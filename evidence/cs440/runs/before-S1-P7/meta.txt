@@ -1,0 +1,4 @@
+head=5f4572eb95b56c54c093ee7489f23c8dc6771f8a probe=evidence/cs440/probes/P7-push-starts-after-stuck-heartbeat-ack.diff filter=FullyQualifiedName~OnboardPowerLossReconnectTests.AVehicleThatKeepsTalkingButStopsReadingIsLetGoAndReconnects
+ src/ControlServer.Host/Transport/OnboardPeer.cs    | 22 +++++++++++++++++++++-
+ .../OnboardPowerLossReconnectTests.cs              | 21 ++++++++++++++++++++-
+ 2 files changed, 41 insertions(+), 2 deletions(-)

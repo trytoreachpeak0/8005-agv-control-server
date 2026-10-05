@@ -1,0 +1,62 @@
+Test run for C:\Users\szy\Desktop\8005-workspace-v2\worktrees\cs440-8005-agv-control-server\tests\ControlServer.Tests\bin\Release\net8.0\win-x64\ControlServer.Tests.dll (.NETCoreApp,Version=v8.0)
+VSTest version 17.11.1 (x64)
+
+Starting test execution, please wait...
+A total of 1 test files matched the specified pattern.
+[xUnit.net 00:00:00.04] xUnit.net VSTest Adapter v3.1.5+1b188a7b0a (64-bit .NET 8.0.31)
+[xUnit.net 00:00:01.68]   Discovering: ControlServer.Tests
+[xUnit.net 00:00:06.58]   Discovered:  ControlServer.Tests
+[xUnit.net 00:00:07.35]   Starting:    ControlServer.Tests
+[xUnit.net 00:00:48.18]     ControlServer.Tests.OnboardPowerLossReconnectTests.ReconnectsAfterAPowerCutThatLeftTheOldConnectionHalfOpen [FAIL]
+[xUnit.net 00:00:48.18]       鏃т唬娆″湪 t=5.5s 绂诲紑璺敱琛紝浣嗘鍚庡紑濮嬬殑绗竴娆″皾璇曟病鏈夋垚鍔熴€?
+[xUnit.net 00:00:48.18]       鏃т唬娆＄寮€璺敱琛細t=5.5s
+[xUnit.net 00:00:48.18]       绗?1 娆★紝t=0.0s 寮€濮嬶細AnsweredButNotRoutable 绗?2 浠?
+[xUnit.net 00:00:48.18]       绗?2 娆★紝t=3.1s 寮€濮嬶細AnsweredButNotRoutable 绗?3 浠?
+[xUnit.net 00:00:48.18]       绗?3 娆★紝t=6.2s 寮€濮嬶細Failed TimeoutException: The operation has timed out.
+[xUnit.net 00:00:48.18]       绗?4 娆★紝t=12.8s 寮€濮嬶細Failed TimeoutException: The operation has timed out.
+[xUnit.net 00:00:48.18]       绗?5 娆★紝t=19.4s 寮€濮嬶細Failed TimeoutException: The operation has timed out.
+[xUnit.net 00:00:48.18]       绗?6 娆★紝t=25.9s 寮€濮嬶細Failed TimeoutException: The operation has timed out.
+[xUnit.net 00:00:48.18]       Stack Trace:
+[xUnit.net 00:00:48.19]         C:\Users\szy\Desktop\8005-workspace-v2\worktrees\cs440-8005-agv-control-server\tests\ControlServer.Tests\OnboardPowerLossReconnectTests.cs(260,0): at ControlServer.Tests.OnboardPowerLossReconnectTests.Outcome.AssertRecovered()
+[xUnit.net 00:00:48.19]         C:\Users\szy\Desktop\8005-workspace-v2\worktrees\cs440-8005-agv-control-server\tests\ControlServer.Tests\OnboardPowerLossReconnectTests.cs(91,0): at ControlServer.Tests.OnboardPowerLossReconnectTests.ReconnectsAfterAPowerCutThatLeftTheOldConnectionHalfOpen()
+[xUnit.net 00:00:48.19]         C:\Users\szy\Desktop\8005-workspace-v2\worktrees\cs440-8005-agv-control-server\tests\ControlServer.Tests\OnboardPowerLossReconnectTests.cs(93,0): at ControlServer.Tests.OnboardPowerLossReconnectTests.ReconnectsAfterAPowerCutThatLeftTheOldConnectionHalfOpen()
+[xUnit.net 00:00:48.19]         --- End of stack trace from previous location ---
+[xUnit.net 00:00:48.19]       Output:
+[xUnit.net 00:00:48.19]         鏃т唬娆＄寮€璺敱琛細t=5.5s
+[xUnit.net 00:00:48.19]         绗?1 娆★紝t=0.0s 寮€濮嬶細AnsweredButNotRoutable 绗?2 浠?
+[xUnit.net 00:00:48.19]         绗?2 娆★紝t=3.1s 寮€濮嬶細AnsweredButNotRoutable 绗?3 浠?
+[xUnit.net 00:00:48.19]         绗?3 娆★紝t=6.2s 寮€濮嬶細Failed TimeoutException: The operation has timed out.
+[xUnit.net 00:00:48.19]         绗?4 娆★紝t=12.8s 寮€濮嬶細Failed TimeoutException: The operation has timed out.
+[xUnit.net 00:00:48.19]         绗?5 娆★紝t=19.4s 寮€濮嬶細Failed TimeoutException: The operation has timed out.
+[xUnit.net 00:00:48.19]         绗?6 娆★紝t=25.9s 寮€濮嬶細Failed TimeoutException: The operation has timed out.
+  Failed ControlServer.Tests.OnboardPowerLossReconnectTests.ReconnectsAfterAPowerCutThatLeftTheOldConnectionHalfOpen [40 s]
+  Error Message:
+   鏃т唬娆″湪 t=5.5s 绂诲紑璺敱琛紝浣嗘鍚庡紑濮嬬殑绗竴娆″皾璇曟病鏈夋垚鍔熴€?
+鏃т唬娆＄寮€璺敱琛細t=5.5s
+绗?1 娆★紝t=0.0s 寮€濮嬶細AnsweredButNotRoutable 绗?2 浠?
+绗?2 娆★紝t=3.1s 寮€濮嬶細AnsweredButNotRoutable 绗?3 浠?
+绗?3 娆★紝t=6.2s 寮€濮嬶細Failed TimeoutException: The operation has timed out.
+绗?4 娆★紝t=12.8s 寮€濮嬶細Failed TimeoutException: The operation has timed out.
+绗?5 娆★紝t=19.4s 寮€濮嬶細Failed TimeoutException: The operation has timed out.
+绗?6 娆★紝t=25.9s 寮€濮嬶細Failed TimeoutException: The operation has timed out.
+  Stack Trace:
+     at ControlServer.Tests.OnboardPowerLossReconnectTests.Outcome.AssertRecovered() in C:\Users\szy\Desktop\8005-workspace-v2\worktrees\cs440-8005-agv-control-server\tests\ControlServer.Tests\OnboardPowerLossReconnectTests.cs:line 260
+   at ControlServer.Tests.OnboardPowerLossReconnectTests.ReconnectsAfterAPowerCutThatLeftTheOldConnectionHalfOpen() in C:\Users\szy\Desktop\8005-workspace-v2\worktrees\cs440-8005-agv-control-server\tests\ControlServer.Tests\OnboardPowerLossReconnectTests.cs:line 91
+   at ControlServer.Tests.OnboardPowerLossReconnectTests.ReconnectsAfterAPowerCutThatLeftTheOldConnectionHalfOpen() in C:\Users\szy\Desktop\8005-workspace-v2\worktrees\cs440-8005-agv-control-server\tests\ControlServer.Tests\OnboardPowerLossReconnectTests.cs:line 93
+--- End of stack trace from previous location ---
+  Standard Output Messages:
+ 鏃т唬娆＄寮€璺敱琛細t=5.5s
+ 绗?1 娆★紝t=0.0s 寮€濮嬶細AnsweredButNotRoutable 绗?2 浠?
+ 绗?2 娆★紝t=3.1s 寮€濮嬶細AnsweredButNotRoutable 绗?3 浠?
+ 绗?3 娆★紝t=6.2s 寮€濮嬶細Failed TimeoutException: The operation has timed out.
+ 绗?4 娆★紝t=12.8s 寮€濮嬶細Failed TimeoutException: The operation has timed out.
+ 绗?5 娆★紝t=19.4s 寮€濮嬶細Failed TimeoutException: The operation has timed out.
+ 绗?6 娆★紝t=25.9s 寮€濮嬶細Failed TimeoutException: The operation has timed out.
+
+
+[xUnit.net 00:01:20.40]   Finished:    ControlServer.Tests (ID = 'e9a86b65d07f6a984a4a75af2821531c21eb38df17b507165946674f4b81024f')
+
+Test Run Failed.
+Total tests: 1
+     Failed: 1
+ Total time: 1.3597 Minutes

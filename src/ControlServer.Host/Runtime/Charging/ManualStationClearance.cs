@@ -80,7 +80,12 @@ public sealed record ManualStationClearanceRequest(
 /// </para>
 /// <para>
 /// <b>并发</b>：车载端与 Host 几乎同时确认、或确认与引擎那一轮的释放撞在一起时，清桩记录的完成带着并发令牌、释放带着读到的版本与持有者，只有一方写成；
-/// 输的一方整个事务回滚，从头再判一次（这时读到的已经是赢的那一方留下的），所以只有一条清桩记录、一次释放。RIoT 在事务之外读。
+/// 输的一方整个事务回滚，从头再判一次（这时读到的已经是赢的那一方留下的），所以只有一条清桩记录、一次释放。
+/// </para>
+/// <para>
+/// <b>RIoT 不在写锁里读</b>（control-server#452）：先在任何事务之外观察（<see cref="ObserveAsync"/>：读库定下桩与旧单，再读 RIoT），再开事务
+/// （<see cref="DecideObservedAsync"/>）重读库、与观察时逐项比对，一致才按观察到的读数判定落盘；不一致什么也不写，回到锁外重新观察、整次重判。
+/// 经入站处理器进来时，处理器在开收件箱事务之前观察，过期时让收件箱事务整个回滚再来。
 /// </para>
 /// </remarks>
 public sealed class ManualStationClearance(
@@ -141,180 +146,237 @@ public sealed class ManualStationClearance(
 
     private readonly JourneyRuntimeOptions _runtime = runtimeOptions.Value;
 
-    /// <summary>判定并答它；同一个确认号判过的，答存下的那一份。</summary>
+    /// <summary>判定并答它；同一个确认号判过的，答存下的那一份。Host 入口与测试走这里：锁外观察、锁内判定，观察过期了整次重来。</summary>
     public async Task<ManualStationClearanceConfirmation> DecideAsync(
         ManualStationClearanceRequest request, CancellationToken cancellationToken)
     {
         ArgumentNullException.ThrowIfNull(request);
+
+        // Twice at most: the loser of a race with the engine or with the other entry observes again, outside the lock, what the
+        // winner left, and is judged once more.
+        for (int attempt = 0; attempt < 3; attempt++)
+        {
+            Observation observed = await ObserveAsync(request, cancellationToken).ConfigureAwait(false);
+            if (await DecideObservedAsync(request, observed, cancellationToken).ConfigureAwait(false) is { } decided)
+            {
+                return decided;
+            }
+        }
+
+        throw new InvalidOperationException(LostEveryRace(request.ConfirmationRequestId));
+    }
+
+    /// <summary>每一次尝试都按过期的观察作罢时的说明；入站处理器用尽重试时抛同一句。</summary>
+    public static string LostEveryRace(string confirmationRequestId) =>
+        $"Manual station clearance {confirmationRequestId} lost every race it entered; nothing was written.";
+
+    /// <summary>
+    /// 锁外观察（control-server#452）：读库定下这次确认对的是哪一个桩、哪一张旧单，再读 RIoT——车此刻在哪、旧单此刻的样子。在任何事务里调用都抛
+    /// （<see cref="RiotReadOutsideWriteLock"/>）。确认号已经判过的不读 RIoT。什么也不写。
+    /// </summary>
+    public async Task<Observation> ObserveAsync(ManualStationClearanceRequest request, CancellationToken cancellationToken)
+    {
+        ArgumentNullException.ThrowIfNull(request);
+        RiotReadOutsideWriteLock.Ensure(dbContext);
+        ForgetWhatThisWrote();
+        if (await requests.ReadManualStationClearanceAsync(request.ConfirmationRequestId, cancellationToken).ConfigureAwait(false)
+            is not null)
+        {
+            return new Observation(request.ConfirmationRequestId, true, null, null, null);
+        }
+
+        Target? target = request.VehicleKey is null
+            ? null
+            : await FindTargetAsync(request.VehicleKey, cancellationToken).ConfigureAwait(false);
+        RiotVehicleObservation? vehicle = await ReadVehicleAsync(request.VehicleKey, cancellationToken).ConfigureAwait(false);
+        RiotOrderObservation? oldOrder = target is null
+            ? null
+            : await ReadOldOrderAsync(target.UpperId, cancellationToken).ConfigureAwait(false);
+        return new Observation(request.ConfirmationRequestId, false, target, vehicle, oldOrder);
+    }
+
+    /// <summary>
+    /// 锁内判定（control-server#452）：开事务（入站处理器的收件箱事务开着时立保存点），重读库里的事实，与观察时逐项比对（<see cref="FactsOf"/>）；一致才用
+    /// 观察带来的 RIoT 读数判定、落盘。比对不上、或写的时候输给了别人，什么也不写，答空：调用方回到锁外重新观察。这里不读 RIoT。
+    /// </summary>
+    public async Task<ManualStationClearanceConfirmation?> DecideObservedAsync(
+        ManualStationClearanceRequest request, Observation observed, CancellationToken cancellationToken)
+    {
+        ArgumentNullException.ThrowIfNull(request);
+        ArgumentNullException.ThrowIfNull(observed);
+        if (!string.Equals(observed.ConfirmationRequestId, request.ConfirmationRequestId, StringComparison.Ordinal))
+        {
+            throw new ArgumentException("The observation is of another confirmation request.", nameof(observed));
+        }
         FieldConfirmationRequestIdentity identity = new(
             request.ConfirmationRequestId, request.AgvId, request.SessionGeneration, request.RequestMessageId,
             request.RequestContentHash, request.OperatorId ?? "", request.VerificationMethod, request.VerifiedAt,
             request.ObservedAt);
+        ForgetWhatThisWrote();
 
-        // Twice at most: the loser of a race with the engine or with the other entry reads what the winner left, once.
-        for (int attempt = 0; attempt < 3; attempt++)
+        DecisionTransaction transaction = await DecisionTransaction.BeginAsync(dbContext, cancellationToken)
+            .ConfigureAwait(false);
+        await using (transaction)
         {
-            ForgetWhatThisWrote();
             if (await requests.ReadManualStationClearanceAsync(request.ConfirmationRequestId, cancellationToken)
-                    .ConfigureAwait(false) is { } decided)
+                    .ConfigureAwait(false) is { } already)
             {
-                if (decided.Request.RequestContentHash != request.RequestContentHash || decided.Request.AgvId != request.AgvId)
+                await transaction.RollbackAsync(cancellationToken).ConfigureAwait(false);
+                if (already.Request.RequestContentHash != request.RequestContentHash || already.Request.AgvId != request.AgvId)
                 {
                     throw new FieldConfirmationContentConflictException(
                         $"Confirmation request {request.ConfirmationRequestId} was replayed with different content.");
                 }
-                return decided;
+                return already;
             }
 
             Target? target = request.VehicleKey is null
                 ? null
                 : await FindTargetAsync(request.VehicleKey, cancellationToken).ConfigureAwait(false);
-            RiotVehicleObservation? vehicle = await ReadVehicleAsync(request.VehicleKey, cancellationToken).ConfigureAwait(false);
-            RiotOrderObservation? oldOrder = target is null
-                ? null
-                : await ReadOldOrderAsync(target.UpperId, cancellationToken).ConfigureAwait(false);
-            string disposition = oldOrder is null ? PositionUnknown : Disposition(oldOrder, target!.UpperId);
+            if (observed.AlreadyDecided || !Equals(FactsOf(observed.Target), FactsOf(target)))
+            {
+                // The database moved between the observation and the lock (the engine advanced the cycle, the other entry
+                // confirmed): RIoT was read for facts that no longer hold, so nothing is judged on it.
+                await transaction.RollbackAsync(cancellationToken).ConfigureAwait(false);
+                ForgetWhatThisWrote();
+                return null;
+            }
 
+            RiotVehicleObservation? vehicle = observed.Vehicle;
+            RiotOrderObservation? oldOrder = observed.OldOrder;
+            string disposition = oldOrder is null ? PositionUnknown : Disposition(oldOrder, target!.UpperId);
             string? role = roles.GrantedRole(request.OperatorId, FieldOperatorRoleRoster.StationClearanceRoles);
             (string? code, string? field, string? message) = Judge(request, role, target, vehicle, disposition, oldOrder);
             DateTimeOffset now = timeProvider.GetUtcNow();
             bool released = false;
 
-            DecisionTransaction transaction = await DecisionTransaction.BeginAsync(dbContext, cancellationToken)
-                .ConfigureAwait(false);
-            await using (transaction)
+            if (code is null && target is not null)
             {
-                if (code is null && target is not null)
+                if (target.CompletedClearance is not null)
                 {
-                    if (target.CompletedClearance is not null)
+                    // The same clearance confirmed again under another number: nothing is recorded twice. If the old order
+                    // has ended since and the engine has not yet released, this does -- the same release, so only one of the
+                    // two takes effect and the loser reads it released.
+                    released = !target.ChargerHeld || target.Cycle.Phase == ChargingCyclePhases.Ended;
+                    if (!released && Settled(disposition))
                     {
-                        // The same clearance confirmed again under another number: nothing is recorded twice. If the old order
-                        // has ended since and the engine has not yet released, this does -- the same release, so only one of the
-                        // two takes effect and the loser reads it released.
-                        released = !target.ChargerHeld || target.Cycle.Phase == ChargingCyclePhases.Ended;
-                        if (!released && Settled(disposition))
-                        {
-                            if (!await ChargerClearanceRelease.ReleaseAsync(
-                                    dbContext, target.Cycle.CycleId, target.Cycle.Version, EndingOf(target.Cycle), now,
-                                    cancellationToken)
-                                    .ConfigureAwait(false))
-                            {
-                                await transaction.RollbackAsync(cancellationToken).ConfigureAwait(false);
-                                ForgetWhatThisWrote();
-                                continue;
-                            }
-                            released = true;
-                        }
-                    }
-                    else if (target.Cycle.Phase == ChargingCyclePhases.Clearing)
-                    {
-                        // After an unable-to-charge (review of control-server#406): the confirmation is recorded now, and the clearance
-                        // completes -- CompletedAt, and the release -- only once the old order has ended too (REQ-0178, REQ-0179). A
-                        // second number for a confirmation already recorded records nothing again.
-                        string clearanceId = target.ClearanceId ?? JourneyPlanBuilder.StableGuid(target.Cycle.CycleId, "station-clearance");
-                        if (!target.ConfirmationRecorded &&
-                            !await RecordConfirmationAsync(clearanceId, request, role!, vehicle, disposition, now, cancellationToken)
+                        if (!await ChargerClearanceRelease.ReleaseAsync(
+                                dbContext, target.Cycle.CycleId, target.Cycle.Version, EndingOf(target.Cycle), now,
+                                cancellationToken)
                                 .ConfigureAwait(false))
                         {
                             await transaction.RollbackAsync(cancellationToken).ConfigureAwait(false);
                             ForgetWhatThisWrote();
-                            continue;
+                            return null;
                         }
-                        // Review N1: the old order has ended, but the charger is completed vacant only if RIoT does not read the
-                        // vehicle back on it (or charging) right now -- a recorded confirmation can be older than that.
-                        if (Settled(disposition) && !StillOnTheCharger(vehicle, target.Cycle.StationId, _runtime.MapIdentity))
-                        {
-                            if (!await ChargerClearanceRelease.CompleteAndReleaseAsync(
-                                    dbContext, clearanceId, target.Cycle.CycleId, target.Cycle.Version, EndingOf(target.Cycle),
-                                    disposition, now, cancellationToken)
-                                    .ConfigureAwait(false))
-                            {
-                                await transaction.RollbackAsync(cancellationToken).ConfigureAwait(false);
-                                ForgetWhatThisWrote();
-                                continue;
-                            }
-                            released = true;
-                        }
+                        released = true;
                     }
-                    else
+                }
+                else if (target.Cycle.Phase == ChargingCyclePhases.Clearing)
+                {
+                    // After an unable-to-charge (review of control-server#406): the confirmation is recorded now, and the clearance
+                    // completes -- CompletedAt, and the release -- only once the old order has ended too (REQ-0178, REQ-0179). A
+                    // second number for a confirmation already recorded records nothing again.
+                    string clearanceId = target.ClearanceId ?? JourneyPlanBuilder.StableGuid(target.Cycle.CycleId, "station-clearance");
+                    if (!target.ConfirmationRecorded &&
+                        !await RecordConfirmationAsync(clearanceId, request, role!, vehicle, disposition, now, cancellationToken)
+                            .ConfigureAwait(false))
                     {
-                        string clearanceId = target.ClearanceId ?? JourneyPlanBuilder.StableGuid(target.Cycle.CycleId, "station-clearance");
-                        StationClearance started = await clearances.StartAsync(
-                                clearanceId, target.Cycle.CycleId, target.Cycle.VehicleKey, target.Cycle.MapId,
-                                target.Cycle.StationId, now, cancellationToken)
-                            .ConfigureAwait(false);
-                        bool completed = await clearances.CompleteAsync(
-                                started.ClearanceId,
-                                new StationClearanceCompletion(
-                                    now,
-                                    StationClearanceProofs.ManualConfirmation,
-                                    null,
-                                    null,
-                                    request.OperatorId!.Trim(),
-                                    role,
-                                    now,
-                                    FinalPosition(vehicle),
-                                    disposition,
-                                    [],
-                                    request.ClearedCondition,
-                                    request.ConfirmationRequestId),
-                                cancellationToken)
-                            .ConfigureAwait(false);
-                        if (!completed)
+                        await transaction.RollbackAsync(cancellationToken).ConfigureAwait(false);
+                        ForgetWhatThisWrote();
+                        return null;
+                    }
+                    // Review N1: the old order has ended, but the charger is completed vacant only if RIoT does not read the
+                    // vehicle back on it (or charging) right now -- a recorded confirmation can be older than that.
+                    if (Settled(disposition) && !StillOnTheCharger(vehicle, target.Cycle.StationId, _runtime.MapIdentity))
+                    {
+                        if (!await ChargerClearanceRelease.CompleteAndReleaseAsync(
+                                dbContext, clearanceId, target.Cycle.CycleId, target.Cycle.Version, EndingOf(target.Cycle),
+                                disposition, now, cancellationToken)
+                                .ConfigureAwait(false))
                         {
                             await transaction.RollbackAsync(cancellationToken).ConfigureAwait(false);
                             ForgetWhatThisWrote();
-                            continue;
+                            return null;
                         }
-
-                        if (Settled(disposition))
-                        {
-                            if (!await ChargerClearanceRelease.ReleaseAsync(
-                                    dbContext, target.Cycle.CycleId, target.Cycle.Version, EndingOf(target.Cycle), now,
-                                    cancellationToken)
-                                    .ConfigureAwait(false))
-                            {
-                                await transaction.RollbackAsync(cancellationToken).ConfigureAwait(false);
-                                ForgetWhatThisWrote();
-                                continue;
-                            }
-                            released = true;
-                        }
+                        released = true;
                     }
                 }
-
-                ManualStationClearanceConfirmation decision = new(
-                    identity,
-                    request.StationId,
-                    request.PublicStationFunction,
-                    request.ClearedCondition,
-                    new FieldConfirmationDecision(
-                        code is null ? FieldConfirmationDecision.Confirmed : FieldConfirmationDecision.Rejected,
-                        code, field, message, now),
-                    released);
-                ManualStationClearanceConfirmation stored = await requests
-                    .DecideManualStationClearanceAsync(decision, cancellationToken).ConfigureAwait(false);
-                if (stored.Request.RequestMessageId != request.RequestMessageId || stored.Decision.DecidedAt != now)
+                else
                 {
-                    // The same number was decided through another context in between: that decision is the one, and nothing
-                    // this attempt did stands.
-                    await transaction.RollbackAsync(cancellationToken).ConfigureAwait(false);
-                    ForgetWhatThisWrote();
-                    return stored;
-                }
+                    string clearanceId = target.ClearanceId ?? JourneyPlanBuilder.StableGuid(target.Cycle.CycleId, "station-clearance");
+                    StationClearance started = await clearances.StartAsync(
+                            clearanceId, target.Cycle.CycleId, target.Cycle.VehicleKey, target.Cycle.MapId,
+                            target.Cycle.StationId, now, cancellationToken)
+                        .ConfigureAwait(false);
+                    bool completed = await clearances.CompleteAsync(
+                            started.ClearanceId,
+                            new StationClearanceCompletion(
+                                now,
+                                StationClearanceProofs.ManualConfirmation,
+                                null,
+                                null,
+                                request.OperatorId!.Trim(),
+                                role,
+                                now,
+                                FinalPosition(vehicle),
+                                disposition,
+                                [],
+                                request.ClearedCondition,
+                                request.ConfirmationRequestId),
+                            cancellationToken)
+                        .ConfigureAwait(false);
+                    if (!completed)
+                    {
+                        await transaction.RollbackAsync(cancellationToken).ConfigureAwait(false);
+                        ForgetWhatThisWrote();
+                        return null;
+                    }
 
-                await WriteAuditAsync(request, role, target, vehicle, disposition, stored, now, cancellationToken)
-                    .ConfigureAwait(false);
-                await transaction.CommitAsync(cancellationToken).ConfigureAwait(false);
-                LogDecided(
-                    logger, request.ConfirmationRequestId, request.AgvId, request.StationId, stored.Decision.Outcome,
-                    stored.StationReleased, code ?? disposition, null);
+                    if (Settled(disposition))
+                    {
+                        if (!await ChargerClearanceRelease.ReleaseAsync(
+                                dbContext, target.Cycle.CycleId, target.Cycle.Version, EndingOf(target.Cycle), now,
+                                cancellationToken)
+                                .ConfigureAwait(false))
+                        {
+                            await transaction.RollbackAsync(cancellationToken).ConfigureAwait(false);
+                            ForgetWhatThisWrote();
+                            return null;
+                        }
+                        released = true;
+                    }
+                }
+            }
+
+            ManualStationClearanceConfirmation decision = new(
+                identity,
+                request.StationId,
+                request.PublicStationFunction,
+                request.ClearedCondition,
+                new FieldConfirmationDecision(
+                    code is null ? FieldConfirmationDecision.Confirmed : FieldConfirmationDecision.Rejected,
+                    code, field, message, now),
+                released);
+            ManualStationClearanceConfirmation stored = await requests
+                .DecideManualStationClearanceAsync(decision, cancellationToken).ConfigureAwait(false);
+            if (stored.Request.RequestMessageId != request.RequestMessageId || stored.Decision.DecidedAt != now)
+            {
+                // The same number was decided through another context in between: that decision is the one, and nothing
+                // this attempt did stands.
+                await transaction.RollbackAsync(cancellationToken).ConfigureAwait(false);
+                ForgetWhatThisWrote();
                 return stored;
             }
-        }
 
-        throw new InvalidOperationException(
-            $"Manual station clearance {request.ConfirmationRequestId} lost every race it entered; nothing was written.");
+            await WriteAuditAsync(request, role, target, vehicle, disposition, stored, now, cancellationToken)
+                .ConfigureAwait(false);
+            await transaction.CommitAsync(cancellationToken).ConfigureAwait(false);
+            LogDecided(
+                logger, request.ConfirmationRequestId, request.AgvId, request.StationId, stored.Decision.Outcome,
+                stored.StationReleased, code ?? disposition, null);
+            return stored;
+        }
     }
 
     /// <summary>
@@ -655,11 +717,50 @@ public sealed class ManualStationClearance(
             now,
             cancellationToken);
 
+    /// <summary>
+    /// 锁外观察到的（<see cref="ObserveAsync"/>）：确认号那时判过没有；没判过时，库里定下的那个桩、那张旧单，与对着它们读到的 RIoT。只交给
+    /// <see cref="DecideObservedAsync"/>。
+    /// </summary>
+    public sealed class Observation
+    {
+        internal Observation(
+            string confirmationRequestId,
+            bool alreadyDecided,
+            Target? target,
+            RiotVehicleObservation? vehicle,
+            RiotOrderObservation? oldOrder)
+        {
+            ConfirmationRequestId = confirmationRequestId;
+            AlreadyDecided = alreadyDecided;
+            Target = target;
+            Vehicle = vehicle;
+            OldOrder = oldOrder;
+        }
+
+        internal string ConfirmationRequestId { get; }
+        internal bool AlreadyDecided { get; }
+        internal Target? Target { get; }
+        internal RiotVehicleObservation? Vehicle { get; }
+        internal RiotOrderObservation? OldOrder { get; }
+    }
+
+    /// <summary>
+    /// 锁内重读之后要与观察时逐项相同的库事实：判定用到的、写的时候带作令牌的全部——周期是哪一个、它的版本与阶段与结束原因，充电腿的站名与
+    /// <c>upperId</c>（旧单读的就是它），清桩记录、它完成没有、确认记下没有，这一趟此刻还持不持有桩。挂在旅程上的保持码只决定这个桩算不算被留着，
+    /// 已经体现在有没有目标里。电量取样那几列不在里面：这里判的车不在充电。
+    /// </summary>
+    internal static object? FactsOf(Target? target) =>
+        target is null
+            ? null
+            : (target.Cycle.CycleId, target.Cycle.Version, target.Cycle.Phase, target.Cycle.WireState, target.Cycle.EndReason,
+                target.StationName, target.UpperId, target.ClearanceId, target.CompletedClearance?.ClearanceId,
+                target.CompletedClearance?.CompletedAt, target.ChargerHeld, target.ConfirmationRecorded);
+
     /// <param name="ClearanceId">这个周期已有的清桩记录；没有为空（失败周期、保持状态的周期由确认这一刻开始并完成）。</param>
     /// <param name="CompletedClearance">已经完成的那一次清桩：同一次清桩的第二个确认号不再写、不再放。</param>
     /// <param name="ChargerHeld">这一趟此刻还持有这个桩的独占。</param>
     /// <param name="ConfirmationRecorded">清桩中：人工确认已经记下、清桩还没完成（旧单那时还没终结）。</param>
-    private sealed record Target(
+    internal sealed record Target(
         ChargingCycleRow Cycle,
         string StationName,
         string UpperId,

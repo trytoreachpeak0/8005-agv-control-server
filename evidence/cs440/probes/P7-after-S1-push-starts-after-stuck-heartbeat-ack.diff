@@ -1,0 +1,88 @@
+diff --git a/src/ControlServer.Host/Transport/OnboardPeer.cs b/src/ControlServer.Host/Transport/OnboardPeer.cs
+index 10cde1e22..333437429 100644
+--- a/src/ControlServer.Host/Transport/OnboardPeer.cs
++++ b/src/ControlServer.Host/Transport/OnboardPeer.cs
+@@ -196,6 +196,10 @@ public sealed class OnboardPeer : IOnboardPeer
+ internal sealed class OnboardPeerConnection : IAsyncDisposable
+ {
+     private readonly SemaphoreSlim _sendGate = new(1, 1);
++
++    // PROBE P7: once the test has started pushing, the first HeartbeatAck takes the send gate and never finishes its write.
++    internal static volatile bool ProbePushSeen;
++    internal static long ProbeHeartbeatStuckSince;
+     private readonly Stream _stream;
+     private readonly TimeSpan _writeTimeout;
+ 
+@@ -227,7 +231,17 @@ internal sealed class OnboardPeerConnection : IAsyncDisposable
+             throw new InvalidDataException("Onboard outbound data must be one or more newline-terminated NDJSON messages.");
+         }
+ 
+-        Task send = SendCoreAsync(ndjsonLine, cancellationToken);
++        string probeText = Encoding.UTF8.GetString(ndjsonLine.Span);
++        bool probeStuck = false;
++        if (probeText.Contains("FaultCargoRecoveryCommand", StringComparison.Ordinal))
++        {
++            ProbePushSeen = true;
++        }
++        else if (ProbePushSeen && probeText.Contains("\"HeartbeatAck\"", StringComparison.Ordinal))
++        {
++            probeStuck = Interlocked.CompareExchange(ref ProbeHeartbeatStuckSince, System.Diagnostics.Stopwatch.GetTimestamp(), 0) == 0;
++        }
++        Task send = probeStuck ? ProbeStuckAsync(cancellationToken) : SendCoreAsync(ndjsonLine, cancellationToken);
+         try
+         {
+             await send.WaitAsync(_writeTimeout, cancellationToken).ConfigureAwait(false);
+@@ -256,6 +270,12 @@ internal sealed class OnboardPeerConnection : IAsyncDisposable
+         }
+     }
+ 
++    private async Task ProbeStuckAsync(CancellationToken cancellationToken)
++    {
++        await _sendGate.WaitAsync(cancellationToken).ConfigureAwait(false);
++        await Task.Delay(Timeout.Infinite, cancellationToken).ConfigureAwait(false);
++    }
++
+     private async Task SendCoreAsync(ReadOnlyMemory<byte> ndjsonLine, CancellationToken cancellationToken)
+     {
+         await _sendGate.WaitAsync(cancellationToken).ConfigureAwait(false);
+diff --git a/tests/ControlServer.Tests/OnboardPowerLossReconnectTests.cs b/tests/ControlServer.Tests/OnboardPowerLossReconnectTests.cs
+index 6a9892fca..7250b974d 100644
+--- a/tests/ControlServer.Tests/OnboardPowerLossReconnectTests.cs
++++ b/tests/ControlServer.Tests/OnboardPowerLossReconnectTests.cs
+@@ -173,6 +173,8 @@ public sealed class OnboardPowerLossReconnectTests
+     public async Task AVehicleThatKeepsTalkingButStopsReadingIsLetGoAndReconnects(int? writeTimeoutMilliseconds)
+     {
+         TimeSpan? configured = writeTimeoutMilliseconds is { } ms ? TimeSpan.FromMilliseconds(ms) : null;
++        OnboardPeerConnection.ProbePushSeen = false; // PROBE P7
++        Interlocked.Exchange(ref OnboardPeerConnection.ProbeHeartbeatStuckSince, 0); // PROBE P7
+         await using Rig rig = await Rig.StartAsync(configured);
+         long oldGeneration = await rig.ConnectFirstSessionAsync();
+ 
+@@ -624,9 +626,26 @@ public sealed class OnboardPowerLossReconnectTests
+             {
+                 since ??= Stopwatch.StartNew();
+                 Interlocked.Exchange(ref _lastSuccessfulPushStartedAtTicks, since.Elapsed.Ticks);
+-                string padding = new('x', payloadBytes);
++                string padding = new('x', 100); // PROBE P7: small pushes never fill the buffer themselves
+                 while (!cancellationToken.IsCancellationRequested)
+                 {
++                    // PROBE P7: a push starts no earlier than 1.2 s after the HeartbeatAck got stuck.
++                    long probeStuckSince = Interlocked.Read(ref OnboardPeerConnection.ProbeHeartbeatStuckSince);
++                    if (probeStuckSince != 0)
++                    {
++                        TimeSpan probeWait = TimeSpan.FromMilliseconds(1200) - Stopwatch.GetElapsedTime(probeStuckSince);
++                        if (probeWait > TimeSpan.Zero)
++                        {
++                            try
++                            {
++                                await Task.Delay(probeWait, cancellationToken);
++                            }
++                            catch (OperationCanceledException)
++                            {
++                                return;
++                            }
++                        }
++                    }
+                     byte[] line = Encoding.UTF8.GetBytes(JsonSerializer.Serialize(new
+                     {
+                         messageType = "FaultCargoRecoveryCommand",

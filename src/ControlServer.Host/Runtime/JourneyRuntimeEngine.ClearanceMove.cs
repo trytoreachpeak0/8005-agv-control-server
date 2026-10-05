@@ -717,7 +717,7 @@ public sealed partial class JourneyRuntimeEngine
         await JourneyClosure.SendAsync(publisher, dbContext, runtime.AgvId, cancellationToken).ConfigureAwait(false);
     }
 
-    /// <summary>一次清桩移动结束（没到点）：<see cref="ClearanceMoveEnding"/> 暂存，写码，一次保存，然后发「回到清桩中」的那两张快照。</summary>
+    /// <summary>一次清桩移动结束（没到点）：<see cref="ClearanceMoveEnding"/> 暂存，写码，一次保存，然后发「回到清桩中」的那两张快照（暂存了的话）。</summary>
     private async Task EndClearanceMoveAsync(
         JourneyRuntimeRow runtime,
         JourneyStopRow move,
@@ -727,10 +727,18 @@ public sealed partial class JourneyRuntimeEngine
     {
         DateTimeOffset now = timeProvider.GetUtcNow();
         checkpointWaits.Clear(runtime.VehicleKey);
-        await ClearanceMoveEnding.StageAsync(dbContext, runtime, move, releaseReason, now, cancellationToken).ConfigureAwait(false);
+        bool backToClearing = await ClearanceMoveEnding.StageAsync(dbContext, runtime, move, releaseReason, now, cancellationToken)
+            .ConfigureAwait(false);
         runtime.SetBlockReason(code, now);
         runtime.UpdatedAt = now;
         await dbContext.SaveChangesAsync(cancellationToken).ConfigureAwait(false);
+        if (!backToClearing)
+        {
+            // control-server#462: the cycle was ended by a manual clearance on the way (or there is no session), so nothing was
+            // staged to say "back to clearing"; the journey closes next round and its closure tells the vehicle. Sending the
+            // two ids anyway threw for a message that does not exist and cost the whole fleet that round.
+            return;
+        }
         int attempt = ClearanceMoveShape.AttemptOf(move);
         await SendIdleReturnSnapshotAsync(ClearanceMoveShape.BackPlanMessageId(runtime.JourneyId, attempt), cancellationToken)
             .ConfigureAwait(false);
@@ -803,9 +811,16 @@ public sealed partial class JourneyRuntimeEngine
                 ]),
             now,
             cancellationToken).ConfigureAwait(false);
+        // control-server#462: the purpose the vehicle holds, not whether the cycle is still open. A manual clearance can end the
+        // cycle before this move is confirmed, and the vehicle still drives under CLEARING_MAINTENANCE until the move converges;
+        // a null here would have the onboard read the waiting point leg as an idle return.
+        string? purpose = await dbContext.Set<VehiclePurposeClaimRow>().AsNoTracking()
+            .Where(row => row.JourneyId == runtime.JourneyId)
+            .Select(row => row.Purpose)
+            .SingleOrDefaultAsync(cancellationToken).ConfigureAwait(false);
         // A millisecond after the plan, so a replay -- which sends in creation order -- sends the plan first too.
         VehicleBusinessProjection state = new(
-            stateRevision, "READY", cycle is null ? null : VehicleActivePurposes.ClearingMaintenance, false,
+            stateRevision, "READY", purpose, false,
             PublishedBatteryState(runtime), cycle?.WireState ?? ChargingCycleWireStates.NotCharging, null, []);
         await OnboardJourneyPublisher.StageVehicleBusinessStateAsync(
             store, stateId, runtime.AgvId, session.SessionGeneration, state, now.AddMilliseconds(1), cancellationToken)

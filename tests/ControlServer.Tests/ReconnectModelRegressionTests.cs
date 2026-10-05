@@ -162,7 +162,8 @@ public sealed class ReconnectModelRegressionTests
 
         ReconnectVerdict verdict = await ReconnectModel.RunAsync(steps);
 
-        Assert.Contains("with different content refused", verdict.Detail, StringComparison.Ordinal);
+        // control-server#478: refused with the protocol's code, as an answer, rather than by ending the connection.
+        Assert.Contains("with different content refused: ProtocolProblem MESSAGE_ID_CONTENT_CONFLICT", verdict.Detail, StringComparison.Ordinal);
         Assert.Empty(verdict.Violations);
     }
 

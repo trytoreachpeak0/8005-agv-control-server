@@ -14,6 +14,7 @@ namespace ControlServer.Tests;
 public sealed class OnboardMessageProcessorTests
 {
     private static readonly int[] FirstTwoSlots = [1, 2];
+    private static readonly int[] SlotOutsideTheVehicle = [9];
 
     /// <summary>
     /// control-server#382: the handshake accepts a peer speaking the <c>3.0.0</c> candidate and rejects one still built
@@ -474,10 +475,14 @@ public sealed class OnboardMessageProcessorTests
 
             JsonNode conflictingNode = JsonNode.Parse(reboundReport)!;
             conflictingNode["payload"]!["forcedRecoveryGeneration"] = 1;
-            await Assert.ThrowsAsync<ProtocolContentConflictException>(() => processor.ProcessAsync(
-                conflictingNode.ToJsonString(),
-                reboundState,
-                TestContext.Current.CancellationToken));
+            // control-server#478: refused with a ProtocolProblem on a connection that stays, no longer an exception.
+            ProtocolProblemAssert.RefusedLine(
+                await processor.ProcessAsync(
+                    conflictingNode.ToJsonString(),
+                    reboundState,
+                    TestContext.Current.CancellationToken),
+                "MESSAGE_ID_CONTENT_CONFLICT",
+                conflictingNode.ToJsonString());
             Assert.Single(await context.ProtocolInbox.Where(
                 row => row.MessageId == "00000000-0000-4000-8000-000000000022")
                 .ToArrayAsync(TestContext.Current.CancellationToken));
@@ -671,8 +676,27 @@ public sealed class OnboardMessageProcessorTests
                 "00000000-0000-4000-8000-000000000121",
                 state.SessionGeneration,
                 messages[^1].Payload);
-            await Assert.ThrowsAsync<ProtocolContentConflictException>(() => processor.ProcessAsync(
-                conflictingResult, state, TestContext.Current.CancellationToken));
+            // control-server#478: refused with a ProtocolProblem on a connection that stays, no longer an exception.
+            ProtocolProblemAssert.RefusedLine(
+                await processor.ProcessAsync(conflictingResult, state, TestContext.Current.CancellationToken),
+                "BUSINESS_ID_CONTENT_CONFLICT",
+                conflictingResult);
+            Assert.Single(await context.OperationResults.ToListAsync(TestContext.Current.CancellationToken));
+
+            // A result whose resultContentSha256 does not match its own business content is not a conflict with anything
+            // on file: the message contradicts itself. CONTENT_HASH_MISMATCH, judged before the business key is looked at.
+            JsonNode tamperedPayload = JsonNode.Parse(
+                JsonSerializer.SerializeToElement(messages[^1].Payload, PeerSerializerOptions).GetRawText())!;
+            tamperedPayload["resultContentSha256"] = new string('a', 64);
+            string tamperedResult = Envelope(
+                "OperationResult",
+                "00000000-0000-4000-8000-000000000122",
+                state.SessionGeneration,
+                tamperedPayload);
+            ProtocolProblemAssert.RefusedLine(
+                await processor.ProcessAsync(tamperedResult, state, TestContext.Current.CancellationToken),
+                "CONTENT_HASH_MISMATCH",
+                tamperedResult);
             Assert.Single(await context.OperationResults.ToListAsync(TestContext.Current.CancellationToken));
         }
         finally
@@ -845,8 +869,16 @@ public sealed class OnboardMessageProcessorTests
             // Rebinding the generation is the only difference a resend may carry.
             JsonNode conflicting = JsonNode.Parse(rebound)!;
             conflicting["payload"]!["safetyStateVersion"] = 3;
-            await Assert.ThrowsAsync<ProtocolContentConflictException>(() => processor.ProcessAsync(
-                conflicting.ToJsonString(), secondState, token));
+            // control-server#478: refused with a ProtocolProblem on a connection that stays, no longer an exception; a refused
+            // safety message also lowers readiness and asks for a new safety snapshot (review S2).
+            using JsonDocument conflictingDocument = JsonDocument.Parse(conflicting.ToJsonString());
+            ProtocolProblemAssert.RefusedSafety(
+                await processor.ProcessAsync(conflicting.ToJsonString(), secondState, token),
+                "MESSAGE_ID_CONTENT_CONFLICT",
+                conflictingDocument.RootElement.GetProperty("messageId").GetString()!,
+                "SafetyStateChanged",
+                "SessionReadiness",
+                "SafetyStateSnapshotRequested");
         }
         finally
         {
@@ -1012,8 +1044,11 @@ public sealed class OnboardMessageProcessorTests
             // Rebinding the generation is the only difference a replay may carry.
             JsonNode conflicting = JsonNode.Parse(rebound)!;
             conflicting["payload"]!["overallOutcome"] = "COMPLETED";
-            await Assert.ThrowsAsync<ProtocolContentConflictException>(() => processor.ProcessAsync(
-                conflicting.ToJsonString(), secondState, token));
+            // control-server#478: refused with a ProtocolProblem on a connection that stays, no longer an exception.
+            ProtocolProblemAssert.RefusedLine(
+                await processor.ProcessAsync(conflicting.ToJsonString(), secondState, token),
+                "MESSAGE_ID_CONTENT_CONFLICT",
+                conflicting.ToJsonString());
             Assert.Single(await context.OperationResults.ToListAsync(token));
         }
         finally
@@ -1905,6 +1940,316 @@ public sealed class OnboardMessageProcessorTests
         {
             Environment.SetEnvironmentVariable(credentialVariable, null);
         }
+    }
+
+    /// <summary>
+    /// The inbound boundary answers only <see cref="InboundMessageRejectedException"/> with a ProtocolProblem
+    /// (control-server#478). A <see cref="ProtocolContentConflictException"/> raised while handling an inbound message
+    /// still leaves the processor as an exception -- which <c>OnboardTcpServer</c> ends the connection on -- and is not
+    /// turned into an answer to the vehicle.
+    /// </summary>
+    /// <remarks>
+    /// That type is the server's own bookkeeping disagreeing with itself: an outbound slot operation or envelope replayed
+    /// with different content (<c>PrepareSlotOperationAsync</c>, <c>RefreshOutboundEnvelopeAsync</c>), or an
+    /// acknowledgement that does not match what the server has on file. Telling the vehicle it sent something wrong would
+    /// be false. The acknowledgement is the one such site an inbound line reaches, so it stands in for all of them; its
+    /// behaviour was left unchanged on purpose and is a follow-up of #478.
+    /// </remarks>
+    [Fact]
+    [Trait("IntegrationSlice", "FP-IS-06")]
+    public async Task AServerSideContentConflictDuringAnInboundMessageIsNotAnsweredAsTheVehiclesFault()
+    {
+        const string credentialVariable = "CONTROL_SERVER_TEST_SERVER_SIDE_CONFLICT_CREDENTIAL";
+        const string credential = "test-credential-not-for-production";
+        Environment.SetEnvironmentVariable(credentialVariable, credential);
+        try
+        {
+            await using SqliteConnection connection = new("Data Source=:memory:");
+            await connection.OpenAsync(TestContext.Current.CancellationToken);
+            DbContextOptions<ControlServerDbContext> options = new DbContextOptionsBuilder<ControlServerDbContext>()
+                .UseSqlite(connection)
+                .Options;
+            await using ControlServerDbContext context = new(options);
+            await context.Database.EnsureCreatedAsync(TestContext.Current.CancellationToken);
+            IConfiguration configuration = new ConfigurationBuilder()
+                .AddInMemoryCollection(new Dictionary<string, string?>
+                {
+                    ["OnboardTransport:CredentialEnvironmentVariable"] = credentialVariable
+                })
+                .Build();
+            WireToGateStore store = new(context);
+            OnboardMessageProcessor processor = TestOnboardProcessorFactory.Create(
+                context, store, new FixedTimeProvider(), configuration);
+            OnboardConnectionState state = new();
+            await ReachReadyAsync(processor, state, credential, TestContext.Current.CancellationToken);
+            long generation = state.SessionGeneration!.Value;
+
+            const string outboundMessageId = "00000000-0000-4000-8000-0000000004e1";
+            await store.QueueOutboundEnvelopeAsync(
+                outboundMessageId,
+                "SlotOperationCommand",
+                Envelope("SlotOperationCommand", outboundMessageId, generation, new { }),
+                new DateTimeOffset(2026, 8, 25, 9, 0, 0, TimeSpan.Zero),
+                TestContext.Current.CancellationToken);
+
+            JsonObject ack = JsonNode.Parse(Envelope(
+                "DurableAck",
+                "00000000-0000-4000-8000-0000000004e2",
+                generation,
+                new
+                {
+                    acceptedMessageId = outboundMessageId,
+                    acceptedMessageType = "SlotOperationCommand",
+                    acceptedContentSha256 = new string('0', 64),
+                    durablyAcceptedAt = "2026-08-25T09:00:01Z"
+                }))!.AsObject();
+            ack["correlationId"] = outboundMessageId;
+
+            ProtocolContentConflictException thrown = await Assert.ThrowsAsync<ProtocolContentConflictException>(() =>
+                processor.ProcessAsync(ack.ToJsonString(), state, TestContext.Current.CancellationToken));
+            Assert.Contains("Outbound acknowledgement", thrown.Message, StringComparison.Ordinal);
+            Assert.False(typeof(InboundMessageRejectedException).IsAssignableFrom(typeof(ProtocolContentConflictException)));
+        }
+        finally
+        {
+            Environment.SetEnvironmentVariable(credentialVariable, null);
+        }
+    }
+
+    /// <summary>
+    /// A result whose demand or operation type is not the one its slot operation was prepared under names the same
+    /// attempt with other content: BUSINESS_ID_CONTENT_CONFLICT on a connection that stays, and nothing of it kept
+    /// (control-server#478; it used to be a BusinessIdentityConflictException that ended the connection).
+    /// </summary>
+    [Fact]
+    [Trait("IntegrationSlice", "FP-IS-06")]
+    public async Task AResultNamingAnotherOperationTypeForItsAttemptIsRefusedAndKeepsNothing()
+    {
+        await using SqliteConnection connection = new("Data Source=:memory:");
+        await connection.OpenAsync(TestContext.Current.CancellationToken);
+        await using ControlServerDbContext context = await PreparedUnloadAsync(connection);
+        OnboardMessageProcessor processor = TestOnboardProcessorFactory.Create(
+            context, new WireToGateStore(context), new FixedTimeProvider(), new ConfigurationBuilder().Build());
+        OnboardConnectionState state = new() { AgvId = "AGV-001", SessionGeneration = 1, Readiness = SessionReadiness.Ready };
+
+        // The slot operation was prepared as an UNLOAD; this result reports a LOAD of the same attempt.
+        string line = Envelope(
+            "OperationResult",
+            PreparedUnloadAttemptId,
+            1,
+            OperationResultPayload(PreparedUnloadDemandId, PreparedUnloadAttemptId, "LOAD", "OCCUPIED", [1, 2]));
+        ProtocolProblemAssert.RefusedLine(
+            await processor.ProcessAsync(line, state, TestContext.Current.CancellationToken),
+            "BUSINESS_ID_CONTENT_CONFLICT",
+            line);
+
+        context.ChangeTracker.Clear();
+        Assert.Empty(await context.OperationResults.ToArrayAsync(TestContext.Current.CancellationToken));
+        Assert.Empty(await context.ProtocolInbox.ToArrayAsync(TestContext.Current.CancellationToken));
+        Assert.Equal(StationOperationStatus.Prepared, (await context.StationOperations.SingleAsync(
+            TestContext.Current.CancellationToken)).Status);
+    }
+
+    /// <summary>
+    /// An unload result for a transport demand key already completed with other evidence: BUSINESS_ID_CONTENT_CONFLICT,
+    /// and the demand neither closes nor gets a second completion (control-server#478).
+    /// </summary>
+    [Fact]
+    [Trait("IntegrationSlice", "FP-IS-06")]
+    public async Task AnUnloadResultDisagreeingWithItsKeysCompletionIsRefusedAndKeepsNothing()
+    {
+        await using SqliteConnection connection = new("Data Source=:memory:");
+        await connection.OpenAsync(TestContext.Current.CancellationToken);
+        await using ControlServerDbContext context = await PreparedUnloadAsync(connection);
+        AcceptedDemandRow demand = await context.AcceptedDemands.SingleAsync(TestContext.Current.CancellationToken);
+        context.TransportDemandCompletions.Add(new TransportDemandCompletionRow
+        {
+            TransportDemandKey = demand.TransportDemandKey,
+            DemandId = demand.DemandId,
+            DemandRevision = demand.DemandRevision,
+            Evidence = new string('e', 64),
+            CompletedAt = new DateTimeOffset(2026, 8, 25, 8, 0, 0, TimeSpan.Zero)
+        });
+        await context.SaveChangesAsync(TestContext.Current.CancellationToken);
+        OnboardMessageProcessor processor = TestOnboardProcessorFactory.Create(
+            context, new WireToGateStore(context), new FixedTimeProvider(), new ConfigurationBuilder().Build());
+        OnboardConnectionState state = new() { AgvId = "AGV-001", SessionGeneration = 1, Readiness = SessionReadiness.Ready };
+
+        string line = Envelope(
+            "OperationResult",
+            PreparedUnloadAttemptId,
+            1,
+            OperationResultPayload(PreparedUnloadDemandId, PreparedUnloadAttemptId, "UNLOAD", "EMPTY", [1, 2]));
+        ProtocolProblemAssert.RefusedLine(
+            await processor.ProcessAsync(line, state, TestContext.Current.CancellationToken),
+            "BUSINESS_ID_CONTENT_CONFLICT",
+            line);
+
+        context.ChangeTracker.Clear();
+        Assert.Equal(new string('e', 64), (await context.TransportDemandCompletions.SingleAsync(
+            TestContext.Current.CancellationToken)).Evidence);
+        Assert.NotEqual(DemandExecutionStatus.Succeeded, (await context.AcceptedDemands.SingleAsync(
+            TestContext.Current.CancellationToken)).Status);
+        Assert.Empty(await context.OperationResults.ToArrayAsync(TestContext.Current.CancellationToken));
+    }
+
+    /// <summary>
+    /// A recovery report naming a slot outside 1..8 as actively unlocked: SLOT_SET_INVALID, and the session keeps no
+    /// part of the report (control-server#478).
+    /// </summary>
+    [Fact]
+    [Trait("IntegrationSlice", "FP-IS-06")]
+    public async Task ARecoveryReportNamingASlotOutsideTheVehicleIsRefusedAndKeepsNothing()
+    {
+        const string credentialVariable = "CONTROL_SERVER_TEST_SLOT_SET_INVALID_CREDENTIAL";
+        const string credential = "test-credential-not-for-production";
+        Environment.SetEnvironmentVariable(credentialVariable, credential);
+        try
+        {
+            await using SqliteConnection connection = new("Data Source=:memory:");
+            await connection.OpenAsync(TestContext.Current.CancellationToken);
+            DbContextOptions<ControlServerDbContext> options = new DbContextOptionsBuilder<ControlServerDbContext>()
+                .UseSqlite(connection)
+                .Options;
+            await using ControlServerDbContext context = new(options);
+            await context.Database.EnsureCreatedAsync(TestContext.Current.CancellationToken);
+            IConfiguration configuration = new ConfigurationBuilder()
+                .AddInMemoryCollection(new Dictionary<string, string?>
+                {
+                    ["OnboardTransport:CredentialEnvironmentVariable"] = credentialVariable
+                })
+                .Build();
+            OnboardMessageProcessor processor = TestOnboardProcessorFactory.Create(
+                context, new WireToGateStore(context), new FixedTimeProvider(), configuration);
+            OnboardConnectionState state = new();
+            await ReachReadyAsync(processor, state, credential, TestContext.Current.CancellationToken);
+            long generation = state.SessionGeneration!.Value;
+            string reportIdBefore = (await context.SessionRecoveries.AsNoTracking()
+                .SingleAsync(TestContext.Current.CancellationToken)).RecoveryReportId!;
+
+            string line = Envelope("RecoveryStateReport", Guid.NewGuid().ToString("D"), generation,
+                new
+                {
+                    reportId = Guid.NewGuid().ToString("D"),
+                    unsettledSlotOperationAttemptId = (string?)null,
+                    provenRecoveryCheckpoint = (string?)null,
+                    activeUnlockSlots = SlotOutsideTheVehicle,
+                    forcedRecoveryGeneration = 0,
+                    pendingResults = Array.Empty<object>()
+                });
+            ProtocolProblemAssert.RefusedLine(
+                await processor.ProcessAsync(line, state, TestContext.Current.CancellationToken),
+                "SLOT_SET_INVALID",
+                line);
+
+            Assert.Equal(reportIdBefore, (await context.SessionRecoveries.AsNoTracking()
+                .SingleAsync(TestContext.Current.CancellationToken)).RecoveryReportId);
+        }
+        finally
+        {
+            Environment.SetEnvironmentVariable(credentialVariable, null);
+        }
+    }
+
+    /// <summary>
+    /// A result whose resultId (its messageId) is already on file with other content, arriving where the inbox has no
+    /// row for it: BUSINESS_ID_CONTENT_CONFLICT on a connection that stays, and the stored result untouched
+    /// (control-server#478; ApplyOperationResultAsync's replay check).
+    /// </summary>
+    [Fact]
+    [Trait("IntegrationSlice", "FP-IS-06")]
+    public async Task AResultIdOnFileWithOtherContentIsRefusedAndKeepsTheStoredResult()
+    {
+        await using SqliteConnection connection = new("Data Source=:memory:");
+        await connection.OpenAsync(TestContext.Current.CancellationToken);
+        await using ControlServerDbContext context = await PreparedUnloadAsync(connection);
+        const string resultId = "00000000-0000-4000-8000-0000000004f6";
+        context.OperationResults.Add(new OperationResultRow
+        {
+            ResultId = resultId,
+            SlotOperationAttemptId = PreparedUnloadAttemptId,
+            AgvId = "AGV-001",
+            ForcedRecoveryGeneration = 0,
+            ContentHash = new string('1', 64),
+            ResultContentSha256 = new string('2', 64),
+            OverallOutcome = "COMPLETED",
+            EvidenceJson = "[]",
+            ObservedAt = new DateTimeOffset(2026, 8, 25, 8, 0, 0, TimeSpan.Zero),
+            ReceivedAt = new DateTimeOffset(2026, 8, 25, 8, 0, 0, TimeSpan.Zero)
+        });
+        await context.SaveChangesAsync(TestContext.Current.CancellationToken);
+        OnboardMessageProcessor processor = TestOnboardProcessorFactory.Create(
+            context, new WireToGateStore(context), new FixedTimeProvider(), new ConfigurationBuilder().Build());
+        OnboardConnectionState state = new() { AgvId = "AGV-001", SessionGeneration = 1, Readiness = SessionReadiness.Ready };
+
+        string line = Envelope(
+            "OperationResult",
+            resultId,
+            1,
+            OperationResultPayload(PreparedUnloadDemandId, PreparedUnloadAttemptId, "UNLOAD", "EMPTY", [1, 2]));
+        ProtocolProblemAssert.RefusedLine(
+            await processor.ProcessAsync(line, state, TestContext.Current.CancellationToken),
+            "BUSINESS_ID_CONTENT_CONFLICT",
+            line);
+
+        context.ChangeTracker.Clear();
+        OperationResultRow stored = await context.OperationResults.SingleAsync(TestContext.Current.CancellationToken);
+        Assert.Equal(new string('2', 64), stored.ResultContentSha256);
+        Assert.Equal(StationOperationStatus.Prepared, (await context.StationOperations.SingleAsync(
+            TestContext.Current.CancellationToken)).Status);
+    }
+
+    private const string PreparedUnloadDemandId = "00000000-0000-4000-8000-0000000004f1";
+    private const string PreparedUnloadAttemptId = "00000000-0000-4000-8000-0000000004f2";
+
+    /// <summary>One accepted demand with an unload prepared for slots 1 and 2 and no result yet, in a ready session.</summary>
+    private static async Task<ControlServerDbContext> PreparedUnloadAsync(SqliteConnection connection)
+    {
+        ControlServerDbContext context = new(new DbContextOptionsBuilder<ControlServerDbContext>()
+            .UseSqlite(connection)
+            .Options);
+        await context.Database.EnsureCreatedAsync(TestContext.Current.CancellationToken);
+        WireToGateStore store = new(context);
+        DateTimeOffset now = new(2026, 8, 25, 9, 0, 0, TimeSpan.Zero);
+        await store.AcceptWithOrderIntentAsync(
+            new AcceptedDemandSnapshot(
+                PreparedUnloadDemandId,
+                "SUBLOT-4F1|WIRE_TO_GATE",
+                9,
+                "00000000-0000-4000-8000-0000000004f3",
+                24,
+                now),
+            new OrderIntent(
+                "00000000-0000-4000-8000-0000000004f4",
+                PreparedUnloadDemandId,
+                "W2G-D-4F1-PICKUP-1",
+                "TO_PICKUP",
+                "PICKUP-01",
+                now),
+            TestContext.Current.CancellationToken);
+        await store.PrepareSlotOperationAsync(
+            new StationOperationPlan(
+                PreparedUnloadAttemptId,
+                PreparedUnloadDemandId,
+                "SUBLOT-4F1",
+                [1, 2],
+                SlotOperationType.Unload,
+                0,
+                new string('c', 64),
+                now),
+            "00000000-0000-4000-8000-0000000004f5",
+            "unload-command-json",
+            TestContext.Current.CancellationToken);
+        await store.BeginSessionRecoveryAsync(
+            new SessionIdentity(
+                "AGV-001",
+                1,
+                ProtocolCandidateIdentity.RepositoryCommit,
+                ProtocolCandidateIdentity.ManifestSha256,
+                ProtocolCandidateIdentity.ProfileId,
+                ProtocolCandidateIdentity.ProtocolVersion),
+            TestContext.Current.CancellationToken);
+        return context;
     }
 
     private static object ManualChargingReturnPayload(string requestId, string administratorRole) => new

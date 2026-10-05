@@ -1,0 +1,16 @@
+diff --git a/tests/ControlServer.Tests/ExpectedActionOverdueTests.cs b/tests/ControlServer.Tests/ExpectedActionOverdueTests.cs
+index 2bdccabbe..4376c1fe0 100644
+--- a/tests/ControlServer.Tests/ExpectedActionOverdueTests.cs
++++ b/tests/ControlServer.Tests/ExpectedActionOverdueTests.cs
+@@ -500,6 +500,11 @@ public sealed class ExpectedActionOverdueTests
+         for (int read = 1; ; read++)
+         {
+             await fixture.HeartbeatAsync();
++            if (read == 1)
++            {
++                // PROBE P5 (post-fix): the machine stalls 6.5 s between the heartbeat and the first GET, past the 6 s window.
++                await Task.Delay(TimeSpan.FromSeconds(6.5), TestContext.Current.CancellationToken);
++            }
+             using HttpResponseMessage response = await client.GetAsync(
+                 new ExpectedActionOverdueCard().SourcePath, TestContext.Current.CancellationToken);
+             response.EnsureSuccessStatusCode();

@@ -170,7 +170,7 @@ public static class StationExclusivityManualRelease
             return await RefuseAsync(CrossCheckNotAvailable).ConfigureAwait(false);
         }
 
-        string crossCheck = await CrossCheckAsync(vehicleFacts, held!, cancellationToken).ConfigureAwait(false);
+        string crossCheck = await CrossCheckAsync(dbContext, vehicleFacts, held!, cancellationToken).ConfigureAwait(false);
         if (crossCheck == CrossCheckAtThisStation) codes.Add(VehicleReportedAtStation);
         if (await HolderBindingAsync(dbContext, held!, cancellationToken).ConfigureAwait(false) is { } binding)
         {
@@ -258,8 +258,10 @@ public static class StationExclusivityManualRelease
         FormattableString.Invariant($"{mapId}/{stationId}");
 
     private static async Task<string> CrossCheckAsync(
-        IRiotVehicleFacts? vehicleFacts, StationExclusivityRow held, CancellationToken cancellationToken)
+        DbContext dbContext, IRiotVehicleFacts? vehicleFacts, StationExclusivityRow held, CancellationToken cancellationToken)
     {
+        // control-server#452: the only caller today, the Host endpoint, holds no transaction here; the guard keeps it that way.
+        RiotReadOutsideWriteLock.Ensure(dbContext);
         if (vehicleFacts is null)
         {
             return CrossCheckNotAvailable;

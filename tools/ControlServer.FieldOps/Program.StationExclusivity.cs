@@ -1,4 +1,5 @@
 using System.Globalization;
+using System.Net.Sockets;
 using System.Net.Http.Headers;
 using System.Net.Http.Json;
 using System.Text.Json;
@@ -21,7 +22,9 @@ namespace ControlServer.FieldOps;
 /// <para>
 /// <b>直接写库之前先探一次服务端</b>（#422 审查）：<c>--database</c> 必须同时给 <c>--probe-server &lt;基址&gt;</c>，本工具对它的
 /// <c>/health/live</c> 发一次请求；得到任何 HTTP 应答（服务端在跑）就拒绝（<c>SERVER_RUNNING</c>），一行不写，提示改用
-/// <c>--server</c>——在线时要走 Host 那条有 RIoT 交叉核对的路。连不上才对库执行。
+/// <c>--server</c>——在线时要走 Host 那条有 RIoT 交叉核对的路。只有连接被主动拒绝（<c>ConnectionRefused</c>：那个地址上没人监听）
+/// 才对库执行。超时或任何别的错误都不是「停着」（#459）：在跑却答得慢的服务端、卡死却仍占着端口的进程（内核照样完成握手）、
+/// 填错成不回 RST 的地址，都只会超时；那是 <c>SERVER_STATE_UNKNOWN</c>，同样一行不写。
 /// </para>
 /// <para>
 /// 必填：<c>--map</c>、<c>--station</c>、<c>--vehicle-key</c>（持有车的 RIoT <c>VehicleKey</c>）、<c>--operator</c>、<c>--reason</c>、
@@ -39,7 +42,9 @@ internal static partial class Program
         ReleaseStationExclusivityCommand + " needs --map <id> --station <id> and either --server <base url> (server running) or "
         + "--database <file> --probe-server <base url> (server stopped), with --vehicle-key --operator --reason --site-verification";
 
-    /// <summary>探测服务端是否在跑的超时：连不上的地址在这之内就会失败，在跑的服务端在这之内一定应答。</summary>
+    /// <summary>
+    /// 探测服务端是否在跑的超时。超时只说明「没得到结论」，不说明服务端停着（#459）：负载下在跑的服务端可能答得比这慢。
+    /// </summary>
     private static readonly TimeSpan ServerProbeTimeout = TimeSpan.FromSeconds(5);
 
     private static async Task<int> ReleaseStationExclusivityAsync(
@@ -54,7 +59,24 @@ internal static partial class Program
         {
             return Usage(ReleaseStationExclusivityUsage);
         }
-        if (await ServerAnswersAsync(probe) is int status)
+        ServerProbe answer = await ProbeServerAsync(probe);
+        if (answer.State == ServerProbeState.Inconclusive)
+        {
+            return Emit(
+                new
+                {
+                    command = ReleaseStationExclusivityCommand,
+                    outcome = "SERVER_STATE_UNKNOWN",
+                    via = "database",
+                    mapId,
+                    stationId,
+                    probeServer = probe.ToString(),
+                    detail = $"The probe of {probe} reached no conclusion (timeout or another error: {answer.Cause}): nothing "
+                        + "was written. Confirm the server is stopped and try again, or run the verb with --server instead."
+                },
+                1);
+        }
+        if (answer.State == ServerProbeState.Answered)
         {
             return Emit(
                 new
@@ -65,7 +87,7 @@ internal static partial class Program
                     mapId,
                     stationId,
                     probeServer = probe.ToString(),
-                    probeHttpStatus = status,
+                    probeHttpStatus = answer.HttpStatus,
                     detail = "The server answered, so it is running: nothing was written. Run the verb with --server instead, "
                         + "which goes through the server and checks RIoT."
                 },
@@ -87,6 +109,7 @@ internal static partial class Program
                 via = "database",
                 mapId,
                 stationId,
+                probeServer = probe.ToString(),
                 codes = result.Codes,
                 stationKind = result.Holder?.StationKind,
                 holderVehicleKey = result.Holder?.VehicleKey,
@@ -113,7 +136,12 @@ internal static partial class Program
         }
 
         StationExclusivityManualReleaseRequest request = StationReleaseRequest(options, mapId, stationId);
-        using HttpClient client = new() { BaseAddress = server, Timeout = TimeSpan.FromSeconds(30) };
+        // Same as the probe (#459 review): the server is on this machine or the plant LAN, never behind a proxy.
+        using HttpClient client = new(new SocketsHttpHandler { UseProxy = false })
+        {
+            BaseAddress = server,
+            Timeout = TimeSpan.FromSeconds(30)
+        };
         client.DefaultRequestHeaders.Authorization = new AuthenticationHeaderValue("Bearer", credential);
         HttpResponseMessage response;
         try
@@ -187,20 +215,47 @@ internal static partial class Program
         }
     }
 
-    /// <summary>服务端对 <c>/health/live</c> 应答了就返回状态码（任何状态码都说明它在跑）；连不上、超时返回空。</summary>
-    private static async Task<int?> ServerAnswersAsync(Uri server)
+    /// <summary>
+    /// 探一次 <c>/health/live</c>。应答了（任何状态码）是 <see cref="ServerProbeState.Answered"/>；连接被主动拒绝（那个地址上没人监听）
+    /// 是 <see cref="ServerProbeState.Refused"/>，唯一允许直接写库的结论；超时与其他任何错误是 <see cref="ServerProbeState.Inconclusive"/>。
+    /// </summary>
+    /// <remarks>
+    /// 探测不走代理（#459 审查）：控制端笔记本与 vm01 都配着 <c>HTTP_PROXY</c>／系统代理。走代理时，代理死了而服务端在跑，「代理拒绝连接」
+    /// 会被当成「服务端停着」放行写库；服务端停着而代理开着，代理代答的 502 又会被当成服务端在跑。探的是服务端本身，不是代理。
+    /// </remarks>
+    private static async Task<ServerProbe> ProbeServerAsync(Uri server)
     {
-        using HttpClient client = new() { BaseAddress = server, Timeout = ServerProbeTimeout };
+        using HttpClient client = new(new SocketsHttpHandler { UseProxy = false })
+        {
+            BaseAddress = server,
+            Timeout = ServerProbeTimeout
+        };
         try
         {
             using HttpResponseMessage response = await client.GetAsync("health/live");
-            return (int)response.StatusCode;
+            return new ServerProbe(ServerProbeState.Answered, (int)response.StatusCode, null);
         }
-        catch (Exception unreachable) when (unreachable is HttpRequestException or TaskCanceledException)
+        catch (HttpRequestException refused) when (refused.InnerException is SocketException
+                                                   {
+                                                       SocketErrorCode: SocketError.ConnectionRefused
+                                                   })
         {
-            return null;
+            return new ServerProbe(ServerProbeState.Refused, null, refused.Message);
+        }
+        catch (Exception other)
+        {
+            return new ServerProbe(ServerProbeState.Inconclusive, null, $"{other.GetType().Name}: {other.Message}");
         }
     }
+
+    private enum ServerProbeState
+    {
+        Answered,
+        Refused,
+        Inconclusive
+    }
+
+    private sealed record ServerProbe(ServerProbeState State, int? HttpStatus, string? Cause);
 
     private static StationExclusivityManualReleaseRequest StationReleaseRequest(
         Dictionary<string, string> options, int mapId, int stationId) =>

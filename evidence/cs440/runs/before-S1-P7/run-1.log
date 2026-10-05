@@ -1,0 +1,58 @@
+Test run for C:\Users\szy\Desktop\8005-workspace-v2\worktrees\cs440-8005-agv-control-server\tests\ControlServer.Tests\bin\Release\net8.0\win-x64\ControlServer.Tests.dll (.NETCoreApp,Version=v8.0)
+VSTest version 17.11.1 (x64)
+
+Starting test execution, please wait...
+A total of 1 test files matched the specified pattern.
+[xUnit.net 00:00:00.00] xUnit.net VSTest Adapter v3.1.5+1b188a7b0a (64-bit .NET 8.0.31)
+[xUnit.net 00:00:00.99]   Discovering: ControlServer.Tests
+[xUnit.net 00:00:04.46]   Discovered:  ControlServer.Tests
+[xUnit.net 00:00:04.92]   Starting:    ControlServer.Tests
+[xUnit.net 00:00:20.81]     ControlServer.Tests.OnboardPowerLossReconnectTests.AVehicleThatKeepsTalkingButStopsReadingIsLetGoAndReconnects(writeTimeoutMilliseconds: 1000) [FAIL]
+[xUnit.net 00:00:20.81]       最长的一次推送不到写超时 1 秒的八成：写没有卡住，这一条没造出它要的形状。
+[xUnit.net 00:00:20.81]       服务端日志：1002、1003；聋了之后车往服务端送了 860 字节；最长的一次推送 1 ms；旧代次离开路由表：t=3.0s；推送的失败：；1003 的异常：OnboardConnectionUnavailableException: A write to the Onboard peer 'AGV-POWER-01' (session generation 1) did not finish within 1 s; the connection was closed and the line stays unacknowledged for the replay after the reconnect.
+[xUnit.net 00:00:20.82]       Stack Trace:
+[xUnit.net 00:00:20.82]         C:\Users\szy\Desktop\8005-workspace-v2\worktrees\cs440-8005-agv-control-server\tests\ControlServer.Tests\OnboardPowerLossReconnectTests.cs(220,0): at ControlServer.Tests.OnboardPowerLossReconnectTests.AVehicleThatKeepsTalkingButStopsReadingIsLetGoAndReconnects(Nullable`1 writeTimeoutMilliseconds)
+[xUnit.net 00:00:20.82]         C:\Users\szy\Desktop\8005-workspace-v2\worktrees\cs440-8005-agv-control-server\tests\ControlServer.Tests\OnboardPowerLossReconnectTests.cs(242,0): at ControlServer.Tests.OnboardPowerLossReconnectTests.AVehicleThatKeepsTalkingButStopsReadingIsLetGoAndReconnects(Nullable`1 writeTimeoutMilliseconds)
+[xUnit.net 00:00:20.82]         --- End of stack trace from previous location ---
+[xUnit.net 00:00:20.82]       Output:
+[xUnit.net 00:00:20.82]         服务端日志：1002、1003；聋了之后车往服务端送了 860 字节；最长的一次推送 1 ms；旧代次离开路由表：t=3.0s；推送的失败：；1003 的异常：OnboardConnectionUnavailableException: A write to the Onboard peer 'AGV-POWER-01' (session generation 1) did not finish within 1 s; the connection was closed and the line stays unacknowledged for the replay after the reconnect.
+  Failed ControlServer.Tests.OnboardPowerLossReconnectTests.AVehicleThatKeepsTalkingButStopsReadingIsLetGoAndReconnects(writeTimeoutMilliseconds: 1000) [15 s]
+  Error Message:
+   最长的一次推送不到写超时 1 秒的八成：写没有卡住，这一条没造出它要的形状。
+服务端日志：1002、1003；聋了之后车往服务端送了 860 字节；最长的一次推送 1 ms；旧代次离开路由表：t=3.0s；推送的失败：；1003 的异常：OnboardConnectionUnavailableException: A write to the Onboard peer 'AGV-POWER-01' (session generation 1) did not finish within 1 s; the connection was closed and the line stays unacknowledged for the replay after the reconnect.
+  Stack Trace:
+     at ControlServer.Tests.OnboardPowerLossReconnectTests.AVehicleThatKeepsTalkingButStopsReadingIsLetGoAndReconnects(Nullable`1 writeTimeoutMilliseconds) in C:\Users\szy\Desktop\8005-workspace-v2\worktrees\cs440-8005-agv-control-server\tests\ControlServer.Tests\OnboardPowerLossReconnectTests.cs:line 220
+   at ControlServer.Tests.OnboardPowerLossReconnectTests.AVehicleThatKeepsTalkingButStopsReadingIsLetGoAndReconnects(Nullable`1 writeTimeoutMilliseconds) in C:\Users\szy\Desktop\8005-workspace-v2\worktrees\cs440-8005-agv-control-server\tests\ControlServer.Tests\OnboardPowerLossReconnectTests.cs:line 242
+--- End of stack trace from previous location ---
+  Standard Output Messages:
+ 服务端日志：1002、1003；聋了之后车往服务端送了 860 字节；最长的一次推送 1 ms；旧代次离开路由表：t=3.0s；推送的失败：；1003 的异常：OnboardConnectionUnavailableException: A write to the Onboard peer 'AGV-POWER-01' (session generation 1) did not finish within 1 s; the connection was closed and the line stays unacknowledged for the replay after the reconnect.
+
+
+[xUnit.net 00:00:32.20]     ControlServer.Tests.OnboardPowerLossReconnectTests.AVehicleThatKeepsTalkingButStopsReadingIsLetGoAndReconnects(writeTimeoutMilliseconds: null) [FAIL]
+[xUnit.net 00:00:32.20]       最长的一次推送不到写超时 5 秒的八成：写没有卡住，这一条没造出它要的形状。
+[xUnit.net 00:00:32.20]       服务端日志：1002、1003；聋了之后车往服务端送了 1720 字节；最长的一次推送 3808 ms；旧代次离开路由表：t=7.0s；推送的失败：；1003 的异常：OnboardConnectionUnavailableException: A write to the Onboard peer 'AGV-POWER-01' (session generation 1) did not finish within 5 s; the connection was closed and the line stays unacknowledged for the replay after the reconnect.
+[xUnit.net 00:00:32.20]       Stack Trace:
+[xUnit.net 00:00:32.20]         C:\Users\szy\Desktop\8005-workspace-v2\worktrees\cs440-8005-agv-control-server\tests\ControlServer.Tests\OnboardPowerLossReconnectTests.cs(220,0): at ControlServer.Tests.OnboardPowerLossReconnectTests.AVehicleThatKeepsTalkingButStopsReadingIsLetGoAndReconnects(Nullable`1 writeTimeoutMilliseconds)
+[xUnit.net 00:00:32.20]         C:\Users\szy\Desktop\8005-workspace-v2\worktrees\cs440-8005-agv-control-server\tests\ControlServer.Tests\OnboardPowerLossReconnectTests.cs(242,0): at ControlServer.Tests.OnboardPowerLossReconnectTests.AVehicleThatKeepsTalkingButStopsReadingIsLetGoAndReconnects(Nullable`1 writeTimeoutMilliseconds)
+[xUnit.net 00:00:32.20]         --- End of stack trace from previous location ---
+[xUnit.net 00:00:32.20]       Output:
+[xUnit.net 00:00:32.20]         服务端日志：1002、1003；聋了之后车往服务端送了 1720 字节；最长的一次推送 3808 ms；旧代次离开路由表：t=7.0s；推送的失败：；1003 的异常：OnboardConnectionUnavailableException: A write to the Onboard peer 'AGV-POWER-01' (session generation 1) did not finish within 5 s; the connection was closed and the line stays unacknowledged for the replay after the reconnect.
+  Failed ControlServer.Tests.OnboardPowerLossReconnectTests.AVehicleThatKeepsTalkingButStopsReadingIsLetGoAndReconnects(writeTimeoutMilliseconds: null) [11 s]
+  Error Message:
+   最长的一次推送不到写超时 5 秒的八成：写没有卡住，这一条没造出它要的形状。
+服务端日志：1002、1003；聋了之后车往服务端送了 1720 字节；最长的一次推送 3808 ms；旧代次离开路由表：t=7.0s；推送的失败：；1003 的异常：OnboardConnectionUnavailableException: A write to the Onboard peer 'AGV-POWER-01' (session generation 1) did not finish within 5 s; the connection was closed and the line stays unacknowledged for the replay after the reconnect.
+  Stack Trace:
+     at ControlServer.Tests.OnboardPowerLossReconnectTests.AVehicleThatKeepsTalkingButStopsReadingIsLetGoAndReconnects(Nullable`1 writeTimeoutMilliseconds) in C:\Users\szy\Desktop\8005-workspace-v2\worktrees\cs440-8005-agv-control-server\tests\ControlServer.Tests\OnboardPowerLossReconnectTests.cs:line 220
+   at ControlServer.Tests.OnboardPowerLossReconnectTests.AVehicleThatKeepsTalkingButStopsReadingIsLetGoAndReconnects(Nullable`1 writeTimeoutMilliseconds) in C:\Users\szy\Desktop\8005-workspace-v2\worktrees\cs440-8005-agv-control-server\tests\ControlServer.Tests\OnboardPowerLossReconnectTests.cs:line 242
+--- End of stack trace from previous location ---
+  Standard Output Messages:
+ 服务端日志：1002、1003；聋了之后车往服务端送了 1720 字节；最长的一次推送 3808 ms；旧代次离开路由表：t=7.0s；推送的失败：；1003 的异常：OnboardConnectionUnavailableException: A write to the Onboard peer 'AGV-POWER-01' (session generation 1) did not finish within 5 s; the connection was closed and the line stays unacknowledged for the replay after the reconnect.
+
+
+[xUnit.net 00:01:10.90]   Finished:    ControlServer.Tests (ID = 'e9a86b65d07f6a984a4a75af2821531c21eb38df17b507165946674f4b81024f')
+
+Test Run Failed.
+Total tests: 2
+     Failed: 2
+ Total time: 1.2064 Minutes
+Results File: C:\Users\szy\Desktop\8005-workspace-v2\worktrees\cs440-8005-agv-control-server\evidence\cs440\runs\before-S1-P7\run-1.trx

@@ -25,7 +25,8 @@ namespace ControlServer.Host.Runtime.Charging;
 /// </remarks>
 internal static class ClearanceMoveEnding
 {
-    public static async Task StageAsync(
+    /// <summary>暂存这次结束；答是否暂存了那两张「回到清桩中」的快照（周期已被人工清桩结束、或车没有会话时没有，发送方据此不去发）。</summary>
+    public static async Task<bool> StageAsync(
         ControlServerDbContext dbContext,
         JourneyRuntimeRow runtime,
         JourneyStopRow move,
@@ -77,7 +78,7 @@ internal static class ClearanceMoveEnding
         if (!clearing || session is null)
         {
             // Ended by a manual clearance meanwhile: the journey closes next round and its closure tells the vehicle.
-            return;
+            return false;
         }
 
         WireToGateStore store = new(dbContext);
@@ -108,5 +109,6 @@ internal static class ClearanceMoveEnding
             // A millisecond after the plan, so a replay -- which sends in creation order -- sends the plan first too.
             now.AddMilliseconds(1),
             cancellationToken).ConfigureAwait(false);
+        return true;
     }
 }

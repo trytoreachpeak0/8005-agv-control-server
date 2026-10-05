@@ -189,8 +189,12 @@ public sealed partial class RecoveryStateMachineG2Tests
                 TestContext.Current.CancellationToken));
 
             string conflictingAction = RecoveryAction("RESUME_AFTER_REPAIR", reason: "different-content");
-            await Assert.ThrowsAsync<ProtocolContentConflictException>(() => restartedProcessor.ProcessAsync(
-                conflictingAction, CurrentState(), TestContext.Current.CancellationToken));
+            // control-server#478: refused with a ProtocolProblem on a connection that stays, no longer an exception.
+            ProtocolProblemAssert.RefusedLine(
+                await restartedProcessor.ProcessAsync(
+                    conflictingAction, CurrentState(), TestContext.Current.CancellationToken),
+                "MESSAGE_ID_CONTENT_CONFLICT",
+                conflictingAction);
             Assert.Equal(4, await restartedContext.ProtocolOutbox.CountAsync(
                 TestContext.Current.CancellationToken));
         }
@@ -243,13 +247,15 @@ public sealed partial class RecoveryStateMachineG2Tests
 
             // Exactly one. The authorization was consumed with the replacement, so a third result
             // has nothing behind it and lands back on the ordinary replay conflict.
-            await Assert.ThrowsAsync<ProtocolContentConflictException>(() => processor.ProcessAsync(
-                Envelope(
-                    "e0000000-0000-4000-8000-000000000012",
-                    "OperationResult",
-                    OperationResultPayload(journalCheckpoint: "UNAUTHORIZED_THIRD_RESULT")),
-                state,
-                TestContext.Current.CancellationToken));
+            string third = Envelope(
+                "e0000000-0000-4000-8000-000000000012",
+                "OperationResult",
+                OperationResultPayload(journalCheckpoint: "UNAUTHORIZED_THIRD_RESULT"));
+            // control-server#478: refused with a ProtocolProblem on a connection that stays, no longer an exception.
+            ProtocolProblemAssert.RefusedLine(
+                await processor.ProcessAsync(third, state, TestContext.Current.CancellationToken),
+                "BUSINESS_ID_CONTENT_CONFLICT",
+                third);
             Assert.Equal(2, await context.OperationResults.CountAsync(TestContext.Current.CancellationToken));
         }
         finally
@@ -282,13 +288,15 @@ public sealed partial class RecoveryStateMachineG2Tests
             // The authorization covers slots 1 and 2. A replacement that settles only slot 1 leaves
             // slot 2 unproven, so it is refused outright rather than degraded to RecoveryRequired:
             // the operation would otherwise carry a result narrower than what was authorized.
-            await Assert.ThrowsAsync<BusinessIdentityConflictException>(() => processor.ProcessAsync(
-                Envelope(
-                    "e0000000-0000-4000-8000-000000000013",
-                    "OperationResult",
-                    OperationResultPayload(slots: [1], journalCheckpoint: "RESUME_RESULT_RECORDED")),
-                state,
-                TestContext.Current.CancellationToken));
+            // control-server#478: refused with RECOVERY_SCOPE_MISMATCH on a connection that stays.
+            string narrower = Envelope(
+                "e0000000-0000-4000-8000-000000000013",
+                "OperationResult",
+                OperationResultPayload(slots: [1], journalCheckpoint: "RESUME_RESULT_RECORDED"));
+            ProtocolProblemAssert.RefusedLine(
+                await processor.ProcessAsync(narrower, state, TestContext.Current.CancellationToken),
+                "RECOVERY_SCOPE_MISMATCH",
+                narrower);
 
             Assert.Single(await context.OperationResults.ToArrayAsync(TestContext.Current.CancellationToken));
             Assert.Equal(StationOperationStatus.RecoveryRequired, (await context.StationOperations.SingleAsync(
@@ -853,6 +861,318 @@ public sealed partial class RecoveryStateMachineG2Tests
                     "COMPENSATE_LOAD_ALL_EMPTY",
                     accepted.RootElement.GetProperty("payload").GetProperty("acceptedAction").GetString());
             }
+        }
+        finally
+        {
+            Environment.SetEnvironmentVariable(proofVariable, null);
+        }
+    }
+
+    /// <summary>
+    /// A fault cargo handoff result naming its workflow with one identity field changed -- the demand, the slot operation,
+    /// the exception recovery session, or the handoff the action authorized: BUSINESS_ID_CONTENT_CONFLICT on a
+    /// connection that stays, and no evidence, settlement or ending kept (control-server#478; these were
+    /// BusinessIdentityConflictExceptions that ended the connection, OnboardRecoveryCoordinator.ValidateResultIdentity).
+    /// </summary>
+    /// <remarks>
+    /// The handoff result carries no <c>slotOperationAttemptId</c> of its own; the check compares it only when present,
+    /// so that case adds one naming another attempt.
+    /// </remarks>
+    [Theory]
+    [Trait("IntegrationSlice", "FP-IS-06")]
+    [Trait("IntegrationSlice", "FP-IS-07")]
+    [InlineData("demandId")]
+    [InlineData("slotOperationAttemptId")]
+    [InlineData("exceptionRecoverySessionId")]
+    [InlineData("handoffId")]
+    public async Task AHandoffResultNamingAnotherIdentityThanItsWorkflowIsRefusedAndKeepsNothing(string field)
+    {
+        const string proofVariable = "CONTROL_SERVER_TEST_RECOVERY_PROOF_RESULT_IDENTITY";
+        const string proof = "result-identity-proof-not-a-production-secret";
+        Environment.SetEnvironmentVariable(proofVariable, proof);
+        try
+        {
+            CancellationToken token = TestContext.Current.CancellationToken;
+            await using SqliteConnection connection = new("Data Source=:memory:");
+            await connection.OpenAsync(token);
+            await using ControlServerDbContext context = await CreateContextAsync(connection);
+            await SeedBlockedJourneyAsync(context);
+            OnboardMessageProcessor processor = Processor(context, new RecordingPeer(context), proofVariable);
+            OnboardConnectionState state = CurrentState();
+            string result = await ReachEndingResultAsync("FaultCargoRecoveryResult", processor, state, proof);
+            string other = Altered(result, "b3100000-0000-4000-8000-000000000478", (field, "d4780000-0000-4000-8000-000000000001"));
+
+            ProtocolProblemAssert.RefusedLine(
+                await processor.ProcessAsync(other, state, token), "BUSINESS_ID_CONTENT_CONFLICT", other);
+
+            context.ChangeTracker.Clear();
+            Assert.Empty(await context.RecoveryResultEvidence.ToArrayAsync(token));
+            Assert.Null((await context.RecoveryWorkflows.SingleAsync(row => row.WorkflowType == "FAULT_CARGO_HANDOFF", token))
+                .ResultMessageId);
+            Assert.NotEqual(DemandExecutionStatus.Cancelled, (await context.AcceptedDemands.SingleAsync(token)).Status);
+            Assert.Empty(await context.ProtocolInbox.Where(row => row.MessageId == "b3100000-0000-4000-8000-000000000478")
+                .ToArrayAsync(token));
+        }
+        finally
+        {
+            Environment.SetEnvironmentVariable(proofVariable, null);
+        }
+    }
+
+    /// <summary>
+    /// The same exception recovery requestId again under a new messageId with other content: BUSINESS_ID_CONTENT_CONFLICT
+    /// on a connection that stays, and still one session (control-server#478).
+    /// </summary>
+    [Fact]
+    [Trait("IntegrationSlice", "FP-IS-06")]
+    [Trait("IntegrationSlice", "FP-IS-07")]
+    public async Task ARecoveryRequestIdAgainWithOtherContentIsRefusedAndOpensNothing()
+    {
+        const string proofVariable = "CONTROL_SERVER_TEST_RECOVERY_PROOF_REQUEST_REPLAY";
+        const string proof = "request-replay-proof-not-a-production-secret";
+        Environment.SetEnvironmentVariable(proofVariable, proof);
+        try
+        {
+            CancellationToken token = TestContext.Current.CancellationToken;
+            await using SqliteConnection connection = new("Data Source=:memory:");
+            await connection.OpenAsync(token);
+            await using ControlServerDbContext context = await CreateContextAsync(connection);
+            await SeedBlockedJourneyAsync(context);
+            OnboardMessageProcessor processor = Processor(context, new RecordingPeer(context), proofVariable);
+            OnboardConnectionState state = CurrentState();
+            string request = RecoverySessionRequest(proof);
+            Assert.Equal("ExceptionRecoverySessionOpened", MessageType(await processor.ProcessAsync(request, state, token)));
+
+            string other = Altered(request, "e0000000-0000-4000-8000-000000000478", ("reason", "A different account of the same request."));
+            ProtocolProblemAssert.RefusedLine(
+                await processor.ProcessAsync(other, state, token), "BUSINESS_ID_CONTENT_CONFLICT", other);
+
+            context.ChangeTracker.Clear();
+            Assert.Single(await context.ExceptionRecoverySessions.ToArrayAsync(token));
+        }
+        finally
+        {
+            Environment.SetEnvironmentVariable(proofVariable, null);
+        }
+    }
+
+    /// <summary>
+    /// The same recoveryActionId again under a new messageId with another reason: BUSINESS_ID_CONTENT_CONFLICT on a
+    /// connection that stays, and still one workflow and one command (control-server#478).
+    /// </summary>
+    [Fact]
+    [Trait("IntegrationSlice", "FP-IS-06")]
+    [Trait("IntegrationSlice", "FP-IS-07")]
+    public async Task ARecoveryActionIdAgainWithOtherContentIsRefusedAndCommandsNothing()
+    {
+        const string proofVariable = "CONTROL_SERVER_TEST_RECOVERY_PROOF_ACTION_REPLAY";
+        const string proof = "action-replay-proof-not-a-production-secret";
+        Environment.SetEnvironmentVariable(proofVariable, proof);
+        try
+        {
+            CancellationToken token = TestContext.Current.CancellationToken;
+            await using SqliteConnection connection = new("Data Source=:memory:");
+            await connection.OpenAsync(token);
+            await using ControlServerDbContext context = await CreateContextAsync(connection);
+            await SeedBlockedJourneyAsync(context);
+            OnboardMessageProcessor processor = Processor(context, new RecordingPeer(context), proofVariable);
+            OnboardConnectionState state = CurrentState();
+            await processor.ProcessAsync(RecoverySessionRequest(proof), state, token);
+            Assert.Equal("RecoveryActionAccepted",
+                MessageType(await processor.ProcessAsync(RecoveryAction("FAULT_CARGO_HANDOFF"), state, token)));
+            int outboxBefore = await context.ProtocolOutbox.CountAsync(token);
+
+            string other = RecoveryAction(
+                "FAULT_CARGO_HANDOFF", reason: "Another reason for the same action.", messageId: "e0000000-0000-4000-8000-000000000479");
+            ProtocolProblemAssert.RefusedLine(
+                await processor.ProcessAsync(other, state, token), "BUSINESS_ID_CONTENT_CONFLICT", other);
+
+            context.ChangeTracker.Clear();
+            Assert.Single(await context.RecoveryWorkflows.ToArrayAsync(token));
+            Assert.Equal(outboxBefore, await context.ProtocolOutbox.CountAsync(token));
+        }
+        finally
+        {
+            Environment.SetEnvironmentVariable(proofVariable, null);
+        }
+    }
+
+    /// <summary>
+    /// The same hardware recovery recordId again under a new messageId with other observations: BUSINESS_ID_CONTENT_CONFLICT
+    /// on a connection that stays, and still the one record (control-server#478).
+    /// </summary>
+    [Fact]
+    [Trait("IntegrationSlice", "FP-IS-06")]
+    [Trait("IntegrationSlice", "FP-IS-07")]
+    [Trait("ProtocolVector", "CV-FORCED-MECHANICAL-RECOVERY")]
+    public async Task AHardwareRecoveryRecordIdAgainWithOtherContentIsRefusedAndRecordsNothing()
+    {
+        const string proofVariable = "CONTROL_SERVER_TEST_RECOVERY_PROOF_HARDWARE_REPLAY";
+        const string proof = "hardware-replay-proof-not-a-production-secret";
+        Environment.SetEnvironmentVariable(proofVariable, proof);
+        try
+        {
+            CancellationToken token = TestContext.Current.CancellationToken;
+            await using SqliteConnection connection = new("Data Source=:memory:");
+            await connection.OpenAsync(token);
+            await using ControlServerDbContext context = await CreateContextAsync(connection);
+            await SeedBlockedJourneyAsync(context, productionShapedSession: true);
+            WireToGateStore store = new(context);
+            OnboardMessageProcessor processor = Processor(context, new RecordingPeer(context), proofVariable);
+            OnboardConnectionState state = CurrentState();
+            await processor.ProcessAsync(RecoverySessionRequest(proof), state, token);
+            await processor.ProcessAsync(RecoveryAction("FORCED_MECHANICAL_RECOVERY"), state, token);
+            await processor.ProcessAsync(MechanicallyIsolatedResult(generation: 1), state, token);
+            await store.ApplyRecoveryReportAsync(
+                AgvId, 3, "f0000000-0000-4000-8000-000000000478", forcedRecoveryGeneration: 1,
+                null, "NONE", [], [], [], token);
+            state.Readiness = SessionReadiness.RecoveryRequired;
+            string record = HardwareRecoveryRecord("e1000000-0000-4000-8000-000000000478", slots: RecoverySlots);
+            Assert.Equal("RECORDED", FirstPayload(await processor.ProcessAsync(record, state, token))
+                .GetProperty("outcome").GetString());
+
+            string other = Altered(
+                record, "e2000000-0000-4000-8000-000000000479", ("observations", "A different account of the same repair."));
+            ProtocolProblemAssert.RefusedLine(
+                await processor.ProcessAsync(other, state, token), "BUSINESS_ID_CONTENT_CONFLICT", other);
+
+            context.ChangeTracker.Clear();
+            Assert.Single(await context.HardwareRecoveryRecords.ToArrayAsync(token));
+        }
+        finally
+        {
+            Environment.SetEnvironmentVariable(proofVariable, null);
+        }
+    }
+
+    /// <summary>
+    /// The same cancellationId again under a new messageId with another reason, while the load can still be cancelled:
+    /// the workflow it would create already exists with other content. BUSINESS_ID_CONTENT_CONFLICT on a connection that
+    /// stays, and still the one workflow (control-server#478; UpsertSimpleWorkflowAsync).
+    /// </summary>
+    [Fact]
+    [Trait("IntegrationSlice", "FP-IS-02")]
+    [Trait("IntegrationSlice", "FP-IS-06")]
+    public async Task ACancellationIdAgainWithOtherContentIsRefusedAndOpensNoSecondWorkflow()
+    {
+        const string cancellationId = "b1000000-0000-4000-8000-000000000478";
+        CancellationToken token = TestContext.Current.CancellationToken;
+        await using SqliteConnection connection = new("Data Source=:memory:");
+        await connection.OpenAsync(token);
+        await using ControlServerDbContext context = await CreateContextAsync(connection);
+        await SeedCancellableLoadAsync(context);
+        OnboardMessageProcessor processor = Processor(context, new RecordingPeer(context), CancellationProofVariable);
+        OnboardConnectionState state = CurrentState();
+        string request = CancellationRequest(cancellationId);
+        Assert.Equal("LoadCancellationAuthorization", MessageType(await processor.ProcessAsync(request, state, token)));
+        string contentBefore = (await context.RecoveryWorkflows.AsNoTracking().SingleAsync(token)).RequestContentHash;
+
+        string other = Altered(request, "b1000000-0000-4000-8000-000000000479", ("reason", "Another reason for the same cancellation."));
+        ProtocolProblemAssert.RefusedLine(
+            await processor.ProcessAsync(other, state, token), "BUSINESS_ID_CONTENT_CONFLICT", other);
+
+        context.ChangeTracker.Clear();
+        RecoveryWorkflowRow workflow = await context.RecoveryWorkflows.SingleAsync(token);
+        Assert.Equal(contentBefore, workflow.RequestContentHash);
+        Assert.Equal(RecoveryWorkflowState.AwaitingResult, workflow.State);
+    }
+
+    /// <summary>
+    /// A replacement result whose resume was authorized at another forced recovery generation than the operation now
+    /// stands at: FORCED_RECOVERY_GENERATION_STALE on a connection that stays, and nothing settled (control-server#478;
+    /// it used to be a BusinessIdentityConflictException that ended the connection).
+    /// </summary>
+    [Fact]
+    [Trait("IntegrationSlice", "FP-IS-06")]
+    [Trait("IntegrationSlice", "FP-IS-07")]
+    [Trait("ProtocolVector", "CV-EXCEPTION-RESUME")]
+    public async Task ResumeRejectsAReplacementResultWhoseAuthorizationIsAtAnotherForcedRecoveryGeneration()
+    {
+        const string proofVariable = "CONTROL_SERVER_TEST_RECOVERY_PROOF_RESUME_GENERATION";
+        const string proof = "resume-generation-proof-not-a-production-secret";
+        Environment.SetEnvironmentVariable(proofVariable, proof);
+        try
+        {
+            await using SqliteConnection connection = new("Data Source=:memory:");
+            await connection.OpenAsync(TestContext.Current.CancellationToken);
+            await using ControlServerDbContext context = await CreateContextAsync(connection);
+            await SeedBlockedJourneyAsync(context);
+            RecordingPeer peer = new(context);
+            OnboardMessageProcessor processor = Processor(context, peer, proofVariable);
+            OnboardConnectionState state = CurrentState(deferOutbound: true);
+            await AuthorizeResumeAfterFailedResultAsync(processor, context, state, proof);
+            RecoveryWorkflowRow authorization = await context.RecoveryWorkflows.SingleAsync(
+                TestContext.Current.CancellationToken);
+            authorization.ForcedRecoveryGeneration = 7;
+            await context.SaveChangesAsync(TestContext.Current.CancellationToken);
+            context.ChangeTracker.Clear();
+
+            string replacement = Envelope(
+                "e0000000-0000-4000-8000-000000000014",
+                "OperationResult",
+                OperationResultPayload(journalCheckpoint: "RESUME_RESULT_RECORDED"));
+            ProtocolProblemAssert.RefusedLine(
+                await processor.ProcessAsync(replacement, state, TestContext.Current.CancellationToken),
+                "FORCED_RECOVERY_GENERATION_STALE",
+                replacement);
+
+            context.ChangeTracker.Clear();
+            Assert.Single(await context.OperationResults.ToArrayAsync(TestContext.Current.CancellationToken));
+            Assert.Equal(StationOperationStatus.RecoveryRequired, (await context.StationOperations.SingleAsync(
+                TestContext.Current.CancellationToken)).Status);
+            Assert.Equal(RecoveryWorkflowState.AwaitingResult, (await context.RecoveryWorkflows.SingleAsync(
+                TestContext.Current.CancellationToken)).State);
+        }
+        finally
+        {
+            Environment.SetEnvironmentVariable(proofVariable, null);
+        }
+    }
+
+    /// <summary>
+    /// A forced mechanical recovery chosen while the vehicle's recorded forced recovery generation is already ahead of
+    /// the one this session would advance to: FORCED_RECOVERY_GENERATION_STALE on a connection that stays, no command
+    /// written and the generation untouched (control-server#478).
+    /// </summary>
+    [Fact]
+    [Trait("IntegrationSlice", "FP-IS-06")]
+    [Trait("IntegrationSlice", "FP-IS-07")]
+    [Trait("ProtocolVector", "CV-FORCED-MECHANICAL-RECOVERY")]
+    public async Task AForcedRecoveryThatCannotAdvanceTheGenerationIsRefusedAndWritesNothing()
+    {
+        const string proofVariable = "CONTROL_SERVER_TEST_RECOVERY_PROOF_FORCED_STALE";
+        const string proof = "forced-stale-proof-not-a-production-secret";
+        Environment.SetEnvironmentVariable(proofVariable, proof);
+        try
+        {
+            await using SqliteConnection connection = new("Data Source=:memory:");
+            await connection.OpenAsync(TestContext.Current.CancellationToken);
+            await using ControlServerDbContext context = await CreateContextAsync(connection);
+            await SeedBlockedJourneyAsync(context);
+            RecordingPeer peer = new(context);
+            OnboardMessageProcessor processor = Processor(context, peer, proofVariable);
+            OnboardConnectionState state = CurrentState();
+            await processor.ProcessAsync(
+                RecoverySessionRequest(proof), state, TestContext.Current.CancellationToken);
+            // The seed already records this vehicle's generation; put it ahead of what the session would advance to.
+            VehicleRecoveryGenerationRow recorded = await context.VehicleRecoveryGenerations.SingleAsync(
+                row => row.AgvId == AgvId, TestContext.Current.CancellationToken);
+            recorded.ForcedRecoveryGeneration = 5;
+            await context.SaveChangesAsync(TestContext.Current.CancellationToken);
+            context.ChangeTracker.Clear();
+
+            string action = RecoveryAction("FORCED_MECHANICAL_RECOVERY");
+            ProtocolProblemAssert.RefusedLine(
+                await processor.ProcessAsync(action, state, TestContext.Current.CancellationToken),
+                "FORCED_RECOVERY_GENERATION_STALE",
+                action);
+
+            context.ChangeTracker.Clear();
+            Assert.Equal(5, (await context.VehicleRecoveryGenerations.SingleAsync(
+                TestContext.Current.CancellationToken)).ForcedRecoveryGeneration);
+            Assert.Empty(await context.ProtocolOutbox.Where(row => row.MessageType == "ForcedMechanicalRecoveryCommand")
+                .ToArrayAsync(TestContext.Current.CancellationToken));
+            Assert.Empty(await context.RecoveryWorkflows.ToArrayAsync(TestContext.Current.CancellationToken));
         }
         finally
         {
@@ -3070,8 +3390,9 @@ public sealed partial class RecoveryStateMachineG2Tests
                 "e0000000-0000-4000-8000-000000001757",
                 "OperationResult",
                 OperationResultPayload(journalCheckpoint: "LATE_RESUME_RESULT_RECORDED"));
-            await Assert.ThrowsAsync<ProtocolContentConflictException>(
-                () => processor.ProcessAsync(late, state, token));
+            // control-server#478: refused with a ProtocolProblem on a connection that stays, no longer an exception.
+            ProtocolProblemAssert.RefusedLine(
+                await processor.ProcessAsync(late, state, token), "BUSINESS_ID_CONTENT_CONFLICT", late);
 
             context.ChangeTracker.Clear();
             Assert.Equal(before, await BusinessPictureAsync(context));
@@ -3338,8 +3659,11 @@ public sealed partial class RecoveryStateMachineG2Tests
                 "a0000000-0000-4000-8000-000000000001",
                 "a0000000-0000-4000-8000-000000000004",
                 StringComparison.Ordinal);
-            await Assert.ThrowsAsync<ProtocolContentConflictException>(() => processor.ProcessAsync(
-                changedResultIdentity, state, TestContext.Current.CancellationToken));
+            // control-server#478: refused with a ProtocolProblem on a connection that stays, no longer an exception.
+            ProtocolProblemAssert.RefusedLine(
+                await processor.ProcessAsync(changedResultIdentity, state, TestContext.Current.CancellationToken),
+                "BUSINESS_ID_CONTENT_CONFLICT",
+                changedResultIdentity);
 
             string cancellationAuthorization = await processor.ProcessAsync(
                 Envelope(
@@ -3368,8 +3692,11 @@ public sealed partial class RecoveryStateMachineG2Tests
 
             string conflictingResult = failedResult.Replace(
                 "PHYSICAL_STATE_UNKNOWN", "DIFFERENT_CONTENT", StringComparison.Ordinal);
-            await Assert.ThrowsAsync<ProtocolContentConflictException>(() => processor.ProcessAsync(
-                conflictingResult, state, TestContext.Current.CancellationToken));
+            // control-server#478: refused with a ProtocolProblem on a connection that stays, no longer an exception.
+            ProtocolProblemAssert.RefusedLine(
+                await processor.ProcessAsync(conflictingResult, state, TestContext.Current.CancellationToken),
+                "MESSAGE_ID_CONTENT_CONFLICT",
+                conflictingResult);
             Assert.Single(await context.RecoveryResultEvidence.ToArrayAsync(
                 TestContext.Current.CancellationToken));
         }
@@ -3499,8 +3826,9 @@ public sealed partial class RecoveryStateMachineG2Tests
             otherKind["messageType"] = "ForcedMechanicalRecoveryResult";
             string otherKindLine = otherKind.ToJsonString();
             using JsonDocument otherDocument = JsonDocument.Parse(otherKindLine);
-            await Assert.ThrowsAsync<ProtocolContentConflictException>(() => coordinator.ProcessResultAsync(
-                otherDocument.RootElement, WireContentHash(otherKindLine), token));
+            InboundMessageRejectedException rejected = await Assert.ThrowsAsync<InboundMessageRejectedException>(
+                () => coordinator.ProcessResultAsync(otherDocument.RootElement, WireContentHash(otherKindLine), token));
+            Assert.Equal("MESSAGE_ID_CONTENT_CONFLICT", rejected.ReasonCode);
         }
         finally
         {
@@ -3551,6 +3879,51 @@ public sealed partial class RecoveryStateMachineG2Tests
             Assert.Empty(workflows);
             Assert.Equal(0, commands);
         }
+    }
+
+    /// <summary>
+    /// An all-empty load cancellation result arriving for a demand that has meanwhile completed: the termination it
+    /// asks for is refused with ACTION_NOT_ALLOWED_IN_STATE on a connection that stays, and nothing of the result is
+    /// kept (control-server#478). <c>PickupStopTermination</c> is shared with the runtime, where the same refusal still
+    /// throws; only the coordinator's inbound call sites translate it.
+    /// </summary>
+    [Fact]
+    [Trait("IntegrationSlice", "FP-IS-02")]
+    [Trait("IntegrationSlice", "FP-IS-06")]
+    [Trait("ProtocolVector", "CV-LOAD-CANCELLATION-ALL-EMPTY")]
+    public async Task ACancellationResultEndingADemandThatAlreadyCompletedIsRefusedAndKeepsNothing()
+    {
+        const string cancellationId = "b1000000-0000-4000-8000-000000000011";
+        const string resultMessageId = "b1000000-0000-4000-8000-000000000012";
+        await using SqliteConnection connection = new("Data Source=:memory:");
+        await connection.OpenAsync(TestContext.Current.CancellationToken);
+        await using ControlServerDbContext context = await CreateContextAsync(connection);
+        await SeedCancellableLoadAsync(context);
+        OnboardMessageProcessor processor = Processor(context, new RecordingPeer(context), CancellationProofVariable);
+        OnboardConnectionState state = CurrentState();
+        string authorization = await processor.ProcessAsync(
+            CancellationRequest(cancellationId), state, TestContext.Current.CancellationToken);
+        using (JsonDocument document = JsonDocument.Parse(authorization))
+        {
+            Assert.Equal("AUTHORIZED", document.RootElement.GetProperty("payload").GetProperty("decision").GetString());
+        }
+        AcceptedDemandRow demand = await context.AcceptedDemands.SingleAsync(TestContext.Current.CancellationToken);
+        demand.Status = DemandExecutionStatus.Succeeded;
+        await context.SaveChangesAsync(TestContext.Current.CancellationToken);
+        context.ChangeTracker.Clear();
+
+        string result = CancellationResult(cancellationId, resultMessageId, "EMPTY");
+        ProtocolProblemAssert.RefusedLine(
+            await processor.ProcessAsync(result, state, TestContext.Current.CancellationToken),
+            "ACTION_NOT_ALLOWED_IN_STATE",
+            result);
+
+        context.ChangeTracker.Clear();
+        Assert.Empty(await context.RecoveryResultEvidence.ToArrayAsync(TestContext.Current.CancellationToken));
+        Assert.Equal(RecoveryWorkflowState.AwaitingResult, (await context.RecoveryWorkflows.SingleAsync(
+            TestContext.Current.CancellationToken)).State);
+        Assert.Equal(DemandExecutionStatus.Succeeded, (await context.AcceptedDemands.SingleAsync(
+            TestContext.Current.CancellationToken)).Status);
     }
 
     /// <summary>
@@ -6377,6 +6750,19 @@ public sealed partial class RecoveryStateMachineG2Tests
 
     private static string WireContentHash(string line) =>
         Convert.ToHexString(SHA256.HashData(Encoding.UTF8.GetBytes(line))).ToLowerInvariant();
+
+    /// <summary>A copy of <paramref name="line"/> under another messageId, with the payload fields given replaced.</summary>
+    private static string Altered(string line, string messageId, params (string Field, JsonNode? Value)[] fields)
+    {
+        JsonObject node = JsonNode.Parse(line)!.AsObject();
+        node["messageId"] = messageId;
+        JsonObject payload = node["payload"]!.AsObject();
+        foreach ((string field, JsonNode? value) in fields)
+        {
+            payload[field] = value;
+        }
+        return node.ToJsonString();
+    }
 
     private static string RecoverySessionRequest(
         string proof,

@@ -1,0 +1,24 @@
+Test-L2ClosureCapture.ps1 exit 0 9s : L2ClosureCapture self-check: all 24 cases as expected.
+Test-L2DispatchZoneParameters.ps1 exit 0 2s : Every case came out as expected.
+Test-L2DoubleCommandError.ps1 exit 0 2s : L2DoubleCommandError self-check: all 12 cases as expected.
+Test-L2ExpectedActionOverdue.ps1 exit 0 2s : All cases as expected.
+Test-L2HmiPhraseWatch.ps1 exit 0 3s : L2HmiPhraseWatch self-check: all 10 cases as expected.
+Test-L2JourneyClosureIds.ps1 exit 0 2s : All journey closure id checks passed.
+Test-L2Lanes.ps1 exit 0 4s : L2_LANES_SELFTEST_PASSED
+Test-L2MultiStopJourney.ps1 exit 0 3s : L2MultiStopJourney self-check: all 8 cases as expected.
+Test-L2OnboardHandleAfterRestart.ps1 exit 0 26s : Self-test passed: all 2 counterexamples were reported.
+Test-L2PortLockQueueing.ps1 exit 0 327s : L2_PORT_LOCK_SELFTEST_PASSED: the port lock queues, and a second orchestrator waits for the first.
+Test-L2ProbeClosureResolvable.ps1 exit 0 8s : L2ProbeClosureResolvable self-check: all 4 cases as expected.
+Test-L2RealInbound.ps1 exit 0 5s : Get-L2RealInbound self-check: all 3 cases as expected.
+Test-L2RouteEvidence.ps1 exit 0 1s : L2RouteEvidence self-check: all 9 cases as expected.
+Test-L2RunLedger.ps1 exit 0 5s : L2RunLedger self-check: all 3 cases as expected.
+Test-L2SafetyDurableWait.ps1 (bare, no -EvidenceRoot: mandatory parameter missing; rerun below)
+Test-L2SecondLegIntentWait.ps1 exit 0 9s : L2SecondLegIntentWait self-check: all 8 cases as expected.
+Test-L2SessionContinuity.ps1 exit 0 4s : L2SessionContinuity self-check: all 17 cases as expected (3 pass, 14 fail).
+Test-L2SingleRow.ps1 exit 0 2s : L2SingleRow self-check: all 28 cases as expected.
+Test-L2SlotGroups.ps1 exit 0 3s : L2SlotGroups self-check: all 13 cases as expected (2 pass, 7 fail, 4 assertion descriptions).
+Test-L2TaskTypeStations.ps1 exit 0 2s : Every case came out as expected.
+Test-L2WholeArrayReturn.ps1 exit 0 128s : No call enumerates a whole-array function, and no stand-in changes the shape of one.
+Test-L2WorklistStationWait.ps1 exit 0 29s : L2WorklistStationWait self-check: all 23 cases as expected.
+
+Test-L2SafetyDurableWait.ps1 -EvidenceRoot <temp> exit 0 : All checks passed.

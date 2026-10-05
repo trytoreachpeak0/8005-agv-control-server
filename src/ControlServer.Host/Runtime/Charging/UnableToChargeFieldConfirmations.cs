@@ -90,6 +90,11 @@ public static class ChargingPolicyDecisions
 /// <b>并发</b>：周期按并发令牌改、暂停事件按主键插，与引擎同一刻形成时只有一方写成；输的一方回滚到保存点，从头再判一次（读到的已是赢的那一方留下的）。
 /// 判成拒绝时，落盘之前再核一次周期版本：读周期与读用途之间引擎形成了确认，读到的事实前后不一，版本一变就整次重判（审查 S3 的用例钉住）。
 /// </para>
+/// <para>
+/// <b>RIoT 不在写锁里读</b>（control-server#452）：先在任何事务之外观察（<see cref="ObserveAsync"/>：RIoT 上的车、库里的事实、RIoT 上的旧单），再开事务
+/// （<see cref="DecideObservedAsync"/>）重读库、与观察时逐项比对（<see cref="FactsOf"/>），一致才按观察到的读数判定、定策略、落盘；不一致什么也不写，
+/// 回到锁外重新观察、整次重判。经入站处理器进来时，处理器在开收件箱事务之前观察，过期时让收件箱事务整个回滚再来。
+/// </para>
 /// </remarks>
 public sealed class UnableToChargeFieldConfirmations(
     ControlServerDbContext dbContext,
@@ -151,31 +156,91 @@ public sealed class UnableToChargeFieldConfirmations(
 
     private readonly JourneyRuntimeOptions _runtime = runtimeOptions.Value;
 
-    /// <summary>判定并答它；同一个确认号判过的，答存下的那一份。</summary>
+    /// <summary>判定并答它；同一个确认号判过的，答存下的那一份。Host 入口与测试走这里：锁外观察、锁内判定，观察过期了整次重来。</summary>
     public async Task<UnableToChargeFieldConfirmation> DecideAsync(
         UnableToChargeFieldConfirmationRequest request, CancellationToken cancellationToken)
     {
         ArgumentNullException.ThrowIfNull(request);
+        for (int attempt = 0; attempt < 3; attempt++)
+        {
+            Observation observed = await ObserveAsync(request, cancellationToken).ConfigureAwait(false);
+            if (await DecideObservedAsync(request, observed, cancellationToken).ConfigureAwait(false) is { } decided)
+            {
+                return decided;
+            }
+        }
+
+        throw new InvalidOperationException(LostEveryRace(request.ConfirmationRequestId));
+    }
+
+    /// <summary>每一次尝试都按过期的观察作罢时的说明；入站处理器用尽重试时抛同一句。</summary>
+    public static string LostEveryRace(string confirmationRequestId) =>
+        $"Unable-to-charge field confirmation {confirmationRequestId} lost every race it entered; nothing was written.";
+
+    /// <summary>
+    /// 锁外观察（control-server#452）：读 RIoT 上的车，读库里这辆车的周期与相关的行，再读 RIoT 上那张旧单。在任何事务里调用都抛
+    /// （<see cref="RiotReadOutsideWriteLock"/>）。确认号已经判过的不读 RIoT。什么也不写。
+    /// </summary>
+    public async Task<Observation> ObserveAsync(UnableToChargeFieldConfirmationRequest request, CancellationToken cancellationToken)
+    {
+        ArgumentNullException.ThrowIfNull(request);
+        RiotReadOutsideWriteLock.Ensure(dbContext);
+        ForgetWhatThisWrote();
+        if (await requests.ReadUnableToChargeAsync(request.ConfirmationRequestId, cancellationToken).ConfigureAwait(false)
+            is not null)
+        {
+            return new Observation(request.ConfirmationRequestId, true, null);
+        }
+        return new Observation(
+            request.ConfirmationRequestId, false, await ReadFactsAsync(request, cancellationToken).ConfigureAwait(false));
+    }
+
+    /// <summary>
+    /// 锁内判定（control-server#452）：开事务（入站处理器的收件箱事务开着时立保存点），重读库里的事实，与观察时逐项比对（<see cref="FactsOf"/>）；一致才用
+    /// 观察带来的 RIoT 读数判定、定充电策略、落盘。比对不上、或写的时候输给了别人，什么也不写，答空：调用方回到锁外重新观察。这里不读 RIoT。
+    /// </summary>
+    public async Task<UnableToChargeFieldConfirmation?> DecideObservedAsync(
+        UnableToChargeFieldConfirmationRequest request, Observation observed, CancellationToken cancellationToken)
+    {
+        ArgumentNullException.ThrowIfNull(request);
+        ArgumentNullException.ThrowIfNull(observed);
+        if (!string.Equals(observed.ConfirmationRequestId, request.ConfirmationRequestId, StringComparison.Ordinal))
+        {
+            throw new ArgumentException("The observation is of another confirmation request.", nameof(observed));
+        }
         FieldConfirmationRequestIdentity identity = new(
             request.ConfirmationRequestId, request.AgvId, request.SessionGeneration, request.RequestMessageId,
             request.RequestContentHash, request.OperatorId ?? "", request.VerificationMethod, request.VerifiedAt,
             request.ObservedAt);
+        ForgetWhatThisWrote();
 
-        for (int attempt = 0; attempt < 3; attempt++)
+        DecisionTransaction transaction = await DecisionTransaction.BeginAsync(dbContext, cancellationToken)
+            .ConfigureAwait(false);
+        await using (transaction)
         {
-            ForgetWhatThisWrote();
             if (await requests.ReadUnableToChargeAsync(request.ConfirmationRequestId, cancellationToken)
-                    .ConfigureAwait(false) is { } decided)
+                    .ConfigureAwait(false) is { } already)
             {
-                if (decided.Request.RequestContentHash != request.RequestContentHash || decided.Request.AgvId != request.AgvId)
+                await transaction.RollbackAsync(cancellationToken).ConfigureAwait(false);
+                if (already.Request.RequestContentHash != request.RequestContentHash || already.Request.AgvId != request.AgvId)
                 {
                     throw new FieldConfirmationContentConflictException(
                         $"Confirmation request {request.ConfirmationRequestId} was replayed with different content.");
                 }
-                return decided;
+                return already;
             }
 
-            Facts facts = await ReadFactsAsync(request, cancellationToken).ConfigureAwait(false);
+            Facts current = await ReadDatabaseFactsAsync(request, cancellationToken).ConfigureAwait(false);
+            if (observed.AlreadyDecided || observed.Facts is null || !Equals(FactsOf(observed.Facts), FactsOf(current)))
+            {
+                // The database moved between the observation and the lock (the engine formed or ended the cycle, another number
+                // confirmed): RIoT was read for facts that no longer hold, so nothing is judged on it.
+                await transaction.RollbackAsync(cancellationToken).ConfigureAwait(false);
+                ForgetWhatThisWrote();
+                return null;
+            }
+
+            Facts facts = observed.Facts;
             string? role = roles.GrantedRole(request.OperatorId, ConfirmingRoles);
             (string? code, string? field, string? message) = Judge(request, role, facts);
             DateTimeOffset now = timeProvider.GetUtcNow();
@@ -183,71 +248,65 @@ public sealed class UnableToChargeFieldConfirmations(
                 ? await PolicyForAsync(request, facts, cancellationToken).ConfigureAwait(false)
                 : (null, false);
 
-            DecisionTransaction transaction = await DecisionTransaction.BeginAsync(dbContext, cancellationToken)
-                .ConfigureAwait(false);
-            await using (transaction)
+            if (code is null && !facts.AlreadyConfirmed &&
+                !await FormAsync(request, role!, facts, now, cancellationToken).ConfigureAwait(false))
             {
-                if (code is null && !facts.AlreadyConfirmed &&
-                    !await FormAsync(request, role!, facts, now, cancellationToken).ConfigureAwait(false))
-                {
-                    await transaction.RollbackAsync(cancellationToken).ConfigureAwait(false);
-                    continue;
-                }
-                if (code is not null && facts.Cycle is { } judged &&
-                    await dbContext.Set<ChargingCycleRow>().AsNoTracking()
-                        .Where(row => row.CycleId == judged.CycleId).Select(row => (long?)row.Version)
-                        .SingleOrDefaultAsync(cancellationToken).ConfigureAwait(false) != judged.Version)
-                {
-                    // Refused on facts that moved under the reads (the engine formed or ended the cycle meanwhile): judged again.
-                    await transaction.RollbackAsync(cancellationToken).ConfigureAwait(false);
-                    continue;
-                }
-                if (policy == ChargingPolicyDecisions.ManualChargingHold && newlyDecided)
-                {
-                    _ = await manualHolds.PlaceAsync(
-                            JourneyPlanBuilder.StableGuid(facts.Cycle!.CycleId, "unable-to-charge-field-manual-hold"),
-                            facts.Cycle.VehicleKey, ManualChargingHoldReasons.UnableToChargeLowBattery, now, cancellationToken)
-                        .ConfigureAwait(false);
-                }
+                await transaction.RollbackAsync(cancellationToken).ConfigureAwait(false);
+                ForgetWhatThisWrote();
+                return null;
+            }
+            if (code is not null && facts.Cycle is { } judged &&
+                await dbContext.Set<ChargingCycleRow>().AsNoTracking()
+                    .Where(row => row.CycleId == judged.CycleId).Select(row => (long?)row.Version)
+                    .SingleOrDefaultAsync(cancellationToken).ConfigureAwait(false) != judged.Version)
+            {
+                // Refused on facts that moved under the reads (the engine formed or ended the cycle meanwhile): judged again.
+                await transaction.RollbackAsync(cancellationToken).ConfigureAwait(false);
+                ForgetWhatThisWrote();
+                return null;
+            }
+            if (policy == ChargingPolicyDecisions.ManualChargingHold && newlyDecided)
+            {
+                _ = await manualHolds.PlaceAsync(
+                        JourneyPlanBuilder.StableGuid(facts.Cycle!.CycleId, "unable-to-charge-field-manual-hold"),
+                        facts.Cycle.VehicleKey, ManualChargingHoldReasons.UnableToChargeLowBattery, now, cancellationToken)
+                    .ConfigureAwait(false);
+            }
 
-                UnableToChargeFieldConfirmation decision = new(
-                    identity,
-                    request.ChargerStationId,
-                    request.ObservedCondition,
-                    new FieldConfirmationDecision(
-                        code is null ? FieldConfirmationDecision.Confirmed : FieldConfirmationDecision.Rejected,
-                        code, field, message, now),
-                    policy);
-                UnableToChargeFieldConfirmation stored = await requests
-                    .DecideUnableToChargeAsync(decision, cancellationToken).ConfigureAwait(false);
-                if (stored.Request.RequestMessageId != request.RequestMessageId || stored.Decision.DecidedAt != now)
-                {
-                    // The same number was decided through another context in between: that decision is the one.
-                    await transaction.RollbackAsync(cancellationToken).ConfigureAwait(false);
-                    ForgetWhatThisWrote();
-                    return stored;
-                }
-
-                await WriteAuditAsync(request, role, facts, stored, now, cancellationToken).ConfigureAwait(false);
-                await transaction.CommitAsync(cancellationToken).ConfigureAwait(false);
-                if (code is null)
-                {
-                    LogConfirmed(
-                        logger, request.OperatorId!.Trim(), role!, request.AgvId, request.ChargerStationId, request.ObservedCondition,
-                        policy!, null);
-                }
-                else
-                {
-                    LogReported(
-                        logger, request.OperatorId ?? "(none)", request.AgvId, request.ChargerStationId, request.ObservedCondition,
-                        code, message!, null);
-                }
+            UnableToChargeFieldConfirmation decision = new(
+                identity,
+                request.ChargerStationId,
+                request.ObservedCondition,
+                new FieldConfirmationDecision(
+                    code is null ? FieldConfirmationDecision.Confirmed : FieldConfirmationDecision.Rejected,
+                    code, field, message, now),
+                policy);
+            UnableToChargeFieldConfirmation stored = await requests
+                .DecideUnableToChargeAsync(decision, cancellationToken).ConfigureAwait(false);
+            if (stored.Request.RequestMessageId != request.RequestMessageId || stored.Decision.DecidedAt != now)
+            {
+                // The same number was decided through another context in between: that decision is the one.
+                await transaction.RollbackAsync(cancellationToken).ConfigureAwait(false);
+                ForgetWhatThisWrote();
                 return stored;
             }
-        }
 
-        throw new InvalidOperationException(
-            $"Unable-to-charge field confirmation {request.ConfirmationRequestId} lost every race it entered; nothing was written.");
+            await WriteAuditAsync(request, role, facts, stored, now, cancellationToken).ConfigureAwait(false);
+            await transaction.CommitAsync(cancellationToken).ConfigureAwait(false);
+            if (code is null)
+            {
+                LogConfirmed(
+                    logger, request.OperatorId!.Trim(), role!, request.AgvId, request.ChargerStationId, request.ObservedCondition,
+                    policy!, null);
+            }
+            else
+            {
+                LogReported(
+                    logger, request.OperatorId ?? "(none)", request.AgvId, request.ChargerStationId, request.ObservedCondition,
+                    code, message!, null);
+            }
+            return stored;
+        }
     }
 
     /// <summary>
@@ -514,28 +573,44 @@ public sealed class UnableToChargeFieldConfirmations(
             : ChargingPolicyDecisions.RetryLater;
     }
 
+    /// <summary>锁外观察的全部：车（RIoT）、库里的事实、旧单（RIoT）。</summary>
     private async Task<Facts> ReadFactsAsync(UnableToChargeFieldConfirmationRequest request, CancellationToken cancellationToken)
     {
         if (request.VehicleKey is not { } vehicleKey)
         {
             return new Facts(null, "", "", false, null, null, false, null, null);
         }
-        // The vehicle from RIoT first, then the database, then the old order from RIoT. Called directly (the Host's tests), the
-        // database reads run in no transaction, so an engine round can commit between two of them; the cycle's version catches it
-        // when writing, and DecideAsync re-checks it before storing a refusal. Through OnboardMessageProcessor all of this runs inside
-        // the inbox transaction, which on SQLite holds the write lock from its start, so no engine round commits in between (nor
-        // while the two RIoT reads are in flight).
+        // The vehicle from RIoT first, then the database, then the old order from RIoT, all outside any transaction
+        // (control-server#452). An engine round may commit between any two of them; DecideObservedAsync reads the database part
+        // again under the lock and judges nothing on an observation it no longer matches.
         RiotVehicleObservation? vehicle = await ReadVehicleAsync(vehicleKey, cancellationToken).ConfigureAwait(false);
+        Facts database = await ReadDatabaseFactsAsync(request, cancellationToken).ConfigureAwait(false);
+        RiotOrderObservation? order = database.Cycle is null
+            ? null
+            : await ReadOrderAsync(database.UpperId, cancellationToken).ConfigureAwait(false);
+        return database with { Vehicle = vehicle, Order = order };
+    }
+
+    /// <summary>库里的那一半：这辆车未结束的周期、它的停靠、系统确认过没有、清桩记录、用途、预占。RIoT 的两项留空。</summary>
+    private async Task<Facts> ReadDatabaseFactsAsync(
+        UnableToChargeFieldConfirmationRequest request, CancellationToken cancellationToken)
+    {
+        if (request.VehicleKey is not { } vehicleKey)
+        {
+            return new Facts(null, "", "", false, null, null, false, null, null);
+        }
         ChargingCycleRow? cycle = await dbContext.Set<ChargingCycleRow>().AsNoTracking()
             .SingleOrDefaultAsync(row => row.VehicleKey == vehicleKey && row.Phase != ChargingCyclePhases.Ended, cancellationToken)
             .ConfigureAwait(false);
         if (cycle is null)
         {
-            return new Facts(null, "", "", false, null, null, false, vehicle, null);
+            return new Facts(null, "", "", false, null, null, false, null, null);
         }
 
+        // The charger's stop: a clearance move to a waiting point (control-server#409) is a second stop of the same journey.
         JourneyStopRow stop = await dbContext.Set<JourneyStopRow>().AsNoTracking()
-            .SingleAsync(row => row.JourneyId == cycle.JourneyId, cancellationToken).ConfigureAwait(false);
+            .SingleAsync(row => row.JourneyId == cycle.JourneyId && row.StopRole == JourneyStopRoles.Charger, cancellationToken)
+            .ConfigureAwait(false);
         bool alreadyConfirmed = cycle.Phase == ChargingCyclePhases.Clearing &&
                                 await dbContext.Set<ChargingStationAllocationHoldRow>().AsNoTracking()
                                     .AnyAsync(
@@ -556,8 +631,7 @@ public sealed class UnableToChargeFieldConfirmations(
                           row.StationKind == StationExclusivityKinds.Charger && row.JourneyId == cycle.JourneyId)
             .Select(row => row.RecordId)
             .SingleOrDefaultAsync(cancellationToken).ConfigureAwait(false);
-        RiotOrderObservation? order = await ReadOrderAsync(stop.UpperId, cancellationToken).ConfigureAwait(false);
-        return new Facts(cycle, stop.StationId, stop.UpperId, alreadyConfirmed, clearanceId, reservation, claimed, vehicle, order);
+        return new Facts(cycle, stop.StationId, stop.UpperId, alreadyConfirmed, clearanceId, reservation, claimed, null, null);
     }
 
     private async Task<RiotVehicleObservation?> ReadVehicleAsync(string vehicleKey, CancellationToken cancellationToken)
@@ -682,13 +756,41 @@ public sealed class UnableToChargeFieldConfirmations(
         public ValueTask DisposeAsync() => _own?.DisposeAsync() ?? ValueTask.CompletedTask;
     }
 
+    /// <summary>
+    /// 锁外观察到的（<see cref="ObserveAsync"/>）：确认号那时判过没有；没判过时，那一刻的事实，含 RIoT 上的车与旧单。只交给
+    /// <see cref="DecideObservedAsync"/>。
+    /// </summary>
+    public sealed class Observation
+    {
+        internal Observation(string confirmationRequestId, bool alreadyDecided, Facts? facts)
+        {
+            ConfirmationRequestId = confirmationRequestId;
+            AlreadyDecided = alreadyDecided;
+            Facts = facts;
+        }
+
+        internal string ConfirmationRequestId { get; }
+        internal bool AlreadyDecided { get; }
+        internal Facts? Facts { get; }
+    }
+
+    /// <summary>
+    /// 锁内重读之后要与观察时逐项相同的库事实：判定与写入用到的全部——周期是哪一个、它的版本与阶段与线上状态、本周期读到过充电没有，停靠的站名与
+    /// <c>upperId</c>（旧单读的就是它），系统确认过没有，清桩记录，预占，用途是不是这一趟的 <c>CHARGING</c>。电量取样那几列不在里面：
+    /// 判定只看它们之外的这些，取样一变就重判只会让一辆不在充电的车白等。
+    /// </summary>
+    internal static object FactsOf(Facts facts) =>
+        (facts.Cycle?.CycleId, facts.Cycle?.Version, facts.Cycle?.Phase, facts.Cycle?.WireState, facts.Cycle?.FirstChargingSeenAt,
+            facts.StationName, facts.UpperId, facts.AlreadyConfirmed, facts.ClearanceId, facts.ReservationRecordId,
+            facts.ChargingClaimIsThisJourneys);
+
     /// <param name="Cycle">这辆车未结束的周期；没有为空。</param>
     /// <param name="StationName">周期那条 <c>CHARGER</c> 腿的站名。</param>
     /// <param name="AlreadyConfirmed">周期已因这一次充不上进了清桩中（系统先确认了，或另一个确认号先确认了）。</param>
     /// <param name="ClearanceId">这个周期已有的清桩记录；没有为空。</param>
     /// <param name="ReservationRecordId">这一趟此刻持有这个桩的独占时，那一行的经过 id。</param>
     /// <param name="ChargingClaimIsThisJourneys">车的用途此刻是这一趟的 <c>CHARGING</c>。</param>
-    private sealed record Facts(
+    internal sealed record Facts(
         ChargingCycleRow? Cycle,
         string StationName,
         string UpperId,

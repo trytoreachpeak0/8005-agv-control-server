@@ -792,6 +792,15 @@ internal static class ReconnectModel
             }
 
             string[] types = [.. answers.Select(MessageTypeOf)];
+            // control-server#478: the refusal is now an answer -- a ProtocolProblem correlated to the resend, on a connection
+            // that stays -- rather than an exception that ended the connection.
+            if (types.FirstOrDefault() == "ProtocolProblem")
+            {
+                using JsonDocument problem = JsonDocument.Parse(answers[0]);
+                string? reasonCode = problem.RootElement.GetProperty("payload").GetProperty("problem")
+                    .GetProperty("reasonCode").GetString();
+                return $"resend of {messageId[..8]} with different content refused: ProtocolProblem {reasonCode} ({where})";
+            }
             if (types.FirstOrDefault() == "DurableAck")
             {
                 Violate(
@@ -1185,6 +1194,10 @@ internal static class ReconnectModel
                 }
 
                 await _processor.FlushDeferredOutboundAsync(_connection!, Token);
+                if (!_answeringSnapshotRequest && answers.Any(answer => MessageTypeOf(answer) == "SafetyStateSnapshotRequested"))
+                {
+                    await AnswerSafetySnapshotRequestAsync();
+                }
                 return answers;
             }
             catch (Exception error) when (error is not OperationCanceledException && refusalExpected)
@@ -1202,6 +1215,46 @@ internal static class ReconnectModel
                 _connectionContext!.ChangeTracker.Clear();
                 DropConnection();
                 return null;
+            }
+        }
+
+        private bool _answeringSnapshotRequest;
+
+        /// <summary>
+        /// 服务端要一份安全快照（<c>SafetyStateSnapshotRequested</c>）时，车照真车载端的规则回一份：
+        /// <c>WireToGateBusinessService.AnswerSafetyStateSnapshotRequestAsync</c>（hmi#109）。
+        /// </summary>
+        /// <remarks>
+        /// 握手完成、手上没有未确认的 <c>SafetyStateChanged</c> 时才回，版本取已接受的下一版；有未确认的变化就不回，等服务端下次再要。
+        /// 这一步原先没有：模型里的车从不回应请求。control-server#478 起，被拒的安全报文之后，服务端靠这份快照恢复对安全基线的信任，
+        /// 不回就一直不派车——真车载端会回，模型不回就是模型与真车对不上。
+        /// </remarks>
+        private async Task AnswerSafetySnapshotRequestAsync()
+        {
+            if (!_connected || _handshakeOpen)
+            {
+                _trace.Add("    snapshot request not answered: session not publishable");
+                return;
+            }
+            if (_unacknowledged.Any(entry => MessageTypeOf(entry.Line) == "SafetyStateChanged"))
+            {
+                _trace.Add("    snapshot request not answered: an unacknowledged SafetyStateChanged is pending");
+                return;
+            }
+
+            long version = ++_acceptedSafetyVersion;
+            _answeringSnapshotRequest = true;
+            try
+            {
+                string[]? answers = await ExchangeAsync(
+                    VehicleLine("SafetyStateSnapshot", SafetySnapshotPayload(version), _generation), "SafetyStateSnapshot");
+                _trace.Add(answers is null
+                    ? $"    snapshot request answered at v{version}: refused"
+                    : $"    snapshot request answered at v{version}: {string.Join("+", answers.Select(MessageTypeOf))}");
+            }
+            finally
+            {
+                _answeringSnapshotRequest = false;
             }
         }
 
