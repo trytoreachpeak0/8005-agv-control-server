@@ -2509,6 +2509,15 @@ foreach ($mvpCase in @(
     try { $null = Assert-ParallelInstanceDefinition -Definition $mvpDefinition -AllowRiotCreateDispatch -AllowRiotForeignOrderCancel } catch { $thrown = $_.Exception.Message }
     Write-Result -Ok ($null -ne $thrown) -Name "gate: an installed definition naming $($mvpCase.Name) is refused before anything is read" -Detail 'accepted'
 }
+# Every script here parses. The AST checks in this file use ParseInput and throw its errors away, so a file that does
+# not parse at all could pass every one of them: Set-ParallelDispatchGateLocal.ps1 did, with "$InstanceDefinitionPath:"
+# in a string read as a drive-qualified variable -- the whole script would have refused to start on factory01.
+foreach ($script in @(Get-ChildItem -LiteralPath $PSScriptRoot -File | Where-Object { $_.Extension -in '.ps1', '.psm1' })) {
+    $parseErrors = $null
+    [void][System.Management.Automation.Language.Parser]::ParseFile($script.FullName, [ref]$null, [ref]$parseErrors)
+    Write-Result -Ok (@($parseErrors).Count -eq 0) -Name "$($script.Name) parses without errors" `
+        -Detail (($parseErrors | ForEach-Object { "line $($_.Extent.StartLineNumber): $($_.Message)" }) -join ' | ')
+}
 $gateScriptSource = Get-Content -LiteralPath (Join-Path $PSScriptRoot 'Set-ParallelDispatchGateLocal.ps1') -Raw
 $gateHits = @(Find-LayoutBypass $gateScriptSource)
 Write-Result -Ok ($gateHits.Count -eq 0) -Name 'Set-ParallelDispatchGateLocal.ps1 reads no path or name except through the layout' -Detail ($gateHits -join ' / ')
@@ -2706,7 +2715,7 @@ function Invoke-GateCase {
     #>
     param([string] $Direction, [string] $Text, $Status = 'Running', [object[]] $States = @(), [object[]] $StartTimes = @(),
         [string] $ServiceName = $v2Service, [string] $ConfigurationName = 'appsettings.Production.json', [scriptblock] $Writer,
-        [string] $StatusAfter = 'Running', [datetime] $WriteTime = $gateStarted.AddMinutes(-5), [string] $ConfigurationPath)
+        [string] $StatusAfter = 'Running', [datetime] $WriteTime = $gateStarted.AddMinutes(-5), [string] $ConfigurationPath, [switch] $StartThrows)
     $directory = Join-Path ([IO.Path]::GetTempPath()) "cs472-gate-$([guid]::NewGuid().ToString('N'))"
     New-Item -ItemType Directory -Path $directory | Out-Null
     $file = $ConfigurationPath ? $ConfigurationPath : (Join-Path $directory $ConfigurationName)
@@ -2722,7 +2731,7 @@ function Invoke-GateCase {
         ServiceStatus = { $calls.Add('Status'); $current.Status }.GetNewClosure()
         ReadState = { $calls.Add('ReadState'); $stateQueue.Count ? $stateQueue.Dequeue() : $null }.GetNewClosure()
         StopService = { $calls.Add('Stop'); $current.Status = 'Stopped' }.GetNewClosure()
-        StartService = { $calls.Add('Start'); $current.Status = $StatusAfter }.GetNewClosure()
+        StartService = { $calls.Add('Start'); if ($StartThrows) { throw 'simulated start failure' }; $current.Status = $StatusAfter }.GetNewClosure()
         ProcessStartTimeUtc = { $calls.Add('StartTime'); $next = $startQueue.Count ? $startQueue.Dequeue() : $null; $next -is [scriptblock] ? (& $next $file) : $next }.GetNewClosure()
     }
     # A -ConfigurationPath case is a production path: it is never read or written here, only handed over.
@@ -2752,7 +2761,7 @@ $beforeWrite = { param($Path) [IO.File]::GetLastWriteTimeUtc($Path).AddSeconds(-
 $nothingSuffix = 'Nothing was stopped or changed.'
 
 $r = Invoke-GateCase -Direction Close -Text $openConfig -States @($idle, $idle) -StartTimes @($gateStarted, $afterWrite)
-Write-Result -Ok ($null -eq $r.Thrown -and $r.Result.Changed -and $r.Flag -eq $false -and $r.Calls -ceq 'Status,StartTime,ReadState,Stop,ReadState,Start,Status,StartTime') `
+Write-Result -Ok ($null -eq $r.Thrown -and $r.Result.Changed -and $r.Flag -eq $false -and $r.Result.Now -is [bool] -and -not $r.Result.Now -and $r.Result.Previous -eq $true -and $r.Calls -ceq 'Status,StartTime,ReadState,Stop,ReadState,Start,Status,StartTime') `
     -Name 'gate change: close, nothing in flight -> read, stop, read again, write, start, verified' -Detail "calls $($r.Calls) flag $($r.Flag) thrown $($r.Thrown)"
 $r = Invoke-GateCase -Direction Close -Text $openConfig -States @($busy) -StartTimes @($gateStarted)
 Write-Result -Ok ($r.Thrown -and $r.Thrown.StartsWith('GATE_CLOSE_REFUSED_IN_FLIGHT:') -and $r.Thrown.EndsWith($nothingSuffix) -and $r.Unchanged -and $r.Calls -notmatch 'Stop|Start(?!Time)') `
@@ -2789,10 +2798,10 @@ $r = Invoke-GateCase -Direction Close -Text $openConfig -States @($idle, $idle) 
 Write-Result -Ok ($r.Thrown -and $r.Thrown.StartsWith('GATE_WRITE_FAILED:') -and $r.Thrown.Contains('put back and checked') -and $r.Unchanged -and $r.Calls.EndsWith('Stop,ReadState,Start,Status') -and $r.Thrown.Contains('started again and is Running')) `
     -Name 'gate change: a write that does not read back -> original bytes restored, service started again, gate as it was' -Detail "calls $($r.Calls) unchanged $($r.Unchanged) thrown $($r.Thrown)"
 $r = Invoke-GateCase -Direction Close -Text $closedConfig -States @($busy) -StartTimes @($gateStarted)
-Write-Result -Ok ($null -eq $r.Thrown -and -not $r.Result.Changed -and $r.Unchanged -and $r.Calls -notmatch 'ReadState|Stop|Start(?!Time)') `
+Write-Result -Ok ($null -eq $r.Thrown -and -not $r.Result.Changed -and $r.Result.Now -is [bool] -and -not $r.Result.Now -and $r.Unchanged -and $r.Calls -notmatch 'ReadState|Stop|Start(?!Time)') `
     -Name 'gate change: already closed -> nothing touched' -Detail "calls $($r.Calls) thrown $($r.Thrown)"
 $r = Invoke-GateCase -Direction Close -Text $openConfig -Status 'Stopped' -States @($idle, $idle)
-Write-Result -Ok ($null -eq $r.Thrown -and $r.Result.Changed -and $r.Flag -eq $false -and $r.Calls -ceq 'Status,ReadState,ReadState') `
+Write-Result -Ok ($null -eq $r.Thrown -and $r.Result.Changed -and $r.Flag -eq $false -and $r.Result.Now -is [bool] -and -not $r.Result.Now -and $r.Calls -ceq 'Status,ReadState,ReadState') `
     -Name 'gate change: a stopped service -> both reads, the write, and the service left stopped' -Detail "calls $($r.Calls) thrown $($r.Thrown)"
 $r = Invoke-GateCase -Direction Close -Text $openConfig -States @($idle, $idle) -StartTimes @($gateStarted.AddMinutes(-10), $afterWrite)
 Write-Result -Ok ($r.Thrown -and $r.Thrown.StartsWith('CONFIGURATION_CHANGED_SINCE_START:') -and $r.Unchanged -and $r.Calls -notmatch 'ReadState|Stop') `
@@ -2802,13 +2811,13 @@ Write-Result -Ok ($r.Thrown -and $r.Thrown.StartsWith('SERVICE_NOT_SETTLED:') -a
 $r = Invoke-GateCase -Direction Close -Text $null -States @($idle, $idle) -StartTimes @($gateStarted)
 Write-Result -Ok ($r.Thrown -and $r.Thrown.StartsWith('INSTALLED_CONFIGURATION_MISSING:')) -Name 'gate change: no installed configuration -> refused' -Detail "thrown $($r.Thrown)"
 $r = Invoke-GateCase -Direction Open -Text $closedConfig -States @($waiting, $waiting) -StartTimes @($gateStarted, $afterWrite)
-Write-Result -Ok ($null -eq $r.Thrown -and $r.Result.Changed -and $r.Flag -eq $true -and $r.Calls -ceq 'Status,StartTime,ReadState,Stop,ReadState,Start,Status,StartTime') `
+Write-Result -Ok ($null -eq $r.Thrown -and $r.Result.Changed -and $r.Flag -eq $true -and $r.Result.Now -eq $true -and $r.Result.Previous -is [bool] -and -not $r.Result.Previous -and $r.Calls -ceq 'Status,StartTime,ReadState,Stop,ReadState,Start,Status,StartTime') `
     -Name 'gate change: open with journeys waiting for the gate -> opened, restarted, verified (they can go on)' -Detail "calls $($r.Calls) thrown $($r.Thrown)"
 $r = Invoke-GateCase -Direction Open -Text $closedConfig -States @($busy) -StartTimes @($gateStarted)
 Write-Result -Ok ($r.Thrown -and $r.Thrown.StartsWith('GATE_OPEN_REFUSED_ORDER_SENT:') -and $r.Unchanged -and $r.Calls -notmatch 'Stop') `
     -Name 'gate change: open with a journey whose order was sent -> refused before the stop' -Detail "calls $($r.Calls) thrown $($r.Thrown)"
 $r = Invoke-GateCase -Direction Open -Text $closedConfig -States @($afterClose, $afterClose) -StartTimes @($gateStarted, $afterWrite)
-Write-Result -Ok ($null -eq $r.Thrown -and $r.Flag -eq $true) `
+Write-Result -Ok ($null -eq $r.Thrown -and $r.Flag -eq $true -and $r.Result.Now -eq $true) `
     -Name 'gate change: open on the state a close leaves plus the journeys accepted since -> opened' -Detail "thrown $($r.Thrown)"
 
 # --- The reader's columns exist in the real schema. The temporary database below is written by this test,
@@ -2850,6 +2859,14 @@ $r = Invoke-GateCase -Direction Close -Text $openConfig -States @($idle, $idle) 
 Write-Result -Ok ($r.Thrown -and $r.Thrown.StartsWith('GATE_WRITE_FAILED:') -and $r.Thrown.Contains("asked to start again but is 'StartPending'")) `
     -Name 'gate change: a service that does not come back after a failed write -> the failure says so' -Detail "thrown $($r.Thrown)"
 
+# --- Review L5: a start that throws after a refusal or a failed write keeps the reason it follows, and says so too.
+$r = Invoke-GateCase -Direction Close -Text $openConfig -States @($idle, $busy) -StartTimes @($gateStarted) -StartThrows
+Write-Result -Ok ($r.Thrown -and $r.Thrown.StartsWith('AFTER_STOP GATE_CLOSE_REFUSED_IN_FLIGHT:') -and $r.Thrown.Contains('could not be started again (simulated start failure)') -and $r.Unchanged) `
+    -Name 'gate change: a start that throws after a refusal after the stop -> the refusal and the start failure are both reported' -Detail "thrown $($r.Thrown)"
+$r = Invoke-GateCase -Direction Close -Text $openConfig -States @($idle, $idle) -StartTimes @($gateStarted) -StartThrows -Writer { param($Path, $Text) }
+Write-Result -Ok ($r.Thrown -and $r.Thrown.StartsWith('GATE_WRITE_FAILED:') -and $r.Thrown.Contains('is not false after it was set') -and $r.Thrown.Contains('could not be started again (simulated start failure)') -and $r.Unchanged) `
+    -Name 'gate change: a start that throws after a failed write -> the write failure and the start failure are both reported' -Detail "thrown $($r.Thrown)"
+
 # --- Review S5: the open refusal names the way out, in order, with the V2 service and not the MVP's.
 $sentRefusal = Get-ParallelDispatchGateRefusal -Direction Open -State $busy -ServiceName $v2Service -DatabasePath $gateDatabase
 $riotAt = $sentRefusal.IndexOf('in RIoT, confirm that no order is running'); $handAt = $sentRefusal.IndexOf('section 10 of remote-ops/factory-server/docs/wire-to-gate-parallel-cd.md')
@@ -2885,7 +2902,18 @@ if ($whatIf.Count -eq 1) {
         $pipeline.Child.Expression.Extent.Text -ceq '$PSCmdlet'
     $body = $whatIf[0].Clauses[0].Item2
     $commands = @($body.FindAll({ param($n) $n -is [System.Management.Automation.Language.CommandAst] }, $true) | ForEach-Object { $_.GetCommandName() })
-    $changing = @($commands | Where-Object { $_ -eq 'Invoke-ParallelDispatchGateChange' -or $_ -like 'Stop-*' -or $_ -like 'Start-*' -or $_ -like 'Restart-*' -or $_ -like 'Set-*' -or $_ -like 'Remove-*' -or $_ -like 'New-*' -or $null -eq $_ })
+    # An allow list, not a deny list (review SF3): the deny list saw commands only, so "$actions.StopService.Invoke()"
+    # and "[IO.File]::WriteAllText(...)" in this branch passed it and would have stopped the service or written the file
+    # on a dry run. Only these read-only commands; no reference to $actions; no .NET method call or static member access
+    # of any kind (which also covers [IO.*]); no type expression naming IO.
+    $readOnlyCommands = @('Get-ParallelJourneyDispatchState', 'Get-ParallelDispatchGateRefusal', 'Get-Service', 'Write-Step')
+    $changing = @($commands | Where-Object { $null -eq $_ -or $readOnlyCommands -notcontains $_ } | ForEach-Object { "command $($_ ?? '(dynamic)')" })
+    $changing += @($body.FindAll({ param($n) $n -is [System.Management.Automation.Language.VariableExpressionAst] -and $n.VariablePath.UserPath -ieq 'actions' }, $true) |
+            ForEach-Object { "reference $($_.Extent.Text)" })
+    $changing += @($body.FindAll({ param($n) $n -is [System.Management.Automation.Language.InvokeMemberExpressionAst] -or
+                ($n -is [System.Management.Automation.Language.MemberExpressionAst] -and $n.Static) }, $true) | ForEach-Object { "member $($_.Extent.Text)" })
+    $changing += @($body.FindAll({ param($n) $n -is [System.Management.Automation.Language.TypeExpressionAst] -and $n.TypeName.FullName -match '(^|\.)IO(\.|$)' }, $true) |
+            ForEach-Object { "type $($_.Extent.Text)" })
     $returns = @($body.Statements | Where-Object { $_ -is [System.Management.Automation.Language.ReturnStatementAst] }).Count -eq 1
     $changeCall = $gateAst.Find({ param($n) $n -is [System.Management.Automation.Language.CommandAst] -and $n.GetCommandName() -eq 'Invoke-ParallelDispatchGateChange' }, $true)
     $before = $null -ne $changeCall -and $whatIf[0].Extent.EndOffset -lt $changeCall.Extent.StartOffset

@@ -57,10 +57,12 @@ public sealed class DispatchGatePremiseArchitectureTests
     [Fact]
     public void OnlyTheTwoCreatePathsReachTheCreateAttempt()
     {
-        string orchestration = Read(Orchestration);
-        int total = ProductSourceFiles().Sum(file => Regex.Matches(File.ReadAllText(file), @"\bDispatchCreateAttemptAsync\(").Count);
+        // Comments (and so cref) stripped first, and the name counted wherever it stands -- a call, a method group handed on
+        // as a delegate, nameof (review L3, L7): documentation that mentions it must not count, and a use without '(' must.
+        string orchestration = CodeOnly(Read(Orchestration));
+        int total = ProductSourceFiles().Sum(file => Regex.Matches(CodeOnly(File.ReadAllText(file)), @"\bDispatchCreateAttemptAsync\b").Count);
         int definition = Regex.Matches(orchestration, @"Task<MovementDispatchResult> DispatchCreateAttemptAsync\(").Count;
-        int inCreatePaths = CreatePaths.Sum(path => Regex.Matches(MethodBody(orchestration, path), @"\bDispatchCreateAttemptAsync\(").Count);
+        int inCreatePaths = CreatePaths.Sum(path => Regex.Matches(MethodBody(orchestration, path), @"\bDispatchCreateAttemptAsync\b").Count);
 
         Assert.Equal(1, definition);
         Assert.Equal(CreatePaths.Length, inCreatePaths);
@@ -110,20 +112,52 @@ public sealed class DispatchGatePremiseArchitectureTests
         Assert.Single(Regex.Matches(Squash(Read(Engine)), Regex.Escape(query)));
     }
 
+    /// <remarks>
+    /// The whole bodies, compared for equality (review SF1): a check that each condition is still there passes a body that
+    /// gained a condition -- <c>if (row.DispatchAuditVersion &gt; 1) { return false; }</c> at the top narrows the definition while
+    /// every fragment stays, and the script's port would then call an order unsent that the server no longer does. Any change
+    /// to either body, narrowing or widening, fails here; reread <c>Test-ParallelOrderIntentNeverSent</c> and update both.
+    /// </remarks>
     [Fact]
     public void NeverSentIsDefinedAsTheGateScriptPortsIt()
     {
-        string store = Squash(Read(Store));
+        string store = Read(Store);
 
-        Assert.Contains(Squash(
-            "return (row.Status == \"PENDING_RECONCILIATION\" && row.CreateAttemptCount == 0 && row.CreateAttemptId is null && " +
-            "row.OrderId is null) || await IsNeverSentAfterUnansweredReadsAsync(row, cancellationToken).ConfigureAwait(false);"), store, StringComparison.Ordinal);
-        Assert.Contains(Squash(
-            "if (row.Status != \"RESULT_UNKNOWN\" || row.DispatchAuditVersion != 1 || row.CreateAttemptCount != 0 || " +
-            "row.CreateAttemptId is not null || row.ExperimentalCreateAuthorizationId is not null)"), store, StringComparison.Ordinal);
-        Assert.Contains(Squash(
-            "return reads.Length > 0 && reads.All(item => item.Phase == \"PRE_CREATE_RECONCILIATION\" && item.Outcome is \"UNKNOWN\" or " +
-            "\"NOT_FOUND\" && item.AttemptId is null && item.ReturnedOrderId is null && item.ResultPresent != true);"), store, StringComparison.Ordinal);
+        Assert.Equal(
+            Squash("""
+                {
+                    ArgumentNullException.ThrowIfNull(row);
+                    return (row.Status == "PENDING_RECONCILIATION" && row.CreateAttemptCount == 0 && row.CreateAttemptId is null &&
+                            row.OrderId is null) ||
+                           await IsNeverSentAfterUnansweredReadsAsync(row, cancellationToken).ConfigureAwait(false);
+                }
+                """),
+            Squash(MethodBody(store, "IsNeverSentAsync")));
+        Assert.Equal(
+            Squash("""
+                {
+                    if (row.Status != "RESULT_UNKNOWN" ||
+                        row.DispatchAuditVersion != 1 ||
+                        row.CreateAttemptCount != 0 ||
+                        row.CreateAttemptId is not null ||
+                        row.ExperimentalCreateAuthorizationId is not null)
+                    {
+                        return false;
+                    }
+
+                    var reads = await dbContext.RiotDispatchAuditEvents.AsNoTracking()
+                        .Where(item => item.MovementLegId == row.MovementLegId)
+                        .Select(item => new { item.Phase, item.Outcome, item.AttemptId, item.ReturnedOrderId, item.ResultPresent })
+                        .ToArrayAsync(cancellationToken).ConfigureAwait(false);
+                    return reads.Length > 0 &&
+                           reads.All(item => item.Phase == "PRE_CREATE_RECONCILIATION" &&
+                                             item.Outcome is "UNKNOWN" or "NOT_FOUND" &&
+                                             item.AttemptId is null &&
+                                             item.ReturnedOrderId is null &&
+                                             item.ResultPresent != true);
+                }
+                """),
+            Squash(MethodBody(store, "IsNeverSentAfterUnansweredReadsAsync")));
     }
 
     /// <summary>
@@ -148,7 +182,15 @@ public sealed class DispatchGatePremiseArchitectureTests
         throw new InvalidOperationException($"unbalanced braces after {name}");
     }
 
-    private static string Squash(string text) => Regex.Replace(text, @"\s+", " ");
+    private static string Squash(string text) => Regex.Replace(text, @"\s+", " ").Trim();
+
+    /// <summary>
+    /// The source without its comments: block comments, then line comments (<c>//</c> and <c>///</c>, so every cref goes
+    /// with them). A <c>//</c> inside a string literal is taken for a comment too; that only ever removes text, which can
+    /// make a count smaller, never larger.
+    /// </summary>
+    private static string CodeOnly(string source) =>
+        Regex.Replace(Regex.Replace(source, @"/\*.*?\*/", " ", RegexOptions.Singleline), @"//[^\r\n]*", " ");
 
     private static string Read(string relative) =>
         File.ReadAllText(Path.Combine(ProtocolIdentityArchitectureTests.RepositoryRoot(), relative));

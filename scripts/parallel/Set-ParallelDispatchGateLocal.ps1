@@ -25,9 +25,11 @@
     names the file and the service and says what was and was not changed. The MVP service is
     fingerprinted before and after.
 
-    Which instance. The definition the installer recorded at the last install or rollback
-    (installed-instance.json beside this script): a gate belongs to what is installed, not to what the
-    control host's copy says today. Every name and path comes from Get-ParallelInstanceLayout.
+    Which instance. The definition the installer recorded at the last install or rollback,
+    <opsRoot>\installed-instance.json, passed as -InstanceDefinitionPath: a gate belongs to what is
+    installed, not to what the control host's copy says today. Every name and path comes from
+    Get-ParallelInstanceLayout. There is no default: this script runs from its own per-commit directory
+    (<opsRoot>\dispatch-gate\<commit>, beside the two modules it imports), where no definition lies.
 
     Non-interactive use. ConfirmImpact is High, so a manual run prompts; over ssh pass -Confirm:$false
     (20-set-control-server-parallel-dispatch-gate.ps1 does), or -WhatIf to see the plan and what the
@@ -37,13 +39,17 @@
     Closed (RiotCreateDispatch.enabled false) or Open (true).
 
 .PARAMETER InstanceDefinitionPath
-    Override the definition. Default: installed-instance.json beside this script.
+    Required: the installed definition, <opsRoot>\installed-instance.json (for the shipped definition,
+    D:\zhengyushao\control-server-v2-ops\installed-instance.json). 20-set-control-server-parallel-dispatch-gate.ps1
+    passes it.
 #>
 [CmdletBinding(SupportsShouldProcess = $true, ConfirmImpact = 'High')]
 param(
     [Parameter(Mandatory = $true)][ValidateSet('Closed', 'Open')][string] $State,
 
-    [string] $InstanceDefinitionPath = (Join-Path $PSScriptRoot 'installed-instance.json')
+    # Not Mandatory, so that a run without it is refused with the explanation below instead of a prompt
+    # that hangs a non-interactive ssh session.
+    [string] $InstanceDefinitionPath
 )
 
 $ErrorActionPreference = 'Stop'
@@ -57,8 +63,14 @@ function Write-Step {
     Write-Host ("[{0:HH:mm:ss}] {1}" -f (Get-Date), $Message)
 }
 
+if (-not $InstanceDefinitionPath) {
+    # No literal path here: Test-ParallelInstance.ps1 holds this script to names and paths from the layout.
+    throw ('No -InstanceDefinitionPath. Pass the definition the installer recorded, <opsRoot>\installed-instance.json ' +
+        '(the opsRoot of the shipped definition is control-server-v2-ops on D:) -- not a copy beside this script, which ' +
+        'runs from its own per-commit directory. 20-set-control-server-parallel-dispatch-gate.ps1 passes it. Nothing was changed.')
+}
 if (-not (Test-Path -LiteralPath $InstanceDefinitionPath -PathType Leaf)) {
-    throw "No installed definition at $InstanceDefinitionPath: the v2 instance was never installed through this path, so it has no gate to set. Nothing was changed."
+    throw "No installed definition at ${InstanceDefinitionPath}: the v2 instance was never installed through this path, so it has no gate to set. Nothing was changed."
 }
 # Asserted as for an uninstall: the checks that refuse the MVP's service, paths or ports are the ones
 # that matter here. The gate's value in the definition is not a question for this script, nor the

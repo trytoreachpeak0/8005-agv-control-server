@@ -606,7 +606,11 @@ function Invoke-ParallelDispatchGateChange {
     # Starting the service again after a refusal or a failed write, and saying what it is now rather than
     # assuming it came back (review N4).
     $startAgain = {
-        $null = & $Actions.StartService
+        # A start that throws must not replace the refusal it follows: the caller puts this text into that refusal, so
+        # both are reported (review L5).
+        try { $null = & $Actions.StartService } catch {
+            return "'$ServiceName' could not be started again ($($_.Exception.Message)) -- start it by hand and check it"
+        }
         $now = [string] (& $Actions.ServiceStatus)
         $now -ceq 'Running' ? "'$ServiceName' was started again and is Running" : "'$ServiceName' was asked to start again but is '$now' -- check it"
     }
