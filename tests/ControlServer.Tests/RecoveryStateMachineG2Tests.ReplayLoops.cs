@@ -286,6 +286,88 @@ public sealed partial class RecoveryStateMachineG2Tests
         Assert.Equal("DurableAck", MessageType(await processor.ProcessAsync(result, state, token)));
     }
 
+    /// <summary>
+    /// A handoff or compensation result that would end a demand already delivered is taken like the cancellation above:
+    /// acknowledged, its workflow RecoveryRequired, the demand left delivered and the journey untouched (control-server#481,
+    /// coordinator's ruling: the same refusal looped on the onboard for these as well).
+    /// </summary>
+    [Theory]
+    [Trait("IntegrationSlice", "FP-IS-06")]
+    [Trait("IntegrationSlice", "FP-IS-07")]
+    [InlineData("FaultCargoRecoveryResult")]
+    [InlineData("LoadCompensationResult")]
+    public async Task AnEndingRecoveryResultForADemandAlreadyDeliveredIsTakenAsNotReconciling(string messageType)
+    {
+        const string proofVariable = "CONTROL_SERVER_TEST_RECOVERY_PROOF_481_DELIVERED_ENDING";
+        const string proof = "delivered-ending-proof-not-a-production-secret";
+        Environment.SetEnvironmentVariable(proofVariable, proof);
+        try
+        {
+            CancellationToken token = TestContext.Current.CancellationToken;
+            await using SqliteConnection connection = new("Data Source=:memory:");
+            await connection.OpenAsync(token);
+            await using ControlServerDbContext context = await CreateContextAsync(connection);
+            await SeedBlockedJourneyAsync(context);
+            OnboardMessageProcessor processor = Processor(context, new RecordingPeer(context), proofVariable);
+            OnboardConnectionState state = CurrentState();
+            string result = await ReachEndingResultAsync(messageType, processor, state, proof);
+            (await context.AcceptedDemands.SingleAsync(token)).Status = DemandExecutionStatus.Succeeded;
+            await context.SaveChangesAsync(token);
+            context.ChangeTracker.Clear();
+            JourneyRuntimeRow journeyBefore = await context.JourneyRuntimes.AsNoTracking().SingleAsync(token);
+            StationOperationRow operationBefore = await context.StationOperations.AsNoTracking().SingleAsync(token);
+
+            string response = await processor.ProcessAsync(result, state, token);
+
+            AssertEndsTheReplay(response, result);
+            Assert.Equal("DurableAck", MessageType(response));
+            context.ChangeTracker.Clear();
+            Assert.Equal(RecoveryWorkflowState.RecoveryRequired, (await context.RecoveryWorkflows.AsNoTracking()
+                .SingleAsync(row => row.ResultMessageId != null, token)).State);
+            Assert.Equal(DemandExecutionStatus.Succeeded, (await context.AcceptedDemands.AsNoTracking().SingleAsync(token)).Status);
+            Assert.Equal(operationBefore.Status, (await context.StationOperations.AsNoTracking().SingleAsync(token)).Status);
+            JourneyRuntimeRow journeyAfter = await context.JourneyRuntimes.AsNoTracking().SingleAsync(token);
+            Assert.Equal((journeyBefore.Stage, journeyBefore.BlockReasonCode), (journeyAfter.Stage, journeyAfter.BlockReasonCode));
+        }
+        finally
+        {
+            Environment.SetEnvironmentVariable(proofVariable, null);
+        }
+    }
+
+    /// <summary>
+    /// The boundary of the acknowledgement above: it is for an attempt this server has no record of. A second result for an
+    /// attempt it knows and has already settled -- a late replacement after its resume was closed, say -- is still refused
+    /// with BUSINESS_ID_CONTENT_CONFLICT, never acknowledged: an acknowledgement would have the onboard drop the row in
+    /// silence, while the refusal makes it give the row up with an alert (8005-agv-onboard-hmi#254).
+    /// </summary>
+    [Fact]
+    [Trait("IntegrationSlice", "FP-IS-06")]
+    public async Task ASecondResultForAnAttemptThisServerSettledIsStillRefused()
+    {
+        CancellationToken token = TestContext.Current.CancellationToken;
+        await using SqliteConnection connection = new("Data Source=:memory:");
+        await connection.OpenAsync(token);
+        await using ControlServerDbContext context = await CreateContextAsync(connection);
+        await SeedCancellableLoadAsync(context);
+        OnboardMessageProcessor processor = Processor(context, new RecordingPeer(context), CancellationProofVariable);
+        OnboardConnectionState state = CurrentState();
+        Assert.Equal("DurableAck", MessageType(await processor.ProcessAsync(
+            Envelope("48100000-0000-4000-8000-000000000041", "OperationResult", CompletedLoadResultPayload(AttemptId)),
+            state, token)));
+        string late = Envelope(
+            "48100000-0000-4000-8000-000000000042", "OperationResult",
+            CompletedLoadResultPayload(AttemptId, observedAfterSeconds: 9));
+
+        ProtocolProblemAssert.RefusedLine(
+            await processor.ProcessAsync(late, state, token), "BUSINESS_ID_CONTENT_CONFLICT", late);
+
+        context.ChangeTracker.Clear();
+        Assert.Equal(
+            "48100000-0000-4000-8000-000000000041",
+            (await context.OperationResults.AsNoTracking().SingleAsync(token)).ResultId);
+    }
+
     private static void AssertEndsTheReplay(string response, string requestLine)
     {
         using JsonDocument request = JsonDocument.Parse(requestLine);
