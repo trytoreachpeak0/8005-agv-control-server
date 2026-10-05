@@ -220,6 +220,8 @@ public sealed partial class RecoveryStateMachineG2Tests
         "fault cargo handoff",
         "result no longer awaited",
         "connected vehicle reports the attempt",
+        "connected vehicle reports the attempt as pending only",
+        "connected vehicle reports the attempt as unsettled only",
         "connected vehicle reports a pending result",
         "missing operator, reason and verification",
         "too long",
@@ -272,6 +274,18 @@ public sealed partial class RecoveryStateMachineG2Tests
                 case "connected vehicle reports the attempt":
                     // As seeded: the report names the attempt both as pending and as the unsettled one.
                     await StuckResumeAsync(context, peer);
+                    connected = SeededSessionGeneration;
+                    expected = [RecoverySessionAdministratorCloseCodes.ResultInFlightOnVehicle];
+                    break;
+                case "connected vehicle reports the attempt as pending only":
+                    await StuckResumeAsync(context, peer);
+                    await SetReportedPendingFactsAsync(context, attempts: [AttemptId], unsettled: null, results: []);
+                    connected = SeededSessionGeneration;
+                    expected = [RecoverySessionAdministratorCloseCodes.ResultInFlightOnVehicle];
+                    break;
+                case "connected vehicle reports the attempt as unsettled only":
+                    await StuckResumeAsync(context, peer);
+                    await SetReportedPendingFactsAsync(context, attempts: [], unsettled: AttemptId, results: []);
                     connected = SeededSessionGeneration;
                     expected = [RecoverySessionAdministratorCloseCodes.ResultInFlightOnVehicle];
                     break;
