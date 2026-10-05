@@ -328,6 +328,7 @@ public sealed partial class RecoveryStateMachineG2Tests
             Assert.Equal(operationBefore.Status, (await context.StationOperations.AsNoTracking().SingleAsync(token)).Status);
             JourneyRuntimeRow journeyAfter = await context.JourneyRuntimes.AsNoTracking().SingleAsync(token);
             Assert.Equal((journeyBefore.Stage, journeyBefore.BlockReasonCode), (journeyAfter.Stage, journeyAfter.BlockReasonCode));
+            Assert.Equal("CLOSED", (await context.ExceptionRecoverySessions.AsNoTracking().SingleAsync(token)).State);
         }
         finally
         {
@@ -366,6 +367,91 @@ public sealed partial class RecoveryStateMachineG2Tests
         Assert.Equal(
             "48100000-0000-4000-8000-000000000041",
             (await context.OperationResults.AsNoTracking().SingleAsync(token)).ResultId);
+    }
+
+    /// <summary>
+    /// A correction is not an ending: a successful correction result on a demand already delivered reconciles as it always
+    /// did (review of #489, S1). A correction on a demand already unloaded is an ordinary path
+    /// (Batch7StationYieldTests.AnOpenCorrectionOnADemandAlreadyUnloadedDoesNotHoldTheDeparture).
+    /// </summary>
+    [Fact]
+    [Trait("IntegrationSlice", "FP-IS-02")]
+    [Trait("ProtocolVector", "CV-LOAD-CORRECTION")]
+    public async Task ASuccessfulCorrectionResultOnADemandAlreadyDeliveredStillReconciles()
+    {
+        const string correctionId = "48100000-0000-4000-8000-000000000051";
+        CancellationToken token = TestContext.Current.CancellationToken;
+        await using SqliteConnection connection = new("Data Source=:memory:");
+        await connection.OpenAsync(token);
+        await using ControlServerDbContext context = await CreateContextAsync(connection);
+        await SeedCorrectableLoadAsync(context, JourneyRuntimeStage.AwaitingStationDeparture);
+        OnboardMessageProcessor processor = Processor(context, new RecordingPeer(context), CancellationProofVariable);
+        OnboardConnectionState state = CurrentState();
+        await processor.ProcessAsync(CorrectionRequest(correctionId), state, token);
+        Assert.Equal("LOAD_CORRECTION", (await context.RecoveryWorkflows.AsNoTracking().SingleAsync(token)).WorkflowType);
+        (await context.AcceptedDemands.SingleAsync(token)).Status = DemandExecutionStatus.Succeeded;
+        await context.SaveChangesAsync(token);
+        context.ChangeTracker.Clear();
+        string result = Envelope(
+            "48100000-0000-4000-8000-000000000052",
+            "LoadCorrectionResult",
+            new
+            {
+                correctionId,
+                demandId = DemandId,
+                slotOperationAttemptId = AttemptId,
+                overallOutcome = "COMPLETED",
+                slotResults = RecoverySlots.Select(slot => new
+                {
+                    slotNo = slot,
+                    outcome = "COMPLETED",
+                    finalPhysicalState = "OCCUPIED",
+                    lockState = "LOCKED",
+                    unlockOutputState = "RESET",
+                    reasonCodes = Array.Empty<string>()
+                }).ToArray(),
+                observedAt = Now.AddSeconds(4)
+            });
+
+        string response = await processor.ProcessAsync(result, state, token);
+
+        Assert.Equal("DurableAck", MessageType(response));
+        context.ChangeTracker.Clear();
+        Assert.Equal(RecoveryWorkflowState.Reconciled, (await context.RecoveryWorkflows.AsNoTracking().SingleAsync(token)).State);
+        Assert.Equal(DemandExecutionStatus.Succeeded, (await context.AcceptedDemands.AsNoTracking().SingleAsync(token)).Status);
+    }
+
+    /// <summary>
+    /// A workflow this server knows but opened for another vehicle is a known business id: refused with
+    /// BUSINESS_ID_CONTENT_CONFLICT and nothing kept, never acknowledged as unknown (review of #489, S2).
+    /// </summary>
+    [Fact]
+    [Trait("IntegrationSlice", "FP-IS-02")]
+    [Trait("IntegrationSlice", "FP-IS-06")]
+    public async Task ARecoveryResultNamingAnotherVehiclesWorkflowIsRefusedAndKeepsNothing()
+    {
+        const string cancellationId = "48100000-0000-4000-8000-000000000061";
+        CancellationToken token = TestContext.Current.CancellationToken;
+        await using SqliteConnection connection = new("Data Source=:memory:");
+        await connection.OpenAsync(token);
+        await using ControlServerDbContext context = await CreateContextAsync(connection);
+        await SeedCancellableLoadAsync(context);
+        OnboardMessageProcessor processor = Processor(context, new RecordingPeer(context), CancellationProofVariable);
+        OnboardConnectionState state = CurrentState();
+        Assert.Equal("AUTHORIZED", FirstPayload(await processor.ProcessAsync(
+            CancellationRequest(cancellationId), state, token)).GetProperty("decision").GetString());
+        (await context.RecoveryWorkflows.SingleAsync(token)).AgvId = "AGV-8005-02";
+        await context.SaveChangesAsync(token);
+        context.ChangeTracker.Clear();
+        string result = CancellationResult(cancellationId, "48100000-0000-4000-8000-000000000062", "EMPTY");
+
+        ProtocolProblemAssert.RefusedLine(
+            await processor.ProcessAsync(result, state, token), "BUSINESS_ID_CONTENT_CONFLICT", result);
+
+        context.ChangeTracker.Clear();
+        Assert.Empty(await context.RecoveryResultEvidence.AsNoTracking().ToArrayAsync(token));
+        RecoveryWorkflowRow workflow = await context.RecoveryWorkflows.AsNoTracking().SingleAsync(token);
+        Assert.Equal((RecoveryWorkflowState.AwaitingResult, (string?)null), (workflow.State, workflow.ResultMessageId));
     }
 
     private static void AssertEndsTheReplay(string response, string requestLine)
@@ -491,6 +577,18 @@ public sealed partial class RecoveryStateMachineG2Tests
             Assert.Equal(
                 (SessionReadiness.RecoveryRequired, WireToGateStore.SlotDoorRepairReleaseRequired),
                 (held.Readiness, held.ReasonCode));
+            // The hold goes out to the vehicle too: one business state outside the journey naming both held slots (review
+            // of #490, S3 -- the hold row alone, without this snapshot, left the vehicle showing no hold).
+            string holding = Assert.Single(
+                (await context.ProtocolOutbox.AsNoTracking()
+                    .Where(row => row.MessageType == "VehicleBusinessStateSnapshot").ToArrayAsync(token))
+                .Select(row => row.PayloadJson),
+                line => line.Contains("SLOT_DOOR_LOCK_UNPROVEN_AFTER_EMPTY", StringComparison.Ordinal));
+            JsonElement holdingSnapshot = PayloadOf(holding);
+            Assert.Equal("RECOVERY_REQUIRED", holdingSnapshot.GetProperty("readiness").GetString());
+            Assert.Equal(
+                ["SLOT_DOOR_LOCK_UNPROVEN_AFTER_EMPTY/SLOT/1", "SLOT_DOOR_LOCK_UNPROVEN_AFTER_EMPTY/SLOT/2"],
+                HoldFacts(holdingSnapshot));
 
             string sessionId = StableGuid(ReleaseRequestId, "exception-recovery-session");
             Assert.Equal("ExceptionRecoverySessionOpened",
