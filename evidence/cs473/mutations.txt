@@ -1,0 +1,29 @@
+== M1 FieldOps skips the lock: exit=1
+Failed!  - Failed:     1, Passed:    98, Skipped:     0, Total:    99, Duration: 59 s - ControlServer.Tests.dll (net8.0)
+  ControlServer.Tests.ControlServerDatabaseLockTests.AServerThatStartsBetweenTheProbeAndTheWriteMakesFieldOpsRefuse
+== M2 Host takes no lock: exit=1
+Failed!  - Failed:     3, Passed:    96, Skipped:     0, Total:    99, Duration: 2 m 16 s - ControlServer.Tests.dll (net8.0)
+  ControlServer.Tests.ControlServerDatabaseLockTests.ASecondServerOnTheSameDatabaseRefusesToStart
+  ControlServer.Tests.ControlServerDatabaseLockTests.AServerThatStartsBetweenTheProbeAndTheWriteMakesFieldOpsRefuse
+  ControlServer.Tests.ControlServerDatabaseLockTests.KillingTheHolderReleasesTheLock
+== M3 machine-wide lock file: exit=1
+Failed!  - Failed:     6, Passed:    93, Skipped:     0, Total:    99, Duration: 1 m 9 s - ControlServer.Tests.dll (net8.0)
+  ControlServer.Tests.ControlServerDatabaseLockTests.ADifferentDatabaseDirectoryIsNotBlocked
+  ControlServer.Tests.ControlServerDatabaseLockTests.KillingTheHolderReleasesTheLock
+  ControlServer.Tests.ControlServerDatabaseLockTests.TheLockIsTheFileNotItsSpelling
+  ControlServer.Tests.StationExclusivityFieldOpsTests.AMissingSiteVerificationIsARefusalNotAUsageError
+  ControlServer.Tests.StationExclusivityFieldOpsTests.ARefusedConnectionIsTheOneAnswerThatLetsTheDatabaseWriteThrough
+  ControlServer.Tests.StationExclusivityFieldOpsTests.WithTheServerStoppedTheVerbReleasesAgainstTheDatabaseWithoutARiotCrossCheck
+== M4 no wait at startup: exit=1
+Failed!  - Failed:     2, Passed:    97, Skipped:     0, Total:    99, Duration: 54 s - ControlServer.Tests.dll (net8.0)
+  ControlServer.Tests.ControlServerDatabaseLockTests.ASecondServerOnTheSameDatabaseRefusesToStart
+  ControlServer.Tests.ControlServerDatabaseLockTests.AServerStartWaitsOutAHolderThatLetsGoWithinTheWait
+== M5 import takes the lock too: exit=1
+Failed!  - Failed:     1, Passed:    98, Skipped:     0, Total:    99, Duration: 1 m 8 s - ControlServer.Tests.dll (net8.0)
+  ControlServer.Tests.ControlServerDatabaseLockTests.ThePackageCapacityImportStillRunsBesideALiveServer
+== M6 lock file existence instead of OS lock: exit=1
+Failed!  - Failed:     3, Passed:    96, Skipped:     0, Total:    99, Duration: 1 m 13 s - ControlServer.Tests.dll (net8.0)
+  ControlServer.Tests.ControlServerDatabaseLockTests.ADifferentDatabaseDirectoryIsNotBlocked
+  ControlServer.Tests.ControlServerDatabaseLockTests.AServerStartWaitsOutAHolderThatLetsGoWithinTheWait
+  ControlServer.Tests.ControlServerDatabaseLockTests.KillingTheHolderReleasesTheLock
+== restored build exit=0

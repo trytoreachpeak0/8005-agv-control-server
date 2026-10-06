@@ -185,6 +185,12 @@ builder.Services.AddPlanRevision();
 WebApplication app = builder.Build();
 app.UseSerilogRequestLogging();
 
+// control-server#473：数据库一碰之前先拿与库文件绑定的锁，进程活着就一直不放；另一个进程（另一个服务端实例、正在直接写库的
+// FieldOps）占着时等一小会儿，仍拿不到就拒绝启动。包容量导入按设计与运行中的服务端并行（control-server#87），不拿。
+using ControlServerDatabaseLock? databaseLock = PackageCapacityImportCommand.IsRequested(args)
+    ? null
+    : await DatabaseLockStartup.AcquireAsync(app.Services, ControlServerSqlite.DataSourceOf(connectionString), CancellationToken.None);
+
 await EnsureDatabaseAsync(app.Services);
 
 // control-server#388：只迁移建库就退出。多车部署在导入等待点之前起不来，首次部署要先有一个库给 FieldOps 离线导入。

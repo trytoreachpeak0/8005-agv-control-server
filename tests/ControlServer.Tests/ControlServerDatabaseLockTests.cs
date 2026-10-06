@@ -6,6 +6,7 @@ using System.Text;
 using System.Text.Json;
 using ControlServer.Application;
 using ControlServer.Domain;
+using ControlServer.Host.Runtime;
 using ControlServer.Infrastructure.Persistence;
 using Microsoft.Data.Sqlite;
 using Microsoft.EntityFrameworkCore;
@@ -54,6 +55,149 @@ public sealed class ControlServerDatabaseLockTests : IAsyncDisposable
         Assert.Equal((1, "DATABASE_IN_USE"), (exit, Outcome(output)));
         Assert.Contains(Path.GetDirectoryName(Path.GetFullPath(database))!, output.GetProperty("detail").GetString(), StringComparison.OrdinalIgnoreCase);
         await AssertNothingWrittenAsync(database);
+    }
+
+    /// <summary>
+    /// 票面第 2 条：锁绑的是库，不是机器。一个服务端在库目录 a 上跑着；FieldOps 对库目录 b 直接写库照常放行，另一个服务端在 b 上照常起来。
+    /// </summary>
+    [Fact]
+    public async Task ADifferentDatabaseDirectoryIsNotBlocked()
+    {
+        string a = await SeedAsync("a");
+        string b = await SeedAsync("b");
+        await StartHostAsync(a, FreePort());
+
+        (int exit, JsonElement output) = await RunFieldOpsAsync(
+            [], [.. ReleaseArguments(), "--database", b, "--probe-server", $"http://127.0.0.1:{FreePort()}/"]);
+        await StartHostAsync(b, FreePort());
+
+        Assert.Equal((0, "OK"), (exit, Outcome(output)));
+        await AssertReleasedAsync(b);
+        await AssertNothingWrittenAsync(a);
+    }
+
+    /// <summary>
+    /// 票面第 3 条：持有锁的服务端进程被杀（不是正常退出），锁随之释放，不留一把要手工删文件才能解开的锁。锁文件还在，照样拿得到。
+    /// </summary>
+    [Fact]
+    public async Task KillingTheHolderReleasesTheLock()
+    {
+        string database = await SeedAsync("a");
+        Process host = await StartHostAsync(database, FreePort());
+        using (ControlServerDatabaseLock? whileRunning = ControlServerDatabaseLock.TryAcquire(database))
+        {
+            Assert.Null(whileRunning);
+        }
+
+        host.Kill(entireProcessTree: true);
+        await host.WaitForExitAsync(Token);
+
+        Assert.True(File.Exists(ControlServerDatabaseLock.LockFileFor(database)));
+        using (ControlServerDatabaseLock? afterKill = ControlServerDatabaseLock.TryAcquire(database))
+        {
+            Assert.NotNull(afterKill);
+        }
+        (int exit, JsonElement output) = await RunFieldOpsAsync(
+            [], [.. ReleaseArguments(), "--database", database, "--probe-server", $"http://127.0.0.1:{FreePort()}/"]);
+        Assert.Equal((0, "OK"), (exit, Outcome(output)));
+        await AssertReleasedAsync(database);
+    }
+
+    /// <summary>
+    /// 票面第 5 条：同一个库上已经有一个服务端在跑，第二个（换了端口）等过 <see cref="DatabaseLockStartup.Wait"/> 仍拿不到锁，拒绝启动、
+    /// 退出码非 0，从不监听；输出里有理由码和被锁的库目录。第一个照常应答。
+    /// </summary>
+    [Fact]
+    public async Task ASecondServerOnTheSameDatabaseRefusesToStart()
+    {
+        string database = await SeedAsync("a");
+        int firstPort = FreePort();
+        await StartHostAsync(database, firstPort);
+        int secondPort = FreePort();
+
+        (int exit, string log, TimeSpan took) = await RunToExitAsync(HostStart(database, secondPort), TimeSpan.FromSeconds(90));
+
+        Assert.True(exit != 0, log);
+        Assert.Contains(DatabaseLockStartup.ReasonCode, log, StringComparison.Ordinal);
+        Assert.Contains(Path.GetDirectoryName(Path.GetFullPath(database))!, log, StringComparison.OrdinalIgnoreCase);
+        Assert.DoesNotContain("Now listening", log, StringComparison.Ordinal);
+        Assert.True(took >= DatabaseLockStartup.Wait, $"It refused after {took}, before waiting {DatabaseLockStartup.Wait}.");
+        using HttpClient client = new(new SocketsHttpHandler { UseProxy = false });
+        Assert.True((await client.GetAsync($"http://127.0.0.1:{firstPort}/health/live", Token)).IsSuccessStatusCode);
+    }
+
+    /// <summary>
+    /// 重启不能因为锁变脆：上一个持有者（服务管理器报「已停止」后还在收尾的进程、一次 FieldOps 写库）几秒后放手，新起的服务端等到它，
+    /// 照常起来，而不是拒绝启动。
+    /// </summary>
+    [Fact]
+    public async Task AServerStartWaitsOutAHolderThatLetsGoWithinTheWait()
+    {
+        string database = await SeedAsync("a");
+        ControlServerDatabaseLock briefly = ControlServerDatabaseLock.TryAcquire(database)!;
+        Assert.NotNull(briefly);
+        _ = Task.Run(async () =>
+        {
+            await Task.Delay(TimeSpan.FromSeconds(3));
+            briefly.Dispose();
+        }, Token);
+
+        await StartHostAsync(database, FreePort());
+
+        using ControlServerDatabaseLock? whileRunning = ControlServerDatabaseLock.TryAcquire(database);
+        Assert.Null(whileRunning);
+    }
+
+    /// <summary>
+    /// 包容量导入（<c>--import-package-capacity</c>）按设计在服务端运行时对同一个库执行（control-server#87），它不拿锁，照常导入。
+    /// </summary>
+    [Fact]
+    public async Task ThePackageCapacityImportStillRunsBesideALiveServer()
+    {
+        string database = await SeedAsync("a");
+        await StartHostAsync(database, FreePort());
+        string csv = Path.Combine(_root, "package-capacity.csv");
+        await File.WriteAllLinesAsync(
+            csv,
+            ["pattern,match_type,max_boxes_per_basket,source,status,note", "PKG-473,exact,4,cs473-test,active,beside a live server"],
+            Token);
+        ProcessStartInfo import = HostStart(database, FreePort());
+        foreach (string argument in new[] { "--import-package-capacity", "--input", csv, "--version", "1" })
+        {
+            import.ArgumentList.Add(argument);
+        }
+
+        (int exit, string log, _) = await RunToExitAsync(import, TimeSpan.FromSeconds(120));
+
+        Assert.True(exit == 0, log);
+        Assert.Contains("Package capacity import complete", log, StringComparison.Ordinal);
+    }
+
+    /// <summary>
+    /// 锁的身份是文件本身，不是路径字符串：同一个库换一种写法（多一段 <c>.</c>、大小写不同）照样被挡；同一进程里第二次也拿不到；
+    /// 旁边另一个库不受影响。
+    /// </summary>
+    [Fact]
+    public void TheLockIsTheFileNotItsSpelling()
+    {
+        string directory = Path.Combine(_root, "spelling");
+        Directory.CreateDirectory(directory);
+        string database = Path.Combine(directory, "controlserver.db");
+
+        using ControlServerDatabaseLock? first = ControlServerDatabaseLock.TryAcquire(database);
+        using ControlServerDatabaseLock? again = ControlServerDatabaseLock.TryAcquire(database);
+        using ControlServerDatabaseLock? dotted = ControlServerDatabaseLock.TryAcquire(Path.Combine(directory, ".", "controlserver.db"));
+        using ControlServerDatabaseLock? upper = ControlServerDatabaseLock.TryAcquire(Path.Combine(directory, "CONTROLSERVER.DB"));
+        using ControlServerDatabaseLock? neighbour = ControlServerDatabaseLock.TryAcquire(Path.Combine(directory, "other.db"));
+
+        Assert.NotNull(first);
+        Assert.Null(again);
+        Assert.Null(dotted);
+        if (OperatingSystem.IsWindows())
+        {
+            Assert.Null(upper);
+        }
+        Assert.NotNull(neighbour);
     }
 
     public async ValueTask DisposeAsync()
@@ -213,6 +357,27 @@ public sealed class ControlServerDatabaseLockTests : IAsyncDisposable
         }
         Assert.Fail($"The host on {database} did not come up (exited: {host.HasExited}).{Environment.NewLine}{text}");
         return host;
+    }
+
+    private static async Task<(int ExitCode, string Log, TimeSpan Took)> RunToExitAsync(ProcessStartInfo start, TimeSpan limit)
+    {
+        Stopwatch clock = Stopwatch.StartNew();
+        using Process process = Process.Start(start)!;
+        Task<string> stdout = process.StandardOutput.ReadToEndAsync(Token);
+        Task<string> stderr = process.StandardError.ReadToEndAsync(Token);
+        using CancellationTokenSource bounded = CancellationTokenSource.CreateLinkedTokenSource(Token);
+        bounded.CancelAfter(limit);
+        try
+        {
+            await process.WaitForExitAsync(bounded.Token);
+        }
+        catch (OperationCanceledException)
+        {
+            process.Kill(entireProcessTree: true);
+            throw;
+        }
+        TimeSpan took = clock.Elapsed;
+        return (process.ExitCode, await stdout + await stderr, took);
     }
 
     private static async Task StopAsync(Process process)
