@@ -4708,16 +4708,20 @@ public sealed partial class JourneyRuntimeEngine(
         LogYieldedToJourneyCommit(logger, runtime.AgvId, runtime.JourneyId, conflicting, null);
     }
 
-    /// <summary>一台车推进之前被跟踪的每一个条目：它的状态与此刻的值。</summary>
-    private sealed class TrackedBeforeAdvance
+    /// <summary>一台车推进之前被跟踪的每一个条目：它的状态、此刻的值与原始值（原始值是库里的样子，保存时的并发条件按它写）。</summary>
+    internal sealed class TrackedBeforeAdvance
     {
-        private readonly List<(EntityEntry Entry, EntityState State, PropertyValues Values)> entries;
+        private readonly List<(EntityEntry Entry, EntityState State, PropertyValues Values, PropertyValues Originals)> entries;
 
-        private TrackedBeforeAdvance(List<(EntityEntry Entry, EntityState State, PropertyValues Values)> entries) =>
+        private TrackedBeforeAdvance(
+            List<(EntityEntry Entry, EntityState State, PropertyValues Values, PropertyValues Originals)> entries) =>
             this.entries = entries;
 
         public static TrackedBeforeAdvance Take(ControlServerDbContext context) =>
-            new([.. context.ChangeTracker.Entries().Select(entry => (entry, entry.State, entry.CurrentValues.Clone()))]);
+            new([
+                .. context.ChangeTracker.Entries()
+                    .Select(entry => (entry, entry.State, entry.CurrentValues.Clone(), entry.OriginalValues.Clone()))
+            ]);
 
         public void Restore(ControlServerDbContext context)
         {
@@ -4729,7 +4733,7 @@ public sealed partial class JourneyRuntimeEngine(
                     entry.State = EntityState.Detached;
                 }
             }
-            foreach ((EntityEntry entry, EntityState state, PropertyValues values) in entries)
+            foreach ((EntityEntry entry, EntityState state, PropertyValues values, _) in entries)
             {
                 if (entry.State is EntityState.Added or EntityState.Modified or EntityState.Deleted)
                 {
@@ -4758,8 +4762,10 @@ public sealed partial class JourneyRuntimeEngine(
         /// whether or not anything about it looks changed: the database is the only thing that knows whether a save of it
         /// committed, and comparing values would miss exactly the entry that was saved and then rolled back. One the database
         /// no longer has comes out Detached. An entry that already carried a change before the advance -- an earlier step's
-        /// change left for a later save on purpose -- goes back to how it was, as in <see cref="Restore"/>; reading it again
-        /// would discard that change.
+        /// change left for a later save on purpose -- goes back to how it was, values, original values and state, so that the
+        /// step it was left for saves it as it would have; reading it again would discard that change. That holds when the
+        /// failing advance saved it along with its own changes inside the transaction that rolled back, too: it is Unchanged
+        /// then, and goes back to its change all the same.
         /// </para>
         /// <para>
         /// An entry that cannot be read again is let go rather than left as it is: its vehicle then sits out this round on the
@@ -4776,12 +4782,17 @@ public sealed partial class JourneyRuntimeEngine(
                     entry.State = EntityState.Detached;
                 }
             }
-            foreach ((EntityEntry entry, EntityState state, PropertyValues values) in entries)
+            foreach ((EntityEntry entry, EntityState state, PropertyValues values, PropertyValues originals) in entries)
             {
                 if (state is EntityState.Added or EntityState.Modified or EntityState.Deleted)
                 {
-                    if (entry.State is EntityState.Added or EntityState.Modified or EntityState.Deleted)
+                    // Saved together with the failing advance and rolled back, such an entry is Unchanged now, with
+                    // original values the database does not have; so the originals go back too, or its own save's
+                    // concurrency check (a journey row's Version) would be written against a version that never landed.
+                    if (entry.State != EntityState.Detached &&
+                        (entry.State != state || entry.State is EntityState.Added or EntityState.Modified or EntityState.Deleted))
                     {
+                        entry.OriginalValues.SetValues(originals);
                         entry.CurrentValues.SetValues(values);
                         entry.State = state;
                     }

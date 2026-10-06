@@ -157,6 +157,51 @@ public sealed partial class MultiVehicleExecutionTests
             row => row.DemandId == PhantomDemandId, TestContext.Current.CancellationToken));
     }
 
+    /// <summary>
+    /// A change an earlier step left on another vehicle's row for a later save, which the failing vehicle saved along with its
+    /// own inside a transaction that rolled back, goes back to being that change -- its values, its original values and
+    /// Modified -- and the save it was left for writes it, against the version the database really has.
+    /// </summary>
+    /// <remarks>
+    /// Driven on the withdrawal itself rather than through a round: no advance today ends with a change left unsaved (every one
+    /// saves before it is done, and the round's own hooks only run inside an advance), so a round cannot hand the next vehicle
+    /// such an entry. Tried both ways through the RIoT double while writing this; the premise asserted below failed each time.
+    /// </remarks>
+    [Fact]
+    public async Task AChangeLeftForALaterSaveThatTheFailingVehicleSavedAndRolledBackGoesBackToBeingThatChange()
+    {
+        await using FleetFixture fixture = await FleetFixture.CreateAsync();
+        await fixture.Engine.ExecuteOnceAsync(TestContext.Current.CancellationToken);
+        ControlServerDbContext context = fixture.Context;
+        context.ChangeTracker.Clear();
+        string other = FleetFixture.AgvIds[2];
+        JourneyRuntimeRow row = await context.JourneyRuntimes
+            .SingleAsync(journey => journey.AgvId == other, TestContext.Current.CancellationToken);
+        long versionInDatabase = row.Version;
+        row.SetBlockReason(StagedReason, fixture.Clock.GetUtcNow());
+        EntityEntry<JourneyRuntimeRow> entry = context.Entry(row);
+        Assert.Equal(EntityState.Modified, entry.State);
+        JourneyRuntimeEngine.TrackedBeforeAdvance before = JourneyRuntimeEngine.TrackedBeforeAdvance.Take(context);
+
+        await using (IDbContextTransaction transaction = await context.Database
+                         .BeginTransactionAsync(TestContext.Current.CancellationToken))
+        {
+            await context.SaveChangesAsync(TestContext.Current.CancellationToken);
+        }
+        // The premise: saved and rolled back, it reads as in step with the database, at a version the database never got.
+        Assert.Equal((EntityState.Unchanged, versionInDatabase + 1), (entry.State, entry.Property(journey => journey.Version).OriginalValue));
+
+        await before.RestoreAsync(context, TestContext.Current.CancellationToken);
+
+        Assert.Equal(EntityState.Modified, entry.State);
+        Assert.Equal(StagedReason, row.BlockReasonCode);
+        Assert.Equal(versionInDatabase, entry.Property(journey => journey.Version).OriginalValue);
+        await context.SaveChangesAsync(TestContext.Current.CancellationToken);
+        context.ChangeTracker.Clear();
+        JourneyRuntimeRow saved = await fixture.JourneyOfAsync(other);
+        Assert.Equal((StagedReason, versionInDatabase + 1), (saved.BlockReasonCode, saved.Version));
+    }
+
     private const string StagedReason = "CS487_STAGED_BY_ANOTHER_VEHICLE";
 
     private const string PhantomDemandId = "cs487-phantom-demand";
