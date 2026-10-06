@@ -1286,7 +1286,7 @@ public sealed partial class JourneyRuntimeEngine(
                 // 没有「正在装的」有两种来历，只有一种是缺陷（批次7-07，control-server#212 查出）。装货落定要保存两次：先把这一条
                 // 记成 LOADED、结算命令（下面重新加载游标要读到它），再在离站或下一条的那一次保存里把阶段前移。崩在两次之间，
                 // 重启后读到的就是「阶段还是 AwaitingLoadResult、这一站没有 LOADING、刚装的那条已是 LOADED」——此前这里一律抛，
-                // 而推进段没有逐车隔离，于是每一轮都在这里整轮中止，车队里每辆车都不再推进。这一种按落库的状态续上，走与刚落定时
+                // 而推进段当时没有逐车隔离，于是每一轮都在这里整轮中止，车队里每辆车都不再推进（cs#487 起逐车隔离，今天只停这一辆）。这一种按落库的状态续上，走与刚落定时
                 // 同一段后续；这一站连一条 LOADED 都没有，才是这台服务器自己的不变量被破坏了，照旧抛。
                 JourneyStopDemand? loading = stops.LoadingAtCurrentStop;
                 bool resumingAfterCommit = loading is null;
@@ -1674,7 +1674,8 @@ public sealed partial class JourneyRuntimeEngine(
                     // 下一轮按一个库里根本不存在的 UpperId 调 SingleAsync，抛 InvalidOperationException，
                     // 冒到 JourneyRuntimeWorker 的<b>整轮</b> catch（记 Error 级事件 2002 LogIterationFailed），
                     // 于是<b>这一轮整个中止</b>：推进循环里排在后面的车不再推进，派车轮次也不跑。每一轮重复。
-                    // （推进段<b>没有</b>逐车隔离——那是派车轮次才有的，事件 2123 属于 DispatchRoundRunner。）
+                    // （那是当时的后果：推进段当时没有逐车隔离。cs#487 起推进段逐车隔离，同样的异常今天只让这一辆车每轮抛、
+                    // 永不前进，别的车照常推进，异常在轮末重抛。）
                     // 判据是 LeavingAnUnloadStopAuthorisesTheLegToTheNextStop：它断订单意图在不在，
                     // 不断「推进没抛」——那个异常在测试这一侧什么都看不到。
                     //
@@ -5461,6 +5462,19 @@ public sealed partial class JourneyRuntimeEngine(
             await new PickupStopTermination(dbContext).StageAsync(
                 runtime, stops.CurrentSublotRequestMessageId(runtime.WorklistRevision), loading.Demand.DemandId, terminalReason, now,
                 cancellationToken).ConfigureAwait(false);
+            // 旅程还带着别的需求、没有收尾时，阶段要离开等装货结果（control-server#291 的 S2）：这一条已经终结，这一站再没有在装的，
+            // 留在这里下一轮每轮抛 "no demand loading at its stop"，车带着更早装上的货永远不走。与站点期限结束停靠
+            // （TryEndStopAtStationDeadlineAsync）同一个出口：本站没有待装的就交给离站那一段，由它决定持货等单还是离站；
+            // 还有待装的就回到等录入——期限已过，那里的期限出口会照它自己的条件（门、在线、取消）结束本站。与终结同一次保存。
+            if (runtime.Stage != JourneyRuntimeStage.Completed)
+            {
+                bool othersToLoadHere = stops.OutstandingAtCurrentStop
+                    .Any(item => item.Demand.DemandId != loading.Demand.DemandId);
+                SetStage(
+                    runtime,
+                    othersToLoadHere ? JourneyRuntimeStage.AwaitingSublot : JourneyRuntimeStage.AwaitingStationDeparture,
+                    now);
+            }
             await dbContext.SaveChangesAsync(cancellationToken).ConfigureAwait(false);
             await transaction.CommitAsync(cancellationToken).ConfigureAwait(false);
         }
