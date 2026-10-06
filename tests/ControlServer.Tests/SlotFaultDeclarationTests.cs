@@ -757,6 +757,54 @@ public sealed class SlotFaultDeclarationTests
     }
 
     /// <summary>
+    /// The give-up as onboard-hmi#266 sends it: the moment its answer is refused, the vehicle refuses the command it has at
+    /// hand, in the same session, without waiting for a reconnect to replay it. The refusal of the answer kept nothing, so
+    /// the declaration is still pending when the command's refusal arrives; it becomes <c>UNRECONCILED</c>, its command is
+    /// settled, and the next reconnect does not replay it.
+    /// </summary>
+    [Theory]
+    [Trait("IntegrationSlice", "FP-IS-07")]
+    [InlineData("attempt-mismatch")]
+    [InlineData("message-id-conflict")]
+    public async Task ARefusalOfTheCommandInTheSameSessionAsTheRefusedAnswerClosesTheDeclaration(string refusedBy)
+    {
+        await using Fixture fixture = await Fixture.AwaitingOperatorOnSlotOneAsync();
+        SlotFaultDeclarationRow declaration = await fixture.DeclareAsync();
+        long? generation = fixture.State.SessionGeneration;
+        string picture = await fixture.BusinessPictureAsync();
+        string messageId = Guid.NewGuid().ToString("D");
+        if (refusedBy == "attempt-mismatch")
+        {
+            AssertRefused(
+                await fixture.SendResultAsync(
+                    declaration.DeclarationId, "20000000-0000-4000-8000-00000000ffff", "APPLIED", messageId: messageId),
+                messageId,
+                ServerReasonCodes.BusinessIdContentConflict);
+        }
+        else
+        {
+            await fixture.SendResultAsync(Guid.NewGuid().ToString("D"), AttemptId, "APPLIED", messageId: messageId);
+            AssertRefused(
+                await fixture.SendResultAsync(declaration.DeclarationId, AttemptId, "APPLIED", messageId: messageId),
+                messageId,
+                ServerReasonCodes.MessageIdContentConflict);
+        }
+        Assert.Equal(SlotFaultDeclarationStates.Pending, Assert.Single(await fixture.DeclarationsAsync()).State);
+        Assert.Null(Assert.Single(await fixture.CommandsAsync()).AcknowledgedAt);
+
+        string answer = await fixture.RefuseCommandAsync(declaration.CommandMessageId, ServerReasonCodes.SlotOperationConflict);
+
+        Assert.Equal(generation, fixture.State.SessionGeneration);
+        Assert.Empty(Lines(answer));
+        Assert.Equal(SlotFaultDeclarationStates.Unreconciled, Assert.Single(await fixture.DeclarationsAsync()).State);
+        Assert.Equal(Now, Assert.Single(await fixture.CommandsAsync()).AcknowledgedAt);
+        Assert.Equal(picture, await fixture.BusinessPictureAsync());
+        fixture.Peer.Lines.Clear();
+        await fixture.ReconnectAsync();
+        Assert.DoesNotContain(fixture.Peer.Lines, line => MessageType(line) == "SlotFaultDeclarationCommand");
+    }
+
+    /// <summary>
     /// The way out of an <c>UNRECONCILED</c> declaration, on the wire only (control-server#481): declared again, the vehicle
     /// -- which journals a declaration only when it applies it -- judges the new one afresh; with the slot still waiting it
     /// applies it, stops the operation and reports the slot <c>UNKNOWN</c>, and the operation goes to recovery as after any
