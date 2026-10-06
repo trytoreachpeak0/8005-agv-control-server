@@ -825,10 +825,14 @@ public sealed class OnboardRecoveryCoordinator(
         // load, no deadline ending it, no settling a determinate failure -- on a journey that is not Blocked and so cannot
         // reach a forced recovery. The declaration row is written before its command goes out, so judging by the row closes
         // the race whichever message the vehicle sees first. One the vehicle refused (NOT_APPLICABLE) withdrew itself and
-        // holds nothing back.
+        // holds nothing back. One whose answer the vehicle gave up (UNRECONCILED, control-server#481) may have been applied,
+        // and nothing will say so any more, so it holds back as an applied one does; the operation still ends through its
+        // OperationResult. A later declaration answered NOT_APPLICABLE does not lift it: the vehicle refuses a second
+        // declaration on an attempt it applied the first one to, so that answer may mean exactly that.
         bool declared = await dbContext.Set<SlotFaultDeclarationRow>().AsNoTracking().AnyAsync(
             row => row.SlotOperationAttemptId == attemptId &&
-                   (row.State == SlotFaultDeclarationStates.Pending || row.State == SlotFaultDeclarationStates.Applied),
+                   (row.State == SlotFaultDeclarationStates.Pending || row.State == SlotFaultDeclarationStates.Applied ||
+                    row.State == SlotFaultDeclarationStates.Unreconciled),
             cancellationToken).ConfigureAwait(false);
         bool authorized = !declared &&
                           demand is not null && demand.Status == DemandExecutionStatus.Accepted && sameVehicle &&

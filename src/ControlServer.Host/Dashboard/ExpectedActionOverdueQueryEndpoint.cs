@@ -208,7 +208,10 @@ internal sealed class ExpectedActionOverdueQueryEndpoint : IDashboardQueryEndpoi
                 faultCategory = latest.FaultCategory,
                 resultReceivedAt = latest.ResultReceivedAt,
                 reasonCode,
-                displayMessage
+                displayMessage,
+                // 这次装卸上有没有车载端放弃了应答的判定（control-server#481）。有的话装货取消一直被挡，而行上只显示最近一次
+                // 判定：之后再判、车回 NOT_APPLICABLE 时，那一格也要说出这件事。按整次装卸算，因为取消挡的是整次装卸。
+                unreconciledOnOperation = rows.Any(row => row.State == SlotFaultDeclarationStates.Unreconciled)
             };
         }
     }

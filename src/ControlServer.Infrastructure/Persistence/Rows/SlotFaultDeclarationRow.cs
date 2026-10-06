@@ -70,13 +70,17 @@ public sealed class SlotFaultDeclarationRow
     /// <summary><c>APPLIED</c> or <c>NOT_APPLICABLE</c>, as the vehicle reported it.</summary>
     public string? ResultOutcome { get; set; }
 
-    /// <summary>The vehicle's <c>problem</c> when it refused the declaration; null otherwise.</summary>
+    /// <summary>
+    /// The vehicle's <c>problem</c> when it refused the declaration; for an <see cref="SlotFaultDeclarationStates.Unreconciled"/>
+    /// one, the problem of the <c>ProtocolProblem</c> it refused the replayed command with (and <see cref="ResultMessageId"/>
+    /// is that message, <see cref="ResultOutcome"/> null); null otherwise.
+    /// </summary>
     public string? ResultProblemJson { get; set; }
 
     public DateTimeOffset? ResultReceivedAt { get; set; }
 }
 
-/// <summary>The three states of a <see cref="SlotFaultDeclarationRow"/>.</summary>
+/// <summary>The four states of a <see cref="SlotFaultDeclarationRow"/>.</summary>
 public static class SlotFaultDeclarationStates
 {
     /// <summary>Persisted and queued for the vehicle; the vehicle has not answered.</summary>
@@ -87,4 +91,11 @@ public static class SlotFaultDeclarationStates
 
     /// <summary>The vehicle refused it: the slot had closed, was already <c>UNKNOWN</c>, or the attempt had changed.</summary>
     public const string NotApplicable = "NOT_APPLICABLE";
+
+    /// <summary>
+    /// The vehicle gave its answer up (control-server#481): the server refused that answer for good, and the vehicle refused
+    /// the replayed command with <c>SLOT_OPERATION_CONFLICT</c>. Nobody knows what the vehicle made of the declaration, so it
+    /// is held to what an applied one holds back (a load cancellation of the attempt), and the attempt can be declared again.
+    /// </summary>
+    public const string Unreconciled = "UNRECONCILED";
 }

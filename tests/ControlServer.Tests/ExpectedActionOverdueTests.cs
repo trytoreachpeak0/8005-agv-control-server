@@ -602,6 +602,120 @@ public sealed class ExpectedActionOverdueTests
     }
 
     /// <summary>
+    /// 车载端放弃了对判定的应答（control-server#481，UNRECONCILED）：卡片如实说两端结论不一致、车上是否生效未知，
+    /// 说明这次装卸不能再取消，并给出再判的链接；不落进「判定状态 X」的兜底说法。
+    /// </summary>
+    [Fact]
+    [Trait("IntegrationSlice", "FP-IS-15")]
+    public void AnUnreconciledDeclarationSaysTheTwoEndsDisagreeAndOffersToDeclareAgain()
+    {
+        using JsonDocument fact = JsonDocument.Parse("""
+            {
+              "thresholdSeconds": 360,
+              "unavailableVehicles": [],
+              "slots": [
+                { "agvId": "AGV-001", "slotNo": 3, "stationId": "PICKUP-1", "operationType": "LOAD", "expectedAction": "关好3号仓门",
+                  "raisedAt": "2026-09-18T07:58:00+00:00", "waitedSeconds": 480, "stationTimeoutDoorNotClosed": false,
+                  "readings": null,
+                  "declaration": { "state": "UNRECONCILED", "declaredAt": "2026-09-18T07:59:10+00:00", "administratorId": "maintenance-7",
+                                   "faultCategory": "LOCK", "resultReceivedAt": "2026-09-18T08:01:12+00:00",
+                                   "reasonCode": "SLOT_OPERATION_CONFLICT", "displayMessage": "本车已放弃对这项判定的应答" } }
+              ]
+            }
+            """);
+
+        string html = new ExpectedActionOverdueCard().RenderFact(fact.RootElement);
+        string text = System.Net.WebUtility.HtmlDecode(html);
+
+        Assert.Contains("车载端已放弃对判定的应答", text, StringComparison.Ordinal);
+        Assert.Contains("车上是否已生效未知", text, StringComparison.Ordinal);
+        Assert.Contains("这次装卸不能再取消", text, StringComparison.Ordinal);
+        Assert.Contains("href=\"/actions/slot-fault-declaration?agvId=AGV-001&amp;slotNo=3\">再判</a>", html, StringComparison.Ordinal);
+        Assert.DoesNotContain("判定状态", text, StringComparison.Ordinal);
+    }
+
+    /// <summary>
+    /// 放弃之后再判、车回 NOT_APPLICABLE（control-server#481 审查 S3）：行上显示的是最近这次拒绝，但装货取消仍被之前那项
+    /// 挡着，拒绝那一格要带上「这次装卸不能再取消」；这次装卸上没有被放弃的判定时不带。
+    /// </summary>
+    [Theory]
+    [Trait("IntegrationSlice", "FP-IS-15")]
+    [InlineData(true)]
+    [InlineData(false)]
+    public void ARefusalAfterAnUnreconciledDeclarationStillSaysTheOperationCannotBeCancelled(bool unreconciledOnOperation)
+    {
+        string flag = unreconciledOnOperation ? "true" : "false";
+        using JsonDocument fact = JsonDocument.Parse($$"""
+            {
+              "thresholdSeconds": 360,
+              "unavailableVehicles": [],
+              "slots": [
+                { "agvId": "AGV-001", "slotNo": 3, "stationId": "PICKUP-1", "operationType": "LOAD", "expectedAction": "关好3号仓门",
+                  "raisedAt": "2026-09-18T07:58:00+00:00", "waitedSeconds": 480, "stationTimeoutDoorNotClosed": false,
+                  "readings": null,
+                  "declaration": { "state": "NOT_APPLICABLE", "declaredAt": "2026-09-18T08:02:10+00:00", "administratorId": "maintenance-7",
+                                   "faultCategory": "LOCK", "resultReceivedAt": "2026-09-18T08:02:12+00:00",
+                                   "reasonCode": "ACTION_NOT_ALLOWED_IN_STATE", "displayMessage": "本次仓位操作已有一项判定生效。",
+                                   "unreconciledOnOperation": {{flag}} } }
+              ]
+            }
+            """);
+
+        string text = System.Net.WebUtility.HtmlDecode(new ExpectedActionOverdueCard().RenderFact(fact.RootElement));
+
+        Assert.Contains("车载端拒绝了判定", text, StringComparison.Ordinal);
+        Assert.Equal(unreconciledOnOperation, text.Contains("这次装卸不能再取消", StringComparison.Ordinal));
+        Assert.Equal(unreconciledOnOperation, text.Contains("车载端已放弃应答", StringComparison.Ordinal));
+    }
+
+    /// <summary>
+    /// 数据面按整次装卸带出有没有被放弃的判定（control-server#481 审查 S3）：最近一次是 NOT_APPLICABLE、之前那项是
+    /// UNRECONCILED 时为 true，哪怕两项不在同一个仓；别的装卸上的被放弃判定不算。
+    /// </summary>
+    [Fact]
+    [Trait("IntegrationSlice", "FP-IS-15")]
+    public async Task TheEndpointSaysWhetherTheOperationHasAnUnreconciledDeclaration()
+    {
+        await using Fixture fixture = await Fixture.CreateAsync();
+        await fixture.ReachReadyAsync();
+        await fixture.AddJourneyAsync(JourneyRuntimeStage.AwaitingLoadResult, blockReasonCode: null);
+        await fixture.SendAlarmsAsync(1, Overdue(3, "关好3号仓门", raisedAt: Now.AddMinutes(-2)));
+        const string Current = "load-attempt-D-142";
+        fixture.Context.StationOperations.Add(new StationOperationRow
+        {
+            SlotOperationAttemptId = Current,
+            DemandId = "D-142",
+            SublotId = "SUBLOT-142",
+            TargetSlotsJson = "[3,4]",
+            OperationType = SlotOperationType.Load,
+            ForcedRecoveryGeneration = 0,
+            ContentHash = new string('a', 64),
+            Status = StationOperationStatus.Prepared,
+            CreatedAt = Now.AddMinutes(-4)
+        });
+        fixture.Context.Set<SlotFaultDeclarationRow>().AddRange(
+            Declaration("other-attempt", 3, SlotFaultDeclarationStates.Unreconciled, Now.AddSeconds(-100)),
+            Declaration(Current, 3, SlotFaultDeclarationStates.NotApplicable, Now.AddSeconds(-30),
+                """{"reasonCode":"ACTION_NOT_ALLOWED_IN_STATE","fieldPath":"payload.slotNo","displayMessage":"本次仓位操作已有一项判定生效。"}"""));
+        await fixture.Context.SaveChangesAsync(TestContext.Current.CancellationToken);
+        fixture.Context.ChangeTracker.Clear();
+
+        using JsonDocument before = await fixture.ReadEndpointAsync();
+        Assert.False(Assert.Single(before.RootElement.GetProperty("slots").EnumerateArray())
+            .GetProperty("declaration").GetProperty("unreconciledOnOperation").GetBoolean());
+
+        fixture.Context.Set<SlotFaultDeclarationRow>().Add(
+            Declaration(Current, 4, SlotFaultDeclarationStates.Unreconciled, Now.AddSeconds(-90)));
+        await fixture.Context.SaveChangesAsync(TestContext.Current.CancellationToken);
+        fixture.Context.ChangeTracker.Clear();
+
+        using JsonDocument after = await fixture.ReadEndpointAsync();
+        JsonElement declaration = Assert.Single(after.RootElement.GetProperty("slots").EnumerateArray()).GetProperty("declaration");
+        Assert.Equal("NOT_APPLICABLE", declaration.GetProperty("state").GetString());
+        Assert.True(declaration.GetProperty("unreconciledOnOperation").GetBoolean());
+    }
+
+    /// <summary>
     /// 数据面带出的是这个仓在当前装卸上最近的一次判定，取自判定记录：别的装卸上的判定、别的仓的判定都不替这一行说话；
     /// 车载端拒绝时它给的原因照原样带出。
     /// </summary>
