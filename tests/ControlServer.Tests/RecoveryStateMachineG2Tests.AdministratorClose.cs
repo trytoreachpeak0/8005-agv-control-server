@@ -217,7 +217,7 @@ public sealed partial class RecoveryStateMachineG2Tests
         "another session named",
         "vehicle without an open session",
         "session open",
-        "fault cargo handoff",
+        "action outside the table",
         "result no longer awaited",
         "connected vehicle reports the attempt",
         "connected vehicle reports the attempt as pending only",
@@ -231,8 +231,8 @@ public sealed partial class RecoveryStateMachineG2Tests
 
     /// <summary>
     /// Every unmet premise refuses with its code, writes nothing but the failed audit record, and sends the vehicle nothing:
-    /// the session, its workflows, the business and the outbox are as they were. Only a resume is closable (the coordinator's
-    /// decision of 2026-10-05). A connected vehicle whose latest RecoveryStateReport still names the resume's attempt, or any
+    /// the session, its workflows, the business and the outbox are as they were. Only the actions in the closable table are
+    /// closable (a resume since 2026-10-05, the other three since #484). A connected vehicle whose latest RecoveryStateReport still names the resume's attempt, or any
     /// pending result -- whose messageId does not say which attempt it settles -- may yet deliver the result, so it is not
     /// closed (review S1). Nor is a vehicle in its handshake, whose SessionHello has cleared the facts on file while it is
     /// about to replay its results, or one connected at another session generation than the facts on file (incremental
@@ -264,8 +264,14 @@ public sealed partial class RecoveryStateMachineG2Tests
                     await OpenSessionAfterFailedResultAsync(context, peer, action: null);
                     expected = [RecoverySessionAdministratorCloseCodes.SessionNotExecuting];
                     break;
-                case "fault cargo handoff":
+                case "action outside the table":
+                    // Every action a session can select is in the table since #484; an action outside it is made by hand to
+                    // pin the check that keeps the table the one place that decides.
                     await OpenSessionAfterFailedResultAsync(context, peer, action: "FAULT_CARGO_HANDOFF");
+                    ExceptionRecoverySessionRow unlisted = await context.ExceptionRecoverySessions.SingleAsync(token);
+                    unlisted.SelectedAction = "LOAD_CORRECTION";
+                    await context.SaveChangesAsync(token);
+                    context.ChangeTracker.Clear();
                     expected = [RecoverySessionAdministratorCloseCodes.ActionNotClosable];
                     break;
                 case "result no longer awaited":
