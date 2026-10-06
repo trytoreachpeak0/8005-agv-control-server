@@ -304,6 +304,66 @@ function Update-ParallelInstanceConfigurationFile {
     return $verify
 }
 
+function Set-ParallelInstanceConfigurationFlag {
+    <#
+        .SYNOPSIS
+            Sets <Section>.enabled to $Value in the installed appsettings.Production.json, and nothing
+            else. Returns the value it replaced.
+
+        .DESCRIPTION
+            control-server#454 wrote this for JourneyRuntime; control-server#472 made the section a
+            parameter so that the dispatch gate script writes RiotCreateDispatch the same way. The
+            section is found ignoring case, as both .NET configuration and the upgrade script's
+            ConvertFrom-Json read it, and it must exist exactly once. Two read-backs:
+
+              * the flag, the way the upgrade script reads it (ConvertFrom-Json, properties ignoring
+                case), must be the boolean that was written;
+              * everything else must be what was read before the write, value for value. That is the
+                check that the file was written as UTF-8 and the Chinese agvId survived: a writer that
+                re-encodes it (Notepad's "Save As", a code page) reads back as different text.
+
+        .PARAMETER Writer
+            Test seam, as for Update-ParallelInstanceConfigurationFile.
+    #>
+    [CmdletBinding()]
+    param(
+        [Parameter(Mandatory = $true)][string] $Path,
+        [Parameter(Mandatory = $true)][string] $Section,
+        [Parameter(Mandatory = $true)][bool] $Value,
+        [scriptblock] $Writer = $script:WriteConfigurationFile
+    )
+    if (-not (Test-Path -LiteralPath $Path -PathType Leaf)) {
+        throw "No installed configuration at $Path."
+    }
+    $configuration = Get-Content -LiteralPath $Path -Raw -Encoding utf8 | ConvertFrom-Json -AsHashtable -Depth 12
+    $found = @($configuration.Keys | Where-Object { [string]::Equals([string] $_, $Section, [StringComparison]::OrdinalIgnoreCase) })
+    if ($found.Count -ne 1) {
+        throw "$Path has $($found.Count) $Section sections; expected exactly one."
+    }
+    $node = $configuration[$found[0]]
+    if ($node -isnot [System.Collections.IDictionary]) {
+        throw "$Section in $Path is not a JSON object."
+    }
+    $flag = @($node.Keys | Where-Object { [string]::Equals([string] $_, 'enabled', [StringComparison]::OrdinalIgnoreCase) })
+    $previous = $flag.Count -gt 0 ? $node[$flag[0]] : $null
+    foreach ($key in $flag) { $node.Remove($key) }
+    $node['enabled'] = $Value
+    $expected = ConvertTo-Json -InputObject $configuration -Depth 12 -Compress
+    $null = & $Writer $Path (ConvertTo-Json -InputObject $configuration -Depth 12)
+
+    # Read back exactly as the upgrade script will.
+    $valueText = $Value ? 'true' : 'false'
+    $readBack = (Get-Content -LiteralPath $Path -Raw -Encoding utf8 | ConvertFrom-Json).$Section.enabled
+    if ($readBack -isnot [bool] -or $readBack -ne $Value) {
+        throw "$Section.enabled in $Path is not $valueText after it was set."
+    }
+    $actual = Get-Content -LiteralPath $Path -Raw -Encoding utf8 | ConvertFrom-Json -AsHashtable -Depth 12 | ConvertTo-Json -Depth 12 -Compress
+    if ($actual -cne $expected) {
+        throw "$Path does not read back as written: something besides $Section.enabled differs (was it re-encoded? is the Chinese agvId intact?)."
+    }
+    return $previous
+}
+
 function Set-ParallelInstanceJourneyRuntimeDisabled {
     <#
         .SYNOPSIS
@@ -317,9 +377,7 @@ function Set-ParallelInstanceJourneyRuntimeDisabled {
             and a runtime that is on would poll demand and place orders from inside that check. The
             parallel overlay writes true, so every upgrade and rollback after a first install was
             refused there. Called only from Invoke-ParallelProductUpgrade, which says when and why.
-
-            The section is found ignoring case, as both .NET configuration and the upgrade script's
-            ConvertFrom-Json read it; the file is read back the way the upgrade script reads it.
+            The write and its read-backs are Set-ParallelInstanceConfigurationFlag's.
 
         .PARAMETER Writer
             Test seam, as for Update-ParallelInstanceConfigurationFile.
@@ -329,26 +387,7 @@ function Set-ParallelInstanceJourneyRuntimeDisabled {
         [Parameter(Mandatory = $true)][string] $Path,
         [scriptblock] $Writer = $script:WriteConfigurationFile
     )
-    if (-not (Test-Path -LiteralPath $Path -PathType Leaf)) {
-        throw "No installed configuration at $Path."
-    }
-    $configuration = Get-Content -LiteralPath $Path -Raw -Encoding utf8 | ConvertFrom-Json -AsHashtable -Depth 12
-    $section = @($configuration.Keys | Where-Object { [string]::Equals([string] $_, 'JourneyRuntime', [StringComparison]::OrdinalIgnoreCase) })
-    if ($section.Count -ne 1) {
-        throw "$Path has $($section.Count) JourneyRuntime sections; expected exactly one."
-    }
-    $journey = $configuration[$section[0]]
-    $flag = @($journey.Keys | Where-Object { [string]::Equals([string] $_, 'enabled', [StringComparison]::OrdinalIgnoreCase) })
-    $previous = $flag.Count -gt 0 ? $journey[$flag[0]] : $null
-    foreach ($key in $flag) { $journey.Remove($key) }
-    $journey['enabled'] = $false
-    $null = & $Writer $Path (ConvertTo-Json -InputObject $configuration -Depth 12)
-
-    # Read back exactly as the upgrade script will.
-    if ((Get-Content -LiteralPath $Path -Raw -Encoding utf8 | ConvertFrom-Json).JourneyRuntime.enabled -ne $false) {
-        throw "JourneyRuntime.enabled in $Path is not false after it was set."
-    }
-    return $previous
+    return Set-ParallelInstanceConfigurationFlag -Path $Path -Section 'JourneyRuntime' -Value $false -Writer $Writer
 }
 
 function Invoke-ParallelProductUpgrade {
@@ -414,6 +453,219 @@ function Invoke-ParallelProductUpgrade {
         throw
     }
     return $wasEnabled
+}
+
+function Get-ParallelJourneyDispatchState {
+    <#
+        .SYNOPSIS
+            Reads, read-only, what Get-ParallelDispatchGateRefusal judges from the instance's SQLite
+            store. Never throws: a failure comes back as @{ Error = '...' }, which that function refuses.
+
+        .DESCRIPTION
+            control-server#472. Three reads, no writes: the journeys not Completed, the order intents,
+            and the audit events of intents that are RESULT_UNKNOWN (all Test-ParallelOrderIntentNeverSent
+            needs them for). Microsoft.Data.Sqlite and SQLitePCLRaw come from the installed service
+            ($AssemblyDirectory), as scripts/l2/L2.psm1's Open-L2Database borrows them from the build under
+            test; Mode=ReadOnly so this can neither block nor alter the service that owns the file, and
+            unpooled so nothing keeps the file open afterwards. A missing file is an error, not an empty
+            state: opening it would not create it, and "no database" is not "no journey".
+    #>
+    [CmdletBinding()]
+    param(
+        [Parameter(Mandatory = $true)][string] $DatabasePath,
+        [Parameter(Mandatory = $true)][string] $AssemblyDirectory
+    )
+    $connection = $null
+    try {
+        if (-not (Test-Path -LiteralPath $DatabasePath -PathType Leaf)) { throw "there is no file at $DatabasePath" }
+        foreach ($assembly in @('SQLitePCLRaw.core.dll', 'SQLitePCLRaw.provider.e_sqlite3.dll', 'SQLitePCLRaw.batteries_v2.dll', 'Microsoft.Data.Sqlite.dll')) {
+            $path = Join-Path $AssemblyDirectory $assembly
+            if (-not (Test-Path -LiteralPath $path -PathType Leaf)) { throw "$assembly is not in $AssemblyDirectory" }
+            Add-Type -LiteralPath $path -ErrorAction SilentlyContinue
+        }
+        # As in Open-L2Database: Batteries_V2 reports a missing type on some builds and the reads work regardless.
+        try { [SQLitePCL.Batteries_V2]::Init() } catch { }
+        $connection = [Microsoft.Data.Sqlite.SqliteConnection]::new("Data Source=$DatabasePath;Mode=ReadOnly;Pooling=False")
+        $connection.Open()
+        $read = {
+            param([string] $Sql)
+            $command = $connection.CreateCommand()
+            $command.CommandText = $Sql
+            $reader = $command.ExecuteReader()
+            $rows = [System.Collections.Generic.List[object]]::new()
+            try {
+                while ($reader.Read()) {
+                    $row = [ordered]@{}
+                    for ($i = 0; $i -lt $reader.FieldCount; $i++) { $row[$reader.GetName($i)] = $reader.IsDBNull($i) ? $null : $reader.GetValue($i) }
+                    $rows.Add($row)
+                }
+            } finally { $reader.Dispose(); $command.Dispose() }
+            return , $rows.ToArray()
+        }
+        return [ordered]@{
+            Journeys = & $read "SELECT JourneyId, Stage, AgvId, VehicleKey, PickupUpperId, GateUpperId, CreatedAt FROM JourneyRuntimes WHERE Stage <> 'Completed'"
+            OrderIntents = & $read ('SELECT MovementLegId, UpperId, VehicleKey, Status, OrderId, CreateAttemptCount, CreateAttemptId, ' +
+                'DispatchAuditVersion, ExperimentalCreateAuthorizationId, CreatedAt FROM OrderIntents')
+            AuditEvents = & $read ('SELECT MovementLegId, Phase, Outcome, AttemptId, ReturnedOrderId, ResultPresent FROM RiotDispatchAuditEvents ' +
+                "WHERE MovementLegId IN (SELECT MovementLegId FROM OrderIntents WHERE Status = 'RESULT_UNKNOWN')")
+        }
+    } catch {
+        return [ordered]@{ Error = $_.Exception.Message }
+    } finally {
+        if ($connection) { $connection.Dispose() }
+    }
+}
+
+function Invoke-ParallelDispatchGateChange {
+    <#
+        .SYNOPSIS
+            Closes or opens this instance's RIoT dispatch gate (RiotCreateDispatch.enabled), with every
+            machine-touching step injected. Returns what it did.
+
+        .DESCRIPTION
+            control-server#472, replacing the hand edit of the installed configuration on factory01. In
+            order, and nothing is changed before step 5:
+
+              1. Refuse the MVP's service name or any production path outright.
+              2. The installer's own first checks (Get-ParallelPreInstallRefusal): the configuration
+                 exists and is a JSON object, the service is Running or Stopped, and a Running process
+                 started after the file was last written -- otherwise what the file says is not what the
+                 process does. Its UPGRADE_REFUSED_DISPATCH_OPEN is the one answer ignored here: an open
+                 gate is what this closes. A missing service is refused here too.
+              3. Already in the requested state: nothing is touched, and the result says so.
+              4. The journey state, read while the service runs (Get-ParallelDispatchGateRefusal): close
+                 refuses any journey not Completed, open any journey with an order that was or may have
+                 been sent. Unreadable refuses.
+              5. Stop the service, and read the state again. This read is the one that counts: a stopped
+                 service creates nothing, so nothing can slip in between it and the write. If it refuses
+                 now, the service is started again on the unchanged file and the refusal says whether it came back
+                 Running. A service that was Stopped is not touched, and its refusal carries no AFTER_STOP.
+              6. Write the flag (Set-ParallelInstanceConfigurationFlag: section found ignoring case, the
+                 flag and every other value read back). If the write fails, the original bytes are put
+                 back, checked, and the service started again, so the gate is as it was.
+              7. Start the service, and require it Running with a process that started after the file's
+                 last write time, both in UTC.
+            A service that was Stopped is left stopped: there is no process to restart, and the file is
+            then the truth. Steps 4 and 5 still run, since the next start will read it.
+
+        .PARAMETER Actions
+            Hashtable of scriptblocks, all required: ServiceStatus (the status as a string, $null when
+            the service does not exist), ReadState (Get-ParallelJourneyDispatchState's output),
+            StopService, StartService, ProcessStartTimeUtc ($null when unknown).
+    #>
+    [CmdletBinding()]
+    param(
+        [Parameter(Mandatory = $true)][ValidateSet('Close', 'Open')][string] $Direction,
+        [Parameter(Mandatory = $true)][string] $ConfigurationPath,
+        [Parameter(Mandatory = $true)][string] $ServiceName,
+        [Parameter(Mandatory = $true)][string] $DatabasePath,
+        [Parameter(Mandatory = $true)][hashtable] $Actions,
+        [scriptblock] $Writer = $script:WriteConfigurationFile
+    )
+    $missing = @('ServiceStatus', 'ReadState', 'StopService', 'StartService', 'ProcessStartTimeUtc' | Where-Object { -not ($Actions.ContainsKey($_) -and $Actions[$_] -is [scriptblock]) })
+    if ($missing.Count -gt 0) { throw "Invoke-ParallelDispatchGateChange: missing action(s) $($missing -join ', '); nothing was run." }
+    $nothing = ' Nothing was stopped or changed.'
+
+    # 1.
+    if ([string]::Equals($ServiceName, $script:ProductionServiceName, [StringComparison]::OrdinalIgnoreCase) -or
+        (Test-ParallelInstancePathIsProduction -Path $ConfigurationPath) -or (Test-ParallelInstancePathIsProduction -Path $DatabasePath)) {
+        throw ("GATE_REFUSED_PRODUCTION: '$ServiceName' / $ConfigurationPath / $DatabasePath is the MVP's or inside a production " +
+            'path. This script changes only the v2 parallel instance.' + $nothing)
+    }
+
+    # 2.
+    $status = & $Actions.ServiceStatus
+    if ($null -eq $status) {
+        throw "GATE_SERVICE_MISSING: there is no service '$ServiceName'. A gate belongs to an installed instance; install it first.$nothing"
+    }
+    $status = [string] $status
+    $exists = Test-Path -LiteralPath $ConfigurationPath -PathType Leaf
+    $text = $exists ? (Get-Content -LiteralPath $ConfigurationPath -Raw -Encoding utf8) : $null
+    $refusal = Get-ParallelPreInstallRefusal -ServiceExists $true -ServiceStatus $status -ServiceName $ServiceName `
+        -ConfigurationPath $ConfigurationPath -ConfigurationText $text `
+        -ConfigurationWriteTimeUtc ($exists ? [IO.File]::GetLastWriteTimeUtc($ConfigurationPath) : $null) `
+        -ProcessStartTimeUtc ($status -ceq 'Running' ? (& $Actions.ProcessStartTimeUtc) : $null)
+    if ($refusal -and -not $refusal.StartsWith('UPGRADE_REFUSED_DISPATCH_OPEN:')) { throw $refusal }
+
+    # 3.
+    $target = $Direction -eq 'Open'
+    $configuration = ConvertFrom-Json -InputObject $text -AsHashtable -Depth 12
+    # Keys ignoring case, as .NET configuration reads them.
+    $section = @($configuration.Keys | Where-Object { $_ -ieq 'RiotCreateDispatch' } | ForEach-Object { $configuration[$_] })
+    $current = $section.Count -eq 1 -and $section[0] -is [System.Collections.IDictionary] ?
+        ($section[0].Keys | Where-Object { $_ -ieq 'enabled' } | ForEach-Object { $section[0][$_] } | Select-Object -First 1) : $null
+    if ($current -is [bool] -and $current -eq $target) {
+        return [pscustomobject]@{ Changed = $false; Direction = $Direction; Previous = $current; Now = $current; ServiceStatus = $status
+            Message = "RiotCreateDispatch.enabled is already $($target ? 'true' : 'false') in $ConfigurationPath; nothing was touched." }
+    }
+
+    # 4.
+    $refusal = Get-ParallelDispatchGateRefusal -Direction $Direction -State (& $Actions.ReadState) -ServiceName $ServiceName -DatabasePath $DatabasePath
+    if ($refusal) { throw $refusal }
+
+    # Starting the service again after a refusal or a failed write, and saying what it is now rather than
+    # assuming it came back (review N4).
+    $startAgain = {
+        # A start that throws must not replace the refusal it follows: the caller puts this text into that refusal, so
+        # both are reported (review L5).
+        try { $null = & $Actions.StartService } catch {
+            return "'$ServiceName' could not be started again ($($_.Exception.Message)) -- start it by hand and check it"
+        }
+        $now = [string] (& $Actions.ServiceStatus)
+        $now -ceq 'Running' ? "'$ServiceName' was started again and is Running" : "'$ServiceName' was asked to start again but is '$now' -- check it"
+    }
+
+    # 5.
+    $wasRunning = $status -ceq 'Running'
+    if ($wasRunning) { $null = & $Actions.StopService }
+    $refusal = Get-ParallelDispatchGateRefusal -Direction $Direction -State (& $Actions.ReadState) -ServiceName $ServiceName -DatabasePath $DatabasePath
+    if ($refusal) {
+        # A service that was Stopped was not touched, so the refusal's own "nothing was stopped or changed" holds.
+        if (-not $wasRunning) { throw $refusal }
+        throw ('AFTER_STOP ' + $refusal.Replace($nothing,
+                " The configuration was not changed. The service was stopped for this second read; $(& $startAgain), on the unchanged $ConfigurationPath."))
+    }
+
+    # 6.
+    $original = [IO.File]::ReadAllBytes($ConfigurationPath)
+    try {
+        $previous = Set-ParallelInstanceConfigurationFlag -Path $ConfigurationPath -Section 'RiotCreateDispatch' -Value $target -Writer $Writer
+    } catch {
+        $failure = $_.Exception.Message
+        [IO.File]::WriteAllBytes($ConfigurationPath, $original)
+        $restored = [Linq.Enumerable]::SequenceEqual([byte[]] [IO.File]::ReadAllBytes($ConfigurationPath), [byte[]] $original)
+        if (-not $restored) {
+            throw ("GATE_WRITE_FAILED: $failure Putting the original bytes of $ConfigurationPath back did not hold either; the service " +
+                "'$ServiceName' is left stopped. Restore the file from the latest backup under the backup root before starting it.")
+        }
+        throw ("GATE_WRITE_FAILED: $failure The original bytes of $ConfigurationPath were put back and checked" +
+            $(if ($wasRunning) { ", and $(& $startAgain)" } else { '' }) + '; the gate is as it was.')
+    }
+    $writtenUtc = [IO.File]::GetLastWriteTimeUtc($ConfigurationPath)
+
+    # 7.
+    if (-not $wasRunning) {
+        return [pscustomobject]@{ Changed = $true; Direction = $Direction; Previous = $previous; Now = $target; ServiceStatus = $status
+            Message = "RiotCreateDispatch.enabled set $($target ? 'true' : 'false') in $ConfigurationPath. '$ServiceName' was $status and is left so; it reads the file when it next starts." }
+    }
+    # The flag is already written here, so a start that throws must say what the file now holds and that the
+    # service did not come up (review S2) -- a bare Start-Service error would leave both unsaid.
+    try { $null = & $Actions.StartService } catch {
+        throw ("GATE_RESTART_FAILED: RiotCreateDispatch.enabled is now $($target ? 'true' : 'false') in $ConfigurationPath " +
+            "(written $($writtenUtc.ToString('o'))), but '$ServiceName', stopped for this change, could not be started again " +
+            "($($_.Exception.Message)). Start it by hand and check it before relying on the gate.")
+    }
+    $statusAfter = [string] (& $Actions.ServiceStatus)
+    $startedUtc = & $Actions.ProcessStartTimeUtc
+    if ($statusAfter -cne 'Running' -or $null -eq $startedUtc -or ([datetime] $startedUtc).ToUniversalTime() -le $writtenUtc) {
+        throw ("GATE_RESTART_UNVERIFIED: RiotCreateDispatch.enabled is now $($target ? 'true' : 'false') in $ConfigurationPath " +
+            "(written $($writtenUtc.ToString('o'))), but '$ServiceName' is '$statusAfter' with a process started at " +
+            "$(if ($null -eq $startedUtc) { 'an unknown time' } else { ([datetime] $startedUtc).ToUniversalTime().ToString('o') }), so whether " +
+            'the running process reads the new value cannot be shown. Check the service before relying on the gate.')
+    }
+    return [pscustomobject]@{ Changed = $true; Direction = $Direction; Previous = $previous; Now = $target; ServiceStatus = $statusAfter
+        Message = ("RiotCreateDispatch.enabled set $($target ? 'true' : 'false') in $ConfigurationPath at $($writtenUtc.ToString('o')); " +
+            "'$ServiceName' restarted, its process started at $(([datetime] $startedUtc).ToUniversalTime().ToString('o')).") }
 }
 
 function Invoke-ParallelInstanceConfigurationStep {
@@ -525,5 +777,6 @@ function Get-ParallelProcessStartTimeUtc {
 
 Export-ModuleMember -Function @('Get-MvpFingerprint', 'Assert-MvpUntouched', 'Format-MvpFingerprint', 'Get-ParallelServiceProcessStartTimeUtc', 'Get-ParallelProcessStartTimeUtc',
     'Get-ParallelProductUninstallerPath', 'Test-ParallelProductUninstallerPremise', 'Invoke-ParallelProductUninstaller',
-    'Update-ParallelInstanceConfigurationFile', 'Set-ParallelInstanceJourneyRuntimeDisabled',
+    'Update-ParallelInstanceConfigurationFile', 'Set-ParallelInstanceJourneyRuntimeDisabled', 'Set-ParallelInstanceConfigurationFlag',
+    'Get-ParallelJourneyDispatchState', 'Invoke-ParallelDispatchGateChange',
     'Invoke-ParallelProductUpgrade', 'Invoke-ParallelInstanceConfigurationStep')
