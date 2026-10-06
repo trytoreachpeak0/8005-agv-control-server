@@ -1,3 +1,4 @@
+using System.Text.Json;
 using ControlServer.Application;
 using ControlServer.Domain;
 using ControlServer.Infrastructure.Persistence;
@@ -77,9 +78,61 @@ public sealed class ResumeAfterAcknowledgedReconnectTests
         Assert.True(
             after.Stage == JourneyRuntimeStage.AwaitingSublot,
             $"The load was settled and the next entry never requested. stage={after.Stage} block={after.BlockReasonCode} round={resumed?.Message}");
-        await EnterSublotAsync(fixture, FirstDemandId, SecondSublot, SecondSubmissionId);
-        Assert.Equal(JourneyDemandStatuses.Loading, (await Batch7MultiDemandAdvanceTests.MembershipAsync(fixture, SecondDemandId)).Status);
+        await AssertTheEntryRequestedInTheNewGenerationAsync(fixture, SecondSublot);
     }
+
+    /// <summary>
+    /// 同上，开着离站期限（生产默认 5 分钟，这里 10 秒）：重连作废了离站等待（ADR-cross-0055），续跑那一轮按此刻补填，期限与车已确认那一版
+    /// 不同，于是升一版清单（control-server#339）而不是同号重发；录入请求跟着新的一版在第 2 代发出。
+    /// </summary>
+    [Fact]
+    [Trait("IntegrationSlice", "FP-IS-08")]
+    public async Task WithTheStationDeadlineOnTheNextEntryIsRequestedUnderANewerWorklistAfterTheReconnect()
+    {
+        UnloadCrashResumeTests.FailOnce crash = new(command =>
+            command.CommandText.Contains("INSERT INTO \"ProtocolOutbox\"", StringComparison.Ordinal) &&
+            UnloadCrashResumeTests.HasParameter(command, "SublotEntryRequested"));
+        await using RuntimeFixture fixture = await RuntimeFixture.CreateAsync(commands: crash);
+        fixture.Options.StationDepartureWaitTimeout = TimeSpan.FromSeconds(10);
+        JourneyRuntimeRow runtime = await Batch7MultiDemandAdvanceTests.TwoDemandsAtThePickupAsync(fixture);
+        await AddInboxAsync(
+            fixture, FirstSubmissionId, "SublotSubmitted", await SublotSubmissionAsync(fixture, runtime, FirstSublot));
+        await TickAndRunAsync(fixture);
+        await ApplySafeResultAsync(fixture, FirstDemandId, SlotOperationType.Load, SlotBusinessState.Occupied);
+        crash.Armed = true;
+        await TickAndRunExpectingCrashAsync(fixture);
+        Assert.True(crash.Fired, "The injected failure never fired, so this proved nothing.");
+        string[] worklistsBefore = await WorklistIdsAsync(fixture);
+
+        await AcknowledgeAndReconnectAsync(fixture, "CurrentStopWorklistSnapshot");
+
+        Exception? resumed = await UnloadCrashResumeTests.RunRoundAsync(fixture);
+        JourneyRuntimeRow after = await JourneyOfAsync(fixture, FirstDemandId);
+        Assert.True(
+            after.Stage == JourneyRuntimeStage.AwaitingSublot,
+            $"The load was settled and the next entry never requested. stage={after.Stage} block={after.BlockReasonCode} round={resumed?.Message}");
+        await AssertTheEntryRequestedInTheNewGenerationAsync(fixture, SecondSublot);
+        string[] newer = [.. (await WorklistIdsAsync(fixture)).Except(worklistsBefore)];
+        Assert.NotEmpty(newer);
+        // 新的那一版带着补填之后的期限：车上显示的就是服务端此刻判定用的那一个，而不是先收到一版没有期限的清单。
+        string[] payloads = await fixture.Context.ProtocolOutbox.AsNoTracking()
+            .Where(row => newer.Contains(row.MessageId))
+            .Select(row => row.PayloadJson)
+            .ToArrayAsync(TestContext.Current.CancellationToken);
+        Assert.All(payloads, payload =>
+        {
+            using JsonDocument document = JsonDocument.Parse(payload);
+            Assert.NotEqual(
+                JsonValueKind.Null,
+                document.RootElement.GetProperty("payload").GetProperty("stationDepartureDeadlineAt").ValueKind);
+        });
+    }
+
+    private static async Task<string[]> WorklistIdsAsync(RuntimeFixture fixture) =>
+        await fixture.Context.ProtocolOutbox.AsNoTracking()
+            .Where(row => row.MessageType == "CurrentStopWorklistSnapshot")
+            .Select(row => row.MessageId)
+            .ToArrayAsync(TestContext.Current.CancellationToken);
 
     /// <summary>
     /// 本站在装那一条被终结之后的续跑：第二个取货站装货途中取消了一条，同站还有一条；续跑那一轮清单已写盘、录入请求没写盘。
@@ -107,13 +160,29 @@ public sealed class ResumeAfterAcknowledgedReconnectTests
         Assert.True(
             after.Stage == JourneyRuntimeStage.AwaitingSublot,
             $"The stop still has a demand to load and its entry was never requested. stage={after.Stage} block={after.BlockReasonCode} round={resumed?.Message}");
-        await EnterSublotAsync(fixture, FirstDemandId, StopEndedJourneyContinuesTests.ThirdSublot, "20000000-0000-4000-8000-000000000031");
-        Assert.Equal(
-            JourneyDemandStatuses.Loading,
-            (await StopEndedJourneyContinuesTests.MembershipAsync(fixture, StopEndedJourneyContinuesTests.ThirdDemandId)).Status);
+        await AssertTheEntryRequestedInTheNewGenerationAsync(fixture, StopEndedJourneyContinuesTests.ThirdSublot);
     }
 
     /// <summary>
+    /// <summary>
+    /// 第 2 代下发出了只点名 <paramref name="sublot"/> 的那一版录入请求，没被退役。不再接着录入：夹具的入站辅助方法把会话代次写死为 1，
+    /// 换代之后它录的那一条按旧会话处理——那是夹具的局限，不是这里要证的事。
+    /// </summary>
+    private static async Task AssertTheEntryRequestedInTheNewGenerationAsync(RuntimeFixture fixture, string sublot)
+    {
+        ProtocolOutboxRow[] requests = await fixture.Context.ProtocolOutbox.AsNoTracking()
+            .Where(row => row.MessageType == "SublotEntryRequested" && row.FencedAt == null)
+            .ToArrayAsync(TestContext.Current.CancellationToken);
+        Assert.Contains(requests, row =>
+        {
+            using JsonDocument document = JsonDocument.Parse(row.PayloadJson);
+            JsonElement root = document.RootElement;
+            return root.GetProperty("sessionGeneration").GetInt64() == 2 &&
+                   root.GetProperty("payload").GetProperty("expectedSublots").EnumerateArray()
+                       .Select(item => item.GetString()).SequenceEqual([sublot]);
+        });
+    }
+
     /// 车确认了发件箱里这一类还在等确认的每一行，然后断开、以第 2 代重连并握手完成；服务端换一个引擎（进程重启）。
     /// </summary>
     private static async Task AcknowledgeAndReconnectAsync(RuntimeFixture fixture, string messageType)

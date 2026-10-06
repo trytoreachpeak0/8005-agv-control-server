@@ -1340,13 +1340,24 @@ public sealed partial class JourneyRuntimeEngine(
                         .ConfigureAwait(false);
                     if (stops.OutstandingAtCurrentStop.Count > 0)
                     {
+                        // 这一支刚落定、#289 的续跑（resumingAfterCommit）与本站在装那一条被终结之后的续跑（resumingAfterEnding）共用。
+                        // 不要在这里无条件重置离站等待起点：resumingAfterEnding 一条都没装上，不是 LoadBatch 闭环（ADR-cross-0055），
+                        // 它不开始新的纠正时间；断联作废过的才按「此刻」补填，与等录入那一处同一个规则。
+                        runtime.StationDepartureWaitStartedAt ??= now;
+                        // 续跑重发的是上一轮已经写盘的那一版（control-server#291 独立审查）。车确认过、又换了一代时，候选报文只有信封不同，
+                        // 不带 keepAcknowledgedIgnoring 就被重放校验拒；断联作废过离站等待时期限也变了，那就升一版（control-server#339），
+                        // 与到站重跑（PublishPickupStateAsync）同一个做法。第一次发这一版时发件箱里还没有它，两样都不起作用。
+                        stops = await AdvanceWorklistPastAStaleDeadlineAsync(runtime, stops, cancellationToken).ConfigureAwait(false)
+                                ?? stops;
                         await PublishStopWorklistAsync(
                             runtime,
                             stops,
                             session,
                             StationDepartureDeadline(runtime, runtimeOptions.StationDepartureWaitTimeout),
-                            cancellationToken).ConfigureAwait(false);
-                        await PublishEntryRequestAsync(runtime, stops, session, cancellationToken)
+                            cancellationToken,
+                            keepAcknowledgedIgnoring: NothingButTheEnvelope).ConfigureAwait(false);
+                        await PublishEntryRequestAsync(
+                                runtime, stops, session, cancellationToken, keepAcknowledgedIgnoring: NothingButTheEnvelope)
                             .ConfigureAwait(false);
                         SetStage(runtime, JourneyRuntimeStage.AwaitingSublot, now);
                         break;
@@ -1626,9 +1637,12 @@ public sealed partial class JourneyRuntimeEngine(
                     if (unload is null && unloadedHereBefore)
                     {
                         // 前一条已存为 UNLOADED，这一条的卸货命令没落库（U1、U5）：发这一版清单与这一条的命令，与刚卸完时同一段。
-                        // 两条报文的 id 都由停靠进度确定地派生，已经写盘的那一版清单按同一个 id 复用，不会再起一行。
+                        // 两条报文的 id 都由停靠进度确定地派生，已经写盘的那一版清单按同一个 id 复用，不会再起一行——同一代、或那一行车还没
+                        // 确认时如此；车确认过、又换了一代时，候选报文只有信封不同，靠 keepAcknowledgedIgnoring 沿用已确认那一行，否则被重放
+                        // 校验拒（control-server#291 独立审查）。卸货停靠没有离站期限，清单内容不会因断联而变。
                         await PublishStopWorklistAsync(
-                            runtime, stops, session, stationDepartureDeadlineAt: null, cancellationToken)
+                            runtime, stops, session, stationDepartureDeadlineAt: null, cancellationToken,
+                            keepAcknowledgedIgnoring: NothingButTheEnvelope)
                             .ConfigureAwait(false);
                         await PublishUnloadCommandAsync(runtime, stops, session, cancellationToken)
                             .ConfigureAwait(false);
@@ -5476,6 +5490,11 @@ public sealed partial class JourneyRuntimeEngine(
             // 留在这里下一轮每轮抛 "no demand loading at its stop"，车带着更早装上的货永远不走。与站点期限结束停靠
             // （TryEndStopAtStationDeadlineAsync）同一个出口：本站没有待装的就交给离站那一段，由它决定持货等单还是离站；
             // 还有待装的就回到等录入——期限已过，那里的期限出口会照它自己的条件（门、在线、取消）结束本站。与终结同一次保存。
+            //
+            // 回等录入时这里不发新一版清单与录入请求，与等装货结果那一段的续跑（resumingAfterEnding，会发）不对称。这个不对称成立的前提是
+            // 「确定的失败只在本站离站期限之后出现」：店里只把期限之后到的确定失败记成 Failed（DeterminateLoadFailure；期限之前的进恢复，
+            // JourneyRuntimeWorkerLoadDeadlineTests.AFailureReportedBeforeTheDeadlineIsNotSettledAsDeterminate），所以回到等录入的那一轮
+            // 期限已过，期限出口结束本站，不会有人对着车上那一版清单再录入。哪天期限之前的失败也走到这里，这一支就要改成与续跑一样发清单与录入请求。
             if (runtime.Stage != JourneyRuntimeStage.Completed)
             {
                 bool othersToLoadHere = stops.OutstandingAtCurrentStop
