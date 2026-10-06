@@ -282,10 +282,12 @@ public sealed class JourneyRuntimeWorkerLoadDeadlineTests
     /// ADR-cross-0058 decision 5's slots for this journey's load: the first target FAILED under
     /// <paramref name="failedSlotReasonCode"/>, the rest NOT_STARTED, every one empty, locked and reset.
     /// </summary>
-    internal static object[] DeterminateFailureSlots(RuntimeFixture fixture, string failedSlotReasonCode)
+    internal static object[] DeterminateFailureSlots(RuntimeFixture fixture, string failedSlotReasonCode, string? demandId = null)
     {
         int[] slots = JsonSerializer.Deserialize<int[]>(
-            fixture.Context.StationOperations.AsNoTracking().Single().TargetSlotsJson) ?? [];
+            fixture.Context.StationOperations.AsNoTracking()
+                .Single(row => demandId == null || (row.DemandId == demandId && row.OperationType == SlotOperationType.Load))
+                .TargetSlotsJson) ?? [];
         return
         [
             .. slots.Select((slot, index) => (object)new
@@ -304,9 +306,13 @@ public sealed class JourneyRuntimeWorkerLoadDeadlineTests
     /// The vehicle's OperationResult for this journey's load, through OnboardMessageProcessor on a connection
     /// context of its own, the way every result on a TCP connection arrives. Returns the server's answer.
     /// </summary>
-    internal static async Task<string> ReportLoadResultAsync(RuntimeFixture fixture, object[] slotResults)
+    internal static async Task<string> ReportLoadResultAsync(RuntimeFixture fixture, object[] slotResults, string? demandId = null)
     {
-        StationOperationRow load = await fixture.OperationAsync(SlotOperationType.Load);
+        StationOperationRow load = demandId is null
+            ? await fixture.OperationAsync(SlotOperationType.Load)
+            : await fixture.Context.StationOperations.AsNoTracking().SingleAsync(
+                row => row.DemandId == demandId && row.OperationType == SlotOperationType.Load,
+                TestContext.Current.CancellationToken);
         await using ControlServerDbContext connection = fixture.OpenConnectionContext();
         OnboardMessageProcessor processor = TestOnboardProcessorFactory.Create(
             connection,

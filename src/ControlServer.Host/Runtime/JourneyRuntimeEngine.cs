@@ -1286,12 +1286,19 @@ public sealed partial class JourneyRuntimeEngine(
                 // 没有「正在装的」有两种来历，只有一种是缺陷（批次7-07，control-server#212 查出）。装货落定要保存两次：先把这一条
                 // 记成 LOADED、结算命令（下面重新加载游标要读到它），再在离站或下一条的那一次保存里把阶段前移。崩在两次之间，
                 // 重启后读到的就是「阶段还是 AwaitingLoadResult、这一站没有 LOADING、刚装的那条已是 LOADED」——此前这里一律抛，
-                // 而推进段没有逐车隔离，于是每一轮都在这里整轮中止，车队里每辆车都不再推进。这一种按落库的状态续上，走与刚落定时
+                // 而推进段当时没有逐车隔离，于是每一轮都在这里整轮中止，车队里每辆车都不再推进（cs#487 起逐车隔离，今天只停这一辆）。这一种按落库的状态续上，走与刚落定时
                 // 同一段后续；这一站连一条 LOADED 都没有，才是这台服务器自己的不变量被破坏了，照旧抛。
+                //
+                // 第二种合法来历（control-server#291）：这一站在装的那一条被终结了——确定的装货失败、装货途中取消——而旅程还带着别的需求，
+                // 不收尾。终结它的那条路若没有把阶段带走，留下的就是「没有在装、没有装上、只有一条 TERMINATED」。确定的装货失败自己会带走
+                // （TrySettleDeterminateLoadFailureAsync），恢复协调器的取消结果不会；这里兜住它们，也兜住已经卡在这个状态的库。
+                // 接的是同一段后续：本站还有待装的就回去等录入，没有就离站。
                 JourneyStopDemand? loading = stops.LoadingAtCurrentStop;
                 bool resumingAfterCommit = loading is null;
-                if (resumingAfterCommit &&
-                    !stops.CurrentStopDemands.Any(item => item.Membership.Status == JourneyDemandStatuses.Loaded))
+                bool loadedHere = stops.CurrentStopDemands.Any(item => item.Membership.Status == JourneyDemandStatuses.Loaded);
+                bool resumingAfterEnding = resumingAfterCommit && !loadedHere &&
+                    stops.AllAtStop(stops.Current).Any(item => item.Membership.Status == JourneyDemandStatuses.Terminated);
+                if (resumingAfterCommit && !loadedHere && !resumingAfterEnding)
                 {
                     throw new InvalidDataException(
                         $"Journey {runtime.JourneyId} waits for a load result with no demand loading at its stop.");
@@ -1333,13 +1340,30 @@ public sealed partial class JourneyRuntimeEngine(
                         .ConfigureAwait(false);
                     if (stops.OutstandingAtCurrentStop.Count > 0)
                     {
+                        // 这一支刚落定、#289 的续跑（resumingAfterCommit）与本站在装那一条被终结之后的续跑（resumingAfterEnding）共用。
+                        // 不要在这里无条件重置离站等待起点：resumingAfterEnding 一条都没装上，不是 LoadBatch 闭环（ADR-cross-0055），
+                        // 它不开始新的纠正时间；断联作废过的才按「此刻」补填，与等录入那一处同一个规则。
+                        //
+                        // 补填只给续跑：刚落定的正常路径也走这一支，而断联作废之后结果先落库、就绪后第一轮直接走到这里时起点也是空的。
+                        // 正常路径原来就是发一版不带期限的清单、下一轮在等录入那一处补填并升一版，这里不改它（cs#291 审查追问）。
+                        if (resumingAfterCommit || resumingAfterEnding)
+                        {
+                            runtime.StationDepartureWaitStartedAt ??= now;
+                        }
+                        // 续跑重发的是上一轮已经写盘的那一版（control-server#291 独立审查）。车确认过、又换了一代时，候选报文只有信封不同，
+                        // 不带 keepAcknowledgedIgnoring 就被重放校验拒；断联作废过离站等待时期限也变了，那就升一版（control-server#339），
+                        // 与到站重跑（PublishPickupStateAsync）同一个做法。第一次发这一版时发件箱里还没有它，两样都不起作用。
+                        stops = await AdvanceWorklistPastAStaleDeadlineAsync(runtime, stops, cancellationToken).ConfigureAwait(false)
+                                ?? stops;
                         await PublishStopWorklistAsync(
                             runtime,
                             stops,
                             session,
                             StationDepartureDeadline(runtime, runtimeOptions.StationDepartureWaitTimeout),
-                            cancellationToken).ConfigureAwait(false);
-                        await PublishEntryRequestAsync(runtime, stops, session, cancellationToken)
+                            cancellationToken,
+                            keepAcknowledgedIgnoring: NothingButTheEnvelope).ConfigureAwait(false);
+                        await PublishEntryRequestAsync(
+                                runtime, stops, session, cancellationToken, keepAcknowledgedIgnoring: NothingButTheEnvelope)
                             .ConfigureAwait(false);
                         SetStage(runtime, JourneyRuntimeStage.AwaitingSublot, now);
                         break;
@@ -1349,7 +1373,10 @@ public sealed partial class JourneyRuntimeEngine(
                     // for departure safety in this same iteration, as this server did until 2026-09-13,
                     // left no such time at all. Not saved here: with the wait off the next case departs
                     // at once and saves once, as before.
-                    runtime.StationDepartureWaitStartedAt = now;
+                    // 本站一条都没装上就结束的（resumingAfterEnding）没有可纠正的放置，离站等待的起点不动——与站点期限结束停靠一致。
+                    runtime.StationDepartureWaitStartedAt = resumingAfterEnding
+                        ? runtime.StationDepartureWaitStartedAt ?? now
+                        : now;
                     SetStage(runtime, JourneyRuntimeStage.AwaitingStationDeparture, now);
                     goto case JourneyRuntimeStage.AwaitingStationDeparture;
                 }
@@ -1580,19 +1607,58 @@ public sealed partial class JourneyRuntimeEngine(
                 // 等的是本停靠此刻该卸的那一条（批次7-06）。卸货不需要一个「正在卸」的状态：卸是服务端自己按顺序发的
                 // （先前侧后后侧，control-server#303），一条卸完才发下一条，已经发出去的那一条由游标优先认出来
                 // （JourneyStopCursor.NextToUnloadAtCurrentStopAsync）。
-                JourneyStopDemand unloading = (await stops.NextToUnloadAtCurrentStopAsync(dbContext, cancellationToken)
-                        .ConfigureAwait(false)).Next
-                    ?? throw new InvalidDataException(
-                        $"Journey {runtime.JourneyId} waits for an unload result with nothing left to unload.");
-                StationOperationRow? unload = await dbContext.StationOperations.SingleOrDefaultAsync(
-                    row => row.SlotOperationAttemptId == unloading.Membership.UnloadSlotOperationAttemptId,
-                    cancellationToken).ConfigureAwait(false);
-                if (unload?.Status == StationOperationStatus.RecoveryRequired)
+                //
+                // 卸完一条要保存不止一次（control-server#291）：先把这一条记成 UNLOADED 单独保存（下面重新加载游标要读到它），再在下一条
+                // 卸货命令、离站或旅程收尾那一次保存里推进；旅程收尾之前还有一次停靠完成的保存。崩在任意两次之间，重启后阶段都还是这一个，
+                // 而此前这里只认「还有一条已下命令、在等结果」这一种——下一条命令没落库的静默停住（U1、U5），本站卸空了的每轮抛（U2、U3）。
+                // 与装货侧（control-server#212）同一个修法：按落库的状态认出是哪一种，接着走刚落定时同一段后续。三种都要求这一站至少
+                // 有一条已经卸完；连一条都没有，才是这台服务器自己的不变量被破坏了，照旧抛。
+                if (stops.OpenStops.Count == 0)
                 {
-                    Block(runtime, "UNLOAD_RESULT_REQUIRES_RECOVERY", now);
+                    // 最后一个停靠已存为完成、旅程收尾那一次保存没落（U3 后半）：收尾。停靠完成只在卸完之后写，所以这里不再判别的。
+                    if (!stops.AllDemands.Any(item => item.Membership.Status == JourneyDemandStatuses.Unloaded))
+                    {
+                        throw new InvalidDataException(
+                            $"Journey {runtime.JourneyId} waits for an unload result with every stop completed and nothing unloaded.");
+                    }
+                    await JourneyClosure.StageAsync(dbContext, runtime, reasonCode: null, now, cancellationToken)
+                        .ConfigureAwait(false);
+                    checkpointWaits.Clear(runtime.VehicleKey);
+                    break;
                 }
-                else
+                JourneyStopDemand? unloading = (await stops.NextToUnloadAtCurrentStopAsync(dbContext, cancellationToken)
+                    .ConfigureAwait(false)).Next;
+                bool unloadedHereBefore = stops.AllAtStop(stops.Current)
+                    .Any(item => item.Membership.Status == JourneyDemandStatuses.Unloaded);
+                if (unloading is null && !unloadedHereBefore)
                 {
+                    throw new InvalidDataException(
+                        $"Journey {runtime.JourneyId} waits for an unload result with nothing left to unload.");
+                }
+                if (unloading is not null)
+                {
+                    StationOperationRow? unload = await dbContext.StationOperations.SingleOrDefaultAsync(
+                        row => row.SlotOperationAttemptId == unloading.Membership.UnloadSlotOperationAttemptId,
+                        cancellationToken).ConfigureAwait(false);
+                    if (unload is null && unloadedHereBefore)
+                    {
+                        // 前一条已存为 UNLOADED，这一条的卸货命令没落库（U1、U5）：发这一版清单与这一条的命令，与刚卸完时同一段。
+                        // 两条报文的 id 都由停靠进度确定地派生，已经写盘的那一版清单按同一个 id 复用，不会再起一行——同一代、或那一行车还没
+                        // 确认时如此；车确认过、又换了一代时，候选报文只有信封不同，靠 keepAcknowledgedIgnoring 沿用已确认那一行，否则被重放
+                        // 校验拒（control-server#291 独立审查）。卸货停靠没有离站期限，清单内容不会因断联而变。
+                        await PublishStopWorklistAsync(
+                            runtime, stops, session, stationDepartureDeadlineAt: null, cancellationToken,
+                            keepAcknowledgedIgnoring: NothingButTheEnvelope)
+                            .ConfigureAwait(false);
+                        await PublishUnloadCommandAsync(runtime, stops, session, cancellationToken)
+                            .ConfigureAwait(false);
+                        break;
+                    }
+                    if (unload?.Status == StationOperationStatus.RecoveryRequired)
+                    {
+                        Block(runtime, "UNLOAD_RESULT_REQUIRES_RECOVERY", now);
+                        break;
+                    }
                     AcceptedDemandRow demand = await dbContext.AcceptedDemands.SingleAsync(
                         row => row.DemandId == unloading.Demand.DemandId, cancellationToken).ConfigureAwait(false);
                     if (unload?.Status != StationOperationStatus.Committed ||
@@ -1611,55 +1677,57 @@ public sealed partial class JourneyRuntimeEngine(
                             now, cancellationToken)
                         .ConfigureAwait(false);
                     await dbContext.SaveChangesAsync(cancellationToken).ConfigureAwait(false);
-                    stops = await JourneyStopCursor.LoadAsync(dbContext, runtime, cancellationToken)
-                        .ConfigureAwait(false);
-                    if (stops.OutstandingAtCurrentStop.Count > 0)
-                    {
-                        // 本停靠还有没卸的：发这一版清单与下一条卸货命令，留在等结果。
-                        await PublishStopWorklistAsync(
-                            runtime, stops, session, stationDepartureDeadlineAt: null, cancellationToken)
-                            .ConfigureAwait(false);
-                        await PublishUnloadCommandAsync(runtime, stops, session, cancellationToken)
-                            .ConfigureAwait(false);
-                        break;
-                    }
-
-                    if (stops.OpenStops.Count > 1)
-                    {
-                        // 卸完了这一站，计划里还有下一站：走与取货停靠<b>同一条</b>离站路——发离站安全核验、
-                        // 按答复过 REQ-0305 的创建门禁、建下一段腿的订单意图并授权移动、下 RIoT 订单，
-                        // 由那条路在车真开走之后才把本停靠标记完成。所以这里既不标记完成也不重载游标：
-                        // 离站段要的 stops.Current 正是「正要离开的这个停靠」。
-                        //
-                        // 先前这里直接 SetStage 到下一站的到站阶段，中间<b>什么都没做</b>。全仓只有
-                        // :761-762 建后续腿的订单意图，而那两行在离站安全分支里，卸货停靠走不到——于是
-                        // 下一轮按一个库里根本不存在的 UpperId 调 SingleAsync，抛 InvalidOperationException，
-                        // 冒到 JourneyRuntimeWorker 的<b>整轮</b> catch（记 Error 级事件 2002 LogIterationFailed），
-                        // 于是<b>这一轮整个中止</b>：推进循环里排在后面的车不再推进，派车轮次也不跑。每一轮重复。
-                        // （推进段<b>没有</b>逐车隔离——那是派车轮次才有的，事件 2123 属于 DispatchRoundRunner。）
-                        // 判据是 LeavingAnUnloadStopAuthorisesTheLegToTheNextStop：它断订单意图在不在，
-                        // 不断「推进没抛」——那个异常在测试这一侧什么都看不到。
-                        //
-                        // OpenStops 含当前停靠，所以判的是 > 1 不是 > 0。
-                        SetStage(runtime, JourneyRuntimeStage.AwaitingStationDeparture, now);
-                        await dbContext.SaveChangesAsync(cancellationToken).ConfigureAwait(false);
-                        goto case JourneyRuntimeStage.AwaitingStationDeparture;
-                    }
-
-                    (await TrackedStopAsync(stops.Current.StopId, cancellationToken).ConfigureAwait(false)).Status =
-                        JourneyStopStatuses.Completed;
-                    await dbContext.SaveChangesAsync(cancellationToken).ConfigureAwait(false);
-                    stops = await JourneyStopCursor.LoadAsync(dbContext, runtime, cancellationToken)
-                        .ConfigureAwait(false);
-
-                    // 与终结的五条来路同一个出口：写 Completed，并暂存车要收的收尾快照（control-server#323）。
-                    await JourneyClosure.StageAsync(dbContext, runtime, reasonCode: null, now, cancellationToken)
-                        .ConfigureAwait(false);
-                    checkpointWaits.Clear(runtime.VehicleKey);
-                    // The vehicle's purpose claim was already released with the unload that ended the journey's last
-                    // demand (JourneyPurposeClaimRelease). The order occupancy that used to be released here, one round
-                    // later, was retired in batch 8-16 (control-server#387).
                 }
+                // 走到这里的是刚卸完的那一轮，或重启后本站已经卸空、推进那一次保存没落的那一轮（U2、U3 前半）：两者读到的落库状态相同。
+                stops = await JourneyStopCursor.LoadAsync(dbContext, runtime, cancellationToken)
+                    .ConfigureAwait(false);
+                if (stops.OutstandingAtCurrentStop.Count > 0)
+                {
+                    // 本停靠还有没卸的：发这一版清单与下一条卸货命令，留在等结果。
+                    await PublishStopWorklistAsync(
+                        runtime, stops, session, stationDepartureDeadlineAt: null, cancellationToken)
+                        .ConfigureAwait(false);
+                    await PublishUnloadCommandAsync(runtime, stops, session, cancellationToken)
+                        .ConfigureAwait(false);
+                    break;
+                }
+
+                if (stops.OpenStops.Count > 1)
+                {
+                    // 卸完了这一站，计划里还有下一站：走与取货停靠<b>同一条</b>离站路——发离站安全核验、
+                    // 按答复过 REQ-0305 的创建门禁、建下一段腿的订单意图并授权移动、下 RIoT 订单，
+                    // 由那条路在车真开走之后才把本停靠标记完成。所以这里既不标记完成也不重载游标：
+                    // 离站段要的 stops.Current 正是「正要离开的这个停靠」。
+                    //
+                    // 先前这里直接 SetStage 到下一站的到站阶段，中间<b>什么都没做</b>。全仓只有
+                    // :761-762 建后续腿的订单意图，而那两行在离站安全分支里，卸货停靠走不到——于是
+                    // 下一轮按一个库里根本不存在的 UpperId 调 SingleAsync，抛 InvalidOperationException，
+                    // 冒到 JourneyRuntimeWorker 的<b>整轮</b> catch（记 Error 级事件 2002 LogIterationFailed），
+                    // 于是<b>这一轮整个中止</b>：推进循环里排在后面的车不再推进，派车轮次也不跑。每一轮重复。
+                    // （那是当时的后果：推进段当时没有逐车隔离。cs#487 起推进段逐车隔离，同样的异常今天只让这一辆车每轮抛、
+                    // 永不前进，别的车照常推进，异常在轮末重抛。）
+                    // 判据是 LeavingAnUnloadStopAuthorisesTheLegToTheNextStop：它断订单意图在不在，
+                    // 不断「推进没抛」——那个异常在测试这一侧什么都看不到。
+                    //
+                    // OpenStops 含当前停靠，所以判的是 > 1 不是 > 0。
+                    SetStage(runtime, JourneyRuntimeStage.AwaitingStationDeparture, now);
+                    await dbContext.SaveChangesAsync(cancellationToken).ConfigureAwait(false);
+                    goto case JourneyRuntimeStage.AwaitingStationDeparture;
+                }
+
+                (await TrackedStopAsync(stops.Current.StopId, cancellationToken).ConfigureAwait(false)).Status =
+                    JourneyStopStatuses.Completed;
+                await dbContext.SaveChangesAsync(cancellationToken).ConfigureAwait(false);
+                stops = await JourneyStopCursor.LoadAsync(dbContext, runtime, cancellationToken)
+                    .ConfigureAwait(false);
+
+                // 与终结的五条来路同一个出口：写 Completed，并暂存车要收的收尾快照（control-server#323）。
+                await JourneyClosure.StageAsync(dbContext, runtime, reasonCode: null, now, cancellationToken)
+                    .ConfigureAwait(false);
+                checkpointWaits.Clear(runtime.VehicleKey);
+                // The vehicle's purpose claim was already released with the unload that ended the journey's last
+                // demand (JourneyPurposeClaimRelease). The order occupancy that used to be released here, one round
+                // later, was retired in batch 8-16 (control-server#387).
                 break;
             case JourneyRuntimeStage.Blocked:
             case JourneyRuntimeStage.Completed:
@@ -5424,6 +5492,24 @@ public sealed partial class JourneyRuntimeEngine(
             await new PickupStopTermination(dbContext).StageAsync(
                 runtime, stops.CurrentSublotRequestMessageId(runtime.WorklistRevision), loading.Demand.DemandId, terminalReason, now,
                 cancellationToken).ConfigureAwait(false);
+            // 旅程还带着别的需求、没有收尾时，阶段要离开等装货结果（control-server#291 的 S2）：这一条已经终结，这一站再没有在装的，
+            // 留在这里下一轮每轮抛 "no demand loading at its stop"，车带着更早装上的货永远不走。与站点期限结束停靠
+            // （TryEndStopAtStationDeadlineAsync）同一个出口：本站没有待装的就交给离站那一段，由它决定持货等单还是离站；
+            // 还有待装的就回到等录入——期限已过，那里的期限出口会照它自己的条件（门、在线、取消）结束本站。与终结同一次保存。
+            //
+            // 回等录入时这里不发新一版清单与录入请求，与等装货结果那一段的续跑（resumingAfterEnding，会发）不对称。这个不对称成立的前提是
+            // 「确定的失败只在本站离站期限之后出现」：店里只把期限之后到的确定失败记成 Failed（DeterminateLoadFailure；期限之前的进恢复，
+            // JourneyRuntimeWorkerLoadDeadlineTests.AFailureReportedBeforeTheDeadlineIsNotSettledAsDeterminate），所以回到等录入的那一轮
+            // 期限已过，期限出口结束本站，不会有人对着车上那一版清单再录入。哪天期限之前的失败也走到这里，这一支就要改成与续跑一样发清单与录入请求。
+            if (runtime.Stage != JourneyRuntimeStage.Completed)
+            {
+                bool othersToLoadHere = stops.OutstandingAtCurrentStop
+                    .Any(item => item.Demand.DemandId != loading.Demand.DemandId);
+                SetStage(
+                    runtime,
+                    othersToLoadHere ? JourneyRuntimeStage.AwaitingSublot : JourneyRuntimeStage.AwaitingStationDeparture,
+                    now);
+            }
             await dbContext.SaveChangesAsync(cancellationToken).ConfigureAwait(false);
             await transaction.CommitAsync(cancellationToken).ConfigureAwait(false);
         }
