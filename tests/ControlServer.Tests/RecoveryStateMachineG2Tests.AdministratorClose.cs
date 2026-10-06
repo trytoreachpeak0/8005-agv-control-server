@@ -217,7 +217,7 @@ public sealed partial class RecoveryStateMachineG2Tests
         "another session named",
         "vehicle without an open session",
         "session open",
-        "fault cargo handoff",
+        "action outside the table",
         "result no longer awaited",
         "connected vehicle reports the attempt",
         "connected vehicle reports the attempt as pending only",
@@ -264,8 +264,14 @@ public sealed partial class RecoveryStateMachineG2Tests
                     await OpenSessionAfterFailedResultAsync(context, peer, action: null);
                     expected = [RecoverySessionAdministratorCloseCodes.SessionNotExecuting];
                     break;
-                case "fault cargo handoff":
+                case "action outside the table":
+                    // Every action a session can select is in the table since #484; an action outside it is made by hand to
+                    // pin the check that keeps the table the one place that decides.
                     await OpenSessionAfterFailedResultAsync(context, peer, action: "FAULT_CARGO_HANDOFF");
+                    ExceptionRecoverySessionRow unlisted = await context.ExceptionRecoverySessions.SingleAsync(token);
+                    unlisted.SelectedAction = "LOAD_CORRECTION";
+                    await context.SaveChangesAsync(token);
+                    context.ChangeTracker.Clear();
                     expected = [RecoverySessionAdministratorCloseCodes.ActionNotClosable];
                     break;
                 case "result no longer awaited":
