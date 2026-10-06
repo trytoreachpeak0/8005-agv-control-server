@@ -93,6 +93,7 @@ internal static partial class Program
                 },
                 1);
         }
+        await PauseAfterProbeForTestAsync();
 
         StationExclusivityManualReleaseResult result = await StationExclusivityManualRelease.ReleaseAsync(
             context,
@@ -245,6 +246,28 @@ internal static partial class Program
         catch (Exception other)
         {
             return new ServerProbe(ServerProbeState.Inconclusive, null, $"{other.GetType().Name}: {other.Message}");
+        }
+    }
+
+    /// <summary>
+    /// Test seam (control-server#473): unset in the field, where it does nothing. A test names a path prefix; this process writes
+    /// <c>&lt;prefix&gt;.reached</c> once the probe has found the server stopped, and goes on only once <c>&lt;prefix&gt;.go</c> exists (or
+    /// after two minutes), so the test can start the server inside the window between the probe and the write.
+    /// </summary>
+    internal const string PauseAfterProbeVariable = "CONTROL_SERVER_FIELDOPS_TEST_PAUSE_AFTER_PROBE";
+
+    private static async Task PauseAfterProbeForTestAsync()
+    {
+        string? prefix = Environment.GetEnvironmentVariable(PauseAfterProbeVariable);
+        if (string.IsNullOrWhiteSpace(prefix))
+        {
+            return;
+        }
+        await File.WriteAllTextAsync(prefix + ".reached", string.Empty);
+        DateTimeOffset giveUp = DateTimeOffset.UtcNow.AddMinutes(2);
+        while (!File.Exists(prefix + ".go") && DateTimeOffset.UtcNow < giveUp)
+        {
+            await Task.Delay(50);
         }
     }
 

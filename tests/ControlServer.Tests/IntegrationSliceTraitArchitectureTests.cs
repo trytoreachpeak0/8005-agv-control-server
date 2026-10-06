@@ -108,6 +108,7 @@ public sealed class IntegrationSliceTraitArchitectureTests
             ["CatalogBindingHoldConvergenceTests"] = "batch 6 FP-C9a REQ-0342/REQ-0345 catalog change holds confined to the affected task type (control-server#162); server-internal, no wire message",
             ["ChargingOrderShapePathTests"] = "control-server#401 every path that builds an order intent carries its order shape (LegIntent authorisation, own-order rebuild); server-internal, no wire message",
             ["ChargingPolicyStartupCheckTests"] = "batch 9-05 REQ-0281 the startup refusal when a charging policy version in effect breaks the threshold relation or the rescue line (control-server#403); server-internal, no wire message",
+            ["ControlServerDatabaseLockTests"] = "control-server#473 the OS-level lock bound to the server's database file, held by the running host and taken by FieldOps before a direct write; process-level, no wire message",
             ["ControlServerSqliteConnectionTests"] = "cross-cutting guard on the one place the server's SQLite connection string is built; the busy timeout two processes share is a policy, not a slice",
             ["CreateGateTests"] = "7.5 #9, FP-C13 create gate and catalog availability; server-internal gate",
             ["DashboardActionTests"] = "batch 6 FP-C9a REQ-0340 dashboard write action convention, same-origin confirmation page (control-server#162); the dashboard is disjoint from the protocol",
