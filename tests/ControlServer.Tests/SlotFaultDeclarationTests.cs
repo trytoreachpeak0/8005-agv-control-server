@@ -805,6 +805,58 @@ public sealed class SlotFaultDeclarationTests
     }
 
     /// <summary>
+    /// The give-up still lands when there is no command line left to settle (review of control-server#481, S2): the line was
+    /// settled already, or is gone, and the settle returns without saving. Without a save the declaration would read
+    /// <c>PENDING</c> again, and its command -- replayed from the declaration, not from the line -- would come back on the next
+    /// reconnect.
+    /// </summary>
+    /// <remarks>
+    /// Two cells per line state. <c>wire</c> goes through the processor, where the inbox transaction's own save
+    /// (<c>WireToGateStore.CaptureFirstResponseAsync</c>, same context) also carries the tracked declaration, so the observer's
+    /// save is not what this cell depends on. <c>direct</c> calls <see cref="SlotFaultDeclarationResults.ObserveCommandRefusedAsync"/>
+    /// itself, outside any inbox transaction: its contract is that it saves what it changed, and only that cell fails when the
+    /// save after the settle is removed (mutation R13).
+    /// </remarks>
+    [Theory]
+    [Trait("IntegrationSlice", "FP-IS-07")]
+    [InlineData("settled", "wire")]
+    [InlineData("gone", "wire")]
+    [InlineData("settled", "direct")]
+    [InlineData("gone", "direct")]
+    public async Task AGiveUpIsRecordedWhenTheCommandLineIsAlreadySettledOrGone(string line, string path)
+    {
+        await using Fixture fixture = await Fixture.AwaitingOperatorOnSlotOneAsync();
+        SlotFaultDeclarationRow declaration = await fixture.DeclareAsync();
+        DateTimeOffset? settledAt = line == "settled" ? Now.AddMinutes(-1) : null;
+        if (line == "settled")
+        {
+            await fixture.SettleCommandsAsync(Now.AddMinutes(-1));
+        }
+        else
+        {
+            await fixture.RemoveCommandsAsync();
+        }
+
+        if (path == "wire")
+        {
+            await fixture.RefuseCommandAsync(declaration.CommandMessageId, ServerReasonCodes.SlotOperationConflict);
+        }
+        else
+        {
+            using JsonDocument problem = JsonDocument.Parse(
+                $$"""{"reasonCode":"{{ServerReasonCodes.SlotOperationConflict}}","fieldPath":null,"displayMessage":"本车已放弃对这项判定的应答"}""");
+            Assert.True(await SlotFaultDeclarationResults.ObserveCommandRefusedAsync(
+                fixture.Context, new WireToGateStore(fixture.Context), AgvId, Guid.NewGuid().ToString("D"),
+                declaration.CommandMessageId, problem.RootElement, Now, NullLogger.Instance, Token));
+        }
+
+        SlotFaultDeclarationRow after = Assert.Single(await fixture.DeclarationsAsync());
+        Assert.Equal(SlotFaultDeclarationStates.Unreconciled, after.State);
+        Assert.Equal(Now, after.ResultReceivedAt);
+        Assert.Equal(settledAt, (await fixture.CommandsAsync()).SingleOrDefault()?.AcknowledgedAt);
+    }
+
+    /// <summary>
     /// The way out of an <c>UNRECONCILED</c> declaration, on the wire only (control-server#481): declared again, the vehicle
     /// -- which journals a declaration only when it applies it -- judges the new one afresh; with the slot still waiting it
     /// applies it, stops the operation and reports the slot <c>UNKNOWN</c>, and the operation goes to recovery as after any
@@ -1968,6 +2020,29 @@ public sealed class SlotFaultDeclarationTests
             {
                 row.AcknowledgedAt = null;
             }
+            await Context.SaveChangesAsync(Token);
+            Context.ChangeTracker.Clear();
+        }
+
+        /// <summary>The declaration commands' outbox lines, settled at <paramref name="settledAt"/>.</summary>
+        public async Task SettleCommandsAsync(DateTimeOffset settledAt)
+        {
+            Context.ChangeTracker.Clear();
+            foreach (ProtocolOutboxRow row in await Context.ProtocolOutbox
+                         .Where(item => item.MessageType == "SlotFaultDeclarationCommand").ToArrayAsync(Token))
+            {
+                row.AcknowledgedAt = settledAt;
+            }
+            await Context.SaveChangesAsync(Token);
+            Context.ChangeTracker.Clear();
+        }
+
+        /// <summary>The declaration commands' outbox lines removed.</summary>
+        public async Task RemoveCommandsAsync()
+        {
+            Context.ChangeTracker.Clear();
+            Context.ProtocolOutbox.RemoveRange(await Context.ProtocolOutbox
+                .Where(item => item.MessageType == "SlotFaultDeclarationCommand").ToArrayAsync(Token));
             await Context.SaveChangesAsync(Token);
             Context.ChangeTracker.Clear();
         }

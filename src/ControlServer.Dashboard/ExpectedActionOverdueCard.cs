@@ -146,7 +146,10 @@ public sealed class ExpectedActionOverdueCard : IDashboardCard
             "PENDING" => DashboardPageRenderer.Cell($"已判定、等车载端结果（{declaredAt} 由 {by} 判定）"),
             "APPLIED" => DashboardPageRenderer.Cell($"判定已生效（{declaredAt} 由 {by} 判定，{answeredAt} 车载端应用），这次装卸转人工异常处理"),
             "NOT_APPLICABLE" => $"<td>{WebUtility.HtmlEncode(
-                    $"车载端拒绝了判定（{declaredAt} 由 {by} 判定，{answeredAt} 拒绝）：{Refusal(declaration)}")}"
+                    $"车载端拒绝了判定（{declaredAt} 由 {by} 判定，{answeredAt} 拒绝）：{Refusal(declaration)}"
+                    + (UnreconciledOnOperation(declaration)
+                        ? "；这次装卸之前有一项判定车载端已放弃应答，车上是否已生效未知，这次装卸不能再取消"
+                        : string.Empty))}"
                 + $" <a href=\"{link}\">再判</a></td>",
             "UNRECONCILED" => $"<td>{WebUtility.HtmlEncode(
                     $"车载端已放弃对判定的应答（{declaredAt} 由 {by} 判定，{answeredAt} 放弃），两端结论不一致，车上是否已生效未知，请人工核对；这次装卸不能再取消")}"
@@ -154,6 +157,13 @@ public sealed class ExpectedActionOverdueCard : IDashboardCard
             var other => DashboardPageRenderer.Cell($"判定状态 {other}（{declaredAt}）")
         };
     }
+
+    /// <summary>
+    /// 这次装卸上是否有车载端放弃了应答的判定（control-server#481）。行上只显示最近一次判定，之后再判被拒时，
+    /// 取消仍被那一项挡着，要在拒绝那一格里说出来。
+    /// </summary>
+    private static bool UnreconciledOnOperation(JsonElement declaration) =>
+        declaration.TryGetProperty("unreconciledOnOperation", out JsonElement value) && value.ValueKind == JsonValueKind.True;
 
     private static string Refusal(JsonElement declaration)
     {
