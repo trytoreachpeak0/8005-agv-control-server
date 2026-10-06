@@ -648,7 +648,13 @@ function Invoke-ParallelDispatchGateChange {
         return [pscustomobject]@{ Changed = $true; Direction = $Direction; Previous = $previous; Now = $target; ServiceStatus = $status
             Message = "RiotCreateDispatch.enabled set $($target ? 'true' : 'false') in $ConfigurationPath. '$ServiceName' was $status and is left so; it reads the file when it next starts." }
     }
-    $null = & $Actions.StartService
+    # The flag is already written here, so a start that throws must say what the file now holds and that the
+    # service did not come up (review S2) -- a bare Start-Service error would leave both unsaid.
+    try { $null = & $Actions.StartService } catch {
+        throw ("GATE_RESTART_FAILED: RiotCreateDispatch.enabled is now $($target ? 'true' : 'false') in $ConfigurationPath " +
+            "(written $($writtenUtc.ToString('o'))), but '$ServiceName', stopped for this change, could not be started again " +
+            "($($_.Exception.Message)). Start it by hand and check it before relying on the gate.")
+    }
     $statusAfter = [string] (& $Actions.ServiceStatus)
     $startedUtc = & $Actions.ProcessStartTimeUtc
     if ($statusAfter -cne 'Running' -or $null -eq $startedUtc -or ([datetime] $startedUtc).ToUniversalTime() -le $writtenUtc) {

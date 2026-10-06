@@ -2867,6 +2867,12 @@ $r = Invoke-GateCase -Direction Close -Text $openConfig -States @($idle, $idle) 
 Write-Result -Ok ($r.Thrown -and $r.Thrown.StartsWith('GATE_WRITE_FAILED:') -and $r.Thrown.Contains('is not false after it was set') -and $r.Thrown.Contains('could not be started again (simulated start failure)') -and $r.Unchanged) `
     -Name 'gate change: a start that throws after a failed write -> the write failure and the start failure are both reported' -Detail "thrown $($r.Thrown)"
 
+# --- Final review S2: the restart after the write throws -> it says what the file now holds and that the service did not come up.
+$r = Invoke-GateCase -Direction Close -Text $openConfig -States @($idle, $idle) -StartTimes @($gateStarted) -StartThrows
+Write-Result -Ok ($r.Thrown -and $r.Thrown.StartsWith('GATE_RESTART_FAILED:') -and $r.Thrown.Contains('RiotCreateDispatch.enabled is now false') -and
+    $r.Thrown.Contains('could not be started again (simulated start failure)') -and $r.Thrown.Contains($v2Service) -and $r.Flag -eq $false) `
+    -Name 'gate change: the restart after the write throws -> GATE_RESTART_FAILED, naming the value written and the service that did not start' -Detail "flag $($r.Flag) thrown $($r.Thrown)"
+
 # --- Review S5: the open refusal names the way out, in order, with the V2 service and not the MVP's.
 $sentRefusal = Get-ParallelDispatchGateRefusal -Direction Open -State $busy -ServiceName $v2Service -DatabasePath $gateDatabase
 $riotAt = $sentRefusal.IndexOf('in RIoT, confirm that no order is running'); $handAt = $sentRefusal.IndexOf('section 10 of remote-ops/factory-server/docs/wire-to-gate-parallel-cd.md')
@@ -2914,6 +2920,9 @@ if ($whatIf.Count -eq 1) {
                 ($n -is [System.Management.Automation.Language.MemberExpressionAst] -and $n.Static) }, $true) | ForEach-Object { "member $($_.Extent.Text)" })
     $changing += @($body.FindAll({ param($n) $n -is [System.Management.Automation.Language.TypeExpressionAst] -and $n.TypeName.FullName -match '(^|\.)IO(\.|$)' }, $true) |
             ForEach-Object { "type $($_.Extent.Text)" })
+    # Final review N1: "Write-Step 'probe' > $configurationPath" is an allowed command whose output is written to a file.
+    $changing += @($body.FindAll({ param($n) $n -is [System.Management.Automation.Language.FileRedirectionAst] }, $true) |
+            ForEach-Object { "redirection $($_.Extent.Text)" })
     $returns = @($body.Statements | Where-Object { $_ -is [System.Management.Automation.Language.ReturnStatementAst] }).Count -eq 1
     $changeCall = $gateAst.Find({ param($n) $n -is [System.Management.Automation.Language.CommandAst] -and $n.GetCommandName() -eq 'Invoke-ParallelDispatchGateChange' }, $true)
     $before = $null -ne $changeCall -and $whatIf[0].Extent.EndOffset -lt $changeCall.Extent.StartOffset

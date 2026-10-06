@@ -186,8 +186,10 @@ public sealed class DispatchGatePremiseArchitectureTests
 
     /// <summary>
     /// The source without its comments: block comments, then line comments (<c>//</c> and <c>///</c>, so every cref goes
-    /// with them). A <c>//</c> inside a string literal is taken for a comment too; that only ever removes text, which can
-    /// make a count smaller, never larger.
+    /// with them). A <c>//</c> or <c>/*</c> inside a string literal is taken for a comment too, and that is not harmless: it
+    /// removes code up to the end of the line or the next <c>*/</c>, so a count can come out smaller -- which is exactly how a
+    /// third call site could be hidden. Today no string literal in <c>src/</c> or <c>tools/</c> contains <c>/*</c>; one
+    /// that does is reason to make this a real lexer, not to trust the count.
     /// </summary>
     private static string CodeOnly(string source) =>
         Regex.Replace(Regex.Replace(source, @"/\*.*?\*/", " ", RegexOptions.Singleline), @"//[^\r\n]*", " ");
