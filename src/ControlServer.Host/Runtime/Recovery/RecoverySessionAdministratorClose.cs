@@ -22,6 +22,7 @@ public static class RecoverySessionAdministratorCloseCodes
     public const string ResultNotAwaited = "RECOVERY_CLOSE_RESULT_NOT_AWAITED";
     public const string ResultInFlightOnVehicle = "RECOVERY_CLOSE_RESULT_IN_FLIGHT_ON_VEHICLE";
     public const string VehicleHandshakeInProgress = "RECOVERY_CLOSE_VEHICLE_HANDSHAKE_IN_PROGRESS";
+    public const string ForcedInProgressOnVehicle = "RECOVERY_CLOSE_FORCED_IN_PROGRESS_ON_VEHICLE";
 
     /// <summary>每一个拒绝码给现场人员看的中文说明：Host 入口的拒绝响应里逐条带上（<c>descriptions</c>）。</summary>
     public static IReadOnlyDictionary<string, string> Descriptions { get; } = new Dictionary<string, string>(StringComparer.Ordinal)
@@ -36,6 +37,7 @@ public static class RecoverySessionAdministratorCloseCodes
         [ActionNotClosable] = "这个会话选的动作不能从这里关：只有修好后续作、故障货交接、全空补偿与强制机械恢复可以",
         [ResultNotAwaited] = "这个会话的动作已经不在等结果：服务端会自己收尾，不用再办",
         [VehicleHandshakeInProgress] = "车正在重新连接，连接还没完成，它可能正在补交结果：请等连接完成后再办",
+        [ForcedInProgressOnVehicle] = "车此刻在线，而它的强制机械恢复可能正在车前执行：服务端在车每次连上后都会把这条命令重新发给它，车上报的事实看不出执行到哪一步。请在车上完成这次强制恢复并提交硬件恢复记录；确实要关，先让车离线（停掉车载端程序）再办",
         [ResultInFlightOnVehicle] = "车此刻在线，而且它上报的事实说明结果可能还在路上（点名了这次的 attempt、有待交结果，或仓门开锁输出还开着）：现在关会让真实结果白白到达。请等车把结果交上来，或等车离线后再办",
     };
 }
@@ -77,7 +79,10 @@ public sealed record RecoverySessionAdministratorCloseResult(
 /// 报着任何待交结果，就拒绝（<see cref="RecoverySessionAdministratorCloseCodes.ResultInFlightOnVehicle"/>）。车正在握手（SessionHello 已到、连接还不可
 /// 发送），或在线连接的会话代次与库里记录的不同，也拒绝（<see cref="RecoverySessionAdministratorCloseCodes.VehicleHandshakeInProgress"/>）：这时库里的
 /// 待处理事实已被 SessionHello 清空，或不是这条连接的报告，而车正要补交结果。车不在线照样放行——等一辆永远不回来的车，
-/// 正是这个出口要结束的事。是否在线、会话代次与那三项事实，放行拒绝都记进审计。
+/// 正是这个出口要结束的事。是否在线、会话代次与那几项事实，放行拒绝都记进审计。
+/// 强制机械恢复在车在线时一律不关（control-server#484 审查 S2，<see cref="RecoverySessionAdministratorCloseCodes.ForcedInProgressOnVehicle"/>）：
+/// 库里那份恢复报告是握手时的，而车每次连上，服务端都在这份报告之后把还在等结果的强制命令重发一遍，所以报告说明不了它执行到哪一步。
+/// 车在线时的出口是结果送达、提交硬件恢复记录；结果被拒收的情况由车载端的隔离与硬件记录入口接住（8005-agv-onboard-hmi#150）。
 /// </para>
 /// <para>
 /// <b>放宽类入口</b>：与 <see cref="StationExclusivityReleaseEndpoints"/> 同一把 Bearer 凭据、同一个开关（<c>VehicleFaultRecovery:enabled</c>）。

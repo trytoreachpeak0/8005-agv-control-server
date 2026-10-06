@@ -211,36 +211,139 @@ public sealed partial class RecoveryStateMachineG2Tests
         }
     }
 
-    public static TheoryData<string, string, bool> OtherActionFactsOnAConnectedVehicle => new()
+    /// <summary>
+    /// The other way out of a closed forced recovery (review N2): the vehicle did carry it out and comes back with its result.
+    /// The late result is acknowledged and settles nothing, but it is on file now, so the hardware record the onboard offers
+    /// for the forced recovery it carried out is RECORDED -- and the forced recovery no longer holds the vehicle.
+    /// </summary>
+    [Fact]
+    [Trait("IntegrationSlice", "FP-IS-07")]
+    [Trait("ProtocolVector", "CV-FORCED-MECHANICAL-RECOVERY")]
+    public async Task AClosedForcedRecoveryWhoseResultArrivesLateIsReleasedByItsHardwareRecord()
     {
-        { Handoff, "unsettled attempt", false },
-        { Handoff, "pending attempt", false },
-        { Handoff, "pending result", false },
-        { Handoff, "active unlock", false },
-        { Handoff, "nothing", true },
-        { CompensationAuthorized, "unsettled attempt", false },
-        { CompensationAuthorized, "active unlock", false },
-        { CompensationAwaitingAuthorization, "unsettled attempt", false },
-        { CompensationAwaitingAuthorization, "active unlock", false },
-        { Forced, "pending result", false },
-        { Forced, "active unlock", false },
-        // A forced recovery settles no attempt of its own; the operation's attempt left unsettled by the failed load says
-        // nothing about whether its result is on the way.
-        { Forced, "unsettled attempt", true },
-        { Forced, "nothing", true },
+        Environment.SetEnvironmentVariable(StuckProofVariable, StuckProof);
+        try
+        {
+            CancellationToken token = TestContext.Current.CancellationToken;
+            await using SqliteConnection connection = new("Data Source=:memory:");
+            await connection.OpenAsync(token);
+            await using ControlServerDbContext context = await CreateContextAsync(connection);
+            RecordingPeer peer = new(context);
+            (OnboardMessageProcessor processor, OnboardConnectionState state, string? late) =
+                await StuckOtherActionAsync(context, peer, Forced);
+            WireToGateStore store = new(context);
+            Assert.True((await CloseAsync(context, peer, CloseRequest(sessionId: null))).Closed);
+            Assert.True(await store.ForcedRecoveryAwaitsHardwareRecordAsync(AgvId, token));
+            Assert.Equal("REJECTED", FirstPayload(await processor.ProcessAsync(
+                HardwareRecoveryRecord("e1000000-0000-4000-8000-000000004848", slots: RecoverySlots), state, token))
+                .GetProperty("outcome").GetString());
+
+            Assert.Equal("DurableAck", MessageType(await processor.ProcessAsync(late!, state, token)));
+            await processor.FlushDeferredOutboundAsync(state, token);
+            context.ChangeTracker.Clear();
+            Assert.True(await store.ForcedRecoveryAwaitsHardwareRecordAsync(AgvId, token));
+
+            string recorded = await processor.ProcessAsync(
+                HardwareRecoveryRecord("e1000000-0000-4000-8000-000000004849", slots: RecoverySlots), state, token);
+            await processor.FlushDeferredOutboundAsync(state, token);
+
+            Assert.Equal("RECORDED", FirstPayload(recorded).GetProperty("outcome").GetString());
+            context.ChangeTracker.Clear();
+            Assert.False(await store.ForcedRecoveryAwaitsHardwareRecordAsync(AgvId, token));
+        }
+        finally
+        {
+            Environment.SetEnvironmentVariable(StuckProofVariable, null);
+        }
+    }
+
+    /// <summary>
+    /// Review S2, through the real handshake: the vehicle reconnects, reports nothing pending and no unlock output -- its report
+    /// predates the forced command -- and the server sends the forced command again right after that report. The vehicle may
+    /// now be carrying it out, and the report on file cannot say otherwise, so the closing is refused,
+    /// RECOVERY_CLOSE_FORCED_IN_PROGRESS_ON_VEHICLE, and the description tells the site what to do next. The same vehicle gone
+    /// is closed.
+    /// </summary>
+    [Fact]
+    [Trait("IntegrationSlice", "FP-IS-07")]
+    [Trait("ProtocolVector", "CV-FORCED-MECHANICAL-RECOVERY")]
+    public async Task AForcedRecoveryResentAfterTheReconnectReportIsNotClosedWhileTheVehicleIsConnected()
+    {
+        Environment.SetEnvironmentVariable(StuckProofVariable, StuckProof);
+        try
+        {
+            CancellationToken token = TestContext.Current.CancellationToken;
+            await using SqliteConnection connection = new("Data Source=:memory:");
+            await connection.OpenAsync(token);
+            await using ControlServerDbContext context = await CreateContextAsync(connection);
+            RecordingPeer peer = new(context);
+            (OnboardMessageProcessor processor, _, _) = await StuckOtherActionAsync(context, peer, Forced);
+            string commandId = (await context.RecoveryWorkflows.AsNoTracking().SingleAsync(token)).CommandMessageId!;
+
+            OnboardConnectionState reconnected = new() { DeferOutboundUntilResponseWritten = true };
+            List<string> wire = [.. await ReconnectAsync(processor, peer, reconnected)];
+            long generation = reconnected.SessionGeneration!.Value;
+            int reportAt = await FinishHandshakeAsync(processor, peer, reconnected, wire);
+            Assert.Contains(wire.Skip(reportAt), line =>
+                MessageType(line) == "ForcedMechanicalRecoveryCommand" && MessageIdOf(line) == commandId);
+            context.ChangeTracker.Clear();
+            SessionRecoveryRow report = await context.SessionRecoveries.AsNoTracking().SingleAsync(token);
+            Assert.Equal((generation, "[]", "[]"), (report.SessionGeneration, report.PendingResultIdsJson, report.ActiveUnlockSlotsJson));
+            string workflows = await WorkflowAccountAsync(context);
+
+            RecoverySessionAdministratorCloseResult refused = await CloseAsync(
+                context, peer, CloseRequest(sessionId: null), new FixedPresence(generation, handshaking: false));
+
+            Assert.Equal([RecoverySessionAdministratorCloseCodes.ForcedInProgressOnVehicle], refused.Codes);
+            Assert.Equal(workflows, await WorkflowAccountAsync(context));
+            Assert.Equal("EXECUTING", (await context.ExceptionRecoverySessions.AsNoTracking().SingleAsync(token)).State);
+            string description = RecoverySessionAdministratorCloseCodes.Descriptions[RecoverySessionAdministratorCloseCodes.ForcedInProgressOnVehicle];
+            Assert.Contains("硬件恢复记录", description, StringComparison.Ordinal);
+            Assert.Contains("先让车离线", description, StringComparison.Ordinal);
+
+            Assert.True((await CloseAsync(context, peer, CloseRequest(sessionId: null))).Closed);
+        }
+        finally
+        {
+            Environment.SetEnvironmentVariable(StuckProofVariable, null);
+        }
+    }
+
+    private const string InFlight = RecoverySessionAdministratorCloseCodes.ResultInFlightOnVehicle;
+    private const string ForcedUnderWay = RecoverySessionAdministratorCloseCodes.ForcedInProgressOnVehicle;
+
+    public static TheoryData<string, string, string> OtherActionFactsOnAConnectedVehicle => new()
+    {
+        { Handoff, "unsettled attempt", InFlight },
+        { Handoff, "pending attempt", InFlight },
+        { Handoff, "pending result", InFlight },
+        { Handoff, "active unlock", InFlight },
+        { Handoff, "nothing", "" },
+        { CompensationAuthorized, "unsettled attempt", InFlight },
+        { CompensationAuthorized, "active unlock", InFlight },
+        { CompensationAwaitingAuthorization, "unsettled attempt", InFlight },
+        { CompensationAwaitingAuthorization, "active unlock", InFlight },
+        // A connected vehicle's forced recovery is refused whatever its report says (review S2): the forced command was sent
+        // again after the report that ended the handshake, so the report cannot tell.
+        { Forced, "pending result", ForcedUnderWay },
+        { Forced, "active unlock", ForcedUnderWay },
+        { Forced, "unsettled attempt", ForcedUnderWay },
+        { Forced, "nothing", ForcedUnderWay },
     };
 
     /// <summary>
     /// A connected vehicle whose latest report says the outcome may still be on its way is not closed: for a handoff or a
-    /// compensation, the report names the session's attempt or any pending result; for a forced recovery, any pending result;
-    /// for all three, slots whose unlock output is active -- the vehicle is at the doors. A connected vehicle whose report says
-    /// none of that -- the onboard replaced or its journal cleared -- is closed.
+    /// compensation, the report names the session's attempt or any pending result, or slots whose unlock output is active --
+    /// the vehicle is at the doors. A connected vehicle whose report says none of that -- the onboard replaced or its journal
+    /// cleared -- is closed. A forced recovery on a connected vehicle is never closed (review S2,
+    /// RECOVERY_CLOSE_FORCED_IN_PROGRESS_ON_VEHICLE): the report on file is older than the forced command the vehicle was
+    /// sent again on connecting, so it says nothing about it. Every refusal leaves the workflows as they were.
     /// </summary>
     [Theory]
     [MemberData(nameof(OtherActionFactsOnAConnectedVehicle))]
     [Trait("IntegrationSlice", "FP-IS-07")]
     public async Task AConnectedVehicleWhoseReportSaysTheOutcomeMayBeOnItsWayHoldsTheClosingBack(
-        string shape, string reported, bool closes)
+        string shape, string reported, string refusal)
     {
         Environment.SetEnvironmentVariable(StuckProofVariable, StuckProof);
         try
@@ -262,14 +365,14 @@ public sealed partial class RecoveryStateMachineG2Tests
             RecoverySessionAdministratorCloseResult result = await CloseAsync(
                 context, peer, CloseRequest(sessionId: null), new FixedPresence(SeededSessionGeneration, handshaking: false));
 
-            if (closes)
+            if (refusal == "")
             {
                 Assert.True(result.Closed, string.Join(',', result.Codes));
                 Assert.Equal("CLOSED", (await context.ExceptionRecoverySessions.AsNoTracking().SingleAsync(token)).State);
             }
             else
             {
-                Assert.Equal([RecoverySessionAdministratorCloseCodes.ResultInFlightOnVehicle], result.Codes);
+                Assert.Equal([refusal], result.Codes);
                 Assert.NotEqual("CLOSED", (await context.ExceptionRecoverySessions.AsNoTracking().SingleAsync(token)).State);
                 Assert.Equal(workflows, await WorkflowAccountAsync(context));
             }
@@ -369,6 +472,9 @@ public sealed partial class RecoveryStateMachineG2Tests
         "a higher generation ended normally",
         "no forced workflow above the reported generation",
         "another action over the closed generation",
+        "an earlier generation ended normally below a closed one",
+        "only another vehicle's forced recovery was closed",
+        "only another action was closed at the generation",
     };
 
     /// <summary>
@@ -398,12 +504,32 @@ public sealed partial class RecoveryStateMachineG2Tests
             OnboardMessageProcessor processor;
             OnboardConnectionState state;
             long reportedGeneration = 0;
-            if (fence == "no forced workflow above the reported generation")
+            if (fence is "no forced workflow above the reported generation"
+                or "only another vehicle's forced recovery was closed"
+                or "only another action was closed at the generation")
             {
                 await SeedBlockedJourneyAsync(context, productionShapedSession: true);
                 processor = Processor(context, peer, StuckProofVariable);
                 state = CurrentState(deferOutbound: true);
                 await store.AdvanceForcedRecoveryGenerationAsync(AgvId, 1, Now, token);
+                if (fence == "only another vehicle's forced recovery was closed")
+                    await AddClosedWorkflowAsync(context, "AGV-8005-02", "FORCED_MECHANICAL_RECOVERY", generation: 1);
+                else if (fence == "only another action was closed at the generation")
+                    await AddClosedWorkflowAsync(context, AgvId, "FAULT_CARGO_HANDOFF", generation: 1);
+            }
+            else if (fence == "an earlier generation ended normally below a closed one")
+            {
+                // Generation 1 ended with its result; generation 2 was closed by an administrator; the vehicle reports 0.
+                (processor, state, _) = await StuckOtherActionAsync(context, peer, Forced);
+                Assert.True((await CloseAsync(context, peer, CloseRequest(sessionId: null))).Closed);
+                RecoveryWorkflowRow ended = await context.RecoveryWorkflows.SingleAsync(token);
+                ended.State = RecoveryWorkflowState.Reconciled;
+                ended.Outcome = "MECHANICALLY_ISOLATED";
+                ended.ResultMessageId = "80000000-0000-4000-8000-000000004847";
+                await context.SaveChangesAsync(token);
+                await store.AdvanceForcedRecoveryGenerationAsync(AgvId, 2, Now, token);
+                context.ChangeTracker.Clear();
+                await AddClosedWorkflowAsync(context, AgvId, "FORCED_MECHANICAL_RECOVERY", generation: 2);
             }
             else
             {
@@ -432,6 +558,7 @@ public sealed partial class RecoveryStateMachineG2Tests
             await processor.FlushDeferredOutboundAsync(state, token);
             Assert.Equal("ExceptionRecoverySessionOpened", MessageType(opened));
             string workflows = await WorkflowAccountAsync(context);
+            long before = await GenerationOfAsync(context);
 
             string answer = await processor.ProcessAsync(
                 InSessionAction(fence == "another action over the closed generation" ? Handoff : Forced,
@@ -441,7 +568,7 @@ public sealed partial class RecoveryStateMachineG2Tests
             await processor.FlushDeferredOutboundAsync(state, token);
             context.ChangeTracker.Clear();
 
-            long generation = (await context.VehicleRecoveryGenerations.AsNoTracking().SingleAsync(token)).ForcedRecoveryGeneration;
+            long generation = await GenerationOfAsync(context);
             if (fence == "vehicle reports the closed generation")
             {
                 Assert.Equal("RecoveryActionAccepted", MessageType(answer));
@@ -451,7 +578,7 @@ public sealed partial class RecoveryStateMachineG2Tests
             {
                 Assert.Equal(("RecoveryActionRejected", ServerReasonCodes.ForcedRecoveryGenerationStale),
                     (MessageType(answer), FirstPayload(answer).GetProperty("problem").GetProperty("reasonCode").GetString()));
-                Assert.Equal(1, generation);
+                Assert.Equal(before, generation);
                 Assert.Equal(workflows, await WorkflowAccountAsync(context));
             }
         }
@@ -508,6 +635,35 @@ public sealed partial class RecoveryStateMachineG2Tests
                 : RecoveryWorkflowState.AwaitingResult,
             workflow.State);
         return (processor, state, result);
+    }
+
+    /// <summary>The seeded vehicle's forced recovery generation, as the server holds it.</summary>
+    private static async Task<long> GenerationOfAsync(ControlServerDbContext context) =>
+        (await context.VehicleRecoveryGenerations.AsNoTracking()
+            .SingleAsync(row => row.AgvId == AgvId, TestContext.Current.CancellationToken)).ForcedRecoveryGeneration;
+
+    /// <summary>A workflow an administrator closed, written by hand: of <paramref name="agvId"/>, at <paramref name="generation"/>.</summary>
+    private static async Task AddClosedWorkflowAsync(ControlServerDbContext context, string agvId, string type, long generation)
+    {
+        CancellationToken token = TestContext.Current.CancellationToken;
+        string workflowId = StableGuid($"{agvId}|{type}|{generation}", "closed-workflow-484");
+        context.RecoveryWorkflows.Add(new RecoveryWorkflowRow
+        {
+            WorkflowId = workflowId,
+            WorkflowType = type,
+            ExceptionRecoverySessionId = StableGuid(workflowId, "closed-session-484"),
+            AgvId = agvId,
+            SlotsJson = JsonSerializer.Serialize(RecoverySlots),
+            ForcedRecoveryGeneration = generation,
+            State = RecoveryWorkflowState.RecoveryRequired,
+            Outcome = RecoveryWorkflowOutcomes.AdministratorClosed,
+            RequestMessageId = StableGuid(workflowId, "request-484"),
+            RequestContentHash = new string('b', 64),
+            CreatedAt = Now,
+            UpdatedAt = Now
+        });
+        await context.SaveChangesAsync(token);
+        context.ChangeTracker.Clear();
     }
 
     /// <summary>The seeded compensation's authorization request, as the vehicle asks it.</summary>

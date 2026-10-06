@@ -494,17 +494,23 @@ public sealed class OnboardRecoveryCoordinator(
                              connection?.UnsettledSlotOperationAttemptId == attemptId);
         // What says the outcome may still be on its way, by action (control-server#484). A pending result is named by its
         // messageId alone, so any one counts, for every action. A resume, a handoff and a compensation are about the session's
-        // attempt, so a report naming it counts; a forced recovery settles no attempt of its own, and the attempt the failed
-        // load left unsettled says nothing about it. A handoff, a compensation and a forced recovery open doors: slots whose
-        // unlock output is active mean the vehicle is at them. The resume is judged as #483 left it.
+        // attempt, so a report naming it counts; a handoff and a compensation open doors, and slots whose unlock output is
+        // active mean the vehicle is at them. The resume is judged as #483 left it. A forced recovery is not judged on the
+        // report at all -- see the refusal below.
         bool resultInFlight = connectedSessionGeneration is not null &&
                               (pendingResults.Length > 0 ||
                                selectedAction switch
                                {
                                    "RESUME_AFTER_REPAIR" => namesAttempt,
-                                   "FORCED_MECHANICAL_RECOVERY" => activeUnlockSlots.Length > 0,
                                    _ => namesAttempt || activeUnlockSlots.Length > 0
                                });
+        // A forced recovery on a connected vehicle may be under way whatever the report says (review of #484, S2): the report on
+        // file is the one that ended the connection's handshake, and every recovery command still awaiting its result is sent
+        // again right after it (OnboardMessageProcessor, ReplayPendingCommandsAsync). So the forced command reached this
+        // connection after its report, and the report can say nothing about it: no pending result, no unlock output, while a
+        // person stands at the vehicle forcing the doors. The way out for a connected vehicle is the result and its hardware
+        // record; a result refused is taken up by the onboard's isolation and hardware record entry (8005-agv-onboard-hmi#150).
+        bool forcedInProgress = connectedSessionGeneration is not null && selectedAction == "FORCED_MECHANICAL_RECOVERY";
         facts(new
         {
             vehicle = new
@@ -556,6 +562,8 @@ public sealed class OnboardRecoveryCoordinator(
             return Refused(RecoverySessionAdministratorCloseCodes.ResultNotAwaited);
         if (handshaking || (connectedSessionGeneration is not null && connectedSessionGeneration != connection?.SessionGeneration))
             return Refused(RecoverySessionAdministratorCloseCodes.VehicleHandshakeInProgress);
+        if (forcedInProgress)
+            return Refused(RecoverySessionAdministratorCloseCodes.ForcedInProgressOnVehicle);
         if (resultInFlight)
             return Refused(RecoverySessionAdministratorCloseCodes.ResultInFlightOnVehicle);
 
