@@ -1343,7 +1343,13 @@ public sealed partial class JourneyRuntimeEngine(
                         // 这一支刚落定、#289 的续跑（resumingAfterCommit）与本站在装那一条被终结之后的续跑（resumingAfterEnding）共用。
                         // 不要在这里无条件重置离站等待起点：resumingAfterEnding 一条都没装上，不是 LoadBatch 闭环（ADR-cross-0055），
                         // 它不开始新的纠正时间；断联作废过的才按「此刻」补填，与等录入那一处同一个规则。
-                        runtime.StationDepartureWaitStartedAt ??= now;
+                        //
+                        // 补填只给续跑：刚落定的正常路径也走这一支，而断联作废之后结果先落库、就绪后第一轮直接走到这里时起点也是空的。
+                        // 正常路径原来就是发一版不带期限的清单、下一轮在等录入那一处补填并升一版，这里不改它（cs#291 审查追问）。
+                        if (resumingAfterCommit || resumingAfterEnding)
+                        {
+                            runtime.StationDepartureWaitStartedAt ??= now;
+                        }
                         // 续跑重发的是上一轮已经写盘的那一版（control-server#291 独立审查）。车确认过、又换了一代时，候选报文只有信封不同，
                         // 不带 keepAcknowledgedIgnoring 就被重放校验拒；断联作废过离站等待时期限也变了，那就升一版（control-server#339），
                         // 与到站重跑（PublishPickupStateAsync）同一个做法。第一次发这一版时发件箱里还没有它，两样都不起作用。

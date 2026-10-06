@@ -128,6 +128,46 @@ public sealed class ResumeAfterAcknowledgedReconnectTests
         });
     }
 
+    /// <summary>
+    /// 不是续跑的那一条路保持原样：断联作废了离站等待，结果在就绪后第一轮之前已落库，这一轮刚落定、本站还有待装——发出的那一版清单
+    /// 照旧不带期限，补填留给下一轮等录入那一处（续跑那一支的补填不碰正常路径，cs#291 审查追问）。
+    /// </summary>
+    [Fact]
+    [Trait("IntegrationSlice", "FP-IS-08")]
+    public async Task AFreshLoadAfterAVoidedWaitStillSendsItsWorklistWithoutADeadlineAsBefore()
+    {
+        await using RuntimeFixture fixture = await RuntimeFixture.CreateAsync();
+        fixture.Options.StationDepartureWaitTimeout = TimeSpan.FromSeconds(10);
+        JourneyRuntimeRow runtime = await Batch7MultiDemandAdvanceTests.TwoDemandsAtThePickupAsync(fixture);
+        await AddInboxAsync(
+            fixture, FirstSubmissionId, "SublotSubmitted", await SublotSubmissionAsync(fixture, runtime, FirstSublot));
+        await TickAndRunAsync(fixture);
+        Assert.Equal(JourneyRuntimeStage.AwaitingLoadResult, (await JourneyOfAsync(fixture, FirstDemandId)).Stage);
+
+        // 断开：新的一代握手还没完成，会话不就绪，这一轮作废离站等待。
+        await fixture.ReconnectAsync(2);
+        await TickAndRunAsync(fixture);
+        Assert.Null((await JourneyOfAsync(fixture, FirstDemandId)).StationDepartureWaitStartedAt);
+        string[] worklistsBefore = await WorklistIdsAsync(fixture);
+
+        // 结果先落库，然后握手完成、车听得到；就绪后第一轮直接走到刚落定那一段。
+        await ApplySafeResultAsync(fixture, FirstDemandId, SlotOperationType.Load, SlotBusinessState.Occupied);
+        await fixture.AdvanceSessionAsync(2);
+        await fixture.HearFromPeerAsync();
+        await TickAndRunAsync(fixture);
+
+        Assert.Equal(JourneyRuntimeStage.AwaitingSublot, (await JourneyOfAsync(fixture, FirstDemandId)).Stage);
+        string[] newer = [.. (await WorklistIdsAsync(fixture)).Except(worklistsBefore)];
+        string payload = Assert.Single(await fixture.Context.ProtocolOutbox.AsNoTracking()
+            .Where(row => newer.Contains(row.MessageId))
+            .Select(row => row.PayloadJson)
+            .ToArrayAsync(TestContext.Current.CancellationToken));
+        using JsonDocument document = JsonDocument.Parse(payload);
+        Assert.Equal(
+            JsonValueKind.Null,
+            document.RootElement.GetProperty("payload").GetProperty("stationDepartureDeadlineAt").ValueKind);
+    }
+
     private static async Task<string[]> WorklistIdsAsync(RuntimeFixture fixture) =>
         await fixture.Context.ProtocolOutbox.AsNoTracking()
             .Where(row => row.MessageType == "CurrentStopWorklistSnapshot")
