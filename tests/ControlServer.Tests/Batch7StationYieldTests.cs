@@ -625,11 +625,10 @@ public sealed class Batch7StationYieldTests
         Assert.Null((await HolderAsync(fixture)).YieldTriggeredAt);
         Assert.NotEqual(JourneyStopStatuses.Completed, (await StopAsync(fixture, stop.StopId)).Status);
 
-        // 重跑在崩溃的同一时刻，不拨钟：离站路在授权移动时按「此刻」写订单意图的 CreatedAt，崩在授权之后、停靠完成之前，
-        // 晚一秒重跑会被 AuthorizeMovementAsync 判成「同一身份、内容不同」而每轮都抛。那是离站路自己的崩溃恢复缺陷，
-        // 与让站无关（本票发现，归 cs#291 的 U4）；这条用例只证触发与停靠完成同生共死，所以避开它。同一时刻重跑不是业务要求：
-        // cs#291 修好之后，这里应改回拨钟重跑。
-        await fixture.Engine.ExecuteOnceAsync(TestContext.Current.CancellationToken);
+        // 拨钟一秒再重跑（cs#291 U4）。这条用例先前在崩溃的同一时刻重跑，因为离站路当时按「此刻」写订单意图的 CreatedAt，崩在授权之后、
+        // 停靠完成之前，晚一秒重跑会被 AuthorizeMovementAsync 判成「同一身份、内容不同」而每轮都抛。cs#357 审查必修起离站路沿用已存意图的
+        // 时刻（JourneyRuntimeEngine 里 legIntentCreatedAt 那一段），晚于崩溃的重跑因此是这条用例同时守着的一格。
+        await TickAndRunAsync(fixture);
 
         Assert.Equal(JourneyStopStatuses.Completed, (await StopAsync(fixture, stop.StopId)).Status);
         Assert.Equal(fixture.Options.VehicleKey, (await HolderAsync(fixture)).YieldTriggeredByVehicleKey);
