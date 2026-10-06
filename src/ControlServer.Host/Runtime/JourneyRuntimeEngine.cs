@@ -4763,8 +4763,9 @@ public sealed partial class JourneyRuntimeEngine(
         /// committed, and comparing values would miss exactly the entry that was saved and then rolled back. One the database
         /// no longer has comes out Detached. An entry that already carried a change before the advance -- an earlier step's
         /// change left for a later save on purpose -- is not read again, which would discard that change. While it still
-        /// carries one, no save has accepted it, and it goes back to how it was: values, original values and state. Once a
-        /// save of the failing advance took it along (it is Unchanged, or Detached after a delete), the tracker cannot say
+        /// carries that change in the same state against the same original values, no save has accepted it, and it goes back
+        /// to how it was: values, original values and state. Once a save of the failing advance took it along (it is
+        /// Unchanged, Detached after a delete, or saved and then changed again), the tracker cannot say
         /// whether that save committed or rolled back, so <see cref="SettleSavedChangeAsync"/> asks the database: rolled back,
         /// it goes back to its change; committed, it stays as the database has it, so the change is not saved a second time.
         /// </para>
@@ -4794,9 +4795,14 @@ public sealed partial class JourneyRuntimeEngine(
             {
                 if (state is EntityState.Added or EntityState.Modified or EntityState.Deleted)
                 {
-                    if (entry.State is EntityState.Added or EntityState.Modified or EntityState.Deleted)
+                    if (entry.State == state && SameValues(entry.OriginalValues, originals))
                     {
-                        // Still carrying a change: no save has accepted it since, so it goes back to how it was.
+                        // Carrying the same change against the same original values: no save has accepted it since (a save
+                        // would have moved its originals, or its state), so it goes back to how it was. Carrying a change is
+                        // not enough by itself: one the failing advance saved, committed and then changed again is Modified
+                        // too, with originals the database has, and going back to the old ones would have its next save
+                        // collide (a journey row's Version, an inserted row's key). Both are compared because an added
+                        // entry's originals are its current values. Anything else is settled against the database.
                         Revert(context, entry, state, values, originals);
                     }
                     else
@@ -4822,9 +4828,9 @@ public sealed partial class JourneyRuntimeEngine(
         }
 
         /// <summary>
-        /// An entry that carried a change before the advance and carries none now (Unchanged, or Detached after a delete): a
-        /// save took its change along. Whether that save committed or rolled back the tracker cannot tell, so the database
-        /// is asked.
+        /// An entry that carried a change before the advance and no longer carries that same change against the same original
+        /// values (Unchanged, Detached after a delete, or changed again after a save): a save took its change along. Whether
+        /// that save committed or rolled back the tracker cannot tell, so the database is asked.
         /// </summary>
         /// <remarks>
         /// Committed: the entry is left as the database has it -- a later save must neither write the change a second time

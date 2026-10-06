@@ -291,6 +291,71 @@ public sealed partial class MultiVehicleExecutionTests
     }
 
     /// <summary>
+    /// Q1: a change left for a later save that the failing vehicle saved and committed, then changed again without saving. It
+    /// still reads as Modified, but against originals the database has: settled against the database, it stays as committed --
+    /// not back to the old originals, which would have every later save of the row collide on its Version.
+    /// </summary>
+    [Fact]
+    public async Task AChangeLeftForALaterSaveThatTheFailingVehicleCommittedAndChangedAgainStaysAsCommitted()
+    {
+        await using FleetFixture fixture = await FleetFixture.CreateAsync();
+        await fixture.Engine.ExecuteOnceAsync(TestContext.Current.CancellationToken);
+        ControlServerDbContext context = fixture.Context;
+        context.ChangeTracker.Clear();
+        JourneyRuntimeRow row = await context.JourneyRuntimes
+            .SingleAsync(journey => journey.AgvId == FleetFixture.AgvIds[2], TestContext.Current.CancellationToken);
+        long versionBefore = row.Version;
+        row.SetBlockReason(StagedReason, fixture.Clock.GetUtcNow());
+        EntityEntry<JourneyRuntimeRow> entry = context.Entry(row);
+        JourneyRuntimeEngine.TrackedBeforeAdvance before = JourneyRuntimeEngine.TrackedBeforeAdvance.Take(context);
+        await context.SaveChangesAsync(TestContext.Current.CancellationToken);
+        row.SetBlockReason("CS487_CHANGED_AGAIN", fixture.Clock.GetUtcNow());
+        context.ChangeTracker.DetectChanges();
+        // The premise: Modified again, as before the advance, but against what was committed.
+        Assert.Equal(
+            (EntityState.Modified, versionBefore + 1),
+            (entry.State, entry.Property(journey => journey.Version).OriginalValue));
+
+        await before.RestoreAsync(context, TestContext.Current.CancellationToken);
+
+        Assert.Equal(
+            (EntityState.Unchanged, StagedReason, versionBefore + 1),
+            (entry.State, row.BlockReasonCode, entry.Property(journey => journey.Version).OriginalValue));
+        row.SetBlockReason(null, fixture.Clock.GetUtcNow());
+        await context.SaveChangesAsync(TestContext.Current.CancellationToken);
+        context.ChangeTracker.Clear();
+        Assert.Equal(versionBefore + 2, (await fixture.JourneyOfAsync(FleetFixture.AgvIds[2])).Version);
+    }
+
+    /// <summary>
+    /// Q2: a row added earlier for a later save that the failing vehicle inserted and committed, then changed again without
+    /// saving. Its originals are what it was added with, so only its state tells it apart: settled against the database, it
+    /// stays inserted -- not Added again, which would insert it a second time.
+    /// </summary>
+    [Fact]
+    public async Task ARowAddedForALaterSaveThatTheFailingVehicleCommittedAndChangedAgainIsNotInsertedAgain()
+    {
+        await using FleetFixture fixture = await FleetFixture.CreateAsync();
+        ControlServerDbContext context = fixture.Context;
+        context.ChangeTracker.Clear();
+        JourneyBacklogRow row = PhantomBacklogRow(fixture.Clock.GetUtcNow());
+        context.JourneyBacklog.Add(row);
+        JourneyRuntimeEngine.TrackedBeforeAdvance before = JourneyRuntimeEngine.TrackedBeforeAdvance.Take(context);
+        await context.SaveChangesAsync(TestContext.Current.CancellationToken);
+        row.ReasonCode = "CS487_CHANGED_AGAIN";
+        context.ChangeTracker.DetectChanges();
+        // The premise: carrying a change again, against the very values it was added with.
+        Assert.Equal(EntityState.Modified, context.Entry(row).State);
+
+        await before.RestoreAsync(context, TestContext.Current.CancellationToken);
+
+        Assert.Equal((EntityState.Unchanged, StagedReason), (context.Entry(row).State, row.ReasonCode));
+        await context.SaveChangesAsync(TestContext.Current.CancellationToken);
+        Assert.Equal(1, await context.JourneyBacklog.AsNoTracking()
+            .CountAsync(backlog => backlog.DemandId == PhantomDemandId, TestContext.Current.CancellationToken));
+    }
+
+    /// <summary>
     /// The withdrawal cannot read the journey rows again: they are let go, so the vehicles after the failing one sit out this
     /// round on the loop's "no longer tracked" check rather than advance on values nobody vouches for, and the next round
     /// serves them as usual -- the second vehicle's failed order is recorded and stopped then.
