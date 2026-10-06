@@ -602,6 +602,39 @@ public sealed class ExpectedActionOverdueTests
     }
 
     /// <summary>
+    /// 车载端放弃了对判定的应答（control-server#481，UNRECONCILED）：卡片如实说两端结论不一致、车上是否生效未知，
+    /// 说明这次装卸不能再取消，并给出再判的链接；不落进「判定状态 X」的兜底说法。
+    /// </summary>
+    [Fact]
+    [Trait("IntegrationSlice", "FP-IS-15")]
+    public void AnUnreconciledDeclarationSaysTheTwoEndsDisagreeAndOffersToDeclareAgain()
+    {
+        using JsonDocument fact = JsonDocument.Parse("""
+            {
+              "thresholdSeconds": 360,
+              "unavailableVehicles": [],
+              "slots": [
+                { "agvId": "AGV-001", "slotNo": 3, "stationId": "PICKUP-1", "operationType": "LOAD", "expectedAction": "关好3号仓门",
+                  "raisedAt": "2026-09-18T07:58:00+00:00", "waitedSeconds": 480, "stationTimeoutDoorNotClosed": false,
+                  "readings": null,
+                  "declaration": { "state": "UNRECONCILED", "declaredAt": "2026-09-18T07:59:10+00:00", "administratorId": "maintenance-7",
+                                   "faultCategory": "LOCK", "resultReceivedAt": "2026-09-18T08:01:12+00:00",
+                                   "reasonCode": "SLOT_OPERATION_CONFLICT", "displayMessage": "本车已放弃对这项判定的应答" } }
+              ]
+            }
+            """);
+
+        string html = new ExpectedActionOverdueCard().RenderFact(fact.RootElement);
+        string text = System.Net.WebUtility.HtmlDecode(html);
+
+        Assert.Contains("车载端已放弃对判定的应答", text, StringComparison.Ordinal);
+        Assert.Contains("车上是否已生效未知", text, StringComparison.Ordinal);
+        Assert.Contains("这次装卸不能再取消", text, StringComparison.Ordinal);
+        Assert.Contains("href=\"/actions/slot-fault-declaration?agvId=AGV-001&amp;slotNo=3\">再判</a>", html, StringComparison.Ordinal);
+        Assert.DoesNotContain("判定状态", text, StringComparison.Ordinal);
+    }
+
+    /// <summary>
     /// 数据面带出的是这个仓在当前装卸上最近的一次判定，取自判定记录：别的装卸上的判定、别的仓的判定都不替这一行说话；
     /// 车载端拒绝时它给的原因照原样带出。
     /// </summary>

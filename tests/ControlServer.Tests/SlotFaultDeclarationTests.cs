@@ -757,21 +757,28 @@ public sealed class SlotFaultDeclarationTests
     }
 
     /// <summary>
-    /// Only the give-up closes a declaration: a refusal of its command with another code (one that means "later", say), a
-    /// <c>SLOT_OPERATION_CONFLICT</c> naming another message, or one naming another vehicle's declaration command leaves the
-    /// declaration pending and its command replayed.
+    /// Only the give-up closes a declaration, and only a pending one: a refusal of its command with another code (one that
+    /// means "later", say), a <c>SLOT_OPERATION_CONFLICT</c> naming another message, or one naming another vehicle's
+    /// declaration command leaves the declaration pending and its command replayed; one naming the command of a declaration
+    /// already answered leaves that answer standing.
     /// </summary>
     [Theory]
     [Trait("IntegrationSlice", "FP-IS-07")]
     [InlineData("other-code")]
     [InlineData("other-message")]
     [InlineData("other-vehicle")]
+    [InlineData("answered")]
     public async Task ARefusalThatIsNotTheGiveUpLeavesTheDeclarationPending(string refusal)
     {
         await using Fixture fixture = await Fixture.AwaitingOperatorOnSlotOneAsync();
         SlotFaultDeclarationRow declaration = refusal == "other-vehicle"
             ? await fixture.SeedOtherVehiclesDeclarationAsync()
             : await fixture.DeclareAsync();
+        if (refusal == "answered")
+        {
+            await fixture.SendResultAsync(declaration.DeclarationId, AttemptId, "NOT_APPLICABLE");
+            declaration = Assert.Single(await fixture.DeclarationsAsync());
+        }
 
         await (refusal switch
         {
@@ -782,7 +789,7 @@ public sealed class SlotFaultDeclarationTests
 
         SlotFaultDeclarationRow after = Assert.Single(await fixture.DeclarationsAsync());
         Assert.Equal(JsonSerializer.Serialize(declaration), JsonSerializer.Serialize(after));
-        if (refusal != "other-vehicle")
+        if (refusal is "other-code" or "other-message")
         {
             Assert.Null(Assert.Single(await fixture.CommandsAsync()).AcknowledgedAt);
             fixture.Peer.Lines.Clear();

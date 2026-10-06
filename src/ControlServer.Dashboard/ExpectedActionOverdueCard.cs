@@ -148,6 +148,9 @@ public sealed class ExpectedActionOverdueCard : IDashboardCard
             "NOT_APPLICABLE" => $"<td>{WebUtility.HtmlEncode(
                     $"车载端拒绝了判定（{declaredAt} 由 {by} 判定，{answeredAt} 拒绝）：{Refusal(declaration)}")}"
                 + $" <a href=\"{link}\">再判</a></td>",
+            "UNRECONCILED" => $"<td>{WebUtility.HtmlEncode(
+                    $"车载端已放弃对判定的应答（{declaredAt} 由 {by} 判定，{answeredAt} 放弃），两端结论不一致，车上是否已生效未知，请人工核对；这次装卸不能再取消")}"
+                + $" <a href=\"{link}\">再判</a></td>",
             var other => DashboardPageRenderer.Cell($"判定状态 {other}（{declaredAt}）")
         };
     }

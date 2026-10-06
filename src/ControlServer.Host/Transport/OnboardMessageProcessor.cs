@@ -733,8 +733,9 @@ public sealed partial class OnboardMessageProcessor(
             case "SlotFaultDeclarationResult":
                 // REQ-0359, control-server#383. It settles the declaration and its command's outbox line (control-server#384),
                 // not the operation: an APPLIED declaration's effect on the
-                // operation arrives as the OperationResult the vehicle sends next, settled by the case above. Nothing here
-                // throws for a result that matches no pending declaration -- see SlotFaultDeclarationResults.
+                // operation arrives as the OperationResult the vehicle sends next, settled by the case above. A result for a
+                // declaration this server never made is acknowledged; one that contradicts a declaration it holds is refused
+                // with BUSINESS_ID_CONTENT_CONFLICT, the connection kept (control-server#481) -- see SlotFaultDeclarationResults.
                 await SlotFaultDeclarationResults.RecordAsync(
                     dbContext, store, agvId, messageId, payload, timeProvider.GetUtcNow(), logger, cancellationToken)
                     .ConfigureAwait(false);
@@ -940,6 +941,11 @@ public sealed partial class OnboardMessageProcessor(
                     await recoveryCoordinator.ObserveReleaseCheckRefusedAsync(
                         agvId, RequiredString(payload, "rejectedMessageId"), RequiredString(problem, "reasonCode"),
                         cancellationToken).ConfigureAwait(false);
+                    // And another (control-server#481): the vehicle refusing a replayed slot fault declaration command because
+                    // it gave its answer up. Without this the declaration stays pending and its command is replayed for good.
+                    await SlotFaultDeclarationResults.ObserveCommandRefusedAsync(
+                        dbContext, store, agvId, messageId, RequiredString(payload, "rejectedMessageId"), problem,
+                        timeProvider.GetUtcNow(), logger, cancellationToken).ConfigureAwait(false);
                     LogOnboardRejection(
                         logger,
                         NullableString(payload, "rejectedMessageType") ?? "(unstated)",
