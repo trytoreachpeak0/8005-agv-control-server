@@ -88,6 +88,13 @@ public static class ServerReasonCodes
     /// </summary>
     public const string SlotDoorLockUnprovenAfterEmpty = "SLOT_DOOR_LOCK_UNPROVEN_AFTER_EMPTY";
     public const string SlotFaultDeclared = "SLOT_FAULT_DECLARED";
+
+    /// <summary>
+    /// Recognised, not produced (control-server#481): the code the vehicle refuses a replayed
+    /// <c>SlotFaultDeclarationCommand</c> with once it has given up its own answer to that declaration, which is how the
+    /// server learns to stop waiting for it (<c>SlotFaultDeclarationResults.ObserveCommandRefusedAsync</c>).
+    /// </summary>
+    public const string SlotOperationConflict = "SLOT_OPERATION_CONFLICT";
     public const string SnapshotRevisionContentConflict = "SNAPSHOT_REVISION_CONTENT_CONFLICT";
     public const string SlotSetInvalid = "SLOT_SET_INVALID";
     public const string SnapshotRevisionRegression = "SNAPSHOT_REVISION_REGRESSION";

@@ -556,25 +556,67 @@ public sealed class SlotFaultDeclarationTests
     }
 
     /// <summary>
-    /// A second answer for the same declaration -- a resend under a new messageId, or a contradicting one -- changes
-    /// nothing: the first answer is the record.
+    /// A second answer for the same declaration with the same content -- outcome, attempt and problem, both problems null
+    /// counting as the same -- under a new messageId is acknowledged and changes nothing: the first answer is the record.
     /// </summary>
-    [Fact]
+    [Theory]
     [Trait("IntegrationSlice", "FP-IS-07")]
-    public async Task ASecondAnswerForTheSameDeclarationChangesNothing()
+    [InlineData("APPLIED")]
+    [InlineData("NOT_APPLICABLE")]
+    public async Task ASecondAnswerWithTheSameContentIsAcknowledgedAndChangesNothing(string outcome)
+    {
+        await using Fixture fixture = await Fixture.AwaitingOperatorOnSlotOneAsync();
+        SlotFaultDeclarationRow declaration = await fixture.DeclareAsync();
+        await fixture.SendResultAsync(declaration.DeclarationId, AttemptId, outcome);
+        SlotFaultDeclarationRow first = Assert.Single(await fixture.DeclarationsAsync());
+        string picture = await fixture.BusinessPictureAsync();
+
+        string answer = await fixture.SendResultAsync(declaration.DeclarationId, AttemptId, outcome);
+
+        Assert.Equal(["DurableAck"], Lines(answer).Select(MessageType));
+        SlotFaultDeclarationRow after = Assert.Single(await fixture.DeclarationsAsync());
+        Assert.Equal(JsonSerializer.Serialize(first), JsonSerializer.Serialize(after));
+        Assert.Equal(picture, await fixture.BusinessPictureAsync());
+    }
+
+    /// <summary>
+    /// A second answer for an answered declaration with other content is refused with <c>BUSINESS_ID_CONTENT_CONFLICT</c>
+    /// and the connection stays (control-server#481). Acknowledged, the vehicle would drop its row silently while the two
+    /// ends disagree about what it did; refused with one of the four content-conflict codes, the vehicle gives the row up and
+    /// tells its operator (onboard-hmi#254). The declaration stays as first answered, and it is not pending, so nothing is
+    /// replayed after it.
+    /// </summary>
+    [Theory]
+    [Trait("IntegrationSlice", "FP-IS-07")]
+    [InlineData("outcome")]
+    [InlineData("problem")]
+    [InlineData("attempt")]
+    public async Task ASecondAnswerWithOtherContentIsRefusedAsABusinessIdConflict(string differs)
     {
         await using Fixture fixture = await Fixture.AwaitingOperatorOnSlotOneAsync();
         SlotFaultDeclarationRow declaration = await fixture.DeclareAsync();
         await fixture.SendResultAsync(declaration.DeclarationId, AttemptId, "NOT_APPLICABLE");
         SlotFaultDeclarationRow first = Assert.Single(await fixture.DeclarationsAsync());
         string picture = await fixture.BusinessPictureAsync();
+        string messageId = Guid.NewGuid().ToString("D");
 
-        await fixture.SendResultAsync(declaration.DeclarationId, AttemptId, "NOT_APPLICABLE");
-        await fixture.SendResultAsync(declaration.DeclarationId, AttemptId, "APPLIED");
+        string answer = differs switch
+        {
+            "outcome" => await fixture.SendResultAsync(declaration.DeclarationId, AttemptId, "APPLIED", messageId: messageId),
+            "problem" => await fixture.SendResultAsync(
+                declaration.DeclarationId, AttemptId, "NOT_APPLICABLE",
+                new { reasonCode = "ACTION_NOT_ALLOWED_IN_STATE", fieldPath = "payload.slotNo", displayMessage = "另一个原因" },
+                messageId),
+            _ => await fixture.SendResultAsync(
+                declaration.DeclarationId, "20000000-0000-4000-8000-00000000ffff", "NOT_APPLICABLE", messageId: messageId)
+        };
 
-        SlotFaultDeclarationRow after = Assert.Single(await fixture.DeclarationsAsync());
-        Assert.Equal(JsonSerializer.Serialize(first), JsonSerializer.Serialize(after));
+        AssertRefused(answer, messageId, ServerReasonCodes.BusinessIdContentConflict);
+        Assert.Equal(JsonSerializer.Serialize(first), JsonSerializer.Serialize(Assert.Single(await fixture.DeclarationsAsync())));
         Assert.Equal(picture, await fixture.BusinessPictureAsync());
+        fixture.Peer.Lines.Clear();
+        await fixture.ReconnectAsync();
+        Assert.DoesNotContain(fixture.Peer.Lines, line => MessageType(line) == "SlotFaultDeclarationCommand");
     }
 
     [Fact]
@@ -593,22 +635,160 @@ public sealed class SlotFaultDeclarationTests
         _ = declaration;
     }
 
+    /// <summary>
+    /// An answer naming another attempt than the declaration's is refused with <c>BUSINESS_ID_CONTENT_CONFLICT</c>
+    /// (control-server#481), and the declaration stays pending: the refusal keeps nothing of the message. What closes it is
+    /// the vehicle refusing the replayed command once it has given the answer up -- see
+    /// <see cref="AVehicleRefusingTheReplayedCommandClosesTheDeclarationAsUnreconciled"/>.
+    /// </summary>
     [Fact]
     [Trait("IntegrationSlice", "FP-IS-07")]
-    public async Task AnAnswerNamingAnotherAttemptIsAcknowledgedAndLeavesTheDeclarationPending()
+    public async Task AnAnswerNamingAnotherAttemptIsRefusedAndLeavesTheDeclarationPending()
     {
         await using Fixture fixture = await Fixture.AwaitingOperatorOnSlotOneAsync();
         SlotFaultDeclarationRow declaration = await fixture.DeclareAsync();
         string picture = await fixture.BusinessPictureAsync();
+        string messageId = Guid.NewGuid().ToString("D");
 
-        string ack = await fixture.SendResultAsync(
-            declaration.DeclarationId, "20000000-0000-4000-8000-00000000ffff", "APPLIED");
+        string answer = await fixture.SendResultAsync(
+            declaration.DeclarationId, "20000000-0000-4000-8000-00000000ffff", "APPLIED", messageId: messageId);
 
-        Assert.Equal(["DurableAck"], Lines(ack).Select(MessageType));
+        AssertRefused(answer, messageId, ServerReasonCodes.BusinessIdContentConflict);
         Assert.Equal(picture, await fixture.BusinessPictureAsync());
         SlotFaultDeclarationRow after = Assert.Single(await fixture.DeclarationsAsync());
         Assert.Equal(SlotFaultDeclarationStates.Pending, after.State);
         Assert.Null(after.ResultOutcome);
+    }
+
+    /// <summary>
+    /// An answer naming a declaration this server made for another vehicle is refused with
+    /// <c>BUSINESS_ID_CONTENT_CONFLICT</c>, not acknowledged as unknown (control-server#481, the same line as the review of
+    /// part one drew for another vehicle's recovery workflow, S2): the id is known, it is just not this vehicle's. The other
+    /// vehicle's declaration is left as it was.
+    /// </summary>
+    [Fact]
+    [Trait("IntegrationSlice", "FP-IS-07")]
+    public async Task AnAnswerNamingAnotherVehiclesDeclarationIsRefusedAndLeavesItAsItWas()
+    {
+        await using Fixture fixture = await Fixture.AwaitingOperatorOnSlotOneAsync();
+        SlotFaultDeclarationRow other = await fixture.SeedOtherVehiclesDeclarationAsync();
+        string picture = await fixture.BusinessPictureAsync();
+        string messageId = Guid.NewGuid().ToString("D");
+
+        string answer = await fixture.SendResultAsync(other.DeclarationId, AttemptId, "APPLIED", messageId: messageId);
+
+        AssertRefused(answer, messageId, ServerReasonCodes.BusinessIdContentConflict);
+        Assert.Equal(picture, await fixture.BusinessPictureAsync());
+        Assert.Equal(
+            JsonSerializer.Serialize(other),
+            JsonSerializer.Serialize(Assert.Single(await fixture.DeclarationsAsync())));
+    }
+
+    // --- The close-out: the vehicle gave its answer up (control-server#481) -----------------------------------------
+
+    /// <summary>
+    /// Once the server has refused a declaration's answer for good, the vehicle gives the row up (onboard-hmi#254) and
+    /// refuses the command the server replays with a <c>ProtocolProblem</c> correlated to it, code
+    /// <c>SLOT_OPERATION_CONFLICT</c> (onboard-hmi#266). The server takes that as the end of waiting: the declaration becomes
+    /// <c>UNRECONCILED</c> with the refusal recorded, its command is settled, it is not replayed again, and the attempt can
+    /// be declared again -- no state that only a database edit gets out of. Nothing of the business changes.
+    /// </summary>
+    /// <remarks>
+    /// Two ways the answer is refused, both ending here: the server's own branch (the answer names another attempt), and the
+    /// inbox (the same messageId as a line already taken, with other content -- a vehicle whose journal was replaced).
+    /// </remarks>
+    [Theory]
+    [Trait("IntegrationSlice", "FP-IS-07")]
+    [InlineData("attempt-mismatch")]
+    [InlineData("message-id-conflict")]
+    public async Task AVehicleRefusingTheReplayedCommandClosesTheDeclarationAsUnreconciled(string refusedBy)
+    {
+        await using Fixture fixture = await Fixture.AwaitingOperatorOnSlotOneAsync();
+        SlotFaultDeclarationRow declaration = await fixture.DeclareAsync();
+        string picture = await fixture.BusinessPictureAsync();
+        string messageId = Guid.NewGuid().ToString("D");
+        if (refusedBy == "attempt-mismatch")
+        {
+            AssertRefused(
+                await fixture.SendResultAsync(
+                    declaration.DeclarationId, "20000000-0000-4000-8000-00000000ffff", "APPLIED", messageId: messageId),
+                messageId,
+                ServerReasonCodes.BusinessIdContentConflict);
+        }
+        else
+        {
+            Assert.Equal(
+                ["DurableAck"],
+                Lines(await fixture.SendResultAsync(Guid.NewGuid().ToString("D"), AttemptId, "APPLIED", messageId: messageId))
+                    .Select(MessageType));
+            AssertRefused(
+                await fixture.SendResultAsync(declaration.DeclarationId, AttemptId, "APPLIED", messageId: messageId),
+                messageId,
+                ServerReasonCodes.MessageIdContentConflict);
+        }
+        Assert.Equal(SlotFaultDeclarationStates.Pending, Assert.Single(await fixture.DeclarationsAsync()).State);
+
+        // The vehicle reconnects, the command is replayed, and the vehicle -- its answer given up -- refuses it.
+        fixture.Peer.Lines.Clear();
+        await fixture.ReconnectAsync();
+        Assert.Contains(fixture.Peer.Lines, line => MessageType(line) == "SlotFaultDeclarationCommand");
+        string refusalId = Guid.NewGuid().ToString("D");
+        string answer = await fixture.RefuseCommandAsync(
+            declaration.CommandMessageId, ServerReasonCodes.SlotOperationConflict, refusalId);
+
+        Assert.Empty(Lines(answer));
+        SlotFaultDeclarationRow after = Assert.Single(await fixture.DeclarationsAsync());
+        Assert.Equal(SlotFaultDeclarationStates.Unreconciled, after.State);
+        Assert.Null(after.ResultOutcome);
+        Assert.Equal(refusalId, after.ResultMessageId);
+        Assert.Equal(Now, after.ResultReceivedAt);
+        using (JsonDocument problem = JsonDocument.Parse(after.ResultProblemJson!))
+        {
+            Assert.Equal(ServerReasonCodes.SlotOperationConflict, problem.RootElement.GetProperty("reasonCode").GetString());
+        }
+        Assert.Equal(Now, Assert.Single(await fixture.CommandsAsync()).AcknowledgedAt);
+        Assert.Equal(picture, await fixture.BusinessPictureAsync());
+
+        fixture.Peer.Lines.Clear();
+        await fixture.ReconnectAsync();
+        Assert.DoesNotContain(fixture.Peer.Lines, line => MessageType(line) == "SlotFaultDeclarationCommand");
+        Assert.IsType<Accepted<SlotFaultDeclarationResponse>>(
+            (await fixture.PostAsync(Request() with { RequestId = Guid.NewGuid().ToString("D") })).Result);
+    }
+
+    /// <summary>
+    /// Only the give-up closes a declaration: a refusal of its command with another code (one that means "later", say), a
+    /// <c>SLOT_OPERATION_CONFLICT</c> naming another message, or one naming another vehicle's declaration command leaves the
+    /// declaration pending and its command replayed.
+    /// </summary>
+    [Theory]
+    [Trait("IntegrationSlice", "FP-IS-07")]
+    [InlineData("other-code")]
+    [InlineData("other-message")]
+    [InlineData("other-vehicle")]
+    public async Task ARefusalThatIsNotTheGiveUpLeavesTheDeclarationPending(string refusal)
+    {
+        await using Fixture fixture = await Fixture.AwaitingOperatorOnSlotOneAsync();
+        SlotFaultDeclarationRow declaration = refusal == "other-vehicle"
+            ? await fixture.SeedOtherVehiclesDeclarationAsync()
+            : await fixture.DeclareAsync();
+
+        await (refusal switch
+        {
+            "other-code" => fixture.RefuseCommandAsync(declaration.CommandMessageId, ServerReasonCodes.ActionNotAllowedInState),
+            "other-message" => fixture.RefuseCommandAsync(Guid.NewGuid().ToString("D"), ServerReasonCodes.SlotOperationConflict),
+            _ => fixture.RefuseCommandAsync(declaration.CommandMessageId, ServerReasonCodes.SlotOperationConflict)
+        });
+
+        SlotFaultDeclarationRow after = Assert.Single(await fixture.DeclarationsAsync());
+        Assert.Equal(JsonSerializer.Serialize(declaration), JsonSerializer.Serialize(after));
+        if (refusal != "other-vehicle")
+        {
+            Assert.Null(Assert.Single(await fixture.CommandsAsync()).AcknowledgedAt);
+            fixture.Peer.Lines.Clear();
+            await fixture.ReconnectAsync();
+            Assert.Contains(fixture.Peer.Lines, line => MessageType(line) == "SlotFaultDeclarationCommand");
+        }
     }
 
     /// <summary>Once answered, the attempt is free again: the pending index only holds unanswered declarations.</summary>
@@ -800,6 +980,7 @@ public sealed class SlotFaultDeclarationTests
     [InlineData("PENDING", "REJECTED")]
     [InlineData("APPLIED", "REJECTED")]
     [InlineData("NOT_APPLICABLE", "AUTHORIZED")]
+    [InlineData("UNRECONCILED", "REJECTED")]
     public async Task ALoadCancellationIsNotAuthorizedForAnAttemptWithAPendingOrAppliedDeclaration(
         string? declaration, string expected)
     {
@@ -807,7 +988,14 @@ public sealed class SlotFaultDeclarationTests
         if (declaration is not null)
         {
             SlotFaultDeclarationRow declared = await fixture.DeclareAsync();
-            if (declaration != "PENDING")
+            if (declaration == "UNRECONCILED")
+            {
+                // The vehicle gave its answer up (control-server#481): nobody knows whether it applied the declaration, so
+                // the cancellation is held back as for an applied one.
+                await fixture.RefuseCommandAsync(declared.CommandMessageId, ServerReasonCodes.SlotOperationConflict);
+                Assert.Equal(SlotFaultDeclarationStates.Unreconciled, Assert.Single(await fixture.DeclarationsAsync()).State);
+            }
+            else if (declaration != "PENDING")
             {
                 await fixture.SendResultAsync(declared.DeclarationId, AttemptId, declaration);
             }
@@ -1103,6 +1291,17 @@ public sealed class SlotFaultDeclarationTests
     }
 
     private static string[] Lines(string response) => response.Split('\n', StringSplitOptions.RemoveEmptyEntries);
+
+    /// <summary>The answer is a ProtocolProblem refusing exactly <paramref name="messageId"/> with <paramref name="reasonCode"/>.</summary>
+    private static void AssertRefused(string answer, string messageId, string reasonCode)
+    {
+        using JsonDocument problem = JsonDocument.Parse(Assert.Single(Lines(answer)));
+        JsonElement root = problem.RootElement;
+        Assert.Equal("ProtocolProblem", root.GetProperty("messageType").GetString());
+        Assert.Equal(messageId, root.GetProperty("correlationId").GetString());
+        Assert.Equal(messageId, root.GetProperty("payload").GetProperty("rejectedMessageId").GetString());
+        Assert.Equal(reasonCode, root.GetProperty("payload").GetProperty("problem").GetProperty("reasonCode").GetString());
+    }
 
     private static string MessageType(string line)
     {
@@ -1520,22 +1719,71 @@ public sealed class SlotFaultDeclarationTests
                 reason = "Operator cancels the load at the station."
             });
 
-        public Task<string> SendResultAsync(string declarationId, string attemptId, string outcome) => Send(
+        public Task<string> SendResultAsync(
+            string declarationId, string attemptId, string outcome, object? problem = null, string? messageId = null) => Send(
             "SlotFaultDeclarationResult",
             new
             {
                 declarationId,
                 slotOperationAttemptId = attemptId,
                 outcome,
-                problem = outcome == "NOT_APPLICABLE"
+                problem = problem ?? (outcome == "NOT_APPLICABLE"
                     ? new
                     {
                         reasonCode = "ACTION_NOT_ALLOWED_IN_STATE",
                         fieldPath = "payload.slotNo",
                         displayMessage = "仓位已闭环"
                     }
-                    : null
-            });
+                    : null)
+            },
+            messageId);
+
+        /// <summary>The vehicle refusing one of the server's messages: a ProtocolProblem correlated to it.</summary>
+        public Task<string> RefuseCommandAsync(string commandMessageId, string reasonCode, string? messageId = null) => Send(
+            "ProtocolProblem",
+            new
+            {
+                rejectedMessageId = commandMessageId,
+                rejectedMessageType = "SlotFaultDeclarationCommand",
+                problem = new
+                {
+                    reasonCode,
+                    fieldPath = (string?)null,
+                    displayMessage = "本车已放弃对这项判定的应答"
+                },
+                expectedProtocolVersion = ProtocolCandidateIdentity.ProtocolVersion,
+                expectedProfileId = ProtocolCandidateIdentity.ProfileId,
+                expectedProtocolReleaseManifestSha256 = ProtocolCandidateIdentity.ManifestSha256
+            },
+            messageId,
+            correlationId: commandMessageId);
+
+        /// <summary>A pending declaration of another vehicle, as this server would have written it, without its command.</summary>
+        public async Task<SlotFaultDeclarationRow> SeedOtherVehiclesDeclarationAsync()
+        {
+            SlotFaultDeclarationRow row = new()
+            {
+                DeclarationId = "30000000-0000-4000-8000-000000000481",
+                RequestId = "30000000-0000-4000-8000-000000000482",
+                RequestContentHash = new string('b', 64),
+                AgvId = "AGV-002",
+                DemandId = "10000000-0000-4000-8000-000000000481",
+                SlotOperationAttemptId = "20000000-0000-4000-8000-000000000481",
+                OperationType = "LOAD",
+                SlotNo = 1,
+                FaultCategory = "LOCK",
+                Note = "另一台车的判定",
+                AdministratorId = OperatorId,
+                AdministratorRole = "MAINTENANCE_ADMINISTRATOR",
+                DeclaredAt = Now.AddMinutes(-1),
+                CommandMessageId = "30000000-0000-4000-8000-000000000483",
+                State = SlotFaultDeclarationStates.Pending
+            };
+            Context.Set<SlotFaultDeclarationRow>().Add(row);
+            await Context.SaveChangesAsync(Token);
+            Context.ChangeTracker.Clear();
+            return Assert.Single(await DeclarationsAsync());
+        }
 
         public async Task<string> SendOperationResultAsync(object payload)
         {
@@ -1623,7 +1871,8 @@ public sealed class SlotFaultDeclarationTests
             });
         }
 
-        private Task<string> Send(string messageType, object payload) =>
+        private Task<string> Send(
+            string messageType, object payload, string? messageId = null, string? correlationId = null) =>
             Processor.ProcessAsync(
                 JsonSerializer.Serialize(new
                 {
@@ -1632,8 +1881,8 @@ public sealed class SlotFaultDeclarationTests
                     protocolReleaseVersion = ProtocolCandidateIdentity.ReleaseVersion,
                     protocolReleaseManifestSha256 = ProtocolCandidateIdentity.ManifestSha256,
                     messageType,
-                    messageId = Guid.NewGuid().ToString("D"),
-                    correlationId = (string?)null,
+                    messageId = messageId ?? Guid.NewGuid().ToString("D"),
+                    correlationId,
                     agvId = AgvId,
                     sessionGeneration = State.SessionGeneration,
                     sentAt = Now,
