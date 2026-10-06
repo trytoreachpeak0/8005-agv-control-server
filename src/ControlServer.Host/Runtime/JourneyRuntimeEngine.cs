@@ -4762,10 +4762,18 @@ public sealed partial class JourneyRuntimeEngine(
         /// whether or not anything about it looks changed: the database is the only thing that knows whether a save of it
         /// committed, and comparing values would miss exactly the entry that was saved and then rolled back. One the database
         /// no longer has comes out Detached. An entry that already carried a change before the advance -- an earlier step's
-        /// change left for a later save on purpose -- goes back to how it was, values, original values and state, so that the
-        /// step it was left for saves it as it would have; reading it again would discard that change. That holds when the
-        /// failing advance saved it along with its own changes inside the transaction that rolled back, too: it is Unchanged
-        /// then, and goes back to its change all the same.
+        /// change left for a later save on purpose -- is not read again, which would discard that change. While it still
+        /// carries one, no save has accepted it, and it goes back to how it was: values, original values and state. Once a
+        /// save of the failing advance took it along (it is Unchanged, or Detached after a delete), the tracker cannot say
+        /// whether that save committed or rolled back, so <see cref="SettleSavedChangeAsync"/> asks the database: rolled back,
+        /// it goes back to its change; committed, it stays as the database has it, so the change is not saved a second time.
+        /// </para>
+        /// <para>
+        /// <b>A row read again is the database's newest.</b> The vehicles after the failing one then advance on rows read
+        /// mid-round rather than at its start, so an inbound commit that landed between the two is no longer caught as
+        /// control-server#357's "changed since it was read" yield: their advance simply starts from it. That is what the yield
+        /// exists to reach -- the next round re-reads and decides on the new row -- one round early, and a commit landing after
+        /// the reread is still caught by the guard (<see cref="ControlServerDbContext.GuardedJourneyId"/>) as before.
         /// </para>
         /// <para>
         /// An entry that cannot be read again is let go rather than left as it is: its vehicle then sits out this round on the
@@ -4786,15 +4794,15 @@ public sealed partial class JourneyRuntimeEngine(
             {
                 if (state is EntityState.Added or EntityState.Modified or EntityState.Deleted)
                 {
-                    // Saved together with the failing advance and rolled back, such an entry is Unchanged now, with
-                    // original values the database does not have; so the originals go back too, or its own save's
-                    // concurrency check (a journey row's Version) would be written against a version that never landed.
-                    if (entry.State != EntityState.Detached &&
-                        (entry.State != state || entry.State is EntityState.Added or EntityState.Modified or EntityState.Deleted))
+                    if (entry.State is EntityState.Added or EntityState.Modified or EntityState.Deleted)
                     {
-                        entry.OriginalValues.SetValues(originals);
-                        entry.CurrentValues.SetValues(values);
-                        entry.State = state;
+                        // Still carrying a change: no save has accepted it since, so it goes back to how it was.
+                        Revert(context, entry, state, values, originals);
+                    }
+                    else
+                    {
+                        await SettleSavedChangeAsync(context, entry, state, values, originals, cancellationToken)
+                            .ConfigureAwait(false);
                     }
                     continue;
                 }
@@ -4812,6 +4820,96 @@ public sealed partial class JourneyRuntimeEngine(
                 }
             }
         }
+
+        /// <summary>
+        /// An entry that carried a change before the advance and carries none now (Unchanged, or Detached after a delete): a
+        /// save took its change along. Whether that save committed or rolled back the tracker cannot tell, so the database
+        /// is asked.
+        /// </summary>
+        /// <remarks>
+        /// Committed: the entry is left as the database has it -- a later save must neither write the change a second time
+        /// (a Modified row against a version it already raised, an Added row inserted twice) nor resurrect a row already
+        /// deleted. Rolled back: it goes back to its change, original values included, for the step it was left for to save
+        /// against the version the database really has. A modified row the database still holds with the values it had
+        /// before is taken as rolled back; any other answer (the saved values, or someone's later write) is taken as the
+        /// database's word, since the change can no longer be saved as it was staged. An answer that cannot be had lets the
+        /// entry go, as a failed read again does.
+        /// </remarks>
+        private static async Task SettleSavedChangeAsync(
+            ControlServerDbContext context,
+            EntityEntry entry,
+            EntityState state,
+            PropertyValues values,
+            PropertyValues originals,
+            CancellationToken cancellationToken)
+        {
+            PropertyValues? inDatabase;
+            try
+            {
+                inDatabase = await entry.GetDatabaseValuesAsync(cancellationToken).ConfigureAwait(false);
+            }
+            catch (Exception error) when (error is not OperationCanceledException || !cancellationToken.IsCancellationRequested)
+            {
+                entry.State = EntityState.Detached;
+                return;
+            }
+
+            bool committed = state switch
+            {
+                EntityState.Added => inDatabase is not null,
+                EntityState.Deleted => inDatabase is null,
+                _ => inDatabase is null || !SameValues(inDatabase, originals),
+            };
+            if (!committed)
+            {
+                Revert(context, entry, state, values, originals);
+            }
+            else if (inDatabase is null)
+            {
+                entry.State = EntityState.Detached;
+            }
+            else
+            {
+                entry.OriginalValues.SetValues(inDatabase);
+                entry.CurrentValues.SetValues(inDatabase);
+                entry.State = EntityState.Unchanged;
+            }
+        }
+
+        /// <summary>
+        /// Puts an entry back to its state, values and original values from before the advance. The originals matter: after a
+        /// save they are what was saved, and a journey row's own save would otherwise write its concurrency check against a
+        /// Version that never landed. An entry a rolled back delete left Detached is tracked again first; one whose key another
+        /// instance has taken since stays let go.
+        /// </summary>
+        private static void Revert(
+            ControlServerDbContext context,
+            EntityEntry entry,
+            EntityState state,
+            PropertyValues values,
+            PropertyValues originals)
+        {
+            EntityEntry target = entry;
+            if (target.State == EntityState.Detached)
+            {
+                target = context.Entry(entry.Entity);
+                try
+                {
+                    target.State = EntityState.Unchanged;
+                }
+                catch (InvalidOperationException)
+                {
+                    return;
+                }
+            }
+            target.OriginalValues.SetValues(originals);
+            target.CurrentValues.SetValues(values);
+            target.State = state;
+        }
+
+        private static bool SameValues(PropertyValues left, PropertyValues right) =>
+            left.Properties.All(property => System.Collections.StructuralComparisons.StructuralEqualityComparer.Equals(
+                left[property], right[property]));
     }
 
     private static bool IsTransportFailure(Exception failure)

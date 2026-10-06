@@ -1,11 +1,11 @@
-  Failed ControlServer.Tests.MultiVehicleExecutionTests.WhatAVehicleWhoseAdvanceThrowsHadStagedOnAnotherRowIsNotSavedLaterInTheRound [11 s]
+  Failed ControlServer.Tests.MultiVehicleExecutionTests.WhatAVehicleWhoseAdvanceThrowsHadStagedOnAnotherRowIsNotSavedLaterInTheRound [7 s]
   Error Message:
    Assert.NotEqual() Failure: Strings are equal
-   at ControlServer.Tests.MultiVehicleExecutionTests.WhatAVehicleWhoseAdvanceThrowsHadStagedOnAnotherRowIsNotSavedLaterInTheRound() in C:\Users\szy\Desktop\8005-workspace-v2\worktrees\cs487-8005-agv-control-server\tests\ControlServer.Tests\MultiVehicleExecutionTests.AdvanceIsolation.cs:line 93
-  Failed ControlServer.Tests.MultiVehicleExecutionTests.WhatAVehicleWhoseAdvanceThrowsSavedInARolledBackTransactionIsNotTakenAsFact [3 s]
+   at ControlServer.Tests.MultiVehicleExecutionTests.WhatAVehicleWhoseAdvanceThrowsHadStagedOnAnotherRowIsNotSavedLaterInTheRound() in C:\Users\szy\Desktop\8005-workspace-v2\worktrees\cs487-8005-agv-control-server\tests\ControlServer.Tests\MultiVehicleExecutionTests.AdvanceIsolation.cs:line 95
+  Failed ControlServer.Tests.MultiVehicleExecutionTests.WhatAVehicleWhoseAdvanceThrowsSavedInARolledBackTransactionIsNotTakenAsFact [2 s]
   Error Message:
    Assert.DoesNotContain() Failure: Filter matched in collection
-   at ControlServer.Tests.MultiVehicleExecutionTests.<>c__DisplayClass2_0.<<WhatAVehicleWhoseAdvanceThrowsSavedInARolledBackTransactionIsNotTakenAsFact>b__0>d.MoveNext() in C:\Users\szy\Desktop\8005-workspace-v2\worktrees\cs487-8005-agv-control-server\tests\ControlServer.Tests\MultiVehicleExecutionTests.AdvanceIsolation.cs:line 137
+   at ControlServer.Tests.MultiVehicleExecutionTests.<>c__DisplayClass2_0.<<WhatAVehicleWhoseAdvanceThrowsSavedInARolledBackTransactionIsNotTakenAsFact>b__0>d.MoveNext() in C:\Users\szy\Desktop\8005-workspace-v2\worktrees\cs487-8005-agv-control-server\tests\ControlServer.Tests\MultiVehicleExecutionTests.AdvanceIsolation.cs:line 139
    at ControlServer.Tests.MultiVehicleExecutionTests.FleetRiot.ReconcileByUpperIdAsync(String upperId, CancellationToken cancellationToken) in C:\Users\szy\Desktop\8005-workspace-v2\worktrees\cs487-8005-agv-control-server\tests\ControlServer.Tests\MultiVehicleExecutionTests.cs:line 2391
    at ControlServer.Host.Runtime.JourneyRuntimeEngine.CheckArrivalAsync(JourneyRuntimeRow runtime, JourneyStopRow stop, String purpose, SessionRecoveryRow session, CancellationToken cancellationToken) in C:\Users\szy\Desktop\8005-workspace-v2\worktrees\cs487-8005-agv-control-server\src\ControlServer.Host\Runtime\JourneyRuntimeEngine.cs:line 1726
    at ControlServer.Host.Runtime.JourneyRuntimeEngine.AdvanceAsync(JourneyRuntimeRow runtime, RiotMapStationCatalogSnapshot currentMap, CancellationToken cancellationToken) in C:\Users\szy\Desktop\8005-workspace-v2\worktrees\cs487-8005-agv-control-server\src\ControlServer.Host\Runtime\JourneyRuntimeEngine.cs:line 1113
@@ -14,5 +14,9 @@
    at ControlServer.Host.Runtime.JourneyRuntimeEngine.ExecuteOnceAsync(CancellationToken cancellationToken) in C:\Users\szy\Desktop\8005-workspace-v2\worktrees\cs487-8005-agv-control-server\src\ControlServer.Host\Runtime\JourneyRuntimeEngine.cs:line 477
    at ControlServer.Host.Runtime.JourneyRuntimeEngine.ExecuteOnceAsync(CancellationToken cancellationToken) in C:\Users\szy\Desktop\8005-workspace-v2\worktrees\cs487-8005-agv-control-server\src\ControlServer.Host\Runtime\JourneyRuntimeEngine.cs:line 488
    at Xunit.Assert.RecordExceptionAsync(Func`1 testCode) in /_/src/xunit.v3.assert/Asserts/Record.cs:line 138 }, Entry { EventId = LogYieldedToJourneyCommit, Level = Information, Message = Vehicle 老厂前线新多仓位3's journey journey:10000002-0000-4000-8000-000000000002 yielded this iteration: journey journey:10000002-0000-4000-8000-000000000002 was written by someone else after this iteration read it. What it had not saved was withdrawn; the next iteration reads it afresh (control-server#357)., Error =  }]
-   at ControlServer.Tests.MultiVehicleExecutionTests.WhatAVehicleWhoseAdvanceThrowsSavedInARolledBackTransactionIsNotTakenAsFact() in C:\Users\szy\Desktop\8005-workspace-v2\worktrees\cs487-8005-agv-control-server\tests\ControlServer.Tests\MultiVehicleExecutionTests.AdvanceIsolation.cs:line 156
-Failed!  - Failed:     2, Passed:     2, Skipped:     0, Total:     4, Duration: 22 s - ControlServer.Tests.dll (net8.0)
+   at ControlServer.Tests.MultiVehicleExecutionTests.WhatAVehicleWhoseAdvanceThrowsSavedInARolledBackTransactionIsNotTakenAsFact() in C:\Users\szy\Desktop\8005-workspace-v2\worktrees\cs487-8005-agv-control-server\tests\ControlServer.Tests\MultiVehicleExecutionTests.AdvanceIsolation.cs:line 158
+  Failed ControlServer.Tests.MultiVehicleExecutionTests.WhenTheWithdrawalCannotReadARowAgainItsVehicleSitsOutThisRoundOnly [2 s]
+  Error Message:
+   Assert.Empty() Failure: Collection was not empty
+   at ControlServer.Tests.MultiVehicleExecutionTests.WhenTheWithdrawalCannotReadARowAgainItsVehicleSitsOutThisRoundOnly() in C:\Users\szy\Desktop\8005-workspace-v2\worktrees\cs487-8005-agv-control-server\tests\ControlServer.Tests\MultiVehicleExecutionTests.AdvanceIsolation.cs:line 334
+Failed!  - Failed:     3, Passed:     6, Skipped:     0, Total:     9, Duration: 31 s - ControlServer.Tests.dll (net8.0)

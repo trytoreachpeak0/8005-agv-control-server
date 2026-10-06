@@ -4,9 +4,11 @@ using ControlServer.Host.Runtime;
 using ControlServer.Host.Runtime.Commands;
 using ControlServer.Host.Runtime.Dispatch;
 using ControlServer.Host.Runtime.Faults;
+using System.Data.Common;
 using ControlServer.Infrastructure.Persistence;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.ChangeTracking;
+using Microsoft.EntityFrameworkCore.Diagnostics;
 using Microsoft.EntityFrameworkCore.Storage;
 
 namespace ControlServer.Tests;
@@ -200,6 +202,214 @@ public sealed partial class MultiVehicleExecutionTests
         context.ChangeTracker.Clear();
         JourneyRuntimeRow saved = await fixture.JourneyOfAsync(other);
         Assert.Equal((StagedReason, versionInDatabase + 1), (saved.BlockReasonCode, saved.Version));
+    }
+
+    /// <summary>
+    /// P-C: a change left for a later save that the failing vehicle saved and committed, then threw. It stays as the database has
+    /// it -- not Modified again, which would have its next save written against the version it already raised.
+    /// </summary>
+    [Fact]
+    public async Task AChangeLeftForALaterSaveThatTheFailingVehicleSavedAndCommittedStaysSaved()
+    {
+        await using FleetFixture fixture = await FleetFixture.CreateAsync();
+        await fixture.Engine.ExecuteOnceAsync(TestContext.Current.CancellationToken);
+        ControlServerDbContext context = fixture.Context;
+        context.ChangeTracker.Clear();
+        JourneyRuntimeRow row = await context.JourneyRuntimes
+            .SingleAsync(journey => journey.AgvId == FleetFixture.AgvIds[2], TestContext.Current.CancellationToken);
+        long versionBefore = row.Version;
+        row.SetBlockReason(StagedReason, fixture.Clock.GetUtcNow());
+        EntityEntry<JourneyRuntimeRow> entry = context.Entry(row);
+        JourneyRuntimeEngine.TrackedBeforeAdvance before = JourneyRuntimeEngine.TrackedBeforeAdvance.Take(context);
+        await context.SaveChangesAsync(TestContext.Current.CancellationToken);
+
+        await before.RestoreAsync(context, TestContext.Current.CancellationToken);
+
+        Assert.Equal(
+            (EntityState.Unchanged, StagedReason, versionBefore + 1),
+            (entry.State, row.BlockReasonCode, entry.Property(journey => journey.Version).OriginalValue));
+        row.SetBlockReason(null, fixture.Clock.GetUtcNow());
+        await context.SaveChangesAsync(TestContext.Current.CancellationToken);
+        context.ChangeTracker.Clear();
+        Assert.Equal(versionBefore + 2, (await fixture.JourneyOfAsync(FleetFixture.AgvIds[2])).Version);
+    }
+
+    /// <summary>
+    /// P-D: a row added earlier for a later save that the failing vehicle inserted and committed, then threw. It stays inserted
+    /// and tracked as the database has it -- not Added again, which would insert it a second time.
+    /// </summary>
+    [Fact]
+    public async Task ARowAddedForALaterSaveThatTheFailingVehicleInsertedAndCommittedIsNotInsertedAgain()
+    {
+        await using FleetFixture fixture = await FleetFixture.CreateAsync();
+        ControlServerDbContext context = fixture.Context;
+        context.ChangeTracker.Clear();
+        JourneyBacklogRow row = PhantomBacklogRow(fixture.Clock.GetUtcNow());
+        context.JourneyBacklog.Add(row);
+        JourneyRuntimeEngine.TrackedBeforeAdvance before = JourneyRuntimeEngine.TrackedBeforeAdvance.Take(context);
+        await context.SaveChangesAsync(TestContext.Current.CancellationToken);
+
+        await before.RestoreAsync(context, TestContext.Current.CancellationToken);
+
+        Assert.Equal(EntityState.Unchanged, context.Entry(row).State);
+        await context.SaveChangesAsync(TestContext.Current.CancellationToken);
+        Assert.Equal(1, await context.JourneyBacklog.AsNoTracking()
+            .CountAsync(backlog => backlog.DemandId == PhantomDemandId, TestContext.Current.CancellationToken));
+    }
+
+    /// <summary>
+    /// P-E: a delete left for a later save that the failing vehicle saved inside a transaction that rolled back. It goes back to
+    /// being that delete, and the save it was left for removes the row -- not let go, which would lose the delete.
+    /// </summary>
+    [Fact]
+    public async Task ADeleteLeftForALaterSaveThatTheFailingVehicleSavedAndRolledBackIsStillCarriedOut()
+    {
+        await using FleetFixture fixture = await FleetFixture.CreateAsync();
+        ControlServerDbContext context = fixture.Context;
+        context.ChangeTracker.Clear();
+        context.JourneyBacklog.Add(PhantomBacklogRow(fixture.Clock.GetUtcNow()));
+        await context.SaveChangesAsync(TestContext.Current.CancellationToken);
+        context.ChangeTracker.Clear();
+        JourneyBacklogRow row = await context.JourneyBacklog
+            .SingleAsync(backlog => backlog.DemandId == PhantomDemandId, TestContext.Current.CancellationToken);
+        context.JourneyBacklog.Remove(row);
+        JourneyRuntimeEngine.TrackedBeforeAdvance before = JourneyRuntimeEngine.TrackedBeforeAdvance.Take(context);
+        await using (IDbContextTransaction transaction = await context.Database
+                         .BeginTransactionAsync(TestContext.Current.CancellationToken))
+        {
+            await context.SaveChangesAsync(TestContext.Current.CancellationToken);
+        }
+        // The premise: saved and rolled back, the row is still there and the tracker has let it go.
+        Assert.Equal(EntityState.Detached, context.Entry(row).State);
+
+        await before.RestoreAsync(context, TestContext.Current.CancellationToken);
+
+        Assert.Equal(EntityState.Deleted, context.Entry(row).State);
+        await context.SaveChangesAsync(TestContext.Current.CancellationToken);
+        Assert.False(await context.JourneyBacklog.AsNoTracking()
+            .AnyAsync(backlog => backlog.DemandId == PhantomDemandId, TestContext.Current.CancellationToken));
+    }
+
+    /// <summary>
+    /// The withdrawal cannot read the journey rows again: they are let go, so the vehicles after the failing one sit out this
+    /// round on the loop's "no longer tracked" check rather than advance on values nobody vouches for, and the next round
+    /// serves them as usual -- the second vehicle's failed order is recorded and stopped then.
+    /// </summary>
+    [Fact]
+    public async Task WhenTheWithdrawalCannotReadARowAgainItsVehicleSitsOutThisRoundOnly()
+    {
+        JourneyReadFailure reads = new();
+        await using FleetFixture fixture = await FleetFixture.CreateAsync(commands: reads);
+        fixture.Riot.MovementState = "MT_FINISHED";
+        await fixture.Engine.ExecuteOnceAsync(TestContext.Current.CancellationToken);
+        string failingOrder = (await fixture.JourneyOfAsync(FleetFixture.AgvIds[0])).PickupUpperId;
+        JourneyRuntimeRow stopped = await fixture.JourneyOfAsync(FleetFixture.AgvIds[1]);
+        bool armed = true;
+        fixture.Riot.BeforeReconcile = upperId =>
+        {
+            if (upperId != failingOrder)
+            {
+                return Task.CompletedTask;
+            }
+            if (armed)
+            {
+                // The three journey rows the round tracks, read again by the withdrawal: the failing vehicle's and the two after it.
+                reads.Remaining = 3;
+                armed = false;
+            }
+            throw new InvalidOperationException("Injected: this vehicle's advance throws every round.");
+        };
+        fixture.Riot.MovementState = "MT_RUNNING";
+        fixture.Riot.FailOrder(stopped.PickupUpperId);
+
+        await Assert.ThrowsAsync<InvalidOperationException>(() => fixture.RunRoundAsync(TimeSpan.FromSeconds(1)));
+
+        Assert.Equal(0, reads.Remaining);
+        Assert.Empty(await fixture.Context.VehicleFaultStates.AsNoTracking().ToArrayAsync(TestContext.Current.CancellationToken));
+
+        await Assert.ThrowsAsync<InvalidOperationException>(() => fixture.RunRoundAsync(TimeSpan.FromSeconds(1)));
+
+        VehicleFaultStateRow fault = Assert.Single(
+            await fixture.Context.VehicleFaultStates.AsNoTracking().ToArrayAsync(TestContext.Current.CancellationToken));
+        Assert.Equal((FleetFixture.AgvIds[1], true), (fault.AgvId, fault.EscalatedAt is not null));
+    }
+
+    /// <summary>
+    /// The host shutting down while the withdrawal reads a row again is not a failed read: its cancellation leaves the round.
+    /// </summary>
+    [Fact]
+    public async Task TheHostsShutdownWhileTheWithdrawalReadsARowAgainLeavesTheRound()
+    {
+        JourneyReadFailure reads = new();
+        await using FleetFixture fixture = await FleetFixture.CreateAsync(commands: reads);
+        fixture.Riot.MovementState = "MT_FINISHED";
+        await fixture.Engine.ExecuteOnceAsync(TestContext.Current.CancellationToken);
+        string failingOrder = (await fixture.JourneyOfAsync(FleetFixture.AgvIds[0])).PickupUpperId;
+        using CancellationTokenSource shutdown = new();
+        reads.Failure = () =>
+        {
+            shutdown.Cancel();
+            return new OperationCanceledException(shutdown.Token);
+        };
+        fixture.Riot.BeforeReconcile = upperId =>
+        {
+            if (upperId != failingOrder)
+            {
+                return Task.CompletedTask;
+            }
+            reads.Remaining = 1;
+            throw new InvalidOperationException("Injected: this vehicle's advance throws.");
+        };
+        fixture.Context.ChangeTracker.Clear();
+
+        await Assert.ThrowsAnyAsync<OperationCanceledException>(() => fixture.Engine.ExecuteOnceAsync(shutdown.Token));
+        Assert.Equal(0, reads.Remaining);
+    }
+
+    private static JourneyBacklogRow PhantomBacklogRow(DateTimeOffset now) => new()
+    {
+        DemandId = PhantomDemandId,
+        TransportDemandKey = PhantomDemandId,
+        FirstSeenAt = now,
+        DemandCreatedAt = now,
+        DecisionFingerprint = "cs487",
+        ReasonCode = StagedReason,
+        LastSeenAt = now,
+    };
+
+    /// <summary>Fails the next <see cref="Remaining"/> reads of the journey table, the way a database that stopped answering does.</summary>
+    private sealed class JourneyReadFailure : DbCommandInterceptor
+    {
+        public int Remaining { get; set; }
+
+        public Func<Exception> Failure { get; set; } =
+            () => new InvalidOperationException("Injected: the journey table cannot be read.");
+
+        public override InterceptionResult<DbDataReader> ReaderExecuting(
+            DbCommand command, CommandEventData eventData, InterceptionResult<DbDataReader> result)
+        {
+            FailIfDue(command);
+            return result;
+        }
+
+        public override ValueTask<InterceptionResult<DbDataReader>> ReaderExecutingAsync(
+            DbCommand command,
+            CommandEventData eventData,
+            InterceptionResult<DbDataReader> result,
+            CancellationToken cancellationToken = default)
+        {
+            FailIfDue(command);
+            return ValueTask.FromResult(result);
+        }
+
+        private void FailIfDue(DbCommand command)
+        {
+            if (Remaining > 0 && command.CommandText.Contains("FROM \"JourneyRuntimes\"", StringComparison.Ordinal))
+            {
+                Remaining--;
+                throw Failure();
+            }
+        }
     }
 
     private const string StagedReason = "CS487_STAGED_BY_ANOTHER_VEHICLE";

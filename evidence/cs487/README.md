@@ -17,30 +17,61 @@ Failed!  - Failed:     1, Passed:     0, Skipped:     0, Total:     1
 
 ## 修后
 
-四条新用例 `Passed: 4`，退出码 0。
+九条新用例 `Passed: 9`，退出码 0。
+
+1 = `AVehicleWhoseAdvanceThrowsEveryRoundDoesNotStopTheOthersSupervisionOrTheDispatchRound`
+(i) = `WhatAVehicleWhoseAdvanceThrowsHadStagedOnAnotherRowIsNotSavedLaterInTheRound`
+(ii) = `WhatAVehicleWhoseAdvanceThrowsSavedInARolledBackTransactionIsNotTakenAsFact`
+(iii) = `AChangeLeftForALaterSaveThatTheFailingVehicleSavedAndRolledBackGoesBackToBeingThatChange`
+P-C = `AChangeLeftForALaterSaveThatTheFailingVehicleSavedAndCommittedStaysSaved`
+P-D = `ARowAddedForALaterSaveThatTheFailingVehicleInsertedAndCommittedIsNotInsertedAgain`
+P-E = `ADeleteLeftForALaterSaveThatTheFailingVehicleSavedAndRolledBackIsStillCarriedOut`
+R = `WhenTheWithdrawalCannotReadARowAgainItsVehicleSitsOutThisRoundOnly`
+S = `TheHostsShutdownWhileTheWithdrawalReadsARowAgainLeavesTheRound`
+
+(iii)、P-C、P-D、P-E 直接测 `TrackedBeforeAdvance.RestoreAsync`，不经过一轮推进：今天没有哪一步推进在走完时留着未保存的改动，一轮推进造不出「推进前挂着改动」的条目。写 (iii) 时经 RIoT 替身试过两个注入点（按单号读订单、读车），用例里的前提断言两次都红在 `Expected: Modified / Actual: Unchanged`，所以改为直接测。独立审查插桩跑了 671 条用例，`Take` 时也都没带改动。
+
+R 与 S 经命令拦截器让撤回时对旅程表的重读失败（R：前 3 次读失败；S：读时停机）。
 
 ## 反向验证（`reverse/`）
 
-每个变异都从修后的文件按内容改出，`--no-incremental` 重编，只跑四条新用例；结束后按内容写回并完整重编。预期是先写后跑的。下表是第二轮（加了 (iii) 与 M8、M9 之后，对最终产品代码重跑的全部九格）。
+每个变异都从修后的文件按内容改出，`--no-incremental` 重编，只跑九条新用例；结束后按内容写回并完整重编。预期是先写后跑的。下表是第三轮（审查意见之后，对最终产品代码重跑的全部格）。
 
 | 变异 | 预期红 | 实际红 |
 | --- | --- | --- |
-| M1 非连接类失败改回整轮 `throw` | 1 | 1 |
+| M1 非连接类失败改回整轮 `throw` | 1 | 1、R |
 | M2 失败车不进 `yielded` | 1 | 1 |
-| M3 去掉撤回 | (i)、(ii) | (i)、(ii) |
-| M4 去掉重读 | (i)、(ii) | (i)、(ii) |
-| M5 只重读 `Modified` 状态的条目 | (ii) | (ii) |
-| M6 去掉轮末重新抛出 | 1、(i)、(ii) | 1、(i)、(ii) |
+| M3 去掉撤回 | (i)、(ii) | (i)、(ii)、R |
+| M4 去掉重读 | (i)、(ii) | (i)、(ii)、R |
+| M5 只重读 `Modified` 状态的条目 | (ii) | (ii)、R |
+| M6 去掉轮末重新抛出 | 1、(i)、(ii) | 1、(i)、(ii)、R |
 | M7 不解除推进中新加进跟踪的条目 | (ii) | (ii) |
-| M8 推进前已挂改动的条目不回写原始值 | (iii) | (iii) |
-| M9 推进前已挂改动的条目只在仍挂着改动时回写 | (iii) | (iii) |
+| M8 退回时不回写原始值 | (iii) | (iii) |
+| M9 推进前 Modified 的条目一律当已提交 | (iii) | (iii) |
+| M10 推进前 Modified 的条目一律当已回滚 | P-C | P-C |
+| M11 推进前 Added 的条目一律当已回滚 | P-D | P-D |
+| M12 推进前 Deleted 的条目一律当已提交 | P-E | P-E |
+| M13 重读失败时不解除跟踪 | R | R |
+| M14 重读的 catch 连停机取消也吞掉 | S（不确定） | 存活 |
 
-1 = `AVehicleWhoseAdvanceThrowsEveryRoundDoesNotStopTheOthersSupervisionOrTheDispatchRound`，(i) = `WhatAVehicleWhoseAdvanceThrowsHadStagedOnAnotherRowIsNotSavedLaterInTheRound`，(ii) = `WhatAVehicleWhoseAdvanceThrowsSavedInARolledBackTransactionIsNotTakenAsFact`，(iii) = `AChangeLeftForALaterSaveThatTheFailingVehicleSavedAndRolledBackGoesBackToBeingThatChange`。
+多红的 R 都对得上：M1 下第二轮第二台车仍推进不到，故障记不下来；M3、M4、M5 下撤回不再重读那 3 行，注入的失败读没被用掉，「失败读已用完」的前提断言红；M6 下整轮不再抛出原异常。
 
-第一轮（只有 1、(i)、(ii) 与 M1–M7）里 M4 多红了 (i)，预期写漏了一层：推进前状态为 `Unchanged` 的条目，不论是暂存了未保存的改动，还是在回滚的事务里存过，`RestoreAsync` 都只靠重读恢复，不按快照回写值。第二轮的预期已按此改正。
+M14 存活：吞掉这一次取消之后，撤回里下一次读库、随后给失败车写码时的重读都带着已取消的令牌，照样抛出取消，停机仍然离开这一轮，用例分辨不出。过滤条件保留：它与引擎里每一处 catch 排除停机取消的写法一致，去掉它的效果只是撤回多解除几个条目的跟踪，结局相同。第一次跑 M14 编译失败（`CS0168`，变异写成了带名字却不用的 `catch (Exception error)`），改成 `catch (Exception)` 后单独重跑，结果如上。
 
-(iii) 直接测 `TrackedBeforeAdvance.RestoreAsync`，不经过一轮推进：今天没有哪一步推进在走完时留着未保存的改动，一轮推进造不出「推进前挂着改动」的条目。写用例时经 RIoT 替身试过两个注入点（按单号读订单、读车），用例里的前提断言两次都红在 `Expected: Modified / Actual: Unchanged`，所以改为直接测。
+早先两轮（M1–M7 三条用例；加 (iii) 与原 M8、M9 之后）的结果已被本轮取代。第一轮里 M4 比预期多红了 (i)，原因是推进前 `Unchanged` 的条目只靠重读恢复，暂存的未保存改动也走这条路。
+
+## 全量（`full/`）
+
+`7649d656` 上的 Release 全量（审查意见之前的版本）：
+
+```
+Passed!  - Failed:     0, Passed:  4263, Skipped:     0, Total:  4263, Duration: 1 h 5 m - ControlServer.Tests.dll (net8.0)
+```
+
+退出码 0，无 `[Test Assembly Cleanup Failure]`。TRX：total 4266、executed 4263。未执行的 3 条是 `ReconnectModelTests` 里手动或靠环境变量触发的模型用例。这一轮之后产品代码又改了（审查应改 1、2），所以它只作记录，最终 head 的全量另跑。
 
 ## 与本票无关的既有不稳
 
 `WhenAVehicleExhaustsItsBudgetTheHookIsStillCalledOnceWithOnlyTheVehiclesThatFinished` 在本机定向跑时红过（第二台车也超出 1 s 预算）。它只跑第一轮派车，那时没有旅程，本票改的循环不会进入。把产品文件换回 `fp/v2-impl` `f4f494ba` 的内容后同样连跑 5 遍，红 2 遍；修后连跑 5 遍红 4 遍。两边都是小样本，判为既有不稳（用真实计时器，cs#372 剩余风险第 11 条点过名），不在本票改。
+
+独立审查单独起进程跑这一条，基线与本票版本都是 5/5 红，判定与本票无关，由调度另开票。7649d656 上的全量里它是绿的。
