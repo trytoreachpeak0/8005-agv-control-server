@@ -204,14 +204,14 @@ public sealed class UnloadCrashResumeTests
     }
 
     /// <summary>跑一轮，把这一轮抛出的东西交回来而不是让用例在这里失败：判据是车有没有往前走，不是这一轮抛没抛。</summary>
-    private static async Task<Exception?> RunRoundAsync(RuntimeFixture fixture)
+    internal static async Task<Exception?> RunRoundAsync(RuntimeFixture fixture)
     {
         fixture.Clock.Advance(TimeSpan.FromSeconds(1));
         return await Record.ExceptionAsync(() => fixture.Engine.ExecuteOnceAsync(TestContext.Current.CancellationToken));
     }
 
     /// <summary>两条需求在同一个取货停靠装上车、同一个卸货停靠卸，车开到卸货站。停在等第一条的卸货结果。</summary>
-    private static async Task LoadBothAndArriveAtTheUnloadStopAsync(RuntimeFixture fixture)
+    internal static async Task LoadBothAndArriveAtTheUnloadStopAsync(RuntimeFixture fixture)
     {
         JourneyRuntimeRow runtime = await TwoDemandsAtThePickupAsync(fixture);
         await AddInboxAsync(
@@ -228,7 +228,7 @@ public sealed class UnloadCrashResumeTests
     }
 
     /// <summary>到站时下了卸货命令的那一条在前，另一条在后。恰好一条已下命令。</summary>
-    private static async Task<(string First, string Second)> UnloadOrderAsync(RuntimeFixture fixture)
+    internal static async Task<(string First, string Second)> UnloadOrderAsync(RuntimeFixture fixture)
     {
         bool firstCommanded = await UnloadCommandedAsync(fixture, FirstDemandId);
         Assert.NotEqual(firstCommanded, await UnloadCommandedAsync(fixture, SecondDemandId));
@@ -271,7 +271,7 @@ public sealed class UnloadCrashResumeTests
         return $"W2G-{extraId}";
     }
 
-    private static async Task<bool> UnloadCommandedAsync(RuntimeFixture fixture, string demandId)
+    internal static async Task<bool> UnloadCommandedAsync(RuntimeFixture fixture, string demandId)
     {
         JourneyDemandRow membership = await MembershipAsync(fixture, demandId);
         return await fixture.Context.ProtocolOutbox.AsNoTracking()
@@ -284,11 +284,11 @@ public sealed class UnloadCrashResumeTests
         fixture.Context.ProtocolOutbox.AsNoTracking()
             .CountAsync(row => row.MessageType == messageType, TestContext.Current.CancellationToken);
 
-    private static bool HasParameter(DbCommand command, string value) =>
+    internal static bool HasParameter(DbCommand command, string value) =>
         command.Parameters.Cast<DbParameter>().Any(parameter => Equals(parameter.Value, value));
 
     /// <summary>与 <paramref name="matches"/> 相符的第一条命令抛一次，如同那一次保存写到那里时进程崩了。</summary>
-    private sealed class FailOnce(Func<DbCommand, bool> matches) : DbCommandInterceptor
+    internal sealed class FailOnce(Func<DbCommand, bool> matches) : DbCommandInterceptor
     {
         public bool Armed { get; set; }
 

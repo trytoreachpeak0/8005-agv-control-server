@@ -190,7 +190,7 @@ public sealed class LoadEndedAtASecondPickupTests
     }
 
     /// <summary>车在装第二条时操作员按「取消装货」，授权之后车报仓位全空。经入站处理器，像真连接那样。</summary>
-    private static async Task CancelTheSecondDemandWhileLoadingAsync(RuntimeFixture fixture)
+    internal static async Task CancelTheSecondDemandWhileLoadingAsync(RuntimeFixture fixture)
     {
         CancellationToken token = TestContext.Current.CancellationToken;
         Assert.Equal(JourneyRuntimeStage.AwaitingLoadResult, (await JourneyOfAsync(fixture, FirstDemandId)).Stage);
