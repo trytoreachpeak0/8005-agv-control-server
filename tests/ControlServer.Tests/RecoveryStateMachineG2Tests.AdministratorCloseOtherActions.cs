@@ -110,6 +110,63 @@ public sealed partial class RecoveryStateMachineG2Tests
         }
     }
 
+    /// <summary>
+    /// A session can hold two compensations: one authorized and awaiting its result, another submitted while the first still
+    /// awaited its authorization and itself still awaiting one (control-server#187). The closing judges both, so the second is
+    /// not left awaiting an authorization for a closed session; asked afterwards, it is refused and authorizes nothing.
+    /// </summary>
+    [Fact]
+    [Trait("IntegrationSlice", "FP-IS-07")]
+    public async Task ClosingASessionWithTwoCompensationsJudgesBoth()
+    {
+        Environment.SetEnvironmentVariable(StuckProofVariable, StuckProof);
+        try
+        {
+            CancellationToken token = TestContext.Current.CancellationToken;
+            await using SqliteConnection connection = new("Data Source=:memory:");
+            await connection.OpenAsync(token);
+            await using ControlServerDbContext context = await CreateContextAsync(connection);
+            RecordingPeer peer = new(context);
+            const string secondActionId = "51000000-0000-4000-8000-000000004846";
+            await SeedBlockedJourneyAsync(context, productionShapedSession: true);
+            OnboardMessageProcessor processor = Processor(context, peer, StuckProofVariable);
+            OnboardConnectionState state = CurrentState(deferOutbound: true);
+            await processor.ProcessAsync(RecoverySessionRequest(StuckProof), state, token);
+            Assert.Equal("RecoveryActionAccepted", MessageType(
+                await processor.ProcessAsync(RecoveryAction("COMPENSATE_LOAD_ALL_EMPTY"), state, token)));
+            Assert.Equal("RecoveryActionAccepted", MessageType(await processor.ProcessAsync(
+                RecoveryAction("COMPENSATE_LOAD_ALL_EMPTY", messageId: "e0000000-0000-4000-8000-000000004846",
+                    actionId: secondActionId),
+                state,
+                token)));
+            await processor.ProcessAsync(CompensationAuthorizationRequest(), state, token);
+            await processor.FlushDeferredOutboundAsync(state, token);
+            context.ChangeTracker.Clear();
+            Assert.Equal(
+                [(ActionId, RecoveryWorkflowState.AwaitingResult), (secondActionId, RecoveryWorkflowState.AwaitingAuthorization)],
+                (await context.RecoveryWorkflows.AsNoTracking().ToArrayAsync(token))
+                    .OrderBy(row => row.WorkflowId, StringComparer.Ordinal).Select(row => (row.WorkflowId, row.State)));
+
+            Assert.True((await CloseAsync(context, peer, CloseRequest(sessionId: null))).Closed);
+
+            Assert.All(await context.RecoveryWorkflows.AsNoTracking().ToArrayAsync(token), row =>
+                Assert.Equal((RecoveryWorkflowState.RecoveryRequired, RecoveryWorkflowOutcomes.AdministratorClosed),
+                    (row.State, row.Outcome)));
+            JsonNode second = JsonNode.Parse(CompensationAuthorizationRequest())!;
+            second["messageId"] = "90000000-0000-4000-8000-000000004846";
+            second["payload"]!["recoveryActionId"] = secondActionId;
+            string refused = await processor.ProcessAsync(second.ToJsonString(), state, token);
+            await processor.FlushDeferredOutboundAsync(state, token);
+            Assert.Equal(ServerReasonCodes.RecoverySessionNotOpen,
+                FirstPayload(refused).GetProperty("problem").GetProperty("reasonCode").GetString());
+            Assert.Equal(1, await context.ProtocolOutbox.CountAsync(row => row.MessageType == "LoadCompensationCommand", token));
+        }
+        finally
+        {
+            Environment.SetEnvironmentVariable(StuckProofVariable, null);
+        }
+    }
+
     public static TheoryData<string> LateOtherResults => new() { Handoff, CompensationAuthorized, Forced };
 
     /// <summary>
