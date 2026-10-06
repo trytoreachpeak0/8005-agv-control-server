@@ -393,20 +393,28 @@ public sealed class OnboardRecoveryCoordinator(
     internal const string AdministratorClosedOutcome = RecoveryWorkflowOutcomes.AdministratorClosed;
 
     /// <summary>
-    /// Which selected actions an administrator may close a session on while their result is awaited, and the workflow
-    /// states that count as awaiting it (control-server#483). Only a resume so far: the other three are a separate decision
-    /// -- a forced recovery's result is what lifts its hardware hold and fences its generation, and a fault cargo handoff or
-    /// a compensation settles cargo -- and each joins this table only once it has been made.
+    /// Which selected actions an administrator may close a session on while their outcome is awaited, and the workflow
+    /// states that count as awaiting it. A resume since control-server#483; the other three since #484 (the coordinator's
+    /// decision of 2026-10-06), a compensation also while it still awaits its authorization -- its session is ACTION_SELECTED
+    /// then and nothing has gone to the vehicle. Closing a forced recovery leaves its hardware hold and its generation where
+    /// they were; the way out of the fence that leaves is <see cref="ForcedFenceLiftedOverAdministratorClosingsAsync"/>.
     /// </summary>
     internal static IReadOnlyDictionary<string, IReadOnlySet<RecoveryWorkflowState>> AdministratorClosableActions { get; } =
         new Dictionary<string, IReadOnlySet<RecoveryWorkflowState>>(StringComparer.Ordinal)
         {
-            ["RESUME_AFTER_REPAIR"] = new HashSet<RecoveryWorkflowState>
+            ["RESUME_AFTER_REPAIR"] = AwaitingCommandOutcome(),
+            ["FAULT_CARGO_HANDOFF"] = AwaitingCommandOutcome(),
+            ["FORCED_MECHANICAL_RECOVERY"] = AwaitingCommandOutcome(),
+            ["COMPENSATE_LOAD_ALL_EMPTY"] = new HashSet<RecoveryWorkflowState>
             {
+                RecoveryWorkflowState.AwaitingAuthorization,
                 RecoveryWorkflowState.CommandPending,
                 RecoveryWorkflowState.AwaitingResult
             }
         };
+
+    private static HashSet<RecoveryWorkflowState> AwaitingCommandOutcome() =>
+        [RecoveryWorkflowState.CommandPending, RecoveryWorkflowState.AwaitingResult];
 
     /// <summary>
     /// Closes the vehicle's one open session whose action's result will never come, on an administrator's word
@@ -466,18 +474,37 @@ public sealed class OnboardRecoveryCoordinator(
         IReadOnlySet<RecoveryWorkflowState>? awaiting = selectedAction is null
             ? null
             : AdministratorClosableActions.GetValueOrDefault(selectedAction);
-        // The selected action's workflow still awaiting its result, if any; otherwise its latest, for the audit.
-        RecoveryWorkflowRow? workflow =
-            workflows.FirstOrDefault(row => row.WorkflowType == selectedAction && awaiting?.Contains(row.State) == true) ??
+        // Every workflow of the selected action still awaiting its outcome: a session can hold more than one compensation,
+        // one whose command is out and others still awaiting their authorization (control-server#187), and the closing judges
+        // them all, so none is left behind to be authorized into a closed session.
+        RecoveryWorkflowRow[] awaitingWorkflows = workflows
+            .Where(row => row.WorkflowType == selectedAction && awaiting?.Contains(row.State) == true)
+            .OrderByDescending(row => row.CommandMessageId is not null)
+            .ThenBy(row => row.CreatedAt)
+            .ToArray();
+        // The one the session closes on -- the one with its command out, if any; otherwise the action's latest, for the audit.
+        RecoveryWorkflowRow? workflow = awaitingWorkflows.FirstOrDefault() ??
             workflows.Where(row => row.WorkflowType == selectedAction).MaxBy(row => row.CreatedAt);
         string[] pendingAttempts = connection is null ? [] : ParseStrings(connection.PendingAttemptIdsJson);
         string[] pendingResults = connection is null ? [] : ParseStrings(connection.PendingResultIdsJson);
+        int[] activeUnlockSlots = connection is null ? [] : ParseSlots(connection.ActiveUnlockSlotsJson);
         string? attemptId = workflow?.SlotOperationAttemptId;
+        bool namesAttempt = attemptId is not null &&
+                            (pendingAttempts.Contains(attemptId, StringComparer.Ordinal) ||
+                             connection?.UnsettledSlotOperationAttemptId == attemptId);
+        // What says the outcome may still be on its way, by action (control-server#484). A pending result is named by its
+        // messageId alone, so any one counts, for every action. A resume, a handoff and a compensation are about the session's
+        // attempt, so a report naming it counts; a forced recovery settles no attempt of its own, and the attempt the failed
+        // load left unsettled says nothing about it. A handoff, a compensation and a forced recovery open doors: slots whose
+        // unlock output is active mean the vehicle is at them. The resume is judged as #483 left it.
         bool resultInFlight = connectedSessionGeneration is not null &&
                               (pendingResults.Length > 0 ||
-                               (attemptId is not null &&
-                                (pendingAttempts.Contains(attemptId, StringComparer.Ordinal) ||
-                                 connection?.UnsettledSlotOperationAttemptId == attemptId)));
+                               selectedAction switch
+                               {
+                                   "RESUME_AFTER_REPAIR" => namesAttempt,
+                                   "FORCED_MECHANICAL_RECOVERY" => activeUnlockSlots.Length > 0,
+                                   _ => namesAttempt || activeUnlockSlots.Length > 0
+                               });
         facts(new
         {
             vehicle = new
@@ -489,7 +516,8 @@ public sealed class OnboardRecoveryCoordinator(
                 recoveryReportId = connection?.RecoveryReportId,
                 pendingAttemptIds = pendingAttempts,
                 pendingResultIds = pendingResults,
-                unsettledSlotOperationAttemptId = connection?.UnsettledSlotOperationAttemptId
+                unsettledSlotOperationAttemptId = connection?.UnsettledSlotOperationAttemptId,
+                activeUnlockSlots
             },
             session = session is null
                 ? null
@@ -518,7 +546,9 @@ public sealed class OnboardRecoveryCoordinator(
         if (exceptionRecoverySessionId is not null &&
             !string.Equals(exceptionRecoverySessionId, session.ExceptionRecoverySessionId, StringComparison.Ordinal))
             return Refused(RecoverySessionAdministratorCloseCodes.SessionMismatch);
-        if (session.State != "EXECUTING")
+        // ACTION_SELECTED is a compensation still awaiting its authorization (control-server#484); the table decides below
+        // whether the selected action may be closed in it.
+        if (session.State is not ("EXECUTING" or "ACTION_SELECTED"))
             return Refused(RecoverySessionAdministratorCloseCodes.SessionNotExecuting);
         if (awaiting is null)
             return Refused(RecoverySessionAdministratorCloseCodes.ActionNotClosable);
@@ -529,11 +559,14 @@ public sealed class OnboardRecoveryCoordinator(
         if (resultInFlight)
             return Refused(RecoverySessionAdministratorCloseCodes.ResultInFlightOnVehicle);
 
-        workflow.State = RecoveryWorkflowState.RecoveryRequired;
-        workflow.Outcome = AdministratorClosedOutcome;
-        workflow.UpdatedAt = timeProvider.GetUtcNow();
+        foreach (RecoveryWorkflowRow closed in awaitingWorkflows)
+        {
+            closed.State = RecoveryWorkflowState.RecoveryRequired;
+            closed.Outcome = AdministratorClosedOutcome;
+            closed.UpdatedAt = timeProvider.GetUtcNow();
+            await SettleAnsweredCommandAsync(closed, cancellationToken).ConfigureAwait(false);
+        }
         await AdvanceSessionAfterResultAsync(workflow, connection!.SessionGeneration, cancellationToken).ConfigureAwait(false);
-        await SettleAnsweredCommandAsync(workflow, cancellationToken).ConfigureAwait(false);
         await dbContext.SaveChangesAsync(cancellationToken).ConfigureAwait(false);
         return new AdministratorCloseDecision([], session.ExceptionRecoverySessionId);
 
@@ -764,7 +797,10 @@ public sealed class OnboardRecoveryCoordinator(
                 root, actionId, recoverySessionId, session.Revision, ServerReasonCodes.RecoveryScopeMismatch);
         SessionRecoveryRow connection = await dbContext.SessionRecoveries.SingleAsync(
             row => row.AgvId == session.AgvId, cancellationToken).ConfigureAwait(false);
-        string? actionProblem = ValidateActionPreconditions(action, session, connection, operation);
+        bool forcedFenceLifted = action == "FORCED_MECHANICAL_RECOVERY" &&
+                                 await ForcedFenceLiftedOverAdministratorClosingsAsync(connection, cancellationToken)
+                                     .ConfigureAwait(false);
+        string? actionProblem = ValidateActionPreconditions(action, session, connection, operation, forcedFenceLifted);
         if (actionProblem is not null)
             return RejectedAction(root, actionId, recoverySessionId, session.Revision, actionProblem);
         // The one check against taking an action again while the same action still awaits its outcome, for all four
@@ -1162,11 +1198,18 @@ public sealed class OnboardRecoveryCoordinator(
             workflow.State is not (RecoveryWorkflowState.AwaitingAuthorization or RecoveryWorkflowState.CommandPending
                 or RecoveryWorkflowState.AwaitingResult))
         {
+            // A compensation an administrator closed while it awaited its authorization (control-server#484): its session is
+            // what ended, and the refusal says so, as it does for a session closed on another result below.
+            bool closedByAdministrator = workflow?.Outcome == AdministratorClosedOutcome &&
+                                         workflow.State == RecoveryWorkflowState.RecoveryRequired;
             return Response(root, "LoadCompensationRejected", new
             {
                 recoveryActionId = actionId,
-                problem = Problem(ServerReasonCodes.ActionNotAllowedInState, "payload",
-                    "Load compensation is not authorized.")
+                problem = closedByAdministrator
+                    ? Problem(ServerReasonCodes.RecoverySessionNotOpen, "payload",
+                        "The recovery session this compensation belongs to was closed by an administrator.")
+                    : Problem(ServerReasonCodes.ActionNotAllowedInState, "payload",
+                        "Load compensation is not authorized.")
             });
         }
         if (workflow.CommandMessageId is null)
@@ -1855,13 +1898,63 @@ public sealed class OnboardRecoveryCoordinator(
                 ? ServerReasonCodes.RecoveryActionAlreadySelected : null;
     }
 
+    /// <summary>
+    /// Whether a new forced mechanical recovery may be taken over a forced generation the vehicle has not reached, because
+    /// every forced recovery above the generation it reports was closed by an administrator (control-server#484, F-b; the
+    /// coordinator's decision of 2026-10-06).
+    /// </summary>
+    /// <remarks>
+    /// <para>
+    /// <b>What the fence guards.</b> Submitting a forced recovery advances the vehicle's generation and fences every command
+    /// issued under an older one; the onboard refuses a command below the generation it holds, and raises its own only by
+    /// binding a ForcedMechanicalRecoveryCommand. Until the vehicle reports the server's generation, the server cannot know it
+    /// has taken the forced recovery in, so every action is refused FORCED_RECOVERY_GENERATION_STALE: a second action now
+    /// could be judged on slots a forced recovery the vehicle is still carrying out has left physically unknown.
+    /// </para>
+    /// <para>
+    /// <b>Why closing one leaves the fence shut for good.</b> An administrator's closing settles the forced command, so it is
+    /// never replayed. A vehicle that never bound it -- gone before it arrived -- comes back reporting the generation below,
+    /// and nothing can raise it but another forced command, which the fence itself refuses. Its hardware hold cannot be lifted
+    /// either: the record needs the forced result, and the onboard offers it only for a forced recovery it carried out.
+    /// </para>
+    /// <para>
+    /// <b>Why lifting it here does not weaken it.</b> Only for a new FORCED_MECHANICAL_RECOVERY, which advances the
+    /// generation again and fences everything below -- the same move the fence exists to order. Only while the vehicle reports
+    /// less than the server holds, and only when every forced workflow above what it reports was closed by an administrator:
+    /// the command of each was settled, never replayed, and a vehicle reporting below its generation never bound it, so no
+    /// forced recovery it might still be carrying out stands between the two. One that ended any other way -- a result arrived
+    /// -- keeps the fence shut (control-server#493 is that case); so does a generation with no forced workflow behind it. The
+    /// closed workflows become history under the new generation, and the new forced recovery goes the ordinary way: its result,
+    /// the vehicle's report of the new generation, a hardware record. That is the cost: a person at the vehicle forces it
+    /// again before it is released.
+    /// </para>
+    /// </remarks>
+    private async Task<bool> ForcedFenceLiftedOverAdministratorClosingsAsync(
+        SessionRecoveryRow connection,
+        CancellationToken cancellationToken)
+    {
+        if (connection.ReportedForcedRecoveryGeneration >= connection.ForcedRecoveryGeneration)
+            return false;
+        string?[] outcomes = await dbContext.RecoveryWorkflows.AsNoTracking()
+            .Where(row => row.AgvId == connection.AgvId &&
+                          row.WorkflowType == "FORCED_MECHANICAL_RECOVERY" &&
+                          row.ForcedRecoveryGeneration > connection.ReportedForcedRecoveryGeneration)
+            .Select(row => row.Outcome)
+            .ToArrayAsync(cancellationToken).ConfigureAwait(false);
+        return outcomes.Length > 0 && outcomes.All(outcome => outcome == AdministratorClosedOutcome);
+    }
+
     private static string? ValidateActionPreconditions(
         string action,
         ExceptionRecoverySessionRow session,
         SessionRecoveryRow connection,
-        StationOperationRow? operation)
+        StationOperationRow? operation,
+        bool forcedFenceLifted)
     {
-        if (connection.ReportedForcedRecoveryGeneration != connection.ForcedRecoveryGeneration)
+        // The fence, lifted for a new forced recovery over administrator-closed generations alone
+        // (ForcedFenceLiftedOverAdministratorClosingsAsync); every other action and case is refused as before.
+        if (connection.ReportedForcedRecoveryGeneration != connection.ForcedRecoveryGeneration &&
+            !(forcedFenceLifted && action == "FORCED_MECHANICAL_RECOVERY"))
             return ServerReasonCodes.ForcedRecoveryGenerationStale;
         if (session.DemandId is not null && operation is null)
             return ServerReasonCodes.RecoveryOperationNotFound;

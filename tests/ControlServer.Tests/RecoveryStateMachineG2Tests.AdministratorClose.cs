@@ -231,8 +231,8 @@ public sealed partial class RecoveryStateMachineG2Tests
 
     /// <summary>
     /// Every unmet premise refuses with its code, writes nothing but the failed audit record, and sends the vehicle nothing:
-    /// the session, its workflows, the business and the outbox are as they were. Only a resume is closable (the coordinator's
-    /// decision of 2026-10-05). A connected vehicle whose latest RecoveryStateReport still names the resume's attempt, or any
+    /// the session, its workflows, the business and the outbox are as they were. Only the actions in the closable table are
+    /// closable (a resume since 2026-10-05, the other three since #484). A connected vehicle whose latest RecoveryStateReport still names the resume's attempt, or any
     /// pending result -- whose messageId does not say which attempt it settles -- may yet deliver the result, so it is not
     /// closed (review S1). Nor is a vehicle in its handshake, whose SessionHello has cleared the facts on file while it is
     /// about to replay its results, or one connected at another session generation than the facts on file (incremental

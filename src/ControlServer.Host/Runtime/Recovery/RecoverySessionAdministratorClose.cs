@@ -32,11 +32,11 @@ public static class RecoverySessionAdministratorCloseCodes
         [FieldTooLong] = "有一项写得太长：理由与核实记录各不超过 500 字，办理人、角色、车号与会话号各不超过 128 字",
         [SessionNotFound] = "这辆车眼下没有未关闭的异常恢复会话，或车号填错了（车号区分大小写）：请核对响应里回显的车号",
         [SessionMismatch] = "填的会话号不是这辆车眼下未关闭的那个会话：可以不填会话号，服务端按车找到它；填了就必须一致",
-        [SessionNotExecuting] = "这辆车的会话不在执行中：开着的会话在车上选动作即可",
-        [ActionNotClosable] = "这个会话选的动作不能从这里关：目前只有修好后续作（RESUME_AFTER_REPAIR）可以",
+        [SessionNotExecuting] = "这辆车的会话不在执行中，也不是选了补偿在等授权：开着的会话在车上选动作即可",
+        [ActionNotClosable] = "这个会话选的动作不能从这里关：只有修好后续作、故障货交接、全空补偿与强制机械恢复可以",
         [ResultNotAwaited] = "这个会话的动作已经不在等结果：服务端会自己收尾，不用再办",
         [VehicleHandshakeInProgress] = "车正在重新连接，连接还没完成，它可能正在补交结果：请等连接完成后再办",
-        [ResultInFlightOnVehicle] = "车此刻在线，而且它上报的待处理事项里还有这次续作，结果可能还在路上：现在关会丢掉真实结果。请等车把结果交上来，或等车离线后再办",
+        [ResultInFlightOnVehicle] = "车此刻在线，而且它上报的事实说明结果可能还在路上（点名了这次的 attempt、有待交结果，或仓门开锁输出还开着）：现在关会让真实结果白白到达。请等车把结果交上来，或等车离线后再办",
     };
 }
 
@@ -89,8 +89,10 @@ public sealed record RecoverySessionAdministratorCloseResult(
 /// 后到的结果看到会话已关。
 /// </para>
 /// <para>
-/// <b>只放开续作</b>（调度 2026-10-05 定）：哪些动作能这样关由 <see cref="OnboardRecoveryCoordinator.AdministratorClosableActions"/> 一张表决定，
-/// 另外三种动作是否加入另开票决定。
+/// <b>哪些动作能关</b>由 <see cref="OnboardRecoveryCoordinator.AdministratorClosableActions"/> 一张表决定：续作（调度 2026-10-05 定），以及故障货交接、
+/// 全空补偿（含选了补偿还在等授权、会话 ACTION_SELECTED 的情形）与强制机械恢复（control-server#484，调度 2026-10-06 定）。后三种关闭之后迟到的结果
+/// 照 control-server#175 应答、留作证据、什么都不结算，不像续作那样拒收。强制机械恢复关掉后，车若没绑定过那条命令、带着更低的代次回来，出口是在新
+/// 会话里再做一次强制机械恢复（<c>OnboardRecoveryCoordinator.ForcedFenceLiftedOverAdministratorClosingsAsync</c>）。
 /// </para>
 /// </remarks>
 public sealed class RecoverySessionAdministratorClose(
