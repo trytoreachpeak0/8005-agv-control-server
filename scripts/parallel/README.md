@@ -48,7 +48,8 @@ control-server#262。约 2026-10-08 起 `factory01` 上同时跑两套 ControlSe
 
 1. **派车闸门开着就拒绝**（`UPGRADE_REFUSED_DISPATCH_OPEN`）。已装配置里 `RiotCreateDispatch.enabled` 为真时，车可能在途，
    停服务等于中途停掉运行时对它的故障监看。安装脚本在最开头就查一次（在记录定义、回滚对调目录、解包之前），包装函数停服务前
-   再查一次。要升级或回滚，**先手工关闸门，按这个顺序**（拒绝消息里也照抄了这几步）：
+   再查一次。要升级或回滚，**先用 `8005-workspace` 仓的 `remote-ops/factory-server/scripts/20-set-control-server-parallel-dispatch-gate.ps1 -State Closed`
+   关闸门**（见下面「关、开派车闸门」）；脚本跑不了时才手工关，**按这个顺序**（拒绝消息里也照抄了这几步）：
    1. 停止往 FakeMesIngest 注入新需求，等 `agv02`／`agv03` 的最后一张单都 `Completed`；
    2. 编辑 **V2 的** `C:\Program Files\8005 AGV\ControlServer.V2\appsettings.Production.json`，把 `RiotCreateDispatch.enabled`
       改成 false。**不是 MVP 的 `C:\Program Files\8005 AGV\ControlServer\appsettings.Production.json`**，两者只差一个 `.V2`。
@@ -135,15 +136,34 @@ VB 的 `DeleteDirectory`、FSO 的 `DeleteFolder`、CIM，以及挪走、清空�
 **真正保证不删错东西的是构造，不是扫描**：删前逐次复检的路径白名单与生产清单、拒删链接、服务一步的正面确认与失败
 即中止、配置文件只删布局路径（或没有布局时安装脚本旁边那一个）。扫描只是让人改这几个文件时，常见写法不会悄悄绕开它们。
 
+## 关、开派车闸门（control-server#472）
+
+`Set-ParallelDispatchGateLocal.ps1` 在 factory01 上关或开 v2 实例的 `RiotCreateDispatch.enabled` 并重启服务，由控制端的
+`20-set-control-server-parallel-dispatch-gate.ps1` 复制过去、经 ssh 执行。**真跑会停、启一个在线服务，只在用户为那一次授权后运行。**
+步骤、判据与拒绝码在 `ParallelHost.psm1` 的 `Invoke-ParallelDispatchGateChange` 与 `ParallelInstance.psm1` 的
+`Get-ParallelDispatchGateRefusal` 里写着；完整的中文说明在 `8005-workspace` 仓 `remote-ops/factory-server/docs/wire-to-gate-parallel-cd.md`
+第 10 节。要点：
+
+- 在途判断读 v2 自己的 SQLite 库（只读），不读看板接口：`/api/dashboard/*` 每个接口只返回在途旅程的一个子集。
+- 关：任何旅程不是 `Completed` 就拒绝。开：只拒绝单已经发出或可能已经发出的旅程，「没发过」照搬 `WireToGateStore.IsNeverSentAsync`；
+  闸门关着时存在的旅程都在等闸门，拒绝它们就是死锁。读不出一律拒绝。
+- 服务在跑时读一次，停服后再读一次；写开关时回读开关和其余每个值（中文 `agvId`）；重启后要求进程启动时间晚于文件修改时间。
+- 判据依赖的服务端事实钉在 .NET 测试 `tests/ControlServer.Tests/DispatchGatePremiseArchitectureTests.cs` 里，CI 会跑：建单在全仓只有
+  `gateway.CreateAsync(` 一个调用点；走到它的只有那两条建单路径，且都在任何 `await` 和 store 调用之前先查闸门；旅程阶段的完整成员表；
+  引擎读在途旅程的那一整条查询；`IsNeverSentAsync` 的定义原文。`Test-ParallelInstance.ps1` 只核对那些用例还在，另外对照 EF 模型快照
+  核对读取的列名。它们是防回归，不是证明：不经这些写法的改动（换了字段名、反射、绕过网关的 HTTP）看不见。
+- 脚本放在服务器上 `opsRoot\dispatch-gate\<commit>` 子目录里，不覆盖 19 号部署在 `opsRoot` 的安装、卸载脚本和模块。
+
 ## 文件
 
 | 文件 | 做什么 |
 | --- | --- |
 | `instance-factory01-v2.json` | 实例定义：端口、目录、服务名、车、RouteGraph、建单闸门 |
 | `ParallelInstance.psm1` | 定义的校验、布局（所有路径与名字的唯一来源）、部署足迹、卸载的删除顺序、唯一的删目录函数。检查全是纯函数，例外只有读路径属性的 `Test-ParallelInstanceReparsePoint` 和删目录的 `Remove-ParallelInstanceDirectory` |
-| `ParallelHost.psm1` | 读写机器的辅助函数（MVP 服务指纹、调用产品卸载脚本并确认成功、把覆盖层合并进 `appsettings.Production.json` 并回读核对），安装与卸载共用 |
+| `ParallelHost.psm1` | 读写机器的辅助函数（MVP 服务指纹、调用产品卸载脚本并确认成功、把覆盖层合并进 `appsettings.Production.json` 并回读核对、只读读取旅程状态、关开派车闸门），安装、卸载与闸门脚本共用 |
 | `Install-ParallelInstanceLocal.ps1` | 在 factory01 上安装／升级／回滚 |
 | `Uninstall-ParallelInstanceLocal.ps1` | 在 factory01 上按部署足迹逐项卸载 |
+| `Set-ParallelDispatchGateLocal.ps1` | 在 factory01 上关、开派车闸门并重启 V2 服务（control-server#472） |
 | `Start-FakeMesIngestResident.ps1` | FakeMesIngest 常驻的计划任务入口 |
 | `Publish-FakeMesIngest.ps1` | 替身的 self-contained 发布（控制端跑） |
 | `Test-ParallelInstance.ps1` | 自测，不碰任何机器 |
