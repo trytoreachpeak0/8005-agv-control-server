@@ -1,7 +1,10 @@
+using System.Text.Json;
 using ControlServer.Application;
 using ControlServer.Domain;
+using ControlServer.Host.Transport;
 using ControlServer.Infrastructure.Persistence;
 using Microsoft.EntityFrameworkCore;
+using Microsoft.Extensions.Configuration;
 using static ControlServer.Tests.Batch7StopDrivenAdvanceDriver;
 using static ControlServer.Tests.Batch7ThreeStopJourneyTests;
 using static ControlServer.Tests.JourneyRuntimeWorkerLoadDeadlineTests;
@@ -24,7 +27,7 @@ namespace ControlServer.Tests;
 /// 防御路径：v2 车载端过了期限不报这种 FAILED（8005-agv-program#55），协议允许别的车载端版本报。L1 是它唯一的证明。
 /// </para>
 /// </remarks>
-public sealed class DeterminateLoadFailureAtASecondPickupTests
+public sealed class LoadEndedAtASecondPickupTests
 {
     /// <summary>第二条需求的 AREA，解析到站 13，与第一条的站 12 不同（同 <c>Batch7ThreeStopJourneyTests</c>）。</summary>
     private const string SecondPickupArea = "N1-2";
@@ -77,6 +80,84 @@ public sealed class DeterminateLoadFailureAtASecondPickupTests
             JourneyDemandStatuses.Loaded,
             (await fixture.Context.Set<JourneyDemandRow>().AsNoTracking()
                 .SingleAsync(row => row.DemandId == FirstDemandId, token)).Status);
+    }
+
+    /// <summary>
+    /// 同一个形状的第二条来路：操作员在第二个取货站<b>装货途中</b>按「取消装货」，车证明仓位全空，取消结果经恢复协调器终结这一条。
+    /// 授权取消不阻塞旅程，所以终结之后阶段同样留在 <c>AwaitingLoadResult</c>。与确定的装货失败不同，这一条是 v2 车载端真会走的路。
+    /// </summary>
+    [Fact]
+    [Trait("IntegrationSlice", "FP-IS-08")]
+    public async Task ACancellationWhileLoadingTheOnlyDemandOfASecondPickupSendsTheVehicleOnWithWhatItCarries()
+    {
+        await using RuntimeFixture fixture = await RuntimeFixture.CreateAsync();
+        CancellationToken token = TestContext.Current.CancellationToken;
+        JourneyStopRow secondPickup = await StopEndedJourneyContinuesTests.ArriveAtTheSecondPickupAsync(fixture);
+        await EnterSublotAsync(fixture, SecondDemandId, SecondSublot, SecondSubmissionId);
+        Assert.Equal(JourneyRuntimeStage.AwaitingLoadResult, (await JourneyOfAsync(fixture, FirstDemandId)).Stage);
+        StationOperationRow load = await fixture.Context.StationOperations.AsNoTracking().SingleAsync(
+            row => row.DemandId == SecondDemandId && row.OperationType == SlotOperationType.Load, token);
+        int[] slots = JsonSerializer.Deserialize<int[]>(load.TargetSlotsJson) ?? [];
+
+        await using (ControlServerDbContext connection = fixture.OpenConnectionContext())
+        {
+            OnboardMessageProcessor processor = TestOnboardProcessorFactory.Create(
+                connection, new WireToGateStore(connection), fixture.Clock, new ConfigurationBuilder().Build(), fixture.Peer);
+            OnboardConnectionState state = StopEndedJourneyContinuesTests.Connection(fixture);
+            const string cancellationId = "d3000000-0000-4000-8000-000000000001";
+            object @operator = new { operatorId = "OP-001", verificationMethod = "BADGE", verifiedAt = fixture.Clock.GetUtcNow() };
+            string authorization = await processor.ProcessAsync(
+                StopEndedJourneyContinuesTests.Envelope(
+                    fixture, "d3000000-0000-4000-8000-000000000002", "LoadCancellationStartRequested", new
+                    {
+                        cancellationId,
+                        demandId = SecondDemandId,
+                        slotOperationAttemptId = load.SlotOperationAttemptId,
+                        @operator,
+                        reason = "Nothing to load at this stop."
+                    }),
+                state,
+                token);
+            Assert.Equal(
+                "AUTHORIZED",
+                StopEndedJourneyContinuesTests.FirstLinePayload(authorization).GetProperty("decision").GetString());
+            await processor.ProcessAsync(
+                StopEndedJourneyContinuesTests.Envelope(
+                    fixture, "d3000000-0000-4000-8000-000000000003", "LoadCancellationResult", new
+                    {
+                        cancellationId,
+                        demandId = SecondDemandId,
+                        slotOperationAttemptId = load.SlotOperationAttemptId,
+                        overallOutcome = "ALL_EMPTY",
+                        slotResults = slots.Select(slot => new
+                        {
+                            slotNo = slot,
+                            outcome = "COMPLETED",
+                            finalPhysicalState = "EMPTY",
+                            lockState = "LOCKED",
+                            unlockOutputState = "RESET",
+                            reasonCodes = Array.Empty<string>()
+                        }).ToArray(),
+                        observedAt = fixture.Clock.GetUtcNow()
+                    }),
+                state,
+                token);
+        }
+        fixture.Context.ChangeTracker.Clear();
+        // 前提：乙被取消终结，旅程因还带着甲而继续，阶段仍是等装货结果。
+        Assert.Equal(JourneyDemandStatuses.Terminated, (await StopEndedJourneyContinuesTests.MembershipAsync(fixture, SecondDemandId)).Status);
+        Assert.Equal(JourneyRuntimeStage.AwaitingLoadResult, (await JourneyOfAsync(fixture, FirstDemandId)).Stage);
+
+        Exception? first = await RunRoundAsync(fixture);
+        Exception? second = await RunRoundAsync(fixture);
+
+        JourneyRuntimeRow after = await JourneyOfAsync(fixture, FirstDemandId);
+        Assert.True(
+            secondPickup.DepartureSafetyCheckMessageId is { } checkId &&
+            await fixture.Context.ProtocolOutbox.AsNoTracking().AnyAsync(row => row.MessageId == checkId, token),
+            $"The stop ended and the vehicle was never asked to leave it. stage={after.Stage} block={after.BlockReasonCode} " +
+            $"first={first?.Message} second={second?.Message}");
+        Assert.Equal(JourneyDemandStatuses.Loaded, (await StopEndedJourneyContinuesTests.MembershipAsync(fixture, FirstDemandId)).Status);
     }
 
     private static async Task<Exception?> RunRoundAsync(RuntimeFixture fixture)
