@@ -76,6 +76,14 @@ Passed!  - Failed:     0, Passed:  4263, Skipped:     0, Total:  4263, Duration:
 
 退出码 0，无 `[Test Assembly Cleanup Failure]`。TRX：total 4266、executed 4263。未执行的 3 条是 `ReconnectModelTests` 里手动或靠环境变量触发的模型用例。这一轮之后产品代码又改了（审查应改 1、2），所以它只作记录，最终 head 的全量另跑。
 
+最终 head `31b24b26` 上的 Release 全量（`full/31b24b26-summary.txt`）：
+
+```
+Passed!  - Failed:     0, Passed:  4278, Skipped:     0, Total:  4278, Duration: 24 m 18 s - ControlServer.Tests.dll (net8.0)
+```
+
+退出码 0，无 `[Test Assembly Cleanup Failure]`。TRX：total 4281、executed 4278，未执行的仍是那 3 条手动触发的模型用例。
+
 ## 与本票无关的既有不稳
 
 `WhenAVehicleExhaustsItsBudgetTheHookIsStillCalledOnceWithOnlyTheVehiclesThatFinished` 在本机定向跑时红过（第二台车也超出 1 s 预算）。它只跑第一轮派车，那时没有旅程，本票改的循环不会进入。把产品文件换回 `fp/v2-impl` `f4f494ba` 的内容后同样连跑 5 遍，红 2 遍；修后连跑 5 遍红 4 遍。两边都是小样本，判为既有不稳（用真实计时器，cs#372 剩余风险第 11 条点过名），不在本票改。
