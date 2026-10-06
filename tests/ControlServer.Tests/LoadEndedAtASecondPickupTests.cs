@@ -70,6 +70,27 @@ public sealed class LoadEndedAtASecondPickupTests
     }
 
     /// <summary>
+    /// 期限已过才取消：本站一条都没装上就结束，没有可纠正的放置，离站等待不重新起算——车当场被请离，不再等一整个期限。
+    /// </summary>
+    [Fact]
+    [Trait("IntegrationSlice", "FP-IS-08")]
+    public async Task ACancellationWhileLoadingPastTheDeadlineDoesNotRestartTheDepartureWait()
+    {
+        await using RuntimeFixture fixture = await RuntimeFixture.CreateAsync();
+        JourneyStopRow secondPickup = await ArriveAtTheSecondPickupAsync(fixture);
+        fixture.Options.StationDepartureWaitTimeout = TimeSpan.FromSeconds(10);
+        await EnterSublotAsync(fixture, SecondDemandId, SecondSublot, SecondSubmissionId);
+        await fixture.ProveSlotDoorsClosedAsync();
+        fixture.Clock.Advance(TimeSpan.FromSeconds(11));
+        await CancelTheSecondDemandWhileLoadingAsync(fixture);
+
+        Exception? first = await RunRoundAsync(fixture);
+        Exception? second = await RunRoundAsync(fixture);
+
+        await AssertTheVehicleWasAskedToLeaveAsync(fixture, secondPickup, first, second);
+    }
+
+    /// <summary>
     /// 库里已经卡在这个状态（修复之前留下的）：阶段 <c>AwaitingLoadResult</c>，本站那一条已 <c>TERMINATED</c>、需求已取消，没有在装的、
     /// 没有装上的。升级之后下一轮就续上。
     /// </summary>

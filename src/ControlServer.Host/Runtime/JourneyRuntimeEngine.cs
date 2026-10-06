@@ -1288,10 +1288,17 @@ public sealed partial class JourneyRuntimeEngine(
                 // 重启后读到的就是「阶段还是 AwaitingLoadResult、这一站没有 LOADING、刚装的那条已是 LOADED」——此前这里一律抛，
                 // 而推进段当时没有逐车隔离，于是每一轮都在这里整轮中止，车队里每辆车都不再推进（cs#487 起逐车隔离，今天只停这一辆）。这一种按落库的状态续上，走与刚落定时
                 // 同一段后续；这一站连一条 LOADED 都没有，才是这台服务器自己的不变量被破坏了，照旧抛。
+                //
+                // 第二种合法来历（control-server#291）：这一站在装的那一条被终结了——确定的装货失败、装货途中取消——而旅程还带着别的需求，
+                // 不收尾。终结它的那条路若没有把阶段带走，留下的就是「没有在装、没有装上、只有一条 TERMINATED」。确定的装货失败自己会带走
+                // （TrySettleDeterminateLoadFailureAsync），恢复协调器的取消结果不会；这里兜住它们，也兜住已经卡在这个状态的库。
+                // 接的是同一段后续：本站还有待装的就回去等录入，没有就离站。
                 JourneyStopDemand? loading = stops.LoadingAtCurrentStop;
                 bool resumingAfterCommit = loading is null;
-                if (resumingAfterCommit &&
-                    !stops.CurrentStopDemands.Any(item => item.Membership.Status == JourneyDemandStatuses.Loaded))
+                bool loadedHere = stops.CurrentStopDemands.Any(item => item.Membership.Status == JourneyDemandStatuses.Loaded);
+                bool resumingAfterEnding = resumingAfterCommit && !loadedHere &&
+                    stops.AllAtStop(stops.Current).Any(item => item.Membership.Status == JourneyDemandStatuses.Terminated);
+                if (resumingAfterCommit && !loadedHere && !resumingAfterEnding)
                 {
                     throw new InvalidDataException(
                         $"Journey {runtime.JourneyId} waits for a load result with no demand loading at its stop.");
@@ -1349,7 +1356,10 @@ public sealed partial class JourneyRuntimeEngine(
                     // for departure safety in this same iteration, as this server did until 2026-09-13,
                     // left no such time at all. Not saved here: with the wait off the next case departs
                     // at once and saves once, as before.
-                    runtime.StationDepartureWaitStartedAt = now;
+                    // 本站一条都没装上就结束的（resumingAfterEnding）没有可纠正的放置，离站等待的起点不动——与站点期限结束停靠一致。
+                    runtime.StationDepartureWaitStartedAt = resumingAfterEnding
+                        ? runtime.StationDepartureWaitStartedAt ?? now
+                        : now;
                     SetStage(runtime, JourneyRuntimeStage.AwaitingStationDeparture, now);
                     goto case JourneyRuntimeStage.AwaitingStationDeparture;
                 }
