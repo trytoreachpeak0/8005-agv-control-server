@@ -44,7 +44,7 @@ public sealed class RecoveryEndingReleasesBlockedJourneyTests
     /// </summary>
     [Fact]
     [Trait("IntegrationSlice", "FP-IS-07")]
-    [Trait("ProtocolVector", "CV-LOAD-COMPENSATION")]
+    [Trait("ProtocolVector", "CV-EXCEPTION-COMPENSATE")]
     public async Task ACompensationOfOneOfTwoDemandsAtOnePickupSendsTheVehicleOnWithTheOther()
     {
         await WithProofAsync(async () =>
@@ -54,6 +54,7 @@ public sealed class RecoveryEndingReleasesBlockedJourneyTests
             int checksBefore = await CountAsync(fixture, "PreDepartureSafetyCheck");
 
             await CompensateAsync(fixture, SecondDemandId);
+            await AssertReleasedAsync(fixture, JourneyRuntimeStage.AwaitingLoadResult);
             await fixture.RestoreSessionReadyAsync();
             Exception? first = await RunRoundAsync(fixture);
             Exception? second = await RunRoundAsync(fixture);
@@ -69,7 +70,7 @@ public sealed class RecoveryEndingReleasesBlockedJourneyTests
     /// </summary>
     [Fact]
     [Trait("IntegrationSlice", "FP-IS-07")]
-    [Trait("ProtocolVector", "CV-LOAD-COMPENSATION")]
+    [Trait("ProtocolVector", "CV-EXCEPTION-COMPENSATE")]
     public async Task ACompensationAtASecondPickupWithAnotherDemandStillToLoadGoesBackToTheEntry()
     {
         await WithProofAsync(async () =>
@@ -112,6 +113,7 @@ public sealed class RecoveryEndingReleasesBlockedJourneyTests
             await BlockOnUnloadAsync(fixture, first);
 
             await HandOffAsync(fixture, first, SlotOperationType.Unload);
+            await AssertReleasedAsync(fixture, JourneyRuntimeStage.AwaitingUnloadResult);
             await fixture.RestoreSessionReadyAsync();
             Exception? round = await RunRoundAsync(fixture);
 
@@ -254,6 +256,74 @@ public sealed class RecoveryEndingReleasesBlockedJourneyTests
             Assert.Equal(JourneyRuntimeStage.Blocked, after.Stage);
             Assert.Equal("LOAD_RESULT_REQUIRES_RECOVERY", after.BlockReasonCode);
             Assert.Equal(StationOperationStatus.RecoveryRequired, (await OperationOfAsync(fixture, SecondDemandId, SlotOperationType.Load)).Status);
+        });
+    }
+
+    /// <summary>
+    /// 护栏的第二个条件单独钉住：结清的正是旅程阻塞在其上的那一次，但这趟旅程另有一次仓位操作没收敛，不放。正常流程里同一站逐条串行，
+    /// 到不了这个状态，所以改库造出它（第一条已装上的那次装货改成要恢复）——它守的是服务器自己的不变量被破坏时不放车。
+    /// </summary>
+    [Fact]
+    [Trait("IntegrationSlice", "FP-IS-07")]
+    [Trait("ProtocolVector", "CV-EXCEPTION-COMPENSATE")]
+    public async Task ACompensationLeavesTheJourneyBlockedWhileAnotherOperationOfItIsUnresolved()
+    {
+        await WithProofAsync(async () =>
+        {
+            CancellationToken token = TestContext.Current.CancellationToken;
+            await using RuntimeFixture fixture = await RuntimeFixture.CreateAsync();
+            await LoadTheFirstAndBlockOnTheSecondAtOnePickupAsync(fixture);
+            await using (ControlServerDbContext context = fixture.OpenConnectionContext())
+            {
+                (await context.StationOperations.SingleAsync(
+                    row => row.DemandId == FirstDemandId && row.OperationType == SlotOperationType.Load, token)).Status =
+                    StationOperationStatus.RecoveryRequired;
+                await context.SaveChangesAsync(token);
+            }
+            fixture.Context.ChangeTracker.Clear();
+
+            await CompensateAsync(fixture, SecondDemandId);
+
+            JourneyRuntimeRow after = await JourneyOfAsync(fixture, FirstDemandId);
+            Assert.Equal((JourneyRuntimeStage.Blocked, "LOAD_RESULT_REQUIRES_RECOVERY"), (after.Stage, after.BlockReasonCode));
+        });
+    }
+
+    /// <summary>
+    /// 护栏的第一个条件单独钉住：旅程阻塞的原因不是哪一次仓位操作（这里是一条没对上的取消结果留下的阻塞），会话把本站已装上的那一条
+    /// 交接掉。结清的那一次装货早已提交，不是它挡着旅程，所以不放，原来的阻塞码照旧。阻塞码是改库写的，形状与
+    /// <c>KeepDemandAndJourneyBlockedAsync</c> 写的相同。
+    /// </summary>
+    [Fact]
+    [Trait("IntegrationSlice", "FP-IS-07")]
+    [Trait("ProtocolVector", "CV-FAULT-CARGO-HANDOFF")]
+    public async Task AHandoffDoesNotLiftABlockItsOperationDidNotCause()
+    {
+        await WithProofAsync(async () =>
+        {
+            CancellationToken token = TestContext.Current.CancellationToken;
+            await using RuntimeFixture fixture = await RuntimeFixture.CreateAsync();
+            JourneyRuntimeRow runtime = await Batch7MultiDemandAdvanceTests.TwoDemandsAtThePickupAsync(fixture);
+            await AddInboxAsync(
+                fixture, FirstSubmissionId, "SublotSubmitted", await SublotSubmissionAsync(fixture, runtime, FirstSublot));
+            await TickAndRunAsync(fixture);
+            await ApplySafeResultAsync(fixture, FirstDemandId, SlotOperationType.Load, SlotBusinessState.Occupied);
+            await TickAndRunAsync(fixture);
+            Assert.Equal(JourneyDemandStatuses.Loaded, (await MembershipAsync(fixture, FirstDemandId)).Status);
+            const string otherBlock = "LoadCancellationResult_NOT_RECONCILED";
+            await using (ControlServerDbContext context = fixture.OpenConnectionContext())
+            {
+                JourneyRuntimeRow row = await context.JourneyRuntimes.SingleAsync(item => item.JourneyId == runtime.JourneyId, token);
+                row.Stage = JourneyRuntimeStage.Blocked;
+                row.SetBlockReason(otherBlock, fixture.Clock.GetUtcNow());
+                await context.SaveChangesAsync(token);
+            }
+            fixture.Context.ChangeTracker.Clear();
+
+            await HandOffAsync(fixture, FirstDemandId, SlotOperationType.Load);
+
+            JourneyRuntimeRow after = await JourneyOfAsync(fixture, SecondDemandId);
+            Assert.Equal((JourneyRuntimeStage.Blocked, otherBlock), (after.Stage, after.BlockReasonCode));
         });
     }
 
@@ -402,6 +472,16 @@ public sealed class RecoveryEndingReleasesBlockedJourneyTests
             @operator = BeforeSublotOperator(fixture),
             reason = "End this demand; the journey carries another."
         });
+
+    /// <summary>
+    /// 规则本身，在引擎跑之前读：恢复结果落库的那一次保存里，旅程已回到等那一次操作结果的阶段、阻塞码已清（与修复续行同一个做法）。
+    /// 引擎下一轮会改写阻塞码，所以要在它之前读。
+    /// </summary>
+    private static async Task AssertReleasedAsync(RuntimeFixture fixture, JourneyRuntimeStage expected)
+    {
+        JourneyRuntimeRow released = await JourneyOfAsync(fixture, FirstDemandId);
+        Assert.Equal((expected, (string?)null), (released.Stage, released.BlockReasonCode));
+    }
 
     /// <summary>判据：发出了一条新的离站核验，旅程在等它的答复，阻塞码已清。</summary>
     private static async Task AssertAskedToLeaveAsync(

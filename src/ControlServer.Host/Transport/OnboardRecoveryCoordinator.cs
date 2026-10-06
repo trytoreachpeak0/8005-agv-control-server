@@ -1728,12 +1728,18 @@ public sealed class OnboardRecoveryCoordinator(
             .SingleAsync(cancellationToken).ConfigureAwait(false);
         JourneyStopCursor commandedStops = await JourneyStopCursor
             .LoadAsync(dbContext, runtime, cancellationToken).ConfigureAwait(false);
+        StationOperationRow? endedOperation = null;
+        StationOperationStatus? statusBeforeEnding = null;
         if (workflow.SlotOperationAttemptId is not null)
         {
-            StationOperationRow? operation = await dbContext.StationOperations.SingleOrDefaultAsync(
+            endedOperation = await dbContext.StationOperations.SingleOrDefaultAsync(
                 row => row.SlotOperationAttemptId == workflow.SlotOperationAttemptId,
                 cancellationToken).ConfigureAwait(false);
-            if (operation is not null) operation.Status = StationOperationStatus.Cancelled;
+            if (endedOperation is not null)
+            {
+                statusBeforeEnding = endedOperation.Status;
+                endedOperation.Status = StationOperationStatus.Cancelled;
+            }
         }
         PickupStopTermination provenEmptyTermination =
             new(dbContext, await ReadPlanRevisionRoutingAsync(cancellationToken).ConfigureAwait(false));
@@ -1757,6 +1763,11 @@ public sealed class OnboardRecoveryCoordinator(
                 },
                 timeProvider.GetUtcNow(),
                 cancellationToken).ConfigureAwait(false);
+        // 旅程还带着别的需求、因此没收尾，而它阻塞在的正是刚结清的这一次操作：放回等那一次结果的阶段，由引擎接着走
+        // （control-server#499）。不是这一次的、或别的操作还没收敛的，留在 Blocked。条件与理由见 BlockedJourneyRelease。
+        await BlockedJourneyRelease
+            .StageAsync(dbContext, runtime, endedOperation, statusBeforeEnding, timeProvider.GetUtcNow(), cancellationToken)
+            .ConfigureAwait(false);
         if (messageType is "FaultCargoRecoveryResult" or "ForcedMechanicalRecoveryResult")
         {
             await SettleHandedOffCargoAsync(runtime, cancellationToken).ConfigureAwait(false);
