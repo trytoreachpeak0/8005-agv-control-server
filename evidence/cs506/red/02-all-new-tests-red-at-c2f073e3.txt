@@ -1,0 +1,18 @@
+cs#506 red: all new tests at c2f073e3 (tests only; product code = base fp/v2-impl a2a481b4). Filter RecoveryEndingReleasesBlockedJourneyTests.ARepairResume
+trx: red2.trx  total=5 passed=1 failed=4
+
+Failed  RecoveryEndingReleasesBlockedJourneyTests.ARepairResumeAfterAnUnreconciledCompensationOfTheSameDemandStaysBlockedUntil505
+        Assert.Equal() Failure: Values differ
+        Expected: Tuple (Blocked, "LoadCompensationResult_NOT_RECONCILED")
+        Actual:   Tuple (AwaitingLoadResult, null)
+Failed  RecoveryEndingReleasesBlockedJourneyTests.ARepairResumeLeavesTheJourneyBlockedWhileAHandoffLeftAnotherDemandAwaitingRecovery
+        A repair resume released the journey while the first demand still awaits recovery. at-result=AwaitingLoadResult/ after-rounds=AwaitingDepartureSafety/ departure-checks=1 round=
+Failed  RecoveryEndingReleasesBlockedJourneyTests.ARepairResumeLeavesTheJourneyBlockedWhileAnotherOperationOfItIsUnresolved
+        Assert.Equal() Failure: Values differ
+        Expected: Tuple (Blocked, "LOAD_RESULT_REQUIRES_RECOVERY")
+        Actual:   Tuple (AwaitingLoadResult, null)
+Passed  RecoveryEndingReleasesBlockedJourneyTests.ARepairResumeOfTheOnlyUnresolvedDemandSendsTheVehicleOn
+Failed  RecoveryEndingReleasesBlockedJourneyTests.ARepairResumeUnderAnOrdinaryBlockLeavesTheJourneyBlockedWhileAnotherDemandAwaitsRecovery
+        Assert.Equal() Failure: Values differ
+        Expected: Tuple (Blocked, "LOAD_RESULT_REQUIRES_RECOVERY")
+        Actual:   Tuple (AwaitingLoadResult, null)

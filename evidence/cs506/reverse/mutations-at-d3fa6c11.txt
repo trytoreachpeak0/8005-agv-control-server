@@ -1,0 +1,15 @@
+mutation M3 on d3fa6c11
+trx: M3.trx  total=17 passed=15 failed=2
+Failed  RecoveryEndingReleasesBlockedJourneyTests.ACompensationLeavesTheJourneyBlockedWhileAnotherOperationOfItIsUnresolved
+Failed  RecoveryEndingReleasesBlockedJourneyTests.ARepairResumeLeavesTheJourneyBlockedWhileAnotherOperationOfItIsUnresolved
+
+mutation M4 on d3fa6c11
+trx: M4.trx  total=17 passed=15 failed=2
+Failed  RecoveryEndingReleasesBlockedJourneyTests.ACompensationUnderAnOrdinaryBlockLeavesTheJourneyBlockedWhileAnotherDemandAwaitsRecovery
+Failed  RecoveryEndingReleasesBlockedJourneyTests.ARepairResumeUnderAnOrdinaryBlockLeavesTheJourneyBlockedWhileAnotherDemandAwaitsRecovery
+
+mutation M5 on d3fa6c11
+trx: M5.trx  total=17 passed=15 failed=2
+Failed  RecoveryEndingReleasesBlockedJourneyTests.ACompensationDoesNotLiftABlockAnUnmarkedResultLeft
+Failed  RecoveryEndingReleasesBlockedJourneyTests.ARepairResumeAfterAnUnreconciledCompensationOfTheSameDemandStaysBlockedUntil505
+
