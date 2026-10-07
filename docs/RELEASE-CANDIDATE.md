@@ -235,9 +235,16 @@ curl.exe --noproxy 192.168.200.1 --max-time 10 'http://192.168.200.1:58007/healt
 给全五个就完全不碰生产的服务、目录与机器级变量。默认值即上面括号里的生产值，因此省略它们与旧版本
 硬编码的行为逐字相同。
 
-升级器停服 → 备份安装目录与完整数据根 → 把保留的 `appsettings.Production.json` 迁移成明文键集 →
-清除证书遗留物 → 换二进制 → 起服并回读 `/health/live`、`/version` 与（给了开关时）只读投影；任一步
-失败即回滚二进制、SQLite 与被清除的机器级变量。
+升级器停服 → 等库锁释放、确认旧进程已退出（见第 6 节）→ 备份安装目录与完整数据根 → 把保留的 `appsettings.Production.json` 迁移成明文键集 →
+清除证书遗留物 → 换二进制 → 起服并回读 `/health/live`、`/version` 与（给了开关时）只读投影。任一步
+失败时：先恢复被清除的机器级变量，再停服、等库锁释放，然后用备份整体替换安装目录与数据根，最后起服。
+**回滚也可能被拒**：停服后 30 秒内新进程仍占着库锁时，回滚不碰安装目录与数据根，以
+`ControlServer upgrade and rollback both failed.` 加 `DATA_ROOT_IN_USE` 退出，并在报错里给出手工恢复的四步
+（按安装目录路径确认进程已退出 → 用 `<备份>\install`、`<备份>\data-root` 整体替换安装目录与数据根 →
+证书密码变量 → 起服），详见 `docs/field/control-server-database-copy.md`。停服后旧进程仍占着锁时，升级在
+备份之前就中止，同样不动两个目录；这时脚本随后的起服多半也会失败（新进程拿不到库锁、拒绝启动），所以看到的
+很可能是 `upgrade and rollback both failed` 而不只是 `DATA_ROOT_IN_USE`，处理办法见报错里的说明。
+按进程路径查，不按名字：同一台机器上 MVP 与 v2 的 `ControlServer.Host` 同名。
 
 脚本自动完成的三件事，逐项记录在结果 JSON 的 `certificateRemoval` 段：
 
@@ -309,8 +316,14 @@ curl.exe --noproxy 127.0.0.1 --max-time 10 'http://127.0.0.1:58007/health/live'
 
 ## 6. 数据库初始化与迁移
 
-- 存储是单文件 SQLite，默认 `<DataRoot>\data\controlserver.db`（安装脚本把绝对路径写进
+- 存储是 SQLite，默认 `<DataRoot>\data\controlserver.db`（安装脚本把绝对路径写进
   `appsettings.Production.json` 的 `ConnectionStrings:ControlServer`）；
+- **库由三个文件组成：停服务后整目录拷贝，运行中用 `VACUUM INTO` 导出。**库是 WAL 模式（EF Core 建库时
+  打开），服务端运行时旁边还有 `controlserver.db-wal` 与 `controlserver.db-shm`，已提交但还没写回主文件的行
+  只在 `-wal` 里。只拷 `controlserver.db` 得到的库能打开、`PRAGMA integrity_check` 也是 `ok`，却静默少了
+  最近的行（control-server#503 实测）。旁边的 `controlserver.db.instance-lock` 是服务端持有的库锁
+  （control-server#473），不要删；安装与升级脚本在拷贝或删除数据根之前，会等它被释放（最多 30 秒），
+  等不到就以 `DATA_ROOT_IN_USE` 中止、数据根原样不动；
 - Host 在**每次启动**时执行 EF Core `Database.MigrateAsync()`，首启即建库建表，升级时自动补迁移。
   没有单独的迁移命令，也不需要外部数据库服务；
 - 目录不存在时由 Host 自行创建；

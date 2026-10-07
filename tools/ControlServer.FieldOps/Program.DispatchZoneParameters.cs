@@ -50,9 +50,9 @@ internal static partial class Program
         {
             if (dryRun)
             {
-                // A preview writes nothing, so it takes no transaction -- and therefore no write lock. This database is
-                // deliberately not in WAL mode (ControlServerSqlite), so a write transaction here would queue behind, and hold
-                // up, the running server's own writes for as long as the preview took.
+                // A preview writes nothing, so it takes no transaction -- and therefore no write lock. WAL mode (which this
+                // database is in, see ControlServerSqlite) still allows only one writer at a time, so a write transaction here
+                // would queue behind, and hold up, the running server's own writes for as long as the preview took.
                 result = await importer.ImportAsync(csv, dryRun: true, now, CancellationToken.None);
             }
             else

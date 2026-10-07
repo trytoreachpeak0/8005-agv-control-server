@@ -1,0 +1,49 @@
+HEAD: 445c0d14c7fac60e6051014b56fa06c708e474db
+[PASS] ParseFile Update-ControlServerLocal.ps1: 0 errors -- errors=0
+[PASS] ParseFile Install-ControlServerLocal.ps1: 0 errors -- errors=0
+[PASS] Update-ControlServerLocal.ps1 defines Wait-DataRootReleased once -- found=1
+[PASS] Install-ControlServerLocal.ps1 defines Wait-DataRootReleased once -- found=1
+[PASS] the two copies of Wait-DataRootReleased are identical
+[PASS] Update: wait before the data-root backup -- wait@16005 'foreach ($item in Get-ChildItem -Literal'@16860
+[PASS] Update: rollback waits before deleting the install directory and the data root -- wait@24396 'Remove-Item -LiteralPath $installPath -R'@24988 'Remove-Item -LiteralPath $dataRoot -Recu'@25422
+[PASS] Install: rollback waits before deleting the install directory and the data root -- wait@31562 'Remove-Item -LiteralPath $installPath -R'@32064 'Get-ChildItem -LiteralPath $dataRoot -Fo'@33338
+[PASS] no lock file: returns at once -- locks=0 elapsed=31ms
+[PASS] held lock: refuses after the wait with DATA_ROOT_IN_USE and the lock file -- elapsed=3s
+[PASS] held lock: the refusal finds the Host by install path, warns against stopping by name, and ends with the next steps
+[PASS] a holder that lets go within the wait: returns -- elapsed=3s
+[PASS] a read-only lock file nobody holds is not taken for a held one -- returned
+[PASS] Update-ControlServerLocal.ps1: exactly one top-level Assert-Administrator call to remove -- found=1
+[PASS] Install-ControlServerLocal.ps1: exactly one top-level Assert-Administrator call to remove -- found=1
+[PASS] Install-ControlServerLocal.ps1: [Environment]:: redirected to the stub -- occurrences=8
+[PASS] U1 held lock: the upgrade stops with DATA_ROOT_IN_USE -- THREW: DATA_ROOT_IN_USE: 等了 30 秒，仍有进程占着数据目录 C:\Users\szy\AppData\Local\Temp\cs503-selftest-b15cd3c8\u1-held\dataroot 里的库（锁文件 C:\Users\szy\AppData\Local\Temp\cs503-selftest-b15cd3c8\u1-held\dataroot\data\controlserver.db.instance-lock）。服务管理器报「已停止」只说明服务报了停，不说明进程已经退出、库已经关上。库是 WAL 模式，这时拷贝或删除数据目录，会拷到或删掉一个还在写的库，所以没有备份数据目录、也没有换二进制，数据目录原样未动。本实例的 Host 按安装目录查：Get-Process ControlServer.Host | Where-Object Path -like 'C:\Users\szy\AppData\Local\Temp\cs503-selftest-b15cd3c8\u1-held\install\*'。现在没有查到，占着锁的可能是别的进程，按锁文件所在的库去找。不要按名字结束进程（Stop-Process -Name、taskkill /IM）：同一台机器上 MVP 与 v2 的 Host 同名，按名字会连生产实例一起停掉。不要删除锁文件：删它解不了锁。接下来：安装目录与数据目录都没动，仍是升级前的版本。按上面的命令确认本实例的 Host 已经退出（没有输出）；本脚本随后会尝试把服务起回来，但旧进程还占着库时新起的进程也会拒绝启动，所以之后要看 Get-Service 'cs503-selftest'，没在运行就 Start-Service 'cs503-selftest' 并读回 /health/live。服务恢复后再重新执行本脚本升级。 ||
+[PASS] U1 held lock: the refusal finds the Host by this install path and warns against stopping by name
+[PASS] U1 held lock: the refusal says nothing was changed and how to get the service back
+[PASS] U1 held lock: the data root is untouched
+[PASS] U1 held lock: nothing was backed up and the binary was not replaced -- backupFiles=0
+[PASS] U1 held lock: the old binary is still installed
+[PASS] U1 held lock: it waited the full 30 seconds first -- seconds=31
+[PASS] U2 lock let go: the upgrade completes with PASS -- COMPLETED
+[PASS] U2 lock let go: the diagnostic records the one lock file it waited on
+[PASS] U2 lock let go: the backup holds the database with its -wal and -shm -- controlserver.db,controlserver.db-shm,controlserver.db-wal,controlserver.db.instance-lock
+[PASS] U3 no lock file: the upgrade completes as before -- COMPLETED seconds=1
+[PASS] U4 rollback under a live holder: refused with DATA_ROOT_IN_USE -- THREW: ControlServer upgrade and rollback both failed. (HTTP GET of http://127.0.0.1:1/health/live failed: stub: health 
+[PASS] U4 rollback under a live holder: the data root was not deleted
+[PASS] U4 rollback under a live holder: the install directory is intact (the replacement, whole)
+[PASS] U4 rollback under a live holder: the backup is intact for a manual restore
+[PASS] U4 rollback under a live holder: the refusal gives the four restore steps with this run's backup paths
+[PASS] U5 rollback after the holder exits: the rollback completes and the original error is rethrown -- THREW: HTTP GET of http://127.0.0.1:1/health/live failed: stub: health check refused ||
+[PASS] U5 rollback after the holder exits: the data root is restored from the backup
+[PASS] U5 rollback after the holder exits: the old binary is back
+[PASS] I1 preflight, held lock: refused with DATA_ROOT_IN_USE after the wait -- seconds=31
+[PASS] I1 preflight, held lock: the refusal does not speak of a stopped service and says nothing was done
+[PASS] I1 preflight, held lock: no install directory, no backup, data root untouched
+[PASS] I2 backup incomplete: the rollback reports DATA_ROOT_BACKUP_INCOMPLETE -- THREW: Deployment failed and rollback reported: data-root: DATA_ROOT_BACKUP_INCOMPLETE: 数据目录 C:\Users\szy\AppData\Local\Temp\cs503-selftest-b15cd3c8\i2-backup-i
+[PASS] I2 backup incomplete: the existing data root is neither emptied nor deleted
+[PASS] I3 rollback: the original error is rethrown -- THREW: The new service registry key cannot be opened. ||
+[PASS] I3 rollback: the data root is restored from the backup and the install directory is removed
+[PASS] I4 rollback under a live holder: refused with DATA_ROOT_IN_USE
+[PASS] I4 rollback under a live holder: the data root was not touched
+[PASS] I4 rollback under a live holder: the install directory was not deleted
+[PASS] I4 rollback under a live holder: the refusal says how to finish the rollback by hand
+All checks passed.
+exit code: 0

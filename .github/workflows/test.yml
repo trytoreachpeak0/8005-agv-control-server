@@ -172,6 +172,15 @@ jobs:
         shell: pwsh
         run: pwsh -NoProfile -File ./scripts/Test-G3EvidenceHonesty.ps1
 
+      # About three minutes, no rig, no elevation, nothing outside %TEMP%: four cases wait out the scripts' real
+      # 30-second limit. Install-ControlServerLocal.ps1 and Update-ControlServerLocal.ps1 run end to end against
+      # stubs, and must neither copy nor delete a data root a live Host still holds (its <db>.instance-lock), nor
+      # empty one they could not back up (control-server#503). Only a failed install or upgrade reaches most of
+      # this, and the deployments that would find out run on the plant's servers.
+      - name: Install and upgrade self-check (data root lock wait)
+        shell: pwsh
+        run: pwsh -NoProfile -File ./scripts/Test-DataRootLockWait.ps1
+
       # 1.5 seconds, and the only thing that ever executes Get-G3EvidenceLocationDiagnostic: a G3
       # runner calls it after it has already decided it found nothing, so no green run reaches it.
       # It says WHERE nothing was found, which is what control-server#211 needed and did not have --
