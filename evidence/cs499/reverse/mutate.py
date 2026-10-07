@@ -10,6 +10,7 @@ M = {
  "M5-engine-no-ended-progress": (eng, "        return endedHere.Length > 0 &&\n", "        return false && endedHere.Length > 0 &&\n"),
  "M6-engine-no-op-exists": (eng, "        return endedHere.Length > 0 &&\n               await", "        return endedHere.Length > 0 ||\n               await"),
  "M8-no-other-demand-check": (rel, "                item.Demand.Status == DemandExecutionStatus.RecoveryRequired))", "                item.Demand.Status == DemandExecutionStatus.RecoveryRequired && false))"),
+ "M9-no-not-reconciled-check": (rel, "            runtime.BlockReasonCode?.EndsWith(\"_NOT_RECONCILED\", StringComparison.Ordinal) == true ||\n", ""),
  "M7-keep-block-code": (rel, "        runtime.SetBlockReason(null, now);\n", ""),
 }
 which = sys.argv[1:] or list(M)
