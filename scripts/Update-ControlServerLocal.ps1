@@ -133,10 +133,23 @@ that no Host still owns any database there. A data root with no lock file (an in
 before control-server#473, upgraded for the first time) has nothing to wait for. Opened for reading
 only, so a read-only lock file is not mistaken for a held one.
 
+The refusal names this instance's Host processes by path, never by name: from 2026-10-08 the MVP and the
+v2 instance run side by side on factory01 as two ControlServer.Host processes, so an operator who follows
+a "stop ControlServer.Host" instruction stops production. -NotDone says what the refusal left undone,
+-NextSteps what the operator does instead; both are the caller's, because only the caller knows its state.
+
 Keep this function identical in Update-ControlServerLocal.ps1 and Install-ControlServerLocal.ps1;
 scripts/Test-DataRootLockWait.ps1 compares the two.
 #>
-function Wait-DataRootReleased([string]$Root, [string]$Purpose, [int]$Seconds = 30) {
+function Wait-DataRootReleased {
+    param(
+        [Parameter(Mandatory)][string]$Root,
+        [Parameter(Mandatory)][string]$NotDone,
+        [Parameter(Mandatory)][string]$NextSteps,
+        [string]$InstallPath,
+        [switch]$AfterServiceStop,
+        [int]$Seconds = 30
+    )
     if (-not (Test-Path -LiteralPath $Root -PathType Container)) { return @() }
     $lockFiles = @(Get-ChildItem -LiteralPath $Root -Recurse -Force -File -Filter '*.instance-lock' |
         ForEach-Object { $_.FullName })
@@ -150,14 +163,32 @@ function Wait-DataRootReleased([string]$Root, [string]$Purpose, [int]$Seconds = 
             catch [IO.FileNotFoundException] { break }
             catch [IO.DirectoryNotFoundException] { break }
             catch [IO.IOException] {
-                if ([DateTimeOffset]::UtcNow -ge $deadline) {
-                    throw ("DATA_ROOT_IN_USE: 停服务后等了 $Seconds 秒，仍有进程占着数据目录里的库（锁文件 $lockFile）。" +
-                        "服务管理器报「已停止」只说明服务报了停，不说明进程已经退出、库已经关上；库是 WAL 模式，" +
-                        "这时拷贝或删除数据目录，会拷到或删掉一个还在写的库。所以没有$Purpose，数据目录原样未动。" +
-                        "请确认 ControlServer.Host 进程已经退出（任务管理器或 Get-Process ControlServer.Host），" +
-                        "或者有没有别的进程按这个库启动过 Host，再重新执行。不要删除锁文件：删它解不了锁。")
+                if ([DateTimeOffset]::UtcNow -lt $deadline) {
+                    Start-Sleep -Milliseconds 250
+                    continue
                 }
-                Start-Sleep -Milliseconds 250
+                $text = [Text.StringBuilder]::new()
+                [void]$text.Append("DATA_ROOT_IN_USE: 等了 $Seconds 秒，仍有进程占着数据目录 $Root 里的库（锁文件 $lockFile）。")
+                if ($AfterServiceStop) {
+                    [void]$text.Append('服务管理器报「已停止」只说明服务报了停，不说明进程已经退出、库已经关上。')
+                }
+                [void]$text.Append("库是 WAL 模式，这时拷贝或删除数据目录，会拷到或删掉一个还在写的库，所以没有$NotDone，数据目录原样未动。")
+                if ([string]::IsNullOrWhiteSpace($InstallPath)) {
+                    [void]$text.Append('按路径查是哪个进程：Get-Process ControlServer.Host | Select-Object Id, Path，只认路径属于这个实例的那一个。')
+                }
+                else {
+                    $prefix = $InstallPath.TrimEnd('\', '/') + '\'
+                    $ours = @(Get-Process -Name 'ControlServer.Host' -ErrorAction SilentlyContinue |
+                        Where-Object { $_.Path -and $_.Path.StartsWith($prefix, [StringComparison]::OrdinalIgnoreCase) } |
+                        ForEach-Object { "PID $($_.Id)" })
+                    [void]$text.Append("本实例的 Host 按安装目录查：Get-Process ControlServer.Host | Where-Object Path -like '$prefix*'。")
+                    [void]$text.Append($(if ($ours.Count -gt 0) { "现在查到：$($ours -join '、')。" }
+                        else { '现在没有查到，占着锁的可能是别的进程，按锁文件所在的库去找。' }))
+                }
+                [void]$text.Append('不要按名字结束进程（Stop-Process -Name、taskkill /IM）：同一台机器上 MVP 与 v2 的 Host 同名，按名字会连生产实例一起停掉。')
+                [void]$text.Append('不要删除锁文件：删它解不了锁。')
+                [void]$text.Append("接下来：$NextSteps")
+                throw $text.ToString()
             }
         }
     }
@@ -268,7 +299,11 @@ try {
     Wait-ServiceState 'Stopped'
     $serviceStopped = $true
     Write-Diagnostic 'service-stopped'
-    $releasedLocks = Wait-DataRootReleased $dataRoot '备份数据目录、也没有换二进制'
+    $releasedLocks = Wait-DataRootReleased -Root $dataRoot -InstallPath $installPath -AfterServiceStop `
+        -NotDone '备份数据目录、也没有换二进制' `
+        -NextSteps ("安装目录与数据目录都没动，仍是升级前的版本。按上面的命令确认本实例的 Host 已经退出（没有输出）；" +
+            "本脚本随后会尝试把服务起回来，但旧进程还占着库时新起的进程也会拒绝启动，所以之后要看 Get-Service '$serviceName'，" +
+            "没在运行就 Start-Service '$serviceName' 并读回 /health/live。服务恢复后再重新执行本脚本升级。")
     Write-Diagnostic ("data-root-released lockFiles={0}" -f $releasedLocks.Count)
 
     New-Item -ItemType Directory -Path $backupPath -Force | Out-Null
@@ -392,10 +427,29 @@ catch {
     Write-Diagnostic ("failure: {0}" -f $original.Exception.Message)
     try {
         try { Stop-Service -Name $serviceName -Force -ErrorAction SilentlyContinue } catch { }
+        # Before the data-root wait, not after it: restoring a machine variable touches no file, and a refused
+        # wait below would otherwise leave it deleted on top of everything else.
+        if ($certificatePasswordRemoved) {
+            [Environment]::SetEnvironmentVariable($certificatePasswordVariable, $oldCertificatePassword, 'Machine')
+            Write-Diagnostic 'certificate-password-restored'
+        }
         if ($backupComplete) {
             # The replacement may have started and may still be exiting: the same proof as before the backup,
-            # or the restore below deletes a data root a live process is writing (control-server#503).
-            $null = Wait-DataRootReleased $dataRoot "从备份 $backupPath 恢复安装目录与数据目录（请按备份手工恢复）"
+            # or the restore below deletes an install directory and a data root a live process is using
+            # (control-server#503). A refusal leaves both as they are and says how to restore by hand.
+            $certificateStep = if ($certificatePasswordRemoved) {
+                "本次升级删除过机器级变量 $certificatePasswordVariable，回滚已把它恢复为升级前的值（诊断里有 certificate-password-restored）；如果诊断里没有这一行，手工恢复它"
+            } else {
+                '本次升级没有删除证书密码变量，这一步不用做'
+            }
+            $null = Wait-DataRootReleased -Root $dataRoot -InstallPath $installPath -AfterServiceStop `
+                -NotDone '从备份恢复安装目录与数据目录' `
+                -NextSteps ("按备份手工恢复，共四步。1. 按上面的命令确认本实例的 Host 已经退出（没有输出）。" +
+                    "2. 用 $backupPath\install 整体替换 $installPath，用 $backupPath\data-root 整体替换 $dataRoot：" +
+                    "先清空目标目录，再把备份里的内容全部拷回（数据目录里的 .db、-wal、-shm 一起）。" +
+                    "3. $certificateStep。" +
+                    "4. Start-Service '$serviceName'，读回 /health/live。" +
+                    '不要用重新执行本脚本代替恢复：那是再升级一次，不是恢复。')
             Write-Diagnostic 'rollback-data-root-released'
             if (Test-Path -LiteralPath $installPath) {
                 Remove-Item -LiteralPath $installPath -Recurse -Force
@@ -415,9 +469,6 @@ catch {
         }
         if (Test-Path -LiteralPath $stagingPath) {
             Remove-Item -LiteralPath $stagingPath -Recurse -Force
-        }
-        if ($certificatePasswordRemoved) {
-            [Environment]::SetEnvironmentVariable($certificatePasswordVariable, $oldCertificatePassword, 'Machine')
         }
         if ($serviceStopped) {
             Start-Service -Name $serviceName

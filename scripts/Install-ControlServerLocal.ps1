@@ -56,6 +56,9 @@ $serviceCreated = $false
 $installCreated = $false
 $dataRootExisted = Test-Path -LiteralPath $dataRoot
 $dataBackupCreated = $false
+# An existing data root with nothing in it has nothing to back up; the rollback may empty it again. One with
+# content and no completed backup ($dataBackupCreated still false) must never be emptied (control-server#503).
+$dataRootWasEmpty = $false
 $oldRiotMachine = [Environment]::GetEnvironmentVariable('CONTROL_SERVER_RIOT_CALL_API_KEY', 'Machine')
 $machineEnvironmentInjected = $false
 $installDashboard = -not [string]::IsNullOrWhiteSpace($DashboardPackagePath)
@@ -169,10 +172,23 @@ that no Host still owns any database there. A data root with no lock file (an in
 before control-server#473, upgraded for the first time) has nothing to wait for. Opened for reading
 only, so a read-only lock file is not mistaken for a held one.
 
+The refusal names this instance's Host processes by path, never by name: from 2026-10-08 the MVP and the
+v2 instance run side by side on factory01 as two ControlServer.Host processes, so an operator who follows
+a "stop ControlServer.Host" instruction stops production. -NotDone says what the refusal left undone,
+-NextSteps what the operator does instead; both are the caller's, because only the caller knows its state.
+
 Keep this function identical in Update-ControlServerLocal.ps1 and Install-ControlServerLocal.ps1;
 scripts/Test-DataRootLockWait.ps1 compares the two.
 #>
-function Wait-DataRootReleased([string]$Root, [string]$Purpose, [int]$Seconds = 30) {
+function Wait-DataRootReleased {
+    param(
+        [Parameter(Mandatory)][string]$Root,
+        [Parameter(Mandatory)][string]$NotDone,
+        [Parameter(Mandatory)][string]$NextSteps,
+        [string]$InstallPath,
+        [switch]$AfterServiceStop,
+        [int]$Seconds = 30
+    )
     if (-not (Test-Path -LiteralPath $Root -PathType Container)) { return @() }
     $lockFiles = @(Get-ChildItem -LiteralPath $Root -Recurse -Force -File -Filter '*.instance-lock' |
         ForEach-Object { $_.FullName })
@@ -186,14 +202,32 @@ function Wait-DataRootReleased([string]$Root, [string]$Purpose, [int]$Seconds = 
             catch [IO.FileNotFoundException] { break }
             catch [IO.DirectoryNotFoundException] { break }
             catch [IO.IOException] {
-                if ([DateTimeOffset]::UtcNow -ge $deadline) {
-                    throw ("DATA_ROOT_IN_USE: 停服务后等了 $Seconds 秒，仍有进程占着数据目录里的库（锁文件 $lockFile）。" +
-                        "服务管理器报「已停止」只说明服务报了停，不说明进程已经退出、库已经关上；库是 WAL 模式，" +
-                        "这时拷贝或删除数据目录，会拷到或删掉一个还在写的库。所以没有$Purpose，数据目录原样未动。" +
-                        "请确认 ControlServer.Host 进程已经退出（任务管理器或 Get-Process ControlServer.Host），" +
-                        "或者有没有别的进程按这个库启动过 Host，再重新执行。不要删除锁文件：删它解不了锁。")
+                if ([DateTimeOffset]::UtcNow -lt $deadline) {
+                    Start-Sleep -Milliseconds 250
+                    continue
                 }
-                Start-Sleep -Milliseconds 250
+                $text = [Text.StringBuilder]::new()
+                [void]$text.Append("DATA_ROOT_IN_USE: 等了 $Seconds 秒，仍有进程占着数据目录 $Root 里的库（锁文件 $lockFile）。")
+                if ($AfterServiceStop) {
+                    [void]$text.Append('服务管理器报「已停止」只说明服务报了停，不说明进程已经退出、库已经关上。')
+                }
+                [void]$text.Append("库是 WAL 模式，这时拷贝或删除数据目录，会拷到或删掉一个还在写的库，所以没有$NotDone，数据目录原样未动。")
+                if ([string]::IsNullOrWhiteSpace($InstallPath)) {
+                    [void]$text.Append('按路径查是哪个进程：Get-Process ControlServer.Host | Select-Object Id, Path，只认路径属于这个实例的那一个。')
+                }
+                else {
+                    $prefix = $InstallPath.TrimEnd('\', '/') + '\'
+                    $ours = @(Get-Process -Name 'ControlServer.Host' -ErrorAction SilentlyContinue |
+                        Where-Object { $_.Path -and $_.Path.StartsWith($prefix, [StringComparison]::OrdinalIgnoreCase) } |
+                        ForEach-Object { "PID $($_.Id)" })
+                    [void]$text.Append("本实例的 Host 按安装目录查：Get-Process ControlServer.Host | Where-Object Path -like '$prefix*'。")
+                    [void]$text.Append($(if ($ours.Count -gt 0) { "现在查到：$($ours -join '、')。" }
+                        else { '现在没有查到，占着锁的可能是别的进程，按锁文件所在的库去找。' }))
+                }
+                [void]$text.Append('不要按名字结束进程（Stop-Process -Name、taskkill /IM）：同一台机器上 MVP 与 v2 的 Host 同名，按名字会连生产实例一起停掉。')
+                [void]$text.Append('不要删除锁文件：删它解不了锁。')
+                [void]$text.Append("接下来：$NextSteps")
+                throw $text.ToString()
             }
         }
     }
@@ -311,7 +345,10 @@ if ([string]::IsNullOrWhiteSpace($onboardCredential)) {
 # No service exists yet (refused above), but a Host started by hand on an existing data root would still be
 # writing the database the backup below copies (control-server#503). Before the try, not inside it: a refusal
 # here has touched nothing, so there is nothing for the error path to undo.
-if ($dataRootExisted) { $null = Wait-DataRootReleased $dataRoot '备份既有数据目录、也没有安装' }
+if ($dataRootExisted) {
+    $null = Wait-DataRootReleased -Root $dataRoot -NotDone '备份既有数据目录、也没有安装' `
+        -NextSteps '查清并停下占着这个数据目录的那个进程（按路径认，不按名字）后，重新执行本脚本。本脚本还什么都没有做。'
+}
 Write-Diagnostic 'preflight-complete'
 
 try {
@@ -323,6 +360,9 @@ try {
             New-Item -ItemType Directory -Path $dataBackup -Force | Out-Null
             foreach ($item in $existingData) { Copy-Item -LiteralPath $item.FullName -Destination $dataBackup -Recurse -Force }
             $dataBackupCreated = $true
+        }
+        else {
+            $dataRootWasEmpty = $true
         }
     }
     Write-Diagnostic 'backup-complete'
@@ -549,8 +589,32 @@ catch {
         }
     }
     catch { $rollbackErrors.Add("service: $($_.Exception.Message)") }
+    # The service stopped above may still be exiting: never delete an install directory or a data root a live
+    # Host is using (control-server#503). Before the install directory, as in Update-ControlServerLocal.ps1. A
+    # refusal leaves both as they are, is reported with the rest, and says how to finish by hand.
+    $dataRootReleased = $true
     try {
-        if ($installCreated -and (Test-Path -LiteralPath $installPath)) {
+        $dataRootStep = if ($dataBackupCreated) {
+            "清空 $dataRoot，再把 $backupPath\data-root 里的内容全部拷回（.db、-wal、-shm 一起）"
+        } elseif (-not $dataRootExisted) {
+            "删除 $dataRoot：它是这次安装新建的，没有要恢复的内容"
+        } elseif ($dataRootWasEmpty) {
+            "清空 $dataRoot：它在安装前是空的"
+        } else {
+            "不要动 $dataRoot：它在安装前就有内容，但备份没有完成，那里面就是原来的数据"
+        }
+        $null = Wait-DataRootReleased -Root $dataRoot -InstallPath $installPath -AfterServiceStop `
+            -NotDone '删除安装目录、回滚数据目录' `
+            -NextSteps ("手工完成回滚。1. 按上面的命令确认本实例的 Host 已经退出（没有输出）。" +
+                "2. 删除 $installPath。3. $dataRootStep。" +
+                $(if ($serviceCreated) { '本次安装注册的服务已在回滚里删除，不用起服务。' } else { '本次安装还没有注册服务。' }))
+    }
+    catch {
+        $dataRootReleased = $false
+        $rollbackErrors.Add("data-root: $($_.Exception.Message)")
+    }
+    try {
+        if ($dataRootReleased -and $installCreated -and (Test-Path -LiteralPath $installPath)) {
             Remove-Item -LiteralPath $installPath -Recurse -Force
         }
     }
@@ -562,10 +626,16 @@ catch {
     }
     catch { $rollbackErrors.Add("machine-environment: $($_.Exception.Message)") }
     try {
-        if (Test-Path -LiteralPath $dataRoot) {
-            # The service stopped above may still be exiting: never delete a data root a live Host is writing
-            # (control-server#503). A refusal leaves the data root as it is and is reported with the rest.
-            $null = Wait-DataRootReleased $dataRoot "回滚数据目录（备份在 $backupPath，请按备份手工恢复）"
+        if ($dataRootReleased -and $dataRootExisted -and -not $dataBackupCreated -and -not $dataRootWasEmpty -and
+            (Test-Path -LiteralPath $dataRoot)) {
+            # Content was there before this install and its backup never completed: emptying it now would delete
+            # the only copy (control-server#503; a v2 uninstall keeps its data root, so a later first install
+            # starts here). Leave it, say so, and let a person compare it with whatever the backup did copy.
+            $rollbackErrors.Add(("data-root: DATA_ROOT_BACKUP_INCOMPLETE: 数据目录 $dataRoot 在安装前就有内容，但备份没有完成" +
+                "（$backupPath），所以回滚没有清空或删除它，原有内容原样保留。本次安装失败前可能已往里写过文件，" +
+                "请对照 $backupPath 里已拷出的部分人工核对后再重新安装。"))
+        }
+        elseif ($dataRootReleased -and (Test-Path -LiteralPath $dataRoot)) {
             Get-ChildItem -LiteralPath $dataRoot -Force | Remove-Item -Recurse -Force
             if ($dataBackupCreated) {
                 foreach ($item in Get-ChildItem -LiteralPath (Join-Path $backupPath 'data-root') -Force) {
