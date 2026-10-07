@@ -88,6 +88,132 @@ public sealed partial class RecoveryEndingReleasesBlockedJourneyTests
     }
 
     /// <summary>
+    /// 第 4 条单独钉住：阻塞码是普通的 <c>LOAD_RESULT_REQUIRES_RECOVERY</c>（第 5 条挡不住），第一条已装上的需求被标成待恢复。上面票面那一格的
+    /// 阻塞码是 <c>FaultCargoRecoveryResult_NOT_RECONCILED</c>，第 4、5 条都挡它，去掉任何一条它都不红，所以这里改库造出只有第 4 条挡得住的状态
+    /// （修之前它的来路正是本票的放错：放出时不看别的需求，之后旅程又在另一次装货上阻塞）。
+    /// </summary>
+    [Fact]
+    [Trait("IntegrationSlice", "FP-IS-07")]
+    [Trait("ProtocolVector", "CV-EXCEPTION-RESUME")]
+    public async Task ARepairResumeUnderAnOrdinaryBlockLeavesTheJourneyBlockedWhileAnotherDemandAwaitsRecovery()
+    {
+        await WithProofAsync(async () =>
+        {
+            CancellationToken token = TestContext.Current.CancellationToken;
+            await using RuntimeFixture fixture = await RuntimeFixture.CreateAsync();
+            await LoadTheFirstAndBlockOnTheSecondAtOnePickupAsync(fixture);
+            await using (ControlServerDbContext context = fixture.OpenConnectionContext())
+            {
+                (await context.AcceptedDemands.SingleAsync(row => row.DemandId == FirstDemandId, token)).Status =
+                    DemandExecutionStatus.RecoveryRequired;
+                await context.SaveChangesAsync(token);
+            }
+            fixture.Context.ChangeTracker.Clear();
+
+            await ResumeLoadAsync(fixture, SecondDemandId);
+
+            JourneyRuntimeRow after = await JourneyOfAsync(fixture, FirstDemandId);
+            Assert.Equal((JourneyRuntimeStage.Blocked, "LOAD_RESULT_REQUIRES_RECOVERY"), (after.Stage, after.BlockReasonCode));
+        });
+    }
+
+    /// <summary>
+    /// 第 3 条单独钉住：旅程里另一次仓位操作（第一条已装上的那次装货）没收敛，而它的需求没被标成待恢复，阻塞码也普通。正常流程里同一站逐条串行，
+    /// 到不了这个状态，改库造出——与 <see cref="ACompensationLeavesTheJourneyBlockedWhileAnotherOperationOfItIsUnresolved"/> 同一个做法，
+    /// 守的是服务器自己的不变量被破坏时不放车。
+    /// </summary>
+    [Fact]
+    [Trait("IntegrationSlice", "FP-IS-07")]
+    [Trait("ProtocolVector", "CV-EXCEPTION-RESUME")]
+    public async Task ARepairResumeLeavesTheJourneyBlockedWhileAnotherOperationOfItIsUnresolved()
+    {
+        await WithProofAsync(async () =>
+        {
+            CancellationToken token = TestContext.Current.CancellationToken;
+            await using RuntimeFixture fixture = await RuntimeFixture.CreateAsync();
+            await LoadTheFirstAndBlockOnTheSecondAtOnePickupAsync(fixture);
+            await using (ControlServerDbContext context = fixture.OpenConnectionContext())
+            {
+                (await context.StationOperations.SingleAsync(
+                    row => row.DemandId == FirstDemandId && row.OperationType == SlotOperationType.Load, token)).Status =
+                    StationOperationStatus.RecoveryRequired;
+                await context.SaveChangesAsync(token);
+            }
+            fixture.Context.ChangeTracker.Clear();
+
+            await ResumeLoadAsync(fixture, SecondDemandId);
+
+            JourneyRuntimeRow after = await JourneyOfAsync(fixture, FirstDemandId);
+            Assert.Equal((JourneyRuntimeStage.Blocked, "LOAD_RESULT_REQUIRES_RECOVERY"), (after.Stage, after.BlockReasonCode));
+        });
+    }
+
+    /// <summary>
+    /// 第 5 条的代价，本票新增的卡死（调度 10-07 裁定接受，出口归 control-server#505）：单需求旅程，装货结果要恢复；先补偿，车报全空、
+    /// 一个仓位却读到 <c>OCCUPIED</c>，没对上，阻塞码变成 <c>LoadCompensationResult_NOT_RECONCILED</c>，装货操作仍是
+    /// <c>RecoveryRequired</c>。再开会话修复续行，新结果对上了。修之前旅程被放出；修之后留在 <c>Blocked</c>——阻塞码不记是哪条需求
+    /// 留下的，分不出「同一条重试成功」与「别的需求还没结论」，一律不放。#505 给阻塞码补上标记之后放宽，到时这一格改成放出。
+    /// </summary>
+    [Fact]
+    [Trait("IntegrationSlice", "FP-IS-07")]
+    [Trait("ProtocolVector", "CV-EXCEPTION-RESUME")]
+    public async Task ARepairResumeAfterAnUnreconciledCompensationOfTheSameDemandStaysBlockedUntil505()
+    {
+        await WithProofAsync(async () =>
+        {
+            CancellationToken token = TestContext.Current.CancellationToken;
+            await using RuntimeFixture fixture = await RuntimeFixture.CreateAsync();
+            fixture.Catalog.Set(fixture.Demand(FirstDemandId, FirstSublot, Now.AddMinutes(-10)));
+            fixture.BoxCounts.Set(FirstSublot, 4);
+            await TickAndRunAsync(fixture);
+            JourneyRuntimeRow runtime = await fixture.RuntimeAsync(FirstDemandId);
+            fixture.Riot.SetSuccessfulArrival("TO_PICKUP", runtime.PickupUpperId, runtime.PickupStationRiotId);
+            fixture.Riot.Vehicle = fixture.Riot.Vehicle with { CurrentStationId = runtime.PickupStationRiotId };
+            await TickAndRunAsync(fixture);
+            await EnterSublotAsync(fixture, FirstDemandId, FirstSublot, FirstSubmissionId);
+            await BlockOnLoadAsync(fixture, FirstDemandId);
+
+            StationOperationRow load = await OperationOfAsync(fixture, FirstDemandId, SlotOperationType.Load);
+            int[] slots = JsonSerializer.Deserialize<int[]>(load.TargetSlotsJson)!;
+            await using (ControlServerDbContext connection = fixture.OpenConnectionContext())
+            {
+                OnboardMessageProcessor processor = RecoveryProcessor(fixture, connection);
+                OnboardConnectionState state = RecoveryConnection(fixture);
+                string sessionId = await OpenSessionAsync(fixture, processor, state, FirstDemandId, slots);
+                await processor.ProcessAsync(
+                    Action(fixture, sessionId, "COMPENSATE_LOAD_ALL_EMPTY", FirstDemandId, slots), state, token);
+                await processor.ProcessAsync(Envelope(fixture, "LoadCompensationRequested", new
+                {
+                    recoveryActionId = ActionId,
+                    exceptionRecoverySessionId = sessionId,
+                    demandId = FirstDemandId,
+                    slotOperationAttemptId = load.SlotOperationAttemptId,
+                    @operator = BeforeSublotOperator(fixture)
+                }), state, token);
+                Assert.Equal("DurableAck", FirstLineType(await processor.ProcessAsync(Envelope(fixture, "LoadCompensationResult", new
+                {
+                    recoveryActionId = ActionId,
+                    demandId = FirstDemandId,
+                    slotOperationAttemptId = load.SlotOperationAttemptId,
+                    overallOutcome = "ALL_EMPTY",
+                    slotResults = SlotsWithOneOccupied(slots, slots[0]),
+                    observedAt = fixture.Clock.GetUtcNow()
+                }), state, token)));
+            }
+            fixture.Context.ChangeTracker.Clear();
+            const string unreconciled = "LoadCompensationResult_NOT_RECONCILED";
+            Assert.Equal((JourneyRuntimeStage.Blocked, unreconciled), ((await JourneyOfAsync(fixture, FirstDemandId)).Stage,
+                (await JourneyOfAsync(fixture, FirstDemandId)).BlockReasonCode));
+            Assert.Equal(StationOperationStatus.RecoveryRequired, (await OperationOfAsync(fixture, FirstDemandId, SlotOperationType.Load)).Status);
+
+            await ResumeLoadAsync(fixture, FirstDemandId);
+
+            JourneyRuntimeRow after = await JourneyOfAsync(fixture, FirstDemandId);
+            Assert.Equal((JourneyRuntimeStage.Blocked, unreconciled), (after.Stage, after.BlockReasonCode));
+        });
+    }
+
+    /// <summary>
     /// 修复续行所在的会话：开会话、选 <c>RESUME_AFTER_REPAIR</c>、车按它重做那一次装货并报一条对上的新结果。车先在恢复报告里报出这一次
     /// 操作没结清、停在已证明的检查点（<c>PREPARED</c>）——授权修复续行要求这两样。
     /// </summary>
