@@ -24,10 +24,21 @@ namespace ControlServer.Infrastructure.Persistence;
 /// 有人往连接串里加别的键时，没有任何东西会说这个值是被想过的。它也是测试能把等待缩短的那个旋钮。
 /// </para>
 /// <para>
-/// <b>两件刻意没做的事。</b>没有关 <c>Pooling</c>：池里那条空闲连接不持有任何锁，关掉它只是让每条命令
-/// 多一次开库。没有开 WAL：WAL 能让读与写并行，确实会把这里的撞车压到极少，但它改变的是库文件的形状
-/// （多出 <c>-wal</c> 与 <c>-shm</c> 两个文件），现场的备份、拷贝与只读体检都按单文件写的，那是另一票
-/// 的事。
+/// <b>刻意没做的事。</b>没有关 <c>Pooling</c>：池里那条空闲连接不持有任何锁，关掉它只是让每条命令
+/// 多一次开库。
+/// </para>
+/// <para>
+/// <b>这个库是 WAL 模式，而且一直是。</b>这里的连接串不设日志模式，打开它的是 EF Core：库文件不存在时
+/// <c>Database.MigrateAsync()</c> 先调 <c>SqliteDatabaseCreator.Create()</c>，那里执行
+/// <c>PRAGMA journal_mode = 'wal';</c>（Microsoft.EntityFrameworkCore.Sqlite 8.0.30），模式记在文件头里，
+/// 之后每次打开都是 WAL。这段注释原先写的是「没有开 WAL」，那是错的（control-server#503）。WAL 下读不挡写、
+/// 写不挡读，但同一时刻仍然只有一个写事务，所以上面那两段关于 <c>SQLITE_BUSY</c> 的话照样成立。
+/// </para>
+/// <para>
+/// <b>WAL 让库变成三个文件：</b><c>controlserver.db</c>、<c>-wal</c> 与 <c>-shm</c>。已提交但还没写回主文件的
+/// 行只在 <c>-wal</c> 里，所以服务端运行中、或进程被强杀之后只拷主文件，拷出来的库能打开、完整性检查也过，
+/// 却静默少了最近的行。拷库只有两种做法：停服务（并确认进程已退出）后整个目录拷，或者运行中用
+/// <c>VACUUM INTO</c> 导出一个单文件快照。
 /// </para>
 /// </remarks>
 public static class ControlServerSqlite

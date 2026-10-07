@@ -116,6 +116,54 @@ function Wait-ServiceState([string]$ExpectedStatus, [int]$Seconds = 30) {
     throw "Service did not reach $ExpectedStatus within $Seconds seconds."
 }
 
+<#
+.SYNOPSIS
+Waits until no process holds a ControlServer database under the data root, or refuses.
+.DESCRIPTION
+control-server#503. Stop-Service returns once the service control manager reports Stopped, which says
+nothing about whether the process has exited and closed the database. The database runs in WAL mode
+(EF Core's SqliteDatabaseCreator turns it on when it creates the file), so a copy or a delete of the
+data root under a process that is still exiting copies or deletes a database that is still being
+written, and part of it may still be only in -wal.
+
+The proof is the lock control-server#473 added: the Host opens <database>.instance-lock with
+FileShare.None for as long as it lives, and the operating system closes that handle when the process
+is gone, however it went. Opening every such file under the data root exclusively therefore proves
+that no Host still owns any database there. A data root with no lock file (an instance installed
+before control-server#473, upgraded for the first time) has nothing to wait for. Opened for reading
+only, so a read-only lock file is not mistaken for a held one.
+
+Keep this function identical in Update-ControlServerLocal.ps1 and Install-ControlServerLocal.ps1;
+scripts/Test-DataRootLockWait.ps1 compares the two.
+#>
+function Wait-DataRootReleased([string]$Root, [string]$Purpose, [int]$Seconds = 30) {
+    if (-not (Test-Path -LiteralPath $Root -PathType Container)) { return @() }
+    $lockFiles = @(Get-ChildItem -LiteralPath $Root -Recurse -Force -File -Filter '*.instance-lock' |
+        ForEach-Object { $_.FullName })
+    $deadline = [DateTimeOffset]::UtcNow.AddSeconds($Seconds)
+    foreach ($lockFile in $lockFiles) {
+        while ($true) {
+            try {
+                [IO.File]::Open($lockFile, [IO.FileMode]::Open, [IO.FileAccess]::Read, [IO.FileShare]::None).Dispose()
+                break
+            }
+            catch [IO.FileNotFoundException] { break }
+            catch [IO.DirectoryNotFoundException] { break }
+            catch [IO.IOException] {
+                if ([DateTimeOffset]::UtcNow -ge $deadline) {
+                    throw ("DATA_ROOT_IN_USE: 停服务后等了 $Seconds 秒，仍有进程占着数据目录里的库（锁文件 $lockFile）。" +
+                        "服务管理器报「已停止」只说明服务报了停，不说明进程已经退出、库已经关上；库是 WAL 模式，" +
+                        "这时拷贝或删除数据目录，会拷到或删掉一个还在写的库。所以没有$Purpose，数据目录原样未动。" +
+                        "请确认 ControlServer.Host 进程已经退出（任务管理器或 Get-Process ControlServer.Host），" +
+                        "或者有没有别的进程按这个库启动过 Host，再重新执行。不要删除锁文件：删它解不了锁。")
+                }
+                Start-Sleep -Milliseconds 250
+            }
+        }
+    }
+    return $lockFiles
+}
+
 # curl.exe is not present on every Windows this script installs on. It ships with
 # Windows 10 1803 and Server 2019; the factory server is Server 2016 and has none,
 # where the previous implementation failed with "The term
@@ -220,6 +268,8 @@ try {
     Wait-ServiceState 'Stopped'
     $serviceStopped = $true
     Write-Diagnostic 'service-stopped'
+    $releasedLocks = Wait-DataRootReleased $dataRoot '备份数据目录、也没有换二进制'
+    Write-Diagnostic ("data-root-released lockFiles={0}" -f $releasedLocks.Count)
 
     New-Item -ItemType Directory -Path $backupPath -Force | Out-Null
     Set-RestrictedDirectoryAcl $backupPath
@@ -343,6 +393,10 @@ catch {
     try {
         try { Stop-Service -Name $serviceName -Force -ErrorAction SilentlyContinue } catch { }
         if ($backupComplete) {
+            # The replacement may have started and may still be exiting: the same proof as before the backup,
+            # or the restore below deletes a data root a live process is writing (control-server#503).
+            $null = Wait-DataRootReleased $dataRoot "从备份 $backupPath 恢复安装目录与数据目录（请按备份手工恢复）"
+            Write-Diagnostic 'rollback-data-root-released'
             if (Test-Path -LiteralPath $installPath) {
                 Remove-Item -LiteralPath $installPath -Recurse -Force
             }
