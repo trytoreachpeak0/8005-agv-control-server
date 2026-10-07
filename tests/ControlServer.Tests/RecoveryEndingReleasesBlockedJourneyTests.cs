@@ -293,9 +293,10 @@ public sealed class RecoveryEndingReleasesBlockedJourneyTests
     }
 
     /// <summary>
-    /// 护栏的第一个条件单独钉住：旅程阻塞的原因不是哪一次仓位操作（这里是一条没对上的取消结果留下的阻塞），会话把本站已装上的那一条
-    /// 交接掉。结清的那一次装货早已提交，不是它挡着旅程，所以不放，原来的阻塞码照旧。阻塞码是改库写的，形状与
-    /// <c>KeepDemandAndJourneyBlockedAsync</c> 写的相同。
+    /// 护栏的第一个条件单独钉住：旅程阻塞的原因不是哪一次仓位操作（这里是停住的自有订单重建在等货物交接，
+    /// <c>VehicleFaultRecoveryService.AwaitingCargoHandoffReason</c>），会话把本站已装上的那一条交接掉。结清的那一次装货早已提交，不是它挡着旅程，
+    /// 所以不放，原来的阻塞码照旧。阻塞码是改库写的。它不能是 <c>*_NOT_RECONCILED</c>：那一种先被第 5 条挡住，这条用例就钉不住第 2 条了
+    /// （第一版用的正是 <c>LoadCancellationResult_NOT_RECONCILED</c>，第 5 条加上后去掉第 2 条的变异不再红）。
     /// </summary>
     [Fact]
     [Trait("IntegrationSlice", "FP-IS-07")]
@@ -313,7 +314,7 @@ public sealed class RecoveryEndingReleasesBlockedJourneyTests
             await ApplySafeResultAsync(fixture, FirstDemandId, SlotOperationType.Load, SlotBusinessState.Occupied);
             await TickAndRunAsync(fixture);
             Assert.Equal(JourneyDemandStatuses.Loaded, (await MembershipAsync(fixture, FirstDemandId)).Status);
-            const string otherBlock = "LoadCancellationResult_NOT_RECONCILED";
+            const string otherBlock = ControlServer.Host.Runtime.Faults.VehicleFaultRecoveryService.AwaitingCargoHandoffReason;
             await using (ControlServerDbContext context = fixture.OpenConnectionContext())
             {
                 JourneyRuntimeRow row = await context.JourneyRuntimes.SingleAsync(item => item.JourneyId == runtime.JourneyId, token);
