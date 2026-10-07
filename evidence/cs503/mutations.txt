@@ -1,0 +1,49 @@
+=== M1 scripts/Update-ControlServerLocal.ps1
+    original : $releasedLocks = Wait-DataRootReleased $dataRoot '备份数据目录、也没有换二进制'
+    mutated  : $releasedLocks = @()
+    self-test exit code: 1
+    [FAIL] Update: wait before the data-root backup
+    [FAIL] U1 held lock: the upgrade stops with DATA_ROOT_IN_USE
+    [FAIL] U1 held lock: nothing was backed up and the binary was not replaced
+    [FAIL] U1 held lock: it waited the full 30 seconds first
+    [FAIL] U2 lock let go: the upgrade completes with PASS
+    [FAIL] U2 lock let go: the diagnostic records the one lock file it waited on
+    [FAIL] U2 lock let go: the backup holds the database with its -wal and -shm
+=== M2 scripts/Update-ControlServerLocal.ps1
+    original : $null = Wait-DataRootReleased $dataRoot "从备份 $backupPath 恢复安装目录与数据目录（请按备份手工恢复）"
+    mutated  : $null = $null
+    self-test exit code: 1
+    [FAIL] Update: wait before the rollback deletes the data root
+    [FAIL] U4 rollback under a live holder: refused with DATA_ROOT_IN_USE
+    [FAIL] U4 rollback under a live holder: the data root was not deleted
+    [FAIL] U4 rollback under a live holder: the diagnostic records the refused rollback
+    [FAIL] U5 rollback after the holder exits: the rollback completes and the original error is rethrown
+    [FAIL] U5 rollback after the holder exits: the data root is restored from the backup
+=== M3 scripts/Update-ControlServerLocal.ps1
+    original : if ([DateTimeOffset]::UtcNow -ge $deadline) {
+    mutated  : break; if ([DateTimeOffset]::UtcNow -ge $deadline) {
+    self-test exit code: 1
+    [FAIL] the two copies of Wait-DataRootReleased are identical
+    [FAIL] held lock: refuses after the wait with DATA_ROOT_IN_USE and the lock file
+    [FAIL] U1 held lock: the upgrade stops with DATA_ROOT_IN_USE
+    [FAIL] U1 held lock: nothing was backed up and the binary was not replaced
+    [FAIL] U1 held lock: it waited the full 30 seconds first
+    [FAIL] U2 lock let go: the upgrade completes with PASS
+    [FAIL] U2 lock let go: the backup holds the database with its -wal and -shm
+    [FAIL] U4 rollback under a live holder: refused with DATA_ROOT_IN_USE
+    [FAIL] U4 rollback under a live holder: the data root was not deleted
+    [FAIL] U4 rollback under a live holder: the diagnostic records the refused rollback
+    [FAIL] U5 rollback after the holder exits: the rollback completes and the original error is rethrown
+    [FAIL] U5 rollback after the holder exits: the data root is restored from the backup
+=== M4 scripts/Install-ControlServerLocal.ps1
+    original : $null = Wait-DataRootReleased $dataRoot "回滚数据目录（备份在 $backupPath，请按备份手工恢复）"
+    mutated  : $null = $null
+    self-test exit code: 1
+    [FAIL] Install: wait before the rollback deletes the data root
+=== M5 scripts/Update-ControlServerLocal.ps1
+    original : [IO.FileAccess]::Read, [IO.FileShare]::None
+    mutated  : [IO.FileAccess]::ReadWrite, [IO.FileShare]::None
+    self-test exit code: 1
+    [FAIL] the two copies of Wait-DataRootReleased are identical
+    [FAIL] a read-only lock file nobody holds is not taken for a held one
+restored; worktree clean: True

@@ -1,0 +1,32 @@
+[PASS] ParseFile Update-ControlServerLocal.ps1: 0 errors -- errors=0
+[PASS] ParseFile Install-ControlServerLocal.ps1: 0 errors -- errors=0
+[PASS] Update-ControlServerLocal.ps1 defines Wait-DataRootReleased once -- found=1
+[PASS] Install-ControlServerLocal.ps1 defines Wait-DataRootReleased once -- found=1
+[PASS] the two copies of Wait-DataRootReleased are identical
+[PASS] Update: wait before the data-root backup -- wait@14094 act@14720 actCount=1
+[PASS] Update: wait before the rollback deletes the data root -- wait@21349 act@21988 actCount=1
+[PASS] Install: wait before the existing data root is backed up -- wait@15969 act@16176 actCount=1
+[PASS] Install: wait before the rollback deletes the data root -- wait@29286 act@29366 actCount=1
+[PASS] no lock file: returns at once -- locks=0 elapsed=29ms
+[PASS] held lock: refuses after the wait with DATA_ROOT_IN_USE and the lock file -- elapsed=3s message=DATA_ROOT_IN_USE: 停服务后等了 3 秒，仍有进程占着数据目录里的库（锁文件 C:\Users\szy\AppData\Local\Temp\cs503-selftest-9865b7ab\unit-held\data\controlserver.db.instance-lock）。服务管理器报「已停止」只说明服务报了停，不说明进程已经退出、库已经关上；库是 WAL 模式，这时拷贝或删除数据目录，会拷到或删掉一个还在写的库。所以没有备份，数据目录原样未动。请确认 ControlServer.Host 进程已经退出（任务管理器或 Get-Process ControlServer.Host），或者有没有别的进程按这个库启动过 Host，再重新执行。不要删除锁文件：删它解不了锁。
+[PASS] a holder that lets go within the wait: returns -- elapsed=3s
+[PASS] a read-only lock file nobody holds is not taken for a held one -- returned
+[PASS] Update: exactly one top-level Assert-Administrator call to remove -- found=1
+[PASS] U1 held lock: the upgrade stops with DATA_ROOT_IN_USE -- THREW: DATA_ROOT_IN_USE: 停服务后等了 30 秒，仍有进程占着数据目录里的库（锁文件 C:\Users\szy\AppData\Local\Temp\cs503-selftest-9865b7ab\u1-held\dataroot\data\controlserver.db.instance-lock）。服务管理器报「已停止」只说明服务报了停，不说明进程已经退出、库已经关上；库是 WAL 模式，这时拷贝或删除数据目录，会拷到或删掉一个还在写的库。所以没有备份数据目录、也没有换二进制，数据目录原样未动。请确认 ControlServer.Host 进程已经退出（任务管理器或 Get-Process ControlServer.Host），或者有没有别的进程按这个库启动过 Host，再重新执行。不要删除锁文件：删它解不了锁。 ||
+[PASS] U1 held lock: the data root is untouched
+[PASS] U1 held lock: nothing was backed up and the binary was not replaced -- backupFiles=0
+[PASS] U1 held lock: the old binary is still installed
+[PASS] U1 held lock: it waited the full 30 seconds first -- seconds=31
+[PASS] U2 lock let go: the upgrade completes with PASS -- COMPLETED
+[PASS] U2 lock let go: the diagnostic records the one lock file it waited on
+[PASS] U2 lock let go: the backup holds the database with its -wal and -shm -- controlserver.db,controlserver.db-shm,controlserver.db-wal,controlserver.db.instance-lock
+[PASS] U3 no lock file: the upgrade completes as before -- COMPLETED seconds=2
+[PASS] U4 rollback under a live holder: refused with DATA_ROOT_IN_USE -- THREW: ControlServer upgrade and rollback both failed. (HTTP GET of http://127.0.0.1:1/health/live failed: stub: health check refused) (DATA_ROOT_IN_USE: 停服务后等了 30 秒，仍有进程占着数据目录里的库（锁文件 C:\Users\szy\AppData\Local\Temp\cs503-selftest-9865b7ab\u4-rollback-held\dataroot\data\controlserver.db.instance-lock）。服务管理器报「已停止」只说明服务报了停，不说明进程已经退出、库已经关上；库是 WAL 模式，这时拷贝或删除数据目录，会拷到或删掉一个还在写的库。所以没有从备份 C:\Users\szy\AppData\Local\Temp\cs503-selftest-9865b7ab\u4-rollback-held\backups\20261007T072303Z-upgrade 恢复安装目录与数据目录（请按备份手工恢复），数据目录原样未动。请确认 ControlServer.Host 进程已经退出（任务管理器或 Get-Process ControlServer.Host），或者有没有别的进程按这个库启动过 Host，再重新执行。不要删除锁文件：删它解不了锁。) || HTTP GET of http://127.0.0.1:1/health/live failed: stub: health check refused || DATA_ROOT_IN_USE: 停服务后等了 30 秒，仍有进程占着数据目录里的库（锁文件 C:\Users\szy\AppData\Local\Temp\cs503-selftest-9865b7ab\u4-rollback-held\dataroot\data\controlserver.db.instance-lock）。服务管理器报「已停止」只说明服务报了停，不说明进程已经退出、库已经关上；库是 WAL 模式，这时拷贝或删除数据目录，会拷到或删掉一个还在写的库。所以没有从备份 C:\Users\szy\AppData\Local\Temp\cs503-selftest-9865b7ab\u4-rollback-held\backups\20261007T072303Z-upgrade 恢复安装目录与数据目录（请按备份手工恢复），数据目录原样未动。请确认 ControlServer.Host 进程已经退出（任务管理器或 Get-Process ControlServer.Host），或者有没有别的进程按这个库启动过 Host，再重新执行。不要删除锁文件：删它解不了锁。
+[PASS] U4 rollback under a live holder: the data root was not deleted
+[PASS] U4 rollback under a live holder: the backup is intact for a manual restore
+[PASS] U4 rollback under a live holder: the diagnostic records the refused rollback
+[PASS] U5 rollback after the holder exits: the rollback completes and the original error is rethrown -- THREW: HTTP GET of http://127.0.0.1:1/health/live failed: stub: health check refused ||
+[PASS] U5 rollback after the holder exits: the data root is restored from the backup
+[PASS] U5 rollback after the holder exits: the old binary is back
+All checks passed.
+exit code: 0
