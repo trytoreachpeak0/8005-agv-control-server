@@ -8,12 +8,13 @@
 | --- | --- | --- |
 | `00-probe291-rerun-at-1de2d2e2.txt` | `1de2d2e2`（`fp/v2-impl` 顶端，含 cs#291），票面评论里的探针原样放进去跑，未提交 | 与票面在 `efc6744f` 上的读数逐字相同：补偿被接受，被补偿那条 `TERMINATED`，另一条 `LOADED`，旅程仍是 `Blocked / LOAD_RESULT_REQUIRES_RECOVERY` |
 | `01-five-red-at-2c3cab97.txt` | `2c3cab97`（只动 tests，产品代码同 `1de2d2e2`） | 新用例 5 红 1 绿：补偿两条、交接两条、强制取出一条全停在 `Blocked`；绿的是护栏用例（交接的不是阻塞旅程的那一条，本来就该留在 `Blocked`） |
+| `02-review-M1-two-red-at-f757c423-plus-tests.txt` | `ff9d227f`（产品代码同 `f757c423`，即第一版修复；tests 加了审查 M-1 的两条护栏） | 10 条里 2 红：第一条交接没对上、仍待恢复时补偿第二条，旅程被放出、发了离站核验（`stage=AwaitingDepartureSafety … checks=1`）；第三条扫码前取消的结果在阻塞之后才到、判为没对上时补偿第二条，旅程回到等录入、又发了第三条的录入请求（`stage=AwaitingSublot … entries=1`）。这是第一版修复自己引入的，在 `1de2d2e2` 上旅程留在 `Blocked`（审查实测） |
 
 `2c3cab97` 里补偿用例挂的协议向量名写成了不存在的 `CV-LOAD-COMPENSATION`，之后改为 `CV-EXCEPTION-COMPENSATE`（架构测试 `NoTestClaimsAVectorIdTheProtocolNeverFroze` 查出）。这只改 trait，不影响上表的红。
 
 ## 反向验证（`reverse/`）
 
-`mutate.py` 每个变异都按内容改出、`--no-incremental` 重编、跑 `RecoveryEndingReleasesBlockedJourneyTests`，结束后按内容写回并完整重编（`restored build exit=0`）。`mutations.txt` 是原始记录，按时间追加。
+两轮。第一轮在第一版修复 `f757c423` 上（`mutations.txt`，按时间追加）；第二轮在审查 M-1 修复之后的 `a6a5e6a3` 上、用最终的 10 条用例把全部八个变异重跑一遍（`mutations-round2-at-a6a5e6a3.txt`），下表是第二轮的结果。`mutate.py` 每个变异都按内容改出、`--no-incremental` 重编、跑 `RecoveryEndingReleasesBlockedJourneyTests`，结束后按内容写回并完整重编（`restored build exit=0`）。`mutations.txt` 是原始记录，按时间追加。
 
 | 变异 | 改了什么 | 红的用例 |
 | --- | --- | --- |
@@ -24,6 +25,7 @@
 | M5 | 引擎卸货侧不把「卸货命令之后被终结」算作本站进展 | 交接两条 |
 | M6 | 引擎卸货侧只看 TERMINATED、不核卸货操作已落库 | 无（见下） |
 | M7 | 放出时不清阻塞码 | 补偿（同站两条）、交接（同站两条） |
+| M8 | 去掉第 4 条「旅程别的需求没有一条是 RecoveryRequired」（审查 M-1） | `…WhileAnotherDemandStillAwaitsRecovery`、`…WhileACancellationLeftAnotherDemandAwaitingRecovery` |
 
 M7 第一次没有被杀死：当时用例只在引擎跑过之后读阻塞码，而引擎那一轮会改写它。之后两条用例加了「结果落库后、引擎跑之前，阶段已回到等结果、阻塞码已清」的断言（`AssertReleasedAsync`），重跑被杀死；M4、M6 也在加断言后的最终用例上重跑过一次，仍不红。
 
