@@ -23,7 +23,7 @@ namespace ControlServer.Host.Runtime;
 /// 本站还有没卸的就发它的卸货命令，没有就离站或收尾。
 /// </para>
 /// <para>
-/// <b>只在四条都成立时放</b>，任何一条不成立就留在 <c>Blocked</c>、什么都不写：
+/// <b>只在五条都成立时放</b>，任何一条不成立就留在 <c>Blocked</c>、什么都不写：
 /// </para>
 /// <list type="number">
 /// <item><description>
@@ -45,6 +45,14 @@ namespace ControlServer.Host.Runtime;
 /// 货在不在车上没有结论；扫码前取消的结果在旅程阻塞之后才到，那条需求还挂在本站待装的清单上。这时放出，车会带着没结论的货去做离站核验，
 /// 或者向车再要一次那条需求的录入；而且旅程一离开 <c>Blocked</c>，管理员为那条需求开的会话就被拒（<c>RECOVERY_DEMAND_NOT_BLOCKED</c>）。
 /// 被终结的这一条自己不算——它在终结之前本来就是 <c>RecoveryRequired</c>。
+/// </description></item>
+/// <item><description>
+/// 阻塞码不是 <c>*_NOT_RECONCILED</c>（cs#499 调度裁定）。第 4 条靠「没对上的需求留在 <c>RecoveryRequired</c>」认出没结论的事实，
+/// 而这个标记不一定在：需求已送达或已取消时，<c>KeepDemandAndJourneyBlockedAsync</c> 照写阻塞码、不留标记。例如对一条已卸需求开的纠错
+/// （授权不看需求还在不在车上，cs#287）结果没对上，压在另一条的装货恢复之上，阻塞码被覆盖成 <c>LoadCorrectionResult_NOT_RECONCILED</c>，
+/// 再补偿另一条时第 2、3、4 条都成立。阻塞码本身不记是哪条需求留下的，分不出这一种与安全的那一种，所以一律不放。
+/// 代价：同一条需求「第一次补偿或交接没对上、第二次对上」时阻塞码也是 <c>*_NOT_RECONCILED</c>，多需求旅程照旧停在 <c>Blocked</c>
+/// （与修之前相同）。放错碰准入线 1，停住碰准入线 3，宁可停住；源头修好、阻塞码必有标记之后再放宽，见 control-server#505。
 /// </description></item>
 /// </list>
 /// <para>
@@ -79,6 +87,7 @@ internal static class BlockedJourneyRelease
         ArgumentNullException.ThrowIfNull(dbContext);
         ArgumentNullException.ThrowIfNull(runtime);
         if (runtime.Stage != JourneyRuntimeStage.Blocked ||
+            runtime.BlockReasonCode?.EndsWith("_NOT_RECONCILED", StringComparison.Ordinal) == true ||
             endedOperation is null ||
             statusBeforeEnding != StationOperationStatus.RecoveryRequired)
         {
