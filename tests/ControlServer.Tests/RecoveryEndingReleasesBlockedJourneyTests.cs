@@ -26,7 +26,7 @@ namespace ControlServer.Tests;
 /// 再由真实引擎推进。最后一条是护栏：被交接的不是旅程阻塞在其上的那一条时，旅程照旧阻塞。
 /// </para>
 /// </remarks>
-public sealed class RecoveryEndingReleasesBlockedJourneyTests
+public sealed partial class RecoveryEndingReleasesBlockedJourneyTests
 {
     private const string ProofVariable = "CONTROL_SERVER_TEST_RECOVERY_PROOF_499";
     private const string Proof = "recovery-ending-499-proof-not-a-production-secret";
