@@ -33,6 +33,9 @@ public sealed class RecoveryEndingReleasesBlockedJourneyTests
     private const string RequestId = "44990000-0000-4000-8000-000000000001";
     private const string EventId = "34990000-0000-4000-8000-000000000001";
     private const string ActionId = "54990000-0000-4000-8000-000000000001";
+    private const string FirstHandoffRequestId = "44990000-0000-4000-8000-000000000002";
+    private const string FirstHandoffActionId = "54990000-0000-4000-8000-000000000002";
+    private const string RetryRequestId = "44990000-0000-4000-8000-000000000003";
     private const string ThirdSubmissionId = "24990000-0000-4000-8000-000000000021";
     private static readonly string[] HardwareChecks = ["LIVE_SLOT_SIGNALS_VALID"];
     private static readonly string[] HardwareActions = ["ADMINISTRATOR_CONFIRMED_HARDWARE_REPAIRED"];
@@ -327,6 +330,116 @@ public sealed class RecoveryEndingReleasesBlockedJourneyTests
         });
     }
 
+    /// <summary>
+    /// 护栏的第四个条件（独立审查必修 M-1 的探针）：旅程阻塞在第二条的装货恢复上，管理员先交接第一条，车报已交接、一个仓位却读到
+    /// <c>OCCUPIED</c>——结果没对上，第一条留在 <c>RecoveryRequired</c>，阻塞码改成 <c>FaultCargoRecoveryResult_NOT_RECONCILED</c>，
+    /// 而仓位操作一次都没动。接着补偿第二条。第一条的货是否还在车上没有结论，旅程不放出：不发离站核验，管理员还能为第一条重开会话。
+    /// </summary>
+    [Fact]
+    [Trait("IntegrationSlice", "FP-IS-07")]
+    [Trait("ProtocolVector", "CV-EXCEPTION-COMPENSATE")]
+    public async Task ACompensationLeavesTheJourneyBlockedWhileAnotherDemandStillAwaitsRecovery()
+    {
+        await WithProofAsync(async () =>
+        {
+            CancellationToken token = TestContext.Current.CancellationToken;
+            await using RuntimeFixture fixture = await RuntimeFixture.CreateAsync();
+            await LoadTheFirstAndBlockOnTheSecondAtOnePickupAsync(fixture);
+            int[] firstSlots = await SlotsOfAsync(fixture, FirstDemandId, SlotOperationType.Load);
+            await HandOffAsync(
+                fixture, FirstDemandId, SlotOperationType.Load, FirstHandoffRequestId, FirstHandoffActionId, occupiedSlot: firstSlots[0]);
+            Assert.Equal(DemandExecutionStatus.RecoveryRequired, (await DemandOfAsync(fixture, FirstDemandId)).Status);
+            int checksBefore = await CountAsync(fixture, "PreDepartureSafetyCheck");
+
+            await CompensateAsync(fixture, SecondDemandId);
+            await fixture.RestoreSessionReadyAsync();
+            Exception? round = await RunRoundAsync(fixture);
+            await RunRoundAsync(fixture);
+
+            JourneyRuntimeRow after = await JourneyOfAsync(fixture, FirstDemandId);
+            Assert.True(
+                after.Stage == JourneyRuntimeStage.Blocked && await CountAsync(fixture, "PreDepartureSafetyCheck") == checksBefore,
+                $"The journey was released while the first demand still awaits recovery. stage={after.Stage} " +
+                $"block={after.BlockReasonCode} checks={await CountAsync(fixture, "PreDepartureSafetyCheck") - checksBefore} " +
+                $"round={round?.Message}");
+            await using ControlServerDbContext connection = fixture.OpenConnectionContext();
+            await OpenSessionAsync(
+                fixture, RecoveryProcessor(fixture, connection), RecoveryConnection(fixture), FirstDemandId, firstSlots, RetryRequestId);
+        });
+    }
+
+    /// <summary>
+    /// 同一个条件的另一种来历（独立审查推断，这里实测）：第二个取货站上第二条在装、第三条还没装，操作员对第三条按扫码前的「取消装货」，
+    /// 取消在第二条装货途中授权；第二条的结果要恢复、旅程阻塞之后，第三条的取消结果才到，阶段已不在取货，判为没对上，第三条留在
+    /// <c>RecoveryRequired</c>。接着补偿第二条：不放出，也不再向车发第三条的录入请求。
+    /// </summary>
+    [Fact]
+    [Trait("IntegrationSlice", "FP-IS-07")]
+    [Trait("ProtocolVector", "CV-EXCEPTION-COMPENSATE")]
+    public async Task ACompensationLeavesTheJourneyBlockedWhileACancellationLeftAnotherDemandAwaitingRecovery()
+    {
+        await WithProofAsync(async () =>
+        {
+            CancellationToken token = TestContext.Current.CancellationToken;
+            await using RuntimeFixture fixture = await RuntimeFixture.CreateAsync();
+            await ArriveAtTheSecondPickupAsync(fixture, thirdAtTheSecondPickup: true);
+            await EnterSublotAsync(fixture, SecondDemandId, SecondSublot, SecondSubmissionId);
+            const string cancellationId = "d4990000-0000-4000-8000-000000000001";
+            await using (ControlServerDbContext connection = fixture.OpenConnectionContext())
+            {
+                OnboardMessageProcessor processor = RecoveryProcessor(fixture, connection);
+                string authorization = await processor.ProcessAsync(
+                    Envelope(fixture, "LoadCancellationStartRequested", new
+                    {
+                        cancellationId,
+                        demandId = ThirdDemandId,
+                        slotOperationAttemptId = (string?)null,
+                        @operator = BeforeSublotOperator(fixture),
+                        reason = "Nothing to load for this demand."
+                    }),
+                    Connection(fixture),
+                    token);
+                Assert.Equal("AUTHORIZED", FirstLinePayload(authorization).GetProperty("decision").GetString());
+            }
+            fixture.Context.ChangeTracker.Clear();
+            await BlockOnLoadAsync(fixture, SecondDemandId);
+            await using (ControlServerDbContext connection = fixture.OpenConnectionContext())
+            {
+                Assert.Equal("DurableAck", FirstLineType(await RecoveryProcessor(fixture, connection).ProcessAsync(
+                    Envelope(fixture, "LoadCancellationResult", new
+                    {
+                        cancellationId,
+                        demandId = ThirdDemandId,
+                        slotOperationAttemptId = (string?)null,
+                        overallOutcome = "ALL_EMPTY",
+                        slotResults = Array.Empty<object>(),
+                        observedAt = fixture.Clock.GetUtcNow()
+                    }),
+                    Connection(fixture),
+                    token)));
+            }
+            fixture.Context.ChangeTracker.Clear();
+            Assert.Equal(DemandExecutionStatus.RecoveryRequired, (await DemandOfAsync(fixture, ThirdDemandId)).Status);
+            int entriesBefore = await CountAsync(fixture, "SublotEntryRequested");
+
+            await CompensateAsync(fixture, SecondDemandId);
+            await fixture.RestoreSessionReadyAsync();
+            Exception? round = await RunRoundAsync(fixture);
+            await RunRoundAsync(fixture);
+
+            JourneyRuntimeRow after = await JourneyOfAsync(fixture, FirstDemandId);
+            Assert.True(
+                after.Stage == JourneyRuntimeStage.Blocked && await CountAsync(fixture, "SublotEntryRequested") == entriesBefore,
+                $"The journey was released while the third demand still awaits recovery. stage={after.Stage} " +
+                $"block={after.BlockReasonCode} entries={await CountAsync(fixture, "SublotEntryRequested") - entriesBefore} " +
+                $"round={round?.Message}");
+        });
+    }
+
+    private static Task<AcceptedDemandRow> DemandOfAsync(RuntimeFixture fixture, string demandId) =>
+        fixture.Context.AcceptedDemands.AsNoTracking().SingleAsync(
+            row => row.DemandId == demandId, TestContext.Current.CancellationToken);
+
     /// <summary>一个取货站两条：第一条装上，第二条录入、下命令，结果超时进恢复，旅程阻塞在它上面。</summary>
     private static async Task LoadTheFirstAndBlockOnTheSecondAtOnePickupAsync(RuntimeFixture fixture)
     {
@@ -358,7 +471,8 @@ public sealed class RecoveryEndingReleasesBlockedJourneyTests
     }
 
     /// <summary>完整的装货补偿：开会话、选 <c>COMPENSATE_LOAD_ALL_EMPTY</c>、车请求授权、车报仓位全空。</summary>
-    private static async Task CompensateAsync(RuntimeFixture fixture, string demandId)
+    private static async Task CompensateAsync(
+        RuntimeFixture fixture, string demandId, string requestId = RequestId, string actionId = ActionId)
     {
         CancellationToken token = TestContext.Current.CancellationToken;
         StationOperationRow load = await OperationOfAsync(fixture, demandId, SlotOperationType.Load);
@@ -367,11 +481,12 @@ public sealed class RecoveryEndingReleasesBlockedJourneyTests
         {
             OnboardMessageProcessor processor = RecoveryProcessor(fixture, connection);
             OnboardConnectionState state = RecoveryConnection(fixture);
-            string sessionId = await OpenSessionAsync(fixture, processor, state, demandId, slots);
-            await processor.ProcessAsync(Action(fixture, sessionId, "COMPENSATE_LOAD_ALL_EMPTY", demandId, slots), state, token);
+            string sessionId = await OpenSessionAsync(fixture, processor, state, demandId, slots, requestId);
+            await processor.ProcessAsync(
+                Action(fixture, sessionId, "COMPENSATE_LOAD_ALL_EMPTY", demandId, slots, actionId), state, token);
             await processor.ProcessAsync(Envelope(fixture, "LoadCompensationRequested", new
             {
-                recoveryActionId = ActionId,
+                recoveryActionId = actionId,
                 exceptionRecoverySessionId = sessionId,
                 demandId,
                 slotOperationAttemptId = load.SlotOperationAttemptId,
@@ -379,7 +494,7 @@ public sealed class RecoveryEndingReleasesBlockedJourneyTests
             }), state, token);
             string ack = await processor.ProcessAsync(Envelope(fixture, "LoadCompensationResult", new
             {
-                recoveryActionId = ActionId,
+                recoveryActionId = actionId,
                 demandId,
                 slotOperationAttemptId = load.SlotOperationAttemptId,
                 overallOutcome = "ALL_EMPTY",
@@ -392,8 +507,17 @@ public sealed class RecoveryEndingReleasesBlockedJourneyTests
         Assert.Equal(JourneyDemandStatuses.Terminated, (await MembershipAsync(fixture, demandId)).Status);
     }
 
-    /// <summary>完整的故障货物交接：开会话、选 <c>FAULT_CARGO_HANDOFF</c>、车报已交接且仓位全空。</summary>
-    private static async Task HandOffAsync(RuntimeFixture fixture, string demandId, SlotOperationType latest)
+    /// <summary>
+    /// 完整的故障货物交接：开会话、选 <c>FAULT_CARGO_HANDOFF</c>、车报已交接且仓位全空。<paramref name="occupiedSlot"/> 给了时，
+    /// 车报已交接、那一个仓位却读到 <c>OCCUPIED</c>——没对上的结果，需求不终结。
+    /// </summary>
+    private static async Task HandOffAsync(
+        RuntimeFixture fixture,
+        string demandId,
+        SlotOperationType latest,
+        string requestId = RequestId,
+        string actionId = ActionId,
+        int? occupiedSlot = null)
     {
         CancellationToken token = TestContext.Current.CancellationToken;
         int[] slots = await SlotsOfAsync(fixture, demandId, latest);
@@ -401,26 +525,42 @@ public sealed class RecoveryEndingReleasesBlockedJourneyTests
         {
             OnboardMessageProcessor processor = RecoveryProcessor(fixture, connection);
             OnboardConnectionState state = RecoveryConnection(fixture);
-            string sessionId = await OpenSessionAsync(fixture, processor, state, demandId, slots);
-            await processor.ProcessAsync(Action(fixture, sessionId, "FAULT_CARGO_HANDOFF", demandId, slots), state, token);
+            string sessionId = await OpenSessionAsync(fixture, processor, state, demandId, slots, requestId);
+            await processor.ProcessAsync(Action(fixture, sessionId, "FAULT_CARGO_HANDOFF", demandId, slots, actionId), state, token);
             string handoffId = (await connection.RecoveryWorkflows.AsNoTracking()
-                .SingleAsync(row => row.WorkflowType == "FAULT_CARGO_HANDOFF", token)).HandoffId!;
+                .SingleAsync(row => row.WorkflowType == "FAULT_CARGO_HANDOFF" && row.ExceptionRecoverySessionId == sessionId, token))
+                .HandoffId!;
             string ack = await processor.ProcessAsync(Envelope(fixture, "FaultCargoRecoveryResult", new
             {
                 exceptionRecoverySessionId = sessionId,
-                recoveryActionId = ActionId,
+                recoveryActionId = actionId,
                 demandId,
                 handoffId,
                 overallOutcome = "HANDED_OFF",
-                slotResults = EmptySlots(slots),
+                slotResults = occupiedSlot is int occupied ? SlotsWithOneOccupied(slots, occupied) : EmptySlots(slots),
                 @operator = BeforeSublotOperator(fixture),
                 observedAt = fixture.Clock.GetUtcNow()
             }), state, token);
             Assert.Equal("DurableAck", FirstLineType(ack));
         }
         fixture.Context.ChangeTracker.Clear();
-        Assert.Equal(JourneyDemandStatuses.Terminated, (await MembershipAsync(fixture, demandId)).Status);
+        Assert.Equal(
+            occupiedSlot is null ? JourneyDemandStatuses.Terminated : JourneyDemandStatuses.Loaded,
+            (await MembershipAsync(fixture, demandId)).Status);
     }
+
+    private static object[] SlotsWithOneOccupied(int[] slots, int occupied) =>
+    [
+        .. slots.Select(slot => new
+        {
+            slotNo = slot,
+            outcome = "COMPLETED",
+            finalPhysicalState = slot == occupied ? "OCCUPIED" : "EMPTY",
+            lockState = "LOCKED",
+            unlockOutputState = "RESET",
+            reasonCodes = Array.Empty<string>()
+        })
+    ];
 
     private static object[] EmptySlots(int[] slots) =>
     [
@@ -440,12 +580,13 @@ public sealed class RecoveryEndingReleasesBlockedJourneyTests
         OnboardMessageProcessor processor,
         OnboardConnectionState state,
         string demandId,
-        int[] slots)
+        int[] slots,
+        string requestId = RequestId)
     {
         string opened = await processor.ProcessAsync(
             Envelope(fixture, "ExceptionRecoverySessionRequested", new
             {
-                requestId = RequestId,
+                requestId,
                 administrator = BeforeSublotOperator(fixture),
                 administratorRole = "MAINTENANCE_ADMINISTRATOR",
                 eventId = EventId,
@@ -460,10 +601,11 @@ public sealed class RecoveryEndingReleasesBlockedJourneyTests
         return FirstLinePayload(opened).GetProperty("exceptionRecoverySessionId").GetString()!;
     }
 
-    private static string Action(RuntimeFixture fixture, string sessionId, string action, string demandId, int[] slots) =>
+    private static string Action(
+        RuntimeFixture fixture, string sessionId, string action, string demandId, int[] slots, string actionId = ActionId) =>
         Envelope(fixture, "RecoveryActionSubmitted", new
         {
-            recoveryActionId = ActionId,
+            recoveryActionId = actionId,
             exceptionRecoverySessionId = sessionId,
             action,
             eventId = EventId,
