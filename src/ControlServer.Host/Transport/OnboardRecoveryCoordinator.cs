@@ -68,6 +68,15 @@ public sealed class OnboardRecoveryCoordinator(
                 "(verified {VerifiedAt}) in message {MessageId}. It was already authorized: nothing is authorized " +
                 "again, and the command it earned is re-sent unchanged.");
 
+    private static readonly Action<ILogger, string, string, string, string, string, string, Exception?>
+        LogBlockedJourneyReleased =
+            LoggerMessage.Define<string, string, string, string, string, string>(
+                LogLevel.Information,
+                new EventId(2135, nameof(LogBlockedJourneyReleased)),
+                "Vehicle {AgvId}: {MessageType} for workflow {WorkflowId} ended demand {DemandId}, whose slot operation " +
+                "the journey was blocked on ({BlockReasonCode}); the journey carries other demands and goes back to " +
+                "{Stage} (control-server#499).");
+
     private static readonly Action<ILogger, string, Exception?> LogClosingSnapshotNotSent =
         LoggerMessage.Define<string>(
             LogLevel.Warning,
@@ -1728,12 +1737,18 @@ public sealed class OnboardRecoveryCoordinator(
             .SingleAsync(cancellationToken).ConfigureAwait(false);
         JourneyStopCursor commandedStops = await JourneyStopCursor
             .LoadAsync(dbContext, runtime, cancellationToken).ConfigureAwait(false);
+        StationOperationRow? endedOperation = null;
+        StationOperationStatus? statusBeforeEnding = null;
         if (workflow.SlotOperationAttemptId is not null)
         {
-            StationOperationRow? operation = await dbContext.StationOperations.SingleOrDefaultAsync(
+            endedOperation = await dbContext.StationOperations.SingleOrDefaultAsync(
                 row => row.SlotOperationAttemptId == workflow.SlotOperationAttemptId,
                 cancellationToken).ConfigureAwait(false);
-            if (operation is not null) operation.Status = StationOperationStatus.Cancelled;
+            if (endedOperation is not null)
+            {
+                statusBeforeEnding = endedOperation.Status;
+                endedOperation.Status = StationOperationStatus.Cancelled;
+            }
         }
         PickupStopTermination provenEmptyTermination =
             new(dbContext, await ReadPlanRevisionRoutingAsync(cancellationToken).ConfigureAwait(false));
@@ -1757,6 +1772,19 @@ public sealed class OnboardRecoveryCoordinator(
                 },
                 timeProvider.GetUtcNow(),
                 cancellationToken).ConfigureAwait(false);
+        // 旅程还带着别的需求、因此没收尾，而它阻塞在的正是刚结清的这一次操作：放回等那一次结果的阶段，由引擎接着走
+        // （control-server#499）。不是这一次的、或别的操作还没收敛的，留在 Blocked。条件与理由见 BlockedJourneyRelease。
+        string? blockedFor = runtime.BlockReasonCode;
+        if (await BlockedJourneyRelease
+                .StageAsync(dbContext, runtime, endedOperation, statusBeforeEnding, timeProvider.GetUtcNow(), cancellationToken)
+                .ConfigureAwait(false))
+        {
+            // Written before the caller's save, like the other lines here: the store, not the log, is the record.
+            LogBlockedJourneyReleased(
+                logger ?? (ILogger)NullLogger.Instance,
+                runtime.AgvId, messageType, workflow.WorkflowId, workflow.DemandId, blockedFor ?? "(none)",
+                runtime.Stage.ToString(), null);
+        }
         if (messageType is "FaultCargoRecoveryResult" or "ForcedMechanicalRecoveryResult")
         {
             await SettleHandedOffCargoAsync(runtime, cancellationToken).ConfigureAwait(false);

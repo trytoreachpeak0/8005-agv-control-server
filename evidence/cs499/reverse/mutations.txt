@@ -1,0 +1,29 @@
+M1-no-release: exit=1 ['Failed!  - Failed:     5, Passed:     3, Skipped:     0, Total:     8, Duration: 19 s - ControlServer.Tests.dll (net8.0)']
+   Failed ControlServer.Tests.RecoveryEndingReleasesBlockedJourneyTests.ACompensationAtASecondPickupWithAnotherDemandStillToLoadGoesBackToTheEntry [9 s]
+   Failed ControlServer.Tests.RecoveryEndingReleasesBlockedJourneyTests.AHandoffOfTheOnlyDemandOfAnUnloadStopWithAStopAfterItLeavesForThatStop [5 s]
+   Failed ControlServer.Tests.RecoveryEndingReleasesBlockedJourneyTests.AForcedRecoveryOfOneOfTwoDemandsAtOnePickupLeavesOnlyAfterTheHardwareRecord [596 ms]
+   Failed ControlServer.Tests.RecoveryEndingReleasesBlockedJourneyTests.ACompensationOfOneOfTwoDemandsAtOnePickupSendsTheVehicleOnWithTheOther [462 ms]
+   Failed ControlServer.Tests.RecoveryEndingReleasesBlockedJourneyTests.AHandoffOfOneOfTwoDemandsAtOneUnloadStopStillUnloadsTheOther [2 s]
+M2-no-status-check: exit=1 ['Failed!  - Failed:     1, Passed:     7, Skipped:     0, Total:     8, Duration: 29 s - ControlServer.Tests.dll (net8.0)']
+   Failed ControlServer.Tests.RecoveryEndingReleasesBlockedJourneyTests.AHandoffDoesNotLiftABlockItsOperationDidNotCause [256 ms]
+M3-no-unconverged-check: exit=1 ['Failed!  - Failed:     1, Passed:     7, Skipped:     0, Total:     8, Duration: 29 s - ControlServer.Tests.dll (net8.0)']
+   Failed ControlServer.Tests.RecoveryEndingReleasesBlockedJourneyTests.ACompensationLeavesTheJourneyBlockedWhileAnotherOperationOfItIsUnresolved [798 ms]
+M4-no-at-this-stop: exit=0 ['Passed!  - Failed:     0, Passed:     8, Skipped:     0, Total:     8, Duration: 25 s - ControlServer.Tests.dll (net8.0)']
+
+M5-engine-no-ended-progress: exit=1 ['Failed!  - Failed:     2, Passed:     6, Skipped:     0, Total:     8, Duration: 24 s - ControlServer.Tests.dll (net8.0)']
+   Failed ControlServer.Tests.RecoveryEndingReleasesBlockedJourneyTests.AHandoffOfTheOnlyDemandOfAnUnloadStopWithAStopAfterItLeavesForThatStop [4 s]
+   Failed ControlServer.Tests.RecoveryEndingReleasesBlockedJourneyTests.AHandoffOfOneOfTwoDemandsAtOneUnloadStopStillUnloadsTheOther [2 s]
+M6-engine-no-op-exists: exit=0 ['Passed!  - Failed:     0, Passed:     8, Skipped:     0, Total:     8, Duration: 29 s - ControlServer.Tests.dll (net8.0)']
+
+M7-keep-block-code: exit=0 ['Passed!  - Failed:     0, Passed:     8, Skipped:     0, Total:     8, Duration: 30 s - ControlServer.Tests.dll (net8.0)']
+
+restored build exit=0
+M7-keep-block-code: exit=1 ['Failed!  - Failed:     2, Passed:     6, Skipped:     0, Total:     8, Duration: 25 s - ControlServer.Tests.dll (net8.0)']
+   Failed ControlServer.Tests.RecoveryEndingReleasesBlockedJourneyTests.ACompensationOfOneOfTwoDemandsAtOnePickupSendsTheVehicleOnWithTheOther [316 ms]
+   Failed ControlServer.Tests.RecoveryEndingReleasesBlockedJourneyTests.AHandoffOfOneOfTwoDemandsAtOneUnloadStopStillUnloadsTheOther [2 s]
+restored build exit=0
+M4-no-at-this-stop: exit=0 ['Passed!  - Failed:     0, Passed:     8, Skipped:     0, Total:     8, Duration: 31 s - ControlServer.Tests.dll (net8.0)']
+
+M6-engine-no-op-exists: exit=0 ['Passed!  - Failed:     0, Passed:     8, Skipped:     0, Total:     8, Duration: 29 s - ControlServer.Tests.dll (net8.0)']
+
+restored build exit=0

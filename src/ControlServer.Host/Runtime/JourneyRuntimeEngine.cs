@@ -1293,6 +1293,8 @@ public sealed partial class JourneyRuntimeEngine(
                 // 不收尾。终结它的那条路若没有把阶段带走，留下的就是「没有在装、没有装上、只有一条 TERMINATED」。确定的装货失败自己会带走
                 // （TrySettleDeterminateLoadFailureAsync），恢复协调器的取消结果不会；这里兜住它们，也兜住已经卡在这个状态的库。
                 // 接的是同一段后续：本站还有待装的就回去等录入，没有就离站。
+                // 异常处置会话里的装货补偿、故障货物交接与强制机械取出终结的也是这一条（control-server#499）：恢复协调器在终结的同一次
+                // 保存里把旅程从 Blocked 放回这个阶段（BlockedJourneyRelease），走的就是这里——本站已有 LOADED 的走上面 #289 那一种。
                 JourneyStopDemand? loading = stops.LoadingAtCurrentStop;
                 bool resumingAfterCommit = loading is null;
                 bool loadedHere = stops.CurrentStopDemands.Any(item => item.Membership.Status == JourneyDemandStatuses.Loaded);
@@ -1612,7 +1614,7 @@ public sealed partial class JourneyRuntimeEngine(
                 // 卸货命令、离站或旅程收尾那一次保存里推进；旅程收尾之前还有一次停靠完成的保存。崩在任意两次之间，重启后阶段都还是这一个，
                 // 而此前这里只认「还有一条已下命令、在等结果」这一种——下一条命令没落库的静默停住（U1、U5），本站卸空了的每轮抛（U2、U3）。
                 // 与装货侧（control-server#212）同一个修法：按落库的状态认出是哪一种，接着走刚落定时同一段后续。三种都要求这一站至少
-                // 有一条已经卸完；连一条都没有，才是这台服务器自己的不变量被破坏了，照旧抛。
+                // 有一条已经卸完（control-server#499 起，或在卸货命令之后被交接终结）；连一条都没有，才是这台服务器自己的不变量被破坏了，照旧抛。
                 if (stops.OpenStops.Count == 0)
                 {
                     // 最后一个停靠已存为完成、旅程收尾那一次保存没落（U3 后半）：收尾。停靠完成只在卸完之后写，所以这里不再判别的。
@@ -1628,8 +1630,15 @@ public sealed partial class JourneyRuntimeEngine(
                 }
                 JourneyStopDemand? unloading = (await stops.NextToUnloadAtCurrentStopAsync(dbContext, cancellationToken)
                     .ConfigureAwait(false)).Next;
+                // 「本站已有进展」还有第二种（control-server#499）：本站一条在下了卸货命令之后被终结——卸货结果要恢复、旅程阻塞，异常处置
+                // 会话把它交接掉（故障货物交接或强制机械取出），而旅程还带着别的需求。恢复协调器把旅程放回这个阶段
+                // （BlockedJourneyRelease），这里接着走与卸完一条时同一段：本站还有没卸的发下一条命令，没有就离站或收尾。
+                // 认的是「卸货操作已经落库」而不只是 TERMINATED：在取货停靠就被终结、从没装上的需求，归属行同样挂在这个卸货停靠上，
+                // 它不算这一站的进展。与装货侧 control-server#291 的 A 同一个意思，只是卸货停靠上的 TERMINATED 多一种来历。只在
+                // 本站还没有 UNLOADED、又有 TERMINATED 时才查库，正常卸货的每一轮不多读。
                 bool unloadedHereBefore = stops.AllAtStop(stops.Current)
-                    .Any(item => item.Membership.Status == JourneyDemandStatuses.Unloaded);
+                    .Any(item => item.Membership.Status == JourneyDemandStatuses.Unloaded) ||
+                    await EndedHereAfterItsUnloadWasCommandedAsync(stops, cancellationToken).ConfigureAwait(false);
                 if (unloading is null && !unloadedHereBefore)
                 {
                     throw new InvalidDataException(
@@ -5049,6 +5058,28 @@ public sealed partial class JourneyRuntimeEngine(
     private static bool IsHeldForAreaEndAdmission(JourneyRuntimeRow runtime) =>
         runtime.Stage == JourneyRuntimeStage.AwaitingGateArrival &&
         string.Equals(runtime.BlockReasonCode, AreaEndAdmissionHeldReason, StringComparison.Ordinal);
+
+    /// <summary>
+    /// 当前（卸货）停靠上有一条需求在它的卸货操作落库之后被终结（control-server#499）。本站没有 TERMINATED 的不查库。
+    /// </summary>
+    private async Task<bool> EndedHereAfterItsUnloadWasCommandedAsync(
+        JourneyStopCursor stops,
+        CancellationToken cancellationToken)
+    {
+        string[] endedHere =
+        [
+            .. stops.AllAtStop(stops.Current)
+                .Where(item => item.Membership.Status == JourneyDemandStatuses.Terminated)
+                .Select(item => item.Membership.UnloadSlotOperationAttemptId)
+        ];
+        return endedHere.Length > 0 &&
+               await dbContext.StationOperations.AsNoTracking()
+                   .AnyAsync(
+                       row => endedHere.Contains(row.SlotOperationAttemptId) &&
+                              row.OperationType == SlotOperationType.Unload,
+                       cancellationToken)
+                   .ConfigureAwait(false);
+    }
 
     private static void Block(JourneyRuntimeRow runtime, string reason, DateTimeOffset now)
     {
