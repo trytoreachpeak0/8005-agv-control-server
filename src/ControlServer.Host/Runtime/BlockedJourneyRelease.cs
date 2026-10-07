@@ -23,7 +23,7 @@ namespace ControlServer.Host.Runtime;
 /// 本站还有没卸的就发它的卸货命令，没有就离站或收尾。
 /// </para>
 /// <para>
-/// <b>只在三条都成立时放</b>，任何一条不成立就留在 <c>Blocked</c>、什么都不写：
+/// <b>只在四条都成立时放</b>，任何一条不成立就留在 <c>Blocked</c>、什么都不写：
 /// </para>
 /// <list type="number">
 /// <item><description>
@@ -38,6 +38,14 @@ namespace ControlServer.Host.Runtime;
 /// 这趟旅程别的仓位操作没有一次还没收敛（<see cref="StationOperationStatus.Prepared"/> 或 <c>RecoveryRequired</c>）。同一站逐条串行，
 /// 正常流程下不会有，这是准入线第 1 条在放行这一侧的那半：有一次操作没收敛，就不放车去做下一件事。
 /// </description></item>
+/// <item><description>
+/// 这趟旅程别的需求没有一条是 <see cref="DemandExecutionStatus.RecoveryRequired"/>（control-server#499 独立审查必修 M-1）。一条需求的
+/// 恢复结果没对上（<c>KeepDemandAndJourneyBlockedAsync</c>）时，需求留在 <c>RecoveryRequired</c>、阻塞码改成
+/// <c>*_NOT_RECONCILED</c>，而仓位操作一次都不动，所以第 3 条看不见它：交接报了 <c>HANDED_OFF</c> 却有仓位读到 <c>OCCUPIED</c>，
+/// 货在不在车上没有结论；扫码前取消的结果在旅程阻塞之后才到，那条需求还挂在本站待装的清单上。这时放出，车会带着没结论的货去做离站核验，
+/// 或者向车再要一次那条需求的录入；而且旅程一离开 <c>Blocked</c>，管理员为那条需求开的会话就被拒（<c>RECOVERY_DEMAND_NOT_BLOCKED</c>）。
+/// 被终结的这一条自己不算——它在终结之前本来就是 <c>RecoveryRequired</c>。
+/// </description></item>
 /// </list>
 /// <para>
 /// <b>门。</b>这里从不直接放车离站。离站只有一条路：引擎发离站核验，车答 <c>SAFE</c>、所有目标仓位锁闭、开锁输出复位、没有未知仓位，
@@ -48,16 +56,17 @@ namespace ControlServer.Host.Runtime;
 /// <b>只暂存，不保存</b>，与终结、结果同一次保存（调用方那一次）。
 /// </para>
 /// <para>
-/// <b>给 control-server#485 的用法。</b>车永久离线时由服务端收尾阻塞旅程，如果那里只终结阻塞旅程的那一条、留下别的需求，
-/// 终结之后调这里，与会话结果走同一个出口；不要另写一个离开 <c>Blocked</c> 的分支。整趟旅程都终结的，<see cref="PickupStopTermination"/>
-/// 已经收尾，这里因阶段已是 <c>Completed</c> 而什么都不做。
+/// <b>离线收尾（control-server#485）不调这里。</b>这里只服务「车还在、会话结果刚落库」的那一刻：放出之后由引擎接着走，而引擎要车答话。
+/// 车永久离线时，只终结阻塞旅程的那一条再调这里，旅程会离开 <c>Blocked</c>、停在 <c>AwaitingLoadResult</c> /
+/// <c>ONBOARD_SESSION_NOT_READY</c>，此后离线收尾与异常处置会话都只认 <c>Blocked</c>，剩下的需求就再也碰不到了（独立审查 S-1）。
+/// 离线时剩下的需求怎么办由 control-server#485 自己决定，例如一并终结、由 <see cref="PickupStopTermination"/> 收尾。
 /// </para>
 /// </remarks>
 internal static class BlockedJourneyRelease
 {
     /// <summary>
     /// <paramref name="endedOperation"/> 刚被结清（终结之前的状态是 <paramref name="statusBeforeEnding"/>）、它的需求已暂存终结时调用。
-    /// 返回是否放出。
+    /// 返回是否放出；放出时调用方记一条事件（谁的哪个结果、原来的阻塞码）。
     /// </summary>
     public static async Task<bool> StageAsync(
         ControlServerDbContext dbContext,
@@ -105,6 +114,13 @@ internal static class BlockedJourneyRelease
                 })
                 .Where(attempt => attempt != endedOperation.SlotOperationAttemptId)
         ];
+        if (stops.AllDemands.Any(item =>
+                item.Demand.DemandId != endedOperation.DemandId &&
+                item.Demand.Status == DemandExecutionStatus.RecoveryRequired))
+        {
+            return false;
+        }
+
         if (await dbContext.StationOperations.AsNoTracking()
                 .AnyAsync(
                     row => otherAttempts.Contains(row.SlotOperationAttemptId) &&
