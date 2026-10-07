@@ -84,6 +84,12 @@ function Stop-Holders {
     $holders.Clear()
 }
 
+# A missing file reads as an empty string, so a check against it fails instead of stopping the run.
+function Read-Text([string]$Path) {
+    if (Test-Path -LiteralPath $Path -PathType Leaf) { return [IO.File]::ReadAllText($Path) }
+    return ''
+}
+
 function Get-TreeFingerprint([string]$Root) {
     if (-not (Test-Path -LiteralPath $Root)) { return '<absent>' }
     $prefix = (Resolve-Path -LiteralPath $Root).Path.TrimEnd('\') + '\'
@@ -154,7 +160,8 @@ try {
     $root = Join-Path $scratch 'unit-held'; $lock = New-DataRoot $root $true
     Start-Holder $lock 60
     $started = [Diagnostics.Stopwatch]::StartNew()
-    $message = $null
+    # A string, never $null: a function that returns instead of refusing must fail these checks, not stop the run.
+    $message = ''
     try { $null = Wait-DataRootReleased -Root $root -InstallPath 'C:\nowhere\cs503' -AfterServiceStop -NotDone '备份' -NextSteps 'NEXT-STEPS-MARKER' -Seconds 3 }
     catch { $message = $_.Exception.Message }
     Write-Result ($message -like 'DATA_ROOT_IN_USE:*' -and $message.Contains($lock) -and $started.Elapsed.TotalSeconds -ge 3) `
@@ -296,8 +303,8 @@ catch {
         }
         $diagnosticPath = Join-Path $Case.Root 'diagnostic.log'
         return [ordered]@{
-            Outcome = (Get-Content -Raw -LiteralPath (Join-Path $Case.Root 'outcome.txt')).Trim()
-            Diagnostic = (Test-Path $diagnosticPath) ? (Get-Content -Raw $diagnosticPath) : ''
+            Outcome = (Read-Text (Join-Path $Case.Root 'outcome.txt')).Trim()
+            Diagnostic = Read-Text $diagnosticPath
             Seconds = [int]$watch.Elapsed.TotalSeconds
         }
     }
@@ -328,7 +335,7 @@ catch {
     Write-Result ((Get-TreeFingerprint $case.Data) -eq $dataBefore) 'U1 held lock: the data root is untouched'
     Write-Result ($backups.Count -eq 0 -and $result.Diagnostic -notmatch 'backup-complete' -and $result.Diagnostic -notmatch 'replacement-installed') `
         'U1 held lock: nothing was backed up and the binary was not replaced' "backupFiles=$($backups.Count)"
-    Write-Result ((Get-Content -Raw (Join-Path $case.Install 'ControlServer.Host.exe')) -eq 'old binary') 'U1 held lock: the old binary is still installed'
+    Write-Result ((Read-Text (Join-Path $case.Install 'ControlServer.Host.exe')) -eq 'old binary') 'U1 held lock: the old binary is still installed'
     Write-Result ($result.Seconds -ge 30) 'U1 held lock: it waited the full 30 seconds first' "seconds=$($result.Seconds)"
 
     # U2: the old process lets go a few seconds after Stop-Service.
@@ -336,7 +343,7 @@ catch {
     Start-Holder $case.Lock 4
     $result = Invoke-Case 'Update' $case
     Stop-Holders
-    $backupData = Get-ChildItem -LiteralPath (Join-Path $case.Root 'backups') -Directory | Select-Object -First 1
+    $backupData = Get-ChildItem -LiteralPath (Join-Path $case.Root 'backups') -Directory -ErrorAction SilentlyContinue | Select-Object -First 1
     $backedUp = $backupData ? @(Get-ChildItem -LiteralPath (Join-Path $backupData.FullName 'data-root/data') -Force -File | ForEach-Object Name | Sort-Object) : @()
     Write-Result ($result.Outcome -eq 'COMPLETED' -and (Test-Pass $case)) 'U2 lock let go: the upgrade completes with PASS' $result.Outcome
     Write-Result ($result.Diagnostic -match 'data-root-released lockFiles=1') 'U2 lock let go: the diagnostic records the one lock file it waited on'
@@ -358,11 +365,12 @@ catch {
     Write-Result ($result.Outcome -like 'THREW: ControlServer upgrade and rollback both failed.*' -and $result.Outcome -match 'DATA_ROOT_IN_USE:') `
         'U4 rollback under a live holder: refused with DATA_ROOT_IN_USE' $result.Outcome.Substring(0, [Math]::Min(120, $result.Outcome.Length))
     Write-Result ((Get-TreeFingerprint $case.Data) -eq $dataBefore) 'U4 rollback under a live holder: the data root was not deleted'
-    Write-Result ((Get-Content -Raw (Join-Path $case.Install 'ControlServer.Host.exe') -ErrorAction SilentlyContinue) -eq 'new binary' -and
+    Write-Result ((Read-Text (Join-Path $case.Install 'ControlServer.Host.exe')) -eq 'new binary' -and
         (Test-Path (Join-Path $case.Install 'appsettings.Production.json'))) `
         'U4 rollback under a live holder: the install directory is intact (the replacement, whole)'
     Write-Result ((Get-BackupFingerprint $case) -eq $dataBefore) 'U4 rollback under a live holder: the backup is intact for a manual restore'
-    $backupDirectory = (Get-ChildItem -LiteralPath (Join-Path $case.Root 'backups') -Directory | Select-Object -First 1).FullName
+    $backupDirectory = "$((Get-ChildItem -LiteralPath (Join-Path $case.Root 'backups') -Directory -ErrorAction SilentlyContinue | Select-Object -First 1).FullName)"
+    if ($backupDirectory -eq '') { $backupDirectory = '<no backup directory>' }
     Write-Result ($result.Outcome.Contains('共四步') -and $result.Outcome.Contains("$backupDirectory\install") -and
         $result.Outcome.Contains("$backupDirectory\data-root") -and $result.Outcome.Contains('不用做') -and
         $result.Outcome.Contains("Start-Service 'cs503-selftest'") -and $result.Outcome.Contains('不要用重新执行本脚本代替恢复')) `
@@ -376,7 +384,7 @@ catch {
     Write-Result ($result.Outcome -like 'THREW: HTTP GET of *' -and $result.Diagnostic -match 'rollback-complete') `
         'U5 rollback after the holder exits: the rollback completes and the original error is rethrown' $result.Outcome
     Write-Result ((Get-TreeFingerprint $case.Data) -eq $dataBefore) 'U5 rollback after the holder exits: the data root is restored from the backup'
-    Write-Result ((Get-Content -Raw (Join-Path $case.Install 'ControlServer.Host.exe')) -eq 'old binary') 'U5 rollback after the holder exits: the old binary is back'
+    Write-Result ((Read-Text (Join-Path $case.Install 'ControlServer.Host.exe')) -eq 'old binary') 'U5 rollback after the holder exits: the old binary is back'
 
     # --- 4. Install ---------------------------------------------------------------------------------
     # I1: a Host started by hand holds the existing data root: the preflight refuses before doing anything.
@@ -416,11 +424,15 @@ catch {
     Write-Result ($result.Outcome -like 'THREW: Deployment failed and rollback reported: *' -and $result.Outcome -match 'DATA_ROOT_IN_USE:') `
         'I4 rollback under a live holder: refused with DATA_ROOT_IN_USE'
     Write-Result ((Get-TreeFingerprint $case.Data) -eq $dataBefore) 'I4 rollback under a live holder: the data root was not touched'
-    Write-Result ((Get-Content -Raw (Join-Path $case.Install 'ControlServer.Host.exe') -ErrorAction SilentlyContinue) -eq 'new binary') `
+    Write-Result ((Read-Text (Join-Path $case.Install 'ControlServer.Host.exe')) -eq 'new binary') `
         'I4 rollback under a live holder: the install directory was not deleted'
     Write-Result ($result.Outcome.Contains("删除 $($case.Install)") -and $result.Outcome.Contains('data-root') -and
         $result.Outcome.Contains('不要按名字结束进程') -and -not $result.Outcome.Contains('不要动')) `
         'I4 rollback under a live holder: the refusal says how to finish the rollback by hand'
+}
+catch {
+    # A check that throws is a failure of this run, reported as one; the exit code below then says so.
+    Write-Result $false "the self-test itself stopped: $($_.Exception.Message)" "line $($_.InvocationInfo.ScriptLineNumber)"
 }
 finally {
     Stop-Holders
