@@ -436,6 +436,119 @@ public sealed class RecoveryEndingReleasesBlockedJourneyTests
         });
     }
 
+    /// <summary>
+    /// 护栏：阻塞码是 <c>*_NOT_RECONCILED</c> 时不放（cs#499 调度裁定，放错链见 #505 的评论）。那种阻塞码不一定有一条
+    /// <c>RecoveryRequired</c> 的需求作标记——需求已送达或已取消时，<c>KeepDemandAndJourneyBlockedAsync</c> 只写阻塞码不留标记，第 4 条就看不见它。
+    /// 这里：第一站装上第一条，车在第一站等离站时它被改库标成已送达（与
+    /// <c>Batch7StationYieldTests.AnOpenCorrectionOnADemandAlreadyUnloadedDoesNotHoldTheDeparture</c> 同一个做法：真实路径要一个先卸再取的
+    /// 四停靠计划），对它开一条纠错——授权不看需求还在不在车上（cs#287 的口子），已卸需求上的纠错也不挡离站。车到第二站，第二条装货结果要
+    /// 恢复、旅程阻塞；第一条的纠错结果这时才到、没对上，阻塞码被覆盖成 <c>LoadCorrectionResult_NOT_RECONCILED</c>，第一条已送达，不被标记。
+    /// 补偿第二条之后旅程不放出：纠错没对上的仓位事实还悬着。
+    /// </summary>
+    [Fact]
+    [Trait("IntegrationSlice", "FP-IS-07")]
+    [Trait("ProtocolVector", "CV-EXCEPTION-COMPENSATE")]
+    public async Task ACompensationDoesNotLiftABlockAnUnmarkedResultLeft()
+    {
+        await WithProofAsync(async () =>
+        {
+            CancellationToken token = TestContext.Current.CancellationToken;
+            await using RuntimeFixture fixture = await RuntimeFixture.CreateAsync();
+            fixture.Options.StationDepartureWaitTimeout = TimeSpan.FromSeconds(10);
+            fixture.Catalog.Set(
+                fixture.Demand(FirstDemandId, FirstSublot, Now.AddMinutes(-10)),
+                fixture.Demand(SecondDemandId, SecondSublot, Now.AddMinutes(-9), area: "N1-2"),
+                fixture.Demand(ThirdDemandId, ThirdSublot, Now.AddMinutes(-8), area: "N1-2"));
+            fixture.BoxCounts.Set(FirstSublot, 7);
+            fixture.BoxCounts.Set(SecondSublot, 7);
+            fixture.BoxCounts.Set(ThirdSublot, 7);
+            await TickAndRunAsync(fixture);
+            await Batch7ThreeStopJourneyTests.AppendSecondDemandAsync(fixture);
+            await Batch7ThreeStopJourneyTests.AppendDemandAsync(fixture, ThirdDemandId, ThirdSublot, "N1-2", 13);
+            await ArriveAtPickupAsync(fixture, FirstDemandId);
+            await EnterSublotAsync(fixture, FirstDemandId, FirstSublot, FirstSubmissionId);
+            await SettleLoadAsync(fixture, FirstDemandId);
+            Assert.Equal(JourneyRuntimeStage.AwaitingStationDeparture, (await JourneyOfAsync(fixture, FirstDemandId)).Stage);
+
+            await using (ControlServerDbContext context = fixture.OpenConnectionContext())
+            {
+                (await context.Set<JourneyDemandRow>().SingleAsync(row => row.DemandId == FirstDemandId, token)).Status =
+                    JourneyDemandStatuses.Unloaded;
+                (await context.AcceptedDemands.SingleAsync(row => row.DemandId == FirstDemandId, token)).Status =
+                    DemandExecutionStatus.Succeeded;
+                await context.SaveChangesAsync(token);
+            }
+            fixture.Context.ChangeTracker.Clear();
+            const string correctionId = "74990000-0000-4000-8000-000000000001";
+            StationOperationRow firstLoad = await OperationOfAsync(fixture, FirstDemandId, SlotOperationType.Load);
+            int[] firstSlots = JsonSerializer.Deserialize<int[]>(firstLoad.TargetSlotsJson)!;
+            await using (ControlServerDbContext connection = fixture.OpenConnectionContext())
+            {
+                await fixture.RequestLoadCorrectionOnConnectionAsync(
+                    connection, correctionId, FirstDemandId, firstLoad.SlotOperationAttemptId, firstSlots);
+            }
+            fixture.Context.ChangeTracker.Clear();
+            // 前提：纠错确实被授权了。
+            Assert.Equal(1, await CountAsync(fixture, "LoadCorrectionCommand"));
+
+            fixture.Clock.Advance(TimeSpan.FromSeconds(15));
+            await TickAndRunAsync(fixture);
+            await AnswerDepartureSafetyAsync(fixture, FirstDemandId, FirstSafetyResultId);
+            await ArriveAtCurrentStopAsync(fixture, SecondDemandId, "TO_GATE");
+            Assert.Equal(JourneyRuntimeStage.AwaitingSublot, (await JourneyOfAsync(fixture, FirstDemandId)).Stage);
+            await EnterSublotAsync(fixture, SecondDemandId, SecondSublot, SecondSubmissionId);
+            await BlockOnLoadAsync(fixture, SecondDemandId);
+
+            await using (ControlServerDbContext connection = fixture.OpenConnectionContext())
+            {
+                Assert.Equal("DurableAck", FirstLineType(await RecoveryProcessor(fixture, connection).ProcessAsync(
+                    Envelope(fixture, "LoadCorrectionResult", new
+                    {
+                        correctionId,
+                        demandId = FirstDemandId,
+                        slotOperationAttemptId = firstLoad.SlotOperationAttemptId,
+                        overallOutcome = "FAILED",
+                        slotResults = firstSlots.Select(slot => new
+                        {
+                            slotNo = slot,
+                            outcome = "FAILED",
+                            finalPhysicalState = "UNKNOWN",
+                            lockState = "UNKNOWN",
+                            unlockOutputState = "UNKNOWN",
+                            reasonCodes = UnknownReasonCodes
+                        }).ToArray(),
+                        observedAt = fixture.Clock.GetUtcNow()
+                    }),
+                    RecoveryConnection(fixture),
+                    token)));
+            }
+            fixture.Context.ChangeTracker.Clear();
+            const string unmarked = "LoadCorrectionResult_NOT_RECONCILED";
+            Assert.Equal(unmarked, (await JourneyOfAsync(fixture, FirstDemandId)).BlockReasonCode);
+            // 没有标记：第一条仍是已送达，待恢复的只有旅程原本阻塞在其上的第二条——补偿它之后第 4 条就什么都看不见了。
+            Assert.Equal(DemandExecutionStatus.Succeeded, (await DemandOfAsync(fixture, FirstDemandId)).Status);
+            Assert.Equal(
+                [SecondDemandId],
+                await fixture.Context.AcceptedDemands.AsNoTracking()
+                    .Where(row => row.Status == DemandExecutionStatus.RecoveryRequired)
+                    .Select(row => row.DemandId).ToArrayAsync(token));
+
+            await CompensateAsync(fixture, SecondDemandId);
+            JourneyRuntimeRow released = await JourneyOfAsync(fixture, FirstDemandId);
+            await fixture.RestoreSessionReadyAsync();
+            Exception? round = await RunRoundAsync(fixture);
+
+            JourneyRuntimeRow after = await JourneyOfAsync(fixture, FirstDemandId);
+            Assert.True(
+                (released.Stage, released.BlockReasonCode, after.Stage) ==
+                (JourneyRuntimeStage.Blocked, unmarked, JourneyRuntimeStage.Blocked),
+                $"A compensation lifted a block an unmarked result left. at-result={released.Stage}/{released.BlockReasonCode} " +
+                $"after-round={after.Stage}/{after.BlockReasonCode} round={round?.Message}");
+        });
+    }
+
+    private static readonly string[] UnknownReasonCodes = ["PHYSICAL_STATE_UNKNOWN"];
+
     private static Task<AcceptedDemandRow> DemandOfAsync(RuntimeFixture fixture, string demandId) =>
         fixture.Context.AcceptedDemands.AsNoTracking().SingleAsync(
             row => row.DemandId == demandId, TestContext.Current.CancellationToken);
