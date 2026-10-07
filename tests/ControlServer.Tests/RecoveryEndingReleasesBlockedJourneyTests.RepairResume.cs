@@ -1,5 +1,6 @@
 using System.Security.Cryptography;
 using System.Text.Json;
+using ControlServer.Application;
 using ControlServer.Domain;
 using ControlServer.Host.Transport;
 using ControlServer.Infrastructure.Persistence;
