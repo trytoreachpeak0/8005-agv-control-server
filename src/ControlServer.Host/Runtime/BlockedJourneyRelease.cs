@@ -87,7 +87,6 @@ internal static class BlockedJourneyRelease
         ArgumentNullException.ThrowIfNull(dbContext);
         ArgumentNullException.ThrowIfNull(runtime);
         if (runtime.Stage != JourneyRuntimeStage.Blocked ||
-            runtime.BlockReasonCode?.EndsWith("_NOT_RECONCILED", StringComparison.Ordinal) == true ||
             endedOperation is null ||
             statusBeforeEnding != StationOperationStatus.RecoveryRequired)
         {
@@ -113,29 +112,7 @@ internal static class BlockedJourneyRelease
             return false;
         }
 
-        string[] otherAttempts =
-        [
-            .. stops.AllDemands
-                .SelectMany(item => new[]
-                {
-                    item.Membership.LoadSlotOperationAttemptId,
-                    item.Membership.UnloadSlotOperationAttemptId
-                })
-                .Where(attempt => attempt != endedOperation.SlotOperationAttemptId)
-        ];
-        if (stops.AllDemands.Any(item =>
-                item.Demand.DemandId != endedOperation.DemandId &&
-                item.Demand.Status == DemandExecutionStatus.RecoveryRequired))
-        {
-            return false;
-        }
-
-        if (await dbContext.StationOperations.AsNoTracking()
-                .AnyAsync(
-                    row => otherAttempts.Contains(row.SlotOperationAttemptId) &&
-                           (row.Status == StationOperationStatus.Prepared ||
-                            row.Status == StationOperationStatus.RecoveryRequired),
-                    cancellationToken)
+        if (!await NothingElseUnresolvedAsync(dbContext, runtime, stops, endedOperation, cancellationToken)
                 .ConfigureAwait(false))
         {
             return false;
@@ -147,5 +124,69 @@ internal static class BlockedJourneyRelease
         runtime.SetBlockReason(null, now);
         runtime.UpdatedAt = now;
         return true;
+    }
+
+    /// <summary>
+    /// 第 3、4、5 条：除了刚结清的 <paramref name="settled"/> 这一次（与它的需求）之外，旅程里没有别的事还没结论。两条放行路径共用它——
+    /// 这里的 <see cref="StageAsync"/>，与修复续行对上之后的 <c>OnboardRecoveryCoordinator.ObserveOperationResultAsync</c>（control-server#506）。
+    /// </summary>
+    /// <remarks>
+    /// <para>
+    /// 只收这三条，因为第 1、2 条修复续行用不着：授权修复续行要求那一次操作是 <c>RecoveryRequired</c>、车报的未结操作正是它
+    /// （<c>ValidateActionPreconditions</c>），开会话要求旅程是 <c>Blocked</c>（<c>ValidateSessionScopeAsync</c>）；而终结那一支的第 2 条
+    /// 判的是「终结之前的状态」，修复续行的结果到时操作已被结果改成 <c>Committed</c>，没有对应的量。加给修复续行只会改动它今天放车的其他情形。
+    /// </para>
+    /// <para>
+    /// 修复续行为什么三条都要（#506 读代码与实测）：开会话与授权都不看阻塞码，也不看别的需求。一条需求没对上而待恢复时，对另一条修复续行对上了，
+    /// 修之前旅程照样放出、接着发离站核验（第 4 条）；没有标记的 <c>*_NOT_RECONCILED</c>（见上面第 5 条）同样压得在修复续行之下（第 5 条）；
+    /// 第 3 条在正常流程里几乎被第 4 条盖住，留着守服务器自己的不变量。
+    /// </para>
+    /// <para>
+    /// <b>出口。</b>不成立时旅程留在 <c>Blocked</c>。另一条需求后来补救成功时，<see cref="StageAsync"/> 也放不出它：那一条的操作早已不是
+    /// <c>RecoveryRequired</c>（第 2 条），阻塞码也还是 <c>*_NOT_RECONCILED</c>（第 5 条）。今天只能改库，与 control-server#505 第 1 件同一个形状，
+    /// 由 #505 给阻塞码补上标记之后一并放宽。第 5 条还让「同一条需求先补偿没对上、再修复续行对上」从放出变成留在 <c>Blocked</c>，单需求旅程也是
+    /// （调度 10-07 裁定接受：放错碰准入线 1，停住碰准入线 3）。
+    /// </para>
+    /// </remarks>
+    internal static async Task<bool> NothingElseUnresolvedAsync(
+        ControlServerDbContext dbContext,
+        JourneyRuntimeRow runtime,
+        JourneyStopCursor stops,
+        StationOperationRow settled,
+        CancellationToken cancellationToken)
+    {
+        ArgumentNullException.ThrowIfNull(dbContext);
+        ArgumentNullException.ThrowIfNull(runtime);
+        ArgumentNullException.ThrowIfNull(stops);
+        ArgumentNullException.ThrowIfNull(settled);
+        if (runtime.BlockReasonCode?.EndsWith("_NOT_RECONCILED", StringComparison.Ordinal) == true)
+        {
+            return false;
+        }
+
+        if (stops.AllDemands.Any(item =>
+                item.Demand.DemandId != settled.DemandId &&
+                item.Demand.Status == DemandExecutionStatus.RecoveryRequired))
+        {
+            return false;
+        }
+
+        string[] otherAttempts =
+        [
+            .. stops.AllDemands
+                .SelectMany(item => new[]
+                {
+                    item.Membership.LoadSlotOperationAttemptId,
+                    item.Membership.UnloadSlotOperationAttemptId
+                })
+                .Where(attempt => attempt != settled.SlotOperationAttemptId)
+        ];
+        return !await dbContext.StationOperations.AsNoTracking()
+            .AnyAsync(
+                row => otherAttempts.Contains(row.SlotOperationAttemptId) &&
+                       (row.Status == StationOperationStatus.Prepared ||
+                        row.Status == StationOperationStatus.RecoveryRequired),
+                cancellationToken)
+            .ConfigureAwait(false);
     }
 }

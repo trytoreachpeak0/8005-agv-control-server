@@ -330,11 +330,25 @@ public sealed class OnboardRecoveryCoordinator(
             ? null
             : await DemandJourneyLookup.JourneyOf(dbContext, workflow.DemandId)
                 .SingleOrDefaultAsync(cancellationToken).ConfigureAwait(false);
-        if (runtime is not null && reconciled)
-        {
-            StationOperationRow operation = await dbContext.StationOperations.SingleAsync(
+        // Released only when nothing else of the journey is unresolved -- another demand awaiting recovery, another
+        // operation not converged, an unmarked *_NOT_RECONCILED block (control-server#506; the same predicate as the
+        // ending path, BlockedJourneyRelease.NothingElseUnresolvedAsync, which carries the reasons and the cost). Held,
+        // the journey stays Blocked with its code; the workflow and the session settle as before.
+        StationOperationRow? operation = runtime is not null && reconciled
+            ? await dbContext.StationOperations.SingleAsync(
                 row => row.SlotOperationAttemptId == slotOperationAttemptId,
-                cancellationToken).ConfigureAwait(false);
+                cancellationToken).ConfigureAwait(false)
+            : null;
+        if (runtime is not null && operation is not null &&
+            await BlockedJourneyRelease.NothingElseUnresolvedAsync(
+                    dbContext,
+                    runtime,
+                    await JourneyStopCursor.LoadIncludingUnsavedChangesAsync(dbContext, runtime, cancellationToken)
+                        .ConfigureAwait(false),
+                    operation,
+                    cancellationToken)
+                .ConfigureAwait(false))
+        {
             runtime.Stage = operation.OperationType == SlotOperationType.Load
                 ? JourneyRuntimeStage.AwaitingLoadResult
                 : JourneyRuntimeStage.AwaitingUnloadResult;
