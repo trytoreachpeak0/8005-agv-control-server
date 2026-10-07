@@ -160,17 +160,16 @@ function Invoke-Case {
 # below could be passing because ConvertTo-Json reshaped the file, not because of the
 # injection -- and the whole run would prove nothing about the checks.
 # ---------------------------------------------------------------------------------
-Write-Section 'case -1: the shipped file, untouched, is refused for exactly its three map-26 placeholders'
-# control-server#262 re-review, M3. The deployment cannot run on the shipped file until the
-# two map-26 values with no source yet are filled in from the site; that is now a check. Exactly
-# three failures, all placeholders: more would mean something else is wrong with the file.
+Write-Section 'case -1: the shipped file, untouched, is accepted'
+# control-server#262 re-review, M3 refused the shipped file for its three map-26 placeholders;
+# control-server#411 (2026-10-07) filled them, so the untouched file must now pass with no failure.
 $shippedFailures = @(Test-ParallelInstanceDefinition -Definition (Read-ParallelInstanceDefinition -Path $resolved))
 $shippedFailures | ForEach-Object { Write-Host "         - $_" }
-if ($shippedFailures.Count -eq 3 -and @($shippedFailures | Where-Object { $_ -like '*is still the placeholder*' }).Count -eq 3) {
-    Write-Host '  PASS   refused for exactly the three placeholders' -ForegroundColor Green
+if ($shippedFailures.Count -eq 0) {
+    Write-Host '  PASS   accepted as it stands' -ForegroundColor Green
     $passed++
 } else {
-    Write-Host "  FAIL   expected exactly the three placeholder failures, got $($shippedFailures.Count)" -ForegroundColor Red
+    Write-Host "  FAIL   expected no failures, got $($shippedFailures.Count)" -ForegroundColor Red
     $failed++
 }
 

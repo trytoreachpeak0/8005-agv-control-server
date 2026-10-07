@@ -66,10 +66,9 @@ function Get-Fingerprint {
 
 function Set-Map26TestValue {
     <#
-        The shipped definition carries REPLACE_* placeholders for the two map-26 values that have
-        no source yet, and is therefore -- deliberately -- not deployable. Every case below works
-        from the shipped file with those filled by obviously-test values, so the cases test the
-        checks and not the placeholders. The real values come from the site (README.md).
+        Every case below works from the shipped file with the three map-26 values replaced by
+        obviously-test values, so the cases do not depend on the site values the shipped file
+        carries (filled by control-server#411; README.md).
     #>
     param($Definition)
     $journey = $Definition['journeyRuntime']
@@ -85,16 +84,16 @@ $baselineFingerprint = Get-Fingerprint $baseline
 
 Write-Host "Instance definition: $DefinitionPath"
 Write-Host ''
-Write-Host 'The shipped file (must NOT be deployable yet)' -ForegroundColor Cyan
+Write-Host 'The shipped file, untouched' -ForegroundColor Cyan
 
-# control-server#262 re-review, M3: "do not install until the map-26 values are filled in" is now
-# a check, not a sentence in a document. The shipped file must be refused for exactly its three
-# placeholders -- no more (that would mean something else is wrong with it) and no fewer.
+# control-server#262 re-review, M3 made the three map-26 placeholders a refusal. control-server#411
+# (2026-10-07) filled them: dispatchZone WIRE is the user's 2026-09-18 decision
+# (evidence/field/2026-09-18-B4-site-prerequisites/03-area-assignment-table.md), the admission
+# policy deployment id was set by the coordinator. The shipped file must now pass as it stands.
 $shippedFailures = @(Test-ParallelInstanceDefinition -Definition $shipped)
-$placeholderFailures = @($shippedFailures | Where-Object { $_ -like '*is still the placeholder*' })
-Write-Result -Ok ($shippedFailures.Count -eq 3 -and $placeholderFailures.Count -eq 3) `
-    -Name 'the shipped definition is refused for exactly its three map-26 placeholders' `
-    -Detail ("got $($shippedFailures.Count): " + ($shippedFailures -join ' | '))
+Write-Result -Ok ($shippedFailures.Count -eq 0) `
+    -Name 'the shipped definition is accepted as it stands, no placeholder left' `
+    -Detail ("expected no failures, got: " + ($shippedFailures -join ' | '))
 
 Write-Host ''
 Write-Host 'Positive case (shipped file with the placeholders filled by test values)' -ForegroundColor Cyan
