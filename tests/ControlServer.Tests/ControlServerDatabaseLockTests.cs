@@ -15,11 +15,20 @@ namespace ControlServer.Tests;
 
 /// <summary>
 /// 库级互斥（control-server#473）：服务端运行期间持有一把与它的库文件绑定的 OS 级独占锁，FieldOps 直接写库前拿同一把锁。探测只能说明
-/// 「探的那一刻服务端停着」，探完、写库前服务端恰好启动的那个时间窗，只有锁关得上。这里起的是真的 Host 进程与真的 FieldOps 进程。
+/// 「探的那一刻服务端停着」，探完、写库前服务端恰好启动的那个时间窗，只有锁关得上。这里起的是真的 Host 进程与真的 FieldOps 进程；
+/// Host 能连的外部地址（RIoT、MesIngest）都钉在回环上没人监听的端口，旅程运行时显式关着。
 /// </summary>
 public sealed class ControlServerDatabaseLockTests : IAsyncDisposable
 {
     private const string KeyA = "KEY-A";
+
+    /// <summary>The FieldOps test seams' variables; see <c>Program.PauseAfterProbeVariable</c> and <c>PauseAfterLockVariable</c>.</summary>
+    private const string PauseAfterProbe = "CONTROL_SERVER_FIELDOPS_TEST_PAUSE_AFTER_PROBE";
+
+    private const string PauseAfterLock = "CONTROL_SERVER_FIELDOPS_TEST_PAUSE_AFTER_LOCK";
+
+    /// <summary>What the host logs while it waits for the lock (<c>DatabaseLockWaiting</c>, event 9404).</summary>
+    private const string LockWaitingLog = "Another process holds the lock on database";
 
     private static readonly DateTimeOffset At = Batch7JourneyFixture.Now;
 
@@ -29,7 +38,8 @@ public sealed class ControlServerDatabaseLockTests : IAsyncDisposable
 
     private readonly string _root = Path.Combine(Path.GetTempPath(), "w2g-database-lock-" + Guid.NewGuid().ToString("N"));
 
-    private readonly List<Process> _hosts = [];
+    /// <summary>Every host and FieldOps process this test started, killed by their own handles on dispose.</summary>
+    private readonly List<Process> _children = [];
 
     private static CancellationToken Token => TestContext.Current.CancellationToken;
 
@@ -46,7 +56,7 @@ public sealed class ControlServerDatabaseLockTests : IAsyncDisposable
         string pause = Path.Combine(_root, "pause");
 
         Task<(int ExitCode, JsonElement Output)> fieldOps = RunFieldOpsAsync(
-            [(ControlServerFieldOpsPause, pause)], [.. ReleaseArguments(), "--database", database, "--probe-server", probe]);
+            [(PauseAfterProbe, pause)], [.. ReleaseArguments(), "--database", database, "--probe-server", probe]);
         await WaitForFileAsync(pause + ".reached", fieldOps);
         await StartHostAsync(database, healthPort);
         await File.WriteAllTextAsync(pause + ".go", string.Empty, Token);
@@ -55,6 +65,33 @@ public sealed class ControlServerDatabaseLockTests : IAsyncDisposable
         Assert.Equal((1, "DATABASE_IN_USE"), (exit, Outcome(output)));
         Assert.Contains(Path.GetDirectoryName(Path.GetFullPath(database))!, output.GetProperty("detail").GetString(), StringComparison.OrdinalIgnoreCase);
         await AssertNothingWrittenAsync(database);
+    }
+
+    /// <summary>
+    /// FieldOps 拿到锁之后一直持有到写完（审查 M7：拿到就放、照常写库，其余用例全绿）。它停在「锁已拿到、还没写」时起一个服务端：
+    /// 服务端在等锁（日志里有 <c>DatabaseLockWaiting</c>）、不应答；FieldOps 写完退出之后它才起来。
+    /// </summary>
+    [Fact]
+    public async Task AFieldOpsWriteHoldsTheLockUntilItIsDone()
+    {
+        string database = await SeedAsync("a");
+        string pause = Path.Combine(_root, "pause");
+        int healthPort = FreePort();
+
+        Task<(int ExitCode, JsonElement Output)> fieldOps = RunFieldOpsAsync(
+            [(PauseAfterLock, pause)],
+            [.. ReleaseArguments(), "--database", database, "--probe-server", $"http://127.0.0.1:{FreePort()}/"]);
+        await WaitForFileAsync(pause + ".reached", fieldOps);
+        HostRun host = LaunchHost(database, healthPort);
+        await WaitForLogAsync(host, LockWaitingLog, TimeSpan.FromSeconds(30));
+        bool answeredWhileFieldOpsHeldTheLock = await AnswersAsync(healthPort);
+        await File.WriteAllTextAsync(pause + ".go", string.Empty, Token);
+        (int exit, JsonElement output) = await fieldOps;
+        await WaitUntilLiveAsync(host, healthPort);
+
+        Assert.False(answeredWhileFieldOpsHeldTheLock);
+        Assert.Equal((0, "OK"), (exit, Outcome(output)));
+        await AssertReleasedAsync(database);
     }
 
     /// <summary>
@@ -119,11 +156,59 @@ public sealed class ControlServerDatabaseLockTests : IAsyncDisposable
 
         Assert.True(exit != 0, log);
         Assert.Contains(DatabaseLockStartup.ReasonCode, log, StringComparison.Ordinal);
+        Assert.Contains("Startup refused", log, StringComparison.Ordinal);
         Assert.Contains(Path.GetDirectoryName(Path.GetFullPath(database))!, log, StringComparison.OrdinalIgnoreCase);
         Assert.DoesNotContain("Now listening", log, StringComparison.Ordinal);
         Assert.True(took >= DatabaseLockStartup.Wait, $"It refused after {took}, before waiting {DatabaseLockStartup.Wait}.");
-        using HttpClient client = new(new SocketsHttpHandler { UseProxy = false });
-        Assert.True((await client.GetAsync($"http://127.0.0.1:{firstPort}/health/live", Token)).IsSuccessStatusCode);
+        Assert.True(await AnswersAsync(firstPort));
+    }
+
+    /// <summary>
+    /// <c>--migrate-only</c> 撞上运行中的服务端：迁移被拒（说的是迁移，不是「服务端拒绝启动」），退出码非 0。
+    /// </summary>
+    [Fact]
+    public async Task MigrateOnlyAgainstADatabaseInUseIsRefusedAsAMigration()
+    {
+        string database = await SeedAsync("a");
+        await StartHostAsync(database, FreePort());
+        ProcessStartInfo migrate = HostStart(database, FreePort());
+        migrate.ArgumentList.Add("--migrate-only");
+
+        (int exit, string log, _) = await RunToExitAsync(migrate, TimeSpan.FromSeconds(90));
+
+        Assert.True(exit != 0, log);
+        Assert.Contains("Migration refused", log, StringComparison.Ordinal);
+        Assert.Contains(DatabaseLockStartup.ReasonCode, log, StringComparison.Ordinal);
+        Assert.DoesNotContain("Startup refused", log, StringComparison.Ordinal);
+    }
+
+    /// <summary>
+    /// 锁文件根本打不开（这里是被设成只读；没有权限同理），不是「有人占着」：服务端不崩成一段堆栈，而是以
+    /// <c>DATABASE_LOCK_FILE_UNUSABLE</c> 拒绝启动并写出是哪个文件；FieldOps 同样拒绝、一行不写。
+    /// </summary>
+    [Fact]
+    public async Task ALockFileThatCannotBeOpenedIsRefusedWithItsReason()
+    {
+        string database = await SeedAsync("a");
+        string lockFile = ControlServerDatabaseLock.LockFileFor(database);
+        await File.WriteAllTextAsync(lockFile, string.Empty, Token);
+        File.SetAttributes(lockFile, FileAttributes.ReadOnly);
+
+        ControlServerDatabaseLockException thrown =
+            Assert.Throws<ControlServerDatabaseLockException>(() => ControlServerDatabaseLock.TryAcquire(database));
+        (int hostExit, string log, _) = await RunToExitAsync(HostStart(database, FreePort()), TimeSpan.FromSeconds(90));
+        (int exit, JsonElement output) = await RunFieldOpsAsync(
+            [], [.. ReleaseArguments(), "--database", database, "--probe-server", $"http://127.0.0.1:{FreePort()}/"]);
+
+        Assert.Equal(lockFile, thrown.LockFile);
+        Assert.Contains(lockFile, thrown.Message, StringComparison.Ordinal);
+        Assert.True(hostExit != 0, log);
+        Assert.Contains("Startup refused", log, StringComparison.Ordinal);
+        Assert.Contains(DatabaseLockStartup.UnusableReasonCode, log, StringComparison.Ordinal);
+        Assert.Contains(lockFile, log, StringComparison.OrdinalIgnoreCase);
+        Assert.DoesNotContain("Now listening", log, StringComparison.Ordinal);
+        Assert.Equal((1, "DATABASE_LOCK_FILE_UNUSABLE", lockFile), (exit, Outcome(output), output.GetProperty("lockFile").GetString()));
+        await AssertNothingWrittenAsync(database);
     }
 
     /// <summary>
@@ -202,14 +287,22 @@ public sealed class ControlServerDatabaseLockTests : IAsyncDisposable
 
     public async ValueTask DisposeAsync()
     {
-        foreach (Process host in _hosts)
+        foreach (Process child in _children)
         {
-            await StopAsync(host);
-            host.Dispose();
+            await StopAsync(child);
+            child.Dispose();
         }
         SqliteConnection.ClearAllPools();
+        if (!Directory.Exists(_root))
+        {
+            return;
+        }
         try
         {
+            foreach (string file in Directory.EnumerateFiles(_root, "*", SearchOption.AllDirectories))
+            {
+                File.SetAttributes(file, FileAttributes.Normal);
+            }
             Directory.Delete(_root, recursive: true);
         }
         catch (IOException)
@@ -222,16 +315,10 @@ public sealed class ControlServerDatabaseLockTests : IAsyncDisposable
 
     // ---- helpers ------------------------------------------------------------------------------------------------
 
-    /// <summary>The FieldOps test seam's variable; see <c>Program.PauseAfterProbeVariable</c> in ControlServer.FieldOps.</summary>
-    private const string ControlServerFieldOpsPause = "CONTROL_SERVER_FIELDOPS_TEST_PAUSE_AFTER_PROBE";
-
-    private static string BuiltPath(string key)
-    {
-        string path = typeof(ControlServerDatabaseLockTests).Assembly
+    private static string BuiltPath(string key) =>
+        typeof(ControlServerDatabaseLockTests).Assembly
             .GetCustomAttributes<AssemblyMetadataAttribute>()
             .Single(attribute => attribute.Key == key).Value!;
-        return path;
-    }
 
     private static string[] ReleaseArguments() =>
     [
@@ -295,6 +382,25 @@ public sealed class ControlServerDatabaseLockTests : IAsyncDisposable
         }
     }
 
+    /// <summary>Whether anything answers <c>/health/live</c> on the port right now.</summary>
+    private static async Task<bool> AnswersAsync(int healthPort)
+    {
+        using HttpClient client = new(new SocketsHttpHandler { UseProxy = false }) { Timeout = TimeSpan.FromSeconds(2) };
+        try
+        {
+            using HttpResponseMessage response = await client.GetAsync($"http://127.0.0.1:{healthPort}/health/live", Token);
+            return response.IsSuccessStatusCode;
+        }
+        catch (HttpRequestException)
+        {
+            return false;
+        }
+        catch (TaskCanceledException) when (!Token.IsCancellationRequested)
+        {
+            return false;
+        }
+    }
+
     private static ProcessStartInfo HostStart(string database, int healthPort)
     {
         Assert.True(File.Exists(HostExecutable), $"The host was not built: {HostExecutable}");
@@ -307,75 +413,93 @@ public sealed class ControlServerDatabaseLockTests : IAsyncDisposable
             StandardOutputEncoding = Encoding.UTF8,
             StandardErrorEncoding = Encoding.UTF8
         };
+        string invariant(int port) => port.ToString(System.Globalization.CultureInfo.InvariantCulture);
         start.Environment["ConnectionStrings__ControlServer"] = $"Data Source={database}";
-        start.Environment["Health__url"] = $"http://127.0.0.1:{healthPort}";
+        start.Environment["Health__url"] = $"http://127.0.0.1:{invariant(healthPort)}";
         // Every host here gets its own ports: the onboard listener's default (58005) is the field's, and two hosts in one test
         // must not collide on anything but the database they are pointed at.
         start.Environment["OnboardTransport__listenAddress"] = "127.0.0.1";
-        start.Environment["OnboardTransport__port"] = FreePort().ToString(System.Globalization.CultureInfo.InvariantCulture);
+        start.Environment["OnboardTransport__port"] = invariant(FreePort());
+        // appsettings.json points RIoT at the real one (172.19.206.222). Nothing here calls it today, but that must not rest on
+        // luck: both external addresses go to a loopback port nothing listens on, the runtime is off, and no RIoT key is passed on.
+        start.Environment["RIoT__baseUrl"] = $"http://127.0.0.1:{invariant(FreePort())}";
+        start.Environment["MesIngest__baseUrl"] = $"http://127.0.0.1:{invariant(FreePort())}";
+        start.Environment["JourneyRuntime__enabled"] = "false";
+        start.Environment.Remove("CONTROL_SERVER_RIOT_CALL_API_KEY");
         return start;
     }
 
-    /// <summary>Starts a real host on the database and returns once its <c>/health/live</c> answers.</summary>
-    private async Task<Process> StartHostAsync(string database, int healthPort)
+    /// <summary>A host process with its output collected as it runs.</summary>
+    private sealed record HostRun(Process Process, StringBuilder Log)
+    {
+        public string Text
+        {
+            get
+            {
+                lock (Log)
+                {
+                    return Log.ToString();
+                }
+            }
+        }
+    }
+
+    private HostRun LaunchHost(string database, int healthPort)
     {
         Process host = Process.Start(HostStart(database, healthPort))!;
-        _hosts.Add(host);
+        _children.Add(host);
         StringBuilder log = new();
         host.OutputDataReceived += (_, line) => { lock (log) { log.AppendLine(line.Data); } };
         host.ErrorDataReceived += (_, line) => { lock (log) { log.AppendLine(line.Data); } };
         host.BeginOutputReadLine();
         host.BeginErrorReadLine();
-        using HttpClient client = new(new SocketsHttpHandler { UseProxy = false }) { Timeout = TimeSpan.FromSeconds(2) };
+        return new HostRun(host, log);
+    }
+
+    private static async Task WaitUntilLiveAsync(HostRun host, int healthPort)
+    {
         Stopwatch clock = Stopwatch.StartNew();
-        while (clock.Elapsed < TimeSpan.FromSeconds(90))
+        while (clock.Elapsed < TimeSpan.FromSeconds(90) && !host.Process.HasExited)
         {
-            if (host.HasExited)
+            if (await AnswersAsync(healthPort))
             {
-                break;
-            }
-            try
-            {
-                using HttpResponseMessage response = await client.GetAsync($"http://127.0.0.1:{healthPort}/health/live", Token);
-                if (response.IsSuccessStatusCode)
-                {
-                    return host;
-                }
-            }
-            catch (HttpRequestException)
-            {
-            }
-            catch (TaskCanceledException) when (!Token.IsCancellationRequested)
-            {
+                return;
             }
             await Task.Delay(100, Token);
         }
-        string text;
-        lock (log)
-        {
-            text = log.ToString();
-        }
-        Assert.Fail($"The host on {database} did not come up (exited: {host.HasExited}).{Environment.NewLine}{text}");
-        return host;
+        Assert.Fail($"The host did not come up (exited: {host.Process.HasExited}).{Environment.NewLine}{host.Text}");
     }
 
-    private static async Task<(int ExitCode, string Log, TimeSpan Took)> RunToExitAsync(ProcessStartInfo start, TimeSpan limit)
+    private static async Task WaitForLogAsync(HostRun host, string text, TimeSpan limit)
     {
         Stopwatch clock = Stopwatch.StartNew();
-        using Process process = Process.Start(start)!;
+        while (!host.Text.Contains(text, StringComparison.Ordinal))
+        {
+            Assert.True(
+                clock.Elapsed < limit && !host.Process.HasExited,
+                $"The host never logged '{text}' (exited: {host.Process.HasExited}).{Environment.NewLine}{host.Text}");
+            await Task.Delay(50, Token);
+        }
+    }
+
+    /// <summary>Starts a real host on the database and returns once its <c>/health/live</c> answers.</summary>
+    private async Task<Process> StartHostAsync(string database, int healthPort)
+    {
+        HostRun host = LaunchHost(database, healthPort);
+        await WaitUntilLiveAsync(host, healthPort);
+        return host.Process;
+    }
+
+    private async Task<(int ExitCode, string Log, TimeSpan Took)> RunToExitAsync(ProcessStartInfo start, TimeSpan limit)
+    {
+        Stopwatch clock = Stopwatch.StartNew();
+        Process process = Process.Start(start)!;
+        _children.Add(process);
         Task<string> stdout = process.StandardOutput.ReadToEndAsync(Token);
         Task<string> stderr = process.StandardError.ReadToEndAsync(Token);
         using CancellationTokenSource bounded = CancellationTokenSource.CreateLinkedTokenSource(Token);
         bounded.CancelAfter(limit);
-        try
-        {
-            await process.WaitForExitAsync(bounded.Token);
-        }
-        catch (OperationCanceledException)
-        {
-            process.Kill(entireProcessTree: true);
-            throw;
-        }
+        await process.WaitForExitAsync(bounded.Token);
         TimeSpan took = clock.Elapsed;
         return (process.ExitCode, await stdout + await stderr, took);
     }
@@ -397,7 +521,7 @@ public sealed class ControlServerDatabaseLockTests : IAsyncDisposable
     }
 
     /// <summary>Runs FieldOps; each variable is set in the child's environment.</summary>
-    private static async Task<(int ExitCode, JsonElement Output)> RunFieldOpsAsync(
+    private async Task<(int ExitCode, JsonElement Output)> RunFieldOpsAsync(
         (string Name, string Value)[] environment, string[] arguments)
     {
         Assert.True(File.Exists(FieldOps), $"FieldOps was not built next to the tests: {FieldOps}");
@@ -416,7 +540,8 @@ public sealed class ControlServerDatabaseLockTests : IAsyncDisposable
         {
             start.Environment[name] = value;
         }
-        using Process process = Process.Start(start)!;
+        Process process = Process.Start(start)!;
+        _children.Add(process);
         Task<string> stdout = process.StandardOutput.ReadToEndAsync(Token);
         Task<string> stderr = process.StandardError.ReadToEndAsync(Token);
         await process.WaitForExitAsync(Token);

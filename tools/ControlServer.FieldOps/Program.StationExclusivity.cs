@@ -99,11 +99,32 @@ internal static partial class Program
                 },
                 1);
         }
-        await PauseAfterProbeForTestAsync();
+        await PauseForTestAsync(PauseAfterProbeVariable);
 
         // #473: the probe only says the server was stopped when it looked. The lock the running server holds on this database
         // file closes the window after it; held until the write and its output are done.
-        using ControlServerDatabaseLock? held = ControlServerDatabaseLock.TryAcquire(databasePath);
+        ControlServerDatabaseLock? held;
+        try
+        {
+            held = ControlServerDatabaseLock.TryAcquire(databasePath);
+        }
+        catch (ControlServerDatabaseLockException unusable)
+        {
+            return Emit(
+                new
+                {
+                    command = ReleaseStationExclusivityCommand,
+                    outcome = "DATABASE_LOCK_FILE_UNUSABLE",
+                    via = "database",
+                    mapId,
+                    stationId,
+                    probeServer = probe.ToString(),
+                    lockFile = unusable.LockFile,
+                    detail = "没有写库：" + unusable.Message
+                },
+                1);
+        }
+        using ControlServerDatabaseLock? releasedOnExit = held;
         if (held is null)
         {
             return Emit(
@@ -120,6 +141,7 @@ internal static partial class Program
                 },
                 1);
         }
+        await PauseForTestAsync(PauseAfterLockVariable);
 
         StationExclusivityManualReleaseResult result = await StationExclusivityManualRelease.ReleaseAsync(
             context,
@@ -276,15 +298,24 @@ internal static partial class Program
     }
 
     /// <summary>
-    /// Test seam (control-server#473): unset in the field, where it does nothing. A test names a path prefix; this process writes
-    /// <c>&lt;prefix&gt;.reached</c> once the probe has found the server stopped, and goes on only once <c>&lt;prefix&gt;.go</c> exists (or
-    /// after two minutes), so the test can start the server inside the window between the probe and the write.
+    /// Test seam (control-server#473): unset in the field, where it does nothing. Pauses once the probe has found the server
+    /// stopped, so a test can start the server inside the window between the probe and the write.
     /// </summary>
     internal const string PauseAfterProbeVariable = "CONTROL_SERVER_FIELDOPS_TEST_PAUSE_AFTER_PROBE";
 
-    private static async Task PauseAfterProbeForTestAsync()
+    /// <summary>
+    /// Test seam (control-server#473 review): unset in the field. Pauses with the lock held and nothing written yet, so a test can
+    /// show a server started meanwhile cannot come up until this process is done.
+    /// </summary>
+    internal const string PauseAfterLockVariable = "CONTROL_SERVER_FIELDOPS_TEST_PAUSE_AFTER_LOCK";
+
+    /// <summary>
+    /// A test names a path prefix in <paramref name="variable"/>; this process writes <c>&lt;prefix&gt;.reached</c> and goes on only once
+    /// <c>&lt;prefix&gt;.go</c> exists (or after two minutes).
+    /// </summary>
+    private static async Task PauseForTestAsync(string variable)
     {
-        string? prefix = Environment.GetEnvironmentVariable(PauseAfterProbeVariable);
+        string? prefix = Environment.GetEnvironmentVariable(variable);
         if (string.IsNullOrWhiteSpace(prefix))
         {
             return;

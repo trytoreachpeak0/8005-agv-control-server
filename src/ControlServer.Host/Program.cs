@@ -189,7 +189,11 @@ app.UseSerilogRequestLogging();
 // FieldOps）占着时等一小会儿，仍拿不到就拒绝启动。包容量导入按设计与运行中的服务端并行（control-server#87），不拿。
 using ControlServerDatabaseLock? databaseLock = PackageCapacityImportCommand.IsRequested(args)
     ? null
-    : await DatabaseLockStartup.AcquireAsync(app.Services, ControlServerSqlite.DataSourceOf(connectionString), CancellationToken.None);
+    : await DatabaseLockStartup.AcquireAsync(
+        app.Services,
+        ControlServerSqlite.DataSourceOf(connectionString),
+        args.Contains("--migrate-only", StringComparer.Ordinal),
+        CancellationToken.None);
 
 await EnsureDatabaseAsync(app.Services);
 

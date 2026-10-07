@@ -47,6 +47,7 @@ public sealed class ControlServerDatabaseLock : IDisposable
     }
 
     /// <summary>试一次：拿到了返回锁，别的进程（或本进程另一处）正持有时返回 <see langword="null"/>。库所在的目录必须已经存在。</summary>
+    /// <exception cref="ControlServerDatabaseLockException">锁文件根本打不开（没有权限、只读、目录不在等），不是「有人占着」。</exception>
     public static ControlServerDatabaseLock? TryAcquire(string databasePath)
     {
         string database = Path.GetFullPath(databasePath);
@@ -58,6 +59,10 @@ public sealed class ControlServerDatabaseLock : IDisposable
         catch (IOException held) when (held.HResult is SharingViolation or LockViolation)
         {
             return null;
+        }
+        catch (Exception unusable) when (unusable is IOException or UnauthorizedAccessException)
+        {
+            throw new ControlServerDatabaseLockException(database + LockFileSuffix, unusable);
         }
         // Who holds it, for a person looking at the directory; nobody reads it back, and it cannot be read while held.
         try
@@ -108,14 +113,14 @@ public sealed class ControlServerDatabaseLock : IDisposable
         }
     }
 
-    /// <summary>服务端拒绝启动时给维护人员看的那段话：哪个库目录、哪个库、怎么办。</summary>
-    public static string ServerRefusal(string databasePath)
+    /// <summary>服务端拒绝启动（或 <c>--migrate-only</c> 拒绝迁移）时给维护人员看的那段话：哪个库目录、哪个库、怎么办。</summary>
+    public static string ServerRefusal(string databasePath, bool migrateOnly = false)
     {
         string database = Path.GetFullPath(databasePath);
-        return $"服务端拒绝启动：库目录 {Path.GetDirectoryName(database)} 里的库 {Path.GetFileName(database)} 正被另一个进程占用"
+        return $"{(migrateOnly ? "迁移被拒，库没有动" : "服务端拒绝启动")}：库目录 {Path.GetDirectoryName(database)} 里的库 {Path.GetFileName(database)} 正被另一个进程占用"
             + "（另一个服务端实例，或正在直接写库的 FieldOps）。两个进程同时用一个库会互相覆盖状态。"
             + "请确认用这个库目录的服务端服务或进程都已经停下（服务管理器、任务管理器里看 ControlServer.Host）；FieldOps 写库一般几秒内结束。"
-            + $"确认后再启动。不要删除锁文件 {Path.GetFileName(database + LockFileSuffix)}：锁随占用它的进程退出自动释放，删文件解不了锁。";
+            + $"确认后再{(migrateOnly ? "迁移" : "启动")}。不要删除锁文件 {Path.GetFileName(database + LockFileSuffix)}：锁随占用它的进程退出自动释放，删文件解不了锁。";
     }
 
     /// <summary>FieldOps 拒绝直接写库时给维护人员看的那段话。</summary>
@@ -128,4 +133,19 @@ public sealed class ControlServerDatabaseLock : IDisposable
     }
 
     public void Dispose() => _handle.Dispose();
+}
+
+/// <summary>
+/// 锁文件打不开，而且不是因为有人占着（control-server#473 审查）：没有权限、文件被设成只读、目录不在等。<see cref="Exception.Message"/>
+/// 是给维护人员看的中文：哪个文件、什么错、怎么办。
+/// </summary>
+public sealed class ControlServerDatabaseLockException(string lockFile, Exception cause)
+    : Exception(
+        $"打不开库锁文件 {lockFile}（{cause.GetType().Name}: {cause.Message}）。这不是有别的进程占着，是这个文件本身用不了。"
+        + "请检查运行这个进程的账户对库目录有没有读写权限、这个文件是不是被设成了只读；处理好后再试。"
+        + "锁文件里没有要保留的内容，确认没有进程在用这个库时可以删掉它，下次会重建。",
+        cause)
+{
+    /// <summary>打不开的那个锁文件，绝对路径。</summary>
+    public string LockFile { get; } = lockFile;
 }
