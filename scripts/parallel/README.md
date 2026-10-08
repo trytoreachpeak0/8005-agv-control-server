@@ -21,7 +21,7 @@ control-server#262。约 2026-10-08 起 `factory01` 上同时跑两套 ControlSe
 
 在 control-server#411 之前，这三个键是 `REPLACE_*` 占位，校验见到 `REPLACE_` 就拒绝，出厂定义因此装不上。这条检查留着，防的是以后有人再写占位。map 25、`老厂前线new`、任何 `MAP-25-*` 标识符也一律拒绝（control-server#262 复审 M3）。
 
-**站点清单与准入策略都只在 `JourneyRuntime.enabled=true` 时才会被读**（`TaskTypeStationStartup.cs` 在运行时关着时直接返回；准入策略在 `JourneyRuntimeEngine` 的一轮迭代里写库）。所以运行时关着的实例用不到它们；**开运行时之前，必须先备好 26 版站点清单**。
+**站点清单与准入策略都只在 `JourneyRuntime.enabled=true` 时才会被读**（`TaskTypeStationStartup.cs` 在运行时关着时直接返回；准入策略在 `JourneyRuntimeEngine` 的一轮迭代里写库）。所以运行时关着的实例用不到它们；开运行时要用的 26 版站点清单已经随包提供，并由定义点名（见下一段）。
 
 **26 版站点清单自 control-server#518 起在包里**：`src/ControlServer.Host/task-type-stations.map-26.settings.json`，只绑
 `WIRE_TO_GATE` → 210「关卡」。站号与站名取自已入库证据（`evidence/field/2026-09-19-B6-map-name-baseline-check/SUMMARY.md` 结论 4、

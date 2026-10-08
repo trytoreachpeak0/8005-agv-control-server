@@ -760,6 +760,12 @@ $cases = @(
         Mutate = { param($d) $d['taskTypeStations']['settingsFile'] = 'Task-Type-Stations.map-26.settings.json'; $d }
     }
     @{
+        # PR #523 review: '$' also matches before a final line feed, so this passed with a '$'-anchored pattern.
+        Name = 'taskTypeStations.settingsFile with a trailing line feed'
+        Expect = "taskTypeStations.settingsFile ('task-type-stations.map-26.settings.json`n') must be a bare file name"
+        Mutate = { param($d) $d['taskTypeStations']['settingsFile'] = "task-type-stations.map-26.settings.json`n"; $d }
+    }
+    @{
         Name = 'taskTypeStations.settingsFile for another map than the runtime'
         Expect = "is the preset for map 27, but journeyRuntime.mapId is 26"
         Mutate = { param($d) $d['taskTypeStations']['settingsFile'] = 'task-type-stations.map-27.settings.json'; $d }

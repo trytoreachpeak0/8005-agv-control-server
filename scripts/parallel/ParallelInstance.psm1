@@ -898,7 +898,8 @@ function Test-ParallelInstanceDefinition {
         $runtimeMap = ($null -ne $journey -and (Test-KeyPresent -Node $journey -Key 'mapId')) ? (ConvertTo-IntegerOrNull $journey['mapId']) : $null
         if ($presetFile -isnot [string] -or [string]::IsNullOrWhiteSpace($presetFile)) {
             $failures += 'taskTypeStations.settingsFile must be a non-empty file name.'
-        } elseif ($presetFile -cnotmatch '^task-type-stations\.map-([1-9][0-9]*)\.settings\.json$') {
+        # \z, not $: in .NET '$' also matches before a final line feed (PR #523 review).
+        } elseif ($presetFile -cnotmatch '\Atask-type-stations\.map-([1-9][0-9]*)\.settings\.json\z') {
             $failures += "taskTypeStations.settingsFile ('$presetFile') must be a bare file name of the form task-type-stations.map-<mapId>.settings.json, one of the per-map presets the package ships next to the Host."
         } elseif ([int] $Matches[1] -ne $runtimeMap) {
             $failures += "taskTypeStations.settingsFile ('$presetFile') is the preset for map $($Matches[1]), but journeyRuntime.mapId is $runtimeMap; the Host would refuse to start the runtime (BindingMapMismatch)."
