@@ -775,8 +775,168 @@ function Get-ParallelProcessStartTimeUtc {
     }
 }
 
+function Get-ParallelFakeMesIngestTaskAction {
+    <#
+        .SYNOPSIS
+            The FakeMesIngest scheduled task's action -- executable, argument string, working
+            directory -- for Install-ParallelInstanceLocal.ps1 and Test-FakeMesIngestScheduledTask.ps1
+            alike. Pure.
+
+        .DESCRIPTION
+            control-server#512. The first real install on factory01 registered this task, started it,
+            and the wrapper never ran a line: LastTaskResult -1, no log directory, and no
+            PowerShellCore/Operational 40961 ("console is starting up") for that process, while the
+            same task shape on vm01 started the double within two seconds. So the task layer is now
+            built in one place and the self-test drives exactly this, not a copy of it.
+
+            -PwshPath is absolute. A bare 'pwsh.exe' leaves the choice to the Task Scheduler service's
+            search path; on factory01 that happened to be right, but nothing showed it.
+
+            Every path is wrapped in double quotes, so none may contain one, and none may end in a
+            backslash: '\"' is an escaped quote to the command-line parser, and the argument after it
+            would be swallowed into the path.
+    #>
+    [CmdletBinding()]
+    param(
+        [Parameter(Mandatory = $true)][string] $PwshPath,
+        [Parameter(Mandatory = $true)][string] $RunnerPath,
+        [Parameter(Mandatory = $true)][string] $ExecutablePath,
+        [Parameter(Mandatory = $true)][ValidateRange(1, 65535)][int] $Port,
+        [Parameter(Mandatory = $true)][string] $SeedPath,
+        [Parameter(Mandatory = $true)][string] $LogPath,
+        [Parameter(Mandatory = $true)][string] $WorkingDirectory
+    )
+    foreach ($pair in @(
+            @('PwshPath', $PwshPath), @('RunnerPath', $RunnerPath), @('ExecutablePath', $ExecutablePath),
+            @('SeedPath', $SeedPath), @('LogPath', $LogPath), @('WorkingDirectory', $WorkingDirectory))) {
+        $name, $value = $pair
+        if (-not [IO.Path]::IsPathFullyQualified($value)) { throw "$name must be an absolute path: '$value'" }
+        if ($value.Contains('"')) { throw "$name must not contain a double quote: '$value'" }
+        if ($value.EndsWith('\')) { throw "$name must not end in a backslash: '$value'" }
+    }
+    $argument = ('-NoProfile -ExecutionPolicy Bypass -File "{0}" -ExecutablePath "{1}" -Port {2} -SeedPath "{3}" -LogPath "{4}"' -f
+        $RunnerPath, $ExecutablePath, $Port, $SeedPath, $LogPath)
+    return [pscustomobject]@{ Execute = $PwshPath; Argument = $argument; WorkingDirectory = $WorkingDirectory }
+}
+
+function Register-ParallelFakeMesIngestTask {
+    <#
+        .SYNOPSIS
+            Registers the FakeMesIngest task as SYSTEM at startup, creates the wrapper's log
+            directory, and starts it. Returns the registration time, which Wait-ParallelFakeMesIngestTask
+            uses to tell this start from an earlier one.
+
+        .DESCRIPTION
+            The log directory is created here rather than left to the wrapper: when the wrapper never
+            runs (control-server#512), a missing directory is one more thing an operator has to rule
+            out before reaching the real question, and the installer's own failure report writes
+            beside it.
+    #>
+    [CmdletBinding()]
+    param(
+        [Parameter(Mandatory = $true)][string] $TaskName,
+        [Parameter(Mandatory = $true)] $Action,
+        [Parameter(Mandatory = $true)][string] $LogPath,
+        [Parameter(Mandatory = $true)][string] $Description
+    )
+    New-Item -ItemType Directory -Path (Split-Path -Parent $LogPath) -Force | Out-Null
+    $taskAction = New-ScheduledTaskAction -Execute $Action.Execute -Argument $Action.Argument -WorkingDirectory $Action.WorkingDirectory
+    $trigger = New-ScheduledTaskTrigger -AtStartup
+    $principal = New-ScheduledTaskPrincipal -UserId 'SYSTEM' -LogonType ServiceAccount -RunLevel Highest
+    $settings = New-ScheduledTaskSettingsSet -ExecutionTimeLimit ([TimeSpan]::Zero) `
+        -RestartCount 3 -RestartInterval (New-TimeSpan -Minutes 1) -StartWhenAvailable `
+        -AllowStartIfOnBatteries -DontStopIfGoingOnBatteries -MultipleInstances IgnoreNew
+    $registeredAt = [datetime]::Now
+    Register-ScheduledTask -TaskName $TaskName -Action $taskAction -Trigger $trigger `
+        -Principal $principal -Settings $settings -Description $Description | Out-Null
+    Start-ScheduledTask -TaskName $TaskName
+    return $registeredAt
+}
+
+function Get-ParallelFakeMesIngestTaskReport {
+    <#
+        .SYNOPSIS
+            What the machine says about a FakeMesIngest task that did not come up, as lines.
+
+        .DESCRIPTION
+            control-server#512 took two rounds of read-only queries on factory01 to reach what this
+            prints in one: the task's state and last result (in hex, so -1 reads as 0xFFFFFFFF), the
+            tail of the wrapper's log and of the double's stdout/stderr, and whether any pwsh host
+            started under SYSTEM after the task was registered (PowerShellCore/Operational 40961).
+            That last line is the one that separates "the wrapper ran and failed" from "pwsh never
+            started", and only the second points outside this repository -- at whatever on the
+            machine stops a SYSTEM pwsh, such as the security software.
+    #>
+    [CmdletBinding()]
+    param(
+        [Parameter(Mandatory = $true)][string] $TaskName,
+        [Parameter(Mandatory = $true)][string] $LogPath,
+        [Parameter(Mandatory = $true)][datetime] $Since
+    )
+    $lines = [System.Collections.Generic.List[string]]::new()
+    try {
+        $task = Get-ScheduledTask -TaskName $TaskName -ErrorAction Stop
+        $info = Get-ScheduledTaskInfo -TaskName $TaskName -ErrorAction Stop
+        $lines.Add(('task: state={0} lastRunTime={1:o} lastTaskResult=0x{2:X8}' -f $task.State, $info.LastRunTime, ([uint32] $info.LastTaskResult)))
+    } catch {
+        $lines.Add("task: unreadable ($($_.Exception.Message))")
+    }
+    foreach ($path in @($LogPath, "$LogPath.out", "$LogPath.err")) {
+        if (Test-Path -LiteralPath $path -PathType Leaf) {
+            $tail = @(Get-Content -LiteralPath $path -Tail 20 -ErrorAction SilentlyContinue)
+            $lines.Add("${path}: last $($tail.Count) line(s)")
+            foreach ($line in $tail) { $lines.Add("  $line") }
+        } else {
+            $lines.Add("${path}: absent")
+        }
+    }
+    try {
+        $starts = @(Get-WinEvent -FilterHashtable @{ LogName = 'PowerShellCore/Operational'; Id = 40961; StartTime = $Since } -ErrorAction Stop |
+                Where-Object { $_.UserId -and $_.UserId.Value -eq 'S-1-5-18' })
+        $lines.Add(($starts.Count -gt 0) ?
+            "pwsh host starts under SYSTEM since $($Since.ToString('o')): $($starts.Count) -- pwsh came up; read the wrapper's log above" :
+            "pwsh host starts under SYSTEM since $($Since.ToString('o')): 0 -- pwsh never initialised; look outside this script (security software, policy)")
+    } catch {
+        $lines.Add(($_.FullyQualifiedErrorId -like 'NoMatchingEventsFound*') ?
+            "pwsh host starts under SYSTEM since $($Since.ToString('o')): 0 -- pwsh never initialised; look outside this script (security software, policy)" :
+            "pwsh host starts: PowerShellCore/Operational unreadable ($($_.Exception.Message))")
+    }
+    return $lines.ToArray()
+}
+
+function Wait-ParallelFakeMesIngestTask {
+    <#
+        .SYNOPSIS
+            Waits for the double behind the task to answer /control/v1/health; throws with
+            Get-ParallelFakeMesIngestTaskReport's lines when it does not.
+    #>
+    [CmdletBinding()]
+    param(
+        [Parameter(Mandatory = $true)][string] $TaskName,
+        [Parameter(Mandatory = $true)][int] $Port,
+        [Parameter(Mandatory = $true)][string] $LogPath,
+        [Parameter(Mandatory = $true)][datetime] $Since,
+        [ValidateRange(1, 600)][int] $TimeoutSeconds = 120
+    )
+    $deadline = [datetime]::UtcNow.AddSeconds($TimeoutSeconds)
+    while ([datetime]::UtcNow -lt $deadline) {
+        try {
+            $response = Invoke-WebRequest -Uri "http://127.0.0.1:$Port/control/v1/health" `
+                -NoProxy -TimeoutSec 5 -UseBasicParsing
+            if ($response.StatusCode -eq 200) { return [string] $response.Content }
+        } catch {
+            Start-Sleep -Milliseconds 500
+        }
+    }
+    $report = Get-ParallelFakeMesIngestTaskReport -TaskName $TaskName -LogPath $LogPath -Since $Since
+    throw ("FakeMesIngest did not answer http://127.0.0.1:$Port/control/v1/health within $TimeoutSeconds s. Log: $LogPath" +
+        [Environment]::NewLine + ($report -join [Environment]::NewLine))
+}
+
 Export-ModuleMember -Function @('Get-MvpFingerprint', 'Assert-MvpUntouched', 'Format-MvpFingerprint', 'Get-ParallelServiceProcessStartTimeUtc', 'Get-ParallelProcessStartTimeUtc',
     'Get-ParallelProductUninstallerPath', 'Test-ParallelProductUninstallerPremise', 'Invoke-ParallelProductUninstaller',
     'Update-ParallelInstanceConfigurationFile', 'Set-ParallelInstanceJourneyRuntimeDisabled', 'Set-ParallelInstanceConfigurationFlag',
     'Get-ParallelJourneyDispatchState', 'Invoke-ParallelDispatchGateChange',
-    'Invoke-ParallelProductUpgrade', 'Invoke-ParallelInstanceConfigurationStep')
+    'Invoke-ParallelProductUpgrade', 'Invoke-ParallelInstanceConfigurationStep',
+    'Get-ParallelFakeMesIngestTaskAction', 'Register-ParallelFakeMesIngestTask', 'Get-ParallelFakeMesIngestTaskReport',
+    'Wait-ParallelFakeMesIngestTask')

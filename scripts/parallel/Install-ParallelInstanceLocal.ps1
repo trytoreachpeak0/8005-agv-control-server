@@ -414,34 +414,17 @@ try {
         $runner = Join-Path $fakeInstallRoot 'Start-FakeMesIngestResident.ps1'
         Copy-Item -LiteralPath (Join-Path $PSScriptRoot 'Start-FakeMesIngestResident.ps1') -Destination $runner -Force
 
-        $argument = ('-NoProfile -ExecutionPolicy Bypass -File "{0}" -ExecutablePath "{1}" -Port {2} -SeedPath "{3}" -LogPath "{4}"' -f
-            $runner, $executable, $fakePort, $seedPath, $logPath)
-        $action = New-ScheduledTaskAction -Execute 'pwsh.exe' -Argument $argument -WorkingDirectory $fakeInstallRoot
-        $trigger = New-ScheduledTaskTrigger -AtStartup
-        $principal = New-ScheduledTaskPrincipal -UserId 'SYSTEM' -LogonType ServiceAccount -RunLevel Highest
-        $settings = New-ScheduledTaskSettingsSet -ExecutionTimeLimit ([TimeSpan]::Zero) `
-            -RestartCount 3 -RestartInterval (New-TimeSpan -Minutes 1) -StartWhenAvailable `
-            -AllowStartIfOnBatteries -DontStopIfGoingOnBatteries -MultipleInstances IgnoreNew
-        Register-ScheduledTask -TaskName $taskName -Action $action -Trigger $trigger `
-            -Principal $principal -Settings $settings `
-            -Description '8005 AGV ControlServer v2 parallel instance: injected MES demand, loopback only' | Out-Null
-        Start-ScheduledTask -TaskName $taskName
-        Write-Step "Scheduled task '$taskName' registered and started"
+        # The task layer lives in ParallelHost.psm1 so Test-FakeMesIngestScheduledTask.ps1 registers
+        # and starts exactly this (control-server#512). pwsh by absolute path: the one running this
+        # script, which the 7.x floor already checked.
+        $action = Get-ParallelFakeMesIngestTaskAction -PwshPath (Join-Path $PSHOME 'pwsh.exe') -RunnerPath $runner `
+            -ExecutablePath $executable -Port $fakePort -SeedPath $seedPath -LogPath $logPath -WorkingDirectory $fakeInstallRoot
+        $registeredAt = Register-ParallelFakeMesIngestTask -TaskName $taskName -Action $action -LogPath $logPath `
+            -Description '8005 AGV ControlServer v2 parallel instance: injected MES demand, loopback only'
+        Write-Step "Scheduled task '$taskName' registered and started ($($action.Execute))"
 
-        $deadline = [datetime]::UtcNow.AddSeconds(120)
-        while ([datetime]::UtcNow -lt $deadline) {
-            try {
-                $response = Invoke-WebRequest -Uri "http://127.0.0.1:$fakePort/control/v1/health" `
-                    -NoProxy -TimeoutSec 5 -UseBasicParsing
-                if ($response.StatusCode -eq 200) {
-                    Write-Step "FakeMesIngest live: $($response.Content)"
-                    return
-                }
-            } catch {
-                Start-Sleep -Milliseconds 500
-            }
-        }
-        throw "FakeMesIngest did not answer http://127.0.0.1:$fakePort/control/v1/health within 120 s. Log: $logPath"
+        $content = Wait-ParallelFakeMesIngestTask -TaskName $taskName -Port $fakePort -LogPath $logPath -Since $registeredAt
+        Write-Step "FakeMesIngest live: $content"
     }
 
     # ---------------------------------------------------------------------- rollback ---
