@@ -3004,29 +3004,26 @@ INSERT INTO RiotDispatchAuditEvents VALUES ('e1', 'leg-p1', 'PRE_CREATE_RECONCIL
 }
 
 Write-Host ''
-Write-Host 'FakeMesIngest task action (control-server#512)' -ForegroundColor Cyan
+Write-Host 'FakeMesIngest task action and seeding (control-server#512)' -ForegroundColor Cyan
 
 <#
     The task layer itself -- registering as SYSTEM and seeing the double answer -- needs elevation and
     lives in Test-FakeMesIngestScheduledTask.ps1. What can be checked here without touching the machine:
-    the action refuses paths it cannot quote, its argument string arrives at the wrapper's param block
-    intact when a process is started from it (the same string Task Scheduler passes), and the installer
-    builds the task only through the functions that script drives.
+    the action is the double's executable with exactly the two arguments, it refuses paths it cannot
+    pass, the -SeedOnly mode seeds without starting anything and reports a double that is not there,
+    and the installer builds, waits for and seeds the task only through the functions that script drives.
 #>
 $taskActionRoot = Join-Path ([IO.Path]::GetTempPath()) "cs512 task action $([guid]::NewGuid().ToString('N'))"
 New-Item -ItemType Directory -Path $taskActionRoot | Out-Null
 try {
-    $pwshPath = Join-Path $PSHOME 'pwsh.exe'
     $good = @{
-        PwshPath = $pwshPath; RunnerPath = (Join-Path $taskActionRoot 'Fake Root\runner.ps1')
         ExecutablePath = (Join-Path $taskActionRoot 'Fake Root\ControlServer.FakeMesIngest.exe'); Port = 58188
-        SeedPath = (Join-Path $taskActionRoot 'ops root\seed.json'); LogPath = (Join-Path $taskActionRoot 'ops root\logs\fake.log')
         WorkingDirectory = (Join-Path $taskActionRoot 'Fake Root')
     }
     foreach ($case in @(
-            @{ Name = 'a bare pwsh.exe'; Key = 'PwshPath'; Value = 'pwsh.exe'; Expect = 'absolute' }
+            @{ Name = 'a bare executable name'; Key = 'ExecutablePath'; Value = 'ControlServer.FakeMesIngest.exe'; Expect = 'absolute' }
             @{ Name = 'a working directory ending in a backslash'; Key = 'WorkingDirectory'; Value = 'C:\Program Files\x\'; Expect = 'backslash' }
-            @{ Name = 'a seed path with a double quote'; Key = 'SeedPath'; Value = 'C:\a"b\seed.json'; Expect = 'double quote' })) {
+            @{ Name = 'an executable path with a double quote'; Key = 'ExecutablePath'; Value = 'C:\a"b\x.exe'; Expect = 'double quote' })) {
         $arguments = $good.Clone(); $arguments[$case.Key] = $case.Value
         $message = $null
         try { $null = Get-ParallelFakeMesIngestTaskAction @arguments } catch { $message = $_.Exception.Message }
@@ -3035,25 +3032,35 @@ try {
     }
 
     $action = Get-ParallelFakeMesIngestTaskAction @good
-    Write-Result -Ok ($action.Execute -ceq $pwshPath -and $action.WorkingDirectory -ceq $good.WorkingDirectory) `
-        -Name 'task action: pwsh by the absolute path given, working directory as given' -Detail "Execute=$($action.Execute)"
+    Write-Result -Ok ($action.Execute -ceq $good.ExecutablePath -and $action.WorkingDirectory -ceq $good.WorkingDirectory -and
+        $action.Argument -ceq '--FakeMesIngest:listenAddress=127.0.0.1 --FakeMesIngest:port=58188') `
+        -Name 'task action: the double itself, loopback named explicitly, the port; no pwsh in the task' `
+        -Detail "Execute=$($action.Execute) Argument=$($action.Argument)"
 
-    # A stand-in runner with the wrapper's own param block, copied from the wrapper's AST so that a
-    # renamed parameter shows up here, which writes what it was bound to.
-    $wrapperAst = [System.Management.Automation.Language.Parser]::ParseFile((Join-Path $PSScriptRoot 'Start-FakeMesIngestResident.ps1'), [ref]$null, [ref]$null)
-    $outPath = Join-Path $taskActionRoot 'bound.json'
-    New-Item -ItemType Directory -Path (Split-Path -Parent $good.RunnerPath) | Out-Null
-    [IO.File]::WriteAllText($good.RunnerPath, ("[CmdletBinding()]`n" + $wrapperAst.ParamBlock.Extent.Text + "`n" +
-            "[IO.File]::WriteAllText('$outPath', (ConvertTo-Json -InputObject `$PSBoundParameters -Compress))`nexit 0`n"), [Text.UTF8Encoding]::new($false))
-    $process = Start-Process -FilePath $action.Execute -ArgumentList $action.Argument -WorkingDirectory $action.WorkingDirectory `
-        -WindowStyle Hidden -Wait -PassThru
-    $bound = (Test-Path -LiteralPath $outPath) ? (Get-Content -LiteralPath $outPath -Raw | ConvertFrom-Json -AsHashtable) : @{}
-    $roundTrip = $process.ExitCode -eq 0 -and $bound.Count -eq 4 -and
-        $bound['ExecutablePath'] -ceq $good.ExecutablePath -and [int] $bound['Port'] -eq 58188 -and
-        $bound['SeedPath'] -ceq $good.SeedPath -and $bound['LogPath'] -ceq $good.LogPath
-    Write-Result -Ok $roundTrip -Name 'task action: the argument string binds every path with spaces intact in the wrapper''s param block' `
-        -Detail "exit=$($process.ExitCode) bound=$(ConvertTo-Json $bound -Compress)"
-} finally {
+    # Seeding against a port nobody answers: the installer's call must throw, naming the health wait,
+    # after writing its first line; the operator script around the same function must exit non-zero.
+    $seedLog = Join-Path $taskActionRoot 'ops root\logs\fake-mes-ingest.log'
+    $listener = [System.Net.Sockets.TcpListener]::new([System.Net.IPAddress]::Loopback, 0)
+    $listener.Start(); $deadPort = ([System.Net.IPEndPoint] $listener.LocalEndpoint).Port; $listener.Stop()
+    $message = $null
+    try { $null = Invoke-ParallelFakeMesIngestSeed -Port $deadPort -SeedPath (Join-Path $taskActionRoot 'none.json') -LogPath $seedLog -ReadyTimeoutSeconds 2 }
+    catch { $message = $_.Exception.Message }
+    $logText = (Test-Path -LiteralPath $seedLog) ? [IO.File]::ReadAllText($seedLog) : ''
+    Write-Result -Ok ($null -ne $message -and $message -match 'did not answer within 2 s' -and $logText -match 'seeding the running double' -and
+        $logText -match 'FATAL: the double did not answer') `
+        -Name 'seeding: a double that is not there throws for the installer, after logging what it tried' -Detail "message: $message; log: $logText"
+
+    $opsCopy = Join-Path $taskActionRoot 'ops copy'
+    New-Item -ItemType Directory -Path $opsCopy | Out-Null
+    foreach ($name in 'Start-FakeMesIngestResident.ps1', 'ParallelHost.psm1', 'ParallelInstance.psm1') { Copy-Item -LiteralPath (Join-Path $PSScriptRoot $name) -Destination $opsCopy }
+    $operatorLog = Join-Path $opsCopy 'logs\fake-mes-ingest.log'
+    $process = Start-Process -FilePath (Join-Path $PSHOME 'pwsh.exe') -WindowStyle Hidden -Wait -PassThru -ArgumentList @(
+        '-NoProfile', '-File', "`"$(Join-Path $opsCopy 'Start-FakeMesIngestResident.ps1')`"", '-Port', $deadPort,
+        '-SeedPath', "`"$(Join-Path $opsCopy 'none.json')`"", '-LogPath', "`"$operatorLog`"", '-ReadyTimeoutSeconds', '2')
+    $operatorText = (Test-Path -LiteralPath $operatorLog) ? [IO.File]::ReadAllText($operatorLog) : ''
+    Write-Result -Ok ($process.ExitCode -ne 0 -and $operatorText -match 'seeding the running double') `
+        -Name 'seeding: the operator script in the operations directory runs the same function and exits non-zero on failure' `
+        -Detail "exit=$($process.ExitCode) log: $operatorText"} finally {
     Remove-Item -LiteralPath $taskActionRoot -Recurse -Force -ErrorAction SilentlyContinue
 }
 
@@ -3061,10 +3068,10 @@ $installerAst = [System.Management.Automation.Language.Parser]::ParseFile((Join-
 $installerCommands = @($installerAst.FindAll({ param($n) $n -is [System.Management.Automation.Language.CommandAst] }, $true) |
         ForEach-Object { $_.GetCommandName() } | Where-Object { $_ })
 $direct = @($installerCommands | Where-Object { $_ -in 'New-ScheduledTaskAction', 'Register-ScheduledTask', 'Start-ScheduledTask', 'New-ScheduledTaskPrincipal' })
-$through = @('Get-ParallelFakeMesIngestTaskAction', 'Register-ParallelFakeMesIngestTask', 'Wait-ParallelFakeMesIngestTask' |
+$through = @('Get-ParallelFakeMesIngestTaskAction', 'Register-ParallelFakeMesIngestTask', 'Wait-ParallelFakeMesIngestTask', 'Invoke-ParallelFakeMesIngestSeed' |
         Where-Object { $installerCommands -contains $_ })
-Write-Result -Ok ($direct.Count -eq 0 -and $through.Count -eq 3) `
-    -Name 'the installer builds, registers and waits for the FakeMesIngest task only through the ParallelHost functions the task self-test drives' `
+Write-Result -Ok ($direct.Count -eq 0 -and $through.Count -eq 4) `
+    -Name 'the installer builds, registers, waits for and seeds the FakeMesIngest task only through the ParallelHost functions the task self-test drives' `
     -Detail "direct calls: $($direct -join ', '); through the functions: $($through -join ', ')"
 
 Write-Host ''

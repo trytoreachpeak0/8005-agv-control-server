@@ -411,20 +411,25 @@ try {
             Write-Step "Empty seed file created at $seedPath"
         }
 
-        $runner = Join-Path $fakeInstallRoot 'Start-FakeMesIngestResident.ps1'
-        Copy-Item -LiteralPath (Join-Path $PSScriptRoot 'Start-FakeMesIngestResident.ps1') -Destination $runner -Force
-
+        # The task runs the double itself, not a pwsh script: on factory01 a SYSTEM task whose action
+        # was pwsh -File Start-FakeMesIngestResident.ps1 never started a PowerShell host
+        # (control-server#512). That script now only re-seeds, from the operations directory beside
+        # this one, and is no longer copied into the double's directory.
         # The task layer lives in ParallelHost.psm1 so Test-FakeMesIngestScheduledTask.ps1 registers
-        # and starts exactly this (control-server#512). pwsh by absolute path: the one running this
-        # script, which the 7.x floor already checked.
-        $action = Get-ParallelFakeMesIngestTaskAction -PwshPath (Join-Path $PSHOME 'pwsh.exe') -RunnerPath $runner `
-            -ExecutablePath $executable -Port $fakePort -SeedPath $seedPath -LogPath $logPath -WorkingDirectory $fakeInstallRoot
+        # and starts exactly this.
+        $action = Get-ParallelFakeMesIngestTaskAction -ExecutablePath $executable -Port $fakePort -WorkingDirectory $fakeInstallRoot
         $registeredAt = Register-ParallelFakeMesIngestTask -TaskName $taskName -Action $action -LogPath $logPath `
             -Description '8005 AGV ControlServer v2 parallel instance: injected MES demand, loopback only'
-        Write-Step "Scheduled task '$taskName' registered and started ($($action.Execute))"
+        Write-Step "Scheduled task '$taskName' registered and started ($($action.Execute) $($action.Argument))"
 
-        $content = Wait-ParallelFakeMesIngestTask -TaskName $taskName -Port $fakePort -LogPath $logPath -Since $registeredAt
+        $content = Wait-ParallelFakeMesIngestTask -TaskName $taskName -Port $fakePort -ExecutablePath $executable -Since $registeredAt
         Write-Step "FakeMesIngest live: $content"
+
+        # Seeding from here, once. In this task form nothing re-seeds after the double restarts (a
+        # reboot, the task's restart): the catalog is then the double's own empty one until somebody
+        # runs Start-FakeMesIngestResident.ps1 in the operations directory (README.md).
+        $seeded = Invoke-ParallelFakeMesIngestSeed -Port $fakePort -SeedPath $seedPath -LogPath $logPath
+        Write-Step "FakeMesIngest seeded from ${seedPath}: $seeded"
     }
 
     # ---------------------------------------------------------------------- rollback ---

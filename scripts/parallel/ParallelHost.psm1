@@ -783,54 +783,53 @@ function Get-ParallelFakeMesIngestTaskAction {
             alike. Pure.
 
         .DESCRIPTION
-            control-server#512. The first real install on factory01 registered this task, started it,
-            and the wrapper never ran a line: LastTaskResult -1, no log directory, and no
-            PowerShellCore/Operational 40961 ("console is starting up") for that process, while the
-            same task shape on vm01 started the double within two seconds. So the task layer is now
-            built in one place and the self-test drives exactly this, not a copy of it.
+            control-server#512. The first real install on factory01 registered a task whose action was
+            pwsh -File Start-FakeMesIngestResident.ps1, started it, and nothing ran: LastTaskResult -1,
+            no log directory, no PowerShellCore/Operational 40961 ("console is starting up"). Rerun on
+            2026-10-08 it failed the same way, also with pwsh by absolute path; a SYSTEM task running
+            pwsh -ExecutionPolicy Bypass -File on a small script under D:\ on the same machine ran
+            normally, and the same task shape on vm01 started the double within two seconds. Which of
+            the remaining differences (the trigger and restart settings, or the paths and arguments)
+            stopped it was not isolated.
 
-            -PwshPath is absolute. A bare 'pwsh.exe' leaves the choice to the Task Scheduler service's
-            search path; on factory01 that happened to be right, but nothing showed it.
+            So the task runs the double's executable itself, as the dashboard task does, with the two
+            arguments the wrapper always passed: loopback, explicitly, and the port. No pwsh is in the
+            task, and seeding is a separate step (Start-FakeMesIngestResident.ps1 -SeedOnly) the
+            installer runs from its own session once the double answers.
 
-            Every path is wrapped in double quotes, so none may contain one, and none may end in a
-            backslash: '\"' is an escaped quote to the command-line parser, and the argument after it
-            would be swallowed into the path.
+            The executable path is taken as given and must be absolute; Task Scheduler quotes it
+            itself, so it may contain spaces but not a double quote. The working directory must not
+            end in a backslash, the form the rest of this module writes.
     #>
     [CmdletBinding()]
     param(
-        [Parameter(Mandatory = $true)][string] $PwshPath,
-        [Parameter(Mandatory = $true)][string] $RunnerPath,
         [Parameter(Mandatory = $true)][string] $ExecutablePath,
         [Parameter(Mandatory = $true)][ValidateRange(1, 65535)][int] $Port,
-        [Parameter(Mandatory = $true)][string] $SeedPath,
-        [Parameter(Mandatory = $true)][string] $LogPath,
         [Parameter(Mandatory = $true)][string] $WorkingDirectory
     )
-    foreach ($pair in @(
-            @('PwshPath', $PwshPath), @('RunnerPath', $RunnerPath), @('ExecutablePath', $ExecutablePath),
-            @('SeedPath', $SeedPath), @('LogPath', $LogPath), @('WorkingDirectory', $WorkingDirectory))) {
+    foreach ($pair in @(@('ExecutablePath', $ExecutablePath), @('WorkingDirectory', $WorkingDirectory))) {
         $name, $value = $pair
         if (-not [IO.Path]::IsPathFullyQualified($value)) { throw "$name must be an absolute path: '$value'" }
         if ($value.Contains('"')) { throw "$name must not contain a double quote: '$value'" }
         if ($value.EndsWith('\')) { throw "$name must not end in a backslash: '$value'" }
     }
-    $argument = ('-NoProfile -ExecutionPolicy Bypass -File "{0}" -ExecutablePath "{1}" -Port {2} -SeedPath "{3}" -LogPath "{4}"' -f
-        $RunnerPath, $ExecutablePath, $Port, $SeedPath, $LogPath)
-    return [pscustomobject]@{ Execute = $PwshPath; Argument = $argument; WorkingDirectory = $WorkingDirectory }
+    # listenAddress explicitly, though 127.0.0.1 is the default: this host carries a production
+    # service and a CI-reachable internal switch, and a default that quietly changed would put the
+    # double on both.
+    $argument = "--FakeMesIngest:listenAddress=127.0.0.1 --FakeMesIngest:port=$Port"
+    return [pscustomobject]@{ Execute = $ExecutablePath; Argument = $argument; WorkingDirectory = $WorkingDirectory }
 }
 
 function Register-ParallelFakeMesIngestTask {
     <#
         .SYNOPSIS
-            Registers the FakeMesIngest task as SYSTEM at startup, creates the wrapper's log
-            directory, and starts it. Returns the registration time, which Wait-ParallelFakeMesIngestTask
-            uses to tell this start from an earlier one.
+            Registers the FakeMesIngest task as SYSTEM at startup, creates the log directory the
+            seeding step writes to, and starts it. Returns the registration time, which
+            Wait-ParallelFakeMesIngestTask uses to tell this start from an earlier one.
 
         .DESCRIPTION
-            The log directory is created here rather than left to the wrapper: when the wrapper never
-            runs (control-server#512), a missing directory is one more thing an operator has to rule
-            out before reaching the real question, and the installer's own failure report writes
-            beside it.
+            The log directory is created here, before anything runs: on 2026-10-07 its absence was
+            one more thing to rule out before reaching the real question (control-server#512).
     #>
     [CmdletBinding()]
     param(
@@ -860,47 +859,42 @@ function Get-ParallelFakeMesIngestTaskReport {
             What the machine says about a FakeMesIngest task that did not come up, as lines.
 
         .DESCRIPTION
-            control-server#512 took two rounds of read-only queries on factory01 to reach what this
-            prints in one: the task's state and last result (in hex, so -1 reads as 0xFFFFFFFF), the
-            tail of the wrapper's log and of the double's stdout/stderr, and whether any pwsh host
-            started under SYSTEM after the task was registered (PowerShellCore/Operational 40961).
-            That last line is the one that separates "the wrapper ran and failed" from "pwsh never
-            started", and only the second points outside this repository -- at whatever on the
-            machine stops a SYSTEM pwsh, such as the security software.
+            control-server#512 took several rounds of queries on factory01 to learn what this prints
+            in one: the task's state and last result (in hex, so -1 reads as 0xFFFFFFFF), whether a
+            process of the double's executable is running, and Application-log crash entries for it
+            since the task was registered. The double's own console output is not captured in this
+            task form, so these are what is left.
+
+            LastRunTime is printed but not to be reasoned from: on factory01 it read about 30 s off
+            the real start time on 2026-10-08, and 31 s before the registration on 2026-10-07.
     #>
     [CmdletBinding()]
     param(
         [Parameter(Mandatory = $true)][string] $TaskName,
-        [Parameter(Mandatory = $true)][string] $LogPath,
+        [Parameter(Mandatory = $true)][string] $ExecutablePath,
         [Parameter(Mandatory = $true)][datetime] $Since
     )
     $lines = [System.Collections.Generic.List[string]]::new()
     try {
         $task = Get-ScheduledTask -TaskName $TaskName -ErrorAction Stop
         $info = Get-ScheduledTaskInfo -TaskName $TaskName -ErrorAction Stop
-        $lines.Add(('task: state={0} lastRunTime={1:o} lastTaskResult=0x{2:X8}' -f $task.State, $info.LastRunTime, ([uint32] $info.LastTaskResult)))
+        $lines.Add(('task: state={0} lastTaskResult=0x{1:X8} lastRunTime={2:o} (unreliable on factory01)' -f $task.State, ([uint32] $info.LastTaskResult), $info.LastRunTime))
     } catch {
         $lines.Add("task: unreadable ($($_.Exception.Message))")
     }
-    foreach ($path in @($LogPath, "$LogPath.out", "$LogPath.err")) {
-        if (Test-Path -LiteralPath $path -PathType Leaf) {
-            $tail = @(Get-Content -LiteralPath $path -Tail 20 -ErrorAction SilentlyContinue)
-            $lines.Add("${path}: last $($tail.Count) line(s)")
-            foreach ($line in $tail) { $lines.Add("  $line") }
-        } else {
-            $lines.Add("${path}: absent")
-        }
-    }
+    $running = @(Get-CimInstance -ClassName Win32_Process -ErrorAction SilentlyContinue |
+            Where-Object { $_.ExecutablePath -and [string]::Equals($_.ExecutablePath, $ExecutablePath, [StringComparison]::OrdinalIgnoreCase) })
+    $lines.Add("process ${ExecutablePath}: $(($running.Count -gt 0) ? "running, pid $(($running | ForEach-Object ProcessId) -join ',')" : 'not running')")
+    $leaf = Split-Path -Leaf $ExecutablePath
     try {
-        $starts = @(Get-WinEvent -FilterHashtable @{ LogName = 'PowerShellCore/Operational'; Id = 40961; StartTime = $Since } -ErrorAction Stop |
-                Where-Object { $_.UserId -and $_.UserId.Value -eq 'S-1-5-18' })
-        $lines.Add(($starts.Count -gt 0) ?
-            "pwsh host starts under SYSTEM since $($Since.ToString('o')): $($starts.Count) -- pwsh came up; read the wrapper's log above" :
-            "pwsh host starts under SYSTEM since $($Since.ToString('o')): 0 -- pwsh never initialised; look outside this script (security software, policy)")
+        $crashes = @(Get-WinEvent -FilterHashtable @{ LogName = 'Application'; Id = 1000, 1026; StartTime = $Since } -ErrorAction Stop |
+                Where-Object { $_.Message -and $_.Message.Contains($leaf) })
+        $lines.Add("Application log 1000/1026 naming $leaf since $($Since.ToString('o')): $($crashes.Count)")
+        foreach ($crash in $crashes | Select-Object -First 3) { $lines.Add("  $($crash.TimeCreated.ToString('o')) $($crash.Id) $((($crash.Message -split "`n") | Select-Object -First 3) -join ' | ')") }
     } catch {
         $lines.Add(($_.FullyQualifiedErrorId -like 'NoMatchingEventsFound*') ?
-            "pwsh host starts under SYSTEM since $($Since.ToString('o')): 0 -- pwsh never initialised; look outside this script (security software, policy)" :
-            "pwsh host starts: PowerShellCore/Operational unreadable ($($_.Exception.Message))")
+            "Application log 1000/1026 naming $leaf since $($Since.ToString('o')): 0" :
+            "Application log unreadable ($($_.Exception.Message))")
     }
     return $lines.ToArray()
 }
@@ -915,7 +909,7 @@ function Wait-ParallelFakeMesIngestTask {
     param(
         [Parameter(Mandatory = $true)][string] $TaskName,
         [Parameter(Mandatory = $true)][int] $Port,
-        [Parameter(Mandatory = $true)][string] $LogPath,
+        [Parameter(Mandatory = $true)][string] $ExecutablePath,
         [Parameter(Mandatory = $true)][datetime] $Since,
         [ValidateRange(1, 600)][int] $TimeoutSeconds = 120
     )
@@ -929,9 +923,127 @@ function Wait-ParallelFakeMesIngestTask {
             Start-Sleep -Milliseconds 500
         }
     }
-    $report = Get-ParallelFakeMesIngestTaskReport -TaskName $TaskName -LogPath $LogPath -Since $Since
-    throw ("FakeMesIngest did not answer http://127.0.0.1:$Port/control/v1/health within $TimeoutSeconds s. Log: $LogPath" +
+    $report = Get-ParallelFakeMesIngestTaskReport -TaskName $TaskName -ExecutablePath $ExecutablePath -Since $Since
+    throw ("FakeMesIngest did not answer http://127.0.0.1:$Port/control/v1/health within $TimeoutSeconds s." +
         [Environment]::NewLine + ($report -join [Environment]::NewLine))
+}
+
+function Write-FakeMesIngestSeedLog {
+    # Not exported. A line in the seed log and on the console; Write-Host, so it never joins a
+    # caller's return value.
+    param([string] $LogPath, [string] $Message)
+    $line = '{0} {1}' -f [DateTimeOffset]::Now.ToString('O'), $Message
+    $directory = Split-Path -Parent $LogPath
+    if (-not (Test-Path -LiteralPath $directory)) { New-Item -ItemType Directory -Path $directory -Force | Out-Null }
+    [IO.File]::AppendAllText($LogPath, $line + [Environment]::NewLine, [Text.UTF8Encoding]::new($false))
+    Write-Host $line
+}
+
+function Invoke-ParallelFakeMesIngestSeed {
+    <#
+        .SYNOPSIS
+            Seeds the running double from the seed file -- wait for health, reset, PUT each demand,
+            read the catalog back -- and returns the read-back line. Throws when the double does not
+            answer, the reset carries no runId, or the catalog does not hold what the file lists.
+
+        .DESCRIPTION
+            control-server#512. Until then Start-FakeMesIngestResident.ps1 did this as the scheduled
+            task's action, after starting the double. The task now runs the double itself (see
+            Get-ParallelFakeMesIngestTaskAction), so the seed is applied here: by the installer once
+            the double answers, and by an operator through Start-FakeMesIngestResident.ps1 after
+            editing the seed file or after the double restarted -- in this task form a restart
+            empties the catalog and nothing re-seeds it by itself.
+
+            In this session and over HTTP only: no child process, nothing for the module's code-running
+            scan in Test-ParallelInstance.ps1 to allow.
+
+            A refused demand is logged and the rest carry on; the read-back count is the judge, and a
+            mismatch throws, so that an install does not report complete over a catalog that is not
+            the seed file.
+    #>
+    [CmdletBinding()]
+    param(
+        [Parameter(Mandatory = $true)][ValidateRange(1, 65535)][int] $Port,
+        [Parameter(Mandatory = $true)][string] $SeedPath,
+        [Parameter(Mandatory = $true)][string] $LogPath,
+        [ValidateRange(1, 600)][int] $ReadyTimeoutSeconds = 90
+    )
+    $baseUrl = "http://127.0.0.1:$Port"
+    Write-FakeMesIngestSeedLog $LogPath "FakeMesIngest seeding the running double: port=$Port seed=$SeedPath"
+
+    # Invoke-WebRequest, not curl.exe: Windows Server 2016 does not ship curl.
+    $deadline = [datetime]::UtcNow.AddSeconds($ReadyTimeoutSeconds)
+    $ready = $false
+    while ([datetime]::UtcNow -lt $deadline) {
+        try {
+            $response = Invoke-WebRequest -Uri "$baseUrl/control/v1/health" -NoProxy -TimeoutSec 5 -UseBasicParsing
+            if ($response.StatusCode -eq 200) { $ready = $true; break }
+        } catch {
+            Start-Sleep -Milliseconds 500
+        }
+    }
+    if (-not $ready) {
+        Write-FakeMesIngestSeedLog $LogPath "FATAL: the double did not answer $baseUrl/control/v1/health within $ReadyTimeoutSeconds s"
+        throw "Seeding the FakeMesIngest catalog failed: $baseUrl/control/v1/health did not answer within $ReadyTimeoutSeconds s. Log: $LogPath"
+    }
+
+    $demands = @()
+    if ($SeedPath -and (Test-Path -LiteralPath $SeedPath -PathType Leaf)) {
+        $seed = Get-Content -LiteralPath $SeedPath -Raw -Encoding utf8 | ConvertFrom-Json -AsHashtable -Depth 10
+        if ($seed.ContainsKey('demands') -and $seed['demands']) { $demands = @($seed['demands']) }
+    } else {
+        Write-FakeMesIngestSeedLog $LogPath "No seed file at '$SeedPath'; the catalog stays empty."
+    }
+
+    # The runId is the double's, not ours. CommandEngine.Apply refuses any command whose runId is
+    # not the round it is currently in (RUN_ID_MISMATCH, HTTP 409), and a freshly started double
+    # generates its own. Reset both starts a round and returns that round's id, which also makes
+    # this seeding idempotent: whatever the catalog held, it now holds the seed file and nothing else.
+    $resetBody = ConvertTo-Json -InputObject ([ordered]@{ commandId = "reset-$([guid]::NewGuid().ToString('N'))" }) -Depth 4
+    $resetResponse = Invoke-WebRequest -Uri "$baseUrl/control/v1/reset" -Method Post `
+        -ContentType 'application/json' -Body $resetBody -NoProxy -TimeoutSec 15 -UseBasicParsing
+    $runId = ($resetResponse.Content | ConvertFrom-Json).runId
+    if ([string]::IsNullOrWhiteSpace($runId)) {
+        throw "The double's reset response carried no runId: $($resetResponse.Content)"
+    }
+    Write-FakeMesIngestSeedLog $LogPath "Catalog reset; this round is $runId"
+
+    $seeded = 0
+    foreach ($demand in $demands) {
+        if (-not $demand.ContainsKey('demandId')) {
+            Write-FakeMesIngestSeedLog $LogPath 'SKIP: a seed entry has no demandId'
+            continue
+        }
+        $demandId = [string] $demand['demandId']
+        $body = [ordered]@{ runId = $runId; commandId = "seed-$demandId" }
+        foreach ($key in $demand.Keys) {
+            if ($key -eq 'demandId') { continue }
+            $body[$key] = $demand[$key]
+        }
+        try {
+            $null = Invoke-WebRequest -Uri "$baseUrl/control/v1/demands/$demandId" -Method Put `
+                -ContentType 'application/json' -Body (ConvertTo-Json -InputObject $body -Depth 8) `
+                -NoProxy -TimeoutSec 15 -UseBasicParsing
+            $seeded++
+        } catch {
+            Write-FakeMesIngestSeedLog $LogPath "SEED FAILED for '$demandId': $($_.Exception.Message)"
+        }
+    }
+    Write-FakeMesIngestSeedLog $LogPath "Seeded $seeded of $($demands.Count) demand(s) under runId $runId"
+
+    # Counting what the double reports, rather than what this believes it sent, is what tells
+    # "two demands are in the catalog" from "two PUTs returned 200".
+    $snapshot = (Invoke-WebRequest -Uri "$baseUrl/control/v1/snapshot" -NoProxy -TimeoutSec 15 -UseBasicParsing).Content |
+        ConvertFrom-Json
+    $inCatalog = @($snapshot.body.demands).Count
+    $readBack = "Catalog now holds $inCatalog demand(s) at revision $($snapshot.body.catalogRevision)"
+    Write-FakeMesIngestSeedLog $LogPath $readBack
+    if ($inCatalog -ne $demands.Count) {
+        Write-FakeMesIngestSeedLog $LogPath "WARNING: the seed file lists $($demands.Count) demand(s) but the catalog holds $inCatalog."
+        throw "Seeding the FakeMesIngest catalog failed: the seed file lists $($demands.Count) demand(s) but the catalog holds $inCatalog. Log: $LogPath"
+    }
+    Write-FakeMesIngestSeedLog $LogPath 'Seeded. The double keeps running under its scheduled task.'
+    return $readBack
 }
 
 Export-ModuleMember -Function @('Get-MvpFingerprint', 'Assert-MvpUntouched', 'Format-MvpFingerprint', 'Get-ParallelServiceProcessStartTimeUtc', 'Get-ParallelProcessStartTimeUtc',
@@ -940,4 +1052,4 @@ Export-ModuleMember -Function @('Get-MvpFingerprint', 'Assert-MvpUntouched', 'Fo
     'Get-ParallelJourneyDispatchState', 'Invoke-ParallelDispatchGateChange',
     'Invoke-ParallelProductUpgrade', 'Invoke-ParallelInstanceConfigurationStep',
     'Get-ParallelFakeMesIngestTaskAction', 'Register-ParallelFakeMesIngestTask', 'Get-ParallelFakeMesIngestTaskReport',
-    'Wait-ParallelFakeMesIngestTask')
+    'Wait-ParallelFakeMesIngestTask', 'Invoke-ParallelFakeMesIngestSeed')
