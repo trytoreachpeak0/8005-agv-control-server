@@ -22,8 +22,6 @@ namespace ControlServer.Tests;
 /// </remarks>
 public sealed partial class RecoveryEndingReleasesBlockedJourneyTests
 {
-    private const string ResumeRequestId = "45060000-0000-4000-8000-000000000001";
-    private const string ResumeActionId = "55060000-0000-4000-8000-000000000001";
     private static readonly JsonSerializerOptions ResultSerializerOptions = new(JsonSerializerDefaults.Web);
 
     /// <summary>
@@ -148,11 +146,63 @@ public sealed partial class RecoveryEndingReleasesBlockedJourneyTests
         });
     }
 
+
     /// <summary>
-    /// 第 5 条的代价，本票新增的卡死（调度 10-07 裁定接受，出口归 control-server#505）：单需求旅程，装货结果要恢复；先补偿，车报全空、
-    /// 一个仓位却读到 <c>OCCUPIED</c>，没对上，阻塞码变成 <c>LoadCompensationResult_NOT_RECONCILED</c>，装货操作仍是
-    /// <c>RecoveryRequired</c>。再开会话修复续行，新结果对上了。修之前旅程被放出；修之后留在 <c>Blocked</c>——阻塞码不记是哪条需求
-    /// 留下的，分不出「同一条重试成功」与「别的需求还没结论」，一律不放。#505 给阻塞码补上标记之后放宽，到时这一格改成放出。
+    /// 同一趟旅程两次修复续行（独立审查 M-1，审查探针的形状）：取货站上第二条的装货修复续行对上，旅程放出、车带着两条到卸货站；先卸的
+    /// 第一条卸货结果要恢复，再修复续行也对上了。旅程放回等卸货结果。修之前第二条在第一次修复续行之后一直留着 <c>RecoveryRequired</c>
+    /// （<c>ApplyOperationResultAsync</c> 只把装货改成 <c>Committed</c>，不动需求），第二次修复续行时第 4 条把它当成「别的需求待恢复」，
+    /// 旅程卡在 <c>Blocked</c>；不改库的出口只剩把装得好好的第二条交接掉。
+    /// </summary>
+    [Fact]
+    [Trait("IntegrationSlice", "FP-IS-07")]
+    [Trait("ProtocolVector", "CV-EXCEPTION-RESUME")]
+    public async Task ASecondRepairResumeInOneJourneyIsNotHeldByTheFirstOnesDemand()
+    {
+        await WithProofAsync(async () =>
+        {
+            await using RuntimeFixture fixture = await RuntimeFixture.CreateAsync();
+            string first = await ResumeTheSecondLoadAndBlockOnTheFirstUnloadAsync(fixture);
+
+            await ResumeAsync(fixture, first, SlotOperationType.Unload, SecondResume);
+
+            JourneyRuntimeRow after = await JourneyOfAsync(fixture, FirstDemandId);
+            Assert.True(
+                after.Stage == JourneyRuntimeStage.AwaitingUnloadResult && after.BlockReasonCode is null,
+                $"The second repair resume was held by the demand the first one recovered. stage={after.Stage} " +
+                $"block={after.BlockReasonCode} second-demand={(await DemandOfAsync(fixture, SecondDemandId)).Status}");
+        });
+    }
+
+    /// <summary>
+    /// 同一个根因落在 cs#499 的终结放行上：形状同上，第二次改成故障货物交接先卸的那一条。修之前同样卡在 <c>Blocked</c>
+    /// （修之前的基线上也是，与本票的新判据无关）：第 4 条读到第一次修复续行留下的过时标记。
+    /// </summary>
+    [Fact]
+    [Trait("IntegrationSlice", "FP-IS-07")]
+    [Trait("ProtocolVector", "CV-FAULT-CARGO-HANDOFF")]
+    public async Task AHandoffAfterAnEarlierRepairResumeInTheJourneyIsNotHeldByItsDemand()
+    {
+        await WithProofAsync(async () =>
+        {
+            await using RuntimeFixture fixture = await RuntimeFixture.CreateAsync();
+            string first = await ResumeTheSecondLoadAndBlockOnTheFirstUnloadAsync(fixture);
+
+            await HandOffAsync(fixture, first, SlotOperationType.Unload);
+
+            JourneyRuntimeRow after = await JourneyOfAsync(fixture, FirstDemandId);
+            Assert.True(
+                after.Stage == JourneyRuntimeStage.AwaitingUnloadResult && after.BlockReasonCode is null,
+                $"A handoff was held by the demand an earlier repair resume recovered. stage={after.Stage} " +
+                $"block={after.BlockReasonCode} second-demand={(await DemandOfAsync(fixture, SecondDemandId)).Status}");
+        });
+    }
+
+    /// <summary>
+    /// 第 5 条的代价，本票新增的卡死（调度 10-07 裁定接受，出口归 control-server#505）：单需求旅程，装货结果要恢复；先补偿，车报
+    /// <c>UNKNOWN</c>（仓位状态读不出），没对上，阻塞码变成 <c>LoadCompensationResult_NOT_RECONCILED</c>，装货操作仍是
+    /// <c>RecoveryRequired</c>。车的恢复报告仍报这一次操作没结清、停在 <c>ACTIVE_UNLOCK_SET</c>，再开会话修复续行，新结果对上了。
+    /// 修之前旅程被放出；修之后留在 <c>Blocked</c>——阻塞码不记是哪条需求留下的，分不出「同一条重试成功」与「别的需求还没结论」，一律不放。
+    /// 这一串是现场形状（独立审查读两端代码推断可达）。#505 给阻塞码补上标记之后放宽，到时这一格改成放出。
     /// </summary>
     [Fact]
     [Trait("IntegrationSlice", "FP-IS-07")]
@@ -195,67 +245,109 @@ public sealed partial class RecoveryEndingReleasesBlockedJourneyTests
                     recoveryActionId = ActionId,
                     demandId = FirstDemandId,
                     slotOperationAttemptId = load.SlotOperationAttemptId,
-                    overallOutcome = "ALL_EMPTY",
-                    slotResults = SlotsWithOneOccupied(slots, slots[0]),
+                    overallOutcome = "UNKNOWN",
+                    slotResults = slots.Select(slot => new
+                    {
+                        slotNo = slot,
+                        outcome = "UNKNOWN",
+                        finalPhysicalState = "UNKNOWN",
+                        lockState = "UNKNOWN",
+                        unlockOutputState = "UNKNOWN",
+                        reasonCodes = UnknownReasonCodes
+                    }).ToArray(),
                     observedAt = fixture.Clock.GetUtcNow()
                 }), state, token)));
             }
             fixture.Context.ChangeTracker.Clear();
             const string unreconciled = "LoadCompensationResult_NOT_RECONCILED";
-            Assert.Equal((JourneyRuntimeStage.Blocked, unreconciled), ((await JourneyOfAsync(fixture, FirstDemandId)).Stage,
-                (await JourneyOfAsync(fixture, FirstDemandId)).BlockReasonCode));
+            JourneyRuntimeRow blocked = await JourneyOfAsync(fixture, FirstDemandId);
+            Assert.Equal((JourneyRuntimeStage.Blocked, unreconciled), (blocked.Stage, blocked.BlockReasonCode));
             Assert.Equal(StationOperationStatus.RecoveryRequired, (await OperationOfAsync(fixture, FirstDemandId, SlotOperationType.Load)).Status);
 
-            await ResumeLoadAsync(fixture, FirstDemandId);
+            await ResumeAsync(fixture, FirstDemandId, SlotOperationType.Load, FirstResume with { Checkpoint = "ACTIVE_UNLOCK_SET" });
 
             JourneyRuntimeRow after = await JourneyOfAsync(fixture, FirstDemandId);
             Assert.Equal((JourneyRuntimeStage.Blocked, unreconciled), (after.Stage, after.BlockReasonCode));
         });
     }
 
+    /// <summary>一次修复续行会话用到的标识与车报的检查点；同一个用例里两次修复续行要用两套。</summary>
+    private sealed record ResumeIds(string RequestId, string ActionId, string ReportId, string Checkpoint = "PREPARED");
+
+    private static readonly ResumeIds FirstResume = new(
+        "45060000-0000-4000-8000-000000000001", "55060000-0000-4000-8000-000000000001", "f5060000-0000-4000-8000-000000000001");
+
+    private static readonly ResumeIds SecondResume = new(
+        "45060000-0000-4000-8000-000000000002", "55060000-0000-4000-8000-000000000002", "f5060000-0000-4000-8000-000000000002");
+
+    private static Task ResumeLoadAsync(RuntimeFixture fixture, string demandId) =>
+        ResumeAsync(fixture, demandId, SlotOperationType.Load, FirstResume);
+
     /// <summary>
-    /// 修复续行所在的会话：开会话、选 <c>RESUME_AFTER_REPAIR</c>、车按它重做那一次装货并报一条对上的新结果。车先在恢复报告里报出这一次
-    /// 操作没结清、停在已证明的检查点（<c>PREPARED</c>）——授权修复续行要求这两样。
+    /// 一个取货站两条：第二条装货结果要恢复、修复续行对上，旅程放出；车答离站核验、到卸货站，先卸的那一条卸货结果要恢复、旅程阻塞。
+    /// 返回先卸的那一条。
     /// </summary>
-    private static async Task ResumeLoadAsync(RuntimeFixture fixture, string demandId)
+    private static async Task<string> ResumeTheSecondLoadAndBlockOnTheFirstUnloadAsync(RuntimeFixture fixture)
+    {
+        await LoadTheFirstAndBlockOnTheSecondAtOnePickupAsync(fixture);
+        await ResumeLoadAsync(fixture, SecondDemandId);
+        await fixture.RestoreSessionReadyAsync();
+        await RunRoundAsync(fixture);
+        await RunRoundAsync(fixture);
+        await AnswerDepartureSafetyAsync(fixture, FirstDemandId, FirstSafetyResultId);
+        await ArriveAtCurrentStopAsync(fixture, FirstDemandId, "TO_GATE");
+        Assert.Equal(JourneyRuntimeStage.AwaitingUnloadResult, (await JourneyOfAsync(fixture, FirstDemandId)).Stage);
+        (string first, _) = await UnloadOrderAsync(fixture);
+        await BlockOnUnloadAsync(fixture, first);
+        return first;
+    }
+
+    /// <summary>
+    /// 修复续行所在的会话：开会话、选 <c>RESUME_AFTER_REPAIR</c>、车按它重做那一次装卸并报一条对上的新结果。车先在恢复报告里报出这一次
+    /// 操作没结清、停在已证明的检查点——授权修复续行要求这两样。
+    /// </summary>
+    private static async Task ResumeAsync(RuntimeFixture fixture, string demandId, SlotOperationType type, ResumeIds ids)
     {
         CancellationToken token = TestContext.Current.CancellationToken;
-        StationOperationRow load = await OperationOfAsync(fixture, demandId, SlotOperationType.Load);
-        int[] slots = JsonSerializer.Deserialize<int[]>(load.TargetSlotsJson)!;
+        StationOperationRow operation = await OperationOfAsync(fixture, demandId, type);
+        int[] slots = JsonSerializer.Deserialize<int[]>(operation.TargetSlotsJson)!;
         await using (ControlServerDbContext connection = fixture.OpenConnectionContext())
         {
             SessionRecoveryRow session = await connection.SessionRecoveries.AsNoTracking().SingleAsync(token);
             await new WireToGateStore(connection).ApplyRecoveryReportAsync(
-                fixture.Options.AgvId, session.SessionGeneration, "f5060000-0000-4000-8000-000000000001",
-                forcedRecoveryGeneration: 0, load.SlotOperationAttemptId, "PREPARED", [], [], [], token);
+                fixture.Options.AgvId, session.SessionGeneration, ids.ReportId,
+                forcedRecoveryGeneration: 0, operation.SlotOperationAttemptId, ids.Checkpoint, [], [], [], token);
             OnboardMessageProcessor processor = RecoveryProcessor(fixture, connection);
             OnboardConnectionState state = RecoveryConnection(fixture);
-            string sessionId = await OpenSessionAsync(fixture, processor, state, demandId, slots, ResumeRequestId);
+            string sessionId = await OpenSessionAsync(fixture, processor, state, demandId, slots, ids.RequestId);
             Assert.Equal("RecoveryActionAccepted", FirstLineType(await processor.ProcessAsync(
-                Action(fixture, sessionId, "RESUME_AFTER_REPAIR", demandId, slots, ResumeActionId), state, token)));
+                Action(fixture, sessionId, "RESUME_AFTER_REPAIR", demandId, slots, ids.ActionId), state, token)));
             Assert.Equal("DurableAck", FirstLineType(await processor.ProcessAsync(
-                Envelope(fixture, "OperationResult", ResumedLoadResult(fixture, demandId, load.SlotOperationAttemptId, slots)),
+                Envelope(fixture, "OperationResult", ResumedResult(fixture, demandId, operation.SlotOperationAttemptId, slots, type)),
                 state,
                 token)));
         }
         fixture.Context.ChangeTracker.Clear();
-        Assert.Equal(StationOperationStatus.Committed, (await OperationOfAsync(fixture, demandId, SlotOperationType.Load)).Status);
+        Assert.Equal(StationOperationStatus.Committed, (await OperationOfAsync(fixture, demandId, type)).Status);
     }
 
-    /// <summary>修复续行之后车报的新装货结果：每个仓位装上、锁闭、开锁输出复位。哈希按车端的做法从 CLR 值直接算。</summary>
-    private static object ResumedLoadResult(RuntimeFixture fixture, string demandId, string attemptId, int[] slots)
+    /// <summary>
+    /// 修复续行之后车报的新结果：每个仓位做完、锁闭、开锁输出复位，装货读到有货、卸货读到空。哈希按车端的做法从 CLR 值直接算。
+    /// </summary>
+    private static object ResumedResult(
+        RuntimeFixture fixture, string demandId, string attemptId, int[] slots, SlotOperationType type)
     {
         var withoutHash = new
         {
             demandId,
             slotOperationAttemptId = attemptId,
-            operationType = "LOAD",
+            operationType = type == SlotOperationType.Load ? "LOAD" : "UNLOAD",
             overallOutcome = "COMPLETED",
             slotResults = slots.Select(slot => new
             {
                 slotNo = slot,
                 outcome = "COMPLETED",
-                finalPhysicalState = "OCCUPIED",
+                finalPhysicalState = type == SlotOperationType.Load ? "OCCUPIED" : "EMPTY",
                 lockState = "LOCKED",
                 unlockOutputState = "RESET",
                 reasonCodes = Array.Empty<string>()
