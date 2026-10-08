@@ -334,11 +334,28 @@ public sealed class OnboardRecoveryCoordinator(
         // operation not converged, an unmarked *_NOT_RECONCILED block (control-server#506; the same predicate as the
         // ending path, BlockedJourneyRelease.NothingElseUnresolvedAsync, which carries the reasons and the cost). Held,
         // the journey stays Blocked with its code; the workflow and the session settle as before.
-        StationOperationRow? operation = runtime is not null && reconciled
+        StationOperationRow? operation = reconciled
             ? await dbContext.StationOperations.SingleAsync(
                 row => row.SlotOperationAttemptId == slotOperationAttemptId,
                 cancellationToken).ConfigureAwait(false)
             : null;
+        // A resumed load that committed leaves its demand where a load that committed the first time leaves it: Accepted.
+        // The store commits the operation and touches no demand on a load (ApplyOperationResultAsync), so the
+        // RecoveryRequired the failed result wrote stayed for the rest of the journey, and the release predicate above read
+        // it as another demand still awaiting recovery: a second recovery in the same journey -- a resume or a handoff of
+        // another demand -- held the journey Blocked for good (control-server#506 review M-1). Staged into this save, before
+        // the predicate reads the demands. A determinate failure is not touched: the runtime ends that demand. An unload
+        // that committed has already made its demand Succeeded.
+        if (disposition is OperationResultDisposition.Accepted &&
+            operation is { OperationType: SlotOperationType.Load, Status: StationOperationStatus.Committed })
+        {
+            AcceptedDemandRow? resumedDemand = await dbContext.AcceptedDemands.SingleOrDefaultAsync(
+                row => row.DemandId == operation.DemandId, cancellationToken).ConfigureAwait(false);
+            if (resumedDemand?.Status == DemandExecutionStatus.RecoveryRequired)
+            {
+                resumedDemand.Status = DemandExecutionStatus.Accepted;
+            }
+        }
         if (runtime is not null && operation is not null &&
             await BlockedJourneyRelease.NothingElseUnresolvedAsync(
                     dbContext,
