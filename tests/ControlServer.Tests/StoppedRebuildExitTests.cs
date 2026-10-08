@@ -1499,6 +1499,273 @@ public sealed class StoppedRebuildExitTests
         }
     }
 
+    // ---- control-server#505 独立审查 M1：停住的一趟，交接失败之后不再转交接、直接再处置一次 ---------------------------------
+
+    /// <summary>
+    /// 停住的一趟（去卸货站途中单 FAILED、仓位读不到货）转交给异常处置会话；第一次交接没对上，人没有再发 <c>PREPARE_CARGO_HANDOFF</c>，
+    /// 直接在车载端再交接一次（现场说明允许这样做），对上了。旅程还带着一条没装的需求，不收尾。它仍留在 <c>Blocked</c>，引擎不在一个车
+    /// 还没到的卸货站上推进，人照常放弃剩下的（<c>TERMINATE_STOPPED_TRIP</c>）。#505 第一版在这里把旅程放成 <c>AwaitingUnloadResult</c>，
+    /// 引擎每轮抛 <c>InvalidDataException</c>，放弃被拒（<c>OWN_ORDER_REBUILD_EXIT_NOT_STOPPED</c>），只能改库（独立审查探针实测）。
+    /// </summary>
+    [Fact]
+    [Trait("Requirement", "REQ-0238")]
+    public async Task AHandoffRetriedWithoutPreparingAgainLeavesTheStoppedTripBlockedForThePerson()
+    {
+        Environment.SetEnvironmentVariable(ProofVariable, Proof);
+        try
+        {
+            await using RuntimeFixture fixture = await StoppedWithCargoNotInPlaceAsync();
+            await using (ControlServerDbContext seeding = new(fixture.DbOptionsForTests))
+            {
+                await JourneyMembershipSeed.AddFurtherDemandAsync(seeding, await fixture.RuntimeAsync(), SecondDemandId);
+            }
+
+            await FailAHandoffThenSettleWithoutPreparingAgainAsync(fixture, "FAULT_CARGO_HANDOFF");
+
+            await AssertStillBlockedThroughThreeRoundsAsync(fixture);
+            VehicleFaultRecoveryDecision giveUp = await VehicleFaultRecoveryTests.Service(fixture, new(fixture))
+                .RecoverAsync(GiveUp(fixture), Token);
+            Assert.Equal(VehicleFaultRecoveryOutcome.TripTerminated, giveUp.Outcome);
+        }
+        finally
+        {
+            Environment.SetEnvironmentVariable(ProofVariable, null);
+        }
+    }
+
+    /// <summary>
+    /// 同一个形状，旅程带着的另一条需求已经装上车（审查第二个探针）：交接掉第一条之后车上还有货，旅程照样留在 <c>Blocked</c>，
+    /// 引擎不推进；车上有货的那一条由人再转交接、在会话里取出。
+    /// </summary>
+    [Fact]
+    [Trait("Requirement", "REQ-0238")]
+    public async Task AHandoffRetriedWithoutPreparingAgainLeavesTheStoppedTripBlockedWithAnotherDemandLoaded()
+    {
+        Environment.SetEnvironmentVariable(ProofVariable, Proof);
+        try
+        {
+            await using RuntimeFixture fixture = await StoppedWithCargoNotInPlaceAsync();
+            // The first demand's slots, read while its load is still the only committed one.
+            int[] firstSlots = await CargoSlotsAsync(fixture);
+            await using (ControlServerDbContext seeding = new(fixture.DbOptionsForTests))
+            {
+                JourneyRuntimeRow stopped = await seeding.JourneyRuntimes.AsNoTracking().SingleAsync(Token);
+                await JourneyMembershipSeed.AddFurtherDemandAsync(seeding, stopped, SecondDemandId);
+                JourneyDemandRow second = await seeding.Set<JourneyDemandRow>().SingleAsync(row => row.DemandId == SecondDemandId, Token);
+                JourneyDemandRow first = await seeding.Set<JourneyDemandRow>().AsNoTracking()
+                    .SingleAsync(row => row.DemandId == FirstDemandId, Token);
+                StationOperationRow firstLoad = await seeding.StationOperations.AsNoTracking()
+                    .SingleAsync(row => row.SlotOperationAttemptId == first.LoadSlotOperationAttemptId, Token);
+                second.Status = JourneyDemandStatuses.Loaded;
+                seeding.StationOperations.Add(new StationOperationRow
+                {
+                    SlotOperationAttemptId = second.LoadSlotOperationAttemptId!,
+                    DemandId = SecondDemandId,
+                    SublotId = "SUBLOT-" + SecondDemandId,
+                    TargetSlotsJson = firstLoad.TargetSlotsJson,
+                    OperationType = SlotOperationType.Load,
+                    ContentHash = firstLoad.ContentHash + "b",
+                    Status = StationOperationStatus.Committed,
+                    CreatedAt = firstLoad.CreatedAt,
+                    CommittedAt = firstLoad.CommittedAt,
+                });
+                await seeding.SaveChangesAsync(Token);
+            }
+
+            await FailAHandoffThenSettleWithoutPreparingAgainAsync(fixture, "FAULT_CARGO_HANDOFF", firstSlots);
+
+            await AssertStillBlockedThroughThreeRoundsAsync(fixture);
+        }
+        finally
+        {
+            Environment.SetEnvironmentVariable(ProofVariable, null);
+        }
+    }
+
+    /// <summary>
+    /// 同一个形状，停在去第二个取货站的路上（审查推断的那一种，这里实测）：第一站装上第一条，开往第二条的取货站时单 FAILED、仓位读不到货。
+    /// 第二次交接对上之后旅程仍是 <c>Blocked</c>——#505 第一版会把它放成 <c>AwaitingLoadResult</c>，在车还没到的取货站上推进。
+    /// </summary>
+    [Fact]
+    [Trait("Requirement", "REQ-0238")]
+    public async Task AHandoffRetriedWithoutPreparingAgainLeavesATripStoppedOnTheWayToAPickupBlocked()
+    {
+        Environment.SetEnvironmentVariable(ProofVariable, Proof);
+        try
+        {
+            await using RuntimeFixture fixture = await StoppedWithCargoNotInPlaceOnTheWayToTheSecondPickupAsync();
+
+            await FailAHandoffThenSettleWithoutPreparingAgainAsync(fixture, "FAULT_CARGO_HANDOFF");
+
+            await AssertStillBlockedThroughThreeRoundsAsync(fixture);
+        }
+        finally
+        {
+            Environment.SetEnvironmentVariable(ProofVariable, null);
+        }
+    }
+
+    /// <summary>
+    /// 同一个形状，第二次不是交接、是强制机械取出（它同样终结那条需求、经同一条放行路径）：旅程仍是 <c>Blocked</c>。
+    /// </summary>
+    [Fact]
+    [Trait("Requirement", "REQ-0242")]
+    public async Task AForcedRecoveryAfterAFailedHandoffWithoutPreparingAgainLeavesTheStoppedTripBlocked()
+    {
+        Environment.SetEnvironmentVariable(ProofVariable, Proof);
+        try
+        {
+            await using RuntimeFixture fixture = await StoppedWithCargoNotInPlaceAsync();
+            await using (ControlServerDbContext seeding = new(fixture.DbOptionsForTests))
+            {
+                await JourneyMembershipSeed.AddFurtherDemandAsync(seeding, await fixture.RuntimeAsync(), SecondDemandId);
+            }
+
+            await FailAHandoffThenSettleWithoutPreparingAgainAsync(fixture, "FORCED_MECHANICAL_RECOVERY");
+
+            await AssertStillBlockedThroughThreeRoundsAsync(fixture);
+        }
+        finally
+        {
+            Environment.SetEnvironmentVariable(ProofVariable, null);
+        }
+    }
+
+    /// <summary>
+    /// 转交接一次；会话里第一次交接没对上；不再转交接，直接开第二个会话做 <paramref name="secondAction"/>，对上（交接报仓位全空，
+    /// 或强制取出报机械隔离）。第一条需求随之终结。
+    /// </summary>
+    private static async Task FailAHandoffThenSettleWithoutPreparingAgainAsync(
+        RuntimeFixture fixture, string secondAction, int[]? firstDemandSlots = null)
+    {
+        int[] slots = firstDemandSlots ?? await CargoSlotsAsync(fixture);
+        Assert.Equal(
+            VehicleFaultRecoveryOutcome.HandoffPrepared,
+            (await VehicleFaultRecoveryTests.Service(fixture, new(fixture)).RecoverAsync(Prepare(fixture), Token)).Outcome);
+        await using (ControlServerDbContext connection = fixture.OpenConnectionContext())
+        {
+            OnboardMessageProcessor processor = RecoveryProcessor(fixture, connection);
+            OnboardConnectionState state = Connection(fixture);
+            string firstSession = FirstLinePayload(
+                await AssertOpenedAsync(processor.ProcessAsync(OpenSession(fixture, SessionRequest, slots), state, Token)))
+                .GetProperty("exceptionRecoverySessionId").GetString()!;
+            Assert.Equal("RecoveryActionAccepted", FirstLineType(
+                await processor.ProcessAsync(Action(fixture, firstSession, "FAULT_CARGO_HANDOFF", slots), state, Token)));
+            string firstHandoff = (await connection.RecoveryWorkflows.AsNoTracking().SingleAsync(Token)).HandoffId!;
+            Assert.Equal("DurableAck", FirstLineType(await processor.ProcessAsync(
+                HandedOff(fixture, firstSession, firstHandoff, slots, failed: true), state, Token)));
+            Assert.Equal(
+                (JourneyRuntimeStage.Blocked, "FaultCargoRecoveryResult_NOT_RECONCILED"),
+                ((await fixture.RuntimeAsync()).Stage, (await fixture.RuntimeAsync()).BlockReasonCode));
+
+            string secondSession = FirstLinePayload(
+                await AssertOpenedAsync(processor.ProcessAsync(OpenSession(fixture, SecondSessionRequest, slots), state, Token)))
+                .GetProperty("exceptionRecoverySessionId").GetString()!;
+            Assert.Equal("RecoveryActionAccepted", FirstLineType(
+                await processor.ProcessAsync(Action(fixture, secondSession, secondAction, slots, SecondActionId), state, Token)));
+            string settled = secondAction == "FAULT_CARGO_HANDOFF"
+                ? HandedOff(
+                    fixture,
+                    secondSession,
+                    (await connection.RecoveryWorkflows.AsNoTracking().SingleAsync(row => row.WorkflowId == SecondActionId, Token))
+                        .HandoffId!,
+                    slots,
+                    SecondActionId)
+                : Envelope(fixture, "ForcedMechanicalRecoveryResult", new
+                {
+                    exceptionRecoverySessionId = secondSession,
+                    recoveryActionId = SecondActionId,
+                    forcedRecoveryGeneration = 1,
+                    outcome = "MECHANICALLY_ISOLATED",
+                    slots,
+                    @operator = BeforeSublotOperator(fixture),
+                    observedAt = Now,
+                    electronicEmptyProven = false,
+                    vehicleReadyProven = false
+                });
+            Assert.Equal("DurableAck", FirstLineType(await processor.ProcessAsync(settled, state, Token)));
+        }
+        fixture.Context.ChangeTracker.Clear();
+        Assert.Equal(JourneyDemandStatuses.Terminated, (await fixture.Context.Set<JourneyDemandRow>().AsNoTracking()
+            .SingleAsync(row => row.DemandId == FirstDemandId, Token)).Status);
+    }
+
+    /// <summary>判据：结果落库之后旅程仍是 <c>Blocked</c>，会话就绪之后引擎跑三轮，每轮不抛、阶段不变。</summary>
+    private static async Task AssertStillBlockedThroughThreeRoundsAsync(RuntimeFixture fixture)
+    {
+        JourneyRuntimeRow atResult = await fixture.RuntimeAsync();
+        await fixture.RestoreSessionReadyAsync();
+        List<string> rounds = [];
+        for (int round = 0; round < 3; round++)
+        {
+            fixture.Clock.Advance(TimeSpan.FromSeconds(2));
+            await fixture.HearFromPeerAsync();
+            fixture.Context.ChangeTracker.Clear();
+            Exception? error = null;
+            try
+            {
+                await fixture.Engine.ExecuteOnceAsync(Token);
+            }
+            catch (Exception exception)
+            {
+                error = exception;
+            }
+            fixture.Context.ChangeTracker.Clear();
+            JourneyRuntimeRow after = await fixture.RuntimeAsync();
+            rounds.Add($"{after.Stage}/{after.BlockReasonCode}/{error?.GetType().Name}");
+        }
+        Assert.True(
+            atResult.Stage == JourneyRuntimeStage.Blocked && rounds.All(item => item.StartsWith("Blocked/", StringComparison.Ordinal) &&
+                                                                         item.EndsWith('/')),
+            $"A stopped trip handed to the session was released by the second settlement. at-result={atResult.Stage}/" +
+            $"{atResult.BlockReasonCode} rounds={string.Join(" | ", rounds)}");
+    }
+
+    /// <summary>
+    /// 去第二个取货站途中单 FAILED、人清除故障（车上装着第一站的货），清除之后车报的快照读到目标仓 EMPTY：记录停在
+    /// <c>CARGO_NOT_PROVEN_IN_ORIGINAL_SLOTS</c>，旅程码 <c>OWN_ORDER_REBUILD_CARGO_NOT_IN_PLACE</c>。与
+    /// <see cref="StoppedWithCargoNotInPlaceAsync"/> 同一串，只是车在去取货站而不是去卸货站的路上。
+    /// </summary>
+    private static async Task<RuntimeFixture> StoppedWithCargoNotInPlaceOnTheWayToTheSecondPickupAsync()
+    {
+        RuntimeFixture fixture = await RuntimeFixture.CreateAsync();
+        fixture.Catalog.Set(
+            fixture.Demand(FirstDemandId, FirstSublot, Now.AddMinutes(-10)),
+            fixture.Demand(SecondDemandId, SecondSublot, Now.AddMinutes(-9), area: "N1-2"));
+        fixture.BoxCounts.Set(FirstSublot, 7);
+        fixture.BoxCounts.Set(SecondSublot, 7);
+        await TickAndRunAsync(fixture);
+        await Batch7ThreeStopJourneyTests.AppendSecondDemandAsync(fixture);
+        await ArriveAtPickupAsync(fixture, FirstDemandId);
+        await EnterSublotAsync(fixture, FirstDemandId, FirstSublot, FirstSubmissionId);
+        await SettleLoadAsync(fixture, FirstDemandId);
+        await AnswerDepartureSafetyAsync(fixture, FirstDemandId, FirstSafetyResultId);
+        fixture.Context.ChangeTracker.Clear();
+        JourneyStopRow secondPickup = await CurrentStopAsync(fixture, FirstDemandId);
+        Assert.Equal(JourneyStopRoles.Pickup, secondPickup.StopRole);
+        fixture.Riot.MovementState = "MT_FINISHED";
+        fixture.Riot.FailOrder(secondPickup.UpperId);
+        await TickAndRunAsync(fixture);
+        Assert.Equal("VEHICLE_ORDER_FAILED", (await fixture.RuntimeAsync()).BlockReasonCode);
+        fixture.Context.ChangeTracker.Clear();
+        Assert.Equal(
+            VehicleFaultRecoveryDispositions.RebuildScheduled,
+            (await VehicleFaultRecoveryTests.Service(fixture, new(fixture))
+                .RecoverAsync(VehicleFaultRecoveryTests.Clear(fixture), Token)).Disposition);
+        fixture.Context.ChangeTracker.Clear();
+        await OwnOrderRebuildTests.PassTheDelayAsync(fixture);
+        fixture.Clock.Advance(TimeSpan.FromSeconds(1));
+        await fixture.AddCargoSnapshotAsync(fixture.Clock.GetUtcNow(), physicalState: "EMPTY");
+        fixture.Clock.Advance(TimeSpan.FromSeconds(1));
+        await fixture.HearFromPeerAsync();
+        fixture.Context.ChangeTracker.Clear();
+        await fixture.Engine.ExecuteOnceAsync(Token);
+        Assert.Equal("OWN_ORDER_REBUILD_CARGO_NOT_IN_PLACE", (await fixture.RuntimeAsync()).BlockReasonCode);
+        Assert.Equal(JourneyStopRoles.Pickup, (await CurrentStopAsync(fixture, FirstDemandId)).StopRole);
+        fixture.Context.ChangeTracker.Clear();
+        return fixture;
+    }
+
     // ---- 夹具 ----------------------------------------------------------------------------------------------
 
     private const string ProofVariable = "CONTROL_SERVER_TEST_RECOVERY_PROOF_STOPPED_REBUILD_EXIT";

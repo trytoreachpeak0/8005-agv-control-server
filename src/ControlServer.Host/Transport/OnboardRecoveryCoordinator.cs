@@ -58,7 +58,7 @@ public sealed class OnboardRecoveryCoordinator(
             new EventId(2136, nameof(LogResultOnEndedDemandBlocked)),
             "{MessageType} for workflow {WorkflowId} did not reconcile, and its demand {DemandId} has already ended " +
             "({DemandStatus}), so it cannot be marked RecoveryRequired; the journey is blocked under {BlockReasonCode}, " +
-            "which no release path lifts: it needs a person (control-server#505).");
+            "which no release path lifts: only the journey's closing ends it (control-server#505).");
     private static readonly Action<ILogger, string, string, string, Exception?> LogResultForDeliveredDemand =
         LoggerMessage.Define<string, string, string>(
             LogLevel.Warning,
@@ -1758,7 +1758,9 @@ public sealed class OnboardRecoveryCoordinator(
                 .Where(row => row.DemandId == workflow.DemandId)
                 .Select(row => (DemandExecutionStatus?)row.Status)
                 .SingleOrDefaultAsync(cancellationToken).ConfigureAwait(false);
-            if (cancelledStatus is DemandExecutionStatus.Cancelled or DemandExecutionStatus.Succeeded)
+            // Cancelled only: a delivered demand never reaches here -- the delivered check above returns first for every result
+            // but a correction's.
+            if (cancelledStatus is DemandExecutionStatus.Cancelled)
             {
                 LogCancellationFoundDemandEnded(
                     logger ?? (ILogger)NullLogger.Instance,
@@ -1925,7 +1927,9 @@ public sealed class OnboardRecoveryCoordinator(
     /// cannot take the mark -- that would rewrite how it ended -- and until #505 the journey was blocked under the ordinary code all
     /// the same. Now it is blocked under <see cref="BlockedJourneyRelease.OnEndedDemandSuffix"/>, which neither release path lifts:
     /// the slots that result left unknown may hold another demand's cargo by now, so letting the vehicle go is the wrong release,
-    /// and staying here is the stuck state a person resolves. The authorizations keep it rare: a correction is authorized only for
+    /// and staying here is the stuck state a person resolves. Only the journey's closing (<c>JourneyClosure</c>) ends it: the last
+    /// demand ending through <c>PickupStopTermination</c>, the release service releasing the last demand still to load, or a person
+    /// giving up a stopped trip. The authorizations keep it rare: a correction is authorized only for
     /// a demand on board, and a session is not opened for a demand that has ended.
     /// </para>
     /// <para>

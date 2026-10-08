@@ -102,6 +102,19 @@ internal static class BlockedJourneyRelease
             return false;
         }
 
+        // 停住的一趟已转交给异常处置会话（control-server#505 独立审查 M1）：它的单在去下一站的路上停了，车不在当前停靠上，
+        // 放回等装货或卸货结果，引擎会在一个车还没到的停靠上推进（每轮抛 InvalidDataException），而那一趟也就不再是
+        // 「停住、等交接」，放弃这趟（TERMINATE_STOPPED_TRIP）与再开会话都被拒，只能改库。那一趟的出口是交接之后由人放弃剩下的，
+        // 或交接掉最后一条时收尾，不是放回引擎。修复续行走不到这里：停住的一趟没有待恢复的仓位操作，授权修复续行要求有一次。
+        if (await dbContext.OwnOrderRebuilds.AsNoTracking()
+                .AnyAsync(
+                    row => row.JourneyId == runtime.JourneyId && row.State == OwnOrderRebuildStates.AwaitingCargoHandoff,
+                    cancellationToken)
+                .ConfigureAwait(false))
+        {
+            return false;
+        }
+
         // 第 2 条的「标记」那一支（control-server#505）：没对上的结果留下的阻塞，终结的正是带着标记的那条需求。
         bool carriedTheMark = IsMarkedNotReconciled(runtime.BlockReasonCode) &&
                               demandStatusBeforeEnding == DemandExecutionStatus.RecoveryRequired;
@@ -146,7 +159,7 @@ internal static class BlockedJourneyRelease
 
     /// <summary>
     /// 结果没对上、而它的需求已送达或已取消、打不上 <c>RecoveryRequired</c> 标记时写的阻塞码后缀（control-server#505）：
-    /// <c>&lt;messageType&gt;_NOT_RECONCILED_ON_ENDED_DEMAND</c>。两条放行路径都不放它，也不被后来的阻塞码覆盖；只能人工处理。
+    /// <c>&lt;messageType&gt;_NOT_RECONCILED_ON_ENDED_DEMAND</c>。两条放行路径都不放它，也不被后来的阻塞码覆盖；只有旅程收尾（<c>JourneyClosure</c>）结束它。
     /// </summary>
     internal const string OnEndedDemandSuffix = NotReconciledSuffix + "_ON_ENDED_DEMAND";
 

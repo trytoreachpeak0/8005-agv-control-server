@@ -10,7 +10,8 @@ namespace ControlServer.Host.Runtime;
 /// （control-server#505）。只读，不改任何行。
 /// </summary>
 /// <remarks>
-/// 这两种码只有人能处理：两条放行路径都不放，异常处置也解不开。升级时一次性数据迁移把旧的普通 <c>*_NOT_RECONCILED</c> 改成其中一种，
+/// 这两种码不会自动放行：两条放行路径都不放，之后的异常处置对上了也不放车；只有旅程收尾（<c>JourneyClosure</c>）结束它——经
+/// <c>PickupStopTermination</c> 终结最后一条需求、释放服务释放最后一条待装需求、人放弃停住的一趟。升级时一次性数据迁移把旧的普通 <c>*_NOT_RECONCILED</c> 改成其中一种，
 /// 现场要在升级之后立刻知道有几趟，而不是等某一辆车被发现一直不动。
 /// </remarks>
 internal static class UnreleasableBlockReport
@@ -20,8 +21,8 @@ internal static class UnreleasableBlockReport
             LogLevel.Warning,
             new EventId(2138, nameof(LogUnreleasableBlocks)),
             "{Total} journey(s) are blocked under a code no release path lifts: {OnEndedDemand} ending in " +
-            "_NOT_RECONCILED_ON_ENDED_DEMAND and {BeforeUpgrade} ending in _NOT_RECONCILED_BEFORE_UPGRADE. Each holds its " +
-            "vehicle until a person checks the slots and settles it (control-server#505).");
+            "_NOT_RECONCILED_ON_ENDED_DEMAND and {BeforeUpgrade} ending in _NOT_RECONCILED_BEFORE_UPGRADE. None is released " +
+            "to the runtime again; only its journey's closing ends it, so each holds its vehicle until then (control-server#505).");
 
     /// <summary>两种不可放行阻塞各有几趟旅程停在上面。</summary>
     public static async Task<(int OnEndedDemand, int BeforeUpgrade)> CountAsync(

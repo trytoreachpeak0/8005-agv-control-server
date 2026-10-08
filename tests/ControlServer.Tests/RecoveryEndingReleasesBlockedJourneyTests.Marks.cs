@@ -252,15 +252,67 @@ public sealed partial class RecoveryEndingReleasesBlockedJourneyTests
     }
 
     /// <summary>
-    /// 扫码前取消的结果晚到、而那条需求在授权与结果之间已被终结（control-server#505 的 A4）：第二站上第二条在装、第三条还没装，操作员对第三条
-    /// 按扫码前的「取消装货」，授权了；第二条结果要恢复、旅程阻塞；第三条在结果到之前被终结（站点期限一类，这里改库）。取消结果报 <c>ALL_EMPTY</c>：
-    /// 没下过命令、车证明仓空，旅程不因它多阻塞一层，原来的阻塞码照旧。修之前它被当成落错阶段，写出一个哪条需求都不带标记的
-    /// <c>LoadCancellationResult_NOT_RECONCILED</c>。
+    /// A3 的另一半（独立审查 S2）：已送达（<c>Succeeded</c>）的需求同样开不出会话。旅程阻塞在第二条的装货恢复上，第一条被改库标成已卸送达；
+    /// 为第一条开会话被拒，第二条照常开得出。
     /// </summary>
     [Fact]
     [Trait("IntegrationSlice", "FP-IS-07")]
     [Trait("ProtocolVector", "CV-EXCEPTION-COMPENSATE")]
-    public async Task ALateCancellationOfADemandAlreadyEndedLeavesTheBlockAsItWas()
+    public async Task ASessionIsNotOpenedForADemandAlreadyDelivered()
+    {
+        await WithProofAsync(async () =>
+        {
+            CancellationToken token = TestContext.Current.CancellationToken;
+            await using RuntimeFixture fixture = await RuntimeFixture.CreateAsync();
+            await LoadTheFirstAndBlockOnTheSecondAtOnePickupAsync(fixture);
+            int[] firstSlots = await SlotsOfAsync(fixture, FirstDemandId, SlotOperationType.Load);
+            int[] secondSlots = await SlotsOfAsync(fixture, SecondDemandId, SlotOperationType.Load);
+            await using (ControlServerDbContext context = fixture.OpenConnectionContext())
+            {
+                (await context.Set<JourneyDemandRow>().SingleAsync(row => row.DemandId == FirstDemandId, token)).Status =
+                    JourneyDemandStatuses.Unloaded;
+                (await context.AcceptedDemands.SingleAsync(row => row.DemandId == FirstDemandId, token)).Status =
+                    DemandExecutionStatus.Succeeded;
+                await context.SaveChangesAsync(token);
+            }
+            fixture.Context.ChangeTracker.Clear();
+
+            await using ControlServerDbContext connection = fixture.OpenConnectionContext();
+            OnboardMessageProcessor processor = RecoveryProcessor(fixture, connection);
+            string refused = await processor.ProcessAsync(
+                Envelope(fixture, "ExceptionRecoverySessionRequested", new
+                {
+                    requestId = EndedDemandRequestId,
+                    administrator = BeforeSublotOperator(fixture),
+                    administratorRole = "MAINTENANCE_ADMINISTRATOR",
+                    eventId = EventId,
+                    demandId = FirstDemandId,
+                    slots = firstSlots,
+                    reason = "The operation cannot be recovered in place.",
+                    authenticationProof = Proof
+                }),
+                RecoveryConnection(fixture),
+                token);
+            Assert.Equal("ExceptionRecoverySessionRejected", FirstLineType(refused));
+            Assert.Equal(
+                "RECOVERY_DEMAND_NOT_BLOCKED",
+                FirstLinePayload(refused).GetProperty("problem").GetProperty("reasonCode").GetString());
+            await OpenSessionAsync(fixture, processor, RecoveryConnection(fixture), SecondDemandId, secondSlots, RetryRequestId);
+        });
+    }
+
+    /// <summary>
+    /// 扫码前取消的结果晚到、而那条需求在授权与结果之间已被终结（control-server#505 的 A4）：第二站上第二条在装、第三条还没装，操作员对第三条
+    /// 按扫码前的「取消装货」，授权了；第二条结果要恢复、旅程阻塞；第三条在结果到之前被终结（站点期限一类，这里改库）。取消结果报 <c>ALL_EMPTY</c>：
+    /// 没下过命令、车证明仓空，旅程不因它多阻塞一层，原来的阻塞码照旧。修之前它被当成落错阶段，写出一个哪条需求都不带标记的
+    /// <c>LoadCancellationResult_NOT_RECONCILED</c>。第二格是已送达的那一种终结（扫码前取消的需求真实里不会已送达，改库造出）：它走不到 A4，由更早的「已送达不终结」那道检查（control-server#481）接住，结果同样是旅程照旧——独立审查的变异 R4 在这一半上存活，所以 A4 只认已取消，这一格钉的是那道检查。
+    /// </summary>
+    [Theory]
+    [Trait("IntegrationSlice", "FP-IS-07")]
+    [Trait("ProtocolVector", "CV-EXCEPTION-COMPENSATE")]
+    [InlineData(nameof(DemandExecutionStatus.Cancelled), JourneyDemandStatuses.Terminated)]
+    [InlineData(nameof(DemandExecutionStatus.Succeeded), JourneyDemandStatuses.Unloaded)]
+    public async Task ALateCancellationOfADemandAlreadyEndedLeavesTheBlockAsItWas(string demandStatus, string membershipStatus)
     {
         await WithProofAsync(async () =>
         {
@@ -289,9 +341,9 @@ public sealed partial class RecoveryEndingReleasesBlockedJourneyTests
             await using (ControlServerDbContext context = fixture.OpenConnectionContext())
             {
                 (await context.AcceptedDemands.SingleAsync(row => row.DemandId == ThirdDemandId, token)).Status =
-                    DemandExecutionStatus.Cancelled;
+                    Enum.Parse<DemandExecutionStatus>(demandStatus);
                 (await context.Set<JourneyDemandRow>().SingleAsync(row => row.DemandId == ThirdDemandId, token)).Status =
-                    JourneyDemandStatuses.Terminated;
+                    membershipStatus;
                 await context.SaveChangesAsync(token);
             }
             fixture.Context.ChangeTracker.Clear();
@@ -315,18 +367,22 @@ public sealed partial class RecoveryEndingReleasesBlockedJourneyTests
 
             JourneyRuntimeRow after = await JourneyOfAsync(fixture, FirstDemandId);
             Assert.Equal((JourneyRuntimeStage.Blocked, "LOAD_RESULT_REQUIRES_RECOVERY"), (after.Stage, after.BlockReasonCode));
-            Assert.Equal(DemandExecutionStatus.Cancelled, (await DemandOfAsync(fixture, ThirdDemandId)).Status);
+            Assert.Equal(Enum.Parse<DemandExecutionStatus>(demandStatus), (await DemandOfAsync(fixture, ThirdDemandId)).Status);
         });
     }
 
     /// <summary>
-    /// 纠错只授权给还在车上的需求（control-server#505 的 A2，cs#287 评论里归本票的那一半）：车在第一站等离站，第一条已装上；它被改库标成已送达之后
-    /// 再请求纠错，被拒，不发纠错命令。修之前授权只看装货已提交、仓位子集与旅程阶段，照样授权。
+    /// 纠错只授权给还在车上的需求（control-server#505 的 A2，cs#287 评论里归本票的那一半）：车在第一站等离站，第一条已装上；改库把它标成不在车上
+    /// 之后再请求纠错，被拒，不发纠错命令。修之前授权只看装货已提交、仓位子集与旅程阶段，照样授权。「在车上」是两样一起成立：需求
+    /// <c>Accepted</c>、归属 <c>LOADED</c>；前两格各只改其中一样（独立审查 S2），第三格是两样都改的真实形状（卸完货就是这样）。
     /// </summary>
-    [Fact]
+    [Theory]
     [Trait("IntegrationSlice", "FP-IS-02")]
     [Trait("ProtocolVector", "CV-LOAD-CORRECTION")]
-    public async Task ACorrectionForADemandNoLongerOnBoardIsRefused()
+    [InlineData(nameof(DemandExecutionStatus.Succeeded), JourneyDemandStatuses.Loaded)]
+    [InlineData(nameof(DemandExecutionStatus.Accepted), JourneyDemandStatuses.Unloaded)]
+    [InlineData(nameof(DemandExecutionStatus.Succeeded), JourneyDemandStatuses.Unloaded)]
+    public async Task ACorrectionForADemandNoLongerOnBoardIsRefused(string demandStatus, string membershipStatus)
     {
         CancellationToken token = TestContext.Current.CancellationToken;
         await using RuntimeFixture fixture = await RuntimeFixture.CreateAsync();
@@ -336,9 +392,9 @@ public sealed partial class RecoveryEndingReleasesBlockedJourneyTests
         await using (ControlServerDbContext context = fixture.OpenConnectionContext())
         {
             (await context.Set<JourneyDemandRow>().SingleAsync(row => row.DemandId == FirstDemandId, token)).Status =
-                JourneyDemandStatuses.Unloaded;
+                membershipStatus;
             (await context.AcceptedDemands.SingleAsync(row => row.DemandId == FirstDemandId, token)).Status =
-                DemandExecutionStatus.Succeeded;
+                Enum.Parse<DemandExecutionStatus>(demandStatus);
             await context.SaveChangesAsync(token);
         }
         fixture.Context.ChangeTracker.Clear();

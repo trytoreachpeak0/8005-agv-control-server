@@ -151,8 +151,8 @@ public sealed partial class RecoveryEndingReleasesBlockedJourneyTests
         Assert.Equal((LogLevel.Warning, 2138), (level, eventId.Id));
         Assert.Equal(
             $"1 journey(s) are blocked under a code no release path lifts: {onEndedDemand} ending in " +
-            $"_NOT_RECONCILED_ON_ENDED_DEMAND and {beforeUpgrade} ending in _NOT_RECONCILED_BEFORE_UPGRADE. Each holds its " +
-            "vehicle until a person checks the slots and settles it (control-server#505).",
+            $"_NOT_RECONCILED_ON_ENDED_DEMAND and {beforeUpgrade} ending in _NOT_RECONCILED_BEFORE_UPGRADE. None is released " +
+            "to the runtime again; only its journey's closing ends it, so each holds its vehicle until then (control-server#505).",
             message);
     }
 

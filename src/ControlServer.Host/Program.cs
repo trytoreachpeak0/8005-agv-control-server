@@ -312,7 +312,7 @@ static async Task EnsureDatabaseAsync(IServiceProvider services)
     await using AsyncServiceScope scope = services.CreateAsyncScope();
     ControlServerDbContext dbContext = scope.ServiceProvider.GetRequiredService<ControlServerDbContext>();
     await dbContext.Database.MigrateAsync();
-    // control-server#505：停在不可放行阻塞码上的旅程只有人能处理，升级迁移会改出这样的行；有就在启动时告诉现场有几趟。
+    // control-server#505：停在不可放行阻塞码上的旅程不会自动放行，只有旅程收尾结束它；升级迁移会改出这样的行，有就在启动时告诉现场有几趟。
     await ControlServer.Host.Runtime.UnreleasableBlockReport.LogAsync(
         dbContext,
         scope.ServiceProvider.GetRequiredService<ILoggerFactory>().CreateLogger("ControlServer.Host.Startup"),
