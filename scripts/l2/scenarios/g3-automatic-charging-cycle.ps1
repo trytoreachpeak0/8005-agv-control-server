@@ -31,6 +31,7 @@ $ErrorActionPreference = 'Stop'
 Import-Module (Join-Path (Split-Path -Parent $PSScriptRoot) 'L2RealOnboard.psm1') -Force
 Import-Module (Join-Path (Split-Path -Parent $PSScriptRoot) 'L2ConditionOrLast.psm1') -Force
 Import-Module (Join-Path (Split-Path -Parent $PSScriptRoot) 'L2SingleRow.psm1') -Force
+Import-Module (Join-Path (Split-Path -Parent $PSScriptRoot) 'L2ReadSnapshot.psm1') -Force
 Import-Module (Join-Path (Split-Path -Parent $PSScriptRoot) 'L2Chargers.psm1') -Force
 Import-Module (Join-Path (Split-Path -Parent $PSScriptRoot) 'L2MultiStopJourney.psm1') -Force
 . (Join-Path $PSScriptRoot 'MultiStopRigCommon.ps1')
@@ -198,8 +199,11 @@ $assertions.Add(
 
 # --- 5. 充满：收尾计划留 ARRIVED 的充电腿，业务状态 COMPLETE、用途为空；211 仍占用 ----------------------------------------
 
+# One read snapshot (control-server#510): the cycle is read before the claim, and this Until stops on any line that is not
+# one of the two in progress -- so read as two statements, a release committed between them gave "CHARGING | (none)".
 $claimUntilComplete = Wait-L2ConditionOrLast -Description 'the cycle completed' -Journal $journal -Criterion 'cycle-complete' `
-    -TimeoutSeconds 120 -Probe { "$([string](Get-Cycle).WireState) | $(Get-Claim)" } `
+    -TimeoutSeconds 120 `
+    -Probe { Invoke-L2ReadSnapshot -Connection $connection -Read { "$([string](Get-Cycle).WireState) | $(Get-Claim)" } } `
     -Until { param($v) $v.StartsWith('COMPLETE') -or ($v -ne "CHARGING | CHARGING $chargingJourneyId" -and $v -ne "EN_ROUTE | CHARGING $chargingJourneyId") }
 $assertions.Add(
     'G3-13-02',
@@ -249,23 +253,28 @@ $heldAtDispatch = Get-ChargerHeld
 
 $null = Move-L2CargoVehicleToCurrentStop $Context $journeyAId $pickupRiotId
 $loadA = Invoke-L2RigLoad $Context $journeyAId $a
+# One read snapshot, and the whole line waited for (control-server#510): the cycle is read before the charger's holder,
+# so a release committed between the two came back next to the cycle from before it.
+$expectedReleased = '(none) | CHARGER_RELEASED_ON_DEPARTURE | ENDED CHARGING_DEPARTED'
 $released = Wait-L2ConditionOrLast -Description 'the charger was released on departure' -Journal $journal `
     -Criterion 'charger-released' -TimeoutSeconds 30 `
     -Probe {
-        $record = Read-L2SingleRow -Connection $connection -Sql (
-            "SELECT IFNULL(ReleaseReason, '') AS Reason FROM StationExclusivityRecords " +
-            "WHERE MapId = $($Context.MapId) AND StationId = $charger AND JourneyId = '$chargingJourneyId'")
-        $cycleNow = Get-Cycle
-        "$(Get-ChargerHeld) | $(${record}?.Reason) | $(${cycleNow}?.Phase) $(${cycleNow}?.EndReason)"
+        Invoke-L2ReadSnapshot -Connection $connection -Read {
+            $record = Read-L2SingleRow -Connection $connection -Sql (
+                "SELECT IFNULL(ReleaseReason, '') AS Reason FROM StationExclusivityRecords " +
+                "WHERE MapId = $($Context.MapId) AND StationId = $charger AND JourneyId = '$chargingJourneyId'")
+            $cycleNow = Get-Cycle
+            "$(Get-ChargerHeld) | $(${record}?.Reason) | $(${cycleNow}?.Phase) $(${cycleNow}?.EndReason)"
+        }
     } `
-    -Until { param($v) $v.StartsWith('(none)') }
+    -Until { param($v) $v -eq $expectedReleased }
 $assertions.Add(
     'G3-13-06',
     '甲派给充满的这辆车：下达那一刻 211 仍是充电那一趟的占用；被确认的最新一版计划属于甲、不含 CHARGER 腿；车到 12 号站车载端录入可用、甲装货提交；211 以 CHARGER_RELEASED_ON_DEPARTURE 释放、周期以 CHARGING_DEPARTED 收尾',
     ($heldAtDispatch -eq "OCCUPIED $chargingJourneyId" -and $latestLegs.Count -ge 1 -and
         @($latestLegs | Where-Object { [string]$_.stopPurposeCategory -eq 'CHARGER' }).Count -eq 0 -and
         @($latestLegs | Where-Object { [string]$_.demandId -eq $a.Id }).Count -ge 1 -and
-        [string]$loadA.Status -eq 'Committed' -and $released -eq '(none) | CHARGER_RELEASED_ON_DEPARTURE | ENDED CHARGING_DEPARTED'),
+        [string]$loadA.Status -eq 'Committed' -and $released -eq $expectedReleased),
     "OCCUPIED $chargingJourneyId / 最新已确认计划属于甲、无充电腿 / load A Committed / (none) | CHARGER_RELEASED_ON_DEPARTURE | ENDED CHARGING_DEPARTED",
     "$heldAtDispatch / $(Format-Plan $latestPlan) / load A $($loadA.Status) / $released")
 

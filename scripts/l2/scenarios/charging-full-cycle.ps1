@@ -27,6 +27,7 @@ $ErrorActionPreference = 'Stop'
 
 Import-Module (Join-Path (Split-Path -Parent $PSScriptRoot) 'L2ConditionOrLast.psm1') -Force
 Import-Module (Join-Path (Split-Path -Parent $PSScriptRoot) 'L2SingleRow.psm1') -Force
+Import-Module (Join-Path (Split-Path -Parent $PSScriptRoot) 'L2ReadSnapshot.psm1') -Force
 Import-Module (Join-Path (Split-Path -Parent $PSScriptRoot) 'L2Chargers.psm1') -Force
 
 $journal = $Context.Journal
@@ -222,21 +223,26 @@ $null = $riot.Command('Put', 'vehicle', @{
     currentPosition = $machine; processingOrder = $false; clearOrderTaskId = $true
 })
 
+# One read snapshot, and the whole line waited for (control-server#510): the cycle is read before the release, so a
+# release committed between the two came back next to the cycle from before it, and a wait on the release alone stopped there.
+$expectedDeparture = '(none) | CHARGER_RELEASED_ON_DEPARTURE | ENDED NOT_CHARGING CHARGING_DEPARTED'
 $afterDeparture = Wait-L2ConditionOrLast -Description 'the charger was released on departure' `
     -Journal $journal -Criterion 'charger-released-on-departure' -TimeoutSeconds 60 `
     -Probe {
-        $cycle = Get-Cycle
-        $record = Read-L2SingleRow -Connection $connection -Sql (
-            "SELECT IFNULL(ReleaseReason, '') AS Reason FROM StationExclusivityRecords " +
-            "WHERE MapId = $($Context.MapId) AND StationId = $charger AND JourneyId = '$journeyId'")
-        "$(Get-ChargerHeld) | $(${record}?.Reason) | $(${cycle}?.Phase) $(${cycle}?.WireState) $(${cycle}?.EndReason)"
+        Invoke-L2ReadSnapshot -Connection $connection -Read {
+            $cycle = Get-Cycle
+            $record = Read-L2SingleRow -Connection $connection -Sql (
+                "SELECT IFNULL(ReleaseReason, '') AS Reason FROM StationExclusivityRecords " +
+                "WHERE MapId = $($Context.MapId) AND StationId = $charger AND JourneyId = '$journeyId'")
+            "$(Get-ChargerHeld) | $(${record}?.Reason) | $(${cycle}?.Phase) $(${cycle}?.WireState) $(${cycle}?.EndReason)"
+        }
     } `
-    -Until { param($v) $v.StartsWith('(none)') }
+    -Until { param($v) $v -eq $expectedDeparture }
 $vehicle = Get-Vehicle
 $assertions.Add(
     'L2-CFC-05',
     '车离开 211、不再充电、桩可确认空闲之后：211 的独占释放（原因 CHARGER_RELEASED_ON_DEPARTURE），周期以 CHARGING_DEPARTED 收尾、回 NOT_CHARGING',
-    ($afterDeparture -eq '(none) | CHARGER_RELEASED_ON_DEPARTURE | ENDED NOT_CHARGING CHARGING_DEPARTED' -and
+    ($afterDeparture -eq $expectedDeparture -and
         [string]$vehicle.batteryState -eq 'NO_CHARGE' -and [string]$vehicle.currentPosition -eq [string]$machine),
     '(none) | CHARGER_RELEASED_ON_DEPARTURE | ENDED NOT_CHARGING CHARGING_DEPARTED / NO_CHARGE at 12',
     "$afterDeparture / $($vehicle.batteryState) at $($vehicle.currentPosition)")

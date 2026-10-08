@@ -32,6 +32,7 @@ $ErrorActionPreference = 'Stop'
 
 Import-Module (Join-Path (Split-Path -Parent $PSScriptRoot) 'L2ConditionOrLast.psm1') -Force
 Import-Module (Join-Path (Split-Path -Parent $PSScriptRoot) 'L2SingleRow.psm1') -Force
+Import-Module (Join-Path (Split-Path -Parent $PSScriptRoot) 'L2ReadSnapshot.psm1') -Force
 Import-Module (Join-Path (Split-Path -Parent $PSScriptRoot) 'L2Chargers.psm1') -Force
 
 $journal = $Context.Journal
@@ -144,16 +145,21 @@ Set-Vehicle $charger
 $hung = @($riot.Snapshot().body.orders | Where-Object { $null -ne $_ -and [string]$_.upperId -eq $upperId })[0]
 $journal.Observe('order-after-start-charging', "$($hung.orderState)", @{ order = $hung })
 
-$confirmed = Wait-L2Condition -Description 'the server confirmed the vehicle cannot charge and paused the charger' `
+# One read snapshot, and the whole line waited for (control-server#510): the pause, the cycle, the purpose and the journey's
+# code are one SaveChanges, but read as four statements the cycle came back from before that commit and the rest from after
+# it (CI run 37595371819), and a wait on the pause alone stopped on that line.
+$expectedConfirmed = "UNABLE_TO_CHARGE_CONFIRMED UNKNOWN recovered=0 | UNABLE_TO_CHARGE CLEARING | CLEARING_MAINTENANCE $journeyId | CHARGING_UNABLE_TO_CHARGE"
+$confirmed = Wait-L2ConditionOrLast -Description 'the server confirmed the vehicle cannot charge and paused the charger' `
     -Journal $journal -Criterion 'unable-to-charge-confirmed' -TimeoutSeconds 60 `
     -Probe {
-        $cycle = Get-Cycle
-        $journey = Read-L2SingleRow -Connection $connection -Sql (
-            "SELECT IFNULL(BlockReasonCode, '') AS Code FROM JourneyRuntimes WHERE JourneyId = '$journeyId'")
-        "$(Get-Holds) | $(${cycle}?.WireState) $(${cycle}?.Phase) | $(Get-Claim) | $(${journey}?.Code)"
+        Invoke-L2ReadSnapshot -Connection $connection -Read {
+            $cycle = Get-Cycle
+            $journey = Read-L2SingleRow -Connection $connection -Sql (
+                "SELECT IFNULL(BlockReasonCode, '') AS Code FROM JourneyRuntimes WHERE JourneyId = '$journeyId'")
+            "$(Get-Holds) | $(${cycle}?.WireState) $(${cycle}?.Phase) | $(Get-Claim) | $(${journey}?.Code)"
+        }
     } `
-    -Until { param($v) $v.StartsWith('UNABLE_TO_CHARGE_CONFIRMED') }
-$expectedConfirmed = "UNABLE_TO_CHARGE_CONFIRMED UNKNOWN recovered=0 | UNABLE_TO_CHARGE CLEARING | CLEARING_MAINTENANCE $journeyId | CHARGING_UNABLE_TO_CHARGE"
+    -Until { param($v) $v -eq $expectedConfirmed }
 $assertions.Add(
     'L2-UTC-01',
     '单在 211 上执行开始充电、RIoT 返回 407802 且停在 HANG（9）、全程不报 CHARGING：一条 UNABLE_TO_CHARGE_CONFIRMED 的暂停（根因 UNKNOWN），周期 UNABLE_TO_CHARGE／CLEARING，用途 CLEARING_MAINTENANCE，旅程 CHARGING_UNABLE_TO_CHARGE',
@@ -230,25 +236,29 @@ $assertions.Add(
 # --- 5. 旧单在 RIoT 里结束的那一轮：放 211，暂停仍在 ----------------------------------------------------------------
 
 $null = $riot.Command('Put', "orders/$upperId", @{ orderState = 2 })
+# One read snapshot, and the whole line waited for (control-server#510): the cycle is read first and the release after it,
+# so a release committed between the two came back next to the cycle from before it.
+$expectedReleased = '(none) | CHARGER_RELEASED_ON_MANUAL_CLEARANCE | ENDED CHARGING_UNABLE_TO_CHARGE_CLEARED | ' +
+    'Completed CHARGING_UNABLE_TO_CHARGE_CLEARED | (none) | UNABLE_TO_CHARGE_CONFIRMED UNKNOWN recovered=0 | completed CANCELLED'
 $released = Wait-L2ConditionOrLast -Description 'the charger was released once the old order ended' `
     -Journal $journal -Criterion 'released-after-old-order-ended' -TimeoutSeconds 60 `
     -Probe {
-        $cycle = Get-Cycle
-        $record = Read-L2SingleRow -Connection $connection -Sql (
-            "SELECT IFNULL(ReleaseReason, '') AS Reason FROM StationExclusivityRecords " +
-            "WHERE MapId = $($Context.MapId) AND StationId = $charger AND JourneyId = '$journeyId'")
-        $journey = Read-L2SingleRow -Connection $connection -Sql (
-            "SELECT Stage, IFNULL(BlockReasonCode, '') AS Code FROM JourneyRuntimes WHERE JourneyId = '$journeyId'")
-        $clearance = Read-L2SingleRow -Connection $connection -Sql (
-            "SELECT IFNULL(OldOrderDisposition, '') AS Disposition, " +
-            "CASE WHEN CompletedAt IS NULL THEN 'open' ELSE 'completed' END AS Completion FROM StationClearances")
-        "$(Get-ChargerHeld) | $(${record}?.Reason) | $(${cycle}?.Phase) $(${cycle}?.EndReason) | " +
-            "$(${journey}?.Stage) $(${journey}?.Code) | $(Get-Claim) | $(Get-Holds) | " +
-            "$(${clearance}?.Completion) $(${clearance}?.Disposition)"
+        Invoke-L2ReadSnapshot -Connection $connection -Read {
+            $cycle = Get-Cycle
+            $record = Read-L2SingleRow -Connection $connection -Sql (
+                "SELECT IFNULL(ReleaseReason, '') AS Reason FROM StationExclusivityRecords " +
+                "WHERE MapId = $($Context.MapId) AND StationId = $charger AND JourneyId = '$journeyId'")
+            $journey = Read-L2SingleRow -Connection $connection -Sql (
+                "SELECT Stage, IFNULL(BlockReasonCode, '') AS Code FROM JourneyRuntimes WHERE JourneyId = '$journeyId'")
+            $clearance = Read-L2SingleRow -Connection $connection -Sql (
+                "SELECT IFNULL(OldOrderDisposition, '') AS Disposition, " +
+                "CASE WHEN CompletedAt IS NULL THEN 'open' ELSE 'completed' END AS Completion FROM StationClearances")
+            "$(Get-ChargerHeld) | $(${record}?.Reason) | $(${cycle}?.Phase) $(${cycle}?.EndReason) | " +
+                "$(${journey}?.Stage) $(${journey}?.Code) | $(Get-Claim) | $(Get-Holds) | " +
+                "$(${clearance}?.Completion) $(${clearance}?.Disposition)"
+        }
     } `
-    -Until { param($v) $v.StartsWith('(none)') -and $v.Contains('Completed') }
-$expectedReleased = '(none) | CHARGER_RELEASED_ON_MANUAL_CLEARANCE | ENDED CHARGING_UNABLE_TO_CHARGE_CLEARED | ' +
-    'Completed CHARGING_UNABLE_TO_CHARGE_CLEARED | (none) | UNABLE_TO_CHARGE_CONFIRMED UNKNOWN recovered=0 | completed CANCELLED'
+    -Until { param($v) $v -eq $expectedReleased }
 $assertions.Add(
     'L2-UTC-04',
     '旧单在 RIoT 里结束的那一轮：清桩在这一刻完成（旧单处置 CANCELLED）、211 的独占释放（CHARGER_RELEASED_ON_MANUAL_CLEARANCE）、周期以 CHARGING_UNABLE_TO_CHARGE_CLEARED 结束、旅程收尾、用途放开；暂停仍在（没有恢复）',
