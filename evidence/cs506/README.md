@@ -38,6 +38,7 @@ M5 的第一种改法（整个条件换成 `false`）编译不过（`if (false)`
 | `green/03-class-green-at-ef46b7d3.txt` | 修后 `RecoveryEndingReleasesBlockedJourneyTests` 19/19 |
 | `green/04-g2-class-green-at-ef46b7d3.txt` | 修后 `RecoveryStateMachineG2Tests` 211/211（其中一格的断言由「仍是 `RecoveryRequired`」改为 `Accepted`） |
 | `reverse/mutations-round2-at-ef46b7d3.txt` | M3、M4、M5 重跑仍各被两格杀死；M8 被三格杀死 |
+| `full/c87c63ca-summary.txt` | 本机全量 4354/4354，退出码 0（含程序集清理阶段的出站 schema 校验） |
 
 | 编号 | 改法 | 去掉的东西 |
 | --- | --- | --- |
