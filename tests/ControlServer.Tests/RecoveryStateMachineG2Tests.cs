@@ -150,7 +150,9 @@ public sealed partial class RecoveryStateMachineG2Tests
                 Assert.DoesNotContain(proof, (await firstContext.ProtocolInbox.SingleAsync(
                     row => row.MessageType == "ExceptionRecoverySessionRequested",
                     TestContext.Current.CancellationToken)).RequestJson, StringComparison.Ordinal);
-                Assert.Equal(DemandExecutionStatus.RecoveryRequired, (await firstContext.AcceptedDemands.SingleAsync(
+                // Back to Accepted with the resumed load committed, like a load that committed the first time. It stayed
+                // RecoveryRequired until control-server#506 (review M-1), which held a second recovery in the same journey.
+                Assert.Equal(DemandExecutionStatus.Accepted, (await firstContext.AcceptedDemands.SingleAsync(
                     TestContext.Current.CancellationToken)).Status);
                 Assert.Null((await firstContext.Set<VehiclePurposeClaimRecordRow>().SingleAsync(
                     TestContext.Current.CancellationToken)).ReleasedAt);

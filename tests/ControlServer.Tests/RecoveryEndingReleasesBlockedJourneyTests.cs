@@ -26,7 +26,7 @@ namespace ControlServer.Tests;
 /// 再由真实引擎推进。最后一条是护栏：被交接的不是旅程阻塞在其上的那一条时，旅程照旧阻塞。
 /// </para>
 /// </remarks>
-public sealed class RecoveryEndingReleasesBlockedJourneyTests
+public sealed partial class RecoveryEndingReleasesBlockedJourneyTests
 {
     private const string ProofVariable = "CONTROL_SERVER_TEST_RECOVERY_PROOF_499";
     private const string Proof = "recovery-ending-499-proof-not-a-production-secret";
@@ -551,7 +551,7 @@ public sealed class RecoveryEndingReleasesBlockedJourneyTests
     /// <summary>
     /// 第 4 条单独钉住：阻塞码是普通的 <c>LOAD_RESULT_REQUIRES_RECOVERY</c>（第 5 条挡不住），而旅程里另一条需求还待恢复。上面两条
     /// 「另一条待恢复」的用例阻塞码都是 <c>*_NOT_RECONCILED</c>，第 5 条加上之后它们先被第 5 条挡住，第 4 条就没人钉了。这个状态在正常流程里
-    /// 有来路（读代码推出）：修复续行（<c>ObserveOperationResultAsync</c>）放出旅程时不看别的需求，一条没对上而待恢复的需求可以随旅程
+    /// 有来路，直到 control-server#506 堵上：修复续行（<c>ObserveOperationResultAsync</c>）放出旅程时不看别的需求，一条没对上而待恢复的需求可以随旅程
     /// 被放出，之后旅程又在另一次装货上阻塞。这里改库造出它：第一条已装上、被标成待恢复，第二条照常阻塞。
     /// </summary>
     [Fact]
