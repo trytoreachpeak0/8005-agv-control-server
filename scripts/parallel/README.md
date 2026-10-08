@@ -15,7 +15,7 @@ control-server#262。约 2026-10-08 起 `factory01` 上同时跑两套 ControlSe
 | `journeyRuntime.mapIdentity` | `老厂前线new_wk` | `evidence/field/2026-09-19-B6-map-name-baseline-check/real-riot/fields.json` |
 | `journeyRuntime.dispatchZone`、`allowedDispatchZones` | `WIRE` | 用户 2026-09-18 定：`evidence/field/2026-09-18-B4-site-prerequisites/03-area-assignment-table.md` 第 58、122 行（区域分配表的 `dispatch_zone` 全部是 `WIRE`，实例必须配成同一个值，否则那张表导入会报 `DISPATCH_ZONE_NOT_FOUND`） |
 | `journeyRuntime.admissionPolicyDeploymentId` | `MAP-26-WIRE_TO_GATE-20261007` | 调度 2026-10-07 定，格式沿用 map 25 的 `MAP-25-WIRE_TO_GATE-20260827`（control-server#411）。它是部署标签，不是业务参数。**实例第一次带着运行时启动之后，它就和 `admissionPolicyVersion` 一起固定在库里**：只改标签、不升版本，服务端会报 `Admission policy version is already bound to different content or deployment identity.`，判为准入策略漂移（`WireToGateStore.cs` 的 `ApplyAdmissionPolicyAsync`）。要换标签，就同时升 `admissionPolicyVersion` |
-| 站点清单 `task-type-stations.settings.json`（在包里，不在定义里） | 绑 25 | **开运行时之前要出 26 版** |
+| `taskTypeStations.settingsFile` | `task-type-stations.map-26.settings.json` | control-server#518。包里随 Host 带一份 26 号图站点清单，定义点名它，覆盖层写成 `TaskTypeStations:settingsFile`（Host 按安装目录解析相对路径）。包内默认的 `task-type-stations.settings.json` 仍绑 25，给 MVP 线用，不动。见下文 |
 
 这三个值都是服务端自己的配置：调度区存在本实例的库里，准入策略部署号是服务端写库时带的标签。**RIoT 里没有它们，也就无从「从 RIoT 取回」**——此前这里和工作区文档都这么写过，那是错的（control-server#411）。
 
@@ -23,7 +23,20 @@ control-server#262。约 2026-10-08 起 `factory01` 上同时跑两套 ControlSe
 
 **站点清单与准入策略都只在 `JourneyRuntime.enabled=true` 时才会被读**（`TaskTypeStationStartup.cs` 在运行时关着时直接返回；准入策略在 `JourneyRuntimeEngine` 的一轮迭代里写库）。所以运行时关着的实例用不到它们；**开运行时之前，必须先备好 26 版站点清单**。
 
-**所以出厂定义里 `journeyRuntime.enabled` 与 `routeGraph.enabled` 都是 `false`**（control-server#411 审查 S2）。包里的站点清单今天仍绑 map 25；运行时开着时，站点清单的图号与 `JourneyRuntime:mapId`（26）对不上，Host 会以 `BindingMapMismatch` 拒绝启动（`TaskTypeStationConfigurationValidator.cs`），照原样装会再次半装。两个开关必须一起改：只开路网引擎、不开运行时会被校验拒绝。**打开运行时是以后单独授权的一步，前提是 26 版站点清单已经进包。**10-07 的首装用的就是这两项为 `false` 的定义。
+**26 版站点清单自 control-server#518 起在包里**：`src/ControlServer.Host/task-type-stations.map-26.settings.json`，只绑
+`WIRE_TO_GATE` → 210「关卡」。站号与站名取自已入库证据（`evidence/field/2026-09-19-B6-map-name-baseline-check/SUMMARY.md` 结论 4、
+`evidence/field/2026-10-03-B9-charging-roster-and-policy/catalog-26.json`），没有读 RIoT。`siteVerificationRef` 是
+`MAP-26-WIRE_TO_GATE-B6-IDENTITY-20260919`：依据的是 B6 的身份核对（26 号图上唯一叫「关卡」的站是 210），**不是现场用途核对**
+（`REQ-0338`）。预置清单只装进一张图的第一版；以后做了关卡 210 的现场用途核对，用 FieldOps 激活新版本换成真实记录号，重启不会覆盖。
+
+- 定义必须写 `taskTypeStations.settingsFile`，缺了就拒绝。它只能是裸文件名 `task-type-stations.map-<N>.settings.json`，
+  不带目录：文件来自包、装在安装目录里，每次装包随 Host 一起替换，所以与 Host 永远同一构建。`<N>` 必须等于
+  `journeyRuntime.mapId`，否则装的时候就拒绝，而不是等开运行时被 `BindingMapMismatch` 拦下。
+- 文件内容与图号由 `TaskTypeStationStartupTests` 钉住（26 号图启动不报 `BindingMapMismatch`，并与 `catalog-26.json` 交叉核对）；
+  覆盖层写的键与 Host 的 `TaskTypeStationPreset.SettingsFileKey` 一致、点名的文件确实由 Host 项目输出，由 `Test-ParallelInstance.ps1` 核对。
+- 取货端（例如 N1-3）是 AREA 端，不进这份清单，靠站点目录与区域分配表导入解析。
+
+**所以出厂定义里 `journeyRuntime.enabled` 与 `routeGraph.enabled` 都是 `false`**（control-server#411 审查 S2）。当时包里的站点清单只有绑 map 25 的那份（control-server#518 之后定义改为点名 26 版，见上文）；运行时开着时，站点清单的图号与 `JourneyRuntime:mapId`（26）对不上，Host 会以 `BindingMapMismatch` 拒绝启动（`TaskTypeStationConfigurationValidator.cs`），照原样装会再次半装。两个开关必须一起改：只开路网引擎、不开运行时会被校验拒绝。**打开运行时是以后单独授权的一步，前提是 26 版站点清单已经进包。**10-07 的首装用的就是这两项为 `false` 的定义。
 
 ## 清桩出口的两节配置与恢复凭据由部署链写，不再手工合入（control-server#454）
 

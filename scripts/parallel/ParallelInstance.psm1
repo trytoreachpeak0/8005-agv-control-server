@@ -142,7 +142,7 @@ $script:AllowedKeys = [ordered]@{
     '' = @('instanceId', 'serviceName', 'installRoot', 'dataRoot', 'backupRoot', 'packageRoot',
         'opsRoot', 'stagingRoot', 'listenAddress', 'healthBindAddress', 'onboardPort', 'healthPort',
         'dashboardPort', 'mesIngest', 'fakeMesIngest', 'routeGraph', 'riotCreateDispatch', 'riotForeignOrderCancel',
-        'journeyRuntime', 'vehicleFaultRecovery', 'fieldOperatorRoles')
+        'journeyRuntime', 'vehicleFaultRecovery', 'fieldOperatorRoles', 'taskTypeStations')
     'mesIngest' = @('baseUrl')
     'fakeMesIngest' = @('installRoot', 'port', 'taskName', 'seedPath')
     'routeGraph' = @('enabled', 'mapId', 'designStateTtl', 'runtimeRefreshPeriod', 'runtimeStateMaxAge')
@@ -158,6 +158,8 @@ $script:AllowedKeys = [ordered]@{
     # this instance's own variable name, so no definition can point the service at the MVP's.
     'vehicleFaultRecovery' = @('enabled')
     'fieldOperatorRoles' = @('path', 'onboardClearanceEntryDeclared')
+    # control-server#518. TaskTypeStationPreset.SettingsFileKey; there is no options class to mirror.
+    'taskTypeStations' = @('settingsFile')
 }
 
 # Names only this instance uses, shared by the installer and the uninstaller so the two cannot
@@ -879,6 +881,30 @@ function Test-ParallelInstanceDefinition {
         $failures += "fieldOperatorRoles.onboardClearanceEntryDeclared must be a JSON boolean, got '$($roles['onboardClearanceEntryDeclared'])'."
     }
 
+    # ------------------------------------------------ task type station preset ---
+
+    # control-server#518. The package's default preset binds map 25; with the runtime on, the Host
+    # refuses to start unless the preset's map is JourneyRuntime:mapId (BindingMapMismatch). So the
+    # definition names the per-map preset the package ships beside it, always -- the runtime is
+    # switched on later by hand, and an install that does not carry the name then fails at that
+    # step instead of here. A bare file name only: it resolves against the install root, which every
+    # install replaces with the package, so the file always comes from the same build as the Host.
+    # The map in the name has to be the runtime's map; the Host test pins each file's content to it.
+    $stations = Get-Node -Root $Definition -Key 'taskTypeStations'
+    if ($null -eq $stations) {
+        $failures += 'taskTypeStations must be an object naming the per-map station preset the package ships (settingsFile).'
+    } else {
+        $presetFile = (Test-KeyPresent -Node $stations -Key 'settingsFile') ? $stations['settingsFile'] : $null
+        $runtimeMap = ($null -ne $journey -and (Test-KeyPresent -Node $journey -Key 'mapId')) ? (ConvertTo-IntegerOrNull $journey['mapId']) : $null
+        if ($presetFile -isnot [string] -or [string]::IsNullOrWhiteSpace($presetFile)) {
+            $failures += 'taskTypeStations.settingsFile must be a non-empty file name.'
+        } elseif ($presetFile -cnotmatch '^task-type-stations\.map-([1-9][0-9]*)\.settings\.json$') {
+            $failures += "taskTypeStations.settingsFile ('$presetFile') must be a bare file name of the form task-type-stations.map-<mapId>.settings.json, one of the per-map presets the package ships next to the Host."
+        } elseif ([int] $Matches[1] -ne $runtimeMap) {
+            $failures += "taskTypeStations.settingsFile ('$presetFile') is the preset for map $($Matches[1]), but journeyRuntime.mapId is $runtimeMap; the Host would refuse to start the runtime (BindingMapMismatch)."
+        }
+    }
+
     return $failures
 }
 
@@ -1498,6 +1524,8 @@ function New-ParallelInstanceConfigurationOverlay {
             path = $Definition['fieldOperatorRoles']['path']
             onboardClearanceEntryDeclared = $Definition['fieldOperatorRoles']['onboardClearanceEntryDeclared']
         }
+        # control-server#518. Read only while the runtime is on, so written on every install whether it is or not.
+        TaskTypeStations = [ordered]@{ settingsFile = $Definition['taskTypeStations']['settingsFile'] }
     }
 }
 

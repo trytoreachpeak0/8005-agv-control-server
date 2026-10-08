@@ -105,7 +105,8 @@ Write-Result -Ok ($shippedFailures.Count -eq 0) `
 # control-server#411 review S2: the package's task-type station preset is still bound to map 25,
 # and the Host refuses to start with the runtime on and that preset (TaskTypeStationConfigurationValidator).
 # So the shipped file installs with the runtime and the route graph off; turning them on is a later,
-# separately authorized step once a map-26 preset exists.
+# separately authorized step. Since control-server#518 the definition names the map-26 preset the
+# package ships (taskTypeStations.settingsFile), which that step needs; the switches stay off.
 Write-Result -Ok ($shipped['journeyRuntime']['enabled'] -eq $false -and $shipped['routeGraph']['enabled'] -eq $false) `
     -Name 'the shipped definition installs with the runtime and the route graph off' `
     -Detail ("journeyRuntime.enabled = $($shipped['journeyRuntime']['enabled']), routeGraph.enabled = $($shipped['routeGraph']['enabled'])")
@@ -312,13 +313,16 @@ $cases = @(
     # --- The MVP's map (control-server#262 re-review, M3) --------------------------------
     @{
         Name = 'both mapIds are the MVP map 25'
-        Expect = @('routeGraph.mapId is 25, the MVP''s map', 'journeyRuntime.mapId is 25, the MVP''s map')
+        # control-server#518: the named preset is map 26's, so the station preset check fires as well.
+        Expect = @('routeGraph.mapId is 25, the MVP''s map', 'journeyRuntime.mapId is 25, the MVP''s map',
+            'is the preset for map 26, but journeyRuntime.mapId is 25')
         Mutate = { param($d) $d['routeGraph']['mapId'] = 25; $d['journeyRuntime']['mapId'] = 25; $d }
     }
     @{
-        # Two, both named: the value is the MVP's map, and it now disagrees with routeGraph's 26.
+        # Three, all named: the value is the MVP's map, it now disagrees with routeGraph's 26, and with
+        # the named station preset's map 26 (control-server#518).
         Name = 'only journeyRuntime.mapId is 25'
-        Expect = @('journeyRuntime.mapId is 25, the MVP''s map', 'disagree')
+        Expect = @('journeyRuntime.mapId is 25, the MVP''s map', 'disagree', 'is the preset for map 26, but journeyRuntime.mapId is 25')
         Mutate = { param($d) $d['journeyRuntime']['mapId'] = 25; $d }
     }
     @{
@@ -503,8 +507,9 @@ $cases = @(
         Mutate = { param($d) $d['journeyRuntime']['enabled'] = $false; $d }
     }
     @{
+        # control-server#518: the named station preset is map 26's as well.
         Name = 'the two mapIds disagree'
-        Expect = 'disagree'
+        Expect = @('disagree', 'is the preset for map 26, but journeyRuntime.mapId is 27')
         Mutate = { param($d) $d['journeyRuntime']['mapId'] = 27; $d }
     }
 
@@ -727,6 +732,45 @@ $cases = @(
         Name = 'fieldOperatorRoles.onboardClearanceEntryDeclared as a number'
         Expect = "fieldOperatorRoles.onboardClearanceEntryDeclared must be a JSON boolean, got '1'"
         Mutate = { param($d) $d['fieldOperatorRoles']['onboardClearanceEntryDeclared'] = 1; $d }
+    }
+    # control-server#518. The Map 26 station preset, named in the definition and checked against the runtime's map.
+    @{
+        Name = 'taskTypeStations absent'
+        Expect = 'taskTypeStations must be an object'
+        Mutate = { param($d) $d.Remove('taskTypeStations'); $d }
+    }
+    @{
+        Name = 'taskTypeStations.settingsFile absent'
+        Expect = 'taskTypeStations.settingsFile must be a non-empty file name'
+        Mutate = { param($d) $d['taskTypeStations'].Remove('settingsFile'); $d }
+    }
+    @{
+        Name = 'taskTypeStations.settingsFile as the package default (map 25)'
+        Expect = "taskTypeStations.settingsFile ('task-type-stations.settings.json') must be a bare file name of the form"
+        Mutate = { param($d) $d['taskTypeStations']['settingsFile'] = 'task-type-stations.settings.json'; $d }
+    }
+    @{
+        Name = 'taskTypeStations.settingsFile with a directory'
+        Expect = "taskTypeStations.settingsFile ('D:\zhengyushao\control-server-v2-ops\task-type-stations.map-26.settings.json') must be a bare file name"
+        Mutate = { param($d) $d['taskTypeStations']['settingsFile'] = 'D:\zhengyushao\control-server-v2-ops\task-type-stations.map-26.settings.json'; $d }
+    }
+    @{
+        Name = 'taskTypeStations.settingsFile spelled with capitals'
+        Expect = "taskTypeStations.settingsFile ('Task-Type-Stations.map-26.settings.json') must be a bare file name"
+        Mutate = { param($d) $d['taskTypeStations']['settingsFile'] = 'Task-Type-Stations.map-26.settings.json'; $d }
+    }
+    @{
+        Name = 'taskTypeStations.settingsFile for another map than the runtime'
+        Expect = "is the preset for map 27, but journeyRuntime.mapId is 26"
+        Mutate = { param($d) $d['taskTypeStations']['settingsFile'] = 'task-type-stations.map-27.settings.json'; $d }
+    }
+    @{
+        Name = 'taskTypeStations.settingsFile for the MVP map'
+        Expect = @(
+            "is the preset for map 25, but journeyRuntime.mapId is 26"
+            "taskTypeStations.settingsFile is 'task-type-stations.map-25.settings.json', an identifier of the MVP's map 25"
+        )
+        Mutate = { param($d) $d['taskTypeStations']['settingsFile'] = 'task-type-stations.map-25.settings.json'; $d }
     }
 )
 
@@ -1734,6 +1778,32 @@ Write-Result -Ok ($merged['RouteGraph']['enabled'] -eq $true -and $merged['Route
 Write-Result -Ok ($merged['MesIngest']['baseUrl'] -eq 'http://127.0.0.1:58188') `
     -Name 'the overlay points MesIngest at the fake catalog' `
     -Detail "got '$($merged['MesIngest']['baseUrl'])'"
+
+# control-server#518. The overlay names the preset under the very key the Host reads, and the file it names
+# is one the package ships, for the runtime's map. A spelling drift on either side would leave the
+# runtime reading the package default (map 25) and refusing to start with BindingMapMismatch.
+$presetSource = Get-Content -LiteralPath (Join-Path $repoRoot 'src/ControlServer.Host/Runtime/TaskTypeStations/TaskTypeStationPreset.cs') -Raw
+$presetKey = [regex]::Match($presetSource, 'SettingsFileKey\s*=\s*"([^"]+)"').Groups[1].Value
+# Sections that are not objects are skipped rather than indexed: a broken overlay is this check's red, not a crash
+# that ends the self-test before the cases below it run.
+$overlayKey = @($overlay.Keys | Where-Object { $overlay[$_] -is [System.Collections.IDictionary] } | ForEach-Object {
+        $section = $_; @($overlay[$section].Keys | Where-Object { $_ -ieq 'settingsFile' }) | ForEach-Object { "${section}:$_" } })
+Write-Result -Ok ($presetKey -ne '' -and $overlayKey.Count -eq 1 -and $overlayKey[0] -ceq $presetKey) `
+    -Name 'the overlay writes the station preset under the Host''s TaskTypeStationPreset.SettingsFileKey' `
+    -Detail "Host key '$presetKey', overlay '$($overlayKey -join ', ')'"
+$mergedPresetFile = ($merged['TaskTypeStations'] -is [System.Collections.IDictionary]) ? $merged['TaskTypeStations']['settingsFile'] : $null
+Write-Result -Ok ($null -ne $mergedPresetFile -and $mergedPresetFile -ceq $shipped['taskTypeStations']['settingsFile']) `
+    -Name 'the overlay carries the definition''s settingsFile' -Detail "got '$mergedPresetFile'"
+$shippedPresetFile = [string] $shipped['taskTypeStations']['settingsFile']
+$shippedPresetPath = Join-Path $repoRoot "src/ControlServer.Host/$shippedPresetFile"
+$hostProject = Get-Content -LiteralPath (Join-Path $repoRoot 'src/ControlServer.Host/ControlServer.Host.csproj') -Raw
+$shippedPresetMap = (Test-Path -LiteralPath $shippedPresetPath -PathType Leaf) ?
+    (Get-Content -LiteralPath $shippedPresetPath -Raw | ConvertFrom-Json -AsHashtable)['TaskTypeStations']['mapId'] : $null
+Write-Result -Ok ($null -ne $shippedPresetMap -and
+        $hostProject.Contains("<None Update=`"$shippedPresetFile`" CopyToOutputDirectory=`"PreserveNewest`" />") -and
+        $shippedPresetMap -eq $shipped['journeyRuntime']['mapId']) `
+    -Name 'the shipped definition names a preset the Host project ships, bound to the definition''s map' `
+    -Detail "file '$shippedPresetFile', its mapId '$shippedPresetMap', journeyRuntime.mapId '$($shipped['journeyRuntime']['mapId'])'"
 
 Write-Host ''
 Write-Host 'Station clearance exit through first install, upgrade and rollback (control-server#454)' -ForegroundColor Cyan
