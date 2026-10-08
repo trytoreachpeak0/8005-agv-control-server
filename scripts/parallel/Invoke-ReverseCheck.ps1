@@ -316,6 +316,19 @@ Invoke-Case -Name 'case 18: the MVP map 25 in both places' `
     -Mutate { param($t) $t['routeGraph']['mapId'] = 25; $t['journeyRuntime']['mapId'] = 25; $t } `
     -ExpectFragment 'is 25, the MVP''s map'
 
+# control-server#411 filled the three map-26 placeholders in the shipped file, so case -1 no longer
+# exercises the placeholder refusal; this case puts them back in the real file to keep it covered.
+Invoke-Case -Name 'case 19: the three map-26 placeholders put back' `
+    -Observe 'journeyRuntime.dispatchZone, allowedDispatchZones, admissionPolicyDeploymentId' `
+    -Mutate {
+        param($t)
+        $t['journeyRuntime']['dispatchZone'] = 'REPLACE_WITH_MAP26_DISPATCH_ZONE'
+        $t['journeyRuntime']['allowedDispatchZones'] = @('REPLACE_WITH_MAP26_DISPATCH_ZONE')
+        $t['journeyRuntime']['admissionPolicyDeploymentId'] = 'REPLACE_WITH_MAP26_ADMISSION_POLICY_DEPLOYMENT_ID'
+        $t
+    } `
+    -ExpectFragment 'is still the placeholder'
+
 # ---------------------------------------------------------------- teardown ---
 
 } finally {
