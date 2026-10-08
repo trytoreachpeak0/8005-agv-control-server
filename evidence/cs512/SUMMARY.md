@@ -47,7 +47,7 @@
 | 文件 | 内容 | 结果 |
 | --- | --- | --- |
 | 01 | 修前：任务构造照抄 35b8ae81 安装器第 414-428 行，SYSTEM，路径带空格，端口 47188 | **不复现**：2 秒内 health 200，包装日志写到 Serving；清理后任务、目录、端口、进程均无残留 |
-| 09 | 修后：`Test-FakeMesIngestScheduledTask.ps1`（702a25d7e） | 待补 |
+| 09 | 修后：`Test-FakeMesIngestScheduledTask.ps1`（702a25d7e），10-08 20:20，第二次（第一次输出丢失，见第五节） | **11 passed, 0 failed**：任务把替身拉起，0.8 s 回 health，唯一进程属 SYSTEM，任务 Running；安装器的灌种子读回 0 条、替身仍在；反面对照（不存在的 exe）注册成功、等待变红，报告给出「not running」与 `0x80070002`；清理后任务、目录、端口均无残留 |
 
 ## 四、本机自测（不在 CI 里，`scripts/parallel/README.md`）
 
