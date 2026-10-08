@@ -66,3 +66,33 @@ M1–M3 的输出是 S3 之前的自检版本跑出来的；S3 只改了出错�
 
 `g3-automatic-charging-cycle` 是真车载端的 G3 场景：本机没跑，也没申请真装置，只做了语法解析（0 错误）。G3 跑的是绑定提交里的场景脚本，
 这处改动要等 G3 绑定前移之后才生效。
+
+## 审查 S1：快照内只等被等的段，钉住「同一次提交」（`s1-split-save/`）
+
+审查指出：等待条件改成等整串后，产品若把 `ConfirmUnableToChargeAsync` 那一次保存拆成两次，场景会等到第二次落库再判绿，
+「同一次提交」这个前提就丢了；G2 只看终态，也抓不到。所以改为：快照保留，等待条件退回只等被等的那段，断言仍比整串。
+
+证据：在临时副本里把产品拆成两次保存（`product-split.diff`：加完暂停行先单独 `SaveChanges`，等 3 秒再保存其余），
+四次都跑在这个产品上。变异没有提交，跑完用 `git checkout` 还原。变异版编译结果 `0 Error(s)`（`runs/s1-1-utc-wholeline/build.log`）。
+被测提交 `f123562b`，本机合成装置，槽位 0，调度放行的时段。
+
+| # | 场景 | 场景版本 | 结果 | 判据 |
+| --- | --- | --- | --- | --- |
+| 1 | charging-unable-to-charge-pauses-charger | `319343d1`（快照 + 等整串） | PASS | 6/6 |
+| 2 | 同上 | `f123562b`（快照内只等暂停） | **FAIL** | L2-UTC-01 红，其余 5 条绿 |
+| 3 | charging-clearance-to-waiting-point | `319343d1` | PASS | 6/6 |
+| 4 | 同上 | `f123562b` | **FAIL** | L2-CWP-01 红，其余 5 条绿 |
+
+第 1、3 次判绿，依据是 `timeline.jsonl`（它只在读数变化时记一行）。两次都持续读到「暂停已在、周期未迁移」的中间态，
+等整串的等待一直等过了这段：
+
+- 第 1 次：`UNABLE_TO_CHARGE_CONFIRMED … | EN_ROUTE ACTIVE | CLEARING_MAINTENANCE … | ORDER_HANG`，从 03:30:34.857 持续到 03:30:37.764（2.9 秒）。
+- 第 3 次：`UNABLE_TO_CHARGE_CONFIRMED recovered=0 | ACTIVE | CLEARING_MAINTENANCE …`，从 03:32:23.840 持续到 03:32:27.020（3.2 秒）。
+
+第 2、4 次红，读数就是那段中间态：
+
+- L2-UTC-01 实际：`UNABLE_TO_CHARGE_CONFIRMED UNKNOWN recovered=0 | EN_ROUTE ACTIVE | CLEARING_MAINTENANCE … | ORDER_HANG`。
+  用途已是 `CLEARING_MAINTENANCE`，是因为它在拆开之前就已暂存，跟着第一次保存落库；周期与旅程码在第二次保存里。
+- L2-CWP-01 实际：`UNABLE_TO_CHARGE_CONFIRMED recovered=0 | ACTIVE | CLEARING_MAINTENANCE …`。
+
+`run-s1.ps1` 同样写死了作者本机路径；重放时从 `product-split.diff` 与 `319343d1` 的场景文件重建。
