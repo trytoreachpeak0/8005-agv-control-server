@@ -180,6 +180,11 @@ roster-empty       import-charger-roster --map 26 --dry-run   outcome=OK errorCo
 - 发布包：`release.yml` run 37585620196，`fp/v2-impl@d2018450`，车载端 `w2g/fp-v2-impl@022282eb`，包 SHA-256 `9186e4f1…b526`。
 - 实例定义：取自 `feat/cs411-1007-field-import@7bd60584`，那里填了三个 map 26 值（见下）。部署用的覆盖定义 `import-1007/deploy-override-definition.json`
   只把 `routeGraph.enabled`、`journeyRuntime.enabled` 改成 `false`，其余逐键相同。
+  它的 SHA-256 是 `3a368f8c935f08684a3fbf216dcd3b2a43247bd4aff792a2ecef5ea04faa935a`。部署时传给 `-InstanceDefinitionPath` 的是会话临时目录里的
+  `instance-factory01-v2.cs411-1007.json`，入库的这份是从它原样拷贝的：两者 `cmp` 逐字节相同，提交后 `git show` 取出的 blob 也是同一个哈希。
+  服务器上部署脚本留下的 `D:\zhengyushao\control-server-v2-ops\installed-instance.json` 与 `instance.json` 也是同一个哈希（10-08 用 `Get-FileHash` 实读），
+  说明服务器实际装的就是这一份。
+  （审查 S2 之后，入库的出厂定义也把这两项改成了 `false`，与这份覆盖定义一致。原因：包里的站点清单仍绑 map 25，运行时开着时 Host 会拒绝启动。）
 - 装前只列了 `C:\Program Files\8005 AGV` 与 `C:\ProgramData\8005` 的子目录名（`01-list-roots.txt`）：只有 MVP 的 `ControlServer`、`ControlServer-backups`，没有别的带 v2 字样的目录。
 - **结果：半装。**产品安装脚本 PASS，配置覆盖层合入并回读核对，服务起来了（`172.19.205.222:58105`／`:58107`）。随后 FakeMesIngest 的计划任务在 120 秒内没有应答健康检查：
 
@@ -211,6 +216,8 @@ roster-empty       import-charger-roster --map 26 --dry-run   outcome=OK errorCo
 | 核对 `charger-roster` | `version 1`，`emptyRoster=true`，`inProgress.openCycleCount=0` |
 
 批准的 `basisReference` 原文：「用户 2026-09-29 在调度会话中批准（转述），批次 9 方案第七节第 6 条；--role 由用户 10-07 在调度会话中确认（转述）；10-07 导入授权 cs#411 issuecomment-6032690519」。
+**批准没有预演**：`approve-charging-policy` 不接受 `--dry-run`（用法只有 `--version --approved-by --role --basis --source`，`Program.ChargingPolicy.cs:110`），
+一次就写进库，写下的记录只能追加、不能修改。所以批准之前先把要写的每个值在调度会话里核过一遍，再执行。导入和激活都有 `--dry-run`，都先跑过。
 `--role` 那一句在中段，不在末尾：调度后来要求「放在末尾」的消息到达时，批准已经写进库了。批准记录只能追加，不能修改，所以没有重做。
 
 **没有做的**：没有查 RIoT（见 8.2）；没有开窗；没有激活演练策略；没有打开任何开关；没有启动车载端；没有碰 agv01、MVP 的配置与库、生产 MesIngest。

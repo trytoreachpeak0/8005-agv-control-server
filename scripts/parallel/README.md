@@ -14,7 +14,7 @@ control-server#262。约 2026-10-08 起 `factory01` 上同时跑两套 ControlSe
 | `routeGraph.mapId`、`journeyRuntime.mapId` | 26 | 用户答复 |
 | `journeyRuntime.mapIdentity` | `老厂前线new_wk` | `evidence/field/2026-09-19-B6-map-name-baseline-check/real-riot/fields.json` |
 | `journeyRuntime.dispatchZone`、`allowedDispatchZones` | `WIRE` | 用户 2026-09-18 定：`evidence/field/2026-09-18-B4-site-prerequisites/03-area-assignment-table.md` 第 58、122 行（区域分配表的 `dispatch_zone` 全部是 `WIRE`，实例必须配成同一个值，否则那张表导入会报 `DISPATCH_ZONE_NOT_FOUND`） |
-| `journeyRuntime.admissionPolicyDeploymentId` | `MAP-26-WIRE_TO_GATE-20261007` | 调度 2026-10-07 定，格式沿用 map 25 的 `MAP-25-WIRE_TO_GATE-20260827`（control-server#411）。它是部署标签，不是业务参数 |
+| `journeyRuntime.admissionPolicyDeploymentId` | `MAP-26-WIRE_TO_GATE-20261007` | 调度 2026-10-07 定，格式沿用 map 25 的 `MAP-25-WIRE_TO_GATE-20260827`（control-server#411）。它是部署标签，不是业务参数。**实例第一次带着运行时启动之后，它就和 `admissionPolicyVersion` 一起固定在库里**：只改标签、不升版本，服务端会报 `Admission policy version is already bound to different content or deployment identity.`，判为准入策略漂移（`WireToGateStore.cs` 的 `ApplyAdmissionPolicyAsync`）。要换标签，就同时升 `admissionPolicyVersion` |
 | 站点清单 `task-type-stations.settings.json`（在包里，不在定义里） | 绑 25 | **开运行时之前要出 26 版** |
 
 这三个值都是服务端自己的配置：调度区存在本实例的库里，准入策略部署号是服务端写库时带的标签。**RIoT 里没有它们，也就无从「从 RIoT 取回」**——此前这里和工作区文档都这么写过，那是错的（control-server#411）。
@@ -22,6 +22,8 @@ control-server#262。约 2026-10-08 起 `factory01` 上同时跑两套 ControlSe
 在 control-server#411 之前，这三个键是 `REPLACE_*` 占位，校验见到 `REPLACE_` 就拒绝，出厂定义因此装不上。这条检查留着，防的是以后有人再写占位。map 25、`老厂前线new`、任何 `MAP-25-*` 标识符也一律拒绝（control-server#262 复审 M3）。
 
 **站点清单与准入策略都只在 `JourneyRuntime.enabled=true` 时才会被读**（`TaskTypeStationStartup.cs` 在运行时关着时直接返回；准入策略在 `JourneyRuntimeEngine` 的一轮迭代里写库）。所以运行时关着的实例用不到它们；**开运行时之前，必须先备好 26 版站点清单**。
+
+**所以出厂定义里 `journeyRuntime.enabled` 与 `routeGraph.enabled` 都是 `false`**（control-server#411 审查 S2）。包里的站点清单今天仍绑 map 25；运行时开着时，站点清单的图号与 `JourneyRuntime:mapId`（26）对不上，Host 会以 `BindingMapMismatch` 拒绝启动（`TaskTypeStationConfigurationValidator.cs`），照原样装会再次半装。两个开关必须一起改：只开路网引擎、不开运行时会被校验拒绝。**打开运行时是以后单独授权的一步，前提是 26 版站点清单已经进包。**10-07 的首装用的就是这两项为 `false` 的定义。
 
 ## 清桩出口的两节配置与恢复凭据由部署链写，不再手工合入（control-server#454）
 
@@ -45,8 +47,8 @@ control-server#262。约 2026-10-08 起 `factory01` 上同时跑两套 ControlSe
 
 产品升级脚本 `Update-ControlServerLocal.ps1` 的预检要求已装配置里 `JourneyRuntime.enabled` 为 false（`ae2f99be9` 起）：
 它会用保留下来的配置拉起还没验证过的新版本，做启动、存活检查、重启、再检查，结果文件写 `journeyRuntimeEnabled=false`、
-`vehicleMoved=false`；运行时开着，新版本就会在这次检查里取需求、建单。并行实例的覆盖层写的是 true，所以首装之后的升级和
-`-Rollback` 以前都被这道预检拒掉。
+`vehicleMoved=false`；运行时开着，新版本就会在这次检查里取需求、建单。当时出厂定义的覆盖层写的是 true（control-server#411
+起出厂改为 false，以后开了运行时就又是 true），所以首装之后的升级和 `-Rollback` 以前都被这道预检拒掉。
 
 现在升级分支走 `ParallelHost.psm1` 的 `Invoke-ParallelProductUpgrade`，顺序是：
 
