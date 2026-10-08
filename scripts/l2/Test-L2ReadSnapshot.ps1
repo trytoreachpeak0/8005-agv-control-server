@@ -34,8 +34,10 @@ if (-not (Test-Path -LiteralPath (Join-Path $HostDirectory 'Microsoft.Data.Sqlit
 }
 
 $results = [System.Collections.Generic.List[object]]::new()
-function Add-Case([string]$Name, [bool]$Ok, [string]$Actual) {
-    $results.Add([pscustomobject]@{ Name = $Name; Ok = $Ok; Actual = $Actual })
+# $Ok untyped: a mutation can turn a block's output into an array, and a [bool] parameter would then throw and end the check
+# instead of failing this one case (control-server#510 review S3). Only a real $true passes.
+function Add-Case([string]$Name, $Ok, [string]$Actual) {
+    $results.Add([pscustomobject]@{ Name = $Name; Ok = ($Ok -is [bool] -and $Ok); Actual = $Actual })
 }
 
 $root = Join-Path ([IO.Path]::GetTempPath()) ("l2-read-snapshot-" + [guid]::NewGuid().ToString('N'))
@@ -73,7 +75,11 @@ try {
     function Read-Holds { [int](Invoke-L2Query -Connection $reader -Sql 'SELECT COUNT(*) AS N FROM Holds')[0].N }
     # A block that throws is an answer, not the end of the check: every case after it still runs and says what it saw.
     function Read-Block([scriptblock]$Read) {
-        try { Invoke-L2ReadSnapshot -Connection $reader -Read $Read } catch { "threw: $($_.Exception.Message)" }
+        # Collected, then joined: whatever the block output -- one value, several, none -- is one string to compare.
+        try {
+            $out = @(Invoke-L2ReadSnapshot -Connection $reader -Read $Read)
+            $out -join ' / '
+        } catch { "threw: $($_.Exception.Message)" }
     }
 
     # ------------------------------------------------------------ the problem: plain reads straddle a commit

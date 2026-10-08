@@ -29,6 +29,12 @@ Plain BEGIN/COMMIT statements rather than SqliteConnection.BeginTransaction(): w
 Microsoft.Data.Sqlite refuses every command whose Transaction property is not set, and Invoke-L2Query and
 Read-L2SingleRow do not set it. With the statements it sees none, and the readers run unchanged inside the block.
 
+A reader left open inside the block keeps the snapshot too: SQLite cannot end a read transaction while one of its statements
+is still running, so the COMMIT here does not end it, no error is raised, and every later read on the connection -- plain or
+in a block -- sees that same old state until the reader is disposed (measured in the review of control-server#510). Read
+through Invoke-L2Query and Read-L2SingleRow, which close their reader in a finally; a block that creates its own command
+must dispose its reader before it returns.
+
 Not nestable: a BEGIN inside an open transaction is an SQLite error, which throws, and that is the intent -- a nested
 block would otherwise end its caller's snapshot at its own COMMIT.
 #>

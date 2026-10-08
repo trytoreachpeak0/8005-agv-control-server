@@ -223,8 +223,12 @@ $null = $riot.Command('Put', 'vehicle', @{
     currentPosition = $machine; processingOrder = $false; clearOrderTaskId = $true
 })
 
-# One read snapshot, and the whole line waited for (control-server#510): the cycle is read before the release, so a
-# release committed between the two came back next to the cycle from before it, and a wait on the release alone stopped there.
+# One read snapshot (control-server#510): the cycle is read before the release, so a release committed between the two came
+# back next to the cycle from before it.
+# Deliberately waits only for the charger released, and compares the whole line: inside one read snapshot, the first read that shows the charger released
+# shows everything committed with it. That pins the premise this criterion rests on -- releasing the charger and ending the cycle are one transaction (ChargingAllocator.CloseCompletedCycleAsync) -- so splitting
+# that commit in the product turns this red, where waiting for the whole line would wait out the split and stay green
+# (control-server#510, review S1).
 $expectedDeparture = '(none) | CHARGER_RELEASED_ON_DEPARTURE | ENDED NOT_CHARGING CHARGING_DEPARTED'
 $afterDeparture = Wait-L2ConditionOrLast -Description 'the charger was released on departure' `
     -Journal $journal -Criterion 'charger-released-on-departure' -TimeoutSeconds 60 `
@@ -237,7 +241,7 @@ $afterDeparture = Wait-L2ConditionOrLast -Description 'the charger was released 
             "$(Get-ChargerHeld) | $(${record}?.Reason) | $(${cycle}?.Phase) $(${cycle}?.WireState) $(${cycle}?.EndReason)"
         }
     } `
-    -Until { param($v) $v -eq $expectedDeparture }
+    -Until { param($v) $v.StartsWith('(none)') }
 $vehicle = Get-Vehicle
 $assertions.Add(
     'L2-CFC-05',

@@ -253,8 +253,12 @@ $heldAtDispatch = Get-ChargerHeld
 
 $null = Move-L2CargoVehicleToCurrentStop $Context $journeyAId $pickupRiotId
 $loadA = Invoke-L2RigLoad $Context $journeyAId $a
-# One read snapshot, and the whole line waited for (control-server#510): the cycle is read before the charger's holder,
-# so a release committed between the two came back next to the cycle from before it.
+# One read snapshot (control-server#510): the cycle is read before the charger's holder, so a release committed between the
+# two came back next to the cycle from before it.
+# Deliberately waits only for the charger released, and compares the whole line: inside one read snapshot, the first read that shows the charger released
+# shows everything committed with it. That pins the premise this criterion rests on -- releasing the charger and ending the cycle are one transaction (ChargingAllocator.CloseCompletedCycleAsync) -- so splitting
+# that commit in the product turns this red, where waiting for the whole line would wait out the split and stay green
+# (control-server#510, review S1).
 $expectedReleased = '(none) | CHARGER_RELEASED_ON_DEPARTURE | ENDED CHARGING_DEPARTED'
 $released = Wait-L2ConditionOrLast -Description 'the charger was released on departure' -Journal $journal `
     -Criterion 'charger-released' -TimeoutSeconds 30 `
@@ -267,7 +271,7 @@ $released = Wait-L2ConditionOrLast -Description 'the charger was released on dep
             "$(Get-ChargerHeld) | $(${record}?.Reason) | $(${cycleNow}?.Phase) $(${cycleNow}?.EndReason)"
         }
     } `
-    -Until { param($v) $v -eq $expectedReleased }
+    -Until { param($v) $v.StartsWith('(none)') }
 $assertions.Add(
     'G3-13-06',
     '甲派给充满的这辆车：下达那一刻 211 仍是充电那一趟的占用；被确认的最新一版计划属于甲、不含 CHARGER 腿；车到 12 号站车载端录入可用、甲装货提交；211 以 CHARGER_RELEASED_ON_DEPARTURE 释放、周期以 CHARGING_DEPARTED 收尾',

@@ -785,6 +785,11 @@ jobs:
           # Belt and braces for the environment above: anything a build still left running goes now.
           & dotnet build-server shutdown *> $null
 
+          # The read snapshot the G3 charging scenarios read through (control-server#510), checked against this build's SQLite
+          # as in the scenarios job.
+          & pwsh -NoProfile -File ./scripts/l2/Test-L2ReadSnapshot.ps1
+          if ($LASTEXITCODE -ne 0) { Stop-RigSetup "Test-L2ReadSnapshot.ps1 exited with $LASTEXITCODE" }
+
           # Each run's stage root goes inside the evidence root, as in the scenarios job.
           $stageTemp = Join-Path $evidenceRoot '_stage'
           $null = New-Item -ItemType Directory -Path $stageTemp -Force
