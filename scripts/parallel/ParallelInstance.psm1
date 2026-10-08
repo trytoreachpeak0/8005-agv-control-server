@@ -814,8 +814,10 @@ function Test-ParallelInstanceDefinition {
             $failures += "$($leaf.Path) is '$($leaf.Value)', an identifier of the MVP's map 25."
         }
         # The same refusal the onboard deployment makes of its site files: a value still marked
-        # as "fill me in" is refused, not guessed. The shipped definition carries these for the
-        # two map-26 values that have no source yet (see scripts/parallel/README.md).
+        # as "fill me in" is refused, not guessed. The shipped definition carried these for the
+        # map-26 values until control-server#411 filled them (see scripts/parallel/README.md); the
+        # check stays for the next placeholder. Covered by Test-ParallelInstance.ps1 ('a placeholder
+        # left in dispatchZone') and Invoke-ReverseCheck.ps1 (case 19).
         if ($leaf.Value -match '(?i)REPLACE_') {
             $failures += "$($leaf.Path) is still the placeholder '$($leaf.Value)'; fill in the value from the site before deploying."
         }
