@@ -36,7 +36,15 @@ jobs:
     # 30 until 2026-10-02: the suite had grown to ~26 minutes of dotnet test (3960 tests) and run
     # 36921421653 (PR #437) hit the limit during artifact upload, ending "cancelled". A timeout cancel
     # is the same path as a manual cancel and can wedge the runner session, so the limit keeps headroom.
-    timeout-minutes: 45
+    # 45 until 2026-10-08 (control-server#521): run 37784270398 attempt 1 hit it with the Test step
+    # still running 38m57s in, and was recorded "cancelled". Measured on that day's seven attempts:
+    # the steps before Test take 5m47s-6m28s, upload and post-checkout about 15 s, and the Test step
+    # itself 32m07s-38m05s on completed runs (attempt 2 of the same run, alone on vm01, 38m05s).
+    # The Test step now carries its own limit below, so a slow suite ends that step "failure" with
+    # the upload still running; 70 = that 60 + the slowest pre-Test 6m28s + upload + ~3 min margin.
+    # Splitting the suite into two jobs buys nothing here: only win11-01-control-server-2 carries
+    # 'cs-test' and it runs one job at a time, so the halves would queue behind each other.
+    timeout-minutes: 70
     env:
       # NuGet's vulnerability audit fetches its data from nuget.org during every restore, and with
       # TreatWarningsAsErrors a failed fetch (NU1900) is a red run that says nothing about the code:
@@ -229,6 +237,12 @@ jobs:
       # Passed!, so no step here may match on English console text.
       - name: Test
         shell: pwsh
+        # 60 = the longest Test step seen, 38m57s (37784270398 attempt 1, unfinished when the job
+        # timed out), x 1.5, rounded up. It is the step's own limit, below the job's, so a suite that
+        # outgrows it ends as a failed step and the upload below still runs, instead of the whole job
+        # ending "cancelled" with nothing uploaded (control-server#521). Restore, build and the
+        # outbound schema check run inside this step too, but take under a minute and about 30 s.
+        timeout-minutes: 60
         # BelowNormal is inherited by every process this step starts (dotnet, MSBuild nodes, the
         # test host), so while an l2 job runs next to it, the scenarios get the CPU first. l2 is on
         # the critical path and has timing-sensitive scenarios; a slower test run costs nothing.
