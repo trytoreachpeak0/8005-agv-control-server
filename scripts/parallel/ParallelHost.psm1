@@ -794,7 +794,7 @@ function Get-ParallelFakeMesIngestTaskAction {
 
             So the task runs the double's executable itself, as the dashboard task does, with the two
             arguments the wrapper always passed: loopback, explicitly, and the port. No pwsh is in the
-            task, and seeding is a separate step (Start-FakeMesIngestResident.ps1 -SeedOnly) the
+            task, and seeding is a separate step (Invoke-ParallelFakeMesIngestSeed) the
             installer runs from its own session once the double answers.
 
             The executable path is taken as given and must be absolute; Task Scheduler quotes it

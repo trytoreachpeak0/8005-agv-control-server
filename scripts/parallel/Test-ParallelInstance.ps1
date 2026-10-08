@@ -3010,7 +3010,7 @@ Write-Host 'FakeMesIngest task action and seeding (control-server#512)' -Foregro
     The task layer itself -- registering as SYSTEM and seeing the double answer -- needs elevation and
     lives in Test-FakeMesIngestScheduledTask.ps1. What can be checked here without touching the machine:
     the action is the double's executable with exactly the two arguments, it refuses paths it cannot
-    pass, the -SeedOnly mode seeds without starting anything and reports a double that is not there,
+    pass, registering returns the registration time and nothing else, seeding reports a double that is not there,
     and the installer builds, waits for and seeds the task only through the functions that script drives.
 #>
 $taskActionRoot = Join-Path ([IO.Path]::GetTempPath()) "cs512 task action $([guid]::NewGuid().ToString('N'))"
@@ -3063,6 +3063,30 @@ try {
         -Detail "exit=$($process.ExitCode) log: $operatorText"} finally {
     Remove-Item -LiteralPath $taskActionRoot -Recurse -Force -ErrorAction SilentlyContinue
 }
+
+# Registering returns the registration time and nothing else (review S3 of PR #520). The installer and the
+# self-test pass it on as -Since, and on the night of control-server#512 a probe of the same shape lost its
+# result because a function's stray output joined its return value. The two machine-touching cmdlets are
+# shadowed inside the module's scope by stand-ins that emit something, so nothing is registered.
+$registerRoot = Join-Path ([IO.Path]::GetTempPath()) "cs512 register $([guid]::NewGuid().ToString('N'))"
+try {
+    $hostModule = Get-Module ParallelHost
+    & $hostModule {
+        function script:Register-ScheduledTask { [pscustomobject]@{ TaskName = 'stand-in register output' } }
+        function script:Start-ScheduledTask { 'stand-in start output' }
+    }
+    $standInRoot = Join-Path $registerRoot 'Fake Root'
+    $action = Get-ParallelFakeMesIngestTaskAction -ExecutablePath (Join-Path $standInRoot 'ControlServer.FakeMesIngest.exe') -Port 58188 -WorkingDirectory $standInRoot
+    $returned = @(Register-ParallelFakeMesIngestTask -TaskName 'never-registered' -Action $action -LogPath (Join-Path $registerRoot 'logs\fake.log') -Description 'self-test')
+    Write-Result -Ok ($returned.Count -eq 1 -and $returned[0] -is [datetime] -and (Test-Path -LiteralPath (Join-Path $registerRoot 'logs') -PathType Container)) `
+        -Name 'Register-ParallelFakeMesIngestTask returns one [datetime] even when the task cmdlets emit output, and creates the log directory first' `
+        -Detail "returned $($returned.Count) item(s): $(($returned | ForEach-Object { $_.GetType().Name }) -join ', ')"
+} finally {
+    # Back to the real cmdlets for anything after this.
+    Import-Module (Join-Path $PSScriptRoot 'ParallelHost.psm1') -Force
+    Remove-Item -LiteralPath $registerRoot -Recurse -Force -ErrorAction SilentlyContinue
+}
+
 
 $installerAst = [System.Management.Automation.Language.Parser]::ParseFile((Join-Path $PSScriptRoot 'Install-ParallelInstanceLocal.ps1'), [ref]$null, [ref]$null)
 $installerCommands = @($installerAst.FindAll({ param($n) $n -is [System.Management.Automation.Language.CommandAst] }, $true) |
