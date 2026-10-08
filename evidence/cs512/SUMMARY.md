@@ -53,9 +53,9 @@
 
 | 文件 | 内容 | 结果 |
 | --- | --- | --- |
-| 10 | `Test-ParallelInstance.ps1`（702a25d7e） | 480 passed, 0 failed；本票 8 条：动作拒绝 3 条、动作恰为 exe+两参数、灌种子对无人端口抛出、运维入口非零退出、安装器只经共用函数建任务／等待／灌种子 |
-| 11 | `Invoke-ReverseCheck.ps1` | 22 passed, 0 failed |
-| 12 | 变异 A1～A4 | 各自恰好打红对应用例，其余不变；还原后工作树干净 |
+| 10 | `Test-ParallelInstance.ps1`（c462072f6） | 481 passed, 0 failed（基线 35b8ae81 为 473）；本票 8 条：动作拒绝 3 条、动作恰为 exe+两参数、注册只返回一个 `[datetime]`（PR #520 审查 S3）、灌种子对无人端口抛出、运维入口非零退出、安装器只经共用函数建任务／等待／灌种子 |
+| 11 | `Invoke-ReverseCheck.ps1`（c462072f6） | 22 passed, 0 failed |
+| 12 | 变异 A1～A4（702a25d7e）与 B3（c462072f6，去掉注册后的 `Out-Null` 管道） | 各自恰好打红对应用例，其余不变；还原后工作树干净 |
 
 另：本机以自己的账户（不建任务）按同一动作起真替身，`Invoke-ParallelFakeMesIngestSeed` 返回一行
 `Catalog now holds 0 demand(s) at revision 1`，灌后替身仍在，按 pid 停掉。

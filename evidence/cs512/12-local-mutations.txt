@@ -17,3 +17,7 @@ FAIL  seeding: the operator script in the operations directory runs the same fun
 == A4-installer-skips-seed
 FAIL  the installer builds, registers, waits for and seeds the FakeMesIngest task only through the ParallelHost functions the task self-test drives
 479 passed, 1 failed
+
+== B3-register-output-not-discarded (c462072f6; review S3 of PR #520): removes "| Out-Null" after Register-ScheduledTask in Register-ParallelFakeMesIngestTask
+FAIL  Register-ParallelFakeMesIngestTask returns one [datetime] even when the task cmdlets emit output, and creates the log directory first
+480 passed, 1 failed
