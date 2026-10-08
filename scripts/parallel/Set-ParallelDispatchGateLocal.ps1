@@ -75,13 +75,16 @@ if (-not (Test-Path -LiteralPath $InstanceDefinitionPath -PathType Leaf)) {
 # Asserted as for an uninstall: the checks that refuse the MVP's service, paths or ports are the ones
 # that matter here. The gate's value in the definition is not a question for this script, nor the
 # foreign order cancel gate.
+# Pinned by Test-ParallelInstance.ps1: -State Closed is Close, -State Open is Open, and nowhere else is it decided.
+# Decided before the assertion, which depends on it (control-server#518).
+$direction = ConvertTo-ParallelGateDirection -State $State
 $definition = Read-ParallelInstanceDefinition -Path $InstanceDefinitionPath
-$null = Assert-ParallelInstanceDefinition -Definition $definition -AllowRiotCreateDispatch -AllowRiotForeignOrderCancel
+# -ForStopDirection for Close only: closing must work on an instance installed before taskTypeStations existed,
+# with the module 20 copies today; opening such an instance is refused like an install (control-server#518).
+$null = Assert-ParallelInstanceDefinition -Definition $definition -AllowRiotCreateDispatch -AllowRiotForeignOrderCancel -ForStopDirection:($direction -ceq 'Close')
 $layout = Get-ParallelInstanceLayout -Definition $definition
 $serviceName = $layout.ServiceName
 $configurationPath = "$($layout.InstallRoot)\appsettings.Production.json"
-# Pinned by Test-ParallelInstance.ps1: -State Closed is Close, -State Open is Open, and nowhere else is it decided.
-$direction = ConvertTo-ParallelGateDirection -State $State
 
 if (-not (Test-Path -LiteralPath $configurationPath -PathType Leaf)) {
     throw "No installed configuration at $configurationPath (service '$serviceName'). Nothing was changed."

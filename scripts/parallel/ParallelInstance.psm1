@@ -142,7 +142,7 @@ $script:AllowedKeys = [ordered]@{
     '' = @('instanceId', 'serviceName', 'installRoot', 'dataRoot', 'backupRoot', 'packageRoot',
         'opsRoot', 'stagingRoot', 'listenAddress', 'healthBindAddress', 'onboardPort', 'healthPort',
         'dashboardPort', 'mesIngest', 'fakeMesIngest', 'routeGraph', 'riotCreateDispatch', 'riotForeignOrderCancel',
-        'journeyRuntime', 'vehicleFaultRecovery', 'fieldOperatorRoles')
+        'journeyRuntime', 'vehicleFaultRecovery', 'fieldOperatorRoles', 'taskTypeStations')
     'mesIngest' = @('baseUrl')
     'fakeMesIngest' = @('installRoot', 'port', 'taskName', 'seedPath')
     'routeGraph' = @('enabled', 'mapId', 'designStateTtl', 'runtimeRefreshPeriod', 'runtimeStateMaxAge')
@@ -158,6 +158,8 @@ $script:AllowedKeys = [ordered]@{
     # this instance's own variable name, so no definition can point the service at the MVP's.
     'vehicleFaultRecovery' = @('enabled')
     'fieldOperatorRoles' = @('path', 'onboardClearanceEntryDeclared')
+    # control-server#518. TaskTypeStationPreset.SettingsFileKey; there is no options class to mirror.
+    'taskTypeStations' = @('settingsFile')
 }
 
 # Names only this instance uses, shared by the installer and the uninstaller so the two cannot
@@ -556,13 +558,21 @@ function Test-ParallelInstanceDefinition {
             else set moving -- a person moving it in RIoT, an experiment -- so it is a RIoT write
             authorized on its own, apart from placing orders, and made a visible argument for the
             same reason as -AllowRiotCreateDispatch.
+
+        .PARAMETER ForStopDirection
+            For the two ways out only: uninstalling, and closing the RIoT dispatch gate. Tolerates a
+            definition with no taskTypeStations at all -- one installed before control-server#518 --
+            and nothing else: a taskTypeStations that is written is checked as always. Never for
+            installing, rolling back or opening the gate (PR #523 review, item 1): those start
+            something, and a definition without the preset must not.
     #>
     [CmdletBinding()]
     [OutputType([string[]])]
     param(
         [Parameter(Mandatory = $true)] $Definition,
         [switch] $AllowRiotCreateDispatch,
-        [switch] $AllowRiotForeignOrderCancel
+        [switch] $AllowRiotForeignOrderCancel,
+        [switch] $ForStopDirection
     )
 
     [string[]] $failures = @()
@@ -877,6 +887,38 @@ function Test-ParallelInstanceDefinition {
         $failures += 'fieldOperatorRoles.onboardClearanceEntryDeclared must be stated explicitly.'
     } elseif ($roles['onboardClearanceEntryDeclared'] -isnot [bool]) {
         $failures += "fieldOperatorRoles.onboardClearanceEntryDeclared must be a JSON boolean, got '$($roles['onboardClearanceEntryDeclared'])'."
+    }
+
+    # ------------------------------------------------ task type station preset ---
+
+    # control-server#518. The package's default preset binds map 25; with the runtime on, the Host
+    # refuses to start unless the preset's map is JourneyRuntime:mapId (BindingMapMismatch). So the
+    # definition names the per-map preset the package ships beside it, always -- the runtime is
+    # switched on later by hand, and an install that does not carry the name then fails at that
+    # step instead of here. A bare file name only: it resolves against the install root, which every
+    # install replaces with the package, so the file always comes from the same build as the Host.
+    # The map in the name has to be the runtime's map; the Host test pins each file's content to it.
+    #
+    # An installed definition older than #518 has no such section, and the new module meets it on the way out: 20
+    # copies the current module before every gate change, and a reinstall that fails after copying the scripts but
+    # before recording its definition leaves the new module beside the old definition for 19 -Uninstall. Closing
+    # the gate and uninstalling must not be the steps that refuse (-ForStopDirection); an absent section only.
+    $stations = Get-Node -Root $Definition -Key 'taskTypeStations'
+    if ($ForStopDirection -and -not (Test-KeyPresent -Node $Definition -Key 'taskTypeStations')) {
+        # Tolerated: see above.
+    } elseif ($null -eq $stations) {
+        $failures += 'taskTypeStations must be an object naming the per-map station preset the package ships (settingsFile).'
+    } else {
+        $presetFile = (Test-KeyPresent -Node $stations -Key 'settingsFile') ? $stations['settingsFile'] : $null
+        $runtimeMap = ($null -ne $journey -and (Test-KeyPresent -Node $journey -Key 'mapId')) ? (ConvertTo-IntegerOrNull $journey['mapId']) : $null
+        if ($presetFile -isnot [string] -or [string]::IsNullOrWhiteSpace($presetFile)) {
+            $failures += 'taskTypeStations.settingsFile must be a non-empty file name.'
+        # \z, not $: in .NET '$' also matches before a final line feed (PR #523 review).
+        } elseif ($presetFile -cnotmatch '\Atask-type-stations\.map-([1-9][0-9]*)\.settings\.json\z') {
+            $failures += "taskTypeStations.settingsFile ('$presetFile') must be a bare file name of the form task-type-stations.map-<mapId>.settings.json, one of the per-map presets the package ships next to the Host."
+        } elseif ([int] $Matches[1] -ne $runtimeMap) {
+            $failures += "taskTypeStations.settingsFile ('$presetFile') is the preset for map $($Matches[1]), but journeyRuntime.mapId is $runtimeMap; the Host would refuse to start the runtime (BindingMapMismatch)."
+        }
     }
 
     return $failures
@@ -1433,7 +1475,9 @@ function Assert-ParallelInstanceDefinition {
     param(
         [Parameter(Mandatory = $true)] $Definition,
         [switch] $AllowRiotCreateDispatch,
-        [switch] $AllowRiotForeignOrderCancel
+        [switch] $AllowRiotForeignOrderCancel,
+        # See Test-ParallelInstanceDefinition: uninstalling and closing the gate only.
+        [switch] $ForStopDirection
     )
 
     # @() around the call, not just the [string[]] cast: PowerShell unwraps an empty array to
@@ -1441,7 +1485,7 @@ function Assert-ParallelInstanceDefinition {
     # StrictMode the .Count below threw on exactly the input this function is supposed to
     # accept. The self-test only exercised Test-, which its own callers already wrapped.
     [string[]] $failures = @(Test-ParallelInstanceDefinition -Definition $Definition -AllowRiotCreateDispatch:$AllowRiotCreateDispatch `
-            -AllowRiotForeignOrderCancel:$AllowRiotForeignOrderCancel)
+            -AllowRiotForeignOrderCancel:$AllowRiotForeignOrderCancel -ForStopDirection:$ForStopDirection)
     if ($failures.Count -gt 0) {
         $listed = ($failures | ForEach-Object { "  - $_" }) -join [Environment]::NewLine
         throw ("The parallel instance definition was refused ($($failures.Count) reason(s)):" +
@@ -1498,6 +1542,8 @@ function New-ParallelInstanceConfigurationOverlay {
             path = $Definition['fieldOperatorRoles']['path']
             onboardClearanceEntryDeclared = $Definition['fieldOperatorRoles']['onboardClearanceEntryDeclared']
         }
+        # control-server#518. Read only while the runtime is on, so written on every install whether it is or not.
+        TaskTypeStations = [ordered]@{ settingsFile = $Definition['taskTypeStations']['settingsFile'] }
     }
 }
 

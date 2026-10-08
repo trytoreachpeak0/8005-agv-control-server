@@ -105,7 +105,8 @@ Write-Result -Ok ($shippedFailures.Count -eq 0) `
 # control-server#411 review S2: the package's task-type station preset is still bound to map 25,
 # and the Host refuses to start with the runtime on and that preset (TaskTypeStationConfigurationValidator).
 # So the shipped file installs with the runtime and the route graph off; turning them on is a later,
-# separately authorized step once a map-26 preset exists.
+# separately authorized step. Since control-server#518 the definition names the map-26 preset the
+# package ships (taskTypeStations.settingsFile), which that step needs; the switches stay off.
 Write-Result -Ok ($shipped['journeyRuntime']['enabled'] -eq $false -and $shipped['routeGraph']['enabled'] -eq $false) `
     -Name 'the shipped definition installs with the runtime and the route graph off' `
     -Detail ("journeyRuntime.enabled = $($shipped['journeyRuntime']['enabled']), routeGraph.enabled = $($shipped['routeGraph']['enabled'])")
@@ -312,13 +313,16 @@ $cases = @(
     # --- The MVP's map (control-server#262 re-review, M3) --------------------------------
     @{
         Name = 'both mapIds are the MVP map 25'
-        Expect = @('routeGraph.mapId is 25, the MVP''s map', 'journeyRuntime.mapId is 25, the MVP''s map')
+        # control-server#518: the named preset is map 26's, so the station preset check fires as well.
+        Expect = @('routeGraph.mapId is 25, the MVP''s map', 'journeyRuntime.mapId is 25, the MVP''s map',
+            'is the preset for map 26, but journeyRuntime.mapId is 25')
         Mutate = { param($d) $d['routeGraph']['mapId'] = 25; $d['journeyRuntime']['mapId'] = 25; $d }
     }
     @{
-        # Two, both named: the value is the MVP's map, and it now disagrees with routeGraph's 26.
+        # Three, all named: the value is the MVP's map, it now disagrees with routeGraph's 26, and with
+        # the named station preset's map 26 (control-server#518).
         Name = 'only journeyRuntime.mapId is 25'
-        Expect = @('journeyRuntime.mapId is 25, the MVP''s map', 'disagree')
+        Expect = @('journeyRuntime.mapId is 25, the MVP''s map', 'disagree', 'is the preset for map 26, but journeyRuntime.mapId is 25')
         Mutate = { param($d) $d['journeyRuntime']['mapId'] = 25; $d }
     }
     @{
@@ -503,8 +507,9 @@ $cases = @(
         Mutate = { param($d) $d['journeyRuntime']['enabled'] = $false; $d }
     }
     @{
+        # control-server#518: the named station preset is map 26's as well.
         Name = 'the two mapIds disagree'
-        Expect = 'disagree'
+        Expect = @('disagree', 'is the preset for map 26, but journeyRuntime.mapId is 27')
         Mutate = { param($d) $d['journeyRuntime']['mapId'] = 27; $d }
     }
 
@@ -727,6 +732,51 @@ $cases = @(
         Name = 'fieldOperatorRoles.onboardClearanceEntryDeclared as a number'
         Expect = "fieldOperatorRoles.onboardClearanceEntryDeclared must be a JSON boolean, got '1'"
         Mutate = { param($d) $d['fieldOperatorRoles']['onboardClearanceEntryDeclared'] = 1; $d }
+    }
+    # control-server#518. The Map 26 station preset, named in the definition and checked against the runtime's map.
+    @{
+        Name = 'taskTypeStations absent'
+        Expect = 'taskTypeStations must be an object'
+        Mutate = { param($d) $d.Remove('taskTypeStations'); $d }
+    }
+    @{
+        Name = 'taskTypeStations.settingsFile absent'
+        Expect = 'taskTypeStations.settingsFile must be a non-empty file name'
+        Mutate = { param($d) $d['taskTypeStations'].Remove('settingsFile'); $d }
+    }
+    @{
+        Name = 'taskTypeStations.settingsFile as the package default (map 25)'
+        Expect = "taskTypeStations.settingsFile ('task-type-stations.settings.json') must be a bare file name of the form"
+        Mutate = { param($d) $d['taskTypeStations']['settingsFile'] = 'task-type-stations.settings.json'; $d }
+    }
+    @{
+        Name = 'taskTypeStations.settingsFile with a directory'
+        Expect = "taskTypeStations.settingsFile ('D:\zhengyushao\control-server-v2-ops\task-type-stations.map-26.settings.json') must be a bare file name"
+        Mutate = { param($d) $d['taskTypeStations']['settingsFile'] = 'D:\zhengyushao\control-server-v2-ops\task-type-stations.map-26.settings.json'; $d }
+    }
+    @{
+        Name = 'taskTypeStations.settingsFile spelled with capitals'
+        Expect = "taskTypeStations.settingsFile ('Task-Type-Stations.map-26.settings.json') must be a bare file name"
+        Mutate = { param($d) $d['taskTypeStations']['settingsFile'] = 'Task-Type-Stations.map-26.settings.json'; $d }
+    }
+    @{
+        # PR #523 review: '$' also matches before a final line feed, so this passed with a '$'-anchored pattern.
+        Name = 'taskTypeStations.settingsFile with a trailing line feed'
+        Expect = "taskTypeStations.settingsFile ('task-type-stations.map-26.settings.json`n') must be a bare file name"
+        Mutate = { param($d) $d['taskTypeStations']['settingsFile'] = "task-type-stations.map-26.settings.json`n"; $d }
+    }
+    @{
+        Name = 'taskTypeStations.settingsFile for another map than the runtime'
+        Expect = "is the preset for map 27, but journeyRuntime.mapId is 26"
+        Mutate = { param($d) $d['taskTypeStations']['settingsFile'] = 'task-type-stations.map-27.settings.json'; $d }
+    }
+    @{
+        Name = 'taskTypeStations.settingsFile for the MVP map'
+        Expect = @(
+            "is the preset for map 25, but journeyRuntime.mapId is 26"
+            "taskTypeStations.settingsFile is 'task-type-stations.map-25.settings.json', an identifier of the MVP's map 25"
+        )
+        Mutate = { param($d) $d['taskTypeStations']['settingsFile'] = 'task-type-stations.map-25.settings.json'; $d }
     }
 )
 
@@ -1735,6 +1785,32 @@ Write-Result -Ok ($merged['MesIngest']['baseUrl'] -eq 'http://127.0.0.1:58188') 
     -Name 'the overlay points MesIngest at the fake catalog' `
     -Detail "got '$($merged['MesIngest']['baseUrl'])'"
 
+# control-server#518. The overlay names the preset under the very key the Host reads, and the file it names
+# is one the package ships, for the runtime's map. A spelling drift on either side would leave the
+# runtime reading the package default (map 25) and refusing to start with BindingMapMismatch.
+$presetSource = Get-Content -LiteralPath (Join-Path $repoRoot 'src/ControlServer.Host/Runtime/TaskTypeStations/TaskTypeStationPreset.cs') -Raw
+$presetKey = [regex]::Match($presetSource, 'SettingsFileKey\s*=\s*"([^"]+)"').Groups[1].Value
+# Sections that are not objects are skipped rather than indexed: a broken overlay is this check's red, not a crash
+# that ends the self-test before the cases below it run.
+$overlayKey = @($overlay.Keys | Where-Object { $overlay[$_] -is [System.Collections.IDictionary] } | ForEach-Object {
+        $section = $_; @($overlay[$section].Keys | Where-Object { $_ -ieq 'settingsFile' }) | ForEach-Object { "${section}:$_" } })
+Write-Result -Ok ($presetKey -ne '' -and $overlayKey.Count -eq 1 -and $overlayKey[0] -ceq $presetKey) `
+    -Name 'the overlay writes the station preset under the Host''s TaskTypeStationPreset.SettingsFileKey' `
+    -Detail "Host key '$presetKey', overlay '$($overlayKey -join ', ')'"
+$mergedPresetFile = ($merged['TaskTypeStations'] -is [System.Collections.IDictionary]) ? $merged['TaskTypeStations']['settingsFile'] : $null
+Write-Result -Ok ($null -ne $mergedPresetFile -and $mergedPresetFile -ceq $shipped['taskTypeStations']['settingsFile']) `
+    -Name 'the overlay carries the definition''s settingsFile' -Detail "got '$mergedPresetFile'"
+$shippedPresetFile = [string] $shipped['taskTypeStations']['settingsFile']
+$shippedPresetPath = Join-Path $repoRoot "src/ControlServer.Host/$shippedPresetFile"
+$hostProject = Get-Content -LiteralPath (Join-Path $repoRoot 'src/ControlServer.Host/ControlServer.Host.csproj') -Raw
+$shippedPresetMap = (Test-Path -LiteralPath $shippedPresetPath -PathType Leaf) ?
+    (Get-Content -LiteralPath $shippedPresetPath -Raw | ConvertFrom-Json -AsHashtable)['TaskTypeStations']['mapId'] : $null
+Write-Result -Ok ($null -ne $shippedPresetMap -and
+        $hostProject.Contains("<None Update=`"$shippedPresetFile`" CopyToOutputDirectory=`"PreserveNewest`" />") -and
+        $shippedPresetMap -eq $shipped['journeyRuntime']['mapId']) `
+    -Name 'the shipped definition names a preset the Host project ships, bound to the definition''s map' `
+    -Detail "file '$shippedPresetFile', its mapId '$shippedPresetMap', journeyRuntime.mapId '$($shipped['journeyRuntime']['mapId'])'"
+
 Write-Host ''
 Write-Host 'Station clearance exit through first install, upgrade and rollback (control-server#454)' -ForegroundColor Cyan
 
@@ -2543,6 +2619,93 @@ $gateDirect = @($gateCommands | Where-Object { $_ -in @('Set-Content', 'Out-File
 Write-Result -Ok ($gateAbsent.Count -eq 0 -and $gateDirect.Count -eq 0) `
     -Name 'Set-ParallelDispatchGateLocal.ps1 asserts the definition, fingerprints the MVP and changes the gate only through Invoke-ParallelDispatchGateChange' `
     -Detail ("not called: $($gateAbsent -join ', ')  direct writes/restarts: $($gateDirect -join ', ')")
+
+# --- control-server#518 (PR #523 review, item 1). The way out must stay open for an instance installed before
+# taskTypeStations existed. 19 -Uninstall runs whatever the last install left in opsRoot, and 20 copies the current
+# module before every gate change; a reinstall that copies the new module and fails before it records the new
+# definition leaves the new module asserting the old definition. Uninstalling and closing the gate must still pass
+# there; opening the gate, installing and rolling back must not. The definition is the one 10-07 really installed.
+$oldInstalledPath = Join-Path $repoRoot 'evidence/field/2026-10-03-B9-charging-roster-and-policy/import-1007/deploy-override-definition.json'
+$oldInstalled = Read-ParallelInstanceDefinition -Path $oldInstalledPath
+Write-Result -Ok (-not $oldInstalled.Contains('taskTypeStations')) `
+    -Name 'stop direction: the premise -- the 10-07 installed definition has no taskTypeStations' -Detail "keys: $($oldInstalled.Keys -join ', ')"
+function Get-AssertRefusal([hashtable] $Definition, [switch] $ForStopDirection) {
+    try {
+        $null = Assert-ParallelInstanceDefinition -Definition $Definition -AllowRiotCreateDispatch -AllowRiotForeignOrderCancel -ForStopDirection:$ForStopDirection
+        return $null
+    } catch { return $_.Exception.Message }
+}
+$refusal = Get-AssertRefusal (Copy-Definition $oldInstalled)
+Write-Result -Ok ($null -ne $refusal -and $refusal.Contains('taskTypeStations must be an object')) `
+    -Name 'stop direction: without the switch (install, rollback, opening the gate) the 10-07 definition is refused for taskTypeStations' -Detail "got: $refusal"
+$refusal = Get-AssertRefusal (Copy-Definition $oldInstalled) -ForStopDirection
+Write-Result -Ok ($null -eq $refusal) `
+    -Name 'stop direction: with -ForStopDirection the 10-07 definition is accepted' -Detail "got: $refusal"
+foreach ($written in @(
+        @{ Name = 'the package default file name'; Value = @{ settingsFile = 'task-type-stations.settings.json' }; Expect = 'must be a bare file name of the form' }
+        @{ Name = 'a string instead of an object'; Value = 'task-type-stations.map-26.settings.json'; Expect = 'taskTypeStations must be an object' }
+        @{ Name = 'another map than the runtime'; Value = @{ settingsFile = 'task-type-stations.map-27.settings.json' }; Expect = 'is the preset for map 27' }
+    )) {
+    $stopWritten = Copy-Definition $oldInstalled
+    $stopWritten['taskTypeStations'] = $written.Value
+    $refusal = Get-AssertRefusal $stopWritten -ForStopDirection
+    Write-Result -Ok ($null -ne $refusal -and $refusal.Contains($written.Expect)) `
+        -Name "stop direction: a taskTypeStations that is written is still checked -- $($written.Name) is refused" -Detail "got: $refusal"
+}
+
+# The call sites, by AST: only the uninstaller and the gate script pass the switch, and the gate passes it only for Close.
+function Get-StopDirectionArgument([string] $FileName) {
+    $ast = [System.Management.Automation.Language.Parser]::ParseFile((Join-Path $PSScriptRoot $FileName), [ref]$null, [ref]$null)
+    return @($ast.FindAll({ param($n) $n -is [System.Management.Automation.Language.CommandAst] -and
+                $n.GetCommandName() -ceq 'Assert-ParallelInstanceDefinition' }, $true) | ForEach-Object {
+            $parameter = @($_.CommandElements | Where-Object { $_ -is [System.Management.Automation.Language.CommandParameterAst] -and
+                    $_.ParameterName -ieq 'ForStopDirection' })
+            $parameter.Count -eq 0 ? '(absent)' : ($null -eq $parameter[0].Argument ? '(bare)' : $parameter[0].Argument.Extent.Text)
+        })
+}
+$stopSites = [ordered]@{
+    'Uninstall-ParallelInstanceLocal.ps1' = '(bare)'
+    'Set-ParallelDispatchGateLocal.ps1'   = "(`$direction -ceq 'Close')"
+    'Install-ParallelInstanceLocal.ps1'   = '(absent)'
+}
+foreach ($site in $stopSites.Keys) {
+    $arguments = @(Get-StopDirectionArgument $site)
+    Write-Result -Ok ($arguments.Count -eq 1 -and $arguments[0] -ceq $stopSites[$site]) `
+        -Name "stop direction: $site asserts once, -ForStopDirection $($stopSites[$site])" -Detail "got: $($arguments -join ', ')"
+}
+$gateDirectionLine = [regex]::Match($gateScriptSource, '(?m)^\$direction = ConvertTo-ParallelGateDirection -State \$State\s*$')
+$gateAssertAt = $gateScriptSource.IndexOf('Assert-ParallelInstanceDefinition', [StringComparison]::Ordinal)
+Write-Result -Ok ($gateDirectionLine.Success -and $gateDirectionLine.Index -lt $gateAssertAt) `
+    -Name 'stop direction: the gate script decides the direction before it asserts the definition' -Detail "direction at $($gateDirectionLine.Index), assert at $gateAssertAt"
+
+# The scripts themselves, against the 10-07 definition. Each stops before anything changes: the uninstaller under -WhatIf
+# after printing its plan, the gate script at the installed configuration this machine does not have.
+$oldPath = Join-Path ([IO.Path]::GetTempPath()) "cs518-installed-1007-$([guid]::NewGuid().ToString('N')).json"
+[IO.File]::Copy($oldInstalledPath, $oldPath)
+try {
+    $out = @(& pwsh -NoProfile -File (Join-Path $PSScriptRoot 'Uninstall-ParallelInstanceLocal.ps1') `
+            -InstanceDefinitionPath $oldPath -ConfirmUninstall -WhatIf 2>&1 | ForEach-Object { "$_" })
+    $exit = $LASTEXITCODE
+    $planLines = @($out | Where-Object { $_ -match '\]\s+(remove|keep)\s' })
+    Write-Result -Ok ($exit -eq 0 -and $planLines.Count -gt 0 -and ($out -match 'WhatIf: nothing removed') -and -not ($out -match 'was refused')) `
+        -Name 'stop direction: Uninstall-ParallelInstanceLocal.ps1 -WhatIf with the 10-07 definition passes the assertion and prints its plan' `
+        -Detail ("exit=$exit plan lines=$($planLines.Count): " + ($out -join ' / '))
+    foreach ($gate in @(
+            @{ State = 'Closed'; Pass = $true }
+            @{ State = 'Open'; Pass = $false }
+        )) {
+        $out = @(& pwsh -NoProfile -File (Join-Path $PSScriptRoot 'Set-ParallelDispatchGateLocal.ps1') `
+                -State $gate.State -InstanceDefinitionPath $oldPath -WhatIf 2>&1 | ForEach-Object { "$_" })
+        $refused = [bool]($out -match 'taskTypeStations must be an object')
+        $reachedConfiguration = [bool]($out -match 'No installed configuration at')
+        Write-Result -Ok ($gate.Pass ? ($reachedConfiguration -and -not $refused) : ($refused -and -not $reachedConfiguration)) `
+            -Name ("stop direction: Set-ParallelDispatchGateLocal.ps1 -State $($gate.State) with the 10-07 definition " +
+                ($gate.Pass ? 'passes the assertion' : 'is refused for taskTypeStations')) `
+            -Detail ($out -join ' / ')
+    }
+} finally {
+    Remove-Item -LiteralPath $oldPath -Force -ErrorAction SilentlyContinue
+}
 
 # --- The database the state is read from: the service's own, and only inside the V2 data root.
 $dbCases = @(

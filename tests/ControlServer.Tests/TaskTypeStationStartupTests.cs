@@ -81,6 +81,87 @@ public sealed class TaskTypeStationStartupTests
         Assert.Equal(1, result.Bindings.Version.Version);
     }
 
+    /// <summary>The Map 26 preset the v2 parallel instance names (control-server#518), relative to the host directory.</summary>
+    private const string Map26PresetFile = "task-type-stations.map-26.settings.json";
+
+    private static readonly TaskTypeStationBinding Map26GateBinding =
+        new(TransportTaskTypes.WireToGate, 210, "关卡", "MAP-26-WIRE_TO_GATE-B6-IDENTITY-20260919");
+
+    private static JourneyRuntimeOptions Map26Runtime(int mapId) => new() { Enabled = true, MapId = mapId };
+
+    private static Dictionary<string, string?> NamingTheMap26Preset() =>
+        new() { [TaskTypeStationPreset.SettingsFileKey] = Map26PresetFile };
+
+    [Fact]
+    public async Task TheMap26PresetShippedNextToTheHostStartsARuntimeOnMap26WithoutABindingMapMismatch()
+    {
+        // control-server#518: the parallel instance runs JourneyRuntime:mapId 26 and names this file, by a path relative
+        // to the host directory, exactly as its installed configuration does.
+        TaskTypeStationPresetFile preset = Assert.IsType<TaskTypeStationPresetFile>(
+            TaskTypeStationPreset.Load(AppContext.BaseDirectory, Map26PresetFile));
+        Assert.Equal(Path.Combine(AppContext.BaseDirectory, Map26PresetFile), preset.Path);
+        Assert.Equal(26, preset.Configuration.Map.MapId);
+        Assert.Equal(
+            SixRules.OrderBy(rule => rule.TaskType, StringComparer.Ordinal),
+            preset.Configuration.Rules.OrderBy(rule => rule.TaskType, StringComparer.Ordinal));
+        Assert.Equal([TransportTaskTypes.WireToGate], preset.Configuration.Map.RequiredTaskTypes);
+        Assert.Equal([Map26GateBinding], preset.Configuration.Map.Bindings);
+        Assert.Empty(TaskTypeStationConfigurationValidator.ValidateStatic(preset.Configuration, 26));
+
+        await using Harness harness = await Harness.CreateAsync(
+            Map26Runtime(26), settingsFile: null, extraSettings: NamingTheMap26Preset());
+        TaskTypeStationStartupResult result = Assert.IsType<TaskTypeStationStartupResult>(
+            await TaskTypeStationStartup.EnsureAsync(harness.Services, Token));
+
+        Assert.True(result.Bindings.Created);
+        Assert.DoesNotContain(harness.Logs, line => line.Contains(TaskTypeStationReasonCodes.BindingMapMismatch, StringComparison.Ordinal));
+        await using AsyncServiceScope scope = harness.Services.CreateAsyncScope();
+        ITaskTypeStationBindingStore bindings = scope.ServiceProvider.GetRequiredService<ITaskTypeStationBindingStore>();
+        TaskTypeStationBindingSetVersion active = Assert.IsType<TaskTypeStationBindingSetVersion>(
+            await bindings.ReadActiveAsync(26, Token));
+        Assert.Equal([Map26GateBinding], active.Bindings);
+        Assert.Null(await bindings.ReadActivePointerAsync(25, Token));
+    }
+
+    [Fact]
+    public async Task TheMap26PresetUnderAMap25RuntimeIsRefusedAsABindingMapMismatch()
+    {
+        // The control for the test above: the same file, the same naming, only the runtime's map differs.
+        await using Harness harness = await Harness.CreateAsync(
+            Map26Runtime(25), settingsFile: null, extraSettings: NamingTheMap26Preset());
+
+        TaskTypeStationConfigurationException refused = await Assert.ThrowsAsync<TaskTypeStationConfigurationException>(
+            () => TaskTypeStationStartup.EnsureAsync(harness.Services, Token));
+
+        Assert.Equal(
+            [TaskTypeStationReasonCodes.BindingMapMismatch],
+            refused.Violations.Select(violation => violation.ReasonCode));
+        Assert.Equal(0, await harness.CountAsync<TaskTypeStationBindingSetVersionRow>());
+    }
+
+    [Fact]
+    public void TheMap26PresetsGateAndTheFirstTripsPickupAreaAreStationsInTheCommittedMap26Catalog()
+    {
+        // Derived from committed data only, never a RIoT read: catalog-26.json is the 2026-10-01 station list of Map 26
+        // (its SUMMARY, section 4). The gate binding must name the one station called 关卡, and the first WIRE_TO_GATE
+        // trip's pickup area N1-3 (B4 area-assignments-N-revised.csv) must be a station of the same map.
+        string catalogPath = Path.Combine(
+            ProtocolIdentityArchitectureTests.RepositoryRoot(),
+            "evidence", "field", "2026-10-03-B9-charging-roster-and-policy", "catalog-26.json");
+        using JsonDocument catalog = JsonDocument.Parse(File.ReadAllText(catalogPath));
+        Assert.Equal(26, catalog.RootElement.GetProperty("mapId").GetInt32());
+        (int Id, string Name)[] stations =
+        [
+            .. catalog.RootElement.GetProperty("stations").EnumerateArray()
+                .Select(station => (station.GetProperty("stationId").GetInt32(), station.GetProperty("stationName").GetString()!))
+        ];
+
+        TaskTypeStationBinding gate = Assert.Single(
+            TaskTypeStationPreset.Load(AppContext.BaseDirectory, Map26PresetFile)!.Configuration.Map.Bindings);
+        Assert.Equal([(gate.StationRiotId, gate.StationName)], stations.Where(station => station.Name == gate.StationName));
+        Assert.Equal([(3, "N1-3")], stations.Where(station => station.Name == "N1-3"));
+    }
+
     [Fact]
     public async Task AFirstStartWritesRuleAndBindingSetVersionOneAndPointsTheMapAtIt()
     {
