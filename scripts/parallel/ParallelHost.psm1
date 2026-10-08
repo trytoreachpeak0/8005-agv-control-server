@@ -849,7 +849,8 @@ function Register-ParallelFakeMesIngestTask {
     $registeredAt = [datetime]::Now
     Register-ScheduledTask -TaskName $TaskName -Action $taskAction -Trigger $trigger `
         -Principal $principal -Settings $settings -Description $Description | Out-Null
-    Start-ScheduledTask -TaskName $TaskName
+    # Discarded explicitly: anything this function emits joins the registration time it returns.
+    $null = Start-ScheduledTask -TaskName $TaskName
     return $registeredAt
 }
 

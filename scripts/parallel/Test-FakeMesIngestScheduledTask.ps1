@@ -102,6 +102,7 @@ try {
         'the action runs pwsh by an absolute path that exists' "Execute=$($action.Execute)"
     $since = Register-ParallelFakeMesIngestTask -TaskName $TaskName -Action $action -LogPath $logPath -Description 'cs512 self-test, loopback only'
     $started = [datetime]::UtcNow
+    Write-Result ($since -is [datetime]) 'registration returns one timestamp and nothing else' "returned: $(@($since).Count) item(s)"
     $health = $null
     $failure = $null
     try { $health = Wait-ParallelFakeMesIngestTask -TaskName $TaskName -Port $Port -LogPath $logPath -Since $since -TimeoutSeconds 120 }
