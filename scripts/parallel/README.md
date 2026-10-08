@@ -170,9 +170,10 @@ VB 的 `DeleteDirectory`、FSO 的 `DeleteFolder`、CIM，以及挪走、清空�
 | `Install-ParallelInstanceLocal.ps1` | 在 factory01 上安装／升级／回滚 |
 | `Uninstall-ParallelInstanceLocal.ps1` | 在 factory01 上按部署足迹逐项卸载 |
 | `Set-ParallelDispatchGateLocal.ps1` | 在 factory01 上关、开派车闸门并重启 V2 服务（control-server#472） |
-| `Start-FakeMesIngestResident.ps1` | FakeMesIngest 常驻的计划任务入口 |
+| `Start-FakeMesIngestResident.ps1` | 在运维目录里给正在跑的 FakeMesIngest 重灌种子（control-server#512 之前是计划任务的动作；现在任务直接执行替身 exe，安装器灌一次，重启后要手动重灌，见 #519） |
 | `Publish-FakeMesIngest.ps1` | 替身的 self-contained 发布（控制端跑） |
 | `Test-ParallelInstance.ps1` | 自测，不碰任何机器 |
+| `Test-FakeMesIngestScheduledTask.ps1` | 自测，**要管理员、会建一个 SYSTEM 计划任务**：用安装器的函数真把替身拉起来、灌一次种子，带一条「注册了但起不来」的反面对照。只在 vm01 跑，不在 factory01 跑；它的绿证明不了 factory01（control-server#512） |
 | `Invoke-ReverseCheck.ps1` | 在真实定义文件上做的反向验证，不碰任何机器 |
 
 ## 改完这里的任何东西之后
@@ -185,7 +186,7 @@ pwsh -File scripts/parallel/Test-ParallelInstance.ps1
 pwsh -File scripts/parallel/Invoke-ReverseCheck.ps1
 ```
 
-两者都要全绿。它们不在 CI 里（本仓 CI 跑的是 .NET 测试套件），所以没人会替你跑。
+两者都要全绿。改到 FakeMesIngest 计划任务那一层（`Get-ParallelFakeMesIngestTaskAction`、`Register-`／`Wait-ParallelFakeMesIngestTask`、`Invoke-ParallelFakeMesIngestSeed`）时，再在 vm01 上以管理员跑一次 `Test-FakeMesIngestScheduledTask.ps1 -FakeMesIngestZip <Publish-FakeMesIngest.ps1 的 zip>`。它们不在 CI 里（本仓 CI 跑的是 .NET 测试套件），所以没人会替你跑。
 
 **孪生脚本**：MVP 那套的对应物是 `8005-workspace` 仓的 `remote-ops/factory-server/scripts/15-deploy-control-server.ps1`
 与 `control-server/Install-ControlServerRemote.ps1`。两边刻意分开，所以一边的修复不会自己到达另一边——

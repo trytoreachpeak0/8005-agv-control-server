@@ -1,0 +1,19 @@
+Mutations of 702a25d7e, one at a time, Test-ParallelInstance.ps1 after each, restored with git checkout (tree clean after):
+  A1 removes the absolute-path check in Get-ParallelFakeMesIngestTaskAction
+  A2 drops --FakeMesIngest:listenAddress=127.0.0.1 from the argument
+  A3 makes Invoke-ParallelFakeMesIngestSeed return instead of throw on the health timeout
+  A4 makes the installer skip Invoke-ParallelFakeMesIngestSeed
+
+== A1-no-absolute-check
+FAIL  task action refuses a bare executable name
+479 passed, 1 failed
+== A2-no-listen-address
+FAIL  task action: the double itself, loopback named explicitly, the port; no pwsh in the task
+479 passed, 1 failed
+== A3-seed-timeout-no-throw
+FAIL  seeding: a double that is not there throws for the installer, after logging what it tried
+FAIL  seeding: the operator script in the operations directory runs the same function and exits non-zero on failure
+478 passed, 2 failed
+== A4-installer-skips-seed
+FAIL  the installer builds, registers, waits for and seeds the FakeMesIngest task only through the ParallelHost functions the task self-test drives
+479 passed, 1 failed

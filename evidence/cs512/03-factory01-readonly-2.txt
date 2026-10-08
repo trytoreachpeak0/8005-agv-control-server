@@ -1,0 +1,128 @@
+=== pwsh install time
+
+DisplayName    : PowerShell 7-x64
+DisplayVersion : 7.6.5.0
+InstallDate    : 20260901
+
+2026-09-01T12:49:52.6124550+08:00
+=== security products and policies
+
+Name       DisplayName                            Status
+----       -----------                            ------
+HipsDaemon Huorong Internet Security Daemon      Running
+MDCoreSvc  Microsoft Defender Core 服务          Running
+WdNisSvc   Microsoft Defender 防病毒网络检查服务 Running
+WinDefend  Microsoft Defender 防病毒服务         Running
+
+
+AMServiceEnabled          : True
+RealTimeProtectionEnabled : True
+AntivirusEnabled          : True
+
+=== machine environment: names only, plus the PowerShell/.NET ones in full
+ComSpec, CONTROL_SERVER_ONBOARD_CREDENTIAL, CONTROL_SERVER_RIOT_CALL_API_KEY, DH_RemoteToolsInstallDir, ERLANG_HOME, MSMPI_BENCHMARKS, MSMPI_BIN, NUMBER_OF_PROCESSORS, OS, Path, PATHEXT, POWERSHELL_DISTRIBUTION_CHANNEL, POWERSHELL_TELEMETRY_OPTOUT, PROCESSOR_ARCHITECTURE, PROCESSOR_IDENTIFIER, PROCESSOR_LEVEL, PROCESSOR_REVISION, PSModulePath, TEMP, TMP, USERNAME, windir
+POWERSHELL_DISTRIBUTION_CHANNEL=MSI:Windows Server 2016 Standard
+POWERSHELL_TELEMETRY_OPTOUT=1
+PSModulePath=C:\Program Files\WindowsPowerShell\Modules;C:\Windows\system32\WindowsPowerShell\v1.0\Modules;C:\Program Files\Intel\Wired Networking\;C:\Program Files (x86)\Microsoft SQL Server\160\Tools\PowerShell\Modules\
+=== SYSTEM profile PowerShell state
+=== Security 4688/4689 for pwsh in window (if auditing is on)
+=== Defender / AppLocker / CodeIntegrity events in window
+--- Microsoft-Windows-Windows Defender/Operational
+
+TimeCreated : 2026/10/7 19:17:15
+Id          : 1151
+Message     : Endpoint Protection 客户端运行状况报告(UTC 时间):
+               	平台版本: 4.18.26080.4
+               	引擎版本: 1.1.26080.3
+               	网络实时检查引擎版本: 1.1.26080.3
+               	防病毒安全智能版本: 1.459.574.0
+               	反间谍软件安全智能版本: 1.459.574.0
+               	网络实时检查安全智能版本: 1.459.574.0
+               	RTP 状态: 已启用
+               	OA 状态: 已启用
+               	IOAV 状态: 已启用
+               	BM 状态: 已启用
+               	防病毒安全智能持续时间: 1
+               	反间谍软件安全智能持续时间: 1
+               	上一次快速扫描时间: 0
+               	上一次完全扫描时间: 4294967295
+               	防病毒安全智能创建时间: 2026-10-05T19:53:50Z
+               	反间谍软件安全智能创建时间: 2026-10-05T19:53:50Z
+               	上一次快速扫描开始时间: 2026-10-06T20:43:22Z
+               	上一次快速扫描结束时间: 2026-10-06T20:44:05Z
+               	上一次快速扫描源: 2
+               	上一次完全扫描开始时间: 1601-01-01T00:00:00Z
+               	上一次完全扫描结束时间: 1601-01-01T00:00:00Z
+               	上一次完全扫描源: 0
+               	产品状态: 0x00080000
+              
+
+TimeCreated : 2026/10/7 19:17:15
+Id          : 1150
+Message     : Endpoint Protection 客户端已启动并处于正常运行状态。
+               	平台版本: 4.18.26080.4
+               	引擎版本: 1.1.26080.3
+               	安全智能版本: 1.459.574.0
+              
+
+--- Microsoft-Windows-AppLocker/EXE and DLL
+--- Microsoft-Windows-CodeIntegrity/Operational
+=== System log in window, PowerShell- or task-related only
+=== PowerShell Core operational log in window
+=== PowerShellCore/Operational 2026-10-07 19:11-19:20 (trimmed for evidence: the 4104 script block texts are this repository's own scripts and are left out; event counts and the 40961/53504 timeline are kept)
+event counts:
+  id=12039: 165
+  id=40961: 19
+  id=40962: 19
+  id=4100: 81
+  id=4103: 4
+  id=4104: 39
+  id=53504: 19
+  id=8193: 1
+  id=8194: 1
+  id=8195: 1
+  id=8196: 165
+  id=8197: 4
+40961/53504 timeline (newest first, as read):
+2026/10/7 19:14:46 id=53504
+2026/10/7 19:14:46 id=40961
+2026/10/7 19:14:46 id=53504
+2026/10/7 19:14:45 id=40961
+2026/10/7 19:12:01 id=53504
+2026/10/7 19:12:01 id=40961
+2026/10/7 19:12:01 id=53504
+2026/10/7 19:12:01 id=40961
+2026/10/7 19:12:00 id=53504
+2026/10/7 19:11:59 id=40961
+2026/10/7 19:11:54 id=53504
+2026/10/7 19:11:54 id=40961
+2026/10/7 19:11:36 id=53504
+2026/10/7 19:11:36 id=40961
+2026/10/7 19:11:35 id=53504
+2026/10/7 19:11:35 id=40961
+2026/10/7 19:11:34 id=53504
+2026/10/7 19:11:34 id=40961
+2026/10/7 19:11:33 id=53504
+2026/10/7 19:11:33 id=40961
+2026/10/7 19:11:32 id=53504
+2026/10/7 19:11:32 id=40961
+2026/10/7 19:11:31 id=53504
+2026/10/7 19:11:31 id=40961
+2026/10/7 19:11:30 id=53504
+2026/10/7 19:11:30 id=40961
+2026/10/7 19:11:29 id=53504
+2026/10/7 19:11:29 id=40961
+2026/10/7 19:11:28 id=53504
+2026/10/7 19:11:28 id=40961
+2026/10/7 19:11:27 id=53504
+2026/10/7 19:11:27 id=40961
+2026/10/7 19:11:26 id=53504
+2026/10/7 19:11:26 id=40961
+2026/10/7 19:11:25 id=53504
+2026/10/7 19:11:25 id=40961
+2026/10/7 19:11:24 id=53504
+2026/10/7 19:11:24 id=40961
+=== other tasks whose action runs pwsh (name, user, last result only)
+\8005 AGV ControlServer V2 FakeMesIngest user=SYSTEM last= result=
+OperationStopped: The pipeline was not run because a pipeline is already running. Pipelines cannot be run concurrently.
+

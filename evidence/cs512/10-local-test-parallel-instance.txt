@@ -1,0 +1,13 @@
+Test-ParallelInstance.ps1 at 702a25d7e, local (laptop), 2026-10-08 18:51 -- the control-server#512 section and the totals; the other 472 PASS lines are unchanged cases
+FakeMesIngest task action and seeding (control-server#512)
+  PASS  task action refuses a bare executable name
+  PASS  task action refuses a working directory ending in a backslash
+  PASS  task action refuses an executable path with a double quote
+  PASS  task action: the double itself, loopback named explicitly, the port; no pwsh in the task
+2026-10-08T18:51:42.2830392+08:00 FakeMesIngest seeding the running double: port=53184 seed=C:\Users\szy\AppData\Local\Temp\cs512 task action 65c5639944b346d78d070f240ff8e012\none.json
+2026-10-08T18:51:44.9058858+08:00 FATAL: the double did not answer http://127.0.0.1:53184/control/v1/health within 2 s
+  PASS  seeding: a double that is not there throws for the installer, after logging what it tried
+  PASS  seeding: the operator script in the operations directory runs the same function and exits non-zero on failure
+  PASS  the installer builds, registers, waits for and seeds the FakeMesIngest task only through the ParallelHost functions the task self-test drives
+
+480 passed, 0 failed
