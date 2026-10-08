@@ -1,0 +1,30 @@
+[2026-10-08T13:20:02.1232336+08:00] registered and started
+[2026-10-08T13:20:03.9516188+08:00] health 200: {"schemaVersion":"1","instanceId":"fake-mes-ingest-1","runId":"run-d602c222","revision":1,"observedAt":"2026-10-08T05:20:03.8991003+00:00","body":{"status":"live","demandCount":0}}
+HEALTH_ANSWERED=True
+=== task info
+
+[32;1mLastRunTime    : [0m2026/10/8 13:20:02
+[32;1mLastTaskResult : [0m267009
+
+Running
+=== action as registered
+
+[32;1mExecute          : [0mpwsh.exe
+[32;1mArguments        : [0m-NoProfile -ExecutionPolicy Bypass -File "C:\cs512 repro\Fake Root\Start-FakeMesIngestResident.ps1" 
+                   -ExecutablePath "C:\cs512 repro\Fake Root\ControlServer.FakeMesIngest.exe" -Port 47188 -SeedPath "C:
+                   \cs512 repro\ops\fake-mes-ingest-seed.json" -LogPath "C:\cs512 repro\ops\logs\fake-mes-ingest.log"
+[32;1mWorkingDirectory : [0mC:\cs512 repro\Fake Root
+
+=== log
+2026-10-08T13:20:02.7577730+08:00 FakeMesIngest resident starting: exe=C:\cs512 repro\Fake Root\ControlServer.FakeMesIngest.exe port=47188 seed=C:\cs512 repro\ops\fake-mes-ingest-seed.json
+2026-10-08T13:20:03.1687050+08:00 Started pid 18036
+2026-10-08T13:20:03.9633158+08:00 Ready at http://127.0.0.1:47188
+2026-10-08T13:20:04.0415076+08:00 Catalog reset; this round is run-e7f55584
+2026-10-08T13:20:04.0466179+08:00 Seeded 0 of 0 demand(s) under runId run-e7f55584
+2026-10-08T13:20:04.0889858+08:00 Catalog now holds 0 demand(s) at revision 1
+2026-10-08T13:20:04.0926547+08:00 Serving. This script stays alive as long as the double does.
+log dir exists: True
+=== TaskScheduler/Operational
+=== cleanup
+task after cleanup: 0
+dir after cleanup exists: False

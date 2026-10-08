@@ -1,0 +1,16 @@
+=== before
+MVP service pid=35288 state=Running; listeners: 58005=35288 58007=35288
+V2 JourneyRuntime.enabled=False
+task as found: state=3 Execute=pwsh.exe
+log dir exists before: False; 58188 listeners before: 0; my processes before: 0
+=== R2: Execute by absolute path, nothing else changed
+R2 Execute now: C:\Program Files\PowerShell\7\pwsh.exe
+R2 started=2026-10-08T18:27:35.8704459+08:00 health=NONE
+R2 task state=3 lastTaskResult=0xFFFFFFFF
+R2 log dir exists: False
+R2 processes: 
+=== cleanup
+task after: state=3 Execute=pwsh.exe Arguments-unchanged=True
+58188 listeners after: 0; my processes after: 0
+=== after
+MVP service pid=35288 state=Running; listeners: 58005=35288 58007=35288

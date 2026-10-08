@@ -1,0 +1,23 @@
+=== before
+MVP service pid=35288 state=Running; listeners: 58005=35288 58007=35288
+
+        Scope ExecutionPolicy
+        ----- ---------------
+MachinePolicy       Undefined
+   UserPolicy       Undefined
+      Process       Undefined
+  CurrentUser       Undefined
+ LocalMachine    RemoteSigned
+
+cs512-probe-T1-exit7: registered=2026-10-08T17:37:04.4722061+08:00 state=3 lastRunTime=2026-10-08T17:37:37.0000000+08:00 lastTaskResult=7 (0x00000007)
+cs512-probe-T2-bypass-file-exit9: registered=2026-10-08T17:37:06.9340933+08:00 state=3 lastRunTime=2026-10-08T17:37:37.0000000+08:00 lastTaskResult=9 (0x00000009)
+probe file: True 2026-10-08T17:37:07.4609189+08:00
+=== PowerShellCore/Operational 40961/53504 since the first registration
+17:37:04.936 40961 user=S-1-5-18 PowerShell console is starting up
+17:37:05.036 53504 user=S-1-5-18 PowerShell has started an IPC listening thread on process: 29700 in AppDomain: DefaultAppDomain.
+17:37:07.245 40961 user=S-1-5-18 PowerShell console is starting up
+17:37:07.320 53504 user=S-1-5-18 PowerShell has started an IPC listening thread on process: 20644 in AppDomain: DefaultAppDomain.
+=== cleanup
+tasks left: 0; dir left: False
+=== after
+MVP service pid=35288 state=Running; listeners: 58005=35288 58007=35288

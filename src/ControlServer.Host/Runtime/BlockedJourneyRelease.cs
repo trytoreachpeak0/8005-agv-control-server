@@ -1,3 +1,4 @@
+using ControlServer.Application;
 using ControlServer.Domain;
 using ControlServer.Infrastructure.Persistence;
 using Microsoft.EntityFrameworkCore;
@@ -16,8 +17,10 @@ namespace ControlServer.Host.Runtime;
 /// <c>Blocked</c>，车上剩下的货永远不卸，只能改库。
 /// </para>
 /// <para>
-/// <b>放到哪里。</b>与修复续行（<c>OnboardRecoveryCoordinator.ObserveOperationResultAsync</c>）同一个做法：按那一次操作是装还是卸，
-/// 回到 <see cref="JourneyRuntimeStage.AwaitingLoadResult"/> 或 <see cref="JourneyRuntimeStage.AwaitingUnloadResult"/>，阻塞码清掉。
+/// <b>放到哪里。</b>与修复续行（<c>OnboardRecoveryCoordinator.ObserveOperationResultAsync</c>）同一个做法（<see cref="ReleaseStage"/>）：按车此刻所在的
+/// 当前停靠是取货还是卸货，回到 <see cref="JourneyRuntimeStage.AwaitingLoadResult"/> 或 <see cref="JourneyRuntimeStage.AwaitingUnloadResult"/>，
+/// 阻塞码清掉。control-server#505 之前按那一次操作是装还是卸；第 2 条保证那一次就在当前停靠上，两者相同。#505 放出的「标记」那一支（第 2 条）
+/// 终结的可以是前一站装上的需求，那时只有当前停靠说得出车在哪里。
 /// 接下来怎么走由引擎在那两个阶段里按落库的状态判，这里不另写一套：取货停靠是 control-server#291 的续跑——本站还有待装的回等录入、
 /// 发清单与录入请求，没有就进离站段；卸货停靠是同一票的卸货续跑，本站一条在下了卸货命令之后被终结也算已有进展（本票放宽），
 /// 本站还有没卸的就发它的卸货命令，没有就离站或收尾。
@@ -33,6 +36,12 @@ namespace ControlServer.Host.Runtime;
 /// 被结清的正是旅程阻塞在其上的那一次：终结之前它是 <see cref="StationOperationStatus.RecoveryRequired"/>，而且是当前停靠上这条需求的
 /// 装货（取货停靠）或卸货（卸货停靠）操作。会话也可以开在同一趟旅程里另一条已装上的需求上，把它交接掉——那一条的操作早已结清，
 /// 阻塞旅程的那一次仍没收敛，不放。
+/// <para>
+/// 或者（control-server#505）：阻塞码是 <c>*_NOT_RECONCILED</c>，而被终结的需求在终结之前正是 <see cref="DemandExecutionStatus.RecoveryRequired"/>
+/// ——它就是那个标记。<c>*_NOT_RECONCILED</c> 来自一次恢复结果没对上（<c>KeepDemandAndJourneyBlockedAsync</c>），那时仓位操作一次都不动，
+/// 所以那条需求的操作可以早已是 <see cref="StationOperationStatus.Committed"/>：纠错没对上、交接第一次没对上的都是这样，第二次交接对上了，
+/// 上面那一支永远不成立，修之前只能改库。阻塞旅程的别的原因由第 3、4 条看着。
+/// </para>
 /// </description></item>
 /// <item><description>
 /// 这趟旅程别的仓位操作没有一次还没收敛（<see cref="StationOperationStatus.Prepared"/> 或 <c>RecoveryRequired</c>）。同一站逐条串行，
@@ -47,12 +56,13 @@ namespace ControlServer.Host.Runtime;
 /// 被终结的这一条自己不算——它在终结之前本来就是 <c>RecoveryRequired</c>。
 /// </description></item>
 /// <item><description>
-/// 阻塞码不是 <c>*_NOT_RECONCILED</c>（cs#499 调度裁定）。第 4 条靠「没对上的需求留在 <c>RecoveryRequired</c>」认出没结论的事实，
-/// 而这个标记不一定在：需求已送达或已取消时，<c>KeepDemandAndJourneyBlockedAsync</c> 照写阻塞码、不留标记。例如对一条已卸需求开的纠错
-/// （授权不看需求还在不在车上，cs#287）结果没对上，压在另一条的装货恢复之上，阻塞码被覆盖成 <c>LoadCorrectionResult_NOT_RECONCILED</c>，
-/// 再补偿另一条时第 2、3、4 条都成立。阻塞码本身不记是哪条需求留下的，分不出这一种与安全的那一种，所以一律不放。
-/// 代价：同一条需求「第一次补偿或交接没对上、第二次对上」时阻塞码也是 <c>*_NOT_RECONCILED</c>，多需求旅程照旧停在 <c>Blocked</c>
-/// （与修之前相同）。放错碰准入线 1，停住碰准入线 3，宁可停住；源头修好、阻塞码必有标记之后再放宽，见 control-server#505。
+/// 阻塞码不是不可放行的那一族（<see cref="IsUnreleasable"/>）。第 4 条靠「没对上的需求留在 <c>RecoveryRequired</c>」认出没结论的事实。
+/// cs#499 时这个标记不一定在：需求已送达或已取消时，<c>KeepDemandAndJourneyBlockedAsync</c> 照写 <c>*_NOT_RECONCILED</c>、不留标记，所以那时
+/// 第 5 条对 <c>*_NOT_RECONCILED</c> 一律不放，代价是「同一条需求第一次没对上、第二次对上」也卡在 <c>Blocked</c>，只能改库。
+/// control-server#505 堵了源头：打不上标记的（需求已终结）改写 <see cref="OnEndedDemandSuffix"/>，而且不被后来的码覆盖；纠错只授权给还在车上的需求，
+/// 已终结的需求开不了会话。于是普通 <c>*_NOT_RECONCILED</c> 必有一条 <c>RecoveryRequired</c> 的需求，交给第 4 条判；那个标记只能经终结、
+/// 修复续行提交或卸货提交清掉，三者都带着车载端一份新的、对上的仓位账。升级前写下的普通 <c>*_NOT_RECONCILED</c> 不满足这个前提，
+/// 由一次性数据迁移改成 <see cref="BeforeUpgradeSuffix"/>。不可放行的那一族（两个后缀）两条放行路径都不放，正式出口归 control-server#485。
 /// </description></item>
 /// </list>
 /// <para>
@@ -73,22 +83,42 @@ namespace ControlServer.Host.Runtime;
 internal static class BlockedJourneyRelease
 {
     /// <summary>
-    /// <paramref name="endedOperation"/> 刚被结清（终结之前的状态是 <paramref name="statusBeforeEnding"/>）、它的需求已暂存终结时调用。
-    /// 返回是否放出；放出时调用方记一条事件（谁的哪个结果、原来的阻塞码）。
+    /// <paramref name="endedOperation"/> 刚被结清（终结之前的状态是 <paramref name="statusBeforeEnding"/>）、它的需求已暂存终结
+    /// （终结之前是 <paramref name="demandStatusBeforeEnding"/>）时调用。返回是否放出；放出时调用方记一条事件（谁的哪个结果、原来的阻塞码）。
     /// </summary>
     public static async Task<bool> StageAsync(
         ControlServerDbContext dbContext,
         JourneyRuntimeRow runtime,
         StationOperationRow? endedOperation,
         StationOperationStatus? statusBeforeEnding,
+        DemandExecutionStatus? demandStatusBeforeEnding,
         DateTimeOffset now,
         CancellationToken cancellationToken)
     {
         ArgumentNullException.ThrowIfNull(dbContext);
         ArgumentNullException.ThrowIfNull(runtime);
-        if (runtime.Stage != JourneyRuntimeStage.Blocked ||
-            endedOperation is null ||
-            statusBeforeEnding != StationOperationStatus.RecoveryRequired)
+        if (runtime.Stage != JourneyRuntimeStage.Blocked || endedOperation is null)
+        {
+            return false;
+        }
+
+        // 停住的一趟已转交给异常处置会话（control-server#505 独立审查 M1）：它的单在去下一站的路上停了，车不在当前停靠上，
+        // 放回等装货或卸货结果，引擎会在一个车还没到的停靠上推进（每轮抛 InvalidDataException），而那一趟也就不再是
+        // 「停住、等交接」，放弃这趟（TERMINATE_STOPPED_TRIP）与再开会话都被拒，只能改库。那一趟的出口是交接之后由人放弃剩下的，
+        // 或交接掉最后一条时收尾，不是放回引擎。修复续行走不到这里：停住的一趟没有待恢复的仓位操作，授权修复续行要求有一次。
+        if (await dbContext.OwnOrderRebuilds.AsNoTracking()
+                .AnyAsync(
+                    row => row.JourneyId == runtime.JourneyId && row.State == OwnOrderRebuildStates.AwaitingCargoHandoff,
+                    cancellationToken)
+                .ConfigureAwait(false))
+        {
+            return false;
+        }
+
+        // 第 2 条的「标记」那一支（control-server#505）：没对上的结果留下的阻塞，终结的正是带着标记的那条需求。
+        bool carriedTheMark = IsMarkedNotReconciled(runtime.BlockReasonCode) &&
+                              demandStatusBeforeEnding == DemandExecutionStatus.RecoveryRequired;
+        if (!carriedTheMark && statusBeforeEnding != StationOperationStatus.RecoveryRequired)
         {
             return false;
         }
@@ -107,7 +137,7 @@ internal static class BlockedJourneyRelease
               ended.LoadSlotOperationAttemptId == endedOperation.SlotOperationAttemptId
             : ended.UnloadStopId == current.StopId &&
               ended.UnloadSlotOperationAttemptId == endedOperation.SlotOperationAttemptId);
-        if (!blockedOnIt)
+        if (!blockedOnIt && !carriedTheMark)
         {
             return false;
         }
@@ -118,12 +148,47 @@ internal static class BlockedJourneyRelease
             return false;
         }
 
-        runtime.Stage = endedOperation.OperationType == SlotOperationType.Load
-            ? JourneyRuntimeStage.AwaitingLoadResult
-            : JourneyRuntimeStage.AwaitingUnloadResult;
+        runtime.Stage = ReleaseStage(stops);
         runtime.SetBlockReason(null, now);
         runtime.UpdatedAt = now;
         return true;
+    }
+
+    /// <summary>普通的「恢复结果没对上」阻塞码的后缀：<c>&lt;messageType&gt;_NOT_RECONCILED</c>，那条需求留在 <c>RecoveryRequired</c>。</summary>
+    internal const string NotReconciledSuffix = "_NOT_RECONCILED";
+
+    /// <summary>
+    /// 结果没对上、而它的需求已送达或已取消、打不上 <c>RecoveryRequired</c> 标记时写的阻塞码后缀（control-server#505）：
+    /// <c>&lt;messageType&gt;_NOT_RECONCILED_ON_ENDED_DEMAND</c>。两条放行路径都不放它，也不被后来的阻塞码覆盖；只有旅程收尾（<c>JourneyClosure</c>）结束它。
+    /// </summary>
+    internal const string OnEndedDemandSuffix = NotReconciledSuffix + "_ON_ENDED_DEMAND";
+
+    /// <summary>
+    /// 升级到 control-server#505 那一刻还停在 <c>Blocked</c> 的普通 <c>*_NOT_RECONCILED</c>，由一次性数据迁移
+    /// （<c>UnreleasableNotReconciledBlocksBeforeUpgrade</c>）改成的后缀。那时的代码不保证每个这样的码都有标记，分不出哪一行有，
+    /// 所以与 <see cref="OnEndedDemandSuffix"/> 一样不放、不覆盖。升级前这些行本来就被第 5 条一律挡着，现场行为不变。
+    /// </summary>
+    internal const string BeforeUpgradeSuffix = NotReconciledSuffix + "_BEFORE_UPGRADE";
+
+    /// <summary>这个阻塞码是不是不可放行、也不可覆盖的那一族（<see cref="OnEndedDemandSuffix"/> 与 <see cref="BeforeUpgradeSuffix"/>）。</summary>
+    internal static bool IsUnreleasable(string? blockReasonCode) =>
+        blockReasonCode is not null &&
+        (blockReasonCode.EndsWith(OnEndedDemandSuffix, StringComparison.Ordinal) ||
+         blockReasonCode.EndsWith(BeforeUpgradeSuffix, StringComparison.Ordinal));
+
+    /// <summary>这个阻塞码是不是带着标记的「结果没对上」（不可放行的那一族不以 <see cref="NotReconciledSuffix"/> 结尾，两者不相交）。</summary>
+    internal static bool IsMarkedNotReconciled(string? blockReasonCode) =>
+        blockReasonCode?.EndsWith(NotReconciledSuffix, StringComparison.Ordinal) == true;
+
+    /// <summary>
+    /// 放出时回到的阶段：车此刻所在的当前停靠是卸货停靠就等卸货结果，否则等装货结果（control-server#505）。两条放行路径共用。
+    /// </summary>
+    internal static JourneyRuntimeStage ReleaseStage(JourneyStopCursor stops)
+    {
+        ArgumentNullException.ThrowIfNull(stops);
+        return stops.Current.StopRole == JourneyStopRoles.Unload
+            ? JourneyRuntimeStage.AwaitingUnloadResult
+            : JourneyRuntimeStage.AwaitingLoadResult;
     }
 
     /// <summary>
@@ -142,10 +207,9 @@ internal static class BlockedJourneyRelease
     /// 第 3 条在正常流程里几乎被第 4 条盖住，留着守服务器自己的不变量。
     /// </para>
     /// <para>
-    /// <b>出口。</b>不成立时旅程留在 <c>Blocked</c>。另一条需求后来补救成功时，<see cref="StageAsync"/> 也放不出它：那一条的操作早已不是
-    /// <c>RecoveryRequired</c>（第 2 条），阻塞码也还是 <c>*_NOT_RECONCILED</c>（第 5 条）。今天只能改库，与 control-server#505 第 1 件同一个形状，
-    /// 由 #505 给阻塞码补上标记之后一并放宽。第 5 条还让「同一条需求先补偿没对上、再修复续行对上」从放出变成留在 <c>Blocked</c>，单需求旅程也是
-    /// （调度 10-07 裁定接受：放错碰准入线 1，停住碰准入线 3）。
+    /// <b>出口。</b>不成立时旅程留在 <c>Blocked</c>。另一条需求后来补救成功时，<see cref="StageAsync"/> 经第 2 条的「标记」那一支放出它
+    /// （control-server#505）；「同一条需求先补偿没对上、再修复续行对上」也放出（#506 时第 5 条挡着它，#505 放宽）。
+    /// 不可放行的那一族（<see cref="IsUnreleasable"/>）两条路径都不放。
     /// </para>
     /// </remarks>
     internal static async Task<bool> NothingElseUnresolvedAsync(
@@ -159,7 +223,7 @@ internal static class BlockedJourneyRelease
         ArgumentNullException.ThrowIfNull(runtime);
         ArgumentNullException.ThrowIfNull(stops);
         ArgumentNullException.ThrowIfNull(settled);
-        if (runtime.BlockReasonCode?.EndsWith("_NOT_RECONCILED", StringComparison.Ordinal) == true)
+        if (IsUnreleasable(runtime.BlockReasonCode))
         {
             return false;
         }

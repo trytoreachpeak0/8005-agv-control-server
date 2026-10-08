@@ -35,7 +35,11 @@ public sealed class Batch9MigrationDisciplineTests
     internal const string Batch9Migration = "20260929114754" + Batch9MigrationSuffix;
 
     /// <summary>批次 9 迁移之后允许存在的迁移，按名字点出来。</summary>
-    private static readonly string[] MigrationsAfterBatch9 = [];
+    private static readonly string[] MigrationsAfterBatch9 =
+    [
+        // control-server#505：**只改数据，不动 schema**——升级那一刻停在 Blocked、阻塞码以 _NOT_RECONCILED 结尾的旅程，码加后缀 _BEFORE_UPGRADE，成为不可放行的那一族（那时的码不保证有 RecoveryRequired 的需求作标记，而升级前第 5 条本来就一律不放，现场行为不变）；Down 去掉两个新后缀。调度 Coordinator 9 于 2026-10-08 给了迁移通道。自己的断言在 RecoveryEndingReleasesBlockedJourneyTests.Migration.cs。
+        "20261008052643_UnreleasableNotReconciledBlocksBeforeUpgrade",
+    ];
 
     private static readonly string[] NewTables =
     [

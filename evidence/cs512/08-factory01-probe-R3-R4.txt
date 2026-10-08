@@ -1,0 +1,29 @@
+=== before
+MVP service pid=35288 state=Running; listeners: 58005=35288 58007=35288
+V2 JourneyRuntime.enabled=False
+real task: state=3 Execute=pwsh.exe
+listeners before: 58188=0 47188=0; my processes before: 0
+module hash: DA2313F5745CE407457A58C285FD3D419948D1AC2C7761ED9C5ABC3BF5BCB710 (expected DA2313F5745CE407457A58C285FD3D419948D1AC2C7761ED9C5ABC3BF5BCB710)
+=== R3: the real task's pwsh action (absolute pwsh), Y's settings: no trigger, no restart policy
+R3 started=2026-10-08T19:13:54.3067771+08:00 health=NONE
+R3 task state=3 lastTaskResult=0xFFFFFFFF
+R3 processes: 
+=== R4: the final form from the shared functions (702a25d7e), the installer's settings, then the installer's seeding
+R4 action: Execute=C:\Program Files\8005 AGV\ControlServer.V2.FakeMesIngest\ControlServer.FakeMesIngest.exe Argument=--FakeMesIngest:listenAddress=127.0.0.1 --FakeMesIngest:port=47188 WorkingDirectory=C:\Program Files\8005 AGV\ControlServer.V2.FakeMesIngest
+R4 registered: triggers=MSFT_TaskBootTrigger restartCount=3 restartInterval=PT1M user=SYSTEM
+R4 health={"schemaVersion":"1","instanceId":"fake-mes-ingest-1","runId":"run-ee4b0a63","revision":1,"observedAt":"2026-10-08T11:15:05.6234868+00:00","body":{"status":"live","demandCount":0}}
+R4 process pid=25500 owner=NT AUTHORITY\SYSTEM
+R4 task state=4
+2026-10-08T19:15:06.3735049+08:00 FakeMesIngest seeding the running double: port=47188 seed=D:\zhengyushao\control-server-v2-ops\cs512-probe\fake-mes-ingest-seed.json
+2026-10-08T19:15:06.4398021+08:00 Catalog reset; this round is run-9a7ea2c6
+2026-10-08T19:15:06.4424356+08:00 Seeded 0 of 0 demand(s) under runId run-9a7ea2c6
+2026-10-08T19:15:06.4696521+08:00 Catalog now holds 0 demand(s) at revision 1
+2026-10-08T19:15:06.4723701+08:00 Seeded. The double keeps running under its scheduled task.
+R4 seeded=Catalog now holds 0 demand(s) at revision 1
+R4 double still running after seeding: 1
+=== cleanup
+probe tasks left: 0; probe dir left: False
+real task after: state=3 Execute=pwsh.exe Arguments-unchanged=True
+listeners after: 58188=0 47188=0; my processes after: 0
+=== after
+MVP service pid=35288 state=Running; listeners: 58005=35288 58007=35288
