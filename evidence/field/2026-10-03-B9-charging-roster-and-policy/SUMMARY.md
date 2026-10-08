@@ -164,3 +164,71 @@ roster-empty       import-charger-roster --map 26 --dry-run   outcome=OK errorCo
 | 时间 | 动作 | 机器／实例 | 授权人 | agv01 状态确认 | 输出摘录（文件） |
 | --- | --- | --- | --- | --- | --- |
 | （尚无） | | | | | |
+| 2026-10-07 19:10–19:14 CST | 首装 v2 并行实例（`JourneyRuntime.enabled=false`），**半装**，见 8.1 | factory01，`8005 AGV ControlServer V2` | Zhengyu Shao（cs#411 issuecomment-6032690519、-6032938272） | 不适用（不开窗） | `import-1007/02-deploy-whatif.txt`、`03-deploy.txt`、`04-diagnose-fake-mes-ingest.txt`、`05-installed-config.txt` |
+| 2026-10-08 08:56 CST | 导入正式策略 → v1；导入演练策略 → v2（只导入）；导入「置空」名册 → v1 | 同上，库 `C:\ProgramData\8005\ControlServer.V2\data\controlserver.db` | 同上 | 不适用（置空，不开窗） | `import-1007/07-fieldops-1.txt`、`08-fieldops-2.txt` |
+| 2026-10-08 09:26 CST | 批准正式策略 v1（`--source FIELD`，`--role 产品负责人`） | 同上 | 同上；`--role` 由用户 10-07 在调度会话中确认（转述） | 不适用 | `import-1007/09-fieldops-3.txt` |
+| 2026-10-08 09:28 CST | 激活正式策略 v1；核对 | 同上 | 同上 | 不适用 | `import-1007/10-fieldops-4.txt` |
+
+### 8.1 10-07／10-08：装实例、导入、批准、激活（cs#411 第 4 步）
+
+**授权**：用户 10-07（cs#411 issuecomment-6032690519）：在 factory01 的 v2 并行实例上装包，`JourneyRuntime.enabled=false`，导入并核对，不碰车。
+同日补充授权（issuecomment-6032938272）：只列两个根目录的子目录名；服务启动后连 RIoT 网关（只读、不下单）在授权内；`--activated-by` 如实写 AI 代理。
+执行者是工作会话（Claude，AI 代理），每一步都经调度会话（Coordinator 9）放行。
+
+**装包**：
+
+- 发布包：`release.yml` run 37585620196，`fp/v2-impl@d2018450`，车载端 `w2g/fp-v2-impl@022282eb`，包 SHA-256 `9186e4f1…b526`。
+- 实例定义：取自 `feat/cs411-1007-field-import@7bd60584`，那里填了三个 map 26 值（见下）。部署用的覆盖定义 `import-1007/deploy-override-definition.json`
+  只把 `routeGraph.enabled`、`journeyRuntime.enabled` 改成 `false`，其余逐键相同。
+  它的 SHA-256 是 `3a368f8c935f08684a3fbf216dcd3b2a43247bd4aff792a2ecef5ea04faa935a`。部署时传给 `-InstanceDefinitionPath` 的是会话临时目录里的
+  `instance-factory01-v2.cs411-1007.json`，入库的这份是从它原样拷贝的：两者 `cmp` 逐字节相同，提交后 `git show` 取出的 blob 也是同一个哈希。
+  服务器上部署脚本留下的 `D:\zhengyushao\control-server-v2-ops\installed-instance.json` 与 `instance.json` 也是同一个哈希（10-08 用 `Get-FileHash` 实读），
+  说明服务器实际装的就是这一份。
+  （审查 S2 之后，入库的出厂定义也把这两项改成了 `false`，与这份覆盖定义一致。原因：包里的站点清单仍绑 map 25，运行时开着时 Host 会拒绝启动。）
+- 装前只列了 `C:\Program Files\8005 AGV` 与 `C:\ProgramData\8005` 的子目录名（`01-list-roots.txt`）：只有 MVP 的 `ControlServer`、`ControlServer-backups`，没有别的带 v2 字样的目录。
+- **结果：半装。**产品安装脚本 PASS，配置覆盖层合入并回读核对，服务起来了（`172.19.205.222:58105`／`:58107`）。随后 FakeMesIngest 的计划任务在 120 秒内没有应答健康检查：
+
+  ```
+  FakeMesIngest did not answer http://127.0.0.1:58188/control/v1/health within 120 s.
+  ```
+
+  （FakeMesIngest 在 120 秒内没有应答健康检查。）任务 `LastTaskResult=4294967295`，日志目录没有建出来，说明包装脚本正文一行都没执行；原因另开 control-server#512 查，不在 factory01 上复现。
+  失败点之后没有执行的步骤：防火墙规则、把包移入 `D:\zhengyushao\ControlServer.V2`。所以升级和回滚走不通，补装要先 `-Uninstall`（默认保留数据根，导入结果随库保留）。
+- MVP 服务前后指纹一致（PID 6660，Running，58005／58007）；服务器上没有留下 `deploy-config.json`。
+- 调度批准「先导入、后补装」，前提已实读核对：卸载默认保留数据根；重装遇到已有数据根时，先备份再继续使用，不清库。
+
+**已装配置回读**（`05-installed-config.txt`）：`JourneyRuntime.enabled=false`、`RouteGraph.enabled=false`、`RiotCreateDispatch.enabled=false`、
+`RiotForeignOrderCancel.enabled=false`、`VehicleFaultRecovery.enabled=false`；`ConnectionStrings:ControlServer = Data Source=C:\ProgramData\8005\ControlServer.V2\data\controlserver.db`；
+`MesIngest.baseUrl=http://127.0.0.1:58188`；`minimumBatteryPercent` 在已装配置与包内 `appsettings.json` 里都是 0 处。
+
+**FieldOps**：`fp/v2-impl@d2018450` 的 `tools/ControlServer.FieldOps`，self-contained win-x64 发布，放在 `D:\zhengyushao\control-server-v2-ops\fieldops-d2018450\`。
+五个输入文件拷上去前的 SHA-256 与第五节的表逐个一致。`--database` 和 `--fleet` 由服务器端脚本从已装配置现读（`06-fieldops-head.ps1`），不手敲。每一步都先 `--dry-run`。
+
+| 步骤 | 输出摘录 |
+| --- | --- |
+| 基线 `charging-policy` | `activeVersion=null`；agv02 `commissioned=false`，`CHARGING_POLICY_NOT_APPROVED` |
+| 正式策略导入 | `OK`，`version 1`，`contentSha256 5d34c605…117a`，`vehiclesWithoutPolicyAfter=[]` |
+| 置空名册导入（`--map 26`，`catalog-26.json`） | `OK`，`version 1`，`emptyRoster=true`，`windowCanClose=true`，`contentSha256 8939cc82…98f1` |
+| 演练策略导入（只导入） | `OK`，`version 2`，`contentSha256 ad2a1a49…5541`；未批准、未激活 |
+| 批准 v1 | `OK`，`approvedBy Zhengyu Shao`，`approverRole 产品负责人`，`source FIELD` |
+| 激活 v1 | `OK`，`sequence 1`，`activatedBy Claude（AI 代理，Zhengyu Shao 10-07 授权，cs#411）`，`impact.vehiclesWithoutPolicyAfter=[]` |
+| 核对 `charging-policy --fleet` | `activeVersion=1`；agv02 `commissioned=true`，`CHARGING_POLICY_EFFECTIVE`；v2 `approvals=[]` |
+| 核对 `charger-roster` | `version 1`，`emptyRoster=true`，`inProgress.openCycleCount=0` |
+
+批准的 `basisReference` 原文：「用户 2026-09-29 在调度会话中批准（转述），批次 9 方案第七节第 6 条；--role 由用户 10-07 在调度会话中确认（转述）；10-07 导入授权 cs#411 issuecomment-6032690519」。
+**批准没有预演**：`approve-charging-policy` 不接受 `--dry-run`（用法只有 `--version --approved-by --role --basis --source`，`Program.ChargingPolicy.cs:110`），
+一次就写进库，写下的记录只能追加、不能修改。所以批准之前先把要写的每个值在调度会话里核过一遍，再执行。导入和激活都有 `--dry-run`，都先跑过。
+`--role` 那一句在中段，不在末尾：调度后来要求「放在末尾」的消息到达时，批准已经写进库了。批准记录只能追加，不能修改，所以没有重做。
+
+**没有做的**：没有查 RIoT（见 8.2）；没有开窗；没有激活演练策略；没有打开任何开关；没有启动车载端；没有碰 agv01、MVP 的配置与库、生产 MesIngest。
+
+### 8.2 与清单和文档不符之处
+
+- **清单第 2 条（删 `minimumBatteryPercent`）是空操作**：这个键在实例定义、包内 `appsettings.json`、部署脚本里都不存在，已装配置里也是 0 处。
+- **清单第 3 条有一处与代码不符**：包内 `src/ControlServer.Host/appsettings.json:64` 设了 `waitingJourneyRescueBatteryPercent: 15`，不是「没有设」。值与代码默认值相同，15 < 30、15 < 50 的结论不变。
+- **清单第 6 条已被 control-server#454 取代**：部署链按实例定义写 `VehicleFaultRecovery`（`enabled=false`）和 `FieldOperatorRoles`（名单路径在运维目录、空名单），不再手工合入。装完打出 `CLEARANCE_EXIT_UNAVAILABLE`，这是第一阶段的预期。
+- **FieldOps 不在发布包里**，清单和 batch-9 说明都没写它在服务器上从哪来。这次是从同一个 commit 另外发布了一份。
+- **map 26 的三个值不在 RIoT 里**：`dispatchZone`、`allowedDispatchZones` 是服务端自己的调度区名，`WIRE` 取自用户 2026-09-18 的决定
+  （`evidence/field/2026-09-18-B4-site-prerequisites/03-area-assignment-table.md` 第 58、122 行）；`admissionPolicyDeploymentId` 是服务端写库的标签，由调度 10-07 定为
+  `MAP-26-WIRE_TO_GATE-20261007`。`scripts/parallel/README.md` 和工作区 `wire-to-gate-parallel-cd.md` 第 9 节都写过「从 factory01 直查 RIoT 取回」，那是错的，已一并改正。
+  运行时关着时这些值与站点清单都不被读取；**开运行时之前要先出 26 版 `task-type-stations.settings.json`**。
