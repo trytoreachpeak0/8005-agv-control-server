@@ -1,0 +1,29 @@
+mutation M3 on ef46b7d3, class RecoveryEndingReleasesBlockedJourneyTests
+trx: M3-RecoveryEndingReleasesBlockedJourneyTests.trx  total=19 passed=17 failed=2
+Failed  RecoveryEndingReleasesBlockedJourneyTests.ACompensationLeavesTheJourneyBlockedWhileAnotherOperationOfItIsUnresolved
+Failed  RecoveryEndingReleasesBlockedJourneyTests.ARepairResumeLeavesTheJourneyBlockedWhileAnotherOperationOfItIsUnresolved
+mutation M3 on ef46b7d3, class RecoveryStateMachineG2Tests
+trx: M3-RecoveryStateMachineG2Tests.trx  total=211 passed=211 failed=0
+
+mutation M4 on ef46b7d3, class RecoveryEndingReleasesBlockedJourneyTests
+trx: M4-RecoveryEndingReleasesBlockedJourneyTests.trx  total=19 passed=17 failed=2
+Failed  RecoveryEndingReleasesBlockedJourneyTests.ACompensationUnderAnOrdinaryBlockLeavesTheJourneyBlockedWhileAnotherDemandAwaitsRecovery
+Failed  RecoveryEndingReleasesBlockedJourneyTests.ARepairResumeUnderAnOrdinaryBlockLeavesTheJourneyBlockedWhileAnotherDemandAwaitsRecovery
+mutation M4 on ef46b7d3, class RecoveryStateMachineG2Tests
+trx: M4-RecoveryStateMachineG2Tests.trx  total=211 passed=211 failed=0
+
+mutation M5 on ef46b7d3, class RecoveryEndingReleasesBlockedJourneyTests
+trx: M5-RecoveryEndingReleasesBlockedJourneyTests.trx  total=19 passed=17 failed=2
+Failed  RecoveryEndingReleasesBlockedJourneyTests.ACompensationDoesNotLiftABlockAnUnmarkedResultLeft
+Failed  RecoveryEndingReleasesBlockedJourneyTests.ARepairResumeAfterAnUnreconciledCompensationOfTheSameDemandStaysBlockedUntil505
+mutation M5 on ef46b7d3, class RecoveryStateMachineG2Tests
+trx: M5-RecoveryStateMachineG2Tests.trx  total=211 passed=211 failed=0
+
+mutation M8 on ef46b7d3, class RecoveryEndingReleasesBlockedJourneyTests
+trx: M8-RecoveryEndingReleasesBlockedJourneyTests.trx  total=19 passed=17 failed=2
+Failed  RecoveryEndingReleasesBlockedJourneyTests.AHandoffAfterAnEarlierRepairResumeInTheJourneyIsNotHeldByItsDemand
+Failed  RecoveryEndingReleasesBlockedJourneyTests.ASecondRepairResumeInOneJourneyIsNotHeldByTheFirstOnesDemand
+mutation M8 on ef46b7d3, class RecoveryStateMachineG2Tests
+trx: M8-RecoveryStateMachineG2Tests.trx  total=211 passed=210 failed=1
+Failed  RecoveryStateMachineG2Tests.ResumeAuthorizationPersistsFormalCommandBeforeSendAndReplaysSameIdentityAfterRestart
+
