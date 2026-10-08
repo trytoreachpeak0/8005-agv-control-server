@@ -71,6 +71,10 @@ try {
     }
     function Read-Cycle { [string](Invoke-L2Query -Connection $reader -Sql 'SELECT State FROM Cycles')[0].State }
     function Read-Holds { [int](Invoke-L2Query -Connection $reader -Sql 'SELECT COUNT(*) AS N FROM Holds')[0].N }
+    # A block that throws is an answer, not the end of the check: every case after it still runs and says what it saw.
+    function Read-Block([scriptblock]$Read) {
+        try { Invoke-L2ReadSnapshot -Connection $reader -Read $Read } catch { "threw: $($_.Exception.Message)" }
+    }
 
     # ------------------------------------------------------------ the problem: plain reads straddle a commit
     $cycle = Read-Cycle
@@ -80,7 +84,7 @@ try {
         $cycle -ceq 'EN_ROUTE' -and $holds -eq 1) "$cycle | holds=$holds"
 
     # ------------------------------------------------------------ one block, one state
-    $seen = Invoke-L2ReadSnapshot -Connection $reader -Read {
+    $seen = Read-Block {
         $first = Read-Cycle
         Commit-Next
         "$first | $(Read-Holds) | $(Read-Cycle)"
@@ -91,18 +95,15 @@ try {
         $step -eq 2) "step=$step"
 
     # ------------------------------------------------------------ the next block sees it
-    $after = Invoke-L2ReadSnapshot -Connection $reader -Read { "$(Read-Cycle) | $(Read-Holds)" }
+    $after = Read-Block { "$(Read-Cycle) | $(Read-Holds)" }
     Add-Case 'the next block sees what was committed between the two (the transaction was ended)' (
         $after -ceq 'S2 | 2') $after
 
     # ------------------------------------------------------------ a block that throws still ends its transaction
-    $threw = try {
-        Invoke-L2ReadSnapshot -Connection $reader -Read { $null = Read-Cycle; throw 'probe failed' }
-        'no'
-    } catch { $_.Exception.Message }
+    $threw = Read-Block { $null = Read-Cycle; throw 'probe failed' }
     Commit-Next
-    $afterThrow = try { Invoke-L2ReadSnapshot -Connection $reader -Read { "$(Read-Cycle) | $(Read-Holds)" } } catch { "threw: $($_.Exception.Message)" }
-    Add-Case 'a throwing block rethrows its own error' ($threw -ceq 'probe failed') $threw
+    $afterThrow = Read-Block { "$(Read-Cycle) | $(Read-Holds)" }
+    Add-Case 'a throwing block rethrows its own error' ($threw -ceq 'threw: probe failed') $threw
     Add-Case 'after a throwing block, the next block opens and sees the newer commit' ($afterThrow -ceq 'S3 | 3') $afterThrow
     $plain = Read-Cycle
     Commit-Next
@@ -111,14 +112,14 @@ try {
         $plain -ceq 'S3' -and $plainNext -ceq 'S4') "$plain -> $plainNext"
 
     # ------------------------------------------------------------ nesting is refused, and does not end the outer block
-    $nested = Invoke-L2ReadSnapshot -Connection $reader -Read {
+    $nested = Read-Block {
         $before = Read-Cycle
         $inner = try { Invoke-L2ReadSnapshot -Connection $reader -Read { 'ran' } } catch { 'refused' }
         Commit-Next
         "$inner | $before | $(Read-Cycle)"
     }
     Add-Case 'a nested block is refused and the outer snapshot holds after it' ($nested -ceq 'refused | S4 | S4') $nested
-    $afterNested = Invoke-L2ReadSnapshot -Connection $reader -Read { Read-Cycle }
+    $afterNested = Read-Block { Read-Cycle }
     Add-Case 'after the outer block, the next one sees the commit made inside it' ($afterNested -ceq 'S5') $afterNested
 } finally {
     if ($null -ne $reader) { $reader.Dispose() }
