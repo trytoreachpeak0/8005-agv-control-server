@@ -558,13 +558,21 @@ function Test-ParallelInstanceDefinition {
             else set moving -- a person moving it in RIoT, an experiment -- so it is a RIoT write
             authorized on its own, apart from placing orders, and made a visible argument for the
             same reason as -AllowRiotCreateDispatch.
+
+        .PARAMETER ForStopDirection
+            For the two ways out only: uninstalling, and closing the RIoT dispatch gate. Tolerates a
+            definition with no taskTypeStations at all -- one installed before control-server#518 --
+            and nothing else: a taskTypeStations that is written is checked as always. Never for
+            installing, rolling back or opening the gate (PR #523 review, item 1): those start
+            something, and a definition without the preset must not.
     #>
     [CmdletBinding()]
     [OutputType([string[]])]
     param(
         [Parameter(Mandatory = $true)] $Definition,
         [switch] $AllowRiotCreateDispatch,
-        [switch] $AllowRiotForeignOrderCancel
+        [switch] $AllowRiotForeignOrderCancel,
+        [switch] $ForStopDirection
     )
 
     [string[]] $failures = @()
@@ -890,8 +898,15 @@ function Test-ParallelInstanceDefinition {
     # step instead of here. A bare file name only: it resolves against the install root, which every
     # install replaces with the package, so the file always comes from the same build as the Host.
     # The map in the name has to be the runtime's map; the Host test pins each file's content to it.
+    #
+    # An installed definition older than #518 has no such section, and the new module meets it on the way out: 20
+    # copies the current module before every gate change, and a reinstall that fails after copying the scripts but
+    # before recording its definition leaves the new module beside the old definition for 19 -Uninstall. Closing
+    # the gate and uninstalling must not be the steps that refuse (-ForStopDirection); an absent section only.
     $stations = Get-Node -Root $Definition -Key 'taskTypeStations'
-    if ($null -eq $stations) {
+    if ($ForStopDirection -and -not (Test-KeyPresent -Node $Definition -Key 'taskTypeStations')) {
+        # Tolerated: see above.
+    } elseif ($null -eq $stations) {
         $failures += 'taskTypeStations must be an object naming the per-map station preset the package ships (settingsFile).'
     } else {
         $presetFile = (Test-KeyPresent -Node $stations -Key 'settingsFile') ? $stations['settingsFile'] : $null
@@ -1460,7 +1475,9 @@ function Assert-ParallelInstanceDefinition {
     param(
         [Parameter(Mandatory = $true)] $Definition,
         [switch] $AllowRiotCreateDispatch,
-        [switch] $AllowRiotForeignOrderCancel
+        [switch] $AllowRiotForeignOrderCancel,
+        # See Test-ParallelInstanceDefinition: uninstalling and closing the gate only.
+        [switch] $ForStopDirection
     )
 
     # @() around the call, not just the [string[]] cast: PowerShell unwraps an empty array to
@@ -1468,7 +1485,7 @@ function Assert-ParallelInstanceDefinition {
     # StrictMode the .Count below threw on exactly the input this function is supposed to
     # accept. The self-test only exercised Test-, which its own callers already wrapped.
     [string[]] $failures = @(Test-ParallelInstanceDefinition -Definition $Definition -AllowRiotCreateDispatch:$AllowRiotCreateDispatch `
-            -AllowRiotForeignOrderCancel:$AllowRiotForeignOrderCancel)
+            -AllowRiotForeignOrderCancel:$AllowRiotForeignOrderCancel -ForStopDirection:$ForStopDirection)
     if ($failures.Count -gt 0) {
         $listed = ($failures | ForEach-Object { "  - $_" }) -join [Environment]::NewLine
         throw ("The parallel instance definition was refused ($($failures.Count) reason(s)):" +
