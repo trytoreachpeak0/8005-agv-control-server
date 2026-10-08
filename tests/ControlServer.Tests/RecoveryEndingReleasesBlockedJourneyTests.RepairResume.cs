@@ -198,16 +198,16 @@ public sealed partial class RecoveryEndingReleasesBlockedJourneyTests
     }
 
     /// <summary>
-    /// 第 5 条的代价，本票新增的卡死（调度 10-07 裁定接受，出口归 control-server#505）：单需求旅程，装货结果要恢复；先补偿，车报
-    /// <c>UNKNOWN</c>（仓位状态读不出），没对上，阻塞码变成 <c>LoadCompensationResult_NOT_RECONCILED</c>，装货操作仍是
-    /// <c>RecoveryRequired</c>。车的恢复报告仍报这一次操作没结清、停在 <c>ACTIVE_UNLOCK_SET</c>，再开会话修复续行，新结果对上了。
-    /// 修之前旅程被放出；修之后留在 <c>Blocked</c>——阻塞码不记是哪条需求留下的，分不出「同一条重试成功」与「别的需求还没结论」，一律不放。
-    /// 这一串是现场形状（独立审查读两端代码推断可达）。#505 给阻塞码补上标记之后放宽，到时这一格改成放出。
+    /// cs#506 留下的卡死，control-server#505 放开：单需求旅程，装货结果要恢复；先补偿，车报 <c>UNKNOWN</c>（仓位状态读不出），没对上，
+    /// 阻塞码变成 <c>LoadCompensationResult_NOT_RECONCILED</c>，需求留在 <c>RecoveryRequired</c>，装货操作仍是 <c>RecoveryRequired</c>。
+    /// 车的恢复报告仍报这一次操作没结清、停在 <c>ACTIVE_UNLOCK_SET</c>，再开会话修复续行，新结果对上了。这一串是现场形状（cs#506 独立审查读两端
+    /// 代码推断可达）。cs#506 时第 5 条对 <c>*_NOT_RECONCILED</c> 一律不放，旅程留在 <c>Blocked</c>、只能改库；#505 之后普通的
+    /// <c>*_NOT_RECONCILED</c> 必有一条待恢复的需求作标记，修复续行把那条需求放回 <c>Accepted</c>，旅程里再没有标记，放出。
     /// </summary>
     [Fact]
     [Trait("IntegrationSlice", "FP-IS-07")]
     [Trait("ProtocolVector", "CV-EXCEPTION-RESUME")]
-    public async Task ARepairResumeAfterAnUnreconciledCompensationOfTheSameDemandStaysBlockedUntil505()
+    public async Task ARepairResumeAfterAnUnreconciledCompensationOfTheSameDemandSendsTheVehicleOn()
     {
         await WithProofAsync(async () =>
         {
@@ -264,10 +264,16 @@ public sealed partial class RecoveryEndingReleasesBlockedJourneyTests
             Assert.Equal((JourneyRuntimeStage.Blocked, unreconciled), (blocked.Stage, blocked.BlockReasonCode));
             Assert.Equal(StationOperationStatus.RecoveryRequired, (await OperationOfAsync(fixture, FirstDemandId, SlotOperationType.Load)).Status);
 
+            Assert.Equal(DemandExecutionStatus.RecoveryRequired, (await DemandOfAsync(fixture, FirstDemandId)).Status);
+
             await ResumeAsync(fixture, FirstDemandId, SlotOperationType.Load, FirstResume with { Checkpoint = "ACTIVE_UNLOCK_SET" });
 
-            JourneyRuntimeRow after = await JourneyOfAsync(fixture, FirstDemandId);
-            Assert.Equal((JourneyRuntimeStage.Blocked, unreconciled), (after.Stage, after.BlockReasonCode));
+            await AssertReleasedAsync(fixture, JourneyRuntimeStage.AwaitingLoadResult);
+            int checksBefore = await CountAsync(fixture, "PreDepartureSafetyCheck");
+            await fixture.RestoreSessionReadyAsync();
+            Exception? first = await RunRoundAsync(fixture);
+            Exception? second = await RunRoundAsync(fixture);
+            await AssertAskedToLeaveAsync(fixture, checksBefore, first, second);
         });
     }
 

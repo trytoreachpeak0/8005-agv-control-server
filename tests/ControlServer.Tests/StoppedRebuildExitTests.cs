@@ -1161,6 +1161,38 @@ public sealed class StoppedRebuildExitTests
     }
 
     /// <summary>
+    /// 不可放行的阻塞码不被「转交接」盖掉（control-server#505）：停住的一趟转交给异常处置会话之后，阻塞码被改成
+    /// <c>FaultCargoRecoveryResult_NOT_RECONCILED_ON_ENDED_DEMAND</c>（恢复协调器在已终结的需求上结果没对上时写它；这里改库）。人再发一次
+    /// <c>PREPARE_CARGO_HANDOFF</c>：受理照旧，旅程仍 <c>Blocked</c>，码不变。修之前被改回 <c>OWN_ORDER_REBUILD_AWAITING_CARGO_HANDOFF</c>，
+    /// 之后任何一次交接放行都可能把它放掉。
+    /// </summary>
+    [Fact]
+    public async Task APreparedHandoffDoesNotReplaceABlockNoReleaseLifts()
+    {
+        await using RuntimeFixture fixture = await StoppedWithCargoNotInPlaceAsync();
+        Assert.Equal(
+            VehicleFaultRecoveryOutcome.HandoffPrepared,
+            (await VehicleFaultRecoveryTests.Service(fixture, new(fixture)).RecoverAsync(Prepare(fixture), Token)).Outcome);
+        const string unreleasable = "FaultCargoRecoveryResult_NOT_RECONCILED_ON_ENDED_DEMAND";
+        await using (ControlServerDbContext context = fixture.OpenConnectionContext())
+        {
+            JourneyRuntimeRow row = await context.JourneyRuntimes.SingleAsync(item => item.Stage == JourneyRuntimeStage.Blocked, Token);
+            row.SetBlockReason(unreleasable, fixture.Clock.GetUtcNow());
+            await context.SaveChangesAsync(Token);
+        }
+        fixture.Context.ChangeTracker.Clear();
+        fixture.Clock.Advance(TimeSpan.FromSeconds(2));
+
+        VehicleFaultRecoveryDecision again = await VehicleFaultRecoveryTests.Service(fixture, new(fixture))
+            .RecoverAsync(Prepare(fixture), Token);
+
+        JourneyRuntimeRow after = await fixture.RuntimeAsync();
+        Assert.Equal(
+            (VehicleFaultRecoveryOutcome.HandoffPrepared, JourneyRuntimeStage.Blocked, unreleasable),
+            (again.Outcome, after.Stage, after.BlockReasonCode));
+    }
+
+    /// <summary>
     /// 就绪这一项只管「这辆车的 <c>Blocked</c> 旅程上有一条在等交接（<c>AWAITING_CARGO_HANDOFF</c>）的重建记录」：码换成别的（交接失败时
     /// 恢复协调器会改写它）照样要恢复；另一辆车不受影响；记录不再等交接、或者旅程不再 <c>Blocked</c>，就绪回到 <c>READY</c>。
     /// </summary>

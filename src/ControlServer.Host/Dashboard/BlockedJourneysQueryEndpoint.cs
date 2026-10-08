@@ -494,7 +494,7 @@ internal sealed class BlockedJourneysQueryEndpoint : IDashboardQueryEndpoint
         // journey -- a cancelled charge order is never rebuilt -- so its rows take the charging wording.
         string? description = idleReturn ? IdleReturnCodeDescriptions.DescribeJourneyCode(blockReasonCode)
             : charging ? ChargingDashboardDescriptions.DescribeChargingCode(blockReasonCode)
-            : blockReasonCode is { } code ? Descriptions.GetValueOrDefault(code) : null;
+            : blockReasonCode is { } code ? Descriptions.GetValueOrDefault(code) ?? DescribeByFamily(code) : null;
         if (!foreignOrderHoldsVehicle)
         {
             return description;
@@ -502,6 +502,29 @@ internal sealed class BlockedJourneysQueryEndpoint : IDashboardQueryEndpoint
 
         return (description is null ? "" : description + "。") + ForeignOrderHoldsVehicleNote;
     }
+
+    /// <summary>
+    /// 按后缀认的码族的说明。<c>&lt;messageType&gt;_NOT_RECONCILED_ON_ENDED_DEMAND</c>（control-server#505）前面接的是哪一种恢复结果，
+    /// 有五种，说明是同一句，所以按后缀认，不逐个列进 <see cref="Descriptions"/>。
+    /// </summary>
+    internal static string? DescribeByFamily(string blockReasonCode) =>
+        blockReasonCode.EndsWith(Runtime.BlockedJourneyRelease.OnEndedDemandSuffix, StringComparison.Ordinal)
+            ? UnreleasableNotReconciledDescription
+            : blockReasonCode.EndsWith(Runtime.BlockedJourneyRelease.BeforeUpgradeSuffix, StringComparison.Ordinal)
+                ? NotReconciledBeforeUpgradeDescription
+                : null;
+
+    /// <summary>升级前留下的「恢复结果没对上」那一族的说明（control-server#505）。操作员看的字，不写票号。</summary>
+    internal const string NotReconciledBeforeUpgradeDescription =
+        "一次异常处置或纠错的结果没对上（仓位状态与预期不符或读不出），而且是服务端升级之前留下的：那时的记录分不出是哪条需求的结果，"
+        + "服务端无法判断那几个仓位里现在是什么货，所以这趟旅程不会自动放行，任何异常处置都解不开它。"
+        + "请到车前核对仓位与货物，联系系统维护人员人工处理。在那之前这辆车不接新单";
+
+    /// <summary>不可放行的「恢复结果没对上」那一族的说明（control-server#505）。操作员看的字，不写票号。</summary>
+    internal const string UnreleasableNotReconciledDescription =
+        "一次异常处置或纠错的结果没对上（仓位状态与预期不符或读不出），而那条需求此前已经卸货送达或已经取消，"
+        + "服务端无法判断那几个仓位里现在是什么货，所以这趟旅程不会自动放行，任何异常处置都解不开它。"
+        + "请到车前核对仓位与货物，联系系统维护人员人工处理。在那之前这辆车不接新单";
 
     /// <summary>车被外来订单挡着时加在阻断说明后面的那一句（control-server#330）。</summary>
     internal const string ForeignOrderHoldsVehicleNote =

@@ -45,6 +45,20 @@ public sealed class OnboardRecoveryCoordinator(
                 "Exception recovery session {SessionId} had already closed when {WorkflowType} {WorkflowId} reported " +
                 "{Outcome}. The result is recorded as evidence only: demand {DemandId}, its journey, lease and " +
                 "vehicle are left as the session handling them now has them; reconcile by hand if they disagree.");
+    private static readonly Action<ILogger, string, string, string, string, Exception?> LogCancellationFoundDemandEnded =
+        LoggerMessage.Define<string, string, string, string>(
+            LogLevel.Warning,
+            new EventId(2137, nameof(LogCancellationFoundDemandEnded)),
+            "Load cancellation {CancellationId} for demand {DemandId} reported ALL_EMPTY after the demand had already " +
+            "ended ({DemandStatus}; journey stage {Stage}); nothing was commanded for it, so the result is recorded and " +
+            "the journey is left as it was (control-server#505).");
+    private static readonly Action<ILogger, string, string, string, string, string, Exception?> LogResultOnEndedDemandBlocked =
+        LoggerMessage.Define<string, string, string, string, string>(
+            LogLevel.Error,
+            new EventId(2136, nameof(LogResultOnEndedDemandBlocked)),
+            "{MessageType} for workflow {WorkflowId} did not reconcile, and its demand {DemandId} has already ended " +
+            "({DemandStatus}), so it cannot be marked RecoveryRequired; the journey is blocked under {BlockReasonCode}, " +
+            "which no release path lifts: it needs a person (control-server#505).");
     private static readonly Action<ILogger, string, string, string, Exception?> LogResultForDeliveredDemand =
         LoggerMessage.Define<string, string, string>(
             LogLevel.Warning,
@@ -331,7 +345,7 @@ public sealed class OnboardRecoveryCoordinator(
             : await DemandJourneyLookup.JourneyOf(dbContext, workflow.DemandId)
                 .SingleOrDefaultAsync(cancellationToken).ConfigureAwait(false);
         // Released only when nothing else of the journey is unresolved -- another demand awaiting recovery, another
-        // operation not converged, an unmarked *_NOT_RECONCILED block (control-server#506; the same predicate as the
+        // operation not converged, an unreleasable *_NOT_RECONCILED_ON_ENDED_DEMAND block (control-server#506, #505; the same predicate as the
         // ending path, BlockedJourneyRelease.NothingElseUnresolvedAsync, which carries the reasons and the cost). Held,
         // the journey stays Blocked with its code; the workflow and the session settle as before.
         StationOperationRow? operation = reconciled
@@ -356,19 +370,17 @@ public sealed class OnboardRecoveryCoordinator(
                 resumedDemand.Status = DemandExecutionStatus.Accepted;
             }
         }
-        if (runtime is not null && operation is not null &&
-            await BlockedJourneyRelease.NothingElseUnresolvedAsync(
-                    dbContext,
-                    runtime,
-                    await JourneyStopCursor.LoadIncludingUnsavedChangesAsync(dbContext, runtime, cancellationToken)
-                        .ConfigureAwait(false),
-                    operation,
-                    cancellationToken)
+        JourneyStopCursor? stops = runtime is not null && operation is not null
+            ? await JourneyStopCursor.LoadIncludingUnsavedChangesAsync(dbContext, runtime, cancellationToken)
+                .ConfigureAwait(false)
+            : null;
+        if (runtime is not null && operation is not null && stops is not null &&
+            await BlockedJourneyRelease.NothingElseUnresolvedAsync(dbContext, runtime, stops, operation, cancellationToken)
                 .ConfigureAwait(false))
         {
-            runtime.Stage = operation.OperationType == SlotOperationType.Load
-                ? JourneyRuntimeStage.AwaitingLoadResult
-                : JourneyRuntimeStage.AwaitingUnloadResult;
+            // The same stage the ending path goes back to (control-server#505): the resumed operation is the current stop's,
+            // so this is what its type used to give.
+            runtime.Stage = BlockedJourneyRelease.ReleaseStage(stops);
             runtime.SetBlockReason(null, timeProvider.GetUtcNow());
             runtime.UpdatedAt = timeProvider.GetUtcNow();
         }
@@ -1379,13 +1391,26 @@ public sealed class OnboardRecoveryCoordinator(
             cancellationToken).ConfigureAwait(false);
         JourneyRuntimeRow? journey = await DemandJourneyLookup.JourneyOf(dbContext, demandId)
             .SingleOrDefaultAsync(cancellationToken).ConfigureAwait(false);
+        // Only for a demand still on board (control-server#505): accepted, and loaded on this journey. A correction for one
+        // already unloaded ran over slots that may hold another demand's cargo by now, and when it did not reconcile the journey
+        // was blocked under a code no demand could carry (KeepDemandAndJourneyBlockedAsync). Whether the vehicle is still at
+        // that demand's own pickup -- REQ-0237's window proper -- is control-server#287's, not checked here.
+        bool onBoard = journey is not null &&
+                       await dbContext.AcceptedDemands.AsNoTracking().AnyAsync(
+                           row => row.DemandId == demandId && row.Status == DemandExecutionStatus.Accepted,
+                           cancellationToken).ConfigureAwait(false) &&
+                       await DemandJourneyLookup.Memberships(dbContext).AsNoTracking().AnyAsync(
+                           row => row.DemandId == demandId && row.JourneyId == journey.JourneyId &&
+                                  row.Status == JourneyDemandStatuses.Loaded,
+                           cancellationToken).ConfigureAwait(false);
         // REQ-0237: an ordinary mis-placement is corrected only before the vehicle leaves the pickup.
         // A committed load alone is not enough -- until 2026-09-13 this authorized corrections for a
         // vehicle already sent to the gate, whose onboard could only refuse to open the doors.
         if (operation is null || operation.OperationType != SlotOperationType.Load ||
             operation.Status != StationOperationStatus.Committed ||
             !slots.All(ParseSlots(operation.TargetSlotsJson).Contains) ||
-            journey?.Stage != JourneyRuntimeStage.AwaitingStationDeparture)
+            journey?.Stage != JourneyRuntimeStage.AwaitingStationDeparture ||
+            !onBoard)
         {
             return Response(root, "LoadCorrectionRejected", new
             {
@@ -1673,8 +1698,7 @@ public sealed class OnboardRecoveryCoordinator(
         if (!success)
         {
             workflow.State = RecoveryWorkflowState.RecoveryRequired;
-            await KeepDemandAndJourneyBlockedAsync(
-                workflow.DemandId, messageType + "_NOT_RECONCILED", cancellationToken).ConfigureAwait(false);
+            await KeepDemandAndJourneyBlockedAsync(workflow, messageType, cancellationToken).ConfigureAwait(false);
             return;
         }
         // A result that would end a demand already delivered (control-server#481). It cannot end it: the demand is the
@@ -1726,6 +1750,21 @@ public sealed class OnboardRecoveryCoordinator(
                     workflow.WorkflowId, stop.DemandId ?? stop.JourneyId, stop.Stage.ToString(), stop.BlockReasonCode, null);
                 return;
             }
+            // The same for the demand alone (control-server#505): the journey goes on with others, and this demand was ended
+            // between the authorization and this result -- by its station deadline, say. Nothing was commanded for it and the
+            // vehicle has proved its slots empty, so there is nothing left to hold the journey for. Until #505 the stage check
+            // below took this for a result arriving in the wrong stage and blocked the journey under a code no demand carried.
+            DemandExecutionStatus? cancelledStatus = await dbContext.AcceptedDemands.AsNoTracking()
+                .Where(row => row.DemandId == workflow.DemandId)
+                .Select(row => (DemandExecutionStatus?)row.Status)
+                .SingleOrDefaultAsync(cancellationToken).ConfigureAwait(false);
+            if (cancelledStatus is DemandExecutionStatus.Cancelled or DemandExecutionStatus.Succeeded)
+            {
+                LogCancellationFoundDemandEnded(
+                    logger ?? (ILogger)NullLogger.Instance,
+                    workflow.WorkflowId, workflow.DemandId, cancelledStatus.Value.ToString(), stop.Stage.ToString(), null);
+                return;
+            }
             // 这条需求在这趟旅程里的归属：命令发没发、要结算哪一版录入请求，都挂在它身上（批次7-06，control-server#211）。
             JourneyStopCursor stopCursor = await JourneyStopCursor
                 .LoadAsync(dbContext, stop, cancellationToken).ConfigureAwait(false);
@@ -1738,8 +1777,7 @@ public sealed class OnboardRecoveryCoordinator(
                 await LoadCommandedAsync(cancelled, cancellationToken).ConfigureAwait(false))
             {
                 workflow.State = RecoveryWorkflowState.RecoveryRequired;
-                await KeepDemandAndJourneyBlockedAsync(
-                    workflow.DemandId, messageType + "_NOT_RECONCILED", cancellationToken).ConfigureAwait(false);
+                await KeepDemandAndJourneyBlockedAsync(workflow, messageType, cancellationToken).ConfigureAwait(false);
                 return;
             }
             // 给了路网的终结在删掉空停靠之后还换序（批次7-10，control-server#215，调度决策 6）；没给就只删不换。
@@ -1770,6 +1808,12 @@ public sealed class OnboardRecoveryCoordinator(
             .LoadAsync(dbContext, runtime, cancellationToken).ConfigureAwait(false);
         StationOperationRow? endedOperation = null;
         StationOperationStatus? statusBeforeEnding = null;
+        // Read before the termination below rewrites it: a demand still RecoveryRequired is the mark an unreconciled result left,
+        // and ending it is what may release a *_NOT_RECONCILED block (BlockedJourneyRelease, criterion 2, control-server#505).
+        DemandExecutionStatus? demandStatusBeforeEnding = await dbContext.AcceptedDemands
+            .Where(row => row.DemandId == workflow.DemandId)
+            .Select(row => (DemandExecutionStatus?)row.Status)
+            .SingleOrDefaultAsync(cancellationToken).ConfigureAwait(false);
         if (workflow.SlotOperationAttemptId is not null)
         {
             endedOperation = await dbContext.StationOperations.SingleOrDefaultAsync(
@@ -1807,7 +1851,9 @@ public sealed class OnboardRecoveryCoordinator(
         // （control-server#499）。不是这一次的、或别的操作还没收敛的，留在 Blocked。条件与理由见 BlockedJourneyRelease。
         string? blockedFor = runtime.BlockReasonCode;
         if (await BlockedJourneyRelease
-                .StageAsync(dbContext, runtime, endedOperation, statusBeforeEnding, timeProvider.GetUtcNow(), cancellationToken)
+                .StageAsync(
+                    dbContext, runtime, endedOperation, statusBeforeEnding, demandStatusBeforeEnding, timeProvider.GetUtcNow(),
+                    cancellationToken)
                 .ConfigureAwait(false))
         {
             // Written before the caller's save, like the other lines here: the store, not the log, is the record.
@@ -1867,24 +1913,54 @@ public sealed class OnboardRecoveryCoordinator(
         }
     }
 
+    /// <summary>
+    /// A recovery result of <paramref name="workflow"/> did not reconcile: its demand is marked RecoveryRequired and its journey
+    /// blocked under <c>&lt;messageType&gt;_NOT_RECONCILED</c>. Staged; the caller saves.
+    /// </summary>
+    /// <remarks>
+    /// <para>
+    /// <b>Every such block names a demand that carries the mark</b> (control-server#505). The release paths
+    /// (<see cref="BlockedJourneyRelease"/>) read "nothing is left unresolved" off the demands still RecoveryRequired, so a block no
+    /// demand stands for would be lifted with whatever else the journey was waiting on. A demand already delivered or cancelled
+    /// cannot take the mark -- that would rewrite how it ended -- and until #505 the journey was blocked under the ordinary code all
+    /// the same. Now it is blocked under <see cref="BlockedJourneyRelease.OnEndedDemandSuffix"/>, which neither release path lifts:
+    /// the slots that result left unknown may hold another demand's cargo by now, so letting the vehicle go is the wrong release,
+    /// and staying here is the stuck state a person resolves. The authorizations keep it rare: a correction is authorized only for
+    /// a demand on board, and a session is not opened for a demand that has ended.
+    /// </para>
+    /// <para>
+    /// <b>That code is never replaced</b>, by an ordinary one here or by anything else: replaced, it would be lifted with the next
+    /// ordinary block it stood under. An ordinary code may still replace another; the demand's mark, not the text, is what holds it.
+    /// </para>
+    /// </remarks>
     private async Task KeepDemandAndJourneyBlockedAsync(
-        string? demandId,
-        string reason,
+        RecoveryWorkflowRow workflow,
+        string messageType,
         CancellationToken cancellationToken)
     {
+        string? demandId = workflow.DemandId;
         if (demandId is null) return;
         AcceptedDemandRow? demand = await dbContext.AcceptedDemands.SingleOrDefaultAsync(
             row => row.DemandId == demandId, cancellationToken).ConfigureAwait(false);
-        if (demand is not null && demand.Status != DemandExecutionStatus.Succeeded &&
-            demand.Status != DemandExecutionStatus.Cancelled)
-            demand.Status = DemandExecutionStatus.RecoveryRequired;
+        bool ended = demand is null || demand.Status is DemandExecutionStatus.Succeeded or DemandExecutionStatus.Cancelled;
+        if (!ended)
+            demand!.Status = DemandExecutionStatus.RecoveryRequired;
         JourneyRuntimeRow? runtime = await DemandJourneyLookup.JourneyOf(dbContext, demandId)
             .SingleOrDefaultAsync(cancellationToken).ConfigureAwait(false);
-        if (runtime is not null)
+        if (runtime is null) return;
+        string reason = messageType + (ended ? BlockedJourneyRelease.OnEndedDemandSuffix : BlockedJourneyRelease.NotReconciledSuffix);
+        runtime.Stage = JourneyRuntimeStage.Blocked;
+        if (!BlockedJourneyRelease.IsUnreleasable(runtime.BlockReasonCode))
         {
-            runtime.Stage = JourneyRuntimeStage.Blocked;
             runtime.SetBlockReason(reason, timeProvider.GetUtcNow());
-            runtime.UpdatedAt = timeProvider.GetUtcNow();
+        }
+        runtime.UpdatedAt = timeProvider.GetUtcNow();
+        if (ended)
+        {
+            LogResultOnEndedDemandBlocked(
+                logger ?? (ILogger)NullLogger.Instance,
+                messageType, workflow.WorkflowId, demandId, demand?.Status.ToString() ?? "(missing)",
+                runtime.BlockReasonCode ?? reason, null);
         }
     }
 
@@ -1945,6 +2021,16 @@ public sealed class OnboardRecoveryCoordinator(
             row => row.AgvId == agvId && row.Stage == JourneyRuntimeStage.Blocked,
             cancellationToken).ConfigureAwait(false);
         if (runtime is null) return ServerReasonCodes.RecoveryDemandNotBlocked;
+        // Not for a demand that has ended (control-server#505). Every ending -- an unload, PickupStopTermination's callers --
+        // leaves none of its cargo on board by this server's account, so there is nothing for a session to recover; and a result
+        // of one that did not reconcile could only block the journey under a code no release lifts.
+        if (await dbContext.AcceptedDemands.AsNoTracking().AnyAsync(
+                row => row.DemandId == demandId &&
+                       (row.Status == DemandExecutionStatus.Succeeded || row.Status == DemandExecutionStatus.Cancelled),
+                cancellationToken).ConfigureAwait(false))
+        {
+            return ServerReasonCodes.RecoveryDemandNotBlocked;
+        }
         StationOperationRow? operation = await FindLatestOperationAsync(demandId, cancellationToken).ConfigureAwait(false);
         return operation is null || !slots.SequenceEqual(ParseSlots(operation.TargetSlotsJson))
             ? ServerReasonCodes.RecoveryScopeMismatch

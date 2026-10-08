@@ -312,6 +312,11 @@ static async Task EnsureDatabaseAsync(IServiceProvider services)
     await using AsyncServiceScope scope = services.CreateAsyncScope();
     ControlServerDbContext dbContext = scope.ServiceProvider.GetRequiredService<ControlServerDbContext>();
     await dbContext.Database.MigrateAsync();
+    // control-server#505：停在不可放行阻塞码上的旅程只有人能处理，升级迁移会改出这样的行；有就在启动时告诉现场有几趟。
+    await ControlServer.Host.Runtime.UnreleasableBlockReport.LogAsync(
+        dbContext,
+        scope.ServiceProvider.GetRequiredService<ILoggerFactory>().CreateLogger("ControlServer.Host.Startup"),
+        CancellationToken.None);
 
     // REQ-0271：保留期是管理员配置，变更本身要留管理员审计。新值在服务起来的这一刻生效，所以在这一刻记。
     GovernanceStore governance = scope.ServiceProvider.GetRequiredService<GovernanceStore>();

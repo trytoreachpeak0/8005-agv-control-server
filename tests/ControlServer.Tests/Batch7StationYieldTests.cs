@@ -326,13 +326,13 @@ public sealed class Batch7StationYieldTests
     /// </summary>
     /// <remarks>
     /// <para>
-    /// 纠错的授权只核对装货已提交、仓位是它的子集、旅程在离站等待里，不看这条需求还在不在车上（那个口子归 cs#287）。所以车停在
-    /// 后面某一站等离站时，能对一条早已卸掉的需求开出纠错；它要靠车载端对一排已经空了的仓位执行完才关，未必关得掉。离站判定若把
-    /// 它算进去，车就一直停在离站等待里、没有人能解开。所以只看还在车上的归属（<c>LOADING</c>、<c>LOADED</c>）。
+    /// 写这条用例时纠错的授权不看这条需求还在不在车上，车停在后面某一站等离站时能对一条早已卸掉的需求开出纠错；它要靠车载端对一排已经空了的
+    /// 仓位执行完才关，未必关得掉。离站判定若把它算进去，车就一直停在离站等待里、没有人能解开。所以只看还在车上的归属（<c>LOADING</c>、<c>LOADED</c>）。
+    /// control-server#505 起授权只给还在车上的需求，这个形状从授权一侧来不了了；离站判定这一侧的边界照旧钉着，作纵深防御。
     /// </para>
     /// <para>
     /// 「已卸」是直接写进归属行的：真实路径要一个「先卸一条、再去取另一条」的四停靠计划，那是插位规划器的事，不是这里要测的。
-    /// 纠错本身走真实授权路径，所以这条用例同时证明了那个口子今天确实开着。
+    /// 纠错走真实授权路径，在那条需求还是 <c>LOADED</c> 时授权，之后才把归属改成已卸（#505 之前的写法是先改再授权，那时授权不拦）。
     /// </para>
     /// </remarks>
     [Fact]
@@ -361,15 +361,10 @@ public sealed class Batch7StationYieldTests
         await SettleLoadAsync(fixture, SecondDemandId);
         Assert.Equal(JourneyRuntimeStage.AwaitingStationDeparture, (await JourneyOfAsync(fixture, SecondDemandId)).Stage);
 
-        JourneyDemandRow first = await fixture.Context.Set<JourneyDemandRow>()
-            .SingleAsync(row => row.DemandId == FirstDemandId, token);
-        first.Status = JourneyDemandStatuses.Unloaded;
-        await fixture.Context.SaveChangesAsync(token);
-        fixture.Context.ChangeTracker.Clear();
-        int checksBeforeTheCorrection = await DepartureChecksSentAsync(fixture);
-
+        string firstLoadAttempt = (await fixture.Context.Set<JourneyDemandRow>().AsNoTracking()
+            .SingleAsync(row => row.DemandId == FirstDemandId, token)).LoadSlotOperationAttemptId!;
         StationOperationRow load = await fixture.Context.StationOperations.AsNoTracking()
-            .SingleAsync(row => row.SlotOperationAttemptId == first.LoadSlotOperationAttemptId, token);
+            .SingleAsync(row => row.SlotOperationAttemptId == firstLoadAttempt, token);
         await using (ControlServerDbContext connection = fixture.OpenConnectionContext())
         {
             await fixture.RequestLoadCorrectionOnConnectionAsync(
@@ -379,8 +374,15 @@ public sealed class Batch7StationYieldTests
                 load.SlotOperationAttemptId,
                 System.Text.Json.JsonSerializer.Deserialize<int[]>(load.TargetSlotsJson)!);
         }
-        // 前提：纠错确实被授权了（授权一侧的口子今天开着）。没被授权的话，下面「没挡住」就什么也证明不了。
+        // 前提：纠错确实被授权了。没被授权的话，下面「没挡住」就什么也证明不了。
         Assert.Contains("LoadCorrectionCommand", await fixture.OutboxTypesAsync());
+
+        JourneyDemandRow first = await fixture.Context.Set<JourneyDemandRow>()
+            .SingleAsync(row => row.DemandId == FirstDemandId, token);
+        first.Status = JourneyDemandStatuses.Unloaded;
+        await fixture.Context.SaveChangesAsync(token);
+        fixture.Context.ChangeTracker.Clear();
+        int checksBeforeTheCorrection = await DepartureChecksSentAsync(fixture);
 
         fixture.Clock.Advance(TimeSpan.FromSeconds(30));
         await TickAndRunAsync(fixture);
