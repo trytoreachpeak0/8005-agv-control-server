@@ -79,6 +79,8 @@ public sealed class Batch6MigrationDisciplineTests
         "20260929070322_Batch8RetireOldVehicleOccupancy",
         // control-server#399：批次 9 唯一一次迁移——新建充电桩名册、充电策略版本（含批准与激活）、充电周期、桩与车两类暂停及其恢复、清桩记录、人工充电等待及其经过、两类现场确认请求共 17 张表（建空）；StationExclusivities／StationExclusivityRecords 加 CHARGER 种类与末列可空 ChargerRosterVersion（保留列序的手写重建）；OrderIntents 末列加 OrderShape（缺省即回填 SINGLE_MOVE）、JourneyRuntimes 末列加两列可空列（原生 ADD COLUMN）；既有列序与行不变。自己的断言在 Batch9MigrationDisciplineTests。
         "20260929114754_Batch9ChargingPersistence",
+        // control-server#505：**只改数据，不动 schema**——升级那一刻停在 Blocked、阻塞码以 _NOT_RECONCILED 结尾的旅程，码加后缀 _BEFORE_UPGRADE，成为不可放行的那一族（那时的码不保证有 RecoveryRequired 的需求作标记，而升级前第 5 条本来就一律不放，现场行为不变）；Down 去掉两个新后缀。调度 Coordinator 9 于 2026-10-08 给了迁移通道。自己的断言在 RecoveryEndingReleasesBlockedJourneyTests.Migration.cs。
+        "20261008052643_UnreleasableNotReconciledBlocksBeforeUpgrade",
     ];
 
     [Fact]

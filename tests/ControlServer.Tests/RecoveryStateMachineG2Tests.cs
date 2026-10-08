@@ -4440,6 +4440,8 @@ public sealed partial class RecoveryStateMachineG2Tests
                 JourneyRuntimeRow runtime = await runtimeContext.JourneyRuntimes.SingleAsync(token);
                 runtime.Stage = JourneyRuntimeStage.AwaitingStationDeparture;
                 runtime.UpdatedAt = Now.AddSeconds(5);
+                // ... and records the demand on board (control-server#505: a correction is authorized only for one).
+                (await runtimeContext.Set<JourneyDemandRow>().SingleAsync(token)).Status = JourneyDemandStatuses.Loaded;
                 await runtimeContext.SaveChangesAsync(token);
             }
 
@@ -6893,6 +6895,10 @@ public sealed partial class RecoveryStateMachineG2Tests
         JourneyRuntimeRow runtime = await context.JourneyRuntimes.SingleAsync(TestContext.Current.CancellationToken);
         runtime.Stage = stage;
         runtime.SetBlockReason(null, Now);
+        // The committed load put the demand on board, as the runtime records it when it moves the journey on: a correction is
+        // authorized only for a demand on board (control-server#505).
+        (await context.Set<JourneyDemandRow>().SingleAsync(TestContext.Current.CancellationToken)).Status =
+            JourneyDemandStatuses.Loaded;
         await context.SaveChangesAsync(TestContext.Current.CancellationToken);
     }
 

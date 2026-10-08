@@ -438,13 +438,14 @@ public sealed partial class RecoveryEndingReleasesBlockedJourneyTests
     }
 
     /// <summary>
-    /// 护栏：阻塞码是 <c>*_NOT_RECONCILED</c> 时不放（cs#499 调度裁定，放错链见 #505 的评论）。那种阻塞码不一定有一条
-    /// <c>RecoveryRequired</c> 的需求作标记——需求已送达或已取消时，<c>KeepDemandAndJourneyBlockedAsync</c> 只写阻塞码不留标记，第 4 条就看不见它。
-    /// 这里：第一站装上第一条，车在第一站等离站时它被改库标成已送达（与
+    /// 护栏：结果没对上、而它的需求已送达，打不上 <c>RecoveryRequired</c> 标记时，旅程阻塞在不可放行的
+    /// <c>LoadCorrectionResult_NOT_RECONCILED_ON_ENDED_DEMAND</c> 上，之后谁都放不出、谁也改写不掉它（control-server#505；cs#499 时这里是
+    /// 普通的 <c>*_NOT_RECONCILED</c>，靠第 5 条一律不放）。
+    /// 这里：第一站装上第一条，车在第一站等离站时对它开一条纠错（那时它还在车上，#505 起授权只给在车上的需求），之后它被改库标成已送达（与
     /// <c>Batch7StationYieldTests.AnOpenCorrectionOnADemandAlreadyUnloadedDoesNotHoldTheDeparture</c> 同一个做法：真实路径要一个先卸再取的
-    /// 四停靠计划），对它开一条纠错——授权不看需求还在不在车上（cs#287 的口子），已卸需求上的纠错也不挡离站。车到第二站，第二条装货结果要
-    /// 恢复、旅程阻塞；第一条的纠错结果这时才到、没对上，阻塞码被覆盖成 <c>LoadCorrectionResult_NOT_RECONCILED</c>，第一条已送达，不被标记。
-    /// 补偿第二条之后旅程不放出：纠错没对上的仓位事实还悬着。
+    /// 四停靠计划；已卸需求上的纠错不挡离站）。车到第二站，第二条装货结果要恢复、旅程阻塞；第一条的纠错结果这时才到、没对上。
+    /// 接着第二条补偿第一次没对上（普通的 <c>LoadCompensationResult_NOT_RECONCILED</c>，不许盖掉前一个码），第二次对上了：旅程仍不放出，
+    /// 纠错没对上的仓位事实还悬着。
     /// </summary>
     [Fact]
     [Trait("IntegrationSlice", "FP-IS-07")]
@@ -471,15 +472,6 @@ public sealed partial class RecoveryEndingReleasesBlockedJourneyTests
             await SettleLoadAsync(fixture, FirstDemandId);
             Assert.Equal(JourneyRuntimeStage.AwaitingStationDeparture, (await JourneyOfAsync(fixture, FirstDemandId)).Stage);
 
-            await using (ControlServerDbContext context = fixture.OpenConnectionContext())
-            {
-                (await context.Set<JourneyDemandRow>().SingleAsync(row => row.DemandId == FirstDemandId, token)).Status =
-                    JourneyDemandStatuses.Unloaded;
-                (await context.AcceptedDemands.SingleAsync(row => row.DemandId == FirstDemandId, token)).Status =
-                    DemandExecutionStatus.Succeeded;
-                await context.SaveChangesAsync(token);
-            }
-            fixture.Context.ChangeTracker.Clear();
             const string correctionId = "74990000-0000-4000-8000-000000000001";
             StationOperationRow firstLoad = await OperationOfAsync(fixture, FirstDemandId, SlotOperationType.Load);
             int[] firstSlots = JsonSerializer.Deserialize<int[]>(firstLoad.TargetSlotsJson)!;
@@ -491,6 +483,15 @@ public sealed partial class RecoveryEndingReleasesBlockedJourneyTests
             fixture.Context.ChangeTracker.Clear();
             // 前提：纠错确实被授权了。
             Assert.Equal(1, await CountAsync(fixture, "LoadCorrectionCommand"));
+            await using (ControlServerDbContext context = fixture.OpenConnectionContext())
+            {
+                (await context.Set<JourneyDemandRow>().SingleAsync(row => row.DemandId == FirstDemandId, token)).Status =
+                    JourneyDemandStatuses.Unloaded;
+                (await context.AcceptedDemands.SingleAsync(row => row.DemandId == FirstDemandId, token)).Status =
+                    DemandExecutionStatus.Succeeded;
+                await context.SaveChangesAsync(token);
+            }
+            fixture.Context.ChangeTracker.Clear();
 
             fixture.Clock.Advance(TimeSpan.FromSeconds(15));
             await TickAndRunAsync(fixture);
@@ -524,7 +525,7 @@ public sealed partial class RecoveryEndingReleasesBlockedJourneyTests
                     token)));
             }
             fixture.Context.ChangeTracker.Clear();
-            const string unmarked = "LoadCorrectionResult_NOT_RECONCILED";
+            const string unmarked = "LoadCorrectionResult_NOT_RECONCILED_ON_ENDED_DEMAND";
             Assert.Equal(unmarked, (await JourneyOfAsync(fixture, FirstDemandId)).BlockReasonCode);
             // 没有标记：第一条仍是已送达，待恢复的只有旅程原本阻塞在其上的第二条——补偿它之后第 4 条就什么都看不见了。
             Assert.Equal(DemandExecutionStatus.Succeeded, (await DemandOfAsync(fixture, FirstDemandId)).Status);
@@ -534,6 +535,9 @@ public sealed partial class RecoveryEndingReleasesBlockedJourneyTests
                     .Where(row => row.Status == DemandExecutionStatus.RecoveryRequired)
                     .Select(row => row.DemandId).ToArrayAsync(token));
 
+            // 第二条补偿第一次没对上：普通的 *_NOT_RECONCILED 不许盖掉不可放行的那一个。
+            await FailCompensationAsync(fixture, SecondDemandId, FailedCompensationRequestId, FailedCompensationActionId);
+            Assert.Equal(unmarked, (await JourneyOfAsync(fixture, FirstDemandId)).BlockReasonCode);
             await CompensateAsync(fixture, SecondDemandId);
             JourneyRuntimeRow released = await JourneyOfAsync(fixture, FirstDemandId);
             await fixture.RestoreSessionReadyAsync();

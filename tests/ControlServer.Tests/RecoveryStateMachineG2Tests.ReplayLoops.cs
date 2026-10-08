@@ -371,8 +371,9 @@ public sealed partial class RecoveryStateMachineG2Tests
 
     /// <summary>
     /// A correction is not an ending: a successful correction result on a demand already delivered reconciles as it always
-    /// did (review of #489, S1). A correction on a demand already unloaded is an ordinary path
-    /// (Batch7StationYieldTests.AnOpenCorrectionOnADemandAlreadyUnloadedDoesNotHoldTheDeparture).
+    /// did (review of #489, S1). Since control-server#505 a correction is authorized only while its demand is on board, so here it
+    /// is authorized first and the demand delivered after, the order Batch7StationYieldTests.AnOpenCorrectionOnADemandAlreadyUnloaded
+    /// DoesNotHoldTheDeparture also takes.
     /// </summary>
     [Fact]
     [Trait("IntegrationSlice", "FP-IS-02")]
