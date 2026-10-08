@@ -5,7 +5,7 @@ control-server#262。约 2026-10-08 起 `factory01` 上同时跑两套 ControlSe
 `remote-ops/factory-server/docs/wire-to-gate-parallel-cd.md`，控制端入口是同目录下的
 `scripts/19-deploy-control-server-parallel.ps1`。这里只放随产品版本走的部分。
 
-## ⚠️ 出厂的实例定义故意装不上：两个 map 26 的值还是占位
+## map 26 的取值与出处
 
 用户 2026-09-21 答复：**MVP 跑 map 25，v2 跑 map 26**。
 
@@ -13,11 +13,15 @@ control-server#262。约 2026-10-08 起 `factory01` 上同时跑两套 ControlSe
 | --- | --- | --- |
 | `routeGraph.mapId`、`journeyRuntime.mapId` | 26 | 用户答复 |
 | `journeyRuntime.mapIdentity` | `老厂前线new_wk` | `evidence/field/2026-09-19-B6-map-name-baseline-check/real-riot/fields.json` |
-| `journeyRuntime.dispatchZone`、`allowedDispatchZones` | `REPLACE_WITH_MAP26_DISPATCH_ZONE` | **待现场取回**：形式可推，没人确认现场真这么叫 |
-| `journeyRuntime.admissionPolicyDeploymentId` | `REPLACE_WITH_MAP26_ADMISSION_POLICY_DEPLOYMENT_ID` | **待现场取回**：无出处，日期是一次现场标定的产物 |
-| 站点清单 `task-type-stations.settings.json`（在包里，不在定义里） | 绑 25 | 要出 26 版 |
+| `journeyRuntime.dispatchZone`、`allowedDispatchZones` | `WIRE` | 用户 2026-09-18 定：`evidence/field/2026-09-18-B4-site-prerequisites/03-area-assignment-table.md` 第 58、122 行（区域分配表的 `dispatch_zone` 全部是 `WIRE`，实例必须配成同一个值，否则那张表导入会报 `DISPATCH_ZONE_NOT_FOUND`） |
+| `journeyRuntime.admissionPolicyDeploymentId` | `MAP-26-WIRE_TO_GATE-20261007` | 调度 2026-10-07 定，格式沿用 map 25 的 `MAP-25-WIRE_TO_GATE-20260827`（control-server#411）。它是部署标签，不是业务参数 |
+| 站点清单 `task-type-stations.settings.json`（在包里，不在定义里） | 绑 25 | **开运行时之前要出 26 版** |
 
-校验见到 `REPLACE_` 就拒绝，所以**在从 factory01 直查 RIoT 把这两个值取回之前，这份定义过不了校验、装不上**——这是刻意的。另外 map 25、`老厂前线new`、任何 `MAP-25-*` 标识符也一律拒绝：以前「按原样装会指向 MVP 那张图」只写在文档里，现在是一条检查（control-server#262 复审 M3）。
+这三个值都是服务端自己的配置：调度区存在本实例的库里，准入策略部署号是服务端写库时带的标签。**RIoT 里没有它们，也就无从「从 RIoT 取回」**——此前这里和工作区文档都这么写过，那是错的（control-server#411）。
+
+在 control-server#411 之前，这三个键是 `REPLACE_*` 占位，校验见到 `REPLACE_` 就拒绝，出厂定义因此装不上。这条检查留着，防的是以后有人再写占位。map 25、`老厂前线new`、任何 `MAP-25-*` 标识符也一律拒绝（control-server#262 复审 M3）。
+
+**站点清单与准入策略都只在 `JourneyRuntime.enabled=true` 时才会被读**（`TaskTypeStationStartup.cs` 在运行时关着时直接返回；准入策略在 `JourneyRuntimeEngine` 的一轮迭代里写库）。所以运行时关着的实例用不到它们；**开运行时之前，必须先备好 26 版站点清单**。
 
 ## 清桩出口的两节配置与恢复凭据由部署链写，不再手工合入（control-server#454）
 
