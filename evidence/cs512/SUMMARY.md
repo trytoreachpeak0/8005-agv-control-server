@@ -9,13 +9,19 @@
   `ControlServer.FakeMesIngest.exe --FakeMesIngest:listenAddress=127.0.0.1 --FakeMesIngest:port=<端口>`；
   种子改由安装器在替身应答 health 后、于自己的 ssh 会话里灌一次（`Invoke-ParallelFakeMesIngestSeed`）。
   这一形态 10-08 在 factory01 上用临时任务实测通过（R4，第 8 号文件）。
-- **根因（定位到这一层为止）**：在 factory01 上，SYSTEM 计划任务里的 pwsh 去跑
+- **根因**：在 factory01 上，SYSTEM 计划任务里的 pwsh 去跑
   `C:\Program Files\8005 AGV\ControlServer.V2.FakeMesIngest\Start-FakeMesIngestResident.ps1`、带
   `-ExecutablePath "<替身 exe>"` 那组参数时，进程在 PowerShell 主机初始化之前就没了（`LastTaskResult`
   0xFFFFFFFF，没有 PowerShellCore/Operational 40961）。触发器、重启策略、裸名 `pwsh.exe` 都**不是**原因
   （R2、R3）；同样的 pwsh、同样 `-ExecutionPolicy Bypass -File` 去跑 D:\ 下的小脚本是正常的（Y-T2）。
-  再往下——脚本位置、命令行里的 exe 路径还是工作目录——没有分。机器上运行着火绒（`HipsDaemon`），
-  按命令行拦截的可能最大，**这是推断，没有直接证据**。
+  **拦它的是火绒，已由火绒安全日志确认**（用户 10-08 在 factory01 现场查看，以下为用户转述的截图内容，
+  不是我们读到的；截图不入库）：10-08 共 3 条，17:54:59、18:28:05、19:14:24，恰好对应 R1、R2、R3；
+  类别「系统防护／系统加固」，概要「svchost.exe 触犯敏感动作防护规则，已阻止」；防护项目「利用 PowerShell
+  执行可疑脚本」；执行文件 `C:\Program Files\PowerShell\7\pwsh.exe`；执行命令行
+  `pwsh.exe -NoProfile -ExecutionPolicy Bypass -File "C:\Program Files\8005 AGV\ControlServer.V2.FakeMesIngest\Start-FakeMesIngestResident.ps1" -ExecutablePa…`
+  （截断）；操作进程 `svchost.exe -k netsvcs`（Task Scheduler），父进程 `services.exe`。17:37 的 Y-T1／T2
+  与 19:15 的 R4 都不在日志里，和实验一致。截图按 10/08 筛选，10-07 那一条不在其中。
+  火绒的设置没有动，**也不应为此给 pwsh 加信任**：现行形态不经 pwsh，不受这条规则影响。
 - **绝对路径保留，但它不是这次的修复**（R2 证明只换绝对路径仍然 -1）。
 - **同形态在 vm01（Win11）上能起来**（第 1 号文件），所以 vm01 上的绿证明不了 factory01。
 
