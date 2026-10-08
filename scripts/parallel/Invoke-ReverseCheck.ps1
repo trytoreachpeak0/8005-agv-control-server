@@ -92,7 +92,10 @@ function Invoke-Case {
         [scriptblock] $Mutate,
         [string] $Observe,
         [string] $ExpectFragment,
-        [switch] $ExpectAccepted
+        [switch] $ExpectAccepted,
+        # When set: the refusal must carry exactly this many reasons, every one of them containing
+        # $ExpectFragment. Without it, one matching reason among others is enough.
+        [int] $ExpectReasonCount = 0
     )
 
     Write-Section $Name
@@ -142,7 +145,11 @@ function Invoke-Case {
         $reasons = @($message -split "`r?`n" | Where-Object { $_ -like '  - *' })
         Write-Host "  refused with $($reasons.Count) reason(s):"
         $reasons | ForEach-Object { Write-Host "         $($_.Trim())" }
-        if ($message -like "*$ExpectFragment*") {
+        $matching = @($reasons | Where-Object { $_ -like "*$ExpectFragment*" })
+        if ($ExpectReasonCount -gt 0 -and ($reasons.Count -ne $ExpectReasonCount -or $matching.Count -ne $ExpectReasonCount)) {
+            Write-Host "  FAIL   expected exactly $ExpectReasonCount reason(s), all '$ExpectFragment'; got $($reasons.Count), $($matching.Count) matching" -ForegroundColor Red
+            $script:failed++
+        } elseif ($message -like "*$ExpectFragment*") {
             Write-Host "  PASS   refused for the expected reason ('$ExpectFragment')" -ForegroundColor Green
             $script:passed++
         } else {
@@ -179,6 +186,10 @@ $fillTree = Get-Content -LiteralPath $resolved -Raw -Encoding utf8 | ConvertFrom
 $fillTree['journeyRuntime']['dispatchZone'] = 'MAP-26-WIRE_TO_GATE'
 $fillTree['journeyRuntime']['allowedDispatchZones'] = @('MAP-26-WIRE_TO_GATE')
 $fillTree['journeyRuntime']['admissionPolicyDeploymentId'] = 'MAP-26-WIRE_TO_GATE-SELFTEST'
+# The shipped file has the runtime and the route graph off (control-server#411 review S2); the cases
+# below include checks that only apply when they are on, so the filled baseline turns them on.
+$fillTree['journeyRuntime']['enabled'] = $true
+$fillTree['routeGraph']['enabled'] = $true
 Write-DefinitionFile $fillTree
 $filledPath = Join-Path ([IO.Path]::GetTempPath()) "instance-filled-$([guid]::NewGuid().ToString('N')).json"
 [IO.File]::Copy($resolved, $filledPath, $true)
@@ -327,7 +338,8 @@ Invoke-Case -Name 'case 19: the three map-26 placeholders put back' `
         $t['journeyRuntime']['admissionPolicyDeploymentId'] = 'REPLACE_WITH_MAP26_ADMISSION_POLICY_DEPLOYMENT_ID'
         $t
     } `
-    -ExpectFragment 'is still the placeholder'
+    -ExpectFragment 'is still the placeholder' `
+    -ExpectReasonCount 3
 
 # ---------------------------------------------------------------- teardown ---
 

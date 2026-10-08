@@ -69,12 +69,19 @@ function Set-Map26TestValue {
         Every case below works from the shipped file with the three map-26 values replaced by
         obviously-test values, so the cases do not depend on the site values the shipped file
         carries (filled by control-server#411; README.md).
+
+        It also turns the runtime and the route graph on. The shipped file has both off
+        (control-server#411: the package's station preset is still map 25, so a runtime-on install
+        would not start), and several checks only apply when they are on; the cases must keep
+        exercising those checks. The shipped values themselves are asserted separately below.
     #>
     param($Definition)
     $journey = $Definition['journeyRuntime']
     $journey['dispatchZone'] = 'MAP-26-WIRE_TO_GATE'
     $journey['allowedDispatchZones'] = @('MAP-26-WIRE_TO_GATE')
     $journey['admissionPolicyDeploymentId'] = 'MAP-26-WIRE_TO_GATE-SELFTEST'
+    $journey['enabled'] = $true
+    $Definition['routeGraph']['enabled'] = $true
     return $Definition
 }
 
@@ -94,6 +101,14 @@ $shippedFailures = @(Test-ParallelInstanceDefinition -Definition $shipped)
 Write-Result -Ok ($shippedFailures.Count -eq 0) `
     -Name 'the shipped definition is accepted as it stands, no placeholder left' `
     -Detail ("expected no failures, got: " + ($shippedFailures -join ' | '))
+
+# control-server#411 review S2: the package's task-type station preset is still bound to map 25,
+# and the Host refuses to start with the runtime on and that preset (TaskTypeStationConfigurationValidator).
+# So the shipped file installs with the runtime and the route graph off; turning them on is a later,
+# separately authorized step once a map-26 preset exists.
+Write-Result -Ok ($shipped['journeyRuntime']['enabled'] -eq $false -and $shipped['routeGraph']['enabled'] -eq $false) `
+    -Name 'the shipped definition installs with the runtime and the route graph off' `
+    -Detail ("journeyRuntime.enabled = $($shipped['journeyRuntime']['enabled']), routeGraph.enabled = $($shipped['routeGraph']['enabled'])")
 
 Write-Host ''
 Write-Host 'Positive case (shipped file with the placeholders filled by test values)' -ForegroundColor Cyan
