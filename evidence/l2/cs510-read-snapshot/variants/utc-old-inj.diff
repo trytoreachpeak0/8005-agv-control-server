@@ -1,0 +1,46 @@
+--- utc-base.ps1	2026-10-08 10:50:45.362595800 +0800
++++ utc-old-inj.ps1	2026-10-08 10:51:18.417120600 +0800
+@@ -37,6 +37,35 @@
+ $journal = $Context.Journal
+ $assertions = $Context.Assertions
+ $connection = $Context.Connection
++
++# --- control-server#510 evidence only, never committed: hold the probe between its first and second read until the
++# server's commit is visible on another connection -- the timing CI run 37595371819 hit by chance, made certain. Once.
++$script:cs510Injected = $false
++function Wait-Cs510CommitElsewhere([string]$Sql) {
++    if ($script:cs510Injected) { return }
++    $script:cs510Injected = $true
++    $other = [Microsoft.Data.Sqlite.SqliteConnection]::new("Data Source=$($connection.DataSource);Mode=ReadOnly;Pooling=False")
++    $other.Open()
++    try {
++        $deadline = [DateTimeOffset]::UtcNow.AddSeconds(30)
++        while ([DateTimeOffset]::UtcNow -lt $deadline) {
++            $command = $other.CreateCommand()
++            $command.CommandText = $Sql
++            $n = [int]$command.ExecuteScalar()
++            $command.Dispose()
++            if ($n -gt 0) {
++                $journal.Note("CS510_INJECTION_FIRED: held between the first and second read until [$Sql] > 0")
++                Write-Host 'CS510_INJECTION_FIRED'
++                return
++            }
++            Start-Sleep -Milliseconds 50
++        }
++        $journal.Note("CS510_INJECTION_TIMED_OUT: [$Sql]")
++        Write-Host 'CS510_INJECTION_TIMED_OUT'
++    } finally {
++        $other.Dispose()
++    }
++}
+ $riot = $Context.Riot
+ $onboard = $Context.Onboard
+ 
+@@ -148,6 +177,7 @@
+     -Journal $journal -Criterion 'unable-to-charge-confirmed' -TimeoutSeconds 60 `
+     -Probe {
+         $cycle = Get-Cycle
++        if ([string]${cycle}?.Phase -eq 'ACTIVE') { Wait-Cs510CommitElsewhere 'SELECT COUNT(*) FROM ChargingStationAllocationHolds' }
+         $journey = Read-L2SingleRow -Connection $connection -Sql (
+             "SELECT IFNULL(BlockReasonCode, '') AS Code FROM JourneyRuntimes WHERE JourneyId = '$journeyId'")
+         "$(Get-Holds) | $(${cycle}?.WireState) $(${cycle}?.Phase) | $(Get-Claim) | $(${journey}?.Code)"

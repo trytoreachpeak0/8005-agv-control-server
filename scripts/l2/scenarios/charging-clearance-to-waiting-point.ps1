@@ -29,6 +29,7 @@ $ErrorActionPreference = 'Stop'
 
 Import-Module (Join-Path (Split-Path -Parent $PSScriptRoot) 'L2ConditionOrLast.psm1') -Force
 Import-Module (Join-Path (Split-Path -Parent $PSScriptRoot) 'L2SingleRow.psm1') -Force
+Import-Module (Join-Path (Split-Path -Parent $PSScriptRoot) 'L2ReadSnapshot.psm1') -Force
 Import-Module (Join-Path (Split-Path -Parent $PSScriptRoot) 'L2Chargers.psm1') -Force
 Import-Module (Join-Path (Split-Path -Parent $PSScriptRoot) 'L2WaitingPoints.psm1') -Force
 
@@ -184,16 +185,26 @@ $null = $riot.Command('Put', "orders/$upperId", @{ orderState = 3; executeVehicl
 $null = $riot.Command('Put', "orders/$upperId", @{ orderState = 5 })
 Set-Vehicle $vehicleA $charger 25
 
-$clearing = Wait-L2Condition -Description 'the server confirmed A cannot charge and put it in the clearing loop' `
+# One read snapshot (control-server#510): the cycle is read before the pause, both in one SaveChanges, so read as separate
+# statements the cycle could come back from before that commit.
+# Deliberately waits only for the pause, and compares the whole line: inside one read snapshot, the first read that shows the pause
+# shows everything committed with it. That pins the premise this criterion rests on -- the pause, the cycle and the purpose are one SaveChanges (ConfirmUnableToChargeAsync) -- so splitting
+# that commit in the product turns this red, where waiting for the whole line would wait out the split and stay green
+# (control-server#510, review S1).
+$expectedClearing = "UNABLE_TO_CHARGE_CONFIRMED recovered=0 | CLEARING | CLEARING_MAINTENANCE $journeyId"
+$clearing = Wait-L2ConditionOrLast -Description 'the server confirmed A cannot charge and put it in the clearing loop' `
     -Journal $journal -Criterion 'unable-to-charge-confirmed' -TimeoutSeconds 60 `
-    -Probe { $cycle = Get-Cycle; "$(Get-Holds) | $(${cycle}?.Phase) | $(Get-Claim $vehicleA)" } `
+    -Probe {
+        Invoke-L2ReadSnapshot -Connection $connection -Read {
+            $cycle = Get-Cycle; "$(Get-Holds) | $(${cycle}?.Phase) | $(Get-Claim $vehicleA)"
+        }
+    } `
     -Until { param($v) $v.StartsWith('UNABLE_TO_CHARGE_CONFIRMED') }
 $assertions.Add(
     'L2-CWP-01',
     'A 在 211 上充不上（407802 + HANG）：桩暂停（UNABLE_TO_CHARGE_CONFIRMED，未恢复），周期清桩中，A 的用途 CLEARING_MAINTENANCE；B 收敛占着 214',
-    ($clearing -eq "UNABLE_TO_CHARGE_CONFIRMED recovered=0 | CLEARING | CLEARING_MAINTENANCE $journeyId" -and
-        $bOnPoint.StartsWith("OCCUPIED $vehicleB")),
-    "UNABLE_TO_CHARGE_CONFIRMED recovered=0 | CLEARING | CLEARING_MAINTENANCE $journeyId / 214 OCCUPIED $vehicleB",
+    ($clearing -eq $expectedClearing -and $bOnPoint.StartsWith("OCCUPIED $vehicleB")),
+    "$expectedClearing / 214 OCCUPIED $vehicleB",
     "$clearing / 214 $bOnPoint")
 
 # --- 3. 旧单在 RIoT 里结束；214 改成对全部车辆开放，但被 B 占着：无合格点，不猜站（另等） --------------------------------
@@ -272,22 +283,30 @@ $assertions.Add(
 
 Set-Vehicle $vehicleA $point 25
 $null = $riot.Command('Put', "orders/$($move.UpperId)", @{ orderState = 5 })
-$arrived = Wait-L2Condition -Description 'the clearance completed at the waiting point' `
-    -Journal $journal -Criterion 'cleared-at-waiting-point' -TimeoutSeconds 60 `
-    -Probe {
-        $cycle = Get-Cycle
-        $clearance = Get-Clearance
-        $record = Read-L2SingleRow -Connection $connection -Sql (
-            "SELECT IFNULL(ReleaseReason, '') AS Reason FROM StationExclusivityRecords " +
-            "WHERE MapId = $($Context.MapId) AND StationId = $charger AND JourneyId = '$journeyId'")
-        "$(Get-Held $charger) | $(${record}?.Reason) | $(${cycle}?.Phase) $(${cycle}?.EndReason) | " +
-            "$(Get-JourneyCode $journeyId) | $(Get-Claim $vehicleA) | $(Get-Holds) | " +
-            "$(${clearance}?.Completion) $(${clearance}?.Proof) $(${clearance}?.Point) | $(Get-Held $point)"
-    } `
-    -Until { param($v) $v.StartsWith('(none)') }
+# One read snapshot (control-server#510): all of it is one transaction, but the cycle is read first, and CI run 37595371819
+# (second attempt) read it CLEARING next to everything else after that commit.
+# Deliberately waits only for the charger released, and compares the whole line: inside one read snapshot, the first read that shows the charger released
+# shows everything committed with it. That pins the premise this criterion rests on -- completing the clearance, releasing 211, ending the cycle, occupying 214 and closing the journey are one transaction (CompleteClearanceAtWaitingPointAsync) -- so splitting
+# that commit in the product turns this red, where waiting for the whole line would wait out the split and stay green
+# (control-server#510, review S1).
 $expectedArrived = '(none) | CHARGER_RELEASED_ON_CLEARANCE_AT_WAITING_POINT | ENDED CHARGING_UNABLE_TO_CHARGE_CLEARED_AT_WAITING_POINT | ' +
     'Completed CHARGING_UNABLE_TO_CHARGE_CLEARED_AT_WAITING_POINT | (none) | UNABLE_TO_CHARGE_CONFIRMED recovered=0 | ' +
     "completed ARRIVED_AT_WAITING_POINT $point | OCCUPIED $vehicleA $journeyId"
+$arrived = Wait-L2ConditionOrLast -Description 'the clearance completed at the waiting point' `
+    -Journal $journal -Criterion 'cleared-at-waiting-point' -TimeoutSeconds 60 `
+    -Probe {
+        Invoke-L2ReadSnapshot -Connection $connection -Read {
+            $cycle = Get-Cycle
+            $clearance = Get-Clearance
+            $record = Read-L2SingleRow -Connection $connection -Sql (
+                "SELECT IFNULL(ReleaseReason, '') AS Reason FROM StationExclusivityRecords " +
+                "WHERE MapId = $($Context.MapId) AND StationId = $charger AND JourneyId = '$journeyId'")
+            "$(Get-Held $charger) | $(${record}?.Reason) | $(${cycle}?.Phase) $(${cycle}?.EndReason) | " +
+                "$(Get-JourneyCode $journeyId) | $(Get-Claim $vehicleA) | $(Get-Holds) | " +
+                "$(${clearance}?.Completion) $(${clearance}?.Proof) $(${clearance}?.Point) | $(Get-Held $point)"
+        }
+    } `
+    -Until { param($v) $v.StartsWith('(none)') }
 $assertions.Add(
     'L2-CWP-05',
     '到点证据满足的那一轮：清桩完成（ARRIVED_AT_WAITING_POINT，等待点 214）、211 释放（CHARGER_RELEASED_ON_CLEARANCE_AT_WAITING_POINT）、周期以 CHARGING_UNABLE_TO_CHARGE_CLEARED_AT_WAITING_POINT 结束、旅程收尾、用途放开、214 转为 A 的占用；211 的暂停仍在（没有恢复）',

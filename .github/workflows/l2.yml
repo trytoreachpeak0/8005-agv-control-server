@@ -522,6 +522,12 @@ jobs:
           Write-Host '::endgroup::'
           if ($buildCode -ne 0) { Stop-L2Setup "dotnet build ControlServer.sln -c Release exited with $buildCode" }
 
+          # A few seconds, here and not in test.yml because it needs this build's Microsoft.Data.Sqlite: the read snapshot
+          # the multi-read charging probes go through (control-server#510), against real SQLite in WAL mode. A transaction
+          # it left open would have every later probe read one old state until its wait timed out.
+          & pwsh -NoProfile -File ./scripts/l2/Test-L2ReadSnapshot.ps1
+          if ($LASTEXITCODE -ne 0) { Stop-L2Setup "Test-L2ReadSnapshot.ps1 exited with $LASTEXITCODE" }
+
           # Each run's stage root (its SQLite database and friends, under %TEMP%) goes inside the evidence
           # root: a passing run deletes its own, and a failing run's -- often the only place the cause is
           # written down -- is uploaded with the evidence and cleared with the runner's temp directory,
@@ -778,6 +784,11 @@ jobs:
           if ($buildCode -ne 0) { Stop-RigSetup "dotnet build ControlServer.sln -c Release exited with $buildCode" }
           # Belt and braces for the environment above: anything a build still left running goes now.
           & dotnet build-server shutdown *> $null
+
+          # The read snapshot the G3 charging scenarios read through (control-server#510), checked against this build's SQLite
+          # as in the scenarios job.
+          & pwsh -NoProfile -File ./scripts/l2/Test-L2ReadSnapshot.ps1
+          if ($LASTEXITCODE -ne 0) { Stop-RigSetup "Test-L2ReadSnapshot.ps1 exited with $LASTEXITCODE" }
 
           # Each run's stage root goes inside the evidence root, as in the scenarios job.
           $stageTemp = Join-Path $evidenceRoot '_stage'
