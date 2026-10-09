@@ -80,6 +80,20 @@ public sealed class ParallelInstanceEffectiveConfigurationTests
         Assert.Equal(["WIRE", "OVEN"], options.AllowedDispatchZones);
     }
 
+    [Fact]
+    public void ShorterListReplacesEarlierListWholeUnderTheHostsConfigurationManager()
+    {
+        // WebApplicationBuilder.Configuration is a ConfigurationManager, not a ConfigurationRoot.
+        using ConfigurationManager configuration = new();
+        configuration.AddJsonStream(new MemoryStream(Encoding.UTF8.GetBytes(Base)));
+        configuration.AddJsonStream(new MemoryStream(Encoding.UTF8.GetBytes("""{ "JourneyRuntime": { "allowedWorkTypes": ["STAGING_TO_WIRE"] } }""")));
+        ServiceCollection services = new();
+        services.AddJourneyRuntimeOptions(configuration);
+        using ServiceProvider provider = services.BuildServiceProvider();
+
+        Assert.Equal(["STAGING_TO_WIRE"], provider.GetRequiredService<IOptions<JourneyRuntimeOptions>>().Value.AllowedWorkTypes);
+    }
+
     private static JourneyRuntimeOptions Bind(string baseJson, string overlayJson, out IConfiguration configuration)
     {
         IConfigurationRoot root = new ConfigurationBuilder()
