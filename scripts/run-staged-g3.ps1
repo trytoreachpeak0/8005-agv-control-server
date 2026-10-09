@@ -386,6 +386,150 @@ function Read-Ndjson {
         ForEach-Object { $_ | ConvertFrom-Json })
 }
 
+# control-server#541. CV-RELIABLE-RETRY-DIFFERENT-CONTENT asks the server to NEVER_APPLY_CONFLICTING_RETRY and leave
+# NO_DUPLICATE_COMMIT, and the probes see only the wire. These three functions read it from the store: for every message
+# a content-conflict case refused, the inbox still holds the line first accepted under that messageId, byte for byte, or
+# -- when the refused line carried a messageId of its own -- no row at all. The probes report the SHA-256 of every line
+# they sent; the expectations are taken from there rather than restated. Top-level functions so that
+# Test-StagedG3ContentConflict.ps1 runs these, not a copy.
+function Get-StagedContentConflictExpectation {
+    param($ProbeResult, $BusinessProbeResult, $RecoveryProbeResult)
+    $expectations = [System.Collections.Generic.List[object]]::new()
+    $conflict = $ProbeResult.conflict
+    if ($null -ne $conflict) {
+        $expectations.Add([ordered]@{
+                case = 'heartbeat'
+                messageId = [string]$conflict.messageId
+                originalRequestSha256 = [string]$conflict.originalRequestSha256
+                conflictingRequestSha256 = @($conflict.conflictingRequestSha256s)
+            })
+    }
+    foreach ($business in @($BusinessProbeResult.conflicts)) {
+        if ($null -eq $business) { continue }
+        $expectations.Add([ordered]@{
+                case = 'business-' + [string]$business.messageType
+                messageId = [string]$business.messageId
+                originalRequestSha256 = [string]$business.originalRequestSha256
+                conflictingRequestSha256 = @($business.conflictingRequestSha256)
+            })
+    }
+    $requestConflict = @($RecoveryProbeResult.sessionAuthorisation | Where-Object {
+            $null -ne $_ -and $_.case -eq 'recovery-session-requestid-content-conflict' })
+    if ($requestConflict.Count -eq 1) {
+        # Its own messageId, so nothing may be on file under it.
+        $expectations.Add([ordered]@{
+                case = 'recovery-session-requestid'
+                messageId = [string]$requestConflict[0].conflictingMessageId
+                originalRequestSha256 = $null
+                conflictingRequestSha256 = @()
+            })
+    }
+    $forced = $RecoveryProbeResult.forcedRecoveryGenerationBranches
+    if ($null -ne $forced) {
+        $expectations.Add([ordered]@{
+                case = 'forced-mechanical-recovery-result'
+                messageId = [string]$forced.resultMessageId
+                originalRequestSha256 = [string]$forced.currentResultRequestSha256
+                conflictingRequestSha256 = @($forced.resultContentConflictRequestSha256)
+            })
+    }
+    return , $expectations.ToArray()
+}
+
+function Read-ProtocolInboxRequestRow {
+    param([Parameter(Mandatory)]$Connection, [string[]]$MessageId)
+    $rows = [System.Collections.Generic.List[object]]::new()
+    foreach ($id in @($MessageId | Where-Object { -not [string]::IsNullOrEmpty($_) } | Sort-Object -Unique)) {
+        $command = $Connection.CreateCommand()
+        try {
+            $command.CommandText = 'SELECT MessageId, MessageType, RequestJson FROM ProtocolInbox WHERE MessageId = $id'
+            [void]$command.Parameters.AddWithValue('$id', $id)
+            $reader = $command.ExecuteReader()
+            try {
+                while ($reader.Read()) {
+                    $rows.Add([ordered]@{
+                            messageId = $reader.GetString(0)
+                            messageType = $reader.GetString(1)
+                            requestSha256 = Get-Sha256Text -Text $reader.GetString(2)
+                        })
+                }
+            }
+            finally { $reader.Dispose() }
+        }
+        finally { $command.Dispose() }
+    }
+    return , $rows.ToArray()
+}
+
+# One verdict per expectation. An expectation without a messageId -- a probe that never reported one -- fails: the
+# check cannot pass on what was not observed.
+function Test-ContentConflictNotApplied {
+    param([object[]]$Expectation, [object[]]$InboxRow)
+    $verdicts = [System.Collections.Generic.List[object]]::new()
+    foreach ($expected in @($Expectation)) {
+        if ($null -eq $expected) { continue }
+        $rows = @($InboxRow | Where-Object { $null -ne $_ -and $_.messageId -eq $expected.messageId })
+        $stored = @($rows | ForEach-Object { $_.requestSha256 })
+        $passed = if ([string]::IsNullOrEmpty($expected.messageId)) {
+            $false
+        } elseif ([string]::IsNullOrEmpty($expected.originalRequestSha256)) {
+            $rows.Count -eq 0
+        } else {
+            $rows.Count -eq 1 -and
+                $stored[0] -eq $expected.originalRequestSha256 -and
+                $stored[0] -notin @($expected.conflictingRequestSha256)
+        }
+        $verdicts.Add([ordered]@{
+                case = $expected.case
+                status = if ($passed) { 'PASS' } else { 'FAIL' }
+                messageId = $expected.messageId
+                inboxRowCount = $rows.Count
+                storedRequestSha256 = $stored
+                originalRequestSha256 = $expected.originalRequestSha256
+                conflictingRequestSha256 = @($expected.conflictingRequestSha256)
+            })
+    }
+    return , $verdicts.ToArray()
+}
+
+# The four content-conflict assertions, each the probe's wire verdict (the vector's ProtocolProblem, the original still
+# answered as itself, the connection still served) AND the store's (the refused content never applied). Until
+# control-server#541 they asserted that the connection closed, which the vector never asked for and control-server#478
+# stopped doing. One function so that the runner and Test-StagedG3ContentConflict.ps1 judge alike.
+function Get-ContentConflictVerdict {
+    param($ProbeResult, $BusinessProbeResult, $RecoveryProbeResult, $DatabaseObservation)
+    $notApplied = @()
+    if ($null -ne $DatabaseObservation) {
+        $notApplied = Test-ContentConflictNotApplied -Expectation $DatabaseObservation.contentConflictExpectations `
+            -InboxRow $DatabaseObservation.contentConflictInboxRows
+    }
+    $notAppliedPass = {
+        param([string[]]$Case)
+        foreach ($name in $Case) {
+            $verdicts = @($notApplied | Where-Object { $_.case -eq $name })
+            if ($verdicts.Count -ne 1 -or $verdicts[0].status -ne 'PASS') { return $false }
+        }
+        return $true
+    }
+    $businessTypes = @('SublotSubmitted', 'OperationProgress', 'PreDepartureSafetyCheckResult', 'SlotOperationCommandRejected')
+    $businessConflicts = @($BusinessProbeResult.conflicts | Where-Object { $null -ne $_ })
+    $requestCase = @($RecoveryProbeResult.sessionAuthorisation | Where-Object {
+            $null -ne $_ -and $_.case -eq 'recovery-session-requestid-content-conflict' })
+    $forced = $RecoveryProbeResult.forcedRecoveryGenerationBranches
+    return [ordered]@{
+        heartbeat = $ProbeResult.conflict.status -eq 'PASS' -and (& $notAppliedPass 'heartbeat')
+        business = $businessConflicts.Count -eq 4 -and
+            @($businessConflicts | Where-Object { $_.status -ne 'PASS' }).Count -eq 0 -and
+            (& $notAppliedPass @($businessTypes | ForEach-Object { 'business-' + $_ }))
+        recoverySessionRequestId = $requestCase.Count -eq 1 -and $requestCase[0].status -eq 'PASS' -and
+            (& $notAppliedPass 'recovery-session-requestid')
+        forcedRecoveryResult = $forced.resultContentConflictRefusedWithProtocolProblem -eq $true -and
+            $forced.originalResultResentAfterConflictAcknowledged -eq $true -and
+            (& $notAppliedPass 'forced-mechanical-recovery-result')
+        notApplied = $notApplied
+    }
+}
+
 # An HTTP error as evidence. pwsh keeps the response body in ErrorDetails, not in the exception message, so a
 # refusal read from the message alone arrives as a bare "409 (Conflict)" and the reason the server gave is
 # lost (control-server#306; control-server#277 for the L2 doubles). `?.` because ErrorDetails is null when the
@@ -563,9 +707,12 @@ public static class StagedG3TlsHarness
         string heartbeatId = StableGuid("heartbeat:duplicate-conflict");
         string? accepted;
         string originalHeartbeat;
+        string conflict;
         string firstAck;
         string secondAck;
-        bool firstConflictClosed;
+        Dictionary<string, object?> firstConflict;
+        string? replayAfterConflict;
+        Dictionary<string, object?> firstServed;
         long firstGeneration;
         await using (Connection connection = await Connection.OpenAsync(
             port, cancellationToken).ConfigureAwait(false))
@@ -580,9 +727,21 @@ public static class StagedG3TlsHarness
             firstAck = await connection.ReadRequiredAsync(TimeSpan.FromSeconds(5), cancellationToken).ConfigureAwait(false);
             await connection.WriteAsync(originalHeartbeat, cancellationToken).ConfigureAwait(false);
             secondAck = await connection.ReadRequiredAsync(TimeSpan.FromSeconds(5), cancellationToken).ConfigureAwait(false);
-            string conflict = Heartbeat(agvId, heartbeatId, firstGeneration, 2);
+            // control-server#541: CV-RELIABLE-RETRY-DIFFERENT-CONTENT asks for a ProtocolProblem and that the
+            // conflicting retry is never applied, not for the connection to end; control-server#478 made the server
+            // do exactly that. So the conflict is followed on the same connection by the original again -- still
+            // answered with the stored first acknowledgement, which a server that had taken the conflicting
+            // content in its place could not do -- and by a fresh heartbeat, which only a served connection answers.
+            conflict = Heartbeat(agvId, heartbeatId, firstGeneration, 2);
             await connection.WriteAsync(conflict, cancellationToken).ConfigureAwait(false);
-            firstConflictClosed = await connection.ExpectClosedAsync(TimeSpan.FromSeconds(5), cancellationToken)
+            firstConflict = await ReadContentConflictAnswerAsync(
+                connection, heartbeatId, "Heartbeat", "MESSAGE_ID_CONTENT_CONFLICT", cancellationToken)
+                .ConfigureAwait(false);
+            await connection.TryWriteAsync(originalHeartbeat, cancellationToken).ConfigureAwait(false);
+            replayAfterConflict = await ReadCorrelatedAsync(
+                connection, heartbeatId, TimeSpan.FromSeconds(5), cancellationToken).ConfigureAwait(false);
+            firstServed = await ProveConnectionStillServedAsync(
+                connection, agvId, firstGeneration, StableGuid("heartbeat:after-first-conflict"), cancellationToken)
                 .ConfigureAwait(false);
             Log(transcriptPath, new Dictionary<string, object?>
             {
@@ -593,17 +752,25 @@ public static class StagedG3TlsHarness
                 ["firstResponseSha256"] = Sha256(firstAck),
                 ["secondResponseSha256"] = Sha256(secondAck)
             });
-            Log(transcriptPath, new Dictionary<string, object?>
-            {
-                ["case"] = "same-messageId-different-content-first-conflict",
-                ["status"] = firstConflictClosed ? "PASS" : "FAIL",
-                ["messageId"] = heartbeatId,
-                ["conflictingRequestSha256"] = Sha256(conflict),
-                ["connectionClosed"] = firstConflictClosed
-            });
         }
+        bool firstConflictPass = Equals(firstConflict["refusedAsTheVectorRequires"], true) &&
+            replayAfterConflict == firstAck &&
+            Equals(firstServed["served"], true);
+        Log(transcriptPath, new Dictionary<string, object?>
+        {
+            ["case"] = "same-messageId-different-content-first-conflict",
+            ["status"] = firstConflictPass ? "PASS" : "FAIL",
+            ["messageId"] = heartbeatId,
+            ["conflictingRequestSha256"] = Sha256(conflict),
+            ["answer"] = firstConflict,
+            ["originalReplayedAfterConflictAnsweredWithStoredAck"] = replayAfterConflict == firstAck,
+            ["originalReplayAfterConflictSha256"] = replayAfterConflict is null ? null : Sha256(replayAfterConflict),
+            ["connectionServedAfterConflict"] = firstServed
+        });
 
-        bool secondConflictClosed;
+        string conflictAgain;
+        Dictionary<string, object?> secondConflict;
+        Dictionary<string, object?> secondServed;
         long secondGeneration;
         await using (Connection connection = await Connection.OpenAsync(
             port, cancellationToken).ConfigureAwait(false))
@@ -614,24 +781,57 @@ public static class StagedG3TlsHarness
             string acceptedAgain = await connection.ReadRequiredAsync(TimeSpan.FromSeconds(5), cancellationToken)
                 .ConfigureAwait(false);
             secondGeneration = NumberProperty(acceptedAgain, "sessionGeneration");
-            string conflictAgain = Heartbeat(agvId, heartbeatId, secondGeneration, 2);
+            conflictAgain = Heartbeat(agvId, heartbeatId, secondGeneration, 2);
             await connection.WriteAsync(conflictAgain, cancellationToken).ConfigureAwait(false);
-            secondConflictClosed = await connection.ExpectClosedAsync(TimeSpan.FromSeconds(5), cancellationToken)
+            secondConflict = await ReadContentConflictAnswerAsync(
+                connection, heartbeatId, "Heartbeat", "MESSAGE_ID_CONTENT_CONFLICT", cancellationToken)
                 .ConfigureAwait(false);
-            Log(transcriptPath, new Dictionary<string, object?>
-            {
-                ["case"] = "same-messageId-different-content-stable-conflict",
-                ["status"] = secondConflictClosed ? "PASS" : "FAIL",
-                ["messageId"] = heartbeatId,
-                ["conflictingRequestSha256"] = Sha256(conflictAgain),
-                ["connectionClosed"] = secondConflictClosed
-            });
+            secondServed = await ProveConnectionStillServedAsync(
+                connection, agvId, secondGeneration, StableGuid("heartbeat:after-repeat-conflict"), cancellationToken)
+                .ConfigureAwait(false);
         }
+        bool secondConflictPass = Equals(secondConflict["refusedAsTheVectorRequires"], true) &&
+            Equals(secondServed["served"], true);
+        Log(transcriptPath, new Dictionary<string, object?>
+        {
+            ["case"] = "same-messageId-different-content-stable-conflict",
+            ["status"] = secondConflictPass ? "PASS" : "FAIL",
+            ["messageId"] = heartbeatId,
+            ["conflictingRequestSha256"] = Sha256(conflictAgain),
+            ["answer"] = secondConflict,
+            ["connectionServedAfterConflict"] = secondServed
+        });
+
+        // The one path that still ends the connection (control-server#478): a SessionHello whose messageId is on file
+        // with other content. There is no session yet to correlate a ProtocolProblem to, so the server closes. Pinned
+        // here so the change above cannot quietly carry it along. "Closed" means the stream ended, not that nothing
+        // arrived in time -- ExpectClosedAsync cannot tell those two apart.
+        string helloConflictId = StableGuid("hello:duplicate");
+        string helloConflict = Hello(
+            agvId + "-HELLO-CONFLICT", helloConflictId, Protocol.Release, Protocol.Manifest, credential);
+        Dictionary<string, object?> helloConflictEnd;
+        await using (Connection connection = await Connection.OpenAsync(
+            port, cancellationToken).ConfigureAwait(false))
+        {
+            await connection.WriteAsync(helloConflict, cancellationToken).ConfigureAwait(false);
+            helloConflictEnd = await ExpectEndOfStreamAsync(connection, TimeSpan.FromSeconds(10), cancellationToken)
+                .ConfigureAwait(false);
+        }
+        bool helloConflictPass = Equals(helloConflictEnd["streamEnded"], true) &&
+            Equals(helloConflictEnd["sessionAccepted"], false);
+        Log(transcriptPath, new Dictionary<string, object?>
+        {
+            ["case"] = "session-hello-same-messageId-different-content-closes",
+            ["status"] = helloConflictPass ? "PASS" : "FAIL",
+            ["messageId"] = helloConflictId,
+            ["conflictingRequestSha256"] = Sha256(helloConflict),
+            ["observation"] = helloConflictEnd
+        });
 
         bool rejectionPass = rejectionCases.All(item => Equals(item["status"], "PASS"));
         bool duplicatePass = firstAck == secondAck &&
             Property(firstAck, "messageType") == "HeartbeatAck";
-        bool conflictPass = firstConflictClosed && secondConflictClosed;
+        bool conflictPass = firstConflictPass && secondConflictPass && helloConflictPass;
         return JsonSerializer.Serialize(new Dictionary<string, object?>
         {
             ["schemaVersion"] = "1.0.0",
@@ -649,9 +849,29 @@ public static class StagedG3TlsHarness
             ["conflict"] = new Dictionary<string, object?>
             {
                 ["status"] = conflictPass ? "PASS" : "FAIL",
+                ["vectorId"] = "CV-RELIABLE-RETRY-DIFFERENT-CONTENT",
                 ["messageId"] = heartbeatId,
-                ["firstSameConnectionClosed"] = firstConflictClosed,
-                ["repeatConnectionClosed"] = secondConflictClosed,
+                ["originalRequestSha256"] = Sha256(originalHeartbeat),
+                ["conflictingRequestSha256s"] = new[] { Sha256(conflict), Sha256(conflictAgain) },
+                ["firstSameConnection"] = new Dictionary<string, object?>
+                {
+                    ["status"] = firstConflictPass ? "PASS" : "FAIL",
+                    ["answer"] = firstConflict,
+                    ["originalReplayedAfterConflictAnsweredWithStoredAck"] = replayAfterConflict == firstAck,
+                    ["connectionServedAfterConflict"] = firstServed
+                },
+                ["repeatInANewSession"] = new Dictionary<string, object?>
+                {
+                    ["status"] = secondConflictPass ? "PASS" : "FAIL",
+                    ["answer"] = secondConflict,
+                    ["connectionServedAfterConflict"] = secondServed
+                },
+                ["sessionHelloConflictClosesTheConnection"] = new Dictionary<string, object?>
+                {
+                    ["status"] = helloConflictPass ? "PASS" : "FAIL",
+                    ["messageId"] = helloConflictId,
+                    ["observation"] = helloConflictEnd
+                },
                 ["sessionGenerations"] = new[] { firstGeneration, secondGeneration }
             }
         });
@@ -693,7 +913,9 @@ public static class StagedG3TlsHarness
             string conflicting;
             string firstAck;
             string secondAck;
-            bool sameConnectionClosed;
+            Dictionary<string, object?> sameConnectionAnswer;
+            string? replayAfterConflict;
+            Dictionary<string, object?> sameConnectionServed;
             await using (Connection connection = await Connection.OpenAsync(
                 port, cancellationToken).ConfigureAwait(false))
             {
@@ -707,13 +929,23 @@ public static class StagedG3TlsHarness
                 await connection.WriteAsync(original, cancellationToken).ConfigureAwait(false);
                 secondAck = await connection.ReadRequiredAsync(TimeSpan.FromSeconds(5), cancellationToken)
                     .ConfigureAwait(false);
+                // control-server#541, as for the heartbeat in RunProbeAsync: the vector's ProtocolProblem, then the
+                // original still answered from its first acceptance, then a fresh message still answered.
                 conflicting = Business(messageType, messageId, agvId, generation, 2);
                 await connection.WriteAsync(conflicting, cancellationToken).ConfigureAwait(false);
-                sameConnectionClosed = await connection
-                    .ExpectClosedAsync(TimeSpan.FromSeconds(5), cancellationToken).ConfigureAwait(false);
+                sameConnectionAnswer = await ReadContentConflictAnswerAsync(
+                    connection, messageId, messageType, "MESSAGE_ID_CONTENT_CONFLICT", cancellationToken)
+                    .ConfigureAwait(false);
+                await connection.TryWriteAsync(original, cancellationToken).ConfigureAwait(false);
+                replayAfterConflict = await ReadCorrelatedAsync(
+                    connection, messageId, TimeSpan.FromSeconds(5), cancellationToken).ConfigureAwait(false);
+                sameConnectionServed = await ProveConnectionStillServedAsync(
+                    connection, agvId, generation, StableGuid("business:after-conflict:" + messageType),
+                    cancellationToken).ConfigureAwait(false);
             }
 
-            bool repeatConnectionClosed;
+            Dictionary<string, object?> repeatAnswer;
+            Dictionary<string, object?> repeatServed;
             await using (Connection connection = await Connection.OpenAsync(
                 port, cancellationToken).ConfigureAwait(false))
             {
@@ -722,8 +954,12 @@ public static class StagedG3TlsHarness
                     .ConfigureAwait(false);
                 await connection.WriteAsync(
                     Business(messageType, messageId, agvId, generation, 2), cancellationToken).ConfigureAwait(false);
-                repeatConnectionClosed = await connection
-                    .ExpectClosedAsync(TimeSpan.FromSeconds(5), cancellationToken).ConfigureAwait(false);
+                repeatAnswer = await ReadContentConflictAnswerAsync(
+                    connection, messageId, messageType, "MESSAGE_ID_CONTENT_CONFLICT", cancellationToken)
+                    .ConfigureAwait(false);
+                repeatServed = await ProveConnectionStillServedAsync(
+                    connection, agvId, generation, StableGuid("business:after-repeat-conflict:" + messageType),
+                    cancellationToken).ConfigureAwait(false);
             }
 
             bool duplicatePass = firstAck == secondAck &&
@@ -743,16 +979,25 @@ public static class StagedG3TlsHarness
             duplicateCases.Add(duplicate);
             Log(transcriptPath, duplicate);
 
-            bool conflictPass = sameConnectionClosed && repeatConnectionClosed;
+            bool conflictPass = Equals(sameConnectionAnswer["refusedAsTheVectorRequires"], true) &&
+                replayAfterConflict == firstAck &&
+                Equals(sameConnectionServed["served"], true) &&
+                Equals(repeatAnswer["refusedAsTheVectorRequires"], true) &&
+                Equals(repeatServed["served"], true);
             var conflict = new Dictionary<string, object?>
             {
                 ["case"] = "business-conflict-" + messageType,
                 ["status"] = conflictPass ? "PASS" : "FAIL",
+                ["vectorId"] = "CV-RELIABLE-RETRY-DIFFERENT-CONTENT",
                 ["messageType"] = messageType,
                 ["messageId"] = messageId,
+                ["originalRequestSha256"] = Sha256(original),
                 ["conflictingRequestSha256"] = Sha256(conflicting),
-                ["firstSameConnectionClosed"] = sameConnectionClosed,
-                ["repeatConnectionClosed"] = repeatConnectionClosed
+                ["firstSameConnectionAnswer"] = sameConnectionAnswer,
+                ["originalReplayedAfterConflictAnsweredWithStoredAck"] = replayAfterConflict == firstAck,
+                ["firstSameConnectionServedAfterConflict"] = sameConnectionServed,
+                ["repeatAnswer"] = repeatAnswer,
+                ["repeatServedAfterConflict"] = repeatServed
             };
             conflictCases.Add(conflict);
             Log(transcriptPath, conflict);
@@ -1020,7 +1265,14 @@ public static class StagedG3TlsHarness
                 }));
         }
 
-        bool requestConflictClosed;
+        // control-server#541: the same requestId under a new messageId with other content (a wider slot set). Since
+        // control-server#478 the coordinator's refusal is a ProtocolProblem BUSINESS_ID_CONTENT_CONFLICT correlated to
+        // that message, and the connection stays. Not applied is shown on the same connection: the original request
+        // under yet another messageId is still answered with the session it opened, at the revision it opened it -- a
+        // session widened to the conflicting scope would have moved its revision or been answered as a conflict.
+        string requestConflictMessageId = StableGuid("recovery:request-conflict");
+        Dictionary<string, object?> requestConflictAnswer;
+        string? replayAfterRequestConflict;
         await using (Connection connection = await Connection.OpenAsync(
             port, cancellationToken).ConfigureAwait(false))
         {
@@ -1029,15 +1281,38 @@ public static class StagedG3TlsHarness
                 .ConfigureAwait(false);
             await connection.WriteAsync(
                 SessionRequest(
-                    agvId, StableGuid("recovery:request-conflict"), generation, requestId, eventId, null, outOfScope,
+                    agvId, requestConflictMessageId, generation, requestId, eventId, null, outOfScope,
                     authenticationProof, administratorId),
                 cancellationToken).ConfigureAwait(false);
-            requestConflictClosed = await connection
-                .ExpectClosedAsync(TimeSpan.FromSeconds(5), cancellationToken).ConfigureAwait(false);
+            requestConflictAnswer = await ReadContentConflictAnswerAsync(
+                connection, requestConflictMessageId, "ExceptionRecoverySessionRequested",
+                "BUSINESS_ID_CONTENT_CONFLICT", cancellationToken).ConfigureAwait(false);
+            await connection.TryWriteAsync(
+                SessionRequest(
+                    agvId, StableGuid("recovery:request-after-conflict"), generation, requestId, eventId, null, scope,
+                    authenticationProof, administratorId),
+                cancellationToken).ConfigureAwait(false);
+            replayAfterRequestConflict = await ReadCorrelatedAsync(
+                connection, StableGuid("recovery:request-after-conflict"), TimeSpan.FromSeconds(10), cancellationToken)
+                .ConfigureAwait(false);
         }
+        bool originalSessionKept =
+            Property(replayAfterRequestConflict, "messageType") == "ExceptionRecoverySessionOpened" &&
+            NestedProperty(replayAfterRequestConflict, "payload", "exceptionRecoverySessionId") == sessionId &&
+            NestedProperty(replayAfterRequestConflict, "payload", "requestId") == requestId &&
+            NumberNestedProperty(replayAfterRequestConflict, "payload", "recoverySessionRevision") ==
+                NumberNestedProperty(openedResponse, "payload", "recoverySessionRevision");
         authorisationCases.Add(Case(
-            transcriptPath, "recovery-session-requestid-content-conflict", null, requestConflictClosed,
-            new Dictionary<string, object?> { ["connectionClosed"] = requestConflictClosed }));
+            transcriptPath, "recovery-session-requestid-content-conflict", replayAfterRequestConflict,
+            Equals(requestConflictAnswer["refusedAsTheVectorRequires"], true) && originalSessionKept,
+            new Dictionary<string, object?>
+            {
+                ["conflictingMessageId"] = requestConflictMessageId,
+                ["answer"] = requestConflictAnswer,
+                ["originalRequestAnsweredWithTheSessionItOpenedAfterConflict"] = originalSessionKept,
+                ["exceptionRecoverySessionId"] =
+                    NestedProperty(replayAfterRequestConflict, "payload", "exceptionRecoverySessionId")
+            }));
 
         string? acceptedFirstActionId;
         bool commandConnectionClosed;
@@ -1187,6 +1462,7 @@ public static class StagedG3TlsHarness
         string? replayedCommand;
         string secondSubmissionResponse;
         string currentResultAck;
+        string currentResultLine;
         string replayedResultAck;
         await using (Connection connection = await Connection.OpenAsync(
             port, cancellationToken).ConfigureAwait(false))
@@ -1239,12 +1515,11 @@ public static class StagedG3TlsHarness
                 ["responseSha256"] = Sha256(secondSubmissionResponse)
             });
 
+            currentResultLine = ForcedResult(
+                agvId, currentResultMessageId, generation, sessionId!, firstActionId,
+                1, scope, administratorId, "2026-08-26T12:00:01Z");
             currentResultAck = await ExchangeAsync(
-                connection,
-                ForcedResult(
-                    agvId, currentResultMessageId, generation, sessionId!, firstActionId,
-                    1, scope, administratorId, "2026-08-26T12:00:01Z"),
-                "DurableAck", cancellationToken).ConfigureAwait(false);
+                connection, currentResultLine, "DurableAck", cancellationToken).ConfigureAwait(false);
             replayedResultAck = await ExchangeAsync(
                 connection,
                 ForcedResult(
@@ -1281,21 +1556,41 @@ public static class StagedG3TlsHarness
                 }));
         }
 
-        bool resultConflictClosed;
+        // control-server#541: the settled result's messageId again in a new session, with another observedAt. Since
+        // control-server#478 that is a ProtocolProblem MESSAGE_ID_CONTENT_CONFLICT and the connection stays. The
+        // original result resent into the same session -- different from its first line in sessionGeneration alone,
+        // which is an equivalent resend -- is then still acknowledged as itself: had the conflicting content been
+        // kept instead, the original would now be the conflict. The inbox row's bytes are checked from the database
+        // by the runner (forcedResultInboxRows).
+        Dictionary<string, object?> resultConflictAnswer;
+        string? resultResentAfterConflictAck;
+        string resultConflictLine = string.Empty;
         await using (Connection connection = await Connection.OpenAsync(
             port, cancellationToken).ConfigureAwait(false))
         {
             long generation = await HandshakeAsync(
                 connection, agvId, StableGuid("hello:recovery:" + ++helloSequence), credential, cancellationToken)
                 .ConfigureAwait(false);
-            await connection.WriteAsync(
+            resultConflictLine = ForcedResult(
+                agvId, currentResultMessageId, generation, sessionId!, firstActionId,
+                1, scope, administratorId, "2026-08-26T12:00:09Z");
+            await connection.WriteAsync(resultConflictLine, cancellationToken).ConfigureAwait(false);
+            resultConflictAnswer = await ReadContentConflictAnswerAsync(
+                connection, currentResultMessageId, "ForcedMechanicalRecoveryResult",
+                "MESSAGE_ID_CONTENT_CONFLICT", cancellationToken).ConfigureAwait(false);
+            await connection.TryWriteAsync(
                 ForcedResult(
                     agvId, currentResultMessageId, generation, sessionId!, firstActionId,
-                    1, scope, administratorId, "2026-08-26T12:00:09Z"),
+                    1, scope, administratorId, "2026-08-26T12:00:01Z"),
                 cancellationToken).ConfigureAwait(false);
-            resultConflictClosed = await connection
-                .ExpectClosedAsync(TimeSpan.FromSeconds(5), cancellationToken).ConfigureAwait(false);
+            resultResentAfterConflictAck = await ReadUntilAsync(
+                connection, "DurableAck", TimeSpan.FromSeconds(10), cancellationToken).ConfigureAwait(false);
         }
+        bool resultConflictRefused = Equals(resultConflictAnswer["refusedAsTheVectorRequires"], true);
+        bool originalResultKept =
+            NestedProperty(resultResentAfterConflictAck, "payload", "acceptedMessageType") ==
+                "ForcedMechanicalRecoveryResult" &&
+            NestedProperty(resultResentAfterConflictAck, "payload", "acceptedMessageId") == currentResultMessageId;
 
         bool authorisationPass = authorisationCases.All(item => Equals(item["status"], "PASS"));
         bool actionBoundaryPass = actionBoundaryCases.All(item => Equals(item["status"], "PASS"));
@@ -1313,7 +1608,7 @@ public static class StagedG3TlsHarness
         bool currentResultPass =
             NestedProperty(currentResultAck, "payload", "acceptedMessageType") == "ForcedMechanicalRecoveryResult" &&
             NestedProperty(currentResultAck, "payload", "acceptedMessageId") == currentResultMessageId;
-        bool resultReplayPass = currentResultAck == replayedResultAck && resultConflictClosed;
+        bool resultReplayPass = currentResultAck == replayedResultAck && resultConflictRefused && originalResultKept;
 
         return JsonSerializer.Serialize(new Dictionary<string, object?>
         {
@@ -1352,8 +1647,16 @@ public static class StagedG3TlsHarness
                 ["secondSubmissionResponseSha256"] = Sha256(secondSubmissionResponse),
                 ["currentGenerationResultAcknowledged"] = currentResultPass,
                 ["resultReplayByteExact"] = currentResultAck == replayedResultAck,
-                ["resultContentConflictClosedConnection"] = resultConflictClosed,
-                ["currentResultAckSha256"] = Sha256(currentResultAck)
+                // Was resultContentConflictClosedConnection until control-server#541; see resultConflictAnswer above.
+                ["resultContentConflictRefusedWithProtocolProblem"] = resultConflictRefused,
+                ["resultContentConflictAnswer"] = resultConflictAnswer,
+                ["resultContentConflictRequestSha256"] = Sha256(resultConflictLine),
+                ["originalResultResentAfterConflictAcknowledged"] = originalResultKept,
+                ["originalResultResentAfterConflictAckSha256"] =
+                    resultResentAfterConflictAck is null ? null : Sha256(resultResentAfterConflictAck),
+                ["resultMessageId"] = currentResultMessageId,
+                ["currentResultAckSha256"] = Sha256(currentResultAck),
+                ["currentResultRequestSha256"] = Sha256(currentResultLine)
             },
             ["coverageLimits"] = new Dictionary<string, object?>
             {
@@ -1388,10 +1691,10 @@ public static class StagedG3TlsHarness
     /// SlotOperationCommand was published but whose result never arrived -- a state only a real
     /// authorised field run produces, and one this probe restores rather than fabricates.
     ///
-    /// Cross-session replay is deliberately not one of the cases: OperationResult has no replay
-    /// identity hash that normalises sessionGeneration the way RecoveryStateReport does, so the same
-    /// messageId resent under a new generation hashes differently and is a conflict by design. Each
-    /// refusal case therefore opens its own connection, because a refusal closes the one it arrives on.
+    /// Cross-session replay is deliberately not one of the cases. Each refusal case opens its own
+    /// connection. Until control-server#478 that was forced, because a refusal closed the one it arrived
+    /// on; since then a content conflict is a ProtocolProblem and the connection stays, which the three
+    /// conflict cases assert (control-server#541). The stale-generation case still ends the connection.
     /// </remarks>
     public static async Task<string> RunDemandBearingResultProbeAsync(
         int port,
@@ -1464,35 +1767,45 @@ public static class StagedG3TlsHarness
                 }));
         }
 
-        bool contentConflictClosed = await ExpectRefusalAsync(
+        // control-server#541: these three are content conflicts, which since control-server#478 are answered with a
+        // ProtocolProblem correlated to the refused result while the connection stays. They used to be judged by
+        // ExpectRefusalAsync, which also counts ten seconds of silence after a ProtocolProblem as "closed", so on a
+        // server past #478 they passed without asserting anything. Whether the refused result left anything in the
+        // store -- an inbox row, a result row -- is judged by the runner from the database.
+        string conflictMessageId = acceptedMessageId;
+        Dictionary<string, object?> contentConflict = await ExpectContentConflictRefusalAsync(
             port, credential, agvId, StableGuid("demand-bearing:hello:" + helloSequence++),
+            conflictMessageId, "OperationResult", "MESSAGE_ID_CONTENT_CONFLICT",
             generation => OperationResultLine(
-                agvId, acceptedMessageId, generation, demandId, preparedAttemptId,
+                agvId, conflictMessageId, generation, demandId, preparedAttemptId,
                 preparedOperationType, preparedSlots, "COMPLETED_WITH_EXCEPTIONS"),
             cancellationToken).ConfigureAwait(false);
         cases.Add(Case(transcriptPath, "sameMessageIdWithDifferentContentIsRefused", null,
-            contentConflictClosed,
-            new Dictionary<string, object?> { ["messageId"] = acceptedMessageId }));
+            Equals(contentConflict["refused"], true), contentConflict));
 
-        bool sameGenerationRenumberClosed = await ExpectRefusalAsync(
+        string renumberedMessageId = StableGuid("demand-bearing:renumbered-result");
+        Dictionary<string, object?> sameGenerationRenumber = await ExpectContentConflictRefusalAsync(
             port, credential, agvId, StableGuid("demand-bearing:hello:" + helloSequence++),
+            renumberedMessageId, "OperationResult", "BUSINESS_ID_CONTENT_CONFLICT",
             generation => OperationResultLine(
-                agvId, StableGuid("demand-bearing:renumbered-result"), generation, demandId,
+                agvId, renumberedMessageId, generation, demandId,
                 preparedAttemptId, preparedOperationType, preparedSlots, "COMPLETED"),
             cancellationToken).ConfigureAwait(false);
+        sameGenerationRenumber["slotOperationAttemptId"] = preparedAttemptId;
         cases.Add(Case(transcriptPath, "sameAttemptAndGenerationUnderANewMessageIdIsRefused", null,
-            sameGenerationRenumberClosed,
-            new Dictionary<string, object?> { ["slotOperationAttemptId"] = preparedAttemptId }));
+            Equals(sameGenerationRenumber["refused"], true), sameGenerationRenumber));
 
-        bool committedAttemptClosed = await ExpectRefusalAsync(
+        string committedAttemptMessageId = StableGuid("demand-bearing:committed-attempt-result");
+        Dictionary<string, object?> committedAttempt = await ExpectContentConflictRefusalAsync(
             port, credential, agvId, StableGuid("demand-bearing:hello:" + helloSequence++),
+            committedAttemptMessageId, "OperationResult", "BUSINESS_ID_CONTENT_CONFLICT",
             generation => OperationResultLine(
-                agvId, StableGuid("demand-bearing:committed-attempt-result"), generation, demandId,
+                agvId, committedAttemptMessageId, generation, demandId,
                 committedAttemptId, committedOperationType, committedSlots, "COMPLETED"),
             cancellationToken).ConfigureAwait(false);
+        committedAttempt["slotOperationAttemptId"] = committedAttemptId;
         cases.Add(Case(transcriptPath, "alreadyCommittedAttemptRefusesASecondResult", null,
-            committedAttemptClosed,
-            new Dictionary<string, object?> { ["slotOperationAttemptId"] = committedAttemptId }));
+            Equals(committedAttempt["refused"], true), committedAttempt));
 
         bool staleGenerationClosed = await ExpectRefusalAsync(
             port, credential, agvId, StableGuid("demand-bearing:hello:" + helloSequence++),
@@ -1580,6 +1893,210 @@ public static class StagedG3TlsHarness
             // message would mean the refusal did not happen.
             if (Property(line, "messageType") == "DurableAck") return false;
         }
+    }
+
+    /// <summary>
+    /// Opens a fresh session, sends one line the server has to refuse for its content, and reports the answer.
+    /// </summary>
+    /// <remarks>
+    /// control-server#541: CV-RELIABLE-RETRY-DIFFERENT-CONTENT and its business-key twin. Refused means the
+    /// ProtocolProblem the vector names, correlated to the refused line, nothing acknowledging that line, and the
+    /// connection still answering a heartbeat afterwards.
+    /// </remarks>
+    private static async Task<Dictionary<string, object?>> ExpectContentConflictRefusalAsync(
+        int port,
+        string credential,
+        string agvId,
+        string helloMessageId,
+        string refusedMessageId,
+        string refusedMessageType,
+        string expectedReasonCode,
+        Func<long, string> buildLine,
+        CancellationToken cancellationToken)
+    {
+        await using Connection connection = await Connection.OpenAsync(port, cancellationToken)
+            .ConfigureAwait(false);
+        long generation = await HandshakeAsync(connection, agvId, helloMessageId, credential, cancellationToken)
+            .ConfigureAwait(false);
+        string line = buildLine(generation);
+        await connection.WriteAsync(line, cancellationToken).ConfigureAwait(false);
+        Dictionary<string, object?> answer = await ReadContentConflictAnswerAsync(
+            connection, refusedMessageId, refusedMessageType, expectedReasonCode, cancellationToken)
+            .ConfigureAwait(false);
+        Dictionary<string, object?> served = await ProveConnectionStillServedAsync(
+            connection, agvId, generation, StableGuid("served-after:" + refusedMessageId + ":" + helloMessageId),
+            cancellationToken).ConfigureAwait(false);
+        return new Dictionary<string, object?>
+        {
+            ["refused"] = Equals(answer["refusedAsTheVectorRequires"], true) && Equals(served["served"], true),
+            ["messageId"] = refusedMessageId,
+            ["requestSha256"] = Sha256(line),
+            ["answer"] = answer,
+            ["connectionServedAfterConflict"] = served
+        };
+    }
+
+    /// <summary>
+    /// Reads the server's answer to a line it has to refuse for its content (control-server#541).
+    /// </summary>
+    /// <remarks>
+    /// The answer the vectors require is a ProtocolProblem with their stable code whose correlationId and
+    /// payload.rejectedMessageId both name the refused message (control-server#478). Lines the server pushes
+    /// alongside a session are skipped. Anything else answering the refused message -- a DurableAck naming it,
+    /// any other correlated reply -- means it was taken, and the stream ending means the connection was closed;
+    /// either one ends the read and fails it. This only observes the answer: the callers then prove the
+    /// connection is still served and the refused content was not applied.
+    /// </remarks>
+    private static async Task<Dictionary<string, object?>> ReadContentConflictAnswerAsync(
+        Connection connection,
+        string refusedMessageId,
+        string refusedMessageType,
+        string expectedReasonCode,
+        CancellationToken cancellationToken)
+    {
+        string? problem = null;
+        string? takenAnswer = null;
+        bool streamEnded = false;
+        DateTimeOffset deadline = DateTimeOffset.UtcNow + TimeSpan.FromSeconds(10);
+        while (problem is null && takenAnswer is null && !streamEnded)
+        {
+            TimeSpan remaining = deadline - DateTimeOffset.UtcNow;
+            if (remaining <= TimeSpan.Zero) break;
+            (string? line, bool ended) = await connection.ReadOrEndAsync(remaining, cancellationToken)
+                .ConfigureAwait(false);
+            if (ended)
+            {
+                streamEnded = true;
+                break;
+            }
+            if (line is null) break;
+            string? messageType = Property(line, "messageType");
+            bool correlated = Property(line, "correlationId") == refusedMessageId;
+            if (messageType == "ProtocolProblem" &&
+                (correlated || NestedProperty(line, "payload", "rejectedMessageId") == refusedMessageId))
+            {
+                problem = line;
+            }
+            else if (correlated ||
+                     (messageType == "DurableAck" &&
+                      NestedProperty(line, "payload", "acceptedMessageId") == refusedMessageId))
+            {
+                takenAnswer = line;
+            }
+        }
+
+        string? reasonCode = NestedProperty(problem, "payload", "problem", "reasonCode");
+        string? correlationId = Property(problem, "correlationId");
+        string? rejectedMessageId = NestedProperty(problem, "payload", "rejectedMessageId");
+        string? rejectedMessageType = NestedProperty(problem, "payload", "rejectedMessageType");
+        bool passed = problem is not null &&
+            reasonCode == expectedReasonCode &&
+            correlationId == refusedMessageId &&
+            rejectedMessageId == refusedMessageId &&
+            rejectedMessageType == refusedMessageType &&
+            takenAnswer is null &&
+            !streamEnded;
+        return new Dictionary<string, object?>
+        {
+            ["refusedAsTheVectorRequires"] = passed,
+            ["answerType"] = problem is not null ? "ProtocolProblem" : Property(takenAnswer, "messageType"),
+            ["expectedReasonCode"] = expectedReasonCode,
+            ["reasonCode"] = reasonCode,
+            ["correlationId"] = correlationId,
+            ["rejectedMessageId"] = rejectedMessageId,
+            ["rejectedMessageType"] = rejectedMessageType,
+            ["answeredAsTaken"] = takenAnswer is not null,
+            ["connectionEnded"] = streamEnded,
+            ["problemSha256"] = problem is null ? null : Sha256(problem),
+            ["takenAnswerSha256"] = takenAnswer is null ? null : Sha256(takenAnswer)
+        };
+    }
+
+    /// <summary>
+    /// Sends a fresh heartbeat and reports whether this connection still answers it (control-server#541).
+    /// </summary>
+    /// <remarks>
+    /// "The connection stays" is not shown by nothing arriving: a server that stopped reading would look the same.
+    /// A HeartbeatAck correlated to a heartbeat sent after the refusal is the connection being served.
+    /// </remarks>
+    private static async Task<Dictionary<string, object?>> ProveConnectionStillServedAsync(
+        Connection connection,
+        string agvId,
+        long generation,
+        string heartbeatMessageId,
+        CancellationToken cancellationToken)
+    {
+        string? ack = null;
+        // A connection the server closed takes no write: not served, and recorded as such below.
+        if (await connection.TryWriteAsync(Heartbeat(agvId, heartbeatMessageId, generation, 1), cancellationToken)
+            .ConfigureAwait(false))
+        {
+            ack = await ReadCorrelatedAsync(connection, heartbeatMessageId, TimeSpan.FromSeconds(10), cancellationToken)
+                .ConfigureAwait(false);
+        }
+        return new Dictionary<string, object?>
+        {
+            ["served"] = Property(ack, "messageType") == "HeartbeatAck",
+            ["heartbeatMessageId"] = heartbeatMessageId,
+            ["answerType"] = Property(ack, "messageType"),
+            ["answerSha256"] = ack is null ? null : Sha256(ack)
+        };
+    }
+
+    /// <summary>
+    /// Reads until the line whose correlationId names the given message, skipping what the server pushes.
+    /// </summary>
+    private static async Task<string?> ReadCorrelatedAsync(
+        Connection connection,
+        string correlationId,
+        TimeSpan timeout,
+        CancellationToken cancellationToken)
+    {
+        DateTimeOffset deadline = DateTimeOffset.UtcNow + timeout;
+        while (true)
+        {
+            TimeSpan remaining = deadline - DateTimeOffset.UtcNow;
+            if (remaining <= TimeSpan.Zero) return null;
+            string? line = await connection.ReadAsync(remaining, cancellationToken).ConfigureAwait(false);
+            if (line is null) return null;
+            if (Property(line, "correlationId") == correlationId) return line;
+        }
+    }
+
+    /// <summary>
+    /// Reads until the server ends the stream, and reports whether it did and what came before.
+    /// </summary>
+    /// <remarks>
+    /// Unlike ExpectClosedAsync, a timeout is not taken for a close: the stream has to end.
+    /// </remarks>
+    private static async Task<Dictionary<string, object?>> ExpectEndOfStreamAsync(
+        Connection connection,
+        TimeSpan timeout,
+        CancellationToken cancellationToken)
+    {
+        var seen = new List<string?>();
+        bool ended = false;
+        DateTimeOffset deadline = DateTimeOffset.UtcNow + timeout;
+        while (true)
+        {
+            TimeSpan remaining = deadline - DateTimeOffset.UtcNow;
+            if (remaining <= TimeSpan.Zero) break;
+            (string? line, bool streamEnded) = await connection.ReadOrEndAsync(remaining, cancellationToken)
+                .ConfigureAwait(false);
+            if (streamEnded)
+            {
+                ended = true;
+                break;
+            }
+            if (line is null) break;
+            seen.Add(Property(line, "messageType"));
+        }
+        return new Dictionary<string, object?>
+        {
+            ["streamEnded"] = ended,
+            ["sessionAccepted"] = seen.Contains("SessionAccepted"),
+            ["linesBeforeEnd"] = seen
+        };
     }
 
     /// <summary>
@@ -2348,6 +2865,24 @@ public static class StagedG3TlsHarness
         public async Task WriteAsync(string line, CancellationToken cancellationToken) =>
             await _writer.WriteLineAsync(line.AsMemory(), cancellationToken).ConfigureAwait(false);
 
+        /// <summary>
+        /// Writes one line unless the server has already closed the connection (control-server#541): a content
+        /// conflict that ends the connection is a red judgment, and must be recorded as one rather than throw the
+        /// whole probe into a runner error.
+        /// </summary>
+        public async Task<bool> TryWriteAsync(string line, CancellationToken cancellationToken)
+        {
+            try
+            {
+                await WriteAsync(line, cancellationToken).ConfigureAwait(false);
+                return true;
+            }
+            catch (IOException)
+            {
+                return false;
+            }
+        }
+
         public async Task<string?> ReadAsync(TimeSpan timeout, CancellationToken cancellationToken)
         {
             using CancellationTokenSource linked = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
@@ -2363,6 +2898,24 @@ public static class StagedG3TlsHarness
 
         public async Task<bool> ExpectClosedAsync(TimeSpan timeout, CancellationToken cancellationToken) =>
             await ReadAsync(timeout, cancellationToken).ConfigureAwait(false) is null;
+
+        /// <summary>
+        /// One line, or the stream's end, kept apart from a timeout -- which ReadAsync folds into the same null
+        /// (control-server#541).
+        /// </summary>
+        public async Task<(string? Line, bool EndOfStream)> ReadOrEndAsync(
+            TimeSpan timeout, CancellationToken cancellationToken)
+        {
+            using CancellationTokenSource linked = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
+            linked.CancelAfter(timeout);
+            try
+            {
+                string? line = await _reader.ReadLineAsync(linked.Token).ConfigureAwait(false);
+                return (line, line is null);
+            }
+            catch (OperationCanceledException) when (!cancellationToken.IsCancellationRequested) { return (null, false); }
+            catch (IOException) { return (null, true); }
+        }
 
         public async ValueTask DisposeAsync()
         {
@@ -3018,6 +3571,11 @@ if (Test-Path -LiteralPath $databasePath) {
             }
         }
         finally { $reader.Dispose(); $command.Dispose() }
+        # control-server#541: the inbox rows under every messageId a content-conflict case refused.
+        $contentConflictExpectations = Get-StagedContentConflictExpectation -ProbeResult $probeResult `
+            -BusinessProbeResult $businessProbeResult -RecoveryProbeResult $recoveryProbeResult
+        $contentConflictInboxRows = Read-ProtocolInboxRequestRow -Connection $connection `
+            -MessageId @($contentConflictExpectations | ForEach-Object { $_.messageId })
         # FP-IS-15. The projection is one row per vehicle by design, so what this reads is the row that
         # survived, not a history: (sessionGeneration, snapshotSequence) says which snapshot won.
         # Reading AlarmsJson's length rather than its text keeps the evidence bounded while still
@@ -3163,6 +3721,8 @@ if (Test-Path -LiteralPath $databasePath) {
         $databaseObservation = [ordered]@{
             recoveryStateReportInboxRows = $recoveryRows
             businessMessageInboxRows = $businessRows
+            contentConflictExpectations = $contentConflictExpectations
+            contentConflictInboxRows = $contentConflictInboxRows
             onboardAlarmSnapshotRows = $alarmSnapshotRows
             slotConfigurationActivationRows = $activationRows
             activeSlotConfigurationRows = $activeConfigurationRows
@@ -3441,13 +4001,20 @@ if ($null -ne $probeResult) { $identityRejectionCases = @($probeResult.identityR
 $identityRejectionsPass = $identityRejectionCases.Count -ge 1 -and
     @($identityRejectionCases | Where-Object { $_.status -ne 'PASS' }).Count -eq 0
 
+# control-server#541: see Get-ContentConflictVerdict.
+$contentConflictVerdict = Get-ContentConflictVerdict -ProbeResult $probeResult -BusinessProbeResult $businessProbeResult `
+    -RecoveryProbeResult $recoveryProbeResult -DatabaseObservation $databaseObservation
+$contentConflictNotApplied = $contentConflictVerdict.notApplied
+$heartbeatConflictPass = $contentConflictVerdict.heartbeat
+
 $businessProbePass = $null -ne $businessProbeResult -and $businessProbeResult.status -eq 'PASS'
 $businessDuplicatePass = $null -ne $businessProbeResult -and
     @($businessProbeResult.duplicates).Count -eq 4 -and
     @($businessProbeResult.duplicates | Where-Object status -NE 'PASS').Count -eq 0
 $businessConflictPass = $null -ne $businessProbeResult -and
     @($businessProbeResult.conflicts).Count -eq 4 -and
-    @($businessProbeResult.conflicts | Where-Object status -NE 'PASS').Count -eq 0
+    @($businessProbeResult.conflicts | Where-Object status -NE 'PASS').Count -eq 0 -and
+    $contentConflictVerdict.business
 $businessAckDropPass = $null -ne $businessProbeResult -and
     $businessProbeResult.ackDropInSessionReplay.status -eq 'PASS' -and
     $null -ne $businessAckDropObservation -and
@@ -3469,7 +4036,8 @@ $businessPass = $businessProbePass -and $businessDuplicatePass -and $businessCon
 $recoveryProbePass = $null -ne $recoveryProbeResult -and $recoveryProbeResult.status -eq 'PASS'
 $recoveryAuthorisationPass = $null -ne $recoveryProbeResult -and
     @($recoveryProbeResult.sessionAuthorisation).Count -eq 6 -and
-    @($recoveryProbeResult.sessionAuthorisation | Where-Object status -NE 'PASS').Count -eq 0
+    @($recoveryProbeResult.sessionAuthorisation | Where-Object status -NE 'PASS').Count -eq 0 -and
+    $contentConflictVerdict.recoverySessionRequestId
 $recoveryActionBoundaryPass = $null -ne $recoveryProbeResult -and
     @($recoveryProbeResult.actionBoundary).Count -eq 4 -and
     @($recoveryProbeResult.actionBoundary | Where-Object status -NE 'PASS').Count -eq 0 -and
@@ -3522,6 +4090,7 @@ $secondEvidence = @($databaseObservation.recoveryResultEvidenceRows | Where-Obje
 # control-server#137 (docs/defects/20260919-staged-g3-forced-recovery-criteria-predate-cs137.md).
 $recoveryGenerationAdvancePass = $null -ne $recoveryProbeResult -and
     $recoveryProbeResult.forcedRecoveryGenerationBranches.status -eq 'PASS' -and
+    $contentConflictVerdict.forcedRecoveryResult -and
     $null -ne $databaseObservation -and
     $databaseObservation.vehicleForcedRecoveryGeneration -eq 1 -and
     $firstWorkflow.Count -eq 1 -and $firstWorkflow[0].state -eq 'Reconciled' -and
@@ -3669,7 +4238,7 @@ foreach ($file in @(Get-ChildItem -LiteralPath $EvidenceRoot -Recurse -File)) {
 $assertionReport = [ordered]@{
     identityRejections = if ($identityRejectionsPass) { 'PASS' } else { 'FAIL_OR_INCONCLUSIVE' }
     sameConnectionSameMessageIdSameContent = if ($null -ne $probeResult -and $probeResult.duplicate.status -eq 'PASS') { 'PASS' } else { 'FAIL_OR_INCONCLUSIVE' }
-    sameMessageIdDifferentContentStableConflict = if ($null -ne $probeResult -and $probeResult.conflict.status -eq 'PASS') { 'PASS' } else { 'FAIL_OR_INCONCLUSIVE' }
+    sameMessageIdDifferentContentStableConflict = if ($heartbeatConflictPass) { 'PASS' } else { 'FAIL_OR_INCONCLUSIVE' }
     # Was recoveryStateReportFirstAckDropReplay (plus an ...OverPlaintext twin on the same boolean) until
     # control-server#87: renamed with its v2 judgment, see $recoveryResubmitPass.
     recoveryStateResubmittedAsANewReportAfterAckDrop = if ($recoveryResubmitPass) { 'PASS' } else { 'FAIL_OR_INCONCLUSIVE' }
@@ -3813,6 +4382,7 @@ $result = [ordered]@{
     recoveryFaultInjection = $recoveryFaultObservation
     recoveryReplay = $runtimeObservation
     database = $databaseObservation
+    contentConflictNotApplied = $contentConflictNotApplied
     simulatorHealth = $simulatorHealth
     controlServerVersion = $version
     error = if ($null -ne $runError) {

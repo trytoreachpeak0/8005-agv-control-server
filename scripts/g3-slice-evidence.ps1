@@ -171,9 +171,11 @@ function Get-G3RunnerClaim {
                     # docs/defects/20260919-staged-g3-second-forced-submission-predates-cs187.md.
                     'secondForcedRecoveryWhileFirstUnsettledIsRejected',
                     'recoveryNeverReportsFalseCompletion')
-                # Weaker than the vectors in two places (review items 11-12): the conflict pair asserts
-                # the connection closed, not the MESSAGE_ID_CONTENT_CONFLICT problem; delay and reorder
-                # have no vector of their own in this slice.
+                # Delay and reorder have no vector of their own in this slice (review item 12). The conflict
+                # pair used to be weaker too (item 11): it asserted the connection closed rather than the
+                # vector's MESSAGE_ID_CONTENT_CONFLICT problem. Since control-server#541 it asserts the
+                # ProtocolProblem, the conflicting retry never applied (read from the inbox) and the
+                # connection still served, as CV-RELIABLE-RETRY-DIFFERENT-CONTENT asks.
                 'FP-IS-06' = @(
                     'sameConnectionSameMessageIdSameContent',
                     'sameMessageIdDifferentContentStableConflict',
