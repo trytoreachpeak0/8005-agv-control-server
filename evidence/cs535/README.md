@@ -45,3 +45,25 @@
 `deploy-19/test-19.ps1` 从 19 的 AST 里取出 `Assert-MesIngestSourceReported`，用本 PR 的模块与两份出厂定义，
 喂 10 组模拟的安装器输出：`ParseFile errors: 0`，10/10 符合预期（`production` 多出 `FAKE_MES_INGEST=`、
 报回 `fake`、没有审计行、任务类型带 `WIRE_TO_GATE` 都拒；`fake` 安装缺 `FAKE_MES_INGEST=` 拒；两种模式的回滚只看审计行）。
+
+## 审查第一轮（M1/M2/S1–S4）之后：`review-1/`
+
+审查发现 M1：.NET 配置跨文件按下标合并数组，叠加层的 `["STAGING_TO_WIRE"]` 只盖住包内 `appsettings.json`
+六项里的下标 0，Host 实际放行的仍有 `WIRE_TO_GATE`。上面那些红绿都只看定义与叠加文件，所以在 M1 上是假绿（M2）。
+
+| 文件 | commit | 结果 |
+| --- | --- | --- |
+| `01-csharp-red-at-fbb60434.txt` | `fbb60434e`（只加测试，绑定原样提成 `AddJourneyRuntimeOptions`） | 2 红：`Expected: ["STAGING_TO_WIRE"]`，`Actual: ["STAGING_TO_WIRE", "DIE_TO_OVEN", "WIRE_TO_GATE", "WIRE_TO_OPTICAL", "STAGING_TO_WIRE", ···]` |
+| `02-test-parallel-red-at-fbb60434.txt` | 同上 | `548 passed, 12 failed`：读回 Host 实际值的 8 项、S1/S2/S3 与安装器接线 4 项 |
+| `03-csharp-green-at-1e7feb88.txt` | `1e7feb88e` | 新测试类、切片账本与 `JourneyRuntimeOptions` 相关共 24 项全过 |
+| `04-test-parallel-green-at-d1324770.txt` | `d1324770e` | `560 passed, 0 failed`，没有 SKIP |
+| `05-reverse-check-green-at-d1324770.txt` | 同上 | `25 passed, 0 failed` |
+| `06-mutation-last-layer-reversed.txt` | 变异：把「取最后一层」改成「取第一层」 | 新测试类 6 项红 5 项 |
+| `07-l2-normal-load-host-log-line.txt` | `235acc3e5` 起的工作树 | L2 normal-load 实跑 PASS，真 Host 启动后打出 `EFFECTIVE_CONFIGURATION` 一行 |
+| `compact-json-check.*` | `d1324770e` | 用 Host 构建里的 Serilog `CompactJsonFormatter` 真格式化一条事件，`Find-ParallelEffectiveConfiguration` 读出、比对通过 |
+
+S4（第一次报 544、审查跑出 548）：`Test-ParallelInstance.ps1` 里有 4 项 gate reader 用例只在本机存在
+`src/ControlServer.Host/bin` 构建时才跑，否则打印 `SKIP` 且不计数。我第一次跑时没有构建（`green/01-...` 里有那行 SKIP），
+审查跑的时候有。`review-1/04-...` 是有构建时跑的，560 = 548 + 12。
+
+`deploy-19/` 已换成审查后的版本：15 组模拟输出，含 production 缺 `EFFECTIVE_CONFIGURATION=` 行、带 M1 那六项都拒。
