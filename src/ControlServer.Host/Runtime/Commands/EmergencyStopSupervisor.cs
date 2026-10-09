@@ -610,6 +610,49 @@ public sealed class EmergencyStopSupervisor(
     }
 
     /// <summary>
+    /// The reasons recorded on every stop this server asked for in this fault generation after its door-cause release
+    /// (<see cref="WasReleasedOnDoorCauseAsync"/>) took effect, one code per entry; empty when there was no such release.
+    /// </summary>
+    /// <remarks>
+    /// For the fault coordinator, which withdraws the door allowance once one of them is motion (control-server#527). Read off
+    /// the triggers' own receipts, like the release reasons, so it survives a restart without a column of its own. Only a stop
+    /// that issued a trigger is here: a request that joined an open episode recorded nothing, and after a confirmed release
+    /// the episode is closed, so every stop asked for after it does issue one.
+    /// </remarks>
+    public async Task<IReadOnlyList<string>> StopReasonsAfterDoorReleaseAsync(
+        EmergencyStopSubject subject,
+        long faultGeneration,
+        CancellationToken cancellationToken)
+    {
+        ArgumentNullException.ThrowIfNull(subject);
+
+        IReadOnlyList<RiotOrderCommandAttempt> releases = await audit.ReadAttemptsAsync(
+            RiotCommandTypeNames.CancelEmergency,
+            VehicleTarget(subject.DeviceKey),
+            cancellationToken).ConfigureAwait(false);
+        RiotOrderCommandAttempt? doorRelease = releases.FirstOrDefault(release =>
+            release.FaultGeneration == faultGeneration &&
+            release.Outcome == RiotOrderCommandOutcome.Confirmed &&
+            IsReleaseOnDoorCause(release));
+        if (doorRelease is null)
+        {
+            return [];
+        }
+
+        IReadOnlyList<RiotOrderCommandAttempt> triggers = await audit.ReadAttemptsAsync(
+            RiotCommandTypeNames.TriggerEmergency,
+            VehicleTarget(subject.DeviceKey),
+            cancellationToken).ConfigureAwait(false);
+        return
+        [
+            .. triggers
+                .Where(trigger => trigger.FaultGeneration == faultGeneration && trigger.IssuedAt > doorRelease.IssuedAt)
+                .SelectMany(trigger => (ReceiptReason(trigger) ?? string.Empty)
+                    .Split(',', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries)),
+        ];
+    }
+
+    /// <summary>
     /// Whether this fault generation has had a release issued on a person's confirmation take
     /// effect.
     /// </summary>
@@ -961,22 +1004,30 @@ public sealed class EmergencyStopSupervisor(
     internal static bool IsReleaseOnDoorCause(RiotOrderCommandAttempt release)
     {
         ArgumentNullException.ThrowIfNull(release);
-        if (string.IsNullOrWhiteSpace(release.ReceiptJson))
+        return string.Equals(ReceiptReason(release), DoorCauseRemovedReason, StringComparison.Ordinal);
+    }
+
+    /// <summary>The request reason written on an emergency command's receipt, or null when there is no readable one.</summary>
+    internal static string? ReceiptReason(RiotOrderCommandAttempt attempt)
+    {
+        ArgumentNullException.ThrowIfNull(attempt);
+        if (string.IsNullOrWhiteSpace(attempt.ReceiptJson))
         {
-            return false;
+            return null;
         }
 
         try
         {
-            using JsonDocument receipt = JsonDocument.Parse(release.ReceiptJson);
+            using JsonDocument receipt = JsonDocument.Parse(attempt.ReceiptJson);
             return receipt.RootElement.ValueKind == JsonValueKind.Object &&
                 receipt.RootElement.TryGetProperty(nameof(EmergencyStopRequest.Reason), out JsonElement reason) &&
-                reason.ValueKind == JsonValueKind.String &&
-                string.Equals(reason.GetString(), DoorCauseRemovedReason, StringComparison.Ordinal);
+                reason.ValueKind == JsonValueKind.String
+                ? reason.GetString()
+                : null;
         }
         catch (JsonException)
         {
-            return false;
+            return null;
         }
     }
 

@@ -1,0 +1,3 @@
+branch: fix/cs527-estop-release-oscillation (product change + tests)
+dotnet test tests/ControlServer.Tests/ControlServer.Tests.csproj -c Release --filter "FullyQualifiedName~Fault|FullyQualifiedName~Emergency|FullyQualifiedName~InTransitDoor|FullyQualifiedName~StopDriven|FullyQualifiedName~OwnOrderRebuild"
+Passed!  - Failed:     0, Passed:   519, Skipped:     0, Total:   519, Duration: 2 m 46 s - ControlServer.Tests.dll (net8.0)
