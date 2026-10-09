@@ -1,0 +1,18 @@
+re-review round: tests-only commit 78497d01 on top of 8ecad915 (product code unchanged)
+dotnet test tests/ControlServer.Tests/ControlServer.Tests.csproj -c Release --filter "FullyQualifiedName~ADoorsOnlyStopRightAfterAReleaseIsNotJudgedOnSamplesFromUnderTheLatch|FullyQualifiedName~GetsOutOnceItsOrderIsEndedInRiot|FullyQualifiedName~TheDoorReleaseHistoryCountsOnlyMotionAfterAReleaseThatTookEffect"
+  Failed ControlServer.Tests.InTransitDoorEmergencyReleaseTests.ADoorsOnlyStopRightAfterAReleaseIsNotJudgedOnSamplesFromUnderTheLatch(branch: "no-order", afterRelease: "MT_PAUSED") [9 s]
+Expected: 3
+Actual:   2
+  Failed ControlServer.Tests.InTransitDoorEmergencyReleaseTests.ADoorsOnlyStopRightAfterAReleaseIsNotJudgedOnSamplesFromUnderTheLatch(branch: "no-order", afterRelease: "MT_FINISHED") [3 s]
+Expected: 3
+Actual:   2
+  Failed ControlServer.Tests.InTransitDoorEmergencyReleaseTests.ADoorsOnlyStopRightAfterAReleaseIsNotJudgedOnSamplesFromUnderTheLatch(branch: "held", afterRelease: "MT_PAUSED") [3 s]
+Expected: 2
+Actual:   1
+  Failed ControlServer.Tests.InTransitDoorEmergencyReleaseTests.ADoorsOnlyStopRightAfterAReleaseIsNotJudgedOnSamplesFromUnderTheLatch(branch: "held", afterRelease: "MT_FINISHED") [3 s]
+Expected: 2
+Actual:   1
+  Failed ControlServer.Tests.InTransitDoorEmergencyReleaseTests.AVehicleStoppedForMotionAfterTheDoorReleaseGetsOutOnceItsOrderIsEndedInRiot(after: "doors-again") [2 s]
+Expected: 3
+Actual:   2
+Failed!  - Failed:     5, Passed:    15, Skipped:     0, Total:    20, Duration: 26 s - ControlServer.Tests.dll (net8.0)
