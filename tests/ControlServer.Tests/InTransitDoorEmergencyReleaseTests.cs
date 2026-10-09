@@ -190,6 +190,313 @@ public sealed class InTransitDoorEmergencyReleaseTests
     }
 
     /// <summary>
+    /// control-server#527（10-09 agv02 现场）：门锁自动解除之后车读到在动、重新急停；闩锁锁上后门锁仍是新鲜锁闭、单仍是本代自己按住的 7。
+    /// 这一代不再自动解除——修前这里每一轮都给出放行，现场 1 分钟里急停 7 次、解除 9 次。闩锁下运动读数是 MT_RUNNING（CP-0003 记录的
+    /// 实车常态）还是 MT_PAUSED 都一样：本票选的是「交给人」，不是「锁住之后读到一次不动就放」。
+    /// </summary>
+    [Theory]
+    [InlineData("MT_RUNNING")]
+    [InlineData("MT_PAUSED")]
+    [Trait("Requirement", "REQ-0167")]
+    [Trait("Requirement", "REQ-0248")]
+    public async Task AVehicleStoppedForMotionAfterTheDoorReleaseIsNotReleasedOnTheDoorsAgain(string movementUnderTheLatch)
+    {
+        await using RuntimeFixture fixture = await ReleasedForTheDoorsAsync();
+
+        fixture.Riot.MovementState = "MT_RUNNING";
+        await DriveOneRoundAsync(fixture);
+        Assert.Equal(2, await CountAsync(fixture, RiotCommandTypeNames.TriggerEmergency));
+
+        fixture.EmergencyLatched = true;
+        fixture.Riot.MovementState = movementUnderTheLatch;
+        for (int round = 0; round < 6; round++)
+        {
+            await ReportLockedAsync(fixture);
+            await DriveOneRoundAsync(fixture);
+            Assert.Equal(1, await CountAsync(fixture, RiotCommandTypeNames.CancelEmergency));
+            Assert.Equal(2, await CountAsync(fixture, RiotCommandTypeNames.TriggerEmergency));
+            Assert.Equal(0, await CountAsync(fixture, RiotCommandTypeNames.OrderContinue));
+        }
+    }
+
+    /// <summary>
+    /// control-server#527 审查 S-1（探针 D）：门锁解除之后重新急停的原因不是「读到在动」，而是读不到运动或运动读数过期——同样排除不了
+    /// 车在动。修前每个周期都放行一次（三个周期四次急停、四次解除）；修后同「读到在动」一样，这一代不再门锁解除。
+    /// </summary>
+    [Theory]
+    [InlineData("motion-unreadable")]
+    [InlineData("motion-stale")]
+    [Trait("Requirement", "REQ-0167")]
+    [Trait("Requirement", "REQ-0248")]
+    public async Task AVehicleStoppedForMotionItCannotRuleOutAfterTheDoorReleaseIsNotReleasedOnTheDoorsAgain(string reading)
+    {
+        await using RuntimeFixture fixture = await ReleasedForTheDoorsAsync();
+        if (reading == "motion-unreadable")
+        {
+            fixture.Riot.MovementState = null;
+        }
+        else
+        {
+            fixture.Riot.MotionObservedAtLag = new VehicleFaultOptions().MaximumEvidenceAge + TimeSpan.FromSeconds(2);
+        }
+        await DriveOneRoundAsync(fixture);
+        Assert.Equal(2, await CountAsync(fixture, RiotCommandTypeNames.TriggerEmergency));
+
+        for (int cycle = 0; cycle < 3; cycle++)
+        {
+            fixture.EmergencyLatched = true;
+            int releases = await CountAsync(fixture, RiotCommandTypeNames.CancelEmergency);
+            await ReportLockedAsync(fixture);
+            await DriveOneRoundAsync(fixture);
+            if (await CountAsync(fixture, RiotCommandTypeNames.CancelEmergency) > releases)
+            {
+                // Released: RIoT lets the latch go, and the next round reads the same motion again.
+                fixture.EmergencyLatched = false;
+                await DriveOneRoundAsync(fixture);
+            }
+        }
+
+        Assert.Equal(1, await CountAsync(fixture, RiotCommandTypeNames.CancelEmergency));
+        Assert.Equal(2, await CountAsync(fixture, RiotCommandTypeNames.TriggerEmergency));
+    }
+
+    /// <summary>
+    /// control-server#527 卡住之后的人工出口（有货的车也适用，REQ-0356 要求无货所以走不了）：值班工程师在 RIoT 里取消本服务端按住的那张单，
+    /// 车上一张未完成单都没有、门锁新鲜锁闭，自动解除一次；之后人经故障清除入口清掉故障。<c>moves-again</c>：解除之后车又读到在动，
+    /// 重新急停，这一代不再给任何门锁解除——这一条出口也不会振荡。<c>doors-again</c>（审查 M-1，探针 E）：零单解除之后只是门又没锁、
+    /// 车没动，重新急停；门锁再次锁好时照样解除——收回零单出口的只能是运动，不是门。
+    /// </summary>
+    [Theory]
+    [InlineData("clears")]
+    [InlineData("moves-again")]
+    [InlineData("doors-again")]
+    [Trait("Requirement", "REQ-0167")]
+    [Trait("Requirement", "REQ-0248")]
+    public async Task AVehicleStoppedForMotionAfterTheDoorReleaseGetsOutOnceItsOrderIsEndedInRiot(string after)
+    {
+        await using RuntimeFixture fixture = await ReleasedForTheDoorsAsync();
+        Latched latched = await LatchedFactsAsync(fixture);
+        fixture.Riot.MovementState = "MT_RUNNING";
+        await DriveOneRoundAsync(fixture);
+        fixture.EmergencyLatched = true;
+        await ReportLockedAsync(fixture);
+        await DriveOneRoundAsync(fixture);
+        Assert.Equal(1, await CountAsync(fixture, RiotCommandTypeNames.CancelEmergency));
+
+        if (after == "doors-again")
+        {
+            // From here on the vehicle reads as standing. The samples taken under the latch before the release still read as
+            // moving; the stop that follows must not be judged on them (review of 8ecad915).
+            fixture.Riot.MovementState = "MT_PAUSED";
+        }
+
+        // 值班工程师在 RIoT 里取消那张单：之后一轮放行不点名任何单、车上零单，解除一次。
+        fixture.Riot.SetOrderState(latched.UpperId, RiotOrderState.Cancelled, terminal: true);
+        fixture.UnfinishedOrderIds = [];
+        await ReportLockedAsync(fixture);
+        await DriveOneRoundAsync(fixture);
+        Assert.Equal(2, await CountAsync(fixture, RiotCommandTypeNames.CancelEmergency));
+        fixture.EmergencyLatched = false;
+
+        if (after == "doors-again")
+        {
+            await fixture.ReportSafetySummaryAsync(
+                allTargetSlotsLocked: false, unknownPresent: false, ["LOCK_NOT_CLOSED", "ACTION_NOT_ALLOWED_IN_STATE"]);
+            await DriveOneRoundAsync(fixture);
+            Assert.Equal(3, await CountAsync(fixture, RiotCommandTypeNames.TriggerEmergency));
+            fixture.EmergencyLatched = true;
+            await ReportLockedAsync(fixture);
+            await DriveOneRoundAsync(fixture);
+            Assert.Equal(3, await CountAsync(fixture, RiotCommandTypeNames.CancelEmergency));
+            return;
+        }
+
+        if (after == "moves-again")
+        {
+            await DriveOneRoundAsync(fixture);
+            Assert.Equal(3, await CountAsync(fixture, RiotCommandTypeNames.TriggerEmergency));
+            fixture.EmergencyLatched = true;
+            for (int round = 0; round < 5; round++)
+            {
+                await ReportLockedAsync(fixture);
+                await DriveOneRoundAsync(fixture);
+                Assert.Equal(2, await CountAsync(fixture, RiotCommandTypeNames.CancelEmergency));
+            }
+            return;
+        }
+
+        fixture.Riot.MovementState = "MT_PAUSED";
+        await ReportLockedAsync(fixture);
+        await DriveOneRoundAsync(fixture);
+        Assert.Equal(2, await CountAsync(fixture, RiotCommandTypeNames.TriggerEmergency));
+        VehicleFaultRecoveryTests.SiteRiot site = new(fixture) { HasUnfinishedOrder = false };
+        VehicleFaultRecoveryDecision decision = await VehicleFaultRecoveryTests.Service(fixture, site).RecoverAsync(
+            new VehicleFaultRecoveryRequest(
+                new EmergencyStopSubject(fixture.Options.AgvId, fixture.Options.VehicleKey),
+                VehicleFaultRecoveryAction.ClearFault,
+                "L1-OPERATOR",
+                FaultRemedied: true,
+                Note: "doors and motion checked on site"),
+            Token);
+        Assert.True(VehicleFaultRecoveryOutcome.Cleared == decision.Outcome, string.Join(", ", decision.Reasons));
+    }
+
+    /// <summary>
+    /// control-server#527 复核必修（8ecad915）：急停原因只能来自解除生效之后采到的样本。闩锁锁着时 RIoT 一直报 <c>MT_RUNNING</c>（速度 0，
+    /// CP-0003 记录的实车常态），解除之后读数变成 <c>MT_FINISHED</c> 或 <c>MT_PAUSED</c>，紧接着下一轮只是门又没锁——这次急停与运动无关，
+    /// 门锁再次锁好时照样解除。修前三条采样窗口里还留着解除前的 <c>MT_RUNNING</c>，急停原因带上 <c>STOP_PROOF_MOTION_OBSERVED</c>，
+    /// 放行被收回。<c>held</c> 是越过按住的 7 那一支（第一次门锁解除之后），<c>no-order</c> 是零单那一支（运动急停、单在 RIoT 结束之后）。
+    /// </summary>
+    [Theory]
+    [InlineData("held", "MT_FINISHED")]
+    [InlineData("held", "MT_PAUSED")]
+    [InlineData("no-order", "MT_FINISHED")]
+    [InlineData("no-order", "MT_PAUSED")]
+    [Trait("Requirement", "REQ-0167")]
+    public async Task ADoorsOnlyStopRightAfterAReleaseIsNotJudgedOnSamplesFromUnderTheLatch(string branch, string afterRelease)
+    {
+        await using RuntimeFixture fixture = await LatchedForTheDoorsAsync();
+        Latched latched = await LatchedFactsAsync(fixture);
+        fixture.Riot.MovementState = "MT_RUNNING";
+        int releases = 0;
+        int triggers = 1;
+
+        if (branch == "no-order")
+        {
+            // First door release, a stop for motion after it, then the order ended in RIoT.
+            await ReportLockedAsync(fixture);
+            await DriveOneRoundAsync(fixture);
+            fixture.EmergencyLatched = false;
+            await DriveOneRoundAsync(fixture);
+            Assert.Equal(2, await CountAsync(fixture, RiotCommandTypeNames.TriggerEmergency));
+            fixture.EmergencyLatched = true;
+            await ReportLockedAsync(fixture);
+            await DriveOneRoundAsync(fixture);
+            Assert.Equal(1, await CountAsync(fixture, RiotCommandTypeNames.CancelEmergency));
+            fixture.Riot.SetOrderState(latched.UpperId, RiotOrderState.Cancelled, terminal: true);
+            fixture.UnfinishedOrderIds = [];
+            releases = 1;
+            triggers = 2;
+        }
+
+        // The release, decided under the latch while RIoT reads MT_RUNNING.
+        await ReportLockedAsync(fixture);
+        await DriveOneRoundAsync(fixture);
+        Assert.Equal(releases + 1, await CountAsync(fixture, RiotCommandTypeNames.CancelEmergency));
+
+        // The latch comes off and the vehicle reads as standing; in the very next round the doors fail, nothing else.
+        fixture.EmergencyLatched = false;
+        fixture.Riot.MovementState = afterRelease;
+        await fixture.ReportSafetySummaryAsync(
+            allTargetSlotsLocked: false, unknownPresent: false, ["LOCK_NOT_CLOSED", "ACTION_NOT_ALLOWED_IN_STATE"]);
+        await DriveOneRoundAsync(fixture);
+        Assert.Equal(triggers + 1, await CountAsync(fixture, RiotCommandTypeNames.TriggerEmergency));
+
+        fixture.EmergencyLatched = true;
+        await ReportLockedAsync(fixture);
+        await DriveOneRoundAsync(fixture);
+        Assert.Equal(releases + 2, await CountAsync(fixture, RiotCommandTypeNames.CancelEmergency));
+    }
+
+    /// <summary>
+    /// control-server#527 复核：解除之后从新窗口采样，但每次解除只清空一次。车报不动、站点却从 1 变到 2，两条解除之后的样本之间位置变了，
+    /// 照样重新急停，原因里有 <c>STOP_PROOF_POSITION_CHANGED</c>。若每一轮都清空（变异 M8），窗口里永远只有一条样本，位置变化再也看不出来。
+    /// </summary>
+    [Fact]
+    [Trait("Requirement", "REQ-0246")]
+    public async Task APositionChangeAfterTheDoorReleaseIsStillSeenAcrossTheFreshWindow()
+    {
+        await using RuntimeFixture fixture = await ReleasedForTheDoorsAsync();
+
+        fixture.Riot.Vehicle = fixture.Riot.Vehicle with { CurrentStationId = 1 };
+        await DriveOneRoundAsync(fixture);
+        Assert.Equal(1, await CountAsync(fixture, RiotCommandTypeNames.TriggerEmergency));
+        fixture.Riot.Vehicle = fixture.Riot.Vehicle with { CurrentStationId = 2 };
+        await DriveOneRoundAsync(fixture);
+
+        await using ControlServerDbContext reading = new(fixture.DbOptionsForTests);
+        RiotOrderCommandAuditRow[] triggers = await reading.RiotOrderCommandAudit.AsNoTracking()
+            .Where(row => row.CommandType == RiotCommandTypeNames.TriggerEmergency).ToArrayAsync(Token);
+        Assert.Equal(2, triggers.Length);
+        Assert.Contains(StopProof.PositionChanged, triggers.OrderBy(row => row.IssuedAt).Last().ReceiptJson, StringComparison.Ordinal);
+    }
+
+    /// <summary>
+    /// control-server#527 的反面，门锁自动解除照旧有效的两格：
+    /// <c>door-only</c>——第一次急停的原因里没有运动（同现场 05:22 那次：报不出站点、样本不够），锁住后车停在已知站点、读数不动，
+    /// 门锁恢复即解除；<c>doors-again</c>——解除之后因门又没锁（不是运动）重新急停，门锁再次恢复时照样第二次解除。后一格挡的是
+    /// 「解除之后再急停一次就一概交给人」这种放得过宽的修法。
+    /// </summary>
+    [Theory]
+    [InlineData("door-only")]
+    [InlineData("doors-again")]
+    [Trait("Requirement", "REQ-0167")]
+    public async Task ADoorReleaseStillHappensWhenNoMotionFollowedIt(string variant)
+    {
+        RuntimeFixture fixture;
+        int releasesBefore;
+        if (variant == "door-only")
+        {
+            fixture = await GateArrivalWaitAsync();
+            string upperId = (await fixture.RuntimeAsync()).GateUpperId!;
+            fixture.Riot.MovementState = "MT_PAUSED";
+            fixture.Riot.Vehicle = fixture.Riot.Vehicle with { CurrentStationId = 0 };
+            await fixture.ReportSafetySummaryAsync(
+                allTargetSlotsLocked: false, unknownPresent: false, ["LOCK_NOT_CLOSED", "ACTION_NOT_ALLOWED_IN_STATE"]);
+            await DriveOneRoundAsync(fixture);
+            await using (ControlServerDbContext reading = new(fixture.DbOptionsForTests))
+            {
+                RiotOrderCommandAuditRow trigger = Assert.Single(await reading.RiotOrderCommandAudit.AsNoTracking()
+                    .Where(row => row.CommandType == RiotCommandTypeNames.TriggerEmergency).ToArrayAsync(Token));
+                Assert.DoesNotContain(StopProof.MotionObserved, trigger.ReceiptJson ?? string.Empty, StringComparison.Ordinal);
+            }
+
+            fixture.Riot.SetOrderState(upperId, RiotOrderState.Paused, terminal: false);
+            fixture.Riot.Vehicle = fixture.Riot.Vehicle with { CurrentStationId = 1 };
+            fixture.EmergencyLatched = true;
+            fixture.UnfinishedOrderIds = [await OrderIdAsync(fixture, upperId)];
+            await DriveOneRoundAsync(fixture);
+            releasesBefore = 0;
+        }
+        else
+        {
+            fixture = await ReleasedForTheDoorsAsync();
+            await fixture.ReportSafetySummaryAsync(
+                allTargetSlotsLocked: false, unknownPresent: false, ["LOCK_NOT_CLOSED", "ACTION_NOT_ALLOWED_IN_STATE"]);
+            await DriveOneRoundAsync(fixture);
+            Assert.Equal(2, await CountAsync(fixture, RiotCommandTypeNames.TriggerEmergency));
+            fixture.EmergencyLatched = true;
+            await DriveOneRoundAsync(fixture);
+            releasesBefore = 1;
+        }
+
+        await using (fixture)
+        {
+            Assert.Equal(releasesBefore, await CountAsync(fixture, RiotCommandTypeNames.CancelEmergency));
+            await ReportLockedAsync(fixture);
+            await DriveOneRoundAsync(fixture);
+            Assert.Equal(releasesBefore + 1, await CountAsync(fixture, RiotCommandTypeNames.CancelEmergency));
+        }
+    }
+
+    /// <summary>
+    /// control-server#527 第 2 条：按住在升级那一轮发出时 RIoT 还没把单停成 7（Pending）；单随后读到 7，门锁仍然没锁。之后每一轮
+    /// 都回查按住结果，下一轮就确认，<c>ORDER_HOLD_PENDING</c> 不再一直挂到门锁恢复（现场 05:22:10–05:26:08 挂了约 4 分钟）。
+    /// </summary>
+    [Fact]
+    [Trait("Requirement", "REQ-0234")]
+    public async Task AHoldIssuedInTheEscalatingRoundIsReadBackWithoutWaitingForTheDoors()
+    {
+        await using RuntimeFixture fixture = await LatchedForTheDoorsAsync();
+
+        await using ControlServerDbContext reading = new(fixture.DbOptionsForTests);
+        RiotOrderCommandAuditRow hold = Assert.Single(await reading.RiotOrderCommandAudit.AsNoTracking()
+            .Where(row => row.CommandType == RiotCommandTypeNames.OrderHold).ToArrayAsync(Token));
+        Assert.Equal(RiotOrderCommandOutcome.Confirmed, hold.Outcome);
+        Assert.Equal(0, await CountAsync(fixture, RiotCommandTypeNames.CancelEmergency));
+    }
+
+    /// <summary>
     /// 豁免只属于那一代故障：人按继续、故障清除之后，车又在两站之间报门没锁，这是新一代故障，照常按住、急停——
     /// 上一代的自动解除不替它豁免。
     /// </summary>
@@ -700,6 +1007,10 @@ public sealed class InTransitDoorEmergencyReleaseTests
     [InlineData("cancelled-doors-not-locked-again")]
     [InlineData("cancelled-order-failed-fault")]
     [InlineData("terminal-failed")]
+    [InlineData("moved-after-door-release")]
+    [InlineData("cancelled-moved-after-door-release")]
+    [InlineData("moved-again-after-a-later-release")]
+    [InlineData("cancelled-moved-again-after-a-later-release")]
     [Trait("Requirement", "REQ-0167")]
     public void TheAllowanceIsGivenOnlyPastTheOwnConfirmedHold(string variant)
     {
@@ -726,7 +1037,8 @@ public sealed class InTransitDoorEmergencyReleaseTests
             "executing" => new(OwnUpperId, RiotOrderObservationKind.Active, OwnOrderId, RiotOrderState.Executing),
             "hang" => new(OwnUpperId, RiotOrderObservationKind.Active, OwnOrderId, RiotOrderState.Hang),
             "order-unread" => new(OwnUpperId, RiotOrderObservationKind.Unknown, null),
-            "cancelled" or "cancelled-without-a-confirmed-hold" or "cancelled-doors-not-locked-again" or "cancelled-order-failed-fault" =>
+            "cancelled" or "cancelled-without-a-confirmed-hold" or "cancelled-doors-not-locked-again" or "cancelled-order-failed-fault" or
+                "cancelled-moved-after-door-release" or "cancelled-moved-again-after-a-later-release" =>
                 new(OwnUpperId, RiotOrderObservationKind.Terminal, OwnOrderId, RiotOrderState.Cancelled),
             "deleted" => new(OwnUpperId, RiotOrderObservationKind.Terminal, OwnOrderId, RiotOrderState.Deleted),
             "cancelled-other-order-id" =>
@@ -735,16 +1047,25 @@ public sealed class InTransitDoorEmergencyReleaseTests
             _ => new(OwnUpperId, RiotOrderObservationKind.Active, OwnOrderId, RiotOrderState.Paused),
         };
 
-        EmergencyReleaseAllowance? allowance = VehicleFaultCoordinator.DoorReleaseAllowance(fault, context, hold, order);
+        EmergencyReleaseAllowance? allowance = VehicleFaultCoordinator.DoorReleaseAllowance(
+            fault,
+            context,
+            hold,
+            order,
+            new DoorReleaseHistory(
+                MovedAfterDoorRelease: variant.EndsWith("moved-after-door-release", StringComparison.Ordinal) ||
+                    variant.EndsWith("moved-again-after-a-later-release", StringComparison.Ordinal),
+                MovedAgainAfterLaterRelease: variant.EndsWith("moved-again-after-a-later-release", StringComparison.Ordinal)));
 
         if (variant == "allowed")
         {
             Assert.Equal(new EmergencyReleaseAllowance(3, OwnOrderId), allowance);
         }
-        else if (variant is "cancelled" or "deleted" or "cancelled-without-a-confirmed-hold")
+        else if (variant is "cancelled" or "deleted" or "cancelled-without-a-confirmed-hold" or "cancelled-moved-after-door-release")
         {
             // 单已在 RIoT 结束（审查 P1）：放行不点名任何单，监督器因此要求车上一张未完成单都没有。按住有没有确认过无关——
-            // 没有单了，就没有能让车动的东西。
+            // 没有单了，就没有能让车动的东西。门锁解除后因运动再急停（cs#527）也照样给这一次：有货的车只有这一条不改库的出路；
+            // 零单解除之后车又动了（moved-again-after-a-later-release），就不再给。
             Assert.Equal(new EmergencyReleaseAllowance(3, HeldOrderId: null), allowance);
         }
         else
@@ -752,6 +1073,23 @@ public sealed class InTransitDoorEmergencyReleaseTests
             Assert.Null(allowance);
         }
     }
+
+    /// <summary>
+    /// control-server#527：哪些急停原因算「排除不了车在动」，从而收回门锁放行（审查 S-1、S-2 的 N2）。读到在动、位置变了、读不到运动、
+    /// 读数过期算；报不出站点、样本不够、样本间隔不对不算——它们只说明证不出停稳，不说明车可能在动，门又没锁的再急停就是这样。
+    /// </summary>
+    [Theory]
+    [InlineData(StopProof.MotionObserved, true)]
+    [InlineData(StopProof.PositionChanged, true)]
+    [InlineData(StopProof.MotionUnknown, true)]
+    [InlineData(StopProof.EvidenceStale, true)]
+    [InlineData(StopProof.PositionUnknown, false)]
+    [InlineData(StopProof.TooFewSamples, false)]
+    [InlineData(StopProof.SamplesTooClose, false)]
+    [InlineData(StopProof.ObservationGap, false)]
+    [Trait("Requirement", "REQ-0167")]
+    public void OnlyAReasonThatCannotRuleOutMotionWithdrawsTheDoorRelease(string reason, bool withdraws) =>
+        Assert.Equal(withdraws, VehicleFaultCoordinator.CannotExcludeMotion(reason));
 
     /// <summary>
     /// <c>EmergencyStopSupervisor.ReleaseObstacles</c> 那一侧：放行只让过它点名的那一张单、只对它点名的那一代。

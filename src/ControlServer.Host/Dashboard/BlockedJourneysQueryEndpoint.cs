@@ -97,7 +97,10 @@ internal sealed class BlockedJourneysQueryEndpoint : IDashboardQueryEndpoint
             [Runtime.Faults.VehicleFaultEvidence.DoorNotProvenLocked] =
                 "车在行驶中，车载端报门锁未锁闭或仓位状态读不到：服务端已按住本单，证不出停稳即急停，"
                 + "并把车判为疑似故障：不派新单，需求不改派。请到现场确认车已停、门已锁好；"
-                + "门锁恢复锁闭后急停会自动解除，但单仍停着，要由现场人员经故障处置入口「继续原单」车才会再走",
+                + "门锁恢复锁闭后急停会自动解除，但单仍停着，要由现场人员经故障处置入口「继续原单」车才会再走。"
+                + "若解除之后车又被读到在动、或读不到车动没动而再次急停，急停不再自动解除：请值班工程师在 RIoT 上结束这张单，"
+                + "车上没有任何未完成单且门锁锁闭时急停会自动解除，之后经故障清除入口清除故障；"
+                + "结束这张单之后，车上无货也可以按急停人工解除",
             // control-server#335：门锁急停已自动解除、单应仍停着，RIoT 却把它跑了起来，没有人按继续。
             [JourneyRuntimeEngine.HeldOrderResumedWithoutContinueReason] =
                 "车因门锁被按住、急停，门锁恢复后急停已自动解除；这张单本应停着等人继续，RIoT 却报它在执行，而没有人按过继续。"
