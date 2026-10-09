@@ -266,6 +266,33 @@ try {
         throw "No previous generation to roll back to: $previousRoot\controlserver does not exist. Nothing was stopped or changed."
     }
 
+    # control-server#535 review S1: a 'fake' rollback restarts the double from the directory it is in; when
+    # a 'production' install retired that directory, say so now, not after the configuration was rewritten.
+    if ($Rollback -and -not $productionSource -and
+        -not (Test-Path -LiteralPath (Join-Path $layout.FakeInstallRoot 'ControlServer.FakeMesIngest.exe') -PathType Leaf)) {
+        throw ("FAKE_MES_INGEST_MISSING: $($layout.FakeInstallRoot)\ControlServer.FakeMesIngest.exe does not exist, so a 'fake' rollback " +
+            'cannot restart the double (a production install retires it). Install the fake definition in full instead. Nothing was stopped or changed.')
+    }
+
+    # The packages, on an install: present and the expected hash, before anything changes -- the retirement
+    # of an old double below is a change (control-server#535 review S2).
+    if (-not $Rollback) {
+        $packages = @(@{ Path = $PackageZip; Name = 'package' })
+        # control-server#535: 'production' installs no double, and was refused above if one was passed.
+        if (-not $productionSource) { $packages += @{ Path = $FakeMesIngestZip; Name = 'FakeMesIngest package' } }
+        foreach ($pair in $packages) {
+            if (-not (Test-Path -LiteralPath $pair.Path -PathType Leaf)) {
+                throw "$($pair.Name) not found: $($pair.Path). Nothing was stopped or changed."
+            }
+        }
+        $actual = (Get-FileHash -LiteralPath $PackageZip -Algorithm SHA256).Hash.ToLowerInvariant()
+        $expectedHash = $ExpectedSha256.ToLowerInvariant()
+        if ($actual -ne $expectedHash) {
+            throw "Package hash mismatch on the server. Expected $expectedHash, got $actual. Nothing was stopped or changed."
+        }
+        Write-Step "Package hash verified ($actual)"
+    }
+
     # The fault recovery credential (control-server#454): the control host's value when it sent one
     # (install only: a rollback has no deploy-config.json), otherwise what the service already holds --
     # read now, before a first install, or a rollback that lands in the product's first-install
@@ -302,7 +329,7 @@ try {
         $retiredPrefix = $retired.FakeInstallRoot.TrimEnd('\') + '\'
         $retiredProcesses = @(Get-Process -Name 'ControlServer.FakeMesIngest' -ErrorAction SilentlyContinue |
                 Where-Object { $_.Path -and $_.Path.StartsWith($retiredPrefix, [StringComparison]::OrdinalIgnoreCase) })
-        $retiredProcesses | Stop-Process -Force
+        $retiredProcesses | Stop-Process -Force -ErrorAction SilentlyContinue
         $retiredProcesses | Wait-Process -Timeout 30 -ErrorAction SilentlyContinue
         Remove-ParallelInstanceDirectory -Path $retired.FakeInstallRoot
         Write-Step 'Previous FakeMesIngest retired (task unregistered, process stopped, directory removed)'
@@ -423,6 +450,59 @@ try {
         Write-Step 'MesIngest bearer token added to this service''s environment and read back; service restarted'
     }
 
+    function Assert-EffectiveConfiguration {
+        <#
+            control-server#535 review M2. Reads back what the running Host really bound -- not the definition,
+            not the overlay file -- from the EFFECTIVE_CONFIGURATION event Program.cs logs once it has started,
+            in the Serilog file the product installer configured, and compares it with the definition. Only a
+            line written since the current service process started counts. Waits up to two minutes.
+
+            'production': no event, or a different value, throws. 'fake': a different value throws; no event is
+            a warning, because a package older than #535 does not log it and its arrays are the package's own length.
+            Prints EFFECTIVE_CONFIGURATION=... as a result line for 19-deploy-control-server-parallel.ps1.
+        #>
+        $configuration = [IO.File]::ReadAllText((Join-Path $installRoot 'appsettings.Production.json')) | ConvertFrom-Json -AsHashtable -Depth 20
+        $serilog = ($configuration -is [hashtable]) ? $configuration['Serilog'] : $null
+        $fileSink = @((($serilog -is [hashtable]) ? $serilog['WriteTo'] : $null) | Where-Object { $_ -is [hashtable] -and $_['Name'] -ceq 'File' }) | Select-Object -First 1
+        $logPath = ($null -ne $fileSink -and $fileSink['Args'] -is [hashtable]) ? [string] $fileSink['Args']['path'] : ''
+        if ([string]::IsNullOrWhiteSpace($logPath)) {
+            throw "EFFECTIVE_CONFIGURATION_UNREAD: $installRoot\appsettings.Production.json names no Serilog File sink path to read the Host's log from."
+        }
+        $logPath = [Environment]::ExpandEnvironmentVariables($logPath)
+        # Serilog's rolling file inserts the date (and a _NNN sequence) before the extension.
+        $logDirectory = Split-Path -Parent $logPath
+        $logFilter = [IO.Path]::GetFileNameWithoutExtension($logPath) + '*' + [IO.Path]::GetExtension($logPath)
+        $started = Get-ParallelServiceProcessStartTimeUtc -ServiceName $serviceName
+        if ($null -eq $started) { throw "EFFECTIVE_CONFIGURATION_UNREAD: $serviceName has no running process whose start time could be read." }
+        # Two seconds of slack: the process start time and the log's clock are read through different APIs.
+        $since = [datetimeoffset]::new([datetime]::SpecifyKind($started, [DateTimeKind]::Utc)).AddSeconds(-2)
+
+        $effective = $null
+        $deadline = [DateTime]::UtcNow.AddSeconds(120)
+        do {
+            $lines = foreach ($file in @(Get-ChildItem -LiteralPath $logDirectory -Filter $logFilter -File -ErrorAction SilentlyContinue |
+                        Sort-Object LastWriteTimeUtc -Descending | Select-Object -First 2)) {
+                # The Host holds the file open (shared = true): read it without asking for exclusive access.
+                $stream = [IO.File]::Open($file.FullName, [IO.FileMode]::Open, [IO.FileAccess]::Read, [IO.FileShare]::ReadWrite)
+                try { ([IO.StreamReader]::new($stream, [Text.Encoding]::UTF8)).ReadToEnd() -split "`r?`n" } finally { $stream.Dispose() }
+            }
+            $effective = Find-ParallelEffectiveConfiguration -Lines @($lines) -Since $since
+            if ($null -ne $effective) { break }
+            Start-Sleep -Seconds 2
+        } while ([DateTime]::UtcNow -lt $deadline)
+
+        $refusal = Get-ParallelEffectiveConfigurationRefusal -Definition $definition -Effective $effective
+        if ($null -eq $effective -and -not $productionSource) {
+            Write-Warning "$refusal Looked in $logDirectory\$logFilter since $($since.ToString('o')). In 'fake' mode this is reported, not refused: a package older than control-server#535 does not log the event."
+            return
+        }
+        if ($refusal) { throw "$refusal Read from $logDirectory\$logFilter since $($since.ToString('o'))." }
+        $line = "EFFECTIVE_CONFIGURATION=allowedWorkTypes=$(@($effective.AllowedWorkTypes) -join ',') " +
+            "allowedDispatchZones=$(@($effective.AllowedDispatchZones) -join ',') mesIngestBaseUrl=$($effective.MesIngestBaseUrl)"
+        Write-Step "What the Host bound, read back from its log at $($effective.At.ToString('o')): $line"
+        Write-Output $line
+    }
+
     function Install-FakeMesIngest {
         <#
             The resident demand source. A scheduled task rather than a service, for the reason the
@@ -524,6 +604,8 @@ try {
         } else {
             Install-FakeMesIngest -Zip ''
         }
+        # What the rolled-back Host really bound (control-server#535 review M2), after its last restart.
+        Assert-EffectiveConfiguration
         Assert-MvpUntouched -Before $mvpBefore -After (Get-MvpFingerprint)
         Write-Output $mesIngestAudit
         Write-Step "Rolled back. Result: $resultPath"
@@ -541,20 +623,7 @@ try {
     # wire-to-gate-parallel-cd.md section 11 and is Uninstall-ParallelInstanceLocal.ps1.
     $completed = $false
     try {
-        $packages = @(@{ Path = $PackageZip; Name = 'package' })
-        # control-server#535: 'production' installs no double, and was refused above if one was passed.
-        if (-not $productionSource) { $packages += @{ Path = $FakeMesIngestZip; Name = 'FakeMesIngest package' } }
-        foreach ($pair in $packages) {
-            if (-not (Test-Path -LiteralPath $pair.Path -PathType Leaf)) {
-                throw "$($pair.Name) not found: $($pair.Path)"
-            }
-        }
-        $actual = (Get-FileHash -LiteralPath $PackageZip -Algorithm SHA256).Hash.ToLowerInvariant()
-        $expectedHash = $ExpectedSha256.ToLowerInvariant()
-        if ($actual -ne $expectedHash) {
-            throw "Package hash mismatch on the server. Expected $expectedHash, got $actual."
-        }
-        Write-Step "Package hash verified ($actual)"
+        # The packages' existence and hash were checked before anything changed (control-server#535 review S2).
 
         # $config (deploy-config.json) and $faultRecoveryCredential were read before anything changed.
 
@@ -641,6 +710,10 @@ try {
         $live = Invoke-WebRequest -Uri "$healthOrigin/health/live" -NoProxy -TimeoutSec 15 -UseBasicParsing
         if ($live.StatusCode -ne 200) { throw "health/live returned $($live.StatusCode)." }
         Write-Step "health/live 200: $($live.Content)"
+
+        # What the Host really bound (control-server#535 review M2), after the last restart above. Before the
+        # generation swap: a refusal here leaves the previous generation where -Rollback finds it.
+        Assert-EffectiveConfiguration
 
         # ------------------------------------------------------- generation swap ---
 

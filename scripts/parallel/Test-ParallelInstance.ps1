@@ -3544,7 +3544,8 @@ Write-Host ''
 Write-Host 'Effective configuration read-back (control-server#535 review M2)' -ForegroundColor Cyan
 
 $effectiveSince = [datetimeoffset]::Parse('2026-10-10T01:00:00Z', [cultureinfo]::InvariantCulture)
-function New-EffectiveLine([string] $At, [string[]] $Types, [string[]] $Zones = @('WIRE'), [string] $BaseUrl = 'http://127.0.0.1:5088') {
+# Zones default to the test definitions' (Set-Map26TestValue), so a case differs from them only where it means to.
+function New-EffectiveLine([string] $At, [string[]] $Types, [string[]] $Zones = @($productionSource['journeyRuntime']['allowedDispatchZones']), [string] $BaseUrl = 'http://127.0.0.1:5088') {
     return ConvertTo-Json -Compress -Depth 5 -InputObject ([ordered]@{
             '@t' = $At
             '@mt' = 'EFFECTIVE_CONFIGURATION allowedWorkTypes={AllowedWorkTypes} allowedDispatchZones={AllowedDispatchZones} mesIngestBaseUrl={MesIngestBaseUrl}'

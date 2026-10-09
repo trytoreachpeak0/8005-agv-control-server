@@ -1683,6 +1683,86 @@ function Get-ParallelRetiredFakeMesIngest {
     }
 }
 
+function Find-ParallelEffectiveConfiguration {
+    <#
+        .SYNOPSIS
+            control-server#535 review M2. The last EFFECTIVE_CONFIGURATION event the Host logged at or
+            after -Since, from Serilog compact JSON lines; $null when there is none.
+
+        .DESCRIPTION
+            Program.cs logs it once the Host has started: the AllowedWorkTypes and AllowedDispatchZones
+            it really bound, and the MesIngest baseUrl it reads. That -- not the definition, not the
+            overlay file -- is what the deployment's read-back compares, because M1 was a definition and
+            an overlay that both said ["STAGING_TO_WIRE"] while the Host bound six types. -Since is the
+            service process's start: a line from an earlier process proves nothing about this one.
+            Lines that are not JSON, or not that event, are skipped.
+    #>
+    [CmdletBinding()]
+    param(
+        [AllowEmptyCollection()][string[]] $Lines,
+        [Parameter(Mandatory = $true)][datetimeoffset] $Since
+    )
+    $found = $null
+    foreach ($line in @($Lines)) {
+        if ([string]::IsNullOrWhiteSpace($line) -or -not $line.TrimStart().StartsWith('{')) { continue }
+        try { $event = ConvertFrom-Json -InputObject $line -AsHashtable -Depth 10 } catch { continue }
+        if ($event -isnot [hashtable] -or $event['@mt'] -isnot [string] -or
+            -not $event['@mt'].StartsWith('EFFECTIVE_CONFIGURATION ', [StringComparison]::Ordinal)) { continue }
+        [datetimeoffset] $at = [datetimeoffset]::MinValue
+        if (-not [datetimeoffset]::TryParse([string] $event['@t'], [cultureinfo]::InvariantCulture,
+                [Globalization.DateTimeStyles]::AssumeUniversal, [ref] $at)) { continue }
+        if ($at -lt $Since) { continue }
+        $found = [pscustomobject]@{
+            At = $at
+            AllowedWorkTypes = [string[]] @($event['AllowedWorkTypes'])
+            AllowedDispatchZones = [string[]] @($event['AllowedDispatchZones'])
+            MesIngestBaseUrl = [string] $event['MesIngestBaseUrl']
+        }
+    }
+    return $found
+}
+
+function Get-ParallelEffectiveConfigurationRefusal {
+    <#
+        .SYNOPSIS
+            control-server#535 review M2. $null when what the Host bound is exactly what the definition
+            says; otherwise why not.
+
+        .DESCRIPTION
+            Each list is compared whole, in order, ordinal. $null for -Effective (no event found) is
+            EFFECTIVE_CONFIGURATION_UNREAD: no evidence is not a pass. 'production' is additionally held to
+            ["STAGING_TO_WIRE"] here, so a definition that slipped past the checks still cannot read back green.
+    #>
+    [CmdletBinding()]
+    [OutputType([string])]
+    param(
+        [Parameter(Mandatory = $true)][hashtable] $Definition,
+        [AllowNull()] $Effective
+    )
+    if ($null -eq $Effective) {
+        return 'EFFECTIVE_CONFIGURATION_UNREAD: the Host logged no EFFECTIVE_CONFIGURATION event since its process started, so what it really bound is unknown.'
+    }
+    [string[]] $problems = @()
+    $journey = $Definition['journeyRuntime']
+    foreach ($pair in @(
+            @{ Name = 'allowedWorkTypes'; Expected = @($journey['allowedWorkTypes']); Actual = @($Effective.AllowedWorkTypes) }
+            @{ Name = 'allowedDispatchZones'; Expected = @($journey['allowedDispatchZones']); Actual = @($Effective.AllowedDispatchZones) })) {
+        if ((@($pair.Expected) -join "`n") -cne (@($pair.Actual) -join "`n")) {
+            $problems += "$($pair.Name) bound [$(@($pair.Actual) -join ',')], the definition says [$(@($pair.Expected) -join ',')]"
+        }
+    }
+    if ((Get-MesIngestSource -Definition $Definition) -ceq 'production' -and
+        (@($Effective.AllowedWorkTypes) -join "`n") -cne ($script:ProductionSourceWorkTypes -join "`n")) {
+        $mvpNote = (@($Effective.AllowedWorkTypes) -ccontains $script:MvpWorkType) ? " -- $script:MvpWorkType is the MVP's" : ''
+        $problems += "production MesIngest source, but allowedWorkTypes bound [$(@($Effective.AllowedWorkTypes) -join ',')]$mvpNote"
+    }
+    if ($Effective.MesIngestBaseUrl -cne [string] $Definition['mesIngest']['baseUrl']) {
+        $problems += "mesIngestBaseUrl bound '$($Effective.MesIngestBaseUrl)', the definition says '$($Definition['mesIngest']['baseUrl'])'"
+    }
+    if ($problems.Count -eq 0) { return $null }
+    return "EFFECTIVE_CONFIGURATION_MISMATCH: $($problems -join '; ')."
+}
+
 function New-ParallelInstanceConfigurationOverlay {
     <#
         .SYNOPSIS
@@ -2253,7 +2333,12 @@ function Merge-ConfigurationTree {
 
         .DESCRIPTION
             Arrays are replaced wholesale rather than concatenated: allowedWorkTypes is a
-            closed list, and an append would silently widen it on every redeployment.
+            closed list, and an append would silently widen it on every redeployment. That holds for
+            THIS file only. The Host reads appsettings.json under it, and .NET configuration merges
+            arrays across files by index -- a one-item list here over six in the package used to leave
+            five of them bound (control-server#535 review M1). JourneyRuntimeOptionsRegistration now
+            takes allowedWorkTypes and allowedDispatchZones whole from the last file that names them;
+            any other list this overlay ever writes needs the same, or the same length as the package's.
 
             Keys match ignoring case, as .NET configuration matches them, and that comes from one
             line: $result is an [ordered] literal, whose dictionary compares keys ignoring case. A
@@ -2304,6 +2389,8 @@ Export-ModuleMember -Function @(
     'Format-ParallelMesIngestAudit'
     'Get-ParallelMesIngestSecretRefusal'
     'Get-ParallelRetiredFakeMesIngest'
+    'Find-ParallelEffectiveConfiguration'
+    'Get-ParallelEffectiveConfigurationRefusal'
     'Merge-ConfigurationTree'
     'Get-ParallelServiceEnvironmentEntry'
     'Set-ParallelServiceEnvironmentEntry'
