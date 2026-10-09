@@ -29,3 +29,10 @@
 - 修前红（`red-review.txt`）：产品代码退回 `7ace03b6` 那一版，6 红 42 绿——读不到运动、读数过期没被当作运动（各 1）；探针 D 两格解除 4 次（`Expected: 1, Actual: 4`）；探针 E 门锁锁好后没再解除（`Expected: 3, Actual: 2`）；`DMDS` 被误判为零单解除后又动了。
 - 修后绿（`green.txt`）：故障、急停、门锁、重建、看板相关定向测试 877 条全绿。
 - 变异 N2、N3、M5、M2' 全部杀死（`mutations.md`）。
+
+## 复核轮（急停原因混进解除之前的样本）
+
+- 测试先行：`78497d01`（探针 E 恢复 49ef80d6 的顺序、复核探针四格、`DMMD`），产品代码仍是 `8ecad915`；实现在 `3a3ab4f6`；`9b21da62` 补 M8 的护栏。
+- 修前红（`red-rereview.txt`）：5 红 15 绿——复核探针四格（按住单那支 `Expected: 2, Actual: 1`，零单那支 `Expected: 3, Actual: 2`），探针 E `Expected: 3, Actual: 2`。
+- 修后绿（`green.txt`）：定向 884 条全绿。
+- 变异 M6、M7、M8 全部杀死（M8 第一次存活，补用例后杀死，`mutations.md`）。
