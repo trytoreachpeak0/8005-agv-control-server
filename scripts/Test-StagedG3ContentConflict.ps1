@@ -45,7 +45,7 @@ param(
     [Parameter(Mandatory)][string]$StageRoot,
     [Parameter(Mandatory)][string]$EvidenceRoot,
     [Parameter(Mandatory)][ValidateSet('Pass', 'Fail')][string]$Expect,
-    [ValidateSet('heartbeat', 'business', 'recoverySessionRequestId', 'forcedRecoveryResult')]
+    # Comma-separated or repeated: pwsh -File hands a,b,c over as one string.
     [string[]]$FailingJudgment,
     [string]$MutationPatch,
     [string]$ControlServerRepository = (Split-Path -Parent $PSScriptRoot),
@@ -57,6 +57,13 @@ $ProgressPreference = 'SilentlyContinue'
 $env:MSBUILDDISABLENODEREUSE = '1'
 $env:DOTNET_CLI_USE_MSBUILD_SERVER = '0'
 
+$FailingJudgment = @($FailingJudgment | ForEach-Object { $_ -split ',' } | ForEach-Object { $_.Trim() } |
+        Where-Object { $_ -ne '' })
+foreach ($name in $FailingJudgment) {
+    if ($name -notin @('heartbeat', 'business', 'recoverySessionRequestId', 'forcedRecoveryResult')) {
+        throw "Unknown judgment in -FailingJudgment: $name"
+    }
+}
 $StageRoot = [IO.Path]::GetFullPath($StageRoot)
 $EvidenceRoot = [IO.Path]::GetFullPath($EvidenceRoot)
 foreach ($path in @($StageRoot, $EvidenceRoot)) {
