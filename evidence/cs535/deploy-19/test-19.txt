@@ -1,0 +1,11 @@
+ParseFile errors: 0
+PASS production install, audit only 
+PASS production install, extra FAKE line MES_INGEST_SOURCE_MISMATCH: production mode, but the installer also reported FAKE_MES_INGEST=http://127.0.0.1:58188.
+PASS production install, fake audit reported MES_INGEST_SOURCE_MISMATCH: the installer reported no line starting 'MES_INGEST_SOURCE=production baseUrl=http://127.0.0.1:5088 '. What it did report: MES_INGEST_SOURCE=fake baseUrl=http://127.0.0.1:58188 allowedWorkTypes=X -- y
+PASS production install, no audit MES_INGEST_SOURCE_MISMATCH: the installer reported no line starting 'MES_INGEST_SOURCE=production baseUrl=http://127.0.0.1:5088 '. What it did report: 
+PASS production install, wrong work types MES_INGEST_SOURCE_MISMATCH: production mode, but the installer reported 'MES_INGEST_SOURCE=production baseUrl=http://127.0.0.1:5088 allowedWorkTypes=STAGING_TO_WIRE,WIRE_TO_GATE -- y'.
+PASS production rollback, audit 
+PASS fake install, audit + FAKE 
+PASS fake install, audit without FAKE MES_INGEST_SOURCE_MISMATCH: fake mode, but the installer reported no FAKE_MES_INGEST line.
+PASS fake rollback, audit only 
+PASS fake install, production audit MES_INGEST_SOURCE_MISMATCH: the installer reported no line starting 'MES_INGEST_SOURCE=fake baseUrl=http://127.0.0.1:58188 '. What it did report: MES_INGEST_SOURCE=production baseUrl=http://127.0.0.1:5088 allowedWorkTypes=STAGING_TO_WIRE -- y | FAKE_MES_INGEST=x
