@@ -186,6 +186,9 @@ public sealed partial class RecoveryEndingReleasesBlockedJourneyTests
             int[] slots = await SlotsOfAsync(fixture, SecondDemandId, SlotOperationType.Load);
             string sessionId = await OpenSessionAsync(fixture, processor, state, SecondDemandId, slots);
             await processor.ProcessAsync(Action(fixture, sessionId, "FORCED_MECHANICAL_RECOVERY", SecondDemandId, slots), state, token);
+            // Protocol 3.0.0 (CP-0008, control-server#385): the result carries the named hand-off of the demand's own sublot.
+            (string? demandId, object? cargoHandoff) = await ForcedRecoveryHandoffRecord.ForSessionAsync(
+                fixture.DbOptionsForTests, sessionId, fixture.Clock.GetUtcNow());
             Assert.Equal("DurableAck", FirstLineType(await processor.ProcessAsync(Envelope(fixture, "ForcedMechanicalRecoveryResult", new
             {
                 exceptionRecoverySessionId = sessionId,
@@ -196,7 +199,9 @@ public sealed partial class RecoveryEndingReleasesBlockedJourneyTests
                 @operator = BeforeSublotOperator(fixture),
                 observedAt = fixture.Clock.GetUtcNow(),
                 electronicEmptyProven = false,
-                vehicleReadyProven = false
+                vehicleReadyProven = false,
+                demandId,
+                cargoHandoff
             }), state, token)));
             fixture.Context.ChangeTracker.Clear();
             Assert.Equal(JourneyDemandStatuses.Terminated, (await MembershipAsync(fixture, SecondDemandId)).Status);

@@ -1663,6 +1663,10 @@ public sealed class StoppedRebuildExitTests
                 .GetProperty("exceptionRecoverySessionId").GetString()!;
             Assert.Equal("RecoveryActionAccepted", FirstLineType(
                 await processor.ProcessAsync(Action(fixture, secondSession, secondAction, slots, SecondActionId), state, Token)));
+            // Protocol 3.0.0 (CP-0008, control-server#385): a forced recovery's result carries the named hand-off of the demand's
+            // own sublot.
+            (string? forcedDemandId, object? cargoHandoff) =
+                await ForcedRecoveryHandoffRecord.ForSessionAsync(fixture.DbOptionsForTests, secondSession, Now);
             string settled = secondAction == "FAULT_CARGO_HANDOFF"
                 ? HandedOff(
                     fixture,
@@ -1681,7 +1685,9 @@ public sealed class StoppedRebuildExitTests
                     @operator = BeforeSublotOperator(fixture),
                     observedAt = Now,
                     electronicEmptyProven = false,
-                    vehicleReadyProven = false
+                    vehicleReadyProven = false,
+                    demandId = forcedDemandId,
+                    cargoHandoff
                 });
             Assert.Equal("DurableAck", FirstLineType(await processor.ProcessAsync(settled, state, Token)));
         }
