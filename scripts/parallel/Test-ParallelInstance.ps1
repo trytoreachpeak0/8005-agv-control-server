@@ -3608,8 +3608,9 @@ Invoke-SourceCase 'effective: the Host source names the event the module looks f
 $installerSource = Get-Content -Raw -LiteralPath (Join-Path $PSScriptRoot 'Install-ParallelInstanceLocal.ps1')
 $recordAt = $installerSource.IndexOf('Copy-Item -LiteralPath $InstanceDefinitionPath', [StringComparison]::Ordinal)
 $retireAt = $installerSource.IndexOf('Unregister-ScheduledTask -TaskName $retired.TaskName', [StringComparison]::Ordinal)
-Invoke-SourceCase 'installer: reads the effective configuration back through Find-/Get-ParallelEffectiveConfiguration after every install and rollback' {
-    $absent = @('Find-ParallelEffectiveConfiguration', 'Get-ParallelEffectiveConfigurationRefusal' | Where-Object { $installerCommands -notcontains $_ })
+Invoke-SourceCase 'installer: reads the effective configuration back through Find-ParallelEffectiveConfiguration / Get-ParallelEffectiveConfigurationAction after every install and rollback' {
+    # Since the re-review the installer reaches the refusal through Get-ParallelEffectiveConfigurationAction (S2).
+    $absent = @('Find-ParallelEffectiveConfiguration', 'Get-ParallelEffectiveConfigurationAction' | Where-Object { $installerCommands -notcontains $_ })
     $calls = ([regex]::Matches($installerSource, '(?m)^\s*Assert-EffectiveConfiguration\s*$')).Count
     @{ Ok = ($absent.Count -eq 0 -and $calls -eq 2); Detail = "not called: $($absent -join ', '); Assert-EffectiveConfiguration call sites: $calls (install and rollback)" }
 }

@@ -106,7 +106,10 @@ param(
     [Parameter(Mandatory = $true, ParameterSetName = 'Install')]
     [string] $DeploymentConfigPath,
 
-    [Parameter(Mandatory = $true, ParameterSetName = 'Install')]
+    # Not Mandatory (control-server#535 re-review S1): 19 passes none in 'production' mode, which installs no
+    # double. 'fake' mode still requires it -- the package check before anything changes refuses it absent.
+    [Parameter(ParameterSetName = 'Install')]
+    [AllowEmptyString()]
     [string] $FakeMesIngestZip,
 
     [Parameter(Mandatory = $true, ParameterSetName = 'Rollback')]
@@ -281,8 +284,8 @@ try {
         # control-server#535: 'production' installs no double, and was refused above if one was passed.
         if (-not $productionSource) { $packages += @{ Path = $FakeMesIngestZip; Name = 'FakeMesIngest package' } }
         foreach ($pair in $packages) {
-            if (-not (Test-Path -LiteralPath $pair.Path -PathType Leaf)) {
-                throw "$($pair.Name) not found: $($pair.Path). Nothing was stopped or changed."
+            if ([string]::IsNullOrWhiteSpace($pair.Path) -or -not (Test-Path -LiteralPath $pair.Path -PathType Leaf)) {
+                throw "$($pair.Name) not found: '$($pair.Path)'. Nothing was stopped or changed."
             }
         }
         $actual = (Get-FileHash -LiteralPath $PackageZip -Algorithm SHA256).Hash.ToLowerInvariant()
@@ -457,29 +460,30 @@ try {
             in the Serilog file the product installer configured, and compares it with the definition. Only a
             line written since the current service process started counts. Waits up to two minutes.
 
-            'production': no event, or a different value, throws. 'fake': a different value throws; no event is
-            a warning, because a package older than #535 does not log it and its arrays are the package's own length.
+            What happens next is Get-ParallelEffectiveConfigurationAction's (re-review S2): bound as defined
+            passes; a different value in either mode, or nothing read back in 'production', STOPS the V2 service
+            and then throws -- a Host that bound something else must not keep reading MesIngest; nothing read
+            back in 'fake' warns, because a package older than #535 does not log the event.
             Prints EFFECTIVE_CONFIGURATION=... as a result line for 19-deploy-control-server-parallel.ps1.
         #>
         $configuration = [IO.File]::ReadAllText((Join-Path $installRoot 'appsettings.Production.json')) | ConvertFrom-Json -AsHashtable -Depth 20
         $serilog = ($configuration -is [hashtable]) ? $configuration['Serilog'] : $null
         $fileSink = @((($serilog -is [hashtable]) ? $serilog['WriteTo'] : $null) | Where-Object { $_ -is [hashtable] -and $_['Name'] -ceq 'File' }) | Select-Object -First 1
         $logPath = ($null -ne $fileSink -and $fileSink['Args'] -is [hashtable]) ? [string] $fileSink['Args']['path'] : ''
-        if ([string]::IsNullOrWhiteSpace($logPath)) {
-            throw "EFFECTIVE_CONFIGURATION_UNREAD: $installRoot\appsettings.Production.json names no Serilog File sink path to read the Host's log from."
-        }
-        $logPath = [Environment]::ExpandEnvironmentVariables($logPath)
-        # Serilog's rolling file inserts the date (and a _NNN sequence) before the extension.
-        $logDirectory = Split-Path -Parent $logPath
-        $logFilter = [IO.Path]::GetFileNameWithoutExtension($logPath) + '*' + [IO.Path]::GetExtension($logPath)
+        $logPath = [string]::IsNullOrWhiteSpace($logPath) ? '' : [Environment]::ExpandEnvironmentVariables($logPath)
+        # Serilog's rolling file inserts the date (and a _NNN sequence) before the extension. No sink path is
+        # "nothing read back", decided below like any other.
+        $logDirectory = $logPath ? (Split-Path -Parent $logPath) : '(no Serilog File sink in appsettings.Production.json)'
+        $logFilter = $logPath ? ([IO.Path]::GetFileNameWithoutExtension($logPath) + '*' + [IO.Path]::GetExtension($logPath)) : ''
         $started = Get-ParallelServiceProcessStartTimeUtc -ServiceName $serviceName
+        # No running process: nothing to stop, and nothing bound.
         if ($null -eq $started) { throw "EFFECTIVE_CONFIGURATION_UNREAD: $serviceName has no running process whose start time could be read." }
         # Two seconds of slack: the process start time and the log's clock are read through different APIs.
         $since = [datetimeoffset]::new([datetime]::SpecifyKind($started, [DateTimeKind]::Utc)).AddSeconds(-2)
 
         $effective = $null
-        $deadline = [DateTime]::UtcNow.AddSeconds(120)
-        do {
+        $deadline = $logPath ? [DateTime]::UtcNow.AddSeconds(120) : [DateTime]::UtcNow
+        while ($logPath) {
             $lines = foreach ($file in @(Get-ChildItem -LiteralPath $logDirectory -Filter $logFilter -File -ErrorAction SilentlyContinue |
                         Sort-Object LastWriteTimeUtc -Descending | Select-Object -First 2)) {
                 # The Host holds the file open (shared = true): read it without asking for exclusive access.
@@ -487,16 +491,22 @@ try {
                 try { ([IO.StreamReader]::new($stream, [Text.Encoding]::UTF8)).ReadToEnd() -split "`r?`n" } finally { $stream.Dispose() }
             }
             $effective = Find-ParallelEffectiveConfiguration -Lines @($lines) -Since $since
-            if ($null -ne $effective) { break }
+            if ($null -ne $effective -or [DateTime]::UtcNow -ge $deadline) { break }
             Start-Sleep -Seconds 2
-        } while ([DateTime]::UtcNow -lt $deadline)
+        }
 
-        $refusal = Get-ParallelEffectiveConfigurationRefusal -Definition $definition -Effective $effective
-        if ($null -eq $effective -and -not $productionSource) {
-            Write-Warning "$refusal Looked in $logDirectory\$logFilter since $($since.ToString('o')). In 'fake' mode this is reported, not refused: a package older than control-server#535 does not log the event."
+        $verdict = Get-ParallelEffectiveConfigurationAction -Definition $definition -Effective $effective
+        $where = "Read from $logDirectory\$logFilter since $($since.ToString('o'))."
+        if ($verdict.Action -ceq 'Warn') {
+            Write-Warning "$($verdict.Message) $where In 'fake' mode this is reported, not refused: a package older than control-server#535 does not log the event."
             return
         }
-        if ($refusal) { throw "$refusal Read from $logDirectory\$logFilter since $($since.ToString('o'))." }
+        if ($verdict.Action -ceq 'StopServiceAndRefuse') {
+            # Stopped first, then refused: the Host must not go on reading MesIngest with a binding nobody meant.
+            Stop-Service -Name $serviceName -Force -ErrorAction Continue
+            $state = [string] (Get-Service -Name $serviceName -ErrorAction SilentlyContinue)?.Status
+            throw "$($verdict.Message) $where $serviceName was stopped (now: $state). The RIoT dispatch gate is untouched; fix the cause, then install again or -Rollback."
+        }
         $line = "EFFECTIVE_CONFIGURATION=allowedWorkTypes=$(@($effective.AllowedWorkTypes) -join ',') " +
             "allowedDispatchZones=$(@($effective.AllowedDispatchZones) -join ',') mesIngestBaseUrl=$($effective.MesIngestBaseUrl)"
         Write-Step "What the Host bound, read back from its log at $($effective.At.ToString('o')): $line"

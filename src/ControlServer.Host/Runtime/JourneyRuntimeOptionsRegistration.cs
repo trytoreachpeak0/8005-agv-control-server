@@ -39,17 +39,44 @@ public static class JourneyRuntimeOptionsRegistration
 
     /// <summary>
     /// The elements of <c>JourneyRuntime:{key}</c> in the last provider that has any, in index order;
-    /// <see langword="null"/> when no provider names one, or the configuration has no providers to ask.
+    /// <see langword="null"/> when no provider names one.
     /// </summary>
+    /// <remarks>
+    /// Never falls back to the index merge in silence (control-server#535 re-review S4): a provider that
+    /// wraps another configuration (<see cref="ChainedConfigurationProvider"/>, what AddConfiguration adds) is
+    /// searched layer by layer in turn, and a configuration whose layers cannot be asked at all -- not an
+    /// <see cref="IConfigurationRoot"/> -- is refused when it names the list.
+    /// </remarks>
     internal static string[]? LastLayerList(IConfiguration configuration, string key)
     {
+        string path = ConfigurationPath.Combine(JourneyRuntimeOptions.SectionName, key);
         if (configuration is not IConfigurationRoot root)
         {
-            return null;
+            if (!configuration.GetSection(path).GetChildren().Any())
+            {
+                return null;
+            }
+            throw new InvalidOperationException(
+                $"{path} is set, but the configuration given ({configuration.GetType().Name}) has no layers to ask, so the list " +
+                "cannot be taken whole from its last layer and would be merged by index. Bind JourneyRuntime from the configuration root.");
         }
+        return LastLayerList(root.Providers, key);
+    }
+
+    private static string[]? LastLayerList(IEnumerable<IConfigurationProvider> providers, string key)
+    {
         string path = ConfigurationPath.Combine(JourneyRuntimeOptions.SectionName, key);
-        foreach (IConfigurationProvider provider in root.Providers.Reverse())
+        foreach (IConfigurationProvider provider in providers.Reverse())
         {
+            if (provider is ChainedConfigurationProvider chained)
+            {
+                string[]? inner = LastLayerList(chained.Configuration, key);
+                if (inner is not null)
+                {
+                    return inner;
+                }
+                continue;
+            }
             List<(int Index, string Value)> elements = [];
             foreach (string child in provider.GetChildKeys([], path).Distinct(StringComparer.OrdinalIgnoreCase))
             {

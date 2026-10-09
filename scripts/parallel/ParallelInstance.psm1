@@ -1686,7 +1686,7 @@ function Get-ParallelRetiredFakeMesIngest {
 function Find-ParallelEffectiveConfiguration {
     <#
         .SYNOPSIS
-            control-server#535 review M2. The last EFFECTIVE_CONFIGURATION event the Host logged at or
+            control-server#535 review M2. The newest (by @t) EFFECTIVE_CONFIGURATION event the Host logged at or
             after -Since, from Serilog compact JSON lines; $null when there is none.
 
         .DESCRIPTION
@@ -1719,6 +1719,8 @@ function Find-ParallelEffectiveConfiguration {
         } elseif (-not [datetimeoffset]::TryParse([string] $raw, [cultureinfo]::InvariantCulture,
                 [Globalization.DateTimeStyles]::AssumeUniversal, [ref] $at)) { continue }
         if ($at -lt $Since) { continue }
+        # The newest by @t, not the last one met: the installer reads the newest file first (re-review S5).
+        if ($null -ne $found -and $at -le $found.At) { continue }
         $found = [pscustomobject]@{
             At = $at
             AllowedWorkTypes = [string[]] @($event['AllowedWorkTypes'])
@@ -1768,6 +1770,32 @@ function Get-ParallelEffectiveConfigurationRefusal {
     }
     if ($problems.Count -eq 0) { return $null }
     return "EFFECTIVE_CONFIGURATION_MISMATCH: $($problems -join '; ')."
+}
+
+function Get-ParallelEffectiveConfigurationAction {
+    <#
+        .SYNOPSIS
+            control-server#535 re-review S2. What the installer does with a read-back: Pass, Warn, or
+            StopServiceAndRefuse, with the message.
+
+        .DESCRIPTION
+            A Host that bound something other than its definition must not keep running: in 'production' it
+            may be reading the production catalog with WIRE_TO_GATE allowed -- a first production install
+            rolled back onto a pre-#535 'fake' package does exactly that, since that package still merges
+            the list by index. So a mismatch in either mode, and nothing read back in 'production', stop the
+            V2 service before the installer throws. Nothing read back in 'fake' only warns: a package older
+            than #535 does not log the event, and its lists are the package's own length.
+    #>
+    [CmdletBinding()]
+    param(
+        [Parameter(Mandatory = $true)][hashtable] $Definition,
+        [AllowNull()] $Effective
+    )
+    $message = Get-ParallelEffectiveConfigurationRefusal -Definition $Definition -Effective $Effective
+    $action = if ($null -eq $message) { 'Pass' }
+        elseif ($null -eq $Effective -and (Get-MesIngestSource -Definition $Definition) -cne 'production') { 'Warn' }
+        else { 'StopServiceAndRefuse' }
+    return [pscustomobject]@{ Action = $action; Message = $message }
 }
 
 function New-ParallelInstanceConfigurationOverlay {
@@ -2398,6 +2426,7 @@ Export-ModuleMember -Function @(
     'Get-ParallelRetiredFakeMesIngest'
     'Find-ParallelEffectiveConfiguration'
     'Get-ParallelEffectiveConfigurationRefusal'
+    'Get-ParallelEffectiveConfigurationAction'
     'Merge-ConfigurationTree'
     'Get-ParallelServiceEnvironmentEntry'
     'Set-ParallelServiceEnvironmentEntry'
