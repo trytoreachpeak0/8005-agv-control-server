@@ -21,6 +21,12 @@ control-server#262。约 2026-10-08 起 `factory01` 上同时跑两套 ControlSe
 
 `instance-factory01-v2.production-mes.json` 是 10-10 受控试运行用的定义：与出厂文件只差 MES 来源、
 没有替身段、任务类型只留 `STAGING_TO_WIRE`，旅程运行时与建单闸门仍是关的（自测断言两份文件的其余部分逐字相同）。
+**实际生效的值以 Host 为准，不以定义为准**（#535 审查 M1/M2）。.NET 配置跨文件按下标合并数组，叠加层的
+`["STAGING_TO_WIRE"]` 曾经只盖住包内 `appsettings.json` 六项里的第一项，`WIRE_TO_GATE` 照样生效。现在 Host
+对 `allowedWorkTypes`、`allowedDispatchZones` 取最后一个写了它的配置层的整份列表（`JourneyRuntimeOptionsRegistration`），
+启动后记一条 `EFFECTIVE_CONFIGURATION` 事件；安装器在安装与回滚之后从 Host 的日志里读这条事件、与定义逐项比对，
+`production` 下读不到或不一致都算失败。
+
 从 `fake` 装成 `production` 时，安装器在记录新定义之前先撤掉上一次安装留下的替身（计划任务、进程、目录），
 否则之后的卸载按新定义找不到它。卸载与关闸两种模式都能走；`production` 下的足迹里没有计划任务和替身目录。
 

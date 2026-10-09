@@ -1708,8 +1708,15 @@ function Find-ParallelEffectiveConfiguration {
         try { $event = ConvertFrom-Json -InputObject $line -AsHashtable -Depth 10 } catch { continue }
         if ($event -isnot [hashtable] -or $event['@mt'] -isnot [string] -or
             -not $event['@mt'].StartsWith('EFFECTIVE_CONFIGURATION ', [StringComparison]::Ordinal)) { continue }
+        # ConvertFrom-Json turns an ISO-8601 '@t' into a DateTime (or DateTimeOffset) itself; formatting that
+        # back into a string would drop the sub-second part and depend on the machine's culture.
+        $raw = $event['@t']
         [datetimeoffset] $at = [datetimeoffset]::MinValue
-        if (-not [datetimeoffset]::TryParse([string] $event['@t'], [cultureinfo]::InvariantCulture,
+        if ($raw -is [datetimeoffset]) {
+            $at = $raw
+        } elseif ($raw -is [datetime]) {
+            $at = [datetimeoffset]::new(($raw.Kind -eq [DateTimeKind]::Unspecified) ? [datetime]::SpecifyKind($raw, [DateTimeKind]::Utc) : $raw.ToUniversalTime())
+        } elseif (-not [datetimeoffset]::TryParse([string] $raw, [cultureinfo]::InvariantCulture,
                 [Globalization.DateTimeStyles]::AssumeUniversal, [ref] $at)) { continue }
         if ($at -lt $Since) { continue }
         $found = [pscustomobject]@{
