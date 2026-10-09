@@ -4,3 +4,7 @@ Passed!  - Failed:     0, Passed:   523, Skipped:     0, Total:   523, Duration:
 
 dotnet test ... --filter "FullyQualifiedName~BlockedJourney|FullyQualifiedName~Dashboard"  (after the dashboard text change)
 Passed!  - Failed:     0, Passed:   332, Skipped:     0, Total:   332, Duration: 4 m 15 s - ControlServer.Tests.dll (net8.0)
+
+review round: aa9180a7 (M-1, S-1, S-3 implementation)
+dotnet test tests/ControlServer.Tests/ControlServer.Tests.csproj -c Release --filter "FullyQualifiedName~Fault|FullyQualifiedName~Emergency|FullyQualifiedName~InTransitDoor|FullyQualifiedName~StopDriven|FullyQualifiedName~OwnOrderRebuild|FullyQualifiedName~BlockedJourney|FullyQualifiedName~Dashboard"
+Passed!  - Failed:     0, Passed:   877, Skipped:     0, Total:   877, Duration: 5 m 21 s - ControlServer.Tests.dll (net8.0)

@@ -1,0 +1,22 @@
+review round (M-1, S-1, S-2): tests at 7ace03b6 with product code of that commit (= 49ef80d6, renames only)
+git checkout 7ace03b6 -- src, then:
+dotnet test tests/ControlServer.Tests/ControlServer.Tests.csproj -c Release --filter "FullyQualifiedName~TheDoorReleaseHistoryCountsOnlyMotionAfterAReleaseThatTookEffect|FullyQualifiedName~OnlyAReasonThatCannotRuleOutMotionWithdrawsTheDoorRelease|FullyQualifiedName~ItCannotRuleOutAfterTheDoorReleaseIsNotReleasedOnTheDoorsAgain|FullyQualifiedName~GetsOutOnceItsOrderIsEndedInRiot|FullyQualifiedName~TheAllowanceIsGivenOnlyPastTheOwnConfirmedHold"
+  Failed ControlServer.Tests.InTransitDoorEmergencyReleaseTests.OnlyAReasonThatCannotRuleOutMotionWithdrawsTheDoorRelease(reason: "STOP_PROOF_EVIDENCE_STALE", withdraws: True) [24 ms]
+Expected: True
+Actual:   False
+  Failed ControlServer.Tests.InTransitDoorEmergencyReleaseTests.OnlyAReasonThatCannotRuleOutMotionWithdrawsTheDoorRelease(reason: "STOP_PROOF_MOTION_UNKNOWN", withdraws: True) [< 1 ms]
+Expected: True
+Actual:   False
+  Failed ControlServer.Tests.InTransitDoorEmergencyReleaseTests.AVehicleStoppedForMotionItCannotRuleOutAfterTheDoorReleaseIsNotReleasedOnTheDoorsAgain(reading: "motion-stale") [11 s]
+Expected: 1
+Actual:   4
+  Failed ControlServer.Tests.InTransitDoorEmergencyReleaseTests.AVehicleStoppedForMotionItCannotRuleOutAfterTheDoorReleaseIsNotReleasedOnTheDoorsAgain(reading: "motion-unreadable") [5 s]
+Expected: 1
+Actual:   4
+  Failed ControlServer.Tests.InTransitDoorEmergencyReleaseTests.AVehicleStoppedForMotionAfterTheDoorReleaseGetsOutOnceItsOrderIsEndedInRiot(after: "doors-again") [4 s]
+Expected: 3
+Actual:   2
+  Failed ControlServer.Tests.EmergencyStopSupervisorTests.TheDoorReleaseHistoryCountsOnlyMotionAfterAReleaseThatTookEffect(script: "DMDS", movedAfterDoorRelease: True, movedAgainAfterLaterRelease: False) [1 s]
+Expected: DoorReleaseHistory { MovedAfterDoorRelease = True, MovedAgainAfterLaterRelease = False }
+Actual:   DoorReleaseHistory { MovedAfterDoorRelease = True, MovedAgainAfterLaterRelease = True }
+Failed!  - Failed:     6, Passed:    42, Skipped:     0, Total:    48, Duration: 32 s - ControlServer.Tests.dll (net8.0)
