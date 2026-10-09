@@ -278,16 +278,16 @@ public sealed class InTransitDoorEmergencyReleaseTests
         Latched latched = await LatchedFactsAsync(fixture);
         fixture.Riot.MovementState = "MT_RUNNING";
         await DriveOneRoundAsync(fixture);
+        if (after == "doors-again")
+        {
+            // From here on the vehicle reads as standing: by the time the doors fail, the three-sample window the stop's reason
+            // is drawn from holds no motion, so that stop is for the doors alone.
+            fixture.Riot.MovementState = "MT_PAUSED";
+        }
         fixture.EmergencyLatched = true;
         await ReportLockedAsync(fixture);
         await DriveOneRoundAsync(fixture);
         Assert.Equal(1, await CountAsync(fixture, RiotCommandTypeNames.CancelEmergency));
-
-        if (after == "doors-again")
-        {
-            // From here on the vehicle reads as standing, so the three-sample window holds no motion by the time the doors fail.
-            fixture.Riot.MovementState = "MT_PAUSED";
-        }
 
         // 值班工程师在 RIoT 里取消那张单：之后一轮放行不点名任何单、车上零单，解除一次。
         fixture.Riot.SetOrderState(latched.UpperId, RiotOrderState.Cancelled, terminal: true);
