@@ -814,9 +814,8 @@ public sealed class VehicleFaultCoordinator(
             return null;
         }
 
-        IReadOnlyList<string> stopReasons = await emergencyStop
-            .StopReasonsAfterDoorReleaseAsync(subject, fault.FaultGeneration, cancellationToken).ConfigureAwait(false);
-        bool movedAfterDoorRelease = stopReasons.Any(IsMotion);
+        DoorReleaseHistory history = await emergencyStop
+            .DoorReleaseHistoryAsync(subject, fault.FaultGeneration, IsMotion, cancellationToken).ConfigureAwait(false);
 
         IReadOnlyList<RiotOrderCommandAttempt> attempts = await audit.ReadAttemptsAsync(
             RiotCommandTypeNames.OrderHold, target.UpperId, cancellationToken).ConfigureAwait(false);
@@ -826,7 +825,7 @@ public sealed class VehicleFaultCoordinator(
             : await commands.ReconcileAsync(hold, cancellationToken).ConfigureAwait(false);
         RiotOrderObservation order = await movement
             .ReconcileByUpperIdAsync(target.UpperId, cancellationToken).ConfigureAwait(false);
-        return DoorReleaseAllowance(fault, context, holdOutcome, order, movedAfterDoorRelease);
+        return DoorReleaseAllowance(fault, context, holdOutcome, order, history);
     }
 
     /// <summary>The stop-proof codes that say the vehicle moved, as opposed to that it could not be watched.</summary>
@@ -846,13 +845,21 @@ public sealed class VehicleFaultCoordinator(
     /// The one exception is this very order cancelled or deleted in RIoT since (control-server#335 review P1): the allowance
     /// then names no order, and the supervisor releases only while RIoT lists none at all for the vehicle.
     /// <para>
-    /// <b>None at all once the vehicle was stopped for motion after this generation's door release</b>
-    /// (<paramref name="movedAfterDoorRelease"/>, control-server#527). The release rests on the doors being the cause; a
-    /// vehicle that read as moving after it, with its order held, has shown that they were not the whole of it, and released
-    /// again on the doors it was stopped again on the next reading -- seven triggers and nine releases in a minute on agv02 on
-    /// 2026-10-09. From there the latch is released by a person (REQ-0356) or by the fault being cleared, not automatically.
-    /// Motion in the stop that started the episode does not count: a vehicle stopped for its doors while driving is moving
-    /// then by definition, and counting it would take this release from exactly the vehicles it was written for.
+    /// <b>Not past the held order once the vehicle was stopped for motion after this generation's door release</b>
+    /// (<see cref="DoorReleaseHistory.MovedAfterDoorRelease"/>, control-server#527). The release rests on the doors being the
+    /// cause; a vehicle that read as moving after it, with its order held, has shown that they were not the whole of it, and
+    /// released again on the doors it was stopped again on the next reading -- nine triggers and fourteen releases in a minute
+    /// on agv02 on 2026-10-09. Motion in the stop that started the episode does not count: a vehicle stopped for its doors
+    /// while driving is moving then by definition, and counting it would take this release from exactly the vehicles it was
+    /// written for.
+    /// </para>
+    /// <para>
+    /// <b>The branch for an order ended in RIoT stays open once more</b>, because for a loaded vehicle it is the only way out
+    /// that is not the database: REQ-0356 needs the vehicle empty, and a clearance or a resume refuses while it is latched.
+    /// Ending this server's own order is a person's act (the duty engineer, <c>docs/emergency-stop-field-fallback.md</c>),
+    /// and with no unfinished order RIoT has nothing left to drive the vehicle with. Once, not every time: if a door-cause
+    /// release has already taken effect after the motion stop (<see cref="DoorReleaseHistory.DoorReleasedAfterMotion"/>),
+    /// nothing is released on the doors again in this generation, so this branch cannot oscillate either.
     /// </para>
     /// </remarks>
     internal static EmergencyReleaseAllowance? DoorReleaseAllowance(
@@ -860,13 +867,14 @@ public sealed class VehicleFaultCoordinator(
         FaultedVehicleContext context,
         RiotOrderCommandOutcome? holdOutcome,
         RiotOrderObservation order,
-        bool movedAfterDoorRelease)
+        DoorReleaseHistory history)
     {
         ArgumentNullException.ThrowIfNull(fault);
         ArgumentNullException.ThrowIfNull(context);
         ArgumentNullException.ThrowIfNull(order);
+        ArgumentNullException.ThrowIfNull(history);
 
-        if (movedAfterDoorRelease ||
+        if (history.DoorReleasedAfterMotion ||
             !context.DoorCauseRemoved ||
             fault.Level == VehicleFaultLevel.None ||
             !string.Equals(fault.EvidenceCode, VehicleFaultEvidence.DoorNotProvenLocked, StringComparison.Ordinal) ||
@@ -886,7 +894,8 @@ public sealed class VehicleFaultCoordinator(
             return new EmergencyReleaseAllowance(fault.FaultGeneration, HeldOrderId: null);
         }
 
-        if (holdOutcome != RiotOrderCommandOutcome.Confirmed ||
+        if (history.MovedAfterDoorRelease ||
+            holdOutcome != RiotOrderCommandOutcome.Confirmed ||
             order.Kind != RiotOrderObservationKind.Active ||
             order.OrderState != RiotOrderState.Paused ||
             !string.Equals(order.OrderId, target.OrderId, StringComparison.Ordinal))
