@@ -1,0 +1,54 @@
+[19:10:41] Instance definition accepted: factory01-v2-parallel (from C:/Users/szy/AppData/Local/Temp/claude/C--Users-szy-Desktop-8005-workspace-v2/f73af88e-2470-4aee-b0c4-e5f722389d02/scratchpad/instance-factory01-v2.cs411-1007.json)
+[19:10:41] Target: factory01  service '8005 AGV ControlServer V2'
+[19:10:41] Vehicle: 老厂前线新多仓位2 (BROKERX-f38975561adf46ccb1d2f23833c7d0e4)
+[19:10:41] RouteGraph: enabled=False mapId=26   RiotCreateDispatch: enabled=False
+[19:10:41] Secrets loaded from the DPAPI store
+[19:10:42] Downloading artifact from run 37585620196
+[19:11:09] Package hash verified (9186e4f1e1059284f0d7953307745f30efdb27eb34ebd70358d87e020ed4b526)
+[19:11:09] Building FakeMesIngest from the control-server repository
+Published FakeMesIngest: C:\Users\szy\AppData\Local\Temp\control-server-v2-deploy-20261007-191041\fake-mes-ingest.zip
+Source commit: 7bd60584e145c720a5253c235324c4d0e7416f5c
+SHA-256: a390dd1d06afe6e73a724d25fc5a832e1b78d7beb7f2c03b149d7369de9cc2f9
+[19:11:23] FakeMesIngest package: C:\Users\szy\AppData\Local\Temp\control-server-v2-deploy-20261007-191041\fake-mes-ingest.zip
+[19:11:31] Parallel scripts and instance definition staged in D:\zhengyushao\control-server-v2-ops
+  ready: D:\zhengyushao\control-server-v2-ops
+  ready: D:\zhengyushao\control-server-v2-staging
+ready: D:\zhengyushao\control-server-v2-ops
+ready: D:\zhengyushao\control-server-v2-staging
+[19:11:35] Copying package (176.3 MB)
+[19:12:00] Running the parallel installer on the server
+  [19:12:03] Instance definition accepted: factory01-v2-parallel
+  [19:12:03] MVP service before: present=True status=Running startType=Automatic pathName="C:\Program Files\8005 AGV\ControlServer\ControlServer.Host.exe" --contentRoot "C:\Program Files\8005 AGV\ControlServer" --environment Production processId=6660
+  [19:12:04] Installed definition recorded at D:\zhengyushao\control-server-v2-ops\installed-instance.json
+  [19:12:05] Package hash verified (9186e4f1e1059284f0d7953307745f30efdb27eb34ebd70358d87e020ed4b526)
+  [19:12:10] Unpacked to D:\zhengyushao\ControlServer.V2.incoming-20261007-191203
+  [19:12:10] Release: controlserver d201845  onboard 022282e
+  [19:12:10] RIoT key written to the user scope (shared with the MVP deployment, same value today); machine scope read, not written
+  [19:12:10] First install of 8005 AGV ControlServer V2 with Install-ControlServerLocal.ps1
+  ControlServer local deployment PASS. Result: D:\zhengyushao\control-server-v2-ops\results\install-20261007-191203.json
+  [19:12:30] Installer result written to D:\zhengyushao\control-server-v2-ops\results\install-20261007-191203.json
+  [19:12:33] Configuration overlay merged into C:\Program Files\8005 AGV\ControlServer.V2\appsettings.Production.json and verified (vehicle identity, MesIngest origin, clearance exit sections); credential not supplied; 8005 AGV ControlServer V2 restarted
+  [19:12:33] CLEARANCE_EXIT_READINESS vehicleFaultRecovery=disabled credential=CONTROL_SERVER_V2_FAULT_RECOVERY_CREDENTIAL:absent fieldOperatorRoles=present roster=D:\zhengyushao\control-server-v2-ops\field-operator-roles.json:empty onboardEntryDeclared=false exit=unavailable(FIELD_OPERATOR_ROSTER_EMPTY,STATION_CLEARANCE_ENTRY_NOT_OFFERED,CHARGING_RECOVERY_ENTRY_NOT_OFFERED)
+  CLEARANCE_EXIT_READINESS vehicleFaultRecovery=disabled credential=CONTROL_SERVER_V2_FAULT_RECOVERY_CREDENTIAL:absent fieldOperatorRoles=present roster=D:\zhengyushao\control-server-v2-ops\field-operator-roles.json:empty onboardEntryDeclared=false exit=unavailable(FIELD_OPERATOR_ROSTER_EMPTY,STATION_CLEARANCE_ENTRY_NOT_OFFERED,CHARGING_RECOVERY_ENTRY_NOT_OFFERED)
+  WARNING: CLEARANCE_EXIT_UNAVAILABLE (FIELD_OPERATOR_ROSTER_EMPTY,STATION_CLEARANCE_ENTRY_NOT_OFFERED,CHARGING_RECOVERY_ENTRY_NOT_OFFERED): a vehicle that cannot charge stays on ORDER_HANG and isolation is not written (server alarms 2271/2272). Intended in phase 1; otherwise fill in the roster at D:\zhengyushao\control-server-v2-ops\field-operator-roles.json and set vehicleFaultRecovery / fieldOperatorRoles in the instance definition.
+  [19:12:35] MesIngest bearer token added to this service's environment; service restarted
+  [19:12:39] FakeMesIngest unpacked to C:\Program Files\8005 AGV\ControlServer.V2.FakeMesIngest
+  [19:12:39] Empty seed file created at D:\zhengyushao\control-server-v2-ops\fake-mes-ingest-seed.json
+  [19:12:43] Scheduled task '8005 AGV ControlServer V2 FakeMesIngest' registered and started
+  WARNING: The parallel install did NOT complete. The instance may be half-installed.
+  WARNING: Nothing was rolled back after the product installer returned. Check the MVP first:
+  WARNING:   MVP now: present=True status=Running startType=Automatic pathName="C:\Program Files\8005 AGV\ControlServer\ControlServer.Host.exe" --contentRoot "C:\Program Files\8005 AGV\ControlServer" --environment Production processId=6660
+  WARNING:   MVP before: present=True status=Running startType=Automatic pathName="C:\Program Files\8005 AGV\ControlServer\ControlServer.Host.exe" --contentRoot "C:\Program Files\8005 AGV\ControlServer" --environment Production processId=6660
+  WARNING: Then remove the partial instance with Uninstall-ParallelInstanceLocal.ps1 (see wire-to-gate-parallel-cd.md section 11).
+  Exception: D:\zhengyushao\control-server-v2-ops\Install-ParallelInstanceLocal.ps1:444
+  Line |
+   444 |          throw "FakeMesIngest did not answer http://127.0.0.1:$fakePor …
+       |          ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+       | FakeMesIngest did not answer http://127.0.0.1:58188/control/v1/health within 120 s. Log:
+       | D:\zhengyushao\control-server-v2-ops\logs\fake-mes-ingest.log
+  deploy-config.json: not on the server
+Exception: C:\Users\szy\Desktop\8005-workspace\remote-ops\factory-server\scripts\19-deploy-control-server-parallel.ps1:116
+Line |
+ 116 |  … EXITCODE -ne 0) { throw "ssh $SshAlias failed (exit $LASTEXITCODE)" }
+     |                      ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+     | ssh factory01 failed (exit 1)

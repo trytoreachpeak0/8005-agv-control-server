@@ -2962,9 +2962,19 @@ public sealed class WireToGateStore(ControlServerDbContext dbContext)
         {
             // A second result for an attempt that already has a live one, with no resume to account for it: the same
             // business key (the manifest's businessDedupKeys for OperationResult are demandId and slotOperationAttemptId)
-            // with other content, so BUSINESS_ID_CONTENT_CONFLICT (control-server#478).
+            // with other content, so BUSINESS_ID_CONTENT_CONFLICT (control-server#478). When the resume that would have
+            // admitted it was closed by an administrator (control-server#483), the refusal says so, under the same code: it
+            // must stay a refusal, because an acknowledgement would make the vehicle drop a result that really happened.
+            bool closedByAdministrator = authorization is null && await dbContext.RecoveryWorkflows.AsNoTracking().AnyAsync(
+                row => row.WorkflowType == "RESUME_AFTER_REPAIR" &&
+                       row.SlotOperationAttemptId == result.SlotOperationAttemptId &&
+                       row.Outcome == RecoveryWorkflowOutcomes.AdministratorClosed,
+                cancellationToken).ConfigureAwait(false);
             throw new InboundMessageRejectedException(ServerReasonCodes.BusinessIdContentConflict,
-                "Operation result identity was replayed with different message or content.");
+                closedByAdministrator
+                    ? "Replacement OperationResult arrived after an administrator closed its resume's exception recovery " +
+                      $"session ({RecoveryWorkflowOutcomes.AdministratorClosed}); nothing of it is kept."
+                    : "Operation result identity was replayed with different message or content.");
         }
         if (authorization.ForcedRecoveryGeneration != forcedRecoveryGeneration)
         {

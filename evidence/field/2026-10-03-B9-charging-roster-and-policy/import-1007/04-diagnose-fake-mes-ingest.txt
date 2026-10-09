@@ -1,0 +1,50 @@
+
+Name                       Status StartType
+----                       ------ ---------
+8005 AGV ControlServer    Running Automatic
+8005 AGV ControlServer V2 Running Automatic
+
+
+task state: 3
+
+LastRunTime        : 2026/10/7 19:12:12
+LastTaskResult     : 4294967295
+NumberOfMissedRuns : 0
+
+
+
+LocalAddress   LocalPort OwningProcess
+------------   --------- -------------
+172.19.205.222     58107         11308
+172.19.205.222     58105         11308
+172.19.205.222     58007          6660
+172.19.205.222     58005          6660
+
+
+--- fake-mes-ingest.log (tail 60)
+--- FakeMesIngest dir
+aspnetcorev2_inprocess.dll
+clretwrc.dll
+clrgc.dll
+clrjit.dll
+ControlServer.Application.dll
+ControlServer.Application.pdb
+ControlServer.Domain.dll
+ControlServer.Domain.pdb
+ControlServer.FakeMesIngest.deps.json
+ControlServer.FakeMesIngest.dll
+ControlServer.FakeMesIngest.exe
+ControlServer.FakeMesIngest.pdb
+ControlServer.FakeMesIngest.runtimeconfig.json
+ControlServer.Infrastructure.dll
+ControlServer.Infrastructure.pdb
+--- logs dir
+
+Get-ChildItem: Cannot find path 'D:\zhengyushao\control-server-v2-ops\logs' because it does not exist.
+--- processes
+
+ProcessId Name                   CommandLine
+--------- ----                   -----------
+    11308 ControlServer.Host.exe "C:\Program Files\8005 AGV\ControlServer.V2\ControlServer.Host.exe" --contentRoot "C:\Program Files\8005 AGV\ControlServer.V2" --environment Production
+
+

@@ -1,0 +1,31 @@
+Case 1: the installer's task starts the double, and the installer's seeding reaches it
+  PASS  the action is the double itself, no pwsh
+  PASS  registration returns one timestamp and nothing else
+  PASS  the log directory exists before anything runs
+  PASS  health answered within 120 s (0.8 s)
+  PASS  exactly one process of the double runs, as SYSTEM
+  PASS  the task is Running
+2026-10-08T20:20:45.0950950+08:00 FakeMesIngest seeding the running double: port=47188 seed=C:\cs512 repro\ops root\fake-mes-ingest-seed.json
+2026-10-08T20:20:45.1806253+08:00 Catalog reset; this round is run-4a766986
+2026-10-08T20:20:45.1843785+08:00 Seeded 0 of 0 demand(s) under runId run-4a766986
+2026-10-08T20:20:45.2138284+08:00 Catalog now holds 0 demand(s) at revision 1
+2026-10-08T20:20:45.2165073+08:00 Seeded. The double keeps running under its scheduled task.
+  PASS  the installer's seeding resets the catalog, reads it back, and leaves the double running
+  PASS  the double is still the one process after seeding
+        2026-10-08T20:20:45.0950950+08:00 FakeMesIngest seeding the running double: port=47188 seed=C:\cs512 repro\ops root\fake-mes-ingest-seed.json
+        2026-10-08T20:20:45.1806253+08:00 Catalog reset; this round is run-4a766986
+        2026-10-08T20:20:45.1843785+08:00 Seeded 0 of 0 demand(s) under runId run-4a766986
+        2026-10-08T20:20:45.2138284+08:00 Catalog now holds 0 demand(s) at revision 1
+        2026-10-08T20:20:45.2165073+08:00 Seeded. The double keeps running under its scheduled task.
+Case 2 (negative control): a task that registers but whose double never starts
+  PASS  the task registered
+  PASS  the wait goes red when the double never starts
+  PASS  the failure says the double is not running and gives the task result
+        FakeMesIngest did not answer http://127.0.0.1:47188/control/v1/health within 20 s.
+        task: state=Ready lastTaskResult=0x80070002 lastRunTime=2026-10-08T20:20:46.0000000+08:00 (unreliable on factory01)
+        process C:\cs512 repro\Fake Root\Absent.FakeMesIngest.exe: not running
+        Application log 1000/1026 naming Absent.FakeMesIngest.exe since 2026-10-08T20:20:46.2301745+08:00: 0
+Cleanup
+  left behind: task=0 root=False listeners on 47188=0
+
+Passed: 11  Failed: 0

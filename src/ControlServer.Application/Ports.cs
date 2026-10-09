@@ -70,6 +70,23 @@ public interface IOnboardPeer
     Task SendAsync(ReadOnlyMemory<byte> ndjsonLine, CancellationToken cancellationToken);
 }
 
+/// <summary>
+/// Whether a vehicle has a connection this server can send to right now: its handshake is done and it is routable. A
+/// vehicle in its handshake, or with none, is not connected (control-server#483).
+/// </summary>
+public interface IOnboardConnectionPresence
+{
+    /// <summary>The session generation of the vehicle's routable connection, or null when it has none.</summary>
+    long? ConnectedSessionGeneration(string agvId);
+
+    /// <summary>
+    /// Whether a connection naming the vehicle has sent a SessionHello and is not routable yet: the vehicle is in its
+    /// handshake, where it replays what it has not had acknowledged -- results included -- before its recovery report
+    /// is answered (review of control-server#483).
+    /// </summary>
+    bool IsHandshaking(string agvId);
+}
+
 public interface IDemandAcceptanceStore
 {
     Task AcceptWithOrderIntentAsync(

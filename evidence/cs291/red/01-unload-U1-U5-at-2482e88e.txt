@@ -1,0 +1,16 @@
+  Failed ControlServer.Tests.UnloadCrashResumeTests.ACrashAfterTheLastUnloadOfAStopWithAStopAfterItStillLeavesForTheNextStop [5 s]
+  Error Message:
+   After the restart the vehicle did not move on to its departure check. stage=AwaitingUnloadResult round=System.IO.InvalidDataException: Journey journey:10000000-0000-4000-8000-000000000001 waits for an unload result with nothing left to unload.
+  Failed ControlServer.Tests.UnloadCrashResumeTests.ACrashAfterTheLastUnloadBeforeItsStopCompletesStillClosesTheJourney [2 s]
+  Error Message:
+   After the restart the journey never closed. stage=AwaitingUnloadResult round=System.IO.InvalidDataException: Journey journey:10000000-0000-4000-8000-000000000001 waits for an unload result with nothing left to unload.
+  Failed ControlServer.Tests.UnloadCrashResumeTests.ACrashBetweenTheNextWorklistAndTheSecondUnloadCommandStillCommandsTheSecond [2 s]
+  Error Message:
+   After the restart the second unload was never commanded. stage=AwaitingUnloadResult round=
+  Failed ControlServer.Tests.UnloadCrashResumeTests.ACrashAfterTheLastStopCompletesBeforeTheJourneyDoesStillClosesTheJourney [2 s]
+  Error Message:
+   After the restart the journey never closed. stage=AwaitingUnloadResult round=System.IO.InvalidDataException: Journey 'journey:10000000-0000-4000-8000-000000000001' has no open stop left.
+  Failed ControlServer.Tests.UnloadCrashResumeTests.ACrashAfterTheFirstOfTwoUnloadsIsSavedStillCommandsTheSecond [2 s]
+  Error Message:
+   After the restart the second unload was never commanded. stage=AwaitingUnloadResult round=
+Failed!  - Failed:     5, Passed:     1, Skipped:     0, Total:     6, Duration: 15 s - ControlServer.Tests.dll (net8.0)

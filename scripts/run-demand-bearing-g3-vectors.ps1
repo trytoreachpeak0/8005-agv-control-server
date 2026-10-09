@@ -9,6 +9,13 @@ param(
     # copy in StageRoot is what the server opens. A store the synthetic rig wrote is refused
     # (control-server#460, Assert-FieldRunStoreIsNotGenerated): this path exempts the store's protocolCommit
     # and calls the store field state, and neither holds for a generated one.
+    # Taking the store off the field server (control-server#503): the database is in WAL mode, so the store is
+    # controlserver.db together with any controlserver.db-wal and controlserver.db-shm, and committed rows may
+    # be only in -wal. Either stop the field server, prove its process has exited (controlserver.db.instance-lock
+    # opens with FileShare.None) and copy the whole data directory, or, with the server running, export one file
+    # with VACUUM INTO and put that here as controlserver.db. A copy of controlserver.db alone from a running or
+    # killed server opens, passes integrity_check, and silently lacks the newest rows. This runner copies all
+    # three files it finds; docs/field/control-server-database-copy.md has the commands.
     # Left out, the store is generated on the spot: the bound ControlServer commit's own L2 scenario
     # demand-bearing-store-at-unload drives a synthetic peer and the fake RIoT to the same shape and
     # exports it. The only field store ever used (fullloop-20260829T131549Z, agv01 and the real RIoT)
@@ -360,6 +367,22 @@ function Invoke-SqliteScalarLong {
     finally { $connection.Dispose() }
 }
 
+function Get-StoreFilesSha256 {
+    param([Parameter(Mandatory)][string]$DatabasePath)
+    $lines = foreach ($suffix in @('', '-wal', '-shm')) {
+        $path = $DatabasePath + $suffix
+        $name = [IO.Path]::GetFileName($path)
+        if (Test-Path -LiteralPath $path -PathType Leaf) {
+            "{0}`0{1}`0{2}" -f $name, (Get-Item -LiteralPath $path).Length,
+                (Get-FileHash -LiteralPath $path -Algorithm SHA256).Hash.ToLowerInvariant()
+        } else {
+            "$name`0ABSENT"
+        }
+    }
+    $bytes = [Text.UTF8Encoding]::new($false).GetBytes($lines -join "`n")
+    return [Convert]::ToHexString([Security.Cryptography.SHA256]::HashData($bytes)).ToLowerInvariant()
+}
+
 # Read only while no process owns the file: the store runs in WAL mode, and a read-only handle must
 # not be the one that has to recover an unclean write-ahead log.
 function Get-FileFingerprint {
@@ -539,7 +562,10 @@ try {
             Copy-Item -LiteralPath $sourceFile -Destination ($controlDatabasePath + $suffix) -Force
         }
     }
-    $fieldDatabaseSha256 = (Get-FileHash -LiteralPath $fieldDatabase -Algorithm SHA256).Hash.ToLowerInvariant()
+    # Over all three files, not the main file alone (control-server#503): with a -wal beside it, the main
+    # file is not the whole store, and two stores with the same main file can hold different rows. One line
+    # per suffix -- name, length and SHA-256, or ABSENT -- hashed together, so a missing -wal is part of it.
+    $fieldDatabaseSha256 = Get-StoreFilesSha256 -DatabasePath $fieldDatabase
 
     $baseline = Read-ControlDatabase
     Assert-FieldRunStoreIsNotGenerated -StoreSource $storeSource -Baseline $baseline
@@ -922,6 +948,7 @@ $configuration = [ordered]@{
         storeSource = $storeSource
         fieldRunRoot = $FieldRunRoot
         fieldDatabaseSha256 = $fieldDatabaseSha256
+        fieldDatabaseSha256Covers = 'controlserver.db, controlserver.db-wal, controlserver.db-shm: one line each of name, length and SHA-256 (or ABSENT), hashed together'
         generator = $storeGenerator
         note = if ($storeSource -eq 'FIELD_RUN') {
             'Restored from an authorised field run. The store is real state produced by a real ' +

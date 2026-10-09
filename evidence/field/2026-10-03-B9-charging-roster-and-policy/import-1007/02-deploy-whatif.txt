@@ -1,0 +1,19 @@
+[19:09:01] Instance definition accepted: factory01-v2-parallel (from C:/Users/szy/AppData/Local/Temp/claude/C--Users-szy-Desktop-8005-workspace-v2/f73af88e-2470-4aee-b0c4-e5f722389d02/scratchpad/instance-factory01-v2.cs411-1007.json)
+[19:09:01] Target: factory01  service '8005 AGV ControlServer V2'
+[19:09:01] Vehicle: 老厂前线新多仓位2 (BROKERX-f38975561adf46ccb1d2f23833c7d0e4)
+[19:09:01] RouteGraph: enabled=False mapId=26   RiotCreateDispatch: enabled=False
+[19:09:01] Secrets loaded from the DPAPI store
+[19:09:01] Downloading artifact from run 37585620196
+[19:09:36] Package hash verified (9186e4f1e1059284f0d7953307745f30efdb27eb34ebd70358d87e020ed4b526)
+[19:09:36] Building FakeMesIngest from the control-server repository
+Published FakeMesIngest: C:\Users\szy\AppData\Local\Temp\control-server-v2-deploy-20261007-190901\fake-mes-ingest.zip
+Source commit: 7bd60584e145c720a5253c235324c4d0e7416f5c
+SHA-256: 06b21bbdee0499e664afa26333c58f86aa4becad12044def1228c296b7bc4d0c
+[19:09:59] FakeMesIngest package: C:\Users\szy\AppData\Local\Temp\control-server-v2-deploy-20261007-190901\fake-mes-ingest.zip
+What if: Performing the operation "Deploy WireToGate-20261007-072624-d201845.zip as the v2 parallel instance" on target "factory01".
+[19:10:00] WhatIf: stopping before the server is touched.
+[19:10:00] Would copy: C:\Users\szy\AppData\Local\Temp\control-server-v2-deploy-20261007-190901\WireToGate-20261007-072624-d201845\WireToGate-20261007-072624-d201845.zip -> factory01:D:\zhengyushao\control-server-v2-staging
+[19:10:00] Would install service '8005 AGV ControlServer V2' into C:\Program Files\8005 AGV\ControlServer.V2
+[19:10:00] Would bind: tcp://172.19.205.222:58105 and http://172.19.205.222:58107
+[19:10:00] Would keep the MVP at 58005/58007 untouched.
+[19:10:00] NOTE: on an upgrade the installed bindings are kept; the ports above apply only to a first install.

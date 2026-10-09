@@ -140,6 +140,8 @@ public sealed partial class OnboardTcpServer : BackgroundService
         OnboardMessageProcessor processor = scope.ServiceProvider.GetRequiredService<OnboardMessageProcessor>();
         OnboardConnectionState state = new() { DeferOutboundUntilResponseWritten = true };
         string? attachedAgvId = null;
+        // The vehicle this connection's SessionHello named while its handshake is not done (control-server#483).
+        string? handshakingAgvId = null;
         // ADR-cross-0027: the peer heartbeats every two seconds, and six seconds without a legal message means
         // the session is lost even though the socket is still open. Until control-server#234 nothing measured
         // this: a vehicle whose process had hung kept a Ready session row for as long as its TCP connection
@@ -193,10 +195,23 @@ public sealed partial class OnboardTcpServer : BackgroundService
                 // processor begins the new session, a push for either session would land in the handshake. No
                 // onboard does this today -- it opens a new socket per handshake -- but the gate is "this handshake
                 // is done", not "a handshake once finished here".
-                if (attachedAgvId is not null && IsSessionHello(line))
+                bool hello = IsSessionHello(line, out string? helloAgvId);
+                if (attachedAgvId is not null && hello)
                 {
                     _peer.Detach(attachedAgvId, connection);
                     attachedAgvId = null;
+                }
+                // Marked handshaking before the hello is processed (control-server#483, review): processing it clears the
+                // vehicle's reported pending facts, and the vehicle replays its results before its recovery report is
+                // answered, so from here until the attach below an administrator must not read it as gone.
+                if (hello && helloAgvId is not null)
+                {
+                    if (handshakingAgvId is not null)
+                    {
+                        _peer.EndHandshake(handshakingAgvId, connection);
+                    }
+                    _peer.BeginHandshake(helloAgvId, connection);
+                    handshakingAgvId = helloAgvId;
                 }
                 string response = await processor.ProcessAsync(line, state, cancellationToken).ConfigureAwait(false);
                 // Refreshed only once the message has been processed: ADR-cross-0027 counts legal protocol
@@ -238,6 +253,12 @@ public sealed partial class OnboardTcpServer : BackgroundService
                 {
                     _peer.Attach(state, connection);
                     attachedAgvId = state.AgvId;
+                    if (handshakingAgvId is not null)
+                    {
+                        // Attach ended it for the vehicle the session established; one the hello named otherwise ends here.
+                        _peer.EndHandshake(handshakingAgvId, connection);
+                        handshakingAgvId = null;
+                    }
                 }
                 await processor.FlushDeferredOutboundAsync(state, cancellationToken).ConfigureAwait(false);
             }
@@ -248,22 +269,35 @@ public sealed partial class OnboardTcpServer : BackgroundService
             {
                 _peer.Detach(attachedAgvId, connection);
             }
+            if (handshakingAgvId is not null)
+            {
+                _peer.EndHandshake(handshakingAgvId, connection);
+            }
         }
     }
 
     /// <summary>
-    /// Whether this line opens a handshake. A line that is not JSON is not one; the processor refuses it and
-    /// that ends the connection, as it always did.
+    /// Whether this line opens a handshake, and the vehicle its envelope names when it names one. A line that is not
+    /// JSON is not one; the processor refuses it and that ends the connection, as it always did.
     /// </summary>
-    private static bool IsSessionHello(string line)
+    private static bool IsSessionHello(string line, out string? agvId)
     {
+        agvId = null;
         try
         {
             using JsonDocument document = JsonDocument.Parse(line);
-            return document.RootElement.ValueKind == JsonValueKind.Object &&
-                   document.RootElement.TryGetProperty("messageType", out JsonElement messageType) &&
-                   messageType.ValueKind == JsonValueKind.String &&
-                   messageType.GetString() == "SessionHello";
+            bool hello = document.RootElement.ValueKind == JsonValueKind.Object &&
+                         document.RootElement.TryGetProperty("messageType", out JsonElement messageType) &&
+                         messageType.ValueKind == JsonValueKind.String &&
+                         messageType.GetString() == "SessionHello";
+            if (hello &&
+                document.RootElement.TryGetProperty("agvId", out JsonElement named) &&
+                named.ValueKind == JsonValueKind.String &&
+                !string.IsNullOrWhiteSpace(named.GetString()))
+            {
+                agvId = named.GetString();
+            }
+            return hello;
         }
         catch (JsonException)
         {

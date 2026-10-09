@@ -10,6 +10,16 @@ public enum RecoveryWorkflowState
     HistoricalOnly
 }
 
+/// <summary>Outcomes a recovery workflow is judged on by the server itself rather than by a result. Not wire codes.</summary>
+public static class RecoveryWorkflowOutcomes
+{
+    /// <summary>
+    /// An administrator closed the workflow's session because its result would never come (control-server#483). A result
+    /// arriving afterwards is refused whole, and the refusal names this.
+    /// </summary>
+    public const string AdministratorClosed = "ADMINISTRATOR_CLOSED";
+}
+
 /// <remarks>
 /// <see cref="ClosedReason"/> is v3's required nullable <c>closedReason</c> (control-server#382): a registry
 /// <c>ErrorCode</c> saying why a closed session closed without its action's result being reconciled, or null. Since

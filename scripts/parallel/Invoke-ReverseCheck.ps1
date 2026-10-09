@@ -92,7 +92,10 @@ function Invoke-Case {
         [scriptblock] $Mutate,
         [string] $Observe,
         [string] $ExpectFragment,
-        [switch] $ExpectAccepted
+        [switch] $ExpectAccepted,
+        # When set: the refusal must carry exactly this many reasons, every one of them containing
+        # $ExpectFragment. Without it, one matching reason among others is enough.
+        [int] $ExpectReasonCount = 0
     )
 
     Write-Section $Name
@@ -142,7 +145,11 @@ function Invoke-Case {
         $reasons = @($message -split "`r?`n" | Where-Object { $_ -like '  - *' })
         Write-Host "  refused with $($reasons.Count) reason(s):"
         $reasons | ForEach-Object { Write-Host "         $($_.Trim())" }
-        if ($message -like "*$ExpectFragment*") {
+        $matching = @($reasons | Where-Object { $_ -like "*$ExpectFragment*" })
+        if ($ExpectReasonCount -gt 0 -and ($reasons.Count -ne $ExpectReasonCount -or $matching.Count -ne $ExpectReasonCount)) {
+            Write-Host "  FAIL   expected exactly $ExpectReasonCount reason(s), all '$ExpectFragment'; got $($reasons.Count), $($matching.Count) matching" -ForegroundColor Red
+            $script:failed++
+        } elseif ($message -like "*$ExpectFragment*") {
             Write-Host "  PASS   refused for the expected reason ('$ExpectFragment')" -ForegroundColor Green
             $script:passed++
         } else {
@@ -160,17 +167,16 @@ function Invoke-Case {
 # below could be passing because ConvertTo-Json reshaped the file, not because of the
 # injection -- and the whole run would prove nothing about the checks.
 # ---------------------------------------------------------------------------------
-Write-Section 'case -1: the shipped file, untouched, is refused for exactly its three map-26 placeholders'
-# control-server#262 re-review, M3. The deployment cannot run on the shipped file until the
-# two map-26 values with no source yet are filled in from the site; that is now a check. Exactly
-# three failures, all placeholders: more would mean something else is wrong with the file.
+Write-Section 'case -1: the shipped file, untouched, is accepted'
+# control-server#262 re-review, M3 refused the shipped file for its three map-26 placeholders;
+# control-server#411 (2026-10-07) filled them, so the untouched file must now pass with no failure.
 $shippedFailures = @(Test-ParallelInstanceDefinition -Definition (Read-ParallelInstanceDefinition -Path $resolved))
 $shippedFailures | ForEach-Object { Write-Host "         - $_" }
-if ($shippedFailures.Count -eq 3 -and @($shippedFailures | Where-Object { $_ -like '*is still the placeholder*' }).Count -eq 3) {
-    Write-Host '  PASS   refused for exactly the three placeholders' -ForegroundColor Green
+if ($shippedFailures.Count -eq 0) {
+    Write-Host '  PASS   accepted as it stands' -ForegroundColor Green
     $passed++
 } else {
-    Write-Host "  FAIL   expected exactly the three placeholder failures, got $($shippedFailures.Count)" -ForegroundColor Red
+    Write-Host "  FAIL   expected no failures, got $($shippedFailures.Count)" -ForegroundColor Red
     $failed++
 }
 
@@ -180,6 +186,10 @@ $fillTree = Get-Content -LiteralPath $resolved -Raw -Encoding utf8 | ConvertFrom
 $fillTree['journeyRuntime']['dispatchZone'] = 'MAP-26-WIRE_TO_GATE'
 $fillTree['journeyRuntime']['allowedDispatchZones'] = @('MAP-26-WIRE_TO_GATE')
 $fillTree['journeyRuntime']['admissionPolicyDeploymentId'] = 'MAP-26-WIRE_TO_GATE-SELFTEST'
+# The shipped file has the runtime and the route graph off (control-server#411 review S2); the cases
+# below include checks that only apply when they are on, so the filled baseline turns them on.
+$fillTree['journeyRuntime']['enabled'] = $true
+$fillTree['routeGraph']['enabled'] = $true
 Write-DefinitionFile $fillTree
 $filledPath = Join-Path ([IO.Path]::GetTempPath()) "instance-filled-$([guid]::NewGuid().ToString('N')).json"
 [IO.File]::Copy($resolved, $filledPath, $true)
@@ -316,6 +326,20 @@ Invoke-Case -Name 'case 18: the MVP map 25 in both places' `
     -Observe 'routeGraph.mapId, journeyRuntime.mapId' `
     -Mutate { param($t) $t['routeGraph']['mapId'] = 25; $t['journeyRuntime']['mapId'] = 25; $t } `
     -ExpectFragment 'is 25, the MVP''s map'
+
+# control-server#411 filled the three map-26 placeholders in the shipped file, so case -1 no longer
+# exercises the placeholder refusal; this case puts them back in the real file to keep it covered.
+Invoke-Case -Name 'case 19: the three map-26 placeholders put back' `
+    -Observe 'journeyRuntime.dispatchZone, allowedDispatchZones, admissionPolicyDeploymentId' `
+    -Mutate {
+        param($t)
+        $t['journeyRuntime']['dispatchZone'] = 'REPLACE_WITH_MAP26_DISPATCH_ZONE'
+        $t['journeyRuntime']['allowedDispatchZones'] = @('REPLACE_WITH_MAP26_DISPATCH_ZONE')
+        $t['journeyRuntime']['admissionPolicyDeploymentId'] = 'REPLACE_WITH_MAP26_ADMISSION_POLICY_DEPLOYMENT_ID'
+        $t
+    } `
+    -ExpectFragment 'is still the placeholder' `
+    -ExpectReasonCount 3
 
 # ---------------------------------------------------------------- teardown ---
 

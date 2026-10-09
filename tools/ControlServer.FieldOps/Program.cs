@@ -134,7 +134,7 @@ internal static partial class Program
             ApproveChargingPolicyCommand => await ApproveChargingPolicyAsync(context, governance, options, now),
             ActivateChargingPolicyCommand => await ActivateChargingPolicyAsync(context, governance, options, now),
             ReadChargingPolicyCommand => await ReadChargingPolicyAsync(context, governance, options),
-            ReleaseStationExclusivityCommand => await ReleaseStationExclusivityAsync(context, governance, options, now),
+            ReleaseStationExclusivityCommand => await ReleaseStationExclusivityAsync(context, governance, databasePath, options, now),
             _ => Usage($"unknown command '{args[0]}'")
         };
     }
@@ -769,7 +769,8 @@ internal static partial class Program
             "      server running: --server <base url> [--credential-env <variable>]   (no --database; goes through the server)");
         Console.Error.WriteLine(
             "      server stopped: --database <path> --probe-server <base url>"
-            + "   (writes only if the connection is refused; an answer, a timeout or any other error writes nothing)");
+            + "   (writes only if the connection is refused; an answer, a timeout or any other error writes nothing;"
+            + " then takes the lock the running server holds on the database file, DATABASE_IN_USE if another process has it)");
         Console.Error.WriteLine(
             "      give --probe-server as the server's literal IP (e.g. http://127.0.0.1:58007/), not localhost:"
             + " each resolved address costs about 2 s to be refused, which runs into the 5 s probe timeout");

@@ -58,11 +58,65 @@ namespace ControlServer.Host.Transport;
 /// ended the connection instead, so the outcome for the vehicle is the same; what changed is which end closes.
 /// </para>
 /// </remarks>
-public sealed class OnboardPeer : IOnboardPeer
+public sealed class OnboardPeer : IOnboardPeer, IOnboardConnectionPresence
 {
     private readonly object _gate = new();
     private readonly Dictionary<string, (OnboardPeerConnection Connection, long SessionGeneration)> _connections =
         new(StringComparer.Ordinal);
+
+    // Connections that sent a SessionHello naming a vehicle and are not routable yet (control-server#483). Kept apart
+    // from _connections: nothing is ever sent to them through here, they only answer IsHandshaking.
+    private readonly Dictionary<string, HashSet<OnboardPeerConnection>> _handshaking = new(StringComparer.Ordinal);
+
+    /// <summary>
+    /// A connection has sent a SessionHello naming <paramref name="agvId"/>. Recorded before the hello is processed,
+    /// so there is no moment between the hello clearing the vehicle's reported pending facts and the vehicle replaying
+    /// its results in which the vehicle reads as neither connected nor handshaking. Ends at <see cref="Attach"/> or
+    /// <see cref="EndHandshake"/>.
+    /// </summary>
+    internal void BeginHandshake(string agvId, OnboardPeerConnection connection)
+    {
+        ArgumentException.ThrowIfNullOrWhiteSpace(agvId);
+        ArgumentNullException.ThrowIfNull(connection);
+        lock (_gate)
+        {
+            if (!_handshaking.TryGetValue(agvId, out HashSet<OnboardPeerConnection>? connections))
+            {
+                connections = [];
+                _handshaking[agvId] = connections;
+            }
+            connections.Add(connection);
+        }
+    }
+
+    /// <summary>The connection's handshake ended without it becoming routable: it closed, or it failed.</summary>
+    internal void EndHandshake(string agvId, OnboardPeerConnection connection)
+    {
+        ArgumentException.ThrowIfNullOrWhiteSpace(agvId);
+        lock (_gate)
+        {
+            RemoveHandshakingLocked(agvId, connection);
+        }
+    }
+
+    /// <inheritdoc/>
+    public bool IsHandshaking(string agvId)
+    {
+        ArgumentException.ThrowIfNullOrWhiteSpace(agvId);
+        lock (_gate)
+        {
+            return _handshaking.ContainsKey(agvId);
+        }
+    }
+
+    private void RemoveHandshakingLocked(string agvId, OnboardPeerConnection connection)
+    {
+        if (_handshaking.TryGetValue(agvId, out HashSet<OnboardPeerConnection>? connections) &&
+            connections.Remove(connection) && connections.Count == 0)
+        {
+            _handshaking.Remove(agvId);
+        }
+    }
 
     /// <summary>Makes a connection routable. Refused unless its session has finished the handshake.</summary>
     internal void Attach(OnboardConnectionState session, OnboardPeerConnection connection)
@@ -90,6 +144,7 @@ public sealed class OnboardPeer : IOnboardPeer
             }
 
             _connections[agvId] = (connection, generation);
+            RemoveHandshakingLocked(agvId, connection);
         }
         connection.Addressee = $"'{agvId}' (session generation {generation})";
     }
@@ -104,6 +159,18 @@ public sealed class OnboardPeer : IOnboardPeer
             {
                 _connections.Remove(agvId);
             }
+        }
+    }
+
+    /// <inheritdoc/>
+    public long? ConnectedSessionGeneration(string agvId)
+    {
+        ArgumentException.ThrowIfNullOrWhiteSpace(agvId);
+        lock (_gate)
+        {
+            return _connections.TryGetValue(agvId, out (OnboardPeerConnection, long SessionGeneration) attached)
+                ? attached.SessionGeneration
+                : null;
         }
     }
 
