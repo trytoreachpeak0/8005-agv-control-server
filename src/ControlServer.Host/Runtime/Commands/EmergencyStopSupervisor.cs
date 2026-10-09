@@ -68,7 +68,9 @@ public sealed record EmergencyReleaseAllowance(long FaultGeneration, string? Hel
 /// <see cref="EmergencyStopSupervisor.DoorReleaseHistoryAsync"/>.
 /// </summary>
 /// <param name="MovedAfterDoorRelease">A stop asked for after the first door-cause release gave motion as a reason.</param>
-/// <param name="MovedAgainAfterLaterRelease">A door-cause release took effect after the first such stop.</param>
+/// <param name="MovedAgainAfterLaterRelease">
+/// A door-cause release took effect after the first such stop, and a stop after that release gave motion as a reason too.
+/// </param>
 public sealed record DoorReleaseHistory(bool MovedAfterDoorRelease, bool MovedAgainAfterLaterRelease);
 
 /// <summary>
@@ -620,10 +622,12 @@ public sealed class EmergencyStopSupervisor(
     /// <summary>
     /// What happened in this fault generation after its first door-cause release (<see cref="WasReleasedOnDoorCauseAsync"/>)
     /// took effect: whether a stop this server asked for since then gave a reason <paramref name="isMotion"/> accepts, and
-    /// whether a door-cause release took effect after the first such stop (control-server#527).
+    /// whether, after a door-cause release that followed the first such stop, another stop gave one (control-server#527).
     /// </summary>
     /// <remarks>
-    /// For the fault coordinator, which withdraws the door allowance on the first and its last way out on the second. Read off
+    /// For the fault coordinator, which withdraws the door allowance on the first and its last way out on the second. A stop
+    /// after that later release for any other reason -- the doors open again -- withdraws nothing (review M-1): only motion
+    /// says the doors were not the whole of it. Read off
     /// the receipts, like the release reasons, so it survives a restart without a column of its own. Only a stop that issued a
     /// trigger counts: a request that joined an open episode recorded nothing, and after a confirmed release the episode is
     /// closed, so every stop asked for after it does issue one. Which reasons are motion is the coordinator's to say.
@@ -660,14 +664,19 @@ public sealed class EmergencyStopSupervisor(
         RiotOrderCommandAttempt? firstMotionStop = triggers.FirstOrDefault(trigger =>
             trigger.FaultGeneration == faultGeneration &&
             trigger.IssuedAt > doorReleases[0].IssuedAt &&
-            (ReceiptReason(trigger) ?? string.Empty)
-                .Split(',', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries)
-                .Any(isMotion));
-        return firstMotionStop is null
-            ? new DoorReleaseHistory(MovedAfterDoorRelease: false, MovedAgainAfterLaterRelease: false)
-            : new DoorReleaseHistory(
-                MovedAfterDoorRelease: true,
-                MovedAgainAfterLaterRelease: doorReleases.Any(release => release.IssuedAt > firstMotionStop.IssuedAt));
+            StopReasons(trigger).Any(isMotion));
+        if (firstMotionStop is null)
+        {
+            return new DoorReleaseHistory(MovedAfterDoorRelease: false, MovedAgainAfterLaterRelease: false);
+        }
+
+        RiotOrderCommandAttempt? laterRelease = doorReleases.FirstOrDefault(release => release.IssuedAt > firstMotionStop.IssuedAt);
+        return new DoorReleaseHistory(
+            MovedAfterDoorRelease: true,
+            MovedAgainAfterLaterRelease: laterRelease is not null && triggers.Any(trigger =>
+                trigger.FaultGeneration == faultGeneration &&
+                trigger.IssuedAt > laterRelease.IssuedAt &&
+                StopReasons(trigger).Any(isMotion)));
     }
 
     /// <summary>
@@ -1024,6 +1033,10 @@ public sealed class EmergencyStopSupervisor(
         ArgumentNullException.ThrowIfNull(release);
         return string.Equals(ReceiptReason(release), DoorCauseRemovedReason, StringComparison.Ordinal);
     }
+
+    /// <summary>The comma-separated codes of a trigger's receipt reason, one per entry.</summary>
+    private static string[] StopReasons(RiotOrderCommandAttempt trigger) =>
+        (ReceiptReason(trigger) ?? string.Empty).Split(',', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries);
 
     /// <summary>The request reason written on an emergency command's receipt, or null when there is no readable one.</summary>
     internal static string? ReceiptReason(RiotOrderCommandAttempt attempt)

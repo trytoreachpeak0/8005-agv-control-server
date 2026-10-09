@@ -828,10 +828,22 @@ public sealed class VehicleFaultCoordinator(
         return DoorReleaseAllowance(fault, context, holdOutcome, order, history);
     }
 
-    /// <summary>The stop-proof codes that say the vehicle moved, as opposed to that it could not be watched.</summary>
+    /// <summary>
+    /// The stop-proof codes that cannot rule out that the vehicle moved: it read as moving, its position changed, its motion
+    /// could not be read, or the reading was stale (control-server#527 review S-1). Not a missing station, too few samples or
+    /// badly spaced ones -- those withhold the proof without saying anything about motion, and a stop for the doors opening
+    /// again between stations gives exactly those.
+    /// </summary>
+    /// <remarks>
+    /// The unreadable and stale ones count because the release this withdraws is automatic: a vehicle nobody can see standing
+    /// still is not released on the doors alone. Counting only <see cref="StopProof.MotionObserved"/> left the same oscillation
+    /// open for them (review probe D: four triggers and four releases in three cycles).
+    /// </remarks>
     internal static bool CannotExcludeMotion(string stopReason) =>
         string.Equals(stopReason, StopProof.MotionObserved, StringComparison.Ordinal) ||
-        string.Equals(stopReason, StopProof.PositionChanged, StringComparison.Ordinal);
+        string.Equals(stopReason, StopProof.PositionChanged, StringComparison.Ordinal) ||
+        string.Equals(stopReason, StopProof.MotionUnknown, StringComparison.Ordinal) ||
+        string.Equals(stopReason, StopProof.EvidenceStale, StringComparison.Ordinal);
 
     private static bool IsDoorFault(VehicleFaultFact fault) =>
         string.Equals(fault.EvidenceCode, VehicleFaultEvidence.DoorNotProvenLocked, StringComparison.Ordinal);
@@ -846,20 +858,20 @@ public sealed class VehicleFaultCoordinator(
     /// then names no order, and the supervisor releases only while RIoT lists none at all for the vehicle.
     /// <para>
     /// <b>Not past the held order once the vehicle was stopped for motion after this generation's door release</b>
-    /// (<see cref="DoorReleaseHistory.MovedAfterDoorRelease"/>, control-server#527). The release rests on the doors being the
-    /// cause; a vehicle that read as moving after it, with its order held, has shown that they were not the whole of it, and
-    /// released again on the doors it was stopped again on the next reading -- nine triggers and fourteen releases in a minute
-    /// on agv02 on 2026-10-09. Motion in the stop that started the episode does not count: a vehicle stopped for its doors
-    /// while driving is moving then by definition, and counting it would take this release from exactly the vehicles it was
-    /// written for.
+    /// (<see cref="DoorReleaseHistory.MovedAfterDoorRelease"/>, control-server#527) -- motion here meaning any reason that
+    /// cannot rule it out (<see cref="CannotExcludeMotion"/>). The release rests on the doors being the cause; a vehicle that
+    /// read as moving after it, with its order held, has shown that they were not the whole of it, and released again on the
+    /// doors it was stopped again on the next reading -- nine triggers and fourteen releases in a minute on agv02 on
+    /// 2026-10-09. Motion in the stop that started the episode does not count: a vehicle stopped for its doors while driving is
+    /// moving then by definition, and counting it would take this release from exactly the vehicles it was written for.
     /// </para>
     /// <para>
-    /// <b>The branch for an order ended in RIoT stays open once more</b>, because for a loaded vehicle it is the only way out
-    /// that is not the database: REQ-0356 needs the vehicle empty, and a clearance or a resume refuses while it is latched.
-    /// Ending this server's own order is a person's act (the duty engineer, <c>docs/emergency-stop-field-fallback.md</c>),
-    /// and with no unfinished order RIoT has nothing left to drive the vehicle with. Once, not every time: if a door-cause
-    /// release has already taken effect after the motion stop (<see cref="DoorReleaseHistory.MovedAgainAfterLaterRelease"/>),
-    /// nothing is released on the doors again in this generation, so this branch cannot oscillate either.
+    /// <b>The branch for an order ended in RIoT stays open</b>, because for a loaded vehicle it is the only way out that is not
+    /// the database: REQ-0356 needs the vehicle empty, and a clearance or a resume refuses while it is latched. Ending this
+    /// server's own order is a person's act (the duty engineer, <c>docs/emergency-stop-field-fallback.md</c>), and with no
+    /// unfinished order RIoT has nothing left to drive the vehicle with. It closes only when the vehicle moves again after a
+    /// release it earned (<see cref="DoorReleaseHistory.MovedAgainAfterLaterRelease"/>), so it cannot oscillate either; a
+    /// stop after that release for the doors opening again leaves it open, as for any door release (review M-1).
     /// </para>
     /// </remarks>
     internal static EmergencyReleaseAllowance? DoorReleaseAllowance(
