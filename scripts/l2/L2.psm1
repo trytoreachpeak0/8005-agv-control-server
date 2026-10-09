@@ -948,19 +948,27 @@ function Invoke-L2Query {
         [Parameter(Mandatory)][string]$Sql
     )
 
+    # Closed in a finally: a reader left open inside Invoke-L2ReadSnapshot keeps the connection on that block's snapshot for
+    # every later read (L2ReadSnapshot.psm1, control-server#510).
     $command = $Connection.CreateCommand()
-    $command.CommandText = $Sql
-    $reader = $command.ExecuteReader()
     $rows = @()
-    while ($reader.Read()) {
-        $row = [ordered]@{}
-        for ($index = 0; $index -lt $reader.FieldCount; $index++) {
-            $row[$reader.GetName($index)] = if ($reader.IsDBNull($index)) { $null } else { $reader.GetValue($index) }
+    try {
+        $command.CommandText = $Sql
+        $reader = $command.ExecuteReader()
+        try {
+            while ($reader.Read()) {
+                $row = [ordered]@{}
+                for ($index = 0; $index -lt $reader.FieldCount; $index++) {
+                    $row[$reader.GetName($index)] = if ($reader.IsDBNull($index)) { $null } else { $reader.GetValue($index) }
+                }
+                $rows += [pscustomobject]$row
+            }
+        } finally {
+            $reader.Close()
         }
-        $rows += [pscustomobject]$row
+    } finally {
+        $command.Dispose()
     }
-    $reader.Close()
-    $command.Dispose()
     return , $rows
 }
 

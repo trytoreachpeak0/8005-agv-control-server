@@ -1,0 +1,64 @@
+{
+  "schemaVersion": 1,
+  "scenario": "charging-full-cycle",
+  "runId": "20261008T030159958Z",
+  "outcome": "PASS",
+  "failureReason": "",
+  "identity": {
+    "agvId": "AGV-L2-001",
+    "protocolReleaseIdentity": {
+      "repository": "8005-agv-protocol",
+      "releaseVersion": "2.0.0",
+      "tag": "protocol-v2.0.0",
+      "commit": "86575456c847041515b7b75e8851a00e0d939804",
+      "protocolVersion": 3,
+      "profileId": "AGV_FULL_PRODUCT",
+      "manifestSha256": "4ac095ad371d3aaa60d7c2e0198cfd64cff5f3068230fc3420e9cdf5616422a7",
+      "schemaBundleSha256": "9db0dbdc22fed7e39edf8d01b1fc40a12f5d70a7414f696f909ab2a87eb8c221",
+      "vectorsSha256": "391fa69a7d6e9f86ea139ba4c74eadf4994bf0a87e89d3dc5258dd7968d9182a",
+      "approvalStatus": "APPROVED_RELEASE"
+    },
+    "controlServerCommit": "a0553a0a15d73e3487f0c9cdbc3cc96b6ec7589a",
+    "batchId": "unspecified",
+    "rig": "SyntheticOnboard",
+    "vehicleKey": "BROKERX-L2-0001",
+    "stageRoot": "C:\\Users\\szy\\AppData\\Local\\Temp\\l2-20261008T030159958Z"
+  },
+  "assertions": [
+    {
+      "id": "L2-CFC-01",
+      "description": "充电单完成、车在 211 上报 CHARGING：211 由预占转为这一趟的占用，周期进 CHARGING（或已涨满到 COMPLETE），记下了到桩时刻",
+      "outcome": "PASS",
+      "expected": "CHARGING | OCCUPIED BROKERX-L2-0001 charging:BROKERX-L2-0001:20261008T030217071Z (arrived)",
+      "actual": "CHARGING | OCCUPIED BROKERX-L2-0001 charging:BROKERX-L2-0001:20261008T030217071Z (arrived '2026-10-08 03:02:19.0555492+00:00')"
+    },
+    {
+      "id": "L2-CFC-02",
+      "description": "电量涨过完成阈值 80：周期 COMPLETE，CHARGING 用途释放（原因 CHARGING_COMPLETE），充电旅程以 CHARGING_COMPLETE 收尾；211 仍是这辆车的占用",
+      "outcome": "PASS",
+      "expected": "COMPLETE | claim (none) | OCCUPIED BROKERX-L2-0001 charging:BROKERX-L2-0001:20261008T030217071Z | journey Completed CHARGING_COMPLETE | released CHARGING_COMPLETE / battery >= 80",
+      "actual": "COMPLETE | claim (none) | OCCUPIED BROKERX-L2-0001 charging:BROKERX-L2-0001:20261008T030217071Z | journey Completed CHARGING_COMPLETE | released CHARGING_COMPLETE / battery 80"
+    },
+    {
+      "id": "L2-CFC-03",
+      "description": "充满之后没有新的需求：服务端不为离桩建任何单（RIoT 上仍只有那一张充电单），211 仍被这辆车占着",
+      "outcome": "PASS",
+      "expected": "W2G-CHARGE-BROKERX-L2-0001-20261008T030217071Z | OCCUPIED BROKERX-L2-0001 charging:BROKERX-L2-0001:20261008T030217071Z",
+      "actual": "W2G-CHARGE-BROKERX-L2-0001-20261008T030217071Z | OCCUPIED BROKERX-L2-0001 charging:BROKERX-L2-0001:20261008T030217071Z"
+    },
+    {
+      "id": "L2-CFC-04",
+      "description": "需求派给了充满的这辆车（仍报 CHARGING），开往取货站的单已确认、假 RIoT 在它队首插了 act(78,2,0)；从下达起另等十秒，211 一直是充电那一趟的占用、周期一直是 COMPLETE（下达下一单不释放）",
+      "outcome": "PASS",
+      "expected": "BROKERX-L2-0001 / act 78 2 0|- / OCCUPIED BROKERX-L2-0001 charging:BROKERX-L2-0001:20261008T030217071Z | COMPLETE",
+      "actual": "BROKERX-L2-0001 / act 78 2 - / OCCUPIED BROKERX-L2-0001 charging:BROKERX-L2-0001:20261008T030217071Z | COMPLETE"
+    },
+    {
+      "id": "L2-CFC-05",
+      "description": "车离开 211、不再充电、桩可确认空闲之后：211 的独占释放（原因 CHARGER_RELEASED_ON_DEPARTURE），周期以 CHARGING_DEPARTED 收尾、回 NOT_CHARGING",
+      "outcome": "PASS",
+      "expected": "(none) | CHARGER_RELEASED_ON_DEPARTURE | ENDED NOT_CHARGING CHARGING_DEPARTED / NO_CHARGE at 12",
+      "actual": "(none) | CHARGER_RELEASED_ON_DEPARTURE | ENDED NOT_CHARGING CHARGING_DEPARTED / NO_CHARGE at 12"
+    }
+  ]
+}

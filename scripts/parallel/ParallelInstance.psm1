@@ -142,7 +142,7 @@ $script:AllowedKeys = [ordered]@{
     '' = @('instanceId', 'serviceName', 'installRoot', 'dataRoot', 'backupRoot', 'packageRoot',
         'opsRoot', 'stagingRoot', 'listenAddress', 'healthBindAddress', 'onboardPort', 'healthPort',
         'dashboardPort', 'mesIngest', 'fakeMesIngest', 'routeGraph', 'riotCreateDispatch', 'riotForeignOrderCancel',
-        'journeyRuntime', 'vehicleFaultRecovery', 'fieldOperatorRoles')
+        'journeyRuntime', 'vehicleFaultRecovery', 'fieldOperatorRoles', 'taskTypeStations')
     'mesIngest' = @('baseUrl')
     'fakeMesIngest' = @('installRoot', 'port', 'taskName', 'seedPath')
     'routeGraph' = @('enabled', 'mapId', 'designStateTtl', 'runtimeRefreshPeriod', 'runtimeStateMaxAge')
@@ -158,6 +158,8 @@ $script:AllowedKeys = [ordered]@{
     # this instance's own variable name, so no definition can point the service at the MVP's.
     'vehicleFaultRecovery' = @('enabled')
     'fieldOperatorRoles' = @('path', 'onboardClearanceEntryDeclared')
+    # control-server#518. TaskTypeStationPreset.SettingsFileKey; there is no options class to mirror.
+    'taskTypeStations' = @('settingsFile')
 }
 
 # Names only this instance uses, shared by the installer and the uninstaller so the two cannot
@@ -556,13 +558,21 @@ function Test-ParallelInstanceDefinition {
             else set moving -- a person moving it in RIoT, an experiment -- so it is a RIoT write
             authorized on its own, apart from placing orders, and made a visible argument for the
             same reason as -AllowRiotCreateDispatch.
+
+        .PARAMETER ForStopDirection
+            For the two ways out only: uninstalling, and closing the RIoT dispatch gate. Tolerates a
+            definition with no taskTypeStations at all -- one installed before control-server#518 --
+            and nothing else: a taskTypeStations that is written is checked as always. Never for
+            installing, rolling back or opening the gate (PR #523 review, item 1): those start
+            something, and a definition without the preset must not.
     #>
     [CmdletBinding()]
     [OutputType([string[]])]
     param(
         [Parameter(Mandatory = $true)] $Definition,
         [switch] $AllowRiotCreateDispatch,
-        [switch] $AllowRiotForeignOrderCancel
+        [switch] $AllowRiotForeignOrderCancel,
+        [switch] $ForStopDirection
     )
 
     [string[]] $failures = @()
@@ -814,8 +824,10 @@ function Test-ParallelInstanceDefinition {
             $failures += "$($leaf.Path) is '$($leaf.Value)', an identifier of the MVP's map 25."
         }
         # The same refusal the onboard deployment makes of its site files: a value still marked
-        # as "fill me in" is refused, not guessed. The shipped definition carries these for the
-        # two map-26 values that have no source yet (see scripts/parallel/README.md).
+        # as "fill me in" is refused, not guessed. The shipped definition carried these for the
+        # map-26 values until control-server#411 filled them (see scripts/parallel/README.md); the
+        # check stays for the next placeholder. Covered by Test-ParallelInstance.ps1 ('a placeholder
+        # left in dispatchZone') and Invoke-ReverseCheck.ps1 (case 19).
         if ($leaf.Value -match '(?i)REPLACE_') {
             $failures += "$($leaf.Path) is still the placeholder '$($leaf.Value)'; fill in the value from the site before deploying."
         }
@@ -875,6 +887,38 @@ function Test-ParallelInstanceDefinition {
         $failures += 'fieldOperatorRoles.onboardClearanceEntryDeclared must be stated explicitly.'
     } elseif ($roles['onboardClearanceEntryDeclared'] -isnot [bool]) {
         $failures += "fieldOperatorRoles.onboardClearanceEntryDeclared must be a JSON boolean, got '$($roles['onboardClearanceEntryDeclared'])'."
+    }
+
+    # ------------------------------------------------ task type station preset ---
+
+    # control-server#518. The package's default preset binds map 25; with the runtime on, the Host
+    # refuses to start unless the preset's map is JourneyRuntime:mapId (BindingMapMismatch). So the
+    # definition names the per-map preset the package ships beside it, always -- the runtime is
+    # switched on later by hand, and an install that does not carry the name then fails at that
+    # step instead of here. A bare file name only: it resolves against the install root, which every
+    # install replaces with the package, so the file always comes from the same build as the Host.
+    # The map in the name has to be the runtime's map; the Host test pins each file's content to it.
+    #
+    # An installed definition older than #518 has no such section, and the new module meets it on the way out: 20
+    # copies the current module before every gate change, and a reinstall that fails after copying the scripts but
+    # before recording its definition leaves the new module beside the old definition for 19 -Uninstall. Closing
+    # the gate and uninstalling must not be the steps that refuse (-ForStopDirection); an absent section only.
+    $stations = Get-Node -Root $Definition -Key 'taskTypeStations'
+    if ($ForStopDirection -and -not (Test-KeyPresent -Node $Definition -Key 'taskTypeStations')) {
+        # Tolerated: see above.
+    } elseif ($null -eq $stations) {
+        $failures += 'taskTypeStations must be an object naming the per-map station preset the package ships (settingsFile).'
+    } else {
+        $presetFile = (Test-KeyPresent -Node $stations -Key 'settingsFile') ? $stations['settingsFile'] : $null
+        $runtimeMap = ($null -ne $journey -and (Test-KeyPresent -Node $journey -Key 'mapId')) ? (ConvertTo-IntegerOrNull $journey['mapId']) : $null
+        if ($presetFile -isnot [string] -or [string]::IsNullOrWhiteSpace($presetFile)) {
+            $failures += 'taskTypeStations.settingsFile must be a non-empty file name.'
+        # \z, not $: in .NET '$' also matches before a final line feed (PR #523 review).
+        } elseif ($presetFile -cnotmatch '\Atask-type-stations\.map-([1-9][0-9]*)\.settings\.json\z') {
+            $failures += "taskTypeStations.settingsFile ('$presetFile') must be a bare file name of the form task-type-stations.map-<mapId>.settings.json, one of the per-map presets the package ships next to the Host."
+        } elseif ([int] $Matches[1] -ne $runtimeMap) {
+            $failures += "taskTypeStations.settingsFile ('$presetFile') is the preset for map $($Matches[1]), but journeyRuntime.mapId is $runtimeMap; the Host would refuse to start the runtime (BindingMapMismatch)."
+        }
     }
 
     return $failures
@@ -1431,7 +1475,9 @@ function Assert-ParallelInstanceDefinition {
     param(
         [Parameter(Mandatory = $true)] $Definition,
         [switch] $AllowRiotCreateDispatch,
-        [switch] $AllowRiotForeignOrderCancel
+        [switch] $AllowRiotForeignOrderCancel,
+        # See Test-ParallelInstanceDefinition: uninstalling and closing the gate only.
+        [switch] $ForStopDirection
     )
 
     # @() around the call, not just the [string[]] cast: PowerShell unwraps an empty array to
@@ -1439,7 +1485,7 @@ function Assert-ParallelInstanceDefinition {
     # StrictMode the .Count below threw on exactly the input this function is supposed to
     # accept. The self-test only exercised Test-, which its own callers already wrapped.
     [string[]] $failures = @(Test-ParallelInstanceDefinition -Definition $Definition -AllowRiotCreateDispatch:$AllowRiotCreateDispatch `
-            -AllowRiotForeignOrderCancel:$AllowRiotForeignOrderCancel)
+            -AllowRiotForeignOrderCancel:$AllowRiotForeignOrderCancel -ForStopDirection:$ForStopDirection)
     if ($failures.Count -gt 0) {
         $listed = ($failures | ForEach-Object { "  - $_" }) -join [Environment]::NewLine
         throw ("The parallel instance definition was refused ($($failures.Count) reason(s)):" +
@@ -1496,6 +1542,8 @@ function New-ParallelInstanceConfigurationOverlay {
             path = $Definition['fieldOperatorRoles']['path']
             onboardClearanceEntryDeclared = $Definition['fieldOperatorRoles']['onboardClearanceEntryDeclared']
         }
+        # control-server#518. Read only while the runtime is on, so written on every install whether it is or not.
+        TaskTypeStations = [ordered]@{ settingsFile = $Definition['taskTypeStations']['settingsFile'] }
     }
 }
 
@@ -1593,7 +1641,11 @@ function Get-ParallelGateClosingSteps {
     #>
     param([string] $ConfigurationPath, [string] $ServiceName)
     $mvpConfiguration = "$($script:ProductionPaths[0])\appsettings.Production.json"
-    return ("Close the gate on THIS instance, in this order: (1) stop injecting new demand into its FakeMesIngest and wait " +
+    # control-server#472: the script does all of the hand steps below, with the checks; they stay as the
+    # fallback for when it cannot run.
+    return ("Close the gate with remote-ops/factory-server/scripts/20-set-control-server-parallel-dispatch-gate.ps1 -State Closed " +
+        "from the control host, on the user's authorization: it refuses while a journey is in flight, writes the file, restarts " +
+        "the V2 service and verifies it. Only if that script cannot run, close it by hand on THIS instance, in this order: (1) stop injecting new demand into its FakeMesIngest and wait " +
         "until agv02 and agv03 both report their last order Completed; (2) edit $ConfigurationPath -- the V2 file, NOT the " +
         "MVP's $mvpConfiguration -- and set RiotCreateDispatch.enabled to false, with an editor that keeps the file UTF-8 " +
         '(saving it from Notepad with "Save As" can re-encode it and corrupt the Chinese agvId); (3) restart the service ' +
@@ -1723,6 +1775,178 @@ function Get-ParallelPreInstallRefusal {
     }
     $dispatchRefusal = Get-ParallelUpgradeRefusal -Configuration $configuration -ConfigurationPath $ConfigurationPath -ServiceName $ServiceName
     return $dispatchRefusal
+}
+
+function Resolve-ParallelInstanceDatabasePath {
+    <#
+        .SYNOPSIS
+            The SQLite file this instance's service reads, from the installed configuration; throws
+            unless it sits inside the layout's DataRoot.
+
+        .DESCRIPTION
+            control-server#472. Taken from ConnectionStrings:ControlServer -- the value the running
+            service uses -- rather than rebuilt from DataRoot, so a file someone moved is read where
+            the service reads it. Held to DataRoot and away from every production path, so that a
+            configuration pointing at the MVP's database is refused instead of read. Pure.
+    #>
+    [CmdletBinding()]
+    param(
+        [Parameter(Mandatory = $true)][System.Collections.IDictionary] $Configuration,
+        [Parameter(Mandatory = $true)][string] $DataRoot,
+        [Parameter(Mandatory = $true)][string] $ConfigurationPath
+    )
+    $connection = [string] (Get-ConfigurationValue (Get-ConfigurationValue $Configuration 'ConnectionStrings') 'ControlServer')
+    $match = [regex]::Match($connection, '(?i)(?:^|;)\s*Data Source\s*=\s*([^;]+)')
+    if (-not $match.Success) {
+        throw "$ConfigurationPath has no Data Source in ConnectionStrings:ControlServer ('$connection'), so the journey state cannot be read."
+    }
+    $path = [Environment]::ExpandEnvironmentVariables($match.Groups[1].Value.Trim()).Replace('/', '\')
+    $root = $DataRoot.TrimEnd('\') + '\'
+    if (-not $path.StartsWith($root, [StringComparison]::OrdinalIgnoreCase) -or $path.Contains('\..\') -or
+        (Test-ParallelInstancePathIsProduction -Path $path)) {
+        throw "The database in $ConfigurationPath ($path) is not inside this instance's data root $DataRoot; refusing to read it."
+    }
+    return $path
+}
+
+function Test-ParallelOrderIntentNeverSent {
+    <#
+        .SYNOPSIS
+            True when an OrderIntents row has certainly never been sent to RIoT.
+
+        .DESCRIPTION
+            control-server#472. A port of WireToGateStore.IsNeverSentAsync and
+            IsNeverSentAfterUnansweredReadsAsync (control-server#375), the single definition the
+            runtime and the release service read: PENDING_RECONCILIATION with no create attempt and no
+            order, or RESULT_UNKNOWN only because every read before the create answered nothing. Every
+            other state may have a live order in RIoT. Test-ParallelInstance.ps1 pins the C# predicate
+            literally, so this port cannot drift silently from it. Pure: the row and its audit events
+            as read from the database (column names as there).
+    #>
+    [CmdletBinding()]
+    [OutputType([bool])]
+    param(
+        [Parameter(Mandatory = $true)][System.Collections.IDictionary] $Intent,
+        [AllowEmptyCollection()][object[]] $AuditEvents = @()
+    )
+    $attempts = $Intent['CreateAttemptCount']
+    $noAttempt = $null -ne $attempts -and [long] $attempts -eq 0 -and $null -eq $Intent['CreateAttemptId']
+    if ([string] $Intent['Status'] -ceq 'PENDING_RECONCILIATION' -and $noAttempt -and $null -eq $Intent['OrderId']) {
+        return $true
+    }
+    if ([string] $Intent['Status'] -cne 'RESULT_UNKNOWN' -or $null -eq $Intent['DispatchAuditVersion'] -or
+        [long] $Intent['DispatchAuditVersion'] -ne 1 -or -not $noAttempt -or $null -ne $Intent['ExperimentalCreateAuthorizationId']) {
+        return $false
+    }
+    $reads = @($AuditEvents | Where-Object { [string] $_['MovementLegId'] -ceq [string] $Intent['MovementLegId'] })
+    if ($reads.Count -eq 0) { return $false }
+    foreach ($read in $reads) {
+        if ([string] $read['Phase'] -cne 'PRE_CREATE_RECONCILIATION' -or [string] $read['Outcome'] -cnotin @('UNKNOWN', 'NOT_FOUND') -or
+            $null -ne $read['AttemptId'] -or $null -ne $read['ReturnedOrderId'] -or
+            ($null -ne $read['ResultPresent'] -and [bool] $read['ResultPresent'])) {
+            return $false
+        }
+    }
+    return $true
+}
+
+function ConvertTo-ParallelGateDirection {
+    <#
+        .SYNOPSIS
+            The gate change -State asks for: Closed is Close (RiotCreateDispatch.enabled false), Open is Open (true).
+
+        .DESCRIPTION
+            control-server#472 review S2. One place, pinned by Test-ParallelInstance.ps1: a swapped mapping makes
+            "-State Closed" a no-op on an open gate that still reports success. Pure.
+    #>
+    [CmdletBinding()]
+    [OutputType([string])]
+    param([Parameter(Mandatory = $true)][ValidateSet('Closed', 'Open')][string] $State)
+    return $State -ceq 'Closed' ? 'Close' : 'Open'
+}
+
+function Get-ParallelDispatchGateRefusal {
+    <#
+        .SYNOPSIS
+            Why the RIoT dispatch gate must not be closed or opened now, judged from the instance's own
+            journey state; $null when it may.
+
+        .DESCRIPTION
+            control-server#472. Both directions restart the V2 service, which stops the journey
+            runtime's fault supervision for as long as the restart takes, so both refuse while a vehicle
+            may be under one of this instance's RIoT orders. They differ in what counts:
+
+              * Close: any journey whose Stage is not Completed (the engine's own definition of active,
+                JourneyRuntimeEngine; Blocked counts). No HTTP endpoint lists them all -- each
+                /api/dashboard/* query returns a subset -- which is why this reads the database.
+              * Open: a journey whose order has been, or may have been, sent. With the gate closed no
+                order can be created (MovementDispatchService returns CreateDispatchDisabled and writes
+                nothing), so the journeys that exist then are waiting for exactly this gate, and refusing
+                them would be a deadlock only a database edit could break. Refused is any journey with an
+                order intent that is not certainly never sent (Test-ParallelOrderIntentNeverSent). A
+                journey's intents are those named on its row (PickupUpperId, GateUpperId) plus every
+                intent for its vehicle created at or after the journey was: the engine keeps at most one
+                active journey per vehicle, and later stops, rebuilds and charging legs get intents of
+                their own that the row does not name. Anything that cannot be dated or read refuses.
+
+            $State is Get-ParallelJourneyDispatchState's output, or $null / an Error string when it could
+            not be read, which refuses in both directions (fail closed). Pure.
+    #>
+    [CmdletBinding()]
+    param(
+        [Parameter(Mandatory = $true)][ValidateSet('Close', 'Open')][string] $Direction,
+        [AllowNull()] $State,
+        [Parameter(Mandatory = $true)][string] $ServiceName,
+        [Parameter(Mandatory = $true)][string] $DatabasePath
+    )
+    $nothing = ' Nothing was stopped or changed.'
+    if ($null -eq $State -or $State -isnot [System.Collections.IDictionary] -or $State.Contains('Error')) {
+        $why = ($State -is [System.Collections.IDictionary] -and $State.Contains('Error')) ? $State['Error'] : 'no state was returned'
+        return ("GATE_STATE_UNREADABLE: the journey state of '$ServiceName' could not be read from $DatabasePath ($why), so " +
+            'whether a vehicle is under way cannot be told.' + $nothing)
+    }
+    $journeys = @($State['Journeys'] | Where-Object { [string] $_['Stage'] -cne 'Completed' })
+    if ($Direction -eq 'Close') {
+        if ($journeys.Count -eq 0) { return $null }
+        $listed = ($journeys | ForEach-Object { "$($_['JourneyId']) ($($_['AgvId']), $($_['Stage']))" }) -join '; '
+        return ("GATE_CLOSE_REFUSED_IN_FLIGHT: $DatabasePath has $($journeys.Count) journey(s) of '$ServiceName' not Completed: " +
+            "$listed. Stop injecting demand into its FakeMesIngest, wait until agv02 and agv03 have finished, and run this again." + $nothing)
+    }
+
+    $intents = @($State['OrderIntents'])
+    $sent = [System.Collections.Generic.List[string]]::new()
+    foreach ($journey in $journeys) {
+        [DateTimeOffset] $since = [DateTimeOffset]::MinValue
+        if (-not [DateTimeOffset]::TryParse([string] $journey['CreatedAt'], [Globalization.CultureInfo]::InvariantCulture, [Globalization.DateTimeStyles]::None, [ref] $since)) {
+            $sent.Add("$($journey['JourneyId']): its CreatedAt '$($journey['CreatedAt'])' cannot be read")
+            continue
+        }
+        $named = @([string] $journey['PickupUpperId'], [string] $journey['GateUpperId']) | Where-Object { $_ }
+        foreach ($intent in $intents) {
+            $mine = $named -ccontains [string] $intent['UpperId']
+            if (-not $mine -and [string] $intent['VehicleKey'] -ceq [string] $journey['VehicleKey']) {
+                [DateTimeOffset] $created = [DateTimeOffset]::MinValue
+                if (-not [DateTimeOffset]::TryParse([string] $intent['CreatedAt'], [Globalization.CultureInfo]::InvariantCulture, [Globalization.DateTimeStyles]::None, [ref] $created)) {
+                    $sent.Add("$($journey['JourneyId']): order intent $($intent['UpperId']) has an unreadable CreatedAt '$($intent['CreatedAt'])'")
+                    continue
+                }
+                $mine = $created -ge $since
+            }
+            if ($mine -and -not (Test-ParallelOrderIntentNeverSent -Intent $intent -AuditEvents @($State['AuditEvents']))) {
+                $sent.Add("$($journey['JourneyId']) ($($journey['AgvId']), $($journey['Stage'])): order intent $($intent['UpperId']) is $($intent['Status'])" +
+                    $(if ($intent['OrderId']) { " with RIoT order $($intent['OrderId'])" } else { '' }))
+            }
+        }
+    }
+    if ($sent.Count -eq 0) { return $null }
+    return ("GATE_OPEN_REFUSED_ORDER_SENT: in $DatabasePath, a journey of '$ServiceName' has an order that was or may have been sent " +
+        "to RIoT, so a vehicle may be under way and restarting the service would stop its fault supervision: $($sent -join '; '). " +
+        'With the gate closed through this script no such order can exist; it happens when the gate was closed by hand while ' +
+        'a journey was under way, and then this refusal does not lift by itself -- the journey never becomes Completed while the ' +
+        "gate stays closed. The way out, in this order: (1) in RIoT, confirm that no order is running on the vehicle(s) named " +
+        "above; (2) only then open the gate by hand as section 10 of remote-ops/factory-server/docs/wire-to-gate-parallel-cd.md " +
+        "says: set RiotCreateDispatch.enabled to true in THIS instance's appsettings.Production.json (the V2 file), keeping it " +
+        "UTF-8; (3) restart '$ServiceName' only -- never the MVP's service." + $nothing)
 }
 
 function Get-ConfigurationValue {
@@ -1895,4 +2119,8 @@ Export-ModuleMember -Function @(
     'Get-ParallelClearanceExitReadiness'
     'Get-ParallelUpgradeRefusal'
     'Get-ParallelPreInstallRefusal'
+    'Resolve-ParallelInstanceDatabasePath'
+    'Test-ParallelOrderIntentNeverSent'
+    'Get-ParallelDispatchGateRefusal'
+    'ConvertTo-ParallelGateDirection'
 )

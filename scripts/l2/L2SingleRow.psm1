@@ -94,20 +94,28 @@ function Read-L2SingleRow {
     )
 
     # Its own reader rather than Invoke-L2Query: the column names have to be known when there is no row.
+    # Closed in a finally: a reader left open inside Invoke-L2ReadSnapshot keeps the connection on that block's snapshot for
+    # every later read (L2ReadSnapshot.psm1, control-server#510).
     $command = $Connection.CreateCommand()
-    $command.CommandText = $Sql
-    $reader = $command.ExecuteReader()
-    $columns = @(for ($index = 0; $index -lt $reader.FieldCount; $index++) { $reader.GetName($index) })
     $rows = [System.Collections.Generic.List[object]]::new()
-    while ($reader.Read()) {
-        $row = [ordered]@{}
-        for ($index = 0; $index -lt $reader.FieldCount; $index++) {
-            $row[$columns[$index]] = if ($reader.IsDBNull($index)) { $null } else { $reader.GetValue($index) }
+    try {
+        $command.CommandText = $Sql
+        $reader = $command.ExecuteReader()
+        try {
+            $columns = @(for ($index = 0; $index -lt $reader.FieldCount; $index++) { $reader.GetName($index) })
+            while ($reader.Read()) {
+                $row = [ordered]@{}
+                for ($index = 0; $index -lt $reader.FieldCount; $index++) {
+                    $row[$columns[$index]] = if ($reader.IsDBNull($index)) { $null } else { $reader.GetValue($index) }
+                }
+                $rows.Add([pscustomobject]$row)
+            }
+        } finally {
+            $reader.Close()
         }
-        $rows.Add([pscustomobject]$row)
+    } finally {
+        $command.Dispose()
     }
-    $reader.Close()
-    $command.Dispose()
     return Select-L2SingleRow -Rows $rows.ToArray() -Columns $columns -Required:$Required
 }
 

@@ -108,6 +108,7 @@ public sealed class IntegrationSliceTraitArchitectureTests
             ["CatalogBindingHoldConvergenceTests"] = "batch 6 FP-C9a REQ-0342/REQ-0345 catalog change holds confined to the affected task type (control-server#162); server-internal, no wire message",
             ["ChargingOrderShapePathTests"] = "control-server#401 every path that builds an order intent carries its order shape (LegIntent authorisation, own-order rebuild); server-internal, no wire message",
             ["ChargingPolicyStartupCheckTests"] = "batch 9-05 REQ-0281 the startup refusal when a charging policy version in effect breaks the threshold relation or the rescue line (control-server#403); server-internal, no wire message",
+            ["ControlServerDatabaseLockTests"] = "control-server#473 the OS-level lock bound to the server's database file, held by the running host and taken by FieldOps before a direct write; process-level, no wire message",
             ["ControlServerSqliteConnectionTests"] = "cross-cutting guard on the one place the server's SQLite connection string is built; the busy timeout two processes share is a policy, not a slice",
             ["CreateGateTests"] = "7.5 #9, FP-C13 create gate and catalog availability; server-internal gate",
             ["DashboardActionTests"] = "batch 6 FP-C9a REQ-0340 dashboard write action convention, same-origin confirmation page (control-server#162); the dashboard is disjoint from the protocol",
@@ -119,6 +120,7 @@ public sealed class IntegrationSliceTraitArchitectureTests
             ["DispatchCandidateOrderingTests"] = "batch 7-04 behaviour-preserving restructuring guard (control-server#209): the layered candidate ordering against the ranker it replaced; server-internal, no wire message",
             ["DispatchVehicleOrderingTests"] = "batch 7-06 REQ-0206/REQ-0207 vehicle-side ordering layers and their fixed order (control-server#211); server-internal, no wire message",
             ["DispatchChainSeamTests"] = "batch 4 FP-C15 dispatch chain seams (control-server#69): reason code names, the area assignment lookup and plan replay; server-internal, no wire message",
+            ["DispatchGatePremiseArchitectureTests"] = "cross-cutting architecture guard (control-server#472): the server facts the v2 dispatch gate script's refusal rests on -- one RIoT create call site, both create paths gated first, the journey stage set, the active-journey query, the never-sent definition; hanging it off a slice would defer the guard with the slice",
             ["DispatchZoneParameterFieldOpsTests"] = "batch 7 REQ-0198/REQ-0203 FieldOps per-zone dispatch parameter verbs' process entry: arguments, JSON output, exit codes, read-only open (control-server#216); a controlled operations entry point, no wire message",
             ["DispatchZoneParameterImportTests"] = "batch 7 REQ-0198/REQ-0203 whole-table import of the per-zone dispatch parameters, versions, snapshot and audit (control-server#216); a controlled operations entry point, no wire message",
             ["EmergencyReleaseVersusOwnOrderRebuildTests"] = "control-server#349 REQ-0356's release on confirmation followed, in the real order, by an own order cancelled in RIoT and #299's clearance, asserting whether and when REQ-0360's rebuild creates a RIoT order and which demand it carries; single-ended server-to-RIoT, no wire message",
@@ -254,7 +256,7 @@ public sealed class IntegrationSliceTraitArchitectureTests
         new(StringComparer.Ordinal)
         {
             ["FakeRiotTests"] = (9, "the fake's own control plane and conflict behaviour; the traited tests are the shapes the production adapter parses"),
-            ["HttpRiotMovementGatewayTests"] = (28, "RIoT adapter fail-closed and sanitisation behaviour (control-server#330 added the unfiltered order listing and the by-orderId state read; control-server#335 the listed order states; control-server#404 the non-final states the order reads ask for); the traited tests are the ones a wire message depends on"),
+            ["HttpRiotMovementGatewayTests"] = (31, "RIoT adapter fail-closed and sanitisation behaviour (control-server#330 added the unfiltered order listing and the by-orderId state read; control-server#335 the listed order states; control-server#404 the non-final states the order reads ask for; control-server#525 paging the non-final order reads); the traited tests are the ones a wire message depends on"),
             ["JourneyRuntimeOptionsTests"] = (5, "option defaults, the retired minimumBatteryPercent key refusing to start (control-server#403), and the cargo holding timeout (control-server#206; read by the loading phase since control-server#212); the traited tests are the validations that fail a deployment closed"),
             ["OnboardAlarmProjectionTests"] = (1, "the dashboard self-registration convention #12 set up; the traited tests are the ones standing behind OnboardAlarmSnapshot")
         };

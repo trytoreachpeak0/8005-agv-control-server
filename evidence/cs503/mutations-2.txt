@@ -1,0 +1,99 @@
+HEAD: 5fa25176199ea891e108321a8dd420602220a1ee
+=== R0 scripts/Install-ControlServerLocal.ps1: Install as reviewed (before this commit): the backup-incomplete rollback empties the data root
+    whole file replaced by 15f978bc1:scripts/Install-ControlServerLocal.ps1
+    self-test exit code: 1
+    [FAIL] the two copies of Wait-DataRootReleased are identical
+    [FAIL] Install: rollback waits before deleting the install directory and the data root
+    [FAIL] I1 preflight, held lock: the refusal does not speak of a stopped service and says nothing was done
+    [FAIL] I2 backup incomplete: the rollback reports DATA_ROOT_BACKUP_INCOMPLETE
+    [FAIL] I2 backup incomplete: the existing data root is neither emptied nor deleted
+    [FAIL] I4 rollback under a live holder: the install directory was not deleted
+    [FAIL] I4 rollback under a live holder: the refusal says how to finish the rollback by hand
+=== X2 scripts/Install-ControlServerLocal.ps1: Install preflight wait never runs
+    original : if ($dataRootExisted) { <CRLF>     $null = Wait-DataRootReleased -Root $dataRoot -NotDone
+    mutated  : if ($false) { <CRLF>     $null = Wait-DataRootReleased -Root $dataRoot -NotDone
+    self-test exit code: 1
+    [FAIL] I1 preflight, held lock: refused with DATA_ROOT_IN_USE after the wait
+    [FAIL] I1 preflight, held lock: the refusal does not speak of a stopped service and says nothing was done
+    [FAIL] I1 preflight, held lock: no install directory, no backup, data root untouched
+=== X6u scripts/Update-ControlServerLocal.ps1: Update rollback deletes the install directory before the wait
+    original : $certificateStep = if ($certificatePasswordRemoved) {
+    mutated  : Remove-Item -LiteralPath $installPath -Recurse -Force -ErrorAction SilentlyContinue <CRLF>             $certificateStep = if ($certificatePasswordRemoved) {
+    self-test exit code: 1
+    [FAIL] U4 rollback under a live holder: the install directory is intact (the replacement, whole)
+=== X6i scripts/Install-ControlServerLocal.ps1: Install rollback deletes the install directory whatever the wait said
+    original : if ($dataRootReleased -and $installCreated -and
+    mutated  : if ($installCreated -and
+    self-test exit code: 1
+    [FAIL] I4 rollback under a live holder: the install directory was not deleted
+=== G1 scripts/Install-ControlServerLocal.ps1: Install rollback empties a data root whose backup did not complete
+    original : if ($dataRootReleased -and $dataRootExisted -and -not $dataBackupCreated
+    mutated  : if ($false -and $dataRootExisted -and -not $dataBackupCreated
+    self-test exit code: 1
+    [FAIL] I2 backup incomplete: the rollback reports DATA_ROOT_BACKUP_INCOMPLETE
+    [FAIL] I2 backup incomplete: the existing data root is neither emptied nor deleted
+=== M1 scripts/Update-ControlServerLocal.ps1: Update pre-backup wait looks at the wrong directory
+    original : $releasedLocks = Wait-DataRootReleased -Root $dataRoot
+    mutated  : $releasedLocks = Wait-DataRootReleased -Root (Join-Path $dataRoot 'cs503-mutant')
+    self-test exit code: 1
+    [FAIL] U1 held lock: the upgrade stops with DATA_ROOT_IN_USE
+    [FAIL] U1 held lock: the refusal finds the Host by this install path and warns against stopping by name
+    [FAIL] U1 held lock: the refusal says nothing was changed and how to get the service back
+    [FAIL] U1 held lock: nothing was backed up and the binary was not replaced
+    [FAIL] U1 held lock: it waited the full 30 seconds first
+    [FAIL] U2 lock let go: the upgrade completes with PASS
+    [FAIL] U2 lock let go: the diagnostic records the one lock file it waited on
+    [FAIL] U2 lock let go: the backup holds the database with its -wal and -shm
+=== M2 scripts/Update-ControlServerLocal.ps1: Update rollback wait looks at the wrong directory
+    original : $null = Wait-DataRootReleased -Root $dataRoot -InstallPath
+    mutated  : $null = Wait-DataRootReleased -Root (Join-Path $dataRoot 'cs503-mutant') -InstallPath
+    self-test exit code: 1
+    [FAIL] U4 rollback under a live holder: refused with DATA_ROOT_IN_USE
+    [FAIL] U4 rollback under a live holder: the data root was not deleted
+    [FAIL] U4 rollback under a live holder: the install directory is intact (the replacement, whole)
+    [FAIL] U4 rollback under a live holder: the refusal gives the four restore steps with this run's backup paths
+    [FAIL] U5 rollback after the holder exits: the rollback completes and the original error is rethrown
+    [FAIL] U5 rollback after the holder exits: the data root is restored from the backup
+=== M3 scripts/Update-ControlServerLocal.ps1: a held lock is taken for a released one (Update copy only)
+    original : if ([DateTimeOffset]::UtcNow -lt $deadline) {
+    mutated  : if ($true) { break } <CRLF>                 if ([DateTimeOffset]::UtcNow -lt $deadline) {
+    self-test exit code: 1
+    [FAIL] the two copies of Wait-DataRootReleased are identical
+    [FAIL] held lock: refuses after the wait with DATA_ROOT_IN_USE and the lock file
+=== M4 scripts/Install-ControlServerLocal.ps1: Install rollback wait looks at the wrong directory
+    original : $null = Wait-DataRootReleased -Root $dataRoot -InstallPath
+    mutated  : $null = Wait-DataRootReleased -Root (Join-Path $dataRoot 'cs503-mutant') -InstallPath
+    self-test exit code: 1
+    [FAIL] I4 rollback under a live holder: refused with DATA_ROOT_IN_USE
+    [FAIL] I4 rollback under a live holder: the data root was not touched
+    [FAIL] I4 rollback under a live holder: the install directory was not deleted
+    [FAIL] I4 rollback under a live holder: the refusal says how to finish the rollback by hand
+=== M5 scripts/Update-ControlServerLocal.ps1: the lock file is opened for writing (Update copy only)
+    original : [IO.FileAccess]::Read, [IO.FileShare]::None
+    mutated  : [IO.FileAccess]::ReadWrite, [IO.FileShare]::None
+    self-test exit code: 1
+    [FAIL] the two copies of Wait-DataRootReleased are identical
+    [FAIL] a read-only lock file nobody holds is not taken for a held one
+restored; worktree clean: True
+NOTE: the first M3 entry above ran against 5fa251761, whose self-test stopped on a null message after the held-lock unit check (fixed in 445c0d14c), so none of its end-to-end cases ran. The M3 rerun below on 445c0d14c is the valid one.
+=== M3 (rerun on 445c0d14c) scripts/Update-ControlServerLocal.ps1: a held lock is taken for a released one (Update copy only)
+    original : if ([DateTimeOffset]::UtcNow -lt $deadline) {
+    mutated  : if ($true) { break } <CRLF> if ([DateTimeOffset]::UtcNow -lt $deadline) {
+    self-test exit code: 1
+    [FAIL] the two copies of Wait-DataRootReleased are identical
+    [FAIL] held lock: refuses after the wait with DATA_ROOT_IN_USE and the lock file
+    [FAIL] held lock: the refusal finds the Host by install path, warns against stopping by name, and ends with the next steps
+    [FAIL] U1 held lock: the upgrade stops with DATA_ROOT_IN_USE
+    [FAIL] U1 held lock: the refusal finds the Host by this install path and warns against stopping by name
+    [FAIL] U1 held lock: the refusal says nothing was changed and how to get the service back
+    [FAIL] U1 held lock: nothing was backed up and the binary was not replaced
+    [FAIL] U1 held lock: it waited the full 30 seconds first
+    [FAIL] U2 lock let go: the upgrade completes with PASS
+    [FAIL] U2 lock let go: the backup holds the database with its -wal and -shm
+    [FAIL] U4 rollback under a live holder: refused with DATA_ROOT_IN_USE
+    [FAIL] U4 rollback under a live holder: the data root was not deleted
+    [FAIL] U4 rollback under a live holder: the install directory is intact (the replacement, whole)
+    [FAIL] U4 rollback under a live holder: the refusal gives the four restore steps with this run's backup paths
+    [FAIL] U5 rollback after the holder exits: the rollback completes and the original error is rethrown
+    [FAIL] U5 rollback after the holder exits: the data root is restored from the backup
+restored; worktree clean: True

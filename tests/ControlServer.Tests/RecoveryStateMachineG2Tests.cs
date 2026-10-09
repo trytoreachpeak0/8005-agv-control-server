@@ -150,7 +150,9 @@ public sealed partial class RecoveryStateMachineG2Tests
                 Assert.DoesNotContain(proof, (await firstContext.ProtocolInbox.SingleAsync(
                     row => row.MessageType == "ExceptionRecoverySessionRequested",
                     TestContext.Current.CancellationToken)).RequestJson, StringComparison.Ordinal);
-                Assert.Equal(DemandExecutionStatus.RecoveryRequired, (await firstContext.AcceptedDemands.SingleAsync(
+                // Back to Accepted with the resumed load committed, like a load that committed the first time. It stayed
+                // RecoveryRequired until control-server#506 (review M-1), which held a second recovery in the same journey.
+                Assert.Equal(DemandExecutionStatus.Accepted, (await firstContext.AcceptedDemands.SingleAsync(
                     TestContext.Current.CancellationToken)).Status);
                 Assert.Null((await firstContext.Set<VehiclePurposeClaimRecordRow>().SingleAsync(
                     TestContext.Current.CancellationToken)).ReleasedAt);
@@ -4423,6 +4425,8 @@ public sealed partial class RecoveryStateMachineG2Tests
                 JourneyRuntimeRow runtime = await runtimeContext.JourneyRuntimes.SingleAsync(token);
                 runtime.Stage = JourneyRuntimeStage.AwaitingStationDeparture;
                 runtime.UpdatedAt = Now.AddSeconds(5);
+                // ... and records the demand on board (control-server#505: a correction is authorized only for one).
+                (await runtimeContext.Set<JourneyDemandRow>().SingleAsync(token)).Status = JourneyDemandStatuses.Loaded;
                 await runtimeContext.SaveChangesAsync(token);
             }
 
@@ -6886,6 +6890,10 @@ public sealed partial class RecoveryStateMachineG2Tests
         JourneyRuntimeRow runtime = await context.JourneyRuntimes.SingleAsync(TestContext.Current.CancellationToken);
         runtime.Stage = stage;
         runtime.SetBlockReason(null, Now);
+        // The committed load put the demand on board, as the runtime records it when it moves the journey on: a correction is
+        // authorized only for a demand on board (control-server#505).
+        (await context.Set<JourneyDemandRow>().SingleAsync(TestContext.Current.CancellationToken)).Status =
+            JourneyDemandStatuses.Loaded;
         await context.SaveChangesAsync(TestContext.Current.CancellationToken);
     }
 

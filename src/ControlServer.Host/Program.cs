@@ -111,9 +111,11 @@ builder.Services.AddSingleton<IValidateOptions<OnboardTransportOptions>, Onboard
 builder.Services.AddScoped<OnboardMessageProcessor>();
 builder.Services.AddScoped<OnboardJourneyPublisher>();
 builder.Services.AddScoped<OnboardRecoveryCoordinator>();
+builder.Services.AddScoped<ControlServer.Host.Runtime.Recovery.RecoverySessionAdministratorClose>();
 builder.Services.AddScoped<SlotConfigurationActivationDispatcher>();
 builder.Services.AddSingleton<OnboardPeer>();
 builder.Services.AddSingleton<IOnboardPeer>(services => services.GetRequiredService<OnboardPeer>());
+builder.Services.AddSingleton<IOnboardConnectionPresence>(services => services.GetRequiredService<OnboardPeer>());
 builder.Services.AddHostedService<OnboardTcpServer>();
 builder.Services.AddOptions<JourneyRuntimeOptions>()
     .Bind(builder.Configuration.GetSection(JourneyRuntimeOptions.SectionName))
@@ -188,6 +190,16 @@ builder.Services.AddPlanRevision();
 
 WebApplication app = builder.Build();
 app.UseSerilogRequestLogging();
+
+// control-server#473：数据库一碰之前先拿与库文件绑定的锁，进程活着就一直不放；另一个进程（另一个服务端实例、正在直接写库的
+// FieldOps）占着时等一小会儿，仍拿不到就拒绝启动。包容量导入按设计与运行中的服务端并行（control-server#87），不拿。
+using ControlServerDatabaseLock? databaseLock = PackageCapacityImportCommand.IsRequested(args)
+    ? null
+    : await DatabaseLockStartup.AcquireAsync(
+        app.Services,
+        ControlServerSqlite.DataSourceOf(connectionString),
+        args.Contains("--migrate-only", StringComparer.Ordinal),
+        CancellationToken.None);
 
 await EnsureDatabaseAsync(app.Services);
 
@@ -317,6 +329,11 @@ static async Task EnsureDatabaseAsync(IServiceProvider services)
     await using AsyncServiceScope scope = services.CreateAsyncScope();
     ControlServerDbContext dbContext = scope.ServiceProvider.GetRequiredService<ControlServerDbContext>();
     await dbContext.Database.MigrateAsync();
+    // control-server#505：停在不可放行阻塞码上的旅程不会自动放行，只有旅程收尾结束它；升级迁移会改出这样的行，有就在启动时告诉现场有几趟。
+    await ControlServer.Host.Runtime.UnreleasableBlockReport.LogAsync(
+        dbContext,
+        scope.ServiceProvider.GetRequiredService<ILoggerFactory>().CreateLogger("ControlServer.Host.Startup"),
+        CancellationToken.None);
 
     // REQ-0271：保留期是管理员配置，变更本身要留管理员审计。新值在服务起来的这一刻生效，所以在这一刻记。
     GovernanceStore governance = scope.ServiceProvider.GetRequiredService<GovernanceStore>();

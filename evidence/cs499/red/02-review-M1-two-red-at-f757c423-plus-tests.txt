@@ -1,0 +1,9 @@
+Test run for C:\Users\szy\Desktop\8005-workspace-v2\worktrees\cs499-8005-agv-control-server\tests\ControlServer.Tests\bin\Release\net8.0\win-x64\ControlServer.Tests.dll (.NETCoreApp,Version=v8.0)
+VSTest version 17.11.1 (x64)
+  Failed ControlServer.Tests.RecoveryEndingReleasesBlockedJourneyTests.ACompensationLeavesTheJourneyBlockedWhileACancellationLeftAnotherDemandAwaitingRecovery [2 s]
+  Error Message:
+   The journey was released while the third demand still awaits recovery. stage=AwaitingSublot block= entries=1 round=
+  Failed ControlServer.Tests.RecoveryEndingReleasesBlockedJourneyTests.ACompensationLeavesTheJourneyBlockedWhileAnotherDemandStillAwaitsRecovery [4 s]
+  Error Message:
+   The journey was released while the first demand still awaits recovery. stage=AwaitingDepartureSafety block= checks=1 round=
+Failed!  - Failed:     2, Passed:     8, Skipped:     0, Total:    10, Duration: 34 s - ControlServer.Tests.dll (net8.0)

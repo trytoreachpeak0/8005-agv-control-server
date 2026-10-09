@@ -176,6 +176,9 @@ public static class RiotDataPlane
             int size = int.TryParse(request.Query["pageSize"], out int parsedSize) && parsedSize > 0
                 ? parsedSize
                 : 100;
+            int pageNum = int.TryParse(request.Query["pageNum"], out int parsedPage) && parsedPage > 0
+                ? parsedPage
+                : 1;
             FakeRiotState state = engine.Snapshot().State;
             object[] records = state.OrdersByUpperId.Values
                 .Where(order => states.Length == 0 || states.Contains(order.OrderState))
@@ -184,13 +187,14 @@ public static class RiotDataPlane
                 .ToArray();
             // total is what the gateway checks its page coverage against: reporting more than this
             // page carries makes it answer RIOT_NONFINAL_ORDER_COVERAGE_UNKNOWN, so it must be the
-            // honest total and not the page length.
+            // honest total and not the page length. pageNum is honoured (control-server#525): the gateway pages through a
+            // listing longer than one page.
             return Ok(new
             {
-                current = 1,
+                current = pageNum,
                 size,
                 total = records.Length,
-                records = records.Take(size).ToArray()
+                records = records.Skip((pageNum - 1) * size).Take(size).ToArray()
             });
         });
 

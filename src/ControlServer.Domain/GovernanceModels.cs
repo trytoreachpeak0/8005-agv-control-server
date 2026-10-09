@@ -40,7 +40,12 @@ public enum GovernedObjectKind
     /// <summary>
     /// 一个站点独占（<c>(MapId, StationId)</c>）。不是受治理配置、没有版本：审计的是现场人工释放它这一次操作（control-server#419）。
     /// </summary>
-    StationExclusivity
+    StationExclusivity,
+
+    /// <summary>
+    /// 一个异常恢复会话。不是受治理配置、没有版本：审计的是管理员在结果永远来不了时关掉它这一次操作（control-server#483）。
+    /// </summary>
+    ExceptionRecoverySession
 }
 
 /// <summary>

@@ -1,0 +1,113 @@
+Each mutation changes one product file, rebuilds with --no-incremental, runs
+  dotnet test tests/ControlServer.Tests/ControlServer.Tests.csproj --no-build --filter "FullyQualifiedName~ControlServerDatabaseLockTests|FullyQualifiedName~StationExclusivityFieldOpsTests|FullyQualifiedName~ArchitectureTests"
+and is restored by writing the original content back.
+
+== M1 FieldOps skips the lock
+  file: tools\ControlServer.FieldOps\Program.StationExclusivity.cs
+  replaced: 'if (held is null)'
+  with:     'if (held is null && false)'
+  build exit=0, test exit=1
+  Failed!  - Failed:     1, Passed:   101, Skipped:     0, Total:   102, Duration: 1 m 12 s - ControlServer.Tests.dll (net8.0)
+    ControlServer.Tests.ControlServerDatabaseLockTests.AServerThatStartsBetweenTheProbeAndTheWriteMakesFieldOpsRefuse
+
+== M2 Host takes no lock
+  file: src\ControlServer.Host\Program.cs
+  replaced: 'using ControlServerDatabaseLock? databaseLock = PackageCapacityImportCommand.IsRequested(args)'
+  with:     'using ControlServerDatabaseLock? databaseLock = true'
+  build exit=0, test exit=1
+  Failed!  - Failed:     6, Passed:    96, Skipped:     0, Total:   102, Duration: 4 m 9 s - ControlServer.Tests.dll (net8.0)
+    ControlServer.Tests.ControlServerDatabaseLockTests.AFieldOpsWriteHoldsTheLockUntilItIsDone
+    ControlServer.Tests.ControlServerDatabaseLockTests.ALockFileThatCannotBeOpenedIsRefusedWithItsReason
+    ControlServer.Tests.ControlServerDatabaseLockTests.ASecondServerOnTheSameDatabaseRefusesToStart
+    ControlServer.Tests.ControlServerDatabaseLockTests.AServerThatStartsBetweenTheProbeAndTheWriteMakesFieldOpsRefuse
+    ControlServer.Tests.ControlServerDatabaseLockTests.KillingTheHolderReleasesTheLock
+    ControlServer.Tests.ControlServerDatabaseLockTests.MigrateOnlyAgainstADatabaseInUseIsRefusedAsAMigration
+
+== M3 machine-wide lock file
+  file: src\ControlServer.Infrastructure\Persistence\ControlServerDatabaseLock.cs
+  replaced: 'handle = new FileStream(database + LockFileSuffix,'
+  with:     'handle = new FileStream(Path.Combine(Path.GetTempPath(), "w2g-cs473-machine-wide" + LockFileSuffix),'
+  build exit=0, test exit=1
+  Failed!  - Failed:     6, Passed:    96, Skipped:     0, Total:   102, Duration: 1 m 16 s - ControlServer.Tests.dll (net8.0)
+    ControlServer.Tests.ControlServerDatabaseLockTests.ADifferentDatabaseDirectoryIsNotBlocked
+    ControlServer.Tests.ControlServerDatabaseLockTests.ALockFileThatCannotBeOpenedIsRefusedWithItsReason
+    ControlServer.Tests.ControlServerDatabaseLockTests.KillingTheHolderReleasesTheLock
+    ControlServer.Tests.ControlServerDatabaseLockTests.TheLockIsTheFileNotItsSpelling
+    ControlServer.Tests.StationExclusivityFieldOpsTests.AMissingSiteVerificationIsARefusalNotAUsageError
+    ControlServer.Tests.StationExclusivityFieldOpsTests.WithTheServerStoppedTheVerbReleasesAgainstTheDatabaseWithoutARiotCrossCheck
+
+== M4 no wait at startup
+  file: src\ControlServer.Infrastructure\Persistence\ControlServerDatabaseLock.cs
+  replaced: 'if (acquired is not null || clock.Elapsed >= wait)'
+  with:     'if (acquired is not null || true)'
+  build exit=0, test exit=1
+  Failed!  - Failed:     3, Passed:    99, Skipped:     0, Total:   102, Duration: 52 s - ControlServer.Tests.dll (net8.0)
+    ControlServer.Tests.ControlServerDatabaseLockTests.AFieldOpsWriteHoldsTheLockUntilItIsDone
+    ControlServer.Tests.ControlServerDatabaseLockTests.ASecondServerOnTheSameDatabaseRefusesToStart
+    ControlServer.Tests.ControlServerDatabaseLockTests.AServerStartWaitsOutAHolderThatLetsGoWithinTheWait
+
+== M5 import takes the lock too
+  file: src\ControlServer.Host\Program.cs
+  replaced: 'using ControlServerDatabaseLock? databaseLock = PackageCapacityImportCommand.IsRequested(args)'
+  with:     'using ControlServerDatabaseLock? databaseLock = false'
+  build exit=0, test exit=1
+  Failed!  - Failed:     1, Passed:   101, Skipped:     0, Total:   102, Duration: 1 m 38 s - ControlServer.Tests.dll (net8.0)
+    ControlServer.Tests.ControlServerDatabaseLockTests.ThePackageCapacityImportStillRunsBesideALiveServer
+
+== M6 lock file existence instead of OS lock
+  file: src\ControlServer.Infrastructure\Persistence\ControlServerDatabaseLock.cs
+  replaced: 'handle = new FileStream(database + LockFileSuffix, FileMode.OpenOrCreate, FileAccess.ReadWrite, FileShare.None);'
+  with:     'if (File.Exists(database + LockFileSuffix)) { return null; } handle = new FileStream(database + LockFileSuffix, FileMode.CreateNew, FileAccess.ReadWrite, FileShare.ReadWrite);'
+  build exit=0, test exit=1
+  Failed!  - Failed:     5, Passed:    97, Skipped:     0, Total:   102, Duration: 1 m 41 s - ControlServer.Tests.dll (net8.0)
+    ControlServer.Tests.ControlServerDatabaseLockTests.ADifferentDatabaseDirectoryIsNotBlocked
+    ControlServer.Tests.ControlServerDatabaseLockTests.AFieldOpsWriteHoldsTheLockUntilItIsDone
+    ControlServer.Tests.ControlServerDatabaseLockTests.ALockFileThatCannotBeOpenedIsRefusedWithItsReason
+    ControlServer.Tests.ControlServerDatabaseLockTests.AServerStartWaitsOutAHolderThatLetsGoWithinTheWait
+    ControlServer.Tests.ControlServerDatabaseLockTests.KillingTheHolderReleasesTheLock
+
+== M7 FieldOps lets go of the lock as soon as it has it (review)
+  file: tools\ControlServer.FieldOps\Program.StationExclusivity.cs
+  replaced: 'using ControlServerDatabaseLock? releasedOnExit = held;'
+  with:     'held?.Dispose(); ControlServerDatabaseLock? releasedOnExit = null;'
+  build exit=1 BUILD FAILED
+C:\Users\szy\Desktop\8005-workspace-v2\worktrees\cs473-8005-agv-control-server\tools\ControlServer.FieldOps\Program.StationExclusivity.cs(127,53): error CS0219: The variable 'releasedOnExit' is assigned but its value is never used [C:\Users\szy\Desktop\8005-workspace-v2\worktrees\cs473-8005-agv-control-server\tools\ControlServer.FieldOps\ControlServer.FieldOps.csproj]
+
+Build FAILED.
+
+C:\Users\szy\Desktop\8005-workspace-v2\worktrees\cs473-8005-agv-control-server\tools\ControlServer.FieldOps\Program.StationExclusivity.cs(127,53): error CS0219: The variable 'releasedOnExit' is assigned but its value is never used [C:\Users\szy\Desktop\8005-workspace-v2\worktrees\cs473-8005-agv-control-server\tools\ControlServer.FieldOps\ControlServer.FieldOps.csproj]
+    0 Warning(s)
+    1 Error(s)
+
+Time Elapsed 00:00:15.92
+
+
+== M8 an unusable lock file is not caught
+  file: src\ControlServer.Infrastructure\Persistence\ControlServerDatabaseLock.cs
+  replaced: 'catch (Exception unusable) when (unusable is IOException or UnauthorizedAccessException)'
+  with:     'catch (Exception unusable) when ((unusable is IOException or UnauthorizedAccessException) && false)'
+  build exit=0, test exit=1
+  Failed!  - Failed:     1, Passed:   101, Skipped:     0, Total:   102, Duration: 1 m 33 s - ControlServer.Tests.dll (net8.0)
+    ControlServer.Tests.ControlServerDatabaseLockTests.ALockFileThatCannotBeOpenedIsRefusedWithItsReason
+
+== M9 --migrate-only refusal worded as a start
+  file: src\ControlServer.Host\Program.cs
+  replaced: 'args.Contains("--migrate-only", StringComparer.Ordinal),\n        CancellationToken.None);'
+  with:     'false,\n        CancellationToken.None);'
+  build exit=0, test exit=1
+  Failed!  - Failed:     1, Passed:   101, Skipped:     0, Total:   102, Duration: 1 m 34 s - ControlServer.Tests.dll (net8.0)
+    ControlServer.Tests.ControlServerDatabaseLockTests.MigrateOnlyAgainstADatabaseInUseIsRefusedAsAMigration
+
+== restored: build exit=0
+
+M7 rerun: the first M7 above did not compile (an unused variable under warnings-as-errors); the same mutation, written so that it builds:
+
+== M7 FieldOps lets go of the lock as soon as it has it (review)
+  file: tools\ControlServer.FieldOps\Program.StationExclusivity.cs
+  replaced: 'using ControlServerDatabaseLock? releasedOnExit = held;'
+  with:     'using ControlServerDatabaseLock? releasedOnExit = held; held?.Dispose();'
+  build exit=0, test exit=1
+  Failed!  - Failed:     1, Passed:   101, Skipped:     0, Total:   102, Duration: 1 m 45 s - ControlServer.Tests.dll (net8.0)
+    ControlServer.Tests.ControlServerDatabaseLockTests.AFieldOpsWriteHoldsTheLockUntilItIsDone
+
+== restored: build exit=0

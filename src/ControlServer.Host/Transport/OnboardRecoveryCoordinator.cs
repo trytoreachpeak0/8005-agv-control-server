@@ -4,6 +4,7 @@ using System.Text.Json;
 using ControlServer.Application;
 using ControlServer.Domain;
 using ControlServer.Host.Runtime;
+using ControlServer.Host.Runtime.Recovery;
 using ControlServer.Infrastructure.Persistence;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Logging;
@@ -61,6 +62,20 @@ public sealed class OnboardRecoveryCoordinator(
                 "Exception recovery session {SessionId} had already closed when {WorkflowType} {WorkflowId} reported " +
                 "{Outcome}. The result is recorded as evidence only: demand {DemandId}, its journey, lease and " +
                 "vehicle are left as the session handling them now has them; reconcile by hand if they disagree.");
+    private static readonly Action<ILogger, string, string, string, string, Exception?> LogCancellationFoundDemandEnded =
+        LoggerMessage.Define<string, string, string, string>(
+            LogLevel.Warning,
+            new EventId(2137, nameof(LogCancellationFoundDemandEnded)),
+            "Load cancellation {CancellationId} for demand {DemandId} reported ALL_EMPTY after the demand had already " +
+            "ended ({DemandStatus}; journey stage {Stage}); nothing was commanded for it, so the result is recorded and " +
+            "the journey is left as it was (control-server#505).");
+    private static readonly Action<ILogger, string, string, string, string, string, Exception?> LogResultOnEndedDemandBlocked =
+        LoggerMessage.Define<string, string, string, string, string>(
+            LogLevel.Error,
+            new EventId(2136, nameof(LogResultOnEndedDemandBlocked)),
+            "{MessageType} for workflow {WorkflowId} did not reconcile, and its demand {DemandId} has already ended " +
+            "({DemandStatus}), so it cannot be marked RecoveryRequired; the journey is blocked under {BlockReasonCode}, " +
+            "which no release path lifts: only the journey's closing ends it (control-server#505).");
     private static readonly Action<ILogger, string, string, string, Exception?> LogResultForDeliveredDemand =
         LoggerMessage.Define<string, string, string>(
             LogLevel.Warning,
@@ -83,6 +98,22 @@ public sealed class OnboardRecoveryCoordinator(
                 "Compensation {WorkflowId} of session {SessionId} was requested again by operator {OperatorId} " +
                 "(verified {VerifiedAt}) in message {MessageId}. It was already authorized: nothing is authorized " +
                 "again, and the command it earned is re-sent unchanged.");
+
+    private static readonly Action<ILogger, string, string, string, string, string, string, Exception?>
+        LogBlockedJourneyReleased =
+            LoggerMessage.Define<string, string, string, string, string, string>(
+                LogLevel.Information,
+                new EventId(2135, nameof(LogBlockedJourneyReleased)),
+                "Vehicle {AgvId}: {MessageType} for workflow {WorkflowId} ended demand {DemandId}, whose slot operation " +
+                "the journey was blocked on ({BlockReasonCode}); the journey carries other demands and goes back to " +
+                "{Stage} (control-server#499).");
+
+    private static readonly Action<ILogger, string, Exception?> LogClosingSnapshotNotSent =
+        LoggerMessage.Define<string>(
+            LogLevel.Warning,
+            new EventId(2133, nameof(LogClosingSnapshotNotSent)),
+            "An exception recovery session of vehicle {AgvId} was closed by an administrator, and sending its CLOSED snapshot " +
+            "failed; the closing stands and the snapshot stays in the outbox for the reconnect replay (control-server#483).");
 
     /// <summary>
     /// The recovery action that lifts a door-unproven hold (REQ-0364, CP-0009, control-server#385). It sends the vehicle no
@@ -344,14 +375,43 @@ public sealed class OnboardRecoveryCoordinator(
             ? null
             : await DemandJourneyLookup.JourneyOf(dbContext, workflow.DemandId)
                 .SingleOrDefaultAsync(cancellationToken).ConfigureAwait(false);
-        if (runtime is not null && reconciled)
-        {
-            StationOperationRow operation = await dbContext.StationOperations.SingleAsync(
+        // Released only when nothing else of the journey is unresolved -- another demand awaiting recovery, another
+        // operation not converged, an unreleasable *_NOT_RECONCILED_ON_ENDED_DEMAND block (control-server#506, #505; the same predicate as the
+        // ending path, BlockedJourneyRelease.NothingElseUnresolvedAsync, which carries the reasons and the cost). Held,
+        // the journey stays Blocked with its code; the workflow and the session settle as before.
+        StationOperationRow? operation = reconciled
+            ? await dbContext.StationOperations.SingleAsync(
                 row => row.SlotOperationAttemptId == slotOperationAttemptId,
-                cancellationToken).ConfigureAwait(false);
-            runtime.Stage = operation.OperationType == SlotOperationType.Load
-                ? JourneyRuntimeStage.AwaitingLoadResult
-                : JourneyRuntimeStage.AwaitingUnloadResult;
+                cancellationToken).ConfigureAwait(false)
+            : null;
+        // A resumed load that committed leaves its demand where a load that committed the first time leaves it: Accepted.
+        // The store commits the operation and touches no demand on a load (ApplyOperationResultAsync), so the
+        // RecoveryRequired the failed result wrote stayed for the rest of the journey, and the release predicate above read
+        // it as another demand still awaiting recovery: a second recovery in the same journey -- a resume or a handoff of
+        // another demand -- held the journey Blocked for good (control-server#506 review M-1). Staged into this save, before
+        // the predicate reads the demands. A determinate failure is not touched: the runtime ends that demand. An unload
+        // that committed has already made its demand Succeeded.
+        if (disposition is OperationResultDisposition.Accepted &&
+            operation is { OperationType: SlotOperationType.Load, Status: StationOperationStatus.Committed })
+        {
+            AcceptedDemandRow? resumedDemand = await dbContext.AcceptedDemands.SingleOrDefaultAsync(
+                row => row.DemandId == operation.DemandId, cancellationToken).ConfigureAwait(false);
+            if (resumedDemand?.Status == DemandExecutionStatus.RecoveryRequired)
+            {
+                resumedDemand.Status = DemandExecutionStatus.Accepted;
+            }
+        }
+        JourneyStopCursor? stops = runtime is not null && operation is not null
+            ? await JourneyStopCursor.LoadIncludingUnsavedChangesAsync(dbContext, runtime, cancellationToken)
+                .ConfigureAwait(false)
+            : null;
+        if (runtime is not null && operation is not null && stops is not null &&
+            await BlockedJourneyRelease.NothingElseUnresolvedAsync(dbContext, runtime, stops, operation, cancellationToken)
+                .ConfigureAwait(false))
+        {
+            // The same stage the ending path goes back to (control-server#505): the resumed operation is the current stop's,
+            // so this is what its type used to give.
+            runtime.Stage = BlockedJourneyRelease.ReleaseStage(stops);
             runtime.SetBlockReason(null, timeProvider.GetUtcNow());
             runtime.UpdatedAt = timeProvider.GetUtcNow();
         }
@@ -406,6 +466,226 @@ public sealed class OnboardRecoveryCoordinator(
             workflow, root.GetProperty("sessionGeneration").GetInt64(), cancellationToken).ConfigureAwait(false);
         await SettleAnsweredCommandAsync(workflow, cancellationToken).ConfigureAwait(false);
         await dbContext.SaveChangesAsync(cancellationToken).ConfigureAwait(false);
+    }
+
+    /// <summary>
+    /// The outcome a workflow is judged on when an administrator closed its session because its result will not come
+    /// (control-server#483). Like <see cref="ResumeCommandRejectedOutcome"/> it marks, in the store, why the session closed;
+    /// it is not a wire code. A result arriving afterwards is refused, and the refusal names it.
+    /// </summary>
+    internal const string AdministratorClosedOutcome = RecoveryWorkflowOutcomes.AdministratorClosed;
+
+    /// <summary>
+    /// Which selected actions an administrator may close a session on while their outcome is awaited, and the workflow
+    /// states that count as awaiting it. A resume since control-server#483; the other three since #484 (the coordinator's
+    /// decision of 2026-10-06), a compensation also while it still awaits its authorization -- its session is ACTION_SELECTED
+    /// then and nothing has gone to the vehicle. Closing a forced recovery leaves its hardware hold and its generation where
+    /// they were; the way out of the fence that leaves is <see cref="ForcedFenceLiftedOverAdministratorClosingsAsync"/>.
+    /// </summary>
+    internal static IReadOnlyDictionary<string, IReadOnlySet<RecoveryWorkflowState>> AdministratorClosableActions { get; } =
+        new Dictionary<string, IReadOnlySet<RecoveryWorkflowState>>(StringComparer.Ordinal)
+        {
+            ["RESUME_AFTER_REPAIR"] = AwaitingCommandOutcome(),
+            ["FAULT_CARGO_HANDOFF"] = AwaitingCommandOutcome(),
+            ["FORCED_MECHANICAL_RECOVERY"] = AwaitingCommandOutcome(),
+            ["COMPENSATE_LOAD_ALL_EMPTY"] = new HashSet<RecoveryWorkflowState>
+            {
+                RecoveryWorkflowState.AwaitingAuthorization,
+                RecoveryWorkflowState.CommandPending,
+                RecoveryWorkflowState.AwaitingResult
+            }
+        };
+
+    private static HashSet<RecoveryWorkflowState> AwaitingCommandOutcome() =>
+        [RecoveryWorkflowState.CommandPending, RecoveryWorkflowState.AwaitingResult];
+
+    /// <summary>
+    /// Closes the vehicle's one open session whose action's result will never come, on an administrator's word
+    /// (control-server#483): the result was refused and abandoned, or the vehicle went away for good. The workflow is judged
+    /// <see cref="RecoveryWorkflowState.RecoveryRequired"/> under <see cref="AdministratorClosedOutcome"/>, its command is
+    /// settled so it is no longer replayed, and the session closes the way a result that does not reconcile closes it
+    /// (<see cref="AdvanceSessionAfterResultAsync"/>): CLOSED, a new revision, a CLOSED snapshot queued. The demand, the
+    /// journey, the operation, the lease and the vehicle are not touched -- exactly as control-server#187 leaves them -- for
+    /// the next session to take up. A replacement result arriving afterwards finds no resume awaiting it and is refused
+    /// whole (<see cref="WireToGateStore"/>, BUSINESS_ID_CONTENT_CONFLICT naming <see cref="AdministratorClosedOutcome"/>).
+    /// </summary>
+    /// <remarks>
+    /// <para>
+    /// <b>Only under the caller's write transaction</b>, and refused without one: everything is read and decided inside it,
+    /// so an inbound result that commits first is seen here and this refuses, and one that commits after finds the session
+    /// closed. A refusal writes nothing.
+    /// </para>
+    /// <para>
+    /// <b>Not while the vehicle may still deliver the result</b> (review of control-server#483, S1). While the vehicle is
+    /// connected (<paramref name="connectedSessionGeneration"/> not null) and its latest RecoveryStateReport still names the
+    /// resume's attempt -- as a pending attempt or as its unsettled one -- or names any pending result at all, the result
+    /// may be on its way, and closing would refuse it when it lands and the vehicle would drop a real result. A pending
+    /// result is named by its messageId alone, which does not say which attempt it settles, so any one counts. A vehicle
+    /// that is not connected is closed regardless: waiting for one that never returns is the very thing this exit ends.
+    /// </para>
+    /// <para>
+    /// <b>Nor while the vehicle is in its handshake</b> (incremental review of control-server#483). A SessionHello clears the
+    /// reported pending facts, and the vehicle replays its unacknowledged results before its recovery report is answered,
+    /// which is before its connection becomes routable: in that window the report on file says nothing and the vehicle
+    /// would read as gone. So a vehicle whose hello has arrived and whose connection is not routable yet
+    /// (<paramref name="handshaking"/>), or whose routable connection is of another session generation than the one on file,
+    /// is refused as well -- the facts on file are not its finished report.
+    /// </para>
+    /// </remarks>
+    internal async Task<AdministratorCloseDecision> CloseSessionAwaitingResultAsync(
+        string agvId,
+        string? exceptionRecoverySessionId,
+        long? connectedSessionGeneration,
+        bool handshaking,
+        Action<object?> facts,
+        CancellationToken cancellationToken)
+    {
+        if (dbContext.Database.CurrentTransaction is null)
+            throw new InvalidOperationException(
+                "An exception recovery session is closed by an administrator only under the caller's write transaction.");
+
+        ExceptionRecoverySessionRow? session = await dbContext.ExceptionRecoverySessions.SingleOrDefaultAsync(
+            row => row.AgvId == agvId && row.State != "CLOSED", cancellationToken).ConfigureAwait(false);
+        SessionRecoveryRow? connection = await dbContext.SessionRecoveries.AsNoTracking()
+            .SingleOrDefaultAsync(row => row.AgvId == agvId, cancellationToken).ConfigureAwait(false);
+        RecoveryWorkflowRow[] workflows = session is null
+            ? []
+            : await dbContext.RecoveryWorkflows
+                .Where(row => row.ExceptionRecoverySessionId == session.ExceptionRecoverySessionId)
+                .ToArrayAsync(cancellationToken).ConfigureAwait(false);
+        string? selectedAction = session?.SelectedAction;
+        IReadOnlySet<RecoveryWorkflowState>? awaiting = selectedAction is null
+            ? null
+            : AdministratorClosableActions.GetValueOrDefault(selectedAction);
+        // Every workflow of the selected action still awaiting its outcome: a session can hold more than one compensation,
+        // one whose command is out and others still awaiting their authorization (control-server#187), and the closing judges
+        // them all, so none is left behind to be authorized into a closed session.
+        RecoveryWorkflowRow[] awaitingWorkflows = workflows
+            .Where(row => row.WorkflowType == selectedAction && awaiting?.Contains(row.State) == true)
+            .OrderByDescending(row => row.CommandMessageId is not null)
+            .ThenBy(row => row.CreatedAt)
+            .ToArray();
+        // The one the session closes on -- the one with its command out, if any; otherwise the action's latest, for the audit.
+        RecoveryWorkflowRow? workflow = awaitingWorkflows.FirstOrDefault() ??
+            workflows.Where(row => row.WorkflowType == selectedAction).MaxBy(row => row.CreatedAt);
+        string[] pendingAttempts = connection is null ? [] : ParseStrings(connection.PendingAttemptIdsJson);
+        string[] pendingResults = connection is null ? [] : ParseStrings(connection.PendingResultIdsJson);
+        int[] activeUnlockSlots = connection is null ? [] : ParseSlots(connection.ActiveUnlockSlotsJson);
+        string? attemptId = workflow?.SlotOperationAttemptId;
+        bool namesAttempt = attemptId is not null &&
+                            (pendingAttempts.Contains(attemptId, StringComparer.Ordinal) ||
+                             connection?.UnsettledSlotOperationAttemptId == attemptId);
+        // What says the outcome may still be on its way, by action (control-server#484). A pending result is named by its
+        // messageId alone, so any one counts, for every action. A resume, a handoff and a compensation are about the session's
+        // attempt, so a report naming it counts; a handoff and a compensation open doors, and slots whose unlock output is
+        // active mean the vehicle is at them. The resume is judged as #483 left it. A forced recovery is not judged on the
+        // report at all -- see the refusal below.
+        bool resultInFlight = connectedSessionGeneration is not null &&
+                              (pendingResults.Length > 0 ||
+                               selectedAction switch
+                               {
+                                   "RESUME_AFTER_REPAIR" => namesAttempt,
+                                   _ => namesAttempt || activeUnlockSlots.Length > 0
+                               });
+        // A forced recovery on a connected vehicle may be under way whatever the report says (review of #484, S2): the report on
+        // file is the one that ended the connection's handshake, and every recovery command still awaiting its result is sent
+        // again right after it (OnboardMessageProcessor, ReplayPendingCommandsAsync). So the forced command reached this
+        // connection after its report, and the report can say nothing about it: no pending result, no unlock output, while a
+        // person stands at the vehicle forcing the doors. The way out for a connected vehicle is the result and its hardware
+        // record; a result refused is taken up by the onboard's isolation and hardware record entry (8005-agv-onboard-hmi#150).
+        bool forcedInProgress = connectedSessionGeneration is not null && selectedAction == "FORCED_MECHANICAL_RECOVERY";
+        facts(new
+        {
+            vehicle = new
+            {
+                connected = connectedSessionGeneration is not null,
+                connectedSessionGeneration,
+                handshaking,
+                recordedSessionGeneration = connection?.SessionGeneration,
+                recoveryReportId = connection?.RecoveryReportId,
+                pendingAttemptIds = pendingAttempts,
+                pendingResultIds = pendingResults,
+                unsettledSlotOperationAttemptId = connection?.UnsettledSlotOperationAttemptId,
+                activeUnlockSlots
+            },
+            session = session is null
+                ? null
+                : new
+                {
+                    session.ExceptionRecoverySessionId,
+                    session.State,
+                    session.SelectedAction,
+                    session.Revision,
+                    session.DemandId
+                },
+            workflow = workflow is null
+                ? null
+                : new
+                {
+                    workflow.WorkflowId,
+                    workflow.WorkflowType,
+                    state = workflow.State.ToString(),
+                    workflow.SlotOperationAttemptId,
+                    workflow.CommandMessageId,
+                    workflow.ResultMessageId
+                }
+        });
+        if (session is null)
+            return new AdministratorCloseDecision([RecoverySessionAdministratorCloseCodes.SessionNotFound], null);
+        if (exceptionRecoverySessionId is not null &&
+            !string.Equals(exceptionRecoverySessionId, session.ExceptionRecoverySessionId, StringComparison.Ordinal))
+            return Refused(RecoverySessionAdministratorCloseCodes.SessionMismatch);
+        // ACTION_SELECTED is a compensation still awaiting its authorization (control-server#484); the table decides below
+        // whether the selected action may be closed in it.
+        if (session.State is not ("EXECUTING" or "ACTION_SELECTED"))
+            return Refused(RecoverySessionAdministratorCloseCodes.SessionNotExecuting);
+        if (awaiting is null)
+            return Refused(RecoverySessionAdministratorCloseCodes.ActionNotClosable);
+        if (workflow is null || !awaiting.Contains(workflow.State))
+            return Refused(RecoverySessionAdministratorCloseCodes.ResultNotAwaited);
+        if (handshaking || (connectedSessionGeneration is not null && connectedSessionGeneration != connection?.SessionGeneration))
+            return Refused(RecoverySessionAdministratorCloseCodes.VehicleHandshakeInProgress);
+        if (forcedInProgress)
+            return Refused(RecoverySessionAdministratorCloseCodes.ForcedInProgressOnVehicle);
+        if (resultInFlight)
+            return Refused(RecoverySessionAdministratorCloseCodes.ResultInFlightOnVehicle);
+
+        foreach (RecoveryWorkflowRow closed in awaitingWorkflows)
+        {
+            closed.State = RecoveryWorkflowState.RecoveryRequired;
+            closed.Outcome = AdministratorClosedOutcome;
+            closed.UpdatedAt = timeProvider.GetUtcNow();
+            await SettleAnsweredCommandAsync(closed, cancellationToken).ConfigureAwait(false);
+        }
+        await AdvanceSessionAfterResultAsync(workflow, connection!.SessionGeneration, cancellationToken).ConfigureAwait(false);
+        await dbContext.SaveChangesAsync(cancellationToken).ConfigureAwait(false);
+        return new AdministratorCloseDecision([], session.ExceptionRecoverySessionId);
+
+        AdministratorCloseDecision Refused(string code) => new([code], session.ExceptionRecoverySessionId);
+
+        static string[] ParseStrings(string json) => JsonSerializer.Deserialize<string[]>(json) ?? [];
+    }
+
+    /// <summary>
+    /// Sends the vehicle the session snapshots still waiting for it, from outside its connection's loop, after the closing
+    /// has committed. Nothing here may undo or misreport that: a vehicle that is not connected is not a failure (the
+    /// snapshot stays in the outbox and the reconnect replay delivers it), and any other failure is logged and left to that
+    /// same replay.
+    /// </summary>
+    internal async Task TrySendPendingSessionSnapshotsAsync(string agvId, CancellationToken cancellationToken)
+    {
+        try
+        {
+            await SendPendingSessionSnapshotsAsync(agvId, cancellationToken).ConfigureAwait(false);
+        }
+        catch (Exception error) when (error is IOException or ObjectDisposedException)
+        {
+            // Not on the line: the replay after the next recovery report carries it.
+        }
+        catch (Exception error) when (error is not OperationCanceledException)
+        {
+            LogClosingSnapshotNotSent(logger ?? (ILogger)NullLogger.Instance, agvId, error);
+        }
     }
 
     public async Task SendTriggeredCommandAsync(JsonElement root, CancellationToken cancellationToken)
@@ -632,7 +912,11 @@ public sealed class OnboardRecoveryCoordinator(
             row => row.AgvId == session.AgvId, cancellationToken).ConfigureAwait(false);
         bool repairReleaseOffered = action == RepairReleaseAction &&
                                     await RepairReleaseOfferedAsync(session, cancellationToken).ConfigureAwait(false);
-        string? actionProblem = ValidateActionPreconditions(action, session, connection, operation, repairReleaseOffered);
+        bool forcedFenceLifted = action == "FORCED_MECHANICAL_RECOVERY" &&
+                                 await ForcedFenceLiftedOverAdministratorClosingsAsync(connection, cancellationToken)
+                                     .ConfigureAwait(false);
+        string? actionProblem = ValidateActionPreconditions(action, session, connection, operation, repairReleaseOffered,
+            forcedFenceLifted);
         if (actionProblem is not null)
             return RejectedAction(root, actionId, recoverySessionId, session.Revision, actionProblem);
         // The one check against taking an action again while the same action still awaits its outcome, for all four
@@ -1079,11 +1363,18 @@ public sealed class OnboardRecoveryCoordinator(
             workflow.State is not (RecoveryWorkflowState.AwaitingAuthorization or RecoveryWorkflowState.CommandPending
                 or RecoveryWorkflowState.AwaitingResult))
         {
+            // A compensation an administrator closed while it awaited its authorization (control-server#484): its session is
+            // what ended, and the refusal says so, as it does for a session closed on another result below.
+            bool closedByAdministrator = workflow?.Outcome == AdministratorClosedOutcome &&
+                                         workflow.State == RecoveryWorkflowState.RecoveryRequired;
             return Response(root, "LoadCompensationRejected", new
             {
                 recoveryActionId = actionId,
-                problem = Problem(ServerReasonCodes.ActionNotAllowedInState, "payload",
-                    "Load compensation is not authorized.")
+                problem = closedByAdministrator
+                    ? Problem(ServerReasonCodes.RecoverySessionNotOpen, "payload",
+                        "The recovery session this compensation belongs to was closed by an administrator.")
+                    : Problem(ServerReasonCodes.ActionNotAllowedInState, "payload",
+                        "Load compensation is not authorized.")
             });
         }
         if (workflow.CommandMessageId is null)
@@ -1205,13 +1496,26 @@ public sealed class OnboardRecoveryCoordinator(
             cancellationToken).ConfigureAwait(false);
         JourneyRuntimeRow? journey = await DemandJourneyLookup.JourneyOf(dbContext, demandId)
             .SingleOrDefaultAsync(cancellationToken).ConfigureAwait(false);
+        // Only for a demand still on board (control-server#505): accepted, and loaded on this journey. A correction for one
+        // already unloaded ran over slots that may hold another demand's cargo by now, and when it did not reconcile the journey
+        // was blocked under a code no demand could carry (KeepDemandAndJourneyBlockedAsync). Whether the vehicle is still at
+        // that demand's own pickup -- REQ-0237's window proper -- is control-server#287's, not checked here.
+        bool onBoard = journey is not null &&
+                       await dbContext.AcceptedDemands.AsNoTracking().AnyAsync(
+                           row => row.DemandId == demandId && row.Status == DemandExecutionStatus.Accepted,
+                           cancellationToken).ConfigureAwait(false) &&
+                       await DemandJourneyLookup.Memberships(dbContext).AsNoTracking().AnyAsync(
+                           row => row.DemandId == demandId && row.JourneyId == journey.JourneyId &&
+                                  row.Status == JourneyDemandStatuses.Loaded,
+                           cancellationToken).ConfigureAwait(false);
         // REQ-0237: an ordinary mis-placement is corrected only before the vehicle leaves the pickup.
         // A committed load alone is not enough -- until 2026-09-13 this authorized corrections for a
         // vehicle already sent to the gate, whose onboard could only refuse to open the doors.
         if (operation is null || operation.OperationType != SlotOperationType.Load ||
             operation.Status != StationOperationStatus.Committed ||
             !slots.All(ParseSlots(operation.TargetSlotsJson).Contains) ||
-            journey?.Stage != JourneyRuntimeStage.AwaitingStationDeparture)
+            journey?.Stage != JourneyRuntimeStage.AwaitingStationDeparture ||
+            !onBoard)
         {
             return Response(root, "LoadCorrectionRejected", new
             {
@@ -1520,8 +1824,7 @@ public sealed class OnboardRecoveryCoordinator(
         if (!success)
         {
             workflow.State = RecoveryWorkflowState.RecoveryRequired;
-            await KeepDemandAndJourneyBlockedAsync(
-                workflow.DemandId, messageType + "_NOT_RECONCILED", cancellationToken).ConfigureAwait(false);
+            await KeepDemandAndJourneyBlockedAsync(workflow, messageType, cancellationToken).ConfigureAwait(false);
             return;
         }
         // A result that would end a demand already delivered (control-server#481). It cannot end it: the demand is the
@@ -1588,6 +1891,23 @@ public sealed class OnboardRecoveryCoordinator(
                     workflow.WorkflowId, stop.DemandId ?? stop.JourneyId, stop.Stage.ToString(), stop.BlockReasonCode, null);
                 return;
             }
+            // The same for the demand alone (control-server#505): the journey goes on with others, and this demand was ended
+            // between the authorization and this result -- by its station deadline, say. Nothing was commanded for it and the
+            // vehicle has proved its slots empty, so there is nothing left to hold the journey for. Until #505 the stage check
+            // below took this for a result arriving in the wrong stage and blocked the journey under a code no demand carried.
+            DemandExecutionStatus? cancelledStatus = await dbContext.AcceptedDemands.AsNoTracking()
+                .Where(row => row.DemandId == workflow.DemandId)
+                .Select(row => (DemandExecutionStatus?)row.Status)
+                .SingleOrDefaultAsync(cancellationToken).ConfigureAwait(false);
+            // Cancelled only: a delivered demand never reaches here -- the delivered check above returns first for every result
+            // but a correction's.
+            if (cancelledStatus is DemandExecutionStatus.Cancelled)
+            {
+                LogCancellationFoundDemandEnded(
+                    logger ?? (ILogger)NullLogger.Instance,
+                    workflow.WorkflowId, workflow.DemandId, cancelledStatus.Value.ToString(), stop.Stage.ToString(), null);
+                return;
+            }
             // 这条需求在这趟旅程里的归属：命令发没发、要结算哪一版录入请求，都挂在它身上（批次7-06，control-server#211）。
             JourneyStopCursor stopCursor = await JourneyStopCursor
                 .LoadAsync(dbContext, stop, cancellationToken).ConfigureAwait(false);
@@ -1600,8 +1920,7 @@ public sealed class OnboardRecoveryCoordinator(
                 await LoadCommandedAsync(cancelled, cancellationToken).ConfigureAwait(false))
             {
                 workflow.State = RecoveryWorkflowState.RecoveryRequired;
-                await KeepDemandAndJourneyBlockedAsync(
-                    workflow.DemandId, messageType + "_NOT_RECONCILED", cancellationToken).ConfigureAwait(false);
+                await KeepDemandAndJourneyBlockedAsync(workflow, messageType, cancellationToken).ConfigureAwait(false);
                 return;
             }
             // 给了路网的终结在删掉空停靠之后还换序（批次7-10，control-server#215，调度决策 6）；没给就只删不换。
@@ -1630,12 +1949,24 @@ public sealed class OnboardRecoveryCoordinator(
             .SingleAsync(cancellationToken).ConfigureAwait(false);
         JourneyStopCursor commandedStops = await JourneyStopCursor
             .LoadAsync(dbContext, runtime, cancellationToken).ConfigureAwait(false);
+        StationOperationRow? endedOperation = null;
+        StationOperationStatus? statusBeforeEnding = null;
+        // Read before the termination below rewrites it: a demand still RecoveryRequired is the mark an unreconciled result left,
+        // and ending it is what may release a *_NOT_RECONCILED block (BlockedJourneyRelease, criterion 2, control-server#505).
+        DemandExecutionStatus? demandStatusBeforeEnding = await dbContext.AcceptedDemands
+            .Where(row => row.DemandId == workflow.DemandId)
+            .Select(row => (DemandExecutionStatus?)row.Status)
+            .SingleOrDefaultAsync(cancellationToken).ConfigureAwait(false);
         if (workflow.SlotOperationAttemptId is not null)
         {
-            StationOperationRow? operation = await dbContext.StationOperations.SingleOrDefaultAsync(
+            endedOperation = await dbContext.StationOperations.SingleOrDefaultAsync(
                 row => row.SlotOperationAttemptId == workflow.SlotOperationAttemptId,
                 cancellationToken).ConfigureAwait(false);
-            if (operation is not null) operation.Status = StationOperationStatus.Cancelled;
+            if (endedOperation is not null)
+            {
+                statusBeforeEnding = endedOperation.Status;
+                endedOperation.Status = StationOperationStatus.Cancelled;
+            }
         }
         if (doorUnprovenEmpty)
         {
@@ -1663,6 +1994,21 @@ public sealed class OnboardRecoveryCoordinator(
                 },
                 timeProvider.GetUtcNow(),
                 cancellationToken).ConfigureAwait(false);
+        // 旅程还带着别的需求、因此没收尾，而它阻塞在的正是刚结清的这一次操作：放回等那一次结果的阶段，由引擎接着走
+        // （control-server#499）。不是这一次的、或别的操作还没收敛的，留在 Blocked。条件与理由见 BlockedJourneyRelease。
+        string? blockedFor = runtime.BlockReasonCode;
+        if (await BlockedJourneyRelease
+                .StageAsync(
+                    dbContext, runtime, endedOperation, statusBeforeEnding, demandStatusBeforeEnding, timeProvider.GetUtcNow(),
+                    cancellationToken)
+                .ConfigureAwait(false))
+        {
+            // Written before the caller's save, like the other lines here: the store, not the log, is the record.
+            LogBlockedJourneyReleased(
+                logger ?? (ILogger)NullLogger.Instance,
+                runtime.AgvId, messageType, workflow.WorkflowId, workflow.DemandId, blockedFor ?? "(none)",
+                runtime.Stage.ToString(), null);
+        }
         if (messageType is "FaultCargoRecoveryResult" or "ForcedMechanicalRecoveryResult")
         {
             await SettleHandedOffCargoAsync(runtime, cancellationToken).ConfigureAwait(false);
@@ -2194,24 +2540,56 @@ public sealed class OnboardRecoveryCoordinator(
         }
     }
 
+    /// <summary>
+    /// A recovery result of <paramref name="workflow"/> did not reconcile: its demand is marked RecoveryRequired and its journey
+    /// blocked under <c>&lt;messageType&gt;_NOT_RECONCILED</c>. Staged; the caller saves.
+    /// </summary>
+    /// <remarks>
+    /// <para>
+    /// <b>Every such block names a demand that carries the mark</b> (control-server#505). The release paths
+    /// (<see cref="BlockedJourneyRelease"/>) read "nothing is left unresolved" off the demands still RecoveryRequired, so a block no
+    /// demand stands for would be lifted with whatever else the journey was waiting on. A demand already delivered or cancelled
+    /// cannot take the mark -- that would rewrite how it ended -- and until #505 the journey was blocked under the ordinary code all
+    /// the same. Now it is blocked under <see cref="BlockedJourneyRelease.OnEndedDemandSuffix"/>, which neither release path lifts:
+    /// the slots that result left unknown may hold another demand's cargo by now, so letting the vehicle go is the wrong release,
+    /// and staying here is the stuck state a person resolves. Only the journey's closing (<c>JourneyClosure</c>) ends it: the last
+    /// demand ending through <c>PickupStopTermination</c>, the release service releasing the last demand still to load, or a person
+    /// giving up a stopped trip. The authorizations keep it rare: a correction is authorized only for
+    /// a demand on board, and a session is not opened for a demand that has ended.
+    /// </para>
+    /// <para>
+    /// <b>That code is never replaced</b>, by an ordinary one here or by anything else: replaced, it would be lifted with the next
+    /// ordinary block it stood under. An ordinary code may still replace another; the demand's mark, not the text, is what holds it.
+    /// </para>
+    /// </remarks>
     private async Task KeepDemandAndJourneyBlockedAsync(
-        string? demandId,
-        string reason,
+        RecoveryWorkflowRow workflow,
+        string messageType,
         CancellationToken cancellationToken)
     {
+        string? demandId = workflow.DemandId;
         if (demandId is null) return;
         AcceptedDemandRow? demand = await dbContext.AcceptedDemands.SingleOrDefaultAsync(
             row => row.DemandId == demandId, cancellationToken).ConfigureAwait(false);
-        if (demand is not null && demand.Status != DemandExecutionStatus.Succeeded &&
-            demand.Status != DemandExecutionStatus.Cancelled)
-            demand.Status = DemandExecutionStatus.RecoveryRequired;
+        bool ended = demand is null || demand.Status is DemandExecutionStatus.Succeeded or DemandExecutionStatus.Cancelled;
+        if (!ended)
+            demand!.Status = DemandExecutionStatus.RecoveryRequired;
         JourneyRuntimeRow? runtime = await DemandJourneyLookup.JourneyOf(dbContext, demandId)
             .SingleOrDefaultAsync(cancellationToken).ConfigureAwait(false);
-        if (runtime is not null)
+        if (runtime is null) return;
+        string reason = messageType + (ended ? BlockedJourneyRelease.OnEndedDemandSuffix : BlockedJourneyRelease.NotReconciledSuffix);
+        runtime.Stage = JourneyRuntimeStage.Blocked;
+        if (!BlockedJourneyRelease.IsUnreleasable(runtime.BlockReasonCode))
         {
-            runtime.Stage = JourneyRuntimeStage.Blocked;
             runtime.SetBlockReason(reason, timeProvider.GetUtcNow());
-            runtime.UpdatedAt = timeProvider.GetUtcNow();
+        }
+        runtime.UpdatedAt = timeProvider.GetUtcNow();
+        if (ended)
+        {
+            LogResultOnEndedDemandBlocked(
+                logger ?? (ILogger)NullLogger.Instance,
+                messageType, workflow.WorkflowId, demandId, demand?.Status.ToString() ?? "(missing)",
+                runtime.BlockReasonCode ?? reason, null);
         }
     }
 
@@ -2272,6 +2650,16 @@ public sealed class OnboardRecoveryCoordinator(
             row => row.AgvId == agvId && row.Stage == JourneyRuntimeStage.Blocked,
             cancellationToken).ConfigureAwait(false);
         if (runtime is null) return ServerReasonCodes.RecoveryDemandNotBlocked;
+        // Not for a demand that has ended (control-server#505). Every ending -- an unload, PickupStopTermination's callers --
+        // leaves none of its cargo on board by this server's account, so there is nothing for a session to recover; and a result
+        // of one that did not reconcile could only block the journey under a code no release lifts.
+        if (await dbContext.AcceptedDemands.AsNoTracking().AnyAsync(
+                row => row.DemandId == demandId &&
+                       (row.Status == DemandExecutionStatus.Succeeded || row.Status == DemandExecutionStatus.Cancelled),
+                cancellationToken).ConfigureAwait(false))
+        {
+            return ServerReasonCodes.RecoveryDemandNotBlocked;
+        }
         StationOperationRow? operation = await FindLatestOperationAsync(demandId, cancellationToken).ConfigureAwait(false);
         return operation is null || !slots.SequenceEqual(ParseSlots(operation.TargetSlotsJson))
             ? ServerReasonCodes.RecoveryScopeMismatch
@@ -2292,14 +2680,64 @@ public sealed class OnboardRecoveryCoordinator(
                 ? ServerReasonCodes.RecoveryActionAlreadySelected : null;
     }
 
+    /// <summary>
+    /// Whether a new forced mechanical recovery may be taken over a forced generation the vehicle has not reached, because
+    /// every forced recovery above the generation it reports was closed by an administrator (control-server#484, F-b; the
+    /// coordinator's decision of 2026-10-06).
+    /// </summary>
+    /// <remarks>
+    /// <para>
+    /// <b>What the fence guards.</b> Submitting a forced recovery advances the vehicle's generation and fences every command
+    /// issued under an older one; the onboard refuses a command below the generation it holds, and raises its own only by
+    /// binding a ForcedMechanicalRecoveryCommand. Until the vehicle reports the server's generation, the server cannot know it
+    /// has taken the forced recovery in, so every action is refused FORCED_RECOVERY_GENERATION_STALE: a second action now
+    /// could be judged on slots a forced recovery the vehicle is still carrying out has left physically unknown.
+    /// </para>
+    /// <para>
+    /// <b>Why closing one leaves the fence shut for good.</b> An administrator's closing settles the forced command, so it is
+    /// never replayed. A vehicle that never bound it -- gone before it arrived -- comes back reporting the generation below,
+    /// and nothing can raise it but another forced command, which the fence itself refuses. Its hardware hold cannot be lifted
+    /// either: the record needs the forced result, and the onboard offers it only for a forced recovery it carried out.
+    /// </para>
+    /// <para>
+    /// <b>Why lifting it here does not weaken it.</b> Only for a new FORCED_MECHANICAL_RECOVERY, which advances the
+    /// generation again and fences everything below -- the same move the fence exists to order. Only while the vehicle reports
+    /// less than the server holds, and only when every forced workflow above what it reports was closed by an administrator:
+    /// the command of each was settled, never replayed, and a vehicle reporting below its generation never bound it, so no
+    /// forced recovery it might still be carrying out stands between the two. One that ended any other way -- a result arrived
+    /// -- keeps the fence shut (control-server#493 is that case); so does a generation with no forced workflow behind it. The
+    /// closed workflows become history under the new generation, and the new forced recovery goes the ordinary way: its result,
+    /// the vehicle's report of the new generation, a hardware record. That is the cost: a person at the vehicle forces it
+    /// again before it is released.
+    /// </para>
+    /// </remarks>
+    private async Task<bool> ForcedFenceLiftedOverAdministratorClosingsAsync(
+        SessionRecoveryRow connection,
+        CancellationToken cancellationToken)
+    {
+        if (connection.ReportedForcedRecoveryGeneration >= connection.ForcedRecoveryGeneration)
+            return false;
+        string?[] outcomes = await dbContext.RecoveryWorkflows.AsNoTracking()
+            .Where(row => row.AgvId == connection.AgvId &&
+                          row.WorkflowType == "FORCED_MECHANICAL_RECOVERY" &&
+                          row.ForcedRecoveryGeneration > connection.ReportedForcedRecoveryGeneration)
+            .Select(row => row.Outcome)
+            .ToArrayAsync(cancellationToken).ConfigureAwait(false);
+        return outcomes.Length > 0 && outcomes.All(outcome => outcome == AdministratorClosedOutcome);
+    }
+
     private static string? ValidateActionPreconditions(
         string action,
         ExceptionRecoverySessionRow session,
         SessionRecoveryRow connection,
         StationOperationRow? operation,
-        bool repairReleaseOffered)
+        bool repairReleaseOffered,
+        bool forcedFenceLifted)
     {
-        if (connection.ReportedForcedRecoveryGeneration != connection.ForcedRecoveryGeneration)
+        // The fence, lifted for a new forced recovery over administrator-closed generations alone
+        // (ForcedFenceLiftedOverAdministratorClosingsAsync); every other action and case is refused as before.
+        if (connection.ReportedForcedRecoveryGeneration != connection.ForcedRecoveryGeneration &&
+            !(forcedFenceLifted && action == "FORCED_MECHANICAL_RECOVERY"))
             return ServerReasonCodes.ForcedRecoveryGenerationStale;
         // Offered only on a session without a demand over exactly the held slots (control-server#385); anywhere else the
         // administrator is told it is not allowed here rather than that an operation is missing.
@@ -2648,3 +3086,10 @@ public sealed class OnboardRecoveryCoordinator(
             ? null
             : await planRevisionRouting.ReadAsync(cancellationToken).ConfigureAwait(false);
 }
+
+/// <summary>
+/// What <see cref="OnboardRecoveryCoordinator.CloseSessionAwaitingResultAsync"/> decided: the refusal codes, empty when the
+/// session closed, and the session it judged -- the one it closed, or the vehicle's open one it refused to close -- when there
+/// was one (control-server#483).
+/// </summary>
+internal sealed record AdministratorCloseDecision(IReadOnlyList<string> Codes, string? ExceptionRecoverySessionId);

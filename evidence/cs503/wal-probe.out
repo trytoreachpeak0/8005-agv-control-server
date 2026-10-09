@@ -1,0 +1,25 @@
+=== A. --migrate-only on scratch DB
+migrate-only exit code: 0
+header[18],[19] of controlserver.db = 2,2
+--- after --migrate-only exited
+controlserver.db                        1265664
+controlserver.db.instance-lock               78
+=== B. a long-lived writer (stands in for the running Host)
+journal_mode seen by a fresh connection: wal
+checkpoint after create: 0
+committed rows on the live connection: 50
+--- live, after 50 committed single-row transactions
+controlserver.db                        1269760
+controlserver.db-shm                      32768
+controlserver.db-wal                     206032
+controlserver.db.instance-lock               78
+copy main file only        -> rows=0 journal_mode=wal integrity=ok
+copy main + -wal           -> rows=50 journal_mode=wal integrity=ok
+copy -shm: succeeded
+Copy-Item -Recurse of live data dir: succeeded
+VACUUM INTO (live)         -> rows=50 journal_mode=delete integrity=ok; header[18],[19] of vacuum-into.db = 1,1
+=== C. writer closes (stands in for a clean service stop)
+--- after the last connection closed
+controlserver.db                        1269760
+controlserver.db.instance-lock               78
+copy main only after close -> rows=50 journal_mode=wal integrity=ok

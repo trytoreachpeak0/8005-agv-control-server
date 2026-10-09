@@ -4,6 +4,7 @@ using ControlServer.Host.Runtime;
 using ControlServer.Infrastructure.Persistence;
 using ControlServer.Host.Runtime.Faults;
 using ControlServer.Host.Runtime.Fleet;
+using ControlServer.Host.Runtime.Recovery;
 using Microsoft.AspNetCore.Builder;
 using Microsoft.AspNetCore.Http;
 using Microsoft.AspNetCore.Http.HttpResults;
@@ -140,6 +141,7 @@ public sealed class StationExclusivityReleaseEndpointsTests
         // Registered so that the handlers' parameters read as services, never resolved: routing is all this looks at.
         builder.Services.AddScoped<VehicleFaultRecoveryService>(_ => throw new InvalidOperationException("not resolved"));
         builder.Services.AddScoped<WaitingPointArrivalSettlement>(_ => throw new InvalidOperationException("not resolved"));
+        builder.Services.AddScoped<RecoverySessionAdministratorClose>(_ => throw new InvalidOperationException("not resolved"));
         builder.Services.AddScoped<VehicleRoster>(_ => throw new InvalidOperationException("not resolved"));
         builder.Services.AddScoped<ControlServerDbContext>(_ => throw new InvalidOperationException("not resolved"));
         builder.Services.AddScoped<IGovernanceAuditWriter>(_ => throw new InvalidOperationException("not resolved"));
@@ -159,6 +161,8 @@ public sealed class StationExclusivityReleaseEndpointsTests
         Assert.Equal(on, routes.Contains(VehicleFaultRecoveryEndpoints.Route));
         // control-server#447: the waiting point arrival settlement hangs on the same switch.
         Assert.Equal(on, routes.Contains(WaitingPointArrivalSettlementEndpoints.Route));
+        // control-server#483: so does the exception recovery session closing.
+        Assert.Equal(on, routes.Contains(RecoverySessionAdministratorCloseEndpoints.Route));
     }
 
     // ---- helpers ------------------------------------------------------------------------------------------------

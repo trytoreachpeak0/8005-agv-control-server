@@ -1,0 +1,10 @@
+ParseFile scripts/run-demand-bearing-g3-vectors.ps1 errors=0
+ParseFile scripts/Update-ControlServerLocal.ps1 errors=0
+ParseFile scripts/Install-ControlServerLocal.ps1 errors=0
+ParseFile scripts/Test-DataRootLockWait.ps1 errors=0
+main only     : 1bcee2dccae675b5789a393540a424e59f9424ceccf4795e81ffb31995deaca3
+main + wal A  : 9b69d5cb6e97ffd7abd8141bef86a36172f701b1d2b1a967c5ba508dba598d7e
+main + wal B  : b10d270551e967bc959c09c493a3915ef77fb67f89ecb3897011acae7053ea8c
+all distinct  : True
+stable        : True
+length 64 hex : True

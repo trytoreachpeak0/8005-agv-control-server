@@ -332,7 +332,13 @@ public sealed partial class VehicleFaultRecoveryService
         DateTimeOffset now = timeProvider.GetUtcNow();
         JourneyRuntimeRow runtime = trip.Runtime!;
         runtime.Stage = JourneyRuntimeStage.Blocked;
-        runtime.SetBlockReason(AwaitingCargoHandoffReason, now);
+        // A block no release lifts keeps its code (control-server#505): replaced by this one, the next handoff that settles the
+        // journey's last marked demand would let the vehicle go with the slots that result left unknown. The handoff session
+        // opens all the same -- the journey is Blocked -- and its result ends the demand without lifting the block.
+        if (!BlockedJourneyRelease.IsUnreleasable(runtime.BlockReasonCode))
+        {
+            runtime.SetBlockReason(AwaitingCargoHandoffReason, now);
+        }
         runtime.UpdatedAt = now;
         // Who handed it over, on the record (independent review S2); event 9203 names them too.
         trip.Stopped!.OperatorId = request.OperatorId;

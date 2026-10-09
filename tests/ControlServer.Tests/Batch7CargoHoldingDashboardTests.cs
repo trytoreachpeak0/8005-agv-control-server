@@ -656,6 +656,33 @@ public sealed class Batch7CargoHoldingDashboardTests
     }
 
     /// <summary>
+    /// 不可放行的两种后缀（control-server#505）经查询端到端给出说明：码前面接的是哪一种恢复结果有五种，说明按后缀认，不逐个进
+    /// <see cref="BlockedJourneysQueryEndpoint.Descriptions"/>，所以只断言字典的那条用例看不见它。
+    /// </summary>
+    [Theory]
+    [InlineData("LoadCorrectionResult_NOT_RECONCILED_ON_ENDED_DEMAND", false)]
+    [InlineData("FaultCargoRecoveryResult_NOT_RECONCILED_BEFORE_UPGRADE", true)]
+    public async Task AnUnreleasableNotReconciledBlockIsShownWithItsDescription(string code, bool beforeUpgrade)
+    {
+        string expected = beforeUpgrade
+            ? BlockedJourneysQueryEndpoint.NotReconciledBeforeUpgradeDescription
+            : BlockedJourneysQueryEndpoint.UnreleasableNotReconciledDescription;
+        await using DashboardDatabase database = await DashboardDatabase.CreateAsync();
+        JourneyRuntimeRow journey = Journey("D-1", "AGV-01", JourneyRuntimeStage.Blocked);
+        journey.SetBlockReason(code, Now.AddMinutes(-1));
+        await database.SeedAsync(journey);
+
+        using JsonDocument fact = await ReadBlockedAsync(database.NewContext());
+        JsonElement row = Assert.Single(fact.RootElement.GetProperty("journeys").EnumerateArray());
+        Assert.Equal(code, row.GetProperty("blockReasonCode").GetString());
+        Assert.Equal(expected, row.GetProperty("blockReasonDescription").GetString());
+        Assert.Contains(
+            System.Net.WebUtility.HtmlEncode(expected),
+            new BlockedJourneyCard().RenderFact(fact.RootElement),
+            StringComparison.Ordinal);
+    }
+
+    /// <summary>
     /// 自动重建停住的两个码，卡片上要说出人能做什么（control-server#345）：点名入口上的动作，不再只说「找值班工程师」。
     /// 放弃这趟要写明业务后果——MES 那边需求还挂着，8005 不再接，货要人另外搬（调度 2026-09-23 转达的要求）。
     /// 窗口写成「默认 10 分钟」并点名配置项，不写死（独立审查低项）；等交接的卡片要说出交接没有一次成功时的两个出口（审查 M1）。

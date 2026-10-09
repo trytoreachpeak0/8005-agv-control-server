@@ -172,7 +172,8 @@ internal static class JourneyRuntimeWorkerTestKit
         public static async Task<RuntimeFixture> CreateAsync(
             bool catalogApproved = true,
             bool bindSlotModel = true,
-            DbCommandInterceptor? commands = null)
+            DbCommandInterceptor? commands = null,
+            bool migrate = false)
         {
             SqliteConnection connection = new("Data Source=:memory:");
             await connection.OpenAsync(TestContext.Current.CancellationToken);
@@ -188,7 +189,16 @@ internal static class JourneyRuntimeWorkerTestKit
 
             DbContextOptions<ControlServerDbContext> dbOptions = builder.Options;
             ControlServerDbContext context = new(dbOptions);
-            await context.Database.EnsureCreatedAsync(TestContext.Current.CancellationToken);
+            // migrate: the schema through the real migrations, with their history, for a test that migrates down and up again
+            // (control-server#505). The default builds it straight from the model, as before.
+            if (migrate)
+            {
+                await context.Database.MigrateAsync(TestContext.Current.CancellationToken);
+            }
+            else
+            {
+                await context.Database.EnsureCreatedAsync(TestContext.Current.CancellationToken);
+            }
             JourneyRuntimeOptions options = ValidOptions();
             FixedTimeProvider clock = new(Now);
             RecordingCatalog catalog = new();

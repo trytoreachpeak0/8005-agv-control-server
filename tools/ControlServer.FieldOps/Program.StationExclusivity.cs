@@ -27,6 +27,11 @@ namespace ControlServer.FieldOps;
 /// 填错成不回 RST 的地址，都只会超时；那是 <c>SERVER_STATE_UNKNOWN</c>，同样一行不写。
 /// </para>
 /// <para>
+/// <b>探完再拿库锁</b>（#473）：探测只说明探的那一刻服务端停着，探完、写库前它恰好被启动，探测拦不住。运行中的服务端整个进程期间
+/// 持有与库文件绑定的锁（<see cref="ControlServerDatabaseLock"/>），这里写库前拿同一把，拿不到是 <c>DATABASE_IN_USE</c>、一行不写，
+/// 拿到了一直持有到写完。探测留着：部署着的服务端可能还是不拿锁的旧构建，探测仍能认出它，并且只有它能告诉操作员改用 <c>--server</c>。
+/// </para>
+/// <para>
 /// 必填：<c>--map</c>、<c>--station</c>、<c>--vehicle-key</c>（持有车的 RIoT <c>VehicleKey</c>）、<c>--operator</c>、<c>--reason</c>、
 /// <c>--site-verification</c>（现场核实「车不在站上」的记录引用）；<c>--role</c> 可选、照录。缺操作员、理由或核实记录不是用法错误，
 /// 是拒绝理由，照样写审计。
@@ -50,6 +55,7 @@ internal static partial class Program
     private static async Task<int> ReleaseStationExclusivityAsync(
         ControlServerDbContext context,
         GovernanceStore governance,
+        string databasePath,
         Dictionary<string, string> options,
         DateTimeOffset now)
     {
@@ -93,6 +99,49 @@ internal static partial class Program
                 },
                 1);
         }
+        await PauseForTestAsync(PauseAfterProbeVariable);
+
+        // #473: the probe only says the server was stopped when it looked. The lock the running server holds on this database
+        // file closes the window after it; held until the write and its output are done.
+        ControlServerDatabaseLock? held;
+        try
+        {
+            held = ControlServerDatabaseLock.TryAcquire(databasePath);
+        }
+        catch (ControlServerDatabaseLockException unusable)
+        {
+            return Emit(
+                new
+                {
+                    command = ReleaseStationExclusivityCommand,
+                    outcome = "DATABASE_LOCK_FILE_UNUSABLE",
+                    via = "database",
+                    mapId,
+                    stationId,
+                    probeServer = probe.ToString(),
+                    lockFile = unusable.LockFile,
+                    detail = "没有写库：" + unusable.Message
+                },
+                1);
+        }
+        using ControlServerDatabaseLock? releasedOnExit = held;
+        if (held is null)
+        {
+            return Emit(
+                new
+                {
+                    command = ReleaseStationExclusivityCommand,
+                    outcome = "DATABASE_IN_USE",
+                    via = "database",
+                    mapId,
+                    stationId,
+                    probeServer = probe.ToString(),
+                    lockFile = ControlServerDatabaseLock.LockFileFor(databasePath),
+                    detail = ControlServerDatabaseLock.FieldOpsRefusal(databasePath)
+                },
+                1);
+        }
+        await PauseForTestAsync(PauseAfterLockVariable);
 
         StationExclusivityManualReleaseResult result = await StationExclusivityManualRelease.ReleaseAsync(
             context,
@@ -245,6 +294,37 @@ internal static partial class Program
         catch (Exception other)
         {
             return new ServerProbe(ServerProbeState.Inconclusive, null, $"{other.GetType().Name}: {other.Message}");
+        }
+    }
+
+    /// <summary>
+    /// Test seam (control-server#473): unset in the field, where it does nothing. Pauses once the probe has found the server
+    /// stopped, so a test can start the server inside the window between the probe and the write.
+    /// </summary>
+    internal const string PauseAfterProbeVariable = "CONTROL_SERVER_FIELDOPS_TEST_PAUSE_AFTER_PROBE";
+
+    /// <summary>
+    /// Test seam (control-server#473 review): unset in the field. Pauses with the lock held and nothing written yet, so a test can
+    /// show a server started meanwhile cannot come up until this process is done.
+    /// </summary>
+    internal const string PauseAfterLockVariable = "CONTROL_SERVER_FIELDOPS_TEST_PAUSE_AFTER_LOCK";
+
+    /// <summary>
+    /// A test names a path prefix in <paramref name="variable"/>; this process writes <c>&lt;prefix&gt;.reached</c> and goes on only once
+    /// <c>&lt;prefix&gt;.go</c> exists (or after two minutes).
+    /// </summary>
+    private static async Task PauseForTestAsync(string variable)
+    {
+        string? prefix = Environment.GetEnvironmentVariable(variable);
+        if (string.IsNullOrWhiteSpace(prefix))
+        {
+            return;
+        }
+        await File.WriteAllTextAsync(prefix + ".reached", string.Empty);
+        DateTimeOffset giveUp = DateTimeOffset.UtcNow.AddMinutes(2);
+        while (!File.Exists(prefix + ".go") && DateTimeOffset.UtcNow < giveUp)
+        {
+            await Task.Delay(50);
         }
     }
 

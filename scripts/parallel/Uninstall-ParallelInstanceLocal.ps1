@@ -92,7 +92,9 @@ Write-Step "Definition: $InstanceDefinitionPath"
 # gate is not a question for an uninstall, hence the switch; nor is the foreign order cancel
 # gate (control-server#330).
 $definition = Read-ParallelInstanceDefinition -Path $InstanceDefinitionPath
-$null = Assert-ParallelInstanceDefinition -Definition $definition -AllowRiotCreateDispatch -AllowRiotForeignOrderCancel
+# -ForStopDirection (control-server#518): an instance installed before taskTypeStations existed must still be
+# removable by a newer module -- the one a failed reinstall leaves in opsRoot.
+$null = Assert-ParallelInstanceDefinition -Definition $definition -AllowRiotCreateDispatch -AllowRiotForeignOrderCancel -ForStopDirection
 $layout = Get-ParallelInstanceLayout -Definition $definition
 $footprint = @(Get-ParallelInstanceFootprint -Definition $definition)
 

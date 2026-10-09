@@ -153,8 +153,9 @@ public sealed class DispatchZoneParameterFieldOpsTests
     }
 
     /// <summary>
-    /// A preview takes no write lock. The database is deliberately not in WAL mode, so a dry run that opened a write
-    /// transaction would queue behind -- and hold up -- the running server's writes for the whole busy timeout.
+    /// A preview takes no write lock. WAL mode (which the database is in) still allows only one writer at a time, so a
+    /// dry run that opened a write transaction would queue behind -- and hold up -- the running server's writes for the
+    /// whole busy timeout.
     /// </summary>
     [Fact]
     public async Task ADryRunAnswersWhileAnotherWriterHoldsTheWriteLock()

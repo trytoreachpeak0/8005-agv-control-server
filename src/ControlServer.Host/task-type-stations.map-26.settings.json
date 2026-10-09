@@ -1,0 +1,23 @@
+{
+  "_comment": "control-server#518: the Map 26 preset for the v2 parallel instance, selected with TaskTypeStations:settingsFile. Station 210 '关卡' is the only station of that name on Map 26 (evidence/field/2026-09-19-B6-map-name-baseline-check/SUMMARY.md, conclusion 4; evidence/field/2026-10-03-B9-charging-roster-and-policy/catalog-26.json). The siteVerificationRef names that identity check; no site-use verification of this gate on Map 26 exists yet (REQ-0338).",
+  "TaskTypeStations": {
+    "rules": [
+      { "taskType": "DIE_TO_WIRE_STAGING", "fixedEnd": "DESTINATION" },
+      { "taskType": "DIE_TO_OVEN", "fixedEnd": "DESTINATION" },
+      { "taskType": "WIRE_TO_GATE", "fixedEnd": "DESTINATION" },
+      { "taskType": "WIRE_TO_OPTICAL", "fixedEnd": "DESTINATION" },
+      { "taskType": "STAGING_TO_WIRE", "fixedEnd": "ORIGIN" },
+      { "taskType": "WIRE_TO_NITROGEN", "fixedEnd": "DESTINATION" }
+    ],
+    "mapId": 26,
+    "requiredTaskTypes": [ "WIRE_TO_GATE" ],
+    "bindings": [
+      {
+        "taskType": "WIRE_TO_GATE",
+        "stationRiotId": 210,
+        "stationName": "关卡",
+        "siteVerificationRef": "MAP-26-WIRE_TO_GATE-B6-IDENTITY-20260919"
+      }
+    ]
+  }
+}

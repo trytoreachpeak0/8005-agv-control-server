@@ -36,6 +36,7 @@ $ErrorActionPreference = 'Stop'
 Import-Module (Join-Path (Split-Path -Parent $PSScriptRoot) 'L2RealOnboard.psm1') -Force
 Import-Module (Join-Path (Split-Path -Parent $PSScriptRoot) 'L2ConditionOrLast.psm1') -Force
 Import-Module (Join-Path (Split-Path -Parent $PSScriptRoot) 'L2SingleRow.psm1') -Force
+Import-Module (Join-Path (Split-Path -Parent $PSScriptRoot) 'L2ReadSnapshot.psm1') -Force
 Import-Module (Join-Path (Split-Path -Parent $PSScriptRoot) 'L2Chargers.psm1') -Force
 Import-Module (Join-Path (Split-Path -Parent $PSScriptRoot) 'L2MultiStopJourney.psm1') -Force
 . (Join-Path $PSScriptRoot 'MultiStopRigCommon.ps1')
@@ -215,15 +216,20 @@ $assertions.Add(
 
 # --- 4. 服务端：只在确认之后放 211，暂停仍在，旅程收尾 --------------------------------------------------------------------
 
+# One read snapshot (control-server#510 review S2): the release record is read before the journey, and the release and the
+# journey's closing are two saves, so both landing between those two reads gave a closed journey next to an empty release
+# reason. The wait stays on the closing, the later of the two; inside the snapshot the release is then always there.
 $after = Wait-L2ConditionOrLast -Description 'the charger was released and the journey closed' -Journal $journal `
     -Criterion 'released-and-closed' -TimeoutSeconds 60 `
     -Probe {
-        $record = Read-L2SingleRow -Connection $connection -Sql (
-            "SELECT IFNULL(ReleaseReason, '') AS Reason FROM StationExclusivityRecords WHERE StationId = $charger AND JourneyId = '$journeyId'")
-        $journey = Read-L2SingleRow -Connection $connection -Sql (
-            "SELECT Stage, IFNULL(BlockReasonCode, '') AS Code FROM JourneyRuntimes WHERE JourneyId = '$journeyId'")
-        "$(Get-ChargerHeld) | $(${record}?.Reason) | $(Get-Holds) | $(${journey}?.Stage) $(${journey}?.Code) | " +
-            "$(@($riot.Snapshot().body.orders | Where-Object { $null -ne $_ }).Count) orders"
+        Invoke-L2ReadSnapshot -Connection $connection -Read {
+            $record = Read-L2SingleRow -Connection $connection -Sql (
+                "SELECT IFNULL(ReleaseReason, '') AS Reason FROM StationExclusivityRecords WHERE StationId = $charger AND JourneyId = '$journeyId'")
+            $journey = Read-L2SingleRow -Connection $connection -Sql (
+                "SELECT Stage, IFNULL(BlockReasonCode, '') AS Code FROM JourneyRuntimes WHERE JourneyId = '$journeyId'")
+            "$(Get-ChargerHeld) | $(${record}?.Reason) | $(Get-Holds) | $(${journey}?.Stage) $(${journey}?.Code) | " +
+                "$(@($riot.Snapshot().body.orders | Where-Object { $null -ne $_ }).Count) orders"
+        }
     } `
     -Until { param($v) $v.Contains('Completed') }
 $expected = '(none) | CHARGER_RELEASED_ON_MANUAL_CLEARANCE | UNABLE_TO_CHARGE_CONFIRMED recovered=0 | Completed CHARGING_UNABLE_TO_CHARGE_CLEARED | 1 orders'

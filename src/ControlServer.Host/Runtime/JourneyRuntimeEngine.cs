@@ -1,3 +1,4 @@
+using System.Runtime.ExceptionServices;
 using System.Security.Cryptography;
 using System.Text;
 using System.Text.Json;
@@ -151,6 +152,13 @@ public sealed partial class JourneyRuntimeEngine(
             "Vehicle {AgvId}'s journey {JourneyId} yielded this iteration: its Onboard connection is not available (not " +
             "connected, another session generation, a write past its timeout, or closed). What it had not saved was withdrawn " +
             "and the other vehicles go on; the next iteration tries it again (control-server#334).");
+    private static readonly Action<ILogger, string, string, Exception?> LogAdvanceFailedVehicleIsolated =
+        LoggerMessage.Define<string, string>(
+            LogLevel.Error,
+            new EventId(2307, nameof(LogAdvanceFailedVehicleIsolated)),
+            "Vehicle {AgvId}'s journey {JourneyId} failed to advance this iteration. What it had not committed was withdrawn, " +
+            "it takes no dispatch this iteration, and the other vehicles and the dispatch round go on; the first such failure " +
+            "of the iteration is rethrown at its end (control-server#487).");
     private static readonly Action<ILogger, string, string, string, DateTimeOffset, Exception?> LogStationTimeoutDoorNotClosed =
         LoggerMessage.Define<string, string, string, DateTimeOffset>(
             LogLevel.Warning,
@@ -630,6 +638,7 @@ public sealed partial class JourneyRuntimeEngine(
         // not advanced until the next one. With one vehicle that is exactly the old shape -- either
         // it had a journey and only advanced, or it had none and only discovered.
         HashSet<string> yielded = new(StringComparer.Ordinal);
+        ExceptionDispatchInfo? firstFailure = null;
         foreach (JourneyRuntimeRow runtime in active)
         {
             // control-server#357：这台车这一轮的决定都出自上面那一次读。入站在那之后提交了这一行（取消收尾、保持阻断……），
@@ -674,15 +683,20 @@ public sealed partial class JourneyRuntimeEngine(
                     // 这条路径因此一定会走到。
                     if (OnboardConnectionUnavailableException.IsIn(error))
                     {
-                        await YieldToUnavailableConnectionAsync(runtime, before, error, cancellationToken).ConfigureAwait(false);
-                        yielded.Add(runtime.AgvId);
-                        continue;
+                        LogYieldedToUnavailableConnection(logger, runtime.AgvId, runtime.JourneyId, error);
                     }
-
-                    // 别的失败：先让这辆车在看板上说出「这一轮推进失败了」，再把异常原样抛出去：轮次仍然 fail-closed，
-                    // 2002 仍然记的是原来那一个异常（control-server#331）。
-                    await NameFailedAdvanceAsync(runtime, error, cancellationToken).ConfigureAwait(false);
-                    throw;
+                    else
+                    {
+                        // control-server#487：别的失败也只是这一台车的事。整轮抛掉会让排在后面的每一台车的推进、急停确认与 REQ-0248
+                        // 重触发、派车都停在它身上，而一台每轮都抛同一个异常的车（control-server#291、#354）会让它们一直停着。
+                        // 这台车照 control-server#331 在看板上说出「推进失败」，这一轮不给它派车（它进 yielded）；第一个这样的异常在
+                        // 轮末原样抛出，2002 记的仍是它。
+                        LogAdvanceFailedVehicleIsolated(logger, runtime.AgvId, runtime.JourneyId, error);
+                        firstFailure ??= ExceptionDispatchInfo.Capture(error);
+                    }
+                    await NameFailedAdvanceAsync(runtime, before, error, cancellationToken).ConfigureAwait(false);
+                    yielded.Add(runtime.AgvId);
+                    continue;
                 }
 
                 await ClearFailedAdvanceAsync(runtime, cancellationToken).ConfigureAwait(false);
@@ -698,7 +712,26 @@ public sealed partial class JourneyRuntimeEngine(
             }
         }
 
+        await ServeFreeVehiclesAsync(
+                currentMap, fixedStations, admissionPolicyDrifted, active, yielded, cancellationToken)
+            .ConfigureAwait(false);
+        // control-server#487: after every other vehicle has advanced and the dispatch round has run. A failure of the dispatch
+        // round itself leaves above instead; the isolated one was already logged with its vehicle (2307).
+        firstFailure?.Throw();
+    }
 
+    /// <summary>
+    /// The second half of a round: once every journey under way has advanced, the vehicles free for work and those that can
+    /// take an appended demand are served by the dispatch round.
+    /// </summary>
+    private async Task ServeFreeVehiclesAsync(
+        RiotMapStationCatalogSnapshot currentMap,
+        IFixedTaskStationView fixedStations,
+        bool admissionPolicyDrifted,
+        JourneyRuntimeRow[] active,
+        HashSet<string> yielded,
+        CancellationToken cancellationToken)
+    {
         HashSet<string> busy = active.Select(row => row.AgvId).ToHashSet(StringComparer.Ordinal);
         // control-server#330 (REQ-0164, the 0/1 gate not relaxed): a vehicle a foreign order is running on takes no new
         // dispatch and no appended demand until RIoT reads that order back ended -- whether its cancel is on the way, went out
@@ -797,13 +830,24 @@ public sealed partial class JourneyRuntimeEngine(
     }
 
     /// <summary>
-    /// 这一轮推进抛了异常：把 <see cref="AdvanceFailedReason"/> 写到旅程行上，让看板说出这件事
-    /// （control-server#331）。写完调用方把原异常照原样抛出去。
+    /// 这台车这一轮推进抛了异常，它这一轮让开：撤回它这一轮没落库的改动，看板上把 <see cref="AdvanceFailedReason"/> 写到旅程行上
+    /// （control-server#331），然后轮次接着推进下一台车。车载端连接不可用（control-server#334）与别的失败（control-server#487）
+    /// 走这同一条路，只是日志不同。
     /// </summary>
     /// <remarks>
     /// <para>
-    /// <b>先丢掉这一轮的改动。</b>失败那一轮留在变更跟踪里的东西是半截的——旅程行可能已经被改成一个它没走到的样子——
-    /// 落库等于把半截状态当成事实。清空之后重读一行，写的就只有这一个码。
+    /// <b>先撤回</b>（<see cref="TrackedBeforeAdvance.RestoreAsync"/>）。失败那一轮留在变更跟踪里的东西是半截的——旅程行可能已经被改成一个
+    /// 它没走到的样子，别的车的行也可能被它改过（让站）——落库等于把半截状态当成事实，而后面的车的每一次保存都会顺带把它存下去。
+    /// 撤回之后跟踪里留下的每一个条目都与库一致，或者是推进之前就留着的未保存改动。已经发生的外部副作用——保存之后才发的出站消息、
+    /// 建了的 RIoT 单——不在撤回之列，下一轮按已存的意图续上，与整轮抛掉之后下一轮的样子相同。
+    /// </para>
+    /// <para>
+    /// <b>不许清空变更跟踪。</b>轮次还要继续，清空会让排在后面的每一台车的旅程行都脱离跟踪，被循环开头那条「不在跟踪里就跳过」挡掉——
+    /// 换一种方式照样让一台车拖住全队。所以只重读、只存这一行，存完不再跟踪它。
+    /// </para>
+    /// <para>
+    /// <b>别的车还留着没保存的改动时，这一轮不写码。</b>这里的保存是为这一个字段来的，不该顺带提交别处刻意留到下一步的改动
+    /// （与 <see cref="ClearFailedAdvanceAsync"/> 同一条规矩）。不写的代价只是看板晚一轮说出这件事：这台车下一轮照样失败，照样再试。
     /// </para>
     /// <para>
     /// <b>码相同就不动开始时间</b>（<see cref="JourneyRuntimeRow.SetBlockReason"/> 的幂等）：每轮都抛同一个异常时，
@@ -827,91 +871,22 @@ public sealed partial class JourneyRuntimeEngine(
     /// <b>写码失败不许顶替原异常。</b>原异常才是这一轮真正出的事；这里再抛一个（比如数据库也不可用）会让 2002 记下
     /// 一个与病因无关的错误。所以这里自己吞掉并单独记一条 2128。
     /// </para>
+    /// <para>
+    /// <b>让开的车自己的急停确认会推迟。</b>它这一轮走不到故障模型，它自己的急停确认与 REQ-0248 重触发这一轮不跑。断线时上限靠静默窗口：
+    /// 会话行仍是 Ready 而连接已经没了时，这台车每一轮都在补发（<c>ReplayPendingForSessionAsync</c>）那里让开；最后一条合法入站之后约
+    /// 6 s（<see cref="SessionLiveness.Timeout"/>），<see cref="NameSilentOnboardSessionAsync"/> 在补发之前接手，故障监看随之恢复——谁要把
+    /// 静默判定挪到补发之后、或把静默窗口拉长，这里的推迟就跟着变长。别的失败没有这样的上限：每轮都抛的车自己的监看一直停着，看板上
+    /// 它挂着推进失败、按 program#55 升级。修之前是整队都停着，所以这不是回归。
+    /// </para>
     /// </remarks>
     private async Task NameFailedAdvanceAsync(
-        JourneyRuntimeRow runtime,
-        Exception failure,
-        CancellationToken cancellationToken)
-    {
-        string journeyId = runtime.JourneyId;
-        try
-        {
-            dbContext.ChangeTracker.Clear();
-            JourneyRuntimeRow? current = await dbContext.JourneyRuntimes
-                .SingleOrDefaultAsync(row => row.JourneyId == journeyId, cancellationToken).ConfigureAwait(false);
-            if (!await ShouldNameFailedAdvanceAsync(current, failure, cancellationToken).ConfigureAwait(false))
-            {
-                return;
-            }
-
-            DateTimeOffset now = timeProvider.GetUtcNow();
-            current!.SetBlockReason(AdvanceFailedReason, now);
-            current.UpdatedAt = now;
-            await dbContext.SaveChangesAsync(cancellationToken).ConfigureAwait(false);
-        }
-        catch (Exception error) when (error is not OperationCanceledException || !cancellationToken.IsCancellationRequested)
-        {
-            LogFailedAdvanceNotNamed(logger, journeyId, error);
-        }
-    }
-
-    /// <summary>
-    /// 失败的这一轮要不要在旅程行上写 <see cref="AdvanceFailedReason"/>：<see cref="NameFailedAdvanceAsync"/> 与
-    /// <see cref="YieldToUnavailableConnectionAsync"/> 共用的判定，理由见前者的 remarks。
-    /// </summary>
-    private async Task<bool> ShouldNameFailedAdvanceAsync(
-        JourneyRuntimeRow? current,
-        Exception failure,
-        CancellationToken cancellationToken) =>
-        current is not null &&
-        current.Stage != JourneyRuntimeStage.Completed &&
-        !string.Equals(current.BlockReasonCode, AdvanceFailedReason, StringComparison.Ordinal) &&
-        !CarriesACodeThatNamesAWaitOnAPerson(current) &&
-        !(string.Equals(current.BlockReasonCode, JourneyWaitClassification.SessionNotReadyReason, StringComparison.Ordinal) &&
-          IsTransportFailure(failure) &&
-          await CurrentReadySessionAsync(current.AgvId, cancellationToken).ConfigureAwait(false) is null);
-
-    /// <summary>
-    /// 这台车的车载端连接此刻不可用，它这一轮让开（control-server#334）：撤回它这一轮没保存的改动，看板上照
-    /// <see cref="NameFailedAdvanceAsync"/> 的判定说出「推进失败」，然后轮次接着推进下一台车。
-    /// </summary>
-    /// <remarks>
-    /// <para>
-    /// <b>撤回与 control-server#357 的让开是同一件事</b>（<see cref="TrackedBeforeAdvance.Restore"/>）：已经保存的留着，与库一致；
-    /// 没保存的回到推进之前。已经发生的外部副作用——保存之后才发的出站消息、建了的 RIoT 单——不在撤回之列，下一轮按已存的意图续上，
-    /// 与整轮抛掉之后下一轮的样子相同。
-    /// </para>
-    /// <para>
-    /// <b>不许清空变更跟踪。</b><see cref="NameFailedAdvanceAsync"/> 先清空再重读，是因为轮次随后就抛了；这里轮次还要继续，清空会让排在后面的
-    /// 每一台车的旅程行都脱离跟踪，被循环开头那条「不在跟踪里就跳过」挡掉——换一种方式照样让一台车拖住全队。所以只重读、只存这一行，
-    /// 存完不再跟踪它。
-    /// </para>
-    /// <para>
-    /// <b>别的车还留着没保存的改动时，这一轮不写码。</b>这里的保存是为这一个字段来的，不该顺带提交别处刻意留到下一步的改动
-    /// （与 <see cref="ClearFailedAdvanceAsync"/> 同一条规矩）。不写的代价只是看板晚一轮说出这件事：这台车下一轮照样失败，照样再试。
-    /// </para>
-    /// <para>
-    /// <b>撤回今天没有东西可撤</b>（增量复核：11 个类 48 次让开，进入时变更跟踪全是干净的）。车载端发送都排在一次保存之后，
-    /// 所以走到这里时这台车这一轮的改动已经存下了。撤回与「不写码」那一支是为发送前留着未保存改动的推进准备的；没有用例走到它们，
-    /// 这一条靠「先存后发」撑着——与 control-server#357 的「冲突即不发」是同一个前提，由 <c>JourneyRowLostUpdateTests</c> 守着。
-    /// </para>
-    /// <para>
-    /// <b>让开的车自己的急停确认会推迟，推迟有上限。</b>断线不写库，会话行仍是 Ready 而连接已经没了时，这台车每一轮都在补发
-    /// （<c>ReplayPendingForSessionAsync</c>）那里让开，走不到故障模型：它自己的急停确认与 REQ-0248 重触发这几轮不跑。上限靠静默窗口：
-    /// 最后一条合法入站之后约 6 s（<see cref="SessionLiveness.Timeout"/>），<see cref="NameSilentOnboardSessionAsync"/> 在补发之前接手，
-    /// 这台车的推进照常往下走，故障监看随之恢复。修之前是整队都停着，所以这不是回归；但谁要把静默判定挪到补发之后、或把静默窗口
-    /// 拉长，这里的推迟就跟着变长。
-    /// </para>
-    /// </remarks>
-    private async Task YieldToUnavailableConnectionAsync(
         JourneyRuntimeRow runtime,
         TrackedBeforeAdvance before,
         Exception failure,
         CancellationToken cancellationToken)
     {
-        before.Restore(dbContext);
+        await before.RestoreAsync(dbContext, cancellationToken).ConfigureAwait(false);
         dbContext.Entry(runtime).State = EntityState.Detached;
-        LogYieldedToUnavailableConnection(logger, runtime.AgvId, runtime.JourneyId, failure);
         if (dbContext.ChangeTracker.Entries()
             .Any(entry => entry.State is EntityState.Added or EntityState.Modified or EntityState.Deleted))
         {
@@ -946,6 +921,21 @@ public sealed partial class JourneyRuntimeEngine(
             }
         }
     }
+
+    /// <summary>
+    /// 失败的这一轮要不要在旅程行上写 <see cref="AdvanceFailedReason"/>，理由见 <see cref="NameFailedAdvanceAsync"/> 的 remarks。
+    /// </summary>
+    private async Task<bool> ShouldNameFailedAdvanceAsync(
+        JourneyRuntimeRow? current,
+        Exception failure,
+        CancellationToken cancellationToken) =>
+        current is not null &&
+        current.Stage != JourneyRuntimeStage.Completed &&
+        !string.Equals(current.BlockReasonCode, AdvanceFailedReason, StringComparison.Ordinal) &&
+        !CarriesACodeThatNamesAWaitOnAPerson(current) &&
+        !(string.Equals(current.BlockReasonCode, JourneyWaitClassification.SessionNotReadyReason, StringComparison.Ordinal) &&
+          IsTransportFailure(failure) &&
+          await CurrentReadySessionAsync(current.AgvId, cancellationToken).ConfigureAwait(false) is null);
 
     /// <summary>
     /// 推进重新走通的那一轮，把上一轮留下的 <see cref="AdvanceFailedReason"/> 清掉：它说的是「上一轮失败了」，
@@ -1296,12 +1286,21 @@ public sealed partial class JourneyRuntimeEngine(
                 // 没有「正在装的」有两种来历，只有一种是缺陷（批次7-07，control-server#212 查出）。装货落定要保存两次：先把这一条
                 // 记成 LOADED、结算命令（下面重新加载游标要读到它），再在离站或下一条的那一次保存里把阶段前移。崩在两次之间，
                 // 重启后读到的就是「阶段还是 AwaitingLoadResult、这一站没有 LOADING、刚装的那条已是 LOADED」——此前这里一律抛，
-                // 而推进段没有逐车隔离，于是每一轮都在这里整轮中止，车队里每辆车都不再推进。这一种按落库的状态续上，走与刚落定时
+                // 而推进段当时没有逐车隔离，于是每一轮都在这里整轮中止，车队里每辆车都不再推进（cs#487 起逐车隔离，今天只停这一辆）。这一种按落库的状态续上，走与刚落定时
                 // 同一段后续；这一站连一条 LOADED 都没有，才是这台服务器自己的不变量被破坏了，照旧抛。
+                //
+                // 第二种合法来历（control-server#291）：这一站在装的那一条被终结了——确定的装货失败、装货途中取消——而旅程还带着别的需求，
+                // 不收尾。终结它的那条路若没有把阶段带走，留下的就是「没有在装、没有装上、只有一条 TERMINATED」。确定的装货失败自己会带走
+                // （TrySettleDeterminateLoadFailureAsync），恢复协调器的取消结果不会；这里兜住它们，也兜住已经卡在这个状态的库。
+                // 接的是同一段后续：本站还有待装的就回去等录入，没有就离站。
+                // 异常处置会话里的装货补偿、故障货物交接与强制机械取出终结的也是这一条（control-server#499）：恢复协调器在终结的同一次
+                // 保存里把旅程从 Blocked 放回这个阶段（BlockedJourneyRelease），走的就是这里——本站已有 LOADED 的走上面 #289 那一种。
                 JourneyStopDemand? loading = stops.LoadingAtCurrentStop;
                 bool resumingAfterCommit = loading is null;
-                if (resumingAfterCommit &&
-                    !stops.CurrentStopDemands.Any(item => item.Membership.Status == JourneyDemandStatuses.Loaded))
+                bool loadedHere = stops.CurrentStopDemands.Any(item => item.Membership.Status == JourneyDemandStatuses.Loaded);
+                bool resumingAfterEnding = resumingAfterCommit && !loadedHere &&
+                    stops.AllAtStop(stops.Current).Any(item => item.Membership.Status == JourneyDemandStatuses.Terminated);
+                if (resumingAfterCommit && !loadedHere && !resumingAfterEnding)
                 {
                     throw new InvalidDataException(
                         $"Journey {runtime.JourneyId} waits for a load result with no demand loading at its stop.");
@@ -1343,13 +1342,30 @@ public sealed partial class JourneyRuntimeEngine(
                         .ConfigureAwait(false);
                     if (stops.OutstandingAtCurrentStop.Count > 0)
                     {
+                        // 这一支刚落定、#289 的续跑（resumingAfterCommit）与本站在装那一条被终结之后的续跑（resumingAfterEnding）共用。
+                        // 不要在这里无条件重置离站等待起点：resumingAfterEnding 一条都没装上，不是 LoadBatch 闭环（ADR-cross-0055），
+                        // 它不开始新的纠正时间；断联作废过的才按「此刻」补填，与等录入那一处同一个规则。
+                        //
+                        // 补填只给续跑：刚落定的正常路径也走这一支，而断联作废之后结果先落库、就绪后第一轮直接走到这里时起点也是空的。
+                        // 正常路径原来就是发一版不带期限的清单、下一轮在等录入那一处补填并升一版，这里不改它（cs#291 审查追问）。
+                        if (resumingAfterCommit || resumingAfterEnding)
+                        {
+                            runtime.StationDepartureWaitStartedAt ??= now;
+                        }
+                        // 续跑重发的是上一轮已经写盘的那一版（control-server#291 独立审查）。车确认过、又换了一代时，候选报文只有信封不同，
+                        // 不带 keepAcknowledgedIgnoring 就被重放校验拒；断联作废过离站等待时期限也变了，那就升一版（control-server#339），
+                        // 与到站重跑（PublishPickupStateAsync）同一个做法。第一次发这一版时发件箱里还没有它，两样都不起作用。
+                        stops = await AdvanceWorklistPastAStaleDeadlineAsync(runtime, stops, cancellationToken).ConfigureAwait(false)
+                                ?? stops;
                         await PublishStopWorklistAsync(
                             runtime,
                             stops,
                             session,
                             StationDepartureDeadline(runtime, runtimeOptions.StationDepartureWaitTimeout),
-                            cancellationToken).ConfigureAwait(false);
-                        await PublishEntryRequestAsync(runtime, stops, session, cancellationToken)
+                            cancellationToken,
+                            keepAcknowledgedIgnoring: NothingButTheEnvelope).ConfigureAwait(false);
+                        await PublishEntryRequestAsync(
+                                runtime, stops, session, cancellationToken, keepAcknowledgedIgnoring: NothingButTheEnvelope)
                             .ConfigureAwait(false);
                         SetStage(runtime, JourneyRuntimeStage.AwaitingSublot, now);
                         break;
@@ -1359,7 +1375,10 @@ public sealed partial class JourneyRuntimeEngine(
                     // for departure safety in this same iteration, as this server did until 2026-09-13,
                     // left no such time at all. Not saved here: with the wait off the next case departs
                     // at once and saves once, as before.
-                    runtime.StationDepartureWaitStartedAt = now;
+                    // 本站一条都没装上就结束的（resumingAfterEnding）没有可纠正的放置，离站等待的起点不动——与站点期限结束停靠一致。
+                    runtime.StationDepartureWaitStartedAt = resumingAfterEnding
+                        ? runtime.StationDepartureWaitStartedAt ?? now
+                        : now;
                     SetStage(runtime, JourneyRuntimeStage.AwaitingStationDeparture, now);
                     goto case JourneyRuntimeStage.AwaitingStationDeparture;
                 }
@@ -1611,19 +1630,65 @@ public sealed partial class JourneyRuntimeEngine(
                 // 等的是本停靠此刻该卸的那一条（批次7-06）。卸货不需要一个「正在卸」的状态：卸是服务端自己按顺序发的
                 // （先前侧后后侧，control-server#303），一条卸完才发下一条，已经发出去的那一条由游标优先认出来
                 // （JourneyStopCursor.NextToUnloadAtCurrentStopAsync）。
-                JourneyStopDemand unloading = (await stops.NextToUnloadAtCurrentStopAsync(dbContext, cancellationToken)
-                        .ConfigureAwait(false)).Next
-                    ?? throw new InvalidDataException(
-                        $"Journey {runtime.JourneyId} waits for an unload result with nothing left to unload.");
-                StationOperationRow? unload = await dbContext.StationOperations.SingleOrDefaultAsync(
-                    row => row.SlotOperationAttemptId == unloading.Membership.UnloadSlotOperationAttemptId,
-                    cancellationToken).ConfigureAwait(false);
-                if (unload?.Status == StationOperationStatus.RecoveryRequired)
+                //
+                // 卸完一条要保存不止一次（control-server#291）：先把这一条记成 UNLOADED 单独保存（下面重新加载游标要读到它），再在下一条
+                // 卸货命令、离站或旅程收尾那一次保存里推进；旅程收尾之前还有一次停靠完成的保存。崩在任意两次之间，重启后阶段都还是这一个，
+                // 而此前这里只认「还有一条已下命令、在等结果」这一种——下一条命令没落库的静默停住（U1、U5），本站卸空了的每轮抛（U2、U3）。
+                // 与装货侧（control-server#212）同一个修法：按落库的状态认出是哪一种，接着走刚落定时同一段后续。三种都要求这一站至少
+                // 有一条已经卸完（control-server#499 起，或在卸货命令之后被交接终结）；连一条都没有，才是这台服务器自己的不变量被破坏了，照旧抛。
+                if (stops.OpenStops.Count == 0)
                 {
-                    Block(runtime, "UNLOAD_RESULT_REQUIRES_RECOVERY", now);
+                    // 最后一个停靠已存为完成、旅程收尾那一次保存没落（U3 后半）：收尾。停靠完成只在卸完之后写，所以这里不再判别的。
+                    if (!stops.AllDemands.Any(item => item.Membership.Status == JourneyDemandStatuses.Unloaded))
+                    {
+                        throw new InvalidDataException(
+                            $"Journey {runtime.JourneyId} waits for an unload result with every stop completed and nothing unloaded.");
+                    }
+                    await JourneyClosure.StageAsync(dbContext, runtime, reasonCode: null, now, cancellationToken)
+                        .ConfigureAwait(false);
+                    checkpointWaits.Clear(runtime.VehicleKey);
+                    break;
                 }
-                else
+                JourneyStopDemand? unloading = (await stops.NextToUnloadAtCurrentStopAsync(dbContext, cancellationToken)
+                    .ConfigureAwait(false)).Next;
+                // 「本站已有进展」还有第二种（control-server#499）：本站一条在下了卸货命令之后被终结——卸货结果要恢复、旅程阻塞，异常处置
+                // 会话把它交接掉（故障货物交接或强制机械取出），而旅程还带着别的需求。恢复协调器把旅程放回这个阶段
+                // （BlockedJourneyRelease），这里接着走与卸完一条时同一段：本站还有没卸的发下一条命令，没有就离站或收尾。
+                // 认的是「卸货操作已经落库」而不只是 TERMINATED：在取货停靠就被终结、从没装上的需求，归属行同样挂在这个卸货停靠上，
+                // 它不算这一站的进展。与装货侧 control-server#291 的 A 同一个意思，只是卸货停靠上的 TERMINATED 多一种来历。只在
+                // 本站还没有 UNLOADED、又有 TERMINATED 时才查库，正常卸货的每一轮不多读。
+                bool unloadedHereBefore = stops.AllAtStop(stops.Current)
+                    .Any(item => item.Membership.Status == JourneyDemandStatuses.Unloaded) ||
+                    await EndedHereAfterItsUnloadWasCommandedAsync(stops, cancellationToken).ConfigureAwait(false);
+                if (unloading is null && !unloadedHereBefore)
                 {
+                    throw new InvalidDataException(
+                        $"Journey {runtime.JourneyId} waits for an unload result with nothing left to unload.");
+                }
+                if (unloading is not null)
+                {
+                    StationOperationRow? unload = await dbContext.StationOperations.SingleOrDefaultAsync(
+                        row => row.SlotOperationAttemptId == unloading.Membership.UnloadSlotOperationAttemptId,
+                        cancellationToken).ConfigureAwait(false);
+                    if (unload is null && unloadedHereBefore)
+                    {
+                        // 前一条已存为 UNLOADED，这一条的卸货命令没落库（U1、U5）：发这一版清单与这一条的命令，与刚卸完时同一段。
+                        // 两条报文的 id 都由停靠进度确定地派生，已经写盘的那一版清单按同一个 id 复用，不会再起一行——同一代、或那一行车还没
+                        // 确认时如此；车确认过、又换了一代时，候选报文只有信封不同，靠 keepAcknowledgedIgnoring 沿用已确认那一行，否则被重放
+                        // 校验拒（control-server#291 独立审查）。卸货停靠没有离站期限，清单内容不会因断联而变。
+                        await PublishStopWorklistAsync(
+                            runtime, stops, session, stationDepartureDeadlineAt: null, cancellationToken,
+                            keepAcknowledgedIgnoring: NothingButTheEnvelope)
+                            .ConfigureAwait(false);
+                        await PublishUnloadCommandAsync(runtime, stops, session, cancellationToken)
+                            .ConfigureAwait(false);
+                        break;
+                    }
+                    if (unload?.Status == StationOperationStatus.RecoveryRequired)
+                    {
+                        Block(runtime, "UNLOAD_RESULT_REQUIRES_RECOVERY", now);
+                        break;
+                    }
                     AcceptedDemandRow demand = await dbContext.AcceptedDemands.SingleAsync(
                         row => row.DemandId == unloading.Demand.DemandId, cancellationToken).ConfigureAwait(false);
                     if (unload?.Status != StationOperationStatus.Committed ||
@@ -1642,55 +1707,57 @@ public sealed partial class JourneyRuntimeEngine(
                             now, cancellationToken)
                         .ConfigureAwait(false);
                     await dbContext.SaveChangesAsync(cancellationToken).ConfigureAwait(false);
-                    stops = await JourneyStopCursor.LoadAsync(dbContext, runtime, cancellationToken)
-                        .ConfigureAwait(false);
-                    if (stops.OutstandingAtCurrentStop.Count > 0)
-                    {
-                        // 本停靠还有没卸的：发这一版清单与下一条卸货命令，留在等结果。
-                        await PublishStopWorklistAsync(
-                            runtime, stops, session, stationDepartureDeadlineAt: null, cancellationToken)
-                            .ConfigureAwait(false);
-                        await PublishUnloadCommandAsync(runtime, stops, session, cancellationToken)
-                            .ConfigureAwait(false);
-                        break;
-                    }
-
-                    if (stops.OpenStops.Count > 1)
-                    {
-                        // 卸完了这一站，计划里还有下一站：走与取货停靠<b>同一条</b>离站路——发离站安全核验、
-                        // 按答复过 REQ-0305 的创建门禁、建下一段腿的订单意图并授权移动、下 RIoT 订单，
-                        // 由那条路在车真开走之后才把本停靠标记完成。所以这里既不标记完成也不重载游标：
-                        // 离站段要的 stops.Current 正是「正要离开的这个停靠」。
-                        //
-                        // 先前这里直接 SetStage 到下一站的到站阶段，中间<b>什么都没做</b>。全仓只有
-                        // :761-762 建后续腿的订单意图，而那两行在离站安全分支里，卸货停靠走不到——于是
-                        // 下一轮按一个库里根本不存在的 UpperId 调 SingleAsync，抛 InvalidOperationException，
-                        // 冒到 JourneyRuntimeWorker 的<b>整轮</b> catch（记 Error 级事件 2002 LogIterationFailed），
-                        // 于是<b>这一轮整个中止</b>：推进循环里排在后面的车不再推进，派车轮次也不跑。每一轮重复。
-                        // （推进段<b>没有</b>逐车隔离——那是派车轮次才有的，事件 2123 属于 DispatchRoundRunner。）
-                        // 判据是 LeavingAnUnloadStopAuthorisesTheLegToTheNextStop：它断订单意图在不在，
-                        // 不断「推进没抛」——那个异常在测试这一侧什么都看不到。
-                        //
-                        // OpenStops 含当前停靠，所以判的是 > 1 不是 > 0。
-                        SetStage(runtime, JourneyRuntimeStage.AwaitingStationDeparture, now);
-                        await dbContext.SaveChangesAsync(cancellationToken).ConfigureAwait(false);
-                        goto case JourneyRuntimeStage.AwaitingStationDeparture;
-                    }
-
-                    (await TrackedStopAsync(stops.Current.StopId, cancellationToken).ConfigureAwait(false)).Status =
-                        JourneyStopStatuses.Completed;
-                    await dbContext.SaveChangesAsync(cancellationToken).ConfigureAwait(false);
-                    stops = await JourneyStopCursor.LoadAsync(dbContext, runtime, cancellationToken)
-                        .ConfigureAwait(false);
-
-                    // 与终结的五条来路同一个出口：写 Completed，并暂存车要收的收尾快照（control-server#323）。
-                    await JourneyClosure.StageAsync(dbContext, runtime, reasonCode: null, now, cancellationToken)
-                        .ConfigureAwait(false);
-                    checkpointWaits.Clear(runtime.VehicleKey);
-                    // The vehicle's purpose claim was already released with the unload that ended the journey's last
-                    // demand (JourneyPurposeClaimRelease). The order occupancy that used to be released here, one round
-                    // later, was retired in batch 8-16 (control-server#387).
                 }
+                // 走到这里的是刚卸完的那一轮，或重启后本站已经卸空、推进那一次保存没落的那一轮（U2、U3 前半）：两者读到的落库状态相同。
+                stops = await JourneyStopCursor.LoadAsync(dbContext, runtime, cancellationToken)
+                    .ConfigureAwait(false);
+                if (stops.OutstandingAtCurrentStop.Count > 0)
+                {
+                    // 本停靠还有没卸的：发这一版清单与下一条卸货命令，留在等结果。
+                    await PublishStopWorklistAsync(
+                        runtime, stops, session, stationDepartureDeadlineAt: null, cancellationToken)
+                        .ConfigureAwait(false);
+                    await PublishUnloadCommandAsync(runtime, stops, session, cancellationToken)
+                        .ConfigureAwait(false);
+                    break;
+                }
+
+                if (stops.OpenStops.Count > 1)
+                {
+                    // 卸完了这一站，计划里还有下一站：走与取货停靠<b>同一条</b>离站路——发离站安全核验、
+                    // 按答复过 REQ-0305 的创建门禁、建下一段腿的订单意图并授权移动、下 RIoT 订单，
+                    // 由那条路在车真开走之后才把本停靠标记完成。所以这里既不标记完成也不重载游标：
+                    // 离站段要的 stops.Current 正是「正要离开的这个停靠」。
+                    //
+                    // 先前这里直接 SetStage 到下一站的到站阶段，中间<b>什么都没做</b>。全仓只有
+                    // :761-762 建后续腿的订单意图，而那两行在离站安全分支里，卸货停靠走不到——于是
+                    // 下一轮按一个库里根本不存在的 UpperId 调 SingleAsync，抛 InvalidOperationException，
+                    // 冒到 JourneyRuntimeWorker 的<b>整轮</b> catch（记 Error 级事件 2002 LogIterationFailed），
+                    // 于是<b>这一轮整个中止</b>：推进循环里排在后面的车不再推进，派车轮次也不跑。每一轮重复。
+                    // （那是当时的后果：推进段当时没有逐车隔离。cs#487 起推进段逐车隔离，同样的异常今天只让这一辆车每轮抛、
+                    // 永不前进，别的车照常推进，异常在轮末重抛。）
+                    // 判据是 LeavingAnUnloadStopAuthorisesTheLegToTheNextStop：它断订单意图在不在，
+                    // 不断「推进没抛」——那个异常在测试这一侧什么都看不到。
+                    //
+                    // OpenStops 含当前停靠，所以判的是 > 1 不是 > 0。
+                    SetStage(runtime, JourneyRuntimeStage.AwaitingStationDeparture, now);
+                    await dbContext.SaveChangesAsync(cancellationToken).ConfigureAwait(false);
+                    goto case JourneyRuntimeStage.AwaitingStationDeparture;
+                }
+
+                (await TrackedStopAsync(stops.Current.StopId, cancellationToken).ConfigureAwait(false)).Status =
+                    JourneyStopStatuses.Completed;
+                await dbContext.SaveChangesAsync(cancellationToken).ConfigureAwait(false);
+                stops = await JourneyStopCursor.LoadAsync(dbContext, runtime, cancellationToken)
+                    .ConfigureAwait(false);
+
+                // 与终结的五条来路同一个出口：写 Completed，并暂存车要收的收尾快照（control-server#323）。
+                await JourneyClosure.StageAsync(dbContext, runtime, reasonCode: null, now, cancellationToken)
+                    .ConfigureAwait(false);
+                checkpointWaits.Clear(runtime.VehicleKey);
+                // The vehicle's purpose claim was already released with the unload that ended the journey's last
+                // demand (JourneyPurposeClaimRelease). The order occupancy that used to be released here, one round
+                // later, was retired in batch 8-16 (control-server#387).
                 break;
             case JourneyRuntimeStage.Blocked:
             case JourneyRuntimeStage.Completed:
@@ -4747,16 +4814,20 @@ public sealed partial class JourneyRuntimeEngine(
         LogYieldedToJourneyCommit(logger, runtime.AgvId, runtime.JourneyId, conflicting, null);
     }
 
-    /// <summary>一台车推进之前被跟踪的每一个条目：它的状态与此刻的值。</summary>
-    private sealed class TrackedBeforeAdvance
+    /// <summary>一台车推进之前被跟踪的每一个条目：它的状态、此刻的值与原始值（原始值是库里的样子，保存时的并发条件按它写）。</summary>
+    internal sealed class TrackedBeforeAdvance
     {
-        private readonly List<(EntityEntry Entry, EntityState State, PropertyValues Values)> entries;
+        private readonly List<(EntityEntry Entry, EntityState State, PropertyValues Values, PropertyValues Originals)> entries;
 
-        private TrackedBeforeAdvance(List<(EntityEntry Entry, EntityState State, PropertyValues Values)> entries) =>
+        private TrackedBeforeAdvance(
+            List<(EntityEntry Entry, EntityState State, PropertyValues Values, PropertyValues Originals)> entries) =>
             this.entries = entries;
 
         public static TrackedBeforeAdvance Take(ControlServerDbContext context) =>
-            new([.. context.ChangeTracker.Entries().Select(entry => (entry, entry.State, entry.CurrentValues.Clone()))]);
+            new([
+                .. context.ChangeTracker.Entries()
+                    .Select(entry => (entry, entry.State, entry.CurrentValues.Clone(), entry.OriginalValues.Clone()))
+            ]);
 
         public void Restore(ControlServerDbContext context)
         {
@@ -4768,7 +4839,7 @@ public sealed partial class JourneyRuntimeEngine(
                     entry.State = EntityState.Detached;
                 }
             }
-            foreach ((EntityEntry entry, EntityState state, PropertyValues values) in entries)
+            foreach ((EntityEntry entry, EntityState state, PropertyValues values, _) in entries)
             {
                 if (entry.State is EntityState.Added or EntityState.Modified or EntityState.Deleted)
                 {
@@ -4777,6 +4848,180 @@ public sealed partial class JourneyRuntimeEngine(
                 }
             }
         }
+
+        /// <summary>
+        /// <see cref="Restore"/> for an advance that threw something other than a journey row conflict (control-server#487),
+        /// where the throw can come from anywhere, between a save and its transaction's commit included.
+        /// </summary>
+        /// <remarks>
+        /// <para>
+        /// <b>Why <see cref="Restore"/> is not enough here.</b> A save inside a transaction that then rolls back leaves what it
+        /// saved tracked as <see cref="EntityState.Unchanged"/>, with values the database does not have. <see cref="Restore"/>
+        /// only goes back over entries still carrying a change, so it would leave those alone, and the vehicle whose row it is
+        /// would advance this round on values that never happened. The advance writes transactions of its own (a load, a sublot
+        /// entry), so this is reachable; <see cref="Restore"/> serves the journey row conflict, which a failed save raises
+        /// before anything of it lands.
+        /// </para>
+        /// <para>
+        /// So: an entry the advance began tracking is let go whatever its state -- an Unchanged one may be a row the rollback
+        /// took back out of the database. Every entry that was Unchanged before the advance is read again from the database,
+        /// whether or not anything about it looks changed: the database is the only thing that knows whether a save of it
+        /// committed, and comparing values would miss exactly the entry that was saved and then rolled back. One the database
+        /// no longer has comes out Detached. An entry that already carried a change before the advance -- an earlier step's
+        /// change left for a later save on purpose -- is not read again, which would discard that change. While it still
+        /// carries that change in the same state against the same original values, no save has accepted it, and it goes back
+        /// to how it was: values, original values and state. Once a save of the failing advance took it along (it is
+        /// Unchanged, Detached after a delete, or saved and then changed again), the tracker cannot say
+        /// whether that save committed or rolled back, so <see cref="SettleSavedChangeAsync"/> asks the database: rolled back,
+        /// it goes back to its change; committed, it stays as the database has it, so the change is not saved a second time.
+        /// </para>
+        /// <para>
+        /// <b>A row read again is the database's newest.</b> The vehicles after the failing one then advance on rows read
+        /// mid-round rather than at its start, so an inbound commit that landed between the two is no longer caught as
+        /// control-server#357's "changed since it was read" yield: their advance simply starts from it. That is what the yield
+        /// exists to reach -- the next round re-reads and decides on the new row -- one round early, and a commit landing after
+        /// the reread is still caught by the guard (<see cref="ControlServerDbContext.GuardedJourneyId"/>) as before.
+        /// </para>
+        /// <para>
+        /// An entry that cannot be read again is let go rather than left as it is: its vehicle then sits out this round on the
+        /// loop's "no longer tracked" check, which is the cost of not knowing, not a wrong value.
+        /// </para>
+        /// </remarks>
+        public async Task RestoreAsync(ControlServerDbContext context, CancellationToken cancellationToken)
+        {
+            HashSet<object> known = entries.Select(item => item.Entry.Entity).ToHashSet(ReferenceEqualityComparer.Instance);
+            foreach (EntityEntry entry in context.ChangeTracker.Entries().ToArray())
+            {
+                if (!known.Contains(entry.Entity))
+                {
+                    entry.State = EntityState.Detached;
+                }
+            }
+            foreach ((EntityEntry entry, EntityState state, PropertyValues values, PropertyValues originals) in entries)
+            {
+                if (state is EntityState.Added or EntityState.Modified or EntityState.Deleted)
+                {
+                    if (entry.State == state && SameValues(entry.OriginalValues, originals))
+                    {
+                        // Carrying the same change against the same original values: no save has accepted it since (a save
+                        // would have moved its originals, or its state), so it goes back to how it was. Carrying a change is
+                        // not enough by itself: one the failing advance saved, committed and then changed again is Modified
+                        // too, with originals the database has, and going back to the old ones would have its next save
+                        // collide (a journey row's Version, an inserted row's key). Both are compared because an added
+                        // entry's originals are its current values. Anything else is settled against the database.
+                        Revert(context, entry, state, values, originals);
+                    }
+                    else
+                    {
+                        await SettleSavedChangeAsync(context, entry, state, values, originals, cancellationToken)
+                            .ConfigureAwait(false);
+                    }
+                    continue;
+                }
+                if (state != EntityState.Unchanged || entry.State == EntityState.Detached)
+                {
+                    continue;
+                }
+                try
+                {
+                    await entry.ReloadAsync(cancellationToken).ConfigureAwait(false);
+                }
+                catch (Exception error) when (error is not OperationCanceledException || !cancellationToken.IsCancellationRequested)
+                {
+                    entry.State = EntityState.Detached;
+                }
+            }
+        }
+
+        /// <summary>
+        /// An entry that carried a change before the advance and no longer carries that same change against the same original
+        /// values (Unchanged, Detached after a delete, or changed again after a save): a save took its change along. Whether
+        /// that save committed or rolled back the tracker cannot tell, so the database is asked.
+        /// </summary>
+        /// <remarks>
+        /// Committed: the entry is left as the database has it -- a later save must neither write the change a second time
+        /// (a Modified row against a version it already raised, an Added row inserted twice) nor resurrect a row already
+        /// deleted. Rolled back: it goes back to its change, original values included, for the step it was left for to save
+        /// against the version the database really has. A modified row the database still holds with the values it had
+        /// before is taken as rolled back; any other answer (the saved values, or someone's later write) is taken as the
+        /// database's word, since the change can no longer be saved as it was staged. An answer that cannot be had lets the
+        /// entry go, as a failed read again does.
+        /// </remarks>
+        private static async Task SettleSavedChangeAsync(
+            ControlServerDbContext context,
+            EntityEntry entry,
+            EntityState state,
+            PropertyValues values,
+            PropertyValues originals,
+            CancellationToken cancellationToken)
+        {
+            PropertyValues? inDatabase;
+            try
+            {
+                inDatabase = await entry.GetDatabaseValuesAsync(cancellationToken).ConfigureAwait(false);
+            }
+            catch (Exception error) when (error is not OperationCanceledException || !cancellationToken.IsCancellationRequested)
+            {
+                entry.State = EntityState.Detached;
+                return;
+            }
+
+            bool committed = state switch
+            {
+                EntityState.Added => inDatabase is not null,
+                EntityState.Deleted => inDatabase is null,
+                _ => inDatabase is null || !SameValues(inDatabase, originals),
+            };
+            if (!committed)
+            {
+                Revert(context, entry, state, values, originals);
+            }
+            else if (inDatabase is null)
+            {
+                entry.State = EntityState.Detached;
+            }
+            else
+            {
+                entry.OriginalValues.SetValues(inDatabase);
+                entry.CurrentValues.SetValues(inDatabase);
+                entry.State = EntityState.Unchanged;
+            }
+        }
+
+        /// <summary>
+        /// Puts an entry back to its state, values and original values from before the advance. The originals matter: after a
+        /// save they are what was saved, and a journey row's own save would otherwise write its concurrency check against a
+        /// Version that never landed. An entry a rolled back delete left Detached is tracked again first; one whose key another
+        /// instance has taken since stays let go.
+        /// </summary>
+        private static void Revert(
+            ControlServerDbContext context,
+            EntityEntry entry,
+            EntityState state,
+            PropertyValues values,
+            PropertyValues originals)
+        {
+            EntityEntry target = entry;
+            if (target.State == EntityState.Detached)
+            {
+                target = context.Entry(entry.Entity);
+                try
+                {
+                    target.State = EntityState.Unchanged;
+                }
+                catch (InvalidOperationException)
+                {
+                    return;
+                }
+            }
+            target.OriginalValues.SetValues(originals);
+            target.CurrentValues.SetValues(values);
+            target.State = state;
+        }
+
+        private static bool SameValues(PropertyValues left, PropertyValues right) =>
+            left.Properties.All(property => System.Collections.StructuralComparisons.StructuralEqualityComparer.Equals(
+                left[property], right[property]));
     }
 
     private static bool IsTransportFailure(Exception failure)
@@ -4842,6 +5087,28 @@ public sealed partial class JourneyRuntimeEngine(
     private static bool IsHeldForAreaEndAdmission(JourneyRuntimeRow runtime) =>
         runtime.Stage == JourneyRuntimeStage.AwaitingGateArrival &&
         string.Equals(runtime.BlockReasonCode, AreaEndAdmissionHeldReason, StringComparison.Ordinal);
+
+    /// <summary>
+    /// 当前（卸货）停靠上有一条需求在它的卸货操作落库之后被终结（control-server#499）。本站没有 TERMINATED 的不查库。
+    /// </summary>
+    private async Task<bool> EndedHereAfterItsUnloadWasCommandedAsync(
+        JourneyStopCursor stops,
+        CancellationToken cancellationToken)
+    {
+        string[] endedHere =
+        [
+            .. stops.AllAtStop(stops.Current)
+                .Where(item => item.Membership.Status == JourneyDemandStatuses.Terminated)
+                .Select(item => item.Membership.UnloadSlotOperationAttemptId)
+        ];
+        return endedHere.Length > 0 &&
+               await dbContext.StationOperations.AsNoTracking()
+                   .AnyAsync(
+                       row => endedHere.Contains(row.SlotOperationAttemptId) &&
+                              row.OperationType == SlotOperationType.Unload,
+                       cancellationToken)
+                   .ConfigureAwait(false);
+    }
 
     private static void Block(JourneyRuntimeRow runtime, string reason, DateTimeOffset now)
     {
@@ -5285,6 +5552,24 @@ public sealed partial class JourneyRuntimeEngine(
             await new PickupStopTermination(dbContext).StageAsync(
                 runtime, stops.CurrentSublotRequestMessageId(runtime.WorklistRevision), loading.Demand.DemandId, terminalReason, now,
                 cancellationToken).ConfigureAwait(false);
+            // 旅程还带着别的需求、没有收尾时，阶段要离开等装货结果（control-server#291 的 S2）：这一条已经终结，这一站再没有在装的，
+            // 留在这里下一轮每轮抛 "no demand loading at its stop"，车带着更早装上的货永远不走。与站点期限结束停靠
+            // （TryEndStopAtStationDeadlineAsync）同一个出口：本站没有待装的就交给离站那一段，由它决定持货等单还是离站；
+            // 还有待装的就回到等录入——期限已过，那里的期限出口会照它自己的条件（门、在线、取消）结束本站。与终结同一次保存。
+            //
+            // 回等录入时这里不发新一版清单与录入请求，与等装货结果那一段的续跑（resumingAfterEnding，会发）不对称。这个不对称成立的前提是
+            // 「确定的失败只在本站离站期限之后出现」：店里只把期限之后到的确定失败记成 Failed（DeterminateLoadFailure；期限之前的进恢复，
+            // JourneyRuntimeWorkerLoadDeadlineTests.AFailureReportedBeforeTheDeadlineIsNotSettledAsDeterminate），所以回到等录入的那一轮
+            // 期限已过，期限出口结束本站，不会有人对着车上那一版清单再录入。哪天期限之前的失败也走到这里，这一支就要改成与续跑一样发清单与录入请求。
+            if (runtime.Stage != JourneyRuntimeStage.Completed)
+            {
+                bool othersToLoadHere = stops.OutstandingAtCurrentStop
+                    .Any(item => item.Demand.DemandId != loading.Demand.DemandId);
+                SetStage(
+                    runtime,
+                    othersToLoadHere ? JourneyRuntimeStage.AwaitingSublot : JourneyRuntimeStage.AwaitingStationDeparture,
+                    now);
+            }
             await dbContext.SaveChangesAsync(cancellationToken).ConfigureAwait(false);
             await transaction.CommitAsync(cancellationToken).ConfigureAwait(false);
         }

@@ -411,37 +411,25 @@ try {
             Write-Step "Empty seed file created at $seedPath"
         }
 
-        $runner = Join-Path $fakeInstallRoot 'Start-FakeMesIngestResident.ps1'
-        Copy-Item -LiteralPath (Join-Path $PSScriptRoot 'Start-FakeMesIngestResident.ps1') -Destination $runner -Force
+        # The task runs the double itself, not a pwsh script: on factory01 a SYSTEM task whose action
+        # was pwsh -File Start-FakeMesIngestResident.ps1 never started a PowerShell host
+        # (control-server#512). That script now only re-seeds, from the operations directory beside
+        # this one, and is no longer copied into the double's directory.
+        # The task layer lives in ParallelHost.psm1 so Test-FakeMesIngestScheduledTask.ps1 registers
+        # and starts exactly this.
+        $action = Get-ParallelFakeMesIngestTaskAction -ExecutablePath $executable -Port $fakePort -WorkingDirectory $fakeInstallRoot
+        $registeredAt = Register-ParallelFakeMesIngestTask -TaskName $taskName -Action $action -LogPath $logPath `
+            -Description '8005 AGV ControlServer v2 parallel instance: injected MES demand, loopback only'
+        Write-Step "Scheduled task '$taskName' registered and started ($($action.Execute) $($action.Argument))"
 
-        $argument = ('-NoProfile -ExecutionPolicy Bypass -File "{0}" -ExecutablePath "{1}" -Port {2} -SeedPath "{3}" -LogPath "{4}"' -f
-            $runner, $executable, $fakePort, $seedPath, $logPath)
-        $action = New-ScheduledTaskAction -Execute 'pwsh.exe' -Argument $argument -WorkingDirectory $fakeInstallRoot
-        $trigger = New-ScheduledTaskTrigger -AtStartup
-        $principal = New-ScheduledTaskPrincipal -UserId 'SYSTEM' -LogonType ServiceAccount -RunLevel Highest
-        $settings = New-ScheduledTaskSettingsSet -ExecutionTimeLimit ([TimeSpan]::Zero) `
-            -RestartCount 3 -RestartInterval (New-TimeSpan -Minutes 1) -StartWhenAvailable `
-            -AllowStartIfOnBatteries -DontStopIfGoingOnBatteries -MultipleInstances IgnoreNew
-        Register-ScheduledTask -TaskName $taskName -Action $action -Trigger $trigger `
-            -Principal $principal -Settings $settings `
-            -Description '8005 AGV ControlServer v2 parallel instance: injected MES demand, loopback only' | Out-Null
-        Start-ScheduledTask -TaskName $taskName
-        Write-Step "Scheduled task '$taskName' registered and started"
+        $content = Wait-ParallelFakeMesIngestTask -TaskName $taskName -Port $fakePort -ExecutablePath $executable -Since $registeredAt
+        Write-Step "FakeMesIngest live: $content"
 
-        $deadline = [datetime]::UtcNow.AddSeconds(120)
-        while ([datetime]::UtcNow -lt $deadline) {
-            try {
-                $response = Invoke-WebRequest -Uri "http://127.0.0.1:$fakePort/control/v1/health" `
-                    -NoProxy -TimeoutSec 5 -UseBasicParsing
-                if ($response.StatusCode -eq 200) {
-                    Write-Step "FakeMesIngest live: $($response.Content)"
-                    return
-                }
-            } catch {
-                Start-Sleep -Milliseconds 500
-            }
-        }
-        throw "FakeMesIngest did not answer http://127.0.0.1:$fakePort/control/v1/health within 120 s. Log: $logPath"
+        # Seeding from here, once. In this task form nothing re-seeds after the double restarts (a
+        # reboot, the task's restart): the catalog is then the double's own empty one until somebody
+        # runs Start-FakeMesIngestResident.ps1 in the operations directory (README.md).
+        $seeded = Invoke-ParallelFakeMesIngestSeed -Port $fakePort -SeedPath $seedPath -LogPath $logPath
+        Write-Step "FakeMesIngest seeded from ${seedPath}: $seeded"
     }
 
     # ---------------------------------------------------------------------- rollback ---

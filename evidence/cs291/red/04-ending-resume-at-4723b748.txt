@@ -1,0 +1,10 @@
+  Failed ControlServer.Tests.LoadEndedAtASecondPickupTests.AJourneyAlreadyStuckWithItsOnlyDemandHereTerminatedLeavesOnTheNextRound [5 s]
+  Error Message:
+   The stop ended and the vehicle was never asked to leave it. stage=AwaitingLoadResult block=JOURNEY_ADVANCE_FAILED first=Journey journey:10000000-0000-4000-8000-000000000001 waits for a load result with no demand loading at its stop. second=Journey journey:10000000-0000-4000-8000-000000000001 waits for a load result with no demand loading at its stop.
+  Failed ControlServer.Tests.LoadEndedAtASecondPickupTests.ACancellationWhileLoadingTheOnlyDemandOfASecondPickupSendsTheVehicleOnWithWhatItCarries [2 s]
+  Error Message:
+   The stop ended and the vehicle was never asked to leave it. stage=AwaitingLoadResult block=JOURNEY_ADVANCE_FAILED first=Journey journey:10000000-0000-4000-8000-000000000001 waits for a load result with no demand loading at its stop. second=Journey journey:10000000-0000-4000-8000-000000000001 waits for a load result with no demand loading at its stop.
+  Failed ControlServer.Tests.LoadEndedAtASecondPickupTests.ACancellationWhileLoadingOneOfTwoDemandsOfASecondPickupGoesBackToTheEntryForTheOther [2 s]
+  Error Message:
+   The stop still has a demand to load, so the journey should be back at the entry. stage=AwaitingLoadResult round=Journey journey:10000000-0000-4000-8000-000000000001 waits for a load result with no demand loading at its stop.
+Failed!  - Failed:     3, Passed:     2, Skipped:     0, Total:     5, Duration: 18 s - ControlServer.Tests.dll (net8.0)
