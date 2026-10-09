@@ -115,8 +115,7 @@ builder.Services.AddSingleton<OnboardPeer>();
 builder.Services.AddSingleton<IOnboardPeer>(services => services.GetRequiredService<OnboardPeer>());
 builder.Services.AddSingleton<IOnboardConnectionPresence>(services => services.GetRequiredService<OnboardPeer>());
 builder.Services.AddHostedService<OnboardTcpServer>();
-builder.Services.AddOptions<JourneyRuntimeOptions>()
-    .Bind(builder.Configuration.GetSection(JourneyRuntimeOptions.SectionName))
+builder.Services.AddJourneyRuntimeOptions(builder.Configuration)
     .ValidateOnStart();
 builder.Services.AddSingleton<IValidateOptions<JourneyRuntimeOptions>, JourneyRuntimeOptionsValidator>();
 builder.Services.AddHostedService<JourneyRuntimeWorker>();

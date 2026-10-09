@@ -3534,6 +3534,96 @@ Invoke-SourceCase 'installer: the secret refusal runs before the installed defin
     @{ Ok = ($refusalAt -gt 0 -and $recordAt -gt 0 -and $refusalAt -lt $recordAt); Detail = "refusal at $refusalAt, record at $recordAt" }
 }
 
+# ------------------------------------------------------------------------------------------------
+# control-server#535 review M2(b). The deployment's read-back reads what the Host really bound, not the
+# definition: the Host logs one EFFECTIVE_CONFIGURATION event after it started (Serilog compact JSON,
+# the file the product installer configures), and the installer finds it and compares it with the
+# definition. M1 was a definition that said ["STAGING_TO_WIRE"] and a Host that bound six types.
+# ------------------------------------------------------------------------------------------------
+Write-Host ''
+Write-Host 'Effective configuration read-back (control-server#535 review M2)' -ForegroundColor Cyan
+
+$effectiveSince = [datetimeoffset]::Parse('2026-10-10T01:00:00Z', [cultureinfo]::InvariantCulture)
+function New-EffectiveLine([string] $At, [string[]] $Types, [string[]] $Zones = @('WIRE'), [string] $BaseUrl = 'http://127.0.0.1:5088') {
+    return ConvertTo-Json -Compress -Depth 5 -InputObject ([ordered]@{
+            '@t' = $At
+            '@mt' = 'EFFECTIVE_CONFIGURATION allowedWorkTypes={AllowedWorkTypes} allowedDispatchZones={AllowedDispatchZones} mesIngestBaseUrl={MesIngestBaseUrl}'
+            AllowedWorkTypes = @($Types); AllowedDispatchZones = @($Zones); MesIngestBaseUrl = $BaseUrl
+            SourceContext = 'ControlServer.Host'
+        })
+}
+$noise = '{"@t":"2026-10-10T01:00:05Z","@mt":"Now listening on: {address}","address":"http://172.19.205.222:58107"}'
+
+Invoke-SourceCase 'effective: the latest EFFECTIVE_CONFIGURATION line after the start is the one read' {
+    $lines = @(
+        (New-EffectiveLine '2026-10-10T00:59:00Z' @('STAGING_TO_WIRE', 'DIE_TO_OVEN', 'WIRE_TO_GATE'))
+        $noise
+        'not json at all'
+        (New-EffectiveLine '2026-10-10T01:00:06Z' @('STAGING_TO_WIRE'))
+    )
+    $e = Find-ParallelEffectiveConfiguration -Lines $lines -Since $effectiveSince
+    @{ Ok = ($null -ne $e -and (@($e.AllowedWorkTypes) -join ',') -ceq 'STAGING_TO_WIRE' -and $e.MesIngestBaseUrl -ceq 'http://127.0.0.1:5088')
+        Detail = "got: $(ConvertTo-Json $e -Compress)" }
+}
+Invoke-SourceCase 'effective: a line from before the start is not evidence of this start' {
+    $e = Find-ParallelEffectiveConfiguration -Lines @((New-EffectiveLine '2026-10-10T00:59:59Z' @('STAGING_TO_WIRE')), $noise) -Since $effectiveSince
+    @{ Ok = $null -eq $e; Detail = "got: $(ConvertTo-Json $e -Compress)" }
+}
+Invoke-SourceCase 'effective: production with the M1 binding (STAGING_TO_WIRE plus five more) is refused, naming WIRE_TO_GATE' {
+    $e = Find-ParallelEffectiveConfiguration -Lines @(New-EffectiveLine '2026-10-10T01:00:06Z' @(
+            'STAGING_TO_WIRE', 'DIE_TO_OVEN', 'WIRE_TO_GATE', 'WIRE_TO_OPTICAL', 'STAGING_TO_WIRE', 'WIRE_TO_NITROGEN')) -Since $effectiveSince
+    $r = Get-ParallelEffectiveConfigurationRefusal -Definition $productionSource -Effective $e
+    @{ Ok = ($r -is [string] -and $r.Contains('EFFECTIVE_CONFIGURATION_MISMATCH') -and $r.Contains('WIRE_TO_GATE')); Detail = "got: $r" }
+}
+Invoke-SourceCase 'effective: production bound exactly as defined is accepted' {
+    $e = Find-ParallelEffectiveConfiguration -Lines @(New-EffectiveLine '2026-10-10T01:00:06Z' @('STAGING_TO_WIRE')) -Since $effectiveSince
+    $r = Get-ParallelEffectiveConfigurationRefusal -Definition $productionSource -Effective $e
+    @{ Ok = $null -eq $r; Detail = "got: $r" }
+}
+Invoke-SourceCase 'effective: a different MesIngest origin or dispatch zone than defined is refused' {
+    $e1 = Find-ParallelEffectiveConfiguration -Lines @(New-EffectiveLine '2026-10-10T01:00:06Z' @('STAGING_TO_WIRE') -BaseUrl 'http://127.0.0.1:58188') -Since $effectiveSince
+    $e2 = Find-ParallelEffectiveConfiguration -Lines @(New-EffectiveLine '2026-10-10T01:00:06Z' @('STAGING_TO_WIRE') -Zones @('WIRE', 'OVEN')) -Since $effectiveSince
+    $r1 = Get-ParallelEffectiveConfigurationRefusal -Definition $productionSource -Effective $e1
+    $r2 = Get-ParallelEffectiveConfigurationRefusal -Definition $productionSource -Effective $e2
+    @{ Ok = ($r1 -is [string] -and $r1.Contains('mesIngestBaseUrl') -and $r2 -is [string] -and $r2.Contains('allowedDispatchZones')); Detail = "r1: $r1 / r2: $r2" }
+}
+Invoke-SourceCase 'effective: no line at all is a refusal, not a pass' {
+    $r = Get-ParallelEffectiveConfigurationRefusal -Definition $productionSource -Effective $null
+    @{ Ok = ($r -is [string] -and $r.Contains('EFFECTIVE_CONFIGURATION_UNREAD')); Detail = "got: $r" }
+}
+Invoke-SourceCase 'effective: fake bound as defined (six types, the double) is accepted' {
+    $e = Find-ParallelEffectiveConfiguration -Lines @(New-EffectiveLine '2026-10-10T01:00:06Z' @($baseline['journeyRuntime']['allowedWorkTypes']) `
+            -Zones @($baseline['journeyRuntime']['allowedDispatchZones']) -BaseUrl $baseline['mesIngest']['baseUrl']) -Since $effectiveSince
+    $r = Get-ParallelEffectiveConfigurationRefusal -Definition $baseline -Effective $e
+    @{ Ok = $null -eq $r; Detail = "got: $r" }
+}
+Invoke-SourceCase 'effective: the Host source names the event the module looks for' {
+    $hostSource = Get-Content -Raw -LiteralPath (Join-Path $repoRoot 'src/ControlServer.Host/Program.cs')
+    @{ Ok = $hostSource.Contains('EFFECTIVE_CONFIGURATION allowedWorkTypes={AllowedWorkTypes} allowedDispatchZones={AllowedDispatchZones} mesIngestBaseUrl={MesIngestBaseUrl}')
+        Detail = 'Program.cs does not log the EFFECTIVE_CONFIGURATION template' }
+}
+
+# The installer's wiring and ordering (review M2(b), S1, S2, S3), from its source.
+$installerSource = Get-Content -Raw -LiteralPath (Join-Path $PSScriptRoot 'Install-ParallelInstanceLocal.ps1')
+$recordAt = $installerSource.IndexOf('Copy-Item -LiteralPath $InstanceDefinitionPath', [StringComparison]::Ordinal)
+$retireAt = $installerSource.IndexOf('Unregister-ScheduledTask -TaskName $retired.TaskName', [StringComparison]::Ordinal)
+Invoke-SourceCase 'installer: reads the effective configuration back through Find-/Get-ParallelEffectiveConfiguration after every install and rollback' {
+    $absent = @('Find-ParallelEffectiveConfiguration', 'Get-ParallelEffectiveConfigurationRefusal' | Where-Object { $installerCommands -notcontains $_ })
+    $calls = ([regex]::Matches($installerSource, '(?m)^\s*Assert-EffectiveConfiguration\s*$')).Count
+    @{ Ok = ($absent.Count -eq 0 -and $calls -eq 2); Detail = "not called: $($absent -join ', '); Assert-EffectiveConfiguration call sites: $calls (install and rollback)" }
+}
+Invoke-SourceCase 'installer (S2): the package is checked for existence and hash before the old double is retired and before the definition is recorded' {
+    $hashAt = $installerSource.IndexOf('Get-FileHash -LiteralPath $PackageZip', [StringComparison]::Ordinal)
+    @{ Ok = ($hashAt -gt 0 -and $hashAt -lt $retireAt -and $hashAt -lt $recordAt); Detail = "hash at $hashAt, retire at $retireAt, record at $recordAt" }
+}
+Invoke-SourceCase 'installer (S1): a fake-mode rollback checks the double executable before anything changes' {
+    $checkAt = $installerSource.IndexOf('FAKE_MES_INGEST_MISSING', [StringComparison]::Ordinal)
+    @{ Ok = ($checkAt -gt 0 -and $checkAt -lt $recordAt -and $checkAt -lt $retireAt); Detail = "check at $checkAt, record at $recordAt" }
+}
+Invoke-SourceCase 'installer (S3): stopping the retired double tolerates a process that already exited' {
+    @{ Ok = $installerSource.Contains('$retiredProcesses | Stop-Process -Force -ErrorAction SilentlyContinue'); Detail = 'Stop-Process without -ErrorAction SilentlyContinue' }
+}
+
 Write-Host ''
 Write-Host ("{0} passed, {1} failed" -f $script:Passed, $script:Failed) `
     -ForegroundColor ($script:Failed -eq 0 ? 'Green' : 'Red')
