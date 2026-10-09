@@ -3625,6 +3625,80 @@ Invoke-SourceCase 'installer (S3): stopping the retired double tolerates a proce
     @{ Ok = $installerSource.Contains('$retiredProcesses | Stop-Process -Force -ErrorAction SilentlyContinue'); Detail = 'Stop-Process without -ErrorAction SilentlyContinue' }
 }
 
+# ------------------------------------------------------------------------------------------------
+# control-server#535 re-review. S1: 19 passes no -FakeMesIngestZip in production, and the parameter was
+# Mandatory -- the installer refused to bind before its first line. S2: a production read-back that fails
+# stops the V2 service before it throws. S5: the newest event by @t wins, whatever order the files come in.
+# ------------------------------------------------------------------------------------------------
+Write-Host ''
+Write-Host 'Re-review fixes (control-server#535)' -ForegroundColor Cyan
+
+Invoke-SourceCase 'S1: the installer binds the arguments 19 passes in production (no -FakeMesIngestZip) and reaches its first check' {
+    # Real parameter binding: a copy of the installer run with exactly 19's production install arguments.
+    # It leaves at its first check -- unelevated at Assert-Administrator, elevated at reading a definition that
+    # does not exist -- before any layout exists, so nothing on the machine is touched.
+    $root = Join-Path ([IO.Path]::GetTempPath()) "cs535-s1-$([guid]::NewGuid().ToString('N'))"
+    New-Item -ItemType Directory -Path $root | Out-Null
+    try {
+        foreach ($file in @('Install-ParallelInstanceLocal.ps1', 'ParallelInstance.psm1', 'ParallelHost.psm1')) {
+            Copy-Item -LiteralPath (Join-Path $PSScriptRoot $file) -Destination $root
+        }
+        $config = Join-Path $root 'deploy-config.json'
+        Set-Content -LiteralPath $config -Value '{"riotCallApiKey":"selftest","mesIngestSharedSecret":"selftest"}'
+        $out = @(& pwsh -NoProfile -File (Join-Path $root 'Install-ParallelInstanceLocal.ps1') `
+                -PackageZip 'x.zip' -ExpectedSha256 'x' -DeploymentConfigPath $config `
+                -InstanceDefinitionPath (Join-Path $root 'no-such-instance.json') 2>&1 | ForEach-Object { "$_" })
+        $bound = -not ($out | Where-Object { $_ -like '*missing mandatory parameters*' -or $_ -like '*Cannot bind*' })
+        $early = @($out | Where-Object { $_ -like '*must run elevated*' -or $_ -like '*no-such-instance.json*' }).Count -gt 0
+        @{ Ok = ($bound -and $early); Detail = "exit=$LASTEXITCODE; output: $($out -join ' / ')" }
+    } finally {
+        Remove-Item -LiteralPath $root -Recurse -Force -ErrorAction SilentlyContinue
+    }
+}
+
+$m1Lines = @(New-EffectiveLine '2026-10-10T01:00:06Z' @('STAGING_TO_WIRE', 'DIE_TO_OVEN', 'WIRE_TO_GATE', 'WIRE_TO_OPTICAL', 'STAGING_TO_WIRE', 'WIRE_TO_NITROGEN'))
+Invoke-SourceCase 'S2: production, read-back mismatch -> stop the service, then refuse' {
+    $a = Get-ParallelEffectiveConfigurationAction -Definition $productionSource -Effective (Find-ParallelEffectiveConfiguration -Lines $m1Lines -Since $effectiveSince)
+    @{ Ok = ($a.Action -ceq 'StopServiceAndRefuse' -and $a.Message.Contains('EFFECTIVE_CONFIGURATION_MISMATCH')); Detail = "got: $(ConvertTo-Json $a -Compress)" }
+}
+Invoke-SourceCase 'S2: production, nothing read back -> stop the service, then refuse' {
+    $a = Get-ParallelEffectiveConfigurationAction -Definition $productionSource -Effective $null
+    @{ Ok = ($a.Action -ceq 'StopServiceAndRefuse' -and $a.Message.Contains('EFFECTIVE_CONFIGURATION_UNREAD')); Detail = "got: $(ConvertTo-Json $a -Compress)" }
+}
+Invoke-SourceCase 'S2: fake, bound differently from the definition -> stop the service, then refuse' {
+    $e = Find-ParallelEffectiveConfiguration -Lines @(New-EffectiveLine '2026-10-10T01:00:06Z' @($baseline['journeyRuntime']['allowedWorkTypes']) `
+            -Zones @($baseline['journeyRuntime']['allowedDispatchZones']) -BaseUrl 'http://127.0.0.1:5088') -Since $effectiveSince
+    $a = Get-ParallelEffectiveConfigurationAction -Definition $baseline -Effective $e
+    @{ Ok = ($a.Action -ceq 'StopServiceAndRefuse' -and $a.Message.Contains('mesIngestBaseUrl')); Detail = "got: $(ConvertTo-Json $a -Compress)" }
+}
+Invoke-SourceCase 'S2: fake, nothing read back -> warn only (a package older than #535)' {
+    $a = Get-ParallelEffectiveConfigurationAction -Definition $baseline -Effective $null
+    @{ Ok = ($a.Action -ceq 'Warn'); Detail = "got: $(ConvertTo-Json $a -Compress)" }
+}
+Invoke-SourceCase 'S2: bound as defined -> pass' {
+    $e = Find-ParallelEffectiveConfiguration -Lines @(New-EffectiveLine '2026-10-10T01:00:06Z' @('STAGING_TO_WIRE')) -Since $effectiveSince
+    $a = Get-ParallelEffectiveConfigurationAction -Definition $productionSource -Effective $e
+    @{ Ok = ($a.Action -ceq 'Pass' -and $null -eq $a.Message); Detail = "got: $(ConvertTo-Json $a -Compress)" }
+}
+Invoke-SourceCase 'S2: the installer stops the service before it throws, on install and on rollback alike (one function, both call sites)' {
+    $ast = [System.Management.Automation.Language.Parser]::ParseInput($installerSource, [ref]$null, [ref]$null)
+    $fn = $ast.FindAll({ param($n) $n -is [System.Management.Automation.Language.FunctionDefinitionAst] -and $n.Name -eq 'Assert-EffectiveConfiguration' }, $true) | Select-Object -First 1
+    $body = "$($fn.Body.Extent.Text)"
+    $actionAt = $body.IndexOf('Get-ParallelEffectiveConfigurationAction', [StringComparison]::Ordinal)
+    $stopAt = $body.IndexOf('Stop-Service -Name $serviceName', [StringComparison]::Ordinal)
+    $throwAt = $body.IndexOf('throw', [Math]::Max($stopAt, 0), [StringComparison]::Ordinal)
+    @{ Ok = ($null -ne $fn -and $actionAt -ge 0 -and $stopAt -gt $actionAt -and $throwAt -gt $stopAt)
+        Detail = "action at $actionAt, Stop-Service at $stopAt, throw after it at $throwAt" }
+}
+Invoke-SourceCase 'S5: the newest event by @t wins, whatever order the lines come in (newest file first)' {
+    $lines = @(
+        (New-EffectiveLine '2026-10-10T01:00:09Z' @('STAGING_TO_WIRE'))
+        (New-EffectiveLine '2026-10-10T01:00:06Z' @('STAGING_TO_WIRE', 'WIRE_TO_GATE'))
+    )
+    $e = Find-ParallelEffectiveConfiguration -Lines $lines -Since $effectiveSince
+    @{ Ok = ($null -ne $e -and (@($e.AllowedWorkTypes) -join ',') -ceq 'STAGING_TO_WIRE'); Detail = "got: $(ConvertTo-Json $e -Compress)" }
+}
+
 Write-Host ''
 Write-Host ("{0} passed, {1} failed" -f $script:Passed, $script:Failed) `
     -ForegroundColor ($script:Failed -eq 0 ? 'Green' : 'Red')

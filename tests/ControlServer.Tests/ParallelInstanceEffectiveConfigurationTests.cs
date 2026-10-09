@@ -81,6 +81,48 @@ public sealed class ParallelInstanceEffectiveConfigurationTests
     }
 
     [Fact]
+    public void ShorterZoneListInLaterLayerReplacesEarlierZoneListWhole()
+    {
+        JourneyRuntimeOptions options = Bind(
+            """{ "JourneyRuntime": { "allowedDispatchZones": ["WIRE", "MAP-25-WIRE_TO_GATE"] } }""",
+            """{ "JourneyRuntime": { "allowedDispatchZones": ["WIRE"] } }""", out _);
+
+        Assert.Equal(["WIRE"], options.AllowedDispatchZones);
+    }
+
+    [Fact]
+    public void ListInsideAChainedConfigurationIsStillTakenWholeFromItsLastLayer()
+    {
+        // AddConfiguration wraps another configuration in a ChainedConfigurationProvider, whose GetChildKeys
+        // answers with the inner configuration already merged by index.
+        IConfigurationRoot inner = new ConfigurationBuilder()
+            .AddJsonStream(new MemoryStream(Encoding.UTF8.GetBytes(Base)))
+            .AddJsonStream(new MemoryStream(Encoding.UTF8.GetBytes("""{ "JourneyRuntime": { "allowedWorkTypes": ["STAGING_TO_WIRE"] } }""")))
+            .Build();
+        IConfigurationRoot outer = new ConfigurationBuilder().AddConfiguration(inner).Build();
+        ServiceCollection services = new();
+        services.AddJourneyRuntimeOptions(outer);
+        using ServiceProvider provider = services.BuildServiceProvider();
+
+        Assert.Equal(["STAGING_TO_WIRE"], provider.GetRequiredService<IOptions<JourneyRuntimeOptions>>().Value.AllowedWorkTypes);
+    }
+
+    [Fact]
+    public void ConfigurationWithoutLayersToAskIsRefusedRatherThanMergedByIndex()
+    {
+        IConfigurationRoot root = new ConfigurationBuilder()
+            .AddJsonStream(new MemoryStream(Encoding.UTF8.GetBytes("""{ "Outer": """ + Base + " }")))
+            .Build();
+        ServiceCollection services = new();
+        services.AddJourneyRuntimeOptions(root.GetSection("Outer"));
+        using ServiceProvider provider = services.BuildServiceProvider();
+
+        InvalidOperationException refused = Assert.Throws<InvalidOperationException>(
+            () => provider.GetRequiredService<IOptions<JourneyRuntimeOptions>>().Value);
+        Assert.Contains("allowedWorkTypes", refused.Message, StringComparison.Ordinal);
+    }
+
+    [Fact]
     public void ShorterListReplacesEarlierListWholeUnderTheHostsConfigurationManager()
     {
         // WebApplicationBuilder.Configuration is a ConfigurationManager, not a ConfigurationRoot.
