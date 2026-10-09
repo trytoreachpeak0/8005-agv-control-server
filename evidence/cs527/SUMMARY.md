@@ -15,6 +15,10 @@
 - `AHoldIssuedInTheEscalatingRoundIsReadBackWithoutWaitingForTheDoors`：按住停在 `Pending`。
 - `ADoorReleaseStillHappensWhenNoMotionFollowedIt` 两格修前修后都绿：它们是护栏，守住门锁自动解除的既有行为。
 
+## 第二次提交：零单放行保留一次
+
+`AVehicleStoppedForMotionAfterTheDoorReleaseGetsOutOnceItsOrderIsEndedInRiot` 两格守着有货车的人工出口；两个方向的变异见 `mutations.md`。
+
 ## 修后绿（`green.txt`）
 
-故障、急停、门锁、重建相关的定向测试 519 条全绿。按调度 10-09 转达的流程，本机不跑全量，由 CI 那一轮充当全量。
+故障、急停、门锁、重建相关的定向测试 523 条全绿；改看板文案之后看板相关 332 条全绿。按调度 10-09 转达的流程，本机不跑全量，由 CI 那一轮充当全量。
