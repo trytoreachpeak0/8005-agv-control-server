@@ -67,3 +67,16 @@ S4（第一次报 544、审查跑出 548）：`Test-ParallelInstance.ps1` 里有
 审查跑的时候有。`review-1/04-...` 是有构建时跑的，560 = 548 + 12。
 
 `deploy-19/` 已换成审查后的版本：15 组模拟输出，含 production 缺 `EFFECTIVE_CONFIGURATION=` 行、带 M1 那六项都拒。
+
+## 复核（S1–S5）之后：`review-2/`
+
+| 文件 | commit | 结果 |
+| --- | --- | --- |
+| `01-test-parallel-red-at-f53e9e85.txt` | `f53e9e85e`（只加测试） | `560 passed, 8 failed`。S1 用 19 在 production 下实际传的参数真跑安装器，原文：`Cannot process command because of one or more missing mandatory parameters: FakeMesIngestZip.`；S2 六项、S5 一项 |
+| `02-csharp-red-at-f53e9e85.txt` | 同上 | 2 红（S4）：嵌套配置里 `Actual: ["STAGING_TO_WIRE", "DIE_TO_OVEN", "WIRE_TO_GATE", ...]`；非 `IConfigurationRoot` 时没有抛 |
+| `03-test-parallel-green-at-2d62b702.txt` | `2d62b7026` | `568 passed, 0 failed` |
+| `04-reverse-check-green-at-2d62b702.txt` | 同上 | `25 passed, 0 failed` |
+| `05-csharp-green-at-2d62b702.txt` | 同上 | 27/27 |
+| `r2-mutations.txt` | 同上，逐个改坏再 `git checkout` 还原、重编 | 5 个变异全杀：分区那行修法删掉（S3）、嵌套分支关掉（S4）、取最新那行删掉（S5）、production 读不到只警告、安装器不停服务（S2） |
+
+S3 的分区用例在 `f53e9e85e` 上本来就是绿的：它证明的是「把分区那行修法删掉会红」，由变异给出。

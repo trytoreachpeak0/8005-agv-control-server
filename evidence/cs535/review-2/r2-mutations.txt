@@ -1,0 +1,8 @@
+ 1 file changed, 1 insertion(+), 1 deletion(-)
+S3 zones-line reverted:   Failed ControlServer.Tests.ParallelInstanceEffectiveConfigurationTests.ShorterZoneListInLaterLayerReplacesEarlierZoneListWhole [112 ms]
+S3 zones-line reverted: Failed!  - Failed:     1, Passed:     8, Skipped:     0, Total:     9, Duration: 2 s - ControlServer.Tests.dll (net8.0)
+S4 chained-branch off:   Failed ControlServer.Tests.ParallelInstanceEffectiveConfigurationTests.ListInsideAChainedConfigurationIsStillTakenWholeFromItsLastLayer [22 ms]
+S4 chained-branch off: Failed!  - Failed:     1, Passed:     8, Skipped:     0, Total:     9, Duration: 2 s - ControlServer.Tests.dll (net8.0)
+S5 newest-by-@t check removed : exit=1 567 passed, 1 failed ::   FAIL  S5: the newest event by @t wins, whatever order the lines come in (newest file first)
+S2 production unread only warns : exit=1 567 passed, 1 failed ::   FAIL  S2: production, nothing read back -> stop the service, then refuse
+S2 installer does not stop the service : exit=1 567 passed, 1 failed ::   FAIL  S2: the installer stops the service before it throws, on install and on rollback alike (one function, both call sites)
