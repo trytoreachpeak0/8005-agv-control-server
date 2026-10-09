@@ -107,10 +107,21 @@ param(
     #   ControlServer commit, so the rewritten criterion (b0f070db) needs the binding on the exit branch.
     #   $ControlServerCommit -> 8d0a644e, the exit branch; git diff 8467480d 8d0a644e -- src tests tools is empty, so the
     #     product is 8467480d. Onboard, simulator and protocol unchanged.
-    [string]$ControlServerCommit = '8d0a644edfd4be30b99f5bf03bf17060ea0b0727',
-    [string]$OnboardCommit = '4e40e196205d55c363f97850d10bd18df9a686c0',
+    #
+    # 2026-10-09, batch 8 and protocol v3 exit (control-server#393): protocol-v3.0.0 was released by
+    #   8005-agv-program#152 (annotated tag object e08c362e), and both batch branches were merged back on the
+    #   released identity (control-server PR #540, onboard-hmi PR #286). All four move.
+    #   $ControlServerCommit -> 5f3adc42, the fp/v2-impl tip before the exit ticket's own branch: PR #540's merge
+    #     commit, whose tree is that of batch-p3/v3@4477ec08 (APPROVED_RELEASE, PR #538).
+    #   $OnboardCommit -> b9e67a53, the w2g/fp-v2-impl tip: onboard-hmi PR #286's merge commit, whose tree is that
+    #     of w2g/batch-p3/v3@33f26018 (APPROVED_RELEASE, onboard-hmi PR #284).
+    #   $SimulatorCommit unchanged: origin/main is still fb5f7c59.
+    #   $ProtocolCommit -> 3f091cb2, what the protocol-v3.0.0 tag dereferences to; equal to the candidate frozen
+    #     by 8005-agv-program#151. The tag literal (protocol-v3.0.0) was already moved by control-server#382.
+    [string]$ControlServerCommit = '5f3adc424e23cabffd4423d4eae1d2863720a9e2',
+    [string]$OnboardCommit = 'b9e67a538ba4cdf1916d201a08af40dd28270d14',
     [string]$SimulatorCommit = 'fb5f7c593742bf98bc3957b8729a38aad5321f28',
-    [string]$ProtocolCommit = '86575456c847041515b7b75e8851a00e0d939804',
+    [string]$ProtocolCommit = '3f091cb2eae7c58cec54a95dd9389c9180bc7b4c',
     # The ref whose tip -OnboardCommit must equal. It is a parameter rather than a literal because the
     # branch carrying a line's onboard half moves with the line: batch 3 on the v2 line lives on
     # w2g/b3-on-v2, not on w2g/fp-v2-impl. The assertion is not weakened -- the clone source must
