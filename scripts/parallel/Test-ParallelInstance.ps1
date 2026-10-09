@@ -3261,6 +3261,445 @@ Write-Result -Ok ($direct.Count -eq 0 -and $through.Count -eq 4) `
     -Name 'the installer builds, registers, waits for and seeds the FakeMesIngest task only through the ParallelHost functions the task self-test drives' `
     -Detail "direct calls: $($direct -join ', '); through the functions: $($through -join ', ')"
 
+# ------------------------------------------------------------------------------------------------
+# control-server#535. mesIngest.source: 'fake' (the default, unchanged) or 'production'. The user
+# decided on 2026-10-09 that v2 may read the production MesIngest for STAGING_TO_WIRE only, while
+# the MVP keeps WIRE_TO_GATE. MesIngest has no claim: both instances read the same catalog, so the
+# split rests entirely on the two work type sets being disjoint. 'production' therefore requires
+# allowedWorkTypes to be exactly ["STAGING_TO_WIRE"]; anything with WIRE_TO_GATE in it would take
+# the MVP's material.
+# ------------------------------------------------------------------------------------------------
+Write-Host ''
+Write-Host 'MesIngest source mode (control-server#535)' -ForegroundColor Cyan
+
+# Each case in its own try: before the change several functions below do not exist, and one
+# missing function must be one red case, not the end of the suite.
+function Invoke-SourceCase([string] $Name, [scriptblock] $Body) {
+    try {
+        $verdict = & $Body
+        Write-Result -Ok ([bool] $verdict.Ok) -Name $Name -Detail ([string] $verdict.Detail)
+    } catch {
+        Write-Result -Ok $false -Name $Name -Detail "threw: $($_.Exception.Message)"
+    }
+}
+function New-ProductionSourceDefinition($From) {
+    $d = Copy-Definition $From
+    # A plain hashtable, as ConvertFrom-Json -AsHashtable produces: [ordered] is not a [hashtable],
+    # and the module reads sections through [hashtable] parameters.
+    $d['mesIngest'] = @{ source = 'production'; baseUrl = 'http://127.0.0.1:5088' }
+    $d.Remove('fakeMesIngest')
+    $d['journeyRuntime']['allowedWorkTypes'] = @('STAGING_TO_WIRE')
+    return $d
+}
+function Test-ExactFailure($Definition, [string[]] $Expect, [switch] $ForStopDirection) {
+    [string[]] $got = @(Test-ParallelInstanceDefinition -Definition $Definition -ForStopDirection:$ForStopDirection)
+    $unmatched = @($Expect | Where-Object { $fragment = $_; -not ($got | Where-Object { $_.Contains($fragment) }) })
+    return @{ Ok = ($got.Count -eq $Expect.Count -and $unmatched.Count -eq 0)
+        Detail = "expected exactly '$($Expect -join "', '")'; got $($got.Count): $($got -join ' | ')" }
+}
+$productionSource = New-ProductionSourceDefinition $baseline
+
+Invoke-SourceCase 'source: production, baseUrl 5088, allowedWorkTypes exactly STAGING_TO_WIRE, no fakeMesIngest -- accepted' {
+    [string[]] $got = @(Test-ParallelInstanceDefinition -Definition $productionSource)
+    $returned = Assert-ParallelInstanceDefinition -Definition (Copy-Definition $productionSource)
+    @{ Ok = ($got.Count -eq 0 -and $null -ne $returned); Detail = "got: $($got -join ' | ')" }
+}
+Invoke-SourceCase 'source: production with WIRE_TO_GATE beside STAGING_TO_WIRE is refused, naming the MVP' {
+    $d = Copy-Definition $productionSource
+    $d['journeyRuntime']['allowedWorkTypes'] = @('STAGING_TO_WIRE', 'WIRE_TO_GATE')
+    Test-ExactFailure $d @('WIRE_TO_GATE, which the MVP takes from the same catalog')
+}
+Invoke-SourceCase 'source: production with the shipped six work types is refused, naming the MVP' {
+    $d = Copy-Definition $productionSource
+    $d['journeyRuntime']['allowedWorkTypes'] = @($baseline['journeyRuntime']['allowedWorkTypes'])
+    Test-ExactFailure $d @('WIRE_TO_GATE, which the MVP takes from the same catalog')
+}
+Invoke-SourceCase 'source: production with another work type beside STAGING_TO_WIRE is refused' {
+    $d = Copy-Definition $productionSource
+    $d['journeyRuntime']['allowedWorkTypes'] = @('STAGING_TO_WIRE', 'DIE_TO_OVEN')
+    Test-ExactFailure $d @('must be exactly ["STAGING_TO_WIRE"]')
+}
+Invoke-SourceCase 'source: production with STAGING_TO_WIRE in another case is refused' {
+    $d = Copy-Definition $productionSource
+    $d['journeyRuntime']['allowedWorkTypes'] = @('staging_to_wire')
+    Test-ExactFailure $d @('must be exactly ["STAGING_TO_WIRE"]')
+}
+Invoke-SourceCase 'source: production with STAGING_TO_WIRE twice is refused' {
+    $d = Copy-Definition $productionSource
+    $d['journeyRuntime']['allowedWorkTypes'] = @('STAGING_TO_WIRE', 'STAGING_TO_WIRE')
+    Test-ExactFailure $d @('must be exactly ["STAGING_TO_WIRE"]')
+}
+Invoke-SourceCase 'source: production with allowedWorkTypes left out is refused (the package default is not one type)' {
+    $d = Copy-Definition $productionSource
+    $d['journeyRuntime'].Remove('allowedWorkTypes')
+    Test-ExactFailure $d @('must be exactly ["STAGING_TO_WIRE"]')
+}
+Invoke-SourceCase 'source: production with allowedWorkTypes as a bare string is refused' {
+    $d = Copy-Definition $productionSource
+    $d['journeyRuntime']['allowedWorkTypes'] = 'STAGING_TO_WIRE'
+    Test-ExactFailure $d @('must be exactly ["STAGING_TO_WIRE"]')
+}
+Invoke-SourceCase 'source: production with a fakeMesIngest section is refused' {
+    $d = Copy-Definition $productionSource
+    $d['fakeMesIngest'] = Copy-Definition $baseline['fakeMesIngest']
+    Test-ExactFailure $d @("fakeMesIngest must be absent when mesIngest.source is 'production'")
+}
+Invoke-SourceCase 'source: production with baseUrl at the fake port is refused' {
+    $d = Copy-Definition $productionSource
+    $d['mesIngest']['baseUrl'] = 'http://127.0.0.1:58188'
+    Test-ExactFailure $d @("must be exactly 'http://127.0.0.1:5088'")
+}
+Invoke-SourceCase 'source: production with baseUrl on the plant address is refused' {
+    $d = Copy-Definition $productionSource
+    $d['mesIngest']['baseUrl'] = 'http://172.19.205.222:5088'
+    Test-ExactFailure $d @("must be exactly 'http://127.0.0.1:5088'")
+}
+foreach ($spelling in @('Production', 'real', '')) {
+    Invoke-SourceCase "source: '$spelling' is not a mode and is refused" {
+        $d = Copy-Definition $productionSource
+        $d['mesIngest']['source'] = $spelling
+        Test-ExactFailure $d @("mesIngest.source must be 'fake' or 'production'")
+    }.GetNewClosure()
+}
+Invoke-SourceCase 'source: a JSON true is not a mode and is refused' {
+    $d = Copy-Definition $productionSource
+    $d['mesIngest']['source'] = $true
+    Test-ExactFailure $d @("mesIngest.source must be 'fake' or 'production'")
+}
+Invoke-SourceCase "source: 'fake' written explicitly is the shipped behaviour (accepted)" {
+    $d = Copy-Definition $baseline
+    $d['mesIngest']['source'] = 'fake'
+    [string[]] $got = @(Test-ParallelInstanceDefinition -Definition $d)
+    @{ Ok = $got.Count -eq 0; Detail = "got: $($got -join ' | ')" }
+}
+Invoke-SourceCase "source: 'fake' written explicitly still refuses 5088, exactly as before" {
+    $d = Copy-Definition $baseline
+    $d['mesIngest']['source'] = 'fake'
+    $d['mesIngest']['baseUrl'] = 'http://127.0.0.1:5088'
+    Test-ExactFailure $d @('points at port 5088, the production MesIngest', 'does not match the port in mesIngest.baseUrl')
+}
+Invoke-SourceCase 'source: absent (fake) without fakeMesIngest is refused, exactly as before' {
+    $d = Copy-Definition $baseline
+    $d.Remove('fakeMesIngest')
+    Test-ExactFailure $d @('fakeMesIngest must be an object describing the resident fake catalog')
+}
+Invoke-SourceCase 'source: absent (fake) with only STAGING_TO_WIRE is still a fake-mode definition (the work type rule is production-only)' {
+    $d = Copy-Definition $baseline
+    $d['journeyRuntime']['allowedWorkTypes'] = @('STAGING_TO_WIRE')
+    [string[]] $got = @(Test-ParallelInstanceDefinition -Definition $d)
+    @{ Ok = $got.Count -eq 0; Detail = "got: $($got -join ' | ')" }
+}
+
+# The way out (item 3): uninstalling and closing the gate assert with -ForStopDirection, then build
+# the layout and the footprint. A production definition has no fakeMesIngest, and the layout used to
+# index into it unconditionally -- under StrictMode that throws, and the uninstall would never start.
+Invoke-SourceCase 'stop direction: a production definition passes -ForStopDirection' {
+    $refusal = Get-AssertRefusal (Copy-Definition $productionSource) -ForStopDirection
+    @{ Ok = $null -eq $refusal; Detail = "got: $refusal" }
+}
+Invoke-SourceCase 'stop direction: a production definition installed before taskTypeStations still passes -ForStopDirection' {
+    $d = Copy-Definition $productionSource
+    $d.Remove('taskTypeStations')
+    $refusal = Get-AssertRefusal $d -ForStopDirection
+    @{ Ok = $null -eq $refusal; Detail = "got: $refusal" }
+}
+Invoke-SourceCase 'stop direction: -ForStopDirection does not relax the work type rule' {
+    $d = Copy-Definition $productionSource
+    $d['journeyRuntime']['allowedWorkTypes'] = @('WIRE_TO_GATE')
+    Test-ExactFailure $d @('WIRE_TO_GATE, which the MVP takes from the same catalog') -ForStopDirection
+}
+Invoke-SourceCase 'layout: a production definition has a layout with no double in it' {
+    $l = Get-ParallelInstanceLayout -Definition $productionSource
+    @{ Ok = ($l.MesIngestSource -ceq 'production' -and $null -eq $l.TaskName -and $null -eq $l.FakeInstallRoot -and
+            $null -eq $l.SeedPath -and $l.ServiceName -ceq $productionSource['serviceName'])
+        Detail = "source=$($l.MesIngestSource) task=$($l.TaskName) fakeRoot=$($l.FakeInstallRoot) seed=$($l.SeedPath)" }
+}
+Invoke-SourceCase 'layout: the fake definition still names its double' {
+    $l = Get-ParallelInstanceLayout -Definition $baseline
+    @{ Ok = ($l.MesIngestSource -ceq 'fake' -and $l.TaskName -ceq $baseline['fakeMesIngest']['taskName'] -and
+            $l.FakeInstallRoot -ceq $baseline['fakeMesIngest']['installRoot'])
+        Detail = "source=$($l.MesIngestSource) task=$($l.TaskName) fakeRoot=$($l.FakeInstallRoot)" }
+}
+Invoke-SourceCase 'footprint: production has no scheduled task and no double directory, and keeps everything else' {
+    $fp = @(Get-ParallelInstanceFootprint -Definition $productionSource)
+    $fakeFp = @(Get-ParallelInstanceFootprint -Definition $baseline)
+    $tasks = @($fp | Where-Object Kind -eq 'ScheduledTask')
+    $empty = @($fp | Where-Object { [string]::IsNullOrWhiteSpace($_.Name) })
+    $fakeRoot = [string] $baseline['fakeMesIngest']['installRoot']
+    $expected = @($fakeFp | Where-Object { $_.Kind -ne 'ScheduledTask' -and $_.Name -ne $fakeRoot } | ForEach-Object { "$($_.Kind)|$($_.Name)" })
+    $actual = @($fp | ForEach-Object { "$($_.Kind)|$($_.Name)" })
+    @{ Ok = ($tasks.Count -eq 0 -and $empty.Count -eq 0 -and ($expected -join ';') -ceq ($actual -join ';'))
+        Detail = "tasks=$($tasks.Count) emptyNames=$($empty.Count) expected=$($expected -join ';') actual=$($actual -join ';')" }
+}
+Invoke-SourceCase 'uninstall: the removal sequence runs over a production footprint (service first, no task, no process step)' {
+    $log = [System.Collections.Generic.List[string]]::new()
+    $outcome = Invoke-ParallelRemovalSequence -Footprint @(Get-ParallelInstanceFootprint -Definition $productionSource) -Actions (New-RecordingAction -Log $log)
+    $kinds = @($log | ForEach-Object { $_.Split('|')[0] })
+    @{ Ok = (-not $outcome.Aborted -and $outcome.Failed.Count -eq 0 -and $kinds[0] -eq 'Service' -and
+            $kinds -notcontains 'ScheduledTask' -and $kinds -notcontains 'Process')
+        Detail = "aborted=$($outcome.Aborted) failed=$($outcome.Failed -join ';') log=$($log -join ';')" }
+}
+Invoke-SourceCase 'overlay: production writes the production baseUrl and STAGING_TO_WIRE only; source is not a product key' {
+    $o = New-ParallelInstanceConfigurationOverlay -Definition (Copy-Definition $productionSource)
+    @{ Ok = ($o['MesIngest']['baseUrl'] -ceq 'http://127.0.0.1:5088' -and -not $o['MesIngest'].Contains('source') -and
+            (@($o['JourneyRuntime']['allowedWorkTypes']) -join ',') -ceq 'STAGING_TO_WIRE' -and
+            $o['MesIngest']['sharedSecretEnvironmentVariable'] -ceq 'CONTROL_SERVER_MES_INGEST_SHARED_SECRET')
+        Detail = (ConvertTo-Json $o['MesIngest'] -Compress) }
+}
+
+# The audit line (item 2) and the shared secret (item 5).
+Invoke-SourceCase 'audit: the production line names the mode, the catalog and the one work type' {
+    $line = Format-ParallelMesIngestAudit -Definition $productionSource
+    @{ Ok = ($line -is [string] -and $line.Contains('MES_INGEST_SOURCE=production') -and $line.Contains('baseUrl=http://127.0.0.1:5088') -and
+            $line.Contains('allowedWorkTypes=STAGING_TO_WIRE') -and $line.Contains('PRODUCTION MesIngest'))
+        Detail = "got: $line" }
+}
+Invoke-SourceCase 'audit: the fake line says fake and names the double' {
+    $line = Format-ParallelMesIngestAudit -Definition $baseline
+    @{ Ok = ($line -is [string] -and $line.Contains('MES_INGEST_SOURCE=fake') -and $line.Contains('baseUrl=http://127.0.0.1:58188') -and
+            -not $line.Contains('PRODUCTION'))
+        Detail = "got: $line" }
+}
+Invoke-SourceCase 'secret: production without the MesIngest shared secret is refused before anything changes' {
+    $refusal = Get-ParallelMesIngestSecretRefusal -Definition $productionSource -SharedSecret ''
+    $refusalNull = Get-ParallelMesIngestSecretRefusal -Definition $productionSource -SharedSecret $null
+    @{ Ok = ($refusal -is [string] -and $refusal.Contains('MesIngestSharedSecret') -and $refusal.Contains('401') -and $refusalNull -is [string])
+        Detail = "empty: $refusal / null: $refusalNull" }
+}
+Invoke-SourceCase 'secret: production with the shared secret, and fake without one, are both accepted' {
+    $a = Get-ParallelMesIngestSecretRefusal -Definition $productionSource -SharedSecret 'selftest'
+    $b = Get-ParallelMesIngestSecretRefusal -Definition $baseline -SharedSecret ''
+    @{ Ok = ($null -eq $a -and $null -eq $b); Detail = "production+secret: $a / fake+none: $b" }
+}
+
+# Switching an installed fake-mode instance to production: the previous definition's double is
+# retired by the installer, or a later uninstall (which reads the production definition) would never
+# find its task and directory again.
+Invoke-SourceCase 'retire: production over an installed fake definition names the old task and directory' {
+    $r = Get-ParallelRetiredFakeMesIngest -Previous (Copy-Definition $baseline) -Current $productionSource
+    @{ Ok = ($null -ne $r -and $r.TaskName -ceq $baseline['fakeMesIngest']['taskName'] -and
+            $r.FakeInstallRoot -ceq $baseline['fakeMesIngest']['installRoot'])
+        Detail = "got: $(ConvertTo-Json $r -Compress)" }
+}
+Invoke-SourceCase 'retire: nothing to retire for fake over fake, production over production, or no previous install' {
+    $a = Get-ParallelRetiredFakeMesIngest -Previous (Copy-Definition $baseline) -Current $baseline
+    $b = Get-ParallelRetiredFakeMesIngest -Previous (Copy-Definition $productionSource) -Current $productionSource
+    $c = Get-ParallelRetiredFakeMesIngest -Previous $null -Current $productionSource
+    @{ Ok = ($null -eq $a -and $null -eq $b -and $null -eq $c); Detail = "a=$a b=$b c=$c" }
+}
+Invoke-SourceCase 'retire: a previous definition that does not pass the checks is not acted on' {
+    $bad = Copy-Definition $baseline
+    $bad['fakeMesIngest']['taskName'] = '*'
+    $thrown = $null
+    try { $null = Get-ParallelRetiredFakeMesIngest -Previous $bad -Current $productionSource } catch { $thrown = $_.Exception.Message }
+    @{ Ok = ($null -ne $thrown -and $thrown.Contains('contains a wildcard character')); Detail = "got: $thrown" }
+}
+
+# The shipped production definition, the file the coordinator deploys on 2026-10-10.
+$productionFile = Join-Path $PSScriptRoot 'instance-factory01-v2.production-mes.json'
+Invoke-SourceCase 'shipped production-mes definition: accepted, production source, STAGING_TO_WIRE only, runtime and gate off' {
+    $p = Read-ParallelInstanceDefinition -Path $productionFile
+    [string[]] $got = @(Test-ParallelInstanceDefinition -Definition $p)
+    @{ Ok = ($got.Count -eq 0 -and $p['mesIngest']['source'] -ceq 'production' -and -not $p.Contains('fakeMesIngest') -and
+            (@($p['journeyRuntime']['allowedWorkTypes']) -join ',') -ceq 'STAGING_TO_WIRE' -and
+            $p['journeyRuntime']['enabled'] -eq $false -and $p['riotCreateDispatch']['enabled'] -eq $false)
+        Detail = "failures: $($got -join ' | ')" }
+}
+Invoke-SourceCase 'shipped production-mes definition: everything except the MES source and the work types equals the fake definition' {
+    $p = Read-ParallelInstanceDefinition -Path $productionFile
+    $f = Copy-Definition $shipped
+    $f['mesIngest'] = $p['mesIngest']
+    $f.Remove('fakeMesIngest')
+    $f['journeyRuntime']['allowedWorkTypes'] = $p['journeyRuntime']['allowedWorkTypes']
+    $a = ConvertTo-Json -InputObject $f -Depth 12 -Compress
+    $b = ConvertTo-Json -InputObject (Copy-Definition $p) -Depth 12 -Compress
+    @{ Ok = [string]::Equals($a, $b, [StringComparison]::Ordinal); Detail = "fake-derived: $a`n        shipped: $b" }
+}
+Invoke-SourceCase 'shipped fake definition: unchanged default -- no source key, all six work types' {
+    @{ Ok = (-not $shipped['mesIngest'].Contains('source') -and @($shipped['journeyRuntime']['allowedWorkTypes']).Count -eq 6)
+        Detail = "mesIngest keys: $($shipped['mesIngest'].Keys -join ',')" }
+}
+
+# The installer's wiring, from its AST: it prints the audit line, refuses a missing secret, retires
+# an old double, and installs the double only in fake mode.
+Invoke-SourceCase 'installer: calls Format-ParallelMesIngestAudit, Get-ParallelMesIngestSecretRefusal and Get-ParallelRetiredFakeMesIngest' {
+    $needed = @('Format-ParallelMesIngestAudit', 'Get-ParallelMesIngestSecretRefusal', 'Get-ParallelRetiredFakeMesIngest')
+    $absent = @($needed | Where-Object { $installerCommands -notcontains $_ })
+    @{ Ok = $absent.Count -eq 0; Detail = "not called: $($absent -join ', ')" }
+}
+Invoke-SourceCase 'installer: the secret refusal runs before the installed definition is re-recorded' {
+    $src = Get-Content -LiteralPath (Join-Path $PSScriptRoot 'Install-ParallelInstanceLocal.ps1') -Raw
+    $refusalAt = $src.IndexOf('Get-ParallelMesIngestSecretRefusal', [StringComparison]::Ordinal)
+    $recordAt = $src.IndexOf('Copy-Item -LiteralPath $InstanceDefinitionPath', [StringComparison]::Ordinal)
+    @{ Ok = ($refusalAt -gt 0 -and $recordAt -gt 0 -and $refusalAt -lt $recordAt); Detail = "refusal at $refusalAt, record at $recordAt" }
+}
+
+# ------------------------------------------------------------------------------------------------
+# control-server#535 review M2(b). The deployment's read-back reads what the Host really bound, not the
+# definition: the Host logs one EFFECTIVE_CONFIGURATION event after it started (Serilog compact JSON,
+# the file the product installer configures), and the installer finds it and compares it with the
+# definition. M1 was a definition that said ["STAGING_TO_WIRE"] and a Host that bound six types.
+# ------------------------------------------------------------------------------------------------
+Write-Host ''
+Write-Host 'Effective configuration read-back (control-server#535 review M2)' -ForegroundColor Cyan
+
+$effectiveSince = [datetimeoffset]::Parse('2026-10-10T01:00:00Z', [cultureinfo]::InvariantCulture)
+# Zones default to the test definitions' (Set-Map26TestValue), so a case differs from them only where it means to.
+function New-EffectiveLine([string] $At, [string[]] $Types, [string[]] $Zones = @($productionSource['journeyRuntime']['allowedDispatchZones']), [string] $BaseUrl = 'http://127.0.0.1:5088') {
+    return ConvertTo-Json -Compress -Depth 5 -InputObject ([ordered]@{
+            '@t' = $At
+            '@mt' = 'EFFECTIVE_CONFIGURATION allowedWorkTypes={AllowedWorkTypes} allowedDispatchZones={AllowedDispatchZones} mesIngestBaseUrl={MesIngestBaseUrl}'
+            AllowedWorkTypes = @($Types); AllowedDispatchZones = @($Zones); MesIngestBaseUrl = $BaseUrl
+            SourceContext = 'ControlServer.Host'
+        })
+}
+$noise = '{"@t":"2026-10-10T01:00:05Z","@mt":"Now listening on: {address}","address":"http://172.19.205.222:58107"}'
+
+Invoke-SourceCase 'effective: the latest EFFECTIVE_CONFIGURATION line after the start is the one read' {
+    $lines = @(
+        (New-EffectiveLine '2026-10-10T00:59:00Z' @('STAGING_TO_WIRE', 'DIE_TO_OVEN', 'WIRE_TO_GATE'))
+        $noise
+        'not json at all'
+        (New-EffectiveLine '2026-10-10T01:00:06Z' @('STAGING_TO_WIRE'))
+    )
+    $e = Find-ParallelEffectiveConfiguration -Lines $lines -Since $effectiveSince
+    @{ Ok = ($null -ne $e -and (@($e.AllowedWorkTypes) -join ',') -ceq 'STAGING_TO_WIRE' -and $e.MesIngestBaseUrl -ceq 'http://127.0.0.1:5088')
+        Detail = "got: $(ConvertTo-Json $e -Compress)" }
+}
+Invoke-SourceCase 'effective: a line from before the start is not evidence of this start' {
+    $e = Find-ParallelEffectiveConfiguration -Lines @((New-EffectiveLine '2026-10-10T00:59:59Z' @('STAGING_TO_WIRE')), $noise) -Since $effectiveSince
+    @{ Ok = $null -eq $e; Detail = "got: $(ConvertTo-Json $e -Compress)" }
+}
+Invoke-SourceCase 'effective: production with the M1 binding (STAGING_TO_WIRE plus five more) is refused, naming WIRE_TO_GATE' {
+    $e = Find-ParallelEffectiveConfiguration -Lines @(New-EffectiveLine '2026-10-10T01:00:06Z' @(
+            'STAGING_TO_WIRE', 'DIE_TO_OVEN', 'WIRE_TO_GATE', 'WIRE_TO_OPTICAL', 'STAGING_TO_WIRE', 'WIRE_TO_NITROGEN')) -Since $effectiveSince
+    $r = Get-ParallelEffectiveConfigurationRefusal -Definition $productionSource -Effective $e
+    @{ Ok = ($r -is [string] -and $r.Contains('EFFECTIVE_CONFIGURATION_MISMATCH') -and $r.Contains('WIRE_TO_GATE')); Detail = "got: $r" }
+}
+Invoke-SourceCase 'effective: production bound exactly as defined is accepted' {
+    $e = Find-ParallelEffectiveConfiguration -Lines @(New-EffectiveLine '2026-10-10T01:00:06Z' @('STAGING_TO_WIRE')) -Since $effectiveSince
+    $r = Get-ParallelEffectiveConfigurationRefusal -Definition $productionSource -Effective $e
+    @{ Ok = $null -eq $r; Detail = "got: $r" }
+}
+Invoke-SourceCase 'effective: a different MesIngest origin or dispatch zone than defined is refused' {
+    $e1 = Find-ParallelEffectiveConfiguration -Lines @(New-EffectiveLine '2026-10-10T01:00:06Z' @('STAGING_TO_WIRE') -BaseUrl 'http://127.0.0.1:58188') -Since $effectiveSince
+    $e2 = Find-ParallelEffectiveConfiguration -Lines @(New-EffectiveLine '2026-10-10T01:00:06Z' @('STAGING_TO_WIRE') -Zones @('WIRE', 'OVEN')) -Since $effectiveSince
+    $r1 = Get-ParallelEffectiveConfigurationRefusal -Definition $productionSource -Effective $e1
+    $r2 = Get-ParallelEffectiveConfigurationRefusal -Definition $productionSource -Effective $e2
+    @{ Ok = ($r1 -is [string] -and $r1.Contains('mesIngestBaseUrl') -and $r2 -is [string] -and $r2.Contains('allowedDispatchZones')); Detail = "r1: $r1 / r2: $r2" }
+}
+Invoke-SourceCase 'effective: no line at all is a refusal, not a pass' {
+    $r = Get-ParallelEffectiveConfigurationRefusal -Definition $productionSource -Effective $null
+    @{ Ok = ($r -is [string] -and $r.Contains('EFFECTIVE_CONFIGURATION_UNREAD')); Detail = "got: $r" }
+}
+Invoke-SourceCase 'effective: fake bound as defined (six types, the double) is accepted' {
+    $e = Find-ParallelEffectiveConfiguration -Lines @(New-EffectiveLine '2026-10-10T01:00:06Z' @($baseline['journeyRuntime']['allowedWorkTypes']) `
+            -Zones @($baseline['journeyRuntime']['allowedDispatchZones']) -BaseUrl $baseline['mesIngest']['baseUrl']) -Since $effectiveSince
+    $r = Get-ParallelEffectiveConfigurationRefusal -Definition $baseline -Effective $e
+    @{ Ok = $null -eq $r; Detail = "got: $r" }
+}
+Invoke-SourceCase 'effective: the Host source names the event the module looks for' {
+    $hostSource = Get-Content -Raw -LiteralPath (Join-Path $repoRoot 'src/ControlServer.Host/Program.cs')
+    @{ Ok = $hostSource.Contains('EFFECTIVE_CONFIGURATION allowedWorkTypes={AllowedWorkTypes} allowedDispatchZones={AllowedDispatchZones} mesIngestBaseUrl={MesIngestBaseUrl}')
+        Detail = 'Program.cs does not log the EFFECTIVE_CONFIGURATION template' }
+}
+
+# The installer's wiring and ordering (review M2(b), S1, S2, S3), from its source.
+$installerSource = Get-Content -Raw -LiteralPath (Join-Path $PSScriptRoot 'Install-ParallelInstanceLocal.ps1')
+$recordAt = $installerSource.IndexOf('Copy-Item -LiteralPath $InstanceDefinitionPath', [StringComparison]::Ordinal)
+$retireAt = $installerSource.IndexOf('Unregister-ScheduledTask -TaskName $retired.TaskName', [StringComparison]::Ordinal)
+Invoke-SourceCase 'installer: reads the effective configuration back through Find-ParallelEffectiveConfiguration / Get-ParallelEffectiveConfigurationAction after every install and rollback' {
+    # Since the re-review the installer reaches the refusal through Get-ParallelEffectiveConfigurationAction (S2).
+    $absent = @('Find-ParallelEffectiveConfiguration', 'Get-ParallelEffectiveConfigurationAction' | Where-Object { $installerCommands -notcontains $_ })
+    $calls = ([regex]::Matches($installerSource, '(?m)^\s*Assert-EffectiveConfiguration\s*$')).Count
+    @{ Ok = ($absent.Count -eq 0 -and $calls -eq 2); Detail = "not called: $($absent -join ', '); Assert-EffectiveConfiguration call sites: $calls (install and rollback)" }
+}
+Invoke-SourceCase 'installer (S2): the package is checked for existence and hash before the old double is retired and before the definition is recorded' {
+    $hashAt = $installerSource.IndexOf('Get-FileHash -LiteralPath $PackageZip', [StringComparison]::Ordinal)
+    @{ Ok = ($hashAt -gt 0 -and $hashAt -lt $retireAt -and $hashAt -lt $recordAt); Detail = "hash at $hashAt, retire at $retireAt, record at $recordAt" }
+}
+Invoke-SourceCase 'installer (S1): a fake-mode rollback checks the double executable before anything changes' {
+    $checkAt = $installerSource.IndexOf('FAKE_MES_INGEST_MISSING', [StringComparison]::Ordinal)
+    @{ Ok = ($checkAt -gt 0 -and $checkAt -lt $recordAt -and $checkAt -lt $retireAt); Detail = "check at $checkAt, record at $recordAt" }
+}
+Invoke-SourceCase 'installer (S3): stopping the retired double tolerates a process that already exited' {
+    @{ Ok = $installerSource.Contains('$retiredProcesses | Stop-Process -Force -ErrorAction SilentlyContinue'); Detail = 'Stop-Process without -ErrorAction SilentlyContinue' }
+}
+
+# ------------------------------------------------------------------------------------------------
+# control-server#535 re-review. S1: 19 passes no -FakeMesIngestZip in production, and the parameter was
+# Mandatory -- the installer refused to bind before its first line. S2: a production read-back that fails
+# stops the V2 service before it throws. S5: the newest event by @t wins, whatever order the files come in.
+# ------------------------------------------------------------------------------------------------
+Write-Host ''
+Write-Host 'Re-review fixes (control-server#535)' -ForegroundColor Cyan
+
+Invoke-SourceCase 'S1: the installer binds the arguments 19 passes in production (no -FakeMesIngestZip) and reaches its first check' {
+    # Real parameter binding: a copy of the installer run with exactly 19's production install arguments.
+    # It leaves at its first check -- unelevated at Assert-Administrator, elevated at reading a definition that
+    # does not exist -- before any layout exists, so nothing on the machine is touched.
+    $root = Join-Path ([IO.Path]::GetTempPath()) "cs535-s1-$([guid]::NewGuid().ToString('N'))"
+    New-Item -ItemType Directory -Path $root | Out-Null
+    try {
+        foreach ($file in @('Install-ParallelInstanceLocal.ps1', 'ParallelInstance.psm1', 'ParallelHost.psm1')) {
+            Copy-Item -LiteralPath (Join-Path $PSScriptRoot $file) -Destination $root
+        }
+        $config = Join-Path $root 'deploy-config.json'
+        Set-Content -LiteralPath $config -Value '{"riotCallApiKey":"selftest","mesIngestSharedSecret":"selftest"}'
+        $out = @(& pwsh -NoProfile -File (Join-Path $root 'Install-ParallelInstanceLocal.ps1') `
+                -PackageZip 'x.zip' -ExpectedSha256 'x' -DeploymentConfigPath $config `
+                -InstanceDefinitionPath (Join-Path $root 'no-such-instance.json') 2>&1 | ForEach-Object { "$_" })
+        $bound = -not ($out | Where-Object { $_ -like '*missing mandatory parameters*' -or $_ -like '*Cannot bind*' })
+        $early = @($out | Where-Object { $_ -like '*must run elevated*' -or $_ -like '*no-such-instance.json*' }).Count -gt 0
+        @{ Ok = ($bound -and $early); Detail = "exit=$LASTEXITCODE; output: $($out -join ' / ')" }
+    } finally {
+        Remove-Item -LiteralPath $root -Recurse -Force -ErrorAction SilentlyContinue
+    }
+}
+
+$m1Lines = @(New-EffectiveLine '2026-10-10T01:00:06Z' @('STAGING_TO_WIRE', 'DIE_TO_OVEN', 'WIRE_TO_GATE', 'WIRE_TO_OPTICAL', 'STAGING_TO_WIRE', 'WIRE_TO_NITROGEN'))
+Invoke-SourceCase 'S2: production, read-back mismatch -> stop the service, then refuse' {
+    $a = Get-ParallelEffectiveConfigurationAction -Definition $productionSource -Effective (Find-ParallelEffectiveConfiguration -Lines $m1Lines -Since $effectiveSince)
+    @{ Ok = ($a.Action -ceq 'StopServiceAndRefuse' -and $a.Message.Contains('EFFECTIVE_CONFIGURATION_MISMATCH')); Detail = "got: $(ConvertTo-Json $a -Compress)" }
+}
+Invoke-SourceCase 'S2: production, nothing read back -> stop the service, then refuse' {
+    $a = Get-ParallelEffectiveConfigurationAction -Definition $productionSource -Effective $null
+    @{ Ok = ($a.Action -ceq 'StopServiceAndRefuse' -and $a.Message.Contains('EFFECTIVE_CONFIGURATION_UNREAD')); Detail = "got: $(ConvertTo-Json $a -Compress)" }
+}
+Invoke-SourceCase 'S2: fake, bound differently from the definition -> stop the service, then refuse' {
+    $e = Find-ParallelEffectiveConfiguration -Lines @(New-EffectiveLine '2026-10-10T01:00:06Z' @($baseline['journeyRuntime']['allowedWorkTypes']) `
+            -Zones @($baseline['journeyRuntime']['allowedDispatchZones']) -BaseUrl 'http://127.0.0.1:5088') -Since $effectiveSince
+    $a = Get-ParallelEffectiveConfigurationAction -Definition $baseline -Effective $e
+    @{ Ok = ($a.Action -ceq 'StopServiceAndRefuse' -and $a.Message.Contains('mesIngestBaseUrl')); Detail = "got: $(ConvertTo-Json $a -Compress)" }
+}
+Invoke-SourceCase 'S2: fake, nothing read back -> warn only (a package older than #535)' {
+    $a = Get-ParallelEffectiveConfigurationAction -Definition $baseline -Effective $null
+    @{ Ok = ($a.Action -ceq 'Warn'); Detail = "got: $(ConvertTo-Json $a -Compress)" }
+}
+Invoke-SourceCase 'S2: bound as defined -> pass' {
+    $e = Find-ParallelEffectiveConfiguration -Lines @(New-EffectiveLine '2026-10-10T01:00:06Z' @('STAGING_TO_WIRE')) -Since $effectiveSince
+    $a = Get-ParallelEffectiveConfigurationAction -Definition $productionSource -Effective $e
+    @{ Ok = ($a.Action -ceq 'Pass' -and $null -eq $a.Message); Detail = "got: $(ConvertTo-Json $a -Compress)" }
+}
+Invoke-SourceCase 'S2: the installer stops the service before it throws, on install and on rollback alike (one function, both call sites)' {
+    $ast = [System.Management.Automation.Language.Parser]::ParseInput($installerSource, [ref]$null, [ref]$null)
+    $fn = $ast.FindAll({ param($n) $n -is [System.Management.Automation.Language.FunctionDefinitionAst] -and $n.Name -eq 'Assert-EffectiveConfiguration' }, $true) | Select-Object -First 1
+    $body = "$($fn.Body.Extent.Text)"
+    $actionAt = $body.IndexOf('Get-ParallelEffectiveConfigurationAction', [StringComparison]::Ordinal)
+    $stopAt = $body.IndexOf('Stop-Service -Name $serviceName', [StringComparison]::Ordinal)
+    $throwAt = $body.IndexOf('throw', [Math]::Max($stopAt, 0), [StringComparison]::Ordinal)
+    @{ Ok = ($null -ne $fn -and $actionAt -ge 0 -and $stopAt -gt $actionAt -and $throwAt -gt $stopAt)
+        Detail = "action at $actionAt, Stop-Service at $stopAt, throw after it at $throwAt" }
+}
+Invoke-SourceCase 'S5: the newest event by @t wins, whatever order the lines come in (newest file first)' {
+    $lines = @(
+        (New-EffectiveLine '2026-10-10T01:00:09Z' @('STAGING_TO_WIRE'))
+        (New-EffectiveLine '2026-10-10T01:00:06Z' @('STAGING_TO_WIRE', 'WIRE_TO_GATE'))
+    )
+    $e = Find-ParallelEffectiveConfiguration -Lines $lines -Since $effectiveSince
+    @{ Ok = ($null -ne $e -and (@($e.AllowedWorkTypes) -join ',') -ceq 'STAGING_TO_WIRE'); Detail = "got: $(ConvertTo-Json $e -Compress)" }
+}
+
 Write-Host ''
 Write-Host ("{0} passed, {1} failed" -f $script:Passed, $script:Failed) `
     -ForegroundColor ($script:Failed -eq 0 ? 'Green' : 'Red')
