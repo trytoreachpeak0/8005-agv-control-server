@@ -51,6 +51,17 @@ public sealed class HttpRiotMovementGateway : IRiotMovementGateway, IRiotVehicle
     /// </remarks>
     private static readonly string[] NotMovingStates = ["MT_FINISHED", "MT_PAUSED"];
 
+    /// <summary>Page size for the non-final order listing; 100 is what every read used before paging (control-server#525).</summary>
+    private const int NonFinalOrderPageSize = 100;
+
+    /// <summary>
+    /// The most pages one non-final order read follows (control-server#525). The real RIoT held 252 non-final orders on
+    /// 2026-10-09 (3 pages), nearly all of them other plant lines' state-8 orders accumulated since 2026-09-09; 20 pages is
+    /// 2000 orders, about eight times that, before the read gives up and answers incomplete. Past it the answer stays the
+    /// fail-closed one every caller already handles, rather than an unbounded burst of requests on every poll.
+    /// </summary>
+    private const int NonFinalOrderPageCap = 20;
+
     /// <summary>Placeholder RIoT reports in executeVehicleKey before a vehicle is bound.</summary>
     private const string UnassignedVehicleKeyPlaceholder = "--";
     private readonly RiotSession riotSession;
@@ -317,12 +328,8 @@ public sealed class HttpRiotMovementGateway : IRiotMovementGateway, IRiotVehicle
         {
             VehicleExecutionFacts vehicle = await riotSession.Tasks.GetVehicleExecutionFactsAsync(
                 vehicleKey, cancellationToken).ConfigureAwait(false);
-            OrderStatePage orders = await riotSession.Order.ListOrdersByStatesAsync(
-                NonFinalOrderStates,
-                pageNum: 1,
-                pageSize: 100,
-                cancellationToken: cancellationToken).ConfigureAwait(false);
-            if (!orders.CoversAllRecords)
+            NonFinalOrderRead orders = await ReadAllNonFinalOrdersAsync(cancellationToken).ConfigureAwait(false);
+            if (!orders.IsComplete)
             {
                 return UnknownSafety(vehicleKey, "RIOT_NONFINAL_ORDER_COVERAGE_UNKNOWN");
             }
@@ -399,12 +406,8 @@ public sealed class HttpRiotMovementGateway : IRiotMovementGateway, IRiotVehicle
         ArgumentException.ThrowIfNullOrWhiteSpace(deviceKey);
         try
         {
-            OrderStatePage orders = await riotSession.Order.ListOrdersByStatesAsync(
-                NonFinalOrderStates,
-                pageNum: 1,
-                pageSize: 100,
-                cancellationToken: cancellationToken).ConfigureAwait(false);
-            if (!orders.CoversAllRecords)
+            NonFinalOrderRead orders = await ReadAllNonFinalOrdersAsync(cancellationToken).ConfigureAwait(false);
+            if (!orders.IsComplete)
             {
                 return new RiotVehicleOrderObservation(deviceKey, null, [], timeProvider.GetUtcNow());
             }
@@ -448,12 +451,8 @@ public sealed class HttpRiotMovementGateway : IRiotMovementGateway, IRiotVehicle
     {
         try
         {
-            OrderStatePage orders = await riotSession.Order.ListOrdersByStatesAsync(
-                NonFinalOrderStates,
-                pageNum: 1,
-                pageSize: 100,
-                cancellationToken: cancellationToken).ConfigureAwait(false);
-            if (!orders.CoversAllRecords)
+            NonFinalOrderRead orders = await ReadAllNonFinalOrdersAsync(cancellationToken).ConfigureAwait(false);
+            if (!orders.IsComplete)
             {
                 return new RiotUnfinishedOrderListing(false, [], timeProvider.GetUtcNow());
             }
@@ -479,6 +478,81 @@ public sealed class HttpRiotMovementGateway : IRiotMovementGateway, IRiotVehicle
         {
             return new RiotUnfinishedOrderListing(false, [], timeProvider.GetUtcNow());
         }
+    }
+
+    /// <summary>
+    /// Every order RIoT holds in a non-final state, read page by page until the listing is covered (control-server#525).
+    /// </summary>
+    /// <remarks>
+    /// <para>
+    /// The SDK's <see cref="OrderStatePage.CoversAllRecords"/> holds only for a first page that carries the whole listing,
+    /// so coverage across pages is proven here: every page must answer the page asked for, report the same total as the
+    /// first, and carry exactly the records that page should hold (a full page, then the remainder), and no record id may
+    /// appear twice. Together the pages then add up to the first page's total.
+    /// </para>
+    /// <para>
+    /// A total that changes between pages, a page that is short, long or out of place, a repeated record, or a listing
+    /// past <see cref="NonFinalOrderPageCap"/> pages is incomplete -- never stitched into a snapshot RIoT never held. The
+    /// callers poll, so the next read starts over. What paging cannot prove is a listing that changed without its total
+    /// changing (one order leaving while another arrives between two page reads); RIoT offers no snapshot to page over, so
+    /// that residue is accepted rather than closed.
+    /// </para>
+    /// </remarks>
+    private async Task<NonFinalOrderRead> ReadAllNonFinalOrdersAsync(CancellationToken cancellationToken)
+    {
+        OrderStatePage first = await riotSession.Order.ListOrdersByStatesAsync(
+            NonFinalOrderStates,
+            pageNum: 1,
+            pageSize: NonFinalOrderPageSize,
+            cancellationToken: cancellationToken).ConfigureAwait(false);
+        if (first.CoversAllRecords)
+        {
+            return new NonFinalOrderRead(true, first.Records);
+        }
+        if (first.Current != 1 || first.Total is not long total || total < 0 ||
+            (first.Size.HasValue && first.Size.Value != NonFinalOrderPageSize))
+        {
+            return NonFinalOrderRead.Incomplete;
+        }
+
+        long pageCount = (total + NonFinalOrderPageSize - 1) / NonFinalOrderPageSize;
+        if (pageCount > NonFinalOrderPageCap)
+        {
+            return NonFinalOrderRead.Incomplete;
+        }
+
+        List<OrderStateRecord> records = [];
+        HashSet<long> seenIds = [];
+        for (int pageNum = 1; pageNum <= pageCount; pageNum++)
+        {
+            OrderStatePage page = pageNum == 1
+                ? first
+                : await riotSession.Order.ListOrdersByStatesAsync(
+                    NonFinalOrderStates,
+                    pageNum: pageNum,
+                    pageSize: NonFinalOrderPageSize,
+                    cancellationToken: cancellationToken).ConfigureAwait(false);
+            long expectedCount = Math.Min(NonFinalOrderPageSize, total - ((long)(pageNum - 1) * NonFinalOrderPageSize));
+            if (page.Current != pageNum || page.Total != total || page.Records.Count != expectedCount ||
+                (page.Size.HasValue && page.Size.Value != NonFinalOrderPageSize))
+            {
+                return NonFinalOrderRead.Incomplete;
+            }
+            foreach (OrderStateRecord record in page.Records)
+            {
+                if (record.Id is long id && !seenIds.Add(id))
+                {
+                    return NonFinalOrderRead.Incomplete;
+                }
+                records.Add(record);
+            }
+        }
+        return new NonFinalOrderRead(true, records);
+    }
+
+    private sealed record NonFinalOrderRead(bool IsComplete, IReadOnlyList<OrderStateRecord> Records)
+    {
+        public static NonFinalOrderRead Incomplete { get; } = new(false, []);
     }
 
     /// <summary>
