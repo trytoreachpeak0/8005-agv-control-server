@@ -815,7 +815,7 @@ public sealed class VehicleFaultCoordinator(
         }
 
         DoorReleaseHistory history = await emergencyStop
-            .DoorReleaseHistoryAsync(subject, fault.FaultGeneration, IsMotion, cancellationToken).ConfigureAwait(false);
+            .DoorReleaseHistoryAsync(subject, fault.FaultGeneration, CannotExcludeMotion, cancellationToken).ConfigureAwait(false);
 
         IReadOnlyList<RiotOrderCommandAttempt> attempts = await audit.ReadAttemptsAsync(
             RiotCommandTypeNames.OrderHold, target.UpperId, cancellationToken).ConfigureAwait(false);
@@ -829,7 +829,7 @@ public sealed class VehicleFaultCoordinator(
     }
 
     /// <summary>The stop-proof codes that say the vehicle moved, as opposed to that it could not be watched.</summary>
-    private static bool IsMotion(string stopReason) =>
+    internal static bool CannotExcludeMotion(string stopReason) =>
         string.Equals(stopReason, StopProof.MotionObserved, StringComparison.Ordinal) ||
         string.Equals(stopReason, StopProof.PositionChanged, StringComparison.Ordinal);
 
@@ -858,7 +858,7 @@ public sealed class VehicleFaultCoordinator(
     /// that is not the database: REQ-0356 needs the vehicle empty, and a clearance or a resume refuses while it is latched.
     /// Ending this server's own order is a person's act (the duty engineer, <c>docs/emergency-stop-field-fallback.md</c>),
     /// and with no unfinished order RIoT has nothing left to drive the vehicle with. Once, not every time: if a door-cause
-    /// release has already taken effect after the motion stop (<see cref="DoorReleaseHistory.DoorReleasedAfterMotion"/>),
+    /// release has already taken effect after the motion stop (<see cref="DoorReleaseHistory.MovedAgainAfterLaterRelease"/>),
     /// nothing is released on the doors again in this generation, so this branch cannot oscillate either.
     /// </para>
     /// </remarks>
@@ -874,7 +874,7 @@ public sealed class VehicleFaultCoordinator(
         ArgumentNullException.ThrowIfNull(order);
         ArgumentNullException.ThrowIfNull(history);
 
-        if (history.DoorReleasedAfterMotion ||
+        if (history.MovedAgainAfterLaterRelease ||
             !context.DoorCauseRemoved ||
             fault.Level == VehicleFaultLevel.None ||
             !string.Equals(fault.EvidenceCode, VehicleFaultEvidence.DoorNotProvenLocked, StringComparison.Ordinal) ||

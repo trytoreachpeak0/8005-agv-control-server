@@ -68,8 +68,8 @@ public sealed record EmergencyReleaseAllowance(long FaultGeneration, string? Hel
 /// <see cref="EmergencyStopSupervisor.DoorReleaseHistoryAsync"/>.
 /// </summary>
 /// <param name="MovedAfterDoorRelease">A stop asked for after the first door-cause release gave motion as a reason.</param>
-/// <param name="DoorReleasedAfterMotion">A door-cause release took effect after the first such stop.</param>
-public sealed record DoorReleaseHistory(bool MovedAfterDoorRelease, bool DoorReleasedAfterMotion);
+/// <param name="MovedAgainAfterLaterRelease">A door-cause release took effect after the first such stop.</param>
+public sealed record DoorReleaseHistory(bool MovedAfterDoorRelease, bool MovedAgainAfterLaterRelease);
 
 /// <summary>
 /// A person's confirmation that a latched vehicle may be released, with everything REQ-0356 requires
@@ -650,7 +650,7 @@ public sealed class EmergencyStopSupervisor(
         ];
         if (doorReleases.Length == 0)
         {
-            return new DoorReleaseHistory(MovedAfterDoorRelease: false, DoorReleasedAfterMotion: false);
+            return new DoorReleaseHistory(MovedAfterDoorRelease: false, MovedAgainAfterLaterRelease: false);
         }
 
         IReadOnlyList<RiotOrderCommandAttempt> triggers = await audit.ReadAttemptsAsync(
@@ -664,10 +664,10 @@ public sealed class EmergencyStopSupervisor(
                 .Split(',', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries)
                 .Any(isMotion));
         return firstMotionStop is null
-            ? new DoorReleaseHistory(MovedAfterDoorRelease: false, DoorReleasedAfterMotion: false)
+            ? new DoorReleaseHistory(MovedAfterDoorRelease: false, MovedAgainAfterLaterRelease: false)
             : new DoorReleaseHistory(
                 MovedAfterDoorRelease: true,
-                DoorReleasedAfterMotion: doorReleases.Any(release => release.IssuedAt > firstMotionStop.IssuedAt));
+                MovedAgainAfterLaterRelease: doorReleases.Any(release => release.IssuedAt > firstMotionStop.IssuedAt));
     }
 
     /// <summary>

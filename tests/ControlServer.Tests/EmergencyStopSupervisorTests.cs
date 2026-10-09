@@ -1148,6 +1148,61 @@ public sealed class EmergencyStopSupervisorTests
         public void Advance(TimeSpan by) => _now += by;
     }
 
+    /// <summary>
+    /// control-server#527: what <see cref="EmergencyStopSupervisor.DoorReleaseHistoryAsync"/> reads off the audit trail, one
+    /// script per case, oldest first. <c>D</c> is a door-cause release that took effect, <c>d</c> one that did not (Failed),
+    /// <c>C</c> a confirmed release on another reason; <c>M</c> is a stop that gave motion as a reason, <c>S</c> one that did
+    /// not, and <c>m</c> a motion stop of another fault generation.
+    /// </summary>
+    /// <remarks>
+    /// <c>DSDS</c> and <c>DMDS</c> are review M-1 and N3: a second door release with no motion after it moves nothing, however
+    /// many door releases there have been. <c>dM</c> is review M5: a door release that never took effect is not one.
+    /// </remarks>
+    [Theory]
+    [InlineData("M", false, false)]
+    [InlineData("MD", false, false)]
+    [InlineData("DS", false, false)]
+    [InlineData("DM", true, false)]
+    [InlineData("dM", false, false)]
+    [InlineData("CM", false, false)]
+    [InlineData("Dm", false, false)]
+    [InlineData("DSDS", false, false)]
+    [InlineData("DMDS", true, false)]
+    [InlineData("DMS", true, false)]
+    [InlineData("DMDM", true, true)]
+    [InlineData("DMDSM", true, true)]
+    public async Task TheDoorReleaseHistoryCountsOnlyMotionAfterAReleaseThatTookEffect(
+        string script,
+        bool movedAfterDoorRelease,
+        bool movedAgainAfterLaterRelease)
+    {
+        await using Fixture fixture = await Fixture.CreateAsync();
+        foreach (char step in script)
+        {
+            fixture.Clock.Advance(TimeSpan.FromSeconds(1));
+            await (step switch
+            {
+                'D' => fixture.RecordAsync(
+                    RiotCommandTypeNames.CancelEmergency, 1, EmergencyStopSupervisor.DoorCauseRemovedReason, RiotOrderCommandOutcome.Confirmed),
+                'd' => fixture.RecordAsync(
+                    RiotCommandTypeNames.CancelEmergency, 1, EmergencyStopSupervisor.DoorCauseRemovedReason, RiotOrderCommandOutcome.Failed),
+                'C' => fixture.RecordAsync(
+                    RiotCommandTypeNames.CancelEmergency, 1, "EMERGENCY_CAUSE_CLEARED", RiotOrderCommandOutcome.Confirmed),
+                'M' => fixture.RecordAsync(
+                    RiotCommandTypeNames.TriggerEmergency, 1, "POSITION_UNKNOWN,MOTION", RiotOrderCommandOutcome.Confirmed),
+                'm' => fixture.RecordAsync(
+                    RiotCommandTypeNames.TriggerEmergency, 2, "MOTION", RiotOrderCommandOutcome.Confirmed),
+                _ => fixture.RecordAsync(
+                    RiotCommandTypeNames.TriggerEmergency, 1, "POSITION_UNKNOWN", RiotOrderCommandOutcome.Confirmed),
+            });
+        }
+
+        DoorReleaseHistory history = await fixture.Supervisor.DoorReleaseHistoryAsync(
+            Subject, 1, reason => reason == "MOTION", TestContext.Current.CancellationToken);
+
+        Assert.Equal(new DoorReleaseHistory(movedAfterDoorRelease, movedAgainAfterLaterRelease), history);
+    }
+
     private sealed class Fixture : IAsyncDisposable
     {
         private readonly SqliteConnection _connection;
@@ -1204,6 +1259,26 @@ public sealed class EmergencyStopSupervisorTests
                 RiotCommandTypeNames.CancelEmergency,
                 $"vehicle:{Subject.DeviceKey}",
                 TestContext.Current.CancellationToken);
+
+        /// <summary>One emergency command row with <paramref name="reason"/> on its receipt, as the supervisor writes it.</summary>
+        public async Task RecordAsync(string commandType, long generation, string reason, RiotOrderCommandOutcome outcome)
+        {
+            RiotOrderCommandAttempt attempt = await _audit.ArmAttemptAsync(
+                commandType,
+                Subject.AgvId,
+                $"vehicle:{Subject.DeviceKey}",
+                targetOrderId: null,
+                requestSemanticSha256: commandType + ":" + reason,
+                generation,
+                Clock.GetUtcNow(),
+                TestContext.Current.CancellationToken);
+            await _audit.RecordOutcomeAsync(
+                attempt.CommandAuditId,
+                outcome,
+                System.Text.Json.JsonSerializer.Serialize(new { Reason = reason }),
+                Clock.GetUtcNow(),
+                TestContext.Current.CancellationToken);
+        }
 
         public Task<VehicleFaultFact?> ReadFaultAsync() =>
             _faults.ReadAsync(Subject.AgvId, TestContext.Current.CancellationToken);
