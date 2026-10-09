@@ -805,7 +805,9 @@ public static class StagedG3TlsHarness
         // The one path that still ends the connection (control-server#478): a SessionHello whose messageId is on file
         // with other content. There is no session yet to correlate a ProtocolProblem to, so the server closes. Pinned
         // here so the change above cannot quietly carry it along. "Closed" means the stream ended, not that nothing
-        // arrived in time -- ExpectClosedAsync cannot tell those two apart.
+        // arrived in time -- ExpectClosedAsync cannot tell those two apart. And ended well inside 3 seconds: the server
+        // also closes any connection silent for 6 (ADR-cross-0027, SessionLiveness.Timeout), so a server that did nothing
+        // with the conflicting hello would still end the stream, just later. A window past 6 seconds would pass it.
         string helloConflictId = StableGuid("hello:duplicate");
         string helloConflict = Hello(
             agvId + "-HELLO-CONFLICT", helloConflictId, Protocol.Release, Protocol.Manifest, credential);
@@ -814,7 +816,7 @@ public static class StagedG3TlsHarness
             port, cancellationToken).ConfigureAwait(false))
         {
             await connection.WriteAsync(helloConflict, cancellationToken).ConfigureAwait(false);
-            helloConflictEnd = await ExpectEndOfStreamAsync(connection, TimeSpan.FromSeconds(10), cancellationToken)
+            helloConflictEnd = await ExpectEndOfStreamAsync(connection, TimeSpan.FromSeconds(3), cancellationToken)
                 .ConfigureAwait(false);
         }
         bool helloConflictPass = Equals(helloConflictEnd["streamEnded"], true) &&
@@ -2067,7 +2069,9 @@ public static class StagedG3TlsHarness
     /// Reads until the server ends the stream, and reports whether it did and what came before.
     /// </summary>
     /// <remarks>
-    /// Unlike ExpectClosedAsync, a timeout is not taken for a close: the stream has to end.
+    /// Unlike ExpectClosedAsync, a timeout is not taken for a close: the stream has to end. Keep the timeout well under
+    /// the server's 6-second silence close (ADR-cross-0027), or that close passes for the one being asserted;
+    /// elapsedMilliseconds records how long the end took.
     /// </remarks>
     private static async Task<Dictionary<string, object?>> ExpectEndOfStreamAsync(
         Connection connection,
@@ -2076,6 +2080,7 @@ public static class StagedG3TlsHarness
     {
         var seen = new List<string?>();
         bool ended = false;
+        var elapsed = System.Diagnostics.Stopwatch.StartNew();
         DateTimeOffset deadline = DateTimeOffset.UtcNow + timeout;
         while (true)
         {
@@ -2094,6 +2099,8 @@ public static class StagedG3TlsHarness
         return new Dictionary<string, object?>
         {
             ["streamEnded"] = ended,
+            ["elapsedMilliseconds"] = elapsed.ElapsedMilliseconds,
+            ["timeoutMilliseconds"] = (long)timeout.TotalMilliseconds,
             ["sessionAccepted"] = seen.Contains("SessionAccepted"),
             ["linesBeforeEnd"] = seen
         };
