@@ -399,6 +399,29 @@ public sealed class InTransitDoorEmergencyReleaseTests
     }
 
     /// <summary>
+    /// control-server#527 复核：解除之后从新窗口采样，但每次解除只清空一次。车报不动、站点却从 1 变到 2，两条解除之后的样本之间位置变了，
+    /// 照样重新急停，原因里有 <c>STOP_PROOF_POSITION_CHANGED</c>。若每一轮都清空（变异 M8），窗口里永远只有一条样本，位置变化再也看不出来。
+    /// </summary>
+    [Fact]
+    [Trait("Requirement", "REQ-0246")]
+    public async Task APositionChangeAfterTheDoorReleaseIsStillSeenAcrossTheFreshWindow()
+    {
+        await using RuntimeFixture fixture = await ReleasedForTheDoorsAsync();
+
+        fixture.Riot.Vehicle = fixture.Riot.Vehicle with { CurrentStationId = 1 };
+        await DriveOneRoundAsync(fixture);
+        Assert.Equal(1, await CountAsync(fixture, RiotCommandTypeNames.TriggerEmergency));
+        fixture.Riot.Vehicle = fixture.Riot.Vehicle with { CurrentStationId = 2 };
+        await DriveOneRoundAsync(fixture);
+
+        await using ControlServerDbContext reading = new(fixture.DbOptionsForTests);
+        RiotOrderCommandAuditRow[] triggers = await reading.RiotOrderCommandAudit.AsNoTracking()
+            .Where(row => row.CommandType == RiotCommandTypeNames.TriggerEmergency).ToArrayAsync(Token);
+        Assert.Equal(2, triggers.Length);
+        Assert.Contains(StopProof.PositionChanged, triggers.OrderBy(row => row.IssuedAt).Last().ReceiptJson, StringComparison.Ordinal);
+    }
+
+    /// <summary>
     /// control-server#527 的反面，门锁自动解除照旧有效的两格：
     /// <c>door-only</c>——第一次急停的原因里没有运动（同现场 05:22 那次：报不出站点、样本不够），锁住后车停在已知站点、读数不动，
     /// 门锁恢复即解除；<c>doors-again</c>——解除之后因门又没锁（不是运动）重新急停，门锁再次恢复时照样第二次解除。后一格挡的是
