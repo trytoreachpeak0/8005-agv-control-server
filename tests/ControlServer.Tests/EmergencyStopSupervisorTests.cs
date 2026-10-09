@@ -1157,6 +1157,7 @@ public sealed class EmergencyStopSupervisorTests
     /// <remarks>
     /// <c>DSDS</c> and <c>DMDS</c> are review M-1 and N3: a second door release with no motion after it moves nothing, however
     /// many door releases there have been. <c>dM</c> is review M5: a door release that never took effect is not one.
+    /// <c>DMMD</c> is the re-review's M6: motion before the later release is not motion after it.
     /// </remarks>
     [Theory]
     [InlineData("M", false, false)]
@@ -1168,6 +1169,7 @@ public sealed class EmergencyStopSupervisorTests
     [InlineData("Dm", false, false)]
     [InlineData("DSDS", false, false)]
     [InlineData("DMDS", true, false)]
+    [InlineData("DMMD", true, false)]
     [InlineData("DMS", true, false)]
     [InlineData("DMDM", true, true)]
     [InlineData("DMDSM", true, true)]

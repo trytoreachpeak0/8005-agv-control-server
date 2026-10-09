@@ -278,16 +278,17 @@ public sealed class InTransitDoorEmergencyReleaseTests
         Latched latched = await LatchedFactsAsync(fixture);
         fixture.Riot.MovementState = "MT_RUNNING";
         await DriveOneRoundAsync(fixture);
-        if (after == "doors-again")
-        {
-            // From here on the vehicle reads as standing: by the time the doors fail, the three-sample window the stop's reason
-            // is drawn from holds no motion, so that stop is for the doors alone.
-            fixture.Riot.MovementState = "MT_PAUSED";
-        }
         fixture.EmergencyLatched = true;
         await ReportLockedAsync(fixture);
         await DriveOneRoundAsync(fixture);
         Assert.Equal(1, await CountAsync(fixture, RiotCommandTypeNames.CancelEmergency));
+
+        if (after == "doors-again")
+        {
+            // From here on the vehicle reads as standing. The samples taken under the latch before the release still read as
+            // moving; the stop that follows must not be judged on them (review of 8ecad915).
+            fixture.Riot.MovementState = "MT_PAUSED";
+        }
 
         // 值班工程师在 RIoT 里取消那张单：之后一轮放行不点名任何单、车上零单，解除一次。
         fixture.Riot.SetOrderState(latched.UpperId, RiotOrderState.Cancelled, terminal: true);
@@ -338,6 +339,63 @@ public sealed class InTransitDoorEmergencyReleaseTests
                 Note: "doors and motion checked on site"),
             Token);
         Assert.True(VehicleFaultRecoveryOutcome.Cleared == decision.Outcome, string.Join(", ", decision.Reasons));
+    }
+
+    /// <summary>
+    /// control-server#527 复核必修（8ecad915）：急停原因只能来自解除生效之后采到的样本。闩锁锁着时 RIoT 一直报 <c>MT_RUNNING</c>（速度 0，
+    /// CP-0003 记录的实车常态），解除之后读数变成 <c>MT_FINISHED</c> 或 <c>MT_PAUSED</c>，紧接着下一轮只是门又没锁——这次急停与运动无关，
+    /// 门锁再次锁好时照样解除。修前三条采样窗口里还留着解除前的 <c>MT_RUNNING</c>，急停原因带上 <c>STOP_PROOF_MOTION_OBSERVED</c>，
+    /// 放行被收回。<c>held</c> 是越过按住的 7 那一支（第一次门锁解除之后），<c>no-order</c> 是零单那一支（运动急停、单在 RIoT 结束之后）。
+    /// </summary>
+    [Theory]
+    [InlineData("held", "MT_FINISHED")]
+    [InlineData("held", "MT_PAUSED")]
+    [InlineData("no-order", "MT_FINISHED")]
+    [InlineData("no-order", "MT_PAUSED")]
+    [Trait("Requirement", "REQ-0167")]
+    public async Task ADoorsOnlyStopRightAfterAReleaseIsNotJudgedOnSamplesFromUnderTheLatch(string branch, string afterRelease)
+    {
+        await using RuntimeFixture fixture = await LatchedForTheDoorsAsync();
+        Latched latched = await LatchedFactsAsync(fixture);
+        fixture.Riot.MovementState = "MT_RUNNING";
+        int releases = 0;
+        int triggers = 1;
+
+        if (branch == "no-order")
+        {
+            // First door release, a stop for motion after it, then the order ended in RIoT.
+            await ReportLockedAsync(fixture);
+            await DriveOneRoundAsync(fixture);
+            fixture.EmergencyLatched = false;
+            await DriveOneRoundAsync(fixture);
+            Assert.Equal(2, await CountAsync(fixture, RiotCommandTypeNames.TriggerEmergency));
+            fixture.EmergencyLatched = true;
+            await ReportLockedAsync(fixture);
+            await DriveOneRoundAsync(fixture);
+            Assert.Equal(1, await CountAsync(fixture, RiotCommandTypeNames.CancelEmergency));
+            fixture.Riot.SetOrderState(latched.UpperId, RiotOrderState.Cancelled, terminal: true);
+            fixture.UnfinishedOrderIds = [];
+            releases = 1;
+            triggers = 2;
+        }
+
+        // The release, decided under the latch while RIoT reads MT_RUNNING.
+        await ReportLockedAsync(fixture);
+        await DriveOneRoundAsync(fixture);
+        Assert.Equal(releases + 1, await CountAsync(fixture, RiotCommandTypeNames.CancelEmergency));
+
+        // The latch comes off and the vehicle reads as standing; in the very next round the doors fail, nothing else.
+        fixture.EmergencyLatched = false;
+        fixture.Riot.MovementState = afterRelease;
+        await fixture.ReportSafetySummaryAsync(
+            allTargetSlotsLocked: false, unknownPresent: false, ["LOCK_NOT_CLOSED", "ACTION_NOT_ALLOWED_IN_STATE"]);
+        await DriveOneRoundAsync(fixture);
+        Assert.Equal(triggers + 1, await CountAsync(fixture, RiotCommandTypeNames.TriggerEmergency));
+
+        fixture.EmergencyLatched = true;
+        await ReportLockedAsync(fixture);
+        await DriveOneRoundAsync(fixture);
+        Assert.Equal(releases + 2, await CountAsync(fixture, RiotCommandTypeNames.CancelEmergency));
     }
 
     /// <summary>
