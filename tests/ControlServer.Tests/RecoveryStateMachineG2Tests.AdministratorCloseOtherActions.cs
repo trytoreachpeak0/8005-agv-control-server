@@ -80,6 +80,9 @@ public sealed partial class RecoveryStateMachineG2Tests
             }
             JsonElement snapshot = await LatestSessionSnapshotAsync(context, sessionId);
             Assert.Equal("CLOSED", snapshot.GetProperty("state").GetString());
+            // v3's closedReason (control-server#382/#385), for every closable action (review of #534, S2).
+            Assert.Equal(
+                ServerReasonCodes.RecoveryActionResultNotReconciled, snapshot.GetProperty("closedReason").GetString());
             Assert.Empty(snapshot.GetProperty("allowedActions").EnumerateArray());
             Assert.Equal(
                 before with { Sessions = $"{sessionId}:CLOSED:{session.Revision}:{stuck.SelectedAction}", Snapshots = before.Snapshots + 1 },

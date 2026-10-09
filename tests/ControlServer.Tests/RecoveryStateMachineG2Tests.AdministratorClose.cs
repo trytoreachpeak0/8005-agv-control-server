@@ -95,6 +95,11 @@ public sealed partial class RecoveryStateMachineG2Tests
             JsonElement snapshot = await LatestSessionSnapshotAsync(context, sessionId);
             Assert.Equal(("CLOSED", session.Revision), (snapshot.GetProperty("state").GetString(),
                 snapshot.GetProperty("recoverySessionRevision").GetInt64()));
+            // v3's closedReason (control-server#382/#385): an administrator closing is a closing without the action's result
+            // reconciled, so the snapshot names it like any other, and the row keeps the same reason (review of #534, S2).
+            Assert.Equal(
+                (ServerReasonCodes.RecoveryActionResultNotReconciled, ServerReasonCodes.RecoveryActionResultNotReconciled),
+                (snapshot.GetProperty("closedReason").GetString(), session.ClosedReason));
             Assert.Empty(snapshot.GetProperty("allowedActions").EnumerateArray());
             Assert.Empty(snapshot.GetProperty("blockingFacts").EnumerateArray());
             Assert.Contains(peer.Lines.Skip(linesBefore), line =>
