@@ -28,6 +28,7 @@ public sealed class ControlServerDbContext(DbContextOptions<ControlServerDbConte
     public DbSet<ManualChargingReturnToServiceRow> ManualChargingReturnToServiceRequests =>
         Set<ManualChargingReturnToServiceRow>();
     public DbSet<HardwareRecoveryRecordRow> HardwareRecoveryRecords => Set<HardwareRecoveryRecordRow>();
+    public DbSet<SlotDoorHoldRow> SlotDoorHolds => Set<SlotDoorHoldRow>();
     public DbSet<RecoveryResultEvidenceRow> RecoveryResultEvidence => Set<RecoveryResultEvidenceRow>();
     public DbSet<JourneyBacklogRow> JourneyBacklog => Set<JourneyBacklogRow>();
     public DbSet<JourneyRuntimeRow> JourneyRuntimes => Set<JourneyRuntimeRow>();
@@ -155,6 +156,8 @@ public sealed class ControlServerDbContext(DbContextOptions<ControlServerDbConte
         modelBuilder.Entity<ManualChargingReturnToServiceRow>().HasKey(row => row.RequestId);
         modelBuilder.Entity<ManualChargingReturnToServiceRow>().HasIndex(row => row.RequestMessageId).IsUnique();
         modelBuilder.Entity<HardwareRecoveryRecordRow>().HasKey(row => row.RecordId);
+        modelBuilder.Entity<SlotDoorHoldRow>().HasKey(row => row.HoldId);
+        modelBuilder.Entity<SlotDoorHoldRow>().HasIndex(row => row.AgvId);
         modelBuilder.Entity<RecoveryResultEvidenceRow>().HasKey(row => row.MessageId);
         modelBuilder.Entity<JourneyBacklogRow>().HasKey(row => row.DemandId);
         modelBuilder.Entity<JourneyBacklogRow>().HasIndex(row => row.TransportDemandKey);
@@ -545,6 +548,14 @@ public sealed class ExceptionRecoverySessionRow
     public long ForcedRecoveryGeneration { get; set; }
     public DateTimeOffset OpenedAt { get; set; }
     public DateTimeOffset UpdatedAt { get; set; }
+
+    /// <summary>
+    /// Why the session closed, as its snapshot's <c>closedReason</c> says it (control-server#385): null while it is open
+    /// and when its action reconciled, <see cref="ServerReasonCodes.RecoveryActionResultNotReconciled"/> when it closed on
+    /// a result that did not reconcile or a refused resume. Written once, in the save that closes the session; a result
+    /// arriving after the closing never touches it, so every resend and reconnect replays the reason first sent.
+    /// </summary>
+    public string? ClosedReason { get; set; }
 }
 
 /// <summary>
@@ -592,11 +603,48 @@ public sealed class RecoveryWorkflowRow
     public string? CommandMessageType { get; set; }
     public string? CommandContentHash { get; set; }
     public string? HandoffId { get; set; }
+
+    /// <summary>
+    /// The named hand-off a forced mechanical recovery's result recorded for its demand's cargo (REQ-0242, CP-0008,
+    /// control-server#385): the sublot identified, the person it was handed to and when. Null on every other workflow,
+    /// and on a forced one that settled nothing.
+    /// </summary>
+    public string? HandoffSublot { get; set; }
+
+    /// <inheritdoc cref="HandoffSublot"/>
+    public string? HandoffReceiverName { get; set; }
+
+    /// <inheritdoc cref="HandoffSublot"/>
+    public DateTimeOffset? HandedOverAt { get; set; }
+
     public string? ResultMessageId { get; set; }
     public string? ResultContentHash { get; set; }
     public string? Outcome { get; set; }
     public DateTimeOffset CreatedAt { get; set; }
     public DateTimeOffset UpdatedAt { get; set; }
+}
+
+/// <summary>
+/// A vehicle held after a cancellation or compensation settled its slots empty while a door lock or unlock output was not
+/// proven (REQ-0364, CP-0009, control-server#385). One row per settling workflow; the hold stands while
+/// <see cref="ReleasedAt"/> is null.
+/// </summary>
+/// <remarks>
+/// What lifts it is a <c>HARDWARE_REPAIR_RELEASE</c> recovery action taken to its end -- a hardware record on that action,
+/// then readings the server received after the record showing every held slot LOCKED, RESET and EMPTY, then a SAFE
+/// <c>HOLD_RELEASE</c> check -- and <see cref="ReleasedByActionId"/> names that action. The release's progress lives on
+/// its own <see cref="RecoveryWorkflowRow"/>.
+/// </remarks>
+public sealed class SlotDoorHoldRow
+{
+    /// <summary>The cancellation or compensation workflow whose result settled the slots and held the vehicle.</summary>
+    public required string HoldId { get; set; }
+    public required string AgvId { get; set; }
+    public required string DemandId { get; set; }
+    public required string SlotsJson { get; set; }
+    public DateTimeOffset HeldAt { get; set; }
+    public string? ReleasedByActionId { get; set; }
+    public DateTimeOffset? ReleasedAt { get; set; }
 }
 
 public sealed class HardwareRecoveryRecordRow

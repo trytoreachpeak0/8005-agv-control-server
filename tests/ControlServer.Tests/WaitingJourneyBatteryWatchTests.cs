@@ -561,6 +561,7 @@ public sealed class WaitingJourneyBatteryWatchTests
             new
             {
                 preDepartureSafetyCheckId = checking.PreDepartureSafetyCheckId,
+                checkPurpose = "DEPARTURE",
                 outcome = "SAFE",
                 observedAt = fixture.Clock.GetUtcNow(),
                 safetyStateVersion = 7,
@@ -645,6 +646,7 @@ public sealed class WaitingJourneyBatteryWatchTests
             new
             {
                 preDepartureSafetyCheckId = checking.PreDepartureSafetyCheckId,
+                checkPurpose = "DEPARTURE",
                 outcome = "SAFE",
                 observedAt = fixture.Clock.GetUtcNow(),
                 safetyStateVersion = 7,

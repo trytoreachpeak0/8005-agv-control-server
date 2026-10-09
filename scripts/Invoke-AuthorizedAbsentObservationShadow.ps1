@@ -557,7 +557,6 @@ function Start-ExactPeers {
     $config.wireToGate.host = $ServerHost
     $config.wireToGate.port = $ServerPort
     $config.wireToGate.onboardBuildCommit = $expectedOnboardCommit
-    $config.wireToGate.supportsBatchUnlock = $true
     # A TLS-era onboard build still carries these two keys and a plaintext one will not, so touch
     # them only where they exist.
     if ($config.wireToGate.PSObject.Properties.Name -contains 'useTls') {

@@ -21,16 +21,45 @@ public sealed class DashboardActionTests
 {
     private static CancellationToken Token => TestContext.Current.CancellationToken;
 
+    private static readonly string[] LooseningWords = ["release", "lift", "cancel", "resume"];
+
+    private static readonly JsonSerializerOptions WebJson = new(JsonSerializerDefaults.Web);
+
+    /// <summary>
+    /// 看板上的写操作是一张名单，不是「有几个算几个」：无人员认证时这里只放收紧方向的动作（规格 5.7）。control-server#384 把
+    /// 人工判故障加进名单——它只让一次装卸停下转人工恢复，前置条件与凭据由服务端的判定接口判，看板只转交。
+    /// </summary>
     [Fact]
-    public void TheHoldActionRegistersItselfAndIsTheOnlyActionTheDashboardHas()
+    public void TheDashboardHasExactlyTheFailSafeActionsOnItsList()
     {
         DashboardActionCatalog catalog = DashboardActionCatalog.Discovered;
 
-        IDashboardAction action = Assert.Single(catalog.Actions);
-        Assert.IsType<TaskTypeHoldAction>(action);
-        Assert.Equal(TaskTypeBindingCard.HoldActionId, action.ActionId);
-        Assert.Equal("/api/task-type-holds", action.TargetPath);
+        Assert.Equal(
+            [SlotFaultDeclarationAction.Id, TaskTypeBindingCard.HoldActionId],
+            catalog.Actions.Select(action => action.ActionId));
+        Assert.IsType<SlotFaultDeclarationAction>(catalog.Find(SlotFaultDeclarationAction.Id));
+        Assert.IsType<TaskTypeHoldAction>(catalog.Find(TaskTypeBindingCard.HoldActionId));
+        Assert.Equal("/api/task-type-holds", catalog.Find(TaskTypeBindingCard.HoldActionId)!.TargetPath);
+        Assert.Equal(
+            ControlServer.Host.Runtime.SlotFaultDeclarationEndpoints.Route,
+            catalog.Find(SlotFaultDeclarationAction.Id)!.TargetPath);
         Assert.Contains(DashboardCardCatalog.Discovered.Cards, card => card is TaskTypeBindingCard);
+        Assert.Contains(DashboardCardCatalog.Discovered.Cards, card => card is ExpectedActionOverdueCard);
+    }
+
+    [Fact]
+    public void AnActionWithTwoCredentialsOrAChoiceWithNothingToChooseIsRefused()
+    {
+        Assert.Throws<InvalidOperationException>(() => new DashboardActionCatalog(
+        [
+            new ExampleAction("example", "/api/one",
+            [
+                new("a", "A", DashboardActionFieldKind.BearerCredential, Required: true),
+                new("b", "B", DashboardActionFieldKind.BearerCredential, Required: true)
+            ])
+        ]));
+        Assert.Throws<InvalidOperationException>(() => new DashboardActionCatalog(
+            [new ExampleAction("example", "/api/one", [new("c", "C", DashboardActionFieldKind.Choice, Required: true)])]));
     }
 
     [Fact]
@@ -127,11 +156,188 @@ public sealed class DashboardActionTests
 
         Assert.All(attempts, status => Assert.False((int)status is >= 200 and < 400, $"Answered {(int)status}."));
         Assert.Empty(rig.Forwarded);
+        // Every action on the list, the slot fault declaration included (control-server#384): nothing that lifts, releases,
+        // cancels or resumes.
         Assert.All(DashboardActionCatalog.Discovered.Actions, action =>
-            Assert.DoesNotContain("release", action.TargetPath, StringComparison.OrdinalIgnoreCase));
+        {
+            foreach (string loosening in LooseningWords)
+            {
+                Assert.DoesNotContain(loosening, action.TargetPath, StringComparison.OrdinalIgnoreCase);
+                Assert.DoesNotContain(loosening, action.ActionId, StringComparison.OrdinalIgnoreCase);
+            }
+        });
     }
 
-    private sealed class ExampleAction(string actionId, string targetPath) : IDashboardAction
+    // --- 人工判故障（REQ-0359，control-server#384） -------------------------------------------------------------------
+
+    [Fact]
+    public async Task TheDeclarationPageCarriesVehicleAndSlotOffersEveryCategoryAndRoleAndNeverEchoesTheCredential()
+    {
+        await using Rig rig = await Rig.StartAsync();
+
+        using HttpResponseMessage response = await rig.Dashboard.GetAsync(
+            "/actions/slot-fault-declaration?agvId=AGV-001&slotNo=3&credential=leaked-through-a-link", Token);
+        string page = await response.Content.ReadAsStringAsync(Token);
+
+        Assert.Equal(HttpStatusCode.OK, response.StatusCode);
+        Assert.DoesNotContain("http-equiv=\"refresh\"", page, StringComparison.OrdinalIgnoreCase);
+        Assert.Contains("action=\"/actions/slot-fault-declaration\"", page, StringComparison.Ordinal);
+        Assert.Contains("name=\"agvId\" value=\"AGV-001\"", page, StringComparison.Ordinal);
+        Assert.Contains("name=\"slotNo\" value=\"3\"", page, StringComparison.Ordinal);
+        foreach (string value in ControlServer.Host.Runtime.SlotFaultDeclarationEndpoints.FaultCategories
+                     .Concat(ControlServer.Host.Runtime.SlotFaultDeclarationEndpoints.AdministratorRoles))
+        {
+            Assert.Contains($"<option value=\"{value}\">", page, StringComparison.Ordinal);
+        }
+        Assert.Contains("<select name=\"faultCategory\" required>", page, StringComparison.Ordinal);
+        Assert.Contains("<select name=\"administratorRole\" required>", page, StringComparison.Ordinal);
+        Assert.Contains("<textarea name=\"note\"", page, StringComparison.Ordinal);
+        Assert.Contains("name=\"operatorId\" required", page, StringComparison.Ordinal);
+        Assert.Contains("<input type=\"password\" name=\"credential\" autocomplete=\"off\" required>", page, StringComparison.Ordinal);
+        Assert.DoesNotContain("leaked-through-a-link", page, StringComparison.Ordinal);
+    }
+
+    /// <summary>
+    /// The forwarded body is the declaration contract of control-server#383 field for field -- it binds onto the server's own
+    /// request record with nothing left over -- and the credential goes only as the Bearer header, never into the body.
+    /// </summary>
+    [Fact]
+    public async Task ADeclarationFromTheDashboardIsForwardedInTheServersContractWithTheCredentialAsItsBearerOnly()
+    {
+        await using Rig rig = await Rig.StartAsync(serverStatus: StatusCodes.Status202Accepted);
+
+        using HttpResponseMessage response = await rig.Dashboard.SendAsync(
+            Rig.Declaration(rig.DashboardOrigin), Token);
+
+        Assert.Equal(HttpStatusCode.SeeOther, response.StatusCode);
+        Assert.Equal("/", response.Headers.Location?.OriginalString);
+        (string path, string body) = Assert.Single(rig.Forwarded);
+        Assert.Equal(ControlServer.Host.Runtime.SlotFaultDeclarationEndpoints.Route, path);
+        Assert.Equal("Bearer declaration-credential", Assert.Single(rig.Authorizations));
+        Assert.DoesNotContain("declaration-credential", body, StringComparison.Ordinal);
+
+        using JsonDocument forwarded = JsonDocument.Parse(body);
+        string[] contract = [.. typeof(ControlServer.Host.Runtime.SlotFaultDeclarationHttpRequest).GetProperties()
+            .Select(property => JsonNamingPolicy.CamelCase.ConvertName(property.Name)).Order(StringComparer.Ordinal)];
+        Assert.Equal(contract, forwarded.RootElement.EnumerateObject().Select(property => property.Name).Order(StringComparer.Ordinal));
+        ControlServer.Host.Runtime.SlotFaultDeclarationHttpRequest request =
+            JsonSerializer.Deserialize<ControlServer.Host.Runtime.SlotFaultDeclarationHttpRequest>(
+                body, WebJson)!;
+        Assert.True(Guid.TryParseExact(request.RequestId, "D", out _));
+        Assert.Equal("AGV-001", request.AgvId);
+        Assert.Equal(3, request.SlotNo);
+        Assert.Equal("LOCK", request.FaultCategory);
+        Assert.Equal("门已关，锁一直读未锁", request.Note);
+        Assert.Equal("maintenance-7", request.OperatorId);
+        Assert.Equal("MAINTENANCE_ADMINISTRATOR", request.AdministratorRole);
+    }
+
+    [Theory]
+    [InlineData("http://evil.example")]
+    [InlineData(null)]
+    public async Task ADeclarationThatDidNotComeFromTheDashboardItselfIsRefusedAndForwardsNothing(string? origin)
+    {
+        await using Rig rig = await Rig.StartAsync(serverStatus: StatusCodes.Status202Accepted);
+
+        using HttpResponseMessage response = await rig.Dashboard.SendAsync(Rig.Declaration(origin), Token);
+
+        Assert.Equal(HttpStatusCode.Forbidden, response.StatusCode);
+        Assert.Empty(rig.Forwarded);
+        Assert.Empty(rig.Authorizations);
+    }
+
+    /// <summary>A refusal shows every reason the server gave, on the confirmation's own page, which does not refresh.</summary>
+    [Theory]
+    [InlineData(StatusCodes.Status409Conflict, "SLOT_FAULT_EXPECTED_ACTION_NOT_OVERDUE,SLOT_FAULT_NOT_THE_CURRENT_SLOT")]
+    [InlineData(StatusCodes.Status422UnprocessableEntity, "requestId (a UUID), agvId, slotNo (1 or more), a non-empty note and operatorId are required")]
+    public async Task AServerRefusalOfADeclarationShowsEveryReasonItGave(int status, string detail)
+    {
+        await using Rig rig = await Rig.StartAsync(responses: [(status, Problem("Slot fault declaration refused", detail))]);
+
+        using HttpResponseMessage response = await rig.Dashboard.SendAsync(Rig.Declaration(rig.DashboardOrigin), Token);
+        string page = WebUtility.HtmlDecode(await response.Content.ReadAsStringAsync(Token));
+
+        Assert.Equal(status, (int)response.StatusCode);
+        foreach (string reason in detail.Split(','))
+        {
+            Assert.Contains(reason, page, StringComparison.Ordinal);
+        }
+        Assert.DoesNotContain("http-equiv=\"refresh\"", page, StringComparison.OrdinalIgnoreCase);
+    }
+
+    /// <summary>
+    /// Two people submitting the same row almost at once: the server's one-pending-declaration-per-attempt constraint
+    /// (control-server#383) holds them to one, and the dashboard shows the second its 409 as it came.
+    /// </summary>
+    [Fact]
+    public async Task TwoDeclarationsOfTheSameRowAreHeldToOneByTheServerAndTheSecondIsShownWhy()
+    {
+        await using Rig rig = await Rig.StartAsync(responses:
+        [
+            (StatusCodes.Status202Accepted, """{"declarationId":"d-1","state":"PENDING"}"""),
+            (StatusCodes.Status409Conflict, Problem("Slot fault declaration refused", "SLOT_FAULT_DECLARATION_PENDING"))
+        ]);
+
+        using HttpResponseMessage first = await rig.Dashboard.SendAsync(Rig.Declaration(rig.DashboardOrigin), Token);
+        using HttpResponseMessage second = await rig.Dashboard.SendAsync(Rig.Declaration(rig.DashboardOrigin), Token);
+
+        Assert.Equal(HttpStatusCode.SeeOther, first.StatusCode);
+        Assert.Equal(HttpStatusCode.Conflict, second.StatusCode);
+        string secondPage = WebUtility.HtmlDecode(await second.Content.ReadAsStringAsync(Token));
+        Assert.Contains("SLOT_FAULT_DECLARATION_PENDING：这次装卸已有一条判定在等车载端答复", secondPage, StringComparison.Ordinal);
+        string[] requestIds = [.. rig.Forwarded.Select(item => JsonDocument.Parse(item.Body).RootElement.GetProperty("requestId").GetString()!)];
+        Assert.Equal(2, requestIds.Distinct(StringComparer.Ordinal).Count());
+    }
+
+    [Theory]
+    [InlineData(StatusCodes.Status401Unauthorized, "凭据不对或没有填（401）")]
+    [InlineData(StatusCodes.Status404NotFound, "可能是现场没有开启它")]
+    public async Task AnAnswerWithoutABodySaysWhatItsStatusMeans(int status, string shown)
+    {
+        await using Rig rig = await Rig.StartAsync(responses: [(status, null)]);
+
+        using HttpResponseMessage response = await rig.Dashboard.SendAsync(Rig.Declaration(rig.DashboardOrigin), Token);
+
+        Assert.Equal(status, (int)response.StatusCode);
+        Assert.Contains(shown, WebUtility.HtmlDecode(await response.Content.ReadAsStringAsync(Token)), StringComparison.Ordinal);
+    }
+
+    /// <summary>The server does not answer in time: the outcome is unknown, and the page sends the person to the row's state.</summary>
+    [Fact]
+    public async Task ADeclarationTheServerDoesNotAnswerInTimeIsReportedAsUnknown()
+    {
+        await using Rig rig = await Rig.StartAsync(hang: true, timeoutSeconds: 1);
+
+        using HttpResponseMessage response = await rig.Dashboard.SendAsync(Rig.Declaration(rig.DashboardOrigin), Token);
+        string page = WebUtility.HtmlDecode(await response.Content.ReadAsStringAsync(Token));
+
+        Assert.Equal(HttpStatusCode.GatewayTimeout, response.StatusCode);
+        Assert.Contains("提交结果未知，请回主页看这一行的状态", page, StringComparison.Ordinal);
+    }
+
+    /// <summary>
+    /// Every reason the declaration endpoint can refuse with has a Chinese description on the confirmation page. The
+    /// dashboard does not reference the server, so its table copies the codes; this compares the two by reflection.
+    /// </summary>
+    [Fact]
+    public void EveryRefusalTheDeclarationEndpointCanGiveHasAChineseDescription()
+    {
+        string[] codes = [.. typeof(ControlServer.Host.Runtime.SlotFaultDeclarationRefusals)
+            .GetFields(System.Reflection.BindingFlags.Public | System.Reflection.BindingFlags.Static)
+            .Where(field => field.IsLiteral)
+            .Select(field => (string)field.GetRawConstantValue()!)];
+        IDashboardAction action = DashboardActionCatalog.Discovered.Find(SlotFaultDeclarationAction.Id)!;
+
+        Assert.Contains(ControlServer.Host.Runtime.SlotFaultDeclarationRefusals.LoadCancellationInProgress, codes);
+        Assert.All(codes, code => Assert.False(string.IsNullOrWhiteSpace(action.DescribeReason(code)), code));
+        Assert.Null(action.DescribeReason("NOT_A_REASON"));
+    }
+
+    private static string Problem(string title, string detail) =>
+        JsonSerializer.Serialize(new { title, detail, status = 0 });
+
+    private sealed class ExampleAction(
+        string actionId, string targetPath, IReadOnlyList<DashboardActionField>? fields = null) : IDashboardAction
     {
         public string ActionId => actionId;
 
@@ -139,7 +345,7 @@ public sealed class DashboardActionTests
 
         public string TargetPath => targetPath;
 
-        public IReadOnlyList<DashboardActionField> Fields => [];
+        public IReadOnlyList<DashboardActionField> Fields => fields ?? [];
 
         public object BuildRequest(IReadOnlyDictionary<string, string> form) => new { };
     }
@@ -150,11 +356,17 @@ public sealed class DashboardActionTests
         private readonly WebApplication _server;
         private readonly WebApplication _dashboard;
 
-        private Rig(WebApplication server, WebApplication dashboard, string dashboardAddress, ConcurrentQueue<(string, string)> forwarded)
+        private Rig(
+            WebApplication server,
+            WebApplication dashboard,
+            string dashboardAddress,
+            ConcurrentQueue<(string, string)> forwarded,
+            ConcurrentQueue<string> authorizations)
         {
             _server = server;
             _dashboard = dashboard;
             Forwarded = forwarded;
+            Authorizations = authorizations;
             DashboardOrigin = dashboardAddress;
             Dashboard = new HttpClient(new HttpClientHandler { AllowAutoRedirect = false })
             {
@@ -168,9 +380,24 @@ public sealed class DashboardActionTests
 
         public ConcurrentQueue<(string Path, string Body)> Forwarded { get; }
 
-        public static async Task<Rig> StartAsync(int serverStatus = StatusCodes.Status201Created)
+        /// <summary>The <c>Authorization</c> header of each forwarded request that carried one.</summary>
+        public ConcurrentQueue<string> Authorizations { get; }
+
+        /// <param name="responses">
+        /// What the stand-in answers, one entry per request in order (the last one repeats); a null body answers with none.
+        /// Without it, <paramref name="serverStatus"/> with the hold's body, as before.
+        /// </param>
+        /// <param name="hang">The stand-in never answers.</param>
+        /// <param name="timeoutSeconds">The dashboard's <c>controlServerTimeoutSeconds</c>; its default otherwise.</param>
+        public static async Task<Rig> StartAsync(
+            int serverStatus = StatusCodes.Status201Created,
+            IReadOnlyList<(int Status, string? Body)>? responses = null,
+            bool hang = false,
+            int? timeoutSeconds = null)
         {
             ConcurrentQueue<(string, string)> forwarded = new();
+            ConcurrentQueue<string> authorizations = new();
+            int calls = 0;
             WebApplicationBuilder serverBuilder = WebApplication.CreateBuilder();
             serverBuilder.WebHost.UseUrls("http://127.0.0.1:0");
             serverBuilder.Logging.ClearProviders();
@@ -179,6 +406,26 @@ public sealed class DashboardActionTests
             {
                 using StreamReader reader = new(context.Request.Body);
                 forwarded.Enqueue((context.Request.Path.Value!, await reader.ReadToEndAsync()));
+                if (context.Request.Headers.Authorization.ToString() is { Length: > 0 } authorization)
+                {
+                    authorizations.Enqueue(authorization);
+                }
+                if (hang)
+                {
+                    await Task.Delay(Timeout.Infinite, context.RequestAborted).ContinueWith(_ => { }, TaskScheduler.Default);
+                    return;
+                }
+                if (responses is not null)
+                {
+                    (int status, string? body) = responses[Math.Min(Interlocked.Increment(ref calls) - 1, responses.Count - 1)];
+                    context.Response.StatusCode = status;
+                    if (body is not null)
+                    {
+                        context.Response.ContentType = "application/problem+json";
+                        await context.Response.WriteAsync(body);
+                    }
+                    return;
+                }
                 context.Response.StatusCode = serverStatus;
                 await context.Response.WriteAsJsonAsync<object>(
                     serverStatus < 300
@@ -192,13 +439,36 @@ public sealed class DashboardActionTests
             dashboardBuilder.Logging.ClearProviders();
             dashboardBuilder.Configuration.AddInMemoryCollection(new Dictionary<string, string?>
             {
-                ["Dashboard:controlServerBaseUrl"] = Address(server)
+                ["Dashboard:controlServerBaseUrl"] = Address(server),
+                ["Dashboard:controlServerTimeoutSeconds"] = timeoutSeconds?.ToString(System.Globalization.CultureInfo.InvariantCulture)
             });
             dashboardBuilder.Services.AddDashboardActions(dashboardBuilder.Configuration);
             WebApplication dashboard = dashboardBuilder.Build();
             dashboard.MapDashboardActions();
             await dashboard.StartAsync(Token);
-            return new Rig(server, dashboard, Address(dashboard), forwarded);
+            return new Rig(server, dashboard, Address(dashboard), forwarded, authorizations);
+        }
+
+        public static HttpRequestMessage Declaration(string? origin)
+        {
+            HttpRequestMessage request = new(HttpMethod.Post, "/actions/slot-fault-declaration")
+            {
+                Content = new FormUrlEncodedContent(new Dictionary<string, string>
+                {
+                    ["agvId"] = "AGV-001",
+                    ["slotNo"] = "3",
+                    ["faultCategory"] = "LOCK",
+                    ["note"] = "门已关，锁一直读未锁",
+                    ["operatorId"] = "maintenance-7",
+                    ["administratorRole"] = "MAINTENANCE_ADMINISTRATOR",
+                    ["credential"] = "declaration-credential"
+                })
+            };
+            if (origin is not null)
+            {
+                request.Headers.Add("Origin", origin);
+            }
+            return request;
         }
 
         public static HttpRequestMessage Submission(string? origin, string path = "/actions/task-type-hold")

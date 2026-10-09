@@ -92,6 +92,8 @@ builder.Services.AddScoped<VehicleFaultCoordinator>();
 builder.Services.AddSingleton<JourneyMutationGate>();
 builder.Services.AddSingleton<ControlServer.Host.Runtime.Faults.VehicleFaultResumeFlights>();
 builder.Services.AddScoped<VehicleFaultRecoveryService>();
+// control-server#383: REQ-0359, an administrator declares the slot a vehicle waits on faulty.
+builder.Services.AddScoped<SlotFaultDeclarationService>();
 // B2 multi-vehicle: the roster is the identity register and is fixed for the life of the process;
 // the policy access keeps the three configured tables equal to the roster. The checkpoint ledger is
 // a singleton for the reason the motion ledger is -- how long a vehicle has been waiting is a
@@ -155,6 +157,10 @@ builder.Services.AddOptions<VehicleFaultRecoveryOptions>()
     .Bind(builder.Configuration.GetSection(VehicleFaultRecoveryOptions.SectionName))
     .ValidateOnStart();
 builder.Services.AddSingleton<IValidateOptions<VehicleFaultRecoveryOptions>, VehicleFaultRecoveryOptionsValidator>();
+builder.Services.AddOptions<SlotFaultDeclarationOptions>()
+    .Bind(builder.Configuration.GetSection(SlotFaultDeclarationOptions.SectionName))
+    .ValidateOnStart();
+builder.Services.AddSingleton<IValidateOptions<SlotFaultDeclarationOptions>, SlotFaultDeclarationOptionsValidator>();
 builder.Services.AddSingleton<MapStationResolver>();
 // 固定站按任务类型取得：规则表加本图生效绑定集（control-server#160）。
 builder.Services.AddScoped<IFixedTaskStationResolver, BoundFixedTaskStationResolver>();
@@ -223,6 +229,14 @@ if (PackageCapacityImportCommand.IsRequested(args))
     return;
 }
 
+// control-server#384：已有结论的人工判故障，其命令在发件箱里补记为已确认（车载端以结果作答、不回 DurableAck）。必须在下面的身份检查之前，
+// 否则改协议身份后做过判定的库起不来。幂等，每次启动都跑。
+await SlotFaultDeclarationResults.SettleAnsweredCommandsAsync(app.Services, CancellationToken.None);
+// control-server#383：人工判故障入口关着、库里却有未结判定时告警（它们在关着时不补发）。放在身份检查之前（cs#384 审查注 2）：
+// 未结判定的命令正是身份检查会拦下的行，检查拒绝启动时这条告警要已经打出来，解释那些行是什么。
+await SlotFaultDeclarationStartupCheck.WarnAsync(app.Services, CancellationToken.None);
+// control-server#382：发件箱里有未确认、信封身份不是本构建的行时拒绝启动——补发不改身份，车会拒收并反复断会话。
+await ProtocolOutboxIdentityStartupCheck.EnsureAsync(app.Services, CancellationToken.None);
 // control-server#72：当前分区归属版本把 AREA 归进了未允许的调度区时拒绝启动，并列出是哪几条。
 await AreaAssignmentDispatchZoneStartupCheck.EnsureAsync(app.Services, CancellationToken.None);
 // control-server#159：旅程运行时开着时装载任务类型规则与按图绑定的预置配置，配错拒绝启动并列出全部违规。
@@ -309,6 +323,9 @@ if (app.Configuration.GetValue<bool>("EmergencyStopRelease:enabled"))
 {
     app.MapEmergencyStopRelease();
 }
+// 默认不挂。control-server#383 的人工判故障（REQ-0359）：这个入口会让车停下一次仓位操作，要现场明确打开才提供；
+// 车载端认识 SlotFaultDeclarationCommand 之前（onboard-hmi#215）也不能打开，否则那台车会反复断开重连。判断在方法里，有 L1 护着。
+app.MapSlotFaultDeclarationWhenEnabled();
 // 默认不挂。control-server#299 的故障人工清除：这个入口会清掉一台车的故障、把它的需求交回改派，要现场明确打开才提供；
 // control-server#419 的站点独占人工释放同一把凭据、同一个开关。
 app.MapVehicleFaultRecoveryEntriesWhenEnabled();

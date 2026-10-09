@@ -874,7 +874,7 @@ $protocolCommitConjunct = if ($storeSource -eq 'FIELD_RUN') {
 }
 $protocolBindingPass = $null -ne $version -and
     $version.protocolCommit -eq $ProtocolCommit -and
-    $version.protocolTag -eq 'protocol-v2.0.0' -and
+    $version.protocolTag -eq 'protocol-v3.0.0' -and
     $null -ne $probeResult -and
     [string]$probeResult.serverBuildCommit -eq $ControlServerCommit -and
     $null -ne $baseline -and

@@ -45,6 +45,10 @@ public sealed class Batch8MigrationDisciplineTests
         "20260929070322_Batch8RetireOldVehicleOccupancy",
         // control-server#399：批次 9 唯一一次迁移——新建充电桩名册、充电策略版本（含批准与激活）、充电周期、桩与车两类暂停及其恢复、清桩记录、人工充电等待及其经过、两类现场确认请求共 17 张表（建空）；StationExclusivities／StationExclusivityRecords 加 CHARGER 种类与末列可空 ChargerRosterVersion（保留列序的手写重建）；OrderIntents 末列加 OrderShape（缺省即回填 SINGLE_MOVE）、JourneyRuntimes 末列加两列可空列（原生 ADD COLUMN）；既有列序与行不变。自己的断言在 Batch9MigrationDisciplineTests。
         "20260929114754_Batch9ChargingPersistence",
+        // control-server#383：批次 8 人工判故障（REQ-0359）——新建 SlotFaultDeclarations 一张表（建空），带「同一尝试至多一条未结判定」的过滤唯一索引；既有表与行不变。在 batch-p3/v3 上建，合回集成分支前按先合入的迁移重建。自己的断言在 SlotFaultDeclarationTests。
+        "20260930012829_Batch8SlotFaultDeclarations",
+        // control-server#385：批次 8 恢复面（REQ-0242 CP-0008、REQ-0364 CP-0009）——ExceptionRecoverySessions 加可空列 ClosedReason，RecoveryWorkflows 加可空列 HandoffSublot、HandoffReceiverName、HandedOverAt，新建 SlotDoorHolds 一张表（建空，AgvId 普通索引）；纯 ADD COLUMN 与 CREATE TABLE，既有表与行不变。在 batch-p3/v3 上建，合回集成分支前按先合入的迁移重建。自己的断言在 RecoveryStateMachineG2Tests（RecoverySurface 分部）。
+        "20260930041750_Batch8RecoverySurface",
         // control-server#505：**只改数据，不动 schema**——升级那一刻停在 Blocked、阻塞码以 _NOT_RECONCILED 结尾的旅程，码加后缀 _BEFORE_UPGRADE，成为不可放行的那一族（那时的码不保证有 RecoveryRequired 的需求作标记，而升级前第 5 条本来就一律不放，现场行为不变）；Down 去掉两个新后缀。调度 Coordinator 9 于 2026-10-08 给了迁移通道。自己的断言在 RecoveryEndingReleasesBlockedJourneyTests.Migration.cs。
         "20261008052643_UnreleasableNotReconciledBlocksBeforeUpgrade",
     ];

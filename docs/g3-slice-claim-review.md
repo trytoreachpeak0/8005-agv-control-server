@@ -292,7 +292,7 @@ L2 id 与断言名的对应在 `$scenarioAssertions`（第 74–185 行）；运
 | `CV-TASK-TYPE-ADMISSION-FAIL-CLOSED` | 服务端 | `ADMIT_ONLY_BOUND_TASK_TYPES` | `boundTaskTypeAdmittedAndCompletedAlongside`（G3-10-05） |
 | `CV-TASK-TYPE-ADMISSION-FAIL-CLOSED` | 服务端 | `FAIL_CLOSED_ON_MISSING_BINDING` | `unboundTaskTypeDemandNeverAccepted`（G3-10-01）、`unboundTaskTypeNeverPlannedListedOrOrdered`（G3-10-02）、`missingBindingReasonKeptOnTheServer`（G3-10-03）、`admissionReasonNeverSentToTheVehicle`（G3-10-04） |
 | `CV-TASK-TYPE-ADMISSION-FAIL-CLOSED` | 车载端 | `NEVER_INFER_UNBOUND_TASK_TYPE` | `onboardShowsNoTaskTypeBeforeAWorklistItem`（G3-10-07）、`onboardShowsOnlyTheBoundTaskType`（G3-10-08） |
-| `CV-TASK-TYPE-ADMISSION-FAIL-CLOSED` | 车载端 | `DISPLAY_ADMISSION_BLOCK_REASON` | **不认领**：规格第 5.3 节取消了这条断言，准入阻断原因只在服务端与看板，不经 `blockingFacts` 下发，v2 没有生产者。契约冲突由 onboard-hmi#115 登记为 trytoreachpeak0/8005-agv-program#125（汇总在 trytoreachpeak0/8005-agv-program#115），下次破坏性协议发布时改措辞。反向的「原因确实没有下发」由 G3-10-04 判 |
+| `CV-TASK-TYPE-ADMISSION-FAIL-CLOSED` | 车载端 | `DISPLAY_ADMISSION_BLOCK_REASON` | **v3 已从向量删除**：规格第 5.3 节取消了这条断言，准入阻断原因只在服务端与看板，不经 `blockingFacts` 下发。契约冲突由 onboard-hmi#115 登记为 trytoreachpeak0/8005-agv-program#125，`protocol-v3.0.0` 候选删掉了这条断言（control-server#382 vendor）。反向的「原因确实没有下发」照旧由 G3-10-04 判 |
 | `CV-TASK-TYPE-ADMISSION-FAIL-CLOSED` | 两端 | `orderedExpectedMessages`、finalState | `admissionSequenceMatchesVector`（G3-10-06）、`admissionFinalStateNoDuplicateCommit`（G3-10-09） |
 | `CV-REVERSED-DIRECTION-JOURNEY` | 服务端 | `DERIVE_DIRECTION_FROM_TASK_TYPE_RULE` | `reversedPlanRunsFromStagingStationToAreaMachine`（G3-11-01）、`reversedWorklistStopRolesFollowThePlan`（G3-11-02）、`loadAtStagingStationUnloadAtAreaMachineOnTheTargetSlots`（G3-11-06） |
 | `CV-REVERSED-DIRECTION-JOURNEY` | 服务端 | `NEVER_SWAP_ORIGIN_AND_DESTINATION` | `originAndDestinationNeverSwapped`（G3-11-07） |
@@ -369,6 +369,54 @@ L2 id 与断言名的对应在 `$scenarioAssertions`（第 74–185 行）；运
 | journey | `onboardShowsTheDispatchPlanInSequenceOrder`（G3-08-05） | FP-IS-08 | 同一向量（`DISPLAY_FULL_JOURNEY_PLAN`） | 追加前最后一版计划（两条腿，车停在 12 号站、甲装完之后读）被车载端确认之后，UIA `JourneyPlanLegs` 的行数与行序等于它的 `sequence`；不在车出发时读，那时计划是否已发要看它与车载端「有未结束的单」报告谁先到 | 两条腿按站名排恰好不变，这一条判不出重排；重排由 G3-08-06 判 |
 | journey | `onboardShowsTheAppendedPlanInSequenceOrder`（G3-08-06） | FP-IS-08 | 同一向量（`DISPLAY_FULL_JOURNEY_PLAN`、`NEVER_REORDER_LEGS_LOCALLY`） | 三条腿那一版被车载端确认之后，UIA 行数与行序等于它的 `sequence`（1,2,3）；按站名重排会读成 2,1,3 | |
 | journey | `multiStopJourneyEachDemandLoadedAndUnloadedOnce`（G3-08-07） | FP-IS-08 | 同一向量 finalState | 旅程 `Completed`；两条需求各一笔装、一笔卸，都 `Committed`，需求 `Succeeded`；关卡上两笔卸货各属一条需求；装过的两个仓最后 `CLOSED/EMPTY/1/0` | 持货等单在本场景会发生（允许追加就持货），不判；它的判据在 `real-onboard-mixed-side-one-stop` |
+
+## 批次 8 新增：FP-IS-07 的两条人工判故障向量（control-server#383）
+
+`protocol-v3.0.0` 候选给 `FP-IS-07` 加了 `CV-SLOT-FAULT-DECLARATION-APPLIED` 与 `CV-SLOT-FAULT-DECLARATION-NOT-APPLICABLE`（REQ-0359）。journey runner 新增一条场景 `g3-slot-fault-declaration`、十条断言，全部是 `FP-IS-07` 的切片断言，不加运行级断言。向量内容按协议仓 `3f091cb2` 的 `vectors/CV-SLOT-FAULT-DECLARATION-*/expected.json` 对照；检查内容取自场景脚本里 `$assertions.Add` 的判定文字。车载端那一半是 onboard-hmi#215，场景要它合入后才跑得通。
+
+| runner | 运行级 | 切片断言 | 合计 |
+| --- | --- | --- | --- |
+| journey 新增 | 0 | 10（FP-IS-07 10） | 10 |
+
+一条需求两站：装货站造 NOT_APPLICABLE，卸货站造 APPLIED。NOT_APPLICABLE 不靠赛跑：协议故障代理按计划吞掉判定命令一次（链路不断），操作员放货关门、装货照常结算，然后代理断开一次，服务端随恢复报告补发仍未结的判定，车载端核对到尝试已结而拒绝。
+
+### 向量产品断言到 G3 断言
+
+服务端七条（两条向量合计，去重后五条）全部有 G3 断言对应。车载端十条里有五条只由 `ONBOARD_HMI_G2` 证，G3 不判，原因写在表里。
+
+| 向量 | 归属 | `productAssertions` 条目 | 对应的 G3 断言 |
+| --- | --- | --- | --- |
+| 两条 | 服务端 | `DECLARE_ONLY_ON_OVERDUE_SLOT_AWAITING_OPERATOR` | `slotFaultDeclaredOnlyOnOverdueSlot`（G3-07-62） |
+| 两条 | 服务端 | `AUDIT_DECLARATION_AND_VEHICLE_RESULT` | `declarationAndVehicleResultAudited`（G3-07-69）；拒绝那一半的原因在 `refusedDeclarationWithdrawnWithoutBusinessChange`（G3-07-65） |
+| APPLIED | 服务端 | `BLOCK_JOURNEY_ON_DECLARED_UNKNOWN` | `journeyBlockedOnDeclaredUnknown`（G3-07-68） |
+| NOT-APPLICABLE | 服务端 | `WITHDRAW_DECLARATION_WITHOUT_BUSINESS_CHANGE` | `refusedDeclarationWithdrawnWithoutBusinessChange`（G3-07-65） |
+| NOT-APPLICABLE | 服务端 | `SETTLE_OPERATION_RESULT_NORMALLY_WHILE_DECLARATION_PENDING` | `operationSettledNormallyWhileDeclarationPending`（G3-07-63） |
+| APPLIED | 车载端 | `NEVER_UNLOCK_AFTER_DECLARATION_APPLIED` | `neverUnlockAfterDeclarationApplied`（G3-07-70） |
+| APPLIED | 车载端 | `REPORT_DECLARED_SLOT_UNKNOWN_LATER_SLOTS_NOT_STARTED` | `declaredSlotReportedUnknownLaterSlotsNotStarted`（G3-07-67） |
+| APPLIED | 车载端 | `SEND_DECLARATION_RESULT_BEFORE_OPERATION_RESULT` | `slotFaultDeclarationAppliedSequenceMatchesVector`（G3-07-66） |
+| APPLIED | 车载端 | `APPLY_ONLY_TO_SAME_ATTEMPT_AND_SLOT_STILL_AWAITING` | `slotFaultDeclarationAppliedSequenceMatchesVector`（G3-07-66，只有正例） |
+| NOT-APPLICABLE | 车载端 | `REJECT_DECLARATION_ON_SETTLED_UNKNOWN_OR_SUPERSEDED_ATTEMPT` | `settledAttemptAnswersDeclarationNotApplicable`（G3-07-64，只判「已结」一种） |
+| APPLIED | 车载端 | `JOURNAL_DECLARATION_BEFORE_APPLIED_RESULT`、`KEEP_DECLARED_SLOT_UNKNOWN_ACROSS_RESTART` | 无：要在车载端写日志与发结果之间杀进程，本场景不重启车载端 |
+| APPLIED | 车载端 | `REPORT_COMPLETED_SLOTS_FROM_LIVE_READINGS` | 无：真装置场景一次操作只驱动一个仓（`Wait-L2WaitingOperator`），没有已完成的仓可报 |
+| NOT-APPLICABLE | 车载端 | `ANSWER_UNKNOWN_ATTEMPT_WITH_NOT_APPLICABLE`、`NEVER_APPLY_DECLARATION_TO_ANOTHER_ATTEMPT_OR_SLOT` | 无：服务端只按在途操作填尝试与仓，线上造不出指向别的尝试或仓的判定；由车载端 G2 用替身造 |
+| 两条 | 两端 | `orderedExpectedMessages` | `slotFaultDeclarationNotApplicableSequenceMatchesVector`（G3-07-61）、`slotFaultDeclarationAppliedSequenceMatchesVector`（G3-07-66） |
+
+### 逐条表
+
+场景：`scripts/l2/scenarios/g3-slot-fault-declaration.ps1`（`setup.psd1` 开判定入口与协议故障代理，门槛 20 秒、站点期限 120 秒）。
+
+| runner | 断言 | 切片 | 对应 | 检查内容 | 备注 |
+| --- | --- | --- | --- | --- | --- |
+| journey | `slotFaultDeclarationNotApplicableSequenceMatchesVector`（G3-07-61） | FP-IS-07 | `CV-SLOT-FAULT-DECLARATION-NOT-APPLICABLE` `orderedExpectedMessages` | 断开之后的代理流量里：补发的 `SlotFaultDeclarationCommand`（同一 messageId）、车载端的 `SlotFaultDeclarationResult`、服务端对它的 `DurableAck`，按此先后；结果在新一代会话里 | 第一次发出的那条被代理吞掉，不计 |
+| journey | `slotFaultDeclaredOnlyOnOverdueSlot`（G3-07-62） | FP-IS-07 | 两条向量（`DECLARE_ONLY_ON_OVERDUE_SLOT_AWAITING_OPERATOR`） | 开锁后、门槛之前判一次：409，原因含 `SLOT_FAULT_EXPECTED_ACTION_NOT_OVERDUE`；越过门槛后同一仓受理 | |
+| journey | `operationSettledNormallyWhileDeclarationPending`（G3-07-63） | FP-IS-07 | NOT-APPLICABLE（`SETTLE_OPERATION_RESULT_NORMALLY_WHILE_DECLARATION_PENDING`） | 判定命令被吞后放货关门：装货结果 `COMPLETED`、仓位操作 `Committed`，此刻判定仍 `PENDING` | |
+| journey | `settledAttemptAnswersDeclarationNotApplicable`（G3-07-64） | FP-IS-07 | NOT-APPLICABLE（`REJECT_DECLARATION_ON_SETTLED_UNKNOWN_OR_SUPERSEDED_ATTEMPT`、`stableErrorCode`） | 补发后车载端回 `NOT_APPLICABLE`，同一个尝试，`problem.reasonCode = ACTION_NOT_ALLOWED_IN_STATE` | |
+| journey | `refusedDeclarationWithdrawnWithoutBusinessChange`（G3-07-65） | FP-IS-07 | NOT-APPLICABLE（`WITHDRAW_DECLARATION_WITHOUT_BUSINESS_CHANGE`、finalState） | 运行时再转四轮后：判定 `NOT_APPLICABLE` 且记下原因，装货仍 `Committed`、需求仍 `Accepted`、旅程没有阻断 | |
+| journey | `slotFaultDeclarationAppliedSequenceMatchesVector`（G3-07-66） | FP-IS-07 | APPLIED `orderedExpectedMessages`（`SEND_DECLARATION_RESULT_BEFORE_OPERATION_RESULT`） | 判定之后的代理流量里：命令、`SlotFaultDeclarationResult(APPLIED)`、它的 `DurableAck`、`OperationResult`、它的 `DurableAck`，按此先后 | |
+| journey | `declaredSlotReportedUnknownLaterSlotsNotStarted`（G3-07-67） | FP-IS-07 | APPLIED（`REPORT_DECLARED_SLOT_UNKNOWN_LATER_SLOTS_NOT_STARTED`、finalState physical） | 卸货 `OperationResult` 整体 `UNKNOWN`；被判仓 `UNKNOWN`，`reasonCodes` 含 `SLOT_FAULT_DECLARED`；其余仓 `NOT_STARTED` | 一次一仓，「其余」通常为空 |
+| journey | `journeyBlockedOnDeclaredUnknown`（G3-07-68） | FP-IS-07 | APPLIED（`BLOCK_JOURNEY_ON_DECLARED_UNKNOWN`、finalState） | 卸货仓位操作 `RecoveryRequired`，旅程 `Blocked`／`UNLOAD_RESULT_REQUIRES_RECOVERY`，需求没有 `Succeeded`，会话 `RecoveryRequired` | 会话用 `Wait-L2ConditionOrLast` 另等（README 第 14 条） |
+| journey | `declarationAndVehicleResultAudited`（G3-07-69） | FP-IS-07 | 两条向量（`AUDIT_DECLARATION_AND_VEHICLE_RESULT`） | 判定记录 `APPLIED`，判定人、角色、车、需求、尝试、仓、类别、说明、带观测时刻的读数、收到结果的时刻都在 | 判定记录用 `Wait-L2ConditionOrLast` 另等 |
+| journey | `neverUnlockAfterDeclarationApplied`（G3-07-70） | FP-IS-07 | APPLIED（`NEVER_UNLOCK_AFTER_DECLARATION_APPLIED`、`forbiddenSideEffects` 的 `unlock-after-declaration`） | 判定生效后空关一次，10 秒后门仍 `CLOSED`，卸货的 `UNLOCKING` 进度条数与判定前相同 | 模拟器没有脉冲计数器，门只在开锁输出触发时弹开，所以「没重开」就是「没开锁」 |
 
 ## 批次 8 新增：FP-IS-12（control-server#390）
 

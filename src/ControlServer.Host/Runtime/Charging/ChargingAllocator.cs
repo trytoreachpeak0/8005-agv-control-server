@@ -312,7 +312,7 @@ public sealed class ChargingAllocationBoard
 /// <para>
 /// <b>谁进待充电集合</b>：这一轮读定的那一版策略下电量低于强制充电线（<see cref="BatteryEligibility.Judge"/>），没有用途占有，不在服务端的
 /// 人工充电等待里，车辆充电资格没有暂停，自己没有还占着的充电桩，并且过了与派车、空闲返回共用的车辆侧判定
-/// （<see cref="VehicleNewPurposeReadiness.JudgeForChargingAsync"/>：故障、投运、强制充电线与救命线的关系、会话、出发安全、在线、绑定、
+/// （<see cref="VehicleNewPurposeReadiness.JudgeForChargingAsync"/>：故障、门未证明扣车、投运、强制充电线与救命线的关系、会话、出发安全、在线、绑定、
 /// 空闲、地图、新鲜、停稳、RIoT 上没有它的单）。哪一条不满足就答哪一条的码，不分配、也不置人工充电等待。
 /// </para>
 /// <para>
@@ -601,7 +601,7 @@ public sealed class ChargingAllocator(
         }
 
         string readiness = await VehicleNewPurposeReadiness
-            .JudgeForChargingAsync(faults, candidate.Facts, _runtime, cancellationToken).ConfigureAwait(false);
+            .JudgeForChargingAsync(faults, dbContext, candidate.Facts, _runtime, cancellationToken).ConfigureAwait(false);
         if (readiness != DispatchAdmissionChain.Eligible)
         {
             return readiness;

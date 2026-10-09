@@ -96,13 +96,17 @@ public sealed class ProtocolIdentityArchitectureTests
     /// </summary>
     /// <remarks>
     /// <c>scripts/New-WireToGateReleaseCandidate.ps1</c> gates on <c>APPROVED_RELEASE</c> and this
-    /// is the other half of that gate. This test has now flipped three times on purpose. It asserted
+    /// is the other half of that gate. This test has now flipped five times on purpose. It asserted
     /// a candidate while the first v2 candidate was unreleased, asserted <c>APPROVED_RELEASE</c>
     /// from 2026-09-12 when <c>protocol-v1.0.0</c> was tagged and approved, asserted a candidate
     /// again from 2026-09-16 when the server moved to the unreleased <c>2.0.0</c> candidate
-    /// (<c>8005-agv-control-server#84</c>), and asserts <c>APPROVED_RELEASE</c> again since
-    /// <c>8005-agv-program#97</c> released <see cref="ProtocolCandidateIdentity.Tag"/> and
-    /// <c>8005-agv-control-server#89</c> bound that release. Each flip is made deliberately because
+    /// (<c>8005-agv-control-server#84</c>), asserted <c>APPROVED_RELEASE</c> again once
+    /// <c>8005-agv-program#97</c> released it (<c>8005-agv-control-server#89</c>), asserted a
+    /// candidate again on the batch branch <c>batch-p3/v3</c>, which moved to the unreleased
+    /// <c>3.0.0</c> candidate (<c>8005-agv-control-server#382</c>), and asserts
+    /// <c>APPROVED_RELEASE</c> again since <c>8005-agv-program#152</c> released
+    /// <see cref="ProtocolCandidateIdentity.Tag"/> on 2026-10-09 and
+    /// <c>8005-agv-control-server#393</c> bound that release. Each flip is made deliberately because
     /// no other test says what the status is: <c>TheShippedSettingsMirrorTheIdentityConstants</c>
     /// below compares the two copies to each other, so a stale value kept in both would ship
     /// silently.

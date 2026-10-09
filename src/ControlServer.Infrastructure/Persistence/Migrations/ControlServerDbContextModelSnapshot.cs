@@ -1080,6 +1080,9 @@ namespace ControlServer.Infrastructure.Persistence.Migrations
                         .IsRequired()
                         .HasColumnType("TEXT");
 
+                    b.Property<string>("ClosedReason")
+                        .HasColumnType("TEXT");
+
                     b.Property<string>("DemandId")
                         .HasColumnType("TEXT");
 
@@ -2870,7 +2873,16 @@ namespace ControlServer.Infrastructure.Persistence.Migrations
                     b.Property<long>("ForcedRecoveryGeneration")
                         .HasColumnType("INTEGER");
 
+                    b.Property<DateTimeOffset?>("HandedOverAt")
+                        .HasColumnType("TEXT");
+
                     b.Property<string>("HandoffId")
+                        .HasColumnType("TEXT");
+
+                    b.Property<string>("HandoffReceiverName")
+                        .HasColumnType("TEXT");
+
+                    b.Property<string>("HandoffSublot")
                         .HasColumnType("TEXT");
 
                     b.Property<string>("Outcome")
@@ -3461,6 +3473,131 @@ namespace ControlServer.Infrastructure.Persistence.Migrations
                         .IsUnique();
 
                     b.ToTable("SlotConfigurationVerifications", (string)null);
+                });
+
+            modelBuilder.Entity("ControlServer.Infrastructure.Persistence.SlotDoorHoldRow", b =>
+                {
+                    b.Property<string>("HoldId")
+                        .HasColumnType("TEXT");
+
+                    b.Property<string>("AgvId")
+                        .IsRequired()
+                        .HasColumnType("TEXT");
+
+                    b.Property<string>("DemandId")
+                        .IsRequired()
+                        .HasColumnType("TEXT");
+
+                    b.Property<DateTimeOffset>("HeldAt")
+                        .HasColumnType("TEXT");
+
+                    b.Property<DateTimeOffset?>("ReleasedAt")
+                        .HasColumnType("TEXT");
+
+                    b.Property<string>("ReleasedByActionId")
+                        .HasColumnType("TEXT");
+
+                    b.Property<string>("SlotsJson")
+                        .IsRequired()
+                        .HasColumnType("TEXT");
+
+                    b.HasKey("HoldId");
+
+                    b.HasIndex("AgvId");
+
+                    b.ToTable("SlotDoorHolds");
+                });
+
+            modelBuilder.Entity("ControlServer.Infrastructure.Persistence.SlotFaultDeclarationRow", b =>
+                {
+                    b.Property<string>("DeclarationId")
+                        .HasColumnType("TEXT");
+
+                    b.Property<string>("AdministratorId")
+                        .IsRequired()
+                        .HasColumnType("TEXT");
+
+                    b.Property<string>("AdministratorRole")
+                        .IsRequired()
+                        .HasColumnType("TEXT");
+
+                    b.Property<string>("AgvId")
+                        .IsRequired()
+                        .HasColumnType("TEXT");
+
+                    b.Property<string>("CommandMessageId")
+                        .IsRequired()
+                        .HasColumnType("TEXT");
+
+                    b.Property<DateTimeOffset>("DeclaredAt")
+                        .HasColumnType("TEXT");
+
+                    b.Property<string>("DemandId")
+                        .IsRequired()
+                        .HasColumnType("TEXT");
+
+                    b.Property<string>("FaultCategory")
+                        .IsRequired()
+                        .HasColumnType("TEXT");
+
+                    b.Property<string>("Note")
+                        .IsRequired()
+                        .HasColumnType("TEXT");
+
+                    b.Property<string>("OperationType")
+                        .IsRequired()
+                        .HasColumnType("TEXT");
+
+                    b.Property<string>("ReadingsJson")
+                        .HasColumnType("TEXT");
+
+                    b.Property<string>("RequestContentHash")
+                        .IsRequired()
+                        .HasColumnType("TEXT");
+
+                    b.Property<string>("RequestId")
+                        .IsRequired()
+                        .HasColumnType("TEXT");
+
+                    b.Property<string>("ResultMessageId")
+                        .HasColumnType("TEXT");
+
+                    b.Property<string>("ResultOutcome")
+                        .HasColumnType("TEXT");
+
+                    b.Property<string>("ResultProblemJson")
+                        .HasColumnType("TEXT");
+
+                    b.Property<DateTimeOffset?>("ResultReceivedAt")
+                        .HasColumnType("TEXT");
+
+                    b.Property<int>("SlotNo")
+                        .HasColumnType("INTEGER");
+
+                    b.Property<string>("SlotOperationAttemptId")
+                        .IsRequired()
+                        .HasColumnType("TEXT");
+
+                    b.Property<string>("State")
+                        .IsRequired()
+                        .HasColumnType("TEXT");
+
+                    b.HasKey("DeclarationId");
+
+                    b.HasIndex("AgvId");
+
+                    b.HasIndex("CommandMessageId")
+                        .IsUnique();
+
+                    b.HasIndex("RequestId")
+                        .IsUnique();
+
+                    b.HasIndex("SlotOperationAttemptId")
+                        .IsUnique()
+                        .HasDatabaseName("IX_SlotFaultDeclarations_PendingAttempt")
+                        .HasFilter("State = 'PENDING'");
+
+                    b.ToTable("SlotFaultDeclarations", (string)null);
                 });
 
             modelBuilder.Entity("ControlServer.Infrastructure.Persistence.SlotIoBindingRow", b =>

@@ -20,6 +20,11 @@ public static class RecoveryWorkflowOutcomes
     public const string AdministratorClosed = "ADMINISTRATOR_CLOSED";
 }
 
+/// <remarks>
+/// <see cref="ClosedReason"/> is v3's required nullable <c>closedReason</c> (control-server#382): a registry
+/// <c>ErrorCode</c> saying why a closed session closed without its action's result being reconciled, or null. Since
+/// control-server#385 it is the session row's own persisted <c>ClosedReason</c>, written once at the closing.
+/// </remarks>
 public sealed record ExceptionRecoverySessionProjection(
     string ExceptionRecoverySessionId,
     long RecoverySessionRevision,
@@ -32,7 +37,8 @@ public sealed record ExceptionRecoverySessionProjection(
     IReadOnlyList<int> Slots,
     string? SelectedAction,
     IReadOnlyList<string> AllowedActions,
-    IReadOnlyList<VehicleBusinessBlockingFact> BlockingFacts);
+    IReadOnlyList<VehicleBusinessBlockingFact> BlockingFacts,
+    string? ClosedReason);
 
 public sealed record SlotOperationResumeAuthorization(
     string ExceptionRecoverySessionId,

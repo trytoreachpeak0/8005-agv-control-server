@@ -462,7 +462,8 @@ public sealed class OnboardHandshakePushGateTests
         Slots: [1],
         SelectedAction: null,
         AllowedActions: ["FORCED_MECHANICAL_RECOVERY"],
-        BlockingFacts: []);
+        BlockingFacts: [],
+        ClosedReason: null);
 
     /// <summary>
     /// A real listener and message processor over an in-memory database, the synthetic vehicle, and the relay

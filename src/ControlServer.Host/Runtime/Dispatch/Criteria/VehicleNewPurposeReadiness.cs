@@ -44,6 +44,30 @@ public static class VehicleNewPurposeReadiness
     }
 
     /// <summary>
+    /// 故障阻断，然后门未证明的扣车（REQ-0364，control-server#385）：扣着的车不接任何新用途。派车链的故障阻断判据调它，
+    /// <see cref="JudgeAsync"/> 也调它，所以搬运、空闲返回、充电走的是同一处。
+    /// </summary>
+    /// <remarks>
+    /// 扣车也让会话不就绪（<c>WireToGateStore.DecideReadinessAsync</c>），动态事实那一格本来就会挡；这里单独判，是为了不靠
+    /// 那条间接的路：原因码直说「被扣」，而且哪天就绪的算法变了、或有一条用途不看会话就绪，扣着的车照样派不出去（准入线 1）。
+    /// </remarks>
+    public static async Task<string> BlockVerdictAsync(
+        IVehicleFaultStore faults, ControlServerDbContext dbContext, string agvId, CancellationToken cancellationToken)
+    {
+        ArgumentNullException.ThrowIfNull(dbContext);
+        string fault = await FaultVerdictAsync(faults, agvId, cancellationToken).ConfigureAwait(false);
+        if (fault != DispatchAdmissionChain.Eligible)
+        {
+            return fault;
+        }
+
+        return await dbContext.SlotDoorHolds.AsNoTracking()
+            .AnyAsync(hold => hold.AgvId == agvId && hold.ReleasedAt == null, cancellationToken).ConfigureAwait(false)
+            ? DispatchReasonCodes.VehicleSlotDoorHold
+            : DispatchAdmissionChain.Eligible;
+    }
+
+    /// <summary>
     /// 投运（control-server#400；REQ-0282，规格 8.6 逐车硬阻断）：没有已批准、已激活、覆盖这辆车的充电策略版本，或读不到，
     /// 都不接新用途。能接答 <see cref="DispatchAdmissionChain.Eligible"/>，否则 <see cref="DispatchReasonCodes.ChargingPolicyNotApproved"/>；
     /// 判定本身一并交回，调用方要写日志时用它的原因与说明。
@@ -79,19 +103,20 @@ public static class VehicleNewPurposeReadiness
         return (decision.Commissioned ? DispatchAdmissionChain.Eligible : DispatchReasonCodes.ChargingPolicyNotApproved, decision);
     }
 
-    /// <summary>故障阻断，然后投运策略，然后车辆动态事实（安全、在线、绑定、IDLE、地图、新鲜、电量门槛、停止、RIoT 上没有它的单）。</summary>
+    /// <summary>故障阻断与门未证明扣车（<see cref="BlockVerdictAsync"/>），然后投运策略，然后车辆动态事实（安全、在线、绑定、IDLE、地图、新鲜、电量门槛、停止、RIoT 上没有它的单）。</summary>
     public static async Task<string> JudgeAsync(
         IVehicleFaultStore faults,
+        ControlServerDbContext dbContext,
         IChargingPolicyResolver chargingPolicy,
         DispatchVehicleFacts facts,
         JourneyRuntimeOptions options,
         CancellationToken cancellationToken)
     {
         ArgumentNullException.ThrowIfNull(facts);
-        string fault = await FaultVerdictAsync(faults, facts.AgvId, cancellationToken).ConfigureAwait(false);
-        if (fault != DispatchAdmissionChain.Eligible)
+        string blocked = await BlockVerdictAsync(faults, dbContext, facts.AgvId, cancellationToken).ConfigureAwait(false);
+        if (blocked != DispatchAdmissionChain.Eligible)
         {
-            return fault;
+            return blocked;
         }
 
         (string commissioning, _) = await CommissioningVerdictAsync(
@@ -138,15 +163,17 @@ public static class VehicleNewPurposeReadiness
     /// </remarks>
     public static async Task<string> JudgeForChargingAsync(
         IVehicleFaultStore faults,
+        ControlServerDbContext dbContext,
         DispatchVehicleFacts facts,
         JourneyRuntimeOptions options,
         CancellationToken cancellationToken)
     {
         ArgumentNullException.ThrowIfNull(facts);
-        string fault = await FaultVerdictAsync(faults, facts.AgvId, cancellationToken).ConfigureAwait(false);
-        if (fault != DispatchAdmissionChain.Eligible)
+        // control-server#456（合并 batch-p3/v3 与批次 9）：门未证明扣车也挡充电，与搬运、空闲返回走同一处（REQ-0364：扣着的车不接任何新用途）。
+        string blocked = await BlockVerdictAsync(faults, dbContext, facts.AgvId, cancellationToken).ConfigureAwait(false);
+        if (blocked != DispatchAdmissionChain.Eligible)
         {
-            return fault;
+            return blocked;
         }
 
         string asObserved = VehicleDynamicFactsCriterion.Evaluate(facts, options);

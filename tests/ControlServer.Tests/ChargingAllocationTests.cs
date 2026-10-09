@@ -513,6 +513,7 @@ public sealed class ChargingAllocationTests
     public static TheoryData<string, string> VehiclesThatMayNotTakeANewPurpose => new()
     {
         { "fault-suspected", VehicleFaultBlockCriterion.SuspectedReason },
+        { "slot-door-held", DispatchReasonCodes.VehicleSlotDoorHold },
         { "no-approved-policy", DispatchReasonCodes.ChargingPolicyNotApproved },
         { "policy-entry-not-above-rescue-line", DispatchReasonCodes.ChargingPolicyEntryNotAboveRescueLine },
         { "session-not-ready", "ONBOARD_FACTS_NOT_READY" },
@@ -524,7 +525,7 @@ public sealed class ChargingAllocationTests
     };
 
     /// <summary>
-    /// 充电分配与派车、空闲返回共用同一份「这辆车此刻能不能承接新用途」：故障阻断、没有已批准的策略、策略的强制充电线不高于救命线
+    /// 充电分配与派车、空闲返回共用同一份「这辆车此刻能不能承接新用途」：故障阻断、门未证明扣车、没有已批准的策略、策略的强制充电线不高于救命线
     /// （整版不可用，充电也一样）、会话未就绪、车载端说不能出发、车在动、RIoT 上有它的单——各答各自的码，不分配、也不置人工充电等待。
     /// 车辆充电资格暂停与位置未知是充电自己的两格。
     /// </summary>
@@ -539,6 +540,18 @@ public sealed class ChargingAllocationTests
             case "fault-suspected":
                 await new VehicleFaultStore(fleet.Context).RecordLevelAsync(
                     AgvA, VehicleFaultLevel.SuspectedBlocked, "COMMS_LOST", false, fleet.Clock.GetUtcNowWithoutTick(), Token);
+                break;
+            case "slot-door-held":
+                // control-server#456：cs#385 的门未证明扣车（REQ-0364）同样挡充电。
+                fleet.Context.SlotDoorHolds.Add(new SlotDoorHoldRow
+                {
+                    HoldId = "f4560000-0000-4000-8000-000000000101",
+                    AgvId = AgvA,
+                    DemandId = "f4560000-0000-4000-8000-000000000102",
+                    SlotsJson = "[1]",
+                    HeldAt = fleet.Clock.GetUtcNowWithoutTick()
+                });
+                await fleet.Context.SaveChangesAsync(Token);
                 break;
             case "no-approved-policy":
                 fleet.ChargingPolicy = TestChargingPolicies.None;

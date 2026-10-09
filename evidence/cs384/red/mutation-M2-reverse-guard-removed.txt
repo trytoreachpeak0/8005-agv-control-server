@@ -1,0 +1,9 @@
+# mutation M2-reverse-guard-removed: in src/ControlServer.Host/Runtime/SlotFaultDeclarationService.cs
+#   - reasons.Add(SlotFaultDeclarationRefusals.LoadCancellationInProgress);
+#   + _ = 0;
+# filter FullyQualifiedName~SlotFaultDeclarationTests.ADeclarationOnAnAttemptWhoseLoadCancellationIsAuthorized
+  Failed ControlServer.Tests.SlotFaultDeclarationTests.ADeclarationOnAnAttemptWhoseLoadCancellationIsAuthorizedIsRefusedAndWritesNothing [2 s]
+   Assert.IsType() Failure: Value is not the exact type
+Expected: typeof(Microsoft.AspNetCore.Http.HttpResults.ProblemHttpResult)
+Actual:   typeof(Microsoft.AspNetCore.Http.HttpResults.Accepted<SlotFaultDeclarationResponse>)
+Failed!  - Failed:     1, Passed:     0, Skipped:     0, Total:     1, Duration: 2 s - ControlServer.Tests.dll (net8.0)

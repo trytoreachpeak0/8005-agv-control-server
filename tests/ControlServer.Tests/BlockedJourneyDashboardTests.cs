@@ -124,6 +124,43 @@ public sealed class BlockedJourneyDashboardTests
 
     // --- 由自己的在途移动单解释的「未知」（control-server#139）-------------------------------------------------------
 
+    // --- 锁存码不是「车没停稳」（control-server#382）---------------------------------------------------------------------
+    //
+    // v3 起车载端锁存严重安全故障期间，出发安全原因报 ONBOARD_FATAL_FAULT_LATCHED（8005-agv-program#150）。它不是
+    // VEHICLE_NOT_READY，也不是本服务端自己在途单造成的「未知」：被这张名单「原谅」，看板就不叫维修管理员，引擎还会把
+    // 取货计划放过关着的就绪闸（control-server#314）。两条都要：只断成员，有人把判据从「全部在名单里」改成「任一在名单里」
+    // 时它照样绿，而锁存就被原谅成了车没停稳。
+
+    [Fact]
+    public void TheLatchedFatalFaultCodeIsNotAVehicleOnlyReason()
+    {
+        HashSet<string> vehicleOnly = Assert.IsType<HashSet<string>>(typeof(OwnMovementOrderExplanation)
+            .GetField("VehicleOnlyReasons", System.Reflection.BindingFlags.NonPublic | System.Reflection.BindingFlags.Static)!
+            .GetValue(null));
+
+        Assert.DoesNotContain("ONBOARD_FATAL_FAULT_LATCHED", vehicleOnly);
+    }
+
+    [Fact]
+    public void ALatchedFatalFaultBesideVehicleNotReadyIsNotExplainedByTheOwnMoveOrder()
+    {
+        // 对照：只有 VEHICLE_NOT_READY 时同样的输入被解释——所以下面的 false 只能来自锁存码。
+        Assert.True(OwnMovementOrderExplanation.Explains(
+            "ONBOARD_SESSION_NOT_READY",
+            "DEPARTURE_SAFETY_NOT_READY",
+            """["VEHICLE_NOT_READY"]""",
+            safetyUnknownPresent: true,
+            ownMovementOrderInFlight: true,
+            foreignRunningOrderHoldsVehicle: false));
+        Assert.False(OwnMovementOrderExplanation.Explains(
+            "ONBOARD_SESSION_NOT_READY",
+            "DEPARTURE_SAFETY_NOT_READY",
+            """["VEHICLE_NOT_READY","ONBOARD_FATAL_FAULT_LATCHED"]""",
+            safetyUnknownPresent: true,
+            ownMovementOrderInFlight: true,
+            foreignRunningOrderHoldsVehicle: false));
+    }
+
     [Fact]
     public void AnUnknownOnlyTheVehicleSideReportsWhileThisServersOwnMoveOrderIsInFlightIsExplained()
     {

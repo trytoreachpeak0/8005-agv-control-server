@@ -190,7 +190,7 @@ internal static class ChargingDashboardDescriptions
         };
 
     /// <summary>
-    /// 充电分配借用的派车链判定码（<c>VehicleNewPurposeReadiness.JudgeForChargingAsync</c>：故障阻断、<c>VehicleDynamicFactsCriterion.Evaluate</c>；
+    /// 充电分配借用的派车链判定码（<c>VehicleNewPurposeReadiness.JudgeForChargingAsync</c>：故障阻断与门未证明扣车、<c>VehicleDynamicFactsCriterion.Evaluate</c>；
     /// <c>BatteryEligibility.Judge</c> 的策略与电量几支），按「为什么不给它分桩」写。由说明守卫在真实跑出来的结论里找到，再按那两处源码补全同族的码。
     /// </summary>
     internal static IReadOnlyDictionary<string, string> ReadinessReasons { get; } =
@@ -199,6 +199,8 @@ internal static class ChargingDashboardDescriptions
             [VehicleFaultBlockCriterion.SuspectedReason] = "车被判为疑似故障：故障清除之前不给它安排充电（也不派别的活）",
             [VehicleFaultBlockCriterion.IsolatedReason] = "车已被故障隔离：解除隔离之前不给它安排充电",
             [VehicleFaultBlockCriterion.IdentityUnresolvedReason] = "车的故障记录对不上身份：说不准它有没有故障，不给它安排充电",
+            [Runtime.Dispatch.DispatchReasonCodes.VehicleSlotDoorHold] =
+                "车有仓门锁闭没能证明，已扣车等维修放行：放行之前不给它安排充电（也不派别的活）",
             ["ONBOARD_FACTS_NOT_READY"] = "车载端会话没有就绪：拿不到车载端的事实，不给它安排充电",
             ["ONBOARD_DEPARTURE_UNSAFE"] = "车载端此刻报不能出发（仓门没锁好、安全摘要带阻断原因或有未知）：不给它安排充电",
             ["RIOT_VEHICLE_NOT_AVAILABLE"] = "RIoT 报这辆车离线或被禁用：不给它安排充电",

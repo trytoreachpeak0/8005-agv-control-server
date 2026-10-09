@@ -1352,7 +1352,6 @@ internal static class ReconnectModel
             activeSlotConfigurationVersion = "SLOT-CONFIG-1",
             activeSlotConfigurationFingerprint = new string('0', 64),
             slotStates = SlotStates(),
-            supportsBatchUnlock = true,
             onboardJournalFormatVersion = 1,
         };
 

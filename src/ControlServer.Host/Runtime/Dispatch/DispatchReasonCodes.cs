@@ -221,6 +221,14 @@ public static class DispatchReasonCodes
     public const string VehicleCommittedToIdleReturn = "VEHICLE_COMMITTED_TO_IDLE_RETURN";
 
     /// <summary>
+    /// 这辆车因门未证明的全空结清被扣，维修放行走完之前不接任何新用途（REQ-0364，CP-0009，control-server#385）。
+    /// </summary>
+    /// <remarks>
+    /// 由 <see cref="Criteria.VehicleNewPurposeReadiness"/> 给出，搬运、空闲返回与充电共用。归普通积压：别的车能接，本车放行后能接。
+    /// </remarks>
+    public const string VehicleSlotDoorHold = "VEHICLE_SLOT_DOOR_HOLD";
+
+    /// <summary>
     /// 这辆车已承诺充电（<c>REQ-0290</c>、<c>REQ-0173</c>；批次9-06，control-server#404）：它持有 <c>CHARGING</c> 用途占有与充电桩预占，
     /// 搬运不取消、不改写、不抢它。
     /// </summary>

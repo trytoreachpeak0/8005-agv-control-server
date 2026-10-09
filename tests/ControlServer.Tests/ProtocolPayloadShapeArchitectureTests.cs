@@ -42,7 +42,7 @@ namespace ControlServer.Tests;
 /// </para>
 /// <para>
 /// <b>The field lists are not copied here.</b> <c>vendor/8005-agv-protocol/schemas/</c> is the
-/// protocol's schema tree file for file, and <see cref="ApprovedSchemaTreeSha256"/> pins all 69 of
+/// protocol's schema tree file for file, and <see cref="ApprovedSchemaTreeSha256"/> pins all 71 of
 /// them with one digest. That digest is <b>ours, not the protocol's</b>: the manifest's
 /// <c>schemaBundleSha256</c> is computed by the protocol's own bundling, which this repository does
 /// not reproduce, so pinning against it would mean reimplementing an algorithm rather than checking
@@ -62,13 +62,13 @@ public sealed class ProtocolPayloadShapeArchitectureTests
     /// newline, the file's own SHA-256 in lower hex, and a newline.
     /// </summary>
     private const string ApprovedSchemaTreeSha256 =
-        "3487327d9a90d9367d9eb27c968530613d71fe145ae9876f52109252eddddf5e";
+        "2488c9ed5b4196b8eb26873f37f4f1e9905d8ff2fbe6e87357f204a2312da498";
 
     [Fact]
     public void TheVendoredSchemaTreeIsTheProtocolSchemaTreeFileForFile()
     {
         Assert.Equal(ApprovedSchemaTreeSha256, SchemaTreeDigest());
-        Assert.Equal(69, SchemaFiles().Length);
+        Assert.Equal(71, SchemaFiles().Length);
     }
 
     /// <summary>
@@ -359,7 +359,8 @@ public sealed class ProtocolPayloadShapeArchitectureTests
                 "00000000-0000-4000-8000-000000000413",
                 new DateTimeOffset(2026, 9, 8, 9, 5, 0, TimeSpan.Zero),
                 [new CurrentStopWorklistItem(
-                    demandId, "SUBLOT-001|WIRE_TO_GATE", "SUBLOT-001", "WIRE_TO_GATE", "PICKUP", 2)]),
+                    demandId, "SUBLOT-001|WIRE_TO_GATE", "SUBLOT-001", "WIRE_TO_GATE", "PICKUP", 2)],
+                StopEndedReason: null),
             TestContext.Current.CancellationToken);
         await publisher.PublishUpcomingStopPlanAsync(
             "00000000-0000-4000-8000-000000000414",

@@ -200,9 +200,25 @@ $scenarioAssertions = [ordered]@{
         'G3-07-53' = 'eligibilityReevaluatedAfterReturn'
         'G3-07-54' = 'manualChargingReturnHasNoSideEffects'
     }
+    # Batch 8 (control-server#383, REQ-0359): the two slot fault declaration vectors protocol 3.0.0 added to FP-IS-07, one
+    # demand, two stops. At the pickup the declaration is lost on the relay, the load settles, the reconnect replays it and
+    # the onboard refuses it (CV-SLOT-FAULT-DECLARATION-NOT-APPLICABLE); at the gate it applies and the journey blocks
+    # (CV-SLOT-FAULT-DECLARATION-APPLIED). Needs an onboard with onboard-hmi#215.
+    'g3-slot-fault-declaration' = [ordered]@{
+        'G3-07-61' = 'slotFaultDeclarationNotApplicableSequenceMatchesVector'
+        'G3-07-62' = 'slotFaultDeclaredOnlyOnOverdueSlot'
+        'G3-07-63' = 'operationSettledNormallyWhileDeclarationPending'
+        'G3-07-64' = 'settledAttemptAnswersDeclarationNotApplicable'
+        'G3-07-65' = 'refusedDeclarationWithdrawnWithoutBusinessChange'
+        'G3-07-66' = 'slotFaultDeclarationAppliedSequenceMatchesVector'
+        'G3-07-67' = 'declaredSlotReportedUnknownLaterSlotsNotStarted'
+        'G3-07-68' = 'journeyBlockedOnDeclaredUnknown'
+        'G3-07-69' = 'declarationAndVehicleResultAudited'
+        'G3-07-70' = 'neverUnlockAfterDeclarationApplied'
+    }
     # Batch 6 (control-server#164): CV-TASK-TYPE-ADMISSION-FAIL-CLOSED under the factory preset, where
-    # STAGING_TO_WIRE is in no demand set and has no binding. DISPLAY_ADMISSION_BLOCK_REASON is not claimed:
-    # specification 5.3 keeps the reason on the server, so v2 has no producer for it (program#125).
+    # STAGING_TO_WIRE is in no demand set and has no binding. DISPLAY_ADMISSION_BLOCK_REASON is no longer in the
+    # vector: protocol 3.0.0 deleted it (program#125, control-server#382), as specification 5.3 keeps the reason on the server.
     'g3-task-type-admission-fail-closed' = [ordered]@{
         'G3-10-01' = 'unboundTaskTypeDemandNeverAccepted'
         'G3-10-02' = 'unboundTaskTypeNeverPlannedListedOrOrdered'

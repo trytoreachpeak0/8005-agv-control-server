@@ -105,6 +105,13 @@ namespace ControlServer.Tests;
 /// <c>commanded-ending-*</c>（手写旅程行）与四份看板基线 0 处；实数相同。比对脚本另改一个无关字符验过会报红（工作区 <c>evidence/cs403/pins/</c>）。
 /// 下发载荷没有变：WirePins 与出站 schema 检查都绿，投影在这组夹具下就是原来写死的那个值。
 /// </para>
+/// <para>
+/// <b>control-server#384 给期待动作超时的两份看板基线各加了一个字段，其余逐字未动。</b>那一票让数据面每行带出这个仓在当前装卸上
+/// 最近一次人工判故障（<c>declaration</c>，这组夹具里没有判定，为 <c>null</c>）。这个字段在集成分支上还不存在，所以同 cs#357
+/// 只能在本票分支上录。判据与 cs#217 同一个形状：把新基线里的 <c>,"declaration":null</c> 删掉，与<b>集成分支上的</b>旧基线
+/// （<c>fp/v2-impl@abd29c23</c>，与 <c>batch-p3/v3@9497b75b</c> 上的逐字相同）逐字相同，两份都成立。先算出该是多少：两份旧基线
+/// 各一行，应各一处，实数各一处；比对脚本另改一个无关字符验过会报红（<c>evidence/cs384/pins/</c>）。十份终结状态基线不受影响。
+/// </para>
 /// </remarks>
 internal static class ZeroChangePin
 {

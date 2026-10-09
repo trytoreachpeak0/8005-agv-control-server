@@ -697,6 +697,7 @@ public sealed class Batch7StationYieldTests
     private static object UnsafeDepartureAnswer(RuntimeFixture fixture, string checkId, bool slotsLocked, bool unknownPresent) => new
     {
         preDepartureSafetyCheckId = checkId,
+        checkPurpose = "DEPARTURE",
         outcome = "UNSAFE",
         observedAt = fixture.Clock.GetUtcNow(),
         safetyStateVersion = 7L,

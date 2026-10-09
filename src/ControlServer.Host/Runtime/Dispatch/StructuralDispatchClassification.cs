@@ -125,6 +125,9 @@ public static class StructuralDispatchClassification
             "This vehicle's fault state; another vehicle, or releasing the isolation, lets the demand through."),
         Backlog(VehicleFaultBlockCriterion.IdentityUnresolvedReason, FaultBlock,
             "This vehicle's identity; says nothing about the demand."),
+        Backlog(DispatchReasonCodes.VehicleSlotDoorHold, FaultBlock,
+            "control-server#385, REQ-0364: this vehicle is held for an unproven door until its repair release; another " +
+            "vehicle, or this one once released, takes the demand."),
 
         // ---- IdleReturnCommitmentCriterion (16) ---------------------------------------------------------
         Backlog(DispatchReasonCodes.VehicleCommittedToIdleReturn, IdleReturnCommitment,

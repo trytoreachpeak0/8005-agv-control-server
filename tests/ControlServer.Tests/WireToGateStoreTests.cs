@@ -68,6 +68,60 @@ public sealed class WireToGateStoreTests
     }
 
     /// <summary>
+    /// control-server#382: the onboard's latched fatal fault (<c>ONBOARD_FATAL_FAULT_LATCHED</c>, protocol 3.0.0) is not
+    /// something this server's own slot operation explains, so it never joins the operation-induced set.
+    /// </summary>
+    [Fact]
+    [Trait("IntegrationSlice", "FP-IS-00")]
+    public void TheLatchedFatalFaultCodeIsNotOperationInducedUnsafety()
+    {
+        string[] operationInduced = Assert.IsType<string[]>(typeof(WireToGateStore)
+            .GetField("OperationInducedUnsafety", System.Reflection.BindingFlags.NonPublic | System.Reflection.BindingFlags.Static)!
+            .GetValue(null));
+
+        Assert.DoesNotContain("ONBOARD_FATAL_FAULT_LATCHED", operationInduced);
+    }
+
+    /// <summary>
+    /// The semantic half of the guard above, the one that carries the weight: with this vehicle's own load in flight,
+    /// an open door beside a latched fatal fault does not leave the session Ready. A check on membership alone stays
+    /// green if the judgment ever becomes "any reason is operation-induced" instead of "every reason is", and the
+    /// latch would then be forgiven as the door the operation opened.
+    /// </summary>
+    [Fact]
+    [Trait("IntegrationSlice", "FP-IS-00")]
+    [Trait("IntegrationSlice", "FP-IS-02")]
+    public async Task ALatchedFatalFaultBesideAnOpenDoorOurOwnLoadExplainsStillFailsTheSession()
+    {
+        await using StoreFixture fixture = await StoreFixture.CreateAsync();
+        await ReachReadyAsync(fixture);
+        await fixture.AddJourneyAsync("D-403", "AGV-001");
+        await fixture.Store.PrepareSlotOperationAsync(
+            new StationOperationPlan(
+                "ATTEMPT-403", "D-403", "SUBLOT-403", [1], SlotOperationType.Load, 0, "plan-hash", fixture.Now),
+            "MSG-CMD-403",
+            "command-json",
+            fixture.CancellationToken);
+
+        // Control: the open door alone is explained, so what fails below is the latch and nothing else.
+        await fixture.Store.ApplySafetySnapshotAsync(
+            "AGV-001", 1, 10, false, "door-hash", fixture.CancellationToken,
+            ["LOCK_NOT_CLOSED"], unknownPresent: false);
+        Assert.Equal(
+            SessionReadiness.Ready,
+            (await fixture.Store.DecideReadinessAsync("AGV-001", 1, fixture.CancellationToken)).Readiness);
+
+        await fixture.Store.ApplySafetySnapshotAsync(
+            "AGV-001", 1, 11, false, "latched-hash", fixture.CancellationToken,
+            ["LOCK_NOT_CLOSED", "ONBOARD_FATAL_FAULT_LATCHED"], unknownPresent: false);
+        SessionReadinessDecision latched = await fixture.Store.DecideReadinessAsync(
+            "AGV-001", 1, fixture.CancellationToken);
+
+        Assert.Equal(SessionReadiness.RecoveryRequired, latched.Readiness);
+        Assert.Equal("DEPARTURE_SAFETY_NOT_READY", latched.ReasonCode);
+    }
+
+    /// <summary>
     /// The exemption is earned by this vehicle's own operation. It used to be granted whenever any operation
     /// anywhere was Prepared, so in a fleet one vehicle mid-load gave every other vehicle standing with a
     /// door ajar a Ready session -- and a vehicle judged Ready never shows its recovery entry

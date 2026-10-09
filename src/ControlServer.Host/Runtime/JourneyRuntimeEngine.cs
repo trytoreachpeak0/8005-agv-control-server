@@ -1432,6 +1432,13 @@ public sealed partial class JourneyRuntimeEngine(
                     await dbContext.SaveChangesAsync(cancellationToken).ConfigureAwait(false);
                     return;
                 }
+                // 门未证明扣车（REQ-0364，control-server#385 审查 N2 (c)）：扣车没被维修放行解除之前，这趟旅程不离站——不发离站检查、
+                // 不建下一段的单。不能只靠车在门没锁时回 UNSAFE：锁的传感器时好时坏，读到一次锁闭车就会回 SAFE。每一轮回到这里再判。
+                if (await store.SlotDoorHeldAsync(runtime.AgvId, cancellationToken).ConfigureAwait(false))
+                {
+                    await dbContext.SaveChangesAsync(cancellationToken).ConfigureAwait(false);
+                    return;
+                }
                 runtime.StationDepartureWaitStartedAt = null;
                 // 卸货停靠的这两个 id 受理时没有写过——在本票之前它永远是旅程的终点，没有「离开之前」可言。
                 // 多停靠计划里它后面还能有停靠，所以第一次要离站时补上并落库。
@@ -1445,6 +1452,7 @@ public sealed partial class JourneyRuntimeEngine(
                     session.SessionGeneration,
                     new PreDepartureSafetyCheckCommand(
                         DepartureCheckId(stops.Current),
+                        PreDepartureCheckPurposes.Departure,
                         runtime.TransportColumn(runtime.DemandId),
                         NextStopAfterCurrent(stops).MovementLegId,
                         session.SafetyRevision ?? throw new InvalidDataException("Safety revision is required."),
@@ -1458,6 +1466,19 @@ public sealed partial class JourneyRuntimeEngine(
                 // was judged and the journey never left this stage. Judge it while it is valid.
                 goto case JourneyRuntimeStage.AwaitingDepartureSafety;
             case JourneyRuntimeStage.AwaitingDepartureSafety:
+                // 离站检查已经发出之后才扣的车，同样停在这里（control-server#385 审查 N2 (c)）：不判应答、不重发过期的检查、不建单。
+                // 扣车之前发出的那张检查同时作废、换一对新身份（审查 N2 追加）：车在扣车期间对它答的 SAFE 说明不了放行之后的车，
+                // 即使放行来得快、那条应答还没过期也不能拿来离站。放行之后先发那张新检查，只有它的应答能让车走。
+                if (await store.SlotDoorHeldAsync(runtime.AgvId, cancellationToken).ConfigureAwait(false))
+                {
+                    await RetireDepartureCheckForDoorHoldAsync(runtime, stops, now, cancellationToken).ConfigureAwait(false);
+                    await dbContext.SaveChangesAsync(cancellationToken).ConfigureAwait(false);
+                    return;
+                }
+                if (await PublishDepartureCheckNotYetSentAsync(runtime, stops, session, cancellationToken).ConfigureAwait(false))
+                {
+                    await dbContext.SaveChangesAsync(cancellationToken).ConfigureAwait(false);
+                }
                 SafetyCheckObservation? safety = await AwaitSafeDepartureResultAsync(
                     runtime, stops, session, cancellationToken).ConfigureAwait(false);
                 now = timeProvider.GetUtcNow();
@@ -3815,7 +3836,14 @@ public sealed partial class JourneyRuntimeEngine(
             // above, and it is unique to this journey's leg, so the correlationId was only ever a
             // second name for a fact already proven.
             string correlationId = RequiredString(root, "correlationId");
-            bool valid = (correlationId == DepartureCheckMessageId(stops.Current) ||
+            // v3 (control-server#382, review S1): only an answer to a departure check is a departure permit. A SAFE answer
+            // under this check id that says it answered a HOLD_RELEASE or NON_BUSINESS_MOVE check answered another question.
+            bool answersADepartureCheck =
+                payload.TryGetProperty("checkPurpose", out JsonElement checkPurpose) &&
+                checkPurpose.ValueKind == JsonValueKind.String &&
+                checkPurpose.GetString() == PreDepartureCheckPurposes.Departure;
+            bool valid = answersADepartureCheck &&
+                         (correlationId == DepartureCheckMessageId(stops.Current) ||
                           correlationId == DepartureCheckId(stops.Current)) &&
                          RequiredString(root, "agvId") == runtime.AgvId &&
                          root.GetProperty("sessionGeneration").GetInt64() == session.SessionGeneration &&
@@ -3990,7 +4018,8 @@ public sealed partial class JourneyRuntimeEngine(
                 item.Demand.WorkType,
                 // 协议这一栏说的是「在这个停靠上对这条需求做什么」：取货停靠装货，卸货停靠卸货。
                 stop.StopRole == JourneyStopRoles.Pickup ? "PICKUP" : "DROPOFF",
-                item.Membership.ExpectedBasketCount))]);
+                item.Membership.ExpectedBasketCount))],
+            StopEndedReason: null);
 
     // The activePurpose of a transport journey. An idle return (batch 8-19, control-server#390) sends IDLE_RETURN from its own
     // branch (JourneyRuntimeEngine.IdleReturn.cs, JourneyPlanBuilder.IdleReturnBusinessState), and a charging journey (batch
@@ -5620,6 +5649,78 @@ public sealed partial class JourneyRuntimeEngine(
     /// restart mid-way derives the same ids and needs no column to remember a counter.
     /// </para>
     /// </remarks>
+    /// <summary>
+    /// 扣车时作废这一站已经发出的离站检查（control-server#385 审查 N2）：退役那一行、换一对新身份，不发。已经换过（这一站的检查
+    /// 还没发）就什么也不做，所以扣车期间每一轮回到这里都是无操作。
+    /// </summary>
+    /// <remarks>
+    /// 新身份按「旧身份 × door-hold」派生，同一站再扣一次就再换一对，不会撞上已经作废的那一张。旧检查的应答此后对不上当前停靠的
+    /// 检查 id，运行时不会再读它（<see cref="FindSafeDepartureResultAsync"/> 按检查 id 找）。
+    /// </remarks>
+    private async Task RetireDepartureCheckForDoorHoldAsync(
+        JourneyRuntimeRow runtime,
+        JourneyStopCursor stops,
+        DateTimeOffset now,
+        CancellationToken cancellationToken)
+    {
+        ProtocolOutboxRow? sent = await dbContext.ProtocolOutbox
+            .SingleOrDefaultAsync(row => row.MessageId == DepartureCheckMessageId(stops.Current), cancellationToken)
+            .ConfigureAwait(false);
+        if (sent is null)
+        {
+            return;
+        }
+
+        if (sent.AcknowledgedAt is null && sent.FencedAt is null)
+        {
+            sent.FencedAt = now;
+        }
+        string checkId = JourneyPlanBuilder.StableGuid(DepartureCheckId(stops.Current), "door-hold");
+        string messageId = JourneyPlanBuilder.StableGuid(DepartureCheckMessageId(stops.Current), "door-hold");
+        JourneyStopRow trackedStop = await dbContext.Set<JourneyStopRow>()
+            .SingleAsync(row => row.StopId == stops.Current.StopId, cancellationToken).ConfigureAwait(false);
+        trackedStop.DepartureSafetyCheckId = checkId;
+        trackedStop.DepartureSafetyCheckMessageId = messageId;
+        stops.Current.DepartureSafetyCheckId = checkId;
+        stops.Current.DepartureSafetyCheckMessageId = messageId;
+        runtime.PreDepartureSafetyCheckId = checkId;
+        runtime.PreDepartureSafetyCheckMessageId = messageId;
+        runtime.UpdatedAt = now;
+    }
+
+    /// <summary>
+    /// 这一站当前那张离站检查还没发（扣车时作废后换的新身份）就现在发，返回是否发了（control-server#385 审查 N2）。
+    /// 已经发过的什么也不做：到这里的每一轮都先问一次，所以这一步只在放行之后的第一轮真正做事。
+    /// </summary>
+    private async Task<bool> PublishDepartureCheckNotYetSentAsync(
+        JourneyRuntimeRow runtime,
+        JourneyStopCursor stops,
+        SessionRecoveryRow session,
+        CancellationToken cancellationToken)
+    {
+        if (stops.Current.DepartureSafetyCheckMessageId is null ||
+            await dbContext.ProtocolOutbox.AsNoTracking()
+                .AnyAsync(row => row.MessageId == DepartureCheckMessageId(stops.Current), cancellationToken)
+                .ConfigureAwait(false))
+        {
+            return false;
+        }
+
+        await publisher.PublishPreDepartureSafetyCheckAsync(
+            DepartureCheckMessageId(stops.Current),
+            runtime.AgvId,
+            session.SessionGeneration,
+            new PreDepartureSafetyCheckCommand(
+                DepartureCheckId(stops.Current),
+                PreDepartureCheckPurposes.Departure,
+                runtime.TransportColumn(runtime.DemandId),
+                NextStopAfterCurrent(stops).MovementLegId,
+                session.SafetyRevision ?? throw new InvalidDataException("Safety revision is required."),
+                NextStopAfterCurrent(stops).StationId),
+            cancellationToken).ConfigureAwait(false);
+        return true;
+    }
+
     private async Task<bool> ReissueExpiredDepartureCheckAsync(
         JourneyRuntimeRow runtime,
         JourneyStopCursor stops,
@@ -5698,6 +5799,7 @@ public sealed partial class JourneyRuntimeEngine(
             session.SessionGeneration,
             new PreDepartureSafetyCheckCommand(
                 reissuedCheckId,
+                PreDepartureCheckPurposes.Departure,
                 runtime.TransportColumn(runtime.DemandId),
                 NextStopAfterCurrent(stops).MovementLegId,
                 currentRevision,

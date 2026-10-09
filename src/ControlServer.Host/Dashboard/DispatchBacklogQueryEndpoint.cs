@@ -69,6 +69,9 @@ internal sealed class DispatchBacklogQueryEndpoint : IDashboardQueryEndpoint
             // 批次8-18（control-server#389）：空闲返回的承诺不被搬运抢，正常调度结论，不是故障。
             [DispatchReasonCodes.VehicleCommittedToIdleReturn] =
                 "这辆车已承诺返回等待点，返回不被搬运取消或抢走；由别的车接，或等它到点后下一轮再派",
+            // control-server#385（REQ-0364）：仓已确认无货而门锁没能证明锁闭，整车扣到维修放行。
+            [DispatchReasonCodes.VehicleSlotDoorHold] =
+                "这辆车有仓门锁闭没能证明，已扣车等维修放行（维修记录、重新读到锁闭复位为空、再过放行检查）；由别的车接，或放行后再派",
             // 批次9-06（control-server#404）：充电的承诺不被搬运抢；人工充电等待的出口只有「充电后返回服务」。都是车辆侧的正常结论。
             [DispatchReasonCodes.VehicleCommittedToCharging] =
                 "这辆车已承诺去充电（占着充电用途并预占了充电桩），充电不被搬运取消或抢走；由别的车接，或等它充完电后再派",

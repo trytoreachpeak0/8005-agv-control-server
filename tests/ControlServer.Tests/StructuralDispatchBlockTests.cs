@@ -42,6 +42,7 @@ public sealed class StructuralDispatchBlockTests
     [InlineData("VEHICLE_FAULT_ISOLATED", DispatchReasonClass.Backlog)]
     [InlineData("VEHICLE_FAULT_IDENTITY_UNRESOLVED", DispatchReasonClass.Backlog)]
     [InlineData("VEHICLE_COMMITTED_TO_IDLE_RETURN", DispatchReasonClass.Backlog)]
+    [InlineData("VEHICLE_SLOT_DOOR_HOLD", DispatchReasonClass.Backlog)]
     [InlineData("VEHICLE_COMMITTED_TO_CHARGING", DispatchReasonClass.Backlog)]
     [InlineData("VEHICLE_IN_MANUAL_CHARGING_HOLD", DispatchReasonClass.Backlog)]
     [InlineData("OUT_OF_SCOPE_WORK_TYPE", DispatchReasonClass.Backlog)]

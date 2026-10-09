@@ -365,6 +365,10 @@ jobs:
               # for a held gate goes on and is given it once released; a second demand at the staging station is not taken
               # while another vehicle holds it, and is taken only after that vehicle leaves on departure evidence.
               @{ Name = 'fixed-station-single-occupancy'; Runs = 1; BatchId = 'batch-8' }
+              # control-server#383, REQ-0359: an administrator declares the slot a vehicle waits on faulty. At the pickup the
+              # vehicle refuses (the door shut as it was declared) and nothing changes; at the gate it applies, the unload goes
+              # to RecoveryRequired and the journey blocks.
+              @{ Name = 'slot-fault-declaration'; Runs = 1; BatchId = 'batch-8' }
               # control-server#390, REQ-0293/0295: the idle vehicle's commitment becomes a journey and a single move to the
               # waiting point; on arrival the reservation turns into an occupancy and the purpose is released; a transport's
               # order leaves the occupancy standing until RIoT reports the vehicle elsewhere; unloaded at the gate, the vehicle
@@ -710,6 +714,10 @@ jobs:
               # fails that one read); each never-sent intent is created once RIoT answers it is absent, after the vehicle check reads
               # the real onboard -- on the gate leg with cargo on board.
               @{ Name = 'real-onboard-unread-pre-create-read';               Runs = 1 }
+              # control-server#383, REQ-0359: the declaration reaches the real onboard, which stops the unlock wait, reports the
+              # slot UNKNOWN under SLOT_FAULT_DECLARED and answers APPLIED; the journey blocks. Needs an onboard_ref that
+              # contains onboard-hmi#215: an onboard without it does not know SlotFaultDeclarationCommand and drops its session.
+              @{ Name = 'real-onboard-slot-fault-declaration';               Runs = 1 }
               # control-server#405 (onboard half onboard-hmi#220): a charging cycle on the real onboard -- CHARGING and COMPLETE
               # shown, no entry at the charger, entry at the pickup once the full vehicle is sent away, the charger released.
               @{ Name = 'real-onboard-charging-cycle';                       Runs = 3 }

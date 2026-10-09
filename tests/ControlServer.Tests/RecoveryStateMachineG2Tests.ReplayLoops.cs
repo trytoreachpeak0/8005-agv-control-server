@@ -521,4 +521,97 @@ public sealed partial class RecoveryStateMachineG2Tests
             resultContentSha256 = Convert.ToHexString(SHA256.HashData(businessContent)).ToLowerInvariant()
         };
     }
+
+    /// <summary>
+    /// REQ-0364 with a delivered demand (review of control-server#482, probe P3): a door-unproven empty cancellation result
+    /// for a demand already delivered is acknowledged as a result that does not reconcile, and the vehicle is still held for
+    /// the door its result could not prove locked -- the hold does not depend on whether the demand could be ended. The
+    /// hold has the exit every door hold has: a repair release, its record, fresh readings and a SAFE HOLD_RELEASE check
+    /// bring the session back to Ready, with nothing written by hand.
+    /// </summary>
+    [Fact]
+    [Trait("IntegrationSlice", "FP-IS-02")]
+    [Trait("IntegrationSlice", "FP-IS-06")]
+    [Trait("IntegrationSlice", "FP-IS-07")]
+    [Trait("ProtocolVector", "CV-LOAD-CANCELLATION-EMPTY-DOOR-UNPROVEN")]
+    [Trait("ProtocolVector", "CV-VEHICLE-HOLD-DOOR-REPAIR-RELEASE")]
+    public async Task ADoorUnprovenCancellationResultForADeliveredDemandHoldsTheVehicleUntilARepairRelease()
+    {
+        const string proofVariable = "CONTROL_SERVER_TEST_RECOVERY_PROOF_481_DELIVERED_DOOR";
+        const string proof = "delivered-door-proof-not-a-production-secret";
+        const string cancellationId = "48100000-0000-4000-8000-000000000031";
+        Environment.SetEnvironmentVariable(proofVariable, proof);
+        try
+        {
+            CancellationToken token = TestContext.Current.CancellationToken;
+            await using SqliteConnection connection = new("Data Source=:memory:");
+            await connection.OpenAsync(token);
+            await using ControlServerDbContext context = await CreateContextAsync(connection);
+            await SeedBlockedJourneyAsync(context, productionShapedSession: true);
+            (await context.AcceptedDemands.SingleAsync(token)).Status = DemandExecutionStatus.Accepted;
+            (await context.StationOperations.SingleAsync(token)).Status = StationOperationStatus.Prepared;
+            await context.SaveChangesAsync(token);
+            RecordingPeer peer = new(context);
+            OnboardMessageProcessor processor = Processor(context, peer, proofVariable);
+            OnboardConnectionState state = CurrentState(deferOutbound: true);
+            WireToGateStore store = new(context);
+            Assert.Equal("AUTHORIZED", FirstPayload((await ExchangeAsync(
+                processor, peer, state, CancellationRequest(cancellationId)))[0]).GetProperty("decision").GetString());
+            (await context.AcceptedDemands.SingleAsync(token)).Status = DemandExecutionStatus.Succeeded;
+            await context.SaveChangesAsync(token);
+            context.ChangeTracker.Clear();
+            string result = DoorUnprovenEmptyResult(
+                CancellationResult(cancellationId, "48100000-0000-4000-8000-000000000032", "EMPTY"));
+
+            string[] wire = await ExchangeAsync(processor, peer, state, result);
+
+            AssertEndsTheReplay(wire[0], result);
+            Assert.Equal("DurableAck", MessageType(wire[0]));
+            context.ChangeTracker.Clear();
+            Assert.Equal(RecoveryWorkflowState.RecoveryRequired, (await context.RecoveryWorkflows.AsNoTracking()
+                .SingleAsync(row => row.WorkflowId == cancellationId, token)).State);
+            Assert.Equal(DemandExecutionStatus.Succeeded, (await context.AcceptedDemands.AsNoTracking().SingleAsync(token)).Status);
+            SlotDoorHoldRow hold = await context.SlotDoorHolds.AsNoTracking().SingleAsync(token);
+            Assert.Equal((cancellationId, AgvId, "[1,2]", (DateTimeOffset?)null),
+                (hold.HoldId, hold.AgvId, hold.SlotsJson, hold.ReleasedAt));
+            SessionReadinessDecision held = await store.DecideReadinessAsync(AgvId, 3, token);
+            Assert.Equal(
+                (SessionReadiness.RecoveryRequired, WireToGateStore.SlotDoorRepairReleaseRequired),
+                (held.Readiness, held.ReasonCode));
+            // The hold goes out to the vehicle too: one business state outside the journey naming both held slots (review
+            // of #490, S3 -- the hold row alone, without this snapshot, left the vehicle showing no hold).
+            string holding = Assert.Single(
+                (await context.ProtocolOutbox.AsNoTracking()
+                    .Where(row => row.MessageType == "VehicleBusinessStateSnapshot").ToArrayAsync(token))
+                .Select(row => row.PayloadJson),
+                line => line.Contains("SLOT_DOOR_LOCK_UNPROVEN_AFTER_EMPTY", StringComparison.Ordinal));
+            JsonElement holdingSnapshot = PayloadOf(holding);
+            Assert.Equal("RECOVERY_REQUIRED", holdingSnapshot.GetProperty("readiness").GetString());
+            Assert.Equal(
+                ["SLOT_DOOR_LOCK_UNPROVEN_AFTER_EMPTY/SLOT/1", "SLOT_DOOR_LOCK_UNPROVEN_AFTER_EMPTY/SLOT/2"],
+                HoldFacts(holdingSnapshot));
+
+            string sessionId = StableGuid(ReleaseRequestId, "exception-recovery-session");
+            Assert.Equal("ExceptionRecoverySessionOpened",
+                MessageType((await ExchangeAsync(processor, peer, state, ReleaseSessionRequest(proof, RecoverySlots)))[0]));
+            Assert.Equal("RecoveryActionAccepted",
+                MessageType((await ExchangeAsync(processor, peer, state, ReleaseAction(sessionId, RecoverySlots)))[0]));
+            Assert.Equal("RECORDED", PayloadOf((await ExchangeAsync(
+                processor, peer, state, ReleaseRecord("48100000-0000-4000-8000-000000000033", sessionId, RecoverySlots)))[0])
+                .GetProperty("outcome").GetString());
+            string[] readings = await ExchangeAsync(
+                processor, peer, state, SlotReadings("48100000-0000-4000-8000-000000000034", 8));
+            string check = Assert.Single(readings, line => MessageType(line) == "PreDepartureSafetyCheck");
+            await ExchangeAsync(
+                processor, peer, state, HoldReleaseCheckResult("48100000-0000-4000-8000-000000000035", check));
+
+            context.ChangeTracker.Clear();
+            Assert.Equal(SessionReadiness.Ready, (await store.DecideReadinessAsync(AgvId, 3, token)).Readiness);
+            Assert.Equal(ReleaseActionId, (await context.SlotDoorHolds.AsNoTracking().SingleAsync(token)).ReleasedByActionId);
+        }
+        finally
+        {
+            Environment.SetEnvironmentVariable(proofVariable, null);
+        }
+    }
 }

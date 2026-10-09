@@ -545,6 +545,257 @@ public sealed class ExpectedActionOverdueTests
         Assert.Equal(endpoint.Path, card.SourcePath);
     }
 
+    /// <summary>
+    /// 每行最后一格是人工判故障（control-server#384）：没判过的给一个指到确认页的链接，带上车与仓位；判过的标出状态。
+    /// 卡片里仍然没有表单、输入框与按钮——主页 2 秒刷新，表单只在确认页上。
+    /// </summary>
+    [Fact]
+    [Trait("IntegrationSlice", "FP-IS-15")]
+    public void EachRowCarriesALinkToTheDeclarationPageOrWhatBecameOfTheDeclarationAndTheCardStillHasNoForm()
+    {
+        using JsonDocument fact = JsonDocument.Parse("""
+            {
+              "thresholdSeconds": 360,
+              "unavailableVehicles": [],
+              "slots": [
+                { "agvId": "AGV-001", "slotNo": 3, "stationId": "PICKUP-1", "operationType": "LOAD", "expectedAction": "关好3号仓门",
+                  "raisedAt": "2026-09-18T07:58:00+00:00", "waitedSeconds": 480, "stationTimeoutDoorNotClosed": false,
+                  "readings": null, "declaration": null },
+                { "agvId": "AGV-001", "slotNo": 4, "stationId": "PICKUP-1", "operationType": "LOAD", "expectedAction": "关好4号仓门",
+                  "raisedAt": "2026-09-18T07:58:00+00:00", "waitedSeconds": 480, "stationTimeoutDoorNotClosed": false,
+                  "readings": null,
+                  "declaration": { "state": "PENDING", "declaredAt": "2026-09-18T07:59:10+00:00", "administratorId": "maintenance-7",
+                                   "faultCategory": "LOCK", "resultReceivedAt": null, "reasonCode": null, "displayMessage": null } },
+                { "agvId": "AGV-002", "slotNo": 6, "stationId": "GATE-1", "operationType": "UNLOAD", "expectedAction": "取出货物并关好6号仓门",
+                  "raisedAt": "2026-09-18T07:58:00+00:00", "waitedSeconds": 480, "stationTimeoutDoorNotClosed": false,
+                  "readings": null,
+                  "declaration": { "state": "NOT_APPLICABLE", "declaredAt": "2026-09-18T07:59:10+00:00", "administratorId": "maintenance-7",
+                                   "faultCategory": "LIGHT_CURTAIN", "resultReceivedAt": "2026-09-18T07:59:12+00:00",
+                                   "reasonCode": "ACTION_NOT_ALLOWED_IN_STATE", "displayMessage": "仓位已闭环" } },
+                { "agvId": "AGV-003", "slotNo": 2, "stationId": "PICKUP-1", "operationType": "LOAD", "expectedAction": "关好2号仓门",
+                  "raisedAt": "2026-09-18T07:58:00+00:00", "waitedSeconds": 480, "stationTimeoutDoorNotClosed": false,
+                  "readings": null,
+                  "declaration": { "state": "APPLIED", "declaredAt": "2026-09-18T07:59:10+00:00", "administratorId": "maintenance-7",
+                                   "faultCategory": "LOCK", "resultReceivedAt": "2026-09-18T07:59:12+00:00", "reasonCode": null, "displayMessage": null } }
+              ]
+            }
+            """);
+
+        string html = new ExpectedActionOverdueCard().RenderFact(fact.RootElement);
+        string text = System.Net.WebUtility.HtmlDecode(html);
+        string declared = DateTimeOffset.Parse("2026-09-18T07:59:10+00:00", System.Globalization.CultureInfo.InvariantCulture)
+            .ToLocalTime().ToString("HH:mm:ss", System.Globalization.CultureInfo.InvariantCulture);
+
+        Assert.Equal(5, CountOf(html, "<tr"));
+        Assert.Contains("<th>人工判故障</th>", html, StringComparison.Ordinal);
+        Assert.Contains("href=\"/actions/slot-fault-declaration?agvId=AGV-001&amp;slotNo=3\">判故障</a>", html, StringComparison.Ordinal);
+        Assert.DoesNotContain("slotNo=4", html, StringComparison.Ordinal);
+        Assert.Contains($"已判定、等车载端结果（{declared} 由 maintenance-7 判定）", text, StringComparison.Ordinal);
+        Assert.Contains("车载端拒绝了判定", text, StringComparison.Ordinal);
+        Assert.Contains("仓位已闭环（ACTION_NOT_ALLOWED_IN_STATE）", text, StringComparison.Ordinal);
+        Assert.Contains("href=\"/actions/slot-fault-declaration?agvId=AGV-002&amp;slotNo=6\">再判</a>", html, StringComparison.Ordinal);
+        Assert.Contains("判定已生效", text, StringComparison.Ordinal);
+        Assert.DoesNotContain("slotNo=2", html, StringComparison.Ordinal);
+        Assert.DoesNotContain("<form", html, StringComparison.OrdinalIgnoreCase);
+        Assert.DoesNotContain("<input", html, StringComparison.OrdinalIgnoreCase);
+        Assert.DoesNotContain("<button", html, StringComparison.OrdinalIgnoreCase);
+    }
+
+    /// <summary>
+    /// 车载端放弃了对判定的应答（control-server#481，UNRECONCILED）：卡片如实说两端结论不一致、车上是否生效未知，
+    /// 说明这次装卸不能再取消，并给出再判的链接；不落进「判定状态 X」的兜底说法。
+    /// </summary>
+    [Fact]
+    [Trait("IntegrationSlice", "FP-IS-15")]
+    public void AnUnreconciledDeclarationSaysTheTwoEndsDisagreeAndOffersToDeclareAgain()
+    {
+        using JsonDocument fact = JsonDocument.Parse("""
+            {
+              "thresholdSeconds": 360,
+              "unavailableVehicles": [],
+              "slots": [
+                { "agvId": "AGV-001", "slotNo": 3, "stationId": "PICKUP-1", "operationType": "LOAD", "expectedAction": "关好3号仓门",
+                  "raisedAt": "2026-09-18T07:58:00+00:00", "waitedSeconds": 480, "stationTimeoutDoorNotClosed": false,
+                  "readings": null,
+                  "declaration": { "state": "UNRECONCILED", "declaredAt": "2026-09-18T07:59:10+00:00", "administratorId": "maintenance-7",
+                                   "faultCategory": "LOCK", "resultReceivedAt": "2026-09-18T08:01:12+00:00",
+                                   "reasonCode": "SLOT_OPERATION_CONFLICT", "displayMessage": "本车已放弃对这项判定的应答" } }
+              ]
+            }
+            """);
+
+        string html = new ExpectedActionOverdueCard().RenderFact(fact.RootElement);
+        string text = System.Net.WebUtility.HtmlDecode(html);
+
+        Assert.Contains("车载端已放弃对判定的应答", text, StringComparison.Ordinal);
+        Assert.Contains("车上是否已生效未知", text, StringComparison.Ordinal);
+        Assert.Contains("这次装卸不能再取消", text, StringComparison.Ordinal);
+        Assert.Contains("href=\"/actions/slot-fault-declaration?agvId=AGV-001&amp;slotNo=3\">再判</a>", html, StringComparison.Ordinal);
+        Assert.DoesNotContain("判定状态", text, StringComparison.Ordinal);
+    }
+
+    /// <summary>
+    /// 放弃之后再判、车回 NOT_APPLICABLE（control-server#481 审查 S3）：行上显示的是最近这次拒绝，但装货取消仍被之前那项
+    /// 挡着，拒绝那一格要带上「这次装卸不能再取消」；这次装卸上没有被放弃的判定时不带。
+    /// </summary>
+    [Theory]
+    [Trait("IntegrationSlice", "FP-IS-15")]
+    [InlineData(true)]
+    [InlineData(false)]
+    public void ARefusalAfterAnUnreconciledDeclarationStillSaysTheOperationCannotBeCancelled(bool unreconciledOnOperation)
+    {
+        string flag = unreconciledOnOperation ? "true" : "false";
+        using JsonDocument fact = JsonDocument.Parse($$"""
+            {
+              "thresholdSeconds": 360,
+              "unavailableVehicles": [],
+              "slots": [
+                { "agvId": "AGV-001", "slotNo": 3, "stationId": "PICKUP-1", "operationType": "LOAD", "expectedAction": "关好3号仓门",
+                  "raisedAt": "2026-09-18T07:58:00+00:00", "waitedSeconds": 480, "stationTimeoutDoorNotClosed": false,
+                  "readings": null,
+                  "declaration": { "state": "NOT_APPLICABLE", "declaredAt": "2026-09-18T08:02:10+00:00", "administratorId": "maintenance-7",
+                                   "faultCategory": "LOCK", "resultReceivedAt": "2026-09-18T08:02:12+00:00",
+                                   "reasonCode": "ACTION_NOT_ALLOWED_IN_STATE", "displayMessage": "本次仓位操作已有一项判定生效。",
+                                   "unreconciledOnOperation": {{flag}} } }
+              ]
+            }
+            """);
+
+        string text = System.Net.WebUtility.HtmlDecode(new ExpectedActionOverdueCard().RenderFact(fact.RootElement));
+
+        Assert.Contains("车载端拒绝了判定", text, StringComparison.Ordinal);
+        Assert.Equal(unreconciledOnOperation, text.Contains("这次装卸不能再取消", StringComparison.Ordinal));
+        Assert.Equal(unreconciledOnOperation, text.Contains("车载端已放弃应答", StringComparison.Ordinal));
+    }
+
+    /// <summary>
+    /// 数据面按整次装卸带出有没有被放弃的判定（control-server#481 审查 S3）：最近一次是 NOT_APPLICABLE、之前那项是
+    /// UNRECONCILED 时为 true，哪怕两项不在同一个仓；别的装卸上的被放弃判定不算。
+    /// </summary>
+    [Fact]
+    [Trait("IntegrationSlice", "FP-IS-15")]
+    public async Task TheEndpointSaysWhetherTheOperationHasAnUnreconciledDeclaration()
+    {
+        await using Fixture fixture = await Fixture.CreateAsync();
+        await fixture.ReachReadyAsync();
+        await fixture.AddJourneyAsync(JourneyRuntimeStage.AwaitingLoadResult, blockReasonCode: null);
+        await fixture.SendAlarmsAsync(1, Overdue(3, "关好3号仓门", raisedAt: Now.AddMinutes(-2)));
+        const string Current = "load-attempt-D-142";
+        fixture.Context.StationOperations.Add(new StationOperationRow
+        {
+            SlotOperationAttemptId = Current,
+            DemandId = "D-142",
+            SublotId = "SUBLOT-142",
+            TargetSlotsJson = "[3,4]",
+            OperationType = SlotOperationType.Load,
+            ForcedRecoveryGeneration = 0,
+            ContentHash = new string('a', 64),
+            Status = StationOperationStatus.Prepared,
+            CreatedAt = Now.AddMinutes(-4)
+        });
+        fixture.Context.Set<SlotFaultDeclarationRow>().AddRange(
+            Declaration("other-attempt", 3, SlotFaultDeclarationStates.Unreconciled, Now.AddSeconds(-100)),
+            Declaration(Current, 3, SlotFaultDeclarationStates.NotApplicable, Now.AddSeconds(-30),
+                """{"reasonCode":"ACTION_NOT_ALLOWED_IN_STATE","fieldPath":"payload.slotNo","displayMessage":"本次仓位操作已有一项判定生效。"}"""));
+        await fixture.Context.SaveChangesAsync(TestContext.Current.CancellationToken);
+        fixture.Context.ChangeTracker.Clear();
+
+        using JsonDocument before = await fixture.ReadEndpointAsync();
+        Assert.False(Assert.Single(before.RootElement.GetProperty("slots").EnumerateArray())
+            .GetProperty("declaration").GetProperty("unreconciledOnOperation").GetBoolean());
+
+        fixture.Context.Set<SlotFaultDeclarationRow>().Add(
+            Declaration(Current, 4, SlotFaultDeclarationStates.Unreconciled, Now.AddSeconds(-90)));
+        await fixture.Context.SaveChangesAsync(TestContext.Current.CancellationToken);
+        fixture.Context.ChangeTracker.Clear();
+
+        using JsonDocument after = await fixture.ReadEndpointAsync();
+        JsonElement declaration = Assert.Single(after.RootElement.GetProperty("slots").EnumerateArray()).GetProperty("declaration");
+        Assert.Equal("NOT_APPLICABLE", declaration.GetProperty("state").GetString());
+        Assert.True(declaration.GetProperty("unreconciledOnOperation").GetBoolean());
+    }
+
+    /// <summary>
+    /// 数据面带出的是这个仓在当前装卸上最近的一次判定，取自判定记录：别的装卸上的判定、别的仓的判定都不替这一行说话；
+    /// 车载端拒绝时它给的原因照原样带出。
+    /// </summary>
+    [Fact]
+    [Trait("IntegrationSlice", "FP-IS-15")]
+    public async Task TheEndpointCarriesTheLatestDeclarationOfThatSlotOnTheOperationInProgressOnly()
+    {
+        await using Fixture fixture = await Fixture.CreateAsync();
+        await fixture.ReachReadyAsync();
+        await fixture.AddJourneyAsync(JourneyRuntimeStage.AwaitingLoadResult, blockReasonCode: null);
+        await fixture.SendAlarmsAsync(1, Overdue(3, "关好3号仓门", raisedAt: Now.AddMinutes(-2)));
+        const string Current = "load-attempt-D-142";
+        fixture.Context.StationOperations.Add(new StationOperationRow
+        {
+            SlotOperationAttemptId = Current,
+            DemandId = "D-142",
+            SublotId = "SUBLOT-142",
+            TargetSlotsJson = "[3]",
+            OperationType = SlotOperationType.Load,
+            ForcedRecoveryGeneration = 0,
+            ContentHash = new string('a', 64),
+            Status = StationOperationStatus.Prepared,
+            CreatedAt = Now.AddMinutes(-4)
+        });
+        fixture.Context.Set<SlotFaultDeclarationRow>().AddRange(
+            Declaration("other-attempt", 3, SlotFaultDeclarationStates.Pending, Now.AddSeconds(-5)),
+            Declaration(Current, 4, SlotFaultDeclarationStates.Applied, Now.AddSeconds(-5)),
+            Declaration(Current, 3, SlotFaultDeclarationStates.NotApplicable, Now.AddSeconds(-90),
+                """{"reasonCode":"ACTION_NOT_ALLOWED_IN_STATE","fieldPath":"payload.slotNo","displayMessage":"仓位已闭环"}"""),
+            Declaration(Current, 3, SlotFaultDeclarationStates.Pending, Now.AddSeconds(-30)));
+        await fixture.Context.SaveChangesAsync(TestContext.Current.CancellationToken);
+        fixture.Context.ChangeTracker.Clear();
+
+        using JsonDocument fact = await fixture.ReadEndpointAsync();
+        JsonElement row = Assert.Single(fact.RootElement.GetProperty("slots").EnumerateArray());
+        JsonElement declaration = row.GetProperty("declaration");
+        Assert.Equal("PENDING", declaration.GetProperty("state").GetString());
+        Assert.Equal(Now.AddSeconds(-30), declaration.GetProperty("declaredAt").GetDateTimeOffset());
+
+        // The pending one answered NOT_APPLICABLE: the refusal and its reason are what the row carries now.
+        SlotFaultDeclarationRow pending = await fixture.Context.Set<SlotFaultDeclarationRow>()
+            .SingleAsync(item => item.SlotOperationAttemptId == Current && item.SlotNo == 3 && item.State == SlotFaultDeclarationStates.Pending,
+                TestContext.Current.CancellationToken);
+        pending.State = SlotFaultDeclarationStates.NotApplicable;
+        pending.ResultReceivedAt = Now;
+        pending.ResultProblemJson = """{"reasonCode":"SLOT_STATE_UNKNOWN","fieldPath":"payload.slotNo","displayMessage":"仓已判 UNKNOWN"}""";
+        await fixture.Context.SaveChangesAsync(TestContext.Current.CancellationToken);
+        fixture.Context.ChangeTracker.Clear();
+
+        using JsonDocument after = await fixture.ReadEndpointAsync();
+        JsonElement refused = Assert.Single(after.RootElement.GetProperty("slots").EnumerateArray()).GetProperty("declaration");
+        Assert.Equal("NOT_APPLICABLE", refused.GetProperty("state").GetString());
+        Assert.Equal("SLOT_STATE_UNKNOWN", refused.GetProperty("reasonCode").GetString());
+        Assert.Equal("仓已判 UNKNOWN", refused.GetProperty("displayMessage").GetString());
+        Assert.Equal(Now, refused.GetProperty("resultReceivedAt").GetDateTimeOffset());
+    }
+
+    private static SlotFaultDeclarationRow Declaration(
+        string attemptId, int slotNo, string state, DateTimeOffset declaredAt, string? problem = null) => new()
+        {
+            DeclarationId = Guid.NewGuid().ToString("D"),
+            RequestId = Guid.NewGuid().ToString("D"),
+            RequestContentHash = new string('b', 64),
+            AgvId = AgvId,
+            DemandId = "D-142",
+            SlotOperationAttemptId = attemptId,
+            OperationType = "LOAD",
+            SlotNo = slotNo,
+            FaultCategory = "LOCK",
+            Note = "锁一直读未锁",
+            AdministratorId = "maintenance-7",
+            AdministratorRole = "MAINTENANCE_ADMINISTRATOR",
+            DeclaredAt = declaredAt,
+            CommandMessageId = Guid.NewGuid().ToString("D"),
+            State = state,
+            ResultOutcome = state == SlotFaultDeclarationStates.Pending ? null : state,
+            ResultProblemJson = problem,
+            ResultReceivedAt = state == SlotFaultDeclarationStates.Pending ? null : declaredAt.AddSeconds(2)
+        };
+
     [Fact]
     [Trait("IntegrationSlice", "FP-IS-15")]
     public void TheCardShowsOneRowPerSlotWithTheStationDeadlineAndTheReadingsInThatRowAndNoForm()

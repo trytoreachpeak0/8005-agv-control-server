@@ -605,29 +605,6 @@ public sealed class JourneyRuntimeWorkerAdmissionTests
 
     [Fact]
     [Trait("IntegrationSlice", "FP-IS-01")]
-    public async Task SupportsBatchUnlockFalseDoesNotBlockAdmission()
-    {
-        // The protocol declares supportsBatchUnlock with no semantics -- a bare boolean, unchanged
-        // from protocol-v0.1.1 through the v2 candidate -- and its own canonical example sets it
-        // false. Whether the vehicle can operate a given slot set is decided
-        // against AvailableSlots when the command is sent, not by this flag.
-        await using RuntimeFixture fixture = await RuntimeFixture.CreateAsync();
-        fixture.Catalog.Set(fixture.Demand(
-            "10000000-0000-4000-8000-000000000001",
-            "SUBLOT-001",
-            Now.AddMinutes(-10)));
-        fixture.BoxCounts.Set("SUBLOT-001", 4);
-        await fixture.ClearSupportsBatchUnlockAsync();
-
-        await fixture.Engine.ExecuteOnceAsync(TestContext.Current.CancellationToken);
-
-        Assert.Equal("ACCEPTED", (await fixture.Context.JourneyBacklog.SingleAsync(
-            TestContext.Current.CancellationToken)).ReasonCode);
-        Assert.Equal(JourneyRuntimeStage.AwaitingPickupArrival, (await fixture.RuntimeAsync()).Stage);
-    }
-
-    [Fact]
-    [Trait("IntegrationSlice", "FP-IS-01")]
     public async Task CandidateProcessingThatExpiresDynamicFactsDoesNotAcceptOrDispatch()
     {
         await using RuntimeFixture fixture = await RuntimeFixture.CreateAsync();

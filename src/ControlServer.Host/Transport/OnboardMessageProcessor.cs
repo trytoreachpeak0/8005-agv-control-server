@@ -255,6 +255,23 @@ public sealed partial class OnboardMessageProcessor(
         // A rebuild after a cleared fault with cargo on board waits for the vehicle to show the cargo in its slots (REQ-0362,
         // control-server#318): ask for a snapshot. Recorded only here, where AppendSafetySnapshotRequest is sure to send it --
         // past the handshake, and not on the recovery report that ends it, whose answer the vehicle still reads as the handshake's.
+        // A repair release whose record is in waits for readings received after it (control-server#385). The record's own
+        // answer asks for them; after a reconnect nothing would, so the first message past the new handshake asks once per
+        // connection. Not the recovery report that ends the handshake, for the reason given just below.
+        if (state.HandshakeCompleted && messageType is not ("RecoveryStateReport" or "HardwareRecoveryRecordSubmitted") &&
+            !state.ReleaseReadingsRequested)
+        {
+            state.ReleaseReadingsRequested = true;
+            if (await recoveryCoordinator.ReleaseAwaitsReadingsAsync(agvId, cancellationToken).ConfigureAwait(false))
+            {
+                state.SafetySnapshotRequestDue = true;
+                state.SafetySnapshotRequestReason = "PRE_MOVEMENT_RECONCILIATION";
+            }
+        }
+        if (messageType == "HardwareRecoveryRecordSubmitted")
+        {
+            state.ReleaseReadingsRequested = true;
+        }
         if (state.HandshakeCompleted && messageType != "RecoveryStateReport" &&
             await OwnOrderRebuilds.ClaimCargoEvidenceRequestAsync(
                 dbContext, agvId, state.SessionGeneration!.Value, state.Readiness == SessionReadiness.Ready,
@@ -315,6 +332,8 @@ public sealed partial class OnboardMessageProcessor(
             return response;
         }
         state.SafetySnapshotRequestDue = false;
+        string reason = state.SafetySnapshotRequestReason ?? "VERSION_GAP";
+        state.SafetySnapshotRequestReason = null;
         if (!state.HandshakeCompleted)
         {
             return response;
@@ -328,7 +347,7 @@ public sealed partial class OnboardMessageProcessor(
             new
             {
                 requestedSafetyStateVersion = (long?)null,
-                reason = "VERSION_GAP"
+                reason
             });
         return string.IsNullOrWhiteSpace(response) ? request : $"{response}\n{request}";
     }
@@ -472,10 +491,15 @@ public sealed partial class OnboardMessageProcessor(
                     {
                         return snapshotAck;
                     }
+                    // A repair release waiting for readings takes the first mid-session snapshot as its readings
+                    // (control-server#385): proven, the HOLD_RELEASE check is staged with this answer and goes out after it.
+                    string? holdReleaseCheck = await recoveryCoordinator.ObserveReleaseReadingsAsync(
+                        agvId, generation, payload, cancellationToken).ConfigureAwait(false);
                     SessionReadinessDecision snapshotDecision = await store.DecideReadinessAsync(
                         agvId, generation, cancellationToken).ConfigureAwait(false);
-                    return AnswerWithReadiness(
+                    string snapshotAnswer = AnswerWithReadiness(
                         snapshotAck, snapshotDecision, agvId, generation, state, messageType, messageId, announceUnchanged: true);
+                    return holdReleaseCheck is null ? snapshotAnswer : $"{snapshotAnswer}\n{holdReleaseCheck}";
                 }
             case "RecoveryStateReport":
                 {
@@ -522,8 +546,31 @@ public sealed partial class OnboardMessageProcessor(
                     return $"{ack}\n{SessionReadinessLine(decision, agvId, generation, state, messageType, messageId)}";
                 }
             case "OperationProgress":
-            case "PreDepartureSafetyCheckResult":
                 return DurableAck(messageType, messageId, agvId, generation, contentHash);
+            case "PreDepartureSafetyCheckResult":
+                {
+                    string checkAck = DurableAck(messageType, messageId, agvId, generation, contentHash);
+                    // DEPARTURE answers are read by the journey runtime from the inbox (FindSafeDepartureResultAsync, which
+                    // since control-server#382 takes DEPARTURE only). An answer correlated to a repair release's check is the
+                    // last step of that release (control-server#385), whatever purpose it says: judged by the coordinator,
+                    // which spends the release on anything but a SAFE HOLD_RELEASE answer to its own check (review M1). When
+                    // it lifts the hold, readiness is decided again and the released business state goes out after the answer.
+                    string? releaseActionId = await recoveryCoordinator.ObserveHoldReleaseCheckResultAsync(
+                        root, cancellationToken).ConfigureAwait(false);
+                    if (releaseActionId is null)
+                    {
+                        return checkAck;
+                    }
+                    SessionReadinessDecision releaseDecision = await store.DecideReadinessAsync(
+                        agvId, generation, cancellationToken).ConfigureAwait(false);
+                    string? released = await recoveryCoordinator.StageDoorReleaseBusinessStateAsync(
+                        agvId, generation, releaseActionId, releaseDecision.Readiness == SessionReadiness.Ready,
+                        cancellationToken).ConfigureAwait(false);
+                    await dbContext.SaveChangesAsync(cancellationToken).ConfigureAwait(false);
+                    string releaseAnswer = AnswerWithReadiness(
+                        checkAck, releaseDecision, agvId, generation, state, messageType, messageId, announceUnchanged: false);
+                    return released is null ? releaseAnswer : $"{releaseAnswer}\n{released}";
+                }
             case "SublotSubmitted":
                 // 这一站已经结束之后才到的扫码，在这里答过时，否则永远没人回答（control-server#324）；答复在应答之后发。
                 // 这一站仍在等录入时什么也不做，留给引擎——见 LateSublotSubmission。
@@ -683,6 +730,16 @@ public sealed partial class OnboardMessageProcessor(
                     return AnswerWithReadiness(
                         recoveryAck, recoveryDecision, agvId, generation, state, messageType, messageId, announceUnchanged: false);
                 }
+            case "SlotFaultDeclarationResult":
+                // REQ-0359, control-server#383. It settles the declaration and its command's outbox line (control-server#384),
+                // not the operation: an APPLIED declaration's effect on the
+                // operation arrives as the OperationResult the vehicle sends next, settled by the case above. A result for a
+                // declaration this server never made is acknowledged; one that contradicts a declaration it holds is refused
+                // with BUSINESS_ID_CONTENT_CONFLICT, the connection kept (control-server#481) -- see SlotFaultDeclarationResults.
+                await SlotFaultDeclarationResults.RecordAsync(
+                    dbContext, store, agvId, messageId, payload, timeProvider.GetUtcNow(), logger, cancellationToken)
+                    .ConfigureAwait(false);
+                return DurableAck(messageType, messageId, agvId, generation, contentHash);
             case "ManualChargingReturnToServiceRequested":
                 {
                     // Not a recovery request despite the administrator context it carries: the
@@ -879,6 +936,16 @@ public sealed partial class OnboardMessageProcessor(
                     // obligation, so record it and keep the session; the envelope itself is
                     // already persisted in the inbox by the caller.
                     JsonElement problem = payload.GetProperty("problem");
+                    // One refusal carries an obligation after all (control-server#385 review M1): the vehicle refusing a
+                    // repair release's HOLD_RELEASE check sends no result, so without this the release would wait forever.
+                    await recoveryCoordinator.ObserveReleaseCheckRefusedAsync(
+                        agvId, RequiredString(payload, "rejectedMessageId"), RequiredString(problem, "reasonCode"),
+                        cancellationToken).ConfigureAwait(false);
+                    // And another (control-server#481): the vehicle refusing a replayed slot fault declaration command because
+                    // it gave its answer up. Without this the declaration stays pending and its command is replayed for good.
+                    await SlotFaultDeclarationResults.ObserveCommandRefusedAsync(
+                        dbContext, store, agvId, messageId, RequiredString(payload, "rejectedMessageId"), problem,
+                        timeProvider.GetUtcNow(), logger, cancellationToken).ConfigureAwait(false);
                     LogOnboardRejection(
                         logger,
                         NullableString(payload, "rejectedMessageType") ?? "(unstated)",
@@ -1611,6 +1678,18 @@ public sealed class OnboardConnectionState
 
     /// <summary>The message being processed made a SafetyStateSnapshotRequested due (control-server#142).</summary>
     public bool SafetySnapshotRequestDue { get; set; }
+
+    /// <summary>
+    /// The reason the due request carries; null is <c>VERSION_GAP</c>. A repair release asks with
+    /// <c>PRE_MOVEMENT_RECONCILIATION</c> (control-server#385).
+    /// </summary>
+    public string? SafetySnapshotRequestReason { get; set; }
+
+    /// <summary>
+    /// This connection has already looked for, and if needed asked for, the readings a repair release waits for
+    /// (control-server#385). A new connection starts false, which is what makes a reconnect ask again.
+    /// </summary>
+    public bool ReleaseReadingsRequested { get; set; }
 
     /// <summary>
     /// A safety message was refused on this connection and no SafetyStateSnapshot has been accepted since, so the

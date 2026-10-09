@@ -1251,22 +1251,7 @@ public sealed partial class RecoveryStateMachineG2Tests
                 TestContext.Current.CancellationToken)).Status);
             Assert.Equal(operationBefore, (await context.StationOperations.AsNoTracking().SingleAsync(
                 TestContext.Current.CancellationToken)).Status);
-            string result = Envelope(
-                "80000000-0000-4000-8000-000000000001",
-                "ForcedMechanicalRecoveryResult",
-                new
-                {
-                    exceptionRecoverySessionId = StableGuid(RequestId, "exception-recovery-session"),
-                    recoveryActionId = ActionId,
-                    forcedRecoveryGeneration = 1,
-                    outcome = "MECHANICALLY_ISOLATED",
-                    slots = RecoverySlots,
-                    @operator = Operator(),
-                    observedAt = Now.AddSeconds(2),
-                    electronicEmptyProven = false,
-                    vehicleReadyProven = false
-                });
-            await processor.ProcessAsync(result, state, TestContext.Current.CancellationToken);
+            await processor.ProcessAsync(MechanicallyIsolatedResult(generation: 1), state, TestContext.Current.CancellationToken);
 
             Assert.Equal("DurableAck", MessageType(lateAck));
             Assert.True((await context.OperationResults.SingleAsync(
@@ -1293,9 +1278,9 @@ public sealed partial class RecoveryStateMachineG2Tests
 
     /// <summary>
     /// REQ-0242, business half (control-server#137). A forced mechanical recovery on a demand-bearing
-    /// session is the named handoff of ForcedCargoHandoffRecord: the product is the demand's own bound
-    /// cargo, and the verified <c>operator</c> the result carries is the named person. Protocol 2.0.0 has no
-    /// field for an unknown identity, so the "pending inventory" branch is unreachable here. The demand ends
+    /// session is a named handoff: since protocol 3.0.0 (CP-0008, control-server#385) the result carries it as
+    /// <c>cargoHandoff</c> -- the demand's own sublot, the named receiver, when -- and REQ-0242 no longer has an
+    /// unidentified-cargo branch. The demand ends
     /// the way a fault cargo handoff ends it (CONTEXT.md, FaultCargoRecoveryRecord), the vehicle is released
     /// from the journey, and the session closes -- so the same vehicle can open another one. Until #137 the
     /// session stayed EXECUTING forever and every later session request was refused.
@@ -2809,7 +2794,7 @@ public sealed partial class RecoveryStateMachineG2Tests
             Assert.Contains(peer.Lines, line =>
                 line.Contains("\"ExceptionRecoverySessionSnapshot\"", StringComparison.Ordinal) &&
                 line.Contains("\"CLOSED\"", StringComparison.Ordinal));
-            Assert.Equal((OnboardRecoveryCoordinator.SessionClosedResultNotReconciled,
+            Assert.Equal((ServerReasonCodes.RecoveryActionResultNotReconciled,
                     OnboardRecoveryCoordinator.ResumeCommandRejectedOutcome),
                 (await ClosingReasonsAsync(context))[sessionId]);
 
@@ -6801,10 +6786,16 @@ public sealed partial class RecoveryStateMachineG2Tests
     /// hand (or, with <paramref name="outcome"/>, not), and -- as the schema pins them -- neither electronic
     /// emptiness nor vehicle readiness claimed.
     /// </summary>
+    /// <remarks>
+    /// Since protocol 3.0.0 (CP-0008, control-server#385) the result copies the command's demand and, isolated on a
+    /// session with a demand, carries the named hand-off of that demand's sublot; <paramref name="demandId"/> null is a
+    /// session without one, which gets neither.
+    /// </remarks>
     private static string MechanicallyIsolatedResult(
         long generation,
         string messageId = "80000000-0000-4000-8000-000000000001",
-        string outcome = "MECHANICALLY_ISOLATED") =>
+        string outcome = "MECHANICALLY_ISOLATED",
+        string? demandId = DemandId) =>
         Envelope(
             messageId,
             "ForcedMechanicalRecoveryResult",
@@ -6818,7 +6809,11 @@ public sealed partial class RecoveryStateMachineG2Tests
                 @operator = Operator(),
                 observedAt = Now.AddSeconds(2),
                 electronicEmptyProven = false,
-                vehicleReadyProven = false
+                vehicleReadyProven = false,
+                demandId,
+                cargoHandoff = outcome == "MECHANICALLY_ISOLATED" && demandId is not null
+                    ? new { sublot = "SUBLOT-001", receiverName = ForcedRecoveryHandoffRecord.ReceiverName, handedOverAt = Now.AddSeconds(1) }
+                    : null
             });
 
     /// <summary>

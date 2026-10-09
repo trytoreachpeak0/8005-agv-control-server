@@ -197,6 +197,7 @@ public sealed class JourneyRuntimeWorkerSnapshotRedeliveryTests
             new
             {
                 preDepartureSafetyCheckId = runtime.PreDepartureSafetyCheckId,
+                checkPurpose = "DEPARTURE",
                 outcome = "SAFE",
                 observedAt = Now,
                 safetyStateVersion = 7,

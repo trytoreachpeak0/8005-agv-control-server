@@ -51,13 +51,14 @@ public sealed class ProtocolVectorTestBindingArchitectureTests
 {
     /// <summary>
     /// SHA-256 of the frozen slice family index, over the file's bytes. Taken from
-    /// <c>8005-agv-protocol</c> commit <c>86575456c847041515b7b75e8851a00e0d939804</c> (branch
-    /// <c>fp/v2-candidate</c>, the <c>2.0.0</c> candidate G1 passed on) on 2026-09-16. The file had
-    /// not changed from its first freeze at <c>f6ee75d</c> on 2026-09-08 until this candidate added
-    /// two vectors to <c>FP-IS-02</c>.
+    /// <c>8005-agv-protocol</c> commit <c>3f091cb2eae7c58cec54a95dd9389c9180bc7b4c</c> (branch
+    /// <c>batch-p3/protocol-v3.0.0-candidate</c>, the <c>3.0.0</c> candidate G1 passed on) on
+    /// 2026-09-30. The file had not changed from its first freeze at <c>f6ee75d</c> on 2026-09-08
+    /// until the <c>2.0.0</c> candidate (<c>86575456</c>) added two vectors to <c>FP-IS-02</c>; the
+    /// <c>3.0.0</c> candidate added one more to <c>FP-IS-02</c> and five to <c>FP-IS-07</c>.
     /// </summary>
     private const string ApprovedIndexSha256 =
-        "268ce62be4e0ec8fe6d26e2048a59cf1732f02713415a0c5f41b6b009951b6fc";
+        "4f1ec1b186089f0f4dca9fa749cae2ad0044f061b868bac7f1f98b312b1b68b5";
 
     /// <summary>
     /// The trait name a test uses to claim it proves a frozen vector.
@@ -85,7 +86,7 @@ public sealed class ProtocolVectorTestBindingArchitectureTests
     /// the smallest form it takes.
     /// <see cref="EveryPinnedVectorBelongsOnlyToSlicesThisBatchDoesNotImplement"/> is what makes
     /// the set load-bearing instead of decorative, and
-    /// <see cref="TheIndexParsesIntoSixteenSlicesAndThirtyThreeDistinctVectors"/> is what lets it be
+    /// <see cref="TheIndexParsesIntoSixteenSlicesAndThirtyNineDistinctVectors"/> is what lets it be
     /// stated as slice ids at all: it pins each slice's id to its own sequence, so the ids named
     /// here and the sequences the index carries cannot drift apart.
     /// </para>
@@ -135,7 +136,11 @@ public sealed class ProtocolVectorTestBindingArchitectureTests
     /// <c>FP-IS-02</c>, a slice this line has built, and section 19.4 of the second edition of the
     /// scope specification assigns them there. The behaviour they prove belongs to
     /// <c>8005-agv-control-server#83</c> and <c>#82</c>, which land after the ticket that vendors the
-    /// candidate (<c>#84</c>); both have named tests now and neither is pinned.
+    /// candidate (<c>#84</c>); both have named tests now and neither is pinned. The <c>3.0.0</c>
+    /// candidate added six more to built slices -- one to <c>FP-IS-02</c>, five to
+    /// <c>FP-IS-07</c> -- vendored by <c>8005-agv-control-server#382</c> and claimed by the tickets
+    /// that build their behaviour: the manual slot-fault declaration by <c>#383</c> and the recovery hand-off, close
+    /// reason and door-unproven hold by <c>#385</c>; both have named tests for all their vectors now and pin none.
     /// Such a pin must name its slice and the claiming ticket in exactly the
     /// form <see cref="ClaimedPinLabel"/> gives, and
     /// <see cref="EveryPinnedVectorBelongsOnlyToSlicesThisBatchDoesNotImplement"/> refuses every other
@@ -181,27 +186,28 @@ public sealed class ProtocolVectorTestBindingArchitectureTests
     }
 
     /// <summary>
-    /// The parse of the index, checked against the shape the <c>2.0.0</c> candidate froze.
+    /// The parse of the index, checked against the shape the <c>3.0.0</c> candidate froze.
     /// </summary>
     /// <remarks>
     /// Without this, every assertion below could pass over an empty parse. The three counts are the
-    /// ones that differ from each other -- 16 slices, 36 <c>vectorIds</c> entries, 33 distinct
+    /// ones that differ from each other -- 16 slices, 42 <c>vectorIds</c> entries, 39 distinct
     /// vectors -- so a parse that lost a slice, or one that forgot to deduplicate, is reported here
     /// rather than silently narrowing what the binding check covers. The three vectors shared
-    /// across slices are counted rather than named: the count is the entire difference between 36
-    /// and 33, and writing their ids out would put a hand-copied fragment of the vector list in a
-    /// file whose whole point is not to hold one. v2 froze 34 and 31; the candidate added two
-    /// vectors, both to <c>FP-IS-02</c> and neither shared.
+    /// across slices are counted rather than named: the count is the entire difference between 42
+    /// and 39, and writing their ids out would put a hand-copied fragment of the vector list in a
+    /// file whose whole point is not to hold one. v2 froze 34 and 31; <c>2.0.0</c> added two
+    /// vectors, both to <c>FP-IS-02</c>; <c>3.0.0</c> added six, one to <c>FP-IS-02</c> and five to
+    /// <c>FP-IS-07</c>, none of the eight shared.
     /// </remarks>
     [Fact]
-    public void TheIndexParsesIntoSixteenSlicesAndThirtyThreeDistinctVectors()
+    public void TheIndexParsesIntoSixteenSlicesAndThirtyNineDistinctVectors()
     {
         Slice[] slices = Slices();
         string[] entries = [.. slices.SelectMany(slice => slice.VectorIds)];
 
         Assert.Equal(16, slices.Length);
-        Assert.Equal(36, entries.Length);
-        Assert.Equal(33, FrozenVectorIds().Length);
+        Assert.Equal(42, entries.Length);
+        Assert.Equal(39, FrozenVectorIds().Length);
 
         // Each slice's id paired with its own sequence, not the two sets compared separately.
         // LastSliceSequenceThisBatchImplements is stated as a sequence and read as a batch

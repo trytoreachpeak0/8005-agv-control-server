@@ -1765,7 +1765,14 @@ public static class StagedG3TlsHarness
                 // empty or ready; since control-server#137 the server settles the workflow but keeps
                 // the vehicle unready until a HardwareRecoveryRecord names it, on exactly this.
                 ["electronicEmptyProven"] = false,
-                ["vehicleReadyProven"] = false
+                ["vehicleReadyProven"] = false,
+                // Protocol 3.0.0 (CP-0008, control-server#385): both required, both nullable. The result copies the
+                // command's demand, and carries the named hand-off exactly when it is MECHANICALLY_ISOLATED on a session
+                // with a demand. This plane's session has none -- it accepts no demand at all -- so both are null, and the
+                // server reconciles the isolation without settling any demand. The hand-off ending is proven by the L1
+                // tests and by G3-07-43/44 of the real-onboard scenario g3-forced-mechanical-recovery.
+                ["demandId"] = null,
+                ["cargoHandoff"] = null
             });
 
     private static string RecoveryReport(
@@ -1922,6 +1929,10 @@ public static class StagedG3TlsHarness
                 return new Dictionary<string, object?>
                 {
                     ["preDepartureSafetyCheckId"] = StableGuid("business:pre-departure-check"),
+                    // v3 (control-server#382): checkPurpose is required. This probe answers no request, so it names the
+                    // one purpose a departure-bearing peer sends; both variants carry it, so the conflict case still
+                    // differs in exactly one business field.
+                    ["checkPurpose"] = "DEPARTURE",
                     ["outcome"] = "SAFE",
                     ["observedAt"] = "2026-08-26T12:00:00Z",
                     ["safetyStateVersion"] = variant,
@@ -2183,9 +2194,9 @@ public static class StagedG3TlsHarness
         {
             ["repository"] = "8005-agv-protocol",
             ["releaseVersion"] = release,
-            ["tag"] = "protocol-v2.0.0",
+            ["tag"] = "protocol-v3.0.0",
             ["commit"] = Protocol.Commit,
-            ["protocolVersion"] = 3,
+            ["protocolVersion"] = 4,
             ["profileId"] = Protocol.Profile,
             ["manifestSha256"] = manifest,
             ["schemaBundleSha256"] = Protocol.Schema,
@@ -2232,7 +2243,7 @@ public static class StagedG3TlsHarness
         long? generation,
         object payload) => JsonSerializer.Serialize(new Dictionary<string, object?>
         {
-            ["protocolVersion"] = 3,
+            ["protocolVersion"] = 4,
             ["profileId"] = Protocol.Profile,
             ["protocolReleaseVersion"] = release,
             ["protocolReleaseManifestSha256"] = manifest,
@@ -2290,12 +2301,12 @@ public static class StagedG3TlsHarness
 
     private static class Protocol
     {
-        public const string Release = "2.0.0";
+        public const string Release = "3.0.0";
         public const string Profile = "AGV_FULL_PRODUCT";
-        public const string Commit = "86575456c847041515b7b75e8851a00e0d939804";
-        public const string Manifest = "4ac095ad371d3aaa60d7c2e0198cfd64cff5f3068230fc3420e9cdf5616422a7";
-        public const string Schema = "9db0dbdc22fed7e39edf8d01b1fc40a12f5d70a7414f696f909ab2a87eb8c221";
-        public const string Vectors = "391fa69a7d6e9f86ea139ba4c74eadf4994bf0a87e89d3dc5258dd7968d9182a";
+        public const string Commit = "3f091cb2eae7c58cec54a95dd9389c9180bc7b4c";
+        public const string Manifest = "d5e1a53f1fd61f105a890dc0267e1b0a9ac5ea49f713d2cf730b0f554df9db9e";
+        public const string Schema = "e435b2b14d9ccd60c89f07df909da7626fef056a6b8a2241087557fd7dc3df43";
+        public const string Vectors = "be849f9749b004296ebd9e7bffa98faf2f8ffa90b63308ca3b210c68e7b8656e";
     }
 
     private sealed class Connection : IAsyncDisposable
