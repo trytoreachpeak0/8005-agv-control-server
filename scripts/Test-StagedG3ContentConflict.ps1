@@ -31,7 +31,10 @@
     whole of what git diff 8d0a644e 5f3adc42 -- scripts/run-staged-g3.ps1 changes in the harness; each replacement must
     match exactly once, or the script stops.
 
-    Exits 0 when every judgment came out as -Expect says (all PASS, or all FAIL), 1 otherwise.
+    Exits 0 when every judgment came out as expected, 1 otherwise. -Expect Pass wants all four PASS. -Expect Fail
+    wants the judgments named in -FailingJudgment FAIL (all four when it is not given) and every other one PASS: a
+    mutation reaches only the path it changes, and a judgment it does not reach turning red would be a judgment that
+    fails for some other reason.
 
 .EXAMPLE
     pwsh -NoProfile -File scripts/Test-StagedG3ContentConflict.ps1 -ControlServerCommit 5f3adc424... -StageRoot C:/s541a -EvidenceRoot evidence/g3/x -Expect Pass
@@ -42,6 +45,8 @@ param(
     [Parameter(Mandatory)][string]$StageRoot,
     [Parameter(Mandatory)][string]$EvidenceRoot,
     [Parameter(Mandatory)][ValidateSet('Pass', 'Fail')][string]$Expect,
+    [ValidateSet('heartbeat', 'business', 'recoverySessionRequestId', 'forcedRecoveryResult')]
+    [string[]]$FailingJudgment,
     [string]$MutationPatch,
     [string]$ControlServerRepository = (Split-Path -Parent $PSScriptRoot),
     [string]$RunnerPath = (Join-Path $PSScriptRoot 'run-staged-g3.ps1')
@@ -250,15 +255,18 @@ if (Test-Path -LiteralPath $databasePath) {
 }
 $verdict = Get-ContentConflictVerdict -ProbeResult $probeResult -BusinessProbeResult $businessProbeResult `
     -RecoveryProbeResult $recoveryProbeResult -DatabaseObservation $databaseObservation
+# Keyed by verdict; the comment names the runner's assertion each one feeds.
 $judgments = [ordered]@{
-    # The runner's assertion each verdict feeds.
-    sameMessageIdDifferentContentStableConflict = $verdict.heartbeat
-    businessMessageSameMessageIdDifferentContentStableConflict = $verdict.business
-    'recoverySessionAuthorisationBoundary (recovery-session-requestid-content-conflict)' = $verdict.recoverySessionRequestId
-    'forcedRecoveryGenerationAdvancesMonotonically (resultContentConflict)' = $verdict.forcedRecoveryResult
+    heartbeat = $verdict.heartbeat                               # sameMessageIdDifferentContentStableConflict
+    business = $verdict.business                                 # businessMessageSameMessageIdDifferentContentStableConflict
+    recoverySessionRequestId = $verdict.recoverySessionRequestId # recoverySessionAuthorisationBoundary
+    forcedRecoveryResult = $verdict.forcedRecoveryResult         # forcedRecoveryGenerationAdvancesMonotonically
 }
-$expectedValue = $Expect -eq 'Pass'
-$asExpected = $null -eq $runError -and @($judgments.Values | Where-Object { $_ -ne $expectedValue }).Count -eq 0
+$failing = if ($Expect -eq 'Pass') { @() } elseif ($FailingJudgment.Count -gt 0) { @($FailingJudgment) } else { @($judgments.Keys) }
+$expected = [ordered]@{}
+foreach ($name in $judgments.Keys) { $expected[$name] = $name -notin $failing }
+$asExpected = $null -eq $runError -and
+    @($judgments.Keys | Where-Object { $judgments[$_] -ne $expected[$_] }).Count -eq 0
 
 $result = [ordered]@{
     schemaVersion = '1.0.0'
@@ -272,6 +280,7 @@ $result = [ordered]@{
     harnessPortedToServerIdentity = $harnessPorted
     controlServerVersion = $version
     expect = $Expect
+    expectedJudgments = $expected
     outcome = if ($asExpected) { 'AS_EXPECTED' } else { 'NOT_AS_EXPECTED' }
     judgments = $judgments
     contentConflictNotApplied = $verdict.notApplied
@@ -289,7 +298,8 @@ $result = [ordered]@{
     ($result | ConvertTo-Json -Depth 30), [Text.UTF8Encoding]::new($false))
 
 foreach ($name in $judgments.Keys) {
-    Write-Host ('{0,-5} {1}' -f $(if ($judgments[$name]) { 'PASS' } else { 'FAIL' }), $name)
+    Write-Host ('{0,-5} {1} (expected {2})' -f $(if ($judgments[$name]) { 'PASS' } else { 'FAIL' }), $name,
+        $(if ($expected[$name]) { 'PASS' } else { 'FAIL' }))
 }
 Write-Host ("expect {0}: {1}" -f $Expect, $result.outcome)
 exit $(if ($asExpected) { 0 } else { 1 })
