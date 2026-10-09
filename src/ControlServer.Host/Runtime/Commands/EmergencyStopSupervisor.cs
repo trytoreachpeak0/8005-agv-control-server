@@ -568,6 +568,28 @@ public sealed class EmergencyStopSupervisor(
     }
 
     /// <summary>
+    /// The audit id of the latest release of this server's that has taken effect on the vehicle (read back <c>OK</c>), or
+    /// null when there is none.
+    /// </summary>
+    /// <remarks>
+    /// For the fault coordinator, which starts its motion window afresh once per release (control-server#527 re-review). A
+    /// caller that has just read the latch as <c>OK</c> settles a release that has taken effect first
+    /// (<see cref="SettleReleaseTakenEffectAsync"/>), or the release it is about to sample after is not yet on the record.
+    /// </remarks>
+    public async Task<string?> LatestReleaseTakenEffectAsync(
+        EmergencyStopSubject subject,
+        CancellationToken cancellationToken)
+    {
+        ArgumentNullException.ThrowIfNull(subject);
+
+        IReadOnlyList<RiotOrderCommandAttempt> releases = await audit.ReadAttemptsAsync(
+            RiotCommandTypeNames.CancelEmergency,
+            VehicleTarget(subject.DeviceKey),
+            cancellationToken).ConfigureAwait(false);
+        return releases.LastOrDefault(release => release.Outcome == RiotOrderCommandOutcome.Confirmed)?.CommandAuditId;
+    }
+
+    /// <summary>
     /// Whether this server has a stop open on the vehicle: a trigger that no confirmed release has closed.
     /// </summary>
     /// <remarks>

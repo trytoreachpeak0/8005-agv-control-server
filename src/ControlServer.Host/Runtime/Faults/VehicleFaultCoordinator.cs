@@ -595,18 +595,31 @@ public sealed class VehicleFaultCoordinator(
             .ConfigureAwait(false);
         RiotOrderCommandOutcome? hold = await HoldCurrentOrderAsync(fault, context, cancellationToken)
             .ConfigureAwait(false);
-        (StopProofVerdict proof, VehicleMotionSample latest) = await ProveStopAsync(
-            subject, fault, emergency, cancellationToken).ConfigureAwait(false);
 
-        // Asked only when it can change the answer: a latched vehicle is not escalated either way.
-        // A release RIoT has carried out since its read-back is settled first, or this evaluation
-        // would find it unconfirmed and stop the vehicle it has just released.
-        bool releasedOnConfirmation = false;
-        bool releasedOnDoorCause = false;
+        // A release RIoT has carried out since its read-back is settled first, or this evaluation would find it unconfirmed
+        // and stop the vehicle it has just released. And a release that has taken effect starts the motion window afresh,
+        // before this round's sample goes in (control-server#527 re-review): the samples taken under the latch read
+        // MT_RUNNING at speed 0 on a real vehicle (CP-0003), and a stop asked for after the release would otherwise give
+        // motion as its reason for a vehicle that has not moved since -- which withdraws the door release for good.
         if (!emergency.IsLatched)
         {
             await emergencyStop.SettleReleaseTakenEffectAsync(subject, emergency, cancellationToken)
                 .ConfigureAwait(false);
+            if (await emergencyStop.LatestReleaseTakenEffectAsync(subject, cancellationToken).ConfigureAwait(false)
+                is string release)
+            {
+                ledger.StartAfterRelease(subject.DeviceKey, release);
+            }
+        }
+
+        (StopProofVerdict proof, VehicleMotionSample latest) = await ProveStopAsync(
+            subject, fault, emergency, cancellationToken).ConfigureAwait(false);
+
+        // Asked only when it can change the answer: a latched vehicle is not escalated either way.
+        bool releasedOnConfirmation = false;
+        bool releasedOnDoorCause = false;
+        if (!emergency.IsLatched)
+        {
             releasedOnConfirmation = await emergencyStop
                 .WasReleasedOnConfirmationAsync(subject, fault.FaultGeneration, cancellationToken)
                 .ConfigureAwait(false);
