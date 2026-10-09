@@ -98,6 +98,26 @@ $script:ProductionPorts = @{
 }
 
 <#
+    control-server#535. mesIngest.source: 'fake' (absent means fake; the behaviour before #535,
+    unchanged) or 'production'. The user decided on 2026-10-09 that v2 may read the production
+    MesIngest, for STAGING_TO_WIRE only, while the MVP keeps WIRE_TO_GATE.
+
+    The split rests on one fact and nothing else: the two work type sets are disjoint. MesIngest
+    is read-only and has no claim -- both instances see the same catalog, and neither writes back --
+    so "a demand one instance took is gone for the other" is not true, and nothing stops two
+    instances from acting on the same material except each refusing the other's type. The MVP
+    (and agv01's field line) only ever accepts WIRE_TO_GATE (JourneyRuntimeEngine); v2 refuses
+    anything outside allowedWorkTypes before admission (WorkTypeScopeCriterion). So 'production'
+    pins allowedWorkTypes to exactly the one type, and the shipped six -- WIRE_TO_GATE among them --
+    are refused by name. Hard-coded on purpose, like the vehicle whitelist: a rule read out of the
+    file being checked is edited in the same keystroke as the file.
+#>
+$script:MesIngestSources = @('fake', 'production')
+$script:ProductionMesIngestBaseUrl = 'http://127.0.0.1:5088'
+$script:ProductionSourceWorkTypes = @('STAGING_TO_WIRE')
+$script:MvpWorkType = 'WIRE_TO_GATE'
+
+<#
     The two spare vehicles, as pairs. Hard-coded on purpose: a whitelist read out of the file
     being checked is not a whitelist, because whoever edits the vehicle edits the list in the
     same keystroke.
@@ -143,7 +163,8 @@ $script:AllowedKeys = [ordered]@{
         'opsRoot', 'stagingRoot', 'listenAddress', 'healthBindAddress', 'onboardPort', 'healthPort',
         'dashboardPort', 'mesIngest', 'fakeMesIngest', 'routeGraph', 'riotCreateDispatch', 'riotForeignOrderCancel',
         'journeyRuntime', 'vehicleFaultRecovery', 'fieldOperatorRoles', 'taskTypeStations')
-    'mesIngest' = @('baseUrl')
+    # control-server#535. source is this deployment's, not a product option: the overlay does not write it.
+    'mesIngest' = @('baseUrl', 'source')
     'fakeMesIngest' = @('installRoot', 'port', 'taskName', 'seedPath')
     'routeGraph' = @('enabled', 'mapId', 'designStateTtl', 'runtimeRefreshPeriod', 'runtimeStateMaxAge')
     'riotCreateDispatch' = @('enabled')
@@ -222,6 +243,19 @@ function Get-Node {
     if (-not (Test-KeyPresent -Node $Root -Key $Key)) { return $null }
     $value = $Root[$Key]
     return ($value -is [hashtable]) ? $value : $null
+}
+
+function Get-MesIngestSource {
+    <#
+        control-server#535. 'fake' when mesIngest.source is absent (or mesIngest itself is: that is
+        refused elsewhere), the value when it is exactly 'fake' or 'production', otherwise $null --
+        which the definition check refuses. Case-sensitive: 'Production' is a typo, not a mode.
+    #>
+    param([hashtable] $Definition)
+    $mesIngest = Get-Node -Root $Definition -Key 'mesIngest'
+    if (-not (Test-KeyPresent -Node $mesIngest -Key 'source')) { return 'fake' }
+    $value = $mesIngest['source']
+    return ($value -is [string] -and $script:MesIngestSources -ccontains $value) ? $value : $null
 }
 
 function ConvertTo-IntegerOrNull {
@@ -533,6 +567,51 @@ function Test-BindableAddress {
     return $null
 }
 
+function Test-ProductionMesIngestSource {
+    <#
+        control-server#535. The rules of mesIngest.source = 'production', each with its own reason:
+
+          * baseUrl is exactly http://127.0.0.1:5088, the production MesIngest on this machine. Not
+            "any URL": this mode exists to read that one catalog, and the 'fake' rules (loopback,
+            never 5088) do not apply to it.
+          * no fakeMesIngest section. A double the instance does not read is a scheduled task and a
+            port nobody looks at, and a definition carrying both says two things about where demand
+            comes from.
+          * journeyRuntime.allowedWorkTypes is exactly ["STAGING_TO_WIRE"]: one string, that
+            spelling. Absent is refused too -- the package default is not one type. WIRE_TO_GATE is
+            named in its own message, because that is the type the MVP takes from the same catalog.
+
+        Not relaxed by -ForStopDirection: no definition that breaks these could have been installed.
+    #>
+    param([hashtable] $Definition)
+
+    [string[]] $failures = @()
+    $mesIngest = Get-Node -Root $Definition -Key 'mesIngest'
+    $baseUrl = (Test-KeyPresent -Node $mesIngest -Key 'baseUrl') ? $mesIngest['baseUrl'] : $null
+    if ($baseUrl -isnot [string] -or $baseUrl -cne $script:ProductionMesIngestBaseUrl) {
+        $failures += "mesIngest.baseUrl is '$baseUrl'; with mesIngest.source 'production' it must be exactly '$script:ProductionMesIngestBaseUrl', the production MesIngest on this machine."
+    }
+
+    if (Test-KeyPresent -Node $Definition -Key 'fakeMesIngest') {
+        $failures += "fakeMesIngest must be absent when mesIngest.source is 'production': this instance reads the production catalog, and a double beside it would be a task and a port nobody reads. Remove the section."
+    }
+
+    $journey = Get-Node -Root $Definition -Key 'journeyRuntime'
+    if ($null -ne $journey) {
+        $types = (Test-KeyPresent -Node $journey -Key 'allowedWorkTypes') ? $journey['allowedWorkTypes'] : $null
+        $listed = ($types -is [System.Collections.IList]) ? @($types) : @($types | Where-Object { $null -ne $_ })
+        $exact = $types -is [System.Collections.IList] -and $listed.Count -eq $script:ProductionSourceWorkTypes.Count -and
+            @($listed | Where-Object { $_ -is [string] -and $script:ProductionSourceWorkTypes -ccontains $_ }).Count -eq $listed.Count
+        $shown = ($null -eq $types) ? '(absent)' : (ConvertTo-Json -InputObject $types -Compress)
+        if (@($listed | Where-Object { $_ -is [string] -and $_.Trim() -ieq $script:MvpWorkType }).Count -gt 0) {
+            $failures += "journeyRuntime.allowedWorkTypes $shown includes $script:MvpWorkType, which the MVP takes from the same catalog: with mesIngest.source 'production' both instances read one MesIngest with no claim, so this instance would compete with the MVP for the same material. It must be exactly [""STAGING_TO_WIRE""] (user decision 2026-10-09)."
+        } elseif (-not $exact) {
+            $failures += "journeyRuntime.allowedWorkTypes is $shown; with mesIngest.source 'production' it must be exactly [""STAGING_TO_WIRE""] (user decision 2026-10-09: v2 does STAGING_TO_WIRE only, the MVP WIRE_TO_GATE only)."
+        }
+    }
+    return $failures
+}
+
 function Test-ParallelInstanceDefinition {
     <#
         .SYNOPSIS
@@ -654,10 +733,17 @@ function Test-ParallelInstanceDefinition {
     # ------------------------------------------------------------- MES isolation ---
 
     # The isolation table's first row. Both versions default to the production MesIngest on
-    # 127.0.0.1:5088; v2 must read an injected catalog for the whole parallel period, because
-    # a demand claimed by one instance is gone from the other's point of view.
+    # 127.0.0.1:5088. In 'fake' mode -- the default, and the only mode before control-server#535 --
+    # v2 reads an injected catalog and every check below the 'production' branch applies exactly as
+    # it always has: 5088 is refused, the double is required. 'production' (the user's 2026-10-09
+    # decision) is a separate branch with its own, narrower rules; see $script:MesIngestSources.
     $mesIngest = Get-Node -Root $Definition -Key 'mesIngest'
-    if ($null -eq $mesIngest) {
+    $mesSource = Get-MesIngestSource -Definition $Definition
+    if ($null -ne $mesIngest -and $null -eq $mesSource) {
+        $failures += "mesIngest.source must be 'fake' or 'production' (exactly, lower case), got '$($mesIngest['source'])'; leave it out for 'fake'."
+    } elseif ($null -ne $mesIngest -and $mesSource -ceq 'production') {
+        $failures += @(Test-ProductionMesIngestSource -Definition $Definition)
+    } elseif ($null -eq $mesIngest) {
         $failures += 'mesIngest must be an object naming the fake catalog this instance reads.'
     } elseif (-not (Test-KeyPresent -Node $mesIngest -Key 'baseUrl')) {
         $failures += 'mesIngest.baseUrl must be set explicitly.'
@@ -673,8 +759,11 @@ function Test-ParallelInstanceDefinition {
         }
     }
 
+    # Fake mode only; 'production' refuses the section outright, and an unknown source has said so above.
     $fake = Get-Node -Root $Definition -Key 'fakeMesIngest'
-    if ($null -eq $fake) {
+    if ($mesSource -cne 'fake') {
+        # Nothing more to check here.
+    } elseif ($null -eq $fake) {
         $failures += 'fakeMesIngest must be an object describing the resident fake catalog.'
     } else {
         # installRoot and seedPath are checked with the other paths (Test-InstancePath).
@@ -1250,13 +1339,17 @@ function Get-ParallelInstanceLayout {
 
     $packageRoot = [string] $Definition['packageRoot']
     $opsRoot = [string] $Definition['opsRoot']
-    $fake = $Definition['fakeMesIngest']
+    # control-server#535: a 'production' definition has no double, and every name and path of the
+    # double is then $null -- which the footprint leaves out rather than removing a nameless task.
+    $source = Get-MesIngestSource -Definition $Definition
+    $fake = ($source -ceq 'fake' -and $Definition.Contains('fakeMesIngest')) ? $Definition['fakeMesIngest'] : $null
     $packageLeaf = Split-Path -Leaf $packageRoot
     # String concatenation, not Join-Path: Join-Path resolves the drive and fails on a machine
     # without one (the control host has no D:), and this function must stay free of the file system.
     return [pscustomobject]@{
         ServiceName = [string] $Definition['serviceName']
-        TaskName = [string] $fake['taskName']
+        MesIngestSource = $source
+        TaskName = ($null -ne $fake) ? [string] $fake['taskName'] : $null
         InstallRoot = [string] $Definition['installRoot']
         DataRoot = [string] $Definition['dataRoot']
         BackupRoot = [string] $Definition['backupRoot']
@@ -1270,14 +1363,14 @@ function Get-ParallelInstanceLayout {
         OpsRoot = $opsRoot
         StagingRoot = [string] $Definition['stagingRoot']
         ResultRoot = "$opsRoot\results"
-        FakeLogPath = "$opsRoot\logs\fake-mes-ingest.log"
+        FakeLogPath = ($null -ne $fake) ? "$opsRoot\logs\fake-mes-ingest.log" : $null
         InstalledDefinitionPath = "$opsRoot\installed-instance.json"
         # Where the control host copies the secrets file (19-deploy-control-server-parallel.ps1
         # writes "$opsRoot\deploy-config.json"). The installer accepts no other path and deletes
         # only this one.
         DeploymentConfigPath = "$opsRoot\deploy-config.json"
-        FakeInstallRoot = [string] $fake['installRoot']
-        SeedPath = [string] $fake['seedPath']
+        FakeInstallRoot = ($null -ne $fake) ? [string] $fake['installRoot'] : $null
+        SeedPath = ($null -ne $fake) ? [string] $fake['seedPath'] : $null
         # control-server#454. Inside opsRoot (Test-InstancePath), so it goes with it.
         FieldOperatorRosterPath = [string] $Definition['fieldOperatorRoles']['path']
         FirewallRules = @(
@@ -1307,16 +1400,21 @@ function Get-ParallelInstanceFootprint {
     param([Parameter(Mandatory = $true)][System.Collections.IDictionary] $Definition)
 
     $layout = Get-ParallelInstanceLayout -Definition $Definition
-    $items = @(
-        [pscustomobject]@{ Kind = 'Service'; Name = $layout.ServiceName; Data = $false }
-        [pscustomobject]@{ Kind = 'ScheduledTask'; Name = $layout.TaskName; Data = $false }
-    )
+    $items = @([pscustomobject]@{ Kind = 'Service'; Name = $layout.ServiceName; Data = $false })
+    # control-server#535: no double in 'production' mode, so no task and no double directory.
+    if ($null -ne $layout.TaskName) {
+        $items += [pscustomobject]@{ Kind = 'ScheduledTask'; Name = $layout.TaskName; Data = $false }
+    }
     foreach ($rule in $layout.FirewallRules) {
         $items += [pscustomobject]@{ Kind = 'FirewallRule'; Name = $rule; Data = $false }
     }
     $items += @(
         [pscustomobject]@{ Kind = 'MachineEnvironment'; Name = $layout.CertificatePasswordVariable; Data = $false }
-        [pscustomobject]@{ Kind = 'Directory'; Name = $layout.FakeInstallRoot; Data = $false }
+    )
+    if ($null -ne $layout.FakeInstallRoot) {
+        $items += [pscustomobject]@{ Kind = 'Directory'; Name = $layout.FakeInstallRoot; Data = $false }
+    }
+    $items += @(
         [pscustomobject]@{ Kind = 'Directory'; Name = $layout.InstallRoot; Data = $false }
         [pscustomobject]@{ Kind = 'Directory'; Name = $layout.PackageRoot; Data = $false }
         [pscustomobject]@{ Kind = 'Directory'; Name = $layout.PreviousRoot; Data = $false }
@@ -1492,6 +1590,97 @@ function Assert-ParallelInstanceDefinition {
             [Environment]::NewLine + $listed)
     }
     return $Definition
+}
+
+function Format-ParallelMesIngestAudit {
+    <#
+        .SYNOPSIS
+            control-server#535. The one line that says where this instance's demand comes from.
+
+        .DESCRIPTION
+            Printed by the installer on every install and rollback, before anything changes and again
+            in its result lines, where 19-deploy-control-server-parallel.ps1 asserts it per mode. In
+            'production' mode it is loud on purpose: the instance reads the catalog the MVP serves
+            customers from, and whoever reads the log should not have to infer that from a port.
+            Call it only on a definition Assert-ParallelInstanceDefinition accepted.
+    #>
+    [CmdletBinding()]
+    [OutputType([string])]
+    param([Parameter(Mandatory = $true)][hashtable] $Definition)
+
+    $source = Get-MesIngestSource -Definition $Definition
+    $types = @($Definition['journeyRuntime']['allowedWorkTypes']) -join ','
+    $line = "MES_INGEST_SOURCE=$source baseUrl=$($Definition['mesIngest']['baseUrl']) allowedWorkTypes=$types"
+    if ($source -ceq 'production') {
+        return "$line -- this instance reads the PRODUCTION MesIngest the MVP also reads; it may take STAGING_TO_WIRE only, the MVP keeps WIRE_TO_GATE (user decision 2026-10-09, control-server#535)"
+    }
+    return "$line -- injected demand from this instance's own FakeMesIngest double, task '$($Definition['fakeMesIngest']['taskName'])'"
+}
+
+function Get-ParallelMesIngestSecretRefusal {
+    <#
+        .SYNOPSIS
+            control-server#535. $null, or why a 'production' install must not go ahead without the
+            MesIngest shared secret.
+
+        .DESCRIPTION
+            The production MesIngest requires a Bearer token on every request (its host binds a
+            non-loopback address, and its middleware does not tell callers apart). Without
+            CONTROL_SERVER_MES_INGEST_SHARED_SECRET in the service's Environment every read is 401 and
+            nothing is dispatched -- the safe direction, but an install that looks done and does
+            nothing. So it is refused before anything changes. 'fake' mode does not need it: the
+            double checks no token.
+    #>
+    [CmdletBinding()]
+    [OutputType([string])]
+    param(
+        [Parameter(Mandatory = $true)][hashtable] $Definition,
+        [AllowNull()][AllowEmptyString()][string] $SharedSecret
+    )
+    if ((Get-MesIngestSource -Definition $Definition) -cne 'production') { return $null }
+    if (-not [string]::IsNullOrWhiteSpace($SharedSecret)) { return $null }
+    return ("mesIngest.source is 'production', but there is no MesIngest shared secret to write into the service's " +
+        "Environment (deploy-config.json mesIngestSharedSecret, or on a rollback CONTROL_SERVER_MES_INGEST_SHARED_SECRET already " +
+        "in the service). Every read of the production MesIngest would be 401 and nothing would be dispatched. Add " +
+        "'MesIngestSharedSecret' to the control host's secret store with Set-ControlServerSecret.ps1. Nothing was stopped or changed.")
+}
+
+function Get-ParallelRetiredFakeMesIngest {
+    <#
+        .SYNOPSIS
+            control-server#535. The previous install's FakeMesIngest task and directory, when this
+            install switches the instance to 'production'; otherwise $null.
+
+        .DESCRIPTION
+            The uninstaller removes what installed-instance.json names, and an install records the new
+            definition there before it does anything else. A 'production' definition names no double,
+            so a double left from an earlier 'fake' install would never be found again -- a SYSTEM task
+            restarting a process on a port nobody reads. The installer retires it (task, process,
+            directory) before recording the new definition, so the record keeps naming it until it is gone.
+
+            The previous definition is asserted first, as an uninstall would (-ForStopDirection): a task
+            name or directory is acted on only when it passed the same checks. A previous definition
+            that does not pass throws, before anything changes.
+    #>
+    [CmdletBinding()]
+    param(
+        [AllowNull()] $Previous,
+        [Parameter(Mandatory = $true)][hashtable] $Current
+    )
+    if ($null -eq $Previous) { return $null }
+    if ((Get-MesIngestSource -Definition $Current) -cne 'production') { return $null }
+    if ($Previous -isnot [hashtable]) { throw 'The previously installed definition is not a JSON object; its FakeMesIngest cannot be retired.' }
+    [string[]] $failures = @(Test-ParallelInstanceDefinition -Definition $Previous -AllowRiotCreateDispatch -AllowRiotForeignOrderCancel -ForStopDirection)
+    if ($failures.Count -gt 0) {
+        throw ("The previously installed definition was refused, so its FakeMesIngest is not retired and nothing was changed:" +
+            [Environment]::NewLine + (($failures | ForEach-Object { "  - $_" }) -join [Environment]::NewLine))
+    }
+    $previousLayout = Get-ParallelInstanceLayout -Definition $Previous
+    if ($null -eq $previousLayout.TaskName) { return $null }
+    return [pscustomobject]@{
+        TaskName = $previousLayout.TaskName
+        FakeInstallRoot = $previousLayout.FakeInstallRoot
+    }
 }
 
 function New-ParallelInstanceConfigurationOverlay {
@@ -2112,6 +2301,9 @@ Export-ModuleMember -Function @(
     'Test-ParallelInstanceDefinition'
     'Assert-ParallelInstanceDefinition'
     'New-ParallelInstanceConfigurationOverlay'
+    'Format-ParallelMesIngestAudit'
+    'Get-ParallelMesIngestSecretRefusal'
+    'Get-ParallelRetiredFakeMesIngest'
     'Merge-ConfigurationTree'
     'Get-ParallelServiceEnvironmentEntry'
     'Set-ParallelServiceEnvironmentEntry'

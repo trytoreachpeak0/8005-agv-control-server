@@ -3284,7 +3284,9 @@ function Invoke-SourceCase([string] $Name, [scriptblock] $Body) {
 }
 function New-ProductionSourceDefinition($From) {
     $d = Copy-Definition $From
-    $d['mesIngest'] = [ordered]@{ source = 'production'; baseUrl = 'http://127.0.0.1:5088' }
+    # A plain hashtable, as ConvertFrom-Json -AsHashtable produces: [ordered] is not a [hashtable],
+    # and the module reads sections through [hashtable] parameters.
+    $d['mesIngest'] = @{ source = 'production'; baseUrl = 'http://127.0.0.1:5088' }
     $d.Remove('fakeMesIngest')
     $d['journeyRuntime']['allowedWorkTypes'] = @('STAGING_TO_WIRE')
     return $d

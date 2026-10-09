@@ -33,7 +33,10 @@
         faultRecoveryCredential, or carried over from the service), an empty roster file if none
         exists, and a CLEARANCE_EXIT_READINESS line read back from what the service will read --
         a broken state throws, an unavailable exit warns as CLEARANCE_EXIT_UNAVAILABLE;
-      * the resident FakeMesIngest, as a scheduled task;
+      * the resident FakeMesIngest, as a scheduled task -- in mesIngest.source 'fake' mode only
+        (control-server#535). In 'production' mode no double is installed, a double an earlier
+        'fake' install left is retired, the MesIngest shared secret is required and read back, and
+        a MES_INGEST_SOURCE audit line is printed as a warning;
       * firewall rules for this instance's two ports, named so they cannot be confused with the
         MVP's;
       * one previous generation kept on disk, so -Rollback is a real operation.
@@ -76,7 +79,7 @@
 
 .PARAMETER FakeMesIngestZip
     Self-contained publish of ControlServer.FakeMesIngest. Omit on an upgrade that keeps the
-    double it already deployed.
+    double it already deployed. Refused when the definition's mesIngest.source is 'production'.
 
 .PARAMETER AllowRiotCreateDispatch
     Deploy a definition whose riotCreateDispatch gate is open. Placing RIoT orders moves a
@@ -163,6 +166,18 @@ try {
     # removes are one list by construction (control-server#262 re-review, M4). Do not read a path
     # or a service/task name out of $definition here: Test-ParallelInstance.ps1 fails on it.
     $layout = Get-ParallelInstanceLayout -Definition $definition
+
+    # control-server#535. Where this instance's demand comes from, said before anything changes and
+    # again in the result lines (19-deploy-control-server-parallel.ps1 asserts it there, per mode).
+    # 'production' reads the catalog the MVP serves customers from, so it is a warning, not a step.
+    $productionSource = $layout.MesIngestSource -ceq 'production'
+    $mesIngestAudit = Format-ParallelMesIngestAudit -Definition $definition
+    Write-Step $mesIngestAudit
+    if ($productionSource) { Write-Warning $mesIngestAudit }
+    if ($productionSource -and $FakeMesIngestZip) {
+        throw ("-FakeMesIngestZip was passed, but the definition's mesIngest.source is 'production', which installs no double. " +
+            'The control host and the definition disagree about where demand comes from; nothing was stopped or changed.')
+    }
 
     # The secrets file. Only the layout's own path is accepted, and it must be a plain file: this
     # script deletes it when it finishes, and used to delete whatever path it was handed (S1
@@ -260,6 +275,38 @@ try {
     $faultRecoveryCredential = Resolve-ParallelFaultRecoveryCredential -Definition $definition `
         -Supplied (($null -ne $config -and $config.PSObject.Properties.Name -contains 'faultRecoveryCredential') ? [string] $config.faultRecoveryCredential : $null) `
         -Carried (Get-ParallelServiceEnvironmentEntry -Environment (Get-ServiceEnvironment) -Name (Get-ParallelInstanceName).FaultRecoveryCredentialVariable)
+
+    # The MesIngest shared secret (control-server#535): deploy-config.json's on an install, what the service
+    # already holds on a rollback. 'production' refuses here without one -- every read would be 401.
+    $mesIngestSecretVariable = 'CONTROL_SERVER_MES_INGEST_SHARED_SECRET'
+    $mesIngestSecret = $Rollback ?
+        (Get-ParallelServiceEnvironmentEntry -Environment (Get-ServiceEnvironment) -Name $mesIngestSecretVariable) :
+        (($null -ne $config -and $config.PSObject.Properties.Name -contains 'mesIngestSharedSecret') ? [string] $config.mesIngestSharedSecret : $null)
+    $secretRefusal = Get-ParallelMesIngestSecretRefusal -Definition $definition -SharedSecret $mesIngestSecret
+    if ($secretRefusal) { throw $secretRefusal }
+
+    # Switching an installed 'fake' instance to 'production' (control-server#535): the double the previous
+    # install recorded is retired now, before the new definition is recorded -- after that, nothing names it
+    # and the uninstaller would never find it. The previous definition is asserted inside the function and
+    # a refused one throws here, still before anything changed.
+    $previousDefinition = (Test-Path -LiteralPath $layout.InstalledDefinitionPath -PathType Leaf) ?
+        (Read-ParallelInstanceDefinition -Path $layout.InstalledDefinitionPath) : $null
+    $retired = Get-ParallelRetiredFakeMesIngest -Previous $previousDefinition -Current $definition
+    if ($null -ne $retired) {
+        Write-Step "Retiring the previous install's FakeMesIngest: task '$($retired.TaskName)', $($retired.FakeInstallRoot)"
+        if (Get-ScheduledTask -TaskName $retired.TaskName -ErrorAction SilentlyContinue) {
+            Stop-ScheduledTask -TaskName $retired.TaskName -ErrorAction SilentlyContinue
+            Unregister-ScheduledTask -TaskName $retired.TaskName -Confirm:$false
+        }
+        # Only processes whose executable lives under that double's own directory, as the uninstaller does.
+        $retiredPrefix = $retired.FakeInstallRoot.TrimEnd('\') + '\'
+        $retiredProcesses = @(Get-Process -Name 'ControlServer.FakeMesIngest' -ErrorAction SilentlyContinue |
+                Where-Object { $_.Path -and $_.Path.StartsWith($retiredPrefix, [StringComparison]::OrdinalIgnoreCase) })
+        $retiredProcesses | Stop-Process -Force
+        $retiredProcesses | Wait-Process -Timeout 30 -ErrorAction SilentlyContinue
+        Remove-ParallelInstanceDirectory -Path $retired.FakeInstallRoot
+        Write-Step 'Previous FakeMesIngest retired (task unregistered, process stopped, directory removed)'
+    }
 
     # The definition this install (or rollback) runs with, recorded before anything changes. The
     # uninstaller reads this copy in preference to instance.json, which the control host
@@ -360,6 +407,22 @@ try {
         }
     }
 
+    function Set-MesIngestSecret {
+        <#
+            Writes the MesIngest bearer token into this service's Environment, reads it back, and restarts
+            the service. The read-back is control-server#535's: in 'production' a token that did not land
+            is a service that reads nothing (401), and the deployment should say so rather than look done.
+        #>
+        Set-ServiceEnvironment (Set-ParallelServiceEnvironmentEntry -Environment (Get-ServiceEnvironment) `
+                -Name $mesIngestSecretVariable -Value $mesIngestSecret)
+        $readBack = Get-ParallelServiceEnvironmentEntry -Environment (Get-ServiceEnvironment) -Name $mesIngestSecretVariable
+        if ($readBack -cne $mesIngestSecret) {
+            throw "MES_INGEST_SECRET_NOT_WRITTEN: $mesIngestSecretVariable is not in $serviceName's Environment after it was written."
+        }
+        Restart-Service -Name $serviceName -Force
+        Write-Step 'MesIngest bearer token added to this service''s environment and read back; service restarted'
+    }
+
     function Install-FakeMesIngest {
         <#
             The resident demand source. A scheduled task rather than a service, for the reason the
@@ -454,8 +517,15 @@ try {
         # rollback to a generation installed before some overlay key existed would otherwise come
         # back without it.
         Set-InstanceConfiguration -FaultRecoveryCredential $faultRecoveryCredential
-        Install-FakeMesIngest -Zip ''
+        if ($productionSource) {
+            # A rollback that lands in the product's first-install branch rebuilds the Environment; the
+            # token the service held (checked above) is written back so the production reads keep working.
+            Set-MesIngestSecret
+        } else {
+            Install-FakeMesIngest -Zip ''
+        }
         Assert-MvpUntouched -Before $mvpBefore -After (Get-MvpFingerprint)
+        Write-Output $mesIngestAudit
         Write-Step "Rolled back. Result: $resultPath"
         Write-Step 'The onboard half was NOT rolled back. The two ends do not negotiate versions.'
         return
@@ -471,7 +541,10 @@ try {
     # wire-to-gate-parallel-cd.md section 11 and is Uninstall-ParallelInstanceLocal.ps1.
     $completed = $false
     try {
-        foreach ($pair in @(@{ Path = $PackageZip; Name = 'package' }, @{ Path = $FakeMesIngestZip; Name = 'FakeMesIngest package' })) {
+        $packages = @(@{ Path = $PackageZip; Name = 'package' })
+        # control-server#535: 'production' installs no double, and was refused above if one was passed.
+        if (-not $productionSource) { $packages += @{ Path = $FakeMesIngestZip; Name = 'FakeMesIngest package' } }
+        foreach ($pair in $packages) {
             if (-not (Test-Path -LiteralPath $pair.Path -PathType Leaf)) {
                 throw "$($pair.Name) not found: $($pair.Path)"
             }
@@ -535,17 +608,19 @@ try {
         # becomes a MesIngest caller the moment JourneyRuntime is enabled -- which for this
         # instance it is. The double does not check the token; the variable is set anyway so that
         # pointing this instance at a real MesIngest later is a configuration change rather than a
-        # redeployment.
-        if ($config.PSObject.Properties.Name -contains 'mesIngestSharedSecret' -and $config.mesIngestSharedSecret) {
-            Set-ServiceEnvironment (Set-ParallelServiceEnvironmentEntry -Environment (Get-ServiceEnvironment) `
-                    -Name 'CONTROL_SERVER_MES_INGEST_SHARED_SECRET' -Value ([string] $config.mesIngestSharedSecret))
-            Restart-Service -Name $serviceName -Force
-            Write-Step 'MesIngest bearer token added to this service''s environment; service restarted'
+        # redeployment. In 'production' mode (control-server#535) it is required, and was refused above
+        # when absent.
+        if (-not [string]::IsNullOrWhiteSpace($mesIngestSecret)) {
+            Set-MesIngestSecret
         }
 
         # --------------------------------------------------------- fake MES ingest ---
 
-        Install-FakeMesIngest -Zip $FakeMesIngestZip
+        if ($productionSource) {
+            Write-Step 'No FakeMesIngest: mesIngest.source is production'
+        } else {
+            Install-FakeMesIngest -Zip $FakeMesIngestZip
+        }
 
         # ---------------------------------------------------------------- firewall ---
 
@@ -583,7 +658,11 @@ try {
         Write-Output "RESULT_PATH=$resultPath"
         Write-Output "ONBOARD_ENDPOINT=tcp://${listenAddress}:$onboardPort"
         Write-Output "HEALTH_ENDPOINT=$healthOrigin"
-        Write-Output "FAKE_MES_INGEST=http://127.0.0.1:$($definition['fakeMesIngest']['port'])"
+        # control-server#535. 19-deploy-control-server-parallel.ps1 asserts this line per mode.
+        Write-Output $mesIngestAudit
+        if (-not $productionSource) {
+            Write-Output "FAKE_MES_INGEST=http://127.0.0.1:$($definition['fakeMesIngest']['port'])"
+        }
         $completed = $true
 
     } finally {

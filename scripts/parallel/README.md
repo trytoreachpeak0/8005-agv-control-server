@@ -5,6 +5,25 @@ control-server#262。约 2026-10-08 起 `factory01` 上同时跑两套 ControlSe
 `remote-ops/factory-server/docs/wire-to-gate-parallel-cd.md`，控制端入口是同目录下的
 `scripts/19-deploy-control-server-parallel.ps1`。这里只放随产品版本走的部分。
 
+## 需求来源：`mesIngest.source`（control-server#535）
+
+2026-10-09 用户批准：v2 可以读生产 MesIngest，**但只做 `STAGING_TO_WIRE`**，MVP 继续只做 `WIRE_TO_GATE`。
+实例定义的 `mesIngest.source` 选两种模式之一：
+
+| 模式 | 取需求 | 规则 |
+| --- | --- | --- |
+| `fake`（缺省，与 #535 之前一字不差） | 本实例自己的 FakeMesIngest 替身 | `baseUrl` 必须回环、端口不能是 5088；`fakeMesIngest` 必填、端口与 `baseUrl` 一致 |
+| `production` | 本机生产 MesIngest | `baseUrl` 必须恰好是 `http://127.0.0.1:5088`；`fakeMesIngest` 必须**不写**；`journeyRuntime.allowedWorkTypes` 必须恰好是 `["STAGING_TO_WIRE"]`，含 `WIRE_TO_GATE` 时单独报「会和 MVP 抢同一批料」；部署配置里必须有 MesIngest 共享密钥 |
+
+分流**只靠两边任务类型不相交**：MesIngest 只读、没有认领，两边看到的是同一份目录，一条需求被一边拿走后
+在另一边**仍然看得见**（09-20 那条「认领后对方看不见」的理由按代码并不成立）。所以 `production` 的
+任务类型是写死在 `ParallelInstance.psm1` 里校验的，不从定义文件里读。
+
+`instance-factory01-v2.production-mes.json` 是 10-10 受控试运行用的定义：与出厂文件只差 MES 来源、
+没有替身段、任务类型只留 `STAGING_TO_WIRE`，旅程运行时与建单闸门仍是关的（自测断言两份文件的其余部分逐字相同）。
+从 `fake` 装成 `production` 时，安装器在记录新定义之前先撤掉上一次安装留下的替身（计划任务、进程、目录），
+否则之后的卸载按新定义找不到它。卸载与关闸两种模式都能走；`production` 下的足迹里没有计划任务和替身目录。
+
 ## map 26 的取值与出处
 
 用户 2026-09-21 答复：**MVP 跑 map 25，v2 跑 map 26**。
@@ -177,7 +196,8 @@ VB 的 `DeleteDirectory`、FSO 的 `DeleteFolder`、CIM，以及挪走、清空�
 
 | 文件 | 做什么 |
 | --- | --- |
-| `instance-factory01-v2.json` | 实例定义：端口、目录、服务名、车、RouteGraph、建单闸门 |
+| `instance-factory01-v2.json` | 实例定义：端口、目录、服务名、车、RouteGraph、建单闸门（`fake` 模式，出厂默认） |
+| `instance-factory01-v2.production-mes.json` | 同一实例的 `production` 模式定义：读生产 MesIngest，只做 `STAGING_TO_WIRE`（control-server#535） |
 | `ParallelInstance.psm1` | 定义的校验、布局（所有路径与名字的唯一来源）、部署足迹、卸载的删除顺序、唯一的删目录函数。检查全是纯函数，例外只有读路径属性的 `Test-ParallelInstanceReparsePoint` 和删目录的 `Remove-ParallelInstanceDirectory` |
 | `ParallelHost.psm1` | 读写机器的辅助函数（MVP 服务指纹、调用产品卸载脚本并确认成功、把覆盖层合并进 `appsettings.Production.json` 并回读核对、只读读取旅程状态、关开派车闸门），安装、卸载与闸门脚本共用 |
 | `Install-ParallelInstanceLocal.ps1` | 在 factory01 上安装／升级／回滚 |
