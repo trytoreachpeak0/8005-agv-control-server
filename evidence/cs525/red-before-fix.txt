@@ -1,0 +1,31 @@
+  Failed ControlServer.Tests.HttpRiotMovementGatewayTests.NonFinalOrdersAcrossSeveralPagesAreReadInFull(read: "safety") [4 ms]
+  Error Message:
+   Assert.Equal() Failure: Values differ
+Expected: Stopped
+Actual:   Unknown
+  Failed ControlServer.Tests.HttpRiotMovementGatewayTests.NonFinalOrdersAcrossSeveralPagesAreReadInFull(read: "by-vehicle") [1 ms]
+  Error Message:
+   Assert.True() Failure
+Expected: True
+Actual:   False
+  Failed ControlServer.Tests.HttpRiotMovementGatewayTests.NonFinalOrdersAcrossSeveralPagesAreReadInFull(read: "listing") [1 ms]
+  Error Message:
+   Assert.True() Failure
+Expected: True
+Actual:   False
+  Failed ControlServer.Tests.HttpRiotMovementGatewayTests.AnOrderOnTheVehicleOnALaterPageIsSeen(read: "safety") [4 ms]
+  Error Message:
+   Assert.Equal() Failure: Collections differ at index 0
+Expected: "RIOT_NONFINAL_ORDER_PRESENT"
+Actual:   "RIOT_NONFINAL_ORDER_COVERAGE_UNKNOWN"
+  Failed ControlServer.Tests.HttpRiotMovementGatewayTests.AnOrderOnTheVehicleOnALaterPageIsSeen(read: "by-vehicle") [1 ms]
+  Error Message:
+   Assert.True() Failure
+Expected: True
+Actual:   null
+  Failed ControlServer.Tests.HttpRiotMovementGatewayTests.AnOrderOnTheVehicleOnALaterPageIsSeen(read: "listing") [1 ms]
+  Error Message:
+   Assert.True() Failure
+Expected: True
+Actual:   False
+Failed!  - Failed:     6, Passed:    85, Skipped:     0, Total:    91, Duration: 365 ms - ControlServer.Tests.dll (net8.0)

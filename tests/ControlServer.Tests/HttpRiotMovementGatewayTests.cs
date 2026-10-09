@@ -900,6 +900,150 @@ public sealed class HttpRiotMovementGatewayTests
     }
 
     /// <summary>
+    /// control-server#525：真实 RIoT 10-09 有 252 条非终态单（3 页），几乎全是别的产线的、没有车的单。三处读都要逐页读全；
+    /// 没有一条挂在本车上时，安全读数是 STOPPED，按车读是「没有」，全清单是完整的 252 条。修之前三处都只读第 1 页，判读不全。
+    /// </summary>
+    [Theory]
+    [InlineData("safety")]
+    [InlineData("by-vehicle")]
+    [InlineData("listing")]
+    public async Task NonFinalOrdersAcrossSeveralPagesAreReadInFull(string read)
+    {
+        PagedOrders orders = new(ForeignOrders(252));
+        await using RiotSession session = CreateSession(PagedOrdersHandler(orders));
+        HttpRiotMovementGateway gateway = new(session);
+
+        switch (read)
+        {
+            case "safety":
+                RiotVehicleSafetyObservation safety = await gateway.ReadVehicleSafetyAsync(
+                    "VEHICLE-KEY-01", TestContext.Current.CancellationToken);
+                Assert.Equal(RiotVehicleMotionState.Stopped, safety.MotionState);
+                Assert.Empty(safety.ReasonCodes);
+                break;
+            case "by-vehicle":
+                RiotVehicleOrderObservation byVehicle = await gateway.ReadUnfinishedOrdersAsync(
+                    "VEHICLE-KEY-01", TestContext.Current.CancellationToken);
+                Assert.True(byVehicle.IsKnown);
+                Assert.False(byVehicle.HasUnfinishedOrder);
+                break;
+            default:
+                RiotUnfinishedOrderListing listing = await gateway.ListUnfinishedOrdersAsync(
+                    TestContext.Current.CancellationToken);
+                Assert.True(listing.IsComplete);
+                Assert.Equal(252, listing.Orders.Count);
+                Assert.Equal(252, listing.Orders.Select(order => order.OrderId).Distinct().Count());
+                break;
+        }
+        Assert.Equal([1, 2, 3], orders.PagesAsked);
+    }
+
+    /// <summary>
+    /// control-server#525：本车的单在第 3 页上也要被看见——安全读数非停稳（<c>RIOT_NONFINAL_ORDER_PRESENT</c>），按车读与全清单都带着它。
+    /// </summary>
+    [Theory]
+    [InlineData("safety")]
+    [InlineData("by-vehicle")]
+    [InlineData("listing")]
+    public async Task AnOrderOnTheVehicleOnALaterPageIsSeen(string read)
+    {
+        List<string> records = ForeignOrders(251);
+        records.Insert(230, OrderRecordJson(9001, "ORDER-MINE", 1, "VEHICLE-KEY-01", "--"));
+        PagedOrders orders = new(records);
+        await using RiotSession session = CreateSession(PagedOrdersHandler(orders));
+        HttpRiotMovementGateway gateway = new(session);
+
+        switch (read)
+        {
+            case "safety":
+                RiotVehicleSafetyObservation safety = await gateway.ReadVehicleSafetyAsync(
+                    "VEHICLE-KEY-01", TestContext.Current.CancellationToken);
+                Assert.Equal(RiotVehicleMotionState.Unknown, safety.MotionState);
+                Assert.Equal(["RIOT_NONFINAL_ORDER_PRESENT"], safety.ReasonCodes);
+                break;
+            case "by-vehicle":
+                RiotVehicleOrderObservation byVehicle = await gateway.ReadUnfinishedOrdersAsync(
+                    "VEHICLE-KEY-01", TestContext.Current.CancellationToken);
+                Assert.True(byVehicle.HasUnfinishedOrder);
+                Assert.Equal(["ORDER-MINE"], byVehicle.UnfinishedOrderIds);
+                break;
+            default:
+                RiotUnfinishedOrderListing listing = await gateway.ListUnfinishedOrdersAsync(
+                    TestContext.Current.CancellationToken);
+                Assert.True(listing.IsComplete);
+                Assert.Contains(new RiotListedOrder("ORDER-MINE", "UPPER-9001", 1, "VEHICLE-KEY-01", "--"), listing.Orders);
+                break;
+        }
+        Assert.Equal([1, 2, 3], orders.PagesAsked);
+    }
+
+    /// <summary>
+    /// control-server#525：读不全仍按读不全处理，不拼出一个 RIoT 从没有过的快照。
+    /// <c>over-cap</c>：2001 条要 21 页，超过 20 页上限，读完第 1 页就停；<c>total-grows</c>／<c>total-shrinks</c>：读第 2 页时总数变了；
+    /// <c>page-repeated</c>：RIoT 不认 pageNum、每次都回第 1 页（修之前的替身 RIoT 就是这样）；<c>short-page</c>：中间一页少一条；
+    /// <c>record-repeated</c>：同一条记录在两页上都出现（分页期间单子前移）。
+    /// </summary>
+    [Theory]
+    [InlineData("safety", "over-cap")]
+    [InlineData("safety", "total-grows")]
+    [InlineData("safety", "total-shrinks")]
+    [InlineData("safety", "page-repeated")]
+    [InlineData("safety", "short-page")]
+    [InlineData("safety", "record-repeated")]
+    [InlineData("by-vehicle", "over-cap")]
+    [InlineData("by-vehicle", "total-grows")]
+    [InlineData("by-vehicle", "total-shrinks")]
+    [InlineData("by-vehicle", "page-repeated")]
+    [InlineData("by-vehicle", "short-page")]
+    [InlineData("by-vehicle", "record-repeated")]
+    [InlineData("listing", "over-cap")]
+    [InlineData("listing", "total-grows")]
+    [InlineData("listing", "total-shrinks")]
+    [InlineData("listing", "page-repeated")]
+    [InlineData("listing", "short-page")]
+    [InlineData("listing", "record-repeated")]
+    public async Task APagedReadThatDoesNotAddUpIsIncomplete(string read, string fault)
+    {
+        PagedOrders orders = new(ForeignOrders(fault == "over-cap" ? 2001 : 252));
+        switch (fault)
+        {
+            case "total-grows": orders.TotalOverride = page => page == 1 ? 252 : 253; break;
+            case "total-shrinks": orders.TotalOverride = page => page == 1 ? 252 : 251; break;
+            case "page-repeated": orders.IgnorePageNum = true; break;
+            case "short-page": orders.DropOneRecordOnPage = 2; break;
+            case "record-repeated": orders.RepeatLastRecordOfPreviousPageOn = 2; break;
+        }
+        await using RiotSession session = CreateSession(PagedOrdersHandler(orders));
+        HttpRiotMovementGateway gateway = new(session);
+
+        switch (read)
+        {
+            case "safety":
+                RiotVehicleSafetyObservation safety = await gateway.ReadVehicleSafetyAsync(
+                    "VEHICLE-KEY-01", TestContext.Current.CancellationToken);
+                Assert.Equal(RiotVehicleMotionState.Unknown, safety.MotionState);
+                Assert.Equal(["RIOT_NONFINAL_ORDER_COVERAGE_UNKNOWN"], safety.ReasonCodes);
+                break;
+            case "by-vehicle":
+                RiotVehicleOrderObservation byVehicle = await gateway.ReadUnfinishedOrdersAsync(
+                    "VEHICLE-KEY-01", TestContext.Current.CancellationToken);
+                Assert.False(byVehicle.IsKnown);
+                Assert.Null(byVehicle.HasUnfinishedOrder);
+                break;
+            default:
+                RiotUnfinishedOrderListing listing = await gateway.ListUnfinishedOrdersAsync(
+                    TestContext.Current.CancellationToken);
+                Assert.False(listing.IsComplete);
+                Assert.Empty(listing.Orders);
+                break;
+        }
+        if (fault == "over-cap")
+        {
+            Assert.Equal([1], orders.PagesAsked);
+        }
+    }
+
+    /// <summary>
     /// control-server#330: one order's state by its RIoT orderId through <c>detailByOrderId</c>; a failed read, or an answer
     /// about another order, is no state at all.
     /// </summary>
@@ -994,6 +1138,71 @@ public sealed class HttpRiotMovementGatewayTests
 
     private static string CompleteOrdersJson() =>
         """{"code":"0","result":{"current":1,"size":100,"total":0,"records":[]}}""";
+
+    private static string OrderRecordJson(
+        long id, string orderId, int orderState, string? appointVehicleKey, string? executeVehicleKey)
+    {
+        string appointed = appointVehicleKey is null ? "null" : $"\"{appointVehicleKey}\"";
+        string execute = executeVehicleKey is null ? "null" : $"\"{executeVehicleKey}\"";
+        return $$$"""
+            {"id":{{{id}}},"orderId":"{{{orderId}}}","upperId":"UPPER-{{{id}}}","orderState":{{{orderState}}},"appointVehicleKey":{{{appointed}}},"executeVehicleKey":{{{execute}}}}
+            """;
+    }
+
+    /// <summary>Other lines' orders, as on the real RIoT on 2026-10-09: mostly state 8 with no vehicle, a few running on others.</summary>
+    private static List<string> ForeignOrders(int count) =>
+    [
+        .. Enumerable.Range(1, count).Select(index => index % 20 == 0
+            ? OrderRecordJson(index, $"ORDER-{index}", 3, "OTHER-VEHICLE", "OTHER-VEHICLE")
+            : OrderRecordJson(index, $"ORDER-{index}", 8, null, "--")),
+    ];
+
+    /// <summary>
+    /// A RIoT order listing served page by page as <c>pageNum</c> asks, with the faults
+    /// <see cref="APagedReadThatDoesNotAddUpIsIncomplete"/> injects.
+    /// </summary>
+    private sealed class PagedOrders(List<string> records)
+    {
+        public List<int> PagesAsked { get; } = [];
+        public Func<int, int>? TotalOverride { get; set; }
+        public bool IgnorePageNum { get; set; }
+        public int? DropOneRecordOnPage { get; set; }
+        public int? RepeatLastRecordOfPreviousPageOn { get; set; }
+
+        public string Page(int pageNum, int pageSize)
+        {
+            PagesAsked.Add(pageNum);
+            int served = IgnorePageNum ? 1 : pageNum;
+            List<string> page = [.. records.Skip((served - 1) * pageSize).Take(pageSize)];
+            if (DropOneRecordOnPage == served) page.RemoveAt(0);
+            if (RepeatLastRecordOfPreviousPageOn == served)
+            {
+                page.RemoveAt(page.Count - 1);
+                page.Insert(0, records[((served - 1) * pageSize) - 1]);
+            }
+            int total = TotalOverride?.Invoke(served) ?? records.Count;
+            return $$$"""
+                {"code":"0","result":{"current":{{{served}}},"size":{{{pageSize}}},"total":{{{total}}},"records":[{{{string.Join(",", page)}}}]}}
+                """;
+        }
+    }
+
+    private static RecordingHandler PagedOrdersHandler(PagedOrders orders) => new((request, _) =>
+    {
+        if (request.RequestUri?.AbsolutePath == "/api/task/v1/task/getVehicleInfo/VEHICLE-KEY-01")
+        {
+            return JsonResponse(SafeVehicleJson("MT_FINISHED", 0));
+        }
+
+        Assert.Equal("/api/order/v1/orderRecord", request.RequestUri?.AbsolutePath);
+        Dictionary<string, string> query = request.RequestUri!.Query.TrimStart('?').Split('&')
+            .Select(pair => pair.Split('=', 2))
+            .Where(pair => pair[0] is "pageNum" or "pageSize")
+            .ToDictionary(pair => pair[0], pair => pair[1]);
+        return JsonResponse(orders.Page(
+            int.Parse(query["pageNum"], System.Globalization.CultureInfo.InvariantCulture),
+            int.Parse(query["pageSize"], System.Globalization.CultureInfo.InvariantCulture)));
+    });
 
     private static OrderIntent CreateIntent() => new(
         "LEG-001", "D-001", "UPPER-001", "TO_PICKUP", "ST-12",
