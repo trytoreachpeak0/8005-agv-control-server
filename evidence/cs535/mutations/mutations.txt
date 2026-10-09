@@ -1,0 +1,8 @@
+M1 generic work-type rule off : exit=1 539 passed, 5 failed ::   FAIL  source: production with another work type beside STAGING_TO_WIRE is refused /   FAIL  source: production with STAGING_TO_WIRE in another case is refused
+M2 WIRE_TO_GATE branch off : exit=1 541 passed, 3 failed ::   FAIL  source: production with WIRE_TO_GATE beside STAGING_TO_WIRE is refused, naming the MVP /   FAIL  source: production with the shipped six work types is refused, naming the MVP
+M3 fakeMesIngest-absent rule off : exit=1 543 passed, 1 failed ::   FAIL  source: production with a fakeMesIngest section is refused
+M4 retire skips previous assert : exit=1 543 passed, 1 failed ::   FAIL  retire: a previous definition that does not pass the checks is not acted on
+M5 fake checks skipped : exit=1 538 passed, 6 failed ::   FAIL  taskName is '*' (every task on the host) /   FAIL  mesIngest.baseUrl points at the production MesIngest
+M6 production baseUrl unchecked : exit=1 542 passed, 2 failed ::   FAIL  source: production with baseUrl at the fake port is refused /   FAIL  source: production with baseUrl on the plant address is refused
+M7 footprint keeps nameless task : exit=1 542 passed, 2 failed ::   FAIL  footprint: production has no scheduled task and no double directory, and keeps everything else /   FAIL  uninstall: the removal sequence runs over a production footprint (service first, no task, no process step)
+M8 source case-insensitive : exit=1 543 passed, 1 failed ::   FAIL  source: 'Production' is not a mode and is refused

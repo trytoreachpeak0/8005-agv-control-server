@@ -341,6 +341,43 @@ Invoke-Case -Name 'case 19: the three map-26 placeholders put back' `
     -ExpectFragment 'is still the placeholder' `
     -ExpectReasonCount 3
 
+# ------------------------------- MesIngest source mode (control-server#535) ---
+
+# The trap the ticket names: switching the shipped file to the production catalog and leaving its
+# six work types alone would take the MVP's WIRE_TO_GATE material.
+Invoke-Case -Name 'case 20: production MesIngest with the shipped six work types (WIRE_TO_GATE among them)' `
+    -Observe 'mesIngest.source' `
+    -Mutate {
+        param($t)
+        $t['mesIngest'] = [ordered]@{ source = 'production'; baseUrl = 'http://127.0.0.1:5088' }
+        $t.Remove('fakeMesIngest')
+        $t
+    } `
+    -ExpectFragment 'WIRE_TO_GATE, which the MVP takes from the same catalog' `
+    -ExpectReasonCount 1
+
+Invoke-Case -Name 'case 21: production MesIngest, STAGING_TO_WIRE only, but the double still declared' `
+    -Observe 'fakeMesIngest' `
+    -Mutate {
+        param($t)
+        $t['mesIngest'] = [ordered]@{ source = 'production'; baseUrl = 'http://127.0.0.1:5088' }
+        $t['journeyRuntime']['allowedWorkTypes'] = @('STAGING_TO_WIRE')
+        $t
+    } `
+    -ExpectFragment "fakeMesIngest must be absent when mesIngest.source is 'production'" `
+    -ExpectReasonCount 1
+
+Invoke-Case -Name 'case 22: production MesIngest done as the ticket says is accepted' `
+    -Observe 'mesIngest.source' `
+    -Mutate {
+        param($t)
+        $t['mesIngest'] = [ordered]@{ source = 'production'; baseUrl = 'http://127.0.0.1:5088' }
+        $t.Remove('fakeMesIngest')
+        $t['journeyRuntime']['allowedWorkTypes'] = @('STAGING_TO_WIRE')
+        $t
+    } `
+    -ExpectAccepted
+
 # ---------------------------------------------------------------- teardown ---
 
 } finally {

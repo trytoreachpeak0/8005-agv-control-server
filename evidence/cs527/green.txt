@@ -1,0 +1,14 @@
+branch: fix/cs527-estop-release-oscillation @ 37d9d6fb + dashboard/doc text
+dotnet test tests/ControlServer.Tests/ControlServer.Tests.csproj -c Release --filter "FullyQualifiedName~Fault|FullyQualifiedName~Emergency|FullyQualifiedName~InTransitDoor|FullyQualifiedName~StopDriven|FullyQualifiedName~OwnOrderRebuild"
+Passed!  - Failed:     0, Passed:   523, Skipped:     0, Total:   523, Duration: 3 m 28 s - ControlServer.Tests.dll (net8.0)
+
+dotnet test ... --filter "FullyQualifiedName~BlockedJourney|FullyQualifiedName~Dashboard"  (after the dashboard text change)
+Passed!  - Failed:     0, Passed:   332, Skipped:     0, Total:   332, Duration: 4 m 15 s - ControlServer.Tests.dll (net8.0)
+
+review round: aa9180a7 (M-1, S-1, S-3 implementation)
+dotnet test tests/ControlServer.Tests/ControlServer.Tests.csproj -c Release --filter "FullyQualifiedName~Fault|FullyQualifiedName~Emergency|FullyQualifiedName~InTransitDoor|FullyQualifiedName~StopDriven|FullyQualifiedName~OwnOrderRebuild|FullyQualifiedName~BlockedJourney|FullyQualifiedName~Dashboard"
+Passed!  - Failed:     0, Passed:   877, Skipped:     0, Total:   877, Duration: 5 m 21 s - ControlServer.Tests.dll (net8.0)
+
+re-review round: 9b21da62 (fresh motion window after a release, plus the M8 guard)
+dotnet test tests/ControlServer.Tests/ControlServer.Tests.csproj -c Release --filter "FullyQualifiedName~Fault|FullyQualifiedName~Emergency|FullyQualifiedName~InTransitDoor|FullyQualifiedName~StopDriven|FullyQualifiedName~OwnOrderRebuild|FullyQualifiedName~BlockedJourney|FullyQualifiedName~Dashboard|FullyQualifiedName~StopProof"
+Passed!  - Failed:     0, Passed:   884, Skipped:     0, Total:   884, Duration: 4 m 59 s - ControlServer.Tests.dll (net8.0)

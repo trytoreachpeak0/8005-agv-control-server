@@ -205,6 +205,8 @@ public sealed class VehicleMotionLedger(IOptions<VehicleFaultOptions> options)
     private readonly ConcurrentDictionary<string, Queue<VehicleMotionSample>> windows =
         new(StringComparer.Ordinal);
 
+    private readonly ConcurrentDictionary<string, string> startedAfterRelease = new(StringComparer.Ordinal);
+
     private readonly int capacity = options.Value.StopProofSampleCount;
 
     /// <summary>Adds one sample and returns the retained window for that vehicle, oldest first.</summary>
@@ -233,4 +235,25 @@ public sealed class VehicleMotionLedger(IOptions<VehicleFaultOptions> options)
     /// samples across episodes would let observations of one stop stand in for the next.
     /// </remarks>
     public void Forget(string deviceKey) => windows.TryRemove(deviceKey, out _);
+
+    /// <summary>
+    /// Drops the samples taken before <paramref name="releaseId"/>, the latest emergency release that has taken effect on the
+    /// vehicle, the first time it is named; naming it again changes nothing.
+    /// </summary>
+    /// <remarks>
+    /// control-server#527 re-review: samples taken under a latch say nothing about a vehicle that has since been released --
+    /// a real one reads MT_RUNNING at speed 0 for as long as it is latched (CP-0003) -- and a stop asked for after the release
+    /// gives the window's missing facts as its reason. Kept in memory like the window: after a restart both start empty.
+    /// </remarks>
+    public void StartAfterRelease(string deviceKey, string releaseId)
+    {
+        ArgumentException.ThrowIfNullOrWhiteSpace(releaseId);
+        if (startedAfterRelease.TryGetValue(deviceKey, out string? seen) && string.Equals(seen, releaseId, StringComparison.Ordinal))
+        {
+            return;
+        }
+
+        windows.TryRemove(deviceKey, out _);
+        startedAfterRelease[deviceKey] = releaseId;
+    }
 }
