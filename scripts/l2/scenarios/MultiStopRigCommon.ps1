@@ -69,6 +69,114 @@ function Get-L2FirstWaitingOperator([object]$Connection, [string]$AttemptId) {
 }
 
 <#
+control-server#560: keep "the fixture failed to write or read the HMI" apart from "the product answered". The batch-8 exit's
+third G3 round (cs#393, binding b6be67ac) lost g3-multi-stop-plan to an onboard-local SUBLOT_NOT_IN_WORKLIST whose only
+remaining explanation was that the scan box did not hold the sublot when 「手动提交」 was invoked -- and nothing recorded what it
+held. So the box is read back and journaled before every submit.
+
+What the fixture may repeat is its own write: a read-back that is not the sublot means the input did not land, and the sublot
+is typed again, at most $MaxRetypes more times, each one journaled. ValuePattern.SetValue replaces the whole text, so typing
+again is the clear-and-retype. A read-back that is the sublot is submitted exactly once; whatever the product does with it is
+the product's answer and is never retried here (Wait-L2SubmitOutcome).
+
+Returns Text (the read-back that was submitted), SubmittedAt (taken just before Invoke) and Typings. Throws RIG_FIXTURE when the
+box never reads back the sublot.
+#>
+function Invoke-L2SublotEntry([object]$Onboard, [object]$Journal, [string]$Sublot, [string]$Label, [int]$MaxRetypes = 2,
+    [int]$SubmitReadySeconds = 30) {
+    $readings = [System.Collections.Generic.List[string]]::new()
+    for ($typing = 1; $typing -le 1 + $MaxRetypes; $typing++) {
+        $Journal.Note("Typing sublot $Sublot ($Label) into ScanTextBox through UI Automation (typing $typing of $(1 + $MaxRetypes)).")
+        $Onboard.SetSublot($Sublot)
+        $text = Read-L2ScanText $Onboard
+        $Journal.Note("ScanTextBox read back after typing $typing ($Label): $(Format-L2ScanText $text).")
+        if ($text -cne $Sublot) {
+            $readings.Add("typing $typing after-type $(Format-L2ScanText $text)")
+            continue
+        }
+        $null = Wait-L2Condition -Description 'the manual submit button became enabled' `
+            -Journal $Journal -Criterion "submit-ready-$Label" -TimeoutSeconds $SubmitReadySeconds `
+            -Probe { $Onboard.SubmitReady() } -Until { param($v) $v }
+        # Read again at the last moment: the gap between typing and the button enabling is seconds on a slow desktop.
+        $text = Read-L2ScanText $Onboard
+        $Journal.Note("ScanTextBox read back just before submit ($Label): $(Format-L2ScanText $text).")
+        if ($text -cne $Sublot) {
+            $readings.Add("typing $typing before-submit $(Format-L2ScanText $text)")
+            continue
+        }
+        $submittedAt = [DateTimeOffset]::Now
+        $Onboard.Submit()
+        $Journal.Note("Manual submit invoked for $Label at $($submittedAt.ToString('o')) with ScanTextBox $(Format-L2ScanText $text).")
+        return [pscustomobject]@{ Text = $text; SubmittedAt = $submittedAt; Typings = $typing }
+    }
+    throw ("RIG_FIXTURE: ScanTextBox never read back '$Sublot' ($Label) after $(1 + $MaxRetypes) typings, so nothing was submitted: " +
+        ($readings -join '; ') + '. The input did not land; this is the fixture, not a product result.')
+}
+
+# The scan box's text, or $null when it cannot be read (absent, or the element went away under the read).
+function Read-L2ScanText([object]$Onboard) {
+    try { return $Onboard.ScanText() } catch { return $null }
+}
+
+function Format-L2ScanText([object]$Text) {
+    if ($null -eq $Text) { return '(unreadable)' }
+    return "'$Text'"
+}
+
+<#
+The onboard's local refusals of an operator command after $After: the app log line MainViewModel writes for every UI command
+a business rule refuses ("界面命令被业务规则拒绝：<code>。"), which is where SUBLOT_NOT_IN_WORKLIST appeared in the third round.
+The refusal never reaches the server, so the database cannot show it. Returns the first one as Code, At and Line, or $null.
+The log is open for writing by the onboard, hence the shared read.
+#>
+function Find-L2OnboardRefusal([string]$LogDirectory, [DateTimeOffset]$After) {
+    if (-not (Test-Path -LiteralPath $LogDirectory)) { return $null }
+    foreach ($file in @(Get-ChildItem -LiteralPath $LogDirectory -Filter 'agv-*.log' | Sort-Object Name)) {
+        $stream = [IO.File]::Open($file.FullName, [IO.FileMode]::Open, [IO.FileAccess]::Read,
+            [IO.FileShare]::ReadWrite -bor [IO.FileShare]::Delete)
+        try {
+            $reader = [IO.StreamReader]::new($stream, [Text.Encoding]::UTF8)
+            while ($null -ne ($line = $reader.ReadLine())) {
+                if ($line -notmatch '界面命令被业务规则拒绝：(?<code>[A-Z0-9_]+)') { continue }
+                $code = $Matches['code']
+                $at = [DateTimeOffset]::MinValue
+                if (-not [DateTimeOffset]::TryParse(($line -split "`t")[0], [ref]$at) -or $at -le $After) { continue }
+                return [pscustomobject]@{ Code = $code; At = $at; Line = $line }
+            }
+        } finally {
+            $stream.Dispose()
+        }
+    }
+    return $null
+}
+
+<#
+After one submit: wait for the server's operation ($GetOperation), or for the onboard to refuse the submit locally. A refusal
+is the product's answer and fails the scenario here, carrying the box text, the code and the time; it is not submitted again.
+#>
+function Wait-L2SubmitOutcome([scriptblock]$GetOperation, [string]$LogDirectory, [object]$Entry, [object]$Journal,
+    [string]$Label, [int]$TimeoutSeconds) {
+    $outcome = Wait-L2Condition -Description "the server issued the load command for $Label, or the onboard refused the submit" `
+        -Journal $Journal -Criterion "load-attempt-$Label" -TimeoutSeconds $TimeoutSeconds `
+        -Probe {
+            $operation = & $GetOperation
+            if ($null -ne $operation) { [pscustomobject]@{ Operation = $operation; Refusal = $null } }
+            else {
+                $refusal = Find-L2OnboardRefusal $LogDirectory $Entry.SubmittedAt
+                if ($null -ne $refusal) { [pscustomobject]@{ Operation = $null; Refusal = $refusal } } else { $null }
+            }
+        } -Until { param($v) $null -ne $v }
+    if ($null -ne $outcome.Refusal) {
+        $refusal = $outcome.Refusal
+        $Journal.Note("The onboard refused the submit for ${Label}: $($refusal.Line)")
+        throw ("PRODUCT_REFUSED: the onboard refused the submit for $Label locally with $($refusal.Code) at " +
+            "$($refusal.At.ToString('o')); ScanTextBox read back $(Format-L2ScanText $Entry.Text) just before the submit at " +
+            "$($Entry.SubmittedAt.ToString('o')). Not submitted again: a refusal is the product's answer.")
+    }
+    return $outcome.Operation
+}
+
+<#
 在当前停靠上装一条需求：等服务端要子批、车载端能录入，经 UIA 录入这条需求的子批并提交；等这条需求的装货命令、车载端在那一仓
 等操作员（WAITING_OPERATOR 只在锁反馈稳定、开锁输出复位之后才发，所以门真开着），把货放进去、关门；等这笔装货提交。
 
@@ -104,17 +212,10 @@ function Invoke-L2RigLoad([object]$Context, [string]$JourneyId, [hashtable]$Dema
         -Journal $journal -Criterion "entry-open-$($Demand.Label)" -TimeoutSeconds $TimeoutSeconds `
         -Probe { "$(Get-L2JourneyStage $connection $JourneyId)/$($onboard.CanSubmit())" } `
         -Until { param($v) $v -eq 'AwaitingSublot/True' }
-    $journal.Note("Typing sublot $($Demand.Sublot) (demand $($Demand.Label)) into ScanTextBox through UI Automation.")
-    $onboard.SetSublot($Demand.Sublot)
-    $null = Wait-L2Condition -Description 'the manual submit button became enabled' `
-        -Journal $journal -Criterion "submit-ready-$($Demand.Label)" -TimeoutSeconds 30 `
-        -Probe { $onboard.SubmitReady() } -Until { param($v) $v }
-    $onboard.Submit()
-    $journal.Note("Manual submit invoked for $($Demand.Label).")
-
-    $operation = Wait-L2Condition -Description "the server issued the load command for $($Demand.Label)" `
-        -Journal $journal -Criterion "load-attempt-$($Demand.Label)" -TimeoutSeconds $TimeoutSeconds `
-        -Probe { Get-L2DemandOperation $connection $demandId 'Load' } -Until { param($v) $null -ne $v }
+    $entry = Invoke-L2SublotEntry -Onboard $onboard -Journal $journal -Sublot $Demand.Sublot -Label $Demand.Label
+    $operation = Wait-L2SubmitOutcome -GetOperation { Get-L2DemandOperation $connection $demandId 'Load' } `
+        -LogDirectory (Join-Path $Context.LogRoot 'onboard-app') -Entry $entry -Journal $journal -Label $Demand.Label `
+        -TimeoutSeconds $TimeoutSeconds
     $attemptId = [string]$operation.SlotOperationAttemptId
     $targetSlots = @([string]$operation.TargetSlotsJson | ConvertFrom-Json | ForEach-Object { [int]$_ })
     $waiting = Wait-L2Condition -Description "the onboard waits for the operator on $($Demand.Label)'s load slot" `
