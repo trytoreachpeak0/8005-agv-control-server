@@ -738,6 +738,9 @@ jobs:
               # control-server#573: the plant's non-final order listing churning while it is paged (the fake RIoT's listing
               # churn) must not make the real onboard flash not-ready and restart the station departure wait.
               @{ Name = 'real-onboard-departure-under-listing-churn';        Runs = 1 }
+              # control-server#573: the same churn from arrival at the pickup on, so the load's WAITING_OPERATOR progress
+              # still reaches the server (before the fix it was lost to a not-ready flash, run 38067577157).
+              @{ Name = 'real-onboard-load-under-listing-churn';             Runs = 1 }
           )
 
           # Registered before anything can fail, so the upload step always has a path.

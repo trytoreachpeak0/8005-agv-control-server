@@ -25,11 +25,24 @@
   建单之后车载端看到本服务端自己的在途单而报未就绪是设计如此（cs#138），不在窗口里。
 - 04 旅程照常走完，`Completed`。
 
+`-ChurnFrom PickupArrival`（场景 `real-onboard-load-under-listing-churn` 传它）从车到取货站就开始搅，多判装货那一段：
+- 05 装货期间注入确实打中了：车到站到装货提交之间至少搅乱 5 次。
+- 06 真车载端的 `WAITING_OPERATOR` 进度送到了服务端（120 秒内）。修复前这一条就是 run 38067577157 的样子：开锁后撞上一次未就绪，
+  进度发不出去、此后不补发，服务端干等（`evidence/cs573/rig-red-load-phase-38067577157`）。不补发是车载端另一个缺陷，调度另开票；
+  本票修好的是让会话不再因清单搅动而闪。
+- 07 装货照常提交。
+然后照样判 01～04。
+
 03 读的收件箱行都写在 TO_GATE 建单之前，02 等到阶段之后它们已经落库，所以在 02 之后读一次即可；时间比较在 PowerShell 里做，
 不在 SQL 里做（SQLite 里的 DateTimeOffset 是带偏移的文本）。
 #>
 [CmdletBinding()]
-param([Parameter(Mandatory)][object]$Context)
+param(
+    [Parameter(Mandatory)][object]$Context,
+    # LoadCommitted: churn from the load commit on (this scenario). PickupArrival: churn from arrival at the pickup on,
+    # through the load (real-onboard-load-under-listing-churn passes it; see that file).
+    [ValidateSet('LoadCommitted', 'PickupArrival')][string]$ChurnFrom = 'LoadCommitted'
+)
 
 Set-StrictMode -Version Latest
 $ErrorActionPreference = 'Stop'
@@ -115,13 +128,21 @@ function Invoke-SlotOperation([string]$operationType, [string]$cargoState) {
         throw "This scenario drives one slot per operation; the $operationType command targets $($slots.Count)."
     }
     $slotNo = [int]$slots[0]
-    $null = Wait-L2Condition -Description "the onboard is waiting for the operator on slot $slotNo" `
+    # Not a throw: under PickupArrival a missing WAITING_OPERATOR is what L2-LC-06 judges, and run 38067577157 is what it
+    # looks like before the fix (evidence/cs573/rig-red-load-phase-38067577157).
+    $waiting = [int](Wait-L2ConditionOrLast -Description "the onboard is waiting for the operator on slot $slotNo" `
         -Journal $journal -Criterion "$operationType-waiting-operator" -TimeoutSeconds 120 `
         -Probe { @(Get-Progress $attemptId | Where-Object { $_.phase -eq 'WAITING_OPERATOR' }).Count } `
-        -Until { param($v) $v -ge 1 }
+        -Until { param($v) $v -ge 1 })
+    if ($waiting -lt 1) { return [pscustomobject]@{ SlotNo = $slotNo; WaitingReported = $false } }
     $null = $simulator.Command('Put', "slots/$slotNo/cargo", @{ state = $cargoState })
     $null = $simulator.Command('Post', "slots/$slotNo/close-door", @{})
-    return $slotNo
+    return [pscustomobject]@{ SlotNo = $slotNo; WaitingReported = $true }
+}
+
+function Set-ListingChurn {
+    $journal.Note('Arming the non-final listing churn: 250 padding orders, 4 churned reads in every 10.')
+    $null = $riot.Command('Put', 'faults/nonfinal-listing-churn', @{ padding = 250; period = 10; burst = 4 })
 }
 
 # --- 1. 需求、派车、到取货站 ------------------------------------------------------------------------
@@ -150,7 +171,13 @@ $null = $riot.Command('Put', 'vehicle', @{
 })
 $null = $riot.Command('Put', "orders/$($pickupIntent.UpperId)", @{ orderState = 5 })
 
-# --- 2. 录入、装货（全厂订单还没开始变，见头注释「为什么装完才搅」） ----------------------------------------
+# --- 2. 录入、装货（LoadCommitted 时全厂订单还没开始变，见头注释「为什么装完才搅」） ------------------------------
+
+$churnedAtArrival = $null
+if ($ChurnFrom -eq 'PickupArrival') {
+    Set-ListingChurn
+    $churnedAtArrival = Get-ChurnedReads
+}
 
 $null = Wait-L2Condition -Description 'the onboard HMI accepted sublot entry' `
     -Journal $journal -Criterion 'onboard-can-submit' -TimeoutSeconds 180 `
@@ -161,8 +188,19 @@ $null = Wait-L2Condition -Description 'the manual submit button became enabled' 
     -Probe { $onboard.SubmitReady() } -Until { param($v) $v }
 $onboard.Submit()
 
-$loadSlot = Invoke-SlotOperation -operationType 'Load' -cargoState 'OCCUPIED'
-$null = Wait-L2Condition -Description 'the load committed' `
+$load = Invoke-SlotOperation -operationType 'Load' -cargoState 'OCCUPIED'
+if ($ChurnFrom -eq 'PickupArrival') {
+    $assertions.Add(
+        'L2-LC-06', '装货时全厂订单在变，真车载端的 WAITING_OPERATOR 进度照样送到服务端（120 秒内）',
+        $load.WaitingReported, $true, $load.WaitingReported)
+}
+if (-not $load.WaitingReported) {
+    if ($ChurnFrom -ne 'PickupArrival') { throw 'The onboard never reported WAITING_OPERATOR for the load.' }
+    $null = $riot.Command('Put', 'faults/nonfinal-listing-churn', @{ padding = 0; period = 0; burst = 0 })
+    $journal.Note('The load never reached the operator; skipping the rest.')
+    return
+}
+$loadStatus = Wait-L2ConditionOrLast -Description 'the load committed' `
     -Journal $journal -Criterion 'load-committed' -TimeoutSeconds 120 `
     -Probe {
         $rows = Invoke-L2Query -Connection $connection `
@@ -171,11 +209,22 @@ $null = Wait-L2Condition -Description 'the load committed' `
     } `
     -Until { param($v) $v -eq 'Committed' }
 $committedAt = [datetimeoffset]::UtcNow
+if ($ChurnFrom -eq 'PickupArrival') {
+    $churnedDuringLoad = (Get-ChurnedReads) - $churnedAtArrival
+    $assertions.Add(
+        'L2-LC-05', '装货期间全厂订单确实在变：假 RIoT 至少搅乱了 5 次清单读取',
+        ($churnedDuringLoad -ge 5), '>= 5', $churnedDuringLoad)
+    $assertions.Add(
+        'L2-LC-07', '装货在清单搅动下照常提交（Committed）',
+        ($loadStatus -eq 'Committed'), 'Committed', $loadStatus)
+}
+elseif ($loadStatus -ne 'Committed') {
+    throw "The load did not commit: $loadStatus."
+}
 
-# --- 3. 全厂订单开始变：250 张别的产线的单，每 10 次读里连续 4 次读到一半总数变了 ---------------------------
+# --- 3. 全厂订单开始变（PickupArrival 时早已在变）：250 张别的产线的单，每 10 次读里连续 4 次读到一半总数变了 -------
 
-$journal.Note('Arming the non-final listing churn: 250 padding orders, 4 churned reads in every 10.')
-$null = $riot.Command('Put', 'faults/nonfinal-listing-churn', @{ padding = 250; period = 10; burst = 4 })
+if ($ChurnFrom -eq 'LoadCommitted') { Set-ListingChurn }
 $churnedAtCommit = Get-ChurnedReads
 $journal.Note("Load committed at $($committedAt.ToString('o')); churn armed with $churnedAtCommit churned reads so far.")
 
