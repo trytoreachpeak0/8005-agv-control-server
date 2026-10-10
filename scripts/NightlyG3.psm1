@@ -175,4 +175,14 @@ function Wait-NightlyG3RigIdle {
     }
 }
 
-Export-ModuleMember -Function Get-NightlyG3Verdict, Format-NightlyG3Comment, Select-NightlyG3BusyRealRigJob, Wait-NightlyG3RigIdle
+function Get-NightlyG3StartDeadline {
+    param(
+        [Parameter(Mandatory)][string]$EventName,
+        [Parameter(Mandatory)][DateTimeOffset]$StartedAtUtc,
+        [double]$DispatchMinutes = 180
+    )
+    return $null
+}
+
+Export-ModuleMember -Function Get-NightlyG3Verdict, Format-NightlyG3Comment, Select-NightlyG3BusyRealRigJob, Wait-NightlyG3RigIdle,
+    Get-NightlyG3StartDeadline

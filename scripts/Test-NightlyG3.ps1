@@ -22,6 +22,8 @@
          busy, read from the REST shapes, and the wait on a fake clock -- idle at once, busy then idle, busy for the
          whole limit (NOT_STARTED_RIG_BUSY, naming what was busy), and a query that cannot answer, which is busy, not
          idle. Nothing is ever cancelled; the wait only decides whether this night starts.
+      4. The start deadline: a scheduled night starts no runner after 04:00 CST of the night it started in, a schedule
+         GitHub started late runs nothing, and a manual dispatch is bounded by its own length.
 
     Exits 1 when any check comes out the other way, and prints every check either way.
 
@@ -205,6 +207,26 @@ try {
             ($null -eq $thrown -and $null -ne $outcome -and $outcome.Result.idle -eq $case.Idle -and $outcome.Sleeps -eq $case.Sleeps -and
              $outcome.Elapsed -le 30 -and ($null -eq $case.Contains -or $text.Contains($case.Contains))) `
             "$thrown idle=$(${outcome}?.Result.idle) sleeps=$(${outcome}?.Sleeps) elapsed=$(${outcome}?.Elapsed) busy=[$text]"
+    }
+
+    # --- 4. the start deadline -----------------------------------------------------------------------------------
+    # A scheduled night starts no runner after 04:00 CST (20:00 UTC) of the night it started in, which keeps it clear of
+    # the golden renderer's 05:30 verify; GitHub may start a schedule late, and a start already past it runs nothing. A
+    # manual dispatch is bounded by its own length instead.
+    $deadlineCases = @(
+        @{ Name = 'scheduled at 01:05 CST'; Event = 'schedule'; Start = '2026-10-10T17:05:00Z'; Deadline = '2026-10-10T20:00:00Z' }
+        @{ Name = 'scheduled at 00:50 CST'; Event = 'schedule'; Start = '2026-10-10T16:50:00Z'; Deadline = '2026-10-10T20:00:00Z' }
+        @{ Name = 'scheduled at 03:59 CST'; Event = 'schedule'; Start = '2026-10-10T19:59:00Z'; Deadline = '2026-10-10T20:00:00Z' }
+        @{ Name = 'a schedule GitHub started at 05:30 CST'; Event = 'schedule'; Start = '2026-10-10T21:30:00Z'; Deadline = '2026-10-10T20:00:00Z' }
+        @{ Name = 'a schedule GitHub started at 09:10 CST, the next UTC day'; Event = 'schedule'; Start = '2026-10-11T01:10:00Z'; Deadline = '2026-10-10T20:00:00Z' }
+        @{ Name = 'a manual dispatch in the afternoon'; Event = 'workflow_dispatch'; Start = '2026-10-11T06:00:00Z'; Deadline = '2026-10-11T09:00:00Z' }
+    )
+    foreach ($case in $deadlineCases) {
+        $deadline = $null
+        $thrown = $null
+        try { $deadline = Get-NightlyG3StartDeadline -EventName $case.Event -StartedAtUtc ([DateTimeOffset]::Parse($case.Start)) } catch { $thrown = $_.Exception.Message }
+        Check "start deadline, $($case.Name): $($case.Deadline)" ($null -eq $thrown -and $deadline -is [DateTimeOffset] -and $deadline -eq [DateTimeOffset]::Parse($case.Deadline)) `
+            "$thrown got $deadline"
     }
 }
 finally {
