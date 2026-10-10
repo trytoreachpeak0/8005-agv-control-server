@@ -438,7 +438,7 @@ public sealed class AreaAssignmentDispatchTests
             Directory.CreateDirectory(directory);
             AcceptanceDatabase database = new(directory);
             await using ControlServerDbContext context = database.Open();
-            await context.Database.MigrateAsync(TestContext.Current.CancellationToken);
+            await MigratedDatabaseTemplate.ApplyAsync(context.Database, TestContext.Current.CancellationToken);
             return database;
         }
 

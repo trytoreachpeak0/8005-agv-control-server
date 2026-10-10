@@ -159,6 +159,7 @@ public sealed class IntegrationSliceTraitArchitectureTests
             ["MapRenameEngineTests"] = "control-server#186 REQ-0341 the engine reads Map names each round and a rename under the same mapId stops dispatch of every bound task type until accepted; server-to-RIoT and dispatch only, no wire message",
             ["MapRenameHoldConvergenceTests"] = "control-server#186 REQ-0341/REQ-0342 Map name baseline and Map level rename holds, confined to the renamed Map; server-internal, no wire message",
             ["MapStationResolverTests"] = "7.5 #6, RouteGraphSnapshot engine; single-ended server-to-RIoT",
+            ["MigratedDatabaseTemplateTests"] = "control-server#553 test infrastructure: a fixture's copy of the once-migrated template database equals a real migration and is its own; no product code, no wire message",
             ["MultiVehicleExecutionTests"] = "7.5 #1, FP-C2 B2 multi-vehicle; the conformance vector format has no vehicle dimension",
             ["OnboardHandshakeReadinessArchitectureTests"] = "cross-cutting architecture guard (control-server#340): an answer takes a SessionReadiness line after it only through the one function that refuses to inside the reconnect handshake; hanging it off a slice would defer the guard with the slice",
             ["OnboardOutboundFunnelArchitectureTests"] = "cross-cutting architecture guard (control-server#259): every server-originated line reaches a socket through OnboardPeer's handshake gate; hanging it off a slice would defer the guard with the slice",

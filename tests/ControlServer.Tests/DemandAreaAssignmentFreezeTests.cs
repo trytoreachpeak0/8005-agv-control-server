@@ -361,7 +361,7 @@ public sealed class DemandAreaAssignmentFreezeTests
             Directory.CreateDirectory(directory);
             TwoWriterDatabase database = new(directory);
             await using ControlServerDbContext context = database.Open();
-            await context.Database.MigrateAsync(TestContext.Current.CancellationToken);
+            await MigratedDatabaseTemplate.ApplyAsync(context.Database, TestContext.Current.CancellationToken);
             return database;
         }
 

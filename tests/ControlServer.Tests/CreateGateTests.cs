@@ -541,7 +541,7 @@ public sealed class CreateGateTests
             DbContextOptions<ControlServerDbContext> dbOptions =
                 new DbContextOptionsBuilder<ControlServerDbContext>().UseSqlite(connection).Options;
             ControlServerDbContext context = new(dbOptions);
-            await context.Database.MigrateAsync(TestContext.Current.CancellationToken);
+            await MigratedDatabaseTemplate.ApplyAsync(context.Database, TestContext.Current.CancellationToken);
 
             MovableClock clock = new(Origin);
             CatalogAvailabilityStore store = new(context);

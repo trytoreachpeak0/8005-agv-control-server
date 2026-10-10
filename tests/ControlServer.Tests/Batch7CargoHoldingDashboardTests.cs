@@ -1100,7 +1100,7 @@ public sealed class Batch7CargoHoldingDashboardTests
             await connection.OpenAsync(Token);
             DashboardDatabase database = new(connection);
             await using ControlServerDbContext context = database.NewContext();
-            await context.Database.MigrateAsync(Token);
+            await MigratedDatabaseTemplate.ApplyAsync(context.Database, Token);
             return database;
         }
 

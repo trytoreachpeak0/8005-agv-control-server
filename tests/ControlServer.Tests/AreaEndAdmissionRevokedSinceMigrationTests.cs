@@ -77,7 +77,7 @@ public sealed class AreaEndAdmissionRevokedSinceMigrationTests
     [Fact]
     public async Task TheColumnIsNullableAndTheModelSnapshotMatchesTheModel()
     {
-        await using Batch7JourneyFixture fixture = await Batch7JourneyFixture.CreateAsync();
+        await using Batch7JourneyFixture fixture = await Batch7JourneyFixture.CreateMigratedForRealAsync();
         await using SqliteCommand command = fixture.Connection.CreateCommand();
         command.CommandText =
             "SELECT \"notnull\" FROM pragma_table_info('JourneyRuntimes') WHERE name = 'AreaEndAdmissionRevokedSince'";
@@ -96,7 +96,7 @@ public sealed class AreaEndAdmissionRevokedSinceMigrationTests
         DateTimeOffset now = Batch7JourneyFixture.Now;
         string[] demands = ["D-HELD", "D-ESCALATED", "D-ORDER-FAILED", "D-TO-GATE", "D-BLOCKED-OTHER", "D-COMPLETED"];
 
-        await using Batch7JourneyFixture scratch = await Batch7JourneyFixture.CreateAsync();
+        await using Batch7JourneyFixture scratch = await Batch7JourneyFixture.CreateMigratedForRealAsync();
         for (int index = 0; index < demands.Length; index++)
         {
             await Batch7JourneyFixture.AcceptAsync(
