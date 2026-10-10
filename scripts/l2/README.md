@@ -281,7 +281,7 @@ control-server#581 下评论一条，全绿也写一行，**某晚没有评论�
 | `g3` | `cs-desktop` | `scripts/Invoke-NightlyG3.ps1`：按出口顺序 staged → restart → 需求承载 → journey 串行（staged 与 restart 都占 Modbus 1502，三个要桌面）。每个 runner 开跑前三道闸门：截止时间、整机已提交内存（照真装置那套，超过 12 GiB 等最多 30 分钟）、C 盘剩余至少 4 GiB；任一不过，其余 runner 记 `NOT_STARTED_DEADLINE`／`NOT_STARTED_COMMIT_GUARD`／`NOT_STARTED_DISK`，不启动 |
 | `report` | headless | 不管前两个作业怎样，都在 #581 下评论 |
 
-- **时间。** 定时触发不在北京时间 04:00 之后开新 runner，避开 05:30 前后 mes-ingest 的黄金渲染 verify；GitHub 把定时触发
+- **时间。** 夜间一轮（`nightly=true`）不在北京时间 04:00 之后开新 runner，避开 05:30 前后 mes-ingest 的黄金渲染 verify；GitHub 把定时触发
   推迟到 04:00 之后时，那晚什么都不跑（评论写 `NOT_STARTED_DEADLINE`）。手动触发的截止是开跑后 180 分钟。
 - **不取消。** 本 workflow 里没有任何取消作业的动作，`cancel-in-progress: false`；作业超时给足，结束一轮的是截止时间，不是超时。
 - **磁盘。** vm01 的 C 盘 2026-10-11 只剩 7.9 GB，一个 runner 的暂存约 1.7 GB。PASS 的暂存跑完即删；红的只删 `sources/`、
@@ -302,8 +302,14 @@ gh workflow run g3.yml -R trytoreachpeak0/8005-agv-control-server --ref <分支>
 
 它占 cs-desktop 约 45 分钟，和「CI 真装置」是同一格：手动跑之前先向调度要那一格。
 
-**定时触发只在默认分支上生效。** GitHub 只按默认分支（本仓是 `main`）上的 workflow 文件排 `schedule`，而 `fp/v2-impl` 不合入
-`main`，所以 `g3.yml` 里的 `cron` 在这条线上不会触发。每晚由谁来触发，见下一段。
+**每晚由 `main` 上的触发器启动。** GitHub 只按默认分支（本仓是 `main`）上的 workflow 文件排 `schedule`，而 `fp/v2-impl` 不合入
+`main`，所以 `g3.yml` 自己不写 `schedule`（写了也永远不会触发）。用户 2026-10-11 定：`main` 上放一个只做触发的
+`.github/workflows/g3-nightly-trigger.yml`（control-server PR #592），每天 17:00 UTC（北京时间 01:00）对 `fp/v2-impl` 上的
+`g3.yml` 发一次 workflow dispatch，带 `ref=fp/v2-impl`、`nightly=true`。它不复制 `g3.yml` 的任何逻辑。
+
+- `nightly=true` 才让一轮按夜间算：04:00 截止、评论写「定时触发」。手动触发别传它，截止按开跑后 180 分钟算、评论写「手动触发」。
+- 触发器依赖 `fp/v2-impl` 上已有 `g3.yml`：在那之前它的 dispatch 会被拒、触发运行变红，那晚就没有每晚 G3。
+- #581 下某晚没有评论，先看 `main` 上 `g3-nightly-trigger` 那晚有没有运行、是不是红的，再看 `g3` 运行。
 
 ## 两套装置
 
