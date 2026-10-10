@@ -15,14 +15,23 @@
            back is submitted, exactly once;
          - a box that never reads it back ends as RIG_FIXTURE with nothing submitted;
          - a submit the onboard refuses (its app-log line) fails as PRODUCT_REFUSED with the box text, the code and the
-           time, and is not submitted again; a refusal logged before the submit is not taken for this one.
+           time, and is not submitted again; a refusal logged before the submit is not taken for this one;
+         - a sublot the server rejected (the onboard's "子批被服务端拒收：...reason=<code>" line) is found the same way, with
+           its reason as the code (control-server#567).
       B. Read-L2UiaItemStatus (L2MultiStopJourney.psm1) and the scenario's held window
          - an element that cannot be read (not found, or throwing) is re-read, at most 3 reads no more than 0.5 s apart,
            each journaled; a readable value after that is returned as read;
          - a value actually read -- a wrong one, or the empty string -- is the product's: returned at once, never re-read;
          - an element unreadable on every read is reported unreadable, never as a value;
          - g3-waiting-point-idle-return.ps1 (read from its AST) ends its held window on an unreadable reading or a read
-           value other than AT_WAITING_POINT, and G3-12-07 judges the held window's reading, not the first one.
+           value other than AT_WAITING_POINT, and G3-12-07 judges the held window's reading, not the first one; so does
+           G3-12-03, whose $heldAtPoint is never AT_WAITING_POINT when the held reading is unreadable (control-server#567,
+           review mutation X10).
+      C. g3-automatic-charging-cycle.ps1's ten-second charger window (control-server#567)
+         - an unreadable ChargingStatus is recorded as unreadable (Readable false), not as a $null value, and an empty
+           string read stays a value;
+         - the window still ends only on CanSubmit, and G3-13-03 reads nothing else from it;
+         - every script this ticket touched parses with 0 errors.
 
     Exits 1 when any case comes out the other way, and prints every case either way.
 
@@ -152,6 +161,32 @@ Test-Case 'A5 product: a refusal logged before the submit is not this submit''s;
     Assert-That ([string]$operation.SlotOperationAttemptId -eq 'op-1') "returned $($operation | ConvertTo-Json -Compress)"
 }
 
+# control-server#567: the line the onboard writes when the server rejects a sublot (WireToGateBusinessService.cs:2653 on
+# w2g/fp-v2-impl@ca89ef8, through FileAppLogger: time, severity, source and message, tab-separated).
+function Format-SublotRejectedLine([DateTimeOffset]$At, [string]$Reason) {
+    return "$($At.ToString('o'))`tWarning`tWireToGateBusinessService`t子批被服务端拒收：sublot=$sublot，reason=$Reason，demandId=null，currentWorklistRevision=3。"
+}
+
+Test-Case 'A6 product: a sublot the server rejected is found with its reason as the code; one logged before the submit is not' {
+    $journal = New-Journal 'a6'
+    $fake = New-FakeEntryOnboard @('<typed>')
+    $entry = Invoke-L2SublotEntry -Onboard $fake -Journal $journal -Sublot $sublot -Label 'B'
+    $logDir = Join-Path $scratch 'a6-onboard-app'
+    $rejectedAt = $entry.SubmittedAt.AddMilliseconds(420)
+    Write-AppLog $logDir @(
+        (Format-SublotRejectedLine $entry.SubmittedAt.AddSeconds(-20) 'SUBLOT_MISMATCH'),
+        (Format-SublotRejectedLine $rejectedAt 'SUBLOT_NOT_IN_DISPATCH_SCOPE'))
+    $refusal = Find-L2OnboardRefusal $logDir $entry.SubmittedAt
+    Assert-That ($null -ne $refusal) 'the rejected-sublot line was not recognised'
+    Assert-That ($refusal.Code -ceq 'SUBLOT_NOT_IN_DISPATCH_SCOPE' -and $refusal.At -eq $rejectedAt) "refusal $($refusal | ConvertTo-Json -Compress)"
+    $message = $null
+    try {
+        $null = Wait-L2SubmitOutcome -GetOperation { $null } -LogDirectory $logDir -Entry $entry -Journal $journal -Label 'B' -TimeoutSeconds 5
+    } catch { $message = $_.Exception.Message }
+    Assert-That ($message -like 'PRODUCT_REFUSED:*SUBLOT_NOT_IN_DISPATCH_SCOPE*' -and $message -notlike '*SUBLOT_MISMATCH*') "message: $message"
+    Assert-That ($fake.Submits -eq 1) "submits $($fake.Submits)"
+}
+
 # --- B. held reading -------------------------------------------------------------------------------------------------
 
 <#
@@ -253,6 +288,86 @@ Test-Case 'B7 scenario: G3-12-07 judges the held window''s reading ($heldReading
     $condition = $add.Arguments[2].Extent.Text
     Assert-That ($condition -like '*$heldReading.Readable*' -and $condition -like '*$heldAtPoint -eq $atPoint*') "condition: $condition"
     Assert-That ($condition -notlike '*$shownAtPoint*') "still reads the first reading: $condition"
+}
+
+# control-server#567: G3-12-03 also judges the held window. Review mutation X10 dropped Readable from its condition and gave
+# $heldAtPoint the expected value when unreadable, and B7 stayed green: an unreadable HMI then passed G3-12-03.
+Test-Case 'B8 scenario: G3-12-03 needs the held reading readable, and $heldAtPoint is never AT_WAITING_POINT when it is not' {
+    $add = $ast.Find({ param($n) $n -is [System.Management.Automation.Language.InvokeMemberExpressionAst] -and
+            $n.Member.Value -eq 'Add' -and $n.Arguments.Count -ge 3 -and $n.Arguments[0].Extent.Text -eq "'G3-12-03'" }, $true)
+    Assert-That ($null -ne $add) 'no G3-12-03 assertion'
+    $condition = $add.Arguments[2].Extent.Text
+    Assert-That ($condition -like '*$heldReading.Readable*' -and $condition -like '*$heldAtPoint -eq $atPoint*') "condition: $condition"
+    $assignments = @($ast.FindAll({ param($n) $n -is [System.Management.Automation.Language.AssignmentStatementAst] -and
+                $n.Left.Extent.Text -eq '$heldAtPoint' }, $true))
+    Assert-That ($assignments.Count -eq 1) "$($assignments.Count) assignments to `$heldAtPoint"
+    $assign = [scriptblock]::Create($assignments[0].Extent.Text)
+    $atPoint = 'AT_WAITING_POINT'
+    foreach ($case in @(
+            @{ r = [pscustomobject]@{ Readable = $false; Status = $null }; atPoint = $false }
+            @{ r = [pscustomobject]@{ Readable = $false; Status = 'AT_WAITING_POINT' }; atPoint = $false }
+            @{ r = [pscustomobject]@{ Readable = $true; Status = 'AT_WAITING_POINT' }; atPoint = $true })) {
+        $heldReading = $case.r
+        $heldAtPoint = $null
+        . $assign
+        Assert-That (($heldAtPoint -eq $atPoint) -eq $case.atPoint) "held $($case.r | ConvertTo-Json -Compress) -> `$heldAtPoint '$heldAtPoint'"
+    }
+}
+
+# --- C. the charging scenario's held window --------------------------------------------------------------------------
+
+# control-server#567: g3-automatic-charging-cycle.ps1's ten-second window reads ChargingStatus so that an unreadable element is
+# recorded as unreadable, not as a $null value (as g3-waiting-point-idle-return does since #560). G3-13-03 judges only
+# CanSubmit from that window, and that does not change.
+$chargingScenario = Join-Path $PSScriptRoot 'scenarios\g3-automatic-charging-cycle.ps1'
+$chargingTokens = $null; $chargingErrors = $null
+$chargingAst = [System.Management.Automation.Language.Parser]::ParseFile($chargingScenario, [ref]$chargingTokens, [ref]$chargingErrors)
+$chargingHeld = $chargingAst.Find({ param($n) $n -is [System.Management.Automation.Language.CommandAst] -and
+        $n.GetCommandName() -eq 'Wait-L2ConditionOrLast' -and $n.Extent.Text -like "*'hmi-no-entry-at-charger'*" }, $true)
+
+Test-Case 'C1 scripts touched by control-server#567 parse' {
+    $broken = foreach ($path in $chargingScenario, (Join-Path $PSScriptRoot 'scenarios\MultiStopRigCommon.ps1'), $IdleReturnScenario, $PSCommandPath) {
+        $t = $null; $e = $null
+        $null = [System.Management.Automation.Language.Parser]::ParseFile($path, [ref]$t, [ref]$e)
+        if ($e.Count -ne 0) { "$(Split-Path -Leaf $path): $($e.Count) ($($e[0].Message))" }
+    }
+    Assert-That (@($broken).Count -eq 0) "parse errors: $($broken -join '; ')"
+}
+
+Test-Case 'C2 scenario: an unreadable ChargingStatus in the charger window is recorded unreadable, not as a $null value' {
+    Assert-That ($null -ne $chargingHeld) 'no hmi-no-entry-at-charger wait'
+    $probe = (Get-NamedArgument $chargingHeld 'Probe').ScriptBlock.GetScriptBlock()
+    # The scenario's own helpers the probe may call, defined here as the scenario defines them.
+    foreach ($helper in @($chargingAst.FindAll({ param($n) $n -is [System.Management.Automation.Language.FunctionDefinitionAst] -and
+                    $n.Name -eq 'Get-ChargingStatus' }, $false))) {
+        . ([scriptblock]::Create($helper.Extent.Text))
+    }
+    $journal = New-Journal 'c2'
+    $onboard = New-FakeStatusOnboard @('<missing>')
+    $onboard | Add-Member -MemberType ScriptMethod -Name CanSubmit -Value { return $false }
+    $v = & $probe
+    Assert-That ($v.PSObject.Properties['Readable'] -and $v.Readable -eq $false) "window value $($v | ConvertTo-Json -Compress)"
+    Assert-That ($null -eq $v.Status -and [string]$v.Shown -like '(unreadable after 3 reads:*') "window value $($v | ConvertTo-Json -Compress)"
+    Assert-That ($onboard.Calls -eq 3 -and @((Get-Notes $journal) | Where-Object { $_ -like 'UIA read*ChargingStatus unreadable*' }).Count -eq 3) "calls $($onboard.Calls)"
+    $onboard = New-FakeStatusOnboard @('')
+    $onboard | Add-Member -MemberType ScriptMethod -Name CanSubmit -Value { return $false }
+    $v = & $probe
+    Assert-That ($v.Readable -eq $true -and $v.Status -ceq '' -and $onboard.Calls -eq 1) "an empty string read: $($v | ConvertTo-Json -Compress)"
+}
+
+Test-Case 'C3 scenario: the charger window still ends only on CanSubmit, and G3-13-03 reads only CanSubmit from it' {
+    $until = (Get-NamedArgument $chargingHeld 'Until').ScriptBlock.GetScriptBlock()
+    foreach ($case in @(
+            @{ v = [pscustomobject]@{ Readable = $false; Status = $null; CanSubmit = $false }; fires = $false }
+            @{ v = [pscustomobject]@{ Readable = $true; Status = ''; CanSubmit = $false }; fires = $false }
+            @{ v = [pscustomobject]@{ Readable = $true; Status = 'CHARGING'; CanSubmit = $true }; fires = $true })) {
+        $fires = [bool](& $until $case.v)
+        Assert-That ($fires -eq $case.fires) "Until($($case.v | ConvertTo-Json -Compress)) = $fires"
+    }
+    $add = $chargingAst.Find({ param($n) $n -is [System.Management.Automation.Language.InvokeMemberExpressionAst] -and
+            $n.Member.Value -eq 'Add' -and $n.Arguments.Count -ge 3 -and $n.Arguments[0].Extent.Text -eq "'G3-13-03'" }, $true)
+    $condition = $add.Arguments[2].Extent.Text
+    Assert-That ((@([regex]::Matches($condition, '\$heldReading\.\w+') | ForEach-Object Value | Sort-Object -Unique) -join ',') -eq '$heldReading.CanSubmit') "condition: $condition"
 }
 
 Remove-Item -LiteralPath $scratch -Recurse -Force
