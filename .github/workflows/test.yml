@@ -48,8 +48,9 @@ jobs:
     # win11-01-control-server-2 carries 'cs-test' and it runs one job at a time, so the halves would
     # queue behind each other.
     # 95 since control-server#567, which added two steps after Test: the v3 script-branch check (seconds) and the
-    # staged content-conflict check (197 s on the control host, its own limit 15). 60 + 6m28s + 15 + upload is about
-    # 82 minutes when every step runs to its own limit, which 80 no longer covered.
+    # staged content-conflict check (197 s on the control host, its own limit 15, and only on pull requests that change
+    # what it checks). 60 + 6m28s + 15 + upload is about 82 minutes when every step runs to its own limit, which 80 no
+    # longer covered.
     timeout-minutes: 95
     env:
       # NuGet's vulnerability audit fetches its data from nuget.org during every restore, and with
@@ -144,6 +145,12 @@ jobs:
       - name: G3 scenario self-check (journey UIA fixture reads)
         shell: pwsh
         run: pwsh -NoProfile -File ./scripts/l2/Test-G3JourneyUiaFixtureReads.ps1
+
+      # Under a second, pure input: which pull requests run the staged content-conflict self-check after Test
+      # (control-server#567). A selector that stopped matching would skip that check for ever and stay green.
+      - name: G3 runner self-check (content-conflict scope)
+        shell: pwsh
+        run: pwsh -NoProfile -File ./scripts/Test-StagedG3ContentConflictScope.ps1
 
       # About 27 seconds (measured 26.4 / 26.8 / 26.7 on the control host), 24 of which are twelve
       # deliberate 2-second timeouts: every case where a criterion must NOT be satisfied has to run out
@@ -299,9 +306,30 @@ jobs:
       # a hand-dispatched job because a judgment that regressed would otherwise wait for the next exit, which is the lesson
       # of the batch-8 exit. It binds ports the system hands out, not the L2 port block, so it never meets an l2 lane's
       # slot; it takes no desktop lock and starts no window. After Test so that the two builds do not overlap in memory.
+      #
+      # Not on every pull request (the coordinator's ruling, 2026-10-10: this job had just come down from 36 minutes to
+      # 7 1/2, and three more on every round is not worth it). A pull request runs it only when it changes what it checks;
+      # Select-StagedG3ContentConflictRun.ps1 holds that list and prints why it runs or skips. The diff is the merge
+      # commit's against its first parent, the base as GitHub merged it. Any other event runs it. It moves to the nightly
+      # G3 once that exists.
+      - name: Decide whether to run the staged content-conflict self-check
+        id: content-conflict-scope
+        if: ${{ !cancelled() }}
+        shell: pwsh
+        run: |
+          if ($env:GITHUB_EVENT_NAME -ne 'pull_request') {
+            $null = & ./scripts/Select-StagedG3ContentConflictRun.ps1 -NotAPullRequest -GitHubOutput $env:GITHUB_OUTPUT
+            exit 0
+          }
+          git fetch --no-tags --quiet --depth=2 origin $env:GITHUB_REF
+          if ($LASTEXITCODE -ne 0) { throw "Could not fetch the merge commit's parents ($env:GITHUB_REF)." }
+          $changed = @(git diff --name-only HEAD^1 HEAD)
+          if ($LASTEXITCODE -ne 0) { throw 'git diff against the base failed.' }
+          $null = & ./scripts/Select-StagedG3ContentConflictRun.ps1 -ChangedPath $changed -GitHubOutput $env:GITHUB_OUTPUT
+
       # The stage root is short (the published tree runs deep) and unique per attempt, and is removed by the next step.
       - name: G3 runner self-check (staged content conflict)
-        if: ${{ !cancelled() }}
+        if: ${{ !cancelled() && steps.content-conflict-scope.outputs.run == 'true' }}
         timeout-minutes: 15
         shell: pwsh
         run: |
@@ -311,7 +339,7 @@ jobs:
             -EvidenceRoot "${{ runner.temp }}\content-conflict" -Expect Pass
 
       - name: Remove the content-conflict stage root
-        if: always()
+        if: ${{ always() && steps.content-conflict-scope.outputs.run == 'true' }}
         continue-on-error: true
         shell: pwsh
         run: Remove-Item -LiteralPath "C:\ccsc-${{ github.run_id }}-${{ github.run_attempt }}" -Recurse -Force -ErrorAction SilentlyContinue
