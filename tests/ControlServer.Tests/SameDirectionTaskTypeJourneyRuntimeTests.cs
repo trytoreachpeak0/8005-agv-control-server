@@ -109,27 +109,6 @@ public sealed class SameDirectionTaskTypeJourneyRuntimeTests
     }
 
     /// <summary>
-    /// The station admission seed pairs every area-named machine station with all six task types once the four are
-    /// executable: the AREA machine end is where each of them is admitted.
-    /// </summary>
-    [Fact]
-    [Trait("IntegrationSlice", "FP-IS-10")]
-    public async Task TheAdmissionSeedPairsEveryAreaStationWithAllSixTaskTypes()
-    {
-        await using RuntimeFixture fixture = await RuntimeFixture.CreateAsync();
-
-        await fixture.Engine.ExecuteOnceAsync(Token);
-
-        StationTaskTypeAdmissionRow[] seeded = await fixture.Context.StationTaskTypeAdmissions.AsNoTracking()
-            .ToArrayAsync(Token);
-        Assert.Equal(
-            [.. AreaStations
-                .SelectMany(station => TransportTaskTypes.All.Select(taskType => (station, taskType)))
-                .Order()],
-            seeded.Select(row => (row.StationId, row.TaskType)).Order().ToArray());
-    }
-
-    /// <summary>
     /// The drift this ticket's version bump exists for (docs/defects/20260915-admission-policy-drift-halts-runtime.md):
     /// a store whose version 2 holds the seed the previous build bound -- each area station with WIRE_TO_GATE and
     /// STAGING_TO_WIRE only -- read by this build under the same version 2 is drift, and no demand is taken on. Under

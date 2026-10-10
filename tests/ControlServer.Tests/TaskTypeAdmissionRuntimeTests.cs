@@ -271,8 +271,8 @@ public sealed class TaskTypeAdmissionRuntimeTests
     /// <remarks>
     /// control-server#160 时这里钉的是「只有 <c>WIRE_TO_GATE</c> 可执行时哈希与改动前相同」。#163 让
     /// <c>STAGING_TO_WIRE</c> 可执行，前提不再成立：内容变了，哈希也不再是 <see cref="SeedHashBeforeThisTicket"/>。所以出厂的
-    /// <c>admissionPolicyVersion</c> 升过绑定旧哈希的版本 1（<see cref="ReversedDirectionJourneyRuntimeTests"/> 里有一条钉它），
-    /// 已部署的实例升级后按新版本导入，不判漂移。
+    /// <c>admissionPolicyVersion</c> 升过绑定旧哈希的版本 1，已部署的实例升级后按新版本导入，不判漂移。批次 10（control-server#545）
+    /// 放开同向四类，种子变成六类，版本再升到 3；可执行集合与出厂版本的对应由 <see cref="AdmissionPolicyVersionGuardTests"/> 钉住。
     /// </remarks>
     [Fact]
     [Trait("IntegrationSlice", "FP-IS-11")]
@@ -284,10 +284,18 @@ public sealed class TaskTypeAdmissionRuntimeTests
 
         Assert.Equal(
             [
+                ("N1-1", TransportTaskTypes.DieToOven),
+                ("N1-1", TransportTaskTypes.DieToWireStaging),
                 ("N1-1", TransportTaskTypes.StagingToWire),
                 ("N1-1", TransportTaskTypes.WireToGate),
+                ("N1-1", TransportTaskTypes.WireToNitrogen),
+                ("N1-1", TransportTaskTypes.WireToOptical),
+                ("N1-2_N1-3", TransportTaskTypes.DieToOven),
+                ("N1-2_N1-3", TransportTaskTypes.DieToWireStaging),
                 ("N1-2_N1-3", TransportTaskTypes.StagingToWire),
                 ("N1-2_N1-3", TransportTaskTypes.WireToGate),
+                ("N1-2_N1-3", TransportTaskTypes.WireToNitrogen),
+                ("N1-2_N1-3", TransportTaskTypes.WireToOptical),
             ],
             (await fixture.Context.StationTaskTypeAdmissions.AsNoTracking().ToArrayAsync(Token))
                 .Select(row => (row.StationId, row.TaskType))

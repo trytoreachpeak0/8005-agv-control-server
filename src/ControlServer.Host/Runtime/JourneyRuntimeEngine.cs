@@ -578,7 +578,8 @@ public sealed partial class JourneyRuntimeEngine(
             // Each area-named station is paired with every task type this build can execute, whichever end of the
             // route the station is (control-server#163): the admission follows the AREA machine end, which is the
             // pickup for WIRE_TO_GATE and the drop-off for STAGING_TO_WIRE. Adding STAGING_TO_WIRE changed the
-            // relations and their hash, so the shipped admissionPolicyVersion moved past 1 with it.
+            // relations and their hash, so the shipped admissionPolicyVersion moved past 1 with it; adding the four
+            // same-direction task types (control-server#545) moved it to 3 (AdmissionPolicyVersionGuardTests).
             string[] seededTaskTypes = await AdmissionSeedTaskTypesAsync(cancellationToken).ConfigureAwait(false);
             await store.ApplyAdmissionPolicyAsync(
                 new AdmissionPolicyDefinition(
