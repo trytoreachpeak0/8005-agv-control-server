@@ -550,8 +550,8 @@ FakeMesIngest task action and seeding (control-server#512)
   PASS  task action refuses a working directory ending in a backslash
   PASS  task action refuses an executable path with a double quote
   PASS  task action: the double itself, loopback named explicitly, the port; no pwsh in the task
-2026-10-10T23:29:42.7888446+08:00 FakeMesIngest seeding the running double: port=62144 seed=C:\Users\szy\AppData\Local\Temp\cs512 task action 30bb07be29de4dc999c0586da82f18db\none.json
-2026-10-10T23:29:45.4179880+08:00 FATAL: the double did not answer http://127.0.0.1:62144/control/v1/health within 2 s
+2026-10-10T23:42:58.3218624+08:00 FakeMesIngest seeding the running double: port=57403 seed=C:\Users\szy\AppData\Local\Temp\cs512 task action 27a582fc1235435ab79ff1700315e31c\none.json
+2026-10-10T23:43:00.9484398+08:00 FATAL: the double did not answer http://127.0.0.1:57403/control/v1/health within 2 s
   PASS  seeding: a double that is not there throws for the installer, after logging what it tried
   PASS  seeding: the operator script in the operations directory runs the same function and exits non-zero on failure
   PASS  Register-ParallelFakeMesIngestTask returns one [datetime] even when the task cmdlets emit output, and creates the log directory first
@@ -693,12 +693,15 @@ Journey runtime held off until the read-back passes (control-server#578)
   PASS  held read-back: an activity event from an earlier process does not count against this one
   PASS  first install: restarted with the runtime off, read back, phase one exited, then opened and read back again
   PASS  first install: phase one with enabled overridden to true by a higher layer is refused, the service stopped, the runtime never opened
+  PASS  first install: phase one with enabled overridden to true, read before any dispatch activity (only 2001 missing), is refused
   PASS  first install: a second read-back that does not match is refused, the service stopped
   PASS  upgrade: restarted with the runtime off, read back, phase one exited, then opened and read back again
   PASS  upgrade: phase one with enabled overridden to true by a higher layer is refused, the service stopped, the runtime never opened
+  PASS  upgrade: phase one with enabled overridden to true, read before any dispatch activity (only 2001 missing), is refused
   PASS  upgrade: a second read-back that does not match is refused, the service stopped
   PASS  rollback: restarted with the runtime off, read back, phase one exited, then opened and read back again
   PASS  rollback: phase one with enabled overridden to true by a higher layer is refused, the service stopped, the runtime never opened
+  PASS  rollback: phase one with enabled overridden to true, read before any dispatch activity (only 2001 missing), is refused
   PASS  rollback: a second read-back that does not match is refused, the service stopped
   PASS  held: the phase-one process has not exited -- refused, the flag stays false, no second start
   PASS  held: a definition with the runtime off is read back once and left off, no second restart
@@ -707,4 +710,4 @@ Journey runtime held off until the read-back passes (control-server#578)
   PASS  wiring: no read-back runs outside the release (the old single read-back with the runtime already on is gone)
   PASS  wiring: the installer's read-back decides through Get-ParallelReadBackAction -Phase $Phase only (the decision the path cases run)
 
-648 passed, 0 failed
+651 passed, 0 failed

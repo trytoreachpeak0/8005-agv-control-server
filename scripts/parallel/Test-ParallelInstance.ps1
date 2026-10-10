@@ -4173,6 +4173,13 @@ foreach ($pathName in $heldPaths.Keys) {
         -Name "$($pathName): phase one with enabled overridden to true by a higher layer is refused, the service stopped, the runtime never opened" `
         -Detail ("log: " + (@($s.Log) -join ',') + "; final enabled=$($s.Final); error: $($s.Error)")
 
+    # Red 1b: the same, read before the loop's first round has logged anything: only event 2001 is missing.
+    $s = Invoke-HeldPath -BaseConfiguration $base -HeldLines @($overridden[0])
+    Write-Result -Ok ($s.Error -like 'JOURNEY_RUNTIME_NOT_HELD:*' -and $s.Error.Contains('2001') -and $s.Final -eq $false -and
+        ((@($s.Log) -join ',') -ceq 'restart(enabled=False),held(enabled=False),stop')) `
+        -Name "$($pathName): phase one with enabled overridden to true, read before any dispatch activity (only 2001 missing), is refused" `
+        -Detail ("log: " + (@($s.Log) -join ',') + "; final enabled=$($s.Final); error: $($s.Error)")
+
     # Red 2: the second read-back does not match (phase two bound WIRE_TO_GATE beside the defined types).
     $s = Invoke-HeldPath -BaseConfiguration $base -ReleasedLines @(New-EffectiveLine '2026-10-10T01:00:05Z' @('STAGING_TO_WIRE', 'WIRE_TO_GATE') `
             -Zones @($clearanceDefinition['journeyRuntime']['allowedDispatchZones']) -BaseUrl ([string] $clearanceDefinition['mesIngest']['baseUrl']))
