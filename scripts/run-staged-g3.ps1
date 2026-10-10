@@ -118,7 +118,14 @@ param(
     #   $SimulatorCommit unchanged: origin/main is still fb5f7c59.
     #   $ProtocolCommit -> 3f091cb2, what the protocol-v3.0.0 tag dereferences to; equal to the candidate frozen
     #     by 8005-agv-program#151. The tag literal (protocol-v3.0.0) was already moved by control-server#382.
-    [string]$ControlServerCommit = '5f3adc424e23cabffd4423d4eae1d2863720a9e2',
+    #   Same night, after the first G3 round went red only on G3 scripts that had not followed merged changes
+    #   (docs/defects/20261010-staged-g3-content-conflict-expects-disconnect.md,
+    #   docs/defects/20261010-journey-g3-two-scenarios-first-run-stale-scripts.md):
+    #   $ControlServerCommit -> 3411887d, the fp/v2-impl tip with control-server#541 (PR #542: the staged runner's
+    #     content-conflict criteria, g3-slot-fault-declaration and g3-forced-mechanical-recovery). The journey runner
+    #     takes its scenario scripts from the bound commit, so it has to be this one. git diff 5f3adc42 3411887d --
+    #     src tests tools is empty: the product is that of 5f3adc42. Onboard, simulator and protocol unchanged.
+    [string]$ControlServerCommit = '3411887df3d9941a50e86c19eeba3ef928a714e9',
     [string]$OnboardCommit = 'b9e67a538ba4cdf1916d201a08af40dd28270d14',
     [string]$SimulatorCommit = 'fb5f7c593742bf98bc3957b8729a38aad5321f28',
     [string]$ProtocolCommit = '3f091cb2eae7c58cec54a95dd9389c9180bc7b4c',
