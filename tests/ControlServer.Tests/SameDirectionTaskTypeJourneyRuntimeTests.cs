@@ -138,6 +138,30 @@ public sealed class SameDirectionTaskTypeJourneyRuntimeTests
     }
 
     /// <summary>
+    /// The seed is applied every round and again after every restart. Under the version it was bound with, the six-type
+    /// seed applied a second time is the same binding: no drift, no second audit row, and intake goes on.
+    /// </summary>
+    [Fact]
+    [Trait("IntegrationSlice", "FP-IS-10")]
+    public async Task TheSixTypeSeedAppliedAgainAfterARestartUnderVersionThreeIsTheSameBinding()
+    {
+        await using RuntimeFixture fixture = await RuntimeFixture.CreateAsync();
+        fixture.Options.AdmissionPolicyVersion = 3;
+        await fixture.Engine.ExecuteOnceAsync(Token);
+        Assert.Equal(1, await fixture.Context.AdmissionPolicyAudit.CountAsync(Token));
+
+        await fixture.RecreateEngineAsync();
+        fixture.Catalog.Set(SameDirection(fixture, TransportTaskTypes.DieToOven));
+        fixture.BoxCounts.Set("SUBLOT-001", 4);
+        await BindAsync(fixture, TransportTaskTypes.DieToOven);
+        await fixture.Engine.ExecuteOnceAsync(Token);
+
+        Assert.Equal("ACCEPTED", (await fixture.BacklogAsync(DemandId)).ReasonCode);
+        Assert.Equal(1, await fixture.Context.AdmissionPolicyAudit.CountAsync(Token));
+        Assert.Equal(3, (await fixture.Context.AdmissionPolicyState.AsNoTracking().SingleAsync(Token)).Version);
+    }
+
+    /// <summary>
     /// Rolling back the package does not roll back the store. Once this build has bound version 3, the build before it
     /// can bind its seed under neither version 2 (the store refuses a version moving backwards) nor version 3 (bound to
     /// other content): the engine reads either refusal as drift and takes on no demand. Only a version above the
@@ -211,6 +235,16 @@ public sealed class SameDirectionTaskTypeJourneyRuntimeTests
     private static async Task<RuntimeFixture> WithBoundAsync(string taskType)
     {
         RuntimeFixture fixture = await RuntimeFixture.CreateAsync();
+        await BindAsync(fixture, taskType);
+        return fixture;
+    }
+
+    /// <summary>
+    /// Puts station 401 on the map, allows <paramref name="taskType"/> and activates a binding set with it bound there
+    /// next to WIRE_TO_GATE at the gate.
+    /// </summary>
+    private static async Task BindAsync(RuntimeFixture fixture, string taskType)
+    {
         fixture.Options.AllowedWorkTypes = [TransportTaskTypes.WireToGate, taskType];
         fixture.Riot.SetMapStations(
             new RiotMapStation(12, "N1-1"),
@@ -223,7 +257,6 @@ public sealed class SameDirectionTaskTypeJourneyRuntimeTests
             Now,
             requiredTaskTypes: [TransportTaskTypes.WireToGate, taskType],
             bindings: [TaskTypeStationRuntimeSeed.GateBinding, Binding(taskType)]);
-        return fixture;
     }
 
     private static TaskTypeStationBinding Binding(string taskType) =>
