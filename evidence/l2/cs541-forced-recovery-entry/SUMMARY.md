@@ -9,7 +9,7 @@
 | 文件 | 内容 | 结果 |
 | --- | --- | --- |
 | `green-output.txt` | 本分支 | 6 条全部符合预期，退出码 0 |
-| `red-old-scenario-5f3adc42-output.txt` | 同一自检读 `5f3adc42` 上的旧场景（`old-scenario-5f3adc42.ps1`） | 顺序与标题两条变红，退出码 1 |
+| `red-old-scenario-5f3adc42-output.txt` | 同一自检读 `5f3adc42` 上的旧场景（`old-scenario-5f3adc42.ps1.txt`，即 `git show 5f3adc42:scripts/l2/scenarios/g3-forced-mechanical-recovery.ps1`；改名为 .txt，免得被扫描 .ps1 的检查当成脚本） | 顺序与标题两条变红，退出码 1 |
 | `red-mutation-title-dropped-output.txt` | 从 `Get-G3ForcedRecoveryFailureTitle` 去掉「强制机械取出未上报」 | 标题那条变红，退出码 1 |
 
 第一条用例用一个假的车载端驱动（按钮只在两个框都有字时可用）直接演示旧顺序会空等、新顺序能走通。
