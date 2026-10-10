@@ -31,3 +31,9 @@ control-server#567。只改 `scripts/` 与 `.github/workflows/test.yml`。
 | M13 | 前缀去掉斜杠（`scripts/l2`） | 选择器：近似路径应跳过 |
 | M14 | 去掉 `src/ControlServer.Host/Transport/` | 选择器：Transport 应触发 |
 | M15 | 非 PR 事件跳过 | 选择器：非 PR 应跑 |
+| R2（审查） | G3-13-27 把空串也算成不可读 | D3（期望串加 `0 unreadable` 之后；之前的期望下 exit 0，`mutations/R2-under-previous-expectation.txt`） |
+
+## 审查轮（PR #574 独立审查 B1～B6）
+
+- B3 的三处路径先进选择器自检，修前红：`red/scope-review-b3-before-fix.txt`；修后 `green/scope.txt`。
+- B1、B2 在本机核过：按 SHA `fetch --depth=2` 能取到父提交；把文件移出 `scripts/l2/` 时，默认 diff 只列新路径，`--no-renames` 才列出旧路径。
