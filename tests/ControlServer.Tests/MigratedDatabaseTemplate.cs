@@ -25,6 +25,13 @@ namespace ControlServer.Tests;
 /// that against a real migration, so a difference shows up there rather than as a changed result somewhere else.
 /// </para>
 /// <para>
+/// <b>Where it is not what a migration would have left.</b> A fixture that opens its file database before migrating -- the
+/// multi-vehicle <c>FleetFixture</c> with a <c>databaseFile</c> -- has the file created empty by that open, so a real
+/// migration finds it existing, skips <c>Create()</c> and leaves it in <c>delete</c> journal mode. The copy is WAL either way
+/// (control-server#553). WAL is production's mode and still admits one writer at a time, which is what the only such tests,
+/// <c>FieldConfirmationWriteLockTests</c> (control-server#452), rely on; their guard is shown to fail under WAL by mutation.
+/// </para>
+/// <para>
 /// <b>What it does not replace.</b> Tests about the migrations themselves -- the <c>*MigrationDisciplineTests</c>, the
 /// <c>*MigrationTests</c>, anything that migrates to a named migration through <c>IMigrator</c>, and
 /// <c>RuntimeFixture.CreateAsync(migrate: true)</c> -- keep calling <c>MigrateAsync</c>. A migration that is wrong is wrong
@@ -43,7 +50,9 @@ internal static class MigratedDatabaseTemplate
 
     /// <summary>
     /// Gives the empty database behind <paramref name="database"/> the schema and history of every migration, as
-    /// <c>database.MigrateAsync()</c> would on that empty database.
+    /// <c>database.MigrateAsync()</c> would when it creates that database itself. A file that already exists empty -- opened
+    /// before migrating -- ends up in WAL here where a migration would have left it in <c>delete</c> journal mode (see the
+    /// remarks on the class).
     /// </summary>
     /// <exception cref="InvalidOperationException">The database already has tables: a copy would replace them, which a
     /// migration never does.</exception>
