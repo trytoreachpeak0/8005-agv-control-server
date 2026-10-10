@@ -39,6 +39,10 @@ $runs = @(
     'scripts/Test-StagedG3ContentConflict.ps1'
     'scripts/Select-StagedG3ContentConflictRun.ps1'
     'src/ControlServer.Host/Transport/OnboardJourneyPublisher.cs'
+    # What the judgments also depend on (review B3 of PR #574): the store they read, the problem codes, the candidate identity.
+    'src/ControlServer.Infrastructure/Persistence/WireToGateStore.cs'
+    'src/ControlServer.Domain/ProtocolErrorCodes.cs'
+    'src/ControlServer.Host/appsettings.json'
 )
 foreach ($path in $runs) {
     $decision = & $Selector -ChangedPath @('docs/README.md', $path)
@@ -52,12 +56,14 @@ $skips = @(
     'scripts/Test-G3EvidenceHonesty.ps1'
     'src/ControlServer.Host/Program.cs'
     'src/ControlServer.Host/TransportNotes.md'
+    'src/ControlServer.Host/appsettings.Development.json'
+    'src/ControlServer.Infrastructure/Persistence/WireToGateStoreNotes.md'
     'tests/ControlServer.Tests/scripts/l2/fixture.txt'
     'Scripts/run-staged-g3.ps1'
 )
 $decision = & $Selector -ChangedPath $skips
 Check 'skips when only near misses changed, and says why' ($decision.Run -eq $false -and $decision.Reason -like '*skipped*' -and
-    $decision.Reason -like '*8 changed*') ($decision | ConvertTo-Json -Compress)
+    $decision.Reason -like '*10 changed*') ($decision | ConvertTo-Json -Compress)
 
 $decision = & $Selector -ChangedPath @()
 Check 'skips on a pull request that changes nothing' ($decision.Run -eq $false) ($decision | ConvertTo-Json -Compress)

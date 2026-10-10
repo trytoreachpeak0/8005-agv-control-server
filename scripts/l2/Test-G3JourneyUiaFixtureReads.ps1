@@ -419,7 +419,7 @@ Test-Case 'D3 scenario: G3-13-27 passes only on every read readable and CONFIRME
     }
     foreach ($case in @(
             @{ reads = @('CONFIRMED', 'CONFIRMED', 'CONFIRMED'); pass = $true; actual = '*3 reads*' }
-            @{ reads = @('CONFIRMED', '', 'CONFIRMED'); pass = $false; actual = "*1 not CONFIRMED*first: ''*" }
+            @{ reads = @('CONFIRMED', '', 'CONFIRMED'); pass = $false; actual = "*1 not CONFIRMED*first: ''*0 unreadable*" }
             @{ reads = @('CONFIRMED', '<unreadable>', 'CONFIRMED'); pass = $false; actual = '*0 not CONFIRMED*1 unreadable*' })) {
         $reads = [System.Collections.Generic.List[object]]::new()
         foreach ($value in $case.reads) { $reads.Add((New-Read $value)) }
