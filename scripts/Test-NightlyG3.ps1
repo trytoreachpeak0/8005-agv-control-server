@@ -5,8 +5,8 @@
     Offline self-check of the nightly G3's decisions (control-server#582): no runner, no window, no network.
 
 .DESCRIPTION
-    A second or two. Everything here is a function of scripts/NightlyG3.psm1, fed with inputs shaped like what a
-    real round produces, and nothing the nightly run does in the dark is left to be found out the first night.
+    About twenty seconds. Sections 1 to 4 are functions of scripts/NightlyG3.psm1 and section 5 is Invoke-NightlyG3.ps1,
+    fed with inputs shaped like what a real round produces, and nothing the nightly run does in the dark is left to be found out the first night.
 
       1. The verdict of one runner, from its exit code and its run-result.json. Only exit 0 together with a status
          ending in _PASS and no assertion other than PASS is PASS; INCONCLUSIVE_RUNNER_ERROR, a missing or
@@ -24,6 +24,12 @@
          idle. Nothing is ever cancelled; the wait only decides whether this night starts.
       4. The start deadline: a scheduled night starts no runner after 04:00 CST of the night it started in, a schedule
          GitHub started late runs nothing, and a manual dispatch is bounded by its own length.
+      5. The round itself (Invoke-NightlyG3.ps1, about twenty seconds), against stand-in runners named like the real
+         ones: the four run in order, each with the override parameters its real runner declares (demand-bearing has
+         no onboard one) and a stage and evidence root of its own; a PASS runner's stage is removed, a red one keeps
+         its runtime but not its sources or publish (vm01 has single-digit gigabytes free); results.json carries the
+         verdicts and the four commits; past the deadline, under the commit guard or short of disk, the runners left
+         are recorded NOT_STARTED_* and never started; red exits 1, green 0.
 
     Exits 1 when any check comes out the other way, and prints every check either way.
 
@@ -43,6 +49,12 @@ function Check([string]$name, [bool]$ok, [string]$detail) {
     Write-Host ("{0} {1}{2}" -f $(if ($ok) { 'PASS' } else { 'FAIL' }), $name, $(if ($ok) { '' } else { " -- $detail" }))
     if (-not $ok) { $failures.Add($name) }
 }
+
+# The written binding, read the way every runner reads it: Get-SharedCommitBinding, taken from the restart runner.
+$bindingReader = @([System.Management.Automation.Language.Parser]::ParseFile((Join-Path $ScriptRoot 'run-staged-g3-restart.ps1'), [ref]$null, [ref]$null).FindAll({
+            param($node) $node -is [System.Management.Automation.Language.FunctionDefinitionAst] -and $node.Name -eq 'Get-SharedCommitBinding' }, $true))
+. ([scriptblock]::Create($bindingReader[0].Extent.Text))
+$binding = Get-SharedCommitBinding -Path (Join-Path $ScriptRoot 'run-staged-g3.ps1')
 
 $scratch = Join-Path ([IO.Path]::GetTempPath()) "nightly-g3-selfcheck-$([guid]::NewGuid().ToString('n'))"
 New-Item -ItemType Directory -Path $scratch | Out-Null
@@ -228,6 +240,116 @@ try {
         Check "start deadline, $($case.Name): $($case.Deadline)" ($null -eq $thrown -and $deadline -is [DateTimeOffset] -and $deadline -eq [DateTimeOffset]::Parse($case.Deadline)) `
             "$thrown got $deadline"
     }
+
+    # --- 5. the round itself, against stand-in runners ------------------------------------------------------------
+    # Invoke-NightlyG3.ps1 run as a child, with -RunnerRoot at four stand-ins named like the real runners. Each records
+    # the parameters it was given, makes a stage tree like a real one (sources/, publish/, runtime/) and writes a
+    # run-result.json. The stand-ins declare only the parameters the real runner has: the demand-bearing one has no
+    # -SelfCheckOnboardCommit, so passing it one fails that runner.
+    $standIns = Join-Path $scratch 'runners'
+    New-Item -ItemType Directory -Path $standIns | Out-Null
+    $standIn = @'
+#Requires -Version 7
+param([Parameter(Mandatory)][string]$StageRoot, [Parameter(Mandatory)][string]$EvidenceRoot,
+    [string]$SelfCheckControlServerCommit, __ONBOARD__ [string]$BatchId)
+if ((Test-Path -LiteralPath $StageRoot) -or (Test-Path -LiteralPath $EvidenceRoot)) { throw 'StageRoot and EvidenceRoot must not already exist' }
+New-Item -ItemType Directory -Path $EvidenceRoot, (Join-Path $StageRoot 'sources\control-server'), (Join-Path $StageRoot 'publish'), (Join-Path $StageRoot 'runtime') | Out-Null
+Set-Content -LiteralPath (Join-Path $StageRoot 'runtime\controlserver.db') -Value 'db'
+[ordered]@{ runner = '__NAME__'; parameters = $PSBoundParameters } | ConvertTo-Json -Depth 4 | Set-Content -LiteralPath (Join-Path $EvidenceRoot 'arguments.json')
+Start-Sleep -Seconds ([int]('0' + $env:NIGHTLY_G3_STANDIN_SLEEP___VAR__))
+$red = $env:NIGHTLY_G3_STANDIN_RED -split ',' -contains '__NAME__'
+[ordered]@{ status = $(if ($red) { 'STAGED_SLICE_FAIL' } else { 'STAGED_SLICE_PASS' }); error = $null
+    assertions = [ordered]@{ standInAssertion = $(if ($red) { 'FAIL' } else { 'PASS' }) } } | ConvertTo-Json -Depth 4 |
+    Set-Content -LiteralPath (Join-Path $EvidenceRoot 'run-result.json')
+exit $(if ($red) { 1 } else { 0 })
+'@
+    foreach ($pair in @(@('staged', 'run-staged-g3.ps1', $true), @('restart', 'run-staged-g3-restart.ps1', $true),
+            @('demand-bearing', 'run-demand-bearing-g3-vectors.ps1', $false), @('journey', 'run-journey-g3.ps1', $true))) {
+        $text = $standIn.Replace('__NAME__', $pair[0]).Replace('__VAR__', ($pair[0] -replace '-', '_').ToUpperInvariant()).Replace(
+            '__ONBOARD__', $(if ($pair[2]) { '[string]$SelfCheckOnboardCommit,' } else { '' }))
+        Set-Content -LiteralPath (Join-Path $standIns $pair[1]) -Value $text
+    }
+    $order = @('staged', 'restart', 'demand-bearing', 'journey')
+    $cs = 'c' * 40
+    $ob = 'b' * 40
+    function Invoke-Round([string]$Name, [hashtable]$Environment, [hashtable]$Extra) {
+        $work = Join-Path $scratch "round-$Name"
+        $arguments = @('-NoProfile', '-File', (Join-Path $ScriptRoot 'Invoke-NightlyG3.ps1'), '-WorkRoot', $work, '-RunnerRoot', $standIns,
+            '-ControlServerCommit', $cs, '-OnboardCommit', $ob, '-CommitCeilingGiB', '100000', '-MinFreeGiB', '0',
+            '-StartDeadlineUtc', ([DateTimeOffset]::UtcNow.AddHours(1).ToString('o')))
+        foreach ($key in $Extra.Keys) { $index = [array]::IndexOf($arguments, "-$key"); if ($index -ge 0) { $arguments[$index + 1] = $Extra[$key] } else { $arguments += "-$key", $Extra[$key] } }
+        $saved = @{}
+        foreach ($key in $Environment.Keys) { $saved[$key] = [Environment]::GetEnvironmentVariable($key); [Environment]::SetEnvironmentVariable($key, $Environment[$key]) }
+        try { $output = & pwsh @arguments *>&1 | Out-String; $exit = $LASTEXITCODE }
+        finally { foreach ($key in $saved.Keys) { [Environment]::SetEnvironmentVariable($key, $saved[$key]) } }
+        $resultsPath = Join-Path $work 'results.json'
+        $results = if (Test-Path -LiteralPath $resultsPath) { Get-Content -Raw -LiteralPath $resultsPath | ConvertFrom-Json -AsHashtable } else { $null }
+        return [pscustomobject]@{ Work = $work; Exit = $exit; Output = $output; Results = $results }
+    }
+    function Get-Arguments([string]$Work, [string]$Runner) {
+        $path = Join-Path $Work "evidence\$Runner\arguments.json"
+        if (Test-Path -LiteralPath $path) { return (Get-Content -Raw -LiteralPath $path | ConvertFrom-Json -AsHashtable)['parameters'] }
+        return $null
+    }
+
+    # A round with restart red.
+    $round = Invoke-Round 'restart-red' @{ NIGHTLY_G3_STANDIN_RED = 'restart' } @{}
+    $verdicts = @(${round}.Results?['verdicts'] | Where-Object { $null -ne $_ })
+    Check 'round: results.json carries the four verdicts in order staged, restart, demand-bearing, journey' `
+        ($verdicts.Count -eq 4 -and ($verdicts | ForEach-Object { $_['runner'] }) -join ',' -ceq ($order -join ',')) "$($round.Output)"
+    Check 'round: PASS, FAIL, PASS, PASS, and the red one names its assertion' `
+        ($verdicts.Count -eq 4 -and ($verdicts | ForEach-Object { $_['result'] }) -join ',' -ceq 'PASS,FAIL,PASS,PASS' -and @($verdicts[1]['failed']) -contains 'standInAssertion') `
+        "$(($verdicts | ForEach-Object { "$($_['runner'])=$($_['result'])" }) -join ', ')"
+    Check 'round: a red round exits 1' ($round.Exit -eq 1) "exit $($round.Exit)"
+    Check 'round: results.json carries the commits, the simulator and protocol from the written binding' `
+        (${round}.Results?['commits']?['controlServer'] -ceq $cs -and $round.Results['commits']['onboardHmi'] -ceq $ob -and
+         $round.Results['commits']['slotsSimulator'] -ceq $binding['SimulatorCommit'] -and $round.Results['commits']['protocol'] -ceq $binding['ProtocolCommit']) `
+        "$(${round}.Results?['commits'] | ConvertTo-Json -Compress)"
+    $stages = @()
+    foreach ($runner in $order) {
+        $given = Get-Arguments $round.Work $runner
+        $wantsOnboard = $runner -ne 'demand-bearing'
+        Check "round, ${runner}: given -SelfCheckControlServerCommit$(if ($wantsOnboard) { ' and -SelfCheckOnboardCommit' } else { ' only' })$(if ($runner -eq 'journey') { ', and a -BatchId' })" `
+            ($null -ne $given -and $given['SelfCheckControlServerCommit'] -ceq $cs -and
+             ($wantsOnboard -eq ($given['SelfCheckOnboardCommit'] -ceq $ob)) -and ($runner -ne 'journey' -or -not [string]::IsNullOrEmpty($given['BatchId']))) `
+            "$($given | ConvertTo-Json -Compress)"
+        if ($null -ne $given) {
+            $stages += $given['StageRoot']
+            Check "round, ${runner}: its stage and evidence roots are under the work root" `
+                ($given['StageRoot'].StartsWith($round.Work) -and $given['EvidenceRoot'].StartsWith($round.Work)) "$($given['StageRoot']) / $($given['EvidenceRoot'])"
+        }
+    }
+    Check 'round: every runner gets a stage root of its own' (@($stages | Select-Object -Unique).Count -eq 4) "$($stages -join ', ')"
+    if ($stages.Count -eq 4) {
+        Check 'round: a PASS runner''s stage is removed' (-not (Test-Path -LiteralPath $stages[0])) "$($stages[0]) is still there"
+        Check 'round: a red runner keeps its runtime but not its sources or publish' `
+            ((Test-Path -LiteralPath (Join-Path $stages[1] 'runtime\controlserver.db')) -and -not (Test-Path -LiteralPath (Join-Path $stages[1] 'sources')) -and
+             -not (Test-Path -LiteralPath (Join-Path $stages[1] 'publish'))) "$(Get-ChildItem -LiteralPath $stages[1] -ErrorAction SilentlyContinue | ForEach-Object Name)"
+    }
+
+    # A round that passes the deadline after its first runner: the others are recorded, not run.
+    $round = Invoke-Round 'deadline' @{ NIGHTLY_G3_STANDIN_SLEEP_STAGED = '8' } @{ StartDeadlineUtc = [DateTimeOffset]::UtcNow.AddSeconds(5).ToString('o') }
+    $verdicts = @(${round}.Results?['verdicts'] | Where-Object { $null -ne $_ })
+    Check 'round past the deadline: staged ran, the other three NOT_STARTED_DEADLINE and never started' `
+        (($verdicts | ForEach-Object { $_['result'] }) -join ',' -ceq 'PASS,NOT_STARTED_DEADLINE,NOT_STARTED_DEADLINE,NOT_STARTED_DEADLINE' -and
+         $round.Results['stoppedBy'] -ceq 'NOT_STARTED_DEADLINE' -and $null -eq (Get-Arguments $round.Work 'restart') -and $round.Exit -eq 1) `
+        "exit $($round.Exit); $(($verdicts | ForEach-Object { "$($_['runner'])=$($_['result'])" }) -join ', ') $($round.Output)"
+
+    foreach ($gate in @(
+            @{ Name = 'the commit guard'; Code = 'NOT_STARTED_COMMIT_GUARD'; Extra = @{ CommitCeilingGiB = '0'; CommitWaitMinutes = '0' } },
+            @{ Name = 'too little free disk'; Code = 'NOT_STARTED_DISK'; Extra = @{ MinFreeGiB = '100000' } })) {
+        $round = Invoke-Round ($gate.Code.ToLowerInvariant()) @{} $gate.Extra
+        $verdicts = @(${round}.Results?['verdicts'] | Where-Object { $null -ne $_ })
+        Check "round stopped by $($gate.Name): four $($gate.Code), nothing started" `
+            ($verdicts.Count -eq 4 -and @($verdicts | Where-Object { $_['result'] -cne $gate.Code }).Count -eq 0 -and $round.Results['stoppedBy'] -ceq $gate.Code -and
+             $null -eq (Get-Arguments $round.Work 'staged') -and $round.Exit -eq 1) `
+            "exit $($round.Exit); $(($verdicts | ForEach-Object { "$($_['runner'])=$($_['result'])" }) -join ', ') $($round.Output)"
+    }
+
+    # All green exits 0.
+    $round = Invoke-Round 'green' @{} @{}
+    Check 'round all green: four PASS, exit 0' ((@(${round}.Results?['verdicts'] | Where-Object { $null -ne $_ }) | ForEach-Object { $_['result'] }) -join ',' -ceq 'PASS,PASS,PASS,PASS' -and $round.Exit -eq 0) `
+        "exit $($round.Exit) $($round.Output)"
 }
 finally {
     Remove-Item -LiteralPath $scratch -Recurse -Force -ErrorAction SilentlyContinue
