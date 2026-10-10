@@ -2,6 +2,7 @@ using System.Text.Json;
 using ControlServer.Application;
 using ControlServer.Domain;
 using ControlServer.Host.Runtime.Dispatch;
+using ControlServer.Host.Runtime.Dispatch.Criteria;
 using ControlServer.Infrastructure.Persistence;
 using Microsoft.EntityFrameworkCore;
 using static ControlServer.Tests.JourneyRuntimeWorkerTestKit;
@@ -19,6 +20,9 @@ public sealed class SameDirectionTaskTypeJourneyRuntimeTests
     private const int BoundStationRiotId = 401;
 
     private const string BoundStationName = "同向固定站";
+
+    // The area-named machine stations on the fixture's map, the ones the admission seed is made of.
+    private static readonly string[] AreaStations = ["N1-1", "N1-2_N1-3"];
 
     private static CancellationToken Token => TestContext.Current.CancellationToken;
 
@@ -103,6 +107,78 @@ public sealed class SameDirectionTaskTypeJourneyRuntimeTests
         Assert.Equal(gateDemand, (await fixture.RuntimeAsync()).DemandId);
         Assert.Equal(1, fixture.Riot.CreateCount("TO_PICKUP"));
     }
+
+    /// <summary>
+    /// The station admission seed pairs every area-named machine station with all six task types once the four are
+    /// executable: the AREA machine end is where each of them is admitted.
+    /// </summary>
+    [Fact]
+    [Trait("IntegrationSlice", "FP-IS-10")]
+    public async Task TheAdmissionSeedPairsEveryAreaStationWithAllSixTaskTypes()
+    {
+        await using RuntimeFixture fixture = await RuntimeFixture.CreateAsync();
+
+        await fixture.Engine.ExecuteOnceAsync(Token);
+
+        StationTaskTypeAdmissionRow[] seeded = await fixture.Context.StationTaskTypeAdmissions.AsNoTracking()
+            .ToArrayAsync(Token);
+        Assert.Equal(
+            [.. AreaStations
+                .SelectMany(station => TransportTaskTypes.All.Select(taskType => (station, taskType)))
+                .Order()],
+            seeded.Select(row => (row.StationId, row.TaskType)).Order().ToArray());
+    }
+
+    /// <summary>
+    /// The drift this ticket's version bump exists for (docs/defects/20260915-admission-policy-drift-halts-runtime.md):
+    /// a store whose version 2 holds the seed the previous build bound -- each area station with WIRE_TO_GATE and
+    /// STAGING_TO_WIRE only -- read by this build under the same version 2 is drift, and no demand is taken on. Under
+    /// version 3 the new seed binds and the demand is accepted.
+    /// </summary>
+    [Fact]
+    [Trait("IntegrationSlice", "FP-IS-10")]
+    public async Task ThePreviousBuildsSeedUnderTheSameVersionIsDriftAndTheRaisedVersionIsNot()
+    {
+        await using RuntimeFixture fixture = await RuntimeFixture.CreateAsync();
+        await BindPreviousBuildsSeedAsync(fixture, version: 2);
+        fixture.Options.AdmissionPolicyVersion = 2;
+        fixture.Catalog.Set(fixture.Demand(DemandId, "SUBLOT-001", Now.AddMinutes(-10)));
+        fixture.BoxCounts.Set("SUBLOT-001", 4);
+
+        await fixture.Engine.ExecuteOnceAsync(Token);
+
+        Assert.Equal(AdmissionPolicyDriftCriterion.Reason, (await fixture.BacklogAsync(DemandId)).ReasonCode);
+        Assert.Empty(await fixture.Context.JourneyRuntimes.AsNoTracking().ToArrayAsync(Token));
+        Assert.Equal(0, fixture.Riot.TotalCreateCount);
+
+        fixture.Options.AdmissionPolicyVersion = 3;
+        await fixture.Engine.ExecuteOnceAsync(Token);
+
+        Assert.Equal("ACCEPTED", (await fixture.BacklogAsync(DemandId)).ReasonCode);
+        Assert.Equal(JourneyRuntimeStage.AwaitingPickupArrival, (await fixture.RuntimeAsync()).Stage);
+    }
+
+    /// <summary>
+    /// Binds what the build before batch 10 seeded -- the fixture map's two area stations, each with WIRE_TO_GATE and
+    /// STAGING_TO_WIRE -- under <paramref name="version"/>, through the store the engine binds with.
+    /// </summary>
+    private static async Task BindPreviousBuildsSeedAsync(RuntimeFixture fixture, long version)
+    {
+        await using ControlServerDbContext context = new(fixture.DbOptionsForTests);
+        await new WireToGateStore(context).ApplyAdmissionPolicyAsync(PreviousBuildsSeed(fixture, version), Token);
+    }
+
+    private static AdmissionPolicyDefinition PreviousBuildsSeed(RuntimeFixture fixture, long version) => new(
+        version,
+        fixture.Options.AdmissionPolicyDeploymentId,
+        [
+            .. AreaStations.SelectMany(station => new[]
+            {
+                new StationTaskTypeAdmission(station, TransportTaskTypes.StagingToWire),
+                new StationTaskTypeAdmission(station, TransportTaskTypes.WireToGate),
+            }),
+        ],
+        Now);
 
     /// <summary>
     /// The runtime's factory rules and map 25 with WIRE_TO_GATE (gate 210) and <paramref name="taskType"/> (station 401)
