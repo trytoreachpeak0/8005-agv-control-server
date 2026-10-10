@@ -1,0 +1,25 @@
+ok    the selector parses
+Staged content-conflict self-check: runs: this pull request changes 1 path(s) it checks, first scripts/run-staged-g3.ps1
+ok    runs when scripts/run-staged-g3.ps1 changed
+Staged content-conflict self-check: runs: this pull request changes 1 path(s) it checks, first scripts/g3-slice-evidence.ps1
+ok    runs when scripts/g3-slice-evidence.ps1 changed
+Staged content-conflict self-check: runs: this pull request changes 1 path(s) it checks, first scripts/l2/L2.psm1
+ok    runs when scripts/l2/L2.psm1 changed
+Staged content-conflict self-check: runs: this pull request changes 1 path(s) it checks, first scripts/l2/scenarios/g3-automatic-charging-cycle.ps1
+ok    runs when scripts/l2/scenarios/g3-automatic-charging-cycle.ps1 changed
+Staged content-conflict self-check: runs: this pull request changes 1 path(s) it checks, first scripts/Test-StagedG3ContentConflict.ps1
+ok    runs when scripts/Test-StagedG3ContentConflict.ps1 changed
+Staged content-conflict self-check: runs: this pull request changes 1 path(s) it checks, first scripts/Select-StagedG3ContentConflictRun.ps1
+ok    runs when scripts/Select-StagedG3ContentConflictRun.ps1 changed
+Staged content-conflict self-check: runs: this pull request changes 1 path(s) it checks, first src/ControlServer.Host/Transport/OnboardJourneyPublisher.cs
+ok    runs when src/ControlServer.Host/Transport/OnboardJourneyPublisher.cs changed
+Staged content-conflict self-check: skipped: none of the 8 changed path(s) is one it checks (scripts/run-staged-g3.ps1, scripts/g3-slice-evidence.ps1, scripts/Test-StagedG3ContentConflict.ps1, scripts/Select-StagedG3ContentConflictRun.ps1, or under scripts/l2/, src/ControlServer.Host/Transport/)
+ok    skips when only near misses changed, and says why
+Staged content-conflict self-check: skipped: none of the 0 changed path(s) is one it checks (scripts/run-staged-g3.ps1, scripts/g3-slice-evidence.ps1, scripts/Test-StagedG3ContentConflict.ps1, scripts/Select-StagedG3ContentConflictRun.ps1, or under scripts/l2/, src/ControlServer.Host/Transport/)
+ok    skips on a pull request that changes nothing
+Staged content-conflict self-check: not a pull request: the content-conflict self-check always runs
+ok    runs on an event that is not a pull request (a dispatched run on the integration branch is a backstop)
+Staged content-conflict self-check: runs: this pull request changes 1 path(s) it checks, first scripts/run-staged-g3.ps1
+Staged content-conflict self-check: skipped: none of the 1 changed path(s) is one it checks (scripts/run-staged-g3.ps1, scripts/g3-slice-evidence.ps1, scripts/Test-StagedG3ContentConflict.ps1, scripts/Select-StagedG3ContentConflictRun.ps1, or under scripts/l2/, src/ControlServer.Host/Transport/)
+ok    writes run=true and run=false to GITHUB_OUTPUT
+All cases as expected.

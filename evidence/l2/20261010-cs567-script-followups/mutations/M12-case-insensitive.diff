@@ -1,0 +1,13 @@
+diff --git a/scripts/Select-StagedG3ContentConflictRun.ps1 b/scripts/Select-StagedG3ContentConflictRun.ps1
+index deb5cbdb8..16d96fd1c 100644
+--- a/scripts/Select-StagedG3ContentConflictRun.ps1
++++ b/scripts/Select-StagedG3ContentConflictRun.ps1
+@@ -46,7 +46,7 @@ if ($NotAPullRequest) {
+ } else {
+     $hits = @($changed | Where-Object {
+             $path = $_
+-            $files -ccontains $path -or @($prefixes | Where-Object { $path.StartsWith($_, [StringComparison]::Ordinal) }).Count -gt 0
++            $files -contains $path -or @($prefixes | Where-Object { $path.StartsWith($_, [StringComparison]::Ordinal) }).Count -gt 0
+         })
+     $decision = if ($hits.Count -gt 0) {
+         [pscustomobject]@{ Run = $true; Reason = "runs: this pull request changes $($hits.Count) path(s) it checks, first $($hits[0])" }

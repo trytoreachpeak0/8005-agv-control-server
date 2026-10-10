@@ -1,0 +1,13 @@
+diff --git a/scripts/l2/scenarios/g3-automatic-charging-cycle.ps1 b/scripts/l2/scenarios/g3-automatic-charging-cycle.ps1
+index ec7db044b..f29986104 100644
+--- a/scripts/l2/scenarios/g3-automatic-charging-cycle.ps1
++++ b/scripts/l2/scenarios/g3-automatic-charging-cycle.ps1
+@@ -172,7 +172,7 @@ $heldReading = Wait-L2ConditionOrLast -Description 'the HMI opened entry at the
+     -Journal $journal -Criterion 'hmi-no-entry-at-charger' -TimeoutSeconds 10 `
+     -Probe {
+         $reading = Read-L2UiaItemStatus $onboard 'ChargingStatus' $journal
+-        [pscustomobject]@{ Readable = $reading.Readable; Status = $reading.Value; Shown = Format-L2UiaReading $reading
++        [pscustomobject]@{ Readable = $true; Status = $reading.Value; Shown = Format-L2UiaReading $reading
+             CanSubmit = [bool]$onboard.CanSubmit() }
+     } `
+     -Until { param($v) $v.CanSubmit }

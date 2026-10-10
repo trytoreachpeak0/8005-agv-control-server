@@ -1,0 +1,16 @@
+ok    the selector parses
+BAD   runs when scripts/run-staged-g3.ps1 changed -> {"Run":true,"Reason":"stub"}
+BAD   runs when scripts/g3-slice-evidence.ps1 changed -> {"Run":true,"Reason":"stub"}
+BAD   runs when scripts/l2/L2.psm1 changed -> {"Run":true,"Reason":"stub"}
+BAD   runs when scripts/l2/scenarios/g3-automatic-charging-cycle.ps1 changed -> {"Run":true,"Reason":"stub"}
+BAD   runs when scripts/Test-StagedG3ContentConflict.ps1 changed -> {"Run":true,"Reason":"stub"}
+BAD   runs when scripts/Select-StagedG3ContentConflictRun.ps1 changed -> {"Run":true,"Reason":"stub"}
+BAD   runs when src/ControlServer.Host/Transport/OnboardJourneyPublisher.cs changed -> {"Run":true,"Reason":"stub"}
+BAD   skips when only near misses changed, and says why -> {"Run":true,"Reason":"stub"}
+BAD   skips on a pull request that changes nothing -> {"Run":true,"Reason":"stub"}
+BAD   runs on an event that is not a pull request (a dispatched run on the integration branch is a backstop) -> {"Run":true,"Reason":"stub"}
+[31;1mGet-Content: [0mC:\Users\szy\Desktop\8005-workspace-v2\worktrees\cs567-8005-agv-control-server\scripts\Test-StagedG3ContentConflictScope.ps1:73[0m
+[31;1m[0m[36;1mLine |[0m
+[31;1m[0m[36;1m[36;1m  73 | [0m     $lines = @([36;1mGet-Content -LiteralPath $output[0m)[0m
+[31;1m[0m[36;1m[36;1m[0m[36;1m[0m[36;1m     | [31;1m                ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~[0m
+[31;1m[0m[36;1m[36;1m[0m[36;1m[0m[36;1m[31;1m[31;1m[36;1m     | [31;1mCannot find path 'C:\Users\szy\AppData\Local\Temp\cs567-scope-20fe5794.txt' because it does not exist.[0m

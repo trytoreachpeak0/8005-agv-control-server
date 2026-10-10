@@ -1,0 +1,13 @@
+diff --git a/scripts/l2/scenarios/g3-automatic-charging-cycle.ps1 b/scripts/l2/scenarios/g3-automatic-charging-cycle.ps1
+index ec7db044b..a3d983c15 100644
+--- a/scripts/l2/scenarios/g3-automatic-charging-cycle.ps1
++++ b/scripts/l2/scenarios/g3-automatic-charging-cycle.ps1
+@@ -181,7 +181,7 @@ $operationsAtCharger = Invoke-L2Query -Connection $connection -Sql 'SELECT SlotO
+ $assertions.Add(
+     'G3-13-03',
+     '到桩充电：211 转为这一趟的占用，周期 CHARGING，界面 ChargingStatus 报 CHARGING；车停在桩上那十秒里车载端每次读都不能提交，服务端也没有建任何装卸操作',
+-    ($charging -eq "CHARGING | OCCUPIED $chargingJourneyId | CHARGING" -and -not $heldReading.CanSubmit -and
++    ($charging -eq "CHARGING | OCCUPIED $chargingJourneyId | CHARGING" -and -not $heldReading.CanSubmit -and $heldReading.Status -eq "CHARGING" -and
+         $operationsAtCharger.Count -eq 0),
+     "CHARGING | OCCUPIED $chargingJourneyId | CHARGING / 不能提交 / 0 笔操作",
+     "$charging / 界面 $($heldReading.Shown)、CanSubmit=$($heldReading.CanSubmit) / 操作 $(($operationsAtCharger | ForEach-Object { "$($_.OperationType):$($_.SlotOperationAttemptId)" }) -join ',')")
