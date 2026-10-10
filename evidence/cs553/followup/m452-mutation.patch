@@ -1,0 +1,40 @@
+diff --git a/src/ControlServer.Host/Transport/OnboardMessageProcessor.cs b/src/ControlServer.Host/Transport/OnboardMessageProcessor.cs
+index fe4c2e259..b31d81144 100644
+--- a/src/ControlServer.Host/Transport/OnboardMessageProcessor.cs
++++ b/src/ControlServer.Host/Transport/OnboardMessageProcessor.cs
+@@ -147,8 +147,7 @@ public sealed partial class OnboardMessageProcessor(
+         // decisions themselves retry; then the same exception they throw, which ends the connection as it always did.
+         for (int attempt = 0; ; attempt++)
+         {
+-            FieldConfirmationObservation? observed = await ObserveFieldConfirmationAsync(
+-                root, state, messageType, messageId, cancellationToken).ConfigureAwait(false);
++            FieldConfirmationObservation? observed = null;
+             try
+             {
+                 capturedResponse = await store.CaptureFirstResponseAsync(
+@@ -156,8 +155,10 @@ public sealed partial class OnboardMessageProcessor(
+                     messageType,
+                     persistedRequest,
+                     contentHash,
+-                    () => ProcessCurrentSessionMessageAsync(
+-                        root, state, messageType, messageId, contentHash, observed, cancellationToken),
++                    async () => await ProcessCurrentSessionMessageAsync(
++                        root, state, messageType, messageId, contentHash,
++                        observed ?? await ObserveFieldConfirmationAsync(root, state, messageType, messageId, cancellationToken).ConfigureAwait(false),
++                        cancellationToken).ConfigureAwait(false),
+                     timeProvider.GetUtcNow(),
+                     cancellationToken,
+                     GenerationRebindReplayHash,
+diff --git a/src/ControlServer.Infrastructure/Persistence/RiotReadOutsideWriteLock.cs b/src/ControlServer.Infrastructure/Persistence/RiotReadOutsideWriteLock.cs
+index 20006d6c8..28dd4914d 100644
+--- a/src/ControlServer.Infrastructure/Persistence/RiotReadOutsideWriteLock.cs
++++ b/src/ControlServer.Infrastructure/Persistence/RiotReadOutsideWriteLock.cs
+@@ -17,7 +17,7 @@ public static class RiotReadOutsideWriteLock
+     public static void Ensure(DbContext dbContext)
+     {
+         ArgumentNullException.ThrowIfNull(dbContext);
+-        if (dbContext.Database.CurrentTransaction is not null)
++        if (dbContext.Database.CurrentTransaction is not null && dbContext.Database.ProviderName == "cs553-mutation-never")
+         {
+             throw new InvalidOperationException("RIoT is read outside the write lock (control-server#452).");
+         }
