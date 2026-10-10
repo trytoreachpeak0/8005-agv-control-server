@@ -262,6 +262,15 @@ try {
         -ConfigurationWriteTimeUtc ($installedConfigurationExists ? [IO.File]::GetLastWriteTimeUtc($installedConfigurationPath) : $null) `
         -ProcessStartTimeUtc (Get-ParallelServiceProcessStartTimeUtc -ServiceName $serviceName)
     if ($preInstallRefusal) { throw $preInstallRefusal }
+    # control-server#578 review item 2. The product script starts the service itself (a first install, the upgrade's
+    # lifecycle check) on its own enabled=false; a JourneyRuntime environment key would turn that on too. Machine-level here;
+    # the service's own Environment is checked again in Invoke-ParallelInstanceConfigurationStep, after the product script.
+    $environmentOverrides = @(Get-ParallelJourneyRuntimeEnvironmentOverride -ServiceEnvironment @() `
+            -MachineEnvironment @([Environment]::GetEnvironmentVariables('Machine').GetEnumerator() | ForEach-Object { "$($_.Key)=$($_.Value)" }))
+    if ($environmentOverrides.Count -gt 0) {
+        throw ("JOURNEY_RUNTIME_ENVIRONMENT_OVERRIDE (nothing was stopped or changed): $($environmentOverrides -join ', ') set JourneyRuntime " +
+            'above appsettings.Production.json. Remove the variable(s), then install again.')
+    }
 
     # A rollback needs a previous generation the product script can install from; checked before the
     # definition is re-recorded and before any directory is swapped (incremental review, item 4).
@@ -426,6 +435,7 @@ try {
                 GetEnvironment = { Get-ServiceEnvironment }
                 SetEnvironment = { param([string[]] $Environment) Set-ServiceEnvironment $Environment }
                 RestartService = { Restart-Service -Name $serviceName -Force }
+                GetMachineEnvironment = { [Environment]::GetEnvironmentVariables('Machine').GetEnumerator() | ForEach-Object { "$($_.Key)=$($_.Value)" } }
             }
         Write-Step "Configuration overlay merged into $configurationPath and verified (vehicle identity, MesIngest origin, clearance exit sections); credential $([string]::IsNullOrWhiteSpace($FaultRecoveryCredential) ? 'not supplied' : 'written, value not shown'); $serviceName restarted"
         Write-Step $readiness.Line
@@ -468,8 +478,15 @@ try {
             service when it differs, is not logged, or nothing is read back at all.
             Prints EFFECTIVE_CONFIGURATION=... as a result line for 19-deploy-control-server-parallel.ps1; that line
             keeps its three fields exactly, because 19 compares it as a string. The roster is printed as a step.
+
+            control-server#578: runs twice, both times from Invoke-ParallelJourneyRuntimeRelease. -Phase Held reads
+            the Host restarted with JourneyRuntime.enabled=false and also judges that its runtime was held (event 2001
+            logged, no dispatch activity), waiting for 2001 as for the event; a refusal stops the service like any
+            other. The decision for both phases is Get-ParallelReadBackAction's, so the self-test runs the same one. -Phase Released reads the Host started with the definition's value. The result line is
+            returned, not printed, so the installer prints it once, from the last read-back.
         #>
-        $configuration = [IO.File]::ReadAllText((Join-Path $installRoot 'appsettings.Production.json')) | ConvertFrom-Json -AsHashtable -Depth 20
+        param([Parameter(Mandatory = $true)][ValidateSet('Held', 'Released')][string] $Phase)
+        $configuration =[IO.File]::ReadAllText((Join-Path $installRoot 'appsettings.Production.json')) | ConvertFrom-Json -AsHashtable -Depth 20
         $serilog = ($configuration -is [hashtable]) ? $configuration['Serilog'] : $null
         $fileSink = @((($serilog -is [hashtable]) ? $serilog['WriteTo'] : $null) | Where-Object { $_ -is [hashtable] -and $_['Name'] -ceq 'File' }) | Select-Object -First 1
         $logPath = ($null -ne $fileSink -and $fileSink['Args'] -is [hashtable]) ? [string] $fileSink['Args']['path'] : ''
@@ -484,7 +501,8 @@ try {
         # Two seconds of slack: the process start time and the log's clock are read through different APIs.
         $since = [datetimeoffset]::new([datetime]::SpecifyKind($started, [DateTimeKind]::Utc)).AddSeconds(-2)
 
-        $effective = $null
+        # With no log to read, nothing is read back; held, no 2001 read is a refusal too.
+        $verdict = Get-ParallelReadBackAction -Phase $Phase -Definition $definition -Lines @() -Since $since
         $deadline = $logPath ? [DateTime]::UtcNow.AddSeconds(120) : [DateTime]::UtcNow
         while ($logPath) {
             $lines = foreach ($file in @(Get-ChildItem -LiteralPath $logDirectory -Filter $logFilter -File -ErrorAction SilentlyContinue |
@@ -493,12 +511,12 @@ try {
                 $stream = [IO.File]::Open($file.FullName, [IO.FileMode]::Open, [IO.FileAccess]::Read, [IO.FileShare]::ReadWrite)
                 try { ([IO.StreamReader]::new($stream, [Text.Encoding]::UTF8)).ReadToEnd() -split "`r?`n" } finally { $stream.Dispose() }
             }
-            $effective = Find-ParallelEffectiveConfiguration -Lines @($lines) -Since $since
-            if ($null -ne $effective -or [DateTime]::UtcNow -ge $deadline) { break }
+            # Held: the worker logs 2001 as it starts, around the time of the event; the decision waits for both.
+            $verdict = Get-ParallelReadBackAction -Phase $Phase -Definition $definition -Lines @($lines) -Since $since
+            if (-not $verdict.Waiting -or [DateTime]::UtcNow -ge $deadline) { break }
             Start-Sleep -Seconds 2
         }
-
-        $verdict = Get-ParallelEffectiveConfigurationAction -Definition $definition -Effective $effective
+        $effective = $verdict.Effective
         $where = "Read from $logDirectory\$logFilter since $($since.ToString('o'))."
         if ($verdict.Action -ceq 'Warn') {
             Write-Warning "$($verdict.Message) $where In 'fake' mode this is reported, not refused: a package older than control-server#535 does not log the event."
@@ -508,15 +526,41 @@ try {
             # Stopped first, then refused: the Host must not go on reading MesIngest with a binding nobody meant.
             Stop-Service -Name $serviceName -Force -ErrorAction Continue
             $state = [string] (Get-Service -Name $serviceName -ErrorAction SilentlyContinue)?.Status
-            throw "$($verdict.Message) $where $serviceName was stopped (now: $state). The RIoT dispatch gate is untouched; fix the cause, then install again or -Rollback."
+            # Review item 3: the size and last write time of what was read. A Host that stopped writing (control-server#587,
+            # 1 GiB) reads back as JOURNEY_RUNTIME_NOT_HELD or EFFECTIVE_CONFIGURATION_UNREAD, and these show why.
+            $logFacts = Format-ParallelLogFileFacts -Files @($logPath ? @(Get-ChildItem -LiteralPath $logDirectory -Filter $logFilter -File -ErrorAction SilentlyContinue |
+                        Sort-Object LastWriteTimeUtc -Descending | Select-Object -First 2) : @())
+            throw "$($verdict.Message) $where $logFacts $serviceName was stopped (now: $state). The RIoT dispatch gate is untouched; fix the cause, then install again or -Rollback."
         }
         $line = "EFFECTIVE_CONFIGURATION=allowedWorkTypes=$(@($effective.AllowedWorkTypes) -join ',') " +
             "allowedDispatchZones=$(@($effective.AllowedDispatchZones) -join ',') mesIngestBaseUrl=$($effective.MesIngestBaseUrl)"
-        Write-Step "What the Host bound, read back from its log at $($effective.At.ToString('o')): $line"
+        Write-Step "[$Phase] What the Host bound, read back from its log at $($effective.At.ToString('o')): $line"
         foreach ($car in @($effective.Fleet | Where-Object { $null -ne $_ })) {
             Write-Step "  fleet: $($car.AgvId) ($($car.VehicleKey)) allowedTaskTypes=$(@($car.AllowedTaskTypes) -join ',') zones=$(@($car.Zones) -join ',')"
         }
-        Write-Output $line
+        return $line
+    }
+
+    function Invoke-JourneyRuntimeRelease {
+        <#
+            control-server#578. Install, upgrade and rollback all end here, after Set-InstanceConfiguration restarted
+            the service with JourneyRuntime.enabled=false (and any later restart for the MesIngest token kept it so):
+            read back held, then -- only for a definition that enables it -- stop, wait for that process to exit,
+            write true, start, read back again (Invoke-ParallelJourneyRuntimeRelease). Prints the last read-back's
+            EFFECTIVE_CONFIGURATION= line, once, for 19-deploy-control-server-parallel.ps1.
+        #>
+        $readBack = @{ Line = $null }
+        $release = Invoke-ParallelJourneyRuntimeRelease -ConfigurationPath (Join-Path $installRoot 'appsettings.Production.json') `
+            -Definition $definition -ServiceName $serviceName -Actions @{
+                ReadBackHeld = { $readBack.Line = Assert-EffectiveConfiguration -Phase Held }
+                ReadBackReleased = { $readBack.Line = Assert-EffectiveConfiguration -Phase Released }
+                ServiceProcessId = { (Get-CimInstance -ClassName Win32_Service -Filter "Name='$serviceName'").ProcessId }
+                StopService = { Stop-Service -Name $serviceName -Force }
+                ProcessExited = { param([int] $Id) $null = Wait-Process -Id $Id -Timeout 60 -ErrorAction SilentlyContinue; $null -eq (Get-Process -Id $Id -ErrorAction SilentlyContinue) }
+                StartService = { Start-Service -Name $serviceName }
+            }
+        Write-Step $release.Message
+        if ($readBack.Line) { Write-Output $readBack.Line }
     }
 
     function Install-FakeMesIngest {
@@ -620,8 +664,9 @@ try {
         } else {
             Install-FakeMesIngest -Zip ''
         }
-        # What the rolled-back Host really bound (control-server#535 review M2), after its last restart.
-        Assert-EffectiveConfiguration
+        # What the rolled-back Host really bound (control-server#535 review M2), read back with the journey runtime held
+        # off, and only then the runtime opened and read back again (control-server#578).
+        Invoke-JourneyRuntimeRelease
         Assert-MvpUntouched -Before $mvpBefore -After (Get-MvpFingerprint)
         Write-Output $mesIngestAudit
         Write-Step "Rolled back. Result: $resultPath"
@@ -728,8 +773,9 @@ try {
         Write-Step "health/live 200: $($live.Content)"
 
         # What the Host really bound (control-server#535 review M2), after the last restart above. Before the
-        # generation swap: a refusal here leaves the previous generation where -Rollback finds it.
-        Assert-EffectiveConfiguration
+        # generation swap: a refusal here leaves the previous generation where -Rollback finds it. Read back with the
+        # journey runtime held off, and only then the runtime opened and read back again (control-server#578).
+        Invoke-JourneyRuntimeRelease
 
         # ------------------------------------------------------- generation swap ---
 

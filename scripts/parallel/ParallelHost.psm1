@@ -376,7 +376,9 @@ function Set-ParallelInstanceJourneyRuntimeDisabled {
             it starts the new, unproven binary on the retained configuration for its lifecycle check,
             and a runtime that is on would poll demand and place orders from inside that check. The
             parallel overlay writes true, so every upgrade and rollback after a first install was
-            refused there. Called only from Invoke-ParallelProductUpgrade, which says when and why.
+            refused there. Called from Invoke-ParallelProductUpgrade, which says when and why, and since
+            control-server#578 from Invoke-ParallelInstanceConfigurationStep, which restarts the service with the
+            runtime held off until Invoke-ParallelJourneyRuntimeRelease has read it back.
             The write and its read-backs are Set-ParallelInstanceConfigurationFlag's.
 
         .PARAMETER Writer
@@ -685,11 +687,14 @@ function Invoke-ParallelInstanceConfigurationStep {
                  CLEARANCE_EXIT_BROKEN BEFORE restarting: a service restarted into a broken state
                  (a section missing, the entry on without its credential) would refuse to start or
                  run without an exit, and the running one is better left as it is;
-              5. restart the service, so it reads all of the above.
+              5. set JourneyRuntime.enabled=false (control-server#578) and restart the service, so it reads all
+                 of the above with its journey runtime held off; Invoke-ParallelJourneyRuntimeRelease writes the
+                 definition's value back once what this Host bound has been read back.
 
         .PARAMETER Actions
             Hashtable of scriptblocks, all required: GetEnvironment (returns the service's
-            Environment multi-string), SetEnvironment (takes the new one), RestartService.
+            Environment multi-string), SetEnvironment (takes the new one), RestartService, GetMachineEnvironment
+            (the machine-level environment as NAME=value; control-server#578).
     #>
     [CmdletBinding()]
     param(
@@ -700,8 +705,17 @@ function Invoke-ParallelInstanceConfigurationStep {
         [Parameter(Mandatory = $true)][string] $RosterPath,
         [Parameter(Mandatory = $true)][hashtable] $Actions
     )
-    $missing = @('GetEnvironment', 'SetEnvironment', 'RestartService' | Where-Object { -not ($Actions.ContainsKey($_) -and $Actions[$_] -is [scriptblock]) })
+    $missing = @('GetEnvironment', 'SetEnvironment', 'RestartService', 'GetMachineEnvironment' | Where-Object { -not ($Actions.ContainsKey($_) -and $Actions[$_] -is [scriptblock]) })
     if ($missing.Count -gt 0) { throw "Invoke-ParallelInstanceConfigurationStep: missing action(s) $($missing -join ', '); nothing was run." }
+
+    # control-server#578 review item 2: a JourneyRuntime key in an environment layer would turn the runtime on over the
+    # file's false. Refused before anything is changed, rather than read back once the Host has started.
+    $overrides = @(Get-ParallelJourneyRuntimeEnvironmentOverride -ServiceEnvironment @(& $Actions.GetEnvironment) -MachineEnvironment @(& $Actions.GetMachineEnvironment))
+    if ($overrides.Count -gt 0) {
+        throw ("JOURNEY_RUNTIME_ENVIRONMENT_OVERRIDE (nothing was changed, the service was not restarted): $($overrides -join ', ') " +
+            'set JourneyRuntime above appsettings.Production.json, so the journey runtime cannot be held off for the read-back. ' +
+            'Remove the variable(s), then install again.')
+    }
 
     $effective = Update-ParallelInstanceConfigurationFile -Path $ConfigurationPath -Definition $Definition
 
@@ -728,8 +742,114 @@ function Invoke-ParallelInstanceConfigurationStep {
         throw ("CLEARANCE_EXIT_BROKEN (the service was not restarted): " + (@($readiness.Fatal) -join ' ') + " $($readiness.Line)")
     }
 
+    # control-server#578: restarted with the journey runtime held off, whatever the definition says. The definition's
+    # value is written back only by Invoke-ParallelJourneyRuntimeRelease, after what the Host bound has been read back.
+    $null = Set-ParallelInstanceJourneyRuntimeDisabled -Path $ConfigurationPath
     $null = & $Actions.RestartService
     return $readiness
+}
+
+function Invoke-ParallelJourneyRuntimeRelease {
+    <#
+        .SYNOPSIS
+            control-server#578. Opens the journey runtime only after a Host that holds it off has read back as
+            the definition says. The machine-touching steps are injected. Returns what it did.
+
+        .DESCRIPTION
+            The Host logs what it bound (EFFECTIVE_CONFIGURATION) only once every hosted service has started, so
+            with the runtime on, the first dispatch round -- reading the production catalog, accepting a demand
+            into the database, claiming a vehicle, and with the dispatch gate open creating a RIoT order -- is
+            already under way when the installer can first see a wrong binding. Stopping the service then stops
+            the next round, not that one, and an accepted journey is reloaded and driven on every later start.
+            So Invoke-ParallelInstanceConfigurationStep restarts the service with JourneyRuntime.enabled=false,
+            and this function, in order:
+
+              1. ReadBackHeld: the installer's read-back of that Host -- what it bound, that it logged the runtime
+                 disabled, and that it logged no dispatch activity. On a refusal it stops the service and throws,
+                 and nothing below runs: the runtime is never opened.
+              2. A definition whose journeyRuntime.enabled is not true: done, the runtime stays off.
+              3. The running process's id, then StopService, then ProcessExited on that id. A phase-one process
+                 still alive when the flag is written could overlap the phase-two one; refused, flag unwritten.
+              4. JourneyRuntime.enabled=true (Set-ParallelInstanceConfigurationFlag, which reads it back).
+              5. StartService, and a process id that is not the phase-one one.
+              6. ReadBackReleased: the read-back again, now of the Host that runs journeys -- the second check.
+                 Only the flag differs from what step 1 read, so a mismatch here means something outside the
+                 file changed between the two starts; the installer's action stops the service and throws.
+            A refusal after step 4 sets JourneyRuntime.enabled back to false before it is thrown (review item 1): the
+            service starts Automatic, and a reboot must not bring it back with the runtime on.
+
+        .PARAMETER Actions
+            Hashtable of scriptblocks, all required: ReadBackHeld, ReadBackReleased (each throws on a refusal,
+            having stopped the service), ServiceProcessId ($null or 0 when there is no process), StopService,
+            ProcessExited (takes a process id; $true once that process has exited, $false when it has not within
+            its own wait), StartService.
+    #>
+    [CmdletBinding()]
+    param(
+        [Parameter(Mandatory = $true)][string] $ConfigurationPath,
+        [Parameter(Mandatory = $true)][System.Collections.IDictionary] $Definition,
+        [Parameter(Mandatory = $true)][string] $ServiceName,
+        [Parameter(Mandatory = $true)][hashtable] $Actions,
+        [scriptblock] $Writer = $script:WriteConfigurationFile
+    )
+    $missing = @('ReadBackHeld', 'ReadBackReleased', 'ServiceProcessId', 'StopService', 'ProcessExited', 'StartService' |
+            Where-Object { -not ($Actions.ContainsKey($_) -and $Actions[$_] -is [scriptblock]) })
+    if ($missing.Count -gt 0) { throw "Invoke-ParallelJourneyRuntimeRelease: missing action(s) $($missing -join ', '); nothing was run." }
+
+    # 1.
+    $null = & $Actions.ReadBackHeld
+
+    # 2.
+    $journey = $Definition['journeyRuntime']
+    $wanted = $journey -is [System.Collections.IDictionary] -and $journey['enabled'] -is [bool] -and $journey['enabled']
+    if (-not $wanted) {
+        return [pscustomobject]@{ Released = $false
+            Message = "JourneyRuntime stays disabled in ${ConfigurationPath}: the definition does not enable it. '$ServiceName' read back as defined with the runtime off." }
+    }
+
+    # 3.
+    $heldProcess = & $Actions.ServiceProcessId
+    if ($null -eq $heldProcess -or [int] $heldProcess -le 0) {
+        throw ("JOURNEY_RUNTIME_RELEASE_REFUSED: '$ServiceName' has no running process after its read-back, so the process to " +
+            "replace is unknown. JourneyRuntime.enabled stays false in $ConfigurationPath; nothing dispatches.")
+    }
+    $null = & $Actions.StopService
+    if (-not (& $Actions.ProcessExited ([int] $heldProcess))) {
+        throw ("JOURNEY_RUNTIME_RELEASE_REFUSED: '$ServiceName' was stopped, but its process $heldProcess (the one that read back " +
+            "with the runtime off) has not exited, and a second process must not start beside it. JourneyRuntime.enabled stays " +
+            "false in $ConfigurationPath. Check the process, then install again.")
+    }
+
+    # 4.
+    $null = Set-ParallelInstanceConfigurationFlag -Path $ConfigurationPath -Section 'JourneyRuntime' -Value $true -Writer $Writer
+
+    # 5.
+    $null = & $Actions.StartService
+    # Review item 1: a refusal from here on leaves the flag false. The service starts Automatic, and a file still saying
+    # true would bring it back on the next reboot with the runtime on and a binding that did not read back.
+    $setBackFalse = {
+        try {
+            $null = Set-ParallelInstanceConfigurationFlag -Path $ConfigurationPath -Section 'JourneyRuntime' -Value $false -Writer $Writer
+            "JourneyRuntime.enabled was set back to false in $ConfigurationPath."
+        } catch {
+            "Setting JourneyRuntime.enabled back to false in $ConfigurationPath FAILED ($($_.Exception.Message)); set it by hand before the service starts again."
+        }
+    }
+    $releasedProcess = & $Actions.ServiceProcessId
+    if ($null -eq $releasedProcess -or [int] $releasedProcess -le 0 -or [int] $releasedProcess -eq [int] $heldProcess) {
+        throw ("JOURNEY_RUNTIME_RELEASE_UNVERIFIED: '$ServiceName' has no new process after JourneyRuntime.enabled was written true " +
+            "(phase one was $heldProcess, now $(if ($null -eq $releasedProcess) { 'none' } else { $releasedProcess })). " +
+            "Check the service; what it bound has not been read back. $(& $setBackFalse)")
+    }
+
+    # 6.
+    try {
+        $null = & $Actions.ReadBackReleased
+    } catch {
+        throw "$($_.Exception.Message) $(& $setBackFalse)"
+    }
+    return [pscustomobject]@{ Released = $true
+        Message = "JourneyRuntime enabled in $ConfigurationPath after '$ServiceName' read back as defined with it off (process $heldProcess); read back again with it on (process $releasedProcess)." }
 }
 
 function Get-ParallelServiceProcessStartTimeUtc {
@@ -1050,6 +1170,6 @@ Export-ModuleMember -Function @('Get-MvpFingerprint', 'Assert-MvpUntouched', 'Fo
     'Get-ParallelProductUninstallerPath', 'Test-ParallelProductUninstallerPremise', 'Invoke-ParallelProductUninstaller',
     'Update-ParallelInstanceConfigurationFile', 'Set-ParallelInstanceJourneyRuntimeDisabled', 'Set-ParallelInstanceConfigurationFlag',
     'Get-ParallelJourneyDispatchState', 'Invoke-ParallelDispatchGateChange',
-    'Invoke-ParallelProductUpgrade', 'Invoke-ParallelInstanceConfigurationStep',
+    'Invoke-ParallelProductUpgrade', 'Invoke-ParallelInstanceConfigurationStep', 'Invoke-ParallelJourneyRuntimeRelease',
     'Get-ParallelFakeMesIngestTaskAction', 'Register-ParallelFakeMesIngestTask', 'Get-ParallelFakeMesIngestTaskReport',
     'Wait-ParallelFakeMesIngestTask', 'Invoke-ParallelFakeMesIngestSeed')

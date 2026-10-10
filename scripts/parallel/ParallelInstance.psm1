@@ -2076,6 +2076,119 @@ function Get-ParallelEffectiveConfigurationAction {
     return [pscustomobject]@{ Action = $action; Message = $message }
 }
 
+# control-server#578. What a Host whose journey runtime is held off must not have logged. Accepting a demand, the RIoT
+# create for it and the plan sent to a vehicle log no event of their own -- they are written to the database -- so this
+# looks for any sign that the loop doing them ran: anything at all under the engine's category (DispatchRoundRunner logs
+# under it too), anything from the worker but its "disabled" line, any request through the MesIngest catalog client
+# (the first thing every dispatch round does), and the effect events logged under other categories.
+$script:HeldRuntimeDisabledEventId = 2001
+$script:HeldRuntimeWorkerSource = 'ControlServer.Host.Runtime.JourneyRuntimeWorker'
+$script:HeldRuntimeActivitySources = @(
+    'ControlServer.Host.Runtime.JourneyRuntimeEngine'
+    'System.Net.Http.HttpClient.IMesIngestCatalog.'
+)
+$script:HeldRuntimeActivityEventIds = @(
+    2150, 2151, 2154,                   # demand release (Release/DemandReleaseService)
+    2170, 2171, 2172, 2173, 2174,       # own order rebuild (a RIoT re-create)
+    2198, 2220, 2223,                   # idle return committed / materialized
+    2240, 2250, 2251, 2252, 2254, 2255, # charging order
+    2300                                # clearance move
+)
+
+function Get-ParallelHeldRuntimeRefusal {
+    <#
+        .SYNOPSIS
+            control-server#578. $null when the Host's log since -Since shows its journey runtime held off; otherwise
+            JOURNEY_RUNTIME_NOT_HELD and why.
+
+        .DESCRIPTION
+            Two facts, both from lines at or after -Since (the service process's start), Serilog compact JSON:
+              * the worker logged event 2001 ("Journey runtime is disabled") -- the runtime read enabled=false.
+                Without it a configuration layer above appsettings.Production.json (an environment variable, say)
+                may have set it true;
+              * nothing shows the dispatch loop ran ($script:HeldRuntimeActivitySources / ActivityEventIds).
+            Lines that are not JSON are skipped, as in Find-ParallelEffectiveConfiguration.
+    #>
+    [CmdletBinding()]
+    [OutputType([string])]
+    param(
+        [AllowEmptyCollection()][string[]] $Lines,
+        [Parameter(Mandatory = $true)][datetimeoffset] $Since
+    )
+    $disabledSeen = $false
+    [string[]] $activity = @()
+    foreach ($line in @($Lines)) {
+        if ([string]::IsNullOrWhiteSpace($line) -or -not $line.TrimStart().StartsWith('{')) { continue }
+        try { $event = ConvertFrom-Json -InputObject $line -AsHashtable -Depth 10 } catch { continue }
+        if ($event -isnot [hashtable]) { continue }
+        $raw = $event['@t']
+        [datetimeoffset] $at = [datetimeoffset]::MinValue
+        if ($raw -is [datetimeoffset]) {
+            $at = $raw
+        } elseif ($raw -is [datetime]) {
+            $at = [datetimeoffset]::new(($raw.Kind -eq [DateTimeKind]::Unspecified) ? [datetime]::SpecifyKind($raw, [DateTimeKind]::Utc) : $raw.ToUniversalTime())
+        } elseif (-not [datetimeoffset]::TryParse([string] $raw, [cultureinfo]::InvariantCulture,
+                [Globalization.DateTimeStyles]::AssumeUniversal, [ref] $at)) { continue }
+        if ($at -lt $Since) { continue }
+        $source = [string] $event['SourceContext']
+        $id = ($event['EventId'] -is [System.Collections.IDictionary]) ? $event['EventId']['Id'] : $null
+        $id = ($id -is [ValueType]) ? [int] $id : $null
+        if ($source -ceq $script:HeldRuntimeWorkerSource) {
+            if ($id -eq $script:HeldRuntimeDisabledEventId) { $disabledSeen = $true } else { $activity += "event $id from $source" }
+            continue
+        }
+        if (@($script:HeldRuntimeActivitySources | Where-Object { $source.StartsWith($_, [StringComparison]::Ordinal) }).Count -gt 0) {
+            $activity += "event $id from $source$(if ($event['Uri']) { " ($($event['Uri']))" })"
+            continue
+        }
+        if ($null -ne $id -and $script:HeldRuntimeActivityEventIds -contains $id) {
+            $activity += "event $id from $source"
+        }
+    }
+    [string[]] $problems = @()
+    if (-not $disabledSeen) {
+        $problems += "no event $script:HeldRuntimeDisabledEventId (journey runtime disabled) from $script:HeldRuntimeWorkerSource since the process started, so the runtime may be on"
+    }
+    if ($activity.Count -gt 0) {
+        $problems += "the dispatch loop ran: $(@($activity | Select-Object -Unique) -join '; ')"
+    }
+    if ($problems.Count -eq 0) { return $null }
+    return "JOURNEY_RUNTIME_NOT_HELD: $($problems -join '; ')."
+}
+
+function Get-ParallelReadBackAction {
+    <#
+        .SYNOPSIS
+            control-server#578. The installer's whole read-back decision for one phase, from the Host's log lines:
+            Action (Pass, Warn, StopServiceAndRefuse), Message, the Effective event found, and Waiting -- $true while
+            the lines read so far may simply be too early to decide.
+
+        .DESCRIPTION
+            Released: Get-ParallelEffectiveConfigurationAction on the newest EFFECTIVE_CONFIGURATION event, as before.
+            Held: that, and Get-ParallelHeldRuntimeRefusal on the same lines; a held refusal stops the service whatever
+            the binding says -- a Host whose runtime may be on, or did run, is not one to leave running -- including in
+            'fake' mode with nothing read back, where the binding alone would only warn.
+            Waiting is $true while no event has been found, or (held) while 2001 has not been read and no activity has
+            either; the installer reads the log again until it is $false or its deadline passes, then acts on Action.
+    #>
+    [CmdletBinding()]
+    param(
+        [Parameter(Mandatory = $true)][ValidateSet('Held', 'Released')][string] $Phase,
+        [Parameter(Mandatory = $true)][hashtable] $Definition,
+        [AllowEmptyCollection()][string[]] $Lines,
+        [Parameter(Mandatory = $true)][datetimeoffset] $Since
+    )
+    $effective = Find-ParallelEffectiveConfiguration -Lines @($Lines) -Since $Since
+    $verdict = Get-ParallelEffectiveConfigurationAction -Definition $Definition -Effective $effective
+    $heldRefusal = ($Phase -ceq 'Held') ? (Get-ParallelHeldRuntimeRefusal -Lines @($Lines) -Since $Since) : $null
+    $waiting = $null -eq $effective -or ($null -ne $heldRefusal -and -not $heldRefusal.Contains('the dispatch loop ran'))
+    if ($heldRefusal) {
+        $verdict = [pscustomobject]@{ Action = 'StopServiceAndRefuse'
+            Message = ($null -eq $verdict.Message) ? $heldRefusal : "$heldRefusal $($verdict.Message)" }
+    }
+    return [pscustomobject]@{ Action = $verdict.Action; Message = $verdict.Message; Effective = $effective; Waiting = $waiting }
+}
+
 function New-ParallelInstanceConfigurationOverlay {
     <#
         .SYNOPSIS
@@ -2152,6 +2265,52 @@ function New-ParallelInstanceConfigurationOverlay {
         # control-server#518. Read only while the runtime is on, so written on every install whether it is or not.
         TaskTypeStations = [ordered]@{ settingsFile = $Definition['taskTypeStations']['settingsFile'] }
     }
+}
+
+function Get-ParallelJourneyRuntimeEnvironmentOverride {
+    <#
+        .SYNOPSIS
+            control-server#578 review item 2. The environment entries that would set a JourneyRuntime key above
+            appsettings.Production.json, as "service NAME" / "machine NAME"; none when there are none.
+
+        .DESCRIPTION
+            .NET reads environment variables after the JSON files, so JourneyRuntime__Enabled=true in the service's
+            Environment or the machine's environment turns the runtime on whatever the file says -- the held phase
+            would read it on only after the Host had started. The Host builder also reads DOTNET_- and
+            ASPNETCORE_-prefixed variables into its configuration, so those count too. A name is matched ignoring
+            case, with __ or : after JourneyRuntime; JourneyRuntimeX or MyJourneyRuntime__ is not this section.
+            Values are never returned.
+    #>
+    [CmdletBinding()]
+    [OutputType([string])]
+    param(
+        [AllowEmptyCollection()][AllowNull()][string[]] $ServiceEnvironment,
+        [AllowEmptyCollection()][AllowNull()][string[]] $MachineEnvironment
+    )
+    $pattern = '^(?i:(?:DOTNET_|ASPNETCORE_)?JourneyRuntime(?:__|:))'
+    foreach ($pair in @(@{ Where = 'service'; Entries = $ServiceEnvironment }, @{ Where = 'machine'; Entries = $MachineEnvironment })) {
+        foreach ($entry in @($pair.Entries | Where-Object { -not [string]::IsNullOrEmpty($_) })) {
+            $name = ($entry -split '=', 2)[0]
+            if ($name -match $pattern) { "$($pair.Where) $name" }
+        }
+    }
+}
+
+function Format-ParallelLogFileFacts {
+    <#
+        .SYNOPSIS
+            control-server#578 review item 3. One line naming each log file a read-back read, its size and last write
+            time (UTC), for the refusal: a Host that stopped writing (control-server#587, the 1 GiB limit) reads back
+            nothing new, and the size and time say so at a glance.
+    #>
+    [CmdletBinding()]
+    [OutputType([string])]
+    param([AllowEmptyCollection()][object[]] $Files)
+    $files = @($Files | Where-Object { $null -ne $_ })
+    if ($files.Count -eq 0) { return 'Log files read: no log file matched.' }
+    return 'Log files read: ' + (@($files | ForEach-Object {
+                "$($_.FullName) ($([long] $_.Length) bytes, last written $(([datetime] $_.LastWriteTimeUtc).ToString('yyyy-MM-ddTHH:mm:ss', [cultureinfo]::InvariantCulture))Z)"
+            }) -join '; ') + '.'
 }
 
 function Get-ParallelServiceEnvironmentEntry {
@@ -2731,6 +2890,10 @@ Export-ModuleMember -Function @(
     'Find-ParallelEffectiveConfiguration'
     'Get-ParallelEffectiveConfigurationRefusal'
     'Get-ParallelEffectiveConfigurationAction'
+    'Get-ParallelHeldRuntimeRefusal'
+    'Get-ParallelReadBackAction'
+    'Get-ParallelJourneyRuntimeEnvironmentOverride'
+    'Format-ParallelLogFileFacts'
     'Merge-ConfigurationTree'
     'Get-ParallelServiceEnvironmentEntry'
     'Set-ParallelServiceEnvironmentEntry'
