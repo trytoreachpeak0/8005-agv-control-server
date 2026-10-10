@@ -57,21 +57,30 @@ $null = Invoke-G3ConfirmedButton $onboard $journal '强制机械恢复' '强制�
 # unlock and reports nothing until the person at the vehicle says the slots were isolated and the cargo taken out
 # by hand -- 「已隔离并完成机械取出」, then Yes on 「确认强制机械取出」. Until control-server#156 this scenario never
 # pressed it, so the result never came and the run aborted with the workflow AwaitingResult.
-$confirmOffered = Wait-G3ButtonOffered $onboard $journal '已隔离并完成机械取出' 'onboard-forced-recovery-confirm-entry' 60
-if (-not $confirmOffered) {
-    $why = if (@($onboard.WindowTitles()) -contains '强制机械恢复失败') { '强制机械恢复未被接受（车载端弹出「强制机械恢复失败」）' }
-           else { '车载端没有给出「已隔离并完成机械取出」入口' }
-    Add-G3NotReached $assertions $ids $why
-    return
-}
+$failureTitles = Get-G3ForcedRecoveryFailureTitle
 # Protocol 3.0.0 (CP-0008, onboard-hmi#216): the confirm stays disabled until the hand-off is filled in -- the sublot of the
 # demand as the current stop's worklist names it (another sublot raises a warning and needs a second press) and the
 # person it was handed to. The server settles the demand on that record only (control-server#385).
+# So the order is form, fill, then the enabled button (control-server#541). This used to wait for the enabled button first and
+# fill the form after, which no run could get past: the button enables only once the form is filled.
+$formShown = Wait-G3ElementPresent $onboard $journal 'ForcedHandoffSublot' 'onboard-forced-handoff-form' 60
+if (-not $formShown) {
+    $shownFailure = @(@($onboard.WindowTitles()) | Where-Object { $_ -in $failureTitles })
+    $why = if ($shownFailure.Count -gt 0) { "强制机械恢复未被接受（车载端弹出「$($shownFailure[0])」）" }
+           else { '车载端没有给出强制机械取出的交接框（ForcedHandoffSublot）' }
+    Add-G3NotReached $assertions $ids $why
+    return
+}
 $handoffSublot = [string](Get-G3Scalar $connection "SELECT Sublot AS Value FROM AcceptedDemands WHERE DemandId = '$demandId'")
 $handoffReceiver = 'G3 交接人 王五'
 $journal.Note("Maintenance fills the hand-off: sublot $handoffSublot, receiver $handoffReceiver.")
 $onboard.SetTextBox('ForcedHandoffSublot', $handoffSublot)
 $onboard.SetTextBox('ForcedHandoffReceiverName', $handoffReceiver)
+$confirmOffered = Wait-G3ButtonOffered $onboard $journal '已隔离并完成机械取出' 'onboard-forced-recovery-confirm-entry' 30
+if (-not $confirmOffered) {
+    Add-G3NotReached $assertions $ids '填好交接框后「已隔离并完成机械取出」仍不可用'
+    return
+}
 $journal.Note('Maintenance has taken the cargo out by hand; presses 已隔离并完成机械取出 and confirms.')
 $null = Invoke-G3ConfirmedButton $onboard $journal '已隔离并完成机械取出' '确认强制机械取出'
 
@@ -81,11 +90,11 @@ $result = Wait-L2Condition -Description 'the server received ForcedMechanicalRec
         $received = Get-G3Inbound $connection 'ForcedMechanicalRecoveryResult'
         $titles = @($onboard.WindowTitles())
         if ($received.Count -ge 1) { $received[0] }
-        elseif ($titles -contains '强制机械恢复失败' -or $titles -contains '确认失败') { 'REFUSED' }
+        elseif (@($titles | Where-Object { $_ -in $failureTitles }).Count -gt 0) { 'REFUSED' }
         else { $null }
     } -Until { param($v) $null -ne $v }
 if ($result -is [string]) {
-    Add-G3NotReached $assertions $ids '强制机械恢复未被接受（车载端弹出「强制机械恢复失败」或「确认失败」）'
+    Add-G3NotReached $assertions $ids "强制机械恢复未被接受（车载端弹出「$((@(@($onboard.WindowTitles()) | Where-Object { $_ -in $failureTitles }) + '(已关闭)')[0])」）"
     return
 }
 $actionId = [string]$result.Payload.recoveryActionId

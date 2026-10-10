@@ -1,0 +1,586 @@
+{
+  "schemaVersion": "1.0.0",
+  "tool": "Test-StagedG3ContentConflict.ps1",
+  "ticket": "control-server#541",
+  "gateEvidence": false,
+  "controlServerCommit": "fba93a0e1ca646b678648428903ceccc6263e19e",
+  "mutationPatch": null,
+  "runnerSha256": "65e1fe37b13d06bf37c134a91cbf673d98433c7fa43c89079a9149ef8a4b466a",
+  "serverProtocolIdentity": {
+    "releaseVersion": "2.0.0",
+    "tag": "protocol-v2.0.0",
+    "repositoryCommit": "86575456c847041515b7b75e8851a00e0d939804",
+    "manifestSha256": "4ac095ad371d3aaa60d7c2e0198cfd64cff5f3068230fc3420e9cdf5616422a7",
+    "schemaBundleSha256": "9db0dbdc22fed7e39edf8d01b1fc40a12f5d70a7414f696f909ab2a87eb8c221",
+    "vectorsSha256": "391fa69a7d6e9f86ea139ba4c74eadf4994bf0a87e89d3dc5258dd7968d9182a",
+    "protocolVersion": 3,
+    "profileId": "AGV_FULL_PRODUCT",
+    "approvalStatus": "APPROVED_RELEASE"
+  },
+  "harnessPortedToServerIdentity": true,
+  "controlServerVersion": {
+    "protocolVersion": 3,
+    "profileId": "AGV_FULL_PRODUCT",
+    "protocolReleaseVersion": "2.0.0",
+    "protocolTag": "protocol-v2.0.0",
+    "protocolCommit": "86575456c847041515b7b75e8851a00e0d939804",
+    "manifestSha256": "4ac095ad371d3aaa60d7c2e0198cfd64cff5f3068230fc3420e9cdf5616422a7",
+    "schemaBundleSha256": "9db0dbdc22fed7e39edf8d01b1fc40a12f5d70a7414f696f909ab2a87eb8c221",
+    "vectorsSha256": "391fa69a7d6e9f86ea139ba4c74eadf4994bf0a87e89d3dc5258dd7968d9182a",
+    "approvalStatus": "APPROVED_RELEASE"
+  },
+  "expect": "Fail",
+  "outcome": "AS_EXPECTED",
+  "judgments": {
+    "sameMessageIdDifferentContentStableConflict": false,
+    "businessMessageSameMessageIdDifferentContentStableConflict": false,
+    "recoverySessionAuthorisationBoundary (recovery-session-requestid-content-conflict)": false,
+    "forcedRecoveryGenerationAdvancesMonotonically (resultContentConflict)": false
+  },
+  "contentConflictNotApplied": [
+    {
+      "case": "heartbeat",
+      "status": "PASS",
+      "messageId": "cf325988-abf5-045c-88be-1e9bcc3e6f96",
+      "inboxRowCount": 1,
+      "storedRequestSha256": [
+        "a51f6306badd9790680f5164bbb2d08456ff3b3871bbdb10f4e0dfcff75b7fd4"
+      ],
+      "originalRequestSha256": "a51f6306badd9790680f5164bbb2d08456ff3b3871bbdb10f4e0dfcff75b7fd4",
+      "conflictingRequestSha256": [
+        "3caaa1c5a6f8516d8584e9d76860e3c666fadb98b450866f559d7692d4d48138",
+        "6a2243efde1f7a240f07c9eb2b989705a3fbabb3faa2f055e52499fcea5d1a04"
+      ]
+    },
+    {
+      "case": "business-SublotSubmitted",
+      "status": "PASS",
+      "messageId": "938ce385-4433-8751-aeb0-8490ead1e539",
+      "inboxRowCount": 1,
+      "storedRequestSha256": [
+        "423d4ae2d680051cae3ee1c9a66c13a775eb59f45130ab60615fc1d08ceb525b"
+      ],
+      "originalRequestSha256": "423d4ae2d680051cae3ee1c9a66c13a775eb59f45130ab60615fc1d08ceb525b",
+      "conflictingRequestSha256": [
+        "23ba35ebe4ddafaf935b8c29278406eec50228cd6846a6b3042c293cf721d49a"
+      ]
+    },
+    {
+      "case": "business-OperationProgress",
+      "status": "PASS",
+      "messageId": "a7c7e430-432c-a551-94ec-2956bcf86ebc",
+      "inboxRowCount": 1,
+      "storedRequestSha256": [
+        "7c03f5a301819b80cf0fffb74481dd13a79ef33d642819b25720acb4bae1b796"
+      ],
+      "originalRequestSha256": "7c03f5a301819b80cf0fffb74481dd13a79ef33d642819b25720acb4bae1b796",
+      "conflictingRequestSha256": [
+        "ae55fd27212134a02d15f432d361c43df2349043dfc044a8b74c30eee62a06fb"
+      ]
+    },
+    {
+      "case": "business-PreDepartureSafetyCheckResult",
+      "status": "PASS",
+      "messageId": "ab69cf67-fbb9-ec51-804a-4f3d86eb5fbb",
+      "inboxRowCount": 1,
+      "storedRequestSha256": [
+        "b0896899f65180d2dacf675fedf979bd56f3dd894b073a5b3d28b8d7cce8f320"
+      ],
+      "originalRequestSha256": "b0896899f65180d2dacf675fedf979bd56f3dd894b073a5b3d28b8d7cce8f320",
+      "conflictingRequestSha256": [
+        "149cc4e52c30b8bf59ce51b8bd1d1918e98b8fe8d5bf88304ab397f79cb55ab2"
+      ]
+    },
+    {
+      "case": "business-SlotOperationCommandRejected",
+      "status": "PASS",
+      "messageId": "75e40d11-f1d3-5756-8bd6-d42c1f9bf724",
+      "inboxRowCount": 1,
+      "storedRequestSha256": [
+        "8eb79a67b351abfcb33ef0ad4ea55cecad75c76a83a77e67feb493cd55817959"
+      ],
+      "originalRequestSha256": "8eb79a67b351abfcb33ef0ad4ea55cecad75c76a83a77e67feb493cd55817959",
+      "conflictingRequestSha256": [
+        "98c0764b93aac3aecbb07736e9cbbe98479a77b77d3da10b23d96e367f5cdba3"
+      ]
+    },
+    {
+      "case": "recovery-session-requestid",
+      "status": "PASS",
+      "messageId": "ac38cf64-b9fb-c652-8916-94f029060ce4",
+      "inboxRowCount": 0,
+      "storedRequestSha256": [],
+      "originalRequestSha256": null,
+      "conflictingRequestSha256": []
+    },
+    {
+      "case": "forced-mechanical-recovery-result",
+      "status": "PASS",
+      "messageId": "505af6ca-f4b9-7258-8013-cf1f4c8ac10c",
+      "inboxRowCount": 1,
+      "storedRequestSha256": [
+        "6b97b46e47e539eb493635536cc9eb87dda285eaf2ba294b06600f013be1736c"
+      ],
+      "originalRequestSha256": "6b97b46e47e539eb493635536cc9eb87dda285eaf2ba294b06600f013be1736c",
+      "conflictingRequestSha256": [
+        "10f8b779920938e1eaae3c56d87fd0fe93359d1f7bbc7c77b69e6fecade7c986"
+      ]
+    }
+  ],
+  "probe": {
+    "schemaVersion": "1.0.0",
+    "status": "FAIL",
+    "identityRejections": [
+      {
+        "case": "release-mismatch",
+        "status": "PASS",
+        "responseType": "SessionRejected",
+        "reasonCode": "PROTOCOL_RELEASE_IDENTITY_MISMATCH",
+        "requestSha256": "6364c282ab42d5bf5fb96ae760a9d05f92c0b40e5dfa239fcc29f95a13d68b74",
+        "responseSha256": "063bab5d6200e9778c3bb905bda7ca01a308a76309b6e34a9e1937a3a52204f8",
+        "atUtc": "2026-10-10T01:07:13.5389387+08:00"
+      },
+      {
+        "case": "manifest-mismatch",
+        "status": "PASS",
+        "responseType": "SessionRejected",
+        "reasonCode": "PROTOCOL_RELEASE_IDENTITY_MISMATCH",
+        "requestSha256": "d74b250fbd302fbd7101bab95d88f5bfd3ffad81b5c4e6af08da32a70a7254ec",
+        "responseSha256": "cbf54fcf28aa569e7691d54315356133e833ec7d99c05cd499428587fd84b182",
+        "atUtc": "2026-10-10T01:07:13.5472371+08:00"
+      },
+      {
+        "case": "credential-mismatch",
+        "status": "PASS",
+        "responseType": "SessionRejected",
+        "reasonCode": "PROTOCOL_RELEASE_IDENTITY_MISMATCH",
+        "requestSha256": "8aa3ceb384713ee6e1fea4f8e97e21132ad203a1b881b7f8017f66ab2d7eb86d",
+        "responseSha256": "a6fe37c6db0da9f4cb11cd9187bb63867963e777bbe8caf2ef452c828fc7c02b",
+        "atUtc": "2026-10-10T01:07:13.563537+08:00"
+      }
+    ],
+    "duplicate": {
+      "status": "PASS",
+      "sameConnection": true,
+      "messageId": "cf325988-abf5-045c-88be-1e9bcc3e6f96",
+      "requestSha256": "a51f6306badd9790680f5164bbb2d08456ff3b3871bbdb10f4e0dfcff75b7fd4",
+      "byteExactResponseReplay": true,
+      "responseSha256": "9dd26b0ee85f694d82ae9bb1a9a5e6fc64ca001d23a24377ab41255328d0b610"
+    },
+    "conflict": {
+      "status": "FAIL",
+      "vectorId": "CV-RELIABLE-RETRY-DIFFERENT-CONTENT",
+      "messageId": "cf325988-abf5-045c-88be-1e9bcc3e6f96",
+      "originalRequestSha256": "a51f6306badd9790680f5164bbb2d08456ff3b3871bbdb10f4e0dfcff75b7fd4",
+      "conflictingRequestSha256s": [
+        "3caaa1c5a6f8516d8584e9d76860e3c666fadb98b450866f559d7692d4d48138",
+        "6a2243efde1f7a240f07c9eb2b989705a3fbabb3faa2f055e52499fcea5d1a04"
+      ],
+      "firstSameConnection": {
+        "status": "FAIL",
+        "answer": {
+          "refusedAsTheVectorRequires": false,
+          "answerType": null,
+          "expectedReasonCode": "MESSAGE_ID_CONTENT_CONFLICT",
+          "reasonCode": null,
+          "correlationId": null,
+          "rejectedMessageId": null,
+          "rejectedMessageType": null,
+          "answeredAsTaken": false,
+          "connectionEnded": true,
+          "problemSha256": null,
+          "takenAnswerSha256": null
+        },
+        "originalReplayedAfterConflictAnsweredWithStoredAck": false,
+        "connectionServedAfterConflict": {
+          "served": false,
+          "heartbeatMessageId": "28ca4835-6428-bd59-a97e-2b1995c87752",
+          "answerType": null,
+          "answerSha256": null
+        }
+      },
+      "repeatInANewSession": {
+        "status": "FAIL",
+        "answer": {
+          "refusedAsTheVectorRequires": false,
+          "answerType": null,
+          "expectedReasonCode": "MESSAGE_ID_CONTENT_CONFLICT",
+          "reasonCode": null,
+          "correlationId": null,
+          "rejectedMessageId": null,
+          "rejectedMessageType": null,
+          "answeredAsTaken": false,
+          "connectionEnded": true,
+          "problemSha256": null,
+          "takenAnswerSha256": null
+        },
+        "connectionServedAfterConflict": {
+          "served": false,
+          "heartbeatMessageId": "246a73ee-baf7-df5d-ab33-982cb112ac1a",
+          "answerType": null,
+          "answerSha256": null
+        }
+      },
+      "sessionHelloConflictClosesTheConnection": {
+        "status": "PASS",
+        "messageId": "4eae6584-331d-8d50-b07e-52ace5c58c4a",
+        "observation": {
+          "streamEnded": true,
+          "sessionAccepted": false,
+          "linesBeforeEnd": []
+        }
+      },
+      "sessionGenerations": [
+        1,
+        2
+      ]
+    }
+  },
+  "businessProbeConflicts": [
+    {
+      "case": "business-conflict-SublotSubmitted",
+      "status": "FAIL",
+      "vectorId": "CV-RELIABLE-RETRY-DIFFERENT-CONTENT",
+      "messageType": "SublotSubmitted",
+      "messageId": "938ce385-4433-8751-aeb0-8490ead1e539",
+      "originalRequestSha256": "423d4ae2d680051cae3ee1c9a66c13a775eb59f45130ab60615fc1d08ceb525b",
+      "conflictingRequestSha256": "23ba35ebe4ddafaf935b8c29278406eec50228cd6846a6b3042c293cf721d49a",
+      "firstSameConnectionAnswer": {
+        "refusedAsTheVectorRequires": false,
+        "answerType": null,
+        "expectedReasonCode": "MESSAGE_ID_CONTENT_CONFLICT",
+        "reasonCode": null,
+        "correlationId": null,
+        "rejectedMessageId": null,
+        "rejectedMessageType": null,
+        "answeredAsTaken": false,
+        "connectionEnded": true,
+        "problemSha256": null,
+        "takenAnswerSha256": null
+      },
+      "originalReplayedAfterConflictAnsweredWithStoredAck": false,
+      "firstSameConnectionServedAfterConflict": {
+        "served": false,
+        "heartbeatMessageId": "f5dceffa-329f-7b56-92b8-65d6cd147f4d",
+        "answerType": null,
+        "answerSha256": null
+      },
+      "repeatAnswer": {
+        "refusedAsTheVectorRequires": false,
+        "answerType": null,
+        "expectedReasonCode": "MESSAGE_ID_CONTENT_CONFLICT",
+        "reasonCode": null,
+        "correlationId": null,
+        "rejectedMessageId": null,
+        "rejectedMessageType": null,
+        "answeredAsTaken": false,
+        "connectionEnded": true,
+        "problemSha256": null,
+        "takenAnswerSha256": null
+      },
+      "repeatServedAfterConflict": {
+        "served": false,
+        "heartbeatMessageId": "06699d4b-6fe7-b154-8df4-93f8111b9fc2",
+        "answerType": null,
+        "answerSha256": null
+      },
+      "atUtc": "2026-10-10T01:07:14.0954227+08:00"
+    },
+    {
+      "case": "business-conflict-OperationProgress",
+      "status": "FAIL",
+      "vectorId": "CV-RELIABLE-RETRY-DIFFERENT-CONTENT",
+      "messageType": "OperationProgress",
+      "messageId": "a7c7e430-432c-a551-94ec-2956bcf86ebc",
+      "originalRequestSha256": "7c03f5a301819b80cf0fffb74481dd13a79ef33d642819b25720acb4bae1b796",
+      "conflictingRequestSha256": "ae55fd27212134a02d15f432d361c43df2349043dfc044a8b74c30eee62a06fb",
+      "firstSameConnectionAnswer": {
+        "refusedAsTheVectorRequires": false,
+        "answerType": null,
+        "expectedReasonCode": "MESSAGE_ID_CONTENT_CONFLICT",
+        "reasonCode": null,
+        "correlationId": null,
+        "rejectedMessageId": null,
+        "rejectedMessageType": null,
+        "answeredAsTaken": false,
+        "connectionEnded": true,
+        "problemSha256": null,
+        "takenAnswerSha256": null
+      },
+      "originalReplayedAfterConflictAnsweredWithStoredAck": false,
+      "firstSameConnectionServedAfterConflict": {
+        "served": false,
+        "heartbeatMessageId": "7d830716-b032-c85d-ae39-09295548165c",
+        "answerType": null,
+        "answerSha256": null
+      },
+      "repeatAnswer": {
+        "refusedAsTheVectorRequires": false,
+        "answerType": null,
+        "expectedReasonCode": "MESSAGE_ID_CONTENT_CONFLICT",
+        "reasonCode": null,
+        "correlationId": null,
+        "rejectedMessageId": null,
+        "rejectedMessageType": null,
+        "answeredAsTaken": false,
+        "connectionEnded": true,
+        "problemSha256": null,
+        "takenAnswerSha256": null
+      },
+      "repeatServedAfterConflict": {
+        "served": false,
+        "heartbeatMessageId": "8927002a-d6da-2657-92d1-7f1b67814a4e",
+        "answerType": null,
+        "answerSha256": null
+      },
+      "atUtc": "2026-10-10T01:07:14.13777+08:00"
+    },
+    {
+      "case": "business-conflict-PreDepartureSafetyCheckResult",
+      "status": "FAIL",
+      "vectorId": "CV-RELIABLE-RETRY-DIFFERENT-CONTENT",
+      "messageType": "PreDepartureSafetyCheckResult",
+      "messageId": "ab69cf67-fbb9-ec51-804a-4f3d86eb5fbb",
+      "originalRequestSha256": "b0896899f65180d2dacf675fedf979bd56f3dd894b073a5b3d28b8d7cce8f320",
+      "conflictingRequestSha256": "149cc4e52c30b8bf59ce51b8bd1d1918e98b8fe8d5bf88304ab397f79cb55ab2",
+      "firstSameConnectionAnswer": {
+        "refusedAsTheVectorRequires": false,
+        "answerType": null,
+        "expectedReasonCode": "MESSAGE_ID_CONTENT_CONFLICT",
+        "reasonCode": null,
+        "correlationId": null,
+        "rejectedMessageId": null,
+        "rejectedMessageType": null,
+        "answeredAsTaken": false,
+        "connectionEnded": true,
+        "problemSha256": null,
+        "takenAnswerSha256": null
+      },
+      "originalReplayedAfterConflictAnsweredWithStoredAck": false,
+      "firstSameConnectionServedAfterConflict": {
+        "served": false,
+        "heartbeatMessageId": "b0d86b98-8c7f-135e-9a81-6286d456ab47",
+        "answerType": null,
+        "answerSha256": null
+      },
+      "repeatAnswer": {
+        "refusedAsTheVectorRequires": false,
+        "answerType": null,
+        "expectedReasonCode": "MESSAGE_ID_CONTENT_CONFLICT",
+        "reasonCode": null,
+        "correlationId": null,
+        "rejectedMessageId": null,
+        "rejectedMessageType": null,
+        "answeredAsTaken": false,
+        "connectionEnded": true,
+        "problemSha256": null,
+        "takenAnswerSha256": null
+      },
+      "repeatServedAfterConflict": {
+        "served": false,
+        "heartbeatMessageId": "83b41b5e-1ae2-e352-a69a-2396935836e0",
+        "answerType": null,
+        "answerSha256": null
+      },
+      "atUtc": "2026-10-10T01:07:14.1811557+08:00"
+    },
+    {
+      "case": "business-conflict-SlotOperationCommandRejected",
+      "status": "FAIL",
+      "vectorId": "CV-RELIABLE-RETRY-DIFFERENT-CONTENT",
+      "messageType": "SlotOperationCommandRejected",
+      "messageId": "75e40d11-f1d3-5756-8bd6-d42c1f9bf724",
+      "originalRequestSha256": "8eb79a67b351abfcb33ef0ad4ea55cecad75c76a83a77e67feb493cd55817959",
+      "conflictingRequestSha256": "98c0764b93aac3aecbb07736e9cbbe98479a77b77d3da10b23d96e367f5cdba3",
+      "firstSameConnectionAnswer": {
+        "refusedAsTheVectorRequires": false,
+        "answerType": null,
+        "expectedReasonCode": "MESSAGE_ID_CONTENT_CONFLICT",
+        "reasonCode": null,
+        "correlationId": null,
+        "rejectedMessageId": null,
+        "rejectedMessageType": null,
+        "answeredAsTaken": false,
+        "connectionEnded": true,
+        "problemSha256": null,
+        "takenAnswerSha256": null
+      },
+      "originalReplayedAfterConflictAnsweredWithStoredAck": false,
+      "firstSameConnectionServedAfterConflict": {
+        "served": false,
+        "heartbeatMessageId": "87853392-8d7c-6254-8f14-a16c7c859695",
+        "answerType": null,
+        "answerSha256": null
+      },
+      "repeatAnswer": {
+        "refusedAsTheVectorRequires": false,
+        "answerType": null,
+        "expectedReasonCode": "MESSAGE_ID_CONTENT_CONFLICT",
+        "reasonCode": null,
+        "correlationId": null,
+        "rejectedMessageId": null,
+        "rejectedMessageType": null,
+        "answeredAsTaken": false,
+        "connectionEnded": true,
+        "problemSha256": null,
+        "takenAnswerSha256": null
+      },
+      "repeatServedAfterConflict": {
+        "served": false,
+        "heartbeatMessageId": "9635e4d8-ba73-d452-94c8-b26ebe1e7a8f",
+        "answerType": null,
+        "answerSha256": null
+      },
+      "atUtc": "2026-10-10T01:07:14.2274268+08:00"
+    }
+  ],
+  "recoveryProbe": {
+    "requestIdConflict": [
+      {
+        "conflictingMessageId": "ac38cf64-b9fb-c652-8916-94f029060ce4",
+        "answer": {
+          "refusedAsTheVectorRequires": false,
+          "answerType": null,
+          "expectedReasonCode": "BUSINESS_ID_CONTENT_CONFLICT",
+          "reasonCode": null,
+          "correlationId": null,
+          "rejectedMessageId": null,
+          "rejectedMessageType": null,
+          "answeredAsTaken": false,
+          "connectionEnded": true,
+          "problemSha256": null,
+          "takenAnswerSha256": null
+        },
+        "originalRequestAnsweredWithTheSessionItOpenedAfterConflict": false,
+        "exceptionRecoverySessionId": null,
+        "case": "recovery-session-requestid-content-conflict",
+        "status": "FAIL",
+        "responseType": null,
+        "responseSha256": null,
+        "atUtc": "2026-10-10T01:07:18.528562+08:00"
+      }
+    ],
+    "forcedRecoveryGenerationBranches": {
+      "status": "FAIL",
+      "firstRecoveryActionId": "3a50a1b0-95a8-ee5e-977f-7ffc462d2390",
+      "secondRecoveryActionId": "ece22300-5230-6f51-8c4a-658286622b33",
+      "secondSubmissionWhileFirstUnsettledRejected": true,
+      "secondSubmissionObservedReasonCode": "ACTION_NOT_ALLOWED_IN_STATE",
+      "secondSubmissionResponseSha256": "0ad94706ff82f5ca6fe4e21baa1a451db53b982e2022898d6952e2808f211171",
+      "currentGenerationResultAcknowledged": true,
+      "resultReplayByteExact": true,
+      "resultContentConflictRefusedWithProtocolProblem": false,
+      "resultContentConflictAnswer": {
+        "refusedAsTheVectorRequires": false,
+        "answerType": null,
+        "expectedReasonCode": "MESSAGE_ID_CONTENT_CONFLICT",
+        "reasonCode": null,
+        "correlationId": null,
+        "rejectedMessageId": null,
+        "rejectedMessageType": null,
+        "answeredAsTaken": false,
+        "connectionEnded": true,
+        "problemSha256": null,
+        "takenAnswerSha256": null
+      },
+      "resultContentConflictRequestSha256": "10f8b779920938e1eaae3c56d87fd0fe93359d1f7bbc7c77b69e6fecade7c986",
+      "originalResultResentAfterConflictAcknowledged": false,
+      "originalResultResentAfterConflictAckSha256": null,
+      "resultMessageId": "505af6ca-f4b9-7258-8013-cf1f4c8ac10c",
+      "currentResultAckSha256": "4c12a7d200d337600ff5e5bdaaff8ca8ca2fa92a39da296b59a625e7bd290b45",
+      "currentResultRequestSha256": "6b97b46e47e539eb493635536cc9eb87dda285eaf2ba294b06600f013be1736c"
+    }
+  },
+  "database": {
+    "contentConflictExpectations": [
+      {
+        "case": "heartbeat",
+        "messageId": "cf325988-abf5-045c-88be-1e9bcc3e6f96",
+        "originalRequestSha256": "a51f6306badd9790680f5164bbb2d08456ff3b3871bbdb10f4e0dfcff75b7fd4",
+        "conflictingRequestSha256": [
+          "3caaa1c5a6f8516d8584e9d76860e3c666fadb98b450866f559d7692d4d48138",
+          "6a2243efde1f7a240f07c9eb2b989705a3fbabb3faa2f055e52499fcea5d1a04"
+        ]
+      },
+      {
+        "case": "business-SublotSubmitted",
+        "messageId": "938ce385-4433-8751-aeb0-8490ead1e539",
+        "originalRequestSha256": "423d4ae2d680051cae3ee1c9a66c13a775eb59f45130ab60615fc1d08ceb525b",
+        "conflictingRequestSha256": [
+          "23ba35ebe4ddafaf935b8c29278406eec50228cd6846a6b3042c293cf721d49a"
+        ]
+      },
+      {
+        "case": "business-OperationProgress",
+        "messageId": "a7c7e430-432c-a551-94ec-2956bcf86ebc",
+        "originalRequestSha256": "7c03f5a301819b80cf0fffb74481dd13a79ef33d642819b25720acb4bae1b796",
+        "conflictingRequestSha256": [
+          "ae55fd27212134a02d15f432d361c43df2349043dfc044a8b74c30eee62a06fb"
+        ]
+      },
+      {
+        "case": "business-PreDepartureSafetyCheckResult",
+        "messageId": "ab69cf67-fbb9-ec51-804a-4f3d86eb5fbb",
+        "originalRequestSha256": "b0896899f65180d2dacf675fedf979bd56f3dd894b073a5b3d28b8d7cce8f320",
+        "conflictingRequestSha256": [
+          "149cc4e52c30b8bf59ce51b8bd1d1918e98b8fe8d5bf88304ab397f79cb55ab2"
+        ]
+      },
+      {
+        "case": "business-SlotOperationCommandRejected",
+        "messageId": "75e40d11-f1d3-5756-8bd6-d42c1f9bf724",
+        "originalRequestSha256": "8eb79a67b351abfcb33ef0ad4ea55cecad75c76a83a77e67feb493cd55817959",
+        "conflictingRequestSha256": [
+          "98c0764b93aac3aecbb07736e9cbbe98479a77b77d3da10b23d96e367f5cdba3"
+        ]
+      },
+      {
+        "case": "recovery-session-requestid",
+        "messageId": "ac38cf64-b9fb-c652-8916-94f029060ce4",
+        "originalRequestSha256": null,
+        "conflictingRequestSha256": []
+      },
+      {
+        "case": "forced-mechanical-recovery-result",
+        "messageId": "505af6ca-f4b9-7258-8013-cf1f4c8ac10c",
+        "originalRequestSha256": "6b97b46e47e539eb493635536cc9eb87dda285eaf2ba294b06600f013be1736c",
+        "conflictingRequestSha256": [
+          "10f8b779920938e1eaae3c56d87fd0fe93359d1f7bbc7c77b69e6fecade7c986"
+        ]
+      }
+    ],
+    "contentConflictInboxRows": [
+      {
+        "messageId": "505af6ca-f4b9-7258-8013-cf1f4c8ac10c",
+        "messageType": "ForcedMechanicalRecoveryResult",
+        "requestSha256": "6b97b46e47e539eb493635536cc9eb87dda285eaf2ba294b06600f013be1736c"
+      },
+      {
+        "messageId": "75e40d11-f1d3-5756-8bd6-d42c1f9bf724",
+        "messageType": "SlotOperationCommandRejected",
+        "requestSha256": "8eb79a67b351abfcb33ef0ad4ea55cecad75c76a83a77e67feb493cd55817959"
+      },
+      {
+        "messageId": "938ce385-4433-8751-aeb0-8490ead1e539",
+        "messageType": "SublotSubmitted",
+        "requestSha256": "423d4ae2d680051cae3ee1c9a66c13a775eb59f45130ab60615fc1d08ceb525b"
+      },
+      {
+        "messageId": "a7c7e430-432c-a551-94ec-2956bcf86ebc",
+        "messageType": "OperationProgress",
+        "requestSha256": "7c03f5a301819b80cf0fffb74481dd13a79ef33d642819b25720acb4bae1b796"
+      },
+      {
+        "messageId": "ab69cf67-fbb9-ec51-804a-4f3d86eb5fbb",
+        "messageType": "PreDepartureSafetyCheckResult",
+        "requestSha256": "b0896899f65180d2dacf675fedf979bd56f3dd894b073a5b3d28b8d7cce8f320"
+      },
+      {
+        "messageId": "cf325988-abf5-045c-88be-1e9bcc3e6f96",
+        "messageType": "Heartbeat",
+        "requestSha256": "a51f6306badd9790680f5164bbb2d08456ff3b3871bbdb10f4e0dfcff75b7fd4"
+      }
+    ]
+  },
+  "error": null
+}

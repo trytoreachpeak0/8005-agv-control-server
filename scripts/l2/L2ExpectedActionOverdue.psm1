@@ -77,5 +77,39 @@ function Set-L2ExpectedActionOverdueOnboardSetting {
         -NotePropertyValue ([int]([TimeSpan]$Threshold).TotalMilliseconds) -Force
 }
 
+<#
+The newest OnboardAlarmSnapshot that reports $Code for slot $SlotNo in an alarm raised at or after $RaisedAfter, or $null
+(control-server#541). The server's inbox keeps every snapshot of the run, so a scenario waiting for a later operation's
+overdue alarm on a slot an earlier operation already reported is otherwise satisfied at once by the earlier snapshot:
+g3-slot-fault-declaration waited one second at the unload, declared, and was rightly answered 409
+SLOT_FAULT_EXPECTED_ACTION_NOT_OVERDUE. A later snapshot that still carries the earlier alarm does not count either: it
+is the alarm's raisedAt that is bounded, not when the snapshot arrived. An alarm entry without a raisedAt that parses is
+not counted. raisedAt is the onboard's clock; on the real-onboard rig that is the clock of this machine.
+#>
+function Select-L2OverdueAlarmSnapshot {
+    param(
+        [object[]]$Snapshot,
+        [Parameter(Mandatory)][string]$Code,
+        [Parameter(Mandatory)][string]$SlotNo,
+        [Parameter(Mandatory)][DateTimeOffset]$RaisedAfter
+    )
+    $matching = @($Snapshot | Where-Object {
+            $null -ne $_ -and $null -ne $_.PSObject.Properties['Payload'] -and $null -ne $_.Payload -and
+            $null -ne $_.Payload.PSObject.Properties['alarms'] -and
+            @(@($_.Payload.alarms) | Where-Object {
+                    $raisedAt = [DateTimeOffset]::MinValue
+                    $null -ne $_ -and
+                    $null -ne $_.PSObject.Properties['code'] -and [string]$_.code -eq $Code -and
+                    $null -ne $_.PSObject.Properties['subjectId'] -and [string]$_.subjectId -eq $SlotNo -and
+                    $null -ne $_.PSObject.Properties['raisedAt'] -and
+                    [DateTimeOffset]::TryParse([string]$_.raisedAt, [Globalization.CultureInfo]::InvariantCulture,
+                        [Globalization.DateTimeStyles]::AssumeUniversal, [ref]$raisedAt) -and
+                    $raisedAt -ge $RaisedAfter
+                }).Count -gt 0
+        })
+    if ($matching.Count -eq 0) { return $null }
+    return $matching[-1]
+}
+
 Export-ModuleMember -Function Resolve-L2ExpectedActionOverdueThreshold, Set-L2ExpectedActionOverdueServerSetting,
-    Set-L2ExpectedActionOverdueOnboardSetting
+    Set-L2ExpectedActionOverdueOnboardSetting, Select-L2OverdueAlarmSnapshot
