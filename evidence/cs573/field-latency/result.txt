@@ -1,0 +1,15 @@
+取数：factory01 上 v2 并行实例日志目录 C:\ProgramData\8005\ControlServer.V2\logs，只读；原始日志不入库。
+命令：在 factory01 上 pwsh -NoProfile -File cs573-measure-latency.ps1（2026-10-11 约 04:30 CST 跑）。
+时段（CST）：10-10 18:01～22:36、10-11 00:00～00:42（两个文件各自的首末行，见下）。单位毫秒。
+
+FILE controlserver-20261010.ndjson first=2026-10-10T10:01:36.6851068Z last=2026-10-10T14:36:52.3757231Z
+FILE controlserver-20261011.ndjson first=2026-10-10T16:00:00.1924758Z last=2026-10-10T16:42:33.9296978Z
+safety n=10129 p50=101.9 p95=114.8 p99=130.6 p999=184.6 max=477.6 >1s=0 >2s=0 >3s=0
+pageInSafety n=30340 p50=17.7 p95=21.2 p99=24.0 p999=40.9 max=98.1 >1s=0 >2s=0 >3s=0
+vehicleInfoInSafety n=10122 p50=4.4 p95=5.4 p99=7.8 p999=25.0 max=44.5 >1s=0 >2s=0 >3s=0
+pageElsewhere n=28995 p50=17.9 p95=21.2 p99=24.3 p999=42.5 max=92.9 >1s=0 >2s=0 >3s=0
+safety status: 401=7 500=3 200=10119
+
+说明：safety 是 Serilog 请求日志的 Elapsed（整次投影请求）；其余是 HttpClient RequestEnd 的 ElapsedMilliseconds，
+按发起它的入站请求 RequestPath 分成「投影请求里的」与「别处（引擎）的」。
+3 次 500（2026-10-10T11:36:03Z、11:57:56Z、12:41:59Z）都是 TaskCanceledException，耗时 13.6、8.7、84.8 ms——请求被取消，不是超时。
