@@ -4157,7 +4157,7 @@ $recoveryGenerationAdvancePass = $null -ne $recoveryProbeResult -and
 # what the disconnect judgment above counts.
 $recoverySecondForcedWhileFirstUnsettledRejectedPass = $null -ne $recoveryProbeResult -and
     $recoveryProbeResult.forcedRecoveryGenerationBranches.secondSubmissionWhileFirstUnsettledRejected -eq $true -and
-    $recoveryProbeResult.forcedRecoveryGenerationBranches.secondSubmissionObservedReasonCode -eq 'ACTION_NOT_ALLOWED_IN_STATE' -and
+    $recoveryProbeResult.forcedRecoveryGenerationBranches.secondSubmissionObservedReasonCode -eq 'ACTION_NOT_ALLOWED_IN_STATE_CS582_RED' -and
     $null -ne $databaseObservation -and
     $secondWorkflow.Count -eq 0 -and $secondEvidence.Count -eq 0 -and
     $databaseObservation.vehicleForcedRecoveryGeneration -eq 1 -and
