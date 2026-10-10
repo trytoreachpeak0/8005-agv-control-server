@@ -181,7 +181,15 @@ function Get-NightlyG3StartDeadline {
         [Parameter(Mandatory)][DateTimeOffset]$StartedAtUtc,
         [double]$DispatchMinutes = 180
     )
-    return $null
+
+    # The last moment a runner may start. A schedule: 04:00 CST of the plant's date it started on, which is in the past
+    # when GitHub started it after 04:00, and then nothing runs. A manual dispatch: DispatchMinutes after its start.
+    if ($EventName -ceq 'schedule') {
+        $cst = [TimeSpan]::FromHours(8)
+        $local = $StartedAtUtc.ToOffset($cst)
+        return ([DateTimeOffset]::new($local.Year, $local.Month, $local.Day, 4, 0, 0, $cst)).ToUniversalTime()
+    }
+    return $StartedAtUtc.ToUniversalTime().AddMinutes($DispatchMinutes)
 }
 
 Export-ModuleMember -Function Get-NightlyG3Verdict, Format-NightlyG3Comment, Select-NightlyG3BusyRealRigJob, Wait-NightlyG3RigIdle,
