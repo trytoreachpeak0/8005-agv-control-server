@@ -1,0 +1,18 @@
+[00:39:46] Target: factory01  v2 parallel instance, server-side script D:\zhengyushao\control-server-v2-ops\dispatch-gate\2fe490d738630212a4a73b99345d0739402672a8\Set-ParallelDispatchGateLocal.ps1 (control-server 2fe490d738630212a4a73b99345d0739402672a8)
+[00:39:47] Requested: RiotCreateDispatch.enabled=false (the server resolves the V2 service and file from installed-instance.json)
+[00:39:51] Server-side script and modules staged in D:\zhengyushao\control-server-v2-ops\dispatch-gate\2fe490d738630212a4a73b99345d0739402672a8 (what 19 deployed in D:\zhengyushao\control-server-v2-ops is untouched)
+  [00:39:55] Definition: D:\zhengyushao\control-server-v2-ops\installed-instance.json (factory01-v2-parallel)
+  [00:39:55] Service: '8005 AGV ControlServer V2'  configuration: C:\Program Files\8005 AGV\ControlServer.V2\appsettings.Production.json
+  [00:39:55] Journey state (read-only): C:\ProgramData\8005\ControlServer.V2\data\controlserver.db
+  [00:39:55] Requested: RiotCreateDispatch.enabled=false
+  [00:39:55] MVP service before: present=True status=Running startType=Automatic pathName="C:\Program Files\8005 AGV\ControlServer\ControlServer.Host.exe" --contentRoot "C:\Program Files\8005 AGV\ControlServer" --environment Production processId=15624
+  [00:39:56] MVP service after:  present=True status=Running startType=Automatic pathName="C:\Program Files\8005 AGV\ControlServer\ControlServer.Host.exe" --contentRoot "C:\Program Files\8005 AGV\ControlServer" --environment Production processId=15624
+  Exception: GATE_CLOSE_REFUSED_IN_FLIGHT: C:\ProgramData\8005\ControlServer.V2\data\controlserver.db has 1 journey(s) of '8005 AGV
+  ControlServer V2' not Completed: journey:d0000566-0000-0000-0000-000000000001 (老厂前线新多仓位2, AwaitingPickupArrival). Stop
+  injecting demand into its FakeMesIngest, wait until agv02 and agv03 have finished, and run this again. Nothing was
+  stopped or changed.
+Exception: C:\Users\szy\Desktop\8005-workspace-v2\worktrees\cs566-ws-main\remote-ops\factory-server\scripts\20-set-control-server-parallel-dispatch-gate.ps1:100
+Line |
+ 100 |  �� EXITCODE -ne 0) { throw "ssh $SshAlias failed (exit $LASTEXITCODE)" }
+     |                      ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+     | ssh factory01 failed (exit 1)

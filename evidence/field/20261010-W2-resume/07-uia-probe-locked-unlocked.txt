@@ -1,0 +1,33 @@
+# read-only UIA probe on agv02, launched by a one-shot Interactive scheduled task (no SetValue, no Invoke)
+## unlocked
+task lastRunTime=2026/10/10 23:17:17 lastTaskResult=0x41301
+{
+  "at": "2026-10-10T23:17:30.8629537+08:00",
+  "sessionId": 1,
+  "locked": false,
+  "windowFound": true,
+  "scanBoxFound": true,
+  "scanBoxEnabled": false,
+  "valuePattern": true,
+  "valueReadOnly": false,
+  "valueLength": 0,
+  "submitFound": true,
+  "submitEnabled": false
+}
+
+## locked (user pressed Win+L, confirmed in chat 23:2x)
+task lastRunTime=2026/10/10 23:22:22 lastTaskResult=0x0
+{
+  "at": "2026-10-10T23:22:22.3900335+08:00",
+  "sessionId": 1,
+  "locked": true,
+  "windowFound": true,
+  "scanBoxFound": true,
+  "scanBoxEnabled": false,
+  "valuePattern": true,
+  "valueReadOnly": false,
+  "valueLength": 0,
+  "submitFound": true,
+  "submitEnabled": false
+}
+

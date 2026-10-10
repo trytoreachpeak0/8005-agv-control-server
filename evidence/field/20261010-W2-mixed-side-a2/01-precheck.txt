@@ -1,0 +1,29 @@
+=== factory01 state 2026-10-10T23:49:58.2094812+08:00
+gate RiotCreateDispatch.enabled=False  IdleReturn=null  admission=2
+JourneyRuntime.enabled=True stationDepartureWaitTimeout=00:03:00 cargoHoldingTimeout=00:03:00 agvId=老厂前线新多仓位2 vehicleKey=BROKERX-f38975561adf46ccb1d2f23833c7d0e4
+Fleet: null
+appsettings LastWriteTime: 2026-10-10T23:45:59.4527375+08:00
+installed-instance: instanceId=factory01-v2-parallel; packageRoot=D:\zhengyushao\ControlServer.V2
+service '8005 AGV ControlServer': Running pid=15624 start=Auto
+service '8005 AGV ControlServer V2': Running pid=12264 start=Auto
+V2 process started: 2026-10-10T23:45:59.4719437+08:00
+RIoT agv02: station=15 pos=(404,50841) conf=90% battery=66 NO_CHARGE sys=IDLE proc=IDLE move=MT_FINISHED mode=MODE_AUTO emerg=OK speed=0 online=
+RIoT nonfinal orders read: 259
+RIoT nonfinal orders mentioning agv02: 0
+ready 200: {"status":"ready"}
+session: {"AgvId":"老厂前线新多仓位2","SessionGeneration":17,"Readiness":"Ready","ReasonCode":"READY","UpdatedAt":"2026-10-10 15:49:11.2866754+00:00"}
+journeys not completed: 
+journeys total: {"Stage":"Completed","n":3}
+backlog: [{"DemandId":"a1000566-0000-0000-0000-000000000001","ReasonCode":"DEMAND_ALREADY_ACCEPTED","LastSeenAt":"2026-10-10 15:49:57.8555097+00:00"},{"DemandId":"a1000566-0000-0000-0000-000000000003","ReasonCode":"DEMAND_ALREADY_ACCEPTED","LastSeenAt":"2026-10-10 15:49:57.8555097+00:00"},{"DemandId":"b1000566-0000-0000-0000-000000000001","ReasonCode":"DEMAND_ALREADY_ACCEPTED","LastSeenAt":"2026-10-10 15:49:57.8555097+00:00"},{"DemandId":"b1000566-0000-0000-0000-000000000002","ReasonCode":"DEMAND_ALREADY_ACCEPTED","LastSeenAt":"2026-10-10 15:49:57.8555097+00:00"},{"DemandId":"a1000566-0000-0000-0000-000000000002","ReasonCode":"DEMAND_LEFT_CATALOG","LastSeenAt":"2026-10-10 10:43:40.7808149+00:00"}]
+faults: 
+manual charging holds: 
+charging-related tables: AdmissionPolicyAudit,AdmissionPolicyState,ManualChargingReturnToServiceRequests,ChargerRosterEntries,ChargerRosterVehicleScopes,ChargerRosterVersions,ChargingCycles,ChargingPolicyActivations,ChargingPolicyApprovals,ChargingPolicyVehicleScopes,ChargingPolicyVersions,ChargingStationAllocationHolds,ChargingStationRecoveries,ManualChargingHoldRecords,ManualChargingHolds,UnableToChargeFieldConfirmations,VehicleChargingEligibilityHolds,VehicleChargingEligibilityRecoveries
+table ChargerRosterEntries (last 3): {"Version":2,"MapId":26,"StationId":211,"StationName":"充电点1","EntryStationId":212,"ExitStationId":212}
+table ChargerRosterVehicleScopes (last 3): 
+table ChargerRosterVersions (last 3): [{"Version":3,"ContentSha256":"8939cc82b4dd68ca94e29e2123728f193cdb0de398bcef43e38e634c187598f1","SnapshotId":"62929a90637f4c60bff41e5c7842bb4c","LoadedAt":"2026-10-10 20:41:33.5153938+08:00","Source":"GOVERNED_IMPORT","ApprovedBy":"Zhengyu Shao","ApprovalBasis":"用户 2026-09-29 定（control-server#400）：授权窗口之外 v2 名册置空，v2 不会分配站 211，MVP 与 agv01 照常使用","ChangeNote":"关窗：空名册。进行中的充电周期按原快照继续到结束。"},{"Version":2,"ContentSha256":"1ad8ad5f66ef6cacd06f946b8f4d0a41a0d4358ddb52db5f2ee9a9c714a97e9d","SnapshotId":"56e2915da0f1410991524648df6f7c9f","LoadedAt":"2026-10-10 20:31:28.9821351+08:00","Source":"GOVERNED_IMPORT","ApprovedBy":"Zhengyu Shao","ApprovalBasis":"规格 full-product-scope-and-sequence-v2 第 5.5 节与第 3.5 节批次 9 行（REQ-0171）：现场唯一在用的桩是 26 号图站 211「充电点1」，进出点 212；2026-09-29 只读 GET mapInfo/stations/26 核对","ChangeNote":"开窗：登记 26 号图站 211（control-server#400）。只在用户授权了本次窗口、现场确认 agv01 不在充也不会去充之后导入。"},{"Version":1,"ContentSha256":"8939cc82b4dd68ca94e29e2123728f193cdb0de398bcef43e38e634c187598f1","SnapshotId":"e705dc4605d94d15a6bd17ecd4608a80","LoadedAt":"2026-10-10 18:03:35.7923142+08:00","Source":"GOVERNED_IMPORT","ApprovedBy":"Zhengyu Shao","ApprovalBasis":"用户 2026-09-29 定（control-server#400）：授权窗口之外 v2 名册置空，v2 不会分配站 211，MVP 与 agv01 照常使用","ChangeNote":"关窗：空名册。进行中的充电周期按原快照继续到结束。"}]
+table ChargingCycles (last 3): 
+table ChargingPolicyActivations (last 3): {"ActivationId":"92c4723f-5a76-4c47-aa0f-ae580b2defb2","Sequence":1,"Version":1,"ActivatedAt":"2026-10-10 18:19:46.9922731+08:00","ActivatedBy":"Claude（AI 代理，Zhengyu Shao 10-10 现场授权，cs#566）"}
+table ChargingPolicyApprovals (last 3): {"ApprovalId":"2473e577-eeb7-412a-ba22-e042a737d299","Version":1,"ApprovedBy":"Zhengyu Shao","ApproverRole":"产品负责人","ApprovedAt":"2026-10-10 18:19:45.3120657+08:00","BasisReference":"用户 2026-10-10 18:1x 在现场会话（cs#566）批准「批准并激活充电策略 v1」；内容与 10-08、10-09 批准版逐字相同（sha 5d34c605…）；原依据：批次 9 方案第七节第 6 条，用户 2026-09-29 同意（control-server#400）","Source":"FIELD"}
+table ChargingPolicyVehicleScopes (last 3): 
+table ChargingPolicyVersions (last 3): {"Version":1,"ContentSha256":"5d34c6051c9f4cf7d37868645c65d57d88fd8f0045829a3c66c7686631da117a","SnapshotId":"913a33d664b042c2bcae189de89b7fde","WrittenAt":"2026-10-10 18:03:34.0117203+08:00","ChangeNote":"投运参数：批次 9 方案第七节第 6 条的推荐值，用户 2026-09-29 同意（control-server#400）。80 > 30 >= 20（REQ-0281）。","MinimumPostTaskBatteryMarginPercent":20,"MandatoryChargeEntryThresholdPercent":30,"ChargingCompletionThresholdPercent":80,"EstimatedTaskConsumptionPercent":10,"ProgressStabilizationSeconds":180,"ProgressObservationWindowSeconds":600,"ProgressMinimumIncreasePercent":3}
+fieldops status: {"command":"status","outcome":"OK","vehicles":[{"agvId":"老厂前线新多仓位2","slotModelVersionId":"a98a732e388a463d957c418458bbc0d4","ready":false,"reasonCode":"SLOT_CONFIGURATION_NEVER_VERIFIED","slotsMissingBinding":[],"slotsMissingVerification":[1,2,3,4,5,6,7,8],"slotsVerifiedNegative":[]}]}
