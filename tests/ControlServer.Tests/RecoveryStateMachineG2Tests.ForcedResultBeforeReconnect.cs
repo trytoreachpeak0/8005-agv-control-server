@@ -1,3 +1,4 @@
+using System.Text.Json;
 using System.Text.Json.Nodes;
 using ControlServer.Domain;
 using ControlServer.Host.Transport;
@@ -206,10 +207,106 @@ public sealed partial class RecoveryStateMachineG2Tests
             SessionRecoveryRow session = await context.SessionRecoveries.AsNoTracking().SingleAsync(token);
             Assert.Equal((2L, 0L), (session.ForcedRecoveryGeneration, session.ReportedForcedRecoveryGeneration));
             Assert.Equal("FORCED_RECOVERY_GENERATION_MISMATCH", (await store.DecideReadinessAsync(AgvId, 3, token)).ReasonCode);
+
+            // And the fence still refuses: the second forced recovery's outcome is still awaited, so nothing lifts it.
+            string refused = await processor.ProcessAsync(
+                InSessionAction(Forced, "e0000000-0000-4000-8000-000000005566", "51000000-0000-4000-8000-000000005566",
+                    nextSessionId), state, token);
+            await processor.FlushDeferredOutboundAsync(state, token);
+            context.ChangeTracker.Clear();
+            Assert.Equal(("RecoveryActionRejected", ServerReasonCodes.ForcedRecoveryGenerationStale),
+                (MessageType(refused), FirstPayload(refused).GetProperty("problem").GetProperty("reasonCode").GetString()));
+            Assert.Equal(2, await GenerationOfAsync(context));
         }
         finally
         {
             Environment.SetEnvironmentVariable(StuckProofVariable, null);
+        }
+    }
+
+    /// <summary>
+    /// Only ever raised. A vehicle that reported a generation ahead of the server's -- its journal from another server, say --
+    /// keeps its own word: a current result does not pull the report down to agree, so the two still disagree.
+    /// </summary>
+    [Fact]
+    [Trait("IntegrationSlice", "FP-IS-07")]
+    [Trait("ProtocolVector", "CV-FORCED-MECHANICAL-RECOVERY")]
+    public async Task AForcedResultNeverLowersAGenerationTheVehicleReported()
+    {
+        Environment.SetEnvironmentVariable(ForcedResultProofVariable, ForcedResultProof);
+        try
+        {
+            CancellationToken token = TestContext.Current.CancellationToken;
+            await using SqliteConnection connection = new("Data Source=:memory:");
+            await connection.OpenAsync(token);
+            await using ControlServerDbContext context = await CreateContextAsync(connection);
+            await SeedBlockedJourneyAsync(context, productionShapedSession: true);
+            WireToGateStore store = new(context);
+            OnboardMessageProcessor processor = Processor(context, new RecordingPeer(context), ForcedResultProofVariable);
+            OnboardConnectionState state = CurrentState();
+            await processor.ProcessAsync(RecoverySessionRequest(ForcedResultProof), state, token);
+            await processor.ProcessAsync(RecoveryAction("FORCED_MECHANICAL_RECOVERY"), state, token);
+            await store.ApplyRecoveryReportAsync(
+                AgvId, 3, "f0000000-0000-4000-8000-000000005567", forcedRecoveryGeneration: 5,
+                null, "NONE", [], [], [], token);
+            context.ChangeTracker.Clear();
+
+            Assert.Equal("DurableAck", MessageType(
+                await processor.ProcessAsync(MechanicallyIsolatedResult(generation: 1), state, token)));
+
+            SessionRecoveryRow session = await context.SessionRecoveries.AsNoTracking().SingleAsync(token);
+            Assert.Equal((1L, 5L, "FORCED_RECOVERY_GENERATION_MISMATCH"),
+                (session.ForcedRecoveryGeneration, session.ReportedForcedRecoveryGeneration, session.ReasonCode));
+        }
+        finally
+        {
+            Environment.SetEnvironmentVariable(ForcedResultProofVariable, null);
+        }
+    }
+
+    /// <summary>
+    /// Only for the connection the result came on. A result reaching the coordinator under an earlier session generation is
+    /// recorded and settles its business as before, but says nothing about what the vehicle holds on the current connection,
+    /// whose handshake is what tells. Reached here through the coordinator directly: the processor refuses a line of another
+    /// session generation before it gets this far, so this is the coordinator's own contract.
+    /// </summary>
+    [Fact]
+    [Trait("IntegrationSlice", "FP-IS-07")]
+    [Trait("ProtocolVector", "CV-FORCED-MECHANICAL-RECOVERY")]
+    public async Task AForcedResultOfAnEarlierConnectionDoesNotStandForTheCurrentOnesReport()
+    {
+        Environment.SetEnvironmentVariable(ForcedResultProofVariable, ForcedResultProof);
+        try
+        {
+            CancellationToken token = TestContext.Current.CancellationToken;
+            await using SqliteConnection connection = new("Data Source=:memory:");
+            await connection.OpenAsync(token);
+            await using ControlServerDbContext context = await CreateContextAsync(connection);
+            await SeedBlockedJourneyAsync(context, productionShapedSession: true);
+            WireToGateStore store = new(context);
+            OnboardMessageProcessor processor = Processor(context, new RecordingPeer(context), ForcedResultProofVariable);
+            OnboardConnectionState state = CurrentState();
+            await processor.ProcessAsync(RecoverySessionRequest(ForcedResultProof), state, token);
+            await processor.ProcessAsync(RecoveryAction("FORCED_MECHANICAL_RECOVERY"), state, token);
+            context.ChangeTracker.Clear();
+            OnboardRecoveryCoordinator coordinator = TestOnboardProcessorFactory.CreateRecoveryCoordinator(
+                context, store, new FixedTimeProvider(Now), Configuration(ForcedResultProofVariable));
+            JsonNode earlier = JsonNode.Parse(MechanicallyIsolatedResult(generation: 1))!;
+            earlier["sessionGeneration"] = 2;
+            using JsonDocument line = JsonDocument.Parse(earlier.ToJsonString());
+
+            Assert.Equal("DurableAck", MessageType(
+                await coordinator.ProcessResultAsync(line.RootElement, new string('c', 64), token)));
+
+            Assert.Equal(RecoveryWorkflowState.Reconciled,
+                (await context.RecoveryWorkflows.AsNoTracking().SingleAsync(token)).State);
+            SessionRecoveryRow session = await context.SessionRecoveries.AsNoTracking().SingleAsync(token);
+            Assert.Equal((1L, 0L), (session.ForcedRecoveryGeneration, session.ReportedForcedRecoveryGeneration));
+            Assert.Equal("FORCED_RECOVERY_GENERATION_MISMATCH", (await store.DecideReadinessAsync(AgvId, 3, token)).ReasonCode);
+        }
+        finally
+        {
+            Environment.SetEnvironmentVariable(ForcedResultProofVariable, null);
         }
     }
 
