@@ -22,6 +22,7 @@ public sealed class OnboardVehicleSafetyEndpointsTests
         var result = await OnboardVehicleSafetyEndpoints.HandleAsync(
             context,
             facts,
+            new ThrowingLedger(),
             Options.Create(JourneyOptions()),
             Options.Create(ProjectionOptions(variable)),
             TestContext.Current.CancellationToken);
@@ -44,6 +45,7 @@ public sealed class OnboardVehicleSafetyEndpointsTests
         var result = await OnboardVehicleSafetyEndpoints.HandleAsync(
             context,
             facts,
+            new ThrowingLedger(),
             Options.Create(JourneyOptions()),
             Options.Create(ProjectionOptions(variable)),
             TestContext.Current.CancellationToken);
@@ -74,6 +76,7 @@ public sealed class OnboardVehicleSafetyEndpointsTests
         var result = await OnboardVehicleSafetyEndpoints.HandleAsync(
             context,
             facts,
+            new ThrowingLedger(),
             Options.Create(JourneyOptions()),
             Options.Create(ProjectionOptions(variable)),
             TestContext.Current.CancellationToken);
@@ -84,6 +87,8 @@ public sealed class OnboardVehicleSafetyEndpointsTests
         Assert.Equal(["RIOT_MOVEMENT_NOT_FINISHED"], ok.Value.ReasonCodes);
         Assert.Equal(1, facts.ReadCount);
         Assert.Equal("VEHICLE-KEY-01", facts.LastVehicleKey);
+        Assert.Equal(TimeSpan.FromSeconds(3), facts.LastCarryOver);
+        Assert.IsType<ThrowingLedger>(facts.LastLedger);
         Assert.Equal("no-store", context.Response.Headers.CacheControl);
         Assert.Equal("no-cache", context.Response.Headers.Pragma);
         Assert.DoesNotContain("credential", ok.Value.ToString(), StringComparison.OrdinalIgnoreCase);
@@ -113,6 +118,39 @@ public sealed class OnboardVehicleSafetyEndpointsTests
 
         Assert.True(result.Succeeded);
     }
+
+    /// <summary>
+    /// control-server#573：沿用窗口 0～4000 毫秒——车载端合同 5000 毫秒减它的时钟容差上限 1000 毫秒（<c>VehicleSafetySettings</c>）。
+    /// 越界就拒绝启动；投影关着也照查，免得打开那天才发现。
+    /// </summary>
+    [Theory]
+    [InlineData(-1, true, false)]
+    [InlineData(0, true, true)]
+    [InlineData(3_000, true, true)]
+    [InlineData(4_000, true, true)]
+    [InlineData(4_001, true, false)]
+    [InlineData(-1, false, false)]
+    [InlineData(4_001, false, false)]
+    public void TheOrderCoverageCarryOverIsBoundedByTheOnboardEvidenceAge(int carryOverMs, bool enabled, bool accepted)
+    {
+        string variable = "CONTROL_SERVER_TEST_" + Guid.NewGuid().ToString("N");
+        using EnvironmentVariableScope credential = new(variable, "onboard-only-credential");
+        OnboardSafetyProjectionOptions options = ProjectionOptions(variable);
+        options.Enabled = enabled;
+        options.OrderCoverageCarryOverMs = carryOverMs;
+
+        ValidateOptionsResult result = new OnboardSafetyProjectionOptionsValidator().Validate(null, options);
+
+        Assert.Equal(accepted, result.Succeeded);
+        if (!accepted)
+        {
+            Assert.Contains("OrderCoverageCarryOverMs", Assert.Single(result.Failures!), StringComparison.Ordinal);
+        }
+    }
+
+    [Fact]
+    public void TheOrderCoverageCarryOverDefaultsToThreeSeconds() =>
+        Assert.Equal(3_000, new OnboardSafetyProjectionOptions().OrderCoverageCarryOverMs);
 
     [Theory]
     [InlineData("OnboardTransport:serverCertificatePath", "C:\\certs\\server.pfx")]
@@ -161,7 +199,7 @@ public sealed class OnboardVehicleSafetyEndpointsTests
         CredentialEnvironmentVariable = credentialVariable
     };
 
-    private sealed class RecordingSafetyFacts : IRiotVehicleSafetyFacts
+    private sealed class RecordingSafetyFacts : IOnboardVehicleSafetyProjection
     {
         public RiotVehicleSafetyObservation Observation { get; set; } = new(
             "VEHICLE-KEY-01",
@@ -171,16 +209,28 @@ public sealed class OnboardVehicleSafetyEndpointsTests
             ["TEST_UNKNOWN"]);
         public int ReadCount { get; private set; }
         public string? LastVehicleKey { get; private set; }
+        public TimeSpan? LastCarryOver { get; private set; }
+        public IOwnOrderCreationLedger? LastLedger { get; private set; }
 
-        public Task<RiotVehicleSafetyObservation> ReadVehicleSafetyAsync(
+        public Task<RiotVehicleSafetyObservation> ReadForOnboardAsync(
             string vehicleKey,
+            TimeSpan coverageCarryOver,
+            IOwnOrderCreationLedger ownOrders,
             CancellationToken cancellationToken)
         {
             _ = cancellationToken;
             ReadCount++;
             LastVehicleKey = vehicleKey;
+            LastCarryOver = coverageCarryOver;
+            LastLedger = ownOrders;
             return Task.FromResult(Observation);
         }
+    }
+
+    private sealed class ThrowingLedger : IOwnOrderCreationLedger
+    {
+        public Task<bool> MayHaveCreatedSinceAsync(string vehicleKey, DateTimeOffset since, CancellationToken cancellationToken) =>
+            throw new InvalidOperationException("not expected in these tests");
     }
 
     private sealed class EnvironmentVariableScope : IDisposable

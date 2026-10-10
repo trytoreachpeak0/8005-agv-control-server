@@ -1,5 +1,6 @@
 using ControlServer.Application;
 using ControlServer.Infrastructure.Adapters;
+using ControlServer.Infrastructure.Persistence;
 using RIoT.Sdk.Core;
 using RIoT.Sdk.Facade;
 
@@ -50,7 +51,12 @@ internal static class RiotSdkRegistration
             HttpClient client = serviceProvider.GetRequiredService<IHttpClientFactory>().CreateClient(HttpClientName);
             return new RiotSession(options, client);
         });
+        // control-server#573: one per process, so a complete listing any scope reads is there for the onboard projection.
+        services.AddSingleton<NonFinalOrderCoverageMemory>();
         services.AddScoped<HttpRiotMovementGateway>();
+        services.AddScoped<IOnboardVehicleSafetyProjection>(services =>
+            services.GetRequiredService<HttpRiotMovementGateway>());
+        services.AddScoped<IOwnOrderCreationLedger, OwnOrderCreationLedger>();
         services.AddScoped<IRiotMovementGateway>(services =>
             services.GetRequiredService<HttpRiotMovementGateway>());
         services.AddScoped<IRiotVehicleFacts>(services =>

@@ -65,6 +65,44 @@ public interface IRiotVehicleSafetyFacts
         CancellationToken cancellationToken);
 }
 
+/// <summary>
+/// The vehicle safety read behind the onboard's <c>/api/onboard/v1/vehicle-safety</c> projection (control-server#573).
+/// </summary>
+/// <remarks>
+/// <para>
+/// The same predicate as <see cref="IRiotVehicleSafetyFacts.ReadVehicleSafetyAsync"/>, with two differences that only this
+/// caller may have. A non-final order listing that does not add up is read again at once, up to two more times, each read
+/// judged on its own by control-server#525's rule. And when none of them adds up, the "is there an order on this vehicle"
+/// part may be taken from the last complete listing, for at most <c>coverageCarryOver</c>, with that listing's start as the
+/// observation's <c>observedAt</c>: the onboard ages every observation by <c>observedAt</c> against its own 5-second limit,
+/// so nothing older than that limit is ever presented as current. The vehicle's own state is always read fresh.
+/// </para>
+/// <para>
+/// No other caller may use it. The journey runtime's safety reads do not age an observation by <c>observedAt</c>, so carried
+/// coverage would be taken as now.
+/// </para>
+/// </remarks>
+public interface IOnboardVehicleSafetyProjection
+{
+    Task<RiotVehicleSafetyObservation> ReadForOnboardAsync(
+        string vehicleKey,
+        TimeSpan coverageCarryOver,
+        IOwnOrderCreationLedger ownOrders,
+        CancellationToken cancellationToken);
+}
+
+/// <summary>
+/// Whether this server may have put an order for a vehicle into RIoT at or after a moment, from its own database alone
+/// (control-server#573). Every order this server creates passes through an <c>OrderIntents</c> row that names the vehicle
+/// and is stamped before the create request is sent, so an order this server created after a listing was read is known here
+/// even when the listing itself is not.
+/// </summary>
+public interface IOwnOrderCreationLedger
+{
+    /// <summary>True when this server may have created, or may be creating, an order for the vehicle at or after <paramref name="since"/>.</summary>
+    Task<bool> MayHaveCreatedSinceAsync(string vehicleKey, DateTimeOffset since, CancellationToken cancellationToken);
+}
+
 public interface IOnboardPeer
 {
     Task SendAsync(ReadOnlyMemory<byte> ndjsonLine, CancellationToken cancellationToken);

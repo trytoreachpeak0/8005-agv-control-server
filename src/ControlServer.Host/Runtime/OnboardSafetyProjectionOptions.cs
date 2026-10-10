@@ -8,6 +8,12 @@ public sealed class OnboardSafetyProjectionOptions
 
     public bool Enabled { get; set; }
     public string CredentialEnvironmentVariable { get; set; } = "CONTROL_SERVER_ONBOARD_CREDENTIAL";
+
+    /// <summary>
+    /// How long a complete non-final order listing may stand in for one that did not add up (control-server#573); 0 turns
+    /// the carry-over off.
+    /// </summary>
+    public int OrderCoverageCarryOverMs { get; set; } = 3_000;
 }
 
 public sealed class OnboardSafetyProjectionOptionsValidator : IValidateOptions<OnboardSafetyProjectionOptions>

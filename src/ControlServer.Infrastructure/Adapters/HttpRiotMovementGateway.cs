@@ -18,7 +18,7 @@ namespace ControlServer.Infrastructure.Adapters;
 /// </summary>
 public sealed class HttpRiotMovementGateway : IRiotMovementGateway, IRiotVehicleFacts, IRiotMapStationCatalog,
     IRiotMapNameCatalog, IRiotVehicleSafetyFacts, IVehicleMotionFacts, IRiotVehicleOrderFacts, IRiotOrderListingFacts,
-    IRiotOrderMissionFacts
+    IRiotOrderMissionFacts, IOnboardVehicleSafetyProjection
 {
     /// <summary>
     /// The order states that are not an ending: QUEUEING 1, EXECUTING 3, PAUSED 7, SUSPENDED 8, HANG 9 and QUEUE_PRIORITY 10 (the
@@ -66,17 +66,27 @@ public sealed class HttpRiotMovementGateway : IRiotMovementGateway, IRiotVehicle
     private const string UnassignedVehicleKeyPlaceholder = "--";
     private readonly RiotSession riotSession;
     private readonly TimeProvider timeProvider;
+    private readonly NonFinalOrderCoverageMemory coverageMemory;
 
     public HttpRiotMovementGateway(RiotSession riotSession)
         : this(riotSession, TimeProvider.System)
     {
     }
 
-    [ActivatorUtilitiesConstructor]
     public HttpRiotMovementGateway(RiotSession riotSession, TimeProvider timeProvider)
+        : this(riotSession, timeProvider, new NonFinalOrderCoverageMemory())
+    {
+    }
+
+    [ActivatorUtilitiesConstructor]
+    public HttpRiotMovementGateway(
+        RiotSession riotSession,
+        TimeProvider timeProvider,
+        NonFinalOrderCoverageMemory coverageMemory)
     {
         this.riotSession = riotSession;
         this.timeProvider = timeProvider;
+        this.coverageMemory = coverageMemory;
     }
 
     /// <summary>The act a charging order carries after its move to the charger (allowlist 1.2, shape two).</summary>
@@ -380,6 +390,18 @@ public sealed class HttpRiotMovementGateway : IRiotMovementGateway, IRiotVehicle
         {
             return UnknownSafety(vehicleKey, "RIOT_READ_FAILED");
         }
+    }
+
+    public Task<RiotVehicleSafetyObservation> ReadForOnboardAsync(
+        string vehicleKey,
+        TimeSpan coverageCarryOver,
+        IOwnOrderCreationLedger ownOrders,
+        CancellationToken cancellationToken)
+    {
+        _ = coverageCarryOver;
+        _ = ownOrders;
+        _ = coverageMemory;
+        return ReadVehicleSafetyAsync(vehicleKey, cancellationToken);
     }
 
     /// <summary>
