@@ -258,7 +258,7 @@ public sealed class IntegrationSliceTraitArchitectureTests
     private static readonly SortedDictionary<string, (int Count, string Reason)> SliceBearingClassesWithTestsOutside =
         new(StringComparer.Ordinal)
         {
-            ["FakeRiotTests"] = (9, "the fake's own control plane and conflict behaviour; the traited tests are the shapes the production adapter parses"),
+            ["FakeRiotTests"] = (12, "the fake's own control plane and conflict behaviour (control-server#573 added the non-final listing churn); the traited tests are the shapes the production adapter parses"),
             ["HttpRiotMovementGatewayTests"] = (31, "RIoT adapter fail-closed and sanitisation behaviour (control-server#330 added the unfiltered order listing and the by-orderId state read; control-server#335 the listed order states; control-server#404 the non-final states the order reads ask for; control-server#525 paging the non-final order reads); the traited tests are the ones a wire message depends on"),
             ["JourneyRuntimeOptionsTests"] = (5, "option defaults, the retired minimumBatteryPercent key refusing to start (control-server#403), and the cargo holding timeout (control-server#206; read by the loading phase since control-server#212); the traited tests are the validations that fail a deployment closed"),
             ["OnboardAlarmProjectionTests"] = (1, "the dashboard self-registration convention #12 set up; the traited tests are the ones standing behind OnboardAlarmSnapshot")
