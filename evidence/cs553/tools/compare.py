@@ -2,16 +2,17 @@ import sys,importlib.util,collections
 spec=importlib.util.spec_from_file_location('m',sys.argv[3]+'/trxlib.py'); m=importlib.util.module_from_spec(spec); spec.loader.exec_module(m)
 def summ(p):
     res=m.load(p); t0=min(r['s'] for r in res); t1=max(r['e'] for r in res)
-    return res,{(r['full'],r['name']):r['out'] for r in res},(t1-t0).total_seconds()
+    # A multiset, not a dict: a test name can appear more than once in a trx (repeated theory rows), and every copy is compared.
+    return res,collections.Counter((r['full'],r['name'],r['out']) for r in res),(t1-t0).total_seconds()
 a,A,wa=summ(sys.argv[1]); b,B,wb=summ(sys.argv[2])
-print('before: tests %d outcomes %s wall %.0f s sumdur %.0f s'%(len(a),dict(collections.Counter(A.values())),wa,sum(r['d'] for r in a)))
-print('after:  tests %d outcomes %s wall %.0f s sumdur %.0f s'%(len(b),dict(collections.Counter(B.values())),wb,sum(r['d'] for r in b)))
-print('duplicate names before/after:',len(a)-len(A),len(b)-len(B))
-only_a=sorted(set(A)-set(B)); only_b=sorted(set(B)-set(A))
-print('only in before (%d):'%len(only_a)); [print('  ',k[1]) for k in only_a]
-print('only in after (%d):'%len(only_b)); [print('  ',k[1]) for k in only_b]
-diff=[(k,A[k],B[k]) for k in set(A)&set(B) if A[k]!=B[k]]
-print('outcome differs on common tests (%d):'%len(diff)); [print('  ',k[1],x,'->',y) for k,x,y in sorted(diff)]
+def outcomes(c): return dict(collections.Counter(k[2] for k in c.elements()))
+print('before: entries %d outcomes %s wall %.0f s sumdur %.0f s'%(len(a),outcomes(A),wa,sum(r['d'] for r in a)))
+print('after:  entries %d outcomes %s wall %.0f s sumdur %.0f s'%(len(b),outcomes(B),wb,sum(r['d'] for r in b)))
+names_a=collections.Counter((r['full'],r['name']) for r in a); names_b=collections.Counter((r['full'],r['name']) for r in b)
+print('names appearing more than once (before/after):',[(k[1],names_a[k],names_b[k]) for k in sorted(set(names_a)|set(names_b)) if names_a[k]>1 or names_b[k]>1])
+only_a=sorted((A-B).elements()); only_b=sorted((B-A).elements())
+print('(name, outcome) entries only in before (%d):'%len(only_a)); [print('  ',k[1],k[2]) for k in only_a]
+print('(name, outcome) entries only in after (%d):'%len(only_b)); [print('  ',k[1],k[2]) for k in only_b]
 for cls in ['IdleReturnExecutionTests','VehicleFaultIsolationTests','EmergencyStopSupervisorTests','MultiVehicleExecutionTests']:
     for lab,res in [('before',a),('after',b)]:
         L=[r for r in res if r['cls']==cls]

@@ -34,6 +34,25 @@
 - 三个重点类（基线是 vm01，这里是本机，只能比量级）：`IdleReturnExecutionTests` 892 → 68 s；`VehicleFaultIsolationTests` 1050 → 1 s；`EmergencyStopSupervisorTests` 579 → 1 s。所有测试耗时之和 38074 → 3694 s。修后最长的类是 `InTransitDoorEmergencyReleaseTests`，173 s。
 - **这一轮的 `dotnet-counters` 作废，没有入库**：监视脚本接到的是 VSTest 的外壳进程 `testhost.exe`，而 xunit v3 实际在子进程 `ControlServer.Tests.exe` 里跑测试，采到的是外壳的数据（CPU 平均 0.1%）。
 
-### 修后 CI
+### 修后 CI（以这一轮为准，#558 合入前）
 
-待补：出口解冻、PR 转 ready 后跑的那一轮。
+| 文件 | 内容 |
+| --- | --- |
+| `step3-ci/compare-38040042973-vs-38013503611.txt` | 修后 run 38040042973（`c25cce44`）与基线 run 38013503611 的 trx 对账，按「类名、测试名、结果」的多重集合逐条比对 |
+| `step3-ci/summary-lines.txt` | 两轮作业日志里 `dotnet test` 的汇总行，以及逐条打印的 3 条跳过 |
+
+- `Test` 步骤：修前 36 分 00 秒，修后 7 分 31 秒。汇总行的持续时间：34 m 39 s → 6 m 13 s。
+- 修前有、修后没有的 0 条；修后多出 7 条，全是 `MigratedDatabaseTemplateTests`。3 个参数化测试名在两边各出现 2 次，也逐条对上了。
+- 两轮汇总行都写「已跳过: 0」，而两轮都逐条打印了同样 3 条 Explicit 测试被跳过，口径一致。
+- `tools/compare.py` 第一版把测试名当作字典的键，重名条目只比其中一条；本地全量那份对账（`step2-local-full/`）是用第一版跑的。现在这一版改成多重集合比较。
+
+## 跟进（#558 审查后）
+
+| 文件 | 内容 |
+| --- | --- |
+| `followup/m452-mutation.patch` | 在 WAL 下复核 cs#452 写锁护栏用的变异（产品代码，只在本地做，没有提交）：入站处理器不在锁外观察，改在收件箱写事务里观察；`RiotReadOutsideWriteLock.Ensure` 失效 |
+| `followup/m452-wal.txt` | 变异下 `FieldConfirmationWriteLockTests`，库是 WAL（#558 合入后的状态）：9 条红 7 条，其中两条写锁用例报 `SQLite Error 5: 'database is locked'` |
+| `followup/m452-delete.txt` | 同一变异，另把多车夹具的文件库临时改回 `delete` 日志模式（#558 之前的状态；这个临时改动不在 patch 里）：红的 7 条完全相同 |
+| `followup/m452-incomplete-first-attempt.txt` | 第一版变异不完整：锁外那次观察还在，RIoT 停在锁外那一次读，写锁两条仍是绿的。保留下来，说明为什么要把锁外观察也去掉 |
+
+结论：#558 把这个文件库从 `delete` 变成 WAL 以后，cs#452 的写锁护栏仍然能红，红法和以前一样。
