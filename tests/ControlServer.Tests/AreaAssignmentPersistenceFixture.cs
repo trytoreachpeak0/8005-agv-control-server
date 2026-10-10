@@ -44,7 +44,7 @@ internal sealed class AreaAssignmentPersistenceFixture : IAsyncDisposable
         DbContextOptions<ControlServerDbContext> options =
             new DbContextOptionsBuilder<ControlServerDbContext>().UseSqlite(connection).Options;
         ControlServerDbContext context = new(options);
-        await context.Database.MigrateAsync(TestContext.Current.CancellationToken);
+        await MigratedDatabaseTemplate.ApplyAsync(context.Database, TestContext.Current.CancellationToken);
         return new AreaAssignmentPersistenceFixture(connection, context);
     }
 

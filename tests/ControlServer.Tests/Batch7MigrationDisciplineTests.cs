@@ -242,7 +242,7 @@ public sealed class Batch7MigrationDisciplineTests
         DateTimeOffset now = Batch7JourneyFixture.Now;
         await fixture.Context.GetService<IMigrator>().MigrateAsync(Batch6Migration, cancellationToken);
 
-        await using Batch7JourneyFixture scratch = await Batch7JourneyFixture.CreateAsync();
+        await using Batch7JourneyFixture scratch = await Batch7JourneyFixture.CreateMigratedForRealAsync();
         ControlServerDbContext context = scratch.Context;
 
         // agv-01: a completed journey, then a second one waiting for its sublot.
@@ -527,7 +527,7 @@ public sealed class Batch7MigrationDisciplineTests
     {
         // scripts/ and the G3 scenarios query these two tables directly -- WHERE DemandId = ..., SELECT * -- so the key
         // change must only ever add columns.
-        await using Batch7JourneyFixture fixture = await Batch7JourneyFixture.CreateAsync();
+        await using Batch7JourneyFixture fixture = await Batch7JourneyFixture.CreateMigratedForRealAsync();
 
         foreach (string table in (string[])["JourneyRuntimes", "JourneyBacklog"])
         {

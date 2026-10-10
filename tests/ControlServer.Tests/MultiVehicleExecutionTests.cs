@@ -994,7 +994,7 @@ public sealed partial class MultiVehicleExecutionTests
             }
             DbContextOptions<ControlServerDbContext> dbOptions = builder.Options;
             ControlServerDbContext context = new(dbOptions);
-            await context.Database.MigrateAsync(TestContext.Current.CancellationToken);
+            await MigratedDatabaseTemplate.ApplyAsync(context.Database, TestContext.Current.CancellationToken);
             await TaskTypeStationRuntimeSeed.ActivateAsync(dbOptions, Now);
             JourneyRuntimeOptions options = FleetOptions(budgetMilliseconds);
             configure?.Invoke(options);

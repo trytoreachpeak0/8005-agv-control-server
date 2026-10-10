@@ -600,7 +600,7 @@ public sealed class RouteGraphEngineTests
             DbContextOptions<ControlServerDbContext> dbOptions =
                 new DbContextOptionsBuilder<ControlServerDbContext>().UseSqlite(connection).Options;
             ControlServerDbContext context = new(dbOptions);
-            await context.Database.MigrateAsync(TestContext.Current.CancellationToken);
+            await MigratedDatabaseTemplate.ApplyAsync(context.Database, TestContext.Current.CancellationToken);
 
             CountingSource source = new();
             AdvanceableTimeProvider clock = new(Origin);

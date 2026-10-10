@@ -24,6 +24,10 @@ internal sealed class Batch7JourneyFixture : IAsyncDisposable
 
     public ControlServerDbContext Context { get; private set; }
 
+    /// <param name="migrate">
+    /// The schema of every migration, copied from <see cref="MigratedDatabaseTemplate"/>; <c>false</c> leaves the database
+    /// empty for a test that migrates it step by step.
+    /// </param>
     public static async Task<Batch7JourneyFixture> CreateAsync(bool migrate = true)
     {
         SqliteConnection connection = new("Data Source=:memory:");
@@ -31,8 +35,19 @@ internal sealed class Batch7JourneyFixture : IAsyncDisposable
         Batch7JourneyFixture fixture = new(connection);
         if (migrate)
         {
-            await fixture.Context.Database.MigrateAsync(TestContext.Current.CancellationToken);
+            await MigratedDatabaseTemplate.ApplyAsync(fixture.Context.Database, TestContext.Current.CancellationToken);
         }
+        return fixture;
+    }
+
+    /// <summary>
+    /// The schema of every migration, written by running them rather than copied from the template: for a test about the
+    /// migrations themselves, or one that migrates down and up again (control-server#553).
+    /// </summary>
+    public static async Task<Batch7JourneyFixture> CreateMigratedForRealAsync()
+    {
+        Batch7JourneyFixture fixture = await CreateAsync(migrate: false);
+        await fixture.Context.Database.MigrateAsync(TestContext.Current.CancellationToken);
         return fixture;
     }
 

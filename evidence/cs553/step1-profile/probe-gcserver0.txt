@@ -1,0 +1,8 @@
+server GC=False latency=Interactive cpus=12
+serial migrate #0: Sample { WallMs = 1892.7271, PauseMs = 317.973, AllocMb = 191, Gen0 = 26, Gen1 = 13, Gen2 = 2, Contention = 0 }
+serial migrate #1: Sample { WallMs = 1021.2825, PauseMs = 300.623, AllocMb = 190, Gen0 = 24, Gen1 = 11, Gen2 = 1, Contention = 0 }
+serial migrate #2: Sample { WallMs = 811.6555, PauseMs = 316.969, AllocMb = 190, Gen0 = 25, Gen1 = 12, Gen2 = 2, Contention = 0 }
+serial ensureCreated: Sample { WallMs = 249.5607, PauseMs = 30.769, AllocMb = 64, Gen0 = 8, Gen1 = 1, Gen2 = 0, Contention = 0 }
+backup copy of migrated template: Sample { WallMs = 2.7217, PauseMs = 0, AllocMb = 0, Gen0 = 0, Gen1 = 0, Gen2 = 0, Contention = 0 }
+parallel x2: Sample { WallMs = 1565.2875, PauseMs = 714.565, AllocMb = 381, Gen0 = 51, Gen1 = 24, Gen2 = 3, Contention = 56 }
+parallel x4: Sample { WallMs = 2724.0251, PauseMs = 1411.13, AllocMb = 760, Gen0 = 97, Gen1 = 44, Gen2 = 2, Contention = 145 }

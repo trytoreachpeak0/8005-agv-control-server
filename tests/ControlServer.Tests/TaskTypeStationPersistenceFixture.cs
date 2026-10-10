@@ -45,7 +45,7 @@ internal sealed class TaskTypeStationPersistenceFixture : IAsyncDisposable
         await using (ControlServerDbContext migrator = new(
                          new DbContextOptionsBuilder<ControlServerDbContext>().UseSqlite(connection).Options))
         {
-            await migrator.Database.MigrateAsync(TestContext.Current.CancellationToken);
+            await MigratedDatabaseTemplate.ApplyAsync(migrator.Database, TestContext.Current.CancellationToken);
         }
         DbContextOptions<ControlServerDbContext> options = new DbContextOptionsBuilder<ControlServerDbContext>()
             .UseSqlite(connection)
