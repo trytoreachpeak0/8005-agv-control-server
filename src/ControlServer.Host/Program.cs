@@ -193,15 +193,11 @@ app.UseSerilogRequestLogging();
 // control-server#535 review M2: what this process really bound, once it has started (options validated).
 // The v2 parallel installer reads this event back from the log and compares it with the instance
 // definition; reading the definition instead is how M1 (six work types bound where one was written) passed.
-Action<Microsoft.Extensions.Logging.ILogger, string[], string[], string, Exception?> logEffectiveConfiguration = LoggerMessage.Define<string[], string[], string>(
-    LogLevel.Information,
-    new EventId(5350, "EffectiveConfiguration"),
-    "EFFECTIVE_CONFIGURATION allowedWorkTypes={AllowedWorkTypes} allowedDispatchZones={AllowedDispatchZones} mesIngestBaseUrl={MesIngestBaseUrl}");
+// control-server#571 added the vehicle roster (EffectiveConfigurationEvent).
 app.Lifetime.ApplicationStarted.Register(() =>
 {
     JourneyRuntimeOptions effective = app.Services.GetRequiredService<IOptions<JourneyRuntimeOptions>>().Value;
-    logEffectiveConfiguration(app.Logger, effective.AllowedWorkTypes, effective.AllowedDispatchZones,
-        app.Configuration["MesIngest:baseUrl"] ?? "http://127.0.0.1:5088", null);
+    EffectiveConfigurationEvent.Log(app.Logger, effective, app.Configuration["MesIngest:baseUrl"] ?? "http://127.0.0.1:5088");
 });
 
 // control-server#473：数据库一碰之前先拿与库文件绑定的锁，进程活着就一直不放；另一个进程（另一个服务端实例、正在直接写库的
