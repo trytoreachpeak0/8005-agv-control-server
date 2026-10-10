@@ -12,7 +12,14 @@ param(
     [ValidatePattern('^FP-IS-(0[0-9]|1[0-5])$')][string]$Slice,
     [string]$ControlServerRepository = (Split-Path -Parent $PSScriptRoot),
     [string]$OnboardRepository = 'https://github.com/trytoreachpeak0/8005-agv-onboard-hmi.git',
-    [string]$SimulatorRepository = 'https://github.com/trytoreachpeak0/slots-simulator.git'
+    [string]$SimulatorRepository = 'https://github.com/trytoreachpeak0/slots-simulator.git',
+    # control-server#582, as in run-staged-g3.ps1 and run-journey-g3.ps1: clone this ControlServer (or onboard)
+    # commit instead of the bound one, for the nightly G3 on the integration branch's tip. The binding itself is
+    # still read off run-staged-g3.ps1 below, through a path that stays a non-parameter; these replace a commit for
+    # one run, recorded as SELF_CHECK_OVERRIDE (even when it names the bound commit), and every slice is graded
+    # formalSlicePass false.
+    [ValidatePattern('^[0-9a-f]{40}$')][string]$SelfCheckControlServerCommit,
+    [ValidatePattern('^[0-9a-f]{40}$')][string]$SelfCheckOnboardCommit
 )
 
 $ErrorActionPreference = 'Stop'
@@ -123,6 +130,15 @@ $runnerCommit = $runnerProvenance.runnerCommit
 if ($null -eq $runnerCommit) { throw "Unable to read the runner commit: $($runnerProvenance.runnerSource)" }
 $runnerWorktreeClean = $runnerProvenance.runnerWorktreeClean
 $commitSources = Get-G3CommitSources -Binding ($runnerProvenance.bindingAtHead ?? $commitBinding) -Actual $commitBinding
+# After $commitSources, so what the record keeps is the override, and before anything is staged.
+if (-not [string]::IsNullOrEmpty($SelfCheckControlServerCommit)) {
+    $ControlServerCommit = $SelfCheckControlServerCommit
+    $commitSources['controlServerCommitSource'] = 'SELF_CHECK_OVERRIDE'
+}
+if (-not [string]::IsNullOrEmpty($SelfCheckOnboardCommit)) {
+    $OnboardCommit = $SelfCheckOnboardCommit
+    $commitSources['onboardCommitSource'] = 'SELF_CHECK_OVERRIDE'
+}
 # Before the clones and the builds, not after: naming a slice this runner cannot certify
 # should cost a message, not an hour of cloning and publishing.
 if (-not [string]::IsNullOrEmpty($Slice)) { Assert-G3SliceIsClaimedBy -RunKind $G3RunKind -Slice $Slice }
