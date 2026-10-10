@@ -13,18 +13,20 @@ public sealed class OnboardSafetyProjectionOptions
     /// How long a complete non-final order listing may stand in for one that did not add up (control-server#573); 0 turns
     /// the carry-over off.
     /// </summary>
-    public int OrderCoverageCarryOverMs { get; set; } = 3_000;
+    public int OrderCoverageCarryOverMs { get; set; } = 1_500;
 }
 
 public sealed class OnboardSafetyProjectionOptionsValidator : IValidateOptions<OnboardSafetyProjectionOptions>
 {
     /// <summary>
-    /// The onboard trusts a STOPPED observation up to 5000 ms after its <c>observedAt</c>, and its clock may run up to
-    /// 1000 ms ahead of this server's (<c>VehicleSafetySettings.MaximumEvidenceAgeMs</c> and the cap on
-    /// <c>ClockSkewToleranceMs</c>, onboard-hmi <c>w2g/fp-v2-impl</c>). A carried observation older than the difference
-    /// could arrive already expired, which is the flicker control-server#573 removes.
+    /// The onboard trusts a STOPPED observation up to 5000 ms after its <c>observedAt</c>, judged each time it uses it
+    /// (<c>VehicleSafetySettings.MaximumEvidenceAgeMs</c>, <c>IsStoppedAndFresh(DateTimeOffset.UtcNow, ...)</c>), and its
+    /// clock may run up to 1000 ms ahead of this server's (the cap on <c>ClockSkewToleranceMs</c>). A carried observation
+    /// has to last until the next poll lands: 1000 ms of poll interval (<c>PollIntervalMs</c>) and up to 1000 ms left for
+    /// that request. All onboard-hmi <c>w2g/fp-v2-impl</c>. The first version allowed 4000 and defaulted to 3000; the real
+    /// rig (run 38069023213) caught a carried observation expiring before the next poll answered (control-server#573).
     /// </summary>
-    internal const int MaximumOrderCoverageCarryOverMs = 5_000 - 1_000;
+    internal const int MaximumOrderCoverageCarryOverMs = 5_000 - 1_000 - 1_000 - 1_000;
 
     public ValidateOptionsResult Validate(string? name, OnboardSafetyProjectionOptions options)
     {

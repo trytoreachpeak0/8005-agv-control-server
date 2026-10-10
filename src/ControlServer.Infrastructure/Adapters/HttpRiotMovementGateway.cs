@@ -431,6 +431,14 @@ public sealed class HttpRiotMovementGateway : IRiotMovementGateway, IRiotVehicle
                 return Safety(vehicleKey, vehicle, hasNonFinalOrder: true, now);
             }
 
+            // The window is measured when the answer leaves, not before the ledger was asked: the onboard ages the answer
+            // from observedAt every time it uses it, and has to keep using it until its next poll lands. A ledger answer
+            // that took long enough leaves too little of the onboard's 5 seconds (control-server#573, run 38069023213).
+            if (timeProvider.GetUtcNow() - remembered.ReadStartedAt > coverageCarryOver)
+            {
+                return UnknownSafety(vehicleKey, "RIOT_NONFINAL_ORDER_COVERAGE_UNKNOWN");
+            }
+
             // The vehicle's own state is this request's; only "is there an order on it" is the remembered listing's, so the
             // observation is stamped with that listing's start -- the onboard ages it from there.
             return Safety(
