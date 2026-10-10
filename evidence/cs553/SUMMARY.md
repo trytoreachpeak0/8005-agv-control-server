@@ -22,4 +22,18 @@
 
 ## 第二步：修后对照
 
-待补：本机全量自检（挂 `dotnet-counters`）与修后一轮 CI 的 trx 对照。
+### 本机全量（`35c89b3a`，2026-10-10 13:48:59 → 13:56:19）
+
+| 文件 | 内容 |
+| --- | --- |
+| `step2-local-full/console-tail.txt` | 控制台结尾：`Failed: 0, Passed: 4664`，测试阶段 5 分 31 秒；含构建共 7 分 20 秒 |
+| `step2-local-full/compare-vs-38013503611.txt` | 与基线 run 38013503611 的 trx 逐条对账（脚本 `tools/compare.py`） |
+
+- 测试名集合：基线有、修后没有的 0 条；修后多出 7 条，全是护栏类 `MigratedDatabaseTemplateTests`；两边共有的测试结果逐条相同。
+- 3 条跳过的测试修前修后相同：`ReconnectModelTests` 的 `ReplaySequences`、`ReplaySeeds`、`PrototypeMeasurement`，都标了 `[Fact(Explicit = true)]`，trx 里记为 `NotExecuted`。控制台汇总行写 `Skipped: 0`，是因为汇总不把 Explicit 算作跳过，控制台上面逐条打印了这三条。
+- 三个重点类（基线是 vm01，这里是本机，只能比量级）：`IdleReturnExecutionTests` 892 → 68 s；`VehicleFaultIsolationTests` 1050 → 1 s；`EmergencyStopSupervisorTests` 579 → 1 s。所有测试耗时之和 38074 → 3694 s。修后最长的类是 `InTransitDoorEmergencyReleaseTests`，173 s。
+- **这一轮的 `dotnet-counters` 作废，没有入库**：监视脚本接到的是 VSTest 的外壳进程 `testhost.exe`，而 xunit v3 实际在子进程 `ControlServer.Tests.exe` 里跑测试，采到的是外壳的数据（CPU 平均 0.1%）。
+
+### 修后 CI
+
+待补：出口解冻、PR 转 ready 后跑的那一轮。
