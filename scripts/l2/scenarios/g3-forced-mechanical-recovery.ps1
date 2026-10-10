@@ -11,7 +11,8 @@ G3 `FP-IS-07`：装载失败后由维护人员在车上发起强制机械恢复�
 （control-server#128 起，此前是「空关后等车载端超时」，v2 上不可达）。车载端「强制机械恢复」按钮是 2026-09-14 补的入口（车载端仓
 `docs/W2G_FP_IS_07_OPERATOR_ENTRIES.md`）。onboard-hmi#107 起车载端收到命令后不发开锁、也不上报，等现场人员按「已隔离并完成机械取出」
 并在「确认强制机械取出」答是之后才报结果；场景自 control-server#156 起按这一步。场景不按「提交硬件恢复记录」，所以 `G3-07-44` 读到的是
-记录到达之前的就绪。
+记录到达之前的就绪：车载端没有重连，原因码必须是 `FORCED_RECOVERY_HARDWARE_RECOVERY_REQUIRED`，不是
+`FORCED_RECOVERY_GENERATION_MISMATCH`（control-server#556）。
 #>
 [CmdletBinding()]
 param([Parameter(Mandatory)][object]$Context)
@@ -19,6 +20,7 @@ param([Parameter(Mandatory)][object]$Context)
 Set-StrictMode -Version Latest
 $ErrorActionPreference = 'Stop'
 . (Join-Path $PSScriptRoot 'G3RecoveryCommon.ps1')
+Import-Module (Join-Path (Split-Path -Parent $PSScriptRoot) 'L2ConditionOrLast.psm1') -Force
 
 $journal = $Context.Journal
 $assertions = $Context.Assertions
@@ -148,7 +150,14 @@ $assertions.Add(
 $workflowState = Get-G3Scalar $connection "SELECT State AS Value FROM RecoveryWorkflows WHERE WorkflowId = '$actionId'"
 $handoffRecorded = [string](Get-G3Scalar $connection "SELECT HandoffReceiverName AS Value FROM RecoveryWorkflows WHERE WorkflowId = '$actionId'")
 $journey = "$(Get-G3Scalar $connection "SELECT Stage AS Value FROM JourneyRuntimes WHERE DemandId = '$demandId'")/$(Get-G3Scalar $connection "SELECT BlockReasonCode AS Value FROM JourneyRuntimes WHERE DemandId = '$demandId'")"
-$session = Get-G3Session $connection
+# control-server#556: what the vehicle waits for once the result is in and before any reconnect is its hardware recovery
+# record, so the session is held under FORCED_RECOVERY_HARDWARE_RECOVERY_REQUIRED. Readiness alone could not tell that from
+# FORCED_RECOVERY_GENERATION_MISMATCH -- the vehicle stuck until something made it reconnect -- and this read PASS over it.
+# The reason is written by the readiness decision that follows the result's save, so wait for it rather than read once.
+$session = Wait-L2ConditionOrLast -Description 'the session is held for the forced recovery''s hardware record' `
+    -Journal $journal -Criterion 'forced-recovery-hardware-hold' -TimeoutSeconds 30 `
+    -Probe { Get-G3Session $connection } `
+    -Until { param($v) $null -ne $v -and [string]$v.ReasonCode -eq 'FORCED_RECOVERY_HARDWARE_RECOVERY_REQUIRED' }
 $recoverySession = Get-G3Scalar $connection "SELECT State AS Value FROM ExceptionRecoverySessions WHERE ExceptionRecoverySessionId = '$([string]$result.Payload.exceptionRecoverySessionId)'"
 $closedReason = Get-G3Scalar $connection "SELECT ClosedReason AS Value FROM ExceptionRecoverySessions WHERE ExceptionRecoverySessionId = '$([string]$result.Payload.exceptionRecoverySessionId)'"
 # control-server#555: Get-G3Scalar returns [string]$rows[0].Value, so a NULL column reads back as "" and can never be
@@ -167,13 +176,15 @@ $toGate = Get-G3Count $connection "SELECT COUNT(*) AS Total FROM OrderIntents WH
 # (「提交硬件恢复记录」) is a separate button it never touches.
 $assertions.Add(
     'G3-07-44',
-    '强制恢复只结算货物业务：工作流 Reconciled 并记下结果里的交接人，需求 Cancelled，旅程 Completed/TERMINATED_BY_FAULT_CARGO_HANDOFF，恢复会话按交接 CLOSED（closedReason 为空），没有去关卡；车辆会话仍 RecoveryRequired，等硬件恢复记录（REQ-0242 / SETTLE_DEMAND_ONLY_ON_NAMED_HANDOFF / forbidden ready-before-reconciliation、unknown-as-success）',
+    '强制恢复只结算货物业务：工作流 Reconciled 并记下结果里的交接人，需求 Cancelled，旅程 Completed/TERMINATED_BY_FAULT_CARGO_HANDOFF，恢复会话按交接 CLOSED（closedReason 为空），没有去关卡；车辆会话仍 RecoveryRequired，原因 FORCED_RECOVERY_HARDWARE_RECOVERY_REQUIRED（等硬件恢复记录，不经重连；车载端报过的代数由结果更新为当前代数，cs#556）（REQ-0242 / SETTLE_DEMAND_ONLY_ON_NAMED_HANDOFF / forbidden ready-before-reconciliation、unknown-as-success）',
     ($workflowState -eq 'Reconciled' -and $journey -eq 'Completed/TERMINATED_BY_FAULT_CARGO_HANDOFF' -and $recoverySession -eq 'CLOSED' -and
-        [string]$session.Readiness -eq 'RecoveryRequired' -and $demandStatus -eq 'Cancelled' -and $toGate -eq 0 -and
+        [string]$session.Readiness -eq 'RecoveryRequired' -and
+        [string]$session.ReasonCode -eq 'FORCED_RECOVERY_HARDWARE_RECOVERY_REQUIRED' -and
+        [long]$session.ReportedForcedRecoveryGeneration -eq $generationAfter -and $demandStatus -eq 'Cancelled' -and $toGate -eq 0 -and
         $null -ne $handoff -and $handoffRecorded -eq $handoffReceiver -and
         $closedReasonIsNull),
-    'Reconciled（交接人 G3 交接人 王五）/ Completed/TERMINATED_BY_FAULT_CARGO_HANDOFF / 会话 CLOSED（原因 NULL）/ RecoveryRequired / Cancelled / TO_GATE 0',
-    "$workflowState（交接人 $handoffRecorded）/ $journey / 会话 $recoverySession（原因 $(if ($closedReasonIsNull) { 'NULL' } else { "'$closedReason'" })）/ $($session.Readiness) ($($session.ReasonCode)) / $demandStatus / TO_GATE $toGate")
+    "Reconciled（交接人 G3 交接人 王五）/ Completed/TERMINATED_BY_FAULT_CARGO_HANDOFF / 会话 CLOSED（原因 NULL）/ RecoveryRequired (FORCED_RECOVERY_HARDWARE_RECOVERY_REQUIRED，报过的代数 $generationAfter) / Cancelled / TO_GATE 0",
+    "$workflowState（交接人 $handoffRecorded）/ $journey / 会话 $recoverySession（原因 $(if ($closedReasonIsNull) { 'NULL' } else { "'$closedReason'" })）/ $($session.Readiness) ($($session.ReasonCode)，报过的代数 $($session.ReportedForcedRecoveryGeneration)) / $demandStatus / TO_GATE $toGate")
 
 $unlocksAfterRequest = @((Get-G3Progress $connection $attemptId) | Where-Object { $_.Phase -eq 'UNLOCKING' -and $_.At -gt $requestedAt })
 $physical = ($load.TargetSlots | Sort-Object | ForEach-Object { "$_=$(Get-G3SlotState $simulator $_)" }) -join ' '
