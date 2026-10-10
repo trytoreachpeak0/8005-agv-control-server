@@ -359,6 +359,11 @@ exit $(if ($red) { 1 } else { 0 })
     $g3Job = [regex]::Match($workflow, '(?ms)^  g3:\s*$.*?(?=^  \w[\w-]*:\s*$)').Value
     Check 'g3.yml: the g3 job runs on [self-hosted, cs-desktop], checks out fetch-depth 0 and runs Invoke-NightlyG3.ps1' `
         ($g3Job -match 'runs-on:\s*\[self-hosted,\s*cs-desktop\]' -and $g3Job -match 'fetch-depth:\s*0\b' -and $g3Job -match 'Invoke-NightlyG3\.ps1') 'see g3.yml'
+    # The night arrives as a workflow_dispatch from main's g3-nightly-trigger.yml (a schedule on this branch never fires),
+    # so it is the nightly input, not the event name, that must give it the 04:00 CST deadline and the 定时触发 label.
+    Check 'g3.yml: no schedule of its own, a nightly input, and nightly runs are graded as the schedule in gate and report' `
+        ($workflow -notmatch '(?m)^\s*schedule:\s*$' -and $workflow -match '(?m)^\s*nightly:\s*$' -and
+         ([regex]::Matches($workflow, "G3_NIGHTLY\s*-eq\s*'true'")).Count -ge 2) 'see g3.yml'
 
     # All green exits 0.
     $round = Invoke-Round 'green' @{} @{}
