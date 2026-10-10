@@ -162,6 +162,35 @@ public sealed class SameDirectionTaskTypeJourneyRuntimeTests
     }
 
     /// <summary>
+    /// The other way round (control-server#545 review M2): a package from before batch 10 installed with a version 3
+    /// definition binds its own two-type seed under 3 without a word -- 3 is above what the store held. When this
+    /// build then runs under 3, the same version holds other content: drift, and no order is created. Raising the
+    /// version again is the way out; putting the definition "back to 3" is not.
+    /// </summary>
+    [Fact]
+    [Trait("IntegrationSlice", "FP-IS-10")]
+    public async Task AnOldPackageInstalledUnderVersionThreeTakesTheVersionAndThisBuildThenDrifts()
+    {
+        await using RuntimeFixture fixture = await RuntimeFixture.CreateAsync();
+        await BindPreviousBuildsSeedAsync(fixture, version: 2);
+        await BindPreviousBuildsSeedAsync(fixture, version: 3);
+        await fixture.RecreateEngineAsync();
+        fixture.Options.AdmissionPolicyVersion = 3;
+        fixture.Catalog.Set(fixture.Demand(DemandId, "SUBLOT-001", Now.AddMinutes(-10)));
+        fixture.BoxCounts.Set("SUBLOT-001", 4);
+
+        await fixture.Engine.ExecuteOnceAsync(Token);
+
+        Assert.Equal(AdmissionPolicyDriftCriterion.Reason, (await fixture.BacklogAsync(DemandId)).ReasonCode);
+        Assert.Equal(0, fixture.Riot.TotalCreateCount);
+
+        fixture.Options.AdmissionPolicyVersion = 4;
+        await fixture.Engine.ExecuteOnceAsync(Token);
+
+        Assert.Equal("ACCEPTED", (await fixture.BacklogAsync(DemandId)).ReasonCode);
+    }
+
+    /// <summary>
     /// Rolling back the package does not roll back the store. Once this build has bound version 3, the build before it
     /// can bind its seed under neither version 2 (the store refuses a version moving backwards) nor version 3 (bound to
     /// other content): the engine reads either refusal as drift and takes on no demand. Only a version above the
