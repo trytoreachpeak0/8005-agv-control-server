@@ -189,11 +189,18 @@ $shownAtPoint = Wait-L2ConditionOrLast -Description 'the HMI shows the vehicle a
     -Criterion 'hmi-at-point' -TimeoutSeconds 30 -Probe { Get-IdleReturnStatus } -Until { param($v) $v -eq $atPoint }
 # Held over time, not read once: a cell that falls back to "journey not synchronised" a few seconds later is the defect P4 names,
 # and an entry that opens a few seconds later is a load at the waiting point. Both halves read together, every poll.
+# control-server#560: a read UI Automation could not make is re-read by Read-L2UiaItemStatus and is not the product's value; only
+# a value actually read that is not AT_WAITING_POINT ends the window as a product failure. An element still unreadable after its
+# re-reads ends it too, never as a pass, and says so.
 $heldReading = Wait-L2ConditionOrLast -Description 'the HMI stopped showing the vehicle at the waiting point, or opened entry (it must not)' `
     -Journal $journal -Criterion 'hmi-still-at-point' -TimeoutSeconds 10 `
-    -Probe { [pscustomobject]@{ Status = Get-IdleReturnStatus; CanSubmit = [bool]$onboard.CanSubmit() } } `
-    -Until { param($v) $v.Status -ne $atPoint -or $v.CanSubmit }
-$heldAtPoint = $heldReading.Status
+    -Probe {
+        $reading = Read-L2UiaItemStatus $onboard 'IdleReturnStatus' $journal
+        [pscustomobject]@{ Readable = $reading.Readable; Status = $reading.Value; Shown = Format-L2UiaReading $reading
+            CanSubmit = [bool]$onboard.CanSubmit() }
+    } `
+    -Until { param($v) -not $v.Readable -or $v.Status -ne $atPoint -or $v.CanSubmit }
+$heldAtPoint = if ($heldReading.Readable) { $heldReading.Status } else { $null }
 # Invoke-L2Query returns its rows whole (return , $rows): assign, do not wrap. Wrapped, an empty result is one element that is an
 # empty array, and reading OperationType off it throws -- the first G3 run of this scenario (cs390-journey-fa4a5ce3) stopped here.
 $operationsAtPoint = Invoke-L2Query -Connection $connection -Sql (
@@ -201,9 +208,9 @@ $operationsAtPoint = Invoke-L2Query -Connection $connection -Sql (
 $assertions.Add(
     'G3-12-07',
     '车停在等待点上：车载端不开放录入（十秒里每次读都不能提交），服务端也没有建任何装卸操作——此刻一条需求都还没有（NEVER_LOAD_AT_WAITING_POINT）',
-    ($shownAtPoint -eq $atPoint -and -not $heldReading.CanSubmit -and $operationsAtPoint.Count -eq 0),
+    ($heldReading.Readable -and $heldAtPoint -eq $atPoint -and -not $heldReading.CanSubmit -and $operationsAtPoint.Count -eq 0),
     "界面 $atPoint、不能提交 / 0 笔操作",
-    "界面 '$($heldReading.Status)'、CanSubmit=$($heldReading.CanSubmit) / 操作 $(($operationsAtPoint | ForEach-Object { "$($_.OperationType):$($_.SlotOperationAttemptId)" }) -join ',')")
+    "界面 $($heldReading.Shown)、CanSubmit=$($heldReading.CanSubmit) / 操作 $(($operationsAtPoint | ForEach-Object { "$($_.OperationType):$($_.SlotOperationAttemptId)" }) -join ',')")
 $occupied = Get-Held $waitingPoint
 $claimRelease = Invoke-L2Query -Connection $connection -Sql (
     "SELECT ReleaseReason FROM VehiclePurposeClaimRecords WHERE JourneyId = '$idleJourneyId'")
@@ -219,9 +226,9 @@ $assertions.Add(
         $null -ne $closingPlan -and $closingLegs.Count -eq 1 -and [string]$closingLegs[0].stopPurposeCategory -eq 'WAITING_POINT' -and
         [string]$closingLegs[0].state -eq 'ARRIVED' -and $closingPlan.Acknowledged -and
         $null -ne $closingState -and (Get-Purpose $closingState) -ne 'IDLE_RETURN' -and $closingState.Acknowledged -and
-        $shownAtPoint -eq $atPoint -and $heldAtPoint -eq $atPoint),
+        $shownAtPoint -eq $atPoint -and $heldReading.Readable -and $heldAtPoint -eq $atPoint),
     "Completed / 214 OCCUPIED / 用途 IDLE_RETURN_CONVERGED_AT_WAITING_POINT / 计划 [1:WAITING_POINT@…:ARRIVED] 已确认 / 业务状态非 IDLE_RETURN 已确认 / 界面 $atPoint 十秒不变",
-    "$(${closed}?.Stage) $(${closed}?.BlockReasonCode) / $(Held-Text $occupied) / 用途 $(($claimRelease | ForEach-Object { $_.ReleaseReason }) -join ',') / $(Format-Plan $closingPlan) / $(Format-State $closingState) / 界面 '$shownAtPoint' → '$heldAtPoint'")
+    "$(${closed}?.Stage) $(${closed}?.BlockReasonCode) / $(Held-Text $occupied) / 用途 $(($claimRelease | ForEach-Object { $_.ReleaseReason }) -join ',') / $(Format-Plan $closingPlan) / $(Format-State $closingState) / 界面 '$shownAtPoint' → $($heldReading.Shown)")
 
 # --- 4. 甲把车派走：新计划整体替换，不留等待点腿；界面不再报空闲返回 ---------------------------------------------------------------
 

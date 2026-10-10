@@ -161,6 +161,47 @@ function Get-L2LoadingPhaseLine([object]$Onboard, [string]$AutomationId) {
 }
 
 <#
+control-server#560: an element's ItemStatus read so that "UI Automation could not read the element" and "the element said
+something" stay apart. Get-L2LoadingPhaseLine returns $null for both a missing element and one that went away under the read,
+and a held criterion that took that $null for the product's value failed the batch-8 exit's third G3 round
+(g3-waiting-point-idle-return, G3-12-03) on one read in which nothing on the onboard had changed.
+
+An unreadable element (not found, or any exception from the read) is read again, at most $Attempts reads $IntervalMilliseconds
+apart, each failure journaled. A value that was read -- the empty string included -- is the product's and is returned at once,
+never re-read. Returns Readable, Value ($null when not readable), Reads and Why (the last failure, when not readable).
+#>
+function Read-L2UiaItemStatus([object]$Onboard, [string]$AutomationId, [object]$Journal, [int]$Attempts = 3,
+    [int]$IntervalMilliseconds = 500) {
+    $why = $null
+    for ($read = 1; $read -le $Attempts; $read++) {
+        try {
+            $element = $Onboard.Element('AutomationId', $AutomationId)
+            if ($element) {
+                return [pscustomobject]@{ Readable = $true; Value = [string]$element.Current.ItemStatus; Reads = $read; Why = $null }
+            }
+            $why = 'element not found'
+        } catch {
+            # The driver's members are ScriptMethods, which wrap whatever UI Automation threw; name the exception itself.
+            $exception = $_.Exception
+            while (($exception -is [System.Management.Automation.MethodInvocationException] -or
+                    $exception.GetType() -eq [System.Management.Automation.RuntimeException]) -and $null -ne $exception.InnerException) {
+                $exception = $exception.InnerException
+            }
+            $why = "$($exception.GetType().Name): $($exception.Message)"
+        }
+        $Journal.Note("UIA read $read of $Attempts of $AutomationId unreadable: $why")
+        if ($read -lt $Attempts) { Start-Sleep -Milliseconds $IntervalMilliseconds }
+    }
+    return [pscustomobject]@{ Readable = $false; Value = $null; Reads = $Attempts; Why = $why }
+}
+
+function Format-L2UiaReading([object]$Reading) {
+    if ($null -eq $Reading) { return '(no reading)' }
+    if (-not $Reading.Readable) { return "(unreadable after $($Reading.Reads) reads: $($Reading.Why))" }
+    return "'$($Reading.Value)'"
+}
+
+<#
 Every plan and worklist snapshot the server queued that names one of $DemandIds, in the order it created them. Unlike
 L2TaskTypeJourney.psm1's Get-L2DemandJourneySnapshots, the legs stay in the order the payload carries them: that order
 is what ORDER_LEGS_BY_SEQUENCE is about, and a reader that sorts would make the criterion true by construction.
@@ -245,4 +286,4 @@ function Stop-L2DoorSampler([object]$Job) {
 }
 
 Export-ModuleMember -Function ConvertFrom-L2PlanLegRowReading, Get-L2PlanLegRows, Format-L2PlanLegRows, Get-L2WorklistRows, Format-L2WorklistRows,
-    Get-L2LoadingPhaseLine, Get-L2JourneyWireSnapshots, Format-L2WireSnapshot, Start-L2DoorSampler, Stop-L2DoorSampler
+    Get-L2LoadingPhaseLine, Read-L2UiaItemStatus, Format-L2UiaReading, Get-L2JourneyWireSnapshots, Format-L2WireSnapshot, Start-L2DoorSampler, Stop-L2DoorSampler

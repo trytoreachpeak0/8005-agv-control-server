@@ -1,0 +1,23 @@
+BAD   A1 fixture: a box that read back empty is typed again, journaled, then submitted once -> The term 'Invoke-L2SublotEntry' is not recognized as a name of a cmdlet, function, script file, or executable program.
+Check the spelling of the name, or if a path was included, verify that the path is correct and try again.
+BAD   A2 fixture: a box that changed between typing and submit is typed again, not submitted with the wrong text -> The term 'Invoke-L2SublotEntry' is not recognized as a name of a cmdlet, function, script file, or executable program.
+Check the spelling of the name, or if a path was included, verify that the path is correct and try again.
+BAD   A3 fixture: a box that never reads back the sublot ends RIG_FIXTURE after 3 typings, nothing submitted -> message: The term 'Invoke-L2SublotEntry' is not recognized as a name of a cmdlet, function, script file, or executable program.
+Check the spelling of the name, or if a path was included, verify that the path is correct and try again.
+BAD   A4 product: a refused submit fails PRODUCT_REFUSED with box text, code and time, and is not submitted again -> The term 'Invoke-L2SublotEntry' is not recognized as a name of a cmdlet, function, script file, or executable program.
+Check the spelling of the name, or if a path was included, verify that the path is correct and try again.
+BAD   A5 product: a refusal logged before the submit is not this submit's; the operation is returned -> The term 'Wait-L2SubmitOutcome' is not recognized as a name of a cmdlet, function, script file, or executable program.
+Check the spelling of the name, or if a path was included, verify that the path is correct and try again.
+BAD   B1 fixture: not found, then throwing, then AT_WAITING_POINT -- re-read, both failures journaled, value returned -> The term 'Read-L2UiaItemStatus' is not recognized as a name of a cmdlet, function, script file, or executable program.
+Check the spelling of the name, or if a path was included, verify that the path is correct and try again.
+BAD   B2 fixture: unreadable on all 3 reads is reported unreadable with its reason, never as a value -> The term 'Read-L2UiaItemStatus' is not recognized as a name of a cmdlet, function, script file, or executable program.
+Check the spelling of the name, or if a path was included, verify that the path is correct and try again.
+BAD   B3 product: a wrong value read is returned at once, not re-read -> The term 'Read-L2UiaItemStatus' is not recognized as a name of a cmdlet, function, script file, or executable program.
+Check the spelling of the name, or if a path was included, verify that the path is correct and try again.
+BAD   B4 product: an empty string read is the product's value, returned at once, not re-read -> The term 'Read-L2UiaItemStatus' is not recognized as a name of a cmdlet, function, script file, or executable program.
+Check the spelling of the name, or if a path was included, verify that the path is correct and try again.
+ok    B5 scenario: g3-waiting-point-idle-return.ps1 parses
+BAD   B6 scenario: the held window reads through Read-L2UiaItemStatus and its Until fires on unreadable or a read value other than AT_WAITING_POINT -> probe: { [pscustomobject]@{ Status = Get-IdleReturnStatus; CanSubmit = [bool]$onboard.CanSubmit() } }
+BAD   B7 scenario: G3-12-07 judges the held window's reading ($heldReading.Readable and $heldAtPoint), not the first one -> condition: ($shownAtPoint -eq $atPoint -and -not $heldReading.CanSubmit -and $operationsAtPoint.Count -eq 0)
+11 case(s) came out the other way.
+exit=1
