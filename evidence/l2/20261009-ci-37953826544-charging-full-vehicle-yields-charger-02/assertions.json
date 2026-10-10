@@ -1,0 +1,55 @@
+{
+  "schemaVersion": 1,
+  "scenario": "charging-full-vehicle-yields-charger",
+  "runId": "20261009T162428105Z",
+  "outcome": "PASS",
+  "failureReason": "",
+  "identity": {
+    "rig": "SyntheticOnboard",
+    "fleet": [
+      "AGV-L2-001/BROKERX-L2-0001",
+      "AGV-L2-002/BROKERX-L2-0002",
+      "AGV-L2-003/BROKERX-L2-0003"
+    ],
+    "protocolReleaseIdentity": {
+      "repository": "8005-agv-protocol",
+      "releaseVersion": "3.0.0",
+      "tag": "protocol-v3.0.0",
+      "commit": "3f091cb2eae7c58cec54a95dd9389c9180bc7b4c",
+      "protocolVersion": 4,
+      "profileId": "AGV_FULL_PRODUCT",
+      "manifestSha256": "d5e1a53f1fd61f105a890dc0267e1b0a9ac5ea49f713d2cf730b0f554df9db9e",
+      "schemaBundleSha256": "e435b2b14d9ccd60c89f07df909da7626fef056a6b8a2241087557fd7dc3df43",
+      "vectorsSha256": "be849f9749b004296ebd9e7bffa98faf2f8ffa90b63308ca3b210c68e7b8656e",
+      "approvalStatus": "APPROVED_RELEASE"
+    },
+    "stageRoot": "C:\\actions-runner\\win11-01-control-server\\_work\\_temp\\l2-37953826544-1\\_stage\\l2-20261009T162428105Z-slot1",
+    "agvId": "AGV-L2-001",
+    "vehicleKey": "BROKERX-L2-0001",
+    "batchId": "batch-9",
+    "controlServerCommit": "563242d071de6f243c59f11722b197d683fee2a4"
+  },
+  "assertions": [
+    {
+      "id": "L2-CFY-01",
+      "description": "A 在 211 上充到 COMPLETE：充电用途放开、211 仍是 A 的占用；B、C 在队里，另等十秒，两台都没有用途、站点独占或订单意图，RIoT 上仍只有 A 那一张充电单",
+      "outcome": "PASS",
+      "expected": "OCCUPIED BROKERX-L2-0001 | AGV-L2-002: 0 claims, 0 stations, 0 intents; AGV-L2-003: 0 claims, 0 stations, 0 intents | 1 orders / A no claim",
+      "actual": "OCCUPIED BROKERX-L2-0001 | AGV-L2-002: 0 claims, 0 stations, 0 intents; AGV-L2-003: 0 claims, 0 stations, 0 intents | 1 orders / A claim "
+    },
+    {
+      "id": "L2-CFY-02",
+      "description": "需求派给了充满的 A（仍报 CHARGING；B、C 低于强制充电线），开往取货站的单已确认；此刻 211 仍是 A 的占用",
+      "outcome": "PASS",
+      "expected": "BROKERX-L2-0001 CONFIRMED / OCCUPIED BROKERX-L2-0001",
+      "actual": "BROKERX-L2-0001 CONFIRMED / OCCUPIED BROKERX-L2-0001"
+    },
+    {
+      "id": "L2-CFY-03",
+      "description": "A 离桩（到了机台 12、不再充电）之后 211 释放（CHARGER_RELEASED_ON_DEPARTURE），电量最低的 C 取得预占；B 仍在队里",
+      "outcome": "PASS",
+      "expected": "RESERVED BROKERX-L2-0003 | A released CHARGER_RELEASED_ON_DEPARTURE | B 0 claims",
+      "actual": "RESERVED BROKERX-L2-0003 | A released CHARGER_RELEASED_ON_DEPARTURE | B 0 claims"
+    }
+  ]
+}

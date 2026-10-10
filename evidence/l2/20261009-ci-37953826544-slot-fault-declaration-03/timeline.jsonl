@@ -1,0 +1,66 @@
+{"at":"2026-10-09T16:46:04.6384055+00:00","note":"L2 run 20261009T164604590Z starting for scenario 'slot-fault-declaration'."}
+{"at":"2026-10-09T16:46:04.6821863+00:00","note":"L2 port block lock acquired (slot 1, Global\\W2G-L2PortBlock-slot1)."}
+{"at":"2026-10-09T16:46:04.6849787+00:00","note":"Build skipped (-SkipBuild); running the output already built."}
+{"at":"2026-10-09T16:46:05.6486770+00:00","criterion":"fake-riot-live","value":"live"}
+{"at":"2026-10-09T16:46:05.8955098+00:00","criterion":"fake-mes-live","value":"live"}
+{"at":"2026-10-09T16:46:05.9675720+00:00","note":"Task type station preset: default (map 25, WIRE_TO_GATE -> 关卡/210)"}
+{"at":"2026-10-09T16:46:11.4710765+00:00","note":"Package capacity rules imported."}
+{"at":"2026-10-09T16:46:11.4798153+00:00","note":"No waiting point registration: a single-vehicle rig, or WaitingPoints = $false."}
+{"at":"2026-10-09T16:46:13.5538028+00:00","criterion":"control-server-live","value":"(null)"}
+{"at":"2026-10-09T16:46:14.4418622+00:00","criterion":"control-server-live","value":"live"}
+{"at":"2026-10-09T16:46:14.5395593+00:00","note":"Protocol release identity: protocol-v3.0.0 (profileId AGV_FULL_PRODUCT, protocolVersion 4, APPROVED_RELEASE)."}
+{"at":"2026-10-09T16:46:15.2363666+00:00","criterion":"onboard-readiness","value":"DISCONNECTED"}
+{"at":"2026-10-09T16:46:15.5104059+00:00","criterion":"onboard-readiness","value":"READY"}
+{"at":"2026-10-09T16:46:15.5656178+00:00","criterion":"control-server-ready","value":"ready"}
+{"at":"2026-10-09T16:46:15.6410095+00:00","note":"FieldOps: seed-approved-facts --database C:\\actions-runner\\win11-01-control-server\\_work\\_temp\\l2-37953826544-1\\_stage\\l2-20261009T164604590Z-slot1\\controlserver.db"}
+{"at":"2026-10-09T16:46:17.5914718+00:00","criterion":"slot-model-preseed:seed-approved-facts","value":"OK","detail":{"output":{"command":"seed-approved-facts","outcome":"OK","modelKey":"8005-eight-slot","slotModelVersionId":"1642841859b14982833d2d12f1e30b2a","version":1,"slotCount":8}}}
+{"at":"2026-10-09T16:46:17.5989355+00:00","note":"FieldOps: bind-io --database C:\\actions-runner\\win11-01-control-server\\_work\\_temp\\l2-37953826544-1\\_stage\\l2-20261009T164604590Z-slot1\\controlserver.db --agv AGV-L2-001"}
+{"at":"2026-10-09T16:46:19.3734648+00:00","criterion":"slot-model-preseed:bind-io:AGV-L2-001","value":"OK","detail":{"output":{"command":"bind-io","outcome":"OK","agvId":"AGV-L2-001","slotModelVersionId":"1642841859b14982833d2d12f1e30b2a","boundSlots":8,"version":1}}}
+{"at":"2026-10-09T16:46:19.5069889+00:00","criterion":"slot-model-preseed:dispatch-zones","value":"0"}
+{"at":"2026-10-09T16:46:19.5092858+00:00","note":"FieldOps: import-area-assignments --database C:\\actions-runner\\win11-01-control-server\\_work\\_temp\\l2-37953826544-1\\_stage\\l2-20261009T164604590Z-slot1\\controlserver.db --input C:\\actions-runner\\win11-01-control-server\\_work\\_temp\\l2-37953826544-1\\slot-fault-declaration-03\\snapshots\\preseed-area-assignments.csv"}
+{"at":"2026-10-09T16:46:21.3633610+00:00","criterion":"slot-model-preseed:import-area-assignments","value":"OK","detail":{"output":{"command":"import-area-assignments","outcome":"OK","dryRun":false,"input":"C:\\actions-runner\\win11-01-control-server\\_work\\_temp\\l2-37953826544-1\\slot-fault-declaration-03\\snapshots\\preseed-area-assignments.csv","entryCount":3,"version":1,"contentSha256":"4291a509c2c0b75ea4bde0ac4dcde04b6e8632b54a21a67eee2772a6f8d0ff8e","snapshotId":"072c687462cb4350b930e53bdaeaf391","importedAt":"2026-10-10T00:46:19.7733877+08:00","errorCount":0,"errors":[],"preview":[]}}}
+{"at":"2026-10-09T16:46:21.3766565+00:00","note":"FieldOps: import-charging-policy --database C:\\actions-runner\\win11-01-control-server\\_work\\_temp\\l2-37953826544-1\\_stage\\l2-20261009T164604590Z-slot1\\controlserver.db --input C:\\actions-runner\\win11-01-control-server\\_work\\_temp\\l2-37953826544-1\\slot-fault-declaration-03\\snapshots\\preseed-charging-policy.json --fleet BROKERX-L2-0001"}
+{"at":"2026-10-09T16:46:23.1446858+00:00","note":"FieldOps: approve-charging-policy --database C:\\actions-runner\\win11-01-control-server\\_work\\_temp\\l2-37953826544-1\\_stage\\l2-20261009T164604590Z-slot1\\controlserver.db --version 1 --approved-by L2 orchestrator --role L2_PRESET --basis scripts/l2/L2ChargingPolicy.psm1 --source L2_PRESET"}
+{"at":"2026-10-09T16:46:24.8073637+00:00","note":"FieldOps: activate-charging-policy --database C:\\actions-runner\\win11-01-control-server\\_work\\_temp\\l2-37953826544-1\\_stage\\l2-20261009T164604590Z-slot1\\controlserver.db --version 1 --activated-by L2 orchestrator --fleet BROKERX-L2-0001 --allow-non-field-approval"}
+{"at":"2026-10-09T16:46:26.5744882+00:00","criterion":"preseed:charging-policy","value":"OK","detail":{"coveredAfter":["BROKERX-L2-0001"],"version":1,"source":"L2_PRESET","withoutPolicy":[]}}
+{"at":"2026-10-09T16:46:26.5758159+00:00","note":"Per-zone dispatch parameters left unconfigured (the default precondition)."}
+{"at":"2026-10-09T16:46:26.5914050+00:00","note":"Environment is up; entering scenario 'slot-fault-declaration'."}
+{"at":"2026-10-09T16:46:26.6925353+00:00","note":"Publishing demand 9272cff767f44f5094aeb8f5619a33a9 (sublot L2-SFD-20261009T164604590Z)."}
+{"at":"2026-10-09T16:46:26.7534462+00:00","criterion":"journey-stage","value":"(null)"}
+{"at":"2026-10-09T16:46:28.0220208+00:00","criterion":"journey-stage","value":"AwaitingPickupArrival"}
+{"at":"2026-10-09T16:46:28.0318615+00:00","criterion":"to-pickup-intent","value":"(null)"}
+{"at":"2026-10-09T16:46:28.3097671+00:00","criterion":"to-pickup-intent","value":"@{UpperId=W2G-9272cff7-67f4-4f50-94ae-b8f5619a33a9-PICKUP-1; OrderId=ORDER-000001; Status=CONFIRMED}"}
+{"at":"2026-10-09T16:46:28.3205083+00:00","note":"Vehicle departs for the pickup station."}
+{"at":"2026-10-09T16:46:28.3933206+00:00","note":"Vehicle arrives at the pickup station and comes to rest."}
+{"at":"2026-10-09T16:46:28.9329978+00:00","criterion":"journey-stage","value":"AwaitingSublot"}
+{"at":"2026-10-09T16:46:29.4554135+00:00","criterion":"journey-stage","value":"AwaitingLoadResult"}
+{"at":"2026-10-09T16:46:29.4856646+00:00","criterion":"pending-load","value":"operation:30bfaaf3-efdb-4051-950e-92dd1d2c0eba"}
+{"at":"2026-10-09T16:46:29.5192936+00:00","note":"Vehicle reports slot 1 overdue: 放入货物并关好1号仓门"}
+{"at":"2026-10-09T16:46:29.5344723+00:00","criterion":"overdue-projected","value":"False"}
+{"at":"2026-10-09T16:46:29.8034041+00:00","criterion":"overdue-projected","value":"True"}
+{"at":"2026-10-09T16:46:29.9873885+00:00","note":"Declaration of slot 1 (LIGHT_CURTAIN) -> 202: {\"declarationId\":\"e6daa572-881c-4b73-a6d3-d037f39c3de8\",\"agvId\":\"AGV-L2-001\",\"demandId\":\"9272cff7-67f4-4f50-94ae-b8f5619a33a9\",\"slotOperationAttemptId\":\"30bfaaf3-efdb-4051-950e-92dd1d2c0eba\",\"slotNo\":1,\"state\":\"PENDING\",\"sentToVehicle\":true}"}
+{"at":"2026-10-09T16:46:30.0038117+00:00","criterion":"declaration-not-applicable","value":"@{DeclarationId=e6daa572-881c-4b73-a6d3-d037f39c3de8; RequestId=f3e67808-0148-4e2e-a615-925bb334cfe6; RequestContentHash=1a7776a972130a42646d8fd5ba32989f7b7235836bf07ab6c2216bb3f5de777c; AgvId=AGV-L2-001; DemandId=9272cff7-67f4-4f50-94ae-b8f5619a33a9; SlotOperationAttemptId=30bfaaf3-efdb-4051-950e-92dd1d2c0eba; OperationType=LOAD; SlotNo=1; FaultCategory=LIGHT_CURTAIN; Note=光幕一直报有物，仓内实际为空; AdministratorId=L2-MAINTENANCE-383; AdministratorRole=MAINTENANCE_ADMINISTRATOR; DeclaredAt=2026-10-09 16:46:29.8912565+00:00; ReadingsJson={\"observedAt\":\"2026-10-09T16:46:15.1474646+00:00\",\"safetyStateVersion\":1,\"lockState\":\"LOCKED\",\"physicalState\":\"EMPTY\",\"unlockOutputState\":\"RESET\",\"changedSinceObserved\":false}; CommandMessageId=09d578da-ee3a-e651-91a7-e937dba12e5f; State=PENDING; ResultMessageId=; ResultOutcome=; ResultProblemJson=; ResultReceivedAt=}"}
+{"at":"2026-10-09T16:46:30.2553486+00:00","criterion":"declaration-not-applicable","value":"@{DeclarationId=e6daa572-881c-4b73-a6d3-d037f39c3de8; RequestId=f3e67808-0148-4e2e-a615-925bb334cfe6; RequestContentHash=1a7776a972130a42646d8fd5ba32989f7b7235836bf07ab6c2216bb3f5de777c; AgvId=AGV-L2-001; DemandId=9272cff7-67f4-4f50-94ae-b8f5619a33a9; SlotOperationAttemptId=30bfaaf3-efdb-4051-950e-92dd1d2c0eba; OperationType=LOAD; SlotNo=1; FaultCategory=LIGHT_CURTAIN; Note=光幕一直报有物，仓内实际为空; AdministratorId=L2-MAINTENANCE-383; AdministratorRole=MAINTENANCE_ADMINISTRATOR; DeclaredAt=2026-10-09 16:46:29.8912565+00:00; ReadingsJson={\"observedAt\":\"2026-10-09T16:46:15.1474646+00:00\",\"safetyStateVersion\":1,\"lockState\":\"LOCKED\",\"physicalState\":\"EMPTY\",\"unlockOutputState\":\"RESET\",\"changedSinceObserved\":false}; CommandMessageId=09d578da-ee3a-e651-91a7-e937dba12e5f; State=NOT_APPLICABLE; ResultMessageId=c31dc2f9-0850-448b-a675-b9709226be0d; ResultOutcome=NOT_APPLICABLE; ResultProblemJson={\"reasonCode\":\"ACTION_NOT_ALLOWED_IN_STATE\",\"fieldPath\":\"payload.slotOperationAttemptId\",\"displayMessage\":\"The declared slot is no longer waiting for the operator.\"}; ResultReceivedAt=2026-10-09 16:46:29.9862411+00:00}"}
+{"at":"2026-10-09T16:46:30.2954931+00:00","criterion":"runtime-iterations","value":"17"}
+{"at":"2026-10-09T16:46:31.0942884+00:00","criterion":"runtime-iterations","value":"18"}
+{"at":"2026-10-09T16:46:32.1270443+00:00","criterion":"runtime-iterations","value":"19"}
+{"at":"2026-10-09T16:46:33.1479253+00:00","criterion":"runtime-iterations","value":"20"}
+{"at":"2026-10-09T16:46:33.1604835+00:00","note":"The door is shut; the peer completes the load."}
+{"at":"2026-10-09T16:46:34.2299194+00:00","criterion":"journey-stage","value":"AwaitingStationDeparture"}
+{"at":"2026-10-09T16:47:05.3559963+00:00","criterion":"journey-stage","value":"AwaitingDepartureSafety"}
+{"at":"2026-10-09T16:47:05.6178264+00:00","criterion":"journey-stage","value":"AwaitingGateArrival"}
+{"at":"2026-10-09T16:47:05.6284689+00:00","note":"Vehicle departs for the gate."}
+{"at":"2026-10-09T16:47:05.6555576+00:00","note":"Vehicle arrives at the gate and comes to rest."}
+{"at":"2026-10-09T16:47:06.6920301+00:00","criterion":"journey-stage","value":"AwaitingUnloadResult"}
+{"at":"2026-10-09T16:47:06.6982652+00:00","criterion":"unload-prepared","value":"@{SlotOperationAttemptId=6011f70b-6cae-b951-8d50-859890716fbd; Status=Prepared; TargetSlotsJson=[1]}"}
+{"at":"2026-10-09T16:47:06.7328896+00:00","criterion":"pending-unload","value":"operation:6011f70b-6cae-b951-8d50-859890716fbd"}
+{"at":"2026-10-09T16:47:06.7457108+00:00","note":"Vehicle reports slot 1 overdue: 取出货物并关好1号仓门"}
+{"at":"2026-10-09T16:47:06.7475095+00:00","criterion":"overdue-projected","value":"False"}
+{"at":"2026-10-09T16:47:07.0200585+00:00","criterion":"overdue-projected","value":"True"}
+{"at":"2026-10-09T16:47:07.0812314+00:00","note":"Declaration of slot 1 (LOCK) -> 202: {\"declarationId\":\"ab0c0a6e-77c9-4ab2-af75-e58c05f2c913\",\"agvId\":\"AGV-L2-001\",\"demandId\":\"9272cff7-67f4-4f50-94ae-b8f5619a33a9\",\"slotOperationAttemptId\":\"6011f70b-6cae-b951-8d50-859890716fbd\",\"slotNo\":1,\"state\":\"PENDING\",\"sentToVehicle\":true}"}
+{"at":"2026-10-09T16:47:07.0912328+00:00","criterion":"journey-stage","value":"@{Stage=AwaitingUnloadResult; BlockReasonCode=}"}
+{"at":"2026-10-09T16:47:08.3689126+00:00","criterion":"journey-stage","value":"@{Stage=Blocked; BlockReasonCode=UNLOAD_RESULT_REQUIRES_RECOVERY}"}
+{"at":"2026-10-09T16:47:08.4017711+00:00","criterion":"declaration-applied","value":"@{DeclarationId=ab0c0a6e-77c9-4ab2-af75-e58c05f2c913; RequestId=b996ade9-8f14-4af4-9861-797f66f7aebc; RequestContentHash=1d1f29cd57a91b5d15161eacdfb472159ad1a5cba8c66cd684baabb007b385a4; AgvId=AGV-L2-001; DemandId=9272cff7-67f4-4f50-94ae-b8f5619a33a9; SlotOperationAttemptId=6011f70b-6cae-b951-8d50-859890716fbd; OperationType=UNLOAD; SlotNo=1; FaultCategory=LOCK; Note=锁舌卡死，门推不开; AdministratorId=L2-MAINTENANCE-383; AdministratorRole=MAINTENANCE_ADMINISTRATOR; DeclaredAt=2026-10-09 16:47:07.062733+00:00; ReadingsJson={\"observedAt\":\"2026-10-09T16:46:15.1474646+00:00\",\"safetyStateVersion\":1,\"lockState\":\"LOCKED\",\"physicalState\":\"EMPTY\",\"unlockOutputState\":\"RESET\",\"changedSinceObserved\":false}; CommandMessageId=2f6d6d75-2bf3-cf5c-848b-dfdb80427c49; State=APPLIED; ResultMessageId=d3a685c2-0bb3-4f7b-a319-24d846148087; ResultOutcome=APPLIED; ResultProblemJson=; ResultReceivedAt=2026-10-09 16:47:07.0818343+00:00}"}
+{"at":"2026-10-09T16:47:08.4706920+00:00","note":"Declaration of slot 1 (LOCK) -> 409: {\"type\":\"https://tools.ietf.org/html/rfc9110#section-15.5.10\",\"title\":\"Slot fault declaration refused\",\"status\":409,\"detail\":\"SLOT_FAULT_OPERATION_ALREADY_UNKNOWN\",\"agvId\":\"AGV-L2-001\",\"slotNo\":1,\"reasons\":[\"SLOT_FAULT_OPERATION_ALREADY_UNKNOWN\"]}"}
+{"at":"2026-10-09T16:47:08.4741293+00:00","note":"Scenario finished at Blocked; the recovery exit is the existing exception recovery session."}
+{"at":"2026-10-09T16:47:09.0462967+00:00","note":"L2 port block lock released."}

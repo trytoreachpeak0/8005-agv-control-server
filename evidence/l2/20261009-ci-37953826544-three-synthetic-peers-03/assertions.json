@@ -1,0 +1,106 @@
+{
+  "schemaVersion": 1,
+  "scenario": "three-synthetic-peers",
+  "runId": "20261009T164112147Z",
+  "outcome": "PASS",
+  "failureReason": "",
+  "identity": {
+    "vehicleKey": "BROKERX-L2-0001",
+    "batchId": "batch-2",
+    "rig": "SyntheticOnboard",
+    "stageRoot": "C:\\actions-runner\\win11-01-control-server\\_work\\_temp\\l2-37953826544-1\\_stage\\l2-20261009T164112147Z-slot3",
+    "agvId": "AGV-L2-001",
+    "protocolReleaseIdentity": {
+      "repository": "8005-agv-protocol",
+      "releaseVersion": "3.0.0",
+      "tag": "protocol-v3.0.0",
+      "commit": "3f091cb2eae7c58cec54a95dd9389c9180bc7b4c",
+      "protocolVersion": 4,
+      "profileId": "AGV_FULL_PRODUCT",
+      "manifestSha256": "d5e1a53f1fd61f105a890dc0267e1b0a9ac5ea49f713d2cf730b0f554df9db9e",
+      "schemaBundleSha256": "e435b2b14d9ccd60c89f07df909da7626fef056a6b8a2241087557fd7dc3df43",
+      "vectorsSha256": "be849f9749b004296ebd9e7bffa98faf2f8ffa90b63308ca3b210c68e7b8656e",
+      "approvalStatus": "APPROVED_RELEASE"
+    },
+    "controlServerCommit": "563242d071de6f243c59f11722b197d683fee2a4"
+  },
+  "assertions": [
+    {
+      "id": "L2-3P-01",
+      "description": "编排器按 setup 起了三个合成车载端",
+      "outcome": "PASS",
+      "expected": 3,
+      "actual": 3
+    },
+    {
+      "id": "L2-3P-02",
+      "description": "三个控制面各占一个端口",
+      "outcome": "PASS",
+      "expected": 3,
+      "actual": 3
+    },
+    {
+      "id": "L2-3P-03",
+      "description": "三个车载端各报各的 AgvId",
+      "outcome": "PASS",
+      "expected": "AGV-FAKE-001,AGV-FAKE-002,AGV-FAKE-003",
+      "actual": "AGV-FAKE-001,AGV-FAKE-002,AGV-FAKE-003"
+    },
+    {
+      "id": "L2-3P-04-AGV-FAKE-001",
+      "description": "AGV-FAKE-001 的控制面在线并报出自己的身份",
+      "outcome": "PASS",
+      "expected": "AGV-FAKE-001",
+      "actual": "AGV-FAKE-001"
+    },
+    {
+      "id": "L2-3P-04-AGV-FAKE-002",
+      "description": "AGV-FAKE-002 的控制面在线并报出自己的身份",
+      "outcome": "PASS",
+      "expected": "AGV-FAKE-002",
+      "actual": "AGV-FAKE-002"
+    },
+    {
+      "id": "L2-3P-04-AGV-FAKE-003",
+      "description": "AGV-FAKE-003 的控制面在线并报出自己的身份",
+      "outcome": "PASS",
+      "expected": "AGV-FAKE-003",
+      "actual": "AGV-FAKE-003"
+    },
+    {
+      "id": "L2-3P-05",
+      "description": "三个控制面报出三个互不相同的身份",
+      "outcome": "PASS",
+      "expected": 3,
+      "actual": 3
+    },
+    {
+      "id": "L2-3P-06",
+      "description": "服务端同时持有三台车的会话，一台一行",
+      "outcome": "PASS",
+      "expected": "AGV-FAKE-001,AGV-FAKE-002,AGV-FAKE-003",
+      "actual": "AGV-FAKE-001,AGV-FAKE-002,AGV-FAKE-003"
+    },
+    {
+      "id": "L2-3P-07-AGV-FAKE-001",
+      "description": "AGV-FAKE-001 的会话在服务端是 Ready",
+      "outcome": "PASS",
+      "expected": "Ready",
+      "actual": "Ready"
+    },
+    {
+      "id": "L2-3P-07-AGV-FAKE-002",
+      "description": "AGV-FAKE-002 的会话在服务端是 Ready",
+      "outcome": "PASS",
+      "expected": "Ready",
+      "actual": "Ready"
+    },
+    {
+      "id": "L2-3P-07-AGV-FAKE-003",
+      "description": "AGV-FAKE-003 的会话在服务端是 Ready",
+      "outcome": "PASS",
+      "expected": "Ready",
+      "actual": "Ready"
+    }
+  ]
+}

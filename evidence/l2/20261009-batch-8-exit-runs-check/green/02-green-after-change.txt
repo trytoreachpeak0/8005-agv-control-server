@@ -1,0 +1,13 @@
+waiting-journey-battery-watch                        Runs=3 DefaultRuns=- ok
+map-rename-holds-all-task-types                      Runs=3 DefaultRuns=- ok
+waiting-points-fewer-than-vehicles-refuses-start     Runs=3 DefaultRuns=- ok
+idle-return-two-vehicles-contend-one-waiting-point   Runs=3 DefaultRuns=- ok
+fixed-station-single-occupancy                       Runs=3 DefaultRuns=- ok
+slot-fault-declaration                               Runs=3 DefaultRuns=- ok
+waiting-point-exclusive-reserve-occupy-release       Runs=3 DefaultRuns=- ok
+real-onboard-slot-fault-declaration                  Runs=3 (real-rig) ok
+timeout-minutes (scenarios): workflow_dispatch 180, otherwise 120
+plain timeout-minutes values: 360
+expected batch-8: 7; batch-8 lines: 7; all synthetic scenarios: 80; real-rig scenarios: 23; synthetic scenario files: 81; unlisted files: 0
+PASS
+green exit=0

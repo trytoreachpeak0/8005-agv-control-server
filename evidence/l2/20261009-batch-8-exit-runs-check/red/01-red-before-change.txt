@@ -1,0 +1,20 @@
+waiting-journey-battery-watch                        Runs=1 DefaultRuns=- FAIL
+map-rename-holds-all-task-types                      Runs=1 DefaultRuns=- FAIL
+waiting-points-fewer-than-vehicles-refuses-start     Runs=1 DefaultRuns=- FAIL
+idle-return-two-vehicles-contend-one-waiting-point   Runs=1 DefaultRuns=- FAIL
+fixed-station-single-occupancy                       Runs=1 DefaultRuns=- FAIL
+slot-fault-declaration                               Runs=1 DefaultRuns=- FAIL
+waiting-point-exclusive-reserve-occupy-release       Runs=1 DefaultRuns=- FAIL
+real-onboard-slot-fault-declaration                  Runs=1 (real-rig) FAIL
+timeout-minutes (scenarios): workflow_dispatch 180, otherwise 120
+plain timeout-minutes values: 360
+expected batch-8: 7; batch-8 lines: 7; all synthetic scenarios: 80; real-rig scenarios: 23; synthetic scenario files: 81; unlisted files: 0
+FAIL: waiting-journey-battery-watch: Runs = 1, expected 3
+FAIL: map-rename-holds-all-task-types: Runs = 1, expected 3
+FAIL: waiting-points-fewer-than-vehicles-refuses-start: Runs = 1, expected 3
+FAIL: idle-return-two-vehicles-contend-one-waiting-point: Runs = 1, expected 3
+FAIL: fixed-station-single-occupancy: Runs = 1, expected 3
+FAIL: slot-fault-declaration: Runs = 1, expected 3
+FAIL: waiting-point-exclusive-reserve-occupy-release: Runs = 1, expected 3
+FAIL: real-rig real-onboard-slot-fault-declaration: Runs = 1, expected 3
+red exit=1

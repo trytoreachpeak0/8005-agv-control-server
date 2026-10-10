@@ -1,0 +1,43 @@
+{
+  "schemaVersion": 1,
+  "scenario": "charging-interruption-isolates",
+  "runId": "20261009T161308635Z",
+  "outcome": "PASS",
+  "failureReason": "",
+  "identity": {
+    "stageRoot": "C:\\actions-runner\\win11-01-control-server\\_work\\_temp\\l2-37953826544-1\\_stage\\l2-20261009T161308635Z-slot3",
+    "agvId": "AGV-L2-001",
+    "controlServerCommit": "563242d071de6f243c59f11722b197d683fee2a4",
+    "rig": "SyntheticOnboard",
+    "batchId": "batch-9",
+    "protocolReleaseIdentity": {
+      "repository": "8005-agv-protocol",
+      "releaseVersion": "3.0.0",
+      "tag": "protocol-v3.0.0",
+      "commit": "3f091cb2eae7c58cec54a95dd9389c9180bc7b4c",
+      "protocolVersion": 4,
+      "profileId": "AGV_FULL_PRODUCT",
+      "manifestSha256": "d5e1a53f1fd61f105a890dc0267e1b0a9ac5ea49f713d2cf730b0f554df9db9e",
+      "schemaBundleSha256": "e435b2b14d9ccd60c89f07df909da7626fef056a6b8a2241087557fd7dc3df43",
+      "vectorsSha256": "be849f9749b004296ebd9e7bffa98faf2f8ffa90b63308ca3b210c68e7b8656e",
+      "approvalStatus": "APPROVED_RELEASE"
+    },
+    "vehicleKey": "BROKERX-L2-0001"
+  },
+  "assertions": [
+    {
+      "id": "L2-CII-01",
+      "description": "充着电在 45% 停了（完成阈值 80 之前）：桩的分配暂停与车的充电资格暂停都写下（INTERRUPTION_CONFIRMED，根因 UNKNOWN），周期进清桩中、线上 UNABLE_TO_CHARGE，用途转 CLEARING_MAINTENANCE，211 仍是这一趟的占用",
+      "outcome": "PASS",
+      "expected": "INTERRUPTION_CONFIRMED UNKNOWN | INTERRUPTION_CONFIRMED | CLEARING UNABLE_TO_CHARGE | claim CLEARING_MAINTENANCE charging:BROKERX-L2-0001:20261009T161334456Z | OCCUPIED BROKERX-L2-0001 charging:BROKERX-L2-0001:20261009T161334456Z | journey AwaitingPickupArrival CHARGING_INTERRUPTION_CONFIRMED | charging seen True",
+      "actual": "INTERRUPTION_CONFIRMED UNKNOWN | INTERRUPTION_CONFIRMED | CLEARING UNABLE_TO_CHARGE | claim CLEARING_MAINTENANCE charging:BROKERX-L2-0001:20261009T161334456Z | OCCUPIED BROKERX-L2-0001 charging:BROKERX-L2-0001:20261009T161334456Z | journey AwaitingPickupArrival CHARGING_INTERRUPTION_CONFIRMED | charging seen True"
+    },
+    {
+      "id": "L2-CII-02",
+      "description": "形成之后另等十秒：RIoT 上一直只有那一张充电单（不在原桩重启、不换桩、不移动），命令审计里订单命令 0 条，211 一直是这一趟的占用，两侧各只有一条暂停",
+      "outcome": "PASS",
+      "expected": "W2G-CHARGE-BROKERX-L2-0001-20261009T161334456Z | 0 commands | OCCUPIED BROKERX-L2-0001 charging:BROKERX-L2-0001:20261009T161334456Z | INTERRUPTION_CONFIRMED UNKNOWN | INTERRUPTION_CONFIRMED",
+      "actual": "W2G-CHARGE-BROKERX-L2-0001-20261009T161334456Z | 0 commands | OCCUPIED BROKERX-L2-0001 charging:BROKERX-L2-0001:20261009T161334456Z | INTERRUPTION_CONFIRMED UNKNOWN | INTERRUPTION_CONFIRMED"
+    }
+  ]
+}

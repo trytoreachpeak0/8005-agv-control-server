@@ -1,0 +1,78 @@
+{
+  "protocol": {
+    "tag": "protocol-v3.0.0",
+    "releaseVersion": "3.0.0",
+    "profileId": "AGV_FULL_PRODUCT",
+    "protocolVersion": 4,
+    "approvalStatus": "APPROVED_RELEASE",
+    "manifestSha256": "d5e1a53f1fd61f105a890dc0267e1b0a9ac5ea49f713d2cf730b0f554df9db9e",
+    "schemaBundleSha256": "e435b2b14d9ccd60c89f07df909da7626fef056a6b8a2241087557fd7dc3df43",
+    "vendoredSchemaFiles": 71
+  },
+  "validator": "Corvus.Json.Validator 4.6.7",
+  "linesObserved": 185,
+  "testAuthoredLinesSkipped": 0,
+  "linesChecked": 185,
+  "distinctLinesChecked": 185,
+  "linesInViolation": 0,
+  "linesInKnownViolation": 0,
+  "knownViolationsMatched": 0,
+  "knownViolationEntriesNotMatched": [],
+  "schemaCompilationMilliseconds": 55753,
+  "validationMilliseconds": 1240,
+  "schemaCompilationProcesses": 4,
+  "serverMessageTypesNotObserved": [
+    "CapabilitySnapshotRequested",
+    "CurrentStopWorklistSnapshot",
+    "DemandSelectionResult",
+    "ExceptionRecoverySessionOpened",
+    "ExceptionRecoverySessionRejected",
+    "ExceptionRecoverySessionSnapshot",
+    "FaultCargoRecoveryCommand",
+    "ForcedMechanicalRecoveryCommand",
+    "HardwareRecoveryRecordResult",
+    "LoadCancellationAuthorization",
+    "LoadCompensationCommand",
+    "LoadCompensationRejected",
+    "LoadCorrectionCommand",
+    "LoadCorrectionRejected",
+    "ManualChargingReturnToServiceResult",
+    "ManualStationClearanceConfirmationResult",
+    "PreDepartureSafetyCheck",
+    "RecoveryActionAccepted",
+    "RecoveryActionRejected",
+    "SessionRejected",
+    "SlotConfigurationActivationCommand",
+    "SlotFaultDeclarationCommand",
+    "SlotOperationCommand",
+    "SlotOperationResumeCommand",
+    "SublotEntryRequested",
+    "SublotRejected",
+    "UnableToChargeFieldConfirmationResult",
+    "UpcomingStopPlanSnapshot",
+    "VehicleBusinessStateSnapshot"
+  ],
+  "byMessageType": {
+    "DurableAck": {
+      "product": 29
+    },
+    "HeartbeatAck": {
+      "product": 1
+    },
+    "ProtocolProblem": {
+      "product": 2
+    },
+    "SafetyStateSnapshotRequested": {
+      "product": 15
+    },
+    "SessionAccepted": {
+      "product": 26
+    },
+    "SessionReadiness": {
+      "product": 38
+    },
+    "SnapshotAppliedAck": {
+      "product": 74
+    }
+  }
+}
