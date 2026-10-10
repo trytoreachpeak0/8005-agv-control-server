@@ -4,7 +4,7 @@ control-server#393（批次8-23）。本报告逐项对照规格 `8005-agv-progr
 需求条目按基线 **`v1.9.0`** 引用（开工时的现行版本；票面写的 `v1.6.0` 之后又批了 `CP-0008`、`CP-0009`、`CP-0010`）。门禁与证据全部绑定 `protocol-v3.0.0`。
 
 > **状态：出口达成，待调度审查。整轮先红后绿，红的是前三轮 G3 与第一轮真装置的一个场景。**
-> - G3 一共跑了四轮。前三轮都红，红的全部是 G3 场景脚本或 runner 判据：要么没跟上已合入的有意改动，要么在出口前从没真跑过，要么把界面读写夹具的一次差错当成了产品结果。**三轮里没有一处是产品行为出错**（第四节）。修脚本的三张票 control-server#541、#555、#560 都只改 `scripts/`，作为出口冻结例外合入。第四轮（绑定 `76c9cfe2`）四个 runner 全 PASS，15 个切片全部 `formalSlicePass true`。
+> - G3 一共跑了四轮。前三轮都红，红的全部是 G3 场景脚本或 runner 判据：要么没跟上已合入的有意改动，要么在出口前从没真跑过，要么把界面读写夹具的一次差错当成了产品结果。**三轮里没有找到产品行为出错的证据；第三轮多停靠那一处的真因未定**（第四节）。修脚本的三张票 control-server#541、#555、#560 作为出口冻结例外合入：cs#541 改 `scripts/`、`evidence/` 与 `.github/workflows/test.yml` 的两个自检步骤（13 行），#555、#560 只改 `scripts/` 与 `evidence/`。第四轮（绑定 `76c9cfe2`）四个 runner 全 PASS，15 个切片全部 `formalSlicePass true`。
 > - 第一轮真装置 31 次中 30 次 PASS，红的是 `real-onboard-restart-with-open-recovery-session`，形状与还开着的 control-server#307 一致。vm01 空闲时单独连跑三遍，全部 PASS（第二节）。
 > - 全部红证据保留。红轮次里 PASS 场景的证据按调度定的方案精简入库，完整原件的去处见「证据精简」一节。
 
@@ -24,7 +24,7 @@ control-server#393（批次8-23）。本报告逐项对照规格 `8005-agv-progr
 | `l2.yml` 批次 8 各行 `Runs = 3`（改前红、改后绿）；CI `consecutive-all` 全部 PASS，证据逐份核对 | 成立：run `37953826544`，80 × 3 = 240 次全 PASS，逐份核对 | 第二节 |
 | 第 8.3 节批次 8 行两条 L2 判据与第 19.5 节第 8 条两个急停场景各有证据目录 | 成立 | 第二节对照表 |
 | program 仓规格措辞 PR 已合入（以补记写） | **未合入**：program PR #167 写好待合 | 第五节第 18 点 |
-| 出口冻结期间没有合入其它 PR；证据小 PR 的合入时点 | 冻结自 2026-10-09 23:06 起。例外只有调度裁定的三张脚本票 control-server#541、#555、#560（都只改 `scripts/`）；车载端证据小 PR onboard-hmi#288 在 G3 全部跑完后合入（`ca89ef8f`，只加 `evidence/`） | 「身份」 |
+| 出口冻结期间没有合入其它 PR；证据小 PR 的合入时点 | 冻结自 2026-10-09 23:06 起。例外只有调度裁定的三张脚本票 control-server#541、#555、#560（改 `scripts/`、`evidence/`，另有 cs#541 在 `test.yml` 加的两个自检步骤）；车载端证据小 PR onboard-hmi#288 在 G3 全部跑完后合入（`ca89ef8f`，只加 `evidence/`） | 「身份」 |
 | 每次门禁新目录；红证据保留，`docs/defects/` 有记录 | 成立：四份缺陷单 | 第四节 |
 | 「必须如实写明」各点，无第 8.8 节禁止的表述 | 已写 | 第五节 |
 | 未切换 `C:\Users\szy\Desktop\8005-workspace\repos\` 下任何克隆 | 成立：全部操作在 `8005-workspace-v2`，`repos/` 下的克隆没有切换分支 | — |
@@ -55,12 +55,12 @@ control-server#393（批次8-23）。本报告逐项对照规格 `8005-agv-progr
 | 身份逐项核对 | 协议仓 `manifest/release.json`（`C:/w2g/p3`，检出在 tag 上）、服务端 `vendor/8005-agv-protocol/manifest/release.json`、车载端同名文件三者 SHA-256 都是 `d5e1a53f…`；身份常量服务端 `ProtocolCandidateIdentity.cs:59-65`（`3.0.0`／`protocol-v3.0.0`／`APPROVED_RELEASE`）、车载端 `WireToGateProtocol.cs`；两端 G2 的 `gate-result.json` 的 `protocolTag`、`protocolRepositoryCommit`、`protocolManifestSha256`、`protocolApprovalStatus` 与之相等 |
 | 发布身份 PR | 服务端 PR #538 → `batch-p3/v3`，合并提交 `4477ec08`（`448ab5bf` 改 `ApprovalStatus` 与 `appsettings.json`）；车载端 onboard-hmi PR #284 → `w2g/batch-p3/v3`，合并提交 `33f26018`（`WireToGateProtocol.cs`、`run-w2g-g2.ps1` 的期望值） |
 | 合回 | 服务端 PR #540 → `fp/v2-impl@5f3adc42`；车载端 onboard-hmi PR #286 → `w2g/fp-v2-impl@b9e67a53`。两个合并提交的树分别与各自批次分支相同（`rev-parse ^{tree}` 实读） |
-| 服务端产品 | `fp/v2-impl@5f3adc42`。出口分支相对它 `git diff 5f3adc42 <出口提交> -- src tests tools` 为 0 行（第三节附原文） |
+| 服务端产品 | `fp/v2-impl@5f3adc42`。出口分支相对它 `git diff --stat 5f3adc42 55f2c762 -- src tests tools` 输出为空（第一节附原文） |
 | 车载端 | `w2g/fp-v2-impl@b9e67a53`；证据小 PR onboard-hmi#288（head `e615ef73`）在 G3 全部跑完后合入，合并提交 `ca89ef8f`，分支顶端前移到它。`git diff --stat b9e67a53 ca89ef8f -- . :!evidence` 输出为空，210 个文件全部在 `evidence/` 下（调度与出口会话各自核过）。G3、真装置、车载端 G2 与部署包用的都是 `b9e67a53` |
 | 模拟器 | `main@fb5f7c59`（不变） |
 | G3 共享绑定 | 移了四次，见第三节「G3 四轮」。出口绑定是 `490faa02`：`ControlServerCommit 76c9cfe2`、`OnboardCommit b9e67a53`、`SimulatorCommit fb5f7c59`、`ProtocolCommit 3f091cb2` |
 | `76c9cfe2` 与集成分支 | `76c9cfe2` 是 cs#560（PR #561）的分支头。调度要求不等合并就开第四轮，所以绑的是它；PR #561 合入后的 `fp/v2-impl@52056c48` 与它的树相同（都是 `7127ddcdd0bca4d26c62bc363704214e9884e3f0`），`git diff --stat 76c9cfe2 52056c48` 输出为空。出口分支随后 merge 了 `52056c48`（`6d56e906`），这次 merge 不改任何文件 |
-| 冻结 | 2026-10-09 23:06 起冻结 `fp/v2-impl` 与 `w2g/fp-v2-impl`。期间合入的只有调度裁定的三张脚本票：control-server#541（PR #542，`3411887d`）、#555（PR #557，`1f63fe0b`）、#560（PR #561，`52056c48`），三张都只改 `scripts/` 与 `evidence/`；车载端证据小 PR onboard-hmi#288 在 G3 全部跑完后合入（`ca89ef8f`，只加 `evidence/`） |
+| 冻结 | 2026-10-09 23:06 起冻结 `fp/v2-impl` 与 `w2g/fp-v2-impl`。期间合入的只有调度裁定的三张脚本票：control-server#541（PR #542，`3411887d`）、#555（PR #557，`1f63fe0b`）、#560（PR #561，`52056c48`），三张改的是 `scripts/` 与 `evidence/`，另有 cs#541 在 `.github/workflows/test.yml` 加的两个自检步骤（13 行）；车载端证据小 PR onboard-hmi#288 在 G3 全部跑完后合入（`ca89ef8f`，只加 `evidence/`） |
 
 ## 一、L1
 
@@ -73,7 +73,16 @@ control-server#393（批次8-23）。本报告逐项对照规格 `8005-agv-progr
 | 服务端（合回之前） | 改身份 PR #538 的 CI，run `37932707562`（test）、`37932707567`（l2 默认一轮） | 都是 success |
 | 服务端（cs#560） | PR #561 的 CI，run `38028129759`（test）、`38028129756`（l2） | 都是 success |
 
-出口分支相对 `5f3adc42` 在 `src/`、`tests/`、`tools/` 下没有一处差异。改了的只有 G3 绑定与 runner、G3 场景脚本、`l2.yml` 的 `Runs`、CI 里新增的几个脚本自检、证据与文档（第三节附 `git diff --stat` 原文）。
+出口分支相对 `5f3adc42` 在 `src/`、`tests/`、`tools/` 下没有一处差异。改了的只有 G3 绑定与 runner、G3 场景脚本、`l2.yml` 的 `Runs`、`test.yml` 里 cs#541 新增的两个脚本自检步骤、证据与文档。出处（出口 PR 的 head `55f2c762`）：
+
+```
+$ git diff --stat 5f3adc42 55f2c762 -- src tests tools
+（输出为空）
+$ git diff --stat 5f3adc42 55f2c762 -- .github
+ .github/workflows/l2.yml   | 16 ++++++++--------
+ .github/workflows/test.yml | 13 +++++++++++++
+ 2 files changed, 21 insertions(+), 8 deletions(-)
+```
 
 ### 批次 8 与 v3 每项新能力 ↔ 新增测试
 
@@ -157,10 +166,10 @@ control-server#393（批次8-23）。本报告逐项对照规格 `8005-agv-progr
 | --- | --- | --- | --- |
 | [`37953803085`](https://github.com/trytoreachpeak0/8005-agv-control-server/actions/runs/37953803085) | `563242d0`／`b9e67a53`／`fb5f7c59` | `mode=consecutive`、`batch_id=batch-8`，清单 23 个场景按登记次数共 31 次 | **30/31**。`real-onboard-slot-fault-declaration` 3/3；`durable-ack-lost`、`expected-action-overdue`、`charging-cycle` 各 3/3；其余 19 个各 1/1。**红一个**：`real-onboard-restart-with-open-recovery-session` |
 | [`37963800400`](https://github.com/trytoreachpeak0/8005-agv-control-server/actions/runs/37963800400) | 同上 | 只跑那一个红场景，`consecutive-all` | **3/3 PASS**。开跑前确认五个仓都没有在跑或排队的作业 |
-| [`38032912362`](https://github.com/trytoreachpeak0/8005-agv-control-server/actions/runs/38032912362) | `6d56e906`／`b9e67a53`／`fb5f7c59` | 出口期间录入路径改过的两个场景，`consecutive-all`，各 3 遍（下文「脚本变化」） | **6/6 PASS**：`real-onboard-charging-cycle` 3/3、`real-onboard-mixed-side-one-stop` 3/3。新的录入路径确实走到了：每次录入都有「提交前读回」记录（charging-cycle 每遍 2 条，mixed-side 每遍 6 条），没有一次重输，也没有 `PRODUCT_REFUSED` 或 `RIG_FIXTURE`（`timeline.jsonl` 实读）。vm01 已提交内存最高 9.34 GiB，上限 16 GiB |
+| [`38032912362`](https://github.com/trytoreachpeak0/8005-agv-control-server/actions/runs/38032912362) | `6d56e906`／`b9e67a53`／`fb5f7c59` | 出口期间录入路径改过的两个场景，`consecutive-all`，各 3 遍（下文「脚本变化」） | **6/6 PASS**：`real-onboard-charging-cycle` 3/3、`real-onboard-mixed-side-one-stop` 3/3。新的录入路径确实走到了：每次录入都有读回记录。charging-cycle 每遍录入 1 次，「提交前读回」1 条、「输入后读回」1 条；mixed-side 每遍录入 3 次，两种读回各 3 条。没有一次重输，也没有 `PRODUCT_REFUSED` 或 `RIG_FIXTURE`（`timeline.jsonl` 实读）。vm01 已提交内存最高 9.34 GiB，上限 16 GiB |
 
-- **那一红的现象**：车载端重启后第一次按「补偿清空」被拒，再按一次才完成。车载端日志 `SafetyStateChanged发送失败，正在断开会话 | TimeoutException`，服务端同一秒记了 `SocketException (10053)`。
-- **归属**：形状与还开着的 **control-server#307** 一致，即服务端单条连接的处理循环停顿超过 2.5 秒，车载端等不到应答，超时后自己断开。
+- **那一红的现象**：车载端重启后第一次按「补偿清空」被拒，再按一次才完成。车载端 00:13:29.69 记 `SafetyStateChanged发送失败，正在断开会话 | TimeoutException`；服务端日志在 00:13:30 记 `Onboard connection ended with a protocol or transport error`，带 `SocketException (10053)`。两边相差不到半秒，但不在同一秒。
+- **归属**：形状与还开着的 **control-server#307** 一致，即服务端单条连接的处理循环停顿超过 2.5 秒，车载端等不到应答，超时后自己断开。同一证据目录里的代理快照 `snapshots/protocol-fault-proxy.json` 坐实了这一点：`SafetyStateChanged` 在 00:13:27.185 已经过了代理；服务端在 27.914、28.615 依次应答了它前面的两条消息；对它的处理到 00:13:30 才在服务端日志里出现（`logs/control-server.out.log:13122`）。第 3 条连接上没有丢包（这一轮唯一的丢包是第 2 条连接上的计划注入），所以不是代理造成的。
 - **不是内存压力**：那段时间 vm01 已提交内存 6.4～7.6 GiB，上限 16 GiB。
 - **结论**：vm01 空闲时三连都绿，只说明那三遍没撞上停顿，证不了 cs#307 不存在。缺陷单 `docs/defects/20261009-real-rig-restart-recovery-first-press-cs307-shape.md`；cs#307 列入剩余风险。
 - **逐份核对**：`evidence/cs393/ci-evidence-identity/rig-37953803085.txt`、`rig-rerun-37963800400.txt`、`rig-38032912362.txt`。40 份 `assertions.json` 的三端提交、`batchId batch-8`、`protocol-v3.0.0`／`APPROVED_RELEASE` 都对，唯一的偏差就是那份 `outcome FAIL`。
@@ -170,7 +179,7 @@ control-server#393（批次8-23）。本报告逐项对照规格 `8005-agv-progr
 
 - 车载端、模拟器都没有变（G3 绑定与 CI 输入都是 `b9e67a53`、`fb5f7c59`）。
 - 服务端 `git diff 563242d0 6d56e906 -- src tests tools` 为空，产品没变。
-- 但 cs#541、#555、#560 改了四个公共脚本，真装置清单里有场景引用它们（`grep` 实读）：
+- 但 cs#541、#555、#560 改了几个公共脚本，真装置清单里有场景引用其中四个（`grep` 实读）。另一个 `g3-slice-evidence.ps1` 只改了注释，不影响结论：
   - `G3RecoveryCommon.ps1`（6 个 real-onboard 场景点号引入）、`L2ExpectedActionOverdue.psm1`（`real-onboard-expected-action-overdue`、`real-onboard-slot-fault-declaration`）、`L2MultiStopJourney.psm1`（另含 `real-onboard-stale-stop-after-station-timeout`）：这三个**只新增了函数**，原有函数一行没改，也没有任何 real-onboard 场景调用新函数。这些场景的结论沿用。
   - `MultiStopRigCommon.ps1` 的 `Invoke-L2RigLoad` **改了行为**（cs#560：提交前读回框内文本、看车载端拒收）。调用它的 `real-onboard-charging-cycle`、`real-onboard-mixed-side-one-stop` 在前一轮跑的是旧版录入路径，所以在出口分支 `6d56e906` 上补跑（run `38032912362`，调度裁定），6/6 PASS。`6d56e906` 到出口提交之间只加 `evidence/` 与 `docs/`，`scripts/` 与 `src/` 不变（出口 PR 正文附 `git diff --stat`）。
 
@@ -250,7 +259,8 @@ control-server#393（批次8-23）。本报告逐项对照规格 `8005-agv-progr
 在出口最终提交的干净 detached worktree 上运行 `New-WireToGateReleaseCandidate.ps1`，车载端用 **`b9e67a53`**，只打包不部署。
 
 - **为什么车载端是 `b9e67a53`，不是 onboard-hmi#288 合入后的顶端**：G3、真装置和车载端 G2 都绑在 `b9e67a53` 上；onboard-hmi#288 合入后的顶端 `ca89ef8f` 相对 `b9e67a53` 只加 `evidence/`，车载端产品不变。用合入后的顶端打包，包里的车载端提交就和全部门禁证据对不上了。
-- 打包在本报告所在提交之后进行。打包产物的 `release-manifest.json`、`SHA256SUMS.txt` 与构建日志作为只含证据的追加提交放进 `evidence/rc/20261010-batch-8-exit-final/`；manifest 的 SHA-256 与打包所用的提交见那个目录，也写在出口 PR 正文与票面评论里。
+- 打包在出口最终提交 `86045ccf` 的干净 detached worktree 上进行，退出码 0。产物清单作为只含证据的追加提交 `55f2c762` 放进 `evidence/rc/20261010-batch-8-exit-final/`（出口 PR #562 的 head）。
+- `release-manifest.json` SHA-256 `dab6d974c6e4c291a2cd1951fb7fd24c5522f5a6ff79d102c2895140bb47e412`，`SHA256SUMS.txt` SHA-256 `21fc6b719d52f26d389643e11bcd789bdb15a688e683292c48a3843aca04d206`，都是包里原始字节（CRLF）的哈希；入库副本换行统一为 LF，哈希不同，两组都写在那个目录的 `SUMMARY.md`。包内 1345 个文件逐个校验 OK；密钥扫描 0；扫描门禁 PASS（白名单内许可未定：`riot.sdk.core`／`facade`／`generated`）。
 - **过程记录**：出口早期在 `563242d0` 上打过一次（退出码 0），之前两次失败（工作树不干净、C 盘写满）。三次的日志在 `evidence/rc/20261009-batch-8-exit-563242d0-process-record/`，只作过程记录，不是出口的包。
 
 ## 四、红证据与缺陷单

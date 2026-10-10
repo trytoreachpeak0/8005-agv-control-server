@@ -6,7 +6,7 @@ Found by: [`evidence/g3/20261010-protocol-v3.0.0-staged-5f3adc42/`](../../eviden
 
 批次 8 与 v3 合并出口的第一轮 G3 里，`run-staged-g3.ps1` 判 `STAGED_SLICE_FAIL`。这一轮的绑定是 ControlServer `5f3adc42`、Onboard `b9e67a53`、Simulator `fb5f7c59`、Protocol `3f091cb2`，`runnerSource COMMITTED_RUNNER`。
 
-- `FP-IS-00`、`FP-IS-14`：PASS。
+- `FP-IS-00`、`FP-IS-14`、`FP-IS-15`：PASS。
 - `FP-IS-06`、`FP-IS-07`：FAIL。红在下面四条判据，其余判据全部 PASS。
 
 | 切片 | 判据 | 红的那一格 |

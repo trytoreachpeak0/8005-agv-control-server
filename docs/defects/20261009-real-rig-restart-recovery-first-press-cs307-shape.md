@@ -20,12 +20,21 @@ Found by: CI run [`37953803085`](https://github.com/trytoreachpeak0/8005-agv-con
   ```
 
   也就是这一次补偿因为连接已关闭而没有执行。
-- 服务端同一秒记录 `Onboard connection ended with a protocol or transport error`，并带 `SocketException (10053)`，即对端中止了连接。
+- 服务端在 00:13:30 记录 `Onboard connection ended with a protocol or transport error`，并带 `SocketException (10053)`，即对端中止了连接。和车载端那条相差不到半秒，但不在同一秒。
 - 重连之后再按一次，补偿走完，工作流收敛。
 
 ## 归属
 
 形状与还开着的 control-server#307 一致：服务端单条连接的处理循环停顿超过 2.5 秒，车载端等应答超时后自己断开（读到的，cs#307 标题；两边日志能对上）。这不是本批引入的，本批没有改这条循环。
+
+更硬的依据在同一证据目录的代理快照 `snapshots/protocol-fault-proxy.json` 里（读到的）：
+
+- `SafetyStateChanged`（`e2fa842a…`）在 00:13:27.185 已经经过代理，走的是第 3 条连接。
+- 服务端在 00:13:27.914 应答了它前面那条 `OperationResult`（`DurableAck`），在 00:13:28.615 应答了 `OnboardAlarmSnapshot`（`SnapshotAppliedAck`），依次处理。
+- 对 `SafetyStateChanged` 的处理到 00:13:30 才在服务端日志里出现（`logs/control-server.out.log:13122`，「after the answer to SafetyStateChanged e2fa842a…」）。车载端 00:13:29.69 已经超时断开，第 3 条连接在 00:13:29.694 由车载端关闭。
+- 第 3 条连接上没有丢包。这一轮唯一的一次丢包在第 2 条连接上，是场景计划注入的。
+
+所以同一条连接上，这一条消息的处理用了超过 2.5 秒：停顿在服务端，不在代理。
 
 ## 是不是负载造成的
 
