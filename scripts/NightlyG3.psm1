@@ -76,7 +76,52 @@ function Format-NightlyG3Comment {
         [string]$StoppedBy,
         [string]$Note
     )
-    return $null
+
+    # One comment a night on control-server#581, in Chinese because a person reads it. Its absence means the night did
+    # not run, so even an all-green night writes one, and a night that never started writes why.
+    function ConvertTo-Cell([string]$Text) { return (($Text -replace '\s+', ' ').Trim() -replace '\|', '\|') }
+
+    $night = $StartedAtUtc.ToOffset([TimeSpan]::FromHours(8)).ToString('yyyy-MM-dd')
+    $red = @($Verdicts | Where-Object { $_.result -in 'FAIL', 'ERROR' })
+    $notStarted = @($Verdicts | Where-Object { "$($_.result)" -like 'NOT_STARTED_*' })
+    $headline = if ($red.Count -gt 0) {
+        "红：$(($red | ForEach-Object runner) -join '、')$(if ($StoppedBy) { "；未跑完：$StoppedBy" })"
+    } elseif ($Verdicts.Count -eq 0) {
+        "未跑：$(if ($StoppedBy) { $StoppedBy } else { '没有任何 runner 的结论' })"
+    } elseif ($StoppedBy -or $notStarted.Count -gt 0) {
+        "未跑完：$(if ($StoppedBy) { $StoppedBy } else { ($notStarted | ForEach-Object result | Select-Object -Unique) -join '、' })"
+    } else { '全绿' }
+
+    $lines = [System.Collections.Generic.List[string]]::new()
+    $lines.Add("**每晚 G3 · $night · $headline**")
+    $lines.Add('')
+    $meta = @("$(if ($Trigger -eq 'schedule') { '定时触发' } else { '手动触发' })", "[run]($RunUrl)", "ref ``$Ref``")
+    foreach ($pair in @(@('controlServer', 'control-server', ''), @('onboardHmi', 'onboard-hmi', '（顶端）'),
+            @('slotsSimulator', 'slots-simulator', '（写死的绑定）'), @('protocol', 'protocol', '（写死的绑定）'))) {
+        if ($Commits.Contains($pair[0]) -and -not [string]::IsNullOrEmpty("$($Commits[$pair[0]])")) {
+            $commit = "$($Commits[$pair[0]])"
+            $meta += "$($pair[1]) ``$($commit.Substring(0, [Math]::Min(8, $commit.Length)))``$($pair[2])"
+        }
+    }
+    $lines.Add($meta -join ' · ')
+    if ($Note) { $lines.Add(''); $lines.Add((ConvertTo-Cell $Note)) }
+
+    if ($headline -ne '全绿' -and $Verdicts.Count -gt 0) {
+        $lines.Add('')
+        $lines.Add('| runner | 结论 | 红在哪条 |')
+        $lines.Add('| --- | --- | --- |')
+        foreach ($verdict in $Verdicts) {
+            $failed = @($verdict.failed)
+            $cell = @($failed | Select-Object -First 10 | ForEach-Object { "``$(ConvertTo-Cell $_)``" }) -join '；'
+            if ($failed.Count -gt 10) { $cell += "；另 $($failed.Count - 10) 条" }
+            if ($verdict.detail) { $cell = (@($cell, (ConvertTo-Cell $verdict.detail)) | Where-Object { $_ }) -join '；' }
+            $lines.Add("| $($verdict.runner) | $($verdict.result) | $cell |")
+        }
+    }
+
+    $lines.Add('')
+    $lines.Add('自检覆盖运行（`SELF_CHECK_OVERRIDE`，`formalSlicePass=false`），不是门禁证据。红了由当班调度第二天看。')
+    return ($lines -join "`n")
 }
 
 Export-ModuleMember -Function Get-NightlyG3Verdict, Format-NightlyG3Comment
