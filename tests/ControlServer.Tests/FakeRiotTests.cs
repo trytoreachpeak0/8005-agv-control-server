@@ -355,6 +355,11 @@ public sealed class FakeRiotTests
     /// listing over pages the way the plant's 250 orders did; read n is churned when <c>(n - 1) % period &lt; burst</c>, and a
     /// churned read reports a higher total on its later pages, which the gateway reads as incomplete. Disarmed, the listing
     /// is the scenario's own again.
+    /// <para>
+    /// The exact sequence is the point: the churn is a deterministic count, never a draw. The real-rig scenarios rely on a
+    /// churned read never being followed by another within one onboard request's rereads; a random churn would make their
+    /// post-fix green a matter of luck (control-server#573, the coordinator's condition).
+    /// </para>
     /// </summary>
     [Fact]
     public async Task TheNonFinalListingChurnPadsTheListingAndChurnsExactlyTheReadsItIsArmedFor()
