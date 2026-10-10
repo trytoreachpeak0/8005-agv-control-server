@@ -1,0 +1,43 @@
+{
+  "schemaVersion": 1,
+  "scenario": "same-direction-wire-to-optical-journey",
+  "runId": "20261010T105649178Z",
+  "outcome": "FAIL",
+  "failureReason": "L2-SDJ-WOP-REAR-01 did not hold: the WIRE_TO_OPTICAL demand (N1-3) was not accepted (backlog reason 'TASK_TYPE_NOT_YET_EXECUTABLE'); every later criterion needs its journey.",
+  "identity": {
+    "rig": "SyntheticOnboard",
+    "agvId": "AGV-L2-001",
+    "batchId": "batch-10",
+    "controlServerCommit": "8b780a24d92e7b141b1c0106a706da1171a13281",
+    "stageRoot": "C:\\Users\\szy\\AppData\\Local\\Temp\\l2-20261010T105649178Z",
+    "vehicleKey": "BROKERX-L2-0001",
+    "protocolReleaseIdentity": {
+      "repository": "8005-agv-protocol",
+      "releaseVersion": "3.0.0",
+      "tag": "protocol-v3.0.0",
+      "commit": "3f091cb2eae7c58cec54a95dd9389c9180bc7b4c",
+      "protocolVersion": 4,
+      "profileId": "AGV_FULL_PRODUCT",
+      "manifestSha256": "d5e1a53f1fd61f105a890dc0267e1b0a9ac5ea49f713d2cf730b0f554df9db9e",
+      "schemaBundleSha256": "e435b2b14d9ccd60c89f07df909da7626fef056a6b8a2241087557fd7dc3df43",
+      "vectorsSha256": "be849f9749b004296ebd9e7bffa98faf2f8ffa90b63308ca3b210c68e7b8656e",
+      "approvalStatus": "APPROVED_RELEASE"
+    }
+  },
+  "assertions": [
+    {
+      "id": "L2-SDJ-WOP-00",
+      "description": "前置：本类固定站 403「三光」在地图上、站名不是 AREA 格式；归属表 N1-3 → REAR、N1-7 → FRONT（同挂机台站 12）",
+      "outcome": "PASS",
+      "expected": "403=三光 / N1-3/REAR,N1-7/FRONT",
+      "actual": "403=三光 / N1-3/REAR,N1-7/FRONT"
+    },
+    {
+      "id": "L2-SDJ-WOP-REAR-01",
+      "description": "WIRE_TO_OPTICAL 需求（N1-3）被受理：旅程进入 AwaitingPickupArrival，受理行的任务类型是 WIRE_TO_OPTICAL",
+      "outcome": "FAIL",
+      "expected": "AwaitingPickupArrival / WIRE_TO_OPTICAL",
+      "actual": "(no journey) / (not accepted) / backlog reason TASK_TYPE_NOT_YET_EXECUTABLE"
+    }
+  ]
+}
