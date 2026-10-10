@@ -1,0 +1,66 @@
+{"at":"2026-10-10T14:42:36.9908375+00:00","note":"L2 run 20261010T144236952Z starting for scenario 'same-direction-wire-to-nitrogen-journey'."}
+{"at":"2026-10-10T14:42:37.0275976+00:00","note":"L2 port block lock acquired (slot 1, Global\\W2G-L2PortBlock-slot1)."}
+{"at":"2026-10-10T14:42:37.0452786+00:00","note":"Build skipped (-SkipBuild); running the output already built."}
+{"at":"2026-10-10T14:42:37.9140439+00:00","criterion":"fake-riot-live","value":"live"}
+{"at":"2026-10-10T14:42:38.1494826+00:00","criterion":"fake-mes-live","value":"live"}
+{"at":"2026-10-10T14:42:38.3307535+00:00","note":"Fake RIoT stations on map 25: 11=C15-13, 12=N1-3_N1-7, 210=关卡, 404=氮气柜"}
+{"at":"2026-10-10T14:42:38.3759019+00:00","note":"Task type station preset: the scenario's own (2 binding(s))"}
+{"at":"2026-10-10T14:42:43.8716774+00:00","note":"Package capacity rules imported."}
+{"at":"2026-10-10T14:42:43.8749404+00:00","note":"No waiting point registration: a single-vehicle rig, or WaitingPoints = $false."}
+{"at":"2026-10-10T14:42:45.9542025+00:00","criterion":"control-server-live","value":"(null)"}
+{"at":"2026-10-10T14:42:46.8801005+00:00","criterion":"control-server-live","value":"live"}
+{"at":"2026-10-10T14:42:46.9826572+00:00","note":"Protocol release identity: protocol-v3.0.0 (profileId AGV_FULL_PRODUCT, protocolVersion 4, APPROVED_RELEASE)."}
+{"at":"2026-10-10T14:42:47.6804756+00:00","criterion":"onboard-readiness","value":"DISCONNECTED"}
+{"at":"2026-10-10T14:42:47.9531399+00:00","criterion":"onboard-readiness","value":"READY"}
+{"at":"2026-10-10T14:42:48.0174238+00:00","criterion":"control-server-ready","value":"ready"}
+{"at":"2026-10-10T14:42:48.0949852+00:00","note":"FieldOps: seed-approved-facts --database C:\\actions-runner\\win11-01-control-server\\_work\\_temp\\l2-38060390711-1\\_stage\\l2-20261010T144236952Z-slot1\\controlserver.db"}
+{"at":"2026-10-10T14:42:49.9695620+00:00","criterion":"slot-model-preseed:seed-approved-facts","value":"OK","detail":{"output":{"command":"seed-approved-facts","outcome":"OK","modelKey":"8005-eight-slot","slotModelVersionId":"31aa7e4d954442f487c797c430b1c151","version":1,"slotCount":8}}}
+{"at":"2026-10-10T14:42:49.9788350+00:00","note":"FieldOps: bind-io --database C:\\actions-runner\\win11-01-control-server\\_work\\_temp\\l2-38060390711-1\\_stage\\l2-20261010T144236952Z-slot1\\controlserver.db --agv AGV-L2-001"}
+{"at":"2026-10-10T14:42:51.7756000+00:00","criterion":"slot-model-preseed:bind-io:AGV-L2-001","value":"OK","detail":{"output":{"command":"bind-io","outcome":"OK","agvId":"AGV-L2-001","slotModelVersionId":"31aa7e4d954442f487c797c430b1c151","boundSlots":8,"version":1}}}
+{"at":"2026-10-10T14:42:51.8743726+00:00","criterion":"slot-model-preseed:dispatch-zones","value":"0"}
+{"at":"2026-10-10T14:42:51.8788036+00:00","note":"FieldOps: import-area-assignments --database C:\\actions-runner\\win11-01-control-server\\_work\\_temp\\l2-38060390711-1\\_stage\\l2-20261010T144236952Z-slot1\\controlserver.db --input C:\\actions-runner\\win11-01-control-server\\_work\\_temp\\l2-38060390711-1\\same-direction-wire-to-nitrogen-journey-01\\snapshots\\preseed-area-assignments.csv"}
+{"at":"2026-10-10T14:42:53.7867822+00:00","criterion":"slot-model-preseed:import-area-assignments","value":"OK","detail":{"output":{"command":"import-area-assignments","outcome":"OK","dryRun":false,"input":"C:\\actions-runner\\win11-01-control-server\\_work\\_temp\\l2-38060390711-1\\same-direction-wire-to-nitrogen-journey-01\\snapshots\\preseed-area-assignments.csv","entryCount":2,"version":1,"contentSha256":"04efbe7b636d311420caf517f8af22cd0a39d4e17d2976caf9251637eecc0556","snapshotId":"0fb30aa8de384bab8fd50da1332250e9","importedAt":"2026-10-10T22:42:52.1227276+08:00","errorCount":0,"errors":[],"preview":[]}}}
+{"at":"2026-10-10T14:42:53.8069674+00:00","note":"FieldOps: import-charging-policy --database C:\\actions-runner\\win11-01-control-server\\_work\\_temp\\l2-38060390711-1\\_stage\\l2-20261010T144236952Z-slot1\\controlserver.db --input C:\\actions-runner\\win11-01-control-server\\_work\\_temp\\l2-38060390711-1\\same-direction-wire-to-nitrogen-journey-01\\snapshots\\preseed-charging-policy.json --fleet BROKERX-L2-0001"}
+{"at":"2026-10-10T14:42:55.6576758+00:00","note":"FieldOps: approve-charging-policy --database C:\\actions-runner\\win11-01-control-server\\_work\\_temp\\l2-38060390711-1\\_stage\\l2-20261010T144236952Z-slot1\\controlserver.db --version 1 --approved-by L2 orchestrator --role L2_PRESET --basis scripts/l2/L2ChargingPolicy.psm1 --source L2_PRESET"}
+{"at":"2026-10-10T14:42:57.3665064+00:00","note":"FieldOps: activate-charging-policy --database C:\\actions-runner\\win11-01-control-server\\_work\\_temp\\l2-38060390711-1\\_stage\\l2-20261010T144236952Z-slot1\\controlserver.db --version 1 --activated-by L2 orchestrator --fleet BROKERX-L2-0001 --allow-non-field-approval"}
+{"at":"2026-10-10T14:42:59.2736422+00:00","criterion":"preseed:charging-policy","value":"OK","detail":{"coveredAfter":["BROKERX-L2-0001"],"source":"L2_PRESET","withoutPolicy":[],"version":1}}
+{"at":"2026-10-10T14:42:59.2750662+00:00","note":"Per-zone dispatch parameters left unconfigured (the default precondition)."}
+{"at":"2026-10-10T14:42:59.2964208+00:00","note":"Environment is up; entering scenario 'same-direction-wire-to-nitrogen-journey'."}
+{"at":"2026-10-10T14:42:59.4634493+00:00","note":"FieldOps: area-assignments --database C:\\actions-runner\\win11-01-control-server\\_work\\_temp\\l2-38060390711-1\\_stage\\l2-20261010T144236952Z-slot1\\controlserver.db"}
+{"at":"2026-10-10T14:43:01.1590676+00:00","note":"Vehicle AGV-L2-001 slot model 31aa7e4d954442f487c797c430b1c151 via LatestPublishedIoBinding: 1=FRONT, 2=FRONT, 3=FRONT, 4=FRONT, 5=REAR, 6=REAR, 7=REAR, 8=REAR"}
+{"at":"2026-10-10T14:43:01.1708732+00:00","note":"Publishing WIRE_TO_NITROGEN demand b2ec3e32b7234c0b8912f22110e1e508 (sublot L2-SDJ-N1-3-20261010T144236952Z, AREA N1-3, 2 baskets)."}
+{"at":"2026-10-10T14:43:01.2223140+00:00","criterion":"L2-SDJ-WNI-REAR-admission","value":"@{Stage=; WorkType=; ReasonCode=}"}
+{"at":"2026-10-10T14:43:01.9836076+00:00","criterion":"L2-SDJ-WNI-REAR-admission","value":"@{Stage=; WorkType=; ReasonCode=ELIGIBLE}"}
+{"at":"2026-10-10T14:43:02.7403616+00:00","criterion":"L2-SDJ-WNI-REAR-admission","value":"@{Stage=AwaitingPickupArrival; WorkType=WIRE_TO_NITROGEN; ReasonCode=ACCEPTED}"}
+{"at":"2026-10-10T14:43:02.7646801+00:00","criterion":"to-pickup-intent","value":"@{UpperId=W2G-b2ec3e32-b723-4c0b-8912-f22110e1e508-PICKUP-1; OrderId=ORDER-000001; Status=CONFIRMED; DestinationStationId=12}"}
+{"at":"2026-10-10T14:43:02.8165777+00:00","note":"Vehicle drives to station 12 and comes to rest."}
+{"at":"2026-10-10T14:43:02.8776033+00:00","criterion":"journey-stage","value":"AwaitingPickupArrival"}
+{"at":"2026-10-10T14:43:03.6421753+00:00","criterion":"journey-stage","value":"AwaitingSublot"}
+{"at":"2026-10-10T14:43:04.1476901+00:00","criterion":"journey-stage","value":"AwaitingLoadResult"}
+{"at":"2026-10-10T14:43:04.6510958+00:00","criterion":"journey-stage","value":"AwaitingStationDeparture"}
+{"at":"2026-10-10T14:43:35.7209824+00:00","criterion":"journey-stage","value":"AwaitingDepartureSafety"}
+{"at":"2026-10-10T14:43:35.9730964+00:00","criterion":"journey-stage","value":"AwaitingGateArrival"}
+{"at":"2026-10-10T14:43:35.9801735+00:00","criterion":"to-gate-intent","value":"@{UpperId=W2G-b2ec3e32-b723-4c0b-8912-f22110e1e508-GATE-1; OrderId=ORDER-000002; Status=CONFIRMED; DestinationStationId=404}"}
+{"at":"2026-10-10T14:43:36.0081108+00:00","note":"Vehicle drives to station 404 and comes to rest."}
+{"at":"2026-10-10T14:43:37.3033571+00:00","criterion":"journey-stage","value":"AwaitingUnloadResult"}
+{"at":"2026-10-10T14:43:37.8096098+00:00","criterion":"journey-stage","value":"Completed"}
+{"at":"2026-10-10T14:43:37.8295095+00:00","criterion":"L2-SDJ-WNI-REAR-settled","value":"@{DemandStatus=Succeeded; Unloads=1}"}
+{"at":"2026-10-10T14:43:37.8329681+00:00","note":"Publishing WIRE_TO_NITROGEN demand 77e570715bc8493b84b4d4bc762ffef8 (sublot L2-SDJ-N1-7-20261010T144236952Z, AREA N1-7, 2 baskets)."}
+{"at":"2026-10-10T14:43:37.8534729+00:00","criterion":"L2-SDJ-WNI-FRONT-admission","value":"@{Stage=; WorkType=; ReasonCode=}"}
+{"at":"2026-10-10T14:43:38.8651796+00:00","criterion":"L2-SDJ-WNI-FRONT-admission","value":"@{Stage=AwaitingPickupArrival; WorkType=WIRE_TO_NITROGEN; ReasonCode=ACCEPTED}"}
+{"at":"2026-10-10T14:43:38.8686682+00:00","criterion":"to-pickup-intent","value":"@{UpperId=W2G-77e57071-5bc8-493b-84b4-d4bc762ffef8-PICKUP-1; OrderId=; Status=PENDING_RECONCILIATION; DestinationStationId=12}"}
+{"at":"2026-10-10T14:43:39.1349515+00:00","criterion":"to-pickup-intent","value":"@{UpperId=W2G-77e57071-5bc8-493b-84b4-d4bc762ffef8-PICKUP-1; OrderId=ORDER-000003; Status=CONFIRMED; DestinationStationId=12}"}
+{"at":"2026-10-10T14:43:39.1483716+00:00","note":"Vehicle drives to station 12 and comes to rest."}
+{"at":"2026-10-10T14:43:39.1748458+00:00","criterion":"journey-stage","value":"AwaitingPickupArrival"}
+{"at":"2026-10-10T14:43:40.1782104+00:00","criterion":"journey-stage","value":"AwaitingSublot"}
+{"at":"2026-10-10T14:43:40.6843996+00:00","criterion":"journey-stage","value":"AwaitingLoadResult"}
+{"at":"2026-10-10T14:43:41.6979592+00:00","criterion":"journey-stage","value":"AwaitingStationDeparture"}
+{"at":"2026-10-10T14:44:12.7978172+00:00","criterion":"journey-stage","value":"AwaitingDepartureSafety"}
+{"at":"2026-10-10T14:44:13.0521612+00:00","criterion":"journey-stage","value":"AwaitingGateArrival"}
+{"at":"2026-10-10T14:44:13.0564545+00:00","criterion":"to-gate-intent","value":"@{UpperId=W2G-77e57071-5bc8-493b-84b4-d4bc762ffef8-GATE-1; OrderId=ORDER-000004; Status=CONFIRMED; DestinationStationId=404}"}
+{"at":"2026-10-10T14:44:13.0651421+00:00","note":"Vehicle drives to station 404 and comes to rest."}
+{"at":"2026-10-10T14:44:14.3636521+00:00","criterion":"journey-stage","value":"AwaitingUnloadResult"}
+{"at":"2026-10-10T14:44:14.8852190+00:00","criterion":"journey-stage","value":"Completed"}
+{"at":"2026-10-10T14:44:14.8948645+00:00","criterion":"L2-SDJ-WNI-FRONT-settled","value":"@{DemandStatus=Succeeded; Unloads=1}"}
+{"at":"2026-10-10T14:44:14.9099467+00:00","note":"WIRE_TO_NITROGEN：两条需求各在 AREA 机台站 12 按侧取仓、到绑定站 404 卸货，都已结清。"}
+{"at":"2026-10-10T14:44:15.4095623+00:00","note":"L2 port block lock released."}
