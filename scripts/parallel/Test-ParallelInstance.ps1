@@ -1896,6 +1896,7 @@ function Invoke-ClearancePath {
                 GetEnvironment = { $service.Environment }
                 SetEnvironment = { param([string[]] $Environment) $service.Environment = $Environment; $service.Log.Add('set-environment') }
                 RestartService = { $service.Log.Add('restart') }
+                GetMachineEnvironment = { @() }
             }
         $onDisk = Get-Content -LiteralPath $file -Raw -Encoding utf8 | ConvertFrom-Json -AsHashtable -Depth 12
     } finally {
@@ -2038,6 +2039,7 @@ Invoke-PathCase 'broken state is not restarted into' {
                     GetEnvironment = { @($productEnvironment) }
                     SetEnvironment = { param([string[]] $Environment) $restarts.Add('set-environment') }
                     RestartService = { $restarts.Add('restart') }
+                    GetMachineEnvironment = { @() }
                 }
         } catch { $message = $_.Exception.Message }
         Write-Result -Ok ($null -ne $message -and $message.Contains('CLEARANCE_EXIT_BROKEN') -and $restarts.Count -eq 0) `
@@ -4097,7 +4099,10 @@ function Invoke-HeldPath {
         # The log each phase's Host writes; $null is a Host that binds as defined (and, held, logs 2001 only).
         [string[]] $HeldLines,
         [string[]] $ReleasedLines,
-        [switch] $ProcessLingers
+        [switch] $ProcessLingers,
+        # Extra entries in the service's Environment, and the machine-level environment, as NAME=value.
+        [string[]] $ServiceEnvironmentExtra = @(),
+        [string[]] $MachineEnvironment = @()
     )
     $definition = Copy-Definition $clearanceDefinition
     $definition['journeyRuntime']['enabled'] = $DefinitionEnabled
@@ -4113,7 +4118,7 @@ function Invoke-HeldPath {
     $directory = Join-Path ([IO.Path]::GetTempPath()) "cs578-$([guid]::NewGuid().ToString('N'))"
     New-Item -ItemType Directory -Path $directory | Out-Null
     $state = @{ Log = [System.Collections.Generic.List[string]]::new(); Process = 100; Error = $null; Final = $null; Result = $null
-        Environment = [string[]] @($productEnvironment) }
+        Environment = [string[]] (@($productEnvironment) + @($ServiceEnvironmentExtra)) }
     try {
         $file = Join-Path $directory 'appsettings.Production.json'
         $roster = Join-Path $directory 'field-operator-roles.json'
@@ -4125,6 +4130,7 @@ function Invoke-HeldPath {
                     GetEnvironment = { $state.Environment }
                     SetEnvironment = { param([string[]] $Environment) $state.Environment = $Environment }
                     RestartService = { $state.Log.Add("restart(enabled=$(& $flag))"); $state.Process++ }
+                    GetMachineEnvironment = { $MachineEnvironment }
                 }
             $state.Result = Invoke-ParallelJourneyRuntimeRelease -ConfigurationPath $file -Definition $definition -ServiceName $v2ServiceName -Actions @{
                 ReadBackHeld = { & $readBack 'Held' }
@@ -4183,9 +4189,46 @@ foreach ($pathName in $heldPaths.Keys) {
     # Red 2: the second read-back does not match (phase two bound WIRE_TO_GATE beside the defined types).
     $s = Invoke-HeldPath -BaseConfiguration $base -ReleasedLines @(New-EffectiveLine '2026-10-10T01:00:05Z' @('STAGING_TO_WIRE', 'WIRE_TO_GATE') `
             -Zones @($clearanceDefinition['journeyRuntime']['allowedDispatchZones']) -BaseUrl ([string] $clearanceDefinition['mesIngest']['baseUrl']))
-    Write-Result -Ok ($s.Error -like 'EFFECTIVE_CONFIGURATION_MISMATCH:*' -and ((@($s.Log) | Select-Object -Last 2) -join ',') -ceq 'released(enabled=True),stop') `
-        -Name "$($pathName): a second read-back that does not match is refused, the service stopped" `
+    # Review item 1: the stopped service starts Automatic; left with enabled=true it would come back on a reboot with the
+    # runtime on and the wrong binding. The flag is written back to false before the refusal.
+    Write-Result -Ok ($s.Error -like 'EFFECTIVE_CONFIGURATION_MISMATCH:*' -and ((@($s.Log) | Select-Object -Last 2) -join ',') -ceq 'released(enabled=True),stop' -and
+        $s.Final -eq $false -and $s.Error.Contains('set back to false')) `
+        -Name "$($pathName): a second read-back that does not match is refused, the service stopped, and JourneyRuntime.enabled set back to false" `
+        -Detail ("log: " + (@($s.Log) -join ',') + "; final enabled=$($s.Final); error: $($s.Error)")
+
+    # Review item 2: a JourneyRuntime__* key in the service's Environment or the machine's environment is a configuration
+    # layer above the file; refused before the restart, naming the key.
+    $s = Invoke-HeldPath -BaseConfiguration $base -ServiceEnvironmentExtra @('JourneyRuntime__Enabled=true')
+    Write-Result -Ok ($s.Error -like 'JOURNEY_RUNTIME_ENVIRONMENT_OVERRIDE*' -and $s.Error.Contains('JourneyRuntime__Enabled') -and @($s.Log).Count -eq 0) `
+        -Name "$($pathName): JourneyRuntime__Enabled in the service's Environment is refused before any restart, naming the key" `
         -Detail ("log: " + (@($s.Log) -join ',') + "; error: $($s.Error)")
+    $s = Invoke-HeldPath -BaseConfiguration $base -MachineEnvironment @('Path=C:\Windows', 'DOTNET_journeyruntime__fleet__0__AllowedTaskTypes__0=WIRE_TO_GATE')
+    Write-Result -Ok ($s.Error -like 'JOURNEY_RUNTIME_ENVIRONMENT_OVERRIDE*' -and $s.Error.Contains('DOTNET_journeyruntime__fleet__0__AllowedTaskTypes__0') -and @($s.Log).Count -eq 0) `
+        -Name "$($pathName): a DOTNET_-prefixed JourneyRuntime key in the machine's environment is refused before any restart, naming the key" `
+        -Detail ("log: " + (@($s.Log) -join ',') + "; error: $($s.Error)")
+}
+
+Invoke-SourceCase 'environment override: only JourneyRuntime keys count, ignoring case, with or without the DOTNET_/ASPNETCORE_ prefix' {
+    $found = @(Get-ParallelJourneyRuntimeEnvironmentOverride -ServiceEnvironment @('CONTROL_SERVER_RIOT_CALL_API_KEY=x', 'JOURNEYRUNTIME__POLLINTERVAL=00:00:05', 'JourneyRuntimeX=1') `
+            -MachineEnvironment @('ASPNETCORE_JourneyRuntime:Enabled=true', 'JourneyRuntimeNotes=1', 'MyJourneyRuntime__Enabled=true'))
+    $expected = 'service JOURNEYRUNTIME__POLLINTERVAL|machine ASPNETCORE_JourneyRuntime:Enabled'
+    @{ Ok = (($found -join '|') -ceq $expected); Detail = "got: $($found -join '|')" }
+}
+Invoke-SourceCase 'environment override: nothing found in an environment without JourneyRuntime keys' {
+    $found = @(Get-ParallelJourneyRuntimeEnvironmentOverride -ServiceEnvironment @($productEnvironment) -MachineEnvironment @('Path=C:\Windows'))
+    @{ Ok = ($found.Count -eq 0); Detail = "got: $($found -join '|')" }
+}
+
+# Review item 3: a refusal says how big the log is and when it was last written (control-server#587: the Host stops
+# writing at 1 GiB, and then nothing new is ever read back).
+Invoke-SourceCase 'log facts: each file read, with its size and last write time' {
+    $text = Format-ParallelLogFileFacts -Files @([pscustomobject]@{ FullName = 'D:\logs\controlserver-20261010.ndjson'; Length = 1073741824
+            LastWriteTimeUtc = [datetime]::SpecifyKind([datetime] '2026-10-10T01:02:03', [DateTimeKind]::Utc) })
+    @{ Ok = ($text.Contains('controlserver-20261010.ndjson') -and $text.Contains('1073741824 bytes') -and $text.Contains('2026-10-10T01:02:03')); Detail = "got: $text" }
+}
+Invoke-SourceCase 'log facts: no file read is said so' {
+    $text = Format-ParallelLogFileFacts -Files @()
+    @{ Ok = ($text.Contains('no log file')); Detail = "got: $text" }
 }
 Invoke-PathCase 'held, phase-one process still alive after the stop' {
     $s = Invoke-HeldPath -BaseConfiguration (Copy-Definition $productConfiguration) -ProcessLingers
@@ -4234,6 +4277,25 @@ $bareReadBack = @($installerAst.FindAll({ param($n) $n -is [System.Management.Au
 Write-Result -Ok ($bareReadBack.Count -eq 0) -Name 'wiring: no read-back runs outside the release (the old single read-back with the runtime already on is gone)' `
     -Detail ($bareReadBack | ForEach-Object { "line $($_.Extent.StartLineNumber)" })
 $assertFunction = $installerAst.Find({ param($n) $n -is [System.Management.Automation.Language.FunctionDefinitionAst] -and $n.Name -eq 'Assert-EffectiveConfiguration' }, $true)
+# Review items 2 and 3, the installer's side.
+$stepCall = $installerAst.Find({ param($n) $n -is [System.Management.Automation.Language.CommandAst] -and $n.GetCommandName() -eq 'Invoke-ParallelInstanceConfigurationStep' }, $true)
+$stepTable = $null -eq $stepCall ? $null : $stepCall.Find({ param($n) $n -is [System.Management.Automation.Language.HashtableAst] }, $true)
+$machineAction = $null -eq $stepTable ? '' : (@($stepTable.KeyValuePairs | Where-Object { $_.Item1.Extent.Text -eq 'GetMachineEnvironment' } | ForEach-Object { $_.Item2.Extent.Text }) -join '')
+Write-Result -Ok ($machineAction.Contains("[Environment]::GetEnvironmentVariables('Machine')")) `
+    -Name 'wiring: the configuration step''s GetMachineEnvironment reads the machine-level environment' -Detail "action: $machineAction"
+$overrideCalls = @($installerAst.FindAll({ param($n) $n -is [System.Management.Automation.Language.CommandAst] -and $n.GetCommandName() -eq 'Get-ParallelJourneyRuntimeEnvironmentOverride' }, $true))
+$firstProductAt = @($installerAst.FindAll({ param($n) $n -is [System.Management.Automation.Language.CommandAst] -and $n.GetCommandName() -eq 'Invoke-ProductInstaller' }, $true) |
+        ForEach-Object { $_.Extent.StartOffset } | Sort-Object | Select-Object -First 1)
+Write-Result -Ok ($overrideCalls.Count -eq 1 -and $firstProductAt.Count -eq 1 -and $overrideCalls[0].Extent.StartOffset -lt $firstProductAt[0] -and
+    $overrideCalls[0].Extent.Text.Contains("GetEnvironmentVariables('Machine')")) `
+    -Name 'wiring: the installer refuses JourneyRuntime environment keys before any product script starts the service' `
+    -Detail ("calls: $($overrideCalls.Count)" + $(if ($overrideCalls.Count) { "; text: $($overrideCalls[0].Extent.Text)" }))
+$factsCall = $null -eq $assertFunction ? $null : $assertFunction.Body.Find({ param($n) $n -is [System.Management.Automation.Language.CommandAst] -and $n.GetCommandName() -eq 'Format-ParallelLogFileFacts' }, $true)
+$refusalThrow = $null -eq $assertFunction ? @() : @($assertFunction.Body.FindAll({ param($n) $n -is [System.Management.Automation.Language.ThrowStatementAst] }, $true) | Where-Object { $_.Extent.Text.Contains('$verdict.Message') })
+Write-Result -Ok ($null -ne $factsCall -and $refusalThrow.Count -eq 1 -and $refusalThrow[0].Extent.Text.Contains('$logFacts')) `
+    -Name 'wiring: a read-back refusal carries the log files'' size and last write time (Format-ParallelLogFileFacts)' `
+    -Detail ("facts call: $($null -ne $factsCall); refusal throws: " + (($refusalThrow | ForEach-Object { $_.Extent.Text }) -join ' | '))
+
 $readBackDecisions = $null -eq $assertFunction ? @() : @($assertFunction.Body.FindAll({ param($n) $n -is [System.Management.Automation.Language.CommandAst] -and
             $n.GetCommandName() -eq 'Get-ParallelReadBackAction' }, $true))
 $directJudges = $null -eq $assertFunction ? @() : @($assertFunction.Body.FindAll({ param($n) $n -is [System.Management.Automation.Language.CommandAst] -and

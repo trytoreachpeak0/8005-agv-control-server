@@ -215,23 +215,40 @@ public sealed class ParallelInstanceEffectiveConfigurationTests
     [Fact]
     public void RosterFromEnvironmentVariablesOverAFileRosterIsTakenWhole()
     {
-        // The L2 rig and any field override write the roster as JourneyRuntime__Fleet__N__... variables.
-        IConfigurationRoot root = new ConfigurationBuilder()
-            .AddJsonStream(new MemoryStream(Encoding.UTF8.GetBytes(TwoCarRoster)))
-            .AddInMemoryCollection(new Dictionary<string, string?>
+        // The L2 rig and any field override write the roster as JourneyRuntime__Fleet__N__... variables. The real
+        // environment-variable provider, under a prefix of this test's own so that parallel tests never see the variables.
+        string prefix = $"CS578_{Guid.NewGuid():N}_";
+        Dictionary<string, string> variables = new()
+        {
+            [$"{prefix}JourneyRuntime__Fleet__0__AgvId"] = "A3",
+            [$"{prefix}JourneyRuntime__Fleet__0__VehicleKey"] = "K3",
+            [$"{prefix}JourneyRuntime__Fleet__0__AllowedTaskTypes__0"] = "DIE_TO_OVEN",
+        };
+        try
+        {
+            foreach ((string name, string value) in variables)
             {
-                ["JourneyRuntime:Fleet:0:AgvId"] = "A3",
-                ["JourneyRuntime:Fleet:0:VehicleKey"] = "K3",
-                ["JourneyRuntime:Fleet:0:AllowedTaskTypes:0"] = "DIE_TO_OVEN",
-            })
-            .Build();
-        ServiceCollection services = new();
-        services.AddJourneyRuntimeOptions(root);
-        using ServiceProvider provider = services.BuildServiceProvider();
+                Environment.SetEnvironmentVariable(name, value);
+            }
+            IConfigurationRoot root = new ConfigurationBuilder()
+                .AddJsonStream(new MemoryStream(Encoding.UTF8.GetBytes(TwoCarRoster)))
+                .AddEnvironmentVariables(prefix)
+                .Build();
+            ServiceCollection services = new();
+            services.AddJourneyRuntimeOptions(root);
+            using ServiceProvider provider = services.BuildServiceProvider();
 
-        FleetVehicleOptions vehicle = Assert.Single(provider.GetRequiredService<IOptions<JourneyRuntimeOptions>>().Value.Fleet);
-        Assert.Equal("K3", vehicle.VehicleKey);
-        Assert.Equal(["DIE_TO_OVEN"], vehicle.AllowedTaskTypes);
+            FleetVehicleOptions vehicle = Assert.Single(provider.GetRequiredService<IOptions<JourneyRuntimeOptions>>().Value.Fleet);
+            Assert.Equal("K3", vehicle.VehicleKey);
+            Assert.Equal(["DIE_TO_OVEN"], vehicle.AllowedTaskTypes);
+        }
+        finally
+        {
+            foreach (string name in variables.Keys)
+            {
+                Environment.SetEnvironmentVariable(name, null);
+            }
+        }
     }
 
     // ------------------------------------------------------------------------------------------------
