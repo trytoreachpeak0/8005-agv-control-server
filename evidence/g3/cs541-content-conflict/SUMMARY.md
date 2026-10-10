@@ -1,6 +1,6 @@
 # cs#541 内容冲突判据的红绿证据
 
-由 `scripts/Test-StagedG3ContentConflict.ps1` 产生：一个不起桌面的自检，用 AST 从 `run-staged-g3.ps1` 里取出它自己的探针和库内判定 `Get-ContentConflictVerdict`，对指定服务端只跑带内容冲突判据的三个探针。**不是 G3 证据，不评任何切片。** 每个目录里的 `self-check-result.json` 是完整结果，`*-events.ndjson` 是探针与故障代理的逐条记录，`logs/control.out.log` 是服务端日志。构建日志已删。
+由 `scripts/Test-StagedG3ContentConflict.ps1` 产生：一个不起桌面的自检，用 AST 从 `run-staged-g3.ps1` 里取出它自己的探针和库内判定 `Get-ContentConflictVerdict`，对指定服务端只跑带内容冲突判据的三个探针。**不是 G3 证据，不评任何切片。** 每个目录里的 `self-check-result.json` 是完整结果，`*-events.ndjson` 是探针与故障代理的逐条记录，`logs/control.out.log` 是服务端日志。最早五轮的构建日志 `logs/publish-control-server.log` 已删，`d5f2c017` 上的两轮（`green/5f3adc42-runner-d5f2c017`、M5）保留了，与历史 G3 证据的惯例一致。
 
 | 目录 | 服务端 | 预期 | 结果 |
 | --- | --- | --- | --- |
