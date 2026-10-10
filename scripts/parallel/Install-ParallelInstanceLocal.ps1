@@ -470,9 +470,9 @@ try {
             keeps its three fields exactly, because 19 compares it as a string. The roster is printed as a step.
 
             control-server#578: runs twice, both times from Invoke-ParallelJourneyRuntimeRelease. -Phase Held reads
-            the Host restarted with JourneyRuntime.enabled=false and also judges Get-ParallelHeldRuntimeRefusal (event
-            2001 logged, no dispatch activity), waiting for 2001 as for the event; a refusal stops the service like
-            any other. -Phase Released reads the Host started with the definition's value. The result line is
+            the Host restarted with JourneyRuntime.enabled=false and also judges that its runtime was held (event 2001
+            logged, no dispatch activity), waiting for 2001 as for the event; a refusal stops the service like any
+            other. The decision for both phases is Get-ParallelReadBackAction's, so the self-test runs the same one. -Phase Released reads the Host started with the definition's value. The result line is
             returned, not printed, so the installer prints it once, from the last read-back.
         #>
         param([Parameter(Mandatory = $true)][ValidateSet('Held', 'Released')][string] $Phase)
@@ -491,9 +491,8 @@ try {
         # Two seconds of slack: the process start time and the log's clock are read through different APIs.
         $since = [datetimeoffset]::new([datetime]::SpecifyKind($started, [DateTimeKind]::Utc)).AddSeconds(-2)
 
-        $effective = $null
-        # With no log to read, the held phase cannot be shown either: no 2001 read is a refusal.
-        $heldRefusal = ($Phase -ceq 'Held') ? (Get-ParallelHeldRuntimeRefusal -Lines @() -Since $since) : $null
+        # With no log to read, nothing is read back; held, no 2001 read is a refusal too.
+        $verdict = Get-ParallelReadBackAction -Phase $Phase -Definition $definition -Lines @() -Since $since
         $deadline = $logPath ? [DateTime]::UtcNow.AddSeconds(120) : [DateTime]::UtcNow
         while ($logPath) {
             $lines = foreach ($file in @(Get-ChildItem -LiteralPath $logDirectory -Filter $logFilter -File -ErrorAction SilentlyContinue |
@@ -502,21 +501,12 @@ try {
                 $stream = [IO.File]::Open($file.FullName, [IO.FileMode]::Open, [IO.FileAccess]::Read, [IO.FileShare]::ReadWrite)
                 try { ([IO.StreamReader]::new($stream, [Text.Encoding]::UTF8)).ReadToEnd() -split "`r?`n" } finally { $stream.Dispose() }
             }
-            $effective = Find-ParallelEffectiveConfiguration -Lines @($lines) -Since $since
-            # Held: the worker logs 2001 as it starts, around the time of the event; wait for both. Activity already
-            # seen needs no more waiting.
-            $heldRefusal = ($Phase -ceq 'Held') ? (Get-ParallelHeldRuntimeRefusal -Lines @($lines) -Since $since) : $null
-            $heldWaiting = $null -ne $heldRefusal -and -not $heldRefusal.Contains('the dispatch loop ran')
-            if (($null -ne $effective -and -not $heldWaiting) -or [DateTime]::UtcNow -ge $deadline) { break }
+            # Held: the worker logs 2001 as it starts, around the time of the event; the decision waits for both.
+            $verdict = Get-ParallelReadBackAction -Phase $Phase -Definition $definition -Lines @($lines) -Since $since
+            if (-not $verdict.Waiting -or [DateTime]::UtcNow -ge $deadline) { break }
             Start-Sleep -Seconds 2
         }
-
-        $verdict = Get-ParallelEffectiveConfigurationAction -Definition $definition -Effective $effective
-        if ($heldRefusal) {
-            # A Host whose runtime may be on, or did run, is stopped whatever its binding says (control-server#578).
-            $verdict = [pscustomobject]@{ Action = 'StopServiceAndRefuse'
-                Message = ($null -eq $verdict.Message) ? $heldRefusal : "$heldRefusal $($verdict.Message)" }
-        }
+        $effective = $verdict.Effective
         $where = "Read from $logDirectory\$logFilter since $($since.ToString('o'))."
         if ($verdict.Action -ceq 'Warn') {
             Write-Warning "$($verdict.Message) $where In 'fake' mode this is reported, not refused: a package older than control-server#535 does not log the event."

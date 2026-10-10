@@ -1,6 +1,6 @@
 File      : scripts/parallel/instance-factory01-v2.json
 Blob      : c29fec7d51966dc9154eb2bb99d5d7d659fc958f
-Backup    : C:\Users\szy\AppData\Local\Temp\instance-backup-af6c2655867745959dcc588cdd51e9fb.json
+Backup    : C:\Users\szy\AppData\Local\Temp\instance-backup-d5a9bdf3d1c3461d80328fff9c7c724e.json
 
 === case -1: the shipped file, untouched, is accepted ===
   PASS   accepted as it stands
@@ -122,7 +122,7 @@ Backup    : C:\Users\szy\AppData\Local\Temp\instance-backup-af6c2655867745959dcc
 
 === case 13: a Fleet roster with agv01 mixed in, spelled as the C# property ===
   key    : journeyRuntime.Fleet
-  blob   : 538418bca2aea6c5bc3060f6ddf0d227d9b12827 -> 3e0f5dad95ae06c4ced5a0ca9f4e92aab2afa0cb
+  blob   : 538418bca2aea6c5bc3060f6ddf0d227d9b12827 -> 753564ff36bc69d5ce64fd98f9ae3af13debd806
   numstat: 21	6	scripts/parallel/instance-factory01-v2.json
   refused with 1 reason(s):
          - journeyRuntime.Fleet differs only in case from journeyRuntime.fleet. .NET configuration is case-insensitive, so the two would be bound as one setting while this check reads only 'fleet'.
@@ -131,10 +131,10 @@ Backup    : C:\Users\szy\AppData\Local\Temp\instance-backup-af6c2655867745959dcc
 
 === case 13b: a fleet roster (spelled exactly) with agv01 in its second row ===
   key    : journeyRuntime.fleet
-  blob   : 538418bca2aea6c5bc3060f6ddf0d227d9b12827 -> 1810fcee206dd7bd210791d80859e194e03c82b4
+  blob   : 538418bca2aea6c5bc3060f6ddf0d227d9b12827 -> a1fd543681dda8931f195db17bd1f2685b6bc1e9
   numstat: 25	6	scripts/parallel/instance-factory01-v2.json
   refused with 1 reason(s):
-         - journeyRuntime.fleet[1] names agv01 (agvId, vehicleKey), the vehicle the MVP service is driving in production. The parallel instance may only drive agv02 or agv03; the whole definition is refused.
+         - journeyRuntime.fleet[1] names agv01 (vehicleKey, agvId), the vehicle the MVP service is driving in production. The parallel instance may only drive agv02 or agv03; the whole definition is refused.
   PASS   refused for the expected reason ('names agv01 (')
   restored, blob back to 538418bca2aea6c5bc3060f6ddf0d227d9b12827
 

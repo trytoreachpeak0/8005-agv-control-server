@@ -2156,6 +2156,39 @@ function Get-ParallelHeldRuntimeRefusal {
     return "JOURNEY_RUNTIME_NOT_HELD: $($problems -join '; ')."
 }
 
+function Get-ParallelReadBackAction {
+    <#
+        .SYNOPSIS
+            control-server#578. The installer's whole read-back decision for one phase, from the Host's log lines:
+            Action (Pass, Warn, StopServiceAndRefuse), Message, the Effective event found, and Waiting -- $true while
+            the lines read so far may simply be too early to decide.
+
+        .DESCRIPTION
+            Released: Get-ParallelEffectiveConfigurationAction on the newest EFFECTIVE_CONFIGURATION event, as before.
+            Held: that, and Get-ParallelHeldRuntimeRefusal on the same lines; a held refusal stops the service whatever
+            the binding says -- a Host whose runtime may be on, or did run, is not one to leave running -- including in
+            'fake' mode with nothing read back, where the binding alone would only warn.
+            Waiting is $true while no event has been found, or (held) while 2001 has not been read and no activity has
+            either; the installer reads the log again until it is $false or its deadline passes, then acts on Action.
+    #>
+    [CmdletBinding()]
+    param(
+        [Parameter(Mandatory = $true)][ValidateSet('Held', 'Released')][string] $Phase,
+        [Parameter(Mandatory = $true)][hashtable] $Definition,
+        [AllowEmptyCollection()][string[]] $Lines,
+        [Parameter(Mandatory = $true)][datetimeoffset] $Since
+    )
+    $effective = Find-ParallelEffectiveConfiguration -Lines @($Lines) -Since $Since
+    $verdict = Get-ParallelEffectiveConfigurationAction -Definition $Definition -Effective $effective
+    $heldRefusal = ($Phase -ceq 'Held') ? (Get-ParallelHeldRuntimeRefusal -Lines @($Lines) -Since $Since) : $null
+    $waiting = $null -eq $effective -or ($null -ne $heldRefusal -and -not $heldRefusal.Contains('the dispatch loop ran'))
+    if ($heldRefusal) {
+        $verdict = [pscustomobject]@{ Action = 'StopServiceAndRefuse'
+            Message = ($null -eq $verdict.Message) ? $heldRefusal : "$heldRefusal $($verdict.Message)" }
+    }
+    return [pscustomobject]@{ Action = $verdict.Action; Message = $verdict.Message; Effective = $effective; Waiting = $waiting }
+}
+
 function New-ParallelInstanceConfigurationOverlay {
     <#
         .SYNOPSIS
@@ -2812,6 +2845,7 @@ Export-ModuleMember -Function @(
     'Get-ParallelEffectiveConfigurationRefusal'
     'Get-ParallelEffectiveConfigurationAction'
     'Get-ParallelHeldRuntimeRefusal'
+    'Get-ParallelReadBackAction'
     'Merge-ConfigurationTree'
     'Get-ParallelServiceEnvironmentEntry'
     'Set-ParallelServiceEnvironmentEntry'
