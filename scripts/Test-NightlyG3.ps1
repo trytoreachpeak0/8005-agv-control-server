@@ -5,7 +5,7 @@
     Offline self-check of the nightly G3's decisions (control-server#582): no runner, no window, no network.
 
 .DESCRIPTION
-    About twenty seconds. Sections 1 to 4 are functions of scripts/NightlyG3.psm1 and section 5 is Invoke-NightlyG3.ps1,
+    Under a minute. Sections 1 to 4 are functions of scripts/NightlyG3.psm1 and section 5 is Invoke-NightlyG3.ps1,
     fed with inputs shaped like what a real round produces, and nothing the nightly run does in the dark is left to be found out the first night.
 
       1. The verdict of one runner, from its exit code and its run-result.json. Only exit 0 together with a status
@@ -24,7 +24,7 @@
          idle. Nothing is ever cancelled; the wait only decides whether this night starts.
       4. The start deadline: a scheduled night starts no runner after 04:00 CST of the night it started in, a schedule
          GitHub started late runs nothing, and a manual dispatch is bounded by its own length.
-      5. The round itself (Invoke-NightlyG3.ps1, about twenty seconds), against stand-in runners named like the real
+      5. The round itself (Invoke-NightlyG3.ps1, most of the minute), against stand-in runners named like the real
          ones: the four run in order, each with the override parameters its real runner declares (demand-bearing has
          no onboard one) and a stage and evidence root of its own; a PASS runner's stage is removed, a red one keeps
          its runtime but not its sources or publish (vm01 has single-digit gigabytes free); results.json carries the
