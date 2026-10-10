@@ -67,6 +67,7 @@ public sealed class MigratedDatabaseTemplateTests : IDisposable
         await using SqliteConnection migrated = await OpenFileAsync(migratedPath);
         await using SqliteConnection copied = await OpenFileAsync(copiedPath);
         Assert.Equal("wal", Scalar(migrated, "PRAGMA journal_mode;"));
+        Assert.Equal("wal", Scalar(copied, "PRAGMA journal_mode;"));
         Assert.Equal(Describe(migrated), Describe(copied));
     }
 
