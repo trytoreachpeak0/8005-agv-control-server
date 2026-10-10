@@ -11,28 +11,16 @@ public sealed class OnboardSafetyProjectionOptions
 
     /// <summary>
     /// How many more times one onboard projection request reads a non-final order listing that did not add up
-    /// (control-server#573). Each reread is a whole read of the listing, so on RIoT (shared with the MVP line) one poll costs at
-    /// most 1 + pages x (1 + this) requests: 10 at the default and 3 pages, 16 at the cap.
+    /// (control-server#573).
     /// </summary>
-    /// <remarks>
-    /// Two is what the field measured for (control-server#573: about 0.2 to 0.5% of reads did not add up on 2026-10-10, 1.3% at
-    /// the worst five minutes). Raise it before anything else if the field ever shows a projection flickering again; the next
-    /// step after that is a background refresh of the listing, which this ticket deliberately did not build.
-    /// </remarks>
-    public int NonFinalOrderReadRetries { get; set; } = 2;
+    public int NonFinalOrderReadRetries { get; set; }
 }
 
 public sealed class OnboardSafetyProjectionOptionsValidator : IValidateOptions<OnboardSafetyProjectionOptions>
 {
-    internal const int MaximumNonFinalOrderReadRetries = 4;
-
     public ValidateOptionsResult Validate(string? name, OnboardSafetyProjectionOptions options)
     {
         _ = name;
-        // control-server#573: checked even while the projection is off, so a bad value is found before the day it is turned on.
-        if (options.NonFinalOrderReadRetries is < 0 or > MaximumNonFinalOrderReadRetries)
-            return ValidateOptionsResult.Fail(
-                $"OnboardSafetyProjection NonFinalOrderReadRetries must be between 0 and {MaximumNonFinalOrderReadRetries}.");
         if (!options.Enabled) return ValidateOptionsResult.Success;
 
         List<string> failures = [];
