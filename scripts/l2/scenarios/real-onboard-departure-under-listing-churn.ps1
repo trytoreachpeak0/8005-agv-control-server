@@ -7,8 +7,9 @@
 「读不全」，给车载端的 vehicle-safety 投影回一次 `RIOT_NONFINAL_ORDER_COVERAGE_UNKNOWN`。真车载端据此报 `VEHICLE_NOT_READY`
 约 1 秒，服务端在会话未就绪那一轮清掉 `StationDepartureWaitStartedAt`，恢复后重新计满——车在站 15 卡了 25 分钟以上。
 
-**装置。**假 RIoT 的 `faults/nonfinal-listing-churn` 在非终态单清单后面补 250 张别的产线的单（3 页），并且按**确定性计数**搅：每 N 次读
-搅第 N 次（读到第 2 页时总数多一张），一次只搅一遍、从不连续。离站场景 N=40（2.5%），离站等待 180 秒。合成车载端永远报安全、不拉投影，
+**装置。**假 RIoT 的 `faults/nonfinal-listing-churn` 在非终态单清单后面补 250 张别的产线的单（3 页），并且按**确定性计数**搅：第 n 次读在
+`(n - 1) % N < 1` 时被搅，即每 N 次读一组、搅每组的第 1 次（第 1、N + 1、2N + 1 次……；读到第 2 页时总数多一张），一次只搅一遍、
+从不连续，全局任意连续 N 次读里恰好 1 次被搅。离站场景 N=40（2.5%），离站等待 180 秒。合成车载端永远报安全、不拉投影，
 所以只有真车载端看得到这件事。
 
 **强度从哪来。**现场 10-10 18 时～10-11 00 时 v2 实例日志实测，单次读不全约 0.2%～0.5%，最坏的 5 分钟约 1.3%（PR 正文有出处）。
@@ -30,7 +31,9 @@
 - 01 注入确实打中了：装货提交到离站之间，假 RIoT 记下的被搅乱的读至少 3 次（180 秒约 300 次读、约 7 次被搅）。否则 02、03 的绿什么也不证明。
 - 02 车离站：离站等待 + 60 秒余量之内（离站场景 240 秒）建出 TO_GATE 单并走到 `AwaitingGateArrival`。
 - 03 车载端没闪：装货提交之后、TO_GATE 建单之前，服务端没收到任何一条带 `VEHICLE_NOT_READY` 的 `SafetyStateChanged`。
-  建单之后车载端看到本服务端自己的在途单而报未就绪是设计如此（cs#138），不在窗口里。
+  建单之后车载端看到本服务端自己的在途单而报未就绪是设计如此（cs#138），不在窗口里。`-ChurnFrom PickupArrival` 时窗口从车到站、
+  开始搅动的那一刻起算（审查 S1）：服务端在会话不就绪的任何一轮都清离站等待（`JourneyRuntimeEngine.cs:993-995`），装货期间也一样，
+  而装货场景的 02 有 60 秒余量，抓不住装货时闪一次。
 - 04 旅程照常走完，`Completed`。
 
 `-ChurnFrom PickupArrival`（场景 `real-onboard-load-under-listing-churn` 传它）从车到取货站就开始搅，N=3（约 33%，仍是计数、仍不连续），
@@ -172,8 +175,10 @@ function Invoke-SlotOperation([string]$operationType, [string]$cargoState) {
 }
 
 function Set-ListingChurn {
-    $journal.Note("Arming the non-final listing churn: 250 padding orders, every $($plan.Period)th read churned, never two in a row.")
+    $journal.Note("Arming the non-final listing churn: 250 padding orders, the first read of every $($plan.Period) churned, never two in a row.")
+    $armedAt = [datetimeoffset]::UtcNow
     $null = $riot.Command('Put', 'faults/nonfinal-listing-churn', @{ padding = 250; period = $plan.Period; burst = $plan.Burst })
+    return $armedAt
 }
 
 # --- 1. 需求、派车、到取货站 ------------------------------------------------------------------------
@@ -205,8 +210,9 @@ $null = $riot.Command('Put', "orders/$($pickupIntent.UpperId)", @{ orderState = 
 # --- 2. 录入、装货（LoadCommitted 时全厂订单还没开始变，见头注释「为什么装完才搅」） ------------------------------
 
 $churnedAtArrival = $null
+$churnArmedAt = $null
 if ($ChurnFrom -eq 'PickupArrival') {
-    Set-ListingChurn
+    $churnArmedAt = Set-ListingChurn
     $churnedAtArrival = Get-ChurnedReads
 }
 
@@ -253,13 +259,13 @@ elseif ($loadStatus -ne 'Committed') {
     throw "The load did not commit: $loadStatus."
 }
 
-# --- 3. 全厂订单开始变（PickupArrival 时早已在变）：250 张别的产线的单，每 N 次读搅第 N 次（计数，不连续） -------
+# --- 3. 全厂订单开始变（PickupArrival 时早已在变）：250 张别的产线的单，每 N 次读搅其中第 1 次（计数，不连续） -------
 
-if ($ChurnFrom -eq 'LoadCommitted') { Set-ListingChurn }
+if ($ChurnFrom -eq 'LoadCommitted') { $churnArmedAt = Set-ListingChurn }
 $churnedAtCommit = Get-ChurnedReads
 $journal.Note("Load committed at $($committedAt.ToString('o')); churn armed with $churnedAtCommit churned reads so far.")
 
-# --- 4. 离站等待（离站场景 180 秒、装货场景 20 秒），全厂订单一直在变 -------------------------------------------------------------
+# --- 4. 离站等待（离站场景 180 秒、装货场景 60 秒），全厂订单一直在变 -------------------------------------------------------------
 
 $stage = Wait-L2ConditionOrLast -Description 'the vehicle left the pickup station for the gate' `
     -Journal $journal -Criterion 'departed' -TimeoutSeconds $plan.DepartureBudgetSeconds `
@@ -286,9 +292,12 @@ if ($null -ne $gateIntent) {
         ([string]::IsNullOrEmpty($armed) ? [string]$gateIntent.CreatedAt : $armed), [cultureinfo]::InvariantCulture)
 }
 # Read once the stage has moved: every SafetyStateChanged before the gate order was received before that.
-$notReady = @(Get-NotReadyReports $committedAt $windowEnd)
+# PickupArrival opens the window when the churn is armed, so a flash during the load counts too (review S1).
+$windowStart = $ChurnFrom -eq 'PickupArrival' ? $churnArmedAt : $committedAt
+$windowLabel = $ChurnFrom -eq 'PickupArrival' ? '车到站开始搅动' : '装货提交'
+$notReady = @(Get-NotReadyReports $windowStart $windowEnd)
 $assertions.Add(
-    'L2-LC-03', '装货提交到建 TO_GATE 单之间，真车载端一次都没报 VEHICLE_NOT_READY（投影没闪）',
+    'L2-LC-03', "$windowLabel到建 TO_GATE 单之间，真车载端一次都没报 VEHICLE_NOT_READY（投影没闪）",
     ($notReady.Count -eq 0),
     0, "$($notReady.Count) $($notReady -join ', ')")
 
