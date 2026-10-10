@@ -69,13 +69,13 @@ public sealed class OnboardSafetyCoverageCarryOverTests
         }
     }
 
+    /// <summary>0 是关闭，不是「0 毫秒以内可沿用」：同一时刻再读也不沿用（时钟不走，免得年龄判断替它挡住）。</summary>
     [Fact]
     public async Task ACarryOverOfZeroIsTodaysAnswer()
     {
         await using Rig rig = new();
         await rig.OnboardAsync();
 
-        rig.Clock.Set(T0.AddMilliseconds(1));
         rig.Orders.FaultEveryReadFrom(rig.Orders.Reads + 1);
 
         AssertCoverageUnknown(await rig.OnboardAsync(TimeSpan.Zero));
