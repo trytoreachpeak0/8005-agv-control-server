@@ -15,14 +15,15 @@
   4. 依次到三个卸货停靠卸货，三单都 Completed。
 判据：
   L2-SDMX-01  三单同一趟旅程、任务类型各自保留（受理行的 WorkType、冻结的卸货站）；
-  L2-SDMX-02  途中追加只发生在停站时：乙、丙各自的加入时刻，晚于车在那一站装货落定，早于车离开那一站的下一条移动订单；
+  L2-SDMX-02  本趟两次追加都发生在停站窗口内（不证行驶中拒绝）：乙、丙各自的加入时刻，晚于车在那一站装货落定，早于车离开那一站的下一条移动订单；
               加入那一刻旅程停在站上（AwaitingStationDeparture）——一次读出，不分两次；
   L2-SDMX-03  计划里有三个不同的卸货停靠，各是对应那一单的卸货停靠，站号是该单类型绑定的站；
   L2-SDMX-04  三单装进不同仓位、各在自己 AREA 指派的那一组；
-  L2-SDMX-05..07  每个卸货站卸的正是对应那一单：到站后等到该单的卸货提交，此刻别的单在这一站没有任何卸货命令，
-              卸货命令与提交的仓位等于该单的目标仓；
+  L2-SDMX-05..07  每个卸货站卸的正是对应那一单装上车的那些仓：到站后等到该单的卸货提交，此刻别的单在这一站没有任何
+              卸货命令；该单的 LOAD 命令、Load 提交、UNLOAD 命令、Unload 提交四样仓位整串等于它的目标仓（只比卸货一侧
+              管不住装错仓，审查 M1）；
   L2-SDMX-08  三单都结清（Completed 之后另等受理行 Succeeded）；
-  L2-SDMX-09  分区参数确实被用上：乙、丙的归属行记下的参数版本是 setup 写入的那一版。
+  L2-SDMX-09  分区参数确实被用上：乙、丙的归属行记下的参数版本是 setup 写入的那一版，那一版的上限是 50000。
 第二段（负向，en-route-append-delay-gate 已用 WIRE_TO_GATE 证过这一门，这里只证「混装之后第二单被延迟门挡住」）：
   5. 不停服务端，经 FieldOps 正式导入一版新参数，上限 30000。
   6. 丁（WIRE_TO_GATE，N2-5，12 号站）受理、装完、持货；车停在 12 号站时放戊（WIRE_TO_OPTICAL，C15-14，11 号站），
@@ -44,6 +45,7 @@ $ErrorActionPreference = 'Stop'
 
 Import-Module (Join-Path (Split-Path -Parent $PSScriptRoot) 'L2ConditionOrLast.psm1') -Force
 Import-Module (Join-Path (Split-Path -Parent $PSScriptRoot) 'L2SlotGroups.psm1') -Force
+Import-Module (Join-Path (Split-Path -Parent $PSScriptRoot) 'L2SingleRow.psm1') -Force
 . (Join-Path $PSScriptRoot 'CargoHoldingCommon.ps1')
 
 $journal = $Context.Journal
@@ -138,11 +140,12 @@ function Get-UnloadCommandCount([string]$DemandId) {
         Where-Object { [string]$_.demandId -eq $DemandId -and [string]$_.operationType -ceq 'UNLOAD' }).Count
 }
 
-function Get-UnloadCommandSlots([string]$DemandId) {
+# 某需求的 LOAD 或 UNLOAD 命令下发过的仓位：每条命令一串，去重。
+function Get-CommandSlots([string]$DemandId, [string]$OperationType) {
     $rows = Invoke-L2Query -Connection $connection `
         -Sql "SELECT PayloadJson FROM ProtocolOutbox WHERE MessageType = 'SlotOperationCommand'"
     $slots = @($rows | ForEach-Object { ([string]$_.PayloadJson | ConvertFrom-Json).payload } |
-        Where-Object { [string]$_.demandId -eq $DemandId -and [string]$_.operationType -ceq 'UNLOAD' } |
+        Where-Object { [string]$_.demandId -eq $DemandId -and [string]$_.operationType -ceq $OperationType } |
         ForEach-Object { (@($_.slots | ForEach-Object { [int]$_ }) -join ',') } | Sort-Object -Unique)
     return , $slots
 }
@@ -261,7 +264,7 @@ $stoppedFacts = foreach ($pair in @(@{ Joined = $b; Join = $joinB; Holder = $a }
 }
 $stoppedFacts = @($stoppedFacts)
 $assertions.Add(
-    'L2-SDMX-02', '途中追加只发生在停站时：乙在车停于 12 号站（甲装完之后、离站订单之前）加入，丙在车停于 11 号站（乙装完之后、离站订单之前）加入；加入那一刻旅程停在站上、当前停靠就是那一站',
+    'L2-SDMX-02', '本趟两次追加都发生在停站窗口内（不证行驶中拒绝）：乙在车停于 12 号站（甲装完之后、离站订单之前）加入，丙在车停于 11 号站（乙装完之后、离站订单之前）加入；加入那一刻旅程停在站上、当前停靠就是那一站',
     (@($stoppedFacts | Where-Object { $_.Ok }).Count -eq 2),
     "B at station 12, C at station 11: loaded <= joined < next departure order; AwaitingStationDeparture",
     (($stoppedFacts | ForEach-Object { $_.Text }) -join ' | '))
@@ -325,14 +328,24 @@ foreach ($stop in $unloadStops) {
         -Until { param($v) $null -ne $v }
     $sentHere = @($others | ForEach-Object { "$($_.Label)+$((Get-UnloadCommandCount $_.Id) - $before[$_.Label])" })
     $target = Format-Slots $memberships[$owner.Label].TargetSlotsJson
-    $commandSlots = Get-UnloadCommandSlots $owner.Id
+    # 卸货命令、卸货提交与归属行的目标仓同出一源（卸货命令直接取 TargetSlotsJson），只比这三样管不住「装错了仓」：
+    # 把乙、丙装进甲的仓、再到各自的站去卸空着的目标仓，三样照样相等（审查 M1，变异 M2）。所以装货一侧也要比——
+    # 这一单的 LOAD 命令与 Load 那条站点操作的仓位——四样整串相等，才算这一站卸的正是装上车的那些仓。
+    $loadOp = Read-L2SingleRow -Connection $connection -Required -Sql (
+        "SELECT TargetSlotsJson FROM StationOperations WHERE DemandId = '$($owner.Id)' AND OperationType = 'Load' AND Status = 'Committed'")
+    $sent = @()
+    foreach ($type in 'LOAD', 'UNLOAD') {
+        $slots = Get-CommandSlots $owner.Id $type
+        $sent += "$type " + $(if ($slots.Count -eq 0) { '(none)' } else { ($slots | ForEach-Object { "[$_]" }) -join ' ' })
+    }
+    $sent += "Load op [$(Format-Slots $loadOp.TargetSlotsJson)]"
+    $sent += "Unload op $(if ($unload) { "[$(Format-Slots $unload.TargetSlotsJson)]" } else { '(not committed)' })"
+    $expectedSent = "LOAD [$target]; UNLOAD [$target]; Load op [$target]; Unload op [$target]"
     $assertions.Add(
-        $unloadIds[$index], "卸货站 $($stop.StationRiotId)（第 $($index + 1) 个卸货停靠）卸的正是 $($owner.Label)（$($owner.TaskType)）：它的卸货提交了、仓位等于它的目标仓，别的单在这一站没有新的卸货命令",
-        ($null -ne $unload -and (Format-Slots $unload.TargetSlotsJson) -eq $target -and ($commandSlots -join ' ') -eq $target -and
-            @($sentHere | Where-Object { $_ -notlike '*+0' }).Count -eq 0),
-        "$($owner.Label) unload committed [$target], UNLOAD command [$target]; others +0",
-        "$($owner.Label) unload $(if ($unload) { "committed [$(Format-Slots $unload.TargetSlotsJson)]" } else { 'not committed' }), " +
-        "UNLOAD command $(if ($commandSlots.Count -eq 0) { '(none)' } else { ($commandSlots | ForEach-Object { "[$_]" }) -join ' ' }); $($sentHere -join ' ')")
+        $unloadIds[$index], "卸货站 $($stop.StationRiotId)（第 $($index + 1) 个卸货停靠）卸的正是 $($owner.Label)（$($owner.TaskType)）装上车的那些仓：LOAD 命令、Load 提交、UNLOAD 命令、Unload 提交的仓位都等于它的目标仓，别的单在这一站没有新的卸货命令",
+        (($sent -join '; ') -ceq $expectedSent -and @($sentHere | Where-Object { $_ -notlike '*+0' }).Count -eq 0),
+        "$expectedSent; others +0",
+        "$($sent -join '; '); $($sentHere -join ' ')")
     $index++
 }
 
@@ -355,11 +368,13 @@ $assertions.Add(
     'Completed / 3 Succeeded', "$($settled.Stage) / $($settled.Succeeded) Succeeded")
 
 $presetVersion = [long](Invoke-L2Query -Connection $connection -Sql 'SELECT MAX(Version) AS V FROM DispatchZoneParameterVersions')[0].V
+$presetAllowance = Read-L2SingleRow -Connection $connection -Required -Sql (
+    "SELECT EnRouteAdditionMaxPathCostIncrease AS Allowance FROM DispatchZoneParameters WHERE Version = $presetVersion AND DispatchZone = '$zone'")
 $appendVersions = @($joinB, $joinC | ForEach-Object { [string]$_.DispatchZoneParameterVersion })
 $assertions.Add(
-    'L2-SDMX-09', "两次追加记下的每区参数版本都是 setup 写入的那一版（$zone 上限 50000）",
-    (($appendVersions -join ',') -eq "$presetVersion,$presetVersion"),
-    "$presetVersion,$presetVersion", ($appendVersions -join ','))
+    'L2-SDMX-09', "两次追加记下的每区参数版本都是 setup 写入的那一版，那一版里 $zone 的上限是 50000",
+    (($appendVersions -join ',') -eq "$presetVersion,$presetVersion" -and [string]$presetAllowance.Allowance -eq '50000'),
+    "$presetVersion,$presetVersion / 50000", "$($appendVersions -join ',') / $($presetAllowance.Allowance)")
 
 # ====================================================================================================
 # 第二段（负向）：上限改成 30000，混装之后的第二单被延迟门挡住

@@ -12,7 +12,7 @@ WIRE_TO_GATE，五条的 AREA 互不相同：
   因此不是读一次就断言；
 - 四类都不受理：积压原因都是 TASK_TYPE_BINDING_MISSING，没有受理行、旅程、订单意图（L2-SDBM-02）；
   /api/dashboard/dispatch-backlog 四条都列出、带中文说明（L2-SDBM-03）；不形成结构性派车阻断（L2-SDBM-04）；
-- WIRE_TO_GATE 那条照常走完两段（L2-SDBM-05）；车空下来之后再转三轮，四条仍不受理、原因不变（L2-SDBM-06）。
+- WIRE_TO_GATE 那条照常走完两段（L2-SDBM-05）；车空下来之后再至少转两轮完整的派车轮，四条仍不受理、原因不变（L2-SDBM-06）。
 
 批次10-01（control-server#545）之前这条也是绿的：缺绑定判据本来就排在「尚未可执行」之前。它测的是批次 6 已有的机制
 在四类上照样成立，不是批次10-01 新加的行为——红绿对照见 PR。
@@ -201,11 +201,12 @@ $assertions.Add(
 
 # --- 3. 车空下来之后：四条仍不受理 --------------------------------------------------------------------------
 
-# 车空着、它们有机会被派的时候再转三轮：仍然不受理，原因仍是那一个。
+# 车空着、它们有机会被派的时候再让运行时读三次站点目录（Wait-L2Iterations -Count 3：计数在请求到达时加，所以只保证
+# 至少两轮完整的派车轮）：仍然不受理，原因仍是那一个。
 $null = Wait-L2Iterations -Riot $riot -Count 3 -Journal $journal
 $after = Get-UnboundFacts $unbound
 $assertions.Add(
-    'L2-SDBM-06', '车空下来之后又转三轮：四条仍不受理，原因仍是 TASK_TYPE_BINDING_MISSING',
+    'L2-SDBM-06', '车空下来之后又至少转了两轮完整的派车轮：四条仍不受理，原因仍是 TASK_TYPE_BINDING_MISSING',
     (Test-AllUnboundRefused $after),
     (($unbound | ForEach-Object { "$($_.TaskType)=TASK_TYPE_BINDING_MISSING rows=0" }) -join '; '),
     (Format-UnboundFacts $after))
