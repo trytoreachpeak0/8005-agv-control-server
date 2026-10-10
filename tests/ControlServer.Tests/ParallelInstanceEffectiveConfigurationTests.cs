@@ -258,10 +258,12 @@ public sealed class ParallelInstanceEffectiveConfigurationTests
             $"$d = Read-ParallelInstanceDefinition -Path '{Path.Combine(parallel, TwoCarExample)}'; " +
             $"$d['journeyRuntime']['fleet'][1] = @{{ agvId = '老厂前线新多仓位1'; vehicleKey = '{Agv01Key}'; deviceKey = '{Agv01Key}'; riotId = 58; " +
             "agvLifecycleGeneration = 1; allowedTaskTypes = @('WIRE_TO_GATE'); zones = @('WIRE') }; " +
-            "try { $null = Assert-ParallelInstanceDefinition -Definition $d; 'ACCEPTED' } catch { 'REFUSED' }",
+            "try { $null = Assert-ParallelInstanceDefinition -Definition $d; 'ACCEPTED' } catch { 'REFUSED: ' + $_.Exception.Message }",
             allowFailure: false);
 
-        Assert.Equal("REFUSED", output.Trim());
+        // Refused for the agv01 row, not for any reason: a check that crashed would also throw (PR #575 review, item 2).
+        Assert.StartsWith("REFUSED: ", output.Trim(), StringComparison.Ordinal);
+        Assert.Contains("journeyRuntime.fleet[1] names agv01", output, StringComparison.Ordinal);
     }
 
     private static string RenderEvent(JourneyRuntimeOptions options, string mesIngestBaseUrl)

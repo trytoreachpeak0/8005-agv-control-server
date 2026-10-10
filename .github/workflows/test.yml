@@ -47,7 +47,11 @@ jobs:
     # "cancelled" again. Splitting the suite into two jobs buys nothing here: only
     # win11-01-control-server-2 carries 'cs-test' and it runs one job at a time, so the halves would
     # queue behind each other.
-    timeout-minutes: 80
+    # 80 until control-server#571, which added the parallel instance self-check after Test with its own
+    # limit of 10: the slowest pre-Test 6m28s + Test's 60 + that 10 + upload and post-checkout about
+    # 15 s is about 76.7 minutes, three minutes under 80. 90 restores the margin; any step added after
+    # Test counts against it the same way.
+    timeout-minutes: 90
     env:
       # NuGet's vulnerability audit fetches its data from nuget.org during every restore, and with
       # TreatWarningsAsErrors a failed fetch (NU1900) is a red run that says nothing about the code:
@@ -274,8 +278,8 @@ jobs:
       # read-back of what the Host really bound. Nothing in it touches a machine. It was run by hand only, and
       # what is run by hand only is found broken at a batch exit. After Test, so its one case that borrows the
       # SQLite provider from a Host build finds one instead of skipping; !cancelled() so it reports even when
-      # the suite is red. About 40 s on the laptop; the step limit keeps the job's 80 (60 + 6m28s + this 10
-      # + upload) above every step's, so a hang here is a failed step, not a cancelled job.
+      # the suite is red. About 40 s on the laptop; with the step limit the job's 90 (see timeout-minutes
+      # above) stays above every step's, so a hang here is a failed step, not a cancelled job.
       - name: Parallel instance self-check
         if: ${{ !cancelled() }}
         shell: pwsh

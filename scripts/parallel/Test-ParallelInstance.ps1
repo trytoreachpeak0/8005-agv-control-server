@@ -3800,6 +3800,20 @@ Invoke-SourceCase 'fleet: row 0''s vehicleKey and deviceKey in lower case -- ref
             $d['journeyRuntime']['fleet'][0]['vehicleKey'] = $agv02Key.ToLowerInvariant()
             $d['journeyRuntime']['fleet'][0]['deviceKey'] = $agv02Key.ToLowerInvariant() }) @('is not a spare vehicle')
 }
+# Zero-width lookalikes (PR #575 review, item 1). A culture comparison skips U+200B, so each of these would match a
+# spare car while .NET configuration and RIoT see a different string. Each goes red if its Ordinal is put back to
+# InvariantCulture (or CurrentCulture).
+Invoke-SourceCase 'fleet: row 0''s vehicleKey and deviceKey with a zero-width space appended -- refused as not a spare vehicle' {
+    Test-ExactFailure (Edit-Fleet { param($d)
+            $d['journeyRuntime']['fleet'][0]['vehicleKey'] = "$agv02Key$([char]0x200B)"
+            $d['journeyRuntime']['fleet'][0]['deviceKey'] = "$agv02Key$([char]0x200B)" }) @('journeyRuntime.fleet[0].vehicleKey')
+}
+Invoke-SourceCase 'fleet: row 1''s deviceKey with a zero-width space appended -- refused, naming deviceKey' {
+    Test-ExactFailure (Edit-Fleet { param($d) $d['journeyRuntime']['fleet'][1]['deviceKey'] = "$agv03Key$([char]0x200B)" }) @('journeyRuntime.fleet[1].deviceKey')
+}
+Invoke-SourceCase 'fleet: row 0''s agvId with a zero-width space appended -- refused, naming agvId' {
+    Test-ExactFailure (Edit-Fleet { param($d) $d['journeyRuntime']['fleet'][0]['agvId'] = "老厂前线新多仓位2$([char]0x200B)" }) @('journeyRuntime.fleet[0].agvId')
+}
 Invoke-SourceCase 'fleet: row 1 without riotId -- refused, the durable coordinate must be stated' {
     Test-ExactFailure (Edit-Fleet { param($d) $d['journeyRuntime']['fleet'][1].Remove('riotId') }) @('journeyRuntime.fleet[1].riotId must be set explicitly')
 }
