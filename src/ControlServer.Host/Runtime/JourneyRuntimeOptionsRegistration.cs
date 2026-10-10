@@ -31,7 +31,10 @@ namespace ControlServer.Host.Runtime;
 /// writing <c>"fleet": []</c> to say "one vehicle, the primary pair" does not remove an earlier layer's roster; the
 /// parallel instance's single-car overlay writes exactly that, and is safe today only because the package's
 /// <c>appsettings.json</c> has no roster and the installer's read-back refuses a roster the definition did not
-/// write (control-server#571).
+/// write (control-server#571). It is a known limitation, kept on purpose (control-server#578, the coordinator's
+/// ruling): <b>the day the package's <c>appsettings.json</c> gains a roster, this rule must change first</b>, so that a
+/// layer writing <c>"fleet": []</c> counts as naming the roster. <c>PackageAppSettingsRosterArchitectureTests</c> turns
+/// red on that day.
 /// </para>
 /// </remarks>
 public static class JourneyRuntimeOptionsRegistration
