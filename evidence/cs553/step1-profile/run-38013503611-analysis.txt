@@ -1,0 +1,64 @@
+# run 38013503611 trx
+tests 4660 outcomes Counter({'Passed': 4657, 'NotExecuted': 3})
+wall 2079 s  sumdur 38074 s  avg concurrency 18.3
+class                                                n   sumdur     span     med     max   start     end
+MultiVehicleExecutionTests                         111     2006     2007   21.52    42.3       0    2007
+Batch7CargoHoldingDashboardTests                    74     1280     1280   21.51    27.5     582    1862
+ChargingCycleProgressTests                          56     1230     1230   23.24    32.1     596    1827
+ManualStationClearanceTests                         61     1206     1206   22.47    29.1     221    1428
+ChargingAllocationTests                             57     1142     1142   21.24    28.9     811    1953
+ChargingClearanceToWaitingPointTests                47     1056     1056   22.75    27.2     309    1365
+VehicleFaultIsolationTests                          99     1050     1050    9.41    28.3     951    2002
+TaskTypeStationActivationTests                      45      989      989   22.22    27.6      49    1039
+IdleReturnCommitmentTests                           57      987      987   20.62    28.7     969    1956
+UnableToChargeFieldConfirmationTests                40      978      978   22.64    69.1       0     978
+ChargingExecutionTests                              41      911      911   22.34    28.9     409    1321
+IdleReturnExecutionTests                            90      892      892    4.35    29.2    1187    2079
+DispatchZoneParameterImportTests                    35      782      783   22.28    27.5      77     860
+ChargingInterruptionTests                           44      724      724   14.69    49.5    1307    2031
+ChargingUnableToChargeTests                         37      695      695   22.77    27.1     133     828
+EmergencyStopSupervisorTests                        67      579      579    6.62    25.9    1477    2056
+TaskTypeHoldEndpointsTests                          29      564      564   22.15    30.9     803    1367
+VehiclePurposeDashboardTests                        46      507      507    7.53    27.4    1305    1812
+ChargerRosterImportTests                            22      499      499   22.71    30.6     978    1477
+WaitingPointImportTests                             25      488      488   21.31    26.8    1410    1897
+RecoveryEndingReleasesBlockedJourneyTests           50      465      465    3.85    30.0      17     482
+TaskTypeStationStartupTests                         22      464      465   21.71    27.1     624    1089
+Batch8PersistencePortTests                          31      431      431   12.91    23.7    1571    2002
+StructuralDispatchBlockTests                       108      431      431    0.00    28.0      12     442
+Batch7StationYieldTriggerTests                      28      407      407   21.28    26.7    1368    1775
+CreateGateTests                                     23      406      406   20.49    25.0     109     515
+MapRenameHoldConvergenceTests                       18      399      400   21.84    26.6     392     791
+Batch7DemandJourneyLookupTests                      17      386      386   22.17    25.8     889    1275
+BlockedJourneyDashboardTests                        63      385      386    0.00    34.0       8     393
+Batch7JourneyAcceptanceTests                        16      382      382   21.94    36.4     923    1305
+AreaAssignmentImportTests                           15      351      351   24.18    29.3    1321    1672
+Batch8FixedStationSingleOccupancyTests              23      344      344   16.74    26.9    1549    1893
+ChargingDashboardTests                              27      343      343   19.59    25.7     850    1193
+ChargingPolicyGovernanceTests                       27      339      339   12.82    29.8    1616    1954
+Batch9PersistencePortTests                          26      327      328   12.48    26.9    1672    2000
+ControlServerDatabaseLockTests                      10      324      324   30.48    58.9    1292    1616
+StationExclusivityFieldOpsTests                     14      317      317   23.98    30.2     280     596
+Batch8StationExclusivityManualReleaseTests          14      312      312   22.81    26.0     491     803
+Batch8OccupancyRetirementMigrationTests             14      311      311   22.71    29.9     793    1104
+Batch2CapabilityStoresTests                         15      308      308   21.32    25.9       0     309
+minute: running tests
+0 1 | 2 20 | 4 20 | 6 20 | 8 20 | 10 20 | 12 20 | 14 20 | 16 20 | 18 20 | 20 20 | 22 20 | 24 20 | 26 20 | 28 20 | 30 16 | 32 10 | 34 2 | 
+hist(5s buckets): [(0, 2964), (5, 117), (10, 111), (15, 236), (20, 940), (25, 248), (30, 20), (35, 4), (40, 5), (45, 4), (50, 3), (55, 3), (60, 5)]
+
+# duration vs concurrency regression
+n=615 slope=1.17s/concurrent test intercept=-0.56s R2=0.88
+tests>3s: 1937 sum 36991 ; tests<=3s: 2723 sum 1082
+
+# per-class duration by concurrency bucket
+IdleReturnExecutionTests {0: (44, 1.5), 4: (8, 7.0), 8: (7, 10.7), 12: (5, 16.1), 16: (7, 22.5), 20: (19, 23.2)}
+VehicleFaultIsolationTests {4: (9, 7.1), 8: (8, 9.6), 12: (6, 13.8), 16: (21, 0.0), 20: (55, 16.6)}
+MultiVehicleExecutionTests {0: (1, 4.5), 4: (8, 6.9), 8: (9, 10.5), 12: (6, 15.2), 16: (15, 22.1), 20: (72, 23.2)}
+EmergencyStopSupervisorTests {0: (32, 1.8), 4: (7, 7.2), 8: (7, 11.1), 12: (6, 14.5), 16: (8, 21.2), 20: (7, 20.6)}
+
+# by fixture kind (classified against base 3411887d sources)
+none                   tests=  262  >3s=    0  sumdur=     11
+migrate-direct         tests=  989  >3s=  585  sumdur=  12694
+via-harness            tests= 2801  >3s= 1327  sumdur=  25027
+ensurecreated-direct   tests=  608  >3s=   25  sumdur=    342
+slow tests in classes with no db fixture: []
