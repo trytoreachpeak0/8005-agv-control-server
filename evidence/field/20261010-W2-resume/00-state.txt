@@ -1,0 +1,41 @@
+cs#566 W2 resume -- state read before any action, 2026-10-10 22:57 (read-only)
+
+Sources: f01-state.txt (factory01 probe, 22:57:29), agv02-state.txt (agv02 probe, 22:57:37),
+installed-instance.json read 22:58, code read at control-server 2fe490d7 / onboard-hmi ca89ef8f.
+
+| Handover claim | Read now | Match |
+| --- | --- | --- |
+| V2 runs package 2fe490d7 (release run 38040930792), new DB, admission 2 | package dir D:\zhengyushao\ControlServer.V2 written 2026-10-10 18:01; admissionPolicyVersion=2; JourneyRuntimes: 2 rows, both Completed | yes (commit taken from prep evidence 10-install-v3-newdb.txt; installed-instance.json carries no commit field) |
+| Gate closed 20:39:32 | RiotCreateDispatch.enabled=False; appsettings written 20:39:29; V2 pid 11796 started 20:39:29 | yes |
+| Waits 3 min / 3 min (test-period values) | stationDepartureWaitTimeout=00:03:00, cargoHoldingTimeout=00:03:00 (instance definition still 00:05:00 / 00:30:00) | yes |
+| Roster v3 empty | ChargerRosterVersions latest = 3, sha 8939cc82..., change note "关窗：空名册" | yes |
+| agv02 in ManualChargingHold ROSTER_EMPTY | ManualChargingHolds row present, Reason=ROSTER_EMPTY, Since 2026-10-10 12:18:02Z | yes |
+| agv02 onboard v3 ca89ef8f | onboardBuildCommit=ca89ef8f..., host 172.19.205.222:58105 | yes |
+| IO -> simulator 127.0.0.1:1502, backup appsettings.json.bak-20261010181927 | ioModule 127.0.0.1:1502; backup file present | yes |
+| recoveryResumeEnabled=false | false; unableToChargeEntryEnabled=false; CONTROL_SERVER_RECOVERY_PROOF not set (Machine/User); CONTROL_SERVER_OPERATOR_ID set (Machine) | yes |
+| Onboard client and simulator stopped | no SQCD/Simulator process on agv02 | yes |
+| Car at (-27093,28166), battery 26% | RIoT: station 214, pos (-54814,33478), conf 80%, battery 74% NO_CHARGE, IDLE, MT_FINISHED, MODE_AUTO, emergency OK, speed 0 | NO: moved and charged since 20:40 (to be confirmed with the user) |
+| (not in handover) | RIoT non-final orders read 254, none mention agv02 | -- |
+| (not in handover) | V2 session row: generation 14, Ready (last update 20:39:33; onboard stopped since) | -- |
+| (not in handover) | VehicleFaultStates empty; ChargingCycles empty; charging policy v1 approved+activated 18:19 (80/30/20/10) | -- |
+| (not in handover) | fieldops status: SLOT_CONFIGURATION_NEVER_VERIFIED (same as all of 10-10, ran anyway) | -- |
+| MVP | '8005 AGV ControlServer' Running pid 15624 (unchanged since 10-10 evening) | untouched |
+
+Finding that changes the plan (code read, control-server 2fe490d7):
+- ChargingStandingCriterion (Order 18) and VehicleNewPurposeReadiness.ManualChargingHoldVerdictAsync refuse EVERY
+  new purpose (transport, idle return, automatic charging) while a ManualChargingHolds row exists for the vehicle,
+  reason VEHICLE_IN_MANUAL_CHARGING_HOLD. Battery rising does not lift it. The only exit is the onboard
+  ManualChargingReturnToServiceRequested (WireToGateStore.DecideManualChargingReturnToServiceAsync), accepted when
+  administratorRole is MAINTENANCE_ADMINISTRATOR/SYSTEM_ADMINISTRATOR and the session is not RecoveryRequired.
+- Consequence: the handover's option B ("charge by hand, then do B, A2, C, E, D") cannot run as written: with the
+  hold in place v2 accepts no demand at all. Every remaining segment first needs the onboard "充电后返回服务" press,
+  i.e. option A's configuration change.
+- Server side (WireToGateStore.cs:636) checks administratorRole (MAINTENANCE_ADMINISTRATOR or SYSTEM_ADMINISTRATOR)
+  and session readiness; it does not check the authentication proof. Onboard side (ManualChargingReturn.cs) only requires the proof
+  environment variable to be configured and non-empty; the proof is not sent. The V2 instance has no recovery
+  administrator credential configured (VehicleFaultRecovery disabled, its credential variable absent from the
+  service environment), so "the V2 instance's existing recovery credential" does not exist; a freshly generated
+  value set on agv02 only, never written to evidence or chat, is what enables the button.
+- At 74% the car is above the mandatory charge line 30% of policy v1, so pressing the button does NOT send it to
+  charger 211; it only returns it to eligibility. A full charging cycle (F) tonight would need a temporary policy
+  with the mandatory line above the current battery, approved by the user.

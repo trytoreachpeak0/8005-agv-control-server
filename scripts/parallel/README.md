@@ -23,9 +23,35 @@ control-server#262。约 2026-10-08 起 `factory01` 上同时跑两套 ControlSe
 没有替身段、任务类型只留 `STAGING_TO_WIRE`，旅程运行时与建单闸门仍是关的（自测断言两份文件的其余部分逐字相同）。
 **实际生效的值以 Host 为准，不以定义为准**（#535 审查 M1/M2）。.NET 配置跨文件按下标合并数组，叠加层的
 `["STAGING_TO_WIRE"]` 曾经只盖住包内 `appsettings.json` 六项里的第一项，`WIRE_TO_GATE` 照样生效。现在 Host
-对 `allowedWorkTypes`、`allowedDispatchZones` 取最后一个写了它的配置层的整份列表（`JourneyRuntimeOptionsRegistration`），
+对 `allowedWorkTypes`、`allowedDispatchZones` 与车队表 `fleet`（含每车的 `allowedTaskTypes`、`zones`，control-server#578）
+取最后一个写了它的配置层的整份内容（`JourneyRuntimeOptionsRegistration`），
 启动后记一条 `EFFECTIVE_CONFIGURATION` 事件；安装器在安装与回滚之后从 Host 的日志里读这条事件、与定义逐项比对，
 `production` 下读不到或不一致都算失败。
+
+**回读之前旅程运行时是关着的**（control-server#578）。这条事件要等所有后台服务都启动后才记，运行时开着的话，
+第一轮派车那时已经在跑：读生产需求目录、受理需求写库、占车，派车闸门开着时还会建 RIoT 单；停服务撤不回已受理的旅程，
+下次启动还会接着推进。所以首装、升级、回滚三条路径都这样走：
+
+1. `Set-InstanceConfiguration` 合并覆盖层后把 `JourneyRuntime.enabled` 写成 `false` 再重启（MesIngest 令牌那次重启也保持 `false`）；
+2. 第一次回读：生效配置与定义一致，**并且**日志里本进程启动后有运行时关闭事件 2001、没有派车循环跑过的痕迹
+   （派车引擎的任何一行、工作者除 2001 外的任何一行、MES 需求目录客户端的任何请求、充电／回待命点／自家单重建等建单事件）。
+   不满足就停服务、报 `JOURNEY_RUNTIME_NOT_HELD` 或 `EFFECTIVE_CONFIGURATION_MISMATCH`，运行时始终没开过；
+3. 定义开着运行时才继续：停服务，等第一阶段那个进程（按 PID）确实退出，写回 `true`，起服务；
+4. 第二次回读（第二道），不一致照样停服务，并把 `JourneyRuntime.enabled` 写回 `false`：服务是自动启动的，机器一重启，
+   开关还是 `true` 的话会带着不符的配置把运行时开起来。
+
+运行时能被关住的前提是没有更高的配置层改写它。服务的 `Environment` 或机器级环境变量里只要有 `JourneyRuntime__*`
+（含 `DOTNET_`、`ASPNETCORE_` 前缀，不分大小写）的键，就报 `JOURNEY_RUNTIME_ENVIRONMENT_OVERRIDE` 并点名是哪个键：
+机器级的在任何产品脚本起服务之前查，服务自己的在第 1 步重启之前查，两处都在改动任何东西之前拒绝。
+
+回读被拒时，报错里附上读过的日志文件的大小和最后写入时间（UTC）。服务端日志写到上限后停写时（control-server#587），
+回读会报 `JOURNEY_RUNTIME_NOT_HELD` 或 `EFFECTIVE_CONFIGURATION_UNREAD`，看这两个数就知道原因。
+
+代价：每次安装多一次重启，约 10～30 秒；运行时关着时服务端不校验车队表，车队表写错要到第 3 步起服务时才报出来（那时服务起不来，
+不会派车）。没有日志文件可读时第 2 步也读不到 2001，按拒绝处理。`EFFECTIVE_CONFIGURATION=` 结果行只打一次，取最后一次回读。
+
+已知限制：一层写空数组 `"fleet": []` 读作「没写」，清不掉更早一层的车队表。今天包内 `appsettings.json` 没有车队表，回读也会拒绝定义里
+没写、却绑出来的车队表；包内一旦加车队表，必须先改这条语义（`PackageAppSettingsRosterArchitectureTests` 会在那天变红）。
 
 从 `fake` 装成 `production` 时，安装器在记录新定义之前先撤掉上一次安装留下的替身（计划任务、进程、目录），
 否则之后的卸载按新定义找不到它。卸载与关闸两种模式都能走；`production` 下的足迹里没有计划任务和替身目录。
@@ -185,9 +211,12 @@ control-server#262。约 2026-10-08 起 `factory01` 上同时跑两套 ControlSe
   `-ControlServerRepository` 必须检出到与安装包同一个 control-server 提交**（包里 `release-manifest.json` 的
   `components.controlServer.commit`）。19 的实例定义取自这个克隆的 `scripts/parallel/`，不从包里取；克隆停在顶端、包是旧的，
   定义就是新的。要部署旧包，就为那个提交建一个 detached worktree 当 `-ControlServerRepository`。19 自己做这道核对是
-  control-server#552，在那之前只能靠人核。
+  control-server#552，在那之前只能靠人核。**control-server#552 之后 19 自己拒绝这种错配**：包里的提交与克隆 `HEAD` 不同、
+  克隆不干净、实例定义不是克隆里被跟踪的文件，都在碰服务器之前拒绝（`8005-workspace` 仓
+  `remote-ops/factory-server/docs/wire-to-gate-parallel-cd.md` 第 1 节）。
 - **本票合入之后、批次 10 的 release 跑出来之前，不要用不带 `-RunId` 的默认方式部署。**19 不带 `-RunId` 时取
   `release.yml` 最近一次成功的产物，那时它还是批次 10 之前的包，而克隆顶端的定义已经是 3——正是上面这种错配。
+  control-server#552 之后，19 不带 `-RunId` 时改为按克隆 `HEAD` 的提交查 release，查不到就拒绝，不再取「最近一次」。
 
 为什么：服务端每一轮都把「本图每个 AREA 命名的机台站 × 本构建能执行的每个任务类型」写进库，作为站点准入（准入种子），
 并和 `admissionPolicyVersion`、`admissionPolicyDeploymentId` 一起固定下来。同一个版本号下种子内容变了，库拒绝重绑，
@@ -258,11 +287,17 @@ L1 `SameDirectionTaskTypeJourneyRuntimeTests.AfterVersionThreeIsBoundTheRolledBa
 
 所以回滚时：
 
-1. 回滚用的定义副本里，把 `admissionPolicyVersion` 设为**这个实例装过的最高版本 + 1**（第一次从 3 回滚就是 4）。最高版本以
-   库里为准（上面「读库里已绑的版本」），部署记录只作对照。只改那一次部署用的副本，不提交回本仓。
+1. 回滚用的 `admissionPolicyVersion` 设为**这个实例装过的最高版本 + 1**（第一次从 3 回滚就是 4）。最高版本以
+   库里为准（上面「读库里已绑的版本」），部署记录只作对照。**control-server#552 之后用 19 的参数给，不再手改定义副本**：
+   `19-deploy-control-server-parallel.ps1 -Rollback -AdmissionPolicyVersionOverride <n>`。19 只改发往服务器的那份副本，本仓的
+   定义不动；`-Rollback` 不带这个参数会被拒绝，克隆外的定义副本也会被拒绝。
 2. 之后再装回批次 10 及之后的包，又要**再高一个**（上例是 5）。这时仓库里的三处出厂值低于实例实际用过的值，护栏不会替你发现；
-   要么部署时用副本写更高的值，要么开票把三处一起升上去。
+   要么部署时给 19 带 `-AdmissionPolicyVersionOverride`（首装与升级也接受，同提交检查照做），要么开票把三处一起升上去。
 3. 每次部署都在部署记录里写下用的版本号，回滚时才知道「装过的最高版本」是多少。
+
+control-server#552 之后，19 在碰服务器之前会先用一次只读 ssh 读服务器上的 `<opsRoot>\installed-instance.json`（安装器每次安装、
+回滚动手之前都会记下这份定义）里的 `admissionPolicyVersion`：安装要发的版本低于它、或回滚要发的版本不高于它，都会被拒绝，拒绝信息里
+写着该填多少。这个文件不存在时按首装处理，此时这道版本下限检查**不生效**（文件被删时也一样），最高版本仍以库里为准。
 
 ## 路径和名字只认一种写法
 

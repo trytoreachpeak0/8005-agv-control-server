@@ -1,0 +1,66 @@
+{"at":"2026-10-10T14:42:42.3238616+00:00","note":"L2 run 20261010T144242285Z starting for scenario 'same-direction-die-to-oven-journey'."}
+{"at":"2026-10-10T14:42:42.3610799+00:00","note":"L2 port block lock acquired (slot 2, Global\\W2G-L2PortBlock-slot2)."}
+{"at":"2026-10-10T14:42:42.3791361+00:00","note":"Build skipped (-SkipBuild); running the output already built."}
+{"at":"2026-10-10T14:42:43.2615753+00:00","criterion":"fake-riot-live","value":"live"}
+{"at":"2026-10-10T14:42:43.4896724+00:00","criterion":"fake-mes-live","value":"live"}
+{"at":"2026-10-10T14:42:43.6411800+00:00","note":"Fake RIoT stations on map 25: 11=C15-13, 12=N1-3_N1-7, 210=关卡, 402=烘箱"}
+{"at":"2026-10-10T14:42:43.6798643+00:00","note":"Task type station preset: the scenario's own (2 binding(s))"}
+{"at":"2026-10-10T14:42:49.2303535+00:00","note":"Package capacity rules imported."}
+{"at":"2026-10-10T14:42:49.2342357+00:00","note":"No waiting point registration: a single-vehicle rig, or WaitingPoints = $false."}
+{"at":"2026-10-10T14:42:51.3023145+00:00","criterion":"control-server-live","value":"(null)"}
+{"at":"2026-10-10T14:42:52.1911449+00:00","criterion":"control-server-live","value":"live"}
+{"at":"2026-10-10T14:42:52.3056179+00:00","note":"Protocol release identity: protocol-v3.0.0 (profileId AGV_FULL_PRODUCT, protocolVersion 4, APPROVED_RELEASE)."}
+{"at":"2026-10-10T14:42:52.9822780+00:00","criterion":"onboard-readiness","value":"DISCONNECTED"}
+{"at":"2026-10-10T14:42:53.2551661+00:00","criterion":"onboard-readiness","value":"READY"}
+{"at":"2026-10-10T14:42:53.3046785+00:00","criterion":"control-server-ready","value":"ready"}
+{"at":"2026-10-10T14:42:53.3621120+00:00","note":"FieldOps: seed-approved-facts --database C:\\actions-runner\\win11-01-control-server\\_work\\_temp\\l2-38060390711-1\\_stage\\l2-20261010T144242285Z-slot2\\controlserver.db"}
+{"at":"2026-10-10T14:42:55.2038110+00:00","criterion":"slot-model-preseed:seed-approved-facts","value":"OK","detail":{"output":{"command":"seed-approved-facts","outcome":"OK","modelKey":"8005-eight-slot","slotModelVersionId":"54e364a344bb4e9bb9331382b16d6fc7","version":1,"slotCount":8}}}
+{"at":"2026-10-10T14:42:55.2138139+00:00","note":"FieldOps: bind-io --database C:\\actions-runner\\win11-01-control-server\\_work\\_temp\\l2-38060390711-1\\_stage\\l2-20261010T144242285Z-slot2\\controlserver.db --agv AGV-L2-001"}
+{"at":"2026-10-10T14:42:57.1197139+00:00","criterion":"slot-model-preseed:bind-io:AGV-L2-001","value":"OK","detail":{"output":{"command":"bind-io","outcome":"OK","agvId":"AGV-L2-001","slotModelVersionId":"54e364a344bb4e9bb9331382b16d6fc7","boundSlots":8,"version":1}}}
+{"at":"2026-10-10T14:42:57.1950798+00:00","criterion":"slot-model-preseed:dispatch-zones","value":"0"}
+{"at":"2026-10-10T14:42:57.1982856+00:00","note":"FieldOps: import-area-assignments --database C:\\actions-runner\\win11-01-control-server\\_work\\_temp\\l2-38060390711-1\\_stage\\l2-20261010T144242285Z-slot2\\controlserver.db --input C:\\actions-runner\\win11-01-control-server\\_work\\_temp\\l2-38060390711-1\\same-direction-die-to-oven-journey-03\\snapshots\\preseed-area-assignments.csv"}
+{"at":"2026-10-10T14:42:59.2582379+00:00","criterion":"slot-model-preseed:import-area-assignments","value":"OK","detail":{"output":{"command":"import-area-assignments","outcome":"OK","dryRun":false,"input":"C:\\actions-runner\\win11-01-control-server\\_work\\_temp\\l2-38060390711-1\\same-direction-die-to-oven-journey-03\\snapshots\\preseed-area-assignments.csv","entryCount":2,"version":1,"contentSha256":"04efbe7b636d311420caf517f8af22cd0a39d4e17d2976caf9251637eecc0556","snapshotId":"d57ab89f79584691b880e01e39eb0786","importedAt":"2026-10-10T22:42:57.4513195+08:00","errorCount":0,"errors":[],"preview":[]}}}
+{"at":"2026-10-10T14:42:59.2704577+00:00","note":"FieldOps: import-charging-policy --database C:\\actions-runner\\win11-01-control-server\\_work\\_temp\\l2-38060390711-1\\_stage\\l2-20261010T144242285Z-slot2\\controlserver.db --input C:\\actions-runner\\win11-01-control-server\\_work\\_temp\\l2-38060390711-1\\same-direction-die-to-oven-journey-03\\snapshots\\preseed-charging-policy.json --fleet BROKERX-L2-0001"}
+{"at":"2026-10-10T14:43:01.1345316+00:00","note":"FieldOps: approve-charging-policy --database C:\\actions-runner\\win11-01-control-server\\_work\\_temp\\l2-38060390711-1\\_stage\\l2-20261010T144242285Z-slot2\\controlserver.db --version 1 --approved-by L2 orchestrator --role L2_PRESET --basis scripts/l2/L2ChargingPolicy.psm1 --source L2_PRESET"}
+{"at":"2026-10-10T14:43:02.8128267+00:00","note":"FieldOps: activate-charging-policy --database C:\\actions-runner\\win11-01-control-server\\_work\\_temp\\l2-38060390711-1\\_stage\\l2-20261010T144242285Z-slot2\\controlserver.db --version 1 --activated-by L2 orchestrator --fleet BROKERX-L2-0001 --allow-non-field-approval"}
+{"at":"2026-10-10T14:43:04.6230828+00:00","criterion":"preseed:charging-policy","value":"OK","detail":{"version":1,"source":"L2_PRESET","coveredAfter":["BROKERX-L2-0001"],"withoutPolicy":[]}}
+{"at":"2026-10-10T14:43:04.6243697+00:00","note":"Per-zone dispatch parameters left unconfigured (the default precondition)."}
+{"at":"2026-10-10T14:43:04.6404511+00:00","note":"Environment is up; entering scenario 'same-direction-die-to-oven-journey'."}
+{"at":"2026-10-10T14:43:04.7600011+00:00","note":"FieldOps: area-assignments --database C:\\actions-runner\\win11-01-control-server\\_work\\_temp\\l2-38060390711-1\\_stage\\l2-20261010T144242285Z-slot2\\controlserver.db"}
+{"at":"2026-10-10T14:43:06.3913746+00:00","note":"Vehicle AGV-L2-001 slot model 54e364a344bb4e9bb9331382b16d6fc7 via LatestPublishedIoBinding: 1=FRONT, 2=FRONT, 3=FRONT, 4=FRONT, 5=REAR, 6=REAR, 7=REAR, 8=REAR"}
+{"at":"2026-10-10T14:43:06.4023563+00:00","note":"Publishing DIE_TO_OVEN demand ae9c038bfccf441f8b8c70816cf868cf (sublot L2-SDJ-N1-3-20261010T144242285Z, AREA N1-3, 2 baskets)."}
+{"at":"2026-10-10T14:43:06.4756936+00:00","criterion":"L2-SDJ-DOV-REAR-admission","value":"@{Stage=; WorkType=; ReasonCode=}"}
+{"at":"2026-10-10T14:43:07.2277033+00:00","criterion":"L2-SDJ-DOV-REAR-admission","value":"@{Stage=; WorkType=; ReasonCode=ELIGIBLE}"}
+{"at":"2026-10-10T14:43:07.9888612+00:00","criterion":"L2-SDJ-DOV-REAR-admission","value":"@{Stage=AwaitingPickupArrival; WorkType=DIE_TO_OVEN; ReasonCode=ACCEPTED}"}
+{"at":"2026-10-10T14:43:08.0153971+00:00","criterion":"to-pickup-intent","value":"@{UpperId=W2G-ae9c038b-fccf-441f-8b8c-70816cf868cf-PICKUP-1; OrderId=; Status=CREATE_ATTEMPTED; DestinationStationId=12}"}
+{"at":"2026-10-10T14:43:08.2582171+00:00","criterion":"to-pickup-intent","value":"@{UpperId=W2G-ae9c038b-fccf-441f-8b8c-70816cf868cf-PICKUP-1; OrderId=ORDER-000001; Status=CONFIRMED; DestinationStationId=12}"}
+{"at":"2026-10-10T14:43:08.3225136+00:00","note":"Vehicle drives to station 12 and comes to rest."}
+{"at":"2026-10-10T14:43:08.3801071+00:00","criterion":"journey-stage","value":"AwaitingPickupArrival"}
+{"at":"2026-10-10T14:43:09.3960945+00:00","criterion":"journey-stage","value":"AwaitingSublot"}
+{"at":"2026-10-10T14:43:10.1543126+00:00","criterion":"journey-stage","value":"AwaitingLoadResult"}
+{"at":"2026-10-10T14:43:11.1666065+00:00","criterion":"journey-stage","value":"AwaitingStationDeparture"}
+{"at":"2026-10-10T14:43:42.0627820+00:00","criterion":"journey-stage","value":"AwaitingDepartureSafety"}
+{"at":"2026-10-10T14:43:42.3322348+00:00","criterion":"journey-stage","value":"AwaitingGateArrival"}
+{"at":"2026-10-10T14:43:42.3393472+00:00","criterion":"to-gate-intent","value":"@{UpperId=W2G-ae9c038b-fccf-441f-8b8c-70816cf868cf-GATE-1; OrderId=ORDER-000002; Status=CONFIRMED; DestinationStationId=402}"}
+{"at":"2026-10-10T14:43:42.3611791+00:00","note":"Vehicle drives to station 402 and comes to rest."}
+{"at":"2026-10-10T14:43:43.4091509+00:00","criterion":"journey-stage","value":"AwaitingUnloadResult"}
+{"at":"2026-10-10T14:43:44.1677066+00:00","criterion":"journey-stage","value":"Completed"}
+{"at":"2026-10-10T14:43:44.1952058+00:00","criterion":"L2-SDJ-DOV-REAR-settled","value":"@{DemandStatus=Succeeded; Unloads=1}"}
+{"at":"2026-10-10T14:43:44.2030904+00:00","note":"Publishing DIE_TO_OVEN demand 4a97728ad6364c689dc90df89c598f40 (sublot L2-SDJ-N1-7-20261010T144242285Z, AREA N1-7, 2 baskets)."}
+{"at":"2026-10-10T14:43:44.2185385+00:00","criterion":"L2-SDJ-DOV-FRONT-admission","value":"@{Stage=; WorkType=; ReasonCode=}"}
+{"at":"2026-10-10T14:43:44.9745504+00:00","criterion":"L2-SDJ-DOV-FRONT-admission","value":"@{Stage=; WorkType=; ReasonCode=ELIGIBLE}"}
+{"at":"2026-10-10T14:43:45.2284888+00:00","criterion":"L2-SDJ-DOV-FRONT-admission","value":"@{Stage=AwaitingPickupArrival; WorkType=DIE_TO_OVEN; ReasonCode=ACCEPTED}"}
+{"at":"2026-10-10T14:43:45.2340658+00:00","criterion":"to-pickup-intent","value":"@{UpperId=W2G-4a97728a-d636-4c68-9dc9-0df89c598f40-PICKUP-1; OrderId=ORDER-000003; Status=CONFIRMED; DestinationStationId=12}"}
+{"at":"2026-10-10T14:43:45.2450907+00:00","note":"Vehicle drives to station 12 and comes to rest."}
+{"at":"2026-10-10T14:43:45.2723827+00:00","criterion":"journey-stage","value":"AwaitingPickupArrival"}
+{"at":"2026-10-10T14:43:46.5239009+00:00","criterion":"journey-stage","value":"AwaitingSublot"}
+{"at":"2026-10-10T14:43:47.0281296+00:00","criterion":"journey-stage","value":"AwaitingLoadResult"}
+{"at":"2026-10-10T14:43:48.0375957+00:00","criterion":"journey-stage","value":"AwaitingStationDeparture"}
+{"at":"2026-10-10T14:44:18.1285030+00:00","criterion":"journey-stage","value":"AwaitingGateArrival"}
+{"at":"2026-10-10T14:44:18.1332075+00:00","criterion":"to-gate-intent","value":"@{UpperId=W2G-4a97728a-d636-4c68-9dc9-0df89c598f40-GATE-1; OrderId=ORDER-000004; Status=CONFIRMED; DestinationStationId=402}"}
+{"at":"2026-10-10T14:44:18.1509591+00:00","note":"Vehicle drives to station 402 and comes to rest."}
+{"at":"2026-10-10T14:44:19.2012701+00:00","criterion":"journey-stage","value":"AwaitingUnloadResult"}
+{"at":"2026-10-10T14:44:19.9621918+00:00","criterion":"journey-stage","value":"Completed"}
+{"at":"2026-10-10T14:44:19.9698091+00:00","criterion":"L2-SDJ-DOV-FRONT-settled","value":"@{DemandStatus=Succeeded; Unloads=1}"}
+{"at":"2026-10-10T14:44:19.9797394+00:00","note":"DIE_TO_OVEN：两条需求各在 AREA 机台站 12 按侧取仓、到绑定站 402 卸货，都已结清。"}
+{"at":"2026-10-10T14:44:20.4939192+00:00","note":"L2 port block lock released."}

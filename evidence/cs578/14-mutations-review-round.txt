@@ -1,0 +1,100 @@
+# Review round (head 9259f0db7): all 17 re-run after the cases were rewritten, M13-M17 new.
+M01 KILLED -- configuration step does not hold the runtime off before the restart [655 passed, 10 failed, exit 1]
+      red: first install: restarted with the runtime off, read back, phase one exited, then opened and read back again
+      red: first install: phase one with enabled overridden to true by a higher layer is refused, the service stopped, the runtime never opened
+      red: first install: phase one with enabled overridden to true, read before any dispatch activity (only 2001 missing), is refused
+      red: upgrade: restarted with the runtime off, read back, phase one exited, then opened and read back again
+      red: upgrade: phase one with enabled overridden to true by a higher layer is refused, the service stopped, the runtime never opened
+      red: upgrade: phase one with enabled overridden to true, read before any dispatch activity (only 2001 missing), is refused
+      red: rollback: restarted with the runtime off, read back, phase one exited, then opened and read back again
+      red: rollback: phase one with enabled overridden to true by a higher layer is refused, the service stopped, the runtime never opened
+      red: rollback: phase one with enabled overridden to true, read before any dispatch activity (only 2001 missing), is refused
+      red: held: the phase-one process has not exited -- refused, the flag stays false, no second start
+M02 KILLED -- held judge never asks for event 2001 [660 passed, 5 failed, exit 1]
+      red: held read-back: no event 2001 since the start (a higher layer set enabled=true) -- refused
+      red: held read-back: event 2001 only from an earlier process -- refused
+      red: first install: phase one with enabled overridden to true, read before any dispatch activity (only 2001 missing), is refused
+      red: upgrade: phase one with enabled overridden to true, read before any dispatch activity (only 2001 missing), is refused
+      red: rollback: phase one with enabled overridden to true, read before any dispatch activity (only 2001 missing), is refused
+M03 KILLED -- held judge ignores activity [658 passed, 7 failed, exit 1]
+      red: held read-back: event 2101 (LogCatalogPollFailed) since the start -- refused, naming it
+      red: held read-back: event 2131 (LogBlockedVehicleJudgedACandidate) since the start -- refused, naming it
+      red: held read-back: event 2002 (LogIterationFailed) since the start -- refused, naming it
+      red: held read-back: event 2153 (LogReleaseFailed) since the start -- refused, naming it
+      red: held read-back: event 100 (RequestPipelineStart) since the start -- refused, naming it
+      red: held read-back: event 2240 (LogCommitted) since the start -- refused, naming it
+      red: held read-back: event 2171 (LogOwnOrderRebuilt) since the start -- refused, naming it
+M04 KILLED -- read-back decision ignores the held refusal [659 passed, 6 failed, exit 1]
+      red: first install: phase one with enabled overridden to true by a higher layer is refused, the service stopped, the runtime never opened
+      red: first install: phase one with enabled overridden to true, read before any dispatch activity (only 2001 missing), is refused
+      red: upgrade: phase one with enabled overridden to true by a higher layer is refused, the service stopped, the runtime never opened
+      red: upgrade: phase one with enabled overridden to true, read before any dispatch activity (only 2001 missing), is refused
+      red: rollback: phase one with enabled overridden to true by a higher layer is refused, the service stopped, the runtime never opened
+      red: rollback: phase one with enabled overridden to true, read before any dispatch activity (only 2001 missing), is refused
+M05 KILLED -- release does not wait for the phase-one process [660 passed, 5 failed, exit 1]
+      red: ParallelHost.psm1 without its allowances shows exactly the 36 allowed command(s)
+      red: first install: restarted with the runtime off, read back, phase one exited, then opened and read back again
+      red: upgrade: restarted with the runtime off, read back, phase one exited, then opened and read back again
+      red: rollback: restarted with the runtime off, read back, phase one exited, then opened and read back again
+      red: held: the phase-one process has not exited -- refused, the flag stays false, no second start
+M06 KILLED -- release skips the second read-back [658 passed, 7 failed, exit 1]
+      red: ParallelHost.psm1 without its allowances shows exactly the 36 allowed command(s)
+      red: first install: restarted with the runtime off, read back, phase one exited, then opened and read back again
+      red: first install: a second read-back that does not match is refused, the service stopped, and JourneyRuntime.enabled set back to false
+      red: upgrade: restarted with the runtime off, read back, phase one exited, then opened and read back again
+      red: upgrade: a second read-back that does not match is refused, the service stopped, and JourneyRuntime.enabled set back to false
+      red: rollback: restarted with the runtime off, read back, phase one exited, then opened and read back again
+      red: rollback: a second read-back that does not match is refused, the service stopped, and JourneyRuntime.enabled set back to false
+M07 KILLED -- release skips the held read-back [654 passed, 11 failed, exit 1]
+      red: ParallelHost.psm1 without its allowances shows exactly the 36 allowed command(s)
+      red: first install: restarted with the runtime off, read back, phase one exited, then opened and read back again
+      red: first install: phase one with enabled overridden to true by a higher layer is refused, the service stopped, the runtime never opened
+      red: first install: phase one with enabled overridden to true, read before any dispatch activity (only 2001 missing), is refused
+      red: upgrade: restarted with the runtime off, read back, phase one exited, then opened and read back again
+      red: upgrade: phase one with enabled overridden to true by a higher layer is refused, the service stopped, the runtime never opened
+      red: upgrade: phase one with enabled overridden to true, read before any dispatch activity (only 2001 missing), is refused
+      red: rollback: restarted with the runtime off, read back, phase one exited, then opened and read back again
+      red: rollback: phase one with enabled overridden to true by a higher layer is refused, the service stopped, the runtime never opened
+      red: rollback: phase one with enabled overridden to true, read before any dispatch activity (only 2001 missing), is refused
+      red: held: a definition with the runtime off is read back once and left off, no second restart
+M08 KILLED -- rollback path reads back once with the runtime on, no release [662 passed, 3 failed, exit 1]
+      red: installer: reads the effective configuration back through Find-ParallelEffectiveConfiguration / Get-ParallelEffectiveConfigurationAction after every install and rollback
+      red: wiring: the runtime is released on the install path and on the rollback path (Invoke-JourneyRuntimeRelease, twice, around one Invoke-ParallelJourneyRuntimeRelease)
+      red: wiring: no read-back runs outside the release (the old single read-back with the runtime already on is gone)
+M09 KILLED -- install path (first install and upgrade) reads back once with the runtime on, no release [662 passed, 3 failed, exit 1]
+      red: installer: reads the effective configuration back through Find-ParallelEffectiveConfiguration / Get-ParallelEffectiveConfigurationAction after every install and rollback
+      red: wiring: the runtime is released on the install path and on the rollback path (Invoke-JourneyRuntimeRelease, twice, around one Invoke-ParallelJourneyRuntimeRelease)
+      red: wiring: no read-back runs outside the release (the old single read-back with the runtime already on is gone)
+M10 KILLED -- ProcessExited action answers yes without waiting [664 passed, 1 failed, exit 1]
+      red: wiring: each release follows Set-InstanceConfiguration, reads back held then released, and waits on the phase-one process
+M11 KILLED -- installer read-back judges the binding alone, not through the phased decision [664 passed, 1 failed, exit 1]
+      red: wiring: the installer's read-back decides through Get-ParallelReadBackAction -Phase $Phase only (the decision the path cases run)
+M12 KILLED -- held judge counts lines from an earlier process [663 passed, 2 failed, exit 1]
+      red: held read-back: event 2001 only from an earlier process -- refused
+      red: held read-back: an activity event from an earlier process does not count against this one
+M13 KILLED -- second read-back refusal leaves enabled=true [661 passed, 4 failed, exit 1]
+      red: ParallelHost.psm1 without its allowances shows exactly the 36 allowed command(s)
+      red: first install: a second read-back that does not match is refused, the service stopped, and JourneyRuntime.enabled set back to false
+      red: upgrade: a second read-back that does not match is refused, the service stopped, and JourneyRuntime.enabled set back to false
+      red: rollback: a second read-back that does not match is refused, the service stopped, and JourneyRuntime.enabled set back to false
+M14 KILLED -- configuration step ignores JourneyRuntime environment keys [659 passed, 6 failed, exit 1]
+      red: first install: JourneyRuntime__Enabled in the service's Environment is refused before any restart, naming the key
+      red: first install: a DOTNET_-prefixed JourneyRuntime key in the machine's environment is refused before any restart, naming the key
+      red: upgrade: JourneyRuntime__Enabled in the service's Environment is refused before any restart, naming the key
+      red: upgrade: a DOTNET_-prefixed JourneyRuntime key in the machine's environment is refused before any restart, naming the key
+      red: rollback: JourneyRuntime__Enabled in the service's Environment is refused before any restart, naming the key
+      red: rollback: a DOTNET_-prefixed JourneyRuntime key in the machine's environment is refused before any restart, naming the key
+M15 KILLED -- environment override ignores the DOTNET_/ASPNETCORE_ prefixes [661 passed, 4 failed, exit 1]
+      red: first install: a DOTNET_-prefixed JourneyRuntime key in the machine's environment is refused before any restart, naming the key
+      red: upgrade: a DOTNET_-prefixed JourneyRuntime key in the machine's environment is refused before any restart, naming the key
+      red: rollback: a DOTNET_-prefixed JourneyRuntime key in the machine's environment is refused before any restart, naming the key
+      red: environment override: only JourneyRuntime keys count, ignoring case, with or without the DOTNET_/ASPNETCORE_ prefix
+M16 KILLED -- installer computes the machine-level override but does not throw it [664 passed, 1 failed, exit 1]
+      red: wiring: a JourneyRuntime environment key found before the product script is thrown by the very next statement
+M17 KILLED -- read-back refusal without the log file facts [664 passed, 1 failed, exit 1]
+      red: wiring: a read-back refusal carries the log files' size and last write time (Format-ParallelLogFileFacts)
+
+# M18 (C#): PostConfigure no longer takes the roster from its last layer; the rewritten real environment-variable case:
+[xUnit.net 00:00:05.17]     ControlServer.Tests.ParallelInstanceEffectiveConfigurationTests.RosterFromEnvironmentVariablesOverAFileRosterIsTakenWhole [FAIL]
+   Assert.Single() Failure: The collection contained 2 items
+Failed!  - Failed:     1, Passed:     0, Skipped:     0, Total:     1, Duration: 121 ms - ControlServer.Tests.dll (net8.0)

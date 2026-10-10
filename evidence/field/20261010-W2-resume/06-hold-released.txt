@@ -1,0 +1,11 @@
+=== hold release check 2026-10-10T23:15:54.5744475+08:00
+ManualChargingHolds (current): 
+ManualChargingHoldRecords: {"HoldId":"manual-charging-hold:BROKERX-f38975561adf46ccb1d2f23833c7d0e4:20261010T1218024389284Z","VehicleKey":"BROKERX-f38975561adf46ccb1d2f23833c7d0e4","Reason":"ROSTER_EMPTY","Since":"2026-10-10 12:18:02.4389284+00:00","WarnedAt":"2026-10-10 12:18:02.5230804+00:00","ReleasedAt":"2026-10-10 15:15:13.8151878+00:00","ReleaseRequestId":"c3fb9052-b89f-451a-a417-11469b870101"}
+ManualChargingReturnToServiceRequests: {"RequestId":"c3fb9052-b89f-451a-a417-11469b870101","AgvId":"老厂前线新多仓位2","SessionGeneration":15,"AdministratorRole":"MAINTENANCE_ADMINISTRATOR","Reason":"手动充电结束，申请恢复业务资格评估。","ObservedBatteryPercent":null,"Outcome":"RETURNED_TO_ELIGIBILITY_EVALUATION","ProblemReasonCode":null,"DecidedAt":"2026-10-10 15:15:13.8151878+00:00"}
+session: {"SessionGeneration":15,"Readiness":"Ready","ReasonCode":"READY","UpdatedAt":"2026-10-10 15:15:31.119773+00:00"}
+log: 
+Get-Content: D:\zhengyushao\control-server-v2-ops\cs566-hold-release.ps1:18
+Line |
+  18 |  Get-Content $log.FullName -Tail 4000 | Select-String -Pattern 'Manual …
+     |              ~~~~~~~~~~~~~
+     | Cannot bind argument to parameter 'Path' because it is null.
