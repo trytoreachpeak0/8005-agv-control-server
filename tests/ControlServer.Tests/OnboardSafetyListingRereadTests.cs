@@ -143,11 +143,15 @@ public sealed class OnboardSafetyListingRereadTests
         rig.HangOn = afterAnIncompleteRead ? request => request.Contains("pageNum=1", StringComparison.Ordinal) && rig.Orders.Reads >= 1
             : request => request.Contains("getVehicleInfo", StringComparison.Ordinal);
 
+        System.Diagnostics.Stopwatch elapsed = System.Diagnostics.Stopwatch.StartNew();
         RiotVehicleSafetyObservation result = await rig.OnboardAsync(rereads: 2, budget: TimeSpan.FromMilliseconds(300));
+        elapsed.Stop();
 
         Assert.Equal(RiotVehicleMotionState.Unknown, result.MotionState);
         Assert.Equal([reason], result.ReasonCodes);
         Assert.True(rig.HungCallWasCancelled);
+        // The budget ended it, not the SDK's one-minute timeout: generous for a slow CI machine, far below that minute.
+        Assert.True(elapsed.Elapsed < TimeSpan.FromSeconds(15), $"answered after {elapsed.Elapsed}");
     }
 
     /// <summary>车载端自己放弃（请求令牌被取消）照旧往外抛取消，由端点记成取消；不是预算到点，不能被当成一次读失败吞掉。</summary>
@@ -239,7 +243,8 @@ public sealed class OnboardSafetyListingRereadTests
         public Rig()
         {
             Session = new RiotSession(
-                new RiotOptions { BaseUrl = "http://riot.test", CallApiKey = "test-call-api-key" },
+                // The SDK's own timeout is far beyond any budget here, so it can never be what ends a hung read.
+                new RiotOptions { BaseUrl = "http://riot.test", CallApiKey = "test-call-api-key", Timeout = TimeSpan.FromMinutes(1) },
                 new Handler(this));
             Gateway = new HttpRiotMovementGateway(Session, Clock);
         }

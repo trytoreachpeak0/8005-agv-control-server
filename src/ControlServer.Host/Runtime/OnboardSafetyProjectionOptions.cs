@@ -50,8 +50,7 @@ public sealed class OnboardSafetyProjectionOptionsValidator : IValidateOptions<O
         if (options.NonFinalOrderReadRetries is < 0 or > MaximumNonFinalOrderReadRetries)
             return ValidateOptionsResult.Fail(
                 $"OnboardSafetyProjection NonFinalOrderReadRetries must be between 0 and {MaximumNonFinalOrderReadRetries}.");
-        if (options.OnboardRequestTimeoutMilliseconds <= 0)
-            return ValidateOptionsResult.Fail("OnboardSafetyProjection OnboardRequestTimeoutMilliseconds must be positive.");
+        // A positive budget below the onboard's timeout also makes that timeout positive.
         if (options.ReadBudgetMilliseconds <= 0 || options.ReadBudgetMilliseconds >= options.OnboardRequestTimeoutMilliseconds)
             return ValidateOptionsResult.Fail(
                 "OnboardSafetyProjection ReadBudgetMilliseconds must be positive and below OnboardRequestTimeoutMilliseconds " +
