@@ -70,7 +70,7 @@ $ErrorActionPreference = 'Stop'
 
 Import-Module (Join-Path (Split-Path -Parent $PSScriptRoot) 'L2ConditionOrLast.psm1') -Force
 
-# Every Period-th read churned, Burst 1: a deterministic count, never a draw (header, "强度从哪来"). The departure budget is the
+# The first read of every Period churned (Burst 1): a deterministic count, never a draw (header, "强度从哪来"). The departure budget is the
 # setup's StationDepartureWaitTimeout plus 60 seconds; both scenarios' setups carry their own wait.
 $plan = if ($ChurnFrom -eq 'PickupArrival') {
     @{ Period = 3; Burst = 1; DepartureBudgetSeconds = 120; MinimumChurned = 5; OperatorPauseSeconds = 10 }
