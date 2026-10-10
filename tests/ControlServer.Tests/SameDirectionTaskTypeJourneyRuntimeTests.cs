@@ -159,6 +159,51 @@ public sealed class SameDirectionTaskTypeJourneyRuntimeTests
     }
 
     /// <summary>
+    /// Rolling back the package does not roll back the store. Once this build has bound version 3, the build before it
+    /// can bind its seed under neither version 2 (the store refuses a version moving backwards) nor version 3 (bound to
+    /// other content): the engine reads either refusal as drift and takes on no demand. Only a version above the
+    /// store's binds it, and moving forward again then needs one above that. scripts/parallel/README.md tells the
+    /// operator this; the ticket had expected version 2 to be accepted on rollback, and it is not.
+    /// </summary>
+    [Fact]
+    [Trait("IntegrationSlice", "FP-IS-10")]
+    public async Task AfterVersionThreeIsBoundTheRolledBackBuildBindsOnlyUnderAHigherVersion()
+    {
+        await using RuntimeFixture fixture = await RuntimeFixture.CreateAsync();
+        fixture.Options.AdmissionPolicyVersion = 3;
+        await fixture.Engine.ExecuteOnceAsync(Token);
+        Assert.Equal(3, (await fixture.Context.AdmissionPolicyState.AsNoTracking().SingleAsync(Token)).Version);
+
+        BusinessIdentityConflictException backwards = await Assert.ThrowsAsync<BusinessIdentityConflictException>(
+            () => BindPreviousBuildsSeedAsync(fixture, version: 2));
+        Assert.Equal("Admission policy version cannot move backwards.", backwards.Message);
+        BusinessIdentityConflictException sameVersion = await Assert.ThrowsAsync<BusinessIdentityConflictException>(
+            () => BindPreviousBuildsSeedAsync(fixture, version: 3));
+        Assert.Equal(
+            "Admission policy version is already bound to different content or deployment identity.",
+            sameVersion.Message);
+
+        await BindPreviousBuildsSeedAsync(fixture, version: 4);
+        Assert.Equal(
+            [TransportTaskTypes.StagingToWire, TransportTaskTypes.WireToGate],
+            await fixture.Context.StationTaskTypeAdmissions.AsNoTracking()
+                .Select(row => row.TaskType).Distinct().OrderBy(taskType => taskType).ToArrayAsync(Token));
+
+        // Forward again: this build under the rollback's version 4 is drift, under 5 it binds. Installing a package
+        // restarts the service, so the engine starts over with nothing tracked from before the rollback.
+        await fixture.RecreateEngineAsync();
+        fixture.Options.AdmissionPolicyVersion = 4;
+        fixture.Catalog.Set(fixture.Demand(DemandId, "SUBLOT-001", Now.AddMinutes(-10)));
+        fixture.BoxCounts.Set("SUBLOT-001", 4);
+        await fixture.Engine.ExecuteOnceAsync(Token);
+        Assert.Equal(AdmissionPolicyDriftCriterion.Reason, (await fixture.BacklogAsync(DemandId)).ReasonCode);
+
+        fixture.Options.AdmissionPolicyVersion = 5;
+        await fixture.Engine.ExecuteOnceAsync(Token);
+        Assert.Equal("ACCEPTED", (await fixture.BacklogAsync(DemandId)).ReasonCode);
+    }
+
+    /// <summary>
     /// Binds what the build before batch 10 seeded -- the fixture map's two area stations, each with WIRE_TO_GATE and
     /// STAGING_TO_WIRE -- under <paramref name="version"/>, through the store the engine binds with.
     /// </summary>
