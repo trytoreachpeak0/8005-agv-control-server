@@ -66,27 +66,17 @@ public sealed class HttpRiotMovementGateway : IRiotMovementGateway, IRiotVehicle
     private const string UnassignedVehicleKeyPlaceholder = "--";
     private readonly RiotSession riotSession;
     private readonly TimeProvider timeProvider;
-    private readonly NonFinalOrderCoverageMemory coverageMemory;
 
     public HttpRiotMovementGateway(RiotSession riotSession)
         : this(riotSession, TimeProvider.System)
     {
     }
 
-    public HttpRiotMovementGateway(RiotSession riotSession, TimeProvider timeProvider)
-        : this(riotSession, timeProvider, new NonFinalOrderCoverageMemory())
-    {
-    }
-
     [ActivatorUtilitiesConstructor]
-    public HttpRiotMovementGateway(
-        RiotSession riotSession,
-        TimeProvider timeProvider,
-        NonFinalOrderCoverageMemory coverageMemory)
+    public HttpRiotMovementGateway(RiotSession riotSession, TimeProvider timeProvider)
     {
         this.riotSession = riotSession;
         this.timeProvider = timeProvider;
-        this.coverageMemory = coverageMemory;
     }
 
     /// <summary>The act a charging order carries after its move to the charger (allowlist 1.2, shape two).</summary>
@@ -344,7 +334,7 @@ public sealed class HttpRiotMovementGateway : IRiotMovementGateway, IRiotVehicle
                 return UnknownSafety(vehicleKey, "RIOT_NONFINAL_ORDER_COVERAGE_UNKNOWN");
             }
 
-            return Safety(vehicleKey, vehicle, AnyOnVehicle(orders.Records, vehicleKey), timeProvider.GetUtcNow());
+            return Safety(vehicleKey, vehicle, orders.Records);
         }
         catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
         {
@@ -360,145 +350,31 @@ public sealed class HttpRiotMovementGateway : IRiotMovementGateway, IRiotVehicle
         }
     }
 
-    /// <summary>How many times one onboard projection request reads the non-final order listing (control-server#573).</summary>
-    /// <remarks>
-    /// Each read is a whole one, judged alone by control-server#525's rule; pages from two reads are never put together. A
-    /// read that adds up first time costs nothing extra. Worst case, every read fails on its last page: one vehicle read plus
-    /// three times the page count, 10 requests for today's 3 pages where a single read made 4.
-    /// </remarks>
-    private const int OnboardListingReadAttempts = 3;
-
-    /// <summary>
-    /// How far before the remembered listing's start this server's own order intents are asked about (control-server#573).
-    /// </summary>
-    /// <remarks>
-    /// Covers a create stamped just before the listing started whose request had not reached RIoT when the first page was
-    /// read. A create still waiting for its answer is caught by the ledger itself (<see cref="IOwnOrderCreationLedger"/>).
-    /// </remarks>
-    private static readonly TimeSpan OwnOrderLookback = TimeSpan.FromSeconds(1);
-
-    /// <summary>How long the own-order question may take before the carry-over is given up (control-server#573).</summary>
-    private static readonly TimeSpan OwnOrderQuestionTimeout = TimeSpan.FromSeconds(1);
-
-    public async Task<RiotVehicleSafetyObservation> ReadForOnboardAsync(
+    public Task<RiotVehicleSafetyObservation> ReadForOnboardAsync(
         string vehicleKey,
-        TimeSpan coverageCarryOver,
-        IOwnOrderCreationLedger ownOrders,
+        int listingRereads,
         CancellationToken cancellationToken)
     {
-        ArgumentException.ThrowIfNullOrWhiteSpace(vehicleKey);
-        ArgumentNullException.ThrowIfNull(ownOrders);
-        try
-        {
-            VehicleExecutionFacts vehicle = await riotSession.Tasks.GetVehicleExecutionFactsAsync(
-                vehicleKey, cancellationToken).ConfigureAwait(false);
-            // Every record a read that did not add up still returned is one RIoT held in a non-final state at that moment.
-            bool seenOnVehicle = false;
-            for (int attempt = 1; attempt <= OnboardListingReadAttempts; attempt++)
-            {
-                NonFinalOrderRead orders = await ReadAllNonFinalOrdersAsync(cancellationToken).ConfigureAwait(false);
-                if (orders.IsComplete)
-                {
-                    return Safety(vehicleKey, vehicle, AnyOnVehicle(orders.Records, vehicleKey), timeProvider.GetUtcNow());
-                }
-                seenOnVehicle |= AnyOnVehicle(orders.Records, vehicleKey);
-            }
-
-            if (seenOnVehicle)
-            {
-                return Safety(vehicleKey, vehicle, hasNonFinalOrder: true, timeProvider.GetUtcNow());
-            }
-
-            DateTimeOffset now = timeProvider.GetUtcNow();
-            RememberedNonFinalOrders? remembered = coverageMemory.Recall();
-            if (coverageCarryOver <= TimeSpan.Zero || remembered is null ||
-                now < remembered.ReadStartedAt || now - remembered.ReadStartedAt > coverageCarryOver)
-            {
-                return UnknownSafety(vehicleKey, "RIOT_NONFINAL_ORDER_COVERAGE_UNKNOWN");
-            }
-
-            // An order of this server's that reached RIoT after the remembered listing started is not in it. This server's own
-            // records say whether there may be one; RIoT's listing is not asked to (control-server#573, the coordinator's
-            // condition 1).
-            bool? ownOrderSince = await OwnOrderCreatedSinceAsync(
-                ownOrders, vehicleKey, remembered.ReadStartedAt - OwnOrderLookback, cancellationToken).ConfigureAwait(false);
-            if (ownOrderSince is null)
-            {
-                return UnknownSafety(vehicleKey, "RIOT_NONFINAL_ORDER_COVERAGE_UNKNOWN");
-            }
-            if (ownOrderSince.Value)
-            {
-                return Safety(vehicleKey, vehicle, hasNonFinalOrder: true, now);
-            }
-
-            // The window is measured when the answer leaves, not before the ledger was asked: the onboard ages the answer
-            // from observedAt every time it uses it, and has to keep using it until its next poll lands. A ledger answer
-            // that took long enough leaves too little of the onboard's 5 seconds (control-server#573, run 38069023213).
-            if (timeProvider.GetUtcNow() - remembered.ReadStartedAt > coverageCarryOver)
-            {
-                return UnknownSafety(vehicleKey, "RIOT_NONFINAL_ORDER_COVERAGE_UNKNOWN");
-            }
-
-            // The vehicle's own state is this request's; only "is there an order on it" is the remembered listing's, so the
-            // observation is stamped with that listing's start -- the onboard ages it from there.
-            return Safety(
-                vehicleKey, vehicle, AnyOnVehicle(remembered.Records, vehicleKey), remembered.ReadStartedAt);
-        }
-        catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
-        {
-            throw;
-        }
-        catch (Exception error) when (RiotCallFailureClassification.IsTimeout(error))
-        {
-            return UnknownSafety(vehicleKey, "RIOT_READ_TIMEOUT");
-        }
-        catch (Exception error) when (RiotCallFailureClassification.IsSdkFailure(error))
-        {
-            return UnknownSafety(vehicleKey, "RIOT_READ_FAILED");
-        }
+        _ = listingRereads;
+        return ReadVehicleSafetyAsync(vehicleKey, cancellationToken);
     }
 
-    /// <summary>The ledger's answer, or null when it failed or did not answer in time: then nothing is carried over.</summary>
-    private static async Task<bool?> OwnOrderCreatedSinceAsync(
-        IOwnOrderCreationLedger ownOrders,
-        string vehicleKey,
-        DateTimeOffset since,
-        CancellationToken cancellationToken)
-    {
-        using CancellationTokenSource timeout = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
-        timeout.CancelAfter(OwnOrderQuestionTimeout);
-        try
-        {
-            return await ownOrders.MayHaveCreatedSinceAsync(vehicleKey, since, timeout.Token).ConfigureAwait(false);
-        }
-        catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
-        {
-            throw;
-        }
-        catch (Exception)
-        {
-            return null;
-        }
-    }
-
-    private static bool AnyOnVehicle(IEnumerable<OrderStateRecord> records, string vehicleKey) =>
-        records.Any(order =>
-            string.Equals(order.AppointVehicleKey, vehicleKey, StringComparison.Ordinal) ||
-            string.Equals(order.ExecuteVehicleKey, vehicleKey, StringComparison.Ordinal));
-
-    private static RiotVehicleSafetyObservation Safety(
+    /// <summary>The safety predicate over one vehicle read and one complete non-final order listing.</summary>
+    private RiotVehicleSafetyObservation Safety(
         string vehicleKey,
         VehicleExecutionFacts vehicle,
-        bool hasNonFinalOrder,
-        DateTimeOffset observedAt)
+        IReadOnlyList<OrderStateRecord> nonFinalOrders)
     {
+        bool hasNonFinalOrder = nonFinalOrders.Any(order =>
+            string.Equals(order.AppointVehicleKey, vehicleKey, StringComparison.Ordinal) ||
+            string.Equals(order.ExecuteVehicleKey, vehicleKey, StringComparison.Ordinal));
         if ((vehicle.Speed is not null && vehicle.Speed != 0) ||
             string.Equals(vehicle.MovementState, "MT_RUNNING", StringComparison.Ordinal))
         {
             return new RiotVehicleSafetyObservation(
                 vehicleKey,
                 RiotVehicleMotionState.Moving,
-                observedAt,
+                timeProvider.GetUtcNow(),
                 "RIOT_BEHAVIOR_LAB_R41",
                 ["RIOT_MOTION_ACTIVE"]);
         }
@@ -519,7 +395,7 @@ public sealed class HttpRiotMovementGateway : IRiotMovementGateway, IRiotVehicle
         return new RiotVehicleSafetyObservation(
             vehicleKey,
             reasons.Count == 0 ? RiotVehicleMotionState.Stopped : RiotVehicleMotionState.Unknown,
-            observedAt,
+            timeProvider.GetUtcNow(),
             "RIOT_BEHAVIOR_LAB_R41",
             reasons);
     }
@@ -635,15 +511,13 @@ public sealed class HttpRiotMovementGateway : IRiotMovementGateway, IRiotVehicle
     /// <para>
     /// A total that changes between pages, a page that is short, long or out of place, a repeated record, or a listing
     /// past <see cref="NonFinalOrderPageCap"/> pages is incomplete -- never stitched into a snapshot RIoT never held. The
-    /// callers poll, so the next read starts over (the onboard projection also reads again at once, control-server#573). What paging cannot prove is a listing that changed without its total
+    /// callers poll, so the next read starts over. What paging cannot prove is a listing that changed without its total
     /// changing (one order leaving while another arrives between two page reads); RIoT offers no snapshot to page over, so
     /// that residue is accepted rather than closed.
     /// </para>
     /// </remarks>
     private async Task<NonFinalOrderRead> ReadAllNonFinalOrdersAsync(CancellationToken cancellationToken)
     {
-        // control-server#573: the start, not the end, is when this listing is remembered as true -- the conservative end.
-        DateTimeOffset startedAt = timeProvider.GetUtcNow();
         OrderStatePage first = await riotSession.Order.ListOrdersByStatesAsync(
             NonFinalOrderStates,
             pageNum: 1,
@@ -651,18 +525,18 @@ public sealed class HttpRiotMovementGateway : IRiotMovementGateway, IRiotVehicle
             cancellationToken: cancellationToken).ConfigureAwait(false);
         if (first.CoversAllRecords)
         {
-            return Complete(startedAt, first.Records);
+            return new NonFinalOrderRead(true, first.Records);
         }
         if (first.Current != 1 || first.Total is not long total || total < 0 ||
             (first.Size.HasValue && first.Size.Value != NonFinalOrderPageSize))
         {
-            return NonFinalOrderRead.IncompleteHaving(first.Records);
+            return NonFinalOrderRead.Incomplete;
         }
 
         long pageCount = (total + NonFinalOrderPageSize - 1) / NonFinalOrderPageSize;
         if (pageCount > NonFinalOrderPageCap)
         {
-            return NonFinalOrderRead.IncompleteHaving(first.Records);
+            return NonFinalOrderRead.Incomplete;
         }
 
         List<OrderStateRecord> records = [];
@@ -680,34 +554,23 @@ public sealed class HttpRiotMovementGateway : IRiotMovementGateway, IRiotVehicle
             if (page.Current != pageNum || page.Total != total || page.Records.Count != expectedCount ||
                 (page.Size.HasValue && page.Size.Value != NonFinalOrderPageSize))
             {
-                return NonFinalOrderRead.IncompleteHaving([.. records, .. page.Records]);
+                return NonFinalOrderRead.Incomplete;
             }
             foreach (OrderStateRecord record in page.Records)
             {
                 if (record.Id is long id && !seenIds.Add(id))
                 {
-                    return NonFinalOrderRead.IncompleteHaving([.. records, .. page.Records]);
+                    return NonFinalOrderRead.Incomplete;
                 }
                 records.Add(record);
             }
         }
-        return Complete(startedAt, records);
-    }
-
-    private NonFinalOrderRead Complete(DateTimeOffset startedAt, IReadOnlyList<OrderStateRecord> records)
-    {
-        coverageMemory.Remember(startedAt, records);
         return new NonFinalOrderRead(true, records);
     }
 
-    /// <remarks>
-    /// An incomplete read keeps the records it did get (control-server#573): each is an order RIoT held in a non-final state
-    /// when its page was read, so one on the vehicle is an order on the vehicle even though the listing as a whole proves
-    /// nothing. Only the onboard projection looks at them; every other caller stops at <see cref="IsComplete"/>.
-    /// </remarks>
     private sealed record NonFinalOrderRead(bool IsComplete, IReadOnlyList<OrderStateRecord> Records)
     {
-        public static NonFinalOrderRead IncompleteHaving(IReadOnlyList<OrderStateRecord> seen) => new(false, seen);
+        public static NonFinalOrderRead Incomplete { get; } = new(false, []);
     }
 
     /// <summary>

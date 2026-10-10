@@ -399,34 +399,29 @@ public sealed class FakeRiotTests
     }
 
     /// <summary>
-    /// control-server#573 end to end against the fake: with every read churned, the onboard projection answers from the
-    /// listing it last read in full, stamped with that read's start; the journey runtime's read still answers unknown.
+    /// control-server#573 end to end against the fake, with the deterministic count the real-rig scenarios rely on: every second
+    /// read churned. The onboard projections first read is churned and its reread adds up, so it answers STOPPED; the journey
+    /// runtimes read, which does not reread, lands on the next churned read and answers unknown.
     /// </summary>
     [Fact]
-    public async Task UnderChurnTheOnboardProjectionCarriesTheLastCompleteListingAndTheRuntimeReadDoesNot()
+    public async Task UnderChurnTheOnboardProjectionRereadsAndTheRuntimeReadDoesNot()
     {
         await using FakeRiotFixture fixture = await FakeRiotFixture.StartAsync();
         HttpRiotMovementGateway gateway = fixture.Gateway();
-        await fixture.CommandAsync(HttpMethod.Put, "faults/nonfinal-listing-churn", new { padding = 250, period = 0, burst = 0 });
-        RiotVehicleSafetyObservation complete = await gateway.ReadForOnboardAsync(
-            VehicleKey, TimeSpan.FromMilliseconds(1_500), new NoOwnOrders(), TestContext.Current.CancellationToken);
+        await fixture.CommandAsync(HttpMethod.Put, "faults/nonfinal-listing-churn", new { padding = 250, period = 2, burst = 1 });
 
-        await fixture.CommandAsync(HttpMethod.Put, "faults/nonfinal-listing-churn", new { padding = 250, period = 1, burst = 1 });
-        RiotVehicleSafetyObservation carried = await gateway.ReadForOnboardAsync(
-            VehicleKey, TimeSpan.FromMilliseconds(1_500), new NoOwnOrders(), TestContext.Current.CancellationToken);
+        RiotVehicleSafetyObservation onboard = await gateway.ReadForOnboardAsync(
+            VehicleKey, listingRereads: 2, TestContext.Current.CancellationToken);
         RiotVehicleSafetyObservation strict = await gateway.ReadVehicleSafetyAsync(VehicleKey, TestContext.Current.CancellationToken);
+        JsonElement churn = (await fixture.CommandAsync(
+                HttpMethod.Put, "faults/nonfinal-listing-churn", new { padding = 0, period = 0, burst = 0 }))
+            .GetProperty("body").GetProperty("nonFinalListingChurn");
 
-        Assert.Equal(RiotVehicleMotionState.Stopped, complete.MotionState);
-        Assert.Equal(RiotVehicleMotionState.Stopped, carried.MotionState);
-        Assert.True(carried.ObservedAt <= complete.ObservedAt);
+        Assert.Equal(RiotVehicleMotionState.Stopped, onboard.MotionState);
         Assert.Equal(["RIOT_NONFINAL_ORDER_COVERAGE_UNKNOWN"], strict.ReasonCodes);
+        Assert.Equal((3L, 2L), (churn.GetProperty("reads").GetInt64(), churn.GetProperty("churnedReads").GetInt64()));
     }
 
-    private sealed class NoOwnOrders : IOwnOrderCreationLedger
-    {
-        public Task<bool> MayHaveCreatedSinceAsync(string vehicleKey, DateTimeOffset since, CancellationToken cancellationToken) =>
-            Task.FromResult(false);
-    }
 
     internal sealed class FakeRiotFixture : IAsyncDisposable
     {

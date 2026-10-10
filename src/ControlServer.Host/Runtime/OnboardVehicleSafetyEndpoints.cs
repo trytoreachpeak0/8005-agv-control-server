@@ -26,7 +26,6 @@ public static class OnboardVehicleSafetyEndpoints
         ProblemHttpResult>> HandleAsync(
         HttpContext context,
         IOnboardVehicleSafetyProjection safetyProjection,
-        IOwnOrderCreationLedger ownOrders,
         IOptions<JourneyRuntimeOptions> journeyOptions,
         IOptions<OnboardSafetyProjectionOptions> projectionOptions,
         CancellationToken cancellationToken)
@@ -50,12 +49,10 @@ public static class OnboardVehicleSafetyEndpoints
             return TypedResults.Unauthorized();
         }
 
-        // control-server#573: the onboard ages this by observedAt, so it alone may carry a complete order listing over one that
-        // did not add up (IOnboardVehicleSafetyProjection).
+        // control-server#573: a listing that does not add up is read again within this request (IOnboardVehicleSafetyProjection).
         RiotVehicleSafetyObservation observation = await safetyProjection.ReadForOnboardAsync(
             journeyOptions.Value.VehicleKey,
-            TimeSpan.FromMilliseconds(options.OrderCoverageCarryOverMs),
-            ownOrders,
+            options.NonFinalOrderReadRetries,
             cancellationToken).ConfigureAwait(false);
         return TypedResults.Ok(new OnboardVehicleSafetyResponse(
             observation.VehicleKey,
