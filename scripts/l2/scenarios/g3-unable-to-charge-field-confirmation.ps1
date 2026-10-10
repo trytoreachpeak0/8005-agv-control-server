@@ -201,23 +201,28 @@ $assertions.Add(
 # Known red until onboard-hmi#242: the onboard forgets the outcome once activePurpose leaves CHARGING, and a confirmation turns
 # it into CLEARING_MAINTENANCE within a second. Read only after that business state is acknowledged -- applied on the vehicle --
 # and then held: every read over the next three seconds must say CONFIRMED, so a result that is gone, or going, is red.
+# control-server#567: each read goes through Read-L2UiaItemStatus, so a read UI Automation could not make is re-read and, if
+# still unreadable, counted apart from a value that is not CONFIRMED. It still fails G3-13-27 -- never a pass -- but says so.
 if ($null -eq $state -or -not $state.Acknowledged) {
     Add-L2RealNotReached $assertions @('G3-13-27') '清桩中的业务状态没有被车载端确认，结果一行无从在它之后读'
 } else {
-    $reads = [System.Collections.Generic.List[string]]::new()
+    $reads = [System.Collections.Generic.List[object]]::new()
     $holdUntil = [DateTimeOffset]::UtcNow.AddSeconds(3)
     while ([DateTimeOffset]::UtcNow -lt $holdUntil) {
-        $reads.Add([string](Get-L2LoadingPhaseLine $onboard 'UnableToChargeStatus'))
+        $reads.Add((Read-L2UiaItemStatus $onboard 'UnableToChargeStatus' $journal))
         Start-Sleep -Milliseconds 200
     }
-    $off = @($reads | Where-Object { $_ -ne 'CONFIRMED' })
-    $journal.Observe('hmi-unable-to-charge-status-held', "$($reads.Count) reads, $($off.Count) not CONFIRMED", @{ reads = @($reads) })
+    $unreadable = @($reads | Where-Object { -not $_.Readable })
+    $off = @($reads | Where-Object { $_.Readable -and $_.Value -ne 'CONFIRMED' })
+    $journal.Observe('hmi-unable-to-charge-status-held', "$($reads.Count) reads, $($off.Count) not CONFIRMED, $($unreadable.Count) unreadable",
+        @{ reads = @($reads | ForEach-Object { Format-L2UiaReading $_ }) })
     $assertions.Add(
         'G3-13-27',
         '清桩中的业务状态被车载端确认之后，界面结果一行 UnableToChargeStatus 在随后 3 秒里每次读都是 CONFIRMED（已知红，等 onboard-hmi#242：用途转为 CLEARING_MAINTENANCE 时车载端清掉了结果）',
-        ($reads.Count -gt 0 -and $off.Count -eq 0),
+        ($reads.Count -gt 0 -and $off.Count -eq 0 -and $unreadable.Count -eq 0),
         "$($reads.Count) reads, all CONFIRMED",
-        "$($reads.Count) reads, $($off.Count) not CONFIRMED (first: '$(if ($off.Count -gt 0) { $off[0] } else { '-' })')")
+        ("$($reads.Count) reads, $($off.Count) not CONFIRMED (first: $(if ($off.Count -gt 0) { Format-L2UiaReading $off[0] } else { '-' })), " +
+            "$($unreadable.Count) unreadable$(if ($unreadable.Count -gt 0) { " (first: $(Format-L2UiaReading $unreadable[0]))" })"))
 }
 
 $serverSide = "$(Get-Holds) | $((Get-Cycle).WireState)/$((Get-Cycle).Phase) | " +
