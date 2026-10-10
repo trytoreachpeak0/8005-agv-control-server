@@ -69,14 +69,16 @@ public sealed partial class RecoveryStateMachineG2Tests
     }
 
     /// <summary>
-    /// A FAILED forced result forced the doors all the same, and was bound under the same generation. Without a reconnect the
-    /// vehicle is held for what it actually waits on -- the load still needs recovery -- and the administrator's next session
-    /// can act on it: a compensation is accepted rather than refused FORCED_RECOVERY_GENERATION_STALE.
+    /// A FAILED forced result does not stand for the vehicle's report (control-server#556 review). The onboard sends one when it
+    /// could not bind the command at all (8005-agv-onboard-hmi <c>AnswerUnbindableCommandAsync</c>): it copies the command's
+    /// generation without binding it, so the vehicle still holds the generation below and nothing was carried out on it.
+    /// Without a reconnect the vehicle stays on FORCED_RECOVERY_GENERATION_MISMATCH, and the fence still refuses the next
+    /// session's action FORCED_RECOVERY_GENERATION_STALE.
     /// </summary>
     [Fact]
     [Trait("IntegrationSlice", "FP-IS-07")]
     [Trait("ProtocolVector", "CV-FORCED-MECHANICAL-RECOVERY")]
-    public async Task AFailedForcedResultWithoutAReconnectLeavesTheNextSessionFreeToAct()
+    public async Task AFailedForcedResultDoesNotStandForTheVehiclesReport()
     {
         Environment.SetEnvironmentVariable(ForcedResultProofVariable, ForcedResultProof);
         try
@@ -96,7 +98,7 @@ public sealed partial class RecoveryStateMachineG2Tests
 
             SessionRecoveryRow held = await context.SessionRecoveries.AsNoTracking().SingleAsync(token);
             Assert.Equal(
-                (1L, 1L, "OPERATION_RECOVERY_REQUIRED"),
+                (1L, 0L, "FORCED_RECOVERY_GENERATION_MISMATCH"),
                 (held.ForcedRecoveryGeneration, held.ReportedForcedRecoveryGeneration, held.ReasonCode));
 
             string nextSessionId = StableGuid("41000000-0000-4000-8000-000000000169", "exception-recovery-session");
@@ -106,8 +108,9 @@ public sealed partial class RecoveryStateMachineG2Tests
                 "COMPENSATE_LOAD_ALL_EMPTY", messageId: "e0000000-0000-4000-8000-000000005562",
                 actionId: "51000000-0000-4000-8000-000000005562"))!;
             compensate["payload"]!["exceptionRecoverySessionId"] = nextSessionId;
-            Assert.Equal("RecoveryActionAccepted",
-                MessageType(await processor.ProcessAsync(compensate.ToJsonString(), state, token)));
+            string refused = await processor.ProcessAsync(compensate.ToJsonString(), state, token);
+            Assert.Equal(("RecoveryActionRejected", ServerReasonCodes.ForcedRecoveryGenerationStale),
+                (MessageType(refused), FirstPayload(refused).GetProperty("problem").GetProperty("reasonCode").GetString()));
         }
         finally
         {
@@ -345,6 +348,78 @@ public sealed partial class RecoveryStateMachineG2Tests
         finally
         {
             Environment.SetEnvironmentVariable(StuckProofVariable, null);
+        }
+    }
+    /// <summary>
+    /// Only a forced result (control-server#556 review, R3). A load cancellation's workflow is issued at the vehicle's current
+    /// forced generation too (UpsertSimpleWorkflowAsync), so its result carries that generation; it says nothing about the
+    /// vehicle having bound a forced command, and leaves what the vehicle reported where it was.
+    /// </summary>
+    [Fact]
+    [Trait("IntegrationSlice", "FP-IS-07")]
+    [Trait("ProtocolVector", "CV-FORCED-MECHANICAL-RECOVERY")]
+    public async Task ALoadCancellationResultAtTheCurrentGenerationDoesNotStandForTheVehiclesReport()
+    {
+        CancellationToken token = TestContext.Current.CancellationToken;
+        const string cancellationId = "b1000000-0000-4000-8000-000000005568";
+        await using SqliteConnection connection = new("Data Source=:memory:");
+        await connection.OpenAsync(token);
+        await using ControlServerDbContext context = await CreateContextAsync(connection);
+        await SeedCancellableLoadAsync(context);
+        WireToGateStore store = new(context);
+        await store.AdvanceForcedRecoveryGenerationAsync(AgvId, 1, Now, token);
+        await context.SaveChangesAsync(token);
+        context.ChangeTracker.Clear();
+        OnboardMessageProcessor processor = Processor(context, new RecordingPeer(context), CancellationProofVariable);
+        OnboardConnectionState state = CurrentState();
+        Assert.Equal("AUTHORIZED", FirstPayload(
+            await processor.ProcessAsync(CancellationRequest(cancellationId), state, token)).GetProperty("decision").GetString());
+        Assert.Equal(1, (await context.RecoveryWorkflows.AsNoTracking().SingleAsync(token)).ForcedRecoveryGeneration);
+
+        Assert.Equal("DurableAck", MessageType(await processor.ProcessAsync(
+            CancellationResult(cancellationId, "b1000000-0000-4000-8000-000000005569", "EMPTY"), state, token)));
+
+        Assert.Equal(RecoveryWorkflowState.Reconciled, (await context.RecoveryWorkflows.AsNoTracking().SingleAsync(token)).State);
+        SessionRecoveryRow session = await context.SessionRecoveries.AsNoTracking().SingleAsync(token);
+        Assert.Equal((1L, 0L), (session.ForcedRecoveryGeneration, session.ReportedForcedRecoveryGeneration));
+        Assert.Equal("FORCED_RECOVERY_GENERATION_MISMATCH", (await store.DecideReadinessAsync(AgvId, 3, token)).ReasonCode);
+    }
+
+    /// <summary>
+    /// Only the generation the server issued (control-server#556 review, R4). A forced result claiming a generation above its
+    /// workflow's and the server's is not history -- nothing newer exists -- but no command of that generation was ever sent,
+    /// so it stands for nothing: what the vehicle reported stays where it was.
+    /// </summary>
+    [Fact]
+    [Trait("IntegrationSlice", "FP-IS-07")]
+    [Trait("ProtocolVector", "CV-FORCED-MECHANICAL-RECOVERY")]
+    public async Task AForcedResultClaimingAGenerationTheServerNeverIssuedDoesNotStandForTheVehiclesReport()
+    {
+        Environment.SetEnvironmentVariable(ForcedResultProofVariable, ForcedResultProof);
+        try
+        {
+            CancellationToken token = TestContext.Current.CancellationToken;
+            await using SqliteConnection connection = new("Data Source=:memory:");
+            await connection.OpenAsync(token);
+            await using ControlServerDbContext context = await CreateContextAsync(connection);
+            await SeedBlockedJourneyAsync(context, productionShapedSession: true);
+            WireToGateStore store = new(context);
+            OnboardMessageProcessor processor = Processor(context, new RecordingPeer(context), ForcedResultProofVariable);
+            OnboardConnectionState state = CurrentState();
+            await processor.ProcessAsync(RecoverySessionRequest(ForcedResultProof), state, token);
+            await processor.ProcessAsync(RecoveryAction("FORCED_MECHANICAL_RECOVERY"), state, token);
+
+            Assert.Equal("DurableAck", MessageType(
+                await processor.ProcessAsync(MechanicallyIsolatedResult(generation: 2), state, token)));
+
+            Assert.False((await context.RecoveryResultEvidence.AsNoTracking().SingleAsync(token)).HistoricalOnly);
+            SessionRecoveryRow session = await context.SessionRecoveries.AsNoTracking().SingleAsync(token);
+            Assert.Equal((1L, 0L), (session.ForcedRecoveryGeneration, session.ReportedForcedRecoveryGeneration));
+            Assert.Equal("FORCED_RECOVERY_GENERATION_MISMATCH", (await store.DecideReadinessAsync(AgvId, 3, token)).ReasonCode);
+        }
+        finally
+        {
+            Environment.SetEnvironmentVariable(ForcedResultProofVariable, null);
         }
     }
 }
