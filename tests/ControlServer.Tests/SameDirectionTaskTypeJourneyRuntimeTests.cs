@@ -1,6 +1,7 @@
 using System.Text.Json;
 using ControlServer.Application;
 using ControlServer.Domain;
+using ControlServer.Host.Runtime.Dispatch;
 using ControlServer.Infrastructure.Persistence;
 using Microsoft.EntityFrameworkCore;
 using static ControlServer.Tests.JourneyRuntimeWorkerTestKit;
@@ -74,6 +75,33 @@ public sealed class SameDirectionTaskTypeJourneyRuntimeTests
         OrderIntentRow drop = await fixture.Context.OrderIntents.AsNoTracking()
             .SingleAsync(row => row.DemandId == DemandId && row.Purpose == "TO_GATE", Token);
         Assert.Equal(BoundStationRiotId, drop.DestinationStationId);
+    }
+
+    /// <summary>
+    /// REQ-0335: an unbound same-direction task type is refused as <c>TASK_TYPE_BINDING_MISSING</c> and stops only
+    /// itself. Its demand is the older one, so it is scored first; the WIRE_TO_GATE demand in the same round is still
+    /// accepted and the vehicle goes to its pickup.
+    /// </summary>
+    [Theory]
+    [Trait("IntegrationSlice", "FP-IS-10")]
+    [MemberData(nameof(SameDirectionTaskTypes))]
+    public async Task AnUnboundSameDirectionTaskTypeStopsOnlyItselfAndWireToGateIsAcceptedInTheSameRound(string taskType)
+    {
+        await using RuntimeFixture fixture = await RuntimeFixture.CreateAsync();
+        fixture.Options.AllowedWorkTypes = [.. TransportTaskTypes.All];
+        const string gateDemand = "10000000-0000-4000-8000-000000000002";
+        fixture.Catalog.Set(
+            SameDirection(fixture, taskType),
+            fixture.Demand(gateDemand, "SUBLOT-002", Now.AddMinutes(-5)));
+        fixture.BoxCounts.Set("SUBLOT-001", 4);
+        fixture.BoxCounts.Set("SUBLOT-002", 4);
+
+        await fixture.Engine.ExecuteOnceAsync(Token);
+
+        Assert.Equal(DispatchReasonCodes.TaskTypeBindingMissing, (await fixture.BacklogAsync(DemandId)).ReasonCode);
+        Assert.Equal("ACCEPTED", (await fixture.BacklogAsync(gateDemand)).ReasonCode);
+        Assert.Equal(gateDemand, (await fixture.RuntimeAsync()).DemandId);
+        Assert.Equal(1, fixture.Riot.CreateCount("TO_PICKUP"));
     }
 
     /// <summary>
