@@ -269,6 +269,19 @@ jobs:
           [System.Diagnostics.Process]::GetCurrentProcess().PriorityClass = 'BelowNormal'
           dotnet test tests/ControlServer.Tests/ControlServer.Tests.csproj -c Release --logger 'trx;LogFileName=test-results.trx'
 
+      # control-server#571. The v2 parallel instance's offline self-check: the definition checks (agv01 never in
+      # the vehicle roster, each roster row's identity against remote-ops/fleet.md), the overlay, and the
+      # read-back of what the Host really bound. Nothing in it touches a machine. It was run by hand only, and
+      # what is run by hand only is found broken at a batch exit. After Test, so its one case that borrows the
+      # SQLite provider from a Host build finds one instead of skipping; !cancelled() so it reports even when
+      # the suite is red. About 40 s on the laptop; the step limit keeps the job's 80 (60 + 6m28s + this 10
+      # + upload) above every step's, so a hang here is a failed step, not a cancelled job.
+      - name: Parallel instance self-check
+        if: ${{ !cancelled() }}
+        shell: pwsh
+        timeout-minutes: 10
+        run: pwsh -NoProfile -File ./scripts/parallel/Test-ParallelInstance.ps1
+
       # continue-on-error, because the .trx is diagnostics, not a deliverable: the verdict is the
       # `dotnet test` exit code in the step above, already reached by the time this runs. A
       # transient ECONNRESET from the artifact service must not turn a green suite red. See the

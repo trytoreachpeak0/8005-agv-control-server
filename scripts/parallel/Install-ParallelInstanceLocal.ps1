@@ -463,8 +463,11 @@ try {
             What happens next is Get-ParallelEffectiveConfigurationAction's (re-review S2): bound as defined
             passes; a different value in either mode, or nothing read back in 'production', STOPS the V2 service
             and then throws -- a Host that bound something else must not keep reading MesIngest; nothing read
-            back in 'fake' warns, because a package older than #535 does not log the event.
-            Prints EFFECTIVE_CONFIGURATION=... as a result line for 19-deploy-control-server-parallel.ps1.
+            back in 'fake' warns, because a package older than #535 does not log the event -- unless the
+            definition has a vehicle roster (control-server#571), which is compared car by car and stops the
+            service when it differs, is not logged, or nothing is read back at all.
+            Prints EFFECTIVE_CONFIGURATION=... as a result line for 19-deploy-control-server-parallel.ps1; that line
+            keeps its three fields exactly, because 19 compares it as a string. The roster is printed as a step.
         #>
         $configuration = [IO.File]::ReadAllText((Join-Path $installRoot 'appsettings.Production.json')) | ConvertFrom-Json -AsHashtable -Depth 20
         $serilog = ($configuration -is [hashtable]) ? $configuration['Serilog'] : $null
@@ -510,6 +513,9 @@ try {
         $line = "EFFECTIVE_CONFIGURATION=allowedWorkTypes=$(@($effective.AllowedWorkTypes) -join ',') " +
             "allowedDispatchZones=$(@($effective.AllowedDispatchZones) -join ',') mesIngestBaseUrl=$($effective.MesIngestBaseUrl)"
         Write-Step "What the Host bound, read back from its log at $($effective.At.ToString('o')): $line"
+        foreach ($car in @($effective.Fleet | Where-Object { $null -ne $_ })) {
+            Write-Step "  fleet: $($car.AgvId) ($($car.VehicleKey)) allowedTaskTypes=$(@($car.AllowedTaskTypes) -join ',') zones=$(@($car.Zones) -join ',')"
+        }
         Write-Output $line
     }
 

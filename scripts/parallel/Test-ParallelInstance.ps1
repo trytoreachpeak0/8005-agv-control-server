@@ -2729,9 +2729,10 @@ foreach ($case in $dbCases) {
         -Name "gate: database path from $($case.Name) -> $($case.Expect ?? 'refused, naming the file')" -Detail "got: $got thrown: $thrown"
 }
 
-# --- The server facts the refusal rests on live in the .NET suite, which CI runs (review S3): this script is not in
-# CI, and the literal pins it used to carry were weaker than they read (a substring that appeared three times, a
-# gate-order check that saw only two of the calls that could come first). Here only that they are still there.
+# --- The server facts the refusal rests on live in the .NET suite, which CI runs (review S3): this script was not in
+# CI then (it is since control-server#571, as a step after the suite), and the literal pins it used to carry were
+# weaker than they read (a substring that appeared three times, a gate-order check that saw only two of the calls
+# that could come first). Here only that they are still there.
 $premiseTests = Get-Content -LiteralPath (Join-Path $repoRoot 'tests/ControlServer.Tests/DispatchGatePremiseArchitectureTests.cs') -Raw
 $premiseNames = @('RiotOrdersAreCreatedAtExactlyOneCallSite', 'OnlyTheTwoCreatePathsReachTheCreateAttempt',
     'EachCreatePathChecksTheGateBeforeAnythingElseAwaits', 'AClosedGateWritesNothing',
