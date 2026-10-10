@@ -37,7 +37,15 @@ control-server#262。约 2026-10-08 起 `factory01` 上同时跑两套 ControlSe
    （派车引擎的任何一行、工作者除 2001 外的任何一行、MES 需求目录客户端的任何请求、充电／回待命点／自家单重建等建单事件）。
    不满足就停服务、报 `JOURNEY_RUNTIME_NOT_HELD` 或 `EFFECTIVE_CONFIGURATION_MISMATCH`，运行时始终没开过；
 3. 定义开着运行时才继续：停服务，等第一阶段那个进程（按 PID）确实退出，写回 `true`，起服务；
-4. 第二次回读（第二道），不一致照样停服务。
+4. 第二次回读（第二道），不一致照样停服务，并把 `JourneyRuntime.enabled` 写回 `false`：服务是自动启动的，机器一重启，
+   开关还是 `true` 的话会带着不符的配置把运行时开起来。
+
+运行时能被关住的前提是没有更高的配置层改写它。服务的 `Environment` 或机器级环境变量里只要有 `JourneyRuntime__*`
+（含 `DOTNET_`、`ASPNETCORE_` 前缀，不分大小写）的键，就报 `JOURNEY_RUNTIME_ENVIRONMENT_OVERRIDE` 并点名是哪个键：
+机器级的在任何产品脚本起服务之前查，服务自己的在第 1 步重启之前查，两处都在改动任何东西之前拒绝。
+
+回读被拒时，报错里附上读过的日志文件的大小和最后写入时间（UTC）。服务端日志写到上限后停写时（control-server#587），
+回读会报 `JOURNEY_RUNTIME_NOT_HELD` 或 `EFFECTIVE_CONFIGURATION_UNREAD`，看这两个数就知道原因。
 
 代价：每次安装多一次重启，约 10～30 秒；运行时关着时服务端不校验车队表，车队表写错要到第 3 步起服务时才报出来（那时服务起不来，
 不会派车）。没有日志文件可读时第 2 步也读不到 2001，按拒绝处理。`EFFECTIVE_CONFIGURATION=` 结果行只打一次，取最后一次回读。

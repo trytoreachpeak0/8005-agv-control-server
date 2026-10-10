@@ -1398,7 +1398,9 @@ $scanTargets = [ordered]@{
             # control-server#578: the release's injected actions.
             'Invoke-ParallelJourneyRuntimeRelease::$Actions.ReadBackHeld', 'Invoke-ParallelJourneyRuntimeRelease::$Actions.ReadBackReleased',
             'Invoke-ParallelJourneyRuntimeRelease::$Actions.ServiceProcessId', 'Invoke-ParallelJourneyRuntimeRelease::$Actions.StopService',
-            'Invoke-ParallelJourneyRuntimeRelease::$Actions.ProcessExited', 'Invoke-ParallelJourneyRuntimeRelease::$Actions.StartService'); Owners = @(); Expected = 32 }
+            'Invoke-ParallelJourneyRuntimeRelease::$Actions.ProcessExited', 'Invoke-ParallelJourneyRuntimeRelease::$Actions.StartService',
+            # control-server#578 review: the machine environment read before the restart, and setting the flag back to false.
+            'Invoke-ParallelInstanceConfigurationStep::$Actions.GetMachineEnvironment', 'Invoke-ParallelJourneyRuntimeRelease::$setBackFalse'); Owners = @(); Expected = 36 }
     'Set-ParallelDispatchGateLocal.ps1'   = @{ Dynamic = @(); Owners = @(); Expected = 0 }
 }
 foreach ($file in $scanTargets.Keys) {
@@ -4288,7 +4290,12 @@ $firstProductAt = @($installerAst.FindAll({ param($n) $n -is [System.Management.
         ForEach-Object { $_.Extent.StartOffset } | Sort-Object | Select-Object -First 1)
 Write-Result -Ok ($overrideCalls.Count -eq 1 -and $firstProductAt.Count -eq 1 -and $overrideCalls[0].Extent.StartOffset -lt $firstProductAt[0] -and
     $overrideCalls[0].Extent.Text.Contains("GetEnvironmentVariables('Machine')")) `
-    -Name 'wiring: the installer refuses JourneyRuntime environment keys before any product script starts the service' `
+    -Name 'wiring: the installer looks for JourneyRuntime environment keys before any product script starts the service' `
+    -Detail ("calls: $($overrideCalls.Count)" + $(if ($overrideCalls.Count) { "; text: $($overrideCalls[0].Extent.Text)" }))
+# R5's lesson again: computed but not thrown is a silent no-op.
+$overrideThrown = [regex]::IsMatch($installerSource, '(?s)\$environmentOverrides = @\(Get-ParallelJourneyRuntimeEnvironmentOverride.{0,400}?\r?\n\s*if \(\$environmentOverrides\.Count -gt 0\) \{\s*throw \("JOURNEY_RUNTIME_ENVIRONMENT_OVERRIDE')
+Write-Result -Ok ($overrideThrown -and $overrideCalls.Count -eq 1) `
+    -Name 'wiring: a JourneyRuntime environment key found before the product script is thrown by the very next statement' `
     -Detail ("calls: $($overrideCalls.Count)" + $(if ($overrideCalls.Count) { "; text: $($overrideCalls[0].Extent.Text)" }))
 $factsCall = $null -eq $assertFunction ? $null : $assertFunction.Body.Find({ param($n) $n -is [System.Management.Automation.Language.CommandAst] -and $n.GetCommandName() -eq 'Format-ParallelLogFileFacts' }, $true)
 $refusalThrow = $null -eq $assertFunction ? @() : @($assertFunction.Body.FindAll({ param($n) $n -is [System.Management.Automation.Language.ThrowStatementAst] }, $true) | Where-Object { $_.Extent.Text.Contains('$verdict.Message') })

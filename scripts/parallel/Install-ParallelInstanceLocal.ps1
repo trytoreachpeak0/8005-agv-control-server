@@ -262,6 +262,15 @@ try {
         -ConfigurationWriteTimeUtc ($installedConfigurationExists ? [IO.File]::GetLastWriteTimeUtc($installedConfigurationPath) : $null) `
         -ProcessStartTimeUtc (Get-ParallelServiceProcessStartTimeUtc -ServiceName $serviceName)
     if ($preInstallRefusal) { throw $preInstallRefusal }
+    # control-server#578 review item 2. The product script starts the service itself (a first install, the upgrade's
+    # lifecycle check) on its own enabled=false; a JourneyRuntime environment key would turn that on too. Machine-level here;
+    # the service's own Environment is checked again in Invoke-ParallelInstanceConfigurationStep, after the product script.
+    $environmentOverrides = @(Get-ParallelJourneyRuntimeEnvironmentOverride -ServiceEnvironment @() `
+            -MachineEnvironment @([Environment]::GetEnvironmentVariables('Machine').GetEnumerator() | ForEach-Object { "$($_.Key)=$($_.Value)" }))
+    if ($environmentOverrides.Count -gt 0) {
+        throw ("JOURNEY_RUNTIME_ENVIRONMENT_OVERRIDE (nothing was stopped or changed): $($environmentOverrides -join ', ') set JourneyRuntime " +
+            'above appsettings.Production.json. Remove the variable(s), then install again.')
+    }
 
     # A rollback needs a previous generation the product script can install from; checked before the
     # definition is re-recorded and before any directory is swapped (incremental review, item 4).
@@ -426,6 +435,7 @@ try {
                 GetEnvironment = { Get-ServiceEnvironment }
                 SetEnvironment = { param([string[]] $Environment) Set-ServiceEnvironment $Environment }
                 RestartService = { Restart-Service -Name $serviceName -Force }
+                GetMachineEnvironment = { [Environment]::GetEnvironmentVariables('Machine').GetEnumerator() | ForEach-Object { "$($_.Key)=$($_.Value)" } }
             }
         Write-Step "Configuration overlay merged into $configurationPath and verified (vehicle identity, MesIngest origin, clearance exit sections); credential $([string]::IsNullOrWhiteSpace($FaultRecoveryCredential) ? 'not supplied' : 'written, value not shown'); $serviceName restarted"
         Write-Step $readiness.Line
@@ -516,7 +526,11 @@ try {
             # Stopped first, then refused: the Host must not go on reading MesIngest with a binding nobody meant.
             Stop-Service -Name $serviceName -Force -ErrorAction Continue
             $state = [string] (Get-Service -Name $serviceName -ErrorAction SilentlyContinue)?.Status
-            throw "$($verdict.Message) $where $serviceName was stopped (now: $state). The RIoT dispatch gate is untouched; fix the cause, then install again or -Rollback."
+            # Review item 3: the size and last write time of what was read. A Host that stopped writing (control-server#587,
+            # 1 GiB) reads back as JOURNEY_RUNTIME_NOT_HELD or EFFECTIVE_CONFIGURATION_UNREAD, and these show why.
+            $logFacts = Format-ParallelLogFileFacts -Files @($logPath ? @(Get-ChildItem -LiteralPath $logDirectory -Filter $logFilter -File -ErrorAction SilentlyContinue |
+                        Sort-Object LastWriteTimeUtc -Descending | Select-Object -First 2) : @())
+            throw "$($verdict.Message) $where $logFacts $serviceName was stopped (now: $state). The RIoT dispatch gate is untouched; fix the cause, then install again or -Rollback."
         }
         $line = "EFFECTIVE_CONFIGURATION=allowedWorkTypes=$(@($effective.AllowedWorkTypes) -join ',') " +
             "allowedDispatchZones=$(@($effective.AllowedDispatchZones) -join ',') mesIngestBaseUrl=$($effective.MesIngestBaseUrl)"

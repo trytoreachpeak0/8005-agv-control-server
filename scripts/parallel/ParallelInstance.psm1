@@ -2267,6 +2267,52 @@ function New-ParallelInstanceConfigurationOverlay {
     }
 }
 
+function Get-ParallelJourneyRuntimeEnvironmentOverride {
+    <#
+        .SYNOPSIS
+            control-server#578 review item 2. The environment entries that would set a JourneyRuntime key above
+            appsettings.Production.json, as "service NAME" / "machine NAME"; none when there are none.
+
+        .DESCRIPTION
+            .NET reads environment variables after the JSON files, so JourneyRuntime__Enabled=true in the service's
+            Environment or the machine's environment turns the runtime on whatever the file says -- the held phase
+            would read it on only after the Host had started. The Host builder also reads DOTNET_- and
+            ASPNETCORE_-prefixed variables into its configuration, so those count too. A name is matched ignoring
+            case, with __ or : after JourneyRuntime; JourneyRuntimeX or MyJourneyRuntime__ is not this section.
+            Values are never returned.
+    #>
+    [CmdletBinding()]
+    [OutputType([string])]
+    param(
+        [AllowEmptyCollection()][AllowNull()][string[]] $ServiceEnvironment,
+        [AllowEmptyCollection()][AllowNull()][string[]] $MachineEnvironment
+    )
+    $pattern = '^(?i:(?:DOTNET_|ASPNETCORE_)?JourneyRuntime(?:__|:))'
+    foreach ($pair in @(@{ Where = 'service'; Entries = $ServiceEnvironment }, @{ Where = 'machine'; Entries = $MachineEnvironment })) {
+        foreach ($entry in @($pair.Entries | Where-Object { -not [string]::IsNullOrEmpty($_) })) {
+            $name = ($entry -split '=', 2)[0]
+            if ($name -match $pattern) { "$($pair.Where) $name" }
+        }
+    }
+}
+
+function Format-ParallelLogFileFacts {
+    <#
+        .SYNOPSIS
+            control-server#578 review item 3. One line naming each log file a read-back read, its size and last write
+            time (UTC), for the refusal: a Host that stopped writing (control-server#587, the 1 GiB limit) reads back
+            nothing new, and the size and time say so at a glance.
+    #>
+    [CmdletBinding()]
+    [OutputType([string])]
+    param([AllowEmptyCollection()][object[]] $Files)
+    $files = @($Files | Where-Object { $null -ne $_ })
+    if ($files.Count -eq 0) { return 'Log files read: no log file matched.' }
+    return 'Log files read: ' + (@($files | ForEach-Object {
+                "$($_.FullName) ($([long] $_.Length) bytes, last written $(([datetime] $_.LastWriteTimeUtc).ToString('yyyy-MM-ddTHH:mm:ss', [cultureinfo]::InvariantCulture))Z)"
+            }) -join '; ') + '.'
+}
+
 function Get-ParallelServiceEnvironmentEntry {
     <#
         .SYNOPSIS
@@ -2846,6 +2892,8 @@ Export-ModuleMember -Function @(
     'Get-ParallelEffectiveConfigurationAction'
     'Get-ParallelHeldRuntimeRefusal'
     'Get-ParallelReadBackAction'
+    'Get-ParallelJourneyRuntimeEnvironmentOverride'
+    'Format-ParallelLogFileFacts'
     'Merge-ConfigurationTree'
     'Get-ParallelServiceEnvironmentEntry'
     'Set-ParallelServiceEnvironmentEntry'
