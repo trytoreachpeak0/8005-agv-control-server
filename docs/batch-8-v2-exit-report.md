@@ -28,7 +28,7 @@ control-server#393（批次8-23）。本报告逐项对照规格 `8005-agv-progr
 | 每次门禁新目录；红证据保留，`docs/defects/` 有记录 | 成立：四份缺陷单 | 第四节 |
 | 「必须如实写明」各点，无第 8.8 节禁止的表述 | 已写 | 第五节 |
 | 未切换 `C:\Users\szy\Desktop\8005-workspace\repos\` 下任何克隆 | 成立：全部操作在 `8005-workspace-v2`，`repos/` 下的克隆没有切换分支 | — |
-| 本 PR 的 CI `test` 与 `l2` 两项绿 | 见 PR 检查页 | PR 检查页 |
+| 本 PR 的 CI `test` 与 `l2` 两项绿 | 第一轮（head `55f2c762`）`test` 红 1 条，是本报告的措辞撞上护栏（第四节）；改后的一轮见 PR 检查页 | 第四节、PR 检查页 |
 
 ## 前置核对（2026-10-09 实查）
 
@@ -272,6 +272,7 @@ $ git diff --stat 5f3adc42 55f2c762 -- .github
 | G3 第二轮 journey：同上两个场景 | 修好第一层后露出的下一层：一个在 StrictMode 下读了不存在的属性 `PayloadJson`；一个把 `Get-G3Scalar` 读回的 `""` 当成「不为空」 | control-server#555 | 同一份缺陷单第二轮一节；`…-journey-3411887d/` |
 | G3 第三轮 journey：`g3-multi-stop-plan`、`g3-waiting-point-idle-return`（前两轮都 PASS） | **界面读写夹具的一次差错被当成产品结果**：多停靠那一处车载端本地拒收 `SUBLOT_NOT_IN_WORKLIST`，唯一剩下的解释是提交那一刻框内文本不对，但证据里没记框内文本，定不了；空闲返回那一处是持续断言读到一次「读不到」就判红，那段时间产品侧没有任何东西会改这个值 | control-server#560：夹具读写失败在夹具层重试并记录，产品结果不重试；第四轮 PASS，但重试没有被触发 | `docs/defects/20261010-journey-g3-uia-fixture-reads-not-told-from-product.md`；`…-journey-1f63fe0b/` |
 | 真装置 `real-onboard-restart-with-open-recovery-session` 1/1 红 | cs#307 形状：服务端单条连接处理循环停顿超过 2.5 秒，车载端超时自断 | 空闲 vm01 上 3/3 PASS；cs#307 列入剩余风险 | `docs/defects/20261009-real-rig-restart-recovery-first-press-cs307-shape.md`；`evidence/l2/20261009-ci-37953803085-real-onboard-restart-with-open-recovery-session-01/` |
+| 出口 PR #562 第一轮 CI（第 9 步，head `55f2c762`）`test` 红 1 条：`Batch8OccupancyRetirementMigrationTests.NothingUnderScriptsTestsSrcToolsDocsOrWorkflowsNamesTheRetiredOccupancyAnyMore`，原文 `Assert.Empty() Failure: Collection was not empty` / `Collection: ["docs/batch-8-v2-exit-report.md"]` | **本报告的措辞撞上护栏**，产品没有问题：这条护栏按名字扫 `scripts/`、`tests/`、`src/`、`tools/`、`docs/`、`.github/` 下的文本，防有人再引用 cs#387 退役的表与列，只放过迁移、两个迁移测试与 `docs/defects/`（那是历史记录）。报告第五节第 4 点直接写出了退役的表名 | 改成描述性说法（「旧的派车租约表与订单意图上的两列旧占用时间」，并指向那个迁移），不改护栏的放行名单；本机用 `--filter` 定向跑这条测试转绿，再用退役名单逐个 grep 改动过的文本，0 命中 | run `38034636604` |
 | 服务端 G2 第一遍（`f63732b8`） | 不是红，是**无效**：相对路径的 `-Output`，`schemaConformance` 全空 | 绝对路径重跑 15/15 | `evidence/g2/20261009-protocol-v3.0.0-f63732b8/`（保留） |
 | 车载端 G2 第一遍 | 不是红，是**无效**：相对路径的 `-EvidenceRoot`，15 片全部 exit 1 | 绝对路径重跑 15/15 | 车载端仓 `…-relpath-inconclusive/README.md` |
 
@@ -311,7 +312,7 @@ $ git diff --stat 5f3adc42 55f2c762 -- .github
    不处理的话，对 MES 交代的结果可能丢失。服务端同样如此：服务端 `ProtocolOutbox` 里升级前写入的 v2 身份未确认行，v3 补发时会被车载端拒收，会话会反复断开。cs#382 加了启动守卫，发件箱里有异身份的未确认行就拒绝启动（`ProtocolOutboxIdentityStartupCheckTests`）。所以升级（以及回滚）之前，每辆车都要没有在途旅程，服务端与车载端的发件箱都要没有未确认行，否则换新库目录（本票评论 5895208507、5896646945）。**这条约束同样适用于 W2，以及之后 agv02、agv03 升 v3。**本票只写这一条约束，不改代码。
 4. **回滚约束，逐端写。**
    - **车载端**：v3 车载端写进日志的旅程快照与恢复上下文带新字段，回滚到 v2 车载端时，启动重放会因 `JsonUnmappedMemberHandling.Disallow` 抛错。回滚前先清日志里的旅程快照，或者确认车辆没有在途旅程（hmi#214、hmi#216 的部署说明）。
-   - **服务端**：cs#387 删了 `VehicleDispatchLeases` 与 `OrderIntents.VehicleOccupancy*`。**回滚到批次 8 之前的服务端要连库一起还原，不能只换程序。**旧版二进制里没有这个迁移，执行不了它的 `Down`。要回去，只能先用新二进制执行 `Down`，或者还原升级前的库备份（推的，依据见 PR #413 正文「Down 的已知限制」）。
+   - **服务端**：cs#387 删了旧的派车租约表与订单意图上的两列旧占用时间（见迁移 `20260929070322_Batch8RetireOldVehicleOccupancy`）。**回滚到批次 8 之前的服务端要连库一起还原，不能只换程序。**旧版二进制里没有这个迁移，执行不了它的 `Down`。要回去，只能先用新二进制执行 `Down`，或者还原升级前的库备份（推的，依据见 PR #413 正文「Down 的已知限制」）。
      - `Down` 本身也有限制：它按每趟搬运旅程最新的一条记录重建一行租约，订单占用的两列回来是空值。
      - 还有两条会让 `Down` 失败：cs#386 的 `Down` 遇到 `DemandId` 为 NULL 的行会整体失败，而空闲返回旅程正会写出这种行（PR #394 审查评论第 7 条）；cs#399 的 `Down` 在有 `CHARGER` 行时拒绝。
    - **cs#387 删表前的数据核对**：迁移在删表之前先核数据，只有「旧占用还开着、却找不到对应的新载体」时才整体拒绝；拒绝时 `RAISE(ABORT)`，报错列出每一行，什么都不删。这一规则相对票面「有未释放行就拒绝」有放宽，已报调度并获批（cs#387 关闭评论 5888713868）。
