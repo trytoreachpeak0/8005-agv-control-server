@@ -129,7 +129,19 @@ function Select-NightlyG3BusyRealRigJob {
         [Parameter(Mandatory)][AllowEmptyCollection()][object[]]$Runs,
         [Parameter(Mandatory)][System.Collections.IDictionary]$JobsByRun
     )
-    return @()
+
+    # A real-rig job of l2.yml that is not completed holds or wants the one cs-desktop runner. Its run's event does not
+    # matter: every l2.yml run carries a real-rig job, skipped (completed) unless it is a rig=real dispatch.
+    $busy = [System.Collections.Generic.List[string]]::new()
+    foreach ($run in $Runs) {
+        if ("$($run['status'])" -ceq 'completed') { continue }
+        foreach ($job in @($JobsByRun[$run['id']])) {
+            if ($null -ne $job -and "$($job['name'])" -ceq 'real-rig' -and "$($job['status'])" -cne 'completed') {
+                $busy.Add("run $($run['id']) job real-rig $($job['status'])")
+            }
+        }
+    }
+    return @($busy)
 }
 
 function Wait-NightlyG3RigIdle {
@@ -140,7 +152,27 @@ function Wait-NightlyG3RigIdle {
         [scriptblock]$Sleep = { param($seconds) Start-Sleep -Seconds $seconds },
         [scriptblock]$Now = { [DateTimeOffset]::UtcNow }
     )
-    return $null
+
+    # Waits while GetBusy names something, up to WaitMinutes, and never cancels anything: it only decides whether this
+    # night starts. A GetBusy that throws counts as busy, with its message, so a query that cannot answer never reads as
+    # an idle rig. Returns idle, busy (what was busy last) and waitedMinutes.
+    $poll = {
+        try { return @(& $GetBusy) } catch { return @("real-rig query failed: $($_.Exception.Message)") }
+    }
+    $started = & $Now
+    $busy = @(& $poll)
+    while ($busy.Count -gt 0) {
+        $elapsed = ((& $Now) - $started).TotalSeconds
+        if ($elapsed -ge $WaitMinutes * 60) { break }
+        Write-Host "G3_RIG_BUSY_WAITING: $($busy -join '; ') ($([Math]::Floor($elapsed / 60)) of $WaitMinutes minutes)"
+        & $Sleep ([Math]::Min($PollSeconds, $WaitMinutes * 60 - $elapsed))
+        $busy = @(& $poll)
+    }
+    return [pscustomobject][ordered]@{
+        idle = $busy.Count -eq 0
+        busy = @($busy)
+        waitedMinutes = [Math]::Round(((& $Now) - $started).TotalMinutes, 1)
+    }
 }
 
 Export-ModuleMember -Function Get-NightlyG3Verdict, Format-NightlyG3Comment, Select-NightlyG3BusyRealRigJob, Wait-NightlyG3RigIdle

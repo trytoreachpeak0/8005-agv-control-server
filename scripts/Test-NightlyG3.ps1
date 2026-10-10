@@ -199,7 +199,7 @@ try {
     foreach ($case in $waitCases) {
         $outcome = $null
         $thrown = $null
-        try { $outcome = Invoke-Wait $case.Answers 30 } catch { $thrown = $_.Exception.Message }
+        try { $outcome = Invoke-Wait $case.Answers 30 6>$null } catch { $thrown = $_.Exception.Message }
         $text = if ($null -ne $outcome) { @($outcome.Result.busy) -join '; ' } else { '' }
         Check "rig wait, $($case.Name): $(if ($case.Idle) { 'idle' } else { 'NOT_STARTED_RIG_BUSY' }) after $($case.Sleeps) sleeps" `
             ($null -eq $thrown -and $null -ne $outcome -and $outcome.Result.idle -eq $case.Idle -and $outcome.Sleeps -eq $case.Sleeps -and
