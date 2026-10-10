@@ -4072,7 +4072,7 @@ Invoke-SourceCase 'held read-back: no event 2001 since the start (a higher layer
     @{ Ok = ($null -ne $r -and $r.StartsWith('JOURNEY_RUNTIME_NOT_HELD:') -and $r.Contains('2001')); Detail = "got: $r" }
 }
 Invoke-SourceCase 'held read-back: event 2001 only from an earlier process -- refused' {
-    $r = Get-ParallelHeldRuntimeRefusal -Lines @((New-EventLine '2026-10-10T00:59:00Z' 2001 'LogDisabled'), $heldEffective) -Since $heldSince
+    $r = Get-ParallelHeldRuntimeRefusal -Lines @((New-EventLine '2026-10-10T00:59:00Z' 2001 'LogDisabled' -Source 'ControlServer.Host.Runtime.JourneyRuntimeWorker'), $heldEffective) -Since $heldSince
     @{ Ok = ($null -ne $r -and $r.StartsWith('JOURNEY_RUNTIME_NOT_HELD:')); Detail = "got: $r" }
 }
 foreach ($activity in $script:HeldRuntimeActivityCases) {

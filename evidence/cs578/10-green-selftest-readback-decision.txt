@@ -550,8 +550,8 @@ FakeMesIngest task action and seeding (control-server#512)
   PASS  task action refuses a working directory ending in a backslash
   PASS  task action refuses an executable path with a double quote
   PASS  task action: the double itself, loopback named explicitly, the port; no pwsh in the task
-2026-10-10T23:42:58.3218624+08:00 FakeMesIngest seeding the running double: port=57403 seed=C:\Users\szy\AppData\Local\Temp\cs512 task action 27a582fc1235435ab79ff1700315e31c\none.json
-2026-10-10T23:43:00.9484398+08:00 FATAL: the double did not answer http://127.0.0.1:57403/control/v1/health within 2 s
+2026-10-11T00:07:22.3026058+08:00 FakeMesIngest seeding the running double: port=58099 seed=C:\Users\szy\AppData\Local\Temp\cs512 task action 72017268c46a43e2aca28a8a13bb0e43\none.json
+2026-10-11T00:07:24.9938073+08:00 FATAL: the double did not answer http://127.0.0.1:58099/control/v1/health within 2 s
   PASS  seeding: a double that is not there throws for the installer, after logging what it tried
   PASS  seeding: the operator script in the operations directory runs the same function and exits non-zero on failure
   PASS  Register-ParallelFakeMesIngestTask returns one [datetime] even when the task cmdlets emit output, and creates the log directory first
