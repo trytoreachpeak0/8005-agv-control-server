@@ -120,6 +120,19 @@ jobs:
         shell: pwsh
         run: pwsh -NoProfile -File ./scripts/l2/Test-L2SecondLegIntentWait.ps1
 
+      # A few seconds, pure input. Besides the overdue threshold key it pins the raisedAt bound on the overdue alarm a
+      # real-onboard scenario waits for (control-server#541): no real-rig round reaches it before the journey G3, and
+      # without it g3-slot-fault-declaration's unload wait was met at once by the load's alarm.
+      - name: L2 scenario self-check (expected-action overdue)
+        shell: pwsh
+        run: pwsh -NoProfile -File ./scripts/l2/Test-L2ExpectedActionOverdue.ps1
+
+      # A few seconds, no window: the order of g3-forced-mechanical-recovery's confirm step and the failure titles it watches,
+      # against a stand-in onboard and the scenario's own AST (control-server#541). The journey G3 is the only run that reaches it.
+      - name: L2 scenario self-check (forced recovery confirm step)
+        shell: pwsh
+        run: pwsh -NoProfile -File ./scripts/l2/Test-G3ForcedRecoveryEntry.ps1
+
       # About 27 seconds (measured 26.4 / 26.8 / 26.7 on the control host), 24 of which are twelve
       # deliberate 2-second timeouts: every case where a criterion must NOT be satisfied has to run out
       # its clock. The twelve is the load-bearing number, and it comes from reading the invocations.

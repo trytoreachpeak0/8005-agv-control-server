@@ -1,0 +1,8 @@
+ok    the old order: waiting for the enabled confirm before filling the form times out
+ok    the new order: form present, fill both boxes, then the confirm is enabled
+ok    Wait-G3ElementPresent reports an element the window does not have as absent
+ok    the failure titles include the onboard's 「强制机械取出未上报」 and the two the scenario knew
+BAD   the scenario waits for the hand-off form, fills both boxes, then waits for the enabled confirm, then presses it -> Expected one wait for the hand-off form in the scenario, found 0.
+BAD   the scenario reads its failure titles from Get-G3ForcedRecoveryFailureTitle and names no title by hand -> the scenario does not call Get-G3ForcedRecoveryFailureTitle exactly once
+2 case(s) came out wrong.
+exit=1

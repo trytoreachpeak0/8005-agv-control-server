@@ -466,8 +466,8 @@ SELECT UpperId, DispatchGeneration, Sequence, Phase, Outcome, EligibilityBasis,
             -Sql 'SELECT AgvId, SessionGeneration, Readiness, ReasonCode, ProtocolCommit FROM SessionRecoveries ORDER BY AgvId' `
             -Columns @('agvId', 'sessionGeneration', 'readiness', 'reasonCode', 'protocolCommit')
         resultInboxRows = Invoke-SqliteRows -DatabasePath $controlDatabasePath `
-            -Sql "SELECT MessageId, ContentHash, FirstResponseJson FROM ProtocolInbox WHERE MessageType = 'OperationResult' ORDER BY ReceivedAt" `
-            -Columns @('messageId', 'contentHash', 'firstResponseJson')
+            -Sql "SELECT MessageId, ContentHash, FirstResponseJson, RequestJson FROM ProtocolInbox WHERE MessageType = 'OperationResult' ORDER BY ReceivedAt" `
+            -Columns @('messageId', 'contentHash', 'firstResponseJson', 'requestJson')
     }
 }
 
@@ -760,9 +760,9 @@ $acceptedMessageId = if ($null -ne $probeResult) { [string]$probeResult.accepted
 
 $resultAcceptedPass = Test-Case -Name 'preparedAttemptAcceptsItsFirstResult'
 $resultReplayPass = Test-Case -Name 'identicalResultReplayReturnsTheStoredAcknowledgement'
-$resultContentConflictPass = Test-Case -Name 'sameMessageIdWithDifferentContentIsRefused'
-$resultRenumberConflictPass = Test-Case -Name 'sameAttemptAndGenerationUnderANewMessageIdIsRefused'
-$committedAttemptConflictPass = Test-Case -Name 'alreadyCommittedAttemptRefusesASecondResult'
+$resultContentConflictProbePass = Test-Case -Name 'sameMessageIdWithDifferentContentIsRefused'
+$resultRenumberConflictProbePass = Test-Case -Name 'sameAttemptAndGenerationUnderANewMessageIdIsRefused'
+$committedAttemptConflictProbePass = Test-Case -Name 'alreadyCommittedAttemptRefusesASecondResult'
 $staleGenerationPass = Test-Case -Name 'resultFromASupersededSessionGenerationIsRefused'
 
 # The replay is only evidence if it did not also process the message twice: one inbox row, one result
@@ -780,6 +780,49 @@ if ($null -ne $final) {
 }
 $finalPreparedRow = $null
 if ($finalPreparedRows.Count -eq 1) { $finalPreparedRow = $finalPreparedRows[0] }
+
+# control-server#541: the three content conflicts are judged on the wire by the probe (the vector's ProtocolProblem,
+# the connection still served) and here from the store, because CV-RELIABLE-RETRY-DIFFERENT-CONTENT also asks that
+# the conflicting retry is never applied. Under the accepted messageId the inbox still holds the accepted line, byte
+# for byte; a refused result under a messageId of its own leaves no inbox row; and no result row is added for either
+# attempt -- the prepared one keeps its single result, the committed one the results it had before this run.
+function Get-InboxRowsFor {
+    param([string]$MessageId)
+    if ($null -eq $final -or [string]::IsNullOrEmpty($MessageId)) { return , @() }
+    return , @($final.resultInboxRows | Where-Object { [string]$_['messageId'] -eq $MessageId })
+}
+$committedAttemptIdForConflict = [string](Get-Case -Name 'alreadyCommittedAttemptRefusesASecondResult')?.slotOperationAttemptId
+$committedResultCountBefore = @($baseline.operationResultRows | Where-Object {
+    $null -ne $_ -and [string]$_['slotOperationAttemptId'] -eq $committedAttemptIdForConflict }).Count
+$committedResultCountAfter = @($final.operationResultRows | Where-Object {
+    $null -ne $_ -and [string]$_['slotOperationAttemptId'] -eq $committedAttemptIdForConflict }).Count
+$conflictInboxRows = Get-InboxRowsFor -MessageId $acceptedMessageId
+$renumberedInboxRows = Get-InboxRowsFor -MessageId ([string](Get-Case -Name 'sameAttemptAndGenerationUnderANewMessageIdIsRefused')?.messageId)
+$committedAttemptInboxRows = Get-InboxRowsFor -MessageId ([string](Get-Case -Name 'alreadyCommittedAttemptRefusesASecondResult')?.messageId)
+$contentConflictStore = [ordered]@{
+    acceptedMessageIdInboxRowCount = $conflictInboxRows.Count
+    acceptedMessageIdStoredRequestSha256 = @($conflictInboxRows | ForEach-Object { Get-Sha256Text ([string]$_['requestJson']) })
+    acceptedRequestSha256 = if ($null -ne $probeResult) { [string]$probeResult.acceptedRequestSha256 } else { $null }
+    renumberedResultInboxRowCount = $renumberedInboxRows.Count
+    committedAttemptResultInboxRowCount = $committedAttemptInboxRows.Count
+    preparedAttemptResultRowCount = $preparedResultRows.Count
+    committedAttemptId = $committedAttemptIdForConflict
+    committedAttemptResultRowCountBefore = $committedResultCountBefore
+    committedAttemptResultRowCountAfter = $committedResultCountAfter
+}
+$resultContentConflictPass = $resultContentConflictProbePass -and
+    $contentConflictStore.acceptedMessageIdInboxRowCount -eq 1 -and
+    -not [string]::IsNullOrEmpty($contentConflictStore.acceptedRequestSha256) -and
+    $contentConflictStore.acceptedMessageIdStoredRequestSha256[0] -eq $contentConflictStore.acceptedRequestSha256
+$resultRenumberConflictPass = $resultRenumberConflictProbePass -and
+    $null -ne $final -and
+    $contentConflictStore.renumberedResultInboxRowCount -eq 0 -and
+    $contentConflictStore.preparedAttemptResultRowCount -eq 1
+$committedAttemptConflictPass = $committedAttemptConflictProbePass -and
+    $null -ne $baseline -and $null -ne $final -and
+    -not [string]::IsNullOrEmpty($committedAttemptIdForConflict) -and
+    $contentConflictStore.committedAttemptResultInboxRowCount -eq 0 -and
+    $committedResultCountAfter -eq $committedResultCountBefore
 
 $resultCommittedOncePass = $null -ne $finalPreparedRow -and
     $finalPreparedRow['status'] -eq 'Committed' -and
@@ -1122,6 +1165,7 @@ $result = [ordered]@{
     }
     failedAssertions = $failedAssertions
     probe = $probeResult
+    contentConflictStore = $contentConflictStore
     handshakeAfterRestart = $handshakeResult
     restart = $restart
     controlDatabaseBaseline = $baseline

@@ -92,15 +92,25 @@ function Invoke-Declaration([int]$slot, [string]$category, [string]$note) {
     }
 }
 
-function Wait-Overdue([int]$slot, [string]$criterion) {
-    return Wait-L2RealOrLast -Description "the onboard reported $code for slot $slot" `
+# Only an alarm raised at or after $after (control-server#541). The inbox keeps every snapshot of the run, and the unload can
+# be on the slot the load used, so without the bound the unload's wait was met at once by the load's alarm: the scenario
+# declared one second into the unload and the server rightly answered 409 SLOT_FAULT_EXPECTED_ACTION_NOT_OVERDUE.
+function Wait-Overdue([int]$slot, [string]$criterion, [DateTimeOffset]$after) {
+    return Wait-L2RealOrLast -Description "the onboard reported $code for slot $slot, raised at or after $($after.ToString('o'))" `
         -Journal $journal -Criterion $criterion -TimeoutSeconds ([int]$threshold.TotalSeconds + 30) `
         -Probe {
-            @((Get-L2RealInbound $connection 'OnboardAlarmSnapshot') | Where-Object {
-                    @(@($_.Payload.alarms) | Where-Object { $null -ne $_ -and [string]$_.code -eq $code -and [string]$_.subjectId -eq [string]$slot }).Count -gt 0
-                }) | Select-Object -Last 1
+            Select-L2OverdueAlarmSnapshot -Snapshot (Get-L2RealInbound $connection 'OnboardAlarmSnapshot') `
+                -Code $code -SlotNo ([string]$slot) -RaisedAfter $after
         } `
         -Until { param($v) $null -ne $v }
+}
+
+# A field of a declaration answer's body, or $null. Under StrictMode a missing property throws, and a 409 body carries
+# reasons but no declarationId: until control-server#541 that turned a refused declaration at the unload into a property
+# error instead of a failed criterion.
+function Get-BodyField([object]$answer, [string]$name) {
+    if ($null -eq $answer.Body -or $null -eq $answer.Body.PSObject.Properties[$name]) { return $null }
+    return $answer.Body.$name
 }
 
 # Every line of the relay's traffic after index $from, as "direction messageType", for the ordered-message criteria.
@@ -129,6 +139,7 @@ function Get-DeclarationSequence([int]$from, [string]$commandMessageId, [string]
 
 # --- 1. 装货站：到站、扫码、开锁后没人放货 ---------------------------------------------------------------------------
 
+$loadPhaseStartedAt = [DateTimeOffset]::UtcNow
 Invoke-L2PickupAndScan -Context $Context -DemandIdWire $demandIdWire -DemandId $demandId -Sublot $sublot
 $load = Wait-L2WaitingOperator -Context $Context -DemandId $demandId -OperationType 'Load'
 $loadAttempt = $load.AttemptId
@@ -136,9 +147,9 @@ $loadSlot = $load.SlotNo
 
 # 门槛之前判一次：服务端只在超时仓上受理（DECLARE_ONLY_ON_OVERDUE_SLOT_AWAITING_OPERATOR）。门槛 20 秒，这一次在开锁后几秒内发出。
 $early = Invoke-Declaration $loadSlot 'LIGHT_CURTAIN' '门槛之前就判'
-$earlyReasons = @($early.Body.reasons ?? @())
+$earlyReasons = @(Get-BodyField $early 'reasons')
 
-$overdue = Wait-Overdue $loadSlot 'load-overdue-reported'
+$overdue = Wait-Overdue $loadSlot 'load-overdue-reported' $loadPhaseStartedAt
 if ($null -eq $overdue) {
     Add-L2RealNotReached $assertions ($notApplicableIds + $appliedIds) "越过门槛 $([int]$threshold.TotalSeconds + 30) 秒内车载端没有报 $code"
     return
@@ -153,7 +164,7 @@ $assertions.Add(
 
 $null = $proxy.Command('Put', 'drop-message', @{ messageType = 'SlotFaultDeclarationCommand'; count = 1 })
 $lost = Invoke-Declaration $loadSlot 'LIGHT_CURTAIN' '光幕一直报有物，仓内实际为空'
-$lostId = [string]($lost.Body.declarationId ?? '')
+$lostId = [string](Get-BodyField $lost 'declarationId')
 $lostRow = Get-Declaration $lostId
 $lostCommandId = if ($lostRow) { ([string]$lostRow.CommandMessageId).ToLowerInvariant() } else { '' }
 $dropped = Wait-L2RealOrLast -Description 'the relay dropped the declaration command' `
@@ -225,11 +236,13 @@ $assertions.Add(
 # --- 4. 卸货站：判定生效 ------------------------------------------------------------------------------------------
 
 $gateIntent = Wait-L2RealIntent -Context $Context -DemandId $demandId -Purpose 'TO_GATE' -TimeoutSeconds 180
+# Before the vehicle leaves for the gate: every overdue alarm raised from here on belongs to the unload.
+$unloadPhaseStartedAt = [DateTimeOffset]::UtcNow
 Move-L2RealVehicleTo -Context $Context -Intent $gateIntent -StationRiotId $Context.GateStationRiotId -Label 'the gate'
 $unload = Wait-L2WaitingOperator -Context $Context -DemandId $demandId -OperationType 'Unload'
 $unloadAttempt = $unload.AttemptId
 $unloadSlot = $unload.SlotNo
-if ($null -eq (Wait-Overdue $unloadSlot 'unload-overdue-reported')) {
+if ($null -eq (Wait-Overdue $unloadSlot 'unload-overdue-reported' $unloadPhaseStartedAt)) {
     Add-L2RealNotReached $assertions $appliedIds "卸货越过门槛 $([int]$threshold.TotalSeconds + 30) 秒内车载端没有报 $code"
     return
 }
@@ -237,7 +250,16 @@ if ($null -eq (Wait-Overdue $unloadSlot 'unload-overdue-reported')) {
 $unlockingsBefore = Get-L2PhaseCount -Connection $connection -AttemptId $unloadAttempt -Phase 'UNLOCKING'
 $before = @((Get-L2RealTraffic $proxy).lines).Count
 $applied = Invoke-Declaration $unloadSlot 'LOCK' '锁舌卡死，门推不开'
-$appliedId = [string]($applied.Body.declarationId ?? '')
+$appliedId = [string](Get-BodyField $applied 'declarationId')
+if ($applied.Status -ne 202 -or [string]::IsNullOrEmpty($appliedId)) {
+    # A criterion that fails and says what the server answered, rather than a property error further down.
+    $appliedReasons = @(Get-BodyField $applied 'reasons')
+    $assertions.Add(
+        'G3-07-66', '卸货站越过门槛后判定被受理（202，带 declarationId），线上顺序才有可比的对象',
+        $false, '202 / declarationId', "$($applied.Status) / $($appliedReasons -join ',') / declarationId '$appliedId'")
+    Add-L2RealNotReached $assertions @('G3-07-67', 'G3-07-68', 'G3-07-69', 'G3-07-70') "卸货站的判定没有受理（$($applied.Status) $($appliedReasons -join ',')）"
+    return
+}
 $appliedCommandId = if (Get-Declaration $appliedId) { ([string](Get-Declaration $appliedId).CommandMessageId).ToLowerInvariant() } else { '' }
 
 $answer = Wait-L2RealOrLast -Description 'the onboard applied the declaration' `
@@ -268,7 +290,7 @@ $assertions.Add(
     ($null -ne $declaredSlot -and [string]$result.Payload.overallOutcome -eq 'UNKNOWN' -and [string]$declaredSlot.outcome -eq 'UNKNOWN' -and
         @($declaredSlot.reasonCodes) -contains 'SLOT_FAULT_DECLARED' -and @($otherSlots | Where-Object { [string]$_.outcome -ne 'NOT_STARTED' }).Count -eq 0),
     "UNKNOWN / slot $unloadSlot UNKNOWN [SLOT_FAULT_DECLARED] / 其余 NOT_STARTED",
-    $(if ($result) { $result.PayloadJson } else { '(no OperationResult)' }))
+    $(if ($result) { $result.Payload | ConvertTo-Json -Depth 20 -Compress } else { '(no OperationResult)' }))
 
 $blocked = Wait-L2RealOrLast -Description 'the journey blocked on the declared unload' `
     -Journal $journal -Criterion 'journey-blocked' -TimeoutSeconds 60 `

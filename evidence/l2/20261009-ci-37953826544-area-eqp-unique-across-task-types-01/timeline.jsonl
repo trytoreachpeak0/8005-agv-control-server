@@ -1,0 +1,40 @@
+{"at":"2026-10-09T16:07:58.8342296+00:00","note":"L2 run 20261009T160758786Z starting for scenario 'area-eqp-unique-across-task-types'."}
+{"at":"2026-10-09T16:07:58.8734953+00:00","note":"L2 port block lock acquired (slot 4, Global\\W2G-L2PortBlock-slot4)."}
+{"at":"2026-10-09T16:07:58.8762889+00:00","note":"Build skipped (-SkipBuild); running the output already built."}
+{"at":"2026-10-09T16:07:59.7662431+00:00","criterion":"fake-riot-live","value":"live"}
+{"at":"2026-10-09T16:08:00.0206779+00:00","criterion":"fake-mes-live","value":"live"}
+{"at":"2026-10-09T16:08:00.0980305+00:00","note":"Task type station preset: default (map 25, WIRE_TO_GATE -> 关卡/210)"}
+{"at":"2026-10-09T16:08:05.6107537+00:00","note":"Package capacity rules imported."}
+{"at":"2026-10-09T16:08:05.6166582+00:00","note":"No waiting point registration: a single-vehicle rig, or WaitingPoints = $false."}
+{"at":"2026-10-09T16:08:07.7029786+00:00","criterion":"control-server-live","value":"(null)"}
+{"at":"2026-10-09T16:08:08.5717376+00:00","criterion":"control-server-live","value":"live"}
+{"at":"2026-10-09T16:08:08.6613895+00:00","note":"Protocol release identity: protocol-v3.0.0 (profileId AGV_FULL_PRODUCT, protocolVersion 4, APPROVED_RELEASE)."}
+{"at":"2026-10-09T16:08:09.3471413+00:00","criterion":"onboard-readiness","value":"DISCONNECTED"}
+{"at":"2026-10-09T16:08:09.6134759+00:00","criterion":"onboard-readiness","value":"READY"}
+{"at":"2026-10-09T16:08:09.6818859+00:00","criterion":"control-server-ready","value":"ready"}
+{"at":"2026-10-09T16:08:09.7626754+00:00","note":"FieldOps: seed-approved-facts --database C:\\actions-runner\\win11-01-control-server\\_work\\_temp\\l2-37953826544-1\\_stage\\l2-20261009T160758786Z-slot4\\controlserver.db"}
+{"at":"2026-10-09T16:08:11.6065532+00:00","criterion":"slot-model-preseed:seed-approved-facts","value":"OK","detail":{"output":{"command":"seed-approved-facts","outcome":"OK","modelKey":"8005-eight-slot","slotModelVersionId":"5095559f73d5475c83fb9cac8f63b3a3","version":1,"slotCount":8}}}
+{"at":"2026-10-09T16:08:11.6166138+00:00","note":"FieldOps: bind-io --database C:\\actions-runner\\win11-01-control-server\\_work\\_temp\\l2-37953826544-1\\_stage\\l2-20261009T160758786Z-slot4\\controlserver.db --agv AGV-L2-001"}
+{"at":"2026-10-09T16:08:13.4265088+00:00","criterion":"slot-model-preseed:bind-io:AGV-L2-001","value":"OK","detail":{"output":{"command":"bind-io","outcome":"OK","agvId":"AGV-L2-001","slotModelVersionId":"5095559f73d5475c83fb9cac8f63b3a3","boundSlots":8,"version":1}}}
+{"at":"2026-10-09T16:08:13.5378818+00:00","criterion":"slot-model-preseed:dispatch-zones","value":"0"}
+{"at":"2026-10-09T16:08:13.5407589+00:00","note":"FieldOps: import-area-assignments --database C:\\actions-runner\\win11-01-control-server\\_work\\_temp\\l2-37953826544-1\\_stage\\l2-20261009T160758786Z-slot4\\controlserver.db --input C:\\actions-runner\\win11-01-control-server\\_work\\_temp\\l2-37953826544-1\\area-eqp-unique-across-task-types-01\\snapshots\\preseed-area-assignments.csv"}
+{"at":"2026-10-09T16:08:15.4883185+00:00","criterion":"slot-model-preseed:import-area-assignments","value":"OK","detail":{"output":{"command":"import-area-assignments","outcome":"OK","dryRun":false,"input":"C:\\actions-runner\\win11-01-control-server\\_work\\_temp\\l2-37953826544-1\\area-eqp-unique-across-task-types-01\\snapshots\\preseed-area-assignments.csv","entryCount":3,"version":1,"contentSha256":"4291a509c2c0b75ea4bde0ac4dcde04b6e8632b54a21a67eee2772a6f8d0ff8e","snapshotId":"296c7e04fa38440b9db56890da6d0daf","importedAt":"2026-10-10T00:08:13.7851214+08:00","errorCount":0,"errors":[],"preview":[]}}}
+{"at":"2026-10-09T16:08:15.5073132+00:00","note":"FieldOps: import-charging-policy --database C:\\actions-runner\\win11-01-control-server\\_work\\_temp\\l2-37953826544-1\\_stage\\l2-20261009T160758786Z-slot4\\controlserver.db --input C:\\actions-runner\\win11-01-control-server\\_work\\_temp\\l2-37953826544-1\\area-eqp-unique-across-task-types-01\\snapshots\\preseed-charging-policy.json --fleet BROKERX-L2-0001"}
+{"at":"2026-10-09T16:08:17.2836013+00:00","note":"FieldOps: approve-charging-policy --database C:\\actions-runner\\win11-01-control-server\\_work\\_temp\\l2-37953826544-1\\_stage\\l2-20261009T160758786Z-slot4\\controlserver.db --version 1 --approved-by L2 orchestrator --role L2_PRESET --basis scripts/l2/L2ChargingPolicy.psm1 --source L2_PRESET"}
+{"at":"2026-10-09T16:08:19.0331714+00:00","note":"FieldOps: activate-charging-policy --database C:\\actions-runner\\win11-01-control-server\\_work\\_temp\\l2-37953826544-1\\_stage\\l2-20261009T160758786Z-slot4\\controlserver.db --version 1 --activated-by L2 orchestrator --fleet BROKERX-L2-0001 --allow-non-field-approval"}
+{"at":"2026-10-09T16:08:20.7964680+00:00","criterion":"preseed:charging-policy","value":"OK","detail":{"coveredAfter":["BROKERX-L2-0001"],"withoutPolicy":[],"version":1,"source":"L2_PRESET"}}
+{"at":"2026-10-09T16:08:20.7979133+00:00","note":"Per-zone dispatch parameters left unconfigured (the default precondition)."}
+{"at":"2026-10-09T16:08:20.8193578+00:00","note":"Environment is up; entering scenario 'area-eqp-unique-across-task-types'."}
+{"at":"2026-10-09T16:08:20.9041888+00:00","note":"Publishing demand b3581bc7434746d4a8c273599320dcf9 (STAGING_TO_WIRE, AREA N1-3) to the fake MesIngest catalog."}
+{"at":"2026-10-09T16:08:20.9651899+00:00","note":"Publishing demand 18f0426a7e304739b6964ef47f3cfdd6 (WIRE_TO_GATE, AREA N1-3) to the fake MesIngest catalog."}
+{"at":"2026-10-09T16:08:20.9975586+00:00","criterion":"backlog-row","value":"(null)"}
+{"at":"2026-10-09T16:08:21.5125100+00:00","criterion":"backlog-row","value":"AREA_EQP_NOT_UNIQUE"}
+{"at":"2026-10-09T16:08:21.5368537+00:00","criterion":"runtime-iterations","value":"14"}
+{"at":"2026-10-09T16:08:22.3043269+00:00","criterion":"runtime-iterations","value":"15"}
+{"at":"2026-10-09T16:08:23.3201206+00:00","criterion":"runtime-iterations","value":"16"}
+{"at":"2026-10-09T16:08:24.3676649+00:00","criterion":"runtime-iterations","value":"17"}
+{"at":"2026-10-09T16:08:24.3911402+00:00","note":"Removing demand b3581bc7434746d4a8c273599320dcf9 from the fake MesIngest catalog."}
+{"at":"2026-10-09T16:08:24.4303643+00:00","criterion":"journey-stage","value":"(null)"}
+{"at":"2026-10-09T16:08:26.2062763+00:00","criterion":"journey-stage","value":"AwaitingPickupArrival"}
+{"at":"2026-10-09T16:08:26.2113240+00:00","note":"REQ-0187 的唯一性跨任务类型：另一类的观测行挡住同 AREA 的 WIRE_TO_GATE，删掉后放行。"}
+{"at":"2026-10-09T16:08:26.6517048+00:00","note":"L2 port block lock released."}

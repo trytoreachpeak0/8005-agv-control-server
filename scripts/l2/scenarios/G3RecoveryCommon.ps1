@@ -106,6 +106,26 @@ function Wait-G3ButtonOffered([object]$Onboard, [object]$Journal, [string]$Name,
     }
 }
 
+# An element of the onboard's main window by AutomationId, present or not, whatever its IsEnabled (control-server#541). A form
+# that is shown before the button it unlocks is enabled has to be waited for this way: Wait-G3ButtonOffered asks for an enabled
+# button, and a button that only enables once the form is filled never is while nobody fills it.
+function Wait-G3ElementPresent([object]$Onboard, [object]$Journal, [string]$AutomationId, [string]$Criterion, [int]$TimeoutSeconds) {
+    $deadline = [DateTimeOffset]::UtcNow.AddSeconds($TimeoutSeconds)
+    while ($true) {
+        $present = $null -ne $Onboard.Element('AutomationId', $AutomationId)
+        $Journal.Observe($Criterion, $present, $null)
+        if ($present -or [DateTimeOffset]::UtcNow -ge $deadline) { return $present }
+        Start-Sleep -Milliseconds 500
+    }
+}
+
+# The titles of the onboard's own failure notices for a forced mechanical recovery. 「强制机械取出未上报」 is the one the confirm step
+# raises when the result was not reported (onboard MainWindow.xaml.cs, OnConfirmForcedMechanicalRecoveryClick, hmi#216); until
+# control-server#541 the scenario knew only the other two, and that refusal read as a two-minute wait for a result.
+function Get-G3ForcedRecoveryFailureTitle {
+    return , @('强制机械恢复失败', '确认失败', '强制机械取出未上报')
+}
+
 if (-not ('G3L2.DialogNative' -as [type])) {
     Add-Type -Namespace 'G3L2' -Name 'DialogNative' -MemberDefinition @'
 [System.Runtime.InteropServices.DllImport("user32.dll", SetLastError = true)]

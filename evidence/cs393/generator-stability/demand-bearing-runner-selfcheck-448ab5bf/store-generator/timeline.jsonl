@@ -1,0 +1,40 @@
+{"at":"2026-10-09T13:18:11.5758655+00:00","note":"L2 run 20261009T131811509Z starting for scenario 'demand-bearing-store-at-unload'."}
+{"at":"2026-10-09T13:18:11.6360909+00:00","note":"L2 port block lock acquired (slot 0, Global\\W2G-L2PortBlock)."}
+{"at":"2026-10-09T13:18:11.6391770+00:00","note":"Building ControlServer and the test doubles."}
+{"at":"2026-10-09T13:18:43.7861615+00:00","criterion":"fake-riot-live","value":"live"}
+{"at":"2026-10-09T13:18:44.1225629+00:00","criterion":"fake-mes-live","value":"live"}
+{"at":"2026-10-09T13:18:44.2684888+00:00","note":"Task type station preset: default (map 25, WIRE_TO_GATE -> 关卡/210)"}
+{"at":"2026-10-09T13:18:50.4988322+00:00","note":"Package capacity rules imported."}
+{"at":"2026-10-09T13:18:50.5025501+00:00","note":"No waiting point registration: a single-vehicle rig, or WaitingPoints = $false."}
+{"at":"2026-10-09T13:18:52.6342645+00:00","criterion":"control-server-live","value":"(null)"}
+{"at":"2026-10-09T13:18:53.5327725+00:00","criterion":"control-server-live","value":"live"}
+{"at":"2026-10-09T13:18:53.7013264+00:00","note":"Protocol release identity: protocol-v3.0.0 (profileId AGV_FULL_PRODUCT, protocolVersion 4, APPROVED_RELEASE)."}
+{"at":"2026-10-09T13:18:54.4780025+00:00","criterion":"onboard-readiness","value":"DISCONNECTED"}
+{"at":"2026-10-09T13:18:54.7635963+00:00","criterion":"onboard-readiness","value":"READY"}
+{"at":"2026-10-09T13:18:54.8653967+00:00","criterion":"control-server-ready","value":"ready"}
+{"at":"2026-10-09T13:18:54.9512462+00:00","note":"FieldOps: seed-approved-facts --database C:\\Users\\szy\\AppData\\Local\\Temp\\l2-20261009T131811509Z\\controlserver.db"}
+{"at":"2026-10-09T13:18:58.4721910+00:00","criterion":"slot-model-preseed:seed-approved-facts","value":"OK","detail":{"output":{"command":"seed-approved-facts","outcome":"OK","modelKey":"8005-eight-slot","slotModelVersionId":"bd0ac5450c8f405d94cbae60d7d12daa","version":1,"slotCount":8}}}
+{"at":"2026-10-09T13:18:58.4874108+00:00","note":"FieldOps: bind-io --database C:\\Users\\szy\\AppData\\Local\\Temp\\l2-20261009T131811509Z\\controlserver.db --agv AGV-L2-001"}
+{"at":"2026-10-09T13:19:00.7287141+00:00","criterion":"slot-model-preseed:bind-io:AGV-L2-001","value":"OK","detail":{"output":{"command":"bind-io","outcome":"OK","agvId":"AGV-L2-001","slotModelVersionId":"bd0ac5450c8f405d94cbae60d7d12daa","boundSlots":8,"version":1}}}
+{"at":"2026-10-09T13:19:01.0174936+00:00","criterion":"slot-model-preseed:dispatch-zones","value":"0"}
+{"at":"2026-10-09T13:19:01.0401472+00:00","note":"FieldOps: import-area-assignments --database C:\\Users\\szy\\AppData\\Local\\Temp\\l2-20261009T131811509Z\\controlserver.db --input C:\\w2g\\cs393\\db-selfcheck-448ab5bf\\store-generator\\snapshots\\preseed-area-assignments.csv"}
+{"at":"2026-10-09T13:19:03.5078858+00:00","criterion":"slot-model-preseed:import-area-assignments","value":"OK","detail":{"output":{"command":"import-area-assignments","outcome":"OK","dryRun":false,"input":"C:\\w2g\\cs393\\db-selfcheck-448ab5bf\\store-generator\\snapshots\\preseed-area-assignments.csv","entryCount":3,"version":1,"contentSha256":"4291a509c2c0b75ea4bde0ac4dcde04b6e8632b54a21a67eee2772a6f8d0ff8e","snapshotId":"357cea3014bf4653ad760ae503b1d5b9","importedAt":"2026-10-09T21:19:01.4697827+08:00","errorCount":0,"errors":[],"preview":[]}}}
+{"at":"2026-10-09T13:19:03.5327401+00:00","note":"FieldOps: import-charging-policy --database C:\\Users\\szy\\AppData\\Local\\Temp\\l2-20261009T131811509Z\\controlserver.db --input C:\\w2g\\cs393\\db-selfcheck-448ab5bf\\store-generator\\snapshots\\preseed-charging-policy.json --fleet BROKERX-L2-0001"}
+{"at":"2026-10-09T13:19:05.4453841+00:00","note":"FieldOps: approve-charging-policy --database C:\\Users\\szy\\AppData\\Local\\Temp\\l2-20261009T131811509Z\\controlserver.db --version 1 --approved-by L2 orchestrator --role L2_PRESET --basis scripts/l2/L2ChargingPolicy.psm1 --source L2_PRESET"}
+{"at":"2026-10-09T13:19:07.1847948+00:00","note":"FieldOps: activate-charging-policy --database C:\\Users\\szy\\AppData\\Local\\Temp\\l2-20261009T131811509Z\\controlserver.db --version 1 --activated-by L2 orchestrator --fleet BROKERX-L2-0001 --allow-non-field-approval"}
+{"at":"2026-10-09T13:19:09.1126451+00:00","criterion":"preseed:charging-policy","value":"OK","detail":{"withoutPolicy":[],"version":1,"source":"L2_PRESET","coveredAfter":["BROKERX-L2-0001"]}}
+{"at":"2026-10-09T13:19:09.1141544+00:00","note":"Per-zone dispatch parameters left unconfigured (the default precondition)."}
+{"at":"2026-10-09T13:19:09.1450942+00:00","note":"Environment is up; entering scenario 'demand-bearing-store-at-unload'."}
+{"at":"2026-10-09T13:19:09.2595008+00:00","note":"Publishing demand 515e38201a0b4bca898ae0157cbd45c1 (sublot L2-SUBLOT-20261009T131811509Z)."}
+{"at":"2026-10-09T13:19:09.3167888+00:00","criterion":"to-pickup-intent","value":"(null)"}
+{"at":"2026-10-09T13:19:11.1676741+00:00","criterion":"to-pickup-intent","value":"@{UpperId=W2G-515e3820-1a0b-4bca-898a-e0157cbd45c1-PICKUP-1; Status=CONFIRMED}"}
+{"at":"2026-10-09T13:19:11.1829327+00:00","note":"Vehicle drives to the pickup station and comes to rest."}
+{"at":"2026-10-09T13:19:11.2584038+00:00","criterion":"to-gate-intent","value":"(null)"}
+{"at":"2026-10-09T13:19:20.4399348+00:00","criterion":"to-gate-intent","value":"@{UpperId=W2G-515e3820-1a0b-4bca-898a-e0157cbd45c1-GATE-1; Status=CONFIRMED}"}
+{"at":"2026-10-09T13:19:20.4420902+00:00","note":"Vehicle drives to the gate and comes to rest."}
+{"at":"2026-10-09T13:19:20.4869405+00:00","criterion":"journey-stage","value":"AwaitingGateArrival"}
+{"at":"2026-10-09T13:19:21.5559957+00:00","criterion":"journey-stage","value":"AwaitingUnloadResult"}
+{"at":"2026-10-09T13:19:21.5916218+00:00","criterion":"pending-unload","value":"1"}
+{"at":"2026-10-09T13:19:21.6566533+00:00","note":"Exported the store to C:\\w2g\\cs393\\db-selfcheck-448ab5bf\\store-generator\\demand-bearing-store\\controlserver.db."}
+{"at":"2026-10-09T13:19:21.7255055+00:00","note":"Generator finished."}
+{"at":"2026-10-09T13:19:22.2263166+00:00","note":"L2 port block lock released."}

@@ -92,6 +92,52 @@ Test-Case 'without a threshold the onboard stage copy has no expectedActionOverd
     if ($json.Contains('expectedActionOverdueMs')) { throw $json }
 }
 
+# control-server#541: the bound on the overdue alarm a scenario waits for. Snapshots shaped as Get-L2RealInbound returns them
+# (Payload from ConvertFrom-Json -DateKind String, so raisedAt is text).
+function New-AlarmSnapshot([string]$MessageId, [object[]]$Alarms) {
+    return [pscustomobject]@{ MessageId = $MessageId; Payload = [pscustomobject]@{ alarms = $Alarms } }
+}
+function New-Alarm([string]$Code, [string]$Slot, [string]$RaisedAt) {
+    return [pscustomobject]@{ alarmId = [guid]::NewGuid().ToString(); code = $Code; subjectType = 'SLOT'; subjectId = $Slot; raisedAt = $RaisedAt }
+}
+$overdue = 'SLOT_EXPECTED_ACTION_OVERDUE'
+$unloadStarted = [DateTimeOffset]::Parse('2026-10-10T08:00:30+00:00')
+$loadSnapshot = New-AlarmSnapshot 'load' @(New-Alarm $overdue '3' '2026-10-10T08:00:05.123Z')
+$loadStillListed = New-AlarmSnapshot 'later-but-old-alarm' @(New-Alarm $overdue '3' '2026-10-10T08:00:05.123Z')
+$unloadSnapshot = New-AlarmSnapshot 'unload' @(New-Alarm $overdue '3' '2026-10-10T08:00:52.400Z')
+
+Test-Case 'the defect: the load snapshot alone met the old probe (code and slot only) but does not meet the bounded one' {
+    $old = @(@($loadSnapshot) | Where-Object { @(@($_.Payload.alarms) | Where-Object {
+                    [string]$_.code -eq $overdue -and [string]$_.subjectId -eq '3' }).Count -gt 0 })
+    if ($old.Count -ne 1) { throw 'the old predicate was expected to match the load snapshot' }
+    $bounded = Select-L2OverdueAlarmSnapshot -Snapshot @($loadSnapshot) -Code $overdue -SlotNo '3' -RaisedAfter $unloadStarted
+    if ($null -ne $bounded) { throw "expected `$null, got $($bounded.MessageId)" }
+}
+Test-Case 'a later snapshot still listing the load alarm does not count: raisedAt is bounded, not arrival' {
+    $found = Select-L2OverdueAlarmSnapshot -Snapshot @($loadSnapshot, $loadStillListed) -Code $overdue -SlotNo '3' -RaisedAfter $unloadStarted
+    if ($null -ne $found) { throw "expected `$null, got $($found.MessageId)" }
+}
+Test-Case 'the unload alarm raised after the bound is found, in the newest matching snapshot' {
+    $found = Select-L2OverdueAlarmSnapshot -Snapshot @($loadSnapshot, $loadStillListed, $unloadSnapshot) -Code $overdue -SlotNo '3' -RaisedAfter $unloadStarted
+    if ($null -eq $found -or $found.MessageId -ne 'unload') { throw "expected unload, got $($found.MessageId)" }
+}
+Test-Case 'an alarm raised exactly at the bound counts' {
+    $at = New-AlarmSnapshot 'at' @(New-Alarm $overdue '3' '2026-10-10T08:00:30Z')
+    if ($null -eq (Select-L2OverdueAlarmSnapshot -Snapshot @($at) -Code $overdue -SlotNo '3' -RaisedAfter $unloadStarted)) { throw 'expected a match' }
+}
+Test-Case 'another slot or another code does not count' {
+    $other = New-AlarmSnapshot 'other' @((New-Alarm $overdue '4' '2026-10-10T08:00:52Z'), (New-Alarm 'SLOT_DOOR_OPEN' '3' '2026-10-10T08:00:52Z'))
+    if ($null -ne (Select-L2OverdueAlarmSnapshot -Snapshot @($other) -Code $overdue -SlotNo '3' -RaisedAfter $unloadStarted)) { throw 'expected $null' }
+}
+Test-Case 'an alarm whose raisedAt is missing or does not parse does not count' {
+    $broken = New-AlarmSnapshot 'broken' @((New-Alarm $overdue '3' 'not a time'),
+        [pscustomobject]@{ alarmId = 'x'; code = $overdue; subjectType = 'SLOT'; subjectId = '3' })
+    if ($null -ne (Select-L2OverdueAlarmSnapshot -Snapshot @($broken) -Code $overdue -SlotNo '3' -RaisedAfter $unloadStarted)) { throw 'expected $null' }
+}
+Test-Case 'no snapshots at all is $null, not an error' {
+    if ($null -ne (Select-L2OverdueAlarmSnapshot -Snapshot @() -Code $overdue -SlotNo '3' -RaisedAfter $unloadStarted)) { throw 'expected $null' }
+}
+
 if ($wrong -gt 0) {
     Write-Host "$wrong case(s) came out wrong."
     exit 1

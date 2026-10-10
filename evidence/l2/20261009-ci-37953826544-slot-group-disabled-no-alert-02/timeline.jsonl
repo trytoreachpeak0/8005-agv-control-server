@@ -1,0 +1,37 @@
+{"at":"2026-10-09T16:39:26.6889624+00:00","note":"L2 run 20261009T163926638Z starting for scenario 'slot-group-disabled-no-alert'."}
+{"at":"2026-10-09T16:39:26.7248428+00:00","note":"L2 port block lock acquired (slot 3, Global\\W2G-L2PortBlock-slot3)."}
+{"at":"2026-10-09T16:39:26.7273493+00:00","note":"Build skipped (-SkipBuild); running the output already built."}
+{"at":"2026-10-09T16:39:27.6227007+00:00","criterion":"fake-riot-live","value":"live"}
+{"at":"2026-10-09T16:39:27.8498934+00:00","criterion":"fake-mes-live","value":"live"}
+{"at":"2026-10-09T16:39:27.9399270+00:00","note":"Task type station preset: default (map 25, WIRE_TO_GATE -> 关卡/210)"}
+{"at":"2026-10-09T16:39:33.5814730+00:00","note":"Package capacity rules imported."}
+{"at":"2026-10-09T16:39:33.5848915+00:00","note":"No waiting point registration: a single-vehicle rig, or WaitingPoints = $false."}
+{"at":"2026-10-09T16:39:35.6755806+00:00","criterion":"control-server-live","value":"(null)"}
+{"at":"2026-10-09T16:39:36.5769492+00:00","criterion":"control-server-live","value":"live"}
+{"at":"2026-10-09T16:39:36.6810153+00:00","note":"Protocol release identity: protocol-v3.0.0 (profileId AGV_FULL_PRODUCT, protocolVersion 4, APPROVED_RELEASE)."}
+{"at":"2026-10-09T16:39:36.6898037+00:00","note":"Onboard slot states for fake-onboard: 0:slotNo=1, 0:administrativeAvailability=DISABLED, 1:slotNo=2, 1:administrativeAvailability=DISABLED"}
+{"at":"2026-10-09T16:39:37.3892552+00:00","criterion":"onboard-readiness","value":"DISCONNECTED"}
+{"at":"2026-10-09T16:39:37.6920899+00:00","criterion":"onboard-readiness","value":"READY"}
+{"at":"2026-10-09T16:39:37.7518826+00:00","criterion":"control-server-ready","value":"ready"}
+{"at":"2026-10-09T16:39:37.8000457+00:00","note":"FieldOps: seed-approved-facts --database C:\\actions-runner\\win11-01-control-server\\_work\\_temp\\l2-37953826544-1\\_stage\\l2-20261009T163926638Z-slot3\\controlserver.db"}
+{"at":"2026-10-09T16:39:39.8099598+00:00","criterion":"slot-model-preseed:seed-approved-facts","value":"OK","detail":{"output":{"command":"seed-approved-facts","outcome":"OK","modelKey":"8005-eight-slot","slotModelVersionId":"c954b675385d4fb0bdc7441ddd99b630","version":1,"slotCount":8}}}
+{"at":"2026-10-09T16:39:39.8182247+00:00","note":"FieldOps: bind-io --database C:\\actions-runner\\win11-01-control-server\\_work\\_temp\\l2-37953826544-1\\_stage\\l2-20261009T163926638Z-slot3\\controlserver.db --agv AGV-L2-001"}
+{"at":"2026-10-09T16:39:41.6790456+00:00","criterion":"slot-model-preseed:bind-io:AGV-L2-001","value":"OK","detail":{"output":{"command":"bind-io","outcome":"OK","agvId":"AGV-L2-001","slotModelVersionId":"c954b675385d4fb0bdc7441ddd99b630","boundSlots":8,"version":1}}}
+{"at":"2026-10-09T16:39:41.7424774+00:00","criterion":"slot-model-preseed:dispatch-zones","value":"0"}
+{"at":"2026-10-09T16:39:41.7464210+00:00","note":"FieldOps: import-area-assignments --database C:\\actions-runner\\win11-01-control-server\\_work\\_temp\\l2-37953826544-1\\_stage\\l2-20261009T163926638Z-slot3\\controlserver.db --input C:\\actions-runner\\win11-01-control-server\\_work\\_temp\\l2-37953826544-1\\slot-group-disabled-no-alert-02\\snapshots\\preseed-area-assignments.csv"}
+{"at":"2026-10-09T16:39:43.7858441+00:00","criterion":"slot-model-preseed:import-area-assignments","value":"OK","detail":{"output":{"command":"import-area-assignments","outcome":"OK","dryRun":false,"input":"C:\\actions-runner\\win11-01-control-server\\_work\\_temp\\l2-37953826544-1\\slot-group-disabled-no-alert-02\\snapshots\\preseed-area-assignments.csv","entryCount":1,"version":1,"contentSha256":"8ab62504edb88283c1f89062bdec82316bfea9ff44c986b884a1ec00d5a5b50f","snapshotId":"f8a2fff0c5cb4cd280e7ad8d956e892c","importedAt":"2026-10-10T00:39:42.0188618+08:00","errorCount":0,"errors":[],"preview":[]}}}
+{"at":"2026-10-09T16:39:43.8105829+00:00","note":"FieldOps: import-charging-policy --database C:\\actions-runner\\win11-01-control-server\\_work\\_temp\\l2-37953826544-1\\_stage\\l2-20261009T163926638Z-slot3\\controlserver.db --input C:\\actions-runner\\win11-01-control-server\\_work\\_temp\\l2-37953826544-1\\slot-group-disabled-no-alert-02\\snapshots\\preseed-charging-policy.json --fleet BROKERX-L2-0001"}
+{"at":"2026-10-09T16:39:45.6170600+00:00","note":"FieldOps: approve-charging-policy --database C:\\actions-runner\\win11-01-control-server\\_work\\_temp\\l2-37953826544-1\\_stage\\l2-20261009T163926638Z-slot3\\controlserver.db --version 1 --approved-by L2 orchestrator --role L2_PRESET --basis scripts/l2/L2ChargingPolicy.psm1 --source L2_PRESET"}
+{"at":"2026-10-09T16:39:47.3208429+00:00","note":"FieldOps: activate-charging-policy --database C:\\actions-runner\\win11-01-control-server\\_work\\_temp\\l2-37953826544-1\\_stage\\l2-20261009T163926638Z-slot3\\controlserver.db --version 1 --activated-by L2 orchestrator --fleet BROKERX-L2-0001 --allow-non-field-approval"}
+{"at":"2026-10-09T16:39:49.0934190+00:00","criterion":"preseed:charging-policy","value":"OK","detail":{"version":1,"source":"L2_PRESET","withoutPolicy":[],"coveredAfter":["BROKERX-L2-0001"]}}
+{"at":"2026-10-09T16:39:49.0952595+00:00","note":"Per-zone dispatch parameters left unconfigured (the default precondition)."}
+{"at":"2026-10-09T16:39:49.1204397+00:00","note":"Environment is up; entering scenario 'slot-group-disabled-no-alert'."}
+{"at":"2026-10-09T16:39:49.2704705+00:00","note":"Publishing demand 7b3191a124b64fe99b2d7b7bb752759f (area N1-3, 12 boxes = 3 baskets)."}
+{"at":"2026-10-09T16:39:49.3496032+00:00","criterion":"backlog-reason","value":"(null)"}
+{"at":"2026-10-09T16:39:50.6177202+00:00","criterion":"backlog-reason","value":"SLOT_GROUP_CAPACITY_TEMPORARILY_UNAVAILABLE"}
+{"at":"2026-10-09T16:39:50.6883922+00:00","criterion":"runtime-iterations","value":"15"}
+{"at":"2026-10-09T16:39:51.2163769+00:00","criterion":"runtime-iterations","value":"16"}
+{"at":"2026-10-09T16:39:52.2261892+00:00","criterion":"runtime-iterations","value":"17"}
+{"at":"2026-10-09T16:39:53.2394978+00:00","criterion":"runtime-iterations","value":"18"}
+{"at":"2026-10-09T16:39:53.3573375+00:00","note":"仓位临时禁用造成的不足只进正常积压，不受理、不形成结构性派车阻断、不告警。"}
+{"at":"2026-10-09T16:39:53.7440583+00:00","note":"L2 port block lock released."}

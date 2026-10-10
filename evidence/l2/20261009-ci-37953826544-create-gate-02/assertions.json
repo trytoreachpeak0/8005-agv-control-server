@@ -1,0 +1,99 @@
+{
+  "schemaVersion": 1,
+  "scenario": "create-gate",
+  "runId": "20261009T165917288Z",
+  "outcome": "PASS",
+  "failureReason": "",
+  "identity": {
+    "batchId": "batch-2",
+    "protocolReleaseIdentity": {
+      "repository": "8005-agv-protocol",
+      "releaseVersion": "3.0.0",
+      "tag": "protocol-v3.0.0",
+      "commit": "3f091cb2eae7c58cec54a95dd9389c9180bc7b4c",
+      "protocolVersion": 4,
+      "profileId": "AGV_FULL_PRODUCT",
+      "manifestSha256": "d5e1a53f1fd61f105a890dc0267e1b0a9ac5ea49f713d2cf730b0f554df9db9e",
+      "schemaBundleSha256": "e435b2b14d9ccd60c89f07df909da7626fef056a6b8a2241087557fd7dc3df43",
+      "vectorsSha256": "be849f9749b004296ebd9e7bffa98faf2f8ffa90b63308ca3b210c68e7b8656e",
+      "approvalStatus": "APPROVED_RELEASE"
+    },
+    "vehicleKey": "BROKERX-L2-0001",
+    "rig": "SyntheticOnboard",
+    "controlServerCommit": "563242d071de6f243c59f11722b197d683fee2a4",
+    "agvId": "AGV-L2-001",
+    "stageRoot": "C:\\actions-runner\\win11-01-control-server\\_work\\_temp\\l2-37953826544-1\\_stage\\l2-20261009T165917288Z-slot1"
+  },
+  "assertions": [
+    {
+      "id": "L2-CG-01",
+      "description": "目录处于 Fresh 且有一次完整确认",
+      "outcome": "PASS",
+      "expected": "Fresh + 已确认",
+      "actual": "Fresh + 2026-10-09 16:59:39.0589361+00:00"
+    },
+    {
+      "id": "L2-CG-02",
+      "description": "判定所依据的两个已批准值被一并记下（30 秒周期 / 300 秒最大未确认）",
+      "outcome": "PASS",
+      "expected": "30 / 300",
+      "actual": "30 / 300"
+    },
+    {
+      "id": "L2-CG-03",
+      "description": "门禁在链路里放行，派车照常走通",
+      "outcome": "PASS",
+      "expected": "AwaitingPickupArrival",
+      "actual": "AwaitingPickupArrival"
+    },
+    {
+      "id": "L2-CG-04",
+      "description": "取货端与卸货端两个端点都被冻结",
+      "outcome": "PASS",
+      "expected": 2,
+      "actual": 2
+    },
+    {
+      "id": "L2-CG-05",
+      "description": "冻结的端点带着当时的目录修订（不是 0）",
+      "outcome": "PASS",
+      "expected": "非 0",
+      "actual": "1017238931678627222"
+    },
+    {
+      "id": "L2-CG-06",
+      "description": "卸货端冻的是关卡站",
+      "outcome": "PASS",
+      "expected": "210",
+      "actual": "210"
+    },
+    {
+      "id": "L2-CG-07",
+      "description": "门禁写了一条 Allowed 审计（同一裁决不重复写，所以只有一条）",
+      "outcome": "PASS",
+      "expected": "1 条 Allowed",
+      "actual": "1 条 / Allowed"
+    },
+    {
+      "id": "L2-CG-08",
+      "description": "RIoT 的 RouteCost 与自建图的遍历代价分列两栏，都有值",
+      "outcome": "PASS",
+      "expected": "两栏都有值",
+      "actual": "RIoT=20000 / Graph=60000"
+    },
+    {
+      "id": "L2-CG-09",
+      "description": "两个源都说可达，没有分歧要处置",
+      "outcome": "PASS",
+      "expected": "可达 + 可达 + 无分歧",
+      "actual": "RIoT=20000 / GraphReachable=1 / Conflict="
+    },
+    {
+      "id": "L2-CG-10",
+      "description": "目录级状态经正式 API 读得回来，一张图一行（按原因去重，不是每轮一条）",
+      "outcome": "PASS",
+      "expected": "1 行 Fresh",
+      "actual": "1 行 / Fresh"
+    }
+  ]
+}

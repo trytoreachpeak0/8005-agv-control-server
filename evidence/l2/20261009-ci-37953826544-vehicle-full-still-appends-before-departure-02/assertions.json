@@ -1,0 +1,78 @@
+{
+  "schemaVersion": 1,
+  "scenario": "vehicle-full-still-appends-before-departure",
+  "runId": "20261009T154821732Z",
+  "outcome": "PASS",
+  "failureReason": "",
+  "identity": {
+    "controlServerCommit": "563242d071de6f243c59f11722b197d683fee2a4",
+    "vehicleKey": "BROKERX-L2-0001",
+    "stageRoot": "C:\\actions-runner\\win11-01-control-server\\_work\\_temp\\l2-37953826544-1\\_stage\\l2-20261009T154821732Z-slot1",
+    "protocolReleaseIdentity": {
+      "repository": "8005-agv-protocol",
+      "releaseVersion": "3.0.0",
+      "tag": "protocol-v3.0.0",
+      "commit": "3f091cb2eae7c58cec54a95dd9389c9180bc7b4c",
+      "protocolVersion": 4,
+      "profileId": "AGV_FULL_PRODUCT",
+      "manifestSha256": "d5e1a53f1fd61f105a890dc0267e1b0a9ac5ea49f713d2cf730b0f554df9db9e",
+      "schemaBundleSha256": "e435b2b14d9ccd60c89f07df909da7626fef056a6b8a2241087557fd7dc3df43",
+      "vectorsSha256": "be849f9749b004296ebd9e7bffa98faf2f8ffa90b63308ca3b210c68e7b8656e",
+      "approvalStatus": "APPROVED_RELEASE"
+    },
+    "rig": "SyntheticOnboard",
+    "agvId": "AGV-L2-001",
+    "batchId": "batch-7"
+  },
+  "assertions": [
+    {
+      "id": "L2-VFA-01",
+      "description": "甲、乙两站装完：FRONT 无空仓、REAR 剩两个，车在 11 号站持货等单",
+      "outcome": "PASS",
+      "expected": "CARGO_HOLDING_WAIT, [\"FRONT\"]",
+      "actual": "AwaitingStationDeparture CARGO_HOLDING_WAIT (LOADED), [\"FRONT\"]"
+    },
+    {
+      "id": "L2-VFA-02",
+      "description": "需求丁（REAR 3 花篮）只因本车货物装不下：车进入 VEHICLE_FULL，仍停在 11 号站",
+      "outcome": "PASS",
+      "expected": "VEHICLE_FULL, AwaitingStationDeparture",
+      "actual": "AwaitingStationDeparture VEHICLE_FULL"
+    },
+    {
+      "id": "L2-VFA-03",
+      "description": "需求戊（REAR 2 花篮）追加进了这趟旅程：VEHICLE_FULL 在离开最后一个装货站之前仍接追加；追加时 11 号站的停靠还没完成",
+      "outcome": "PASS",
+      "expected": "joined journey:fe0861c9-8846-4ec7-8524-5cea80c85a0e / station-11 stop still open",
+      "actual": "joined journey:fe0861c9-8846-4ec7-8524-5cea80c85a0e (AwaitingStationDeparture VEHICLE_FULL) / PENDING"
+    },
+    {
+      "id": "L2-VFA-04",
+      "description": "需求戊是被受理的：积压行上有受理时刻",
+      "outcome": "PASS",
+      "expected": "accepted",
+      "actual": "ACCEPTED accepted=2026-10-09 15:49:56.4348362+00:00"
+    },
+    {
+      "id": "L2-VFA-05",
+      "description": "从判满到需求戊加入、再到加入之后又转了三轮：装货阶段一直是 VEHICLE_FULL，没有退回持货等单或装货",
+      "outcome": "PASS",
+      "expected": "only VEHICLE_FULL",
+      "actual": "seen VEHICLE_FULL; three rounds after join AwaitingStationDeparture VEHICLE_FULL"
+    },
+    {
+      "id": "L2-VFA-07",
+      "description": "需求戊装上了车，车离开它那个取货停靠（最后一个装货停靠）时以 VEHICLE_FULL 关闭",
+      "outcome": "PASS",
+      "expected": "E LOADED / CLOSED/VEHICLE_FULL",
+      "actual": "E LOADED / AwaitingGateArrival CLOSED/VEHICLE_FULL"
+    },
+    {
+      "id": "L2-VFA-06",
+      "description": "发给车的快照在第一张 VEHICLE_FULL 之后没有再出现 CARGO_HOLDING_WAIT 或 LOADING",
+      "outcome": "PASS",
+      "expected": "a FULL, then neither WAIT nor LOADING",
+      "actual": "1:LOADING 2:LOADING 3:CARGO_HOLDING_WAIT 4:VEHICLE_FULL 5:VEHICLE_FULL 6:CLOSED/VEHICLE_FULL"
+    }
+  ]
+}

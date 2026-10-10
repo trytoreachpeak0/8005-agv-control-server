@@ -1,0 +1,92 @@
+{
+  "schemaVersion": 1,
+  "scenario": "slot-group-selection",
+  "runId": "20261009T160654329Z",
+  "outcome": "PASS",
+  "failureReason": "",
+  "identity": {
+    "vehicleKey": "BROKERX-L2-0001",
+    "protocolReleaseIdentity": {
+      "repository": "8005-agv-protocol",
+      "releaseVersion": "3.0.0",
+      "tag": "protocol-v3.0.0",
+      "commit": "3f091cb2eae7c58cec54a95dd9389c9180bc7b4c",
+      "protocolVersion": 4,
+      "profileId": "AGV_FULL_PRODUCT",
+      "manifestSha256": "d5e1a53f1fd61f105a890dc0267e1b0a9ac5ea49f713d2cf730b0f554df9db9e",
+      "schemaBundleSha256": "e435b2b14d9ccd60c89f07df909da7626fef056a6b8a2241087557fd7dc3df43",
+      "vectorsSha256": "be849f9749b004296ebd9e7bffa98faf2f8ffa90b63308ca3b210c68e7b8656e",
+      "approvalStatus": "APPROVED_RELEASE"
+    },
+    "agvId": "AGV-L2-001",
+    "batchId": "batch-4",
+    "rig": "SyntheticOnboard",
+    "stageRoot": "C:\\actions-runner\\win11-01-control-server\\_work\\_temp\\l2-37953826544-1\\_stage\\l2-20261009T160654329Z-slot1",
+    "controlServerCommit": "563242d071de6f243c59f11722b197d683fee2a4"
+  },
+  "assertions": [
+    {
+      "id": "L2-SGS-01",
+      "description": "库内整车模型的分组只有 FRONT 与 REAR，本车的仓位模型可解析",
+      "outcome": "PASS",
+      "expected": "SlotModelSlots: FRONT,REAR; vehicle groups: FRONT,REAR",
+      "actual": "SlotModelSlots: FRONT,REAR; vehicle groups: FRONT,REAR"
+    },
+    {
+      "id": "L2-SGS-02",
+      "description": "需求要 3 个花篮，旅程恰好占 3 个目标仓",
+      "outcome": "PASS",
+      "expected": "ExpectedBasketCount 3, 3 target slots",
+      "actual": "ExpectedBasketCount 3, 3 target slots [5,6,7]"
+    },
+    {
+      "id": "L2-SGS-03",
+      "description": "N1-3 指 REAR：目标仓全部属于本车 REAR 组、升序，且恰好是该组编号最小的 3 个可用仓",
+      "outcome": "PASS",
+      "expected": "[5,6,7]（REAR 组最小的可用仓，升序）",
+      "actual": "[5,6,7] on AGV-L2-001"
+    },
+    {
+      "id": "L2-SGS-04",
+      "description": "第一条需求的旅程走到 Completed",
+      "outcome": "PASS",
+      "expected": "Completed",
+      "actual": "Completed"
+    },
+    {
+      "id": "L2-SGS-05",
+      "description": "取货点下发给车的 LOAD 命令 slots 与旅程目标仓相同",
+      "outcome": "PASS",
+      "expected": "[5,6,7]",
+      "actual": "1 command(s), slots: [5,6,7]"
+    },
+    {
+      "id": "L2-SGS-06",
+      "description": "关卡下发给车的 UNLOAD 命令 slots 与旅程目标仓相同",
+      "outcome": "PASS",
+      "expected": "[5,6,7]",
+      "actual": "1 command(s), slots: [5,6,7]"
+    },
+    {
+      "id": "L2-SGS-07",
+      "description": "导入把 N1-3 改指 FRONT 的新版本归属表",
+      "outcome": "PASS",
+      "expected": "OK, version 2",
+      "actual": "OK, version 2"
+    },
+    {
+      "id": "L2-SGS-08",
+      "description": "第二条需求同样要 3 个花篮",
+      "outcome": "PASS",
+      "expected": 3,
+      "actual": 3
+    },
+    {
+      "id": "L2-SGS-09",
+      "description": "N1-3 改指 FRONT 之后：目标仓全部属于本车 FRONT 组、升序，且恰好是该组编号最小的 3 个可用仓",
+      "outcome": "PASS",
+      "expected": "[1,2,3]（FRONT 组最小的可用仓，升序）",
+      "actual": "[1,2,3] on AGV-L2-001"
+    }
+  ]
+}

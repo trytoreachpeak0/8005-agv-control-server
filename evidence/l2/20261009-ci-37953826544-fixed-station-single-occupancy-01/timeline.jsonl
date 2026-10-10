@@ -1,0 +1,90 @@
+{"at":"2026-10-09T16:33:15.9125935+00:00","note":"L2 run 20261009T163315872Z starting for scenario 'fixed-station-single-occupancy'."}
+{"at":"2026-10-09T16:33:15.9673174+00:00","note":"L2 port block lock acquired (slot 1, Global\\W2G-L2PortBlock-slot1)."}
+{"at":"2026-10-09T16:33:15.9702897+00:00","note":"Build skipped (-SkipBuild); running the output already built."}
+{"at":"2026-10-09T16:33:16.8760899+00:00","criterion":"fake-riot-live","value":"live"}
+{"at":"2026-10-09T16:33:17.1386064+00:00","criterion":"fake-mes-live","value":"live"}
+{"at":"2026-10-09T16:33:17.3523867+00:00","note":"Fake RIoT stations on map 25: 11=C15-13, 12=N1-3_N1-7, 210=关卡, 214=等待点1, 215=等待点2, 305=派工待送取货"}
+{"at":"2026-10-09T16:33:17.3640873+00:00","note":"Fleet of 2: AGV-L2-001/BROKERX-L2-0001, AGV-L2-002/BROKERX-L2-0002"}
+{"at":"2026-10-09T16:33:17.4165844+00:00","note":"Task type station preset: the scenario's own (2 binding(s))"}
+{"at":"2026-10-09T16:33:22.8152951+00:00","note":"Package capacity rules imported."}
+{"at":"2026-10-09T16:33:24.6615131+00:00","note":"FieldOps: import-waiting-points --database C:\\actions-runner\\win11-01-control-server\\_work\\_temp\\l2-37953826544-1\\_stage\\l2-20261009T163315872Z-slot1\\controlserver.db --input C:\\actions-runner\\win11-01-control-server\\_work\\_temp\\l2-37953826544-1\\_stage\\l2-20261009T163315872Z-slot1\\waiting-points.csv --catalog C:\\actions-runner\\win11-01-control-server\\_work\\_temp\\l2-37953826544-1\\_stage\\l2-20261009T163315872Z-slot1\\waiting-points-catalog-25.json --map 25 --fleet BROKERX-L2-0001;BROKERX-L2-0002"}
+{"at":"2026-10-09T16:33:26.5474692+00:00","criterion":"waiting-points-imported","value":"1","detail":{"stations":[214,215],"coverage":{"mapId":25,"vehicleCount":2,"enabledOnMap":2,"assignable":2,"sufficient":true,"shortfall":0,"unassigned":[],"onOtherMaps":{},"warning":null}}}
+{"at":"2026-10-09T16:33:26.5609091+00:00","note":"Waiting points registered on map 25 as version 1: 214=等待点1, 215=等待点2"}
+{"at":"2026-10-09T16:33:28.6265821+00:00","criterion":"control-server-live","value":"(null)"}
+{"at":"2026-10-09T16:33:29.5313071+00:00","criterion":"control-server-live","value":"live"}
+{"at":"2026-10-09T16:33:29.6311438+00:00","note":"Protocol release identity: protocol-v3.0.0 (profileId AGV_FULL_PRODUCT, protocolVersion 4, APPROVED_RELEASE)."}
+{"at":"2026-10-09T16:33:30.3203744+00:00","criterion":"onboard-readiness","value":"DISCONNECTED"}
+{"at":"2026-10-09T16:33:30.6030011+00:00","criterion":"onboard-readiness","value":"READY"}
+{"at":"2026-10-09T16:33:31.4201482+00:00","criterion":"control-server-ready","value":"ready"}
+{"at":"2026-10-09T16:33:31.5004194+00:00","note":"FieldOps: seed-approved-facts --database C:\\actions-runner\\win11-01-control-server\\_work\\_temp\\l2-37953826544-1\\_stage\\l2-20261009T163315872Z-slot1\\controlserver.db"}
+{"at":"2026-10-09T16:33:33.3093052+00:00","criterion":"slot-model-preseed:seed-approved-facts","value":"OK","detail":{"output":{"command":"seed-approved-facts","outcome":"OK","modelKey":"8005-eight-slot","slotModelVersionId":"e4f1d1c48eb04771bd2984a172d258a9","version":1,"slotCount":8}}}
+{"at":"2026-10-09T16:33:33.3181517+00:00","note":"FieldOps: bind-io --database C:\\actions-runner\\win11-01-control-server\\_work\\_temp\\l2-37953826544-1\\_stage\\l2-20261009T163315872Z-slot1\\controlserver.db --agv AGV-L2-001"}
+{"at":"2026-10-09T16:33:35.1504528+00:00","criterion":"slot-model-preseed:bind-io:AGV-L2-001","value":"OK","detail":{"output":{"command":"bind-io","outcome":"OK","agvId":"AGV-L2-001","slotModelVersionId":"e4f1d1c48eb04771bd2984a172d258a9","boundSlots":8,"version":1}}}
+{"at":"2026-10-09T16:33:35.1564393+00:00","note":"FieldOps: bind-io --database C:\\actions-runner\\win11-01-control-server\\_work\\_temp\\l2-37953826544-1\\_stage\\l2-20261009T163315872Z-slot1\\controlserver.db --agv AGV-L2-002"}
+{"at":"2026-10-09T16:33:36.9872031+00:00","criterion":"slot-model-preseed:bind-io:AGV-L2-002","value":"OK","detail":{"output":{"command":"bind-io","outcome":"OK","agvId":"AGV-L2-002","slotModelVersionId":"e4f1d1c48eb04771bd2984a172d258a9","boundSlots":8,"version":1}}}
+{"at":"2026-10-09T16:33:37.0547905+00:00","criterion":"slot-model-preseed:dispatch-zones","value":"0"}
+{"at":"2026-10-09T16:33:37.0579605+00:00","note":"FieldOps: import-area-assignments --database C:\\actions-runner\\win11-01-control-server\\_work\\_temp\\l2-37953826544-1\\_stage\\l2-20261009T163315872Z-slot1\\controlserver.db --input C:\\actions-runner\\win11-01-control-server\\_work\\_temp\\l2-37953826544-1\\fixed-station-single-occupancy-01\\snapshots\\preseed-area-assignments.csv"}
+{"at":"2026-10-09T16:33:38.9412302+00:00","criterion":"slot-model-preseed:import-area-assignments","value":"OK","detail":{"output":{"command":"import-area-assignments","outcome":"OK","dryRun":false,"input":"C:\\actions-runner\\win11-01-control-server\\_work\\_temp\\l2-37953826544-1\\fixed-station-single-occupancy-01\\snapshots\\preseed-area-assignments.csv","entryCount":3,"version":1,"contentSha256":"4291a509c2c0b75ea4bde0ac4dcde04b6e8632b54a21a67eee2772a6f8d0ff8e","snapshotId":"953695ac924d47b283d632e441173100","importedAt":"2026-10-10T00:33:37.3044277+08:00","errorCount":0,"errors":[],"preview":[]}}}
+{"at":"2026-10-09T16:33:38.9639882+00:00","note":"FieldOps: import-charging-policy --database C:\\actions-runner\\win11-01-control-server\\_work\\_temp\\l2-37953826544-1\\_stage\\l2-20261009T163315872Z-slot1\\controlserver.db --input C:\\actions-runner\\win11-01-control-server\\_work\\_temp\\l2-37953826544-1\\fixed-station-single-occupancy-01\\snapshots\\preseed-charging-policy.json --fleet BROKERX-L2-0001;BROKERX-L2-0002"}
+{"at":"2026-10-09T16:33:40.7812439+00:00","note":"FieldOps: approve-charging-policy --database C:\\actions-runner\\win11-01-control-server\\_work\\_temp\\l2-37953826544-1\\_stage\\l2-20261009T163315872Z-slot1\\controlserver.db --version 1 --approved-by L2 orchestrator --role L2_PRESET --basis scripts/l2/L2ChargingPolicy.psm1 --source L2_PRESET"}
+{"at":"2026-10-09T16:33:42.4877676+00:00","note":"FieldOps: activate-charging-policy --database C:\\actions-runner\\win11-01-control-server\\_work\\_temp\\l2-37953826544-1\\_stage\\l2-20261009T163315872Z-slot1\\controlserver.db --version 1 --activated-by L2 orchestrator --fleet BROKERX-L2-0001;BROKERX-L2-0002 --allow-non-field-approval"}
+{"at":"2026-10-09T16:33:44.3698693+00:00","criterion":"preseed:charging-policy","value":"OK","detail":{"withoutPolicy":[],"version":1,"coveredAfter":["BROKERX-L2-0001","BROKERX-L2-0002"],"source":"L2_PRESET"}}
+{"at":"2026-10-09T16:33:44.3715865+00:00","note":"Per-zone dispatch parameters left unconfigured (the default precondition)."}
+{"at":"2026-10-09T16:33:44.3874838+00:00","note":"Environment is up; entering scenario 'fixed-station-single-occupancy'."}
+{"at":"2026-10-09T16:33:44.4756900+00:00","note":"Publishing WIRE_TO_GATE demand GATE-A c253372946ac4307aa9a705d0478e90f (area N1-3)."}
+{"at":"2026-10-09T16:33:44.5533790+00:00","criterion":"accepted-gate demand A","value":"(null)"}
+{"at":"2026-10-09T16:33:46.3545571+00:00","criterion":"accepted-gate demand A","value":"@{JourneyId=journey:c2533729-46ac-4307-aa9a-705d0478e90f; AgvId=AGV-L2-001; VehicleKey=BROKERX-L2-0001; Stage=AwaitingPickupArrival; BlockReasonCode=}"}
+{"at":"2026-10-09T16:33:46.3592388+00:00","note":"Publishing WIRE_TO_GATE demand GATE-B 934fba7e745d47a980d378d80e0f4175 (area C15-13)."}
+{"at":"2026-10-09T16:33:46.3782378+00:00","criterion":"accepted-gate demand B","value":"(null)"}
+{"at":"2026-10-09T16:33:47.1317816+00:00","criterion":"accepted-gate demand B","value":"@{JourneyId=journey:934fba7e-745d-47a9-80d3-78d80e0f4175; AgvId=AGV-L2-002; VehicleKey=BROKERX-L2-0002; Stage=AwaitingPickupArrival; BlockReasonCode=}"}
+{"at":"2026-10-09T16:33:47.1340792+00:00","note":"Gate section: A = BROKERX-L2-0001, B = BROKERX-L2-0002."}
+{"at":"2026-10-09T16:33:47.1604931+00:00","criterion":"intent-A-TO_PICKUP","value":"@{UpperId=W2G-c2533729-46ac-4307-aa9a-705d0478e90f-PICKUP-1; OrderId=ORDER-000001; Status=CONFIRMED}"}
+{"at":"2026-10-09T16:33:47.2361215+00:00","criterion":"stage-A","value":"AwaitingPickupArrival"}
+{"at":"2026-10-09T16:33:47.7494929+00:00","criterion":"stage-A","value":"AwaitingSublot"}
+{"at":"2026-10-09T16:33:48.5085082+00:00","criterion":"stage-A","value":"AwaitingLoadResult"}
+{"at":"2026-10-09T16:33:49.5352720+00:00","criterion":"stage-A","value":"AwaitingStationDeparture"}
+{"at":"2026-10-09T16:34:19.4626917+00:00","criterion":"stage-A","value":"AwaitingDepartureSafety"}
+{"at":"2026-10-09T16:34:19.7158423+00:00","criterion":"stage-A","value":"AwaitingGateArrival"}
+{"at":"2026-10-09T16:34:19.7220959+00:00","criterion":"gate-reserved-for-a","value":"@{VehicleKey=BROKERX-L2-0001; JourneyId=journey:c2533729-46ac-4307-aa9a-705d0478e90f; State=RESERVED; StationKind=FIXED_TASK_STATION; RecordId=058662fb-f6a7-4d9d-9a7e-bbc6198e402d}"}
+{"at":"2026-10-09T16:34:19.7599675+00:00","criterion":"intent-A-TO_GATE","value":"@{UpperId=W2G-c2533729-46ac-4307-aa9a-705d0478e90f-GATE-1; OrderId=ORDER-000003; Status=CONFIRMED}"}
+{"at":"2026-10-09T16:34:20.8108442+00:00","criterion":"stage-A","value":"AwaitingUnloadResult"}
+{"at":"2026-10-09T16:34:21.5858467+00:00","criterion":"stage-A","value":"Completed"}
+{"at":"2026-10-09T16:34:21.5939981+00:00","criterion":"intent-B-TO_PICKUP","value":"@{UpperId=W2G-934fba7e-745d-47a9-80d3-78d80e0f4175-PICKUP-1; OrderId=ORDER-000002; Status=CONFIRMED}"}
+{"at":"2026-10-09T16:34:21.6359803+00:00","criterion":"stage-B","value":"AwaitingPickupArrival"}
+{"at":"2026-10-09T16:34:22.6476395+00:00","criterion":"stage-B","value":"AwaitingSublot"}
+{"at":"2026-10-09T16:34:23.4096563+00:00","criterion":"stage-B","value":"AwaitingLoadResult"}
+{"at":"2026-10-09T16:34:24.4258244+00:00","criterion":"stage-B","value":"AwaitingStationDeparture"}
+{"at":"2026-10-09T16:34:55.3610611+00:00","criterion":"stage-B","value":"AwaitingDepartureSafety"}
+{"at":"2026-10-09T16:34:55.6136459+00:00","criterion":"stage-B","value":"AwaitingGateArrival"}
+{"at":"2026-10-09T16:34:55.6281154+00:00","note":"A leaves the gate for station 11 without an order (departure evidence)."}
+{"at":"2026-10-09T16:34:55.6665405+00:00","criterion":"gate-given-to-b","value":"@{VehicleKey=BROKERX-L2-0001; JourneyId=journey:c2533729-46ac-4307-aa9a-705d0478e90f; State=OCCUPIED; StationKind=FIXED_TASK_STATION; RecordId=058662fb-f6a7-4d9d-9a7e-bbc6198e402d}"}
+{"at":"2026-10-09T16:34:56.1985430+00:00","criterion":"gate-given-to-b","value":"@{VehicleKey=BROKERX-L2-0002; JourneyId=journey:934fba7e-745d-47a9-80d3-78d80e0f4175; State=RESERVED; StationKind=FIXED_TASK_STATION; RecordId=5136110b-4376-4e27-aab6-e5bd931b03b7}"}
+{"at":"2026-10-09T16:34:56.2179090+00:00","criterion":"intent-B-TO_GATE","value":"@{UpperId=W2G-934fba7e-745d-47a9-80d3-78d80e0f4175-GATE-1; OrderId=ORDER-000004; Status=CONFIRMED}"}
+{"at":"2026-10-09T16:34:57.0050950+00:00","criterion":"stage-B","value":"AwaitingUnloadResult"}
+{"at":"2026-10-09T16:34:57.5119349+00:00","criterion":"stage-B","value":"Completed"}
+{"at":"2026-10-09T16:34:57.5225637+00:00","note":"Publishing STAGING_TO_WIRE demand STAGING-1 2a75e024826c41038db349c91d728725 (area N1-3)."}
+{"at":"2026-10-09T16:34:57.5336542+00:00","criterion":"accepted-staging demand 1","value":"(null)"}
+{"at":"2026-10-09T16:34:58.5386158+00:00","criterion":"accepted-staging demand 1","value":"@{JourneyId=journey:2a75e024-826c-4103-8db3-49c91d728725; AgvId=AGV-L2-001; VehicleKey=BROKERX-L2-0001; Stage=AwaitingPickupArrival; BlockReasonCode=}"}
+{"at":"2026-10-09T16:34:58.5458391+00:00","note":"Publishing STAGING_TO_WIRE demand STAGING-2 6ad6775b518a4cfba66fe871498e84b5 (area N1-7)."}
+{"at":"2026-10-09T16:34:58.5835983+00:00","criterion":"second-judged","value":"(null)"}
+{"at":"2026-10-09T16:34:59.5986345+00:00","criterion":"second-judged","value":"@{ReasonCode=ROUTE_GRAPH_NEVER_REFRESHED; FirstSeenAt=2026-10-09 16:34:59.2937964+00:00; LastSeenAt=2026-10-09 16:34:59.2937964+00:00}"}
+{"at":"2026-10-09T16:35:00.6285007+00:00","criterion":"second-judged","value":"@{ReasonCode=ROUTE_GRAPH_NEVER_REFRESHED; FirstSeenAt=2026-10-09 16:34:59.2937964+00:00; LastSeenAt=2026-10-09 16:35:00.2511509+00:00}"}
+{"at":"2026-10-09T16:35:01.6595273+00:00","criterion":"second-judged","value":"@{ReasonCode=ROUTE_GRAPH_NEVER_REFRESHED; FirstSeenAt=2026-10-09 16:34:59.2937964+00:00; LastSeenAt=2026-10-09 16:35:01.3051572+00:00}"}
+{"at":"2026-10-09T16:35:02.4186548+00:00","criterion":"second-judged","value":"@{ReasonCode=FIXED_TASK_STATION_RESERVED_BY_OTHER_VEHICLE; FirstSeenAt=2026-10-09 16:34:59.2937964+00:00; LastSeenAt=2026-10-09 16:35:02.2445787+00:00}"}
+{"at":"2026-10-09T16:35:02.6718872+00:00","criterion":"second-judged","value":"@{ReasonCode=ROUTE_GRAPH_NEVER_REFRESHED; FirstSeenAt=2026-10-09 16:34:59.2937964+00:00; LastSeenAt=2026-10-09 16:35:02.2445787+00:00}"}
+{"at":"2026-10-09T16:35:03.6840073+00:00","criterion":"second-judged","value":"@{ReasonCode=ROUTE_GRAPH_NEVER_REFRESHED; FirstSeenAt=2026-10-09 16:34:59.2937964+00:00; LastSeenAt=2026-10-09 16:35:03.2874014+00:00}"}
+{"at":"2026-10-09T16:35:04.6976246+00:00","criterion":"second-judged","value":"@{ReasonCode=ROUTE_GRAPH_NEVER_REFRESHED; FirstSeenAt=2026-10-09 16:34:59.2937964+00:00; LastSeenAt=2026-10-09 16:35:04.2849292+00:00}"}
+{"at":"2026-10-09T16:35:05.4562537+00:00","criterion":"second-judged","value":"@{ReasonCode=ROUTE_GRAPH_NEVER_REFRESHED; FirstSeenAt=2026-10-09 16:34:59.2937964+00:00; LastSeenAt=2026-10-09 16:35:05.2764607+00:00}"}
+{"at":"2026-10-09T16:35:05.4666334+00:00","criterion":"second-backlog","value":"ROUTE_GRAPH_NEVER_REFRESHED","detail":{"backlog":{"ReasonCode":"ROUTE_GRAPH_NEVER_REFRESHED","FirstSeenAt":"2026-10-09 16:34:59.2937964+00:00","LastSeenAt":"2026-10-09 16:35:05.2764607+00:00"}}}
+{"at":"2026-10-09T16:35:05.4768267+00:00","criterion":"intent-H-TO_PICKUP","value":"@{UpperId=W2G-2a75e024-826c-4103-8db3-49c91d728725-PICKUP-1; OrderId=ORDER-000005; Status=CONFIRMED}"}
+{"at":"2026-10-09T16:35:05.5084222+00:00","criterion":"stage-H","value":"AwaitingPickupArrival"}
+{"at":"2026-10-09T16:35:06.5169420+00:00","criterion":"stage-H","value":"AwaitingSublot"}
+{"at":"2026-10-09T16:35:07.2768941+00:00","criterion":"stage-H","value":"AwaitingLoadResult"}
+{"at":"2026-10-09T16:35:08.2879915+00:00","criterion":"stage-H","value":"AwaitingStationDeparture"}
+{"at":"2026-10-09T16:35:38.4478804+00:00","criterion":"stage-H","value":"AwaitingDepartureSafety"}
+{"at":"2026-10-09T16:35:38.7026829+00:00","criterion":"stage-H","value":"AwaitingGateArrival"}
+{"at":"2026-10-09T16:35:38.7098970+00:00","criterion":"intent-H-TO_GATE","value":"@{UpperId=W2G-2a75e024-826c-4103-8db3-49c91d728725-GATE-1; OrderId=ORDER-000006; Status=CONFIRMED}"}
+{"at":"2026-10-09T16:35:38.7739636+00:00","criterion":"second-accepted","value":"(null)"}
+{"at":"2026-10-09T16:35:40.2903262+00:00","criterion":"second-accepted","value":"2026-10-09 16:35:39.9503815+00:00"}
+{"at":"2026-10-09T16:35:40.2970392+00:00","note":"Scenario finished."}
+{"at":"2026-10-09T16:35:40.8884113+00:00","note":"L2 port block lock released."}
