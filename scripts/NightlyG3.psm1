@@ -65,4 +65,18 @@ function Get-NightlyG3Verdict {
     return [pscustomobject]$verdict
 }
 
-Export-ModuleMember -Function Get-NightlyG3Verdict
+function Format-NightlyG3Comment {
+    param(
+        [Parameter(Mandatory)][AllowEmptyCollection()][object[]]$Verdicts,
+        [Parameter(Mandatory)][string]$RunUrl,
+        [Parameter(Mandatory)][string]$Trigger,
+        [Parameter(Mandatory)][string]$Ref,
+        [Parameter(Mandatory)][System.Collections.IDictionary]$Commits,
+        [Parameter(Mandatory)][DateTimeOffset]$StartedAtUtc,
+        [string]$StoppedBy,
+        [string]$Note
+    )
+    return $null
+}
+
+Export-ModuleMember -Function Get-NightlyG3Verdict, Format-NightlyG3Comment
