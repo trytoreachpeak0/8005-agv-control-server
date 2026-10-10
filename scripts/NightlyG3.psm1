@@ -192,5 +192,49 @@ function Get-NightlyG3StartDeadline {
     return $StartedAtUtc.ToUniversalTime().AddMinutes($DispatchMinutes)
 }
 
+# The two calls to GitHub, kept thin: everything they decide is in the functions above, which the self-check covers.
+function Invoke-NightlyG3Api {
+    param(
+        [Parameter(Mandatory)][string]$Path,
+        [Parameter(Mandatory)][string]$Token,
+        [string]$Method = 'GET',
+        [object]$Body
+    )
+    $request = @{
+        Uri = "https://api.github.com/$($Path.TrimStart('/'))"
+        Method = $Method
+        Headers = @{ Authorization = "Bearer $Token"; Accept = 'application/vnd.github+json'; 'X-GitHub-Api-Version' = '2022-11-28' }
+        TimeoutSec = 45
+    }
+    if ($null -ne $Body) { $request.Body = ($Body | ConvertTo-Json -Depth 5); $request.ContentType = 'application/json; charset=utf-8' }
+    return Invoke-RestMethod @request
+}
+
+function Get-NightlyG3BusyRealRigJob {
+    param(
+        [Parameter(Mandatory)][string]$Repository,
+        [Parameter(Mandatory)][string]$Token
+    )
+    # The most recent l2.yml runs are enough: a run that holds or waits for the rig is among the newest.
+    $runs = @((Invoke-NightlyG3Api -Path "repos/$Repository/actions/workflows/l2.yml/runs?per_page=50" -Token $Token).workflow_runs |
+        Where-Object { $_.status -ne 'completed' } | ForEach-Object { [ordered]@{ id = $_.id; event = $_.event; status = $_.status } })
+    $jobsByRun = @{}
+    foreach ($run in $runs) {
+        $jobsByRun[$run['id']] = @((Invoke-NightlyG3Api -Path "repos/$Repository/actions/runs/$($run['id'])/jobs?per_page=100" -Token $Token).jobs |
+            ForEach-Object { [ordered]@{ name = $_.name; status = $_.status; conclusion = $_.conclusion } })
+    }
+    return @(Select-NightlyG3BusyRealRigJob -Runs $runs -JobsByRun $jobsByRun)
+}
+
+function Send-NightlyG3Comment {
+    param(
+        [Parameter(Mandatory)][string]$Repository,
+        [Parameter(Mandatory)][int]$Issue,
+        [Parameter(Mandatory)][string]$Body,
+        [Parameter(Mandatory)][string]$Token
+    )
+    return Invoke-NightlyG3Api -Path "repos/$Repository/issues/$Issue/comments" -Token $Token -Method POST -Body @{ body = $Body }
+}
+
 Export-ModuleMember -Function Get-NightlyG3Verdict, Format-NightlyG3Comment, Select-NightlyG3BusyRealRigJob, Wait-NightlyG3RigIdle,
-    Get-NightlyG3StartDeadline
+    Get-NightlyG3StartDeadline, Get-NightlyG3BusyRealRigJob, Send-NightlyG3Comment
