@@ -1,0 +1,15 @@
+diff --git a/src/ControlServer.Host/Transport/OnboardMessageProcessor.cs b/src/ControlServer.Host/Transport/OnboardMessageProcessor.cs
+index fe4c2e259..dfe3c64e9 100644
+--- a/src/ControlServer.Host/Transport/OnboardMessageProcessor.cs
++++ b/src/ControlServer.Host/Transport/OnboardMessageProcessor.cs
+@@ -98,6 +98,10 @@ public sealed partial class OnboardMessageProcessor(
+                     timeProvider.GetUtcNow(),
+                     cancellationToken).ConfigureAwait(false);
+             }
++            catch (InboundMessageRejectedException) // MUTATION M5 (control-server#541): a conflicting SessionHello is ignored, the connection left open.
++            {
++                return string.Empty;
++            }
+             catch (ProtocolIdentityMismatchException error)
+             {
+                 return SerializeEnvelope(
