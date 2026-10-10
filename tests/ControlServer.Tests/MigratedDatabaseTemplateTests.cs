@@ -1,3 +1,4 @@
+using System.Text.RegularExpressions;
 using ControlServer.Infrastructure.Persistence;
 using Microsoft.Data.Sqlite;
 using Microsoft.EntityFrameworkCore;
@@ -140,34 +141,84 @@ public sealed class MigratedDatabaseTemplateTests : IDisposable
     }
 
     /// <summary>
-    /// A test about the migrations runs them: the template is migrated by the same code, so a wrong migration would be wrong
-    /// in every copy too, and only these tests would say so.
+    /// What starts a test from a template copy: the template itself, or the journey fixture's factory with anything but
+    /// <c>migrate: false</c> (which leaves the database empty for the test to migrate). A regex rather than one literal, so
+    /// <c>CreateAsync(migrate: true)</c> is caught as well as <c>CreateAsync()</c>.
     /// </summary>
+    private static readonly Regex StartsFromTemplate = new(
+        @"\bMigratedDatabaseTemplate\b|\bBatch7JourneyFixture\.CreateAsync\((?!\s*migrate\s*:\s*false\s*\))",
+        RegexOptions.CultureInvariant);
+
+    private static readonly Regex TestAttribute = new(@"^\s*\[(?:Fact|Theory)\b", RegexOptions.Multiline | RegexOptions.CultureInvariant);
+
+    private static readonly Regex TypeDeclaration = new(
+        @"^\s*(?:(?:private|internal|public|protected|sealed|static|abstract|file|partial)\s+)*(?:class|record|struct|interface)\s",
+        RegexOptions.Multiline | RegexOptions.CultureInvariant);
+
+    /// <summary>
+    /// A test about the migrations runs them: the template is migrated by the same code, so a wrong migration would be wrong
+    /// in every copy too, and only these tests would say so. Two places are scanned: every migration test file as a whole, and
+    /// every test method anywhere that names <c>IMigrator</c> -- one that migrates to a named migration, such as
+    /// <c>Batch7JourneyAcceptanceTests</c>' down-and-up, whose file otherwise starts from the template on purpose.
+    /// </summary>
+    /// <remarks>
+    /// A source scan, so it sees what is written in the test itself: a test reaching <c>IMigrator</c> only through a helper
+    /// defined elsewhere is not seen. The counts below fail the guard when the scan stops finding what it was written for.
+    /// </remarks>
     [Fact]
     public void NoMigrationTestStartsFromATemplateCopy()
     {
         string tests = Path.Combine(ProtocolIdentityArchitectureTests.RepositoryRoot(), "tests", "ControlServer.Tests");
+        string[] sources =
+        [
+            .. Directory.GetFiles(tests, "*.cs")
+                .Where(path => !Path.GetFileName(path).StartsWith(nameof(MigratedDatabaseTemplate), StringComparison.Ordinal)),
+        ];
         string[] migrationTests =
         [
-            .. Directory.GetFiles(tests, "*Migration*.cs")
-                .Where(path => !Path.GetFileName(path).StartsWith(nameof(MigratedDatabaseTemplate), StringComparison.Ordinal)),
+            .. sources.Where(path => Path.GetFileName(path).Contains("Migration", StringComparison.Ordinal)),
             Path.Combine(tests, "AuditDatabaseImmutabilityTests.cs"),
         ];
         Assert.True(migrationTests.Length >= 15, $"Found only {migrationTests.Length} migration test files under {tests}.");
 
-        string[] copying =
+        List<string> copying =
         [
-            .. migrationTests.Where(path =>
-            {
-                string text = File.ReadAllText(path);
-                return text.Contains(nameof(MigratedDatabaseTemplate), StringComparison.Ordinal) ||
-                       text.Contains("Batch7JourneyFixture.CreateAsync()", StringComparison.Ordinal);
-            }).Select(Path.GetFileName)!,
+            .. migrationTests.Where(path => StartsFromTemplate.IsMatch(File.ReadAllText(path))).Select(Path.GetFileName)!,
         ];
+        int migratorTests = 0;
+        foreach (string path in sources.Except(migrationTests))
+        {
+            foreach (string test in TestMethods(File.ReadAllText(path)).Where(test => test.Contains("IMigrator", StringComparison.Ordinal)))
+            {
+                migratorTests++;
+                if (StartsFromTemplate.IsMatch(test))
+                {
+                    copying.Add($"{Path.GetFileName(path)} ({test.Split('\n').Select(line => line.Trim()).First(line => line.StartsWith("public ", StringComparison.Ordinal))})");
+                }
+            }
+        }
+        Assert.True(migratorTests >= 4, $"Found only {migratorTests} tests naming IMigrator outside the migration test files.");
         Assert.True(
-            copying.Length == 0,
-            "These migration tests start from a template copy instead of running the migrations; use "
+            copying.Count == 0,
+            "These tests about the migrations start from a template copy instead of running the migrations; use "
             + "Batch7JourneyFixture.CreateMigratedForRealAsync() or MigrateAsync: " + string.Join(", ", copying));
+    }
+
+    /// <summary>
+    /// Each test's source: from one <c>[Fact]</c> or <c>[Theory]</c> attribute up to the next one, or to the next type declaration
+    /// -- otherwise a file's last test would take in the fixture classes after it.
+    /// </summary>
+    private static IEnumerable<string> TestMethods(string source)
+    {
+        MatchCollection starts = TestAttribute.Matches(source);
+        int[] types = [.. TypeDeclaration.Matches(source).Select(match => match.Index)];
+        for (int n = 0; n < starts.Count; n++)
+        {
+            int start = starts[n].Index;
+            int end = n + 1 < starts.Count ? starts[n + 1].Index : source.Length;
+            end = Math.Min(end, types.Where(index => index > start).DefaultIfEmpty(source.Length).Min());
+            yield return source[start..end];
+        }
     }
 
     private static async Task<SqliteConnection> CopyAsync()

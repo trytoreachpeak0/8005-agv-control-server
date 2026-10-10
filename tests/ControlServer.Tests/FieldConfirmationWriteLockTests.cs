@@ -42,7 +42,8 @@ public sealed class FieldConfirmationWriteLockTests : IAsyncDisposable
     public ValueTask DisposeAsync()
     {
         SqliteConnection.ClearAllPools();
-        foreach (string file in new[] { _database, _database + "-journal" })
+        // The database is in WAL mode since its schema is copied from the migrated template (control-server#553), so -wal and -shm too.
+        foreach (string file in new[] { _database, _database + "-journal", _database + "-wal", _database + "-shm" })
         {
             try
             {
