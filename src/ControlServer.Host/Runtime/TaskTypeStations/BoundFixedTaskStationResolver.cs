@@ -7,12 +7,18 @@ namespace ControlServer.Host.Runtime.TaskTypeStations;
 /// <summary>
 /// The task types this build can execute end to end. Everything else that clears its binding is refused as
 /// <see cref="DispatchReasonCodes.TaskTypeNotYetExecutable"/> (control-server#160). STAGING_TO_WIRE since control-server#163;
-/// the four same-direction task types wait for batch 10.
+/// the four same-direction task types since batch 10 (control-server#545), so today it is all six.
 /// </summary>
+/// <remarks>
+/// The set is also the station admission seed's task types (<c>JourneyRuntimeEngine.AdmissionSeedTaskTypesAsync</c>):
+/// changing it changes the seed's content, which the store refuses under the version it was bound with. So a change
+/// here moves <c>JourneyRuntime:admissionPolicyVersion</c> with it, in <c>appsettings.json</c> and in both v2 instance
+/// definitions under <c>scripts/parallel/</c>; <c>AdmissionPolicyVersionGuardTests</c> holds the table that says how far.
+/// </remarks>
 public static class ExecutableTaskTypes
 {
     public static IReadOnlySet<string> All { get; } =
-        new HashSet<string>(StringComparer.Ordinal) { TransportTaskTypes.WireToGate, TransportTaskTypes.StagingToWire };
+        new HashSet<string>(TransportTaskTypes.All, StringComparer.Ordinal);
 
     public static bool Contains(string taskType) => All.Contains(taskType);
 }
