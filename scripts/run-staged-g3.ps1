@@ -107,10 +107,36 @@ param(
     #   ControlServer commit, so the rewritten criterion (b0f070db) needs the binding on the exit branch.
     #   $ControlServerCommit -> 8d0a644e, the exit branch; git diff 8467480d 8d0a644e -- src tests tools is empty, so the
     #     product is 8467480d. Onboard, simulator and protocol unchanged.
-    [string]$ControlServerCommit = '8d0a644edfd4be30b99f5bf03bf17060ea0b0727',
-    [string]$OnboardCommit = '4e40e196205d55c363f97850d10bd18df9a686c0',
+    #
+    # 2026-10-09, batch 8 and protocol v3 exit (control-server#393): protocol-v3.0.0 was released by
+    #   8005-agv-program#152 (annotated tag object e08c362e), and both batch branches were merged back on the
+    #   released identity (control-server PR #540, onboard-hmi PR #286). All four move.
+    #   $ControlServerCommit -> 5f3adc42, the fp/v2-impl tip before the exit ticket's own branch: PR #540's merge
+    #     commit, whose tree is that of batch-p3/v3@4477ec08 (APPROVED_RELEASE, PR #538).
+    #   $OnboardCommit -> b9e67a53, the w2g/fp-v2-impl tip: onboard-hmi PR #286's merge commit, whose tree is that
+    #     of w2g/batch-p3/v3@33f26018 (APPROVED_RELEASE, onboard-hmi PR #284).
+    #   $SimulatorCommit unchanged: origin/main is still fb5f7c59.
+    #   $ProtocolCommit -> 3f091cb2, what the protocol-v3.0.0 tag dereferences to; equal to the candidate frozen
+    #     by 8005-agv-program#151. The tag literal (protocol-v3.0.0) was already moved by control-server#382.
+    #   Same night, after the first G3 round went red only on G3 scripts that had not followed merged changes
+    #   (docs/defects/20261010-staged-g3-content-conflict-expects-disconnect.md,
+    #   docs/defects/20261010-journey-g3-two-scenarios-first-run-stale-scripts.md):
+    #   $ControlServerCommit -> 3411887d, the fp/v2-impl tip with control-server#541 (PR #542: the staged runner's
+    #     content-conflict criteria, g3-slot-fault-declaration and g3-forced-mechanical-recovery). The journey runner
+    #     takes its scenario scripts from the bound commit, so it has to be this one. git diff 5f3adc42 3411887d --
+    #     src tests tools is empty: the product is that of 5f3adc42. Onboard, simulator and protocol unchanged.
+    #   Third round, after the second journey round went red on two more never-run script branches
+    #   (control-server#555, PR #557): $ControlServerCommit -> 1f63fe0b, the fp/v2-impl tip with that fix.
+    #     git diff 5f3adc42 1f63fe0b -- src tests tools is empty. Onboard, simulator and protocol unchanged.
+    #   Fourth round, after the third journey round went red on two UI Automation reads in the scenario fixture
+    #   (control-server#560, PR #561): $ControlServerCommit -> 76c9cfe2, that PR's branch head, bound before the PR
+    #     merged because the coordinator asked for the round at once. Merging it into fp/v2-impl adds only a merge
+    #     commit with the same tree. git diff 5f3adc42 76c9cfe2 -- src tests tools is empty. Onboard, simulator and
+    #     protocol unchanged.
+    [string]$ControlServerCommit = '76c9cfe26f8bd06fc42f954b608edfdd108d5962',
+    [string]$OnboardCommit = 'b9e67a538ba4cdf1916d201a08af40dd28270d14',
     [string]$SimulatorCommit = 'fb5f7c593742bf98bc3957b8729a38aad5321f28',
-    [string]$ProtocolCommit = '86575456c847041515b7b75e8851a00e0d939804',
+    [string]$ProtocolCommit = '3f091cb2eae7c58cec54a95dd9389c9180bc7b4c',
     # The ref whose tip -OnboardCommit must equal. It is a parameter rather than a literal because the
     # branch carrying a line's onboard half moves with the line: batch 3 on the v2 line lives on
     # w2g/b3-on-v2, not on w2g/fp-v2-impl. The assertion is not weakened -- the clone source must

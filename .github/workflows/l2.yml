@@ -350,30 +350,30 @@ jobs:
               # control-server#273, after the batch-7 exit: a loaded vehicle standing at the gate waiting for a person
               # has its battery read from RIoT and logged past the (shortened) threshold -- an error under the rescue line
               # -- the dashboard card shows it, and not one order is created for it (REQ-0169).
-              @{ Name = 'waiting-journey-battery-watch'; Runs = 1; BatchId = 'batch-8' }
+              @{ Name = 'waiting-journey-battery-watch'; Runs = 3; BatchId = 'batch-8' }
               # control-server#186, after the batch-7 exit and before v2 goes on a real vehicle: RIoT renames the Map under
               # the same mapId and every task type bound on it is held (source CATALOG_CHANGE, MAP_RENAMED) until FieldOps
               # accepts the new name and releases the holds; a Map list that cannot be read is not a rename (REQ-0341).
-              @{ Name = 'map-rename-holds-all-task-types'; Runs = 1; BatchId = 'batch-8' }
+              @{ Name = 'map-rename-holds-all-task-types'; Runs = 3; BatchId = 'batch-8' }
               # control-server#388, specification 5.4 and 8.3 batch-8: two vehicles and one registered waiting point, and the
               # server refuses to start before it listens, naming both counts; nothing is accepted and no order is created.
-              @{ Name = 'waiting-points-fewer-than-vehicles-refuses-start'; Runs = 1; BatchId = 'batch-8' }
+              @{ Name = 'waiting-points-fewer-than-vehicles-refuses-start'; Runs = 3; BatchId = 'batch-8' }
               # control-server#389, REQ-0291/0292: two idle vehicles and one usable waiting point; exactly one commits to an
               # idle return (purpose claim and reservation in one save), and a later transport goes to the other vehicle.
-              @{ Name = 'idle-return-two-vehicles-contend-one-waiting-point'; Runs = 1; BatchId = 'batch-8' }
+              @{ Name = 'idle-return-two-vehicles-contend-one-waiting-point'; Runs = 3; BatchId = 'batch-8' }
               # control-server#391, REQ-0204 revised: a public station is held by one vehicle at a time. A vehicle heading
               # for a held gate goes on and is given it once released; a second demand at the staging station is not taken
               # while another vehicle holds it, and is taken only after that vehicle leaves on departure evidence.
-              @{ Name = 'fixed-station-single-occupancy'; Runs = 1; BatchId = 'batch-8' }
+              @{ Name = 'fixed-station-single-occupancy'; Runs = 3; BatchId = 'batch-8' }
               # control-server#383, REQ-0359: an administrator declares the slot a vehicle waits on faulty. At the pickup the
               # vehicle refuses (the door shut as it was declared) and nothing changes; at the gate it applies, the unload goes
               # to RecoveryRequired and the journey blocks.
-              @{ Name = 'slot-fault-declaration'; Runs = 1; BatchId = 'batch-8' }
+              @{ Name = 'slot-fault-declaration'; Runs = 3; BatchId = 'batch-8' }
               # control-server#390, REQ-0293/0295: the idle vehicle's commitment becomes a journey and a single move to the
               # waiting point; on arrival the reservation turns into an occupancy and the purpose is released; a transport's
               # order leaves the occupancy standing until RIoT reports the vehicle elsewhere; unloaded at the gate, the vehicle
               # returns idle again and the gate is released on departure evidence.
-              @{ Name = 'waiting-point-exclusive-reserve-occupy-release'; Runs = 1; BatchId = 'batch-8' }
+              @{ Name = 'waiting-point-exclusive-reserve-occupy-release'; Runs = 3; BatchId = 'batch-8' }
               # control-server#400, specification 8.6 and 8.3 batch-9: the approved charging policy covers only the second of
               # two vehicles; the demand goes to it, and the first, asked first, is refused with CHARGING_POLICY_NOT_APPROVED
               # and gets no order (REQ-0282, per vehicle, the server keeps running).
@@ -717,7 +717,7 @@ jobs:
               # control-server#383, REQ-0359: the declaration reaches the real onboard, which stops the unlock wait, reports the
               # slot UNKNOWN under SLOT_FAULT_DECLARED and answers APPLIED; the journey blocks. Needs an onboard_ref that
               # contains onboard-hmi#215: an onboard without it does not know SlotFaultDeclarationCommand and drops its session.
-              @{ Name = 'real-onboard-slot-fault-declaration';               Runs = 1 }
+              @{ Name = 'real-onboard-slot-fault-declaration';               Runs = 3 }
               # control-server#405 (onboard half onboard-hmi#220): a charging cycle on the real onboard -- CHARGING and COMPLETE
               # shown, no entry at the charger, entry at the pickup once the full vehicle is sent away, the charger released.
               @{ Name = 'real-onboard-charging-cycle';                       Runs = 3 }

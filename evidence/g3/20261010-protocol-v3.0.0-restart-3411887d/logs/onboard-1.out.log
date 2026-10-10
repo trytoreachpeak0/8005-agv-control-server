@@ -1,0 +1,17 @@
+2026-10-10T10:55:29.9229631+08:00	Information	SingleInstanceGuard	抢到了整机单例名字。名字=Global\SQCD.Agv.Wpf.Onboard。
+2026-10-10T10:55:29.9445516+08:00	Information	App	车载端启动：agvId=AGV-8005-STAGED-G3-RESTART-01，environment=Development，version=0.2.0-safety-mock-travel+b9e67a538ba4cdf1916d201a08af40dd28270d14。
+2026-10-10T10:55:30.7816704+08:00	Information	WireToGateSessionClient	会话状态发布：source=handshake-start，connected=False，generation=null，readiness=Recovering，reasonCodes=[]，safetyStateVersion=1。
+2026-10-10T10:55:30.7829204+08:00	Information	ModbusTcpIoModuleClient	已连接IO模块 127.0.0.1:1502，UnitId=255。
+2026-10-10T10:55:30.7863147+08:00	Information	WireToGateBusinessService	判恢复入口：generation=null，readiness=Recovering，reasonCodes=[]，subject=none，recoveryVector=none，recoverySession=none，faultCargoHandoff=False。
+2026-10-10T10:55:30.8365252+08:00	Information	OnboardController	IO模块在线。
+2026-10-10T10:55:30.8388379+08:00	Information	OnboardController	启动IO安全快照验证通过。
+2026-10-10T10:55:31.2794490+08:00	Information	WireToGateSessionClient	会话状态发布：source=session-accepted，connected=True，generation=1，readiness=Recovering，reasonCodes=[]，safetyStateVersion=1。
+2026-10-10T10:55:31.2809973+08:00	Information	WireToGateBusinessService	判恢复入口：generation=1，readiness=Recovering，reasonCodes=[]，subject=none，recoveryVector=none，recoverySession=none，faultCargoHandoff=False。
+2026-10-10T10:55:31.7487518+08:00	Information	WireToGateSessionClient	收到SessionReadiness：messageId=923cc234-3ed7-4344-94e9-a249497d4761，generation=1，readiness=RECOVERY_REQUIRED，reasonCodes=[DEPARTURE_UNSAFE]，acceptedSafetyStateVersion=1。
+2026-10-10T10:55:31.7497749+08:00	Information	WireToGateSessionClient	会话状态发布：source=SessionReadiness，connected=True，generation=1，readiness=RecoveryRequired，reasonCodes=[DEPARTURE_UNSAFE]，safetyStateVersion=1。
+2026-10-10T10:55:31.7506071+08:00	Information	WireToGateBusinessService	判恢复入口：generation=1，readiness=RecoveryRequired，reasonCodes=[DEPARTURE_UNSAFE]，subject=none，recoveryVector=none，recoverySession=none，faultCargoHandoff=False。
+2026-10-10T10:55:31.7668990+08:00	Information	WireToGateBusinessService	重连后检查授权请求：generation=1，vector=none/none，commandBound=False，结论=无待授权的补偿或修正。
+2026-10-10T10:55:31.7695581+08:00	Information	WireToGateSessionService	上层会话已建立：generation=1，readiness=RecoveryRequired。
+2026-10-10T10:55:31.8651492+08:00	Information	WireToGateSessionClient	收到SessionReadiness：messageId=a87b8852-3154-4af4-a0a2-98a2b59deb4b，generation=1，readiness=RECOVERY_REQUIRED，reasonCodes=[DEPARTURE_UNSAFE]，acceptedSafetyStateVersion=2。
+2026-10-10T10:55:31.8659903+08:00	Information	WireToGateSessionClient	会话状态发布：source=SessionReadiness，connected=True，generation=1，readiness=RecoveryRequired，reasonCodes=[DEPARTURE_UNSAFE]，safetyStateVersion=2。
+2026-10-10T10:55:31.8757254+08:00	Information	WireToGateSessionClient	会话状态发布：source=SafetyStateChanged-ack，connected=True，generation=1，readiness=RecoveryRequired，reasonCodes=[DEPARTURE_UNSAFE]，safetyStateVersion=2。

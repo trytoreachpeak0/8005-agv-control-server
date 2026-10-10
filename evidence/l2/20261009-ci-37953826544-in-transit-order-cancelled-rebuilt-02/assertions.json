@@ -1,0 +1,64 @@
+{
+  "schemaVersion": 1,
+  "scenario": "in-transit-order-cancelled-rebuilt",
+  "runId": "20261009T161923217Z",
+  "outcome": "PASS",
+  "failureReason": "",
+  "identity": {
+    "controlServerCommit": "563242d071de6f243c59f11722b197d683fee2a4",
+    "agvId": "AGV-L2-001",
+    "vehicleKey": "BROKERX-L2-0001",
+    "stageRoot": "C:\\actions-runner\\win11-01-control-server\\_work\\_temp\\l2-37953826544-1\\_stage\\l2-20261009T161923217Z-slot4",
+    "batchId": "batch-2",
+    "protocolReleaseIdentity": {
+      "repository": "8005-agv-protocol",
+      "releaseVersion": "3.0.0",
+      "tag": "protocol-v3.0.0",
+      "commit": "3f091cb2eae7c58cec54a95dd9389c9180bc7b4c",
+      "protocolVersion": 4,
+      "profileId": "AGV_FULL_PRODUCT",
+      "manifestSha256": "d5e1a53f1fd61f105a890dc0267e1b0a9ac5ea49f713d2cf730b0f554df9db9e",
+      "schemaBundleSha256": "e435b2b14d9ccd60c89f07df909da7626fef056a6b8a2241087557fd7dc3df43",
+      "vectorsSha256": "be849f9749b004296ebd9e7bffa98faf2f8ffa90b63308ca3b210c68e7b8656e",
+      "approvalStatus": "APPROVED_RELEASE"
+    },
+    "rig": "SyntheticOnboard"
+  },
+  "assertions": [
+    {
+      "id": "L2-OC-01",
+      "description": "订单被取消后旅程写 ORDER_ENDED_WITHOUT_ARRIVAL，仍停在开往取货站",
+      "outcome": "PASS",
+      "expected": "AwaitingPickupArrival / ORDER_ENDED_WITHOUT_ARRIVAL",
+      "actual": "AwaitingPickupArrival / ORDER_ENDED_WITHOUT_ARRIVAL"
+    },
+    {
+      "id": "L2-OC-02",
+      "description": "延迟之内不释放、不改派、不重建：归属未移除，仍只有一趟旅程、一张移动意图，码与开始时刻不变",
+      "outcome": "PASS",
+      "expected": "未移除 / 1 趟 / 1 张 / ORDER_ENDED_WITHOUT_ARRIVAL / 2026-10-09 16:19:50.72064+00:00",
+      "actual": "未移除 / 1 趟 / 1 张 / ORDER_ENDED_WITHOUT_ARRIVAL / 2026-10-09 16:19:50.72064+00:00"
+    },
+    {
+      "id": "L2-OC-03",
+      "description": "没有发出任何订单命令或急停（包括对已终结的单再发取消）",
+      "outcome": "PASS",
+      "expected": "0 / 0",
+      "actual": "0 / 0"
+    },
+    {
+      "id": "L2-OC-04",
+      "description": "延迟之后重建：取货停靠（同一个停靠、同一序位、同一站）改指向一张服务端自己的新单，意图已确认，需求与车都是原来那条、那辆，目标站不变；RIoT 上有这张单、指派给同一辆车",
+      "outcome": "PASS",
+      "expected": "新单号 W2G-… / CONFIRMED / c97ec9fb-4775-4678-8a69-12ba50642731 / BROKERX-L2-0001 / 站 12 / 序位 1 / RIoT 1 张",
+      "actual": "W2G-c97ec9fb-4775-4678-8a69-12ba50642731-REBUILD-1-1 / CONFIRMED / c97ec9fb-4775-4678-8a69-12ba50642731 / BROKERX-L2-0001 / 站 12 / 序位 1 / RIoT 1 张"
+    },
+    {
+      "id": "L2-OC-05",
+      "description": "重建之后：仍是同一趟旅程、开往取货站，码清掉；恰好两张移动意图（旧单留作记录）、一条重建记录（REBUILT、来源 ORDER_CANCELLED_IN_RIOT）；仍没有任何订单命令",
+      "outcome": "PASS",
+      "expected": "AwaitingPickupArrival / (无码) / 1 趟 / 2 张 / REBUILT ORDER_CANCELLED_IN_RIOT / 0 条命令",
+      "actual": "AwaitingPickupArrival / (无码) / 1 趟 / 2 张 / REBUILT ORDER_CANCELLED_IN_RIOT / 0 条命令"
+    }
+  ]
+}

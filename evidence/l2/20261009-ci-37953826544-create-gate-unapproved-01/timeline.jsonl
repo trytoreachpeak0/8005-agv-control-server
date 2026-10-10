@@ -1,0 +1,33 @@
+{"at":"2026-10-09T16:36:13.8429924+00:00","note":"L2 run 20261009T163613803Z starting for scenario 'create-gate-unapproved'."}
+{"at":"2026-10-09T16:36:13.8803400+00:00","note":"L2 port block lock acquired (slot 2, Global\\W2G-L2PortBlock-slot2)."}
+{"at":"2026-10-09T16:36:13.8830540+00:00","note":"Build skipped (-SkipBuild); running the output already built."}
+{"at":"2026-10-09T16:36:14.7879290+00:00","criterion":"fake-riot-live","value":"live"}
+{"at":"2026-10-09T16:36:15.0115637+00:00","criterion":"fake-mes-live","value":"live"}
+{"at":"2026-10-09T16:36:15.0550078+00:00","note":"Map/Station catalog parameters deliberately unapproved for this scenario."}
+{"at":"2026-10-09T16:36:15.0816195+00:00","note":"Task type station preset: default (map 25, WIRE_TO_GATE -> 关卡/210)"}
+{"at":"2026-10-09T16:36:20.5628679+00:00","note":"Package capacity rules imported."}
+{"at":"2026-10-09T16:36:20.5691928+00:00","note":"No waiting point registration: a single-vehicle rig, or WaitingPoints = $false."}
+{"at":"2026-10-09T16:36:22.6606107+00:00","criterion":"control-server-live","value":"(null)"}
+{"at":"2026-10-09T16:36:23.5516861+00:00","criterion":"control-server-live","value":"live"}
+{"at":"2026-10-09T16:36:23.6337751+00:00","note":"Protocol release identity: protocol-v3.0.0 (profileId AGV_FULL_PRODUCT, protocolVersion 4, APPROVED_RELEASE)."}
+{"at":"2026-10-09T16:36:24.3379137+00:00","criterion":"onboard-readiness","value":"DISCONNECTED"}
+{"at":"2026-10-09T16:36:24.6088266+00:00","criterion":"onboard-readiness","value":"READY"}
+{"at":"2026-10-09T16:36:24.6831562+00:00","criterion":"control-server-ready","value":"ready"}
+{"at":"2026-10-09T16:36:24.7710470+00:00","note":"FieldOps: seed-approved-facts --database C:\\actions-runner\\win11-01-control-server\\_work\\_temp\\l2-37953826544-1\\_stage\\l2-20261009T163613803Z-slot2\\controlserver.db"}
+{"at":"2026-10-09T16:36:26.8090657+00:00","criterion":"slot-model-preseed:seed-approved-facts","value":"OK","detail":{"output":{"command":"seed-approved-facts","outcome":"OK","modelKey":"8005-eight-slot","slotModelVersionId":"db9d017ad2d34e2981040905865daa64","version":1,"slotCount":8}}}
+{"at":"2026-10-09T16:36:26.8260543+00:00","note":"FieldOps: bind-io --database C:\\actions-runner\\win11-01-control-server\\_work\\_temp\\l2-37953826544-1\\_stage\\l2-20261009T163613803Z-slot2\\controlserver.db --agv AGV-L2-001"}
+{"at":"2026-10-09T16:36:28.6001817+00:00","criterion":"slot-model-preseed:bind-io:AGV-L2-001","value":"OK","detail":{"output":{"command":"bind-io","outcome":"OK","agvId":"AGV-L2-001","slotModelVersionId":"db9d017ad2d34e2981040905865daa64","boundSlots":8,"version":1}}}
+{"at":"2026-10-09T16:36:28.7512506+00:00","criterion":"slot-model-preseed:dispatch-zones","value":"0"}
+{"at":"2026-10-09T16:36:28.7538802+00:00","note":"FieldOps: import-area-assignments --database C:\\actions-runner\\win11-01-control-server\\_work\\_temp\\l2-37953826544-1\\_stage\\l2-20261009T163613803Z-slot2\\controlserver.db --input C:\\actions-runner\\win11-01-control-server\\_work\\_temp\\l2-37953826544-1\\create-gate-unapproved-01\\snapshots\\preseed-area-assignments.csv"}
+{"at":"2026-10-09T16:36:30.6667860+00:00","criterion":"slot-model-preseed:import-area-assignments","value":"OK","detail":{"output":{"command":"import-area-assignments","outcome":"OK","dryRun":false,"input":"C:\\actions-runner\\win11-01-control-server\\_work\\_temp\\l2-37953826544-1\\create-gate-unapproved-01\\snapshots\\preseed-area-assignments.csv","entryCount":3,"version":1,"contentSha256":"4291a509c2c0b75ea4bde0ac4dcde04b6e8632b54a21a67eee2772a6f8d0ff8e","snapshotId":"f988e19790124776b7f883bfed8e7bd2","importedAt":"2026-10-10T00:36:29.0256705+08:00","errorCount":0,"errors":[],"preview":[]}}}
+{"at":"2026-10-09T16:36:30.6858053+00:00","note":"FieldOps: import-charging-policy --database C:\\actions-runner\\win11-01-control-server\\_work\\_temp\\l2-37953826544-1\\_stage\\l2-20261009T163613803Z-slot2\\controlserver.db --input C:\\actions-runner\\win11-01-control-server\\_work\\_temp\\l2-37953826544-1\\create-gate-unapproved-01\\snapshots\\preseed-charging-policy.json --fleet BROKERX-L2-0001"}
+{"at":"2026-10-09T16:36:32.4947118+00:00","note":"FieldOps: approve-charging-policy --database C:\\actions-runner\\win11-01-control-server\\_work\\_temp\\l2-37953826544-1\\_stage\\l2-20261009T163613803Z-slot2\\controlserver.db --version 1 --approved-by L2 orchestrator --role L2_PRESET --basis scripts/l2/L2ChargingPolicy.psm1 --source L2_PRESET"}
+{"at":"2026-10-09T16:36:34.1867081+00:00","note":"FieldOps: activate-charging-policy --database C:\\actions-runner\\win11-01-control-server\\_work\\_temp\\l2-37953826544-1\\_stage\\l2-20261009T163613803Z-slot2\\controlserver.db --version 1 --activated-by L2 orchestrator --fleet BROKERX-L2-0001 --allow-non-field-approval"}
+{"at":"2026-10-09T16:36:35.9564754+00:00","criterion":"preseed:charging-policy","value":"OK","detail":{"version":1,"source":"L2_PRESET","withoutPolicy":[],"coveredAfter":["BROKERX-L2-0001"]}}
+{"at":"2026-10-09T16:36:35.9578677+00:00","note":"Per-zone dispatch parameters left unconfigured (the default precondition)."}
+{"at":"2026-10-09T16:36:35.9836137+00:00","note":"Environment is up; entering scenario 'create-gate-unapproved'."}
+{"at":"2026-10-09T16:36:36.0609207+00:00","note":"Publishing demand 2894fb69c93548969ef30cbbbafd93b1 (sublot L2-CGU-20261009T163613803Z) against an uncommissioned catalog."}
+{"at":"2026-10-09T16:36:36.1391806+00:00","criterion":"backlog-reason","value":""}
+{"at":"2026-10-09T16:36:36.6454968+00:00","criterion":"backlog-reason","value":"CATALOG_PARAMETERS_NOT_APPROVED"}
+{"at":"2026-10-09T16:36:41.6588368+00:00","note":"未批准的两个值确实阻断了一切依赖 Map/Station 的业务，而服务端本身照常运行。"}
+{"at":"2026-10-09T16:36:42.0740820+00:00","note":"L2 port block lock released."}

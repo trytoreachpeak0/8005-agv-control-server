@@ -1,0 +1,27 @@
+=== M1 一行批次标签改成 batch-9
+FAIL: batch-8 scenarios missing from l2.yml: slot-fault-declaration
+(the exit= line of this harness recorded grep, not the check; the FAIL lines above are the check's own output)
+=== M2 加 DefaultRuns
+FAIL: fixed-station-single-occupancy: DefaultRuns = 3, expected none
+(the exit= line of this harness recorded grep, not the check; the FAIL lines above are the check's own output)
+=== M3 手动触发超时降到 170
+FAIL: workflow_dispatch timeout 170 minutes, expected at least 180
+(the exit= line of this harness recorded grep, not the check; the FAIL lines above are the check's own output)
+=== M4 真装置判故障场景 Runs 回到 1
+FAIL: real-rig real-onboard-slot-fault-declaration: Runs = 1, expected 3
+(the exit= line of this harness recorded grep, not the check; the FAIL lines above are the check's own output)
+=== M5 删掉一行批次 8
+FAIL: batch-8 scenarios missing from l2.yml: waiting-journey-battery-watch
+FAIL: synthetic scenario files not in l2.yml's scenario list: waiting-journey-battery-watch
+(the exit= line of this harness recorded grep, not the check; the FAIL lines above are the check's own output)
+=== M6 名字改大小写
+FAIL: batch-8 scenarios missing from l2.yml: map-rename-holds-all-task-types
+FAIL: batch-8 scenarios not in the exit report's list: Map-rename-holds-all-task-types
+FAIL: synthetic scenario files not in l2.yml's scenario list: map-rename-holds-all-task-types
+(the exit= line of this harness recorded grep, not the check; the FAIL lines above are the check's own output)
+=== M7 多一个未登记的场景文件
+FAIL: synthetic scenario files not in l2.yml's scenario list: unregistered-batch-8-scenario
+(the exit= line of this harness recorded grep, not the check; the FAIL lines above are the check's own output)
+=== M8 真装置作业超时降到 300
+FAIL: no job keeps a timeout of at least 360 minutes (the real-rig job)
+(the exit= line of this harness recorded grep, not the check; the FAIL lines above are the check's own output)

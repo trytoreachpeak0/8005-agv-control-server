@@ -1,0 +1,53 @@
+{"at":"2026-10-09T16:05:08.0915077+00:00","note":"L2 run 20261009T160508050Z starting for scenario 'waiting-journey-battery-watch'."}
+{"at":"2026-10-09T16:05:08.1303450+00:00","note":"L2 port block lock acquired (slot 1, Global\\W2G-L2PortBlock-slot1)."}
+{"at":"2026-10-09T16:05:08.1331543+00:00","note":"Build skipped (-SkipBuild); running the output already built."}
+{"at":"2026-10-09T16:05:09.0241316+00:00","criterion":"fake-riot-live","value":"live"}
+{"at":"2026-10-09T16:05:09.2655673+00:00","criterion":"fake-mes-live","value":"live"}
+{"at":"2026-10-09T16:05:09.3447745+00:00","note":"Task type station preset: default (map 25, WIRE_TO_GATE -> 关卡/210)"}
+{"at":"2026-10-09T16:05:14.8089496+00:00","note":"Package capacity rules imported."}
+{"at":"2026-10-09T16:05:14.8128071+00:00","note":"No waiting point registration: a single-vehicle rig, or WaitingPoints = $false."}
+{"at":"2026-10-09T16:05:16.8971734+00:00","criterion":"control-server-live","value":"(null)"}
+{"at":"2026-10-09T16:05:17.7801593+00:00","criterion":"control-server-live","value":"live"}
+{"at":"2026-10-09T16:05:17.8902730+00:00","note":"Protocol release identity: protocol-v3.0.0 (profileId AGV_FULL_PRODUCT, protocolVersion 4, APPROVED_RELEASE)."}
+{"at":"2026-10-09T16:05:18.5793337+00:00","criterion":"onboard-readiness","value":"DISCONNECTED"}
+{"at":"2026-10-09T16:05:18.8588248+00:00","criterion":"onboard-readiness","value":"READY"}
+{"at":"2026-10-09T16:05:18.9245944+00:00","criterion":"control-server-ready","value":"ready"}
+{"at":"2026-10-09T16:05:20.3442592+00:00","criterion":"dashboard-live","value":"200"}
+{"at":"2026-10-09T16:05:20.4263246+00:00","note":"FieldOps: seed-approved-facts --database C:\\actions-runner\\win11-01-control-server\\_work\\_temp\\l2-37953826544-1\\_stage\\l2-20261009T160508050Z-slot1\\controlserver.db"}
+{"at":"2026-10-09T16:05:22.2406146+00:00","criterion":"slot-model-preseed:seed-approved-facts","value":"OK","detail":{"output":{"command":"seed-approved-facts","outcome":"OK","modelKey":"8005-eight-slot","slotModelVersionId":"6de0cc01cff0425d81b2bebb705cd12f","version":1,"slotCount":8}}}
+{"at":"2026-10-09T16:05:22.2490834+00:00","note":"FieldOps: bind-io --database C:\\actions-runner\\win11-01-control-server\\_work\\_temp\\l2-37953826544-1\\_stage\\l2-20261009T160508050Z-slot1\\controlserver.db --agv AGV-L2-001"}
+{"at":"2026-10-09T16:05:24.0011523+00:00","criterion":"slot-model-preseed:bind-io:AGV-L2-001","value":"OK","detail":{"output":{"command":"bind-io","outcome":"OK","agvId":"AGV-L2-001","slotModelVersionId":"6de0cc01cff0425d81b2bebb705cd12f","boundSlots":8,"version":1}}}
+{"at":"2026-10-09T16:05:24.1456551+00:00","criterion":"slot-model-preseed:dispatch-zones","value":"0"}
+{"at":"2026-10-09T16:05:24.1477109+00:00","note":"FieldOps: import-area-assignments --database C:\\actions-runner\\win11-01-control-server\\_work\\_temp\\l2-37953826544-1\\_stage\\l2-20261009T160508050Z-slot1\\controlserver.db --input C:\\actions-runner\\win11-01-control-server\\_work\\_temp\\l2-37953826544-1\\waiting-journey-battery-watch-03\\snapshots\\preseed-area-assignments.csv"}
+{"at":"2026-10-09T16:05:26.0939057+00:00","criterion":"slot-model-preseed:import-area-assignments","value":"OK","detail":{"output":{"command":"import-area-assignments","outcome":"OK","dryRun":false,"input":"C:\\actions-runner\\win11-01-control-server\\_work\\_temp\\l2-37953826544-1\\waiting-journey-battery-watch-03\\snapshots\\preseed-area-assignments.csv","entryCount":3,"version":1,"contentSha256":"4291a509c2c0b75ea4bde0ac4dcde04b6e8632b54a21a67eee2772a6f8d0ff8e","snapshotId":"e6de5b89cab346f1b076b08841860c16","importedAt":"2026-10-10T00:05:24.4104061+08:00","errorCount":0,"errors":[],"preview":[]}}}
+{"at":"2026-10-09T16:05:26.1127837+00:00","note":"FieldOps: import-charging-policy --database C:\\actions-runner\\win11-01-control-server\\_work\\_temp\\l2-37953826544-1\\_stage\\l2-20261009T160508050Z-slot1\\controlserver.db --input C:\\actions-runner\\win11-01-control-server\\_work\\_temp\\l2-37953826544-1\\waiting-journey-battery-watch-03\\snapshots\\preseed-charging-policy.json --fleet BROKERX-L2-0001"}
+{"at":"2026-10-09T16:05:27.9182536+00:00","note":"FieldOps: approve-charging-policy --database C:\\actions-runner\\win11-01-control-server\\_work\\_temp\\l2-37953826544-1\\_stage\\l2-20261009T160508050Z-slot1\\controlserver.db --version 1 --approved-by L2 orchestrator --role L2_PRESET --basis scripts/l2/L2ChargingPolicy.psm1 --source L2_PRESET"}
+{"at":"2026-10-09T16:05:29.6545158+00:00","note":"FieldOps: activate-charging-policy --database C:\\actions-runner\\win11-01-control-server\\_work\\_temp\\l2-37953826544-1\\_stage\\l2-20261009T160508050Z-slot1\\controlserver.db --version 1 --activated-by L2 orchestrator --fleet BROKERX-L2-0001 --allow-non-field-approval"}
+{"at":"2026-10-09T16:05:31.4588673+00:00","criterion":"preseed:charging-policy","value":"OK","detail":{"version":1,"source":"L2_PRESET","coveredAfter":["BROKERX-L2-0001"],"withoutPolicy":[]}}
+{"at":"2026-10-09T16:05:31.4601983+00:00","note":"Per-zone dispatch parameters left unconfigured (the default precondition)."}
+{"at":"2026-10-09T16:05:31.4728284+00:00","note":"Environment is up; entering scenario 'waiting-journey-battery-watch'."}
+{"at":"2026-10-09T16:05:31.5839429+00:00","note":"Publishing demand 851eddf99cfe471ebbcd9a5284df023e (sublot L2-SUBLOT-20261009T160508050Z)."}
+{"at":"2026-10-09T16:05:31.6408264+00:00","criterion":"journey-stage","value":"(null)"}
+{"at":"2026-10-09T16:05:33.4294092+00:00","criterion":"journey-stage","value":"AwaitingPickupArrival"}
+{"at":"2026-10-09T16:05:33.4403593+00:00","criterion":"to-pickup-intent","value":"(null)"}
+{"at":"2026-10-09T16:05:33.7001642+00:00","criterion":"to-pickup-intent","value":"@{UpperId=W2G-851eddf9-9cfe-471e-bbcd-9a5284df023e-PICKUP-1; OrderId=ORDER-000001; Status=CONFIRMED}"}
+{"at":"2026-10-09T16:05:33.7044613+00:00","note":"Vehicle drives to the pickup station and comes to rest."}
+{"at":"2026-10-09T16:05:34.3015480+00:00","criterion":"journey-stage","value":"AwaitingSublot"}
+{"at":"2026-10-09T16:05:34.8044677+00:00","criterion":"journey-stage","value":"AwaitingLoadResult"}
+{"at":"2026-10-09T16:05:35.5643231+00:00","criterion":"journey-stage","value":"AwaitingStationDeparture"}
+{"at":"2026-10-09T16:05:41.6601121+00:00","criterion":"journey-stage","value":"AwaitingDepartureSafety"}
+{"at":"2026-10-09T16:05:41.9138964+00:00","criterion":"journey-stage","value":"AwaitingGateArrival"}
+{"at":"2026-10-09T16:05:41.9167769+00:00","criterion":"to-gate-intent","value":"@{UpperId=W2G-851eddf9-9cfe-471e-bbcd-9a5284df023e-GATE-1; OrderId=ORDER-000002; Status=CONFIRMED}"}
+{"at":"2026-10-09T16:05:41.9331466+00:00","note":"Vehicle drives to the gate and comes to rest."}
+{"at":"2026-10-09T16:05:42.9729864+00:00","criterion":"journey-stage","value":"AwaitingUnloadResult"}
+{"at":"2026-10-09T16:05:42.9850881+00:00","note":"RIoT reports the waiting vehicle at 12% battery."}
+{"at":"2026-10-09T16:05:43.1659209+00:00","criterion":"watch-log-record","value":"(null)"}
+{"at":"2026-10-09T16:05:47.8521089+00:00","criterion":"watch-log-record","value":"[00:05:47 ERR] Journey journey:851eddf9-9cfe-471e-bbcd-9a5284df023e on vehicle AGV-L2-001 has waited for a person in AwaitingUnloadResult for 0 min; battery 12% as read at 2026-10-09T16:05:47.5212382+00:00. The battery is below the rescue line of 15%: a person has to move the vehicle to a charger. Nothing on this server will move it (REQ-0169)."}
+{"at":"2026-10-09T16:05:47.8916952+00:00","criterion":"endpoint-waiting-journey","value":"@{journeyId=journey:851eddf9-9cfe-471e-bbcd-9a5284df023e; agvId=AGV-L2-001; stage=AwaitingUnloadResult; blockReasonCode=; waitingSince=2026-10-09T16:05:42.4111379+00:00; waitedSeconds=5; pastWarningThreshold=True; batteryPercent=12; batteryObservedAt=2026-10-09T16:05:47.5212382+00:00; mandatoryChargeEntryPercent=30; batteryLevel=BelowRescueLine}"}
+{"at":"2026-10-09T16:05:48.2296906+00:00","criterion":"dashboard-waiting-row","value":"AGV-L2-001  闸口等卸货    0 分 5 秒  12%  2026-10-10 00:05:47  需要人工挪车充电：在车上用单机方式挪车、充电，不要在 RIoT 里给这辆车下单"}
+{"at":"2026-10-09T16:05:48.2547580+00:00","criterion":"pending-unload","value":"operation:16f6378a-8980-6753-bade-450425bd14de"}
+{"at":"2026-10-09T16:05:48.2598768+00:00","note":"The operator empties the slots; the unload result goes back."}
+{"at":"2026-10-09T16:05:48.7937513+00:00","criterion":"journey-stage","value":"Completed"}
+{"at":"2026-10-09T16:05:48.8068839+00:00","criterion":"endpoint-waiting-journey-gone","value":"(not listed)"}
+{"at":"2026-10-09T16:05:48.8131785+00:00","note":"Scenario finished."}
+{"at":"2026-10-09T16:05:49.2627647+00:00","note":"L2 port block lock released."}

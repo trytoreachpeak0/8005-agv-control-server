@@ -1,0 +1,54 @@
+{"at":"2026-10-10T05:11:18.1841094+00:00","note":"L2 run 20261010T051118143Z starting for scenario 'g3-unable-to-charge-field-confirmation'."}
+{"at":"2026-10-10T05:11:18.2209919+00:00","note":"L2 port block lock acquired (slot 0, Global\\W2G-L2PortBlock)."}
+{"at":"2026-10-10T05:11:18.2237945+00:00","note":"Building ControlServer and the test doubles."}
+{"at":"2026-10-10T05:11:25.8658982+00:00","note":"Reusing cached onboard-hmi publish for b9e67a538ba4cdf1916d201a08af40dd28270d14."}
+{"at":"2026-10-10T05:11:25.9465416+00:00","note":"Reusing cached slots-simulator publish for fb5f7c593742bf98bc3957b8729a38aad5321f28."}
+{"at":"2026-10-10T05:11:25.9538324+00:00","note":"Peers: onboard-hmi@b9e67a538ba4cdf1916d201a08af40dd28270d14, slots-simulator@fb5f7c593742bf98bc3957b8729a38aad5321f28."}
+{"at":"2026-10-10T05:11:25.9625685+00:00","note":"Interactive desktop lock acquired."}
+{"at":"2026-10-10T05:11:26.8875856+00:00","criterion":"fake-riot-live","value":"live"}
+{"at":"2026-10-10T05:11:27.0626351+00:00","criterion":"fake-mes-live","value":"live"}
+{"at":"2026-10-10T05:11:28.8817138+00:00","criterion":"simulator-ready","value":"READY/True"}
+{"at":"2026-10-10T05:11:28.9677263+00:00","note":"Field operator roster: L2-OPERATOR=R-11."}
+{"at":"2026-10-10T05:11:28.9758979+00:00","note":"Route graph engine enabled for map 25."}
+{"at":"2026-10-10T05:11:29.0012403+00:00","note":"Task type station preset: default (map 25, WIRE_TO_GATE -> 关卡/210)"}
+{"at":"2026-10-10T05:11:33.5812237+00:00","note":"Package capacity rules imported."}
+{"at":"2026-10-10T05:11:33.5839708+00:00","note":"No waiting point registration: a single-vehicle rig, or WaitingPoints = $false."}
+{"at":"2026-10-10T05:11:35.6383057+00:00","criterion":"control-server-live","value":"(null)"}
+{"at":"2026-10-10T05:11:36.0101853+00:00","criterion":"control-server-live","value":"live"}
+{"at":"2026-10-10T05:11:36.1038604+00:00","note":"Protocol release identity: protocol-v3.0.0 (profileId AGV_FULL_PRODUCT, protocolVersion 4, APPROVED_RELEASE)."}
+{"at":"2026-10-10T05:11:38.3385089+00:00","note":"Onboard window: 8005 多仓位AGV车载端"}
+{"at":"2026-10-10T05:11:38.3586496+00:00","criterion":"onboard-modbus","value":"1"}
+{"at":"2026-10-10T05:11:38.4174906+00:00","criterion":"control-server-ready","value":"(null)"}
+{"at":"2026-10-10T05:11:38.9478550+00:00","criterion":"control-server-ready","value":"ready"}
+{"at":"2026-10-10T05:11:39.0296641+00:00","note":"FieldOps: seed-approved-facts --database C:\\Users\\szy\\AppData\\Local\\Temp\\l2-20261010T051118143Z\\controlserver.db"}
+{"at":"2026-10-10T05:11:40.5269962+00:00","criterion":"slot-model-preseed:seed-approved-facts","value":"OK","detail":{"output":{"command":"seed-approved-facts","outcome":"OK","modelKey":"8005-eight-slot","slotModelVersionId":"fb3feac4968143c4b97cd859ae0612bf","version":1,"slotCount":8}}}
+{"at":"2026-10-10T05:11:40.5336655+00:00","note":"FieldOps: bind-io --database C:\\Users\\szy\\AppData\\Local\\Temp\\l2-20261010T051118143Z\\controlserver.db --agv AGV-L2-001"}
+{"at":"2026-10-10T05:11:42.0070580+00:00","criterion":"slot-model-preseed:bind-io:AGV-L2-001","value":"OK","detail":{"output":{"command":"bind-io","outcome":"OK","agvId":"AGV-L2-001","slotModelVersionId":"fb3feac4968143c4b97cd859ae0612bf","boundSlots":8,"version":1}}}
+{"at":"2026-10-10T05:11:42.1351167+00:00","criterion":"slot-model-preseed:dispatch-zones","value":"0"}
+{"at":"2026-10-10T05:11:42.1381796+00:00","note":"FieldOps: import-area-assignments --database C:\\Users\\szy\\AppData\\Local\\Temp\\l2-20261010T051118143Z\\controlserver.db --input C:\\Users\\szy\\Desktop\\8005-workspace-v2\\worktrees\\cs393-8005-agv-control-server\\evidence\\g3\\20261010-protocol-v3.0.0-journey-1f63fe0b\\scenarios\\g3-unable-to-charge-field-confirmation\\snapshots\\preseed-area-assignments.csv"}
+{"at":"2026-10-10T05:11:43.8548643+00:00","criterion":"slot-model-preseed:import-area-assignments","value":"OK","detail":{"output":{"command":"import-area-assignments","outcome":"OK","dryRun":false,"input":"C:\\Users\\szy\\Desktop\\8005-workspace-v2\\worktrees\\cs393-8005-agv-control-server\\evidence\\g3\\20261010-protocol-v3.0.0-journey-1f63fe0b\\scenarios\\g3-unable-to-charge-field-confirmation\\snapshots\\preseed-area-assignments.csv","entryCount":3,"version":1,"contentSha256":"4291a509c2c0b75ea4bde0ac4dcde04b6e8632b54a21a67eee2772a6f8d0ff8e","snapshotId":"866ff2fe651d457882bfc35ad922504b","importedAt":"2026-10-10T13:11:42.3592558+08:00","errorCount":0,"errors":[],"preview":[]}}}
+{"at":"2026-10-10T05:11:43.8686683+00:00","note":"FieldOps: import-charging-policy --database C:\\Users\\szy\\AppData\\Local\\Temp\\l2-20261010T051118143Z\\controlserver.db --input C:\\Users\\szy\\Desktop\\8005-workspace-v2\\worktrees\\cs393-8005-agv-control-server\\evidence\\g3\\20261010-protocol-v3.0.0-journey-1f63fe0b\\scenarios\\g3-unable-to-charge-field-confirmation\\snapshots\\preseed-charging-policy.json --fleet BROKERX-L2-0001"}
+{"at":"2026-10-10T05:11:45.2280949+00:00","note":"FieldOps: approve-charging-policy --database C:\\Users\\szy\\AppData\\Local\\Temp\\l2-20261010T051118143Z\\controlserver.db --version 1 --approved-by L2 orchestrator --role L2_PRESET --basis scripts/l2/L2ChargingPolicy.psm1 --source L2_PRESET"}
+{"at":"2026-10-10T05:11:46.4742402+00:00","note":"FieldOps: activate-charging-policy --database C:\\Users\\szy\\AppData\\Local\\Temp\\l2-20261010T051118143Z\\controlserver.db --version 1 --activated-by L2 orchestrator --fleet BROKERX-L2-0001 --allow-non-field-approval"}
+{"at":"2026-10-10T05:11:47.7792483+00:00","criterion":"preseed:charging-policy","value":"OK","detail":{"source":"L2_PRESET","coveredAfter":["BROKERX-L2-0001"],"withoutPolicy":[],"version":1}}
+{"at":"2026-10-10T05:11:47.7804567+00:00","note":"Per-zone dispatch parameters left unconfigured (the default precondition)."}
+{"at":"2026-10-10T05:11:47.7848323+00:00","note":"Environment is up; entering scenario 'g3-unable-to-charge-field-confirmation'."}
+{"at":"2026-10-10T05:11:48.1307521+00:00","criterion":"route-graph-ready","value":"True"}
+{"at":"2026-10-10T05:11:48.1680013+00:00","note":"FieldOps: import-charger-roster --database C:\\Users\\szy\\AppData\\Local\\Temp\\l2-20261010T051118143Z\\controlserver.db --input C:\\Users\\szy\\Desktop\\8005-workspace-v2\\worktrees\\cs393-8005-agv-control-server\\evidence\\g3\\20261010-protocol-v3.0.0-journey-1f63fe0b\\scenarios\\g3-unable-to-charge-field-confirmation\\snapshots\\charger-roster-open.json --catalog C:\\Users\\szy\\Desktop\\8005-workspace-v2\\worktrees\\cs393-8005-agv-control-server\\evidence\\g3\\20261010-protocol-v3.0.0-journey-1f63fe0b\\scenarios\\g3-unable-to-charge-field-confirmation\\snapshots\\charger-roster-open-catalog-25.json --map 25 --fleet BROKERX-L2-0001"}
+{"at":"2026-10-10T05:11:49.6771666+00:00","criterion":"charger-roster","value":"1","detail":{"import":{"command":"import-charger-roster","outcome":"OK","dryRun":false,"input":"C:\\Users\\szy\\Desktop\\8005-workspace-v2\\worktrees\\cs393-8005-agv-control-server\\evidence\\g3\\20261010-protocol-v3.0.0-journey-1f63fe0b\\scenarios\\g3-unable-to-charge-field-confirmation\\snapshots\\charger-roster-open.json","catalog":"C:\\Users\\szy\\Desktop\\8005-workspace-v2\\worktrees\\cs393-8005-agv-control-server\\evidence\\g3\\20261010-protocol-v3.0.0-journey-1f63fe0b\\scenarios\\g3-unable-to-charge-field-confirmation\\snapshots\\charger-roster-open-catalog-25.json","mapId":25,"fleet":["BROKERX-L2-0001"],"entryCount":1,"emptyRoster":false,"previousVersion":null,"version":1,"contentSha256":"facdc4e82ab874505a60dabc3f0f571c76760332fc8a77d19836cd206c4612cf","snapshotId":"a5ad58d904904338ae9bf342899bbe50","loadedAt":"2026-10-10T13:11:48.3324833+08:00","approvedBy":"L2 scenario","approvalBasis":"scripts/l2/L2Chargers.psm1: a synthetic rig roster, never a field approval","changeNote":"G3 g3-unable-to-charge-field-confirmation: station 211","errorCount":0,"errors":[],"changes":[{"mapId":25,"stationId":211,"kind":"ADDED","before":null,"after":{"mapId":25,"stationId":211,"stationName":"充电点1","entryStationId":null,"exitStationId":null,"vehicleScope":[]}}],"inProgress":{"openCycleCount":0,"openCycles":[],"chargerReservations":[],"retention":"These continue under the snapshot they started with until they end; this import affects only new allocations (REQ-0282, REQ-0173). It cancels no order, releases no reservation and ends no cycle."},"windowCanClose":null,"windowNote":null}}}
+{"at":"2026-10-10T05:11:49.7031135+00:00","criterion":"charge-intent","value":"(null)"}
+{"at":"2026-10-10T05:11:50.4959346+00:00","criterion":"charge-intent","value":"@{UpperId=W2G-CHARGE-BROKERX-L2-0001-20261010T051149846Z; OrderId=; Status=PENDING_RECONCILIATION}"}
+{"at":"2026-10-10T05:11:51.0182138+00:00","criterion":"charge-intent","value":"@{UpperId=W2G-CHARGE-BROKERX-L2-0001-20261010T051149846Z; OrderId=; Status=CREATE_ATTEMPTED}"}
+{"at":"2026-10-10T05:11:51.2722329+00:00","criterion":"charge-intent","value":"@{UpperId=W2G-CHARGE-BROKERX-L2-0001-20261010T051149846Z; OrderId=ORDER-000001; Status=CONFIRMED}"}
+{"at":"2026-10-10T05:11:51.2989629+00:00","note":"Vehicle departs for the charger."}
+{"at":"2026-10-10T05:11:51.3194061+00:00","note":"Vehicle arrives at the charger and comes to rest."}
+{"at":"2026-10-10T05:11:51.3480602+00:00","criterion":"order-hang-not-confirmed","value":" | (none) | ACTIVE"}
+{"at":"2026-10-10T05:11:51.8675521+00:00","criterion":"order-hang-not-confirmed","value":"ORDER_HANG | (none) | ACTIVE"}
+{"at":"2026-10-10T05:11:57.0911198+00:00","criterion":"hmi-offers-unable-to-charge","value":"offered=True | notice=False"}
+{"at":"2026-10-10T05:11:58.2606834+00:00","note":"Pressing 接不上充电 (attempt 1)."}
+{"at":"2026-10-10T05:12:02.5687019+00:00","note":"Invoke on '现场确认充不上' button 6 failed (Exception calling \"Invoke\" with \"0\" argument(s): \"Operation is not valid due to the current state of the object.\"); posting BM_CLICK to hwnd 3542132."}
+{"at":"2026-10-10T05:12:03.2562176+00:00","criterion":"unable-to-charge-answered","value":"@{Request=; Result=}"}
+{"at":"2026-10-10T05:12:03.3026268+00:00","criterion":"clearing-state-acknowledged","value":"(null)"}
+{"at":"2026-10-10T05:12:03.8321731+00:00","criterion":"clearing-state-acknowledged","value":"@{MessageId=0894e861-a87b-0151-8715-1cf5df37ebbe; MessageType=VehicleBusinessStateSnapshot; At=10/10/2026 05:12:03 +00:00; Payload=; Acknowledged=True; Fenced=False}"}
+{"at":"2026-10-10T05:12:07.0768235+00:00","criterion":"hmi-unable-to-charge-status-held","value":"12 reads, 0 not CONFIRMED","detail":{"reads":["CONFIRMED","CONFIRMED","CONFIRMED","CONFIRMED","CONFIRMED","CONFIRMED","CONFIRMED","CONFIRMED","CONFIRMED","CONFIRMED","CONFIRMED","CONFIRMED"]}}
+{"at":"2026-10-10T05:12:12.5127146+00:00","note":"L2 port block lock released."}
