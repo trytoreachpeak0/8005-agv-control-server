@@ -350,6 +350,84 @@ public sealed class FakeRiotTests
         1,
         1);
 
+    /// <summary>
+    /// control-server#573: the listing churn <c>real-onboard-departure-under-listing-churn</c> injects. Padding spreads the
+    /// listing over pages the way the plant's 250 orders did; read n is churned when <c>(n - 1) % period &lt; burst</c>, and a
+    /// churned read reports a higher total on its later pages, which the gateway reads as incomplete. Disarmed, the listing
+    /// is the scenario's own again.
+    /// <para>
+    /// The exact sequence is the point: the churn is a deterministic count, never a draw. The real-rig scenarios rely on a
+    /// churned read never being followed by another within one onboard request's rereads; a random churn would make their
+    /// post-fix green a matter of luck (control-server#573, the coordinator's condition).
+    /// </para>
+    /// </summary>
+    [Fact]
+    public async Task TheNonFinalListingChurnPadsTheListingAndChurnsExactlyTheReadsItIsArmedFor()
+    {
+        await using FakeRiotFixture fixture = await FakeRiotFixture.StartAsync();
+        HttpRiotMovementGateway gateway = fixture.Gateway();
+        await fixture.CommandAsync(HttpMethod.Put, "faults/nonfinal-listing-churn", new { padding = 250, period = 3, burst = 1 });
+
+        List<RiotUnfinishedOrderListing> reads = [];
+        for (int read = 1; read <= 4; read++)
+        {
+            reads.Add(await gateway.ListUnfinishedOrdersAsync(TestContext.Current.CancellationToken));
+        }
+        JsonElement churn = (await fixture.CommandAsync(
+                HttpMethod.Put, "faults/nonfinal-listing-churn", new { padding = 0, period = 0, burst = 0 }))
+            .GetProperty("body").GetProperty("nonFinalListingChurn");
+        RiotUnfinishedOrderListing disarmed = await gateway.ListUnfinishedOrdersAsync(TestContext.Current.CancellationToken);
+
+        Assert.Equal([false, true, true, false], reads.Select(listing => listing.IsComplete));
+        Assert.Equal(250, reads[1].Orders.Count(order => order.OrderId.StartsWith("PLANT-", StringComparison.Ordinal)));
+        Assert.All(reads[1].Orders.Where(order => order.OrderId.StartsWith("PLANT-", StringComparison.Ordinal)),
+            order => Assert.Equal((8, null, "--"), (order.OrderState, order.AppointVehicleKey, order.ExecuteVehicleKey)));
+        Assert.Equal((4L, 2L), (churn.GetProperty("reads").GetInt64(), churn.GetProperty("churnedReads").GetInt64()));
+        Assert.True(disarmed.IsComplete);
+        Assert.DoesNotContain(disarmed.Orders, order => order.OrderId.StartsWith("PLANT-", StringComparison.Ordinal));
+    }
+
+    [Theory]
+    [InlineData(2001, 10, 4)]
+    [InlineData(-1, 10, 4)]
+    [InlineData(250, 1001, 4)]
+    [InlineData(250, 10, 11)]
+    [InlineData(250, 10, -1)]
+    public async Task AListingChurnOutOfRangeIsRefused(int padding, int period, int burst)
+    {
+        await using FakeRiotFixture fixture = await FakeRiotFixture.StartAsync();
+
+        using HttpResponseMessage response = await fixture.SendCommandAsync(
+            HttpMethod.Put, "faults/nonfinal-listing-churn", new { padding, period, burst });
+
+        Assert.Equal(HttpStatusCode.BadRequest, response.StatusCode);
+    }
+
+    /// <summary>
+    /// control-server#573 end to end against the fake, with the deterministic count the real-rig scenarios rely on: every second
+    /// read churned. The onboard projections first read is churned and its reread adds up, so it answers STOPPED; the journey
+    /// runtimes read, which does not reread, lands on the next churned read and answers unknown.
+    /// </summary>
+    [Fact]
+    public async Task UnderChurnTheOnboardProjectionRereadsAndTheRuntimeReadDoesNot()
+    {
+        await using FakeRiotFixture fixture = await FakeRiotFixture.StartAsync();
+        HttpRiotMovementGateway gateway = fixture.Gateway();
+        await fixture.CommandAsync(HttpMethod.Put, "faults/nonfinal-listing-churn", new { padding = 250, period = 2, burst = 1 });
+
+        RiotVehicleSafetyObservation onboard = await gateway.ReadForOnboardAsync(
+            VehicleKey, listingRereads: 2, readBudget: TimeSpan.FromSeconds(30), TestContext.Current.CancellationToken);
+        RiotVehicleSafetyObservation strict = await gateway.ReadVehicleSafetyAsync(VehicleKey, TestContext.Current.CancellationToken);
+        JsonElement churn = (await fixture.CommandAsync(
+                HttpMethod.Put, "faults/nonfinal-listing-churn", new { padding = 0, period = 0, burst = 0 }))
+            .GetProperty("body").GetProperty("nonFinalListingChurn");
+
+        Assert.Equal(RiotVehicleMotionState.Stopped, onboard.MotionState);
+        Assert.Equal(["RIOT_NONFINAL_ORDER_COVERAGE_UNKNOWN"], strict.ReasonCodes);
+        Assert.Equal((3L, 2L), (churn.GetProperty("reads").GetInt64(), churn.GetProperty("churnedReads").GetInt64()));
+    }
+
+
     internal sealed class FakeRiotFixture : IAsyncDisposable
     {
         private WebApplication app = null!;

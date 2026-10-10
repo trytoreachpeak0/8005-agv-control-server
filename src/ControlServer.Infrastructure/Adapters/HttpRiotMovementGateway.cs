@@ -18,7 +18,7 @@ namespace ControlServer.Infrastructure.Adapters;
 /// </summary>
 public sealed class HttpRiotMovementGateway : IRiotMovementGateway, IRiotVehicleFacts, IRiotMapStationCatalog,
     IRiotMapNameCatalog, IRiotVehicleSafetyFacts, IVehicleMotionFacts, IRiotVehicleOrderFacts, IRiotOrderListingFacts,
-    IRiotOrderMissionFacts
+    IRiotOrderMissionFacts, IOnboardVehicleSafetyProjection
 {
     /// <summary>
     /// The order states that are not an ending: QUEUEING 1, EXECUTING 3, PAUSED 7, SUSPENDED 8, HANG 9 and QUEUE_PRIORITY 10 (the
@@ -334,39 +334,7 @@ public sealed class HttpRiotMovementGateway : IRiotMovementGateway, IRiotVehicle
                 return UnknownSafety(vehicleKey, "RIOT_NONFINAL_ORDER_COVERAGE_UNKNOWN");
             }
 
-            bool hasNonFinalOrder = orders.Records.Any(order =>
-                string.Equals(order.AppointVehicleKey, vehicleKey, StringComparison.Ordinal) ||
-                string.Equals(order.ExecuteVehicleKey, vehicleKey, StringComparison.Ordinal));
-            if ((vehicle.Speed is not null && vehicle.Speed != 0) ||
-                string.Equals(vehicle.MovementState, "MT_RUNNING", StringComparison.Ordinal))
-            {
-                return new RiotVehicleSafetyObservation(
-                    vehicleKey,
-                    RiotVehicleMotionState.Moving,
-                    timeProvider.GetUtcNow(),
-                    "RIOT_BEHAVIOR_LAB_R41",
-                    ["RIOT_MOTION_ACTIVE"]);
-            }
-
-            List<string> reasons = [];
-            if (!string.Equals(vehicle.ProcState, "IDLE", StringComparison.Ordinal)) reasons.Add("RIOT_PROC_NOT_IDLE");
-            if (vehicle.ProcessingOrder != false) reasons.Add("RIOT_PROCESSING_ORDER_UNKNOWN_OR_ACTIVE");
-            if (vehicle.Enable != true) reasons.Add("RIOT_VEHICLE_NOT_ENABLED");
-            if (!string.Equals(vehicle.IntegrationLevel, "ON_LINE", StringComparison.Ordinal)) reasons.Add("RIOT_VEHICLE_NOT_ONLINE");
-            if (!string.Equals(vehicle.EmergencyState, "OK", StringComparison.Ordinal)) reasons.Add("RIOT_EMERGENCY_NOT_OK");
-            if (!string.Equals(vehicle.BreakSwitchState, "MOVABLE", StringComparison.Ordinal)) reasons.Add("RIOT_BRAKE_NOT_MOVABLE");
-            if (!string.Equals(vehicle.ControlState, "CONTROL_STATE_OK", StringComparison.Ordinal)) reasons.Add("RIOT_CONTROL_NOT_OK");
-            if (!string.Equals(vehicle.LocationState, "LOCATION_STATE_RUNNING", StringComparison.Ordinal)) reasons.Add("RIOT_LOCATION_NOT_RUNNING");
-            if (vehicle.Speed is null || vehicle.Speed != 0) reasons.Add("RIOT_SPEED_NOT_ZERO");
-            if (!string.Equals(vehicle.MovementState, "MT_FINISHED", StringComparison.Ordinal)) reasons.Add("RIOT_MOVEMENT_NOT_FINISHED");
-            if (hasNonFinalOrder) reasons.Add("RIOT_NONFINAL_ORDER_PRESENT");
-
-            return new RiotVehicleSafetyObservation(
-                vehicleKey,
-                reasons.Count == 0 ? RiotVehicleMotionState.Stopped : RiotVehicleMotionState.Unknown,
-                timeProvider.GetUtcNow(),
-                "RIOT_BEHAVIOR_LAB_R41",
-                reasons);
+            return Safety(vehicleKey, vehicle, orders.Records);
         }
         catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
         {
@@ -380,6 +348,103 @@ public sealed class HttpRiotMovementGateway : IRiotMovementGateway, IRiotVehicle
         {
             return UnknownSafety(vehicleKey, "RIOT_READ_FAILED");
         }
+    }
+
+    public async Task<RiotVehicleSafetyObservation> ReadForOnboardAsync(
+        string vehicleKey,
+        int listingRereads,
+        TimeSpan readBudget,
+        CancellationToken cancellationToken)
+    {
+        ArgumentException.ThrowIfNullOrWhiteSpace(vehicleKey);
+        ArgumentOutOfRangeException.ThrowIfNegative(listingRereads);
+        ArgumentOutOfRangeException.ThrowIfLessThanOrEqual(readBudget, TimeSpan.Zero);
+        long started = timeProvider.GetTimestamp();
+        // The budget cancels whatever read is still running, so nothing outlives the onboard that asked (control-server#573).
+        using CancellationTokenSource budget = new(readBudget, timeProvider);
+        using CancellationTokenSource linked = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken, budget.Token);
+        bool listingRead = false;
+        try
+        {
+            VehicleExecutionFacts vehicle = await riotSession.Tasks.GetVehicleExecutionFactsAsync(
+                vehicleKey, linked.Token).ConfigureAwait(false);
+            // Each read is a whole one, judged alone by control-server#525's rule; pages of two reads are never put together.
+            for (int read = 0; read <= listingRereads; read++)
+            {
+                long readStarted = timeProvider.GetTimestamp();
+                NonFinalOrderRead orders = await ReadAllNonFinalOrdersAsync(linked.Token).ConfigureAwait(false);
+                listingRead = true;
+                if (orders.IsComplete)
+                {
+                    return Safety(vehicleKey, vehicle, orders.Records);
+                }
+                // Another read only when the time left covers one as long as this one took.
+                TimeSpan lastRead = timeProvider.GetElapsedTime(readStarted);
+                if (timeProvider.GetElapsedTime(started) + lastRead > readBudget)
+                {
+                    break;
+                }
+            }
+            return UnknownSafety(vehicleKey, "RIOT_NONFINAL_ORDER_COVERAGE_UNKNOWN");
+        }
+        catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
+        {
+            throw;
+        }
+        catch (Exception error) when (budget.IsCancellationRequested && RiotCallFailureClassification.IsTimeout(error))
+        {
+            // Out of budget: a listing that was read and did not add up is still that; before any listing, it is a read timeout.
+            return UnknownSafety(vehicleKey, listingRead ? "RIOT_NONFINAL_ORDER_COVERAGE_UNKNOWN" : "RIOT_READ_TIMEOUT");
+        }
+        catch (Exception error) when (RiotCallFailureClassification.IsTimeout(error))
+        {
+            return UnknownSafety(vehicleKey, "RIOT_READ_TIMEOUT");
+        }
+        catch (Exception error) when (RiotCallFailureClassification.IsSdkFailure(error))
+        {
+            return UnknownSafety(vehicleKey, "RIOT_READ_FAILED");
+        }
+    }
+
+    /// <summary>The safety predicate over one vehicle read and one complete non-final order listing.</summary>
+    private RiotVehicleSafetyObservation Safety(
+        string vehicleKey,
+        VehicleExecutionFacts vehicle,
+        IReadOnlyList<OrderStateRecord> nonFinalOrders)
+    {
+        bool hasNonFinalOrder = nonFinalOrders.Any(order =>
+            string.Equals(order.AppointVehicleKey, vehicleKey, StringComparison.Ordinal) ||
+            string.Equals(order.ExecuteVehicleKey, vehicleKey, StringComparison.Ordinal));
+        if ((vehicle.Speed is not null && vehicle.Speed != 0) ||
+            string.Equals(vehicle.MovementState, "MT_RUNNING", StringComparison.Ordinal))
+        {
+            return new RiotVehicleSafetyObservation(
+                vehicleKey,
+                RiotVehicleMotionState.Moving,
+                timeProvider.GetUtcNow(),
+                "RIOT_BEHAVIOR_LAB_R41",
+                ["RIOT_MOTION_ACTIVE"]);
+        }
+
+        List<string> reasons = [];
+        if (!string.Equals(vehicle.ProcState, "IDLE", StringComparison.Ordinal)) reasons.Add("RIOT_PROC_NOT_IDLE");
+        if (vehicle.ProcessingOrder != false) reasons.Add("RIOT_PROCESSING_ORDER_UNKNOWN_OR_ACTIVE");
+        if (vehicle.Enable != true) reasons.Add("RIOT_VEHICLE_NOT_ENABLED");
+        if (!string.Equals(vehicle.IntegrationLevel, "ON_LINE", StringComparison.Ordinal)) reasons.Add("RIOT_VEHICLE_NOT_ONLINE");
+        if (!string.Equals(vehicle.EmergencyState, "OK", StringComparison.Ordinal)) reasons.Add("RIOT_EMERGENCY_NOT_OK");
+        if (!string.Equals(vehicle.BreakSwitchState, "MOVABLE", StringComparison.Ordinal)) reasons.Add("RIOT_BRAKE_NOT_MOVABLE");
+        if (!string.Equals(vehicle.ControlState, "CONTROL_STATE_OK", StringComparison.Ordinal)) reasons.Add("RIOT_CONTROL_NOT_OK");
+        if (!string.Equals(vehicle.LocationState, "LOCATION_STATE_RUNNING", StringComparison.Ordinal)) reasons.Add("RIOT_LOCATION_NOT_RUNNING");
+        if (vehicle.Speed is null || vehicle.Speed != 0) reasons.Add("RIOT_SPEED_NOT_ZERO");
+        if (!string.Equals(vehicle.MovementState, "MT_FINISHED", StringComparison.Ordinal)) reasons.Add("RIOT_MOVEMENT_NOT_FINISHED");
+        if (hasNonFinalOrder) reasons.Add("RIOT_NONFINAL_ORDER_PRESENT");
+
+        return new RiotVehicleSafetyObservation(
+            vehicleKey,
+            reasons.Count == 0 ? RiotVehicleMotionState.Stopped : RiotVehicleMotionState.Unknown,
+            timeProvider.GetUtcNow(),
+            "RIOT_BEHAVIOR_LAB_R41",
+            reasons);
     }
 
     /// <summary>

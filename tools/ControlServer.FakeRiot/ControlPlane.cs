@@ -47,6 +47,14 @@ public sealed record AbsentOrderReadFaultCommand : CommandEnvelope
     public int? Count { get; init; }
 }
 
+/// <summary>control-server#573: <see cref="NonFinalListingChurn"/>'s three knobs.</summary>
+public sealed record NonFinalListingChurnCommand : CommandEnvelope
+{
+    public int? Padding { get; init; }
+    public int? Period { get; init; }
+    public int? Burst { get; init; }
+}
+
 public sealed record StationsCommand : CommandEnvelope
 {
     public Dictionary<string, string>? Stations { get; init; }
@@ -116,6 +124,7 @@ public static class ControlPlane
         MapStationReadCounter mapStationReads = app.Services.GetRequiredService<MapStationReadCounter>();
         MapListReadCounter mapListReads = app.Services.GetRequiredService<MapListReadCounter>();
         AbsentOrderReadFaults absentOrderReadFaults = app.Services.GetRequiredService<AbsentOrderReadFaults>();
+        NonFinalListingChurn nonFinalListingChurn = app.Services.GetRequiredService<NonFinalListingChurn>();
         FakeRiotSeed seed = app.Services.GetRequiredService<FakeRiotSeed>();
         TimeProvider clock = app.Services.GetRequiredService<TimeProvider>();
         RouteGroupBuilder control = app.MapGroup("/control/v1");
@@ -138,6 +147,7 @@ public static class ControlPlane
                 delayMs = state.DelayMs,
                 mapStationReads = mapStationReads.Count,
                 absentOrderReadFaults = absentOrderReadFaults.Describe(),
+                nonFinalListingChurn = nonFinalListingChurn.Describe(),
                 // As RIoT would report them now: a simulated battery moves with the clock, not with the revision.
                 vehicles = state.Vehicles.Values.OrderBy(item => item.DeviceKey, StringComparer.Ordinal)
                     .Select(item => FakeChargingModel.Effective(state, item, now)),
@@ -435,6 +445,24 @@ public static class ControlPlane
             {
                 commandId = command.CommandId,
                 absentOrderReadFaults = absentOrderReadFaults.Describe()
+            }));
+        });
+
+        control.MapPut("/faults/nonfinal-listing-churn", (NonFinalListingChurnCommand command) =>
+        {
+            if (string.IsNullOrWhiteSpace(command.CommandId) ||
+                command.Padding is not (>= 0 and <= 2000) ||
+                command.Period is not (>= 0 and <= 1000) ||
+                command.Burst is not int burst || burst < 0 || burst > command.Period)
+            {
+                return ControlPlaneConventions.Refused(engine, ReasonCodes.InvalidArgument, command.CommandId);
+            }
+
+            nonFinalListingChurn.Arm(command.Padding.Value, command.Period.Value, burst);
+            return Results.Json(ControlPlaneConventions.Envelope(engine, new
+            {
+                commandId = command.CommandId,
+                nonFinalListingChurn = nonFinalListingChurn.Describe()
             }));
         });
 

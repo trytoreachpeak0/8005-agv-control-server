@@ -51,6 +51,9 @@ internal static class RiotSdkRegistration
             return new RiotSession(options, client);
         });
         services.AddScoped<HttpRiotMovementGateway>();
+        // control-server#573: the onboard projection's read, which rereads a non-final order listing that did not add up.
+        services.AddScoped<IOnboardVehicleSafetyProjection>(services =>
+            services.GetRequiredService<HttpRiotMovementGateway>());
         services.AddScoped<IRiotMovementGateway>(services =>
             services.GetRequiredService<HttpRiotMovementGateway>());
         services.AddScoped<IRiotVehicleFacts>(services =>

@@ -9,6 +9,12 @@ namespace ControlServer.Host.Runtime;
 
 public static class OnboardVehicleSafetyEndpoints
 {
+    private static readonly Action<ILogger, string, long, Exception?> LogCancelledByOnboard =
+        LoggerMessage.Define<string, long>(
+            LogLevel.Warning,
+            new EventId(5730, nameof(LogCancelledByOnboard)),
+            "Onboard vehicle-safety request for {VehicleKey} was cancelled by the onboard after {ElapsedMilliseconds} ms");
+
     public static void MapOnboardVehicleSafety(this WebApplication app)
     {
         app.MapGet("/api/onboard/v1/vehicle-safety", HandleAsync)
@@ -17,20 +23,24 @@ public static class OnboardVehicleSafetyEndpoints
             .WithDescription("Returns STOPPED only for the complete RIoT Behavior Lab Round-41 predicate.")
             .Produces<OnboardVehicleSafetyResponse>()
             .Produces(StatusCodes.Status401Unauthorized)
+            .Produces(StatusCodes.Status499ClientClosedRequest)
             .ProducesProblem(StatusCodes.Status503ServiceUnavailable);
     }
 
     public static async Task<Results<
         Ok<OnboardVehicleSafetyResponse>,
         UnauthorizedHttpResult,
+        StatusCodeHttpResult,
         ProblemHttpResult>> HandleAsync(
         HttpContext context,
-        IRiotVehicleSafetyFacts safetyFacts,
+        IOnboardVehicleSafetyProjection safetyProjection,
         IOptions<JourneyRuntimeOptions> journeyOptions,
         IOptions<OnboardSafetyProjectionOptions> projectionOptions,
+        ILoggerFactory loggerFactory,
         CancellationToken cancellationToken)
     {
         OnboardSafetyProjectionOptions options = projectionOptions.Value;
+        DateTimeOffset requestStarted = DateTimeOffset.UtcNow;
         context.Response.Headers.CacheControl = "no-store";
         context.Response.Headers.Pragma = "no-cache";
 
@@ -49,8 +59,28 @@ public static class OnboardVehicleSafetyEndpoints
             return TypedResults.Unauthorized();
         }
 
-        RiotVehicleSafetyObservation observation = await safetyFacts.ReadVehicleSafetyAsync(
-            journeyOptions.Value.VehicleKey, cancellationToken).ConfigureAwait(false);
+        // control-server#573: a listing that does not add up is read again within this request, inside a budget below the
+        // onboard's own timeout (IOnboardVehicleSafetyProjection).
+        RiotVehicleSafetyObservation observation;
+        try
+        {
+            observation = await safetyProjection.ReadForOnboardAsync(
+                journeyOptions.Value.VehicleKey,
+                options.NonFinalOrderReadRetries,
+                TimeSpan.FromMilliseconds(options.ReadBudgetMilliseconds),
+                cancellationToken).ConfigureAwait(false);
+        }
+        catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
+        {
+            // The onboard gave up on this request (its timeout, or it went away): a cancellation, not a server error. No one
+            // reads this answer; the onboard already treats the missing reading as unknown.
+            LogCancelledByOnboard(
+                loggerFactory.CreateLogger(typeof(OnboardVehicleSafetyEndpoints).FullName!),
+                journeyOptions.Value.VehicleKey,
+                (long)(DateTimeOffset.UtcNow - requestStarted).TotalMilliseconds,
+                null);
+            return TypedResults.StatusCode(StatusCodes.Status499ClientClosedRequest);
+        }
         return TypedResults.Ok(new OnboardVehicleSafetyResponse(
             observation.VehicleKey,
             observation.MotionState.ToString().ToUpperInvariant(),
