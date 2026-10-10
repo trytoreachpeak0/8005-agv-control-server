@@ -1,0 +1,14 @@
+ok    Get-L2Inbound builds rows of exactly MessageId, At, Payload, Response, ResponsePayload (read from its AST)
+ok    a row of that shape throws on .PayloadJson under StrictMode (the line G3-07-67 stopped on)
+ok    the same row serialises through Payload under StrictMode
+ok    a NULL ClosedReason reads back through Get-G3Scalar as "" (not $null, not DBNull)
+ok    so the old G3-07-44 conjunct is false for a NULL ClosedReason -- the red it produced was the script's
+ok    ClosedReason IS NULL: true for NULL
+ok    ClosedReason IS NULL: false for an empty string (a NULL-or-empty test would pass it)
+ok    ClosedReason IS NULL: false for a reason code
+BAD   g3-slot-fault-declaration.ps1: G3-07-67 reads no PayloadJson off $result -> still reads $result.PayloadJson
+BAD   g3-forced-mechanical-recovery.ps1: G3-07-44's condition uses $closedReasonIsNull, not a $null or DBNull test of $closedReason -> condition does not use $closedReasonIsNull
+BAD   g3-forced-mechanical-recovery.ps1: $closedReasonIsNull is computed from an "IS NULL" query -> no assignment to $closedReasonIsNull
+
+FAIL: 3 case(s) came out the other way.
+exit=1
