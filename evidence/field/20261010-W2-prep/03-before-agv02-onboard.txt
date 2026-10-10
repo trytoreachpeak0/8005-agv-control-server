@@ -1,0 +1,49 @@
+# captured 2026-10-10T17:31:07+08:00 via ssh agv02, read-only
+host: DESKTOP-94OA6CK  time: 2026-10-10T17:31:17.2112794+08:00
+
+
+Name           LastWriteTime
+----           -------------
+OnboardHmi     2026/10/9 15:30:13
+SlotsSimulator 2026/10/9 9:42:29
+
+
+
+Name                            LastWriteTime      Length
+----                            -------------      ------
+appsettings.json                2026/10/9 15:30:14   3749
+SQCD.Agv.Wpf.deps.json          2026/10/9 1:51:34   62364
+SQCD.Agv.Wpf.runtimeconfig.json 2026/10/9 1:51:34     561
+
+
+
+config top keys: environment,agvId,onboardInstanceId,ruleGateway,wireToGate,automation,vehicleSafety,ioModule,workflow,logging
+wireToGate: {"enabled":true,"host":"172.19.205.222","port":58105,"onboardInstanceId":"fb7244d8-e78f-4153-ab33-7fcb23fc67fe","onboardBuildCommit":"db8fec10eafb9606b54413ce721b6fe6ffd175c9","credentialEnvironmentVariable":"CONTROL_SERVER_ONBOARD_CREDENTIAL","connectTimeoutMs":3000,"messageTimeoutMs":2500,"sessionHeartbeatIntervalMs":2000,"capabilityVersion":1,"safetyStateVersion":1,"slotModelVersion":"eight-slot-v1","activeSlotConfigurationVersion":"eight-slot-modbus-v1","supportsBatchUnlock":false,"journeySnapshotMaxAgeMs":5000,"operatorIdEnvironmentVariable":"CONTROL_SERVER_OPERATOR_ID","recoveryResumeEnabled":false,"unableToChargeEntryEnabled":false,"recoveryAuthenticationProofEnvironmentVariable":"CONTROL_SERVER_RECOVERY_PROOF","recoveryAdministratorRole":"MAINTENANCE_ADMINISTRATOR","recoveryVerificationMethod":"CONFIGURED_PROOF","journalPath":"%LOCALAPPDATA%\\SQCD\\8005AGV\\onboard-journal.db"}
+ioModule: {"host":"192.168.71.150","port":502,"unitId":255,"doStartAddress":100,"diStartAddress":200,"channelCount":16,"pollIntervalMs":100,"requestTimeoutMs":1000,"reconnectDelayMs":1000,"slots":[{"slotIndex":0,"doChannel":0,"lockFeedbackDiChannel":0,"lightCurtainDiChannel":8},{"slotIndex":1,"doChannel":1,"lockFeedbackDiChannel":1,"lightCurtainDiChannel":9},{"slotIndex":2,"doChannel":2,"lockFeedbackDiChannel":2,"lightCurtainDiChannel":10},{"slotIndex":3,"doChannel":3,"lockFeedbackDiChannel":3,"lightCurtainDiChannel":11},{"slotIndex":4,"doChannel":4,"lockFeedbackDiChannel":4,"lightCurtainDiChannel":12},{"slotIndex":5,"doChannel":5,"lockFeedbackDiChannel":5,"lightCurtainDiChannel":13},{"slotIndex":6,"doChannel":6,"lockFeedbackDiChannel":6,"lightCurtainDiChannel":14},{"slotIndex":7,"doChannel":7,"lockFeedbackDiChannel":7,"lightCurtainDiChannel":15}]}
+
+Name                          LastWriteTime
+----                          -------------
+8005AGV                       2026/10/9 15:28:29
+8005AGV.retest2-20261009-1428 2026/10/9 14:29:28
+
+
+
+FullName                                                  Length LastWriteTime
+--------                                                  ------ -------------
+C:\Users\HT\AppData\Local\SQCD\8005AGV\onboard-journal.db 131072 2026/10/9 15:28:29
+
+
+# journal copied by scp, read with python sqlite3 mode=ro
+select MessageType,Acknowledged,AbandonedReasonCode,count(*),max(CreatedAt) from WireToGateDurableOutbox group by 1,2,3
+   ('OperationProgress', 1, None, 20, '2026-10-09T07:27:03.2722773+00:00')
+   ('OperationResult', 1, None, 4, '2026-10-09T07:27:03.3234457+00:00')
+   ('PreDepartureSafetyCheckResult', 1, None, 2, '2026-10-09T07:23:27.2582582+00:00')
+   ('RecoveryStateReport', 1, None, 5, '2026-10-09T07:27:29.5317524+00:00')
+   ('SafetyStateChanged', 1, None, 48, '2026-10-09T07:28:29.6321350+00:00')
+   ('SublotSubmitted', 1, None, 2, '2026-10-09T07:17:53.3753761+00:00')
+select * from WireToGateJournalMetadata
+   (1, '4fd8c03e-cc06-48d8-a43b-b48202f921d6')
+select MessageType,Revision,AppliedAt from WireToGateAppliedJourneySnapshots
+   ('UpcomingStopPlanSnapshot', 8, '2026-10-09T07:27:05.3450675+00:00')
+   ('VehicleBusinessStateSnapshot', 6, '2026-10-09T07:27:05.3661237+00:00')
+   ('CurrentStopWorklistSnapshot', 6, '2026-10-09T07:27:05.3161329+00:00')

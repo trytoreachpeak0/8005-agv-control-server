@@ -1,0 +1,97 @@
+# captured 2026-10-10T17:31:43+08:00 via ssh factory01, read-only
+
+Name                       Status StartType
+----                       ------ ---------
+8005 AGV ControlServer    Running Automatic
+8005 AGV ControlServer V2 Stopped Automatic
+
+
+Name                      ProcessId State
+----                      --------- -----
+8005 AGV ControlServer        15624 Running
+8005 AGV ControlServer V2         0 Stopped
+
+ConnStr: Data Source=C:\ProgramData\8005\ControlServer.V2\data\controlserver.db
+RiotCreateDispatch: {"enabled":false}
+JourneyRuntime.enabled: True  admissionPolicyVersion: 2  deploymentId: MAP-26-WIRE_TO_GATE-20261007
+JourneyRuntime.allowedWorkTypes (overlay file): DIE_TO_WIRE_STAGING,DIE_TO_OVEN,WIRE_TO_GATE,WIRE_TO_OPTICAL,STAGING_TO_WIRE,WIRE_TO_NITROGEN
+RouteGraph: {"enabled":true,"mapId":26,"runtimeRefreshPeriod":"00:00:10","runtimeStateMaxAge":"00:00:45","designStateTtl":"00:10:00"}
+MapStationCatalog: {"ApprovedSyncPeriod":"00:00:30","ApprovedMaxUnconfirmed":"00:05:00"}
+OnboardTransport: {"enabled":true,"listenAddress":"172.19.205.222","port":58105,"credentialEnvironmentVariable":"CONTROL_SERVER_ONBOARD_CREDENTIAL"}
+Health: {"url":"http://172.19.205.222:58107"}
+MesIngest: {"baseUrl":"http://127.0.0.1:58188","sharedSecretEnvironmentVariable":"CONTROL_SERVER_MES_INGEST_SHARED_SECRET"}
+Keys: Health,ConnectionStrings,OnboardTransport,OnboardSafetyProjection,JourneyRuntime,Serilog,MesIngest,RouteGraph,RiotCreateDispatch,RiotForeignOrderCancel,VehicleFaultRecovery,FieldOperatorRoles,TaskTypeStations,MapStationCatalog
+manifest runId: 20261009T040426Z
+component controlServer: fp/v2-impl bf7d4c7f386e74e3949a84d7f4bde5fe359e9632
+component dashboard: fp/v2-impl bf7d4c7f386e74e3949a84d7f4bde5fe359e9632
+component onboardHmi: w2g/fp-v2-impl db8fec10eafb9606b54413ce721b6fe6ffd175c9
+component protocol:  86575456c847041515b7b75e8851a00e0d939804
+
+TaskName                                State
+--------                                -----
+8005 AGV ControlServer V2 FakeMesIngest     4
+
+
+LocalAddress   LocalPort OwningProcess
+------------   --------- -------------
+127.0.0.1          58188         16616
+172.19.205.222     58007         15624
+172.19.205.222     58005         15624
+0.0.0.0             5088         11700
+
+
+FullName                                                                 Length    LastWriteTime
+--------                                                                 ------    -------------
+C:\ProgramData\8005\ControlServer.V2\data                                          2026/10/10 17:27:10
+C:\ProgramData\8005\ControlServer.V2\logs                                          2026/10/9 14:18:31
+C:\ProgramData\8005\ControlServer.V2\data\controlserver.db               3395584   2026/10/9 15:30:15
+C:\ProgramData\8005\ControlServer.V2\data\controlserver.db.instance-lock 77        2026/10/9 15:30:15
+C:\ProgramData\8005\ControlServer.V2\data\controlserver.db-shm           32768     2026/10/10 17:30:18
+C:\ProgramData\8005\ControlServer.V2\data\controlserver.db-wal           0         2026/10/10 17:27:10
+C:\ProgramData\8005\ControlServer.V2\logs\controlserver-20261009.ndjson  199827044 2026/10/9 15:30:15
+
+
+ProcessId CommandLine
+--------- -----------
+    16140 "c:\program files\powershell\7\pwsh.exe" -c "pwsh -NoProfile -Command -"
+    10808 "c:\program files\powershell\7\pwsh.exe" -NoProfile -Command -
+
+
+Name                                 LastWriteTime
+----                                 -------------
+dispatch-gate                        2026/10/9 12:18:01
+fieldops-a11c7aa4                    2026/10/9 10:03:35
+fieldops-d2018450                    2026/10/8 8:24:10
+logs                                 2026/10/8 21:55:54
+results                              2026/10/9 14:18:40
+sqlite-tools                         2026/10/9 14:19:10
+51-seed-bind.ps1                     2026/10/9 10:07:50
+area-assignments-N-revised.csv       2026/10/9 10:03:32
+Export-RiotStationCatalog.ps1        2026/10/9 15:02:52
+fake-mes-ingest-seed.json            2026/10/9 15:27:30
+field-operator-roles.json            2026/10/7 19:12:31
+fieldops-a11c7aa4.zip                2026/10/9 10:03:31
+installed-instance.json              2026/10/9 14:17:45
+Install-ParallelInstanceLocal.ps1    2026/10/9 14:17:41
+instance.json                        2026/10/9 14:17:45
+ParallelHost.psm1                    2026/10/9 14:17:40
+ParallelInstance.psm1                2026/10/9 14:17:39
+r2-catalog.ps1                       2026/10/9 12:09:56
+r2-journeys.ps1                      2026/10/9 14:20:03
+r2-watch.ps1                         2026/10/9 14:20:00
+r3-check.ps1                         2026/10/9 14:20:02
+r3-imports.ps1                       2026/10/9 13:49:40
+r3-policy.ps1                        2026/10/9 14:22:36
+r5-done.ps1                          2026/10/9 14:40:18
+r5-inbox.ps1                         2026/10/9 14:35:40
+r5-j.ps1                             2026/10/9 14:35:52
+s2w-activate.ps1                     2026/10/9 15:08:21
+s2w-binding.json                     2026/10/9 15:08:21
+Start-FakeMesIngestResident.ps1      2026/10/9 14:17:43
+stations-26-20261009-150822.json     2026/10/9 15:08:27
+stations-26-20261009-150822.raw.json 2026/10/9 15:08:26
+stations-26-20261009-150950.json     2026/10/9 15:09:53
+stations-26-20261009-150950.raw.json 2026/10/9 15:09:53
+Uninstall-ControlServerLocal.ps1     2026/10/9 14:17:44
+Uninstall-ParallelInstanceLocal.ps1  2026/10/9 14:17:42
+

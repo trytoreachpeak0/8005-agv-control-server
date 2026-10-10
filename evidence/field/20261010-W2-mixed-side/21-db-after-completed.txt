@@ -1,0 +1,411 @@
+--- JourneyRuntimes
+
+JourneyId                        : journey:a1000566-0000-0000-0000-000000000001
+AgvId                            : 老厂前线新多仓位2
+AgvLifecycleGeneration           : 1
+BlockReasonCode                  : 
+BlockReasonSince                 : 
+CargoHoldingStartedAt            : 2026-10-10 10:42:46.8152089+00:00
+ConsumedSafetyResultMessageId    : 3cafc16d-6692-de5e-85a8-fa95a7300323
+ConsumedSublotMessageId          : 3fe46d65-7996-4237-932f-41c8f1b6d1b2
+CreatedAt                        : 2026-10-10 10:34:53.8187414+00:00
+DemandId                         : a1000566-0000-0000-0000-000000000001
+DispatchGeneration               : 1
+DispatchZone                     : WIRE
+ExpectedBasketCount              : 1
+FullSlotPositionsJson            : []
+GateMovementLegId                : e80051c9-62be-985f-ab75-83f883e48156
+GatePlanMessageId                : 45161c4f-c920-3b5b-ad87-2f1fded9bf3c
+GateStationId                    : 关卡
+GateStationRiotId                : 210
+GateUpperId                      : W2G-a1000566-0000-0000-0000-000000000001-GATE-1
+GateVehicleBusinessMessageId     : 058f9387-c7ff-e159-ae00-e903bb664505
+GateWorklistMessageId            : 2af51130-ecb6-cd57-a628-dcac86bba1b7
+LoadCommandMessageId             : 7bc38647-72d2-6f53-9f92-fbd83a9701e9
+LoadSlotOperationAttemptId       : 4b9f7998-5d47-1251-ab21-42a318b8413c
+LoadingClosedReason              : CARGO_HOLDING_TIMEOUT
+LoadingPhaseState                : CLOSED
+MapId                            : 26
+MapIdentity                      : 老厂前线new_wk
+OperationSessionId               : 0707ee5d-c142-fe56-8b65-77952a536e84
+PickupMovementLegId              : 3f3327c7-58bc-4651-a9e4-d48d9bdd8edb
+PickupStationId                  : N1-3
+PickupStationRiotId              : 3
+PickupUpperId                    : W2G-a1000566-0000-0000-0000-000000000001-PICKUP-1
+PlanMessageId                    : 17454a4a-2cc6-4057-bd71-24545eb1ce75
+PlanRevision                     : 5
+PreDepartureSafetyCheckId        : 116a2e2f-7751-7d5c-8666-1d33150548d9
+PreDepartureSafetyCheckMessageId : fa73d9e9-f1c4-d75a-a43f-942bf2451e9b
+RouteEvidenceId                  : MAPCAT-fbfe562a45f6e83061e4f23af45b43eafcadc36a85f5f476036e527cf10be51c
+Stage                            : Completed
+StationDepartureWaitStartedAt    : 
+SublotRequestMessageId           : 1322fac5-6148-1753-80b9-dd368b0d72ac
+TargetSlotsJson                  : [1]
+UnloadCommandMessageId           : b7dbf4ab-7151-7a5e-9367-be8bd7f1ff9d
+UnloadSlotOperationAttemptId     : ba5d7982-bf7e-ac53-8368-68b4109ac9c3
+UpdatedAt                        : 2026-10-10 12:03:06.8077197+00:00
+VehicleBusinessMessageId         : 497e1323-5468-d653-9b31-ce919d3bdc46
+VehicleBusinessRevision          : 5
+VehicleKey                       : BROKERX-f38975561adf46ccb1d2f23833c7d0e4
+WorklistMessageId                : 2b8314c2-e032-7e5b-81ee-e90940a3cb5b
+WorklistRevision                 : 1
+YieldTriggeredAt                 : 
+YieldTriggeredByVehicleKey       : 
+AreaEndAdmissionRevokedSince     : 
+WaitingBatteryObservedAt         : 2026-10-10 12:02:19.2891197+00:00
+WaitingBatteryPercent            : 32
+WaitingSince                     : 
+WaitingWarnedAt                  : 
+Version                          : 2337
+ChargingPolicyVersion            : 1
+PublishedBatteryState            : SUFFICIENT
+
+
+--- JourneyStops
+
+StopId                        : journey:a1000566-0000-0000-0000-000000000001|PICKUP
+JourneyId                     : journey:a1000566-0000-0000-0000-000000000001
+Sequence                      : 1
+StopRole                      : PICKUP
+StationId                     : N1-3
+StationRiotId                 : 3
+DispatchZone                  : WIRE
+OperationSessionId            : 0707ee5d-c142-fe56-8b65-77952a536e84
+MovementLegId                 : 3f3327c7-58bc-4651-a9e4-d48d9bdd8edb
+UpperId                       : W2G-a1000566-0000-0000-0000-000000000001-PICKUP-1
+VehicleBusinessMessageId      : 497e1323-5468-d653-9b31-ce919d3bdc46
+WorklistMessageId             : 2b8314c2-e032-7e5b-81ee-e90940a3cb5b
+PlanMessageId                 : 17454a4a-2cc6-4057-bd71-24545eb1ce75
+SublotRequestMessageId        : 1322fac5-6148-1753-80b9-dd368b0d72ac
+DepartureSafetyCheckMessageId : fa73d9e9-f1c4-d75a-a43f-942bf2451e9b
+DepartureSafetyCheckId        : 116a2e2f-7751-7d5c-8666-1d33150548d9
+Status                        : COMPLETED
+CreatedAt                     : 2026-10-10 10:34:53.8187414+00:00
+WorklistRefills               : 0
+
+StopId                        : journey:a1000566-0000-0000-0000-000000000001|UNLOAD
+JourneyId                     : journey:a1000566-0000-0000-0000-000000000001
+Sequence                      : 3
+StopRole                      : UNLOAD
+StationId                     : 关卡
+StationRiotId                 : 210
+DispatchZone                  : WIRE
+OperationSessionId            : 0707ee5d-c142-fe56-8b65-77952a536e84
+MovementLegId                 : 39cae84f-b24a-cb55-bb32-7a5a335d6198
+UpperId                       : W2G-a1000566-0000-0000-0000-000000000001-REBUILD-1-1
+VehicleBusinessMessageId      : 058f9387-c7ff-e159-ae00-e903bb664505
+WorklistMessageId             : 2af51130-ecb6-cd57-a628-dcac86bba1b7
+PlanMessageId                 : 45161c4f-c920-3b5b-ad87-2f1fded9bf3c
+SublotRequestMessageId        : 
+DepartureSafetyCheckMessageId : 
+DepartureSafetyCheckId        : 
+Status                        : COMPLETED
+CreatedAt                     : 2026-10-10 10:34:53.8187414+00:00
+WorklistRefills               : 0
+
+StopId                        : journey:a1000566-0000-0000-0000-000000000003|PICKUP
+JourneyId                     : journey:a1000566-0000-0000-0000-000000000001
+Sequence                      : 2
+StopRole                      : PICKUP
+StationId                     : N1-15_N1-16
+StationRiotId                 : 15
+DispatchZone                  : WIRE
+OperationSessionId            : dc13691b-2a80-8d5d-9500-14fed9915da0
+MovementLegId                 : 9444d8ce-e25f-2f57-a33b-f87b12bc7b57
+UpperId                       : W2G-a1000566-0000-0000-0000-000000000003-PICKUP-1
+VehicleBusinessMessageId      : 0fbadfb4-eb7d-fe5f-b59f-831e86c86274
+WorklistMessageId             : 1cb99a66-a92b-3952-8f51-636fdf8d13ba
+PlanMessageId                 : ce451143-fd16-cc5a-a0a3-d2f4ccafca40
+SublotRequestMessageId        : 713c2232-cf0b-0955-8d10-42407a1c14ed
+DepartureSafetyCheckMessageId : 4da0e109-1ddb-1958-a893-26d00946d61b
+DepartureSafetyCheckId        : 6b17561e-de94-8851-bbf1-2db11eb231fd
+Status                        : COMPLETED
+CreatedAt                     : 2026-10-10 10:43:03.0810394+00:00
+WorklistRefills               : 0
+
+
+--- JourneyDemands
+
+JourneyId                    : journey:a1000566-0000-0000-0000-000000000001
+DemandId                     : a1000566-0000-0000-0000-000000000001
+PickupStopId                 : journey:a1000566-0000-0000-0000-000000000001|PICKUP
+UnloadStopId                 : journey:a1000566-0000-0000-0000-000000000001|UNLOAD
+ExpectedBasketCount          : 1
+TargetSlotsJson              : [1]
+LoadedSlotsJson              : 
+LoadSlotOperationAttemptId   : 4b9f7998-5d47-1251-ab21-42a318b8413c
+LoadCommandMessageId         : 7bc38647-72d2-6f53-9f92-fbd83a9701e9
+UnloadSlotOperationAttemptId : ba5d7982-bf7e-ac53-8368-68b4109ac9c3
+UnloadCommandMessageId       : b7dbf4ab-7151-7a5e-9367-be8bd7f1ff9d
+DispatchZone                 : WIRE
+DispatchGeneration           : 1
+Status                       : UNLOADED
+AddedAt                      : 2026-10-10 10:34:53.8187414+00:00
+RemovedAt                    : 
+RemovalReason                : 
+DispatchZoneParameterVersion : 
+
+JourneyId                    : journey:a1000566-0000-0000-0000-000000000001
+DemandId                     : a1000566-0000-0000-0000-000000000003
+PickupStopId                 : journey:a1000566-0000-0000-0000-000000000003|PICKUP
+UnloadStopId                 : journey:a1000566-0000-0000-0000-000000000001|UNLOAD
+ExpectedBasketCount          : 1
+TargetSlotsJson              : [5]
+LoadedSlotsJson              : 
+LoadSlotOperationAttemptId   : 65b9ef17-c061-315c-a7b0-fcafe8c26dfa
+LoadCommandMessageId         : 2be62271-5fb3-7850-bb87-02740479db12
+UnloadSlotOperationAttemptId : 66a55cbc-0f53-f25a-a734-acee3d737cdb
+UnloadCommandMessageId       : 3c593de0-7d8c-565f-a109-f479a4e1a7b6
+DispatchZone                 : WIRE
+DispatchGeneration           : 1
+Status                       : UNLOADED
+AddedAt                      : 2026-10-10 10:43:03.0810394+00:00
+RemovedAt                    : 
+RemovalReason                : 
+DispatchZoneParameterVersion : 1
+
+
+--- StationOperations
+
+SlotOperationAttemptId   : 4b9f7998-5d47-1251-ab21-42a318b8413c
+DemandId                 : a1000566-0000-0000-0000-000000000001
+SublotId                 : W2-1010-A-JIA
+TargetSlotsJson          : [1]
+ForcedRecoveryGeneration : 0
+ContentHash              : 4005f0290d368defd61e5c799aa7bb9a7d91f28699b68a0e78a0b3bfa8e46809
+Status                   : Committed
+EvidenceJson             : [{"SlotNumber":1,"State":1,"DoorLocked":true,"UnlockOutputReset":true}]
+CreatedAt                : 2026-10-10 10:41:58.9106673+00:00
+CommittedAt              : 2026-10-10 18:42:45.4399647+08:00
+OperationType            : Load
+
+SlotOperationAttemptId   : 65b9ef17-c061-315c-a7b0-fcafe8c26dfa
+DemandId                 : a1000566-0000-0000-0000-000000000003
+SublotId                 : W2-1010-A-BING
+TargetSlotsJson          : [5]
+ForcedRecoveryGeneration : 0
+ContentHash              : 3dd739e3dfc1c354d553d5184b0fdf946834cb124b5aa65dae60433e95ddc280
+Status                   : Committed
+EvidenceJson             : [{"SlotNumber":5,"State":1,"DoorLocked":true,"UnlockOutputReset":true}]
+CreatedAt                : 2026-10-10 10:50:58.8113539+00:00
+CommittedAt              : 2026-10-10 18:52:05.4592279+08:00
+OperationType            : Load
+
+SlotOperationAttemptId   : ba5d7982-bf7e-ac53-8368-68b4109ac9c3
+DemandId                 : a1000566-0000-0000-0000-000000000001
+SublotId                 : W2-1010-A-JIA
+TargetSlotsJson          : [1]
+ForcedRecoveryGeneration : 0
+ContentHash              : 5cab1b3aa627c42fd7d1a5298fbc759f0949ad3f05367a6a0045d4371beed7eb
+Status                   : Committed
+EvidenceJson             : [{"SlotNumber":1,"State":0,"DoorLocked":true,"UnlockOutputReset":true}]
+CreatedAt                : 2026-10-10 12:02:19.0766371+00:00
+CommittedAt              : 2026-10-10 20:02:51.6339608+08:00
+OperationType            : Unload
+
+SlotOperationAttemptId   : 66a55cbc-0f53-f25a-a734-acee3d737cdb
+DemandId                 : a1000566-0000-0000-0000-000000000003
+SublotId                 : W2-1010-A-BING
+TargetSlotsJson          : [5]
+ForcedRecoveryGeneration : 0
+ContentHash              : 842fefdca7591578edf7b9d0c957a11b1b987f2732820f8069cd6ddff36da2a0
+Status                   : Committed
+EvidenceJson             : [{"SlotNumber":5,"State":0,"DoorLocked":true,"UnlockOutputReset":true}]
+CreatedAt                : 2026-10-10 12:02:52.861957+00:00
+CommittedAt              : 2026-10-10 20:03:04.8398047+08:00
+OperationType            : Unload
+
+
+--- OrderIntents
+
+MovementLegId                     : 3f3327c7-58bc-4651-a9e4-d48d9bdd8edb
+DemandId                          : a1000566-0000-0000-0000-000000000001
+UpperId                           : W2G-a1000566-0000-0000-0000-000000000001-PICKUP-1
+Purpose                           : TO_PICKUP
+TargetStationId                   : N1-3
+VehicleKey                        : BROKERX-f38975561adf46ccb1d2f23833c7d0e4
+MapId                             : 26
+DestinationStationId              : 3
+AgvLifecycleGeneration            : 1
+DispatchGeneration                : 1
+CreatedAt                         : 2026-10-10 10:34:53.8187414+00:00
+Status                            : CONFIRMED
+OrderId                           : order-2108869130311565312
+CreateAttemptCount                : 1
+CreateAttemptId                   : 33977b57-c6ba-4e99-9758-faf672b6f504
+CreateDispatchArmedAt             : 2026-10-10 10:35:56.2031809+00:00
+DispatchAuditVersion              : 1
+LastCreateOutcome                 : CreateResponseAccepted
+LastCreateOutcomeAt               : 2026-10-10 10:35:56.36658+00:00
+LastCreateReceiptJson             : {"Operation":"CREATE","Classification":"SdkAccepted","ObservedAt":"2026-10-10T10:35:56.36555+00:00","HttpStatusCode":null,"BusinessCode":null,"ResultPresent":true,"FailureCategory":null}
+LastReconciliationOutcome         : PostCreateReconciliationConfirmed
+LastReconciliationOutcomeAt       : 2026-10-10 10:35:56.4931503+00:00
+LastReconciliationReceiptJson     : {"Operation":"RECONCILE","Classification":"Found","ObservedAt":"2026-10-10T10:35:56.4879168+00:00","HttpStatusCode":null,"BusinessCode":null,"ResultPresent":true,"FailureCategory":null}
+DispatchAuditSequence             : 5
+ExperimentalCreateAuthorizationId : 
+OrderShape                        : SINGLE_MOVE
+
+MovementLegId                     : 9444d8ce-e25f-2f57-a33b-f87b12bc7b57
+DemandId                          : a1000566-0000-0000-0000-000000000001
+UpperId                           : W2G-a1000566-0000-0000-0000-000000000003-PICKUP-1
+Purpose                           : TO_GATE
+TargetStationId                   : N1-15_N1-16
+VehicleKey                        : BROKERX-f38975561adf46ccb1d2f23833c7d0e4
+MapId                             : 26
+DestinationStationId              : 15
+AgvLifecycleGeneration            : 1
+DispatchGeneration                : 1
+CreatedAt                         : 2026-10-10 10:47:48.8947622+00:00
+Status                            : CONFIRMED
+OrderId                           : order-2108872120179228672
+CreateAttemptCount                : 1
+CreateAttemptId                   : 472d0653-40e1-406c-8b8e-d4831027a45d
+CreateDispatchArmedAt             : 2026-10-10 10:47:49.0606793+00:00
+DispatchAuditVersion              : 1
+LastCreateOutcome                 : CreateResponseAccepted
+LastCreateOutcomeAt               : 2026-10-10 10:47:49.1907406+00:00
+LastCreateReceiptJson             : {"Operation":"CREATE","Classification":"SdkAccepted","ObservedAt":"2026-10-10T10:47:49.1907134+00:00","HttpStatusCode":null,"BusinessCode":null,"ResultPresent":true,"FailureCategory":null}
+LastReconciliationOutcome         : PostCreateReconciliationConfirmed
+LastReconciliationOutcomeAt       : 2026-10-10 10:47:49.2946674+00:00
+LastReconciliationReceiptJson     : {"Operation":"RECONCILE","Classification":"Found","ObservedAt":"2026-10-10T10:47:49.2946401+00:00","HttpStatusCode":null,"BusinessCode":null,"ResultPresent":true,"FailureCategory":null}
+DispatchAuditSequence             : 5
+ExperimentalCreateAuthorizationId : 
+OrderShape                        : SINGLE_MOVE
+
+MovementLegId                     : e80051c9-62be-985f-ab75-83f883e48156
+DemandId                          : a1000566-0000-0000-0000-000000000001
+UpperId                           : W2G-a1000566-0000-0000-0000-000000000001-GATE-1
+Purpose                           : TO_GATE
+TargetStationId                   : 关卡
+VehicleKey                        : BROKERX-f38975561adf46ccb1d2f23833c7d0e4
+MapId                             : 26
+DestinationStationId              : 210
+AgvLifecycleGeneration            : 1
+DispatchGeneration                : 1
+CreatedAt                         : 2026-10-10 11:27:00.8836629+00:00
+Status                            : CONFIRMED
+OrderId                           : order-2108881985039630336
+CreateAttemptCount                : 1
+CreateAttemptId                   : 6a8cdda3-48d8-4c63-b4e6-5a3ab8081f36
+CreateDispatchArmedAt             : 2026-10-10 11:27:01.030649+00:00
+DispatchAuditVersion              : 1
+LastCreateOutcome                 : CreateResponseAccepted
+LastCreateOutcomeAt               : 2026-10-10 11:27:01.1637358+00:00
+LastCreateReceiptJson             : {"Operation":"CREATE","Classification":"SdkAccepted","ObservedAt":"2026-10-10T11:27:01.1637074+00:00","HttpStatusCode":null,"BusinessCode":null,"ResultPresent":true,"FailureCategory":null}
+LastReconciliationOutcome         : PostCreateReconciliationConfirmed
+LastReconciliationOutcomeAt       : 2026-10-10 11:27:01.2809147+00:00
+LastReconciliationReceiptJson     : {"Operation":"RECONCILE","Classification":"Found","ObservedAt":"2026-10-10T11:27:01.2808824+00:00","HttpStatusCode":null,"BusinessCode":null,"ResultPresent":true,"FailureCategory":null}
+DispatchAuditSequence             : 5
+ExperimentalCreateAuthorizationId : 
+OrderShape                        : SINGLE_MOVE
+
+MovementLegId                     : 39cae84f-b24a-cb55-bb32-7a5a335d6198
+DemandId                          : a1000566-0000-0000-0000-000000000001
+UpperId                           : W2G-a1000566-0000-0000-0000-000000000001-REBUILD-1-1
+Purpose                           : TO_GATE
+TargetStationId                   : 关卡
+VehicleKey                        : BROKERX-f38975561adf46ccb1d2f23833c7d0e4
+MapId                             : 26
+DestinationStationId              : 210
+AgvLifecycleGeneration            : 1
+DispatchGeneration                : 1
+CreatedAt                         : 2026-10-10 12:00:48.843936+00:00
+Status                            : CONFIRMED
+OrderId                           : order-2108890491629207552
+CreateAttemptCount                : 1
+CreateAttemptId                   : 4d9af964-27d9-4399-bf73-15bc927b2ae5
+CreateDispatchArmedAt             : 2026-10-10 12:00:49.1666452+00:00
+DispatchAuditVersion              : 1
+LastCreateOutcome                 : CreateResponseAccepted
+LastCreateOutcomeAt               : 2026-10-10 12:00:49.2845017+00:00
+LastCreateReceiptJson             : {"Operation":"CREATE","Classification":"SdkAccepted","ObservedAt":"2026-10-10T12:00:49.2844804+00:00","HttpStatusCode":null,"BusinessCode":null,"ResultPresent":true,"FailureCategory":null}
+LastReconciliationOutcome         : PostCreateReconciliationConfirmed
+LastReconciliationOutcomeAt       : 2026-10-10 12:00:49.4020174+00:00
+LastReconciliationReceiptJson     : {"Operation":"RECONCILE","Classification":"Found","ObservedAt":"2026-10-10T12:00:49.4020028+00:00","HttpStatusCode":null,"BusinessCode":null,"ResultPresent":true,"FailureCategory":null}
+DispatchAuditSequence             : 5
+ExperimentalCreateAuthorizationId : 
+OrderShape                        : SINGLE_MOVE
+
+
+--- AcceptedDemands
+
+DemandId   : a1000566-0000-0000-0000-000000000001
+Status     : Succeeded
+WorkType   : WIRE_TO_GATE
+Sublot     : W2-1010-A-JIA
+AcceptedAt : 2026-10-10 10:34:53.8319762+00:00
+
+DemandId   : a1000566-0000-0000-0000-000000000003
+Status     : Succeeded
+WorkType   : WIRE_TO_GATE
+Sublot     : W2-1010-A-BING
+AcceptedAt : 2026-10-10 10:43:03.1005204+00:00
+
+
+--- TransportDemandCompletions
+
+TransportDemandKey : W2-1010-A-JIA|WIRE_TO_GATE
+DemandId           : a1000566-0000-0000-0000-000000000001
+DemandRevision     : 1
+Evidence           : 0eb33bfb5b01b835c9adea4b087315b05978277befe87cdd4735eaa844405e96
+CompletedAt        : 2026-10-10 20:02:51.6339608+08:00
+
+TransportDemandKey : W2-1010-A-BING|WIRE_TO_GATE
+DemandId           : a1000566-0000-0000-0000-000000000003
+DemandRevision     : 1
+Evidence           : 0b65ec1d95579bae712a288ea44175b04b9042920e5c4245b822487cc6f0c834
+CompletedAt        : 2026-10-10 20:03:04.8398047+08:00
+
+
+--- JourneyBacklog
+
+DemandId                             : a1000566-0000-0000-0000-000000000001
+TransportDemandKey                   : W2-1010-A-JIA|WIRE_TO_GATE
+FirstSeenAt                          : 2026-10-10 10:34:53.5074135+00:00
+DemandCreatedAt                      : 2026-10-10 10:24:51.8840309+00:00
+DecisionFingerprint                  : 6fc8ae0f66619d9f35865dc5a493d4376e678585327197f98d00efd911a0e6a8
+ReasonCode                           : DEMAND_ALREADY_ACCEPTED
+LastSeenAt                           : 2026-10-10 12:03:48.5781481+00:00
+AcceptedAt                           : 2026-10-10 10:34:53.8319762+00:00
+StarvationEscalatedAt                : 
+StarvationEscalationParameterVersion : 
+
+DemandId                             : a1000566-0000-0000-0000-000000000003
+TransportDemandKey                   : W2-1010-A-BING|WIRE_TO_GATE
+FirstSeenAt                          : 2026-10-10 10:43:02.831275+00:00
+DemandCreatedAt                      : 2026-10-10 10:33:01.9238433+00:00
+DecisionFingerprint                  : cb02a7081e37ee0c8a344235b240209675e65ec6e0c9d4fac719e38e54f35ee7
+ReasonCode                           : DEMAND_ALREADY_ACCEPTED
+LastSeenAt                           : 2026-10-10 12:03:48.5781481+00:00
+AcceptedAt                           : 2026-10-10 10:43:03.1005204+00:00
+StarvationEscalatedAt                : 
+StarvationEscalationParameterVersion : 
+
+DemandId                             : a1000566-0000-0000-0000-000000000002
+TransportDemandKey                   : W2-1010-A-YI|WIRE_TO_GATE
+FirstSeenAt                          : 2026-10-10 10:43:08.8061543+00:00
+DemandCreatedAt                      : 2026-10-10 10:33:08.6520146+00:00
+DecisionFingerprint                  : 4eb71ecb075a9dc82eb3de79ff65f381409299d72070fb11bd69885b0fe4715f
+ReasonCode                           : DEMAND_LEFT_CATALOG
+LastSeenAt                           : 2026-10-10 10:43:40.7808149+00:00
+AcceptedAt                           : 
+StarvationEscalatedAt                : 
+StarvationEscalationParameterVersion : 
+
+
+--- StationExclusivityRecords
+
+RecordId             : 6638fa0e-df84-4667-98fc-a9fcc78fd997
+MapId                : 26
+StationId            : 210
+StationKind          : FIXED_TASK_STATION
+VehicleKey           : BROKERX-f38975561adf46ccb1d2f23833c7d0e4
+JourneyId            : journey:a1000566-0000-0000-0000-000000000001
+WaitingPointVersion  : 
+ReservedAt           : 2026-10-10 10:41:50.7684821+00:00
+OccupiedAt           : 2026-10-10 12:02:18.8277625+00:00
+ReleasedAt           : 
+ReleaseReason        : 
+ChargerRosterVersion : 
+
+
