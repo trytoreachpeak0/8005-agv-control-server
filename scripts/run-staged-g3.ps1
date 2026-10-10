@@ -125,7 +125,10 @@ param(
     #     content-conflict criteria, g3-slot-fault-declaration and g3-forced-mechanical-recovery). The journey runner
     #     takes its scenario scripts from the bound commit, so it has to be this one. git diff 5f3adc42 3411887d --
     #     src tests tools is empty: the product is that of 5f3adc42. Onboard, simulator and protocol unchanged.
-    [string]$ControlServerCommit = '3411887df3d9941a50e86c19eeba3ef928a714e9',
+    #   Third round, after the second journey round went red on two more never-run script branches
+    #   (control-server#555, PR #557): $ControlServerCommit -> 1f63fe0b, the fp/v2-impl tip with that fix.
+    #     git diff 5f3adc42 1f63fe0b -- src tests tools is empty. Onboard, simulator and protocol unchanged.
+    [string]$ControlServerCommit = '1f63fe0bb173f37c05dd5059c78455da57ed100b',
     [string]$OnboardCommit = 'b9e67a538ba4cdf1916d201a08af40dd28270d14',
     [string]$SimulatorCommit = 'fb5f7c593742bf98bc3957b8729a38aad5321f28',
     [string]$ProtocolCommit = '3f091cb2eae7c58cec54a95dd9389c9180bc7b4c',
