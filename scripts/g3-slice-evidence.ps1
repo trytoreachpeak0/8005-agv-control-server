@@ -824,6 +824,32 @@ function ConvertFrom-G3CommitBindingText {
     return $binding
 }
 
+# The repository's git status entries that make it dirty: every "XY path" entry of porcelain v1 (untracked files listed
+# one by one) except the one exemption, an untracked file under evidence/. Get-G3RunnerProvenance and run-staged-g3.ps1's
+# harnessWorktreeCleanAtStart both read it (control-server#567: the harness measured plain status, so every staged run
+# after the first in an exit recorded harness dirty beside a clean runner).
+function Get-G3DirtyStatusEntries {
+    param([Parameter(Mandatory)][string]$Repository)
+
+    # -z: one NUL-terminated "XY path" entry per path, unquoted, relative to the top level; a rename or copy is
+    # followed by its source path as an entry of its own.
+    $entries = @((Invoke-G3Git -Repository $Repository -Arguments 'status', '--porcelain=v1', '-z', '--untracked-files=all') -split "`0" |
+            Where-Object { $_ -ne '' })
+    $status = [System.Collections.Generic.List[string]]::new()
+    for ($i = 0; $i -lt $entries.Count; $i++) {
+        $entry = $entries[$i]
+        if ($entry.Length -ge 2 -and $entry.Substring(0, 2) -match '[RC]') { $i++ }
+        # The one exemption (review M1 of PR #470): an untracked file under evidence/. An exit runs several runners
+        # in a row, and each run's evidence lands there untracked, so without it every run after the first was
+        # dirty -- four of the seven formal runs of the last two exits. No runner executes anything under
+        # evidence/, and a runner copy put there and pointed at is RUNNER_INPUT_OVERRIDE anyway. A change to a
+        # tracked file under evidence/, and an untracked file anywhere else, stay dirty.
+        if ($entry.StartsWith('?? evidence/', [StringComparison]::Ordinal)) { continue }
+        $status.Add($entry)
+    }
+    return , $status.ToArray()
+}
+
 # -ScriptRoot is the runner's $PSScriptRoot: the repository measured is the one the runner script lives in, never
 # a parameter. -Inputs names each path parameter that decides what the run reads, with the value the run got and
 # its default (Test-G3EvidenceHonesty pins those defaults to the param block's own). Call it before the run writes
@@ -845,22 +871,7 @@ function Get-G3RunnerProvenance {
         $repository = [IO.Path]::GetFullPath((Invoke-G3Git -Repository $ScriptRoot -Arguments 'rev-parse', '--show-toplevel').Trim())
         $commit = (Invoke-G3Git -Repository $repository -Arguments 'rev-parse', 'HEAD').Trim()
         if ($commit -cnotmatch '^[0-9a-f]{40}$') { throw "HEAD is not a full SHA-1: $commit" }
-        # -z: one NUL-terminated "XY path" entry per path, unquoted, relative to the top level; a rename or copy is
-        # followed by its source path as an entry of its own.
-        $entries = @((Invoke-G3Git -Repository $repository -Arguments 'status', '--porcelain=v1', '-z', '--untracked-files=all') -split "`0" |
-                Where-Object { $_ -ne '' })
-        $status = [System.Collections.Generic.List[string]]::new()
-        for ($i = 0; $i -lt $entries.Count; $i++) {
-            $entry = $entries[$i]
-            if ($entry.Length -ge 2 -and $entry.Substring(0, 2) -match '[RC]') { $i++ }
-            # The one exemption (review M1 of PR #470): an untracked file under evidence/. An exit runs several runners
-            # in a row, and each run's evidence lands there untracked, so without it every run after the first was
-            # dirty -- four of the seven formal runs of the last two exits. No runner executes anything under
-            # evidence/, and a runner copy put there and pointed at is RUNNER_INPUT_OVERRIDE anyway. A change to a
-            # tracked file under evidence/, and an untracked file anywhere else, stay dirty.
-            if ($entry.StartsWith('?? evidence/', [StringComparison]::Ordinal)) { continue }
-            $status.Add($entry)
-        }
+        $status = Get-G3DirtyStatusEntries -Repository $repository
         # ls-files -v tags an assume-unchanged file in lowercase and a skip-worktree file as S: status skips both.
         $hidden = @((Invoke-G3Git -Repository $repository -Arguments 'ls-files', '-v') -split "`n" |
                 Where-Object { $_ -cmatch '^([a-z]|S) ' })

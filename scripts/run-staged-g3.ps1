@@ -229,10 +229,12 @@ foreach ($value in @($ControlServerCommit, $OnboardCommit, $SimulatorCommit, $Pr
 # as untracked content and report every run as dirty.
 $harnessCommit = (& git -C $ControlServerRepository rev-parse HEAD).Trim()
 if ($LASTEXITCODE -ne 0) { throw "Unable to read the harness commit from $ControlServerRepository" }
-$harnessWorktreeClean = @(& git -C $ControlServerRepository status --porcelain).Count -eq 0
 
 $G3RunKind = 'STAGED_G3_REAL_PEERS_DETERMINISTIC_PLAINTEXT'
 . (Join-Path $PSScriptRoot 'g3-slice-evidence.ps1')
+# Clean by the runner provenance's own rule (control-server#567): an earlier run's untracked evidence under evidence/ does
+# not count, anything else does. Still before anything is written.
+$harnessWorktreeClean = (Get-G3DirtyStatusEntries -Repository $ControlServerRepository).Count -eq 0
 
 # Where the four commits this run uses came from (control-server#460). The binding is this script's own param
 # defaults, read back the way the other three runners read it -- Get-SharedCommitBinding, taken from the restart
