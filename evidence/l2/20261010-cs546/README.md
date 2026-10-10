@@ -16,6 +16,7 @@
 | `same-direction-wire-to-nitrogen-journey-01` | PASS |
 | `same-direction-binding-missing-not-cascading-01` | PASS |
 | `same-direction-mixed-load-multi-drop-01` | PASS（含负向第二段） |
+| `same-direction-binding-missing-not-cascading-02-after-merge-c94929302` | PASS——merge `fp/v2-impl@0c2c27eb` 之后（`c94929302`）重跑，覆盖 `756059339` 改过的 `L2-SDBM-01` 判据文字 |
 | `8b780a24-same-direction-binding-missing-not-cascading` | PASS——**批次10-01 合入前的提交 `8b780a24`** 上也是绿的，对照用：它测的是批次 6 已有的缺绑定机制 |
 
 ## red/：应当红、确实红的
