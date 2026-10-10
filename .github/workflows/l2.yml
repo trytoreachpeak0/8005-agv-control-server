@@ -410,6 +410,17 @@ jobs:
               # control-server#409, REQ-0178/0179: the clearing vehicle queues when no waiting point is eligible, wins the
               # last one in the round it frees, drives there, and the charger is released only in the arrival's round.
               @{ Name = 'charging-clearance-to-waiting-point'; Runs = 3; BatchId = 'batch-9' }
+              # Batch 10 (program#169), specification 8.3 batch 10: the four same-direction task types. control-server#546:
+              # none of the four bound -- each refused with TASK_TYPE_BINDING_MISSING while WIRE_TO_GATE runs; each bound --
+              # loads at the AREA machine into the group its AREA is assigned and unloads at its bound station; and one
+              # vehicle taking WIRE_TO_GATE, WIRE_TO_OPTICAL and WIRE_TO_NITROGEN by appends while stopped, unloading at
+              # three drop-offs in turn, with a smaller allowance then refusing the second order at the delay gate.
+              @{ Name = 'same-direction-binding-missing-not-cascading'; Runs = 3; BatchId = 'batch-10' }
+              @{ Name = 'same-direction-die-to-oven-journey'; Runs = 3; BatchId = 'batch-10' }
+              @{ Name = 'same-direction-die-to-wire-staging-journey'; Runs = 3; BatchId = 'batch-10' }
+              @{ Name = 'same-direction-mixed-load-multi-drop'; Runs = 3; BatchId = 'batch-10' }
+              @{ Name = 'same-direction-wire-to-nitrogen-journey'; Runs = 3; BatchId = 'batch-10' }
+              @{ Name = 'same-direction-wire-to-optical-journey'; Runs = 3; BatchId = 'batch-10' }
           )
           # One run's usual length in seconds, for dealing scenarios out to lanes longest first. Medians of 31
           # CI jobs from 2026-09-17 (ci-research, control-server#130); normal-load's excludes the build it used
