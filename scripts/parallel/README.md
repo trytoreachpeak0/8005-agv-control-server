@@ -225,6 +225,10 @@ L1 `SameDirectionTaskTypeJourneyRuntimeTests.AfterVersionThreeIsBoundTheRolledBa
    要么部署时给 19 带 `-AdmissionPolicyVersionOverride`（首装与升级也接受，同提交检查照做），要么开票把三处一起升上去。
 3. 每次部署都在部署记录里写下用的版本号，回滚时才知道「装过的最高版本」是多少。
 
+control-server#552 之后，19 在碰服务器之前会先用一次只读 ssh 读服务器上的 `<opsRoot>\installed-instance.json`（安装器每次安装、
+回滚动手之前都会记下这份定义）里的 `admissionPolicyVersion`：安装要发的版本低于它、或回滚要发的版本不高于它，都会被拒绝，拒绝信息里
+写着该填多少。这个文件不存在时按首装处理，此时这道版本下限检查**不生效**（文件被删时也一样），最高版本仍以库里为准。
+
 ## 路径和名字只认一种写法
 
 control-server#262 复审找到过一个严重缺陷：卸载脚本在一种很常见的写错下（JSON 里用正斜杠写路径）
