@@ -13,6 +13,11 @@
 **修复前**（cs#573 之前）每 10 次读就有 4 次让投影回未知，车载端每几秒闪一次未就绪，20 秒的离站等待一次都走不满：`L2-LC-02`、
 `L2-LC-03` 红。**修复后**投影读不全时当场再读、仍不全就沿用 3 秒内读全的那份，车载端不闪，等满 20 秒就走。
 
+**为什么装完才搅。**这个场景要的红是离站等待那一段（现场就是那一段）。第一版从车到站就开始搅，修复前的 CI 真装置
+（run 38067577157）红在了装货：车载端开锁后进入等操作员，正撞上一次未就绪，那条 `OperationProgress`（`WAITING_OPERATOR`）
+没发出去（车载端日志「仓位操作进度未能发送……InvalidOperationException」），服务端看不到、场景等它 120 秒超时。那是同一个缺陷的
+另一个后果，但它让判据表一条都没走到。所以注入在装货提交之后才打开，装货那一段的影响记在 PR 里，不在这个场景判。
+
 判据（`L2-LC-*`）：
 - 01 注入确实打中了：装货提交到离站之间，假 RIoT 记下的被搅乱的读至少 5 次。否则 02、03 的绿什么也不证明。
 - 02 车离站：装货提交后 20 秒离站等待 + 60 秒余量之内建出 TO_GATE 单并走到 `AwaitingGateArrival`。
@@ -145,12 +150,7 @@ $null = $riot.Command('Put', 'vehicle', @{
 })
 $null = $riot.Command('Put', "orders/$($pickupIntent.UpperId)", @{ orderState = 5 })
 
-# --- 2. 全厂订单开始变：250 张别的产线的单，每 10 次读里连续 4 次读到一半总数变了 ---------------------------
-
-$journal.Note('Arming the non-final listing churn: 250 padding orders, 4 churned reads in every 10.')
-$null = $riot.Command('Put', 'faults/nonfinal-listing-churn', @{ padding = 250; period = 10; burst = 4 })
-
-# --- 3. 录入、装货 ----------------------------------------------------------------------------------
+# --- 2. 录入、装货（全厂订单还没开始变，见头注释「为什么装完才搅」） ----------------------------------------
 
 $null = Wait-L2Condition -Description 'the onboard HMI accepted sublot entry' `
     -Journal $journal -Criterion 'onboard-can-submit' -TimeoutSeconds 180 `
@@ -171,8 +171,13 @@ $null = Wait-L2Condition -Description 'the load committed' `
     } `
     -Until { param($v) $v -eq 'Committed' }
 $committedAt = [datetimeoffset]::UtcNow
+
+# --- 3. 全厂订单开始变：250 张别的产线的单，每 10 次读里连续 4 次读到一半总数变了 ---------------------------
+
+$journal.Note('Arming the non-final listing churn: 250 padding orders, 4 churned reads in every 10.')
+$null = $riot.Command('Put', 'faults/nonfinal-listing-churn', @{ padding = 250; period = 10; burst = 4 })
 $churnedAtCommit = Get-ChurnedReads
-$journal.Note("Load committed at $($committedAt.ToString('o')); $churnedAtCommit churned reads so far.")
+$journal.Note("Load committed at $($committedAt.ToString('o')); churn armed with $churnedAtCommit churned reads so far.")
 
 # --- 4. 离站等待 20 秒，全厂订单一直在变 -------------------------------------------------------------
 
