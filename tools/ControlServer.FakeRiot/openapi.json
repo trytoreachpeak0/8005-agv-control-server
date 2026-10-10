@@ -206,6 +206,28 @@
         }
       }
     },
+    "/control/v1/faults/nonfinal-listing-churn": {
+      "put": {
+        "summary": "Control plane: pad the order listing and churn reads of it (control-server#573).",
+        "description": "padding (0..2000) state-8 orders on no vehicle, ids from 900001, follow the scenario's own orders in any listing that asks for state 8 or for every state. A read is counted at each pageNum=1 request; read n (from 1) is churned when (n - 1) % period < burst, and a churned read reports a total one higher on every later page, which a reader checking page coverage takes as incomplete. period 0 churns nothing; burst may not exceed period. Readers share the count. Outside the command engine: no revision moves. /snapshot reports the knobs, the reads counted and the reads churned.",
+        "requestBody": {
+          "required": true,
+          "content": { "application/json": { "schema": {
+            "allOf": [ { "$ref": "#/components/schemas/CommandEnvelope" } ],
+            "properties": {
+              "padding": { "type": "integer", "minimum": 0, "maximum": 2000 },
+              "period": { "type": "integer", "minimum": 0, "maximum": 1000 },
+              "burst": { "type": "integer", "minimum": 0 }
+            },
+            "required": ["padding", "period", "burst"]
+          } } }
+        },
+        "responses": {
+          "200": { "description": "Armed." },
+          "400": { "description": "INVALID_ARGUMENT." }
+        }
+      }
+    },
     "/control/v1/chargers": {
       "put": {
         "summary": "Control plane: replace the registered chargers and the discharge rate (control-server#402).",

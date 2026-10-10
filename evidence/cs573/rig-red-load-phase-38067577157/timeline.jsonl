@@ -1,0 +1,49 @@
+{"at":"2026-10-10T16:29:24.9930500+00:00","note":"L2 run 20261010T162924939Z starting for scenario 'real-onboard-departure-under-listing-churn'."}
+{"at":"2026-10-10T16:29:25.0579864+00:00","note":"L2 port block lock acquired (slot 0, Global\\W2G-L2PortBlock)."}
+{"at":"2026-10-10T16:29:25.0613887+00:00","note":"Build skipped (-SkipBuild); running the output already built."}
+{"at":"2026-10-10T16:29:26.5046576+00:00","note":"Building onboard-hmi at 535c94fce47a10879ba1f404d04f603ba1a65bbf from a throwaway clone."}
+{"at":"2026-10-10T16:30:12.8855564+00:00","note":"Reusing cached slots-simulator publish for fb5f7c593742bf98bc3957b8729a38aad5321f28."}
+{"at":"2026-10-10T16:30:12.8940859+00:00","note":"Peers: onboard-hmi@535c94fce47a10879ba1f404d04f603ba1a65bbf, slots-simulator@fb5f7c593742bf98bc3957b8729a38aad5321f28."}
+{"at":"2026-10-10T16:30:12.9110855+00:00","note":"Interactive desktop lock acquired."}
+{"at":"2026-10-10T16:30:14.2158053+00:00","criterion":"fake-riot-live","value":"live"}
+{"at":"2026-10-10T16:30:14.4538946+00:00","criterion":"fake-mes-live","value":"live"}
+{"at":"2026-10-10T16:30:17.3932326+00:00","criterion":"simulator-ready","value":"(null)"}
+{"at":"2026-10-10T16:30:20.1161552+00:00","criterion":"simulator-ready","value":"READY/True"}
+{"at":"2026-10-10T16:30:20.2447094+00:00","note":"Task type station preset: default (map 25, WIRE_TO_GATE -> 关卡/210)"}
+{"at":"2026-10-10T16:30:30.9867377+00:00","note":"Package capacity rules imported."}
+{"at":"2026-10-10T16:30:30.9928992+00:00","note":"No waiting point registration: a single-vehicle rig, or WaitingPoints = $false."}
+{"at":"2026-10-10T16:30:33.0637434+00:00","criterion":"control-server-live","value":"(null)"}
+{"at":"2026-10-10T16:30:35.5351419+00:00","criterion":"control-server-live","value":"live"}
+{"at":"2026-10-10T16:30:35.6744606+00:00","note":"Protocol release identity: protocol-v3.0.0 (profileId AGV_FULL_PRODUCT, protocolVersion 4, APPROVED_RELEASE)."}
+{"at":"2026-10-10T16:30:54.2764964+00:00","note":"Onboard window: 8005 多仓位AGV车载端"}
+{"at":"2026-10-10T16:30:54.3211003+00:00","criterion":"onboard-modbus","value":"1"}
+{"at":"2026-10-10T16:30:54.3802880+00:00","criterion":"control-server-ready","value":"ready"}
+{"at":"2026-10-10T16:30:54.4526050+00:00","note":"FieldOps: seed-approved-facts --database C:\\actions-runner\\win11-01-control-server-desktop\\_work\\_temp\\real-rig-38067577157-1\\_stage\\l2-20261010T162924939Z\\controlserver.db"}
+{"at":"2026-10-10T16:30:59.3697100+00:00","criterion":"slot-model-preseed:seed-approved-facts","value":"OK","detail":{"output":{"command":"seed-approved-facts","outcome":"OK","modelKey":"8005-eight-slot","slotModelVersionId":"1c4a75cdec3e43d78b2c391359005ab5","version":1,"slotCount":8}}}
+{"at":"2026-10-10T16:30:59.3783394+00:00","note":"FieldOps: bind-io --database C:\\actions-runner\\win11-01-control-server-desktop\\_work\\_temp\\real-rig-38067577157-1\\_stage\\l2-20261010T162924939Z\\controlserver.db --agv AGV-L2-001"}
+{"at":"2026-10-10T16:31:01.3707578+00:00","criterion":"slot-model-preseed:bind-io:AGV-L2-001","value":"OK","detail":{"output":{"command":"bind-io","outcome":"OK","agvId":"AGV-L2-001","slotModelVersionId":"1c4a75cdec3e43d78b2c391359005ab5","boundSlots":8,"version":1}}}
+{"at":"2026-10-10T16:31:01.5020393+00:00","criterion":"slot-model-preseed:dispatch-zones","value":"0"}
+{"at":"2026-10-10T16:31:01.5044130+00:00","note":"FieldOps: import-area-assignments --database C:\\actions-runner\\win11-01-control-server-desktop\\_work\\_temp\\real-rig-38067577157-1\\_stage\\l2-20261010T162924939Z\\controlserver.db --input C:\\actions-runner\\win11-01-control-server-desktop\\_work\\_temp\\real-rig-38067577157-1\\real-onboard-departure-under-listing-churn-01\\snapshots\\preseed-area-assignments.csv"}
+{"at":"2026-10-10T16:31:03.5395550+00:00","criterion":"slot-model-preseed:import-area-assignments","value":"OK","detail":{"output":{"command":"import-area-assignments","outcome":"OK","dryRun":false,"input":"C:\\actions-runner\\win11-01-control-server-desktop\\_work\\_temp\\real-rig-38067577157-1\\real-onboard-departure-under-listing-churn-01\\snapshots\\preseed-area-assignments.csv","entryCount":3,"version":1,"contentSha256":"4291a509c2c0b75ea4bde0ac4dcde04b6e8632b54a21a67eee2772a6f8d0ff8e","snapshotId":"10d17a99821140c19b22bc8511926176","importedAt":"2026-10-11T00:31:01.7687986+08:00","errorCount":0,"errors":[],"preview":[]}}}
+{"at":"2026-10-10T16:31:03.5857999+00:00","note":"FieldOps: import-charging-policy --database C:\\actions-runner\\win11-01-control-server-desktop\\_work\\_temp\\real-rig-38067577157-1\\_stage\\l2-20261010T162924939Z\\controlserver.db --input C:\\actions-runner\\win11-01-control-server-desktop\\_work\\_temp\\real-rig-38067577157-1\\real-onboard-departure-under-listing-churn-01\\snapshots\\preseed-charging-policy.json --fleet BROKERX-L2-0001"}
+{"at":"2026-10-10T16:31:05.6258127+00:00","note":"FieldOps: approve-charging-policy --database C:\\actions-runner\\win11-01-control-server-desktop\\_work\\_temp\\real-rig-38067577157-1\\_stage\\l2-20261010T162924939Z\\controlserver.db --version 1 --approved-by L2 orchestrator --role L2_PRESET --basis scripts/l2/L2ChargingPolicy.psm1 --source L2_PRESET"}
+{"at":"2026-10-10T16:31:07.4248230+00:00","note":"FieldOps: activate-charging-policy --database C:\\actions-runner\\win11-01-control-server-desktop\\_work\\_temp\\real-rig-38067577157-1\\_stage\\l2-20261010T162924939Z\\controlserver.db --version 1 --activated-by L2 orchestrator --fleet BROKERX-L2-0001 --allow-non-field-approval"}
+{"at":"2026-10-10T16:31:09.5101962+00:00","criterion":"preseed:charging-policy","value":"OK","detail":{"coveredAfter":["BROKERX-L2-0001"],"source":"L2_PRESET","version":1,"withoutPolicy":[]}}
+{"at":"2026-10-10T16:31:09.5118394+00:00","note":"Per-zone dispatch parameters left unconfigured (the default precondition)."}
+{"at":"2026-10-10T16:31:09.5334212+00:00","note":"Environment is up; entering scenario 'real-onboard-departure-under-listing-churn'."}
+{"at":"2026-10-10T16:31:09.7757789+00:00","criterion":"to-pickup-intent","value":"(null)"}
+{"at":"2026-10-10T16:31:12.3190986+00:00","criterion":"to-pickup-intent","value":"PENDING_RECONCILIATION"}
+{"at":"2026-10-10T16:31:13.0865912+00:00","criterion":"to-pickup-intent","value":"CREATE_ATTEMPTED"}
+{"at":"2026-10-10T16:31:13.3550012+00:00","criterion":"to-pickup-intent","value":"CONFIRMED"}
+{"at":"2026-10-10T16:31:13.4361047+00:00","note":"Arming the non-final listing churn: 250 padding orders, 4 churned reads in every 10."}
+{"at":"2026-10-10T16:31:13.5166467+00:00","criterion":"onboard-can-submit","value":"False"}
+{"at":"2026-10-10T16:31:20.3543999+00:00","criterion":"onboard-can-submit","value":"True"}
+{"at":"2026-10-10T16:31:21.2102720+00:00","criterion":"onboard-submit-ready","value":"True"}
+{"at":"2026-10-10T16:31:21.2977479+00:00","criterion":"Load-attempt","value":"(null)"}
+{"at":"2026-10-10T16:31:23.5791809+00:00","criterion":"Load-attempt","value":"6841c16e-8d47-dc50-a773-6221b56d3616"}
+{"at":"2026-10-10T16:31:23.6580812+00:00","criterion":"Load-unlocking","value":"(null)"}
+{"at":"2026-10-10T16:31:24.9660425+00:00","criterion":"Load-unlocking","value":"@{slotOperationAttemptId=6841c16e-8d47-dc50-a773-6221b56d3616; phase=UNLOCKING; activeUnlockSlots=System.Object[]; completedSlots=System.Object[]; observedAt=10/11/2026 00:31:24}"}
+{"at":"2026-10-10T16:31:25.0018393+00:00","criterion":"Load-waiting-operator","value":"0"}
+{"at":"2026-10-10T16:33:25.0290573+00:00","note":"Run failed: Timed out after 120s waiting for: the onboard is waiting for the operator on slot 1. Last observed: 0"}
+{"at":"2026-10-10T16:33:25.0783397+00:00","note":"Failure at: 位于 Wait-L2Condition，C:\\actions-runner\\win11-01-control-server-desktop\\_work\\8005-agv-control-server\\8005-agv-control-server\\control-server\\scripts\\l2\\L2.psm1: 行 103\r\n位于 Invoke-SlotOperation，C:\\actions-runner\\win11-01-control-server-desktop\\_work\\8005-agv-control-server\\8005-agv-control-server\\control-server\\scripts\\l2\\scenarios\\real-onboard-departure-under-listing-churn.ps1: 行 113\r\n位于 <ScriptBlock>，C:\\actions-runner\\win11-01-control-server-desktop\\_work\\8005-agv-control-server\\8005-agv-control-server\\control-server\\scripts\\l2\\scenarios\\real-onboard-departure-under-listing-churn.ps1: 行 164\r\n位于 <ScriptBlock>，C:\\actions-runner\\win11-01-control-server-desktop\\_work\\8005-agv-control-server\\8005-agv-control-server\\control-server\\scripts\\l2\\Invoke-L2Scenario.ps1: 行 1432"}
+{"at":"2026-10-10T16:33:26.1388934+00:00","note":"L2 port block lock released."}

@@ -90,6 +90,7 @@ ControlServer 的 SDK 实际调用的六个端点，响应形状与 `HttpRiotMov
 | `PUT` | `/chargers` | 登记充电桩与耗电速率（control-server#402），见下面「充电」 |
 | `PUT` | `/charging/faults` | 按车或按单注入充电故障（control-server#402），见下面「充电」 |
 | `PUT` | `/faults/absent-order-reads` | 接下来 `count` 次按 upperId 读一张不存在的单时回 503 而不是 404（control-server#375）；只打这一种读，不动数据面别的接口，也不推进 `revision`；`/snapshot` 的 `absentOrderReadFaults` 给出剩余次数与打中了哪些 upperId |
+| `PUT` | `/faults/nonfinal-listing-churn` | 模拟 10-10 现场那种全厂清单（control-server#573）：`padding` 张状态 8、不挂车的别的产线的单（id 从 900001 起）接在场景自己的单后面，让非终态单清单分成好几页；第 n 次读（数第 1 页的请求）在 `(n - 1) % period < burst` 时被搅乱，后面各页的 `total` 多 1，按页核对覆盖的读者会判读不全。`period` 为 0 不搅，`burst` 不超过 `period`。不推进 `revision`；`/snapshot` 的 `nonFinalListingChurn` 给出三个参数、读了几次、搅了几次 |
 
 每个响应都带 `schemaVersion`、`instanceId`、`runId`、`revision`、`observedAt`；写命令必须带
 `runId` 与 `commandId`，可带 `expectedRevision`。写响应还带 `changed`、`replayed`、

@@ -1,0 +1,35 @@
+57:2026-10-11T04:18:40.4451789+08:00	Information	WireToGateSessionClient	收到SessionReadiness：messageId=58731b4f-14ac-4fd0-bdea-b2d7f0b55ea4，generation=2，readiness=READY，reasonCodes=[]，acceptedSafetyStateVersion=8。
+58:2026-10-11T04:18:40.4460463+08:00	Information	WireToGateSessionClient	会话状态发布：source=SessionReadiness，connected=True，generation=2，readiness=Ready，reasonCodes=[]，safetyStateVersion=8。
+60:2026-10-11T04:18:41.2070695+08:00	Information	WireToGateSessionClient	收到SessionReadiness：messageId=eeacc7a6-520c-49f8-a0c0-fa271fde2fa9，generation=2，readiness=READY，reasonCodes=[]，acceptedSafetyStateVersion=9。
+61:2026-10-11T04:18:41.2075197+08:00	Information	WireToGateSessionClient	会话状态发布：source=SessionReadiness，connected=True，generation=2，readiness=Ready，reasonCodes=[]，safetyStateVersion=9。
+64:2026-10-11T04:19:04.0804581+08:00	Warning	OnboardAlarmMonitor	告警快照暂未报上服务端，下一轮再报。 | TimeoutException: The operation has timed out.
+65:2026-10-11T04:19:04.5205266+08:00	Error	WireToGateBusinessService	SafetyStateChanged发送失败，正在断开会话；待发项留着，重连后按此刻读数决定原样重发还是放弃。 | TimeoutException: The operation has timed out.
+66:2026-10-11T04:19:04.5219055+08:00	Warning	OnboardAlarmMonitor	告警快照暂未报上服务端，下一轮再报。 | WireToGateConnectionGoneException: WIRE_TO_GATE连接已关闭。
+67:2026-10-11T04:19:04.5220485+08:00	Information	WireToGateSessionClient	会话状态发布：source=disconnect，connected=False，generation=null，readiness=Disconnected，reasonCodes=[SESSION_RECOVERY_REQUIRED]，safetyStateVersion=9。
+69:2026-10-11T04:19:04.5242201+08:00	Warning	WireToGateSessionService	上层会话不可用：WIRE_TO_GATE连接已关闭。。将在2秒后重连。
+70:2026-10-11T04:19:04.6674812+08:00	Information	WireToGateSessionClient	会话状态发布：source=disconnect，connected=False，generation=null，readiness=Disconnected，reasonCodes=[SESSION_RECOVERY_REQUIRED]，safetyStateVersion=9。
+71:2026-10-11T04:19:06.5306858+08:00	Information	WireToGateSessionClient	会话状态发布：source=handshake-start，connected=False，generation=null，readiness=Recovering，reasonCodes=[]，safetyStateVersion=9。
+73:2026-10-11T04:19:10.8687551+08:00	Information	WireToGateSessionClient	会话状态发布：source=handshake-failed，connected=False，generation=null，readiness=Disconnected，reasonCodes=[SESSION_RECOVERY_REQUIRED]，safetyStateVersion=9。
+75:2026-10-11T04:19:10.9618521+08:00	Information	WireToGateSessionClient	会话状态发布：source=disconnect，connected=False，generation=null，readiness=Disconnected，reasonCodes=[SESSION_RECOVERY_REQUIRED]，safetyStateVersion=9。
+76:2026-10-11T04:19:10.9622535+08:00	Warning	WireToGateSessionService	上层会话不可用：等待WIRE_TO_GATE消息超时。。将在2秒后重连。
+77:2026-10-11T04:19:12.9667765+08:00	Information	WireToGateSessionClient	会话状态发布：source=handshake-start，connected=False，generation=null，readiness=Recovering，reasonCodes=[]，safetyStateVersion=9。
+79:2026-10-11T04:19:15.3905395+08:00	Information	WireToGateSessionClient	会话状态发布：source=session-accepted，connected=True，generation=4，readiness=Recovering，reasonCodes=[]，safetyStateVersion=9。
+81:2026-10-11T04:19:18.5847654+08:00	Information	WireToGateSessionClient	会话状态发布：source=handshake-failed，connected=False，generation=null，readiness=Disconnected，reasonCodes=[SESSION_RECOVERY_REQUIRED]，safetyStateVersion=9。
+83:2026-10-11T04:19:18.6154190+08:00	Information	WireToGateSessionClient	会话状态发布：source=disconnect，connected=False，generation=null，readiness=Disconnected，reasonCodes=[SESSION_RECOVERY_REQUIRED]，safetyStateVersion=9。
+84:2026-10-11T04:19:18.6219924+08:00	Warning	WireToGateSessionService	上层会话不可用：等待WIRE_TO_GATE消息超时。。将在2秒后重连。
+85:2026-10-11T04:19:20.6954418+08:00	Information	WireToGateSessionClient	会话状态发布：source=handshake-start，connected=False，generation=null，readiness=Recovering，reasonCodes=[]，safetyStateVersion=9。
+87:2026-10-11T04:19:23.6363066+08:00	Information	WireToGateSessionClient	会话状态发布：source=session-accepted，connected=True，generation=5，readiness=Recovering，reasonCodes=[]，safetyStateVersion=9。
+89:2026-10-11T04:19:32.6503490+08:00	Information	WireToGateSessionClient	收到SessionReadiness：messageId=60913f71-27d7-42ca-aa02-9a99bc78e69a，generation=5，readiness=RECOVERY_REQUIRED，reasonCodes=[DEPARTURE_UNSAFE]，acceptedSafetyStateVersion=11。
+90:2026-10-11T04:19:32.7268738+08:00	Information	WireToGateSessionClient	会话状态发布：source=SessionReadiness，connected=True，generation=5，readiness=RecoveryRequired，reasonCodes=[DEPARTURE_UNSAFE]，safetyStateVersion=11。
+94:2026-10-11T04:19:36.6745723+08:00	Error	WireToGateBusinessService	SafetyStateChanged发送失败，正在断开会话；待发项留着，重连后按此刻读数决定原样重发还是放弃。 | TimeoutException: The operation has timed out.
+95:2026-10-11T04:19:37.8021547+08:00	Information	WireToGateSessionClient	会话状态发布：source=disconnect，connected=False，generation=null，readiness=Disconnected，reasonCodes=[SESSION_RECOVERY_REQUIRED]，safetyStateVersion=11。
+97:2026-10-11T04:19:37.8072668+08:00	Warning	WireToGateSessionService	上层会话不可用：WIRE_TO_GATE连接已关闭。。将在2秒后重连。
+98:2026-10-11T04:19:38.0703300+08:00	Information	WireToGateSessionClient	会话状态发布：source=disconnect，connected=False，generation=null，readiness=Disconnected，reasonCodes=[SESSION_RECOVERY_REQUIRED]，safetyStateVersion=11。
+99:2026-10-11T04:19:39.8100804+08:00	Information	WireToGateSessionClient	会话状态发布：source=handshake-start，connected=False，generation=null，readiness=Recovering，reasonCodes=[]，safetyStateVersion=11。
+101:2026-10-11T04:19:42.3829140+08:00	Information	WireToGateSessionClient	会话状态发布：source=session-accepted，connected=True，generation=6，readiness=Recovering，reasonCodes=[]，safetyStateVersion=11。
+103:2026-10-11T04:19:46.0885444+08:00	Information	WireToGateSessionClient	收到SessionReadiness：messageId=f7248e1c-0fdf-4254-bb6d-715222c35b6e，generation=6，readiness=RECOVERY_REQUIRED，reasonCodes=[DEPARTURE_UNSAFE]，acceptedSafetyStateVersion=13。
+104:2026-10-11T04:19:46.0895042+08:00	Information	WireToGateSessionClient	会话状态发布：source=SessionReadiness，connected=True，generation=6，readiness=RecoveryRequired，reasonCodes=[DEPARTURE_UNSAFE]，safetyStateVersion=13。
+108:2026-10-11T04:19:48.8011378+08:00	Information	WireToGateSessionClient	收到SessionReadiness：messageId=e598e0e4-844e-46b3-9be7-e3d8205eeaad，generation=6，readiness=RECOVERY_REQUIRED，reasonCodes=[DEPARTURE_UNSAFE]，acceptedSafetyStateVersion=14。
+109:2026-10-11T04:19:48.8018691+08:00	Information	WireToGateSessionClient	会话状态发布：source=SessionReadiness，connected=True，generation=6，readiness=RecoveryRequired，reasonCodes=[DEPARTURE_UNSAFE]，safetyStateVersion=14。
+111:2026-10-11T04:19:50.4459705+08:00	Information	WireToGateSessionClient	收到SessionReadiness：messageId=c2b4bb64-50df-4b48-917c-19e9acbd7304，generation=6，readiness=READY，reasonCodes=[]，acceptedSafetyStateVersion=15。
+112:2026-10-11T04:19:50.4464566+08:00	Information	WireToGateSessionClient	会话状态发布：source=SessionReadiness，connected=True，generation=6，readiness=Ready，reasonCodes=[]，safetyStateVersion=15。
