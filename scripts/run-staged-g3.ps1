@@ -128,7 +128,12 @@ param(
     #   Third round, after the second journey round went red on two more never-run script branches
     #   (control-server#555, PR #557): $ControlServerCommit -> 1f63fe0b, the fp/v2-impl tip with that fix.
     #     git diff 5f3adc42 1f63fe0b -- src tests tools is empty. Onboard, simulator and protocol unchanged.
-    [string]$ControlServerCommit = '1f63fe0bb173f37c05dd5059c78455da57ed100b',
+    #   Fourth round, after the third journey round went red on two UI Automation reads in the scenario fixture
+    #   (control-server#560, PR #561): $ControlServerCommit -> 76c9cfe2, that PR's branch head, bound before the PR
+    #     merged because the coordinator asked for the round at once. Merging it into fp/v2-impl adds only a merge
+    #     commit with the same tree. git diff 5f3adc42 76c9cfe2 -- src tests tools is empty. Onboard, simulator and
+    #     protocol unchanged.
+    [string]$ControlServerCommit = '76c9cfe26f8bd06fc42f954b608edfdd108d5962',
     [string]$OnboardCommit = 'b9e67a538ba4cdf1916d201a08af40dd28270d14',
     [string]$SimulatorCommit = 'fb5f7c593742bf98bc3957b8729a38aad5321f28',
     [string]$ProtocolCommit = '3f091cb2eae7c58cec54a95dd9389c9180bc7b4c',
