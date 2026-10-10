@@ -20,6 +20,8 @@
 
     Cases:
 
+      - a held port refuses an HttpListener with error 32 (the premise), and the listener this script
+        uses, started from that held port, moves to another one and starts (control-server#312);
       - 409 with a JSON body -> the message carries the double, the method, the path, reasonCode and
         detail, and still starts with the cmdlet's own message; the InnerException is the original
         HttpResponseException with status 409;
@@ -41,6 +43,7 @@ param()
 $ErrorActionPreference = 'Stop'
 Set-StrictMode -Version Latest
 Import-Module (Join-Path $PSScriptRoot 'L2.psm1') -Force
+Import-Module (Join-Path $PSScriptRoot '..' 'LoopbackListener.psm1') -Force
 
 $failures = [System.Collections.Generic.List[string]]::new()
 function Check([string]$name, [bool]$ok, [string]$detail) {
@@ -48,12 +51,40 @@ function Check([string]$name, [bool]$ok, [string]$detail) {
     if (-not $ok) { $failures.Add($name) }
 }
 
+# --- the listener's own retry --------------------------------------------------------------------------
+# control-server#312: this script used to pick a random port in 49200-49900, inside Windows' ephemeral range,
+# and went red in CI whenever a concurrent job held that port (HttpListener.Start(): "The process cannot
+# access the file because it is being used by another process."). Start-LoopbackListener takes a port the
+# system reports free and moves to another one when Start is refused that way. Hold a port, start from it,
+# and require that it moved and started; the premise is pinned first, or the retry case would pass without
+# retrying anything.
+$held = [System.Net.Sockets.TcpListener]::new([System.Net.IPAddress]::Loopback, 0)
+$held.Start()
+try {
+    $heldPort = $held.LocalEndpoint.Port
+    $direct = [System.Net.HttpListener]::new()
+    $direct.Prefixes.Add("http://localhost:$heldPort/")
+    $directError = $null
+    try { $direct.Start() } catch { $directError = $_.Exception.GetBaseException() } finally { $direct.Close() }
+    Check 'premise: a held port refuses an HttpListener with error 32' `
+        ($directError -is [System.Net.HttpListenerException] -and $directError.ErrorCode -eq 32) "$directError"
+
+    $retried = $null
+    $retryError = $null
+    try { $retried = Start-LoopbackListener -FirstPort $heldPort } catch { $retryError = $_.Exception.Message }
+    try {
+        Check 'listener retry: starting from a held port moves to another port and starts' `
+            ($null -ne $retried -and $retried.Port -ne $heldPort -and $retried.Listener.IsListening -and
+                @($retried.Refused) -contains $heldPort) `
+            "$retryError port=$(${retried}?.Port) refused=$(@(${retried}?.Refused) -join ',')"
+    } finally { if ($null -ne $retried) { $retried.Listener.Close() } }
+} finally { $held.Stop() }
+
 # One listener for every case. Snapshot requests always answer; every other request takes the next
 # planned response off the queue and is counted.
-$port = Get-Random -Minimum 49200 -Maximum 49900
-$listener = [System.Net.HttpListener]::new()
-$listener.Prefixes.Add("http://localhost:$port/")
-$listener.Start()
+$started = Start-LoopbackListener
+$listener = $started.Listener
+$port = $started.Port
 $plan = [System.Collections.Concurrent.ConcurrentQueue[object]]::new()
 $commands = [System.Collections.Concurrent.ConcurrentQueue[string]]::new()
 $server = Start-ThreadJob -ArgumentList $listener, $plan, $commands -ScriptBlock {
@@ -157,4 +188,4 @@ if ($failures.Count -gt 0) {
     Write-Host "L2DoubleCommandError self-check: $($failures.Count) case(s) came out the other way."
     exit 1
 }
-Write-Host 'L2DoubleCommandError self-check: all 12 cases as expected.'
+Write-Host 'L2DoubleCommandError self-check: all 14 cases as expected.'

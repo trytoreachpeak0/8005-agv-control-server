@@ -1,0 +1,37 @@
+{"at":"2026-10-10T10:51:15.4173180+00:00","note":"L2 run 20261010T105115299Z starting for scenario 'same-direction-die-to-wire-staging-journey'."}
+{"at":"2026-10-10T10:51:15.5654129+00:00","note":"L2 port block lock acquired (slot 0, Global\\W2G-L2PortBlock)."}
+{"at":"2026-10-10T10:51:15.8074545+00:00","note":"Building ControlServer and the test doubles."}
+{"at":"2026-10-10T10:52:44.9150401+00:00","criterion":"fake-riot-live","value":"live"}
+{"at":"2026-10-10T10:52:45.2208524+00:00","criterion":"fake-mes-live","value":"live"}
+{"at":"2026-10-10T10:52:45.4715844+00:00","note":"Fake RIoT stations on map 25: 11=C15-13, 12=N1-3_N1-7, 210=关卡, 401=派工待送卸货"}
+{"at":"2026-10-10T10:52:45.5340884+00:00","note":"Task type station preset: the scenario's own (2 binding(s))"}
+{"at":"2026-10-10T10:52:51.1855579+00:00","note":"Package capacity rules imported."}
+{"at":"2026-10-10T10:52:51.1889704+00:00","note":"No waiting point registration: a single-vehicle rig, or WaitingPoints = $false."}
+{"at":"2026-10-10T10:52:53.2763063+00:00","criterion":"control-server-live","value":"(null)"}
+{"at":"2026-10-10T10:52:54.6813235+00:00","criterion":"control-server-live","value":"live"}
+{"at":"2026-10-10T10:52:54.7842924+00:00","note":"Protocol release identity: protocol-v3.0.0 (profileId AGV_FULL_PRODUCT, protocolVersion 4, APPROVED_RELEASE)."}
+{"at":"2026-10-10T10:52:55.4644468+00:00","criterion":"onboard-readiness","value":"DISCONNECTED"}
+{"at":"2026-10-10T10:52:55.7292557+00:00","criterion":"onboard-readiness","value":"READY"}
+{"at":"2026-10-10T10:52:55.7804651+00:00","criterion":"control-server-ready","value":"ready"}
+{"at":"2026-10-10T10:52:55.8399990+00:00","note":"FieldOps: seed-approved-facts --database C:\\Users\\szy\\AppData\\Local\\Temp\\l2-20261010T105115299Z\\controlserver.db"}
+{"at":"2026-10-10T10:52:57.9047506+00:00","criterion":"slot-model-preseed:seed-approved-facts","value":"OK","detail":{"output":{"command":"seed-approved-facts","outcome":"OK","modelKey":"8005-eight-slot","slotModelVersionId":"d23f0085e0254f9fb49b4714d9529a73","version":1,"slotCount":8}}}
+{"at":"2026-10-10T10:52:57.9172025+00:00","note":"FieldOps: bind-io --database C:\\Users\\szy\\AppData\\Local\\Temp\\l2-20261010T105115299Z\\controlserver.db --agv AGV-L2-001"}
+{"at":"2026-10-10T10:52:59.8022375+00:00","criterion":"slot-model-preseed:bind-io:AGV-L2-001","value":"OK","detail":{"output":{"command":"bind-io","outcome":"OK","agvId":"AGV-L2-001","slotModelVersionId":"d23f0085e0254f9fb49b4714d9529a73","boundSlots":8,"version":1}}}
+{"at":"2026-10-10T10:52:59.8704257+00:00","criterion":"slot-model-preseed:dispatch-zones","value":"0"}
+{"at":"2026-10-10T10:52:59.8740115+00:00","note":"FieldOps: import-area-assignments --database C:\\Users\\szy\\AppData\\Local\\Temp\\l2-20261010T105115299Z\\controlserver.db --input C:\\Users\\szy\\Desktop\\8005-workspace-v2\\worktrees\\b10-02-8005-agv-control-server\\evidence\\l2\\20261010-cs546\\red\\8b780a24-same-direction-die-to-wire-staging-journey\\snapshots\\preseed-area-assignments.csv"}
+{"at":"2026-10-10T10:53:01.8189737+00:00","criterion":"slot-model-preseed:import-area-assignments","value":"OK","detail":{"output":{"command":"import-area-assignments","outcome":"OK","dryRun":false,"input":"C:\\Users\\szy\\Desktop\\8005-workspace-v2\\worktrees\\b10-02-8005-agv-control-server\\evidence\\l2\\20261010-cs546\\red\\8b780a24-same-direction-die-to-wire-staging-journey\\snapshots\\preseed-area-assignments.csv","entryCount":2,"version":1,"contentSha256":"04efbe7b636d311420caf517f8af22cd0a39d4e17d2976caf9251637eecc0556","snapshotId":"77c5be58294545ae846eebdd6f30f4bf","importedAt":"2026-10-10T18:53:00.0883229+08:00","errorCount":0,"errors":[],"preview":[]}}}
+{"at":"2026-10-10T10:53:01.8342471+00:00","note":"FieldOps: import-charging-policy --database C:\\Users\\szy\\AppData\\Local\\Temp\\l2-20261010T105115299Z\\controlserver.db --input C:\\Users\\szy\\Desktop\\8005-workspace-v2\\worktrees\\b10-02-8005-agv-control-server\\evidence\\l2\\20261010-cs546\\red\\8b780a24-same-direction-die-to-wire-staging-journey\\snapshots\\preseed-charging-policy.json --fleet BROKERX-L2-0001"}
+{"at":"2026-10-10T10:53:05.5291006+00:00","note":"FieldOps: approve-charging-policy --database C:\\Users\\szy\\AppData\\Local\\Temp\\l2-20261010T105115299Z\\controlserver.db --version 1 --approved-by L2 orchestrator --role L2_PRESET --basis scripts/l2/L2ChargingPolicy.psm1 --source L2_PRESET"}
+{"at":"2026-10-10T10:53:09.5425533+00:00","note":"FieldOps: activate-charging-policy --database C:\\Users\\szy\\AppData\\Local\\Temp\\l2-20261010T105115299Z\\controlserver.db --version 1 --activated-by L2 orchestrator --fleet BROKERX-L2-0001 --allow-non-field-approval"}
+{"at":"2026-10-10T10:53:11.0781533+00:00","criterion":"preseed:charging-policy","value":"OK","detail":{"coveredAfter":["BROKERX-L2-0001"],"withoutPolicy":[],"source":"L2_PRESET","version":1}}
+{"at":"2026-10-10T10:53:11.0799832+00:00","note":"Per-zone dispatch parameters left unconfigured (the default precondition)."}
+{"at":"2026-10-10T10:53:11.0852390+00:00","note":"Environment is up; entering scenario 'same-direction-die-to-wire-staging-journey'."}
+{"at":"2026-10-10T10:53:11.1943379+00:00","note":"FieldOps: area-assignments --database C:\\Users\\szy\\AppData\\Local\\Temp\\l2-20261010T105115299Z\\controlserver.db"}
+{"at":"2026-10-10T10:53:12.6649814+00:00","note":"Vehicle AGV-L2-001 slot model d23f0085e0254f9fb49b4714d9529a73 via LatestPublishedIoBinding: 1=FRONT, 2=FRONT, 3=FRONT, 4=FRONT, 5=REAR, 6=REAR, 7=REAR, 8=REAR"}
+{"at":"2026-10-10T10:53:12.6854439+00:00","note":"Publishing DIE_TO_WIRE_STAGING demand 4a682883fa5c47c495e35487f722dd8e (sublot L2-SDJ-N1-3-20261010T105115299Z, AREA N1-3, 2 baskets)."}
+{"at":"2026-10-10T10:53:12.7769412+00:00","criterion":"L2-SDJ-DWS-REAR-admission","value":"@{Stage=; WorkType=; ReasonCode=}"}
+{"at":"2026-10-10T10:53:13.8274600+00:00","criterion":"L2-SDJ-DWS-REAR-admission","value":"@{Stage=; WorkType=; ReasonCode=TASK_TYPE_NOT_YET_EXECUTABLE}"}
+{"at":"2026-10-10T10:54:43.0081263+00:00","note":"Not reached: Timed out after 90s waiting for: the DIE_TO_WIRE_STAGING demand (N1-3) was accepted and dispatched to the machine station. Last observed: {\"Stage\":null,\"WorkType\":null,\"ReasonCode\":\"TASK_TYPE_NOT_YET_EXECUTABLE\"}"}
+{"at":"2026-10-10T10:54:43.0135898+00:00","note":"Run failed: L2-SDJ-DWS-REAR-01 did not hold: the DIE_TO_WIRE_STAGING demand (N1-3) was not accepted (backlog reason 'TASK_TYPE_NOT_YET_EXECUTABLE'); every later criterion needs its journey."}
+{"at":"2026-10-10T10:54:43.0150782+00:00","note":"Failure at: at Test-L2SameDirectionDemand, C:\\Users\\szy\\Desktop\\8005-workspace-v2\\worktrees\\b10-02-red-8b780a24\\scripts\\l2\\scenarios\\SameDirectionJourneyCommon.ps1: line 130\r\nat Invoke-L2SameDirectionJourneyScenario, C:\\Users\\szy\\Desktop\\8005-workspace-v2\\worktrees\\b10-02-red-8b780a24\\scripts\\l2\\scenarios\\SameDirectionJourneyCommon.ps1: line 238\r\nat <ScriptBlock>, C:\\Users\\szy\\Desktop\\8005-workspace-v2\\worktrees\\b10-02-red-8b780a24\\scripts\\l2\\scenarios\\same-direction-die-to-wire-staging-journey.ps1: line 18\r\nat <ScriptBlock>, C:\\Users\\szy\\Desktop\\8005-workspace-v2\\worktrees\\b10-02-red-8b780a24\\scripts\\l2\\Invoke-L2Scenario.ps1: line 1432"}
+{"at":"2026-10-10T10:54:43.3460681+00:00","note":"L2 port block lock released."}

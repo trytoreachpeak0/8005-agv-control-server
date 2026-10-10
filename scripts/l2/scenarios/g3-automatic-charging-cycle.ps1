@@ -165,9 +165,16 @@ $charging = Wait-L2ConditionOrLast -Description 'the cycle is CHARGING and the H
     -Probe { "$([string](Get-Cycle).WireState) | $(Get-ChargerHeld) | $(Get-ChargingStatus)" } `
     -Until { param($v) $v -eq "CHARGING | OCCUPIED $chargingJourneyId | CHARGING" }
 # Held over time, not read once: an entry that opens a few seconds later is a load at the charger.
+# control-server#567: ChargingStatus is read as in g3-waiting-point-idle-return (#560), so an element UI Automation could not
+# read is re-read and recorded as unreadable, never as a $null value. G3-13-03 judges only CanSubmit from this window; a
+# criterion that ever judges Status here must also require Readable.
 $heldReading = Wait-L2ConditionOrLast -Description 'the HMI opened entry at the charger (it must not)' `
     -Journal $journal -Criterion 'hmi-no-entry-at-charger' -TimeoutSeconds 10 `
-    -Probe { [pscustomobject]@{ Status = Get-ChargingStatus; CanSubmit = [bool]$onboard.CanSubmit() } } `
+    -Probe {
+        $reading = Read-L2UiaItemStatus $onboard 'ChargingStatus' $journal
+        [pscustomobject]@{ Readable = $reading.Readable; Status = $reading.Value; Shown = Format-L2UiaReading $reading
+            CanSubmit = [bool]$onboard.CanSubmit() }
+    } `
     -Until { param($v) $v.CanSubmit }
 # Invoke-L2Query returns its rows whole: assign, do not wrap.
 $operationsAtCharger = Invoke-L2Query -Connection $connection -Sql 'SELECT SlotOperationAttemptId, OperationType FROM StationOperations'
@@ -177,7 +184,7 @@ $assertions.Add(
     ($charging -eq "CHARGING | OCCUPIED $chargingJourneyId | CHARGING" -and -not $heldReading.CanSubmit -and
         $operationsAtCharger.Count -eq 0),
     "CHARGING | OCCUPIED $chargingJourneyId | CHARGING / 不能提交 / 0 笔操作",
-    "$charging / CanSubmit=$($heldReading.CanSubmit) / 操作 $(($operationsAtCharger | ForEach-Object { "$($_.OperationType):$($_.SlotOperationAttemptId)" }) -join ',')")
+    "$charging / 界面 $($heldReading.Shown)、CanSubmit=$($heldReading.CanSubmit) / 操作 $(($operationsAtCharger | ForEach-Object { "$($_.OperationType):$($_.SlotOperationAttemptId)" }) -join ',')")
 
 # --- 4. 充电中、低于完成阈值：甲不派 ------------------------------------------------------------------------------
 

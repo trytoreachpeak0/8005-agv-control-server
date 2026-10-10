@@ -291,7 +291,19 @@ Invoke-Case -Name 'case 13: a Fleet roster with agv01 mixed in, spelled as the C
         $t['journeyRuntime']['Fleet'] = @(@{ agvId = '老厂前线新多仓位1'; vehicleKey = 'BROKERX-0c20ff0600d644869a6a80c186065d85' })
         $t
     } `
-    -ExpectFragment 'journeyRuntime.Fleet is a vehicle roster'
+    -ExpectFragment 'journeyRuntime.Fleet differs only in case from journeyRuntime.fleet'
+
+# control-server#571: the roster is accepted spelled exactly, and then read row by row.
+Invoke-Case -Name 'case 13b: a fleet roster (spelled exactly) with agv01 in its second row' `
+    -Observe 'journeyRuntime.fleet' `
+    -Mutate {
+        param($t)
+        $t['journeyRuntime']['fleet'] = @(
+            @{ agvId = '老厂前线新多仓位2'; vehicleKey = 'BROKERX-f38975561adf46ccb1d2f23833c7d0e4' }
+            @{ agvId = '老厂前线新多仓位1'; vehicleKey = 'BROKERX-0c20ff0600d644869a6a80c186065d85' })
+        $t
+    } `
+    -ExpectFragment 'names agv01 ('  # not 'fleet[1]': this script matches with -like, where [1] is a character class
 
 Invoke-Case -Name "case 14: a second 'AgvId' naming agv01 beside the checked 'agvId'" `
     -Observe 'journeyRuntime.AgvId' `

@@ -1,0 +1,32 @@
+# ä¿®å CI run 38040042973ï¼ˆc25cce44ï¼‰å¯¹æ¯”åŸºçº¿ run 38013503611ï¼Œè„šæœ¬ tools/compare.pyï¼ˆå¤šé‡é›†åˆé€æ¡æ¯”å¯¹ï¼‰
+before: entries 4660 outcomes {'Passed': 4657, 'NotExecuted': 3} wall 2079 s sumdur 38074 s
+after:  entries 4667 outcomes {'Passed': 4664, 'NotExecuted': 3} wall 373 s sumdur 6782 s
+names appearing more than once (before/after): [('ControlServer.Tests.HttpRiotChargingOrderGatewayTests.SeveralMovesWhoseLastMoveIsNotTheEndStationRemainUnknown(missionsJson: "[{\\"type\\":\\"move\\",\\"mapId\\":26,\\"destination\\":2"¡¤¡¤¡¤, endStationNo: 211)', 2, 2), ('ControlServer.Tests.HttpRiotMovementGatewayTests.CreateEmptyIncompleteOrMismatchedSdkResultRemainsUnknownWithoutRetry(body: "{\\"code\\":\\"0\\",\\"result\\":{\\"id\\":1,\\"orderId\\":\\"¡¤¡¤¡¤)', 2, 2), ('ControlServer.Tests.HttpRiotMovementGatewayTests.StrictMapCatalogRejectsInvalidCatalogWithoutPublishingPartialResult(body: "{\\"code\\":\\"0\\",\\"result\\":[{\\"id\\":12,\\"name\\":\\""¡¤¡¤¡¤)', 2, 2)]
+(name, outcome) entries only in before (0):
+(name, outcome) entries only in after (7):
+   ControlServer.Tests.MigratedDatabaseTemplateTests.ACopyHasEveryMigrationAppliedAndNonePending Passed
+   ControlServer.Tests.MigratedDatabaseTemplateTests.ADatabaseThatAlreadyHasASchemaIsRefusedRatherThanOverwritten Passed
+   ControlServer.Tests.MigratedDatabaseTemplateTests.AFileCopyIsTheDatabaseARealMigrationWritesInWalMode Passed
+   ControlServer.Tests.MigratedDatabaseTemplateTests.AnInMemoryCopyIsTheDatabaseARealMigrationWrites Passed
+   ControlServer.Tests.MigratedDatabaseTemplateTests.CopiesMadeAtOnceSeeOnlyTheirOwnRows Passed
+   ControlServer.Tests.MigratedDatabaseTemplateTests.NoMigrationTestStartsFromATemplateCopy Passed
+   ControlServer.Tests.MigratedDatabaseTemplateTests.WritesToACopyNeverReachTheTemplate Passed
+IdleReturnExecutionTests       before n=90 sum=892 s span=892 s
+IdleReturnExecutionTests       after  n=90 sum=101 s span=101 s
+VehicleFaultIsolationTests     before n=99 sum=1050 s span=1050 s
+VehicleFaultIsolationTests     after  n=99 sum=2 s span=2 s
+EmergencyStopSupervisorTests   before n=67 sum=579 s span=579 s
+EmergencyStopSupervisorTests   after  n=67 sum=2 s span=2 s
+MultiVehicleExecutionTests     before n=111 sum=2006 s span=2007 s
+MultiVehicleExecutionTests     after  n=111 sum=115 s span=116 s
+after: longest classes by span
+   RecoveryEndingReleasesBlockedJourneyTests        n=50 span=350 s
+   InTransitDoorEmergencyReleaseTests               n=84 span=269 s
+   AuditDatabaseImmutabilityTests                   n=13 span=207 s
+   StoppedRebuildExitTests                          n=53 span=205 s
+   FaultedCargoBindingLifecycleTests                n=22 span=150 s
+   ReconnectModelTests                              n=8 span=143 s
+   OwnOrderRebuildCargoProofTests                   n=21 span=139 s
+   Batch8OccupancyRetirementMigrationTests          n=14 span=135 s
+   Batch9MigrationDisciplineTests                   n=8 span=134 s
+   Batch8MigrationDisciplineTests                   n=8 span=129 s

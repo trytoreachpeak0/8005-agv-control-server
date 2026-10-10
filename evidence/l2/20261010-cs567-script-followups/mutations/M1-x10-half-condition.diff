@@ -1,0 +1,13 @@
+diff --git a/scripts/l2/scenarios/g3-waiting-point-idle-return.ps1 b/scripts/l2/scenarios/g3-waiting-point-idle-return.ps1
+index dc7e54cac..6e4a86364 100644
+--- a/scripts/l2/scenarios/g3-waiting-point-idle-return.ps1
++++ b/scripts/l2/scenarios/g3-waiting-point-idle-return.ps1
+@@ -226,7 +226,7 @@ $assertions.Add(
+         $null -ne $closingPlan -and $closingLegs.Count -eq 1 -and [string]$closingLegs[0].stopPurposeCategory -eq 'WAITING_POINT' -and
+         [string]$closingLegs[0].state -eq 'ARRIVED' -and $closingPlan.Acknowledged -and
+         $null -ne $closingState -and (Get-Purpose $closingState) -ne 'IDLE_RETURN' -and $closingState.Acknowledged -and
+-        $shownAtPoint -eq $atPoint -and $heldReading.Readable -and $heldAtPoint -eq $atPoint),
++        $shownAtPoint -eq $atPoint -and $heldAtPoint -eq $atPoint),
+     "Completed / 214 OCCUPIED / 用途 IDLE_RETURN_CONVERGED_AT_WAITING_POINT / 计划 [1:WAITING_POINT@…:ARRIVED] 已确认 / 业务状态非 IDLE_RETURN 已确认 / 界面 $atPoint 十秒不变",
+     "$(${closed}?.Stage) $(${closed}?.BlockReasonCode) / $(Held-Text $occupied) / 用途 $(($claimRelease | ForEach-Object { $_.ReleaseReason }) -join ',') / $(Format-Plan $closingPlan) / $(Format-State $closingState) / 界面 '$shownAtPoint' → $($heldReading.Shown)")
+ 

@@ -1,0 +1,44 @@
+# run 1 (mutations M02-M20 valid; M01/M25 did not land; M21-M24 misjudged, see README)
+
+Id  What                                                            Killed Note
+--  ----                                                            ------ ----
+M01 agv01 scan never refuses                                         False mutation did not land
+M02 riotId 58 not treated as agv01                                    True red: 1; expected but green: 
+M03 agv01 string compare made exact (ordinal, case-sensitive)         True red: 1; expected but green: 
+M04 riotId not compared with the registry                             True red: 1; expected but green: 
+M05 deviceKey not compared with vehicleKey                            True red: 1; expected but green: 
+M06 agvId not compared with the registry                              True red: 1; expected but green: 
+M07 registry lookup case-insensitive                                  True red: 1; expected but green: 
+M08 roster beside single keys tolerated                               True red: 2; expected but green: 
+M09 same car twice tolerated                                          True red: 1; expected but green: 
+M10 riotId not required                                               True red: 1; expected but green: 
+M11 task types not held to allowedWorkTypes                           True red: 2; expected but green: 
+M12 overlay writes deployment-only row keys                           True red: 1; expected but green: 
+M13 overlay does not write the primary pair                           True red: 1; expected but green: 
+M14 single-car overlay leaves a stale roster                          True red: 1; expected but green: 
+M15 missing car not reported                                          True red: 1; expected but green: 
+M16 extra car not reported                                            True red: 2; expected but green: 
+M17 per-car lists not compared                                        True red: 2; expected but green: 
+M18 per-car agvId not compared                                        True red: 1; expected but green: 
+M19 roster definition accepts an event without a roster               True red: 1; expected but green: 
+M20 no event at all only warns for a roster definition                True red: 1; expected but green: 
+M21 event logs a fifth field per car                                 False red: 1; expected but green: EffectiveConfigurationEventCarriesEachRosterVehicleWithExactlyFourFields
+M22 event logs an empty roster always                                False red: 1; expected but green: EffectiveConfigurationEventCarriesEachRosterVehicleWithExactlyFourFields / InstallerReadBackJudgesTheEventTheHostReallyLogs
+M23 overlay does not write the primary pair (C# binding)             False red: 1; expected but green: TwoCarExampleOverPackageAppSettingsBindsBothRowsWholeWithAgv02Primary
+M24 missing car not reported (C# end to end)                         False red: 1; expected but green: InstallerReadBackJudgesTheEventTheHostReallyLogs
+M25 agv01 scan never refuses and registry lookup accepts agv01 (C#)  False mutation did not land
+
+
+# run 2 (M01 after the pattern fix)
+M01 agv01 scan never refuses                                          True red: 9; expected but green: 
+# run 3 (M21-M25 after the judging fix)
+
+Id  What                                                            Killed Note
+--  ----                                                            ------ ----
+M21 event logs a fifth field per car                                  True red: 1; expected but green: 
+M22 event logs an empty roster always                                 True red: 2; expected but green: 
+M23 overlay does not write the primary pair (C# binding)              True red: 1; expected but green: 
+M24 missing car not reported (C# end to end)                          True red: 1; expected but green: 
+M25 agv01 scan never refuses and registry lookup accepts agv01 (C#)   True red: 1; expected but green: 
+
+

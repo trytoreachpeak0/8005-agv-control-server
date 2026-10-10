@@ -1,0 +1,36 @@
+[17:58:19] OnboardHmi deployment to agv02
+[17:58:19] Site values from site-agv02.json
+[17:58:19] Secrets loaded from the DPAPI store
+[17:58:20] Onboard client state on agv02: STOPPED
+[17:58:20] Downloading artifact from run 38040930792
+[17:58:52] Package hash verified (63c42cd7166de1aa8ffa2f4009a97dff5e6059a89f86f418b5dfb6733b7d704a)
+[17:59:02] OnboardHmi commit:    ca89ef8fd3c6ddee38c5c022d782d85048f30596
+[17:59:02] ControlServer commit: 2fe490d738630212a4a73b99345d0739402672a8
+[17:59:02] wireToGate endpoint: 172.19.205.222:58105
+[17:59:02] Configuration rendered and validated
+[17:59:02] Staging on agv02
+  ready
+ready
+[17:59:09] Copying payload (80.8 MB)
+[17:59:21] Placing the payload on the vehicle
+  hash verified
+  placed: C:\8005\OnboardHmi
+  wireToGate endpoint read back: 172.19.205.222:58105
+  credentials set (machine scope)
+  shortcut: C:\Users\Public\Desktop\8005 AGV 车载�?lnk
+  vehicle-safety UNREACHABLE: 由于目标计算机积极拒绝，无法连接�?(172.19.205.222:58107)
+
+[17:59:39] Staged. NOT started -- that part is yours.
+
+  On the vehicle, from a desktop session:
+    C:\8005\OnboardHmi\SQCD.Agv.Wpf.exe
+
+  Before you do:
+    - confirm the vehicle is where you think it is and is meant to move;
+    - the vehicle-safety line above must be 200 with a matching vehicleKey,
+      motionState=STOPPED and fresh observedAt, or a clean session stays in
+      RecoveryRequired / DEPARTURE_SAFETY_NOT_READY. That is the gate working,
+      not a bug;
+    - the previous build is at C:\8005\OnboardHmi.previous if you need it back.
+[33;1mWARNING: The vehicle could not reach the ControlServer projection endpoint.[0m
+[33;1mWARNING: Deploy the server half first: ../factory-server/scripts/15-deploy-control-server.ps1[0m

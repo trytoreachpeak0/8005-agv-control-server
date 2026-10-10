@@ -1,0 +1,13 @@
+diff --git a/scripts/Select-StagedG3ContentConflictRun.ps1 b/scripts/Select-StagedG3ContentConflictRun.ps1
+index deb5cbdb8..5516b6806 100644
+--- a/scripts/Select-StagedG3ContentConflictRun.ps1
++++ b/scripts/Select-StagedG3ContentConflictRun.ps1
+@@ -37,7 +37,7 @@ $files = @(
+ )
+ $prefixes = @(
+     'scripts/l2/'
+-    'src/ControlServer.Host/Transport/'
++    'src/ControlServer.Host/Transport/NotThere/'
+ )
+ 
+ $changed = @($ChangedPath | Where-Object { -not [string]::IsNullOrWhiteSpace($_) } | ForEach-Object { $_.Trim() })

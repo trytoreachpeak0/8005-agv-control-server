@@ -1,0 +1,8 @@
+Map 26: 212 stations read at 2026-10-10T18:04:02.8317070+08:00 via em4; wrote D:\zhengyushao\control-server-v2-ops\stations-26-20261010-180359.json and D:\zhengyushao\control-server-v2-ops\stations-26-20261010-180359.raw.json.
+export exit=0 file=D:\zhengyushao\control-server-v2-ops\stations-26-20261010-180359.json
+### dry-run
+{"command":"activate-task-type-stations","outcome":"PREVIEW","dryRun":true,"requestCategory":"ACTIVATE","mapId":26,"attemptId":"a5d0b38c3d7d482b893d58f045b3acbe","previousVersion":1,"targetVersion":null,"ruleVersion":1,"catalogRevision":2447344863957797939,"violations":[],"changes":[{"taskType":"STAGING_TO_WIRE","before":null,"after":{"stationRiotId":217,"stationName":"派工待送取货","siteVerificationRef":"MAP-26-STAGING_TO_WIRE-SITE-20261009"}}],"impact":{"inFlightDemandCount":0,"affected":[]},"auditRecordIds":["0c7ed0e87ead49ef829384191af824f6"],"detail":null}
+exit=0
+### real
+{"command":"activate-task-type-stations","outcome":"OK","dryRun":false,"requestCategory":"ACTIVATE","mapId":26,"attemptId":"f43b8f2305f44cd8bacac20d5ae93457","previousVersion":1,"targetVersion":2,"ruleVersion":1,"catalogRevision":2447344863957797939,"violations":[],"changes":[{"taskType":"STAGING_TO_WIRE","before":null,"after":{"stationRiotId":217,"stationName":"派工待送取货","siteVerificationRef":"MAP-26-STAGING_TO_WIRE-SITE-20261009"}}],"impact":{"inFlightDemandCount":0,"affected":[]},"auditRecordIds":["63cedb6270dd4a2aabe2b9822bf55af5"],"detail":"Map 26 version 2 reads back with content 3789a2638a8e6d799e5f1529d71ffe11130218b8c7df870f9f4a2c19c0604ee6."}
+exit=0

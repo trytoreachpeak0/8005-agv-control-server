@@ -30,6 +30,50 @@ control-server#262。约 2026-10-08 起 `factory01` 上同时跑两套 ControlSe
 从 `fake` 装成 `production` 时，安装器在记录新定义之前先撤掉上一次安装留下的替身（计划任务、进程、目录），
 否则之后的卸载按新定义找不到它。卸载与关闸两种模式都能走；`production` 下的足迹里没有计划任务和替身目录。
 
+## 两车车队表：`journeyRuntime.fleet`（control-server#571）
+
+现场 W2 门槛第③项「多需求持货与两车让站」要两台车同时跑。实例定义有两种写法，**二选一**：
+
+- **单车**（出厂两份定义都是这种，已装定义不用改）：`journeyRuntime.agvId`、`vehicleKey`、`agvLifecycleGeneration`。
+- **车队表**：`journeyRuntime.fleet`，每行一台车。写了车队表就**不能**再写上面三个单车键，两种同时出现整份拒收，
+  部署工具不猜哪个算数。
+
+车队表每一行的写法（示例见 `instance-factory01-v2.two-car-example.json`）：
+
+```json
+{
+  "agvId": "老厂前线新多仓位2",
+  "vehicleKey": "BROKERX-f38975561adf46ccb1d2f23833c7d0e4",
+  "deviceKey": "BROKERX-f38975561adf46ccb1d2f23833c7d0e4",
+  "riotId": 59,
+  "agvLifecycleGeneration": 1,
+  "allowedTaskTypes": ["STAGING_TO_WIRE"],
+  "zones": ["WIRE"]
+}
+```
+
+| 字段 | 规则 |
+| --- | --- |
+| `agvId`、`vehicleKey`、`deviceKey`、`riotId` | 身份四元组，按 `remote-ops/fleet.md` 核对，必须是同一台备用车：agv02 是 `59`，agv03 是 `60`；`deviceKey` 就是 RIoT 的 deviceKey，必须与 `vehicleKey` 一字不差。逐字比较，大小写不同也算不对 |
+| `agvLifecycleGeneration` | 正整数 |
+| `allowedTaskTypes` | 这台车能接的任务类型，必须写出（空列表表示一种都不接），每项都要在 `journeyRuntime.allowedWorkTypes` 里。生产 MesIngest 模式下 `allowedWorkTypes` 只能是 `STAGING_TO_WIRE`，所以车队行也带不进 `WIRE_TO_GATE` |
+| `zones` | 这台车服务的分区，必须写出，每项都要在 `journeyRuntime.allowedDispatchZones` 里，否则 Host 起不来 |
+| `roundTimeoutMilliseconds` | 可不写（产品默认 30000），写了必须在 1000..600000 |
+
+**任何一行、任何字段出现 agv01**（名称 `老厂前线新多仓位1`、key `BROKERX-0c20…5d85`、`riotId` 58，大小写不同也算），
+整份定义拒收，拒收理由写明第几行、哪些字段。同一台车出现两次、行里有不认识的键，也拒收。
+
+覆盖层怎么写：车队表整段写进 `appsettings.Production.json`，每行只写产品认识的键（`deviceKey`、`riotId` 只用来校验，
+不写进去）；Host 要求车队表包含「主车」那一对，而包内 `appsettings.json` 的主车是 agv01，所以覆盖层把**第一行**写成主车。
+单车定义会写一个空车队表，这样从两车改回单车重装时，上次留下的车队表会被清掉。
+
+部署后的回读：`EFFECTIVE_CONFIGURATION` 事件逐车记 `AgvId`、`VehicleKey`、`AllowedTaskTypes`、`Zones`（只这四项），
+安装器逐车比对。少一辆、多一辆、某车的 agvId、任务类型或分区与定义不同，都先停 V2 服务再报
+`EFFECTIVE_CONFIGURATION_MISMATCH`；车队定义装到一个不记车队表的旧包上，报 `EFFECTIVE_CONFIGURATION_FLEET_UNREAD` 并停服务。
+车队定义读不到任何事件时也停服务，不像单车 fake 模式那样只警告——驱动哪几台车不是可以警告了事的事。
+
+现场要用两车定义时，经 19 号部署脚本的 `-InstanceDefinitionPath` 传入示例文件（或照它改的一份）；出厂的两份定义仍是单车。
+
 ## map 26 的取值与出处
 
 用户 2026-09-21 答复：**MVP 跑 map 25，v2 跑 map 26**。
@@ -308,6 +352,7 @@ VB 的 `DeleteDirectory`、FSO 的 `DeleteFolder`、CIM，以及挪走、清空�
 | --- | --- |
 | `instance-factory01-v2.json` | 实例定义：端口、目录、服务名、车、RouteGraph、建单闸门（`fake` 模式，出厂默认） |
 | `instance-factory01-v2.production-mes.json` | 同一实例的 `production` 模式定义：读生产 MesIngest，只做 `STAGING_TO_WIRE`（control-server#535） |
+| `instance-factory01-v2.two-car-example.json` | 两车（agv02、agv03）车队表的示例定义，其余与出厂单车定义相同（control-server#571） |
 | `ParallelInstance.psm1` | 定义的校验、布局（所有路径与名字的唯一来源）、部署足迹、卸载的删除顺序、唯一的删目录函数。检查全是纯函数，例外只有读路径属性的 `Test-ParallelInstanceReparsePoint` 和删目录的 `Remove-ParallelInstanceDirectory` |
 | `ParallelHost.psm1` | 读写机器的辅助函数（MVP 服务指纹、调用产品卸载脚本并确认成功、把覆盖层合并进 `appsettings.Production.json` 并回读核对、只读读取旅程状态、关开派车闸门），安装、卸载与闸门脚本共用 |
 | `Install-ParallelInstanceLocal.ps1` | 在 factory01 上安装／升级／回滚 |
@@ -329,7 +374,9 @@ pwsh -File scripts/parallel/Test-ParallelInstance.ps1
 pwsh -File scripts/parallel/Invoke-ReverseCheck.ps1
 ```
 
-两者都要全绿。改到 FakeMesIngest 计划任务那一层（`Get-ParallelFakeMesIngestTaskAction`、`Register-`／`Wait-ParallelFakeMesIngestTask`、`Invoke-ParallelFakeMesIngestSeed`）时，再在 vm01 上以管理员跑一次 `Test-FakeMesIngestScheduledTask.ps1 -FakeMesIngestZip <Publish-FakeMesIngest.ps1 的 zip>`。它们不在 CI 里（本仓 CI 跑的是 .NET 测试套件），所以没人会替你跑。
+两者都要全绿。改到 FakeMesIngest 计划任务那一层（`Get-ParallelFakeMesIngestTaskAction`、`Register-`／`Wait-ParallelFakeMesIngestTask`、`Invoke-ParallelFakeMesIngestSeed`）时，再在 vm01 上以管理员跑一次 `Test-FakeMesIngestScheduledTask.ps1 -FakeMesIngestZip <Publish-FakeMesIngest.ps1 的 zip>`。
+control-server#571 起 `Test-ParallelInstance.ps1` 也在 CI 的 `test.yml` 里跑（套件之后单独一步）；`Invoke-ReverseCheck.ps1`
+与 `Test-FakeMesIngestScheduledTask.ps1` 仍不在 CI 里，没人会替你跑。
 
 **孪生脚本**：MVP 那套的对应物是 `8005-workspace` 仓的 `remote-ops/factory-server/scripts/15-deploy-control-server.ps1`
 与 `control-server/Install-ControlServerRemote.ps1`。两边刻意分开，所以一边的修复不会自己到达另一边——

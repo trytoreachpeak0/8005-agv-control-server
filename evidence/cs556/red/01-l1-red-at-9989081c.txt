@@ -1,0 +1,30 @@
+# cs#556 red: test commit 9989081cd53e3ae617402c4cf2035dd2c73e6cea on fp/v2-impl 2fe490d7, before the fix
+# dotnet test tests/ControlServer.Tests/ControlServer.Tests.csproj -c Release --no-build --filter "FullyQualifiedName~RecoveryStateMachineG2Tests.AForcedResult|FullyQualifiedName~RecoveryStateMachineG2Tests.AFailedForcedResultWithoutAReconnect"
+Test run for C:\Users\szy\Desktop\8005-workspace-v2\worktrees\cs556-8005-agv-control-server\tests\ControlServer.Tests\bin\Release\net8.0\win-x64\ControlServer.Tests.dll (.NETCoreApp,Version=v8.0)
+VSTest version 17.11.1 (x64)
+
+Starting test execution, please wait...
+A total of 1 test files matched the specified pattern.
+[xUnit.net 00:00:10.06]     ControlServer.Tests.RecoveryStateMachineG2Tests.AForcedResultResentAndThenTheReconnectsReportAgreeWithWhatTheResultAlreadyGave [FAIL]
+  Failed ControlServer.Tests.RecoveryStateMachineG2Tests.AForcedResultResentAndThenTheReconnectsReportAgreeWithWhatTheResultAlreadyGave [4 s]
+  Error Message:
+   Assert.Equal() Failure: Values differ
+Expected: Tuple (1, "FORCED_RECOVERY_HARDWARE_RECOVERY_REQUIRED")
+Actual:   Tuple (0, "FORCED_RECOVERY_GENERATION_MISMATCH")
+--- End of stack trace from previous location ---
+[xUnit.net 00:00:10.71]     ControlServer.Tests.RecoveryStateMachineG2Tests.AFailedForcedResultWithoutAReconnectLeavesTheNextSessionFreeToAct [FAIL]
+[xUnit.net 00:00:11.17]     ControlServer.Tests.RecoveryStateMachineG2Tests.AForcedResultWithoutAReconnectHoldsTheVehicleForItsHardwareRecordAndTheRecordMakesItReady [FAIL]
+  Failed ControlServer.Tests.RecoveryStateMachineG2Tests.AFailedForcedResultWithoutAReconnectLeavesTheNextSessionFreeToAct [272 ms]
+  Error Message:
+   Assert.Equal() Failure: Values differ
+Expected: Tuple (1, 1, "OPERATION_RECOVERY_REQUIRED")
+Actual:   Tuple (1, 0, "FORCED_RECOVERY_GENERATION_MISMATCH")
+--- End of stack trace from previous location ---
+  Failed ControlServer.Tests.RecoveryStateMachineG2Tests.AForcedResultWithoutAReconnectHoldsTheVehicleForItsHardwareRecordAndTheRecordMakesItReady [224 ms]
+  Error Message:
+   Assert.Equal() Failure: Values differ
+Expected: Tuple (1, 1, RecoveryRequired, "FORCED_RECOVERY_HARDWARE_RECOVERY_REQUIRED")
+Actual:   Tuple (1, 0, RecoveryRequired, "FORCED_RECOVERY_GENERATION_MISMATCH")
+--- End of stack trace from previous location ---
+
+Failed!  - Failed:     3, Passed:     2, Skipped:     0, Total:     5, Duration: 5 s - ControlServer.Tests.dll (net8.0)

@@ -47,7 +47,17 @@ jobs:
     # "cancelled" again. Splitting the suite into two jobs buys nothing here: only
     # win11-01-control-server-2 carries 'cs-test' and it runs one job at a time, so the halves would
     # queue behind each other.
-    timeout-minutes: 80
+    # 95 since control-server#567, which added two steps after Test: the v3 script-branch check (seconds) and the
+    # staged content-conflict check (197 s on the control host, its own limit 15, and only on pull requests that change
+    # what it checks). control-server#571 added the parallel instance self-check after Test as well (about 40 s, its own
+    # limit 10), and the two merged on the same day, so the number was recomputed for both:
+    #   the slowest pre-Test 6m28s (measured before #567) + the two steps #567 put before Test, 5 + 5
+    #   + Test 60 + after Test 10 (#571) + 5 + 5 + 15 (#567) + upload and post-checkout about 15 s
+    #   = about 112 minutes if every step ran to its own limit.
+    # 120 keeps the job limit above that sum, so whatever hangs is recorded as a failed step and never as a cancelled
+    # job. It only acts when something has already gone wrong.
+    # Any step added later counts against it the same way.
+    timeout-minutes: 120
     env:
       # NuGet's vulnerability audit fetches its data from nuget.org during every restore, and with
       # TreatWarningsAsErrors a failed fetch (NU1900) is a red run that says nothing about the code:
@@ -132,6 +142,23 @@ jobs:
       - name: L2 scenario self-check (forced recovery confirm step)
         shell: pwsh
         run: pwsh -NoProfile -File ./scripts/l2/Test-G3ForcedRecoveryEntry.ps1
+
+      # A few seconds (about 5 on the control host), no rig, no window, no database: the journey G3 rig's UI Automation reads
+      # against a stand-in onboard and the scenarios' own AST -- sublot entry and the onboard refusals it must recognise,
+      # the held readings of g3-waiting-point-idle-return (G3-12-03, G3-12-07) and g3-automatic-charging-cycle's charger
+      # window (control-server#560, #567). Only the journey G3 reaches these scenarios, and only after an exit moves its
+      # binding, so a fixture that regressed would otherwise surface at the next exit.
+      - name: G3 scenario self-check (journey UIA fixture reads)
+        timeout-minutes: 5
+        shell: pwsh
+        run: pwsh -NoProfile -File ./scripts/l2/Test-G3JourneyUiaFixtureReads.ps1
+
+      # Under a second, pure input: which pull requests run the staged content-conflict self-check after Test
+      # (control-server#567). A selector that stopped matching would skip that check for ever and stay green.
+      - name: G3 runner self-check (content-conflict scope)
+        timeout-minutes: 5
+        shell: pwsh
+        run: pwsh -NoProfile -File ./scripts/Test-StagedG3ContentConflictScope.ps1
 
       # About 27 seconds (measured 26.4 / 26.8 / 26.7 on the control host), 24 of which are twelve
       # deliberate 2-second timeouts: every case where a criterion must NOT be satisfied has to run out
@@ -269,6 +296,84 @@ jobs:
           [System.Diagnostics.Process]::GetCurrentProcess().PriorityClass = 'BelowNormal'
           dotnet test tests/ControlServer.Tests/ControlServer.Tests.csproj -c Release --logger 'trx;LogFileName=test-results.trx'
 
+      # control-server#571. The v2 parallel instance's offline self-check: the definition checks (agv01 never in
+      # the vehicle roster, each roster row's identity against remote-ops/fleet.md), the overlay, and the
+      # read-back of what the Host really bound. Nothing in it touches a machine. It was run by hand only, and
+      # what is run by hand only is found broken at a batch exit. After Test, so its one case that borrows the
+      # SQLite provider from a Host build finds one instead of skipping; !cancelled() so it reports even when
+      # the suite is red. About 40 s on the laptop; with the step limit the job's 120 (see timeout-minutes
+      # above) stays above every step's, so a hang here is a failed step, not a cancelled job.
+      - name: Parallel instance self-check
+        if: ${{ !cancelled() }}
+        shell: pwsh
+        timeout-minutes: 10
+        run: pwsh -NoProfile -File ./scripts/parallel/Test-ParallelInstance.ps1
+
+      # A few seconds, no rig, no window (control-server#555, #567): the two journey G3 script branches no run reached before
+      # the batch-8 exit. After Test, not with the self-checks above, because its SQLite cases borrow Microsoft.Data.Sqlite
+      # from src/ControlServer.Host/bin/Release/net8.0/win-x64, which the Test step's build produces (the test project
+      # references the host). Without that build it exits 2, never 0, so a skip cannot pass here. !cancelled(): it does not
+      # depend on the suite's verdict, only on its build, and a red suite should not hide it. Adds seconds to the job;
+      # the job limit's margin above covers it.
+      - name: G3 scenario self-check (journey v3 script branches)
+        if: ${{ !cancelled() }}
+        timeout-minutes: 5
+        shell: pwsh
+        run: pwsh -NoProfile -File ./scripts/l2/Test-G3JourneyV3ScriptBranches.ps1
+
+      # control-server#541's content-conflict judgments in run-staged-g3.ps1, against this commit (control-server#567).
+      # Not seconds: it clones this checkout, builds and publishes a ControlServer and starts it the way the staged runner
+      # does, then runs the four probes that carry the judgments -- 197 s measured on the control host (cs567, -Expect Pass
+      # on 0c2c27eb). Here rather than in l2.yml because l2 is the critical path and this needs no rig; here rather than in
+      # a hand-dispatched job because a judgment that regressed would otherwise wait for the next exit, which is the lesson
+      # of the batch-8 exit. It binds ports the system hands out, not the L2 port block, so it never meets an l2 lane's
+      # slot; it takes no desktop lock and starts no window. After Test so that the two builds do not overlap in memory.
+      #
+      # Not on every pull request (the coordinator's ruling, 2026-10-10: this job had just come down from 36 minutes to
+      # 7 1/2, and three more on every round is not worth it). A pull request runs it only when it changes what it checks;
+      # Select-StagedG3ContentConflictRun.ps1 holds that list and prints why it runs or skips; a skip is also a notice and
+      # a line in the job summary, so a green job is not read as "it ran". The diff is the merge commit's (GITHUB_SHA, not
+      # the merge ref, which moves when the base does or the job is re-run) against its first parent, the base as GitHub
+      # merged it, without rename detection, so a file moved out of a checked path still counts. Any other event -- a
+      # hand-dispatched run -- runs it. This workflow does not run on a push to fp/v2-impl, so there is no automatic
+      # backstop there until the nightly G3 takes this check over.
+      - name: Decide whether to run the staged content-conflict self-check
+        id: content-conflict-scope
+        if: ${{ !cancelled() }}
+        timeout-minutes: 5
+        shell: pwsh
+        run: |
+          if ($env:GITHUB_EVENT_NAME -ne 'pull_request') {
+            $null = & ./scripts/Select-StagedG3ContentConflictRun.ps1 -NotAPullRequest -GitHubOutput $env:GITHUB_OUTPUT
+            exit 0
+          }
+          git fetch --no-tags --quiet --depth=2 origin $env:GITHUB_SHA
+          if ($LASTEXITCODE -ne 0) { throw "Could not fetch the merge commit's parents ($env:GITHUB_SHA)." }
+          $changed = @(git diff --no-renames --name-only "$env:GITHUB_SHA^1" $env:GITHUB_SHA)
+          if ($LASTEXITCODE -ne 0) { throw 'git diff against the base failed.' }
+          $decision = & ./scripts/Select-StagedG3ContentConflictRun.ps1 -ChangedPath $changed -GitHubOutput $env:GITHUB_OUTPUT
+          if (-not $decision.Run) {
+            Write-Host "::notice title=Staged content-conflict self-check skipped::$($decision.Reason)"
+            Add-Content -LiteralPath $env:GITHUB_STEP_SUMMARY -Value "Staged content-conflict self-check **skipped**: $($decision.Reason)"
+          }
+
+      # The stage root is short (the published tree runs deep) and unique per attempt, and is removed by the next step.
+      - name: G3 runner self-check (staged content conflict)
+        if: ${{ !cancelled() && steps.content-conflict-scope.outputs.run == 'true' }}
+        timeout-minutes: 15
+        shell: pwsh
+        run: |
+          [System.Diagnostics.Process]::GetCurrentProcess().PriorityClass = 'BelowNormal'
+          pwsh -NoProfile -File ./scripts/Test-StagedG3ContentConflict.ps1 -ControlServerCommit (git rev-parse HEAD) `
+            -StageRoot "C:\ccsc-${{ github.run_id }}-${{ github.run_attempt }}" `
+            -EvidenceRoot "${{ runner.temp }}\content-conflict" -Expect Pass
+
+      - name: Remove the content-conflict stage root
+        if: ${{ always() && steps.content-conflict-scope.outputs.run == 'true' }}
+        continue-on-error: true
+        shell: pwsh
+        run: Remove-Item -LiteralPath "C:\ccsc-${{ github.run_id }}-${{ github.run_attempt }}" -Recurse -Force -ErrorAction SilentlyContinue
+
       # continue-on-error, because the .trx is diagnostics, not a deliverable: the verdict is the
       # `dotnet test` exit code in the step above, already reached by the time this runs. A
       # transient ECONNRESET from the artifact service must not turn a green suite red. See the
@@ -287,4 +392,5 @@ jobs:
           path: |
             tests/ControlServer.Tests/TestResults/test-results.trx
             tests/ControlServer.Tests/bin/Release/net8.0/win-x64/schema-conformance/
+            ${{ runner.temp }}/content-conflict/
           if-no-files-found: warn

@@ -1,0 +1,365 @@
+PASS classification, STAGED_G3_REAL_PEERS_DETERMINISTIC_PLAINTEXT, a record with no commit source: formalSlicePass False, reason COMMIT_SOURCE_MISSING: controlServerCommitSource
+PASS classification, STAGED_G3_REAL_PEERS_DETERMINISTIC_PLAINTEXT, a record with no commit source: every slice status PASS, every slice formalSlicePass False
+PASS gate-result.json, STAGED_G3_REAL_PEERS_DETERMINISTIC_PLAINTEXT, a record with no commit source, FP-IS-00: status PASS, formalSlicePass False, reason COMMIT_SOURCE_MISSING: controlServerCommitSource
+PASS classification, STAGED_G3_REAL_PEERS_DETERMINISTIC_PLAINTEXT, only an onboard source: formalSlicePass False, reason COMMIT_SOURCE_MISSING: controlServerCommitSource
+PASS classification, STAGED_G3_REAL_PEERS_DETERMINISTIC_PLAINTEXT, only an onboard source: every slice status PASS, every slice formalSlicePass False
+PASS gate-result.json, STAGED_G3_REAL_PEERS_DETERMINISTIC_PLAINTEXT, only an onboard source, FP-IS-00: status PASS, formalSlicePass False, reason COMMIT_SOURCE_MISSING: controlServerCommitSource
+PASS classification, STAGED_G3_REAL_PEERS_DETERMINISTIC_PLAINTEXT, an empty record: formalSlicePass False, reason COMMIT_SOURCE_MISSING: controlServerCommitSource; RUNNER_SOURCE_MISSING
+PASS classification, STAGED_G3_REAL_PEERS_DETERMINISTIC_PLAINTEXT, an empty record: every slice status PASS, every slice formalSlicePass False
+PASS gate-result.json, STAGED_G3_REAL_PEERS_DETERMINISTIC_PLAINTEXT, an empty record, FP-IS-00: status PASS, formalSlicePass False, reason COMMIT_SOURCE_MISSING: controlServerCommitSource; RUNNER_SOURCE_MISSING
+PASS classification, STAGED_G3_REAL_PEERS_DETERMINISTIC_PLAINTEXT, a bare string: formalSlicePass False, reason COMMIT_SOURCE_MISSING: controlServerCommitSource; RUNNER_SOURCE_MISSING
+PASS classification, STAGED_G3_REAL_PEERS_DETERMINISTIC_PLAINTEXT, a bare string: every slice status PASS, every slice formalSlicePass False
+PASS gate-result.json, STAGED_G3_REAL_PEERS_DETERMINISTIC_PLAINTEXT, a bare string, FP-IS-00: status PASS, formalSlicePass False, reason COMMIT_SOURCE_MISSING: controlServerCommitSource; RUNNER_SOURCE_MISSING
+PASS classification, STAGED_G3_REAL_PEERS_DETERMINISTIC_PLAINTEXT, an override and an unknown source: formalSlicePass False, reason SELF_CHECK_OVERRIDE; UNRECOGNISED_COMMIT_SOURCE: onboardCommitSource=SOMETHING_NEW
+PASS classification, STAGED_G3_REAL_PEERS_DETERMINISTIC_PLAINTEXT, an override and an unknown source: every slice status PASS, every slice formalSlicePass False
+PASS gate-result.json, STAGED_G3_REAL_PEERS_DETERMINISTIC_PLAINTEXT, an override and an unknown source, FP-IS-00: status PASS, formalSlicePass False, reason SELF_CHECK_OVERRIDE; UNRECOGNISED_COMMIT_SOURCE: onboardCommitSource=SOMETHING_NEW
+PASS classification, STAGED_G3_REAL_PEERS_DETERMINISTIC_PLAINTEXT, SHARED_BINDING: formalSlicePass True, reason null
+PASS classification, STAGED_G3_REAL_PEERS_DETERMINISTIC_PLAINTEXT, SHARED_BINDING: every slice status PASS, every slice formalSlicePass True
+PASS gate-result.json, STAGED_G3_REAL_PEERS_DETERMINISTIC_PLAINTEXT, SHARED_BINDING, FP-IS-00: status PASS, formalSlicePass True, reason null
+PASS classification, STAGED_G3_REAL_PEERS_DETERMINISTIC_PLAINTEXT, a ControlServer self-check override: formalSlicePass False, reason SELF_CHECK_OVERRIDE
+PASS classification, STAGED_G3_REAL_PEERS_DETERMINISTIC_PLAINTEXT, a ControlServer self-check override: every slice status PASS, every slice formalSlicePass False
+PASS gate-result.json, STAGED_G3_REAL_PEERS_DETERMINISTIC_PLAINTEXT, a ControlServer self-check override, FP-IS-00: status PASS, formalSlicePass False, reason SELF_CHECK_OVERRIDE
+PASS classification, STAGED_G3_REAL_PEERS_DETERMINISTIC_PLAINTEXT, an onboard self-check override: formalSlicePass False, reason SELF_CHECK_OVERRIDE
+PASS classification, STAGED_G3_REAL_PEERS_DETERMINISTIC_PLAINTEXT, an onboard self-check override: every slice status PASS, every slice formalSlicePass False
+PASS gate-result.json, STAGED_G3_REAL_PEERS_DETERMINISTIC_PLAINTEXT, an onboard self-check override, FP-IS-00: status PASS, formalSlicePass False, reason SELF_CHECK_OVERRIDE
+PASS classification, STAGED_G3_REAL_PEERS_DETERMINISTIC_PLAINTEXT, a source nobody defined: formalSlicePass False, reason UNRECOGNISED_COMMIT_SOURCE*
+PASS classification, STAGED_G3_REAL_PEERS_DETERMINISTIC_PLAINTEXT, a source nobody defined: every slice status PASS, every slice formalSlicePass False
+PASS gate-result.json, STAGED_G3_REAL_PEERS_DETERMINISTIC_PLAINTEXT, a source nobody defined, FP-IS-00: status PASS, formalSlicePass False, reason UNRECOGNISED_COMMIT_SOURCE*
+PASS classification, STAGED_G3_REAL_PEERS_DETERMINISTIC_PLAINTEXT, SHARED_BINDING with no runner source: formalSlicePass False, reason RUNNER_SOURCE_MISSING
+PASS classification, STAGED_G3_REAL_PEERS_DETERMINISTIC_PLAINTEXT, SHARED_BINDING with no runner source: every slice status PASS, every slice formalSlicePass False
+PASS gate-result.json, STAGED_G3_REAL_PEERS_DETERMINISTIC_PLAINTEXT, SHARED_BINDING with no runner source, FP-IS-00: status PASS, formalSlicePass False, reason RUNNER_SOURCE_MISSING
+PASS classification, STAGED_G3_REAL_PEERS_DETERMINISTIC_PLAINTEXT, SHARED_BINDING from a dirty runner worktree: formalSlicePass False, reason RUNNER_WORKTREE_DIRTY
+PASS classification, STAGED_G3_REAL_PEERS_DETERMINISTIC_PLAINTEXT, SHARED_BINDING from a dirty runner worktree: every slice status PASS, every slice formalSlicePass False
+PASS gate-result.json, STAGED_G3_REAL_PEERS_DETERMINISTIC_PLAINTEXT, SHARED_BINDING from a dirty runner worktree, FP-IS-00: status PASS, formalSlicePass False, reason RUNNER_WORKTREE_DIRTY
+PASS classification, STAGED_G3_REAL_PEERS_DETERMINISTIC_PLAINTEXT, SHARED_BINDING through another shared runner: formalSlicePass False, reason RUNNER_INPUT_OVERRIDE: SharedRunnerSource
+PASS classification, STAGED_G3_REAL_PEERS_DETERMINISTIC_PLAINTEXT, SHARED_BINDING through another shared runner: every slice status PASS, every slice formalSlicePass False
+PASS gate-result.json, STAGED_G3_REAL_PEERS_DETERMINISTIC_PLAINTEXT, SHARED_BINDING through another shared runner, FP-IS-00: status PASS, formalSlicePass False, reason RUNNER_INPUT_OVERRIDE: SharedRunnerSource
+PASS classification, STAGED_G3_REAL_PEERS_DETERMINISTIC_PLAINTEXT, SHARED_BINDING, dirty and through another shared runner: formalSlicePass False, reason RUNNER_WORKTREE_DIRTY; RUNNER_INPUT_OVERRIDE: SharedRunnerSource, ControlServerRepository
+PASS classification, STAGED_G3_REAL_PEERS_DETERMINISTIC_PLAINTEXT, SHARED_BINDING, dirty and through another shared runner: every slice status PASS, every slice formalSlicePass False
+PASS gate-result.json, STAGED_G3_REAL_PEERS_DETERMINISTIC_PLAINTEXT, SHARED_BINDING, dirty and through another shared runner, FP-IS-00: status PASS, formalSlicePass False, reason RUNNER_WORKTREE_DIRTY; RUNNER_INPUT_OVERRIDE: SharedRunnerSource, ControlServerRepository
+PASS classification, STAGED_G3_REAL_PEERS_DETERMINISTIC_PLAINTEXT, SHARED_BINDING with unknown provenance: formalSlicePass False, reason RUNNER_PROVENANCE_UNKNOWN: no repository
+PASS classification, STAGED_G3_REAL_PEERS_DETERMINISTIC_PLAINTEXT, SHARED_BINDING with unknown provenance: every slice status PASS, every slice formalSlicePass False
+PASS gate-result.json, STAGED_G3_REAL_PEERS_DETERMINISTIC_PLAINTEXT, SHARED_BINDING with unknown provenance, FP-IS-00: status PASS, formalSlicePass False, reason RUNNER_PROVENANCE_UNKNOWN: no repository
+PASS classification, STAGED_G3_REAL_PEERS_DETERMINISTIC_PLAINTEXT, an override from a dirty runner worktree: formalSlicePass False, reason SELF_CHECK_OVERRIDE; RUNNER_WORKTREE_DIRTY
+PASS classification, STAGED_G3_REAL_PEERS_DETERMINISTIC_PLAINTEXT, an override from a dirty runner worktree: every slice status PASS, every slice formalSlicePass False
+PASS gate-result.json, STAGED_G3_REAL_PEERS_DETERMINISTIC_PLAINTEXT, an override from a dirty runner worktree, FP-IS-00: status PASS, formalSlicePass False, reason SELF_CHECK_OVERRIDE; RUNNER_WORKTREE_DIRTY
+PASS classification, STAGED_G3_REAL_PEERS_DETERMINISTIC_PLAINTEXT, an empty runner source: formalSlicePass False, reason UNRECOGNISED_RUNNER_SOURCE: 
+PASS classification, STAGED_G3_REAL_PEERS_DETERMINISTIC_PLAINTEXT, an empty runner source: every slice status PASS, every slice formalSlicePass False
+PASS gate-result.json, STAGED_G3_REAL_PEERS_DETERMINISTIC_PLAINTEXT, an empty runner source, FP-IS-00: status PASS, formalSlicePass False, reason UNRECOGNISED_RUNNER_SOURCE: 
+PASS classification, STAGED_G3_REAL_PEERS_DETERMINISTIC_PLAINTEXT, a runner source nobody defined: formalSlicePass False, reason UNRECOGNISED_RUNNER_SOURCE: SOMETHING_NEW
+PASS classification, STAGED_G3_REAL_PEERS_DETERMINISTIC_PLAINTEXT, a runner source nobody defined: every slice status PASS, every slice formalSlicePass False
+PASS gate-result.json, STAGED_G3_REAL_PEERS_DETERMINISTIC_PLAINTEXT, a runner source nobody defined, FP-IS-00: status PASS, formalSlicePass False, reason UNRECOGNISED_RUNNER_SOURCE: SOMETHING_NEW
+PASS classification, STAGED_G3_REAL_PEERS_DETERMINISTIC_PLAINTEXT, a lowercase committed_runner: formalSlicePass False, reason UNRECOGNISED_RUNNER_SOURCE: committed_runner
+PASS classification, STAGED_G3_REAL_PEERS_DETERMINISTIC_PLAINTEXT, a lowercase committed_runner: every slice status PASS, every slice formalSlicePass False
+PASS gate-result.json, STAGED_G3_REAL_PEERS_DETERMINISTIC_PLAINTEXT, a lowercase committed_runner, FP-IS-00: status PASS, formalSlicePass False, reason UNRECOGNISED_RUNNER_SOURCE: committed_runner
+PASS classification, STAGED_G3_REAL_PEERS_PROCESS_RESTART_NO_MOVEMENT, a record with no commit source: formalSlicePass False, reason COMMIT_SOURCE_MISSING: controlServerCommitSource
+PASS classification, STAGED_G3_REAL_PEERS_PROCESS_RESTART_NO_MOVEMENT, a record with no commit source: every slice status PASS, every slice formalSlicePass False
+PASS gate-result.json, STAGED_G3_REAL_PEERS_PROCESS_RESTART_NO_MOVEMENT, a record with no commit source, FP-IS-00: status PASS, formalSlicePass False, reason COMMIT_SOURCE_MISSING: controlServerCommitSource
+PASS classification, STAGED_G3_REAL_PEERS_PROCESS_RESTART_NO_MOVEMENT, only an onboard source: formalSlicePass False, reason COMMIT_SOURCE_MISSING: controlServerCommitSource
+PASS classification, STAGED_G3_REAL_PEERS_PROCESS_RESTART_NO_MOVEMENT, only an onboard source: every slice status PASS, every slice formalSlicePass False
+PASS gate-result.json, STAGED_G3_REAL_PEERS_PROCESS_RESTART_NO_MOVEMENT, only an onboard source, FP-IS-00: status PASS, formalSlicePass False, reason COMMIT_SOURCE_MISSING: controlServerCommitSource
+PASS classification, STAGED_G3_REAL_PEERS_PROCESS_RESTART_NO_MOVEMENT, an empty record: formalSlicePass False, reason COMMIT_SOURCE_MISSING: controlServerCommitSource; RUNNER_SOURCE_MISSING
+PASS classification, STAGED_G3_REAL_PEERS_PROCESS_RESTART_NO_MOVEMENT, an empty record: every slice status PASS, every slice formalSlicePass False
+PASS gate-result.json, STAGED_G3_REAL_PEERS_PROCESS_RESTART_NO_MOVEMENT, an empty record, FP-IS-00: status PASS, formalSlicePass False, reason COMMIT_SOURCE_MISSING: controlServerCommitSource; RUNNER_SOURCE_MISSING
+PASS classification, STAGED_G3_REAL_PEERS_PROCESS_RESTART_NO_MOVEMENT, a bare string: formalSlicePass False, reason COMMIT_SOURCE_MISSING: controlServerCommitSource; RUNNER_SOURCE_MISSING
+PASS classification, STAGED_G3_REAL_PEERS_PROCESS_RESTART_NO_MOVEMENT, a bare string: every slice status PASS, every slice formalSlicePass False
+PASS gate-result.json, STAGED_G3_REAL_PEERS_PROCESS_RESTART_NO_MOVEMENT, a bare string, FP-IS-00: status PASS, formalSlicePass False, reason COMMIT_SOURCE_MISSING: controlServerCommitSource; RUNNER_SOURCE_MISSING
+PASS classification, STAGED_G3_REAL_PEERS_PROCESS_RESTART_NO_MOVEMENT, an override and an unknown source: formalSlicePass False, reason SELF_CHECK_OVERRIDE; UNRECOGNISED_COMMIT_SOURCE: onboardCommitSource=SOMETHING_NEW
+PASS classification, STAGED_G3_REAL_PEERS_PROCESS_RESTART_NO_MOVEMENT, an override and an unknown source: every slice status PASS, every slice formalSlicePass False
+PASS gate-result.json, STAGED_G3_REAL_PEERS_PROCESS_RESTART_NO_MOVEMENT, an override and an unknown source, FP-IS-00: status PASS, formalSlicePass False, reason SELF_CHECK_OVERRIDE; UNRECOGNISED_COMMIT_SOURCE: onboardCommitSource=SOMETHING_NEW
+PASS classification, STAGED_G3_REAL_PEERS_PROCESS_RESTART_NO_MOVEMENT, SHARED_BINDING: formalSlicePass True, reason null
+PASS classification, STAGED_G3_REAL_PEERS_PROCESS_RESTART_NO_MOVEMENT, SHARED_BINDING: every slice status PASS, every slice formalSlicePass True
+PASS gate-result.json, STAGED_G3_REAL_PEERS_PROCESS_RESTART_NO_MOVEMENT, SHARED_BINDING, FP-IS-00: status PASS, formalSlicePass True, reason null
+PASS classification, STAGED_G3_REAL_PEERS_PROCESS_RESTART_NO_MOVEMENT, a ControlServer self-check override: formalSlicePass False, reason SELF_CHECK_OVERRIDE
+PASS classification, STAGED_G3_REAL_PEERS_PROCESS_RESTART_NO_MOVEMENT, a ControlServer self-check override: every slice status PASS, every slice formalSlicePass False
+PASS gate-result.json, STAGED_G3_REAL_PEERS_PROCESS_RESTART_NO_MOVEMENT, a ControlServer self-check override, FP-IS-00: status PASS, formalSlicePass False, reason SELF_CHECK_OVERRIDE
+PASS classification, STAGED_G3_REAL_PEERS_PROCESS_RESTART_NO_MOVEMENT, an onboard self-check override: formalSlicePass False, reason SELF_CHECK_OVERRIDE
+PASS classification, STAGED_G3_REAL_PEERS_PROCESS_RESTART_NO_MOVEMENT, an onboard self-check override: every slice status PASS, every slice formalSlicePass False
+PASS gate-result.json, STAGED_G3_REAL_PEERS_PROCESS_RESTART_NO_MOVEMENT, an onboard self-check override, FP-IS-00: status PASS, formalSlicePass False, reason SELF_CHECK_OVERRIDE
+PASS classification, STAGED_G3_REAL_PEERS_PROCESS_RESTART_NO_MOVEMENT, a source nobody defined: formalSlicePass False, reason UNRECOGNISED_COMMIT_SOURCE*
+PASS classification, STAGED_G3_REAL_PEERS_PROCESS_RESTART_NO_MOVEMENT, a source nobody defined: every slice status PASS, every slice formalSlicePass False
+PASS gate-result.json, STAGED_G3_REAL_PEERS_PROCESS_RESTART_NO_MOVEMENT, a source nobody defined, FP-IS-00: status PASS, formalSlicePass False, reason UNRECOGNISED_COMMIT_SOURCE*
+PASS classification, STAGED_G3_REAL_PEERS_PROCESS_RESTART_NO_MOVEMENT, SHARED_BINDING with no runner source: formalSlicePass False, reason RUNNER_SOURCE_MISSING
+PASS classification, STAGED_G3_REAL_PEERS_PROCESS_RESTART_NO_MOVEMENT, SHARED_BINDING with no runner source: every slice status PASS, every slice formalSlicePass False
+PASS gate-result.json, STAGED_G3_REAL_PEERS_PROCESS_RESTART_NO_MOVEMENT, SHARED_BINDING with no runner source, FP-IS-00: status PASS, formalSlicePass False, reason RUNNER_SOURCE_MISSING
+PASS classification, STAGED_G3_REAL_PEERS_PROCESS_RESTART_NO_MOVEMENT, SHARED_BINDING from a dirty runner worktree: formalSlicePass False, reason RUNNER_WORKTREE_DIRTY
+PASS classification, STAGED_G3_REAL_PEERS_PROCESS_RESTART_NO_MOVEMENT, SHARED_BINDING from a dirty runner worktree: every slice status PASS, every slice formalSlicePass False
+PASS gate-result.json, STAGED_G3_REAL_PEERS_PROCESS_RESTART_NO_MOVEMENT, SHARED_BINDING from a dirty runner worktree, FP-IS-00: status PASS, formalSlicePass False, reason RUNNER_WORKTREE_DIRTY
+PASS classification, STAGED_G3_REAL_PEERS_PROCESS_RESTART_NO_MOVEMENT, SHARED_BINDING through another shared runner: formalSlicePass False, reason RUNNER_INPUT_OVERRIDE: SharedRunnerSource
+PASS classification, STAGED_G3_REAL_PEERS_PROCESS_RESTART_NO_MOVEMENT, SHARED_BINDING through another shared runner: every slice status PASS, every slice formalSlicePass False
+PASS gate-result.json, STAGED_G3_REAL_PEERS_PROCESS_RESTART_NO_MOVEMENT, SHARED_BINDING through another shared runner, FP-IS-00: status PASS, formalSlicePass False, reason RUNNER_INPUT_OVERRIDE: SharedRunnerSource
+PASS classification, STAGED_G3_REAL_PEERS_PROCESS_RESTART_NO_MOVEMENT, SHARED_BINDING, dirty and through another shared runner: formalSlicePass False, reason RUNNER_WORKTREE_DIRTY; RUNNER_INPUT_OVERRIDE: SharedRunnerSource, ControlServerRepository
+PASS classification, STAGED_G3_REAL_PEERS_PROCESS_RESTART_NO_MOVEMENT, SHARED_BINDING, dirty and through another shared runner: every slice status PASS, every slice formalSlicePass False
+PASS gate-result.json, STAGED_G3_REAL_PEERS_PROCESS_RESTART_NO_MOVEMENT, SHARED_BINDING, dirty and through another shared runner, FP-IS-00: status PASS, formalSlicePass False, reason RUNNER_WORKTREE_DIRTY; RUNNER_INPUT_OVERRIDE: SharedRunnerSource, ControlServerRepository
+PASS classification, STAGED_G3_REAL_PEERS_PROCESS_RESTART_NO_MOVEMENT, SHARED_BINDING with unknown provenance: formalSlicePass False, reason RUNNER_PROVENANCE_UNKNOWN: no repository
+PASS classification, STAGED_G3_REAL_PEERS_PROCESS_RESTART_NO_MOVEMENT, SHARED_BINDING with unknown provenance: every slice status PASS, every slice formalSlicePass False
+PASS gate-result.json, STAGED_G3_REAL_PEERS_PROCESS_RESTART_NO_MOVEMENT, SHARED_BINDING with unknown provenance, FP-IS-00: status PASS, formalSlicePass False, reason RUNNER_PROVENANCE_UNKNOWN: no repository
+PASS classification, STAGED_G3_REAL_PEERS_PROCESS_RESTART_NO_MOVEMENT, an override from a dirty runner worktree: formalSlicePass False, reason SELF_CHECK_OVERRIDE; RUNNER_WORKTREE_DIRTY
+PASS classification, STAGED_G3_REAL_PEERS_PROCESS_RESTART_NO_MOVEMENT, an override from a dirty runner worktree: every slice status PASS, every slice formalSlicePass False
+PASS gate-result.json, STAGED_G3_REAL_PEERS_PROCESS_RESTART_NO_MOVEMENT, an override from a dirty runner worktree, FP-IS-00: status PASS, formalSlicePass False, reason SELF_CHECK_OVERRIDE; RUNNER_WORKTREE_DIRTY
+PASS classification, STAGED_G3_REAL_PEERS_PROCESS_RESTART_NO_MOVEMENT, an empty runner source: formalSlicePass False, reason UNRECOGNISED_RUNNER_SOURCE: 
+PASS classification, STAGED_G3_REAL_PEERS_PROCESS_RESTART_NO_MOVEMENT, an empty runner source: every slice status PASS, every slice formalSlicePass False
+PASS gate-result.json, STAGED_G3_REAL_PEERS_PROCESS_RESTART_NO_MOVEMENT, an empty runner source, FP-IS-00: status PASS, formalSlicePass False, reason UNRECOGNISED_RUNNER_SOURCE: 
+PASS classification, STAGED_G3_REAL_PEERS_PROCESS_RESTART_NO_MOVEMENT, a runner source nobody defined: formalSlicePass False, reason UNRECOGNISED_RUNNER_SOURCE: SOMETHING_NEW
+PASS classification, STAGED_G3_REAL_PEERS_PROCESS_RESTART_NO_MOVEMENT, a runner source nobody defined: every slice status PASS, every slice formalSlicePass False
+PASS gate-result.json, STAGED_G3_REAL_PEERS_PROCESS_RESTART_NO_MOVEMENT, a runner source nobody defined, FP-IS-00: status PASS, formalSlicePass False, reason UNRECOGNISED_RUNNER_SOURCE: SOMETHING_NEW
+PASS classification, STAGED_G3_REAL_PEERS_PROCESS_RESTART_NO_MOVEMENT, a lowercase committed_runner: formalSlicePass False, reason UNRECOGNISED_RUNNER_SOURCE: committed_runner
+PASS classification, STAGED_G3_REAL_PEERS_PROCESS_RESTART_NO_MOVEMENT, a lowercase committed_runner: every slice status PASS, every slice formalSlicePass False
+PASS gate-result.json, STAGED_G3_REAL_PEERS_PROCESS_RESTART_NO_MOVEMENT, a lowercase committed_runner, FP-IS-00: status PASS, formalSlicePass False, reason UNRECOGNISED_RUNNER_SOURCE: committed_runner
+PASS classification, DEMAND_BEARING_G3_RESULT_AND_RIOT_UNKNOWN_VECTORS_NO_MOVEMENT, a record with no commit source: formalSlicePass False, reason COMMIT_SOURCE_MISSING: controlServerCommitSource
+PASS classification, DEMAND_BEARING_G3_RESULT_AND_RIOT_UNKNOWN_VECTORS_NO_MOVEMENT, a record with no commit source: every slice status PASS, every slice formalSlicePass False
+PASS gate-result.json, DEMAND_BEARING_G3_RESULT_AND_RIOT_UNKNOWN_VECTORS_NO_MOVEMENT, a record with no commit source, FP-IS-04: status PASS, formalSlicePass False, reason COMMIT_SOURCE_MISSING: controlServerCommitSource
+PASS classification, DEMAND_BEARING_G3_RESULT_AND_RIOT_UNKNOWN_VECTORS_NO_MOVEMENT, only an onboard source: formalSlicePass False, reason COMMIT_SOURCE_MISSING: controlServerCommitSource
+PASS classification, DEMAND_BEARING_G3_RESULT_AND_RIOT_UNKNOWN_VECTORS_NO_MOVEMENT, only an onboard source: every slice status PASS, every slice formalSlicePass False
+PASS gate-result.json, DEMAND_BEARING_G3_RESULT_AND_RIOT_UNKNOWN_VECTORS_NO_MOVEMENT, only an onboard source, FP-IS-04: status PASS, formalSlicePass False, reason COMMIT_SOURCE_MISSING: controlServerCommitSource
+PASS classification, DEMAND_BEARING_G3_RESULT_AND_RIOT_UNKNOWN_VECTORS_NO_MOVEMENT, an empty record: formalSlicePass False, reason COMMIT_SOURCE_MISSING: controlServerCommitSource; RUNNER_SOURCE_MISSING
+PASS classification, DEMAND_BEARING_G3_RESULT_AND_RIOT_UNKNOWN_VECTORS_NO_MOVEMENT, an empty record: every slice status PASS, every slice formalSlicePass False
+PASS gate-result.json, DEMAND_BEARING_G3_RESULT_AND_RIOT_UNKNOWN_VECTORS_NO_MOVEMENT, an empty record, FP-IS-04: status PASS, formalSlicePass False, reason COMMIT_SOURCE_MISSING: controlServerCommitSource; RUNNER_SOURCE_MISSING
+PASS classification, DEMAND_BEARING_G3_RESULT_AND_RIOT_UNKNOWN_VECTORS_NO_MOVEMENT, a bare string: formalSlicePass False, reason COMMIT_SOURCE_MISSING: controlServerCommitSource; RUNNER_SOURCE_MISSING
+PASS classification, DEMAND_BEARING_G3_RESULT_AND_RIOT_UNKNOWN_VECTORS_NO_MOVEMENT, a bare string: every slice status PASS, every slice formalSlicePass False
+PASS gate-result.json, DEMAND_BEARING_G3_RESULT_AND_RIOT_UNKNOWN_VECTORS_NO_MOVEMENT, a bare string, FP-IS-04: status PASS, formalSlicePass False, reason COMMIT_SOURCE_MISSING: controlServerCommitSource; RUNNER_SOURCE_MISSING
+PASS classification, DEMAND_BEARING_G3_RESULT_AND_RIOT_UNKNOWN_VECTORS_NO_MOVEMENT, an override and an unknown source: formalSlicePass False, reason SELF_CHECK_OVERRIDE; UNRECOGNISED_COMMIT_SOURCE: onboardCommitSource=SOMETHING_NEW
+PASS classification, DEMAND_BEARING_G3_RESULT_AND_RIOT_UNKNOWN_VECTORS_NO_MOVEMENT, an override and an unknown source: every slice status PASS, every slice formalSlicePass False
+PASS gate-result.json, DEMAND_BEARING_G3_RESULT_AND_RIOT_UNKNOWN_VECTORS_NO_MOVEMENT, an override and an unknown source, FP-IS-04: status PASS, formalSlicePass False, reason SELF_CHECK_OVERRIDE; UNRECOGNISED_COMMIT_SOURCE: onboardCommitSource=SOMETHING_NEW
+PASS classification, DEMAND_BEARING_G3_RESULT_AND_RIOT_UNKNOWN_VECTORS_NO_MOVEMENT, SHARED_BINDING: formalSlicePass True, reason null
+PASS classification, DEMAND_BEARING_G3_RESULT_AND_RIOT_UNKNOWN_VECTORS_NO_MOVEMENT, SHARED_BINDING: every slice status PASS, every slice formalSlicePass True
+PASS gate-result.json, DEMAND_BEARING_G3_RESULT_AND_RIOT_UNKNOWN_VECTORS_NO_MOVEMENT, SHARED_BINDING, FP-IS-04: status PASS, formalSlicePass True, reason null
+PASS classification, DEMAND_BEARING_G3_RESULT_AND_RIOT_UNKNOWN_VECTORS_NO_MOVEMENT, a ControlServer self-check override: formalSlicePass False, reason SELF_CHECK_OVERRIDE
+PASS classification, DEMAND_BEARING_G3_RESULT_AND_RIOT_UNKNOWN_VECTORS_NO_MOVEMENT, a ControlServer self-check override: every slice status PASS, every slice formalSlicePass False
+PASS gate-result.json, DEMAND_BEARING_G3_RESULT_AND_RIOT_UNKNOWN_VECTORS_NO_MOVEMENT, a ControlServer self-check override, FP-IS-04: status PASS, formalSlicePass False, reason SELF_CHECK_OVERRIDE
+PASS classification, DEMAND_BEARING_G3_RESULT_AND_RIOT_UNKNOWN_VECTORS_NO_MOVEMENT, an onboard self-check override: formalSlicePass False, reason SELF_CHECK_OVERRIDE
+PASS classification, DEMAND_BEARING_G3_RESULT_AND_RIOT_UNKNOWN_VECTORS_NO_MOVEMENT, an onboard self-check override: every slice status PASS, every slice formalSlicePass False
+PASS gate-result.json, DEMAND_BEARING_G3_RESULT_AND_RIOT_UNKNOWN_VECTORS_NO_MOVEMENT, an onboard self-check override, FP-IS-04: status PASS, formalSlicePass False, reason SELF_CHECK_OVERRIDE
+PASS classification, DEMAND_BEARING_G3_RESULT_AND_RIOT_UNKNOWN_VECTORS_NO_MOVEMENT, a source nobody defined: formalSlicePass False, reason UNRECOGNISED_COMMIT_SOURCE*
+PASS classification, DEMAND_BEARING_G3_RESULT_AND_RIOT_UNKNOWN_VECTORS_NO_MOVEMENT, a source nobody defined: every slice status PASS, every slice formalSlicePass False
+PASS gate-result.json, DEMAND_BEARING_G3_RESULT_AND_RIOT_UNKNOWN_VECTORS_NO_MOVEMENT, a source nobody defined, FP-IS-04: status PASS, formalSlicePass False, reason UNRECOGNISED_COMMIT_SOURCE*
+PASS classification, DEMAND_BEARING_G3_RESULT_AND_RIOT_UNKNOWN_VECTORS_NO_MOVEMENT, SHARED_BINDING with no runner source: formalSlicePass False, reason RUNNER_SOURCE_MISSING
+PASS classification, DEMAND_BEARING_G3_RESULT_AND_RIOT_UNKNOWN_VECTORS_NO_MOVEMENT, SHARED_BINDING with no runner source: every slice status PASS, every slice formalSlicePass False
+PASS gate-result.json, DEMAND_BEARING_G3_RESULT_AND_RIOT_UNKNOWN_VECTORS_NO_MOVEMENT, SHARED_BINDING with no runner source, FP-IS-04: status PASS, formalSlicePass False, reason RUNNER_SOURCE_MISSING
+PASS classification, DEMAND_BEARING_G3_RESULT_AND_RIOT_UNKNOWN_VECTORS_NO_MOVEMENT, SHARED_BINDING from a dirty runner worktree: formalSlicePass False, reason RUNNER_WORKTREE_DIRTY
+PASS classification, DEMAND_BEARING_G3_RESULT_AND_RIOT_UNKNOWN_VECTORS_NO_MOVEMENT, SHARED_BINDING from a dirty runner worktree: every slice status PASS, every slice formalSlicePass False
+PASS gate-result.json, DEMAND_BEARING_G3_RESULT_AND_RIOT_UNKNOWN_VECTORS_NO_MOVEMENT, SHARED_BINDING from a dirty runner worktree, FP-IS-04: status PASS, formalSlicePass False, reason RUNNER_WORKTREE_DIRTY
+PASS classification, DEMAND_BEARING_G3_RESULT_AND_RIOT_UNKNOWN_VECTORS_NO_MOVEMENT, SHARED_BINDING through another shared runner: formalSlicePass False, reason RUNNER_INPUT_OVERRIDE: SharedRunnerSource
+PASS classification, DEMAND_BEARING_G3_RESULT_AND_RIOT_UNKNOWN_VECTORS_NO_MOVEMENT, SHARED_BINDING through another shared runner: every slice status PASS, every slice formalSlicePass False
+PASS gate-result.json, DEMAND_BEARING_G3_RESULT_AND_RIOT_UNKNOWN_VECTORS_NO_MOVEMENT, SHARED_BINDING through another shared runner, FP-IS-04: status PASS, formalSlicePass False, reason RUNNER_INPUT_OVERRIDE: SharedRunnerSource
+PASS classification, DEMAND_BEARING_G3_RESULT_AND_RIOT_UNKNOWN_VECTORS_NO_MOVEMENT, SHARED_BINDING, dirty and through another shared runner: formalSlicePass False, reason RUNNER_WORKTREE_DIRTY; RUNNER_INPUT_OVERRIDE: SharedRunnerSource, ControlServerRepository
+PASS classification, DEMAND_BEARING_G3_RESULT_AND_RIOT_UNKNOWN_VECTORS_NO_MOVEMENT, SHARED_BINDING, dirty and through another shared runner: every slice status PASS, every slice formalSlicePass False
+PASS gate-result.json, DEMAND_BEARING_G3_RESULT_AND_RIOT_UNKNOWN_VECTORS_NO_MOVEMENT, SHARED_BINDING, dirty and through another shared runner, FP-IS-04: status PASS, formalSlicePass False, reason RUNNER_WORKTREE_DIRTY; RUNNER_INPUT_OVERRIDE: SharedRunnerSource, ControlServerRepository
+PASS classification, DEMAND_BEARING_G3_RESULT_AND_RIOT_UNKNOWN_VECTORS_NO_MOVEMENT, SHARED_BINDING with unknown provenance: formalSlicePass False, reason RUNNER_PROVENANCE_UNKNOWN: no repository
+PASS classification, DEMAND_BEARING_G3_RESULT_AND_RIOT_UNKNOWN_VECTORS_NO_MOVEMENT, SHARED_BINDING with unknown provenance: every slice status PASS, every slice formalSlicePass False
+PASS gate-result.json, DEMAND_BEARING_G3_RESULT_AND_RIOT_UNKNOWN_VECTORS_NO_MOVEMENT, SHARED_BINDING with unknown provenance, FP-IS-04: status PASS, formalSlicePass False, reason RUNNER_PROVENANCE_UNKNOWN: no repository
+PASS classification, DEMAND_BEARING_G3_RESULT_AND_RIOT_UNKNOWN_VECTORS_NO_MOVEMENT, an override from a dirty runner worktree: formalSlicePass False, reason SELF_CHECK_OVERRIDE; RUNNER_WORKTREE_DIRTY
+PASS classification, DEMAND_BEARING_G3_RESULT_AND_RIOT_UNKNOWN_VECTORS_NO_MOVEMENT, an override from a dirty runner worktree: every slice status PASS, every slice formalSlicePass False
+PASS gate-result.json, DEMAND_BEARING_G3_RESULT_AND_RIOT_UNKNOWN_VECTORS_NO_MOVEMENT, an override from a dirty runner worktree, FP-IS-04: status PASS, formalSlicePass False, reason SELF_CHECK_OVERRIDE; RUNNER_WORKTREE_DIRTY
+PASS classification, DEMAND_BEARING_G3_RESULT_AND_RIOT_UNKNOWN_VECTORS_NO_MOVEMENT, an empty runner source: formalSlicePass False, reason UNRECOGNISED_RUNNER_SOURCE: 
+PASS classification, DEMAND_BEARING_G3_RESULT_AND_RIOT_UNKNOWN_VECTORS_NO_MOVEMENT, an empty runner source: every slice status PASS, every slice formalSlicePass False
+PASS gate-result.json, DEMAND_BEARING_G3_RESULT_AND_RIOT_UNKNOWN_VECTORS_NO_MOVEMENT, an empty runner source, FP-IS-04: status PASS, formalSlicePass False, reason UNRECOGNISED_RUNNER_SOURCE: 
+PASS classification, DEMAND_BEARING_G3_RESULT_AND_RIOT_UNKNOWN_VECTORS_NO_MOVEMENT, a runner source nobody defined: formalSlicePass False, reason UNRECOGNISED_RUNNER_SOURCE: SOMETHING_NEW
+PASS classification, DEMAND_BEARING_G3_RESULT_AND_RIOT_UNKNOWN_VECTORS_NO_MOVEMENT, a runner source nobody defined: every slice status PASS, every slice formalSlicePass False
+PASS gate-result.json, DEMAND_BEARING_G3_RESULT_AND_RIOT_UNKNOWN_VECTORS_NO_MOVEMENT, a runner source nobody defined, FP-IS-04: status PASS, formalSlicePass False, reason UNRECOGNISED_RUNNER_SOURCE: SOMETHING_NEW
+PASS classification, DEMAND_BEARING_G3_RESULT_AND_RIOT_UNKNOWN_VECTORS_NO_MOVEMENT, a lowercase committed_runner: formalSlicePass False, reason UNRECOGNISED_RUNNER_SOURCE: committed_runner
+PASS classification, DEMAND_BEARING_G3_RESULT_AND_RIOT_UNKNOWN_VECTORS_NO_MOVEMENT, a lowercase committed_runner: every slice status PASS, every slice formalSlicePass False
+PASS gate-result.json, DEMAND_BEARING_G3_RESULT_AND_RIOT_UNKNOWN_VECTORS_NO_MOVEMENT, a lowercase committed_runner, FP-IS-04: status PASS, formalSlicePass False, reason UNRECOGNISED_RUNNER_SOURCE: committed_runner
+PASS classification, JOURNEY_G3_REAL_ONBOARD_SIMULATED_COUNTERPARTS, a record with no commit source: formalSlicePass False, reason COMMIT_SOURCE_MISSING: controlServerCommitSource
+PASS classification, JOURNEY_G3_REAL_ONBOARD_SIMULATED_COUNTERPARTS, a record with no commit source: every slice status PASS, every slice formalSlicePass False
+PASS gate-result.json, JOURNEY_G3_REAL_ONBOARD_SIMULATED_COUNTERPARTS, a record with no commit source, FP-IS-01: status PASS, formalSlicePass False, reason COMMIT_SOURCE_MISSING: controlServerCommitSource
+PASS classification, JOURNEY_G3_REAL_ONBOARD_SIMULATED_COUNTERPARTS, only an onboard source: formalSlicePass False, reason COMMIT_SOURCE_MISSING: controlServerCommitSource
+PASS classification, JOURNEY_G3_REAL_ONBOARD_SIMULATED_COUNTERPARTS, only an onboard source: every slice status PASS, every slice formalSlicePass False
+PASS gate-result.json, JOURNEY_G3_REAL_ONBOARD_SIMULATED_COUNTERPARTS, only an onboard source, FP-IS-01: status PASS, formalSlicePass False, reason COMMIT_SOURCE_MISSING: controlServerCommitSource
+PASS classification, JOURNEY_G3_REAL_ONBOARD_SIMULATED_COUNTERPARTS, an empty record: formalSlicePass False, reason COMMIT_SOURCE_MISSING: controlServerCommitSource; RUNNER_SOURCE_MISSING
+PASS classification, JOURNEY_G3_REAL_ONBOARD_SIMULATED_COUNTERPARTS, an empty record: every slice status PASS, every slice formalSlicePass False
+PASS gate-result.json, JOURNEY_G3_REAL_ONBOARD_SIMULATED_COUNTERPARTS, an empty record, FP-IS-01: status PASS, formalSlicePass False, reason COMMIT_SOURCE_MISSING: controlServerCommitSource; RUNNER_SOURCE_MISSING
+PASS classification, JOURNEY_G3_REAL_ONBOARD_SIMULATED_COUNTERPARTS, a bare string: formalSlicePass False, reason COMMIT_SOURCE_MISSING: controlServerCommitSource; RUNNER_SOURCE_MISSING
+PASS classification, JOURNEY_G3_REAL_ONBOARD_SIMULATED_COUNTERPARTS, a bare string: every slice status PASS, every slice formalSlicePass False
+PASS gate-result.json, JOURNEY_G3_REAL_ONBOARD_SIMULATED_COUNTERPARTS, a bare string, FP-IS-01: status PASS, formalSlicePass False, reason COMMIT_SOURCE_MISSING: controlServerCommitSource; RUNNER_SOURCE_MISSING
+PASS classification, JOURNEY_G3_REAL_ONBOARD_SIMULATED_COUNTERPARTS, an override and an unknown source: formalSlicePass False, reason SELF_CHECK_OVERRIDE; UNRECOGNISED_COMMIT_SOURCE: onboardCommitSource=SOMETHING_NEW
+PASS classification, JOURNEY_G3_REAL_ONBOARD_SIMULATED_COUNTERPARTS, an override and an unknown source: every slice status PASS, every slice formalSlicePass False
+PASS gate-result.json, JOURNEY_G3_REAL_ONBOARD_SIMULATED_COUNTERPARTS, an override and an unknown source, FP-IS-01: status PASS, formalSlicePass False, reason SELF_CHECK_OVERRIDE; UNRECOGNISED_COMMIT_SOURCE: onboardCommitSource=SOMETHING_NEW
+PASS classification, JOURNEY_G3_REAL_ONBOARD_SIMULATED_COUNTERPARTS, SHARED_BINDING: formalSlicePass True, reason null
+PASS classification, JOURNEY_G3_REAL_ONBOARD_SIMULATED_COUNTERPARTS, SHARED_BINDING: every slice status PASS, every slice formalSlicePass True
+PASS gate-result.json, JOURNEY_G3_REAL_ONBOARD_SIMULATED_COUNTERPARTS, SHARED_BINDING, FP-IS-01: status PASS, formalSlicePass True, reason null
+PASS classification, JOURNEY_G3_REAL_ONBOARD_SIMULATED_COUNTERPARTS, a ControlServer self-check override: formalSlicePass False, reason SELF_CHECK_OVERRIDE
+PASS classification, JOURNEY_G3_REAL_ONBOARD_SIMULATED_COUNTERPARTS, a ControlServer self-check override: every slice status PASS, every slice formalSlicePass False
+PASS gate-result.json, JOURNEY_G3_REAL_ONBOARD_SIMULATED_COUNTERPARTS, a ControlServer self-check override, FP-IS-01: status PASS, formalSlicePass False, reason SELF_CHECK_OVERRIDE
+PASS classification, JOURNEY_G3_REAL_ONBOARD_SIMULATED_COUNTERPARTS, an onboard self-check override: formalSlicePass False, reason SELF_CHECK_OVERRIDE
+PASS classification, JOURNEY_G3_REAL_ONBOARD_SIMULATED_COUNTERPARTS, an onboard self-check override: every slice status PASS, every slice formalSlicePass False
+PASS gate-result.json, JOURNEY_G3_REAL_ONBOARD_SIMULATED_COUNTERPARTS, an onboard self-check override, FP-IS-01: status PASS, formalSlicePass False, reason SELF_CHECK_OVERRIDE
+PASS classification, JOURNEY_G3_REAL_ONBOARD_SIMULATED_COUNTERPARTS, a source nobody defined: formalSlicePass False, reason UNRECOGNISED_COMMIT_SOURCE*
+PASS classification, JOURNEY_G3_REAL_ONBOARD_SIMULATED_COUNTERPARTS, a source nobody defined: every slice status PASS, every slice formalSlicePass False
+PASS gate-result.json, JOURNEY_G3_REAL_ONBOARD_SIMULATED_COUNTERPARTS, a source nobody defined, FP-IS-01: status PASS, formalSlicePass False, reason UNRECOGNISED_COMMIT_SOURCE*
+PASS classification, JOURNEY_G3_REAL_ONBOARD_SIMULATED_COUNTERPARTS, SHARED_BINDING with no runner source: formalSlicePass False, reason RUNNER_SOURCE_MISSING
+PASS classification, JOURNEY_G3_REAL_ONBOARD_SIMULATED_COUNTERPARTS, SHARED_BINDING with no runner source: every slice status PASS, every slice formalSlicePass False
+PASS gate-result.json, JOURNEY_G3_REAL_ONBOARD_SIMULATED_COUNTERPARTS, SHARED_BINDING with no runner source, FP-IS-01: status PASS, formalSlicePass False, reason RUNNER_SOURCE_MISSING
+PASS classification, JOURNEY_G3_REAL_ONBOARD_SIMULATED_COUNTERPARTS, SHARED_BINDING from a dirty runner worktree: formalSlicePass False, reason RUNNER_WORKTREE_DIRTY
+PASS classification, JOURNEY_G3_REAL_ONBOARD_SIMULATED_COUNTERPARTS, SHARED_BINDING from a dirty runner worktree: every slice status PASS, every slice formalSlicePass False
+PASS gate-result.json, JOURNEY_G3_REAL_ONBOARD_SIMULATED_COUNTERPARTS, SHARED_BINDING from a dirty runner worktree, FP-IS-01: status PASS, formalSlicePass False, reason RUNNER_WORKTREE_DIRTY
+PASS classification, JOURNEY_G3_REAL_ONBOARD_SIMULATED_COUNTERPARTS, SHARED_BINDING through another shared runner: formalSlicePass False, reason RUNNER_INPUT_OVERRIDE: SharedRunnerSource
+PASS classification, JOURNEY_G3_REAL_ONBOARD_SIMULATED_COUNTERPARTS, SHARED_BINDING through another shared runner: every slice status PASS, every slice formalSlicePass False
+PASS gate-result.json, JOURNEY_G3_REAL_ONBOARD_SIMULATED_COUNTERPARTS, SHARED_BINDING through another shared runner, FP-IS-01: status PASS, formalSlicePass False, reason RUNNER_INPUT_OVERRIDE: SharedRunnerSource
+PASS classification, JOURNEY_G3_REAL_ONBOARD_SIMULATED_COUNTERPARTS, SHARED_BINDING, dirty and through another shared runner: formalSlicePass False, reason RUNNER_WORKTREE_DIRTY; RUNNER_INPUT_OVERRIDE: SharedRunnerSource, ControlServerRepository
+PASS classification, JOURNEY_G3_REAL_ONBOARD_SIMULATED_COUNTERPARTS, SHARED_BINDING, dirty and through another shared runner: every slice status PASS, every slice formalSlicePass False
+PASS gate-result.json, JOURNEY_G3_REAL_ONBOARD_SIMULATED_COUNTERPARTS, SHARED_BINDING, dirty and through another shared runner, FP-IS-01: status PASS, formalSlicePass False, reason RUNNER_WORKTREE_DIRTY; RUNNER_INPUT_OVERRIDE: SharedRunnerSource, ControlServerRepository
+PASS classification, JOURNEY_G3_REAL_ONBOARD_SIMULATED_COUNTERPARTS, SHARED_BINDING with unknown provenance: formalSlicePass False, reason RUNNER_PROVENANCE_UNKNOWN: no repository
+PASS classification, JOURNEY_G3_REAL_ONBOARD_SIMULATED_COUNTERPARTS, SHARED_BINDING with unknown provenance: every slice status PASS, every slice formalSlicePass False
+PASS gate-result.json, JOURNEY_G3_REAL_ONBOARD_SIMULATED_COUNTERPARTS, SHARED_BINDING with unknown provenance, FP-IS-01: status PASS, formalSlicePass False, reason RUNNER_PROVENANCE_UNKNOWN: no repository
+PASS classification, JOURNEY_G3_REAL_ONBOARD_SIMULATED_COUNTERPARTS, an override from a dirty runner worktree: formalSlicePass False, reason SELF_CHECK_OVERRIDE; RUNNER_WORKTREE_DIRTY
+PASS classification, JOURNEY_G3_REAL_ONBOARD_SIMULATED_COUNTERPARTS, an override from a dirty runner worktree: every slice status PASS, every slice formalSlicePass False
+PASS gate-result.json, JOURNEY_G3_REAL_ONBOARD_SIMULATED_COUNTERPARTS, an override from a dirty runner worktree, FP-IS-01: status PASS, formalSlicePass False, reason SELF_CHECK_OVERRIDE; RUNNER_WORKTREE_DIRTY
+PASS classification, JOURNEY_G3_REAL_ONBOARD_SIMULATED_COUNTERPARTS, an empty runner source: formalSlicePass False, reason UNRECOGNISED_RUNNER_SOURCE: 
+PASS classification, JOURNEY_G3_REAL_ONBOARD_SIMULATED_COUNTERPARTS, an empty runner source: every slice status PASS, every slice formalSlicePass False
+PASS gate-result.json, JOURNEY_G3_REAL_ONBOARD_SIMULATED_COUNTERPARTS, an empty runner source, FP-IS-01: status PASS, formalSlicePass False, reason UNRECOGNISED_RUNNER_SOURCE: 
+PASS classification, JOURNEY_G3_REAL_ONBOARD_SIMULATED_COUNTERPARTS, a runner source nobody defined: formalSlicePass False, reason UNRECOGNISED_RUNNER_SOURCE: SOMETHING_NEW
+PASS classification, JOURNEY_G3_REAL_ONBOARD_SIMULATED_COUNTERPARTS, a runner source nobody defined: every slice status PASS, every slice formalSlicePass False
+PASS gate-result.json, JOURNEY_G3_REAL_ONBOARD_SIMULATED_COUNTERPARTS, a runner source nobody defined, FP-IS-01: status PASS, formalSlicePass False, reason UNRECOGNISED_RUNNER_SOURCE: SOMETHING_NEW
+PASS classification, JOURNEY_G3_REAL_ONBOARD_SIMULATED_COUNTERPARTS, a lowercase committed_runner: formalSlicePass False, reason UNRECOGNISED_RUNNER_SOURCE: committed_runner
+PASS classification, JOURNEY_G3_REAL_ONBOARD_SIMULATED_COUNTERPARTS, a lowercase committed_runner: every slice status PASS, every slice formalSlicePass False
+PASS gate-result.json, JOURNEY_G3_REAL_ONBOARD_SIMULATED_COUNTERPARTS, a lowercase committed_runner, FP-IS-01: status PASS, formalSlicePass False, reason UNRECOGNISED_RUNNER_SOURCE: committed_runner
+PASS classification without a commits record: refused
+PASS run-staged-g3.ps1 grades its slices with -Commits $commitsRecord
+PASS run-staged-g3.ps1 hands its gate results commits = $commitsRecord
+PASS run-staged-g3.ps1 assigns $commitsRecord once, at top level
+PASS run-staged-g3.ps1's $commitsRecord carries controlServerCommitSource
+PASS run-staged-g3.ps1's $commitsRecord carries onboardCommitSource
+PASS run-staged-g3.ps1's $commitsRecord carries simulatorCommitSource
+PASS run-staged-g3.ps1's $commitsRecord carries protocolCommitSource
+PASS run-staged-g3.ps1's $commitsRecord carries runnerSource = $runnerProvenance.runnerSource
+PASS run-staged-g3.ps1 assigns $runnerProvenance once, at top level, from Get-G3RunnerProvenance -ScriptRoot $PSScriptRoot
+PASS run-staged-g3.ps1 prints the provenance in the statement right after measuring it
+PASS run-staged-g3.ps1 measures its provenance before the first statement that touches $StageRoot or $EvidenceRoot
+PASS run-staged-g3.ps1: -ControlServerRepository is an -Inputs entry of Get-G3RunnerProvenance, Given $ControlServerRepository, Default its param default
+PASS run-staged-g3.ps1: -Inputs names only those parameters
+PASS run-staged-g3-restart.ps1 grades its slices with -Commits $commitsRecord
+PASS run-staged-g3-restart.ps1 hands its gate results commits = $commitsRecord
+PASS run-staged-g3-restart.ps1 assigns $commitsRecord once, at top level
+PASS run-staged-g3-restart.ps1's $commitsRecord carries controlServerCommitSource
+PASS run-staged-g3-restart.ps1's $commitsRecord carries onboardCommitSource
+PASS run-staged-g3-restart.ps1's $commitsRecord carries simulatorCommitSource
+PASS run-staged-g3-restart.ps1's $commitsRecord carries protocolCommitSource
+PASS run-staged-g3-restart.ps1's $commitsRecord carries runnerSource = $runnerProvenance.runnerSource
+PASS run-staged-g3-restart.ps1 assigns $runnerProvenance once, at top level, from Get-G3RunnerProvenance -ScriptRoot $PSScriptRoot
+PASS run-staged-g3-restart.ps1 prints the provenance in the statement right after measuring it
+PASS run-staged-g3-restart.ps1 measures its provenance before the first statement that touches $StageRoot or $EvidenceRoot
+PASS run-staged-g3-restart.ps1: -ControlServerRepository is an -Inputs entry of Get-G3RunnerProvenance, Given $ControlServerRepository, Default its param default
+PASS run-staged-g3-restart.ps1: -Inputs names only those parameters
+PASS run-demand-bearing-g3-vectors.ps1 grades its slices with -Commits $commitsRecord
+PASS run-demand-bearing-g3-vectors.ps1 hands its gate results commits = $commitsRecord
+PASS run-demand-bearing-g3-vectors.ps1 assigns $commitsRecord once, at top level
+PASS run-demand-bearing-g3-vectors.ps1's $commitsRecord carries controlServerCommitSource
+PASS run-demand-bearing-g3-vectors.ps1's $commitsRecord carries runnerSource = $runnerProvenance.runnerSource
+PASS run-demand-bearing-g3-vectors.ps1 assigns $runnerProvenance once, at top level, from Get-G3RunnerProvenance -ScriptRoot $PSScriptRoot
+PASS run-demand-bearing-g3-vectors.ps1 prints the provenance in the statement right after measuring it
+PASS run-demand-bearing-g3-vectors.ps1 measures its provenance before the first statement that touches $StageRoot or $EvidenceRoot
+PASS run-demand-bearing-g3-vectors.ps1: -ControlServerRepository is an -Inputs entry of Get-G3RunnerProvenance, Given $ControlServerRepository, Default its param default
+PASS run-demand-bearing-g3-vectors.ps1: -SharedRunnerSource is an -Inputs entry of Get-G3RunnerProvenance, Given $SharedRunnerSource, Default its param default
+PASS run-demand-bearing-g3-vectors.ps1: -CommitBindingFunctionSource is an -Inputs entry of Get-G3RunnerProvenance, Given $CommitBindingFunctionSource, Default its param default
+PASS run-demand-bearing-g3-vectors.ps1: -Inputs names only those parameters
+PASS run-journey-g3.ps1 grades its slices with -Commits $commitsRecord
+PASS run-journey-g3.ps1 hands its gate results commits = $commitsRecord
+PASS run-journey-g3.ps1 assigns $commitsRecord once, at top level
+PASS run-journey-g3.ps1's $commitsRecord carries controlServerCommitSource
+PASS run-journey-g3.ps1's $commitsRecord carries onboardCommitSource
+PASS run-journey-g3.ps1's $commitsRecord carries runnerSource = $runnerProvenance.runnerSource
+PASS run-journey-g3.ps1 assigns $runnerProvenance once, at top level, from Get-G3RunnerProvenance -ScriptRoot $PSScriptRoot
+PASS run-journey-g3.ps1 prints the provenance in the statement right after measuring it
+PASS run-journey-g3.ps1 measures its provenance before the first statement that touches $StageRoot or $EvidenceRoot
+PASS run-journey-g3.ps1: -ControlServerRepository is an -Inputs entry of Get-G3RunnerProvenance, Given $ControlServerRepository, Default its param default
+PASS run-journey-g3.ps1: -SharedRunnerSource is an -Inputs entry of Get-G3RunnerProvenance, Given $SharedRunnerSource, Default its param default
+PASS run-journey-g3.ps1: -CommitBindingFunctionSource is an -Inputs entry of Get-G3RunnerProvenance, Given $CommitBindingFunctionSource, Default its param default
+PASS run-journey-g3.ps1: -Inputs names only those parameters
+PASS Get-G3CommitSources: the binding itself is SHARED_BINDING four times
+PASS Get-G3CommitSources: an uppercase spelling of the bound commit is not the binding
+PASS run-staged-g3.ps1 assigns $commitSources once, at top level
+PASS run-staged-g3.ps1's commit sources, the defaults: SHARED_BINDING
+PASS run-staged-g3.ps1's commit sources, -ControlServerCommit on the command line: SELF_CHECK_OVERRIDE/SHARED_BINDING
+PASS run-staged-g3.ps1, -ControlServerCommit on the command line: a PASS slice is withheld as SELF_CHECK_OVERRIDE
+PASS run-staged-g3.ps1's commit sources, -OnboardCommit on the command line: SHARED_BINDING/SELF_CHECK_OVERRIDE
+PASS run-staged-g3.ps1, -OnboardCommit on the command line: a PASS slice is withheld as SELF_CHECK_OVERRIDE
+PASS run-staged-g3.ps1's commit sources, -SimulatorCommit on the command line: SHARED_BINDING/SELF_CHECK_OVERRIDE
+PASS run-staged-g3.ps1, -SimulatorCommit on the command line: a PASS slice is withheld as SELF_CHECK_OVERRIDE
+PASS run-staged-g3.ps1's commit sources, -ProtocolCommit on the command line: SHARED_BINDING/SELF_CHECK_OVERRIDE
+PASS run-staged-g3.ps1, -ProtocolCommit on the command line: a PASS slice is withheld as SELF_CHECK_OVERRIDE
+PASS run-staged-g3.ps1's commit sources, HEAD binding another ControlServerCommit than the disk default: SELF_CHECK_OVERRIDE/SHARED_BINDING
+PASS run-staged-g3.ps1, HEAD binding another ControlServerCommit than the disk default: a PASS slice is withheld as SELF_CHECK_OVERRIDE
+PASS run-staged-g3.ps1's commit sources, HEAD binding another OnboardCommit than the disk default: SHARED_BINDING/SELF_CHECK_OVERRIDE
+PASS run-staged-g3.ps1, HEAD binding another OnboardCommit than the disk default: a PASS slice is withheld as SELF_CHECK_OVERRIDE
+PASS run-staged-g3.ps1's commit sources, HEAD binding another SimulatorCommit than the disk default: SHARED_BINDING/SELF_CHECK_OVERRIDE
+PASS run-staged-g3.ps1, HEAD binding another SimulatorCommit than the disk default: a PASS slice is withheld as SELF_CHECK_OVERRIDE
+PASS run-staged-g3.ps1's commit sources, HEAD binding another ProtocolCommit than the disk default: SHARED_BINDING/SELF_CHECK_OVERRIDE
+PASS run-staged-g3.ps1, HEAD binding another ProtocolCommit than the disk default: a PASS slice is withheld as SELF_CHECK_OVERRIDE
+PASS run-demand-bearing-g3-vectors.ps1: one top-level -SelfCheck* branch per override parameter
+PASS run-demand-bearing-g3-vectors.ps1, no override: the commits record carries the source the run set
+PASS run-demand-bearing-g3-vectors.ps1, -SelfCheckControlServerCommit: the commits record carries the source the run set
+PASS run-demand-bearing-g3-vectors.ps1, -SelfCheckControlServerCommit: a PASS slice is withheld as SELF_CHECK_OVERRIDE
+PASS run-demand-bearing-g3-vectors.ps1, HEAD binding another ControlServerCommit than -SharedRunnerSource: the commits record carries the source the run set
+PASS run-demand-bearing-g3-vectors.ps1, HEAD binding another ControlServerCommit than -SharedRunnerSource: a PASS slice is withheld as SELF_CHECK_OVERRIDE
+PASS run-demand-bearing-g3-vectors.ps1, HEAD binding another OnboardCommit than -SharedRunnerSource: the commits record carries the source the run set
+PASS run-demand-bearing-g3-vectors.ps1, HEAD binding another OnboardCommit than -SharedRunnerSource: a PASS slice is withheld as SELF_CHECK_OVERRIDE
+PASS run-demand-bearing-g3-vectors.ps1, HEAD binding another SimulatorCommit than -SharedRunnerSource: the commits record carries the source the run set
+PASS run-demand-bearing-g3-vectors.ps1, HEAD binding another SimulatorCommit than -SharedRunnerSource: a PASS slice is withheld as SELF_CHECK_OVERRIDE
+PASS run-demand-bearing-g3-vectors.ps1, HEAD binding another ProtocolCommit than -SharedRunnerSource: the commits record carries the source the run set
+PASS run-demand-bearing-g3-vectors.ps1, HEAD binding another ProtocolCommit than -SharedRunnerSource: a PASS slice is withheld as SELF_CHECK_OVERRIDE
+PASS run-journey-g3.ps1: one top-level -SelfCheck* branch per override parameter
+PASS run-journey-g3.ps1, no override: the commits record carries the source the run set
+PASS run-journey-g3.ps1, -SelfCheckControlServerCommit: the commits record carries the source the run set
+PASS run-journey-g3.ps1, -SelfCheckControlServerCommit: a PASS slice is withheld as SELF_CHECK_OVERRIDE
+PASS run-journey-g3.ps1, -SelfCheckOnboardCommit: the commits record carries the source the run set
+PASS run-journey-g3.ps1, -SelfCheckOnboardCommit: a PASS slice is withheld as SELF_CHECK_OVERRIDE
+PASS run-journey-g3.ps1, HEAD binding another ControlServerCommit than -SharedRunnerSource: the commits record carries the source the run set
+PASS run-journey-g3.ps1, HEAD binding another ControlServerCommit than -SharedRunnerSource: a PASS slice is withheld as SELF_CHECK_OVERRIDE
+PASS run-journey-g3.ps1, HEAD binding another OnboardCommit than -SharedRunnerSource: the commits record carries the source the run set
+PASS run-journey-g3.ps1, HEAD binding another OnboardCommit than -SharedRunnerSource: a PASS slice is withheld as SELF_CHECK_OVERRIDE
+PASS run-journey-g3.ps1, HEAD binding another SimulatorCommit than -SharedRunnerSource: the commits record carries the source the run set
+PASS run-journey-g3.ps1, HEAD binding another SimulatorCommit than -SharedRunnerSource: a PASS slice is withheld as SELF_CHECK_OVERRIDE
+PASS run-journey-g3.ps1, HEAD binding another ProtocolCommit than -SharedRunnerSource: the commits record carries the source the run set
+PASS run-journey-g3.ps1, HEAD binding another ProtocolCommit than -SharedRunnerSource: a PASS slice is withheld as SELF_CHECK_OVERRIDE
+PASS run-staged-g3-restart.ps1 assigns $commitSources once, at top level
+PASS run-staged-g3-restart.ps1, HEAD committed the disk binding: the commits record carries the source
+PASS run-staged-g3-restart.ps1, HEAD binding another ControlServerCommit than the disk default: the commits record carries the source
+PASS run-staged-g3-restart.ps1, HEAD binding another OnboardCommit than the disk default: the commits record carries the source
+PASS run-staged-g3-restart.ps1, HEAD binding another SimulatorCommit than the disk default: the commits record carries the source
+PASS run-staged-g3-restart.ps1, HEAD binding another ProtocolCommit than the disk default: the commits record carries the source
+PASS the first statement after the demand-bearing run's try is Write-StagedRunError
+PASS premise: the throwaway repository has a commit
+PASS the forced run fails
+PASS premise: what stops the run is the gate-result writer, not the generator
+PASS the console carries the generator's own reason
+PASS runner-error.json carries the generator's own reason and the exit
+PASS the statement after $baseline = Read-ControlDatabase is the FIELD_RUN guard over that baseline
+PASS FIELD_RUN guard, cs#453's generated store under FIELD_RUN: refused, naming 3 marker(s)
+PASS FIELD_RUN guard, only the generated demand key: refused, naming 1 marker(s)
+PASS FIELD_RUN guard, only the generated vehicle key: refused, naming 1 marker(s)
+PASS FIELD_RUN guard, only the generated agvId: refused, naming 1 marker(s)
+PASS FIELD_RUN guard, the 2026-08-29 field store: accepted
+PASS FIELD_RUN guard, the 2026-08-29 field store without claim records: accepted
+PASS FIELD_RUN guard, the generated store under SYNTHETIC_RIG: accepted
+PASS provenance, the committed runner: COMMITTED_RUNNER, clean, the binding read back out of HEAD
+PASS provenance, the committed runner: a PASS slice is a formal pass
+PASS provenance, a locally edited default: RUNNER_WORKTREE_DIRTY, and the binding is still HEAD's
+PASS provenance, a locally edited default: the edited commit is SELF_CHECK_OVERRIDE against HEAD
+PASS provenance, a locally edited default: withheld
+PASS provenance, a locally edited default behind --assume-unchanged (premise: git status is empty)
+PASS provenance, a locally edited default behind --assume-unchanged: RUNNER_WORKTREE_DIRTY, withheld
+PASS provenance, a locally edited default behind --skip-worktree (premise: git status is empty)
+PASS provenance, a locally edited default behind --skip-worktree: RUNNER_WORKTREE_DIRTY, withheld
+PASS provenance, an untracked file outside evidence/: RUNNER_WORKTREE_DIRTY naming it, withheld
+PASS provenance printed when not COMMITTED_RUNNER: the warning, the reason and the dirty path
+PASS provenance printed when COMMITTED_RUNNER: one line, no warning
+PASS provenance, an earlier run's untracked evidence under evidence/: COMMITTED_RUNNER, a formal pass
+PASS provenance, a tracked file under evidence/ changed: RUNNER_WORKTREE_DIRTY naming it, withheld
+PASS provenance, an untracked file beside evidence/ (evidence-copy.ps1): RUNNER_WORKTREE_DIRTY
+PASS harness clean: run-staged-g3.ps1 assigns $harnessWorktreeClean once, at top level
+FAIL harness clean: measured after g3-slice-evidence.ps1 is loaded and before the run writes anything -- harness at 31, shared source at 33, first write at 44
+FAIL harness clean: an earlier run's untracked evidence under evidence/ alone is clean -- False
+PASS harness clean: that evidence plus an untracked file outside evidence/ is dirty
+PASS harness clean: an untracked file beside evidence/ (evidence-copy.ps1) is dirty
+PASS harness clean: a tracked file under evidence/ changed is dirty
+PASS provenance, -SharedRunnerSource at a copy keeping the defaults: RUNNER_INPUT_OVERRIDE: SharedRunnerSource, withheld
+PASS provenance, -SharedRunnerSource at a copy with another default: RUNNER_INPUT_OVERRIDE: SharedRunnerSource, withheld
+PASS provenance, -SharedRunnerSource at a copy with another default: that commit is SELF_CHECK_OVERRIDE against HEAD
+PASS provenance, the default paths spelled relative and with a trailing separator: COMMITTED_RUNNER
+PASS provenance, an empty -ControlServerRepository: RUNNER_INPUT_OVERRIDE
+PASS provenance, dirty and through a copy: both reasons
+PASS provenance, HEAD without run-staged-g3.ps1: RUNNER_PROVENANCE_UNKNOWN, no binding, withheld
+PASS provenance, an unborn HEAD: RUNNER_PROVENANCE_UNKNOWN on one line, withheld
+PASS provenance, outside any repository: RUNNER_PROVENANCE_UNKNOWN, no commit, withheld
+G3EvidenceHonesty self-check: 2 check(s) came out the other way.
