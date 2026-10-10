@@ -314,7 +314,7 @@ public sealed class RouteGraphDispatchTests
             DbContextOptions<ControlServerDbContext> dbOptions =
                 new DbContextOptionsBuilder<ControlServerDbContext>().UseSqlite(connection).Options;
             ControlServerDbContext context = new(dbOptions);
-            await context.Database.MigrateAsync(TestContext.Current.CancellationToken);
+            await MigratedDatabaseTemplate.ApplyAsync(context.Database, TestContext.Current.CancellationToken);
 
             RouteGraphSnapshotStore store = new(context);
             if (seeded)

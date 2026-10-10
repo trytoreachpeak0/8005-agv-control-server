@@ -139,6 +139,37 @@ public sealed class MigratedDatabaseTemplateTests : IDisposable
         Assert.Equal("1", Scalar(connection, "SELECT count(*) FROM sqlite_master;"));
     }
 
+    /// <summary>
+    /// A test about the migrations runs them: the template is migrated by the same code, so a wrong migration would be wrong
+    /// in every copy too, and only these tests would say so.
+    /// </summary>
+    [Fact]
+    public void NoMigrationTestStartsFromATemplateCopy()
+    {
+        string tests = Path.Combine(ProtocolIdentityArchitectureTests.RepositoryRoot(), "tests", "ControlServer.Tests");
+        string[] migrationTests =
+        [
+            .. Directory.GetFiles(tests, "*Migration*.cs")
+                .Where(path => !Path.GetFileName(path).StartsWith(nameof(MigratedDatabaseTemplate), StringComparison.Ordinal)),
+            Path.Combine(tests, "AuditDatabaseImmutabilityTests.cs"),
+        ];
+        Assert.True(migrationTests.Length >= 15, $"Found only {migrationTests.Length} migration test files under {tests}.");
+
+        string[] copying =
+        [
+            .. migrationTests.Where(path =>
+            {
+                string text = File.ReadAllText(path);
+                return text.Contains(nameof(MigratedDatabaseTemplate), StringComparison.Ordinal) ||
+                       text.Contains("Batch7JourneyFixture.CreateAsync()", StringComparison.Ordinal);
+            }).Select(Path.GetFileName)!,
+        ];
+        Assert.True(
+            copying.Length == 0,
+            "These migration tests start from a template copy instead of running the migrations; use "
+            + "Batch7JourneyFixture.CreateMigratedForRealAsync() or MigrateAsync: " + string.Join(", ", copying));
+    }
+
     private static async Task<SqliteConnection> CopyAsync()
     {
         SqliteConnection connection = await OpenMemoryAsync();

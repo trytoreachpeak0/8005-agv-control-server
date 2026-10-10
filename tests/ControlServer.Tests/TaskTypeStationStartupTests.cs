@@ -657,8 +657,8 @@ public sealed class TaskTypeStationStartupTests
             ServiceProvider provider = services.BuildServiceProvider(new ServiceProviderOptions { ValidateScopes = true });
             await using (AsyncServiceScope scope = provider.CreateAsyncScope())
             {
-                await scope.ServiceProvider.GetRequiredService<ControlServerDbContext>().Database
-                    .MigrateAsync(TestContext.Current.CancellationToken);
+                await MigratedDatabaseTemplate.ApplyAsync(
+                    scope.ServiceProvider.GetRequiredService<ControlServerDbContext>().Database, TestContext.Current.CancellationToken);
             }
             return new Harness(connection, provider, directory, presetPath, logs);
         }

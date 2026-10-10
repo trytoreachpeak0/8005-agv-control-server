@@ -253,7 +253,7 @@ public sealed class EmergencyStopReleaseEndpointsTests
             await connection.OpenAsync(TestContext.Current.CancellationToken);
             ControlServerDbContext context = new(
                 new DbContextOptionsBuilder<ControlServerDbContext>().UseSqlite(connection).Options);
-            await context.Database.MigrateAsync(TestContext.Current.CancellationToken);
+            await MigratedDatabaseTemplate.ApplyAsync(context.Database, TestContext.Current.CancellationToken);
             return new EndpointFixture(connection, context);
         }
 

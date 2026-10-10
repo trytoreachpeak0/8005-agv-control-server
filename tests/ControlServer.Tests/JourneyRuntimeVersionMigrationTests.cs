@@ -100,7 +100,7 @@ public sealed class JourneyRuntimeVersionMigrationTests
     [Fact]
     public async Task TheColumnIsNotNullAndTheModelSnapshotMatchesTheModel()
     {
-        await using Batch7JourneyFixture fixture = await Batch7JourneyFixture.CreateAsync();
+        await using Batch7JourneyFixture fixture = await Batch7JourneyFixture.CreateMigratedForRealAsync();
         await using SqliteCommand command = fixture.Connection.CreateCommand();
         command.CommandText = "SELECT \"notnull\" FROM pragma_table_info('JourneyRuntimes') WHERE name = 'Version'";
 
@@ -116,7 +116,7 @@ public sealed class JourneyRuntimeVersionMigrationTests
     {
         Batch7JourneyFixture fixture = await Batch7JourneyFixture.CreateAsync(migrate: false);
         await fixture.Context.GetService<IMigrator>().MigrateAsync(PreviousMigration, Token);
-        await using Batch7JourneyFixture scratch = await Batch7JourneyFixture.CreateAsync();
+        await using Batch7JourneyFixture scratch = await Batch7JourneyFixture.CreateMigratedForRealAsync();
         string[] demands = ["D-1", "D-2", "D-3"];
         for (int index = 0; index < demands.Length; index++)
         {

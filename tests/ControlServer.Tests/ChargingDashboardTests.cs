@@ -1146,7 +1146,7 @@ public sealed class ChargingDashboardTests
             DateTimeOffset now = DateTimeOffset.FromUnixTimeSeconds(DateTimeOffset.UtcNow.ToUnixTimeSeconds());
             ChargingDatabase database = new(connection, now);
             await using ControlServerDbContext context = database.NewContext();
-            await context.Database.MigrateAsync(TestContext.Current.CancellationToken);
+            await MigratedDatabaseTemplate.ApplyAsync(context.Database, TestContext.Current.CancellationToken);
             foreach (int n in Enumerable.Range(1, 5))
             {
                 string agvId = $"AGV-0{n}";

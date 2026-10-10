@@ -92,7 +92,7 @@ public sealed class Batch7LoadingMembershipBackfillMigrationTests
     {
         CancellationToken cancellationToken = TestContext.Current.CancellationToken;
         DateTimeOffset now = Batch7JourneyFixture.Now;
-        await using Batch7JourneyFixture scratch = await Batch7JourneyFixture.CreateAsync();
+        await using Batch7JourneyFixture scratch = await Batch7JourneyFixture.CreateMigratedForRealAsync();
         ControlServerDbContext context = scratch.Context;
         await Batch7JourneyFixture.AcceptAsync(context, LoadingDemandId, "agv-01", "VK-01", now);
         await Batch7JourneyFixture.AcceptAsync(context, OnTheWayDemandId, "agv-02", "VK-02", now);

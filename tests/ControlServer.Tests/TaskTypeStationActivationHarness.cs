@@ -64,7 +64,7 @@ internal sealed class TaskTypeStationActivationHarness : IAsyncDisposable
         CancellationToken cancellationToken = TestContext.Current.CancellationToken;
 
         ControlServerDbContext context = harness.NewContext();
-        await context.Database.MigrateAsync(cancellationToken);
+        await MigratedDatabaseTemplate.ApplyAsync(context.Database, cancellationToken);
         Stack stack = StackOver(context);
         TaskTypeStationVersionWrite<TaskTypeStationRuleVersion> rules = await stack.Rules.WriteVersionAsync(
             TaskTypeStationTestData.SixRules, TaskTypeStationTestData.Source, Now.AddHours(-1), cancellationToken);

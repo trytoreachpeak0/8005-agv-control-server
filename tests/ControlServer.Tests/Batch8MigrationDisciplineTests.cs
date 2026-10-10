@@ -76,7 +76,7 @@ public sealed class Batch8MigrationDisciplineTests
     [Fact]
     public async Task TheModelSnapshotMatchesTheModel()
     {
-        await using Batch7JourneyFixture fixture = await Batch7JourneyFixture.CreateAsync();
+        await using Batch7JourneyFixture fixture = await Batch7JourneyFixture.CreateMigratedForRealAsync();
 
         Assert.False(fixture.Context.Database.HasPendingModelChanges());
     }

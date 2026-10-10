@@ -205,7 +205,7 @@ public sealed class Batch7TransportDemandSuppressionTests
             CancellationToken cancellationToken = TestContext.Current.CancellationToken;
             await using (ControlServerDbContext setup = FileContext(connectionString))
             {
-                await setup.Database.MigrateAsync(cancellationToken);
+                await MigratedDatabaseTemplate.ApplyAsync(setup.Database, cancellationToken);
                 await Batch7JourneyFixture.AcceptAsync(setup, Demand, "agv-01", "VK-01", At);
             }
 

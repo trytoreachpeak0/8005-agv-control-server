@@ -114,7 +114,7 @@ public sealed class Batch7JourneyAcceptanceTests
     [Fact]
     public async Task ANewlyAcceptedJourneyCannotBeToldApartFromTheSameJourneyBackFilledByTheMigration()
     {
-        await using Batch7JourneyFixture fixture = await Batch7JourneyFixture.CreateAsync();
+        await using Batch7JourneyFixture fixture = await Batch7JourneyFixture.CreateMigratedForRealAsync();
         CancellationToken cancellationToken = TestContext.Current.CancellationToken;
         await Batch7JourneyFixture.AcceptAsync(fixture.Context, "D-712", "agv-01", "VK-01", Batch7JourneyFixture.Now);
         await fixture.RenewContextAsync();

@@ -906,7 +906,7 @@ public sealed class VehiclePurposeDashboardTests
             await connection.OpenAsync(TestContext.Current.CancellationToken);
             DashboardDatabase database = new(connection);
             await using ControlServerDbContext context = database.NewContext();
-            await context.Database.MigrateAsync(TestContext.Current.CancellationToken);
+            await MigratedDatabaseTemplate.ApplyAsync(context.Database, TestContext.Current.CancellationToken);
             // AGV-01..04 说过话；AGV-05 的会话行在，最后一条消息却在六秒存活时限之外。
             foreach (int n in Enumerable.Range(1, 5))
             {

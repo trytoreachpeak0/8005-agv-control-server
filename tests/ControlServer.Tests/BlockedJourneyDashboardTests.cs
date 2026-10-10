@@ -1018,7 +1018,7 @@ public sealed class BlockedJourneyDashboardTests
             SqliteConnection connection = new("Data Source=:memory:");
             await connection.OpenAsync(TestContext.Current.CancellationToken);
             DashboardDatabase database = new(connection, new ControlServerDbContext(Options(connection)));
-            await database.Context.Database.MigrateAsync(TestContext.Current.CancellationToken);
+            await MigratedDatabaseTemplate.ApplyAsync(database.Context.Database, TestContext.Current.CancellationToken);
             return database;
         }
 

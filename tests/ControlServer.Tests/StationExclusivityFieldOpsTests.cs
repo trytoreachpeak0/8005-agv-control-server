@@ -352,7 +352,7 @@ public sealed class StationExclusivityFieldOpsTests : IAsyncDisposable
     {
         Directory.CreateDirectory(_directory);
         await using ControlServerDbContext context = Open();
-        await context.Database.MigrateAsync(Token);
+        await MigratedDatabaseTemplate.ApplyAsync(context.Database, Token);
         await new StationExclusivityStore(context).TryAcquireAsync(
             new StationExclusivityRequest(25, 202, StationExclusivityKinds.FixedTaskStation, StationExclusivityStates.Occupied, null),
             KeyA, "journey:a", At, Token);
