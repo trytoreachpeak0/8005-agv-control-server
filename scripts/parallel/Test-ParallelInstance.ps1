@@ -1394,7 +1394,11 @@ $scanTargets = [ordered]@{
             'Set-ParallelInstanceConfigurationFlag::$Writer', 'Get-ParallelJourneyDispatchState::$read',
             'Invoke-ParallelDispatchGateChange::$Actions.ServiceStatus', 'Invoke-ParallelDispatchGateChange::$Actions.ReadState',
             'Invoke-ParallelDispatchGateChange::$Actions.StopService', 'Invoke-ParallelDispatchGateChange::$Actions.StartService',
-            'Invoke-ParallelDispatchGateChange::$Actions.ProcessStartTimeUtc', 'Invoke-ParallelDispatchGateChange::$startAgain'); Owners = @(); Expected = 25 }
+            'Invoke-ParallelDispatchGateChange::$Actions.ProcessStartTimeUtc', 'Invoke-ParallelDispatchGateChange::$startAgain',
+            # control-server#578: the release's injected actions.
+            'Invoke-ParallelJourneyRuntimeRelease::$Actions.ReadBackHeld', 'Invoke-ParallelJourneyRuntimeRelease::$Actions.ReadBackReleased',
+            'Invoke-ParallelJourneyRuntimeRelease::$Actions.ServiceProcessId', 'Invoke-ParallelJourneyRuntimeRelease::$Actions.StopService',
+            'Invoke-ParallelJourneyRuntimeRelease::$Actions.ProcessExited', 'Invoke-ParallelJourneyRuntimeRelease::$Actions.StartService'); Owners = @(); Expected = 32 }
     'Set-ParallelDispatchGateLocal.ps1'   = @{ Dynamic = @(); Owners = @(); Expected = 0 }
 }
 foreach ($file in $scanTargets.Keys) {
@@ -3618,8 +3622,11 @@ $retireAt = $installerSource.IndexOf('Unregister-ScheduledTask -TaskName $retire
 Invoke-SourceCase 'installer: reads the effective configuration back through Find-ParallelEffectiveConfiguration / Get-ParallelEffectiveConfigurationAction after every install and rollback' {
     # Since the re-review the installer reaches the refusal through Get-ParallelEffectiveConfigurationAction (S2).
     $absent = @('Find-ParallelEffectiveConfiguration', 'Get-ParallelEffectiveConfigurationAction' | Where-Object { $installerCommands -notcontains $_ })
-    $calls = ([regex]::Matches($installerSource, '(?m)^\s*Assert-EffectiveConfiguration\s*$')).Count
-    @{ Ok = ($absent.Count -eq 0 -and $calls -eq 2); Detail = "not called: $($absent -join ', '); Assert-EffectiveConfiguration call sites: $calls (install and rollback)" }
+    # control-server#578: the read-back runs inside the release, held then released; the release runs on both paths.
+    $calls = ([regex]::Matches($installerSource, '(?m)^\s*Invoke-JourneyRuntimeRelease\s*$')).Count
+    $phases = ([regex]::Matches($installerSource, 'Assert-EffectiveConfiguration -Phase (Held|Released)')).Count
+    @{ Ok = ($absent.Count -eq 0 -and $calls -eq 2 -and $phases -eq 2)
+        Detail = "not called: $($absent -join ', '); Invoke-JourneyRuntimeRelease call sites: $calls (install and rollback); phased read-backs: $phases" }
 }
 Invoke-SourceCase 'installer (S2): the package is checked for existence and hash before the old double is retired and before the definition is recorded' {
     $hashAt = $installerSource.IndexOf('Get-FileHash -LiteralPath $PackageZip', [StringComparison]::Ordinal)
@@ -4171,26 +4178,30 @@ Invoke-PathCase 'held, definition keeps the runtime off' {
 # rollback path, the release runs after Set-InstanceConfiguration, its two read-backs are the installer's
 # Assert-EffectiveConfiguration in the two phases, and no read-back runs outside it.
 $releaseCalls = @($installerAst.FindAll({ param($n) $n -is [System.Management.Automation.Language.CommandAst] -and $n.GetCommandName() -eq 'Invoke-ParallelJourneyRuntimeRelease' }, $true))
-$rollbackRelease = @($releaseCalls | Where-Object { $null -ne $rollbackBlock -and $_.Extent.StartOffset -gt $rollbackBlock.Clauses[0].Item2.Extent.StartOffset -and $_.Extent.EndOffset -lt $rollbackBlock.Clauses[0].Item2.Extent.EndOffset })
-Write-Result -Ok ($releaseCalls.Count -eq 2 -and $rollbackRelease.Count -eq 1) `
-    -Name 'wiring: the runtime is released on the install path and on the rollback path (Invoke-ParallelJourneyRuntimeRelease, twice)' `
-    -Detail ("calls at lines " + (($releaseCalls | ForEach-Object { $_.Extent.StartLineNumber }) -join ', ') + "; in rollback: $($rollbackRelease.Count)")
+$releaseSites = @($installerAst.FindAll({ param($n) $n -is [System.Management.Automation.Language.CommandAst] -and $n.GetCommandName() -eq 'Invoke-JourneyRuntimeRelease' }, $true))
+$rollbackRelease = @($releaseSites | Where-Object { $null -ne $rollbackBlock -and $_.Extent.StartOffset -gt $rollbackBlock.Clauses[0].Item2.Extent.StartOffset -and $_.Extent.EndOffset -lt $rollbackBlock.Clauses[0].Item2.Extent.EndOffset })
+Write-Result -Ok ($releaseCalls.Count -eq 1 -and $releaseSites.Count -eq 2 -and $rollbackRelease.Count -eq 1) `
+    -Name 'wiring: the runtime is released on the install path and on the rollback path (Invoke-JourneyRuntimeRelease, twice, around one Invoke-ParallelJourneyRuntimeRelease)' `
+    -Detail ("module calls: $($releaseCalls.Count); release sites at lines " + (($releaseSites | ForEach-Object { $_.Extent.StartLineNumber }) -join ', ') + "; in rollback: $($rollbackRelease.Count)")
 $releaseOrderBad = @()
-foreach ($site in $releaseCalls) {
+foreach ($site in $releaseSites) {
     $block = $site.Parent
     while ($block -and $block -isnot [System.Management.Automation.Language.StatementBlockAst] -and $block -isnot [System.Management.Automation.Language.NamedBlockAst]) { $block = $block.Parent }
     $setBefore = @($block.FindAll({ param($n) $n -is [System.Management.Automation.Language.CommandAst] -and $n.GetCommandName() -eq 'Set-InstanceConfiguration' }, $false) |
             Where-Object { $_.Extent.StartOffset -lt $site.Extent.StartOffset })
+    if ($setBefore.Count -eq 0) { $releaseOrderBad += "line $($site.Extent.StartLineNumber): no Set-InstanceConfiguration before it" }
+}
+foreach ($site in $releaseCalls) {
     $table = $site.Find({ param($n) $n -is [System.Management.Automation.Language.HashtableAst] }, $true)
-    $held = $null -eq $table ? '' : (@($table.KeyValuePairs | Where-Object { $_.Item1.Extent.Text -eq 'ReadBackHeld' } | ForEach-Object { $_.Item2.Extent.Text }) -join '')
-    $released = $null -eq $table ? '' : (@($table.KeyValuePairs | Where-Object { $_.Item1.Extent.Text -eq 'ReadBackReleased' } | ForEach-Object { $_.Item2.Extent.Text }) -join '')
-    $exited = $null -eq $table ? '' : (@($table.KeyValuePairs | Where-Object { $_.Item1.Extent.Text -eq 'ProcessExited' } | ForEach-Object { $_.Item2.Extent.Text }) -join '')
-    if ($setBefore.Count -eq 0 -or -not $held.Contains('Assert-EffectiveConfiguration -Phase Held') -or
-        -not $released.Contains('Assert-EffectiveConfiguration -Phase Released') -or -not $exited.Contains('Wait-Process')) {
-        $releaseOrderBad += "line $($site.Extent.StartLineNumber)"
+    $pairText = { param([string] $Key) $null -eq $table ? '' : (@($table.KeyValuePairs | Where-Object { $_.Item1.Extent.Text -eq $Key } | ForEach-Object { $_.Item2.Extent.Text }) -join '') }
+    if (-not (& $pairText 'ReadBackHeld').Contains('Assert-EffectiveConfiguration -Phase Held') -or
+        -not (& $pairText 'ReadBackReleased').Contains('Assert-EffectiveConfiguration -Phase Released') -or
+        -not (& $pairText 'ProcessExited').Contains('Wait-Process') -or -not (& $pairText 'ServiceProcessId').Contains("Name='`$serviceName'") -or
+        -not (& $pairText 'StopService').Contains('Stop-Service -Name $serviceName') -or -not (& $pairText 'StartService').Contains('Start-Service -Name $serviceName')) {
+        $releaseOrderBad += "line $($site.Extent.StartLineNumber): an action does not run what it stands for"
     }
 }
-Write-Result -Ok ($releaseCalls.Count -gt 0 -and $releaseOrderBad.Count -eq 0) `
+Write-Result -Ok ($releaseSites.Count -gt 0 -and $releaseOrderBad.Count -eq 0) `
     -Name 'wiring: each release follows Set-InstanceConfiguration, reads back held then released, and waits on the phase-one process' -Detail ($releaseOrderBad -join ', ')
 $bareReadBack = @($installerAst.FindAll({ param($n) $n -is [System.Management.Automation.Language.CommandAst] -and $n.GetCommandName() -eq 'Assert-EffectiveConfiguration' }, $true) |
         Where-Object { $p = $_.Parent; $inRelease = $false; while ($p) { if ($releaseCalls -contains $p) { $inRelease = $true; break }; $p = $p.Parent }; -not $inRelease })

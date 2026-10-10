@@ -23,9 +23,27 @@ control-server#262。约 2026-10-08 起 `factory01` 上同时跑两套 ControlSe
 没有替身段、任务类型只留 `STAGING_TO_WIRE`，旅程运行时与建单闸门仍是关的（自测断言两份文件的其余部分逐字相同）。
 **实际生效的值以 Host 为准，不以定义为准**（#535 审查 M1/M2）。.NET 配置跨文件按下标合并数组，叠加层的
 `["STAGING_TO_WIRE"]` 曾经只盖住包内 `appsettings.json` 六项里的第一项，`WIRE_TO_GATE` 照样生效。现在 Host
-对 `allowedWorkTypes`、`allowedDispatchZones` 取最后一个写了它的配置层的整份列表（`JourneyRuntimeOptionsRegistration`），
+对 `allowedWorkTypes`、`allowedDispatchZones` 与车队表 `fleet`（含每车的 `allowedTaskTypes`、`zones`，control-server#578）
+取最后一个写了它的配置层的整份内容（`JourneyRuntimeOptionsRegistration`），
 启动后记一条 `EFFECTIVE_CONFIGURATION` 事件；安装器在安装与回滚之后从 Host 的日志里读这条事件、与定义逐项比对，
 `production` 下读不到或不一致都算失败。
+
+**回读之前旅程运行时是关着的**（control-server#578）。这条事件要等所有后台服务都启动后才记，运行时开着的话，
+第一轮派车那时已经在跑：读生产需求目录、受理需求写库、占车，派车闸门开着时还会建 RIoT 单；停服务撤不回已受理的旅程，
+下次启动还会接着推进。所以首装、升级、回滚三条路径都这样走：
+
+1. `Set-InstanceConfiguration` 合并覆盖层后把 `JourneyRuntime.enabled` 写成 `false` 再重启（MesIngest 令牌那次重启也保持 `false`）；
+2. 第一次回读：生效配置与定义一致，**并且**日志里本进程启动后有运行时关闭事件 2001、没有派车循环跑过的痕迹
+   （派车引擎的任何一行、工作者除 2001 外的任何一行、MES 需求目录客户端的任何请求、充电／回待命点／自家单重建等建单事件）。
+   不满足就停服务、报 `JOURNEY_RUNTIME_NOT_HELD` 或 `EFFECTIVE_CONFIGURATION_MISMATCH`，运行时始终没开过；
+3. 定义开着运行时才继续：停服务，等第一阶段那个进程（按 PID）确实退出，写回 `true`，起服务；
+4. 第二次回读（第二道），不一致照样停服务。
+
+代价：每次安装多一次重启，约 10～30 秒；运行时关着时服务端不校验车队表，车队表写错要到第 3 步起服务时才报出来（那时服务起不来，
+不会派车）。没有日志文件可读时第 2 步也读不到 2001，按拒绝处理。`EFFECTIVE_CONFIGURATION=` 结果行只打一次，取最后一次回读。
+
+已知限制：一层写空数组 `"fleet": []` 读作「没写」，清不掉更早一层的车队表。今天包内 `appsettings.json` 没有车队表，回读也会拒绝定义里
+没写、却绑出来的车队表；包内一旦加车队表，必须先改这条语义（`PackageAppSettingsRosterArchitectureTests` 会在那天变红）。
 
 从 `fake` 装成 `production` 时，安装器在记录新定义之前先撤掉上一次安装留下的替身（计划任务、进程、目录），
 否则之后的卸载按新定义找不到它。卸载与关闸两种模式都能走；`production` 下的足迹里没有计划任务和替身目录。

@@ -2076,6 +2076,86 @@ function Get-ParallelEffectiveConfigurationAction {
     return [pscustomobject]@{ Action = $action; Message = $message }
 }
 
+# control-server#578. What a Host whose journey runtime is held off must not have logged. Accepting a demand, the RIoT
+# create for it and the plan sent to a vehicle log no event of their own -- they are written to the database -- so this
+# looks for any sign that the loop doing them ran: anything at all under the engine's category (DispatchRoundRunner logs
+# under it too), anything from the worker but its "disabled" line, any request through the MesIngest catalog client
+# (the first thing every dispatch round does), and the effect events logged under other categories.
+$script:HeldRuntimeDisabledEventId = 2001
+$script:HeldRuntimeWorkerSource = 'ControlServer.Host.Runtime.JourneyRuntimeWorker'
+$script:HeldRuntimeActivitySources = @(
+    'ControlServer.Host.Runtime.JourneyRuntimeEngine'
+    'System.Net.Http.HttpClient.IMesIngestCatalog.'
+)
+$script:HeldRuntimeActivityEventIds = @(
+    2150, 2151, 2154,                   # demand release (Release/DemandReleaseService)
+    2170, 2171, 2172, 2173, 2174,       # own order rebuild (a RIoT re-create)
+    2198, 2220, 2223,                   # idle return committed / materialized
+    2240, 2250, 2251, 2252, 2254, 2255, # charging order
+    2300                                # clearance move
+)
+
+function Get-ParallelHeldRuntimeRefusal {
+    <#
+        .SYNOPSIS
+            control-server#578. $null when the Host's log since -Since shows its journey runtime held off; otherwise
+            JOURNEY_RUNTIME_NOT_HELD and why.
+
+        .DESCRIPTION
+            Two facts, both from lines at or after -Since (the service process's start), Serilog compact JSON:
+              * the worker logged event 2001 ("Journey runtime is disabled") -- the runtime read enabled=false.
+                Without it a configuration layer above appsettings.Production.json (an environment variable, say)
+                may have set it true;
+              * nothing shows the dispatch loop ran ($script:HeldRuntimeActivitySources / ActivityEventIds).
+            Lines that are not JSON are skipped, as in Find-ParallelEffectiveConfiguration.
+    #>
+    [CmdletBinding()]
+    [OutputType([string])]
+    param(
+        [AllowEmptyCollection()][string[]] $Lines,
+        [Parameter(Mandatory = $true)][datetimeoffset] $Since
+    )
+    $disabledSeen = $false
+    [string[]] $activity = @()
+    foreach ($line in @($Lines)) {
+        if ([string]::IsNullOrWhiteSpace($line) -or -not $line.TrimStart().StartsWith('{')) { continue }
+        try { $event = ConvertFrom-Json -InputObject $line -AsHashtable -Depth 10 } catch { continue }
+        if ($event -isnot [hashtable]) { continue }
+        $raw = $event['@t']
+        [datetimeoffset] $at = [datetimeoffset]::MinValue
+        if ($raw -is [datetimeoffset]) {
+            $at = $raw
+        } elseif ($raw -is [datetime]) {
+            $at = [datetimeoffset]::new(($raw.Kind -eq [DateTimeKind]::Unspecified) ? [datetime]::SpecifyKind($raw, [DateTimeKind]::Utc) : $raw.ToUniversalTime())
+        } elseif (-not [datetimeoffset]::TryParse([string] $raw, [cultureinfo]::InvariantCulture,
+                [Globalization.DateTimeStyles]::AssumeUniversal, [ref] $at)) { continue }
+        if ($at -lt $Since) { continue }
+        $source = [string] $event['SourceContext']
+        $id = ($event['EventId'] -is [System.Collections.IDictionary]) ? $event['EventId']['Id'] : $null
+        $id = ($id -is [ValueType]) ? [int] $id : $null
+        if ($source -ceq $script:HeldRuntimeWorkerSource) {
+            if ($id -eq $script:HeldRuntimeDisabledEventId) { $disabledSeen = $true } else { $activity += "event $id from $source" }
+            continue
+        }
+        if (@($script:HeldRuntimeActivitySources | Where-Object { $source.StartsWith($_, [StringComparison]::Ordinal) }).Count -gt 0) {
+            $activity += "event $id from $source$(if ($event['Uri']) { " ($($event['Uri']))" })"
+            continue
+        }
+        if ($null -ne $id -and $script:HeldRuntimeActivityEventIds -contains $id) {
+            $activity += "event $id from $source"
+        }
+    }
+    [string[]] $problems = @()
+    if (-not $disabledSeen) {
+        $problems += "no event $script:HeldRuntimeDisabledEventId (journey runtime disabled) from $script:HeldRuntimeWorkerSource since the process started, so the runtime may be on"
+    }
+    if ($activity.Count -gt 0) {
+        $problems += "the dispatch loop ran: $(@($activity | Select-Object -Unique) -join '; ')"
+    }
+    if ($problems.Count -eq 0) { return $null }
+    return "JOURNEY_RUNTIME_NOT_HELD: $($problems -join '; ')."
+}
+
 function New-ParallelInstanceConfigurationOverlay {
     <#
         .SYNOPSIS
@@ -2731,6 +2811,7 @@ Export-ModuleMember -Function @(
     'Find-ParallelEffectiveConfiguration'
     'Get-ParallelEffectiveConfigurationRefusal'
     'Get-ParallelEffectiveConfigurationAction'
+    'Get-ParallelHeldRuntimeRefusal'
     'Merge-ConfigurationTree'
     'Get-ParallelServiceEnvironmentEntry'
     'Set-ParallelServiceEnvironmentEntry'
