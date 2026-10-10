@@ -370,6 +370,72 @@ Test-Case 'C3 scenario: the charger window still ends only on CanSubmit, and G3-
     Assert-That ((@([regex]::Matches($condition, '\$heldReading\.\w+') | ForEach-Object Value | Sort-Object -Unique) -join ',') -eq '$heldReading.CanSubmit') "condition: $condition"
 }
 
+# --- D. G3-13-27's held UnableToChargeStatus reads -------------------------------------------------------------------
+
+# control-server#567 (coordinator's ruling, the same shape a second time): g3-unable-to-charge-field-confirmation's three-second
+# hold cast every read to [string], so an element UI Automation could not read became '' and counted as "not CONFIRMED". Each
+# read now goes through Read-L2UiaItemStatus; an unreadable one is counted apart and still fails G3-13-27, but says so.
+$unableScenario = Join-Path $PSScriptRoot 'scenarios\g3-unable-to-charge-field-confirmation.ps1'
+$unableTokens = $null; $unableErrors = $null
+$unableAst = [System.Management.Automation.Language.Parser]::ParseFile($unableScenario, [ref]$unableTokens, [ref]$unableErrors)
+$unableAdd = $unableAst.Find({ param($n) $n -is [System.Management.Automation.Language.InvokeMemberExpressionAst] -and
+        $n.Member.Value -eq 'Add' -and $n.Arguments.Count -ge 3 -and $n.Arguments[0].Extent.Text -eq "'G3-13-27'" }, $true)
+# The statements of the block that holds the reads and the assertion: the else branch of "is the business state acknowledged".
+$unableBlock = if ($null -ne $unableAdd) {
+    $node = $unableAdd
+    while ($null -ne $node -and $node -isnot [System.Management.Automation.Language.StatementBlockAst]) { $node = $node.Parent }
+    $node
+}
+
+Test-Case 'D1 g3-unable-to-charge-field-confirmation.ps1 parses and has the G3-13-27 hold' {
+    Assert-That ($unableErrors.Count -eq 0) "$($unableErrors.Count) parse errors: $($unableErrors | ForEach-Object { $_.Message })"
+    Assert-That ($null -ne $unableAdd -and $null -ne $unableBlock) 'no G3-13-27 assertion in a block'
+}
+
+Test-Case 'D2 scenario: an unreadable UnableToChargeStatus read is recorded unreadable, not as an empty value' {
+    $readAdd = $unableBlock.Find({ param($n) $n -is [System.Management.Automation.Language.InvokeMemberExpressionAst] -and
+            $n.Member.Value -eq 'Add' -and $n.Expression.Extent.Text -eq '$reads' }, $true)
+    Assert-That ($null -ne $readAdd) 'no $reads.Add(...) in the hold'
+    $readOne = [scriptblock]::Create($readAdd.Arguments[0].Extent.Text)
+    $journal = New-Journal 'd2'
+    $onboard = New-FakeStatusOnboard @('<missing>')
+    $read = & $readOne
+    Assert-That ($read -isnot [string] -and $null -ne $read.PSObject.Properties['Readable'] -and $read.Readable -eq $false) "read $($read | ConvertTo-Json -Compress)"
+    $onboard = New-FakeStatusOnboard @('CONFIRMED')
+    $read = & $readOne
+    Assert-That ($read.Readable -and $read.Value -ceq 'CONFIRMED') "read $($read | ConvertTo-Json -Compress)"
+}
+
+Test-Case 'D3 scenario: G3-13-27 passes only on every read readable and CONFIRMED; an unreadable read fails it as unreadable' {
+    # Everything in the block after the read loop, up to and including the assertion, run against a recorded $reads list.
+    $statements = @($unableBlock.Statements)
+    $loop = @($statements | Where-Object { $_ -is [System.Management.Automation.Language.WhileStatementAst] })
+    Assert-That ($loop.Count -eq 1) "$($loop.Count) read loops"
+    $after = $statements[([array]::IndexOf($statements, $loop[0]) + 1)..($statements.Count - 1)]
+    $judge = [scriptblock]::Create(($after | ForEach-Object { $_.Extent.Text }) -join "`n")
+    function New-Read([object]$Value) {
+        if ($Value -eq '<unreadable>') { return [pscustomobject]@{ Readable = $false; Value = $null; Reads = 3; Why = 'element not found' } }
+        return [pscustomobject]@{ Readable = $true; Value = $Value; Reads = 1; Why = $null }
+    }
+    foreach ($case in @(
+            @{ reads = @('CONFIRMED', 'CONFIRMED', 'CONFIRMED'); pass = $true; actual = '*3 reads*' }
+            @{ reads = @('CONFIRMED', '', 'CONFIRMED'); pass = $false; actual = "*1 not CONFIRMED*first: ''*" }
+            @{ reads = @('CONFIRMED', '<unreadable>', 'CONFIRMED'); pass = $false; actual = '*0 not CONFIRMED*1 unreadable*' })) {
+        $reads = [System.Collections.Generic.List[object]]::new()
+        foreach ($value in $case.reads) { $reads.Add((New-Read $value)) }
+        $journal = New-Journal 'd3'
+        $recorded = [System.Collections.Generic.List[object]]::new()
+        $assertions = [pscustomobject]@{ Recorded = $recorded }
+        $assertions | Add-Member -MemberType ScriptMethod -Name Add -Value {
+            param($Id, $Description, $Condition, $Expected, $Actual)
+            $this.Recorded.Add([pscustomobject]@{ Id = $Id; Pass = [bool]$Condition; Actual = [string]$Actual })
+        }
+        . $judge
+        $got = @($recorded | Where-Object Id -eq 'G3-13-27')
+        Assert-That ($got.Count -eq 1 -and $got[0].Pass -eq $case.pass -and $got[0].Actual -like $case.actual) "reads $($case.reads -join ',') -> $($got | ConvertTo-Json -Compress)"
+    }
+}
+
 Remove-Item -LiteralPath $scratch -Recurse -Force
 if ($wrong -gt 0) {
     Write-Host "$wrong case(s) came out the other way."
