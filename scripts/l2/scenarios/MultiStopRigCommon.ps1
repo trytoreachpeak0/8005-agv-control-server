@@ -126,7 +126,9 @@ function Format-L2ScanText([object]$Text) {
 <#
 The onboard's local refusals of an operator command after $After: the app log line MainViewModel writes for every UI command
 a business rule refuses ("界面命令被业务规则拒绝：<code>。"), which is where SUBLOT_NOT_IN_WORKLIST appeared in the third round.
-The refusal never reaches the server, so the database cannot show it. Returns the first one as Code, At and Line, or $null.
+The refusal never reaches the server, so the database cannot show it. Also a sublot the server rejected: the onboard logs
+"子批被服务端拒收：sublot=…，reason=<code>，demandId=…" (WireToGateBusinessService), and that reason is the code
+(control-server#567; unrecognised, the scenario waited its whole timeout). Returns the first one as Code, At and Line, or $null.
 The log is open for writing by the onboard, hence the shared read.
 #>
 function Find-L2OnboardRefusal([string]$LogDirectory, [DateTimeOffset]$After) {
@@ -137,7 +139,8 @@ function Find-L2OnboardRefusal([string]$LogDirectory, [DateTimeOffset]$After) {
         try {
             $reader = [IO.StreamReader]::new($stream, [Text.Encoding]::UTF8)
             while ($null -ne ($line = $reader.ReadLine())) {
-                if ($line -notmatch '界面命令被业务规则拒绝：(?<code>[A-Z0-9_]+)') { continue }
+                if ($line -notmatch '界面命令被业务规则拒绝：(?<code>[A-Z0-9_]+)' -and
+                    $line -notmatch '子批被服务端拒收：.*?reason=(?<code>[A-Z0-9_]+)') { continue }
                 $code = $Matches['code']
                 $at = [DateTimeOffset]::MinValue
                 if (-not [DateTimeOffset]::TryParse(($line -split "`t")[0], [ref]$at) -or $at -le $After) { continue }

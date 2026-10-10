@@ -1,0 +1,13 @@
+diff --git a/scripts/l2/scenarios/MultiStopRigCommon.ps1 b/scripts/l2/scenarios/MultiStopRigCommon.ps1
+index cc0693912..d047fa67c 100644
+--- a/scripts/l2/scenarios/MultiStopRigCommon.ps1
++++ b/scripts/l2/scenarios/MultiStopRigCommon.ps1
+@@ -140,7 +140,7 @@ function Find-L2OnboardRefusal([string]$LogDirectory, [DateTimeOffset]$After) {
+             $reader = [IO.StreamReader]::new($stream, [Text.Encoding]::UTF8)
+             while ($null -ne ($line = $reader.ReadLine())) {
+                 if ($line -notmatch '界面命令被业务规则拒绝：(?<code>[A-Z0-9_]+)' -and
+-                    $line -notmatch '子批被服务端拒收：.*?reason=(?<code>[A-Z0-9_]+)') { continue }
++                    $line -notmatch '子批被服务端拒收：.*?reasonCode=(?<code>[A-Z0-9_]+)') { continue }
+                 $code = $Matches['code']
+                 $at = [DateTimeOffset]::MinValue
+                 if (-not [DateTimeOffset]::TryParse(($line -split "`t")[0], [ref]$at) -or $at -le $After) { continue }
