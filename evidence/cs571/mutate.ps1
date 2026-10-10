@@ -97,6 +97,22 @@ $mutations = @(
         Old = "`n    if (`$hits.Count -gt 0) {"; New = "`n    if (`$false -and `$hits.Count -gt 0) {"
         Also = @{ Old = '$script:AllowedVehicles = @('; New = '$script:AllowedVehicles = @(' + "`n" + '    [pscustomobject]@{ Alias = ''agv01''; AgvId = ''老厂前线新多仓位1''; VehicleKey = ''BROKERX-0c20ff0600d644869a6a80c186065d85''; RiotId = 58 }' }
         Expect = @('InstallerModuleRefusesTheTwoCarExampleWithAgv01InARow') }
+    # PR #575 review, items 1 and 2.
+    @{ Id = 'M26'; File = $psm; Runner = 'self'; What = 'registry lookup InvariantCulture (skips zero-width)'
+        Old = '        $match = $script:AllowedVehicles | Where-Object { [string]::Equals($_.VehicleKey, $vehicleKey, [StringComparison]::Ordinal) } | Select-Object -First 1'
+        New = '        $match = $script:AllowedVehicles | Where-Object { [string]::Equals($_.VehicleKey, $vehicleKey, [StringComparison]::InvariantCulture) } | Select-Object -First 1'
+        Expect = @('fleet: row 0''s vehicleKey and deviceKey with a zero-width space appended') }
+    @{ Id = 'M27'; File = $psm; Runner = 'self'; What = 'deviceKey compare InvariantCulture'
+        Old = '        if (-not [string]::Equals($deviceKey, $vehicleKey, [StringComparison]::Ordinal)) {'
+        New = '        if (-not [string]::Equals($deviceKey, $vehicleKey, [StringComparison]::InvariantCulture)) {'
+        Expect = @('fleet: row 1''s deviceKey with a zero-width space appended') }
+    @{ Id = 'M28'; File = $psm; Runner = 'self'; What = 'agvId compare InvariantCulture'
+        Old = '        if (-not [string]::Equals([string] $row[''agvId''], $match.AgvId, [StringComparison]::Ordinal)) {'
+        New = '        if (-not [string]::Equals([string] $row[''agvId''], $match.AgvId, [StringComparison]::InvariantCulture)) {'
+        Expect = @('fleet: row 0''s agvId with a zero-width space appended') }
+    @{ Id = 'M29'; File = $psm; Runner = 'cs'; What = 'agv01 scan off alone: still refused, but not for agv01 (C#)'
+        Old = "`n    if (`$hits.Count -gt 0) {"; New = "`n    if (`$false -and `$hits.Count -gt 0) {"
+        Expect = @('InstallerModuleRefusesTheTwoCarExampleWithAgv01InARow') }
 )
 
 $results = @()

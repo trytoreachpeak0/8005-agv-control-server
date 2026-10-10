@@ -28,3 +28,14 @@
 3. 第三轮：判读改为只认编译器的 `: error XXnnnn` 后补跑 M21–M25，全部被杀。
 
 M01（agv01 扫描整个关掉）的旁证：含 agv01 的定义仍被拒收，只是理由变成「不是备用车」，即第二道身份核对独立挡得住。
+
+## 审查轮（PR #575）
+
+| 文件 | 内容 | 提交 |
+| --- | --- | --- |
+| `09-test-parallel-green-at-df58e1e7.txt` | 补三条零宽字符用例后自检 `622 passed, 0 failed` | `df58e1e75` |
+| `10-csharp-green-at-df58e1e7.txt` | 改过 agv01 拒收断言后测试类 `16 passed, 0 failed` | `df58e1e75` |
+| `11-review-mutations.txt` | M26–M29 全部被杀 | `df58e1e75` |
+
+M26–M28 把身份四元组的三处 Ordinal 比较各改成 InvariantCulture（会忽略零宽字符），对应的零宽字符用例各自变红。
+M29 只关掉 agv01 扫描：定义仍被拒，但理由变成「不是备用车」；改前只看「抛没抛异常」的断言在这里会是绿的，改后红了。
