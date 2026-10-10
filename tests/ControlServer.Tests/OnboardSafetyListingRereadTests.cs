@@ -103,6 +103,24 @@ public sealed class OnboardSafetyListingRereadTests
     }
 
     /// <summary>
+    /// 审查 S4：STOPPED 的 <c>observedAt</c> 是车辆读开始的时刻，不是答案拼好的时刻。车载端的新鲜窗口从 observedAt 起算 5 秒
+    /// （onboard-hmi <c>App.xaml.cs:79-83</c>），用最早那次读的时刻才不会把读数说得比实际新。车辆读 50 ms、每页 100 ms、第一遍不全：
+    /// 答案在 T0 + 0.55 秒拼好，observedAt 仍是 T0。
+    /// </summary>
+    [Fact]
+    public async Task AStoppedAnswerIsAsOldAsTheVehicleRead()
+    {
+        await using Rig rig = new() { VehicleCost = TimeSpan.FromMilliseconds(50), PageCost = TimeSpan.FromMilliseconds(100) };
+        rig.Orders.FaultOnlyRead(1);
+
+        RiotVehicleSafetyObservation result = await rig.OnboardAsync(rereads: 2);
+
+        Assert.Equal(RiotVehicleMotionState.Stopped, result.MotionState);
+        Assert.Equal(T0, result.ObservedAt);
+        Assert.Equal(T0 + TimeSpan.FromMilliseconds(550), rig.Clock.GetUtcNow());
+    }
+
+    /// <summary>
     /// 预算内读得完就照常重读：每页 100 ms、预算 2 秒，三遍都不全也读满三遍（真装置 run 38082575561 之后加了时间预算，这条钉住预算没把重读吃掉）。
     /// </summary>
     [Fact]
@@ -138,17 +156,19 @@ public sealed class OnboardSafetyListingRereadTests
     [InlineData(false, "RIOT_READ_TIMEOUT")]
     public async Task AReadStillRunningWhenTheBudgetRunsOutIsCancelledAndAnswersUnknown(bool afterAnIncompleteRead, string reason)
     {
+        // The budget timer is the rig's and runs out exactly when the hung call starts (BudgetRunsOutWhenACallHangs).
         await using Rig rig = new();
         rig.Orders.FaultOnlyRead(1);
         rig.HangOn = afterAnIncompleteRead ? request => request.Contains("pageNum=1", StringComparison.Ordinal) && rig.Orders.Reads >= 1
             : request => request.Contains("getVehicleInfo", StringComparison.Ordinal);
 
         System.Diagnostics.Stopwatch elapsed = System.Diagnostics.Stopwatch.StartNew();
-        RiotVehicleSafetyObservation result = await rig.OnboardAsync(rereads: 2, budget: TimeSpan.FromMilliseconds(300));
+        RiotVehicleSafetyObservation result = await rig.OnboardAsync(rereads: 2, budget: TimeSpan.FromSeconds(2));
         elapsed.Stop();
 
         Assert.Equal(RiotVehicleMotionState.Unknown, result.MotionState);
         Assert.Equal([reason], result.ReasonCodes);
+        Assert.True(rig.HungCallWasReached);
         Assert.True(rig.HungCallWasCancelled);
         // The budget ended it, not the SDK's one-minute timeout: generous for a slow CI machine, far below that minute.
         Assert.True(elapsed.Elapsed < TimeSpan.FromSeconds(15), $"answered after {elapsed.Elapsed}");
@@ -158,7 +178,7 @@ public sealed class OnboardSafetyListingRereadTests
     [Fact]
     public async Task TheOnboardGivingUpIsACancellationNotAnAnswer()
     {
-        await using Rig rig = new();
+        await using Rig rig = new() { BudgetRunsOutWhenACallHangs = false };
         using CancellationTokenSource onboard = CancellationTokenSource.CreateLinkedTokenSource(TestContext.Current.CancellationToken);
         rig.HangOn = request => request.Contains("getVehicleInfo", StringComparison.Ordinal);
         onboard.CancelAfter(TimeSpan.FromMilliseconds(200));
@@ -227,15 +247,52 @@ public sealed class OnboardSafetyListingRereadTests
         }
     }
 
-    /// <summary>墙钟钉在 T0；计时戳由 <see cref="Advance"/> 手动推进（每次 RIoT 调用推进一次）；预算的定时器仍是真定时器。</summary>
-    private sealed class MutableTimeProvider(DateTimeOffset now) : TimeProvider
+    /// <summary>
+    /// 时间全由测试推：墙钟与计时戳从 T0 起、只随 <see cref="Advance"/> 前进（每次 RIoT 调用推进一次）；预算的定时器也是假的，
+    /// 只在 <see cref="ExpireTimers"/> 时触发。审查 M1：原先用 300 ms 的真定时器，构建后第一次跑常在挂起点之前就到点（6 次全红）。
+    /// </summary>
+    private sealed class MutableTimeProvider(DateTimeOffset start) : TimeProvider
     {
+        private readonly List<ManualTimer> timers = [];
         private long timestamp;
 
-        public override DateTimeOffset GetUtcNow() => now;
+        public override DateTimeOffset GetUtcNow() => start + TimeSpan.FromTicks(Interlocked.Read(ref timestamp));
         public override long TimestampFrequency => TimeSpan.TicksPerSecond;
         public override long GetTimestamp() => Interlocked.Read(ref timestamp);
         public void Advance(TimeSpan by) => Interlocked.Add(ref timestamp, by.Ticks);
+
+        public override ITimer CreateTimer(TimerCallback callback, object? state, TimeSpan dueTime, TimeSpan period)
+        {
+            ManualTimer timer = new(callback, state);
+            lock (timers) timers.Add(timer);
+            return timer;
+        }
+
+        /// <summary>Fires every live timer once: the read budget runs out now.</summary>
+        public void ExpireTimers()
+        {
+            ManualTimer[] live;
+            lock (timers) live = [.. timers];
+            foreach (ManualTimer timer in live) timer.Fire();
+        }
+
+        private sealed class ManualTimer(TimerCallback callback, object? state) : ITimer
+        {
+            private bool disposed;
+
+            public void Fire()
+            {
+                if (!disposed) callback(state);
+            }
+
+            public bool Change(TimeSpan dueTime, TimeSpan period) => !disposed;
+            public void Dispose() => disposed = true;
+            public ValueTask DisposeAsync()
+            {
+                disposed = true;
+                return ValueTask.CompletedTask;
+            }
+        }
     }
 
     private sealed class Rig : IAsyncDisposable
@@ -251,8 +308,11 @@ public sealed class OnboardSafetyListingRereadTests
 
         public MutableTimeProvider Clock { get; } = new(T0);
         public TimeSpan PageCost { get; init; }
+        public TimeSpan VehicleCost { get; init; }
         public Func<string, bool> HangOn { get; set; } = _ => false;
+        public bool BudgetRunsOutWhenACallHangs { get; init; } = true;
         public bool HungCallWasCancelled { get; private set; }
+        public bool HungCallWasReached { get; private set; }
 
         public PlantOrders Orders { get; } = new();
         public RiotSession Session { get; }
@@ -272,6 +332,11 @@ public sealed class OnboardSafetyListingRereadTests
             {
                 if (rig.HangOn(request.RequestUri!.PathAndQuery))
                 {
+                    rig.HungCallWasReached = true;
+                    if (rig.BudgetRunsOutWhenACallHangs)
+                    {
+                        rig.Clock.ExpireTimers();
+                    }
                     try
                     {
                         await Task.Delay(Timeout.Infinite, cancellationToken);
@@ -286,6 +351,7 @@ public sealed class OnboardSafetyListingRereadTests
                 {
                     rig.VehicleReads++;
                     body = rig.VehicleJson;
+                    rig.Clock.Advance(rig.VehicleCost);
                 }
                 else
                 {

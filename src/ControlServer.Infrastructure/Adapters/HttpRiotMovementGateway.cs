@@ -334,7 +334,7 @@ public sealed class HttpRiotMovementGateway : IRiotMovementGateway, IRiotVehicle
                 return UnknownSafety(vehicleKey, "RIOT_NONFINAL_ORDER_COVERAGE_UNKNOWN");
             }
 
-            return Safety(vehicleKey, vehicle, orders.Records);
+            return Safety(vehicleKey, vehicle, orders.Records, timeProvider.GetUtcNow());
         }
         catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
         {
@@ -360,6 +360,9 @@ public sealed class HttpRiotMovementGateway : IRiotMovementGateway, IRiotVehicle
         ArgumentOutOfRangeException.ThrowIfNegative(listingRereads);
         ArgumentOutOfRangeException.ThrowIfLessThanOrEqual(readBudget, TimeSpan.Zero);
         long started = timeProvider.GetTimestamp();
+        // A STOPPED answer is as old as its oldest read, and the vehicle is read first (control-server#573 review S4): the onboard's
+        // freshness window counts from here, not from when the answer was put together.
+        DateTimeOffset readStartedAt = timeProvider.GetUtcNow();
         // The budget cancels whatever read is still running, so nothing outlives the onboard that asked (control-server#573).
         using CancellationTokenSource budget = new(readBudget, timeProvider);
         using CancellationTokenSource linked = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken, budget.Token);
@@ -376,7 +379,7 @@ public sealed class HttpRiotMovementGateway : IRiotMovementGateway, IRiotVehicle
                 listingRead = true;
                 if (orders.IsComplete)
                 {
-                    return Safety(vehicleKey, vehicle, orders.Records);
+                    return Safety(vehicleKey, vehicle, orders.Records, readStartedAt);
                 }
                 // Another read only when the time left covers one as long as this one took.
                 TimeSpan lastRead = timeProvider.GetElapsedTime(readStarted);
@@ -407,10 +410,11 @@ public sealed class HttpRiotMovementGateway : IRiotMovementGateway, IRiotVehicle
     }
 
     /// <summary>The safety predicate over one vehicle read and one complete non-final order listing.</summary>
-    private RiotVehicleSafetyObservation Safety(
+    private static RiotVehicleSafetyObservation Safety(
         string vehicleKey,
         VehicleExecutionFacts vehicle,
-        IReadOnlyList<OrderStateRecord> nonFinalOrders)
+        IReadOnlyList<OrderStateRecord> nonFinalOrders,
+        DateTimeOffset observedAt)
     {
         bool hasNonFinalOrder = nonFinalOrders.Any(order =>
             string.Equals(order.AppointVehicleKey, vehicleKey, StringComparison.Ordinal) ||
@@ -421,7 +425,7 @@ public sealed class HttpRiotMovementGateway : IRiotMovementGateway, IRiotVehicle
             return new RiotVehicleSafetyObservation(
                 vehicleKey,
                 RiotVehicleMotionState.Moving,
-                timeProvider.GetUtcNow(),
+                observedAt,
                 "RIOT_BEHAVIOR_LAB_R41",
                 ["RIOT_MOTION_ACTIVE"]);
         }
@@ -442,7 +446,7 @@ public sealed class HttpRiotMovementGateway : IRiotMovementGateway, IRiotVehicle
         return new RiotVehicleSafetyObservation(
             vehicleKey,
             reasons.Count == 0 ? RiotVehicleMotionState.Stopped : RiotVehicleMotionState.Unknown,
-            timeProvider.GetUtcNow(),
+            observedAt,
             "RIOT_BEHAVIOR_LAB_R41",
             reasons);
     }

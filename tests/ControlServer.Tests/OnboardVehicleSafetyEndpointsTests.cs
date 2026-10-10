@@ -75,11 +75,16 @@ public sealed class OnboardVehicleSafetyEndpointsTests
                 ["RIOT_MOVEMENT_NOT_FINISHED"])
         };
 
+        // Non-default values (control-server#573 review S2), so a value written into the endpoint cannot pass as the configured one.
+        OnboardSafetyProjectionOptions options = ProjectionOptions(variable);
+        options.NonFinalOrderReadRetries = 3;
+        options.ReadBudgetMilliseconds = 1_500;
+
         var result = await OnboardVehicleSafetyEndpoints.HandleAsync(
             context,
             facts,
             Options.Create(JourneyOptions()),
-            Options.Create(ProjectionOptions(variable)),
+            Options.Create(options),
             NullLoggerFactory.Instance,
             TestContext.Current.CancellationToken);
 
@@ -89,8 +94,8 @@ public sealed class OnboardVehicleSafetyEndpointsTests
         Assert.Equal(["RIOT_MOVEMENT_NOT_FINISHED"], ok.Value.ReasonCodes);
         Assert.Equal(1, facts.ReadCount);
         Assert.Equal("VEHICLE-KEY-01", facts.LastVehicleKey);
-        Assert.Equal(2, facts.LastRereads);
-        Assert.Equal(TimeSpan.FromSeconds(2), facts.LastBudget);
+        Assert.Equal(3, facts.LastRereads);
+        Assert.Equal(TimeSpan.FromMilliseconds(1_500), facts.LastBudget);
         Assert.Equal("no-store", context.Response.Headers.CacheControl);
         Assert.Equal("no-cache", context.Response.Headers.Pragma);
         Assert.DoesNotContain("credential", ok.Value.ToString(), StringComparison.OrdinalIgnoreCase);
@@ -221,8 +226,9 @@ public sealed class OnboardVehicleSafetyEndpointsTests
 
         StatusCodeHttpResult status = Assert.IsType<StatusCodeHttpResult>(result.Result);
         Assert.Equal(StatusCodes.Status499ClientClosedRequest, status.StatusCode);
-        (LogLevel level, string message) = Assert.Single(logs.Entries);
+        (LogLevel level, EventId eventId, string message) = Assert.Single(logs.Entries);
         Assert.Equal(LogLevel.Warning, level);
+        Assert.Equal(5730, eventId.Id);
         Assert.Contains("cancelled by the onboard", message, StringComparison.Ordinal);
         Assert.Contains("VEHICLE-KEY-01", message, StringComparison.Ordinal);
     }
@@ -334,7 +340,7 @@ public sealed class OnboardVehicleSafetyEndpointsTests
 
     private sealed class RecordingLoggerFactory : ILoggerFactory, ILogger
     {
-        public List<(LogLevel Level, string Message)> Entries { get; } = [];
+        public List<(LogLevel Level, EventId EventId, string Message)> Entries { get; } = [];
 
         public ILogger CreateLogger(string categoryName) => this;
         public void AddProvider(ILoggerProvider provider) => _ = provider;
@@ -345,8 +351,7 @@ public sealed class OnboardVehicleSafetyEndpointsTests
         public void Log<TState>(
             LogLevel logLevel, EventId eventId, TState state, Exception? exception, Func<TState, Exception?, string> formatter)
         {
-            _ = eventId;
-            Entries.Add((logLevel, formatter(state, exception)));
+            Entries.Add((logLevel, eventId, formatter(state, exception)));
         }
     }
 
