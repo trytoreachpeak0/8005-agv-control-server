@@ -73,6 +73,7 @@ $overrides = [ordered]@{ SelfCheckControlServerCommit = 'ControlServerCommit'; S
 
 $runners = [ordered]@{
     'run-staged-g3.ps1' = 'STAGED_G3_REAL_PEERS_DETERMINISTIC_PLAINTEXT'
+    'run-staged-g3-restart.ps1' = 'STAGED_G3_REAL_PEERS_PROCESS_RESTART_NO_MOVEMENT'
 }
 
 foreach ($file in $runners.Keys) {
@@ -148,6 +149,19 @@ foreach ($file in $runners.Keys) {
         }
     }
 }
+
+# 4. The restart runner's binding still comes from run-staged-g3.ps1, through a path that is not a parameter.
+$bindingSourceParameters = @($restartAst.ParamBlock.Parameters | Where-Object { $_.Name.VariablePath.UserPath -like '*Binding*' -or
+        $_.Name.VariablePath.UserPath -like '*SharedRunner*' })
+Check 'run-staged-g3-restart.ps1: no parameter can redirect where the binding is read from' ($bindingSourceParameters.Count -eq 0) `
+    "$(($bindingSourceParameters | ForEach-Object { $_.Name.VariablePath.UserPath }) -join ', ')"
+$bindingSourceAssignments = @($restartAst.EndBlock.Statements | Where-Object {
+        $_ -is [System.Management.Automation.Language.AssignmentStatementAst] -and
+        $_.Left -is [System.Management.Automation.Language.VariableExpressionAst] -and
+        $_.Left.VariablePath.UserPath -eq 'CommitBindingSource' })
+Check "run-staged-g3-restart.ps1: `$CommitBindingSource is assigned once, to run-staged-g3.ps1 beside it" `
+    ($bindingSourceAssignments.Count -eq 1 -and $bindingSourceAssignments[0].Right.Extent.Text -ceq "Join-Path `$PSScriptRoot 'run-staged-g3.ps1'") `
+    "$(($bindingSourceAssignments | ForEach-Object { $_.Extent.Text }) -join ' | ')"
 
 if ($failures.Count -gt 0) {
     Write-Host "$($failures.Count) check(s) failed."
