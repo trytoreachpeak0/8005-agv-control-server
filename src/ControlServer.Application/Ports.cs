@@ -79,12 +79,19 @@ public interface IRiotVehicleSafetyFacts
 /// Only the onboard projection rereads. A projection that flickers unknown makes the onboard flash not-ready, and both ends then
 /// restart the station departure wait (field run of control-server#566); the journey runtime's reads simply try again next round.
 /// </para>
+/// <para>
+/// The whole read, rereads included, stays inside <c>readBudget</c>, which is set below the onboard's own request timeout: a
+/// reread starts only when the time left would cover one more read as long as the last one took, and a read still running when
+/// the budget runs out is cancelled and answers unknown. The server never keeps reading for an onboard that has given up (rig
+/// run 38082575561, where rereads on a slow rig outlasted the onboard's 3 seconds).
+/// </para>
 /// </remarks>
 public interface IOnboardVehicleSafetyProjection
 {
     Task<RiotVehicleSafetyObservation> ReadForOnboardAsync(
         string vehicleKey,
         int listingRereads,
+        TimeSpan readBudget,
         CancellationToken cancellationToken);
 }
 

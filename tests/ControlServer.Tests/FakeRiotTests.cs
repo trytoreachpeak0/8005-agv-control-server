@@ -416,7 +416,7 @@ public sealed class FakeRiotTests
         await fixture.CommandAsync(HttpMethod.Put, "faults/nonfinal-listing-churn", new { padding = 250, period = 2, burst = 1 });
 
         RiotVehicleSafetyObservation onboard = await gateway.ReadForOnboardAsync(
-            VehicleKey, listingRereads: 2, TestContext.Current.CancellationToken);
+            VehicleKey, listingRereads: 2, readBudget: TimeSpan.FromSeconds(30), TestContext.Current.CancellationToken);
         RiotVehicleSafetyObservation strict = await gateway.ReadVehicleSafetyAsync(VehicleKey, TestContext.Current.CancellationToken);
         JsonElement churn = (await fixture.CommandAsync(
                 HttpMethod.Put, "faults/nonfinal-listing-churn", new { padding = 0, period = 0, burst = 0 }))

@@ -20,6 +20,23 @@ public sealed class OnboardSafetyProjectionOptions
     /// step after that is a background refresh of the listing, which this ticket deliberately did not build.
     /// </remarks>
     public int NonFinalOrderReadRetries { get; set; } = 2;
+
+    /// <summary>
+    /// The onboard's own timeout for one projection request: its <c>RequestTimeoutMs</c> for the vehicle-safety projection, 3000
+    /// out of the box. Kept here only to check <see cref="ReadBudgetMilliseconds"/> against; change it when the onboard's changes.
+    /// </summary>
+    public int OnboardRequestTimeoutMilliseconds { get; set; } = 3_000;
+
+    /// <summary>
+    /// How long one projection request may spend reading RIoT, rereads included (control-server#573). It must stay below
+    /// <see cref="OnboardRequestTimeoutMilliseconds"/> so the answer arrives before the onboard gives up; when it runs out the
+    /// answer is unknown, never an error.
+    /// </summary>
+    /// <remarks>
+    /// The field took 478 ms at most for a whole projection request on 2026-10-10 (p99 131 ms); a slow rig took over 3 seconds
+    /// once it reread (run 38082575561).
+    /// </remarks>
+    public int ReadBudgetMilliseconds { get; set; } = 2_000;
 }
 
 public sealed class OnboardSafetyProjectionOptionsValidator : IValidateOptions<OnboardSafetyProjectionOptions>
@@ -33,6 +50,12 @@ public sealed class OnboardSafetyProjectionOptionsValidator : IValidateOptions<O
         if (options.NonFinalOrderReadRetries is < 0 or > MaximumNonFinalOrderReadRetries)
             return ValidateOptionsResult.Fail(
                 $"OnboardSafetyProjection NonFinalOrderReadRetries must be between 0 and {MaximumNonFinalOrderReadRetries}.");
+        if (options.OnboardRequestTimeoutMilliseconds <= 0)
+            return ValidateOptionsResult.Fail("OnboardSafetyProjection OnboardRequestTimeoutMilliseconds must be positive.");
+        if (options.ReadBudgetMilliseconds <= 0 || options.ReadBudgetMilliseconds >= options.OnboardRequestTimeoutMilliseconds)
+            return ValidateOptionsResult.Fail(
+                "OnboardSafetyProjection ReadBudgetMilliseconds must be positive and below OnboardRequestTimeoutMilliseconds " +
+                $"({options.OnboardRequestTimeoutMilliseconds}), so the answer arrives before the onboard gives up.");
         if (!options.Enabled) return ValidateOptionsResult.Success;
 
         List<string> failures = [];

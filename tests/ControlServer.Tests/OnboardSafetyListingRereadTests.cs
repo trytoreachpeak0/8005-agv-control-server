@@ -102,6 +102,67 @@ public sealed class OnboardSafetyListingRereadTests
         Assert.Equal([1, 2], rig.Orders.PagesAsked);
     }
 
+    /// <summary>
+    /// 预算内读得完就照常重读：每页 100 ms、预算 2 秒，三遍都不全也读满三遍（真装置 run 38082575561 之后加了时间预算，这条钉住预算没把重读吃掉）。
+    /// </summary>
+    [Fact]
+    public async Task WithinTheBudgetTheRereadsAllHappen()
+    {
+        await using Rig rig = new() { PageCost = TimeSpan.FromMilliseconds(100) };
+        rig.Orders.FaultEveryReadFrom(1);
+
+        AssertCoverageUnknown(await rig.OnboardAsync(rereads: 2, budget: TimeSpan.FromSeconds(2)));
+        Assert.Equal(3, rig.Orders.Reads);
+    }
+
+    /// <summary>
+    /// 剩下的时间不够再读一遍就不读，直接回未知：每页 400 ms，一遍读两页 800 ms；第一遍后 0.8 + 0.8 ≤ 2 秒再读，
+    /// 第二遍后 1.6 + 0.8 > 2 秒停下。真装置 run 38082575561 第 3 遍就是重读拖过了车载端的 3 秒。
+    /// </summary>
+    [Fact]
+    public async Task NoRereadStartsThatTheTimeLeftCannotCover()
+    {
+        await using Rig rig = new() { PageCost = TimeSpan.FromMilliseconds(400) };
+        rig.Orders.FaultEveryReadFrom(1);
+
+        AssertCoverageUnknown(await rig.OnboardAsync(rereads: 4, budget: TimeSpan.FromSeconds(2)));
+        Assert.Equal([1, 2, 1, 2], rig.Orders.PagesAsked);
+    }
+
+    /// <summary>
+    /// 预算到点时还卡着的那一遍读被取消，回未知，不抛、不回 500，服务端也不在车载端放弃之后接着读：读过一遍不全的清单就是
+    /// <c>COVERAGE_UNKNOWN</c>，一遍清单都没读到就是 <c>RIOT_READ_TIMEOUT</c>。
+    /// </summary>
+    [Theory]
+    [InlineData(true, "RIOT_NONFINAL_ORDER_COVERAGE_UNKNOWN")]
+    [InlineData(false, "RIOT_READ_TIMEOUT")]
+    public async Task AReadStillRunningWhenTheBudgetRunsOutIsCancelledAndAnswersUnknown(bool afterAnIncompleteRead, string reason)
+    {
+        await using Rig rig = new();
+        rig.Orders.FaultOnlyRead(1);
+        rig.HangOn = afterAnIncompleteRead ? request => request.Contains("pageNum=1", StringComparison.Ordinal) && rig.Orders.Reads >= 1
+            : request => request.Contains("getVehicleInfo", StringComparison.Ordinal);
+
+        RiotVehicleSafetyObservation result = await rig.OnboardAsync(rereads: 2, budget: TimeSpan.FromMilliseconds(300));
+
+        Assert.Equal(RiotVehicleMotionState.Unknown, result.MotionState);
+        Assert.Equal([reason], result.ReasonCodes);
+        Assert.True(rig.HungCallWasCancelled);
+    }
+
+    /// <summary>车载端自己放弃（请求令牌被取消）照旧往外抛取消，由端点记成取消；不是预算到点，不能被当成一次读失败吞掉。</summary>
+    [Fact]
+    public async Task TheOnboardGivingUpIsACancellationNotAnAnswer()
+    {
+        await using Rig rig = new();
+        using CancellationTokenSource onboard = CancellationTokenSource.CreateLinkedTokenSource(TestContext.Current.CancellationToken);
+        rig.HangOn = request => request.Contains("getVehicleInfo", StringComparison.Ordinal);
+        onboard.CancelAfter(TimeSpan.FromMilliseconds(200));
+
+        await Assert.ThrowsAnyAsync<OperationCanceledException>(() =>
+            rig.Gateway.ReadForOnboardAsync(Vehicle, 2, TimeSpan.FromSeconds(30), onboard.Token));
+    }
+
     private static void AssertCoverageUnknown(RiotVehicleSafetyObservation result)
     {
         Assert.Equal(RiotVehicleMotionState.Unknown, result.MotionState);
@@ -162,9 +223,15 @@ public sealed class OnboardSafetyListingRereadTests
         }
     }
 
+    /// <summary>墙钟钉在 T0；计时戳由 <see cref="Advance"/> 手动推进（每次 RIoT 调用推进一次）；预算的定时器仍是真定时器。</summary>
     private sealed class MutableTimeProvider(DateTimeOffset now) : TimeProvider
     {
+        private long timestamp;
+
         public override DateTimeOffset GetUtcNow() => now;
+        public override long TimestampFrequency => TimeSpan.TicksPerSecond;
+        public override long GetTimestamp() => Interlocked.Read(ref timestamp);
+        public void Advance(TimeSpan by) => Interlocked.Add(ref timestamp, by.Ticks);
     }
 
     private sealed class Rig : IAsyncDisposable
@@ -174,8 +241,13 @@ public sealed class OnboardSafetyListingRereadTests
             Session = new RiotSession(
                 new RiotOptions { BaseUrl = "http://riot.test", CallApiKey = "test-call-api-key" },
                 new Handler(this));
-            Gateway = new HttpRiotMovementGateway(Session, new MutableTimeProvider(T0));
+            Gateway = new HttpRiotMovementGateway(Session, Clock);
         }
+
+        public MutableTimeProvider Clock { get; } = new(T0);
+        public TimeSpan PageCost { get; init; }
+        public Func<string, bool> HangOn { get; set; } = _ => false;
+        public bool HungCallWasCancelled { get; private set; }
 
         public PlantOrders Orders { get; } = new();
         public RiotSession Session { get; }
@@ -183,16 +255,27 @@ public sealed class OnboardSafetyListingRereadTests
         public string VehicleJson { get; set; } = OnboardSafetyListingRereadTests.VehicleJson("MT_FINISHED", 0);
         public int VehicleReads { get; private set; }
 
-        public Task<RiotVehicleSafetyObservation> OnboardAsync(int rereads) =>
-            Gateway.ReadForOnboardAsync(Vehicle, rereads, TestContext.Current.CancellationToken);
+        public Task<RiotVehicleSafetyObservation> OnboardAsync(int rereads, TimeSpan? budget = null) =>
+            Gateway.ReadForOnboardAsync(Vehicle, rereads, budget ?? TimeSpan.FromSeconds(30), TestContext.Current.CancellationToken);
 
         public ValueTask DisposeAsync() => Session.DisposeAsync();
 
         private sealed class Handler(Rig rig) : HttpMessageHandler
         {
-            protected override Task<HttpResponseMessage> SendAsync(
+            protected override async Task<HttpResponseMessage> SendAsync(
                 HttpRequestMessage request, CancellationToken cancellationToken)
             {
+                if (rig.HangOn(request.RequestUri!.PathAndQuery))
+                {
+                    try
+                    {
+                        await Task.Delay(Timeout.Infinite, cancellationToken);
+                    }
+                    finally
+                    {
+                        rig.HungCallWasCancelled = cancellationToken.IsCancellationRequested;
+                    }
+                }
                 string body;
                 if (request.RequestUri?.AbsolutePath == $"/api/task/v1/task/getVehicleInfo/{Vehicle}")
                 {
@@ -209,11 +292,12 @@ public sealed class OnboardSafetyListingRereadTests
                     body = rig.Orders.Page(
                         int.Parse(query["pageNum"], System.Globalization.CultureInfo.InvariantCulture),
                         int.Parse(query["pageSize"], System.Globalization.CultureInfo.InvariantCulture));
+                    rig.Clock.Advance(rig.PageCost);
                 }
-                return Task.FromResult(new HttpResponseMessage(HttpStatusCode.OK)
+                return new HttpResponseMessage(HttpStatusCode.OK)
                 {
                     Content = new StringContent(body, Encoding.UTF8, "application/json")
-                });
+                };
             }
         }
     }

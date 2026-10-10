@@ -353,21 +353,36 @@ public sealed class HttpRiotMovementGateway : IRiotMovementGateway, IRiotVehicle
     public async Task<RiotVehicleSafetyObservation> ReadForOnboardAsync(
         string vehicleKey,
         int listingRereads,
+        TimeSpan readBudget,
         CancellationToken cancellationToken)
     {
         ArgumentException.ThrowIfNullOrWhiteSpace(vehicleKey);
         ArgumentOutOfRangeException.ThrowIfNegative(listingRereads);
+        ArgumentOutOfRangeException.ThrowIfLessThanOrEqual(readBudget, TimeSpan.Zero);
+        long started = timeProvider.GetTimestamp();
+        // The budget cancels whatever read is still running, so nothing outlives the onboard that asked (control-server#573).
+        using CancellationTokenSource budget = new(readBudget, timeProvider);
+        using CancellationTokenSource linked = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken, budget.Token);
+        bool listingRead = false;
         try
         {
             VehicleExecutionFacts vehicle = await riotSession.Tasks.GetVehicleExecutionFactsAsync(
-                vehicleKey, cancellationToken).ConfigureAwait(false);
+                vehicleKey, linked.Token).ConfigureAwait(false);
             // Each read is a whole one, judged alone by control-server#525's rule; pages of two reads are never put together.
             for (int read = 0; read <= listingRereads; read++)
             {
-                NonFinalOrderRead orders = await ReadAllNonFinalOrdersAsync(cancellationToken).ConfigureAwait(false);
+                long readStarted = timeProvider.GetTimestamp();
+                NonFinalOrderRead orders = await ReadAllNonFinalOrdersAsync(linked.Token).ConfigureAwait(false);
+                listingRead = true;
                 if (orders.IsComplete)
                 {
                     return Safety(vehicleKey, vehicle, orders.Records);
+                }
+                // Another read only when the time left covers one as long as this one took.
+                TimeSpan lastRead = timeProvider.GetElapsedTime(readStarted);
+                if (timeProvider.GetElapsedTime(started) + lastRead > readBudget)
+                {
+                    break;
                 }
             }
             return UnknownSafety(vehicleKey, "RIOT_NONFINAL_ORDER_COVERAGE_UNKNOWN");
@@ -375,6 +390,11 @@ public sealed class HttpRiotMovementGateway : IRiotMovementGateway, IRiotVehicle
         catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
         {
             throw;
+        }
+        catch (Exception error) when (budget.IsCancellationRequested && RiotCallFailureClassification.IsTimeout(error))
+        {
+            // Out of budget: a listing that was read and did not add up is still that; before any listing, it is a read timeout.
+            return UnknownSafety(vehicleKey, listingRead ? "RIOT_NONFINAL_ORDER_COVERAGE_UNKNOWN" : "RIOT_READ_TIMEOUT");
         }
         catch (Exception error) when (RiotCallFailureClassification.IsTimeout(error))
         {
