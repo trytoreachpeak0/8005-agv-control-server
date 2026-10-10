@@ -1,0 +1,316 @@
+# captured 2026-10-10T17:30:07+08:00 via ssh factory01, Mode=ReadOnly
+e_sqlite3.dll
+Microsoft.Data.Sqlite.dll
+SQLitePCLRaw.batteries_v2.dll
+SQLitePCLRaw.core.dll
+SQLitePCLRaw.provider.e_sqlite3.dll
+AcceptedDemands                                    2
+AdministratorAuditRecords                          1
+AdmissionDecisionSnapshots                         2
+AdmissionPolicyAudit                               1
+AdmissionPolicyState                               1
+BusinessAuditRecords                               14
+ChargerRosterVersions                              1
+ChargingPolicyActivations                          1
+ChargingPolicyApprovals                            1
+ChargingPolicyVersions                             1
+ConfigurationConsumerBindings                      6
+CreateGateAudit                                    2
+DispatchZoneAreaAssignmentVersions                 1
+DispatchZoneAreaAssignments                        217
+DispatchZoneVehicles                               1
+FrozenDemandStations                               4
+GovernedConfigurationSnapshots                     9
+JourneyBacklog                                     2
+JourneyDemands                                     2
+JourneyRuntimes                                    2
+JourneyStops                                       4
+MapNameBaselines                                   8
+MapStationCatalogStates                            1
+OnboardAlarmSnapshots                              1
+OperationResults                                   4
+OrderIntents                                       4
+PackageCapacityRules                               28
+ProtocolInbox                                      1209
+ProtocolOutbox                                     28
+RiotDispatchAuditEvents                            20
+RouteGraphEdges                                    427
+RouteGraphSnapshots                                1
+RouteGraphStations                                 212
+SessionRecoveries                                  1
+SlotIoBindings                                     8
+SlotModelSlots                                     8
+SlotModelVersions                                  1
+SlotTemplates                                      1
+StationExclusivityRecords                          2
+StationOperations                                  4
+StationTaskTypeAdmissions                          410
+StopClosures                                       2
+TaskTypeStationActiveBindingSets                   1
+TaskTypeStationBindingSetVersions                  2
+TaskTypeStationBindings                            3
+TaskTypeStationHolds                               2
+TaskTypeStationRequirements                        3
+TaskTypeStationRuleVersions                        1
+TaskTypeStationRules                               6
+TransportDemandCompletions                         2
+UnloadBatches                                      2
+VehicleDispatchBudgets                             1
+VehiclePurposeClaimRecords                         2
+VehicleSnapshotRevisions                           1
+VehicleTaskTypeAdmissions                          6
+__EFMigrationsHistory                              38
+--- ProtocolOutbox schema
+MessageId,MessageType,PayloadJson,CreatedAt,AcknowledgedAt,FencedAt
+--- AcceptedDemands schema
+DemandId,TransportDemandKey,DemandRevision,HistoryEpoch,CatalogRevision,AcceptedAt,Status,CreatedAt,Generation,LiveMesFieldsJson,SeriesId,Sublot,ValueObservedAt,ValuePollTraceId,ValueProjectionCommitId,WorkType
+--- JourneyRuntimes not completed
+
+--- OrderIntents
+
+UpperId                                           Status    OrderId
+-------                                           ------    -------
+W2G-15b03c5a-ab1d-4b7b-9451-0a4f0e0cbc7d-PICKUP-1 CONFIRMED order-2108443884131581952
+W2G-15b03c5a-ab1d-4b7b-9451-0a4f0e0cbc7d-GATE-1   CONFIRMED order-2108446866889900032
+W2G-f2253f73-95aa-438f-aec7-49f9d3ae2fa3-PICKUP-1 CONFIRMED order-2108456749647396864
+W2G-f2253f73-95aa-438f-aec7-49f9d3ae2fa3-GATE-1   CONFIRMED order-2108458303418925056
+
+
+--- admission tables
+AdmissionDecisionSnapshots,AdmissionPolicyAudit,AdmissionPolicyState,ChargerRosterEntries,ChargerRosterVehicleScopes,ChargerRosterVersions,ChargingCycles,ChargingPolicyActivations,ChargingPolicyApprovals,ChargingPolicyVehicleScopes,ChargingPolicyVersions,ChargingStationAllocationHolds,ChargingStationRecoveries,ManualChargingHoldRecords,ManualChargingHolds,ManualChargingReturnToServiceRequests,StationTaskTypeAdmissions,TaskTypeStationActiveBindingSets,TaskTypeStationBindingSetVersions,TaskTypeStationBindings,TaskTypeStationCatalogChanges,TaskTypeStationHolds,TaskTypeStationRequirements,TaskTypeStationRuleVersions,TaskTypeStationRules,UnableToChargeFieldConfirmations,VehicleChargingEligibilityHolds,VehicleChargingEligibilityRecoveries,VehicleTaskTypeAdmissions,WaitingPointVehicleScopes,WaitingPointVersions,WaitingPoints
+e_sqlite3.dll
+Microsoft.Data.Sqlite.dll
+SQLitePCLRaw.batteries_v2.dll
+SQLitePCLRaw.core.dll
+SQLitePCLRaw.provider.e_sqlite3.dll
+--- Outbox unacked
+
+--- Outbox by type
+
+MessageType : CurrentStopWorklistSnapshot
+n           : 6
+unacked     : 0
+fenced      : 0
+
+MessageType : PreDepartureSafetyCheck
+n           : 2
+unacked     : 0
+fenced      : 0
+
+MessageType : SlotOperationCommand
+n           : 4
+unacked     : 0
+fenced      : 0
+
+MessageType : SublotEntryRequested
+n           : 2
+unacked     : 0
+fenced      : 0
+
+MessageType : UpcomingStopPlanSnapshot
+n           : 8
+unacked     : 0
+fenced      : 0
+
+MessageType : VehicleBusinessStateSnapshot
+n           : 6
+unacked     : 0
+fenced      : 0
+
+
+--- AcceptedDemands
+
+DemandId   : 15b03c5a-ab1d-4b7b-9451-0a4f0e0cbc7d
+Status     : Succeeded
+WorkType   : WIRE_TO_GATE
+Sublot     : FIELD-1009-AGV02-01
+AcceptedAt : 2026-10-09 06:22:46.6547799+00:00
+
+DemandId   : f2253f73-95aa-438f-aec7-49f9d3ae2fa3
+Status     : Succeeded
+WorkType   : STAGING_TO_WIRE
+Sublot     : FIELD-1009-AGV02-S2W-01
+AcceptedAt : 2026-10-09 07:16:14.3585272+00:00
+
+
+--- JourneyBacklog
+
+DemandId                             : 15b03c5a-ab1d-4b7b-9451-0a4f0e0cbc7d
+TransportDemandKey                   : FIELD-1009-AGV02-01|WIRE_TO_GATE
+FirstSeenAt                          : 2026-10-09 06:22:46.3138837+00:00
+DemandCreatedAt                      : 2026-10-09 06:12:45.6275357+00:00
+DecisionFingerprint                  : 73342612522ab69d39990b52b317171cbc96fb1ae32259ff79b25e91badb0fda
+ReasonCode                           : DEMAND_ALREADY_ACCEPTED
+LastSeenAt                           : 2026-10-09 06:40:41.0304865+00:00
+AcceptedAt                           : 2026-10-09 06:22:46.6547799+00:00
+StarvationEscalatedAt                : 
+StarvationEscalationParameterVersion : 
+
+DemandId                             : f2253f73-95aa-438f-aec7-49f9d3ae2fa3
+TransportDemandKey                   : FIELD-1009-AGV02-S2W-01|STAGING_TO_WIRE
+FirstSeenAt                          : 2026-10-09 07:10:14.1466971+00:00
+DemandCreatedAt                      : 2026-10-09 07:00:12.9066216+00:00
+DecisionFingerprint                  : 3f3a2eef9068ab63da1bd36028f4eaa7aba8f4d715e03010591289b377850c27
+ReasonCode                           : DEMAND_ALREADY_ACCEPTED
+LastSeenAt                           : 2026-10-09 07:27:30.9716484+00:00
+AcceptedAt                           : 2026-10-09 07:16:14.3585272+00:00
+StarvationEscalatedAt                : 
+StarvationEscalationParameterVersion : 
+
+
+--- AdmissionPolicyState
+
+Id           : 1
+Version      : 2
+DeploymentId : MAP-26-WIRE_TO_GATE-20261007
+ContentHash  : 0eea644ce371ffe13a612ac4ea4f68918ada889dd529b54426cbb04f38d867da
+ImportedAt   : 2026-10-09 06:18:47.1582236+00:00
+
+
+--- TaskTypeStationHolds
+
+HoldId     : 5a71ff80f7254f0faa8c291770caa543
+MapId      : 26
+TaskType   : WIRE_TO_GATE
+Source     : ACTIVATION_RESULT_UNKNOWN
+ReasonCode : TASK_TYPE_ACTIVATION_RESULT_UNKNOWN
+DetailJson : {"attemptId":"5d16f9a482cb4a4fbe47eccf8696d786","targetVersion":2,"previousVersion":1,"previousState":"ACTIVE"}
+RaisedAt   : 2026-10-09 15:09:54.2814702+08:00
+RaisedBy   : fieldops:activation:5d16f9a482cb4a4fbe47eccf8696d786
+ReleasedAt : 2026-10-09 15:09:54.2814702+08:00
+ReleasedBy : fieldops:activation:5d16f9a482cb4a4fbe47eccf8696d786
+
+HoldId     : b485dc55a4e54ad5a488457b58e56bc2
+MapId      : 26
+TaskType   : STAGING_TO_WIRE
+Source     : ACTIVATION_RESULT_UNKNOWN
+ReasonCode : TASK_TYPE_ACTIVATION_RESULT_UNKNOWN
+DetailJson : {"attemptId":"5d16f9a482cb4a4fbe47eccf8696d786","targetVersion":2,"previousVersion":1,"previousState":"ACTIVE"}
+RaisedAt   : 2026-10-09 15:09:54.2814702+08:00
+RaisedBy   : fieldops:activation:5d16f9a482cb4a4fbe47eccf8696d786
+ReleasedAt : 2026-10-09 15:09:54.2814702+08:00
+ReleasedBy : fieldops:activation:5d16f9a482cb4a4fbe47eccf8696d786
+
+
+--- StationExclusivityRecords
+
+RecordId             : 8cd99ee5-c2e9-4629-86a7-8e1c1a08214e
+MapId                : 26
+StationId            : 210
+StationKind          : FIXED_TASK_STATION
+VehicleKey           : BROKERX-f38975561adf46ccb1d2f23833c7d0e4
+JourneyId            : journey:15b03c5a-ab1d-4b7b-9451-0a4f0e0cbc7d
+WaitingPointVersion  : 
+ReservedAt           : 2026-10-09 06:30:26.2262775+00:00
+OccupiedAt           : 2026-10-09 06:39:24.4147755+00:00
+ReleasedAt           : 2026-10-09 06:42:56.9090377+00:00
+ReleaseReason        : DEPARTED_STATION
+ChargerRosterVersion : 
+
+RecordId             : 5bf861ac-49c4-409c-80ff-b832ef89230d
+MapId                : 26
+StationId            : 217
+StationKind          : FIXED_TASK_STATION
+VehicleKey           : BROKERX-f38975561adf46ccb1d2f23833c7d0e4
+JourneyId            : journey:f2253f73-95aa-438f-aec7-49f9d3ae2fa3
+WaitingPointVersion  : 
+ReservedAt           : 2026-10-09 07:16:14.3585272+00:00
+OccupiedAt           : 2026-10-09 07:17:25.2428196+00:00
+ReleasedAt           : 2026-10-09 07:23:33.2134632+00:00
+ReleaseReason        : DEPARTED_STATION
+ChargerRosterVersion : 
+
+
+--- VehiclePurposeClaimRecords
+
+RecordId      : 8cbafc3c-02a0-4145-adc5-00c6c6eceee5
+VehicleKey    : BROKERX-f38975561adf46ccb1d2f23833c7d0e4
+Purpose       : TRANSPORT
+JourneyId     : journey:15b03c5a-ab1d-4b7b-9451-0a4f0e0cbc7d
+AcquiredAt    : 2026-10-09 06:22:46.6547799+00:00
+ReleasedAt    : 2026-10-09 14:39:43.8557907+08:00
+ReleaseReason : LAST_DEMAND_UNLOADED
+
+RecordId      : 36c12630-89df-4fa8-9daa-96fef21ebcd0
+VehicleKey    : BROKERX-f38975561adf46ccb1d2f23833c7d0e4
+Purpose       : TRANSPORT
+JourneyId     : journey:f2253f73-95aa-438f-aec7-49f9d3ae2fa3
+AcquiredAt    : 2026-10-09 07:16:14.3585272+00:00
+ReleasedAt    : 2026-10-09 15:27:03.3162421+08:00
+ReleaseReason : LAST_DEMAND_UNLOADED
+
+
+--- SessionRecoveries
+
+AgvId                                : 老厂前线新多仓位2
+SessionGeneration                    : 13
+ProtocolCommit                       : 86575456c847041515b7b75e8851a00e0d939804
+ManifestSha256                       : 4ac095ad371d3aaa60d7c2e0198cfd64cff5f3068230fc3420e9cdf5616422a7
+ProfileId                            : AGV_FULL_PRODUCT
+ProtocolVersion                      : 3
+CapabilityRevision                   : 1
+CapabilityHash                       : 6fbebfb709c6ba1c35abad711294e4e6a337a1432a3833184d08ef709bb1b88e
+SafetyRevision                       : 23
+SafetyHash                           : 6afa9bce078152f928d473f645d61ced8a49fff044f9622882d32bc22a9f537a
+DepartureSafe                        : 1
+RecoveryReportId                     : 95a5ffe7-b217-414e-9e9c-4b7c3552eeeb
+ForcedRecoveryGeneration             : 0
+PendingAttemptIdsJson                : []
+PendingResultIdsJson                 : []
+Readiness                            : Ready
+ReasonCode                           : READY
+UpdatedAt                            : 2026-10-09 07:28:29.6499523+00:00
+ActiveUnlockSlotsJson                : []
+ProvenRecoveryCheckpoint             : RESULT_RECORDED
+ReportedForcedRecoveryGeneration     : 0
+UnsettledSlotOperationAttemptId      : 
+SafetyReasonCodesJson                : []
+SafetyUnknownPresent                 : 0
+ReportedSlotConfigurationFingerprint : de93ca3d9eda7b619dd3ea2e8824f8592a3471b11ff723eba3dbc12ea6f69da9
+
+
+--- TaskTypeStationBindings
+
+MapId               : 26
+Version             : 1
+TaskType            : WIRE_TO_GATE
+StationRiotId       : 210
+StationName         : 关卡
+SiteVerificationRef : MAP-26-WIRE_TO_GATE-B6-IDENTITY-20260919
+
+MapId               : 26
+Version             : 2
+TaskType            : STAGING_TO_WIRE
+StationRiotId       : 217
+StationName         : 派工待送取货
+SiteVerificationRef : MAP-26-STAGING_TO_WIRE-SITE-20261009
+
+MapId               : 26
+Version             : 2
+TaskType            : WIRE_TO_GATE
+StationRiotId       : 210
+StationName         : 关卡
+SiteVerificationRef : MAP-26-WIRE_TO_GATE-B6-IDENTITY-20260919
+
+
+--- ChargerRosterVersions
+
+Version       : 1
+ContentSha256 : 8939cc82b4dd68ca94e29e2123728f193cdb0de398bcef43e38e634c187598f1
+SnapshotId    : 2dfa6fb63692438cb1f731022acb9e37
+LoadedAt      : 2026-10-09 14:19:19.2211001+08:00
+Source        : GOVERNED_IMPORT
+ApprovedBy    : Zhengyu Shao
+ApprovalBasis : 用户 2026-09-29 定（control-server#400）：授权窗口之外 v2 名册置空，v2 不会分配站 211，MVP 与 agv01 照常使用
+ChangeNote    : 关窗：空名册。进行中的充电周期按原快照继续到结束。
+
+
+--- ChargingPolicyActivations
+
+ActivationId : e3d72413-4193-4cd6-b92d-784fe97b3dea
+Sequence     : 1
+Version      : 1
+ActivatedAt  : 2026-10-09 14:22:39.4404468+08:00
+ActivatedBy  : Claude（AI 代理，Zhengyu Shao 10-09 授权，现场重测二）
+
+

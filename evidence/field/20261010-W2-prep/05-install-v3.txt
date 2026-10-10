@@ -1,0 +1,58 @@
+[17:40:51] Instance definition accepted: factory01-v2-parallel (from C:/Users/szy/AppData/Local/Temp/claude/C--Users-szy-Desktop-8005-workspace-v2/633497e0-bd94-4160-8786-463f6b9f4a1d/scratchpad/deploy/instance-factory01-v2.runtime-on.json)
+[17:40:52] MES_INGEST_SOURCE=fake baseUrl=http://127.0.0.1:58188 allowedWorkTypes=DIE_TO_WIRE_STAGING,DIE_TO_OVEN,WIRE_TO_GATE,WIRE_TO_OPTICAL,STAGING_TO_WIRE,WIRE_TO_NITROGEN -- injected demand from this instance's own FakeMesIngest double, task '8005 AGV ControlServer V2 FakeMesIngest'
+[17:40:52] Target: factory01  service '8005 AGV ControlServer V2'
+[17:40:52] Vehicle: ÀÏ³§Ç°ÏßÐÂ¶à²ÖÎ»2 (BROKERX-f38975561adf46ccb1d2f23833c7d0e4)
+[17:40:52] RouteGraph: enabled=True mapId=26   RiotCreateDispatch: enabled=False
+[17:40:52] Clearance exit: VehicleFaultRecovery enabled=False   FieldOperatorRoles roster=D:\zhengyushao\control-server-v2-ops\field-operator-roles.json onboardEntryDeclared=False
+[17:40:52] Secrets loaded from the DPAPI store (V2FaultRecoveryCredential absent; the Host recovery entry is off)
+[17:40:52] Downloading artifact from run 38040930792
+[17:41:33] Package hash verified (63c42cd7166de1aa8ffa2f4009a97dff5e6059a89f86f418b5dfb6733b7d704a)
+[17:41:34] Building FakeMesIngest from the control-server repository
+  Determining projects to restore...
+  Restored C:\Users\szy\Desktop\8005-workspace-v2\worktrees\rig-cs566-8005-agv-control-server\src\ControlServer.Domain\ControlServer.Domain.csproj (in 159 ms).
+  Restored C:\Users\szy\Desktop\8005-workspace-v2\worktrees\rig-cs566-8005-agv-control-server\tools\ControlServer.TestDoubles\ControlServer.TestDoubles.csproj (in 159 ms).
+  Restored C:\Users\szy\Desktop\8005-workspace-v2\worktrees\rig-cs566-8005-agv-control-server\src\ControlServer.Application\ControlServer.Application.csproj (in 165 ms).
+  Restored C:\Users\szy\Desktop\8005-workspace-v2\worktrees\rig-cs566-8005-agv-control-server\tools\ControlServer.FakeMesIngest\ControlServer.FakeMesIngest.csproj (in 500 ms).
+  Restored C:\Users\szy\Desktop\8005-workspace-v2\worktrees\rig-cs566-8005-agv-control-server\src\ControlServer.Infrastructure\ControlServer.Infrastructure.csproj (in 506 ms).
+  ControlServer.Domain -> C:\Users\szy\Desktop\8005-workspace-v2\worktrees\rig-cs566-8005-agv-control-server\src\ControlServer.Domain\bin\Release\net8.0\win-x64\ControlServer.Domain.dll
+  ControlServer.TestDoubles -> C:\Users\szy\Desktop\8005-workspace-v2\worktrees\rig-cs566-8005-agv-control-server\tools\ControlServer.TestDoubles\bin\Release\net8.0\win-x64\ControlServer.TestDoubles.dll
+  ControlServer.Application -> C:\Users\szy\Desktop\8005-workspace-v2\worktrees\rig-cs566-8005-agv-control-server\src\ControlServer.Application\bin\Release\net8.0\win-x64\ControlServer.Application.dll
+  ControlServer.Infrastructure -> C:\Users\szy\Desktop\8005-workspace-v2\worktrees\rig-cs566-8005-agv-control-server\src\ControlServer.Infrastructure\bin\Release\net8.0\win-x64\ControlServer.Infrastructure.dll
+  ControlServer.FakeMesIngest -> C:\Users\szy\Desktop\8005-workspace-v2\worktrees\rig-cs566-8005-agv-control-server\tools\ControlServer.FakeMesIngest\bin\Release\net8.0\win-x64\ControlServer.FakeMesIngest.dll
+  ControlServer.FakeMesIngest -> C:\Users\szy\AppData\Local\Temp\control-server-v2-deploy-20261010-174052\fake-mes-ingest\
+Published FakeMesIngest: C:\Users\szy\AppData\Local\Temp\control-server-v2-deploy-20261010-174052\fake-mes-ingest.zip
+Source commit: 2fe490d738630212a4a73b99345d0739402672a8
+SHA-256: c1d48efb63a3bcbf954023f7c2a7add887503d6f99a6575d5839cf293355e499
+[17:41:59] FakeMesIngest package: C:\Users\szy\AppData\Local\Temp\control-server-v2-deploy-20261010-174052\fake-mes-ingest.zip
+[17:42:08] Parallel scripts and instance definition staged in D:\zhengyushao\control-server-v2-ops
+  ready: D:\zhengyushao\control-server-v2-ops
+  ready: D:\zhengyushao\control-server-v2-staging
+ready: D:\zhengyushao\control-server-v2-ops
+ready: D:\zhengyushao\control-server-v2-staging
+[17:42:14] Copying package (176.4 MB)
+[17:42:47] Running the parallel installer on the server
+  [17:42:49] Instance definition accepted: factory01-v2-parallel
+  [17:42:49] MES_INGEST_SOURCE=fake baseUrl=http://127.0.0.1:58188 allowedWorkTypes=DIE_TO_WIRE_STAGING,DIE_TO_OVEN,WIRE_TO_GATE,WIRE_TO_OPTICAL,STAGING_TO_WIRE,WIRE_TO_NITROGEN -- injected demand from this instance's own FakeMesIngest double, task '8005 AGV ControlServer V2 FakeMesIngest'
+  [17:42:49] MVP service before: present=True status=Running startType=Automatic pathName="C:\Program Files\8005 AGV\ControlServer\ControlServer.Host.exe" --contentRoot "C:\Program Files\8005 AGV\ControlServer" --environment Production processId=15624
+  [17:42:51] Package hash verified (63c42cd7166de1aa8ffa2f4009a97dff5e6059a89f86f418b5dfb6733b7d704a)
+  [17:42:51] Installed definition recorded at D:\zhengyushao\control-server-v2-ops\installed-instance.json
+  [17:42:57] Unpacked to D:\zhengyushao\ControlServer.V2.incoming-20261010-174249
+  [17:42:57] Release: controlserver 2fe490d  onboard ca89ef8
+  [17:42:57] RIoT key written to the user scope (shared with the MVP deployment, same value today); machine scope read, not written
+  [17:42:57] First install of 8005 AGV ControlServer V2 with Install-ControlServerLocal.ps1
+  [33;1mWARNING: The parallel install did NOT complete. The instance may be half-installed.[0m
+  [33;1mWARNING: Nothing was rolled back after the product installer returned. Check the MVP first:[0m
+  [33;1mWARNING:   MVP now: present=True status=Running startType=Automatic pathName="C:\Program Files\8005 AGV\ControlServer\ControlServer.Host.exe" --contentRoot "C:\Program Files\8005 AGV\ControlServer" --environment Production processId=15624[0m
+  [33;1mWARNING:   MVP before: present=True status=Running startType=Automatic pathName="C:\Program Files\8005 AGV\ControlServer\ControlServer.Host.exe" --contentRoot "C:\Program Files\8005 AGV\ControlServer" --environment Production processId=15624[0m
+  [33;1mWARNING: Then remove the partial instance with Uninstall-ParallelInstanceLocal.ps1 (see wire-to-gate-parallel-cd.md section 11).[0m
+  [31;1mException: [0mD:\zhengyushao\ControlServer.V2.incoming-20261010-174249\scripts\Install-ControlServerLocal.ps1:508[0m
+  [31;1m[0m[36;1mLine |[0m
+  [31;1m[0m[36;1m[36;1m 508 | [0m     [36;1m$result = [ordered]@{[0m
+  [31;1m[0m[36;1m[36;1m[0m[36;1m[0m[36;1m     | [31;1m     ~~~~~~~~~~~~~~~~~~~~~[0m
+  [31;1m[0m[36;1m[36;1m[0m[36;1m[0m[36;1m[31;1m[31;1m[36;1m     | [31;1mThe property 'reason' cannot be found on this object. Verify that the property exists.[0m
+  deploy-config.json: not on the server
+[31;1mException: [0mC:\Users\szy\Desktop\8005-workspace\remote-ops\factory-server\scripts\19-deploy-control-server-parallel.ps1:119[0m
+[31;1m[0m[36;1mLine |[0m
+[31;1m[0m[36;1m[36;1m 119 | [0m ¡­ EXITCODE -ne 0) { [36;1mthrow "ssh $SshAlias failed (exit $LASTEXITCODE)"[0m }[0m
+[31;1m[0m[36;1m[36;1m[0m[36;1m[0m[36;1m     | [31;1m                     ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~[0m
+[31;1m[0m[36;1m[36;1m[0m[36;1m[0m[36;1m[31;1m[31;1m[36;1m     | [31;1mssh factory01 failed (exit 1)[0m
