@@ -151,6 +151,10 @@ $journey = "$(Get-G3Scalar $connection "SELECT Stage AS Value FROM JourneyRuntim
 $session = Get-G3Session $connection
 $recoverySession = Get-G3Scalar $connection "SELECT State AS Value FROM ExceptionRecoverySessions WHERE ExceptionRecoverySessionId = '$([string]$result.Payload.exceptionRecoverySessionId)'"
 $closedReason = Get-G3Scalar $connection "SELECT ClosedReason AS Value FROM ExceptionRecoverySessions WHERE ExceptionRecoverySessionId = '$([string]$result.Payload.exceptionRecoverySessionId)'"
+# control-server#555: Get-G3Scalar returns [string]$rows[0].Value, so a NULL column reads back as "" and can never be
+# $null or DBNull -- the old test of $closedReason was false whatever the server wrote. Ask SQLite whether the column is
+# NULL instead: that keeps NULL apart from an empty string, which a NULL-or-empty test would let through.
+$closedReasonIsNull = (Get-G3Scalar $connection "SELECT ClosedReason IS NULL AS Value FROM ExceptionRecoverySessions WHERE ExceptionRecoverySessionId = '$([string]$result.Payload.exceptionRecoverySessionId)'") -eq '1'
 $demandStatus = Get-G3Scalar $connection "SELECT Status AS Value FROM AcceptedDemands WHERE DemandId = '$demandId'"
 $toGate = Get-G3Count $connection "SELECT COUNT(*) AS Total FROM OrderIntents WHERE DemandId = '$demandId' AND Purpose = 'TO_GATE'"
 # control-server#137 (REQ-0242): the forced result closes the cargo's business as a named handoff -- demand
@@ -167,9 +171,9 @@ $assertions.Add(
     ($workflowState -eq 'Reconciled' -and $journey -eq 'Completed/TERMINATED_BY_FAULT_CARGO_HANDOFF' -and $recoverySession -eq 'CLOSED' -and
         [string]$session.Readiness -eq 'RecoveryRequired' -and $demandStatus -eq 'Cancelled' -and $toGate -eq 0 -and
         $null -ne $handoff -and $handoffRecorded -eq $handoffReceiver -and
-        ($null -eq $closedReason -or $closedReason -is [System.DBNull])),
-    'Reconciled（交接人 G3 交接人 王五）/ Completed/TERMINATED_BY_FAULT_CARGO_HANDOFF / 会话 CLOSED（原因空）/ RecoveryRequired / Cancelled / TO_GATE 0',
-    "$workflowState（交接人 $handoffRecorded）/ $journey / 会话 $recoverySession（原因 $closedReason）/ $($session.Readiness) ($($session.ReasonCode)) / $demandStatus / TO_GATE $toGate")
+        $closedReasonIsNull),
+    'Reconciled（交接人 G3 交接人 王五）/ Completed/TERMINATED_BY_FAULT_CARGO_HANDOFF / 会话 CLOSED（原因 NULL）/ RecoveryRequired / Cancelled / TO_GATE 0',
+    "$workflowState（交接人 $handoffRecorded）/ $journey / 会话 $recoverySession（原因 $(if ($closedReasonIsNull) { 'NULL' } else { "'$closedReason'" })）/ $($session.Readiness) ($($session.ReasonCode)) / $demandStatus / TO_GATE $toGate")
 
 $unlocksAfterRequest = @((Get-G3Progress $connection $attemptId) | Where-Object { $_.Phase -eq 'UNLOCKING' -and $_.At -gt $requestedAt })
 $physical = ($load.TargetSlots | Sort-Object | ForEach-Object { "$_=$(Get-G3SlotState $simulator $_)" }) -join ' '

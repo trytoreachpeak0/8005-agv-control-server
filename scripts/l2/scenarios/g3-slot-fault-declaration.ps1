@@ -290,7 +290,7 @@ $assertions.Add(
     ($null -ne $declaredSlot -and [string]$result.Payload.overallOutcome -eq 'UNKNOWN' -and [string]$declaredSlot.outcome -eq 'UNKNOWN' -and
         @($declaredSlot.reasonCodes) -contains 'SLOT_FAULT_DECLARED' -and @($otherSlots | Where-Object { [string]$_.outcome -ne 'NOT_STARTED' }).Count -eq 0),
     "UNKNOWN / slot $unloadSlot UNKNOWN [SLOT_FAULT_DECLARED] / 其余 NOT_STARTED",
-    $(if ($result) { $result.PayloadJson } else { '(no OperationResult)' }))
+    $(if ($result) { $result.Payload | ConvertTo-Json -Depth 20 -Compress } else { '(no OperationResult)' }))
 
 $blocked = Wait-L2RealOrLast -Description 'the journey blocked on the declared unload' `
     -Journal $journal -Criterion 'journey-blocked' -TimeoutSeconds 60 `
