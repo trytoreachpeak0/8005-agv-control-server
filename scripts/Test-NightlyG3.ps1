@@ -30,6 +30,8 @@
          its runtime but not its sources or publish (vm01 has single-digit gigabytes free); results.json carries the
          verdicts and the four commits; past the deadline, under the commit guard or short of disk, the runners left
          are recorded NOT_STARTED_* and never started; red exits 1, green 0.
+      6. The workflow's load-bearing lines, as text: nothing in .github/workflows/g3.yml cancels a job, and its g3 job
+         runs Invoke-NightlyG3.ps1 on [self-hosted, cs-desktop] with the whole history checked out.
 
     Exits 1 when any check comes out the other way, and prints every check either way.
 
@@ -345,6 +347,18 @@ exit $(if ($red) { 1 } else { 0 })
              $null -eq (Get-Arguments $round.Work 'staged') -and $round.Exit -eq 1) `
             "exit $($round.Exit); $(($verdicts | ForEach-Object { "$($_['runner'])=$($_['result'])" }) -join ', ') $($round.Output)"
     }
+
+    # --- 6. the workflow's load-bearing lines ----------------------------------------------------------------------
+    # Text, not YAML (no parser ships with pwsh), and only what would hurt if it drifted: nothing in it cancels a job,
+    # the round runs on cs-desktop with the whole history checked out, and it calls the round script.
+    $workflowPath = Join-Path (Split-Path -Parent $ScriptRoot) '.github\workflows\g3.yml'
+    $workflow = if (Test-Path -LiteralPath $workflowPath) { Get-Content -Raw -LiteralPath $workflowPath } else { '' }
+    Check 'g3.yml: cancel-in-progress is false, and nothing cancels a run' `
+        ($workflow -match '(?m)^\s*cancel-in-progress:\s*false\s*$' -and $workflow -notmatch '(?m)^\s*cancel-in-progress:\s*true' -and
+         $workflow -notmatch '(?i)run\s+cancel|/cancel\b|force-cancel') 'see g3.yml'
+    $g3Job = [regex]::Match($workflow, '(?ms)^  g3:\s*$.*?(?=^  \w[\w-]*:\s*$)').Value
+    Check 'g3.yml: the g3 job runs on [self-hosted, cs-desktop], checks out fetch-depth 0 and runs Invoke-NightlyG3.ps1' `
+        ($g3Job -match 'runs-on:\s*\[self-hosted,\s*cs-desktop\]' -and $g3Job -match 'fetch-depth:\s*0\b' -and $g3Job -match 'Invoke-NightlyG3\.ps1') 'see g3.yml'
 
     # All green exits 0.
     $round = Invoke-Round 'green' @{} @{}

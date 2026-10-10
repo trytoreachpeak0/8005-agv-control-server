@@ -1,0 +1,259 @@
+name: g3
+
+# The nightly G3 (control-server#582): the four G3 runners -- staged, restart, demand-bearing, journey -- at the tip
+# of the integration branch, under a self-check override, with the verdict commented on the fixed issue
+# control-server#581 every night, all green included, so that a night with no comment is a night that did not run.
+#
+# It is NOT gate evidence. The G3 commit binding in run-staged-g3.ps1 is written down on purpose and moves only in a
+# batch exit's first step; this runs the runners with -SelfCheckControlServerCommit / -SelfCheckOnboardCommit instead,
+# and every slice of every run grades formalSlicePass false with SELF_CHECK_OVERRIDE. What it is for: seeing the day
+# after a merge that a change visible to the peer was not followed in a G3 script (cs#478 changed a reply on 10-04
+# and the staged G3 found out at the batch-10 exit), instead of at the exit. The simulator and protocol stay at the
+# binding (run-journey-g3.ps1 has no override for them); the onboard is the tip of w2g/fp-v2-impl, which the runners'
+# clone check requires anyway.
+#
+# Three jobs:
+#   gate    (headless)   resolves the commits and the start deadline, and waits up to 30 minutes for any l2.yml
+#                        real-rig job (the other holder of cs-desktop) to finish. Still busy: NOT_STARTED_RIG_BUSY.
+#                        Waiting here and not on cs-desktop matters: a real-rig job queued behind this workflow's own
+#                        desktop job could never finish while that job waited for it.
+#   g3      (cs-desktop) scripts/Invoke-NightlyG3.ps1: the four runners in a row (staged and restart both bind Modbus
+#                        1502; three put WPF windows on the one desktop), each behind l2.yml real-rig's commit guard,
+#                        the start deadline and a free-disk floor. A scheduled night starts no runner after 04:00 CST,
+#                        clear of 8005-mes-ingest's golden-renderer verify near 05:30.
+#   report  (headless)   comments the verdict on control-server#581, whatever the other two did.
+# Nothing here cancels a job, and no job's timeout is meant to be what ends it (a cancel can wedge a self-hosted
+# runner: workspace CLAUDE.md). The verdict is decided offline-testably in scripts/NightlyG3.psm1, checked by
+# scripts/Test-NightlyG3.ps1 in test.yml.
+#
+# The schedule only fires from the default branch. GitHub runs `schedule` from the workflow file on the default branch
+# (main), and this line (fp/v2-impl) does not merge into main, so from here the cron below is inert; how the nightly
+# run is triggered is recorded in scripts/l2/README.md's nightly G3 section.
+#
+# By hand, on any branch that has this file (the input picks what is tested; the workflow file comes from --ref):
+#   gh workflow run g3.yml -R trytoreachpeak0/8005-agv-control-server --ref fp/v2-impl -f ref=fp/v2-impl [-f note=...]
+on:
+  schedule:
+    - cron: '0 17 * * *'   # 01:00 CST
+  workflow_dispatch:
+    inputs:
+      ref:
+        description: 'control-server branch or commit to test; the runners clone this commit with -SelfCheckControlServerCommit'
+        type: string
+        default: 'fp/v2-impl'
+      note:
+        description: 'One line added to the comment (for example: red evidence on a throwaway branch)'
+        type: string
+        default: ''
+      comment_issue:
+        description: 'Issue the verdict is commented on'
+        type: string
+        default: '581'
+  # Only so that GitHub knows this workflow at all: a workflow file that is not on the default branch can be dispatched
+  # only once it has run for some event. A pull request touching this file runs the `register` job and nothing else.
+  pull_request:
+    types: [opened, synchronize, reopened, ready_for_review]
+    paths: ['.github/workflows/g3.yml']
+
+permissions:
+  contents: read
+  actions: read
+  issues: write
+
+# One night at a time. cancel-in-progress stays false (workspace CLAUDE.md: never cancel a running self-hosted job).
+concurrency:
+  group: ${{ github.workflow }}${{ github.event_name == 'pull_request' && format('-pr-{0}', github.ref) || '' }}
+  cancel-in-progress: false
+
+env:
+  G3_REF: ${{ inputs.ref || 'fp/v2-impl' }}
+  G3_ONBOARD_REF: refs/heads/w2g/fp-v2-impl
+
+jobs:
+  register:
+    if: github.event_name == 'pull_request' && !github.event.pull_request.draft
+    runs-on: [self-hosted, headless]
+    timeout-minutes: 10
+    steps:
+      - name: Registration only
+        shell: pwsh
+        run: Write-Host 'g3.yml runs on schedule and workflow_dispatch; a pull request touching it only registers the workflow.'
+
+  gate:
+    if: github.event_name != 'pull_request'
+    runs-on: [self-hosted, headless]
+    # The rig wait is 30 minutes; this bounds it with room, and is never what ends it.
+    timeout-minutes: 60
+    outputs:
+      proceed: ${{ steps.gate.outputs.proceed }}
+      stopped_by: ${{ steps.gate.outputs.stopped_by }}
+      busy: ${{ steps.gate.outputs.busy }}
+      control_server: ${{ steps.gate.outputs.control_server }}
+      onboard: ${{ steps.gate.outputs.onboard }}
+      started: ${{ steps.gate.outputs.started }}
+      deadline: ${{ steps.gate.outputs.deadline }}
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          ref: ${{ env.G3_REF }}
+          sparse-checkout: scripts
+
+      - name: Commits, deadline and the real rig
+        id: gate
+        shell: pwsh
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          Import-Module ./scripts/NightlyG3.psm1 -Force
+          $started = [DateTimeOffset]::UtcNow
+          $deadline = Get-NightlyG3StartDeadline -EventName $env:GITHUB_EVENT_NAME -StartedAtUtc $started
+          $controlServer = (git rev-parse HEAD).Trim()
+          $onboard = ((git ls-remote https://github.com/trytoreachpeak0/8005-agv-onboard-hmi.git $env:G3_ONBOARD_REF) -split '\s+')[0]
+          if ($onboard -notmatch '^[0-9a-f]{40}$') { throw "Unable to read the tip of $env:G3_ONBOARD_REF in 8005-agv-onboard-hmi: '$onboard'" }
+          Write-Host "control-server $controlServer ($env:G3_REF); onboard-hmi $onboard ($env:G3_ONBOARD_REF); start deadline $($deadline.ToString('o'))"
+
+          $stoppedBy = ''
+          $busy = ''
+          if ([DateTimeOffset]::UtcNow -gt $deadline) {
+              $stoppedBy = 'NOT_STARTED_DEADLINE'
+          } else {
+              $wait = Wait-NightlyG3RigIdle -WaitMinutes 30 -PollSeconds 60 -GetBusy {
+                  Get-NightlyG3BusyRealRigJob -Repository $env:GITHUB_REPOSITORY -Token $env:GH_TOKEN }
+              if (-not $wait.idle) {
+                  $stoppedBy = 'NOT_STARTED_RIG_BUSY'
+                  $busy = "等了 $($wait.waitedMinutes) 分钟仍忙：$($wait.busy -join '; ')"
+                  Write-Host "::warning title=Nightly G3::$busy"
+              }
+          }
+          @(
+              "proceed=$(if ($stoppedBy) { 'false' } else { 'true' })"
+              "stopped_by=$stoppedBy"
+              "busy=$busy"
+              "control_server=$controlServer"
+              "onboard=$onboard"
+              "started=$($started.ToString('o'))"
+              "deadline=$($deadline.ToString('o'))"
+          ) | Out-File -FilePath $env:GITHUB_OUTPUT -Append -Encoding utf8
+
+  g3:
+    needs: gate
+    if: needs.gate.outputs.proceed == 'true'
+    runs-on: [self-hosted, cs-desktop]
+    # A round is about 45 minutes; each runner may also wait 30 for memory and 30 for the desktop lock. The round stops
+    # starting runners at its deadline and fails on its own; this only has to sit above one worst-case runner past it.
+    timeout-minutes: 330
+    env:
+      NuGetAudit: 'false'
+      # As in l2.yml's real-rig job: no build server outlives the build. The runners set the first two themselves.
+      MSBUILDDISABLENODEREUSE: '1'
+      DOTNET_CLI_USE_MSBUILD_SERVER: '0'
+      UseSharedCompilation: 'false'
+    outputs:
+      results: ${{ steps.round.outputs.results }}
+    steps:
+      # The whole history: the runners clone the ControlServer from this local checkout (New-ExactClone), and the staged
+      # harness reads its own identity from it.
+      - uses: actions/checkout@v7
+        with:
+          ref: ${{ needs.gate.outputs.control_server }}
+          fetch-depth: 0
+
+      # run-staged-g3.ps1 runs the protocol's G1 with node and pnpm. vm01 has both machine-wide (C:\Program Files\nodejs,
+      # node v24.20.0 and pnpm 11.25.0 on 2026-10-11), the same installation 8005-agv-protocol's own g1.yml uses; the
+      # protocol repository pins no packageManager. Nothing is installed here: missing, this fails before any runner.
+      - name: Node and pnpm
+        shell: pwsh
+        run: |
+          foreach ($name in 'node', 'pnpm') {
+              $command = Get-Command $name -ErrorAction SilentlyContinue
+              if ($null -eq $command) { throw "$name is not on PATH; run-staged-g3.ps1 needs it for protocol G1." }
+              Write-Host "$name $(& $name --version) at $($command.Source)"
+          }
+
+      - name: Run the four G3 runners
+        id: round
+        shell: pwsh
+        env:
+          G3_CONTROL_SERVER: ${{ needs.gate.outputs.control_server }}
+          G3_ONBOARD: ${{ needs.gate.outputs.onboard }}
+          G3_DEADLINE: ${{ needs.gate.outputs.deadline }}
+        run: |
+          # Short: the onboard clone carries G2 evidence deep enough to pass MAX_PATH below a long root.
+          $work = Join-Path $env:RUNNER_TEMP 'g3'
+          "G3_WORK_ROOT=$work" | Out-File -FilePath $env:GITHUB_ENV -Append -Encoding utf8
+          & pwsh -NoProfile -File ./scripts/Invoke-NightlyG3.ps1 -WorkRoot $work -ControlServerCommit $env:G3_CONTROL_SERVER `
+              -OnboardCommit $env:G3_ONBOARD -StartDeadlineUtc $env:G3_DEADLINE
+          $exitCode = $LASTEXITCODE
+          $resultsPath = Join-Path $work 'results.json'
+          if (Test-Path -LiteralPath $resultsPath) {
+              $compact = Get-Content -Raw -LiteralPath $resultsPath | ConvertFrom-Json | ConvertTo-Json -Depth 8 -Compress
+              "results=$compact" | Out-File -FilePath $env:GITHUB_OUTPUT -Append -Encoding utf8
+          }
+          exit $exitCode
+
+      # Evidence of every runner, and what is left of a red runner's stage (runtime, journals, logs; its clones and
+      # builds are already gone). Diagnostic material, not a deliverable, so a failed upload does not turn the run red.
+      - name: Upload G3 evidence
+        if: always() && env.G3_WORK_ROOT != ''
+        continue-on-error: true
+        uses: actions/upload-artifact@v7
+        with:
+          name: g3-nightly-${{ github.run_id }}-${{ github.run_attempt }}
+          path: ${{ env.G3_WORK_ROOT }}
+          retention-days: 14
+          if-no-files-found: warn
+
+      # vm01's C: had 7.9 GB free on 2026-10-11. After the upload, not before.
+      - name: Remove the work root
+        if: always() && env.G3_WORK_ROOT != ''
+        continue-on-error: true
+        shell: pwsh
+        run: Remove-Item -LiteralPath $env:G3_WORK_ROOT -Recurse -Force -ErrorAction SilentlyContinue
+
+  report:
+    needs: [gate, g3]
+    if: always() && github.event_name != 'pull_request'
+    runs-on: [self-hosted, headless]
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          ref: ${{ needs.gate.outputs.control_server || env.G3_REF }}
+          sparse-checkout: scripts
+
+      - name: Comment the verdict
+        shell: pwsh
+        env:
+          GH_TOKEN: ${{ github.token }}
+          G3_RESULTS: ${{ needs.g3.outputs.results }}
+          G3_GATE_RESULT: ${{ needs.gate.result }}
+          G3_JOB_RESULT: ${{ needs.g3.result }}
+          G3_STOPPED_BY: ${{ needs.gate.outputs.stopped_by }}
+          G3_BUSY: ${{ needs.gate.outputs.busy }}
+          G3_CONTROL_SERVER: ${{ needs.gate.outputs.control_server }}
+          G3_ONBOARD: ${{ needs.gate.outputs.onboard }}
+          G3_STARTED: ${{ needs.gate.outputs.started }}
+          G3_NOTE: ${{ inputs.note }}
+          G3_ISSUE: ${{ inputs.comment_issue || '581' }}
+        run: |
+          Import-Module ./scripts/NightlyG3.psm1 -Force
+          $runUrl = "$env:GITHUB_SERVER_URL/$env:GITHUB_REPOSITORY/actions/runs/$env:GITHUB_RUN_ID"
+          $notes = @($env:G3_NOTE, $env:G3_BUSY | Where-Object { $_ })
+          $verdicts = @()
+          $stoppedBy = $env:G3_STOPPED_BY
+          $commits = [ordered]@{ controlServer = $env:G3_CONTROL_SERVER; onboardHmi = $env:G3_ONBOARD }
+          if ($env:G3_RESULTS) {
+              $results = $env:G3_RESULTS | ConvertFrom-Json -AsHashtable
+              $verdicts = @($results['verdicts'] | ForEach-Object { [pscustomobject]$_ })
+              if ($results['stoppedBy']) { $stoppedBy = $results['stoppedBy'] }
+              $commits = $results['commits']
+          } elseif (-not $stoppedBy) {
+              # Neither a verdict nor a reason it did not start: a job that failed outside the round.
+              $stoppedBy = "ERROR_NO_RESULTS (gate $env:G3_GATE_RESULT, g3 $env:G3_JOB_RESULT)"
+          }
+          $started = if ($env:G3_STARTED) { [DateTimeOffset]::Parse($env:G3_STARTED) } else { [DateTimeOffset]::UtcNow }
+          $body = Format-NightlyG3Comment -Verdicts $verdicts -RunUrl $runUrl -Trigger $env:GITHUB_EVENT_NAME -Ref $env:G3_REF `
+              -Commits $commits -StartedAtUtc $started -StoppedBy $stoppedBy -Note ($notes -join ' ')
+          $body | Out-File -FilePath $env:GITHUB_STEP_SUMMARY -Append -Encoding utf8
+          $comment = Send-NightlyG3Comment -Repository $env:GITHUB_REPOSITORY -Issue ([int]$env:G3_ISSUE) -Body $body -Token $env:GH_TOKEN
+          Write-Host "Commented: $($comment.html_url)"
