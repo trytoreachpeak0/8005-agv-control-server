@@ -185,9 +185,12 @@ control-server#262。约 2026-10-08 起 `factory01` 上同时跑两套 ControlSe
   `-ControlServerRepository` 必须检出到与安装包同一个 control-server 提交**（包里 `release-manifest.json` 的
   `components.controlServer.commit`）。19 的实例定义取自这个克隆的 `scripts/parallel/`，不从包里取；克隆停在顶端、包是旧的，
   定义就是新的。要部署旧包，就为那个提交建一个 detached worktree 当 `-ControlServerRepository`。19 自己做这道核对是
-  control-server#552，在那之前只能靠人核。
+  control-server#552，在那之前只能靠人核。**control-server#552 之后 19 自己拒绝这种错配**：包里的提交与克隆 `HEAD` 不同、
+  克隆不干净、实例定义不是克隆里被跟踪的文件，都在碰服务器之前拒绝（`8005-workspace` 仓
+  `remote-ops/factory-server/docs/wire-to-gate-parallel-cd.md` 第 1 节）。
 - **本票合入之后、批次 10 的 release 跑出来之前，不要用不带 `-RunId` 的默认方式部署。**19 不带 `-RunId` 时取
   `release.yml` 最近一次成功的产物，那时它还是批次 10 之前的包，而克隆顶端的定义已经是 3——正是上面这种错配。
+  control-server#552 之后，19 不带 `-RunId` 时改为按克隆 `HEAD` 的提交查 release，查不到就拒绝，不再取「最近一次」。
 
 为什么：服务端每一轮都把「本图每个 AREA 命名的机台站 × 本构建能执行的每个任务类型」写进库，作为站点准入（准入种子），
 并和 `admissionPolicyVersion`、`admissionPolicyDeploymentId` 一起固定下来。同一个版本号下种子内容变了，库拒绝重绑，
@@ -258,11 +261,17 @@ L1 `SameDirectionTaskTypeJourneyRuntimeTests.AfterVersionThreeIsBoundTheRolledBa
 
 所以回滚时：
 
-1. 回滚用的定义副本里，把 `admissionPolicyVersion` 设为**这个实例装过的最高版本 + 1**（第一次从 3 回滚就是 4）。最高版本以
-   库里为准（上面「读库里已绑的版本」），部署记录只作对照。只改那一次部署用的副本，不提交回本仓。
+1. 回滚用的 `admissionPolicyVersion` 设为**这个实例装过的最高版本 + 1**（第一次从 3 回滚就是 4）。最高版本以
+   库里为准（上面「读库里已绑的版本」），部署记录只作对照。**control-server#552 之后用 19 的参数给，不再手改定义副本**：
+   `19-deploy-control-server-parallel.ps1 -Rollback -AdmissionPolicyVersionOverride <n>`。19 只改发往服务器的那份副本，本仓的
+   定义不动；`-Rollback` 不带这个参数会被拒绝，克隆外的定义副本也会被拒绝。
 2. 之后再装回批次 10 及之后的包，又要**再高一个**（上例是 5）。这时仓库里的三处出厂值低于实例实际用过的值，护栏不会替你发现；
-   要么部署时用副本写更高的值，要么开票把三处一起升上去。
+   要么部署时给 19 带 `-AdmissionPolicyVersionOverride`（首装与升级也接受，同提交检查照做），要么开票把三处一起升上去。
 3. 每次部署都在部署记录里写下用的版本号，回滚时才知道「装过的最高版本」是多少。
+
+control-server#552 之后，19 在碰服务器之前会先用一次只读 ssh 读服务器上的 `<opsRoot>\installed-instance.json`（安装器每次安装、
+回滚动手之前都会记下这份定义）里的 `admissionPolicyVersion`：安装要发的版本低于它、或回滚要发的版本不高于它，都会被拒绝，拒绝信息里
+写着该填多少。这个文件不存在时按首装处理，此时这道版本下限检查**不生效**（文件被删时也一样），最高版本仍以库里为准。
 
 ## 路径和名字只认一种写法
 
