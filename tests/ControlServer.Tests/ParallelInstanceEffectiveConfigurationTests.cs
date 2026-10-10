@@ -138,6 +138,103 @@ public sealed class ParallelInstanceEffectiveConfigurationTests
     }
 
     // ------------------------------------------------------------------------------------------------
+    // control-server#578. The roster is an array of objects, each holding two arrays of its own, and an
+    // index merge leaves an earlier layer's extra cars and extra task types in force. Per-vehicle task
+    // types are exactly what keeps each car to its own work, so the roster is taken whole too.
+    // ------------------------------------------------------------------------------------------------
+
+    private const string TwoCarRoster = """
+        { "JourneyRuntime": { "fleet": [
+            { "agvId": "A2", "vehicleKey": "K2", "agvLifecycleGeneration": 1, "roundTimeoutMilliseconds": 45000,
+              "allowedTaskTypes": ["STAGING_TO_WIRE", "WIRE_TO_GATE"], "zones": ["WIRE", "OVEN"] },
+            { "agvId": "A3", "vehicleKey": "K3", "agvLifecycleGeneration": 1,
+              "allowedTaskTypes": ["DIE_TO_OVEN"], "zones": ["OVEN"] } ] } }
+        """;
+
+    [Fact]
+    public void ShorterRosterInLaterLayerReplacesEarlierRosterWholeDownToEachVehiclesLists()
+    {
+        JourneyRuntimeOptions options = Bind(TwoCarRoster, """
+            { "JourneyRuntime": { "fleet": [
+                { "agvId": "A2", "vehicleKey": "K2", "agvLifecycleGeneration": 1,
+                  "allowedTaskTypes": ["STAGING_TO_WIRE"], "zones": ["WIRE"] } ] } }
+            """, out _);
+
+        FleetVehicleOptions vehicle = Assert.Single(options.Fleet);
+        Assert.Equal("K2", vehicle.VehicleKey);
+        Assert.Equal(["STAGING_TO_WIRE"], vehicle.AllowedTaskTypes);
+        Assert.Equal(["WIRE"], vehicle.Zones);
+        // Taken whole: a field the later layer leaves out is the default, not the earlier layer's value.
+        Assert.Equal(30_000, vehicle.RoundTimeoutMilliseconds);
+    }
+
+    [Fact]
+    public void SameSizedRosterInLaterLayerKeepsNoneOfAVehiclesEarlierTaskTypesOrZones()
+    {
+        JourneyRuntimeOptions options = Bind(TwoCarRoster, """
+            { "JourneyRuntime": { "fleet": [
+                { "agvId": "A2", "vehicleKey": "K2", "agvLifecycleGeneration": 1,
+                  "allowedTaskTypes": ["STAGING_TO_WIRE"], "zones": ["WIRE"] },
+                { "agvId": "A3", "vehicleKey": "K3", "agvLifecycleGeneration": 1,
+                  "allowedTaskTypes": ["DIE_TO_OVEN"], "zones": ["OVEN"] } ] } }
+            """, out _);
+
+        Assert.Equal(["STAGING_TO_WIRE"], options.Fleet[0].AllowedTaskTypes);
+        Assert.Equal(["WIRE"], options.Fleet[0].Zones);
+    }
+
+    [Fact]
+    public void LaterLayerThatDoesNotNameRosterLeavesEarlierRosterAlone()
+    {
+        JourneyRuntimeOptions options = Bind(TwoCarRoster, """{ "JourneyRuntime": { "allowedWorkTypes": ["STAGING_TO_WIRE"] } }""", out _);
+
+        Assert.Equal(["K2", "K3"], options.Fleet.Select(vehicle => vehicle.VehicleKey));
+        Assert.Equal(["STAGING_TO_WIRE", "WIRE_TO_GATE"], options.Fleet[0].AllowedTaskTypes);
+        Assert.Equal(45_000, options.Fleet[0].RoundTimeoutMilliseconds);
+    }
+
+    [Fact]
+    public void RosterInsideAChainedConfigurationIsStillTakenWholeFromItsLastLayer()
+    {
+        IConfigurationRoot inner = new ConfigurationBuilder()
+            .AddJsonStream(new MemoryStream(Encoding.UTF8.GetBytes(TwoCarRoster)))
+            .AddJsonStream(new MemoryStream(Encoding.UTF8.GetBytes(
+                """{ "JourneyRuntime": { "fleet": [ { "agvId": "A3", "vehicleKey": "K3", "allowedTaskTypes": ["DIE_TO_WIRE_STAGING"] } ] } }""")))
+            .Build();
+        using ConfigurationManager outer = new();
+        outer.AddConfiguration(inner);
+        ServiceCollection services = new();
+        services.AddJourneyRuntimeOptions(outer);
+        using ServiceProvider provider = services.BuildServiceProvider();
+
+        FleetVehicleOptions vehicle = Assert.Single(provider.GetRequiredService<IOptions<JourneyRuntimeOptions>>().Value.Fleet);
+        Assert.Equal(["DIE_TO_WIRE_STAGING"], vehicle.AllowedTaskTypes);
+        Assert.Empty(vehicle.Zones);
+    }
+
+    [Fact]
+    public void RosterFromEnvironmentVariablesOverAFileRosterIsTakenWhole()
+    {
+        // The L2 rig and any field override write the roster as JourneyRuntime__Fleet__N__... variables.
+        IConfigurationRoot root = new ConfigurationBuilder()
+            .AddJsonStream(new MemoryStream(Encoding.UTF8.GetBytes(TwoCarRoster)))
+            .AddInMemoryCollection(new Dictionary<string, string?>
+            {
+                ["JourneyRuntime:Fleet:0:AgvId"] = "A3",
+                ["JourneyRuntime:Fleet:0:VehicleKey"] = "K3",
+                ["JourneyRuntime:Fleet:0:AllowedTaskTypes:0"] = "DIE_TO_OVEN",
+            })
+            .Build();
+        ServiceCollection services = new();
+        services.AddJourneyRuntimeOptions(root);
+        using ServiceProvider provider = services.BuildServiceProvider();
+
+        FleetVehicleOptions vehicle = Assert.Single(provider.GetRequiredService<IOptions<JourneyRuntimeOptions>>().Value.Fleet);
+        Assert.Equal("K3", vehicle.VehicleKey);
+        Assert.Equal(["DIE_TO_OVEN"], vehicle.AllowedTaskTypes);
+    }
+
+    // ------------------------------------------------------------------------------------------------
     // control-server#571. The parallel instance takes a two-car roster. The ticket fails if agv01 in the
     // roster passes the check, or if the Host binds a roster other than the definition's without an
     // error -- so the event must carry the roster, and the installer's read-back must read it.
