@@ -295,7 +295,7 @@ public sealed class OnboardRecoveryCoordinator(
         {
             await ApplyCurrentResultAsync(messageType, payload, workflow, cancellationToken)
                 .ConfigureAwait(false);
-            if (messageType == "ForcedMechanicalRecoveryResult" && awaitedResult &&
+            if (messageType == "ForcedMechanicalRecoveryResult" && outcome == "MECHANICALLY_ISOLATED" && awaitedResult &&
                 resultGeneration == currentGeneration && resultGeneration == workflow.ForcedRecoveryGeneration)
             {
                 await TakeForcedResultAsReportedGenerationAsync(agvId, sessionGeneration, resultGeneration, cancellationToken)
@@ -2891,19 +2891,34 @@ public sealed class OnboardRecoveryCoordinator(
     }
 
     /// <summary>
-    /// Takes a current forced result as the vehicle reporting its generation (control-server#556): the onboard raises its
-    /// generation only by binding the ForcedMechanicalRecoveryCommand, and the result carries the generation it bound, after
-    /// the forcing was done. Until #556 only the handshake's RecoveryStateReport counted, so a vehicle that sent its result and
+    /// Takes a current MECHANICALLY_ISOLATED forced result as the vehicle reporting its generation (control-server#556): the
+    /// onboard raises its generation only by binding the ForcedMechanicalRecoveryCommand, and it reports MECHANICALLY_ISOLATED
+    /// only for a command it bound, under the generation it bound, after the forcing was done. Until #556 only the handshake's RecoveryStateReport counted, so a vehicle that sent its result and
     /// did not reconnect stayed on FORCED_RECOVERY_GENERATION_MISMATCH: every action refused
     /// FORCED_RECOVERY_GENERATION_STALE, and a hardware record taken but lifting nothing.
     /// </summary>
     /// <remarks>
+    /// <para>
     /// The fence (<see cref="ForcedFenceLiftedOverAdministratorClosingsAsync"/>) waits to know the vehicle has taken the
     /// forced recovery in; its result says more than a report does -- the recovery was carried out to its end. The caller
     /// passes only the result of the server's current generation, of the workflow issued under it, which was still awaiting
     /// its result: an older generation's result is history, and a workflow an administrator closed stands for nothing until
     /// the vehicle's own report. Only for the connection the result arrived on, and only ever raised: a later report is the
     /// vehicle's word and replaces this as before.
+    /// </para>
+    /// <para>
+    /// <b>Not a FAILED result.</b> The onboard sends a FAILED forced result when it could not bind the command at all
+    /// (8005-agv-onboard-hmi <c>AnswerUnbindableCommandAsync</c>: scope, context or content hash refused). That answer copies
+    /// the command's generation without binding it, so the vehicle still holds the generation below and nothing was carried
+    /// out on it. Taking it would open the fence on a premise that does not hold, so the vehicle stays on
+    /// FORCED_RECOVERY_GENERATION_MISMATCH until its own report.
+    /// </para>
+    /// <para>
+    /// <b>Known limit: a read, then a write.</b> <see cref="SessionRecoveryRow"/> carries no concurrency token, so "only ever
+    /// raised" is decided on the value this context read, not by a conditional update. A recovery report saved in between can
+    /// be overwritten. Since only MECHANICALLY_ISOLATED is taken, the report and the result name the same generation in every
+    /// ordinary interleaving; what is left is a vehicle whose journal was cleared, reporting lower, overwritten upwards.
+    /// </para>
     /// </remarks>
     private async Task TakeForcedResultAsReportedGenerationAsync(
         string agvId,
