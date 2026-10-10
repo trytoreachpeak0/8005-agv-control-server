@@ -3984,6 +3984,10 @@ Invoke-SourceCase 'fleet read-back: a Host that does not log the roster (older p
     $a = Get-FleetReadBack $fleetBaseline $null -NoFleet
     @{ Ok = ($a.Action -ceq 'StopServiceAndRefuse' -and $a.Message.Contains('EFFECTIVE_CONFIGURATION_FLEET_UNREAD')); Detail = "got: $(ConvertTo-Json $a -Compress)" }
 }
+Invoke-SourceCase 'fleet read-back: no EFFECTIVE_CONFIGURATION event at all, fake source -- stop and refuse, not warn' {
+    $a = Get-ParallelEffectiveConfigurationAction -Definition $fleetBaseline -Effective $null
+    @{ Ok = ($a.Action -ceq 'StopServiceAndRefuse' -and $a.Message.Contains('EFFECTIVE_CONFIGURATION_UNREAD')); Detail = "got: $(ConvertTo-Json $a -Compress)" }
+}
 Invoke-SourceCase 'single-car read-back: the new event with an empty roster -- pass' {
     $a = Get-FleetReadBack $baseline @()
     @{ Ok = ($a.Action -ceq 'Pass'); Detail = "got: $(ConvertTo-Json $a -Compress)" }
