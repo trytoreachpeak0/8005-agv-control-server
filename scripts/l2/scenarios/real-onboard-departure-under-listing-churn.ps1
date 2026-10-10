@@ -297,7 +297,7 @@ $windowStart = $ChurnFrom -eq 'PickupArrival' ? $churnArmedAt : $committedAt
 $windowLabel = $ChurnFrom -eq 'PickupArrival' ? '车到站开始搅动' : '装货提交'
 $notReady = @(Get-NotReadyReports $windowStart $windowEnd)
 $assertions.Add(
-    'L2-LC-03', "$windowLabel到建 TO_GATE 单之间，真车载端一次都没报 VEHICLE_NOT_READY（投影没闪）",
+    'L2-LC-03', "${windowLabel}到建 TO_GATE 单之间，真车载端一次都没报 VEHICLE_NOT_READY（投影没闪）",
     ($notReady.Count -eq 0),
     0, "$($notReady.Count) $($notReady -join ', ')")
 
