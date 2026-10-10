@@ -158,7 +158,16 @@ param(
     # moved with it: control-server#90 moves them once protocol-v2.0.0 is bound on both ends. Until then
     # $OnboardCommit is not the tip of this ref and a run on the defaults stops at the clone check, which
     # is the check doing its job rather than a reason to point the ref back.
-    [string]$OnboardRemoteRef = 'origin/w2g/fp-v2-impl'
+    [string]$OnboardRemoteRef = 'origin/w2g/fp-v2-impl',
+    # control-server#582, the shape run-journey-g3.ps1 has: clone this ControlServer (or onboard) commit instead of
+    # the bound one, without moving the binding above. The nightly G3 (.github/workflows/g3.yml) runs on the
+    # integration branch's tip this way. The run records that commit's source as SELF_CHECK_OVERRIDE -- even when it
+    # names the bound commit, since a run that asked for an override is not gate evidence -- and every slice is graded
+    # formalSlicePass false. Passing a commit as -ControlServerCommit / -OnboardCommit is recorded the same way
+    # (control-server#460) unless it equals the binding; these parameters say what is meant, and win over those two.
+    # The onboard commit must still be the tip of -OnboardRemoteRef: New-ExactClone checks it either way.
+    [ValidatePattern('^[0-9a-f]{40}$')][string]$SelfCheckControlServerCommit,
+    [ValidatePattern('^[0-9a-f]{40}$')][string]$SelfCheckOnboardCommit
 )
 
 $ErrorActionPreference = 'Stop'
@@ -271,6 +280,15 @@ $commitSources = Get-G3CommitSources -Binding ($runnerProvenance.bindingAtHead ?
         SimulatorCommit = $SimulatorCommit
         ProtocolCommit = $ProtocolCommit
     })
+# After $commitSources, so what the record keeps is the override, and before anything is staged.
+if (-not [string]::IsNullOrEmpty($SelfCheckControlServerCommit)) {
+    $ControlServerCommit = $SelfCheckControlServerCommit
+    $commitSources['controlServerCommitSource'] = 'SELF_CHECK_OVERRIDE'
+}
+if (-not [string]::IsNullOrEmpty($SelfCheckOnboardCommit)) {
+    $OnboardCommit = $SelfCheckOnboardCommit
+    $commitSources['onboardCommitSource'] = 'SELF_CHECK_OVERRIDE'
+}
 # Before the clones and the builds, not after: naming a slice this runner cannot certify should cost
 # a message, not an hour of cloning and publishing four repositories.
 if (-not [string]::IsNullOrEmpty($Slice)) { Assert-G3SliceIsClaimedBy -RunKind $G3RunKind -Slice $Slice }

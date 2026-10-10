@@ -1,0 +1,10 @@
+FAIL verdict, staged red on two content-conflict criteria (the batch-10 exit, 5f3adc42): FAIL --  result= missing=[sameMessageIdDifferentContentStableConflict, businessMessageSameMessageIdDifferentContentStableConflict] extra=[] text=
+FAIL verdict, restart all PASS: PASS --  result= missing=[] extra=[] text=
+FAIL verdict, journey red, failed assertions and a scenario reason (the batch-10 exit, 3411887d): FAIL --  result= missing=[journeyBlockedOnDeclaredUnknown, noScenarioAbortedBeforeItsJudgments, g3-slot-fault-declaration, PayloadJson is not a property of the row] extra=[] text=
+FAIL verdict, a runner error carries its own message: ERROR --  result= missing=[clone-onboard exited with code 128] extra=[] text=
+FAIL verdict, no run-result.json at all: ERROR --  result= missing=[run-result.json] extra=[] text=
+FAIL verdict, an unreadable run-result.json: ERROR --  result= missing=[run-result.json] extra=[] text=
+FAIL verdict, a PASS status with a non-zero exit: FAIL --  result= missing=[exit 1] extra=[] text=
+FAIL verdict, a PASS status with an assertion that is not PASS: FAIL --  result= missing=[recoveryReplay] extra=[] text=
+FAIL verdict, a runner that never started: NOT_STARTED_DEADLINE --  result= missing=[] extra=[] text=
+9 check(s) failed.

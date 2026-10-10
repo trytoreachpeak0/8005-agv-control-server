@@ -223,6 +223,13 @@ jobs:
         shell: pwsh
         run: pwsh -NoProfile -File ./scripts/Test-G3EvidenceHonesty.ps1
 
+      # A second or two, no rig. The staged and restart runners' -SelfCheck*Commit parameters (control-server#582),
+      # which the nightly g3.yml runs them with: an override is used and recorded SELF_CHECK_OVERRIDE, withholding the
+      # formal pass, and without one the written binding is what the run uses. Only the nightly run takes this path.
+      - name: G3 runner self-check (self-check override parameters)
+        shell: pwsh
+        run: pwsh -NoProfile -File ./scripts/Test-G3SelfCheckOverride.ps1
+
       # About three minutes, no rig, no elevation, nothing outside %TEMP%: four cases wait out the scripts' real
       # 30-second limit. Install-ControlServerLocal.ps1 and Update-ControlServerLocal.ps1 run end to end against
       # stubs, and must neither copy nor delete a data root a live Host still holds (its <db>.instance-lock), nor

@@ -1,0 +1,22 @@
+PASS verdict, staged red on two content-conflict criteria (the batch-10 exit, 5f3adc42): FAIL
+PASS verdict, restart all PASS: PASS
+PASS verdict, journey red, failed assertions and a scenario reason (the batch-10 exit, 3411887d): FAIL
+PASS verdict, a runner error carries its own message: ERROR
+PASS verdict, no run-result.json at all: ERROR
+PASS verdict, an unreadable run-result.json: ERROR
+PASS verdict, a PASS status with a non-zero exit: FAIL
+PASS verdict, a PASS status with an assertion that is not PASS: FAIL
+PASS verdict, a runner that never started: NOT_STARTED_DEADLINE
+PASS comment, all green
+PASS comment, staged and journey red, error on restart
+PASS comment, a round stopped at the deadline
+PASS comment, not run at all, the rig busy
+PASS comment, a manual dispatch says so
+PASS comment, a long red list is cut, and says how much
+FAIL real-rig busy: the in-progress and the queued real-rig job, not the synthetic dispatch, the pull request or the finished one --  []
+FAIL rig wait, idle at once: idle after 0 sleeps --  idle= sleeps=0 elapsed=0 busy=[]
+FAIL rig wait, busy twice, then idle: idle after 2 sleeps --  idle= sleeps=0 elapsed=0 busy=[]
+FAIL rig wait, busy for the whole 30 minutes: NOT_STARTED_RIG_BUSY after 30 sleeps --  idle= sleeps=0 elapsed=0 busy=[]
+FAIL rig wait, a query that keeps failing: NOT_STARTED_RIG_BUSY after 30 sleeps --  idle= sleeps=0 elapsed=0 busy=[]
+FAIL rig wait, a query that fails once, then idle: idle after 1 sleeps --  idle= sleeps=0 elapsed=0 busy=[]
+6 check(s) failed.
