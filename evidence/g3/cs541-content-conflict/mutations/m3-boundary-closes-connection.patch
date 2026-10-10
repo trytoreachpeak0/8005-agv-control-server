@@ -1,0 +1,12 @@
+diff --git a/src/ControlServer.Host/Transport/OnboardMessageProcessor.cs b/src/ControlServer.Host/Transport/OnboardMessageProcessor.cs
+index fe4c2e259..f4056ec55 100644
+--- a/src/ControlServer.Host/Transport/OnboardMessageProcessor.cs
++++ b/src/ControlServer.Host/Transport/OnboardMessageProcessor.cs
+@@ -181,6 +181,7 @@ public sealed partial class OnboardMessageProcessor(
+             }
+             catch (InboundMessageRejectedException rejected)
+             {
++                if (messageType.Length > 0) throw; // MUTATION M3 (control-server#541): the inbound boundary of control-server#478 undone -- a refused message ends the connection again.
+                 // control-server#478: the inbound boundary. A message the server read and will not take is answered with a
+                 // ProtocolProblem correlated to it, and the connection stays. Until then this reached OnboardTcpServer's
+                 // catch-all and closed the connection, and the onboard replays an unacknowledged message in every handshake,

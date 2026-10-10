@@ -1,0 +1,13 @@
+diff --git a/src/ControlServer.Infrastructure/Persistence/WireToGateStore.cs b/src/ControlServer.Infrastructure/Persistence/WireToGateStore.cs
+index 4f61467d9..b73ca5732 100644
+--- a/src/ControlServer.Infrastructure/Persistence/WireToGateStore.cs
++++ b/src/ControlServer.Infrastructure/Persistence/WireToGateStore.cs
+@@ -2400,7 +2400,7 @@ public sealed class WireToGateStore(ControlServerDbContext dbContext)
+             if (replayEquivalenceHash is null ||
+                 replayEquivalenceHash(existing.RequestJson) != replayEquivalenceHash(requestJson))
+             {
+-                throw new InboundMessageRejectedException(ServerReasonCodes.MessageIdContentConflict,
++                throw new InboundMessageRejectedException(ServerReasonCodes.BusinessIdContentConflict, // MUTATION M2 (control-server#541): wrong code
+                     "MessageId was replayed with different normalized content.");
+             }
+ 

@@ -1,0 +1,14 @@
+diff --git a/src/ControlServer.Host/Transport/OnboardRecoveryCoordinator.cs b/src/ControlServer.Host/Transport/OnboardRecoveryCoordinator.cs
+index 6bf2168c5..c3086ade6 100644
+--- a/src/ControlServer.Host/Transport/OnboardRecoveryCoordinator.cs
++++ b/src/ControlServer.Host/Transport/OnboardRecoveryCoordinator.cs
+@@ -805,8 +805,7 @@ public sealed class OnboardRecoveryCoordinator(
+         if (replay is not null)
+         {
+             if (replay.RequestContentHash != businessHash || replay.AgvId != agvId)
+-                throw new InboundMessageRejectedException(ServerReasonCodes.BusinessIdContentConflict,
+-                    "Recovery requestId was replayed with different content.");
++                replay.RequestContentHash = businessHash; // MUTATION M4 (control-server#541): the conflicting request is taken as the session's.
+             StationOperationRow? replayOperation = await SessionOperationAsync(replay, cancellationToken)
+                 .ConfigureAwait(false);
+             return OpenedResponse(root, replay, replayOperation?.SlotOperationAttemptId);
