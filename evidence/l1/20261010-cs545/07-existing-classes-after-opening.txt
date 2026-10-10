@@ -1,0 +1,45 @@
+  Determining projects to restore...
+  All projects are up-to-date for restore.
+  ControlServer.Domain -> C:\Users\szy\Desktop\8005-workspace-v2\worktrees\b10-01-8005-agv-control-server\src\ControlServer.Domain\bin\Release\net8.0\win-x64\ControlServer.Domain.dll
+  ControlServer.TestDoubles -> C:\Users\szy\Desktop\8005-workspace-v2\worktrees\b10-01-8005-agv-control-server\tools\ControlServer.TestDoubles\bin\Release\net8.0\win-x64\ControlServer.TestDoubles.dll
+  ControlServer.Dashboard -> C:\Users\szy\Desktop\8005-workspace-v2\worktrees\b10-01-8005-agv-control-server\src\ControlServer.Dashboard\bin\Release\net8.0\win-x64\ControlServer.Dashboard.dll
+  ControlServer.Application -> C:\Users\szy\Desktop\8005-workspace-v2\worktrees\b10-01-8005-agv-control-server\src\ControlServer.Application\bin\Release\net8.0\win-x64\ControlServer.Application.dll
+  ControlServer.ClockSkewProxy -> C:\Users\szy\Desktop\8005-workspace-v2\worktrees\b10-01-8005-agv-control-server\tools\ControlServer.ClockSkewProxy\bin\Release\net8.0\win-x64\ControlServer.ClockSkewProxy.dll
+  ControlServer.FakeOnboard -> C:\Users\szy\Desktop\8005-workspace-v2\worktrees\b10-01-8005-agv-control-server\tools\ControlServer.FakeOnboard\bin\Release\net8.0\win-x64\ControlServer.FakeOnboard.dll
+  ControlServer.FakeRiot -> C:\Users\szy\Desktop\8005-workspace-v2\worktrees\b10-01-8005-agv-control-server\tools\ControlServer.FakeRiot\bin\Release\net8.0\win-x64\ControlServer.FakeRiot.dll
+  ControlServer.ProtocolFaultProxy -> C:\Users\szy\Desktop\8005-workspace-v2\worktrees\b10-01-8005-agv-control-server\tools\ControlServer.ProtocolFaultProxy\bin\Release\net8.0\win-x64\ControlServer.ProtocolFaultProxy.dll
+  ControlServer.Infrastructure -> C:\Users\szy\Desktop\8005-workspace-v2\worktrees\b10-01-8005-agv-control-server\src\ControlServer.Infrastructure\bin\Release\net8.0\win-x64\ControlServer.Infrastructure.dll
+  ControlServer.FieldOps -> C:\Users\szy\Desktop\8005-workspace-v2\worktrees\b10-01-8005-agv-control-server\tools\ControlServer.FieldOps\bin\Release\net8.0\win-x64\ControlServer.FieldOps.dll
+  ControlServer.Host -> C:\Users\szy\Desktop\8005-workspace-v2\worktrees\b10-01-8005-agv-control-server\src\ControlServer.Host\bin\Release\net8.0\win-x64\ControlServer.Host.dll
+  ControlServer.SchemaConformance -> C:\Users\szy\Desktop\8005-workspace-v2\worktrees\b10-01-8005-agv-control-server\tools\ControlServer.SchemaConformance\bin\Release\net8.0\win-x64\ControlServer.SchemaConformance.dll
+  ControlServer.Tests -> C:\Users\szy\Desktop\8005-workspace-v2\worktrees\b10-01-8005-agv-control-server\tests\ControlServer.Tests\bin\Release\net8.0\win-x64\ControlServer.Tests.dll
+Test run for C:\Users\szy\Desktop\8005-workspace-v2\worktrees\b10-01-8005-agv-control-server\tests\ControlServer.Tests\bin\Release\net8.0\win-x64\ControlServer.Tests.dll (.NETCoreApp,Version=v8.0)
+VSTest version 17.11.1 (x64)
+
+Starting test execution, please wait...
+A total of 1 test files matched the specified pattern.
+[xUnit.net 00:00:07.88]     ControlServer.Tests.TaskTypeAdmissionChainTests.ABoundTaskTypeThisBuildCannotExecuteIsNotYetExecutableAndAMissingBindingIsNamedFirst [FAIL]
+  Failed ControlServer.Tests.TaskTypeAdmissionChainTests.ABoundTaskTypeThisBuildCannotExecuteIsNotYetExecutableAndAMissingBindingIsNamedFirst [437 ms]
+  Error Message:
+   Assert.Equal() Failure: Strings differ
+           ↓ (pos 0)
+Expected: "TASK_TYPE_NOT_YET_EXECUTABLE"
+Actual:   "ONBOARD_FACTS_NOT_READY"
+           ↑ (pos 0)
+  Stack Trace:
+     at ControlServer.Tests.TaskTypeAdmissionChainTests.ABoundTaskTypeThisBuildCannotExecuteIsNotYetExecutableAndAMissingBindingIsNamedFirst() in C:\Users\szy\Desktop\8005-workspace-v2\worktrees\b10-01-8005-agv-control-server\tests\ControlServer.Tests\TaskTypeAdmissionChainTests.cs:line 101
+--- End of stack trace from previous location ---
+[xUnit.net 00:00:13.39]     ControlServer.Tests.TaskTypeAdmissionRuntimeTests.TheAdmissionSeedPairsEveryAreaStationWithEveryExecutableTaskType [FAIL]
+  Failed ControlServer.Tests.TaskTypeAdmissionRuntimeTests.TheAdmissionSeedPairsEveryAreaStationWithEveryExecutableTaskType [410 ms]
+  Error Message:
+   Assert.Equal() Failure: Collections differ
+                                                                 ↓ (pos 0)
+Expected: <>z__ReadOnlyArray<ValueTuple<string, string>>        [Tuple ("N1-1", "STAGING_TO_WIRE"), Tuple ("N1-1", "WIRE_TO_GATE"), Tuple ("N1-2_N1-3", "STAGING_TO_WIRE"), Tuple ("N1-2_N1-3", "WIRE_TO_GATE")]
+Actual:   OrderedEnumerable<ValueTuple<string, string>, string> [Tuple ("N1-1", "DIE_TO_OVEN"), Tuple ("N1-1", "DIE_TO_WIRE_STAGING"), Tuple ("N1-1", "STAGING_TO_WIRE"), Tuple ("N1-1", "WIRE_TO_GATE"), Tuple ("N1-1", "WIRE_TO_NITROGEN"), ···]
+                                                                 ↑ (pos 0)
+  Stack Trace:
+     at ControlServer.Tests.TaskTypeAdmissionRuntimeTests.TheAdmissionSeedPairsEveryAreaStationWithEveryExecutableTaskType() in C:\Users\szy\Desktop\8005-workspace-v2\worktrees\b10-01-8005-agv-control-server\tests\ControlServer.Tests\TaskTypeAdmissionRuntimeTests.cs:line 285
+   at ControlServer.Tests.TaskTypeAdmissionRuntimeTests.TheAdmissionSeedPairsEveryAreaStationWithEveryExecutableTaskType() in C:\Users\szy\Desktop\8005-workspace-v2\worktrees\b10-01-8005-agv-control-server\tests\ControlServer.Tests\TaskTypeAdmissionRuntimeTests.cs:line 297
+--- End of stack trace from previous location ---
+
+Failed!  - Failed:     2, Passed:   191, Skipped:     0, Total:   193, Duration: 43 s - ControlServer.Tests.dll (net8.0)

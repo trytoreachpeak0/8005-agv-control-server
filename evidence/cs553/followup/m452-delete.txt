@@ -1,0 +1,12 @@
+# FieldConfirmationWriteLockTests 在变异 m452-mutation.patch 下（delete 日志模式）
+ControlServer.Tests.FieldConfirmationWriteLockTests.AnUnableToChargeObservedBeforeTheSystemConfirmedIsJudgedAgainThroughTheInbox [FAIL]
+ControlServer.Tests.FieldConfirmationWriteLockTests.AManualStationClearanceHoldsNoWriteLockWhileRiotAnswers [FAIL]
+Actual:   Tuple ("other vehicle's inbound: SQLite Error 5: 'database"···, "engine round: An error occurred while saving the e"···)
+ControlServer.Tests.FieldConfirmationWriteLockTests.ObservingInsideATransactionThrowsBeforeReadingRiot [FAIL]
+ControlServer.Tests.FieldConfirmationWriteLockTests.AnUnableToChargeIsNotRefusedOnAPurposeThatChangedSinceTheObservation [FAIL]
+ControlServer.Tests.FieldConfirmationWriteLockTests.AnUnableToChargeIsNotWrittenWithAReservationThatChangedSinceTheObservation [FAIL]
+ControlServer.Tests.FieldConfirmationWriteLockTests.AnUnableToChargeConfirmationHoldsNoWriteLockWhileRiotAnswers [FAIL]
+Actual:   Tuple ("other vehicle's inbound: SQLite Error 5: 'database"···, "engine round: An error occurred while saving the e"···)
+ControlServer.Tests.FieldConfirmationWriteLockTests.AClearanceObservedBeforeTheEngineVoidedItIsJudgedAgainOnWhatRiotSaysNow [FAIL]
+Actual:   Tuple ("fleet-r11", "00000000-0000-4000-8000-000000045210")
+Failed!  - Failed:     7, Passed:     2, Skipped:     0, Total:     9, Duration: 14 s - ControlServer.Tests.dll (net8.0)

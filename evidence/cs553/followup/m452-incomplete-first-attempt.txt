@@ -1,0 +1,4 @@
+# 第一版变异（不完整：只把观察挪进事务、没删锁外那次观察）在 WAL 下的结果：写锁两条仍绿，原因是 RIoT 停在锁外那次读
+ControlServer.Tests.FieldConfirmationWriteLockTests.ObservationsThatGoStaleEveryTimeLeaveTheMessageUnprocessedAndFailAsBefore [FAIL]
+ControlServer.Tests.FieldConfirmationWriteLockTests.ObservingInsideATransactionThrowsBeforeReadingRiot [FAIL]
+Failed!  - Failed:     2, Passed:     7, Skipped:     0, Total:     9, Duration: 14 s - ControlServer.Tests.dll (net8.0)

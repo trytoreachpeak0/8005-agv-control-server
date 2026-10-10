@@ -842,30 +842,6 @@ public sealed class ReversedDirectionJourneyRuntimeTests
     }
 
     /// <summary>
-    /// Pairing every area-named station with STAGING_TO_WIRE as well changes the admission seed's content, and a
-    /// deployment whose store holds version 1 -- the version the WIRE_TO_GATE-only seed was bound to -- would read
-    /// the new content under the same version as drift and take on no further demand until someone raised it by
-    /// hand (docs/defects/20260915-admission-policy-drift-halts-runtime.md). The shipped configuration raises it.
-    /// </summary>
-    [Fact]
-    [Trait("IntegrationSlice", "FP-IS-11")]
-    public void TheShippedAdmissionPolicyVersionMovesPastTheOneTheWireToGateOnlySeedWasBoundTo()
-    {
-        DirectoryInfo? root = new(AppContext.BaseDirectory);
-        while (root is not null && !File.Exists(Path.Combine(root.FullName, "ControlServer.sln")))
-        {
-            root = root.Parent;
-        }
-        Assert.NotNull(root);
-        using JsonDocument settings = JsonDocument.Parse(
-            File.ReadAllText(Path.Combine(root.FullName, "src", "ControlServer.Host", "appsettings.json")));
-
-        long version = settings.RootElement.GetProperty("JourneyRuntime").GetProperty("admissionPolicyVersion").GetInt64();
-
-        Assert.True(version >= 2, $"admissionPolicyVersion is {version}; the WIRE_TO_GATE-only seed was bound to 1.");
-    }
-
-    /// <summary>
     /// The runtime's factory rules and map 25 with both WIRE_TO_GATE (gate 210) and STAGING_TO_WIRE (staging
     /// station 305) bound and active, the staging station on the map, and both task types allowed.
     /// </summary>

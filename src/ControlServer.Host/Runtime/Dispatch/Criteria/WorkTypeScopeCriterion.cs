@@ -22,6 +22,15 @@ namespace ControlServer.Host.Runtime.Dispatch.Criteria;
 /// nothing had happened (REQ-0335, REQ-0342). None of them is a fault; they reach the backlog and the dashboard,
 /// never <c>VehicleBusinessStateSnapshot.blockingFacts</c> (scope specification 5.3).
 /// </para>
+/// <para>
+/// <b>"Not yet executable" cannot be reached today.</b> Since batch 10 (control-server#545) every task type the rule table
+/// may name is in <see cref="ExecutableTaskTypes"/>. The branch stays as the seam for a build that takes a task type out
+/// of that set again. Such a task type would still fail closed without this branch -- the set is also the station
+/// admission seed, so <c>StationTaskTypeAdmissionCriterion</c> (Order 90) refuses it as
+/// <c>TASK_TYPE_NOT_ALLOWED_AT_STATION</c> -- but only after the vehicle criteria, and under a code that reads as a
+/// station's policy rather than as what this build can do. Here it is named for what it is, per task type, before any
+/// vehicle fact. No test covers the branch while no real task type reaches it; one that did would have to invent one.
+/// </para>
 /// </remarks>
 public sealed class WorkTypeScopeCriterion(IOptions<JourneyRuntimeOptions> options)
     : IDispatchAdmissionCriterion
