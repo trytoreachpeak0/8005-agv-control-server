@@ -61,7 +61,10 @@
        -SharedRunnerSource at a copy (defaults kept, or one changed), HEAD without the binding, an unborn HEAD
        (its reason on one line) and no repository at all are each withheld. Each runner prints the provenance in
        the statement right after measuring it, loudly with reason and paths when it is not COMMITTED_RUNNER
-       (review S2).
+       (review S2). run-staged-g3.ps1's harnessWorktreeCleanAtStart statement, from its AST, run against the same
+       repository takes the same exemption (control-server#567): an earlier run's untracked evidence alone is clean,
+       a stray untracked file, one beside evidence/ or a changed tracked file under it is not; it is measured after
+       g3-slice-evidence.ps1 is loaded and before the run writes anything.
 
     The rows are inlined rather than read from evidence/ so that a clone without the evidence tree can run
     this.
@@ -641,6 +644,46 @@ try {
     Check 'provenance, an untracked file beside evidence/ (evidence-copy.ps1): RUNNER_WORKTREE_DIRTY' `
         ($besideEvidence.runnerSource -ceq 'RUNNER_WORKTREE_DIRTY') "$($besideEvidence | ConvertTo-Json -Compress)"
     Remove-Item -LiteralPath $lookalike
+
+    # control-server#567: run-staged-g3.ps1's harnessWorktreeCleanAtStart takes the same exemption as the provenance
+    # above -- the four staged runs of the batch-8 exit recorded harness false beside runner true. Its own statement,
+    # from the AST, run against the throwaway repository: an earlier run's untracked evidence alone is clean; an
+    # untracked file elsewhere, or a tracked file under evidence/ changed, is not.
+    $stagedAst = Get-RunnerAst (Join-Path $ScriptRoot 'run-staged-g3.ps1')
+    $harnessStatements = @($stagedAst.EndBlock.Statements | Where-Object {
+            $_ -is [System.Management.Automation.Language.AssignmentStatementAst] -and $_.Left.Extent.Text -eq '$harnessWorktreeClean' })
+    Check 'harness clean: run-staged-g3.ps1 assigns $harnessWorktreeClean once, at top level' ($harnessStatements.Count -eq 1) "$($harnessStatements.Count)"
+    if ($harnessStatements.Count -eq 1) {
+        $harnessStatement = $harnessStatements[0]
+        $topLevel = @($stagedAst.EndBlock.Statements)
+        $sharedSource = @($topLevel | Where-Object { $_.Extent.Text -like ". (Join-Path `$PSScriptRoot 'g3-slice-evidence.ps1')*" })
+        $firstWrite = @($topLevel | Where-Object { $_.Extent.Text -match '\$(StageRoot|EvidenceRoot)\b' -and
+                $_.Extent.Text -match 'New-Item|Set-Content|Out-File|Copy-Item|WriteAll' }) | Select-Object -First 1
+        Check 'harness clean: measured after g3-slice-evidence.ps1 is loaded and before the run writes anything' `
+            ($sharedSource.Count -eq 1 -and $topLevel.IndexOf($sharedSource[0]) -lt $topLevel.IndexOf($harnessStatement) -and
+             ($null -eq $firstWrite -or $topLevel.IndexOf($harnessStatement) -lt $topLevel.IndexOf($firstWrite))) `
+            "harness at $($topLevel.IndexOf($harnessStatement)), shared source at $(@($sharedSource | ForEach-Object { $topLevel.IndexOf($_) }) -join ','), first write at $(if ($firstWrite) { $topLevel.IndexOf($firstWrite) })"
+        $measureHarness = {
+            $ControlServerRepository = $runnerRepository
+            $harnessWorktreeClean = $null
+            . ([scriptblock]::Create($harnessStatement.Extent.Text))
+            $harnessWorktreeClean
+        }
+        $harnessWithEvidence = & $measureHarness
+        Check 'harness clean: an earlier run''s untracked evidence under evidence/ alone is clean' ($harnessWithEvidence -eq $true) "$harnessWithEvidence"
+        Set-Content -LiteralPath $stray -Value 'x'
+        $harnessWithStray = & $measureHarness
+        Check 'harness clean: that evidence plus an untracked file outside evidence/ is dirty' ($harnessWithStray -eq $false) "$harnessWithStray"
+        Remove-Item -LiteralPath $stray
+        Set-Content -LiteralPath $lookalike -Value 'x'
+        $harnessBeside = & $measureHarness
+        Check 'harness clean: an untracked file beside evidence/ (evidence-copy.ps1) is dirty' ($harnessBeside -eq $false) "$harnessBeside"
+        Remove-Item -LiteralPath $lookalike
+        Set-Content -LiteralPath $trackedEvidence -Value 'edited evidence'
+        $harnessEditedEvidence = & $measureHarness
+        Check 'harness clean: a tracked file under evidence/ changed is dirty' ($harnessEditedEvidence -eq $false) "$harnessEditedEvidence"
+        Set-Content -LiteralPath $trackedEvidence -Value 'committed evidence'
+    }
     Remove-Item -LiteralPath (Join-Path $runnerRepository 'evidence\g3\earlier-run') -Recurse -Force
 
     # The ticket's second finding: -SharedRunnerSource pointing at a copy. One with the defaults left alone and
