@@ -83,7 +83,7 @@ public sealed class WaitingJourneyWatchMigrationTests
     [Fact]
     public async Task TheColumnsAreNullableAndTheModelSnapshotMatchesTheModel()
     {
-        await using Batch7JourneyFixture fixture = await Batch7JourneyFixture.CreateAsync();
+        await using Batch7JourneyFixture fixture = await Batch7JourneyFixture.CreateMigratedForRealAsync();
         await using SqliteCommand command = fixture.Connection.CreateCommand();
         command.CommandText =
             """
@@ -101,7 +101,7 @@ public sealed class WaitingJourneyWatchMigrationTests
     {
         CancellationToken cancellationToken = TestContext.Current.CancellationToken;
         string[] demands = ["D-GATE", "D-BLOCKED", "D-HANG", "D-COMPLETED", "D-MOVING", "D-SESSION-GATE"];
-        await using Batch7JourneyFixture scratch = await Batch7JourneyFixture.CreateAsync();
+        await using Batch7JourneyFixture scratch = await Batch7JourneyFixture.CreateMigratedForRealAsync();
         for (int index = 0; index < demands.Length; index++)
         {
             await Batch7JourneyFixture.AcceptAsync(

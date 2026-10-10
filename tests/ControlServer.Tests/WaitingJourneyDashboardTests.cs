@@ -241,7 +241,7 @@ public sealed class WaitingJourneyDashboardTests
             await connection.OpenAsync(TestContext.Current.CancellationToken);
             DashboardDatabase database = new(connection);
             await using ControlServerDbContext context = database.NewContext();
-            await context.Database.MigrateAsync(TestContext.Current.CancellationToken);
+            await MigratedDatabaseTemplate.ApplyAsync(context.Database, TestContext.Current.CancellationToken);
             return database;
         }
 

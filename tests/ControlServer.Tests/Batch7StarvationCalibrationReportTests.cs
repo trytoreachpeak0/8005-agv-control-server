@@ -349,7 +349,7 @@ public sealed class Batch7StarvationCalibrationReportTests
             await connection.OpenAsync(Token);
             ControlServerDbContext context = new(
                 new DbContextOptionsBuilder<ControlServerDbContext>().UseSqlite(connection).Options);
-            await context.Database.MigrateAsync(Token);
+            await MigratedDatabaseTemplate.ApplyAsync(context.Database, Token);
             return new ReportDatabase(connection, context);
         }
 

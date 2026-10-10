@@ -336,7 +336,7 @@ public sealed class ControlServerDatabaseLockTests : IAsyncDisposable
         Directory.CreateDirectory(directory);
         string database = Path.Combine(directory, "controlserver.db");
         await using ControlServerDbContext context = Open(database);
-        await context.Database.MigrateAsync(Token);
+        await MigratedDatabaseTemplate.ApplyAsync(context.Database, Token);
         await new StationExclusivityStore(context).TryAcquireAsync(
             new StationExclusivityRequest(25, 202, StationExclusivityKinds.FixedTaskStation, StationExclusivityStates.Occupied, null),
             KeyA, "journey:a", At, Token);

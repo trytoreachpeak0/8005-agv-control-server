@@ -65,7 +65,7 @@ internal sealed class WaitingPointImportHarness : IAsyncDisposable
         WaitingPointImportHarness harness = new(directory);
         await using (ControlServerDbContext context = harness.Open())
         {
-            await context.Database.MigrateAsync(TestContext.Current.CancellationToken);
+            await MigratedDatabaseTemplate.ApplyAsync(context.Database, TestContext.Current.CancellationToken);
         }
         File.WriteAllText(
             harness.CatalogPath,

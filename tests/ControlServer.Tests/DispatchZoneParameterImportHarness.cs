@@ -45,7 +45,7 @@ internal sealed class DispatchZoneParameterImportHarness : IAsyncDisposable
         System.IO.Directory.CreateDirectory(directory);
         DispatchZoneParameterImportHarness harness = new(directory);
         await using ControlServerDbContext context = harness.Open();
-        await context.Database.MigrateAsync(TestContext.Current.CancellationToken);
+        await MigratedDatabaseTemplate.ApplyAsync(context.Database, TestContext.Current.CancellationToken);
         foreach (string zone in (string[])[ZoneA, ZoneB, ZoneC])
         {
             context.DispatchZoneVehicles.Add(new DispatchZoneVehicleRow
