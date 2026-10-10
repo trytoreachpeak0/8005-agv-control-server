@@ -27,28 +27,126 @@ namespace ControlServer.Host.Transport;
 /// failure the single-connection version reported when nothing was attached, and the caller
 /// already treats it as one.
 /// </para>
+/// <para>
+/// <b>Only a connection whose handshake is done is in here</b> (control-server#259). Until the vehicle has
+/// read the answer to its recovery report it reads one line per request and takes the next line as the
+/// answer, so anything pushed in that window is read in place of an answer and the vehicle drops the
+/// connection. This class is the one way server-originated traffic reaches a socket -- every sender holds an
+/// <see cref="IOnboardPeer"/>, and this is its only implementation -- so keeping unfinished handshakes out of
+/// the routing table gates every sender at once, including the next one somebody writes. To a sender, a
+/// vehicle in its handshake is a vehicle that is not connected yet: the send throws, the outbox row stays
+/// unacknowledged, and the replay that follows the recovery report or the runtime's next round delivers it,
+/// exactly as after a reconnect. <c>OnboardOutboundFunnelArchitectureTests</c> pins the "one way".
+/// </para>
+/// <para>
+/// <b>And only to the session it was built for.</b> Each connection is filed with the session generation its
+/// handshake established, and a line stamped with another generation is refused the same way. A sender reads
+/// the session, then sends: the runtime reads generation N at the top of a round and pushes some hundreds of
+/// milliseconds later, and if the vehicle reconnected in between, routing by <c>agvId</c> alone handed the new
+/// session a line for the old one. The onboard rejects such a line in its receive loop
+/// (<c>STALE_SESSION_GENERATION</c>) and the loop ends, which drops the connection just as a push into the
+/// handshake did (review of control-server#309). Refused here, the line stays unacknowledged, and the replays
+/// that deliver held-back lines rewrite its generation to the current one.
+/// </para>
+/// <para>
+/// <b>"Stays unacknowledged and is delivered later" holds for senders outside the connection's own loop</b> --
+/// the runtime, the activation endpoint. A send from inside the loop, the deferred flush after a line
+/// (<c>OnboardMessageProcessor.FlushDeferredOutboundAsync</c>, which ends in
+/// <c>OnboardJourneyPublisher.SendPersistedAsync</c>), is not caught on the way out: a refusal there propagates
+/// to <c>OnboardTcpServer.HandleClientAsync</c> and the server ends the connection, and the line is replayed
+/// when the vehicle reconnects. Before the generation check such a line reached the vehicle and the vehicle
+/// ended the connection instead, so the outcome for the vehicle is the same; what changed is which end closes.
+/// </para>
 /// </remarks>
-public sealed class OnboardPeer : IOnboardPeer
+public sealed class OnboardPeer : IOnboardPeer, IOnboardConnectionPresence
 {
     private readonly object _gate = new();
-    private readonly Dictionary<string, OnboardPeerConnection> _connections = new(StringComparer.Ordinal);
+    private readonly Dictionary<string, (OnboardPeerConnection Connection, long SessionGeneration)> _connections =
+        new(StringComparer.Ordinal);
 
-    internal void Attach(string agvId, OnboardPeerConnection connection)
+    // Connections that sent a SessionHello naming a vehicle and are not routable yet (control-server#483). Kept apart
+    // from _connections: nothing is ever sent to them through here, they only answer IsHandshaking.
+    private readonly Dictionary<string, HashSet<OnboardPeerConnection>> _handshaking = new(StringComparer.Ordinal);
+
+    /// <summary>
+    /// A connection has sent a SessionHello naming <paramref name="agvId"/>. Recorded before the hello is processed,
+    /// so there is no moment between the hello clearing the vehicle's reported pending facts and the vehicle replaying
+    /// its results in which the vehicle reads as neither connected nor handshaking. Ends at <see cref="Attach"/> or
+    /// <see cref="EndHandshake"/>.
+    /// </summary>
+    internal void BeginHandshake(string agvId, OnboardPeerConnection connection)
     {
         ArgumentException.ThrowIfNullOrWhiteSpace(agvId);
+        ArgumentNullException.ThrowIfNull(connection);
+        lock (_gate)
+        {
+            if (!_handshaking.TryGetValue(agvId, out HashSet<OnboardPeerConnection>? connections))
+            {
+                connections = [];
+                _handshaking[agvId] = connections;
+            }
+            connections.Add(connection);
+        }
+    }
+
+    /// <summary>The connection's handshake ended without it becoming routable: it closed, or it failed.</summary>
+    internal void EndHandshake(string agvId, OnboardPeerConnection connection)
+    {
+        ArgumentException.ThrowIfNullOrWhiteSpace(agvId);
+        lock (_gate)
+        {
+            RemoveHandshakingLocked(agvId, connection);
+        }
+    }
+
+    /// <inheritdoc/>
+    public bool IsHandshaking(string agvId)
+    {
+        ArgumentException.ThrowIfNullOrWhiteSpace(agvId);
+        lock (_gate)
+        {
+            return _handshaking.ContainsKey(agvId);
+        }
+    }
+
+    private void RemoveHandshakingLocked(string agvId, OnboardPeerConnection connection)
+    {
+        if (_handshaking.TryGetValue(agvId, out HashSet<OnboardPeerConnection>? connections) &&
+            connections.Remove(connection) && connections.Count == 0)
+        {
+            _handshaking.Remove(agvId);
+        }
+    }
+
+    /// <summary>Makes a connection routable. Refused unless its session has finished the handshake.</summary>
+    internal void Attach(OnboardConnectionState session, OnboardPeerConnection connection)
+    {
+        ArgumentNullException.ThrowIfNull(session);
+        if (!session.HandshakeCompleted ||
+            session.SessionGeneration is null ||
+            string.IsNullOrWhiteSpace(session.AgvId))
+        {
+            throw new InvalidOperationException(
+                "An Onboard connection is routable only once its handshake is done; " +
+                "until then the vehicle would read a push as the answer it is waiting for.");
+        }
+        string agvId = session.AgvId;
+        long generation = session.SessionGeneration.Value;
         lock (_gate)
         {
             // One vehicle, one live connection. Two sockets claiming the same agvId is not a fleet,
             // it is the ambiguity the single-connection version refused, and it is still refused --
             // per vehicle now rather than for the server.
-            if (_connections.TryGetValue(agvId, out OnboardPeerConnection? existing) &&
-                !ReferenceEquals(existing, connection))
+            if (_connections.TryGetValue(agvId, out (OnboardPeerConnection Connection, long) existing) &&
+                !ReferenceEquals(existing.Connection, connection))
             {
                 throw new InvalidOperationException($"An Onboard peer is already attached for '{agvId}'.");
             }
 
-            _connections[agvId] = connection;
+            _connections[agvId] = (connection, generation);
+            RemoveHandshakingLocked(agvId, connection);
         }
+        connection.Addressee = $"'{agvId}' (session generation {generation})";
     }
 
     internal void Detach(string agvId, OnboardPeerConnection connection)
@@ -56,30 +154,48 @@ public sealed class OnboardPeer : IOnboardPeer
         ArgumentException.ThrowIfNullOrWhiteSpace(agvId);
         lock (_gate)
         {
-            if (_connections.TryGetValue(agvId, out OnboardPeerConnection? existing) &&
-                ReferenceEquals(existing, connection))
+            if (_connections.TryGetValue(agvId, out (OnboardPeerConnection Connection, long) existing) &&
+                ReferenceEquals(existing.Connection, connection))
             {
                 _connections.Remove(agvId);
             }
         }
     }
 
-    public Task SendAsync(ReadOnlyMemory<byte> ndjsonLine, CancellationToken cancellationToken)
+    /// <inheritdoc/>
+    public long? ConnectedSessionGeneration(string agvId)
     {
-        string agvId = ReadAddressee(ndjsonLine.Span);
-        OnboardPeerConnection connection;
+        ArgumentException.ThrowIfNullOrWhiteSpace(agvId);
         lock (_gate)
         {
-            connection = _connections.TryGetValue(agvId, out OnboardPeerConnection? attached)
-                ? attached
-                : throw new IOException($"No recovered Onboard peer is connected for '{agvId}'.");
+            return _connections.TryGetValue(agvId, out (OnboardPeerConnection, long SessionGeneration) attached)
+                ? attached.SessionGeneration
+                : null;
+        }
+    }
+
+    public Task SendAsync(ReadOnlyMemory<byte> ndjsonLine, CancellationToken cancellationToken)
+    {
+        (string agvId, long generation) = ReadAddressee(ndjsonLine.Span);
+        (OnboardPeerConnection Connection, long SessionGeneration) attached;
+        lock (_gate)
+        {
+            attached = _connections.TryGetValue(agvId, out (OnboardPeerConnection, long) found)
+                ? found
+                : throw new OnboardConnectionUnavailableException($"No recovered Onboard peer is connected for '{agvId}'.");
+        }
+        if (attached.SessionGeneration != generation)
+        {
+            throw new OnboardConnectionUnavailableException(
+                $"The Onboard peer connected for '{agvId}' is in session generation {attached.SessionGeneration}; " +
+                $"this line was built for generation {generation}.");
         }
 
-        return connection.SendAsync(ndjsonLine, cancellationToken);
+        return attached.Connection.SendAsync(ndjsonLine, cancellationToken);
     }
 
     /// <summary>
-    /// Reads the <c>agvId</c> the first envelope in this buffer is addressed to.
+    /// Reads the <c>agvId</c> and session generation the first envelope in this buffer is addressed to.
     /// </summary>
     /// <remarks>
     /// A buffer may hold several newline-terminated envelopes, and they are sent as one write, so
@@ -87,32 +203,89 @@ public sealed class OnboardPeer : IOnboardPeer
     /// caller builds a buffer for one session, and parsing each line to re-check would cost a JSON
     /// parse per message to detect a bug no caller can currently have.
     /// </remarks>
-    private static string ReadAddressee(ReadOnlySpan<byte> ndjsonLine)
+    private static (string AgvId, long SessionGeneration) ReadAddressee(ReadOnlySpan<byte> ndjsonLine)
     {
         int newline = ndjsonLine.IndexOf((byte)'\n');
         ReadOnlySpan<byte> first = newline < 0 ? ndjsonLine : ndjsonLine[..newline];
         try
         {
             using JsonDocument document = JsonDocument.Parse(Encoding.UTF8.GetString(first));
-            if (document.RootElement.TryGetProperty("agvId", out JsonElement agvId) &&
-                agvId.ValueKind == JsonValueKind.String &&
-                !string.IsNullOrWhiteSpace(agvId.GetString()))
+            JsonElement root = document.RootElement;
+            if (!root.TryGetProperty("agvId", out JsonElement agvId) ||
+                agvId.ValueKind != JsonValueKind.String ||
+                string.IsNullOrWhiteSpace(agvId.GetString()))
             {
-                return agvId.GetString()!;
+                throw new InvalidDataException("Onboard outbound envelope must name the agvId it is addressed to.");
             }
+            if (!root.TryGetProperty("sessionGeneration", out JsonElement generation) ||
+                !generation.TryGetInt64(out long sessionGeneration))
+            {
+                throw new InvalidDataException(
+                    "Onboard outbound envelope must name the session generation it was built for.");
+            }
+            return (agvId.GetString()!, sessionGeneration);
         }
         catch (JsonException error)
         {
             throw new InvalidDataException("Onboard outbound data must be a JSON envelope.", error);
         }
-
-        throw new InvalidDataException("Onboard outbound envelope must name the agvId it is addressed to.");
     }
 }
 
-internal sealed class OnboardPeerConnection(Stream stream) : IAsyncDisposable
+/// <summary>One vehicle's socket, as the senders see it: one write at a time, and no write without an end.</summary>
+/// <remarks>
+/// <para>
+/// <b>Every write is bounded</b> (control-server#334, <see cref="OnboardTransportOptions.WriteTimeout"/>): the wait for
+/// this connection's turn, the write and the flush together. Past it the stream is closed and the send throws
+/// <see cref="OnboardConnectionUnavailableException"/>, an <see cref="IOException"/>, which every sender already reads as
+/// "the vehicle is not connected": the outbox row stays unacknowledged and the replay after the reconnect delivers it.
+/// </para>
+/// <para>
+/// <b>Every way a send finds the connection gone ends the same way.</b> A socket error, a stream already closed (by a timeout
+/// of another sender, or by the read loop ending) or the send gate already disposed all surface as
+/// <see cref="OnboardConnectionUnavailableException"/>, named with the vehicle once the connection is routable -- not as
+/// an <see cref="ObjectDisposedException"/> a sender catching <see cref="IOException"/> would not expect.
+/// </para>
+/// <para>
+/// <b>Why closing, and not just giving up on the write.</b> A write abandoned half way may have put part of a line on the
+/// wire, and the next line would be read as its tail. And the connection has to leave the routing table, or the vehicle's
+/// reconnect is refused as a second connection for the same vehicle (control-server#276). Closing the stream does both
+/// through the path the silence window already takes: the connection's read fails, its loop ends, and
+/// <c>OnboardTcpServer.HandleClientAsync</c> detaches it. When the loop is itself the one stuck -- on its HeartbeatAck,
+/// behind another sender's write -- that write is bounded here too, and the loop ends through the same exception.
+/// </para>
+/// <para>
+/// <b>The bound is on the caller's wait, not on the write's cancellation.</b> A pending socket write is not guaranteed to
+/// honour a token, so the wait is timed from outside it and the stream is closed underneath it; that is what makes a
+/// socket write end.
+/// </para>
+/// </remarks>
+internal sealed class OnboardPeerConnection : IAsyncDisposable
 {
     private readonly SemaphoreSlim _sendGate = new(1, 1);
+    private readonly Stream _stream;
+    private readonly TimeSpan _writeTimeout;
+
+    public OnboardPeerConnection(Stream stream)
+        : this(stream, OnboardTransportOptions.DefaultWriteTimeout)
+    {
+    }
+
+    public OnboardPeerConnection(Stream stream, TimeSpan writeTimeout)
+    {
+        ArgumentNullException.ThrowIfNull(stream);
+        if (writeTimeout <= TimeSpan.Zero || writeTimeout > OnboardTransportOptions.MaxWriteTimeout)
+        {
+            throw new ArgumentOutOfRangeException(
+                nameof(writeTimeout), writeTimeout,
+                $"The Onboard write timeout must be positive and at most {OnboardTransportOptions.MaxWriteTimeout.TotalSeconds:0} s.");
+        }
+        _stream = stream;
+        _writeTimeout = writeTimeout;
+    }
+
+    /// <summary>Who this connection reaches, for the failures it reports; set once the connection is made routable.</summary>
+    internal string Addressee { get; set; } = "(no session yet)";
 
     public async Task SendAsync(ReadOnlyMemory<byte> ndjsonLine, CancellationToken cancellationToken)
     {
@@ -121,11 +294,42 @@ internal sealed class OnboardPeerConnection(Stream stream) : IAsyncDisposable
             throw new InvalidDataException("Onboard outbound data must be one or more newline-terminated NDJSON messages.");
         }
 
+        Task send = SendCoreAsync(ndjsonLine, cancellationToken);
+        try
+        {
+            await send.WaitAsync(_writeTimeout, cancellationToken).ConfigureAwait(false);
+        }
+        catch (TimeoutException error)
+        {
+            // Closing is what ends the pending write; the send is then observed so its failure is not left unobserved.
+            await _stream.DisposeAsync().ConfigureAwait(false);
+            _ = send.ContinueWith(
+                static finished => _ = finished.Exception,
+                CancellationToken.None,
+                TaskContinuationOptions.OnlyOnFaulted | TaskContinuationOptions.ExecuteSynchronously,
+                TaskScheduler.Default);
+            throw new OnboardConnectionUnavailableException(
+                $"A write to the Onboard peer {Addressee} did not finish within {_writeTimeout.TotalSeconds:0.###} s; " +
+                "the connection was closed and the line stays unacknowledged for the replay after the reconnect.",
+                error);
+        }
+        catch (Exception error) when (error is ObjectDisposedException ||
+                                      (error is IOException && error is not OnboardConnectionUnavailableException))
+        {
+            throw new OnboardConnectionUnavailableException(
+                $"The connection to the Onboard peer {Addressee} is closed or broken; " +
+                "the line stays unacknowledged for the replay after the reconnect.",
+                error);
+        }
+    }
+
+    private async Task SendCoreAsync(ReadOnlyMemory<byte> ndjsonLine, CancellationToken cancellationToken)
+    {
         await _sendGate.WaitAsync(cancellationToken).ConfigureAwait(false);
         try
         {
-            await stream.WriteAsync(ndjsonLine, cancellationToken).ConfigureAwait(false);
-            await stream.FlushAsync(cancellationToken).ConfigureAwait(false);
+            await _stream.WriteAsync(ndjsonLine, cancellationToken).ConfigureAwait(false);
+            await _stream.FlushAsync(cancellationToken).ConfigureAwait(false);
         }
         finally
         {

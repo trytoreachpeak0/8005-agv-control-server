@@ -179,6 +179,19 @@ public static class TaskTypeStationStartup
             cancellationToken);
         // First version of this map: nothing was active, so the preset is what becomes active.
         await bindings.SetActiveAsync(map.MapId, bindingWrite.Version.Version, now, cancellationToken);
+        // control-server#186 (PR #378 incremental review, item 1): a restart can find no pointer row while the Map carries a
+        // rename nobody accepted. The preset then comes into force under that rename, and if the first round cannot read the
+        // Map list its task types would dispatch for a round. Held here, in the transaction that makes the preset active,
+        // exactly as the activation's second step does.
+        await MapRenameHoldWriter.HoldUnderPendingRenameAsync(
+            context,
+            provider.GetRequiredService<ITaskTypeStationHoldStore>(),
+            provider.GetRequiredService<IGovernanceAuditWriter>(),
+            bindingWrite.Version,
+            source,
+            MapRenameHoldWriter.ByStartupPreset,
+            now,
+            cancellationToken);
         await transaction.CommitAsync(cancellationToken);
 
         Loaded(

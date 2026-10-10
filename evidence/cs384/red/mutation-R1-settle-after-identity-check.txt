@@ -1,0 +1,10 @@
+# mutation R1-settle-after-identity-check: in src/ControlServer.Host/Program.cs
+#   - await SlotFaultDeclarationResults.SettleAnsweredCommandsAsync(app.Services, CancellationToken.None);
+#   + 
+#   - await ProtocolOutboxIdentityStartupCheck.EnsureAsync(app.Services, CancellationToken.None);
+#   + await ProtocolOutboxIdentityStartupCheck.EnsureAsync(app.Services, CancellationToken.None);
+await SlotFaultDeclarationResults.SettleAnsweredCommandsAsync(app.Services, CancellationToken.None);
+# filter FullyQualifiedName~SlotFaultDeclarationTests.TheHostSettlesAnsweredDeclarations
+  Failed ControlServer.Tests.SlotFaultDeclarationTests.TheHostSettlesAnsweredDeclarationsAfterMigratingAndBeforeTheOutboxIdentityCheck [26 ms]
+   settle at line 214 runs after the identity check at line 213
+Failed!  - Failed:     1, Passed:     0, Skipped:     0, Total:     1, Duration: 55 ms - ControlServer.Tests.dll (net8.0)

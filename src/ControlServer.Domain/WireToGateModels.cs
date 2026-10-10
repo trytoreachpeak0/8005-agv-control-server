@@ -16,6 +16,12 @@ public enum SessionReadiness
 
 public sealed record SessionReadinessDecision(SessionReadiness Readiness, string ReasonCode);
 
+/// <summary>
+/// One entry of a RecoveryStateReport's pendingResults: the result's messageId and the business content hash
+/// (its <c>resultContentSha256</c>) the vehicle holds for it.
+/// </summary>
+public sealed record ReportedPendingResult(string MessageId, string ContentSha256);
+
 public sealed record StationOperationPlan(
     string SlotOperationAttemptId,
     string DemandId,
@@ -116,8 +122,26 @@ public sealed record VehicleBusinessProjection(
 /// </summary>
 public static class VehicleActivePurposes
 {
-    /// <summary>The vehicle is carrying a demand; the only purpose the v2 journey runtime can be in.</summary>
+    /// <summary>The vehicle is carrying a demand.</summary>
     public const string Transport = "TRANSPORT";
+
+    /// <summary>
+    /// The vehicle is on its way to a waiting point with no demand (batch 8-19, control-server#390): no worklist, no entry request,
+    /// no slot command. Withdrawn, by a snapshot whose purpose is no longer this, when the idle return converges or ends.
+    /// </summary>
+    public const string IdleReturn = "IDLE_RETURN";
+
+    /// <summary>
+    /// The vehicle is committed to a charger (batch 9-06, control-server#404): it holds the CHARGING purpose and the charger's
+    /// reservation. No worklist, no entry request, no slot command; where the cycle stands is <c>chargingCycleState</c>.
+    /// </summary>
+    public const string Charging = "CHARGING";
+
+    /// <summary>
+    /// The vehicle could not charge and stands on the charger it failed at (batch 9-08, control-server#406): nothing moves it
+    /// until a person with the clearance permission has moved it off and confirmed the charger clear.
+    /// </summary>
+    public const string ClearingMaintenance = "CLEARING_MAINTENANCE";
 }
 
 /// <summary>
@@ -125,9 +149,16 @@ public static class VehicleActivePurposes
 /// stands.
 /// </summary>
 /// <remarks>
-/// While v2 carries one demand per journey only the two values below occur. Holding cargo to wait
-/// for more demands (<c>CARGO_HOLDING_WAIT</c>, <c>VEHICLE_FULL</c>, a holding deadline and the other
-/// three closed reasons) is batch 7.
+/// <para>
+/// 批次7-07（control-server#212）起四个状态都会出现，而且<b>从旅程行上的三列读，不再由阶段推</b>
+/// （<c>JourneyRuntimeRow.LoadingPhaseState</c>、<c>LoadingClosedReason</c>、<c>CargoHoldingStartedAt</c>）。
+/// 取值的语义是 program#94 那张表：<c>LOADING</c> 装货进行中、未等单；<c>CARGO_HOLDING_WAIT</c> 持货等单（REQ-0354）；
+/// <c>VEHICLE_FULL</c> 不再等单，但离开最后一个装货停靠之前仍可追加；<c>CLOSED</c> 装货阶段已结束。
+/// </para>
+/// <para>
+/// 分区都禁止途中追加的旅程（参数批准之前的全部旅程）仍然只出现下面两个值，与批次 7 之前逐条相同。
+/// <c>WAITING_STATION_YIELD</c> 只有让站才产生，归 control-server#213。
+/// </para>
 /// </remarks>
 public sealed record LoadingPhaseProjection(
     string State,
@@ -143,6 +174,24 @@ public sealed record LoadingPhaseProjection(
     /// </summary>
     public static LoadingPhaseProjection PlannedLoadingComplete { get; } =
         new("CLOSED", null, "PLANNED_LOADING_COMPLETE");
+}
+
+/// <summary><c>loadingPhase.state</c> 的四个取值（协议 <c>2.0.0</c>，program#94）。</summary>
+public static class LoadingPhaseStates
+{
+    public const string Loading = "LOADING";
+    public const string CargoHoldingWait = "CARGO_HOLDING_WAIT";
+    public const string VehicleFull = "VEHICLE_FULL";
+    public const string Closed = "CLOSED";
+}
+
+/// <summary><c>loadingPhase.closedReason</c> 的四个取值；只在 <see cref="LoadingPhaseStates.Closed"/> 时非空。</summary>
+public static class LoadingClosedReasons
+{
+    public const string VehicleFull = "VEHICLE_FULL";
+    public const string CargoHoldingTimeout = "CARGO_HOLDING_TIMEOUT";
+    public const string WaitingStationYield = "WAITING_STATION_YIELD";
+    public const string PlannedLoadingComplete = "PLANNED_LOADING_COMPLETE";
 }
 
 public sealed record CurrentStopWorklistItem(
@@ -163,7 +212,8 @@ public sealed record CurrentStopWorklistProjection(
     long Revision,
     string? OperationSessionId,
     DateTimeOffset? StationDepartureDeadlineAt,
-    IReadOnlyList<CurrentStopWorklistItem> Items);
+    IReadOnlyList<CurrentStopWorklistItem> Items,
+    string? StopEndedReason);
 
 /// <summary>
 /// One leg of the plan the vehicle is shown.
@@ -255,12 +305,33 @@ public sealed record SlotOperationCommand(
     long ForcedRecoveryGeneration,
     string CommandContentSha256);
 
+/// <remarks>
+/// <see cref="CheckPurpose"/> is v3's discriminator (control-server#382), one of <see cref="PreDepartureCheckPurposes"/>.
+/// The three fields after it are nullable since control-server#385 added <see cref="PreDepartureCheckPurposes.HoldRelease"/>,
+/// which carries none of them; the publisher requires exactly the ones each purpose's schema branch requires.
+/// </remarks>
 public sealed record PreDepartureSafetyCheckCommand(
     string PreDepartureSafetyCheckId,
-    string DemandId,
-    string MovementLegId,
+    string CheckPurpose,
+    string? DemandId,
+    string? MovementLegId,
     long ExpectedSafetyStateVersion,
-    string TargetStationId);
+    string? TargetStationId);
+
+/// <summary>
+/// v3's <c>checkPurpose</c> on <c>PreDepartureSafetyCheck</c> and its result (<c>8005-agv-program#150</c>, control-server#382).
+/// </summary>
+public static class PreDepartureCheckPurposes
+{
+    /// <summary>A demand-bearing departure: <c>demandId</c>, <c>movementLegId</c> and <c>targetStationId</c> all present.</summary>
+    public const string Departure = "DEPARTURE";
+
+    /// <summary>A move without a demand (idle return, charging): <c>demandId</c> null, leg and target present.</summary>
+    public const string NonBusinessMove = "NON_BUSINESS_MOVE";
+
+    /// <summary>Releasing a door-unproven hold: all three null.</summary>
+    public const string HoldRelease = "HOLD_RELEASE";
+}
 
 public enum DemandExecutionStatus
 {
@@ -313,7 +384,57 @@ public sealed record JourneyExecutionPlan(
     string? RequiredSlotPosition = null,
     long? TaskTypeStationRuleVersion = null,
     long? TaskTypeStationBindingSetVersion = null,
-    long? StationCatalogRevision = null);
+    long? StationCatalogRevision = null,
+    string? IdentityKey = null,
+    int? FixedTaskStationRiotId = null,
+    long? ChargingPolicyVersion = null,
+    string? PublishedBatteryState = null)
+{
+    /// <summary>
+    /// 这趟受理派生身份（旅程 id、停靠 id、报文与 attempt id）所用的键：需求第一次受理时就是需求 id，改派之后带上代次
+    /// （<c>JourneyIdentity.DerivationKey</c>，批次7-10，control-server#215）。为空即需求 id——那是改派出现之前唯一的形状。
+    /// </summary>
+    public string DerivationKeyFor(string demandId) => IdentityKey ?? demandId;
+
+    // FixedTaskStationRiotId: the RIoT station id of this demand's REQ-0204 public station (its task type's
+    // FixedTaskStation, batch 8-20, control-server#391) -- the pickup for STAGING_TO_WIRE, the gate for WIRE_TO_GATE.
+    // Null for a plan built without a resolved fixed station, which takes no station exclusivity.
+    //
+    // ChargingPolicyVersion: the charging policy version the dispatch decision was judged under (REQ-0282, batch 9-05,
+    // control-server#403), and PublishedBatteryState the batteryState projected from that decision's facts. Both are
+    // written onto the journey row in the acceptance's own save, so a dispatch that fails to save leaves neither behind.
+    // An appended demand does not change them: the journey keeps the version it was dispatched under.
+}
+
+/// <summary>
+/// 把一条需求追加进一辆在途车已有旅程时，要一次写下的全部（票面第 3 条，批次7-06，control-server#211）。
+/// </summary>
+/// <remarks>
+/// <para>
+/// 它<b>复用</b> <see cref="JourneyExecutionPlan"/> 来携带这条需求自己的那一份：端点、仓位、花篮数、
+/// 派车代次与三样冻结版本，因为追加受理要写的冻结与受理时一字不差——一条需求不会因为它是被追加进来的，
+/// 就少冻结一个版本。旅程层面的那几样（会话、订单、租约）在计划里仍然填着，但追加路径不读它们：
+/// 那辆车已经被这趟旅程占着。
+/// </para>
+/// <para>
+/// <see cref="Resequenced"/> 是插入之后<b>全部</b>停靠的新序位，包括没动的那些：序位是可变的序位，
+/// 身份是 <c>StopId</c>（MVP 拿序号当身份，一插队后面每个停靠的身份都跟着变）。整张表一起给，
+/// 是为了「插在哪」这个决定只由一处做出，而不是让写库的一方再推一遍。
+/// </para>
+/// </remarks>
+public sealed record JourneyAppendPlan(
+    string JourneyId,
+    string DemandId,
+    JourneyExecutionPlan Demand,
+    string PickupStopId,
+    string UnloadStopId,
+    string DispatchZone,
+    long? DispatchZoneParameterVersion,
+    IReadOnlyList<JourneyStopSequenceChange> Resequenced,
+    DateTimeOffset AddedAt);
+
+/// <summary>一个停靠插入之后的新序位。</summary>
+public sealed record JourneyStopSequenceChange(string StopId, int Sequence);
 
 public enum ConnectionRecoveryStatus
 {
@@ -348,6 +469,14 @@ public enum OperationResultDisposition
 /// <c>observedBatteryPercent</c> as <c>number | null</c>, so an absent reading is a value the
 /// administrator supplied rather than a violation.
 /// </summary>
+/// <param name="VehicleKey">
+/// The RIoT vehicle key of <paramref name="AgvId"/>, resolved from the fleet roster by whoever received the message
+/// (control-server#404). The server's manual-charging hold is kept per vehicle key; null when the AGV is not in the roster,
+/// and then no hold can be found or lifted.
+/// </param>
+/// <param name="DecidedAt">
+/// The receiver's clock at the decision, stamped on the decision and on the hold's release; null falls back to the system clock.
+/// </param>
 public sealed record ManualChargingReturnToServiceRequest(
     string RequestId,
     string AgvId,
@@ -357,7 +486,9 @@ public sealed record ManualChargingReturnToServiceRequest(
     string AdministratorId,
     string AdministratorRole,
     string Reason,
-    double? ObservedBatteryPercent);
+    double? ObservedBatteryPercent,
+    string? VehicleKey = null,
+    DateTimeOffset? DecidedAt = null);
 
 /// <summary>
 /// What the server decided about one such request, durable so the same <c>requestId</c> arriving
@@ -382,6 +513,29 @@ public sealed record ManualChargingReturnToServiceDecision(
 public sealed class ProtocolIdentityMismatchException(string message) : InvalidOperationException(message);
 public sealed class StaleSessionGenerationException(string message) : InvalidOperationException(message);
 public sealed class ProtocolContentConflictException(string message) : InvalidOperationException(message);
+
+/// <summary>
+/// An inbound message from the vehicle that the server read and will not take, for a reason the protocol names
+/// (control-server#478). Thrown only while judging an inbound message; the processor's inbound boundary answers it
+/// with a <c>ProtocolProblem</c> correlated to that message, writes nothing, and keeps the connection.
+/// </summary>
+/// <remarks>
+/// <para>
+/// <b>A type of its own, not a <see cref="ProtocolContentConflictException"/>.</b> That one is also thrown by the
+/// server's own outbound bookkeeping (a slot operation or outbound envelope replayed with different content), which is
+/// a server fault and must still end the work it is in. Catching it at the inbound boundary would tell the vehicle it
+/// had sent something wrong when the server had. So only this type is caught there, and the outbound sites keep theirs.
+/// </para>
+/// <para>
+/// It carries the reason code and not the rejected message's identity: every site that throws it is judging the one
+/// message the boundary is processing, so the boundary already holds that messageId and messageType, and several
+/// sites (a snapshot revision, a recovery workflow) never see them.
+/// </para>
+/// </remarks>
+public sealed class InboundMessageRejectedException(string reasonCode, string message) : InvalidOperationException(message)
+{
+    public string ReasonCode { get; } = reasonCode;
+}
 public sealed class UnsafePhysicalEvidenceException(string message) : InvalidOperationException(message);
 public sealed class UnsafeMovementAuthorizationException(string message) : InvalidOperationException(message);
 public sealed class ActiveUnlockSetExpansionException(string message) : InvalidOperationException(message);

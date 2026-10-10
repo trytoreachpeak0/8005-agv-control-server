@@ -1,0 +1,99 @@
+  Determining projects to restore...
+  All projects are up-to-date for restore.
+  ControlServer.Domain -> C:\Users\szy\Desktop\8005-workspace-v2\worktrees\cs331-8005-agv-control-server\src\ControlServer.Domain\bin\Debug\net8.0\win-x64\ControlServer.Domain.dll
+  ControlServer.Dashboard -> C:\Users\szy\Desktop\8005-workspace-v2\worktrees\cs331-8005-agv-control-server\src\ControlServer.Dashboard\bin\Debug\net8.0\win-x64\ControlServer.Dashboard.dll
+  ControlServer.TestDoubles -> C:\Users\szy\Desktop\8005-workspace-v2\worktrees\cs331-8005-agv-control-server\tools\ControlServer.TestDoubles\bin\Debug\net8.0\win-x64\ControlServer.TestDoubles.dll
+  ControlServer.Application -> C:\Users\szy\Desktop\8005-workspace-v2\worktrees\cs331-8005-agv-control-server\src\ControlServer.Application\bin\Debug\net8.0\win-x64\ControlServer.Application.dll
+  ControlServer.ProtocolFaultProxy -> C:\Users\szy\Desktop\8005-workspace-v2\worktrees\cs331-8005-agv-control-server\tools\ControlServer.ProtocolFaultProxy\bin\Debug\net8.0\win-x64\ControlServer.ProtocolFaultProxy.dll
+  ControlServer.FakeRiot -> C:\Users\szy\Desktop\8005-workspace-v2\worktrees\cs331-8005-agv-control-server\tools\ControlServer.FakeRiot\bin\Debug\net8.0\win-x64\ControlServer.FakeRiot.dll
+  ControlServer.FakeOnboard -> C:\Users\szy\Desktop\8005-workspace-v2\worktrees\cs331-8005-agv-control-server\tools\ControlServer.FakeOnboard\bin\Debug\net8.0\win-x64\ControlServer.FakeOnboard.dll
+  ControlServer.ClockSkewProxy -> C:\Users\szy\Desktop\8005-workspace-v2\worktrees\cs331-8005-agv-control-server\tools\ControlServer.ClockSkewProxy\bin\Debug\net8.0\win-x64\ControlServer.ClockSkewProxy.dll
+  ControlServer.Infrastructure -> C:\Users\szy\Desktop\8005-workspace-v2\worktrees\cs331-8005-agv-control-server\src\ControlServer.Infrastructure\bin\Debug\net8.0\win-x64\ControlServer.Infrastructure.dll
+  ControlServer.FieldOps -> C:\Users\szy\Desktop\8005-workspace-v2\worktrees\cs331-8005-agv-control-server\tools\ControlServer.FieldOps\bin\Debug\net8.0\win-x64\ControlServer.FieldOps.dll
+  ControlServer.Host -> C:\Users\szy\Desktop\8005-workspace-v2\worktrees\cs331-8005-agv-control-server\src\ControlServer.Host\bin\Debug\net8.0\win-x64\ControlServer.Host.dll
+  ControlServer.SchemaConformance -> C:\Users\szy\Desktop\8005-workspace-v2\worktrees\cs331-8005-agv-control-server\tools\ControlServer.SchemaConformance\bin\Debug\net8.0\win-x64\ControlServer.SchemaConformance.dll
+  ControlServer.Tests -> C:\Users\szy\Desktop\8005-workspace-v2\worktrees\cs331-8005-agv-control-server\tests\ControlServer.Tests\bin\Debug\net8.0\win-x64\ControlServer.Tests.dll
+Test run for C:\Users\szy\Desktop\8005-workspace-v2\worktrees\cs331-8005-agv-control-server\tests\ControlServer.Tests\bin\Debug\net8.0\win-x64\ControlServer.Tests.dll (.NETCoreApp,Version=v8.0)
+A total of 1 test files matched the specified pattern.
+  Failed ControlServer.Tests.ArrivalPublishInterruptedThenReconnectedTests.OnTheOwnOrderAFailureUnrelatedToTheConnectionStillNamesItself [1 s]
+  Error Message:
+   Assert.Equal() Failure: Strings differ
+           ↓ (pos 0)
+Expected: "JOURNEY_ADVANCE_FAILED"
+Actual:   "ONBOARD_SESSION_NOT_READY"
+           ↑ (pos 0)
+  Stack Trace:
+     at ControlServer.Tests.ArrivalPublishInterruptedThenReconnectedTests.OnTheOwnOrderAFailureUnrelatedToTheConnectionStillNamesItself() in C:\Users\szy\Desktop\8005-workspace-v2\worktrees\cs331-8005-agv-control-server\tests\ControlServer.Tests\ArrivalPublishInterruptedThenReconnectedTests.cs:line 540
+   at ControlServer.Tests.ArrivalPublishInterruptedThenReconnectedTests.OnTheOwnOrderAFailureUnrelatedToTheConnectionStillNamesItself() in C:\Users\szy\Desktop\8005-workspace-v2\worktrees\cs331-8005-agv-control-server\tests\ControlServer.Tests\ArrivalPublishInterruptedThenReconnectedTests.cs:line 541
+--- End of stack trace from previous location ---
+  Failed ControlServer.Tests.ArrivalPublishInterruptedThenReconnectedTests.AFailedAdvanceLeavesACodeThatNamesAWaitOnAPersonAsItIs(code: "STATION_TIMEOUT_DOOR_NOT_CLOSED", stage: AwaitingLoadResult) [522 ms]
+  Error Message:
+   Assert.Equal() Failure: Strings differ
+           ↓ (pos 0)
+Expected: "STATION_TIMEOUT_DOOR_NOT_CLOSED"
+Actual:   "JOURNEY_ADVANCE_FAILED"
+           ↑ (pos 0)
+  Stack Trace:
+     at ControlServer.Tests.ArrivalPublishInterruptedThenReconnectedTests.AFailedAdvanceLeavesACodeThatNamesAWaitOnAPersonAsItIs(String code, JourneyRuntimeStage stage) in C:\Users\szy\Desktop\8005-workspace-v2\worktrees\cs331-8005-agv-control-server\tests\ControlServer.Tests\ArrivalPublishInterruptedThenReconnectedTests.cs:line 443
+   at ControlServer.Tests.ArrivalPublishInterruptedThenReconnectedTests.AFailedAdvanceLeavesACodeThatNamesAWaitOnAPersonAsItIs(String code, JourneyRuntimeStage stage) in C:\Users\szy\Desktop\8005-workspace-v2\worktrees\cs331-8005-agv-control-server\tests\ControlServer.Tests\ArrivalPublishInterruptedThenReconnectedTests.cs:line 444
+--- End of stack trace from previous location ---
+  Failed ControlServer.Tests.OnboardSessionLostBlockTests.ASilentSessionDoesNotOverwriteACodeThatNamesAWaitOnAPerson(code: "LOAD_CORRECTION_IN_PROGRESS") [3 s]
+  Error Message:
+   Assert.Equal() Failure: Strings differ
+           ↓ (pos 0)
+Expected: "LOAD_CORRECTION_IN_PROGRESS"
+Actual:   "ONBOARD_SESSION_LOST"
+           ↑ (pos 0)
+  Stack Trace:
+     at ControlServer.Tests.OnboardSessionLostBlockTests.ASilentSessionDoesNotOverwriteACodeThatNamesAWaitOnAPerson(String code) in C:\Users\szy\Desktop\8005-workspace-v2\worktrees\cs331-8005-agv-control-server\tests\ControlServer.Tests\OnboardSessionLostBlockTests.cs:line 169
+   at ControlServer.Tests.OnboardSessionLostBlockTests.ASilentSessionDoesNotOverwriteACodeThatNamesAWaitOnAPerson(String code) in C:\Users\szy\Desktop\8005-workspace-v2\worktrees\cs331-8005-agv-control-server\tests\ControlServer.Tests\OnboardSessionLostBlockTests.cs:line 170
+--- End of stack trace from previous location ---
+  Failed ControlServer.Tests.ArrivalPublishInterruptedThenReconnectedTests.AFailedAdvanceLeavesACodeThatNamesAWaitOnAPersonAsItIs(code: "LOAD_CORRECTION_IN_PROGRESS", stage: AwaitingStationDeparture) [655 ms]
+  Error Message:
+   Assert.Equal() Failure: Strings differ
+           ↓ (pos 0)
+Expected: "LOAD_CORRECTION_IN_PROGRESS"
+Actual:   "JOURNEY_ADVANCE_FAILED"
+           ↑ (pos 0)
+  Stack Trace:
+     at ControlServer.Tests.ArrivalPublishInterruptedThenReconnectedTests.AFailedAdvanceLeavesACodeThatNamesAWaitOnAPersonAsItIs(String code, JourneyRuntimeStage stage) in C:\Users\szy\Desktop\8005-workspace-v2\worktrees\cs331-8005-agv-control-server\tests\ControlServer.Tests\ArrivalPublishInterruptedThenReconnectedTests.cs:line 443
+   at ControlServer.Tests.ArrivalPublishInterruptedThenReconnectedTests.AFailedAdvanceLeavesACodeThatNamesAWaitOnAPersonAsItIs(String code, JourneyRuntimeStage stage) in C:\Users\szy\Desktop\8005-workspace-v2\worktrees\cs331-8005-agv-control-server\tests\ControlServer.Tests\ArrivalPublishInterruptedThenReconnectedTests.cs:line 444
+--- End of stack trace from previous location ---
+  Failed ControlServer.Tests.OnboardSessionLostBlockTests.ASilentSessionDoesNotOverwriteACodeThatNamesAWaitOnAPerson(code: "STATION_TIMEOUT_DOOR_NOT_CLOSED") [4 s]
+  Error Message:
+   Assert.Equal() Failure: Strings differ
+           ↓ (pos 0)
+Expected: "STATION_TIMEOUT_DOOR_NOT_CLOSED"
+Actual:   "ONBOARD_SESSION_LOST"
+           ↑ (pos 0)
+  Stack Trace:
+     at ControlServer.Tests.OnboardSessionLostBlockTests.ASilentSessionDoesNotOverwriteACodeThatNamesAWaitOnAPerson(String code) in C:\Users\szy\Desktop\8005-workspace-v2\worktrees\cs331-8005-agv-control-server\tests\ControlServer.Tests\OnboardSessionLostBlockTests.cs:line 169
+   at ControlServer.Tests.OnboardSessionLostBlockTests.ASilentSessionDoesNotOverwriteACodeThatNamesAWaitOnAPerson(String code) in C:\Users\szy\Desktop\8005-workspace-v2\worktrees\cs331-8005-agv-control-server\tests\ControlServer.Tests\OnboardSessionLostBlockTests.cs:line 170
+--- End of stack trace from previous location ---
+  Failed ControlServer.Tests.ArrivalPublishInterruptedThenReconnectedTests.TheEntryRequestReachesTheVehicleAfterASecondDisconnectLandsOnItOnceThePlanWasAcknowledged [1 s]
+  Error Message:
+   ControlServer.Domain.ProtocolContentConflictException : Outbound MessageId was replayed with different semantics or a non-advancing session generation.
+  Stack Trace:
+     at ControlServer.Infrastructure.Persistence.WireToGateStore.RefreshOutboundEnvelopeAsync(ProtocolOutboxRow existing, String messageType, String candidateWire, DateTimeOffset candidateCreatedAt, CancellationToken cancellationToken) in C:\Users\szy\Desktop\8005-workspace-v2\worktrees\cs331-8005-agv-control-server\src\ControlServer.Infrastructure\Persistence\WireToGateStore.cs:line 3291
+   at ControlServer.Infrastructure.Persistence.WireToGateStore.QueueOutboundEnvelopeAsync(String messageId, String messageType, String wireJson, DateTimeOffset createdAt, CancellationToken cancellationToken) in C:\Users\szy\Desktop\8005-workspace-v2\worktrees\cs331-8005-agv-control-server\src\ControlServer.Infrastructure\Persistence\WireToGateStore.cs:line 2086
+   at ControlServer.Host.Transport.OnboardJourneyPublisher.QueueEnvelopeAsync(String messageType, String messageId, String correlationId, String agvId, Int64 sessionGeneration, Func`2 payloadFactory, CancellationToken cancellationToken, IReadOnlySet`1 keepAcknowledgedIgnoring) in C:\Users\szy\Desktop\8005-workspace-v2\worktrees\cs331-8005-agv-control-server\src\ControlServer.Host\Transport\OnboardJourneyPublisher.cs:line 845
+   at ControlServer.Host.Transport.OnboardJourneyPublisher.PublishStampedEnvelopeAsync(String messageType, String messageId, String correlationId, String agvId, Int64 sessionGeneration, Func`2 payloadFactory, CancellationToken cancellationToken, IReadOnlySet`1 keepAcknowledgedIgnoring) in C:\Users\szy\Desktop\8005-workspace-v2\worktrees\cs331-8005-agv-control-server\src\ControlServer.Host\Transport\OnboardJourneyPublisher.cs:line 778
+   at ControlServer.Host.Transport.OnboardJourneyPublisher.PublishStampedSnapshotAsync(String messageType, String messageId, String agvId, Int64 sessionGeneration, Int64 revision, Func`2 payloadFactory, CancellationToken cancellationToken, IReadOnlySet`1 keepAcknowledgedIgnoring) in C:\Users\szy\Desktop\8005-workspace-v2\worktrees\cs331-8005-agv-control-server\src\ControlServer.Host\Transport\OnboardJourneyPublisher.cs:line 745
+   at ControlServer.Host.Transport.OnboardJourneyPublisher.PublishSnapshotAsync(String messageType, String messageId, String agvId, Int64 sessionGeneration, Int64 revision, Object payload, CancellationToken cancellationToken, IReadOnlySet`1 keepAcknowledgedIgnoring) in C:\Users\szy\Desktop\8005-workspace-v2\worktrees\cs331-8005-agv-control-server\src\ControlServer.Host\Transport\OnboardJourneyPublisher.cs:line 719
+   at ControlServer.Host.Runtime.JourneyRuntimeEngine.PublishPickupStateAsync(JourneyRuntimeRow runtime, JourneyStopCursor stops, SessionRecoveryRow session, Boolean holdingApplicable, CancellationToken cancellationToken) in C:\Users\szy\Desktop\8005-workspace-v2\worktrees\cs331-8005-agv-control-server\src\ControlServer.Host\Runtime\JourneyRuntimeEngine.cs:line 1841
+   at ControlServer.Host.Runtime.JourneyRuntimeEngine.AdvanceAsync(JourneyRuntimeRow runtime, RiotMapStationCatalogSnapshot currentMap, CancellationToken cancellationToken) in C:\Users\szy\Desktop\8005-workspace-v2\worktrees\cs331-8005-agv-control-server\src\ControlServer.Host\Runtime\JourneyRuntimeEngine.cs:line 786
+   at ControlServer.Host.Runtime.JourneyRuntimeEngine.ExecuteRoundAsync(CancellationToken cancellationToken) in C:\Users\szy\Desktop\8005-workspace-v2\worktrees\cs331-8005-agv-control-server\src\ControlServer.Host\Runtime\JourneyRuntimeEngine.cs:line 451
+   at ControlServer.Host.Runtime.JourneyRuntimeEngine.ExecuteRoundAsync(CancellationToken cancellationToken) in C:\Users\szy\Desktop\8005-workspace-v2\worktrees\cs331-8005-agv-control-server\src\ControlServer.Host\Runtime\JourneyRuntimeEngine.cs:line 459
+   at ControlServer.Host.Runtime.JourneyRuntimeEngine.ExecuteOnceAsync(CancellationToken cancellationToken) in C:\Users\szy\Desktop\8005-workspace-v2\worktrees\cs331-8005-agv-control-server\src\ControlServer.Host\Runtime\JourneyRuntimeEngine.cs:line 308
+   at ControlServer.Host.Runtime.JourneyRuntimeEngine.ExecuteOnceAsync(CancellationToken cancellationToken) in C:\Users\szy\Desktop\8005-workspace-v2\worktrees\cs331-8005-agv-control-server\src\ControlServer.Host\Runtime\JourneyRuntimeEngine.cs:line 322
+   at ControlServer.Tests.ArrivalPublishInterruptedThenReconnectedTests.TheEntryRequestReachesTheVehicleAfterASecondDisconnectLandsOnItOnceThePlanWasAcknowledged() in C:\Users\szy\Desktop\8005-workspace-v2\worktrees\cs331-8005-agv-control-server\tests\ControlServer.Tests\ArrivalPublishInterruptedThenReconnectedTests.cs:line 157
+   at ControlServer.Tests.ArrivalPublishInterruptedThenReconnectedTests.TheEntryRequestReachesTheVehicleAfterASecondDisconnectLandsOnItOnceThePlanWasAcknowledged() in C:\Users\szy\Desktop\8005-workspace-v2\worktrees\cs331-8005-agv-control-server\tests\ControlServer.Tests\ArrivalPublishInterruptedThenReconnectedTests.cs:line 161
+--- End of stack trace from previous location ---
+
+Failed!  - Failed:     6, Passed:    53, Skipped:     0, Total:    59, Duration: 34 s - ControlServer.Tests.dll (net8.0)
+[xUnit.net 00:00:14.00]     ControlServer.Tests.ArrivalPublishInterruptedThenReconnectedTests.OnTheOwnOrderAFailureUnrelatedToTheConnectionStillNamesItself [FAIL]
+[xUnit.net 00:00:16.26]     ControlServer.Tests.ArrivalPublishInterruptedThenReconnectedTests.AFailedAdvanceLeavesACodeThatNamesAWaitOnAPersonAsItIs(code: "STATION_TIMEOUT_DOOR_NOT_CLOSED", stage: AwaitingLoadResult) [FAIL]
+[xUnit.net 00:00:17.50]     ControlServer.Tests.OnboardSessionLostBlockTests.ASilentSessionDoesNotOverwriteACodeThatNamesAWaitOnAPerson(code: "LOAD_CORRECTION_IN_PROGRESS") [FAIL]
+[xUnit.net 00:00:17.55]     ControlServer.Tests.ArrivalPublishInterruptedThenReconnectedTests.AFailedAdvanceLeavesACodeThatNamesAWaitOnAPersonAsItIs(code: "LOAD_CORRECTION_IN_PROGRESS", stage: AwaitingStationDeparture) [FAIL]
+[xUnit.net 00:00:22.40]     ControlServer.Tests.OnboardSessionLostBlockTests.ASilentSessionDoesNotOverwriteACodeThatNamesAWaitOnAPerson(code: "STATION_TIMEOUT_DOOR_NOT_CLOSED") [FAIL]
+[xUnit.net 00:00:22.92]     ControlServer.Tests.ArrivalPublishInterruptedThenReconnectedTests.TheEntryRequestReachesTheVehicleAfterASecondDisconnectLandsOnItOnceThePlanWasAcknowledged [FAIL]

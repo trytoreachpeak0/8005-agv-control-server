@@ -1,5 +1,6 @@
 using ControlServer.Application;
 using ControlServer.Host.Runtime.Dispatch;
+using ControlServer.Host.Runtime.Release;
 using ControlServer.Infrastructure.Persistence;
 using Microsoft.EntityFrameworkCore;
 
@@ -60,7 +61,81 @@ internal sealed class DispatchBacklogQueryEndpoint : IDashboardQueryEndpoint
                 "本图这个任务类型处于暂停（人工暂停、站点目录变化或绑定激活结果未知），解除后才会派车",
             [DispatchReasonCodes.TaskTypeNotYetExecutable] =
                 "这个任务类型已有绑定，但当前版本的服务端还不能执行它",
+            // 按业务键抑制（control-server#210；故障货物交接自 control-server#395 起也写）：有意不执行，不是故障。
+            [DispatchReasonCodes.TransportDemandKeySuppressed] =
+                "这个子批次的这类任务已在本地取消过、或已以故障货物交接终止，按业务键永久不再执行；MES 换了新的需求号也一样",
+            [DispatchReasonCodes.TransportDemandKeyAlreadyAccepted] =
+                "这个子批次的这类任务已由另一个需求号受理过（在办、已完成或已取消），同一件活不再重复受理",
+            // 批次8-18（control-server#389）：空闲返回的承诺不被搬运抢，正常调度结论，不是故障。
+            [DispatchReasonCodes.VehicleCommittedToIdleReturn] =
+                "这辆车已承诺返回等待点，返回不被搬运取消或抢走；由别的车接，或等它到点后下一轮再派",
+            // control-server#385（REQ-0364）：仓已确认无货而门锁没能证明锁闭，整车扣到维修放行。
+            [DispatchReasonCodes.VehicleSlotDoorHold] =
+                "这辆车有仓门锁闭没能证明，已扣车等维修放行（维修记录、重新读到锁闭复位为空、再过放行检查）；由别的车接，或放行后再派",
+            // 批次9-06（control-server#404）：充电的承诺不被搬运抢；人工充电等待的出口只有「充电后返回服务」。都是车辆侧的正常结论。
+            [DispatchReasonCodes.VehicleCommittedToCharging] =
+                "这辆车已承诺去充电（占着充电用途并预占了充电桩），充电不被搬运取消或抢走；由别的车接，或等它充完电后再派",
+            [DispatchReasonCodes.VehicleInManualChargingHold] =
+                "这辆车在人工充电等待中（充电桩名册里没有它可用的桩，或它的充电单反复被取消），不接任何任务、也不会自己移动；"
+                + "请人工给它充电，再由管理员在车上发起「充电后返回服务」。电量回升、名册重新启用都不会自动解除",
+            // 批次9-02（control-server#400）：逐车硬阻断，看板展示归批次9-10，这里只有派车原因的一句说明。
+            [DispatchReasonCodes.ChargingPolicyNotApproved] =
+                "这辆车没有已批准并激活、适用范围覆盖它的充电策略版本，不承接新任务；别的车照常，导入、批准并激活一版覆盖它的策略即解除",
+            // 批次9-05（control-server#403）：强制充电优先，车辆侧的正常结论。去桩由批次9-06 做，在那之前车原地不动。
+            [DispatchReasonCodes.ChargingPolicyEntryNotAboveRescueLine] =
+                "这辆车生效的充电策略版本，强制充电线不高于服务端的救命告警线，这一版不能用，车不接任何新任务（在途的照常做完）；" +
+                "用 FieldOps 激活一版强制充电线高于救命线的策略即恢复，不需要改库，也不需要重启服务",
+            [DispatchReasonCodes.MandatoryChargeRequired] =
+                "这辆车电量低于它所用充电策略的强制充电线，只等去充电，不接新任务也不接途中追加；别的车照常。"
+                + "它若一直没去充电，是在排队等桩：看服务端日志事件 2246（写明分不到桩的原因）——充电桩被占或被预占、"
+                + "RIoT 读不到某辆车的位置或订单清单、路网引擎没开或过期、桩被暂停分配或在地图上改了名；"
+                + "或者车本身此刻不能出发（原因码 CHARGING_DEPARTURE_NOT_PROVEN_AT_ALLOCATION，事件里写明缺哪一项）："
+                + "车上某个仓位没锁好或开锁输出没复位（到车前把仓门关好锁上）、车载端安全摘要带着阻断原因（看车载端屏上的原因）、"
+                + "RIoT 读不到车停稳（看 RIoT 里这辆车是否急停、在动或抱闸）。这几项恢复后下一轮就会分桩",
+            // 批次 7（control-server#211～#215）：途中追加、装货阶段、释放改派。都是正常调度的结论，不是故障（规格 8.8 第 4 条）。
+            [DispatchReasonCodes.SlotGroupOccupiedByOwnCargo] =
+                "本车货物占侧：所需一侧的空仓已被这辆车自己已装或已预留的货占满，其余条件都满足，等别的车或本车卸货后再派",
+            [DispatchReasonCodes.EnRouteAppendNotConfigured] =
+                "所在分区没有批准途中追加（未配置或配成 0），这条需求不会追加到在途车上，等空车来接",
+            [DispatchReasonCodes.EnRouteAppendDelayGateExceeded] =
+                "追加到在途车上会让车上某条需求到终点的路程增加超过所在分区的上限，这一趟不追加",
+            [DispatchReasonCodes.EnRouteAppendDelayUncomputable] =
+                "路网算不出追加之后的路程增量，按规则不追加（算不出不当成零）",
+            [DispatchReasonCodes.EnRouteAppendBreaksZoneContiguity] =
+                "追加进去会让在途车的停靠在分区之间来回穿插，没有能保持分区连续的插入位，这一趟不追加",
+            [DispatchReasonCodes.EnRouteAppendPlanLimitReached] =
+                "追加进去会让在途车的计划超过 9 段或某一站清单超过 8 项，这一趟不追加",
+            [DispatchReasonCodes.EnRouteAppendNoInsertionPoint] =
+                "在途车正驶向的那一站之后已经没有可插入的位置，这一趟不追加",
+            [DispatchReasonCodes.EnRouteAppendDemandLeftThisJourney] =
+                "这条需求刚从这趟旅程上释放出去，不再追加回同一趟，可以由别的车接",
+            [DispatchReasonCodes.LoadingPhaseClosed] =
+                "在途车的装货阶段已经结束（持货超时、让站、装满后离开或计划装货完成），不再接新的待装需求",
+            [DispatchReasonCodes.SublotTaskTypeConflict] =
+                "同一份 MES 快照里这个批次同时命中了不止一种任务类型，这个批次的需求都先不派，请到 MES 核对数据",
+            [DemandReleaseReasons.Released] =
+                "这条需求已从原来的车上释放，正在等改派给别的车",
+            // 批次8-20（control-server#391，REQ-0204）：公共站点同时只由一台车占用或预占。都是正常调度的结论，那辆车离开后再派。
+            [DispatchReasonCodes.FixedTaskStationReservedByOtherVehicle] =
+                "这条需求的公共站点（如派工待送站）已被另一台车预占、正在前往，等它到站并离开后再派",
+            [DispatchReasonCodes.FixedTaskStationOccupiedByOtherVehicle] =
+                "这条需求的公共站点（如派工待送站）上正停着另一台车，等它离开后再派",
+            [DispatchReasonCodes.FixedTaskStationApproachedByOtherVehicle] =
+                "这条需求的公共站点正是另一台车的下一站、它还在等这个站空出来，等它到站并离开后再派",
         };
+
+    private readonly TimeProvider _clock;
+
+    public DispatchBacklogQueryEndpoint()
+        : this(TimeProvider.System)
+    {
+    }
+
+    internal DispatchBacklogQueryEndpoint(TimeProvider clock)
+    {
+        ArgumentNullException.ThrowIfNull(clock);
+        _clock = clock;
+    }
 
     public string Path => DashboardQueryEndpointCatalog.QueryPrefix + "dispatch-backlog";
 
@@ -68,29 +143,49 @@ internal sealed class DispatchBacklogQueryEndpoint : IDashboardQueryEndpoint
     {
         ArgumentNullException.ThrowIfNull(dbContext);
 
-        DateTimeOffset now = TimeProvider.System.GetUtcNow();
+        DateTimeOffset now = _clock.GetUtcNow();
         JourneyBacklogRow[] pending = await dbContext.JourneyBacklog.AsNoTracking()
             .Where(row => row.AcceptedAt == null && row.ReasonCode != DispatchReasonCodes.DemandLeftCatalog)
             .ToArrayAsync(cancellationToken);
         IReadOnlyList<StructuralDispatchBlock> blocks =
             await new StructuralDispatchBlockStore(dbContext).ListUnclearedAsync(cancellationToken);
+        StarvationThresholds thresholds = await StarvationThresholds.ReadAsync(dbContext, cancellationToken);
 
-        // Ordered in memory: SQLite cannot ORDER BY a DateTimeOffset.
+        // The order is the dispatch ranking's own (DispatchCandidateOrdering.Ranker), run over the backlog rows restored as the
+        // tasks the dispatch round ranked (BacklogStanding.TaskOf); it compares in memory, as SQLite cannot ORDER BY a DateTimeOffset.
+        Dictionary<DispatchTask, JourneyBacklogRow> rowOf = new(ReferenceEqualityComparer.Instance);
+        foreach (JourneyBacklogRow row in pending.Where(row => !DispatchReasonCodes.IsSilent(row.ReasonCode)))
+        {
+            rowOf.Add(BacklogStanding.TaskOf(row, now), row);
+        }
+        IReadOnlyList<DispatchTask> ordered = DispatchCandidateOrdering.Ranker().Order([.. rowOf.Keys]);
         return new
         {
-            backlog = pending
-                .Where(row => !DispatchReasonCodes.IsSilent(row.ReasonCode))
-                .OrderBy(row => row.FirstSeenAt)
-                .ThenBy(row => row.DemandId, StringComparer.Ordinal)
-                .Select(row => new
+            starvationThresholdsApproved = thresholds.AnyApproved,
+            starvationThresholds = thresholds.Zones
+                .Select(zone => new { dispatchZone = zone.Key, thresholdSeconds = zone.Value })
+                .ToArray(),
+            backlog = ordered
+                .Select(task => (Task: task, Row: rowOf[task]))
+                .Select(item => new
                 {
-                    demandId = row.DemandId,
-                    transportDemandKey = row.TransportDemandKey,
-                    reasonCode = row.ReasonCode,
-                    reasonDescription = Describe(row.ReasonCode),
-                    firstSeenAt = row.FirstSeenAt,
-                    lastEvaluatedAt = row.LastSeenAt,
-                    waitingSeconds = (long)Math.Max(0, (now - row.FirstSeenAt).TotalSeconds)
+                    demandId = item.Row.DemandId,
+                    transportDemandKey = item.Row.TransportDemandKey,
+                    reasonCode = item.Row.ReasonCode,
+                    reasonDescription = Describe(item.Row.ReasonCode),
+                    firstSeenAt = item.Row.FirstSeenAt,
+                    lastEvaluatedAt = item.Row.LastSeenAt,
+                    waitingSeconds = (long)TaskStarvation.WaitingAge(item.Task.Snapshot, now).TotalSeconds,
+                    demandCreatedAt = TaskStarvation.HasLocalCreation(item.Task.Snapshot) ? item.Row.DemandCreatedAt : (DateTimeOffset?)null,
+                    waitingAgeKnown = TaskStarvation.HasLocalCreation(item.Task.Snapshot),
+                    tier = BacklogStanding.TierOf(item.Task) switch
+                    {
+                        BacklogTier.StarvationTimeout => "STARVATION_TIMEOUT",
+                        BacklogTier.TopBand => "TOP_BAND",
+                        _ => "NORMAL_BAND"
+                    },
+                    starvationEscalatedAt = item.Row.StarvationEscalatedAt,
+                    starvationEscalationParameterVersion = item.Row.StarvationEscalationParameterVersion
                 })
                 .ToArray(),
             silentBacklogCount = pending.Count(row => DispatchReasonCodes.IsSilent(row.ReasonCode)),

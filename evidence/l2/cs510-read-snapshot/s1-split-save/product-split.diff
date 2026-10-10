@@ -1,0 +1,14 @@
+diff --git a/src/ControlServer.Host/Runtime/JourneyRuntimeEngine.UnableToCharge.cs b/src/ControlServer.Host/Runtime/JourneyRuntimeEngine.UnableToCharge.cs
+index d20546948..5a0956407 100644
+--- a/src/ControlServer.Host/Runtime/JourneyRuntimeEngine.UnableToCharge.cs
++++ b/src/ControlServer.Host/Runtime/JourneyRuntimeEngine.UnableToCharge.cs
+@@ -232,6 +232,9 @@ public sealed partial class JourneyRuntimeEngine
+             RiotBuild = UnableToChargeFacts.VerifiedRiotBuild,
+             RiotContractVersion = UnableToChargeFacts.VerifiedRiotContract,
+         });
++        // control-server#510 review S1 evidence only: the pause saved on its own, the rest 3 s later.
++        await dbContext.SaveChangesAsync(cancellationToken).ConfigureAwait(false);
++        await Task.Delay(TimeSpan.FromSeconds(3), cancellationToken).ConfigureAwait(false);
+         dbContext.Add(new StationClearanceRow
+         {
+             ClearanceId = JourneyPlanBuilder.StableGuid(cycle.CycleId, "station-clearance"),

@@ -1,0 +1,26 @@
+From 30207876fb3b58fc740e91775c3a8c7691f1c01f Mon Sep 17 00:00:00 2001
+From: Zhengyu Shao <trytoreachpeak0@gmail.com>
+Date: Tue, 22 Sep 2026 02:11:59 +0800
+Subject: [PATCH] DEFECT(cs#218 red evidence, local only, never push):
+ slot-group
+
+---
+ src/ControlServer.Host/Runtime/Dispatch/DispatchAdmission.cs | 2 +-
+ 1 file changed, 1 insertion(+), 1 deletion(-)
+
+diff --git a/src/ControlServer.Host/Runtime/Dispatch/DispatchAdmission.cs b/src/ControlServer.Host/Runtime/Dispatch/DispatchAdmission.cs
+index 68fc4579..39969bfe 100644
+--- a/src/ControlServer.Host/Runtime/Dispatch/DispatchAdmission.cs
++++ b/src/ControlServer.Host/Runtime/Dispatch/DispatchAdmission.cs
+@@ -215,7 +215,7 @@ public sealed class DispatchCandidateEvaluation(
+     /// The slot capacity criterion chooses <see cref="TargetSlots"/> inside this group (control-server#73), so
+     /// a plan's target slots are always in the group it carries.
+     /// </remarks>
+-    public string? RequiredSlotPosition => AreaAssignment?.SlotPosition;
++    public string? RequiredSlotPosition => AreaAssignment is null ? null : "FRONT"; // DEFECT cs#218: every demand goes to the front group
+ 
+     /// <summary>
+     /// This candidate's task type resolved against the round's fixed stations, set by the
+-- 
+2.55.0.windows.5
+

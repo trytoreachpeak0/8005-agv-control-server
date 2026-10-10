@@ -7,10 +7,12 @@ using ControlServer.Domain;
 using ControlServer.Infrastructure.Security;
 using Microsoft.Data.Sqlite;
 using Microsoft.EntityFrameworkCore;
+using Microsoft.EntityFrameworkCore.Storage;
 
 namespace ControlServer.Infrastructure.Persistence;
 
-public sealed class WireToGateStore(ControlServerDbContext dbContext) : IJourneyAcceptanceStore, IMovementIntentStore
+public sealed class WireToGateStore(ControlServerDbContext dbContext)
+    : IJourneyAcceptanceStore, IJourneyAppendStore, IMovementIntentStore
 {
     private const string ForcedMechanicalRecoveryWorkflowType = "FORCED_MECHANICAL_RECOVERY";
 
@@ -22,18 +24,108 @@ public sealed class WireToGateStore(ControlServerDbContext dbContext) : IJourney
     public const string ForcedRecoveryHardwareRecoveryRequired = "FORCED_RECOVERY_HARDWARE_RECOVERY_REQUIRED";
 
     /// <summary>
+    /// The block a journey carries while a person has handed its stopped trip to the vehicle's exception recovery session, for
+    /// the cargo to be taken out, handed over and its demand ended (REQ-0238, control-server#345). What holds the session is
+    /// the rebuild record waiting for the handoff, not this code (<see cref="DecideReadinessAsync"/>): a failed handoff rewrites
+    /// the code and the trip still waits.
+    /// </summary>
+    public const string AwaitingCargoHandoffJourneyReason = "OWN_ORDER_REBUILD_AWAITING_CARGO_HANDOFF";
+
+    /// <summary>
+    /// The readiness reason while one of this vehicle's <c>Blocked</c> journeys has a rebuild record waiting for a cargo handoff.
+    /// On the wire it is SESSION_RECOVERY_REQUIRED, which is what makes the onboard offer its fault cargo handoff entry.
+    /// </summary>
+    public const string CargoHandoffRequired = "CARGO_HANDOFF_REQUIRED";
+
+    /// <summary>
+    /// The readiness reason while the vehicle is held because a cancellation or compensation settled slots empty with a
+    /// door lock or unlock output unproven (REQ-0364, CP-0009, control-server#385). On the wire it is
+    /// SESSION_RECOVERY_REQUIRED, which is what keeps the onboard's recovery entry open for the repair release.
+    /// </summary>
+    public const string SlotDoorRepairReleaseRequired = "SLOT_DOOR_REPAIR_RELEASE_REQUIRED";
+
+    /// <summary>
     /// A journey publishes its stored revision at the pickup stop and that value plus one at the
     /// gate stop (JourneyRuntimeEngine publishes both stops), so the next journey on the same
     /// vehicle has to start two above the stored one.
     /// </summary>
-    private const long RevisionsPerJourney = 2;
+    /// <remarks>
+    /// Public since control-server#211, read by <c>JourneyRuntimeEngine.AdvanceWorklistRevisionCounterAsync</c>: a
+    /// journey carrying several demands publishes more worklist revisions than this reservation covers, and the engine
+    /// raises the counter so the next journey's base still clears what this one used. The value is unchanged -- what
+    /// changed is that the engine now has to know what the reservation is rather than assume it.
+    /// </remarks>
+    public const long RevisionsPerJourney = 2;
 
     /// <summary>
     /// The plan stream takes three per journey rather than two. Since 2026-09-13 the plan also goes
     /// out before the pickup arrival (CV-DEMAND-ACCEPT-TO-PICKUP) at the stored revision, so the
     /// pickup and the gate publish it one and two above that.
     /// </summary>
-    private const long PlanRevisionsPerJourney = 3;
+    /// <remarks>
+    /// 与 <see cref="RevisionsPerJourney"/> 同样在 control-server#211 转为公开，理由也相同：多停靠旅程发的
+    /// 计划版数超过这个预留，引擎要把按车计数器抬上去，而那要求它知道预留量是多少，不能假设。
+    /// </remarks>
+    public const long PlanRevisionsPerJourney = 3;
+
+    /// <summary>
+    /// 把这辆车某条快照流的下一趟基准抬到 <paramref name="revision"/> 之上（批次7-06，control-server#211）。
+    /// </summary>
+    /// <remarks>
+    /// <para>
+    /// 下一趟的基准是按车计数器加上每趟的预留量，而预留量是照「一趟两个停靠」定的常数——停靠数没有上界，
+    /// 常数接不住。多停靠或多需求的旅程三条流都会发得更多，本趟的号于是可能越过下一趟的基准，而车载端
+    /// 只按消息类型记修订号，一次回退就是 <c>SNAPSHOT_REVISION_REGRESSION</c> 断会话。
+    /// </para>
+    /// <para>
+    /// <b>由发布快照那个原语调用，不由调用点调用。</b>「发了快照却没结清」因此在构造上不可能：三条流都只能
+    /// 经由 <c>OnboardJourneyPublisher</c> 的快照原语发出去，而那里每发一条就结清一条。放在调用点上则是纪律——
+    /// 漏掉一处要等下一趟才看得见，而新加的发布点往往正是测试走不到的那一处。
+    /// </para>
+    /// <para>
+    /// 不认识的消息类型不做事：只有这三条流按停靠发，别的出站消息没有按车的修订号。
+    /// </para>
+    /// </remarks>
+    public async Task RaiseSnapshotRevisionFloorAsync(
+        string messageType,
+        string agvId,
+        long revision,
+        CancellationToken cancellationToken)
+    {
+        long reserve = messageType switch
+        {
+            "VehicleBusinessStateSnapshot" or "CurrentStopWorklistSnapshot" => RevisionsPerJourney,
+            "UpcomingStopPlanSnapshot" => PlanRevisionsPerJourney,
+            _ => 0
+        };
+        if (reserve == 0)
+        {
+            return;
+        }
+
+        VehicleSnapshotRevisionRow? counter = await dbContext.Set<VehicleSnapshotRevisionRow>()
+            .SingleOrDefaultAsync(row => row.AgvId == agvId, cancellationToken).ConfigureAwait(false);
+        if (counter is null)
+        {
+            return;
+        }
+
+        // 这一号要求下一趟的基准至少是 revision - reserve + 1；已经更高就不动它。单需求旅程一次也不会推进
+        // 任何一条——那时最大的号正好落在预留里，条件不成立，修订号流逐字不变。
+        long required = revision - reserve + 1;
+        switch (messageType)
+        {
+            case "VehicleBusinessStateSnapshot":
+                if (counter.VehicleBusinessRevision < required) { counter.VehicleBusinessRevision = required; }
+                break;
+            case "CurrentStopWorklistSnapshot":
+                if (counter.WorklistRevision < required) { counter.WorklistRevision = required; }
+                break;
+            default:
+                if (counter.PlanRevision < required) { counter.PlanRevision = required; }
+                break;
+        }
+    }
 
     public async Task<long> GetNextSessionGenerationAsync(string agvId, CancellationToken cancellationToken)
     {
@@ -161,13 +253,46 @@ public sealed class WireToGateStore(ControlServerDbContext dbContext) : IJourney
         await dbContext.SaveChangesAsync(cancellationToken).ConfigureAwait(false);
     }
 
+    /// <summary>
+    /// Stops trusting this session's departure safety until the vehicle sends a fresh SafetyStateSnapshot
+    /// (control-server#478): the departure verdict and its reasons are cleared, so readiness is RecoveryRequired from here
+    /// and the vehicle is given no work. The reason code is the one <see cref="DecideReadinessAsync"/> names:
+    /// DEPARTURE_SAFETY_NOT_READY unless a reason it ranks earlier also holds (a missing capability snapshot or recovery
+    /// report, facts still to reconcile).
+    /// </summary>
+    /// <remarks>
+    /// For a safety message the server refused. Before #478 such a refusal ended the connection, and the reconnect brought
+    /// a new safety baseline with it; with the connection kept, the server would otherwise go on judging departure on
+    /// whichever content arrived first while the vehicle holds another. The revision and its hash stay: the next snapshot
+    /// must still move the revision forward, so a stale one cannot slip in as the replacement.
+    /// <para>
+    /// Readiness falls in this same save, to what <see cref="DecideReadinessAsync"/> would decide from a cleared verdict;
+    /// the caller decides it again afterwards only to name the reason more precisely. Leaving readiness to that second save
+    /// left a window: had it failed, the connection would end with the row still Ready, and dispatch reads nothing but
+    /// Readiness (control-server#478 incremental review).
+    /// </para>
+    /// </remarks>
+    public async Task DistrustSafetyBaselineAsync(
+        string agvId, long sessionGeneration, CancellationToken cancellationToken)
+    {
+        SessionRecoveryRow row = await GetCurrentSessionAsync(agvId, sessionGeneration, cancellationToken)
+            .ConfigureAwait(false);
+        row.DepartureSafe = null;
+        row.SafetyReasonCodesJson = null;
+        row.SafetyUnknownPresent = null;
+        row.Readiness = SessionReadiness.RecoveryRequired;
+        row.ReasonCode = "DEPARTURE_SAFETY_NOT_READY";
+        row.UpdatedAt = DateTimeOffset.UtcNow;
+        await dbContext.SaveChangesAsync(cancellationToken).ConfigureAwait(false);
+    }
+
     public async Task ApplyRecoveryReportAsync(
         string agvId, long sessionGeneration, string reportId, long forcedRecoveryGeneration,
         string? unsettledSlotOperationAttemptId,
         string? provenRecoveryCheckpoint,
         IReadOnlyCollection<int> activeUnlockSlots,
         IReadOnlyCollection<string> pendingAttemptIds,
-        IReadOnlyCollection<string> pendingResultIds,
+        IReadOnlyCollection<ReportedPendingResult> pendingResults,
         CancellationToken cancellationToken)
     {
         SessionRecoveryRow row = await GetCurrentSessionAsync(agvId, sessionGeneration, cancellationToken)
@@ -183,7 +308,9 @@ public sealed class WireToGateStore(ControlServerDbContext dbContext) : IJourney
         row.ProvenRecoveryCheckpoint = provenRecoveryCheckpoint;
         row.ActiveUnlockSlotsJson = JsonSerializer.Serialize(NormalizeSlots(activeUnlockSlots));
         row.PendingAttemptIdsJson = SerializeSorted(pendingAttemptIds);
-        row.PendingResultIdsJson = SerializeSorted(pendingResultIds);
+        row.PendingResultIdsJson = SerializeSorted(
+            await ResultsNotProcessedInThisGenerationAsync(agvId, sessionGeneration, pendingResults, cancellationToken)
+                .ConfigureAwait(false));
         // The report can name an attempt this server settled long ago, and nothing may arrive for it
         // afterwards: its result was accepted in an earlier session. Settling reported attempts only when
         // a result arrives left such a session on PENDING_FACT_RECONCILIATION_REQUIRED until some later
@@ -194,6 +321,67 @@ public sealed class WireToGateStore(ControlServerDbContext dbContext) : IJourney
         row.ReasonCode = "RECOVERY_RECONCILIATION_PENDING";
         row.UpdatedAt = DateTimeOffset.UtcNow;
         await dbContext.SaveChangesAsync(cancellationToken).ConfigureAwait(false);
+    }
+
+    /// <summary>
+    /// The messageIds of <paramref name="pendingResults"/> less every one this session generation has already
+    /// processed as an OperationResult with the same business content.
+    /// </summary>
+    /// <remarks>
+    /// <para>
+    /// control-server#435. A reconnecting vehicle resends its unacknowledged result before it reports, so the result can
+    /// be processed in this generation while the session has no pending list yet -- and the report then names it. The
+    /// vehicle's replay after the handshake is byte for byte the line already processed, so the inbox answers it from
+    /// its first response and <see cref="ReconcileReportedPendingResultAsync"/> never runs for it. Nothing else takes it
+    /// off while the link stays up: the session sat on PENDING_FACT_RECONCILIATION_REQUIRED, heartbeats flowing (hmi#233
+    /// real-rig run 36828773806, generation 7). The report is therefore reconciled here against what this generation has
+    /// already seen, which is what the replay would have done.
+    /// </para>
+    /// <para>
+    /// An inbox row stands for a processed line: <c>CaptureFirstResponseAsync</c> writes it -- and rewrites it to a new
+    /// generation's line on a rebound resend -- in the transaction that processed the line, after processing returned.
+    /// A result this generation has not processed stays pending; one processed only in an earlier generation stays
+    /// pending too, for the rebound replay to reprocess and reconcile (CV-OPERATION-RESULT-UNKNOWN-RECONCILE). So does
+    /// one whose business content differs from what the report holds.
+    /// </para>
+    /// </remarks>
+    private async Task<string[]> ResultsNotProcessedInThisGenerationAsync(
+        string agvId, long sessionGeneration, IReadOnlyCollection<ReportedPendingResult> pendingResults,
+        CancellationToken cancellationToken)
+    {
+        if (pendingResults.Count == 0)
+        {
+            return [];
+        }
+
+        string[] messageIds = pendingResults.Select(item => item.MessageId).ToArray();
+        ProtocolInboxRow[] processed = await dbContext.ProtocolInbox.AsNoTracking()
+            .Where(item => messageIds.Contains(item.MessageId) && item.MessageType == "OperationResult")
+            .ToArrayAsync(cancellationToken).ConfigureAwait(false);
+        return pendingResults
+            .Where(pending => !processed.Any(item =>
+                string.Equals(item.MessageId, pending.MessageId, StringComparison.Ordinal) &&
+                IsResultOfThisGeneration(item.RequestJson, agvId, sessionGeneration, pending.ContentSha256)))
+            .Select(pending => pending.MessageId)
+            .ToArray();
+    }
+
+    private static bool IsResultOfThisGeneration(
+        string requestJson, string agvId, long sessionGeneration, string resultContentSha256)
+    {
+        using JsonDocument document = JsonDocument.Parse(requestJson);
+        JsonElement root = document.RootElement;
+        return root.TryGetProperty("agvId", out JsonElement lineAgvId) &&
+               lineAgvId.ValueKind == JsonValueKind.String &&
+               string.Equals(lineAgvId.GetString(), agvId, StringComparison.Ordinal) &&
+               root.TryGetProperty("sessionGeneration", out JsonElement lineGeneration) &&
+               lineGeneration.ValueKind == JsonValueKind.Number &&
+               lineGeneration.GetInt64() == sessionGeneration &&
+               root.TryGetProperty("payload", out JsonElement payload) &&
+               payload.ValueKind == JsonValueKind.Object &&
+               payload.TryGetProperty("resultContentSha256", out JsonElement contentSha256) &&
+               contentSha256.ValueKind == JsonValueKind.String &&
+               string.Equals(contentSha256.GetString(), resultContentSha256, StringComparison.Ordinal);
     }
 
     /// <summary>
@@ -302,11 +490,8 @@ public sealed class WireToGateStore(ControlServerDbContext dbContext) : IJourney
         // This can only move a session from Ready to RecoveryRequired, never the other way.
         // The operation's demand is found in its journey through the demand memberships (control-server#207): an
         // operation of any demand the vehicle carries holds it, not only one of the journey row's anchor demand.
-        bool operationNeedsRecovery = await OperationsOnJourneys()
-            .AnyAsync(
-                pair => pair.Runtime.AgvId == agvId &&
-                        pair.Operation.Status == StationOperationStatus.RecoveryRequired,
-                cancellationToken).ConfigureAwait(false);
+        bool operationNeedsRecovery = await OperationNeedsRecoveryAsync(agvId, cancellationToken)
+            .ConfigureAwait(false);
         // REQ-0241/0242 and ADR-cross-0036 (control-server#137). A forced mechanical recovery settles the
         // cargo's business and the operation it was about, and with that every input above can say "fine" --
         // yet what the result pinned false is still unproven: empty slots, safe doors, a recovered vehicle.
@@ -316,14 +501,22 @@ public sealed class WireToGateStore(ControlServerDbContext dbContext) : IJourney
         // .RecordHardwareRecoveryAsync) -- and only together with every other judgement here: a record is an
         // audit fact, not a substitute for live signals, and it resumes nothing. A workflow a later forced
         // generation made history of is covered by the later one.
-        bool forcedRecoveryAwaitsHardwareRecord = await dbContext.RecoveryWorkflows
+        bool forcedRecoveryAwaitsHardwareRecord = await ForcedRecoveryAwaitsHardwareRecordAsync(agvId, cancellationToken)
+            .ConfigureAwait(false);
+        // control-server#345. A person handed a stopped trip with cargo on board to the exception recovery session: the onboard
+        // offers the fault cargo handoff only while the session says RECOVERY_REQUIRED, and nothing else here says so for a
+        // vehicle standing still, fault cleared, doors locked. Held while this vehicle has a Blocked journey whose rebuild record
+        // waits for the handoff -- on the record, not on the journey code (independent review M1): a handoff that fails has
+        // the recovery coordinator rewrite the code, and a journey that still carries another demand after one was handed off
+        // keeps it, and in neither case is the trip done with. It lets go once the record is ended or the journey leaves
+        // Blocked; never on Blocked as such, and never for another vehicle.
+        bool cargoHandoffAwaited = await dbContext.OwnOrderRebuilds.AsNoTracking()
             .AnyAsync(
-                workflow => workflow.AgvId == agvId &&
-                            workflow.WorkflowType == ForcedMechanicalRecoveryWorkflowType &&
-                            workflow.State != RecoveryWorkflowState.HistoricalOnly &&
-                            !dbContext.HardwareRecoveryRecords.Any(
-                                record => record.RecoveryActionId == workflow.WorkflowId),
-                cancellationToken).ConfigureAwait(false);
+                record => record.AgvId == agvId && record.State == OwnOrderRebuildStates.AwaitingCargoHandoff &&
+                          dbContext.JourneyRuntimes.Any(
+                              journey => journey.JourneyId == record.JourneyId && journey.Stage == JourneyRuntimeStage.Blocked),
+                cancellationToken)
+            .ConfigureAwait(false);
         // REQ-0316. The vehicle reported which slot configuration it is carrying; this server knows
         // which one it activated. Disagreement means nobody can say what the eight slots on that
         // vehicle will actually do, so it must not be given work -- but it stays connected, because
@@ -342,6 +535,13 @@ public sealed class WireToGateStore(ControlServerDbContext dbContext) : IJourney
         // CapabilityRevision is null so the session is not ready anyway, and the honest reason for that
         // is HANDSHAKE_INCOMPLETE -- naming the fingerprint mismatch first would send an operator after
         // a vehicle whose only problem is that it is still handshaking.
+        // REQ-0364 (CP-0009, control-server#385). A cancellation or compensation whose light curtains proved its slots empty
+        // while a lock or unlock output could not be proven settles the demand, and holds the vehicle: nothing else here can
+        // see it, because the operation is settled and the doors may well read locked by now. It lifts only when a
+        // HARDWARE_REPAIR_RELEASE action has run to its end -- record, then readings received after the record, then a SAFE
+        // HOLD_RELEASE check (OnboardRecoveryCoordinator) -- which marks the hold released. A record alone lifts nothing,
+        // and neither does a record on any other action. The forced recovery's hold above is a different one and unchanged.
+        bool slotDoorHeld = await SlotDoorHeldAsync(agvId, cancellationToken).ConfigureAwait(false);
         bool slotConfigurationAgrees = activeSlotConfiguration is null ||
             row.ReportedSlotConfigurationFingerprint is null ||
             string.Equals(
@@ -353,6 +553,8 @@ public sealed class WireToGateStore(ControlServerDbContext dbContext) : IJourney
                      row.RecoveryReportId is not null && departureUsable && noPendingFacts &&
                      !operationNeedsRecovery &&
                      !forcedRecoveryAwaitsHardwareRecord &&
+                     !cargoHandoffAwaited &&
+                     !slotDoorHeld &&
                      row.ReportedForcedRecoveryGeneration == row.ForcedRecoveryGeneration;
         row.Readiness = ready ? SessionReadiness.Ready : SessionReadiness.RecoveryRequired;
         // The slot configuration mismatch is named first when it applies: every other reason here is about this
@@ -362,7 +564,8 @@ public sealed class WireToGateStore(ControlServerDbContext dbContext) : IJourney
             ? "READY"
             : slotConfigurationAgrees
                 ? GetRecoveryReason(
-                    row, noPendingFacts, departureUsable, operationNeedsRecovery, forcedRecoveryAwaitsHardwareRecord)
+                    row, noPendingFacts, departureUsable, operationNeedsRecovery, forcedRecoveryAwaitsHardwareRecord,
+                    cargoHandoffAwaited, slotDoorHeld)
                 : SlotConfigurationFingerprintVerdict.MismatchCode;
         row.UpdatedAt = DateTimeOffset.UtcNow;
         await dbContext.SaveChangesAsync(cancellationToken).ConfigureAwait(false);
@@ -375,12 +578,26 @@ public sealed class WireToGateStore(ControlServerDbContext dbContext) : IJourney
     /// </summary>
     /// <remarks>
     /// <para>
-    /// The server holds no manual-charging hold of its own -- <c>VehicleBusinessProjection.ManualChargingHold</c>
-    /// is published as false from both sites that build it -- so the hold being lifted is the
-    /// vehicle's, and this request is the vehicle asking the server to put it back into eligibility
-    /// evaluation. The server's part is therefore to say whether it is in a position to evaluate the
-    /// vehicle at all, and the only fact it holds that can answer no is the session's own readiness:
-    /// a session in RecoveryRequired has facts to reconcile before the vehicle may take work again.
+    /// <b>The hold being lifted is the server's</b> (control-server#404; <c>CV-MANUAL-CHARGING-RETURN</c>'s
+    /// <c>REEVALUATE_ELIGIBILITY_AFTER_RETURN</c>). The server places a manual-charging hold on a vehicle that needs charging
+    /// when the charger roster has no charger for it, or when its charging order keeps being ended (<c>ChargingAllocator</c>),
+    /// keeps it per RIoT vehicle key (<see cref="ManualChargingHoldRow"/>), and publishes it as
+    /// <c>VehicleBusinessStateSnapshot.manualChargingHold</c>. This request -- an administrator at the vehicle, after it has
+    /// been charged by hand -- is the only way out of it: the battery rising does not lift it, and neither does the roster
+    /// being enabled again (the user's decision of 2026-09-29). An accepted request removes the hold row and writes the
+    /// release on its record <b>in the same save as the decision</b>, so there is never an accepted request with the hold still
+    /// standing, nor a lifted hold without the request that lifted it. The next dispatch round judges the vehicle afresh --
+    /// battery, roster and all -- and tells it the hold is off.
+    /// </para>
+    /// <para>
+    /// <b>A rejected request leaves the hold in place</b>, and the two rejections are what they were: a role outside the two the
+    /// profile allows, and a session in RecoveryRequired, which has facts to reconcile before the vehicle may take work again.
+    /// <b>A replayed <c>requestId</c> returns the stored decision and lifts nothing</b> -- a hold placed since the first time
+    /// is a different hold, and needs a request of its own. A vehicle with no hold is decided exactly as before.
+    /// </para>
+    /// <para>
+    /// The request carries the vehicle's key because it arrives naming the AGV id; the receiver resolves it from the fleet
+    /// roster (<c>OnboardMessageProcessor</c>). Without it -- an AGV not in the roster -- there is no hold to find.
     /// </para>
     /// <para>
     /// The role check is here rather than left to the schema because neither end validates against
@@ -399,7 +616,7 @@ public sealed class WireToGateStore(ControlServerDbContext dbContext) : IJourney
         {
             if (replay.RequestContentHash != request.RequestContentHash || replay.AgvId != request.AgvId)
             {
-                throw new ProtocolContentConflictException(
+                throw new InboundMessageRejectedException(ServerReasonCodes.BusinessIdContentConflict,
                     "ManualChargingReturnToService requestId was replayed with different content.");
             }
 
@@ -445,9 +662,18 @@ public sealed class WireToGateStore(ControlServerDbContext dbContext) : IJourney
             ProblemFieldPath = fieldPath,
             ProblemDisplayMessage = displayMessage,
             VehicleBusinessStateRevision = revision,
-            DecidedAt = DateTimeOffset.UtcNow
+            // The caller's clock where it has one (control-server#404 review): the hold's release carries the same instant,
+            // and the allocator compares it with the instants its own TimeProvider stamps on charging cycles.
+            DecidedAt = request.DecidedAt ?? DateTimeOffset.UtcNow
         };
         dbContext.ManualChargingReturnToServiceRequests.Add(row);
+        if (outcome == ManualChargingReturnToServiceDecision.ReturnedToEligibilityEvaluation &&
+            !string.IsNullOrWhiteSpace(request.VehicleKey))
+        {
+            await ManualChargingHoldWrites
+                .StageReleaseAsync(dbContext, request.VehicleKey, request.RequestId, row.DecidedAt, cancellationToken)
+                .ConfigureAwait(false);
+        }
         await dbContext.SaveChangesAsync(cancellationToken).ConfigureAwait(false);
         return ToDecision(row);
     }
@@ -471,13 +697,71 @@ public sealed class WireToGateStore(ControlServerDbContext dbContext) : IJourney
         return row.ForcedRecoveryGeneration;
     }
 
-    public Task<long> GetOperationForcedRecoveryGenerationAsync(
+    /// <summary>
+    /// The forced recovery generation of the slot operation <paramref name="slotOperationAttemptId"/>, or null when this
+    /// server has no such operation (control-server#481, see <see cref="RecordUnknownOperationResultAsync"/>).
+    /// </summary>
+    public Task<long?> FindOperationForcedRecoveryGenerationAsync(
         string slotOperationAttemptId,
         CancellationToken cancellationToken) =>
         dbContext.StationOperations
             .Where(row => row.SlotOperationAttemptId == slotOperationAttemptId)
-            .Select(row => row.ForcedRecoveryGeneration)
-            .SingleAsync(cancellationToken);
+            .Select(row => (long?)row.ForcedRecoveryGeneration)
+            .SingleOrDefaultAsync(cancellationToken);
+
+    /// <summary>
+    /// An OperationResult for a slot operation this server has no record of (control-server#481): one the vehicle owes a
+    /// server whose database has since been replaced, or another server instance it was connected to before. Kept as
+    /// historical evidence and acknowledged, changing nothing else. Until #481 the lookup threw, the connection ended, and
+    /// the onboard replays an unacknowledged result in every handshake, so the vehicle never got past it; a refusal would
+    /// only move that loop to the onboard, which gives a row up on four row-content codes alone (8005-agv-onboard-hmi#254).
+    /// </summary>
+    /// <remarks>
+    /// A row already under this result's id is this result: the inbox has refused anything else sent under the same
+    /// messageId (<c>GenerationRebindReplayHash</c>), so a rebound replay is answered as one. The row takes the vehicle's
+    /// current forced recovery generation, as no operation names one; a second, different result for the same unknown attempt
+    /// is acknowledged but not kept again, the attempt's one live row being taken.
+    /// </remarks>
+    public async Task<OperationResultDisposition> RecordUnknownOperationResultAsync(
+        StationOperationResult result,
+        string agvId,
+        CancellationToken cancellationToken)
+    {
+        ArgumentNullException.ThrowIfNull(result);
+        if (await dbContext.OperationResults.AnyAsync(row => row.ResultId == result.ResultId, cancellationToken)
+                .ConfigureAwait(false))
+        {
+            return OperationResultDisposition.Replay;
+        }
+        long generation = await dbContext.VehicleRecoveryGenerations
+            .Where(row => row.AgvId == agvId)
+            .Select(row => (long?)row.ForcedRecoveryGeneration)
+            .SingleOrDefaultAsync(cancellationToken).ConfigureAwait(false) ?? 0;
+        bool attemptTaken = await dbContext.OperationResults.AnyAsync(
+            row => row.SlotOperationAttemptId == result.SlotOperationAttemptId &&
+                   row.ForcedRecoveryGeneration == generation &&
+                   row.SupersededByResultId == null,
+            cancellationToken).ConfigureAwait(false);
+        if (!attemptTaken)
+        {
+            dbContext.OperationResults.Add(new OperationResultRow
+            {
+                ResultId = result.ResultId,
+                SlotOperationAttemptId = result.SlotOperationAttemptId,
+                AgvId = agvId,
+                ForcedRecoveryGeneration = generation,
+                ContentHash = result.WireContentSha256,
+                ResultContentSha256 = result.ResultContentSha256,
+                OverallOutcome = result.OverallOutcome,
+                EvidenceJson = JsonSerializer.Serialize(result.SlotEvidence.OrderBy(item => item.SlotNumber)),
+                ObservedAt = result.ObservedAt,
+                HistoricalOnly = true,
+                ReceivedAt = result.ObservedAt
+            });
+            await dbContext.SaveChangesAsync(cancellationToken).ConfigureAwait(false);
+        }
+        return OperationResultDisposition.HistoricalOnly;
+    }
 
     public Task AcceptWithOrderIntentAsync(
         AcceptedDemandSnapshot snapshot, OrderIntent orderIntent, CancellationToken cancellationToken) =>
@@ -489,6 +773,405 @@ public sealed class WireToGateStore(ControlServerDbContext dbContext) : IJourney
         JourneyExecutionPlan journey,
         CancellationToken cancellationToken) =>
         AcceptCoreAsync(snapshot, orderIntent, journey, cancellationToken);
+
+    /// <summary>
+    /// 把一条需求追加进一辆在途车已有的旅程（票面第 3 条，批次7-06，control-server#211）。
+    /// </summary>
+    /// <remarks>
+    /// <para>
+    /// <b>与受理写的是同一套冻结，少的是旅程层面那几样。</b>需求行、三样冻结（区域分配、端点、任务类型站点版本）
+    /// 与受理一字不差——一条需求不会因为它是被追加进来的就少冻结一个版本。不写的是旅程行、用途占有与移动订单：
+    /// 那辆车已经被这趟旅程占着（<c>VehiclePurposeClaims</c> 的主键一车一行，再认领一次会直接冲突），而新那一段腿要等前面的停靠走完才发。
+    /// </para>
+    /// <para>
+    /// <b>四样东西一个事务：</b>需求行、归属、两个新停靠、既有停靠的新序位。分开写会留下「占了仓位却不在计划里的需求」
+    /// ——仓位在归属上，计划在停靠上，中间崩一次就对不上了。事务失败时连同变更跟踪器一起还原，理由与受理那一处相同。
+    /// </para>
+    /// <para>
+    /// <b>重放判同。</b>同一条追加重放时，需求行已在、归属已在、两个停靠已在，且停靠序列与这一次要写的一致，就当它已经做过
+    /// （票面「重放与重连」：同一追加重放判同、序列不同判冲突）。
+    /// </para>
+    /// </remarks>
+    public async Task AppendToJourneyAsync(
+        AcceptedDemandSnapshot snapshot,
+        JourneyAppendPlan plan,
+        CancellationToken cancellationToken)
+    {
+        ArgumentNullException.ThrowIfNull(snapshot);
+        ArgumentNullException.ThrowIfNull(plan);
+
+        AcceptedDemandRow? existing = await dbContext.AcceptedDemands
+            .SingleOrDefaultAsync(row => row.DemandId == snapshot.DemandId ||
+                                         row.TransportDemandKey == snapshot.TransportDemandKey, cancellationToken)
+            .ConfigureAwait(false);
+        bool redispatch = existing is not null &&
+                          await IsReleasedForRedispatchAsync(existing, snapshot, cancellationToken).ConfigureAwait(false);
+        if (existing is not null && !redispatch)
+        {
+            await AssertAppendReplayMatchesAsync(snapshot, plan, existing, cancellationToken).ConfigureAwait(false);
+            return;
+        }
+
+        await using var transaction = await dbContext.Database.BeginTransactionAsync(cancellationToken)
+            .ConfigureAwait(false);
+        Dictionary<object, (EntityState State, Microsoft.EntityFrameworkCore.ChangeTracking.PropertyValues Values)> trackedBefore =
+            dbContext.ChangeTracker.Entries().ToDictionary(
+                entry => entry.Entity, entry => (entry.State, entry.CurrentValues.Clone()), ReferenceEqualityComparer.Instance);
+        try
+        {
+            await StageAndCommitAppendAsync(snapshot, plan, redispatch, transaction, cancellationToken).ConfigureAwait(false);
+        }
+        catch (Exception) when (ForgetStagedAcceptance(trackedBefore))
+        {
+            throw;
+        }
+    }
+
+    private async Task StageAndCommitAppendAsync(
+        AcceptedDemandSnapshot snapshot,
+        JourneyAppendPlan plan,
+        bool redispatch,
+        Microsoft.EntityFrameworkCore.Storage.IDbContextTransaction transaction,
+        CancellationToken cancellationToken)
+    {
+        JourneyExecutionPlan demand = plan.Demand;
+        if (demand is { StationCatalogRevision: null } &&
+            (demand.TaskTypeStationRuleVersion is not null || demand.TaskTypeStationBindingSetVersion is not null))
+        {
+            throw new JourneyPlanFreezeIncompleteException(FormattableString.Invariant(
+                $"Appended demand {snapshot.DemandId} carries task type station versions but no station catalog revision."));
+        }
+
+        // 这趟旅程此刻还接不接得下追加，在事务里再判一次（批次7-06，control-server#211）。
+        //
+        // <b>这不是第二道保险，这是那条路唯一的守卫。</b>轮次在开头读到旅程不是 Blocked，而从那一读到这一写
+        // 之间，车载端的一条入站消息可以把它置成 Blocked（<c>OnboardRecoveryCoordinator</c>，另一个连接、
+        // 另一个线程）——轮次那一侧在它自己的时刻是对的，所以挡不住这个竞态。判据放在事务外也挡不住：
+        // BEGIN IMMEDIATE 之前读到的仍是旧快照。
+        //
+        // 放行的代价不是少接一条活：需求会写进 AcceptedDemands 从此不再是候选，绑死在一辆等人介入的车上，
+        // 而车上那张计划不会更新（<c>RefreshUpcomingStopPlanAsync</c> 对 Blocked 直接返回）。Completed 一并判，
+        // 它是同一个竞态的另一头——旅程在这中间跑完了。
+        //
+        // <b>它和 DispatchRoundRunner.ReadEnRoutePlanAsync 里那一处不是重复的，别删掉任何一处。</b>
+        // 那里是准入口径（轮次开始时就已经 Blocked 的车不值得算插位），这里是写入一致性（轮次读过之后才
+        // 变成 Blocked）。判一道竞态守卫有没有用，看它和它守护的那次写入在不在同一个事务里——那一处不在，
+        // 所以它挡不住这个，也不该由它挡。
+        //
+        // <b>读库，不读跟踪着的那一份</b>（control-server#357 独立审查必修 4）。派车轮与引擎共用一个上下文，本轮开头读过的旅程在里面被跟踪着；
+        // 带跟踪的查询会被身份解析换回那个旧实例，事务再新也判的是旧阶段。这一行这里只用来判、不用来写。
+        JourneyRuntimeRow journey = await dbContext.JourneyRuntimes.AsNoTracking()
+            .SingleAsync(row => row.JourneyId == plan.JourneyId, cancellationToken).ConfigureAwait(false);
+        if (journey.Stage is JourneyRuntimeStage.Blocked or JourneyRuntimeStage.Completed)
+        {
+            throw new BusinessIdentityConflictException(
+                $"Journey '{plan.JourneyId}' is {journey.Stage} and cannot take an appended demand.");
+        }
+
+        // An idle return carries no demand and takes none (control-server#390), and neither does a charging journey
+        // (control-server#404): the round keeps its vehicle out of the en-route candidates, and this is the write-side half
+        // of that rule.
+        if (journey.CarriesNoDemand())
+        {
+            throw new BusinessIdentityConflictException(
+                $"Journey '{plan.JourneyId}' is {(journey.IsIdleReturn() ? "an idle return" : "a charging journey")} and cannot take an appended demand.");
+        }
+
+        // 装货阶段结束了也不接（批次7-07，control-server#212）：持货超时、让站之后不再接受新的待装需求（REQ-0354 末句），
+        // 装满之后离开最后一个装货停靠同样是终点——「离开」指服务端为离站向 RIoT 请求移动，而那一次保存就写下了 CLOSED。
+        // 所以「是否已经离开」在这里读的是同一次写入留下的那一列，与判 Blocked 同一个道理：轮次读到的计划在它自己的
+        // 时刻是对的，挡得住的只有和这次写入在同一个事务里的判据。
+        if (journey.LoadingPhaseState == LoadingPhaseStates.Closed)
+        {
+            throw new BusinessIdentityConflictException(
+                $"Journey '{plan.JourneyId}' has closed its loading phase ({journey.LoadingClosedReason}) and cannot take an appended demand.");
+        }
+
+        // 让站已触发也不接（批次7-08，control-server#213，审查必修 1）。触发由别的车的受理、追加或离站写进这一行，而装货阶段列
+        // 要到这辆车自己下一轮才变成 CLOSED——同一个派车轮里先受理乙、再追加戊，戊就落在这两次写入之间。上面那道只看装货阶段列，
+        // 挡不住它；这一道读触发列本身，与写触发的那次提交在同一个库上串行，所以没有第二个窗口。
+        // 判据是 Batch7StationYieldTests.AnAppendRightAfterTheTriggerIsRefusedBeforeTheHolderRunsAgain。
+        if (journey.YieldTriggeredAt is not null)
+        {
+            throw new BusinessIdentityConflictException(
+                $"Journey '{plan.JourneyId}' was asked to yield its station ({journey.YieldTriggeredByVehicleKey}) and cannot take an appended demand.");
+        }
+
+        if (redispatch)
+        {
+            await ThawForRedispatchAsync(snapshot.DemandId, cancellationToken).ConfigureAwait(false);
+        }
+
+        if (demand.AreaAssignmentVersion is long areaAssignmentVersion)
+        {
+            await FreezeAreaAssignmentAsync(snapshot, areaAssignmentVersion, cancellationToken).ConfigureAwait(false);
+        }
+
+        if (demand is { StationCatalogRevision: long catalogRevision })
+        {
+            await FreezeEndpointsAsync(snapshot, demand, catalogRevision, cancellationToken).ConfigureAwait(false);
+        }
+
+        if (demand is { TaskTypeStationRuleVersion: long ruleVersion, TaskTypeStationBindingSetVersion: long bindingSetVersion })
+        {
+            await new DemandTaskTypeStationFreezeStore(dbContext)
+                .FreezeAsync(snapshot.DemandId, ruleVersion, demand.MapId, bindingSetVersion, snapshot.AcceptedAt, cancellationToken)
+                .ConfigureAwait(false);
+        }
+
+        if (!redispatch)
+        {
+            // 释放改派的需求复用它第一次受理时的那一行（调度决策 3，批次7-10，control-server#215）：受理时刻与内容都是
+            // 那一次的事实，改派不重写它们（冻结不同，上面按这次受理重冻，见 ThawForRedispatchAsync）。
+            // 行上的状态本来就还是 Accepted——释放不终结需求。
+            dbContext.AcceptedDemands.Add(NewAcceptedDemandRow(snapshot));
+        }
+
+        // 追加之前的下一站（批次8-20，control-server#391）：只有追加改变了下一站，才是这次承诺让车以新的站为下一站。
+        string? nextStopBeforeAppend = StationYield.NextStop(
+                journey.Stage, await StationYield.StopsOfAsync(dbContext, plan.JourneyId, cancellationToken).ConfigureAwait(false))
+            ?.StopId;
+
+        // 追加停靠与归属上的 id 同样取键（批次7-10，control-server#215），理由见 ToRuntimeRow。
+        string key = demand.DerivationKeyFor(snapshot.DemandId);
+        foreach (JourneyStopRow stop in await NewStopsAsync(key, plan, cancellationToken)
+                     .ConfigureAwait(false))
+        {
+            dbContext.Set<JourneyStopRow>().Add(stop);
+        }
+
+        dbContext.Set<JourneyDemandRow>().Add(new JourneyDemandRow
+        {
+            JourneyId = plan.JourneyId,
+            DemandId = snapshot.DemandId,
+            PickupStopId = plan.PickupStopId,
+            UnloadStopId = plan.UnloadStopId,
+            ExpectedBasketCount = demand.ExpectedBasketCount,
+            TargetSlotsJson = JsonSerializer.Serialize(demand.TargetSlots),
+            LoadSlotOperationAttemptId = DeterministicGuid($"{key}|load-attempt"),
+            LoadCommandMessageId = DeterministicGuid($"{key}|load-command"),
+            UnloadSlotOperationAttemptId = DeterministicGuid($"{key}|unload-attempt"),
+            UnloadCommandMessageId = DeterministicGuid($"{key}|unload-command"),
+            DispatchZone = plan.DispatchZone,
+            DispatchGeneration = demand.DispatchGeneration,
+            Status = JourneyDemandStatuses.PendingLoad,
+            AddedAt = plan.AddedAt,
+            DispatchZoneParameterVersion = plan.DispatchZoneParameterVersion
+        });
+
+        await ApplyResequencingAsync(plan, cancellationToken).ConfigureAwait(false);
+
+        // 让站（批次7-08，control-server#213）：追加可能把新的取货停靠排成这辆车的下一停靠。按重排之后的序列算，
+        // 与追加同一次保存标记停在那里持货等单的别的车。下一停靠没变时也照样判：承诺那一刻已经在等的车早被标记过，
+        // 不会再写；之后才开始等的那辆这里一并标记，与它自己推进时的补判（引擎的 ReconcileLoadingPhaseAsync）是同一个结论。
+        if (StationYield.NextStop(journey.Stage, await StationYield.StopsOfAsync(dbContext, plan.JourneyId, cancellationToken)
+                .ConfigureAwait(false)) is { } nextStop)
+        {
+            await StationYield.StageTriggerAsync(
+                    dbContext, journey.VehicleKey, nextStop.StationRiotId, plan.AddedAt, cancellationToken)
+                .ConfigureAwait(false);
+            // REQ-0204（批次8-20，control-server#391）：追加把这条需求的公共站点排成了这辆车的下一站（车站在停靠上、新停靠
+            // 插在紧接着的位置），就在追加的同一次保存里预占它；别的车占着时主键拒绝，追加整笔回滚（下面的 catch）。
+            // 下一站没变（仍是追加之前那一个，包括新需求并进了它）时不取：那不是本次承诺的，本票不管已经承诺的。
+            if (demand.FixedTaskStationRiotId is int fixedStation &&
+                nextStop.StationRiotId == fixedStation &&
+                !string.Equals(nextStop.StopId, nextStopBeforeAppend, StringComparison.Ordinal))
+            {
+                await FixedStationExclusivity.StageReserveAsync(
+                        dbContext, demand.MapId, fixedStation, journey.VehicleKey, plan.JourneyId, plan.AddedAt,
+                        cancellationToken)
+                    .ConfigureAwait(false);
+            }
+        }
+
+        JourneyBacklogRow? backlog = await dbContext.JourneyBacklog
+            .SingleOrDefaultAsync(row => row.DemandId == snapshot.DemandId, cancellationToken).ConfigureAwait(false);
+        if (backlog is not null)
+        {
+            backlog.AcceptedAt = snapshot.AcceptedAt;
+            backlog.ReasonCode = "ACCEPTED";
+            backlog.LastSeenAt = snapshot.AcceptedAt;
+        }
+
+        try
+        {
+            await dbContext.SaveChangesAsync(cancellationToken).ConfigureAwait(false);
+        }
+        catch (DbUpdateException failure) when (FixedStationExclusivity.IsStationHeld(failure))
+        {
+            throw new BusinessIdentityConflictException(
+                $"The fixed task station of appended demand '{snapshot.DemandId}' is held by another vehicle: {failure.InnerException?.Message}");
+        }
+        await transaction.CommitAsync(cancellationToken).ConfigureAwait(false);
+    }
+
+    /// <summary>
+    /// 这次追加要<b>新建</b>的停靠。并入既有停靠时不建——判据是那个 <c>StopId</c> 已经属于这趟旅程，
+    /// 这让重放与首次走同一条路：第二次跑到这里时两个停靠都已在库，一个也不会重复建。
+    /// </summary>
+    private async Task<IReadOnlyList<JourneyStopRow>> NewStopsAsync(
+        string derivationKey,
+        JourneyAppendPlan plan,
+        CancellationToken cancellationToken)
+    {
+        JourneyExecutionPlan demand = plan.Demand;
+        HashSet<string> alreadyThere = (await dbContext.Set<JourneyStopRow>().AsNoTracking()
+                .Where(row => row.JourneyId == plan.JourneyId)
+                .Select(row => row.StopId)
+                .ToArrayAsync(cancellationToken).ConfigureAwait(false))
+            .ToHashSet(StringComparer.Ordinal);
+        int SequenceOf(string stopId) => plan.Resequenced.Single(stop => stop.StopId == stopId).Sequence;
+        string Id(string purpose) => DeterministicGuid($"{derivationKey}|{purpose}");
+        List<JourneyStopRow> created = [];
+        if (!alreadyThere.Contains(plan.PickupStopId))
+        {
+            created.Add(new JourneyStopRow
+            {
+                StopId = plan.PickupStopId,
+                JourneyId = plan.JourneyId,
+                Sequence = SequenceOf(plan.PickupStopId),
+                StopRole = JourneyStopRoles.Pickup,
+                StationId = demand.PickupStationId,
+                StationRiotId = demand.PickupStationRiotId,
+                DispatchZone = plan.DispatchZone,
+                OperationSessionId = demand.OperationSessionId,
+                MovementLegId = demand.PickupMovementLegId,
+                UpperId = demand.PickupUpperId,
+                VehicleBusinessMessageId = Id("appended-pickup-vehicle-state"),
+                WorklistMessageId = Id("appended-pickup-worklist"),
+                PlanMessageId = Id("appended-pickup-plan"),
+                SublotRequestMessageId = Id("appended-pickup-sublot-request"),
+                DepartureSafetyCheckMessageId = Id("appended-pickup-safety-request"),
+                DepartureSafetyCheckId = Id("appended-pickup-safety-check"),
+                Status = JourneyStopStatuses.Pending,
+                CreatedAt = plan.AddedAt
+            });
+        }
+
+        if (!alreadyThere.Contains(plan.UnloadStopId))
+        {
+            created.Add(new JourneyStopRow
+            {
+                StopId = plan.UnloadStopId,
+                JourneyId = plan.JourneyId,
+                Sequence = SequenceOf(plan.UnloadStopId),
+                StopRole = JourneyStopRoles.Unload,
+                StationId = demand.GateStationId,
+                StationRiotId = demand.GateStationRiotId,
+                DispatchZone = plan.DispatchZone,
+                // 每个停靠一个作业会话（规格第 22 节补记）：卸货停靠不复用取货停靠那一个。
+                OperationSessionId = Id("appended-unload-session"),
+                MovementLegId = demand.GateMovementLegId,
+                UpperId = demand.GateUpperId,
+                VehicleBusinessMessageId = Id("appended-unload-vehicle-state"),
+                WorklistMessageId = Id("appended-unload-worklist"),
+                PlanMessageId = Id("appended-unload-plan"),
+                Status = JourneyStopStatuses.Pending,
+                CreatedAt = plan.AddedAt
+            });
+        }
+
+        return created;
+    }
+
+    /// <summary>把插入之后的序位写到每个停靠上；序位可变，身份是 <c>StopId</c>。</summary>
+    private async Task ApplyResequencingAsync(JourneyAppendPlan plan, CancellationToken cancellationToken)
+    {
+        // 本次追加新开的停靠此刻还在变更跟踪器里、没有落库，而它也要被重排覆盖，所以这里把库里的和本地新加的
+        // 并在一起看。只查数据库会把新停靠判成「重排提到了一个不存在的停靠」，把正常路径打挂。
+        JourneyStopRow[] stored = [.. (await dbContext.Set<JourneyStopRow>()
+                .Where(row => row.JourneyId == plan.JourneyId)
+                .ToArrayAsync(cancellationToken).ConfigureAwait(false))
+            .Concat(dbContext.Set<JourneyStopRow>().Local.Where(row => row.JourneyId == plan.JourneyId))
+            .DistinctBy(row => row.StopId, StringComparer.Ordinal)];
+
+        // 重排必须覆盖这趟旅程的每一个既有停靠（批次7-06，control-server#211）。
+        //
+        // 这是一道构造上的护栏，不是防御性编程：只覆盖一部分停靠的重排，写出来的是一份自相矛盾的序位——
+        // 没被覆盖的那些留着旧号，与新号撞在一起。规划器曾经只拿到未完成的停靠，算出的新号就正好从 1 开始
+        // 与已完成的撞号，而当时这里静默接受了它。下一次有人再把子集传进来，要响亮地停下。
+        string[] missing = [.. stored
+            .Select(row => row.StopId)
+            .Except(plan.Resequenced.Select(change => change.StopId), StringComparer.Ordinal)
+            .Order(StringComparer.Ordinal)];
+        if (missing.Length > 0)
+        {
+            throw new BusinessIdentityConflictException(
+                $"Resequencing does not cover every stop of journey '{plan.JourneyId}': {string.Join(',', missing)}.");
+        }
+
+        // 当前下一站不可变（REQ-0196），在<b>写入这一刻</b>再判一次。
+        //
+        // 轮次是先读计划、算插位，再进这个事务写。这中间车可能刚好到站：它原本驶向的那个停靠完成了，
+        // 当前下一站前移到下一个——而手上这份重排是按旧的当前下一站算的，它给那个新的当前下一站安排了一个
+        // 更靠后的序位，也就是把新需求的停靠插到了<b>车此刻正驶向的那一站之前</b>。车在路上，目的地被改了。
+        //
+        // 判据是「当前下一站的序位没有变」：合法的追加按 REQ-0196 本来就不会把任何东西插到它前面，
+        // 所以它的序位必然原样；一旦变大，就说明有东西插进去了。
+        //
+        // <b>它和上面那道覆盖检查、和 DispatchRoundRunner 的准入口径都不重复。</b>覆盖检查看的是重排说全了没有，
+        // 准入口径看的是轮次开始时这辆车值不值得算——只有这一处与它守护的那次写入在同一个事务里，
+        // 也只有它能看见「读完之后车到站了」。
+        JourneyStopRow? currentNextStop = stored
+            .Where(row => row.Status is not (JourneyStopStatuses.Completed or JourneyStopStatuses.Removed))
+            .OrderBy(row => row.Sequence)
+            .FirstOrDefault();
+        if (currentNextStop is not null &&
+            plan.Resequenced.Single(change => change.StopId == currentNextStop.StopId).Sequence
+                != currentNextStop.Sequence)
+        {
+            throw new BusinessIdentityConflictException(
+                $"Journey '{plan.JourneyId}' moved on to stop '{currentNextStop.StopId}' while this append was " +
+                "being planned; the plan would resequence the stop the vehicle is already heading for.");
+        }
+
+        foreach (JourneyStopSequenceChange change in plan.Resequenced)
+        {
+            // 认不出的 StopId 同样是矛盾：重排说的是一个这趟旅程里没有的停靠。静默跳过会让调用方以为它生效了。
+            JourneyStopRow row = stored.FirstOrDefault(stop => stop.StopId == change.StopId)
+                ?? throw new BusinessIdentityConflictException(
+                    $"Resequencing names stop '{change.StopId}', which journey '{plan.JourneyId}' does not have.");
+            row.Sequence = change.Sequence;
+        }
+    }
+
+    /// <summary>同一条追加重放：写下的东西必须与这一次要写的一样，否则是两次不同的追加用了同一个需求 id。</summary>
+    private async Task AssertAppendReplayMatchesAsync(
+        AcceptedDemandSnapshot snapshot,
+        JourneyAppendPlan plan,
+        AcceptedDemandRow existing,
+        CancellationToken cancellationToken)
+    {
+        bool sameDemand = existing.DemandId == snapshot.DemandId &&
+                          existing.TransportDemandKey == snapshot.TransportDemandKey &&
+                          existing.Sublot == snapshot.Sublot &&
+                          existing.WorkType == snapshot.WorkType;
+        JourneyDemandRow? membership = await dbContext.Set<JourneyDemandRow>().AsNoTracking()
+            .SingleOrDefaultAsync(row => row.DemandId == snapshot.DemandId && row.RemovedAt == null, cancellationToken)
+            .ConfigureAwait(false);
+        if (!sameDemand || membership is null ||
+            membership.JourneyId != plan.JourneyId ||
+            membership.PickupStopId != plan.PickupStopId ||
+            membership.UnloadStopId != plan.UnloadStopId)
+        {
+            throw new BusinessIdentityConflictException(
+                $"Demand '{snapshot.DemandId}' is already bound to different content or to another journey.");
+        }
+
+        // 序列不同判冲突（票面「重放与重连」）：同一条追加重放两次，第二次算出的插入位必须与第一次落下的一致。
+        JourneyStopRow[] stored = await dbContext.Set<JourneyStopRow>().AsNoTracking()
+            .Where(row => row.JourneyId == plan.JourneyId)
+            .ToArrayAsync(cancellationToken).ConfigureAwait(false);
+        foreach (JourneyStopSequenceChange change in plan.Resequenced)
+        {
+            JourneyStopRow? row = stored.FirstOrDefault(stop => stop.StopId == change.StopId);
+            if (row is null || row.Sequence != change.Sequence)
+            {
+                throw new BusinessIdentityConflictException(
+                    $"Replayed append of '{snapshot.DemandId}' does not match the stop sequence already stored.");
+            }
+        }
+    }
 
     private async Task AcceptCoreAsync(
         AcceptedDemandSnapshot snapshot,
@@ -518,7 +1201,9 @@ public sealed class WireToGateStore(ControlServerDbContext dbContext) : IJourney
             .SingleOrDefaultAsync(row => row.DemandId == snapshot.DemandId ||
                                          row.TransportDemandKey == snapshot.TransportDemandKey, cancellationToken)
             .ConfigureAwait(false);
-        if (existing is not null)
+        bool redispatch = existing is not null &&
+                          await IsReleasedForRedispatchAsync(existing, snapshot, cancellationToken).ConfigureAwait(false);
+        if (existing is not null && !redispatch)
         {
             bool same = existing.DemandId == snapshot.DemandId &&
                         existing.SeriesId == snapshot.SeriesId &&
@@ -548,8 +1233,11 @@ public sealed class WireToGateStore(ControlServerDbContext dbContext) : IJourney
 
             if (journey is not null)
             {
+                // By the id this acceptance derives, as the insert below does: a redispatched demand also has the journey
+                // row of its earlier dispatch (control-server#215).
+                string replayJourneyId = JourneyIdentity.ForAnchorDemand(journey.DerivationKeyFor(snapshot.DemandId));
                 JourneyRuntimeRow? runtime = await dbContext.JourneyRuntimes
-                    .SingleOrDefaultAsync(row => row.DemandId == snapshot.DemandId, cancellationToken)
+                    .SingleOrDefaultAsync(row => row.JourneyId == replayJourneyId, cancellationToken)
                     .ConfigureAwait(false);
                 if (runtime is null || !Matches(runtime, journey) ||
                     !await StopsAndDemandMatchAsync(runtime, cancellationToken).ConfigureAwait(false) ||
@@ -571,7 +1259,7 @@ public sealed class WireToGateStore(ControlServerDbContext dbContext) : IJourney
                 entry => entry.Entity, entry => (entry.State, entry.CurrentValues.Clone()), ReferenceEqualityComparer.Instance);
         try
         {
-            await StageAndCommitAcceptanceAsync(snapshot, orderIntent, journey, transaction, cancellationToken)
+            await StageAndCommitAcceptanceAsync(snapshot, orderIntent, journey, redispatch, transaction, cancellationToken)
                 .ConfigureAwait(false);
         }
         catch (Exception) when (ForgetStagedAcceptance(trackedBefore))
@@ -611,18 +1299,13 @@ public sealed class WireToGateStore(ControlServerDbContext dbContext) : IJourney
         AcceptedDemandSnapshot snapshot,
         OrderIntent orderIntent,
         JourneyExecutionPlan? journey,
+        bool redispatch,
         Microsoft.EntityFrameworkCore.Storage.IDbContextTransaction transaction,
         CancellationToken cancellationToken)
     {
-        VehicleDispatchLeaseRow? activeLease = await dbContext.VehicleDispatchLeases
-            .SingleOrDefaultAsync(
-                row => row.VehicleKey == orderIntent.VehicleKey && row.ReleasedAt == null,
-                cancellationToken)
-            .ConfigureAwait(false);
-        if (activeLease is not null)
+        if (redispatch)
         {
-            throw new BusinessIdentityConflictException(
-                $"Vehicle '{orderIntent.VehicleKey}' is already bound to unresolved demand '{activeLease.DemandId}'.");
+            await ThawForRedispatchAsync(snapshot.DemandId, cancellationToken).ConfigureAwait(false);
         }
 
         if (journey?.AreaAssignmentVersion is long areaAssignmentVersion)
@@ -645,44 +1328,21 @@ public sealed class WireToGateStore(ControlServerDbContext dbContext) : IJourney
                 .ConfigureAwait(false);
         }
 
-        dbContext.AcceptedDemands.Add(new AcceptedDemandRow
+        if (!redispatch)
         {
-            DemandId = snapshot.DemandId,
-            SeriesId = snapshot.SeriesId,
-            TransportDemandKey = snapshot.TransportDemandKey,
-            WorkType = snapshot.WorkType,
-            Sublot = snapshot.Sublot,
-            Generation = snapshot.Generation,
-            DemandRevision = snapshot.DemandRevision,
-            HistoryEpoch = snapshot.HistoryEpoch,
-            CatalogRevision = snapshot.CatalogRevision,
-            CreatedAt = snapshot.CreatedAt,
-            ValueObservedAt = snapshot.ValueObservedAt,
-            ValuePollTraceId = snapshot.ValuePollTraceId,
-            ValueProjectionCommitId = snapshot.ValueProjectionCommitId,
-            LiveMesFieldsJson = JsonSerializer.Serialize(snapshot.LiveMesFields),
-            AcceptedAt = snapshot.AcceptedAt,
-            Status = DemandExecutionStatus.Accepted
-        });
-        string journeyId = JourneyIdentity.ForAnchorDemand(snapshot.DemandId);
-        dbContext.VehicleDispatchLeases.Add(new VehicleDispatchLeaseRow
-        {
-            JourneyId = journeyId,
-            DemandId = snapshot.DemandId,
-            VehicleKey = orderIntent.VehicleKey,
-            AcquiredAt = snapshot.AcceptedAt
-        });
-        // Batch 7 (control-server#206): the purpose claim is the vehicle's occupancy of record, written beside the lease in
-        // the same save and released wherever the lease is. It is inserted, never read first: the key decides who holds
-        // the vehicle.
+            // 释放改派的需求复用它第一次受理时的那一行（调度决策 3，批次7-10，control-server#215）：受理时刻与内容都是
+            // 那一次的事实，改派不重写它们（冻结不同，上面按这次受理重冻，见 ThawForRedispatchAsync）。
+            // 行上的状态本来就还是 Accepted——释放不终结需求。
+            dbContext.AcceptedDemands.Add(NewAcceptedDemandRow(snapshot));
+        }
+        string journeyId = JourneyIdentity.ForAnchorDemand(journey?.DerivationKeyFor(snapshot.DemandId) ?? snapshot.DemandId);
+        // The purpose claim is the vehicle's one occupancy (batch 8-16, control-server#387: the lease and the order
+        // occupancy that used to be written beside it are gone), taken with its record in this acceptance's save. It is
+        // inserted, never read first: the key decides who holds the vehicle, and a vehicle some other journey holds
+        // refuses the whole acceptance below.
         ForgetClaimsThisContextLastSaw(orderIntent.VehicleKey);
-        dbContext.Set<VehiclePurposeClaimRow>().Add(new VehiclePurposeClaimRow
-        {
-            VehicleKey = orderIntent.VehicleKey,
-            Purpose = VehiclePurposes.Transport,
-            JourneyId = journeyId,
-            ClaimedAt = snapshot.AcceptedAt
-        });
+        dbContext.AddRange(VehiclePurposeClaimWrites.NewRows(
+            new VehiclePurposeClaim(orderIntent.VehicleKey, VehiclePurposes.Transport, journeyId, snapshot.AcceptedAt)));
         dbContext.OrderIntents.Add(ToRow(orderIntent));
         if (journey is not null)
         {
@@ -692,6 +1352,21 @@ public sealed class WireToGateStore(ControlServerDbContext dbContext) : IJourney
             dbContext.Set<JourneyStopRow>().AddRange(SingleDemandJourneyShape.Stops(runtimeRow));
             dbContext.Set<JourneyDemandRow>().Add(SingleDemandJourneyShape.Demand(runtimeRow));
             await AdvanceSnapshotRevisionCounterAsync(runtimeRow, cancellationToken).ConfigureAwait(false);
+            // 让站（批次7-08，control-server#213）：新旅程的下一停靠就是它的取货站。停在那里持货等单的别的车，在这次受理的
+            // 同一次保存里被标记——受理与触发要么都在，要么都不在，不留给下一轮去推断。
+            await StationYield.StageTriggerAsync(
+                    dbContext, orderIntent.VehicleKey, journey.PickupStationRiotId, snapshot.AcceptedAt, cancellationToken)
+                .ConfigureAwait(false);
+            // REQ-0204（批次8-20，control-server#391）：新旅程的下一站是公共站点（STAGING_TO_WIRE 的派工待送取货站）时，
+            // 在同一次保存里预占它。别的车占着时主键拒绝整次保存，受理整笔回滚（下面的 catch）；WIRE_TO_GATE 的公共站点是
+            // 关卡，受理时它不是下一站，这里不取。
+            if (journey.FixedTaskStationRiotId is int fixedStation && fixedStation == journey.PickupStationRiotId)
+            {
+                await FixedStationExclusivity.StageReserveAsync(
+                        dbContext, journey.MapId, fixedStation, orderIntent.VehicleKey, runtimeRow.JourneyId,
+                        snapshot.AcceptedAt, cancellationToken)
+                    .ConfigureAwait(false);
+            }
             JourneyBacklogRow? backlog = await dbContext.JourneyBacklog
                 .SingleOrDefaultAsync(row => row.DemandId == snapshot.DemandId, cancellationToken)
                 .ConfigureAwait(false);
@@ -708,10 +1383,17 @@ public sealed class WireToGateStore(ControlServerDbContext dbContext) : IJourney
         }
         catch (DbUpdateException failure) when (IsPurposeClaimConflict(failure))
         {
-            // Another journey's claim landed between the lease read above and this insert: the key refused this one, and
-            // the transaction rolls every row of this acceptance back with it. Said the way the lease read says it.
+            // Another journey holds the vehicle: the key refused this claim, and the transaction rolls every row of this
+            // acceptance back with it.
             throw new BusinessIdentityConflictException(
                 $"Vehicle '{orderIntent.VehicleKey}' is already claimed by another journey: {failure.InnerException?.Message}");
+        }
+        catch (DbUpdateException failure) when (FixedStationExclusivity.IsStationHeld(failure))
+        {
+            // Another vehicle holds the journey's public station (REQ-0204): the key refused the reservation, and the
+            // transaction rolls every row of this acceptance back with it.
+            throw new BusinessIdentityConflictException(
+                $"The fixed task station of demand '{snapshot.DemandId}' is held by another vehicle: {failure.InnerException?.Message}");
         }
         await transaction.CommitAsync(cancellationToken).ConfigureAwait(false);
     }
@@ -766,7 +1448,56 @@ public sealed class WireToGateStore(ControlServerDbContext dbContext) : IJourney
             row.CreateAttemptId,
             row.CreateAttemptCount,
             authorization?.AuthorizationId,
-            authorization is null ? null : "EXPERIMENTAL_ABSENT_AT_OBSERVATION");
+            authorization is null ? null : "EXPERIMENTAL_ABSENT_AT_OBSERVATION",
+            await IsNeverSentAfterUnansweredReadsAsync(row, cancellationToken).ConfigureAwait(false));
+    }
+
+    /// <summary>
+    /// Whether the order intent <paramref name="row"/> has certainly never been sent to RIoT (control-server#375): pending with
+    /// no create attempt and no order, or RESULT_UNKNOWN only because the reads before its create answered nothing
+    /// (<see cref="IsNeverSentAfterUnansweredReadsAsync"/>). The one definition the runtime's check before a retried create and
+    /// the release service's "no order to cancel" both read. Every other state may have a live order in RIoT.
+    /// </summary>
+    public async Task<bool> IsNeverSentAsync(OrderIntentRow row, CancellationToken cancellationToken)
+    {
+        ArgumentNullException.ThrowIfNull(row);
+        return (row.Status == "PENDING_RECONCILIATION" && row.CreateAttemptCount == 0 && row.CreateAttemptId is null &&
+                row.OrderId is null) ||
+               await IsNeverSentAfterUnansweredReadsAsync(row, cancellationToken).ConfigureAwait(false);
+    }
+
+    /// <summary>
+    /// Whether <paramref name="row"/> is RESULT_UNKNOWN only because the reads before its create answered nothing
+    /// (control-server#375), which makes it as eligible for its one create as a pending intent. The single definition, read both
+    /// when the intent is loaded for reconciliation and by <see cref="ArmCreateDispatchAsync"/>.
+    /// </summary>
+    /// <remarks>
+    /// Never sent: audit version 1, no create armed (<c>CreateAttemptCount == 0</c>, no attempt id). Not the experimental path's
+    /// own RESULT_UNKNOWN, which it writes between its pre-create audit and its arm and which only that arm may continue. And no
+    /// read on the leg's audit chain returned an order or a result that might be one: a pre-create read that found an order under
+    /// this upperId not matching the intent also leaves it RESULT_UNKNOWN with no attempt, and that one stays for a person.
+    /// </remarks>
+    private async Task<bool> IsNeverSentAfterUnansweredReadsAsync(OrderIntentRow row, CancellationToken cancellationToken)
+    {
+        if (row.Status != "RESULT_UNKNOWN" ||
+            row.DispatchAuditVersion != 1 ||
+            row.CreateAttemptCount != 0 ||
+            row.CreateAttemptId is not null ||
+            row.ExperimentalCreateAuthorizationId is not null)
+        {
+            return false;
+        }
+
+        var reads = await dbContext.RiotDispatchAuditEvents.AsNoTracking()
+            .Where(item => item.MovementLegId == row.MovementLegId)
+            .Select(item => new { item.Phase, item.Outcome, item.AttemptId, item.ReturnedOrderId, item.ResultPresent })
+            .ToArrayAsync(cancellationToken).ConfigureAwait(false);
+        return reads.Length > 0 &&
+               reads.All(item => item.Phase == "PRE_CREATE_RECONCILIATION" &&
+                                 item.Outcome is "UNKNOWN" or "NOT_FOUND" &&
+                                 item.AttemptId is null &&
+                                 item.ReturnedOrderId is null &&
+                                 item.ResultPresent != true);
     }
 
     public async Task PersistExperimentalCreateAuthorizationAsync(
@@ -848,7 +1579,7 @@ public sealed class WireToGateStore(ControlServerDbContext dbContext) : IJourney
         {
             await dbContext.SaveChangesAsync(cancellationToken).ConfigureAwait(false);
         }
-        catch (DbUpdateConcurrencyException)
+        catch (DbUpdateConcurrencyException failure) when (!JourneyRowConflict.Is(failure))
         {
             await RequireExactCommittedFreshAuthorizationAsync(authorization, cancellationToken)
                 .ConfigureAwait(false);
@@ -890,7 +1621,11 @@ public sealed class WireToGateStore(ControlServerDbContext dbContext) : IJourney
         ArgumentException.ThrowIfNullOrWhiteSpace(requestSemanticSha256);
         OrderIntentRow row = await dbContext.OrderIntents
             .SingleAsync(item => item.UpperId == upperId, cancellationToken).ConfigureAwait(false);
-        if (row.Status != "PENDING_RECONCILIATION" ||
+        // control-server#375: RESULT_UNKNOWN only because the reads before the create answered nothing is as never-sent as
+        // pending. The at-most-once counter below is unchanged: whatever the status, an armed create is never armed again.
+        bool neverSent = row.Status == "PENDING_RECONCILIATION" ||
+                         await IsNeverSentAfterUnansweredReadsAsync(row, cancellationToken).ConfigureAwait(false);
+        if (!neverSent ||
             row.DispatchAuditVersion != 1 ||
             row.CreateAttemptCount != 0 ||
             row.CreateAttemptId is not null)
@@ -1012,7 +1747,7 @@ public sealed class WireToGateStore(ControlServerDbContext dbContext) : IJourney
         {
             await dbContext.SaveChangesAsync(cancellationToken).ConfigureAwait(false);
         }
-        catch (DbUpdateConcurrencyException)
+        catch (DbUpdateConcurrencyException failure) when (!JourneyRowConflict.Is(failure))
         {
             throw new BusinessIdentityConflictException(
                 "A concurrent RIoT create decision consumed or invalidated the experimental authorization.");
@@ -1256,24 +1991,70 @@ public sealed class WireToGateStore(ControlServerDbContext dbContext) : IJourney
     }
 
     /// <summary>
-    /// Whether the task type is admitted at the journey's AREA machine station: its pickup when the machine is where
-    /// it loads, its drop-off when the machine is where it unloads (<see cref="AreaEndOperationAsync"/>). A journey
-    /// whose direction cannot be read is not admitted.
+    /// Whether the task type is admitted at the demand's AREA machine station: the station of the stop it loads at when the
+    /// machine is where it loads, of the stop it unloads at when the machine is where it unloads
+    /// (<see cref="AreaEndOperationAsync"/>). A demand whose direction cannot be read, or that no journey carries, is not
+    /// admitted.
     /// </summary>
+    /// <remarks>
+    /// Asked of the demand, not of the journey (control-server#251): the journey row's <c>DemandId</c>,
+    /// <c>PickupStationId</c> and <c>GateStationId</c> are the anchor demand's, and in a journey of several stops a further
+    /// demand is loaded or unloaded somewhere else, under a rule version of its own. The station comes from
+    /// <see cref="StopStationIds"/>, the one derivation <see cref="PrepareSlotOperationAsync"/> checks against too.
+    /// </remarks>
     public async Task<bool> IsTaskTypeAllowedAtAreaEndAsync(
-        JourneyRuntimeRow runtime,
+        string demandId,
         string taskType,
         CancellationToken cancellationToken)
     {
-        ArgumentNullException.ThrowIfNull(runtime);
-        return await AreaEndOperationAsync(runtime.DemandId, taskType, cancellationToken).ConfigureAwait(false) switch
+        ArgumentException.ThrowIfNullOrWhiteSpace(demandId);
+        if (await AreaEndOperationAsync(demandId, taskType, cancellationToken).ConfigureAwait(false)
+            is not { } areaEnd)
         {
-            SlotOperationType.Load => await IsTaskTypeAllowedAsync(runtime.PickupStationId, taskType, cancellationToken)
-                .ConfigureAwait(false),
-            SlotOperationType.Unload => await IsTaskTypeAllowedAsync(runtime.GateStationId, taskType, cancellationToken)
-                .ConfigureAwait(false),
-            _ => false,
-        };
+            return false;
+        }
+        string? stationId = await StopStationIds(
+                dbContext.Set<JourneyDemandRow>().Where(row => row.DemandId == demandId && row.RemovedAt == null),
+                areaEnd)
+            .SingleOrDefaultAsync(cancellationToken).ConfigureAwait(false);
+        return stationId is not null &&
+               await IsTaskTypeAllowedAsync(stationId, taskType, cancellationToken).ConfigureAwait(false);
+    }
+
+    /// <summary>
+    /// "Which station is this": the station of the stop each of <paramref name="memberships"/> performs
+    /// <paramref name="operationType"/> at -- its pickup stop for the load, its unload stop for the unload. The one place
+    /// that maps a demand's operation to a station (control-server#251); callers choose which memberships.
+    /// </summary>
+    private IQueryable<string> StopStationIds(IQueryable<JourneyDemandRow> memberships, SlotOperationType operationType)
+    {
+        IQueryable<string> stopIds = operationType == SlotOperationType.Load
+            ? memberships.Select(row => row.PickupStopId)
+            : memberships.Select(row => row.UnloadStopId);
+        return dbContext.Set<JourneyStopRow>().AsNoTracking()
+            .Where(stop => stopIds.Contains(stop.StopId))
+            .Select(stop => stop.StationId);
+    }
+
+    /// <summary>
+    /// The station of the stop a slot operation is performed at (<see cref="StopStationIds"/>), <c>null</c> when no membership
+    /// names this operation's attempt.
+    /// </summary>
+    /// <remarks>
+    /// The membership is found by the operation's own attempt id, not by "the membership in force": the attempt id is what
+    /// ties an operation to one membership, and so to one pickup and one unload stop, in a journey of several stops
+    /// (control-server#211). The journey row's <c>PickupStationId</c> and <c>GateStationId</c> are the anchor demand's and are
+    /// not read (control-server#251).
+    /// </remarks>
+    private async Task<string?> OperationStopStationIdAsync(StationOperationPlan plan, CancellationToken cancellationToken)
+    {
+        IQueryable<JourneyDemandRow> memberships = dbContext.Set<JourneyDemandRow>()
+            .Where(row => row.DemandId == plan.DemandId);
+        memberships = plan.OperationType == SlotOperationType.Load
+            ? memberships.Where(row => row.LoadSlotOperationAttemptId == plan.SlotOperationAttemptId)
+            : memberships.Where(row => row.UnloadSlotOperationAttemptId == plan.SlotOperationAttemptId);
+        return await StopStationIds(memberships, plan.OperationType)
+            .SingleOrDefaultAsync(cancellationToken).ConfigureAwait(false);
     }
 
     public async Task<ProtocolOutboxRow> PrepareSlotOperationAsync(
@@ -1316,6 +2097,18 @@ public sealed class WireToGateStore(ControlServerDbContext dbContext) : IJourney
         {
             throw new BusinessIdentityConflictException(
                 "Only the operation at the AREA machine station may carry a station/task admission identity.");
+        }
+        // control-server#251: and the station is that operation's own. The runtime's two call sites name the station of the
+        // stop the vehicle is at, which is right by construction -- but only for those two call sites. Checked ahead of the
+        // replay branch too, whose comparison is with the frozen snapshot, not with the stop.
+        if (hasAdmissionIdentity)
+        {
+            string? stationId = await OperationStopStationIdAsync(plan, cancellationToken).ConfigureAwait(false);
+            if (!string.Equals(stationId, plan.AdmissionStationId, StringComparison.Ordinal))
+            {
+                throw new BusinessIdentityConflictException(FormattableString.Invariant(
+                    $"The admission identity names station {plan.AdmissionStationId}, but the {plan.OperationType} of demand {plan.DemandId} is at {stationId ?? "no stop of any journey"}."));
+            }
         }
 
         StationOperationRow? existing = await dbContext.StationOperations
@@ -1366,7 +2159,11 @@ public sealed class WireToGateStore(ControlServerDbContext dbContext) : IJourney
                 "Outbound MessageId is already bound without the matching slot operation.");
         }
 
-        await using var transaction = await dbContext.Database.BeginTransactionAsync(cancellationToken).ConfigureAwait(false);
+        // Joins the caller's write transaction when there is one: the runtime stages a load inside its own, re-checks the
+        // demand there and sends only after committing (control-server#362).
+        await using IDbContextTransaction? transaction = dbContext.Database.CurrentTransaction is null
+            ? await dbContext.Database.BeginTransactionAsync(cancellationToken).ConfigureAwait(false)
+            : null;
         if (hasAdmissionIdentity)
         {
             AdmissionPolicyStateRow policy = await dbContext.AdmissionPolicyState
@@ -1409,7 +2206,10 @@ public sealed class WireToGateStore(ControlServerDbContext dbContext) : IJourney
         };
         dbContext.ProtocolOutbox.Add(outbox);
         await dbContext.SaveChangesAsync(cancellationToken).ConfigureAwait(false);
-        await transaction.CommitAsync(cancellationToken).ConfigureAwait(false);
+        if (transaction is not null)
+        {
+            await transaction.CommitAsync(cancellationToken).ConfigureAwait(false);
+        }
         return outbox;
     }
 
@@ -1439,6 +2239,9 @@ public sealed class WireToGateStore(ControlServerDbContext dbContext) : IJourney
         row.CommittedAt = committedAt;
         await dbContext.SaveChangesAsync(cancellationToken).ConfigureAwait(false);
     }
+
+    /// <inheritdoc />
+    public void ReleaseJourneyGuardBeforeExternalEffect() => dbContext.GuardedJourneyId = null;
 
     public async Task AuthorizeMovementAsync(
         OrderIntent intent, SafetyCheckObservation safety, DateTimeOffset now,
@@ -1503,9 +2306,10 @@ public sealed class WireToGateStore(ControlServerDbContext dbContext) : IJourney
         });
         dbContext.StopClosures.Add(new StopClosureRow { DemandId = demandId, CommittedAt = completedAt });
         demand.Status = DemandExecutionStatus.Succeeded;
-        // The lease and the purpose claim go when the journey's last open demand ends (control-server#207), decided inside
+        // The purpose claim goes when the journey's last open demand ends (control-server#207), decided inside
         // the transaction opened just above; with one demand that is this one, in this save, as before.
-        await JourneyLeaseRelease.StageIfLastOpenDemandAsync(dbContext, demandId, completedAt, cancellationToken)
+        await JourneyPurposeClaimRelease.StageIfLastOpenDemandAsync(
+                dbContext, demandId, completedAt, VehiclePurposeReleaseReasons.LastDemandUnloaded, cancellationToken)
             .ConfigureAwait(false);
         dbContext.TransportDemandCompletions.Add(new TransportDemandCompletionRow
         {
@@ -1596,7 +2400,8 @@ public sealed class WireToGateStore(ControlServerDbContext dbContext) : IJourney
             if (replayEquivalenceHash is null ||
                 replayEquivalenceHash(existing.RequestJson) != replayEquivalenceHash(requestJson))
             {
-                throw new ProtocolContentConflictException("MessageId was replayed with different normalized content.");
+                throw new InboundMessageRejectedException(ServerReasonCodes.MessageIdContentConflict,
+                    "MessageId was replayed with different normalized content.");
             }
 
             // An equivalent resend answered from its first acceptance rather than processed again. The
@@ -1605,7 +2410,7 @@ public sealed class WireToGateStore(ControlServerDbContext dbContext) : IJourney
             if (equivalentReplayResponse is not null)
             {
                 return await equivalentReplayResponse(existing.FirstResponseJson).ConfigureAwait(false)
-                    ?? throw new ProtocolContentConflictException(
+                    ?? throw new InboundMessageRejectedException(ServerReasonCodes.MessageIdContentConflict,
                         "MessageId was replayed with different normalized content.");
             }
 
@@ -1670,6 +2475,40 @@ public sealed class WireToGateStore(ControlServerDbContext dbContext) : IJourney
         dbContext.ProtocolOutbox.Add(row);
         await dbContext.SaveChangesAsync(cancellationToken).ConfigureAwait(false);
         return row;
+    }
+
+    /// <summary>
+    /// 同 <see cref="QueueOutboundEnvelopeAsync"/>，但只把这一行加进调用方那一次还没保存的改动，不保存（control-server#323）。
+    /// </summary>
+    /// <remarks>
+    /// 给旅程收尾用：收尾的每一样事实都等调用方那一次保存（<c>PickupStopTermination</c> 的类注释），收尾快照也不例外——
+    /// 旅程关了、快照没落库，或者反过来，都是崩在两次保存之间留下的样子。这一行已经在（本上下文暂存的或库里已提交的）就不再加，
+    /// 返回 false：同一个 id 在同一次保存里加两次，会在保存时以主键冲突把整次收尾一起拒掉。
+    /// </remarks>
+    public async Task<bool> StageOutboundEnvelopeAsync(
+        string messageId,
+        string messageType,
+        string wireJson,
+        DateTimeOffset createdAt,
+        CancellationToken cancellationToken)
+    {
+        ArgumentException.ThrowIfNullOrWhiteSpace(messageId);
+        ArgumentException.ThrowIfNullOrWhiteSpace(messageType);
+        ArgumentException.ThrowIfNullOrWhiteSpace(wireJson);
+
+        if (await dbContext.ProtocolOutbox.FindAsync([messageId], cancellationToken).ConfigureAwait(false) is not null)
+        {
+            return false;
+        }
+
+        dbContext.ProtocolOutbox.Add(new ProtocolOutboxRow
+        {
+            MessageId = messageId,
+            MessageType = messageType,
+            PayloadJson = wireJson,
+            CreatedAt = createdAt
+        });
+        return true;
     }
 
     public Task<ProtocolOutboxRow?> FindOutboundEnvelopeAsync(
@@ -1779,7 +2618,9 @@ public sealed class WireToGateStore(ControlServerDbContext dbContext) : IJourney
         }
         if (generation <= row.ForcedRecoveryGeneration)
         {
-            throw new BusinessIdentityConflictException("ForcedRecoveryGeneration must advance monotonically.");
+            // Only ever reached from an inbound FORCED_MECHANICAL_RECOVERY action (control-server#478).
+            throw new InboundMessageRejectedException(ServerReasonCodes.ForcedRecoveryGenerationStale,
+                "ForcedRecoveryGeneration must advance monotonically.");
         }
         row.ForcedRecoveryGeneration = generation;
         row.UpdatedAt = advancedAt;
@@ -1900,7 +2741,7 @@ public sealed class WireToGateStore(ControlServerDbContext dbContext) : IJourney
                         replay.ResultContentSha256 == result.ResultContentSha256;
             if (!same)
             {
-                throw new ProtocolContentConflictException(
+                throw new InboundMessageRejectedException(ServerReasonCodes.BusinessIdContentConflict,
                     "Operation result identity was replayed with different message or content.");
             }
             return OperationResultDisposition.Replay;
@@ -1955,14 +2796,23 @@ public sealed class WireToGateStore(ControlServerDbContext dbContext) : IJourney
             return OperationResultDisposition.HistoricalOnly;
         }
 
-        StationOperationRow operation = await dbContext.StationOperations
-            .SingleAsync(row => row.SlotOperationAttemptId == result.SlotOperationAttemptId, cancellationToken)
+        StationOperationRow? operation = await dbContext.StationOperations
+            .SingleOrDefaultAsync(row => row.SlotOperationAttemptId == result.SlotOperationAttemptId, cancellationToken)
             .ConfigureAwait(false);
+        if (operation is null)
+        {
+            // No operation of this server: kept as the record of what the vehicle said, changing nothing
+            // (control-server#481). The processor sends such a result to RecordUnknownOperationResultAsync before it
+            // gets here; this is for any other caller, which would otherwise throw on an inbound line.
+            resultRow.HistoricalOnly = true;
+            await dbContext.SaveChangesAsync(cancellationToken).ConfigureAwait(false);
+            return OperationResultDisposition.HistoricalOnly;
+        }
         if (operation.DemandId != result.DemandId ||
             operation.OperationType != result.OperationType ||
             operation.ForcedRecoveryGeneration != forcedRecoveryGeneration)
         {
-            throw new BusinessIdentityConflictException(
+            throw new InboundMessageRejectedException(ServerReasonCodes.BusinessIdContentConflict,
                 "OperationResult does not match the persisted slot operation identity.");
         }
 
@@ -2048,7 +2898,7 @@ public sealed class WireToGateStore(ControlServerDbContext dbContext) : IJourney
                                   existingCompletion.Evidence == result.ResultContentSha256;
             if (!sameCompletion)
             {
-                throw new BusinessIdentityConflictException(
+                throw new InboundMessageRejectedException(ServerReasonCodes.BusinessIdContentConflict,
                     "TransportDemandKey completion differs from the persisted unload result.");
             }
             await dbContext.SaveChangesAsync(cancellationToken).ConfigureAwait(false);
@@ -2074,7 +2924,9 @@ public sealed class WireToGateStore(ControlServerDbContext dbContext) : IJourney
         // is inside a write transaction on the path that reaches it. Batch7DemandTerminationTests
         // .TheUnloadResultsReleaseDecisionIsReadInsideTheInboxWriteTransaction pins that, because it is the inbox's
         // structure that provides it rather than anything here.
-        await JourneyLeaseRelease.StageIfLastOpenDemandAsync(dbContext, result.DemandId, result.ObservedAt, cancellationToken)
+        await JourneyPurposeClaimRelease.StageIfLastOpenDemandAsync(
+                dbContext, result.DemandId, result.ObservedAt, VehiclePurposeReleaseReasons.LastDemandUnloaded,
+                cancellationToken)
             .ConfigureAwait(false);
         dbContext.TransportDemandCompletions.Add(new TransportDemandCompletionRow
         {
@@ -2108,12 +2960,25 @@ public sealed class WireToGateStore(ControlServerDbContext dbContext) : IJourney
         if (authorization?.CommandContentHash is null ||
             authorization.CommandMessageType != "SlotOperationResumeCommand")
         {
-            throw new ProtocolContentConflictException(
-                "Operation result identity was replayed with different message or content.");
+            // A second result for an attempt that already has a live one, with no resume to account for it: the same
+            // business key (the manifest's businessDedupKeys for OperationResult are demandId and slotOperationAttemptId)
+            // with other content, so BUSINESS_ID_CONTENT_CONFLICT (control-server#478). When the resume that would have
+            // admitted it was closed by an administrator (control-server#483), the refusal says so, under the same code: it
+            // must stay a refusal, because an acknowledgement would make the vehicle drop a result that really happened.
+            bool closedByAdministrator = authorization is null && await dbContext.RecoveryWorkflows.AsNoTracking().AnyAsync(
+                row => row.WorkflowType == "RESUME_AFTER_REPAIR" &&
+                       row.SlotOperationAttemptId == result.SlotOperationAttemptId &&
+                       row.Outcome == RecoveryWorkflowOutcomes.AdministratorClosed,
+                cancellationToken).ConfigureAwait(false);
+            throw new InboundMessageRejectedException(ServerReasonCodes.BusinessIdContentConflict,
+                closedByAdministrator
+                    ? "Replacement OperationResult arrived after an administrator closed its resume's exception recovery " +
+                      $"session ({RecoveryWorkflowOutcomes.AdministratorClosed}); nothing of it is kept."
+                    : "Operation result identity was replayed with different message or content.");
         }
         if (authorization.ForcedRecoveryGeneration != forcedRecoveryGeneration)
         {
-            throw new BusinessIdentityConflictException(
+            throw new InboundMessageRejectedException(ServerReasonCodes.ForcedRecoveryGenerationStale,
                 "Replacement OperationResult was authorized at a different forced recovery generation.");
         }
         // The replacement has to settle exactly what was authorized: the same demand and attempt, the
@@ -2133,7 +2998,7 @@ public sealed class WireToGateStore(ControlServerDbContext dbContext) : IJourney
             resumedCommandHash is null ||
             authorization.CommandContentHash != resumedCommandHash)
         {
-            throw new BusinessIdentityConflictException(
+            throw new InboundMessageRejectedException(ServerReasonCodes.RecoveryScopeMismatch,
                 "Replacement OperationResult falls outside its RESUME_AFTER_REPAIR authorization.");
         }
     }
@@ -2372,7 +3237,7 @@ public sealed class WireToGateStore(ControlServerDbContext dbContext) : IJourney
         _ => throw new ArgumentOutOfRangeException(nameof(outcome), outcome, null)
     };
 
-    private static OrderIntentRow ToRow(OrderIntent intent) => new()
+    internal static OrderIntentRow ToRow(OrderIntent intent) => new()
     {
         MovementLegId = intent.MovementLegId,
         DemandId = intent.DemandId,
@@ -2385,6 +3250,7 @@ public sealed class WireToGateStore(ControlServerDbContext dbContext) : IJourney
         AgvLifecycleGeneration = intent.AgvLifecycleGeneration,
         DispatchGeneration = intent.DispatchGeneration,
         CreatedAt = intent.CreatedAt,
+        OrderShape = intent.OrderShape,
         DispatchAuditVersion = 1,
         DispatchAuditSequence = 0,
         CreateAttemptCount = 0
@@ -2401,7 +3267,8 @@ public sealed class WireToGateStore(ControlServerDbContext dbContext) : IJourney
         row.MapId,
         row.DestinationStationId,
         row.AgvLifecycleGeneration,
-        row.DispatchGeneration);
+        row.DispatchGeneration,
+        row.OrderShape);
 
     private static bool Matches(OrderIntentRow row, OrderIntent intent) =>
         row.MovementLegId == intent.MovementLegId &&
@@ -2414,6 +3281,7 @@ public sealed class WireToGateStore(ControlServerDbContext dbContext) : IJourney
         row.DestinationStationId == intent.DestinationStationId &&
         row.AgvLifecycleGeneration == intent.AgvLifecycleGeneration &&
         row.DispatchGeneration == intent.DispatchGeneration &&
+        row.OrderShape == intent.OrderShape &&
         row.CreatedAt == intent.CreatedAt;
 
     private static bool Matches(JourneyRuntimeRow row, JourneyExecutionPlan journey) =>
@@ -2429,7 +3297,7 @@ public sealed class WireToGateStore(ControlServerDbContext dbContext) : IJourney
         row.GateStationId == journey.GateStationId &&
         row.GateStationRiotId == journey.GateStationRiotId &&
         row.ExpectedBasketCount == journey.ExpectedBasketCount &&
-        (JsonSerializer.Deserialize<int[]>(row.TargetSlotsJson) ?? []).SequenceEqual(journey.TargetSlots) &&
+        (JsonSerializer.Deserialize<int[]>(row.TransportColumn(row.TargetSlotsJson)) ?? []).SequenceEqual(journey.TargetSlots) &&
         row.OperationSessionId == journey.OperationSessionId &&
         row.PickupMovementLegId == journey.PickupMovementLegId &&
         row.PickupUpperId == journey.PickupUpperId &&
@@ -2486,10 +3354,10 @@ public sealed class WireToGateStore(ControlServerDbContext dbContext) : IJourney
     /// happen freezes nothing (control-server#160).
     /// </summary>
     /// <remarks>
-    /// Rows already there can only be what an earlier, refused attempt left behind before the freeze moved in here:
-    /// this branch runs only for a demand this server has not accepted, so they are no task's endpoints. They are
-    /// replaced rather than refused -- refusing them failed every round for every task type once the binding they
-    /// were taken under had changed.
+    /// Rows already there are either what an earlier, refused attempt left behind before the freeze moved in here, or,
+    /// since control-server#215, the endpoints of a demand released for redispatch, frozen by the journey it has left.
+    /// Neither is any running task's endpoints. They are replaced rather than refused -- refusing them failed every round
+    /// for every task type once the binding they were taken under had changed.
     /// </remarks>
     private async Task FreezeEndpointsAsync(
         AcceptedDemandSnapshot snapshot,
@@ -2501,6 +3369,14 @@ public sealed class WireToGateStore(ControlServerDbContext dbContext) : IJourney
             .Where(row => row.DemandId == snapshot.DemandId)
             .ExecuteDeleteAsync(cancellationToken)
             .ConfigureAwait(false);
+        // ExecuteDelete bypasses the change tracker: rows this context froze earlier are still tracked and would collide
+        // with the same-key rows inserted below (third review, low 2). Same shape as ThawForRedispatchAsync.
+        foreach (var stale in dbContext.ChangeTracker.Entries<FrozenDemandStationRow>()
+                     .Where(entry => entry.State == EntityState.Unchanged && entry.Entity.DemandId == snapshot.DemandId)
+                     .ToArray())
+        {
+            stale.State = EntityState.Detached;
+        }
         await new CatalogAvailabilityStore(dbContext).FreezeDemandStationsAsync(
             snapshot.DemandId,
             snapshot.TransportDemandKey,
@@ -2535,6 +3411,39 @@ public sealed class WireToGateStore(ControlServerDbContext dbContext) : IJourney
             : frozen.RuleVersion == journey.TaskTypeStationRuleVersion
                 && frozen.BindingSetVersion == journey.TaskTypeStationBindingSetVersion
                 && frozen.MapId == journey.MapId;
+    }
+
+    /// <summary>
+    /// 释放改派的再受理之前，删掉这条需求的分区归属冻结与任务类型站点冻结（批次7-10，control-server#215，复审中 1）。
+    /// </summary>
+    /// <remarks>
+    /// <para>
+    /// 改派是一次新的派车决定，计划按当前配置建，冻结跟着这次受理走。三种冻结同一口径：先删这条需求的旧冻结，再按这次受理冻；
+    /// 端点那一种由 <see cref="FreezeEndpointsAsync"/> 自己先删。受理与途中追加两条写入路径都经过这里。
+    /// </para>
+    /// <para>
+    /// 按旧冻结判会在等改派期间导入过新版本时抛冲突。受理接不住它，冒到派车轮次整轮失败，而这条需求保留原等待年龄排在最前，
+    /// 每一轮都先挑中它、再失败；当成积压原因拒绝则让它永远派不出去——等待期间换过的版本不会再换回来。
+    /// 「冻结不被后来的版本改写」说的是同一次受理：仍在执行的需求不被重新解析；被释放出来的需求，旧冻结属于已经结束的那一趟。
+    /// </para>
+    /// <para>
+    /// 两个冻结存储用 <c>ExecuteDelete</c> 直接删库里的行，不经过变更跟踪器：同一个上下文里首次受理冻下的那几行仍被跟踪着，
+    /// 重冻插入同键的新行就撞上它们（第三轮复审低 2）。所以删完把这条需求被跟踪、未改动的冻结行 Detach 掉，
+    /// 同 <see cref="ForgetClaimsThisContextLastSaw"/>。生产上每个 tick 开新作用域，今天碰不到；跨轮存活的上下文会。
+    /// </para>
+    /// </remarks>
+    private async Task ThawForRedispatchAsync(string demandId, CancellationToken cancellationToken)
+    {
+        await new DemandAreaAssignmentFreezeStore(dbContext)
+            .ThawForRedispatchAsync(demandId, cancellationToken).ConfigureAwait(false);
+        await new DemandTaskTypeStationFreezeStore(dbContext)
+            .ThawForRedispatchAsync(demandId, cancellationToken).ConfigureAwait(false);
+        foreach (var stale in dbContext.ChangeTracker.Entries<ConfigurationConsumerBindingRow>()
+                     .Where(entry => entry.State == EntityState.Unchanged && entry.Entity.ConsumerId == demandId)
+                     .ToArray())
+        {
+            stale.State = EntityState.Detached;
+        }
     }
 
     /// <summary>
@@ -2585,7 +3494,7 @@ public sealed class WireToGateStore(ControlServerDbContext dbContext) : IJourney
     /// journey on a vehicle re-published a revision Onboard had already adopted and had it refused
     /// as SNAPSHOT_REVISION_REGRESSION -- which raises a protocol problem and tears the session down.
     /// </remarks>
-    private async Task SeedSnapshotRevisionsAsync(
+    internal async Task SeedSnapshotRevisionsAsync(
         JourneyRuntimeRow runtime,
         CancellationToken cancellationToken)
     {
@@ -2637,7 +3546,7 @@ public sealed class WireToGateStore(ControlServerDbContext dbContext) : IJourney
     /// counter only records it, and so always equals the highest revision stored on the vehicle's journeys. Its readers
     /// switch over in control-server#208.
     /// </remarks>
-    private async Task AdvanceSnapshotRevisionCounterAsync(
+    internal async Task AdvanceSnapshotRevisionCounterAsync(
         JourneyRuntimeRow runtime,
         CancellationToken cancellationToken)
     {
@@ -2654,12 +3563,92 @@ public sealed class WireToGateStore(ControlServerDbContext dbContext) : IJourney
         counter.PlanRevision = runtime.PlanRevision;
     }
 
+    private static AcceptedDemandRow NewAcceptedDemandRow(AcceptedDemandSnapshot snapshot) => new()
+    {
+        DemandId = snapshot.DemandId,
+        SeriesId = snapshot.SeriesId,
+        TransportDemandKey = snapshot.TransportDemandKey,
+        WorkType = snapshot.WorkType,
+        Sublot = snapshot.Sublot,
+        Generation = snapshot.Generation,
+        DemandRevision = snapshot.DemandRevision,
+        HistoryEpoch = snapshot.HistoryEpoch,
+        CatalogRevision = snapshot.CatalogRevision,
+        CreatedAt = snapshot.CreatedAt,
+        ValueObservedAt = snapshot.ValueObservedAt,
+        ValuePollTraceId = snapshot.ValuePollTraceId,
+        ValueProjectionCommitId = snapshot.ValueProjectionCommitId,
+        LiveMesFieldsJson = JsonSerializer.Serialize(snapshot.LiveMesFields),
+        AcceptedAt = snapshot.AcceptedAt,
+        Status = DemandExecutionStatus.Accepted
+    };
+
+    /// <summary>
+    /// 这一次受理是不是一条已释放需求的改派（批次7-10，control-server#215）：已受理的那一行就是这条需求自己的，
+    /// 而且它此刻是 <see cref="DemandJourneyLookup.ReleasedForRedispatch"/> 里的一条。
+    /// </summary>
+    /// <remarks>
+    /// 是的话受理与追加都复用那一行、照常写新旅程或新归属；不是的话照旧走重放判同。
+    /// 按业务键撞上的是<b>另一条</b>需求的行时不算——那仍是冲突，由重放判同照旧报出来。
+    /// </remarks>
+    private async Task<bool> IsReleasedForRedispatchAsync(
+        AcceptedDemandRow existing,
+        AcceptedDemandSnapshot snapshot,
+        CancellationToken cancellationToken) =>
+        string.Equals(existing.DemandId, snapshot.DemandId, StringComparison.Ordinal) &&
+        await DemandJourneyLookup.ReleasedForRedispatch(dbContext)
+            .AnyAsync(row => row.DemandId == snapshot.DemandId, cancellationToken).ConfigureAwait(false);
+
+    /// <summary>
+    /// 把一次空闲返回承诺物化成旅程（批次8-19，control-server#390）：旅程行、开往等待点的那一个停靠与它的订单意图，同一次保存。
+    /// 这个旅程 id 已经有旅程行时什么也不写，返回假——物化按 <c>JourneyId</c> 幂等，承诺与物化之间崩溃了，下一轮补建恰好一次。
+    /// </summary>
+    /// <remarks>
+    /// <para>
+    /// 快照修订号的基准与受理一样从按车计数器派生、并在同一次保存里推进计数器（<see cref="SeedSnapshotRevisionsAsync"/>、
+    /// <see cref="AdvanceSnapshotRevisionCounterAsync"/>）：车载端按消息类型记修订号，空闲返回发出的计划与业务状态必须接在上一趟之后。
+    /// </para>
+    /// <para>
+    /// 先读一次只为分清「已经物化过」；两个上下文同时物化同一个承诺时，由 <c>JourneyRuntimes</c> 的主键拒绝后到的那一次。
+    /// </para>
+    /// </remarks>
+    public async Task<bool> MaterializeIdleReturnAsync(
+        JourneyRuntimeRow runtime,
+        JourneyStopRow stop,
+        OrderIntent orderIntent,
+        CancellationToken cancellationToken)
+    {
+        ArgumentNullException.ThrowIfNull(runtime);
+        ArgumentNullException.ThrowIfNull(stop);
+        ArgumentNullException.ThrowIfNull(orderIntent);
+        if (!runtime.IsIdleReturn())
+        {
+            throw new ArgumentException($"Journey '{runtime.JourneyId}' is not an idle return.", nameof(runtime));
+        }
+        if (await dbContext.JourneyRuntimes.AsNoTracking()
+                .AnyAsync(row => row.JourneyId == runtime.JourneyId, cancellationToken).ConfigureAwait(false))
+        {
+            return false;
+        }
+
+        await SeedSnapshotRevisionsAsync(runtime, cancellationToken).ConfigureAwait(false);
+        dbContext.JourneyRuntimes.Add(runtime);
+        dbContext.Set<JourneyStopRow>().Add(stop);
+        dbContext.OrderIntents.Add(ToRow(orderIntent));
+        await AdvanceSnapshotRevisionCounterAsync(runtime, cancellationToken).ConfigureAwait(false);
+        await dbContext.SaveChangesAsync(cancellationToken).ConfigureAwait(false);
+        return true;
+    }
+
     private static JourneyRuntimeRow ToRuntimeRow(string demandId, JourneyExecutionPlan journey)
     {
-        string Id(string purpose) => DeterministicGuid($"{demandId}|{purpose}");
+        // 派生身份取键不取需求 id（批次7-10，control-server#215）：第一次受理两者相同，改派之后键带代次，
+        // 旅程 id 与这一趟的报文、attempt id 都换一套，与第一趟的行并存。DemandId 一列仍是需求 id 本身。
+        string key = journey.DerivationKeyFor(demandId);
+        string Id(string purpose) => DeterministicGuid($"{key}|{purpose}");
         return new JourneyRuntimeRow
         {
-            JourneyId = JourneyIdentity.ForAnchorDemand(demandId),
+            JourneyId = JourneyIdentity.ForAnchorDemand(key),
             DemandId = demandId,
             Stage = JourneyRuntimeStage.AwaitingPickupArrival,
             AgvId = journey.AgvId,
@@ -2681,6 +3670,8 @@ public sealed class WireToGateStore(ControlServerDbContext dbContext) : IJourney
             GateMovementLegId = journey.GateMovementLegId,
             GateUpperId = journey.GateUpperId,
             DispatchGeneration = journey.DispatchGeneration,
+            ChargingPolicyVersion = journey.ChargingPolicyVersion,
+            PublishedBatteryState = journey.PublishedBatteryState,
             VehicleBusinessRevision = 1,
             WorklistRevision = 1,
             PlanRevision = 1,
@@ -2788,11 +3779,13 @@ public sealed class WireToGateStore(ControlServerDbContext dbContext) : IJourney
     {
         if (currentRevision == revision && currentHash != contentHash)
         {
-            throw new ProtocolContentConflictException($"{kind} revision {revision} has conflicting content.");
+            throw new InboundMessageRejectedException(ServerReasonCodes.SnapshotRevisionContentConflict,
+                $"{kind} revision {revision} has conflicting content.");
         }
         if (currentRevision > revision)
         {
-            throw new ProtocolContentConflictException($"{kind} revision regressed from {currentRevision} to {revision}.");
+            throw new InboundMessageRejectedException(ServerReasonCodes.SnapshotRevisionRegression,
+                $"{kind} revision regressed from {currentRevision} to {revision}.");
         }
     }
 
@@ -2843,6 +3836,111 @@ public sealed class WireToGateStore(ControlServerDbContext dbContext) : IJourney
     }
 
     /// <summary>
+    /// Whether an operation of any demand this vehicle carries is held for recovery -- one of the readiness inputs
+    /// <see cref="DecideReadinessAsync"/> combines.
+    /// </summary>
+    /// <remarks>
+    /// Public because the session reason code cannot answer it: <c>GetRecoveryReason</c> ranks
+    /// <c>DEPARTURE_SAFETY_NOT_READY</c> ahead of <c>OPERATION_RECOVERY_REQUIRED</c>, so while the vehicle is also unsafe to
+    /// depart the reason code names departure safety alone. The journey runtime asks this directly before it lets the
+    /// pickup dispatch plan past a closed readiness gate (control-server#314).
+    /// </remarks>
+    public Task<bool> OperationNeedsRecoveryAsync(string agvId, CancellationToken cancellationToken) =>
+        OperationsOnJourneys()
+            .AnyAsync(
+                pair => pair.Runtime.AgvId == agvId &&
+                        pair.Operation.Status == StationOperationStatus.RecoveryRequired,
+                cancellationToken);
+
+    /// <summary>
+    /// Whether a forced mechanical recovery of this vehicle still waits for its hardware recovery record -- the other
+    /// readiness input the reason code hides behind departure safety (see <see cref="OperationNeedsRecoveryAsync"/>).
+    /// </summary>
+    public Task<bool> ForcedRecoveryAwaitsHardwareRecordAsync(string agvId, CancellationToken cancellationToken) =>
+        dbContext.RecoveryWorkflows
+            .AnyAsync(
+                workflow => workflow.AgvId == agvId &&
+                            workflow.WorkflowType == ForcedMechanicalRecoveryWorkflowType &&
+                            workflow.State != RecoveryWorkflowState.HistoricalOnly &&
+                            !dbContext.HardwareRecoveryRecords.Any(
+                                record => record.RecoveryActionId == workflow.WorkflowId),
+                cancellationToken);
+
+    /// <summary>
+    /// Whether this vehicle is held for a door-unproven empty settlement that no repair release has lifted yet
+    /// (REQ-0364, control-server#385).
+    /// </summary>
+    public Task<bool> SlotDoorHeldAsync(string agvId, CancellationToken cancellationToken) =>
+        dbContext.SlotDoorHolds.AnyAsync(hold => hold.AgvId == agvId && hold.ReleasedAt == null, cancellationToken);
+
+    /// <summary>
+    /// The one projection every <c>VehicleBusinessStateSnapshot</c> of a held vehicle goes through (REQ-0364,
+    /// control-server#385 review N2): while a door hold stands, the snapshot is not READY and lists every held slot under
+    /// <c>SLOT_DOOR_LOCK_UNPROVEN_AFTER_EMPTY</c>, whoever built it -- a stop's arrival, a loading phase, a journey's
+    /// closing, the hold or its release. A vehicle with no standing hold gets the projection back unchanged.
+    /// </summary>
+    /// <remarks>
+    /// <para>
+    /// Applied by the publisher's two business-state entry points, not by their callers: there are five callers and every
+    /// new one would have to remember it, and forgetting is exactly what made a journey snapshot after a mid-journey hold
+    /// read READY with no fact (review N2).
+    /// </para>
+    /// <para>
+    /// <b>The unsaved change counts.</b> A hold written in the caller's change (the settlement that holds the vehicle) and a
+    /// hold whose release is being written (the release's SAFE check) are read as the caller has them; every other hold is
+    /// read from the store, so a copy tracked earlier by a long-lived context cannot stand in for what is on file.
+    /// </para>
+    /// </remarks>
+    public async Task<VehicleBusinessProjection> WithSlotDoorHoldsAsync(
+        string agvId,
+        VehicleBusinessProjection projection,
+        CancellationToken cancellationToken)
+    {
+        ArgumentNullException.ThrowIfNull(projection);
+        Dictionary<string, SlotDoorHoldRow> holds = await dbContext.SlotDoorHolds.AsNoTracking()
+            .Where(hold => hold.AgvId == agvId)
+            .ToDictionaryAsync(hold => hold.HoldId, StringComparer.Ordinal, cancellationToken).ConfigureAwait(false);
+        foreach (Microsoft.EntityFrameworkCore.ChangeTracking.EntityEntry<SlotDoorHoldRow> entry in
+                 dbContext.ChangeTracker.Entries<SlotDoorHoldRow>().Where(entry => entry.Entity.AgvId == agvId))
+        {
+            switch (entry.State)
+            {
+                case EntityState.Added or EntityState.Modified:
+                    holds[entry.Entity.HoldId] = entry.Entity;
+                    break;
+                case EntityState.Deleted:
+                    holds.Remove(entry.Entity.HoldId);
+                    break;
+            }
+        }
+
+        int[] held =
+        [
+            .. holds.Values.Where(hold => hold.ReleasedAt is null)
+                .SelectMany(hold => JsonSerializer.Deserialize<int[]>(hold.SlotsJson) ?? [])
+                .Distinct()
+                .Order()
+        ];
+        if (held.Length == 0)
+        {
+            return projection;
+        }
+
+        return projection with
+        {
+            Readiness = "RECOVERY_REQUIRED",
+            BlockingFacts =
+            [
+                .. projection.BlockingFacts.Where(fact => fact.ReasonCode != ServerReasonCodes.SlotDoorLockUnprovenAfterEmpty),
+                .. held.Select(slot => new VehicleBusinessBlockingFact(
+                    ServerReasonCodes.SlotDoorLockUnprovenAfterEmpty,
+                    "SLOT",
+                    slot.ToString(System.Globalization.CultureInfo.InvariantCulture)))
+            ]
+        };
+    }
+
+    /// <summary>
     /// Every station operation with the journey that carries its demand, joined through the demand memberships
     /// (<see cref="DemandJourneyLookup"/>, control-server#207) rather than the journey row's anchor demand.
     /// </summary>
@@ -2869,7 +3967,9 @@ public sealed class WireToGateStore(ControlServerDbContext dbContext) : IJourney
         bool noPendingFacts,
         bool departureUsable,
         bool operationNeedsRecovery,
-        bool forcedRecoveryAwaitsHardwareRecord)
+        bool forcedRecoveryAwaitsHardwareRecord,
+        bool cargoHandoffAwaited,
+        bool slotDoorHeld)
     {
         if (row.CapabilityRevision is null) return "CAPABILITY_SNAPSHOT_REQUIRED";
         if (row.SafetyRevision is null) return "SAFETY_SNAPSHOT_REQUIRED";
@@ -2883,6 +3983,8 @@ public sealed class WireToGateStore(ControlServerDbContext dbContext) : IJourney
         // complete would point the operator at the wrong thing.
         if (operationNeedsRecovery) return "OPERATION_RECOVERY_REQUIRED";
         if (forcedRecoveryAwaitsHardwareRecord) return ForcedRecoveryHardwareRecoveryRequired;
+        if (cargoHandoffAwaited) return CargoHandoffRequired;
+        if (slotDoorHeld) return SlotDoorRepairReleaseRequired;
         return "RECOVERY_REQUIRED";
     }
 
@@ -2897,7 +3999,8 @@ public sealed class WireToGateStore(ControlServerDbContext dbContext) : IJourney
         int[] normalized = slots.Distinct().Order().ToArray();
         if (normalized.Any(slot => slot is < 1 or > 8))
         {
-            throw new BusinessIdentityConflictException("Slot numbers must be in 1..8.");
+            // Its one live caller is ApplyRecoveryReportAsync, an inbound RecoveryStateReport (control-server#478).
+            throw new InboundMessageRejectedException(ServerReasonCodes.SlotSetInvalid, "Slot numbers must be in 1..8.");
         }
         return normalized;
     }

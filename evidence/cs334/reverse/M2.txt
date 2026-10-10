@@ -1,0 +1,20 @@
+Test run for C:\Users\szy\Desktop\8005-workspace-v2\worktrees\cs334-8005-agv-control-server\tests\ControlServer.Tests\bin\Debug\net8.0\win-x64\ControlServer.Tests.dll (.NETCoreApp,Version=v8.0)
+VSTest version 17.11.1 (x64)
+
+Starting test execution, please wait...
+A total of 1 test files matched the specified pattern.
+[xUnit.net 00:00:42.78]     ControlServer.Tests.OnboardPowerLossReconnectTests.AVehicleThatKeepsTalkingButStopsReadingIsLetGoAndReconnects(writeTimeoutMilliseconds: 1000) [FAIL]
+  Failed ControlServer.Tests.OnboardPowerLossReconnectTests.AVehicleThatKeepsTalkingButStopsReadingIsLetGoAndReconnects(writeTimeoutMilliseconds: 1000) [9 s]
+  Error Message:
+   配的写超时是 1.0 秒，旧连接却在 t=5.1s 才被放掉：监听器没有把配置交给连接。
+聋了之后车往服务端送了 1290 字节；最长的一次推送 5006 ms；旧代次离开路由表：t=5.1s；推送的失败：1× IOException: A write to the Onboard peer did not finish within 5 s; the connection was closed and the line stays unacknowledged for the replay after the reconnect.
+  Stack Trace:
+     at ControlServer.Tests.OnboardPowerLossReconnectTests.AVehicleThatKeepsTalkingButStopsReadingIsLetGoAndReconnects(Nullable`1 writeTimeoutMilliseconds) in C:\Users\szy\Desktop\8005-workspace-v2\worktrees\cs334-8005-agv-control-server\tests\ControlServer.Tests\OnboardPowerLossReconnectTests.cs:line 198
+   at ControlServer.Tests.OnboardPowerLossReconnectTests.AVehicleThatKeepsTalkingButStopsReadingIsLetGoAndReconnects(Nullable`1 writeTimeoutMilliseconds) in C:\Users\szy\Desktop\8005-workspace-v2\worktrees\cs334-8005-agv-control-server\tests\ControlServer.Tests\OnboardPowerLossReconnectTests.cs:line 207
+--- End of stack trace from previous location ---
+  Standard Output Messages:
+ 聋了之后车往服务端送了 1290 字节；最长的一次推送 5006 ms；旧代次离开路由表：t=5.1s；推送的失败：1× IOException: A write to the Onboard peer did not finish within 5 s; the connection was closed and the line stays unacknowledged for the replay after the reconnect.
+
+
+
+Failed!  - Failed:     1, Passed:   132, Skipped:     0, Total:   133, Duration: 50 s - ControlServer.Tests.dll (net8.0)

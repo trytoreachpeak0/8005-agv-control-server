@@ -131,7 +131,9 @@ function Resolve-L2ExpectedStartupRefusal {
     if ($RealOnboard) {
         throw "ExpectServerStartupRefusal in $Where needs the synthetic rig: a server that refuses to start has no session for the real onboard to open."
     }
-    foreach ($key in @('Dashboard', 'OnboardPeers', 'Fleet', 'ClockSkewMs', 'ProtocolFaultProxy')) {
+    # Fleet is allowed (control-server#388): it only configures the server and the fake RIoT, and a Fleet server refusing to
+    # start for want of waiting points is exactly such a scenario. No peer is started for it.
+    foreach ($key in @('Dashboard', 'OnboardPeers', 'ClockSkewMs', 'ProtocolFaultProxy')) {
         if ($Setup.ContainsKey($key)) {
             throw "ExpectServerStartupRefusal in $Where cannot be combined with ${key}: nothing that needs a running server is started."
         }

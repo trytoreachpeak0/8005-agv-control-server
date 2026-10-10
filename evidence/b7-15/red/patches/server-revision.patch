@@ -1,0 +1,25 @@
+From fe6783d5f7d4d639a6f384d2b74b4a47df9510fb Mon Sep 17 00:00:00 2001
+From: Zhengyu Shao <trytoreachpeak0@gmail.com>
+Date: Tue, 22 Sep 2026 02:11:57 +0800
+Subject: [PATCH] DEFECT(cs#218 red evidence, local only, never push): revision
+
+---
+ src/ControlServer.Host/Runtime/JourneyRuntimeEngine.cs | 2 +-
+ 1 file changed, 1 insertion(+), 1 deletion(-)
+
+diff --git a/src/ControlServer.Host/Runtime/JourneyRuntimeEngine.cs b/src/ControlServer.Host/Runtime/JourneyRuntimeEngine.cs
+index b6c3cd1c..dea033f0 100644
+--- a/src/ControlServer.Host/Runtime/JourneyRuntimeEngine.cs
++++ b/src/ControlServer.Host/Runtime/JourneyRuntimeEngine.cs
+@@ -1632,7 +1632,7 @@ public sealed class JourneyRuntimeEngine(
+             return;
+         }
+ 
+-        long revision = last.Revision + 1;
++        long revision = last.Revision; // DEFECT cs#218: the re-sent plan does not advance its revision
+         // 重发把计划流的基准一并抬高，好让后面每一次到站按序位算出来的号仍然落在这一号之上
+         // （批次7-06，control-server#211）。
+         //
+-- 
+2.55.0.windows.5
+

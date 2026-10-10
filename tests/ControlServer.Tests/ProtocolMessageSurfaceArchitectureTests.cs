@@ -3,7 +3,7 @@ using System.Text.Json;
 namespace ControlServer.Tests;
 
 /// <summary>
-/// The machine guard on the message surface: every one of the sixty-three message types protocol v2
+/// The machine guard on the message surface: every one of the sixty-five message types the protocol
 /// froze is either named in <c>src/</c> or pinned here as unimplemented with its reason, and none of
 /// the eleven denylisted types has come back.
 /// </summary>
@@ -67,6 +67,14 @@ public sealed class ProtocolMessageSurfaceArchitectureTests
     /// dashboard can show that slot's readings (REQ-0358).
     /// </para>
     /// <para>
+    /// <b>A third kind since the <c>3.0.0</c> candidate.</b> It added the manual slot-fault
+    /// declaration pair <c>SlotFaultDeclarationCommand</c> / <c>SlotFaultDeclarationResult</c> to
+    /// <c>FP-IS-07</c>, a slice this line has built. Vendoring the candidate
+    /// (<c>8005-agv-control-server#382</c>) and implementing the pair
+    /// (<c>8005-agv-control-server#383</c>) were separate tickets, so the pair was pinned to the
+    /// claiming ticket rather than to a batch until #383 implemented it.
+    /// </para>
+    /// <para>
     /// <b>Pinning is not waiving.</b> The comparison is exact in both directions: implementing a
     /// message without deleting its line here fails, and a message quietly losing its last mention
     /// in <c>src/</c> fails too. <b>Keep the field when it empties</b> -- empty is itself the
@@ -79,15 +87,11 @@ public sealed class ProtocolMessageSurfaceArchitectureTests
             ["CapabilitySnapshotRequested"] =
                 "predates v2; the server refuses readiness with CAPABILITY_VERSION_GAP instead of asking again",
             ["DemandSelectionRequested"] = "FP-IS-09, batch 11",
-            ["DemandSelectionResult"] = "FP-IS-09, batch 11",
-            ["ManualStationClearanceConfirmationRequested"] = "FP-IS-13, batch 9",
-            ["ManualStationClearanceConfirmationResult"] = "FP-IS-13, batch 9",
-            ["UnableToChargeFieldConfirmationRequested"] = "FP-IS-13, batch 9",
-            ["UnableToChargeFieldConfirmationResult"] = "FP-IS-13, batch 9"
+            ["DemandSelectionResult"] = "FP-IS-09, batch 11"
         };
 
     /// <summary>
-    /// The parse of the manifest, checked against the shape v2 froze.
+    /// The parse of the manifest, checked against the shape the <c>3.0.0</c> candidate froze.
     /// </summary>
     /// <remarks>
     /// Without this, every assertion below could pass over an empty parse: an empty message table
@@ -96,9 +100,9 @@ public sealed class ProtocolMessageSurfaceArchitectureTests
     /// wrong property is reported here.
     /// </remarks>
     [Fact]
-    public void TheManifestParsesIntoSixtyThreeMessagesAndElevenDenylistedTypes()
+    public void TheManifestParsesIntoSixtyFiveMessagesAndElevenDenylistedTypes()
     {
-        Assert.Equal(63, FrozenMessageTypes().Length);
+        Assert.Equal(65, FrozenMessageTypes().Length);
         Assert.Equal(11, DenylistedMessageTypes().Length);
         Assert.Empty(FrozenMessageTypes().Intersect(DenylistedMessageTypes(), StringComparer.Ordinal));
     }

@@ -1,0 +1,13 @@
+diff --git a/src/ControlServer.Host/Transport/OnboardMessageProcessor.cs b/src/ControlServer.Host/Transport/OnboardMessageProcessor.cs
+index 713a369e..12116693 100644
+--- a/src/ControlServer.Host/Transport/OnboardMessageProcessor.cs
++++ b/src/ControlServer.Host/Transport/OnboardMessageProcessor.cs
+@@ -717,7 +717,7 @@ public sealed partial class OnboardMessageProcessor(
+     {
+         bool changed = decision.Readiness != state.Readiness;
+         state.Readiness = decision.Readiness;
+-        if (!state.HandshakeCompleted || !(changed || announceUnchanged))
++        if (!(changed || announceUnchanged))
+         {
+             return answer;
+         }

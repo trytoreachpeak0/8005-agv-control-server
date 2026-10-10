@@ -1,0 +1,12 @@
+# 修前红：追加事务只看装货阶段列（cca61c80 的写法），新用例在这版代码上跑
+# build:
+    0 Error(s)
+# test run (filter: AnAppendRightAfterTheTriggerIsRefusedBeforeTheHolderRunsAgain):
+[xUnit.net 00:00:19.62]     ControlServer.Tests.Batch7StationYieldTests.AnAppendRightAfterTheTriggerIsRefusedBeforeTheHolderRunsAgain [FAIL]
+  Failed ControlServer.Tests.Batch7StationYieldTests.AnAppendRightAfterTheTriggerIsRefusedBeforeTheHolderRunsAgain [13 s]
+  Error Message:
+   Assert.Throws() Failure: No exception was thrown
+Expected: typeof(ControlServer.Domain.BusinessIdentityConflictException)
+  Stack Trace:
+--
+Failed!  - Failed:     1, Passed:     0, Skipped:     0, Total:     1, Duration: 13 s - ControlServer.Tests.dll (net8.0)

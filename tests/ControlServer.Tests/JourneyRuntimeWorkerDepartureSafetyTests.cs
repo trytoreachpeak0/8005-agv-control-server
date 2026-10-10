@@ -60,6 +60,7 @@ public sealed class JourneyRuntimeWorkerDepartureSafetyTests
                 {
                     preDepartureSafetyCheckId = root.GetProperty("payload")
                         .GetProperty("preDepartureSafetyCheckId").GetString(),
+                    checkPurpose = "DEPARTURE",
                     outcome = "SAFE",
                     observedAt = answeredAt,
                     safetyStateVersion = 7,
@@ -106,8 +107,11 @@ public sealed class JourneyRuntimeWorkerDepartureSafetyTests
         fixture.BoxCounts.Set("SUBLOT-001", 4);
         JourneyRuntimeRow runtime = await fixture.AdvanceToDepartureSafetyAsync();
         Assert.Equal(JourneyRuntimeStage.AwaitingDepartureSafety, runtime.Stage);
-        string expiredCheckId = runtime.PreDepartureSafetyCheckId;
-        string expiredMessageId = runtime.PreDepartureSafetyCheckMessageId;
+        string expiredCheckId = runtime.PreDepartureSafetyCheckId!;
+        string expiredMessageId = runtime.PreDepartureSafetyCheckMessageId!;
+        // v3 (control-server#382): the first check says what it is for. Without checkPurpose the peer rejects the
+        // check against the schema and every departure is held.
+        Assert.Equal("DEPARTURE", await CheckPurposeAsync(fixture, expiredMessageId));
         await fixture.AddInboxAsync(
             Guid.NewGuid().ToString("D"), "PreDepartureSafetyCheckResult",
             SafeDepartureAnswer(expiredCheckId, 7, fixture.Clock.GetUtcNow()), expiredCheckId);
@@ -124,10 +128,12 @@ public sealed class JourneyRuntimeWorkerDepartureSafetyTests
         Assert.NotNull((await fixture.Context.ProtocolOutbox.SingleAsync(
             row => row.MessageId == expiredMessageId, TestContext.Current.CancellationToken)).FencedAt);
         Assert.Equal(8, await ExpectedSafetyStateVersionAsync(fixture, runtime));
+        // The reissue is the engine's second call site and has to say the same.
+        Assert.Equal("DEPARTURE", await CheckPurposeAsync(fixture, runtime.PreDepartureSafetyCheckMessageId!));
 
         await fixture.AddInboxAsync(
             Guid.NewGuid().ToString("D"), "PreDepartureSafetyCheckResult",
-            SafeDepartureAnswer(runtime.PreDepartureSafetyCheckId, 8, fixture.Clock.GetUtcNow()),
+            SafeDepartureAnswer(runtime.PreDepartureSafetyCheckId!, 8, fixture.Clock.GetUtcNow()),
             runtime.PreDepartureSafetyCheckId);
         await fixture.Engine.ExecuteOnceAsync(TestContext.Current.CancellationToken);
 
@@ -152,7 +158,7 @@ public sealed class JourneyRuntimeWorkerDepartureSafetyTests
             "10000000-0000-4000-8000-000000000001", "SUBLOT-001", Now.AddMinutes(-10)));
         fixture.BoxCounts.Set("SUBLOT-001", 4);
         JourneyRuntimeRow runtime = await fixture.AdvanceToDepartureSafetyAsync();
-        string firstCheckId = runtime.PreDepartureSafetyCheckId;
+        string firstCheckId = runtime.PreDepartureSafetyCheckId!;
 
         await fixture.AddSafetyStateChangedAsync(8, departureSafe: false, vehicleStopped: true);
         await fixture.Engine.ExecuteOnceAsync(TestContext.Current.CancellationToken);
@@ -186,13 +192,14 @@ public sealed class JourneyRuntimeWorkerDepartureSafetyTests
             "10000000-0000-4000-8000-000000000001", "SUBLOT-001", Now.AddMinutes(-10)));
         fixture.BoxCounts.Set("SUBLOT-001", 4);
         JourneyRuntimeRow runtime = await fixture.AdvanceToDepartureSafetyAsync();
-        string firstCheckId = runtime.PreDepartureSafetyCheckId;
+        string firstCheckId = runtime.PreDepartureSafetyCheckId!;
         DateTimeOffset answeredAt = fixture.Clock.GetUtcNow();
         await fixture.AddInboxAsync(
             Guid.NewGuid().ToString("D"), "PreDepartureSafetyCheckResult",
             new
             {
                 preDepartureSafetyCheckId = firstCheckId,
+                checkPurpose = "DEPARTURE",
                 outcome = "SAFE",
                 observedAt = answeredAt,
                 safetyStateVersion = 7,
@@ -241,13 +248,14 @@ public sealed class JourneyRuntimeWorkerDepartureSafetyTests
         JourneyRuntimeRow runtime = await fixture.AdvanceToDepartureSafetyAsync();
         Assert.Null(runtime.BlockReasonCode);
         Assert.Null(runtime.BlockReasonSince);
-        string firstCheckId = runtime.PreDepartureSafetyCheckId;
+        string firstCheckId = runtime.PreDepartureSafetyCheckId!;
         DateTimeOffset answeredAt = fixture.Clock.GetUtcNow();
         await fixture.AddInboxAsync(
             Guid.NewGuid().ToString("D"), "PreDepartureSafetyCheckResult",
             new
             {
                 preDepartureSafetyCheckId = firstCheckId,
+                checkPurpose = "DEPARTURE",
                 outcome = "SAFE",
                 observedAt = answeredAt,
                 safetyStateVersion = 7,
@@ -284,9 +292,11 @@ public sealed class JourneyRuntimeWorkerDepartureSafetyTests
         Assert.Equal(fixture.Clock.GetUtcNow(), runtime.BlockReasonSince);
     }
 
-    private static object SafeDepartureAnswer(string checkId, long safetyStateVersion, DateTimeOffset observedAt) => new
+    private static object SafeDepartureAnswer(
+        string checkId, long safetyStateVersion, DateTimeOffset observedAt, string checkPurpose = "DEPARTURE") => new
     {
         preDepartureSafetyCheckId = checkId,
+        checkPurpose,
         outcome = "SAFE",
         observedAt,
         safetyStateVersion,
@@ -301,6 +311,47 @@ public sealed class JourneyRuntimeWorkerDepartureSafetyTests
             reasonCodes = Array.Empty<string>()
         }
     };
+
+    /// <summary>
+    /// control-server#382 (review S1): a SAFE answer only authorizes a departure when it answers a departure check. v3's
+    /// <c>checkPurpose</c> says what a check was for; a SAFE <c>HOLD_RELEASE</c> or <c>NON_BUSINESS_MOVE</c> answer under the
+    /// same check id -- a peer answering the wrong question -- is not a departure permit, whatever its safety fields say.
+    /// </summary>
+    [Theory]
+    [Trait("IntegrationSlice", "FP-IS-03")]
+    [InlineData("DEPARTURE", true)]
+    [InlineData("HOLD_RELEASE", false)]
+    [InlineData("NON_BUSINESS_MOVE", false)]
+    public async Task OnlyAnAnswerToADepartureCheckAuthorizesTheDeparture(string checkPurpose, bool departs)
+    {
+        await using RuntimeFixture fixture = await RuntimeFixture.CreateAsync();
+        fixture.Catalog.Set(fixture.Demand(
+            "10000000-0000-4000-8000-000000000001", "SUBLOT-001", Now.AddMinutes(-10)));
+        fixture.BoxCounts.Set("SUBLOT-001", 4);
+        JourneyRuntimeRow runtime = await fixture.AdvanceToDepartureSafetyAsync();
+        Assert.Equal(JourneyRuntimeStage.AwaitingDepartureSafety, runtime.Stage);
+        long safetyVersion = await ExpectedSafetyStateVersionAsync(fixture, runtime);
+
+        await fixture.AddInboxAsync(
+            Guid.NewGuid().ToString("D"), "PreDepartureSafetyCheckResult",
+            SafeDepartureAnswer(runtime.PreDepartureSafetyCheckId!, safetyVersion, fixture.Clock.GetUtcNow(), checkPurpose),
+            runtime.PreDepartureSafetyCheckId);
+        await fixture.Engine.ExecuteOnceAsync(TestContext.Current.CancellationToken);
+
+        runtime = await fixture.RuntimeAsync();
+        Assert.Equal(departs ? 1 : 0, fixture.Riot.CreateCount("TO_GATE"));
+        Assert.Equal(
+            departs ? JourneyRuntimeStage.AwaitingGateArrival : JourneyRuntimeStage.AwaitingDepartureSafety,
+            runtime.Stage);
+    }
+
+    private static async Task<string?> CheckPurposeAsync(RuntimeFixture fixture, string messageId)
+    {
+        ProtocolOutboxRow check = await fixture.Context.ProtocolOutbox.SingleAsync(
+            row => row.MessageId == messageId, TestContext.Current.CancellationToken);
+        using JsonDocument document = JsonDocument.Parse(check.PayloadJson);
+        return document.RootElement.GetProperty("payload").GetProperty("checkPurpose").GetString();
+    }
 
     private static async Task<long> ExpectedSafetyStateVersionAsync(RuntimeFixture fixture, JourneyRuntimeRow runtime)
     {

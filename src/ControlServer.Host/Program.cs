@@ -17,6 +17,7 @@ using ControlServer.Host.Runtime.CreateGate;
 using ControlServer.Host.Runtime.Commands;
 using ControlServer.Host.Runtime.Faults;
 using ControlServer.Host.Runtime.Fleet;
+using ControlServer.Host.Runtime.ForeignOrders;
 using ControlServer.Host.Runtime.TaskTypeStations;
 
 WebApplicationBuilder builder = WebApplication.CreateBuilder(args);
@@ -42,6 +43,9 @@ builder.Services.AddScoped<DemandIntakeService>();
 builder.Services.AddScoped<MovementDispatchService>();
 builder.Services.AddScoped<JourneyIntakeCoordinator>();
 builder.Services.AddScoped<JourneyRuntimeEngine>();
+// control-server#391: the fixed task station sweep's warnings are raised once and cleared once across rounds.
+builder.Services.AddSingleton<FixedStationSweepWarnings>();
+builder.Services.AddScoped<ForeignRunningOrderSupervisor>();
 builder.Services.AddDispatchAdmission();
 builder.Services.AddOptions<RouteGraphOptions>()
     .Bind(builder.Configuration.GetSection(RouteGraphOptions.SectionName))
@@ -83,6 +87,13 @@ builder.Services.AddOptions<VehicleFaultOptions>()
 builder.Services.AddSingleton<IValidateOptions<VehicleFaultOptions>, VehicleFaultOptionsValidator>();
 builder.Services.AddSingleton<VehicleMotionLedger>();
 builder.Services.AddScoped<VehicleFaultCoordinator>();
+// control-server#299: a person's way out of a vehicle fault. The gate is a singleton because it is the one lock the
+// runtime loop and the HTTP request share; see JourneyMutationGate.
+builder.Services.AddSingleton<JourneyMutationGate>();
+builder.Services.AddSingleton<ControlServer.Host.Runtime.Faults.VehicleFaultResumeFlights>();
+builder.Services.AddScoped<VehicleFaultRecoveryService>();
+// control-server#383: REQ-0359, an administrator declares the slot a vehicle waits on faulty.
+builder.Services.AddScoped<SlotFaultDeclarationService>();
 // B2 multi-vehicle: the roster is the identity register and is fixed for the life of the process;
 // the policy access keeps the three configured tables equal to the roster. The checkpoint ledger is
 // a singleton for the reason the motion ledger is -- how long a vehicle has been waiting is a
@@ -100,22 +111,28 @@ builder.Services.AddSingleton<IValidateOptions<OnboardTransportOptions>, Onboard
 builder.Services.AddScoped<OnboardMessageProcessor>();
 builder.Services.AddScoped<OnboardJourneyPublisher>();
 builder.Services.AddScoped<OnboardRecoveryCoordinator>();
+builder.Services.AddScoped<ControlServer.Host.Runtime.Recovery.RecoverySessionAdministratorClose>();
 builder.Services.AddScoped<SlotConfigurationActivationDispatcher>();
 builder.Services.AddSingleton<OnboardPeer>();
 builder.Services.AddSingleton<IOnboardPeer>(services => services.GetRequiredService<OnboardPeer>());
+builder.Services.AddSingleton<IOnboardConnectionPresence>(services => services.GetRequiredService<OnboardPeer>());
 builder.Services.AddHostedService<OnboardTcpServer>();
-builder.Services.AddOptions<JourneyRuntimeOptions>()
-    .Bind(builder.Configuration.GetSection(JourneyRuntimeOptions.SectionName))
+builder.Services.AddJourneyRuntimeOptions(builder.Configuration)
     .ValidateOnStart();
 builder.Services.AddSingleton<IValidateOptions<JourneyRuntimeOptions>, JourneyRuntimeOptionsValidator>();
 builder.Services.AddHostedService<JourneyRuntimeWorker>();
 builder.Services.AddSingleton(TimeProvider.System);
 builder.Services.AddRiotCreateDispatchGate(builder.Configuration);
+builder.Services.AddRiotForeignOrderCancelGate(builder.Configuration);
 builder.Services.AddRiotAbsentAtObservationCreateExperiment(builder.Configuration);
+// Read and checked here, at startup, rather than on the first request that creates a client.
+TimeSpan mesIngestTimeout = MesIngestReads.Timeout(builder.Configuration);
 builder.Services.AddHttpClient<IMesIngestCatalog, HttpMesIngestCatalog>((services, client) =>
 {
     IConfiguration configuration = services.GetRequiredService<IConfiguration>();
     client.BaseAddress = new Uri(configuration["MesIngest:baseUrl"] ?? "http://127.0.0.1:5088");
+    // Read under JourneyMutationGate: bounded, and a timeout is a failed read (control-server#334, MesIngestReads).
+    client.Timeout = mesIngestTimeout;
     string? secretVariable = configuration["MesIngest:sharedSecretEnvironmentVariable"];
     string? secret = string.IsNullOrWhiteSpace(secretVariable) ? null : Environment.GetEnvironmentVariable(secretVariable);
     if (!string.IsNullOrWhiteSpace(secret))
@@ -136,6 +153,14 @@ builder.Services.AddOptions<EmergencyStopReleaseOptions>()
     .Bind(builder.Configuration.GetSection(EmergencyStopReleaseOptions.SectionName))
     .ValidateOnStart();
 builder.Services.AddSingleton<IValidateOptions<EmergencyStopReleaseOptions>, EmergencyStopReleaseOptionsValidator>();
+builder.Services.AddOptions<VehicleFaultRecoveryOptions>()
+    .Bind(builder.Configuration.GetSection(VehicleFaultRecoveryOptions.SectionName))
+    .ValidateOnStart();
+builder.Services.AddSingleton<IValidateOptions<VehicleFaultRecoveryOptions>, VehicleFaultRecoveryOptionsValidator>();
+builder.Services.AddOptions<SlotFaultDeclarationOptions>()
+    .Bind(builder.Configuration.GetSection(SlotFaultDeclarationOptions.SectionName))
+    .ValidateOnStart();
+builder.Services.AddSingleton<IValidateOptions<SlotFaultDeclarationOptions>, SlotFaultDeclarationOptionsValidator>();
 builder.Services.AddSingleton<MapStationResolver>();
 // 固定站按任务类型取得：规则表加本图生效绑定集（control-server#160）。
 builder.Services.AddScoped<IFixedTaskStationResolver, BoundFixedTaskStationResolver>();
@@ -144,6 +169,7 @@ builder.Services.AddHttpClient<ISublotBoxCountReader, HttpSublotBoxCountReader>(
 {
     IConfiguration configuration = services.GetRequiredService<IConfiguration>();
     client.BaseAddress = new Uri(configuration["MesIngest:baseUrl"] ?? "http://127.0.0.1:5088");
+    client.Timeout = mesIngestTimeout;
     string? secretVariable = configuration["MesIngest:sharedSecretEnvironmentVariable"];
     string? secret = string.IsNullOrWhiteSpace(secretVariable) ? null : Environment.GetEnvironmentVariable(secretVariable);
     if (!string.IsNullOrWhiteSpace(secret))
@@ -156,11 +182,41 @@ builder.Services.AddGovernance(builder.Configuration);
 // 批次 6 建表票 control-server#159：任务类型规则、按图绑定集、暂停、目录变化与需求冻结的端口。
 builder.Services.AddTaskTypeStations();
 builder.Services.AddMultiDemandJourneys();
+builder.Services.AddVehiclePurposes();
+builder.Services.AddIdleReturn(builder.Configuration);
+builder.Services.AddCharging();
+builder.Services.AddPlanRevision();
 
 WebApplication app = builder.Build();
 app.UseSerilogRequestLogging();
 
+// control-server#535 review M2: what this process really bound, once it has started (options validated).
+// The v2 parallel installer reads this event back from the log and compares it with the instance
+// definition; reading the definition instead is how M1 (six work types bound where one was written) passed.
+// control-server#571 added the vehicle roster (EffectiveConfigurationEvent).
+app.Lifetime.ApplicationStarted.Register(() =>
+{
+    JourneyRuntimeOptions effective = app.Services.GetRequiredService<IOptions<JourneyRuntimeOptions>>().Value;
+    EffectiveConfigurationEvent.Log(app.Logger, effective, app.Configuration["MesIngest:baseUrl"] ?? "http://127.0.0.1:5088");
+});
+
+// control-server#473：数据库一碰之前先拿与库文件绑定的锁，进程活着就一直不放；另一个进程（另一个服务端实例、正在直接写库的
+// FieldOps）占着时等一小会儿，仍拿不到就拒绝启动。包容量导入按设计与运行中的服务端并行（control-server#87），不拿。
+using ControlServerDatabaseLock? databaseLock = PackageCapacityImportCommand.IsRequested(args)
+    ? null
+    : await DatabaseLockStartup.AcquireAsync(
+        app.Services,
+        ControlServerSqlite.DataSourceOf(connectionString),
+        args.Contains("--migrate-only", StringComparer.Ordinal),
+        CancellationToken.None);
+
 await EnsureDatabaseAsync(app.Services);
+
+// control-server#388：只迁移建库就退出。多车部署在导入等待点之前起不来，首次部署要先有一个库给 FieldOps 离线导入。
+if (args.Contains("--migrate-only", StringComparer.Ordinal))
+{
+    return;
+}
 
 if (PackageCapacityImportCommand.IsRequested(args))
 {
@@ -169,10 +225,25 @@ if (PackageCapacityImportCommand.IsRequested(args))
     return;
 }
 
+// control-server#384：已有结论的人工判故障，其命令在发件箱里补记为已确认（车载端以结果作答、不回 DurableAck）。必须在下面的身份检查之前，
+// 否则改协议身份后做过判定的库起不来。幂等，每次启动都跑。
+await SlotFaultDeclarationResults.SettleAnsweredCommandsAsync(app.Services, CancellationToken.None);
+// control-server#383：人工判故障入口关着、库里却有未结判定时告警（它们在关着时不补发）。放在身份检查之前（cs#384 审查注 2）：
+// 未结判定的命令正是身份检查会拦下的行，检查拒绝启动时这条告警要已经打出来，解释那些行是什么。
+await SlotFaultDeclarationStartupCheck.WarnAsync(app.Services, CancellationToken.None);
+// control-server#382：发件箱里有未确认、信封身份不是本构建的行时拒绝启动——补发不改身份，车会拒收并反复断会话。
+await ProtocolOutboxIdentityStartupCheck.EnsureAsync(app.Services, CancellationToken.None);
 // control-server#72：当前分区归属版本把 AREA 归进了未允许的调度区时拒绝启动，并列出是哪几条。
 await AreaAssignmentDispatchZoneStartupCheck.EnsureAsync(app.Services, CancellationToken.None);
 // control-server#159：旅程运行时开着时装载任务类型规则与按图绑定的预置配置，配错拒绝启动并列出全部违规。
 await TaskTypeStationStartup.EnsureAsync(app.Services, CancellationToken.None);
+// control-server#388：投运车辆数大于 1 而等待点不够每辆车各分一个时拒绝启动（规格 5.4）。在绑定装载之后，固定站不算等待点。
+await WaitingPointStartupCheck.EnsureAsync(app.Services, CancellationToken.None);
+// control-server#403：生效的充电策略版本（含在途旅程与充电周期冻结的版本）不满足 REQ-0281 的阈值关系、或救命线不低于它的强制充电线时拒绝启动。
+// 关系只有 ChargingPolicyRules.ThresholdRelationViolations 一份定义，导入也调它。一版都没有照常启动（逐车不投运，control-server#400）。
+await ChargingPolicyStartupCheck.EnsureAsync(app.Services, CancellationToken.None);
+// control-server#406 审查 M1：人工清桩的出口（名单加至少一个入口）不可用时告警一次；那时充不上照旧写 ORDER_HANG，不进清桩中。
+ControlServer.Host.Runtime.Charging.StationClearanceExit.LogAtStartup(app.Services);
 
 app.MapGet("/health/live", () => Results.Ok(new { status = "live" }));
 app.MapGet("/health/ready", async (ControlServerDbContext dbContext, CancellationToken cancellationToken) =>
@@ -248,7 +319,17 @@ if (app.Configuration.GetValue<bool>("EmergencyStopRelease:enabled"))
 {
     app.MapEmergencyStopRelease();
 }
+// 默认不挂。control-server#383 的人工判故障（REQ-0359）：这个入口会让车停下一次仓位操作，要现场明确打开才提供；
+// 车载端认识 SlotFaultDeclarationCommand 之前（onboard-hmi#215）也不能打开，否则那台车会反复断开重连。判断在方法里，有 L1 护着。
+app.MapSlotFaultDeclarationWhenEnabled();
+// 默认不挂。control-server#299 的故障人工清除：这个入口会清掉一台车的故障、把它的需求交回改派，要现场明确打开才提供；
+// control-server#419 的站点独占人工释放同一把凭据、同一个开关。
+app.MapVehicleFaultRecoveryEntriesWhenEnabled();
+// 批次9-08（control-server#406）：充电桩的维修暂停（总是挂）、恢复确认与人工清桩（与上面同一个开关、同一把凭据）。
+app.MapChargingStationEntries();
 app.MapDashboardQueries();
+// 防饥饿阈值的标定证据（批次7-09，control-server#214）：只读，JSON 与 CSV。
+app.MapStarvationCalibrationReport();
 
 await app.RunAsync();
 
@@ -257,6 +338,11 @@ static async Task EnsureDatabaseAsync(IServiceProvider services)
     await using AsyncServiceScope scope = services.CreateAsyncScope();
     ControlServerDbContext dbContext = scope.ServiceProvider.GetRequiredService<ControlServerDbContext>();
     await dbContext.Database.MigrateAsync();
+    // control-server#505：停在不可放行阻塞码上的旅程不会自动放行，只有旅程收尾结束它；升级迁移会改出这样的行，有就在启动时告诉现场有几趟。
+    await ControlServer.Host.Runtime.UnreleasableBlockReport.LogAsync(
+        dbContext,
+        scope.ServiceProvider.GetRequiredService<ILoggerFactory>().CreateLogger("ControlServer.Host.Startup"),
+        CancellationToken.None);
 
     // REQ-0271：保留期是管理员配置，变更本身要留管理员审计。新值在服务起来的这一刻生效，所以在这一刻记。
     GovernanceStore governance = scope.ServiceProvider.GetRequiredService<GovernanceStore>();

@@ -1,0 +1,5 @@
+injection 2 (any-refusal-marks-side) in src/ControlServer.Host/Runtime/Dispatch/SlotGroupFullnessBoard.cs
+70c70
+<             .Where(verdict => verdict.ReasonCode == DispatchReasonCodes.SlotGroupOccupiedByOwnCargo)
+---
+>             .Where(verdict => verdict.ReasonCode != DispatchAdmissionChain.Eligible)

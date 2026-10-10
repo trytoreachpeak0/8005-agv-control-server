@@ -124,6 +124,110 @@ public sealed class RouteGraphEngineTests
         Assert.Equal([11, 12, 210], costs.Keys.Order());
     }
 
+    // ---- several stations on one node (control-server#431) --------------------------------------
+
+    // Station 213 shares node 5 with station 210. The snapshot store reads stations back ordered by
+    // id, so the higher id comes later; both orders are built, because a reverse lookup that keeps
+    // one station per node loses whichever one came first.
+    public static TheoryData<bool> SharedStationOrders => new() { true, false };
+
+    [Theory]
+    [MemberData(nameof(SharedStationOrders))]
+    public void TwoStationsOnOneNodeAreBothReachableAtTheSameCost(bool sharedStationLast)
+    {
+        RouteGraph graph = BuildGraphWithSharedNode(sharedStationLast);
+
+        RouteGraphTraversal toKept = graph.Traverse(11, 210);
+        RouteGraphTraversal toShared = graph.Traverse(11, 213);
+        Assert.Equal(new RouteGraphTraversal(true, 40000), toKept);
+        Assert.Equal(new RouteGraphTraversal(true, 40000), toShared);
+        Assert.Equal([11, 12, 210, 213], graph.TraversalCostsFrom(11).Keys.Order());
+    }
+
+    [Theory]
+    [MemberData(nameof(SharedStationOrders))]
+    public void EitherStationOnASharedNodeIsAnOriginWithTheSameReach(bool sharedStationLast)
+    {
+        RouteGraph graph = BuildGraphWithSharedNode(sharedStationLast);
+
+        // Both stations stand on node 5, so they reach everything else at the same cost: 5→6→1 for
+        // station 11, and on round to node 3 for station 12. The origin side alone was never
+        // broken (it goes station → node); what each origin must also see is its node sibling.
+        Assert.Equal([11, 12, 210, 213], graph.TraversalCostsFrom(210).Keys.Order());
+        Assert.Equal(graph.TraversalCostsFrom(210), graph.TraversalCostsFrom(213));
+        Assert.Equal(new RouteGraphTraversal(true, 40000), graph.Traverse(213, 11));
+        Assert.Equal(new RouteGraphTraversal(true, 60000), graph.Traverse(213, 12));
+    }
+
+    [Theory]
+    [MemberData(nameof(SharedStationOrders))]
+    public void StationsSharingANodeReachEachOtherAtNoCost(bool sharedStationLast)
+    {
+        RouteGraph graph = BuildGraphWithSharedNode(sharedStationLast);
+
+        // Origin and destination on the same node: reachable, and nothing to traverse.
+        Assert.Equal(new RouteGraphTraversal(true, 0), graph.Traverse(210, 213));
+        Assert.Equal(new RouteGraphTraversal(true, 0), graph.Traverse(213, 210));
+    }
+
+    [Theory]
+    [MemberData(nameof(SharedStationOrders))]
+    public void ARemovedStationOnASharedNodeStaysOffTheGraphWhileItsSiblingStaysOn(bool sharedStationLast)
+    {
+        // A node's list is created by whichever of its stations comes first. A removed station
+        // must stay out of that list whether or not a sibling already created it, and removing it
+        // must not take the sibling with it.
+        List<RouteGraphStation> stations = Stations.Select(ToDomainStation).ToList();
+        RouteGraphStation shared = new(213, 5);
+        if (sharedStationLast)
+        {
+            stations.Add(shared);
+        }
+        else
+        {
+            stations.Insert(0, shared);
+        }
+
+        RouteGraph graph = RouteGraph.Build(
+            Edges.Select(ToDomainEdge).ToList(), stations, new HashSet<int>(), new HashSet<int> { 213 });
+
+        Assert.False(graph.KnowsStation(213));
+        Assert.Equal(RouteGraphTraversal.Unreachable, graph.Traverse(11, 213));
+        Assert.Equal(RouteGraphTraversal.Unreachable, graph.Traverse(210, 213));
+        Assert.Equal(new RouteGraphTraversal(true, 40000), graph.Traverse(11, 210));
+        Assert.Equal([11, 12, 210], graph.TraversalCostsFrom(11).Keys.Order());
+        Assert.Equal([11, 12, 210], graph.TraversalCostsFrom(210).Keys.Order());
+    }
+
+    [Fact]
+    public void TwoStationsSnappedOntoTheSameEndpointAreBothReachable()
+    {
+        // The real shape behind a shared node: RIoT places stations on edges, and the placement
+        // rule snaps each to the nearer end of its own edge. Station 213 sits 4 mm before the end
+        // of edge 4 (4→5); station 214 sits 3 mm along edge 5 (5→6). Both land on node 5, as
+        // station 210 also does, with no hand-written node number anywhere.
+        RouteGraphEdgeFact edge4 = Edges.Single(edge => edge.EdgeId == 4);
+        RouteGraphEdgeFact edge5 = Edges.Single(edge => edge.EdgeId == 5);
+        RouteGraphPlacement at213 = Place(19_996, 20_000, edge4);
+        RouteGraphPlacement at214 = Place(20_000, 19_997, edge5);
+        Assert.Equal((5, 5), (at213.Node, at214.Node));
+
+        RouteGraph graph = RouteGraph.Build(
+            Edges.Select(ToDomainEdge).ToList(),
+            [
+                .. Stations.Select(ToDomainStation),
+                new RouteGraphStation(213, at213.Node),
+                new RouteGraphStation(214, at214.Node),
+            ],
+            new HashSet<int>(),
+            new HashSet<int>());
+
+        IReadOnlyDictionary<int, long> costs = graph.TraversalCostsFrom(11);
+        Assert.Equal(40000, costs[210]);
+        Assert.Equal(40000, costs[213]);
+        Assert.Equal(40000, costs[214]);
+    }
+
     // ---- station placement ---------------------------------------------------------------
 
     [Fact]
@@ -381,6 +485,27 @@ public sealed class RouteGraphEngineTests
         new HashSet<int>(),
         new HashSet<int>());
 
+    private static RouteGraph BuildGraphWithSharedNode(bool sharedStationLast)
+    {
+        List<RouteGraphStation> stations = Stations.Select(ToDomainStation).ToList();
+        RouteGraphStation shared = new(213, 5);
+        if (sharedStationLast)
+        {
+            stations.Add(shared);
+        }
+        else
+        {
+            stations.Insert(0, shared);
+        }
+
+        return RouteGraph.Build(
+            Edges.Select(ToDomainEdge).ToList(), stations, new HashSet<int>(), new HashSet<int>());
+    }
+
+    private static RouteGraphPlacement Place(double x, double y, RouteGraphEdgeFact edge) =>
+        RouteGraphStationPlacement.Resolve(
+            x, y, edge.StartNode, edge.StartX, edge.StartY, edge.EndNode, edge.EndX, edge.EndY);
+
     /// <summary>
     /// A clock the test moves by hand. The repository has several fixed-time providers already;
     /// this one advances, because the two refresh cycles are told apart by elapsed time.
@@ -475,7 +600,7 @@ public sealed class RouteGraphEngineTests
             DbContextOptions<ControlServerDbContext> dbOptions =
                 new DbContextOptionsBuilder<ControlServerDbContext>().UseSqlite(connection).Options;
             ControlServerDbContext context = new(dbOptions);
-            await context.Database.MigrateAsync(TestContext.Current.CancellationToken);
+            await MigratedDatabaseTemplate.ApplyAsync(context.Database, TestContext.Current.CancellationToken);
 
             CountingSource source = new();
             AdvanceableTimeProvider clock = new(Origin);

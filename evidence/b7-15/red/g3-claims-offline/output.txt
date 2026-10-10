@@ -1,0 +1,8 @@
+$ pwsh -NoProfile -File scripts/Test-G3RunnerClaims.ps1   # 只有认领、场景未写
+Exception: C:\Users\szy\Desktop\8005-workspace-v2\worktrees\b7-15-8005-agv-control-server\scripts\Test-G3RunnerClaims.ps1:125
+Line |
+ 125 |  �� blems.Count -ne 0) { throw ($problems -join [Environment]::NewLine) }
+     |                         ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+     | run-journey-g3.ps1 drives 'g3-multi-stop-plan', which has no scenario script at
+     | C:\Users\szy\Desktop\8005-workspace-v2\worktrees\b7-15-8005-agv-control-server\scripts\l2\scenarios\g3-multi-stop-plan.ps1.
+exit=1

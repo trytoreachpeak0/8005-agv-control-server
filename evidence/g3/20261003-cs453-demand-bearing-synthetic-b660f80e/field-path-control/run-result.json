@@ -1,0 +1,1028 @@
+{
+  "schemaVersion": "1.0.0",
+  "runKind": "DEMAND_BEARING_G3_RESULT_AND_RIOT_UNKNOWN_VECTORS_NO_MOVEMENT",
+  "runId": "20261003T043223632Z",
+  "startedAtUtc": "2026-10-03T04:32:23.6323666+00:00",
+  "completedAtUtc": "2026-10-03T04:33:50.7477808+00:00",
+  "status": "DEMAND_BEARING_G3_VECTORS_PASS",
+  "classification": {
+    "runStatus": "DEMAND_BEARING_G3_VECTORS_PASS",
+    "assuranceLevel": "DEMAND_BEARING_RESTORE",
+    "formalSlicePass": true,
+    "officialSlices": [
+      {
+        "integrationSliceId": "FP-IS-04",
+        "status": "PASS",
+        "assuranceLevel": "DEMAND_BEARING_RESTORE",
+        "formalSlicePass": true
+      },
+      {
+        "integrationSliceId": "FP-IS-05",
+        "status": "PASS",
+        "assuranceLevel": "DEMAND_BEARING_RESTORE",
+        "formalSlicePass": true
+      },
+      {
+        "integrationSliceId": "FP-IS-06",
+        "status": "PASS",
+        "assuranceLevel": "DEMAND_BEARING_RESTORE",
+        "formalSlicePass": true
+      }
+    ],
+    "slicesWithoutSurfaceThisBatch": [],
+    "fullG3": "INCONCLUSIVE",
+    "releaseCandidate": "INCONCLUSIVE"
+  },
+  "gateResults": [
+    "slices/FP-IS-04/gate-result.json",
+    "slices/FP-IS-05/gate-result.json",
+    "slices/FP-IS-06/gate-result.json"
+  ],
+  "fieldStoreProvenance": {
+    "storeSource": "FIELD_RUN",
+    "protocolCommit": "1531489e42e328f28bfe0c51ed3f8c56e5ce0279",
+    "matchesBoundProtocolCommit": false,
+    "protocolCommitAsserted": false,
+    "protocolCommitConjunct": "FIELD_RUN: seventh conjunct exempt (TICKET_17); store protocolCommit 1531489e42e328f28bfe0c51ed3f8c56e5ce0279 recorded, not asserted",
+    "exemption": "TICKET_17_KNOWN_EXEMPTION_FIELD_STORE_HISTORY",
+    "note": "The restored store is real state written by an authorised field run (the one used up to batch 7 was 2026-08-29, protocol-v0.1.1). Its recorded protocolCommit is that history, not a statement about the build under test, so it is recorded and not asserted. Ruled a known exemption by the user on 2026-09-09; scope is this fact alone.",
+    "riotCreateAuditHistory": {
+      "legs": 2,
+      "preCreateReconciliationObservedUnknownOnEveryLeg": false,
+      "unknownWasAnExactAbsentAtObservation": false,
+      "unknownStillCreatedExactlyOncePerLeg": true,
+      "unknownResolvedToTheOrderItCreated": true,
+      "note": "History of the field run, not a judgment of the build under test. Recorded, not asserted, by the user ruling on control-server#60 (2026-09-18)."
+    }
+  },
+  "storeProvenance": {
+    "storeSource": "FIELD_RUN",
+    "fieldRunRoot": "C:/w2g/cs453-m2mut/generated-store",
+    "fieldDatabaseSha256": "a071397251ec915e75d1aef6617bf5f5daa8ab90a155352c3b5dcc6ae1af2443",
+    "generator": null,
+    "note": "Restored from an authorised field run. The store is real state produced by a real demand; the build under test is the bound ControlServer commit, which is not necessarily the build that wrote it."
+  },
+  "commits": {
+    "controlServer": "b660f80eb02619056c13ea8def21e5d90ac7dbb2",
+    "controlServerCommitSource": "SELF_CHECK_OVERRIDE",
+    "onboardHmi": "4e40e196205d55c363f97850d10bd18df9a686c0",
+    "slotsSimulator": "fb5f7c593742bf98bc3957b8729a38aad5321f28",
+    "protocol": "86575456c847041515b7b75e8851a00e0d939804",
+    "runner": "b660f80eb02619056c13ea8def21e5d90ac7dbb2",
+    "runnerWorktreeCleanAtStart": true
+  },
+  "configurationSha256": "d2c2d20a3dedec7378dc2bba516d67e611228bd39f9248f449bcb3b1e5866218",
+  "configuration": {
+    "loopbackOnly": true,
+    "tls": false,
+    "temporaryTrustRootInstalled": false,
+    "unattended": true,
+    "storeProvenance": {
+      "storeSource": "FIELD_RUN",
+      "fieldRunRoot": "C:/w2g/cs453-m2mut/generated-store",
+      "fieldDatabaseSha256": "a071397251ec915e75d1aef6617bf5f5daa8ab90a155352c3b5dcc6ae1af2443",
+      "generator": null,
+      "note": "Restored from an authorised field run. The store is real state produced by a real demand; the build under test is the bound ControlServer commit, which is not necessarily the build that wrote it."
+    },
+    "commitBinding": {
+      "source": "scripts/run-staged-g3.ps1",
+      "sourceSha256": "ee99d5e92cd3c04c622814de5a7a85e0a0e81eb6060ad9798e4612e8044d3c74",
+      "functionSource": "scripts/run-staged-g3-restart.ps1",
+      "functionSourceSha256": "f547ad613466d5900d2e0cee06819a7dbfb2f7f9633c6d73740568a663677c06",
+      "readFrom": "param-block-defaults",
+      "controlServer": "b660f80eb02619056c13ea8def21e5d90ac7dbb2",
+      "controlServerCommitSource": "SELF_CHECK_OVERRIDE",
+      "onboardHmi": "4e40e196205d55c363f97850d10bd18df9a686c0",
+      "slotsSimulator": "fb5f7c593742bf98bc3957b8729a38aad5321f28",
+      "protocol": "86575456c847041515b7b75e8851a00e0d939804"
+    },
+    "ports": {
+      "controlPlaintext": 58305,
+      "controlHealth": 58307
+    },
+    "journeyRuntimeEnabled": false,
+    "riotCreateDispatchEnabled": false,
+    "mesIngestBaseUrl": "http://127.0.0.1:1",
+    "riotBaseUrl": "http://127.0.0.1:1",
+    "realExternalCredentialsUsed": false,
+    "realRiotOrderCreated": false,
+    "movementCommandSent": false,
+    "stationOperationRowFabricated": false
+  },
+  "commands": [
+    {
+      "name": "clone-control-server",
+      "workingDirectory": "C:\\w2g\\cs453-m2field\\sources",
+      "file": "git",
+      "arguments": [
+        "-c",
+        "core.autocrlf=false",
+        "clone",
+        "--no-hardlinks",
+        "--no-checkout",
+        "C:\\Users\\szy\\Desktop\\8005-workspace-v2\\worktrees\\cs453-8005-agv-control-server",
+        "C:\\w2g\\cs453-m2field\\sources\\control-server"
+      ],
+      "startedAtUtc": "2026-10-03T04:32:24.9561947+00:00",
+      "exitCode": 0,
+      "log": "logs/clone-control-server.log"
+    },
+    {
+      "name": "checkout-control-server",
+      "workingDirectory": "C:\\w2g\\cs453-m2field\\sources\\control-server",
+      "file": "git",
+      "arguments": [
+        "checkout",
+        "--detach",
+        "b660f80eb02619056c13ea8def21e5d90ac7dbb2"
+      ],
+      "startedAtUtc": "2026-10-03T04:32:27.0877136+00:00",
+      "exitCode": 0,
+      "log": "logs/checkout-control-server.log"
+    },
+    {
+      "name": "publish-control-server",
+      "workingDirectory": "C:\\w2g\\cs453-m2field\\sources\\control-server",
+      "file": "dotnet",
+      "arguments": [
+        "publish",
+        ".\\src\\ControlServer.Host\\ControlServer.Host.csproj",
+        "-c",
+        "Release",
+        "-o",
+        "C:\\w2g\\cs453-m2field\\publish\\control-server"
+      ],
+      "startedAtUtc": "2026-10-03T04:33:27.63804+00:00",
+      "exitCode": 0,
+      "log": "logs/publish-control-server.log"
+    }
+  ],
+  "assertions": {
+    "protocolAndBuildIdentityBoundToTheSharedBinding": "PASS",
+    "preparedAttemptAcceptsItsFirstResult": "PASS",
+    "identicalResultReplayReturnsTheStoredAcknowledgement": "PASS",
+    "sameMessageIdWithDifferentContentIsRefused": "PASS",
+    "sameAttemptAndGenerationUnderANewMessageIdIsRefused": "PASS",
+    "alreadyCommittedAttemptRefusesASecondResult": "PASS",
+    "resultFromASupersededSessionGenerationIsRefused": "PASS",
+    "replayedResultWasNotProcessedTwice": "PASS",
+    "unloadResultClosedTheDemandAtomically": "PASS",
+    "controlServerHostProcessWasActuallyReplaced": "PASS",
+    "acceptedDemandSurvivesTheHostRestart": "PASS",
+    "vehicleClaimRecordSurvivesTheHostRestart": "PASS",
+    "restartedHostServesTheSameStore": "PASS",
+    "noMovementOrExternalSideEffects": "PASS",
+    "listenersReleased": "PASS",
+    "secretScan": "PASS"
+  },
+  "assertionDetails": {
+    "protocolAndBuildIdentityBoundToTheSharedBinding": "FIELD_RUN: seventh conjunct exempt (TICKET_17); store protocolCommit 1531489e42e328f28bfe0c51ed3f8c56e5ce0279 recorded, not asserted"
+  },
+  "failedAssertions": [],
+  "probe": {
+    "agvId": "AGV-L2-001",
+    "demandId": "de8caae0-4f58-4351-94b8-5e4c0770dbf3",
+    "serverBuildCommit": "b660f80eb02619056c13ea8def21e5d90ac7dbb2",
+    "serverInstanceId": "4c9499c1-ecb9-4f4e-8dd4-0dacb43e374d",
+    "acceptedGeneration": 2,
+    "acceptedMessageId": "60e2187e-129a-8556-ac69-27b314e550e6",
+    "acceptedRequestSha256": "fa5ca7e3a2abbf6f4761267fcdd8aee1417d9eef186874e5c92e3076f397352e",
+    "acceptedAckSha256": "40b524fab242db91c43661adea8c08b6b4649d832dc78c74c96615395b7affef",
+    "replayedAckSha256": "40b524fab242db91c43661adea8c08b6b4649d832dc78c74c96615395b7affef",
+    "cases": [
+      {
+        "slotOperationAttemptId": "41ec651a-c953-9b5b-9127-1ca0b9ca3498",
+        "messageId": "60e2187e-129a-8556-ac69-27b314e550e6",
+        "requestSha256": "fa5ca7e3a2abbf6f4761267fcdd8aee1417d9eef186874e5c92e3076f397352e",
+        "case": "preparedAttemptAcceptsItsFirstResult",
+        "status": "PASS",
+        "responseType": "DurableAck",
+        "responseSha256": "40b524fab242db91c43661adea8c08b6b4649d832dc78c74c96615395b7affef",
+        "atUtc": "2026-10-03T12:33:43.524526+08:00"
+      },
+      {
+        "firstAckSha256": "40b524fab242db91c43661adea8c08b6b4649d832dc78c74c96615395b7affef",
+        "replayedAckSha256": "40b524fab242db91c43661adea8c08b6b4649d832dc78c74c96615395b7affef",
+        "case": "identicalResultReplayReturnsTheStoredAcknowledgement",
+        "status": "PASS",
+        "responseType": "DurableAck",
+        "responseSha256": "40b524fab242db91c43661adea8c08b6b4649d832dc78c74c96615395b7affef",
+        "atUtc": "2026-10-03T12:33:43.5284045+08:00"
+      },
+      {
+        "messageId": "60e2187e-129a-8556-ac69-27b314e550e6",
+        "case": "sameMessageIdWithDifferentContentIsRefused",
+        "status": "PASS",
+        "responseType": null,
+        "responseSha256": null,
+        "atUtc": "2026-10-03T12:33:43.5554906+08:00"
+      },
+      {
+        "slotOperationAttemptId": "41ec651a-c953-9b5b-9127-1ca0b9ca3498",
+        "case": "sameAttemptAndGenerationUnderANewMessageIdIsRefused",
+        "status": "PASS",
+        "responseType": null,
+        "responseSha256": null,
+        "atUtc": "2026-10-03T12:33:43.6025301+08:00"
+      },
+      {
+        "slotOperationAttemptId": "c295b7bb-ad55-305a-aba1-ba0b6505e0eb",
+        "case": "alreadyCommittedAttemptRefusesASecondResult",
+        "status": "PASS",
+        "responseType": null,
+        "responseSha256": null,
+        "atUtc": "2026-10-03T12:33:43.6250347+08:00"
+      },
+      {
+        "acceptedGeneration": 2,
+        "case": "resultFromASupersededSessionGenerationIsRefused",
+        "status": "PASS",
+        "responseType": null,
+        "responseSha256": null,
+        "atUtc": "2026-10-03T12:33:43.6404465+08:00"
+      }
+    ]
+  },
+  "handshakeAfterRestart": {
+    "sessionGeneration": 7,
+    "serverInstanceId": "5ea3455a-5374-4d61-99e2-de8da83f5489",
+    "serverBuildCommit": "b660f80eb02619056c13ea8def21e5d90ac7dbb2",
+    "acceptedSha256": "776f6a96a6a9ada73cd8da01e0b475d9e4f36d0627e0ccc7cd1996993c4dff1f"
+  },
+  "restart": {
+    "firstHostProcessId": 35432,
+    "firstHostExitedBeforeRestart": true,
+    "secondHostProcessId": 26648
+  },
+  "controlDatabaseBaseline": {
+    "file": {
+      "creationTimeUtc": "2026-10-03T04:33:37.5330116Z",
+      "length": 1314816
+    },
+    "counts": {
+      "OrderIntents": 2,
+      "RiotDispatchAuditEvents": 10,
+      "AcceptedDemands": 1,
+      "VehiclePurposeClaimRecords": 1,
+      "StationOperations": 2,
+      "OperationResults": 1,
+      "UnloadBatches": 0,
+      "StopClosures": 0,
+      "TransportDemandCompletions": 0,
+      "ProtocolInbox": 25
+    },
+    "acceptedDemandRows": [
+      {
+        "demandId": "de8caae0-4f58-4351-94b8-5e4c0770dbf3",
+        "transportDemandKey": "L2-SUBLOT-20261003T043100565Z|WIRE_TO_GATE",
+        "demandRevision": 1,
+        "status": "Accepted"
+      }
+    ],
+    "vehicleClaimRecordRows": [
+      {
+        "journeyId": "journey:de8caae0-4f58-4351-94b8-5e4c0770dbf3",
+        "vehicleKey": "BROKERX-L2-0001",
+        "acquiredAt": "2026-10-03 04:31:52.448024+00:00",
+        "releasedAt": null
+      }
+    ],
+    "auditRows": [
+      {
+        "upperId": "W2G-de8caae0-4f58-4351-94b8-5e4c0770dbf3-GATE-1",
+        "dispatchGeneration": 1,
+        "sequence": 1,
+        "phase": "PRE_CREATE_RECONCILIATION",
+        "outcome": "NOT_FOUND",
+        "eligibilityBasis": null,
+        "httpStatusCode": 404,
+        "businessCode": null,
+        "resultPresent": 0,
+        "returnedOrderId": null
+      },
+      {
+        "upperId": "W2G-de8caae0-4f58-4351-94b8-5e4c0770dbf3-GATE-1",
+        "dispatchGeneration": 1,
+        "sequence": 2,
+        "phase": "CREATE_DISPATCH",
+        "outcome": "ARMED",
+        "eligibilityBasis": null,
+        "httpStatusCode": null,
+        "businessCode": null,
+        "resultPresent": null,
+        "returnedOrderId": null
+      },
+      {
+        "upperId": "W2G-de8caae0-4f58-4351-94b8-5e4c0770dbf3-GATE-1",
+        "dispatchGeneration": 1,
+        "sequence": 3,
+        "phase": "CREATE_REQUEST",
+        "outcome": "STARTED",
+        "eligibilityBasis": null,
+        "httpStatusCode": null,
+        "businessCode": null,
+        "resultPresent": null,
+        "returnedOrderId": null
+      },
+      {
+        "upperId": "W2G-de8caae0-4f58-4351-94b8-5e4c0770dbf3-GATE-1",
+        "dispatchGeneration": 1,
+        "sequence": 4,
+        "phase": "CREATE_RESPONSE",
+        "outcome": "ACCEPTED",
+        "eligibilityBasis": null,
+        "httpStatusCode": null,
+        "businessCode": null,
+        "resultPresent": 1,
+        "returnedOrderId": "ORDER-000002"
+      },
+      {
+        "upperId": "W2G-de8caae0-4f58-4351-94b8-5e4c0770dbf3-GATE-1",
+        "dispatchGeneration": 1,
+        "sequence": 5,
+        "phase": "POST_CREATE_RECONCILIATION",
+        "outcome": "CONFIRMED",
+        "eligibilityBasis": null,
+        "httpStatusCode": null,
+        "businessCode": null,
+        "resultPresent": 1,
+        "returnedOrderId": "ORDER-000002"
+      },
+      {
+        "upperId": "W2G-de8caae0-4f58-4351-94b8-5e4c0770dbf3-PICKUP-1",
+        "dispatchGeneration": 1,
+        "sequence": 1,
+        "phase": "PRE_CREATE_RECONCILIATION",
+        "outcome": "NOT_FOUND",
+        "eligibilityBasis": null,
+        "httpStatusCode": 404,
+        "businessCode": null,
+        "resultPresent": 0,
+        "returnedOrderId": null
+      },
+      {
+        "upperId": "W2G-de8caae0-4f58-4351-94b8-5e4c0770dbf3-PICKUP-1",
+        "dispatchGeneration": 1,
+        "sequence": 2,
+        "phase": "CREATE_DISPATCH",
+        "outcome": "ARMED",
+        "eligibilityBasis": null,
+        "httpStatusCode": null,
+        "businessCode": null,
+        "resultPresent": null,
+        "returnedOrderId": null
+      },
+      {
+        "upperId": "W2G-de8caae0-4f58-4351-94b8-5e4c0770dbf3-PICKUP-1",
+        "dispatchGeneration": 1,
+        "sequence": 3,
+        "phase": "CREATE_REQUEST",
+        "outcome": "STARTED",
+        "eligibilityBasis": null,
+        "httpStatusCode": null,
+        "businessCode": null,
+        "resultPresent": null,
+        "returnedOrderId": null
+      },
+      {
+        "upperId": "W2G-de8caae0-4f58-4351-94b8-5e4c0770dbf3-PICKUP-1",
+        "dispatchGeneration": 1,
+        "sequence": 4,
+        "phase": "CREATE_RESPONSE",
+        "outcome": "ACCEPTED",
+        "eligibilityBasis": null,
+        "httpStatusCode": null,
+        "businessCode": null,
+        "resultPresent": 1,
+        "returnedOrderId": "ORDER-000001"
+      },
+      {
+        "upperId": "W2G-de8caae0-4f58-4351-94b8-5e4c0770dbf3-PICKUP-1",
+        "dispatchGeneration": 1,
+        "sequence": 5,
+        "phase": "POST_CREATE_RECONCILIATION",
+        "outcome": "CONFIRMED",
+        "eligibilityBasis": null,
+        "httpStatusCode": null,
+        "businessCode": null,
+        "resultPresent": 1,
+        "returnedOrderId": "ORDER-000001"
+      }
+    ],
+    "orderIntentRows": [
+      {
+        "upperId": "W2G-de8caae0-4f58-4351-94b8-5e4c0770dbf3-GATE-1",
+        "purpose": "TO_GATE",
+        "status": "CONFIRMED",
+        "orderId": "ORDER-000002",
+        "destinationStationId": 210
+      },
+      {
+        "upperId": "W2G-de8caae0-4f58-4351-94b8-5e4c0770dbf3-PICKUP-1",
+        "purpose": "TO_PICKUP",
+        "status": "CONFIRMED",
+        "orderId": "ORDER-000001",
+        "destinationStationId": 12
+      }
+    ],
+    "stationOperationRows": [
+      {
+        "slotOperationAttemptId": "c295b7bb-ad55-305a-aba1-ba0b6505e0eb",
+        "demandId": "de8caae0-4f58-4351-94b8-5e4c0770dbf3",
+        "operationType": "Load",
+        "status": "Committed",
+        "forcedRecoveryGeneration": 0,
+        "targetSlotsJson": "[1]",
+        "evidenceJson": "[{\"SlotNumber\":1,\"State\":1,\"DoorLocked\":true,\"UnlockOutputReset\":true}]"
+      },
+      {
+        "slotOperationAttemptId": "41ec651a-c953-9b5b-9127-1ca0b9ca3498",
+        "demandId": "de8caae0-4f58-4351-94b8-5e4c0770dbf3",
+        "operationType": "Unload",
+        "status": "Prepared",
+        "forcedRecoveryGeneration": 0,
+        "targetSlotsJson": "[1]",
+        "evidenceJson": null
+      }
+    ],
+    "operationResultRows": [
+      {
+        "resultId": "57d3ba45-1f9c-4d33-8b04-0074f800bd1a",
+        "slotOperationAttemptId": "c295b7bb-ad55-305a-aba1-ba0b6505e0eb",
+        "agvId": "AGV-L2-001",
+        "forcedRecoveryGeneration": 0,
+        "historicalOnly": 0
+      }
+    ],
+    "sessionRecoveryRows": [
+      {
+        "agvId": "AGV-L2-001",
+        "sessionGeneration": 1,
+        "readiness": "Ready",
+        "reasonCode": "READY",
+        "protocolCommit": "1531489e42e328f28bfe0c51ed3f8c56e5ce0279"
+      }
+    ],
+    "resultInboxRows": [
+      {
+        "messageId": "57d3ba45-1f9c-4d33-8b04-0074f800bd1a",
+        "contentHash": "073b299be908ea51bcbc3643da148447cdc5fc9a0bb01e379add6a2bdfb2533d",
+        "firstResponseJson": "{\"protocolVersion\":3,\"profileId\":\"AGV_FULL_PRODUCT\",\"protocolReleaseVersion\":\"2.0.0\",\"protocolReleaseManifestSha256\":\"4ac095ad371d3aaa60d7c2e0198cfd64cff5f3068230fc3420e9cdf5616422a7\",\"messageType\":\"DurableAck\",\"messageId\":\"344692f2-664b-496b-bf4b-cf43299525ec\",\"correlationId\":\"57d3ba45-1f9c-4d33-8b04-0074f800bd1a\",\"agvId\":\"AGV-L2-001\",\"sessionGeneration\":1,\"sentAt\":\"2026-10-03T04:31:54.4643459+00:00\",\"payload\":{\"acceptedMessageId\":\"57d3ba45-1f9c-4d33-8b04-0074f800bd1a\",\"acceptedMessageType\":\"OperationResult\",\"acceptedContentSha256\":\"073b299be908ea51bcbc3643da148447cdc5fc9a0bb01e379add6a2bdfb2533d\",\"durablyAcceptedAt\":\"2026-10-03T04:31:54.4643405+00:00\"}}"
+      }
+    ]
+  },
+  "controlDatabaseAfterProbe": {
+    "file": {
+      "creationTimeUtc": "2026-10-03T04:33:37.5330116Z",
+      "length": 1335296
+    },
+    "counts": {
+      "OrderIntents": 2,
+      "RiotDispatchAuditEvents": 10,
+      "AcceptedDemands": 1,
+      "VehiclePurposeClaimRecords": 1,
+      "StationOperations": 2,
+      "OperationResults": 2,
+      "UnloadBatches": 1,
+      "StopClosures": 1,
+      "TransportDemandCompletions": 1,
+      "ProtocolInbox": 31
+    },
+    "acceptedDemandRows": [
+      {
+        "demandId": "de8caae0-4f58-4351-94b8-5e4c0770dbf3",
+        "transportDemandKey": "L2-SUBLOT-20261003T043100565Z|WIRE_TO_GATE",
+        "demandRevision": 1,
+        "status": "Succeeded"
+      }
+    ],
+    "vehicleClaimRecordRows": [
+      {
+        "journeyId": "journey:de8caae0-4f58-4351-94b8-5e4c0770dbf3",
+        "vehicleKey": "BROKERX-L2-0001",
+        "acquiredAt": "2026-10-03 04:31:52.448024+00:00",
+        "releasedAt": "2026-08-29 12:00:00+00:00"
+      }
+    ],
+    "auditRows": [
+      {
+        "upperId": "W2G-de8caae0-4f58-4351-94b8-5e4c0770dbf3-GATE-1",
+        "dispatchGeneration": 1,
+        "sequence": 1,
+        "phase": "PRE_CREATE_RECONCILIATION",
+        "outcome": "NOT_FOUND",
+        "eligibilityBasis": null,
+        "httpStatusCode": 404,
+        "businessCode": null,
+        "resultPresent": 0,
+        "returnedOrderId": null
+      },
+      {
+        "upperId": "W2G-de8caae0-4f58-4351-94b8-5e4c0770dbf3-GATE-1",
+        "dispatchGeneration": 1,
+        "sequence": 2,
+        "phase": "CREATE_DISPATCH",
+        "outcome": "ARMED",
+        "eligibilityBasis": null,
+        "httpStatusCode": null,
+        "businessCode": null,
+        "resultPresent": null,
+        "returnedOrderId": null
+      },
+      {
+        "upperId": "W2G-de8caae0-4f58-4351-94b8-5e4c0770dbf3-GATE-1",
+        "dispatchGeneration": 1,
+        "sequence": 3,
+        "phase": "CREATE_REQUEST",
+        "outcome": "STARTED",
+        "eligibilityBasis": null,
+        "httpStatusCode": null,
+        "businessCode": null,
+        "resultPresent": null,
+        "returnedOrderId": null
+      },
+      {
+        "upperId": "W2G-de8caae0-4f58-4351-94b8-5e4c0770dbf3-GATE-1",
+        "dispatchGeneration": 1,
+        "sequence": 4,
+        "phase": "CREATE_RESPONSE",
+        "outcome": "ACCEPTED",
+        "eligibilityBasis": null,
+        "httpStatusCode": null,
+        "businessCode": null,
+        "resultPresent": 1,
+        "returnedOrderId": "ORDER-000002"
+      },
+      {
+        "upperId": "W2G-de8caae0-4f58-4351-94b8-5e4c0770dbf3-GATE-1",
+        "dispatchGeneration": 1,
+        "sequence": 5,
+        "phase": "POST_CREATE_RECONCILIATION",
+        "outcome": "CONFIRMED",
+        "eligibilityBasis": null,
+        "httpStatusCode": null,
+        "businessCode": null,
+        "resultPresent": 1,
+        "returnedOrderId": "ORDER-000002"
+      },
+      {
+        "upperId": "W2G-de8caae0-4f58-4351-94b8-5e4c0770dbf3-PICKUP-1",
+        "dispatchGeneration": 1,
+        "sequence": 1,
+        "phase": "PRE_CREATE_RECONCILIATION",
+        "outcome": "NOT_FOUND",
+        "eligibilityBasis": null,
+        "httpStatusCode": 404,
+        "businessCode": null,
+        "resultPresent": 0,
+        "returnedOrderId": null
+      },
+      {
+        "upperId": "W2G-de8caae0-4f58-4351-94b8-5e4c0770dbf3-PICKUP-1",
+        "dispatchGeneration": 1,
+        "sequence": 2,
+        "phase": "CREATE_DISPATCH",
+        "outcome": "ARMED",
+        "eligibilityBasis": null,
+        "httpStatusCode": null,
+        "businessCode": null,
+        "resultPresent": null,
+        "returnedOrderId": null
+      },
+      {
+        "upperId": "W2G-de8caae0-4f58-4351-94b8-5e4c0770dbf3-PICKUP-1",
+        "dispatchGeneration": 1,
+        "sequence": 3,
+        "phase": "CREATE_REQUEST",
+        "outcome": "STARTED",
+        "eligibilityBasis": null,
+        "httpStatusCode": null,
+        "businessCode": null,
+        "resultPresent": null,
+        "returnedOrderId": null
+      },
+      {
+        "upperId": "W2G-de8caae0-4f58-4351-94b8-5e4c0770dbf3-PICKUP-1",
+        "dispatchGeneration": 1,
+        "sequence": 4,
+        "phase": "CREATE_RESPONSE",
+        "outcome": "ACCEPTED",
+        "eligibilityBasis": null,
+        "httpStatusCode": null,
+        "businessCode": null,
+        "resultPresent": 1,
+        "returnedOrderId": "ORDER-000001"
+      },
+      {
+        "upperId": "W2G-de8caae0-4f58-4351-94b8-5e4c0770dbf3-PICKUP-1",
+        "dispatchGeneration": 1,
+        "sequence": 5,
+        "phase": "POST_CREATE_RECONCILIATION",
+        "outcome": "CONFIRMED",
+        "eligibilityBasis": null,
+        "httpStatusCode": null,
+        "businessCode": null,
+        "resultPresent": 1,
+        "returnedOrderId": "ORDER-000001"
+      }
+    ],
+    "orderIntentRows": [
+      {
+        "upperId": "W2G-de8caae0-4f58-4351-94b8-5e4c0770dbf3-GATE-1",
+        "purpose": "TO_GATE",
+        "status": "CONFIRMED",
+        "orderId": "ORDER-000002",
+        "destinationStationId": 210
+      },
+      {
+        "upperId": "W2G-de8caae0-4f58-4351-94b8-5e4c0770dbf3-PICKUP-1",
+        "purpose": "TO_PICKUP",
+        "status": "CONFIRMED",
+        "orderId": "ORDER-000001",
+        "destinationStationId": 12
+      }
+    ],
+    "stationOperationRows": [
+      {
+        "slotOperationAttemptId": "c295b7bb-ad55-305a-aba1-ba0b6505e0eb",
+        "demandId": "de8caae0-4f58-4351-94b8-5e4c0770dbf3",
+        "operationType": "Load",
+        "status": "Committed",
+        "forcedRecoveryGeneration": 0,
+        "targetSlotsJson": "[1]",
+        "evidenceJson": "[{\"SlotNumber\":1,\"State\":1,\"DoorLocked\":true,\"UnlockOutputReset\":true}]"
+      },
+      {
+        "slotOperationAttemptId": "41ec651a-c953-9b5b-9127-1ca0b9ca3498",
+        "demandId": "de8caae0-4f58-4351-94b8-5e4c0770dbf3",
+        "operationType": "Unload",
+        "status": "Committed",
+        "forcedRecoveryGeneration": 0,
+        "targetSlotsJson": "[1]",
+        "evidenceJson": "[{\"SlotNumber\":1,\"State\":0,\"DoorLocked\":true,\"UnlockOutputReset\":true}]"
+      }
+    ],
+    "operationResultRows": [
+      {
+        "resultId": "60e2187e-129a-8556-ac69-27b314e550e6",
+        "slotOperationAttemptId": "41ec651a-c953-9b5b-9127-1ca0b9ca3498",
+        "agvId": "AGV-L2-001",
+        "forcedRecoveryGeneration": 0,
+        "historicalOnly": 0
+      },
+      {
+        "resultId": "57d3ba45-1f9c-4d33-8b04-0074f800bd1a",
+        "slotOperationAttemptId": "c295b7bb-ad55-305a-aba1-ba0b6505e0eb",
+        "agvId": "AGV-L2-001",
+        "forcedRecoveryGeneration": 0,
+        "historicalOnly": 0
+      }
+    ],
+    "sessionRecoveryRows": [
+      {
+        "agvId": "AGV-L2-001",
+        "sessionGeneration": 6,
+        "readiness": "RecoveryRequired",
+        "reasonCode": "HANDSHAKE_INCOMPLETE",
+        "protocolCommit": "86575456c847041515b7b75e8851a00e0d939804"
+      }
+    ],
+    "resultInboxRows": [
+      {
+        "messageId": "57d3ba45-1f9c-4d33-8b04-0074f800bd1a",
+        "contentHash": "073b299be908ea51bcbc3643da148447cdc5fc9a0bb01e379add6a2bdfb2533d",
+        "firstResponseJson": "{\"protocolVersion\":3,\"profileId\":\"AGV_FULL_PRODUCT\",\"protocolReleaseVersion\":\"2.0.0\",\"protocolReleaseManifestSha256\":\"4ac095ad371d3aaa60d7c2e0198cfd64cff5f3068230fc3420e9cdf5616422a7\",\"messageType\":\"DurableAck\",\"messageId\":\"344692f2-664b-496b-bf4b-cf43299525ec\",\"correlationId\":\"57d3ba45-1f9c-4d33-8b04-0074f800bd1a\",\"agvId\":\"AGV-L2-001\",\"sessionGeneration\":1,\"sentAt\":\"2026-10-03T04:31:54.4643459+00:00\",\"payload\":{\"acceptedMessageId\":\"57d3ba45-1f9c-4d33-8b04-0074f800bd1a\",\"acceptedMessageType\":\"OperationResult\",\"acceptedContentSha256\":\"073b299be908ea51bcbc3643da148447cdc5fc9a0bb01e379add6a2bdfb2533d\",\"durablyAcceptedAt\":\"2026-10-03T04:31:54.4643405+00:00\"}}"
+      },
+      {
+        "messageId": "60e2187e-129a-8556-ac69-27b314e550e6",
+        "contentHash": "fa5ca7e3a2abbf6f4761267fcdd8aee1417d9eef186874e5c92e3076f397352e",
+        "firstResponseJson": "{\"protocolVersion\":3,\"profileId\":\"AGV_FULL_PRODUCT\",\"protocolReleaseVersion\":\"2.0.0\",\"protocolReleaseManifestSha256\":\"4ac095ad371d3aaa60d7c2e0198cfd64cff5f3068230fc3420e9cdf5616422a7\",\"messageType\":\"DurableAck\",\"messageId\":\"35f4c443-7cc5-435f-ae20-f0a686c5ec74\",\"correlationId\":\"60e2187e-129a-8556-ac69-27b314e550e6\",\"agvId\":\"AGV-L2-001\",\"sessionGeneration\":2,\"sentAt\":\"2026-10-03T04:33:43.5150278+00:00\",\"payload\":{\"acceptedMessageId\":\"60e2187e-129a-8556-ac69-27b314e550e6\",\"acceptedMessageType\":\"OperationResult\",\"acceptedContentSha256\":\"fa5ca7e3a2abbf6f4761267fcdd8aee1417d9eef186874e5c92e3076f397352e\",\"durablyAcceptedAt\":\"2026-10-03T04:33:43.5149665+00:00\"}}"
+      }
+    ]
+  },
+  "controlDatabaseFinal": {
+    "file": {
+      "creationTimeUtc": "2026-10-03T04:33:37.5330116Z",
+      "length": 1339392
+    },
+    "counts": {
+      "OrderIntents": 2,
+      "RiotDispatchAuditEvents": 10,
+      "AcceptedDemands": 1,
+      "VehiclePurposeClaimRecords": 1,
+      "StationOperations": 2,
+      "OperationResults": 2,
+      "UnloadBatches": 1,
+      "StopClosures": 1,
+      "TransportDemandCompletions": 1,
+      "ProtocolInbox": 32
+    },
+    "acceptedDemandRows": [
+      {
+        "demandId": "de8caae0-4f58-4351-94b8-5e4c0770dbf3",
+        "transportDemandKey": "L2-SUBLOT-20261003T043100565Z|WIRE_TO_GATE",
+        "demandRevision": 1,
+        "status": "Succeeded"
+      }
+    ],
+    "vehicleClaimRecordRows": [
+      {
+        "journeyId": "journey:de8caae0-4f58-4351-94b8-5e4c0770dbf3",
+        "vehicleKey": "BROKERX-L2-0001",
+        "acquiredAt": "2026-10-03 04:31:52.448024+00:00",
+        "releasedAt": "2026-08-29 12:00:00+00:00"
+      }
+    ],
+    "auditRows": [
+      {
+        "upperId": "W2G-de8caae0-4f58-4351-94b8-5e4c0770dbf3-GATE-1",
+        "dispatchGeneration": 1,
+        "sequence": 1,
+        "phase": "PRE_CREATE_RECONCILIATION",
+        "outcome": "NOT_FOUND",
+        "eligibilityBasis": null,
+        "httpStatusCode": 404,
+        "businessCode": null,
+        "resultPresent": 0,
+        "returnedOrderId": null
+      },
+      {
+        "upperId": "W2G-de8caae0-4f58-4351-94b8-5e4c0770dbf3-GATE-1",
+        "dispatchGeneration": 1,
+        "sequence": 2,
+        "phase": "CREATE_DISPATCH",
+        "outcome": "ARMED",
+        "eligibilityBasis": null,
+        "httpStatusCode": null,
+        "businessCode": null,
+        "resultPresent": null,
+        "returnedOrderId": null
+      },
+      {
+        "upperId": "W2G-de8caae0-4f58-4351-94b8-5e4c0770dbf3-GATE-1",
+        "dispatchGeneration": 1,
+        "sequence": 3,
+        "phase": "CREATE_REQUEST",
+        "outcome": "STARTED",
+        "eligibilityBasis": null,
+        "httpStatusCode": null,
+        "businessCode": null,
+        "resultPresent": null,
+        "returnedOrderId": null
+      },
+      {
+        "upperId": "W2G-de8caae0-4f58-4351-94b8-5e4c0770dbf3-GATE-1",
+        "dispatchGeneration": 1,
+        "sequence": 4,
+        "phase": "CREATE_RESPONSE",
+        "outcome": "ACCEPTED",
+        "eligibilityBasis": null,
+        "httpStatusCode": null,
+        "businessCode": null,
+        "resultPresent": 1,
+        "returnedOrderId": "ORDER-000002"
+      },
+      {
+        "upperId": "W2G-de8caae0-4f58-4351-94b8-5e4c0770dbf3-GATE-1",
+        "dispatchGeneration": 1,
+        "sequence": 5,
+        "phase": "POST_CREATE_RECONCILIATION",
+        "outcome": "CONFIRMED",
+        "eligibilityBasis": null,
+        "httpStatusCode": null,
+        "businessCode": null,
+        "resultPresent": 1,
+        "returnedOrderId": "ORDER-000002"
+      },
+      {
+        "upperId": "W2G-de8caae0-4f58-4351-94b8-5e4c0770dbf3-PICKUP-1",
+        "dispatchGeneration": 1,
+        "sequence": 1,
+        "phase": "PRE_CREATE_RECONCILIATION",
+        "outcome": "NOT_FOUND",
+        "eligibilityBasis": null,
+        "httpStatusCode": 404,
+        "businessCode": null,
+        "resultPresent": 0,
+        "returnedOrderId": null
+      },
+      {
+        "upperId": "W2G-de8caae0-4f58-4351-94b8-5e4c0770dbf3-PICKUP-1",
+        "dispatchGeneration": 1,
+        "sequence": 2,
+        "phase": "CREATE_DISPATCH",
+        "outcome": "ARMED",
+        "eligibilityBasis": null,
+        "httpStatusCode": null,
+        "businessCode": null,
+        "resultPresent": null,
+        "returnedOrderId": null
+      },
+      {
+        "upperId": "W2G-de8caae0-4f58-4351-94b8-5e4c0770dbf3-PICKUP-1",
+        "dispatchGeneration": 1,
+        "sequence": 3,
+        "phase": "CREATE_REQUEST",
+        "outcome": "STARTED",
+        "eligibilityBasis": null,
+        "httpStatusCode": null,
+        "businessCode": null,
+        "resultPresent": null,
+        "returnedOrderId": null
+      },
+      {
+        "upperId": "W2G-de8caae0-4f58-4351-94b8-5e4c0770dbf3-PICKUP-1",
+        "dispatchGeneration": 1,
+        "sequence": 4,
+        "phase": "CREATE_RESPONSE",
+        "outcome": "ACCEPTED",
+        "eligibilityBasis": null,
+        "httpStatusCode": null,
+        "businessCode": null,
+        "resultPresent": 1,
+        "returnedOrderId": "ORDER-000001"
+      },
+      {
+        "upperId": "W2G-de8caae0-4f58-4351-94b8-5e4c0770dbf3-PICKUP-1",
+        "dispatchGeneration": 1,
+        "sequence": 5,
+        "phase": "POST_CREATE_RECONCILIATION",
+        "outcome": "CONFIRMED",
+        "eligibilityBasis": null,
+        "httpStatusCode": null,
+        "businessCode": null,
+        "resultPresent": 1,
+        "returnedOrderId": "ORDER-000001"
+      }
+    ],
+    "orderIntentRows": [
+      {
+        "upperId": "W2G-de8caae0-4f58-4351-94b8-5e4c0770dbf3-GATE-1",
+        "purpose": "TO_GATE",
+        "status": "CONFIRMED",
+        "orderId": "ORDER-000002",
+        "destinationStationId": 210
+      },
+      {
+        "upperId": "W2G-de8caae0-4f58-4351-94b8-5e4c0770dbf3-PICKUP-1",
+        "purpose": "TO_PICKUP",
+        "status": "CONFIRMED",
+        "orderId": "ORDER-000001",
+        "destinationStationId": 12
+      }
+    ],
+    "stationOperationRows": [
+      {
+        "slotOperationAttemptId": "c295b7bb-ad55-305a-aba1-ba0b6505e0eb",
+        "demandId": "de8caae0-4f58-4351-94b8-5e4c0770dbf3",
+        "operationType": "Load",
+        "status": "Committed",
+        "forcedRecoveryGeneration": 0,
+        "targetSlotsJson": "[1]",
+        "evidenceJson": "[{\"SlotNumber\":1,\"State\":1,\"DoorLocked\":true,\"UnlockOutputReset\":true}]"
+      },
+      {
+        "slotOperationAttemptId": "41ec651a-c953-9b5b-9127-1ca0b9ca3498",
+        "demandId": "de8caae0-4f58-4351-94b8-5e4c0770dbf3",
+        "operationType": "Unload",
+        "status": "Committed",
+        "forcedRecoveryGeneration": 0,
+        "targetSlotsJson": "[1]",
+        "evidenceJson": "[{\"SlotNumber\":1,\"State\":0,\"DoorLocked\":true,\"UnlockOutputReset\":true}]"
+      }
+    ],
+    "operationResultRows": [
+      {
+        "resultId": "60e2187e-129a-8556-ac69-27b314e550e6",
+        "slotOperationAttemptId": "41ec651a-c953-9b5b-9127-1ca0b9ca3498",
+        "agvId": "AGV-L2-001",
+        "forcedRecoveryGeneration": 0,
+        "historicalOnly": 0
+      },
+      {
+        "resultId": "57d3ba45-1f9c-4d33-8b04-0074f800bd1a",
+        "slotOperationAttemptId": "c295b7bb-ad55-305a-aba1-ba0b6505e0eb",
+        "agvId": "AGV-L2-001",
+        "forcedRecoveryGeneration": 0,
+        "historicalOnly": 0
+      }
+    ],
+    "sessionRecoveryRows": [
+      {
+        "agvId": "AGV-L2-001",
+        "sessionGeneration": 7,
+        "readiness": "RecoveryRequired",
+        "reasonCode": "HANDSHAKE_INCOMPLETE",
+        "protocolCommit": "86575456c847041515b7b75e8851a00e0d939804"
+      }
+    ],
+    "resultInboxRows": [
+      {
+        "messageId": "57d3ba45-1f9c-4d33-8b04-0074f800bd1a",
+        "contentHash": "073b299be908ea51bcbc3643da148447cdc5fc9a0bb01e379add6a2bdfb2533d",
+        "firstResponseJson": "{\"protocolVersion\":3,\"profileId\":\"AGV_FULL_PRODUCT\",\"protocolReleaseVersion\":\"2.0.0\",\"protocolReleaseManifestSha256\":\"4ac095ad371d3aaa60d7c2e0198cfd64cff5f3068230fc3420e9cdf5616422a7\",\"messageType\":\"DurableAck\",\"messageId\":\"344692f2-664b-496b-bf4b-cf43299525ec\",\"correlationId\":\"57d3ba45-1f9c-4d33-8b04-0074f800bd1a\",\"agvId\":\"AGV-L2-001\",\"sessionGeneration\":1,\"sentAt\":\"2026-10-03T04:31:54.4643459+00:00\",\"payload\":{\"acceptedMessageId\":\"57d3ba45-1f9c-4d33-8b04-0074f800bd1a\",\"acceptedMessageType\":\"OperationResult\",\"acceptedContentSha256\":\"073b299be908ea51bcbc3643da148447cdc5fc9a0bb01e379add6a2bdfb2533d\",\"durablyAcceptedAt\":\"2026-10-03T04:31:54.4643405+00:00\"}}"
+      },
+      {
+        "messageId": "60e2187e-129a-8556-ac69-27b314e550e6",
+        "contentHash": "fa5ca7e3a2abbf6f4761267fcdd8aee1417d9eef186874e5c92e3076f397352e",
+        "firstResponseJson": "{\"protocolVersion\":3,\"profileId\":\"AGV_FULL_PRODUCT\",\"protocolReleaseVersion\":\"2.0.0\",\"protocolReleaseManifestSha256\":\"4ac095ad371d3aaa60d7c2e0198cfd64cff5f3068230fc3420e9cdf5616422a7\",\"messageType\":\"DurableAck\",\"messageId\":\"35f4c443-7cc5-435f-ae20-f0a686c5ec74\",\"correlationId\":\"60e2187e-129a-8556-ac69-27b314e550e6\",\"agvId\":\"AGV-L2-001\",\"sessionGeneration\":2,\"sentAt\":\"2026-10-03T04:33:43.5150278+00:00\",\"payload\":{\"acceptedMessageId\":\"60e2187e-129a-8556-ac69-27b314e550e6\",\"acceptedMessageType\":\"OperationResult\",\"acceptedContentSha256\":\"fa5ca7e3a2abbf6f4761267fcdd8aee1417d9eef186874e5c92e3076f397352e\",\"durablyAcceptedAt\":\"2026-10-03T04:33:43.5149665+00:00\"}}"
+      }
+    ]
+  },
+  "controlServerVersion": {
+    "protocolVersion": 3,
+    "profileId": "AGV_FULL_PRODUCT",
+    "protocolReleaseVersion": "2.0.0",
+    "protocolTag": "protocol-v2.0.0",
+    "protocolCommit": "86575456c847041515b7b75e8851a00e0d939804",
+    "manifestSha256": "4ac095ad371d3aaa60d7c2e0198cfd64cff5f3068230fc3420e9cdf5616422a7",
+    "schemaBundleSha256": "9db0dbdc22fed7e39edf8d01b1fc40a12f5d70a7414f696f909ab2a87eb8c221",
+    "vectorsSha256": "391fa69a7d6e9f86ea139ba4c74eadf4994bf0a87e89d3dc5258dd7968d9182a",
+    "approvalStatus": "APPROVED_RELEASE"
+  },
+  "controlServerVersionAfterRestart": {
+    "protocolVersion": 3,
+    "profileId": "AGV_FULL_PRODUCT",
+    "protocolReleaseVersion": "2.0.0",
+    "protocolTag": "protocol-v2.0.0",
+    "protocolCommit": "86575456c847041515b7b75e8851a00e0d939804",
+    "manifestSha256": "4ac095ad371d3aaa60d7c2e0198cfd64cff5f3068230fc3420e9cdf5616422a7",
+    "schemaBundleSha256": "9db0dbdc22fed7e39edf8d01b1fc40a12f5d70a7414f696f909ab2a87eb8c221",
+    "vectorsSha256": "391fa69a7d6e9f86ea139ba4c74eadf4994bf0a87e89d3dc5258dd7968d9182a",
+    "approvalStatus": "APPROVED_RELEASE"
+  },
+  "error": null,
+  "secretLeakFiles": [],
+  "evidenceFiles": [
+    {
+      "path": "configuration.json",
+      "sha256": "d2c2d20a3dedec7378dc2bba516d67e611228bd39f9248f449bcb3b1e5866218",
+      "length": 1624
+    },
+    {
+      "path": "handshake-after-restart.json",
+      "sha256": "6eade6d2fe5fa108ba5aa0c19ee5b95323b111c6aa9189f01668e7959bda6104",
+      "length": 228
+    },
+    {
+      "path": "logs/checkout-control-server.log",
+      "sha256": "eeae382b0e49e9469377e6a94d0bf8c6ebd2a1bfbe4d628e573da8d5dbf4dd80",
+      "length": 139
+    },
+    {
+      "path": "logs/clone-control-server.log",
+      "sha256": "884b8daf1ed06899062dc56f3ce901397edac04d57ab46a55aa8406a8494651f",
+      "length": 70
+    },
+    {
+      "path": "logs/control-1.err.log",
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "length": 0
+    },
+    {
+      "path": "logs/control-1.out.log",
+      "sha256": "4cb9453c94477a94933f7afaf47b4c7ce6032c0d27d225a43d84012648edacc1",
+      "length": 60118
+    },
+    {
+      "path": "logs/control-2.err.log",
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "length": 0
+    },
+    {
+      "path": "logs/control-2.out.log",
+      "sha256": "642b402ab611956a48a3228eb340fbe5533de38fd6f25b81701d68ba6cfe2336",
+      "length": 7495
+    },
+    {
+      "path": "logs/publish-control-server.log",
+      "sha256": "494e2eafac54ce1b8156c604a9c671196949983bae582d972a86c4c6d80b52c6",
+      "length": 1242
+    },
+    {
+      "path": "probe-result.json",
+      "sha256": "0e0b761a1b4ec694dfd93be4ce84339b1fc3caf75ea67d77d2364f00ccce620e",
+      "length": 2215
+    },
+    {
+      "path": "probe-transcript.ndjson",
+      "sha256": "cc9cd64937aeb0c3f61b8373439600102c25762175dd293d443ac50749e52196",
+      "length": 1665
+    },
+    {
+      "path": "slices/FP-IS-04/gate-result.json",
+      "sha256": "9daea79843a67a4fcd397f9cdfb65f50c1a7929d14bed096606a3de08bf131e4",
+      "length": 3500
+    },
+    {
+      "path": "slices/FP-IS-05/gate-result.json",
+      "sha256": "47a29710395bb98301ab8a97935aafcc68840233e8f7054eee7125b4adcf8faa",
+      "length": 3480
+    },
+    {
+      "path": "slices/FP-IS-06/gate-result.json",
+      "sha256": "727a32bc77a245cd3ec4c38201b239e79e34f6d55ff60c9f62b836e543b00727",
+      "length": 3424
+    }
+  ]
+}

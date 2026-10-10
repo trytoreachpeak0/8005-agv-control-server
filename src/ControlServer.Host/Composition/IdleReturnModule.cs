@@ -1,0 +1,33 @@
+using ControlServer.Application;
+using ControlServer.Host.Runtime.IdleReturn;
+using Microsoft.Extensions.Options;
+
+namespace ControlServer.Host.Composition;
+
+/// <summary>
+/// 空闲返回（批次8-18，control-server#389）：开关、强制充电线的过渡实现与评估器，一次注册齐。
+/// </summary>
+/// <remarks>
+/// 开关绑配置节 <c>IdleReturn</c>，<c>appsettings.json</c> 里没有这一节，所以不配即关（<see cref="IdleReturnOptions"/>）。
+/// 评估器依赖 <see cref="VehiclePurposeModule"/> 的三个端口、<see cref="TaskTypeStationModule"/> 的绑定存储与路网访问器。
+/// </remarks>
+internal static class IdleReturnModule
+{
+    internal static IServiceCollection AddIdleReturn(this IServiceCollection services, IConfiguration configuration)
+    {
+        ArgumentNullException.ThrowIfNull(services);
+        ArgumentNullException.ThrowIfNull(configuration);
+
+        // 批次8-18 的过渡护栏（打开即拒绝启动）与它的 L2 确认键由批次8-19（control-server#390）删掉：承诺现在会被执行与释放。
+        services.AddOptions<IdleReturnOptions>()
+            .Bind(configuration.GetSection(IdleReturnOptions.SectionName));
+        // 批次9-05（control-server#403）换成按车读充电策略版本的实现。作用域：它读库（IChargingPolicyResolver 是作用域的）。
+        services.AddScoped<IMandatoryChargeLine, PolicyMandatoryChargeLine>();
+        // 单例：结论变了才记日志，要跨轮次（每一轮是一个新的作用域）记得上一轮的结论。
+        services.AddSingleton<IdleReturnVerdictBoard>();
+        // 单例：连续物化失败的轮数要跨轮次记着（审查 L3）。
+        services.AddSingleton<IdleReturnMaterializationFailures>();
+        services.AddScoped<IdleReturnEvaluator>();
+        return services;
+    }
+}

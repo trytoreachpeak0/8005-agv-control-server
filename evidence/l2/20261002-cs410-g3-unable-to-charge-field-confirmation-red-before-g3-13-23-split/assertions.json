@@ -1,0 +1,73 @@
+{
+  "schemaVersion": 1,
+  "scenario": "g3-unable-to-charge-field-confirmation",
+  "runId": "20261002T082657272Z",
+  "outcome": "FAIL",
+  "failureReason": "",
+  "identity": {
+    "vehicleKey": "BROKERX-L2-0001",
+    "onboardHmiCommit": "52970e5091a57b07caae472f33145d12f8081e7f",
+    "controlServerCommit": "5c201348c30381070b54b79a3bd2d43fe3bec3b3",
+    "batchId": "unspecified",
+    "rig": "RealOnboard",
+    "protocolReleaseIdentity": {
+      "repository": "8005-agv-protocol",
+      "releaseVersion": "2.0.0",
+      "tag": "protocol-v2.0.0",
+      "commit": "86575456c847041515b7b75e8851a00e0d939804",
+      "protocolVersion": 3,
+      "profileId": "AGV_FULL_PRODUCT",
+      "manifestSha256": "4ac095ad371d3aaa60d7c2e0198cfd64cff5f3068230fc3420e9cdf5616422a7",
+      "schemaBundleSha256": "9db0dbdc22fed7e39edf8d01b1fc40a12f5d70a7414f696f909ab2a87eb8c221",
+      "vectorsSha256": "391fa69a7d6e9f86ea139ba4c74eadf4994bf0a87e89d3dc5258dd7968d9182a",
+      "approvalStatus": "APPROVED_RELEASE"
+    },
+    "slotsSimulatorCommit": "fb5f7c593742bf98bc3957b8729a38aad5321f28",
+    "stageRoot": "C:\\Users\\szy\\AppData\\Local\\Temp\\l2-20261002T082657272Z",
+    "agvId": "AGV-L2-001"
+  },
+  "assertions": [
+    {
+      "id": "G3-13-21",
+      "description": "车停在 211、单 HANG、开始充电的结果码不是 407802：旅程写 ORDER_HANG，没有任何暂停，周期仍 ACTIVE（系统没有自动确认，REQ-0175）",
+      "outcome": "PASS",
+      "expected": "ORDER_HANG | (none) | ACTIVE",
+      "actual": "ORDER_HANG | (none) | ACTIVE / ORDER_HANG | (none) | ACTIVE"
+    },
+    {
+      "id": "G3-13-22",
+      "description": "车载端：充电用途、计划当前腿是 211 时「现场确认充不上」入口出现（「接不上充电」可按，没有不可用说明）",
+      "outcome": "PASS",
+      "expected": "offered=True | notice=False",
+      "actual": "offered=True | notice=False"
+    },
+    {
+      "id": "G3-13-23",
+      "description": "车载端发 UnableToChargeFieldConfirmationRequested（L2-OPERATOR、计划里那条 CHARGER 腿的站点、CONNECTION_FAILED），服务端回 Result：CONFIRMED、problem 为空、chargingPolicyDecision=MANUAL_CHARGING_HOLD（名册只有 211、电量 25 低于最低余量 30）；界面结果一行报 CONFIRMED",
+      "outcome": "FAIL",
+      "expected": "L2-OPERATOR / 充电点1 / CONNECTION_FAILED -> CONFIRMED / null / MANUAL_CHARGING_HOLD / CONFIRMED",
+      "actual": "L2-OPERATOR / 充电点1 / CONNECTION_FAILED -> CONFIRMED /  / MANUAL_CHARGING_HOLD / "
+    },
+    {
+      "id": "G3-13-24",
+      "description": "Result 之后，业务状态 UNABLE_TO_CHARGE、CLEARING_MAINTENANCE 进发件箱并被车载端确认（VehicleBusinessStateSnapshot → SnapshotAppliedAck）",
+      "outcome": "PASS",
+      "expected": "after 10/02/2026 08:27:47 +00:00, acknowledged",
+      "actual": "10/02/2026 08:27:47 +00:00, acknowledged=True"
+    },
+    {
+      "id": "G3-13-25",
+      "description": "一条 UNABLE_TO_CHARGE_CONFIRMED 的暂停（确认人 L2-OPERATOR、R-11、现场处置 CONNECTION_FAILED）；周期 UNABLE_TO_CHARGE／CLEARING；人工充电等待 UNABLE_TO_CHARGE_LOW_BATTERY；判定记下一行（DECIDE_CHARGING_POLICY_CENTRALLY、RECORD_FIELD_OBSERVATION）",
+      "outcome": "PASS",
+      "expected": "UNABLE_TO_CHARGE_CONFIRMED L2-OPERATOR/R-11/CONNECTION_FAILED | UNABLE_TO_CHARGE/CLEARING | UNABLE_TO_CHARGE_LOW_BATTERY | 1 decided",
+      "actual": "UNABLE_TO_CHARGE_CONFIRMED L2-OPERATOR/R-11/CONNECTION_FAILED | UNABLE_TO_CHARGE/CLEARING | UNABLE_TO_CHARGE_LOW_BATTERY | 1 decided"
+    },
+    {
+      "id": "G3-13-26",
+      "description": "车保持原位：RIoT 上恰好一张充电单（duplicate-riot-order），没有任何订单命令，211 仍是这一趟的",
+      "outcome": "PASS",
+      "expected": "1 orders | 0 commands | True",
+      "actual": "1 orders | 0 commands | True"
+    }
+  ]
+}

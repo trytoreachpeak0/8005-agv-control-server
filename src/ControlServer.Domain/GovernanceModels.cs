@@ -23,7 +23,29 @@ public enum GovernedObjectKind
     TaskTypeStationRule,
 
     /// <summary>每区派车参数表，整张表一个版本（REQ-0198、REQ-0203；批次 7 建表票 control-server#206）。</summary>
-    DispatchZoneParameters
+    DispatchZoneParameters,
+
+    /// <summary>等待点登记（含 <c>WaitingPointVehicleScope</c> 白名单），整张登记一个版本（REQ-0289；批次 8 建表票 control-server#386）。</summary>
+    WaitingPointRegistration,
+
+    /// <summary>
+    /// 8005 独占充电桩名册（含每桩的车辆候选子集），整张名册一个版本；零条目的版本合法，即「名册置空」（REQ-0171；批次 9 建表票
+    /// control-server#399）。
+    /// </summary>
+    ChargerRoster,
+
+    /// <summary><c>ChargingPolicyVersion</c> 的内容（三个阈值、耗电估计、无进展观察策略、适用车辆），一版一份（REQ-0281、REQ-0282；control-server#399）。</summary>
+    ChargingPolicy,
+
+    /// <summary>
+    /// 一个站点独占（<c>(MapId, StationId)</c>）。不是受治理配置、没有版本：审计的是现场人工释放它这一次操作（control-server#419）。
+    /// </summary>
+    StationExclusivity,
+
+    /// <summary>
+    /// 一个异常恢复会话。不是受治理配置、没有版本：审计的是管理员在结果永远来不了时关掉它这一次操作（control-server#483）。
+    /// </summary>
+    ExceptionRecoverySession
 }
 
 /// <summary>

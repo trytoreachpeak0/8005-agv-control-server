@@ -1,0 +1,16 @@
+mutation R3-refills-not-in-versions: JourneyStopCursor.cs matches=1
+    0 Error(s)
+  Failed ControlServer.Tests.RefilledStationDeadlineReachesVehicleTests.AfterARefillTheJourneyReachesTheGateWithTheWorklistRevisionStrictlyAdvancing(enteredAgainst: 1) [568 ms]
+  Error Message:
+   Assert.Equal() Failure: Values differ
+Expected: AwaitingLoadResult
+Actual:   AwaitingSublot
+--- End of stack trace from previous location ---
+  Failed ControlServer.Tests.RefilledStationDeadlineReachesVehicleTests.AfterARefillTheJourneyReachesTheGateWithTheWorklistRevisionStrictlyAdvancing(enteredAgainst: 0) [2 s]
+  Error Message:
+   Assert.Equal() Failure: Collections differ
+                 ↓ (pos 2)
+Expected: [1, 2, 3]
+Actual:   [1, 2]
+--- End of stack trace from previous location ---
+Failed!  - Failed:     2, Passed:    28, Skipped:     0, Total:    30, Duration: 13 s - ControlServer.Tests.dll (net8.0)

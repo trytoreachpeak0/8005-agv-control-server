@@ -1,0 +1,31 @@
+Test run for C:\Users\szy\Desktop\8005-workspace-v2\worktrees\b7-06-8005-agv-control-server\tests\ControlServer.Tests\bin\Release\net8.0\win-x64\ControlServer.Tests.dll (.NETCoreApp,Version=v8.0)
+VSTest version 17.11.1 (x64)
+
+Starting test execution, please wait...
+A total of 1 test files matched the specified pattern.
+[xUnit.net 00:00:06.67]     ControlServer.Tests.Batch7JourneyAwareSlotLedgerTests.AVehicleUnderWayLosesTheSlotsItsOwnDemandHasReserved [FAIL]
+  Failed ControlServer.Tests.Batch7JourneyAwareSlotLedgerTests.AVehicleUnderWayLosesTheSlotsItsOwnDemandHasReserved [1 s]
+  Error Message:
+   Assert.Equal() Failure: Collections differ
+                                   ↓ (pos 0)
+Expected: <>z__ReadOnlyArray<int> [3, 4]
+Actual:   <>z__ReadOnlyList<int>  [1, 2, 3, 4]
+                                   ↑ (pos 0)
+  Stack Trace:
+     at ControlServer.Tests.Batch7JourneyAwareSlotLedgerTests.AVehicleUnderWayLosesTheSlotsItsOwnDemandHasReserved() in C:\Users\szy\Desktop\8005-workspace-v2\worktrees\b7-06-8005-agv-control-server\tests\ControlServer.Tests\Batch7JourneyAwareSlotLedgerTests.cs:line 78
+   at ControlServer.Tests.Batch7JourneyAwareSlotLedgerTests.AVehicleUnderWayLosesTheSlotsItsOwnDemandHasReserved() in C:\Users\szy\Desktop\8005-workspace-v2\worktrees\b7-06-8005-agv-control-server\tests\ControlServer.Tests\Batch7JourneyAwareSlotLedgerTests.cs:line 81
+--- End of stack trace from previous location ---
+[xUnit.net 00:00:07.55]     ControlServer.Tests.Batch7JourneyAwareSlotLedgerTests.TheSlotsSubtractedAreTheReservedOnesWhileNothingIsLoadedYet [FAIL]
+  Failed ControlServer.Tests.Batch7JourneyAwareSlotLedgerTests.TheSlotsSubtractedAreTheReservedOnesWhileNothingIsLoadedYet [876 ms]
+  Error Message:
+   Assert.Equal() Failure: Collections differ
+                                   ↓ (pos 0)
+Expected: <>z__ReadOnlyArray<int> [3, 4]
+Actual:   <>z__ReadOnlyList<int>  [1, 2, 3, 4]
+                                   ↑ (pos 0)
+  Stack Trace:
+     at ControlServer.Tests.Batch7JourneyAwareSlotLedgerTests.TheSlotsSubtractedAreTheReservedOnesWhileNothingIsLoadedYet() in C:\Users\szy\Desktop\8005-workspace-v2\worktrees\b7-06-8005-agv-control-server\tests\ControlServer.Tests\Batch7JourneyAwareSlotLedgerTests.cs:line 107
+   at ControlServer.Tests.Batch7JourneyAwareSlotLedgerTests.TheSlotsSubtractedAreTheReservedOnesWhileNothingIsLoadedYet() in C:\Users\szy\Desktop\8005-workspace-v2\worktrees\b7-06-8005-agv-control-server\tests\ControlServer.Tests\Batch7JourneyAwareSlotLedgerTests.cs:line 107
+--- End of stack trace from previous location ---
+
+Failed!  - Failed:     2, Passed:     7, Skipped:     0, Total:     9, Duration: 8 s - ControlServer.Tests.dll (net8.0)

@@ -1,0 +1,37 @@
+{"at":"2026-10-10T10:54:45.1220620+00:00","note":"L2 run 20261010T105445082Z starting for scenario 'same-direction-die-to-oven-journey'."}
+{"at":"2026-10-10T10:54:45.1768784+00:00","note":"L2 port block lock acquired (slot 0, Global\\W2G-L2PortBlock)."}
+{"at":"2026-10-10T10:54:45.1809200+00:00","note":"Build skipped (-SkipBuild); running the output already built."}
+{"at":"2026-10-10T10:54:46.1043151+00:00","criterion":"fake-riot-live","value":"live"}
+{"at":"2026-10-10T10:54:46.3166876+00:00","criterion":"fake-mes-live","value":"live"}
+{"at":"2026-10-10T10:54:46.4539004+00:00","note":"Fake RIoT stations on map 25: 11=C15-13, 12=N1-3_N1-7, 210=关卡, 402=烘箱"}
+{"at":"2026-10-10T10:54:46.4944729+00:00","note":"Task type station preset: the scenario's own (2 binding(s))"}
+{"at":"2026-10-10T10:54:52.4105707+00:00","note":"Package capacity rules imported."}
+{"at":"2026-10-10T10:54:52.4140555+00:00","note":"No waiting point registration: a single-vehicle rig, or WaitingPoints = $false."}
+{"at":"2026-10-10T10:54:54.5176615+00:00","criterion":"control-server-live","value":"(null)"}
+{"at":"2026-10-10T10:54:56.9497185+00:00","criterion":"control-server-live","value":"live"}
+{"at":"2026-10-10T10:54:57.0323095+00:00","note":"Protocol release identity: protocol-v3.0.0 (profileId AGV_FULL_PRODUCT, protocolVersion 4, APPROVED_RELEASE)."}
+{"at":"2026-10-10T10:54:57.7255717+00:00","criterion":"onboard-readiness","value":"DISCONNECTED"}
+{"at":"2026-10-10T10:54:57.9946640+00:00","criterion":"onboard-readiness","value":"READY"}
+{"at":"2026-10-10T10:54:58.0416389+00:00","criterion":"control-server-ready","value":"ready"}
+{"at":"2026-10-10T10:54:58.0961254+00:00","note":"FieldOps: seed-approved-facts --database C:\\Users\\szy\\AppData\\Local\\Temp\\l2-20261010T105445082Z\\controlserver.db"}
+{"at":"2026-10-10T10:54:59.8782657+00:00","criterion":"slot-model-preseed:seed-approved-facts","value":"OK","detail":{"output":{"command":"seed-approved-facts","outcome":"OK","modelKey":"8005-eight-slot","slotModelVersionId":"eb20bb542aab428884ef730ea41a0c29","version":1,"slotCount":8}}}
+{"at":"2026-10-10T10:54:59.8848011+00:00","note":"FieldOps: bind-io --database C:\\Users\\szy\\AppData\\Local\\Temp\\l2-20261010T105445082Z\\controlserver.db --agv AGV-L2-001"}
+{"at":"2026-10-10T10:55:01.5084437+00:00","criterion":"slot-model-preseed:bind-io:AGV-L2-001","value":"OK","detail":{"output":{"command":"bind-io","outcome":"OK","agvId":"AGV-L2-001","slotModelVersionId":"eb20bb542aab428884ef730ea41a0c29","boundSlots":8,"version":1}}}
+{"at":"2026-10-10T10:55:01.5609805+00:00","criterion":"slot-model-preseed:dispatch-zones","value":"0"}
+{"at":"2026-10-10T10:55:01.5641139+00:00","note":"FieldOps: import-area-assignments --database C:\\Users\\szy\\AppData\\Local\\Temp\\l2-20261010T105445082Z\\controlserver.db --input C:\\Users\\szy\\Desktop\\8005-workspace-v2\\worktrees\\b10-02-8005-agv-control-server\\evidence\\l2\\20261010-cs546\\red\\8b780a24-same-direction-die-to-oven-journey\\snapshots\\preseed-area-assignments.csv"}
+{"at":"2026-10-10T10:55:05.3157687+00:00","criterion":"slot-model-preseed:import-area-assignments","value":"OK","detail":{"output":{"command":"import-area-assignments","outcome":"OK","dryRun":false,"input":"C:\\Users\\szy\\Desktop\\8005-workspace-v2\\worktrees\\b10-02-8005-agv-control-server\\evidence\\l2\\20261010-cs546\\red\\8b780a24-same-direction-die-to-oven-journey\\snapshots\\preseed-area-assignments.csv","entryCount":2,"version":1,"contentSha256":"04efbe7b636d311420caf517f8af22cd0a39d4e17d2976caf9251637eecc0556","snapshotId":"d175092a22b0431abfa645f5232a79d9","importedAt":"2026-10-10T18:55:01.7997122+08:00","errorCount":0,"errors":[],"preview":[]}}}
+{"at":"2026-10-10T10:55:05.3290537+00:00","note":"FieldOps: import-charging-policy --database C:\\Users\\szy\\AppData\\Local\\Temp\\l2-20261010T105445082Z\\controlserver.db --input C:\\Users\\szy\\Desktop\\8005-workspace-v2\\worktrees\\b10-02-8005-agv-control-server\\evidence\\l2\\20261010-cs546\\red\\8b780a24-same-direction-die-to-oven-journey\\snapshots\\preseed-charging-policy.json --fleet BROKERX-L2-0001"}
+{"at":"2026-10-10T10:55:09.2090844+00:00","note":"FieldOps: approve-charging-policy --database C:\\Users\\szy\\AppData\\Local\\Temp\\l2-20261010T105445082Z\\controlserver.db --version 1 --approved-by L2 orchestrator --role L2_PRESET --basis scripts/l2/L2ChargingPolicy.psm1 --source L2_PRESET"}
+{"at":"2026-10-10T10:55:11.5633319+00:00","note":"FieldOps: activate-charging-policy --database C:\\Users\\szy\\AppData\\Local\\Temp\\l2-20261010T105445082Z\\controlserver.db --version 1 --activated-by L2 orchestrator --fleet BROKERX-L2-0001 --allow-non-field-approval"}
+{"at":"2026-10-10T10:55:13.9040701+00:00","criterion":"preseed:charging-policy","value":"OK","detail":{"coveredAfter":["BROKERX-L2-0001"],"source":"L2_PRESET","withoutPolicy":[],"version":1}}
+{"at":"2026-10-10T10:55:13.9057116+00:00","note":"Per-zone dispatch parameters left unconfigured (the default precondition)."}
+{"at":"2026-10-10T10:55:13.9113048+00:00","note":"Environment is up; entering scenario 'same-direction-die-to-oven-journey'."}
+{"at":"2026-10-10T10:55:14.0205846+00:00","note":"FieldOps: area-assignments --database C:\\Users\\szy\\AppData\\Local\\Temp\\l2-20261010T105445082Z\\controlserver.db"}
+{"at":"2026-10-10T10:55:16.5809085+00:00","note":"Vehicle AGV-L2-001 slot model eb20bb542aab428884ef730ea41a0c29 via LatestPublishedIoBinding: 1=FRONT, 2=FRONT, 3=FRONT, 4=FRONT, 5=REAR, 6=REAR, 7=REAR, 8=REAR"}
+{"at":"2026-10-10T10:55:16.5962570+00:00","note":"Publishing DIE_TO_OVEN demand e24a89d6ecb146309a0b0709f5f76ffd (sublot L2-SDJ-N1-3-20261010T105445082Z, AREA N1-3, 2 baskets)."}
+{"at":"2026-10-10T10:55:16.6703801+00:00","criterion":"L2-SDJ-DOV-REAR-admission","value":"@{Stage=; WorkType=; ReasonCode=}"}
+{"at":"2026-10-10T10:55:16.9296921+00:00","criterion":"L2-SDJ-DOV-REAR-admission","value":"@{Stage=; WorkType=; ReasonCode=TASK_TYPE_NOT_YET_EXECUTABLE}"}
+{"at":"2026-10-10T10:56:46.8530013+00:00","note":"Not reached: Timed out after 90s waiting for: the DIE_TO_OVEN demand (N1-3) was accepted and dispatched to the machine station. Last observed: {\"Stage\":null,\"WorkType\":null,\"ReasonCode\":\"TASK_TYPE_NOT_YET_EXECUTABLE\"}"}
+{"at":"2026-10-10T10:56:46.8603416+00:00","note":"Run failed: L2-SDJ-DOV-REAR-01 did not hold: the DIE_TO_OVEN demand (N1-3) was not accepted (backlog reason 'TASK_TYPE_NOT_YET_EXECUTABLE'); every later criterion needs its journey."}
+{"at":"2026-10-10T10:56:46.8621588+00:00","note":"Failure at: at Test-L2SameDirectionDemand, C:\\Users\\szy\\Desktop\\8005-workspace-v2\\worktrees\\b10-02-red-8b780a24\\scripts\\l2\\scenarios\\SameDirectionJourneyCommon.ps1: line 130\r\nat Invoke-L2SameDirectionJourneyScenario, C:\\Users\\szy\\Desktop\\8005-workspace-v2\\worktrees\\b10-02-red-8b780a24\\scripts\\l2\\scenarios\\SameDirectionJourneyCommon.ps1: line 238\r\nat <ScriptBlock>, C:\\Users\\szy\\Desktop\\8005-workspace-v2\\worktrees\\b10-02-red-8b780a24\\scripts\\l2\\scenarios\\same-direction-die-to-oven-journey.ps1: line 18\r\nat <ScriptBlock>, C:\\Users\\szy\\Desktop\\8005-workspace-v2\\worktrees\\b10-02-red-8b780a24\\scripts\\l2\\Invoke-L2Scenario.ps1: line 1432"}
+{"at":"2026-10-10T10:56:47.3156740+00:00","note":"L2 port block lock released."}

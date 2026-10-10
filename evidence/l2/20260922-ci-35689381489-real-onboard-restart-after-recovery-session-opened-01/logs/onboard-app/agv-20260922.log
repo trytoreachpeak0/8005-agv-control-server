@@ -1,0 +1,27 @@
+2026-09-22T13:37:06.3136469+08:00	Information	SingleInstanceGuard	抢到了整机单例名字。名字=Global\SQCD.Agv.Wpf.Onboard。
+2026-09-22T13:37:06.3592967+08:00	Information	App	车载端启动：agvId=AGV-L2-001，environment=Development，version=0.2.0-safety-mock-travel+ecdb3a0be1d95ef51e7d40493808ba4659274f41。
+2026-09-22T13:37:07.0302577+08:00	Information	ModbusTcpIoModuleClient	已连接IO模块 127.0.0.1:48412，UnitId=255。
+2026-09-22T13:37:07.0447516+08:00	Information	OnboardController	IO模块在线。
+2026-09-22T13:37:07.0460602+08:00	Information	OnboardController	启动IO安全快照验证通过。
+2026-09-22T13:37:08.3236580+08:00	Information	WireToGateSessionService	上层会话已建立：generation=1，readiness=Ready。
+2026-09-22T13:37:19.4194272+08:00	Information	App	服务端请求录入Sublot：station=N1-3_N1-7，revision=1，expectedSublots=RAO-20260922T053653559Z。 
+2026-09-22T13:37:20.0704315+08:00	Information	App	服务端请求录入Sublot：station=N1-3_N1-7，revision=1，expectedSublots=RAO-20260922T053653559Z。 
+2026-09-22T13:37:21.0975354+08:00	Information	ModbusTcpIoModuleClient	已向物理1号仓发送开锁脉冲触发，DO地址=100。硬件负责自动复位。 
+2026-09-22T13:37:21.1145736+08:00	Information	ModbusTcpIoModuleClient	1号仓IO变化：DO 0->1，锁DI 1->1，光幕DI 1->1。
+2026-09-22T13:37:21.2898200+08:00	Information	ModbusTcpIoModuleClient	1号仓IO变化：DO 1->1，锁DI 1->0，光幕DI 1->1。
+2026-09-22T13:37:21.6231840+08:00	Information	ModbusTcpIoModuleClient	1号仓IO变化：DO 1->0，锁DI 0->0，光幕DI 1->1。
+2026-09-22T13:37:21.7857167+08:00	Information	WireToGateBusinessService	忽略并发重复SlotOperationCommand：attempt=11b7e05d-add3-4652-9e95-4c31cad17096。
+2026-09-22T13:37:22.8000639+08:00	Information	SingleInstanceGuard	抢到了整机单例名字。名字=Global\SQCD.Agv.Wpf.Onboard。
+2026-09-22T13:37:22.8620612+08:00	Information	App	车载端启动：agvId=AGV-L2-001，environment=Development，version=0.2.0-safety-mock-travel+ecdb3a0be1d95ef51e7d40493808ba4659274f41。
+2026-09-22T13:37:23.2780238+08:00	Information	ModbusTcpIoModuleClient	已连接IO模块 127.0.0.1:48412，UnitId=255。
+2026-09-22T13:37:23.2902426+08:00	Information	OnboardController	IO模块在线。
+2026-09-22T13:37:23.2915641+08:00	Information	OnboardController	启动IO安全快照验证通过。
+2026-09-22T13:37:23.6398478+08:00	Warning	WireToGateBusinessService	上次仓位操作在执行中中断，未再输出开锁，按实时IO结算：attempt=11b7e05d-add3-4652-9e95-4c31cad17096，outcome=UNKNOWN，checkpoint=SAFE_FINISH_REACHED。
+2026-09-22T13:37:23.6501972+08:00	Information	WireToGateSessionService	上层会话已建立：generation=2，readiness=RecoveryRequired。
+2026-09-22T13:37:28.9532459+08:00	Warning	WireToGateBusinessService	恢复向量LOAD_COMPENSATION未执行：reason=The operation has timed out.。 | TimeoutException: The operation has timed out.
+2026-09-22T13:37:30.6231594+08:00	Information	SingleInstanceGuard	抢到了整机单例名字。名字=Global\SQCD.Agv.Wpf.Onboard。
+2026-09-22T13:37:30.6846141+08:00	Information	App	车载端启动：agvId=AGV-L2-001，environment=Development，version=0.2.0-safety-mock-travel+ecdb3a0be1d95ef51e7d40493808ba4659274f41。
+2026-09-22T13:37:31.1106830+08:00	Information	ModbusTcpIoModuleClient	已连接IO模块 127.0.0.1:48412，UnitId=255。
+2026-09-22T13:37:31.1404665+08:00	Information	OnboardController	IO模块在线。
+2026-09-22T13:37:31.1426951+08:00	Information	OnboardController	启动IO安全快照验证通过。
+2026-09-22T13:37:31.4720164+08:00	Information	WireToGateSessionService	上层会话已建立：generation=3，readiness=RecoveryRequired。

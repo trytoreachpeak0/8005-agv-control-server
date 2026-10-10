@@ -1,0 +1,58 @@
+Test run for C:\Users\szy\Desktop\8005-workspace-v2\worktrees\cs440-8005-agv-control-server\tests\ControlServer.Tests\bin\Release\net8.0\win-x64\ControlServer.Tests.dll (.NETCoreApp,Version=v8.0)
+VSTest version 17.11.1 (x64)
+
+Starting test execution, please wait...
+A total of 1 test files matched the specified pattern.
+[xUnit.net 00:00:00.00] xUnit.net VSTest Adapter v3.1.5+1b188a7b0a (64-bit .NET 8.0.31)
+[xUnit.net 00:00:00.61]   Discovering: ControlServer.Tests
+[xUnit.net 00:00:02.39]   Discovered:  ControlServer.Tests
+[xUnit.net 00:00:02.61]   Starting:    ControlServer.Tests
+[xUnit.net 00:00:08.75]     ControlServer.Tests.OnboardPowerLossReconnectTests.AVehicleThatKeepsTalkingButStopsReadingIsLetGoAndReconnects(writeTimeoutMilliseconds: 1000) [FAIL]
+[xUnit.net 00:00:08.75]       最后一次写成功的推送在 t=0.1s 开始，到旧代次离开路由表只隔了 140 ms，不到写超时 1 秒的八成：写没有卡住，这一条没造出它要的形状。
+[xUnit.net 00:00:08.75]       服务端日志：1002、1003；聋了之后车往服务端送了 430 字节；最长的一次推送 64 ms；最后一次写成功的推送开始于 t=0.1s；旧代次离开路由表：t=0.2s；推送的失败：1× OnboardConnectionUnavailableException: A write to the Onboard peer 'AGV-POWER-01' (session generation 1) did not finish within 1 s; the connection was closed and the line stays unacknowledged for the replay after the reconnect.；1003 的异常：IOException: Unable to read data from the transport connection: The I/O operation has been aborted because of either a thread exit or an application request..
+[xUnit.net 00:00:08.75]       Stack Trace:
+[xUnit.net 00:00:08.75]         C:\Users\szy\Desktop\8005-workspace-v2\worktrees\cs440-8005-agv-control-server\tests\ControlServer.Tests\OnboardPowerLossReconnectTests.cs(232,0): at ControlServer.Tests.OnboardPowerLossReconnectTests.AVehicleThatKeepsTalkingButStopsReadingIsLetGoAndReconnects(Nullable`1 writeTimeoutMilliseconds)
+[xUnit.net 00:00:08.75]         C:\Users\szy\Desktop\8005-workspace-v2\worktrees\cs440-8005-agv-control-server\tests\ControlServer.Tests\OnboardPowerLossReconnectTests.cs(251,0): at ControlServer.Tests.OnboardPowerLossReconnectTests.AVehicleThatKeepsTalkingButStopsReadingIsLetGoAndReconnects(Nullable`1 writeTimeoutMilliseconds)
+[xUnit.net 00:00:08.75]         --- End of stack trace from previous location ---
+[xUnit.net 00:00:08.75]       Output:
+[xUnit.net 00:00:08.75]         服务端日志：1002、1003；聋了之后车往服务端送了 430 字节；最长的一次推送 64 ms；最后一次写成功的推送开始于 t=0.1s；旧代次离开路由表：t=0.2s；推送的失败：1× OnboardConnectionUnavailableException: A write to the Onboard peer 'AGV-POWER-01' (session generation 1) did not finish within 1 s; the connection was closed and the line stays unacknowledged for the replay after the reconnect.；1003 的异常：IOException: Unable to read data from the transport connection: The I/O operation has been aborted because of either a thread exit or an application request..
+  Failed ControlServer.Tests.OnboardPowerLossReconnectTests.AVehicleThatKeepsTalkingButStopsReadingIsLetGoAndReconnects(writeTimeoutMilliseconds: 1000) [6 s]
+  Error Message:
+   最后一次写成功的推送在 t=0.1s 开始，到旧代次离开路由表只隔了 140 ms，不到写超时 1 秒的八成：写没有卡住，这一条没造出它要的形状。
+服务端日志：1002、1003；聋了之后车往服务端送了 430 字节；最长的一次推送 64 ms；最后一次写成功的推送开始于 t=0.1s；旧代次离开路由表：t=0.2s；推送的失败：1× OnboardConnectionUnavailableException: A write to the Onboard peer 'AGV-POWER-01' (session generation 1) did not finish within 1 s; the connection was closed and the line stays unacknowledged for the replay after the reconnect.；1003 的异常：IOException: Unable to read data from the transport connection: The I/O operation has been aborted because of either a thread exit or an application request..
+  Stack Trace:
+     at ControlServer.Tests.OnboardPowerLossReconnectTests.AVehicleThatKeepsTalkingButStopsReadingIsLetGoAndReconnects(Nullable`1 writeTimeoutMilliseconds) in C:\Users\szy\Desktop\8005-workspace-v2\worktrees\cs440-8005-agv-control-server\tests\ControlServer.Tests\OnboardPowerLossReconnectTests.cs:line 232
+   at ControlServer.Tests.OnboardPowerLossReconnectTests.AVehicleThatKeepsTalkingButStopsReadingIsLetGoAndReconnects(Nullable`1 writeTimeoutMilliseconds) in C:\Users\szy\Desktop\8005-workspace-v2\worktrees\cs440-8005-agv-control-server\tests\ControlServer.Tests\OnboardPowerLossReconnectTests.cs:line 251
+--- End of stack trace from previous location ---
+  Standard Output Messages:
+ 服务端日志：1002、1003；聋了之后车往服务端送了 430 字节；最长的一次推送 64 ms；最后一次写成功的推送开始于 t=0.1s；旧代次离开路由表：t=0.2s；推送的失败：1× OnboardConnectionUnavailableException: A write to the Onboard peer 'AGV-POWER-01' (session generation 1) did not finish within 1 s; the connection was closed and the line stays unacknowledged for the replay after the reconnect.；1003 的异常：IOException: Unable to read data from the transport connection: The I/O operation has been aborted because of either a thread exit or an application request..
+
+
+[xUnit.net 00:00:13.13]       最后一次写成功的推送在 t=0.1s 开始，到旧代次离开路由表只隔了 142 ms，不到写超时 5 秒的八成：写没有卡住，这一条没造出它要的形状。
+[xUnit.net 00:00:13.13]     ControlServer.Tests.OnboardPowerLossReconnectTests.AVehicleThatKeepsTalkingButStopsReadingIsLetGoAndReconnects(writeTimeoutMilliseconds: null) [FAIL]
+[xUnit.net 00:00:13.13]       服务端日志：1002、1003；聋了之后车往服务端送了 430 字节；最长的一次推送 63 ms；最后一次写成功的推送开始于 t=0.1s；旧代次离开路由表：t=0.2s；推送的失败：1× OnboardConnectionUnavailableException: A write to the Onboard peer 'AGV-POWER-01' (session generation 1) did not finish within 5 s; the connection was closed and the line stays unacknowledged for the replay after the reconnect.；1003 的异常：IOException: Unable to read data from the transport connection: The I/O operation has been aborted because of either a thread exit or an application request..
+[xUnit.net 00:00:13.13]       Stack Trace:
+[xUnit.net 00:00:13.13]         C:\Users\szy\Desktop\8005-workspace-v2\worktrees\cs440-8005-agv-control-server\tests\ControlServer.Tests\OnboardPowerLossReconnectTests.cs(232,0): at ControlServer.Tests.OnboardPowerLossReconnectTests.AVehicleThatKeepsTalkingButStopsReadingIsLetGoAndReconnects(Nullable`1 writeTimeoutMilliseconds)
+[xUnit.net 00:00:13.13]         C:\Users\szy\Desktop\8005-workspace-v2\worktrees\cs440-8005-agv-control-server\tests\ControlServer.Tests\OnboardPowerLossReconnectTests.cs(251,0): at ControlServer.Tests.OnboardPowerLossReconnectTests.AVehicleThatKeepsTalkingButStopsReadingIsLetGoAndReconnects(Nullable`1 writeTimeoutMilliseconds)
+[xUnit.net 00:00:13.13]         --- End of stack trace from previous location ---
+[xUnit.net 00:00:13.13]       Output:
+[xUnit.net 00:00:13.13]         服务端日志：1002、1003；聋了之后车往服务端送了 430 字节；最长的一次推送 63 ms；最后一次写成功的推送开始于 t=0.1s；旧代次离开路由表：t=0.2s；推送的失败：1× OnboardConnectionUnavailableException: A write to the Onboard peer 'AGV-POWER-01' (session generation 1) did not finish within 5 s; the connection was closed and the line stays unacknowledged for the replay after the reconnect.；1003 的异常：IOException: Unable to read data from the transport connection: The I/O operation has been aborted because of either a thread exit or an application request..
+  Failed ControlServer.Tests.OnboardPowerLossReconnectTests.AVehicleThatKeepsTalkingButStopsReadingIsLetGoAndReconnects(writeTimeoutMilliseconds: null) [4 s]
+  Error Message:
+   最后一次写成功的推送在 t=0.1s 开始，到旧代次离开路由表只隔了 142 ms，不到写超时 5 秒的八成：写没有卡住，这一条没造出它要的形状。
+服务端日志：1002、1003；聋了之后车往服务端送了 430 字节；最长的一次推送 63 ms；最后一次写成功的推送开始于 t=0.1s；旧代次离开路由表：t=0.2s；推送的失败：1× OnboardConnectionUnavailableException: A write to the Onboard peer 'AGV-POWER-01' (session generation 1) did not finish within 5 s; the connection was closed and the line stays unacknowledged for the replay after the reconnect.；1003 的异常：IOException: Unable to read data from the transport connection: The I/O operation has been aborted because of either a thread exit or an application request..
+  Stack Trace:
+     at ControlServer.Tests.OnboardPowerLossReconnectTests.AVehicleThatKeepsTalkingButStopsReadingIsLetGoAndReconnects(Nullable`1 writeTimeoutMilliseconds) in C:\Users\szy\Desktop\8005-workspace-v2\worktrees\cs440-8005-agv-control-server\tests\ControlServer.Tests\OnboardPowerLossReconnectTests.cs:line 232
+   at ControlServer.Tests.OnboardPowerLossReconnectTests.AVehicleThatKeepsTalkingButStopsReadingIsLetGoAndReconnects(Nullable`1 writeTimeoutMilliseconds) in C:\Users\szy\Desktop\8005-workspace-v2\worktrees\cs440-8005-agv-control-server\tests\ControlServer.Tests\OnboardPowerLossReconnectTests.cs:line 251
+--- End of stack trace from previous location ---
+  Standard Output Messages:
+ 服务端日志：1002、1003；聋了之后车往服务端送了 430 字节；最长的一次推送 63 ms；最后一次写成功的推送开始于 t=0.1s；旧代次离开路由表：t=0.2s；推送的失败：1× OnboardConnectionUnavailableException: A write to the Onboard peer 'AGV-POWER-01' (session generation 1) did not finish within 5 s; the connection was closed and the line stays unacknowledged for the replay after the reconnect.；1003 的异常：IOException: Unable to read data from the transport connection: The I/O operation has been aborted because of either a thread exit or an application request..
+
+
+[xUnit.net 00:00:31.44]   Finished:    ControlServer.Tests (ID = 'e9a86b65d07f6a984a4a75af2821531c21eb38df17b507165946674f4b81024f')
+
+Test Run Failed.
+Total tests: 2
+     Failed: 2
+ Total time: 31.9083 Seconds
+Results File: C:\Users\szy\Desktop\8005-workspace-v2\worktrees\cs440-8005-agv-control-server\evidence\cs440\runs\after-mutation-M-S1\run-1.trx

@@ -1,0 +1,5 @@
+injection 6 (full-refuses-appends) in src/ControlServer.Host/Runtime/Dispatch/DispatchRoundRunner.cs
+511c511
+<             LoadingPhaseClosed: runtime.LoadingPhaseState == LoadingPhaseStates.Closed);
+---
+>             LoadingPhaseClosed: runtime.LoadingPhaseState is LoadingPhaseStates.Closed or LoadingPhaseStates.VehicleFull);

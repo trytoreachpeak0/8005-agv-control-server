@@ -1,0 +1,15 @@
+ProtocolOutbox rows: 0
+ProtocolInbox (non-Heartbeat):
+   2026-09-22 05:34:05.7037368+00:00 SessionHello
+   2026-09-22 05:34:05.8619977+00:00 CapabilitySnapshot
+   2026-09-22 05:34:05.9066223+00:00 SafetyStateSnapshot
+   2026-09-22 05:34:05.9224987+00:00 OnboardAlarmSnapshot
+   2026-09-22 05:34:06.0016066+00:00 RecoveryStateReport
+   2026-09-22 05:34:06.1396759+00:00 SafetyStateChanged
+   2026-09-22 05:34:12.8710998+00:00 OnboardAlarmSnapshot
+   2026-09-22 05:34:12.8837999+00:00 SafetyStateChanged
+Heartbeat count: (33, '2026-09-22 05:34:08.1475132+00:00', '2026-09-22 05:35:12.3133622+00:00')
+SessionRecoveries: (1, 'RecoveryRequired', 'DEPARTURE_SAFETY_NOT_READY', '["VEHICLE_NOT_READY"]', 1, 0, '2026-09-22 05:34:12.8907629+00:00')
+OrderIntents: ('CONFIRMED', 'ORDER-000001', '2026-09-22 05:34:12.2208646+00:00', '2026-09-22 05:34:12.7757915+00:00', 'PostCreateReconciliationConfirmed', '2026-09-22 05:34:12.7876561+00:00', '2026-09-22 05:34:12.7938065+00:00')
+JourneyRuntimes: ('AwaitingPickupArrival', 'ONBOARD_SESSION_NOT_READY', '2026-09-22 05:34:12.9875526+00:00', '2026-09-22 05:34:12.2208646+00:00', '2026-09-22 05:35:12.9746592+00:00')
+OnboardAlarmSnapshots {'AgvId': 'AGV-L2-001', 'SnapshotSequence': 2, 'CapturedAt': '2026-09-22 05:34:12.8679464+00:00', 'ReceivedAt': '2026-09-22 05:34:12.8738893+00:00', 'AlarmsJson': '[{"AlarmCode":"ONBOARD_DEPARTURE_SAFETY_SIGNAL_UNAVAILABLE","Severity":"WARNING","RaisedAt":"2026-09-22T05:34:12.8676776+00:00","Scope":"CurrentVehicle","Message":"\\u8F66\\u8F86\\u662F\\u5426\\u505C\\u7A33', 'SessionGeneration': 1}

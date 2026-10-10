@@ -1,0 +1,37 @@
+
+=== S1-3 service refusal no longer aborts   (anchor hits: 1 / -, landed: True)
+    summary: 104 passed, 1 failed
+    RED  a production refusal from the product uninstaller aborts before ANY other action
+
+=== S1 directory guards removed from the sequence   (anchor hits: 1 / 1, landed: True)
+    summary: 103 passed, 2 failed
+    RED  a glob match outside the allowlist is never deleted, and the directory phase stops
+    RED  a production directory in the footprint itself never reaches the delete action
+
+=== S1-1 forward slash no longer refused (GetFullPath check also removed)   (anchor hits: 1 / 1, landed: True)
+    summary: 102 passed, 3 failed
+    RED  installRoot written with forward slashes
+    RED  the re-review S1 reproduction definition
+    RED  seedPath written with forward slashes
+
+=== S1-2 allowlist marker check removed   (anchor hits: 1 / -, landed: True)
+    summary: 99 passed, 6 failed
+    RED  installRoot is the production install root
+    RED  packageRoot is the MVP's previous package generation
+    RED  backupRoot is the production MesIngest directory
+    RED  fakeMesIngest.installRoot is the MVP's ops directory
+    RED  the re-review S1 reproduction definition
+    RED  a glob match outside the allowlist is never deleted, and the directory phase stops
+
+=== M1 wildcard refusal removed   (anchor hits: 1 / -, landed: True)
+    summary: 102 passed, 3 failed
+    RED  serviceName with a trailing wildcard
+    RED  serviceName with a single-character wildcard
+    RED  taskName is '*' (every task on the host)
+
+=== M3 map-25 id refusal removed   (anchor hits: 1 / -, landed: True)
+    summary: 103 passed, 2 failed
+    RED  both mapIds are the MVP map 25
+    RED  only journeyRuntime.mapId is 25
+
+real files unchanged: True   mutation dir removed: True

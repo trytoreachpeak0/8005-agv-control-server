@@ -1,0 +1,47 @@
+{"at":"2026-09-26T16:03:59.2553194+00:00","note":"L2 run 20260926T160359204Z starting for scenario 'real-onboard-order-failed-in-transit'."}
+{"at":"2026-09-26T16:03:59.3325832+00:00","note":"L2 port block lock acquired (slot 0, Global\\W2G-L2PortBlock)."}
+{"at":"2026-09-26T16:03:59.3358541+00:00","note":"Building ControlServer and the test doubles."}
+{"at":"2026-09-26T16:04:03.0974624+00:00","note":"Reusing cached onboard-hmi publish for b789c3d4a249cd3368aa53ea5f7ebe992d109666."}
+{"at":"2026-09-26T16:04:03.2351032+00:00","note":"Reusing cached slots-simulator publish for fb5f7c593742bf98bc3957b8729a38aad5321f28."}
+{"at":"2026-09-26T16:04:03.2411707+00:00","note":"Peers: onboard-hmi@b789c3d4a249cd3368aa53ea5f7ebe992d109666, slots-simulator@fb5f7c593742bf98bc3957b8729a38aad5321f28."}
+{"at":"2026-09-26T16:04:03.2592673+00:00","note":"Interactive desktop lock acquired."}
+{"at":"2026-09-26T16:04:04.4332138+00:00","criterion":"fake-riot-live","value":"live"}
+{"at":"2026-09-26T16:04:04.6831917+00:00","criterion":"fake-mes-live","value":"live"}
+{"at":"2026-09-26T16:04:07.6702671+00:00","criterion":"simulator-ready","value":"READY/True"}
+{"at":"2026-09-26T16:04:07.7912821+00:00","note":"Task type station preset: default (map 25, WIRE_TO_GATE -> 关卡/210)"}
+{"at":"2026-09-26T16:04:11.6887511+00:00","note":"Package capacity rules imported."}
+{"at":"2026-09-26T16:04:13.7855891+00:00","criterion":"control-server-live","value":"(null)"}
+{"at":"2026-09-26T16:04:14.1634203+00:00","criterion":"control-server-live","value":"live"}
+{"at":"2026-09-26T16:04:14.2757664+00:00","note":"Protocol release identity: protocol-v2.0.0 (profileId AGV_FULL_PRODUCT, protocolVersion 3, APPROVED_RELEASE)."}
+{"at":"2026-09-26T16:04:17.8061958+00:00","note":"Onboard window: 8005 多仓位AGV车载端"}
+{"at":"2026-09-26T16:04:17.8352877+00:00","criterion":"onboard-modbus","value":"1"}
+{"at":"2026-09-26T16:04:17.9047451+00:00","criterion":"control-server-ready","value":"(null)"}
+{"at":"2026-09-26T16:04:18.4425664+00:00","criterion":"control-server-ready","value":"ready"}
+{"at":"2026-09-26T16:04:18.5528906+00:00","note":"FieldOps: seed-approved-facts --database C:\\Users\\szy\\AppData\\Local\\Temp\\l2-20260926T160359204Z\\controlserver.db"}
+{"at":"2026-09-26T16:04:20.1841024+00:00","criterion":"slot-model-preseed:seed-approved-facts","value":"OK","detail":{"output":{"command":"seed-approved-facts","outcome":"OK","modelKey":"8005-eight-slot","slotModelVersionId":"2686268dfc62476b8fbaa42691c1caae","version":1,"slotCount":8}}}
+{"at":"2026-09-26T16:04:20.1937291+00:00","note":"FieldOps: bind-io --database C:\\Users\\szy\\AppData\\Local\\Temp\\l2-20260926T160359204Z\\controlserver.db --agv AGV-L2-001"}
+{"at":"2026-09-26T16:04:21.8288428+00:00","criterion":"slot-model-preseed:bind-io:AGV-L2-001","value":"OK","detail":{"output":{"command":"bind-io","outcome":"OK","agvId":"AGV-L2-001","slotModelVersionId":"2686268dfc62476b8fbaa42691c1caae","boundSlots":8,"version":1}}}
+{"at":"2026-09-26T16:04:22.1114632+00:00","criterion":"slot-model-preseed:dispatch-zones","value":"0"}
+{"at":"2026-09-26T16:04:22.1267889+00:00","note":"FieldOps: import-area-assignments --database C:\\Users\\szy\\AppData\\Local\\Temp\\l2-20260926T160359204Z\\controlserver.db --input C:\\w2g\\cs358-rig\\86773d9d-real-onboard-order-failed-in-transit-001\\snapshots\\preseed-area-assignments.csv"}
+{"at":"2026-09-26T16:04:23.6395271+00:00","criterion":"slot-model-preseed:import-area-assignments","value":"OK","detail":{"output":{"command":"import-area-assignments","outcome":"OK","dryRun":false,"input":"C:\\w2g\\cs358-rig\\86773d9d-real-onboard-order-failed-in-transit-001\\snapshots\\preseed-area-assignments.csv","entryCount":3,"version":1,"contentSha256":"4291a509c2c0b75ea4bde0ac4dcde04b6e8632b54a21a67eee2772a6f8d0ff8e","snapshotId":"69027a4c89d047c38f3ec6473f1ecf3b","importedAt":"2026-09-27T00:04:22.3630047+08:00","errorCount":0,"errors":[],"preview":[]}}}
+{"at":"2026-09-26T16:04:23.6439894+00:00","note":"Per-zone dispatch parameters left unconfigured (the default precondition)."}
+{"at":"2026-09-26T16:04:23.6694986+00:00","note":"Environment is up; entering scenario 'real-onboard-order-failed-in-transit'."}
+{"at":"2026-09-26T16:04:23.7616824+00:00","note":"Publishing demand 589dcdec7f7448099d8576ab4daf8b1f (area N1-3)."}
+{"at":"2026-09-26T16:04:23.8403766+00:00","criterion":"to-pickup-intent","value":"(null)"}
+{"at":"2026-09-26T16:04:25.9368609+00:00","criterion":"to-pickup-intent","value":"@{UpperId=W2G-589dcdec-7f74-4809-9d85-76ab4daf8b1f-PICKUP-1; OrderId=ORDER-000001; Status=CONFIRMED}"}
+{"at":"2026-09-26T16:04:25.9592506+00:00","note":"Vehicle departs for the pickup station."}
+{"at":"2026-09-26T16:04:26.0696717+00:00","criterion":"gate-closed-in-transit","value":"@{Stage=AwaitingPickupArrival; BlockReasonCode=; BlockReasonSince=}"}
+{"at":"2026-09-26T16:04:26.8708789+00:00","criterion":"gate-closed-in-transit","value":"@{Stage=AwaitingPickupArrival; BlockReasonCode=ONBOARD_SESSION_NOT_READY; BlockReasonSince=2026-09-26 16:04:26.7595959+00:00}"}
+{"at":"2026-09-26T16:04:26.8878530+00:00","criterion":"session-before-failure","value":"RecoveryRequired/DEPARTURE_SAFETY_NOT_READY","detail":{"reasonCode":"DEPARTURE_SAFETY_NOT_READY","readiness":"RecoveryRequired"}}
+{"at":"2026-09-26T16:04:26.8892037+00:00","note":"RIoT reports W2G-589dcdec-7f74-4809-9d85-76ab4daf8b1f-PICKUP-1 FAILED while the vehicle is still moving."}
+{"at":"2026-09-26T16:04:26.9275433+00:00","criterion":"fault-recorded","value":"(null)"}
+{"at":"2026-09-26T16:04:27.9648539+00:00","criterion":"fault-recorded","value":"@{Fault=; Session=}"}
+{"at":"2026-09-26T16:04:27.9689277+00:00","criterion":"session-at-fault","value":"RecoveryRequired/DEPARTURE_SAFETY_NOT_READY","detail":{"reasonCode":"DEPARTURE_SAFETY_NOT_READY","readiness":"RecoveryRequired"}}
+{"at":"2026-09-26T16:04:28.0290554+00:00","criterion":"runtime-iterations","value":"15"}
+{"at":"2026-09-26T16:04:28.8452010+00:00","criterion":"runtime-iterations","value":"16"}
+{"at":"2026-09-26T16:04:29.9073567+00:00","criterion":"runtime-iterations","value":"17"}
+{"at":"2026-09-26T16:04:30.9666008+00:00","criterion":"runtime-iterations","value":"18"}
+{"at":"2026-09-26T16:04:31.7604393+00:00","criterion":"runtime-iterations","value":"19"}
+{"at":"2026-09-26T16:04:31.7632433+00:00","criterion":"session-later","value":"RecoveryRequired/DEPARTURE_SAFETY_NOT_READY","detail":{"reasonCode":"DEPARTURE_SAFETY_NOT_READY","readiness":"RecoveryRequired"}}
+{"at":"2026-09-26T16:04:31.8208471+00:00","note":"会话：注入前 RecoveryRequired/DEPARTURE_SAFETY_NOT_READY，记故障时 RecoveryRequired/DEPARTURE_SAFETY_NOT_READY，4 轮后 RecoveryRequired/DEPARTURE_SAFETY_NOT_READY。"}
+{"at":"2026-09-26T16:04:32.6393502+00:00","note":"L2 port block lock released."}

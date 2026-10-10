@@ -101,6 +101,172 @@ public static class DispatchReasonCodes
     public const string TaskTypeNotYetExecutable = "TASK_TYPE_NOT_YET_EXECUTABLE";
 
     /// <summary>
+    /// 这一侧的空仓位被<b>本车自己已预留或已装的货</b>占着，装不下（票面第 4 条，批次7-06，control-server#211）。
+    /// 与 <see cref="SlotGroupCapacityTemporarilyUnavailable"/> 分开登记：那一个是仓位被禁用，这一个是车自己满了。
+    /// </summary>
+    /// <remarks>
+    /// 批次7-07（control-server#212）判「这一侧装满」时唯一的依据就是它，所以它必须只在「其余准入全过、只卡在这一条」
+    /// 时出现——一个把两种情形合在一起的原因码，会让那一票分不出「车满了」和「仓位坏了」。
+    /// </remarks>
+    public const string SlotGroupOccupiedByOwnCargo = "SLOT_GROUP_OCCUPIED_BY_OWN_CARGO";
+
+    /// <summary>
+    /// 这条需求所在分区没有配置途中追加的上限，或配成了 0：本区禁止途中追加（REQ-0198）。
+    /// </summary>
+    /// <remarks>
+    /// 参数默认未配置，所以本票合入本身不会让线上产生多需求旅程——v2 的行为与今天完全相同，直到有人批准参数。
+    /// 它也是既有需求那一侧的答案：一条既有需求所在分区没有上限时，它不接受任何延迟。
+    /// </remarks>
+    public const string EnRouteAppendNotConfigured = "EN_ROUTE_APPEND_NOT_CONFIGURED";
+
+    /// <summary>追加会让某条需求到终点的计划路径代价增量超过它所在分区的上限（REQ-0198）。</summary>
+    public const string EnRouteAppendDelayGateExceeded = "EN_ROUTE_APPEND_DELAY_GATE_EXCEEDED";
+
+    /// <summary>
+    /// 任一增量算不出（路网给不出某一段的代价）。<b>算不出即拒</b>，不按零处理——一个算不出的增量与一个为零的增量
+    /// 是两回事，而把前者当后者用，正是「门禁形同虚设」的样子。
+    /// </summary>
+    public const string EnRouteAppendDelayUncomputable = "EN_ROUTE_APPEND_DELAY_UNCOMPUTABLE";
+
+    /// <summary>没有一个插入位能让各分区的需求保持连续区段（REQ-0195）：允许 A→A→B→B，禁止 A→B→A。</summary>
+    public const string EnRouteAppendBreaksZoneContiguity = "EN_ROUTE_APPEND_BREAKS_ZONE_CONTIGUITY";
+
+    /// <summary>追加会让计划超过 9 条腿，或让某一站的清单超过 8 项（protocol 2.0.0）。</summary>
+    public const string EnRouteAppendPlanLimitReached = "EN_ROUTE_APPEND_PLAN_LIMIT_REACHED";
+
+    /// <summary>
+    /// 当前下一站之后没有可用的插入位（REQ-0196）：车正驶向的那一站不能被插到前面去，而它之后已经没有位置了。
+    /// </summary>
+    public const string EnRouteAppendNoInsertionPoint = "EN_ROUTE_APPEND_NO_INSERTION_POINT";
+
+    /// <summary>
+    /// 这条需求曾经挂在这趟旅程上、被释放出去了（批次7-10，control-server#215，审查 M5）：不再追加回这一趟。
+    /// 归属表的主键是 (JourneyId, DemandId)，被释放的那一行只标移除、不删，追加回去会撞主键，每一轮都撞。
+    /// 它可以被别的车、别的旅程接走。
+    /// </summary>
+    public const string EnRouteAppendDemandLeftThisJourney = "EN_ROUTE_APPEND_DEMAND_LEFT_THIS_JOURNEY";
+
+    /// <summary>
+    /// 这辆在途车的装货阶段已经结束（批次7-07，control-server#212）：持货超时了，或者装满之后已经离开最后一个装货停靠，
+    /// 或者本来就不适用持货、当前计划已经装完。REQ-0354 末句「持货超时或让站之后不再接受新的待装 Demand」。
+    /// </summary>
+    public const string LoadingPhaseClosed = "LOADING_PHASE_CLOSED";
+
+    /// <summary>
+    /// 同一份完整 MES 快照里，这个 Sublot 命中了多于一种任务类型（<c>REQ-0189</c>）。该 Sublot 的<b>全部</b>候选都挡，
+    /// 别的 Sublot 不受影响。
+    /// </summary>
+    /// <remarks>
+    /// 归普通积压而不是结构性告警：这是 MES 那一侧的数据自相矛盾，下一份快照就能改掉，而结构性告警说的是
+    /// 「整个车队都接不了」——换一辆车、等一等都没用。两者的处置也不同：这一条要人去看 MES，不是去看车队。
+    /// </remarks>
+    public const string SublotTaskTypeConflict = "SUBLOT_TASK_TYPE_CONFLICT";
+
+    /// <summary>
+    /// 这个业务键（<c>sublot|workType</c>）已被本地取消或故障货物交接终止永久抑制（<c>REQ-0155</c>、<c>REQ-0156</c>、
+    /// <c>REQ-0211</c>；批次7-05，control-server#210；交接自 control-server#395）：MES 换了新 <c>DemandId</c> 也不再执行。
+    /// </summary>
+    /// <remarks>
+    /// 归普通积压、不报结构性告警：这是有意不执行，不是故障，也没有人需要去处理它。抑制没有「解除」操作。
+    /// 只在服务端与看板，不经 <c>blockingFacts</c> 下发。
+    /// </remarks>
+    public const string TransportDemandKeySuppressed = "TRANSPORT_DEMAND_KEY_SUPPRESSED";
+
+    /// <summary>
+    /// 这个业务键已有别的 <c>DemandId</c> 被本服务端受理过（进行中、成功或取消；批次7-05，control-server#210）。
+    /// </summary>
+    /// <remarks>
+    /// 归普通积压，理由同上：同一件活已经办过或正在办，不是故障。挡在判据链里，受理存储层的业务键唯一索引就不会被撞到。
+    /// </remarks>
+    public const string TransportDemandKeyAlreadyAccepted = "TRANSPORT_DEMAND_KEY_ALREADY_ACCEPTED";
+
+    /// <summary>
+    /// 这辆车没有「已批准、已激活、适用范围覆盖它」的 <c>ChargingPolicyVersion</c>，或读不到（fail-closed）：不承接任何新用途
+    /// （批次9-02，control-server#400；REQ-0282；规格 8.6 逐车硬阻断）。
+    /// </summary>
+    /// <remarks>
+    /// 归普通积压（车辆侧）：别的车照常承接，导入、批准并激活一版覆盖它的策略即解除。空闲返回资格与充电分配用同一个判定
+    /// （<c>IChargingPolicyResolver</c>）。
+    /// </remarks>
+    public const string ChargingPolicyNotApproved = "CHARGING_POLICY_NOT_APPROVED";
+
+    /// <summary>
+    /// 这辆车当前电量低于它所用策略版本的 <c>MandatoryChargeEntryThreshold</c>：它此刻属于强制充电，不接普通新任务，也不接途中追加
+    /// （批次9-05，control-server#403；<c>REQ-0281</c>、<c>REQ-0290</c>）。
+    /// </summary>
+    /// <remarks>
+    /// 与「预计任务后保不住余量」（<c>BATTERY_POLICY_NOT_SATISFIED</c>）分开：这辆车该去充电，而那一条只是这一趟接不下。归普通积压（车辆侧）：
+    /// 别的车照常承接。把车排进充电队列、去桩是批次9-06 的事；在那之前这样的车原地不动。
+    /// </remarks>
+    public const string MandatoryChargeRequired = "MANDATORY_CHARGE_REQUIRED";
+
+    /// <summary>
+    /// 这辆车此刻生效的充电策略版本，强制充电线不高于服务端的救命告警线（<c>JourneyRuntime:WaitingJourneyRescueBatteryPercent</c>）：
+    /// 这一版视为不可用，车不承接任何新用途（批次9-05，control-server#403）。
+    /// </summary>
+    /// <remarks>
+    /// 为什么是整版不可用：那样一版生效后，车要等电量掉到救命线以下才算该充电，可能在去充电之前就没电，一台车堵住整个车队。
+    /// 激活走 FieldOps、不经服务端，所以服务端只能在用的时候拦——每轮派车、空闲返回与充电分配读到它就拒，在途旅程照常走完。
+    /// 启动时同一条关系拒绝启动（<c>ChargingPolicyStartupCheck</c>）。归普通积压（车辆侧）：用 FieldOps 激活一版强制充电线高于救命线的版本即解除，
+    /// 不改库、不重启。
+    /// </remarks>
+    public const string ChargingPolicyEntryNotAboveRescueLine = "CHARGING_POLICY_ENTRY_NOT_ABOVE_RESCUE_LINE";
+
+    /// <summary>
+    /// 这辆车已承诺空闲返回（<c>REQ-0292</c>；批次8-18，control-server#389）：返回是它当前已承诺的下一站，搬运不取消、不换点、不抢它。
+    /// </summary>
+    /// <remarks>
+    /// 归普通积压：别的车能接，或这辆车返回到点收敛（批次8-19）后下一轮能接。不是故障，也不是整个车队都接不了。
+    /// </remarks>
+    public const string VehicleCommittedToIdleReturn = "VEHICLE_COMMITTED_TO_IDLE_RETURN";
+
+    /// <summary>
+    /// 这辆车因门未证明的全空结清被扣，维修放行走完之前不接任何新用途（REQ-0364，CP-0009，control-server#385）。
+    /// </summary>
+    /// <remarks>
+    /// 由 <see cref="Criteria.VehicleNewPurposeReadiness"/> 给出，搬运、空闲返回与充电共用。归普通积压：别的车能接，本车放行后能接。
+    /// </remarks>
+    public const string VehicleSlotDoorHold = "VEHICLE_SLOT_DOOR_HOLD";
+
+    /// <summary>
+    /// 这辆车已承诺充电（<c>REQ-0290</c>、<c>REQ-0173</c>；批次9-06，control-server#404）：它持有 <c>CHARGING</c> 用途占有与充电桩预占，
+    /// 搬运不取消、不改写、不抢它。
+    /// </summary>
+    /// <remarks>
+    /// 归普通积压（车辆侧）：别的车能接，或这辆车充完电之后能接。不是故障，也不是整个车队都接不了。
+    /// </remarks>
+    public const string VehicleCommittedToCharging = "VEHICLE_COMMITTED_TO_CHARGING";
+
+    /// <summary>
+    /// 这辆车在服务端持有的人工充电等待中（<c>REQ-0171</c> 的退化路径，规格 8.6；批次9-06，control-server#404）：名册为空时需要充电的车、
+    /// 或充电单反复被取消的车被置上，出口只有管理员在车上发起的「充电后返回服务」——电量回升本身不恢复资格。期间不接搬运、不做空闲返回。
+    /// </summary>
+    /// <remarks>
+    /// 归普通积压（车辆侧）：别的车照常承接。只在服务端与看板；下发给车的是 <c>VehicleBusinessStateSnapshot.manualChargingHold</c>，不是这个码。
+    /// </remarks>
+    public const string VehicleInManualChargingHold = "VEHICLE_IN_MANUAL_CHARGING_HOLD";
+
+    /// <summary>
+    /// 这条候选会让这辆车的下一站变成它的公共站点（<c>REQ-0204</c>，批次8-20，control-server#391），而那个站此刻被别的车预占着——
+    /// 别的车已被承诺前往、还没到。
+    /// </summary>
+    /// <remarks>归普通积压：那辆车到点、离开并满足离点证据之后就放了，这条需求那时再派。</remarks>
+    public const string FixedTaskStationReservedByOtherVehicle = "FIXED_TASK_STATION_RESERVED_BY_OTHER_VEHICLE";
+
+    /// <summary>
+    /// 同上，而那个站此刻被别的已到达的车占用着（<c>REQ-0204</c>，批次8-20，control-server#391）。
+    /// </summary>
+    /// <remarks>归普通积压，理由同上：占用在车离点之后释放。</remarks>
+    public const string FixedTaskStationOccupiedByOtherVehicle = "FIXED_TASK_STATION_OCCUPIED_BY_OTHER_VEHICLE";
+
+    /// <summary>
+    /// 同上，而那个站此刻没有独占行，但别的车正开往它、还没取得预占（<c>REQ-0204</c>，批次8-20，control-server#391）：那辆车在推进里
+    /// 把它排成了下一站，离站时站被占着就照常出发，等每轮开头的补预占。
+    /// </summary>
+    /// <remarks>归普通积压：那辆车到点、离开之后就放了。</remarks>
+    public const string FixedTaskStationApproachedByOtherVehicle = "FIXED_TASK_STATION_APPROACHED_BY_OTHER_VEHICLE";
+
+    /// <summary>
     /// The reasons that are a configured outcome rather than a problem: they reach the backlog and nothing
     /// else — no structural dispatch block, no alarm, no log at Warning or above.
     /// </summary>

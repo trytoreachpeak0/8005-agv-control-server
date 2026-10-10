@@ -1,0 +1,25 @@
+# injection: 02-plan-resend-over-18-not-replayed
+# file: src/ControlServer.Host/Runtime/JourneyRuntimeEngine.cs
+# diff:
+@@ -2906,8 +2906,10 @@
+             //
+             // 批次7-07（control-server#212）之前这里枚举的是修订号 1 到 18，写的人把它当成「一趟旅程里的第几版」，而它是
+             // <b>按车</b>单调的绝对号：一辆车跑到第四、五趟，重发版的号就超过 18，不在这个集合里，断线之后再也不补发。
+-            ids.Add(ReSentPlanMessageId(runtime, stop, arrivedAtStop: true));
+-            ids.Add(ReSentPlanMessageId(runtime, stop, arrivedAtStop: false));
++            for (long revision = 1; revision <= EnRouteAppendPlanner.MaximumLegs * 2; revision++)
++            {
++                ids.Add(JourneyPlanBuilder.StableGuid($"{stop.StopId}|{revision}", "plan"));
++            }
+             // 装货阶段快照同一个道理（批次7-07）：最新那一张的号是这个停靠的业务状态算式，或者比它小一（车还在路上）。
+             ids.Add(LoadingPhaseMessageId(stop, StopRevision(runtime.VehicleBusinessRevision, stop)));
+             ids.Add(LoadingPhaseMessageId(stop, StopRevision(runtime.VehicleBusinessRevision, stop) - 1));
+# build:
+    0 Error(s)
+# test run (filter: FullyQualifiedName~Batch7ThreeStopJourneyTests):
+  Failed ControlServer.Tests.Batch7ThreeStopJourneyTests.AReSentPlanIsReplayedAfterAReconnectWhateverItsRevision [207 ms]
+  Error Message:
+   Assert.Contains() Failure: Filter not matched in collection
+     at ControlServer.Tests.Batch7ThreeStopJourneyTests.AReSentPlanIsReplayedAfterAReconnectWhateverItsRevision() in C:\Users\szy\Desktop\8005-workspace-v2\worktrees\b7-07-8005-agv-control-server\tests\ControlServer.Tests\Batch7ThreeStopJourneyTests.cs:line 373
+   at ControlServer.Tests.Batch7ThreeStopJourneyTests.AReSentPlanIsReplayedAfterAReconnectWhateverItsRevision() in C:\Users\szy\Desktop\8005-workspace-v2\worktrees\b7-07-8005-agv-control-server\tests\ControlServer.Tests\Batch7ThreeStopJourneyTests.cs:line 373
+Failed!  - Failed:     1, Passed:     8, Skipped:     0, Total:     9, Duration: 31 s - ControlServer.Tests.dll (net8.0)

@@ -1,0 +1,11 @@
+# 两轮 CI 作业日志里 dotnet test 的汇总行与逐条打印的跳过（控制台为中文本地化）
+## base
+2026-10-10T02:27:28.7637406Z   已跳过 ControlServer.Tests.ReconnectModelTests.ReplaySeeds [1 ms]
+2026-10-10T02:29:44.6362191Z   已跳过 ControlServer.Tests.ReconnectModelTests.ReplaySequences [1 ms]
+2026-10-10T02:29:44.6364942Z   已跳过 ControlServer.Tests.ReconnectModelTests.PrototypeMeasurement [1 ms]
+2026-10-10T02:44:26.8116308Z 已通过! - 失败:     0，通过:  4657，已跳过:     0，总计:  4657，持续时间: 34 m 39 s - ControlServer.Tests.dll (net8.0)
+## after
+2026-10-10T09:14:26.9986923Z   已跳过 ControlServer.Tests.ReconnectModelTests.ReplaySeeds [1 ms]
+2026-10-10T09:16:50.4672774Z   已跳过 ControlServer.Tests.ReconnectModelTests.ReplaySequences [1 ms]
+2026-10-10T09:16:50.4674497Z   已跳过 ControlServer.Tests.ReconnectModelTests.PrototypeMeasurement [1 ms]
+2026-10-10T09:17:30.0338796Z 已通过! - 失败:     0，通过:  4664，已跳过:     0，总计:  4664，持续时间: 6 m 13 s - ControlServer.Tests.dll (net8.0)

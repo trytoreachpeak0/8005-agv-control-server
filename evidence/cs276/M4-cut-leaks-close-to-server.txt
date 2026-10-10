@@ -1,0 +1,31 @@
+xUnit.net v3 In-Process Runner v3.2.2+728c1dce01 (64-bit .NET 8.0.31)
+  Discovering: ControlServer.Tests
+  Discovered:  ControlServer.Tests
+  Starting:    ControlServer.Tests
+    ControlServer.Tests.OnboardPowerLossReconnectTests.ReconnectsWhileTheServerIsStillWritingIntoTheDeadConnection [FAIL]
+      没有一次尝试是「握手答完、但不可路由」：旧连接没挡过新连接，这一次没造出要测的状态。
+      旧代次离开路由表：t=0.0s
+      第 1 次，t=0.0s 开始：Routable 第 2 代
+      Stack Trace:
+        tests\ControlServer.Tests\OnboardPowerLossReconnectTests.cs(163,0): at ControlServer.Tests.OnboardPowerLossReconnectTests.Outcome.AssertRecovered()
+        tests\ControlServer.Tests\OnboardPowerLossReconnectTests.cs(124,0): at ControlServer.Tests.OnboardPowerLossReconnectTests.ReconnectsWhileTheServerIsStillWritingIntoTheDeadConnection()
+        tests\ControlServer.Tests\OnboardPowerLossReconnectTests.cs(126,0): at ControlServer.Tests.OnboardPowerLossReconnectTests.ReconnectsWhileTheServerIsStillWritingIntoTheDeadConnection()
+        --- End of stack trace from previous location ---
+      Output:
+        旧代次离开路由表：t=0.0s
+        第 1 次，t=0.0s 开始：Routable 第 2 代
+    ControlServer.Tests.OnboardPowerLossReconnectTests.ReconnectsAfterAPowerCutThatLeftTheOldConnectionHalfOpen [FAIL]
+      没有一次尝试是「握手答完、但不可路由」：旧连接没挡过新连接，这一次没造出要测的状态。
+      旧代次离开路由表：t=0.0s
+      第 1 次，t=0.0s 开始：Routable 第 2 代
+      Stack Trace:
+        tests\ControlServer.Tests\OnboardPowerLossReconnectTests.cs(163,0): at ControlServer.Tests.OnboardPowerLossReconnectTests.Outcome.AssertRecovered()
+        tests\ControlServer.Tests\OnboardPowerLossReconnectTests.cs(90,0): at ControlServer.Tests.OnboardPowerLossReconnectTests.ReconnectsAfterAPowerCutThatLeftTheOldConnectionHalfOpen()
+        tests\ControlServer.Tests\OnboardPowerLossReconnectTests.cs(92,0): at ControlServer.Tests.OnboardPowerLossReconnectTests.ReconnectsAfterAPowerCutThatLeftTheOldConnectionHalfOpen()
+        --- End of stack trace from previous location ---
+      Output:
+        旧代次离开路由表：t=0.0s
+        第 1 次，t=0.0s 开始：Routable 第 2 代
+  Finished:    ControlServer.Tests (ID = 'f8ba1b415e206499cf4d4644e752bfa521ea1fd73323c53eec687456339a5e13')
+=== TEST EXECUTION SUMMARY ===
+   ControlServer.Tests  Total: 12, Errors: 0, Failed: 2, Skipped: 0, Not Run: 0, Time: 12.791s

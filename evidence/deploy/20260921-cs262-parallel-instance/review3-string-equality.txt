@@ -1,0 +1,8 @@
+pair                                     -ceq   -eq    -ccontains Ordinal  regex (Escape)
+map name, zero-width space inside        True   True   True       False    False
+vehicle name, zero-width space after     True   True   True       False    False
+key name, zero-width space after         True   True   True       False    False
+map name, trailing ordinary space        False  False  False      False    False
+map name, capitals                       False  True   False      False    True
+
+pwsh 7.6.6, culture 'en-US'

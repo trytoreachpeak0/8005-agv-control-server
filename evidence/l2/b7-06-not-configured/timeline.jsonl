@@ -1,0 +1,33 @@
+{"at":"2026-09-20T09:44:47.0766332+00:00","note":"L2 run 20260920T094447025Z starting for scenario 'en-route-append-not-configured'."}
+{"at":"2026-09-20T09:44:47.1400098+00:00","note":"L2 port block lock acquired (slot 0, Global\\W2G-L2PortBlock)."}
+{"at":"2026-09-20T09:44:47.1431927+00:00","note":"Building ControlServer and the test doubles."}
+{"at":"2026-09-20T09:44:51.1223332+00:00","criterion":"fake-riot-live","value":"live"}
+{"at":"2026-09-20T09:44:51.4283743+00:00","criterion":"fake-mes-live","value":"live"}
+{"at":"2026-09-20T09:44:51.5336433+00:00","note":"Route graph engine enabled for map 25."}
+{"at":"2026-09-20T09:44:51.5754242+00:00","note":"Task type station preset: default (map 25, WIRE_TO_GATE -> 关卡/210)"}
+{"at":"2026-09-20T09:44:55.0915002+00:00","note":"Package capacity rules imported."}
+{"at":"2026-09-20T09:44:57.1760117+00:00","criterion":"control-server-live","value":"(null)"}
+{"at":"2026-09-20T09:44:57.5569819+00:00","criterion":"control-server-live","value":"live"}
+{"at":"2026-09-20T09:44:57.7309441+00:00","note":"Protocol release identity: protocol-v2.0.0 (profileId AGV_FULL_PRODUCT, protocolVersion 3, APPROVED_RELEASE)."}
+{"at":"2026-09-20T09:44:58.5212443+00:00","criterion":"onboard-readiness","value":"DISCONNECTED"}
+{"at":"2026-09-20T09:44:58.7961541+00:00","criterion":"onboard-readiness","value":"READY"}
+{"at":"2026-09-20T09:44:58.9093363+00:00","criterion":"control-server-ready","value":"ready"}
+{"at":"2026-09-20T09:44:58.9827996+00:00","note":"FieldOps: seed-approved-facts --database C:\\Users\\szy\\AppData\\Local\\Temp\\l2-20260920T094447025Z\\controlserver.db"}
+{"at":"2026-09-20T09:45:00.9914548+00:00","criterion":"slot-model-preseed:seed-approved-facts","value":"OK","detail":{"output":{"command":"seed-approved-facts","outcome":"OK","modelKey":"8005-eight-slot","slotModelVersionId":"80ebcdd40a5f43e7beb039d2c1827935","version":1,"slotCount":8}}}
+{"at":"2026-09-20T09:45:01.0019567+00:00","note":"FieldOps: bind-io --database C:\\Users\\szy\\AppData\\Local\\Temp\\l2-20260920T094447025Z\\controlserver.db --agv AGV-L2-001"}
+{"at":"2026-09-20T09:45:02.7810096+00:00","criterion":"slot-model-preseed:bind-io:AGV-L2-001","value":"OK","detail":{"output":{"command":"bind-io","outcome":"OK","agvId":"AGV-L2-001","slotModelVersionId":"80ebcdd40a5f43e7beb039d2c1827935","boundSlots":8,"version":1}}}
+{"at":"2026-09-20T09:45:02.8955498+00:00","criterion":"slot-model-preseed:dispatch-zones","value":"0"}
+{"at":"2026-09-20T09:45:02.8993268+00:00","note":"FieldOps: import-area-assignments --database C:\\Users\\szy\\AppData\\Local\\Temp\\l2-20260920T094447025Z\\controlserver.db --input C:\\Users\\szy\\Desktop\\8005-workspace-v2\\worktrees\\b7-06-8005-agv-control-server\\evidence\\l2\\b7-06-not-configured-01\\snapshots\\preseed-area-assignments.csv"}
+{"at":"2026-09-20T09:45:04.7992719+00:00","criterion":"slot-model-preseed:import-area-assignments","value":"OK","detail":{"output":{"command":"import-area-assignments","outcome":"OK","dryRun":false,"input":"C:\\Users\\szy\\Desktop\\8005-workspace-v2\\worktrees\\b7-06-8005-agv-control-server\\evidence\\l2\\b7-06-not-configured-01\\snapshots\\preseed-area-assignments.csv","entryCount":3,"version":1,"contentSha256":"4291a509c2c0b75ea4bde0ac4dcde04b6e8632b54a21a67eee2772a6f8d0ff8e","snapshotId":"ebe7b88e46a841f7b1438c34683663fa","importedAt":"2026-09-20T17:45:03.1349055+08:00","errorCount":0,"errors":[],"preview":[]}}}
+{"at":"2026-09-20T09:45:04.8035649+00:00","note":"Per-zone dispatch parameters left unconfigured (the default precondition)."}
+{"at":"2026-09-20T09:45:04.8088290+00:00","note":"Environment is up; entering scenario 'en-route-append-not-configured'."}
+{"at":"2026-09-20T09:45:04.8898596+00:00","criterion":"route-graph-ready","value":"True"}
+{"at":"2026-09-20T09:45:04.9047535+00:00","note":"Publishing demand df36919c183c4ee5bde0619201cc8fe7 (sublot L2-ENC-A-20260920T094447025Z, area N1-3)."}
+{"at":"2026-09-20T09:45:04.9448476+00:00","criterion":"first-journey-stage","value":"(null)"}
+{"at":"2026-09-20T09:45:06.2494325+00:00","criterion":"first-journey-stage","value":"AwaitingPickupArrival"}
+{"at":"2026-09-20T09:45:06.2611001+00:00","note":"Publishing demand 69bf4aa2df1e493db5e5448a8046bd3f (sublot L2-ENC-B-20260920T094447025Z, area C15-13)."}
+{"at":"2026-09-20T09:45:06.2803245+00:00","criterion":"second-demand-reason","value":"(null)"}
+{"at":"2026-09-20T09:45:06.8023197+00:00","criterion":"second-demand-reason","value":"EN_ROUTE_APPEND_NOT_CONFIGURED"}
+{"at":"2026-09-20T09:45:06.8072982+00:00","note":"Letting several more dispatch rounds pass, to show the refusal is steady rather than a race."}
+{"at":"2026-09-20T09:45:12.8258144+00:00","note":"本区未配置派车参数时，在途车一条追加都接不到：旅程、停靠、计划三样一个字都没变。"}
+{"at":"2026-09-20T09:45:13.4333828+00:00","note":"L2 port block lock released."}

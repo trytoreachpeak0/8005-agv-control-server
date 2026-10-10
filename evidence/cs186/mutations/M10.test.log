@@ -1,0 +1,116 @@
+Test run for C:\Users\szy\Desktop\8005-workspace-v2\worktrees\cs186-8005-agv-control-server\tests\ControlServer.Tests\bin\Release\net8.0\win-x64\ControlServer.Tests.dll (.NETCoreApp,Version=v8.0)
+A total of 1 test files matched the specified pattern.
+[xUnit.net 00:00:04.75]     ControlServer.Tests.HttpRiotMapNameCatalogTests.AnEnumValueTheSdkDoesNotKnowStillReadsEveryMapAndItsName(key: "state", known: "activated", unknown: "archived") [FAIL]
+[xUnit.net 00:00:04.77]     ControlServer.Tests.HttpRiotMapNameCatalogTests.AnEnumValueTheSdkDoesNotKnowStillReadsEveryMapAndItsName(key: "source", known: "fetch", unknown: "importedFromCloud") [FAIL]
+[xUnit.net 00:00:04.78]     ControlServer.Tests.HttpRiotMapNameCatalogTests.AnEnumValueTheSdkDoesNotKnowStillReadsEveryMapAndItsName(key: "syncState", known: "partition", unknown: "resyncing") [FAIL]
+[xUnit.net 00:00:04.80]     ControlServer.Tests.HttpRiotMapNameCatalogTests.TheRealRiotAnswerOf20260928ParsesThroughTheAdapterWithMap26UnderItsName [FAIL]
+  Failed ControlServer.Tests.HttpRiotMapNameCatalogTests.AnEnumValueTheSdkDoesNotKnowStillReadsEveryMapAndItsName(key: "state", known: "activated", unknown: "archived") [62 ms]
+  Error Message:
+   System.IO.InvalidDataException : RIoT Map list response was not valid.
+---- System.InvalidOperationException : The requested operation requires an element of type 'String', but the target element has type 'Number'.
+  Stack Trace:
+     at ControlServer.Infrastructure.Adapters.HttpRiotMovementGateway.ReadMapNamesAsync(CancellationToken cancellationToken) in C:\Users\szy\Desktop\8005-workspace-v2\worktrees\cs186-8005-agv-control-server\src\ControlServer.Infrastructure\Adapters\HttpRiotMovementGateway.cs:line 263
+   at ControlServer.Tests.HttpRiotMapNameCatalogTests.AnEnumValueTheSdkDoesNotKnowStillReadsEveryMapAndItsName(String key, String known, String unknown) in C:\Users\szy\Desktop\8005-workspace-v2\worktrees\cs186-8005-agv-control-server\tests\ControlServer.Tests\HttpRiotMapNameCatalogTests.cs:line 84
+   at ControlServer.Tests.HttpRiotMapNameCatalogTests.AnEnumValueTheSdkDoesNotKnowStillReadsEveryMapAndItsName(String key, String known, String unknown) in C:\Users\szy\Desktop\8005-workspace-v2\worktrees\cs186-8005-agv-control-server\tests\ControlServer.Tests\HttpRiotMapNameCatalogTests.cs:line 87
+--- End of stack trace from previous location ---
+----- Inner Stack Trace -----
+   at System.Text.Json.ThrowHelper.ThrowJsonElementWrongTypeException(JsonTokenType expectedType, JsonTokenType actualType)
+   at System.Text.Json.JsonDocument.GetString(Int32 index, JsonTokenType expectedType)
+   at Microsoft.Kiota.Serialization.Json.JsonParseNode.GetEnumValue[T]()
+   at RIoT.Sdk.Generated.Imap.Models.MapInfoObject.<GetFieldDeserializers>b__50_7(IParseNode n)
+   at Microsoft.Kiota.Serialization.Json.JsonParseNode.AssignFieldValues[T](T item)
+   at Microsoft.Kiota.Serialization.Json.JsonParseNode.GetObjectValue[T](ParsableFactory`1 factory)
+   at Microsoft.Kiota.Serialization.Json.JsonParseNode.GetCollectionOfObjectValues[T](ParsableFactory`1 factory)+MoveNext()
+   at System.Collections.Generic.List`1..ctor(IEnumerable`1 collection)
+   at Microsoft.Kiota.Abstractions.Extensions.IEnumerableExtensions.AsList[T](IEnumerable`1 e)
+   at RIoT.Sdk.Generated.Imap.Models.ResponseMsg_Of_List_Of_MapInfoObject.<GetFieldDeserializers>b__30_4(IParseNode n)
+   at Microsoft.Kiota.Serialization.Json.JsonParseNode.AssignFieldValues[T](T item)
+   at Microsoft.Kiota.Serialization.Json.JsonParseNode.GetObjectValue[T](ParsableFactory`1 factory)
+   at Microsoft.Kiota.Http.HttpClientLibrary.HttpClientRequestAdapter.SendAsync[ModelType](RequestInformation requestInfo, ParsableFactory`1 factory, Dictionary`2 errorMapping, CancellationToken cancellationToken)
+   at Microsoft.Kiota.Http.HttpClientLibrary.HttpClientRequestAdapter.SendAsync[ModelType](RequestInformation requestInfo, ParsableFactory`1 factory, Dictionary`2 errorMapping, CancellationToken cancellationToken)
+   at RIoT.Sdk.Generated.Imap.Api.Imap.V1.MapInfo.GetALLMapInfoExcludeMapJson.GetALLMapInfoExcludeMapJsonRequestBuilder.GetAsync(Action`1 requestConfiguration, CancellationToken cancellationToken)
+   at RIoT.Sdk.Facade.MapClient.ListMapsAsync(CancellationToken cancellationToken)
+   at ControlServer.Infrastructure.Adapters.HttpRiotMovementGateway.ReadMapNamesAsync(CancellationToken cancellationToken) in C:\Users\szy\Desktop\8005-workspace-v2\worktrees\cs186-8005-agv-control-server\src\ControlServer.Infrastructure\Adapters\HttpRiotMovementGateway.cs:line 255
+  Failed ControlServer.Tests.HttpRiotMapNameCatalogTests.AnEnumValueTheSdkDoesNotKnowStillReadsEveryMapAndItsName(key: "source", known: "fetch", unknown: "importedFromCloud") [2 ms]
+  Error Message:
+   System.IO.InvalidDataException : RIoT Map list response was not valid.
+---- System.InvalidOperationException : The requested operation requires an element of type 'String', but the target element has type 'Number'.
+  Stack Trace:
+     at ControlServer.Infrastructure.Adapters.HttpRiotMovementGateway.ReadMapNamesAsync(CancellationToken cancellationToken) in C:\Users\szy\Desktop\8005-workspace-v2\worktrees\cs186-8005-agv-control-server\src\ControlServer.Infrastructure\Adapters\HttpRiotMovementGateway.cs:line 263
+   at ControlServer.Tests.HttpRiotMapNameCatalogTests.AnEnumValueTheSdkDoesNotKnowStillReadsEveryMapAndItsName(String key, String known, String unknown) in C:\Users\szy\Desktop\8005-workspace-v2\worktrees\cs186-8005-agv-control-server\tests\ControlServer.Tests\HttpRiotMapNameCatalogTests.cs:line 84
+   at ControlServer.Tests.HttpRiotMapNameCatalogTests.AnEnumValueTheSdkDoesNotKnowStillReadsEveryMapAndItsName(String key, String known, String unknown) in C:\Users\szy\Desktop\8005-workspace-v2\worktrees\cs186-8005-agv-control-server\tests\ControlServer.Tests\HttpRiotMapNameCatalogTests.cs:line 87
+--- End of stack trace from previous location ---
+----- Inner Stack Trace -----
+   at System.Text.Json.ThrowHelper.ThrowJsonElementWrongTypeException(JsonTokenType expectedType, JsonTokenType actualType)
+   at System.Text.Json.JsonDocument.GetString(Int32 index, JsonTokenType expectedType)
+   at Microsoft.Kiota.Serialization.Json.JsonParseNode.GetEnumValue[T]()
+   at RIoT.Sdk.Generated.Imap.Models.MapInfoObject.<GetFieldDeserializers>b__50_7(IParseNode n)
+   at Microsoft.Kiota.Serialization.Json.JsonParseNode.AssignFieldValues[T](T item)
+   at Microsoft.Kiota.Serialization.Json.JsonParseNode.GetObjectValue[T](ParsableFactory`1 factory)
+   at Microsoft.Kiota.Serialization.Json.JsonParseNode.GetCollectionOfObjectValues[T](ParsableFactory`1 factory)+MoveNext()
+   at System.Collections.Generic.List`1..ctor(IEnumerable`1 collection)
+   at Microsoft.Kiota.Abstractions.Extensions.IEnumerableExtensions.AsList[T](IEnumerable`1 e)
+   at RIoT.Sdk.Generated.Imap.Models.ResponseMsg_Of_List_Of_MapInfoObject.<GetFieldDeserializers>b__30_4(IParseNode n)
+   at Microsoft.Kiota.Serialization.Json.JsonParseNode.AssignFieldValues[T](T item)
+   at Microsoft.Kiota.Serialization.Json.JsonParseNode.GetObjectValue[T](ParsableFactory`1 factory)
+   at Microsoft.Kiota.Http.HttpClientLibrary.HttpClientRequestAdapter.SendAsync[ModelType](RequestInformation requestInfo, ParsableFactory`1 factory, Dictionary`2 errorMapping, CancellationToken cancellationToken)
+   at Microsoft.Kiota.Http.HttpClientLibrary.HttpClientRequestAdapter.SendAsync[ModelType](RequestInformation requestInfo, ParsableFactory`1 factory, Dictionary`2 errorMapping, CancellationToken cancellationToken)
+   at RIoT.Sdk.Generated.Imap.Api.Imap.V1.MapInfo.GetALLMapInfoExcludeMapJson.GetALLMapInfoExcludeMapJsonRequestBuilder.GetAsync(Action`1 requestConfiguration, CancellationToken cancellationToken)
+   at RIoT.Sdk.Facade.MapClient.ListMapsAsync(CancellationToken cancellationToken)
+   at ControlServer.Infrastructure.Adapters.HttpRiotMovementGateway.ReadMapNamesAsync(CancellationToken cancellationToken) in C:\Users\szy\Desktop\8005-workspace-v2\worktrees\cs186-8005-agv-control-server\src\ControlServer.Infrastructure\Adapters\HttpRiotMovementGateway.cs:line 255
+  Failed ControlServer.Tests.HttpRiotMapNameCatalogTests.AnEnumValueTheSdkDoesNotKnowStillReadsEveryMapAndItsName(key: "syncState", known: "partition", unknown: "resyncing") [1 ms]
+  Error Message:
+   System.IO.InvalidDataException : RIoT Map list response was not valid.
+---- System.InvalidOperationException : The requested operation requires an element of type 'String', but the target element has type 'Number'.
+  Stack Trace:
+     at ControlServer.Infrastructure.Adapters.HttpRiotMovementGateway.ReadMapNamesAsync(CancellationToken cancellationToken) in C:\Users\szy\Desktop\8005-workspace-v2\worktrees\cs186-8005-agv-control-server\src\ControlServer.Infrastructure\Adapters\HttpRiotMovementGateway.cs:line 263
+   at ControlServer.Tests.HttpRiotMapNameCatalogTests.AnEnumValueTheSdkDoesNotKnowStillReadsEveryMapAndItsName(String key, String known, String unknown) in C:\Users\szy\Desktop\8005-workspace-v2\worktrees\cs186-8005-agv-control-server\tests\ControlServer.Tests\HttpRiotMapNameCatalogTests.cs:line 84
+   at ControlServer.Tests.HttpRiotMapNameCatalogTests.AnEnumValueTheSdkDoesNotKnowStillReadsEveryMapAndItsName(String key, String known, String unknown) in C:\Users\szy\Desktop\8005-workspace-v2\worktrees\cs186-8005-agv-control-server\tests\ControlServer.Tests\HttpRiotMapNameCatalogTests.cs:line 87
+--- End of stack trace from previous location ---
+----- Inner Stack Trace -----
+   at System.Text.Json.ThrowHelper.ThrowJsonElementWrongTypeException(JsonTokenType expectedType, JsonTokenType actualType)
+   at System.Text.Json.JsonDocument.GetString(Int32 index, JsonTokenType expectedType)
+   at Microsoft.Kiota.Serialization.Json.JsonParseNode.GetEnumValue[T]()
+   at RIoT.Sdk.Generated.Imap.Models.MapInfoObject.<GetFieldDeserializers>b__50_7(IParseNode n)
+   at Microsoft.Kiota.Serialization.Json.JsonParseNode.AssignFieldValues[T](T item)
+   at Microsoft.Kiota.Serialization.Json.JsonParseNode.GetObjectValue[T](ParsableFactory`1 factory)
+   at Microsoft.Kiota.Serialization.Json.JsonParseNode.GetCollectionOfObjectValues[T](ParsableFactory`1 factory)+MoveNext()
+   at System.Collections.Generic.List`1..ctor(IEnumerable`1 collection)
+   at Microsoft.Kiota.Abstractions.Extensions.IEnumerableExtensions.AsList[T](IEnumerable`1 e)
+   at RIoT.Sdk.Generated.Imap.Models.ResponseMsg_Of_List_Of_MapInfoObject.<GetFieldDeserializers>b__30_4(IParseNode n)
+   at Microsoft.Kiota.Serialization.Json.JsonParseNode.AssignFieldValues[T](T item)
+   at Microsoft.Kiota.Serialization.Json.JsonParseNode.GetObjectValue[T](ParsableFactory`1 factory)
+   at Microsoft.Kiota.Http.HttpClientLibrary.HttpClientRequestAdapter.SendAsync[ModelType](RequestInformation requestInfo, ParsableFactory`1 factory, Dictionary`2 errorMapping, CancellationToken cancellationToken)
+   at Microsoft.Kiota.Http.HttpClientLibrary.HttpClientRequestAdapter.SendAsync[ModelType](RequestInformation requestInfo, ParsableFactory`1 factory, Dictionary`2 errorMapping, CancellationToken cancellationToken)
+   at RIoT.Sdk.Generated.Imap.Api.Imap.V1.MapInfo.GetALLMapInfoExcludeMapJson.GetALLMapInfoExcludeMapJsonRequestBuilder.GetAsync(Action`1 requestConfiguration, CancellationToken cancellationToken)
+   at RIoT.Sdk.Facade.MapClient.ListMapsAsync(CancellationToken cancellationToken)
+   at ControlServer.Infrastructure.Adapters.HttpRiotMovementGateway.ReadMapNamesAsync(CancellationToken cancellationToken) in C:\Users\szy\Desktop\8005-workspace-v2\worktrees\cs186-8005-agv-control-server\src\ControlServer.Infrastructure\Adapters\HttpRiotMovementGateway.cs:line 255
+  Failed ControlServer.Tests.HttpRiotMapNameCatalogTests.TheRealRiotAnswerOf20260928ParsesThroughTheAdapterWithMap26UnderItsName [4 ms]
+  Error Message:
+   System.IO.InvalidDataException : RIoT Map list response was not valid.
+---- System.InvalidOperationException : The requested operation requires an element of type 'String', but the target element has type 'Number'.
+  Stack Trace:
+     at ControlServer.Infrastructure.Adapters.HttpRiotMovementGateway.ReadMapNamesAsync(CancellationToken cancellationToken) in C:\Users\szy\Desktop\8005-workspace-v2\worktrees\cs186-8005-agv-control-server\src\ControlServer.Infrastructure\Adapters\HttpRiotMovementGateway.cs:line 263
+   at ControlServer.Tests.HttpRiotMapNameCatalogTests.TheRealRiotAnswerOf20260928ParsesThroughTheAdapterWithMap26UnderItsName() in C:\Users\szy\Desktop\8005-workspace-v2\worktrees\cs186-8005-agv-control-server\tests\ControlServer.Tests\HttpRiotMapNameCatalogTests.cs:line 61
+   at ControlServer.Tests.HttpRiotMapNameCatalogTests.TheRealRiotAnswerOf20260928ParsesThroughTheAdapterWithMap26UnderItsName() in C:\Users\szy\Desktop\8005-workspace-v2\worktrees\cs186-8005-agv-control-server\tests\ControlServer.Tests\HttpRiotMapNameCatalogTests.cs:line 65
+--- End of stack trace from previous location ---
+----- Inner Stack Trace -----
+   at System.Text.Json.ThrowHelper.ThrowJsonElementWrongTypeException(JsonTokenType expectedType, JsonTokenType actualType)
+   at System.Text.Json.JsonDocument.GetString(Int32 index, JsonTokenType expectedType)
+   at Microsoft.Kiota.Serialization.Json.JsonParseNode.GetEnumValue[T]()
+   at RIoT.Sdk.Generated.Imap.Models.MapInfoObject.<GetFieldDeserializers>b__50_7(IParseNode n)
+   at Microsoft.Kiota.Serialization.Json.JsonParseNode.AssignFieldValues[T](T item)
+   at Microsoft.Kiota.Serialization.Json.JsonParseNode.GetObjectValue[T](ParsableFactory`1 factory)
+   at Microsoft.Kiota.Serialization.Json.JsonParseNode.GetCollectionOfObjectValues[T](ParsableFactory`1 factory)+MoveNext()
+   at System.Collections.Generic.List`1..ctor(IEnumerable`1 collection)
+   at Microsoft.Kiota.Abstractions.Extensions.IEnumerableExtensions.AsList[T](IEnumerable`1 e)
+   at RIoT.Sdk.Generated.Imap.Models.ResponseMsg_Of_List_Of_MapInfoObject.<GetFieldDeserializers>b__30_4(IParseNode n)
+   at Microsoft.Kiota.Serialization.Json.JsonParseNode.AssignFieldValues[T](T item)
+   at Microsoft.Kiota.Serialization.Json.JsonParseNode.GetObjectValue[T](ParsableFactory`1 factory)
+   at Microsoft.Kiota.Http.HttpClientLibrary.HttpClientRequestAdapter.SendAsync[ModelType](RequestInformation requestInfo, ParsableFactory`1 factory, Dictionary`2 errorMapping, CancellationToken cancellationToken)
+   at Microsoft.Kiota.Http.HttpClientLibrary.HttpClientRequestAdapter.SendAsync[ModelType](RequestInformation requestInfo, ParsableFactory`1 factory, Dictionary`2 errorMapping, CancellationToken cancellationToken)
+   at RIoT.Sdk.Generated.Imap.Api.Imap.V1.MapInfo.GetALLMapInfoExcludeMapJson.GetALLMapInfoExcludeMapJsonRequestBuilder.GetAsync(Action`1 requestConfiguration, CancellationToken cancellationToken)
+   at RIoT.Sdk.Facade.MapClient.ListMapsAsync(CancellationToken cancellationToken)
+   at ControlServer.Infrastructure.Adapters.HttpRiotMovementGateway.ReadMapNamesAsync(CancellationToken cancellationToken) in C:\Users\szy\Desktop\8005-workspace-v2\worktrees\cs186-8005-agv-control-server\src\ControlServer.Infrastructure\Adapters\HttpRiotMovementGateway.cs:line 255
+
+Failed!  - Failed:     4, Passed:    66, Skipped:     0, Total:    70, Duration: 1 m 5 s - ControlServer.Tests.dll (net8.0)

@@ -1,0 +1,64 @@
+{
+  "schemaVersion": 1,
+  "scenario": "in-transit-rebuild-stopped-person-rebuilds",
+  "runId": "20260923T171641887Z",
+  "outcome": "FAIL",
+  "failureReason": "",
+  "identity": {
+    "vehicleKey": "BROKERX-L2-0001",
+    "rig": "SyntheticOnboard",
+    "protocolReleaseIdentity": {
+      "repository": "8005-agv-protocol",
+      "releaseVersion": "2.0.0",
+      "tag": "protocol-v2.0.0",
+      "commit": "86575456c847041515b7b75e8851a00e0d939804",
+      "protocolVersion": 3,
+      "profileId": "AGV_FULL_PRODUCT",
+      "manifestSha256": "4ac095ad371d3aaa60d7c2e0198cfd64cff5f3068230fc3420e9cdf5616422a7",
+      "schemaBundleSha256": "9db0dbdc22fed7e39edf8d01b1fc40a12f5d70a7414f696f909ab2a87eb8c221",
+      "vectorsSha256": "391fa69a7d6e9f86ea139ba4c74eadf4994bf0a87e89d3dc5258dd7968d9182a",
+      "approvalStatus": "APPROVED_RELEASE"
+    },
+    "batchId": "unspecified",
+    "stageRoot": "C:\\Users\\szy\\AppData\\Local\\Temp\\l2-20260923T171641887Z",
+    "controlServerCommit": "012c31b2ea4382c3ba8e92300d380d374ba83824",
+    "agvId": "AGV-L2-001"
+  },
+  "assertions": [
+    {
+      "id": "L2-SR-01",
+      "description": "重建出来的单在窗口内又被取消：护栏三停住，旅程仍开往取货站、码 OWN_ORDER_REBUILD_STOPPED；只建过两张单；记录 STOPPED；需求未移除",
+      "outcome": "PASS",
+      "expected": "AwaitingPickupArrival / OWN_ORDER_REBUILD_STOPPED / 2 张 / 未移除 / STOPPED REBUILT_ORDER_ENDED_AGAIN_WITHIN_WINDOW",
+      "actual": "AwaitingPickupArrival / OWN_ORDER_REBUILD_STOPPED / 2 张 / 移除 0 / STOPPED REBUILT_ORDER_ENDED_AGAIN_WITHIN_WINDOW"
+    },
+    {
+      "id": "L2-SR-02",
+      "description": "没确认已查明原因的请求被拒（409，FAULT_RECOVERY_REMEDY_NOT_CONFIRMED），旅程与单数不变",
+      "outcome": "FAIL",
+      "expected": "409 FAULT_RECOVERY_REMEDY_NOT_CONFIRMED / OWN_ORDER_REBUILD_STOPPED / 2 张",
+      "actual": "422  / OWN_ORDER_REBUILD_STOPPED / 2 张"
+    },
+    {
+      "id": "L2-SR-03",
+      "description": "署名、确认的人工重建被受理（200 RebuildRequested / REBUILD_SCHEDULED），停住的记录原行重开、署上这个人、保留停住原因",
+      "outcome": "FAIL",
+      "expected": "200 RebuildRequested REBUILD_SCHEDULED / L2-OPERATOR-345 / REBUILT_ORDER_ENDED_AGAIN_WITHIN_WINDOW / PENDING|ORDERING|REBUILT",
+      "actual": "422   /  / REBUILT_ORDER_ENDED_AGAIN_WITHIN_WINDOW / STOPPED"
+    },
+    {
+      "id": "L2-SR-04",
+      "description": "人工重建之后：取货停靠（同序位、同站）改指向第三张服务端自己的单，意图已确认，需求与车不变、目标站不变，旅程码清掉；RIoT 上有这张单、指派给同一辆车",
+      "outcome": "FAIL",
+      "expected": "第三张 W2G-… / CONFIRMED / 0716d5ea-bb69-4ad8-b8a8-f898d9a45da7 / BROKERX-L2-0001 / 站 12 / 序位 1 / AwaitingPickupArrival (无码) / RIoT 1 张",
+      "actual": "W2G-0716d5ea-bb69-4ad8-b8a8-f898d9a45da7-REBUILD-1-1 / CONFIRMED / 0716d5ea-bb69-4ad8-b8a8-f898d9a45da7 / BROKERX-L2-0001 / 站 12 / 序位 1 / AwaitingPickupArrival (OWN_ORDER_REBUILD_STOPPED) / RIoT 1 张"
+    },
+    {
+      "id": "L2-SR-05",
+      "description": "同一请求再来一次：200 AlreadyDone，不再建单（恰好三张意图、一趟旅程、需求未移除）；全程没有发出任何订单命令或急停",
+      "outcome": "FAIL",
+      "expected": "200 AlreadyDone / 3 张 / 1 趟 / 未移除 / 0 条命令 / 0 次调用",
+      "actual": "422  / 2 张 / 1 趟 / 移除 0 / 0 条命令 / 0 次调用"
+    }
+  ]
+}

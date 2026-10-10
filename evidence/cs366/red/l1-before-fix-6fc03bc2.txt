@@ -1,0 +1,78 @@
+修前红：6fc03bc2（只改 tests，产品代码 = d81c78ad），dotnet build --no-incremental 0 Error(s)，dotnet test 退出码 1
+  Passed ControlServer.Tests.IntegrationSliceTraitArchitectureTests.TheSixteenSliceFiltersRunEveryTestThatCarriesTheTrait [251 ms]
+  Passed ControlServer.Tests.IntegrationSliceTraitArchitectureTests.EveryClaimedVectorIsCoveredByASliceItsOwnTestCarries [89 ms]
+  Passed ControlServer.Tests.IntegrationSliceTraitArchitectureTests.TheAccountingCheckReportsATestThatLosesItsOnlySliceTrait [116 ms]
+  Passed ControlServer.Tests.IntegrationSliceTraitArchitectureTests.EveryTestOutsideTheSliceFamilyIsAccountedFor [113 ms]
+  Passed ControlServer.Tests.IntegrationSliceTraitArchitectureTests.EverySliceTraitNamesOneOfTheSixteenFrozenSlices [80 ms]
+  Failed ControlServer.Tests.OwnOrderRebuildCargoProofTests.AGateOrderCancelledBeforeConfirmationWithCargoOnBoardNeedsTheSameProof [9 s]
+Expected: 1
+Actual:   2
+     at ControlServer.Tests.OwnOrderRebuildCargoProofTests.AssertWaitingAsync(RuntimeFixture fixture, Cancelled cancelled, String waitingPrefix, String journeyCode) in tests\ControlServer.Tests\OwnOrderRebuildCargoProofTests.cs:line 417
+   at ControlServer.Tests.OwnOrderRebuildCargoProofTests.AGateOrderCancelledBeforeConfirmationWithCargoOnBoardNeedsTheSameProof() in tests\ControlServer.Tests\OwnOrderRebuildCargoProofTests.cs:line 258
+   at ControlServer.Tests.OwnOrderRebuildCargoProofTests.AGateOrderCancelledBeforeConfirmationWithCargoOnBoardNeedsTheSameProof() in tests\ControlServer.Tests\OwnOrderRebuildCargoProofTests.cs:line 262
+  Failed ControlServer.Tests.StoppedRebuildExitTests.ACancelledTripWhoseCargoIsNotInPlaceIsHandedToTheExceptionSessionAndEndsThere(session: "not-ready-on-own-order") [9 s]
+Expected: 1
+Actual:   2
+     at ControlServer.Tests.StoppedRebuildExitTests.StoppedCancelledWithCargoNotInPlaceAsync() in tests\ControlServer.Tests\StoppedRebuildExitTests.cs:line 1587
+   at ControlServer.Tests.StoppedRebuildExitTests.ACancelledTripWhoseCargoIsNotInPlaceIsHandedToTheExceptionSessionAndEndsThere(String session) in tests\ControlServer.Tests\StoppedRebuildExitTests.cs:line 781
+  Failed ControlServer.Tests.OwnOrderRebuildCargoProofTests.CargoProvenThenTakenUnderSomeoneElsesStopIsNotRebuilt [2 s]
+Expected: 1
+Actual:   2
+     at ControlServer.Tests.OwnOrderRebuildCargoProofTests.AssertWaitingAsync(RuntimeFixture fixture, Cancelled cancelled, String waitingPrefix, String journeyCode) in tests\ControlServer.Tests\OwnOrderRebuildCargoProofTests.cs:line 417
+   at ControlServer.Tests.OwnOrderRebuildCargoProofTests.CargoProvenThenTakenUnderSomeoneElsesStopIsNotRebuilt() in tests\ControlServer.Tests\OwnOrderRebuildCargoProofTests.cs:line 115
+   at ControlServer.Tests.OwnOrderRebuildCargoProofTests.CargoProvenThenTakenUnderSomeoneElsesStopIsNotRebuilt() in tests\ControlServer.Tests\OwnOrderRebuildCargoProofTests.cs:line 119
+  Failed ControlServer.Tests.StoppedRebuildExitTests.ACancelledTripWhoseCargoIsNotInPlaceIsHandedToTheExceptionSessionAndEndsThere(session: "ready") [2 s]
+Expected: 1
+Actual:   2
+     at ControlServer.Tests.StoppedRebuildExitTests.StoppedCancelledWithCargoNotInPlaceAsync() in tests\ControlServer.Tests\StoppedRebuildExitTests.cs:line 1587
+   at ControlServer.Tests.StoppedRebuildExitTests.ACancelledTripWhoseCargoIsNotInPlaceIsHandedToTheExceptionSessionAndEndsThere(String session) in tests\ControlServer.Tests\StoppedRebuildExitTests.cs:line 781
+  Failed ControlServer.Tests.OwnOrderRebuildCargoProofTests.FaultWindowBASnapshotFromWithinTheDelayDoesNotProveTheCargoAtTheRebuild [2 s]
+Expected: 1
+Actual:   2
+     at ControlServer.Tests.OwnOrderRebuildCargoProofTests.FaultWindowBASnapshotFromWithinTheDelayDoesNotProveTheCargoAtTheRebuild() in tests\ControlServer.Tests\OwnOrderRebuildCargoProofTests.cs:line 315
+   at ControlServer.Tests.OwnOrderRebuildCargoProofTests.FaultWindowBASnapshotFromWithinTheDelayDoesNotProveTheCargoAtTheRebuild() in tests\ControlServer.Tests\OwnOrderRebuildCargoProofTests.cs:line 322
+  Failed ControlServer.Tests.OwnOrderRebuildCargoProofTests.OneEmptySlotAmongTheLoadedDemandsStopsTheWholeTrip [2 s]
+Expected: 1
+Actual:   2
+     at ControlServer.Tests.OwnOrderRebuildCargoProofTests.AssertStoppedAsync(RuntimeFixture fixture, Cancelled cancelled) in tests\ControlServer.Tests\OwnOrderRebuildCargoProofTests.cs:line 426
+   at ControlServer.Tests.OwnOrderRebuildCargoProofTests.OneEmptySlotAmongTheLoadedDemandsStopsTheWholeTrip() in tests\ControlServer.Tests\OwnOrderRebuildCargoProofTests.cs:line 213
+   at ControlServer.Tests.OwnOrderRebuildCargoProofTests.OneEmptySlotAmongTheLoadedDemandsStopsTheWholeTrip() in tests\ControlServer.Tests\OwnOrderRebuildCargoProofTests.cs:line 215
+  Failed ControlServer.Tests.OwnOrderRebuildCargoProofTests.ASnapshotReceivedBeforeTheRecoveryDoesNotCount [2 s]
+Expected: 1
+Actual:   2
+     at ControlServer.Tests.OwnOrderRebuildCargoProofTests.AssertWaitingAsync(RuntimeFixture fixture, Cancelled cancelled, String waitingPrefix, String journeyCode) in tests\ControlServer.Tests\OwnOrderRebuildCargoProofTests.cs:line 417
+   at ControlServer.Tests.OwnOrderRebuildCargoProofTests.ASnapshotReceivedBeforeTheRecoveryDoesNotCount() in tests\ControlServer.Tests\OwnOrderRebuildCargoProofTests.cs:line 138
+   at ControlServer.Tests.OwnOrderRebuildCargoProofTests.ASnapshotReceivedBeforeTheRecoveryDoesNotCount() in tests\ControlServer.Tests\OwnOrderRebuildCargoProofTests.cs:line 142
+  Passed ControlServer.Tests.OwnOrderRebuildCargoProofTests.WithNothingLoadedTheCancelledOrderIsRebuiltWithoutASnapshot [267 ms]
+  Failed ControlServer.Tests.OwnOrderRebuildCargoProofTests.AnInconclusiveSnapshotWaitsAndACargoShownInPlaceRebuildsToTheGate [2 s]
+Expected: 1
+Actual:   2
+     at ControlServer.Tests.OwnOrderRebuildCargoProofTests.AssertWaitingAsync(RuntimeFixture fixture, Cancelled cancelled, String waitingPrefix, String journeyCode) in tests\ControlServer.Tests\OwnOrderRebuildCargoProofTests.cs:line 417
+   at ControlServer.Tests.OwnOrderRebuildCargoProofTests.AnInconclusiveSnapshotWaitsAndACargoShownInPlaceRebuildsToTheGate() in tests\ControlServer.Tests\OwnOrderRebuildCargoProofTests.cs:line 84
+   at ControlServer.Tests.OwnOrderRebuildCargoProofTests.AnInconclusiveSnapshotWaitsAndACargoShownInPlaceRebuildsToTheGate() in tests\ControlServer.Tests\OwnOrderRebuildCargoProofTests.cs:line 90
+  Failed ControlServer.Tests.OwnOrderRebuildCargoProofTests.WithoutASnapshotAfterTheCancellationTheRebuildWaits [2 s]
+Expected: 1
+Actual:   2
+     at ControlServer.Tests.OwnOrderRebuildCargoProofTests.AssertWaitingAsync(RuntimeFixture fixture, Cancelled cancelled, String waitingPrefix, String journeyCode) in tests\ControlServer.Tests\OwnOrderRebuildCargoProofTests.cs:line 417
+   at ControlServer.Tests.OwnOrderRebuildCargoProofTests.WithoutASnapshotAfterTheCancellationTheRebuildWaits() in tests\ControlServer.Tests\OwnOrderRebuildCargoProofTests.cs:line 68
+   at ControlServer.Tests.OwnOrderRebuildCargoProofTests.WithoutASnapshotAfterTheCancellationTheRebuildWaits() in tests\ControlServer.Tests\OwnOrderRebuildCargoProofTests.cs:line 68
+  Failed ControlServer.Tests.OwnOrderRebuildCargoProofTests.AnEmptySlotAfterTheCancellationStopsTheRebuildForAPerson [2 s]
+Expected: 1
+Actual:   2
+     at ControlServer.Tests.OwnOrderRebuildCargoProofTests.AssertWaitingAsync(RuntimeFixture fixture, Cancelled cancelled, String waitingPrefix, String journeyCode) in tests\ControlServer.Tests\OwnOrderRebuildCargoProofTests.cs:line 417
+   at ControlServer.Tests.OwnOrderRebuildCargoProofTests.AnEmptySlotAfterTheCancellationStopsTheRebuildForAPerson() in tests\ControlServer.Tests\OwnOrderRebuildCargoProofTests.cs:line 47
+   at ControlServer.Tests.OwnOrderRebuildCargoProofTests.AnEmptySlotAfterTheCancellationStopsTheRebuildForAPerson() in tests\ControlServer.Tests\OwnOrderRebuildCargoProofTests.cs:line 52
+  Failed ControlServer.Tests.OwnOrderRebuildCargoProofTests.WhileTheSessionIsNotReadyOnItsOwnOrderASnapshotDoesNotCountAndReadinessAsksForAFreshOne [2 s]
+Expected: 1
+Actual:   2
+     at ControlServer.Tests.OwnOrderRebuildCargoProofTests.AssertWaitingAsync(RuntimeFixture fixture, Cancelled cancelled, String waitingPrefix, String journeyCode) in tests\ControlServer.Tests\OwnOrderRebuildCargoProofTests.cs:line 417
+   at ControlServer.Tests.OwnOrderRebuildCargoProofTests.WhileTheSessionIsNotReadyOnItsOwnOrderASnapshotDoesNotCountAndReadinessAsksForAFreshOne() in tests\ControlServer.Tests\OwnOrderRebuildCargoProofTests.cs:line 165
+   at ControlServer.Tests.OwnOrderRebuildCargoProofTests.WhileTheSessionIsNotReadyOnItsOwnOrderASnapshotDoesNotCountAndReadinessAsksForAFreshOne() in tests\ControlServer.Tests\OwnOrderRebuildCargoProofTests.cs:line 170
+  Failed ControlServer.Tests.OwnOrderRebuildCargoProofTests.FaultWindowACargoProvenThenTakenWhileTheVehicleIsHeldIsNotRebuilt [2 s]
+Expected: 1
+Actual:   2
+     at ControlServer.Tests.OwnOrderRebuildCargoProofTests.FaultWindowACargoProvenThenTakenWhileTheVehicleIsHeldIsNotRebuilt() in tests\ControlServer.Tests\OwnOrderRebuildCargoProofTests.cs:line 287
+   at ControlServer.Tests.OwnOrderRebuildCargoProofTests.FaultWindowACargoProvenThenTakenWhileTheVehicleIsHeldIsNotRebuilt() in tests\ControlServer.Tests\OwnOrderRebuildCargoProofTests.cs:line 297
+Total tests: 18
+     Passed: 6
+     Failed: 12

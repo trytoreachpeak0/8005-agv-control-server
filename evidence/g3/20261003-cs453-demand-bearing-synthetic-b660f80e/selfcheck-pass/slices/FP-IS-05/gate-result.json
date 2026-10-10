@@ -1,0 +1,73 @@
+{
+  "schemaVersion": "1.3.0",
+  "gate": "G3",
+  "runKind": "DEMAND_BEARING_G3_RESULT_AND_RIOT_UNKNOWN_VECTORS_NO_MOVEMENT",
+  "runId": "20261003T042613339Z",
+  "integrationSliceId": "FP-IS-05",
+  "status": "PASS",
+  "assuranceLevel": "DEMAND_BEARING_RESTORE",
+  "formalSlicePass": true,
+  "startedAt": "2026-10-03T04:26:13.3394891+00:00",
+  "finishedAt": "2026-10-03T04:29:12.9288812+00:00",
+  "implementationRepository": "8005-agv-control-server",
+  "commits": {
+    "controlServer": "b660f80eb02619056c13ea8def21e5d90ac7dbb2",
+    "controlServerCommitSource": "SELF_CHECK_OVERRIDE",
+    "onboardHmi": "4e40e196205d55c363f97850d10bd18df9a686c0",
+    "slotsSimulator": "fb5f7c593742bf98bc3957b8729a38aad5321f28",
+    "protocol": "86575456c847041515b7b75e8851a00e0d939804",
+    "runner": "b660f80eb02619056c13ea8def21e5d90ac7dbb2",
+    "runnerWorktreeCleanAtStart": true
+  },
+  "protocolReleaseVersion": "2.0.0",
+  "protocolTag": "protocol-v2.0.0",
+  "protocolProfileId": "AGV_FULL_PRODUCT",
+  "protocolVersion": 3,
+  "protocolApprovalStatus": "APPROVED_RELEASE",
+  "protocolRepositoryCommit": "86575456c847041515b7b75e8851a00e0d939804",
+  "protocolManifestSha256": "4ac095ad371d3aaa60d7c2e0198cfd64cff5f3068230fc3420e9cdf5616422a7",
+  "protocolSchemaBundleSha256": "9db0dbdc22fed7e39edf8d01b1fc40a12f5d70a7414f696f909ab2a87eb8c221",
+  "protocolVectorsSha256": "391fa69a7d6e9f86ea139ba4c74eadf4994bf0a87e89d3dc5258dd7968d9182a",
+  "integrationSliceIndexSha256": "268ce62be4e0ec8fe6d26e2048a59cf1732f02713415a0c5f41b6b009951b6fc",
+  "integrationSliceIndexSource": "vendor/8005-agv-protocol/integration-slices/index.json",
+  "vectorIds": [
+    "CV-CONNECTION-LOSS-SAFE-FINISH",
+    "CV-SESSION-RECONNECT-DURING-RECOVERY"
+  ],
+  "fieldStoreProvenance": {
+    "storeSource": "SYNTHETIC_RIG",
+    "protocolCommit": "86575456c847041515b7b75e8851a00e0d939804",
+    "matchesBoundProtocolCommit": true,
+    "protocolCommitAsserted": true,
+    "protocolCommitConjunct": "SYNTHETIC_RIG: seventh conjunct in force; store protocolCommit 86575456c847041515b7b75e8851a00e0d939804 must equal bound 86575456c847041515b7b75e8851a00e0d939804 -> equal",
+    "exemption": null,
+    "generator": {
+      "scenario": "demand-bearing-store-at-unload",
+      "evidence": "store-generator",
+      "runId": "20261003T042747877Z",
+      "outcome": "PASS",
+      "rig": "SyntheticOnboard",
+      "controlServerCommit": "b660f80eb02619056c13ea8def21e5d90ac7dbb2"
+    },
+    "note": "Generated on the spot by the bound ControlServer commit on the synthetic rig: a synthetic onboard peer and the fake RIoT, not a real vehicle and not the real RIoT. Weaker than a field store: the state was written by the build under test through the product code path, not by a real demand on a real vehicle (control-server#453). Its protocolCommit is asserted inside protocolAndBuildIdentityBoundToTheSharedBinding.",
+    "riotCreateAuditHistory": {
+      "legs": 2,
+      "preCreateReconciliationObservedUnknownOnEveryLeg": false,
+      "unknownWasAnExactAbsentAtObservation": false,
+      "unknownStillCreatedExactlyOncePerLeg": true,
+      "unknownResolvedToTheOrderItCreated": true,
+      "note": "Written against the fake RIoT, whose answers are not the real RIoT's. Recorded, not asserted, and not evidence about RIoT."
+    }
+  },
+  "assertionIds": {
+    "resultFromASupersededSessionGenerationIsRefused": "PASS",
+    "acceptedDemandSurvivesTheHostRestart": "PASS",
+    "vehicleClaimRecordSurvivesTheHostRestart": "PASS",
+    "restartedHostServesTheSameStore": "PASS",
+    "protocolAndBuildIdentityBoundToTheSharedBinding": "PASS",
+    "controlServerHostProcessWasActuallyReplaced": "PASS",
+    "noMovementOrExternalSideEffects": "PASS",
+    "listenersReleased": "PASS",
+    "secretScan": "PASS"
+  }
+}

@@ -1,0 +1,40 @@
+{"at":"2026-10-03T04:31:00.6340606+00:00","note":"L2 run 20261003T043100565Z starting for scenario 'demand-bearing-store-at-unload'."}
+{"at":"2026-10-03T04:31:00.6979086+00:00","note":"L2 port block lock acquired (slot 0, Global\\W2G-L2PortBlock)."}
+{"at":"2026-10-03T04:31:00.7010394+00:00","note":"Building ControlServer and the test doubles."}
+{"at":"2026-10-03T04:31:28.8761798+00:00","criterion":"fake-riot-live","value":"live"}
+{"at":"2026-10-03T04:31:29.2152230+00:00","criterion":"fake-mes-live","value":"live"}
+{"at":"2026-10-03T04:31:29.3749781+00:00","note":"Task type station preset: default (map 25, WIRE_TO_GATE -> 关卡/210)"}
+{"at":"2026-10-03T04:31:36.2304346+00:00","note":"Package capacity rules imported."}
+{"at":"2026-10-03T04:31:36.2335009+00:00","note":"No waiting point registration: a single-vehicle rig, or WaitingPoints = $false."}
+{"at":"2026-10-03T04:31:38.3551647+00:00","criterion":"control-server-live","value":"(null)"}
+{"at":"2026-10-03T04:31:39.7854344+00:00","criterion":"control-server-live","value":"live"}
+{"at":"2026-10-03T04:31:39.9870412+00:00","note":"Protocol release identity: protocol-v2.0.0 (profileId AGV_FULL_PRODUCT, protocolVersion 3, APPROVED_RELEASE)."}
+{"at":"2026-10-03T04:31:40.8755156+00:00","criterion":"onboard-readiness","value":"DISCONNECTED"}
+{"at":"2026-10-03T04:31:41.1384928+00:00","criterion":"onboard-readiness","value":"READY"}
+{"at":"2026-10-03T04:31:41.2413592+00:00","criterion":"control-server-ready","value":"ready"}
+{"at":"2026-10-03T04:31:41.3194534+00:00","note":"FieldOps: seed-approved-facts --database C:\\Users\\szy\\AppData\\Local\\Temp\\l2-20261003T043100565Z\\controlserver.db"}
+{"at":"2026-10-03T04:31:43.9769027+00:00","criterion":"slot-model-preseed:seed-approved-facts","value":"OK","detail":{"output":{"command":"seed-approved-facts","outcome":"OK","modelKey":"8005-eight-slot","slotModelVersionId":"c12d6e99c96d4b23832ce5627697b92c","version":1,"slotCount":8}}}
+{"at":"2026-10-03T04:31:43.9842276+00:00","note":"FieldOps: bind-io --database C:\\Users\\szy\\AppData\\Local\\Temp\\l2-20261003T043100565Z\\controlserver.db --agv AGV-L2-001"}
+{"at":"2026-10-03T04:31:45.4230012+00:00","criterion":"slot-model-preseed:bind-io:AGV-L2-001","value":"OK","detail":{"output":{"command":"bind-io","outcome":"OK","agvId":"AGV-L2-001","slotModelVersionId":"c12d6e99c96d4b23832ce5627697b92c","boundSlots":8,"version":1}}}
+{"at":"2026-10-03T04:31:45.5429784+00:00","criterion":"slot-model-preseed:dispatch-zones","value":"0"}
+{"at":"2026-10-03T04:31:45.5464374+00:00","note":"FieldOps: import-area-assignments --database C:\\Users\\szy\\AppData\\Local\\Temp\\l2-20261003T043100565Z\\controlserver.db --input C:\\Users\\szy\\AppData\\Local\\Temp\\claude\\C--Users-szy-Desktop-8005-workspace-v2\\da5791f3-c21e-4777-9f18-66a53768f8cc\\scratchpad\\m2-mut\\store-generator\\snapshots\\preseed-area-assignments.csv"}
+{"at":"2026-10-03T04:31:47.2368125+00:00","criterion":"slot-model-preseed:import-area-assignments","value":"OK","detail":{"output":{"command":"import-area-assignments","outcome":"OK","dryRun":false,"input":"C:\\Users\\szy\\AppData\\Local\\Temp\\claude\\C--Users-szy-Desktop-8005-workspace-v2\\da5791f3-c21e-4777-9f18-66a53768f8cc\\scratchpad\\m2-mut\\store-generator\\snapshots\\preseed-area-assignments.csv","entryCount":3,"version":1,"contentSha256":"4291a509c2c0b75ea4bde0ac4dcde04b6e8632b54a21a67eee2772a6f8d0ff8e","snapshotId":"b78a68cb2608443fbe4e880d70c52be2","importedAt":"2026-10-03T12:31:45.8202896+08:00","errorCount":0,"errors":[],"preview":[]}}}
+{"at":"2026-10-03T04:31:47.2480900+00:00","note":"FieldOps: import-charging-policy --database C:\\Users\\szy\\AppData\\Local\\Temp\\l2-20261003T043100565Z\\controlserver.db --input C:\\Users\\szy\\AppData\\Local\\Temp\\claude\\C--Users-szy-Desktop-8005-workspace-v2\\da5791f3-c21e-4777-9f18-66a53768f8cc\\scratchpad\\m2-mut\\store-generator\\snapshots\\preseed-charging-policy.json --fleet BROKERX-L2-0001"}
+{"at":"2026-10-03T04:31:48.7997963+00:00","note":"FieldOps: approve-charging-policy --database C:\\Users\\szy\\AppData\\Local\\Temp\\l2-20261003T043100565Z\\controlserver.db --version 1 --approved-by L2 orchestrator --role L2_PRESET --basis scripts/l2/L2ChargingPolicy.psm1 --source L2_PRESET"}
+{"at":"2026-10-03T04:31:50.4143690+00:00","note":"FieldOps: activate-charging-policy --database C:\\Users\\szy\\AppData\\Local\\Temp\\l2-20261003T043100565Z\\controlserver.db --version 1 --activated-by L2 orchestrator --fleet BROKERX-L2-0001 --allow-non-field-approval"}
+{"at":"2026-10-03T04:31:51.9485094+00:00","criterion":"preseed:charging-policy","value":"OK","detail":{"coveredAfter":["BROKERX-L2-0001"],"source":"L2_PRESET","version":1,"withoutPolicy":[]}}
+{"at":"2026-10-03T04:31:51.9494805+00:00","note":"Per-zone dispatch parameters left unconfigured (the default precondition)."}
+{"at":"2026-10-03T04:31:51.9619023+00:00","note":"Environment is up; entering scenario 'demand-bearing-store-at-unload'."}
+{"at":"2026-10-03T04:31:52.0555043+00:00","note":"Publishing demand de8caae04f58435194b85e4c0770dbf3 (sublot L2-SUBLOT-20261003T043100565Z)."}
+{"at":"2026-10-03T04:31:52.0883432+00:00","criterion":"to-pickup-intent","value":"(null)"}
+{"at":"2026-10-03T04:31:53.1257561+00:00","criterion":"to-pickup-intent","value":"@{UpperId=W2G-de8caae0-4f58-4351-94b8-5e4c0770dbf3-PICKUP-1; Status=CONFIRMED}"}
+{"at":"2026-10-03T04:31:53.1296130+00:00","note":"Vehicle drives to the pickup station and comes to rest."}
+{"at":"2026-10-03T04:31:53.1823362+00:00","criterion":"to-gate-intent","value":"(null)"}
+{"at":"2026-10-03T04:32:01.2714213+00:00","criterion":"to-gate-intent","value":"@{UpperId=W2G-de8caae0-4f58-4351-94b8-5e4c0770dbf3-GATE-1; Status=CONFIRMED}"}
+{"at":"2026-10-03T04:32:01.2741806+00:00","note":"Vehicle drives to the gate and comes to rest."}
+{"at":"2026-10-03T04:32:01.3031588+00:00","criterion":"journey-stage","value":"AwaitingGateArrival"}
+{"at":"2026-10-03T04:32:02.5917000+00:00","criterion":"journey-stage","value":"AwaitingUnloadResult"}
+{"at":"2026-10-03T04:32:02.6025838+00:00","criterion":"pending-unload","value":"1"}
+{"at":"2026-10-03T04:32:02.6551866+00:00","note":"Exported the store to C:\\Users\\szy\\AppData\\Local\\Temp\\claude\\C--Users-szy-Desktop-8005-workspace-v2\\da5791f3-c21e-4777-9f18-66a53768f8cc\\scratchpad\\m2-mut\\store-generator\\demand-bearing-store\\controlserver.db."}
+{"at":"2026-10-03T04:32:02.6762612+00:00","note":"Generator finished."}
+{"at":"2026-10-03T04:32:02.9924385+00:00","note":"L2 port block lock released."}

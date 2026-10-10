@@ -142,11 +142,11 @@ $operationKey = Wait-L2Condition -Description 'the load command reached the peer
     -Probe { Get-PendingOperationKey } -Until { param($v) $null -ne $v }
 $journal.Note("Load command $operationKey reached the peer, which will never answer it.")
 
-# 等，不是读一次（control-server#193）。服务端在同一轮迭代里先把装载指令落库并发出去，再单独保存录入请求的
-# 结算，迭代末尾才保存 AwaitingLoadResult——所以对端手里有指令的那一刻，库里可能还是 AwaitingSublot。CI run
-# 35432232407 就读在这个窗口里；L1 JourneyRuntimeWorkerLoadCommandCommitOrderTests 钉住了这个顺序，也证明窗口里
-# 进来的录入前取消会被拒（它看的是已落库的指令，不是阶段）。load-result-requires-recovery 的 L2-LR-01 是同一对
-# 写入，2026-09-10 就这样修过，这一处当时没跟上。
+# 等，不是读一次（control-server#193）。原先服务端先把装载指令落库并发出去、迭代末尾才保存 AwaitingLoadResult，
+# 对端手里有指令的那一刻库里可能还是 AwaitingSublot（CI run 35432232407 就读在这个窗口里）。control-server#362 起
+# 指令、归属 LOADING 与 AwaitingLoadResult 同一事务提交、提交之后才上线，这个窗口没有了；L1
+# JourneyRuntimeWorkerLoadCommandCommitOrderTests 钉住新顺序。这里照旧等：读一次只在今天的服务端上成立，等则不依赖它。
+# load-result-requires-recovery 的 L2-LR-01 是同一对写入，2026-09-10 就这样修过。
 #
 # 等不到不抛：超时本身就是 L2-LN-01 的失败，要带着最后读到的阶段落进判据表，而不是变成一条 failureReason。
 $stage = Wait-L2ConditionOrLast -Description 'the journey recorded that it is waiting for the load result' `

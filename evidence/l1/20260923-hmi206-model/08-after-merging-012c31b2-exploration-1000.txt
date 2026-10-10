@@ -1,0 +1,13 @@
+head e808c01162ec383cb92a4dcfb679e263b0c853dc
+   ControlServer.Tests  Total: 1, Errors: 0, Failed: 0, Skipped: 0, Not Run: 0, Time: 123.986s
+--- report
+iterations=1000 masterSeed=342
+per combination (ms): n=1000 mean=123.6 p50=100.0 p90=190.7 max=2887.5; wall total 123.9s
+per combination excluding the first (ms): n=999 mean=120.8; first=2887.5
+setup mean=70.4ms; engine rounds per combination mean=4.0; per round (excluding setup) mean=13.3ms
+ack conflicts=0 vehicle regressions=0
+entry request reached the vehicle in 1000 of 1000
+rounds from the last recovery to the entry request: 1: 983, 2: 17
+DifferentMessageAccepted by where: handshake open 0, handshake done 0
+rounds that failed while carrying a wait-on-person code: 14
+  by code: ONBOARD_SESSION_LOST (exempt: heard inside the liveness window): 5, ORDER_HANG: 14

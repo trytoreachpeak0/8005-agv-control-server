@@ -1,0 +1,23 @@
+{"at":"2026-10-09T16:35:46.5870201+00:00","note":"L2 run 20261009T163546543Z starting for scenario 'waiting-points-fewer-than-vehicles-refuses-start'."}
+{"at":"2026-10-09T16:35:46.6338310+00:00","note":"L2 port block lock acquired (slot 3, Global\\W2G-L2PortBlock-slot3)."}
+{"at":"2026-10-09T16:35:46.6365313+00:00","note":"Build skipped (-SkipBuild); running the output already built."}
+{"at":"2026-10-09T16:35:47.5437380+00:00","criterion":"fake-riot-live","value":"live"}
+{"at":"2026-10-09T16:35:47.7917730+00:00","criterion":"fake-mes-live","value":"live"}
+{"at":"2026-10-09T16:35:47.8544323+00:00","note":"Fleet of 2: AGV-L2-001/BROKERX-L2-0001, AGV-L2-002/BROKERX-L2-0002"}
+{"at":"2026-10-09T16:35:47.8815573+00:00","note":"Task type station preset: default (map 25, WIRE_TO_GATE -> 关卡/210)"}
+{"at":"2026-10-09T16:35:53.3198862+00:00","note":"Package capacity rules imported."}
+{"at":"2026-10-09T16:35:55.2207261+00:00","note":"FieldOps: import-waiting-points --database C:\\actions-runner\\win11-01-control-server\\_work\\_temp\\l2-37953826544-1\\_stage\\l2-20261009T163546543Z-slot3\\controlserver.db --input C:\\actions-runner\\win11-01-control-server\\_work\\_temp\\l2-37953826544-1\\_stage\\l2-20261009T163546543Z-slot3\\waiting-points.csv --catalog C:\\actions-runner\\win11-01-control-server\\_work\\_temp\\l2-37953826544-1\\_stage\\l2-20261009T163546543Z-slot3\\waiting-points-catalog-25.json --map 25 --fleet BROKERX-L2-0001;BROKERX-L2-0002"}
+{"at":"2026-10-09T16:35:57.1150787+00:00","criterion":"waiting-points-imported","value":"1","detail":{"stations":[214],"coverage":{"mapId":25,"vehicleCount":2,"enabledOnMap":1,"assignable":1,"sufficient":false,"shortfall":1,"unassigned":["BROKERX-L2-0002"],"onOtherMaps":{},"warning":"A server running this fleet on this map will refuse to start (WAITING_POINTS_FEWER_THAN_VEHICLES) until more waiting points are enabled."}}}
+{"at":"2026-10-09T16:35:57.1254847+00:00","note":"Waiting points registered on map 25 as version 1: 214=等待点1"}
+{"at":"2026-10-09T16:36:06.2776740+00:00","criterion":"control-server-refused","value":"-532462766","detail":{"everLive":false}}
+{"at":"2026-10-09T16:36:06.2933838+00:00","note":"Server exited with -532462766 as expected for WAITING_POINTS_FEWER_THAN_VEHICLES (log read as utf-8); protocol release identity protocol-v3.0.0 read from the host's appsettings.json."}
+{"at":"2026-10-09T16:36:06.2946000+00:00","note":"No onboard peer started: the server was expected to refuse to start."}
+{"at":"2026-10-09T16:36:06.3367121+00:00","note":"Slot model preseed skipped: SlotModelPreseed = $false."}
+{"at":"2026-10-09T16:36:06.3378561+00:00","note":"Area assignment import skipped: AreaAssignments = $false."}
+{"at":"2026-10-09T16:36:06.3524552+00:00","note":"Charging policy preset skipped: ChargingPolicy = $false, or a server expected to refuse to start."}
+{"at":"2026-10-09T16:36:06.3610454+00:00","note":"Per-zone dispatch parameters left unconfigured (the default precondition)."}
+{"at":"2026-10-09T16:36:06.3794459+00:00","note":"Environment is up; entering scenario 'waiting-points-fewer-than-vehicles-refuses-start'."}
+{"at":"2026-10-09T16:36:06.4561094+00:00","note":"Server exited with -532462766; /health/live ever answered: False."}
+{"at":"2026-10-09T16:36:06.6123657+00:00","criterion":"refused-server-side-effects","value":"@{Accepted=0; Intents=0; Orders=0}"}
+{"at":"2026-10-09T16:36:21.7619871+00:00","note":"Not reached: Timed out after 15s waiting for: a refused server accepted a demand or created an order. Last observed: {\"Accepted\":0,\"Intents\":0,\"Orders\":0}"}
+{"at":"2026-10-09T16:36:22.0526314+00:00","note":"L2 port block lock released."}

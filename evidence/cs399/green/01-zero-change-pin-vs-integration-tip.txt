@@ -1,0 +1,26 @@
+# python evidence/cs399/green/compare-pins.py <repo> 3fc3587b5be8f07a2b938c320721d90a78cb37cc
+base (old pins): 3fc3587b5be8f07a2b938c320721d90a78cb37cc
+pins: 14
+cancellation-before-sublot.txt: changed, identical after removal
+commanded-ending-FaultCargoRecoveryResult.txt: changed, identical after removal
+commanded-ending-LoadCancellationResult.txt: changed, identical after removal
+commanded-ending-LoadCompensationResult.txt: changed, identical after removal
+dashboard-blocked-journeys-admission-session-down.txt: unchanged, identical after removal
+dashboard-blocked-journeys-own-move-order.txt: unchanged, identical after removal
+dashboard-expected-action-overdue-load.txt: unchanged, identical after removal
+dashboard-expected-action-overdue-unload.txt: unchanged, identical after removal
+determinate-load-failure.txt: changed, identical after removal
+fault-cargo-handoff.txt: changed, identical after removal
+forced-mechanical-recovery.txt: changed, identical after removal
+in-flight-cancellation.txt: changed, identical after removal
+station-deadline.txt: changed, identical after removal
+unload.txt: changed, identical after removal
+expected (rows in the old pins) vs actual (fields in the new pins):
+  |OrderShape='SINGLE_MOVE': expected 14, actual 14
+  |ChargingPolicyVersion=NULL: expected 10, actual 10
+  |PublishedBatteryState=NULL: expected 10, actual 10
+RESULT: PASS
+
+# self-check: Stage='Completed' -> 'Complete' once in unload.txt (restored afterwards)
+unload.txt: changed, DIFFERENT; NOT byte-identical after removing the appended fields
+RESULT: FAIL (1)

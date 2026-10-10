@@ -1,0 +1,114 @@
+2026-09-30T15:56:15.9349434+08:00	Information	SingleInstanceGuard	抢到了整机单例名字。名字=Global\SQCD.Agv.Wpf.Onboard。
+2026-09-30T15:56:15.9935598+08:00	Information	App	车载端启动：agvId=AGV-L2-001，environment=Development，version=0.2.0-safety-mock-travel+f3c3e939f650b3479bc929d2fc25fbb53ebbe6ef。
+2026-09-30T15:56:17.2760446+08:00	Information	ModbusTcpIoModuleClient	已连接IO模块 127.0.0.1:48412，UnitId=255。
+2026-09-30T15:56:17.2914590+08:00	Information	WireToGateSessionClient	会话状态发布：source=handshake-start，connected=False，generation=null，readiness=Recovering，reasonCodes=[]，safetyStateVersion=1。
+2026-09-30T15:56:17.2957319+08:00	Information	WireToGateBusinessService	判恢复入口：generation=null，readiness=Recovering，reasonCodes=[]，subject=none，recoveryVector=none，recoverySession=none，faultCargoHandoff=False。
+2026-09-30T15:56:17.3336234+08:00	Information	OnboardController	IO模块在线。
+2026-09-30T15:56:17.3374475+08:00	Information	OnboardController	启动IO安全快照验证通过。
+2026-09-30T15:56:17.7493243+08:00	Information	WireToGateSessionClient	会话状态发布：source=session-accepted，connected=True，generation=1，readiness=Recovering，reasonCodes=[]，safetyStateVersion=1。
+2026-09-30T15:56:17.7509530+08:00	Information	WireToGateBusinessService	判恢复入口：generation=1，readiness=Recovering，reasonCodes=[]，subject=none，recoveryVector=none，recoverySession=none，faultCargoHandoff=False。
+2026-09-30T15:56:18.4352148+08:00	Information	WireToGateSessionClient	收到SessionReadiness：messageId=53852b2a-bebf-454a-be62-4fc1e8c3c34d，generation=1，readiness=READY，reasonCodes=[]，acceptedSafetyStateVersion=1。
+2026-09-30T15:56:18.4364496+08:00	Information	WireToGateSessionClient	会话状态发布：source=SessionReadiness，connected=True，generation=1，readiness=Ready，reasonCodes=[]，safetyStateVersion=1。
+2026-09-30T15:56:18.4384856+08:00	Information	WireToGateBusinessService	判恢复入口：generation=1，readiness=Ready，reasonCodes=[]，subject=none，recoveryVector=none，recoverySession=none，faultCargoHandoff=False。
+2026-09-30T15:56:18.4684890+08:00	Information	WireToGateSessionService	上层会话已建立：generation=1，readiness=Ready。
+2026-09-30T15:56:18.6061380+08:00	Information	WireToGateSessionClient	收到SessionReadiness：messageId=7fc6d5a4-8208-4eb0-a388-45b08c2e765c，generation=1，readiness=READY，reasonCodes=[]，acceptedSafetyStateVersion=2。
+2026-09-30T15:56:18.6070829+08:00	Information	WireToGateSessionClient	会话状态发布：source=SessionReadiness，connected=True，generation=1，readiness=Ready，reasonCodes=[]，safetyStateVersion=2。
+2026-09-30T15:56:18.6203119+08:00	Information	WireToGateSessionClient	会话状态发布：source=SafetyStateChanged-ack，connected=True，generation=1，readiness=Ready，reasonCodes=[]，safetyStateVersion=2。
+2026-09-30T15:56:41.5938117+08:00	Information	App	服务端请求录入Sublot：station=N1-3_N1-7，revision=1，expectedSublots=G3-02-20260930T075555932Z。 
+2026-09-30T15:56:42.1486993+08:00	Information	App	服务端请求录入Sublot：station=N1-3_N1-7，revision=1，expectedSublots=G3-02-20260930T075555932Z。 
+2026-09-30T15:56:43.0767678+08:00	Information	App	服务端请求录入Sublot：station=N1-3_N1-7，revision=1，expectedSublots=G3-02-20260930T075555932Z。 
+2026-09-30T15:56:44.0672366+08:00	Information	App	服务端请求录入Sublot：station=N1-3_N1-7，revision=1，expectedSublots=G3-02-20260930T075555932Z。 
+2026-09-30T15:56:45.0779388+08:00	Information	App	服务端请求录入Sublot：station=N1-3_N1-7，revision=1，expectedSublots=G3-02-20260930T075555932Z。 
+2026-09-30T15:56:46.0678758+08:00	Information	App	服务端请求录入Sublot：station=N1-3_N1-7，revision=1，expectedSublots=G3-02-20260930T075555932Z。 
+2026-09-30T15:56:46.3417032+08:00	Information	ModbusTcpIoModuleClient	已向物理1号仓发送开锁脉冲触发，DO地址=100。硬件负责自动复位。 
+2026-09-30T15:56:46.3916392+08:00	Information	ModbusTcpIoModuleClient	1号仓IO变化：DO 0->1，锁DI 1->1，光幕DI 1->1。
+2026-09-30T15:56:46.4224248+08:00	Information	WireToGateSessionClient	收到SessionReadiness：messageId=d172ca56-1c3d-48a2-a761-778cb24ebd7a，generation=1，readiness=READY，reasonCodes=[]，acceptedSafetyStateVersion=3。
+2026-09-30T15:56:46.4228911+08:00	Information	WireToGateSessionClient	会话状态发布：source=SessionReadiness，connected=True，generation=1，readiness=Ready，reasonCodes=[]，safetyStateVersion=3。
+2026-09-30T15:56:46.4294026+08:00	Information	WireToGateSessionClient	会话状态发布：source=SafetyStateChanged-ack，connected=True，generation=1，readiness=Ready，reasonCodes=[]，safetyStateVersion=3。
+2026-09-30T15:56:46.5145680+08:00	Information	ModbusTcpIoModuleClient	1号仓IO变化：DO 1->1，锁DI 1->0，光幕DI 1->1。
+2026-09-30T15:56:46.5340534+08:00	Information	WireToGateSessionClient	收到SessionReadiness：messageId=94da62f8-3704-4666-8877-7911c9626fcf，generation=1，readiness=READY，reasonCodes=[]，acceptedSafetyStateVersion=4。
+2026-09-30T15:56:46.5346963+08:00	Information	WireToGateSessionClient	会话状态发布：source=SessionReadiness，connected=True，generation=1，readiness=Ready，reasonCodes=[]，safetyStateVersion=4。
+2026-09-30T15:56:46.5407543+08:00	Information	WireToGateSessionClient	会话状态发布：source=SafetyStateChanged-ack，connected=True，generation=1，readiness=Ready，reasonCodes=[]，safetyStateVersion=4。
+2026-09-30T15:56:46.9517227+08:00	Information	ModbusTcpIoModuleClient	1号仓IO变化：DO 1->0，锁DI 0->0，光幕DI 1->1。
+2026-09-30T15:56:46.9718499+08:00	Information	WireToGateSessionClient	收到SessionReadiness：messageId=647291f2-a826-4065-bdfe-6a218073b000，generation=1，readiness=READY，reasonCodes=[]，acceptedSafetyStateVersion=5。
+2026-09-30T15:56:46.9724327+08:00	Information	WireToGateSessionClient	会话状态发布：source=SessionReadiness，connected=True，generation=1，readiness=Ready，reasonCodes=[]，safetyStateVersion=5。
+2026-09-30T15:56:46.9783663+08:00	Information	WireToGateSessionClient	会话状态发布：source=SafetyStateChanged-ack，connected=True，generation=1，readiness=Ready，reasonCodes=[]，safetyStateVersion=5。
+2026-09-30T15:56:47.0641212+08:00	Information	WireToGateBusinessService	忽略并发重复SlotOperationCommand：attempt=5a9fd225-f3fe-035e-aa68-dbab318084ba。
+2026-09-30T15:56:47.7098494+08:00	Information	ModbusTcpIoModuleClient	1号仓IO变化：DO 0->0，锁DI 0->0，光幕DI 1->0。
+2026-09-30T15:56:47.7452962+08:00	Information	WireToGateSessionClient	收到SessionReadiness：messageId=d24819a1-e8ad-4110-b4bc-1913b988492d，generation=1，readiness=READY，reasonCodes=[]，acceptedSafetyStateVersion=6。
+2026-09-30T15:56:47.7460475+08:00	Information	WireToGateSessionClient	会话状态发布：source=SessionReadiness，connected=True，generation=1，readiness=Ready，reasonCodes=[]，safetyStateVersion=6。
+2026-09-30T15:56:47.7551754+08:00	Information	WireToGateSessionClient	会话状态发布：source=SafetyStateChanged-ack，connected=True，generation=1，readiness=Ready，reasonCodes=[]，safetyStateVersion=6。
+2026-09-30T15:56:47.8336341+08:00	Information	ModbusTcpIoModuleClient	1号仓IO变化：DO 0->0，锁DI 0->1，光幕DI 0->0。
+2026-09-30T15:56:47.8594368+08:00	Information	WireToGateSessionClient	收到SessionReadiness：messageId=d5c5fcb0-6c06-4682-9f95-e90ed6873f12，generation=1，readiness=READY，reasonCodes=[]，acceptedSafetyStateVersion=7。
+2026-09-30T15:56:47.8599761+08:00	Information	WireToGateSessionClient	会话状态发布：source=SessionReadiness，connected=True，generation=1，readiness=Ready，reasonCodes=[]，safetyStateVersion=7。
+2026-09-30T15:56:47.8679215+08:00	Information	WireToGateSessionClient	会话状态发布：source=SafetyStateChanged-ack，connected=True，generation=1，readiness=Ready，reasonCodes=[]，safetyStateVersion=7。
+2026-09-30T15:56:48.0825684+08:00	Information	WireToGateBusinessService	忽略并发重复SlotOperationCommand：attempt=5a9fd225-f3fe-035e-aa68-dbab318084ba。
+2026-09-30T15:56:48.2548667+08:00	Information	ModbusTcpIoModuleClient	已向物理2号仓发送开锁脉冲触发，DO地址=101。硬件负责自动复位。 
+2026-09-30T15:56:48.2741107+08:00	Information	ModbusTcpIoModuleClient	2号仓IO变化：DO 0->1，锁DI 1->1，光幕DI 1->1。
+2026-09-30T15:56:48.3018509+08:00	Information	WireToGateSessionClient	收到SessionReadiness：messageId=e1f05bdb-97b6-4f1c-8058-15795f3d47b9，generation=1，readiness=READY，reasonCodes=[]，acceptedSafetyStateVersion=8。
+2026-09-30T15:56:48.3024195+08:00	Information	WireToGateSessionClient	会话状态发布：source=SessionReadiness，connected=True，generation=1，readiness=Ready，reasonCodes=[]，safetyStateVersion=8。
+2026-09-30T15:56:48.3097360+08:00	Information	WireToGateSessionClient	会话状态发布：source=SafetyStateChanged-ack，connected=True，generation=1，readiness=Ready，reasonCodes=[]，safetyStateVersion=8。
+2026-09-30T15:56:48.3980440+08:00	Information	ModbusTcpIoModuleClient	2号仓IO变化：DO 1->1，锁DI 1->0，光幕DI 1->1。
+2026-09-30T15:56:48.4258037+08:00	Information	WireToGateSessionClient	收到SessionReadiness：messageId=9f8151b3-ebe5-4d84-ad34-b75d35853bd2，generation=1，readiness=READY，reasonCodes=[]，acceptedSafetyStateVersion=9。
+2026-09-30T15:56:48.4264088+08:00	Information	WireToGateSessionClient	会话状态发布：source=SessionReadiness，connected=True，generation=1，readiness=Ready，reasonCodes=[]，safetyStateVersion=9。
+2026-09-30T15:56:48.4340389+08:00	Information	WireToGateSessionClient	会话状态发布：source=SafetyStateChanged-ack，connected=True，generation=1，readiness=Ready，reasonCodes=[]，safetyStateVersion=9。
+2026-09-30T15:56:48.8500746+08:00	Information	ModbusTcpIoModuleClient	2号仓IO变化：DO 1->0，锁DI 0->0，光幕DI 1->1。
+2026-09-30T15:56:48.8687198+08:00	Information	WireToGateSessionClient	收到SessionReadiness：messageId=e7f2ae41-71d9-4910-a357-63282c8ab478，generation=1，readiness=READY，reasonCodes=[]，acceptedSafetyStateVersion=10。
+2026-09-30T15:56:48.8693190+08:00	Information	WireToGateSessionClient	会话状态发布：source=SessionReadiness，connected=True，generation=1，readiness=Ready，reasonCodes=[]，safetyStateVersion=10。
+2026-09-30T15:56:48.8753011+08:00	Information	WireToGateSessionClient	会话状态发布：source=SafetyStateChanged-ack，connected=True，generation=1，readiness=Ready，reasonCodes=[]，safetyStateVersion=10。
+2026-09-30T15:56:49.0829253+08:00	Information	WireToGateBusinessService	忽略并发重复SlotOperationCommand：attempt=5a9fd225-f3fe-035e-aa68-dbab318084ba。
+2026-09-30T15:56:49.2856753+08:00	Information	ModbusTcpIoModuleClient	2号仓IO变化：DO 0->0，锁DI 0->0，光幕DI 1->0。
+2026-09-30T15:56:49.3123138+08:00	Information	WireToGateSessionClient	收到SessionReadiness：messageId=1da11526-90d2-4fe8-9087-ad782ef08b53，generation=1，readiness=READY，reasonCodes=[]，acceptedSafetyStateVersion=11。
+2026-09-30T15:56:49.3129874+08:00	Information	WireToGateSessionClient	会话状态发布：source=SessionReadiness，connected=True，generation=1，readiness=Ready，reasonCodes=[]，safetyStateVersion=11。
+2026-09-30T15:56:49.3210831+08:00	Information	WireToGateSessionClient	会话状态发布：source=SafetyStateChanged-ack，connected=True，generation=1，readiness=Ready，reasonCodes=[]，safetyStateVersion=11。
+2026-09-30T15:56:49.4084271+08:00	Information	ModbusTcpIoModuleClient	2号仓IO变化：DO 0->0，锁DI 0->1，光幕DI 0->0。
+2026-09-30T15:56:49.4377872+08:00	Information	WireToGateSessionClient	收到SessionReadiness：messageId=935c3584-2c7e-4a1e-b19e-84bf46357fcc，generation=1，readiness=READY，reasonCodes=[]，acceptedSafetyStateVersion=12。
+2026-09-30T15:56:49.4385516+08:00	Information	WireToGateSessionClient	会话状态发布：source=SessionReadiness，connected=True，generation=1，readiness=Ready，reasonCodes=[]，safetyStateVersion=12。
+2026-09-30T15:56:49.4476208+08:00	Information	WireToGateSessionClient	会话状态发布：source=SafetyStateChanged-ack，connected=True，generation=1，readiness=Ready，reasonCodes=[]，safetyStateVersion=12。
+2026-09-30T15:56:50.0762692+08:00	Information	WireToGateBusinessService	忽略重复SlotOperationCommand：attempt=5a9fd225-f3fe-035e-aa68-dbab318084ba，保留原OperationResult重放。
+2026-09-30T15:56:56.9487455+08:00	Information	ModbusTcpIoModuleClient	已向物理1号仓发送开锁脉冲触发，DO地址=100。硬件负责自动复位。 
+2026-09-30T15:56:57.0408988+08:00	Information	ModbusTcpIoModuleClient	1号仓IO变化：DO 0->1，锁DI 1->1，光幕DI 0->0。
+2026-09-30T15:56:57.0728743+08:00	Information	WireToGateSessionClient	收到SessionReadiness：messageId=99768ca7-e56e-4e28-8e67-a31f6e29fe08，generation=1，readiness=RECOVERY_REQUIRED，reasonCodes=[DEPARTURE_UNSAFE]，acceptedSafetyStateVersion=13。
+2026-09-30T15:56:57.0735782+08:00	Information	WireToGateSessionClient	会话状态发布：source=SessionReadiness，connected=True，generation=1，readiness=RecoveryRequired，reasonCodes=[DEPARTURE_UNSAFE]，safetyStateVersion=13。
+2026-09-30T15:56:57.0748204+08:00	Information	WireToGateBusinessService	判恢复入口：generation=1，readiness=RecoveryRequired，reasonCodes=[DEPARTURE_UNSAFE]，subject=Load/d477d3a1-9d87-476a-900d-457eba7f27c1/5a9fd225-f3fe-035e-aa68-dbab318084ba（最近完成的装货），recoveryVector=LOAD_CORRECTION，recoverySession=none，faultCargoHandoff=False。
+2026-09-30T15:56:57.0808460+08:00	Information	WireToGateSessionClient	会话状态发布：source=SafetyStateChanged-ack，connected=True，generation=1，readiness=RecoveryRequired，reasonCodes=[DEPARTURE_UNSAFE]，safetyStateVersion=13。
+2026-09-30T15:56:57.1647419+08:00	Information	ModbusTcpIoModuleClient	1号仓IO变化：DO 1->1，锁DI 1->0，光幕DI 0->0。
+2026-09-30T15:56:57.1862808+08:00	Information	WireToGateSessionClient	收到SessionReadiness：messageId=a38b0d72-e5af-44ec-91bc-309950d1d2c5，generation=1，readiness=RECOVERY_REQUIRED，reasonCodes=[DEPARTURE_UNSAFE]，acceptedSafetyStateVersion=14。
+2026-09-30T15:56:57.1868922+08:00	Information	WireToGateSessionClient	会话状态发布：source=SessionReadiness，connected=True，generation=1，readiness=RecoveryRequired，reasonCodes=[DEPARTURE_UNSAFE]，safetyStateVersion=14。
+2026-09-30T15:56:57.1932980+08:00	Information	WireToGateSessionClient	会话状态发布：source=SafetyStateChanged-ack，connected=True，generation=1，readiness=RecoveryRequired，reasonCodes=[DEPARTURE_UNSAFE]，safetyStateVersion=14。
+2026-09-30T15:56:57.5060984+08:00	Information	ModbusTcpIoModuleClient	1号仓IO变化：DO 1->0，锁DI 0->0，光幕DI 0->0。
+2026-09-30T15:56:57.5291802+08:00	Information	WireToGateSessionClient	收到SessionReadiness：messageId=4b8b756c-67c7-4d0c-af62-8f5f1e9eb84d，generation=1，readiness=RECOVERY_REQUIRED，reasonCodes=[DEPARTURE_UNSAFE]，acceptedSafetyStateVersion=15。
+2026-09-30T15:56:57.5298746+08:00	Information	WireToGateSessionClient	会话状态发布：source=SessionReadiness，connected=True，generation=1，readiness=RecoveryRequired，reasonCodes=[DEPARTURE_UNSAFE]，safetyStateVersion=15。
+2026-09-30T15:56:57.5354619+08:00	Information	WireToGateSessionClient	会话状态发布：source=SafetyStateChanged-ack，connected=True，generation=1，readiness=RecoveryRequired，reasonCodes=[DEPARTURE_UNSAFE]，safetyStateVersion=15。
+2026-09-30T15:56:58.1712958+08:00	Information	ModbusTcpIoModuleClient	1号仓IO变化：DO 0->0，锁DI 0->0，光幕DI 0->1。
+2026-09-30T15:56:58.1908270+08:00	Information	WireToGateSessionClient	收到SessionReadiness：messageId=148c22c4-b272-45b2-bce6-66edc120e50f，generation=1，readiness=RECOVERY_REQUIRED，reasonCodes=[DEPARTURE_UNSAFE]，acceptedSafetyStateVersion=16。
+2026-09-30T15:56:58.1915066+08:00	Information	WireToGateSessionClient	会话状态发布：source=SessionReadiness，connected=True，generation=1，readiness=RecoveryRequired，reasonCodes=[DEPARTURE_UNSAFE]，safetyStateVersion=16。
+2026-09-30T15:56:58.1969971+08:00	Information	WireToGateSessionClient	会话状态发布：source=SafetyStateChanged-ack，connected=True，generation=1，readiness=RecoveryRequired，reasonCodes=[DEPARTURE_UNSAFE]，safetyStateVersion=16。
+2026-09-30T15:57:01.2357666+08:00	Information	ModbusTcpIoModuleClient	1号仓IO变化：DO 0->0，锁DI 0->1，光幕DI 1->0。
+2026-09-30T15:57:01.2589206+08:00	Information	WireToGateSessionClient	收到SessionReadiness：messageId=4f75c8e2-17e4-40a7-9d13-cac7be39808c，generation=1，readiness=READY，reasonCodes=[]，acceptedSafetyStateVersion=17。
+2026-09-30T15:57:01.2595033+08:00	Information	WireToGateSessionClient	会话状态发布：source=SessionReadiness，connected=True，generation=1，readiness=Ready，reasonCodes=[]，safetyStateVersion=17。
+2026-09-30T15:57:01.2600094+08:00	Information	WireToGateBusinessService	判恢复入口：generation=1，readiness=Ready，reasonCodes=[]，subject=Load/d477d3a1-9d87-476a-900d-457eba7f27c1/5a9fd225-f3fe-035e-aa68-dbab318084ba（最近完成的装货），recoveryVector=LOAD_CORRECTION，recoverySession=none，faultCargoHandoff=False。
+2026-09-30T15:57:01.2657892+08:00	Information	WireToGateSessionClient	会话状态发布：source=SafetyStateChanged-ack，connected=True，generation=1，readiness=Ready，reasonCodes=[]，safetyStateVersion=17。
+2026-09-30T15:57:01.6715535+08:00	Information	ModbusTcpIoModuleClient	已向物理2号仓发送开锁脉冲触发，DO地址=101。硬件负责自动复位。 
+2026-09-30T15:57:01.6821689+08:00	Information	ModbusTcpIoModuleClient	2号仓IO变化：DO 0->1，锁DI 1->1，光幕DI 0->0。
+2026-09-30T15:57:01.7111981+08:00	Information	WireToGateSessionClient	收到SessionReadiness：messageId=0cb33ed7-9802-4d88-a9d2-9232acba1ee5，generation=1，readiness=RECOVERY_REQUIRED，reasonCodes=[DEPARTURE_UNSAFE]，acceptedSafetyStateVersion=18。
+2026-09-30T15:57:01.7118227+08:00	Information	WireToGateSessionClient	会话状态发布：source=SessionReadiness，connected=True，generation=1，readiness=RecoveryRequired，reasonCodes=[DEPARTURE_UNSAFE]，safetyStateVersion=18。
+2026-09-30T15:57:01.7122232+08:00	Information	WireToGateBusinessService	判恢复入口：generation=1，readiness=RecoveryRequired，reasonCodes=[DEPARTURE_UNSAFE]，subject=Load/d477d3a1-9d87-476a-900d-457eba7f27c1/5a9fd225-f3fe-035e-aa68-dbab318084ba（最近完成的装货），recoveryVector=LOAD_CORRECTION，recoverySession=none，faultCargoHandoff=False。
+2026-09-30T15:57:01.7186071+08:00	Information	WireToGateSessionClient	会话状态发布：source=SafetyStateChanged-ack，connected=True，generation=1，readiness=RecoveryRequired，reasonCodes=[DEPARTURE_UNSAFE]，safetyStateVersion=18。
+2026-09-30T15:57:01.8059988+08:00	Information	ModbusTcpIoModuleClient	2号仓IO变化：DO 1->1，锁DI 1->0，光幕DI 0->0。
+2026-09-30T15:57:01.8283680+08:00	Information	WireToGateSessionClient	收到SessionReadiness：messageId=6e950b81-939e-470c-990b-28e4f373672e，generation=1，readiness=RECOVERY_REQUIRED，reasonCodes=[DEPARTURE_UNSAFE]，acceptedSafetyStateVersion=19。
+2026-09-30T15:57:01.8289653+08:00	Information	WireToGateSessionClient	会话状态发布：source=SessionReadiness，connected=True，generation=1，readiness=RecoveryRequired，reasonCodes=[DEPARTURE_UNSAFE]，safetyStateVersion=19。
+2026-09-30T15:57:01.8354967+08:00	Information	WireToGateSessionClient	会话状态发布：source=SafetyStateChanged-ack，connected=True，generation=1，readiness=RecoveryRequired，reasonCodes=[DEPARTURE_UNSAFE]，safetyStateVersion=19。
+2026-09-30T15:57:02.2551622+08:00	Information	ModbusTcpIoModuleClient	2号仓IO变化：DO 1->0，锁DI 0->0，光幕DI 0->0。
+2026-09-30T15:57:02.2746895+08:00	Information	WireToGateSessionClient	收到SessionReadiness：messageId=46a31ca1-5a85-4da7-828e-61f7900579c1，generation=1，readiness=RECOVERY_REQUIRED，reasonCodes=[DEPARTURE_UNSAFE]，acceptedSafetyStateVersion=20。
+2026-09-30T15:57:02.2753048+08:00	Information	WireToGateSessionClient	会话状态发布：source=SessionReadiness，connected=True，generation=1，readiness=RecoveryRequired，reasonCodes=[DEPARTURE_UNSAFE]，safetyStateVersion=20。
+2026-09-30T15:57:02.2806561+08:00	Information	WireToGateSessionClient	会话状态发布：source=SafetyStateChanged-ack，connected=True，generation=1，readiness=RecoveryRequired，reasonCodes=[DEPARTURE_UNSAFE]，safetyStateVersion=20。
+2026-09-30T15:57:02.7992231+08:00	Information	ModbusTcpIoModuleClient	2号仓IO变化：DO 0->0，锁DI 0->0，光幕DI 0->1。
+2026-09-30T15:57:02.8237492+08:00	Information	WireToGateSessionClient	收到SessionReadiness：messageId=c5cb4f88-70c2-4712-805c-dae7c307a3c9，generation=1，readiness=RECOVERY_REQUIRED，reasonCodes=[DEPARTURE_UNSAFE]，acceptedSafetyStateVersion=21。
+2026-09-30T15:57:02.8243667+08:00	Information	WireToGateSessionClient	会话状态发布：source=SessionReadiness，connected=True，generation=1，readiness=RecoveryRequired，reasonCodes=[DEPARTURE_UNSAFE]，safetyStateVersion=21。
+2026-09-30T15:57:02.8307142+08:00	Information	WireToGateSessionClient	会话状态发布：source=SafetyStateChanged-ack，connected=True，generation=1，readiness=RecoveryRequired，reasonCodes=[DEPARTURE_UNSAFE]，safetyStateVersion=21。
+2026-09-30T15:57:05.8748267+08:00	Information	ModbusTcpIoModuleClient	2号仓IO变化：DO 0->0，锁DI 0->1，光幕DI 1->0。
+2026-09-30T15:57:05.8996547+08:00	Information	WireToGateSessionClient	收到SessionReadiness：messageId=c91db0f7-8732-4537-b358-6a9b20b5b8ac，generation=1，readiness=READY，reasonCodes=[]，acceptedSafetyStateVersion=22。
+2026-09-30T15:57:05.9002241+08:00	Information	WireToGateSessionClient	会话状态发布：source=SessionReadiness，connected=True，generation=1，readiness=Ready，reasonCodes=[]，safetyStateVersion=22。
+2026-09-30T15:57:05.9006547+08:00	Information	WireToGateBusinessService	判恢复入口：generation=1，readiness=Ready，reasonCodes=[]，subject=Load/d477d3a1-9d87-476a-900d-457eba7f27c1/5a9fd225-f3fe-035e-aa68-dbab318084ba（最近完成的装货），recoveryVector=LOAD_CORRECTION，recoverySession=none，faultCargoHandoff=False。
+2026-09-30T15:57:05.9071354+08:00	Information	WireToGateSessionClient	会话状态发布：source=SafetyStateChanged-ack，connected=True，generation=1，readiness=Ready，reasonCodes=[]，safetyStateVersion=22。

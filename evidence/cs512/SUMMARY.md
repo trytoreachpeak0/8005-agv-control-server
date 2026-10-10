@@ -1,0 +1,84 @@
+# cs#512 证据：v2 并行实例的 FakeMesIngest 计划任务以 SYSTEM 启动即 -1
+
+票：[control-server#512](https://github.com/trytoreachpeak0/8005-agv-control-server/issues/512)。
+出处：cs#411 第二步 10-07 在 factory01 首装 v2 并行实例，安装在替身健康检查处中止（`evidence/field/2026-10-03-B9-charging-roster-and-policy/import-1007/03-deploy.txt`）。
+
+## 一、结论
+
+- **修法**：计划任务不再以 `pwsh -File Start-FakeMesIngestResident.ps1` 为动作，改为直接执行
+  `ControlServer.FakeMesIngest.exe --FakeMesIngest:listenAddress=127.0.0.1 --FakeMesIngest:port=<端口>`；
+  种子改由安装器在替身应答 health 后、于自己的 ssh 会话里灌一次（`Invoke-ParallelFakeMesIngestSeed`）。
+  这一形态 10-08 在 factory01 上用临时任务实测通过（R4，第 8 号文件）。
+- **根因**：在 factory01 上，SYSTEM 计划任务里的 pwsh 去跑
+  `C:\Program Files\8005 AGV\ControlServer.V2.FakeMesIngest\Start-FakeMesIngestResident.ps1`、带
+  `-ExecutablePath "<替身 exe>"` 那组参数时，进程在 PowerShell 主机初始化之前就没了（`LastTaskResult`
+  0xFFFFFFFF，没有 PowerShellCore/Operational 40961）。触发器、重启策略、裸名 `pwsh.exe` 都**不是**原因
+  （R2、R3）；同样的 pwsh、同样 `-ExecutionPolicy Bypass -File` 去跑 D:\ 下的小脚本是正常的（Y-T2）。
+  **拦它的是火绒，已由火绒安全日志确认**（用户 10-08 在 factory01 现场查看，以下为用户转述的截图内容，
+  不是我们读到的；截图不入库）：10-08 共 3 条，17:54:59、18:28:05、19:14:24，恰好对应 R1、R2、R3；
+  类别「系统防护／系统加固」，概要「svchost.exe 触犯敏感动作防护规则，已阻止」；防护项目「利用 PowerShell
+  执行可疑脚本」；执行文件 `C:\Program Files\PowerShell\7\pwsh.exe`；执行命令行
+  `pwsh.exe -NoProfile -ExecutionPolicy Bypass -File "C:\Program Files\8005 AGV\ControlServer.V2.FakeMesIngest\Start-FakeMesIngestResident.ps1" -ExecutablePa…`
+  （截断）；操作进程 `svchost.exe -k netsvcs`（Task Scheduler），父进程 `services.exe`。17:37 的 Y-T1／T2
+  与 19:15 的 R4 都不在日志里，和实验一致。截图按 10/08 筛选，10-07 那一条不在其中。
+  用户 10-08 晚决定，并亲自在 factory01 的火绒里信任了 `pwsh.exe`。10-08 21:47 验证：信任之后，原样旧任务
+  仍被拦（-1，无 40961），这条信任对该规则无效（第 13 号文件）。10-08 21:55 验证：用户关闭火绒『系统加固』后，
+  原样旧任务能起来（health、40961、日志到 Serving），根因闭环；文件信任对这条规则无效（21:47）（第 14 号文件）。
+  代码坚持直接执行 exe，与系统加固开关无关。系统加固开关由用户决定。
+- **绝对路径保留，但它不是这次的修复**（R2 证明只换绝对路径仍然 -1）。
+- **同形态在 vm01（Win11）上能起来**（第 1 号文件），所以 vm01 上的绿证明不了 factory01。
+
+## 二、factory01 上做了什么（每一项都先经调度审原文；Y、R1/R2、R2 补做、R3/R4 各由用户在调度会话里单独授权一次）
+
+每次前后都读了 MVP 服务 `8005 AGV ControlServer` 的 pid 与 58005/58007 的监听进程，**全部一致**
+（pid 35288）。V2 服务没有被停、启或修改，`JourneyRuntime.enabled=False`。
+
+| 文件 | 时间 | 内容 | 结果 |
+| --- | --- | --- | --- |
+| 02 | 10-08 16:27 | 只读：任务 XML、任务信息、Operational 日志状态、Application 崩溃、pwsh 位置 | 任务定义与安装器预期一致；TaskScheduler/Operational **未开**；无 pwsh 崩溃；machine PATH 有 pwsh 7.6.5 |
+| 03 | 10-08 | 只读第二轮：pwsh 安装时间、安全软件、环境变量名、SYSTEM 配置目录、事件日志 | pwsh 09-01 12:49 MSI 安装，早于 09-01 23:35 开机（排除"计划任务服务 PATH 旧"）；**火绒 `HipsDaemon` 在跑**；10-07 19:12:01～19:14:45 之间**没有任何 40961**，而前后每个 ssh 会话里的 pwsh 都有 |
+| 04 | 10-08 17:37 | Y：两个临时 SYSTEM 任务，绝对路径 pwsh；T1 `-Command "exit 7"`，T2 `-ExecutionPolicy Bypass -File` D:\ 小脚本 | T1=7、T2=9，均有 SYSTEM 40961，T2 写出文件；执行策略 LocalMachine=RemoteSigned，其余 Undefined |
+| 05 | 10-08 17:5x | R1：10-07 那个任务原样启动一次 | **脚本写法错误把结果吞掉**（函数输出混进返回值），R2 被跳过；清理正常 |
+| 06 | 10-08 18:13 | R1 只读补读 | 0xFFFFFFFF、日志目录不存在、无 40961 → R1 失败 |
+| 07 | 10-08 18:27 | R2：只把 Execute 换成绝对路径 | 0xFFFFFFFF、无 40961 → 裸名不是原因；Execute 已改回 |
+| 08 | 10-08 19:13～19:16 | R3：同 R2 的动作，配 Y 的设置（无触发器、无重启）；R4：现行形态，由 702a25d7e 的共用函数生成，安装器全套设置，端口 47188，再灌一次种子 | **R3 失败**（0xFFFFFFFF、无 40961）；**R4 成功**：约 3 秒回 health，唯一进程属 `NT AUTHORITY\SYSTEM`，任务 Running，灌种子 reset→读回 0 条→revision 1，灌后替身仍在 |
+| 13 | 10-08 21:47 | 用户在火绒里信任 `pwsh.exe` 之后，10-07 原样任务启动一次（不改 Execute） | 仍被拦：0xFFFFFFFF、无 40961、日志目录不存在；用户随后在火绒日志里看到 21:47 一条新拦截 |
+| 14 | 10-08 21:55 | 用户关闭火绒「系统加固」之后，同一原样任务启动一次 | 起来了：约 2 秒回 health，SYSTEM 40961，包装日志写到 Serving；停任务时 pwsh 与替身一并结束，70 秒内未被拉起 |
+
+两个旁证：
+
+- **`LastRunTime` 在 factory01 上不可信**：Y 的两个任务真实启动于 17:37:04、17:37:07（40961 与 probe 文件为准），
+  `LastRunTime` 都显示 17:37:37；10-07 那次显示得比注册时间还早 31 秒。三台机器的时钟彼此只差几秒，
+  不是时钟问题。诊断里 `LastRunTime` 只打不用。
+- `03` 的原文 680 KB，几乎全是脚本块日志（4104），内容是本仓自己的脚本，入库时去掉，只留每段结论、
+  事件计数与 40961/53504 时间线。机器级环境变量只留名字（值只取 PSModulePath、POWERSHELL_* 这几类）。
+
+## 三、vm01
+
+| 文件 | 内容 | 结果 |
+| --- | --- | --- |
+| 01 | 修前：任务构造照抄 35b8ae81 安装器第 414-428 行，SYSTEM，路径带空格，端口 47188 | **不复现**：2 秒内 health 200，包装日志写到 Serving；清理后任务、目录、端口、进程均无残留 |
+| 09 | 修后：`Test-FakeMesIngestScheduledTask.ps1`（702a25d7e），10-08 20:20，第二次（第一次输出丢失，见第五节） | **11 passed, 0 failed**：任务把替身拉起，0.8 s 回 health，唯一进程属 SYSTEM，任务 Running；安装器的灌种子读回 0 条、替身仍在；反面对照（不存在的 exe）注册成功、等待变红，报告给出「not running」与 `0x80070002`；清理后任务、目录、端口均无残留 |
+
+## 四、本机自测（不在 CI 里，`scripts/parallel/README.md`）
+
+| 文件 | 内容 | 结果 |
+| --- | --- | --- |
+| 10 | `Test-ParallelInstance.ps1`（c462072f6） | 481 passed, 0 failed（基线 35b8ae81 为 473）；本票 8 条：动作拒绝 3 条、动作恰为 exe+两参数、注册只返回一个 `[datetime]`（PR #520 审查 S3）、灌种子对无人端口抛出、运维入口非零退出、安装器只经共用函数建任务／等待／灌种子 |
+| 11 | `Invoke-ReverseCheck.ps1`（c462072f6） | 22 passed, 0 failed |
+| 12 | 变异 A1～A4（702a25d7e）与 B3（c462072f6，去掉注册后的 `Out-Null` 管道） | 各自恰好打红对应用例，其余不变；还原后工作树干净 |
+
+另：本机以自己的账户（不建任务）按同一动作起真替身，`Invoke-ParallelFakeMesIngestSeed` 返回一行
+`Catalog now holds 0 demand(s) at revision 1`，灌后替身仍在，按 pid 停掉。
+
+中间形态（1d26c8093，任务仍跑 pwsh 包装脚本、只改绝对路径与诊断）也做过三处变异（全杀），
+那部分代码已被 702a25d7e 取代，记录不入库。
+
+## 五、本票自己犯的两个错
+
+1. R1 探针里 `$r1 = Invoke-Round 'R1'` 把函数里所有结果行连同返回值一起收进 `$r1`，恒为真，结果没打、R2 被跳过。
+   用只读补读救回了 R1 的结论，R2 另行授权补做；之后的探针结果一律 `Write-Host`、不用函数返回值。
+   产品代码里同类隐患（`Register-ParallelFakeMesIngestTask` 里的 `Start-ScheduledTask`）一并改为 `$null =`，
+   vm01 自测断言注册只返回一个时间戳。
+2. vm01 第一次修后复现，`Out-File` 用了相对路径而当时 cwd 在别的仓的临时 worktree，本地管道开头失败；
+   远端 ssh 已起并跑完、自己清理了现场，输出全丢。经调度批准重跑（第 9 号文件）。

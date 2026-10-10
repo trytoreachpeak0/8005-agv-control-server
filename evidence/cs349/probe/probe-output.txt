@@ -1,0 +1,10 @@
+Probe349.SessionNotReadyThenFailed, fp/v2-impl@da1eaf8aee48f87dc5f6d1cf6a3121f0872af011, run locally 2026-09-26.
+Session: RecoveryRequired / DEPARTURE_SAFETY_NOT_READY (shape of PickupDispatchPlanPastOwnOrderTests.DropSessionOnOwnOrderAsync).
+RIoT: pickup order FAILED, movementState MT_RUNNING. One engine round per line, clock +1 s each.
+
+ dropped: stage=AwaitingPickupArrival code= faults=[] audit=[]
+ round0: stage=AwaitingPickupArrival code=ONBOARD_SESSION_NOT_READY faults=[] audit=[]
+ round1: stage=AwaitingPickupArrival code=ONBOARD_SESSION_NOT_READY faults=[] audit=[]
+ round2: stage=AwaitingPickupArrival code=ONBOARD_SESSION_NOT_READY faults=[] audit=[]
+ ready0: stage=AwaitingPickupArrival code=VEHICLE_ORDER_FAILED faults=[SuspectedBlocked/1] audit=[OrderHold:Failed,triggerEmergency:Pending]
+ ready1: stage=AwaitingPickupArrival code=VEHICLE_ORDER_FAILED faults=[SuspectedBlocked/1] audit=[OrderHold:Failed,triggerEmergency:Pending]

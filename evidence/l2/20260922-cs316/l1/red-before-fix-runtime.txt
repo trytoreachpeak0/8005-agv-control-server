@@ -1,0 +1,53 @@
+  Failed ControlServer.Tests.InTransitOrderStallTests.AContinuedOrderClearsTheReasonAndTheJourneyArrives [10 s]
+   Assert.Equal() Failure: Values differ
+Expected: Tuple ("ORDER_HANG", null)
+Actual:   Tuple (null, null)
+  Failed ControlServer.Tests.MultiVehicleExecutionTests.AJourneyWhoseOrderHangsTakesNoAppendedDemand [9 s]
+   Assert.Equal() Failure: Strings differ
+Expected: "ORDER_HANG"
+Actual:   null
+  Failed ControlServer.Tests.Batch7DemandReleaseServiceTests.AHangingPickupOrderIsNeitherReleasedNorCancelled [333 ms]
+   Assert.Equal() Failure: Strings differ
+Expected: "ORDER_HANG"
+Actual:   null
+  Failed ControlServer.Tests.InTransitOrderStallTests.AHangingGateOrderIsNamedAndNothingIsCommanded [3 s]
+   Assert.Equal() Failure: Values differ
+Expected: Tuple (AwaitingGateArrival, "ORDER_HANG")
+Actual:   Tuple (AwaitingGateArrival, null)
+  Failed ControlServer.Tests.InTransitOrderStallTests.ASilentSessionDoesNotOverwriteAHangingOrderAsTheReason [2 s]
+   Assert.Equal() Failure: Strings differ
+Expected: "ORDER_HANG"
+Actual:   null
+  Failed ControlServer.Tests.Batch7DemandReleaseServiceTests.AnEndedGateOrderReleasesNothingAndLeavesTheJourneyToAPerson [2 s]
+   Assert.Equal() Failure: Values differ
+Expected: Tuple (AwaitingGateArrival, "ORDER_ENDED_WITHOUT_ARRIVAL")
+Actual:   Tuple (AwaitingGateArrival, null)
+  Failed ControlServer.Tests.InTransitOrderStallTests.AnOrderEndedInRiotIsNamed(orderState: 6) [2 s]
+   Assert.Equal() Failure: Values differ
+Expected: Tuple (AwaitingGateArrival, "ORDER_ENDED_WITHOUT_ARRIVAL")
+Actual:   Tuple (AwaitingGateArrival, null)
+  Failed ControlServer.Tests.Batch7DemandReleaseServiceTests.APickupOrderEndedInRiotReleasesTheDemandWithoutACancel(orderState: 2) [248 ms]
+   Assert.Equal() Failure: Collections differ
+Expected: <>z__ReadOnlySingleElementList<ValueTuple<string, string, string>>           [Tuple ("10000000-0000-4000-8000-000000000001", "ORDER_ENDED_WITHOUT_ARRIVAL", "RELEASED")]
+Actual:   SelectListIterator<DemandReleaseOutcome, ValueTuple<string, string, string>> []
+  Failed ControlServer.Tests.Batch7DemandReleaseServiceTests.APickupOrderEndedInRiotReleasesTheDemandWithoutACancel(orderState: 6) [203 ms]
+   Assert.Equal() Failure: Collections differ
+Expected: <>z__ReadOnlySingleElementList<ValueTuple<string, string, string>>           [Tuple ("10000000-0000-4000-8000-000000000001", "ORDER_ENDED_WITHOUT_ARRIVAL", "RELEASED")]
+Actual:   SelectListIterator<DemandReleaseOutcome, ValueTuple<string, string, string>> []
+  Failed ControlServer.Tests.Batch7DemandReleaseServiceTests.AnEndedPickupOrderWithAnotherDemandOnTheJourneyIsRefusedAndTheEnginesReasonStands [266 ms]
+   Assert.Equal() Failure: Collections differ
+Expected: <>z__ReadOnlySingleElementList<ValueTuple<string, string>>           [Tuple ("10000000-0000-4000-8000-000000000001", "RELEASE_CURRENT_STOP_WITH_OTHER_DEMANDS")]
+Actual:   SelectListIterator<DemandReleaseOutcome, ValueTuple<string, string>> []
+  Failed ControlServer.Tests.InTransitOrderStallTests.AnOrderEndedInRiotIsNamed(orderState: 2) [2 s]
+   Assert.Equal() Failure: Values differ
+Expected: Tuple (AwaitingGateArrival, "ORDER_ENDED_WITHOUT_ARRIVAL")
+Actual:   Tuple (AwaitingGateArrival, null)
+  Failed ControlServer.Tests.InTransitOrderStallTests.AHangingPickupOrderIsNamedAndNothingIsCommanded [253 ms]
+   Assert.Equal() Failure: Values differ
+Expected: Tuple (AwaitingPickupArrival, "ORDER_HANG")
+Actual:   Tuple (AwaitingPickupArrival, null)
+  Failed ControlServer.Tests.InTransitOrderStallTests.ASuspendedOrderIsNamedAsUnrecognizedAndNothingIsDone [602 ms]
+   Assert.Equal() Failure: Values differ
+Expected: Tuple (AwaitingPickupArrival, "ORDER_STATE_UNRECOGNIZED")
+Actual:   Tuple (AwaitingPickupArrival, null)
+Failed!  - Failed:    13, Passed:    93, Skipped:     0, Total:   106, Duration: 29 s - ControlServer.Tests.dll (net8.0)

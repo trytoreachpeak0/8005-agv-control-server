@@ -1,0 +1,19 @@
+xUnit.net v3 In-Process Runner v3.2.2+728c1dce01 (64-bit .NET 8.0.31)
+  Discovering: ControlServer.Tests
+  Discovered:  ControlServer.Tests
+  Starting:    ControlServer.Tests
+    ControlServer.Tests.OnboardPowerLossReconnectTests.ReconnectsWhileTheServerIsStillWritingIntoTheDeadConnection [FAIL]
+      断电后最长的一次推送只挂了 1 ms：写没有卡住，这一条没造出它要的形状。
+      Stack Trace:
+        tests\ControlServer.Tests\OnboardPowerLossReconnectTests.cs(126,0): at ControlServer.Tests.OnboardPowerLossReconnectTests.ReconnectsWhileTheServerIsStillWritingIntoTheDeadConnection()
+        tests\ControlServer.Tests\OnboardPowerLossReconnectTests.cs(126,0): at ControlServer.Tests.OnboardPowerLossReconnectTests.ReconnectsWhileTheServerIsStillWritingIntoTheDeadConnection()
+        --- End of stack trace from previous location ---
+      Output:
+        旧代次离开路由表：t=5.5s
+        第 1 次，t=0.0s 开始：AnsweredButNotRoutable 第 2 代
+        第 2 次，t=3.0s 开始：AnsweredButNotRoutable 第 3 代
+        第 3 次，t=6.1s 开始：Routable 第 4 代
+        断电后最长的一次推送：1 ms
+  Finished:    ControlServer.Tests (ID = 'f8ba1b415e206499cf4d4644e752bfa521ea1fd73323c53eec687456339a5e13')
+=== TEST EXECUTION SUMMARY ===
+   ControlServer.Tests  Total: 12, Errors: 0, Failed: 1, Skipped: 0, Not Run: 0, Time: 25.274s

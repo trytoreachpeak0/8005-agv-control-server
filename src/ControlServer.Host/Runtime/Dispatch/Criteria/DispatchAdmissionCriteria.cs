@@ -35,17 +35,34 @@ public static class DispatchAdmissionCriteria
         IVehicleFaultStore faultStore,
         ISublotBoxCountReader boxCountReader,
         ILogger<SlotCapacityCriterion> slotCapacityLogger,
+        ITransportDemandSuppressionStore suppressions,
+        ControlServerDbContext dbContext,
+        IChargingPolicyResolver chargingPolicy,
         RouteGraphAccess? routeGraph = null,
         CatalogAvailabilityAccess? catalog = null,
         PreCreateGate? createGate = null,
-        IVehicleSlotLedger? slotLedger = null)
+        IVehicleSlotLedger? slotLedger = null,
+        ChargingPolicyCommissioningLog? commissioningLog = null)
     {
         List<IDispatchAdmissionCriterion> criteria =
         [
             new AlreadyAcceptedCriterion(),
+            // 按业务键抑制（批次7-05，control-server#210）。必填、不是可选，理由同下面的故障阻断：同键新 DemandId 过了全部
+            // 判据就会在受理存储层撞唯一索引，一个漏传它们的调用方就是一个带着那个隐患的调用方。
+            new TransportDemandKeySuppressedCriterion(suppressions),
+            new TransportDemandKeyAlreadyAcceptedCriterion(dbContext),
             // Required rather than optional, unlike the three appended below: a safety block a
             // caller may leave out is a safety block that will be left out.
-            new VehicleFaultBlockCriterion(faultStore),
+            new VehicleFaultBlockCriterion(faultStore, dbContext),
+            // Required, like the fault block: a vehicle committed to an idle return takes no transport (control-server#389,
+            // REQ-0292), and the reason has to reach the backlog rather than surface only as the claims key refusing intake.
+            new IdleReturnCommitmentCriterion(dbContext),
+            // Required, for the same reason (control-server#404): a vehicle committed to a charger, or held for manual charging,
+            // takes no transport, and the backlog has to say so.
+            new ChargingStandingCriterion(dbContext),
+            // 批次9-02（control-server#400）：没有已批准策略版本的车不承接新用途。必填，理由同故障阻断：逐车硬阻断（规格 8.6）
+            // 一个调用方可以漏传，就会被最需要它的那个调用方漏掉。
+            new ChargingPolicyCommissioningCriterion(chargingPolicy, options, commissioningLog ?? new ChargingPolicyCommissioningLog()),
             new WorkTypeScopeCriterion(options),
             // Required rather than optional for the same reason as the fault block: B2's two
             // vehicle filters are fail-closed, and a fail-closed rule a caller may omit is one
@@ -53,6 +70,8 @@ public static class DispatchAdmissionCriteria
             new VehicleTaskTypeAdmissionCriterion(),
             new RequiredMesFactsCriterion(),
             // Required: it blocks nothing, and every batch 4 criterion behind it reads what it records.
+            // REQ-0189（批次7-06）：同一份完整快照里一个 Sublot 命中多种任务类型，该 Sublot 全部候选都挡。
+            new SublotTaskTypeConflictCriterion(),
             new AreaAssignmentLookupCriterion(),
             new AreaScopeCriterion(),
             new AreaEqpUniqueCriterion(),
@@ -64,6 +83,8 @@ public static class DispatchAdmissionCriteria
             new AdmissionPolicyDriftCriterion(),
             new VehicleDynamicFactsCriterion(options),
             new StationTaskTypeAdmissionCriterion(store),
+            // REQ-0204（批次8-20，control-server#391）：别的车预占或占用着的公共站点不做这辆车的新下一站。
+            new FixedStationSingleOccupancyCriterion(dbContext),
             // Null is the idle vehicle's ledger, the session baseline -- what the host registers too.
             new SlotCapacityCriterion(boxCountReader, slotCapacityLogger, slotLedger ?? new SessionBaselineSlotLedger()),
         ];
@@ -92,13 +113,49 @@ public static class DispatchAdmissionCriteria
         return criteria;
     }
 
+    /// <summary>
+    /// 在途车那条链（REQ-0205，批次7-06，control-server#211）：从空闲链派生，换掉动态事实那一条，加上追加的四道门。
+    /// </summary>
+    /// <remarks>
+    /// <b>派生而不是另写一张表</b>，因为共用的那十几条判据是同一件事：一条需求能不能被这台服务器执行，与车在不在途无关。
+    /// 另写一张表，下一个人往空闲链加判据时不会知道在途链也该加——而那正是「在途车放行了一条空闲车挡下的需求」的样子。
+    /// </remarks>
+    public static IReadOnlyList<IDispatchAdmissionCriterion> InTransit(
+        IReadOnlyList<IDispatchAdmissionCriterion> idleChain,
+        IOptions<JourneyRuntimeOptions> options,
+        RouteGraphAccess? routeGraph = null)
+    {
+        ArgumentNullException.ThrowIfNull(idleChain);
+        List<IDispatchAdmissionCriterion> criteria =
+            [.. idleChain.Where(criterion => criterion is not (VehicleDynamicFactsCriterion or FixedStationSingleOccupancyCriterion)),
+             new InTransitVehicleFactsCriterion(options),
+             // 批次7-07（control-server#212）：装货阶段结束的车不再接追加。不依赖路网，所以不跟着下面那一条的条件走。
+             new LoadingPhaseOpenCriterion()];
+        if (routeGraph is not null)
+        {
+            criteria.Add(new EnRouteAppendCriterion(routeGraph));
+        }
+
+        // 公共站点单车位（批次8-20，control-server#391）与装货阶段同序（99），挪到它后面：同序按这张表的先后跑，装货阶段已结束的车
+        // 要报的是 LOADING_PHASE_CLOSED。
+        criteria.AddRange(idleChain.OfType<FixedStationSingleOccupancyCriterion>());
+
+        return criteria;
+    }
+
     /// <summary>Registers the chain, its ranker and the dispatch round for the host.</summary>
     public static IServiceCollection AddDispatchAdmission(this IServiceCollection services)
     {
         ArgumentNullException.ThrowIfNull(services);
 
         services.AddScoped<IDispatchAdmissionCriterion, AlreadyAcceptedCriterion>();
+        services.AddScoped<IDispatchAdmissionCriterion, TransportDemandKeySuppressedCriterion>();
+        services.AddScoped<IDispatchAdmissionCriterion, TransportDemandKeyAlreadyAcceptedCriterion>();
         services.AddScoped<IDispatchAdmissionCriterion, VehicleFaultBlockCriterion>();
+        services.AddScoped<IDispatchAdmissionCriterion, IdleReturnCommitmentCriterion>();
+        services.AddScoped<IDispatchAdmissionCriterion, ChargingStandingCriterion>();
+        services.AddScoped<IChargingPolicyResolver, ChargingPolicyResolver>();
+        services.AddScoped<IDispatchAdmissionCriterion, ChargingPolicyCommissioningCriterion>();
         services.AddScoped<IDispatchAdmissionCriterion, WorkTypeScopeCriterion>();
         services.AddScoped<IDispatchAdmissionCriterion, VehicleTaskTypeAdmissionCriterion>();
         services.AddScoped<IDispatchAdmissionCriterion, DispatchZoneVehicleCriterion>();
@@ -112,25 +169,45 @@ public static class DispatchAdmissionCriteria
         services.AddScoped<IDispatchAdmissionCriterion, AdmissionPolicyDriftCriterion>();
         services.AddScoped<IDispatchAdmissionCriterion, VehicleDynamicFactsCriterion>();
         services.AddScoped<IDispatchAdmissionCriterion, StationTaskTypeAdmissionCriterion>();
+        services.AddScoped<IDispatchAdmissionCriterion, FixedStationSingleOccupancyCriterion>();
         services.AddScoped<IDispatchAdmissionCriterion, RouteGraphReachabilityCriterion>();
         services.AddScoped<IDispatchAdmissionCriterion, PreCreateGateCriterion>();
         services.AddScoped<IDispatchAdmissionCriterion, SlotCapacityCriterion>();
 
         services.AddScoped<DispatchAdmissionChain>();
+        services.AddScoped<IDispatchAdmissionCriterion, SublotTaskTypeConflictCriterion>();
+        // 在途链从注册好的空闲链派生（批次7-06，control-server#211）：换掉动态事实那一条，加上追加的四道门。
+        services.AddScoped(provider => new InTransitDispatchAdmissionChain(
+            InTransit(
+                [.. provider.GetServices<IDispatchAdmissionCriterion>()],
+                provider.GetRequiredService<IOptions<JourneyRuntimeOptions>>(),
+                provider.GetService<RouteGraphAccess>())));
         // Which slots on a side are free (control-server#209): the session baseline, until control-server#211 takes
         // away what a vehicle under way has reserved or loaded.
-        services.AddScoped<IVehicleSlotLedger, SessionBaselineSlotLedger>();
+        // 会话基线减去本车自己已预留、已装的货（批次7-06，control-server#211）；空闲车没有旅程，减数是空集，
+        // 答案与会话基线逐字相同。
+        services.AddScoped<IVehicleSlotLedger, JourneyAwareSlotLedger>();
         // Cost-ranked, falling back to first-seen when nothing was priced — which is what
         // REQ-0207 asks for when a cost is missing rather than a reachability. The layers are listed in
         // DispatchCandidateOrdering (control-server#209); a new layer is a line there, not here.
         services.AddScoped<IDispatchCandidateRanker>(_ => DispatchCandidateOrdering.Ranker());
         // The structural dispatch block (control-server#74): what can only be concluded across every vehicle.
-        services.AddScoped<IDispatchRoundOutcomeSink, StructuralDispatchBlockSink>();
+        services.AddScoped<StructuralDispatchBlockSink>();
+        // 防饥饿升级告警（批次7-09，control-server#214）：轮末第二个汇总，排在结构性阻断之后。
+        services.AddScoped<StarvationEscalationSink>();
+        // 两者的先后写在 DispatchRoundOutcomeSinks 里，不在这里（审查中 1）。
+        services.AddScoped<IDispatchRoundOutcomeSink, DispatchRoundOutcomeSinks>();
+        // 上一轮每辆在途车被「本车货物占侧」判满的那几侧（批次7-07，control-server#212）。单例：这一轮的派车写、下一轮的推进段读，
+        // 每一轮是一个新的作用域。
+        services.AddSingleton<SlotGroupFullnessBoard>();
+        // control-server#403: which vehicle is in mandatory charging outlives the per-round runner, so the log line fires on change.
+        services.AddSingleton<MandatoryChargeBoard>();
+        // control-server#403 review S3: which vehicle was already logged as not commissioned outlives the per-round criterion.
+        // A required constructor argument, so a host that forgets this line fails to build the chain instead of logging every round.
+        services.AddSingleton<ChargingPolicyCommissioningLog>();
         // The round itself and the Onboard facts it shares with the advance side (control-server#209). Scoped, like
         // the engine: both must be handed the engine's own DbContext -- see DispatchRoundRunner.
         services.AddScoped<OnboardDispatchFactsReader>();
-        // A vehicle under way is refused until control-server#211 opens appending.
-        services.AddScoped<IInTransitDispatchQualification, InTransitAppendNotOpened>();
         services.AddScoped<DispatchRoundRunner>();
         return services;
     }

@@ -1,0 +1,80 @@
+{
+  "schemaVersion": 1,
+  "scenario": "real-onboard-order-hang-continue",
+  "runId": "20260922T122421120Z",
+  "outcome": "PASS",
+  "failureReason": "",
+  "identity": {
+    "batchId": "unspecified",
+    "protocolReleaseIdentity": {
+      "repository": "8005-agv-protocol",
+      "releaseVersion": "2.0.0",
+      "tag": "protocol-v2.0.0",
+      "commit": "86575456c847041515b7b75e8851a00e0d939804",
+      "protocolVersion": 3,
+      "profileId": "AGV_FULL_PRODUCT",
+      "manifestSha256": "4ac095ad371d3aaa60d7c2e0198cfd64cff5f3068230fc3420e9cdf5616422a7",
+      "schemaBundleSha256": "9db0dbdc22fed7e39edf8d01b1fc40a12f5d70a7414f696f909ab2a87eb8c221",
+      "vectorsSha256": "391fa69a7d6e9f86ea139ba4c74eadf4994bf0a87e89d3dc5258dd7968d9182a",
+      "approvalStatus": "APPROVED_RELEASE"
+    },
+    "controlServerCommit": "918ef62a4687bc10af328b0896d819981f3e6ad3",
+    "onboardHmiCommit": "083fd9a76e5cf20c96e13ed6ea0140249a471d48",
+    "rig": "RealOnboard",
+    "agvId": "AGV-L2-001",
+    "stageRoot": "C:\\actions-runner\\win11-01-control-server-desktop\\_work\\_temp\\real-rig-35726825314-1\\_stage\\l2-20260922T122421120Z",
+    "vehicleKey": "BROKERX-L2-0001",
+    "slotsSimulatorCommit": "fb5f7c593742bf98bc3957b8729a38aad5321f28"
+  },
+  "assertions": [
+    {
+      "id": "L2-ROH-00",
+      "description": "前提：车在途时真车载端会话掉出 Ready，闸门先为旅程写了 ONBOARD_SESSION_NOT_READY（挂起在这之后才注入）",
+      "outcome": "PASS",
+      "expected": "ONBOARD_SESSION_NOT_READY",
+      "actual": "ONBOARD_SESSION_NOT_READY"
+    },
+    {
+      "id": "L2-ROH-01",
+      "description": "真车载端在场时，订单挂起后旅程写 ORDER_HANG",
+      "outcome": "PASS",
+      "expected": "ORDER_HANG",
+      "actual": "ORDER_HANG"
+    },
+    {
+      "id": "L2-ROH-02",
+      "description": "前提：挂起期间会话未就绪（真车载端看到本服务端自己的在途单），所以这条走的是会话闸门那条路",
+      "outcome": "PASS",
+      "expected": "非 Ready",
+      "actual": "RecoveryRequired / DEPARTURE_SAFETY_NOT_READY"
+    },
+    {
+      "id": "L2-ROH-02b",
+      "description": "前提仍然成立：几轮之后会话仍未就绪，ORDER_HANG 在这段时间里一直是闸门那条路维持的",
+      "outcome": "PASS",
+      "expected": "非 Ready",
+      "actual": "RecoveryRequired / DEPARTURE_SAFETY_NOT_READY"
+    },
+    {
+      "id": "L2-ROH-03",
+      "description": "挂起期间没有订单命令、急停或故障事实；码与开始时刻不变",
+      "outcome": "PASS",
+      "expected": "0 / 0 / 0 / ORDER_HANG / 2026-09-22 12:25:07.9335972+00:00",
+      "actual": "0 / 0 / 0 / ORDER_HANG / 2026-09-22 12:25:07.9335972+00:00"
+    },
+    {
+      "id": "L2-ROH-04",
+      "description": "continue 之后码回到闸门的 ONBOARD_SESSION_NOT_READY（会话仍未就绪），旅程仍在开往取货站",
+      "outcome": "PASS",
+      "expected": "AwaitingPickupArrival / ONBOARD_SESSION_NOT_READY",
+      "actual": "AwaitingPickupArrival / ONBOARD_SESSION_NOT_READY"
+    },
+    {
+      "id": "L2-ROH-05",
+      "description": "到站后旅程照常推进，车载端允许录入 sublot；全程没有订单命令、急停或故障事实",
+      "outcome": "PASS",
+      "expected": "AwaitingSublot / 0 / 0 / 0",
+      "actual": "AwaitingSublot / 0 / 0 / 0"
+    }
+  ]
+}

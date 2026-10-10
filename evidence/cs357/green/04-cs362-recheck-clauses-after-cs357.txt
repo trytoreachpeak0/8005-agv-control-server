@@ -1,0 +1,37 @@
+[R2-demand] target occurrences: 1
+[R2-demand] build:     0 Error(s)
+[R2-demand] Passed!  - Failed:     0, Passed:     7, Skipped:     0, Total:     7, Duration: 26 s - ControlServer.Tests.dll (net8.0)
+[R2-demand] restored
+[R3-membership] target occurrences: 1
+[R3-membership] build:     0 Error(s)
+[R3-membership] Passed!  - Failed:     0, Passed:     7, Skipped:     0, Total:     7, Duration: 26 s - ControlServer.Tests.dll (net8.0)
+[R3-membership] restored
+[R4-stage] target occurrences: 1
+[R4-stage] build:     0 Error(s)
+[R4-stage] Passed!  - Failed:     0, Passed:     7, Skipped:     0, Total:     7, Duration: 25 s - ControlServer.Tests.dll (net8.0)
+[R4-stage] restored
+[R5-cancel] target occurrences: 1
+[R5-cancel] build:     0 Error(s)
+[R5-cancel] Failed ControlServer.Tests.CancelledDemandLoadCommandTests.ACancellationOfAnotherDemandAtTheStopAuthorizedInTheWindowHoldsTheStopAndNothingIsLoaded [5 s]
+[R5-cancel] Failed!  - Failed:     1, Passed:     6, Skipped:     0, Total:     7, Duration: 25 s - ControlServer.Tests.dll (net8.0)
+[R5-cancel] restored
+[R23-demand+membership] target occurrences: 1
+[R23-demand+membership] target occurrences: 1
+[R23-demand+membership] build:     0 Error(s)
+[R23-demand+membership] Failed ControlServer.Tests.CancelledDemandLoadCommandTests.ACancellationThatSettlesAfterTheRuntimeReadTheEntryWinsTheStop(vehicle: "REPORTED_EMPTY_BEFORE_THE_DEADLINE") [2 s]
+[R23-demand+membership] Failed ControlServer.Tests.CancelledDemandLoadCommandTests.ACancellationThatSettlesAfterTheRuntimeReadTheEntryWinsTheStop(vehicle: "REPORTED_EMPTY_AFTER_THE_DEADLINE") [2 s]
+[R23-demand+membership] Failed ControlServer.Tests.CancelledDemandLoadCommandTests.ACancellationThatSettlesAfterTheRuntimeReadTheEntryWinsTheStop(vehicle: "CANCELLED_WHILE_LOADING") [2 s]
+[R23-demand+membership] Failed ControlServer.Tests.CancelledDemandLoadCommandTests.ACancellationThatSettlesAfterTheRuntimeReadTheEntryWinsTheStop(vehicle: "LOADED") [4 s]
+[R23-demand+membership] Failed ControlServer.Tests.CancelledDemandLoadCommandTests.WhenTheStopStillHasWorkTheLosingEntryIsRefusedAsOutOfScopeOnTheNextIteration [2 s]
+[R23-demand+membership] Failed!  - Failed:     5, Passed:     2, Skipped:     0, Total:     7, Duration: 20 s - ControlServer.Tests.dll (net8.0)
+[R23-demand+membership] restored
+[R24-demand+stage] target occurrences: 1
+[R24-demand+stage] target occurrences: 1
+[R24-demand+stage] build:     0 Error(s)
+[R24-demand+stage] Passed!  - Failed:     0, Passed:     7, Skipped:     0, Total:     7, Duration: 25 s - ControlServer.Tests.dll (net8.0)
+[R24-demand+stage] restored
+[R2-demand-with-new-guard] target occurrences: 1
+[R2-demand-with-new-guard] build:     0 Error(s)
+[R2-demand-with-new-guard] Failed ControlServer.Tests.CancelledDemandLoadCommandTests.ADemandHeldForRecoveryWithoutItsJourneyBeingWrittenIsNotLoaded [2 s]
+[R2-demand-with-new-guard] Failed!  - Failed:     1, Passed:     7, Skipped:     0, Total:     8, Duration: 27 s - ControlServer.Tests.dll (net8.0)
+[R2-demand-with-new-guard] restored

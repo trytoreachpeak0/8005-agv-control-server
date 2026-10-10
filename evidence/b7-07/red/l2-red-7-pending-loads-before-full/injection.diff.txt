@@ -1,0 +1,5 @@
+injection 7 (pending-loads-before-full) in src/ControlServer.Host/Runtime/LoadingPhaseMachine.cs
+109c109
+<         bool full = facts.VehicleFull ?? current == LoadingPhaseStates.VehicleFull;
+---
+>         bool full = !facts.PendingLoadsRemain && (facts.VehicleFull ?? current == LoadingPhaseStates.VehicleFull);

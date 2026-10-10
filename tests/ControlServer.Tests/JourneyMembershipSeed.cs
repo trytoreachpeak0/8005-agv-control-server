@@ -17,7 +17,62 @@ namespace ControlServer.Tests;
 internal static class JourneyMembershipSeed
 {
     /// <summary>The anchor demand's membership, exactly as acceptance writes it.</summary>
-    internal static JourneyDemandRow For(JourneyRuntimeRow journey) => Member(journey, journey.DemandId);
+    internal static JourneyDemandRow For(JourneyRuntimeRow journey) => Member(journey, journey.DemandId!);
+
+    /// <summary>
+    /// 受理会在旅程行旁边写下的全部：两个停靠与锚需求的归属（control-server#206、#211）。手写旅程行的夹具用它，
+    /// 否则造出来的是一个<b>没有停靠的旅程</b>——批次 7 之后那是库坏了，推进段与恢复协调器都会在读停靠时响亮地停下。
+    /// </summary>
+    /// <remarks>
+    /// 形状照 <c>SingleDemandJourneyShape</c>（它 internal 在基础设施程序集里，这边看不到），所以那边改了这边要跟。
+    /// <c>Batch7JourneyAcceptanceTests</c> 比对的是真受理写下的行，那才是两边一致的判据。
+    /// </remarks>
+    internal static void Seed(ControlServerDbContext context, JourneyRuntimeRow journey)
+    {
+        ArgumentNullException.ThrowIfNull(context);
+        ArgumentNullException.ThrowIfNull(journey);
+        context.Set<JourneyStopRow>().AddRange(
+            new JourneyStopRow
+            {
+                StopId = JourneyIdentity.PickupStopId(journey.JourneyId),
+                JourneyId = journey.JourneyId,
+                Sequence = 1,
+                StopRole = JourneyStopRoles.Pickup,
+                StationId = journey.PickupStationId,
+                StationRiotId = journey.PickupStationRiotId,
+                DispatchZone = journey.DispatchZone,
+                OperationSessionId = journey.OperationSessionId,
+                MovementLegId = journey.PickupMovementLegId,
+                UpperId = journey.PickupUpperId,
+                VehicleBusinessMessageId = journey.VehicleBusinessMessageId,
+                WorklistMessageId = journey.WorklistMessageId,
+                PlanMessageId = journey.PlanMessageId,
+                SublotRequestMessageId = journey.SublotRequestMessageId,
+                DepartureSafetyCheckMessageId = journey.PreDepartureSafetyCheckMessageId,
+                DepartureSafetyCheckId = journey.PreDepartureSafetyCheckId,
+                Status = JourneyStopStatuses.Pending,
+                CreatedAt = journey.CreatedAt
+            },
+            new JourneyStopRow
+            {
+                StopId = JourneyIdentity.UnloadStopId(journey.JourneyId),
+                JourneyId = journey.JourneyId,
+                Sequence = 2,
+                StopRole = JourneyStopRoles.Unload,
+                StationId = journey.GateStationId!,
+                StationRiotId = journey.GateStationRiotId,
+                DispatchZone = journey.DispatchZone,
+                OperationSessionId = journey.OperationSessionId,
+                MovementLegId = journey.GateMovementLegId!,
+                UpperId = journey.GateUpperId!,
+                VehicleBusinessMessageId = journey.GateVehicleBusinessMessageId!,
+                WorklistMessageId = journey.GateWorklistMessageId!,
+                PlanMessageId = journey.GatePlanMessageId!,
+                Status = JourneyStopStatuses.Pending,
+                CreatedAt = journey.CreatedAt
+            });
+        context.Set<JourneyDemandRow>().Add(For(journey));
+    }
 
     /// <summary>
     /// A further demand in the same journey. Batch 7's tables allow it; nothing in the runtime creates one yet
@@ -34,17 +89,68 @@ internal static class JourneyMembershipSeed
             PickupStopId = JourneyIdentity.PickupStopId(journey.JourneyId),
             UnloadStopId = JourneyIdentity.UnloadStopId(journey.JourneyId),
             ExpectedBasketCount = journey.ExpectedBasketCount,
-            TargetSlotsJson = journey.TargetSlotsJson,
-            LoadSlotOperationAttemptId = Own(journey.LoadSlotOperationAttemptId),
-            LoadCommandMessageId = Own(journey.LoadCommandMessageId),
-            UnloadSlotOperationAttemptId = Own(journey.UnloadSlotOperationAttemptId),
-            UnloadCommandMessageId = Own(journey.UnloadCommandMessageId),
+            TargetSlotsJson = journey.TargetSlotsJson!,
+            LoadSlotOperationAttemptId = Own(journey.LoadSlotOperationAttemptId!),
+            LoadCommandMessageId = Own(journey.LoadCommandMessageId!),
+            UnloadSlotOperationAttemptId = Own(journey.UnloadSlotOperationAttemptId!),
+            UnloadCommandMessageId = Own(journey.UnloadCommandMessageId!),
             DispatchZone = journey.DispatchZone,
             DispatchGeneration = journey.DispatchGeneration,
             Status = JourneyDemandStatuses.PendingLoad,
             AddedAt = journey.CreatedAt
         };
     }
+
+    /// <summary>
+    /// A journey stop at <paramref name="stationId"/>, for store-level tests that have no journey row. Only its identity, role
+    /// and station carry meaning; the ids are placeholders derived from <paramref name="stopId"/>.
+    /// </summary>
+    internal static JourneyStopRow Stop(string journeyId, string stopId, int sequence, string role, string stationId) => new()
+    {
+        StopId = stopId,
+        JourneyId = journeyId,
+        Sequence = sequence,
+        StopRole = role,
+        StationId = stationId,
+        StationRiotId = sequence,
+        DispatchZone = "ZONE-1",
+        OperationSessionId = $"SESSION-{journeyId}",
+        MovementLegId = $"LEG-{stopId}",
+        UpperId = $"UPPER-{stopId}",
+        VehicleBusinessMessageId = $"VBS-{stopId}",
+        WorklistMessageId = $"WL-{stopId}",
+        PlanMessageId = $"PLAN-{stopId}",
+        Status = JourneyStopStatuses.Pending,
+        CreatedAt = DateTimeOffset.UnixEpoch
+    };
+
+    /// <summary>
+    /// A demand's membership in a journey, for store-level tests that have no journey row: the stops it is loaded and unloaded
+    /// at, and its two slot operation attempts -- what ties a slot operation to its stop (control-server#251).
+    /// </summary>
+    internal static JourneyDemandRow Membership(
+        string journeyId,
+        string demandId,
+        string pickupStopId,
+        string unloadStopId,
+        string loadAttemptId,
+        string unloadAttemptId) => new()
+    {
+        JourneyId = journeyId,
+        DemandId = demandId,
+        PickupStopId = pickupStopId,
+        UnloadStopId = unloadStopId,
+        ExpectedBasketCount = 1,
+        TargetSlotsJson = "[1]",
+        LoadSlotOperationAttemptId = loadAttemptId,
+        LoadCommandMessageId = $"LOAD-COMMAND-{demandId}",
+        UnloadSlotOperationAttemptId = unloadAttemptId,
+        UnloadCommandMessageId = $"UNLOAD-COMMAND-{demandId}",
+        DispatchZone = "ZONE-1",
+        DispatchGeneration = 1,
+        Status = JourneyDemandStatuses.PendingLoad,
+        AddedAt = DateTimeOffset.UnixEpoch
+    };
 
     /// <summary>
     /// Makes <paramref name="journey"/> a two-demand journey: a further accepted demand, a copy of the anchor's with its own
@@ -79,7 +185,14 @@ internal static class JourneyMembershipSeed
             Status = status
         };
         context.AcceptedDemands.Add(further);
-        context.Set<JourneyDemandRow>().Add(Member(journey, demandId));
+        // 归属行的状态跟着需求的执行状态走（control-server#211）：一条已取消的需求，它在旅程里的归属就是 TERMINATED。
+        // 造一个「需求取消了、归属还写着待装」的库，是这台服务器自己产不出来的形状。
+        JourneyDemandRow membership = Member(journey, demandId);
+        if (status == DemandExecutionStatus.Cancelled)
+        {
+            membership.Status = JourneyDemandStatuses.Terminated;
+        }
+        context.Set<JourneyDemandRow>().Add(membership);
         await context.SaveChangesAsync(cancellationToken);
         return further;
     }

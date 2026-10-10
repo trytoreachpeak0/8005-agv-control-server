@@ -1,0 +1,11 @@
+== M2 src/ControlServer.Infrastructure/Persistence/FaultedCargoBindings.cs
+hits=1 line=73
+--- before
+        if (memberships.Any(row => row.RemovedAt == null && MayBeOnBoard(row.Status)))
+--- after
+        if (memberships.Count < 0)
+build exit=0
+test exit=1
+Failed FaultedCargoBindingLifecycleTests.TheFirstOfTwoUnloadsKeepsTheBindingAndTheLastReleasesIt
+Failed FaultedCargoBindingLifecycleTests.WhenTheAnchorUnloadsLastTheBindingIsKeptUntilItHas
+Failed!  - Failed:     2, Passed:   399, Skipped:     0, Total:   401, Duration: 1 m 32 s - dll (net8.0)

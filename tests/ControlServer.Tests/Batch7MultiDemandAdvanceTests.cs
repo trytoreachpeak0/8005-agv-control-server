@@ -1,0 +1,473 @@
+using System.Text.Json;
+using ControlServer.Application;
+using ControlServer.Domain;
+using ControlServer.Host.Runtime;
+using ControlServer.Infrastructure.Persistence;
+using Microsoft.EntityFrameworkCore;
+using static ControlServer.Tests.Batch7StopDrivenAdvanceDriver;
+using static ControlServer.Tests.JourneyRuntimeWorkerTestKit;
+
+namespace ControlServer.Tests;
+
+/// <summary>
+/// 一个停靠上挂着几条需求时，推进段照哪一条走（批次7-06，control-server#211）。
+/// </summary>
+/// <remarks>
+/// <para>
+/// 批次7-03（control-server#208）把录入的范围放宽成了「这个停靠上还没终结的需求」，但只放宽了录入那一处，下游每一步仍按
+/// 锚需求走，所以它在录入处加了一句守卫把范围退回锚需求。本票删掉那句守卫，代价是要先把「<b>这个停靠此刻在装哪一条
+/// 需求</b>」立成一个状态——否则就落进 7-03 注释里算过的两个坏答案之一：只放宽录入，车上收到的是第一条的开仓命令；
+/// 连下游一起按被录入那条走而没有状态，等装货结果时又回头查锚需求的 attempt，旅程静默卡死。
+/// </para>
+/// <para>
+/// 状态的载体是从属需求行的 <see cref="JourneyDemandRow.Status"/>：待装、<c>LOADING</c>（录入已受理、装货命令已发、
+/// 结果未到）、已装、已卸、已终结。「此刻在装哪一条」就是当前停靠上唯一一条 <c>LOADING</c>。
+/// </para>
+/// <para>
+/// 当前停靠不再由阶段推出，而是<b>序位最小的、还没完成的停靠</b>（<see cref="JourneyStopRow.Status"/>）。阶段只说
+/// 「在这个停靠上走到哪一步」；多停靠下同一个阶段会在不同停靠上重复出现，阶段就不够定位了。
+/// </para>
+/// </remarks>
+public sealed class Batch7MultiDemandAdvanceTests
+{
+    /// <summary>
+    /// 一站两条需求，操作员先扫了<b>第二条</b>的子批：装货命令必须是第二条的——它的 attempt、它的命令 id、它的仓位、
+    /// 它的子批。
+    /// </summary>
+    /// <remarks>
+    /// 这一条直接取代 7-03 的 <c>EnteringTheSecondDemandsSublotIsRefusedRatherThanLoadingTheAnchor</c>：那条钉的是
+    /// 守卫在位时的行为（拒收 <c>SUBLOT_NOT_IN_DISPATCH_SCOPE</c>），守卫删掉之后它的期望必须反过来，所以它被改写成
+    /// 了本类里的这一条，而不是删掉。
+    /// </remarks>
+    [Fact]
+    public async Task EnteringTheSecondDemandsSublotLoadsTheSecondDemand()
+    {
+        await using RuntimeFixture fixture = await RuntimeFixture.CreateAsync();
+        JourneyRuntimeRow runtime = await TwoDemandsAtThePickupAsync(fixture);
+
+        await AddInboxAsync(
+            fixture, FirstSubmissionId, "SublotSubmitted", await SublotSubmissionAsync(fixture, runtime, SecondSublot));
+        await TickAndRunAsync(fixture);
+
+        JourneyDemandRow second = await MembershipAsync(fixture, SecondDemandId);
+        ProtocolOutboxRow command = await fixture.Context.ProtocolOutbox.AsNoTracking()
+            .SingleAsync(row => row.MessageType == "SlotOperationCommand", TestContext.Current.CancellationToken);
+        Assert.Equal(second.LoadCommandMessageId, command.MessageId);
+        using JsonDocument document = JsonDocument.Parse(command.PayloadJson);
+        JsonElement payload = document.RootElement.GetProperty("payload");
+        Assert.Equal(SecondDemandId, payload.GetProperty("demandId").GetString());
+        Assert.Equal(
+            second.LoadSlotOperationAttemptId,
+            payload.GetProperty("slotOperationAttemptId").GetString());
+        // 仓位也必须是第二条自己的：夹具把两条的仓位错开了，所以「发第二条的 attempt 却开第一条的仓门」这种
+        // 半搬迁的样子在这里会红。
+        Assert.Equal(
+            JsonSerializer.Deserialize<int[]>(second.TargetSlotsJson),
+            payload.GetProperty("slots").EnumerateArray().Select(slot => slot.GetInt32()).ToArray());
+
+        // 「此刻在装第二条」落了库：第二条 LOADING，第一条还在待装。
+        Assert.Equal(JourneyDemandStatuses.Loading, second.Status);
+        Assert.Equal(JourneyDemandStatuses.PendingLoad, (await MembershipAsync(fixture, FirstDemandId)).Status);
+        Assert.Equal(JourneyRuntimeStage.AwaitingLoadResult, (await fixture.RuntimeAsync(FirstDemandId)).Stage);
+    }
+
+    /// <summary>
+    /// 等装货结果时查的是<b>被录入那一条</b>的 attempt，不是锚需求的：第二条的结果到了，旅程就往下走。
+    /// </summary>
+    /// <remarks>
+    /// 7-03 注释里算过的第二个坏答案正是这里——命令按第二条发出去、结果按锚需求去查，查不到，旅程停在等结果<b>而且
+    /// 不报错</b>。所以这一条断言的是「走了」，而反过来那种坏法的样子是「永远停在 AwaitingLoadResult」。
+    /// </remarks>
+    [Fact]
+    public async Task TheLoadResultIsLookedUpByTheEnteredDemandsAttempt()
+    {
+        await using RuntimeFixture fixture = await RuntimeFixture.CreateAsync();
+        JourneyRuntimeRow runtime = await TwoDemandsAtThePickupAsync(fixture);
+        await AddInboxAsync(
+            fixture, FirstSubmissionId, "SublotSubmitted", await SublotSubmissionAsync(fixture, runtime, SecondSublot));
+        await TickAndRunAsync(fixture);
+
+        await ApplySafeResultAsync(fixture, SecondDemandId, SlotOperationType.Load, SlotBusinessState.Occupied);
+        await TickAndRunAsync(fixture);
+
+        Assert.Equal(JourneyDemandStatuses.Loaded, (await MembershipAsync(fixture, SecondDemandId)).Status);
+    }
+
+    /// <summary>
+    /// 同一站的几条需求逐条串行（规格第 22 节补记）：第一条装完，旅程<b>回到本停靠的等录入</b>等下一条，两条都装完
+    /// 才进离站等待。
+    /// </summary>
+    [Fact]
+    public async Task TheStopReturnsToTheEntryWaitUntilEveryDemandOnItIsLoaded()
+    {
+        await using RuntimeFixture fixture = await RuntimeFixture.CreateAsync();
+        JourneyRuntimeRow runtime = await TwoDemandsAtThePickupAsync(fixture);
+
+        await AddInboxAsync(
+            fixture, FirstSubmissionId, "SublotSubmitted", await SublotSubmissionAsync(fixture, runtime, SecondSublot));
+        await TickAndRunAsync(fixture);
+        await ApplySafeResultAsync(fixture, SecondDemandId, SlotOperationType.Load, SlotBusinessState.Occupied);
+        await TickAndRunAsync(fixture);
+
+        // 一条装完、另一条还没：回到等录入，不离站。
+        Assert.Equal(JourneyRuntimeStage.AwaitingSublot, (await fixture.RuntimeAsync(FirstDemandId)).Stage);
+
+        await AddInboxAsync(
+            fixture, SecondSubmissionId, "SublotSubmitted", await SublotSubmissionAsync(fixture, runtime, FirstSublot));
+        await TickAndRunAsync(fixture);
+        await ApplySafeResultAsync(fixture, FirstDemandId, SlotOperationType.Load, SlotBusinessState.Occupied);
+        await TickAndRunAsync(fixture);
+
+        // 两条都装完了，这才轮到离站核验。
+        JourneyRuntimeRow after = await fixture.RuntimeAsync(FirstDemandId);
+        Assert.True(
+            after.Stage is JourneyRuntimeStage.AwaitingStationDeparture or JourneyRuntimeStage.AwaitingDepartureSafety,
+            $"两条都装完之后该离站了，实际停在 {after.Stage}。");
+        Assert.Equal(JourneyDemandStatuses.Loaded, (await MembershipAsync(fixture, FirstDemandId)).Status);
+        Assert.Equal(JourneyDemandStatuses.Loaded, (await MembershipAsync(fixture, SecondDemandId)).Status);
+    }
+
+    /// <summary>
+    /// 一条装完之后清单升版，车载端按<b>新版</b>修订号提交下一条——服务端要认得这是本停靠的答复。
+    /// </summary>
+    /// <remarks>
+    /// <para>
+    /// <b>这一条是从「测试恰好没发现」里补出来的。</b>上面那条串行用例里，第二次提交用的是测试手上那个旧的旅程行快照，
+    /// 它带的是受理时的基准修订号，而基准恰好还落在本停靠的版区间里，所以它过了。真实的车载端不会这样：
+    /// <c>SublotEntryRequested</c> 带 <c>expiresOnRevisionChange</c>，升版之后旧的那一版在车上作废，它只会拿新版的
+    /// 号来提交。入站匹配若仍按旅程行上那个基准比对，这条提交就不算答复本停靠——服务端会一直等一个已经到了的录入。
+    /// </para>
+    /// <para>
+    /// 判据因此定在「本停靠发过的任一版」而不是「当前那一版」：升版前就上路的提交带的是旧版号，它是对旧版清单的
+    /// 合法答复，丢掉它同样是等一个已经到了的录入。已经答复过的那些由消费记录挡住，已经装完的那条由
+    /// <see cref="JourneyStopCursor.OutstandingAtCurrentStop"/> 挡住。
+    /// </para>
+    /// </remarks>
+    [Fact]
+    public async Task AnEntrySentUnderTheRaisedWorklistRevisionStillAnswersTheStop()
+    {
+        await using RuntimeFixture fixture = await RuntimeFixture.CreateAsync();
+        JourneyRuntimeRow runtime = await TwoDemandsAtThePickupAsync(fixture);
+        await AddInboxAsync(
+            fixture, FirstSubmissionId, "SublotSubmitted", await SublotSubmissionAsync(fixture, runtime, SecondSublot));
+        await TickAndRunAsync(fixture);
+        await ApplySafeResultAsync(fixture, SecondDemandId, SlotOperationType.Load, SlotBusinessState.Occupied);
+        await TickAndRunAsync(fixture);
+
+        // 车载端读的是刚发出去那一版录入请求上的修订号，不是受理时的基准。
+        JsonElement request = await LatestEntryRequestAsync(fixture);
+        long raised = request.GetProperty("worklistRevision").GetInt64();
+        Assert.True(
+            raised > runtime.WorklistRevision,
+            $"装完一条之后清单该升版，实际修订号仍是 {raised}。");
+
+        await AddInboxAsync(
+            fixture,
+            SecondSubmissionId,
+            "SublotSubmitted",
+            SubmissionAtRevision(fixture, runtime, FirstSublot, raised));
+        await TickAndRunAsync(fixture);
+
+        Assert.Equal(JourneyDemandStatuses.Loading, (await MembershipAsync(fixture, FirstDemandId)).Status);
+    }
+
+    /// <summary>
+    /// 锚需求在取货站被终结，旅程还带着另一条：旅程<b>回到当前停靠继续推进</b>，不停在 <c>Blocked</c>
+    /// （原 7-03 第 8 条，MVP <c>8be28b1c</c> 修的同一类问题）。
+    /// </summary>
+    /// <remarks>
+    /// 终结走 <see cref="PickupStopTermination"/> 的第一步（只终结这一条），第二步不跑，因为旅程还有未终结的需求。
+    /// 留下的坑是阶段：终结的那条路径把旅程推到哪里，都不能让剩下那条需求没人管。
+    /// </remarks>
+    [Fact]
+    public async Task TerminatingTheAnchorLeavesTheJourneyAdvancingOnItsOtherDemand()
+    {
+        await using RuntimeFixture fixture = await RuntimeFixture.CreateAsync();
+        JourneyRuntimeRow runtime = await TwoDemandsAtThePickupAsync(fixture);
+
+        JourneyRuntimeRow tracked = await fixture.Context.JourneyRuntimes
+            .SingleAsync(row => row.DemandId == FirstDemandId, TestContext.Current.CancellationToken);
+        await new PickupStopTermination(fixture.Context).StageAsync(
+            tracked, FirstDemandId, "CANCELLED_BY_OPERATOR", fixture.Clock.GetUtcNow(),
+            TestContext.Current.CancellationToken);
+        await fixture.Context.SaveChangesAsync(TestContext.Current.CancellationToken);
+
+        await TickAndRunAsync(fixture);
+
+        JourneyRuntimeRow after = await fixture.RuntimeAsync(FirstDemandId);
+        Assert.NotEqual(JourneyRuntimeStage.Blocked, after.Stage);
+        Assert.NotEqual(JourneyRuntimeStage.Completed, after.Stage);
+        Assert.Equal(JourneyDemandStatuses.Terminated, (await MembershipAsync(fixture, FirstDemandId)).Status);
+
+        // 剩下那条照样能装：清单与录入请求还在这个停靠上开着。
+        await AddInboxAsync(
+            fixture, SecondSubmissionId, "SublotSubmitted", await SublotSubmissionAsync(fixture, runtime, SecondSublot));
+        await TickAndRunAsync(fixture);
+        Assert.Equal(JourneyDemandStatuses.Loading, (await MembershipAsync(fixture, SecondDemandId)).Status);
+    }
+
+    /// <summary>
+    /// 一站两条需求都还没装、站点离站期限到期：两条一起终结，<b>旅程就此收尾</b>——<c>Completed</c> 带
+    /// <c>CANCELLED_BY_STATION_TIMEOUT</c>，租约放掉，车收到收尾快照（control-server#327）。
+    /// </summary>
+    /// <remarks>
+    /// <para>
+    /// 修前的样子：两条都 <c>Cancelled</c>，旅程却停在 <c>(AwaitingStationDeparture, null)</c>，租约与占用都没放。期限那一处对这个停靠上
+    /// 每条待做项逐条调 <see cref="PickupStopTermination"/>，而「是不是最后一条开着的需求」是一条库查询，看不见同一次改动里刚暂存、
+    /// 还没保存的那条终结——于是两条都判「另一条还开着」，谁也不走收尾那一支。
+    /// </para>
+    /// <para>
+    /// 收尾快照断的是线上那一行（<see cref="ClosureSnapshotAssertions"/>），不只是发件箱：旅程收尾了车却没收到，与修前一样会让车上
+    /// 一直挂着这一站。
+    /// </para>
+    /// </remarks>
+    [Fact]
+    public async Task TwoUnloadedDemandsTimingOutAtOneStopCloseTheJourney()
+    {
+        await using RuntimeFixture fixture = await TwoUnloadedDemandsPastTheStationDeadlineAsync();
+
+        await TickAndRunAsync(fixture);
+
+        CancellationToken token = TestContext.Current.CancellationToken;
+        AcceptedDemandRow[] demands = await fixture.Context.AcceptedDemands.AsNoTracking()
+            .Where(row => row.DemandId == FirstDemandId || row.DemandId == SecondDemandId)
+            .ToArrayAsync(token);
+        Assert.All(demands, demand => Assert.Equal(DemandExecutionStatus.Cancelled, demand.Status));
+        Assert.Equal(2, demands.Length);
+
+        JourneyRuntimeRow after = await JourneyOfAsync(fixture, FirstDemandId);
+        Assert.Equal(
+            (JourneyRuntimeStage.Completed, "CANCELLED_BY_STATION_TIMEOUT"), (after.Stage, after.BlockReasonCode));
+        VehiclePurposeClaimRecordRow record = await fixture.Context.Set<VehiclePurposeClaimRecordRow>().AsNoTracking()
+            .SingleAsync(row => row.JourneyId == after.JourneyId, token);
+        Assert.NotNull(record.ReleasedAt);
+        Assert.False(await fixture.Context.Set<VehiclePurposeClaimRow>().AsNoTracking()
+            .AnyAsync(row => row.JourneyId == after.JourneyId, token));
+
+        await ClosureSnapshotAssertions.AssertClosureSentAsync(
+            fixture.Context,
+            after.AgvId,
+            fixture.Peer.Lines.Select(bytes => System.Text.Encoding.UTF8.GetString(bytes)),
+            1,
+            after.PickupStationId);
+    }
+
+    /// <summary>
+    /// 同上那一站，期限那一轮之后<b>下一轮不抛</b>，旅程停在收尾（control-server#327）。
+    /// </summary>
+    /// <remarks>
+    /// 修前下一轮推进到离站，<c>NextStopAfterCurrent</c> 抛 <c>InvalidDataException</c>（两条需求留下的卸货停靠已被计划修订删掉，
+    /// 取货停靠成了最后一个）。推进段没有逐车隔离，这一抛让整轮中止——车队里排在后面的车不再推进、派车轮次不跑，而且每轮重复。
+    /// 所以这一条断的是「整轮跑得完」，不只是本车的状态。
+    /// </remarks>
+    [Fact]
+    public async Task TheRoundAfterTwoDemandsTimedOutAtOneStopDoesNotThrow()
+    {
+        await using RuntimeFixture fixture = await TwoUnloadedDemandsPastTheStationDeadlineAsync();
+        await TickAndRunAsync(fixture);
+
+        await TickAndRunAsync(fixture);
+
+        JourneyRuntimeRow after = await JourneyOfAsync(fixture, FirstDemandId);
+        Assert.Equal(
+            (JourneyRuntimeStage.Completed, "CANCELLED_BY_STATION_TIMEOUT"), (after.Stage, after.BlockReasonCode));
+    }
+
+    /// <summary>
+    /// 一站三条：一条早已在库里终结，另两条在同一次改动里逐条终结。「判为最后一条」只出现在<b>最后一次</b>：
+    /// 第一条暂存之后旅程仍开着，第二条暂存之后才收尾（control-server#327 审查建议）。
+    /// </summary>
+    /// <remarks>
+    /// <para>
+    /// 两个来源的「已终结」一次都照到：库里那一条由查询本身排除，暂存的那一条由跟踪行排除。只看库，第二条仍把第一条当开着，
+    /// 旅程不收尾（修前的样子）；把被跟踪的行一律当成终结（过宽），第一条暂存时就会把还开着的第三条算成终结、当场收尾。
+    /// </para>
+    /// <para>
+    /// 驱动的是期限那个循环做的同一件事——对同一个上下文逐条调 <see cref="PickupStopTermination"/>，不保存——而不是跑引擎一轮：
+    /// 一轮跑完只看得到最后的样子，看不到「中间那一次没有提前收尾」。
+    /// </para>
+    /// </remarks>
+    [Fact]
+    public async Task OnlyTheLastOfSeveralEndingsAtOneStopClosesTheJourney()
+    {
+        await using RuntimeFixture fixture = await RuntimeFixture.CreateAsync();
+        CancellationToken token = TestContext.Current.CancellationToken;
+        const string thirdDemandId = "10000000-0000-4000-8000-000000000003";
+        JourneyRuntimeRow runtime = await TwoDemandsAtThePickupAsync(fixture);
+        fixture.BoxCounts.Set("SUBLOT-003", 4);
+        await AddDemandToJourneyAsync(fixture, runtime, thirdDemandId, "SUBLOT-003", slotBlock: 2);
+
+        // 第一条早已终结、已落库。
+        JourneyRuntimeRow tracked = await fixture.Context.JourneyRuntimes
+            .SingleAsync(row => row.JourneyId == runtime.JourneyId, token);
+        await new PickupStopTermination(fixture.Context).StageAsync(
+            tracked, FirstDemandId, "CANCELLED_BY_OPERATOR", fixture.Clock.GetUtcNow(), token);
+        await fixture.Context.SaveChangesAsync(token);
+        Assert.NotEqual(JourneyRuntimeStage.Completed, tracked.Stage);
+
+        // 另两条在同一次改动里逐条终结，中间不保存。
+        PickupStopTermination termination = new(fixture.Context);
+        await termination.StageAsync(tracked, null, SecondDemandId, "CANCELLED_BY_STATION_TIMEOUT", fixture.Clock.GetUtcNow(), token);
+        Assert.NotEqual(JourneyRuntimeStage.Completed, tracked.Stage);
+        await termination.StageAsync(tracked, null, thirdDemandId, "CANCELLED_BY_STATION_TIMEOUT", fixture.Clock.GetUtcNow(), token);
+        Assert.Equal(
+            (JourneyRuntimeStage.Completed, "CANCELLED_BY_STATION_TIMEOUT"), (tracked.Stage, tracked.BlockReasonCode));
+    }
+
+    /// <summary>一站两条需求都没装，门已证明关着，钟拨过站点离站期限。下一轮就是期限那一轮。</summary>
+    private static async Task<RuntimeFixture> TwoUnloadedDemandsPastTheStationDeadlineAsync()
+    {
+        RuntimeFixture fixture = await RuntimeFixture.CreateAsync();
+        fixture.Options.StationDepartureWaitTimeout = TimeSpan.FromSeconds(10);
+        JourneyRuntimeRow runtime = await TwoDemandsAtThePickupAsync(fixture);
+        Assert.Equal(JourneyRuntimeStage.AwaitingSublot, runtime.Stage);
+        await fixture.ProveSlotDoorsClosedAsync();
+        fixture.Clock.Advance(TimeSpan.FromSeconds(10));
+        return fixture;
+    }
+
+    /// <summary>
+    /// 单需求旅程跑完之后，两个停靠都 <c>COMPLETED</c>、那条需求 <c>UNLOADED</c>——「当前停靠」与「装到哪一步」从此
+    /// 是落库的状态，不是从阶段反推的。
+    /// </summary>
+    /// <remarks>
+    /// 这两列在批次7-03 之前一直停在受理时写下的值（<c>PENDING</c> 与 <c>PENDING_LOAD</c>），<c>ZeroChangePin</c> 钉着
+    /// 它们。本票让它们动起来，于是那批基线在这两列上会变——那是本票<b>要的</b>变化，也是它唯一该有的变化。
+    /// </remarks>
+    [Fact]
+    public async Task ASingleDemandJourneyEndsWithItsStopsCompletedAndItsDemandUnloaded()
+    {
+        await using RuntimeFixture fixture = await RuntimeFixture.CreateAsync();
+        fixture.Catalog.Set(fixture.Demand(FirstDemandId, FirstSublot, Now.AddMinutes(-10)));
+        fixture.BoxCounts.Set(FirstSublot, 4);
+        JourneyRuntimeRow runtime = await RunJourneyToCompletionAsync(
+            fixture, FirstDemandId, FirstSublot, FirstSubmissionId, FirstSafetyResultId);
+
+        Assert.Equal(JourneyRuntimeStage.Completed, runtime.Stage);
+        JourneyStopRow[] stops = await fixture.Context.Set<JourneyStopRow>().AsNoTracking()
+            .Where(row => row.JourneyId == runtime.JourneyId)
+            .OrderBy(row => row.Sequence)
+            .ToArrayAsync(TestContext.Current.CancellationToken);
+        Assert.Equal(
+            [JourneyStopStatuses.Completed, JourneyStopStatuses.Completed],
+            stops.Select(stop => stop.Status).ToArray());
+        Assert.Equal(JourneyDemandStatuses.Unloaded, (await MembershipAsync(fixture, FirstDemandId)).Status);
+    }
+
+    /// <summary>
+    /// 受理、到取货站，然后往这个停靠上再挂一条需求：一站两条，都还没装。
+    /// </summary>
+    /// <remarks><paramref name="boxCount"/> 定每条需求占几个仓位：4 箱占一个，要两个仓位的用例传更多。</remarks>
+    internal static async Task<JourneyRuntimeRow> TwoDemandsAtThePickupAsync(RuntimeFixture fixture, int boxCount = 4)
+    {
+        fixture.Catalog.Set(fixture.Demand(FirstDemandId, FirstSublot, Now.AddMinutes(-10)));
+        fixture.BoxCounts.Set(FirstSublot, boxCount);
+        fixture.BoxCounts.Set(SecondSublot, boxCount);
+        await TickAndRunAsync(fixture);
+        JourneyRuntimeRow runtime = await fixture.RuntimeAsync(FirstDemandId);
+        await AddSecondDemandToJourneyAsync(fixture, runtime);
+        fixture.Riot.SetSuccessfulArrival("TO_PICKUP", runtime.PickupUpperId, runtime.PickupStationRiotId);
+        fixture.Riot.Vehicle = fixture.Riot.Vehicle with { CurrentStationId = runtime.PickupStationRiotId };
+        await TickAndRunAsync(fixture);
+        return await fixture.RuntimeAsync(FirstDemandId);
+    }
+
+    /// <summary>一条录入提交，修订号由调用方指定——车载端用的是它手上那一版录入请求上的号。</summary>
+    private static object SubmissionAtRevision(
+        RuntimeFixture fixture,
+        JourneyRuntimeRow runtime,
+        string sublot,
+        long worklistRevision) => new
+        {
+            operationSessionId = runtime.OperationSessionId,
+            stationId = runtime.PickupStationId,
+            worklistRevision,
+            sublot,
+            entryMethod = "SCANNER",
+            @operator = new
+            {
+                operatorId = "OP-001",
+                verificationMethod = "BADGE",
+                verifiedAt = fixture.Clock.GetUtcNow()
+            }
+        };
+
+    /// <summary>修订号最高的那一条录入请求的载荷，也就是此刻在车上有效的那一版。</summary>
+    /// <remarks>SQLite 排不了 <c>DateTimeOffset</c>，而「最新」本来就该按修订号定义，不按写盘时刻。</remarks>
+    private static async Task<JsonElement> LatestEntryRequestAsync(RuntimeFixture fixture)
+    {
+        string[] payloads = await fixture.Context.ProtocolOutbox.AsNoTracking()
+            .Where(item => item.MessageType == "SublotEntryRequested")
+            .Select(item => item.PayloadJson)
+            .ToArrayAsync(TestContext.Current.CancellationToken);
+        JsonElement latest = default;
+        long highest = long.MinValue;
+        foreach (string json in payloads)
+        {
+            using JsonDocument document = JsonDocument.Parse(json);
+            JsonElement payload = document.RootElement.GetProperty("payload");
+            long revision = payload.GetProperty("worklistRevision").GetInt64();
+            if (revision > highest)
+            {
+                highest = revision;
+                latest = payload.Clone();
+            }
+        }
+
+        Assert.NotEqual(long.MinValue, highest);
+        return latest;
+    }
+
+    internal static Task<JourneyDemandRow> MembershipAsync(RuntimeFixture fixture, string demandId) =>
+        fixture.Context.Set<JourneyDemandRow>().AsNoTracking()
+            .SingleAsync(row => row.DemandId == demandId, TestContext.Current.CancellationToken);
+
+    /// <summary>
+    /// 往这趟旅程的两个停靠上再挂一条需求，直接写库——本票之前没有任何路径会这么做，途中追加是本票的另一半。
+    /// </summary>
+    internal static Task AddSecondDemandToJourneyAsync(RuntimeFixture fixture, JourneyRuntimeRow runtime) =>
+        AddDemandToJourneyAsync(fixture, runtime, SecondDemandId, SecondSublot, slotBlock: 1);
+
+    /// <summary>
+    /// 同上，需求 id、子批与仓位段由调用方给：第 <paramref name="slotBlock"/> 段仓位紧接锚需求那一段之后排，几条需求互不重叠。
+    /// </summary>
+    internal static async Task AddDemandToJourneyAsync(
+        RuntimeFixture fixture, JourneyRuntimeRow runtime, string demandId, string sublot, int slotBlock)
+    {
+        CancellationToken token = TestContext.Current.CancellationToken;
+        AcceptedDemandRow anchor = await fixture.Context.AcceptedDemands.AsNoTracking()
+            .SingleAsync(row => row.DemandId == runtime.DemandId, token);
+        JourneyDemandRow anchorMembership = await fixture.Context.Set<JourneyDemandRow>().AsNoTracking()
+            .SingleAsync(row => row.JourneyId == runtime.JourneyId && row.DemandId == runtime.DemandId, token);
+
+        // AcceptedDemandRow 不是 record，字段又多，所以整行序列化再读回来当克隆用。
+        AcceptedDemandRow second = JsonSerializer.Deserialize<AcceptedDemandRow>(JsonSerializer.Serialize(anchor))!;
+        second.DemandId = demandId;
+        second.Sublot = sublot;
+        second.TransportDemandKey = $"{sublot}|WIRE_TO_GATE";
+        second.SeriesId = $"SERIES-{demandId}";
+        fixture.Context.AcceptedDemands.Add(second);
+
+        // 仓位要与锚需求错开：同一辆车上两条需求不能占同一个仓位，而装货结果按仓位回报。
+        int[] anchorSlots = JsonSerializer.Deserialize<int[]>(anchorMembership.TargetSlotsJson) ?? [];
+        int[] secondSlots = [.. anchorSlots.Select(slot => slot + anchorSlots.Length * slotBlock)];
+        fixture.Context.Set<JourneyDemandRow>().Add(new JourneyDemandRow
+        {
+            JourneyId = anchorMembership.JourneyId,
+            DemandId = demandId,
+            PickupStopId = anchorMembership.PickupStopId,
+            UnloadStopId = anchorMembership.UnloadStopId,
+            ExpectedBasketCount = anchorMembership.ExpectedBasketCount,
+            TargetSlotsJson = JsonSerializer.Serialize(secondSlots),
+            LoadSlotOperationAttemptId = JourneyPlanBuilder.StableGuid(demandId, "load-attempt"),
+            LoadCommandMessageId = JourneyPlanBuilder.StableGuid(demandId, "load-command"),
+            UnloadSlotOperationAttemptId = JourneyPlanBuilder.StableGuid(demandId, "unload-attempt"),
+            UnloadCommandMessageId = JourneyPlanBuilder.StableGuid(demandId, "unload-command"),
+            DispatchZone = anchorMembership.DispatchZone,
+            DispatchGeneration = anchorMembership.DispatchGeneration,
+            Status = JourneyDemandStatuses.PendingLoad,
+            AddedAt = anchorMembership.AddedAt.AddSeconds(slotBlock)
+        });
+        await fixture.Context.SaveChangesAsync(token);
+    }
+}

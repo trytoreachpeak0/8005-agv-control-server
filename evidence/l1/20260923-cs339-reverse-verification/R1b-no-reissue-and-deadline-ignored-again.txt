@@ -1,0 +1,58 @@
+mutation R1b-no-reissue-and-deadline-ignored-again: JourneyRuntimeEngine.cs matches=[1, 1]
+diff --git a/src/ControlServer.Host/Runtime/JourneyRuntimeEngine.cs b/src/ControlServer.Host/Runtime/JourneyRuntimeEngine.cs
+--- a/src/ControlServer.Host/Runtime/JourneyRuntimeEngine.cs
++++ b/src/ControlServer.Host/Runtime/JourneyRuntimeEngine.cs
+@@ -1959,7 +1959,7 @@ public sealed partial class JourneyRuntimeEngine(
+-            keepAcknowledgedIgnoring: NothingButTheEnvelope).ConfigureAwait(false);
++            keepAcknowledgedIgnoring: new HashSet<string>(["stationDepartureDeadlineAt"], StringComparer.Ordinal)).ConfigureAwait(false);
+@@ -2125,7 +2125,7 @@ public sealed partial class JourneyRuntimeEngine(
+-        if (sent == StationDepartureDeadline(runtime, runtimeOptions.StationDepartureWaitTimeout))
++        if (queued is not null)
+    0 Error(s)
+  Failed ControlServer.Tests.RefilledStationDeadlineReachesVehicleTests.ARefillOnTheArrivalRerunReachesTheVehicle [4 s]
+  Error Message:
+   Assert.Equal() Failure: Values differ
+Expected: 2026-08-26T01:00:37.0000000+00:00
+Actual:   2026-08-26T01:00:30.0000000+00:00
+--- End of stack trace from previous location ---
+ before the disconnect 2026-08-26T01:00:30.0000000+00:00; server now 2026-08-26T01:00:37.0000000+00:00; vehicle holds 2026-08-26T01:00:30.0000000+00:00; vehicle refused , regressions 0
+  Failed ControlServer.Tests.RefilledStationDeadlineReachesVehicleTests.AfterARefillTheJourneyReachesTheGateWithTheWorklistRevisionStrictlyAdvancing(enteredAgainst: 1) [532 ms]
+  Error Message:
+   Assert.Equal() Failure: Collections differ
+              ↓ (pos 1)
+Expected: [1, 2]
+Actual:   [1]
+--- End of stack trace from previous location ---
+  Failed ControlServer.Tests.RefilledStationDeadlineReachesVehicleTests.AfterARefillTheJourneyReachesTheGateWithTheWorklistRevisionStrictlyAdvancing(enteredAgainst: 0) [464 ms]
+  Error Message:
+   Assert.Equal() Failure: Collections differ
+              ↓ (pos 1)
+Expected: [1, 2]
+Actual:   [1]
+--- End of stack trace from previous location ---
+  Failed ControlServer.Tests.RefilledStationDeadlineReachesVehicleTests.ARefillWhileAwaitingTheEntryReachesTheVehicle [332 ms]
+  Error Message:
+   Assert.Equal() Failure: Values differ
+Expected: 2026-08-26T01:00:37.0000000+00:00
+Actual:   2026-08-26T01:00:30.0000000+00:00
+--- End of stack trace from previous location ---
+ before the disconnect 2026-08-26T01:00:30.0000000+00:00; server now 2026-08-26T01:00:37.0000000+00:00; vehicle holds 2026-08-26T01:00:30.0000000+00:00; vehicle refused , regressions 0
+  Failed ControlServer.Tests.RefilledStationDeadlineReachesVehicleTests.TheRealOnboardsUnreadyShapeRefillsOnceAndTheVehicleHoldsIt [357 ms]
+  Error Message:
+   Assert.Equal() Failure: Values differ
+Expected: 2026-08-26T01:00:37.0000000+00:00
+Actual:   2026-08-26T01:00:30.0000000+00:00
+--- End of stack trace from previous location ---
+ before the disconnect 2026-08-26T01:00:30.0000000+00:00; server now 2026-08-26T01:00:37.0000000+00:00; vehicle holds 2026-08-26T01:00:30.0000000+00:00; vehicle refused , regressions 0
+  Failed ControlServer.Tests.RefilledStationDeadlineReachesVehicleTests.ARefillWhileTheLoadResultIsOutstandingReachesTheVehicle [2 s]
+  Error Message:
+   Assert.Equal() Failure: Values differ
+Expected: 2026-08-26T01:00:37.0000000+00:00
+Actual:   2026-08-26T01:00:30.0000000+00:00
+--- End of stack trace from previous location ---
+ before the disconnect 2026-08-26T01:00:30.0000000+00:00; server now 2026-08-26T01:00:37.0000000+00:00; vehicle holds 2026-08-26T01:00:30.0000000+00:00; vehicle refused , regressions 0
+  Failed ControlServer.Tests.ArrivalPublishInterruptedThenReconnectedTests.ACutOnTheWorklistThenARefillSendsANewerWorklistInsteadOfFailingARound [213 ms]
+  Error Message:
+   ControlServer.Domain.ProtocolContentConflictException : Outbound MessageId was replayed with different semantics or a non-advancing session generation.
+--- End of stack trace from previous location ---
+Failed!  - Failed:     7, Passed:    23, Skipped:     0, Total:    30, Duration: 12 s - ControlServer.Tests.dll (net8.0)

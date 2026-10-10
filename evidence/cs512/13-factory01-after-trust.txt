@@ -1,0 +1,15 @@
+=== before
+MVP service pid=35288 state=Running; listeners: 58005=35288 58007=35288
+V2 JourneyRuntime.enabled=False
+task as found: state=3 Execute=pwsh.exe
+log dir exists before: False; 58188 listeners before: 0; my processes before: 0
+=== T: the 10-07 task exactly as it is, after pwsh.exe was trusted in Huorong
+T started=2026-10-08T21:47:56.7058203+08:00 health=NONE
+T task state=3 lastTaskResult=0xFFFFFFFF
+T log dir exists: False
+T processes: 
+=== cleanup
+task after: state=3 Execute=pwsh.exe Arguments-unchanged=True
+58188 listeners after: 0; my processes after: 0
+=== after
+MVP service pid=35288 state=Running; listeners: 58005=35288 58007=35288

@@ -1,0 +1,91 @@
+Test run for C:\Users\szy\Desktop\8005-workspace-v2\worktrees\cs340-8005-agv-control-server\tests\ControlServer.Tests\bin\Release\net8.0\win-x64\ControlServer.Tests.dll (.NETCoreApp,Version=v8.0)
+VSTest version 17.11.1 (x64)
+
+Starting test execution, please wait...
+A total of 1 test files matched the specified pattern.
+[xUnit.net 00:00:00.00] xUnit.net VSTest Adapter v3.1.5+1b188a7b0a (64-bit .NET 8.0.31)
+[xUnit.net 00:00:00.68]   Discovering: ControlServer.Tests
+[xUnit.net 00:00:03.31]   Discovered:  ControlServer.Tests
+[xUnit.net 00:00:04.14]   Starting:    ControlServer.Tests
+[xUnit.net 00:00:05.32]       Assert.Equal() Failure: Collections differ
+[xUnit.net 00:00:05.32]       Expected: ["ProcessCurrentSessionMessageAsync", "AnswerWithReadiness"]
+[xUnit.net 00:00:05.32]       Actual:   ["ProcessCurrentSessionMessageAsync", "AnswerWithReadiness", "RebindDurableAckAsync"]
+[xUnit.net 00:00:05.32]                                                                              ↑ (pos 2)
+[xUnit.net 00:00:05.32]       Stack Trace:
+[xUnit.net 00:00:05.32]         C:\Users\szy\Desktop\8005-workspace-v2\worktrees\cs340-8005-agv-control-server\tests\ControlServer.Tests\OnboardHandshakeReadinessArchitectureTests.cs(77,0): at ControlServer.Tests.OnboardHandshakeReadinessArchitectureTests.OnlyTheCombiningFunctionAndTheRecoveryReportsAnswerAppendAReadinessLine()
+[xUnit.net 00:00:05.32]            at System.RuntimeMethodHandle.InvokeMethod(Object target, Void** arguments, Signature sig, Boolean isConstructor)
+[xUnit.net 00:00:05.32]            at System.Reflection.MethodBaseInvoker.InvokeWithNoArgs(Object obj, BindingFlags invokeAttr)
+  Passed ControlServer.Tests.OnboardHandshakeReadinessArchitectureTests.AReadinessEnvelopeIsBuiltInOneMethodOnly [942 ms]
+  Failed ControlServer.Tests.OnboardHandshakeReadinessArchitectureTests.OnlyTheCombiningFunctionAndTheRecoveryReportsAnswerAppendAReadinessLine [33 ms]
+  Error Message:
+   Assert.Equal() Failure: Collections differ
+Expected: ["ProcessCurrentSessionMessageAsync", "AnswerWithReadiness"]
+Actual:   ["ProcessCurrentSessionMessageAsync", "AnswerWithReadiness", "RebindDurableAckAsync"]
+                                                                       ↑ (pos 2)
+  Stack Trace:
+     at ControlServer.Tests.OnboardHandshakeReadinessArchitectureTests.OnlyTheCombiningFunctionAndTheRecoveryReportsAnswerAppendAReadinessLine() in C:\Users\szy\Desktop\8005-workspace-v2\worktrees\cs340-8005-agv-control-server\tests\ControlServer.Tests\OnboardHandshakeReadinessArchitectureTests.cs:line 77
+   at System.RuntimeMethodHandle.InvokeMethod(Object target, Void** arguments, Signature sig, Boolean isConstructor)
+   at System.Reflection.MethodBaseInvoker.InvokeWithNoArgs(Object obj, BindingFlags invokeAttr)
+  Passed ControlServer.Tests.RecoveryStateMachineG2Tests.ASafetyChangeFirstDeliveredInTheReconnectHandshakeIsOnlyAcknowledged(deferOutbound: True) [5 s]
+  Passed ControlServer.Tests.RecoveryStateMachineG2Tests.ASafetyChangeFirstDeliveredInTheReconnectHandshakeIsOnlyAcknowledged(deferOutbound: False) [371 ms]
+  Passed ControlServer.Tests.RecoveryStateMachineG2Tests.AnOperationResultInTheReconnectHandshakeIsOnlyAcknowledgedEvenWhenItChangesReadiness(deferOutbound: False) [2 s]
+[xUnit.net 00:00:14.15]       Assert.Equal() Failure: Collections differ
+[xUnit.net 00:00:14.15]       Expected: ["DurableAck"]
+[xUnit.net 00:00:14.15]       Actual:   ["DurableAck", "SessionReadiness"]
+[xUnit.net 00:00:14.15]                                ↑ (pos 1)
+[xUnit.net 00:00:14.15]       Stack Trace:
+[xUnit.net 00:00:14.15]         C:\Users\szy\Desktop\8005-workspace-v2\worktrees\cs340-8005-agv-control-server\tests\ControlServer.Tests\RecoveryStateMachineG2Tests.cs(4890,0): at ControlServer.Tests.RecoveryStateMachineG2Tests.AMessageArrivingASecondTimeInTheReconnectHandshakeIsOnlyAcknowledgedEvenWhenItChangesReadiness(Boolean deferOutbound)
+[xUnit.net 00:00:14.15]         C:\Users\szy\Desktop\8005-workspace-v2\worktrees\cs340-8005-agv-control-server\tests\ControlServer.Tests\RecoveryStateMachineG2Tests.cs(4891,0): at ControlServer.Tests.RecoveryStateMachineG2Tests.AMessageArrivingASecondTimeInTheReconnectHandshakeIsOnlyAcknowledgedEvenWhenItChangesReadiness(Boolean deferOutbound)
+[xUnit.net 00:00:14.15]         C:\Users\szy\Desktop\8005-workspace-v2\worktrees\cs340-8005-agv-control-server\tests\ControlServer.Tests\RecoveryStateMachineG2Tests.cs(4891,0): at ControlServer.Tests.RecoveryStateMachineG2Tests.AMessageArrivingASecondTimeInTheReconnectHandshakeIsOnlyAcknowledgedEvenWhenItChangesReadiness(Boolean deferOutbound)
+[xUnit.net 00:00:14.15]         --- End of stack trace from previous location ---
+  Passed ControlServer.Tests.RecoveryStateMachineG2Tests.AnOperationResultInTheReconnectHandshakeIsOnlyAcknowledgedEvenWhenItChangesReadiness(deferOutbound: True) [824 ms]
+  Passed ControlServer.Tests.RecoveryStateMachineG2Tests.InsideTheReconnectHandshakeReadinessCannotChangeBeforeTheRecoveryReport [646 ms]
+  Failed ControlServer.Tests.RecoveryStateMachineG2Tests.AMessageArrivingASecondTimeInTheReconnectHandshakeIsOnlyAcknowledgedEvenWhenItChangesReadiness(deferOutbound: False) [400 ms]
+  Error Message:
+   Assert.Equal() Failure: Collections differ
+Expected: ["DurableAck"]
+Actual:   ["DurableAck", "SessionReadiness"]
+                         ↑ (pos 1)
+  Stack Trace:
+     at ControlServer.Tests.RecoveryStateMachineG2Tests.AMessageArrivingASecondTimeInTheReconnectHandshakeIsOnlyAcknowledgedEvenWhenItChangesReadiness(Boolean deferOutbound) in C:\Users\szy\Desktop\8005-workspace-v2\worktrees\cs340-8005-agv-control-server\tests\ControlServer.Tests\RecoveryStateMachineG2Tests.cs:line 4890
+   at ControlServer.Tests.RecoveryStateMachineG2Tests.AMessageArrivingASecondTimeInTheReconnectHandshakeIsOnlyAcknowledgedEvenWhenItChangesReadiness(Boolean deferOutbound) in C:\Users\szy\Desktop\8005-workspace-v2\worktrees\cs340-8005-agv-control-server\tests\ControlServer.Tests\RecoveryStateMachineG2Tests.cs:line 4891
+   at ControlServer.Tests.RecoveryStateMachineG2Tests.AMessageArrivingASecondTimeInTheReconnectHandshakeIsOnlyAcknowledgedEvenWhenItChangesReadiness(Boolean deferOutbound) in C:\Users\szy\Desktop\8005-workspace-v2\worktrees\cs340-8005-agv-control-server\tests\ControlServer.Tests\RecoveryStateMachineG2Tests.cs:line 4891
+--- End of stack trace from previous location ---
+[xUnit.net 00:00:14.52]       Assert.Equal() Failure: Collections differ
+[xUnit.net 00:00:14.52]       Expected: ["DurableAck"]
+[xUnit.net 00:00:14.52]       Actual:   ["DurableAck", "SessionReadiness"]
+[xUnit.net 00:00:14.52]                                ↑ (pos 1)
+[xUnit.net 00:00:14.52]       Stack Trace:
+[xUnit.net 00:00:14.52]         C:\Users\szy\Desktop\8005-workspace-v2\worktrees\cs340-8005-agv-control-server\tests\ControlServer.Tests\RecoveryStateMachineG2Tests.cs(4890,0): at ControlServer.Tests.RecoveryStateMachineG2Tests.AMessageArrivingASecondTimeInTheReconnectHandshakeIsOnlyAcknowledgedEvenWhenItChangesReadiness(Boolean deferOutbound)
+[xUnit.net 00:00:14.52]         C:\Users\szy\Desktop\8005-workspace-v2\worktrees\cs340-8005-agv-control-server\tests\ControlServer.Tests\RecoveryStateMachineG2Tests.cs(4891,0): at ControlServer.Tests.RecoveryStateMachineG2Tests.AMessageArrivingASecondTimeInTheReconnectHandshakeIsOnlyAcknowledgedEvenWhenItChangesReadiness(Boolean deferOutbound)
+[xUnit.net 00:00:14.52]         C:\Users\szy\Desktop\8005-workspace-v2\worktrees\cs340-8005-agv-control-server\tests\ControlServer.Tests\RecoveryStateMachineG2Tests.cs(4891,0): at ControlServer.Tests.RecoveryStateMachineG2Tests.AMessageArrivingASecondTimeInTheReconnectHandshakeIsOnlyAcknowledgedEvenWhenItChangesReadiness(Boolean deferOutbound)
+[xUnit.net 00:00:14.52]         --- End of stack trace from previous location ---
+  Failed ControlServer.Tests.RecoveryStateMachineG2Tests.AMessageArrivingASecondTimeInTheReconnectHandshakeIsOnlyAcknowledgedEvenWhenItChangesReadiness(deferOutbound: True) [358 ms]
+  Error Message:
+   Assert.Equal() Failure: Collections differ
+Expected: ["DurableAck"]
+Actual:   ["DurableAck", "SessionReadiness"]
+                         ↑ (pos 1)
+  Stack Trace:
+     at ControlServer.Tests.RecoveryStateMachineG2Tests.AMessageArrivingASecondTimeInTheReconnectHandshakeIsOnlyAcknowledgedEvenWhenItChangesReadiness(Boolean deferOutbound) in C:\Users\szy\Desktop\8005-workspace-v2\worktrees\cs340-8005-agv-control-server\tests\ControlServer.Tests\RecoveryStateMachineG2Tests.cs:line 4890
+   at ControlServer.Tests.RecoveryStateMachineG2Tests.AMessageArrivingASecondTimeInTheReconnectHandshakeIsOnlyAcknowledgedEvenWhenItChangesReadiness(Boolean deferOutbound) in C:\Users\szy\Desktop\8005-workspace-v2\worktrees\cs340-8005-agv-control-server\tests\ControlServer.Tests\RecoveryStateMachineG2Tests.cs:line 4891
+   at ControlServer.Tests.RecoveryStateMachineG2Tests.AMessageArrivingASecondTimeInTheReconnectHandshakeIsOnlyAcknowledgedEvenWhenItChangesReadiness(Boolean deferOutbound) in C:\Users\szy\Desktop\8005-workspace-v2\worktrees\cs340-8005-agv-control-server\tests\ControlServer.Tests\RecoveryStateMachineG2Tests.cs:line 4891
+--- End of stack trace from previous location ---
+  Passed ControlServer.Tests.RecoveryStateMachineG2Tests.ARecoveryResultFirstDeliveredInTheReconnectHandshakeIsOnlyAcknowledgedEvenWhenItChangesReadiness(deferOutbound: False) [1 s]
+  Passed ControlServer.Tests.RecoveryStateMachineG2Tests.ARecoveryResultFirstDeliveredInTheReconnectHandshakeIsOnlyAcknowledgedEvenWhenItChangesReadiness(deferOutbound: True) [323 ms]
+  Passed ControlServer.Tests.RecoveryStateMachineG2Tests.AVehicleNotReadyOnItsOwnOrderHandshakesWithoutAnExtraReadinessAndIsStillToldAfterwards [233 ms]
+  Passed ControlServer.Tests.RecoveryStateMachineG2Tests.AfterTheReconnectHandshakeTheSameMessagesStillCarryReadiness(messageType: "OperationResult") [192 ms]
+  Passed ControlServer.Tests.RecoveryStateMachineG2Tests.AfterTheReconnectHandshakeTheSameMessagesStillCarryReadiness(messageType: "SafetyStateChanged") [185 ms]
+  Passed ControlServer.Tests.RecoveryStateMachineG2Tests.TheRecoveryReportAnnouncesTheReadinessAResendInsideTheHandshakeLeftBehind(resendsUnknownResult: False, reported: "READY") [174 ms]
+  Passed ControlServer.Tests.RecoveryStateMachineG2Tests.TheRecoveryReportAnnouncesTheReadinessAResendInsideTheHandshakeLeftBehind(resendsUnknownResult: True, reported: "RECOVERY_REQUIRED") [167 ms]
+  Passed ControlServer.Tests.RecoveryStateMachineG2Tests.AHardwareRecoveryRecordInsideTheReconnectHandshakeIsAnsweredWithoutReadinessEvenWhenItChangesReadiness [313 ms]
+[xUnit.net 00:00:49.86]   Finished:    ControlServer.Tests (ID = '9fb9a4ab0d84790bc3c068db6d32933a49ead250b57fcfa71669a5fbed036549')
+
+Total tests: 17
+     Passed: 14
+     Failed: 3
+ Total time: 50.5473 Seconds
+[xUnit.net 00:00:05.32]     ControlServer.Tests.OnboardHandshakeReadinessArchitectureTests.OnlyTheCombiningFunctionAndTheRecoveryReportsAnswerAppendAReadinessLine [FAIL]
+[xUnit.net 00:00:14.15]     ControlServer.Tests.RecoveryStateMachineG2Tests.AMessageArrivingASecondTimeInTheReconnectHandshakeIsOnlyAcknowledgedEvenWhenItChangesReadiness(deferOutbound: False) [FAIL]
+[xUnit.net 00:00:14.52]     ControlServer.Tests.RecoveryStateMachineG2Tests.AMessageArrivingASecondTimeInTheReconnectHandshakeIsOnlyAcknowledgedEvenWhenItChangesReadiness(deferOutbound: True) [FAIL]
+Test Run Failed.

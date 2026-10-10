@@ -1,0 +1,102 @@
+{
+  "schemaVersion": 1,
+  "scenario": "real-onboard-durable-ack-lost",
+  "runId": "20260921T023634089Z",
+  "outcome": "PASS",
+  "failureReason": "",
+  "identity": {
+    "rig": "RealOnboard",
+    "vehicleKey": "BROKERX-L2-0001",
+    "protocolFaultProxy": true,
+    "controlServerCommit": "fc144d0a565329a4115c657e73edc6d9fb5246b7",
+    "slotsSimulatorCommit": "fb5f7c593742bf98bc3957b8729a38aad5321f28",
+    "protocolReleaseIdentity": {
+      "repository": "8005-agv-protocol",
+      "releaseVersion": "2.0.0",
+      "tag": "protocol-v2.0.0",
+      "commit": "86575456c847041515b7b75e8851a00e0d939804",
+      "protocolVersion": 3,
+      "profileId": "AGV_FULL_PRODUCT",
+      "manifestSha256": "4ac095ad371d3aaa60d7c2e0198cfd64cff5f3068230fc3420e9cdf5616422a7",
+      "schemaBundleSha256": "9db0dbdc22fed7e39edf8d01b1fc40a12f5d70a7414f696f909ab2a87eb8c221",
+      "vectorsSha256": "391fa69a7d6e9f86ea139ba4c74eadf4994bf0a87e89d3dc5258dd7968d9182a",
+      "approvalStatus": "APPROVED_RELEASE"
+    },
+    "batchId": "batch-7",
+    "agvId": "AGV-L2-001",
+    "onboardHmiCommit": "e6bea2674a54a80ea92f9df8031999d46c77d321",
+    "stageRoot": "C:\\actions-runner\\win11-01-control-server-desktop\\_work\\_temp\\real-rig-35554054251-1\\_stage\\l2-20260921T023634089Z"
+  },
+  "assertions": [
+    {
+      "id": "L2-DA-00",
+      "description": "车载端的会话经协议故障代理建立（否则丢 ack 注入不到这条链路上）",
+      "outcome": "PASS",
+      "expected": ">= 1 SessionHello through the proxy",
+      "actual": 1
+    },
+    {
+      "id": "L2-DA-01",
+      "description": "丢掉的是一份服务端已经收下的装货结果：ProtocolInbox 有这一行，装货已 Committed",
+      "outcome": "PASS",
+      "expected": "OperationResult / Committed",
+      "actual": "OperationResult / Committed"
+    },
+    {
+      "id": "L2-DA-02",
+      "description": "车重连后在新会话里以原 messageId 补发 OperationResult、sessionGeneration 换成新的，服务端按首次受理重签 DurableAck（control-server#77）",
+      "outcome": "PASS",
+      "expected": "same messageId replayed at a newer generation and acknowledged",
+      "actual": "first on #1 at generation 1; 1 replay(s), first on #2 at generation 2; acked on a later connection 1 time(s)"
+    },
+    {
+      "id": "L2-DA-03",
+      "description": "补发之后同一条连接照常走完握手：Hello → Accepted → 补发 → 其 ack → 能力快照 → 安全快照 → 新 messageId 的 RecoveryStateReport → SessionReadiness；旧的恢复报告一条都不按原编号补发（onboard-hmi#69，CV-SESSION-RECONNECT-DURING-RECOVERY）",
+      "outcome": "PASS",
+      "expected": "按序 / 新报告 >= 1 / 旧报告补发 0",
+      "actual": "#2 onboard->server:SessionHello server->onboard:SessionAccepted onboard->server:OperationResult server->onboard:DurableAck onboard->server:CapabilitySnapshot server->onboard:SnapshotAppliedAck onboard->server:SafetyStateSnapshot server->onboard:SnapshotAppliedAck onboard->server:OnboardAlarmSnapshot server->onboard:SnapshotAppliedAck onboard->server:RecoveryStateReport server->onboard:DurableAck server->onboard:SessionReadiness onboard->server:SafetyStateChanged server->onboard:DurableAck server->onboard:SessionReadiness / 新报告 1 / 旧报告补发 0"
+    },
+    {
+      "id": "L2-DA-04",
+      "description": "服务端在新世代把会话判回 Ready：本代次能力快照、安全快照与恢复状态报告齐全",
+      "outcome": "PASS",
+      "expected": "gen > 1 / Ready / READY",
+      "actual": "gen 2 / Ready / READY"
+    },
+    {
+      "id": "L2-DA-09",
+      "description": "确认丢失的那次装货已完成：会话重回 Ready 之后、卸货等操作员之前，HMI 上从未出现「上次装货操作未完成」；开头 10 秒采样窗与之后到卸货等操作员为止**各**至少 10 轮把整棵 UIA 树读全了（onboard-hmi#124，计数与分段在 control-server#204 收紧）",
+      "outcome": "PASS",
+      "expected": "采样窗 ≥ 10 轮 / 之后 ≥ 10 轮 / 检出 0 次",
+      "actual": "干净扫描 72 轮（最少一轮读到 114 个元素）/ 失败 0 轮（读失败元素 0 个）/ 检出 0 次（采样窗 22 轮 / 之后 50 轮）"
+    },
+    {
+      "id": "L2-DA-05",
+      "description": "补发被确认之后旅程照常走完",
+      "outcome": "PASS",
+      "expected": "Completed",
+      "actual": "Completed"
+    },
+    {
+      "id": "L2-DA-06",
+      "description": "装货结果只记了一次，卸货 Committed，需求 Succeeded",
+      "outcome": "PASS",
+      "expected": "1 / Committed / Succeeded",
+      "actual": "1 / Committed / Succeeded"
+    },
+    {
+      "id": "L2-DA-07",
+      "description": "补发之后没有哪条连接被服务端掐掉：丢 ack 之后的连接要么车自己关的、要么到收尾还开着",
+      "outcome": "PASS",
+      "expected": "0 connections after the drop ended by anyone but the onboard",
+      "actual": "0 (#1: relay dropped DurableAck for OperationResult; #2: open)"
+    },
+    {
+      "id": "L2-DA-08",
+      "description": "丢一次 ack 只换来一次重连：之后只有一条连接，而且到收尾还开着",
+      "outcome": "PASS",
+      "expected": "2 connections, 1 open",
+      "actual": "2 connections, 1 open (#1: relay dropped DurableAck for OperationResult; #2: open)"
+    }
+  ]
+}

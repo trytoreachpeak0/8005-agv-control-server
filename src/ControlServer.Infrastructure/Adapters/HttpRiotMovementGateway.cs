@@ -17,9 +17,17 @@ namespace ControlServer.Infrastructure.Adapters;
 /// owns only ControlServer observation semantics.
 /// </summary>
 public sealed class HttpRiotMovementGateway : IRiotMovementGateway, IRiotVehicleFacts, IRiotMapStationCatalog,
-    IRiotVehicleSafetyFacts, IVehicleMotionFacts, IRiotVehicleOrderFacts
+    IRiotMapNameCatalog, IRiotVehicleSafetyFacts, IVehicleMotionFacts, IRiotVehicleOrderFacts, IRiotOrderListingFacts,
+    IRiotOrderMissionFacts
 {
-    private static readonly int[] NonFinalOrderStates = [1, 3, 7, 9];
+    /// <summary>
+    /// The order states that are not an ending: QUEUEING 1, EXECUTING 3, PAUSED 7, SUSPENDED 8, HANG 9 and QUEUE_PRIORITY 10 (the
+    /// SDK's <c>OrderRecordObject.orderState</c>: 10 is "队列优先执行", a queued order moved to the front). 8 and 10 were missing until
+    /// control-server#404's second review (L-2): 10 is a queue state like 1, and 8 -- labelled "已移除" but never observed, and
+    /// counted as occupying the vehicle by REQ-0164 -- is not one of the four explicit endings
+    /// (<c>ForeignRunningOrders.IsExplicitlyEnded</c>). Left out, a vehicle with such an order read as having none.
+    /// </summary>
+    private static readonly int[] NonFinalOrderStates = [1, 3, 7, 8, 9, 10];
 
     /// <summary>
     /// The <c>movementState</c> values this server is prepared to read as "not moving".
@@ -43,6 +51,17 @@ public sealed class HttpRiotMovementGateway : IRiotMovementGateway, IRiotVehicle
     /// </remarks>
     private static readonly string[] NotMovingStates = ["MT_FINISHED", "MT_PAUSED"];
 
+    /// <summary>Page size for the non-final order listing; 100 is what every read used before paging (control-server#525).</summary>
+    private const int NonFinalOrderPageSize = 100;
+
+    /// <summary>
+    /// The most pages one non-final order read follows (control-server#525). The real RIoT held 252 non-final orders on
+    /// 2026-10-09 (3 pages), nearly all of them other plant lines' state-8 orders accumulated since 2026-09-09; 20 pages is
+    /// 2000 orders, about eight times that, before the read gives up and answers incomplete. Past it the answer stays the
+    /// fail-closed one every caller already handles, rather than an unbounded burst of requests on every poll.
+    /// </summary>
+    private const int NonFinalOrderPageCap = 20;
+
     /// <summary>Placeholder RIoT reports in executeVehicleKey before a vehicle is bound.</summary>
     private const string UnassignedVehicleKeyPlaceholder = "--";
     private readonly RiotSession riotSession;
@@ -59,6 +78,12 @@ public sealed class HttpRiotMovementGateway : IRiotMovementGateway, IRiotVehicle
         this.riotSession = riotSession;
         this.timeProvider = timeProvider;
     }
+
+    /// <summary>The act a charging order carries after its move to the charger (allowlist 1.2, shape two).</summary>
+    private static readonly OrderMissionAction StartChargingAction = new(
+        RiotChargingOrderAction.ActionId,
+        RiotChargingOrderAction.StartChargingParam1,
+        RiotChargingOrderAction.Param2);
 
     /// <summary>RIoT business code for "订单已存在" on byDefaultMissions (BC-ORDER-004).</summary>
     private const string OrderAlreadyExistsBusinessCode = "0610008";
@@ -110,15 +135,36 @@ public sealed class HttpRiotMovementGateway : IRiotMovementGateway, IRiotVehicle
     {
         ArgumentNullException.ThrowIfNull(intent);
         ValidateFrozenIntent(intent);
+        bool charge = string.Equals(intent.OrderShape, OrderShapes.Charge, StringComparison.Ordinal);
+        if (!charge && !string.Equals(intent.OrderShape, OrderShapes.SingleMove, StringComparison.Ordinal))
+        {
+            // The shape column carries no CHECK (#399), so this is where an unknown value stops. Nothing is
+            // sent: guessing a shape would create an order the intent never asked for.
+            return Unknown(
+                intent.UpperId,
+                Receipt("CREATE", "UnsupportedOrderShape", resultPresent: false, failureCategory: "IDENTITY_INVALID"));
+        }
+
         try
         {
-            OrderRef created = await riotSession.Order.CreateMoveOrderAsync(
-                intent.UpperId,
-                intent.VehicleKey,
-                intent.MapId,
-                intent.DestinationStationId,
-                intent.UpperId,
-                cancellationToken).ConfigureAwait(false);
+            // The shape is read from the frozen intent on every attempt, so a retry creates exactly what the
+            // first attempt did, whatever RIoT or the vehicle reported in between.
+            OrderRef created = charge
+                ? await riotSession.Order.CreateMoveOrderAsync(
+                    intent.UpperId,
+                    intent.VehicleKey,
+                    intent.MapId,
+                    intent.DestinationStationId,
+                    StartChargingAction,
+                    intent.UpperId,
+                    cancellationToken).ConfigureAwait(false)
+                : await riotSession.Order.CreateMoveOrderAsync(
+                    intent.UpperId,
+                    intent.VehicleKey,
+                    intent.MapId,
+                    intent.DestinationStationId,
+                    intent.UpperId,
+                    cancellationToken).ConfigureAwait(false);
 
             RiotOrderObservationKind kind = ToObservationKind(created.OrderState);
             if (kind == RiotOrderObservationKind.Unknown ||
@@ -242,6 +288,37 @@ public sealed class HttpRiotMovementGateway : IRiotMovementGateway, IRiotVehicle
         return new RiotMapStationCatalogSnapshot(mapId, observedAt, fingerprint, stations);
     }
 
+    /// <summary>
+    /// RIoT's Map list without any <c>mapJson</c> (control-server#186; verified on the real RIoT 2026-09-28: 2 KB for eight
+    /// Maps, where <c>mapInfo/{mapId}</c> is some 260 KB for one). Fails closed: an answer that is not a non-empty list
+    /// throws rather than coming back empty, because an empty list would read as every Map being absent.
+    /// </summary>
+    public async Task<RiotMapNameListing> ReadMapNamesAsync(CancellationToken cancellationToken)
+    {
+        IReadOnlyList<Map> maps;
+        try
+        {
+            maps = await riotSession.Maps.ListMapsAsync(cancellationToken).ConfigureAwait(false);
+        }
+        catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
+        {
+            throw;
+        }
+        catch (Exception error) when (RiotCallFailureClassification.IsSdkFailure(error))
+        {
+            throw new InvalidDataException("RIoT Map list response was not valid.", error);
+        }
+
+        // The SDK drops entries without an id or a name; what is left must still be something.
+        if (maps.Count == 0)
+        {
+            throw new InvalidDataException("RIoT Map list must be non-empty.");
+        }
+        return new RiotMapNameListing(
+            timeProvider.GetUtcNow(),
+            [.. maps.Select(map => new RiotMapName(map.MapId, map.Name))]);
+    }
+
     public async Task<RiotVehicleSafetyObservation> ReadVehicleSafetyAsync(
         string vehicleKey,
         CancellationToken cancellationToken)
@@ -251,12 +328,8 @@ public sealed class HttpRiotMovementGateway : IRiotMovementGateway, IRiotVehicle
         {
             VehicleExecutionFacts vehicle = await riotSession.Tasks.GetVehicleExecutionFactsAsync(
                 vehicleKey, cancellationToken).ConfigureAwait(false);
-            OrderStatePage orders = await riotSession.Order.ListOrdersByStatesAsync(
-                NonFinalOrderStates,
-                pageNum: 1,
-                pageSize: 100,
-                cancellationToken: cancellationToken).ConfigureAwait(false);
-            if (!orders.CoversAllRecords)
+            NonFinalOrderRead orders = await ReadAllNonFinalOrdersAsync(cancellationToken).ConfigureAwait(false);
+            if (!orders.IsComplete)
             {
                 return UnknownSafety(vehicleKey, "RIOT_NONFINAL_ORDER_COVERAGE_UNKNOWN");
             }
@@ -333,23 +406,26 @@ public sealed class HttpRiotMovementGateway : IRiotMovementGateway, IRiotVehicle
         ArgumentException.ThrowIfNullOrWhiteSpace(deviceKey);
         try
         {
-            OrderStatePage orders = await riotSession.Order.ListOrdersByStatesAsync(
-                NonFinalOrderStates,
-                pageNum: 1,
-                pageSize: 100,
-                cancellationToken: cancellationToken).ConfigureAwait(false);
-            if (!orders.CoversAllRecords)
+            NonFinalOrderRead orders = await ReadAllNonFinalOrdersAsync(cancellationToken).ConfigureAwait(false);
+            if (!orders.IsComplete)
             {
                 return new RiotVehicleOrderObservation(deviceKey, null, [], timeProvider.GetUtcNow());
             }
 
-            string[] unfinished = [.. orders.Records
+            var unfinished = orders.Records
                 .Where(order =>
                     string.Equals(order.AppointVehicleKey, deviceKey, StringComparison.Ordinal) ||
                     string.Equals(order.ExecuteVehicleKey, deviceKey, StringComparison.Ordinal))
-                .Select(order => order.OrderId)];
+                .ToArray();
+            string[] ids = [.. unfinished.Select(order => order.OrderId)];
+            // A record listed twice keeps the state of neither: StateOf then answers null, which reads as "not shown PAUSED".
+            Dictionary<string, int?> states = unfinished
+                .Where(order => order.OrderId is not null)
+                .GroupBy(order => order.OrderId!, StringComparer.Ordinal)
+                .Where(group => group.Count() == 1)
+                .ToDictionary(group => group.Key, group => group.Single().OrderState, StringComparer.Ordinal);
             return new RiotVehicleOrderObservation(
-                deviceKey, unfinished.Length > 0, unfinished, timeProvider.GetUtcNow());
+                deviceKey, ids.Length > 0, ids, timeProvider.GetUtcNow(), states);
         }
         catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
         {
@@ -360,6 +436,198 @@ public sealed class HttpRiotMovementGateway : IRiotMovementGateway, IRiotVehicle
             return new RiotVehicleOrderObservation(deviceKey, null, [], timeProvider.GetUtcNow());
         }
     }
+
+    /// <summary>
+    /// Every order RIoT holds in a non-final state (<see cref="NonFinalOrderStates"/>), whichever vehicle it is for
+    /// (control-server#330).
+    /// </summary>
+    /// <remarks>
+    /// The same read and the same state list as <see cref="ReadUnfinishedOrdersAsync"/> and the safety read's
+    /// <c>RIOT_NONFINAL_ORDER_PRESENT</c>, but unfiltered and with each order's own fields: which of them is running on a
+    /// vehicle of this server's, and whose it is, is the caller's question. A page that does not cover every record, and
+    /// every failure, is an incomplete listing rather than an exception or an empty one.
+    /// </remarks>
+    public async Task<RiotUnfinishedOrderListing> ListUnfinishedOrdersAsync(CancellationToken cancellationToken)
+    {
+        try
+        {
+            NonFinalOrderRead orders = await ReadAllNonFinalOrdersAsync(cancellationToken).ConfigureAwait(false);
+            if (!orders.IsComplete)
+            {
+                return new RiotUnfinishedOrderListing(false, [], timeProvider.GetUtcNow());
+            }
+
+            RiotListedOrder[] listed = [.. orders.Records
+                .Where(order => !string.IsNullOrWhiteSpace(order.OrderId))
+                .Select(order => new RiotListedOrder(
+                    order.OrderId!,
+                    order.UpperId,
+                    order.OrderState,
+                    order.AppointVehicleKey,
+                    order.ExecuteVehicleKey))];
+            // A record without an orderId cannot be addressed, re-read or cancelled; one that is there all the same makes the
+            // listing something this server cannot fully account for.
+            return new RiotUnfinishedOrderListing(
+                listed.Length == orders.Records.Count, listed, timeProvider.GetUtcNow());
+        }
+        catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
+        {
+            throw;
+        }
+        catch (Exception error) when (RiotCallFailureClassification.IsSdkFailure(error))
+        {
+            return new RiotUnfinishedOrderListing(false, [], timeProvider.GetUtcNow());
+        }
+    }
+
+    /// <summary>
+    /// Every order RIoT holds in a non-final state, read page by page until the listing is covered (control-server#525).
+    /// </summary>
+    /// <remarks>
+    /// <para>
+    /// The SDK's <see cref="OrderStatePage.CoversAllRecords"/> holds only for a first page that carries the whole listing,
+    /// so coverage across pages is proven here: every page must answer the page asked for, report the same total as the
+    /// first, and carry exactly the records that page should hold (a full page, then the remainder), and no record id may
+    /// appear twice. Together the pages then add up to the first page's total.
+    /// </para>
+    /// <para>
+    /// A total that changes between pages, a page that is short, long or out of place, a repeated record, or a listing
+    /// past <see cref="NonFinalOrderPageCap"/> pages is incomplete -- never stitched into a snapshot RIoT never held. The
+    /// callers poll, so the next read starts over. What paging cannot prove is a listing that changed without its total
+    /// changing (one order leaving while another arrives between two page reads); RIoT offers no snapshot to page over, so
+    /// that residue is accepted rather than closed.
+    /// </para>
+    /// </remarks>
+    private async Task<NonFinalOrderRead> ReadAllNonFinalOrdersAsync(CancellationToken cancellationToken)
+    {
+        OrderStatePage first = await riotSession.Order.ListOrdersByStatesAsync(
+            NonFinalOrderStates,
+            pageNum: 1,
+            pageSize: NonFinalOrderPageSize,
+            cancellationToken: cancellationToken).ConfigureAwait(false);
+        if (first.CoversAllRecords)
+        {
+            return new NonFinalOrderRead(true, first.Records);
+        }
+        if (first.Current != 1 || first.Total is not long total || total < 0 ||
+            (first.Size.HasValue && first.Size.Value != NonFinalOrderPageSize))
+        {
+            return NonFinalOrderRead.Incomplete;
+        }
+
+        long pageCount = (total + NonFinalOrderPageSize - 1) / NonFinalOrderPageSize;
+        if (pageCount > NonFinalOrderPageCap)
+        {
+            return NonFinalOrderRead.Incomplete;
+        }
+
+        List<OrderStateRecord> records = [];
+        HashSet<long> seenIds = [];
+        for (int pageNum = 1; pageNum <= pageCount; pageNum++)
+        {
+            OrderStatePage page = pageNum == 1
+                ? first
+                : await riotSession.Order.ListOrdersByStatesAsync(
+                    NonFinalOrderStates,
+                    pageNum: pageNum,
+                    pageSize: NonFinalOrderPageSize,
+                    cancellationToken: cancellationToken).ConfigureAwait(false);
+            long expectedCount = Math.Min(NonFinalOrderPageSize, total - ((long)(pageNum - 1) * NonFinalOrderPageSize));
+            if (page.Current != pageNum || page.Total != total || page.Records.Count != expectedCount ||
+                (page.Size.HasValue && page.Size.Value != NonFinalOrderPageSize))
+            {
+                return NonFinalOrderRead.Incomplete;
+            }
+            foreach (OrderStateRecord record in page.Records)
+            {
+                if (record.Id is long id && !seenIds.Add(id))
+                {
+                    return NonFinalOrderRead.Incomplete;
+                }
+                records.Add(record);
+            }
+        }
+        return new NonFinalOrderRead(true, records);
+    }
+
+    private sealed record NonFinalOrderRead(bool IsComplete, IReadOnlyList<OrderStateRecord> Records)
+    {
+        public static NonFinalOrderRead Incomplete { get; } = new(false, []);
+    }
+
+    /// <summary>
+    /// One order's state by its RIoT <c>orderId</c>, through <c>detailByOrderId</c> (control-server#330). Null state on every
+    /// failure: a read that did not answer says nothing about whether the order ended.
+    /// </summary>
+    public async Task<RiotOrderStateReading> ReadOrderStateAsync(string orderId, CancellationToken cancellationToken)
+    {
+        ArgumentException.ThrowIfNullOrWhiteSpace(orderId);
+        try
+        {
+            OrderRef order = await riotSession.Order.GetOrderByOrderIdAsync(orderId, cancellationToken)
+                .ConfigureAwait(false);
+            return new RiotOrderStateReading(
+                orderId,
+                string.Equals(order.OrderId, orderId, StringComparison.Ordinal) ? order.OrderState : null,
+                timeProvider.GetUtcNow());
+        }
+        catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
+        {
+            throw;
+        }
+        catch (Exception error) when (RiotCallFailureClassification.IsSdkFailure(error))
+        {
+            return new RiotOrderStateReading(orderId, null, timeProvider.GetUtcNow());
+        }
+    }
+
+    public async Task<RiotOrderMissionFacts> ReadOrderMissionFactsAsync(
+        string upperId,
+        CancellationToken cancellationToken)
+    {
+        ArgumentException.ThrowIfNullOrWhiteSpace(upperId);
+        try
+        {
+            OrderLookupResult lookup = await riotSession.Order.FindOrderByUpperIdAsync(
+                upperId, cancellationToken).ConfigureAwait(false);
+            DateTimeOffset observedAt = timeProvider.GetUtcNow();
+            return lookup.Status switch
+            {
+                OrderLookupStatus.Found when lookup.Order is { } order &&
+                    string.Equals(order.UpperId, upperId, StringComparison.Ordinal) =>
+                    new RiotOrderMissionFacts(
+                        upperId,
+                        RiotOrderMissionFactsStatus.Found,
+                        order.OrderId,
+                        order.OrderState,
+                        order.Missions
+                            .Select(mission => new RiotOrderMissionFact(
+                                mission.Type,
+                                mission.MapId,
+                                mission.Destination,
+                                mission.ActionId,
+                                mission.ActionParam1,
+                                mission.ActionParam2,
+                                mission.ResultCode))
+                            .ToArray(),
+                        observedAt),
+                OrderLookupStatus.NotFound => new RiotOrderMissionFacts(
+                    upperId, RiotOrderMissionFactsStatus.NotFound, null, null, [], observedAt),
+                _ => UnknownMissionFacts(upperId, observedAt)
+            };
+        }
+        catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
+        {
+            throw;
+        }
+        catch (Exception error) when (RiotCallFailureClassification.IsSdkFailure(error))
+        {
+            return UnknownMissionFacts(upperId, timeProvider.GetUtcNow());
+        }
+    }
+
+    private static RiotOrderMissionFacts UnknownMissionFacts(string upperId, DateTimeOffset observedAt) =>
+        new(upperId, RiotOrderMissionFactsStatus.Unknown, null, null, [], observedAt);
 
     /// <summary>
     /// One motion-and-position sample for REQ-0247's combined stop proof.
@@ -462,8 +730,7 @@ public sealed class HttpRiotMovementGateway : IRiotMovementGateway, IRiotVehicle
             string.IsNullOrWhiteSpace(order.OrderId) ||
             !string.Equals(order.UpperId, expectedUpperId, StringComparison.Ordinal) ||
             string.IsNullOrWhiteSpace(vehicleKey) ||
-            movements.Length != 1 ||
-            movements[0].MapId is not > 0)
+            movements.Length == 0)
         {
             return Unknown(expectedUpperId, receipt with
             {
@@ -472,7 +739,26 @@ public sealed class HttpRiotMovementGateway : IRiotMovementGateway, IRiotVehicle
             });
         }
 
-        int? destination = movements[0].Destination ?? order.EndStationNo;
+        // RIoT expands an order whose target station has an enter_exit point into several moves: a
+        // charging order to 211 on maps 25 and 26 reads back as move(212) -> move(211) -> act(78,1,0),
+        // and the order after it may start with RIoT's own act(78,2,0). Act missions never decide the
+        // destination. With several moves the last one is the destination, and only when the order's
+        // endStationNo says the same: an order whose moves end somewhere other than where RIoT says it
+        // ends is not evidence of anything (the MVP rule of 3c9ced4). This holds for every order shape,
+        // not just charging: a transport order after leaving the charger may be expanded the same way.
+        OrderMissionSnapshot movement = movements[^1];
+        if (movement.MapId is not > 0 ||
+            (movements.Length > 1 &&
+             (order.EndStationNo is not > 0 || movement.Destination != order.EndStationNo)))
+        {
+            return Unknown(expectedUpperId, receipt with
+            {
+                Classification = "Indeterminate",
+                FailureCategory = "IDENTITY_INVALID"
+            });
+        }
+
+        int? destination = movement.Destination ?? order.EndStationNo;
         if (destination is not > 0)
         {
             return Unknown(expectedUpperId, receipt with
@@ -488,7 +774,7 @@ public sealed class HttpRiotMovementGateway : IRiotMovementGateway, IRiotVehicle
             order.OrderId,
             order.OrderState,
             vehicleKey,
-            movements[0].MapId,
+            movement.MapId,
             destination,
             receipt);
     }

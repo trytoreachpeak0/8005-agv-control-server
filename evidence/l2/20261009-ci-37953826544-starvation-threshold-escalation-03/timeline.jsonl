@@ -1,0 +1,69 @@
+{"at":"2026-10-09T16:25:37.0551936+00:00","note":"L2 run 20261009T162537016Z starting for scenario 'starvation-threshold-escalation'."}
+{"at":"2026-10-09T16:25:37.0924373+00:00","note":"L2 port block lock acquired (slot 4, Global\\W2G-L2PortBlock-slot4)."}
+{"at":"2026-10-09T16:25:37.0951771+00:00","note":"Build skipped (-SkipBuild); running the output already built."}
+{"at":"2026-10-09T16:25:38.0008274+00:00","criterion":"fake-riot-live","value":"live"}
+{"at":"2026-10-09T16:25:38.2269762+00:00","criterion":"fake-mes-live","value":"live"}
+{"at":"2026-10-09T16:25:38.3954814+00:00","note":"Fake RIoT stations on map 25: 11=C15-13, 12=N1-3_N1-7, 210=关卡, 305=派工待送取货"}
+{"at":"2026-10-09T16:25:38.4386245+00:00","note":"Task type station preset: the scenario's own (2 binding(s))"}
+{"at":"2026-10-09T16:25:43.8174597+00:00","note":"Package capacity rules imported."}
+{"at":"2026-10-09T16:25:43.8208733+00:00","note":"No waiting point registration: a single-vehicle rig, or WaitingPoints = $false."}
+{"at":"2026-10-09T16:25:45.8934234+00:00","criterion":"control-server-live","value":"(null)"}
+{"at":"2026-10-09T16:25:46.8146005+00:00","criterion":"control-server-live","value":"live"}
+{"at":"2026-10-09T16:25:46.9235388+00:00","note":"Protocol release identity: protocol-v3.0.0 (profileId AGV_FULL_PRODUCT, protocolVersion 4, APPROVED_RELEASE)."}
+{"at":"2026-10-09T16:25:47.6052908+00:00","criterion":"onboard-readiness","value":"DISCONNECTED"}
+{"at":"2026-10-09T16:25:47.8747405+00:00","criterion":"onboard-readiness","value":"READY"}
+{"at":"2026-10-09T16:25:47.9416566+00:00","criterion":"control-server-ready","value":"ready"}
+{"at":"2026-10-09T16:25:47.9923676+00:00","note":"FieldOps: seed-approved-facts --database C:\\actions-runner\\win11-01-control-server\\_work\\_temp\\l2-37953826544-1\\_stage\\l2-20261009T162537016Z-slot4\\controlserver.db"}
+{"at":"2026-10-09T16:25:49.8205011+00:00","criterion":"slot-model-preseed:seed-approved-facts","value":"OK","detail":{"output":{"command":"seed-approved-facts","outcome":"OK","modelKey":"8005-eight-slot","slotModelVersionId":"3e9c43e217c24a4980aff4ee3426f385","version":1,"slotCount":8}}}
+{"at":"2026-10-09T16:25:49.8287035+00:00","note":"FieldOps: bind-io --database C:\\actions-runner\\win11-01-control-server\\_work\\_temp\\l2-37953826544-1\\_stage\\l2-20261009T162537016Z-slot4\\controlserver.db --agv AGV-L2-001"}
+{"at":"2026-10-09T16:25:51.6067829+00:00","criterion":"slot-model-preseed:bind-io:AGV-L2-001","value":"OK","detail":{"output":{"command":"bind-io","outcome":"OK","agvId":"AGV-L2-001","slotModelVersionId":"3e9c43e217c24a4980aff4ee3426f385","boundSlots":8,"version":1}}}
+{"at":"2026-10-09T16:25:51.6588921+00:00","criterion":"slot-model-preseed:dispatch-zones","value":"0"}
+{"at":"2026-10-09T16:25:51.6632258+00:00","note":"FieldOps: import-area-assignments --database C:\\actions-runner\\win11-01-control-server\\_work\\_temp\\l2-37953826544-1\\_stage\\l2-20261009T162537016Z-slot4\\controlserver.db --input C:\\actions-runner\\win11-01-control-server\\_work\\_temp\\l2-37953826544-1\\starvation-threshold-escalation-03\\snapshots\\preseed-area-assignments.csv"}
+{"at":"2026-10-09T16:25:53.5830407+00:00","criterion":"slot-model-preseed:import-area-assignments","value":"OK","detail":{"output":{"command":"import-area-assignments","outcome":"OK","dryRun":false,"input":"C:\\actions-runner\\win11-01-control-server\\_work\\_temp\\l2-37953826544-1\\starvation-threshold-escalation-03\\snapshots\\preseed-area-assignments.csv","entryCount":2,"version":1,"contentSha256":"b171a68bf677fd0699480695430dcc0739669f639113cba26a1a91bf912ee283","snapshotId":"1505fb18e5d34750ba239184b09b06b3","importedAt":"2026-10-10T00:25:51.9073268+08:00","errorCount":0,"errors":[],"preview":[]}}}
+{"at":"2026-10-09T16:25:53.6022523+00:00","note":"FieldOps: import-charging-policy --database C:\\actions-runner\\win11-01-control-server\\_work\\_temp\\l2-37953826544-1\\_stage\\l2-20261009T162537016Z-slot4\\controlserver.db --input C:\\actions-runner\\win11-01-control-server\\_work\\_temp\\l2-37953826544-1\\starvation-threshold-escalation-03\\snapshots\\preseed-charging-policy.json --fleet BROKERX-L2-0001"}
+{"at":"2026-10-09T16:25:55.4634973+00:00","note":"FieldOps: approve-charging-policy --database C:\\actions-runner\\win11-01-control-server\\_work\\_temp\\l2-37953826544-1\\_stage\\l2-20261009T162537016Z-slot4\\controlserver.db --version 1 --approved-by L2 orchestrator --role L2_PRESET --basis scripts/l2/L2ChargingPolicy.psm1 --source L2_PRESET"}
+{"at":"2026-10-09T16:25:57.1598698+00:00","note":"FieldOps: activate-charging-policy --database C:\\actions-runner\\win11-01-control-server\\_work\\_temp\\l2-37953826544-1\\_stage\\l2-20261009T162537016Z-slot4\\controlserver.db --version 1 --activated-by L2 orchestrator --fleet BROKERX-L2-0001 --allow-non-field-approval"}
+{"at":"2026-10-09T16:25:58.9751460+00:00","criterion":"preseed:charging-policy","value":"OK","detail":{"source":"L2_PRESET","coveredAfter":["BROKERX-L2-0001"],"version":1,"withoutPolicy":[]}}
+{"at":"2026-10-09T16:25:58.9766585+00:00","note":"Per-zone dispatch parameters left unconfigured (the default precondition)."}
+{"at":"2026-10-09T16:25:58.9921917+00:00","note":"Environment is up; entering scenario 'starvation-threshold-escalation'."}
+{"at":"2026-10-09T16:25:59.0835107+00:00","note":"Publishing WIRE_TO_GATE demand BUSY ece334d0f79c4c85b6fa05c5fc5ee957 (area N1-3, created locally at 2026-10-09T15:55:59.0705130+00:00)."}
+{"at":"2026-10-09T16:25:59.1579295+00:00","criterion":"journey-stage","value":"(null)"}
+{"at":"2026-10-09T16:26:00.4395788+00:00","criterion":"journey-stage","value":"AwaitingPickupArrival"}
+{"at":"2026-10-09T16:26:00.4438569+00:00","note":"Publishing WIRE_TO_GATE demand HUNGRY 1c1a2c583cb849cdb2726516d0969e2b (area N1-3, created locally at 2026-10-09T16:20:59.0705130+00:00)."}
+{"at":"2026-10-09T16:26:00.4646238+00:00","note":"Publishing STAGING_TO_WIRE demand STAGING1 a1e8e24a95f04cef83b48b42e2451793 (area N1-7, created locally at 2026-10-09T16:25:54.0705130+00:00)."}
+{"at":"2026-10-09T16:26:00.4800347+00:00","criterion":"backlog-rows","value":"0"}
+{"at":"2026-10-09T16:26:01.2526766+00:00","criterion":"backlog-rows","value":"2"}
+{"at":"2026-10-09T16:26:01.2685814+00:00","criterion":"to-pickup-intent","value":"@{UpperId=W2G-ece334d0-f79c-4c85-b6fa-05c5fc5ee957-PICKUP-1; OrderId=ORDER-000001; Status=CONFIRMED}"}
+{"at":"2026-10-09T16:26:01.8721140+00:00","criterion":"journey-stage","value":"AwaitingSublot"}
+{"at":"2026-10-09T16:26:02.9469858+00:00","criterion":"journey-stage","value":"AwaitingLoadResult"}
+{"at":"2026-10-09T16:26:03.7261815+00:00","criterion":"journey-stage","value":"AwaitingStationDeparture"}
+{"at":"2026-10-09T16:26:34.6348310+00:00","criterion":"journey-stage","value":"AwaitingGateArrival"}
+{"at":"2026-10-09T16:26:34.6413665+00:00","criterion":"to-gate-intent","value":"@{UpperId=W2G-ece334d0-f79c-4c85-b6fa-05c5fc5ee957-GATE-1; OrderId=ORDER-000002; Status=CONFIRMED}"}
+{"at":"2026-10-09T16:26:35.9512798+00:00","criterion":"journey-stage","value":"AwaitingUnloadResult"}
+{"at":"2026-10-09T16:26:36.7125368+00:00","criterion":"journey-stage","value":"Completed"}
+{"at":"2026-10-09T16:26:36.7211763+00:00","criterion":"first-accepted","value":""}
+{"at":"2026-10-09T16:26:37.7480778+00:00","criterion":"first-accepted","value":"STAGING1"}
+{"at":"2026-10-09T16:26:37.7732672+00:00","criterion":"hungry-rejudged","value":"@{ReasonCode=ELIGIBLE; FirstSeenAt=2026-10-09 16:26:01.0281176+00:00; LastSeenAt=2026-10-09 16:26:37.4045696+00:00; AcceptedAt=; StarvationEscalatedAt=; StarvationEscalationParameterVersion=}"}
+{"at":"2026-10-09T16:26:38.7837839+00:00","criterion":"hungry-rejudged","value":"@{ReasonCode=ROUTE_GRAPH_NEVER_REFRESHED; FirstSeenAt=2026-10-09 16:26:01.0281176+00:00; LastSeenAt=2026-10-09 16:26:38.4600278+00:00; AcceptedAt=; StarvationEscalatedAt=; StarvationEscalationParameterVersion=}"}
+{"at":"2026-10-09T16:26:39.1128037+00:00","note":"FieldOps: import-dispatch-zone-parameters --database C:\\actions-runner\\win11-01-control-server\\_work\\_temp\\l2-37953826544-1\\_stage\\l2-20261009T162537016Z-slot4\\controlserver.db --input C:\\actions-runner\\win11-01-control-server\\_work\\_temp\\l2-37953826544-1\\starvation-threshold-escalation-03\\snapshots\\starvation-threshold.csv"}
+{"at":"2026-10-09T16:26:40.9020135+00:00","criterion":"dispatch-zone-parameters-import","value":"OK","detail":{"output":{"command":"import-dispatch-zone-parameters","outcome":"OK","dryRun":false,"input":"C:\\actions-runner\\win11-01-control-server\\_work\\_temp\\l2-37953826544-1\\starvation-threshold-escalation-03\\snapshots\\starvation-threshold.csv","entryCount":1,"previousVersion":null,"version":1,"contentSha256":"477dea62db7151c215a050e5fdfc58b9234593ac34a4950d4771c02e27bf6e89","snapshotId":"978e5bc6c21244f98eabba393603a57a","loadedAt":"2026-10-10T00:26:39.3484201+08:00","errorCount":0,"errors":[],"changes":[{"dispatchZone":"MAP-25-WIRE_TO_GATE","before":null,"after":{"enRouteAdditionMaxPathCostIncreaseMm":null,"starvationThresholdSeconds":60}}]}}}
+{"at":"2026-10-09T16:26:40.9091269+00:00","criterion":"escalation-mark","value":"@{ReasonCode=ROUTE_GRAPH_NEVER_REFRESHED; FirstSeenAt=2026-10-09 16:26:01.0281176+00:00; LastSeenAt=2026-10-09 16:26:39.4593354+00:00; AcceptedAt=; StarvationEscalatedAt=; StarvationEscalationParameterVersion=}"}
+{"at":"2026-10-09T16:26:41.1700630+00:00","criterion":"escalation-mark","value":"@{ReasonCode=ROUTE_GRAPH_NEVER_REFRESHED; FirstSeenAt=2026-10-09 16:26:01.0281176+00:00; LastSeenAt=2026-10-09 16:26:40.9317998+00:00; AcceptedAt=; StarvationEscalatedAt=2026-10-09 16:26:40.9317998+00:00; StarvationEscalationParameterVersion=1}"}
+{"at":"2026-10-09T16:26:41.4931168+00:00","criterion":"escalation-log","value":"[00:26:41 WRN] Starvation escalation: demand 1c1a2c58-3cb8-49cd-b272-6516d0969e2b (L2-TPB-HUNGRY-20261009T162537016Z|WIRE_TO_GATE) in dispatch zone MAP-25-WIRE_TO_GATE has waited 341 s since it was created locally, past the zone's 60 s anti-starvation threshold (dispatch zone parameter version 1). It now goes ahead of every task that is not overdue; hard gates still apply."}
+{"at":"2026-10-09T16:26:41.4985936+00:00","note":"Publishing STAGING_TO_WIRE demand STAGING2 f6c342d7342143c29e8eb437d28321bb (area N1-7, created locally at 2026-10-09T16:26:41.4983880+00:00)."}
+{"at":"2026-10-09T16:26:41.5238850+00:00","criterion":"backlog-rows","value":"(null)"}
+{"at":"2026-10-09T16:26:42.7844905+00:00","criterion":"backlog-rows","value":"@{ReasonCode=ROUTE_GRAPH_NEVER_REFRESHED; FirstSeenAt=2026-10-09 16:26:42.4721247+00:00; LastSeenAt=2026-10-09 16:26:42.4721247+00:00; AcceptedAt=; StarvationEscalatedAt=; StarvationEscalationParameterVersion=}"}
+{"at":"2026-10-09T16:26:42.7906685+00:00","criterion":"to-pickup-intent","value":"@{UpperId=W2G-a1e8e24a-95f0-4cef-83b4-8b42e2451793-PICKUP-1; OrderId=ORDER-000003; Status=CONFIRMED}"}
+{"at":"2026-10-09T16:26:42.8399560+00:00","criterion":"journey-stage","value":"AwaitingPickupArrival"}
+{"at":"2026-10-09T16:26:44.1162014+00:00","criterion":"journey-stage","value":"AwaitingSublot"}
+{"at":"2026-10-09T16:26:44.6232513+00:00","criterion":"journey-stage","value":"AwaitingLoadResult"}
+{"at":"2026-10-09T16:26:45.6529692+00:00","criterion":"journey-stage","value":"AwaitingStationDeparture"}
+{"at":"2026-10-09T16:27:15.6144151+00:00","criterion":"journey-stage","value":"AwaitingDepartureSafety"}
+{"at":"2026-10-09T16:27:15.8773519+00:00","criterion":"journey-stage","value":"AwaitingGateArrival"}
+{"at":"2026-10-09T16:27:15.8814212+00:00","criterion":"to-gate-intent","value":"@{UpperId=W2G-a1e8e24a-95f0-4cef-83b4-8b42e2451793-GATE-1; OrderId=ORDER-000004; Status=CONFIRMED}"}
+{"at":"2026-10-09T16:27:16.9902904+00:00","criterion":"journey-stage","value":"AwaitingUnloadResult"}
+{"at":"2026-10-09T16:27:17.7877244+00:00","criterion":"journey-stage","value":"Completed"}
+{"at":"2026-10-09T16:27:17.7933220+00:00","criterion":"second-accepted","value":""}
+{"at":"2026-10-09T16:27:18.8369250+00:00","criterion":"second-accepted","value":"HUNGRY"}
+{"at":"2026-10-09T16:27:19.4717588+00:00","note":"Scenario finished."}
+{"at":"2026-10-09T16:27:20.0087293+00:00","note":"L2 port block lock released."}

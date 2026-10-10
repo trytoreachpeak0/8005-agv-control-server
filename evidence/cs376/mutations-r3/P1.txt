@@ -1,0 +1,19 @@
+== P1 src/ControlServer.Host/Transport/OnboardRecoveryCoordinator.cs
+hits=1 line=1414
+--- before
+        await FaultedCargoBindings.StageReleaseWhenNothingLeftOnBoardAsync(
+                dbContext, runtime.JourneyId, runtime.AgvId, HandedOffInExceptionSessionReason, now, cancellationToken)
+            .ConfigureAwait(false);
+--- after
+        foreach (FaultedVehicleCargoRow cargo in await dbContext.FaultedVehicleCargo
+                     .Where(row => row.AgvId == runtime.AgvId && row.ReleasedAt == null)
+                     .ToArrayAsync(cancellationToken).ConfigureAwait(false))
+        {
+            cargo.ReleasedAt = now;
+            cargo.ReleasedReason = HandedOffInExceptionSessionReason;
+        }
+build exit=0
+test exit=1
+Failed FaultedCargoBindingLifecycleTests.AHandoffKeepsTheBindingWhileAnotherDemandIsStillOnBoard(bindingNames: "ended-anchor")
+Failed FaultedCargoBindingLifecycleTests.AHandoffKeepsTheBindingWhileAnotherDemandIsStillOnBoard(bindingNames: "handed-off-demand")
+Failed!  - Failed:     2, Passed:   525, Skipped:     0, Total:   527, Duration: 1 m 41 s - dll (net8.0)

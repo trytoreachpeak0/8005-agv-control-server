@@ -1,0 +1,47 @@
+=== control-server#262 review follow-up: do the parallel instance's paths and names already exist? (read-only) ===
+taken: 2026-09-21T10:20:28.0075025+08:00
+
+--- directories the parallel instance would create (must all be absent) ---
+C:\Program Files\8005 AGV\ControlServer.V2                 absent
+C:\Program Files\8005 AGV\ControlServer.V2.FakeMesIngest   absent
+C:\ProgramData\8005\ControlServer.V2                       absent
+C:\ProgramData\8005\ControlServer.V2-backups               absent
+D:\zhengyushao\ControlServer.V2                            absent
+D:\zhengyushao\ControlServer.V2.previous                   absent
+D:\zhengyushao\control-server-v2-ops                       absent
+D:\zhengyushao\control-server-v2-staging                   absent
+
+--- staging directories matching the OLD unprefixed glob in D:\zhengyushao (both instances' cleanup reached these) ---
+count: 0
+
+--- siblings in D:\zhengyushao (who else lives next to the package roots) ---
+  ControlServer
+  ControlServer.previous
+  control-server-ops
+  control-server-staging
+  Hyper-V
+  installer
+  MesIngest
+  MesIngest.previous
+  mes-ingest-ops
+  mes-ingest-staging
+  RabbitMQ
+  vm-staging
+  w1-20260913
+
+--- names ---
+service '8005 AGV ControlServer V2'                 : absent
+task '8005 AGV ControlServer V2 FakeMesIngest'      : absent
+firewall '8005 AGV ControlServer V2 58105' : absent
+firewall '8005 AGV ControlServer V2 58107' : absent
+
+--- listening ports, re-checked ---
+58105: free
+58107: free
+58109: free
+58188: free
+--- are any of the four held by an outbound (ephemeral) connection right now? ---
+58105: 0 connection(s) using it as local port
+58107: 0 connection(s) using it as local port
+58109: 0 connection(s) using it as local port
+58188: 0 connection(s) using it as local port

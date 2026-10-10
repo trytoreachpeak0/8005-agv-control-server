@@ -1,0 +1,32 @@
+# injection: l1-07-a-departing-full-vehicle-is-not-standing
+# file: src/ControlServer.Infrastructure/Persistence/StationYield.cs
+--- 
++++ 
+@@ -35,3 +35,2 @@
+             or JourneyRuntimeStage.AwaitingStationDeparture
+-            or JourneyRuntimeStage.AwaitingDepartureSafety
+             or JourneyRuntimeStage.AwaitingUnloadResult;
+# build:
+0 Error(s)
+# test run (filter: FullyQualifiedName~Batch7StationYield|FullyQualifiedName~LoadingPhaseMachineTests|FullyQualifiedName~DispatchVehicleOrderingTests):
+  Failed ControlServer.Tests.Batch7StationYieldTriggerTests.AVehicleAcceptedForTheStationWhereAnotherHoldsMakesItYield(stage: AwaitingDepartureSafety, state: "VEHICLE_FULL") [861 ms]
+  Error Message:
+   Assert.Equal() Failure: Values differ
+Expected: 2026-09-19T09:03:00.0000000+00:00
+Actual:   null
+     at ControlServer.Tests.Batch7StationYieldTriggerTests.AVehicleAcceptedForTheStationWhereAnotherHoldsMakesItYield(JourneyRuntimeStage stage, String state) in C:\Users\szy\Desktop\8005-workspace-v2\worktrees\b7-08-8005-agv-control-server\tests\ControlServer.Tests\Batch7StationYieldTriggerTests.cs:line 57
+   at ControlServer.Tests.Batch7StationYieldTriggerTests.AVehicleAcceptedForTheStationWhereAnotherHoldsMakesItYield(JourneyRuntimeStage stage, String state) in C:\Users\szy\Desktop\8005-workspace-v2\worktrees\b7-08-8005-agv-control-server\tests\ControlServer.Tests\Batch7StationYieldTriggerTests.cs:line 58
+  Failed ControlServer.Tests.Batch7StationYieldTriggerTests.AVehicleAcceptedForTheStationWhereAnotherHoldsMakesItYield(stage: AwaitingDepartureSafety, state: "CARGO_HOLDING_WAIT") [1 s]
+  Error Message:
+   Assert.Equal() Failure: Values differ
+Expected: 2026-09-19T09:03:00.0000000+00:00
+Actual:   null
+     at ControlServer.Tests.Batch7StationYieldTriggerTests.AVehicleAcceptedForTheStationWhereAnotherHoldsMakesItYield(JourneyRuntimeStage stage, String state) in C:\Users\szy\Desktop\8005-workspace-v2\worktrees\b7-08-8005-agv-control-server\tests\ControlServer.Tests\Batch7StationYieldTriggerTests.cs:line 57
+   at ControlServer.Tests.Batch7StationYieldTriggerTests.AVehicleAcceptedForTheStationWhereAnotherHoldsMakesItYield(JourneyRuntimeStage stage, String state) in C:\Users\szy\Desktop\8005-workspace-v2\worktrees\b7-08-8005-agv-control-server\tests\ControlServer.Tests\Batch7StationYieldTriggerTests.cs:line 58
+  Failed ControlServer.Tests.Batch7StationYieldTriggerTests.TheNextStopIsWhereTheVehicleGoesNext(stage: AwaitingDepartureSafety, expected: "D") [6 ms]
+  Error Message:
+   Assert.Equal() Failure: Strings differ
+Expected: "D"
+Actual:   "B"
+     at ControlServer.Tests.Batch7StationYieldTriggerTests.TheNextStopIsWhereTheVehicleGoesNext(JourneyRuntimeStage stage, String expected) in C:\Users\szy\Desktop\8005-workspace-v2\worktrees\b7-08-8005-agv-control-server\tests\ControlServer.Tests\Batch7StationYieldTriggerTests.cs:line 269
+Failed!  - Failed:     3, Passed:   109, Skipped:     0, Total:   112, Duration: 52 s - ControlServer.Tests.dll (net8.0)

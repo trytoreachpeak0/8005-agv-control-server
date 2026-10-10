@@ -35,7 +35,16 @@
 .PARAMETER SelfCheckControlServerCommit
     For developing a scenario before the shared binding has moved: clone this ControlServer commit
     instead of the bound one. The run records controlServerCommitSource = SELF_CHECK_OVERRIDE and must
-    not be committed as gate evidence -- ticket 23's self-check runs go to a temporary directory.
+    not be committed as gate evidence -- ticket 23's self-check runs go to a temporary directory. Since
+    control-server#460 the evidence says so itself: every slice is graded formalSlicePass false with
+    formalSliceWithheldReason SELF_CHECK_OVERRIDE, whatever its assertions said.
+
+.PARAMETER SelfCheckOnboardCommit
+    The same thing for the onboard half (control-server#211). The shared binding is deliberately frozen and
+    moves in an exit ticket's first step, but New-ExactClone requires -OnboardCommit to be the tip of
+    -OnboardRemoteRef, so a self-check run on a day the tip has moved cannot use the bound commit at all --
+    it fails before any scenario starts. This parameter is the way through, and like the one above it marks
+    the run: onboardCommitSource = SELF_CHECK_OVERRIDE, not gate evidence.
 #>
 [CmdletBinding()]
 param(
@@ -57,6 +66,7 @@ param(
     [string]$SharedRunnerSource = (Join-Path $PSScriptRoot 'run-staged-g3.ps1'),
     [string]$CommitBindingFunctionSource = (Join-Path $PSScriptRoot 'run-staged-g3-restart.ps1'),
     [ValidatePattern('^[0-9a-f]{40}$')][string]$SelfCheckControlServerCommit,
+    [ValidatePattern('^[0-9a-f]{40}$')][string]$SelfCheckOnboardCommit,
     # Which batch's exit this run is evidence for, passed through to every scenario's assertions.json
     # (control-server#201). Left out it says 'unspecified' -- it used to be a literal 'batch-2'.
     [string]$BatchId = 'unspecified'
@@ -190,9 +200,25 @@ $scenarioAssertions = [ordered]@{
         'G3-07-53' = 'eligibilityReevaluatedAfterReturn'
         'G3-07-54' = 'manualChargingReturnHasNoSideEffects'
     }
+    # Batch 8 (control-server#383, REQ-0359): the two slot fault declaration vectors protocol 3.0.0 added to FP-IS-07, one
+    # demand, two stops. At the pickup the declaration is lost on the relay, the load settles, the reconnect replays it and
+    # the onboard refuses it (CV-SLOT-FAULT-DECLARATION-NOT-APPLICABLE); at the gate it applies and the journey blocks
+    # (CV-SLOT-FAULT-DECLARATION-APPLIED). Needs an onboard with onboard-hmi#215.
+    'g3-slot-fault-declaration' = [ordered]@{
+        'G3-07-61' = 'slotFaultDeclarationNotApplicableSequenceMatchesVector'
+        'G3-07-62' = 'slotFaultDeclaredOnlyOnOverdueSlot'
+        'G3-07-63' = 'operationSettledNormallyWhileDeclarationPending'
+        'G3-07-64' = 'settledAttemptAnswersDeclarationNotApplicable'
+        'G3-07-65' = 'refusedDeclarationWithdrawnWithoutBusinessChange'
+        'G3-07-66' = 'slotFaultDeclarationAppliedSequenceMatchesVector'
+        'G3-07-67' = 'declaredSlotReportedUnknownLaterSlotsNotStarted'
+        'G3-07-68' = 'journeyBlockedOnDeclaredUnknown'
+        'G3-07-69' = 'declarationAndVehicleResultAudited'
+        'G3-07-70' = 'neverUnlockAfterDeclarationApplied'
+    }
     # Batch 6 (control-server#164): CV-TASK-TYPE-ADMISSION-FAIL-CLOSED under the factory preset, where
-    # STAGING_TO_WIRE is in no demand set and has no binding. DISPLAY_ADMISSION_BLOCK_REASON is not claimed:
-    # specification 5.3 keeps the reason on the server, so v2 has no producer for it (program#125).
+    # STAGING_TO_WIRE is in no demand set and has no binding. DISPLAY_ADMISSION_BLOCK_REASON is no longer in the
+    # vector: protocol 3.0.0 deleted it (program#125, control-server#382), as specification 5.3 keeps the reason on the server.
     'g3-task-type-admission-fail-closed' = [ordered]@{
         'G3-10-01' = 'unboundTaskTypeDemandNeverAccepted'
         'G3-10-02' = 'unboundTaskTypeNeverPlannedListedOrOrdered'
@@ -216,6 +242,71 @@ $scenarioAssertions = [ordered]@{
         'G3-11-07' = 'originAndDestinationNeverSwapped'
         'G3-11-08' = 'admissionFrozenOnTheUnload'
         'G3-11-09' = 'reversedJourneyFinalStateNoDuplicateCommit'
+    }
+    # Batch 7 (control-server#218): CV-MULTI-STOP-PLAN-NINE-LEGS. One vehicle, two demands at two pickup stations
+    # and one gate; the second is appended en route, so the plan grows from two legs to three and is replaced on
+    # the vehicle. The vector covers plan legs only; nine legs is the two G2s' to prove, this proves a real plan of
+    # three or more, run to completion.
+    'g3-multi-stop-plan' = [ordered]@{
+        'G3-08-01' = 'everyPlanRevisionSequencedFromOneWithAPurposePerLeg'
+        'G3-08-02' = 'appendedPlanAdvancesRevisionWithAtLeastThreeLegs'
+        'G3-08-03' = 'planLegsSentInSequenceOrder'
+        'G3-08-04' = 'multiStopSequenceMatchesVector'
+        'G3-08-05' = 'onboardShowsTheDispatchPlanInSequenceOrder'
+        'G3-08-06' = 'onboardShowsTheAppendedPlanInSequenceOrder'
+        'G3-08-07' = 'multiStopJourneyEachDemandLoadedAndUnloadedOnce'
+    }
+    # Batch 8 (control-server#390): CV-WAITING-POINT-IDLE-RETURN. One vehicle unloads, has no demand left and
+    # returns idle to waiting point 214, converges there, and is taken away by the next demand. Guards the two
+    # cross-ticket contracts with onboard-hmi#217: the release sends a business state whose activePurpose is no
+    # longer IDLE_RETURN, and the waiting-point leg follows the facts (ARRIVED while the vehicle stands there,
+    # gone once the next journey's plan replaces it); the pickup entry that follows still opens.
+    'g3-waiting-point-idle-return' = [ordered]@{
+        'G3-12-01' = 'idleReturnPlanBeforeBusinessStateBothAcknowledged'
+        'G3-12-02' = 'onboardShowsEnRouteToWaitingPoint'
+        'G3-12-03' = 'convergedWithArrivedLegAndIdleReturnWithdrawn'
+        'G3-12-04' = 'nextJourneyPlanReplacesTheWaitingPointLeg'
+        'G3-12-05' = 'pickupEntryOpensAfterIdleReturnAndPointReleasedOnDeparture'
+        'G3-12-06' = 'idleReturnJourneyFinalStateNoDuplicateCommit'
+        'G3-12-07' = 'onboardNeverLoadsAtWaitingPoint'
+    }
+    # Batch 9 (control-server#405): CV-AUTOMATIC-CHARGING-CYCLE. One vehicle pushed below its mandatory charge line is sent
+    # to charger 211, charges, is not dispatched while charging, completes, and is taken away by the next demand; the
+    # charger is released only once the vehicle has left it. Onboard half onboard-hmi#220 (ChargingStatus, no entry at the
+    # charger); the cross-ticket contract is G3-13-06 (the next plan carries no CHARGER leg, the pickup entry opens).
+    # CV-MANUAL-STATION-CLEARANCE and CV-UNABLE-TO-CHARGE-FIELD-CONFIRMATION are FP-IS-13's too; their scenarios are written
+    # by control-server#406 and #410 and registered below by the exit ticket control-server#412 (G3-13-11 onwards).
+    'g3-automatic-charging-cycle' = [ordered]@{
+        'G3-13-01' = 'chargerPlanBeforeChargingBusinessStateBothAcknowledged'
+        'G3-13-02' = 'chargingPurposeClaimedFromAllocationUntilComplete'
+        'G3-13-03' = 'onboardShowsChargingAndNeverLoadsAtCharger'
+        'G3-13-04' = 'neverDispatchedWhileChargingBelowCompletion'
+        'G3-13-05' = 'completeWithArrivedChargerLegPurposeReleasedChargerKept'
+        'G3-13-06' = 'nextJourneyLeavesChargerAndChargerReleasedOnDeparture'
+        'G3-13-07' = 'chargingCycleFinalStateNoDuplicateOrder'
+    }
+    # Batch 9 (control-server#406, registered by the exit ticket control-server#412): CV-MANUAL-STATION-CLEARANCE. 407802 +
+    # final HANG at 211 pauses the charger and holds the vehicle in CLEARING_MAINTENANCE; the vehicle is moved off and the
+    # old order cancelled in RIoT, and an R-11 operator confirms the clearance on the real onboard (onboard-hmi#221): the
+    # charger is released only on that confirmation and the pause stays.
+    'g3-manual-station-clearance' = [ordered]@{
+        'G3-13-11' = 'unableToChargePausesChargerAndClearingStateAcknowledged'
+        'G3-13-12' = 'onboardShowsUnableToChargeAndClearanceEntry'
+        'G3-13-13' = 'clearanceRequestedAndConfirmedWithStationReleased'
+        'G3-13-14' = 'chargerReleasedOnlyOnConfirmedClearanceNoOrderCommand'
+    }
+    # Batch 9 (control-server#410, registered by the exit ticket control-server#412): CV-UNABLE-TO-CHARGE-FIELD-CONFIRMATION.
+    # A HANG at 211 without the verified 407802 is not confirmed automatically; an R-11 operator confirms "cannot connect" on
+    # the real onboard (onboard-hmi#222, entry switched on for this run by the scenario's setup), the server decides
+    # MANUAL_CHARGING_HOLD centrally, pauses 211 and holds the vehicle in CLEARING_MAINTENANCE. G3-13-27 needs onboard-hmi#242.
+    'g3-unable-to-charge-field-confirmation' = [ordered]@{
+        'G3-13-21' = 'hangWithoutVerifiedCodeIsNotConfirmedAutomatically'
+        'G3-13-22' = 'onboardShowsUnableToChargeEntryAtCharger'
+        'G3-13-23' = 'fieldConfirmationRequestedAndConfirmedWithManualHold'
+        'G3-13-24' = 'clearingBusinessStateAfterResultAcknowledged'
+        'G3-13-25' = 'fieldConfirmationPausesChargerAndRecordsObservation'
+        'G3-13-26' = 'vehicleHeldInPlaceNoDuplicateOrder'
+        'G3-13-27' = 'onboardKeepsConfirmedResultAfterClearing'
     }
 }
 
@@ -252,19 +343,36 @@ $ControlServerCommit = $commitBinding['ControlServerCommit']
 $OnboardCommit = $commitBinding['OnboardCommit']
 $SimulatorCommit = $commitBinding['SimulatorCommit']
 $ProtocolCommit = $commitBinding['ProtocolCommit']
-$controlServerCommitSource = 'SHARED_BINDING'
+$sharedRunnerSha256 = (Get-FileHash -LiteralPath $SharedRunnerSource -Algorithm SHA256).Hash.ToLowerInvariant()
+
+$G3RunKind = 'JOURNEY_G3_REAL_ONBOARD_SIMULATED_COUNTERPARTS'
+. (Join-Path $PSScriptRoot 'g3-slice-evidence.ps1')
+
+# control-server#466: the repository this script lives in (not -ControlServerRepository), whether any path
+# parameter that decides what the run reads was moved off its default, and the binding as HEAD committed it,
+# which the commits read off -SharedRunnerSource are compared with. Before anything is written.
+$runnerProvenance = Get-G3RunnerProvenance -ScriptRoot $PSScriptRoot -Inputs ([ordered]@{
+        SharedRunnerSource = @{ Given = $SharedRunnerSource; Default = (Join-Path $PSScriptRoot 'run-staged-g3.ps1') }
+        CommitBindingFunctionSource = @{ Given = $CommitBindingFunctionSource; Default = (Join-Path $PSScriptRoot 'run-staged-g3-restart.ps1') }
+        ControlServerRepository = @{ Given = $ControlServerRepository; Default = (Split-Path -Parent $PSScriptRoot) }
+    })
+Write-G3RunnerProvenance -Provenance $runnerProvenance
+$runnerCommit = $runnerProvenance.runnerCommit
+if ($null -eq $runnerCommit) { throw "Unable to read the runner commit: $($runnerProvenance.runnerSource)" }
+$runnerWorktreeClean = $runnerProvenance.runnerWorktreeClean
+$bindingSources = Get-G3CommitSources -Binding ($runnerProvenance.bindingAtHead ?? $commitBinding) -Actual $commitBinding
+$controlServerCommitSource = $bindingSources['controlServerCommitSource']
 if (-not [string]::IsNullOrEmpty($SelfCheckControlServerCommit)) {
     $ControlServerCommit = $SelfCheckControlServerCommit
     $controlServerCommitSource = 'SELF_CHECK_OVERRIDE'
 }
-$sharedRunnerSha256 = (Get-FileHash -LiteralPath $SharedRunnerSource -Algorithm SHA256).Hash.ToLowerInvariant()
-
-$runnerCommit = (& git -C $ControlServerRepository rev-parse HEAD).Trim()
-if ($LASTEXITCODE -ne 0) { throw "Unable to read the runner commit from $ControlServerRepository" }
-$runnerWorktreeClean = @(& git -C $ControlServerRepository status --porcelain).Count -eq 0
-
-$G3RunKind = 'JOURNEY_G3_REAL_ONBOARD_SIMULATED_COUNTERPARTS'
-. (Join-Path $PSScriptRoot 'g3-slice-evidence.ps1')
+$onboardCommitSource = $bindingSources['onboardCommitSource']
+if (-not [string]::IsNullOrEmpty($SelfCheckOnboardCommit)) {
+    $OnboardCommit = $SelfCheckOnboardCommit
+    $onboardCommitSource = 'SELF_CHECK_OVERRIDE'
+}
+$simulatorCommitSource = $bindingSources['simulatorCommitSource']
+$protocolCommitSource = $bindingSources['protocolCommitSource']
 if (-not [string]::IsNullOrEmpty($Slice)) { Assert-G3SliceIsClaimedBy -RunKind $G3RunKind -Slice $Slice }
 
 if (Test-Path -LiteralPath $StageRoot) { throw "StageRoot must not already exist: $StageRoot" }
@@ -551,10 +659,14 @@ $commitsRecord = [ordered]@{
     controlServer = $ControlServerCommit
     controlServerCommitSource = $controlServerCommitSource
     onboardHmi = $OnboardCommit
+    onboardCommitSource = $onboardCommitSource
     slotsSimulator = $SimulatorCommit
+    simulatorCommitSource = $simulatorCommitSource
     protocol = $ProtocolCommit
+    protocolCommitSource = $protocolCommitSource
     runner = $runnerCommit
     runnerWorktreeCleanAtStart = $runnerWorktreeClean
+    runnerSource = $runnerProvenance.runnerSource
 }
 
 $gateResultPaths = @()
@@ -613,6 +725,7 @@ $configuration = [ordered]@{
         sourceSha256 = $sharedRunnerSha256
         readFrom = 'param-block-defaults'
         controlServerCommitSource = $controlServerCommitSource
+        onboardCommitSource = $onboardCommitSource
     }
     scenarios = @($scenarioAssertions.Keys)
     secretVariablesScanned = $secretVariableNames
@@ -640,7 +753,7 @@ $result = [ordered]@{
     completedAtUtc = [DateTimeOffset]::UtcNow
     status = $status
     classification = (New-G3Classification -RunKind $G3RunKind -RunStatus $status `
-        -AssertionReport $assertionReport -RunnerErrored:($null -ne $runError))
+        -AssertionReport $assertionReport -Commits $commitsRecord -RunnerErrored:($null -ne $runError))
     gateResults = @($gateResultPaths | ForEach-Object {
         [IO.Path]::GetRelativePath($EvidenceRoot, $_).Replace('\', '/') })
     commits = $commitsRecord

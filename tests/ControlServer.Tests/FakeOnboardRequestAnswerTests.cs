@@ -75,6 +75,31 @@ public sealed class FakeOnboardRequestAnswerTests
         Assert.Equal(first.GetRawText(), replayed.GetRawText());
     }
 
+    /// <summary>
+    /// v3 (control-server#382): the answer carries back the <c>checkPurpose</c> it was asked for.
+    /// </summary>
+    /// <remarks>
+    /// The schema makes <c>checkPurpose</c> required on <c>PreDepartureSafetyCheckResult</c>, so an answer without it is
+    /// one the real peer would never send. The server does not validate inbound lines against the schema
+    /// (<c>OnboardMessageProcessor</c> stores a <c>PreDepartureSafetyCheckResult</c> as it arrives), so a synthetic peer
+    /// that forgot the field would keep every L2 scenario green while testing an answer that cannot exist. Nothing but
+    /// this test would notice. Every purpose is echoed as given: the peer answers the question it was asked.
+    /// </remarks>
+    [Theory]
+    [InlineData("DEPARTURE")]
+    [InlineData("NON_BUSINESS_MOVE")]
+    [InlineData("HOLD_RELEASE")]
+    public async Task TheSafetyCheckAnswerCarriesBackTheCheckPurposeItWasAskedFor(string checkPurpose)
+    {
+        await using ServerSide server = await ServerSide.ConnectAsync();
+
+        await server.SendAsync(ServerSide.PreDepartureSafetyCheck(
+            Guid.NewGuid().ToString("D"), Guid.NewGuid().ToString("D"), checkPurpose));
+        JsonElement answer = await server.ReadAsync("PreDepartureSafetyCheckResult");
+
+        Assert.Equal(checkPurpose, answer.GetProperty("payload").GetProperty("checkPurpose").GetString());
+    }
+
     /// <summary>ControlServer's end of the session, just enough of it to get the peer to READY.</summary>
     private sealed class ServerSide : IAsyncDisposable
     {
@@ -162,10 +187,12 @@ public sealed class FakeOnboardRequestAnswerTests
                 expiresOnRevisionChange = true
             });
 
-        public static object PreDepartureSafetyCheck(string messageId, string preDepartureSafetyCheckId) =>
+        public static object PreDepartureSafetyCheck(
+            string messageId, string preDepartureSafetyCheckId, string checkPurpose = "DEPARTURE") =>
             Request("PreDepartureSafetyCheck", messageId, new
             {
                 preDepartureSafetyCheckId,
+                checkPurpose,
                 demandId = Guid.NewGuid().ToString("D"),
                 movementLegId = Guid.NewGuid().ToString("D"),
                 expectedSafetyStateVersion = 1L,

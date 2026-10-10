@@ -1,0 +1,55 @@
+{"at":"2026-09-22T07:38:48.2895817+00:00","note":"L2 run 20260922T073848246Z starting for scenario 'command-surface-order-hold'."}
+{"at":"2026-09-22T07:38:48.3291834+00:00","note":"L2 port block lock acquired (slot 4, Global\\W2G-L2PortBlock-slot4)."}
+{"at":"2026-09-22T07:38:48.3320455+00:00","note":"Build skipped (-SkipBuild); running the output already built."}
+{"at":"2026-09-22T07:38:49.2000978+00:00","criterion":"fake-riot-live","value":"live"}
+{"at":"2026-09-22T07:38:49.5045558+00:00","criterion":"fake-mes-live","value":"live"}
+{"at":"2026-09-22T07:38:49.6031274+00:00","note":"Fleet of 3: AGV-L2-001/BROKERX-L2-0001, AGV-L2-002/BROKERX-L2-0002, AGV-L2-003/BROKERX-L2-0003"}
+{"at":"2026-09-22T07:38:49.6295146+00:00","note":"Task type station preset: default (map 25, WIRE_TO_GATE -> 关卡/210)"}
+{"at":"2026-09-22T07:38:53.2755093+00:00","note":"Package capacity rules imported."}
+{"at":"2026-09-22T07:38:55.3512133+00:00","criterion":"control-server-live","value":"(null)"}
+{"at":"2026-09-22T07:38:56.2424814+00:00","criterion":"control-server-live","value":"live"}
+{"at":"2026-09-22T07:38:56.3728958+00:00","note":"Protocol release identity: protocol-v2.0.0 (profileId AGV_FULL_PRODUCT, protocolVersion 3, APPROVED_RELEASE)."}
+{"at":"2026-09-22T07:38:57.0703309+00:00","criterion":"onboard-readiness","value":"DISCONNECTED"}
+{"at":"2026-09-22T07:38:57.3440101+00:00","criterion":"onboard-readiness","value":"READY"}
+{"at":"2026-09-22T07:38:58.9256280+00:00","criterion":"control-server-ready","value":"ready"}
+{"at":"2026-09-22T07:38:58.9931877+00:00","note":"FieldOps: seed-approved-facts --database C:\\actions-runner\\win11-01-control-server\\_work\\_temp\\l2-35699901251-1\\_stage\\l2-20260922T073848246Z-slot4\\controlserver.db"}
+{"at":"2026-09-22T07:39:00.6681615+00:00","criterion":"slot-model-preseed:seed-approved-facts","value":"OK","detail":{"output":{"command":"seed-approved-facts","outcome":"OK","modelKey":"8005-eight-slot","slotModelVersionId":"888d1e4a658642d8b57f8576f89a3ede","version":1,"slotCount":8}}}
+{"at":"2026-09-22T07:39:00.6765122+00:00","note":"FieldOps: bind-io --database C:\\actions-runner\\win11-01-control-server\\_work\\_temp\\l2-35699901251-1\\_stage\\l2-20260922T073848246Z-slot4\\controlserver.db --agv AGV-L2-001"}
+{"at":"2026-09-22T07:39:02.4359790+00:00","criterion":"slot-model-preseed:bind-io:AGV-L2-001","value":"OK","detail":{"output":{"command":"bind-io","outcome":"OK","agvId":"AGV-L2-001","slotModelVersionId":"888d1e4a658642d8b57f8576f89a3ede","boundSlots":8,"version":1}}}
+{"at":"2026-09-22T07:39:02.4424755+00:00","note":"FieldOps: bind-io --database C:\\actions-runner\\win11-01-control-server\\_work\\_temp\\l2-35699901251-1\\_stage\\l2-20260922T073848246Z-slot4\\controlserver.db --agv AGV-L2-002"}
+{"at":"2026-09-22T07:39:04.1568762+00:00","criterion":"slot-model-preseed:bind-io:AGV-L2-002","value":"OK","detail":{"output":{"command":"bind-io","outcome":"OK","agvId":"AGV-L2-002","slotModelVersionId":"888d1e4a658642d8b57f8576f89a3ede","boundSlots":8,"version":1}}}
+{"at":"2026-09-22T07:39:04.1606257+00:00","note":"FieldOps: bind-io --database C:\\actions-runner\\win11-01-control-server\\_work\\_temp\\l2-35699901251-1\\_stage\\l2-20260922T073848246Z-slot4\\controlserver.db --agv AGV-L2-003"}
+{"at":"2026-09-22T07:39:05.9043605+00:00","criterion":"slot-model-preseed:bind-io:AGV-L2-003","value":"OK","detail":{"output":{"command":"bind-io","outcome":"OK","agvId":"AGV-L2-003","slotModelVersionId":"888d1e4a658642d8b57f8576f89a3ede","boundSlots":8,"version":1}}}
+{"at":"2026-09-22T07:39:06.0157720+00:00","criterion":"slot-model-preseed:dispatch-zones","value":"0"}
+{"at":"2026-09-22T07:39:06.0184695+00:00","note":"FieldOps: import-area-assignments --database C:\\actions-runner\\win11-01-control-server\\_work\\_temp\\l2-35699901251-1\\_stage\\l2-20260922T073848246Z-slot4\\controlserver.db --input C:\\actions-runner\\win11-01-control-server\\_work\\_temp\\l2-35699901251-1\\command-surface-order-hold-03\\snapshots\\preseed-area-assignments.csv"}
+{"at":"2026-09-22T07:39:07.7919926+00:00","criterion":"slot-model-preseed:import-area-assignments","value":"OK","detail":{"output":{"command":"import-area-assignments","outcome":"OK","dryRun":false,"input":"C:\\actions-runner\\win11-01-control-server\\_work\\_temp\\l2-35699901251-1\\command-surface-order-hold-03\\snapshots\\preseed-area-assignments.csv","entryCount":3,"version":1,"contentSha256":"4291a509c2c0b75ea4bde0ac4dcde04b6e8632b54a21a67eee2772a6f8d0ff8e","snapshotId":"c28eb52aa13a42a7912de73d870ddb52","importedAt":"2026-09-22T15:39:06.2598108+08:00","errorCount":0,"errors":[],"preview":[]}}}
+{"at":"2026-09-22T07:39:07.8010187+00:00","note":"Per-zone dispatch parameters left unconfigured (the default precondition)."}
+{"at":"2026-09-22T07:39:07.8204509+00:00","note":"Environment is up; entering scenario 'command-surface-order-hold'."}
+{"at":"2026-09-22T07:39:07.8674653+00:00","note":"Publishing demand d60a9ff343904acaa5545627f4428e1c."}
+{"at":"2026-09-22T07:39:07.9300607+00:00","note":"Publishing demand 53d317e2fb7f414ab5e3651cd73e6fb7."}
+{"at":"2026-09-22T07:39:07.9455330+00:00","note":"Publishing demand cb5b3c95c17144f2a78f5e27b2c409e2."}
+{"at":"2026-09-22T07:39:07.9717697+00:00","criterion":"journeys-dispatched","value":"0"}
+{"at":"2026-09-22T07:39:09.7551665+00:00","criterion":"journeys-dispatched","value":"1"}
+{"at":"2026-09-22T07:39:10.2572594+00:00","criterion":"journeys-dispatched","value":"2"}
+{"at":"2026-09-22T07:39:10.5111158+00:00","criterion":"journeys-dispatched","value":"3"}
+{"at":"2026-09-22T07:39:10.5329645+00:00","criterion":"faulted-intent","value":"@{UpperId=W2G-53d317e2-fb7f-414a-b5e3-651cd73e6fb7-PICKUP-1; OrderId=ORDER-000002; Status=CONFIRMED}"}
+{"at":"2026-09-22T07:39:10.5527869+00:00","note":"RIoT reports W2G-53d317e2-fb7f-414a-b5e3-651cd73e6fb7-PICKUP-1 FAILED on AGV-L2-002."}
+{"at":"2026-09-22T07:39:10.5832611+00:00","criterion":"hold-attempts","value":"0"}
+{"at":"2026-09-22T07:39:11.0959584+00:00","criterion":"hold-attempts","value":"1"}
+{"at":"2026-09-22T07:39:11.1233591+00:00","criterion":"riot-hold-received","value":"@{Count=1; Target=ORDER-000002}"}
+{"at":"2026-09-22T07:39:11.1506896+00:00","criterion":"runtime-iterations","value":"15"}
+{"at":"2026-09-22T07:39:11.6550107+00:00","criterion":"runtime-iterations","value":"16"}
+{"at":"2026-09-22T07:39:12.6718659+00:00","criterion":"runtime-iterations","value":"17"}
+{"at":"2026-09-22T07:39:13.6886682+00:00","criterion":"runtime-iterations","value":"18"}
+{"at":"2026-09-22T07:39:14.7011675+00:00","criterion":"runtime-iterations","value":"19"}
+{"at":"2026-09-22T07:39:15.7326266+00:00","criterion":"runtime-iterations","value":"20"}
+{"at":"2026-09-22T07:39:16.7471054+00:00","criterion":"runtime-iterations","value":"21"}
+{"at":"2026-09-22T07:39:17.7613560+00:00","criterion":"runtime-iterations","value":"22"}
+{"at":"2026-09-22T07:39:18.7759681+00:00","criterion":"runtime-iterations","value":"23"}
+{"at":"2026-09-22T07:39:18.8449588+00:00","criterion":"bystander-stage","value":"AwaitingPickupArrival"}
+{"at":"2026-09-22T07:39:19.8540912+00:00","criterion":"bystander-stage","value":"AwaitingSublot"}
+{"at":"2026-09-22T07:39:20.8822495+00:00","criterion":"bystander-stage","value":"AwaitingLoadResult"}
+{"at":"2026-09-22T07:39:21.8980538+00:00","criterion":"bystander-stage","value":"AwaitingStationDeparture"}
+{"at":"2026-09-22T07:39:52.8562202+00:00","criterion":"bystander-stage","value":"AwaitingGateArrival"}
+{"at":"2026-09-22T07:39:52.8653817+00:00","note":"命令面：该调用时调用了、参数正确、只调一次，且只作用于出事的那一台车。"}
+{"at":"2026-09-22T07:39:53.4258278+00:00","note":"L2 port block lock released."}

@@ -1,0 +1,75 @@
+{
+  "schemaVersion": 1,
+  "scenario": "waiting-station-yield",
+  "runId": "20260921T124507768Z",
+  "outcome": "PASS",
+  "failureReason": "",
+  "identity": {
+    "protocolReleaseIdentity": {
+      "repository": "8005-agv-protocol",
+      "releaseVersion": "2.0.0",
+      "tag": "protocol-v2.0.0",
+      "commit": "86575456c847041515b7b75e8851a00e0d939804",
+      "protocolVersion": 3,
+      "profileId": "AGV_FULL_PRODUCT",
+      "manifestSha256": "4ac095ad371d3aaa60d7c2e0198cfd64cff5f3068230fc3420e9cdf5616422a7",
+      "schemaBundleSha256": "9db0dbdc22fed7e39edf8d01b1fc40a12f5d70a7414f696f909ab2a87eb8c221",
+      "vectorsSha256": "391fa69a7d6e9f86ea139ba4c74eadf4994bf0a87e89d3dc5258dd7968d9182a",
+      "approvalStatus": "APPROVED_RELEASE"
+    },
+    "agvId": "AGV-L2-001",
+    "stageRoot": "C:\\Users\\szy\\AppData\\Local\\Temp\\l2-20260921T124507768Z",
+    "rig": "SyntheticOnboard",
+    "vehicleKey": "BROKERX-L2-0001",
+    "fleet": [
+      "AGV-L2-001/BROKERX-L2-0001",
+      "AGV-L2-002/BROKERX-L2-0002"
+    ],
+    "batchId": "unspecified",
+    "controlServerCommit": "c61009b85933d824289f1a06d4854a8e23651129"
+  },
+  "assertions": [
+    {
+      "id": "L2-WSY-01",
+      "description": "持单车 AGV-L2-001 装完需求甲（1 花篮）、两侧都没满，在 12 号站上 CARGO_HOLDING_WAIT",
+      "outcome": "PASS",
+      "expected": "AwaitingStationDeparture CARGO_HOLDING_WAIT",
+      "actual": "AwaitingStationDeparture CARGO_HOLDING_WAIT"
+    },
+    {
+      "id": "L2-WSY-02",
+      "description": "需求乙由另一台车 AGV-L2-002 受理，它的下一停靠就是持单车所在的 12 号站",
+      "outcome": "PASS",
+      "expected": "AGV-L2-002 AwaitingPickupArrival → 12",
+      "actual": "AGV-L2-002 AwaitingPickupArrival → 12"
+    },
+    {
+      "id": "L2-WSY-03",
+      "description": "另一台车受理之后，持单车装货阶段 CLOSED/WAITING_STATION_YIELD；触发列记的是那台车，时刻不早于受理",
+      "outcome": "PASS",
+      "expected": "CLOSED/WAITING_STATION_YIELD by BROKERX-L2-0002 at or after 2026-09-21T12:45:54.3449257+00:00",
+      "actual": "AwaitingStationDeparture CLOSED/WAITING_STATION_YIELD by 'BROKERX-L2-0002' at 2026-09-21T12:45:54.3449257+00:00"
+    },
+    {
+      "id": "L2-WSY-04",
+      "description": "持单车收到了 CLOSED/WAITING_STATION_YIELD 那张车辆业务状态快照",
+      "outcome": "PASS",
+      "expected": ">= 1",
+      "actual": 1
+    },
+    {
+      "id": "L2-WSY-05",
+      "description": "让站之后主车离站开向关卡：关卡腿建了单",
+      "outcome": "PASS",
+      "expected": "a gate leg intent",
+      "actual": "W2G-cb005ff7-51dc-40b0-8587-1a9f5164de55-GATE-1 CONFIRMED"
+    },
+    {
+      "id": "L2-WSY-06",
+      "description": "让站之后发的需求戊（后侧，主车后侧全空）不进主车那一趟",
+      "outcome": "PASS",
+      "expected": "judged, and not on journey:cb005ff7-51dc-40b0-8587-1a9f5164de55",
+      "actual": "on journey:d1b894e9-e555-4ba3-adbe-bd9277bc7fb2 (AGV-L2-002)"
+    }
+  ]
+}

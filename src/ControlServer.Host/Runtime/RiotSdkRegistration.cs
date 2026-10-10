@@ -57,6 +57,8 @@ internal static class RiotSdkRegistration
             services.GetRequiredService<HttpRiotMovementGateway>());
         services.AddScoped<IRiotMapStationCatalog>(services =>
             services.GetRequiredService<HttpRiotMovementGateway>());
+        services.AddScoped<IRiotMapNameCatalog>(services =>
+            services.GetRequiredService<HttpRiotMovementGateway>());
         services.AddScoped<IRiotVehicleSafetyFacts>(services =>
             services.GetRequiredService<HttpRiotMovementGateway>());
         // On the movement gateway rather than on a new adapter, because the two calls a motion
@@ -65,6 +67,12 @@ internal static class RiotSdkRegistration
             services.GetRequiredService<HttpRiotMovementGateway>());
         // Also the movement gateway's: the unfinished-order read is the one its safety read makes.
         services.AddScoped<IRiotVehicleOrderFacts>(services =>
+            services.GetRequiredService<HttpRiotMovementGateway>());
+        services.AddScoped<IRiotOrderListingFacts>(services =>
+            services.GetRequiredService<HttpRiotMovementGateway>());
+        // control-server#404: the charging allocation reads where an order that is not this server's is heading
+        // (detailByUpperId), to tell whether a charger is being driven to.
+        services.AddScoped<IRiotOrderMissionFacts>(services =>
             services.GetRequiredService<HttpRiotMovementGateway>());
         services.AddScoped<HttpRiotOrderCommandGateway>();
         services.AddScoped<IRiotOrderCommandGateway>(services =>

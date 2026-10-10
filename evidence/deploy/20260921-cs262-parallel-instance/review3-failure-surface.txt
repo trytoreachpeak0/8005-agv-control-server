@@ -1,0 +1,9 @@
+fake                                                 threw    $?     LASTEXITCODE errvar   output
+silenced errors only (what a normal uninstall does)  -        True   0            2        done
+Write-Error under Continue                           -        True   0            1        after
+exit 1                                               -        False  1            0        
+native command exits 3, last statement               -        True   3            0        
+native command exits 3, then more output             -        True   3            0        more
+throw                                                yes      -      0            1        
+
+pwsh 7.6.6

@@ -1,0 +1,7 @@
+  Failed ControlServer.Tests.JourneyRowLostUpdateTests.AClosureCommittedBetweenTheEnginesReadAndSaveKeepsItsReason [2 s]
+Expected: Tuple (Completed, "CANCELLED_BY_OPERATOR", 2026-08-26T01:00:10.0000000+00:00)
+Actual:   Tuple (Completed, null, null)
+  Failed ControlServer.Tests.JourneyRowLostUpdateTests.ABlockCommittedWhileTheEngineAdvancesACommittedLoadStaysBlocked [2 s]
+Expected: Tuple (Blocked, "LoadCancellationResult_NOT_RECONCILED")
+Actual:   Tuple (AwaitingDepartureSafety, "LoadCancellationResult_NOT_RECONCILED")
+Failed!  - Failed:     2, Passed:     5, Skipped:     0, Total:     7, Duration: 5 s - ControlServer.Tests.dll (net8.0)

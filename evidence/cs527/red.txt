@@ -1,0 +1,15 @@
+base: fp/v2-impl@bf7d4c7f + new tests only (no product change)
+dotnet test tests/ControlServer.Tests/ControlServer.Tests.csproj -c Release --filter "FullyQualifiedName~InTransitDoorEmergencyReleaseTests"
+  Failed ControlServer.Tests.InTransitDoorEmergencyReleaseTests.AVehicleStoppedForMotionAfterTheDoorReleaseIsNotReleasedOnTheDoorsAgain(movementUnderTheLatch: "MT_RUNNING") [2 s]
+   Assert.Equal() Failure: Values differ
+Expected: 1
+Actual:   2
+  Failed ControlServer.Tests.InTransitDoorEmergencyReleaseTests.AVehicleStoppedForMotionAfterTheDoorReleaseIsNotReleasedOnTheDoorsAgain(movementUnderTheLatch: "MT_PAUSED") [2 s]
+   Assert.Equal() Failure: Values differ
+Expected: 1
+Actual:   2
+  Failed ControlServer.Tests.InTransitDoorEmergencyReleaseTests.AHoldIssuedInTheEscalatingRoundIsReadBackWithoutWaitingForTheDoors [2 s]
+   Assert.Equal() Failure: Values differ
+Expected: Confirmed
+Actual:   Pending
+Failed!  - Failed:     3, Passed:    59, Skipped:     0, Total:    62, Duration: 1 m 19 s - ControlServer.Tests.dll (net8.0)

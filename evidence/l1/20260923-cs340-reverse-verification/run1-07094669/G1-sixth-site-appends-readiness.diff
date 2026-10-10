@@ -1,0 +1,17 @@
+diff --git a/src/ControlServer.Host/Transport/OnboardMessageProcessor.cs b/src/ControlServer.Host/Transport/OnboardMessageProcessor.cs
+index 713a369e..96191143 100644
+--- a/src/ControlServer.Host/Transport/OnboardMessageProcessor.cs
++++ b/src/ControlServer.Host/Transport/OnboardMessageProcessor.cs
+@@ -415,7 +415,11 @@ public sealed partial class OnboardMessageProcessor(
+             case "OperationProgress":
+             case "PreDepartureSafetyCheckResult":
+             case "SublotSubmitted":
+-                return DurableAck(messageType, messageId, agvId, generation, contentHash);
++                {
++                    SessionReadinessDecision progressDecision = await store.DecideReadinessAsync(
++                        agvId, generation, cancellationToken).ConfigureAwait(false);
++                    return $"{DurableAck(messageType, messageId, agvId, generation, contentHash)}\n{SessionReadinessLine(progressDecision, agvId, generation, state)}";
++                }
+             case "SlotOperationCommandRejected":
+                 // A refused resume command closes its recovery session (control-server#187); every other
+                 // refusal is only acknowledged. The closing snapshot goes out with the triggered sends below, or, for a

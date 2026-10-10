@@ -1,0 +1,73 @@
+{
+  "schemaVersion": 1,
+  "scenario": "g3-fault-cargo-handoff",
+  "runId": "20260923T182450216Z",
+  "outcome": "PASS",
+  "failureReason": "",
+  "identity": {
+    "batchId": "unspecified",
+    "vehicleKey": "BROKERX-L2-0001",
+    "stageRoot": "C:\\Users\\szy\\AppData\\Local\\Temp\\l2-20260923T182450216Z",
+    "rig": "RealOnboard",
+    "protocolReleaseIdentity": {
+      "repository": "8005-agv-protocol",
+      "releaseVersion": "2.0.0",
+      "tag": "protocol-v2.0.0",
+      "commit": "86575456c847041515b7b75e8851a00e0d939804",
+      "protocolVersion": 3,
+      "profileId": "AGV_FULL_PRODUCT",
+      "manifestSha256": "4ac095ad371d3aaa60d7c2e0198cfd64cff5f3068230fc3420e9cdf5616422a7",
+      "schemaBundleSha256": "9db0dbdc22fed7e39edf8d01b1fc40a12f5d70a7414f696f909ab2a87eb8c221",
+      "vectorsSha256": "391fa69a7d6e9f86ea139ba4c74eadf4994bf0a87e89d3dc5258dd7968d9182a",
+      "approvalStatus": "APPROVED_RELEASE"
+    },
+    "onboardHmiCommit": "1184bb0762462f443736de749fe242fc9aa2f0d7",
+    "agvId": "AGV-L2-001",
+    "slotsSimulatorCommit": "fb5f7c593742bf98bc3957b8729a38aad5321f28",
+    "controlServerCommit": "ab52333fcd2a07276dfa4ef5e922fe09148530bb"
+  },
+  "assertions": [
+    {
+      "id": "G3-07-31",
+      "description": "消息顺序与向量一致，各一次：RecoveryActionSubmitted(FAULT_CARGO_HANDOFF) → RecoveryActionAccepted → FaultCargoRecoveryCommand → FaultCargoRecoveryResult（CV-FAULT-CARGO-HANDOFF orderedExpectedMessages）",
+      "outcome": "PASS",
+      "expected": "各 1，按向量顺序",
+      "actual": "Action×1 RecoveryActionAccepted FAULT_CARGO_HANDOFF / Command×1 / Result×1 / 有序=True"
+    },
+    {
+      "id": "G3-07-32",
+      "description": "服务端记下这次交接：工作流带交接号与结果 HANDED_OFF，状态 Reconciled（RECORD_FAULT_CARGO_HANDOFF）",
+      "outcome": "PASS",
+      "expected": "交接号已记 / HANDED_OFF / Reconciled",
+      "actual": "交接号 d13318f3-57ad-8852-aef5-8441471921fc / HANDED_OFF / Reconciled"
+    },
+    {
+      "id": "G3-07-33",
+      "description": "只凭授权的命令交接：命令就是工作流绑定的那一条，命令、结果、工作流三处交接号相同；按下交接之后没有额外开锁（HANDOFF_ONLY_ON_AUTHORIZED_COMMAND / forbidden duplicate-slot-unlock）",
+      "outcome": "PASS",
+      "expected": "命令 = 绑定 / 交接号 d13318f3-57ad-8852-aef5-8441471921fc ×3 / 开锁 0",
+      "actual": "命令 8cdabc0f-c328-6958-9467-21aca56f8392 / 命令交接号 d13318f3-57ad-8852-aef5-8441471921fc / 结果交接号 d13318f3-57ad-8852-aef5-8441471921fc / 工作流 d13318f3-57ad-8852-aef5-8441471921fc / 开锁 0"
+    },
+    {
+      "id": "G3-07-34",
+      "description": "车载端报交接结果：HANDED_OFF，每个授权仓空、锁上、输出复位（REPORT_HANDOFF_OUTCOME）",
+      "outcome": "PASS",
+      "expected": "HANDED_OFF 1=COMPLETED/EMPTY/LOCKED/RESET",
+      "actual": "HANDED_OFF 1=COMPLETED/EMPTY/LOCKED/RESET"
+    },
+    {
+      "id": "G3-07-35",
+      "description": "交接收敛且无重复提交：需求与装载 Cancelled，旅程以 TERMINATED_BY_FAULT_CARGO_HANDOFF 收尾、没有去关卡，RIoT 上只有取货那一张单，仓位物理上空、锁上（finalState NO_DUPLICATE_COMMIT / NO_UNPROVEN_STATE）",
+      "outcome": "PASS",
+      "expected": "Cancelled / Cancelled / Completed/TERMINATED_BY_FAULT_CARGO_HANDOFF / TO_GATE 0 / RIoT 单 1 / 1=CLOSED/EMPTY/1/0",
+      "actual": "Cancelled / Cancelled / Completed/TERMINATED_BY_FAULT_CARGO_HANDOFF / TO_GATE 0 / RIoT 单 1 / 1=CLOSED/EMPTY/1/0"
+    },
+    {
+      "id": "G3-07-36",
+      "description": "交接收敛之后车辆放出来了：这条需求的 TO_PICKUP 单车辆占用已释放，同一台车在 60 秒内接了下一单（旅程到 AwaitingPickupArrival，不是 Blocked/VEHICLE_OCCUPANCY_CONFLICT；control-server#131）",
+      "outcome": "PASS",
+      "expected": "TO_PICKUP 占用已释放 / 下一单 AwaitingPickupArrival on AGV-L2-001，TO_PICKUP 意图 CONFIRMED，没有停摆原因码",
+      "actual": "VehicleOccupancyReleasedAt='2026-09-23 18:25:25.5135294+00:00' / 下一单 AwaitingPickupArrival/ TO_PICKUP=CONFIRMED on AGV-L2-001"
+    }
+  ]
+}

@@ -1,0 +1,25 @@
+2026-09-22T13:28:09.2514993+08:00	Information	SingleInstanceGuard	抢到了整机单例名字。名字=Global\SQCD.Agv.Wpf.Onboard。
+2026-09-22T13:28:09.3106479+08:00	Information	App	车载端启动：agvId=AGV-L2-001，environment=Development，version=0.2.0-safety-mock-travel+ecdb3a0be1d95ef51e7d40493808ba4659274f41。
+2026-09-22T13:28:10.2103418+08:00	Information	ModbusTcpIoModuleClient	已连接IO模块 127.0.0.1:48412，UnitId=255。
+2026-09-22T13:28:10.2381513+08:00	Information	OnboardController	IO模块在线。
+2026-09-22T13:28:10.2418661+08:00	Information	OnboardController	启动IO安全快照验证通过。
+2026-09-22T13:28:10.8308002+08:00	Information	WireToGateSessionService	上层会话已建立：generation=1，readiness=Ready。
+2026-09-22T13:28:17.5646902+08:00	Information	App	服务端请求录入Sublot：station=N1-3_N1-7，revision=1，expectedSublots=G3-02R-20260922T052752481Z。 
+2026-09-22T13:28:18.2185513+08:00	Information	App	服务端请求录入Sublot：station=N1-3_N1-7，revision=1，expectedSublots=G3-02R-20260922T052752481Z。 
+2026-09-22T13:28:19.2178829+08:00	Information	App	服务端请求录入Sublot：station=N1-3_N1-7，revision=1，expectedSublots=G3-02R-20260922T052752481Z。 
+2026-09-22T13:28:20.2221532+08:00	Information	App	服务端请求录入Sublot：station=N1-3_N1-7，revision=1，expectedSublots=G3-02R-20260922T052752481Z。 
+2026-09-22T13:28:20.2676256+08:00	Warning	WireToGateBusinessService	子批被服务端拒收：sublot=G3-02R-20260922T052752481Z，reason=EXPECTED_BASKET_COUNT_MISMATCH，demandId=ed778b13-7b82-4ab4-b4d5-4225b1583184，currentWorklistRevision=1。
+2026-09-22T13:28:21.2279801+08:00	Information	App	服务端请求录入Sublot：station=N1-3_N1-7，revision=1，expectedSublots=G3-02R-20260922T052752481Z。 
+2026-09-22T13:28:22.2171000+08:00	Information	App	服务端请求录入Sublot：station=N1-3_N1-7，revision=1，expectedSublots=G3-02R-20260922T052752481Z。 
+2026-09-22T13:28:23.2222778+08:00	Information	App	服务端请求录入Sublot：station=N1-3_N1-7，revision=1，expectedSublots=G3-02R-20260922T052752481Z。 
+2026-09-22T13:28:24.2303636+08:00	Information	App	服务端请求录入Sublot：station=N1-3_N1-7，revision=1，expectedSublots=G3-02R-20260922T052752481Z。 
+2026-09-22T13:28:25.2307796+08:00	Information	App	服务端请求录入Sublot：station=N1-3_N1-7，revision=1，expectedSublots=G3-02R-20260922T052752481Z。 
+2026-09-22T13:28:25.4811679+08:00	Information	ModbusTcpIoModuleClient	已向物理1号仓发送开锁脉冲触发，DO地址=100。硬件负责自动复位。 
+2026-09-22T13:28:25.5097490+08:00	Information	ModbusTcpIoModuleClient	1号仓IO变化：DO 0->1，锁DI 1->1，光幕DI 1->1。
+2026-09-22T13:28:25.6370664+08:00	Information	ModbusTcpIoModuleClient	1号仓IO变化：DO 1->1，锁DI 1->0，光幕DI 1->1。
+2026-09-22T13:28:26.0843267+08:00	Information	ModbusTcpIoModuleClient	1号仓IO变化：DO 1->0，锁DI 0->0，光幕DI 1->1。
+2026-09-22T13:28:26.2505588+08:00	Information	WireToGateBusinessService	忽略并发重复SlotOperationCommand：attempt=1f2f8469-dc79-e85f-aecc-9c788e50f4d5。
+2026-09-22T13:28:26.7520181+08:00	Information	ModbusTcpIoModuleClient	1号仓IO变化：DO 0->0，锁DI 0->0，光幕DI 1->0。
+2026-09-22T13:28:26.8736324+08:00	Information	ModbusTcpIoModuleClient	1号仓IO变化：DO 0->0，锁DI 0->1，光幕DI 0->0。
+2026-09-22T13:28:27.2351217+08:00	Information	WireToGateBusinessService	忽略并发重复SlotOperationCommand：attempt=1f2f8469-dc79-e85f-aecc-9c788e50f4d5。
+2026-09-22T13:28:28.2230281+08:00	Information	WireToGateBusinessService	忽略重复SlotOperationCommand：attempt=1f2f8469-dc79-e85f-aecc-9c788e50f4d5，保留原OperationResult重放。

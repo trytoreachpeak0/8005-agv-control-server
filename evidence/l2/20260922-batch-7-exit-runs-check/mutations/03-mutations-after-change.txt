@@ -1,0 +1,31 @@
+## M0 unchanged
+expected batch-7: 19; batch-7 lines: 19; all scenarios: 55; synthetic scenario files: 55; unlisted files: 0
+PASS
+exit=0
+## M1 one batch-7 line relabelled batch-6
+expected batch-7: 19; batch-7 lines: 18; all scenarios: 55; synthetic scenario files: 55; unlisted files: 0
+FAIL: batch-7 scenarios missing from l2.yml: waiting-station-yield
+exit=1
+## M2 DefaultRuns added
+expected batch-7: 19; batch-7 lines: 19; all scenarios: 55; synthetic scenario files: 55; unlisted files: 0
+FAIL: cargo-holding-timeout: DefaultRuns = 3, expected none
+exit=1
+## M3 dispatch timeout 170
+expected batch-7: 19; batch-7 lines: 19; all scenarios: 55; synthetic scenario files: 55; unlisted files: 0
+FAIL: workflow_dispatch timeout 170 minutes, expected at least 180
+exit=1
+## M4 unregistered scenario file
+expected batch-7: 19; batch-7 lines: 19; all scenarios: 55; synthetic scenario files: 56; unlisted files: 1
+FAIL: synthetic scenario files not in l2.yml's scenario list: cargo-holding-new-unregistered
+exit=1
+## M5 batch-7 line removed
+expected batch-7: 19; batch-7 lines: 18; all scenarios: 54; synthetic scenario files: 55; unlisted files: 1
+FAIL: batch-7 scenarios missing from l2.yml: transport-demand-key-suppressed
+FAIL: synthetic scenario files not in l2.yml's scenario list: transport-demand-key-suppressed
+exit=1
+## M6 name case changed
+expected batch-7: 19; batch-7 lines: 19; all scenarios: 55; synthetic scenario files: 55; unlisted files: 1
+FAIL: batch-7 scenarios missing from l2.yml: task-type-priority-band
+FAIL: batch-7 scenarios not in the exit report's list: Task-type-priority-band
+FAIL: synthetic scenario files not in l2.yml's scenario list: task-type-priority-band
+exit=1

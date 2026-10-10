@@ -1,0 +1,99 @@
+{
+  "schemaVersion": 1,
+  "scenario": "multi-stop-append-same-zone",
+  "runId": "20261009T162111562Z",
+  "outcome": "PASS",
+  "failureReason": "",
+  "identity": {
+    "stageRoot": "C:\\actions-runner\\win11-01-control-server\\_work\\_temp\\l2-37953826544-1\\_stage\\l2-20261009T162111562Z-slot4",
+    "controlServerCommit": "563242d071de6f243c59f11722b197d683fee2a4",
+    "batchId": "batch-7",
+    "rig": "SyntheticOnboard",
+    "protocolReleaseIdentity": {
+      "repository": "8005-agv-protocol",
+      "releaseVersion": "3.0.0",
+      "tag": "protocol-v3.0.0",
+      "commit": "3f091cb2eae7c58cec54a95dd9389c9180bc7b4c",
+      "protocolVersion": 4,
+      "profileId": "AGV_FULL_PRODUCT",
+      "manifestSha256": "d5e1a53f1fd61f105a890dc0267e1b0a9ac5ea49f713d2cf730b0f554df9db9e",
+      "schemaBundleSha256": "e435b2b14d9ccd60c89f07df909da7626fef056a6b8a2241087557fd7dc3df43",
+      "vectorsSha256": "be849f9749b004296ebd9e7bffa98faf2f8ffa90b63308ca3b210c68e7b8656e",
+      "approvalStatus": "APPROVED_RELEASE"
+    },
+    "vehicleKey": "BROKERX-L2-0001",
+    "agvId": "AGV-L2-001"
+  },
+  "assertions": [
+    {
+      "id": "L2-MSA-01",
+      "description": "第一条需求被一辆空闲车接走，车已在途（AwaitingPickupArrival）",
+      "outcome": "PASS",
+      "expected": "AwaitingPickupArrival",
+      "actual": "AwaitingPickupArrival"
+    },
+    {
+      "id": "L2-MSA-02",
+      "description": "受理写下两个停靠：取货与卸货各一个",
+      "outcome": "PASS",
+      "expected": 2,
+      "actual": 2
+    },
+    {
+      "id": "L2-MSA-03",
+      "description": "第二条需求进了同一趟旅程：归属两条（REQ-0205 在途车参与竞争）",
+      "outcome": "PASS",
+      "expected": 2,
+      "actual": 2
+    },
+    {
+      "id": "L2-MSA-04",
+      "description": "没有另起一趟旅程：整个库里仍然只有一条 JourneyRuntime",
+      "outcome": "PASS",
+      "expected": 1,
+      "actual": 1
+    },
+    {
+      "id": "L2-MSA-05",
+      "description": "停靠从两个变成三个：第二条需求的取货新开一个停靠，它的卸货并进了既有的关卡停靠（不是四个）",
+      "outcome": "PASS",
+      "expected": 3,
+      "actual": 3
+    },
+    {
+      "id": "L2-MSA-06",
+      "description": "当前下一站没被动：序位 1 还是追加之前那一个停靠，站号也没被改写（REQ-0196）",
+      "outcome": "PASS",
+      "expected": "journey:1c3f4888-b98d-47b0-b53e-77ace7b44f95|PICKUP@12",
+      "actual": "journey:1c3f4888-b98d-47b0-b53e-77ace7b44f95|PICKUP@12"
+    },
+    {
+      "id": "L2-MSA-07",
+      "description": "三个停靠的序位是 1,2,3，连续且无重复",
+      "outcome": "PASS",
+      "expected": "1,2,3",
+      "actual": "1,2,3"
+    },
+    {
+      "id": "L2-MSA-08",
+      "description": "车上收到的最后一版计划带三条腿：计划是整体替换下发的（ADR-cross-0053）",
+      "outcome": "PASS",
+      "expected": 3,
+      "actual": 3
+    },
+    {
+      "id": "L2-MSA-09",
+      "description": "第二条需求被受理过：积压行上有受理时刻，没有被任何 EN_ROUTE_APPEND_* 挡住",
+      "outcome": "PASS",
+      "expected": "(有受理时刻，理由不是 EN_ROUTE_APPEND_*)",
+      "actual": "ACCEPTED accepted=yes"
+    },
+    {
+      "id": "L2-MSA-10",
+      "description": "关卡上只有一个停靠：第二条需求的卸货并进了既有那一个，没有同站再开一个",
+      "outcome": "PASS",
+      "expected": 1,
+      "actual": 1
+    }
+  ]
+}

@@ -1,0 +1,43 @@
+{
+  "schemaVersion": 1,
+  "scenario": "charging-general-fault-does-not-pause",
+  "runId": "20261002T153034305Z",
+  "outcome": "PASS",
+  "failureReason": "",
+  "identity": {
+    "vehicleKey": "BROKERX-L2-0001",
+    "protocolReleaseIdentity": {
+      "repository": "8005-agv-protocol",
+      "releaseVersion": "2.0.0",
+      "tag": "protocol-v2.0.0",
+      "commit": "86575456c847041515b7b75e8851a00e0d939804",
+      "protocolVersion": 3,
+      "profileId": "AGV_FULL_PRODUCT",
+      "manifestSha256": "4ac095ad371d3aaa60d7c2e0198cfd64cff5f3068230fc3420e9cdf5616422a7",
+      "schemaBundleSha256": "9db0dbdc22fed7e39edf8d01b1fc40a12f5d70a7414f696f909ab2a87eb8c221",
+      "vectorsSha256": "391fa69a7d6e9f86ea139ba4c74eadf4994bf0a87e89d3dc5258dd7968d9182a",
+      "approvalStatus": "APPROVED_RELEASE"
+    },
+    "controlServerCommit": "6b7b3e38b7d72b454b227a104de2e37a3198db86",
+    "stageRoot": "C:\\actions-runner\\win11-01-control-server\\_work\\_temp\\l2-37023804697-1\\_stage\\l2-20261002T153034305Z-slot2",
+    "agvId": "AGV-L2-001",
+    "batchId": "batch-9",
+    "rig": "SyntheticOnboard"
+  },
+  "assertions": [
+    {
+      "id": "L2-GFD-01",
+      "description": "到桩后单停在 HANG（9），开始充电的动作带的是结果码 1、不是 407802：另等十五秒，没有暂停事件，周期仍在途（EN_ROUTE／ACTIVE），用途仍是 CHARGING，旅程照原样是 ORDER_HANG",
+      "outcome": "PASS",
+      "expected": "0 holds | EN_ROUTE ACTIVE | CHARGING | ORDER_HANG / order 9 / act code 1",
+      "actual": "0 holds | EN_ROUTE ACTIVE | CHARGING | ORDER_HANG / order 9 / act code 1"
+    },
+    {
+      "id": "L2-GFD-02",
+      "description": "同一张单改为带 407802 停在 HANG，可车报在关卡 210、不在 211 上（未到桩）：另等十五秒，同样没有暂停事件，周期、用途与 ORDER_HANG 都不变",
+      "outcome": "PASS",
+      "expected": "0 holds | EN_ROUTE ACTIVE | CHARGING | ORDER_HANG / order 9 / act code 407802",
+      "actual": "0 holds | EN_ROUTE ACTIVE | CHARGING | ORDER_HANG / order 9 / act code 407802"
+    }
+  ]
+}

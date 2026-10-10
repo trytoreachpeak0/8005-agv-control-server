@@ -1,0 +1,61 @@
+{"at":"2026-10-02T16:09:09.3318402+00:00","note":"L2 run 20261002T160909284Z starting for scenario 'vehicle-fault-operator-clearance'."}
+{"at":"2026-10-02T16:09:09.3678103+00:00","note":"L2 port block lock acquired (slot 1, Global\\W2G-L2PortBlock-slot1)."}
+{"at":"2026-10-02T16:09:09.3703381+00:00","note":"Build skipped (-SkipBuild); running the output already built."}
+{"at":"2026-10-02T16:09:10.2711007+00:00","criterion":"fake-riot-live","value":"live"}
+{"at":"2026-10-02T16:09:10.5100065+00:00","criterion":"fake-mes-live","value":"live"}
+{"at":"2026-10-02T16:09:10.5619905+00:00","note":"RIoT command options for this scenario: EmergencyRetryInitialDelay=00:00:20"}
+{"at":"2026-10-02T16:09:10.5857186+00:00","note":"Task type station preset: default (map 25, WIRE_TO_GATE -> 关卡/210)"}
+{"at":"2026-10-02T16:09:15.7184211+00:00","note":"Package capacity rules imported."}
+{"at":"2026-10-02T16:09:15.7224289+00:00","note":"No waiting point registration: a single-vehicle rig, or WaitingPoints = $false."}
+{"at":"2026-10-02T16:09:17.8099229+00:00","criterion":"control-server-live","value":"(null)"}
+{"at":"2026-10-02T16:09:18.7522118+00:00","criterion":"control-server-live","value":"live"}
+{"at":"2026-10-02T16:09:18.8340921+00:00","note":"Protocol release identity: protocol-v2.0.0 (profileId AGV_FULL_PRODUCT, protocolVersion 3, APPROVED_RELEASE)."}
+{"at":"2026-10-02T16:09:19.5587598+00:00","criterion":"onboard-readiness","value":"DISCONNECTED"}
+{"at":"2026-10-02T16:09:19.8290561+00:00","criterion":"onboard-readiness","value":"READY"}
+{"at":"2026-10-02T16:09:19.8926258+00:00","criterion":"control-server-ready","value":"ready"}
+{"at":"2026-10-02T16:09:19.9586596+00:00","note":"FieldOps: seed-approved-facts --database C:\\actions-runner\\win11-01-control-server\\_work\\_temp\\l2-37023804697-1\\_stage\\l2-20261002T160909284Z-slot1\\controlserver.db"}
+{"at":"2026-10-02T16:09:21.7163617+00:00","criterion":"slot-model-preseed:seed-approved-facts","value":"OK","detail":{"output":{"command":"seed-approved-facts","outcome":"OK","modelKey":"8005-eight-slot","slotModelVersionId":"93759d02590e4f2c9f32eec07de0aa1e","version":1,"slotCount":8}}}
+{"at":"2026-10-02T16:09:21.7239444+00:00","note":"FieldOps: bind-io --database C:\\actions-runner\\win11-01-control-server\\_work\\_temp\\l2-37023804697-1\\_stage\\l2-20261002T160909284Z-slot1\\controlserver.db --agv AGV-L2-001"}
+{"at":"2026-10-02T16:09:23.4786743+00:00","criterion":"slot-model-preseed:bind-io:AGV-L2-001","value":"OK","detail":{"output":{"command":"bind-io","outcome":"OK","agvId":"AGV-L2-001","slotModelVersionId":"93759d02590e4f2c9f32eec07de0aa1e","boundSlots":8,"version":1}}}
+{"at":"2026-10-02T16:09:23.6172105+00:00","criterion":"slot-model-preseed:dispatch-zones","value":"0"}
+{"at":"2026-10-02T16:09:23.6195701+00:00","note":"FieldOps: import-area-assignments --database C:\\actions-runner\\win11-01-control-server\\_work\\_temp\\l2-37023804697-1\\_stage\\l2-20261002T160909284Z-slot1\\controlserver.db --input C:\\actions-runner\\win11-01-control-server\\_work\\_temp\\l2-37023804697-1\\vehicle-fault-operator-clearance-03\\snapshots\\preseed-area-assignments.csv"}
+{"at":"2026-10-02T16:09:25.5274507+00:00","criterion":"slot-model-preseed:import-area-assignments","value":"OK","detail":{"output":{"command":"import-area-assignments","outcome":"OK","dryRun":false,"input":"C:\\actions-runner\\win11-01-control-server\\_work\\_temp\\l2-37023804697-1\\vehicle-fault-operator-clearance-03\\snapshots\\preseed-area-assignments.csv","entryCount":3,"version":1,"contentSha256":"4291a509c2c0b75ea4bde0ac4dcde04b6e8632b54a21a67eee2772a6f8d0ff8e","snapshotId":"4db1cbd3a5dc474984ef9e8247a5d371","importedAt":"2026-10-03T00:09:23.882901+08:00","errorCount":0,"errors":[],"preview":[]}}}
+{"at":"2026-10-02T16:09:25.5382918+00:00","note":"FieldOps: import-charging-policy --database C:\\actions-runner\\win11-01-control-server\\_work\\_temp\\l2-37023804697-1\\_stage\\l2-20261002T160909284Z-slot1\\controlserver.db --input C:\\actions-runner\\win11-01-control-server\\_work\\_temp\\l2-37023804697-1\\vehicle-fault-operator-clearance-03\\snapshots\\preseed-charging-policy.json --fleet BROKERX-L2-0001"}
+{"at":"2026-10-02T16:09:27.3151843+00:00","note":"FieldOps: approve-charging-policy --database C:\\actions-runner\\win11-01-control-server\\_work\\_temp\\l2-37023804697-1\\_stage\\l2-20261002T160909284Z-slot1\\controlserver.db --version 1 --approved-by L2 orchestrator --role L2_PRESET --basis scripts/l2/L2ChargingPolicy.psm1 --source L2_PRESET"}
+{"at":"2026-10-02T16:09:28.9902354+00:00","note":"FieldOps: activate-charging-policy --database C:\\actions-runner\\win11-01-control-server\\_work\\_temp\\l2-37023804697-1\\_stage\\l2-20261002T160909284Z-slot1\\controlserver.db --version 1 --activated-by L2 orchestrator --fleet BROKERX-L2-0001 --allow-non-field-approval"}
+{"at":"2026-10-02T16:09:30.7352715+00:00","criterion":"preseed:charging-policy","value":"OK","detail":{"source":"L2_PRESET","version":1,"coveredAfter":["BROKERX-L2-0001"],"withoutPolicy":[]}}
+{"at":"2026-10-02T16:09:30.7370231+00:00","note":"Per-zone dispatch parameters left unconfigured (the default precondition)."}
+{"at":"2026-10-02T16:09:30.7579872+00:00","note":"Environment is up; entering scenario 'vehicle-fault-operator-clearance'."}
+{"at":"2026-10-02T16:09:30.8372424+00:00","note":"Publishing demand a95235d10ff146b68e1a1fa411481e53."}
+{"at":"2026-10-02T16:09:30.9169604+00:00","criterion":"journey-dispatched","value":"(null)"}
+{"at":"2026-10-02T16:09:32.1854114+00:00","criterion":"journey-dispatched","value":"@{JourneyId=journey:a95235d1-0ff1-46b6-8e1a-1fa411481e53; DemandId=a95235d1-0ff1-46b6-8e1a-1fa411481e53; Stage=AwaitingPickupArrival; BlockReasonCode=}"}
+{"at":"2026-10-02T16:09:32.1956788+00:00","criterion":"pickup-intent","value":"(null)"}
+{"at":"2026-10-02T16:09:32.4578761+00:00","criterion":"pickup-intent","value":"@{UpperId=W2G-a95235d1-0ff1-46b6-8e1a-1fa411481e53-PICKUP-1; OrderId=ORDER-000001; Status=CONFIRMED}"}
+{"at":"2026-10-02T16:09:32.4651691+00:00","note":"AGV-L2-001 drives between stations; RIoT reports W2G-a95235d1-0ff1-46b6-8e1a-1fa411481e53-PICKUP-1 FAILED."}
+{"at":"2026-10-02T16:09:32.5506365+00:00","criterion":"trigger-issued","value":"0"}
+{"at":"2026-10-02T16:09:33.0620545+00:00","criterion":"trigger-issued","value":"1"}
+{"at":"2026-10-02T16:09:33.0650090+00:00","note":"The latch engages; the vehicle keeps reporting MT_RUNNING at speed 0 between stations."}
+{"at":"2026-10-02T16:09:33.0950779+00:00","criterion":"trigger-confirmed","value":"Pending"}
+{"at":"2026-10-02T16:09:33.6001221+00:00","criterion":"trigger-confirmed","value":"Confirmed"}
+{"at":"2026-10-02T16:09:33.7480886+00:00","note":"Fault recovery (latched) -> 409: {\"type\":\"https://tools.ietf.org/html/rfc9110#section-15.5.10\",\"title\":\"Vehicle fault recovery refused\",\"status\":409,\"detail\":\"FAULT_RECOVERY_EMERGENCY_LATCHED\",\"agvId\":\"AGV-L2-001\",\"action\":\"CLEAR_FAULT\",\"outcome\":\"Refused\",\"reasons\":[\"FAULT_RECOVERY_EMERGENCY_LATCHED\"],\"faultGeneration\":1}"}
+{"at":"2026-10-02T16:09:33.8535466+00:00","note":"Emergency release -> 202: {\"agvId\":\"AGV-L2-001\",\"action\":\"RecoveryUnconfirmed\",\"emergencyState\":\"CAN_RECOVER\",\"reasons\":[\"EMERGENCY_RELEASE_NOT_CONFIRMED\"],\"alarmCode\":\"EMERGENCY_RELEASE_UNCONFIRMED\",\"commandAuditId\":\"2229dbb4e26543f8bbeae9c9e402f2e6\",\"outcome\":\"Pending\"}"}
+{"at":"2026-10-02T16:09:33.8574387+00:00","note":"RIoT clears the latch; the vehicle stands idle at its station, its order FAILED."}
+{"at":"2026-10-02T16:09:33.8786657+00:00","criterion":"release-confirmed","value":"Pending"}
+{"at":"2026-10-02T16:09:34.3879478+00:00","criterion":"release-confirmed","value":"Confirmed"}
+{"at":"2026-10-02T16:09:34.4080473+00:00","criterion":"runtime-iterations","value":"17"}
+{"at":"2026-10-02T16:09:35.4566828+00:00","criterion":"runtime-iterations","value":"18"}
+{"at":"2026-10-02T16:09:36.2301680+00:00","criterion":"runtime-iterations","value":"19"}
+{"at":"2026-10-02T16:09:37.2492761+00:00","criterion":"runtime-iterations","value":"20"}
+{"at":"2026-10-02T16:09:37.4911231+00:00","note":"Fault recovery (not remedied, order unfinished) -> 409: {\"type\":\"https://tools.ietf.org/html/rfc9110#section-15.5.10\",\"title\":\"Vehicle fault recovery refused\",\"status\":409,\"detail\":\"FAULT_RECOVERY_REMEDY_NOT_CONFIRMED,FAULT_RECOVERY_VEHICLE_ORDER_NOT_FINISHED,FAULT_RECOVERY_CURRENT_ORDER_NOT_ENDED\",\"agvId\":\"AGV-L2-001\",\"action\":\"CLEAR_FAULT\",\"outcome\":\"Refused\",\"reasons\":[\"FAULT_RECOVERY_REMEDY_NOT_CONFIRMED\",\"FAULT_RECOVERY_VEHICLE_ORDER_NOT_FINISHED\",\"FAULT_RECOVERY_CURRENT_ORDER_NOT_ENDED\"],\"faultGeneration\":1}"}
+{"at":"2026-10-02T16:09:37.7072384+00:00","note":"Fault recovery (complete) -> 200: {\"agvId\":\"AGV-L2-001\",\"action\":\"CLEAR_FAULT\",\"outcome\":\"Cleared\",\"disposition\":\"REBUILD_SCHEDULED\",\"reasons\":[],\"faultGeneration\":1,\"terminatedDemandIds\":[]}"}
+{"at":"2026-10-02T16:09:37.7275162+00:00","criterion":"order-rebuilt","value":"@{UpperId=W2G-a95235d1-0ff1-46b6-8e1a-1fa411481e53-PICKUP-1; DemandId=a95235d1-0ff1-46b6-8e1a-1fa411481e53; VehicleKey=BROKERX-L2-0001; Status=CONFIRMED; DestinationStationId=12; JourneyId=journey:a95235d1-0ff1-46b6-8e1a-1fa411481e53; Stage=AwaitingPickupArrival}"}
+{"at":"2026-10-02T16:09:46.6428382+00:00","criterion":"order-rebuilt","value":"@{UpperId=W2G-a95235d1-0ff1-46b6-8e1a-1fa411481e53-REBUILD-1-1; DemandId=a95235d1-0ff1-46b6-8e1a-1fa411481e53; VehicleKey=BROKERX-L2-0001; Status=CONFIRMED; DestinationStationId=12; JourneyId=journey:a95235d1-0ff1-46b6-8e1a-1fa411481e53; Stage=AwaitingPickupArrival}"}
+{"at":"2026-10-02T16:09:46.6716692+00:00","criterion":"runtime-iterations","value":"29"}
+{"at":"2026-10-02T16:09:47.4418046+00:00","criterion":"runtime-iterations","value":"30"}
+{"at":"2026-10-02T16:09:48.2025138+00:00","criterion":"runtime-iterations","value":"31"}
+{"at":"2026-10-02T16:09:49.2493965+00:00","criterion":"runtime-iterations","value":"32"}
+{"at":"2026-10-02T16:09:50.2718085+00:00","criterion":"runtime-iterations","value":"33"}
+{"at":"2026-10-02T16:09:50.3005778+00:00","note":"Fault recovery (repeat) -> 200: {\"agvId\":\"AGV-L2-001\",\"action\":\"CLEAR_FAULT\",\"outcome\":\"AlreadyCleared\",\"disposition\":\"NONE\",\"reasons\":[],\"faultGeneration\":1,\"terminatedDemandIds\":[]}"}
+{"at":"2026-10-02T16:09:50.3126580+00:00","note":"Fault recovery (unsigned) -> 409: {\"type\":\"https://tools.ietf.org/html/rfc9110#section-15.5.10\",\"title\":\"Vehicle fault recovery refused\",\"status\":409,\"detail\":\"FAULT_RECOVERY_OPERATOR_UNIDENTIFIED\",\"agvId\":\"AGV-L2-001\",\"action\":\"CLEAR_FAULT\",\"outcome\":\"Refused\",\"reasons\":[\"FAULT_RECOVERY_OPERATOR_UNIDENTIFIED\"],\"faultGeneration\":1}"}
+{"at":"2026-10-02T16:09:50.3149866+00:00","note":"故障人工清除：锁着清不了；解除急停后条件不全就拒并全列理由；齐全则清除、需求留在本车、延迟后同车重建、不再记故障；重复请求不做事；没署名的重复请求照样被拒。"}
+{"at":"2026-10-02T16:09:50.7643331+00:00","note":"L2 port block lock released."}

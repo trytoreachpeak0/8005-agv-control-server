@@ -1,0 +1,271 @@
+Test run for C:\Users\szy\Desktop\8005-workspace-v2\worktrees\b7-06-8005-agv-control-server\tests\ControlServer.Tests\bin\Release\net8.0\win-x64\ControlServer.Tests.dll (.NETCoreApp,Version=v8.0)
+VSTest version 17.11.1 (x64)
+
+Starting test execution, please wait...
+A total of 1 test files matched the specified pattern.
+[xUnit.net 00:00:01.49]     ControlServer.Tests.InTransitVehicleFactsTests.BothChainsGiveTheSameReasonForTheFactsTheyShare(fault: "unknownPresent", reason: "ONBOARD_DEPARTURE_UNSAFE") [FAIL]
+[xUnit.net 00:00:01.50]     ControlServer.Tests.InTransitVehicleFactsTests.BothChainsGiveTheSameReasonForTheFactsTheyShare(fault: "onboardFactsMissing", reason: "ONBOARD_FACTS_NOT_READY") [FAIL]
+[xUnit.net 00:00:01.50]     ControlServer.Tests.InTransitVehicleFactsTests.BothChainsGiveTheSameReasonForTheFactsTheyShare(fault: "bindingMismatch", reason: "RIOT_VEHICLE_BINDING_MISMATCH") [FAIL]
+[xUnit.net 00:00:01.50]     ControlServer.Tests.InTransitVehicleFactsTests.BothChainsGiveTheSameReasonForTheFactsTheyShare(fault: "staleObservation", reason: "RIOT_VEHICLE_FACT_STALE") [FAIL]
+[xUnit.net 00:00:01.50]     ControlServer.Tests.InTransitVehicleFactsTests.BothChainsGiveTheSameReasonForTheFactsTheyShare(fault: "batteryTooLow", reason: "BATTERY_POLICY_NOT_SATISFIED") [FAIL]
+[xUnit.net 00:00:01.51]     ControlServer.Tests.InTransitVehicleFactsTests.BothChainsGiveTheSameReasonForTheFactsTheyShare(fault: "disconnected", reason: "RIOT_VEHICLE_NOT_AVAILABLE") [FAIL]
+[xUnit.net 00:00:01.51]     ControlServer.Tests.InTransitVehicleFactsTests.BothChainsGiveTheSameReasonForTheFactsTheyShare(fault: "wrongMap", reason: "RIOT_VEHICLE_MAP_MISMATCH") [FAIL]
+[xUnit.net 00:00:01.51]     ControlServer.Tests.InTransitVehicleFactsTests.BothChainsGiveTheSameReasonForTheFactsTheyShare(fault: "departureUnsafe", reason: "ONBOARD_DEPARTURE_UNSAFE") [FAIL]
+[xUnit.net 00:00:01.51]     ControlServer.Tests.InTransitVehicleFactsTests.BothChainsGiveTheSameReasonForTheFactsTheyShare(fault: "unlockOutputsNotReset", reason: "ONBOARD_DEPARTURE_UNSAFE") [FAIL]
+  Failed ControlServer.Tests.InTransitVehicleFactsTests.BothChainsGiveTheSameReasonForTheFactsTheyShare(fault: "unknownPresent", reason: "ONBOARD_DEPARTURE_UNSAFE") [15 ms]
+  Error Message:
+   Assert.Equal() Failure: Strings differ
+           ↓ (pos 0)
+Expected: "ONBOARD_DEPARTURE_UNSAFE"
+Actual:   "ELIGIBLE"
+           ↑ (pos 0)
+  Stack Trace:
+     at ControlServer.Tests.InTransitVehicleFactsTests.BothChainsGiveTheSameReasonForTheFactsTheyShare(String fault, String reason) in C:\Users\szy\Desktop\8005-workspace-v2\worktrees\b7-06-8005-agv-control-server\tests\ControlServer.Tests\InTransitVehicleFactsTests.cs:line 153
+   at System.RuntimeMethodHandle.InvokeMethod(Object target, Void** arguments, Signature sig, Boolean isConstructor)
+   at System.Reflection.MethodBaseInvoker.InvokeDirectByRefWithFewArgs(Object obj, Span`1 copyOfArgs, BindingFlags invokeAttr)
+  Failed ControlServer.Tests.InTransitVehicleFactsTests.BothChainsGiveTheSameReasonForTheFactsTheyShare(fault: "onboardFactsMissing", reason: "ONBOARD_FACTS_NOT_READY") [< 1 ms]
+  Error Message:
+   Assert.Equal() Failure: Strings differ
+           ↓ (pos 0)
+Expected: "ONBOARD_FACTS_NOT_READY"
+Actual:   "ELIGIBLE"
+           ↑ (pos 0)
+  Stack Trace:
+     at ControlServer.Tests.InTransitVehicleFactsTests.BothChainsGiveTheSameReasonForTheFactsTheyShare(String fault, String reason) in C:\Users\szy\Desktop\8005-workspace-v2\worktrees\b7-06-8005-agv-control-server\tests\ControlServer.Tests\InTransitVehicleFactsTests.cs:line 153
+   at InvokeStub_InTransitVehicleFactsTests.BothChainsGiveTheSameReasonForTheFactsTheyShare(Object, Span`1)
+   at System.Reflection.MethodBaseInvoker.InvokeWithFewArgs(Object obj, BindingFlags invokeAttr, Binder binder, Object[] parameters, CultureInfo culture)
+  Failed ControlServer.Tests.InTransitVehicleFactsTests.BothChainsGiveTheSameReasonForTheFactsTheyShare(fault: "bindingMismatch", reason: "RIOT_VEHICLE_BINDING_MISMATCH") [< 1 ms]
+  Error Message:
+   Assert.Equal() Failure: Strings differ
+           ↓ (pos 0)
+Expected: "RIOT_VEHICLE_BINDING_MISMATCH"
+Actual:   "ELIGIBLE"
+           ↑ (pos 0)
+  Stack Trace:
+     at ControlServer.Tests.InTransitVehicleFactsTests.BothChainsGiveTheSameReasonForTheFactsTheyShare(String fault, String reason) in C:\Users\szy\Desktop\8005-workspace-v2\worktrees\b7-06-8005-agv-control-server\tests\ControlServer.Tests\InTransitVehicleFactsTests.cs:line 153
+   at InvokeStub_InTransitVehicleFactsTests.BothChainsGiveTheSameReasonForTheFactsTheyShare(Object, Span`1)
+   at System.Reflection.MethodBaseInvoker.InvokeWithFewArgs(Object obj, BindingFlags invokeAttr, Binder binder, Object[] parameters, CultureInfo culture)
+  Failed ControlServer.Tests.InTransitVehicleFactsTests.BothChainsGiveTheSameReasonForTheFactsTheyShare(fault: "staleObservation", reason: "RIOT_VEHICLE_FACT_STALE") [< 1 ms]
+  Error Message:
+   Assert.Equal() Failure: Strings differ
+           ↓ (pos 0)
+Expected: "RIOT_VEHICLE_FACT_STALE"
+Actual:   "ELIGIBLE"
+           ↑ (pos 0)
+  Stack Trace:
+     at ControlServer.Tests.InTransitVehicleFactsTests.BothChainsGiveTheSameReasonForTheFactsTheyShare(String fault, String reason) in C:\Users\szy\Desktop\8005-workspace-v2\worktrees\b7-06-8005-agv-control-server\tests\ControlServer.Tests\InTransitVehicleFactsTests.cs:line 153
+   at InvokeStub_InTransitVehicleFactsTests.BothChainsGiveTheSameReasonForTheFactsTheyShare(Object, Span`1)
+   at System.Reflection.MethodBaseInvoker.InvokeWithFewArgs(Object obj, BindingFlags invokeAttr, Binder binder, Object[] parameters, CultureInfo culture)
+  Failed ControlServer.Tests.InTransitVehicleFactsTests.BothChainsGiveTheSameReasonForTheFactsTheyShare(fault: "batteryTooLow", reason: "BATTERY_POLICY_NOT_SATISFIED") [< 1 ms]
+  Error Message:
+   Assert.Equal() Failure: Strings differ
+           ↓ (pos 0)
+Expected: "BATTERY_POLICY_NOT_SATISFIED"
+Actual:   "ELIGIBLE"
+           ↑ (pos 0)
+  Stack Trace:
+     at ControlServer.Tests.InTransitVehicleFactsTests.BothChainsGiveTheSameReasonForTheFactsTheyShare(String fault, String reason) in C:\Users\szy\Desktop\8005-workspace-v2\worktrees\b7-06-8005-agv-control-server\tests\ControlServer.Tests\InTransitVehicleFactsTests.cs:line 153
+   at InvokeStub_InTransitVehicleFactsTests.BothChainsGiveTheSameReasonForTheFactsTheyShare(Object, Span`1)
+   at System.Reflection.MethodBaseInvoker.InvokeWithFewArgs(Object obj, BindingFlags invokeAttr, Binder binder, Object[] parameters, CultureInfo culture)
+  Failed ControlServer.Tests.InTransitVehicleFactsTests.BothChainsGiveTheSameReasonForTheFactsTheyShare(fault: "disconnected", reason: "RIOT_VEHICLE_NOT_AVAILABLE") [< 1 ms]
+  Error Message:
+   Assert.Equal() Failure: Strings differ
+           ↓ (pos 0)
+Expected: "RIOT_VEHICLE_NOT_AVAILABLE"
+Actual:   "ELIGIBLE"
+           ↑ (pos 0)
+  Stack Trace:
+     at ControlServer.Tests.InTransitVehicleFactsTests.BothChainsGiveTheSameReasonForTheFactsTheyShare(String fault, String reason) in C:\Users\szy\Desktop\8005-workspace-v2\worktrees\b7-06-8005-agv-control-server\tests\ControlServer.Tests\InTransitVehicleFactsTests.cs:line 153
+   at InvokeStub_InTransitVehicleFactsTests.BothChainsGiveTheSameReasonForTheFactsTheyShare(Object, Span`1)
+   at System.Reflection.MethodBaseInvoker.InvokeWithFewArgs(Object obj, BindingFlags invokeAttr, Binder binder, Object[] parameters, CultureInfo culture)
+  Failed ControlServer.Tests.InTransitVehicleFactsTests.BothChainsGiveTheSameReasonForTheFactsTheyShare(fault: "wrongMap", reason: "RIOT_VEHICLE_MAP_MISMATCH") [< 1 ms]
+  Error Message:
+   Assert.Equal() Failure: Strings differ
+           ↓ (pos 0)
+Expected: "RIOT_VEHICLE_MAP_MISMATCH"
+Actual:   "ELIGIBLE"
+           ↑ (pos 0)
+  Stack Trace:
+     at ControlServer.Tests.InTransitVehicleFactsTests.BothChainsGiveTheSameReasonForTheFactsTheyShare(String fault, String reason) in C:\Users\szy\Desktop\8005-workspace-v2\worktrees\b7-06-8005-agv-control-server\tests\ControlServer.Tests\InTransitVehicleFactsTests.cs:line 153
+   at InvokeStub_InTransitVehicleFactsTests.BothChainsGiveTheSameReasonForTheFactsTheyShare(Object, Span`1)
+   at System.Reflection.MethodBaseInvoker.InvokeWithFewArgs(Object obj, BindingFlags invokeAttr, Binder binder, Object[] parameters, CultureInfo culture)
+  Failed ControlServer.Tests.InTransitVehicleFactsTests.BothChainsGiveTheSameReasonForTheFactsTheyShare(fault: "departureUnsafe", reason: "ONBOARD_DEPARTURE_UNSAFE") [< 1 ms]
+  Error Message:
+   Assert.Equal() Failure: Strings differ
+           ↓ (pos 0)
+Expected: "ONBOARD_DEPARTURE_UNSAFE"
+Actual:   "ELIGIBLE"
+           ↑ (pos 0)
+  Stack Trace:
+     at ControlServer.Tests.InTransitVehicleFactsTests.BothChainsGiveTheSameReasonForTheFactsTheyShare(String fault, String reason) in C:\Users\szy\Desktop\8005-workspace-v2\worktrees\b7-06-8005-agv-control-server\tests\ControlServer.Tests\InTransitVehicleFactsTests.cs:line 153
+   at InvokeStub_InTransitVehicleFactsTests.BothChainsGiveTheSameReasonForTheFactsTheyShare(Object, Span`1)
+   at System.Reflection.MethodBaseInvoker.InvokeWithFewArgs(Object obj, BindingFlags invokeAttr, Binder binder, Object[] parameters, CultureInfo culture)
+  Failed ControlServer.Tests.InTransitVehicleFactsTests.BothChainsGiveTheSameReasonForTheFactsTheyShare(fault: "unlockOutputsNotReset", reason: "ONBOARD_DEPARTURE_UNSAFE") [< 1 ms]
+  Error Message:
+   Assert.Equal() Failure: Strings differ
+           ↓ (pos 0)
+Expected: "ONBOARD_DEPARTURE_UNSAFE"
+Actual:   "ELIGIBLE"
+           ↑ (pos 0)
+  Stack Trace:
+     at ControlServer.Tests.InTransitVehicleFactsTests.BothChainsGiveTheSameReasonForTheFactsTheyShare(String fault, String reason) in C:\Users\szy\Desktop\8005-workspace-v2\worktrees\b7-06-8005-agv-control-server\tests\ControlServer.Tests\InTransitVehicleFactsTests.cs:line 153
+   at InvokeStub_InTransitVehicleFactsTests.BothChainsGiveTheSameReasonForTheFactsTheyShare(Object, Span`1)
+   at System.Reflection.MethodBaseInvoker.InvokeWithFewArgs(Object obj, BindingFlags invokeAttr, Binder binder, Object[] parameters, CultureInfo culture)
+[xUnit.net 00:00:01.51]     ControlServer.Tests.InTransitVehicleFactsTests.BothChainsGiveTheSameReasonForTheFactsTheyShare(fault: "charging", reason: "BATTERY_POLICY_NOT_SATISFIED") [FAIL]
+[xUnit.net 00:00:01.51]     ControlServer.Tests.InTransitVehicleFactsTests.BothChainsGiveTheSameReasonForTheFactsTheyShare(fault: "batteryUnknown", reason: "BATTERY_FACT_UNKNOWN") [FAIL]
+[xUnit.net 00:00:01.52]     ControlServer.Tests.InTransitVehicleFactsTests.TheFactsBothChainsAskAboutStopAVehicleUnderWayToo(fault: "unknownPresent", reason: "ONBOARD_DEPARTURE_UNSAFE") [FAIL]
+  Failed ControlServer.Tests.InTransitVehicleFactsTests.BothChainsGiveTheSameReasonForTheFactsTheyShare(fault: "charging", reason: "BATTERY_POLICY_NOT_SATISFIED") [< 1 ms]
+  Error Message:
+   Assert.Equal() Failure: Strings differ
+           ↓ (pos 0)
+Expected: "BATTERY_POLICY_NOT_SATISFIED"
+Actual:   "ELIGIBLE"
+           ↑ (pos 0)
+  Stack Trace:
+     at ControlServer.Tests.InTransitVehicleFactsTests.BothChainsGiveTheSameReasonForTheFactsTheyShare(String fault, String reason) in C:\Users\szy\Desktop\8005-workspace-v2\worktrees\b7-06-8005-agv-control-server\tests\ControlServer.Tests\InTransitVehicleFactsTests.cs:line 153
+   at InvokeStub_InTransitVehicleFactsTests.BothChainsGiveTheSameReasonForTheFactsTheyShare(Object, Span`1)
+   at System.Reflection.MethodBaseInvoker.InvokeWithFewArgs(Object obj, BindingFlags invokeAttr, Binder binder, Object[] parameters, CultureInfo culture)
+  Failed ControlServer.Tests.InTransitVehicleFactsTests.BothChainsGiveTheSameReasonForTheFactsTheyShare(fault: "batteryUnknown", reason: "BATTERY_FACT_UNKNOWN") [< 1 ms]
+  Error Message:
+   Assert.Equal() Failure: Strings differ
+           ↓ (pos 0)
+Expected: "BATTERY_FACT_UNKNOWN"
+Actual:   "ELIGIBLE"
+           ↑ (pos 0)
+  Stack Trace:
+     at ControlServer.Tests.InTransitVehicleFactsTests.BothChainsGiveTheSameReasonForTheFactsTheyShare(String fault, String reason) in C:\Users\szy\Desktop\8005-workspace-v2\worktrees\b7-06-8005-agv-control-server\tests\ControlServer.Tests\InTransitVehicleFactsTests.cs:line 153
+   at InvokeStub_InTransitVehicleFactsTests.BothChainsGiveTheSameReasonForTheFactsTheyShare(Object, Span`1)
+   at System.Reflection.MethodBaseInvoker.InvokeWithFewArgs(Object obj, BindingFlags invokeAttr, Binder binder, Object[] parameters, CultureInfo culture)
+  Failed ControlServer.Tests.InTransitVehicleFactsTests.TheFactsBothChainsAskAboutStopAVehicleUnderWayToo(fault: "unknownPresent", reason: "ONBOARD_DEPARTURE_UNSAFE") [< 1 ms]
+  Error Message:
+   Assert.Equal() Failure: Strings differ
+           ↓ (pos 0)
+Expected: "ONBOARD_DEPARTURE_UNSAFE"
+Actual:   "ELIGIBLE"
+           ↑ (pos 0)
+  Stack Trace:
+     at ControlServer.Tests.InTransitVehicleFactsTests.TheFactsBothChainsAskAboutStopAVehicleUnderWayToo(String fault, String reason) in C:\Users\szy\Desktop\8005-workspace-v2\worktrees\b7-06-8005-agv-control-server\tests\ControlServer.Tests\InTransitVehicleFactsTests.cs:line 126
+   at System.RuntimeMethodHandle.InvokeMethod(Object target, Void** arguments, Signature sig, Boolean isConstructor)
+   at System.Reflection.MethodBaseInvoker.InvokeDirectByRefWithFewArgs(Object obj, Span`1 copyOfArgs, BindingFlags invokeAttr)
+[xUnit.net 00:00:01.52]     ControlServer.Tests.InTransitVehicleFactsTests.TheFactsBothChainsAskAboutStopAVehicleUnderWayToo(fault: "batteryTooLow", reason: "BATTERY_POLICY_NOT_SATISFIED") [FAIL]
+[xUnit.net 00:00:01.52]     ControlServer.Tests.InTransitVehicleFactsTests.TheFactsBothChainsAskAboutStopAVehicleUnderWayToo(fault: "departureUnsafe", reason: "ONBOARD_DEPARTURE_UNSAFE") [FAIL]
+[xUnit.net 00:00:01.52]     ControlServer.Tests.InTransitVehicleFactsTests.TheFactsBothChainsAskAboutStopAVehicleUnderWayToo(fault: "batteryUnknown", reason: "BATTERY_FACT_UNKNOWN") [FAIL]
+[xUnit.net 00:00:01.52]     ControlServer.Tests.InTransitVehicleFactsTests.TheFactsBothChainsAskAboutStopAVehicleUnderWayToo(fault: "disconnected", reason: "RIOT_VEHICLE_NOT_AVAILABLE") [FAIL]
+[xUnit.net 00:00:01.53]     ControlServer.Tests.InTransitVehicleFactsTests.TheFactsBothChainsAskAboutStopAVehicleUnderWayToo(fault: "onboardFactsMissing", reason: "ONBOARD_FACTS_NOT_READY") [FAIL]
+[xUnit.net 00:00:01.53]     ControlServer.Tests.InTransitVehicleFactsTests.TheFactsBothChainsAskAboutStopAVehicleUnderWayToo(fault: "wrongMap", reason: "RIOT_VEHICLE_MAP_MISMATCH") [FAIL]
+[xUnit.net 00:00:01.53]     ControlServer.Tests.InTransitVehicleFactsTests.TheFactsBothChainsAskAboutStopAVehicleUnderWayToo(fault: "bindingMismatch", reason: "RIOT_VEHICLE_BINDING_MISMATCH") [FAIL]
+[xUnit.net 00:00:01.53]     ControlServer.Tests.InTransitVehicleFactsTests.TheFactsBothChainsAskAboutStopAVehicleUnderWayToo(fault: "staleObservation", reason: "RIOT_VEHICLE_FACT_STALE") [FAIL]
+[xUnit.net 00:00:01.53]     ControlServer.Tests.InTransitVehicleFactsTests.TheFactsBothChainsAskAboutStopAVehicleUnderWayToo(fault: "charging", reason: "BATTERY_POLICY_NOT_SATISFIED") [FAIL]
+  Failed ControlServer.Tests.InTransitVehicleFactsTests.TheFactsBothChainsAskAboutStopAVehicleUnderWayToo(fault: "batteryTooLow", reason: "BATTERY_POLICY_NOT_SATISFIED") [< 1 ms]
+  Error Message:
+   Assert.Equal() Failure: Strings differ
+           ↓ (pos 0)
+Expected: "BATTERY_POLICY_NOT_SATISFIED"
+Actual:   "ELIGIBLE"
+           ↑ (pos 0)
+  Stack Trace:
+     at ControlServer.Tests.InTransitVehicleFactsTests.TheFactsBothChainsAskAboutStopAVehicleUnderWayToo(String fault, String reason) in C:\Users\szy\Desktop\8005-workspace-v2\worktrees\b7-06-8005-agv-control-server\tests\ControlServer.Tests\InTransitVehicleFactsTests.cs:line 126
+   at InvokeStub_InTransitVehicleFactsTests.TheFactsBothChainsAskAboutStopAVehicleUnderWayToo(Object, Span`1)
+   at System.Reflection.MethodBaseInvoker.InvokeWithFewArgs(Object obj, BindingFlags invokeAttr, Binder binder, Object[] parameters, CultureInfo culture)
+  Failed ControlServer.Tests.InTransitVehicleFactsTests.TheFactsBothChainsAskAboutStopAVehicleUnderWayToo(fault: "departureUnsafe", reason: "ONBOARD_DEPARTURE_UNSAFE") [< 1 ms]
+  Error Message:
+   Assert.Equal() Failure: Strings differ
+           ↓ (pos 0)
+Expected: "ONBOARD_DEPARTURE_UNSAFE"
+Actual:   "ELIGIBLE"
+           ↑ (pos 0)
+  Stack Trace:
+     at ControlServer.Tests.InTransitVehicleFactsTests.TheFactsBothChainsAskAboutStopAVehicleUnderWayToo(String fault, String reason) in C:\Users\szy\Desktop\8005-workspace-v2\worktrees\b7-06-8005-agv-control-server\tests\ControlServer.Tests\InTransitVehicleFactsTests.cs:line 126
+   at InvokeStub_InTransitVehicleFactsTests.TheFactsBothChainsAskAboutStopAVehicleUnderWayToo(Object, Span`1)
+   at System.Reflection.MethodBaseInvoker.InvokeWithFewArgs(Object obj, BindingFlags invokeAttr, Binder binder, Object[] parameters, CultureInfo culture)
+  Failed ControlServer.Tests.InTransitVehicleFactsTests.TheFactsBothChainsAskAboutStopAVehicleUnderWayToo(fault: "batteryUnknown", reason: "BATTERY_FACT_UNKNOWN") [< 1 ms]
+  Error Message:
+   Assert.Equal() Failure: Strings differ
+           ↓ (pos 0)
+Expected: "BATTERY_FACT_UNKNOWN"
+Actual:   "ELIGIBLE"
+           ↑ (pos 0)
+  Stack Trace:
+     at ControlServer.Tests.InTransitVehicleFactsTests.TheFactsBothChainsAskAboutStopAVehicleUnderWayToo(String fault, String reason) in C:\Users\szy\Desktop\8005-workspace-v2\worktrees\b7-06-8005-agv-control-server\tests\ControlServer.Tests\InTransitVehicleFactsTests.cs:line 126
+   at InvokeStub_InTransitVehicleFactsTests.TheFactsBothChainsAskAboutStopAVehicleUnderWayToo(Object, Span`1)
+   at System.Reflection.MethodBaseInvoker.InvokeWithFewArgs(Object obj, BindingFlags invokeAttr, Binder binder, Object[] parameters, CultureInfo culture)
+  Failed ControlServer.Tests.InTransitVehicleFactsTests.TheFactsBothChainsAskAboutStopAVehicleUnderWayToo(fault: "disconnected", reason: "RIOT_VEHICLE_NOT_AVAILABLE") [< 1 ms]
+  Error Message:
+   Assert.Equal() Failure: Strings differ
+           ↓ (pos 0)
+Expected: "RIOT_VEHICLE_NOT_AVAILABLE"
+Actual:   "ELIGIBLE"
+           ↑ (pos 0)
+  Stack Trace:
+     at ControlServer.Tests.InTransitVehicleFactsTests.TheFactsBothChainsAskAboutStopAVehicleUnderWayToo(String fault, String reason) in C:\Users\szy\Desktop\8005-workspace-v2\worktrees\b7-06-8005-agv-control-server\tests\ControlServer.Tests\InTransitVehicleFactsTests.cs:line 126
+   at InvokeStub_InTransitVehicleFactsTests.TheFactsBothChainsAskAboutStopAVehicleUnderWayToo(Object, Span`1)
+   at System.Reflection.MethodBaseInvoker.InvokeWithFewArgs(Object obj, BindingFlags invokeAttr, Binder binder, Object[] parameters, CultureInfo culture)
+  Failed ControlServer.Tests.InTransitVehicleFactsTests.TheFactsBothChainsAskAboutStopAVehicleUnderWayToo(fault: "onboardFactsMissing", reason: "ONBOARD_FACTS_NOT_READY") [< 1 ms]
+  Error Message:
+   Assert.Equal() Failure: Strings differ
+           ↓ (pos 0)
+Expected: "ONBOARD_FACTS_NOT_READY"
+Actual:   "ELIGIBLE"
+           ↑ (pos 0)
+  Stack Trace:
+     at ControlServer.Tests.InTransitVehicleFactsTests.TheFactsBothChainsAskAboutStopAVehicleUnderWayToo(String fault, String reason) in C:\Users\szy\Desktop\8005-workspace-v2\worktrees\b7-06-8005-agv-control-server\tests\ControlServer.Tests\InTransitVehicleFactsTests.cs:line 126
+   at InvokeStub_InTransitVehicleFactsTests.TheFactsBothChainsAskAboutStopAVehicleUnderWayToo(Object, Span`1)
+   at System.Reflection.MethodBaseInvoker.InvokeWithFewArgs(Object obj, BindingFlags invokeAttr, Binder binder, Object[] parameters, CultureInfo culture)
+  Failed ControlServer.Tests.InTransitVehicleFactsTests.TheFactsBothChainsAskAboutStopAVehicleUnderWayToo(fault: "wrongMap", reason: "RIOT_VEHICLE_MAP_MISMATCH") [< 1 ms]
+  Error Message:
+   Assert.Equal() Failure: Strings differ
+           ↓ (pos 0)
+Expected: "RIOT_VEHICLE_MAP_MISMATCH"
+Actual:   "ELIGIBLE"
+           ↑ (pos 0)
+  Stack Trace:
+     at ControlServer.Tests.InTransitVehicleFactsTests.TheFactsBothChainsAskAboutStopAVehicleUnderWayToo(String fault, String reason) in C:\Users\szy\Desktop\8005-workspace-v2\worktrees\b7-06-8005-agv-control-server\tests\ControlServer.Tests\InTransitVehicleFactsTests.cs:line 126
+   at InvokeStub_InTransitVehicleFactsTests.TheFactsBothChainsAskAboutStopAVehicleUnderWayToo(Object, Span`1)
+   at System.Reflection.MethodBaseInvoker.InvokeWithFewArgs(Object obj, BindingFlags invokeAttr, Binder binder, Object[] parameters, CultureInfo culture)
+  Failed ControlServer.Tests.InTransitVehicleFactsTests.TheFactsBothChainsAskAboutStopAVehicleUnderWayToo(fault: "bindingMismatch", reason: "RIOT_VEHICLE_BINDING_MISMATCH") [< 1 ms]
+  Error Message:
+   Assert.Equal() Failure: Strings differ
+           ↓ (pos 0)
+Expected: "RIOT_VEHICLE_BINDING_MISMATCH"
+Actual:   "ELIGIBLE"
+           ↑ (pos 0)
+  Stack Trace:
+     at ControlServer.Tests.InTransitVehicleFactsTests.TheFactsBothChainsAskAboutStopAVehicleUnderWayToo(String fault, String reason) in C:\Users\szy\Desktop\8005-workspace-v2\worktrees\b7-06-8005-agv-control-server\tests\ControlServer.Tests\InTransitVehicleFactsTests.cs:line 126
+   at InvokeStub_InTransitVehicleFactsTests.TheFactsBothChainsAskAboutStopAVehicleUnderWayToo(Object, Span`1)
+   at System.Reflection.MethodBaseInvoker.InvokeWithFewArgs(Object obj, BindingFlags invokeAttr, Binder binder, Object[] parameters, CultureInfo culture)
+  Failed ControlServer.Tests.InTransitVehicleFactsTests.TheFactsBothChainsAskAboutStopAVehicleUnderWayToo(fault: "staleObservation", reason: "RIOT_VEHICLE_FACT_STALE") [< 1 ms]
+  Error Message:
+   Assert.Equal() Failure: Strings differ
+           ↓ (pos 0)
+Expected: "RIOT_VEHICLE_FACT_STALE"
+Actual:   "ELIGIBLE"
+           ↑ (pos 0)
+  Stack Trace:
+     at ControlServer.Tests.InTransitVehicleFactsTests.TheFactsBothChainsAskAboutStopAVehicleUnderWayToo(String fault, String reason) in C:\Users\szy\Desktop\8005-workspace-v2\worktrees\b7-06-8005-agv-control-server\tests\ControlServer.Tests\InTransitVehicleFactsTests.cs:line 126
+   at InvokeStub_InTransitVehicleFactsTests.TheFactsBothChainsAskAboutStopAVehicleUnderWayToo(Object, Span`1)
+   at System.Reflection.MethodBaseInvoker.InvokeWithFewArgs(Object obj, BindingFlags invokeAttr, Binder binder, Object[] parameters, CultureInfo culture)
+  Failed ControlServer.Tests.InTransitVehicleFactsTests.TheFactsBothChainsAskAboutStopAVehicleUnderWayToo(fault: "charging", reason: "BATTERY_POLICY_NOT_SATISFIED") [< 1 ms]
+  Error Message:
+   Assert.Equal() Failure: Strings differ
+           ↓ (pos 0)
+Expected: "BATTERY_POLICY_NOT_SATISFIED"
+Actual:   "ELIGIBLE"
+           ↑ (pos 0)
+  Stack Trace:
+     at ControlServer.Tests.InTransitVehicleFactsTests.TheFactsBothChainsAskAboutStopAVehicleUnderWayToo(String fault, String reason) in C:\Users\szy\Desktop\8005-workspace-v2\worktrees\b7-06-8005-agv-control-server\tests\ControlServer.Tests\InTransitVehicleFactsTests.cs:line 126
+   at InvokeStub_InTransitVehicleFactsTests.TheFactsBothChainsAskAboutStopAVehicleUnderWayToo(Object, Span`1)
+   at System.Reflection.MethodBaseInvoker.InvokeWithFewArgs(Object obj, BindingFlags invokeAttr, Binder binder, Object[] parameters, CultureInfo culture)
+[xUnit.net 00:00:01.53]     ControlServer.Tests.InTransitVehicleFactsTests.TheFactsBothChainsAskAboutStopAVehicleUnderWayToo(fault: "unlockOutputsNotReset", reason: "ONBOARD_DEPARTURE_UNSAFE") [FAIL]
+  Failed ControlServer.Tests.InTransitVehicleFactsTests.TheFactsBothChainsAskAboutStopAVehicleUnderWayToo(fault: "unlockOutputsNotReset", reason: "ONBOARD_DEPARTURE_UNSAFE") [< 1 ms]
+  Error Message:
+   Assert.Equal() Failure: Strings differ
+           ↓ (pos 0)
+Expected: "ONBOARD_DEPARTURE_UNSAFE"
+Actual:   "ELIGIBLE"
+           ↑ (pos 0)
+  Stack Trace:
+     at ControlServer.Tests.InTransitVehicleFactsTests.TheFactsBothChainsAskAboutStopAVehicleUnderWayToo(String fault, String reason) in C:\Users\szy\Desktop\8005-workspace-v2\worktrees\b7-06-8005-agv-control-server\tests\ControlServer.Tests\InTransitVehicleFactsTests.cs:line 126
+   at InvokeStub_InTransitVehicleFactsTests.TheFactsBothChainsAskAboutStopAVehicleUnderWayToo(Object, Span`1)
+   at System.Reflection.MethodBaseInvoker.InvokeWithFewArgs(Object obj, BindingFlags invokeAttr, Binder binder, Object[] parameters, CultureInfo culture)
+
+Failed!  - Failed:    22, Passed:     7, Skipped:     0, Total:    29, Duration: 59 ms - ControlServer.Tests.dll (net8.0)

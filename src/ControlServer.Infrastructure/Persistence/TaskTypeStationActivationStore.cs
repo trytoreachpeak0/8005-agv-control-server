@@ -124,6 +124,7 @@ public sealed class TaskTypeStationActivationStore(
             pointer.UpdatedAt = at;
             await ReleaseAttemptHoldsAsync(attempt, at, cancellationToken);
             await _context.SaveChangesAsync(cancellationToken);
+            await HoldUnderPendingRenameAsync(attempt, at, cancellationToken);
             await transaction.CommitAsync(cancellationToken);
         }
         catch
@@ -405,6 +406,15 @@ public sealed class TaskTypeStationActivationStore(
         {
             // The release and its audit are one transaction (review O2): a release nobody recorded did not happen.
             await using IDbContextTransaction transaction = await _context.Database.BeginTransactionAsync(cancellationToken);
+            // control-server#186 (PR #378 review, suggestion 1): the service refused a release under a pending rename before
+            // this transaction began, but the engine may have recorded one since. Read it again here, where nothing can
+            // overtake the read before the release commits, and release nothing if it is there.
+            MapNameBaselineRow? mapName = await _context.Set<MapNameBaselineRow>().AsNoTracking()
+                .SingleOrDefaultAsync(row => row.MapId == mapId, cancellationToken);
+            if (mapName?.PendingName is { } pendingName)
+            {
+                throw new MapRenamePendingException(mapId, mapName.Name, pendingName);
+            }
             List<TaskTypeStationHoldRow> open = await _context.Set<TaskTypeStationHoldRow>()
                 .Where(row => row.MapId == mapId
                     && row.TaskType == taskType
@@ -449,13 +459,7 @@ public sealed class TaskTypeStationActivationStore(
             .ToArrayAsync(cancellationToken);
         string[] demandIds = [.. freezes.Select(row => row.ConsumerId)];
         // Same notion of in flight as the area assignment preview: frozen, and its journey has not completed.
-        HashSet<string> completed = new(
-            await _context.Set<JourneyRuntimeRow>()
-                .AsNoTracking()
-                .Where(row => demandIds.Contains(row.DemandId) && row.Stage == JourneyRuntimeStage.Completed)
-                .Select(row => row.DemandId)
-                .ToArrayAsync(cancellationToken),
-            StringComparer.Ordinal);
+        HashSet<string> completed = await DemandJourneyLookup.EndedJourneyDemandIdsAsync(_context, demandIds, cancellationToken);
         return
         [
             .. freezes.Where(row => !completed.Contains(row.ConsumerId))
@@ -630,6 +634,36 @@ public sealed class TaskTypeStationActivationStore(
 
     private static string HoldActor(TaskTypeStationActivationAttempt attempt) =>
         "fieldops:activation:" + attempt.AttemptId;
+
+    /// <summary>
+    /// control-server#186 (PR #378 review, suggestion 2): a version made active while the Map carries a rename nobody accepted
+    /// has every task type it binds held under <c>CATALOG_CHANGE</c> / <c>MAP_RENAMED</c>, in the very transaction that makes
+    /// it active. Refusing the activation instead would not be enough: a rename first seen between the activation's two steps
+    /// would still let the new version come into force after the engine's observation of that round and before its read of
+    /// the holds -- one round with a newly bound task type unheld. Here the two writers are serial (BEGIN IMMEDIATE): either
+    /// the pending name is already there and this holds, or it comes later and the engine holds in the transaction that
+    /// records it, before that round reads the holds.
+    /// </summary>
+    private async Task HoldUnderPendingRenameAsync(
+        TaskTypeStationActivationAttempt attempt,
+        DateTimeOffset at,
+        CancellationToken cancellationToken)
+    {
+        TaskTypeStationBindingSetVersion target = await _bindings.ReadVersionAsync(
+                attempt.MapId, attempt.TargetVersion, cancellationToken)
+            ?? throw new InvalidOperationException(Invariant(
+                $"Map {attempt.MapId} has no binding set version {attempt.TargetVersion} to hold under a pending rename."));
+        await MapRenameHoldWriter.HoldUnderPendingRenameAsync(
+            _context,
+            new TaskTypeStationHoldStore(_context),
+            _audit,
+            target,
+            "fieldops:activate:" + attempt.AttemptId,
+            MapRenameHoldWriter.ByActivation,
+            at,
+            cancellationToken,
+            attempt.AttemptId);
+    }
 
     private static string Invariant(FormattableString text) => text.ToString(CultureInfo.InvariantCulture);
 }

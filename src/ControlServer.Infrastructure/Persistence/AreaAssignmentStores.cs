@@ -247,19 +247,26 @@ public sealed class DemandAreaAssignmentFreezeStore(ControlServerDbContext conte
         return row is null ? null : Project(row);
     }
 
+    /// <summary>
+    /// 删掉这条需求的分区归属冻结，只给释放改派的再受理用（批次7-10，control-server#215，复审中 1）。
+    /// </summary>
+    /// <remarks>
+    /// 改派是一次新的派车决定，计划按当前版本建，冻结跟着这次受理重冻。「冻结不被后来的版本改写」说的是同一次受理：
+    /// 一条已受理、仍在执行的需求不被重新解析；被释放出来重新派的需求，旧冻结属于已经结束的那一趟。
+    /// </remarks>
+    public Task ThawForRedispatchAsync(string demandId, CancellationToken cancellationToken)
+    {
+        ArgumentException.ThrowIfNullOrWhiteSpace(demandId);
+        return DemandFreezes().Where(row => row.ConsumerId == demandId).ExecuteDeleteAsync(cancellationToken);
+    }
+
     public async Task<IReadOnlyList<DemandAreaAssignmentFreeze>> ListInFlightAsync(CancellationToken cancellationToken)
     {
         ConfigurationConsumerBindingRow[] freezes = await DemandFreezes()
             .AsNoTracking()
             .ToArrayAsync(cancellationToken);
         string[] demandIds = [.. freezes.Select(row => row.ConsumerId)];
-        HashSet<string> completed = new(
-            await _context.Set<JourneyRuntimeRow>()
-                .AsNoTracking()
-                .Where(row => demandIds.Contains(row.DemandId) && row.Stage == JourneyRuntimeStage.Completed)
-                .Select(row => row.DemandId)
-                .ToArrayAsync(cancellationToken),
-            StringComparer.Ordinal);
+        HashSet<string> completed = await DemandJourneyLookup.EndedJourneyDemandIdsAsync(_context, demandIds, cancellationToken);
         return
         [
             .. freezes.Where(row => !completed.Contains(row.ConsumerId))

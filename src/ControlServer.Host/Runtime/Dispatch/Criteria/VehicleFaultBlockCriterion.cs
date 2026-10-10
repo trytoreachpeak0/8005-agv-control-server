@@ -36,7 +36,8 @@ namespace ControlServer.Host.Runtime.Dispatch.Criteria;
 /// dispatching such a vehicle is exactly what this criterion exists to prevent.
 /// </para>
 /// </remarks>
-public sealed class VehicleFaultBlockCriterion(IVehicleFaultStore faults) : IDispatchAdmissionCriterion
+public sealed class VehicleFaultBlockCriterion(IVehicleFaultStore faults, ControlServer.Infrastructure.Persistence.ControlServerDbContext dbContext)
+    : IDispatchAdmissionCriterion
 {
     /// <summary>The vehicle is suspected to be blocked; nothing has proven it faulty.</summary>
     public const string SuspectedReason = "VEHICLE_FAULT_SUSPECTED_BLOCK";
@@ -55,19 +56,9 @@ public sealed class VehicleFaultBlockCriterion(IVehicleFaultStore faults) : IDis
     {
         ArgumentNullException.ThrowIfNull(evaluation);
 
-        string agvId = evaluation.Vehicle.AgvId;
-        if (string.IsNullOrWhiteSpace(agvId))
-        {
-            return IdentityUnresolvedReason;
-        }
-
-        VehicleFaultFact? fault = await faults
-            .ReadAsync(agvId, cancellationToken).ConfigureAwait(false);
-        return fault?.Level switch
-        {
-            VehicleFaultLevel.ConfirmedIsolated => IsolatedReason,
-            VehicleFaultLevel.SuspectedBlocked => SuspectedReason,
-            _ => DispatchAdmissionChain.Eligible
-        };
+        // One definition with the idle return (control-server#389, review M1): VehicleNewPurposeReadiness. Since
+        // control-server#385 it also refuses a vehicle held for an unproven door (VEHICLE_SLOT_DOOR_HOLD).
+        return await VehicleNewPurposeReadiness
+            .BlockVerdictAsync(faults, dbContext, evaluation.Vehicle.AgvId, cancellationToken).ConfigureAwait(false);
     }
 }

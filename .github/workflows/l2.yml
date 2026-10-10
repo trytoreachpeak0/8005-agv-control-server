@@ -188,6 +188,9 @@ jobs:
               # runs for the same reason -- what it guards against is RIoT clearing the latch after the
               # read-back, a timing that one pass cannot tell from luck.
               @{ Name = 'emergency-stop-operator-release'; Runs = 3 }
+              # control-server#335 (REQ-0246): a door reported not locked while driving holds this order, stops once, never cancels;
+              # locked again, the latch is released and the held order waits for a person.
+              @{ Name = 'in-transit-door-not-locked'; Runs = 1 }
               # The batch-3 exit (FP-IS-14 and FP-IS-15), three consecutive runs each.
               @{ Name = 'slot-configuration-activation-replay'; Runs = 3; BatchId = 'batch-3' }
               @{ Name = 'onboard-alarm-snapshot-dashboard';     Runs = 3; BatchId = 'batch-3' }
@@ -254,14 +257,170 @@ jobs:
               # types refuses start.
               @{ Name = 'task-type-binding-station-reused-refuses-start'; Runs = 3; BatchId = 'batch-6' }
               # Batch 7 (program#127). Each ticket adds its own scenario here from its own pull request, sorted by
-              # name, one run each; the batch-7 exit (control-server#220) makes every line three runs.
+              # name, one run each; the batch-7 exit (control-server#220) made every line three runs.
+              # control-server#212: the loading phase. Holding for appends only where the zone allows appending (the
+              # disabled one runs both ways of forbidding it, limit 0 and unconfigured, on one server); each side full
+              # in one of its two ways; the holding timeout at 40 seconds; candidates that do not fit for any reason
+              # other than the vehicle's own cargo never make a side full; and a full vehicle still taking an
+              # appended demand until it leaves its last pickup.
+              # control-server#217: the dashboard reads the holding vehicle's deadline and time left from the database,
+              # and shows the yield once another vehicle is committed to the station.
+              @{ Name = 'cargo-holding-dashboard-projection'; Runs = 3; BatchId = 'batch-7' }
+              @{ Name = 'cargo-holding-disabled-when-append-forbidden'; Runs = 3; BatchId = 'batch-7' }
+              @{ Name = 'cargo-holding-side-full'; Runs = 3; BatchId = 'batch-7' }
+              @{ Name = 'cargo-holding-timeout'; Runs = 3; BatchId = 'batch-7' }
               # control-server#216: the five kinds of bad per-zone dispatch parameter table each rejected whole, and a
               # good one taking effect as one new version without restarting the server.
-              @{ Name = 'dispatch-zone-parameters-import-rejects'; Runs = 1; BatchId = 'batch-7' }
+              @{ Name = 'dispatch-zone-parameters-import-rejects'; Runs = 3; BatchId = 'batch-7' }
+              # control-server#211, specification 8.3 batch-7 FP-IS-08. Four scenarios, and the first two are a pair
+              # that only says anything together: with the zone's per-zone limit configured a vehicle under way takes
+              # an appended demand into a three-stop plan (REQ-0196, REQ-0205, ADR-cross-0053), and with no limit
+              # configured it takes none at all -- which is today's behaviour, and the guarantee that this change
+              # does nothing on a site whose parameters have not been approved yet (REQ-0198, REQ-0203).
+              # The delay gate one configures a limit of one millimetre, so the refusal can only come from the gate
+              # itself rather than from the zone being unconfigured -- two refusals, two reason codes, and telling
+              # them apart is what the site sees. The last one puts an idle and an in-transit vehicle on the same
+              # candidate table and watches both paths run in one round (REQ-0200, REQ-0205).
+              #
+              # One departure from the ticket, deliberate and written up in PR #257: the ticket listed a
+              # multi-stop-zone-continuity scenario asserting that the resulting stop sequence keeps each zone in one
+              # contiguous run. en-route-append-not-configured took its place. They are not the same claim -- what L1
+              # covers (ZoneContiguityRulesOutTheCheapestPlacementAndTheNextOneIsTaken) is that contiguity rules out a
+              # placement, not that the sequence a run produces is contiguous, and multi-stop-append-same-zone appends
+              # within one zone, where the sequence is contiguous by construction. The trade was made because the route
+              # graph engine ships disabled, so "with it off, appending does nothing at all" is the deployment premise
+              # a silent failure would hide.
+              @{ Name = 'en-route-append-delay-gate'; Runs = 3; BatchId = 'batch-7' }
+              @{ Name = 'en-route-append-not-configured'; Runs = 3; BatchId = 'batch-7' }
+              @{ Name = 'idle-and-inflight-vehicles-compete'; Runs = 3; BatchId = 'batch-7' }
+              @{ Name = 'multi-stop-append-same-zone'; Runs = 3; BatchId = 'batch-7' }
               # control-server#234: the onboard stops sending while leaving its socket open. The server closes the
               # connection on ADR-cross-0027's six-second window, the in-flight journey carries ONBOARD_SESSION_LOST
               # so the blocked-journey card shows it, and nothing else about the journey moves (REQ-0287).
-              @{ Name = 'onboard-silent-liveness-loss'; Runs = 1; BatchId = 'batch-7' }
+              @{ Name = 'onboard-silent-liveness-loss'; Runs = 3; BatchId = 'batch-7' }
+              # control-server#215: an operator cancels a STAGING_TO_WIRE demand before its sublot, and the unload stop only it
+              # used leaves the plan the vehicle holds, with the plan revision moving on (REQ-0197, ADR-cross-0053). It does
+              # not run the other demands to completion; that half is L1 (see the scenario's header and the pull request).
+              @{ Name = 'plan-reorder-and-drop-cancelled'; Runs = 3; BatchId = 'batch-7' }
+              # control-server#215: a vehicle that leaves the map loses its not-yet-picked demand -- the pickup order is
+              # cancelled and reconciled, the demand goes back to the backlog with its age, and a second vehicle takes it
+              # under a new generation and upperId, its dispatch plan actually sent (REQ-0328).
+              @{ Name = 'reassign-when-vehicle-ineligible'; Runs = 3; BatchId = 'batch-7' }
+              # control-server#316 (#299's T1, before the v2 vehicle trial): an in-flight order RIoT reports HANG is named
+              # ORDER_HANG with no order command, emergency stop or fault, and a continue in RIoT resumes the journey.
+              @{ Name = 'in-transit-order-hang-continue'; Runs = 1 }
+              # control-server#318 (source one, before the v2 vehicle trial): an in-flight pickup order a person cancels in
+              # RIoT is named ORDER_ENDED_WITHOUT_ARRIVAL, left alone through the delay (no release, no redispatch, no command),
+              # then rebuilt for the same vehicle and demand to the same stop. Replaces #316's in-transit-order-cancelled-held.
+              @{ Name = 'in-transit-order-cancelled-rebuilt'; Runs = 1 }
+              # control-server#299 (#299's T2, before the v2 vehicle trial): a person clears the fault an in-flight FAILED order
+              # raised. A latched vehicle is refused (clearing never releases a latch); after REQ-0356's release an incomplete
+              # request is refused with every reason; a complete one clears the fault and, since control-server#318, keeps the
+              # demand on the vehicle and rebuilds its order after the delay; the same request twice does nothing, and an
+              # unsigned one is still refused.
+              @{ Name = 'vehicle-fault-operator-clearance'; Runs = 1 }
+              # control-server#345 (before the v2 vehicle trial): an own order rebuilt after a cancellation is cancelled again
+              # within REQ-0361's window and the rebuilding stops; an unconfirmed request through #299's entry point is refused,
+              # a confirmed REBUILD_STOPPED_ORDER rebuilds it once for the same vehicle and demand, and the same request again
+              # answers AlreadyDone.
+              @{ Name = 'in-transit-rebuild-stopped-person-rebuilds'; Runs = 1 }
+              # control-server#324 (program#86's B shape, before the v2 vehicle trial): a second pickup ended by its station
+              # deadline while the vehicle carries the first one's cargo. The vehicle gets that stop's empty worklist, a late
+              # entry and a late cancellation are both answered WORKLIST_REVISION_STALE, and the next stop's worklist starts
+              # above the empty one, the session never dropping on a revision conflict.
+              @{ Name = 'stop-ended-journey-continues'; Runs = 1 }
+              # control-server#214: the task-side ranking. A new STAGING_TO_WIRE demand is taken before an older normal-band
+              # one (REQ-0202); with no anti-starvation threshold configured nothing escalates, and once one is imported
+              # the overdue normal-band demand is escalated exactly once and goes ahead of a STAGING_TO_WIRE that is not
+              # overdue (REQ-0202, REQ-0203, REQ-0210).
+              @{ Name = 'starvation-threshold-escalation'; Runs = 3; BatchId = 'batch-7' }
+              @{ Name = 'task-type-priority-band'; Runs = 3; BatchId = 'batch-7' }
+              # control-server#210, specification 8.3 batch-7 criterion 7: a key suppressed by a local cancellation stays out
+              # under a new DemandId, the unrelated demand behind it is still taken, and a demand gone from the catalog
+              # before acceptance suppresses nothing.
+              @{ Name = 'transport-demand-key-suppressed'; Runs = 3; BatchId = 'batch-7' }
+              # control-server#212, the two vehicle-full ones of the five above.
+              @{ Name = 'vehicle-full-ignores-oversized-and-gated'; Runs = 3; BatchId = 'batch-7' }
+              @{ Name = 'vehicle-full-still-appends-before-departure'; Runs = 3; BatchId = 'batch-7' }
+              # control-server#213, specification 8.3 batch-7 criterion 3: a vehicle holding at a station yields the moment
+              # another vehicle is committed to that station as its next stop, and the yield does not break an open door
+              # or a load under way -- the departure still waits for both to settle and for the pre-departure check.
+              @{ Name = 'waiting-station-yield'; Runs = 3; BatchId = 'batch-7' }
+              @{ Name = 'waiting-station-yield-waits-for-door'; Runs = 3; BatchId = 'batch-7' }
+              # control-server#273, after the batch-7 exit: a loaded vehicle standing at the gate waiting for a person
+              # has its battery read from RIoT and logged past the (shortened) threshold -- an error under the rescue line
+              # -- the dashboard card shows it, and not one order is created for it (REQ-0169).
+              @{ Name = 'waiting-journey-battery-watch'; Runs = 3; BatchId = 'batch-8' }
+              # control-server#186, after the batch-7 exit and before v2 goes on a real vehicle: RIoT renames the Map under
+              # the same mapId and every task type bound on it is held (source CATALOG_CHANGE, MAP_RENAMED) until FieldOps
+              # accepts the new name and releases the holds; a Map list that cannot be read is not a rename (REQ-0341).
+              @{ Name = 'map-rename-holds-all-task-types'; Runs = 3; BatchId = 'batch-8' }
+              # control-server#388, specification 5.4 and 8.3 batch-8: two vehicles and one registered waiting point, and the
+              # server refuses to start before it listens, naming both counts; nothing is accepted and no order is created.
+              @{ Name = 'waiting-points-fewer-than-vehicles-refuses-start'; Runs = 3; BatchId = 'batch-8' }
+              # control-server#389, REQ-0291/0292: two idle vehicles and one usable waiting point; exactly one commits to an
+              # idle return (purpose claim and reservation in one save), and a later transport goes to the other vehicle.
+              @{ Name = 'idle-return-two-vehicles-contend-one-waiting-point'; Runs = 3; BatchId = 'batch-8' }
+              # control-server#391, REQ-0204 revised: a public station is held by one vehicle at a time. A vehicle heading
+              # for a held gate goes on and is given it once released; a second demand at the staging station is not taken
+              # while another vehicle holds it, and is taken only after that vehicle leaves on departure evidence.
+              @{ Name = 'fixed-station-single-occupancy'; Runs = 3; BatchId = 'batch-8' }
+              # control-server#383, REQ-0359: an administrator declares the slot a vehicle waits on faulty. At the pickup the
+              # vehicle refuses (the door shut as it was declared) and nothing changes; at the gate it applies, the unload goes
+              # to RecoveryRequired and the journey blocks.
+              @{ Name = 'slot-fault-declaration'; Runs = 3; BatchId = 'batch-8' }
+              # control-server#390, REQ-0293/0295: the idle vehicle's commitment becomes a journey and a single move to the
+              # waiting point; on arrival the reservation turns into an occupancy and the purpose is released; a transport's
+              # order leaves the occupancy standing until RIoT reports the vehicle elsewhere; unloaded at the gate, the vehicle
+              # returns idle again and the gate is released on departure evidence.
+              @{ Name = 'waiting-point-exclusive-reserve-occupy-release'; Runs = 3; BatchId = 'batch-8' }
+              # control-server#400, specification 8.6 and 8.3 batch-9: the approved charging policy covers only the second of
+              # two vehicles; the demand goes to it, and the first, asked first, is refused with CHARGING_POLICY_NOT_APPROVED
+              # and gets no order (REQ-0282, per vehicle, the server keeps running).
+              @{ Name = 'charging-policy-missing-vehicle-not-commissioned'; Runs = 3; BatchId = 'batch-9' }
+              # control-server#403, REQ-0290: a vehicle below the mandatory charge entry threshold, asked first, takes no
+              # transport (the other vehicle does); it gets no order, purpose or station at all.
+              @{ Name = 'mandatory-charge-vehicle-takes-no-transport'; Runs = 3; BatchId = 'batch-9' }
+              # control-server#403, REQ-0281: a policy whose thresholds break the relation is refused whole at import through
+              # FieldOps; the default policy stays active and the next demand is dispatched under it.
+              @{ Name = 'charging-thresholds-relation-refused'; Runs = 3; BatchId = 'batch-9' }
+              # control-server#404, REQ-0172/0173: one charger, three vehicles below their line at once. The lowest battery
+              # gets the CHARGING purpose and the reservation; a queued vehicle whose battery then falls lower does not take it.
+              @{ Name = 'charging-one-charger-three-vehicles-contend'; Runs = 3; BatchId = 'batch-9' }
+              # control-server#404, REQ-0171: the roster is emptied while one vehicle is on its way to the charger (it goes on);
+              # a vehicle that then needs charging is put on manual charging hold and warned about; the roster back, it is
+              # allocated only after its onboard sends the return to service.
+              @{ Name = 'charging-registry-emptied-degrades-and-resumes'; Runs = 3; BatchId = 'batch-9' }
+              # control-server#405, REQ-0281/0173: one vehicle charges to COMPLETE (purpose released, charger still occupied),
+              # is sent away by a demand, and the charger is released only after it has left -- not when the order is issued.
+              @{ Name = 'charging-full-cycle'; Runs = 3; BatchId = 'batch-9' }
+              # control-server#405, specification 8.3/8.5 "one charger, three vehicles, the full one yields": the full vehicle
+              # takes a demand and leaves, and the charger goes to the lowest queued vehicle.
+              @{ Name = 'charging-full-vehicle-yields-charger'; Runs = 3; BatchId = 'batch-9' }
+              # control-server#406, REQ-0174/0284: 407802 + final HANG + no CHARGING pauses the charger and holds the
+              # vehicle where it is; an R-11 manual clearance releases the charger only once the old order has ended.
+              @{ Name = 'charging-unable-to-charge-pauses-charger'; Runs = 3; BatchId = 'batch-9' }
+              # control-server#406, REQ-0175: a HANG with another code, or 407802 away from the charger, pauses nothing.
+              @{ Name = 'charging-general-fault-does-not-pause'; Runs = 3; BatchId = 'batch-9' }
+              # control-server#407, REQ-0285/0286: charging stops below the threshold -- the charger and the vehicle's
+              # charging eligibility are both paused, the vehicle stays where it is, and nothing is sent afterwards.
+              @{ Name = 'charging-interruption-isolates'; Runs = 3; BatchId = 'batch-9' }
+              # control-server#407, REQ-0285/0282: CHARGING with no gain over the frozen (shortened) window -- both paused.
+              @{ Name = 'charging-no-progress-isolates'; Runs = 3; BatchId = 'batch-9' }
+              # control-server#409, REQ-0178/0179: the clearing vehicle queues when no waiting point is eligible, wins the
+              # last one in the round it frees, drives there, and the charger is released only in the arrival's round.
+              @{ Name = 'charging-clearance-to-waiting-point'; Runs = 3; BatchId = 'batch-9' }
+              # Batch 10 (program#169), specification 8.3 batch 10: the four same-direction task types. control-server#546:
+              # none of the four bound -- each refused with TASK_TYPE_BINDING_MISSING while WIRE_TO_GATE runs; each bound --
+              # loads at the AREA machine into the group its AREA is assigned and unloads at its bound station; and one
+              # vehicle taking WIRE_TO_GATE, WIRE_TO_OPTICAL and WIRE_TO_NITROGEN by appends while stopped, unloading at
+              # three drop-offs in turn, with a smaller allowance then refusing the second order at the delay gate.
+              @{ Name = 'same-direction-binding-missing-not-cascading'; Runs = 3; BatchId = 'batch-10' }
+              @{ Name = 'same-direction-die-to-oven-journey'; Runs = 3; BatchId = 'batch-10' }
+              @{ Name = 'same-direction-die-to-wire-staging-journey'; Runs = 3; BatchId = 'batch-10' }
+              @{ Name = 'same-direction-mixed-load-multi-drop'; Runs = 3; BatchId = 'batch-10' }
+              @{ Name = 'same-direction-wire-to-nitrogen-journey'; Runs = 3; BatchId = 'batch-10' }
+              @{ Name = 'same-direction-wire-to-optical-journey'; Runs = 3; BatchId = 'batch-10' }
           )
           # One run's usual length in seconds, for dealing scenarios out to lanes longest first. Medians of 31
           # CI jobs from 2026-09-17 (ci-research, control-server#130); normal-load's excludes the build it used
@@ -282,6 +441,28 @@ jobs:
               'structural-block-oversized-demand' = 21; 'slot-group-disabled-no-alert' = 20
               'slot-configuration-activation-replay' = 19; 'three-synthetic-peers' = 18; 'create-gate' = 18
               'route-graph-engine' = 17
+              # control-server#212, one local run each (2026-09-21): the station and holding waits are most of it.
+              'vehicle-full-still-appends-before-departure' = 111; 'cargo-holding-side-full' = 98
+              'cargo-holding-timeout' = 81; 'cargo-holding-disabled-when-append-forbidden' = 64
+              'vehicle-full-ignores-oversized-and-gated' = 58
+              # control-server#213, one local run each (2026-09-21).
+              'waiting-station-yield' = 60; 'waiting-station-yield-waits-for-door' = 60
+              # control-server#215, one local run each (2026-09-21), build excluded.
+              'reassign-when-vehicle-ineligible' = 39; 'plan-reorder-and-drop-cancelled' = 23
+              # control-server#210, one local run (2026-09-22), build included: the station deadline is 10 s of it.
+              'transport-demand-key-suppressed' = 80
+              # control-server#217, one local run (2026-09-22): 41 s with the build cached; the yield rig is most of it.
+              'cargo-holding-dashboard-projection' = 60
+              # control-server#273, one local run (2026-09-22): 83 s with the build.
+              'waiting-journey-battery-watch' = 60
+              # control-server#186, one local run (2026-09-29): two journeys, the fault window and four FieldOps calls.
+              'map-rename-holds-all-task-types' = 95
+              # control-server#389, local runs (2026-09-29): 25 s of deliberate waits (the two Wait-L2ConditionOrLast windows)
+              # on top of a two-vehicle start and one transport.
+              'idle-return-two-vehicles-contend-one-waiting-point' = 75
+              # control-server#390, one local run (2026-09-30): 91 s for the scenario itself -- two idle returns, one
+              # transport, 10 s of deliberate waiting -- 161 s with the build.
+              'waiting-point-exclusive-reserve-occupy-release' = 110
           }
 
           # Registered before anything can fail, so the upload step below always has a path: without it
@@ -355,6 +536,12 @@ jobs:
           $buildCode = $LASTEXITCODE
           Write-Host '::endgroup::'
           if ($buildCode -ne 0) { Stop-L2Setup "dotnet build ControlServer.sln -c Release exited with $buildCode" }
+
+          # A few seconds, here and not in test.yml because it needs this build's Microsoft.Data.Sqlite: the read snapshot
+          # the multi-read charging probes go through (control-server#510), against real SQLite in WAL mode. A transaction
+          # it left open would have every later probe read one old state until its wait timed out.
+          & pwsh -NoProfile -File ./scripts/l2/Test-L2ReadSnapshot.ps1
+          if ($LASTEXITCODE -ne 0) { Stop-L2Setup "Test-L2ReadSnapshot.ps1 exited with $LASTEXITCODE" }
 
           # Each run's stage root (its SQLite database and friends, under %TEMP%) goes inside the evidence
           # root: a passing run deletes its own, and a failing run's -- often the only place the cause is
@@ -509,8 +696,45 @@ jobs:
               @{ Name = 'real-onboard-cancellation-authorization-lost';       Runs = 1 }
               @{ Name = 'real-onboard-durable-ack-lost';                      Runs = 3 }
               @{ Name = 'real-onboard-expected-action-overdue';               Runs = 3 }
+              # control-server#316: an in-flight order RIoT reports HANG is named ORDER_HANG while the real onboard's session is
+              # not Ready on this server's own order, which is the normal state in transit and invisible to the synthetic peer.
+              @{ Name = 'real-onboard-order-hang-continue';                   Runs = 1 }
               @{ Name = 'real-onboard-restart-with-open-recovery-session';    Runs = 1 }
               @{ Name = 'real-onboard-restart-after-recovery-session-opened'; Runs = 1 }
+              # Batch 7 (control-server#218): the specification 8.3 batch-7 real-rig L2, a mixed-side station with a front
+              # and a rear demand at one stop. Listed so the batch exit (control-server#220) can run it here.
+              @{ Name = 'real-onboard-mixed-side-one-stop';                  Runs = 1 }
+              # control-server#339: a link dropped while the journey waits for a sublot; the deadline the runtime refills
+              # after the reconnect has to reach the real onboard, read back from its own journal.
+              @{ Name = 'real-onboard-refilled-deadline-reaches-vehicle';     Runs = 1 }
+              # control-server#345: a rebuild stopped on cargo not in its slots is handed by a person to the exception recovery
+              # session; readiness turns RECOVERY_REQUIRED so the real onboard offers the fault cargo handoff.
+              @{ Name = 'real-onboard-rebuild-stopped-cargo-handoff';        Runs = 1 }
+              # control-server#366: an own order cancelled in RIoT with cargo on board is rebuilt only on a snapshot received
+              # after it fell due and after the vehicle was last held; emptied under someone else's stop it stops, and the
+              # exception session's handoff takes it to the end though there is no fault cargo binding.
+              @{ Name = 'real-onboard-cancelled-rebuild-cargo-proof';        Runs = 1 }
+              # control-server#325 (program#86 v2): once the station deadline ends a stop, the real onboard shows none of it,
+              # and a late cancellation and a late scan made before the closing worklist arrives are both refused as STALE.
+              @{ Name = 'real-onboard-stale-stop-after-station-timeout';     Runs = 1 }
+              # control-server#335 (REQ-0246): the real onboard, not Ready for the whole leg on this server's order, drives and
+              # reconnects without a hold; a lock feedback forced to 0 holds this order and stops once; locked again, the
+              # latch is released and the held order waits for a person.
+              @{ Name = 'real-onboard-in-transit-door-facts';                Runs = 1 }
+              # control-server#375: the read before the pickup leg's create, and later the gate leg's, answers nothing (the fake RIoT
+              # fails that one read); each never-sent intent is created once RIoT answers it is absent, after the vehicle check reads
+              # the real onboard -- on the gate leg with cargo on board.
+              @{ Name = 'real-onboard-unread-pre-create-read';               Runs = 1 }
+              # control-server#383, REQ-0359: the declaration reaches the real onboard, which stops the unlock wait, reports the
+              # slot UNKNOWN under SLOT_FAULT_DECLARED and answers APPLIED; the journey blocks. Needs an onboard_ref that
+              # contains onboard-hmi#215: an onboard without it does not know SlotFaultDeclarationCommand and drops its session.
+              @{ Name = 'real-onboard-slot-fault-declaration';               Runs = 3 }
+              # control-server#405 (onboard half onboard-hmi#220): a charging cycle on the real onboard -- CHARGING and COMPLETE
+              # shown, no entry at the charger, entry at the pickup once the full vehicle is sent away, the charger released.
+              @{ Name = 'real-onboard-charging-cycle';                       Runs = 3 }
+              # control-server#405 (control-server#404 review S6): the server-held manual charging hold shown on the real onboard,
+              # kept when the battery comes back, and lifted only by the administrator's 充电后返回服务.
+              @{ Name = 'real-onboard-manual-charging-hold-return';          Runs = 1 }
           )
 
           # Registered before anything can fail, so the upload step always has a path.
@@ -579,6 +803,11 @@ jobs:
           if ($buildCode -ne 0) { Stop-RigSetup "dotnet build ControlServer.sln -c Release exited with $buildCode" }
           # Belt and braces for the environment above: anything a build still left running goes now.
           & dotnet build-server shutdown *> $null
+
+          # The read snapshot the G3 charging scenarios read through (control-server#510), checked against this build's SQLite
+          # as in the scenarios job.
+          & pwsh -NoProfile -File ./scripts/l2/Test-L2ReadSnapshot.ps1
+          if ($LASTEXITCODE -ne 0) { Stop-RigSetup "Test-L2ReadSnapshot.ps1 exited with $LASTEXITCODE" }
 
           # Each run's stage root goes inside the evidence root, as in the scenarios job.
           $stageTemp = Join-Path $evidenceRoot '_stage'

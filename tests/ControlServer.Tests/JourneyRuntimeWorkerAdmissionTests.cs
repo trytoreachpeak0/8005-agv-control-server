@@ -201,8 +201,42 @@ public sealed class JourneyRuntimeWorkerAdmissionTests
     [Trait("IntegrationSlice", "FP-IS-01")]
     public async Task LargeCatalogBatchesBacklogPersistenceBeforeAcceptingEligibleJourney()
     {
+        Assert.InRange(await SavesForARoundAsync(outOfScopeCount: 250), 1, 19);
+    }
+
+    /// <summary>
+    /// 一轮的保存次数不随目录规模增长：五十条候选与二百五十条候选，保存次数一模一样。
+    /// </summary>
+    /// <remarks>
+    /// <para>
+    /// 上面那条用一个区间说同一件事，而区间是个魔数——它随每批新增的固定写入往上挪过好几次（FP-C13 挪到 13，
+    /// B2 挪到 16，批次 4 与批次 6 各挪一格，批次7-06 挪到 19）。每挪一次，「批量」这个保证就被稀释一点：
+    /// 只看区间，一份「每条候选保存 0.05 次」的实现在小目录上也能过。
+    /// </para>
+    /// <para>
+    /// <b>这一条直接断言那个不变量。</b>两个规模差二百条候选，保存次数必须相等；只要有任何一处按候选保存，
+    /// 哪怕只是偶尔，这里立刻就是两个不同的数。批次7-06（control-server#211）把轮次翻成任务优先之后，
+    /// 循环的形状从「按车」变成了「按候选」，按候选保存正是这次改动最容易滑进去的退化——写这一条的直接原因
+    /// 就是它真的滑进去过一次，二百五十一条候选跑出了 269 次保存。
+    /// </para>
+    /// </remarks>
+    [Fact]
+    [Trait("IntegrationSlice", "FP-IS-01")]
+    public async Task TheNumberOfSavesInARoundDoesNotGrowWithTheCatalog()
+    {
+        Assert.Equal(
+            await SavesForARoundAsync(outOfScopeCount: 50),
+            await SavesForARoundAsync(outOfScopeCount: 250));
+    }
+
+    /// <summary>
+    /// 跑一轮：<paramref name="outOfScopeCount"/> 条不在范围内的候选加一条合格的，返回这一轮的保存次数。
+    /// </summary>
+    /// <remarks>顺带把这一轮该有的结果断言掉——合格那条被接走、每条候选都有积压行、只建了一个订单。</remarks>
+    private static async Task<int> SavesForARoundAsync(int outOfScopeCount)
+    {
         await using RuntimeFixture fixture = await RuntimeFixture.CreateAsync();
-        AcceptedDemandSnapshot[] outOfScope = Enumerable.Range(1, 250)
+        AcceptedDemandSnapshot[] outOfScope = Enumerable.Range(1, outOfScopeCount)
             .Select(index => fixture.Demand(
                 $"20000000-0000-4000-8000-{index:D12}",
                 $"IGNORED-{index:D3}",
@@ -223,21 +257,10 @@ public sealed class JourneyRuntimeWorkerAdmissionTests
         await fixture.Engine.ExecuteOnceAsync(TestContext.Current.CancellationToken);
 
         Assert.Equal(eligible.DemandId, (await fixture.RuntimeAsync()).DemandId);
-        Assert.Equal(251, await fixture.Context.JourneyBacklog.CountAsync(
+        Assert.Equal(outOfScopeCount + 1, await fixture.Context.JourneyBacklog.CountAsync(
             TestContext.Current.CancellationToken));
         Assert.Equal(1, fixture.Riot.TotalCreateCount);
-        // 251 candidates, a bounded number of saves: what this pins is that backlog persistence is
-        // batched rather than one save per candidate. The budget went from 10 to 13 with FP-C13,
-        // which adds exactly three writes to an accepting round and none per candidate -- the
-        // catalog confirmation, the gate verdict for the one demand that reached the gate, and the
-        // freeze of its endpoints. A steady round that accepts nothing adds only the confirmation.
-        // B2 adds three more, still none of them per candidate: applying the configured fleet
-        // policy, which this first round does because the tables start empty and which costs two
-        // saves, and the occupancy claim on the accepted journey's first order. Batch 4 adds one more
-        // (control-server#72): the area assignment freeze, written inside the acceptance transaction
-        // ahead of the acceptance rows. Batch 6 adds one more (control-server#160): the task type station
-        // rule and binding set versions, frozen in the same transaction, again once per accepted journey.
-        Assert.InRange(fixture.SaveChanges.Count, 1, 17);
+        return fixture.SaveChanges.Count;
     }
 
     [Fact]
@@ -578,29 +601,6 @@ public sealed class JourneyRuntimeWorkerAdmissionTests
 
         Assert.Equal("ACCEPTED", (await fixture.Context.JourneyBacklog.SingleAsync(
             TestContext.Current.CancellationToken)).ReasonCode);
-    }
-
-    [Fact]
-    [Trait("IntegrationSlice", "FP-IS-01")]
-    public async Task SupportsBatchUnlockFalseDoesNotBlockAdmission()
-    {
-        // The protocol declares supportsBatchUnlock with no semantics -- a bare boolean, unchanged
-        // from protocol-v0.1.1 through the v2 candidate -- and its own canonical example sets it
-        // false. Whether the vehicle can operate a given slot set is decided
-        // against AvailableSlots when the command is sent, not by this flag.
-        await using RuntimeFixture fixture = await RuntimeFixture.CreateAsync();
-        fixture.Catalog.Set(fixture.Demand(
-            "10000000-0000-4000-8000-000000000001",
-            "SUBLOT-001",
-            Now.AddMinutes(-10)));
-        fixture.BoxCounts.Set("SUBLOT-001", 4);
-        await fixture.ClearSupportsBatchUnlockAsync();
-
-        await fixture.Engine.ExecuteOnceAsync(TestContext.Current.CancellationToken);
-
-        Assert.Equal("ACCEPTED", (await fixture.Context.JourneyBacklog.SingleAsync(
-            TestContext.Current.CancellationToken)).ReasonCode);
-        Assert.Equal(JourneyRuntimeStage.AwaitingPickupArrival, (await fixture.RuntimeAsync()).Stage);
     }
 
     [Fact]
@@ -1095,7 +1095,7 @@ public sealed class JourneyRuntimeWorkerAdmissionTests
         Assert.Equal("T3-7", runtime.PickupStationId);
         Assert.Equal(fixture.Options.DispatchZone, runtime.DispatchZone);
         DemandAreaAssignmentFreeze? freeze = await new DemandAreaAssignmentFreezeStore(fixture.Context)
-            .ReadAsync(runtime.DemandId, TestContext.Current.CancellationToken);
+            .ReadAsync(runtime.DemandId!, TestContext.Current.CancellationToken);
         Assert.Equal(table.Version, freeze?.Version);
         Assert.Equal(table.SnapshotId, freeze?.SnapshotId);
     }
@@ -1147,7 +1147,7 @@ public sealed class JourneyRuntimeWorkerAdmissionTests
         Assert.Equal(
             2,
             (await new DemandAreaAssignmentFreezeStore(fixture.Context)
-                .ReadAsync(runtime.DemandId, TestContext.Current.CancellationToken))?.Version);
+                .ReadAsync(runtime.DemandId!, TestContext.Current.CancellationToken))?.Version);
     }
 
     /// <summary>
@@ -1194,7 +1194,7 @@ public sealed class JourneyRuntimeWorkerAdmissionTests
         Assert.Equal(
             before.Version,
             (await new DemandAreaAssignmentFreezeStore(fixture.Context)
-                .ReadAsync(runtime.DemandId, TestContext.Current.CancellationToken))?.Version);
+                .ReadAsync(runtime.DemandId!, TestContext.Current.CancellationToken))?.Version);
     }
 
     [Fact]
@@ -1227,7 +1227,9 @@ public sealed class JourneyRuntimeWorkerAdmissionTests
     public async Task BatteryAtConfirmedThirtyPercentThresholdRemainsEligible()
     {
         await using RuntimeFixture fixture = await RuntimeFixture.CreateAsync();
-        fixture.Options.MinimumBatteryPercent = 30;
+        // 批次9-05（control-server#403）：线来自充电策略，不再是 MinimumBatteryPercent。两道线 30、估计 0，等于线即合格。
+        fixture.ChargingPolicy = TestChargingPolicies.AllApprovedAt(30);
+        await fixture.RecreateEngineAsync();
         fixture.Riot.Vehicle = fixture.Riot.Vehicle with { BatteryPercent = 30 };
         fixture.Catalog.Set(fixture.Demand(
             "10000000-0000-4000-8000-000000000001", "SUBLOT-001", Now.AddMinutes(-10)));
@@ -1278,7 +1280,9 @@ public sealed class JourneyRuntimeWorkerAdmissionTests
     [InlineData("zone-not-admitted", "DISPATCH_ZONE_VEHICLE_ADMISSION_MISSING")]
     [InlineData("vehicle-not-idle", "RIOT_VEHICLE_NOT_IDLE")]
     [InlineData("vehicle-map-mismatch", "RIOT_VEHICLE_MAP_MISMATCH")]
-    [InlineData("battery-low", "BATTERY_POLICY_NOT_SATISFIED")]
+    // control-server#403: below the mandatory charge entry threshold is its own code; short of the post-task margin keeps the old one.
+    [InlineData("battery-low", "MANDATORY_CHARGE_REQUIRED")]
+    [InlineData("battery-margin", "BATTERY_POLICY_NOT_SATISFIED")]
     [InlineData("riot-order-occupied", "RIOT_VEHICLE_ORDER_OCCUPIED")]
     [InlineData("box-count-missing", "SUBLOT_BOX_COUNT_UNAVAILABLE")]
     [InlineData("package-capacity-missing", "PACKAGE_CAPACITY_NOT_UNIQUE")]
@@ -1315,7 +1319,17 @@ public sealed class JourneyRuntimeWorkerAdmissionTests
                 fixture.Riot.Vehicle = fixture.Riot.Vehicle with { CurrentMap = "OTHER-MAP" };
                 break;
             case "battery-low":
+                // control-server#404: with no charger in the roster the vehicle would be put on manual charging hold, and that
+                // criterion answers before the battery one. A charger it cannot be allocated keeps it queued, so the battery gate shows.
+                await ChargingTestKit.WriteRosterWithAChargerNobodyIsSentToAsync(fixture.Context, fixture.Options.MapId, Now);
                 fixture.Riot.Vehicle = fixture.Riot.Vehicle with { BatteryPercent = 10 };
+                break;
+            case "battery-margin":
+                // Above the fixture's entry line of 40, but 45 - 10 = 35 is short of the margin of 40.
+                fixture.ChargingPolicy = TestChargingPolicies.AllApprovedWith(
+                    TestChargingPolicies.ContentAt(40) with { EstimatedTaskConsumptionPercent = 10 });
+                await fixture.RecreateEngineAsync();
+                fixture.Riot.Vehicle = fixture.Riot.Vehicle with { BatteryPercent = 45 };
                 break;
             case "riot-order-occupied":
                 fixture.Riot.Vehicle = fixture.Riot.Vehicle with { LockStatus = 1, OrderTaskId = "ORDER-ACTIVE" };

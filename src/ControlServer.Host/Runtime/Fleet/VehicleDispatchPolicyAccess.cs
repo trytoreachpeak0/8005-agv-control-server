@@ -51,23 +51,6 @@ public sealed class VehicleDispatchPolicyAccess(
         return configured;
     }
 
-    /// <summary>
-    /// Claims this vehicle for one in-flight order, returning false when it already has one.
-    /// </summary>
-    /// <remarks>
-    /// The claim rides the journey's first order and is held for the whole journey: a journey's
-    /// second leg is a second <c>OrderIntent</c> for the same vehicle, and having it claim as well
-    /// would make the vehicle collide with itself. Uniqueness is decided by the filtered unique
-    /// index ticket 06 put on <c>OrderIntents</c>, not by a read followed by a write, so two rounds
-    /// racing for one vehicle cannot both win.
-    /// </remarks>
-    public Task<bool> TryClaimVehicleOccupancyAsync(string upperId, CancellationToken cancellationToken) =>
-        store.TryClaimVehicleOccupancyAsync(upperId, timeProvider.GetUtcNow(), cancellationToken);
-
-    /// <summary>Releases the claim, because the journey holding it has finished.</summary>
-    public Task ReleaseVehicleOccupancyAsync(string upperId, CancellationToken cancellationToken) =>
-        store.ReleaseVehicleOccupancyAsync(upperId, timeProvider.GetUtcNow(), cancellationToken);
-
     /// <summary>The policy the configuration describes.</summary>
     /// <remarks>
     /// An empty <c>Fleet</c> is the single-vehicle deployment, and its slice comes from the fields

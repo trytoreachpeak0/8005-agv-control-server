@@ -1,0 +1,13 @@
+diff --git a/scripts/g3-slice-evidence.ps1 b/scripts/g3-slice-evidence.ps1
+index c52c299b5..e7691c56c 100644
+--- a/scripts/g3-slice-evidence.ps1
++++ b/scripts/g3-slice-evidence.ps1
+@@ -844,7 +844,7 @@ function Get-G3DirtyStatusEntries {
+         # dirty -- four of the seven formal runs of the last two exits. No runner executes anything under
+         # evidence/, and a runner copy put there and pointed at is RUNNER_INPUT_OVERRIDE anyway. A change to a
+         # tracked file under evidence/, and an untracked file anywhere else, stay dirty.
+-        if ($entry.StartsWith('?? evidence/', [StringComparison]::Ordinal)) { continue }
++        if ($entry.StartsWith('?? ', [StringComparison]::Ordinal)) { continue }
+         $status.Add($entry)
+     }
+     return , $status.ToArray()

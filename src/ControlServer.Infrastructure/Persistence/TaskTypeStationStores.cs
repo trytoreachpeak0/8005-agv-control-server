@@ -721,6 +721,23 @@ public sealed class DemandTaskTypeStationFreezeStore(ControlServerDbContext cont
         return new DemandTaskTypeStationFreeze(demandId, rules.Version, mapId, bindings.Version, frozenAt);
     }
 
+    /// <summary>
+    /// 删掉这条需求的规则版本与绑定集版本冻结（两行），只给释放改派的再受理用（批次7-10，control-server#215，复审中 1）。
+    /// </summary>
+    /// <remarks>理由与 <see cref="DemandAreaAssignmentFreezeStore.ThawForRedispatchAsync"/> 相同。</remarks>
+    public Task ThawForRedispatchAsync(string demandId, CancellationToken cancellationToken)
+    {
+        ArgumentException.ThrowIfNullOrWhiteSpace(demandId);
+        return _context.Set<ConfigurationConsumerBindingRow>()
+            .Where(row => row.ConsumerKind == TaskTypeStationGovernance.DemandConsumerKind
+                && row.ConsumerId == demandId
+                && ((row.ObjectKind == GovernedObjectKind.TaskTypeStationRule
+                        && row.ObjectId == TaskTypeStationGovernance.RuleObjectId)
+                    || (row.ObjectKind == GovernedObjectKind.PublicStationBinding
+                        && row.ObjectId.StartsWith(MapObjectIdPrefix))))
+            .ExecuteDeleteAsync(cancellationToken);
+    }
+
     public async Task<DemandTaskTypeStationFreeze?> ReadAsync(string demandId, CancellationToken cancellationToken)
     {
         ArgumentException.ThrowIfNullOrWhiteSpace(demandId);

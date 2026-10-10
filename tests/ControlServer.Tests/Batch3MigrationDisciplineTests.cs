@@ -50,7 +50,7 @@ public sealed class Batch3MigrationDisciplineTests
         // 在 #80 合入之后的 fp/v2-impl 上生成，排在它后面。批次 6 自己的断言在 Batch6MigrationDisciplineTests。
         "20260919021150_Batch6TaskTypeStationBindings",
         // 批次 7 唯一建表票 control-server#206：停靠与需求从属、用途占有、按业务键抑制、每区派车参数、按车修订号计数器，
-        // JourneyRuntimes／VehicleDispatchLeases 主键改 JourneyId。在 #159 合入之后的 fp/v2-impl 上生成。批次 7 自己的断言在
+        // JourneyRuntimes 与租约表主键改 JourneyId。在 #159 合入之后的 fp/v2-impl 上生成。批次 7 自己的断言在
         // Batch7MigrationDisciplineTests；迁移通道上排在它后面的是 control-server#199、#186。
         "20260919154546_Batch7MultiDemandJourneyPersistence",
         // 批次 7 迁移通道第一张：control-server#228，JourneyRuntimes 加 AreaEndAdmissionRevokedSince（准入被撤的等待起点）。
@@ -58,7 +58,40 @@ public sealed class Batch3MigrationDisciplineTests
         "20260919200353_AreaEndAdmissionRevokedSince",
         // 批次 7 迁移通道第二张：control-server#199，两张审计表加 BEFORE UPDATE／BEFORE DELETE 触发器，把「审计写一次
         // 就不再改」从 EF 层落到数据库层。在 #228 合入之后的 fp/v2-impl 上生成。自己的断言在 AuditDatabaseImmutabilityTests。
-        "20260920001500_AuditImmutabilityTriggers"
+        "20260920001500_AuditImmutabilityTriggers",
+        // 批次 7 迁移通道第三张：control-server#211，**data only, no schema change**——把升级那一刻正在装货的
+        // 那条归属回填成 LOADING。本票票面写的是「零 migration」，这一条是 Coordinator 7 于 2026-09-20 松开那条
+        // 约束后加的例外；为什么非它不可、谓词为什么无歧义，写在 Batch7MigrationDisciplineTests 的同一条上。
+        // 自己的断言在 Batch7LoadingMembershipBackfillMigrationTests。
+        "20260920145604_Batch7LoadingMembershipBackfill",
+        // control-server#273：JourneyRuntimes 加等人起点 WaitingSince 与三列等人电量记录，WaitingSince 回填正在等人的旅程。自己的断言在 WaitingJourneyWatchMigrationTests。
+        "20260922120241_WaitingJourneyWatch",
+        // control-server#318：新建 OwnOrderRebuilds 表，本服务端自建单终结后同车同需求重建的记录与审计；不动任何既有表与行。
+        "20260923043049_OwnOrderRebuilds",
+        // control-server#318 增量审查 B1：OwnOrderRebuilds 加最近一次要快照的时刻 CargoEvidenceRequestedAt（可空，不回填）；不动任何既有行。
+        "20260923094511_OwnOrderRebuildCargoEvidenceRequestedAt",
+        // control-server#330：新建 ForeignRiotOrders 表，我们车上运行中的外来订单的告警、审计与取消记录；不动任何既有表与行。
+        "20260923115051_ForeignRiotOrders",
+        // control-server#339：JourneyStops 加 WorklistRefills（本停靠的清单因离站期限重填多发了几版），默认 0；不动任何既有行。
+        "20260923152943_JourneyStopWorklistRefills",
+        // control-server#357：JourneyRuntimes 加并发令牌 Version（这一行被保存了几次），默认 0；不动任何既有行。自己的断言在 JourneyRuntimeVersionMigrationTests。
+        "20260927113122_JourneyRuntimeVersion",
+        // control-server#366：OwnOrderRebuilds 加 VehicleHeldAt（有货重建这一次被车况或会话挡住的开始）与 CargoEvidenceNotBefore（快照要晚于它才算数），都可空、不回填；不动任何既有行。
+        "20260928060831_OwnOrderRebuildCargoEvidenceNotBefore",
+        // control-server#186：新建 MapNameBaselines 表，每个 mapId 一行地图名基线（首次读到的名称、待接受的新名称、最近一次接受）；不动任何既有表与行。自己的断言在 MapNameBaselinesMigrationTests。
+        "20260928153736_MapNameBaselines",
+        // control-server#386：批次 8 建表迁移——新建用途占有记录、站点独占与经过、等待点登记四组表（记录表建空，回填归 #387），VehiclePurposeClaims 加用途 CHECK；选甲放宽 JourneyRuntimes 锚需求与只属搬运的 14 列、OrderIntents／RiotDispatchAuditEvents／ExperimentalRiotCreateAuthorizations／OwnOrderRebuilds 的 DemandId 必填性（都是保留列序的手写重建）；既有列序与行不变。自己的断言在 Batch8MigrationDisciplineTests。
+        "20260929044052_Batch8VehiclePurposePersistence",
+        // control-server#387：批次 8 第二次迁移——删前核数据（未结束的旧占用没有对应用途占有即整体拒绝、列出行、什么都不删），从占有行与已释放租约回填占有记录，删租约表与 OrderIntents 的两列订单占用及其过滤唯一索引（原生 DROP COLUMN，其余列序不变）。自己的断言在 Batch8OccupancyRetirementMigrationTests。
+        "20260929070322_Batch8RetireOldVehicleOccupancy",
+        // control-server#399：批次 9 唯一一次迁移——新建充电桩名册、充电策略版本（含批准与激活）、充电周期、桩与车两类暂停及其恢复、清桩记录、人工充电等待及其经过、两类现场确认请求共 17 张表（建空）；StationExclusivities／StationExclusivityRecords 加 CHARGER 种类与末列可空 ChargerRosterVersion（保留列序的手写重建）；OrderIntents 末列加 OrderShape（缺省即回填 SINGLE_MOVE）、JourneyRuntimes 末列加两列可空列（原生 ADD COLUMN）；既有列序与行不变。自己的断言在 Batch9MigrationDisciplineTests。
+        "20260929114754_Batch9ChargingPersistence",
+        // control-server#383：批次 8 人工判故障（REQ-0359）——新建 SlotFaultDeclarations 一张表（建空），带「同一尝试至多一条未结判定」的过滤唯一索引；既有表与行不变。在 batch-p3/v3 上建，合回集成分支前按先合入的迁移重建。自己的断言在 SlotFaultDeclarationTests。
+        "20260930012829_Batch8SlotFaultDeclarations",
+        // control-server#385：批次 8 恢复面（REQ-0242 CP-0008、REQ-0364 CP-0009）——ExceptionRecoverySessions 加可空列 ClosedReason，RecoveryWorkflows 加可空列 HandoffSublot、HandoffReceiverName、HandedOverAt，新建 SlotDoorHolds 一张表（建空，AgvId 普通索引）；纯 ADD COLUMN 与 CREATE TABLE，既有表与行不变。在 batch-p3/v3 上建，合回集成分支前按先合入的迁移重建。自己的断言在 RecoveryStateMachineG2Tests（RecoverySurface 分部）。
+        "20260930041750_Batch8RecoverySurface",
+        // control-server#505：**只改数据，不动 schema**——升级那一刻停在 Blocked、阻塞码以 _NOT_RECONCILED 结尾的旅程，码加后缀 _BEFORE_UPGRADE，成为不可放行的那一族（那时的码不保证有 RecoveryRequired 的需求作标记，而升级前第 5 条本来就一律不放，现场行为不变）；Down 去掉两个新后缀。调度 Coordinator 9 于 2026-10-08 给了迁移通道。自己的断言在 RecoveryEndingReleasesBlockedJourneyTests.Migration.cs。
+        "20261008052643_UnreleasableNotReconciledBlocksBeforeUpgrade",
     ];
 
     private static readonly string[] Batch3Tables =

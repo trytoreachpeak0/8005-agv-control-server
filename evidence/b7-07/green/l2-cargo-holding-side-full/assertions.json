@@ -1,0 +1,99 @@
+{
+  "schemaVersion": 1,
+  "scenario": "cargo-holding-side-full",
+  "runId": "20260921T091939747Z",
+  "outcome": "PASS",
+  "failureReason": "",
+  "identity": {
+    "controlServerCommit": "1dc9a178da7b8fe559afa6234a727aaa70950090",
+    "vehicleKey": "BROKERX-L2-0001",
+    "batchId": "unspecified",
+    "agvId": "AGV-L2-001",
+    "stageRoot": "C:\\Users\\szy\\AppData\\Local\\Temp\\l2-20260921T091939747Z",
+    "protocolReleaseIdentity": {
+      "repository": "8005-agv-protocol",
+      "releaseVersion": "2.0.0",
+      "tag": "protocol-v2.0.0",
+      "commit": "86575456c847041515b7b75e8851a00e0d939804",
+      "protocolVersion": 3,
+      "profileId": "AGV_FULL_PRODUCT",
+      "manifestSha256": "4ac095ad371d3aaa60d7c2e0198cfd64cff5f3068230fc3420e9cdf5616422a7",
+      "schemaBundleSha256": "9db0dbdc22fed7e39edf8d01b1fc40a12f5d70a7414f696f909ab2a87eb8c221",
+      "vectorsSha256": "391fa69a7d6e9f86ea139ba4c74eadf4994bf0a87e89d3dc5258dd7968d9182a",
+      "approvalStatus": "APPROVED_RELEASE"
+    },
+    "rig": "SyntheticOnboard"
+  },
+  "assertions": [
+    {
+      "id": "L2-CHS-01",
+      "description": "需求甲装完、FRONT 已无空仓，但 REAR 还空着：车进入持货等单（CARGO_HOLDING_WAIT），不是 VEHICLE_FULL",
+      "outcome": "PASS",
+      "expected": "CARGO_HOLDING_WAIT, started",
+      "actual": "AwaitingStationDeparture CARGO_HOLDING_WAIT, started '2026-09-21 09:20:34.7377581+00:00'"
+    },
+    {
+      "id": "L2-CHS-02",
+      "description": "需求乙追加进了持货等单的这辆车（同一趟旅程）",
+      "outcome": "PASS",
+      "expected": "journey:04724952-231e-45e4-9522-4ce0b45ace01",
+      "actual": "journey:04724952-231e-45e4-9522-4ce0b45ace01"
+    },
+    {
+      "id": "L2-CHS-03",
+      "description": "需求乙装完、REAR 还有两个空仓：仍是 CARGO_HOLDING_WAIT，起算点没有因为新停靠重置",
+      "outcome": "PASS",
+      "expected": "CARGO_HOLDING_WAIT, started 2026-09-21 09:20:34.7377581+00:00",
+      "actual": "CARGO_HOLDING_WAIT (LOADED), started 2026-09-21 09:20:34.7377581+00:00"
+    },
+    {
+      "id": "L2-CHS-04",
+      "description": "又转了五轮，REAR 仍有空仓且没有「只因本车货物装不下」的候选：状态仍是 CARGO_HOLDING_WAIT，FRONT 单侧满不算整车满",
+      "outcome": "PASS",
+      "expected": "CARGO_HOLDING_WAIT",
+      "actual": "AwaitingStationDeparture CARGO_HOLDING_WAIT full sides [\"FRONT\"]"
+    },
+    {
+      "id": "L2-CHS-05",
+      "description": "需求丁（3 花篮）只因本车货物占着 REAR 而装不下：车进入 VEHICLE_FULL，满的两侧是 FRONT 与 REAR",
+      "outcome": "PASS",
+      "expected": "VEHICLE_FULL, [\"FRONT\",\"REAR\"]",
+      "actual": "AwaitingStationDeparture VEHICLE_FULL, [\"FRONT\",\"REAR\"], D backlog SLOT_GROUP_OCCUPIED_BY_OWN_CARGO"
+    },
+    {
+      "id": "L2-CHS-06",
+      "description": "车离开最后一个装货停靠：装货阶段关闭，理由 VEHICLE_FULL",
+      "outcome": "PASS",
+      "expected": "CLOSED/VEHICLE_FULL",
+      "actual": "AwaitingGateArrival CLOSED/VEHICLE_FULL"
+    },
+    {
+      "id": "L2-CHS-07",
+      "description": "需求丁没有进这趟旅程，关闭之后它的积压理由是 LOADING_PHASE_CLOSED",
+      "outcome": "PASS",
+      "expected": "no journey / LOADING_PHASE_CLOSED",
+      "actual": "no journey / LOADING_PHASE_CLOSED"
+    },
+    {
+      "id": "L2-CHS-08",
+      "description": "车辆业务状态快照的修订号不重号（车载端号同内容不同会当场拆会话）",
+      "outcome": "PASS",
+      "expected": "7 distinct",
+      "actual": "7 of 7"
+    },
+    {
+      "id": "L2-CHS-09",
+      "description": "车收到的装货阶段依次是：到站装货 → 持货等单 → 追加后回到装货 → 持货等单 → 整车满 → 因满关闭",
+      "outcome": "PASS",
+      "expected": "LOADING CARGO_HOLDING_WAIT LOADING CARGO_HOLDING_WAIT VEHICLE_FULL CLOSED/VEHICLE_FULL",
+      "actual": "LOADING CARGO_HOLDING_WAIT LOADING CARGO_HOLDING_WAIT VEHICLE_FULL CLOSED/VEHICLE_FULL"
+    },
+    {
+      "id": "L2-CHS-10",
+      "description": "从第一张 WAIT 起，之后每一张快照（含 LOADING、FULL 与 CLOSED）都带同一个期限，等于第一次装货落定 + 持货超时（十分钟）",
+      "outcome": "PASS",
+      "expected": "2026-09-21T09:30:34.7377581+00:00",
+      "actual": "2026-09-21T09:30:34.7377581+00:00"
+    }
+  ]
+}

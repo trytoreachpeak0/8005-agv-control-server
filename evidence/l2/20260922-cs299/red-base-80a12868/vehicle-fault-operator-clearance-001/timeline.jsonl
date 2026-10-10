@@ -1,0 +1,48 @@
+{"at":"2026-09-22T13:59:00.2311018+00:00","note":"L2 run 20260922T135900101Z starting for scenario 'vehicle-fault-operator-clearance'."}
+{"at":"2026-09-22T13:59:00.3332900+00:00","note":"L2 port block lock acquired (slot 0, Global\\W2G-L2PortBlock)."}
+{"at":"2026-09-22T13:59:00.3380277+00:00","note":"Building ControlServer and the test doubles."}
+{"at":"2026-09-22T13:59:22.8148559+00:00","criterion":"fake-riot-live","value":"live"}
+{"at":"2026-09-22T13:59:23.2095220+00:00","criterion":"fake-mes-live","value":"live"}
+{"at":"2026-09-22T13:59:23.3423717+00:00","note":"RIoT command options for this scenario: EmergencyRetryInitialDelay=00:00:20"}
+{"at":"2026-09-22T13:59:23.3761557+00:00","note":"Task type station preset: default (map 25, WIRE_TO_GATE -> 关卡/210)"}
+{"at":"2026-09-22T13:59:28.1926144+00:00","note":"Package capacity rules imported."}
+{"at":"2026-09-22T13:59:30.3164866+00:00","criterion":"control-server-live","value":"(null)"}
+{"at":"2026-09-22T13:59:31.2503520+00:00","criterion":"control-server-live","value":"live"}
+{"at":"2026-09-22T13:59:31.4804048+00:00","note":"Protocol release identity: protocol-v2.0.0 (profileId AGV_FULL_PRODUCT, protocolVersion 3, APPROVED_RELEASE)."}
+{"at":"2026-09-22T13:59:32.3756037+00:00","criterion":"onboard-readiness","value":"DISCONNECTED"}
+{"at":"2026-09-22T13:59:32.6697227+00:00","criterion":"onboard-readiness","value":"READY"}
+{"at":"2026-09-22T13:59:32.7804390+00:00","criterion":"control-server-ready","value":"ready"}
+{"at":"2026-09-22T13:59:32.9266283+00:00","note":"FieldOps: seed-approved-facts --database C:\\Users\\szy\\AppData\\Local\\Temp\\l2-20260922T135900101Z\\controlserver.db"}
+{"at":"2026-09-22T13:59:36.0489504+00:00","criterion":"slot-model-preseed:seed-approved-facts","value":"OK","detail":{"output":{"command":"seed-approved-facts","outcome":"OK","modelKey":"8005-eight-slot","slotModelVersionId":"9ad182eef8fb44b2a6cd29b98606dce0","version":1,"slotCount":8}}}
+{"at":"2026-09-22T13:59:36.0622830+00:00","note":"FieldOps: bind-io --database C:\\Users\\szy\\AppData\\Local\\Temp\\l2-20260922T135900101Z\\controlserver.db --agv AGV-L2-001"}
+{"at":"2026-09-22T13:59:38.7127871+00:00","criterion":"slot-model-preseed:bind-io:AGV-L2-001","value":"OK","detail":{"output":{"command":"bind-io","outcome":"OK","agvId":"AGV-L2-001","slotModelVersionId":"9ad182eef8fb44b2a6cd29b98606dce0","boundSlots":8,"version":1}}}
+{"at":"2026-09-22T13:59:39.0532930+00:00","criterion":"slot-model-preseed:dispatch-zones","value":"0"}
+{"at":"2026-09-22T13:59:39.0780201+00:00","note":"FieldOps: import-area-assignments --database C:\\Users\\szy\\AppData\\Local\\Temp\\l2-20260922T135900101Z\\controlserver.db --input C:\\Users\\szy\\Desktop\\8005-workspace-v2\\worktrees\\cs299-8005-agv-control-server\\evidence\\l2\\20260922-cs299\\red-vehicle-fault-operator-clearance-80a12868\\snapshots\\preseed-area-assignments.csv"}
+{"at":"2026-09-22T13:59:41.7392559+00:00","criterion":"slot-model-preseed:import-area-assignments","value":"OK","detail":{"output":{"command":"import-area-assignments","outcome":"OK","dryRun":false,"input":"C:\\Users\\szy\\Desktop\\8005-workspace-v2\\worktrees\\cs299-8005-agv-control-server\\evidence\\l2\\20260922-cs299\\red-vehicle-fault-operator-clearance-80a12868\\snapshots\\preseed-area-assignments.csv","entryCount":3,"version":1,"contentSha256":"4291a509c2c0b75ea4bde0ac4dcde04b6e8632b54a21a67eee2772a6f8d0ff8e","snapshotId":"88d47616ad714392a4d065fbba869e6d","importedAt":"2026-09-22T21:59:39.5269599+08:00","errorCount":0,"errors":[],"preview":[]}}}
+{"at":"2026-09-22T13:59:41.7444513+00:00","note":"Per-zone dispatch parameters left unconfigured (the default precondition)."}
+{"at":"2026-09-22T13:59:41.7524296+00:00","note":"Environment is up; entering scenario 'vehicle-fault-operator-clearance'."}
+{"at":"2026-09-22T13:59:41.8860749+00:00","note":"Publishing demand 4f6eddda01c3465db67a1f40ac26aabd."}
+{"at":"2026-09-22T13:59:41.9763902+00:00","criterion":"journey-dispatched","value":"(null)"}
+{"at":"2026-09-22T13:59:44.9406372+00:00","criterion":"journey-dispatched","value":"@{JourneyId=journey:4f6eddda-01c3-465d-b67a-1f40ac26aabd; DemandId=4f6eddda-01c3-465d-b67a-1f40ac26aabd; Stage=AwaitingPickupArrival; BlockReasonCode=}"}
+{"at":"2026-09-22T13:59:44.9722072+00:00","criterion":"pickup-intent","value":"(null)"}
+{"at":"2026-09-22T13:59:45.2336680+00:00","criterion":"pickup-intent","value":"@{UpperId=W2G-4f6eddda-01c3-465d-b67a-1f40ac26aabd-PICKUP-1; OrderId=ORDER-000001; Status=CONFIRMED}"}
+{"at":"2026-09-22T13:59:45.2407822+00:00","note":"AGV-L2-001 drives between stations; RIoT reports W2G-4f6eddda-01c3-465d-b67a-1f40ac26aabd-PICKUP-1 FAILED."}
+{"at":"2026-09-22T13:59:45.3268744+00:00","criterion":"trigger-issued","value":"0"}
+{"at":"2026-09-22T13:59:46.1384670+00:00","criterion":"trigger-issued","value":"1"}
+{"at":"2026-09-22T13:59:46.1405597+00:00","note":"The latch engages; the vehicle keeps reporting MT_RUNNING at speed 0 between stations."}
+{"at":"2026-09-22T13:59:46.1743911+00:00","criterion":"trigger-confirmed","value":"Pending"}
+{"at":"2026-09-22T13:59:46.9703859+00:00","criterion":"trigger-confirmed","value":"Confirmed"}
+{"at":"2026-09-22T13:59:47.0068225+00:00","note":"Fault recovery (latched) -> 404: "}
+{"at":"2026-09-22T13:59:47.1831985+00:00","note":"Emergency release -> 202: {\"agvId\":\"AGV-L2-001\",\"action\":\"RecoveryUnconfirmed\",\"emergencyState\":\"CAN_RECOVER\",\"reasons\":[\"EMERGENCY_RELEASE_NOT_CONFIRMED\"],\"alarmCode\":\"EMERGENCY_RELEASE_UNCONFIRMED\",\"commandAuditId\":\"83fc42ea75ee46918333c01ae6e0963d\",\"outcome\":\"Pending\"}"}
+{"at":"2026-09-22T13:59:47.1858065+00:00","note":"RIoT clears the latch; the vehicle stands idle at its station, its order FAILED."}
+{"at":"2026-09-22T13:59:47.2240881+00:00","criterion":"release-confirmed","value":"Pending"}
+{"at":"2026-09-22T13:59:48.3404511+00:00","criterion":"release-confirmed","value":"Confirmed"}
+{"at":"2026-09-22T13:59:48.3916421+00:00","criterion":"runtime-iterations","value":"17"}
+{"at":"2026-09-22T13:59:48.8584177+00:00","criterion":"runtime-iterations","value":"18"}
+{"at":"2026-09-22T13:59:49.9692517+00:00","criterion":"runtime-iterations","value":"19"}
+{"at":"2026-09-22T13:59:51.0173857+00:00","criterion":"runtime-iterations","value":"20"}
+{"at":"2026-09-22T13:59:51.0690742+00:00","note":"Fault recovery (not remedied, order unfinished) -> 404: "}
+{"at":"2026-09-22T13:59:51.0862662+00:00","note":"Fault recovery (complete) -> 404: "}
+{"at":"2026-09-22T13:59:51.1373978+00:00","note":"Run failed: The property 'outcome' cannot be found on this object. Verify that the property exists."}
+{"at":"2026-09-22T13:59:51.1411570+00:00","note":"Failure at: at <ScriptBlock>, C:\\Users\\szy\\AppData\\Local\\Temp\\claude\\C--Users-szy-Desktop-8005-workspace-v2\\02f01fec-d4a6-478d-af47-c14522617365\\scratchpad\\base-scripts\\scripts\\l2\\scenarios\\vehicle-fault-operator-clearance.ps1: line 229\r\nat <ScriptBlock>, C:\\Users\\szy\\AppData\\Local\\Temp\\claude\\C--Users-szy-Desktop-8005-workspace-v2\\02f01fec-d4a6-478d-af47-c14522617365\\scratchpad\\base-scripts\\scripts\\l2\\Invoke-L2Scenario.ps1: line 1298"}
+{"at":"2026-09-22T13:59:51.7290121+00:00","note":"L2 port block lock released."}

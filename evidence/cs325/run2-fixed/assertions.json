@@ -1,0 +1,81 @@
+{
+  "schemaVersion": 1,
+  "scenario": "real-onboard-stale-stop-after-station-timeout",
+  "runId": "20260926T173722053Z",
+  "outcome": "FAIL",
+  "failureReason": "Exception calling \"InvokeButton\" with \"1\" argument(s): \"No button named '取消装货'.\"",
+  "identity": {
+    "controlServerCommit": "19cfeb6ee660b8e62c4c9d36cca8e3cf732896ba",
+    "protocolFaultProxy": true,
+    "vehicleKey": "BROKERX-L2-0001",
+    "protocolReleaseIdentity": {
+      "repository": "8005-agv-protocol",
+      "releaseVersion": "2.0.0",
+      "tag": "protocol-v2.0.0",
+      "commit": "86575456c847041515b7b75e8851a00e0d939804",
+      "protocolVersion": 3,
+      "profileId": "AGV_FULL_PRODUCT",
+      "manifestSha256": "4ac095ad371d3aaa60d7c2e0198cfd64cff5f3068230fc3420e9cdf5616422a7",
+      "schemaBundleSha256": "9db0dbdc22fed7e39edf8d01b1fc40a12f5d70a7414f696f909ab2a87eb8c221",
+      "vectorsSha256": "391fa69a7d6e9f86ea139ba4c74eadf4994bf0a87e89d3dc5258dd7968d9182a",
+      "approvalStatus": "APPROVED_RELEASE"
+    },
+    "onboardHmiCommit": "4c2d2dc14656f80e812f37128a7964c2c310217a",
+    "rig": "RealOnboard",
+    "agvId": "AGV-L2-001",
+    "stageRoot": "C:\\Users\\szy\\AppData\\Local\\Temp\\l2-20260926T173722053Z",
+    "batchId": "unspecified",
+    "slotsSimulatorCommit": "fb5f7c593742bf98bc3957b8729a38aad5321f28"
+  },
+  "assertions": [
+    {
+      "id": "L2-SST-00",
+      "description": "车载端的会话经协议故障代理建立（否则第二趟丢不掉那张空清单）",
+      "outcome": "PASS",
+      "expected": ">= 1 SessionHello through the proxy",
+      "actual": 1
+    },
+    {
+      "id": "L2-SST-01",
+      "description": "第一趟：车到站后要子批、给「取消装货」、清单挂着这单（前提，也是下面三条「不在」的正向锚点）",
+      "outcome": "PASS",
+      "expected": "canSubmit / offersCancel / listsSublot 均为 True",
+      "actual": "canSubmit=True offersCancel=True listsSublot=True worklist=[L2-SST-A-20260926T173722053Z]"
+    },
+    {
+      "id": "L2-SST-02",
+      "description": "第一趟：站点期限到，服务端以 CANCELLED_BY_STATION_TIMEOUT 结束需求、旅程 Completed、没发过仓位命令（前提）",
+      "outcome": "PASS",
+      "expected": "Cancelled / CANCELLED_BY_STATION_TIMEOUT / Completed / 0 条仓位操作",
+      "actual": "Cancelled / CANCELLED_BY_STATION_TIMEOUT / Completed / 0 条仓位操作"
+    },
+    {
+      "id": "L2-SST-03",
+      "description": "第一趟：旅程被站点期限结束之后，车不再要子批",
+      "outcome": "PASS",
+      "expected": "canSubmit=False",
+      "actual": "canSubmit=False offersCancel=False listsSublot=False worklist=[]"
+    },
+    {
+      "id": "L2-SST-04",
+      "description": "第一趟：旅程被站点期限结束之后，车不再给「取消装货」",
+      "outcome": "PASS",
+      "expected": "offersCancel=False",
+      "actual": "canSubmit=False offersCancel=False listsSublot=False worklist=[]"
+    },
+    {
+      "id": "L2-SST-05",
+      "description": "第一趟：旅程被站点期限结束之后，车上的清单不再挂着这单",
+      "outcome": "PASS",
+      "expected": "listsSublot=False",
+      "actual": "canSubmit=False offersCancel=False listsSublot=False worklist=[]"
+    },
+    {
+      "id": "L2-SST-09",
+      "description": "第二趟（前提）：服务端已以站点期限收尾，车上仍要子批、仍给「取消装货」、清单仍挂着这单——迟到的动作只能发生在这个窗口里",
+      "outcome": "PASS",
+      "expected": "Cancelled / CANCELLED_BY_STATION_TIMEOUT / Completed / 0；canSubmit / offersCancel / listsSublot 均为 True",
+      "actual": "Cancelled / CANCELLED_BY_STATION_TIMEOUT / Completed / 0 条仓位操作；canSubmit=True offersCancel=True listsSublot=True worklist=[L2-SST-B-20260926T173722053Z]"
+    }
+  ]
+}

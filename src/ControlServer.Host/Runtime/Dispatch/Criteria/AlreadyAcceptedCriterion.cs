@@ -17,6 +17,14 @@ public sealed class AlreadyAcceptedCriterion : IDispatchAdmissionCriterion
 {
     public int Order => 10;
 
+    /// <summary>这一轮已经有别的车把这条需求接走了。</summary>
+    /// <remarks>
+    /// 批次7-06（control-server#211）之前，它只由这个判据产生——轮次按车迭代，排在后面的车判到这条需求时
+    /// 已经能看见它被接受了。翻转成任务优先之后，同一条任务上的车是并排判的，谁也看不见谁，所以
+    /// <c>DispatchRoundRunner</c> 在决出胜者之后也会用这个理由落下落选者的裁决。两个来源，一个字面量。
+    /// </remarks>
+    public const string DemandAlreadyAccepted = "DEMAND_ALREADY_ACCEPTED";
+
     public Task<string> EvaluateAsync(
         DispatchCandidateEvaluation evaluation,
         CancellationToken cancellationToken)
@@ -26,7 +34,7 @@ public sealed class AlreadyAcceptedCriterion : IDispatchAdmissionCriterion
 
         return Task.FromResult(
             evaluation.Round.AcceptedDemandIds.Contains(evaluation.Candidate.DemandId)
-                ? "DEMAND_ALREADY_ACCEPTED"
+                ? DemandAlreadyAccepted
                 : DispatchAdmissionChain.Eligible);
     }
 }

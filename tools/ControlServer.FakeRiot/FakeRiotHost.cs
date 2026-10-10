@@ -15,8 +15,15 @@ public static class FakeRiotHost
     /// Returns null and writes the reason to stderr when the configured listen address is not
     /// loopback and the override was not set.
     /// </summary>
-    public static WebApplication? TryCreate(string[] args)
+    public static WebApplication? TryCreate(string[] args) => TryCreate(args, TimeProvider.System);
+
+    /// <summary>
+    /// As <see cref="TryCreate(string[])"/>, with the clock the battery simulation reads (control-server#402), so a test
+    /// can move time instead of sleeping through it.
+    /// </summary>
+    public static WebApplication? TryCreate(string[] args, TimeProvider clock)
     {
+        ArgumentNullException.ThrowIfNull(clock);
         WebApplicationBuilder builder = WebApplication.CreateBuilder(args);
         builder.Services.Configure<Microsoft.AspNetCore.Http.Json.JsonOptions>(options =>
             options.SerializerOptions.PropertyNamingPolicy = System.Text.Json.JsonNamingPolicy.CamelCase);
@@ -28,6 +35,9 @@ public static class FakeRiotHost
         builder.Services.AddSingleton(services => new CommandEngine<FakeRiotState>(
             instanceId, services.GetRequiredService<FakeRiotSeed>().BuildInitialState));
         builder.Services.AddSingleton<MapStationReadCounter>();
+        builder.Services.AddSingleton<MapListReadCounter>();
+        builder.Services.AddSingleton<AbsentOrderReadFaults>();
+        builder.Services.AddSingleton(clock);
 
         IPEndPoint? listener = ControlPlaneConventions.ResolveLoopbackListener(
             builder.Configuration, "FakeRiot", DefaultPort);

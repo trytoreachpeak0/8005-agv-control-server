@@ -106,15 +106,23 @@ $OnboardRemoteRef = $onboardRemoteRefCandidates[0].DefaultValue.Value
 $commitBindingSourceSha256 =
     (Get-FileHash -LiteralPath $CommitBindingSource -Algorithm SHA256).Hash.ToLowerInvariant()
 
-# This runner executes from the working tree rather than from an exact clone, so its own identity has
-# to be read back. Read it before anything is written, and commit the runner before the run that will
-# be archived: a run started from a dirty tree cannot report a trustworthy runner identity.
-$runnerCommit = (& git -C $ControlServerRepository rev-parse HEAD).Trim()
-if ($LASTEXITCODE -ne 0) { throw "Unable to read the runner commit from $ControlServerRepository" }
-$runnerWorktreeClean = @(& git -C $ControlServerRepository status --porcelain).Count -eq 0
-
 $G3RunKind = 'STAGED_G3_REAL_PEERS_PROCESS_RESTART_NO_MOVEMENT'
 . (Join-Path $PSScriptRoot 'g3-slice-evidence.ps1')
+# This runner executes from the working tree rather than from an exact clone, so its own identity has
+# to be read back. Read it before anything is written, and commit the runner before the run that will
+# be archived: a run started from a dirty tree cannot report a trustworthy runner identity, and since
+# control-server#466 does not grade a slice as a formal pass.
+# control-server#466: the repository this script lives in, not -ControlServerRepository, and the binding as HEAD
+# committed it. The commits above are read off the file on disk, so until #466 their four sources were the literal
+# SHARED_BINDING whatever that file said; now an edited default there is SELF_CHECK_OVERRIDE.
+$runnerProvenance = Get-G3RunnerProvenance -ScriptRoot $PSScriptRoot -Inputs ([ordered]@{
+        ControlServerRepository = @{ Given = $ControlServerRepository; Default = (Split-Path -Parent $PSScriptRoot) }
+    })
+Write-G3RunnerProvenance -Provenance $runnerProvenance
+$runnerCommit = $runnerProvenance.runnerCommit
+if ($null -eq $runnerCommit) { throw "Unable to read the runner commit: $($runnerProvenance.runnerSource)" }
+$runnerWorktreeClean = $runnerProvenance.runnerWorktreeClean
+$commitSources = Get-G3CommitSources -Binding ($runnerProvenance.bindingAtHead ?? $commitBinding) -Actual $commitBinding
 # Before the clones and the builds, not after: naming a slice this runner cannot certify
 # should cost a message, not an hour of cloning and publishing.
 if (-not [string]::IsNullOrEmpty($Slice)) { Assert-G3SliceIsClaimedBy -RunKind $G3RunKind -Slice $Slice }
@@ -460,7 +468,7 @@ function Read-ControlDatabase {
     if (-not (Test-Path -LiteralPath $controlDatabasePath -PathType Leaf)) { return $null }
 
     $sideEffectTables = @(
-        'OrderIntents', 'AcceptedDemands', 'StationOperations', 'VehicleDispatchLeases',
+        'OrderIntents', 'AcceptedDemands', 'StationOperations', 'VehiclePurposeClaimRecords',
         'RiotDispatchAuditEvents', 'UnloadBatches', 'TransportDemandCompletions',
         'RecoveryWorkflows', 'ExceptionRecoverySessions', 'HardwareRecoveryRecords')
     $sideEffectCounts = [ordered]@{}
@@ -1046,7 +1054,7 @@ $configuration = [ordered]@{
     vehicleSafetyEligibilityFabricated = $false
     vectorsNotReachableWithoutAnAcceptedDemand = @(
         'demandReusedAcrossRestart',
-        'vehicleDispatchLeaseReusedAcrossRestart')
+        'vehicleClaimReusedAcrossRestart')
 }
 $configurationJson = $configuration | ConvertTo-Json -Depth 20
 [IO.File]::WriteAllText(
@@ -1110,18 +1118,29 @@ $status = if ($null -ne $runError) {
     'STAGED_SLICE_FAIL'
 }
 
+# One record for the gate results, the classification and run-result.json alike: the classification reads it
+# to decide whether the run tested the shared binding (control-server#460). This runner has no commit
+# parameters: all four are read from run-staged-g3.ps1's param defaults above, so each is the binding by
+# construction and is recorded as such, in the same shape as the runners that can override one.
+$commitsRecord = [ordered]@{
+    controlServer = $ControlServerCommit
+    controlServerCommitSource = $commitSources['controlServerCommitSource']
+    onboardHmi = $OnboardCommit
+    onboardCommitSource = $commitSources['onboardCommitSource']
+    slotsSimulator = $SimulatorCommit
+    simulatorCommitSource = $commitSources['simulatorCommitSource']
+    protocol = $ProtocolCommit
+    protocolCommitSource = $commitSources['protocolCommitSource']
+    runner = $runnerCommit
+    runnerWorktreeCleanAtStart = $runnerWorktreeClean
+    runnerSource = $runnerProvenance.runnerSource
+}
+
 $gateResultPaths = Write-G3GateResults -RunKind $G3RunKind -EvidenceRoot $EvidenceRoot `
     -AssertionReport $assertionReport -Slice $Slice -RunnerErrored:($null -ne $runError) -Context @{
         runId = $runId
         startedAt = $runStartedAt.ToString('O')
-        commits = [ordered]@{
-            controlServer = $ControlServerCommit
-            onboardHmi = $OnboardCommit
-            slotsSimulator = $SimulatorCommit
-            protocol = $ProtocolCommit
-            runner = $runnerCommit
-            runnerWorktreeCleanAtStart = $runnerWorktreeClean
-        }
+        commits = $commitsRecord
         # Read back from the server this run actually talked to rather than restated from a constant:
         # this runner clones no protocol repository, so the identity it can honestly cite is the one
         # the running host reported. Null when the run never got a version, which is the same case
@@ -1167,17 +1186,10 @@ $result = [ordered]@{
     completedAtUtc = [DateTimeOffset]::UtcNow
     status = $status
     classification = (New-G3Classification -RunKind $G3RunKind -RunStatus $status `
-        -AssertionReport $assertionReport -RunnerErrored:($null -ne $runError))
+        -AssertionReport $assertionReport -Commits $commitsRecord -RunnerErrored:($null -ne $runError))
     gateResults = @($gateResultPaths | ForEach-Object {
         [IO.Path]::GetRelativePath($EvidenceRoot, $_).Replace('\', '/') })
-    commits = [ordered]@{
-        controlServer = $ControlServerCommit
-        onboardHmi = $OnboardCommit
-        slotsSimulator = $SimulatorCommit
-        protocol = $ProtocolCommit
-        runner = $runnerCommit
-        runnerWorktreeCleanAtStart = $runnerWorktreeClean
-    }
+    commits = $commitsRecord
     configurationSha256 = Get-Sha256Text $configurationJson
     configuration = $configuration
     commands = @($commands)

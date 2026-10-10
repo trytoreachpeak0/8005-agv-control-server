@@ -1,0 +1,42 @@
+{"at":"2026-09-22T07:53:14.2147147+00:00","note":"L2 run 20260922T075314174Z starting for scenario 'reassign-when-vehicle-ineligible'."}
+{"at":"2026-09-22T07:53:14.2613120+00:00","note":"L2 port block lock acquired (slot 1, Global\\W2G-L2PortBlock-slot1)."}
+{"at":"2026-09-22T07:53:14.2641502+00:00","note":"Build skipped (-SkipBuild); running the output already built."}
+{"at":"2026-09-22T07:53:15.1357267+00:00","criterion":"fake-riot-live","value":"live"}
+{"at":"2026-09-22T07:53:15.3952277+00:00","criterion":"fake-mes-live","value":"live"}
+{"at":"2026-09-22T07:53:15.4697977+00:00","note":"Fleet of 2: AGV-L2-001/BROKERX-L2-0001, AGV-L2-002/BROKERX-L2-0002"}
+{"at":"2026-09-22T07:53:15.5141064+00:00","note":"Task type station preset: default (map 25, WIRE_TO_GATE -> 关卡/210)"}
+{"at":"2026-09-22T07:53:19.1683716+00:00","note":"Package capacity rules imported."}
+{"at":"2026-09-22T07:53:21.2448854+00:00","criterion":"control-server-live","value":"(null)"}
+{"at":"2026-09-22T07:53:22.1243029+00:00","criterion":"control-server-live","value":"live"}
+{"at":"2026-09-22T07:53:22.2136450+00:00","note":"Protocol release identity: protocol-v2.0.0 (profileId AGV_FULL_PRODUCT, protocolVersion 3, APPROVED_RELEASE)."}
+{"at":"2026-09-22T07:53:22.8996419+00:00","criterion":"onboard-readiness","value":"DISCONNECTED"}
+{"at":"2026-09-22T07:53:23.1560106+00:00","criterion":"onboard-readiness","value":"READY"}
+{"at":"2026-09-22T07:53:23.9741490+00:00","criterion":"control-server-ready","value":"ready"}
+{"at":"2026-09-22T07:53:24.0266299+00:00","note":"FieldOps: seed-approved-facts --database C:\\actions-runner\\win11-01-control-server\\_work\\_temp\\l2-35699901251-1\\_stage\\l2-20260922T075314174Z-slot1\\controlserver.db"}
+{"at":"2026-09-22T07:53:25.6996231+00:00","criterion":"slot-model-preseed:seed-approved-facts","value":"OK","detail":{"output":{"command":"seed-approved-facts","outcome":"OK","modelKey":"8005-eight-slot","slotModelVersionId":"7a10b94a5c63483ea6778e03c4dbaa50","version":1,"slotCount":8}}}
+{"at":"2026-09-22T07:53:25.7080584+00:00","note":"FieldOps: bind-io --database C:\\actions-runner\\win11-01-control-server\\_work\\_temp\\l2-35699901251-1\\_stage\\l2-20260922T075314174Z-slot1\\controlserver.db --agv AGV-L2-001"}
+{"at":"2026-09-22T07:53:27.4170325+00:00","criterion":"slot-model-preseed:bind-io:AGV-L2-001","value":"OK","detail":{"output":{"command":"bind-io","outcome":"OK","agvId":"AGV-L2-001","slotModelVersionId":"7a10b94a5c63483ea6778e03c4dbaa50","boundSlots":8,"version":1}}}
+{"at":"2026-09-22T07:53:27.4210034+00:00","note":"FieldOps: bind-io --database C:\\actions-runner\\win11-01-control-server\\_work\\_temp\\l2-35699901251-1\\_stage\\l2-20260922T075314174Z-slot1\\controlserver.db --agv AGV-L2-002"}
+{"at":"2026-09-22T07:53:29.0967598+00:00","criterion":"slot-model-preseed:bind-io:AGV-L2-002","value":"OK","detail":{"output":{"command":"bind-io","outcome":"OK","agvId":"AGV-L2-002","slotModelVersionId":"7a10b94a5c63483ea6778e03c4dbaa50","boundSlots":8,"version":1}}}
+{"at":"2026-09-22T07:53:29.1961823+00:00","criterion":"slot-model-preseed:dispatch-zones","value":"0"}
+{"at":"2026-09-22T07:53:29.1987742+00:00","note":"FieldOps: import-area-assignments --database C:\\actions-runner\\win11-01-control-server\\_work\\_temp\\l2-35699901251-1\\_stage\\l2-20260922T075314174Z-slot1\\controlserver.db --input C:\\actions-runner\\win11-01-control-server\\_work\\_temp\\l2-35699901251-1\\reassign-when-vehicle-ineligible-02\\snapshots\\preseed-area-assignments.csv"}
+{"at":"2026-09-22T07:53:31.0257970+00:00","criterion":"slot-model-preseed:import-area-assignments","value":"OK","detail":{"output":{"command":"import-area-assignments","outcome":"OK","dryRun":false,"input":"C:\\actions-runner\\win11-01-control-server\\_work\\_temp\\l2-35699901251-1\\reassign-when-vehicle-ineligible-02\\snapshots\\preseed-area-assignments.csv","entryCount":3,"version":1,"contentSha256":"4291a509c2c0b75ea4bde0ac4dcde04b6e8632b54a21a67eee2772a6f8d0ff8e","snapshotId":"89b9ce5e8529459eb2e9b384929f9a0e","importedAt":"2026-09-22T15:53:29.4395892+08:00","errorCount":0,"errors":[],"preview":[]}}}
+{"at":"2026-09-22T07:53:31.0309105+00:00","note":"Per-zone dispatch parameters left unconfigured (the default precondition)."}
+{"at":"2026-09-22T07:53:31.0521303+00:00","note":"Environment is up; entering scenario 'reassign-when-vehicle-ineligible'."}
+{"at":"2026-09-22T07:53:31.1702819+00:00","note":"Publishing demand 8c9707110c3b46069329283e18a394c8 (area N1-3)."}
+{"at":"2026-09-22T07:53:31.2343326+00:00","criterion":"first-journey","value":"(null)"}
+{"at":"2026-09-22T07:53:32.5223588+00:00","criterion":"first-journey","value":"@{JourneyId=journey:8c970711-0c3b-4606-9329-283e18a394c8; AgvId=AGV-L2-001; Stage=AwaitingPickupArrival; PickupUpperId=W2G-8c970711-0c3b-4606-9329-283e18a394c8-PICKUP-1; DispatchGeneration=1; OrderId=; Status=PENDING_RECONCILIATION}"}
+{"at":"2026-09-22T07:53:32.7827735+00:00","criterion":"first-journey","value":"@{JourneyId=journey:8c970711-0c3b-4606-9329-283e18a394c8; AgvId=AGV-L2-001; Stage=AwaitingPickupArrival; PickupUpperId=W2G-8c970711-0c3b-4606-9329-283e18a394c8-PICKUP-1; DispatchGeneration=1; OrderId=ORDER-000001; Status=CONFIRMED}"}
+{"at":"2026-09-22T07:53:32.7995851+00:00","criterion":"first-seen-before-release","value":"2026-09-22 07:53:31.528185+00:00","detail":{"firstSeenAt":"2026-09-22 07:53:31.528185+00:00"}}
+{"at":"2026-09-22T07:53:32.8007032+00:00","note":"The primary vehicle leaves the map (RIOT_VEHICLE_MAP_MISMATCH)."}
+{"at":"2026-09-22T07:53:32.8334429+00:00","criterion":"riot-cancel-received","value":"0"}
+{"at":"2026-09-22T07:53:33.3457229+00:00","criterion":"riot-cancel-received","value":"1"}
+{"at":"2026-09-22T07:53:33.3693156+00:00","criterion":"released","value":"@{RemovedAt=; RemovalReason=; Stage=AwaitingPickupArrival; BlockReasonCode=RELEASE_ORDER_CANCEL_NOT_CONFIRMED}"}
+{"at":"2026-09-22T07:53:33.8921872+00:00","criterion":"released","value":"@{RemovedAt=2026-09-22 07:53:33.7147331+00:00; RemovalReason=RELEASED_FOR_REDISPATCH; Stage=Completed; BlockReasonCode=RELEASED_FOR_REDISPATCH}"}
+{"at":"2026-09-22T07:53:33.9066703+00:00","note":"Enabling the second vehicle."}
+{"at":"2026-09-22T07:53:33.9221219+00:00","criterion":"second-journey","value":"(null)"}
+{"at":"2026-09-22T07:53:34.9374052+00:00","criterion":"second-journey","value":"@{JourneyId=journey:8c970711-0c3b-4606-9329-283e18a394c8|g2; AgvId=AGV-L2-002; Stage=AwaitingPickupArrival; PickupUpperId=W2G-8c970711-0c3b-4606-9329-283e18a394c8-PICKUP-2; PickupMovementLegId=543e11c4-b3b0-715b-a624-1460fea96efa; DispatchGeneration=2}"}
+{"at":"2026-09-22T07:53:34.9623052+00:00","criterion":"second-plan","value":"0"}
+{"at":"2026-09-22T07:53:35.7550919+00:00","criterion":"second-plan","value":"1"}
+{"at":"2026-09-22T07:53:35.7580457+00:00","note":"需求从不合格的车上释放、退回积压，由另一台车以新代次与新 upperId 受理，等待年龄保留。"}
+{"at":"2026-09-22T07:53:36.2272710+00:00","note":"L2 port block lock released."}

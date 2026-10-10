@@ -4,9 +4,23 @@ param(
     [string]$StageRoot,
     [Parameter(Mandatory)]
     [string]$EvidenceRoot,
-    # A run root produced by an authorised field run: its controlserver.db is the demand-bearing store
-    # this runner restores. Nothing here writes to it; the copy in StageRoot is what the server opens.
-    [Parameter(Mandatory)]
+    # Optional since control-server#453. Given, it is a run root produced by an authorised field run: its
+    # controlserver.db is the demand-bearing store this runner restores. Nothing here writes to it; the
+    # copy in StageRoot is what the server opens. A store the synthetic rig wrote is refused
+    # (control-server#460, Assert-FieldRunStoreIsNotGenerated): this path exempts the store's protocolCommit
+    # and calls the store field state, and neither holds for a generated one.
+    # Taking the store off the field server (control-server#503): the database is in WAL mode, so the store is
+    # controlserver.db together with any controlserver.db-wal and controlserver.db-shm, and committed rows may
+    # be only in -wal. Either stop the field server, prove its process has exited (controlserver.db.instance-lock
+    # opens with FileShare.None) and copy the whole data directory, or, with the server running, export one file
+    # with VACUUM INTO and put that here as controlserver.db. A copy of controlserver.db alone from a running or
+    # killed server opens, passes integrity_check, and silently lacks the newest rows. This runner copies all
+    # three files it finds; docs/field/control-server-database-copy.md has the commands.
+    # Left out, the store is generated on the spot: the bound ControlServer commit's own L2 scenario
+    # demand-bearing-store-at-unload drives a synthetic peer and the fake RIoT to the same shape and
+    # exports it. The only field store ever used (fullloop-20260829T131549Z, agv01 and the real RIoT)
+    # was lost, and making another needs a real vehicle; a generated one is weaker evidence, and the
+    # run says so in storeProvenance.
     [string]$FieldRunRoot,
     # Selects what this run CERTIFIES, not what it runs. A G3 run is one end-to-end scenario against
     # real peers, not a filterable set of tests, so -Slice narrows the evidence written and never the
@@ -14,6 +28,14 @@ param(
     # this runner claims. Naming a slice this runner does not claim is refused before anything is
     # created -- see scripts/g3-slice-evidence.ps1 for the claim table and the 2026-09-09 ruling.
     [ValidatePattern('^FP-IS-(0[0-9]|1[0-5])$')][string]$Slice,
+    # For checking a change before the shared binding has moved, as run-journey-g3.ps1 has it: clone this
+    # ControlServer commit instead of the bound one. The run records controlServerCommitSource =
+    # SELF_CHECK_OVERRIDE in run-result.json and every gate-result.json, and is not gate evidence: since
+    # control-server#460 every slice of it is graded formalSlicePass false, formalSliceWithheldReason
+    # SELF_CHECK_OVERRIDE (g3-slice-evidence.ps1, Get-G3FormalSlicePass). The binding
+    # itself moves only in an exit ticket's first step (control-server#453 needed one: its generator scenario
+    # exists only in commits that contain it). There is no onboard counterpart: this runner clones no onboard.
+    [ValidatePattern('^[0-9a-f]{40}$')][string]$SelfCheckControlServerCommit,
     [string]$ControlServerRepository = (Split-Path -Parent $PSScriptRoot),
     # Both the peer commit binding and the synthetic-peer harness are owned by the staged G3 runner and
     # read back from it rather than restated here, so the two runners can never drift apart.
@@ -79,6 +101,53 @@ function Get-HarnessSource {
 # Defined by the staged restart runner; taken from there rather than copied, for the same reason the
 # commit values themselves are.
 Invoke-Expression (Get-ScriptFunction -Path $CommitBindingFunctionSource -Name 'Get-SharedCommitBinding')
+# The staged runner's error report (control-server#306), taken the same way (control-server#460): printed and
+# saved as runner-error.json directly after the run's try, before anything can throw over it.
+Invoke-Expression (Get-ScriptFunction -Path $SharedRunnerSource -Name 'Write-StagedRunError')
+
+# What marks a store as written by the synthetic L2 rig rather than by a field run, read from the baseline
+# Read-ControlDatabase takes of it. Invoke-L2Scenario.ps1 names every vehicle BROKERX-L2-<n> / AGV-L2-<n> and
+# every L2 scenario's sublot L2-SUBLOT-..., which becomes the TransportDemandKey; no field run carries either
+# (the 2026-08-29 store reads Q26081298-1, BROKERX-0c20..., 老厂前线新多仓位1). Empty for a field store.
+function Get-GeneratedStoreMarkers {
+    param([Parameter(Mandatory)]$Baseline)
+
+    $markers = [System.Collections.Generic.List[string]]::new()
+    foreach ($row in @($Baseline.acceptedDemandRows)) {
+        if ("$($row['transportDemandKey'])" -like 'L2-SUBLOT-*') {
+            $markers.Add("AcceptedDemands.TransportDemandKey=$($row['transportDemandKey'])")
+        }
+    }
+    foreach ($row in @($Baseline.vehicleClaimRecordRows)) {
+        if ("$($row['vehicleKey'])" -like 'BROKERX-L2-*') {
+            $markers.Add("VehiclePurposeClaimRecords.VehicleKey=$($row['vehicleKey'])")
+        }
+    }
+    foreach ($row in @($Baseline.sessionRecoveryRows)) {
+        if ("$($row['agvId'])" -like 'AGV-L2-*') { $markers.Add("SessionRecoveries.AgvId=$($row['agvId'])") }
+    }
+    return ,$markers
+}
+
+# control-server#460. -FieldRunRoot says "this is real state an authorised field run wrote", and the run then
+# exempts the store's protocolCommit from the identity assertion (TICKET_17) and writes that note into the
+# evidence. cs#453's review fed a generated store through that path and got a PASS stamped as field state:
+# the exemption, and the field-state claim, were both available to a store that never saw a vehicle. So a
+# FIELD_RUN store that carries the rig's marks is refused before the server is started on it.
+function Assert-FieldRunStoreIsNotGenerated {
+    param(
+        [Parameter(Mandatory)][string]$StoreSource,
+        [Parameter(Mandatory)]$Baseline
+    )
+
+    if ($StoreSource -ne 'FIELD_RUN') { return }
+    $markers = Get-GeneratedStoreMarkers -Baseline $Baseline
+    if ($markers.Count -ne 0) {
+        throw ('FIELD_RUN_STORE_IS_GENERATED: -FieldRunRoot was given a store the synthetic L2 rig wrote, not a ' +
+               'field run: ' + ($markers -join '; ') + '. Leave -FieldRunRoot out to generate a store on purpose; ' +
+               'the field-store exemption and the field-state note do not apply to it.')
+    }
+}
 
 $commitBinding = Get-SharedCommitBinding -Path $SharedRunnerSource
 $ControlServerCommit = $commitBinding['ControlServerCommit']
@@ -89,21 +158,61 @@ $sharedRunnerSha256 = (Get-FileHash -LiteralPath $SharedRunnerSource -Algorithm 
 $commitBindingFunctionSha256 =
     (Get-FileHash -LiteralPath $CommitBindingFunctionSource -Algorithm SHA256).Hash.ToLowerInvariant()
 
-$runnerCommit = (& git -C $ControlServerRepository rev-parse HEAD).Trim()
-if ($LASTEXITCODE -ne 0) { throw "Unable to read the runner commit from $ControlServerRepository" }
-$runnerWorktreeClean = @(& git -C $ControlServerRepository status --porcelain).Count -eq 0
-
 $G3RunKind = 'DEMAND_BEARING_G3_RESULT_AND_RIOT_UNKNOWN_VECTORS_NO_MOVEMENT'
 . (Join-Path $PSScriptRoot 'g3-slice-evidence.ps1')
+
+# control-server#466: the repository this script lives in (not -ControlServerRepository), whether any path
+# parameter that decides what the run reads was moved off its default -- -SharedRunnerSource also supplies the
+# harness this run compiles and its error report -- and the binding as HEAD committed it, which the commits read
+# off -SharedRunnerSource are compared with. Before anything is written.
+$runnerProvenance = Get-G3RunnerProvenance -ScriptRoot $PSScriptRoot -Inputs ([ordered]@{
+        SharedRunnerSource = @{ Given = $SharedRunnerSource; Default = (Join-Path $PSScriptRoot 'run-staged-g3.ps1') }
+        CommitBindingFunctionSource = @{ Given = $CommitBindingFunctionSource; Default = (Join-Path $PSScriptRoot 'run-staged-g3-restart.ps1') }
+        ControlServerRepository = @{ Given = $ControlServerRepository; Default = (Split-Path -Parent $PSScriptRoot) }
+    })
+Write-G3RunnerProvenance -Provenance $runnerProvenance
+$runnerCommit = $runnerProvenance.runnerCommit
+if ($null -eq $runnerCommit) { throw "Unable to read the runner commit: $($runnerProvenance.runnerSource)" }
+$runnerWorktreeClean = $runnerProvenance.runnerWorktreeClean
+$bindingSources = Get-G3CommitSources -Binding ($runnerProvenance.bindingAtHead ?? $commitBinding) -Actual $commitBinding
+$controlServerCommitSource = $bindingSources['controlServerCommitSource']
+if (-not [string]::IsNullOrEmpty($SelfCheckControlServerCommit)) {
+    $ControlServerCommit = $SelfCheckControlServerCommit
+    $controlServerCommitSource = 'SELF_CHECK_OVERRIDE'
+}
+$onboardCommitSource = $bindingSources['onboardCommitSource']
+$simulatorCommitSource = $bindingSources['simulatorCommitSource']
+$protocolCommitSource = $bindingSources['protocolCommitSource']
 # Before the clones and the builds, not after: naming a slice this runner cannot certify
 # should cost a message, not an hour of cloning and publishing.
 if (-not [string]::IsNullOrEmpty($Slice)) { Assert-G3SliceIsClaimedBy -RunKind $G3RunKind -Slice $Slice }
 
 if (Test-Path -LiteralPath $StageRoot) { throw "StageRoot must not already exist: $StageRoot" }
 if (Test-Path -LiteralPath $EvidenceRoot) { throw "EvidenceRoot must not already exist: $EvidenceRoot" }
-$fieldDatabase = Join-Path $FieldRunRoot 'controlserver.db'
-if (-not (Test-Path -LiteralPath $fieldDatabase -PathType Leaf)) {
-    throw "FieldRunRoot has no controlserver.db: $FieldRunRoot"
+# FIELD_RUN restores a store a real vehicle wrote; SYNTHETIC_RIG generates one from the bound commit.
+$storeSource = if ([string]::IsNullOrEmpty($FieldRunRoot)) { 'SYNTHETIC_RIG' } else { 'FIELD_RUN' }
+$storeGeneratorScenario = 'demand-bearing-store-at-unload'
+if ($storeSource -eq 'FIELD_RUN') {
+    $fieldDatabase = Join-Path $FieldRunRoot 'controlserver.db'
+    if (-not (Test-Path -LiteralPath $fieldDatabase -PathType Leaf)) {
+        throw "FieldRunRoot has no controlserver.db: $FieldRunRoot"
+    }
+} else {
+    # The generator comes from the bound clone, like run-journey-g3.ps1's scenarios: the commit that writes the
+    # store is the commit under test, and a commit older than control-server#453 has none. Asked of the
+    # repository before anything is created: raised later, inside the run, the gate-result writer's own refusal
+    # of a store that was never read is what the operator would see instead.
+    & git -C $ControlServerRepository cat-file -e "${ControlServerCommit}^{commit}" 2>$null
+    if ($LASTEXITCODE -ne 0) {
+        throw ("The ControlServer commit $ControlServerCommit ($controlServerCommitSource) does not exist in " +
+               "$ControlServerRepository. Fetch it first.")
+    }
+    & git -C $ControlServerRepository cat-file -e "${ControlServerCommit}:scripts/l2/scenarios/$storeGeneratorScenario.ps1" 2>$null
+    if ($LASTEXITCODE -ne 0) {
+        throw ("The ControlServer commit $ControlServerCommit ($controlServerCommitSource) has no $storeGeneratorScenario " +
+               'scenario. Move the binding to a commit that has it, pass -SelfCheckControlServerCommit for a self-check, ' +
+               'or pass -FieldRunRoot.')
+    }
 }
 New-Item -ItemType Directory -Path $StageRoot, $EvidenceRoot | Out-Null
 # Absolute from here on. Unlike run-journey-g3.ps1, this runner does not hand an $EvidenceRoot-derived
@@ -162,7 +271,14 @@ function Invoke-LoggedCommand {
         exitCode = $exitCode
         log = [IO.Path]::GetRelativePath($EvidenceRoot, $LogPath).Replace('\', '/')
     })
-    if ($exitCode -ne 0) { throw "$Name exited with code $exitCode. See $LogPath" }
+    if ($exitCode -ne 0) {
+        # The tail of the log in the message itself (control-server#460): the message is what runner-error.json
+        # and the console carry, and "see the log" alone is what made the cause something to go and dig for.
+        $tail = @($output | ForEach-Object { "$_" } | Where-Object { -not [string]::IsNullOrWhiteSpace($_) } |
+            Select-Object -Last 15)
+        throw ("$Name exited with code $exitCode. See $LogPath" +
+               $(if ($tail.Count -ne 0) { ". Last lines:`n" + ($tail -join "`n") } else { '' }))
+    }
     return @($output)
 }
 
@@ -251,6 +367,22 @@ function Invoke-SqliteScalarLong {
     finally { $connection.Dispose() }
 }
 
+function Get-StoreFilesSha256 {
+    param([Parameter(Mandatory)][string]$DatabasePath)
+    $lines = foreach ($suffix in @('', '-wal', '-shm')) {
+        $path = $DatabasePath + $suffix
+        $name = [IO.Path]::GetFileName($path)
+        if (Test-Path -LiteralPath $path -PathType Leaf) {
+            "{0}`0{1}`0{2}" -f $name, (Get-Item -LiteralPath $path).Length,
+                (Get-FileHash -LiteralPath $path -Algorithm SHA256).Hash.ToLowerInvariant()
+        } else {
+            "$name`0ABSENT"
+        }
+    }
+    $bytes = [Text.UTF8Encoding]::new($false).GetBytes($lines -join "`n")
+    return [Convert]::ToHexString([Security.Cryptography.SHA256]::HashData($bytes)).ToLowerInvariant()
+}
+
 # Read only while no process owns the file: the store runs in WAL mode, and a read-only handle must
 # not be the one that has to recover an unclean write-ahead log.
 function Get-FileFingerprint {
@@ -287,13 +419,18 @@ function Test-RowsPreserved {
 
 function Read-ControlDatabase {
     $countedTables = @(
-        'OrderIntents', 'RiotDispatchAuditEvents', 'AcceptedDemands', 'VehicleDispatchLeases',
+        'OrderIntents', 'RiotDispatchAuditEvents', 'AcceptedDemands', 'VehiclePurposeClaimRecords',
         'StationOperations', 'OperationResults', 'UnloadBatches', 'StopClosures',
         'TransportDemandCompletions', 'ProtocolInbox')
     $counts = [ordered]@{}
     foreach ($table in $countedTables) {
-        $counts[$table] = Invoke-SqliteScalarLong -DatabasePath $controlDatabasePath `
-            -Sql "SELECT COUNT(*) FROM $table"
+        # The claim record table (control-server#386/#387) does not exist yet in a field store restored from before
+        # batch 8; the baseline reads it before the server has migrated that store. Absent counts as 0.
+        $present = Invoke-SqliteScalarLong -DatabasePath $controlDatabasePath `
+            -Sql "SELECT COUNT(*) FROM sqlite_master WHERE type = 'table' AND name = '$table'"
+        $counts[$table] = if ($present -eq 0) { 0 } else {
+            Invoke-SqliteScalarLong -DatabasePath $controlDatabasePath -Sql "SELECT COUNT(*) FROM $table"
+        }
     }
 
     return [ordered]@{
@@ -302,9 +439,13 @@ function Read-ControlDatabase {
         acceptedDemandRows = Invoke-SqliteRows -DatabasePath $controlDatabasePath `
             -Sql 'SELECT DemandId, TransportDemandKey, DemandRevision, Status FROM AcceptedDemands ORDER BY DemandId' `
             -Columns @('demandId', 'transportDemandKey', 'demandRevision', 'status')
-        vehicleLeaseRows = Invoke-SqliteRows -DatabasePath $controlDatabasePath `
-            -Sql 'SELECT DemandId, VehicleKey, AcquiredAt, ReleasedAt FROM VehicleDispatchLeases ORDER BY DemandId' `
-            -Columns @('demandId', 'vehicleKey', 'acquiredAt', 'releasedAt')
+        # The vehicle's occupancy history since control-server#387 retired the dispatch lease: one record per claim.
+        # Empty before the server has migrated a store from before batch 8 (the table is not there yet).
+        vehicleClaimRecordRows = if ($counts['VehiclePurposeClaimRecords'] -eq 0) { @() } else {
+            Invoke-SqliteRows -DatabasePath $controlDatabasePath `
+                -Sql 'SELECT JourneyId, VehicleKey, AcquiredAt, ReleasedAt FROM VehiclePurposeClaimRecords ORDER BY JourneyId, AcquiredAt' `
+                -Columns @('journeyId', 'vehicleKey', 'acquiredAt', 'releasedAt')
+        }
         auditRows = Invoke-SqliteRows -DatabasePath $controlDatabasePath -Sql @'
 SELECT UpperId, DispatchGeneration, Sequence, Phase, Outcome, EligibilityBasis,
        HttpStatusCode, BusinessCode, ResultPresent, ReturnedOrderId
@@ -325,13 +466,15 @@ SELECT UpperId, DispatchGeneration, Sequence, Phase, Outcome, EligibilityBasis,
             -Sql 'SELECT AgvId, SessionGeneration, Readiness, ReasonCode, ProtocolCommit FROM SessionRecoveries ORDER BY AgvId' `
             -Columns @('agvId', 'sessionGeneration', 'readiness', 'reasonCode', 'protocolCommit')
         resultInboxRows = Invoke-SqliteRows -DatabasePath $controlDatabasePath `
-            -Sql "SELECT MessageId, ContentHash, FirstResponseJson FROM ProtocolInbox WHERE MessageType = 'OperationResult' ORDER BY ReceivedAt" `
-            -Columns @('messageId', 'contentHash', 'firstResponseJson')
+            -Sql "SELECT MessageId, ContentHash, FirstResponseJson, RequestJson FROM ProtocolInbox WHERE MessageType = 'OperationResult' ORDER BY ReceivedAt" `
+            -Columns @('messageId', 'contentHash', 'firstResponseJson', 'requestJson')
     }
 }
 
 $control = $null
 $runError = $null
+$storeGenerator = $null
+$fieldDatabaseSha256 = $null
 $probeResult = $null
 $handshakeResult = $null
 $version = $null
@@ -362,6 +505,50 @@ try {
         throw "The ControlServer clone is not a clean exact checkout of $ControlServerCommit"
     }
 
+    if ($storeSource -eq 'SYNTHETIC_RIG') {
+        # Checked against the repository before the run started; the clone is that commit.
+        $rig = Join-Path $controlSource 'scripts\l2\Invoke-L2Scenario.ps1'
+        $storeGeneratorEvidence = Join-Path $EvidenceRoot 'store-generator'
+        $generatorAssertions = Join-Path $storeGeneratorEvidence 'assertions.json'
+        try {
+            Invoke-LoggedCommand -Name 'generate-demand-bearing-store' -WorkingDirectory $controlSource -FilePath 'pwsh' `
+                -Arguments @('-NoProfile', '-File', $rig,
+                             '-Scenario', $storeGeneratorScenario,
+                             '-EvidenceRoot', $storeGeneratorEvidence,
+                             '-Repository', $controlSource) `
+                -LogPath (Join-Path $logsRoot 'generate-demand-bearing-store.log') | Out-Null
+        }
+        catch {
+            # The rig exits 1 on any outcome but PASS, so its own verdict is only in its assertions.json: put it
+            # in front of the exit code (control-server#460).
+            $verdict = if (Test-Path -LiteralPath $generatorAssertions -PathType Leaf) {
+                $failed = Get-Content -Raw -LiteralPath $generatorAssertions | ConvertFrom-Json
+                "The store generator reported $($failed.outcome): $($failed.failureReason). "
+            } else { 'The store generator wrote no assertions.json. ' }
+            throw ($verdict + $_.Exception.Message)
+        }
+        $generatorDocument = Get-Content -Raw -LiteralPath $generatorAssertions | ConvertFrom-Json
+        if ($generatorDocument.outcome -ne 'PASS') {
+            throw ("The store generator did not pass: $($generatorDocument.outcome): $($generatorDocument.failureReason). " +
+                   "See $storeGeneratorEvidence")
+        }
+        # Out of the evidence tree: the store is an input, and the restored copy's rows are recorded below.
+        $generatedRoot = Join-Path $StageRoot 'generated-store'
+        New-Item -ItemType Directory -Path $generatedRoot | Out-Null
+        $fieldDatabase = Join-Path $generatedRoot 'controlserver.db'
+        Move-Item -LiteralPath (Join-Path $storeGeneratorEvidence 'demand-bearing-store\controlserver.db') `
+            -Destination $fieldDatabase
+        Remove-Item -LiteralPath (Join-Path $storeGeneratorEvidence 'demand-bearing-store') -Recurse -Force
+        $storeGenerator = [ordered]@{
+            scenario = $storeGeneratorScenario
+            evidence = [IO.Path]::GetRelativePath($EvidenceRoot, $storeGeneratorEvidence).Replace('\', '/')
+            runId = $generatorDocument.runId
+            outcome = $generatorDocument.outcome
+            rig = $generatorDocument.identity.rig
+            controlServerCommit = $generatorDocument.identity.controlServerCommit
+        }
+    }
+
     Invoke-LoggedCommand -Name 'publish-control-server' -WorkingDirectory $controlSource -FilePath 'dotnet' `
         -Arguments @('publish', '.\src\ControlServer.Host\ControlServer.Host.csproj', '-c', 'Release', '-o', $controlPublish) `
         -LogPath (Join-Path $logsRoot 'publish-control-server.log') | Out-Null
@@ -375,10 +562,14 @@ try {
             Copy-Item -LiteralPath $sourceFile -Destination ($controlDatabasePath + $suffix) -Force
         }
     }
-    $fieldDatabaseSha256 = (Get-FileHash -LiteralPath $fieldDatabase -Algorithm SHA256).Hash.ToLowerInvariant()
+    # Over all three files, not the main file alone (control-server#503): with a -wal beside it, the main
+    # file is not the whole store, and two stores with the same main file can hold different rows. One line
+    # per suffix -- name, length and SHA-256, or ABSENT -- hashed together, so a missing -wal is part of it.
+    $fieldDatabaseSha256 = Get-StoreFilesSha256 -DatabasePath $fieldDatabase
 
     $baseline = Read-ControlDatabase
-    $preparedRows = @($baseline.stationOperationRows | Where-Object { $_['status'] -eq 'Prepared' })
+    Assert-FieldRunStoreIsNotGenerated -StoreSource $storeSource -Baseline $baseline
+    $preparedRows =@($baseline.stationOperationRows | Where-Object { $_['status'] -eq 'Prepared' })
     $committedRows = @($baseline.stationOperationRows | Where-Object { $_['status'] -eq 'Committed' })
     if ($preparedRows.Count -ne 1) {
         throw "The restored store must hold exactly one Prepared station operation, found $($preparedRows.Count)."
@@ -477,6 +668,12 @@ finally {
     }
 }
 
+# First, before any judgement and before Write-G3GateResults (control-server#460): on an errored run the gate-result
+# writer refuses a store that was never read or a version that was never fetched, and until this call that refusal
+# was all the run printed -- the generator's exit, the store's shape or the host that never came up stayed in a
+# log. Test-G3EvidenceHonesty.ps1 asserts that this call directly follows the try.
+Write-StagedRunError -ErrorRecord $runError -EvidenceRoot $EvidenceRoot -RunLabel 'Demand-bearing G3'
+
 $portsReleased = @(Get-NetTCPConnection -State Listen -LocalPort $controlPort, $healthPort `
         -ErrorAction SilentlyContinue).Count -eq 0
 
@@ -563,9 +760,9 @@ $acceptedMessageId = if ($null -ne $probeResult) { [string]$probeResult.accepted
 
 $resultAcceptedPass = Test-Case -Name 'preparedAttemptAcceptsItsFirstResult'
 $resultReplayPass = Test-Case -Name 'identicalResultReplayReturnsTheStoredAcknowledgement'
-$resultContentConflictPass = Test-Case -Name 'sameMessageIdWithDifferentContentIsRefused'
-$resultRenumberConflictPass = Test-Case -Name 'sameAttemptAndGenerationUnderANewMessageIdIsRefused'
-$committedAttemptConflictPass = Test-Case -Name 'alreadyCommittedAttemptRefusesASecondResult'
+$resultContentConflictProbePass = Test-Case -Name 'sameMessageIdWithDifferentContentIsRefused'
+$resultRenumberConflictProbePass = Test-Case -Name 'sameAttemptAndGenerationUnderANewMessageIdIsRefused'
+$committedAttemptConflictProbePass = Test-Case -Name 'alreadyCommittedAttemptRefusesASecondResult'
 $staleGenerationPass = Test-Case -Name 'resultFromASupersededSessionGenerationIsRefused'
 
 # The replay is only evidence if it did not also process the message twice: one inbox row, one result
@@ -583,6 +780,49 @@ if ($null -ne $final) {
 }
 $finalPreparedRow = $null
 if ($finalPreparedRows.Count -eq 1) { $finalPreparedRow = $finalPreparedRows[0] }
+
+# control-server#541: the three content conflicts are judged on the wire by the probe (the vector's ProtocolProblem,
+# the connection still served) and here from the store, because CV-RELIABLE-RETRY-DIFFERENT-CONTENT also asks that
+# the conflicting retry is never applied. Under the accepted messageId the inbox still holds the accepted line, byte
+# for byte; a refused result under a messageId of its own leaves no inbox row; and no result row is added for either
+# attempt -- the prepared one keeps its single result, the committed one the results it had before this run.
+function Get-InboxRowsFor {
+    param([string]$MessageId)
+    if ($null -eq $final -or [string]::IsNullOrEmpty($MessageId)) { return , @() }
+    return , @($final.resultInboxRows | Where-Object { [string]$_['messageId'] -eq $MessageId })
+}
+$committedAttemptIdForConflict = [string](Get-Case -Name 'alreadyCommittedAttemptRefusesASecondResult')?.slotOperationAttemptId
+$committedResultCountBefore = @($baseline.operationResultRows | Where-Object {
+    $null -ne $_ -and [string]$_['slotOperationAttemptId'] -eq $committedAttemptIdForConflict }).Count
+$committedResultCountAfter = @($final.operationResultRows | Where-Object {
+    $null -ne $_ -and [string]$_['slotOperationAttemptId'] -eq $committedAttemptIdForConflict }).Count
+$conflictInboxRows = Get-InboxRowsFor -MessageId $acceptedMessageId
+$renumberedInboxRows = Get-InboxRowsFor -MessageId ([string](Get-Case -Name 'sameAttemptAndGenerationUnderANewMessageIdIsRefused')?.messageId)
+$committedAttemptInboxRows = Get-InboxRowsFor -MessageId ([string](Get-Case -Name 'alreadyCommittedAttemptRefusesASecondResult')?.messageId)
+$contentConflictStore = [ordered]@{
+    acceptedMessageIdInboxRowCount = $conflictInboxRows.Count
+    acceptedMessageIdStoredRequestSha256 = @($conflictInboxRows | ForEach-Object { Get-Sha256Text ([string]$_['requestJson']) })
+    acceptedRequestSha256 = if ($null -ne $probeResult) { [string]$probeResult.acceptedRequestSha256 } else { $null }
+    renumberedResultInboxRowCount = $renumberedInboxRows.Count
+    committedAttemptResultInboxRowCount = $committedAttemptInboxRows.Count
+    preparedAttemptResultRowCount = $preparedResultRows.Count
+    committedAttemptId = $committedAttemptIdForConflict
+    committedAttemptResultRowCountBefore = $committedResultCountBefore
+    committedAttemptResultRowCountAfter = $committedResultCountAfter
+}
+$resultContentConflictPass = $resultContentConflictProbePass -and
+    $contentConflictStore.acceptedMessageIdInboxRowCount -eq 1 -and
+    -not [string]::IsNullOrEmpty($contentConflictStore.acceptedRequestSha256) -and
+    $contentConflictStore.acceptedMessageIdStoredRequestSha256[0] -eq $contentConflictStore.acceptedRequestSha256
+$resultRenumberConflictPass = $resultRenumberConflictProbePass -and
+    $null -ne $final -and
+    $contentConflictStore.renumberedResultInboxRowCount -eq 0 -and
+    $contentConflictStore.preparedAttemptResultRowCount -eq 1
+$committedAttemptConflictPass = $committedAttemptConflictProbePass -and
+    $null -ne $baseline -and $null -ne $final -and
+    -not [string]::IsNullOrEmpty($committedAttemptIdForConflict) -and
+    $contentConflictStore.committedAttemptResultInboxRowCount -eq 0 -and
+    $committedResultCountAfter -eq $committedResultCountBefore
 
 $resultCommittedOncePass = $null -ne $finalPreparedRow -and
     $finalPreparedRow['status'] -eq 'Committed' -and
@@ -604,10 +844,14 @@ $demandClosureRowsPass = $null -ne $baseline -and $null -ne $final -and
 
 # Nothing left this machine. The restored store gains business rows -- that is the vector -- but the
 # tables that only an external call can grow must be byte-for-byte the same count as the baseline.
-$externalTables = @('OrderIntents', 'RiotDispatchAuditEvents', 'AcceptedDemands', 'VehicleDispatchLeases')
-$noExternalSideEffectsPass = $null -ne $baseline -and $null -ne $final -and
+# The claim records are compared from after the first host, not from the baseline: that host migrated the restored
+# store, and the migration backfills a record per claim and per released lease it finds (control-server#387). What
+# only an acceptance can add is what must not grow from there on.
+$externalTables = @('OrderIntents', 'RiotDispatchAuditEvents', 'AcceptedDemands')
+$noExternalSideEffectsPass = $null -ne $baseline -and $null -ne $final -and $null -ne $afterProbe -and
     @($externalTables | Where-Object {
         [long]$baseline.counts[$_] -ne [long]$final.counts[$_] }).Count -eq 0 -and
+    [long]$afterProbe.counts['VehiclePurposeClaimRecords'] -eq [long]$final.counts['VehiclePurposeClaimRecords'] -and
     [long]$final.counts['StationOperations'] -eq [long]$baseline.counts['StationOperations']
 
 # --- the demand-bearing half of the process restart vector ------------------------------------------
@@ -624,10 +868,10 @@ $demandSurvivesRestartPass = $null -ne $afterProbe -and $null -ne $final -and
     (Test-RowsPreserved -Before $afterProbe.acceptedDemandRows -After $final.acceptedDemandRows `
         -IdentityColumns @('demandId', 'transportDemandKey', 'demandRevision', 'status'))
 
-$vehicleLeaseSurvivesRestartPass = $null -ne $afterProbe -and $null -ne $final -and
-    [long]$afterProbe.counts['VehicleDispatchLeases'] -eq [long]$final.counts['VehicleDispatchLeases'] -and
-    (Test-RowsPreserved -Before $afterProbe.vehicleLeaseRows -After $final.vehicleLeaseRows `
-        -IdentityColumns @('demandId', 'vehicleKey', 'acquiredAt', 'releasedAt'))
+$vehicleClaimRecordSurvivesRestartPass = $null -ne $afterProbe -and $null -ne $final -and
+    [long]$afterProbe.counts['VehiclePurposeClaimRecords'] -eq [long]$final.counts['VehiclePurposeClaimRecords'] -and
+    (Test-RowsPreserved -Before $afterProbe.vehicleClaimRecordRows -After $final.vehicleClaimRecordRows `
+        -IdentityColumns @('journeyId', 'vehicleKey', 'acquiredAt', 'releasedAt'))
 
 # The restarted host has to be serving that same store, not a fresh one: a new session on the old
 # file continues the generation sequence instead of restarting it at 1.
@@ -642,47 +886,99 @@ $restartedHostServesTheSameStorePass = $null -ne $handshakeResult -and $null -ne
 # under test, and the fact that the restored store was read at all.
 #
 # The store's own recorded protocolCommit used to be a seventh conjunct here, and it is not one any
-# more (ticket 24, on the user's ruling of 2026-09-09). It asks what protocol the field run of
-# 2026-08-29 was speaking -- protocol-v0.1.1 -- which no v2-identity run can ever satisfy, short of
+# more for a field store (ticket 24, on the user's ruling of 2026-09-09). It asks what protocol the field
+# run of 2026-08-29 was speaking -- protocol-v0.1.1 -- which no v2-identity run can ever satisfy, short of
 # re-collecting a field run under v2. Leaving it inside the conjunction made the whole assertion
 # permanently red, and a permanently red assertion cannot report the six checks that are still
 # meaningful: an exemption written against the assertion's NAME would have swallowed them.
-# So it is recorded below instead of asserted, and the exemption is written against that one fact.
-$protocolBindingPass = $null -ne $version -and
-    $version.protocolCommit -eq $ProtocolCommit -and
-    $version.protocolTag -eq 'protocol-v2.0.0' -and
-    $null -ne $probeResult -and
-    [string]$probeResult.serverBuildCommit -eq $ControlServerCommit -and
-    $null -ne $baseline
-
-# Recorded, not asserted. matchesBoundProtocolCommit is written exactly as measured -- false is the
-# expected value today, and it is stated rather than omitted: an exemption means this fact does not
-# decide the slice, not that the evidence stops saying it.
-$fieldStoreProtocolCommit = if ($null -ne $baseline) {
+# So for a field store it is recorded below instead of asserted, and the exemption is written against
+# that one fact.
+#
+# A generated store (control-server#453) is written by the bound commit itself, speaking the bound
+# protocol, so for it the conjunct is back: a generated store that recorded any other protocol was not
+# written by what this run claims to test. The exemption is the field store's and goes no further.
+# On that path the conjunct holds by construction: the server refuses to write SessionRecoveries.ProtocolCommit
+# unless it equals the identity compiled into the build (WireToGateStore.ValidateProtocolIdentity, called from
+# BeginSessionRecoveryAsync). So it guards "this store was not written by this build" and catches no product
+# regression; a mutation can only reach it by editing the exported file.
+$storeProtocolCommit = if ($null -ne $baseline) {
     [string]$baseline.sessionRecoveryRows[0]['protocolCommit']
 } else {
     $null
 }
-$fieldStoreProvenanceRecord = [ordered]@{
-    protocolCommit = $fieldStoreProtocolCommit
-    matchesBoundProtocolCommit = ($null -ne $fieldStoreProtocolCommit) -and
-        ($fieldStoreProtocolCommit -eq $ProtocolCommit)
-    exemption = 'TICKET_17_KNOWN_EXEMPTION_FIELD_STORE_HISTORY'
-    note = 'The restored store is real state written by the authorised field run of 2026-08-29, ' +
-           'which spoke protocol-v0.1.1. Its recorded protocolCommit is that history, not a ' +
-           'statement about the build under test, so it is recorded and not asserted. Ruled a ' +
-           'known exemption by the user on 2026-09-09; scope is this fact alone.'
-    # The RIoT create audit read out of the same restored store. Asserted until the control-server#60
-    # review (2026-09-18): every row was written by the field run's build before this server started,
-    # so it judged that history rather than the bound commit. Recorded exactly as measured instead.
-    riotCreateAuditHistory = [ordered]@{
-        legs = $auditLegs.Count
-        preCreateReconciliationObservedUnknownOnEveryLeg = $riotUnknownObservedPass
-        unknownWasAnExactAbsentAtObservation = $riotUnknownIsExactAbsencePass
-        unknownStillCreatedExactlyOncePerLeg = $riotUnknownCreatesExactlyOncePass
-        unknownResolvedToTheOrderItCreated = $riotUnknownResolvesToTheCreatedOrderPass
-        note = 'History of the 2026-08-29 field run, not a judgment of the build under test. ' +
-               'Recorded, not asserted, by the user ruling on control-server#60 (2026-09-18).'
+$storeProtocolCommitMatches = ($null -ne $storeProtocolCommit) -and ($storeProtocolCommit -eq $ProtocolCommit)
+# Written beside the PASS so a reader can tell whether the seventh conjunct was checked at all: on a field store a
+# PASS here says nothing about the store's protocol, on a generated one it does.
+$protocolCommitConjunct = if ($storeSource -eq 'FIELD_RUN') {
+    "FIELD_RUN: seventh conjunct exempt (TICKET_17); store protocolCommit $storeProtocolCommit recorded, not asserted"
+} else {
+    "SYNTHETIC_RIG: seventh conjunct in force; store protocolCommit $storeProtocolCommit must equal bound " +
+    "$ProtocolCommit -> $(if ($storeProtocolCommitMatches) { 'equal' } else { 'NOT equal' })"
+}
+$protocolBindingPass = $null -ne $version -and
+    $version.protocolCommit -eq $ProtocolCommit -and
+    $version.protocolTag -eq 'protocol-v3.0.0' -and
+    $null -ne $probeResult -and
+    [string]$probeResult.serverBuildCommit -eq $ControlServerCommit -and
+    $null -ne $baseline -and
+    ($storeSource -eq 'FIELD_RUN' -or $storeProtocolCommitMatches)
+
+# For a field store: recorded, not asserted. matchesBoundProtocolCommit is written exactly as measured --
+# false is the expected value for the 2026-08-29 store, and it is stated rather than omitted: an exemption
+# means this fact does not decide the slice, not that the evidence stops saying it.
+$fieldStoreProvenanceRecord = if ($storeSource -eq 'FIELD_RUN') {
+    [ordered]@{
+        storeSource = $storeSource
+        protocolCommit = $storeProtocolCommit
+        matchesBoundProtocolCommit = $storeProtocolCommitMatches
+        protocolCommitAsserted = $false
+        protocolCommitConjunct = $protocolCommitConjunct
+        exemption = 'TICKET_17_KNOWN_EXEMPTION_FIELD_STORE_HISTORY'
+        note = 'The restored store is real state written by an authorised field run (the one used up ' +
+               'to batch 7 was 2026-08-29, protocol-v0.1.1). Its recorded protocolCommit is that history, ' +
+               'not a statement about the build under test, so it is recorded and not asserted. Ruled a ' +
+               'known exemption by the user on 2026-09-09; scope is this fact alone.'
+        # The RIoT create audit read out of the same restored store. Asserted until the control-server#60
+        # review (2026-09-18): every row was written by the field run's build before this server started,
+        # so it judged that history rather than the bound commit. Recorded exactly as measured instead.
+        riotCreateAuditHistory = [ordered]@{
+            legs = $auditLegs.Count
+            preCreateReconciliationObservedUnknownOnEveryLeg = $riotUnknownObservedPass
+            unknownWasAnExactAbsentAtObservation = $riotUnknownIsExactAbsencePass
+            unknownStillCreatedExactlyOncePerLeg = $riotUnknownCreatesExactlyOncePass
+            unknownResolvedToTheOrderItCreated = $riotUnknownResolvesToTheCreatedOrderPass
+            note = 'History of the field run, not a judgment of the build under test. ' +
+                   'Recorded, not asserted, by the user ruling on control-server#60 (2026-09-18).'
+        }
+    }
+} else {
+    [ordered]@{
+        storeSource = $storeSource
+        protocolCommit = $storeProtocolCommit
+        matchesBoundProtocolCommit = $storeProtocolCommitMatches
+        protocolCommitAsserted = $true
+        protocolCommitConjunct = $protocolCommitConjunct
+        exemption = $null
+        generator = $storeGenerator
+        note = 'Generated on the spot by the bound ControlServer commit on the synthetic rig: a synthetic ' +
+               'onboard peer and the fake RIoT, not a real vehicle and not the real RIoT. Weaker than a ' +
+               'field store in two ways (control-server#453): the state was not written by a real demand on a ' +
+               'real vehicle; and it was written by the build under test in its own schema, so restoring it ' +
+               'migrates nothing -- the restart and side-effect assertions no longer also show that a store ' +
+               'another build wrote, in an older schema, is taken over. Its protocolCommit is asserted inside ' +
+               'protocolAndBuildIdentityBoundToTheSharedBinding, where it holds by construction: it can only ' +
+               'show the store was written by this build, not catch a product regression.'
+        # The fake RIoT does not answer a never-created upperId the way the real one does, so these say
+        # nothing about RIoT; kept so the shape of the record does not depend on where the store came from.
+        riotCreateAuditHistory = [ordered]@{
+            legs = $auditLegs.Count
+            preCreateReconciliationObservedUnknownOnEveryLeg = $riotUnknownObservedPass
+            unknownWasAnExactAbsentAtObservation = $riotUnknownIsExactAbsencePass
+            unknownStillCreatedExactlyOncePerLeg = $riotUnknownCreatesExactlyOncePass
+            unknownResolvedToTheOrderItCreated = $riotUnknownResolvesToTheCreatedOrderPass
+            note = 'Written against the fake RIoT, whose answers are not the real RIoT''s. Recorded, not ' +
+                   'asserted, and not evidence about RIoT.'
+        }
     }
 }
 
@@ -692,11 +988,20 @@ $configuration = [ordered]@{
     temporaryTrustRootInstalled = $false
     unattended = $true
     storeProvenance = [ordered]@{
+        storeSource = $storeSource
         fieldRunRoot = $FieldRunRoot
         fieldDatabaseSha256 = $fieldDatabaseSha256
-        note = 'Restored from an authorised field run. The store is real state produced by a real ' +
-               'demand; the build under test is the bound ControlServer commit, which is not ' +
-               'necessarily the build that wrote it.'
+        fieldDatabaseSha256Covers = 'controlserver.db, controlserver.db-wal, controlserver.db-shm: one line each of name, length and SHA-256 (or ABSENT), hashed together'
+        generator = $storeGenerator
+        note = if ($storeSource -eq 'FIELD_RUN') {
+            'Restored from an authorised field run. The store is real state produced by a real ' +
+            'demand; the build under test is the bound ControlServer commit, which is not ' +
+            'necessarily the build that wrote it.'
+        } else {
+            'Generated by the bound ControlServer commit on the synthetic rig (synthetic onboard peer, ' +
+            'fake RIoT, fake MesIngest). Weaker than a field store: no real vehicle, no real RIoT, and no ' +
+            'cross-build restore -- the store is in the build''s own schema, so nothing is migrated.'
+        }
     }
     commitBinding = [ordered]@{
         source = [IO.Path]::GetRelativePath($ControlServerRepository, $SharedRunnerSource).Replace('\', '/')
@@ -705,6 +1010,7 @@ $configuration = [ordered]@{
         functionSourceSha256 = $commitBindingFunctionSha256
         readFrom = 'param-block-defaults'
         controlServer = $ControlServerCommit
+        controlServerCommitSource = $controlServerCommitSource
         onboardHmi = $OnboardCommit
         slotsSimulator = $SimulatorCommit
         protocol = $ProtocolCommit
@@ -748,7 +1054,7 @@ $assertions = [ordered]@{
     unloadResultClosedTheDemandAtomically = $demandClosureRowsPass
     controlServerHostProcessWasActuallyReplaced = $hostReplacedPass
     acceptedDemandSurvivesTheHostRestart = $demandSurvivesRestartPass
-    vehicleDispatchLeaseSurvivesTheHostRestart = $vehicleLeaseSurvivesRestartPass
+    vehicleClaimRecordSurvivesTheHostRestart = $vehicleClaimRecordSurvivesRestartPass
     restartedHostServesTheSameStore = $restartedHostServesTheSameStorePass
     noMovementOrExternalSideEffects = $noExternalSideEffectsPass
     listenersReleased = $portsReleased
@@ -768,18 +1074,28 @@ $status = if ($null -ne $runError) {
     'DEMAND_BEARING_SLICE_FAIL'
 }
 
+# One record for the gate results, the classification and run-result.json alike: the classification reads its
+# controlServerCommitSource to decide whether this run tested the shared binding (control-server#460).
+$commitsRecord = [ordered]@{
+    controlServer = $ControlServerCommit
+    controlServerCommitSource = $controlServerCommitSource
+    onboardHmi = $OnboardCommit
+    onboardCommitSource = $onboardCommitSource
+    slotsSimulator = $SimulatorCommit
+    simulatorCommitSource = $simulatorCommitSource
+    protocol = $ProtocolCommit
+    protocolCommitSource = $protocolCommitSource
+    runner = $runnerCommit
+    runnerWorktreeCleanAtStart = $runnerWorktreeClean
+    runnerSource = $runnerProvenance.runnerSource
+}
+
 $gateResultPaths = Write-G3GateResults -RunKind $G3RunKind -EvidenceRoot $EvidenceRoot `
     -AssertionReport $assertionReport -Slice $Slice -RunnerErrored:($null -ne $runError) -Context @{
         runId = $runId
         startedAt = $runStartedAt.ToString('O')
-        commits = [ordered]@{
-            controlServer = $ControlServerCommit
-            onboardHmi = $OnboardCommit
-            slotsSimulator = $SimulatorCommit
-            protocol = $ProtocolCommit
-            runner = $runnerCommit
-            runnerWorktreeCleanAtStart = $runnerWorktreeClean
-        }
+        commits = $commitsRecord
+
         # Read back from the server this run actually talked to rather than restated from a constant:
         # this runner clones no protocol repository, so the identity it can honestly cite is the one
         # the running host reported. Null when the run never got a version, which is the same case
@@ -829,26 +1145,27 @@ $result = [ordered]@{
     completedAtUtc = [DateTimeOffset]::UtcNow
     status = $status
     classification = (New-G3Classification -RunKind $G3RunKind -RunStatus $status `
-        -AssertionReport $assertionReport -RunnerErrored:($null -ne $runError))
+        -AssertionReport $assertionReport -Commits $commitsRecord -RunnerErrored:($null -ne $runError))
     gateResults = @($gateResultPaths | ForEach-Object {
         [IO.Path]::GetRelativePath($EvidenceRoot, $_).Replace('\', '/') })
     # Same record the per-slice gate results carry, at run level so a reader of this file alone can
     # see which field run's history the store carries without opening a slice directory.
     fieldStoreProvenance = $fieldStoreProvenanceRecord
-    commits = [ordered]@{
-        controlServer = $ControlServerCommit
-        onboardHmi = $OnboardCommit
-        slotsSimulator = $SimulatorCommit
-        protocol = $ProtocolCommit
-        runner = $runnerCommit
-        runnerWorktreeCleanAtStart = $runnerWorktreeClean
-    }
+    # Where the restored store came from, at the top so it is the first thing a reader of a PASS meets.
+    storeProvenance = $configuration.storeProvenance
+    commits = $commitsRecord
+
     configurationSha256 = Get-Sha256Text $configurationJson
     configuration = $configuration
     commands = @($commands)
     assertions = $assertionReport
+    # What an assertion actually checked, where a PASS alone would not say. Only names whose meaning depends on the run.
+    assertionDetails = [ordered]@{
+        protocolAndBuildIdentityBoundToTheSharedBinding = $protocolCommitConjunct
+    }
     failedAssertions = $failedAssertions
     probe = $probeResult
+    contentConflictStore = $contentConflictStore
     handshakeAfterRestart = $handshakeResult
     restart = $restart
     controlDatabaseBaseline = $baseline

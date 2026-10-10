@@ -1,0 +1,47 @@
+{"at":"2026-09-30T01:36:40.5739623+00:00","note":"L2 run 20260930T013640473Z starting for scenario 'slot-fault-declaration'."}
+{"at":"2026-09-30T01:36:40.7148200+00:00","note":"L2 port block lock acquired (slot 0, Global\\W2G-L2PortBlock)."}
+{"at":"2026-09-30T01:36:40.7260268+00:00","note":"Building ControlServer and the test doubles."}
+{"at":"2026-09-30T01:37:05.9332428+00:00","criterion":"fake-riot-live","value":"live"}
+{"at":"2026-09-30T01:37:06.4269365+00:00","criterion":"fake-mes-live","value":"live"}
+{"at":"2026-09-30T01:37:06.6371547+00:00","note":"Task type station preset: default (map 25, WIRE_TO_GATE -> 关卡/210)"}
+{"at":"2026-09-30T01:37:17.2475121+00:00","note":"Package capacity rules imported."}
+{"at":"2026-09-30T01:37:17.2525039+00:00","note":"No waiting point registration: a single-vehicle rig, or WaitingPoints = $false."}
+{"at":"2026-09-30T01:37:19.3733922+00:00","criterion":"control-server-live","value":"(null)"}
+{"at":"2026-09-30T01:37:26.0180846+00:00","criterion":"control-server-live","value":"live"}
+{"at":"2026-09-30T01:37:26.5292133+00:00","note":"Protocol release identity: protocol-v3.0.0 (profileId AGV_FULL_PRODUCT, protocolVersion 4, SUPERSEDING_CANDIDATE)."}
+{"at":"2026-09-30T01:37:28.0745519+00:00","criterion":"onboard-readiness","value":"DISCONNECTED"}
+{"at":"2026-09-30T01:37:28.4307901+00:00","criterion":"onboard-readiness","value":"READY"}
+{"at":"2026-09-30T01:37:28.9326085+00:00","criterion":"control-server-ready","value":"ready"}
+{"at":"2026-09-30T01:37:29.0933313+00:00","note":"FieldOps: seed-approved-facts --database C:\\Users\\szy\\AppData\\Local\\Temp\\l2-20260930T013640473Z\\controlserver.db"}
+{"at":"2026-09-30T01:37:40.3540565+00:00","criterion":"slot-model-preseed:seed-approved-facts","value":"OK","detail":{"output":{"command":"seed-approved-facts","outcome":"OK","modelKey":"8005-eight-slot","slotModelVersionId":"eccfa774b73747e1ac45f3236f7ca52d","version":1,"slotCount":8}}}
+{"at":"2026-09-30T01:37:40.3848565+00:00","note":"FieldOps: bind-io --database C:\\Users\\szy\\AppData\\Local\\Temp\\l2-20260930T013640473Z\\controlserver.db --agv AGV-L2-001"}
+{"at":"2026-09-30T01:37:48.3060623+00:00","criterion":"slot-model-preseed:bind-io:AGV-L2-001","value":"OK","detail":{"output":{"command":"bind-io","outcome":"OK","agvId":"AGV-L2-001","slotModelVersionId":"eccfa774b73747e1ac45f3236f7ca52d","boundSlots":8,"version":1}}}
+{"at":"2026-09-30T01:37:48.5740846+00:00","criterion":"slot-model-preseed:dispatch-zones","value":"0"}
+{"at":"2026-09-30T01:37:48.5838358+00:00","note":"FieldOps: import-area-assignments --database C:\\Users\\szy\\AppData\\Local\\Temp\\l2-20260930T013640473Z\\controlserver.db --input C:\\Users\\szy\\Desktop\\8005-workspace-v2\\worktrees\\cs383-8005-agv-control-server\\evidence\\l2\\20260930-cs383-slot-fault-declaration-red-ignores-not-applicable\\snapshots\\preseed-area-assignments.csv"}
+{"at":"2026-09-30T01:37:56.5713899+00:00","criterion":"slot-model-preseed:import-area-assignments","value":"OK","detail":{"output":{"command":"import-area-assignments","outcome":"OK","dryRun":false,"input":"C:\\Users\\szy\\Desktop\\8005-workspace-v2\\worktrees\\cs383-8005-agv-control-server\\evidence\\l2\\20260930-cs383-slot-fault-declaration-red-ignores-not-applicable\\snapshots\\preseed-area-assignments.csv","entryCount":3,"version":1,"contentSha256":"4291a509c2c0b75ea4bde0ac4dcde04b6e8632b54a21a67eee2772a6f8d0ff8e","snapshotId":"c228f150b99046ad863cbe3f4a488923","importedAt":"2026-09-30T09:37:49.1305221+08:00","errorCount":0,"errors":[],"preview":[]}}}
+{"at":"2026-09-30T01:37:56.5787658+00:00","note":"Per-zone dispatch parameters left unconfigured (the default precondition)."}
+{"at":"2026-09-30T01:37:56.5881341+00:00","note":"Environment is up; entering scenario 'slot-fault-declaration'."}
+{"at":"2026-09-30T01:37:58.1731367+00:00","note":"Publishing demand 7aea443a695e4bc8a52e0c425e4f11d9 (sublot L2-SFD-20260930T013640473Z)."}
+{"at":"2026-09-30T01:37:58.3997853+00:00","criterion":"journey-stage","value":"(null)"}
+{"at":"2026-09-30T01:38:00.5124025+00:00","criterion":"journey-stage","value":"AwaitingPickupArrival"}
+{"at":"2026-09-30T01:38:00.5266799+00:00","criterion":"to-pickup-intent","value":"(null)"}
+{"at":"2026-09-30T01:38:01.0546405+00:00","criterion":"to-pickup-intent","value":"@{UpperId=W2G-7aea443a-695e-4bc8-a52e-0c425e4f11d9-PICKUP-1; OrderId=ORDER-000001; Status=CONFIRMED}"}
+{"at":"2026-09-30T01:38:01.0704636+00:00","note":"Vehicle departs for the pickup station."}
+{"at":"2026-09-30T01:38:01.1473900+00:00","note":"Vehicle arrives at the pickup station and comes to rest."}
+{"at":"2026-09-30T01:38:02.2564185+00:00","criterion":"journey-stage","value":"AwaitingSublot"}
+{"at":"2026-09-30T01:38:03.3122436+00:00","criterion":"journey-stage","value":"AwaitingLoadResult"}
+{"at":"2026-09-30T01:38:03.3468010+00:00","criterion":"pending-load","value":"operation:73ad7886-acc0-1458-91b8-0558e70f10c8"}
+{"at":"2026-09-30T01:38:03.3857849+00:00","note":"Vehicle reports slot 1 overdue: 放入货物并关好1号仓门"}
+{"at":"2026-09-30T01:38:03.4078849+00:00","criterion":"overdue-projected","value":"False"}
+{"at":"2026-09-30T01:38:03.6793808+00:00","criterion":"overdue-projected","value":"True"}
+{"at":"2026-09-30T01:38:03.9385095+00:00","note":"Declaration of slot 1 (LIGHT_CURTAIN) -> 202: {\"declarationId\":\"d66c5c82-e256-4912-ad07-4582d7b7a00a\",\"agvId\":\"AGV-L2-001\",\"demandId\":\"7aea443a-695e-4bc8-a52e-0c425e4f11d9\",\"slotOperationAttemptId\":\"73ad7886-acc0-1458-91b8-0558e70f10c8\",\"slotNo\":1,\"state\":\"PENDING\",\"sentToVehicle\":true}"}
+{"at":"2026-09-30T01:38:03.9772915+00:00","criterion":"declaration-not-applicable","value":"@{DeclarationId=d66c5c82-e256-4912-ad07-4582d7b7a00a; RequestId=82850c5a-bdb4-4ba6-ace0-aaa5d4d0b0bf; RequestContentHash=1a7776a972130a42646d8fd5ba32989f7b7235836bf07ab6c2216bb3f5de777c; AgvId=AGV-L2-001; DemandId=7aea443a-695e-4bc8-a52e-0c425e4f11d9; SlotOperationAttemptId=73ad7886-acc0-1458-91b8-0558e70f10c8; OperationType=LOAD; SlotNo=1; FaultCategory=LIGHT_CURTAIN; Note=光幕一直报有物，仓内实际为空; AdministratorId=L2-MAINTENANCE-383; AdministratorRole=MAINTENANCE_ADMINISTRATOR; DeclaredAt=2026-09-30 01:38:03.8035968+00:00; ReadingsJson={\"observedAt\":\"2026-09-30T01:37:28.0143605+00:00\",\"safetyStateVersion\":1,\"lockState\":\"LOCKED\",\"physicalState\":\"EMPTY\",\"unlockOutputState\":\"RESET\",\"changedSinceObserved\":false}; CommandMessageId=96464532-98b7-5459-996c-aa147368b66d; State=NOT_APPLICABLE; ResultMessageId=2266e894-551b-4f42-a53c-dceb97a88cc6; ResultOutcome=NOT_APPLICABLE; ResultProblemJson={\"reasonCode\":\"ACTION_NOT_ALLOWED_IN_STATE\",\"fieldPath\":\"payload.slotOperationAttemptId\",\"displayMessage\":\"The declared slot is no longer waiting for the operator.\"}; ResultReceivedAt=2026-09-30 01:38:03.9274656+00:00}"}
+{"at":"2026-09-30T01:38:04.0177326+00:00","criterion":"runtime-iterations","value":"36"}
+{"at":"2026-09-30T01:38:04.8177863+00:00","criterion":"runtime-iterations","value":"37"}
+{"at":"2026-09-30T01:38:06.4618170+00:00","criterion":"runtime-iterations","value":"38"}
+{"at":"2026-09-30T01:38:06.7241142+00:00","criterion":"runtime-iterations","value":"39"}
+{"at":"2026-09-30T01:38:06.7364731+00:00","note":"The door is shut; the peer completes the load."}
+{"at":"2026-09-30T01:38:06.7836279+00:00","criterion":"journey-stage","value":"Blocked"}
+{"at":"2026-09-30T01:40:07.0026351+00:00","note":"Run failed: Timed out after 120s waiting for: the load completed and the journey reached the gate leg. Last observed: \"Blocked\""}
+{"at":"2026-09-30T01:40:07.0139482+00:00","note":"Failure at: at Wait-L2Condition, C:\\Users\\szy\\Desktop\\8005-workspace-v2\\worktrees\\cs383-8005-agv-control-server\\scripts\\l2\\L2.psm1: line 103\r\nat <ScriptBlock>, C:\\Users\\szy\\Desktop\\8005-workspace-v2\\worktrees\\cs383-8005-agv-control-server\\scripts\\l2\\scenarios\\slot-fault-declaration.ps1: line 244\r\nat <ScriptBlock>, C:\\Users\\szy\\Desktop\\8005-workspace-v2\\worktrees\\cs383-8005-agv-control-server\\scripts\\l2\\Invoke-L2Scenario.ps1: line 1371"}
+{"at":"2026-09-30T01:40:09.8191950+00:00","note":"L2 port block lock released."}

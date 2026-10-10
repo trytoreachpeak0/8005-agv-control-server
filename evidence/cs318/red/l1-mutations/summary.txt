@@ -1,0 +1,382 @@
+M01 guard 1 (delay) off
+  totals: Failed! 9 191
+  red: ControlServer.Tests.Batch7DemandReleaseServiceTests.APickupOrderEndedInRiotIsNeitherReleasedNorRedispatched(orderState:
+  red: ControlServer.Tests.InTransitOrderStallTests.AnOrderEndedWhileTheSessionIsNotReadyIsNamed
+  red: ControlServer.Tests.OwnOrderRebuildTests.AnOrderCancelledInRiotIsRebuiltForTheSameVehicleAndDemandOnceTheDelayIsOver
+  red: ControlServer.Tests.OwnOrderRebuildTests.AnOrderCancelledWhileTheSessionIsNotReadyOnItsOwnOrderIsRebuiltBehindTheGate
+  red: ControlServer.Tests.VehicleFaultRecoveryTests.AClearanceWhileTheSessionIsNotReadyOnItsOwnOrderStillRebuilds(cargo:
+  red: ControlServer.Tests.VehicleFaultRecoveryTests.AClearedFaultOnAnEmptyVehicleKeepsTheDemandAndRebuildsTheOrder
+  red: ControlServer.Tests.VehicleFaultRecoveryTests.AClearedFaultWithCargoOnBoardRebuildsTheOrderToDeliverIt
+M02 guard 2 (vehicle condition) off
+  totals: Failed! 8 192
+  red: ControlServer.Tests.OwnOrderRebuildTests.ARebuildWaitsWhileTheVehicleMayNotMoveAndIsMadeOnceItMay(condition:
+  red: ControlServer.Tests.OwnOrderRebuildTests.ASilentSessionDoesNotOverwriteARebuildThatWaitsForTheVehicle
+M03 guard 3 (second ending within the window) off
+  totals: Failed! 2 198
+  red: ControlServer.Tests.OwnOrderRebuildTests.ARebuiltOrderCancelledAgainSoonIsNotRebuiltASecondTime(withinTheWindow:
+  red: ControlServer.Tests.VehicleFaultRecoveryTests.AFaultClearedAgainSoonAfterTheRebuildStopsTheRebuilding
+M04 #299's release on clearance restored (nothing on board: release and close; cargo: Blocked for a person)
+  totals: Failed! 8 192
+  red: ControlServer.Tests.VehicleFaultRecoveryEndpointsTests.AClearanceIsOkAndTheSameOneAgainSaysItWasAlreadyMade
+  red: ControlServer.Tests.VehicleFaultRecoveryTests.AClearanceCutShortLeavesNothingBehindAndCanBeMadeAgain
+  red: ControlServer.Tests.VehicleFaultRecoveryTests.AClearanceWhileTheSessionIsNotReadyOnItsOwnOrderStillRebuilds(cargo:
+  red: ControlServer.Tests.VehicleFaultRecoveryTests.AClearedFaultKeepsTheJourneySoNoClosureIsSentAndTheOrderIsRebuilt
+  red: ControlServer.Tests.VehicleFaultRecoveryTests.AClearedFaultOnAnEmptyVehicleKeepsTheDemandAndRebuildsTheOrder
+  red: ControlServer.Tests.VehicleFaultRecoveryTests.AClearedFaultWithCargoOnBoardRebuildsTheOrderToDeliverIt
+  red: ControlServer.Tests.VehicleFaultRecoveryTests.AFaultClearedAgainSoonAfterTheRebuildStopsTheRebuilding
+M05 no rebuild behind the readiness gate
+  totals: Failed! 5 195
+  red: ControlServer.Tests.OwnOrderRebuildTests.ARebuildWaitsBehindTheGateWhenTheSessionIsHeldForMoreThanTheVehicle(held:
+  red: ControlServer.Tests.OwnOrderRebuildTests.AnOrderCancelledWhileTheSessionIsNotReadyOnItsOwnOrderIsRebuiltBehindTheGate
+  red: ControlServer.Tests.VehicleFaultRecoveryTests.AClearanceWhileTheSessionIsNotReadyOnItsOwnOrderStillRebuilds(cargo:
+M06 behind the gate, any not-ready session may create
+  totals: Failed! 2 198
+  red: ControlServer.Tests.OwnOrderRebuildTests.ARebuildWaitsBehindTheGateWhenTheSessionIsHeldForMoreThanTheVehicle(held:
+M07 record key random instead of derived from the ended upperId
+  totals: Failed! 1 199
+  red: ControlServer.Tests.OwnOrderRebuildTests.TheSameEndingRecordedFromTwoScopesIsOneRecordWithOneNewOrder
+M08 an order this server cancelled itself is rebuilt like any other
+  totals: Failed! 1 199
+  red: ControlServer.Tests.OwnOrderRebuildTests.AnOrderThisServerCancelledItselfIsNotRebuilt
+M09 release service releases or cancels a stalled or rebuilding journey
+  totals: Failed! 2 198
+  red: ControlServer.Tests.Batch7DemandReleaseServiceTests.AJourneyWhoseOrderStalledIsNotReleasedWhenTheVehicleBecomesIneligible(stalled:
+M10 guard 2 does not read the vehicle map
+  totals: Failed! 1 199
+  red: ControlServer.Tests.OwnOrderRebuildTests.ARebuildWaitsWhileTheVehicleMayNotMoveAndIsMadeOnceItMay(condition:
+M11 a stopped record is found only by its ended order
+  totals: Failed! 1 199
+  red: ControlServer.Tests.OwnOrderRebuildTests.ARebuiltOrderThatEndsBeforeItIsConfirmedStopsTheRebuilding
+M12 the cargo binding is not settled when the rebuilt order is confirmed
+  totals: Failed! 1 199
+  red: ControlServer.Tests.VehicleFaultRecoveryTests.AClearedFaultWithCargoOnBoardRebuildsTheOrderToDeliverIt
+M13 the stopped code has no dashboard description
+  totals: Failed! 1 199
+  red: ControlServer.Tests.Batch7CargoHoldingDashboardTests.AStalledInTransitOrderIsShownWithAChineseDescription(code:
+M14 the rebuild codes are not in the stalled-order family
+  totals: Failed! 1 199
+  red: ControlServer.Tests.OwnOrderRebuildTests.ASilentSessionDoesNotOverwriteARebuildThatWaitsForTheVehicle
+M15 the rebuilt order skips the create gate
+  totals: Failed! 1 199
+  red: ControlServer.Tests.OwnOrderRebuildTests.ARebuildGoesThroughTheCreateGateForTheStationItGoesTo
+M16 an unconfirmed create is taken as rebuilt
+  totals: Failed! 2 198
+  red: ControlServer.Tests.OwnOrderRebuildTests.ARebuildWhoseCreateAnswerIsLostIsConfirmedNextRoundWithoutASecondCreate
+  red: ControlServer.Tests.OwnOrderRebuildTests.ARebuiltOrderThatEndsBeforeItIsConfirmedStopsTheRebuilding
+
+# second run, on 49cb6de8 (after REQ-0361 window and REQ-0362 cargo evidence): M03 and M14 re-pointed at the current code, M17-M23 new
+M03 guard 3 (a second problem within the window, REQ-0361) off
+  totals: Failed! 3 291
+  red: ControlServer.Tests.OwnOrderRebuildTests.ARebuiltOrderCancelledAgainSoonIsNotRebuiltASecondTime(withinTheWindow:
+  red: ControlServer.Tests.VehicleFaultRecoveryTests.AFaultClearedAgainSoonAfterTheRebuildStopsTheRebuilding
+  red: ControlServer.Tests.VehicleFaultRecoveryTests.Req0361ACancellationSoonAfterAFaultRebuildStopsTheRebuilding
+M14 the rebuild codes are not in the stalled-order family
+  totals: Failed! 2 292
+  red: ControlServer.Tests.MultiVehicleExecutionTests.AVehicleWaitingForItsOrderToBeRebuiltTakesNoAppendedDemand(waiting:
+  red: ControlServer.Tests.OwnOrderRebuildTests.ASilentSessionDoesNotOverwriteARebuildThatWaitsForTheVehicle
+M17 REQ-0361 source rule off: any later problem repeats a cancellation
+  totals: Failed! 1 293
+  red: ControlServer.Tests.VehicleFaultRecoveryTests.Req0361AFailureSoonAfterACancellationRebuildIsNotARepeat
+M18 REQ-0362 a snapshot from before the clearance counts
+  totals: Passed! 0 294
+  red: (none)
+M19 REQ-0362 a cargo slot need not read OCCUPIED
+  totals: Failed! 1 293
+  red: ControlServer.Tests.VehicleFaultRecoveryTests.Req0362AFreshSnapshotThatDoesNotShowTheCargoInPlaceStopsTheRebuild(shows:
+M20 REQ-0362 unknownPresent is not read
+  totals: Failed! 1 293
+  red: ControlServer.Tests.VehicleFaultRecoveryTests.Req0362AFreshSnapshotThatDoesNotShowTheCargoInPlaceStopsTheRebuild(shows:
+M21 REQ-0362 the request is never recorded, so it is not throttled
+  totals: Failed! 3 291
+  red: ControlServer.Tests.OwnOrderRebuildCargoEvidenceRequestTests.Req0362ACargoRebuildWaitingForEvidenceAsksTheVehicleOncePerSession
+  red: ControlServer.Tests.OwnOrderRebuildCargoEvidenceRequestTests.Req0362ARequestMadeWhileNotReadyIsMadeOnceMoreWhenTheSessionBecomesReady
+  red: ControlServer.Tests.OwnOrderRebuildCargoEvidenceRequestTests.Req0362NoRequestInsideTheHandshakeAndOneAgainInTheNextSession
+M22 REQ-0362 the recovery report that ends the handshake may carry the request
+  totals: Failed! 1 293
+  red: ControlServer.Tests.OwnOrderRebuildCargoEvidenceRequestTests.Req0362NoRequestInsideTheHandshakeAndOneAgainInTheNextSession
+M23 REQ-0362 the request is claimed inside the handshake too
+  totals: Failed! 1 293
+  red: ControlServer.Tests.OwnOrderRebuildCargoEvidenceRequestTests.Req0362NoRequestInsideTheHandshakeAndOneAgainInTheNextSession
+# M18 above was miswritten ("TickCount64 < 0 ||" leaves the freshness check in force), so its green means nothing; its log is kept as M18-miswritten.log. Rerun with "TickCount64 >= 0 ||":
+M18 REQ-0362 a snapshot from before the clearance counts
+  totals: Failed! 3 291
+  red: ControlServer.Tests.VehicleFaultRecoveryTests.AClearedFaultWithCargoOnBoardRebuildsTheOrderToDeliverIt
+  red: ControlServer.Tests.VehicleFaultRecoveryTests.Req0362ALoadedClearanceWhoseSessionNeverBecomesReadyWaitsForTheSnapshot
+  red: ControlServer.Tests.VehicleFaultRecoveryTests.Req0362ASnapshotFromBeforeTheClearanceDoesNotProveTheCargo
+
+# third run, on 7f4de19d (after the release fix and the multi-demand guard): M09 re-pointed at the new call, M24 and M25 new
+M09 release service releases or cancels a stalled or rebuilding journey
+  totals: Failed! 2 294
+  red: ControlServer.Tests.Batch7DemandReleaseServiceTests.AJourneyWhoseOrderStalledIsNotReleasedWhenTheVehicleBecomesIneligible(stalled:
+M24 the release's own cancellation, read by the engine first, counts as a stalled order
+  totals: Failed! 1 295
+  red: ControlServer.Tests.Batch7DemandReleaseServiceTests.TheReleasesOwnCancellationReadByTheEngineFirstStillEndsInTheRelease
+M25 REQ-0360 the rebuild revives the journey's terminated demands
+  totals: Failed! 1 295
+  red: ControlServer.Tests.OwnOrderRebuildTests.Req0360ARebuildCarriesTheStopsOpenDemandsAndRevivesNoTerminatedOne
+
+# fourth run, on 6c94352f (review M1, M2, S1..S6): every mutation rerun; M02, M06, M14, M15, M18, M19 re-pointed at the moved code
+M01 guard 1 (delay) off
+  totals: Failed! 11 306
+  red: ControlServer.Tests.Batch7DemandReleaseServiceTests.APickupOrderEndedInRiotIsNeitherReleasedNorRedispatched(orderState:
+  red: ControlServer.Tests.InTransitOrderStallTests.AnOrderEndedWhileTheSessionIsNotReadyIsNamed
+  red: ControlServer.Tests.MultiVehicleExecutionTests.AVehicleWaitingForItsOrderToBeRebuiltTakesNoAppendedDemand(waiting:
+  red: ControlServer.Tests.MultiVehicleExecutionTests.AVehicleWhoseOrderWasCancelledInRiotIsNotOfferedAsIdle
+  red: ControlServer.Tests.OwnOrderRebuildTests.AnOrderCancelledInRiotIsRebuiltForTheSameVehicleAndDemandOnceTheDelayIsOver
+  red: ControlServer.Tests.OwnOrderRebuildTests.AnOrderCancelledWhileTheSessionIsNotReadyOnItsOwnOrderWaitsForTheSessionBeforeItIsRebuilt
+  red: ControlServer.Tests.VehicleFaultRecoveryTests.AClearanceWhileTheSessionIsNotReadyOnItsOwnOrderRebuildsOnceTheSessionIsReady(cargo:
+  red: ControlServer.Tests.VehicleFaultRecoveryTests.AClearedFaultOnAnEmptyVehicleKeepsTheDemandAndRebuildsTheOrder
+  red: ControlServer.Tests.VehicleFaultRecoveryTests.AClearedFaultWithCargoOnBoardRebuildsTheOrderToDeliverIt
+M02 guard 2 (vehicle condition) off
+  totals: Failed! 16 301
+  red: ControlServer.Tests.MultiVehicleExecutionTests.AVehicleWaitingForItsOrderToBeRebuiltTakesNoAppendedDemand(waiting:
+  red: ControlServer.Tests.OwnOrderRebuildTests.ARebuildDecidedBeforeACrashChecksTheVehicleAndTheGateAgainAfterTheRestart(closedBy:
+  red: ControlServer.Tests.OwnOrderRebuildTests.ARebuildWaitsUntilTheOnboardSaysTheVehicleMayDepart(unsafeBy:
+  red: ControlServer.Tests.OwnOrderRebuildTests.ARebuildWaitsWhileTheVehicleMayNotMoveAndIsMadeOnceItMay(condition:
+  red: ControlServer.Tests.OwnOrderRebuildTests.ASilentSessionDoesNotOverwriteARebuildThatWaitsForTheVehicle
+  red: ControlServer.Tests.OwnOrderRebuildTests.Req0361TheWindowRunsFromTheFirstProblemNotFromTheRebuild
+M03 guard 3 (a second problem within the window, REQ-0361) off
+  totals: Failed! 4 313
+  red: ControlServer.Tests.OwnOrderRebuildTests.ARebuiltOrderCancelledAgainSoonIsNotRebuiltASecondTime(withinTheWindow:
+  red: ControlServer.Tests.OwnOrderRebuildTests.ARebuiltOrderThatEndsBeforeItIsConfirmedStopsTheRebuilding
+  red: ControlServer.Tests.VehicleFaultRecoveryTests.AFaultClearedAgainSoonAfterTheRebuildStopsTheRebuilding
+  red: ControlServer.Tests.VehicleFaultRecoveryTests.Req0361ACancellationSoonAfterAFaultRebuildStopsTheRebuilding
+M04 #299's release on clearance restored (nothing on board: release and close; cargo: Blocked for a person)
+  totals: Failed! 24 293
+  red: ControlServer.Tests.VehicleFaultRecoveryEndpointsTests.AClearanceIsOkAndTheSameOneAgainSaysItWasAlreadyMade
+  red: ControlServer.Tests.VehicleFaultRecoveryTests.AClearanceCutShortLeavesNothingBehindAndCanBeMadeAgain
+  red: ControlServer.Tests.VehicleFaultRecoveryTests.AClearanceWhileTheSessionIsNotReadyOnItsOwnOrderRebuildsOnceTheSessionIsReady(cargo:
+  red: ControlServer.Tests.VehicleFaultRecoveryTests.AClearedFaultKeepsTheJourneySoNoClosureIsSentAndTheOrderIsRebuilt
+  red: ControlServer.Tests.VehicleFaultRecoveryTests.AClearedFaultOnAnEmptyVehicleKeepsTheDemandAndRebuildsTheOrder
+  red: ControlServer.Tests.VehicleFaultRecoveryTests.AClearedFaultWithCargoOnBoardRebuildsTheOrderToDeliverIt
+  red: ControlServer.Tests.VehicleFaultRecoveryTests.AFaultClearedAgainSoonAfterTheRebuildStopsTheRebuilding
+  red: ControlServer.Tests.VehicleFaultRecoveryTests.Req0361ACancellationSoonAfterAFaultRebuildStopsTheRebuilding
+  red: ControlServer.Tests.VehicleFaultRecoveryTests.Req0361AFailureSoonAfterACancellationRebuildIsNotARepeat
+  red: ControlServer.Tests.VehicleFaultRecoveryTests.Req0361ARebuiltOrderThatFailsBeforeItIsConfirmedIsAFaultAPersonCanClear
+  red: ControlServer.Tests.VehicleFaultRecoveryTests.Req0362AFreshSnapshotThatDoesNotShowTheCargoInPlaceStopsTheRebuild(shows:
+  red: ControlServer.Tests.VehicleFaultRecoveryTests.Req0362ALoadedClearanceWhoseSessionNeverBecomesReadyWaitsForTheSnapshot
+  red: ControlServer.Tests.VehicleFaultRecoveryTests.Req0362ASnapshotFromAnotherVehicleSaysNothingAboutThisOnesCargo
+  red: ControlServer.Tests.VehicleFaultRecoveryTests.Req0362ASnapshotFromBeforeTheClearanceDoesNotProveTheCargo
+  red: ControlServer.Tests.VehicleFaultRecoveryTests.Req0362ASnapshotThatCannotSettleWhereTheCargoIsKeepsTheRebuildWaiting(shows:
+  red: ControlServer.Tests.VehicleFaultRecoveryTests.Req0362AnInconclusiveSnapshotIsAskedForAgainAfterAWhile
+M05 no rebuild behind the readiness gate
+  totals: Failed! 6 311
+  red: ControlServer.Tests.OwnOrderRebuildTests.ARebuildWaitsBehindTheGateWhenTheSessionIsHeldForMoreThanTheVehicle(held:
+  red: ControlServer.Tests.OwnOrderRebuildTests.AnOrderCancelledWhileTheSessionIsNotReadyOnItsOwnOrderWaitsForTheSessionBeforeItIsRebuilt
+  red: ControlServer.Tests.VehicleFaultRecoveryTests.AClearanceWhileTheSessionIsNotReadyOnItsOwnOrderRebuildsOnceTheSessionIsReady(cargo:
+  red: ControlServer.Tests.VehicleFaultRecoveryTests.Req0362ALoadedClearanceWhoseSessionNeverBecomesReadyWaitsForTheSnapshot
+M06 behind the readiness gate, the rebuild may create
+  totals: Failed! 5 312
+  red: ControlServer.Tests.OwnOrderRebuildTests.ARebuildWaitsBehindTheGateWhenTheSessionIsHeldForMoreThanTheVehicle(held:
+  red: ControlServer.Tests.OwnOrderRebuildTests.AnOrderCancelledWhileTheSessionIsNotReadyOnItsOwnOrderWaitsForTheSessionBeforeItIsRebuilt
+  red: ControlServer.Tests.VehicleFaultRecoveryTests.AClearanceWhileTheSessionIsNotReadyOnItsOwnOrderRebuildsOnceTheSessionIsReady(cargo:
+M07 record key random instead of derived from the ended upperId
+  totals: Failed! 1 316
+  red: ControlServer.Tests.OwnOrderRebuildTests.TheSameEndingRecordedFromTwoScopesIsOneRecordWithOneNewOrder
+M08 an order this server cancelled itself is rebuilt like any other
+  totals: Failed! 2 315
+  red: ControlServer.Tests.Batch7DemandReleaseServiceTests.TheReleasesOwnCancellationReadByTheEngineFirstStillEndsInTheRelease
+  red: ControlServer.Tests.OwnOrderRebuildTests.AnOrderThisServerCancelledItselfIsNotRebuilt
+M09 release service releases or cancels a stalled or rebuilding journey
+  totals: Failed! 2 315
+  red: ControlServer.Tests.Batch7DemandReleaseServiceTests.AJourneyWhoseOrderStalledIsNotReleasedWhenTheVehicleBecomesIneligible(stalled:
+M10 guard 2 does not read the vehicle map
+  totals: Failed! 1 316
+  red: ControlServer.Tests.OwnOrderRebuildTests.ARebuildWaitsWhileTheVehicleMayNotMoveAndIsMadeOnceItMay(condition:
+M11 a stopped record is found only by its ended order
+  totals: Passed! 0 317
+  red: (none)
+M12 the cargo binding is not settled when the rebuilt order is confirmed
+  totals: Failed! 1 316
+  red: ControlServer.Tests.VehicleFaultRecoveryTests.AClearedFaultWithCargoOnBoardRebuildsTheOrderToDeliverIt
+M13 the stopped code has no dashboard description
+  totals: Failed! 1 316
+  red: ControlServer.Tests.Batch7CargoHoldingDashboardTests.AStalledInTransitOrderIsShownWithAChineseDescription(code:
+M14 the rebuild codes are not in the stalled-order family
+  totals: Failed! 2 315
+  red: ControlServer.Tests.MultiVehicleExecutionTests.AVehicleWaitingForItsOrderToBeRebuiltTakesNoAppendedDemand(waiting:
+  red: ControlServer.Tests.OwnOrderRebuildTests.ASilentSessionDoesNotOverwriteARebuildThatWaitsForTheVehicle
+M15 the rebuilt order skips the create gate
+  totals: Failed! 2 315
+  red: ControlServer.Tests.OwnOrderRebuildTests.ARebuildDecidedBeforeACrashChecksTheVehicleAndTheGateAgainAfterTheRestart(closedBy:
+  red: ControlServer.Tests.OwnOrderRebuildTests.ARebuildGoesThroughTheCreateGateForTheStationItGoesTo
+M16 an unconfirmed create is taken as rebuilt
+  totals: Failed! 5 312
+  red: ControlServer.Tests.Batch7DemandReleaseServiceTests.ARebuildThatEndedBeforeConfirmationAndWasTakenOverDoesNotHoldALaterRelease
+  red: ControlServer.Tests.OwnOrderRebuildTests.ARebuildWhoseCreateAnswerIsLostIsConfirmedNextRoundWithoutASecondCreate
+  red: ControlServer.Tests.OwnOrderRebuildTests.ARebuiltOrderCancelledBeforeItIsConfirmedOutsideTheWindowIsRebuiltAgain
+  red: ControlServer.Tests.OwnOrderRebuildTests.ARebuiltOrderThatEndsBeforeItIsConfirmedStopsTheRebuilding
+  red: ControlServer.Tests.VehicleFaultRecoveryTests.Req0361ARebuiltOrderThatFailsBeforeItIsConfirmedIsAFaultAPersonCanClear
+M17 REQ-0361 source rule off: any later problem repeats a cancellation
+  totals: Failed! 2 315
+  red: ControlServer.Tests.VehicleFaultRecoveryTests.Req0361AFailureSoonAfterACancellationRebuildIsNotARepeat
+  red: ControlServer.Tests.VehicleFaultRecoveryTests.Req0361ARebuiltOrderThatFailsBeforeItIsConfirmedIsAFaultAPersonCanClear
+M18 REQ-0362 a snapshot from before the clearance counts
+  totals: Failed! 5 312
+  red: ControlServer.Tests.VehicleFaultRecoveryTests.AClearedFaultWithCargoOnBoardRebuildsTheOrderToDeliverIt
+  red: ControlServer.Tests.VehicleFaultRecoveryTests.Req0362ALoadedClearanceWhoseSessionNeverBecomesReadyWaitsForTheSnapshot
+  red: ControlServer.Tests.VehicleFaultRecoveryTests.Req0362ASnapshotFromAnotherVehicleSaysNothingAboutThisOnesCargo
+  red: ControlServer.Tests.VehicleFaultRecoveryTests.Req0362ASnapshotFromBeforeTheClearanceDoesNotProveTheCargo
+  red: ControlServer.Tests.VehicleFaultRecoveryTests.Req0362AnInconclusiveSnapshotIsAskedForAgainAfterAWhile
+M19 REQ-0362 a cargo slot need not read OCCUPIED
+  totals: Failed! 1 316
+  red: ControlServer.Tests.VehicleFaultRecoveryTests.Req0362ASnapshotThatCannotSettleWhereTheCargoIsKeepsTheRebuildWaiting(shows:
+M20 REQ-0362 unknownPresent is not read
+  totals: Failed! 1 316
+  red: ControlServer.Tests.VehicleFaultRecoveryTests.Req0362ASnapshotThatCannotSettleWhereTheCargoIsKeepsTheRebuildWaiting(shows:
+M21 REQ-0362 the request is never recorded, so it is not throttled
+  totals: Failed! 4 313
+  red: ControlServer.Tests.OwnOrderRebuildCargoEvidenceRequestTests.Req0362ACargoRebuildWaitingForEvidenceAsksTheVehicleOncePerSession
+  red: ControlServer.Tests.OwnOrderRebuildCargoEvidenceRequestTests.Req0362ARequestMadeWhileNotReadyIsMadeOnceMoreWhenTheSessionBecomesReady
+  red: ControlServer.Tests.OwnOrderRebuildCargoEvidenceRequestTests.Req0362NoRequestInsideTheHandshakeAndOneAgainInTheNextSession
+  red: ControlServer.Tests.VehicleFaultRecoveryTests.Req0362AnInconclusiveSnapshotIsAskedForAgainAfterAWhile
+M22 REQ-0362 the recovery report that ends the handshake may carry the request
+  totals: Failed! 1 316
+  red: ControlServer.Tests.OwnOrderRebuildCargoEvidenceRequestTests.Req0362NoRequestInsideTheHandshakeAndOneAgainInTheNextSession
+M23 REQ-0362 the request is claimed inside the handshake too
+  totals: Failed! 1 316
+  red: ControlServer.Tests.OwnOrderRebuildCargoEvidenceRequestTests.Req0362NoRequestInsideTheHandshakeAndOneAgainInTheNextSession
+M24 the release's own cancellation, read by the engine first, counts as a stalled order
+  totals: Failed! 1 316
+  red: ControlServer.Tests.Batch7DemandReleaseServiceTests.TheReleasesOwnCancellationReadByTheEngineFirstStillEndsInTheRelease
+M25 REQ-0360 the rebuild revives the journey's terminated demands
+  totals: Failed! 1 316
+  red: ControlServer.Tests.OwnOrderRebuildTests.Req0360ARebuildCarriesTheStopsOpenDemandsAndRevivesNoTerminatedOne
+M26 review M1: a rebuild decided before a crash is created without asking the vehicle and the gate again
+  totals: Failed! 2 315
+  red: ControlServer.Tests.OwnOrderRebuildTests.ARebuildDecidedBeforeACrashChecksTheVehicleAndTheGateAgainAfterTheRestart(closedBy:
+M27 review M2: Onboard's departure summary is not read
+  totals: Failed! 5 312
+  red: ControlServer.Tests.OwnOrderRebuildTests.ARebuildWaitsUntilTheOnboardSaysTheVehicleMayDepart(unsafeBy:
+M28 review S1: eligibility is not asked before the rebuild
+  totals: Failed! 1 316
+  red: ControlServer.Tests.Batch7DemandReleaseServiceTests.AVehicleNoLongerEligibleWhileItsOrderWaitsToBeRebuiltIsNotSentAgainAndTheDemandIsReleased
+M29 review S1: the release service holds a rebuild the engine gave up for eligibility
+  totals: Failed! 1 316
+  red: ControlServer.Tests.Batch7DemandReleaseServiceTests.AVehicleNoLongerEligibleWhileItsOrderWaitsToBeRebuiltIsNotSentAgainAndTheDemandIsReleased
+M30 review S2: a FAILED before confirmation is not recorded as a fault
+  totals: Failed! 1 316
+  red: ControlServer.Tests.VehicleFaultRecoveryTests.Req0361ARebuiltOrderThatFailsBeforeItIsConfirmedIsAFaultAPersonCanClear
+M31 review S2: a cancellation before confirmation stops without the window (the first version)
+  totals: Failed! 3 314
+  red: ControlServer.Tests.Batch7DemandReleaseServiceTests.ARebuildThatEndedBeforeConfirmationAndWasTakenOverDoesNotHoldALaterRelease
+  red: ControlServer.Tests.OwnOrderRebuildTests.ARebuiltOrderCancelledBeforeItIsConfirmedOutsideTheWindowIsRebuiltAgain
+  red: ControlServer.Tests.OwnOrderRebuildTests.ARebuiltOrderThatEndsBeforeItIsConfirmedStopsTheRebuilding
+M32 review S2: the clearance does not read a terminal-reconciled intent
+  totals: Failed! 1 316
+  red: ControlServer.Tests.VehicleFaultRecoveryTests.Req0361ARebuiltOrderThatFailsBeforeItIsConfirmedIsAFaultAPersonCanClear
+M33 review S2: the next record does not end the FAILED one
+  totals: Failed! 1 316
+  red: ControlServer.Tests.VehicleFaultRecoveryTests.Req0361ARebuiltOrderThatFailsBeforeItIsConfirmedIsAFaultAPersonCanClear
+M34 review S2: an ENDED record counts as a rebuild under way for the release
+  totals: Failed! 1 316
+  red: ControlServer.Tests.Batch7DemandReleaseServiceTests.ARebuildThatEndedBeforeConfirmationAndWasTakenOverDoesNotHoldALaterRelease
+M35 review S4: an inconclusive snapshot is taken as proof
+  totals: Failed! 8 309
+  red: ControlServer.Tests.VehicleFaultRecoveryTests.Req0362ASnapshotThatCannotSettleWhereTheCargoIsKeepsTheRebuildWaiting(shows:
+  red: ControlServer.Tests.VehicleFaultRecoveryTests.Req0362AnInconclusiveSnapshotIsAskedForAgainAfterAWhile
+M36 review S4: an EMPTY slot is only inconclusive
+  totals: Failed! 2 315
+  red: ControlServer.Tests.VehicleFaultRecoveryTests.Req0362AFreshSnapshotThatDoesNotShowTheCargoInPlaceStopsTheRebuild(shows:
+M37 review S4: an inconclusive snapshot is never asked for again
+  totals: Failed! 1 316
+  red: ControlServer.Tests.VehicleFaultRecoveryTests.Req0362AnInconclusiveSnapshotIsAskedForAgainAfterAWhile
+M38 review S3: another vehicle's snapshot counts
+  totals: Failed! 1 316
+  red: ControlServer.Tests.VehicleFaultRecoveryTests.Req0362ASnapshotFromAnotherVehicleSaysNothingAboutThisOnesCargo
+M39 review S3: an unsettled load is not looked at
+  totals: Failed! 1 316
+  red: ControlServer.Tests.VehicleFaultRecoveryTests.Req0362ASnapshotThatCannotSettleWhereTheCargoIsKeepsTheRebuildWaiting(shows:
+M40 review S3: no committed load is not looked at
+  totals: Failed! 1 316
+  red: ControlServer.Tests.VehicleFaultRecoveryTests.Req0362ASnapshotThatCannotSettleWhereTheCargoIsKeepsTheRebuildWaiting(shows:
+M41 review S3: a cargo slot missing from the snapshot is passed over
+  totals: Failed! 1 316
+  red: ControlServer.Tests.VehicleFaultRecoveryTests.Req0362ASnapshotThatCannotSettleWhereTheCargoIsKeepsTheRebuildWaiting(shows:
+M42 review S6: a zero delay is accepted
+  totals: Failed! 1 316
+  red: ControlServer.Tests.OwnOrderRebuildTests.TheRebuildDelayDefaultsToThirtySecondsAndMustBePositive
+M43 review S2: the FAILED new order is fed to the fault model only once
+  totals: Passed! 0 317
+  red: (none)
+# fourth run: two mutations stayed green. M11: its only red case (a new order ending before confirmation) now becomes ENDED
+# plus a new record (review S2), so no test left reaches a stopped record found by its new order -- a case is added for the
+# remaining shape: the new order reads RIoT's state 8, SUSPENDED, before confirmation
+# (ARebuiltOrderSuspendedBeforeItIsConfirmedStaysStoppedForAPerson). This note first said "reads SUCCESS"; that was wrong --
+# reconciliation takes a SUCCESS before confirmation as the order confirmed, and it never stops. M43: nothing asserted that the FAILED new order keeps
+# being fed to the fault model after the first round -- a case is added on the emergency-stop trigger reconciled in a later
+# round. Both are rerun below after the fix.
+
+# fifth run, on 8f3a32a3 (fp/v2-impl 384b9b69 merged, M11 and M43 closed): M11, M21-M23, M37, M43 rerun; M44, M45 new
+M11 a stopped record is found only by its ended order
+  totals: Failed! 1 320
+  red: ControlServer.Tests.OwnOrderRebuildTests.ARebuiltOrderSuspendedBeforeItIsConfirmedStaysStoppedForAPerson
+M21 REQ-0362 the request is never recorded, so it is not throttled
+  totals: Failed! 5 316
+  red: ControlServer.Tests.OwnOrderRebuildCargoEvidenceRequestTests.Req0362ACargoRebuildWaitingForEvidenceAsksTheVehicleOncePerSession
+  red: ControlServer.Tests.OwnOrderRebuildCargoEvidenceRequestTests.Req0362ARequestMadeWhileNotReadyIsMadeOnceMoreWhenTheSessionBecomesReady
+  red: ControlServer.Tests.OwnOrderRebuildCargoEvidenceRequestTests.Req0362AWithdrawnRequestIsSentOnceMoreInTheSameSession
+  red: ControlServer.Tests.OwnOrderRebuildCargoEvidenceRequestTests.Req0362NoRequestInsideTheHandshakeAndOneAgainInTheNextSession
+  red: ControlServer.Tests.VehicleFaultRecoveryTests.Req0362AnInconclusiveSnapshotIsAskedForAgainAfterAWhile
+M22 REQ-0362 the recovery report that ends the handshake may carry the request
+  totals: Failed! 2 319
+  red: ControlServer.Tests.OwnOrderRebuildCargoEvidenceRequestTests.Req0362AWithdrawnRequestIsSentOnceMoreInTheSameSession
+  red: ControlServer.Tests.OwnOrderRebuildCargoEvidenceRequestTests.Req0362NoRequestInsideTheHandshakeAndOneAgainInTheNextSession
+M23 REQ-0362 the request is claimed inside the handshake too
+  totals: Failed! 2 319
+  red: ControlServer.Tests.OwnOrderRebuildCargoEvidenceRequestTests.Req0362AWithdrawnRequestIsSentOnceMoreInTheSameSession
+  red: ControlServer.Tests.OwnOrderRebuildCargoEvidenceRequestTests.Req0362NoRequestInsideTheHandshakeAndOneAgainInTheNextSession
+M37 review S4: an inconclusive snapshot is never asked for again
+  totals: Failed! 1 320
+  red: ControlServer.Tests.VehicleFaultRecoveryTests.Req0362AnInconclusiveSnapshotIsAskedForAgainAfterAWhile
+M43 review S2: the FAILED new order is fed to the fault model only once
+  totals: Failed! 1 320
+  red: ControlServer.Tests.VehicleFaultRecoveryTests.ARebuiltOrderThatFailedBeforeConfirmationStaysUnderFaultSupervision
+M44 review S4: withdrawing the request changes nothing, so no second request goes out
+  totals: Failed! 2 319
+  red: ControlServer.Tests.OwnOrderRebuildCargoEvidenceRequestTests.Req0362AWithdrawnRequestIsSentOnceMoreInTheSameSession
+  red: ControlServer.Tests.VehicleFaultRecoveryTests.Req0362AnInconclusiveSnapshotIsAskedForAgainAfterAWhile
+M45 review S2: an ending that cannot be read again stops the rebuild
+  totals: Failed! 1 320
+  red: ControlServer.Tests.OwnOrderRebuildTests.ARebuiltOrderWhoseEndingCannotBeReadIsReadAgainNextRound
+
+# sixth run, on dd3b49f0 (incremental review B1, B2, low 2 and 4): M05, M06, M26, M27, M32, M37 rerun (M06, M32, M37 re-pointed); M46-M49 new
+# (entries for M05-M37 below were written from their logs: the run stopped at M46, whose injection did not compile, before it wrote the summary)
+M05 no rebuild behind the readiness gate
+  totals: Failed! 7 317
+  red: ControlServer.Tests.OwnOrderRebuildTests.ARebuildWaitsBehindTheGateWhenTheSessionIsHeldForMoreThanTheVehicle(held:
+  red: ControlServer.Tests.OwnOrderRebuildTests.ARebuiltOrderSentBeforeTheSessionDroppedIsConfirmedBehindTheGate
+  red: ControlServer.Tests.OwnOrderRebuildTests.AnOrderCancelledWhileTheSessionIsNotReadyOnItsOwnOrderWaitsForTheSessionBeforeItIsRebuilt
+  red: ControlServer.Tests.VehicleFaultRecoveryTests.AClearanceWhileTheSessionIsNotReadyOnItsOwnOrderRebuildsOnceTheSessionIsReady(cargo:
+  red: ControlServer.Tests.VehicleFaultRecoveryTests.Req0362ALoadedClearanceWhoseSessionNeverBecomesReadyWaitsForTheSnapshot
+M06 behind the readiness gate, the rebuild may create
+  totals: Failed! 5 319
+  red: ControlServer.Tests.OwnOrderRebuildTests.ARebuildWaitsBehindTheGateWhenTheSessionIsHeldForMoreThanTheVehicle(held:
+  red: ControlServer.Tests.OwnOrderRebuildTests.AnOrderCancelledWhileTheSessionIsNotReadyOnItsOwnOrderWaitsForTheSessionBeforeItIsRebuilt
+  red: ControlServer.Tests.VehicleFaultRecoveryTests.AClearanceWhileTheSessionIsNotReadyOnItsOwnOrderRebuildsOnceTheSessionIsReady(cargo:
+M26 review M1: a rebuild decided before a crash is created without asking the vehicle and the gate again
+  totals: Failed! 2 322
+  red: ControlServer.Tests.OwnOrderRebuildTests.ARebuildDecidedBeforeACrashChecksTheVehicleAndTheGateAgainAfterTheRestart(closedBy:
+M27 review M2: Onboard's departure summary is not read
+  totals: Failed! 6 318
+  red: ControlServer.Tests.OwnOrderRebuildTests.ARebuildToTheUnloadStopWaitsWhileTheOnboardSaysASlotIsUnlocked
+  red: ControlServer.Tests.OwnOrderRebuildTests.ARebuildWaitsUntilTheOnboardSaysTheVehicleMayDepart(unsafeBy:
+M32 review S2: the clearance does not read a terminal-reconciled intent
+  totals: Failed! 1 323
+  red: ControlServer.Tests.VehicleFaultRecoveryTests.Req0361ARebuiltOrderThatFailsBeforeItIsConfirmedIsAFaultAPersonCanClear
+M37 review S4: an inconclusive snapshot is never asked for again
+  totals: Failed! 1 323
+  red: ControlServer.Tests.VehicleFaultRecoveryTests.Req0362AnInconclusiveSnapshotIsAskedForAgainAfterAWhile
+# M46 as first written ("TickCount64 >= 0 || await ...") did not compile (CS8602, intent may be null on that side); log kept as M46-miswritten.log. Rewritten to keep the intent check on the left:
+M46 incremental low 4: an ordinary leg's terminal-reconciled intent is read too
+  totals: Failed! 1 323
+  red: ControlServer.Tests.VehicleFaultRecoveryTests.AnOrdinaryLegThatFailedBeforeConfirmationIsNotClearedThroughItsTerminalIntent
+M47 incremental B1: the re-ask counts from the snapshot alone, not from the last request
+  totals: Failed! 1 323
+  red: ControlServer.Tests.VehicleFaultRecoveryTests.Req0362AnInconclusiveSnapshotIsAskedForAgainAfterAWhile
+M48 incremental B2: behind the gate an order already sent waits for the vehicle instead of being reconciled
+  totals: Failed! 1 323
+  red: ControlServer.Tests.OwnOrderRebuildTests.ARebuiltOrderSentBeforeTheSessionDroppedIsConfirmedBehindTheGate
+M49 incremental B2: a rebuild confirmed behind the gate leaves the journey with no code
+  totals: Failed! 1 323
+  red: ControlServer.Tests.OwnOrderRebuildTests.ARebuiltOrderSentBeforeTheSessionDroppedIsConfirmedBehindTheGate

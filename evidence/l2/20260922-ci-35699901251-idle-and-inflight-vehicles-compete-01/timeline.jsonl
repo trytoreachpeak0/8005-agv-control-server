@@ -1,0 +1,39 @@
+{"at":"2026-09-22T07:57:34.0581323+00:00","note":"L2 run 20260922T075734016Z starting for scenario 'idle-and-inflight-vehicles-compete'."}
+{"at":"2026-09-22T07:57:34.0955670+00:00","note":"L2 port block lock acquired (slot 1, Global\\W2G-L2PortBlock-slot1)."}
+{"at":"2026-09-22T07:57:34.0983513+00:00","note":"Build skipped (-SkipBuild); running the output already built."}
+{"at":"2026-09-22T07:57:34.9357650+00:00","criterion":"fake-riot-live","value":"live"}
+{"at":"2026-09-22T07:57:35.1958887+00:00","criterion":"fake-mes-live","value":"live"}
+{"at":"2026-09-22T07:57:35.2734344+00:00","note":"Fleet of 2: AGV-L2-001/BROKERX-L2-0001, AGV-L2-002/BROKERX-L2-0002"}
+{"at":"2026-09-22T07:57:35.2809062+00:00","note":"Route graph engine enabled for map 25."}
+{"at":"2026-09-22T07:57:35.3075758+00:00","note":"Task type station preset: default (map 25, WIRE_TO_GATE -> 关卡/210)"}
+{"at":"2026-09-22T07:57:38.9731667+00:00","note":"Package capacity rules imported."}
+{"at":"2026-09-22T07:57:41.0769866+00:00","criterion":"control-server-live","value":"(null)"}
+{"at":"2026-09-22T07:57:41.4331751+00:00","criterion":"control-server-live","value":"live"}
+{"at":"2026-09-22T07:57:41.5564806+00:00","note":"Protocol release identity: protocol-v2.0.0 (profileId AGV_FULL_PRODUCT, protocolVersion 3, APPROVED_RELEASE)."}
+{"at":"2026-09-22T07:57:42.2487671+00:00","criterion":"onboard-readiness","value":"DISCONNECTED"}
+{"at":"2026-09-22T07:57:42.5127994+00:00","criterion":"onboard-readiness","value":"READY"}
+{"at":"2026-09-22T07:57:43.3308715+00:00","criterion":"control-server-ready","value":"ready"}
+{"at":"2026-09-22T07:57:43.4060936+00:00","note":"FieldOps: seed-approved-facts --database C:\\actions-runner\\win11-01-control-server\\_work\\_temp\\l2-35699901251-1\\_stage\\l2-20260922T075734016Z-slot1\\controlserver.db"}
+{"at":"2026-09-22T07:57:45.1237718+00:00","criterion":"slot-model-preseed:seed-approved-facts","value":"OK","detail":{"output":{"command":"seed-approved-facts","outcome":"OK","modelKey":"8005-eight-slot","slotModelVersionId":"10789302d18143ea9c2d5a93bd31a1c3","version":1,"slotCount":8}}}
+{"at":"2026-09-22T07:57:45.1306469+00:00","note":"FieldOps: bind-io --database C:\\actions-runner\\win11-01-control-server\\_work\\_temp\\l2-35699901251-1\\_stage\\l2-20260922T075734016Z-slot1\\controlserver.db --agv AGV-L2-001"}
+{"at":"2026-09-22T07:57:46.8072372+00:00","criterion":"slot-model-preseed:bind-io:AGV-L2-001","value":"OK","detail":{"output":{"command":"bind-io","outcome":"OK","agvId":"AGV-L2-001","slotModelVersionId":"10789302d18143ea9c2d5a93bd31a1c3","boundSlots":8,"version":1}}}
+{"at":"2026-09-22T07:57:46.8137948+00:00","note":"FieldOps: bind-io --database C:\\actions-runner\\win11-01-control-server\\_work\\_temp\\l2-35699901251-1\\_stage\\l2-20260922T075734016Z-slot1\\controlserver.db --agv AGV-L2-002"}
+{"at":"2026-09-22T07:57:48.5010121+00:00","criterion":"slot-model-preseed:bind-io:AGV-L2-002","value":"OK","detail":{"output":{"command":"bind-io","outcome":"OK","agvId":"AGV-L2-002","slotModelVersionId":"10789302d18143ea9c2d5a93bd31a1c3","boundSlots":8,"version":1}}}
+{"at":"2026-09-22T07:57:48.6233171+00:00","criterion":"slot-model-preseed:dispatch-zones","value":"0"}
+{"at":"2026-09-22T07:57:48.6270947+00:00","note":"FieldOps: import-area-assignments --database C:\\actions-runner\\win11-01-control-server\\_work\\_temp\\l2-35699901251-1\\_stage\\l2-20260922T075734016Z-slot1\\controlserver.db --input C:\\actions-runner\\win11-01-control-server\\_work\\_temp\\l2-35699901251-1\\idle-and-inflight-vehicles-compete-01\\snapshots\\preseed-area-assignments.csv"}
+{"at":"2026-09-22T07:57:50.3960861+00:00","criterion":"slot-model-preseed:import-area-assignments","value":"OK","detail":{"output":{"command":"import-area-assignments","outcome":"OK","dryRun":false,"input":"C:\\actions-runner\\win11-01-control-server\\_work\\_temp\\l2-35699901251-1\\idle-and-inflight-vehicles-compete-01\\snapshots\\preseed-area-assignments.csv","entryCount":3,"version":1,"contentSha256":"4291a509c2c0b75ea4bde0ac4dcde04b6e8632b54a21a67eee2772a6f8d0ff8e","snapshotId":"87978d49bbdf4fba97a3227134c8f324","importedAt":"2026-09-22T15:57:48.8833781+08:00","errorCount":0,"errors":[],"preview":[]}}}
+{"at":"2026-09-22T07:57:50.4639908+00:00","criterion":"preseed:dispatch-zone-parameters","value":"OK","detail":{"contentSha256":"529298468af875cef190776b9690725d43994971e44cb06beb0b33da58694c97","version":1,"source":"L2_PRESET","zones":[{"DispatchZone":"MAP-25-WIRE_TO_GATE","EnRouteAdditionMaxPathCostIncrease":100000,"StarvationThresholdSeconds":null}]}}
+{"at":"2026-09-22T07:57:50.4684912+00:00","note":"Environment is up; entering scenario 'idle-and-inflight-vehicles-compete'."}
+{"at":"2026-09-22T07:57:50.5943672+00:00","criterion":"route-graph-ready","value":"True"}
+{"at":"2026-09-22T07:57:50.6047362+00:00","note":"Publishing demand A (area N1-3)."}
+{"at":"2026-09-22T07:57:50.6594581+00:00","criterion":"first-journey-agv","value":"(null)"}
+{"at":"2026-09-22T07:57:52.4503411+00:00","criterion":"first-journey-agv","value":"AGV-L2-002"}
+{"at":"2026-09-22T07:57:52.4537857+00:00","note":"Demand A went to AGV-L2-002; it is now the vehicle under way."}
+{"at":"2026-09-22T07:57:52.4794064+00:00","note":"Publishing demand B (area N1-7)."}
+{"at":"2026-09-22T07:57:52.5083070+00:00","note":"Publishing demand C (area C15-13)."}
+{"at":"2026-09-22T07:57:52.5187336+00:00","criterion":"journeys","value":"1"}
+{"at":"2026-09-22T07:57:53.2874860+00:00","criterion":"journeys","value":"2"}
+{"at":"2026-09-22T07:57:53.5383200+00:00","criterion":"journeys","value":"3"}
+{"at":"2026-09-22T07:57:53.5463268+00:00","criterion":"journeys","value":"AGV-L2-001=96437421-9774-4e46-89a9-1ac03e5a9516 AGV-L2-002=5453137f-bbe1-4058-a91d-3d5e6419dfde","detail":{"runtimes":[{"JourneyId":"journey:96437421-9774-4e46-89a9-1ac03e5a9516","AgvId":"AGV-L2-001","DemandId":"96437421-9774-4e46-89a9-1ac03e5a9516"},{"JourneyId":"journey:5453137f-bbe1-4058-a91d-3d5e6419dfde","AgvId":"AGV-L2-002","DemandId":"5453137f-bbe1-4058-a91d-3d5e6419dfde"}]}}
+{"at":"2026-09-22T07:57:53.5596843+00:00","note":"在途车与空闲车在同一张候选表上：同一轮里一条走了追加、一条走了新建，三条需求一条不剩。"}
+{"at":"2026-09-22T07:57:54.0302097+00:00","note":"L2 port block lock released."}

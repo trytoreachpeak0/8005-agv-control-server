@@ -1,0 +1,78 @@
+{
+  "schemaVersion": 1,
+  "scenario": "en-route-append-delay-gate",
+  "runId": "20260922T074805696Z",
+  "outcome": "PASS",
+  "failureReason": "",
+  "identity": {
+    "rig": "SyntheticOnboard",
+    "batchId": "batch-7",
+    "stageRoot": "C:\\actions-runner\\win11-01-control-server\\_work\\_temp\\l2-35699901251-1\\_stage\\l2-20260922T074805696Z-slot3",
+    "agvId": "AGV-L2-001",
+    "controlServerCommit": "f2ddd40522432925580d6048dca2d6d54171a7a8",
+    "protocolReleaseIdentity": {
+      "repository": "8005-agv-protocol",
+      "releaseVersion": "2.0.0",
+      "tag": "protocol-v2.0.0",
+      "commit": "86575456c847041515b7b75e8851a00e0d939804",
+      "protocolVersion": 3,
+      "profileId": "AGV_FULL_PRODUCT",
+      "manifestSha256": "4ac095ad371d3aaa60d7c2e0198cfd64cff5f3068230fc3420e9cdf5616422a7",
+      "schemaBundleSha256": "9db0dbdc22fed7e39edf8d01b1fc40a12f5d70a7414f696f909ab2a87eb8c221",
+      "vectorsSha256": "391fa69a7d6e9f86ea139ba4c74eadf4994bf0a87e89d3dc5258dd7968d9182a",
+      "approvalStatus": "APPROVED_RELEASE"
+    },
+    "vehicleKey": "BROKERX-L2-0001"
+  },
+  "assertions": [
+    {
+      "id": "L2-EDG-01",
+      "description": "本区配了途中追加上限，值是一毫米：第一道门（本区未配置）过得去",
+      "outcome": "PASS",
+      "expected": 1,
+      "actual": "1"
+    },
+    {
+      "id": "L2-EDG-02",
+      "description": "第一条需求被一辆空闲车接走，车已在途",
+      "outcome": "PASS",
+      "expected": "AwaitingPickupArrival",
+      "actual": "AwaitingPickupArrival"
+    },
+    {
+      "id": "L2-EDG-03",
+      "description": "第二条需求被延迟门禁挡住（EN_ROUTE_APPEND_DELAY_GATE_EXCEEDED），而不是被判成本区未配置",
+      "outcome": "PASS",
+      "expected": "EN_ROUTE_APPEND_DELAY_GATE_EXCEEDED",
+      "actual": "EN_ROUTE_APPEND_DELAY_GATE_EXCEEDED"
+    },
+    {
+      "id": "L2-EDG-04",
+      "description": "那趟旅程仍然只带着一条需求：追加一次都没有发生",
+      "outcome": "PASS",
+      "expected": 1,
+      "actual": 1
+    },
+    {
+      "id": "L2-EDG-05",
+      "description": "停靠仍然是两个：计划一个字都没被改写",
+      "outcome": "PASS",
+      "expected": 2,
+      "actual": 2
+    },
+    {
+      "id": "L2-EDG-06",
+      "description": "第二条需求没有被受理过：积压行上没有受理时刻，它在等下一辆空闲车",
+      "outcome": "PASS",
+      "expected": "(无受理时刻)",
+      "actual": "(无受理时刻)"
+    },
+    {
+      "id": "L2-EDG-07",
+      "description": "计划只发过一版：没有追加，就没有整体重发",
+      "outcome": "PASS",
+      "expected": 1,
+      "actual": 1
+    }
+  ]
+}

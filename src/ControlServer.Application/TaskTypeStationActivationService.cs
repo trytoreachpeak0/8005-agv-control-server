@@ -28,7 +28,8 @@ public sealed class TaskTypeStationActivationService(
     ITaskTypeStationBindingStore bindings,
     ITaskTypeStationActivationStore activations,
     ICatalogAvailabilityStore catalogStates,
-    IGovernanceAuditWriter audit)
+    IGovernanceAuditWriter audit,
+    IMapNameBaselineStore mapNames)
 {
     private static readonly JsonSerializerOptions AuditJson = new()
     {
@@ -42,6 +43,7 @@ public sealed class TaskTypeStationActivationService(
     private readonly ICatalogAvailabilityStore _catalogStates =
         catalogStates ?? throw new ArgumentNullException(nameof(catalogStates));
     private readonly IGovernanceAuditWriter _audit = audit ?? throw new ArgumentNullException(nameof(audit));
+    private readonly IMapNameBaselineStore _mapNames = mapNames ?? throw new ArgumentNullException(nameof(mapNames));
 
     /// <summary>
     /// 激活一份候选；<paramref name="dryRun"/> 时只校验并预览，除一条审计外什么都不写。
@@ -433,6 +435,19 @@ public sealed class TaskTypeStationActivationService(
                 TaskTypeStationActivationReasonCodes.ActivationPendingReconciliation, taskType, null,
                 Invariant($"Map {mapId} has an activation of version {pointer.PendingVersion} whose result is unknown; which binding is in force is not known until it is reconciled.")));
         }
+        // control-server#186: a release under a Map rename nobody accepted would be undone the next round, when the rename is
+        // seen again -- and in between it would dispatch on a Map whose name the field has not checked. Accept first.
+        // This check is the redundant one: the release transaction re-reads the pending name and refuses by itself
+        // (TaskTypeStationActivationStore.ReleaseManualAndCatalogHoldsAsync), and that is what closes the race. What this
+        // one adds is that the refusal is listed together with every other violation, before anything is attempted --
+        // which is why taking it out alone changes no outcome (mutation M7 survives by design).
+        MapNameBaseline? mapName = await _mapNames.ReadAsync(mapId, cancellationToken);
+        if (mapName?.PendingName is { } pendingName)
+        {
+            violations.Add(new(
+                MapNameBaselineReasonCodes.RenameNotAccepted, taskType, null,
+                Invariant($"Map {mapId} was renamed from '{mapName.Name}' to '{pendingName}' and the new name has not been accepted; run accept-map-name first.")));
+        }
         if (binding is null)
         {
             violations.Add(new(
@@ -543,6 +558,18 @@ public sealed class TaskTypeStationActivationService(
                     TaskTypeStationHoldReleaseOutcome.Rejected, mapId, taskType, nothingHeld, [], auditId)
                 : new TaskTypeStationHoldReleaseResult(
                     TaskTypeStationHoldReleaseOutcome.Released, mapId, taskType, [], released, auditId);
+        }
+        catch (MapRenamePendingException pending)
+        {
+            // control-server#186: the rename appeared after the checks above; the release transaction saw it and wrote nothing.
+            TaskTypeStationViolation[] renamed =
+            [
+                new(MapNameBaselineReasonCodes.RenameNotAccepted, taskType, null,
+                    Invariant($"Map {mapId} was renamed from '{pending.BaselineName}' to '{pending.PendingName}' while the release was being made, and the new name has not been accepted; run accept-map-name first."))
+            ];
+            string rejectedId = await _audit.WriteBusinessAsync(Entry(renamed, []), now, cancellationToken);
+            return new TaskTypeStationHoldReleaseResult(
+                TaskTypeStationHoldReleaseOutcome.Rejected, mapId, taskType, renamed, [], rejectedId);
         }
 #pragma warning disable CA1031 // The release and its audit rolled back together; nothing was released. Record that.
         catch (Exception failure)

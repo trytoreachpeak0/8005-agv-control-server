@@ -1,0 +1,40 @@
+cargo-holding-dashboard-projection             Runs=1 DefaultRuns=- FAIL
+cargo-holding-disabled-when-append-forbidden   Runs=1 DefaultRuns=- FAIL
+cargo-holding-side-full                        Runs=1 DefaultRuns=- FAIL
+cargo-holding-timeout                          Runs=1 DefaultRuns=- FAIL
+dispatch-zone-parameters-import-rejects        Runs=1 DefaultRuns=- FAIL
+en-route-append-delay-gate                     Runs=1 DefaultRuns=- FAIL
+en-route-append-not-configured                 Runs=1 DefaultRuns=- FAIL
+idle-and-inflight-vehicles-compete             Runs=1 DefaultRuns=- FAIL
+multi-stop-append-same-zone                    Runs=1 DefaultRuns=- FAIL
+onboard-silent-liveness-loss                   Runs=1 DefaultRuns=- FAIL
+plan-reorder-and-drop-cancelled                Runs=1 DefaultRuns=- FAIL
+reassign-when-vehicle-ineligible               Runs=1 DefaultRuns=- FAIL
+starvation-threshold-escalation                Runs=1 DefaultRuns=- FAIL
+task-type-priority-band                        Runs=1 DefaultRuns=- FAIL
+transport-demand-key-suppressed                Runs=1 DefaultRuns=- FAIL
+vehicle-full-ignores-oversized-and-gated       Runs=1 DefaultRuns=- FAIL
+vehicle-full-still-appends-before-departure    Runs=1 DefaultRuns=- FAIL
+waiting-station-yield                          Runs=1 DefaultRuns=- FAIL
+waiting-station-yield-waits-for-door           Runs=1 DefaultRuns=- FAIL
+timeout-minutes: workflow_dispatch 180, otherwise 120
+expected batch-7: 19; batch-7 lines: 19; all scenarios: 55; synthetic scenario files: 55; unlisted files: 0
+FAIL: cargo-holding-dashboard-projection: Runs = 1, expected 3
+FAIL: cargo-holding-disabled-when-append-forbidden: Runs = 1, expected 3
+FAIL: cargo-holding-side-full: Runs = 1, expected 3
+FAIL: cargo-holding-timeout: Runs = 1, expected 3
+FAIL: dispatch-zone-parameters-import-rejects: Runs = 1, expected 3
+FAIL: en-route-append-delay-gate: Runs = 1, expected 3
+FAIL: en-route-append-not-configured: Runs = 1, expected 3
+FAIL: idle-and-inflight-vehicles-compete: Runs = 1, expected 3
+FAIL: multi-stop-append-same-zone: Runs = 1, expected 3
+FAIL: onboard-silent-liveness-loss: Runs = 1, expected 3
+FAIL: plan-reorder-and-drop-cancelled: Runs = 1, expected 3
+FAIL: reassign-when-vehicle-ineligible: Runs = 1, expected 3
+FAIL: starvation-threshold-escalation: Runs = 1, expected 3
+FAIL: task-type-priority-band: Runs = 1, expected 3
+FAIL: transport-demand-key-suppressed: Runs = 1, expected 3
+FAIL: vehicle-full-ignores-oversized-and-gated: Runs = 1, expected 3
+FAIL: vehicle-full-still-appends-before-departure: Runs = 1, expected 3
+FAIL: waiting-station-yield: Runs = 1, expected 3
+FAIL: waiting-station-yield-waits-for-door: Runs = 1, expected 3

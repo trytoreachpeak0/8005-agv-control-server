@@ -1,0 +1,189 @@
+using ControlServer.Application;
+using ControlServer.Host.Runtime.Dispatch;
+using ControlServer.Host.Runtime.IdleReturn;
+using ControlServer.Infrastructure.Persistence;
+using Microsoft.EntityFrameworkCore;
+
+namespace ControlServer.Tests;
+
+/// <summary>
+/// 空闲返回在派车轮里（批次8-18，control-server#389）：只评估任务优先派车剩下的空闲车；承诺之后搬运不抢它。
+/// </summary>
+/// <remarks>
+/// 夹具的路网里站 300「等待点」就是车停着的地方（节点 1），这里把它登记成唯一的等待点：第一辆被评估的车拿到它，后面的车一个点都不剩。
+/// </remarks>
+public sealed partial class MultiVehicleExecutionTests
+{
+    private static readonly WaitingPointEntry FleetWaitingPoint = new(25, 300, "等待点", true, []);
+
+    /// <summary>
+    /// 一轮里接了单的车不做空闲返回；剩下的空闲车按名册次序评估，第一辆拿到唯一的等待点，第三辆一个点都不剩。
+    /// </summary>
+    [Fact]
+    public async Task OnlyTheIdleVehiclesTheTransportPassLeftOverAreCommittedToAnIdleReturn()
+    {
+        await using FleetFixture fixture = await FleetFixture.CreateAsync(withRouteGraph: true);
+        await fixture.EnableIdleReturnAsync(FleetWaitingPoint);
+        fixture.Catalog.Set([FleetFixture.Demand(0, "N1-1", 0)]);
+
+        await fixture.RunRoundAsync();
+
+        JourneyRuntimeRow journey = Assert.Single(
+            await fixture.Context.JourneyRuntimes.AsNoTracking().ToArrayAsync(TestContext.Current.CancellationToken));
+        Assert.Equal(FleetFixture.AgvIds[0], journey.AgvId);
+        Dictionary<string, (string Purpose, string JourneyId)> claims = await fixture.Context.Set<VehiclePurposeClaimRow>()
+            .AsNoTracking()
+            .ToDictionaryAsync(row => row.VehicleKey, row => (row.Purpose, row.JourneyId), TestContext.Current.CancellationToken);
+        Assert.Equal(VehiclePurposes.Transport, claims[FleetFixture.VehicleKeys[0]].Purpose);
+        Assert.Equal(VehiclePurposes.IdleReturn, claims[FleetFixture.VehicleKeys[1]].Purpose);
+        Assert.False(claims.ContainsKey(FleetFixture.VehicleKeys[2]));
+        StationExclusivityRow station = Assert.Single(
+            await fixture.Context.Set<StationExclusivityRow>().AsNoTracking().ToArrayAsync(TestContext.Current.CancellationToken));
+        Assert.Equal(
+            (300, FleetFixture.VehicleKeys[1], claims[FleetFixture.VehicleKeys[1]].JourneyId, StationExclusivityStates.Reserved),
+            (station.StationId, station.VehicleKey, station.JourneyId, station.State));
+        // 承诺不建单：这一轮 RIoT 上只有接单那辆车的取货单。
+        Assert.All(fixture.Riot.Creates, create => Assert.Equal(FleetFixture.VehicleKeys[0], create.VehicleKey));
+    }
+
+    /// <summary>
+    /// 承诺之后，同一辆车在下一轮、再下一轮都不接一条正好适合它的搬运，也不被当成在途车问追加；需求留在积压里，原因是它已承诺空闲返回。
+    /// 承诺本身原样留着：不取消、不换点。
+    /// </summary>
+    /// <remarks>
+    /// <para>
+    /// 车队裁成一辆：有别的车时需求会被别的车接走，积压上的原因就不是这一条了。
+    /// </para>
+    /// <para>
+    /// 批次8-19（control-server#390）之后，承诺在下一轮开头物化成一趟空闲返回旅程，车从那一刻起是忙的、不再作为空闲车被判
+    /// （那条路的「不抢」由 <c>IdleReturnExecutionTests</c> 断）。承诺判据守的是承诺还没物化的那一段——这里让物化一直失败
+    /// （<see cref="IdleReturnNeverMaterializes"/>）把那一段撑开来测。
+    /// </para>
+    /// </remarks>
+    [Fact]
+    public async Task AVehicleCommittedToAnIdleReturnTakesNoLaterTransportAndTheDemandWaitsWithThatReason()
+    {
+        await using FleetFixture fixture = await FleetFixture.CreateAsync(
+            configure: options => options.Fleet = options.Fleet[..1], withRouteGraph: true,
+            commands: new IdleReturnNeverMaterializes());
+        await fixture.AllowEnRouteAppendAsync(1_000_000);
+        await fixture.EnableIdleReturnAsync(FleetWaitingPoint);
+        // 第一轮没有需求（夹具默认给每辆车一条，这里清掉）：没有合法搬运用途，才轮到空闲返回。
+        fixture.Catalog.Set([]);
+        await fixture.RunRoundAsync();
+        VehiclePurposeClaimRow committed = Assert.Single(
+            await fixture.Context.Set<VehiclePurposeClaimRow>().AsNoTracking().ToArrayAsync(TestContext.Current.CancellationToken));
+        Assert.Equal(VehiclePurposes.IdleReturn, committed.Purpose);
+
+        fixture.Catalog.Set([FleetFixture.Demand(0, "N1-1", 0)]);
+        await fixture.RunRoundAsync(TimeSpan.FromSeconds(1));
+        await fixture.RunRoundAsync(TimeSpan.FromSeconds(1));
+
+        Assert.Empty(await fixture.Context.JourneyRuntimes.AsNoTracking().ToArrayAsync(TestContext.Current.CancellationToken));
+        Assert.Empty(fixture.Riot.Creates);
+        JourneyBacklogRow backlog = Assert.Single(
+            await fixture.Context.JourneyBacklog.AsNoTracking().ToArrayAsync(TestContext.Current.CancellationToken));
+        Assert.Equal(DispatchReasonCodes.VehicleCommittedToIdleReturn, backlog.ReasonCode);
+        Assert.Null(backlog.AcceptedAt);
+        // 两轮都问到了它、都是这一条：它作为空闲车被问（没有在途计划），没有被当成可追加的在途车。
+        DispatchRoundOutcome[] lastTwo = [.. fixture.RoundOutcomes.Outcomes.TakeLast(2)];
+        Assert.All(lastTwo, outcome =>
+        {
+            DispatchVehicleOutcome vehicle = Assert.Single(outcome.CompletedVehicles);
+            DispatchCandidateVerdict verdict = Assert.Single(vehicle.Verdicts);
+            Assert.Equal(DispatchReasonCodes.VehicleCommittedToIdleReturn, verdict.ReasonCode);
+            Assert.Null(verdict.Evaluation.Vehicle.Plan);
+        });
+        VehiclePurposeClaimRow still = Assert.Single(
+            await fixture.Context.Set<VehiclePurposeClaimRow>().AsNoTracking().ToArrayAsync(TestContext.Current.CancellationToken));
+        Assert.Equal((committed.Purpose, committed.JourneyId, committed.ClaimedAt), (still.Purpose, still.JourneyId, still.ClaimedAt));
+        StationExclusivityRow station = Assert.Single(
+            await fixture.Context.Set<StationExclusivityRow>().AsNoTracking().ToArrayAsync(TestContext.Current.CancellationToken));
+        Assert.Equal((300, committed.JourneyId), (station.StationId, station.JourneyId));
+    }
+
+    /// <summary>
+    /// 在途车不交给空闲返回评估：它这一轮的结论停在上一轮（接单那一轮的「本轮被选中」），不会变成任何新的结论。
+    /// </summary>
+    /// <remarks>
+    /// 只断言「没有承诺」不够：在途车持有搬运占有，评估了也只会答「有用途」，派车轮把在途车交过去照样全绿（审查实测 MI）。
+    /// 所以断言它根本没被评估：评估器每评估一次都会记下结论，结论停在上一轮就是没被评估。
+    /// </remarks>
+    [Fact]
+    public async Task AVehicleUnderWayIsNotHandedToTheIdleReturnEvaluation()
+    {
+        await using FleetFixture fixture = await FleetFixture.CreateAsync(
+            configure: options => options.Fleet = options.Fleet[..1], withRouteGraph: true);
+        await fixture.AllowEnRouteAppendAsync(1_000_000);
+        await fixture.EnableIdleReturnAsync(FleetWaitingPoint);
+        fixture.Catalog.Set([FleetFixture.Demand(0, "N1-1", 0)]);
+
+        await fixture.RunRoundAsync();
+        Assert.Single(await fixture.Context.JourneyRuntimes.AsNoTracking().ToArrayAsync(TestContext.Current.CancellationToken));
+        Assert.Equal(
+            IdleReturnReasons.NotLeftOverByTransportThisRound, fixture.IdleReturnBoard.Reasons[FleetFixture.AgvIds[0]]);
+
+        // 下一轮它在途（有旅程、可追加），参加的是在途那一路；目录里没有它能接的新需求，所以它这一轮没被选中。交过去的话它会答
+        // 「有用途」，结论就变了。给一条它能追加的新需求则测不到：它会被选中，答的仍是「本轮被选中」（第一版这样写，变异 R8 活了下来）。
+        await fixture.RunRoundAsync(TimeSpan.FromSeconds(1));
+        Assert.Contains(
+            fixture.RoundOutcomes.Outcomes.Last().CompletedVehicles,
+            vehicle => vehicle.AgvId == FleetFixture.AgvIds[0] &&
+                       vehicle.Verdicts.All(verdict => verdict.Evaluation.Vehicle.Plan is not null));
+
+        Assert.Equal(
+            IdleReturnReasons.NotLeftOverByTransportThisRound, fixture.IdleReturnBoard.Reasons[FleetFixture.AgvIds[0]]);
+    }
+
+    /// <summary>
+    /// 故障车同时持有空闲返回承诺时，积压显示故障原因：故障判据（15）排在承诺判据（16）之前是有意的，故障是更要人去看的那一个。
+    /// </summary>
+    /// <remarks>物化一直失败，理由同上一条（control-server#390）。</remarks>
+    [Fact]
+    public async Task AFaultedVehicleHoldingAnIdleReturnShowsTheFaultOnTheBacklog()
+    {
+        await using FleetFixture fixture = await FleetFixture.CreateAsync(
+            configure: options => options.Fleet = options.Fleet[..1], withRouteGraph: true,
+            commands: new IdleReturnNeverMaterializes());
+        await fixture.EnableIdleReturnAsync(FleetWaitingPoint);
+        fixture.Catalog.Set([]);
+        await fixture.RunRoundAsync();
+        Assert.Equal(
+            VehiclePurposes.IdleReturn,
+            (await fixture.Context.Set<VehiclePurposeClaimRow>().AsNoTracking().SingleAsync(TestContext.Current.CancellationToken)).Purpose);
+
+        await new VehicleFaultStore(fixture.Context).RecordLevelAsync(
+            FleetFixture.AgvIds[0], ControlServer.Domain.VehicleFaultLevel.SuspectedBlocked, "COMMS_LOST", false,
+            fixture.Clock.GetUtcNow(), TestContext.Current.CancellationToken);
+        fixture.Catalog.Set([FleetFixture.Demand(0, "N1-1", 0)]);
+        await fixture.RunRoundAsync(TimeSpan.FromSeconds(1));
+
+        JourneyBacklogRow backlog = Assert.Single(
+            await fixture.Context.JourneyBacklog.AsNoTracking().ToArrayAsync(TestContext.Current.CancellationToken));
+        Assert.Equal(ControlServer.Host.Runtime.Dispatch.Criteria.VehicleFaultBlockCriterion.SuspectedReason, backlog.ReasonCode);
+        Assert.Empty(await fixture.Context.JourneyRuntimes.AsNoTracking().ToArrayAsync(TestContext.Current.CancellationToken));
+    }
+
+    /// <summary>
+    /// 空闲返回的物化那一次写旅程行时失败（control-server#390），像一直写不进去：承诺留着、旅程物化不出来。只拦带
+    /// <c>idle-return:</c> 旅程 id 的那一条插入，搬运的受理照常写。
+    /// </summary>
+    private sealed class IdleReturnNeverMaterializes : Microsoft.EntityFrameworkCore.Diagnostics.DbCommandInterceptor
+    {
+        public override ValueTask<Microsoft.EntityFrameworkCore.Diagnostics.InterceptionResult<System.Data.Common.DbDataReader>>
+            ReaderExecutingAsync(
+                System.Data.Common.DbCommand command,
+                Microsoft.EntityFrameworkCore.Diagnostics.CommandEventData eventData,
+                Microsoft.EntityFrameworkCore.Diagnostics.InterceptionResult<System.Data.Common.DbDataReader> result,
+                CancellationToken cancellationToken = default)
+        {
+            if (command.CommandText.Contains("INSERT INTO \"JourneyRuntimes\"", StringComparison.Ordinal) &&
+                command.Parameters.Cast<System.Data.Common.DbParameter>().Any(parameter =>
+                    parameter.Value is string text && text.StartsWith(IdleReturnIdentity.JourneyIdPrefix, StringComparison.Ordinal)))
+            {
+                throw new InvalidOperationException("The idle return journey is not written (test).");
+            }
+            return base.ReaderExecutingAsync(command, eventData, result, cancellationToken);
+        }
+    }
+}

@@ -1,0 +1,13 @@
+diff --git a/src/ControlServer.Host/Runtime/JourneyRuntimeEngine.cs b/src/ControlServer.Host/Runtime/JourneyRuntimeEngine.cs
+index 65cfc9758..d7c2ee918 100644
+--- a/src/ControlServer.Host/Runtime/JourneyRuntimeEngine.cs
++++ b/src/ControlServer.Host/Runtime/JourneyRuntimeEngine.cs
+@@ -3289,7 +3289,7 @@ public sealed partial class JourneyRuntimeEngine(
+         CancellationToken cancellationToken)
+     {
+         JourneyStopRow stop = stops.Current;
+-        int[] slots = JsonSerializer.Deserialize<int[]>(entered.Membership.TargetSlotsJson) ?? [];
++        int[] slots = JsonSerializer.Deserialize<int[]>(stops.Demands[0].Membership.TargetSlotsJson) ?? [];
+         string hash = BusinessHash(entered.Demand.DemandId, entered.Demand.Sublot, "LOAD", slots);
+         // The load carries the admission only where the AREA machine is the pickup (WIRE_TO_GATE); STAGING_TO_WIRE's
+         // is carried by the unload at the machine (I6 overturned, scope specification 21.2 item 2).

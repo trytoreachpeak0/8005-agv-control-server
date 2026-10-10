@@ -1,0 +1,77 @@
+{"at":"2026-09-29T00:30:14.1232509+00:00","note":"L2 run 20260929T003014059Z starting for scenario 'map-rename-holds-all-task-types'."}
+{"at":"2026-09-29T00:30:14.1660517+00:00","note":"L2 port block lock acquired (slot 0, Global\\W2G-L2PortBlock)."}
+{"at":"2026-09-29T00:30:14.1687660+00:00","note":"Building ControlServer and the test doubles."}
+{"at":"2026-09-29T00:30:30.0347944+00:00","criterion":"fake-riot-live","value":"live"}
+{"at":"2026-09-29T00:30:30.3188710+00:00","criterion":"fake-mes-live","value":"live"}
+{"at":"2026-09-29T00:30:30.5101905+00:00","note":"Fake RIoT stations on map 25: 11=C15-13, 12=N1-3_N1-7, 210=关卡, 230=派工待送取货"}
+{"at":"2026-09-29T00:30:30.5685977+00:00","note":"Task type station preset: the scenario's own (2 binding(s))"}
+{"at":"2026-09-29T00:30:33.9502083+00:00","note":"Package capacity rules imported."}
+{"at":"2026-09-29T00:30:36.0866449+00:00","criterion":"control-server-live","value":"live"}
+{"at":"2026-09-29T00:30:36.2527587+00:00","note":"Protocol release identity: protocol-v2.0.0 (profileId AGV_FULL_PRODUCT, protocolVersion 3, APPROVED_RELEASE)."}
+{"at":"2026-09-29T00:30:36.9668038+00:00","criterion":"onboard-readiness","value":"DISCONNECTED"}
+{"at":"2026-09-29T00:30:37.2399976+00:00","criterion":"onboard-readiness","value":"READY"}
+{"at":"2026-09-29T00:30:37.3043725+00:00","criterion":"control-server-ready","value":"ready"}
+{"at":"2026-09-29T00:30:38.2215554+00:00","criterion":"dashboard-live","value":"200"}
+{"at":"2026-09-29T00:30:38.3285449+00:00","note":"FieldOps: seed-approved-facts --database C:\\Users\\szy\\AppData\\Local\\Temp\\l2-20260929T003014059Z\\controlserver.db"}
+{"at":"2026-09-29T00:30:40.0097559+00:00","criterion":"slot-model-preseed:seed-approved-facts","value":"OK","detail":{"output":{"command":"seed-approved-facts","outcome":"OK","modelKey":"8005-eight-slot","slotModelVersionId":"39f4755bb6654db1aa2e02c3af2ef476","version":1,"slotCount":8}}}
+{"at":"2026-09-29T00:30:40.0179205+00:00","note":"FieldOps: bind-io --database C:\\Users\\szy\\AppData\\Local\\Temp\\l2-20260929T003014059Z\\controlserver.db --agv AGV-L2-001"}
+{"at":"2026-09-29T00:30:41.4082876+00:00","criterion":"slot-model-preseed:bind-io:AGV-L2-001","value":"OK","detail":{"output":{"command":"bind-io","outcome":"OK","agvId":"AGV-L2-001","slotModelVersionId":"39f4755bb6654db1aa2e02c3af2ef476","boundSlots":8,"version":1}}}
+{"at":"2026-09-29T00:30:41.4721472+00:00","criterion":"slot-model-preseed:dispatch-zones","value":"0"}
+{"at":"2026-09-29T00:30:41.4745780+00:00","note":"FieldOps: import-area-assignments --database C:\\Users\\szy\\AppData\\Local\\Temp\\l2-20260929T003014059Z\\controlserver.db --input C:\\Users\\szy\\Desktop\\8005-workspace-v2\\worktrees\\cs186-8005-agv-control-server\\evidence\\l2\\20260929-cs186-map-rename-green-final\\snapshots\\preseed-area-assignments.csv"}
+{"at":"2026-09-29T00:30:42.9770648+00:00","criterion":"slot-model-preseed:import-area-assignments","value":"OK","detail":{"output":{"command":"import-area-assignments","outcome":"OK","dryRun":false,"input":"C:\\Users\\szy\\Desktop\\8005-workspace-v2\\worktrees\\cs186-8005-agv-control-server\\evidence\\l2\\20260929-cs186-map-rename-green-final\\snapshots\\preseed-area-assignments.csv","entryCount":3,"version":1,"contentSha256":"4291a509c2c0b75ea4bde0ac4dcde04b6e8632b54a21a67eee2772a6f8d0ff8e","snapshotId":"04c24a601e6f4259b3cbf2e984381b0b","importedAt":"2026-09-29T08:30:41.6587758+08:00","errorCount":0,"errors":[],"preview":[]}}}
+{"at":"2026-09-29T00:30:42.9806856+00:00","note":"Per-zone dispatch parameters left unconfigured (the default precondition)."}
+{"at":"2026-09-29T00:30:42.9853590+00:00","note":"Environment is up; entering scenario 'map-rename-holds-all-task-types'."}
+{"at":"2026-09-29T00:30:43.0722085+00:00","criterion":"runtime-iterations","value":"8"}
+{"at":"2026-09-29T00:30:43.8609385+00:00","criterion":"runtime-iterations","value":"9"}
+{"at":"2026-09-29T00:30:44.9099298+00:00","criterion":"runtime-iterations","value":"10"}
+{"at":"2026-09-29T00:30:44.9162310+00:00","note":"Fake RIoT: only the Map list answers 500 from now on."}
+{"at":"2026-09-29T00:30:45.9849379+00:00","criterion":"runtime-iterations","value":"11"}
+{"at":"2026-09-29T00:30:47.0317845+00:00","criterion":"runtime-iterations","value":"12"}
+{"at":"2026-09-29T00:30:48.0772704+00:00","criterion":"runtime-iterations","value":"13"}
+{"at":"2026-09-29T00:30:48.0847390+00:00","note":"Fake RIoT: the Map list answers again."}
+{"at":"2026-09-29T00:30:48.1011001+00:00","note":"Publishing WIRE_TO_GATE demand first (3f50b27a93664eee8b2ab823e4f67cd6)."}
+{"at":"2026-09-29T00:30:48.1374917+00:00","criterion":"journey-stage-first","value":"(null)"}
+{"at":"2026-09-29T00:30:49.4495918+00:00","criterion":"journey-stage-first","value":"AwaitingPickupArrival"}
+{"at":"2026-09-29T00:30:49.4558355+00:00","criterion":"to-pickup-intent-first","value":"(null)"}
+{"at":"2026-09-29T00:30:49.7134587+00:00","criterion":"to-pickup-intent-first","value":"@{UpperId=W2G-3f50b27a-9366-4eee-8b2a-b823e4f67cd6-PICKUP-1; OrderId=ORDER-000001; Status=CONFIRMED}"}
+{"at":"2026-09-29T00:30:49.7177523+00:00","note":"Demand first: AGV-L2-001 (BROKERX-L2-0001) departs for the pickup station."}
+{"at":"2026-09-29T00:30:49.7390995+00:00","note":"Demand first: AGV-L2-001 arrives at the pickup station and comes to rest."}
+{"at":"2026-09-29T00:30:49.7542417+00:00","criterion":"gate-leg-first","value":"AwaitingPickupArrival"}
+{"at":"2026-09-29T00:30:50.0213668+00:00","criterion":"gate-leg-first","value":"AwaitingSublot"}
+{"at":"2026-09-29T00:30:51.0724869+00:00","criterion":"gate-leg-first","value":"AwaitingLoadResult"}
+{"at":"2026-09-29T00:30:52.1220005+00:00","criterion":"gate-leg-first","value":"AwaitingStationDeparture"}
+{"at":"2026-09-29T00:31:22.9074939+00:00","criterion":"gate-leg-first","value":"AwaitingDepartureSafety"}
+{"at":"2026-09-29T00:31:23.1714874+00:00","criterion":"gate-leg-first","value":"AwaitingGateArrival"}
+{"at":"2026-09-29T00:31:23.1747927+00:00","criterion":"to-gate-intent-first","value":"@{UpperId=W2G-3f50b27a-9366-4eee-8b2a-b823e4f67cd6-GATE-1; OrderId=ORDER-000002; Status=CONFIRMED}"}
+{"at":"2026-09-29T00:31:23.1818356+00:00","note":"Demand first: AGV-L2-001 drives to the gate and comes to rest."}
+{"at":"2026-09-29T00:31:23.1959872+00:00","criterion":"completed-first","value":"AwaitingGateArrival"}
+{"at":"2026-09-29T00:31:24.2416112+00:00","criterion":"completed-first","value":"AwaitingUnloadResult"}
+{"at":"2026-09-29T00:31:25.0293074+00:00","criterion":"completed-first","value":"Completed"}
+{"at":"2026-09-29T00:31:25.0316413+00:00","note":"Fake RIoT: map 25 is renamed from 老厂前线new_wk to 老厂前线new_wk-L2-20260929T003014059Z under the same id."}
+{"at":"2026-09-29T00:31:25.0451505+00:00","criterion":"holds-after-rename","value":""}
+{"at":"2026-09-29T00:31:26.1106450+00:00","criterion":"holds-after-rename","value":" "}
+{"at":"2026-09-29T00:31:26.1664819+00:00","note":"Publishing WIRE_TO_GATE demand second (9c09f691b4bd4a92b6cffe0e18280530)."}
+{"at":"2026-09-29T00:31:26.2163619+00:00","criterion":"backlog-second","value":"(null)"}
+{"at":"2026-09-29T00:31:27.0110055+00:00","criterion":"backlog-second","value":"TASK_TYPE_HELD"}
+{"at":"2026-09-29T00:31:27.0230232+00:00","criterion":"runtime-iterations","value":"52"}
+{"at":"2026-09-29T00:31:28.0650611+00:00","criterion":"runtime-iterations","value":"53"}
+{"at":"2026-09-29T00:31:28.8537493+00:00","criterion":"runtime-iterations","value":"54"}
+{"at":"2026-09-29T00:31:29.9020612+00:00","criterion":"runtime-iterations","value":"55"}
+{"at":"2026-09-29T00:31:29.9801424+00:00","criterion":"dashboard-row","value":"WIRE_TO_GATE 在本图需求集合 210 关卡 已暂停 目录变化，自 2026-09-29T00:31:25.8593504+00:00，地图改名 暂停"}
+{"at":"2026-09-29T00:31:30.0313632+00:00","note":"FieldOps: release-task-type-station-hold --database C:\\Users\\szy\\AppData\\Local\\Temp\\l2-20260929T003014059Z\\controlserver.db --map 25 --task-type WIRE_TO_GATE --site-verification L2-SYNTHETIC-SITE-CHECK --catalog C:\\Users\\szy\\Desktop\\8005-workspace-v2\\worktrees\\cs186-8005-agv-control-server\\evidence\\l2\\20260929-cs186-map-rename-green-final\\snapshots\\map-rename-catalog.json --reason L2 地图改名复核"}
+{"at":"2026-09-29T00:31:31.4090264+00:00","note":"FieldOps: accept-map-name --database C:\\Users\\szy\\AppData\\Local\\Temp\\l2-20260929T003014059Z\\controlserver.db --map 25 --map-name 老厂前线new_wk-L2-20260929T003014059Z --reason L2 现场核对地图改名"}
+{"at":"2026-09-29T00:31:32.9003512+00:00","note":"FieldOps: release-task-type-station-hold --database C:\\Users\\szy\\AppData\\Local\\Temp\\l2-20260929T003014059Z\\controlserver.db --map 25 --task-type WIRE_TO_GATE --site-verification L2-SYNTHETIC-SITE-CHECK --catalog C:\\Users\\szy\\Desktop\\8005-workspace-v2\\worktrees\\cs186-8005-agv-control-server\\evidence\\l2\\20260929-cs186-map-rename-green-final\\snapshots\\map-rename-catalog.json --reason L2 地图改名复核"}
+{"at":"2026-09-29T00:31:34.3753919+00:00","note":"FieldOps: release-task-type-station-hold --database C:\\Users\\szy\\AppData\\Local\\Temp\\l2-20260929T003014059Z\\controlserver.db --map 25 --task-type STAGING_TO_WIRE --site-verification L2-SYNTHETIC-SITE-CHECK --catalog C:\\Users\\szy\\Desktop\\8005-workspace-v2\\worktrees\\cs186-8005-agv-control-server\\evidence\\l2\\20260929-cs186-map-rename-green-final\\snapshots\\map-rename-catalog.json --reason L2 地图改名复核"}
+{"at":"2026-09-29T00:31:36.7428703+00:00","criterion":"journey-stage-second","value":"AwaitingPickupArrival"}
+{"at":"2026-09-29T00:31:36.7442670+00:00","criterion":"to-pickup-intent-second","value":"@{UpperId=W2G-9c09f691-b4bd-4a92-b6cf-fe0e18280530-PICKUP-1; OrderId=ORDER-000003; Status=CONFIRMED}"}
+{"at":"2026-09-29T00:31:36.7454548+00:00","note":"Demand second: AGV-L2-001 (BROKERX-L2-0001) departs for the pickup station."}
+{"at":"2026-09-29T00:31:36.7603172+00:00","note":"Demand second: AGV-L2-001 arrives at the pickup station and comes to rest."}
+{"at":"2026-09-29T00:31:36.7693238+00:00","criterion":"gate-leg-second","value":"AwaitingPickupArrival"}
+{"at":"2026-09-29T00:31:37.2859609+00:00","criterion":"gate-leg-second","value":"AwaitingSublot"}
+{"at":"2026-09-29T00:31:38.0709023+00:00","criterion":"gate-leg-second","value":"AwaitingLoadResult"}
+{"at":"2026-09-29T00:31:39.1132332+00:00","criterion":"gate-leg-second","value":"AwaitingStationDeparture"}
+{"at":"2026-09-29T00:32:08.9755539+00:00","criterion":"gate-leg-second","value":"AwaitingDepartureSafety"}
+{"at":"2026-09-29T00:32:09.2368287+00:00","criterion":"gate-leg-second","value":"AwaitingGateArrival"}
+{"at":"2026-09-29T00:32:09.2383463+00:00","criterion":"to-gate-intent-second","value":"@{UpperId=W2G-9c09f691-b4bd-4a92-b6cf-fe0e18280530-GATE-1; OrderId=ORDER-000004; Status=CONFIRMED}"}
+{"at":"2026-09-29T00:32:09.2401784+00:00","note":"Scenario finished."}
+{"at":"2026-09-29T00:32:09.8011074+00:00","note":"L2 port block lock released."}

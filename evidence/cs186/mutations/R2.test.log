@@ -1,0 +1,26 @@
+Test run for C:\Users\szy\Desktop\8005-workspace-v2\worktrees\cs186-8005-agv-control-server\tests\ControlServer.Tests\bin\Release\net8.0\win-x64\ControlServer.Tests.dll (.NETCoreApp,Version=v8.0)
+A total of 1 test files matched the specified pattern.
+[xUnit.net 00:00:49.72]     ControlServer.Tests.MapNameBaselineAcceptanceTests.AnActivationUnderAPendingRenameHoldsEveryTaskTypeOfTheVersionItMakesActive(renameBetweenTheTwoSteps: False) [FAIL]
+  Failed ControlServer.Tests.MapNameBaselineAcceptanceTests.AnActivationUnderAPendingRenameHoldsEveryTaskTypeOfTheVersionItMakesActive(renameBetweenTheTwoSteps: False) [5 s]
+  Error Message:
+   Assert.Equal() Failure: Collections differ
+                                             ↓ (pos 0)
+Expected: <>z__ReadOnlyArray<string>        ["STAGING_TO_WIRE", "WIRE_TO_GATE"]
+Actual:   OrderedEnumerable<string, string> []
+  Stack Trace:
+     at ControlServer.Tests.MapNameBaselineAcceptanceTests.AnActivationUnderAPendingRenameHoldsEveryTaskTypeOfTheVersionItMakesActive(Boolean renameBetweenTheTwoSteps) in C:\Users\szy\Desktop\8005-workspace-v2\worktrees\cs186-8005-agv-control-server\tests\ControlServer.Tests\MapNameBaselineAcceptanceTests.cs:line 232
+   at ControlServer.Tests.MapNameBaselineAcceptanceTests.AnActivationUnderAPendingRenameHoldsEveryTaskTypeOfTheVersionItMakesActive(Boolean renameBetweenTheTwoSteps) in C:\Users\szy\Desktop\8005-workspace-v2\worktrees\cs186-8005-agv-control-server\tests\ControlServer.Tests\MapNameBaselineAcceptanceTests.cs:line 236
+--- End of stack trace from previous location ---
+[xUnit.net 00:00:55.53]     ControlServer.Tests.MapNameBaselineAcceptanceTests.AnActivationUnderAPendingRenameHoldsEveryTaskTypeOfTheVersionItMakesActive(renameBetweenTheTwoSteps: True) [FAIL]
+  Failed ControlServer.Tests.MapNameBaselineAcceptanceTests.AnActivationUnderAPendingRenameHoldsEveryTaskTypeOfTheVersionItMakesActive(renameBetweenTheTwoSteps: True) [5 s]
+  Error Message:
+   Assert.Equal() Failure: Collections differ
+                                             ↓ (pos 0)
+Expected: <>z__ReadOnlyArray<string>        ["STAGING_TO_WIRE", "WIRE_TO_GATE"]
+Actual:   OrderedEnumerable<string, string> []
+  Stack Trace:
+     at ControlServer.Tests.MapNameBaselineAcceptanceTests.AnActivationUnderAPendingRenameHoldsEveryTaskTypeOfTheVersionItMakesActive(Boolean renameBetweenTheTwoSteps) in C:\Users\szy\Desktop\8005-workspace-v2\worktrees\cs186-8005-agv-control-server\tests\ControlServer.Tests\MapNameBaselineAcceptanceTests.cs:line 232
+   at ControlServer.Tests.MapNameBaselineAcceptanceTests.AnActivationUnderAPendingRenameHoldsEveryTaskTypeOfTheVersionItMakesActive(Boolean renameBetweenTheTwoSteps) in C:\Users\szy\Desktop\8005-workspace-v2\worktrees\cs186-8005-agv-control-server\tests\ControlServer.Tests\MapNameBaselineAcceptanceTests.cs:line 236
+--- End of stack trace from previous location ---
+
+Failed!  - Failed:     2, Passed:    68, Skipped:     0, Total:    70, Duration: 1 m 22 s - ControlServer.Tests.dll (net8.0)

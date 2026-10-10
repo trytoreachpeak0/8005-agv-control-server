@@ -71,70 +71,99 @@ public sealed class OnboardJourneyPublisher(
         }
     }
 
-    public Task PublishVehicleBusinessStateAsync(
+    /// <param name="keepAcknowledgedIgnoring">见 <see cref="QueueEnvelopeAsync"/> 的同名参数。</param>
+    /// <remarks>
+    /// A held vehicle's standing door holds are laid over the projection here (<see cref="WireToGateStore.WithSlotDoorHoldsAsync"/>,
+    /// control-server#385 review N2), as in <see cref="StageVehicleBusinessStateAsync"/>: every business state leaves through
+    /// one of the two.
+    /// </remarks>
+    public async Task PublishVehicleBusinessStateAsync(
         string messageId,
         string agvId,
         long sessionGeneration,
         VehicleBusinessProjection projection,
-        CancellationToken cancellationToken)
+        CancellationToken cancellationToken,
+        IReadOnlySet<string>? keepAcknowledgedIgnoring = null)
+    {
+        ArgumentNullException.ThrowIfNull(projection);
+        projection = await store.WithSlotDoorHoldsAsync(agvId, projection, cancellationToken).ConfigureAwait(false);
+        ValidateVehicleBusinessState(projection);
+        await PublishStampedSnapshotAsync(
+            "VehicleBusinessStateSnapshot",
+            messageId,
+            agvId,
+            sessionGeneration,
+            projection.Revision,
+            VehicleBusinessStatePayload(projection),
+            cancellationToken,
+            keepAcknowledgedIgnoring).ConfigureAwait(false);
+    }
+
+    private static void ValidateVehicleBusinessState(VehicleBusinessProjection projection)
     {
         ArgumentNullException.ThrowIfNull(projection);
         if (!ChargingCycleStates.Contains(projection.ChargingCycleState))
             throw new InvalidDataException("chargingCycleState is not allowed by the protocol.");
+        // Since control-server#403 the value is projected rather than a constant, so a typo would reach the peer.
+        if (!BatteryStateValues.Contains(projection.BatteryState))
+            throw new InvalidDataException("batteryState is not allowed by the protocol.");
         // loadingPhase is null exactly when the vehicle has no transport journey
         // (8005-agv-program#94). The schema accepts null either way, so nothing downstream -- not even
         // the outbound schema gate -- would notice a journey reported without its loading phase.
         if ((projection.ActivePurpose == VehicleActivePurposes.Transport) != (projection.LoadingPhase is not null))
             throw new InvalidDataException(
                 "loadingPhase must be present exactly when activePurpose is TRANSPORT.");
-        return PublishStampedSnapshotAsync(
-            "VehicleBusinessStateSnapshot",
-            messageId,
-            agvId,
-            sessionGeneration,
-            // observedAt comes from the envelope's frozen sentAt rather than a fresh clock read.
-            // This snapshot keeps one deterministic messageId per journey stage, so a payload
-            // carrying the current time differs on every re-publish and is refused as a semantic
-            // conflict -- which left an arrived journey looping between reconnects, never able to
-            // re-send the snapshot the peer was waiting on.
-            sentAt => new
-            {
-                vehicleBusinessStateRevision = projection.Revision,
-                readiness = projection.Readiness,
-                projection.ActivePurpose,
-                projection.ManualChargingHold,
-                projection.BatteryState,
-                projection.ChargingCycleState,
-                loadingPhase = projection.LoadingPhase is not { } phase
-                    ? null
-                    : new
-                    {
-                        phase.State,
-                        phase.CargoHoldingDeadlineAt,
-                        phase.ClosedReason
-                    },
-                blockingFacts = projection.BlockingFacts.Select(fact => new
-                {
-                    fact.ReasonCode,
-                    fact.SubjectType,
-                    fact.SubjectId
-                }),
-                ObservedAt = sentAt
-            },
-            cancellationToken);
     }
+
+    // observedAt comes from the envelope's frozen sentAt rather than a fresh clock read.
+    // This snapshot keeps one deterministic messageId per journey stage, so a payload
+    // carrying the current time differs on every re-publish and is refused as a semantic
+    // conflict -- which left an arrived journey looping between reconnects, never able to
+    // re-send the snapshot the peer was waiting on.
+    private static Func<DateTimeOffset, object> VehicleBusinessStatePayload(VehicleBusinessProjection projection) =>
+        sentAt => new
+        {
+            vehicleBusinessStateRevision = projection.Revision,
+            readiness = projection.Readiness,
+            projection.ActivePurpose,
+            projection.ManualChargingHold,
+            projection.BatteryState,
+            projection.ChargingCycleState,
+            loadingPhase = projection.LoadingPhase is not { } phase
+                ? null
+                : new
+                {
+                    phase.State,
+                    phase.CargoHoldingDeadlineAt,
+                    phase.ClosedReason
+                },
+            blockingFacts = projection.BlockingFacts.Select(fact => new
+            {
+                fact.ReasonCode,
+                fact.SubjectType,
+                fact.SubjectId
+            }),
+            ObservedAt = sentAt
+        };
+
+    private static readonly HashSet<string> BatteryStateValues = new(StringComparer.Ordinal)
+    {
+        "SUFFICIENT", "LOW", "UNKNOWN", "MANDATORY_CHARGE"
+    };
 
     private static readonly HashSet<string> ChargingCycleStates = new(StringComparer.Ordinal)
     {
         "NOT_CHARGING", "ALLOCATED", "EN_ROUTE", "CHARGING", "COMPLETE", "UNABLE_TO_CHARGE", "UNKNOWN"
     };
 
+    /// <param name="keepAcknowledgedIgnoring">见 <see cref="QueueEnvelopeAsync"/> 的同名参数。</param>
     public Task PublishSublotEntryRequestAsync(
         string messageId,
         string agvId,
         long sessionGeneration,
         SublotEntryRequest request,
-        CancellationToken cancellationToken)
+        CancellationToken cancellationToken,
+        IReadOnlySet<string>? keepAcknowledgedIgnoring = null)
     {
         ArgumentNullException.ThrowIfNull(request);
         ValidateUuid(request.OperationSessionId, nameof(request.OperationSessionId));
@@ -162,7 +191,8 @@ public sealed class OnboardJourneyPublisher(
                 entryMethods = SublotEntryMethods,
                 expiresOnRevisionChange = true
             },
-            cancellationToken);
+            cancellationToken,
+            keepAcknowledgedIgnoring);
     }
 
     /// <summary>
@@ -224,6 +254,56 @@ public sealed class OnboardJourneyPublisher(
             cancellationToken);
     }
 
+    /// <summary>
+    /// 同 <see cref="PublishSublotRejectedAsync"/> 的信封与载荷，但只暂存进调用方那一次还没保存的改动——不保存、不发送（control-server#324）。
+    /// </summary>
+    /// <remarks>
+    /// 给入站那一侧答迟到的扫码用：它在收件箱的写事务里判「这一站已经结束」，答复必须与那次判定一起提交，而发送要等本条报文自己的应答
+    /// 写出去之后（握手之外、应答之后，同触发发送那条链）。静态、不带对端，理由同收尾快照的暂存方法。
+    /// </remarks>
+    public static Task<bool> StageSublotRejectedAsync(
+        WireToGateStore store,
+        string messageId,
+        string submittedMessageId,
+        string agvId,
+        long sessionGeneration,
+        SublotRejection rejection,
+        DateTimeOffset createdAt,
+        CancellationToken cancellationToken)
+    {
+        ArgumentNullException.ThrowIfNull(store);
+        ArgumentNullException.ThrowIfNull(rejection);
+        ValidateUuid(messageId, nameof(messageId));
+        ValidateUuid(submittedMessageId, nameof(submittedMessageId));
+        ArgumentException.ThrowIfNullOrWhiteSpace(agvId);
+        ArgumentOutOfRangeException.ThrowIfNegative(sessionGeneration);
+        if (rejection.DemandId is not null)
+        {
+            ValidateUuid(rejection.DemandId, nameof(rejection.DemandId));
+        }
+        ValidateUuid(rejection.OperationSessionId, nameof(rejection.OperationSessionId));
+        ArgumentException.ThrowIfNullOrWhiteSpace(rejection.RejectedSublot);
+        ArgumentOutOfRangeException.ThrowIfNegative(rejection.CurrentWorklistRevision);
+        ArgumentNullException.ThrowIfNull(rejection.Problem);
+
+        string wire = SerializeWire(
+            "SublotRejected",
+            messageId,
+            submittedMessageId,
+            agvId,
+            sessionGeneration,
+            createdAt,
+            new
+            {
+                rejection.DemandId,
+                rejection.OperationSessionId,
+                rejection.Problem,
+                rejection.CurrentWorklistRevision,
+                rejection.RejectedSublot
+            });
+        return store.StageOutboundEnvelopeAsync(messageId, "SublotRejected", wire, createdAt, cancellationToken);
+    }
+
     public Task PublishSlotOperationCommandAsync(
         string messageId,
         string agvId,
@@ -231,7 +311,39 @@ public sealed class OnboardJourneyPublisher(
         SlotOperationCommand command,
         CancellationToken cancellationToken,
         string? admissionStationId = null,
-        string? admissionTaskType = null)
+        string? admissionTaskType = null) =>
+        SlotOperationCommandAsync(
+            messageId, agvId, sessionGeneration, command, send: true, admissionStationId, admissionTaskType,
+            cancellationToken);
+
+    /// <summary>
+    /// 与 <see cref="PublishSlotOperationCommandAsync"/> 相同，但只落库、不发：调用方在自己的写事务里下命令，提交之后再用
+    /// <see cref="SendPersistedAsync"/> 发（control-server#362）。
+    /// </summary>
+    /// <remarks>
+    /// 命令先于提交上线，车就可能照一条最后没落库的命令开仓；所以写事务里只能落库。
+    /// </remarks>
+    public Task StageSlotOperationCommandAsync(
+        string messageId,
+        string agvId,
+        long sessionGeneration,
+        SlotOperationCommand command,
+        CancellationToken cancellationToken,
+        string? admissionStationId = null,
+        string? admissionTaskType = null) =>
+        SlotOperationCommandAsync(
+            messageId, agvId, sessionGeneration, command, send: false, admissionStationId, admissionTaskType,
+            cancellationToken);
+
+    private Task SlotOperationCommandAsync(
+        string messageId,
+        string agvId,
+        long sessionGeneration,
+        SlotOperationCommand command,
+        bool send,
+        string? admissionStationId,
+        string? admissionTaskType,
+        CancellationToken cancellationToken)
     {
         ArgumentNullException.ThrowIfNull(command);
         ValidateUuid(command.DemandId, nameof(command.DemandId));
@@ -286,38 +398,94 @@ public sealed class OnboardJourneyPublisher(
             command,
             admissionStationId,
             admissionTaskType,
+            send,
             cancellationToken);
     }
 
+    /// <remarks>
+    /// v3 加了必填的 <c>checkPurpose</c>（control-server#382）。组装两种：<see cref="PreDepartureCheckPurposes.Departure"/>
+    /// 三个字段都必须有，<see cref="PreDepartureCheckPurposes.HoldRelease"/>（control-server#385）三个都必须是 null——与 schema 里
+    /// 两条 <c>if/then</c> 同一条规则，本服务端运行时不按 schema 校验出站报文，所以在这里守。<c>NON_BUSINESS_MOVE</c> 由空闲返回与
+    /// 自动充电的票放开，今天照旧拒绝。
+    /// </remarks>
     public Task PublishPreDepartureSafetyCheckAsync(
         string messageId,
         string agvId,
         long sessionGeneration,
         PreDepartureSafetyCheckCommand command,
-        CancellationToken cancellationToken)
-    {
-        ArgumentNullException.ThrowIfNull(command);
-        ValidateUuid(command.PreDepartureSafetyCheckId, nameof(command.PreDepartureSafetyCheckId));
-        ValidateUuid(command.DemandId, nameof(command.DemandId));
-        ValidateUuid(command.MovementLegId, nameof(command.MovementLegId));
-        ArgumentOutOfRangeException.ThrowIfNegative(command.ExpectedSafetyStateVersion);
-        ArgumentException.ThrowIfNullOrWhiteSpace(command.TargetStationId);
-
-        return PublishEnvelopeAsync(
+        CancellationToken cancellationToken) =>
+        PublishEnvelopeAsync(
             "PreDepartureSafetyCheck",
             messageId,
             correlationId: null,
             agvId,
             sessionGeneration,
-            new
-            {
-                command.PreDepartureSafetyCheckId,
-                command.DemandId,
-                command.MovementLegId,
-                command.ExpectedSafetyStateVersion,
-                command.TargetStationId
-            },
+            PreDepartureSafetyCheckPayload(command),
             cancellationToken);
+
+    /// <summary>
+    /// 同 <see cref="PublishPreDepartureSafetyCheckAsync"/> 的信封与载荷，但只暂存进调用方那一次还没保存的改动，返回那一行的线上文本；
+    /// 这个 id 已经在发件箱里时返回 null（control-server#385）。
+    /// </summary>
+    /// <remarks>
+    /// 给解除门未证明扣车的 <c>HOLD_RELEASE</c> 检查用：它在收件箱的写事务里、在收到证明读数的那一刻决定发，检查必须与那次判定一起
+    /// 提交，线上文本随那条读数的应答之后发出。静态、不带对端，理由同其余暂存方法。
+    /// </remarks>
+    public static async Task<string?> StagePreDepartureSafetyCheckAsync(
+        WireToGateStore store,
+        string messageId,
+        string agvId,
+        long sessionGeneration,
+        PreDepartureSafetyCheckCommand command,
+        DateTimeOffset createdAt,
+        CancellationToken cancellationToken)
+    {
+        ArgumentNullException.ThrowIfNull(store);
+        ArgumentException.ThrowIfNullOrWhiteSpace(agvId);
+        ValidateUuid(messageId, nameof(messageId));
+        ArgumentOutOfRangeException.ThrowIfNegative(sessionGeneration);
+        string wire = SerializeWire(
+            "PreDepartureSafetyCheck", messageId, correlationId: null, agvId, sessionGeneration, createdAt,
+            PreDepartureSafetyCheckPayload(command));
+        return await store.StageOutboundEnvelopeAsync(messageId, "PreDepartureSafetyCheck", wire, createdAt, cancellationToken)
+            .ConfigureAwait(false)
+            ? wire
+            : null;
+    }
+
+    private static object PreDepartureSafetyCheckPayload(PreDepartureSafetyCheckCommand command)
+    {
+        ArgumentNullException.ThrowIfNull(command);
+        ValidateUuid(command.PreDepartureSafetyCheckId, nameof(command.PreDepartureSafetyCheckId));
+        ArgumentOutOfRangeException.ThrowIfNegative(command.ExpectedSafetyStateVersion);
+        switch (command.CheckPurpose)
+        {
+            case PreDepartureCheckPurposes.Departure:
+                ValidateUuid(command.DemandId, nameof(command.DemandId));
+                ValidateUuid(command.MovementLegId, nameof(command.MovementLegId));
+                ArgumentException.ThrowIfNullOrWhiteSpace(command.TargetStationId);
+                break;
+            case PreDepartureCheckPurposes.HoldRelease:
+                if (command.DemandId is not null || command.MovementLegId is not null || command.TargetStationId is not null)
+                    throw new InvalidDataException(
+                        "A HOLD_RELEASE check carries no demandId, movementLegId or targetStationId.");
+                break;
+            default:
+                throw new ArgumentOutOfRangeException(
+                    nameof(command),
+                    command.CheckPurpose,
+                    "Only DEPARTURE and HOLD_RELEASE checks are assembled; NON_BUSINESS_MOVE waits for the idle-return and charging moves.");
+        }
+
+        return new
+        {
+            command.PreDepartureSafetyCheckId,
+            command.CheckPurpose,
+            command.DemandId,
+            command.MovementLegId,
+            command.ExpectedSafetyStateVersion,
+            command.TargetStationId
+        };
     }
 
     public Task<ProtocolOutboxRow> QueueSlotOperationResumeCommandAsync(
@@ -374,6 +542,9 @@ public sealed class OnboardJourneyPublisher(
                 throw new InvalidDataException("A recovery session without a demand names no slot operation attempt.");
         }
         ValidateSlots(projection.Slots);
+        if (projection.ClosedReason is not null &&
+            (projection.State != "CLOSED" || !ProtocolErrorCodes.All.Contains(projection.ClosedReason)))
+            throw new InvalidDataException("closedReason names a registry code, and only on a CLOSED session.");
         return QueueEnvelopeAsync(
             "ExceptionRecoverySessionSnapshot", messageId, null, agvId, sessionGeneration,
             new
@@ -394,7 +565,8 @@ public sealed class OnboardJourneyPublisher(
                     fact.ReasonCode,
                     fact.SubjectType,
                     fact.SubjectId
-                })
+                }),
+                projection.ClosedReason
             }, cancellationToken);
     }
 
@@ -528,6 +700,31 @@ public sealed class OnboardJourneyPublisher(
             payload, cancellationToken);
     }
 
+    /// <summary>
+    /// Asks the vehicle for a fresh <c>SafetyStateSnapshot</c>. Not persisted, like the request the message processor appends
+    /// to an answer: it is a question, and a reconnect asks again. Used by a repair release once its record is in, with
+    /// <c>PRE_MOVEMENT_RECONCILIATION</c> (control-server#385).
+    /// </summary>
+    public Task SendSafetyStateSnapshotRequestAsync(
+        string agvId,
+        long sessionGeneration,
+        string reason,
+        CancellationToken cancellationToken)
+    {
+        ArgumentException.ThrowIfNullOrWhiteSpace(agvId);
+        if (reason is not ("HANDSHAKE" or "VERSION_GAP" or "PRE_MOVEMENT_RECONCILIATION"))
+            throw new ArgumentOutOfRangeException(nameof(reason), reason, "Not a SafetyStateSnapshotRequested reason.");
+        string wire = ProtocolEnvelope.Serialize(
+            "SafetyStateSnapshotRequested",
+            Guid.NewGuid().ToString("D"),
+            null,
+            agvId,
+            sessionGeneration,
+            timeProvider.GetUtcNow(),
+            new { requestedSafetyStateVersion = (long?)null, reason });
+        return peer.SendAsync(Encoding.UTF8.GetBytes(wire + "\n"), cancellationToken);
+    }
+
     public async Task SendPersistedAsync(string messageId, CancellationToken cancellationToken)
     {
         ProtocolOutboxRow row = await store.FindOutboundEnvelopeAsync(messageId, cancellationToken)
@@ -540,83 +737,224 @@ public sealed class OnboardJourneyPublisher(
             .ConfigureAwait(false);
     }
 
+    /// <param name="keepAcknowledgedIgnoring">见 <see cref="QueueEnvelopeAsync"/> 的同名参数。</param>
     public Task PublishCurrentStopWorklistAsync(
         string messageId,
         string agvId,
         long sessionGeneration,
         CurrentStopWorklistProjection projection,
-        CancellationToken cancellationToken) =>
+        CancellationToken cancellationToken,
+        IReadOnlySet<string>? keepAcknowledgedIgnoring = null) =>
         PublishSnapshotAsync(
             "CurrentStopWorklistSnapshot",
             messageId,
             agvId,
             sessionGeneration,
-            new
-            {
-                projection.StationId,
-                worklistRevision = projection.Revision,
-                projection.OperationSessionId,
-                projection.StationDepartureDeadlineAt,
-                items = projection.Items.Select(item => new
-                {
-                    item.DemandId,
-                    item.TransportDemandKey,
-                    item.Sublot,
-                    item.WorkType,
-                    item.StopRole,
-                    item.ExpectedBasketCount
-                })
-            },
-            cancellationToken);
+            projection.Revision,
+            CurrentStopWorklistPayload(projection),
+            cancellationToken,
+            keepAcknowledgedIgnoring);
 
+    /// <param name="keepAcknowledgedIgnoring">见 <see cref="QueueEnvelopeAsync"/> 的同名参数。</param>
     public Task PublishUpcomingStopPlanAsync(
         string messageId,
         string agvId,
         long sessionGeneration,
         UpcomingStopPlanProjection projection,
-        CancellationToken cancellationToken) =>
+        CancellationToken cancellationToken,
+        IReadOnlySet<string>? keepAcknowledgedIgnoring = null) =>
         PublishSnapshotAsync(
             "UpcomingStopPlanSnapshot",
             messageId,
             agvId,
             sessionGeneration,
-            new
+            projection.Revision,
+            UpcomingStopPlanPayload(projection),
+            cancellationToken,
+            keepAcknowledgedIgnoring);
+
+    private static object CurrentStopWorklistPayload(CurrentStopWorklistProjection projection)
+    {
+        ValidateCurrentStopWorklist(projection);
+        return new
+        {
+            projection.StationId,
+            worklistRevision = projection.Revision,
+            projection.OperationSessionId,
+            projection.StationDepartureDeadlineAt,
+            items = projection.Items.Select(item => new
             {
-                planRevision = projection.Revision,
-                legs = projection.Legs.Select(leg => new
-                {
-                    leg.MovementLegId,
-                    leg.LegType,
-                    leg.StopPurposeCategory,
-                    leg.DemandId,
-                    leg.PublicStationFunction,
-                    leg.Sequence,
-                    leg.StationId,
-                    leg.MapId,
-                    leg.State
-                })
-            },
-            cancellationToken);
+                item.DemandId,
+                item.TransportDemandKey,
+                item.Sublot,
+                item.WorkType,
+                item.StopRole,
+                item.ExpectedBasketCount
+            }),
+            projection.StopEndedReason
+        };
+    }
+
+    /// <summary>
+    /// v3 的清单条件（control-server#382）：<c>items</c> 非空时 <c>stopEndedReason</c> 必须是 null，为空时必须给出原因。
+    /// </summary>
+    /// <remarks>
+    /// 车载端按 schema 拒收违反它的清单并断会话，而本服务端运行时不按 schema 校验出站报文，出站 schema 检查只在测试里跑。所以在组装
+    /// 这里守：一张该说原因却没说的空清单，宁可在服务端这一侧当场失败，也不要发出去让车拆会话。原因的取值由
+    /// <c>StopEndedReasons.ForEnding</c> 一处给出。
+    /// </remarks>
+    internal static void ValidateCurrentStopWorklist(CurrentStopWorklistProjection projection)
+    {
+        ArgumentNullException.ThrowIfNull(projection);
+        if ((projection.Items.Count == 0) != (projection.StopEndedReason is not null))
+            throw new InvalidDataException(
+                "stopEndedReason must be present exactly when the worklist has no items.");
+    }
+
+    private static object UpcomingStopPlanPayload(UpcomingStopPlanProjection projection) => new
+    {
+        planRevision = projection.Revision,
+        legs = projection.Legs.Select(leg => new
+        {
+            leg.MovementLegId,
+            leg.LegType,
+            leg.StopPurposeCategory,
+            leg.DemandId,
+            leg.PublicStationFunction,
+            leg.Sequence,
+            leg.StationId,
+            leg.MapId,
+            leg.State
+        })
+    };
+
+    /// <summary>
+    /// 旅程收尾的三张快照之一（control-server#323）：与对应的发布方法同一个信封、同一套载荷，但只暂存进调用方那一次还没保存的
+    /// 改动——不保存、不发送。发送由调用方在保存之后做（<c>JourneyClosure.SendAsync</c>）。
+    /// </summary>
+    /// <remarks>
+    /// <para>
+    /// 静态、不带对端，因为收尾尾巴（<c>PickupStopTermination</c>）只拿得到上下文：它的五个调用方里有几个根本没有发布器。
+    /// 按车计数器照样由这里推高（<see cref="WireToGateStore.RaiseSnapshotRevisionFloorAsync"/>，同样不保存），
+    /// 所以「暂存了快照却没结清」与发布那条路一样在构造上不可能。
+    /// </para>
+    /// <para>
+    /// 信封经 <c>ProtocolEnvelope.Serialize</c> 生成，出站 schema 门禁照样看得见这几行。返回 false 表示这个 id 已经在发件箱里、
+    /// 这一次什么也没加。
+    /// </para>
+    /// </remarks>
+    public static async Task<bool> StageVehicleBusinessStateAsync(
+        WireToGateStore store,
+        string messageId,
+        string agvId,
+        long sessionGeneration,
+        VehicleBusinessProjection projection,
+        DateTimeOffset createdAt,
+        CancellationToken cancellationToken)
+    {
+        ArgumentNullException.ThrowIfNull(store);
+        ArgumentNullException.ThrowIfNull(projection);
+        // A held vehicle's standing door holds, as in PublishVehicleBusinessStateAsync (control-server#385 review N2).
+        projection = await store.WithSlotDoorHoldsAsync(agvId, projection, cancellationToken).ConfigureAwait(false);
+        ValidateVehicleBusinessState(projection);
+        return await StageStampedSnapshotAsync(
+            store, "VehicleBusinessStateSnapshot", messageId, agvId, sessionGeneration, projection.Revision,
+            VehicleBusinessStatePayload(projection), createdAt, cancellationToken).ConfigureAwait(false);
+    }
+
+    /// <inheritdoc cref="StageVehicleBusinessStateAsync"/>
+    public static Task<bool> StageCurrentStopWorklistAsync(
+        WireToGateStore store,
+        string messageId,
+        string agvId,
+        long sessionGeneration,
+        CurrentStopWorklistProjection projection,
+        DateTimeOffset createdAt,
+        CancellationToken cancellationToken)
+    {
+        ArgumentNullException.ThrowIfNull(projection);
+        object payload = CurrentStopWorklistPayload(projection);
+        return StageStampedSnapshotAsync(
+            store, "CurrentStopWorklistSnapshot", messageId, agvId, sessionGeneration, projection.Revision,
+            _ => payload, createdAt, cancellationToken);
+    }
+
+    /// <inheritdoc cref="StageVehicleBusinessStateAsync"/>
+    public static Task<bool> StageUpcomingStopPlanAsync(
+        WireToGateStore store,
+        string messageId,
+        string agvId,
+        long sessionGeneration,
+        UpcomingStopPlanProjection projection,
+        DateTimeOffset createdAt,
+        CancellationToken cancellationToken)
+    {
+        ArgumentNullException.ThrowIfNull(projection);
+        object payload = UpcomingStopPlanPayload(projection);
+        return StageStampedSnapshotAsync(
+            store, "UpcomingStopPlanSnapshot", messageId, agvId, sessionGeneration, projection.Revision,
+            _ => payload, createdAt, cancellationToken);
+    }
+
+    private static async Task<bool> StageStampedSnapshotAsync(
+        WireToGateStore store,
+        string messageType,
+        string messageId,
+        string agvId,
+        long sessionGeneration,
+        long revision,
+        Func<DateTimeOffset, object> payloadFactory,
+        DateTimeOffset createdAt,
+        CancellationToken cancellationToken)
+    {
+        ArgumentNullException.ThrowIfNull(store);
+        ArgumentException.ThrowIfNullOrWhiteSpace(messageId);
+        ArgumentException.ThrowIfNullOrWhiteSpace(agvId);
+        ValidateUuid(messageId, nameof(messageId));
+        ArgumentOutOfRangeException.ThrowIfNegative(sessionGeneration);
+        await store.RaiseSnapshotRevisionFloorAsync(messageType, agvId, revision, cancellationToken)
+            .ConfigureAwait(false);
+        string wire = SerializeWire(
+            messageType, messageId, correlationId: null, agvId, sessionGeneration, createdAt, payloadFactory(createdAt));
+        return await store.StageOutboundEnvelopeAsync(messageId, messageType, wire, createdAt, cancellationToken)
+            .ConfigureAwait(false);
+    }
 
     private async Task PublishSnapshotAsync(
         string messageType,
         string messageId,
         string agvId,
         long sessionGeneration,
+        long revision,
         object payload,
-        CancellationToken cancellationToken) =>
+        CancellationToken cancellationToken,
+        IReadOnlySet<string>? keepAcknowledgedIgnoring = null) =>
         await PublishStampedSnapshotAsync(
-            messageType, messageId, agvId, sessionGeneration, _ => payload, cancellationToken)
+            messageType, messageId, agvId, sessionGeneration, revision, _ => payload, cancellationToken,
+            keepAcknowledgedIgnoring)
             .ConfigureAwait(false);
 
     /// <summary>Builds the payload from the envelope's frozen sentAt, so re-publishes reproduce it.</summary>
+    /// <summary>
+    /// 一条按车带修订号的快照，发出去并把这条流的下一趟基准结清（批次7-06，control-server#211）。
+    /// </summary>
+    /// <remarks>
+    /// <b><paramref name="revision"/> 是必填的，这正是它的用处。</b>三条按停靠发的快照流都只能从这里出去，
+    /// 所以「发了快照却没结清」在构造上不可能；再加一种这样的快照时，编译器会要求它把自己的号交出来。
+    /// 结清放在发布之前，与发件箱那一行落在同一次保存里——崩在中间也不会留下「发了没结清」的状态。
+    /// </remarks>
     private async Task PublishStampedSnapshotAsync(
         string messageType,
         string messageId,
         string agvId,
         long sessionGeneration,
+        long revision,
         Func<DateTimeOffset, object> payloadFactory,
-        CancellationToken cancellationToken) =>
+        CancellationToken cancellationToken,
+        IReadOnlySet<string>? keepAcknowledgedIgnoring = null)
+    {
+        await store.RaiseSnapshotRevisionFloorAsync(messageType, agvId, revision, cancellationToken)
+            .ConfigureAwait(false);
         await PublishStampedEnvelopeAsync(
             messageType,
             messageId,
@@ -624,7 +962,9 @@ public sealed class OnboardJourneyPublisher(
             agvId,
             sessionGeneration,
             payloadFactory,
-            cancellationToken).ConfigureAwait(false);
+            cancellationToken,
+            keepAcknowledgedIgnoring).ConfigureAwait(false);
+    }
 
     private async Task PublishEnvelopeAsync(
         string messageType,
@@ -633,9 +973,11 @@ public sealed class OnboardJourneyPublisher(
         string agvId,
         long sessionGeneration,
         object payload,
-        CancellationToken cancellationToken) =>
+        CancellationToken cancellationToken,
+        IReadOnlySet<string>? keepAcknowledgedIgnoring = null) =>
         await PublishStampedEnvelopeAsync(
-            messageType, messageId, correlationId, agvId, sessionGeneration, _ => payload, cancellationToken)
+            messageType, messageId, correlationId, agvId, sessionGeneration, _ => payload, cancellationToken,
+            keepAcknowledgedIgnoring)
             .ConfigureAwait(false);
 
     private async Task PublishStampedEnvelopeAsync(
@@ -645,10 +987,12 @@ public sealed class OnboardJourneyPublisher(
         string agvId,
         long sessionGeneration,
         Func<DateTimeOffset, object> payloadFactory,
-        CancellationToken cancellationToken)
+        CancellationToken cancellationToken,
+        IReadOnlySet<string>? keepAcknowledgedIgnoring = null)
     {
         ProtocolOutboxRow stored = await QueueEnvelopeAsync(
-            messageType, messageId, correlationId, agvId, sessionGeneration, payloadFactory, cancellationToken)
+            messageType, messageId, correlationId, agvId, sessionGeneration, payloadFactory, cancellationToken,
+            keepAcknowledgedIgnoring)
             .ConfigureAwait(false);
         if (stored.AcknowledgedAt is null && stored.FencedAt is null)
             await peer.SendAsync(
@@ -667,6 +1011,26 @@ public sealed class OnboardJourneyPublisher(
         QueueEnvelopeAsync(
             messageType, messageId, correlationId, agvId, sessionGeneration, _ => payload, cancellationToken);
 
+    /// <summary>把这一条报文落进发件箱（或认出已经在那里的那一行），返回落着的那一行。</summary>
+    /// <param name="keepAcknowledgedIgnoring">
+    /// <para>
+    /// 给了它、而发件箱里这一行车已经确认过时：候选报文与那一行去掉信封的 <c>sessionGeneration</c>、<c>sentAt</c> 以及
+    /// payload 里这几个字段之后一字不差，就原样返回那一行——不改写、不入队，调用方也就不发（已确认的行本来就不发）。
+    /// 有任何别的不同，照常交给 <see cref="WireToGateStore.QueueOutboundEnvelopeAsync"/>，由它的重放校验按原样拒绝。
+    /// 不给这个参数时行为与之前完全相同。
+    /// </para>
+    /// <para>
+    /// <b>为什么需要它（control-server#331）。</b>到站那一段发布是好几条报文，做完的标志是阶段前移。断线把它打断在中间时，
+    /// 重连后整段从头重跑，而前半段车早已确认。cs#331 起调用方给的忽略集合只有清单的 <c>stationDepartureDeadlineAt</c>：断线那一轮
+    /// 作废了站点离站等待，重连后从此刻重填（ADR-cross-0055），期限会合法地变。control-server#339 起期限变了的清单作为新的一版发出
+    /// （新的号、新的 id），调用方不再忽略任何 payload 字段；参数留着，是因为「只有信封可以不同」本身就要靠它表达。
+    /// </para>
+    /// <para>
+    /// <b>按内容比，不按「确认过」这一件事。</b>判据若只是「已确认」，同一 messageId 下内容真的变了的那一版会被静默吞掉，
+    /// 车永远收不到——持货等单的旅程在断线窗口里进出装货阶段时，车辆业务状态就会这样（修订号与 <c>loadingPhase</c> 都变）。
+    /// 按内容比，那一种照旧被护栏拒，在看板上显示推进失败，而不是悄悄消失。
+    /// </para>
+    /// </param>
     private async Task<ProtocolOutboxRow> QueueEnvelopeAsync(
         string messageType,
         string messageId,
@@ -674,7 +1038,8 @@ public sealed class OnboardJourneyPublisher(
         string agvId,
         long sessionGeneration,
         Func<DateTimeOffset, object> payloadFactory,
-        CancellationToken cancellationToken)
+        CancellationToken cancellationToken,
+        IReadOnlySet<string>? keepAcknowledgedIgnoring = null)
     {
         ArgumentException.ThrowIfNullOrWhiteSpace(messageId);
         ArgumentException.ThrowIfNullOrWhiteSpace(agvId);
@@ -685,8 +1050,57 @@ public sealed class OnboardJourneyPublisher(
         DateTimeOffset sentAt = existing?.CreatedAt ?? timeProvider.GetUtcNow();
         string candidateWire = SerializeWire(
             messageType, messageId, correlationId, agvId, sessionGeneration, sentAt, payloadFactory(sentAt));
+        if (keepAcknowledgedIgnoring is not null &&
+            existing is { AcknowledgedAt: not null } &&
+            string.Equals(existing.MessageType, messageType, StringComparison.Ordinal) &&
+            SaysTheSameIgnoring(existing.PayloadJson, candidateWire, keepAcknowledgedIgnoring))
+        {
+            return existing;
+        }
         return await store.QueueOutboundEnvelopeAsync(
             messageId, messageType, candidateWire, sentAt, cancellationToken).ConfigureAwait(false);
+    }
+
+    /// <summary>
+    /// 两行报文去掉信封的 <c>sessionGeneration</c>、<c>sentAt</c> 与 payload 里 <paramref name="ignoredPayloadFields"/> 之后是否一字不差，
+    /// 且候选的代次不比已存的旧（control-server#331）。其余每一个字段——信封的身份、类型、messageId，payload 里的修订号与每一项——
+    /// 都参与比较。
+    /// </summary>
+    private static bool SaysTheSameIgnoring(
+        string storedWire,
+        string candidateWire,
+        IReadOnlySet<string> ignoredPayloadFields)
+    {
+        // 代次不许倒退：比较里去掉代次，是为了放过「重连后同一件事在新的一代再说一次」，不是放过一次发进旧一代的重发——
+        // 那是重放校验本来就拒的形状，这里不替它开口子。代次相同是允许的：会话掉到未就绪、没有换代就回来时，离站等待
+        // 一样被作废重填（ADR-cross-0055），期限变了而代次没变。
+        if (Generation(candidateWire) < Generation(storedWire))
+        {
+            return false;
+        }
+        return JsonNode.DeepEquals(Stripped(storedWire), Stripped(candidateWire));
+
+        static long Generation(string wire)
+        {
+            using JsonDocument document = JsonDocument.Parse(wire);
+            return document.RootElement.GetProperty("sessionGeneration").GetInt64();
+        }
+
+        JsonObject Stripped(string wire)
+        {
+            JsonObject envelope = JsonNode.Parse(wire)?.AsObject()
+                ?? throw new InvalidDataException("Outbound envelope is empty.");
+            envelope.Remove("sessionGeneration");
+            envelope.Remove("sentAt");
+            if (envelope["payload"] is JsonObject payload)
+            {
+                foreach (string field in ignoredPayloadFields)
+                {
+                    payload.Remove(field);
+                }
+            }
+            return envelope;
+        }
     }
 
     /// <summary>
@@ -734,6 +1148,7 @@ public sealed class OnboardJourneyPublisher(
         SlotOperationCommand command,
         string? admissionStationId,
         string? admissionTaskType,
+        bool send,
         CancellationToken cancellationToken)
     {
         ArgumentException.ThrowIfNullOrWhiteSpace(messageId);
@@ -761,7 +1176,7 @@ public sealed class OnboardJourneyPublisher(
             messageId,
             candidateWire,
             cancellationToken).ConfigureAwait(false);
-        if (stored.AcknowledgedAt is not null)
+        if (!send || stored.AcknowledgedAt is not null)
         {
             return;
         }

@@ -51,9 +51,26 @@
 #
 # Batch 6 (control-server#164): the journey runner claims FP-IS-10 and FP-IS-11, one scenario each, nine
 # assertions each. docs/g3-slice-claim-review.md has their rows, each against the vector's productAssertions
-# entry it answers. One onboard entry is deliberately answered by nothing: CV-TASK-TYPE-ADMISSION-FAIL-CLOSED's
-# DISPLAY_ADMISSION_BLOCK_REASON, which specification 5.3 cancelled (the reason stays on the server and the
-# dashboard, so v2 has no producer for it); registered as program#125.
+# entry it answers. CV-TASK-TYPE-ADMISSION-FAIL-CLOSED used to carry one onboard entry answered by nothing,
+# DISPLAY_ADMISSION_BLOCK_REASON, which specification 5.3 cancelled; protocol 3.0.0 deleted it from the vector
+# (program#125, control-server#382), so every entry is answered.
+#
+# Batch 7 (control-server#218): the journey runner claims FP-IS-08, one scenario (g3-multi-stop-plan), seven
+# assertions, one en-route append that grows the plan from two legs to three, run to completion on the real
+# onboard. All five productAssertions entries of CV-MULTI-STOP-PLAN-NINE-LEGS are answered; the "nine" of
+# UP_TO_NINE_LEGS_PLANNED is proved by the two G2s, not here (docs/g3-slice-claim-review.md says so in its row).
+# The vector covers plan legs only: several worklist items, cargo holding and station yield have no vector, and
+# the real-rig scenario real-onboard-mixed-side-one-stop that exercises them is in no runner and claims no slice.
+#
+# Batch 8 (control-server#390): the journey runner claims FP-IS-12, one scenario (g3-waiting-point-idle-return),
+# seven assertions. It answers CV-WAITING-POINT-IDLE-RETURN on the real onboard and guards the two cross-ticket
+# contracts with onboard-hmi#217 (docs/g3-slice-claim-review.md has the rows).
+#
+# Batch 9 (control-server#405): the journey runner claims FP-IS-13 for CV-AUTOMATIC-CHARGING-CYCLE, one scenario
+# (g3-automatic-charging-cycle), seven assertions. The exit ticket control-server#412 added CV-MANUAL-STATION-CLEARANCE
+# (g3-manual-station-clearance, four) and CV-UNABLE-TO-CHARGE-FIELD-CONFIRMATION (g3-unable-to-charge-field-confirmation,
+# seven), the scenarios control-server#406 and #410 wrote. CV-MANUAL-CHARGING-RETURN stays asserted under FP-IS-07's names
+# until FP-IS-13 claims it under its own (review item 29); the exit changes no existing scenario, so it did not.
 #
 # ---------------------------------------------------------------------------------------------
 # The ruling, 2026-09-09 (ticket 23, the user's decision -- recorded here rather than only in a
@@ -154,9 +171,11 @@ function Get-G3RunnerClaim {
                     # docs/defects/20260919-staged-g3-second-forced-submission-predates-cs187.md.
                     'secondForcedRecoveryWhileFirstUnsettledIsRejected',
                     'recoveryNeverReportsFalseCompletion')
-                # Weaker than the vectors in two places (review items 11-12): the conflict pair asserts
-                # the connection closed, not the MESSAGE_ID_CONTENT_CONFLICT problem; delay and reorder
-                # have no vector of their own in this slice.
+                # Delay and reorder have no vector of their own in this slice (review item 12). The conflict
+                # pair used to be weaker too (item 11): it asserted the connection closed rather than the
+                # vector's MESSAGE_ID_CONTENT_CONFLICT problem. Since control-server#541 it asserts the
+                # ProtocolProblem, the conflicting retry never applied (read from the inbox) and the
+                # connection still served, as CV-RELIABLE-RETRY-DIFFERENT-CONTENT asks.
                 'FP-IS-06' = @(
                     'sameConnectionSameMessageIdSameContent',
                     'sameMessageIdDifferentContentStableConflict',
@@ -288,7 +307,7 @@ function Get-G3RunnerClaim {
                 'FP-IS-05' = @(
                     'resultFromASupersededSessionGenerationIsRefused',
                     'acceptedDemandSurvivesTheHostRestart',
-                    'vehicleDispatchLeaseSurvivesTheHostRestart',
+                    'vehicleClaimRecordSurvivesTheHostRestart',
                     'restartedHostServesTheSameStore')
                 # CV-RELIABLE-RETRY-SAME-CONTENT and CV-RELIABLE-RETRY-DIFFERENT-CONTENT on an
                 # OperationResult; moved from FP-IS-04 (items 20, 21).
@@ -437,12 +456,25 @@ function Get-G3RunnerClaim {
                     'manualChargingReturnSequenceMatchesVector',
                     'manualChargingReturnRequiresVerifiedAdministrator',
                     'eligibilityReevaluatedAfterReturn',
-                    'manualChargingReturnHasNoSideEffects')
+                    'manualChargingReturnHasNoSideEffects',
+                    # CV-SLOT-FAULT-DECLARATION-NOT-APPLICABLE and -APPLIED (protocol 3.0.0, control-server#383): one
+                    # demand, refused at the pickup after a replay, applied at the gate. The server halves are the first
+                    # and last three of each group; the onboard halves are the refusal, the UNKNOWN report and no unlock.
+                    'slotFaultDeclarationNotApplicableSequenceMatchesVector',
+                    'slotFaultDeclaredOnlyOnOverdueSlot',
+                    'operationSettledNormallyWhileDeclarationPending',
+                    'settledAttemptAnswersDeclarationNotApplicable',
+                    'refusedDeclarationWithdrawnWithoutBusinessChange',
+                    'slotFaultDeclarationAppliedSequenceMatchesVector',
+                    'declaredSlotReportedUnknownLaterSlotsNotStarted',
+                    'journeyBlockedOnDeclaredUnknown',
+                    'declarationAndVehicleResultAudited',
+                    'neverUnlockAfterDeclarationApplied')
                 # CV-TASK-TYPE-ADMISSION-FAIL-CLOSED (batch 6, control-server#164): under the factory preset
                 # STAGING_TO_WIRE has no binding, so its demand is never admitted while a WIRE_TO_GATE demand in
                 # the same rounds runs to completion. The onboard half is NEVER_INFER_UNBOUND_TASK_TYPE, read
-                # through UI Automation. DISPLAY_ADMISSION_BLOCK_REASON is deliberately unclaimed: specification
-                # 5.3 keeps the reason on the server and the dashboard, so no v2 producer exists (program#125).
+                # through UI Automation. DISPLAY_ADMISSION_BLOCK_REASON is gone: protocol 3.0.0 deleted it from the
+                # vector (program#125, control-server#382), as specification 5.3 keeps the reason on the server.
                 'FP-IS-10' = @(
                     'unboundTaskTypeDemandNeverAccepted',
                     'unboundTaskTypeNeverPlannedListedOrOrdered',
@@ -469,6 +501,69 @@ function Get-G3RunnerClaim {
                     'originAndDestinationNeverSwapped',
                     'admissionFrozenOnTheUnload',
                     'reversedJourneyFinalStateNoDuplicateCommit')
+                # CV-MULTI-STOP-PLAN-NINE-LEGS (batch 7, control-server#218): a second demand appended en route
+                # grows the plan from two legs to three. Server halves: CATEGORISE_EVERY_STOP_PURPOSE and the
+                # contiguous sequence (every revision), PLAN_UP_TO_NINE_LEGS (the appended revision moves on and has
+                # three or more legs -- nine is the two G2s' to prove), ORDER_LEGS_BY_SEQUENCE (the legs array as the
+                # wire carries it, unsorted). Onboard halves, DISPLAY_FULL_JOURNEY_PLAN and NEVER_REORDER_LEGS_LOCALLY,
+                # read through UI Automation (JourneyPlanLegs) once each revision is acknowledged; the stations are
+                # chosen so that ordering them by station number would differ from the sequence.
+                'FP-IS-08' = @(
+                    'everyPlanRevisionSequencedFromOneWithAPurposePerLeg',
+                    'appendedPlanAdvancesRevisionWithAtLeastThreeLegs',
+                    'planLegsSentInSequenceOrder',
+                    'multiStopSequenceMatchesVector',
+                    'onboardShowsTheDispatchPlanInSequenceOrder',
+                    'onboardShowsTheAppendedPlanInSequenceOrder',
+                    'multiStopJourneyEachDemandLoadedAndUnloadedOnce')
+                # CV-WAITING-POINT-IDLE-RETURN (batch 8, control-server#390; onboard half onboard-hmi#217): an idle
+                # return to waiting point 214 after an unload, converged there, then taken away by the next demand.
+                # Server halves: the vector's message order (plan before business state), convergence (reserve ->
+                # occupy, purpose released) and release on departure evidence. Onboard half,
+                # TREAT_WAITING_POINT_AS_NON_BUSINESS_STOP, read through UI Automation (IdleReturnStatus). The two
+                # cross-ticket contracts are G3-12-03 and G3-12-04; G3-12-05 is the entry that follows.
+                'FP-IS-12' = @(
+                    'idleReturnPlanBeforeBusinessStateBothAcknowledged',
+                    'onboardShowsEnRouteToWaitingPoint',
+                    'convergedWithArrivedLegAndIdleReturnWithdrawn',
+                    'nextJourneyPlanReplacesTheWaitingPointLeg',
+                    'pickupEntryOpensAfterIdleReturnAndPointReleasedOnDeparture',
+                    'idleReturnJourneyFinalStateNoDuplicateCommit',
+                    'onboardNeverLoadsAtWaitingPoint')
+                # CV-AUTOMATIC-CHARGING-CYCLE (batch 9, control-server#404/#405; onboard half onboard-hmi#220): a vehicle
+                # below its mandatory charge line charges at 211, completes, and leaves on the next demand. Every entry
+                # answers one item of the vector: orderedExpectedMessages (G3-13-01), CLAIM_VEHICLE_FOR_CHARGING_PURPOSE
+                # (G3-13-02), NEVER_DISPATCH_DURING_CHARGING (G3-13-04), the onboard half NEVER_LOAD_AT_CHARGER (G3-13-03),
+                # finalState and forbiddenSideEffects duplicate-riot-order (G3-13-07); G3-13-05 and G3-13-06 are the
+                # completion and the release on departure (REQ-0281, REQ-0173). Names of its own, never FP-IS-07's: the
+                # manual charging return stays FP-IS-07's claim (review item 29). FP-IS-13's other two vectors are claimed by
+                # the exit ticket control-server#412 under further names in this list.
+                'FP-IS-13' = @(
+                    'chargerPlanBeforeChargingBusinessStateBothAcknowledged',
+                    'chargingPurposeClaimedFromAllocationUntilComplete',
+                    'onboardShowsChargingAndNeverLoadsAtCharger',
+                    'neverDispatchedWhileChargingBelowCompletion',
+                    'completeWithArrivedChargerLegPurposeReleasedChargerKept',
+                    'nextJourneyLeavesChargerAndChargerReleasedOnDeparture',
+                    'chargingCycleFinalStateNoDuplicateOrder',
+                    # CV-MANUAL-STATION-CLEARANCE (control-server#406, onboard half onboard-hmi#221), registered by
+                    # control-server#412: RELEASE_STATION_ONLY_ON_CONFIRMED_CLEARANCE (G3-13-14), orderedExpectedMessages
+                    # (G3-13-13), the onboard entry (G3-13-12) and its precondition (G3-13-11).
+                    'unableToChargePausesChargerAndClearingStateAcknowledged',
+                    'onboardShowsUnableToChargeAndClearanceEntry',
+                    'clearanceRequestedAndConfirmedWithStationReleased',
+                    'chargerReleasedOnlyOnConfirmedClearanceNoOrderCommand',
+                    # CV-UNABLE-TO-CHARGE-FIELD-CONFIRMATION (control-server#410, onboard half onboard-hmi#222), registered
+                    # by control-server#412: orderedExpectedMessages (G3-13-23, G3-13-24), DECIDE_CHARGING_POLICY_CENTRALLY
+                    # and RECORD_FIELD_OBSERVATION (G3-13-25), duplicate-riot-order (G3-13-26), the onboard entry and result
+                    # (G3-13-22, G3-13-27) and the no-automatic-confirmation precondition (G3-13-21).
+                    'hangWithoutVerifiedCodeIsNotConfirmedAutomatically',
+                    'onboardShowsUnableToChargeEntryAtCharger',
+                    'fieldConfirmationRequestedAndConfirmedWithManualHold',
+                    'clearingBusinessStateAfterResultAcknowledged',
+                    'fieldConfirmationPausesChargerAndRecordsObservation',
+                    'vehicleHeldInPlaceNoDuplicateOrder',
+                    'onboardKeepsConfirmedResultAfterClearing')
             }
         }
     }
@@ -571,6 +666,289 @@ function Get-G3SliceStatus {
     return 'PASS'
 }
 
+# Why a run's slice results must not count as a formal slice pass whatever its assertions said, or $null.
+#
+# control-server#460. A self-check override (-SelfCheckControlServerCommit, -SelfCheckOnboardCommit) tests a
+# commit that is not the shared binding: the run is a functional check of that commit, not gate evidence. Until
+# #460 only a parameter description said so, and the classification and every gate-result.json of such a run
+# still wrote formalSlicePass true (cs#453's self-check run 20261003T042613339Z, FP-IS-04/05/06), so a quoted
+# self-check result carried nothing that would stop it being read as exit evidence.
+#
+# Read from the run's commits record, every key named *CommitSource. All four runners record where each commit
+# came from there: journey and demand-bearing from their -SelfCheck* parameters, run-staged-g3.ps1 by comparing
+# its commits with its own param defaults, the restart runner (which has no commit parameter) as SHARED_BINDING.
+# Fail-closed twice over:
+#   - on the value: SHARED_BINDING is the only one that leaves the pass alone, so a source some later runner
+#     invents is withheld until this function is taught it, rather than passing because nobody listed it;
+#   - on absence: a record without controlServerCommitSource -- empty, a runner that forgot to record it, or
+#     not a record at all -- says nothing about what ran, so it is withheld as COMMIT_SOURCE_MISSING. Silence
+#     passing was exactly the shape cs#453 found: nothing in the evidence said the run was not the gate.
+# Every reason that applies is written, joined by '; ', SELF_CHECK_OVERRIDE first: a record with an override and an
+# unknown value keeps both, so the unknown one is not lost behind the override.
+function Get-G3FormalSliceWithheldReason {
+    param([Parameter(Mandatory)][AllowNull()]$Commits)
+
+    if ($null -eq $Commits) {
+        throw ('No commits record was given, so the run cannot say whether it tested the shared binding. ' +
+               'A run that cannot say so does not grade its slices.')
+    }
+    $keys = if ($Commits -is [System.Collections.IDictionary]) { @($Commits.Keys) } else {
+        @($Commits.PSObject.Properties.Name)
+    }
+    $reasons = [System.Collections.Generic.List[string]]::new()
+    $overridden = [System.Collections.Generic.List[string]]::new()
+    $unrecognised = [System.Collections.Generic.List[string]]::new()
+    foreach ($key in @($keys | Where-Object { "$_" -like '*CommitSource' })) {
+        $value = "$($Commits.$key)"
+        if ($value -eq 'SHARED_BINDING') { continue }
+        if ($value -eq 'SELF_CHECK_OVERRIDE') { $overridden.Add($key) } else { $unrecognised.Add("$key=$value") }
+    }
+    if ($overridden.Count -ne 0) { $reasons.Add('SELF_CHECK_OVERRIDE') }
+    if ($unrecognised.Count -ne 0) { $reasons.Add("UNRECOGNISED_COMMIT_SOURCE: $($unrecognised -join ', ')") }
+    if ('controlServerCommitSource' -notin $keys) { $reasons.Add('COMMIT_SOURCE_MISSING: controlServerCommitSource') }
+    # control-server#466: what ran, not only which commits it named. Get-G3RunnerProvenance's runnerSource is
+    # COMMITTED_RUNNER or the '; '-joined reasons it found; fail-closed the same two ways as the commit sources.
+    if ('runnerSource' -notin $keys) {
+        $reasons.Add('RUNNER_SOURCE_MISSING')
+    } elseif ("$($Commits.runnerSource)" -cne 'COMMITTED_RUNNER') {
+        foreach ($token in @("$($Commits.runnerSource)" -split '; ')) {
+            if (($token -split ':')[0] -cin (Get-G3RunnerSourceReasons)) { $reasons.Add($token) } else {
+                $reasons.Add("UNRECOGNISED_RUNNER_SOURCE: $token") }
+        }
+    }
+    if ($reasons.Count -eq 0) { return $null }
+    return $reasons -join '; '
+}
+
+# Where each of the four commits a run used came from, as *CommitSource entries for its commits record:
+# SHARED_BINDING when the value equals the shared binding, SELF_CHECK_OVERRIDE when it does not. For
+# run-staged-g3.ps1, whose four bindings are its own param defaults: passing -ControlServerCommit (or any of the
+# other three) on the command line ran another commit, and until control-server#460 nothing in the evidence said
+# so. Recorded, not refused -- running another commit to check it is a legitimate use; it just is not the gate.
+# -ceq: the binding is a lowercase full SHA-1 and must match byte for byte (Get-SharedCommitBinding's rule).
+function Get-G3CommitSources {
+    param(
+        [Parameter(Mandatory)][System.Collections.IDictionary]$Actual,
+        [Parameter(Mandatory)][System.Collections.IDictionary]$Binding
+    )
+
+    $sources = [ordered]@{}
+    foreach ($pair in @(
+            @('ControlServerCommit', 'controlServerCommitSource'),
+            @('OnboardCommit', 'onboardCommitSource'),
+            @('SimulatorCommit', 'simulatorCommitSource'),
+            @('ProtocolCommit', 'protocolCommitSource'))) {
+        if (-not $Binding.Contains($pair[0]) -or -not $Actual.Contains($pair[0])) {
+            throw "Get-G3CommitSources needs $($pair[0]) in both the binding and the values the run used."
+        }
+        $sources[$pair[1]] = if ("$($Actual[$pair[0]])" -ceq "$($Binding[$pair[0]])") { 'SHARED_BINDING' } else {
+            'SELF_CHECK_OVERRIDE' }
+    }
+    return $sources
+}
+
+# control-server#466. Until then SHARED_BINDING meant "equals the param defaults of the run-staged-g3.ps1 on
+# disk", not "equals the binding the repository committed": a locally edited default, run with no parameter,
+# graded four SHARED_BINDING sources and formalSlicePass true, and -SharedRunnerSource pointing at a copy did the
+# same. runnerWorktreeCleanAtStart was recorded but graded nothing, and it measured -ControlServerRepository
+# rather than the repository the runner lives in (the 2026-09-22 formal evidence says false next to a pass).
+#
+# So each runner now reads, before it writes anything:
+#   - the binding from its own repository's HEAD (git cat-file, not the file on disk), which Get-G3CommitSources
+#     compares the commits it actually uses with: an edited default, or a copy with other defaults, is an override;
+#   - runnerSource, one of the reasons below or COMMITTED_RUNNER, which Get-G3FormalSliceWithheldReason grades:
+#       RUNNER_WORKTREE_DIRTY      the runner's repository has changes, untracked files, or files flagged
+#                                  assume-unchanged / skip-worktree (which git status would not show). Untracked
+#                                  files under evidence/ alone are exempt: they are earlier runs' output;
+#       RUNNER_INPUT_OVERRIDE      a path parameter that decides what the run reads -- the shared runner it takes
+#                                  the binding, the harness and its error report from, the file it takes the
+#                                  binding reader from, the repository it reads the slice index and its own
+#                                  identity from -- was given a value other than its default. A copy keeping
+#                                  the defaults but carrying another harness is not visible to the binding check;
+#                                  this is what catches it;
+#       RUNNER_PROVENANCE_UNKNOWN  git could not say: no repository, no HEAD, a failed status, or a binding that
+#                                  does not read back out of HEAD.
+# Recorded, not refused: a self-check from a dirty tree or a copy still runs, it just is not gate evidence. An
+# exit ticket moving the binding edits the defaults, commits, and runs: HEAD then carries the new binding, the
+# tree is clean, and the run grades as before.
+function Get-G3RunnerSourceReasons {
+    return @('RUNNER_WORKTREE_DIRTY', 'RUNNER_INPUT_OVERRIDE', 'RUNNER_PROVENANCE_UNKNOWN')
+}
+
+# git's stdout as UTF-8 bytes, not through the console code page: the blob read back carries Chinese comments,
+# and a mis-decoded one is a parse error that would read as "no binding".
+function Invoke-G3Git {
+    param(
+        [Parameter(Mandatory)][string]$Repository,
+        [Parameter(Mandatory)][string[]]$Arguments
+    )
+
+    $start = [System.Diagnostics.ProcessStartInfo]::new('git')
+    $start.ArgumentList.Add('-C')
+    $start.ArgumentList.Add($Repository)
+    foreach ($argument in $Arguments) { $start.ArgumentList.Add($argument) }
+    $start.RedirectStandardOutput = $true
+    $start.RedirectStandardError = $true
+    $start.UseShellExecute = $false
+    $start.StandardOutputEncoding = [System.Text.UTF8Encoding]::new($false)
+    $process = [System.Diagnostics.Process]::Start($start)
+    $errorRead = $process.StandardError.ReadToEndAsync()
+    $output = $process.StandardOutput.ReadToEnd()
+    $process.WaitForExit()
+    if ($process.ExitCode -ne 0) {
+        throw "git $($Arguments -join ' ') exited with $($process.ExitCode): $($errorRead.Result.Trim())"
+    }
+    return $output
+}
+
+# The four commits out of a run-staged-g3.ps1 text, under Get-SharedCommitBinding's rules (one parameter each, a
+# literal lowercase full SHA-1). Separate from it because that one reads a path, and the reader a runner uses can
+# come from -CommitBindingFunctionSource; this one is only ever this file's.
+function ConvertFrom-G3CommitBindingText {
+    param([Parameter(Mandatory)][string]$Text)
+
+    $parseErrors = $null
+    $ast = [System.Management.Automation.Language.Parser]::ParseInput($Text, [ref]$null, [ref]$parseErrors)
+    if ($null -ne $parseErrors -and $parseErrors.Count -gt 0) { throw 'the binding at HEAD does not parse' }
+    if ($null -eq $ast.ParamBlock) { throw 'the binding at HEAD has no param block' }
+    $binding = [ordered]@{}
+    foreach ($name in @('ControlServerCommit', 'OnboardCommit', 'SimulatorCommit', 'ProtocolCommit')) {
+        $candidates = @($ast.ParamBlock.Parameters | Where-Object { $_.Name.VariablePath.UserPath -eq $name })
+        if ($candidates.Count -ne 1 -or
+            $candidates[0].DefaultValue -isnot [System.Management.Automation.Language.StringConstantExpressionAst] -or
+            $candidates[0].DefaultValue.Value -cnotmatch '^[0-9a-f]{40}$') {
+            throw "the binding at HEAD has no single literal lowercase full SHA-1 for `$$name"
+        }
+        $binding[$name] = $candidates[0].DefaultValue.Value
+    }
+    return $binding
+}
+
+# The repository's git status entries that make it dirty: every "XY path" entry of porcelain v1 (untracked files listed
+# one by one) except the one exemption, an untracked file under evidence/. Get-G3RunnerProvenance and run-staged-g3.ps1's
+# harnessWorktreeCleanAtStart both read it (control-server#567: the harness measured plain status, so every staged run
+# after the first in an exit recorded harness dirty beside a clean runner).
+function Get-G3DirtyStatusEntries {
+    param([Parameter(Mandatory)][string]$Repository)
+
+    # -z: one NUL-terminated "XY path" entry per path, unquoted, relative to the top level; a rename or copy is
+    # followed by its source path as an entry of its own.
+    $entries = @((Invoke-G3Git -Repository $Repository -Arguments 'status', '--porcelain=v1', '-z', '--untracked-files=all') -split "`0" |
+            Where-Object { $_ -ne '' })
+    $status = [System.Collections.Generic.List[string]]::new()
+    for ($i = 0; $i -lt $entries.Count; $i++) {
+        $entry = $entries[$i]
+        if ($entry.Length -ge 2 -and $entry.Substring(0, 2) -match '[RC]') { $i++ }
+        # The one exemption (review M1 of PR #470): an untracked file under evidence/. An exit runs several runners
+        # in a row, and each run's evidence lands there untracked, so without it every run after the first was
+        # dirty -- four of the seven formal runs of the last two exits. No runner executes anything under
+        # evidence/, and a runner copy put there and pointed at is RUNNER_INPUT_OVERRIDE anyway. A change to a
+        # tracked file under evidence/, and an untracked file anywhere else, stay dirty.
+        if ($entry.StartsWith('?? evidence/', [StringComparison]::Ordinal)) { continue }
+        $status.Add($entry)
+    }
+    return , $status.ToArray()
+}
+
+# -ScriptRoot is the runner's $PSScriptRoot: the repository measured is the one the runner script lives in, never
+# a parameter. -Inputs names each path parameter that decides what the run reads, with the value the run got and
+# its default (Test-G3EvidenceHonesty pins those defaults to the param block's own). Call it before the run writes
+# anything: an EvidenceRoot or StageRoot inside the repository would otherwise make every run dirty -- or, measured
+# late, hide nothing, since a dirty tree must be seen before the run's own output joins it.
+function Get-G3RunnerProvenance {
+    param(
+        [Parameter(Mandatory)][string]$ScriptRoot,
+        [System.Collections.IDictionary]$Inputs = [ordered]@{}
+    )
+
+    $reasons = [System.Collections.Generic.List[string]]::new()
+    $repository = $null
+    $commit = $null
+    $clean = $null
+    $binding = $null
+    $dirtyPaths = @()
+    try {
+        $repository = [IO.Path]::GetFullPath((Invoke-G3Git -Repository $ScriptRoot -Arguments 'rev-parse', '--show-toplevel').Trim())
+        $commit = (Invoke-G3Git -Repository $repository -Arguments 'rev-parse', 'HEAD').Trim()
+        if ($commit -cnotmatch '^[0-9a-f]{40}$') { throw "HEAD is not a full SHA-1: $commit" }
+        $status = Get-G3DirtyStatusEntries -Repository $repository
+        # ls-files -v tags an assume-unchanged file in lowercase and a skip-worktree file as S: status skips both.
+        $hidden = @((Invoke-G3Git -Repository $repository -Arguments 'ls-files', '-v') -split "`n" |
+                Where-Object { $_ -cmatch '^([a-z]|S) ' })
+        $clean = $status.Count -eq 0 -and $hidden.Count -eq 0
+        $dirtyPaths = @(@($status) + @($hidden) | Select-Object -First 10)
+        $relative = [IO.Path]::GetRelativePath($repository, (Join-Path $ScriptRoot 'run-staged-g3.ps1')).Replace('\', '/')
+        $binding = ConvertFrom-G3CommitBindingText -Text (Invoke-G3Git -Repository $repository -Arguments 'cat-file', 'blob', "HEAD:$relative")
+    } catch {
+        $clean = $null
+        $binding = $null
+        # '; ' joins the reasons; keep the message from splitting one, and on one line (git's own messages, such as
+        # an unborn HEAD's, run to several).
+        $reasons.Add("RUNNER_PROVENANCE_UNKNOWN: $(($_.Exception.Message.Replace(';', ',') -replace '\s*\r?\n\s*', ' ').Trim())")
+    }
+    if ($clean -eq $false) { $reasons.Insert(0, 'RUNNER_WORKTREE_DIRTY') }
+
+    $overridden = [System.Collections.Generic.List[string]]::new()
+    foreach ($name in $Inputs.Keys) {
+        $given = $Inputs[$name].Given
+        $default = $Inputs[$name].Default
+        $resolve = { param($path) $ExecutionContext.SessionState.Path.GetUnresolvedProviderPathFromPSPath($path).TrimEnd('\', '/') }
+        if ([string]::IsNullOrEmpty($given) -or [string]::IsNullOrEmpty($default) -or
+            (& $resolve $given) -ne (& $resolve $default)) { $overridden.Add($name) }
+    }
+    if ($overridden.Count -ne 0) {
+        $reasons.Insert([int]($clean -eq $false), "RUNNER_INPUT_OVERRIDE: $($overridden -join ', ')")
+    }
+
+    return [ordered]@{
+        runnerRepository = $repository
+        runnerCommit = $commit
+        runnerWorktreeClean = $clean
+        bindingAtHead = $binding
+        runnerSource = if ($reasons.Count -eq 0) { 'COMMITTED_RUNNER' } else { $reasons -join '; ' }
+        # The first ten of what made it dirty, for Write-G3RunnerProvenance; not part of the record.
+        runnerDirtyPaths = $dirtyPaths
+    }
+}
+
+# Printed by each runner directly after Get-G3RunnerProvenance (review S2 of PR #470): a journey run takes some
+# 25 minutes, and an operator who learns only from the gate results that it was never going to count has lost
+# them. One line when the run can be a formal pass, a loud block when it cannot.
+function Write-G3RunnerProvenance {
+    param([Parameter(Mandatory)][System.Collections.IDictionary]$Provenance)
+
+    if ($Provenance.runnerSource -ceq 'COMMITTED_RUNNER') {
+        Write-Host "G3 runner source: COMMITTED_RUNNER ($($Provenance.runnerCommit))"
+        return
+    }
+    Write-Host ('=' * 100) -ForegroundColor Yellow
+    Write-Host 'G3 RUNNER SOURCE IS NOT COMMITTED_RUNNER: this run grades no slice as a formal pass.' -ForegroundColor Yellow
+    foreach ($reason in @("$($Provenance.runnerSource)" -split '; ')) { Write-Host "  $reason" -ForegroundColor Yellow }
+    foreach ($path in @($Provenance.runnerDirtyPaths)) { Write-Host "    $path" -ForegroundColor Yellow }
+    Write-Host ('=' * 100) -ForegroundColor Yellow
+}
+
+# The one place a slice's formalSlicePass is decided, for New-G3Classification and Write-G3GateResult alike:
+# the slice's own status, the run's assurance level (the 2026-09-09 ruling above), and whether the run tested
+# the shared binding at all (control-server#460). status is left as measured: a self-check's assertions still
+# say what they observed, and only the claim that this counts as the slice passing is withheld.
+function Get-G3FormalSlicePass {
+    param(
+        [Parameter(Mandatory)][string]$RunKind,
+        [Parameter(Mandatory)][string]$SliceStatus,
+        [Parameter(Mandatory)][AllowNull()]$Commits
+    )
+
+    $claim = Get-G3RunnerClaim -RunKind $RunKind
+    $withheld = Get-G3FormalSliceWithheldReason -Commits $Commits
+    return [ordered]@{
+        formalSlicePass = ($SliceStatus -eq 'PASS') -and
+            ($claim.assuranceLevel -in (Get-G3AssuranceLevelsThatCountAsSlicePass)) -and
+            ($null -eq $withheld)
+        formalSliceWithheldReason = $withheld
+    }
+}
+
 # Replaces the literal classification block the three runners used to carry. officialSlices is now
 # computed from the claim and the assertion results; formalSlicePass from the ruling above.
 function New-G3Classification {
@@ -578,23 +956,26 @@ function New-G3Classification {
         [Parameter(Mandatory)][string]$RunKind,
         [Parameter(Mandatory)][string]$RunStatus,
         [Parameter(Mandatory)]$AssertionReport,
+        # The run's commits record, the same one its gate results carry: Get-G3FormalSlicePass reads its
+        # *CommitSource entries. Mandatory so that a runner cannot grade slices without saying what it ran.
+        [Parameter(Mandatory)][AllowNull()]$Commits,
         [switch]$RunnerErrored
     )
 
     $claim = Get-G3RunnerClaim -RunKind $RunKind
-    $counting = Get-G3AssuranceLevelsThatCountAsSlicePass
     $official = [System.Collections.Generic.List[object]]::new()
     $allPass = $true
     foreach ($slice in $claim.slices.Keys) {
         $sliceStatus = Get-G3SliceStatus -RunKind $RunKind -Slice $slice `
             -AssertionReport $AssertionReport -RunnerErrored:$RunnerErrored
-        $formal = ($sliceStatus -eq 'PASS') -and ($claim.assuranceLevel -in $counting)
-        if (-not $formal) { $allPass = $false }
+        $formal = Get-G3FormalSlicePass -RunKind $RunKind -SliceStatus $sliceStatus -Commits $Commits
+        if (-not $formal.formalSlicePass) { $allPass = $false }
         $official.Add([ordered]@{
             integrationSliceId = $slice
             status = $sliceStatus
             assuranceLevel = $claim.assuranceLevel
-            formalSlicePass = $formal
+            formalSlicePass = $formal.formalSlicePass
+            formalSliceWithheldReason = $formal.formalSliceWithheldReason
         })
     }
 
@@ -602,6 +983,7 @@ function New-G3Classification {
         runStatus = $RunStatus
         assuranceLevel = $claim.assuranceLevel
         formalSlicePass = $allPass
+        formalSliceWithheldReason = Get-G3FormalSliceWithheldReason -Commits $Commits
         officialSlices = @($official)
         slicesWithoutSurfaceThisBatch = @((Get-G3SlicesWithoutSurfaceThisBatch).Keys)
         # Unchanged, and still literal on purpose: one runner covering its own slices says nothing
@@ -615,7 +997,8 @@ function New-G3Classification {
 # already write one per slice. schemaVersion 1.3.0 -- 1.2.0 was additive over the 1.1.0 both G2
 # harnesses emit, and 1.3.0 is additive again (ticket 24's optional fieldStoreProvenance), so a
 # 1.1.0 reader still parses it, but a reader that cannot tell the shapes apart cannot tell a graded
-# G3 result from an ungraded G2 one either.
+# G3 result from an ungraded G2 one either. 1.4.0 adds formalSliceWithheldReason (control-server#460),
+# additive again; what changed in meaning is that formalSlicePass is now false for a self-check override.
 function Write-G3GateResult {
     param(
         [Parameter(Mandatory)][string]$RunKind,
@@ -634,17 +1017,19 @@ function Write-G3GateResult {
     $sliceReport = Get-G3SliceAssertionReport -RunKind $RunKind -Slice $Slice -AssertionReport $AssertionReport
     $status = Get-G3SliceStatus -RunKind $RunKind -Slice $Slice `
         -AssertionReport $AssertionReport -RunnerErrored:$RunnerErrored
-    $counting = Get-G3AssuranceLevelsThatCountAsSlicePass
+    $formal = Get-G3FormalSlicePass -RunKind $RunKind -SliceStatus $status -Commits $Context['commits']
 
     $result = [ordered]@{
-        schemaVersion = '1.3.0'
+        schemaVersion = '1.4.0'
         gate = 'G3'
         runKind = $RunKind
         runId = $Context['runId']
         integrationSliceId = $Slice
         status = $status
         assuranceLevel = $claim.assuranceLevel
-        formalSlicePass = ($status -eq 'PASS') -and ($claim.assuranceLevel -in $counting)
+        formalSlicePass = $formal.formalSlicePass
+        # control-server#460: why formalSlicePass is false although status may say PASS, or null.
+        formalSliceWithheldReason = $formal.formalSliceWithheldReason
         startedAt = $Context['startedAt']
         finishedAt = ([DateTimeOffset]::UtcNow).ToString('O')
         implementationRepository = '8005-agv-control-server'

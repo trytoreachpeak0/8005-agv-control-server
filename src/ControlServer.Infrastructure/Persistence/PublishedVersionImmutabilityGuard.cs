@@ -68,6 +68,16 @@ internal static class PublishedVersionImmutabilityGuard
             or TaskTypeStationBindingSetVersionRow or TaskTypeStationBindingRow or TaskTypeStationRequirementRow => true,
         // 每区派车参数同样没有草稿态（REQ-0198、REQ-0203；control-server#206）：版本行与分区行写入即发布，换参数是写一个新版本。
         DispatchZoneParameterVersionRow or DispatchZoneParameterRow => true,
+        // 等待点登记同样没有草稿态（REQ-0289、REQ-0297；control-server#386）：版本行、等待点行与白名单行写入即发布。
+        WaitingPointVersionRow or WaitingPointRow or WaitingPointVehicleScopeRow => true,
+        // 充电桩名册与充电策略同样没有草稿态（REQ-0171、REQ-0282；control-server#399）：版本行与子行写入即发布；策略的批准与激活
+        // 只追加，换生效版本是再激活一次。
+        ChargerRosterVersionRow or ChargerRosterEntryRow or ChargerRosterVehicleScopeRow
+            or ChargingPolicyVersionRow or ChargingPolicyVehicleScopeRow
+            or ChargingPolicyApprovalRow or ChargingPolicyActivationRow => true,
+        // 桩与车的充电暂停是不可变事件（REQ-0177）：暂停行与恢复行都只追加，恢复是另起一行，不是改暂停行。
+        ChargingStationAllocationHoldRow or ChargingStationRecoveryRow
+            or VehicleChargingEligibilityHoldRow or VehicleChargingEligibilityRecoveryRow => true,
         _ => false,
     };
 

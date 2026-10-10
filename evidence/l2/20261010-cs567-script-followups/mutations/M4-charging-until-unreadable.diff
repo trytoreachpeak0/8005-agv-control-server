@@ -1,0 +1,13 @@
+diff --git a/scripts/l2/scenarios/g3-automatic-charging-cycle.ps1 b/scripts/l2/scenarios/g3-automatic-charging-cycle.ps1
+index ec7db044b..b79c4ec26 100644
+--- a/scripts/l2/scenarios/g3-automatic-charging-cycle.ps1
++++ b/scripts/l2/scenarios/g3-automatic-charging-cycle.ps1
+@@ -175,7 +175,7 @@ $heldReading = Wait-L2ConditionOrLast -Description 'the HMI opened entry at the
+         [pscustomobject]@{ Readable = $reading.Readable; Status = $reading.Value; Shown = Format-L2UiaReading $reading
+             CanSubmit = [bool]$onboard.CanSubmit() }
+     } `
+-    -Until { param($v) $v.CanSubmit }
++    -Until { param($v) -not $v.Readable -or $v.CanSubmit }
+ # Invoke-L2Query returns its rows whole: assign, do not wrap.
+ $operationsAtCharger = Invoke-L2Query -Connection $connection -Sql 'SELECT SlotOperationAttemptId, OperationType FROM StationOperations'
+ $assertions.Add(

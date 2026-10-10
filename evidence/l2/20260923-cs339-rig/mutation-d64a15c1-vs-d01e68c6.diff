@@ -1,0 +1,22 @@
+diff --git a/src/ControlServer.Host/Runtime/JourneyRuntimeEngine.cs b/src/ControlServer.Host/Runtime/JourneyRuntimeEngine.cs
+index 23332095..47b6aea9 100644
+--- a/src/ControlServer.Host/Runtime/JourneyRuntimeEngine.cs
++++ b/src/ControlServer.Host/Runtime/JourneyRuntimeEngine.cs
+@@ -2016,7 +2016,7 @@ public sealed partial class JourneyRuntimeEngine(
+             session,
+             StationDepartureDeadline(runtime, runtimeOptions.StationDepartureWaitTimeout),
+             cancellationToken,
+-            keepAcknowledgedIgnoring: NothingButTheEnvelope).ConfigureAwait(false);
++            keepAcknowledgedIgnoring: new HashSet<string>(["stationDepartureDeadlineAt"], StringComparer.Ordinal)).ConfigureAwait(false);
+         await RetireSupersededSnapshotAsync(PickupDispatchPlanMessageId(runtime), cancellationToken)
+             .ConfigureAwait(false);
+         // 车在路上收到的那张重发版（途中追加整体重发，号按「还没到站」算）同样被到站这一版取代（批次7-07 审查）。
+@@ -2182,7 +2182,7 @@ public sealed partial class JourneyRuntimeEngine(
+             JsonElement deadline = document.RootElement.GetProperty("payload").GetProperty("stationDepartureDeadlineAt");
+             sent = deadline.ValueKind == JsonValueKind.Null ? null : deadline.GetDateTimeOffset();
+         }
+-        if (sent == StationDepartureDeadline(runtime, runtimeOptions.StationDepartureWaitTimeout))
++        if (queued is not null)
+         {
+             return null;
+         }

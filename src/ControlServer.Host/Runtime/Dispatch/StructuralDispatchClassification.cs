@@ -78,7 +78,12 @@ public sealed record DispatchReasonClassification(
 public static class StructuralDispatchClassification
 {
     private const int AlreadyAccepted = 10;
+    private const int TransportDemandKeySuppressed = 11;
+    private const int TransportDemandKeyAlreadyAccepted = 12;
     private const int FaultBlock = 15;
+    private const int IdleReturnCommitment = 16;
+    private const int ChargingPolicyCommissioning = 17;
+    private const int ChargingStanding = 18;
     private const int WorkTypeScope = 20;
     private const int VehicleTaskType = 25;
     private const int RequiredMesFacts = 30;
@@ -94,12 +99,24 @@ public static class StructuralDispatchClassification
     private const int RouteGraphReachability = 95;
     private const int PreCreateGate = 96;
     private const int SlotCapacity = 100;
+    private const int SublotTaskTypeConflict = 35;
+    private const int EnRouteAppend = 98;
+    private const int LoadingPhaseOpen = 99;
+    private const int FixedStationSingleOccupancy = 99;
 
     private static readonly DispatchReasonClassification[] Rows =
     [
         // ---- AlreadyAcceptedCriterion (10) --------------------------------------------------------------
-        Backlog("DEMAND_ALREADY_ACCEPTED", AlreadyAccepted,
+        Backlog(AlreadyAcceptedCriterion.DemandAlreadyAccepted, AlreadyAccepted,
             "The demand is taken. Not a block at all; the summary clears any block on an accepted demand."),
+
+        // ---- TransportDemandKeySuppressedCriterion (11), TransportDemandKeyAlreadyAcceptedCriterion (12) ------------
+        Backlog(DispatchReasonCodes.TransportDemandKeySuppressed, TransportDemandKeySuppressed,
+            "control-server#210, REQ-0155: the business key was suppressed by a local cancellation, for good. Deliberately " +
+            "not executed rather than a fault: nobody has anything to fix, so never a structural alarm."),
+        Backlog(DispatchReasonCodes.TransportDemandKeyAlreadyAccepted, TransportDemandKeyAlreadyAccepted,
+            "control-server#210: another DemandId of the same business key was already accepted here. The same work is " +
+            "done or under way; not a fault, and refused here so intake never meets the key's unique index."),
 
         // ---- VehicleFaultBlockCriterion (15) ------------------------------------------------------------
         Backlog(VehicleFaultBlockCriterion.SuspectedReason, FaultBlock,
@@ -108,6 +125,31 @@ public static class StructuralDispatchClassification
             "This vehicle's fault state; another vehicle, or releasing the isolation, lets the demand through."),
         Backlog(VehicleFaultBlockCriterion.IdentityUnresolvedReason, FaultBlock,
             "This vehicle's identity; says nothing about the demand."),
+        Backlog(DispatchReasonCodes.VehicleSlotDoorHold, FaultBlock,
+            "control-server#385, REQ-0364: this vehicle is held for an unproven door until its repair release; another " +
+            "vehicle, or this one once released, takes the demand."),
+
+        // ---- IdleReturnCommitmentCriterion (16) ---------------------------------------------------------
+        Backlog(DispatchReasonCodes.VehicleCommittedToIdleReturn, IdleReturnCommitment,
+            "control-server#389, REQ-0292: this vehicle committed to an idle return, which no later transport takes over. " +
+            "Another vehicle, or this one once the return has converged (control-server#390), takes the demand."),
+        // ---- ChargingPolicyCommissioningCriterion (17) --------------------------------------------------
+        Backlog(DispatchReasonCodes.ChargingPolicyNotApproved, ChargingPolicyCommissioning,
+            "control-server#400, REQ-0282: this vehicle has no approved, activated charging policy covering it. The " +
+            "vehicle's side, not the demand's: another vehicle takes it, and activating a policy that covers this one " +
+            "clears it."),
+        Backlog(DispatchReasonCodes.ChargingPolicyEntryNotAboveRescueLine, ChargingPolicyCommissioning,
+            "control-server#403: the policy version in effect puts its mandatory charge entry threshold at or below the rescue " +
+            "line, so it is treated as unusable. The vehicle's side, cleared by activating a version with a higher threshold."),
+
+        // ---- ChargingStandingCriterion (18) -------------------------------------------------------------
+        Backlog(DispatchReasonCodes.VehicleCommittedToCharging, ChargingStanding,
+            "control-server#404, REQ-0290, REQ-0173: this vehicle committed to charging -- it holds the CHARGING purpose and a " +
+            "charger reservation, which no transport takes over. Another vehicle, or this one once it has charged, takes the demand."),
+        Backlog(DispatchReasonCodes.VehicleInManualChargingHold, ChargingStanding,
+            "control-server#404, REQ-0171: this vehicle is on the server's manual charging hold (no charger in the roster for " +
+            "it, or its charging order kept being ended). The vehicle's side: another vehicle takes the demand, and an " +
+            "administrator's return-to-service at the vehicle clears it."),
 
         // ---- WorkTypeScopeCriterion (20) ----------------------------------------------------------------
         Backlog(DispatchReasonCodes.OutOfScopeWorkType, WorkTypeScope,
@@ -126,8 +168,9 @@ public static class StructuralDispatchClassification
             "control-server#160: the task type is held on this Map (operator, catalog change, or an activation of " +
             "unknown outcome). A configured outcome, not a fault; releasing the hold clears it."),
         Backlog(DispatchReasonCodes.TaskTypeNotYetExecutable, WorkTypeScope,
-            "control-server#160: bound, but this build cannot execute the task type yet (batch 10 for the four " +
-            "same-direction ones). A configured outcome, not a fault, so never a structural alarm."),
+            "control-server#160: bound, but this build cannot execute the task type. Unreachable since batch 10 " +
+            "(control-server#545) made all six executable; kept for a build that narrows the set. A configured " +
+            "outcome, not a fault, so never a structural alarm."),
 
         // ---- VehicleTaskTypeAdmissionCriterion (25) -----------------------------------------------------
         Backlog(VehicleTaskTypeAdmissionCriterion.VehicleNotInPolicyReason, VehicleTaskType,
@@ -197,7 +240,11 @@ public static class StructuralDispatchClassification
         Backlog("RIOT_VEHICLE_MAP_MISMATCH", VehicleDynamicFacts, "This vehicle is on another map right now."),
         Backlog("RIOT_VEHICLE_FACT_STALE", VehicleDynamicFacts, "This vehicle's observation is old."),
         Backlog("BATTERY_FACT_UNKNOWN", VehicleDynamicFacts, "This vehicle's battery is not reported."),
-        Backlog("BATTERY_POLICY_NOT_SATISFIED", VehicleDynamicFacts, "This vehicle is charging or low."),
+        Backlog("BATTERY_POLICY_NOT_SATISFIED", VehicleDynamicFacts,
+            "This vehicle is charging, or would not keep the approved post-task battery margin (control-server#403)."),
+        Backlog(DispatchReasonCodes.MandatoryChargeRequired, VehicleDynamicFacts,
+            "control-server#403, REQ-0290: this vehicle is below its mandatory charge entry threshold and belongs to " +
+            "charging, not to new work. The vehicle's side: another vehicle takes the demand."),
         Backlog("RIOT_VEHICLE_NOT_STOPPED", VehicleDynamicFacts, "This vehicle is moving."),
         Backlog("RIOT_VEHICLE_ORDER_OCCUPIED", VehicleDynamicFacts, "This vehicle holds an order."),
 
@@ -250,6 +297,57 @@ public static class StructuralDispatchClassification
         Backlog(DispatchReasonCodes.SlotGroupCapacityTemporarilyUnavailable, SlotCapacity,
             "Too few usable free slots in the group right now, disabled ones included: REQ-0352 says a temporary " +
             "shortfall is not structural."),
+
+        Backlog(DispatchReasonCodes.SlotGroupOccupiedByOwnCargo, SlotCapacity,
+            "control-server#211: this side is full of the vehicle's own reserved or loaded cargo. The vehicle's own " +
+            "position, not the demand's: another vehicle takes it, and this one takes it once it has unloaded."),
+
+        // ---- SublotTaskTypeConflictCriterion (35) -------------------------------------------------------
+        Backlog(DispatchReasonCodes.SublotTaskTypeConflict, SublotTaskTypeConflict,
+            "control-server#211, REQ-0189: one Sublot hit by more than one task type in the same complete MES " +
+            "snapshot. MES's own data contradicting itself, which the next snapshot can fix -- and the thing to " +
+            "look at is MES, not the fleet, which is what a structural alarm would send someone to do."),
+
+        // ---- EnRouteAppendCriterion (98) ----------------------------------------------------------------
+        Backlog(DispatchReasonCodes.EnRouteAppendNotConfigured, EnRouteAppend,
+            "control-server#211, REQ-0198: no per-zone allowance is configured for this zone, so appending to a " +
+            "journey under way is forbidden there. A configured outcome and this vehicle's position both: an idle " +
+            "vehicle takes the demand by the ordinary path."),
+        Backlog(DispatchReasonCodes.EnRouteAppendDelayGateExceeded, EnRouteAppend,
+            "control-server#211, REQ-0198: the added path cost exceeds some demand's zone allowance. This vehicle's " +
+            "plan; another vehicle, or this one after it unloads, may take it."),
+        Backlog(DispatchReasonCodes.EnRouteAppendDelayUncomputable, EnRouteAppend,
+            "control-server#211: a leg's path cost could not be computed. Refused rather than treated as zero; the " +
+            "route graph refreshing can make it computable next round."),
+        Backlog(DispatchReasonCodes.EnRouteAppendBreaksZoneContiguity, EnRouteAppend,
+            "control-server#211, REQ-0195: no insertion point keeps each zone's demands in one contiguous run. This " +
+            "vehicle's current plan; it changes as the vehicle works through it."),
+        Backlog(DispatchReasonCodes.EnRouteAppendPlanLimitReached, EnRouteAppend,
+            "control-server#211: nine legs or eight worklist items would be exceeded. This vehicle's plan, which " +
+            "shrinks as it unloads."),
+        Backlog(DispatchReasonCodes.EnRouteAppendDemandLeftThisJourney, EnRouteAppend,
+            "control-server#215: the demand was released from this very journey and is not appended back to it. This " +
+            "vehicle's current journey; another vehicle, or this one on its next journey, may take it."),
+        Backlog(DispatchReasonCodes.EnRouteAppendNoInsertionPoint, EnRouteAppend,
+            "control-server#211, REQ-0196: the current next stop cannot be changed and nothing sits after it. This " +
+            "vehicle's position in its plan."),
+
+        // ---- LoadingPhaseOpenCriterion (99) -------------------------------------------------------------
+        Backlog(DispatchReasonCodes.LoadingPhaseClosed, LoadingPhaseOpen,
+            "control-server#212, REQ-0354: this vehicle's loading phase has ended -- held past its cargo holding " +
+            "deadline, full and gone from its last pickup, or its plan loaded with appending forbidden. This " +
+            "vehicle's journey only: another vehicle takes the demand, and this one does after it unloads."),
+
+        // ---- FixedStationSingleOccupancyCriterion (99) --------------------------------------------------
+        Backlog(DispatchReasonCodes.FixedTaskStationReservedByOtherVehicle, FixedStationSingleOccupancy,
+            "control-server#391, REQ-0204: the public station this candidate would make the vehicle's next stop is reserved " +
+            "by another vehicle on its way there. Waiting clears it: that vehicle arrives, leaves, and the station is free."),
+        Backlog(DispatchReasonCodes.FixedTaskStationOccupiedByOtherVehicle, FixedStationSingleOccupancy,
+            "control-server#391, REQ-0204: the same, with the other vehicle already standing at the station. Its departure " +
+            "evidence releases it; a vehicle standing there itself is not refused, so the demand is not stranded."),
+        Backlog(DispatchReasonCodes.FixedTaskStationApproachedByOtherVehicle, FixedStationSingleOccupancy,
+            "control-server#391, REQ-0204: no one holds the station yet, but another vehicle has it as its next stop and is " +
+            "waiting for the per-round reservation to give it to it. Its departure evidence frees it in turn."),
 
         // ---- written by the engine after the chain ------------------------------------------------------
         Backlog("FINAL_DYNAMIC_FACTS_NOT_READY", null, "The pre-intake re-read of this vehicle's facts failed."),

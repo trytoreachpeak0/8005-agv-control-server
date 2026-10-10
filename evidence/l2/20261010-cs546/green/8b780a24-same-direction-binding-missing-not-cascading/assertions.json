@@ -1,0 +1,71 @@
+{
+  "schemaVersion": 1,
+  "scenario": "same-direction-binding-missing-not-cascading",
+  "runId": "20261010T110107069Z",
+  "outcome": "PASS",
+  "failureReason": "",
+  "identity": {
+    "rig": "SyntheticOnboard",
+    "stageRoot": "C:\\Users\\szy\\AppData\\Local\\Temp\\l2-20261010T110107069Z",
+    "controlServerCommit": "8b780a24d92e7b141b1c0106a706da1171a13281",
+    "agvId": "AGV-L2-001",
+    "protocolReleaseIdentity": {
+      "repository": "8005-agv-protocol",
+      "releaseVersion": "3.0.0",
+      "tag": "protocol-v3.0.0",
+      "commit": "3f091cb2eae7c58cec54a95dd9389c9180bc7b4c",
+      "protocolVersion": 4,
+      "profileId": "AGV_FULL_PRODUCT",
+      "manifestSha256": "d5e1a53f1fd61f105a890dc0267e1b0a9ac5ea49f713d2cf730b0f554df9db9e",
+      "schemaBundleSha256": "e435b2b14d9ccd60c89f07df909da7626fef056a6b8a2241087557fd7dc3df43",
+      "vectorsSha256": "be849f9749b004296ebd9e7bffa98faf2f8ffa90b63308ca3b210c68e7b8656e",
+      "approvalStatus": "APPROVED_RELEASE"
+    },
+    "vehicleKey": "BROKERX-L2-0001",
+    "batchId": "batch-10"
+  },
+  "assertions": [
+    {
+      "id": "L2-SDBM-01",
+      "description": "WIRE_TO_GATE（已绑定、最后发布）被受理：派车轮已经跑过，排在它前面的四条同向需求已经被判过",
+      "outcome": "PASS",
+      "expected": "AwaitingPickupArrival",
+      "actual": "AwaitingPickupArrival"
+    },
+    {
+      "id": "L2-SDBM-02",
+      "description": "四类都不受理：积压原因都是 TASK_TYPE_BINDING_MISSING，没有受理时刻，没有受理行、旅程、旅程归属、订单意图",
+      "outcome": "PASS",
+      "expected": "DIE_TO_WIRE_STAGING=TASK_TYPE_BINDING_MISSING rows=0; DIE_TO_OVEN=TASK_TYPE_BINDING_MISSING rows=0; WIRE_TO_OPTICAL=TASK_TYPE_BINDING_MISSING rows=0; WIRE_TO_NITROGEN=TASK_TYPE_BINDING_MISSING rows=0",
+      "actual": "DIE_TO_WIRE_STAGING=TASK_TYPE_BINDING_MISSING rows=0; DIE_TO_OVEN=TASK_TYPE_BINDING_MISSING rows=0; WIRE_TO_OPTICAL=TASK_TYPE_BINDING_MISSING rows=0; WIRE_TO_NITROGEN=TASK_TYPE_BINDING_MISSING rows=0"
+    },
+    {
+      "id": "L2-SDBM-03",
+      "description": "/api/dashboard/dispatch-backlog 四条都列出，原因码 TASK_TYPE_BINDING_MISSING 带中文说明",
+      "outcome": "PASS",
+      "expected": "four rows / TASK_TYPE_BINDING_MISSING / Chinese description",
+      "actual": "DIE_TO_WIRE_STAGING: 1 row(s) TASK_TYPE_BINDING_MISSING +zh; DIE_TO_OVEN: 1 row(s) TASK_TYPE_BINDING_MISSING +zh; WIRE_TO_OPTICAL: 1 row(s) TASK_TYPE_BINDING_MISSING +zh; WIRE_TO_NITROGEN: 1 row(s) TASK_TYPE_BINDING_MISSING +zh"
+    },
+    {
+      "id": "L2-SDBM-04",
+      "description": "StructuralDispatchBlocks 没有这四条的行（含已清除的）：缺绑定是配置造成的不投运，不是结构性告警",
+      "outcome": "PASS",
+      "expected": "0",
+      "actual": 0
+    },
+    {
+      "id": "L2-SDBM-05",
+      "description": "WIRE_TO_GATE 在同一次运行内被受理并走完两段：同向四类缺绑定不连带它",
+      "outcome": "PASS",
+      "expected": "Completed / gate leg to 210 / 2 RIoT orders",
+      "actual": "Completed / gate leg to 210 / 2 RIoT orders"
+    },
+    {
+      "id": "L2-SDBM-06",
+      "description": "车空下来之后又转三轮：四条仍不受理，原因仍是 TASK_TYPE_BINDING_MISSING",
+      "outcome": "PASS",
+      "expected": "DIE_TO_WIRE_STAGING=TASK_TYPE_BINDING_MISSING rows=0; DIE_TO_OVEN=TASK_TYPE_BINDING_MISSING rows=0; WIRE_TO_OPTICAL=TASK_TYPE_BINDING_MISSING rows=0; WIRE_TO_NITROGEN=TASK_TYPE_BINDING_MISSING rows=0",
+      "actual": "DIE_TO_WIRE_STAGING=TASK_TYPE_BINDING_MISSING rows=0; DIE_TO_OVEN=TASK_TYPE_BINDING_MISSING rows=0; WIRE_TO_OPTICAL=TASK_TYPE_BINDING_MISSING rows=0; WIRE_TO_NITROGEN=TASK_TYPE_BINDING_MISSING rows=0"
+    }
+  ]
+}

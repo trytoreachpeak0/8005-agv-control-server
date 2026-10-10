@@ -235,14 +235,23 @@ public interface IRiotVehicleEmergencyFacts
 /// way.
 /// </remarks>
 /// <param name="UnfinishedOrderIds">RIoT's <c>orderId</c> of each unfinished order found, for the refusal to name.</param>
+/// <param name="UnfinishedOrderStates">
+/// RIoT's <c>orderState</c> of each of them, from the same listing (control-server#335 review P2). Optional so that a reader that
+/// has none says so: <see cref="StateOf"/> then answers null, which no caller may read as any particular state.
+/// </param>
 public sealed record RiotVehicleOrderObservation(
     string DeviceKey,
     bool? HasUnfinishedOrder,
     IReadOnlyList<string> UnfinishedOrderIds,
-    DateTimeOffset ObservedAt)
+    DateTimeOffset ObservedAt,
+    IReadOnlyDictionary<string, int?>? UnfinishedOrderStates = null)
 {
     /// <summary>Whether RIoT gave a complete answer.</summary>
     public bool IsKnown => HasUnfinishedOrder is not null;
+
+    /// <summary>The listed state of one unfinished order, or null when it was not listed or listed without one.</summary>
+    public int? StateOf(string orderId) =>
+        UnfinishedOrderStates is not null && UnfinishedOrderStates.TryGetValue(orderId, out int? state) ? state : null;
 }
 
 /// <summary>

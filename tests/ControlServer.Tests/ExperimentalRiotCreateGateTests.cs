@@ -621,6 +621,50 @@ public sealed class ExperimentalRiotCreateGateTests
             new StaticAuthorizationSource(null),
             policy);
 
+    /// <summary>
+    /// control-server#375 leaves the experimental path as it was. Its own pre-create audit writes RESULT_UNKNOWN with no attempt
+    /// before it arms; stopped between the two, the intent looks never sent, yet it carries a permit and an audit chain the
+    /// experimental arm alone may continue. A later NotFound does not turn it into an ordinary create.
+    /// </summary>
+    [Fact]
+    public async Task ExperimentalIntentStoppedBeforeItsArmIsNotCreatedByALaterNotFound()
+    {
+        await using SharedDatabase database = await SharedDatabase.CreateAsync();
+        await using ControlServerDbContext context = database.CreateContext();
+        WireToGateStore store = new(context);
+        OrderIntent intent = await AcceptIntentAsync(store);
+        ExperimentalRiotCreateAuthorization authorization = Authorization(intent);
+        await store.PersistExperimentalCreateAuthorizationAsync(authorization, Now, TestContext.Current.CancellationToken);
+        await store.RecordReconciliationAsync(
+            intent.UpperId,
+            new DispatchAuditWrite(
+                RiotDispatchAuditPhase.PreCreateReconciliation,
+                RiotDispatchAuditOutcome.Unknown,
+                Now.AddMilliseconds(1),
+                Receipt: Receipt("RECONCILE", "AbsentAtObservation", resultPresent: false),
+                ExperimentalAuthorizationId: authorization.AuthorizationId,
+                EligibilityBasis: EligibilityBasis),
+            markResultUnknown: true,
+            TestContext.Current.CancellationToken);
+        DelegateGateway gateway = GatewayFor(
+            _ => new RiotOrderObservation(
+                intent.UpperId,
+                RiotOrderObservationKind.NotFound,
+                null,
+                Receipt: Receipt("RECONCILE", "NotFound", httpStatusCode: 404, resultPresent: false)),
+            _ => Observation(intent, RiotOrderObservationKind.Active, "MUST-NOT-CREATE", Receipt("CREATE", "SdkAccepted")));
+
+        MovementDispatchResult result = await Service(store, gateway, new StaticAuthorizationSource(null))
+            .ReconcileOrCreateAsync(intent.UpperId, TestContext.Current.CancellationToken);
+
+        Assert.Equal(MovementDispatchOutcome.ResultUnknown, result.Outcome);
+        Assert.Equal(0, gateway.CreateCount);
+        OrderIntentRow row = await SnapshotAsync(context);
+        Assert.Equal(("RESULT_UNKNOWN", 0, (string?)null), (row.Status, row.CreateAttemptCount, row.CreateAttemptId));
+        Assert.Null((await context.Set<ExperimentalRiotCreateAuthorizationRow>().AsNoTracking()
+            .SingleAsync(TestContext.Current.CancellationToken)).ConsumedAt);
+    }
+
     private static Task<OrderIntentRow> SnapshotAsync(ControlServerDbContext context) =>
         context.OrderIntents.AsNoTracking().SingleAsync(TestContext.Current.CancellationToken);
 
@@ -656,7 +700,7 @@ public sealed class ExperimentalRiotCreateGateTests
             7);
         await store.AcceptWithOrderIntentAsync(
             new AcceptedDemandSnapshot(
-                intent.DemandId,
+                intent.DemandId!,
                 $"SUBLOT-{suffix}|WIRE_TO_GATE",
                 1,
                 $"history-{suffix}",
@@ -679,7 +723,7 @@ public sealed class ExperimentalRiotCreateGateTests
         AuthorizationId: $"AUTH-{intent.DemandId}",
         AuthorizationVersion: 1,
         UpperId: intent.UpperId,
-        DemandId: intent.DemandId,
+        DemandId: intent.DemandId!,
         MovementLegId: intent.MovementLegId,
         AgvLifecycleGeneration: intent.AgvLifecycleGeneration,
         DispatchGeneration: intent.DispatchGeneration,

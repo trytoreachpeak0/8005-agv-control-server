@@ -253,15 +253,15 @@ $assertions.Add(
     "ALL_EMPTY / 0 条逐仓结果 / 0 条进度 / $slotsBefore",
     "$([string]$cancellationResult.Payload.overallOutcome) / $($slotResults.Count) 条逐仓结果 / $progress 条进度 / $slotsAfter")
 
-$workflow = @(Invoke-L2Query -Connection $connection `
-        -Sql "SELECT WorkflowType, State, SlotOperationAttemptId, SlotsJson, ResultMessageId FROM RecoveryWorkflows WHERE WorkflowId = '$cancellationId'")
-$lease = @(Invoke-L2Query -Connection $connection -Sql "SELECT ReleasedAt FROM VehicleDispatchLeases WHERE DemandId = '$demandId'")
+$workflow = Invoke-L2Query -Connection $connection `
+        -Sql "SELECT WorkflowType, State, SlotOperationAttemptId, SlotsJson, ResultMessageId FROM RecoveryWorkflows WHERE WorkflowId = '$cancellationId'"
+$lease = Invoke-L2Query -Connection $connection -Sql "SELECT r.ReleasedAt FROM VehiclePurposeClaimRecords AS r JOIN JourneyDemands AS d ON d.JourneyId = r.JourneyId WHERE d.DemandId = '$demandId' ORDER BY r.AcquiredAt DESC LIMIT 1"
 $releasedAt = if ($lease.Count -eq 1 -and (Test-Present $lease[0].ReleasedAt)) { ConvertTo-Instant $lease[0].ReleasedAt } else { $null }
 $demandStatus = Get-Scalar "SELECT Status AS Value FROM AcceptedDemands WHERE DemandId = '$demandId'"
 $blockReason = Get-Scalar "SELECT BlockReasonCode AS Value FROM JourneyRuntimes WHERE DemandId = '$demandId'"
 $workflowText = if ($workflow.Count -eq 1) {
     "$($workflow[0].WorkflowType) / attempt=$($workflow[0].SlotOperationAttemptId) / $($workflow[0].SlotsJson) / 收下 $($workflow[0].ResultMessageId) / $($workflow[0].State)"
-} else { '(no workflow row)' }
+} else { "($($workflow.Count) workflow rows)" }
 $assertions.Add(
     'G3-02-35',
     '只在收到 ALL_EMPTY 结果之后终结：取消工作流无 attempt、仓集合为空、收下的正是车报的那条结果并已收敛；需求 Cancelled、旅程以 CANCELLED_BY_OPERATOR 收尾，车辆租约的释放时刻不早于服务端收到结果（TERMINATE_ONLY_ON_ALL_EMPTY_RESULT）',
@@ -275,8 +275,8 @@ $assertions.Add(
 
 $operations = Get-Count "SELECT COUNT(*) AS Total FROM StationOperations WHERE DemandId = '$demandId'"
 $commands = Get-Count "SELECT COUNT(*) AS Total FROM ProtocolOutbox WHERE MessageType = 'SlotOperationCommand'"
-$entryRequest = @(Invoke-L2Query -Connection $connection `
-        -Sql "SELECT AcknowledgedAt FROM ProtocolOutbox WHERE MessageId = '$($waiting.SublotRequestMessageId)'")
+$entryRequest = Invoke-L2Query -Connection $connection `
+        -Sql "SELECT AcknowledgedAt FROM ProtocolOutbox WHERE MessageId = '$($waiting.SublotRequestMessageId)'"
 $submissions = Get-Count "SELECT COUNT(*) AS Total FROM ProtocolInbox WHERE MessageType = 'SublotSubmitted'"
 $toGate = Get-Count "SELECT COUNT(*) AS Total FROM OrderIntents WHERE DemandId = '$demandId' AND Purpose = 'TO_GATE'"
 $recoveryRequired = Get-Count "SELECT COUNT(*) AS Total FROM StationOperations WHERE Status = 'RecoveryRequired'"

@@ -49,10 +49,33 @@ public sealed class DemandIntakeService(IMesIngestCatalog catalog, IDemandAccept
         CancellationToken cancellationToken) =>
         AcceptCoreAsync(discovered, orderIntent, journey, finalAdmissionGate, cancellationToken);
 
-    private async Task<DemandIntakeOutcome> AcceptCoreAsync(
+    /// <summary>
+    /// 把一条需求追加进一辆在途车已有的旅程（票面第 3 条，批次7-06，control-server#211）。
+    /// </summary>
+    /// <remarks>
+    /// 与受理走同一道最后一刻的检查：目录重读、决策事实比对、最终准入门。追加与受理在「这条需求还是不是刚才判过的
+    /// 那一条」这件事上没有区别，而一条在最后一刻变了的需求，被追加进一辆已经在跑的车比被派给一辆空闲车更难收回。
+    /// </remarks>
+    public Task<DemandIntakeOutcome> AppendToJourneyAsync(
+        AcceptedDemandSnapshot discovered,
+        JourneyAppendPlan append,
+        Func<CancellationToken, Task<bool>> finalAdmissionGate,
+        CancellationToken cancellationToken) =>
+        AcceptCoreAsync(discovered, orderIntent: null, journey: null, append, finalAdmissionGate, cancellationToken);
+
+    private Task<DemandIntakeOutcome> AcceptCoreAsync(
         AcceptedDemandSnapshot discovered,
         OrderIntent orderIntent,
         JourneyExecutionPlan? journey,
+        Func<CancellationToken, Task<bool>>? finalAdmissionGate,
+        CancellationToken cancellationToken) =>
+        AcceptCoreAsync(discovered, orderIntent, journey, append: null, finalAdmissionGate, cancellationToken);
+
+    private async Task<DemandIntakeOutcome> AcceptCoreAsync(
+        AcceptedDemandSnapshot discovered,
+        OrderIntent? orderIntent,
+        JourneyExecutionPlan? journey,
+        JourneyAppendPlan? append,
         Func<CancellationToken, Task<bool>>? finalAdmissionGate,
         CancellationToken cancellationToken)
     {
@@ -81,16 +104,42 @@ public sealed class DemandIntakeService(IMesIngestCatalog catalog, IDemandAccept
             HistoryEpoch = finalCatalog.HistoryEpoch,
             CatalogRevision = finalCatalog.CatalogRevision
         };
-        if (journey is null)
+        if (append is not null)
         {
-            await store.AcceptWithOrderIntentAsync(accepted, orderIntent, cancellationToken).ConfigureAwait(false);
+            if (store is not IJourneyAppendStore appendStore)
+            {
+                throw new InvalidOperationException("The configured demand store cannot append to a journey.");
+            }
+
+            try
+            {
+                await appendStore.AppendToJourneyAsync(accepted, append, cancellationToken).ConfigureAwait(false);
+            }
+            catch (AreaAssignmentVersionChangedException)
+            {
+                return DemandIntakeOutcome.CandidateChanged;
+            }
+            catch (JourneyPlanFreezeIncompleteException)
+            {
+                return DemandIntakeOutcome.JourneyPlanIncomplete;
+            }
+        }
+        else if (journey is null)
+        {
+            await store.AcceptWithOrderIntentAsync(
+                accepted,
+                orderIntent ?? throw new InvalidOperationException("An acceptance needs its order intent."),
+                cancellationToken).ConfigureAwait(false);
         }
         else if (store is IJourneyAcceptanceStore journeyStore)
         {
             try
             {
-                await journeyStore.AcceptWithOrderIntentAsync(accepted, orderIntent, journey, cancellationToken)
-                    .ConfigureAwait(false);
+                await journeyStore.AcceptWithOrderIntentAsync(
+                    accepted,
+                    orderIntent ?? throw new InvalidOperationException("An acceptance needs its order intent."),
+                    journey,
+                    cancellationToken).ConfigureAwait(false);
             }
             catch (AreaAssignmentVersionChangedException)
             {
@@ -140,7 +189,14 @@ public enum MovementDispatchOutcome
     /// The observation was create-eligible but the operational create-dispatch gate is closed,
     /// so no RIoT mutation was attempted and the intent keeps its create eligibility.
     /// </summary>
-    CreateDispatchDisabled
+    CreateDispatchDisabled,
+
+    /// <summary>
+    /// The intent names an order shape this server cannot build (<c>OrderShapes</c>; the column has no CHECK,
+    /// control-server#399). Refused before the create is armed, so nothing is written: the intent has still never been
+    /// sent, and only this leg waits, under this name as its block reason (control-server#401).
+    /// </summary>
+    UnsupportedOrderShape
 }
 
 /// <summary>
@@ -238,9 +294,12 @@ public sealed class MovementDispatchService
 
         RiotOrderObservation observed = await gateway.ReconcileByUpperIdAsync(upperId, cancellationToken)
             .ConfigureAwait(false);
-        RiotDispatchAuditPhase reconciliationPhase = intent.Status == "PENDING_RECONCILIATION"
-            ? RiotDispatchAuditPhase.PreCreateReconciliation
-            : RiotDispatchAuditPhase.PostCreateReconciliation;
+        // An intent left RESULT_UNKNOWN by reads that answered nothing has still never been sent (control-server#375): what is
+        // read for it is read before its create, and recorded so -- which is also what keeps it eligible.
+        RiotDispatchAuditPhase reconciliationPhase =
+            intent.Status == "PENDING_RECONCILIATION" || intent.NeverSentAfterUnansweredReads
+                ? RiotDispatchAuditPhase.PreCreateReconciliation
+                : RiotDispatchAuditPhase.PostCreateReconciliation;
         return observed.Kind switch
         {
             RiotOrderObservationKind.Active => await ConfirmAsync(
@@ -255,6 +314,14 @@ public sealed class MovementDispatchService
             RiotOrderObservationKind.NotFound when intent.Status == "PENDING_RECONCILIATION" &&
                                                    intent.DispatchAuditVersion == 1 &&
                                                    intent.CreateAttemptCount == 0 =>
+                await CreateAfterConfirmedAbsenceAsync(intent.Intent, observed, cancellationToken)
+                    .ConfigureAwait(false),
+            // control-server#375: a read before the create that answered nothing -- an SDK timeout, say -- marks the intent
+            // RESULT_UNKNOWN, and until then any later NotFound was taken for a create whose result is unknown, so the order
+            // was never created and the journey could only be moved on by editing the database. RIoT has now answered that
+            // there is no order, and nothing was ever sent: this is the pending case above. A create already armed never
+            // reaches here (the store's definition requires no attempt), and ArmCreateDispatchAsync still arms only once.
+            RiotOrderObservationKind.NotFound when intent.NeverSentAfterUnansweredReads =>
                 await CreateAfterConfirmedAbsenceAsync(intent.Intent, observed, cancellationToken)
                     .ConfigureAwait(false),
             RiotOrderObservationKind.NotFound when intent.Status == "PENDING_RECONCILIATION" =>
@@ -309,6 +376,17 @@ public sealed class MovementDispatchService
             RiotOrderObservationKind.Unknown when intent.Status == "PENDING_RECONCILIATION" &&
                                                   intent.DispatchAuditVersion == 1 &&
                                                   intent.CreateAttemptCount == 0 &&
+                                                  IsExactAbsentAtObservation(upperId, observed) =>
+                await CreateAfterConfirmedAbsenceAsync(
+                        intent.Intent,
+                        observed,
+                        cancellationToken,
+                        RiotDispatchAuditOutcome.Unknown,
+                        IdempotentAbsentEligibilityBasis)
+                    .ConfigureAwait(false),
+            // The same exact absent-at-observation read, for an intent left RESULT_UNKNOWN by reads that answered nothing
+            // (control-server#375).
+            RiotOrderObservationKind.Unknown when intent.NeverSentAfterUnansweredReads &&
                                                   IsExactAbsentAtObservation(upperId, observed) =>
                 await CreateAfterConfirmedAbsenceAsync(
                         intent.Intent,
@@ -387,6 +465,11 @@ public sealed class MovementDispatchService
             return CreateDispatchDisabled(intent);
         }
 
+        if (!IsBuildableOrderShape(intent))
+        {
+            return UnsupportedOrderShape(intent);
+        }
+
         DateTimeOffset absenceRecordedAt = timeProvider.GetUtcNow();
         if (!MatchesExperimentalAuthorization(intent, authorization, absenceRecordedAt))
         {
@@ -412,6 +495,7 @@ public sealed class MovementDispatchService
             markResultUnknown: true,
             cancellationToken).ConfigureAwait(false);
 
+        store.ReleaseJourneyGuardBeforeExternalEffect();
         DateTimeOffset armedAt = timeProvider.GetUtcNow();
         CreateDispatchAttempt attempt = await store.ArmExperimentalCreateDispatchAsync(
             intent.UpperId,
@@ -440,6 +524,11 @@ public sealed class MovementDispatchService
             return CreateDispatchDisabled(intent);
         }
 
+        if (!IsBuildableOrderShape(intent))
+        {
+            return UnsupportedOrderShape(intent);
+        }
+
         DateTimeOffset absenceRecordedAt = timeProvider.GetUtcNow();
         await store.RecordReconciliationAsync(
             intent.UpperId,
@@ -452,6 +541,7 @@ public sealed class MovementDispatchService
             markResultUnknown: false,
             cancellationToken).ConfigureAwait(false);
 
+        store.ReleaseJourneyGuardBeforeExternalEffect();
         DateTimeOffset armedAt = timeProvider.GetUtcNow();
         CreateDispatchAttempt attempt = await store.ArmCreateDispatchAsync(
             intent.UpperId,
@@ -468,6 +558,19 @@ public sealed class MovementDispatchService
     /// </summary>
     private static MovementDispatchResult CreateDispatchDisabled(OrderIntent intent) =>
         new(MovementDispatchOutcome.CreateDispatchDisabled, intent.UpperId, null);
+
+    /// <summary>
+    /// Refuses a create whose order shape the RIoT gateway cannot build, before the create is armed. Nothing is written,
+    /// exactly as for a closed gate: arming first would spend the intent's one create on a request that is never sent, and
+    /// leave it RESULT_UNKNOWN with every later NotFound read as "result unknown" -- a leg stuck until the database is
+    /// edited. The gateway refuses the same shapes again as a second line (control-server#401 review).
+    /// </summary>
+    private static MovementDispatchResult UnsupportedOrderShape(OrderIntent intent) =>
+        new(MovementDispatchOutcome.UnsupportedOrderShape, intent.UpperId, null);
+
+    private static bool IsBuildableOrderShape(OrderIntent intent) =>
+        string.Equals(intent.OrderShape, OrderShapes.SingleMove, StringComparison.Ordinal) ||
+        string.Equals(intent.OrderShape, OrderShapes.Charge, StringComparison.Ordinal);
 
     private async Task<MovementDispatchResult> DispatchCreateAttemptAsync(
         OrderIntent intent,
@@ -721,18 +824,7 @@ public sealed class MovementDispatchService
     private static bool IsExactAbsentAtObservation(
         string expectedUpperId,
         RiotOrderObservation observation) =>
-        observation.Kind == RiotOrderObservationKind.Unknown &&
-        string.Equals(observation.UpperId, expectedUpperId, StringComparison.Ordinal) &&
-        observation.OrderId is null &&
-        observation.Receipt is
-        {
-            Operation: "RECONCILE",
-            Classification: "AbsentAtObservation",
-            HttpStatusCode: null,
-            BusinessCode: null,
-            ResultPresent: false,
-            FailureCategory: null
-        };
+        observation.IsExactAbsentAtObservation(expectedUpperId);
 
     private async Task<MovementDispatchResult> MarkUnknownAsync(
         string upperId,
@@ -846,25 +938,70 @@ public sealed class MovementDispatchService
             ExperimentalAuthorizationId: experimentalAuthorizationId,
             EligibilityBasis: eligibilityBasis);
 
-    private static string ComputeRequestSemanticSha256(OrderIntent intent)
+    /// <summary>
+    /// The digest of what a create for this intent asks RIoT to do, recorded on the create audit rows.
+    /// </summary>
+    /// <remarks>
+    /// <b>A single-move intent's digest is byte-for-byte what it was before order shapes existed</b>: the
+    /// audit rows already written carry it, and the next attempt of the same intent must compare equal
+    /// to them. Every other shape serializes its shape name and its missions as a list, so it can never
+    /// collide with a single-move digest for the same vehicle and station.
+    /// </remarks>
+    public static string ComputeRequestSemanticSha256(OrderIntent intent)
     {
-        byte[] semanticRequest = JsonSerializer.SerializeToUtf8Bytes(new
-        {
-            schemaVersion = 1,
-            endpoint = "byDefaultMissions",
-            upperId = intent.UpperId,
-            appointVehicleKey = intent.VehicleKey,
-            isAppointEnable = 1,
-            lockStatus = 0,
-            orderName = intent.UpperId,
-            mission = new
+        ArgumentNullException.ThrowIfNull(intent);
+        byte[] semanticRequest = string.Equals(intent.OrderShape, OrderShapes.SingleMove, StringComparison.Ordinal)
+            ? JsonSerializer.SerializeToUtf8Bytes(new
             {
-                type = "move",
-                mapId = intent.MapId,
-                destination = intent.DestinationStationId
-            }
-        });
+                schemaVersion = 1,
+                endpoint = "byDefaultMissions",
+                upperId = intent.UpperId,
+                appointVehicleKey = intent.VehicleKey,
+                isAppointEnable = 1,
+                lockStatus = 0,
+                orderName = intent.UpperId,
+                mission = new
+                {
+                    type = "move",
+                    mapId = intent.MapId,
+                    destination = intent.DestinationStationId
+                }
+            })
+            : JsonSerializer.SerializeToUtf8Bytes(new
+            {
+                schemaVersion = 1,
+                endpoint = "byDefaultMissions",
+                orderShape = intent.OrderShape,
+                upperId = intent.UpperId,
+                appointVehicleKey = intent.VehicleKey,
+                isAppointEnable = 1,
+                lockStatus = 0,
+                orderName = intent.UpperId,
+                missions = RequestedMissions(intent)
+            });
         return Convert.ToHexString(SHA256.HashData(semanticRequest)).ToLowerInvariant();
+    }
+
+    private static object[] RequestedMissions(OrderIntent intent)
+    {
+        object move = new
+        {
+            type = "move",
+            mapId = intent.MapId,
+            destination = intent.DestinationStationId
+        };
+        return string.Equals(intent.OrderShape, OrderShapes.Charge, StringComparison.Ordinal)
+            ? [
+                move,
+                new
+                {
+                    type = "act",
+                    actionId = RiotChargingOrderAction.ActionId,
+                    actionParam1 = RiotChargingOrderAction.StartChargingParam1,
+                    actionParam2 = RiotChargingOrderAction.Param2
+                }
+            ]
+            : [move];
     }
 
     private static async Task RecordAfterDispatchAsync(Func<CancellationToken, Task> write)
@@ -895,6 +1032,20 @@ public sealed class JourneyIntakeCoordinator(
     DemandIntakeService intake,
     MovementDispatchService movementDispatch)
 {
+    /// <summary>
+    /// 把一条需求追加进一辆在途车已有的旅程（票面第 3 条，批次7-06，control-server#211）。
+    /// </summary>
+    /// <remarks>
+    /// 没有第二步：追加不建移动订单。那辆车正在走它自己的计划，新那一段腿要等前面的停靠走完、离站核验过了才发，
+    /// 由推进段在那一刻按停靠行建（<c>JourneyPlanBuilder.LegIntent</c>）。
+    /// </remarks>
+    public Task<DemandIntakeOutcome> AppendToJourneyAsync(
+        AcceptedDemandSnapshot prevalidatedCandidate,
+        JourneyAppendPlan append,
+        Func<CancellationToken, Task<bool>> finalAdmissionGate,
+        CancellationToken cancellationToken) =>
+        intake.AppendToJourneyAsync(prevalidatedCandidate, append, finalAdmissionGate, cancellationToken);
+
     public async Task<JourneyIntakeResult> AcceptAndDispatchToPickupAsync(
         AcceptedDemandSnapshot prevalidatedCandidate,
         OrderIntent pickupIntent,

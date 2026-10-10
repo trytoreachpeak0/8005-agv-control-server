@@ -1,0 +1,75 @@
+{
+  "schemaVersion": 1,
+  "scenario": "charging-registry-emptied-degrades-and-resumes",
+  "runId": "20261009T161708055Z",
+  "outcome": "PASS",
+  "failureReason": "",
+  "identity": {
+    "agvId": "AGV-L2-001",
+    "rig": "SyntheticOnboard",
+    "protocolReleaseIdentity": {
+      "repository": "8005-agv-protocol",
+      "releaseVersion": "3.0.0",
+      "tag": "protocol-v3.0.0",
+      "commit": "3f091cb2eae7c58cec54a95dd9389c9180bc7b4c",
+      "protocolVersion": 4,
+      "profileId": "AGV_FULL_PRODUCT",
+      "manifestSha256": "d5e1a53f1fd61f105a890dc0267e1b0a9ac5ea49f713d2cf730b0f554df9db9e",
+      "schemaBundleSha256": "e435b2b14d9ccd60c89f07df909da7626fef056a6b8a2241087557fd7dc3df43",
+      "vectorsSha256": "be849f9749b004296ebd9e7bffa98faf2f8ffa90b63308ca3b210c68e7b8656e",
+      "approvalStatus": "APPROVED_RELEASE"
+    },
+    "vehicleKey": "BROKERX-L2-0001",
+    "batchId": "batch-9",
+    "stageRoot": "C:\\actions-runner\\win11-01-control-server\\_work\\_temp\\l2-37953826544-1\\_stage\\l2-20261009T161708055Z-slot3",
+    "fleet": [
+      "AGV-L2-001/BROKERX-L2-0001",
+      "AGV-L2-002/BROKERX-L2-0002"
+    ],
+    "controlServerCommit": "563242d071de6f243c59f11722b197d683fee2a4"
+  },
+  "assertions": [
+    {
+      "id": "L2-CRE-01",
+      "description": "开窗（名册登记 211）后，电量低于强制充电线的 A 取得 CHARGING 用途占有与 211 的预占，充电单在 RIoT 上恰好一张；周期与预占记下的是这一版名册",
+      "outcome": "PASS",
+      "expected": "OK / 1 / claim[CHARGING charging:BROKERX-L2-0001:20261009T161739481Z] station[211 RESERVED CHARGER charging:BROKERX-L2-0001:20261009T161739481Z v1] cycle[charging-cycle:BROKERX-L2-0001:20261009T161739481Z 211 v1 ACTIVE W2G-CHARGE-BROKERX-L2-0001-20261009T161739481Z] riot[W2G-CHARGE-BROKERX-L2-0001-20261009T161739481Z]",
+      "actual": "OK / 1 / claim[CHARGING charging:BROKERX-L2-0001:20261009T161739481Z] station[211 RESERVED CHARGER charging:BROKERX-L2-0001:20261009T161739481Z v1] cycle[charging-cycle:BROKERX-L2-0001:20261009T161739481Z 211 v1 ACTIVE W2G-CHARGE-BROKERX-L2-0001-20261009T161739481Z] riot[W2G-CHARGE-BROKERX-L2-0001-20261009T161739481Z]"
+    },
+    {
+      "id": "L2-CRE-02",
+      "description": "关窗是同一个动词导入空名册：成一个新的空版本，并指出还有充电在进行、窗口还不能关",
+      "outcome": "PASS",
+      "expected": "OK / 0 entries / emptyRoster / version > 1 / windowCanClose false",
+      "actual": "OK / 0 entries / emptyRoster=True / v2 / windowCanClose False"
+    },
+    {
+      "id": "L2-CRE-03",
+      "description": "名册为空时需要充电的 B 进入服务端持有的人工充电等待（ROSTER_EMPTY），告警恰好一次，车载端收到并确认 manualChargingHold=true；B 没有用途占有、预占、周期或建单",
+      "outcome": "PASS",
+      "expected": "ROSTER_EMPTY warned | 1 warnings | true:none:acked / claim[] station[] cycle[] riot[]",
+      "actual": "ROSTER_EMPTY warned | 1 warnings | true:none:acked / claim[] station[] cycle[] riot[]"
+    },
+    {
+      "id": "L2-CRE-04",
+      "description": "名册重新启用（211、213，213 空着）之后，仍在等待中的 B 十几轮里不被分配、等待不被解除，告警与快照也不重复",
+      "outcome": "PASS",
+      "expected": "OK / 2 / ROSTER_EMPTY | claim[] station[] cycle[] riot[] | 1 warnings | true:none:acked",
+      "actual": "OK / 2 / ROSTER_EMPTY | claim[] station[] cycle[] riot[] | 1 warnings | true:none:acked"
+    },
+    {
+      "id": "L2-CRE-05",
+      "description": "「充电后返回服务」受理时同一次保存解除等待（经过记录写上这个请求 id）；B 收到并确认 manualChargingHold=false，随后取得空着的 213 与 CHARGING 用途占有",
+      "outcome": "PASS",
+      "expected": "RETURNED_TO_ELIGIBILITY_EVALUATION | 0 holds | released by 1ab870c1-e2cf-4f67-99ae-9822e7547c51 / claim[CHARGING charging:BROKERX-L2-0002:20261009T161801925Z] station[213 RESERVED CHARGER charging:BROKERX-L2-0002:20261009T161801925Z v3] cycle[charging-cycle:BROKERX-L2-0002:20261009T161801925Z 213 v3 ACTIVE W2G-CHARGE-BROKERX-L2-0002-20261009T161801925Z] riot[W2G-CHARGE-BROKERX-L2-0002-20261009T161801925Z] / true:none:acked false:none:acked ...",
+      "actual": "RETURNED_TO_ELIGIBILITY_EVALUATION | 0 holds | released by 1ab870c1-e2cf-4f67-99ae-9822e7547c51 / claim[CHARGING charging:BROKERX-L2-0002:20261009T161801925Z] station[213 RESERVED CHARGER charging:BROKERX-L2-0002:20261009T161801925Z v3] cycle[charging-cycle:BROKERX-L2-0002:20261009T161801925Z 213 v3 ACTIVE W2G-CHARGE-BROKERX-L2-0002-20261009T161801925Z] riot[W2G-CHARGE-BROKERX-L2-0002-20261009T161801925Z] / true:none:acked false:none:acked false:CHARGING:acked false:CHARGING:acked"
+    },
+    {
+      "id": "L2-CRE-06",
+      "description": "A 的周期在名册置空、重新启用的整段里原样继续：同一趟、同一个桩、同一个单号，仍按它记下的那一版名册，没有任何取消命令",
+      "outcome": "PASS",
+      "expected": "claim[CHARGING charging:BROKERX-L2-0001:20261009T161739481Z] station[211 RESERVED CHARGER charging:BROKERX-L2-0001:20261009T161739481Z v1] cycle[charging-cycle:BROKERX-L2-0001:20261009T161739481Z 211 v1 ACTIVE W2G-CHARGE-BROKERX-L2-0001-20261009T161739481Z] riot[W2G-CHARGE-BROKERX-L2-0001-20261009T161739481Z] | 0 commands",
+      "actual": "claim[CHARGING charging:BROKERX-L2-0001:20261009T161739481Z] station[211 RESERVED CHARGER charging:BROKERX-L2-0001:20261009T161739481Z v1] cycle[charging-cycle:BROKERX-L2-0001:20261009T161739481Z 211 v1 ACTIVE W2G-CHARGE-BROKERX-L2-0001-20261009T161739481Z] riot[W2G-CHARGE-BROKERX-L2-0001-20261009T161739481Z] | 0 commands"
+    }
+  ]
+}

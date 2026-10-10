@@ -1,0 +1,22 @@
+# injection: 11-a-journey-that-does-not-hold-is-sent-a-wait
+# file: src/ControlServer.Host/Runtime/LoadingPhaseMachine.cs
+# diff:
+@@ -93,7 +93,7 @@
+         {
+             return facts.PendingLoadsRemain
+                 ? Open(LoadingPhaseStates.Loading)
+-                : Closed(LoadingClosedReasons.PlannedLoadingComplete);
++                : Open(LoadingPhaseStates.CargoHoldingWait);
+         }
+ 
+         if (facts.HoldingDeadlinePassed && !facts.LoadBatchInProgress)
+# build:
+    0 Error(s)
+# test run (filter: FullyQualifiedName~AJourneyThatDoesNotHoldIsOnlyEverSentTheTwoBatchFiveLoadingPhases|FullyQualifiedName~IntegrationSlice):
+  Failed ControlServer.Tests.JourneyRuntimeWorkerSlotGroupAndRestartTests.AJourneyThatDoesNotHoldIsOnlyEverSentTheTwoBatchFiveLoadingPhases [94 ms]
+  Error Message:
+   Assert.Equal() Failure: Collections differ at index 0
+Expected: "CLOSED/PLANNED_LOADING_COMPLETE"
+Actual:   "CARGO_HOLDING_WAIT/"
+     at ControlServer.Tests.JourneyRuntimeWorkerSlotGroupAndRestartTests.AJourneyThatDoesNotHoldIsOnlyEverSentTheTwoBatchFiveLoadingPhases() in C:\Users\szy\Desktop\8005-workspace-v2\worktrees\b7-07-8005-agv-control-server\tests\ControlServer.Tests\JourneyRuntimeWorkerSlotGroupAndRestartTests.cs:line 788
+Failed!  - Failed:     1, Passed:     5, Skipped:     0, Total:     6, Duration: 849 ms - ControlServer.Tests.dll (net8.0)

@@ -1,0 +1,132 @@
+Instance definition: C:\Users\szy\Desktop\8005-workspace-v2\worktrees\b7-262-8005-agv-control-server\scripts\parallel\instance-factory01-v2.json
+
+The shipped file (must NOT be deployable yet)
+  PASS  the shipped definition is refused for exactly its three map-26 placeholders
+
+Positive case (shipped file with the placeholders filled by test values)
+  PASS  the shipped definition is accepted
+  PASS  Assert- accepts the shipped definition and returns it
+  PASS  Assert- throws on the agv01 definition
+
+Negative cases (each must fire exactly one named failure)
+  PASS  serviceName is the production service
+  PASS  installRoot is the production install root
+  PASS  dataRoot is a V2-named directory nested inside the production data root
+  PASS  installRoot written with forward slashes
+  PASS  dataRoot through a '.' segment
+  PASS  dataRoot through a '..' segment
+  PASS  installRoot through an 8.3 short name
+  PASS  packageRoot as a \\?\ device path
+  PASS  packageRoot as an administrative share
+  PASS  opsRoot with a trailing dot
+  PASS  packageRoot is the MVP's previous package generation
+  PASS  backupRoot is the production MesIngest directory
+  PASS  fakeMesIngest.installRoot is the MVP's ops directory
+  PASS  the re-review S1 reproduction definition
+  PASS  dataRoot is the same directory as installRoot
+  PASS  dataRoot is packageRoot's previous generation
+  PASS  opsRoot matches packageRoot's staging glob
+  PASS  seedPath outside opsRoot
+  PASS  seedPath written with forward slashes
+  PASS  serviceName with a trailing wildcard
+  PASS  serviceName with a single-character wildcard
+  PASS  serviceName is another production service
+  PASS  taskName is '*' (every task on the host)
+  PASS  both mapIds are the MVP map 25
+  PASS  only journeyRuntime.mapId is 25
+  PASS  mapIdentity is the MVP map's name
+  PASS  dispatchZone is the MVP map-25 zone
+  PASS  admissionPolicyDeploymentId is the MVP one
+  PASS  a map-25 zone hidden second in allowedDispatchZones
+  PASS  a placeholder left in dispatchZone
+  PASS  onboardPort takes the MVP transport port
+  PASS  healthPort collides with onboardPort
+  PASS  listenAddress is the wildcard
+  PASS  listenAddress is loopback
+  PASS  mesIngest.baseUrl points at the production MesIngest
+  PASS  mesIngest.baseUrl is reachable from the plant network
+  PASS  fakeMesIngest.port disagrees with mesIngest.baseUrl
+  PASS  routeGraph section removed entirely
+  PASS  routeGraph present but an empty object
+  PASS  routeGraph.enabled is a string rather than a boolean
+  PASS  routeGraph.enabled true with no mapId
+  PASS  routeGraph refresh budget not larger than its period
+  PASS  route graph enabled under a disabled journey runtime
+  PASS  the two mapIds disagree
+  PASS  agvId is 'AGV02', a plausible but wrong spelling
+  PASS  agvId differs only in case from the registered name
+  PASS  vehicleKey is agv01's
+  PASS  agvId is agv01's while the key still names agv02
+  PASS  agvId is a list with agv01 mixed in
+  PASS  agvId names agv03 while vehicleKey still names agv02
+  PASS  vehicleKey is a well-formed key of no registered vehicle
+  PASS  journeyRuntime.vehicleKey removed
+  PASS  journeyRuntime.fleet roster with agv01 mixed in
+  PASS  journeyRuntime.Fleet, capitalised as the C# property
+  PASS  a second agvId spelled AgvId naming agv01
+  PASS  an unknown top-level key (a typo of a real one)
+  PASS  riotCreateDispatch section removed
+  PASS  riotCreateDispatch opened without the explicit switch
+
+Switch cases (the escape hatch must work, or it is decoration)
+  PASS  -AllowRiotCreateDispatch accepts the same definition the default run refused
+  PASS  -AllowRiotCreateDispatch still refuses agv01
+
+Second layer on its own: the production denylist normalises and fails closed
+  PASS  denylist: 'C:/Program Files/8005 AGV/ControlServer' must be recognised as production (or unreadable, which fails closed)
+  PASS  denylist: 'C:\ProgramData\8005\.\ControlServer' must be recognised as production (or unreadable, which fails closed)
+  PASS  denylist: 'C:\ProgramData\8005\x\..\ControlServer' must be recognised as production (or unreadable, which fails closed)
+  PASS  denylist: 'D:\zhengyushao\MesIngest\' must be recognised as production (or unreadable, which fails closed)
+  PASS  denylist: 'D:\zhengyushao\ControlServer.previous' must be recognised as production (or unreadable, which fails closed)
+  PASS  denylist: 'D:\zhengyushao' must be recognised as production (or unreadable, which fails closed)
+  PASS  denylist: 'C:\PROGRA~1\8005 AGV\ControlServer' must be recognised as production (or unreadable, which fails closed)
+  PASS  denylist: '\\?\C:\ProgramData\8005\ControlServer' must be recognised as production (or unreadable, which fails closed)
+  PASS  denylist: 'D:\zhengyushao\ControlServer.V2' must NOT be flagged (no false positives on our own paths)
+  PASS  denylist: 'C:\ProgramData\8005\ControlServer.V2' must NOT be flagged (no false positives on our own paths)
+
+Removal sequence: order and stop conditions (control-server#262 re-review, S1)
+  PASS  a production refusal from the product uninstaller aborts before ANY other action
+  PASS  a glob match outside the allowlist is never deleted, and the directory phase stops
+  PASS  a production directory in the footprint itself never reaches the delete action
+  PASS  the ordinary run: service first, data kept without -RemoveData
+  PASS  -RemoveData deletes exactly the three data directories as well
+  PASS  a failed task removal is recorded, not an abort
+
+Uninstaller refuses the S1 definition before printing any plan
+  PASS  Uninstall-ParallelInstanceLocal.ps1 -WhatIf throws at the assertion and lists nothing
+
+Installer and uninstaller take paths and names only from the layout (re-review, M4)
+  PASS  Install-ParallelInstanceLocal.ps1 reads no path or name except through the layout
+  PASS  Uninstall-ParallelInstanceLocal.ps1 reads no path or name except through the layout
+  PASS  the bypass scan reports both planted bypasses (it is not blind)
+
+Whitelist against the C# options (a rename there must fail here)
+  PASS  every journeyRuntime key names a JourneyRuntimeOptions property
+  PASS  JourneyRuntimeOptions.Fleet exists and is deliberately NOT whitelisted
+  PASS  every routeGraph key names a RouteGraphOptions property
+  PASS  every riotCreateDispatch key names a RiotCreateDispatchOptions property
+
+Footprint (what install creates and uninstall removes)
+  PASS  no footprint directory is, contains or sits in a production path
+  PASS  the footprint lists exactly the layout's directories
+  PASS  every other layout path lies inside opsRoot, so it goes with it
+  PASS  the leftover staging globs are in the footprint and carry the instance prefix
+  PASS  every footprint directory passes the allowlist
+  PASS  the footprint firewall rules are the V2 ones, never the MVP rules
+  PASS  the certificate variable the upgrade deletes is not the MVP one
+  PASS  the data root is marked as data (kept unless asked) and the install root is not
+  PASS  the shared RIoT key is not in the footprint (the MVP installer reads it)
+
+Staging cleanup glob (control-server#262 review, finding 1)
+  PASS  old glob '*.incoming-*' matches both instances (reproduces the bug)
+  PASS  the fixed V2 glob matches only the V2 staging directory
+  PASS  the fixed MVP glob matches only the MVP staging directory
+
+Overlay
+  PASS  the overlay replaces the inherited agv01 identity
+  PASS  the overlay enables the journey runtime the installer left disabled
+  PASS  the merge keeps base keys the overlay does not mention
+  PASS  the overlay states the route graph explicitly
+  PASS  the overlay points MesIngest at the fake catalog
+
+105 passed, 0 failed

@@ -1,0 +1,6 @@
+cs#506 red: tests at f5e6c5c9 (no product change), base fp/v2-impl a2a481b4. Filter RecoveryEndingReleasesBlockedJourneyTests.ARepairResume
+trx: red.trx  total=2 passed=1 failed=1
+
+Failed  RecoveryEndingReleasesBlockedJourneyTests.ARepairResumeLeavesTheJourneyBlockedWhileAHandoffLeftAnotherDemandAwaitingRecovery
+        A repair resume released the journey while the first demand still awaits recovery. at-result=AwaitingLoadResult/ after-rounds=AwaitingDepartureSafety/ departure-checks=1 round=
+Passed  RecoveryEndingReleasesBlockedJourneyTests.ARepairResumeOfTheOnlyUnresolvedDemandSendsTheVehicleOn

@@ -46,11 +46,9 @@ public sealed class JourneyRuntimeWorkerLoadDeadlineTests
         Assert.Equal("CANCELLED_BY_STATION_TIMEOUT", runtime.BlockReasonCode);
         Assert.Equal(DemandExecutionStatus.Cancelled, (await fixture.DemandRowAsync()).Status);
         Assert.Equal(StationOperationStatus.Failed, (await fixture.OperationAsync(SlotOperationType.Load)).Status);
-        Assert.Equal(settledAt, (await fixture.LeaseAsync()).ReleasedAt);
-        OrderIntentRow pickup = await fixture.Context.OrderIntents.AsNoTracking()
-            .SingleAsync(row => row.Purpose == "TO_PICKUP", TestContext.Current.CancellationToken);
-        Assert.Equal(settledAt, pickup.VehicleOccupancyReleasedAt);
-        await VehicleOccupancyAssertions.AssertActiveLeasesAndPurposeClaimsMatchAsync(fixture.Context);
+        Assert.Equal(settledAt, (await fixture.ClaimRecordAsync()).ReleasedAt);
+        Assert.False(await fixture.Context.Set<VehiclePurposeClaimRow>().AsNoTracking().AnyAsync(TestContext.Current.CancellationToken));
+        await VehicleOccupancyAssertions.AssertOpenClaimRecordsAndPurposeClaimsMatchAsync(fixture.Context);
         ProtocolOutboxRow loadCommand = await fixture.Context.ProtocolOutbox.AsNoTracking()
             .SingleAsync(row => row.MessageId == runtime.LoadCommandMessageId, TestContext.Current.CancellationToken);
         Assert.Equal(settledAt, loadCommand.AcknowledgedAt);
@@ -60,6 +58,7 @@ public sealed class JourneyRuntimeWorkerLoadDeadlineTests
         Assert.Contains(fixture.EngineLog.Entries, entry =>
             entry.Level == LogLevel.Warning && entry.Message.Contains("CANCELLED_BY_STATION_TIMEOUT"));
         await ZeroChangePin.AssertMatchesAsync(fixture.Context, "determinate-load-failure");
+        await SuppressionAssertions.AssertTheDemandSuppressedAsync(fixture.Context, "CANCELLED_BY_STATION_TIMEOUT");
         // control-server#208：发出去的报文与修订号。录入提交的 messageId 是随机的，而它原样进了装货命令的
         // correlationId，所以按值遮掉。
         string submissionId = await fixture.Context.ProtocolInbox.AsNoTracking()
@@ -94,7 +93,7 @@ public sealed class JourneyRuntimeWorkerLoadDeadlineTests
         Assert.Equal("LOAD_RESULT_REQUIRES_RECOVERY", runtime.BlockReasonCode);
         Assert.Equal(StationOperationStatus.RecoveryRequired, (await fixture.OperationAsync(SlotOperationType.Load)).Status);
         Assert.Equal(DemandExecutionStatus.RecoveryRequired, (await fixture.DemandRowAsync()).Status);
-        Assert.Null((await fixture.LeaseAsync()).ReleasedAt);
+        Assert.Null((await fixture.ClaimRecordAsync()).ReleasedAt);
     }
 
     /// <summary>
@@ -126,7 +125,7 @@ public sealed class JourneyRuntimeWorkerLoadDeadlineTests
         Assert.Equal("STATION_TIMEOUT_DOOR_NOT_CLOSED", alarmed.BlockReasonCode);
         Assert.Equal(raisedAt, alarmed.BlockReasonSince);
         Assert.Equal(DemandExecutionStatus.Accepted, (await fixture.DemandRowAsync()).Status);
-        Assert.Null((await fixture.LeaseAsync()).ReleasedAt);
+        Assert.Null((await fixture.ClaimRecordAsync()).ReleasedAt);
         Assert.Single(fixture.EngineLog.Entries, entry =>
             entry.Level == LogLevel.Warning && entry.Message.Contains("STATION_TIMEOUT_DOOR_NOT_CLOSED"));
 
@@ -136,7 +135,14 @@ public sealed class JourneyRuntimeWorkerLoadDeadlineTests
         Assert.Equal(JourneyRuntimeStage.AwaitingLoadResult, stillAlarmed.Stage);
         Assert.Equal("STATION_TIMEOUT_DOOR_NOT_CLOSED", stillAlarmed.BlockReasonCode);
         Assert.Equal(raisedAt, stillAlarmed.BlockReasonSince);
-        Assert.Single(fixture.EngineLog.Entries, entry => entry.Message.Contains("STATION_TIMEOUT_DOOR_NOT_CLOSED"));
+        // The door alarm itself is logged once, on the edge. Since control-server#273 the waiting journey watch also logs
+        // this wait -- twenty minutes is past its threshold -- and its line names the reason code the stage carries; that
+        // is a different line (event 2163, "has waited for a person"), so it is counted apart rather than filtered out.
+        Assert.Single(fixture.EngineLog.Entries, entry =>
+            entry.Message.Contains("with a slot door not closed", StringComparison.Ordinal));
+        Assert.Single(fixture.EngineLog.Entries, entry =>
+            entry.Message.Contains("has waited for a person", StringComparison.Ordinal) &&
+            entry.Message.Contains("(reason STATION_TIMEOUT_DOOR_NOT_CLOSED)", StringComparison.Ordinal));
 
         await fixture.ProveSlotDoorsClosedAsync();
         await fixture.Engine.ExecuteOnceAsync(TestContext.Current.CancellationToken);
@@ -213,7 +219,7 @@ public sealed class JourneyRuntimeWorkerLoadDeadlineTests
                 AgvId = runtime.AgvId,
                 DemandId = runtime.DemandId,
                 SlotOperationAttemptId = runtime.LoadSlotOperationAttemptId,
-                SlotsJson = runtime.TargetSlotsJson,
+                SlotsJson = runtime.TargetSlotsJson!,
                 State = RecoveryWorkflowState.AwaitingResult,
                 RequestMessageId = Guid.NewGuid().ToString("D"),
                 RequestContentHash = new string('c', 64),
@@ -230,7 +236,7 @@ public sealed class JourneyRuntimeWorkerLoadDeadlineTests
         Assert.Equal(JourneyRuntimeStage.AwaitingLoadResult, unchanged.Stage);
         Assert.Null(unchanged.BlockReasonCode);
         Assert.Equal(DemandExecutionStatus.Accepted, (await fixture.DemandRowAsync()).Status);
-        Assert.Null((await fixture.LeaseAsync()).ReleasedAt);
+        Assert.Null((await fixture.ClaimRecordAsync()).ReleasedAt);
     }
 
     /// <summary>
@@ -261,7 +267,7 @@ public sealed class JourneyRuntimeWorkerLoadDeadlineTests
     }
 
     /// <summary>A ten-second station departure wait, and the journey carried to its outstanding load command.</summary>
-    private static async Task AdvanceToLoadWithStationDeadlineAsync(RuntimeFixture fixture)
+    internal static async Task AdvanceToLoadWithStationDeadlineAsync(RuntimeFixture fixture)
     {
         fixture.Options.StationDepartureWaitTimeout = TimeSpan.FromSeconds(10);
         fixture.Catalog.Set(fixture.Demand(
@@ -276,10 +282,12 @@ public sealed class JourneyRuntimeWorkerLoadDeadlineTests
     /// ADR-cross-0058 decision 5's slots for this journey's load: the first target FAILED under
     /// <paramref name="failedSlotReasonCode"/>, the rest NOT_STARTED, every one empty, locked and reset.
     /// </summary>
-    private static object[] DeterminateFailureSlots(RuntimeFixture fixture, string failedSlotReasonCode)
+    internal static object[] DeterminateFailureSlots(RuntimeFixture fixture, string failedSlotReasonCode, string? demandId = null)
     {
         int[] slots = JsonSerializer.Deserialize<int[]>(
-            fixture.Context.StationOperations.AsNoTracking().Single().TargetSlotsJson) ?? [];
+            fixture.Context.StationOperations.AsNoTracking()
+                .Single(row => demandId == null || (row.DemandId == demandId && row.OperationType == SlotOperationType.Load))
+                .TargetSlotsJson) ?? [];
         return
         [
             .. slots.Select((slot, index) => (object)new
@@ -298,9 +306,13 @@ public sealed class JourneyRuntimeWorkerLoadDeadlineTests
     /// The vehicle's OperationResult for this journey's load, through OnboardMessageProcessor on a connection
     /// context of its own, the way every result on a TCP connection arrives. Returns the server's answer.
     /// </summary>
-    private static async Task<string> ReportLoadResultAsync(RuntimeFixture fixture, object[] slotResults)
+    internal static async Task<string> ReportLoadResultAsync(RuntimeFixture fixture, object[] slotResults, string? demandId = null)
     {
-        StationOperationRow load = await fixture.OperationAsync(SlotOperationType.Load);
+        StationOperationRow load = demandId is null
+            ? await fixture.OperationAsync(SlotOperationType.Load)
+            : await fixture.Context.StationOperations.AsNoTracking().SingleAsync(
+                row => row.DemandId == demandId && row.OperationType == SlotOperationType.Load,
+                TestContext.Current.CancellationToken);
         await using ControlServerDbContext connection = fixture.OpenConnectionContext();
         OnboardMessageProcessor processor = TestOnboardProcessorFactory.Create(
             connection,
@@ -344,6 +356,11 @@ public sealed class JourneyRuntimeWorkerLoadDeadlineTests
                 resultContentSha256
             }
         }, SerializerOptions);
+        // This models a connection in the middle of its session: the result is reported from the receive loop,
+        // and a real connection is always HandshakeCompleted = true once its recovery report has been answered.
+        // Since control-server#340 an answer carries no SessionReadiness while the handshake is not done, so
+        // leaving the flag at its default (as this did until then) turns the test into one about a handshake
+        // and drops the readiness line it asserts. Not redundant: do not remove it.
         string response = await processor.ProcessAsync(
             line,
             new OnboardConnectionState
@@ -352,7 +369,8 @@ public sealed class JourneyRuntimeWorkerLoadDeadlineTests
                 SessionGeneration = 1,
                 CapabilityRevision = 1,
                 SafetyRevision = 7,
-                Readiness = SessionReadiness.Ready
+                Readiness = SessionReadiness.Ready,
+                HandshakeCompleted = true
             },
             TestContext.Current.CancellationToken);
         // The runtime reads each iteration in a scope of its own; the fixture's engine keeps one context, so

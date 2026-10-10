@@ -1,0 +1,22 @@
+# injection: l1-06-a-yield-after-the-deadline-still-counts
+# file: src/ControlServer.Host/Runtime/JourneyRuntimeEngine.cs
+--- 
++++ 
+@@ -2687,5 +2687,3 @@
+     private bool YieldTriggeredBeforeHoldingDeadline(JourneyRuntimeRow runtime) =>
+-        runtime.YieldTriggeredAt is { } triggeredAt &&
+-        (runtime.CargoHoldingStartedAt is not { } startedAt ||
+-         triggeredAt < startedAt + runtimeOptions.CargoHoldingTimeout);
++        runtime.YieldTriggeredAt is not null && runtimeOptions.CargoHoldingTimeout >= TimeSpan.Zero;
+ 
+# build:
+0 Error(s)
+# test run (filter: FullyQualifiedName~Batch7StationYield|FullyQualifiedName~LoadingPhaseMachineTests|FullyQualifiedName~DispatchVehicleOrderingTests):
+  Failed ControlServer.Tests.Batch7StationYieldTests.WhicheverOfTheDeadlineAndTheYieldCameFirstIsWhyTheLoadingPhaseClosed(triggerAfterMinutes: 31, reason: "CARGO_HOLDING_TIMEOUT") [2 s]
+  Error Message:
+   Assert.Equal() Failure: Strings differ
+Expected: "CARGO_HOLDING_TIMEOUT"
+Actual:   "WAITING_STATION_YIELD"
+     at ControlServer.Tests.Batch7StationYieldTests.WhicheverOfTheDeadlineAndTheYieldCameFirstIsWhyTheLoadingPhaseClosed(Int32 triggerAfterMinutes, String reason) in C:\Users\szy\Desktop\8005-workspace-v2\worktrees\b7-08-8005-agv-control-server\tests\ControlServer.Tests\Batch7StationYieldTests.cs:line 512
+   at ControlServer.Tests.Batch7StationYieldTests.WhicheverOfTheDeadlineAndTheYieldCameFirstIsWhyTheLoadingPhaseClosed(Int32 triggerAfterMinutes, String reason) in C:\Users\szy\Desktop\8005-workspace-v2\worktrees\b7-08-8005-agv-control-server\tests\ControlServer.Tests\Batch7StationYieldTests.cs:line 513
+Failed!  - Failed:     1, Passed:   111, Skipped:     0, Total:   112, Duration: 53 s - ControlServer.Tests.dll (net8.0)

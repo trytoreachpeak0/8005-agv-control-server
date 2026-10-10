@@ -1,0 +1,16 @@
+ParseFile errors: 0
+PASS production install, audit + effective 
+PASS production install, effective missing EFFECTIVE_CONFIGURATION_UNREAD: the installer reported no EFFECTIVE_CONFIGURATION line, so what the Host really bound is unknown.
+PASS production install, M1 effective (six types bound) EFFECTIVE_CONFIGURATION_MISMATCH: the Host bound 'EFFECTIVE_CONFIGURATION=allowedWorkTypes=STAGING_TO_WIRE,DIE_TO_OVEN,WIRE_TO_GATE,WIRE_TO_OPTICAL,STAGING_TO_WIRE,WIRE_TO_NITROGEN allowedDispatchZones=WIRE mesIngestBaseUrl=http://127.0.0.1:5088', the definition says 'EFFECTIVE_CONFIGURATION=allowedWorkTypes=STAGING_TO_WIRE allowedDispatchZones=WIRE mesIngestBaseUrl=http://127.0.0.1:5088'.
+PASS production install, extra FAKE line MES_INGEST_SOURCE_MISMATCH: production mode, but the installer also reported FAKE_MES_INGEST=http://127.0.0.1:58188.
+PASS production install, fake audit reported MES_INGEST_SOURCE_MISMATCH: the installer reported no line starting 'MES_INGEST_SOURCE=production baseUrl=http://127.0.0.1:5088 '. What it did report: MES_INGEST_SOURCE=fake baseUrl=http://127.0.0.1:58188 allowedWorkTypes=X -- y
+PASS production install, no audit MES_INGEST_SOURCE_MISMATCH: the installer reported no line starting 'MES_INGEST_SOURCE=production baseUrl=http://127.0.0.1:5088 '. What it did report: 
+PASS production install, audit with wrong work types MES_INGEST_SOURCE_MISMATCH: production mode, but the installer reported 'MES_INGEST_SOURCE=production baseUrl=http://127.0.0.1:5088 allowedWorkTypes=STAGING_TO_WIRE,WIRE_TO_GATE -- y'.
+PASS production rollback, audit + effective 
+PASS production rollback, effective missing EFFECTIVE_CONFIGURATION_UNREAD: the installer reported no EFFECTIVE_CONFIGURATION line, so what the Host really bound is unknown.
+PASS fake install, audit + FAKE + effective 
+PASS fake install, effective missing (old package): warns, passes  [warned]
+PASS fake install, effective differs from definition EFFECTIVE_CONFIGURATION_MISMATCH: the Host bound 'EFFECTIVE_CONFIGURATION=allowedWorkTypes=DIE_TO_WIRE_STAGING,DIE_TO_OVEN,WIRE_TO_GATE,WIRE_TO_OPTICAL,STAGING_TO_WIRE,WIRE_TO_NITROGEN allowedDispatchZones=WIRE mesIngestBaseUrl=http://127.0.0.1:5088', the definition says 'EFFECTIVE_CONFIGURATION=allowedWorkTypes=DIE_TO_WIRE_STAGING,DIE_TO_OVEN,WIRE_TO_GATE,WIRE_TO_OPTICAL,STAGING_TO_WIRE,WIRE_TO_NITROGEN allowedDispatchZones=WIRE mesIngestBaseUrl=http://127.0.0.1:58188'.
+PASS fake install, audit without FAKE MES_INGEST_SOURCE_MISMATCH: fake mode, but the installer reported no FAKE_MES_INGEST line.
+PASS fake rollback, audit + effective 
+PASS fake install, production audit MES_INGEST_SOURCE_MISMATCH: the installer reported no line starting 'MES_INGEST_SOURCE=fake baseUrl=http://127.0.0.1:58188 '. What it did report: MES_INGEST_SOURCE=production baseUrl=http://127.0.0.1:5088 allowedWorkTypes=STAGING_TO_WIRE -- y | FAKE_MES_INGEST=x

@@ -1,0 +1,38 @@
+{"at":"2026-09-28T07:52:59.1094510+00:00","note":"L2 run 20260928T075258423Z starting for scenario 'in-transit-door-not-locked'."}
+{"at":"2026-09-28T07:52:59.5296883+00:00","note":"L2 port block lock acquired (slot 0, Global\\W2G-L2PortBlock)."}
+{"at":"2026-09-28T07:52:59.5349753+00:00","note":"Building ControlServer and the test doubles."}
+{"at":"2026-09-28T07:53:06.9816680+00:00","criterion":"fake-riot-live","value":"live"}
+{"at":"2026-09-28T07:53:07.2813395+00:00","criterion":"fake-mes-live","value":"live"}
+{"at":"2026-09-28T07:53:07.3591052+00:00","note":"RIoT command options for this scenario: EmergencyRetryInitialDelay=00:00:20"}
+{"at":"2026-09-28T07:53:07.3906723+00:00","note":"Task type station preset: default (map 25, WIRE_TO_GATE -> 关卡/210)"}
+{"at":"2026-09-28T07:53:11.4962362+00:00","note":"Package capacity rules imported."}
+{"at":"2026-09-28T07:53:13.6050170+00:00","criterion":"control-server-live","value":"(null)"}
+{"at":"2026-09-28T07:53:14.5214191+00:00","criterion":"control-server-live","value":"live"}
+{"at":"2026-09-28T07:53:14.6864078+00:00","note":"Protocol release identity: protocol-v2.0.0 (profileId AGV_FULL_PRODUCT, protocolVersion 3, APPROVED_RELEASE)."}
+{"at":"2026-09-28T07:53:15.6706749+00:00","criterion":"onboard-readiness","value":"DISCONNECTED"}
+{"at":"2026-09-28T07:53:16.2258435+00:00","criterion":"onboard-readiness","value":"READY"}
+{"at":"2026-09-28T07:53:16.3127283+00:00","criterion":"control-server-ready","value":"ready"}
+{"at":"2026-09-28T07:53:16.3890406+00:00","note":"FieldOps: seed-approved-facts --database C:\\Users\\szy\\AppData\\Local\\Temp\\l2-20260928T075258423Z\\controlserver.db"}
+{"at":"2026-09-28T07:53:19.4064560+00:00","criterion":"slot-model-preseed:seed-approved-facts","value":"OK","detail":{"output":{"command":"seed-approved-facts","outcome":"OK","modelKey":"8005-eight-slot","slotModelVersionId":"691a07bf65b64f3b96f06f012862e6fd","version":1,"slotCount":8}}}
+{"at":"2026-09-28T07:53:19.4212986+00:00","note":"FieldOps: bind-io --database C:\\Users\\szy\\AppData\\Local\\Temp\\l2-20260928T075258423Z\\controlserver.db --agv AGV-L2-001"}
+{"at":"2026-09-28T07:53:21.9188708+00:00","criterion":"slot-model-preseed:bind-io:AGV-L2-001","value":"OK","detail":{"output":{"command":"bind-io","outcome":"OK","agvId":"AGV-L2-001","slotModelVersionId":"691a07bf65b64f3b96f06f012862e6fd","boundSlots":8,"version":1}}}
+{"at":"2026-09-28T07:53:22.0698448+00:00","criterion":"slot-model-preseed:dispatch-zones","value":"0"}
+{"at":"2026-09-28T07:53:22.0759277+00:00","note":"FieldOps: import-area-assignments --database C:\\Users\\szy\\AppData\\Local\\Temp\\l2-20260928T075258423Z\\controlserver.db --input C:\\Users\\szy\\AppData\\Local\\Temp\\claude\\C--Users-szy-Desktop-8005-workspace-v2\\d70406e1-f4f1-4956-bcd7-937a86105f2e\\scratchpad\\l2\\in-transit-door-not-locked-red-001\\snapshots\\preseed-area-assignments.csv"}
+{"at":"2026-09-28T07:53:24.5653057+00:00","criterion":"slot-model-preseed:import-area-assignments","value":"OK","detail":{"output":{"command":"import-area-assignments","outcome":"OK","dryRun":false,"input":"C:\\Users\\szy\\AppData\\Local\\Temp\\claude\\C--Users-szy-Desktop-8005-workspace-v2\\d70406e1-f4f1-4956-bcd7-937a86105f2e\\scratchpad\\l2\\in-transit-door-not-locked-red-001\\snapshots\\preseed-area-assignments.csv","entryCount":3,"version":1,"contentSha256":"4291a509c2c0b75ea4bde0ac4dcde04b6e8632b54a21a67eee2772a6f8d0ff8e","snapshotId":"f5e20dec93b944ecb0db193aba06480f","importedAt":"2026-09-28T15:53:22.4237789+08:00","errorCount":0,"errors":[],"preview":[]}}}
+{"at":"2026-09-28T07:53:24.5690327+00:00","note":"Per-zone dispatch parameters left unconfigured (the default precondition)."}
+{"at":"2026-09-28T07:53:24.5844101+00:00","note":"Environment is up; entering scenario 'in-transit-door-not-locked'."}
+{"at":"2026-09-28T07:53:24.6478953+00:00","note":"Publishing demand 3a0a4658b24a43079011f0ac69b6fefe."}
+{"at":"2026-09-28T07:53:24.7283104+00:00","criterion":"journey-dispatched","value":"(null)"}
+{"at":"2026-09-28T07:53:26.2855173+00:00","criterion":"journey-dispatched","value":"@{DemandId=3a0a4658-b24a-4307-9011-f0ac69b6fefe}"}
+{"at":"2026-09-28T07:53:26.3091667+00:00","criterion":"pickup-intent","value":"@{UpperId=W2G-3a0a4658-b24a-4307-9011-f0ac69b6fefe-PICKUP-1; OrderId=ORDER-000001; Status=CONFIRMED}"}
+{"at":"2026-09-28T07:53:26.4053371+00:00","criterion":"runtime-iterations","value":"13"}
+{"at":"2026-09-28T07:53:27.2038375+00:00","criterion":"runtime-iterations","value":"14"}
+{"at":"2026-09-28T07:53:28.2645506+00:00","criterion":"runtime-iterations","value":"15"}
+{"at":"2026-09-28T07:53:29.0658079+00:00","criterion":"runtime-iterations","value":"16"}
+{"at":"2026-09-28T07:53:29.0824067+00:00","note":"The onboard reports a door not locked while AGV-L2-001 drives on W2G-3a0a4658-b24a-4307-9011-f0ac69b6fefe-PICKUP-1."}
+{"at":"2026-09-28T07:53:29.1556157+00:00","criterion":"server-safety-revision","value":"1/1"}
+{"at":"2026-09-28T07:53:29.4343970+00:00","criterion":"server-safety-revision","value":"1/2"}
+{"at":"2026-09-28T07:53:29.4407365+00:00","criterion":"trigger-issued","value":"0"}
+{"at":"2026-09-28T07:54:59.4862174+00:00","note":"Run failed: Timed out after 90s waiting for: the server issued the emergency stop. Last observed: 0"}
+{"at":"2026-09-28T07:54:59.4893435+00:00","note":"Failure at: at Wait-L2Condition, C:\\Users\\szy\\Desktop\\8005-workspace-v2\\worktrees\\cs335-8005-agv-control-server\\scripts\\l2\\L2.psm1: line 103\r\nat <ScriptBlock>, C:\\Users\\szy\\Desktop\\8005-workspace-v2\\worktrees\\cs335-8005-agv-control-server\\scripts\\l2\\scenarios\\in-transit-door-not-locked.ps1: line 126\r\nat <ScriptBlock>, C:\\Users\\szy\\Desktop\\8005-workspace-v2\\worktrees\\cs335-8005-agv-control-server\\scripts\\l2\\Invoke-L2Scenario.ps1: line 1308"}
+{"at":"2026-09-28T07:54:59.8632313+00:00","note":"L2 port block lock released."}

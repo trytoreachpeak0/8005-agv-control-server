@@ -1,0 +1,106 @@
+{
+  "schemaVersion": 1,
+  "scenario": "same-direction-die-to-wire-staging-journey",
+  "runId": "20261010T104727277Z",
+  "outcome": "PASS",
+  "failureReason": "",
+  "identity": {
+    "controlServerCommit": "588fc34c2b12acb5560a7d260cfc53949ac81459",
+    "rig": "SyntheticOnboard",
+    "stageRoot": "C:\\Users\\szy\\AppData\\Local\\Temp\\l2-20261010T104727277Z",
+    "agvId": "AGV-L2-001",
+    "batchId": "batch-10",
+    "vehicleKey": "BROKERX-L2-0001",
+    "protocolReleaseIdentity": {
+      "repository": "8005-agv-protocol",
+      "releaseVersion": "3.0.0",
+      "tag": "protocol-v3.0.0",
+      "commit": "3f091cb2eae7c58cec54a95dd9389c9180bc7b4c",
+      "protocolVersion": 4,
+      "profileId": "AGV_FULL_PRODUCT",
+      "manifestSha256": "d5e1a53f1fd61f105a890dc0267e1b0a9ac5ea49f713d2cf730b0f554df9db9e",
+      "schemaBundleSha256": "e435b2b14d9ccd60c89f07df909da7626fef056a6b8a2241087557fd7dc3df43",
+      "vectorsSha256": "be849f9749b004296ebd9e7bffa98faf2f8ffa90b63308ca3b210c68e7b8656e",
+      "approvalStatus": "APPROVED_RELEASE"
+    }
+  },
+  "assertions": [
+    {
+      "id": "L2-SDJ-DWS-00",
+      "description": "前置：本类固定站 401「派工待送卸货」在地图上、站名不是 AREA 格式；归属表 N1-3 → REAR、N1-7 → FRONT（同挂机台站 12）",
+      "outcome": "PASS",
+      "expected": "401=派工待送卸货 / N1-3/REAR,N1-7/FRONT",
+      "actual": "401=派工待送卸货 / N1-3/REAR,N1-7/FRONT"
+    },
+    {
+      "id": "L2-SDJ-DWS-REAR-01",
+      "description": "DIE_TO_WIRE_STAGING 需求（N1-3）被受理：旅程进入 AwaitingPickupArrival，受理行的任务类型是 DIE_TO_WIRE_STAGING",
+      "outcome": "PASS",
+      "expected": "AwaitingPickupArrival / DIE_TO_WIRE_STAGING",
+      "actual": "AwaitingPickupArrival / DIE_TO_WIRE_STAGING / backlog reason ACCEPTED"
+    },
+    {
+      "id": "L2-SDJ-DWS-REAR-03",
+      "description": "N1-3 指 REAR：取货时目标仓全部属于本车 REAR 组、升序，且恰好是该组编号最小的 2 个可用仓",
+      "outcome": "PASS",
+      "expected": "[5,6]（REAR 组最小的可用仓，升序）",
+      "actual": "[5,6] on AGV-L2-001"
+    },
+    {
+      "id": "L2-SDJ-DWS-REAR-02",
+      "description": "DIE_TO_WIRE_STAGING（N1-3）两端没有对调：取货在 AREA 机台站 12、卸货在本类绑定站 401（不是关卡 210）；冻结的卸货站与两条腿的订单终点一致",
+      "outcome": "PASS",
+      "expected": "pickup 12 / drop-off 401 / frozen 401 / legs 12 -> 401",
+      "actual": "pickup 12 / drop-off 401 / frozen 401 / legs 12 -> 401"
+    },
+    {
+      "id": "L2-SDJ-DWS-REAR-04",
+      "description": "DIE_TO_WIRE_STAGING（N1-3）：机台站下发的 LOAD 与绑定站下发的 UNLOAD，slots 都等于目标仓",
+      "outcome": "PASS",
+      "expected": "LOAD [5,6]; UNLOAD [5,6]",
+      "actual": "LOAD [5,6]; UNLOAD [5,6]"
+    },
+    {
+      "id": "L2-SDJ-DWS-REAR-05",
+      "description": "DIE_TO_WIRE_STAGING（N1-3）卸货完成、需求结清：旅程 Completed，卸货操作 Committed，受理行 Succeeded",
+      "outcome": "PASS",
+      "expected": "Completed / 1 committed unload / Succeeded",
+      "actual": "Completed / 1 committed unload(s) / Succeeded"
+    },
+    {
+      "id": "L2-SDJ-DWS-FRONT-01",
+      "description": "DIE_TO_WIRE_STAGING 需求（N1-7）被受理：旅程进入 AwaitingPickupArrival，受理行的任务类型是 DIE_TO_WIRE_STAGING",
+      "outcome": "PASS",
+      "expected": "AwaitingPickupArrival / DIE_TO_WIRE_STAGING",
+      "actual": "AwaitingPickupArrival / DIE_TO_WIRE_STAGING / backlog reason ACCEPTED"
+    },
+    {
+      "id": "L2-SDJ-DWS-FRONT-03",
+      "description": "N1-7 指 FRONT：取货时目标仓全部属于本车 FRONT 组、升序，且恰好是该组编号最小的 2 个可用仓",
+      "outcome": "PASS",
+      "expected": "[1,2]（FRONT 组最小的可用仓，升序）",
+      "actual": "[1,2] on AGV-L2-001"
+    },
+    {
+      "id": "L2-SDJ-DWS-FRONT-02",
+      "description": "DIE_TO_WIRE_STAGING（N1-7）两端没有对调：取货在 AREA 机台站 12、卸货在本类绑定站 401（不是关卡 210）；冻结的卸货站与两条腿的订单终点一致",
+      "outcome": "PASS",
+      "expected": "pickup 12 / drop-off 401 / frozen 401 / legs 12 -> 401",
+      "actual": "pickup 12 / drop-off 401 / frozen 401 / legs 12 -> 401"
+    },
+    {
+      "id": "L2-SDJ-DWS-FRONT-04",
+      "description": "DIE_TO_WIRE_STAGING（N1-7）：机台站下发的 LOAD 与绑定站下发的 UNLOAD，slots 都等于目标仓",
+      "outcome": "PASS",
+      "expected": "LOAD [1,2]; UNLOAD [1,2]",
+      "actual": "LOAD [1,2]; UNLOAD [1,2]"
+    },
+    {
+      "id": "L2-SDJ-DWS-FRONT-05",
+      "description": "DIE_TO_WIRE_STAGING（N1-7）卸货完成、需求结清：旅程 Completed，卸货操作 Committed，受理行 Succeeded",
+      "outcome": "PASS",
+      "expected": "Completed / 1 committed unload / Succeeded",
+      "actual": "Completed / 1 committed unload(s) / Succeeded"
+    }
+  ]
+}

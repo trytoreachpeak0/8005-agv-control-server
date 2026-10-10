@@ -1,0 +1,12 @@
+== M7 src/ControlServer.Host/Runtime/Faults/VehicleFaultRecoveryService.StoppedRebuild.cs
+hits=1 line=226
+--- before
+            await VehicleFaultCoordinator.ReleaseCargoOfOtherJourneysAsync(
+                faults, agvId, timeProvider.GetUtcNow(), logger, cancellationToken).ConfigureAwait(false);
+            DateTimeOffset now = timeProvider.GetUtcNow();
+--- after
+            DateTimeOffset now = timeProvider.GetUtcNow();
+build exit=0
+test exit=1
+Failed FaultedCargoBindingLifecycleTests.AnEmptySecondTripStoppedByTheThirdGuardCanBeGivenUp
+Failed!  - Failed:     1, Passed:   400, Skipped:     0, Total:   401, Duration: 1 m 47 s - dll (net8.0)

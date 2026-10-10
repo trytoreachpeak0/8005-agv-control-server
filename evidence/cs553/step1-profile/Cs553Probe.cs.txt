@@ -1,0 +1,77 @@
+// Throwaway probe for control-server#553. Never committed.
+using System.Diagnostics;
+using ControlServer.Infrastructure.Persistence;
+using Microsoft.Data.Sqlite;
+using Microsoft.EntityFrameworkCore;
+
+namespace ControlServer.Tests;
+
+public sealed class Cs553Probe
+{
+    private static async Task<SqliteConnection> MigrateOnce(bool ensureCreated = false)
+    {
+        SqliteConnection connection = new("Data Source=:memory:");
+        await connection.OpenAsync();
+        await using ControlServerDbContext context =
+            new(new DbContextOptionsBuilder<ControlServerDbContext>().UseSqlite(connection).Options);
+        if (ensureCreated)
+        {
+            await context.Database.EnsureCreatedAsync();
+        }
+        else
+        {
+            await context.Database.MigrateAsync();
+        }
+        return connection;
+    }
+
+    private sealed record Sample(double WallMs, double PauseMs, long AllocMb, int Gen0, int Gen1, int Gen2, long Contention);
+
+    private static async Task<Sample> Measure(Func<Task> work)
+    {
+        GC.Collect();
+        TimeSpan pause0 = GC.GetTotalPauseDuration();
+        long alloc0 = GC.GetTotalAllocatedBytes(precise: true);
+        int g0 = GC.CollectionCount(0), g1 = GC.CollectionCount(1), g2 = GC.CollectionCount(2);
+        long lock0 = Monitor.LockContentionCount;
+        Stopwatch watch = Stopwatch.StartNew();
+        await work();
+        watch.Stop();
+        return new Sample(
+            watch.Elapsed.TotalMilliseconds,
+            (GC.GetTotalPauseDuration() - pause0).TotalMilliseconds,
+            (GC.GetTotalAllocatedBytes(precise: true) - alloc0) / (1024 * 1024),
+            GC.CollectionCount(0) - g0, GC.CollectionCount(1) - g1, GC.CollectionCount(2) - g2,
+            Monitor.LockContentionCount - lock0);
+    }
+
+    [Fact]
+    public async Task Probe()
+    {
+        string output = Environment.GetEnvironmentVariable("CS553_OUT") ?? Path.Combine(Path.GetTempPath(), "cs553-probe.txt");
+        List<string> lines = [$"server GC={System.Runtime.GCSettings.IsServerGC} latency={System.Runtime.GCSettings.LatencyMode} cpus={Environment.ProcessorCount}"];
+        (await MigrateOnce()).Dispose(); // warm-up: JIT and the runtime model
+        for (int i = 0; i < 3; i++)
+        {
+            lines.Add($"serial migrate #{i}: {await Measure(async () => (await MigrateOnce()).Dispose())}");
+        }
+        lines.Add($"serial ensureCreated: {await Measure(async () => (await MigrateOnce(ensureCreated: true)).Dispose())}");
+
+        SqliteConnection template = await MigrateOnce();
+        lines.Add($"backup copy of migrated template: {await Measure(() =>
+        {
+            using SqliteConnection copy = new("Data Source=:memory:");
+            copy.Open();
+            template.BackupDatabase(copy);
+            return Task.CompletedTask;
+        })}");
+        template.Dispose();
+
+        foreach (int width in new[] { 2, 4 })
+        {
+            lines.Add($"parallel x{width}: {await Measure(() => Task.WhenAll(Enumerable.Range(0, width)
+                .Select(_ => Task.Run(async () => (await MigrateOnce()).Dispose()))))}");
+        }
+        await File.WriteAllLinesAsync(output, lines, TestContext.Current.CancellationToken);
+    }
+}

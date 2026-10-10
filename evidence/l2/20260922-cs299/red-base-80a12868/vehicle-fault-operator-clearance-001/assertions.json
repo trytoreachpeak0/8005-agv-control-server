@@ -1,0 +1,50 @@
+{
+  "schemaVersion": 1,
+  "scenario": "vehicle-fault-operator-clearance",
+  "runId": "20260922T135900101Z",
+  "outcome": "FAIL",
+  "failureReason": "The property 'outcome' cannot be found on this object. Verify that the property exists.",
+  "identity": {
+    "protocolReleaseIdentity": {
+      "repository": "8005-agv-protocol",
+      "releaseVersion": "2.0.0",
+      "tag": "protocol-v2.0.0",
+      "commit": "86575456c847041515b7b75e8851a00e0d939804",
+      "protocolVersion": 3,
+      "profileId": "AGV_FULL_PRODUCT",
+      "manifestSha256": "4ac095ad371d3aaa60d7c2e0198cfd64cff5f3068230fc3420e9cdf5616422a7",
+      "schemaBundleSha256": "9db0dbdc22fed7e39edf8d01b1fc40a12f5d70a7414f696f909ab2a87eb8c221",
+      "vectorsSha256": "391fa69a7d6e9f86ea139ba4c74eadf4994bf0a87e89d3dc5258dd7968d9182a",
+      "approvalStatus": "APPROVED_RELEASE"
+    },
+    "controlServerCommit": "80a1286814af9733bbe621065e1375f5ee3b8365",
+    "batchId": "unspecified",
+    "rig": "SyntheticOnboard",
+    "agvId": "AGV-L2-001",
+    "vehicleKey": "BROKERX-L2-0001",
+    "stageRoot": "C:\\Users\\szy\\AppData\\Local\\Temp\\l2-20260922T135900101Z"
+  },
+  "assertions": [
+    {
+      "id": "L2-VFC-01",
+      "description": "急停锁着：清除入口回 409，理由点名 FAULT_RECOVERY_EMERGENCY_LATCHED；故障仍是 SuspectedBlocked，没有发 cancelEmergency（清除不解除急停）",
+      "outcome": "FAIL",
+      "expected": "409 / FAULT_RECOVERY_EMERGENCY_LATCHED / SuspectedBlocked / 0 次",
+      "actual": "404 /  / SuspectedBlocked / 0 次"
+    },
+    {
+      "id": "L2-VFC-02",
+      "description": "急停解除之后故障仍在（解除只结束急停）：SuspectedBlocked、未清除；车一直挂在原旅程上，没有新旅程",
+      "outcome": "PASS",
+      "expected": "SuspectedBlocked / 1 趟旅程",
+      "actual": "SuspectedBlocked / 1 趟旅程"
+    },
+    {
+      "id": "L2-VFC-03",
+      "description": "没确认故障已排除、RIoT 里这台车还有未结束的订单：入口回 409，三条理由（没确认、车上有未完成订单、当前单没结束）一起列出；故障不动",
+      "outcome": "FAIL",
+      "expected": "409 / REMEDY_NOT_CONFIRMED + VEHICLE_ORDER_NOT_FINISHED + CURRENT_ORDER_NOT_ENDED / SuspectedBlocked",
+      "actual": "404 /  / SuspectedBlocked"
+    }
+  ]
+}

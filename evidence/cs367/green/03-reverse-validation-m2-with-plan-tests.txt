@@ -1,0 +1,15 @@
+# cs#367 mutations at 3e3cdcf2628044dde4da9b43f92942bb18c1ef51 2026-09-28T09:50:54.3524742+08:00
+# only: M2-behind-disabled (1)
+== M2-behind-disabled : applied (1	1	src/ControlServer.Host/Runtime/JourneyRuntimeEngine.cs)
+   build errors: 0
+   exit: 1
+   RED PickupDispatchPlanPastOwnOrderTests.AnOrderWhoseCreateAnswerWasLostIsConfirmedBehindTheGateAndThePlanGoesOut
+   RED FailedOrderBeforeConfirmationTests.AnUnreadableOrderKeepsTheFailedCodeAndItsStart(behindTheGate: True)
+   RED FailedOrderBeforeConfirmationTests.AnUnconfirmedOrderFoundHangingBehindTheGateIsConfirmedAndNamed
+   RED FailedOrderBeforeConfirmationTests.BehindTheGateTheStopIsConfirmedAndRetriggeredForAnOrderThatFailedBeforeConfirmation
+   RED FailedOrderBeforeConfirmationTests.AnUnreconciledPickupOrderThatFailedIsRecordedHeldAndStoppedBehindTheGate
+   RED FailedOrderBeforeConfirmationTests.ATerminalReconciledPickupOrderLeftWithoutAFaultIsRecordedBehindTheGate
+   RED FailedOrderBeforeConfirmationTests.AnUnreconciledGateOrderThatFailedAlsoBindsTheCargoBehindTheGate
+   Failed!  - Failed:     7, Passed:   194, Skipped:     0, Total:   201, Duration: 49 s - ControlServer.Tests.dll (net8.0)
+# final build: 0 Error(s)
+# done

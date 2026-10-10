@@ -1,0 +1,50 @@
+{
+  "schemaVersion": 1,
+  "scenario": "charging-no-progress-isolates",
+  "runId": "20261002T152855372Z",
+  "outcome": "PASS",
+  "failureReason": "",
+  "identity": {
+    "protocolReleaseIdentity": {
+      "repository": "8005-agv-protocol",
+      "releaseVersion": "2.0.0",
+      "tag": "protocol-v2.0.0",
+      "commit": "86575456c847041515b7b75e8851a00e0d939804",
+      "protocolVersion": 3,
+      "profileId": "AGV_FULL_PRODUCT",
+      "manifestSha256": "4ac095ad371d3aaa60d7c2e0198cfd64cff5f3068230fc3420e9cdf5616422a7",
+      "schemaBundleSha256": "9db0dbdc22fed7e39edf8d01b1fc40a12f5d70a7414f696f909ab2a87eb8c221",
+      "vectorsSha256": "391fa69a7d6e9f86ea139ba4c74eadf4994bf0a87e89d3dc5258dd7968d9182a",
+      "approvalStatus": "APPROVED_RELEASE"
+    },
+    "stageRoot": "C:\\actions-runner\\win11-01-control-server\\_work\\_temp\\l2-37023804697-1\\_stage\\l2-20261002T152855372Z-slot4",
+    "batchId": "batch-9",
+    "agvId": "AGV-L2-001",
+    "vehicleKey": "BROKERX-L2-0001",
+    "controlServerCommit": "6b7b3e38b7d72b454b227a104de2e37a3198db86",
+    "rig": "SyntheticOnboard"
+  },
+  "assertions": [
+    {
+      "id": "L2-CNP-01",
+      "description": "观察窗口起点开窗之后不被新样本重置：形成时周期上的起点仍是开窗那一刻（2026-10-02 15:29:26.5213195+00:00），形成时刻距起点不少于窗口 20 秒",
+      "outcome": "PASS",
+      "expected": "window start 2026-10-02 15:29:26.5213195+00:00 / >= 20 s",
+      "actual": "window start 2026-10-02 15:29:26.5213195+00:00 / 21 s"
+    },
+    {
+      "id": "L2-CNP-02",
+      "description": "一直报 CHARGING、电量不涨：窗口满后桩的分配暂停与车的充电资格暂停都写下（NO_PROGRESS_CONFIRMED，根因 UNKNOWN），周期进清桩中，用途转 CLEARING_MAINTENANCE，211 仍是这一趟的占用",
+      "outcome": "PASS",
+      "expected": "NO_PROGRESS_CONFIRMED UNKNOWN | NO_PROGRESS_CONFIRMED | CLEARING UNABLE_TO_CHARGE | claim CLEARING_MAINTENANCE charging:BROKERX-L2-0001:20261002T152919595Z | OCCUPIED BROKERX-L2-0001 charging:BROKERX-L2-0001:20261002T152919595Z | journey AwaitingPickupArrival CHARGING_NO_PROGRESS_CONFIRMED",
+      "actual": "NO_PROGRESS_CONFIRMED UNKNOWN | NO_PROGRESS_CONFIRMED | CLEARING UNABLE_TO_CHARGE | claim CLEARING_MAINTENANCE charging:BROKERX-L2-0001:20261002T152919595Z | OCCUPIED BROKERX-L2-0001 charging:BROKERX-L2-0001:20261002T152919595Z | journey AwaitingPickupArrival CHARGING_NO_PROGRESS_CONFIRMED"
+    },
+    {
+      "id": "L2-CNP-03",
+      "description": "形成之后另等十秒：RIoT 上一直只有那一张充电单，命令审计 0 条，211 一直是这一趟的占用，两侧各只有一条暂停",
+      "outcome": "PASS",
+      "expected": "W2G-CHARGE-BROKERX-L2-0001-20261002T152919595Z | 0 commands | OCCUPIED BROKERX-L2-0001 charging:BROKERX-L2-0001:20261002T152919595Z | NO_PROGRESS_CONFIRMED UNKNOWN | NO_PROGRESS_CONFIRMED",
+      "actual": "W2G-CHARGE-BROKERX-L2-0001-20261002T152919595Z | 0 commands | OCCUPIED BROKERX-L2-0001 charging:BROKERX-L2-0001:20261002T152919595Z | NO_PROGRESS_CONFIRMED UNKNOWN | NO_PROGRESS_CONFIRMED"
+    }
+  ]
+}

@@ -127,7 +127,7 @@ public sealed class TaskTypeStationHoldWriteConcurrencyTests
             Directory.CreateDirectory(directory);
             SharedDatabase database = new(directory);
             await using ControlServerDbContext migrator = database.NewContext();
-            await migrator.Database.MigrateAsync(Token);
+            await MigratedDatabaseTemplate.ApplyAsync(migrator.Database, Token);
             return database;
         }
 

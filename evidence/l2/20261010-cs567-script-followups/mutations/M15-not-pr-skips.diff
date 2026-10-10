@@ -1,0 +1,13 @@
+diff --git a/scripts/Select-StagedG3ContentConflictRun.ps1 b/scripts/Select-StagedG3ContentConflictRun.ps1
+index deb5cbdb8..6719931bf 100644
+--- a/scripts/Select-StagedG3ContentConflictRun.ps1
++++ b/scripts/Select-StagedG3ContentConflictRun.ps1
+@@ -42,7 +42,7 @@ $prefixes = @(
+ 
+ $changed = @($ChangedPath | Where-Object { -not [string]::IsNullOrWhiteSpace($_) } | ForEach-Object { $_.Trim() })
+ if ($NotAPullRequest) {
+-    $decision = [pscustomobject]@{ Run = $true; Reason = 'not a pull request: the content-conflict self-check always runs' }
++    $decision = [pscustomobject]@{ Run = $false; Reason = 'not a pull request: the content-conflict self-check always runs' }
+ } else {
+     $hits = @($changed | Where-Object {
+             $path = $_

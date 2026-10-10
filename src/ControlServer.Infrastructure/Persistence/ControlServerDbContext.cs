@@ -1,13 +1,13 @@
 using ControlServer.Application;
 using ControlServer.Domain;
 using Microsoft.EntityFrameworkCore;
+using Microsoft.EntityFrameworkCore.ChangeTracking;
 
 namespace ControlServer.Infrastructure.Persistence;
 
 public sealed class ControlServerDbContext(DbContextOptions<ControlServerDbContext> options) : DbContext(options)
 {
     public DbSet<AcceptedDemandRow> AcceptedDemands => Set<AcceptedDemandRow>();
-    public DbSet<VehicleDispatchLeaseRow> VehicleDispatchLeases => Set<VehicleDispatchLeaseRow>();
     public DbSet<OrderIntentRow> OrderIntents => Set<OrderIntentRow>();
     public DbSet<RiotDispatchAuditEventRow> RiotDispatchAuditEvents => Set<RiotDispatchAuditEventRow>();
     public DbSet<ExperimentalRiotCreateAuthorizationRow> ExperimentalRiotCreateAuthorizations =>
@@ -28,6 +28,7 @@ public sealed class ControlServerDbContext(DbContextOptions<ControlServerDbConte
     public DbSet<ManualChargingReturnToServiceRow> ManualChargingReturnToServiceRequests =>
         Set<ManualChargingReturnToServiceRow>();
     public DbSet<HardwareRecoveryRecordRow> HardwareRecoveryRecords => Set<HardwareRecoveryRecordRow>();
+    public DbSet<SlotDoorHoldRow> SlotDoorHolds => Set<SlotDoorHoldRow>();
     public DbSet<RecoveryResultEvidenceRow> RecoveryResultEvidence => Set<RecoveryResultEvidenceRow>();
     public DbSet<JourneyBacklogRow> JourneyBacklog => Set<JourneyBacklogRow>();
     public DbSet<JourneyRuntimeRow> JourneyRuntimes => Set<JourneyRuntimeRow>();
@@ -55,6 +56,8 @@ public sealed class ControlServerDbContext(DbContextOptions<ControlServerDbConte
     public DbSet<MapStationCatalogStateRow> MapStationCatalogStates => Set<MapStationCatalogStateRow>();
     public DbSet<FrozenDemandStationRow> FrozenDemandStations => Set<FrozenDemandStationRow>();
     public DbSet<CreateGateAuditRow> CreateGateAudit => Set<CreateGateAuditRow>();
+    public DbSet<OwnOrderRebuildRow> OwnOrderRebuilds => Set<OwnOrderRebuildRow>();
+    public DbSet<ForeignRiotOrderRow> ForeignRiotOrders => Set<ForeignRiotOrderRow>();
 
     /// <summary>
     /// How long audit records are protected from deletion. Defaults to the REQ-0271 floor of 180
@@ -65,25 +68,38 @@ public sealed class ControlServerDbContext(DbContextOptions<ControlServerDbConte
     /// <summary>The clock the retention check reads.</summary>
     public TimeProvider AuditClock { get; set; } = TimeProvider.System;
 
+    /// <summary>
+    /// The journey whose tracked row the work under way was decided from; null when there is none (control-server#357).
+    /// While it is set, every save re-checks that row's <see cref="JourneyRuntimeRow.Version"/> and raises it, even a save
+    /// that changes nothing on the row.
+    /// </summary>
+    /// <remarks>
+    /// The runtime sets it for one vehicle's advance. Most of what an advance writes is not the journey row -- an order intent
+    /// before the RIoT create, an outbound message before it goes out -- and a token on the journey row alone would not stop
+    /// those: the inbound could block the journey after the round read it, and the order intent would still be saved and the
+    /// order created. With the row guarded, the first save after such a commit fails before anything leaves this server.
+    /// <para>
+    /// The price: while it is set, a save that would otherwise change nothing on the journey row still updates it (the version).
+    /// The movement dispatch takes it off just before an external side effect (after the pre-create reconciliation audit,
+    /// before the at-most-once create counter is spent: <c>IMovementIntentStore.ReleaseJourneyGuardBeforeExternalEffect</c>),
+    /// so the saves that record that effect are never thrown away by it; the row's own changes after that still meet the token.
+    /// </para>
+    /// </remarks>
+    public string? GuardedJourneyId { get; set; }
+
     protected override void OnModelCreating(ModelBuilder modelBuilder)
     {
         modelBuilder.Entity<AcceptedDemandRow>().HasKey(row => row.DemandId);
         modelBuilder.Entity<AcceptedDemandRow>().HasIndex(row => row.TransportDemandKey).IsUnique();
         modelBuilder.Entity<AcceptedDemandRow>().Property(row => row.Status).HasConversion<string>();
-        // Batch 7 (control-server#206): keyed on the journey, the demand kept as a plain column because scripts and
-        // G3 scenarios read it, and because every release site still finds the lease by its anchor demand.
-        modelBuilder.Entity<VehicleDispatchLeaseRow>().HasKey(row => row.JourneyId);
-        modelBuilder.Entity<VehicleDispatchLeaseRow>().HasIndex(row => row.DemandId);
-        modelBuilder.Entity<VehicleDispatchLeaseRow>()
-            .HasIndex(row => row.VehicleKey)
-            .IsUnique()
-            .HasFilter("ReleasedAt IS NULL");
         modelBuilder.Entity<OrderIntentRow>().HasKey(row => row.MovementLegId);
         modelBuilder.Entity<OrderIntentRow>().HasIndex(row => row.UpperId).IsUnique();
         modelBuilder.Entity<OrderIntentRow>().Property(row => row.Status).IsConcurrencyToken();
         modelBuilder.Entity<OrderIntentRow>().Property(row => row.CreateAttemptCount).IsConcurrencyToken();
         modelBuilder.Entity<OrderIntentRow>().Property(row => row.DispatchAuditSequence).IsConcurrencyToken();
         modelBuilder.Entity<OrderIntentRow>().Property(row => row.ExperimentalCreateAuthorizationId).IsConcurrencyToken();
+        // The database default is what the migration back-fills existing rows with (control-server#399).
+        modelBuilder.Entity<OrderIntentRow>().Property(row => row.OrderShape).HasDefaultValue(OrderShapes.SingleMove);
         modelBuilder.Entity<OrderIntentRow>()
             .HasIndex(row => row.CreateAttemptId)
             .IsUnique()
@@ -140,6 +156,8 @@ public sealed class ControlServerDbContext(DbContextOptions<ControlServerDbConte
         modelBuilder.Entity<ManualChargingReturnToServiceRow>().HasKey(row => row.RequestId);
         modelBuilder.Entity<ManualChargingReturnToServiceRow>().HasIndex(row => row.RequestMessageId).IsUnique();
         modelBuilder.Entity<HardwareRecoveryRecordRow>().HasKey(row => row.RecordId);
+        modelBuilder.Entity<SlotDoorHoldRow>().HasKey(row => row.HoldId);
+        modelBuilder.Entity<SlotDoorHoldRow>().HasIndex(row => row.AgvId);
         modelBuilder.Entity<RecoveryResultEvidenceRow>().HasKey(row => row.MessageId);
         modelBuilder.Entity<JourneyBacklogRow>().HasKey(row => row.DemandId);
         modelBuilder.Entity<JourneyBacklogRow>().HasIndex(row => row.TransportDemandKey);
@@ -149,6 +167,22 @@ public sealed class ControlServerDbContext(DbContextOptions<ControlServerDbConte
         modelBuilder.Entity<JourneyRuntimeRow>().HasKey(row => row.JourneyId);
         modelBuilder.Entity<JourneyRuntimeRow>().HasIndex(row => row.DemandId);
         modelBuilder.Entity<JourneyRuntimeRow>().Property(row => row.Stage).HasConversion<string>();
+        // control-server#357: raised on every save by StampJourneyVersions, never by a writer.
+        modelBuilder.Entity<JourneyRuntimeRow>().Property(row => row.Version).IsConcurrencyToken();
+        // Batch 8 (control-server#386): an idle return is a journey without a demand (choice A), so the anchor demand and the
+        // columns only a transport has become nullable in the database. The CLR properties stay non-nullable on purpose:
+        // until batch 8-18/8-19 (control-server#389, #390) change a type and meet every reader the compiler then names, no
+        // code can write a null here, and nothing any engine path writes changes.
+        foreach (string column in IdleReturnNullableColumns.JourneyRuntimes)
+        {
+            modelBuilder.Entity<JourneyRuntimeRow>().Property(column).IsRequired(false);
+        }
+        modelBuilder.Entity<OrderIntentRow>().Property(row => row.DemandId).IsRequired(false);
+        modelBuilder.Entity<RiotDispatchAuditEventRow>().Property(row => row.DemandId).IsRequired(false);
+        modelBuilder.Entity<ExperimentalRiotCreateAuthorizationRow>().Property(row => row.DemandId).IsRequired(false);
+        // An idle return rides on the journey so that fault supervision and the own-order rebuild reach it too; the
+        // rebuild's record names the journey's anchor demand.
+        modelBuilder.Entity<OwnOrderRebuildRow>().Property(row => row.DemandId).IsRequired(false);
         modelBuilder.Entity<AdmissionPolicyStateRow>().HasKey(row => row.Id);
         modelBuilder.Entity<AdmissionPolicyStateRow>().Property(row => row.Id).ValueGeneratedNever();
         modelBuilder.Entity<StationTaskTypeAdmissionRow>().HasKey(row => new { row.StationId, row.TaskType });
@@ -173,8 +207,62 @@ public sealed class ControlServerDbContext(DbContextOptions<ControlServerDbConte
     // Audit immutability lives here rather than in the stores that write audit, so that it is a
     // property of the context every caller already goes through instead of a rule each new caller
     // has to remember.
+    /// <summary>
+    /// Keeps <see cref="JourneyRuntimeRow.WaitingSince"/> in step with every journey row this save adds or changes
+    /// (control-server#273), by the one definition of waiting in <see cref="JourneyWaitClassification"/>. Here rather than
+    /// at the writers for the reason the audit guard below is: a rule each writer had to remember would be broken by the
+    /// next one.
+    /// </summary>
+    private void ReconcileJourneyWaits()
+    {
+        ChangeTracker.DetectChanges();
+        foreach (EntityEntry<JourneyRuntimeRow> entry in ChangeTracker.Entries<JourneyRuntimeRow>())
+        {
+            if (entry.State is not (EntityState.Added or EntityState.Modified))
+            {
+                continue;
+            }
+            JourneyRuntimeRow row = entry.Entity;
+            // Arriving is a new wait: the vehicle has moved since whatever wait the leg carried (incremental review of
+            // #320). Blocked is the exception -- a leg is blocked where it stands.
+            if (entry.State == EntityState.Modified &&
+                row.Stage != JourneyRuntimeStage.Blocked &&
+                JourneyWaitClassification.Of(row.Stage) == JourneyStageActivity.Stationary &&
+                JourneyWaitClassification.Of(entry.Property(item => item.Stage).OriginalValue) == JourneyStageActivity.Travelling)
+            {
+                row.ReconcileWait(waiting: false, row.UpdatedAt);
+            }
+            DateTimeOffset startedAt = JourneyWaitClassification.Of(row.Stage) == JourneyStageActivity.Travelling
+                ? row.BlockReasonSince ?? row.UpdatedAt
+                : row.UpdatedAt;
+            row.ReconcileWait(JourneyWaitClassification.IsWaiting(row.Stage, row.BlockReasonCode), startedAt);
+        }
+    }
+
+    /// <summary>
+    /// Raises <see cref="JourneyRuntimeRow.Version"/> on every journey row this save changes, and on the
+    /// <see cref="GuardedJourneyId"/> row even when the save changes nothing on it (control-server#357). After
+    /// <see cref="ReconcileJourneyWaits"/>, so the columns it adds count as a change. Computed from the original value, so a
+    /// save retried after it failed raises it by one, not two.
+    /// </summary>
+    private void StampJourneyVersions()
+    {
+        foreach (EntityEntry<JourneyRuntimeRow> entry in ChangeTracker.Entries<JourneyRuntimeRow>())
+        {
+            bool guarded = entry.State == EntityState.Unchanged &&
+                           string.Equals(entry.Entity.JourneyId, GuardedJourneyId, StringComparison.Ordinal);
+            if (entry.State == EntityState.Modified || guarded)
+            {
+                PropertyEntry<JourneyRuntimeRow, long> version = entry.Property(row => row.Version);
+                version.CurrentValue = version.OriginalValue + 1;
+            }
+        }
+    }
+
     public override int SaveChanges(bool acceptAllChangesOnSuccess)
     {
+        ReconcileJourneyWaits();
+        StampJourneyVersions();
         AuditImmutabilityGuard.Enforce(ChangeTracker, AuditRetention, AuditClock.GetUtcNow());
         PublishedVersionImmutabilityGuard.Enforce(ChangeTracker);
         return base.SaveChanges(acceptAllChangesOnSuccess);
@@ -184,6 +272,8 @@ public sealed class ControlServerDbContext(DbContextOptions<ControlServerDbConte
         bool acceptAllChangesOnSuccess,
         CancellationToken cancellationToken = default)
     {
+        ReconcileJourneyWaits();
+        StampJourneyVersions();
         AuditImmutabilityGuard.Enforce(ChangeTracker, AuditRetention, AuditClock.GetUtcNow());
         PublishedVersionImmutabilityGuard.Enforce(ChangeTracker);
         return base.SaveChangesAsync(acceptAllChangesOnSuccess, cancellationToken);
@@ -210,20 +300,10 @@ public sealed class AcceptedDemandRow
     public DemandExecutionStatus Status { get; set; }
 }
 
-public sealed class VehicleDispatchLeaseRow
-{
-    /// <summary>The journey the lease is held for; the key since batch 7 (control-server#206).</summary>
-    public required string JourneyId { get; set; }
-    public required string DemandId { get; set; }
-    public required string VehicleKey { get; set; }
-    public DateTimeOffset AcquiredAt { get; set; }
-    public DateTimeOffset? ReleasedAt { get; set; }
-}
-
 public sealed class OrderIntentRow
 {
     public required string MovementLegId { get; set; }
-    public required string DemandId { get; set; }
+    public string? DemandId { get; set; }
     public required string UpperId { get; set; }
     public required string Purpose { get; set; }
     public required string TargetStationId { get; set; }
@@ -248,18 +328,19 @@ public sealed class OrderIntentRow
     public DateTimeOffset? LastReconciliationOutcomeAt { get; set; }
     public string? LastReconciliationReceiptJson { get; set; }
 
-    // Vehicle-occupancy uniqueness moved down from the lease table (specification 5.1).
-    // Nothing writes these yet — see Batch2CapabilityModel for why the index is filtered on
-    // ClaimedAt being set, and why that keeps current behaviour unchanged.
-    public DateTimeOffset? VehicleOccupancyClaimedAt { get; set; }
-    public DateTimeOffset? VehicleOccupancyReleasedAt { get; set; }
+    /// <summary>
+    /// Which kind of RIoT order this intent stands for (<see cref="OrderShapes"/>; batch 9, control-server#399). Every
+    /// existing writer leaves it at <see cref="OrderShapes.SingleMove"/>, the value the migration back-fills. No CHECK: the
+    /// values are validated in code (control-server#401).
+    /// </summary>
+    public string OrderShape { get; set; } = OrderShapes.SingleMove;
 }
 
 public sealed class RiotDispatchAuditEventRow
 {
     public required string AuditEventId { get; set; }
     public required string MovementLegId { get; set; }
-    public required string DemandId { get; set; }
+    public string? DemandId { get; set; }
     public required string UpperId { get; set; }
     public long DispatchGeneration { get; set; }
     public long Sequence { get; set; }
@@ -467,6 +548,14 @@ public sealed class ExceptionRecoverySessionRow
     public long ForcedRecoveryGeneration { get; set; }
     public DateTimeOffset OpenedAt { get; set; }
     public DateTimeOffset UpdatedAt { get; set; }
+
+    /// <summary>
+    /// Why the session closed, as its snapshot's <c>closedReason</c> says it (control-server#385): null while it is open
+    /// and when its action reconciled, <see cref="ServerReasonCodes.RecoveryActionResultNotReconciled"/> when it closed on
+    /// a result that did not reconcile or a refused resume. Written once, in the save that closes the session; a result
+    /// arriving after the closing never touches it, so every resend and reconnect replays the reason first sent.
+    /// </summary>
+    public string? ClosedReason { get; set; }
 }
 
 /// <summary>
@@ -514,11 +603,48 @@ public sealed class RecoveryWorkflowRow
     public string? CommandMessageType { get; set; }
     public string? CommandContentHash { get; set; }
     public string? HandoffId { get; set; }
+
+    /// <summary>
+    /// The named hand-off a forced mechanical recovery's result recorded for its demand's cargo (REQ-0242, CP-0008,
+    /// control-server#385): the sublot identified, the person it was handed to and when. Null on every other workflow,
+    /// and on a forced one that settled nothing.
+    /// </summary>
+    public string? HandoffSublot { get; set; }
+
+    /// <inheritdoc cref="HandoffSublot"/>
+    public string? HandoffReceiverName { get; set; }
+
+    /// <inheritdoc cref="HandoffSublot"/>
+    public DateTimeOffset? HandedOverAt { get; set; }
+
     public string? ResultMessageId { get; set; }
     public string? ResultContentHash { get; set; }
     public string? Outcome { get; set; }
     public DateTimeOffset CreatedAt { get; set; }
     public DateTimeOffset UpdatedAt { get; set; }
+}
+
+/// <summary>
+/// A vehicle held after a cancellation or compensation settled its slots empty while a door lock or unlock output was not
+/// proven (REQ-0364, CP-0009, control-server#385). One row per settling workflow; the hold stands while
+/// <see cref="ReleasedAt"/> is null.
+/// </summary>
+/// <remarks>
+/// What lifts it is a <c>HARDWARE_REPAIR_RELEASE</c> recovery action taken to its end -- a hardware record on that action,
+/// then readings the server received after the record showing every held slot LOCKED, RESET and EMPTY, then a SAFE
+/// <c>HOLD_RELEASE</c> check -- and <see cref="ReleasedByActionId"/> names that action. The release's progress lives on
+/// its own <see cref="RecoveryWorkflowRow"/>.
+/// </remarks>
+public sealed class SlotDoorHoldRow
+{
+    /// <summary>The cancellation or compensation workflow whose result settled the slots and held the vehicle.</summary>
+    public required string HoldId { get; set; }
+    public required string AgvId { get; set; }
+    public required string DemandId { get; set; }
+    public required string SlotsJson { get; set; }
+    public DateTimeOffset HeldAt { get; set; }
+    public string? ReleasedByActionId { get; set; }
+    public DateTimeOffset? ReleasedAt { get; set; }
 }
 
 public sealed class HardwareRecoveryRecordRow
@@ -581,8 +707,48 @@ public sealed class JourneyRuntimeRow
     /// </summary>
     public required string JourneyId { get; set; }
 
-    /// <summary>The anchor demand: the first demand the journey accepted. Every existing reader still finds the row by it.</summary>
-    public required string DemandId { get; set; }
+    /// <summary>
+    /// The anchor demand: the first demand the journey accepted. Every existing reader still finds the row by it. Null on an
+    /// idle return (batch 8-19, control-server#390), which is a journey without a demand (<see cref="IsIdleReturn"/>); so are
+    /// the gate, slot, load, unload, sublot and pre-departure columns only a transport has.
+    /// </summary>
+    /// <remarks>
+    /// A reader that can only ever meet a transport journey reads these through <see cref="TransportColumn"/>, which throws on
+    /// null rather than letting an idle return walk into transport code with a blank demand. A reader that may meet either
+    /// kind asks <see cref="IsIdleReturn"/> first.
+    /// </remarks>
+    public string? DemandId { get; set; }
+
+    /// <summary>
+    /// Whether this journey is an idle return: a move to a waiting point with no demand (batch 8-19, control-server#390). Its
+    /// id is the one its commitment was made under (<c>IdleReturnIdentity.JourneyIdPrefix</c>), which is what tells it apart;
+    /// a null <see cref="DemandId"/> is a consequence, not the test.
+    /// </summary>
+    public bool IsIdleReturn() => JourneyId.StartsWith(IdleReturnIdentity.JourneyIdPrefix, StringComparison.Ordinal);
+
+    /// <summary>
+    /// Whether this journey is a charging journey: a move to a rostered charger with no demand (batch 9-06, control-server#404).
+    /// Told apart by the id its commitment was made under (<c>ChargingIdentity.JourneyIdPrefix</c>), like an idle return.
+    /// </summary>
+    public bool IsCharging() => JourneyId.StartsWith(ChargingIdentity.JourneyIdPrefix, StringComparison.Ordinal);
+
+    /// <summary>
+    /// Whether this journey carries no demand at all: an idle return or a charging journey. What a reader that only needs to
+    /// know "is there a demand, a worklist, cargo" asks; one that treats the two kinds differently asks each by name.
+    /// </summary>
+    public bool CarriesNoDemand() => IsIdleReturn() || IsCharging();
+
+    /// <summary>
+    /// A column only a transport journey has, read where only a transport journey can be: throws when it is null, which on
+    /// this row means the caller was handed an idle return (control-server#390) or a charging journey (control-server#404) --
+    /// a defect to surface, never a blank to use.
+    /// </summary>
+    public string TransportColumn(
+        string? value,
+        [System.Runtime.CompilerServices.CallerArgumentExpression(nameof(value))] string column = "") =>
+        value ?? throw new InvalidDataException(
+            $"Journey '{JourneyId}' has no {column}: only a transport journey carries it, and this one " +
+            (IsIdleReturn() ? "is an idle return." : IsCharging() ? "is a charging journey." : "is missing it."));
     public JourneyRuntimeStage Stage { get; set; }
     public required string AgvId { get; set; }
     public required string VehicleKey { get; set; }
@@ -593,15 +759,15 @@ public sealed class JourneyRuntimeRow
     public required string RouteEvidenceId { get; set; }
     public required string PickupStationId { get; set; }
     public int PickupStationRiotId { get; set; }
-    public required string GateStationId { get; set; }
+    public string? GateStationId { get; set; }
     public int GateStationRiotId { get; set; }
     public int ExpectedBasketCount { get; set; }
-    public required string TargetSlotsJson { get; set; }
+    public string? TargetSlotsJson { get; set; }
     public required string OperationSessionId { get; set; }
     public required string PickupMovementLegId { get; set; }
     public required string PickupUpperId { get; set; }
-    public required string GateMovementLegId { get; set; }
-    public required string GateUpperId { get; set; }
+    public string? GateMovementLegId { get; set; }
+    public string? GateUpperId { get; set; }
     public long DispatchGeneration { get; set; }
     public long VehicleBusinessRevision { get; set; }
     public long WorklistRevision { get; set; }
@@ -609,16 +775,16 @@ public sealed class JourneyRuntimeRow
     public required string VehicleBusinessMessageId { get; set; }
     public required string WorklistMessageId { get; set; }
     public required string PlanMessageId { get; set; }
-    public required string SublotRequestMessageId { get; set; }
-    public required string LoadCommandMessageId { get; set; }
-    public required string LoadSlotOperationAttemptId { get; set; }
-    public required string PreDepartureSafetyCheckMessageId { get; set; }
-    public required string PreDepartureSafetyCheckId { get; set; }
-    public required string GateVehicleBusinessMessageId { get; set; }
-    public required string GateWorklistMessageId { get; set; }
-    public required string GatePlanMessageId { get; set; }
-    public required string UnloadCommandMessageId { get; set; }
-    public required string UnloadSlotOperationAttemptId { get; set; }
+    public string? SublotRequestMessageId { get; set; }
+    public string? LoadCommandMessageId { get; set; }
+    public string? LoadSlotOperationAttemptId { get; set; }
+    public string? PreDepartureSafetyCheckMessageId { get; set; }
+    public string? PreDepartureSafetyCheckId { get; set; }
+    public string? GateVehicleBusinessMessageId { get; set; }
+    public string? GateWorklistMessageId { get; set; }
+    public string? GatePlanMessageId { get; set; }
+    public string? UnloadCommandMessageId { get; set; }
+    public string? UnloadSlotOperationAttemptId { get; set; }
     public string? ConsumedSublotMessageId { get; set; }
     public string? ConsumedSafetyResultMessageId { get; set; }
     /// <summary>
@@ -680,6 +846,117 @@ public sealed class JourneyRuntimeRow
 
     /// <summary>The vehicle whose acceptance triggered the yield, when <see cref="YieldTriggeredAt"/> is set.</summary>
     public string? YieldTriggeredByVehicleKey { get; set; }
+
+    /// <summary>
+    /// When this journey's vehicle began waiting for a person, by the clock of the write that made it so
+    /// (control-server#273): the waiting journey watch and the dashboard measure the wait from here. Null while the
+    /// journey is not waiting (<see cref="JourneyWaitClassification.IsWaiting"/>).
+    /// </summary>
+    /// <remarks>
+    /// <para>
+    /// <b>A wait, not a stage.</b> Moving from one stationary stage to another -- a gate that waited two hours for its unload
+    /// and is then blocked -- does not start it over: the vehicle has not moved and its battery has not stopped falling. It
+    /// ends when the journey stops waiting -- a departure whose order was confirmed, or the end of the journey -- and a new
+    /// one begins on arrival, from the arrival, because the vehicle has moved since.
+    /// </para>
+    /// <para>
+    /// <b>A departure whose order was not confirmed keeps waiting</b> (incremental review of #320, L-a). The engine moves the
+    /// stage onto the leg in the same save that writes the dispatch outcome as the reason (<c>ResultUnknown</c> and the like);
+    /// a travelling stage with a reason is a wait, so the start stays the station's. That is decided, not incidental: the
+    /// vehicle has most likely not left.
+    /// </para>
+    /// <para>
+    /// <b>The session gate is not a reason on a leg.</b> <c>ONBOARD_SESSION_NOT_READY</c> is what a real onboard reports on
+    /// nearly every leg while it carries this server's own order, so on a travelling stage it is not a wait (see
+    /// <see cref="JourneyWaitClassification"/>).
+    /// </para>
+    /// <para>
+    /// <b>A travelling stage's wait begins with its reason, not with the leg.</b> A twelve-minute drive whose session drops
+    /// in its last seconds has waited seconds, not twelve minutes, so the start is <see cref="BlockReasonSince"/>. A reason
+    /// that changes during the stop (a checkpoint wait escalated past its budget) does not start it over either.
+    /// </para>
+    /// <para>
+    /// Written by <see cref="ControlServerDbContext"/> on every save that adds or changes the row, never by the runtime:
+    /// seven places move a stage and more write a reason, and a column each of them had to remember would be wrong the first
+    /// time one forgot. A stationary stage's start is the <see cref="UpdatedAt"/> the same write carries; a writer that
+    /// forgot that column leaves an earlier time, so the wait reads longer and is reported sooner -- never later.
+    /// </para>
+    /// </remarks>
+    public DateTimeOffset? WaitingSince { get; private set; }
+
+    /// <summary>
+    /// The battery the waiting journey watch last read from RIoT for this journey's vehicle, in percent; null when that
+    /// read gave no percentage (control-server#273). Meaningful together with <see cref="WaitingBatteryObservedAt"/>:
+    /// a null here with a time there is "unknown at that time", not "never read".
+    /// </summary>
+    public int? WaitingBatteryPercent { get; set; }
+
+    /// <summary>When the watch made the read <see cref="WaitingBatteryPercent"/> holds, by this server's clock; null before the first.</summary>
+    public DateTimeOffset? WaitingBatteryObservedAt { get; set; }
+
+    /// <summary>When the watch last logged this journey's wait; kept so a restart neither repeats nor loses the cadence.</summary>
+    public DateTimeOffset? WaitingWarnedAt { get; set; }
+
+    /// <summary>
+    /// The <c>ChargingPolicyVersion</c> this journey was dispatched under (<c>REQ-0282</c>: work already under way keeps the
+    /// policy snapshot it started with; <c>REQ-0281</c>: a threshold crossed on the way is acted on after the journey, read
+    /// against this version). Null on every journey today: batch 9 schema ticket control-server#399 only adds the column, and
+    /// its writer is the dispatch of batch 9.
+    /// </summary>
+    public long? ChargingPolicyVersion { get; set; }
+
+    /// <summary>
+    /// The <c>batteryState</c> this server last put into this journey's <c>VehicleBusinessStateSnapshot</c>. That snapshot is
+    /// re-sent under one deterministic message id per stage, and a re-send whose payload differs is refused as a semantic
+    /// conflict (<c>OnboardJourneyPublisher</c>), so the value a stage published must be readable again rather than taken
+    /// from the vehicle's live battery. Null on every journey today (control-server#399); its writer is batch 9's
+    /// projection of the real battery state.
+    /// </summary>
+    public string? PublishedBatteryState { get; set; }
+
+    /// <summary>
+    /// How many saves have written this row: the concurrency token that stops a writer from saving over a row it read before
+    /// someone else committed to it (control-server#357). Raised by <see cref="ControlServerDbContext"/> on every save that
+    /// changes the row, never by a writer, so no writer can forget it.
+    /// </summary>
+    /// <remarks>
+    /// <para>
+    /// <b>Why there is one.</b> The inbound handling writes journeys inside the inbox's <c>BEGIN IMMEDIATE</c> transaction, so what
+    /// it reads is current. The runtime reads every open journey at the start of a round and saves each one after deciding --
+    /// after RIoT calls and after the other vehicles' advances. An operator's cancellation or a result that does not reconcile,
+    /// committed in between, was saved over: the reason it closed with went blank (real-rig run 35896134304), and a journey the
+    /// inbound had just blocked for manual recovery was carried on to its departure and its gate order.
+    /// </para>
+    /// <para>
+    /// A save whose original value no longer matches fails with a concurrency exception and writes nothing; the runtime yields
+    /// that vehicle for the round and reads it afresh in the next (<c>JourneyRuntimeEngine</c>). While a vehicle is advanced
+    /// every save the runtime makes also re-checks this row even if it changes nothing on it
+    /// (<see cref="ControlServerDbContext.GuardedJourneyId"/>), so a RIoT order is never created on the strength of a read that
+    /// has since been overtaken.
+    /// </para>
+    /// <para>
+    /// Not a business fact, so the zero-change pins leave it out: it counts saves, and a path that saves once more is not a
+    /// path whose outcome changed.
+    /// </para>
+    /// </remarks>
+    public long Version { get; private set; }
+
+    /// <summary>
+    /// Brings <see cref="WaitingSince"/> in line with the row as it is about to be saved: a wait that began starts at
+    /// <paramref name="startedAt"/>, a wait that goes on keeps its start, and a journey no longer waiting has none -- nor a
+    /// time it was last warned about, so a wait that begins again is logged from its own threshold. Internal, and the
+    /// database context is its one caller, so no runtime writer can set the start beside the stage and drift from that.
+    /// </summary>
+    internal void ReconcileWait(bool waiting, DateTimeOffset startedAt)
+    {
+        if (!waiting)
+        {
+            WaitingSince = null;
+            WaitingWarnedAt = null;
+            return;
+        }
+        WaitingSince ??= startedAt;
+    }
 
     /// <summary>
     /// The one way to write <see cref="BlockReasonCode"/>: the first write of a code records when it

@@ -1,0 +1,7 @@
+# cs#499 issue comment probe (RecoveryStateMachineG2Tests.CompensationProbe291.cs, copied verbatim from the comment, not committed)
+# commit: 1de2d2e27667305ac3aff917a425db9dbe92efeb (fp/v2-impl tip, includes cs#291 / PR #498)
+# command: dotnet test tests/ControlServer.Tests/ControlServer.Tests.csproj -c Release --filter "FullyQualifiedName~Probe291"
+  Failed ControlServer.Tests.RecoveryStateMachineG2Tests.Probe291CompensationOfOneOfTwoDemands [3 s]
+  Error Message:
+   response=DurableAck stage=Blocked block=LOAD_RESULT_REQUIRES_RECOVERY readiness=RecoveryRequired/DEPARTURE_SAFETY_NOT_READY demands=1=Cancelled,2=Accepted members=1=TERMINATED,2=LOADED
+Failed!  - Failed:     1, Passed:     0, Skipped:     0, Total:     1, Duration: 3 s - ControlServer.Tests.dll (net8.0)

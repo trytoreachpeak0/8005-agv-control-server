@@ -1,0 +1,22 @@
+mutation S2-one-refill-per-stop: JourneyRuntimeEngine.cs matches=[1]
+diff --git a/src/ControlServer.Host/Runtime/JourneyRuntimeEngine.cs b/src/ControlServer.Host/Runtime/JourneyRuntimeEngine.cs
+index a1178c08..b00066f8 100644
+--- a/src/ControlServer.Host/Runtime/JourneyRuntimeEngine.cs
++++ b/src/ControlServer.Host/Runtime/JourneyRuntimeEngine.cs
+@@ -2177,7 +2177,7 @@ public sealed partial class JourneyRuntimeEngine(
+         CancellationToken cancellationToken)
+     {
+         JourneyStopRow stop = stops.Current;
+-        if (stops.OutstandingAtCurrentStop.Count == 0)
++        if (stops.OutstandingAtCurrentStop.Count == 0 || stop.WorklistRefills > 0)
+         {
+             return null;
+         }
+  Failed ControlServer.Tests.RefilledStationDeadlineReachesVehicleTests.TwoDisconnectsWithNoConfirmationBetweenThemEachReachTheVehicle [671 ms]
+  Error Message:
+Expected: 2026-08-26T01:00:44.0000000+00:00
+Actual:   2026-08-26T01:00:37.0000000+00:00
+     at ControlServer.Tests.RefilledStationDeadlineReachesVehicleTests.AssertTheVehicleHoldsTheServersDeadlineAsync(RuntimeFixture fixture, AdoptingPeer vehicle, DateTimeOffset before) in tests\ControlServer.Tests\RefilledStationDeadlineReachesVehicleTests.cs:line 714
+   at ControlServer.Tests.RefilledStationDeadlineReachesVehicleTests.TwoDisconnectsWithNoConfirmationBetweenThemEachReachTheVehicle() in tests\ControlServer.Tests\RefilledStationDeadlineReachesVehicleTests.cs:line 317
+   at ControlServer.Tests.RefilledStationDeadlineReachesVehicleTests.TwoDisconnectsWithNoConfirmationBetweenThemEachReachTheVehicle() in tests\ControlServer.Tests\RefilledStationDeadlineReachesVehicleTests.cs:line 320
+Failed!  - Failed:     1, Passed:    33, Skipped:     0, Total:    34, Duration: 16 s - ControlServer.Tests.dll (net8.0)

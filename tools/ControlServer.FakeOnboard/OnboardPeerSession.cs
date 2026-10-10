@@ -23,7 +23,8 @@ public sealed class OnboardPeerSession(
     CommandEngine<FakeOnboardState> engine,
     FakeOnboardOptions options,
     SlotStateSeed slotStateSeed,
-    FakeLoadCancellations? loadCancellations = null) : IAsyncDisposable
+    FakeLoadCancellations? loadCancellations = null,
+    FakeSlotFaultDeclarations? slotFaultDeclarations = null) : IAsyncDisposable
 {
     // The envelope's own settings: this instance also hashes the OperationResult business content
     // the server hashes back, and the peer's line has to be the bytes the server validates.
@@ -62,16 +63,31 @@ public sealed class OnboardPeerSession(
         lifetime = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
         closedByPeer = false;
         client = new TcpClient();
-        await client.ConnectAsync(options.Host, options.Port, lifetime.Token).ConfigureAwait(false);
-        NetworkStream stream = client.GetStream();
-        StreamReader reader = new(stream, Encoding.UTF8, detectEncodingFromByteOrderMarks: false, leaveOpen: true);
-        writer = new StreamWriter(stream, new UTF8Encoding(false), leaveOpen: true)
+        StreamReader reader;
+        long generation;
+        try
         {
-            AutoFlush = true,
-            NewLine = "\n"
-        };
-
-        long generation = await HandshakeAsync(reader, lifetime.Token).ConfigureAwait(false);
+            await client.ConnectAsync(options.Host, options.Port, lifetime.Token).ConfigureAwait(false);
+            NetworkStream stream = client.GetStream();
+            reader = new(stream, Encoding.UTF8, detectEncodingFromByteOrderMarks: false, leaveOpen: true);
+            writer = new StreamWriter(stream, new UTF8Encoding(false), leaveOpen: true)
+            {
+                AutoFlush = true,
+                NewLine = "\n"
+            };
+            generation = await HandshakeAsync(reader, lifetime.Token).ConfigureAwait(false);
+        }
+        catch
+        {
+            // A failed handshake used to leave client, writer and lifetime assigned. IsConnected reads only
+            // client and closedByPeer, so the peer reported a session that never reached READY as connected,
+            // and PUT /connection {connected:true} answered "no change" without trying again: a scenario that
+            // retries after a failed reconnect would go on against a peer that is not there. The socket also
+            // stayed open and unread while the server kept writing into it (control-server#277). Torn down
+            // before rethrowing, so the caller still sees why the handshake failed.
+            await TearDownAsync("HANDSHAKE_FAILED").ConfigureAwait(false);
+            throw;
+        }
         engine.Mutate<object?>(state => (state with
         {
             SessionGeneration = generation,
@@ -118,7 +134,6 @@ public sealed class OnboardPeerSession(
             activeSlotConfigurationVersion = state.ActiveSlotConfigurationVersion,
             activeSlotConfigurationFingerprint = state.ActiveSlotConfigurationFingerprint,
             slotStates = slotStateSeed.Render(),
-            supportsBatchUnlock = false,
             onboardJournalFormatVersion = 1
         }), cancellationToken).ConfigureAwait(false);
         await ReadRequiredAsync(reader, "SnapshotAppliedAck", cancellationToken).ConfigureAwait(false);
@@ -205,9 +220,11 @@ public sealed class OnboardPeerSession(
             while (await timer.WaitForNextTickAsync(cancellationToken).ConfigureAwait(false))
             {
                 FakeOnboardState state = engine.Snapshot().State;
+                // Exactly the two fields Heartbeat.schema.json allows. An observedAt here was refused by the
+                // outbound schema gate (additionalProperties) the first time a test kept this peer alive past
+                // its first beat (control-server#276); the server never read it.
                 await SendLineAsync(Envelope("Heartbeat", NewId(), null, state.SessionGeneration, new
                 {
-                    observedAt = DateTimeOffset.UtcNow,
                     capabilityVersion = 1L,
                     safetyStateVersion = state.SafetyStateVersion
                 }), cancellationToken).ConfigureAwait(false);
@@ -268,6 +285,10 @@ public sealed class OnboardPeerSession(
                 return;
             case "LoadCancellationAuthorization" when loadCancellations is not null:
                 await loadCancellations.ObserveAuthorizationAsync(this, root, cancellationToken).ConfigureAwait(false);
+                return;
+            case "SlotFaultDeclarationCommand" when slotFaultDeclarations is not null:
+                await slotFaultDeclarations.ObserveCommandAsync(this, root, options.AgvId, generation, cancellationToken)
+                    .ConfigureAwait(false);
                 return;
             case "DurableAck" when loadCancellations is not null:
                 loadCancellations.ObserveDurableAck(root);
@@ -496,6 +517,10 @@ public sealed class OnboardPeerSession(
             new
             {
                 preDepartureSafetyCheckId = checkPayload.GetProperty("preDepartureSafetyCheckId").GetString(),
+                // v3 (control-server#382): the answer says which check it answers. Required by the schema, and
+                // the server does not validate inbound lines, so only FakeOnboardRequestAnswerTests would notice
+                // it missing.
+                checkPurpose = checkPayload.GetProperty("checkPurpose").GetString(),
                 outcome = safe ? "SAFE" : "UNSAFE",
                 observedAt,
                 safetyStateVersion = checkPayload.GetProperty("expectedSafetyStateVersion").GetInt64(),
@@ -665,7 +690,13 @@ public sealed class OnboardPeerSession(
     /// 把这条会话断掉，不自己重连——场景用它造出「车掉线」，读完服务端在掉线期间的状态再调
     /// <see cref="ReconnectAsync"/>。
     /// </summary>
-    public async Task DisconnectAsync()
+    public Task DisconnectAsync() => TearDownAsync("DISCONNECTED_BY_SCENARIO");
+
+    /// <summary>
+    /// Closes whatever session is open, finished or not, and records why. A scenario's disconnect and a
+    /// handshake that failed part-way leave the same fields behind.
+    /// </summary>
+    private async Task TearDownAsync(string readinessReasonCode)
     {
         CancellationTokenSource? current = lifetime;
         if (current is null)
@@ -708,7 +739,7 @@ public sealed class OnboardPeerSession(
         engine.Mutate<object?>(state => (state with
         {
             Readiness = "DISCONNECTED",
-            ReadinessReasonCode = "DISCONNECTED_BY_SCENARIO"
+            ReadinessReasonCode = readinessReasonCode
         }, null));
     }
 
@@ -786,6 +817,9 @@ public sealed class OnboardPeerSession(
         SendLineAsync(
             Envelope(messageType, messageId, null, engine.Snapshot().State.SessionGeneration, payload),
             cancellationToken);
+
+    /// <summary>Sends a line this peer built itself, as it is (control-server#383's declaration results).</summary>
+    public Task ResendLineAsync(string line, CancellationToken cancellationToken) => SendLineAsync(line, cancellationToken);
 
     private async Task SendLineAsync(string line, CancellationToken cancellationToken)
     {

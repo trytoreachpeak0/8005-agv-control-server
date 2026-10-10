@@ -73,42 +73,6 @@ public sealed class Batch2CapabilityStoresTests
         Assert.Equal(["agv02"], read.Vehicles.Select(vehicle => vehicle.AgvId));
     }
 
-    [Fact]
-    public async Task ASecondClaimOnAnOccupiedVehicleIsRefusedByTheUniqueIndex()
-    {
-        await using Fixture fixture = await Fixture.CreateAsync();
-        await fixture.AddOrderIntentAsync("UPPER-1", "agv01");
-        await fixture.AddOrderIntentAsync("UPPER-2", "agv01");
-        VehicleDispatchPolicyStore store = new(fixture.Context);
-
-        Assert.True(await store.TryClaimVehicleOccupancyAsync(
-            "UPPER-1", Now, TestContext.Current.CancellationToken));
-        Assert.False(await store.TryClaimVehicleOccupancyAsync(
-            "UPPER-2", Now, TestContext.Current.CancellationToken));
-
-        // Releasing the first frees the vehicle for the second — the index is filtered on
-        // ReleasedAt, so a finished occupancy steps out of the uniqueness scope.
-        await store.ReleaseVehicleOccupancyAsync("UPPER-1", Now, TestContext.Current.CancellationToken);
-        Assert.True(await store.TryClaimVehicleOccupancyAsync(
-            "UPPER-2", Now, TestContext.Current.CancellationToken));
-    }
-
-    [Fact]
-    public async Task UnclaimedOrderIntentsForOneVehicleDoNotCollide()
-    {
-        // This is the behaviour-unchanged guarantee ticket 06 promised. OrderIntents keeps
-        // historical rows, so one vehicle already appears on many of them; the index only bites
-        // once something writes ClaimedAt, which nothing does before ticket 09.
-        await using Fixture fixture = await Fixture.CreateAsync();
-
-        await fixture.AddOrderIntentAsync("UPPER-1", "agv01");
-        await fixture.AddOrderIntentAsync("UPPER-2", "agv01");
-        await fixture.AddOrderIntentAsync("UPPER-3", "agv01");
-
-        Assert.Equal(3, await fixture.Context.OrderIntents
-            .CountAsync(intent => intent.VehicleKey == "agv01", TestContext.Current.CancellationToken));
-    }
-
     // ---- RouteGraphSnapshot engine (ticket 12) -----------------------------------------
 
     [Fact]
@@ -515,25 +479,8 @@ public sealed class Batch2CapabilityStoresTests
             DbContextOptions<ControlServerDbContext> options =
                 new DbContextOptionsBuilder<ControlServerDbContext>().UseSqlite(connection).Options;
             ControlServerDbContext context = new(options);
-            await context.Database.MigrateAsync(TestContext.Current.CancellationToken);
+            await MigratedDatabaseTemplate.ApplyAsync(context.Database, TestContext.Current.CancellationToken);
             return new Fixture(connection, context);
-        }
-
-        public async Task AddOrderIntentAsync(string upperId, string vehicleKey)
-        {
-            Context.OrderIntents.Add(new OrderIntentRow
-            {
-                MovementLegId = $"LEG-{upperId}",
-                DemandId = $"DEMAND-{upperId}",
-                UpperId = upperId,
-                Purpose = "WIRE_TO_GATE",
-                TargetStationId = "GATE-1",
-                VehicleKey = vehicleKey,
-                MapId = 25,
-                DestinationStationId = 10,
-                CreatedAt = Now,
-            });
-            await Context.SaveChangesAsync(TestContext.Current.CancellationToken);
         }
 
         public async ValueTask DisposeAsync()

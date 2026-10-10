@@ -1,0 +1,81 @@
+Test run for C:\Users\szy\Desktop\8005-workspace-v2\worktrees\cs362-8005-agv-control-server\tests\ControlServer.Tests\bin\Release\net8.0\win-x64\ControlServer.Tests.dll (.NETCoreApp,Version=v8.0)
+VSTest version 17.11.1 (x64)
+
+Starting test execution, please wait...
+A total of 1 test files matched the specified pattern.
+[xUnit.net 00:00:11.89]     ControlServer.Tests.JourneyRuntimeWorkerLoadCommandCommitOrderTests.TheLoadCommandReachesTheVehicleOnlyAfterItsIterationCommitsAwaitingLoadResult [FAIL]
+  Failed ControlServer.Tests.JourneyRuntimeWorkerLoadCommandCommitOrderTests.TheLoadCommandReachesTheVehicleOnlyAfterItsIterationCommitsAwaitingLoadResult [8 s]
+  Error Message:
+   Assert.Equal() Failure: Values differ
+Expected: AwaitingLoadResult
+Actual:   AwaitingSublot
+  Stack Trace:
+     at ControlServer.Tests.JourneyRuntimeWorkerLoadCommandCommitOrderTests.TheLoadCommandReachesTheVehicleOnlyAfterItsIterationCommitsAwaitingLoadResult() in C:\Users\szy\Desktop\8005-workspace-v2\worktrees\cs362-8005-agv-control-server\tests\ControlServer.Tests\JourneyRuntimeWorkerLoadCommandCommitOrderTests.cs:line 63
+   at ControlServer.Tests.JourneyRuntimeWorkerLoadCommandCommitOrderTests.TheLoadCommandReachesTheVehicleOnlyAfterItsIterationCommitsAwaitingLoadResult() in C:\Users\szy\Desktop\8005-workspace-v2\worktrees\cs362-8005-agv-control-server\tests\ControlServer.Tests\JourneyRuntimeWorkerLoadCommandCommitOrderTests.cs:line 67
+--- End of stack trace from previous location ---
+[xUnit.net 00:00:13.60]     ControlServer.Tests.JourneyRuntimeWorkerLoadCommandCommitOrderTests.ACancellationBeforeSublotArrivingWhileTheLoadCommandGoesOutIsRefused [FAIL]
+  Failed ControlServer.Tests.JourneyRuntimeWorkerLoadCommandCommitOrderTests.ACancellationBeforeSublotArrivingWhileTheLoadCommandGoesOutIsRefused [1 s]
+  Error Message:
+   Assert.Equal() Failure: Values differ
+Expected: AwaitingLoadResult
+Actual:   AwaitingSublot
+  Stack Trace:
+     at ControlServer.Tests.JourneyRuntimeWorkerLoadCommandCommitOrderTests.ACancellationBeforeSublotArrivingWhileTheLoadCommandGoesOutIsRefused() in C:\Users\szy\Desktop\8005-workspace-v2\worktrees\cs362-8005-agv-control-server\tests\ControlServer.Tests\JourneyRuntimeWorkerLoadCommandCommitOrderTests.cs:line 109
+   at ControlServer.Tests.JourneyRuntimeWorkerLoadCommandCommitOrderTests.ACancellationBeforeSublotArrivingWhileTheLoadCommandGoesOutIsRefused() in C:\Users\szy\Desktop\8005-workspace-v2\worktrees\cs362-8005-agv-control-server\tests\ControlServer.Tests\JourneyRuntimeWorkerLoadCommandCommitOrderTests.cs:line 116
+   at ControlServer.Tests.JourneyRuntimeWorkerLoadCommandCommitOrderTests.ACancellationBeforeSublotArrivingWhileTheLoadCommandGoesOutIsRefused() in C:\Users\szy\Desktop\8005-workspace-v2\worktrees\cs362-8005-agv-control-server\tests\ControlServer.Tests\JourneyRuntimeWorkerLoadCommandCommitOrderTests.cs:line 116
+--- End of stack trace from previous location ---
+[xUnit.net 00:00:15.16]     ControlServer.Tests.CancelledDemandLoadCommandTests.ACancellationThatSettlesAfterTheRuntimeReadTheEntryWinsTheStop(vehicle: "CANCELLED_WHILE_LOADING") [FAIL]
+  Failed ControlServer.Tests.CancelledDemandLoadCommandTests.ACancellationThatSettlesAfterTheRuntimeReadTheEntryWinsTheStop(vehicle: "CANCELLED_WHILE_LOADING") [11 s]
+  Error Message:
+   Assert.Equal() Failure: Values differ
+Expected: Ledger { First = Succeeded, Second = Cancelled, SecondMembership = TERMINATED, LoadOperationForTheCancelled = , Completions = 10000000-0000-4000-8000-000000000001, Stage = Completed }
+Actual:   Ledger { First = Accepted, Second = Cancelled, SecondMembership = LOADING, LoadOperationForTheCancelled = Prepared, Completions = , Stage = AwaitingLoadResult }
+  Stack Trace:
+     at ControlServer.Tests.CancelledDemandLoadCommandTests.ACancellationThatSettlesAfterTheRuntimeReadTheEntryWinsTheStop(String vehicle) in C:\Users\szy\Desktop\8005-workspace-v2\worktrees\cs362-8005-agv-control-server\tests\ControlServer.Tests\CancelledDemandLoadCommandTests.cs:line 91
+   at ControlServer.Tests.CancelledDemandLoadCommandTests.ACancellationThatSettlesAfterTheRuntimeReadTheEntryWinsTheStop(String vehicle) in C:\Users\szy\Desktop\8005-workspace-v2\worktrees\cs362-8005-agv-control-server\tests\ControlServer.Tests\CancelledDemandLoadCommandTests.cs:line 106
+   at ControlServer.Tests.CancelledDemandLoadCommandTests.ACancellationThatSettlesAfterTheRuntimeReadTheEntryWinsTheStop(String vehicle) in C:\Users\szy\Desktop\8005-workspace-v2\worktrees\cs362-8005-agv-control-server\tests\ControlServer.Tests\CancelledDemandLoadCommandTests.cs:line 106
+--- End of stack trace from previous location ---
+[xUnit.net 00:00:18.42]     ControlServer.Tests.CancelledDemandLoadCommandTests.ACancellationThatSettlesAfterTheRuntimeReadTheEntryWinsTheStop(vehicle: "REPORTED_EMPTY_BEFORE_THE_DEADLINE") [FAIL]
+  Failed ControlServer.Tests.CancelledDemandLoadCommandTests.ACancellationThatSettlesAfterTheRuntimeReadTheEntryWinsTheStop(vehicle: "REPORTED_EMPTY_BEFORE_THE_DEADLINE") [3 s]
+  Error Message:
+   Assert.Equal() Failure: Values differ
+Expected: Ledger { First = Succeeded, Second = Cancelled, SecondMembership = TERMINATED, LoadOperationForTheCancelled = , Completions = 10000000-0000-4000-8000-000000000001, Stage = Completed }
+Actual:   Ledger { First = Accepted, Second = RecoveryRequired, SecondMembership = LOADING, LoadOperationForTheCancelled = RecoveryRequired, Completions = , Stage = Blocked }
+  Stack Trace:
+     at ControlServer.Tests.CancelledDemandLoadCommandTests.ACancellationThatSettlesAfterTheRuntimeReadTheEntryWinsTheStop(String vehicle) in C:\Users\szy\Desktop\8005-workspace-v2\worktrees\cs362-8005-agv-control-server\tests\ControlServer.Tests\CancelledDemandLoadCommandTests.cs:line 91
+   at ControlServer.Tests.CancelledDemandLoadCommandTests.ACancellationThatSettlesAfterTheRuntimeReadTheEntryWinsTheStop(String vehicle) in C:\Users\szy\Desktop\8005-workspace-v2\worktrees\cs362-8005-agv-control-server\tests\ControlServer.Tests\CancelledDemandLoadCommandTests.cs:line 106
+   at ControlServer.Tests.CancelledDemandLoadCommandTests.ACancellationThatSettlesAfterTheRuntimeReadTheEntryWinsTheStop(String vehicle) in C:\Users\szy\Desktop\8005-workspace-v2\worktrees\cs362-8005-agv-control-server\tests\ControlServer.Tests\CancelledDemandLoadCommandTests.cs:line 106
+--- End of stack trace from previous location ---
+[xUnit.net 00:00:21.46]     ControlServer.Tests.CancelledDemandLoadCommandTests.ACancellationThatSettlesAfterTheRuntimeReadTheEntryWinsTheStop(vehicle: "REPORTED_EMPTY_AFTER_THE_DEADLINE") [FAIL]
+  Failed ControlServer.Tests.CancelledDemandLoadCommandTests.ACancellationThatSettlesAfterTheRuntimeReadTheEntryWinsTheStop(vehicle: "REPORTED_EMPTY_AFTER_THE_DEADLINE") [3 s]
+  Error Message:
+   Assert.Equal() Failure: Values differ
+Expected: Ledger { First = Succeeded, Second = Cancelled, SecondMembership = TERMINATED, LoadOperationForTheCancelled = , Completions = 10000000-0000-4000-8000-000000000001, Stage = Completed }
+Actual:   Ledger { First = Accepted, Second = Cancelled, SecondMembership = LOADING, LoadOperationForTheCancelled = Failed, Completions = , Stage = AwaitingLoadResult }
+  Stack Trace:
+     at ControlServer.Tests.CancelledDemandLoadCommandTests.ACancellationThatSettlesAfterTheRuntimeReadTheEntryWinsTheStop(String vehicle) in C:\Users\szy\Desktop\8005-workspace-v2\worktrees\cs362-8005-agv-control-server\tests\ControlServer.Tests\CancelledDemandLoadCommandTests.cs:line 91
+   at ControlServer.Tests.CancelledDemandLoadCommandTests.ACancellationThatSettlesAfterTheRuntimeReadTheEntryWinsTheStop(String vehicle) in C:\Users\szy\Desktop\8005-workspace-v2\worktrees\cs362-8005-agv-control-server\tests\ControlServer.Tests\CancelledDemandLoadCommandTests.cs:line 106
+   at ControlServer.Tests.CancelledDemandLoadCommandTests.ACancellationThatSettlesAfterTheRuntimeReadTheEntryWinsTheStop(String vehicle) in C:\Users\szy\Desktop\8005-workspace-v2\worktrees\cs362-8005-agv-control-server\tests\ControlServer.Tests\CancelledDemandLoadCommandTests.cs:line 106
+--- End of stack trace from previous location ---
+[xUnit.net 00:00:26.35]     ControlServer.Tests.CancelledDemandLoadCommandTests.ACancellationThatSettlesAfterTheRuntimeReadTheEntryWinsTheStop(vehicle: "LOADED") [FAIL]
+  Failed ControlServer.Tests.CancelledDemandLoadCommandTests.ACancellationThatSettlesAfterTheRuntimeReadTheEntryWinsTheStop(vehicle: "LOADED") [4 s]
+  Error Message:
+   Assert.Equal() Failure: Values differ
+Expected: Ledger { First = Succeeded, Second = Cancelled, SecondMembership = TERMINATED, LoadOperationForTheCancelled = , Completions = 10000000-0000-4000-8000-000000000001, Stage = Completed }
+Actual:   Ledger { First = Succeeded, Second = Cancelled, SecondMembership = LOADED, LoadOperationForTheCancelled = Committed, Completions = 10000000-0000-4000-8000-000000000001, Stage = Completed }
+  Stack Trace:
+     at ControlServer.Tests.CancelledDemandLoadCommandTests.ACancellationThatSettlesAfterTheRuntimeReadTheEntryWinsTheStop(String vehicle) in C:\Users\szy\Desktop\8005-workspace-v2\worktrees\cs362-8005-agv-control-server\tests\ControlServer.Tests\CancelledDemandLoadCommandTests.cs:line 91
+   at ControlServer.Tests.CancelledDemandLoadCommandTests.ACancellationThatSettlesAfterTheRuntimeReadTheEntryWinsTheStop(String vehicle) in C:\Users\szy\Desktop\8005-workspace-v2\worktrees\cs362-8005-agv-control-server\tests\ControlServer.Tests\CancelledDemandLoadCommandTests.cs:line 106
+   at ControlServer.Tests.CancelledDemandLoadCommandTests.ACancellationThatSettlesAfterTheRuntimeReadTheEntryWinsTheStop(String vehicle) in C:\Users\szy\Desktop\8005-workspace-v2\worktrees\cs362-8005-agv-control-server\tests\ControlServer.Tests\CancelledDemandLoadCommandTests.cs:line 106
+--- End of stack trace from previous location ---
+[xUnit.net 00:00:28.62]     ControlServer.Tests.CancelledDemandLoadCommandTests.WhenTheStopStillHasWorkTheLosingEntryIsRefusedAsOutOfScopeOnTheNextIteration [FAIL]
+  Failed ControlServer.Tests.CancelledDemandLoadCommandTests.WhenTheStopStillHasWorkTheLosingEntryIsRefusedAsOutOfScopeOnTheNextIteration [2 s]
+  Error Message:
+   已取消的乙被下了装货命令。
+  Stack Trace:
+     at ControlServer.Tests.CancelledDemandLoadCommandTests.WhenTheStopStillHasWorkTheLosingEntryIsRefusedAsOutOfScopeOnTheNextIteration() in C:\Users\szy\Desktop\8005-workspace-v2\worktrees\cs362-8005-agv-control-server\tests\ControlServer.Tests\CancelledDemandLoadCommandTests.cs:line 135
+   at ControlServer.Tests.CancelledDemandLoadCommandTests.WhenTheStopStillHasWorkTheLosingEntryIsRefusedAsOutOfScopeOnTheNextIteration() in C:\Users\szy\Desktop\8005-workspace-v2\worktrees\cs362-8005-agv-control-server\tests\ControlServer.Tests\CancelledDemandLoadCommandTests.cs:line 144
+   at ControlServer.Tests.CancelledDemandLoadCommandTests.WhenTheStopStillHasWorkTheLosingEntryIsRefusedAsOutOfScopeOnTheNextIteration() in C:\Users\szy\Desktop\8005-workspace-v2\worktrees\cs362-8005-agv-control-server\tests\ControlServer.Tests\CancelledDemandLoadCommandTests.cs:line 144
+--- End of stack trace from previous location ---
+
+Failed!  - Failed:     7, Passed:     0, Skipped:     0, Total:     7, Duration: 24 s - ControlServer.Tests.dll (net8.0)

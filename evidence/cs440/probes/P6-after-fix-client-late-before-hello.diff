@@ -1,0 +1,16 @@
+diff --git a/tests/ControlServer.Tests/OnboardSilentLivenessLossTests.cs b/tests/ControlServer.Tests/OnboardSilentLivenessLossTests.cs
+index 68038dcf1..bc284c338 100644
+--- a/tests/ControlServer.Tests/OnboardSilentLivenessLossTests.cs
++++ b/tests/ControlServer.Tests/OnboardSilentLivenessLossTests.cs
+@@ -385,6 +385,11 @@ public sealed class OnboardSilentLivenessLossTests
+             string? accepted;
+             try
+             {
++                if (attempt == 1)
++                {
++                    // PROBE P6 (post-fix): the first connection's client thread is late by 400 ms, past the 250 ms window.
++                    await Task.Delay(TimeSpan.FromMilliseconds(400), TestContext.Current.CancellationToken);
++                }
+                 await writer.WriteLineAsync(SessionHello(messageId).AsMemory(), TestContext.Current.CancellationToken);
+                 // 等的是服务端答复这个事实，不是等够多少毫秒。
+                 accepted = await ReadWithinGuardAsync(

@@ -1,0 +1,149 @@
+[15:09:18 INF] Executed DbCommand (9ms) [Parameters=[], CommandType='Text', CommandTimeout='30']
+SELECT COUNT(*) FROM "sqlite_master" WHERE "name" = '__EFMigrationsHistory' AND "type" = 'table';
+[15:09:18 INF] Executed DbCommand (1ms) [Parameters=[], CommandType='Text', CommandTimeout='30']
+SELECT COUNT(*) FROM "sqlite_master" WHERE "name" = '__EFMigrationsHistory' AND "type" = 'table';
+[15:09:18 INF] Executed DbCommand (1ms) [Parameters=[], CommandType='Text', CommandTimeout='30']
+SELECT "MigrationId", "ProductVersion"
+FROM "__EFMigrationsHistory"
+ORDER BY "MigrationId";
+[15:09:18 INF] No migrations were applied. The database is already up to date.
+[15:09:18 INF] Executed DbCommand (0ms) [Parameters=[], CommandType='Text', CommandTimeout='30']
+SELECT "a"."AuditRecordId", "a"."Action", "a"."ActorAttribution", "a"."ActorIdentity", "a"."ClaimedAdministratorRole", "a"."DetailJson", "a"."ObjectId", "a"."ObjectKind", "a"."Outcome", "a"."RecordedAt", "a"."RecordedAtUtcTicks", "a"."SnapshotId", "a"."Version"
+FROM "AdministratorAuditRecords" AS "a"
+WHERE "a"."Action" = 'AUDIT_RETENTION_POLICY_CONFIGURED'
+ORDER BY "a"."RecordedAtUtcTicks" DESC, "a"."AuditRecordId" DESC
+LIMIT 1
+[15:09:19 INF] Executed DbCommand (1ms) [Parameters=[], CommandType='Text', CommandTimeout='30']
+SELECT MAX("d"."Version")
+FROM "DispatchZoneAreaAssignmentVersions" AS "d"
+[15:09:19 INF] Executed DbCommand (0ms) [Parameters=[], CommandType='Text', CommandTimeout='30']
+SELECT "t"."Version", "t"."ContentSha256", "t"."LoadedAt", "t"."SnapshotId", "t"."Source"
+FROM "TaskTypeStationRuleVersions" AS "t"
+ORDER BY "t"."Version" DESC
+LIMIT 1
+[15:09:19 INF] Executed DbCommand (2ms) [Parameters=[@__objectKind_0='?' (Size = 19), @__objectId_1='?' (Size = 23), @__version_2='?' (DbType = Int64)], CommandType='Text', CommandTimeout='30']
+SELECT "g"."SnapshotId", "g"."ContentJson", "g"."ContentSha256", "g"."FrozenAt", "g"."ObjectId", "g"."ObjectKind", "g"."Version"
+FROM "GovernedConfigurationSnapshots" AS "g"
+WHERE "g"."ObjectKind" = @__objectKind_0 AND "g"."ObjectId" = @__objectId_1 AND "g"."Version" = @__version_2
+LIMIT 2
+[15:09:19 INF] Executed DbCommand (2ms) [Parameters=[@p0='?' (Size = 32), @p1='?' (Size = 340), @p2='?' (Size = 64), @p3='?' (DbType = DateTimeOffset), @p4='?' (Size = 23), @p5='?' (Size = 19), @p6='?' (DbType = Int64)], CommandType='Text', CommandTimeout='30']
+INSERT INTO "GovernedConfigurationSnapshots" ("SnapshotId", "ContentJson", "ContentSha256", "FrozenAt", "ObjectId", "ObjectKind", "Version")
+VALUES (@p0, @p1, @p2, @p3, @p4, @p5, @p6);
+[15:09:19 INF] Executed DbCommand (0ms) [Parameters=[@p0='?' (Size = 32), @p1='?' (Size = 37), @p2='?' (Size = 34), @p3='?' (Size = 40), @p4='?' (Size = 131), @p5='?' (Size = 23), @p6='?' (Size = 19), @p7='?' (Size = 9), @p8='?' (DbType = DateTimeOffset), @p9='?' (DbType = Int64), @p10='?' (Size = 32), @p11='?' (DbType = Int64)], CommandType='Text', CommandTimeout='30']
+INSERT INTO "BusinessAuditRecords" ("AuditRecordId", "Action", "ActorAttribution", "ActorIdentity", "DetailJson", "ObjectId", "ObjectKind", "Outcome", "RecordedAt", "RecordedAtUtcTicks", "SnapshotId", "Version")
+VALUES (@p0, @p1, @p2, @p3, @p4, @p5, @p6, @p7, @p8, @p9, @p10, @p11);
+[15:09:19 INF] Executed DbCommand (0ms) [Parameters=[@p0='?' (DbType = Int64), @p1='?' (Size = 64), @p2='?' (DbType = DateTimeOffset), @p3='?' (Size = 32), @p4='?' (Size = 94)], CommandType='Text', CommandTimeout='30']
+INSERT INTO "TaskTypeStationRuleVersions" ("Version", "ContentSha256", "LoadedAt", "SnapshotId", "Source")
+VALUES (@p0, @p1, @p2, @p3, @p4);
+[15:09:19 INF] Executed DbCommand (0ms) [Parameters=[@p0='?' (Size = 11), @p1='?' (DbType = Int64), @p2='?' (Size = 11)], CommandType='Text', CommandTimeout='30']
+INSERT INTO "TaskTypeStationRules" ("TaskType", "Version", "FixedEnd")
+VALUES (@p0, @p1, @p2);
+[15:09:19 INF] Executed DbCommand (0ms) [Parameters=[@p0='?' (Size = 19), @p1='?' (DbType = Int64), @p2='?' (Size = 11)], CommandType='Text', CommandTimeout='30']
+INSERT INTO "TaskTypeStationRules" ("TaskType", "Version", "FixedEnd")
+VALUES (@p0, @p1, @p2);
+[15:09:19 INF] Executed DbCommand (0ms) [Parameters=[@p0='?' (Size = 15), @p1='?' (DbType = Int64), @p2='?' (Size = 6)], CommandType='Text', CommandTimeout='30']
+INSERT INTO "TaskTypeStationRules" ("TaskType", "Version", "FixedEnd")
+VALUES (@p0, @p1, @p2);
+[15:09:19 INF] Executed DbCommand (0ms) [Parameters=[@p0='?' (Size = 12), @p1='?' (DbType = Int64), @p2='?' (Size = 11)], CommandType='Text', CommandTimeout='30']
+INSERT INTO "TaskTypeStationRules" ("TaskType", "Version", "FixedEnd")
+VALUES (@p0, @p1, @p2);
+[15:09:19 INF] Executed DbCommand (0ms) [Parameters=[@p0='?' (Size = 16), @p1='?' (DbType = Int64), @p2='?' (Size = 11)], CommandType='Text', CommandTimeout='30']
+INSERT INTO "TaskTypeStationRules" ("TaskType", "Version", "FixedEnd")
+VALUES (@p0, @p1, @p2);
+[15:09:19 INF] Executed DbCommand (0ms) [Parameters=[@p0='?' (Size = 15), @p1='?' (DbType = Int64), @p2='?' (Size = 11)], CommandType='Text', CommandTimeout='30']
+INSERT INTO "TaskTypeStationRules" ("TaskType", "Version", "FixedEnd")
+VALUES (@p0, @p1, @p2);
+[15:09:19 INF] Executed DbCommand (0ms) [Parameters=[@__mapId_0='?' (DbType = Int32)], CommandType='Text', CommandTimeout='30']
+SELECT "t"."MapId", "t"."ActiveVersion", "t"."PendingVersion", "t"."State", "t"."UpdatedAt"
+FROM "TaskTypeStationActiveBindingSets" AS "t"
+WHERE "t"."MapId" = @__mapId_0
+LIMIT 2
+[15:09:19 INF] Executed DbCommand (0ms) [Parameters=[@__ruleVersion_0='?' (DbType = Int64)], CommandType='Text', CommandTimeout='30']
+SELECT EXISTS (
+    SELECT 1
+    FROM "TaskTypeStationRuleVersions" AS "t"
+    WHERE "t"."Version" = @__ruleVersion_0)
+[15:09:19 INF] Executed DbCommand (0ms) [Parameters=[@__ruleVersion_0='?' (DbType = Int64)], CommandType='Text', CommandTimeout='30']
+SELECT "t"."TaskType", "t"."FixedEnd"
+FROM "TaskTypeStationRules" AS "t"
+WHERE "t"."Version" = @__ruleVersion_0
+[15:09:19 INF] Executed DbCommand (0ms) [Parameters=[@__mapId_0='?' (DbType = Int32)], CommandType='Text', CommandTimeout='30']
+SELECT "t"."MapId", "t"."Version", "t"."CatalogRevision", "t"."ContentSha256", "t"."LoadedAt", "t"."RuleVersion", "t"."SnapshotId", "t"."Source"
+FROM "TaskTypeStationBindingSetVersions" AS "t"
+WHERE "t"."MapId" = @__mapId_0
+ORDER BY "t"."Version" DESC
+LIMIT 1
+[15:09:19 INF] Executed DbCommand (0ms) [Parameters=[@__objectKind_0='?' (Size = 20), @__objectId_1='?' (Size = 6), @__version_2='?' (DbType = Int64)], CommandType='Text', CommandTimeout='30']
+SELECT "g"."SnapshotId", "g"."ContentJson", "g"."ContentSha256", "g"."FrozenAt", "g"."ObjectId", "g"."ObjectKind", "g"."Version"
+FROM "GovernedConfigurationSnapshots" AS "g"
+WHERE "g"."ObjectKind" = @__objectKind_0 AND "g"."ObjectId" = @__objectId_1 AND "g"."Version" = @__version_2
+LIMIT 2
+[15:09:19 INF] Executed DbCommand (0ms) [Parameters=[@p0='?' (Size = 32), @p1='?' (Size = 193), @p2='?' (Size = 64), @p3='?' (DbType = DateTimeOffset), @p4='?' (Size = 6), @p5='?' (Size = 20), @p6='?' (DbType = Int64)], CommandType='Text', CommandTimeout='30']
+INSERT INTO "GovernedConfigurationSnapshots" ("SnapshotId", "ContentJson", "ContentSha256", "FrozenAt", "ObjectId", "ObjectKind", "Version")
+VALUES (@p0, @p1, @p2, @p3, @p4, @p5, @p6);
+[15:09:19 INF] Executed DbCommand (0ms) [Parameters=[@p0='?' (Size = 32), @p1='?' (Size = 44), @p2='?' (Size = 34), @p3='?' (Size = 40), @p4='?' (Size = 131), @p5='?' (Size = 6), @p6='?' (Size = 20), @p7='?' (Size = 9), @p8='?' (DbType = DateTimeOffset), @p9='?' (DbType = Int64), @p10='?' (Size = 32), @p11='?' (DbType = Int64)], CommandType='Text', CommandTimeout='30']
+INSERT INTO "BusinessAuditRecords" ("AuditRecordId", "Action", "ActorAttribution", "ActorIdentity", "DetailJson", "ObjectId", "ObjectKind", "Outcome", "RecordedAt", "RecordedAtUtcTicks", "SnapshotId", "Version")
+VALUES (@p0, @p1, @p2, @p3, @p4, @p5, @p6, @p7, @p8, @p9, @p10, @p11);
+[15:09:19 INF] Executed DbCommand (1ms) [Parameters=[@p0='?' (DbType = Int32), @p1='?' (DbType = Int64), @p2='?' (DbType = Int64), @p3='?' (Size = 64), @p4='?' (DbType = DateTimeOffset), @p5='?' (DbType = Int64), @p6='?' (Size = 32), @p7='?' (Size = 94)], CommandType='Text', CommandTimeout='30']
+INSERT INTO "TaskTypeStationBindingSetVersions" ("MapId", "Version", "CatalogRevision", "ContentSha256", "LoadedAt", "RuleVersion", "SnapshotId", "Source")
+VALUES (@p0, @p1, @p2, @p3, @p4, @p5, @p6, @p7);
+[15:09:19 INF] Executed DbCommand (0ms) [Parameters=[@p0='?' (DbType = Int32), @p1='?' (Size = 12), @p2='?' (DbType = Int64), @p3='?' (Size = 23), @p4='?' (Size = 2), @p5='?' (DbType = Int32)], CommandType='Text', CommandTimeout='30']
+INSERT INTO "TaskTypeStationBindings" ("MapId", "TaskType", "Version", "SiteVerificationRef", "StationName", "StationRiotId")
+VALUES (@p0, @p1, @p2, @p3, @p4, @p5);
+[15:09:19 INF] Executed DbCommand (0ms) [Parameters=[@p0='?' (DbType = Int32), @p1='?' (Size = 12), @p2='?' (DbType = Int64)], CommandType='Text', CommandTimeout='30']
+INSERT INTO "TaskTypeStationRequirements" ("MapId", "TaskType", "Version")
+VALUES (@p0, @p1, @p2);
+[15:09:19 INF] Executed DbCommand (0ms) [Parameters=[@__mapId_0='?' (DbType = Int32), @__version_1='?' (DbType = Int64)], CommandType='Text', CommandTimeout='30']
+SELECT EXISTS (
+    SELECT 1
+    FROM "TaskTypeStationBindingSetVersions" AS "t"
+    WHERE "t"."MapId" = @__mapId_0 AND "t"."Version" = @__version_1)
+[15:09:19 INF] Executed DbCommand (0ms) [Parameters=[@__mapId_0='?' (DbType = Int32)], CommandType='Text', CommandTimeout='30']
+SELECT "t"."MapId", "t"."ActiveVersion", "t"."PendingVersion", "t"."State", "t"."UpdatedAt"
+FROM "TaskTypeStationActiveBindingSets" AS "t"
+WHERE "t"."MapId" = @__mapId_0
+LIMIT 2
+[15:09:19 INF] Executed DbCommand (0ms) [Parameters=[@p0='?' (DbType = Int32), @p1='?' (DbType = Int64), @p2='?' (DbType = Int64), @p3='?' (Size = 6), @p4='?' (DbType = DateTimeOffset)], CommandType='Text', CommandTimeout='30']
+INSERT INTO "TaskTypeStationActiveBindingSets" ("MapId", "ActiveVersion", "PendingVersion", "State", "UpdatedAt")
+VALUES (@p0, @p1, @p2, @p3, @p4);
+[15:09:19 INF] Executed DbCommand (0ms) [Parameters=[@__version_MapId_0='?' (DbType = Int32)], CommandType='Text', CommandTimeout='30']
+SELECT "m"."MapId", "m"."AcceptedAt", "m"."AcceptedBy", "m"."EstablishedAt", "m"."Name", "m"."PendingName", "m"."PendingSince"
+FROM "MapNameBaselines" AS "m"
+WHERE "m"."MapId" = @__version_MapId_0
+LIMIT 2
+[15:09:19 INF] Task type station preset C:\Users\szy\AppData\Local\Temp\l2-20260929T070902214Z\task-type-stations.settings.json loaded: rule version 1 (new), Map 25 binding set version 1 (new) active.
+[15:09:19 INF] Executed DbCommand (0ms) [Parameters=[], CommandType='Text', CommandTimeout='30']
+SELECT MAX("w"."Version")
+FROM "WaitingPointVersions" AS "w"
+[15:09:19 INF] Executed DbCommand (0ms) [Parameters=[@__version_0='?' (DbType = Int64)], CommandType='Text', CommandTimeout='30']
+SELECT "w"."Version", "w"."ContentSha256", "w"."LoadedAt", "w"."SnapshotId", "w"."Source"
+FROM "WaitingPointVersions" AS "w"
+WHERE "w"."Version" = @__version_0
+LIMIT 2
+[15:09:19 INF] Executed DbCommand (0ms) [Parameters=[@__version_0='?' (DbType = Int64)], CommandType='Text', CommandTimeout='30']
+SELECT "w"."Version", "w"."MapId", "w"."StationId", "w"."Enabled", "w"."StationName"
+FROM "WaitingPoints" AS "w"
+WHERE "w"."Version" = @__version_0
+[15:09:19 INF] Executed DbCommand (0ms) [Parameters=[@__version_0='?' (DbType = Int64)], CommandType='Text', CommandTimeout='30']
+SELECT "w"."Version", "w"."MapId", "w"."StationId", "w"."VehicleKey"
+FROM "WaitingPointVehicleScopes" AS "w"
+WHERE "w"."Version" = @__version_0
+[15:09:19 INF] Executed DbCommand (0ms) [Parameters=[@__mapId_0='?' (DbType = Int32)], CommandType='Text', CommandTimeout='30']
+SELECT "t"."MapId", "t"."ActiveVersion", "t"."PendingVersion", "t"."State", "t"."UpdatedAt"
+FROM "TaskTypeStationActiveBindingSets" AS "t"
+WHERE "t"."MapId" = @__mapId_0
+LIMIT 2
+[15:09:19 INF] Executed DbCommand (0ms) [Parameters=[@__mapId_0='?' (DbType = Int32), @__version_1='?' (DbType = Int64)], CommandType='Text', CommandTimeout='30']
+SELECT "t"."MapId", "t"."Version", "t"."CatalogRevision", "t"."ContentSha256", "t"."LoadedAt", "t"."RuleVersion", "t"."SnapshotId", "t"."Source"
+FROM "TaskTypeStationBindingSetVersions" AS "t"
+WHERE "t"."MapId" = @__mapId_0 AND "t"."Version" = @__version_1
+LIMIT 2
+[15:09:19 INF] Executed DbCommand (0ms) [Parameters=[@__mapId_0='?' (DbType = Int32), @__version_1='?' (DbType = Int64)], CommandType='Text', CommandTimeout='30']
+SELECT "t"."TaskType"
+FROM "TaskTypeStationRequirements" AS "t"
+WHERE "t"."MapId" = @__mapId_0 AND "t"."Version" = @__version_1
+[15:09:19 INF] Executed DbCommand (0ms) [Parameters=[@__mapId_0='?' (DbType = Int32), @__version_1='?' (DbType = Int64)], CommandType='Text', CommandTimeout='30']
+SELECT "t"."MapId", "t"."Version", "t"."TaskType", "t"."SiteVerificationRef", "t"."StationName", "t"."StationRiotId"
+FROM "TaskTypeStationBindings" AS "t"
+WHERE "t"."MapId" = @__mapId_0 AND "t"."Version" = @__version_1
+[15:09:19 ERR] Waiting point registration refused: WAITING_POINTS_FEWER_THAN_VEHICLES JourneyRuntime:Fleet has 2 vehicles, but waiting point registration version 1 gives only 1 of them a waiting point of their own on Map 25 (1 enabled there). Import the waiting point registration with ControlServer.FieldOps import-waiting-points (at least 2 enabled waiting points on Map 25) before starting.

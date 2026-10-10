@@ -1,0 +1,20 @@
+2026-09-22T13:31:27.9742820+08:00	Information	SingleInstanceGuard	抢到了整机单例名字。名字=Global\SQCD.Agv.Wpf.Onboard。
+2026-09-22T13:31:28.0348505+08:00	Information	App	车载端启动：agvId=AGV-L2-001，environment=Development，version=0.2.0-safety-mock-travel+ecdb3a0be1d95ef51e7d40493808ba4659274f41。
+2026-09-22T13:31:29.0519484+08:00	Information	ModbusTcpIoModuleClient	已连接IO模块 127.0.0.1:48412，UnitId=255。
+2026-09-22T13:31:29.0797370+08:00	Information	OnboardController	IO模块在线。
+2026-09-22T13:31:29.0822495+08:00	Information	OnboardController	启动IO安全快照验证通过。
+2026-09-22T13:31:29.7507284+08:00	Information	WireToGateSessionService	上层会话已建立：generation=1，readiness=Ready。
+2026-09-22T13:31:37.5358401+08:00	Information	App	服务端请求录入Sublot：station=N1-3_N1-7，revision=1，expectedSublots=G3-07C-20260922T053110655Z。 
+2026-09-22T13:31:38.2143780+08:00	Information	App	服务端请求录入Sublot：station=N1-3_N1-7，revision=1，expectedSublots=G3-07C-20260922T053110655Z。 
+2026-09-22T13:31:38.5215576+08:00	Information	ModbusTcpIoModuleClient	已向物理1号仓发送开锁脉冲触发，DO地址=100。硬件负责自动复位。 
+2026-09-22T13:31:38.5523692+08:00	Information	ModbusTcpIoModuleClient	1号仓IO变化：DO 0->1，锁DI 1->1，光幕DI 1->1。
+2026-09-22T13:31:38.6806307+08:00	Information	ModbusTcpIoModuleClient	1号仓IO变化：DO 1->1，锁DI 1->0，光幕DI 1->1。
+2026-09-22T13:31:39.1162140+08:00	Information	ModbusTcpIoModuleClient	1号仓IO变化：DO 1->0，锁DI 0->0，光幕DI 1->1。
+2026-09-22T13:31:39.2099810+08:00	Information	WireToGateBusinessService	忽略并发重复SlotOperationCommand：attempt=40827d29-7cf9-8254-90f2-3b9a3098e638。
+2026-09-22T13:31:40.5003177+08:00	Information	SingleInstanceGuard	抢到了整机单例名字。名字=Global\SQCD.Agv.Wpf.Onboard。
+2026-09-22T13:31:40.5603769+08:00	Information	App	车载端启动：agvId=AGV-L2-001，environment=Development，version=0.2.0-safety-mock-travel+ecdb3a0be1d95ef51e7d40493808ba4659274f41。
+2026-09-22T13:31:41.1712675+08:00	Information	ModbusTcpIoModuleClient	已连接IO模块 127.0.0.1:48412，UnitId=255。
+2026-09-22T13:31:41.1837787+08:00	Information	OnboardController	IO模块在线。
+2026-09-22T13:31:41.1856632+08:00	Information	OnboardController	启动IO安全快照验证通过。
+2026-09-22T13:31:41.5394982+08:00	Warning	WireToGateBusinessService	上次仓位操作在执行中中断，未再输出开锁，按实时IO结算：attempt=40827d29-7cf9-8254-90f2-3b9a3098e638，outcome=UNKNOWN，checkpoint=SAFE_FINISH_REACHED。
+2026-09-22T13:31:41.5506871+08:00	Information	WireToGateSessionService	上层会话已建立：generation=2，readiness=RecoveryRequired。

@@ -1,0 +1,23 @@
+== a407ec61 + cs#362 fix
+iterations=300 masterSeed=342
+per combination (ms): n=300 mean=197.4 p50=170.1 p90=255.5 max=4400.8; wall total 59.3s
+per combination excluding the first (ms): n=299 mean=183.3; first=4400.8
+setup mean=114.3ms; engine rounds per combination mean=4.1; per round (excluding setup) mean=20.2ms
+ack conflicts=0 vehicle regressions=0
+entry request reached the vehicle in 300 of 300
+rounds from the last recovery to the entry request: 1: 300
+DifferentMessageAccepted by where: handshake open 0, handshake done 0
+rounds that failed while carrying a wait-on-person code: 5
+  by code: ORDER_HANG: 5
+
+== a407ec61 (src at HEAD, same seed)
+iterations=300 masterSeed=342
+per combination (ms): n=300 mean=267.0 p50=219.6 p90=397.2 max=5648.3; wall total 80.3s
+per combination excluding the first (ms): n=299 mean=249.0; first=5648.3
+setup mean=154.7ms; engine rounds per combination mean=4.1; per round (excluding setup) mean=27.3ms
+ack conflicts=0 vehicle regressions=0
+entry request reached the vehicle in 300 of 300
+rounds from the last recovery to the entry request: 1: 300
+DifferentMessageAccepted by where: handshake open 0, handshake done 0
+rounds that failed while carrying a wait-on-person code: 5
+  by code: ORDER_HANG: 5

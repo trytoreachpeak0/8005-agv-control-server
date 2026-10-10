@@ -10,11 +10,13 @@ using ControlServer.Host.Runtime.Dispatch;
 using ControlServer.Host.Runtime.Dispatch.Criteria;
 using ControlServer.Host.Runtime.Faults;
 using ControlServer.Host.Runtime.Fleet;
+using ControlServer.Host.Runtime.RouteGraph;
 using ControlServer.Host.Transport;
 using ControlServer.Infrastructure.Adapters;
 using ControlServer.Infrastructure.Persistence;
 using Microsoft.Data.Sqlite;
 using Microsoft.EntityFrameworkCore;
+using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.Logging.Abstractions;
 using Microsoft.Extensions.Options;
 
@@ -122,32 +124,36 @@ public sealed partial class MultiVehicleExecutionTests
     // ---- one worker, vehicles in series --------------------------------------------------
 
     /// <summary>
-    /// The round reads the catalog once and serves the vehicles one after another, with no
-    /// vehicle's reads interleaved into another's segment.
+    /// 一轮只读一次目录，每辆车的事实也只读一次——一个 worker 对着同一份快照决定整轮。
     /// </summary>
     /// <remarks>
-    /// What this protects is snapshot freshness: the reason B2 is a single worker iterating rather
-    /// than one worker per vehicle is that two workers would each decide against their own read of
-    /// the same catalog and could accept the same demand twice. Interleaving is the observable
-    /// symptom of that, so it is what the test looks at.
+    /// <para>
+    /// <b>这一条守的是快照新鲜度</b>：B2 之所以是一个 worker 迭代而不是一车一个 worker，是因为两个 worker
+    /// 会各自对着同一份目录的各自一次读做决定，于是可能把同一条需求接两次。所以真正的判据是那个读次数：
+    /// 一次轮次决策读，加上受理每条需求前的一次最终重读。按候选读会是九次，按车读会是三次决策读。
+    /// </para>
+    /// <para>
+    /// <b>「不交错」那一半随本票换了说法</b>（control-server#211）。翻转之前轮次按车迭代，一辆车的读因此挤在
+    /// 自己那一段里，交错就是「两个 worker 各读各的」的可观测症状。翻转成任务优先之后，一辆车的评估按定义就
+    /// 散在多条任务里，中间隔着别的车——交错不再说明任何事。换上的判据比它更直接：<b>每辆车的事实恰好读两次</b>，
+    /// 入轮时一次、受理前的最终重读一次。多出来的任何一次都意味着有人在按候选或按任务重读车辆事实，
+    /// 那正是这条用例本来要挡住的东西。三次是：入轮时读一次事实，派车前的最终重读一次，受理内部那个「临门一脚
+    /// 再确认」的回调一次。三次都属于这辆车自己那一段，与它判了几条候选无关。
+    /// </para>
     /// </remarks>
     [Fact]
-    public async Task OneWorkerServesTheVehiclesInSeriesAgainstOneCatalogRead()
+    public async Task OneWorkerDecidesTheWholeRoundAgainstOneCatalogRead()
     {
         await using FleetFixture fixture = await FleetFixture.CreateAsync();
 
         await fixture.Engine.ExecuteOnceAsync(TestContext.Current.CancellationToken);
 
-        // One read for the round's decision, plus the one final re-read intake does for each
-        // demand it is about to accept. Nothing is read per candidate, and nothing is read per
-        // vehicle: three vehicles judging three candidates against a per-candidate read would be
-        // nine, and against a per-vehicle read would be three decision reads rather than one.
         Assert.Equal(1 + 3, fixture.Catalog.ReadCount);
-        string[] segments = fixture.Riot.VehicleReads
-            .Where((key, index) => index == 0 || fixture.Riot.VehicleReads[index - 1] != key)
-            .ToArray();
-        Assert.Equal(segments, segments.Distinct(StringComparer.Ordinal).ToArray());
-        Assert.Equal(FleetFixture.VehicleKeys, segments.Order(StringComparer.Ordinal).ToArray());
+        Assert.Equal(
+            FleetFixture.VehicleKeys.ToDictionary(key => key, _ => 3, StringComparer.Ordinal),
+            fixture.Riot.VehicleReads
+                .GroupBy(key => key, StringComparer.Ordinal)
+                .ToDictionary(group => group.Key, group => group.Count(), StringComparer.Ordinal));
     }
 
     /// <summary>
@@ -163,7 +169,7 @@ public sealed partial class MultiVehicleExecutionTests
         await fixture.Engine.ExecuteOnceAsync(TestContext.Current.CancellationToken);
 
         string[] demands = await fixture.Context.JourneyRuntimes
-            .Select(row => row.DemandId)
+            .Select(row => row.DemandId!)
             .ToArrayAsync(TestContext.Current.CancellationToken);
         Assert.Equal(3, demands.Distinct(StringComparer.Ordinal).Count());
         Assert.Equal(3, await fixture.Context.AcceptedDemands.CountAsync(
@@ -382,7 +388,7 @@ public sealed partial class MultiVehicleExecutionTests
         Assert.All(outcome.CompletedVehicles, vehicle => Assert.Equal(
             demandIds,
             vehicle.Verdicts.Select(verdict => verdict.Evaluation.Candidate.DemandId).Order(StringComparer.Ordinal).ToArray()));
-        string takenByFirst = (await fixture.JourneyOfAsync(FleetFixture.AgvIds[0])).DemandId;
+        string takenByFirst = (await fixture.JourneyOfAsync(FleetFixture.AgvIds[0])).DemandId!;
         Assert.Equal(
             "DEMAND_ALREADY_ACCEPTED",
             outcome.CompletedVehicles[1].Verdicts
@@ -717,14 +723,12 @@ public sealed partial class MultiVehicleExecutionTests
 
     /// <summary>
     /// A dispatched vehicle holds its occupancy claim for the whole journey, and a second claim for
-    /// the same vehicle is refused by the index rather than by a read.
+    /// the same vehicle is refused by the key rather than by a read.
     /// </summary>
     /// <remarks>
-    /// This is where the uniqueness ticket 06 moved down onto <c>OrderIntents</c> starts being
-    /// enforced: the columns and the filtered unique index existed already, and until something
-    /// wrote them every row fell outside the index. The ticket's own acceptance names a
-    /// <c>DispatchUniquenessGuard</c>, which does not exist in this repository — see the
-    /// resolution — so what is pinned here is the invariant that name stood for.
+    /// Until batch 8-16 (control-server#387) this pinned the order occupancy on <c>OrderIntents</c>, the uniqueness
+    /// ticket 06 moved down there. That occupancy and its filtered unique index were retired; the vehicle's one occupancy is
+    /// its <c>VehiclePurposeClaims</c> row, taken in the acceptance's own save, so the invariant is pinned there.
     /// </remarks>
     [Fact]
     public async Task ADispatchedVehicleHoldsItsOccupancyUntilTheJourneyEnds()
@@ -732,19 +736,20 @@ public sealed partial class MultiVehicleExecutionTests
         await using FleetFixture fixture = await FleetFixture.CreateAsync();
         await fixture.Engine.ExecuteOnceAsync(TestContext.Current.CancellationToken);
 
-        OrderIntentRow[] claimed = await fixture.Context.OrderIntents
-            .Where(row => row.VehicleOccupancyClaimedAt != null && row.VehicleOccupancyReleasedAt == null)
+        VehiclePurposeClaimRow[] claimed = await fixture.Context.Set<VehiclePurposeClaimRow>().AsNoTracking()
             .ToArrayAsync(TestContext.Current.CancellationToken);
         Assert.Equal(3, claimed.Length);
         Assert.Equal(
             FleetFixture.VehicleKeys,
             claimed.Select(row => row.VehicleKey).Order(StringComparer.Ordinal).ToArray());
 
-        // A second in-flight order for a vehicle that already holds one is refused by the index.
-        VehicleDispatchPolicyStore store = new(fixture.Context);
-        string second = await fixture.AddSecondIntentAsync(FleetFixture.VehicleKeys[0]);
-        Assert.False(await store.TryClaimVehicleOccupancyAsync(
-            second, Now, TestContext.Current.CancellationToken));
+        // A second claim for a vehicle that already holds one is refused by the key.
+        Assert.Equal(
+            VehiclePurposeAcquisitionOutcome.VehicleHeld,
+            await new VehiclePurposeLedgerStore(fixture.Context).TryAcquireAsync(
+                new VehiclePurposeClaim(FleetFixture.VehicleKeys[0], VehiclePurposes.Transport, "journey:SECOND", Now),
+                station: null,
+                TestContext.Current.CancellationToken));
     }
 
     // ---- N sessions on the peer -----------------------------------------------------------------
@@ -760,8 +765,8 @@ public sealed partial class MultiVehicleExecutionTests
         using MemoryStream second = new();
         await using OnboardPeerConnection firstConnection = new(first);
         await using OnboardPeerConnection secondConnection = new(second);
-        peer.Attach("AGV-1", firstConnection);
-        peer.Attach("AGV-2", secondConnection);
+        peer.Attach(Handshaken("AGV-1"), firstConnection);
+        peer.Attach(Handshaken("AGV-2"), secondConnection);
 
         await peer.SendAsync(Envelope("AGV-2"), TestContext.Current.CancellationToken);
 
@@ -778,9 +783,9 @@ public sealed partial class MultiVehicleExecutionTests
         OnboardPeer peer = new();
         using MemoryStream stream = new();
         await using OnboardPeerConnection connection = new(stream);
-        peer.Attach("AGV-1", connection);
+        peer.Attach(Handshaken("AGV-1"), connection);
 
-        await Assert.ThrowsAsync<IOException>(() =>
+        await Assert.ThrowsAsync<OnboardConnectionUnavailableException>(() =>
             peer.SendAsync(Envelope("AGV-2"), TestContext.Current.CancellationToken));
         Assert.Empty(stream.ToArray());
     }
@@ -797,9 +802,9 @@ public sealed partial class MultiVehicleExecutionTests
         using MemoryStream second = new();
         await using OnboardPeerConnection firstConnection = new(first);
         await using OnboardPeerConnection secondConnection = new(second);
-        peer.Attach("AGV-1", firstConnection);
+        peer.Attach(Handshaken("AGV-1"), firstConnection);
 
-        Assert.Throws<InvalidOperationException>(() => peer.Attach("AGV-1", secondConnection));
+        Assert.Throws<InvalidOperationException>(() => peer.Attach(Handshaken("AGV-1"), secondConnection));
 
         // Detaching the one that is attached frees the vehicle for the next connection; detaching a
         // stale one must not, or a reconnect would evict the session that replaced it.
@@ -808,7 +813,7 @@ public sealed partial class MultiVehicleExecutionTests
         Assert.NotEmpty(first.ToArray());
 
         peer.Detach("AGV-1", firstConnection);
-        await Assert.ThrowsAsync<IOException>(() =>
+        await Assert.ThrowsAsync<OnboardConnectionUnavailableException>(() =>
             peer.SendAsync(Envelope("AGV-1"), TestContext.Current.CancellationToken));
     }
 
@@ -820,6 +825,14 @@ public sealed partial class MultiVehicleExecutionTests
             agvId,
             sessionGeneration = 1,
         }, SerializerOptions) + "\n");
+
+    /// <summary>A session past its handshake, which is the only kind the peer routes to (control-server#259).</summary>
+    private static OnboardConnectionState Handshaken(string agvId) => new()
+    {
+        AgvId = agvId,
+        SessionGeneration = 1,
+        HandshakeCompleted = true
+    };
 
     private static VehicleDispatchPolicy Policy(string agvId, params string[] taskTypes) => new(
         [new VehicleDispatchProfile(agvId, taskTypes.ToHashSet(StringComparer.Ordinal), 30_000)],
@@ -854,7 +867,7 @@ public sealed partial class MultiVehicleExecutionTests
     }
 
     /// <summary>A store no test may reach: the roster cases below read configuration only.</summary>
-    private sealed class ThrowingPolicyStore : IVehicleDispatchPolicyStore
+    internal sealed class ThrowingPolicyStore : IVehicleDispatchPolicyStore
     {
         public Task<VehicleDispatchPolicy> ReadPolicyAsync(CancellationToken cancellationToken) =>
             throw new NotSupportedException();
@@ -863,23 +876,13 @@ public sealed partial class MultiVehicleExecutionTests
             VehicleDispatchPolicy policy,
             DateTimeOffset updatedAt,
             CancellationToken cancellationToken) => throw new NotSupportedException();
-
-        public Task<bool> TryClaimVehicleOccupancyAsync(
-            string upperId,
-            DateTimeOffset claimedAt,
-            CancellationToken cancellationToken) => throw new NotSupportedException();
-
-        public Task ReleaseVehicleOccupancyAsync(
-            string upperId,
-            DateTimeOffset releasedAt,
-            CancellationToken cancellationToken) => throw new NotSupportedException();
     }
 
     /// <summary>
     /// A commissioned three-vehicle server: three Onboard sessions, three open demands in three
     /// areas, and a RIoT that answers for whichever vehicle it is asked about.
     /// </summary>
-    private sealed class FleetFixture : IAsyncDisposable
+    internal sealed class FleetFixture : IAsyncDisposable
     {
         public static readonly string[] AgvIds = ["老厂前线新多仓位1", "老厂前线新多仓位2", "老厂前线新多仓位3"];
         public static readonly string[] VehicleKeys = ["BROKERX-0001", "BROKERX-0002", "BROKERX-0003"];
@@ -892,15 +895,29 @@ public sealed partial class MultiVehicleExecutionTests
         /// <summary>A criterion put at the head of the chain, so a test can state what a vehicle concludes.</summary>
         private readonly IDispatchAdmissionCriterion? _extraCriterion;
 
+        /// <summary>装不装路网——在途追加那条判据只在装了的时候才进链，见 <see cref="SeedRouteGraphAsync"/>。</summary>
+        private readonly bool _withRouteGraph;
+
+        /// <summary>
+        /// 在途链装不装路网。<b>false 造的是一个畸形配置</b>：空闲链有路网、在途链没有，于是在途车被判为合格
+        /// 却拿不到插入位——<c>DispatchSelectedCoreAsync</c> 那条一致性断言存在就是为了让它响亮地停下，
+        /// 而不是把这辆在途车当成空闲车去建第二趟旅程。
+        /// </summary>
+        private readonly bool _routeGraphOnInTransitChain;
+
         private FleetFixture(
             SqliteConnection connection,
             ControlServerDbContext context,
             JourneyRuntimeOptions options,
             MovableClock clock,
-            IDispatchAdmissionCriterion? extraCriterion)
+            IDispatchAdmissionCriterion? extraCriterion,
+            bool withRouteGraph,
+            bool routeGraphOnInTransitChain)
         {
             _connection = connection;
             _extraCriterion = extraCriterion;
+            _withRouteGraph = withRouteGraph;
+            _routeGraphOnInTransitChain = routeGraphOnInTransitChain;
             Context = context;
             Options = options;
             Clock = clock;
@@ -912,6 +929,11 @@ public sealed partial class MultiVehicleExecutionTests
                 AuditRetentionPolicy.Default);
             AreaAssignments = new CountingAreaAssignments(
                 new AreaAssignmentStore(context, new GovernedConfigurationPublisher(governance, governance)));
+            ClearanceRoles = new ControlServer.Host.Runtime.Charging.FieldOperatorRoleOptions
+            {
+                Path = ClearanceRosterPath,
+                OnboardClearanceEntryDeclared = true,
+            };
             Engine = CreateEngine();
         }
 
@@ -927,27 +949,133 @@ public sealed partial class MultiVehicleExecutionTests
         public List<JourneyExecutionPlan> AcceptedPlans { get; } = [];
         public RecordingAcceptances Acceptances { get; }
         public FleetBoxCounts BoxCounts { get; } = new();
-        public RecordingInTransitQualification InTransit { get; } = new();
+
+        /// <summary>
+        /// 逐车投运判定（control-server#400）：默认每辆车都有一版已批准的测试策略，两道线都是 40（<see cref="TestChargingPolicies.AllApprovedAt"/>；
+        /// 这个夹具此前配 <c>MinimumBatteryPercent = 40</c>，批次9-05 起电量阈值读策略，control-server#403），
+        /// 与合入前的派车结论等价；要测「没有策略」的用例换掉它再调 <c>RecreateEngineAsync</c>，链随引擎重建。
+        /// </summary>
+        public IChargingPolicyResolver ChargingPolicy { get; set; } = TestChargingPolicies.AllApprovedAt(40);
+
+        /// <summary>Silent unless a test names a vehicle whose Onboard connection is gone (control-server#334).</summary>
+        public FleetPeer Peer { get; } = new();
         public EventRecordingLogger<JourneyRuntimeEngine> EngineLog { get; } = new();
         public JourneyRuntimeEngine Engine { get; private set; }
 
+        /// <param name="withRouteGraph">
+        /// 给这台服务器装上路网，于是在途追加那条链按生产的样子建起来（批次7-06，control-server#211）。
+        /// </param>
         public static async Task<FleetFixture> CreateAsync(
             int budgetMilliseconds = 30_000,
             Action<JourneyRuntimeOptions>? configure = null,
-            IDispatchAdmissionCriterion? extraCriterion = null)
+            IDispatchAdmissionCriterion? extraCriterion = null,
+            bool withRouteGraph = false,
+            bool routeGraphOnInTransitChain = true,
+            Microsoft.EntityFrameworkCore.Diagnostics.DbCommandInterceptor? commands = null,
+            Microsoft.EntityFrameworkCore.Diagnostics.ISaveChangesInterceptor? saves = null,
+            string? databaseFile = null)
         {
-            SqliteConnection connection = new("Data Source=:memory:");
+            // control-server#452: a file database gives every NewContext() a connection of its own, so the write lock is the one
+            // production has between the inbound handler, the engine and other vehicles' inbound. The busy timeout is a second,
+            // so a writer stuck behind it fails fast instead of waiting the production 30.
+            SqliteConnection connection = new(databaseFile is null
+                ? "Data Source=:memory:"
+                : ControlServerSqlite.ForDatabaseFile(databaseFile, busyTimeoutSeconds: 1));
             await connection.OpenAsync(TestContext.Current.CancellationToken);
-            DbContextOptions<ControlServerDbContext> dbOptions =
-                new DbContextOptionsBuilder<ControlServerDbContext>().UseSqlite(connection).Options;
+            DbContextOptionsBuilder<ControlServerDbContext> builder =
+                new DbContextOptionsBuilder<ControlServerDbContext>().UseSqlite(connection);
+            if (commands is not null)
+            {
+                builder.AddInterceptors(commands);
+            }
+            if (saves is not null)
+            {
+                builder.AddInterceptors(saves);
+            }
+            DbContextOptions<ControlServerDbContext> dbOptions = builder.Options;
             ControlServerDbContext context = new(dbOptions);
-            await context.Database.MigrateAsync(TestContext.Current.CancellationToken);
+            await MigratedDatabaseTemplate.ApplyAsync(context.Database, TestContext.Current.CancellationToken);
             await TaskTypeStationRuntimeSeed.ActivateAsync(dbOptions, Now);
             JourneyRuntimeOptions options = FleetOptions(budgetMilliseconds);
             configure?.Invoke(options);
-            FleetFixture fixture = new(connection, context, options, new MovableClock(Now), extraCriterion);
+            FleetFixture fixture = new(
+                connection, context, options, new MovableClock(Now), extraCriterion, withRouteGraph,
+                routeGraphOnInTransitChain);
+            fixture._databaseFile = databaseFile;
+            if (withRouteGraph)
+            {
+                await fixture.SeedRouteGraphAsync();
+            }
+
             await fixture.SeedAsync();
             return fixture;
+        }
+
+        /// <summary>
+        /// 这台服务器的路网：一条单向链，车位 → 12 → 13 → 210，每段一万毫米。
+        /// </summary>
+        /// <remarks>
+        /// <para>
+        /// <b>它是三件事共用的，改它之前先看这三处。</b>
+        /// </para>
+        /// <list type="number">
+        /// <item>在途追加那条链在没有路网时根本不装（<c>DispatchAdmissionCriteria.InTransit</c> 只在
+        /// <c>routeGraph</c> 非空时加 <c>EnRouteAppendCriterion</c>），所以「在途与否」不能从插入位反推那一条
+        /// 要靠它才测得到；</item>
+        /// <item><c>ReadEnRoutePlanAsync</c> 排除 Blocked，要有路网才走得到；</item>
+        /// <item>分区连续（<c>EN_ROUTE_APPEND_BREAKS_ZONE_CONTIGUITY</c>）在轮次这一层的覆盖同样靠它。</item>
+        /// </list>
+        /// <para>
+        /// 站号与 <see cref="FleetRiot"/> 的站表一一对上：12 是 N1-1、13 是 N1-2／N1-3、210 是关卡、
+        /// 300 是等待点。对不上的话判据会先在可达性上拒掉，而那不是这几条用例要测的东西。
+        /// </para>
+        /// </remarks>
+        /// <summary>这台服务器的路网访问器；没装路网时为空，链于是与本票之前逐字相同。</summary>
+        private RouteGraphAccess? RouteGraph() =>
+            _withRouteGraph
+                ? new RouteGraphAccess(
+                    new RouteGraphSnapshotStore(Context),
+                    Microsoft.Extensions.Options.Options.Create(new RouteGraphOptions
+                    {
+                        Enabled = true,
+                        MapId = Options.MapId,
+                        DesignStateTtl = TimeSpan.FromHours(1),
+                        RuntimeRefreshPeriod = TimeSpan.FromSeconds(10),
+                        RuntimeStateMaxAge = TimeSpan.FromHours(1),
+                    }),
+                    Clock)
+                : null;
+
+        /// <summary>配本区的途中追加上限；不配就是本区禁止追加（REQ-0198）。</summary>
+        public Task<DispatchZoneParameterTableVersion> AllowEnRouteAppendAsync(long maxPathCostIncreaseMm) =>
+            new DispatchZoneParameterStore(Context, JourneyRuntimeWorkerTestKit.CreateGovernedPublisher(Context))
+                .WriteVersionAsync(
+                    [new DispatchZoneParameters(Options.DispatchZone, maxPathCostIncreaseMm, null)],
+                    Clock.GetUtcNow(),
+                    TestContext.Current.CancellationToken);
+
+        private async Task SeedRouteGraphAsync()
+        {
+            CancellationToken token = TestContext.Current.CancellationToken;
+            RouteGraphSnapshotStore store = new(Context);
+            RouteGraphEdgeFact[] edges =
+            [
+                new(1, 1, 2, 10000, 0, 0, 10000, 0, 1, false),
+                new(2, 2, 3, 10000, 10000, 0, 20000, 0, 1, false),
+                new(3, 3, 4, 10000, 20000, 0, 30000, 0, 1, false),
+                new(4, 4, 5, 10000, 30000, 0, 40000, 0, 1, false),
+            ];
+            RouteGraphStationFact[] stations =
+            [
+                new(300, "等待点", 1, 0, 0, 1, 0),
+                new(12, "N1-1", 1, 10000, 0, 2, 0),
+                new(13, "N1-2_N1-3", 2, 20000, 0, 3, 0),
+                new(210, "关卡", 3, 30000, 0, 4, 0),
+            ];
+            await store.ReplaceDesignStateAsync(Options.MapId, edges, stations, null, Now, token);
+            await store.ReplaceRuntimeStateAsync(Options.MapId, [], [], Now, token);
+            await store.ReplaceEdgeGroupsAsync(Options.MapId, [], "", Now, token);
+            await store.ClearStaleAsync(Options.MapId, Now, token);
         }
 
         /// <summary>One more round, with the clock moved on first so samples are spaced.</summary>
@@ -968,6 +1096,16 @@ public sealed partial class MultiVehicleExecutionTests
             Context.ChangeTracker.Clear();
         }
 
+        /// <summary>同一个库上的另一个上下文：一个与引擎那一轮并行的入站或 Host 请求（control-server#406 的并发交错）。</summary>
+        public ControlServerDbContext NewContext() =>
+            _databaseFile is null
+                ? new(new DbContextOptionsBuilder<ControlServerDbContext>().UseSqlite(_connection).Options)
+                : new(new DbContextOptionsBuilder<ControlServerDbContext>()
+                    .UseSqlite(ControlServerSqlite.ForDatabaseFile(_databaseFile, busyTimeoutSeconds: 1)).Options);
+
+        /// <summary>The database file when the fixture was created on one (control-server#452); in memory otherwise.</summary>
+        private string? _databaseFile;
+
         public async Task<JourneyRuntimeRow> JourneyOfAsync(string agvId) =>
             await Context.JourneyRuntimes.AsNoTracking()
                 .SingleAsync(row => row.AgvId == agvId, TestContext.Current.CancellationToken);
@@ -983,6 +1121,75 @@ public sealed partial class MultiVehicleExecutionTests
             Context.ChangeTracker.Clear();
             Engine = CreateEngine();
             await Task.CompletedTask;
+        }
+
+        /// <summary>空闲返回评估器的工厂；为空即派车轮不评估空闲返回，与本票之前逐字相同（control-server#389）。</summary>
+        private Func<FleetFixture, ControlServer.Host.Runtime.IdleReturn.IdleReturnEvaluator>? _idleReturn;
+
+        /// <summary>打开空闲返回之后每辆车最近一次的结论，跨轮次保留，像宿主里的单例。</summary>
+        public ControlServer.Host.Runtime.IdleReturn.IdleReturnVerdictBoard IdleReturnBoard { get; } = new();
+
+        /// <summary>
+        /// 打开空闲返回（control-server#389）：登记这些等待点、让实时目录列出它们，派车轮末尾按生产的样子评估。要装了路网的夹具。
+        /// </summary>
+        public async Task EnableIdleReturnAsync(params WaitingPointEntry[] points)
+        {
+            if (!_withRouteGraph)
+            {
+                throw new InvalidOperationException("Idle return needs the route graph: create the fixture withRouteGraph.");
+            }
+
+            await new WaitingPointRegistry(Context, JourneyRuntimeWorkerTestKit.CreateGovernedPublisher(Context))
+                .WriteVersionAsync(points, Clock.GetUtcNow(), TestContext.Current.CancellationToken);
+            Riot.ExtraStations.AddRange(points.Select(point => new RiotMapStation(point.StationId, point.StationName)));
+            _idleReturn = fixture => IdleReturnTestKit.Create(
+                fixture.Context, fixture.Options, fixture.Clock, fixture.RouteGraph()!, enabled: true, board: fixture.IdleReturnBoard,
+                logger: fixture.IdleReturnLog, chargingPolicy: fixture.ChargingPolicy);
+            await RecreateEngineAsync();
+        }
+
+        /// <summary>
+        /// 给这辆车留下一条没有释放的用途占有（连同它开着的记录），像一次释放没落库那样。批次8-16（control-server#387）之前
+        /// 这里留的是租约；租约退役后，车被占着只剩这一种写法。
+        /// </summary>
+        public async Task LeaveUnreleasedClaimAsync(string agvId)
+        {
+            int index = Array.IndexOf(AgvIds, agvId);
+            DateTimeOffset claimedAt = Clock.GetUtcNow().AddHours(-1);
+            Context.Set<VehiclePurposeClaimRow>().Add(new VehiclePurposeClaimRow
+            {
+                VehicleKey = VehicleKeys[index],
+                Purpose = VehiclePurposes.Transport,
+                JourneyId = $"journey:stale-claim-{agvId}",
+                ClaimedAt = claimedAt
+            });
+            Context.Set<VehiclePurposeClaimRecordRow>().Add(new VehiclePurposeClaimRecordRow
+            {
+                RecordId = $"record:stale-claim-{agvId}",
+                VehicleKey = VehicleKeys[index],
+                Purpose = VehiclePurposes.Transport,
+                JourneyId = $"journey:stale-claim-{agvId}",
+                AcquiredAt = claimedAt
+            });
+            await Context.SaveChangesAsync(TestContext.Current.CancellationToken);
+            Context.ChangeTracker.Clear();
+        }
+
+        /// <summary>Blocks the named vehicles' journeys, the way a refused load result does.</summary>
+        public async Task BlockJourneysAsync(params string[] agvIds)
+        {
+            JourneyRuntimeRow[] rows = await Context.JourneyRuntimes
+                .Where(row => agvIds.Contains(row.AgvId))
+                .ToArrayAsync(TestContext.Current.CancellationToken);
+            foreach (JourneyRuntimeRow row in rows)
+            {
+                row.Stage = JourneyRuntimeStage.Blocked;
+                row.SetBlockReason("LOAD_RESULT_REQUIRES_RECOVERY", Clock.GetUtcNow());
+                row.UpdatedAt = Clock.GetUtcNow();
+            }
+
+            await Context.SaveChangesAsync(TestContext.Current.CancellationToken);
+            Context.ChangeTracker.Clear();
         }
 
         /// <summary>Powers a vehicle down the way a repair does: its session stops being Ready.</summary>
@@ -1011,6 +1218,67 @@ public sealed partial class MultiVehicleExecutionTests
             _safetyMessageIds[agvId].Clear();
             await Context.SaveChangesAsync(TestContext.Current.CancellationToken);
             await AddSafetySnapshotAsync(agvId, 1, departureSafe: false);
+        }
+
+        /// <summary>
+        /// 换掉一辆车的安全状态快照（空闲返回的出发前安全门，control-server#390）：某个仓位没锁、摘要带阻断事实、摘要说目标仓位没锁。
+        /// 旧的整张删掉而不是被顶替，理由同 <see cref="MakeDepartureUnsafeAsync"/>。
+        /// </summary>
+        public async Task ReplaceSafetySnapshotAsync(
+            string agvId,
+            bool departureSafe = true,
+            int? unlockedSlot = null,
+            string[]? reasonCodes = null,
+            bool allTargetSlotsLocked = true)
+        {
+            string[] messageIds = [.. _safetyMessageIds[agvId]];
+            ProtocolInboxRow[] existing = await Context.ProtocolInbox
+                .Where(row => messageIds.Contains(row.MessageId))
+                .ToArrayAsync(TestContext.Current.CancellationToken);
+            Context.ProtocolInbox.RemoveRange(existing);
+            _safetyMessageIds[agvId].Clear();
+            await Context.SaveChangesAsync(TestContext.Current.CancellationToken);
+            await AddInboxAsync(
+                agvId,
+                "SafetyStateSnapshot",
+                1,
+                new
+                {
+                    safetyStateVersion = 7,
+                    observedAt = Clock.GetUtcNow(),
+                    safety = new
+                    {
+                        departureSafe,
+                        vehicleStopped = true,
+                        allTargetSlotsLocked,
+                        allUnlockOutputsReset = true,
+                        unknownPresent = false,
+                        reasonCodes = reasonCodes ?? Array.Empty<string>(),
+                    },
+                    slotStates = Enumerable.Range(1, 8).Select(slot => new
+                    {
+                        slotNo = slot,
+                        operability = "OPERABLE",
+                        administrativeAvailability = "ENABLED",
+                        physicalState = "EMPTY",
+                        lockState = slot == unlockedSlot ? "UNLOCKED" : "LOCKED",
+                        unlockOutputState = "RESET",
+                        reasonCodes = Array.Empty<string>(),
+                    }).ToArray(),
+                });
+            Context.ChangeTracker.Clear();
+        }
+
+        /// <summary>换掉这台服务器的路网（空闲返回的用例要几个路网上可达的等待点，control-server#390）。</summary>
+        public async Task ReplaceRouteGraphAsync(RouteGraphEdgeFact[] edges, RouteGraphStationFact[] stations)
+        {
+            CancellationToken token = TestContext.Current.CancellationToken;
+            RouteGraphSnapshotStore store = new(Context);
+            await store.ReplaceDesignStateAsync(Options.MapId, edges, stations, null, Clock.GetUtcNow(), token);
+            await store.ReplaceRuntimeStateAsync(Options.MapId, [], [], Clock.GetUtcNow(), token);
+            await store.ReplaceEdgeGroupsAsync(Options.MapId, [], "", Clock.GetUtcNow(), token);
+            await store.ClearStaleAsync(Options.MapId, Clock.GetUtcNow(), token);
+            Context.ChangeTracker.Clear();
         }
 
         /// <summary>Puts a second unresolved journey on one vehicle, which must not be allowed.</summary>
@@ -1052,37 +1320,25 @@ public sealed partial class MultiVehicleExecutionTests
             Context.ChangeTracker.Clear();
         }
 
-        /// <summary>Adds another in-flight order intent for one vehicle and returns its upperId.</summary>
-        public async Task<string> AddSecondIntentAsync(string vehicleKey)
-        {
-            string upperId = $"W2G-SECOND-{vehicleKey}";
-            Context.OrderIntents.Add(new OrderIntentRow
-            {
-                UpperId = upperId,
-                MovementLegId = Guid.NewGuid().ToString("D"),
-                DemandId = "demand-second",
-                Purpose = "TO_PICKUP",
-                TargetStationId = "N1-1",
-                VehicleKey = vehicleKey,
-                MapId = 25,
-                DestinationStationId = 12,
-                AgvLifecycleGeneration = 1,
-                DispatchGeneration = 1,
-                CreatedAt = Now,
-                Status = "PENDING",
-            });
-            await Context.SaveChangesAsync(TestContext.Current.CancellationToken);
-            return upperId;
-        }
+        /// <summary>
+        /// 夹具释放时跑的检查（control-server#408：充电看板的说明守卫在这里断言这个用例写过的码都有说明）。先释放资源再断言，断言失败不漏连接。
+        /// </summary>
+        public List<Action> DisposeChecks { get; } = [];
 
         public async ValueTask DisposeAsync()
         {
+            File.Delete(ClearanceRosterPath);
             await Context.DisposeAsync();
             await _connection.DisposeAsync();
+            foreach (Action check in DisposeChecks)
+            {
+                check();
+            }
         }
 
         private JourneyRuntimeEngine CreateEngine()
         {
+            ControlServer.Host.Runtime.Charging.StationClearanceExit clearanceExit = CreateClearanceExit();
             WireToGateStore store = new(Context);
             IOptions<JourneyRuntimeOptions> options =
                 Microsoft.Extensions.Options.Options.Create(Options);
@@ -1120,21 +1376,52 @@ public sealed partial class MultiVehicleExecutionTests
                         new VehicleFaultStore(Context),
                         BoxCounts,
                         NullLogger<SlotCapacityCriterion>.Instance,
-                        routeGraph: null,
+                        new TransportDemandSuppressionStore(Context),
+                        Context,
+                        ChargingPolicy,
+                        routeGraph: RouteGraph(),
                         catalog: catalogAccess,
                         createGate: gate),
                     .. _extraCriterion is null ? Array.Empty<IDispatchAdmissionCriterion>() : [_extraCriterion],
                 ]),
+                new InTransitDispatchAdmissionChain(DispatchAdmissionCriteria.InTransit(
+                    [
+                        .. DispatchAdmissionCriteria.Default(
+                            options,
+                            new MapStationResolver(),
+                            new PackageCapacityStore(Context),
+                            store,
+                            new VehicleFaultStore(Context),
+                            BoxCounts,
+                            NullLogger<SlotCapacityCriterion>.Instance,
+                            new TransportDemandSuppressionStore(Context),
+                            Context,
+                            ChargingPolicy,
+                            routeGraph: RouteGraph(),
+                            catalog: catalogAccess,
+                            createGate: gate),
+                        .. _extraCriterion is null ? Array.Empty<IDispatchAdmissionCriterion>() : [_extraCriterion],
+                    ],
+                    options,
+                    // 第三个参数才是把 EnRouteAppendCriterion 加进在途链的那个——上面 Default 里那个 routeGraph
+                    // 加的是可达性判据，两者不是一回事。漏了它，在途车会被判为合格却拿不到插入位。
+                    _routeGraphOnInTransitChain ? RouteGraph() : null)),
+                new DispatchZoneParameterStore(Context, JourneyRuntimeWorkerTestKit.CreateGovernedPublisher(Context)),
                 DispatchCandidateOrdering.Ranker(),
                 dispatchPolicy,
                 AreaAssignments,
                 SlotPositions,
                 RoundOutcomes,
+                SlotGroupFullness,
                 onboardFacts,
-                InTransit,
                 options,
                 Clock,
-                EngineLog);
+                EngineLog,
+                _idleReturn?.Invoke(this) ?? IdleReturnTestKit.Create(Context, Options, Clock, board: IdleReturnBoard, chargingPolicy: ChargingPolicy),
+                ChargingPolicy,
+                ChargingTestKit.Create(
+                    Context, Options, Clock, Riot, Peer, Riot, Riot, RouteGraph(), ChargingBoard, ChargingLog,
+                    clearanceExit: clearanceExit));
             return new JourneyRuntimeEngine(
                 Context,
                 Riot,
@@ -1143,9 +1430,13 @@ public sealed partial class MultiVehicleExecutionTests
                 new BoundFixedTaskStationResolver(TaskTypeStationRuntimeSeed.Access(Context), options),
                 TaskTypeStationRuntimeSeed.Access(Context),
                 TaskTypeStationRuntimeSeed.CatalogBindingHolds(Context, Clock),
+                // Its own clock that never moves (control-server#186): the transcript tests tick the fleet clock on every read
+                // and pin the timestamps each read produced, so a round-start step that read that clock would shift every
+                // timestamp after it without changing one decision. The Map name check is not what these tests pin.
+                TaskTypeStationRuntimeSeed.MapRenameHolds(Context, Riot, new FixedMapNameClock(Clock.GetUtcNowWithoutTick())),
                 movement,
                 store,
-                new OnboardJourneyPublisher(store, new SilentPeer(), Clock),
+                new OnboardJourneyPublisher(store, Peer, Clock),
                 BoxCounts,
                 new PackageCapacityStore(Context),
                 catalogAccess,
@@ -1158,9 +1449,126 @@ public sealed partial class MultiVehicleExecutionTests
                 CreateFaultCoordinator(),
                 dispatchRound,
                 onboardFacts,
+                new DispatchZoneParameterStore(Context, JourneyRuntimeWorkerTestKit.CreateGovernedPublisher(Context)),
+                SlotGroupFullness,
+                Riot,
+                JourneyRuntimeWorkerTestKit.QuietForeignOrderRiot.Supervisor(Context, options.Value, Clock),
                 options,
                 Clock,
-                EngineLog);
+                EngineLog,
+                ChargingPolicy,
+                orderCommands: new RiotOrderCommandService(Riot, new RiotOrderCommandAuditStore(Context), Riot, Clock),
+                idleReturnMaterializationFailures: IdleReturnMaterializationFailures,
+                clearanceExit: clearanceExit);
+        }
+
+        /// <summary>
+        /// 引擎与充电分配共用的那一个出口判定。<see cref="HostRecoveryEntryOffered"/> 为真时 Host 入口算可用：开关打开、凭据变量（每个夹具一个名字）有值。
+        /// 判定在构造时取 Host 入口的快照，所以改了它要 <see cref="RecreateEngineAsync"/>。
+        /// </summary>
+        private ControlServer.Host.Runtime.Charging.StationClearanceExit CreateClearanceExit()
+        {
+            string variable = "W2G_TEST_RECOVERY_" + _hostCredentialSuffix;
+            Environment.SetEnvironmentVariable(variable, HostRecoveryEntryOffered ? "fixture-credential" : null);
+            return new ControlServer.Host.Runtime.Charging.StationClearanceExit(
+                new ControlServer.Host.Runtime.Charging.FieldOperatorRoleRoster(Microsoft.Extensions.Options.Options.Create(ClearanceRoles)),
+                Microsoft.Extensions.Options.Options.Create(ClearanceRoles),
+                new ConfigurationBuilder()
+                    .AddInMemoryCollection(new Dictionary<string, string?>
+                    {
+                        [VehicleFaultRecoveryEndpoints.EnabledKey] = HostRecoveryEntryOffered ? "true" : "false",
+                    })
+                    .Build(),
+                Microsoft.Extensions.Options.Options.Create(new VehicleFaultRecoveryOptions { CredentialEnvironmentVariable = variable }));
+        }
+
+        private readonly string _hostCredentialSuffix = Guid.NewGuid().ToString("N");
+
+        /// <summary>
+        /// Host 的放宽类入口（桩与车的恢复、清桩）算不算可用（control-server#407：中断与无进展的隔离要它）。默认否；改了要 <see cref="RecreateEngineAsync"/>。
+        /// </summary>
+        public bool HostRecoveryEntryOffered { get; set; }
+
+        /// <summary>
+        /// 人工清桩的出口（control-server#406 审查 M1）：默认可用——名单里有一名 R-11、声明了车载端入口（Host 入口要一个有值的凭据变量，夹具不设
+        /// 进程级的环境变量）。要它不可用的用例改名单文件或 <see cref="ClearanceRoles"/>；名单文件每次现读，选项对象引擎读的就是这一个。
+        /// </summary>
+        public string ClearanceRosterPath { get; } = WriteClearanceRoster();
+
+        /// <inheritdoc cref="ClearanceRosterPath"/>
+        public ControlServer.Host.Runtime.Charging.FieldOperatorRoleOptions ClearanceRoles { get; }
+
+        private static string WriteClearanceRoster()
+        {
+            string path = Path.Combine(Path.GetTempPath(), $"fleet-roster-{Guid.NewGuid():N}.json");
+            File.WriteAllText(path, """{"operators":[{"operatorId":"fleet-r11","roles":["R-11"]}]}""");
+            return path;
+        }
+
+        /// <summary>每辆车最近一次的充电分配结论（control-server#404），跨轮次保留，像宿主里的单例。</summary>
+        public ControlServer.Host.Runtime.Charging.ChargingAllocationBoard ChargingBoard { get; } = new();
+
+        /// <summary>充电分配器的日志（control-server#404）：人工充电等待的告警是日志事件。</summary>
+        public EventRecordingLogger<ControlServer.Host.Runtime.Charging.ChargingAllocator> ChargingLog { get; } = new();
+
+        /// <summary>
+        /// 登记充电桩名册的一个新版本（control-server#404），并让实时站点目录列出这些桩。名册为空也是一个版本（「名册置空」）。
+        /// 最近优先要路网，所以要装了路网的夹具。
+        /// </summary>
+        public async Task<ChargerRosterVersion> WriteChargerRosterAsync(params ChargerRosterEntry[] chargers)
+        {
+            if (!_withRouteGraph)
+            {
+                throw new InvalidOperationException("Charging allocation needs the route graph: create the fixture withRouteGraph.");
+            }
+
+            ChargerRosterVersion version = await new ChargerRosterStore(Context, JourneyRuntimeWorkerTestKit.CreateGovernedPublisher(Context))
+                .WriteVersionAsync(
+                    chargers,
+                    new ChargerRosterApproval("test fixture", "tests: charger roster", null),
+                    Clock.GetUtcNowWithoutTick(),
+                    TestContext.Current.CancellationToken);
+            foreach (ChargerRosterEntry charger in chargers.Where(charger =>
+                         Riot.ExtraStations.All(station => station.StationId != charger.StationId)))
+            {
+                Riot.ExtraStations.Add(new RiotMapStation(charger.StationId, charger.StationName));
+            }
+            Context.ChangeTracker.Clear();
+            return version;
+        }
+
+        /// <summary>空闲返回评估器的日志（control-server#390 增量审查 R1）：停止自动空闲返回那一条（2227）是现场唯一看得到的信号。</summary>
+        public EventRecordingLogger<ControlServer.Host.Runtime.IdleReturn.IdleReturnEvaluator> IdleReturnLog { get; } = new();
+
+        /// <summary>空闲返回连续物化失败的轮数（control-server#390 审查 L3）：宿主里是单例，这里一个夹具一份，跨轮次保留。</summary>
+        public ControlServer.Host.Runtime.IdleReturn.IdleReturnMaterializationFailures IdleReturnMaterializationFailures { get; } = new();
+
+        /// <summary>派车轮写、推进段读的那块板（批次7-07）：宿主里是单例，这里一个夹具一块，跨轮次保留。</summary>
+        public SlotGroupFullnessBoard SlotGroupFullness { get; } = new();
+
+        /// <summary>
+        /// 人工清除故障的入口（空闲返回的 FAILED 单由人清除后收尾，control-server#390），按宿主的组装、用夹具的 RIoT 与车载端。
+        /// </summary>
+        public VehicleFaultRecoveryService CreateFaultRecovery()
+        {
+            VehicleFaultStore faults = new(Context);
+            RiotOrderCommandAuditStore audit = new(Context);
+            IOptions<VehicleFaultOptions> faultOptions =
+                Microsoft.Extensions.Options.Options.Create(new VehicleFaultOptions());
+            EmergencyStopSupervisor supervisor = new(
+                Riot,
+                Riot,
+                Riot,
+                audit,
+                faults,
+                Microsoft.Extensions.Options.Options.Create(new RiotCommandOptions()),
+                Clock,
+                NullLogger<EmergencyStopSupervisor>.Instance);
+            return new VehicleFaultRecoveryService(
+                Context, faults, Riot, Riot, Riot, supervisor, CreateFaultCoordinator(), new VehicleMotionLedger(faultOptions),
+                new JourneyMutationGate(), new VehicleFaultResumeFlights(),
+                new OnboardJourneyPublisher(new WireToGateStore(Context), Peer, Clock),
+                Microsoft.Extensions.Options.Options.Create(Options), Clock, NullLogger<VehicleFaultRecoveryService>.Instance);
         }
 
         private VehicleFaultCoordinator CreateFaultCoordinator()
@@ -1265,7 +1673,6 @@ public sealed partial class MultiVehicleExecutionTests
                 activeSlotConfigurationVersion = "SLOT-CONFIG-1",
                 activeSlotConfigurationFingerprint = new string('0', 64),
                 slotStates = Slots(),
-                supportsBatchUnlock = true,
                 onboardJournalFormatVersion = 1,
             });
 
@@ -1362,7 +1769,6 @@ public sealed partial class MultiVehicleExecutionTests
             MapIdentity = "MAP-25",
             DispatchZone = "MAP-25-WIRE_TO_GATE",
             DispatchGeneration = 1,
-            MinimumBatteryPercent = 40,
             MaximumEvidenceAge = TimeSpan.FromMinutes(2),
             SublotBoxCountPath = "/api/v2/sublot-box-count",
             AllowedWorkTypes = ["WIRE_TO_GATE"],
@@ -1385,7 +1791,7 @@ public sealed partial class MultiVehicleExecutionTests
         public static int PickupStationFor(int index) => PickupStations[index];
     }
 
-    private sealed class FleetCatalog : IMesIngestCatalog
+    internal sealed class FleetCatalog : IMesIngestCatalog
     {
         private AcceptedDemandSnapshot[] _items = [];
 
@@ -1423,9 +1829,16 @@ public sealed partial class MultiVehicleExecutionTests
 
         public void Set(AcceptedDemandSnapshot[] items) => _items = items;
 
+        /// <summary>Set, every read goes to it instead (control-server#334's MesIngest that never answers).</summary>
+        public Func<CancellationToken, Task<DemandCatalogSnapshot>>? Through { get; set; }
+
         public async Task<DemandCatalogSnapshot> ReadCatalogAsync(CancellationToken cancellationToken)
         {
             ReadCount++;
+            if (Through is { } through)
+            {
+                return await through(cancellationToken).ConfigureAwait(false);
+            }
             if (ReadCount == HangOnRead)
             {
                 await Task.Delay(Timeout.InfiniteTimeSpan, cancellationToken).ConfigureAwait(false);
@@ -1462,7 +1875,7 @@ public sealed partial class MultiVehicleExecutionTests
         }
     }
 
-    private sealed class FleetBoxCounts : ISublotBoxCountReader
+    internal sealed class FleetBoxCounts : ISublotBoxCountReader
     {
         public int Calls { get; private set; }
 
@@ -1472,10 +1885,16 @@ public sealed partial class MultiVehicleExecutionTests
         /// <summary>Runs just before the hanging call starts to wait, so a test can see the state it hangs in.</summary>
         public Action? OnHang { get; set; }
 
+        /// <summary>Set, every read goes to it instead (control-server#334's MesIngest that never answers).</summary>
+        public Func<string, CancellationToken, Task<int?>>? Through { get; set; }
+
         public async Task<int?> ReadMaxBoxCountAsync(string sublot, CancellationToken cancellationToken)
         {
-            _ = sublot;
             Calls++;
+            if (Through is { } through)
+            {
+                return await through(sublot, cancellationToken).ConfigureAwait(false);
+            }
             if (Calls == HangOnCall)
             {
                 OnHang?.Invoke();
@@ -1493,7 +1912,7 @@ public sealed partial class MultiVehicleExecutionTests
     /// Real rather than a table held in memory: acceptance freezes the version a plan carries, and a version
     /// that was never written cannot be frozen.
     /// </remarks>
-    private sealed class CountingAreaAssignments(IAreaAssignmentStore inner) : IAreaAssignmentStore
+    internal sealed class CountingAreaAssignments(IAreaAssignmentStore inner) : IAreaAssignmentStore
     {
         public int CurrentReads { get; private set; }
 
@@ -1516,7 +1935,7 @@ public sealed partial class MultiVehicleExecutionTests
     }
 
     /// <summary>Every vehicle on an eight-slot model, front four and rear four, with each read written down.</summary>
-    private sealed class CountingSlotPositions : IVehicleSlotPositionReader
+    internal sealed class CountingSlotPositions : IVehicleSlotPositionReader
     {
         public List<string> Reads { get; } = [];
 
@@ -1547,38 +1966,7 @@ public sealed partial class MultiVehicleExecutionTests
             CancellationToken cancellationToken) => throw new NotSupportedException();
     }
 
-    /// <summary>
-    /// The host's in-transit path, with every vehicle it was asked about written down; <see cref="Answer"/> overrides
-    /// it for the one test about a yes.
-    /// </summary>
-    private sealed class RecordingInTransitQualification : IInTransitDispatchQualification
-    {
-        private readonly InTransitAppendNotOpened _host = new();
-
-        public List<(DispatchRoundFacts Round, FleetVehicle Vehicle)> Asked { get; } = [];
-
-        public bool? Answer { get; set; }
-
-        /// <summary>Whether the path fails the way a read of its own would; what control-server#211 puts here can throw.</summary>
-        public bool Throws { get; set; }
-
-        public async Task<bool> QualifiesAsync(
-            DispatchRoundFacts round,
-            FleetVehicle vehicle,
-            CancellationToken cancellationToken)
-        {
-            Asked.Add((round, vehicle));
-            if (Throws)
-            {
-                throw new HttpRequestException($"The in-transit path did not answer for {vehicle.AgvId}.");
-            }
-
-            bool host = await _host.QualifiesAsync(round, vehicle, cancellationToken);
-            return Answer ?? host;
-        }
-    }
-
-    private sealed class RecordingRoundOutcomes : IDispatchRoundOutcomeSink
+    internal sealed class RecordingRoundOutcomes : IDispatchRoundOutcomeSink
     {
         public List<DispatchRoundOutcome> Outcomes { get; } = [];
 
@@ -1599,9 +1987,20 @@ public sealed partial class MultiVehicleExecutionTests
     }
 
     /// <summary>The real store, with every journey plan intake hands it written down first.</summary>
-    private sealed class RecordingAcceptances(WireToGateStore inner, List<JourneyExecutionPlan> plans)
-        : IJourneyAcceptanceStore
+    internal sealed class RecordingAcceptances(WireToGateStore inner, List<JourneyExecutionPlan> plans)
+        : IJourneyAcceptanceStore, IJourneyAppendStore
     {
+        /// <summary>
+        /// 途中追加原样转给真 store（批次7-06，control-server#211）。不实现这个接口的话，在途车被判为合格、
+        /// 拿到插入位、走到受理，然后 <c>WireToGateOrchestration</c> 抛「配置的需求仓库不支持追加」——
+        /// 那是夹具的缺口，不是产品的。
+        /// </summary>
+        public Task AppendToJourneyAsync(
+            AcceptedDemandSnapshot snapshot,
+            JourneyAppendPlan plan,
+            CancellationToken cancellationToken) =>
+            inner.AppendToJourneyAsync(snapshot, plan, cancellationToken);
+
         /// <summary>
         /// Thrown instead of the first acceptance, and only that one, the way the real store refuses one it cannot
         /// make good on. Nothing is written when it throws, so the round claimed a demand it never accepted.
@@ -1674,25 +2073,160 @@ public sealed partial class MultiVehicleExecutionTests
         }
     }
 
-    private sealed class SilentPeer : IOnboardPeer
+    /// <summary>
+    /// Takes every line silently, except for the vehicle named <see cref="Unavailable"/>: its lines go to a real
+    /// <see cref="OnboardPeer"/> with nothing attached, which refuses them exactly as it refuses a vehicle whose connection is
+    /// gone -- the product's own exception, not one this double chose (control-server#334).
+    /// </summary>
+    internal sealed class FleetPeer : IOnboardPeer
     {
+        public string? Unavailable { get; set; }
+
+        /// <summary>How many sends were refused, so a test can show the failure it arranged did happen.</summary>
+        public int Refused { get; private set; }
+
+        /// <summary>
+        /// 送到了的每一行，(agvId, messageType, messageId)，按先后（空闲返回的补发用例，control-server#390）。被拒的行不在里面。
+        /// </summary>
+        public List<(string AgvId, string MessageType, string MessageId)> Delivered { get; } = [];
+
         public Task SendAsync(ReadOnlyMemory<byte> ndjsonLine, CancellationToken cancellationToken)
         {
-            _ = ndjsonLine;
-            _ = cancellationToken;
-            return Task.CompletedTask;
+            using JsonDocument envelope = JsonDocument.Parse(Encoding.UTF8.GetString(ndjsonLine.Span).Split('\n')[0]);
+            string agvId = envelope.RootElement.GetProperty("agvId").GetString()!;
+            if (Unavailable is not string gone || agvId != gone)
+            {
+                Delivered.Add((
+                    agvId,
+                    envelope.RootElement.GetProperty("messageType").GetString()!,
+                    envelope.RootElement.GetProperty("messageId").GetString()!));
+                return Task.CompletedTask;
+            }
+            Refused++;
+            return _nobodyAttached.SendAsync(ndjsonLine, cancellationToken);
         }
+
+        private readonly OnboardPeer _nobodyAttached = new();
     }
 
     /// <summary>
     /// A RIoT that answers per vehicle, records the order it was asked in, and can be made to hang
     /// on one vehicle the way an unanswered call does.
     /// </summary>
-    private sealed class FleetRiot(MovableClock clock, JourneyRuntimeOptions options)
+    internal sealed class FleetRiot(MovableClock clock, JourneyRuntimeOptions options)
         : IRiotMovementGateway, IRiotVehicleFacts, IRiotMapStationCatalog, IVehicleMotionFacts,
-          IRiotRouteCostProbe, IRiotOrderCommandGateway, IRiotVehicleEmergencyFacts, IRiotVehicleOrderFacts
+          IRiotRouteCostProbe, IRiotOrderCommandGateway, IRiotVehicleEmergencyFacts, IRiotVehicleOrderFacts,
+          IRiotVehicleSafetyFacts, IRiotMapNameCatalog, IRiotOrderListingFacts, IRiotOrderMissionFacts
     {
+        /// <summary>每一次建单的意图，按先后（control-server#404：充电单的形态、目的站与单号都在意图上）。</summary>
+        public List<OrderIntent> CreatedIntents { get; } = [];
+
+        /// <summary>未完成订单清单读不全（control-server#404）：分页没覆盖全部记录，或 RIoT 问不到。</summary>
+        public bool OrderListingIncomplete { get; set; }
+
+        /// <summary>
+        /// 不是本服务端建的、却在跑的单（control-server#404）：清单里的那一行，与按单号读 mission 时答的目的站；目的站为空即读不到。
+        /// </summary>
+        public List<(RiotListedOrder Order, int? DestinationStationId)> ForeignOrders { get; } = [];
+
+        /// <summary>
+        /// RIoT 的按状态订单清单（control-server#404 判「桩有没有被一张在跑的单当成目的站」）：本替身上还没终结的单，加上
+        /// <see cref="ForeignOrders"/>。时刻不读夹具的时钟（逐字转录的用例每读一次钟都走一格）。
+        /// </summary>
+        public Task<RiotUnfinishedOrderListing> ListUnfinishedOrdersAsync(CancellationToken cancellationToken)
+        {
+            _ = cancellationToken;
+            if (OrderListingIncomplete)
+            {
+                return Task.FromResult(new RiotUnfinishedOrderListing(false, [], clock.GetUtcNowWithoutTick()));
+            }
+            RiotListedOrder[] own =
+            [
+                .. _orders.Values
+                    .Where(order => order.Kind == RiotOrderObservationKind.Active && order.OrderId is not null)
+                    .Select(order => new RiotListedOrder(
+                        order.OrderId!, order.UpperId, order.OrderState, order.VehicleKey, order.VehicleKey)),
+            ];
+            return Task.FromResult(new RiotUnfinishedOrderListing(
+                true, [.. own, .. ForeignOrders.Select(foreign => foreign.Order)], clock.GetUtcNowWithoutTick()));
+        }
+
+        public Task<RiotOrderStateReading> ReadOrderStateAsync(string orderId, CancellationToken cancellationToken)
+        {
+            _ = cancellationToken;
+            return Task.FromResult(new RiotOrderStateReading(
+                orderId,
+                _orders.Values.FirstOrDefault(order => order.OrderId == orderId)?.OrderState,
+                clock.GetUtcNowWithoutTick()));
+        }
+
+        public Task<RiotOrderMissionFacts> ReadOrderMissionFactsAsync(string upperId, CancellationToken cancellationToken)
+        {
+            _ = cancellationToken;
+            (RiotListedOrder Order, int? DestinationStationId) foreign =
+                ForeignOrders.FirstOrDefault(item => item.Order.UpperId == upperId);
+            RiotOrderObservation? own = _orders.GetValueOrDefault(upperId);
+            if (foreign.Order is null && own is not null && MissionOverrides.TryGetValue(upperId, out IReadOnlyList<RiotOrderMissionFact>? missions))
+            {
+                return Task.FromResult(new RiotOrderMissionFacts(
+                    upperId, RiotOrderMissionFactsStatus.Found, own.OrderId, MissionOrderStateOverride ?? own.OrderState, missions,
+                    clock.GetUtcNowWithoutTick()));
+            }
+            int? destination = foreign.Order is not null ? foreign.DestinationStationId : own?.DestinationStationId;
+            return Task.FromResult(destination is int station
+                ? new RiotOrderMissionFacts(
+                    upperId, RiotOrderMissionFactsStatus.Found, foreign.Order?.OrderId ?? own?.OrderId,
+                    foreign.Order?.OrderState ?? own?.OrderState,
+                    [new RiotOrderMissionFact("move", options.MapId, station, 0, 0, 0, null)], clock.GetUtcNowWithoutTick())
+                : new RiotOrderMissionFacts(
+                    upperId, RiotOrderMissionFactsStatus.Unknown, null, null, [], clock.GetUtcNowWithoutTick()));
+        }
+
+        /// <summary>
+        /// 按单号读任务明细时答的那几段（control-server#406）：去桩的 move 之外，开始充电的 act 与它的结果码。没有登记的单照旧只答一段 move。
+        /// </summary>
+        public Dictionary<string, IReadOnlyList<RiotOrderMissionFact>> MissionOverrides { get; } = new(StringComparer.Ordinal);
+
+        /// <summary>任务明细里答的订单状态，与订单观测不同时用（control-server#406：两处读数冲突）。为空即与订单观测相同。</summary>
+        public int? MissionOrderStateOverride { get; set; }
+
+        /// <summary>
+        /// 充电单在桩上执行开始充电、RIoT 返回 <paramref name="resultCode"/> 并把单挂起（<c>HANG</c>，control-server#406）：订单观测是 <c>HANG</c>，
+        /// 任务明细是去桩的 move 加 <c>act(78,1,0)</c> 带这个结果码。
+        /// </summary>
+        public void FailToCharge(string upperId, int? resultCode = 407802)
+        {
+            HangOrder(upperId);
+            RiotOrderObservation order = _orders[upperId];
+            MissionOverrides[upperId] =
+            [
+                new RiotOrderMissionFact("move", order.MapId, order.DestinationStationId, 0, 0, 0, null),
+                new RiotOrderMissionFact("act", 0, 0, 78, 1, 0, resultCode),
+            ];
+        }
+
+        /// <summary>目录里另列的站：空闲返回的用例登记的等待点（control-server#389）。默认为空，目录与本票之前逐字相同。</summary>
+        public List<RiotMapStation> ExtraStations { get; } = [];
+
         private readonly Dictionary<string, RiotOrderObservation> _orders = new(StringComparer.Ordinal);
+
+        /// <summary>
+        /// RIoT's vehicle safety read (control-server#318's second guard): every vehicle stopped and nothing in the way, unless
+        /// <see cref="SafetyReasons"/> names something.
+        /// </summary>
+        public Task<RiotVehicleSafetyObservation> ReadVehicleSafetyAsync(string vehicleKey, CancellationToken cancellationToken)
+        {
+            _ = cancellationToken;
+            return Task.FromResult(new RiotVehicleSafetyObservation(
+                vehicleKey,
+                SafetyReasons.Length == 0 ? RiotVehicleMotionState.Stopped : RiotVehicleMotionState.Unknown,
+                clock.GetUtcNow(),
+                "L1",
+                SafetyReasons));
+        }
+
+        /// <summary>What the safety read names for every vehicle; empty means stopped with nothing in the way.</summary>
+        public string[] SafetyReasons { get; set; } = [];
 
         /// <summary>The vehicle key whose reads never come back, or null.</summary>
         public string? HangOn { get; set; }
@@ -1714,6 +2248,9 @@ public sealed partial class MultiVehicleExecutionTests
 
         /// <summary>Every vehicle read, in the order it was asked, so a test can see the segments.</summary>
         public List<string> VehicleReads { get; } = [];
+
+        /// <summary>The battery each vehicle reports (control-server#403); a vehicle not listed reports 80.</summary>
+        public Dictionary<string, int?> BatteryByVehicle { get; } = new(StringComparer.Ordinal);
 
         /// <summary>Every order created, oldest first, as (vehicleKey, upperId, destination station).</summary>
         public List<(string VehicleKey, string UpperId, int DestinationStationId)> Creates { get; } = [];
@@ -1741,20 +2278,56 @@ public sealed partial class MultiVehicleExecutionTests
                     $"A deadline of this vehicle's own fired for {vehicleKey}.", new CancellationToken(true));
             }
 
-            return new RiotVehicleObservation(
+            RiotVehicleObservation observed = new(
                 vehicleKey,
                 Connected: true,
                 Enabled: true,
                 ProcState: "IDLE",
                 CurrentMap: options.MapIdentity,
                 CurrentStationId: 300,
-                BatteryPercent: 80,
+                BatteryPercent: BatteryByVehicle.TryGetValue(vehicleKey, out int? battery) ? battery : 80,
                 BatteryState: "NO_CHARGE",
                 Speed: 0,
                 ObservedAt: clock.GetUtcNow(),
                 LockStatus: 0,
                 OrderTaskId: null);
+            return VehicleOverrides.TryGetValue(vehicleKey, out Func<RiotVehicleObservation, RiotVehicleObservation>? change)
+                ? change(observed)
+                : observed;
         }
+
+        /// <summary>
+        /// 按车改写车辆读数（空闲返回的用例，control-server#390）：车开到了哪个站、在不在动、有没有在执行的任务。没写的车读数与本票之前逐字相同。
+        /// </summary>
+        public Dictionary<string, Func<RiotVehicleObservation, RiotVehicleObservation>> VehicleOverrides { get; } =
+            new(StringComparer.Ordinal);
+
+        /// <summary>
+        /// 下一次建单怎么答（control-server#390）：返回非空即用它作答并记下这次建单，返回空照常建成。用完不清，用例自己置回空。
+        /// </summary>
+        public Func<OrderIntent, RiotOrderObservation?>? CreateAnswer { get; set; }
+
+        /// <summary>把一张单改成 RIoT 的终态 SUCCESS（5），车到了目标站（control-server#390）。</summary>
+        public void CompleteOrder(string upperId) =>
+            _orders[upperId] = _orders[upperId] with
+            {
+                Kind = RiotOrderObservationKind.Terminal,
+                OrderState = RiotOrderState.Success,
+            };
+
+        /// <summary>把一张单改成 RIoT 的终态 DELETED（6）。</summary>
+        public void DeleteOrder(string upperId) =>
+            _orders[upperId] = _orders[upperId] with
+            {
+                Kind = RiotOrderObservationKind.Terminal,
+                OrderState = RiotOrderState.Deleted,
+            };
+
+        /// <summary>让 RIoT 上有这样一张单（结果未知之后单其实在的那一种，control-server#390）。</summary>
+        public void PutOrder(RiotOrderObservation order) => _orders[order.UpperId] = order;
+
+        /// <summary>这张单此刻在 RIoT 上的样子；没建过为空。</summary>
+        public RiotOrderObservation? OrderOf(string upperId) => _orders.GetValueOrDefault(upperId);
 
         public Task<VehicleMotionSample> SampleMotionAsync(string deviceKey, CancellationToken cancellationToken)
         {
@@ -1767,6 +2340,14 @@ public sealed partial class MultiVehicleExecutionTests
                 options.MapIdentity,
                 300,
                 clock.GetUtcNow()));
+        }
+
+        /// <summary>RIoT's Map list (control-server#186): the served Map under one name that never changes here.</summary>
+        public Task<RiotMapNameListing> ReadMapNamesAsync(CancellationToken cancellationToken)
+        {
+            _ = cancellationToken;
+            // Not clock.GetUtcNow(): that read would tick the transcript clock (see MapRenameHolds above).
+            return Task.FromResult(new RiotMapNameListing(clock.GetUtcNowWithoutTick(), [new RiotMapName(options.MapId, "MAP-FLEET")]));
         }
 
         public Task<RiotMapStationCatalogSnapshot> ReadMapStationsAsync(
@@ -1783,23 +2364,55 @@ public sealed partial class MultiVehicleExecutionTests
                     new RiotMapStation(13, "N1-2"),
                     new RiotMapStation(14, "N1-3"),
                     new RiotMapStation(210, "关卡"),
+                    .. ExtraStations,
                 ]));
         }
 
-        public Task<RiotOrderObservation> ReconcileByUpperIdAsync(
+        /// <summary>
+        /// 「查无此单」按真实 RIoT 的形态答（control-server#404 增量审查 M-A）：HTTP 200、业务码 0、不带 result，网关归为
+        /// <c>AbsentAtObservation</c> 的 Unknown；只有 HTTP 404 才是 <see cref="RiotOrderObservationKind.NotFound"/>，而真实 RIoT 不回 404。
+        /// 默认关：既有用例按 404 写。
+        /// </summary>
+        public bool AnswersAbsentAsRealRiot { get; set; }
+
+        /// <summary>
+        /// 按单号对账之前先做的一件事（control-server#406 的并发交错：引擎读到清桩已完成、正去读旧单的那一刻，另一个确认到来）。为空即不做。
+        /// </summary>
+        public Func<string, Task>? BeforeReconcile { get; set; }
+
+        public async Task<RiotOrderObservation> ReconcileByUpperIdAsync(
             string upperId,
             CancellationToken cancellationToken)
         {
             _ = cancellationToken;
-            return Task.FromResult(_orders.TryGetValue(upperId, out RiotOrderObservation? order)
+            if (BeforeReconcile is { } meanwhile)
+            {
+                await meanwhile(upperId);
+            }
+            RiotOrderObservation answer = _orders.TryGetValue(upperId, out RiotOrderObservation? order)
                 ? order
-                : new RiotOrderObservation(upperId, RiotOrderObservationKind.NotFound, null));
+                : new RiotOrderObservation(upperId, RiotOrderObservationKind.NotFound, null);
+            return AnswersAbsentAsRealRiot && answer.Kind == RiotOrderObservationKind.NotFound
+                ? RealRiotAbsent(upperId)
+                : answer;
         }
+
+        /// <summary>真实 RIoT 对一个它没有单的 upperId 的回答，经网关之后的样子（<c>HttpRiotMovementGateway.ReconcileByUpperIdAsync</c>）。</summary>
+        public RiotOrderObservation RealRiotAbsent(string upperId) => new(
+            upperId,
+            RiotOrderObservationKind.Unknown,
+            null,
+            Receipt: new RiotOrderCallReceipt("RECONCILE", "AbsentAtObservation", clock.GetUtcNowWithoutTick(), ResultPresent: false));
 
         public Task<RiotOrderObservation> CreateAsync(OrderIntent intent, CancellationToken cancellationToken)
         {
             _ = cancellationToken;
             Creates.Add((intent.VehicleKey, intent.UpperId, intent.DestinationStationId));
+            CreatedIntents.Add(intent);
+            if (CreateAnswer?.Invoke(intent) is { } answer)
+            {
+                return Task.FromResult(answer);
+            }
             RiotOrderObservation active = new(
                 intent.UpperId,
                 RiotOrderObservationKind.Active,
@@ -1845,6 +2458,34 @@ public sealed partial class MultiVehicleExecutionTests
                 OrderState = RiotOrderState.Failed,
             };
         }
+
+        /// <summary>Moves an order to RIoT's terminal CANCELLED (2), the way a person cancelling it in RIoT does (control-server#316).</summary>
+        public void CancelOrder(string upperId) =>
+            _orders[upperId] = _orders[upperId] with
+            {
+                Kind = RiotOrderObservationKind.Terminal,
+                OrderState = RiotOrderState.Cancelled,
+            };
+
+        /// <summary>Has RIoT read <paramref name="upperId"/>'s order as executed by <paramref name="vehicleKey"/> (control-server#406).</summary>
+        public void ExecuteOrderOn(string upperId, string? vehicleKey) =>
+            _orders[upperId] = _orders[upperId] with { VehicleKey = vehicleKey };
+
+        /// <summary>Moves an order to RIoT's SUSPENDED (8), which the gateway reads as Active (control-server#406).</summary>
+        public void SuspendOrder(string upperId) =>
+            _orders[upperId] = _orders[upperId] with
+            {
+                Kind = RiotOrderObservationKind.Active,
+                OrderState = RiotOrderState.Suspended,
+            };
+
+        /// <summary>Moves an order to RIoT's HANG (9), which the gateway reads as Active (control-server#316).</summary>
+        public void HangOrder(string upperId) =>
+            _orders[upperId] = _orders[upperId] with
+            {
+                Kind = RiotOrderObservationKind.Active,
+                OrderState = RiotOrderState.Hang,
+            };
 
         public Task<RiotCommandCallResult> IssueOrderCommandAsync(
             RiotOrderCommandKind kind,
@@ -1892,7 +2533,7 @@ public sealed partial class MultiVehicleExecutionTests
         }
     }
 
-    private sealed class MovableClock(DateTimeOffset utcNow) : TimeProvider
+    internal sealed class MovableClock(DateTimeOffset utcNow) : TimeProvider
     {
         private DateTimeOffset _utcNow = utcNow;
 
@@ -1910,5 +2551,13 @@ public sealed partial class MultiVehicleExecutionTests
         }
 
         public void Advance(TimeSpan elapsed) => _utcNow += elapsed;
+
+        /// <summary>The time now, without moving the clock on: for reads the transcript does not pin (control-server#186).</summary>
+        public DateTimeOffset GetUtcNowWithoutTick() => _utcNow;
+    }
+
+    internal sealed class FixedMapNameClock(DateTimeOffset now) : TimeProvider
+    {
+        public override DateTimeOffset GetUtcNow() => now;
     }
 }

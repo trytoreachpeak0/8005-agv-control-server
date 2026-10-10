@@ -28,6 +28,13 @@ public sealed class Batch7MigrationDisciplineTests
     internal const string Batch6Migration = "20260919021150_Batch6TaskTypeStationBindings";
     internal const string Batch7MigrationSuffix = "_Batch7MultiDemandJourneyPersistence";
 
+    /// <summary>
+    /// The last migration under which the dispatch lease table and the order occupancy columns exist: the one after it
+    /// (batch 8-16, control-server#387) drops them. This class's backfill assertions read the leases, so they stop there;
+    /// what that migration does to the leases is Batch8OccupancyRetirementMigrationTests' to assert.
+    /// </summary>
+    internal const string LastMigrationWithTheLeases = "20260929044052_Batch8VehiclePurposePersistence";
+
     /// <summary>批次 7 迁移之后允许存在的迁移，按名字点出来。</summary>
     private static readonly string[] MigrationsAfterBatch7 =
     [
@@ -35,6 +42,42 @@ public sealed class Batch7MigrationDisciplineTests
         "20260919200353_AreaEndAdmissionRevokedSince",
         // control-server#199：两张审计表的 BEFORE UPDATE／BEFORE DELETE 触发器。只建触发器，不动任何表。
         "20260920001500_AuditImmutabilityTriggers",
+        // control-server#211：**data only, no schema change**——把升级那一刻正在装货的那条归属回填成 LOADING。
+        // 本票票面写的是「零 migration」，这一条是 Coordinator 7 于 2026-09-20 明确松开那条约束后加的例外，
+        // 理由连同它一起留在这里，而不是只留在当时的对话里：新代码在 AwaitingLoadResult 阶段按 LOADING 找需求，
+        // 找不到就抛（那个 throw 是「命令与状态要么都在、要么都不在」的护栏，有意为之），所以跨过本提交升级时，
+        // 一条正在装货的旅程会每一轮都抛、永久卡住。读取侧兜底能躲开它，代价是那条护栏在最该出声时沉默。
+        // 谓词无歧义：老数据里一趟旅程只有一条需求，「这趟旅程里那条 PENDING_LOAD」没有第二个候选。
+        // 自己的断言在 Batch7LoadingMembershipBackfillMigrationTests。
+        "20260920145604_Batch7LoadingMembershipBackfill",
+        // control-server#273：JourneyRuntimes 加等人起点 WaitingSince 与三列等人电量记录，WaitingSince 回填正在等人的旅程。自己的断言在 WaitingJourneyWatchMigrationTests。
+        "20260922120241_WaitingJourneyWatch",
+        // control-server#318：新建 OwnOrderRebuilds 表，本服务端自建单终结后同车同需求重建的记录与审计；不动任何既有表与行。
+        "20260923043049_OwnOrderRebuilds",
+        // control-server#318 增量审查 B1：OwnOrderRebuilds 加最近一次要快照的时刻 CargoEvidenceRequestedAt（可空，不回填）；不动任何既有行。
+        "20260923094511_OwnOrderRebuildCargoEvidenceRequestedAt",
+        // control-server#330：新建 ForeignRiotOrders 表，我们车上运行中的外来订单的告警、审计与取消记录；不动任何既有表与行。
+        "20260923115051_ForeignRiotOrders",
+        // control-server#339：JourneyStops 加 WorklistRefills（本停靠的清单因离站期限重填多发了几版），默认 0；不动任何既有行。
+        "20260923152943_JourneyStopWorklistRefills",
+        // control-server#357：JourneyRuntimes 加并发令牌 Version（这一行被保存了几次），默认 0；不动任何既有行。自己的断言在 JourneyRuntimeVersionMigrationTests。
+        "20260927113122_JourneyRuntimeVersion",
+        // control-server#366：OwnOrderRebuilds 加 VehicleHeldAt（有货重建这一次被车况或会话挡住的开始）与 CargoEvidenceNotBefore（快照要晚于它才算数），都可空、不回填；不动任何既有行。
+        "20260928060831_OwnOrderRebuildCargoEvidenceNotBefore",
+        // control-server#186：新建 MapNameBaselines 表，每个 mapId 一行地图名基线（首次读到的名称、待接受的新名称、最近一次接受）；不动任何既有表与行。自己的断言在 MapNameBaselinesMigrationTests。
+        "20260928153736_MapNameBaselines",
+        // control-server#386：批次 8 建表迁移——新建用途占有记录、站点独占与经过、等待点登记四组表（记录表建空，回填归 #387），VehiclePurposeClaims 加用途 CHECK；选甲放宽 JourneyRuntimes 锚需求与只属搬运的 14 列、OrderIntents／RiotDispatchAuditEvents／ExperimentalRiotCreateAuthorizations／OwnOrderRebuilds 的 DemandId 必填性（都是保留列序的手写重建）；既有列序与行不变。自己的断言在 Batch8MigrationDisciplineTests。
+        "20260929044052_Batch8VehiclePurposePersistence",
+        // control-server#387：批次 8 第二次迁移——删前核数据（未结束的旧占用没有对应用途占有即整体拒绝、列出行、什么都不删），从占有行与已释放租约回填占有记录，删租约表与 OrderIntents 的两列订单占用及其过滤唯一索引（原生 DROP COLUMN，其余列序不变）。自己的断言在 Batch8OccupancyRetirementMigrationTests。
+        "20260929070322_Batch8RetireOldVehicleOccupancy",
+        // control-server#399：批次 9 唯一一次迁移——新建充电桩名册、充电策略版本（含批准与激活）、充电周期、桩与车两类暂停及其恢复、清桩记录、人工充电等待及其经过、两类现场确认请求共 17 张表（建空）；StationExclusivities／StationExclusivityRecords 加 CHARGER 种类与末列可空 ChargerRosterVersion（保留列序的手写重建）；OrderIntents 末列加 OrderShape（缺省即回填 SINGLE_MOVE）、JourneyRuntimes 末列加两列可空列（原生 ADD COLUMN）；既有列序与行不变。自己的断言在 Batch9MigrationDisciplineTests。
+        "20260929114754_Batch9ChargingPersistence",
+        // control-server#383：批次 8 人工判故障（REQ-0359）——新建 SlotFaultDeclarations 一张表（建空），带「同一尝试至多一条未结判定」的过滤唯一索引；既有表与行不变。在 batch-p3/v3 上建，合回集成分支前按先合入的迁移重建。自己的断言在 SlotFaultDeclarationTests。
+        "20260930012829_Batch8SlotFaultDeclarations",
+        // control-server#385：批次 8 恢复面（REQ-0242 CP-0008、REQ-0364 CP-0009）——ExceptionRecoverySessions 加可空列 ClosedReason，RecoveryWorkflows 加可空列 HandoffSublot、HandoffReceiverName、HandedOverAt，新建 SlotDoorHolds 一张表（建空，AgvId 普通索引）；纯 ADD COLUMN 与 CREATE TABLE，既有表与行不变。在 batch-p3/v3 上建，合回集成分支前按先合入的迁移重建。自己的断言在 RecoveryStateMachineG2Tests（RecoverySurface 分部）。
+        "20260930041750_Batch8RecoverySurface",
+        // control-server#505：**只改数据，不动 schema**——升级那一刻停在 Blocked、阻塞码以 _NOT_RECONCILED 结尾的旅程，码加后缀 _BEFORE_UPGRADE，成为不可放行的那一族（那时的码不保证有 RecoveryRequired 的需求作标记，而升级前第 5 条本来就一律不放，现场行为不变）；Down 去掉两个新后缀。调度 Coordinator 9 于 2026-10-08 给了迁移通道。自己的断言在 RecoveryEndingReleasesBlockedJourneyTests.Migration.cs。
+        "20261008052643_UnreleasableNotReconciledBlocksBeforeUpgrade",
     ];
 
     [Fact]
@@ -60,7 +103,7 @@ public sealed class Batch7MigrationDisciplineTests
         Assert.Equal(5, before["JourneyRuntimes"].Length);
         Assert.NotEmpty(before["ProtocolOutbox"]);
 
-        await fixture.Context.Database.MigrateAsync(cancellationToken);
+        await fixture.Context.GetService<IMigrator>().MigrateAsync(LastMigrationWithTheLeases, cancellationToken);
 
         // Existing tables, restricted to the columns they had at batch 6, row for row the same -- ProtocolOutbox included,
         // so what a reconnect replays is the original wire, and the old "" and 0001-01-01 defaults untouched.
@@ -70,6 +113,8 @@ public sealed class Batch7MigrationDisciplineTests
         }
 
         await using ControlServerDbContext read = fixture.NewContext();
+        // Today's model reads columns later migrations appended (control-server#399); this database stops before them.
+        await using IAsyncDisposable todaysColumns = await Batch7JourneyFixture.WithTodaysTrailingColumnsAsync(read);
         JourneyRuntimeRow[] journeys = await read.JourneyRuntimes.AsNoTracking().ToArrayAsync(cancellationToken);
         JourneyStopRow[] stops = await read.Set<JourneyStopRow>().AsNoTracking().ToArrayAsync(cancellationToken);
         JourneyDemandRow[] demands = await read.Set<JourneyDemandRow>().AsNoTracking().ToArrayAsync(cancellationToken);
@@ -84,20 +129,20 @@ public sealed class Batch7MigrationDisciplineTests
                 [journey.JourneyId + "|PICKUP", "PICKUP", journey.PickupStationId, Text(journey.PickupStationRiotId),
                  journey.DispatchZone, journey.OperationSessionId, journey.PickupMovementLegId, journey.PickupUpperId,
                  journey.VehicleBusinessMessageId, journey.WorklistMessageId, journey.PlanMessageId,
-                 journey.SublotRequestMessageId, journey.PreDepartureSafetyCheckMessageId, journey.PreDepartureSafetyCheckId],
+                 journey.SublotRequestMessageId!, journey.PreDepartureSafetyCheckMessageId!, journey.PreDepartureSafetyCheckId!],
                 StopFields(pickup));
             Assert.Equal(
-                [journey.JourneyId + "|UNLOAD", "UNLOAD", journey.GateStationId, Text(journey.GateStationRiotId),
-                 journey.DispatchZone, journey.OperationSessionId, journey.GateMovementLegId, journey.GateUpperId,
-                 journey.GateVehicleBusinessMessageId, journey.GateWorklistMessageId, journey.GatePlanMessageId,
+                [journey.JourneyId + "|UNLOAD", "UNLOAD", journey.GateStationId!, Text(journey.GateStationRiotId),
+                 journey.DispatchZone, journey.OperationSessionId, journey.GateMovementLegId!, journey.GateUpperId!,
+                 journey.GateVehicleBusinessMessageId!, journey.GateWorklistMessageId!, journey.GatePlanMessageId!,
                  "-", "-", "-"],
                 StopFields(unload));
 
             JourneyDemandRow demand = Assert.Single(demands, row => row.JourneyId == journey.JourneyId);
             Assert.Equal(
-                [journey.DemandId, pickup.StopId, unload.StopId, Text(journey.ExpectedBasketCount),
-                 journey.TargetSlotsJson, journey.LoadSlotOperationAttemptId, journey.LoadCommandMessageId,
-                 journey.UnloadSlotOperationAttemptId, journey.UnloadCommandMessageId, journey.DispatchZone,
+                [journey.DemandId!, pickup.StopId, unload.StopId, Text(journey.ExpectedBasketCount),
+                 journey.TargetSlotsJson!, journey.LoadSlotOperationAttemptId!, journey.LoadCommandMessageId!,
+                 journey.UnloadSlotOperationAttemptId!, journey.UnloadCommandMessageId!, journey.DispatchZone,
                  Text(journey.DispatchGeneration)],
                 [demand.DemandId, demand.PickupStopId, demand.UnloadStopId, Text(demand.ExpectedBasketCount),
                  demand.TargetSlotsJson, demand.LoadSlotOperationAttemptId, demand.LoadCommandMessageId,
@@ -127,11 +172,13 @@ public sealed class Batch7MigrationDisciplineTests
                     .Select(stop => $"{stop.StopRole}={stop.Status}"))
                 + $" demand={demands.Single(row => row.JourneyId == journey.JourneyId).Status}"));
 
-        // One purpose claim per active lease, for the same journey; a released lease has none.
-        VehicleDispatchLeaseRow[] leases = await read.VehicleDispatchLeases.AsNoTracking().ToArrayAsync(cancellationToken);
+        // One purpose claim per active lease, for the same journey; a released lease has none. The lease table is no
+        // longer in the model (batch 8-16, control-server#387), so it is read as the table it still is at this migration.
+        (string JourneyId, string DemandId, string VehicleKey, DateTimeOffset AcquiredAt, bool Released)[] leases =
+            await ReadLeasesAsync(fixture.Connection);
         VehiclePurposeClaimRow[] claims = await read.Set<VehiclePurposeClaimRow>().AsNoTracking().ToArrayAsync(cancellationToken);
         Assert.Equal(
-            leases.Where(lease => lease.ReleasedAt == null)
+            leases.Where(lease => !lease.Released)
                 .Select(lease => $"{lease.VehicleKey} TRANSPORT {lease.JourneyId} {lease.AcquiredAt:O}")
                 .Order(StringComparer.Ordinal),
             claims.Select(claim => $"{claim.VehicleKey} {claim.Purpose} {claim.JourneyId} {claim.ClaimedAt:O}")
@@ -154,6 +201,21 @@ public sealed class Batch7MigrationDisciplineTests
     }
 
     private static string Text(long value) => value.ToString(CultureInfo.InvariantCulture);
+
+    private static async Task<(string JourneyId, string DemandId, string VehicleKey, DateTimeOffset AcquiredAt, bool Released)[]>
+        ReadLeasesAsync(SqliteConnection connection)
+    {
+        await using SqliteCommand select = connection.CreateCommand();
+        select.CommandText = "SELECT JourneyId, DemandId, VehicleKey, AcquiredAt, ReleasedAt IS NOT NULL FROM VehicleDispatchLeases";
+        List<(string, string, string, DateTimeOffset, bool)> leases = [];
+        await using SqliteDataReader reader = await select.ExecuteReaderAsync(TestContext.Current.CancellationToken);
+        while (await reader.ReadAsync(TestContext.Current.CancellationToken))
+        {
+            leases.Add((reader.GetString(0), reader.GetString(1), reader.GetString(2),
+                DateTimeOffset.Parse(reader.GetString(3), CultureInfo.InvariantCulture), reader.GetBoolean(4)));
+        }
+        return [.. leases];
+    }
 
     private static string[] StopFields(JourneyStopRow stop) =>
     [
@@ -180,7 +242,7 @@ public sealed class Batch7MigrationDisciplineTests
         DateTimeOffset now = Batch7JourneyFixture.Now;
         await fixture.Context.GetService<IMigrator>().MigrateAsync(Batch6Migration, cancellationToken);
 
-        await using Batch7JourneyFixture scratch = await Batch7JourneyFixture.CreateAsync();
+        await using Batch7JourneyFixture scratch = await Batch7JourneyFixture.CreateMigratedForRealAsync();
         ControlServerDbContext context = scratch.Context;
 
         // agv-01: a completed journey, then a second one waiting for its sublot.
@@ -198,9 +260,12 @@ public sealed class Batch7MigrationDisciplineTests
         JourneyRuntimeRow toGate = await context.JourneyRuntimes.SingleAsync(row => row.DemandId == "D-C", cancellationToken);
         toGate.Stage = JourneyRuntimeStage.AwaitingGateArrival;
         await context.SaveChangesAsync(cancellationToken);
+        // 卸货停靠的行就是这一段腿的载体（control-server#211 把写死的 Gate* 四列换成了它）。
+        JourneyStopRow toGateStop = await context.Set<JourneyStopRow>()
+            .SingleAsync(row => row.StopId == JourneyIdentity.UnloadStopId(toGate.JourneyId), cancellationToken);
         await new WireToGateStore(context).AuthorizeMovementAsync(
-            JourneyPlanBuilder.GateIntent(toGate, now.AddMinutes(5)),
-            new SafetyCheckObservation(toGate.PreDepartureSafetyCheckId, 1, true, now.AddMinutes(5), now.AddMinutes(6)),
+            JourneyPlanBuilder.LegIntent(toGate, toGateStop, now.AddMinutes(5)),
+            new SafetyCheckObservation(toGate.PreDepartureSafetyCheckId!, 1, true, now.AddMinutes(5), now.AddMinutes(6)),
             now.AddMinutes(5),
             cancellationToken);
 
@@ -216,14 +281,14 @@ public sealed class Batch7MigrationDisciplineTests
         context.ProtocolOutbox.AddRange(
             new ProtocolOutboxRow
             {
-                MessageId = toGate.GateVehicleBusinessMessageId,
+                MessageId = toGate.GateVehicleBusinessMessageId!,
                 MessageType = "VehicleBusinessStateSnapshot",
                 PayloadJson = "{\"revision\":1}",
                 CreatedAt = now.AddMinutes(5)
             },
             new ProtocolOutboxRow
             {
-                MessageId = blocked.SublotRequestMessageId,
+                MessageId = blocked.SublotRequestMessageId!,
                 MessageType = "SublotEntryRequest",
                 PayloadJson = "{}",
                 CreatedAt = now.AddMinutes(2),
@@ -231,9 +296,33 @@ public sealed class Batch7MigrationDisciplineTests
             });
         await context.SaveChangesAsync(cancellationToken);
 
-        foreach (string table in (string[])["AcceptedDemands", "VehicleDispatchLeases", "OrderIntents", "JourneyRuntimes", "ProtocolOutbox"])
+        foreach (string table in (string[])["AcceptedDemands", "OrderIntents", "JourneyRuntimes", "ProtocolOutbox"])
         {
-            await CopyRowsAsync(scratch.Connection, fixture.Connection, table, await ColumnsAtBatch6Async(table));
+            // The scratch database is at the current schema, which no longer has the order occupancy columns (batch 8-16,
+            // control-server#387); every batch-6 column it does have is copied, the rest keep batch 6's defaults.
+            string[] current = await ColumnsAsync(scratch.Connection, table);
+            await CopyRowsAsync(
+                scratch.Connection, fixture.Connection, table,
+                [.. (await ColumnsAtBatch6Async(table)).Intersect(current, StringComparer.Ordinal)]);
+        }
+        // The acceptances above wrote a claim record where they used to write a lease (batch 8-16, control-server#387): the
+        // same vehicle, the same moments, the lease's demand the one its journey is anchored on.
+        await using (SqliteCommand records = scratch.Connection.CreateCommand())
+        {
+            records.CommandText =
+                "SELECT substr(JourneyId, length('journey:') + 1), VehicleKey, AcquiredAt, ReleasedAt FROM VehiclePurposeClaimRecords";
+            await using SqliteDataReader reader = await records.ExecuteReaderAsync(cancellationToken);
+            while (await reader.ReadAsync(cancellationToken))
+            {
+                await using SqliteCommand insert = fixture.Connection.CreateCommand();
+                insert.CommandText =
+                    "INSERT INTO VehicleDispatchLeases (DemandId, VehicleKey, AcquiredAt, ReleasedAt) VALUES ($d, $v, $a, $r)";
+                insert.Parameters.AddWithValue("$d", reader.GetValue(0));
+                insert.Parameters.AddWithValue("$v", reader.GetValue(1));
+                insert.Parameters.AddWithValue("$a", reader.GetValue(2));
+                insert.Parameters.AddWithValue("$r", reader.GetValue(3));
+                await insert.ExecuteNonQueryAsync(cancellationToken);
+            }
         }
 
         await using SqliteCommand raw = fixture.Connection.CreateCommand();
@@ -425,27 +514,57 @@ public sealed class Batch7MigrationDisciplineTests
         return [.. schema];
     }
 
+    /// <remarks>
+    /// Until batch 8-16 (control-server#387) this also held <c>VehicleDispatchLeases</c> to its batch-6 columns, for the same
+    /// reason: scripts and G3 scenarios read it directly. That ticket dropped the table and moved every one of those readers
+    /// onto <c>VehiclePurposeClaims</c> and <c>VehiclePurposeClaimRecords</c> in the same change, so what this guarded
+    /// against -- a script silently finding no column -- is now guarded by
+    /// <c>Batch8OccupancyRetirementMigrationTests.NothingUnderScriptsTestsSrcToolsDocsOrWorkflowsNamesTheRetiredOccupancyAnyMore</c>:
+    /// no reader of the retired table or columns is left to break.
+    /// </remarks>
     [Fact]
-    public async Task JourneyRuntimesAndVehicleDispatchLeasesKeepEveryColumnTheyHadAtBatch6SoScriptsStillFindThem()
+    public async Task EveryTableTheScriptsReadKeepsEveryColumnItHadSoScriptsStillFindThem()
     {
-        // scripts/ and the G3 scenarios query these two tables directly -- WHERE DemandId = ..., SELECT DemandId, VehicleKey,
-        // AcquiredAt, ReleasedAt, SELECT * -- so the key change must only ever add columns.
-        await using Batch7JourneyFixture fixture = await Batch7JourneyFixture.CreateAsync();
+        // scripts/ and the G3 scenarios query these two tables directly -- WHERE DemandId = ..., SELECT * -- so the key
+        // change must only ever add columns.
+        await using Batch7JourneyFixture fixture = await Batch7JourneyFixture.CreateMigratedForRealAsync();
 
-        foreach (string table in (string[])["JourneyRuntimes", "VehicleDispatchLeases", "JourneyBacklog"])
+        foreach (string table in (string[])["JourneyRuntimes", "JourneyBacklog"])
         {
             string[] after = await ColumnsAsync(fixture.Connection, table);
             Assert.Empty((await ColumnsAtBatch6Async(table)).Except(after, StringComparer.Ordinal));
             Assert.Contains("DemandId", after);
         }
         Assert.Contains("JourneyId", await ColumnsAsync(fixture.Connection, "JourneyRuntimes"));
-        Assert.Contains("JourneyId", await ColumnsAsync(fixture.Connection, "VehicleDispatchLeases"));
+
+        // Since control-server#387 the scripts and G3 scenarios read the vehicle's occupancy from these three instead of
+        // the retired lease table -- joining the claim records and claims to JourneyDemands by JourneyId, filtering by
+        // DemandId, VehicleKey and ReleasedAt. Held to the columns they had when that started, the same way.
+        Dictionary<string, string[]> readByScriptsSinceBatch8 = new(StringComparer.Ordinal)
+        {
+            ["VehiclePurposeClaimRecords"] =
+                ["AcquiredAt", "JourneyId", "Purpose", "RecordId", "ReleaseReason", "ReleasedAt", "VehicleKey"],
+            ["VehiclePurposeClaims"] = ["ClaimedAt", "JourneyId", "Purpose", "VehicleKey"],
+            ["JourneyDemands"] =
+            [
+                "AddedAt", "DemandId", "DispatchGeneration", "DispatchZone", "DispatchZoneParameterVersion",
+                "ExpectedBasketCount", "JourneyId", "LoadCommandMessageId", "LoadSlotOperationAttemptId", "LoadedSlotsJson",
+                "PickupStopId", "RemovalReason", "RemovedAt", "Status", "TargetSlotsJson", "UnloadCommandMessageId",
+                "UnloadSlotOperationAttemptId", "UnloadStopId",
+            ],
+        };
+        foreach ((string table, string[] columns) in readByScriptsSinceBatch8)
+        {
+            Assert.Empty(columns.Except(await ColumnsAsync(fixture.Connection, table), StringComparer.Ordinal));
+        }
     }
 
     [Fact]
     public async Task MigratingAnEmptyDatabaseCreatesEveryBatch7TableWithItsKeysAndIndexes()
     {
-        await using Batch7JourneyFixture fixture = await Batch7JourneyFixture.CreateAsync();
+        // Up to the last migration that still has the lease table (batch 8-16, control-server#387, drops it).
+        await using Batch7JourneyFixture fixture = await Batch7JourneyFixture.CreateAsync(migrate: false);
+        await fixture.Context.GetService<IMigrator>().MigrateAsync(LastMigrationWithTheLeases, TestContext.Current.CancellationToken);
 
         Assert.Equal(
             [

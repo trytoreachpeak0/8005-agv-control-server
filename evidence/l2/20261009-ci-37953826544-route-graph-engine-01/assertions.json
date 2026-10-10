@@ -1,0 +1,78 @@
+{
+  "schemaVersion": 1,
+  "scenario": "route-graph-engine",
+  "runId": "20261009T163253541Z",
+  "outcome": "PASS",
+  "failureReason": "",
+  "identity": {
+    "controlServerCommit": "563242d071de6f243c59f11722b197d683fee2a4",
+    "protocolReleaseIdentity": {
+      "repository": "8005-agv-protocol",
+      "releaseVersion": "3.0.0",
+      "tag": "protocol-v3.0.0",
+      "commit": "3f091cb2eae7c58cec54a95dd9389c9180bc7b4c",
+      "protocolVersion": 4,
+      "profileId": "AGV_FULL_PRODUCT",
+      "manifestSha256": "d5e1a53f1fd61f105a890dc0267e1b0a9ac5ea49f713d2cf730b0f554df9db9e",
+      "schemaBundleSha256": "e435b2b14d9ccd60c89f07df909da7626fef056a6b8a2241087557fd7dc3df43",
+      "vectorsSha256": "be849f9749b004296ebd9e7bffa98faf2f8ffa90b63308ca3b210c68e7b8656e",
+      "approvalStatus": "APPROVED_RELEASE"
+    },
+    "vehicleKey": "BROKERX-L2-0001",
+    "rig": "SyntheticOnboard",
+    "batchId": "batch-2",
+    "agvId": "AGV-L2-001",
+    "stageRoot": "C:\\actions-runner\\win11-01-control-server\\_work\\_temp\\l2-37953826544-1\\_stage\\l2-20261009T163253541Z-slot4"
+  },
+  "assertions": [
+    {
+      "id": "L2-RG-01",
+      "description": "设计态读回了种子图的八条有向边",
+      "outcome": "PASS",
+      "expected": 8,
+      "actual": 8
+    },
+    {
+      "id": "L2-RG-02",
+      "description": "设计态读回了三个站点",
+      "outcome": "PASS",
+      "expected": 3,
+      "actual": 3
+    },
+    {
+      "id": "L2-RG-03",
+      "description": "运行态周期也跑过（移除集已读回，空是正常答案）",
+      "outcome": "PASS",
+      "expected": "(非空)",
+      "actual": "2026-10-09 16:33:15.9542369+00:00"
+    },
+    {
+      "id": "L2-RG-04",
+      "description": "边组指纹为空串且已取过一次（合成 RIoT 与 map25 一样没有边组）",
+      "outcome": "PASS",
+      "expected": "'' + 已取过",
+      "actual": "'' + 已取过"
+    },
+    {
+      "id": "L2-RG-05",
+      "description": "快照不是陈旧态",
+      "outcome": "PASS",
+      "expected": "(无陈旧原因)",
+      "actual": "(null)"
+    },
+    {
+      "id": "L2-RG-06",
+      "description": "引擎开着时派车照常走通（可达性判据放行）",
+      "outcome": "PASS",
+      "expected": "AwaitingPickupArrival",
+      "actual": "AwaitingPickupArrival"
+    },
+    {
+      "id": "L2-RG-07",
+      "description": "候选判定结果是 ACCEPTED，没有被任何 ROUTE_GRAPH_* 原因挡住",
+      "outcome": "PASS",
+      "expected": "ACCEPTED",
+      "actual": "ACCEPTED"
+    }
+  ]
+}

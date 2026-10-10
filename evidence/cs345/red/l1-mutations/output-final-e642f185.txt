@@ -1,0 +1,185 @@
+== M1-window-not-restarted: applied (0	1	src/ControlServer.Host/Runtime/OwnOrderRebuilds.cs)
+  build: ['0 Error(s)']
+  Failed ControlServer.Tests.StoppedRebuildExitTests.AfterAPersonsRebuildTheWindowRunsFromTheRequest [216 ms]
+  Failed ControlServer.Tests.StoppedRebuildExitTests.AStoppedRebuildIsRebuiltOnceOnAPersonsRequest [133 ms]
+  Failed!  - Failed:     2, Passed:    40, Skipped:     0, Total:    42, Duration: 49 s - ControlServer.Tests.dll (net8.0)
+== M2-not-only-stopped: applied (1	1	src/ControlServer.Host/Runtime/Faults/VehicleFaultRecoveryService.StoppedRebuild.cs)
+  build: ['0 Error(s)']
+  Failed ControlServer.Tests.StoppedRebuildExitTests.AHandoffIsPreparedOnlyForAStoppedTripWithCargoOnBoard(state: "rebuild-waiting", refusal: "OWN_ORDER_REBUILD_EXIT_NOT_STOPPED") [3 s]
+  Failed ControlServer.Tests.StoppedRebuildExitTests.AHandoffIsPreparedOnlyForAStoppedTripWithCargoOnBoard(state: "under-way", refusal: "OWN_ORDER_REBUILD_EXIT_NOT_STOPPED") [278 ms]
+  Failed ControlServer.Tests.StoppedRebuildExitTests.GivingUpAJourneyNotStoppedByTheThirdGuardIsRefusedAndChangesNothing(state: "rebuild-waiting", refusal: "OWN_ORDER_REBUILD_EXIT_NOT_STOPPED") [446 ms]
+  Failed ControlServer.Tests.StoppedRebuildExitTests.GivingUpAJourneyNotStoppedByTheThirdGuardIsRefusedAndChangesNothing(state: "under-way", refusal: "OWN_ORDER_REBUILD_EXIT_NOT_STOPPED") [234 ms]
+  Failed ControlServer.Tests.StoppedRebuildExitTests.ARequestForAJourneyNotStoppedByTheThirdGuardIsRefusedAndChangesNothing(state: "under-way", refusal: "OWN_ORDER_REBUILD_EXIT_NOT_STOPPED") [219 ms]
+  Failed ControlServer.Tests.StoppedRebuildExitTests.ARequestForAJourneyNotStoppedByTheThirdGuardIsRefusedAndChangesNothing(state: "rebuild-waiting", refusal: "OWN_ORDER_REBUILD_EXIT_NOT_STOPPED") [236 ms]
+  Failed ControlServer.Tests.StoppedRebuildExitTests.TheSameGiveUpTwiceTerminatesOnce [127 ms]
+  Failed ControlServer.Tests.StoppedRebuildExitTests.TheSameRequestTwiceRebuildsOnce [103 ms]
+  Failed!  - Failed:     8, Passed:    34, Skipped:     0, Total:    42, Duration: 43 s - ControlServer.Tests.dll (net8.0)
+M3-no-idempotency: MATCHED 0 TIMES (want 1), SKIPPED
+== M4-old-snapshot-counts: applied (0	1	src/ControlServer.Host/Runtime/OwnOrderRebuilds.cs)
+  build: ['0 Error(s)']
+  Failed ControlServer.Tests.StoppedRebuildExitTests.AStoppedRebuildIsRebuiltOnceOnAPersonsRequest [129 ms]
+  Failed ControlServer.Tests.StoppedRebuildExitTests.APersonsRebuildWithCargoOnBoardStillNeedsAFreshSnapshotOfTheCargo [3 s]
+  Failed!  - Failed:     2, Passed:    40, Skipped:     0, Total:    42, Duration: 45 s - ControlServer.Tests.dll (net8.0)
+== M5-delay-waited: applied (1	1	src/ControlServer.Host/Runtime/OwnOrderRebuilds.cs)
+  build: ['0 Error(s)']
+  Failed ControlServer.Tests.StoppedRebuildExitTests.AfterAPersonsRebuildTheWindowRunsFromTheRequest [130 ms]
+  Failed ControlServer.Tests.StoppedRebuildExitTests.AStoppedRebuildIsRebuiltOnceOnAPersonsRequest [101 ms]
+  Failed ControlServer.Tests.StoppedRebuildExitTests.APersonsRebuildWhileTheSessionIsNotReadyOnItsOwnOrderWaitsForTheSession [126 ms]
+  Failed ControlServer.Tests.StoppedRebuildExitTests.TheSameRequestTwiceRebuildsOnce [79 ms]
+  Failed!  - Failed:     4, Passed:    38, Skipped:     0, Total:    42, Duration: 41 s - ControlServer.Tests.dll (net8.0)
+== M6-cargo-stop-not-refused: applied (1	1	src/ControlServer.Host/Runtime/Faults/VehicleFaultRecoveryService.StoppedRebuild.cs)
+  build: ['0 Error(s)']
+  Failed ControlServer.Tests.StoppedRebuildExitTests.GivingUpAJourneyNotStoppedByTheThirdGuardIsRefusedAndChangesNothing(state: "cargo-not-in-place", refusal: "OWN_ORDER_REBUILD_EXIT_CARGO_NOT_IN_PLACE") [2 s]
+  Failed ControlServer.Tests.StoppedRebuildExitTests.ARequestForAJourneyNotStoppedByTheThirdGuardIsRefusedAndChangesNothing(state: "cargo-not-in-place", refusal: "OWN_ORDER_REBUILD_EXIT_CARGO_NOT_IN_PLACE") [2 s]
+  Failed!  - Failed:     2, Passed:    40, Skipped:     0, Total:    42, Duration: 39 s - ControlServer.Tests.dll (net8.0)
+N1-live-binding-ignored: MATCHED 0 TIMES (want 1), SKIPPED
+N2-memberships-ignored: MATCHED 0 TIMES (want 1), SKIPPED
+== N3-riot-not-read: applied (0	1	src/ControlServer.Host/Runtime/Faults/VehicleFaultRecoveryService.StoppedRebuild.cs)
+  build: ['0 Error(s)']
+  Failed ControlServer.Tests.StoppedRebuildExitTests.AStoppedTripIsNotGivenUpWhileRiotMayHoldAnUnfinishedOrder(unfinished: True, refusal: "FAULT_RECOVERY_VEHICLE_ORDER_NOT_FINISHED") [132 ms]
+  Failed ControlServer.Tests.StoppedRebuildExitTests.AStoppedTripIsNotGivenUpWhileRiotMayHoldAnUnfinishedOrder(unfinished: null, refusal: "FAULT_RECOVERY_VEHICLE_ORDERS_UNKNOWN") [126 ms]
+  Failed!  - Failed:     2, Passed:    40, Skipped:     0, Total:    42, Duration: 43 s - ControlServer.Tests.dll (net8.0)
+== N4-no-giveup-idempotency: applied (1	1	src/ControlServer.Host/Runtime/Faults/VehicleFaultRecoveryService.StoppedRebuild.cs)
+  build: ['0 Error(s)']
+  Failed ControlServer.Tests.StoppedRebuildExitTests.TheSameGiveUpTwiceTerminatesOnce [162 ms]
+  Failed!  - Failed:     1, Passed:    41, Skipped:     0, Total:    42, Duration: 49 s - ControlServer.Tests.dll (net8.0)
+== N5-closure-not-sent: applied (1	1	src/ControlServer.Host/Runtime/Faults/VehicleFaultRecoveryService.StoppedRebuild.cs)
+  build: ['0 Error(s)']
+  Failed ControlServer.Tests.JourneyClosureSingleExitArchitectureTests.EveryFileThatCanCloseAJourneySendsTheClosure [221 ms]
+  Failed ControlServer.Tests.StoppedRebuildExitTests.AStoppedTripWithNothingOnBoardIsGivenUpOnAPersonsRequest(session: "not-ready-on-own-order") [199 ms]
+  Failed ControlServer.Tests.StoppedRebuildExitTests.AStoppedTripWithNothingOnBoardIsGivenUpOnAPersonsRequest(session: "ready") [140 ms]
+  Failed!  - Failed:     3, Passed:    54, Skipped:     0, Total:    57, Duration: 44 s - ControlServer.Tests.dll (net8.0)
+== H1-readiness-input-removed: applied (0	1	src/ControlServer.Infrastructure/Persistence/WireToGateStore.cs)
+  build: ['0 Error(s)']
+  Failed ControlServer.Tests.StoppedRebuildExitTests.AFailedHandoffLeavesTheTripAWayOut [2 s]
+  Failed ControlServer.Tests.StoppedRebuildExitTests.ACargoNotInPlaceIsHandedToTheExceptionSessionAndEndsThere(session: "ready") [2 s]
+  Failed ControlServer.Tests.StoppedRebuildExitTests.OnlyThisVehiclesBlockedJourneyAwaitingAHandoffHoldsItsSession [2 s]
+  Failed ControlServer.Tests.StoppedRebuildExitTests.APartialHandoffLetsThePersonGiveTheRestUp [2 s]
+  Failed!  - Failed:     4, Passed:    38, Skipped:     0, Total:    42, Duration: 44 s - ControlServer.Tests.dll (net8.0)
+H2-readiness-any-blocked: MATCHED 0 TIMES (want 1), SKIPPED
+H3-readiness-any-vehicle: MATCHED 0 TIMES (want 1), SKIPPED
+== H4-journey-not-blocked: applied (0	1	src/ControlServer.Host/Runtime/Faults/VehicleFaultRecoveryService.StoppedRebuild.cs)
+  build: ['0 Error(s)']
+  Failed ControlServer.Tests.StoppedRebuildExitTests.AFailedHandoffLeavesTheTripAWayOut [2 s]
+  Failed ControlServer.Tests.StoppedRebuildExitTests.ACargoNotInPlaceIsHandedToTheExceptionSessionAndEndsThere(session: "not-ready-on-own-order") [2 s]
+  Failed ControlServer.Tests.StoppedRebuildExitTests.ACargoNotInPlaceIsHandedToTheExceptionSessionAndEndsThere(session: "ready") [2 s]
+  Failed ControlServer.Tests.StoppedRebuildExitTests.AStoppedTripWithCargoOnBoardCanBeHandedToTheExceptionSession [2 s]
+  Failed ControlServer.Tests.StoppedRebuildExitTests.OnlyThisVehiclesBlockedJourneyAwaitingAHandoffHoldsItsSession [2 s]
+  Failed ControlServer.Tests.StoppedRebuildExitTests.AHandedOverTripIsNotRebuiltByAPerson [2 s]
+  Failed ControlServer.Tests.StoppedRebuildExitTests.AHandedOffCargoBindingIsNotTakenForTheVehiclesNextFault [2 s]
+  Failed ControlServer.Tests.StoppedRebuildExitTests.APartialHandoffLetsThePersonGiveTheRestUp [2 s]
+  Failed ControlServer.Tests.StoppedRebuildExitTests.TheSameHandoffPreparationTwiceIsDoneOnce [2 s]
+  Failed ControlServer.Tests.StoppedRebuildExitTests.AForcedMechanicalRecoveryOfAHandedOverTripSettlesItsBinding [2 s]
+  Failed!  - Failed:    10, Passed:    32, Skipped:     0, Total:    42, Duration: 44 s - ControlServer.Tests.dll (net8.0)
+== H5-binding-not-released: applied (0	1	src/ControlServer.Host/Transport/OnboardRecoveryCoordinator.cs)
+  build: ['0 Error(s)']
+  Failed ControlServer.Tests.StoppedRebuildExitTests.ACargoNotInPlaceIsHandedToTheExceptionSessionAndEndsThere(session: "not-ready-on-own-order") [2 s]
+  Failed ControlServer.Tests.StoppedRebuildExitTests.ACargoNotInPlaceIsHandedToTheExceptionSessionAndEndsThere(session: "ready") [2 s]
+  Failed ControlServer.Tests.StoppedRebuildExitTests.AHandedOffCargoBindingIsNotTakenForTheVehiclesNextFault [2 s]
+  Failed ControlServer.Tests.StoppedRebuildExitTests.APartialHandoffLetsThePersonGiveTheRestUp [2 s]
+  Failed ControlServer.Tests.StoppedRebuildExitTests.AForcedMechanicalRecoveryOfAHandedOverTripSettlesItsBinding [2 s]
+  Failed!  - Failed:     5, Passed:    37, Skipped:     0, Total:    42, Duration: 45 s - ControlServer.Tests.dll (net8.0)
+H6-claim-not-extended: MATCHED 0 TIMES (want 1), SKIPPED
+== H7-nothing-on-board-allowed: applied (1	1	src/ControlServer.Host/Runtime/Faults/VehicleFaultRecoveryService.StoppedRebuild.cs)
+  build: ['0 Error(s)']
+  Failed ControlServer.Tests.StoppedRebuildExitTests.AHandoffIsPreparedOnlyForAStoppedTripWithCargoOnBoard(state: "nothing-on-board", refusal: "OWN_ORDER_REBUILD_EXIT_NOTHING_ON_BOARD") [414 ms]
+  Failed ControlServer.Tests.StoppedRebuildExitTests.APartialHandoffLetsThePersonGiveTheRestUp [2 s]
+  Failed!  - Failed:     2, Passed:    40, Skipped:     0, Total:    42, Duration: 44 s - ControlServer.Tests.dll (net8.0)
+== N1b-live-binding-ignored: applied (1	1	src/ControlServer.Host/Runtime/Faults/VehicleFaultRecoveryService.StoppedRebuild.cs)
+  build: ['0 Error(s)']
+  Failed ControlServer.Tests.StoppedRebuildExitTests.AStoppedTripWithCargoOnBoardIsNotGivenUp(cargo: "live-cargo-binding") [186 ms]
+  Failed!  - Failed:     1, Passed:    41, Skipped:     0, Total:    42, Duration: 45 s - ControlServer.Tests.dll (net8.0)
+== N2b-memberships-ignored: applied (1	1	src/ControlServer.Host/Runtime/Faults/VehicleFaultRecoveryService.StoppedRebuild.cs)
+  build: ['0 Error(s)']
+  Failed ControlServer.Tests.StoppedRebuildExitTests.AStoppedTripWithCargoOnBoardCanBeHandedToTheExceptionSession [2 s]
+  Failed ControlServer.Tests.StoppedRebuildExitTests.AStoppedTripWithCargoOnBoardIsNotGivenUp(cargo: "loaded") [2 s]
+  Failed!  - Failed:     2, Passed:    40, Skipped:     0, Total:    42, Duration: 45 s - ControlServer.Tests.dll (net8.0)
+H6a-claim-read-not-extended: MATCHED 0 TIMES (want 1), SKIPPED
+== H2r-readiness-ignores-record: applied (1	1	src/ControlServer.Infrastructure/Persistence/WireToGateStore.cs)
+  build: ['0 Error(s)']
+  Failed ControlServer.Tests.StoppedRebuildExitTests.OnlyThisVehiclesBlockedJourneyAwaitingAHandoffHoldsItsSession [2 s]
+  Failed!  - Failed:     1, Passed:    41, Skipped:     0, Total:    42, Duration: 43 s - ControlServer.Tests.dll (net8.0)
+== H3r-readiness-any-vehicle: applied (1	1	src/ControlServer.Infrastructure/Persistence/WireToGateStore.cs)
+  build: ['0 Error(s)']
+  Failed ControlServer.Tests.StoppedRebuildExitTests.OnlyThisVehiclesBlockedJourneyAwaitingAHandoffHoldsItsSession [2 s]
+  Failed!  - Failed:     1, Passed:    41, Skipped:     0, Total:    42, Duration: 44 s - ControlServer.Tests.dll (net8.0)
+== H2b-readiness-ignores-blocked: applied (1	1	src/ControlServer.Infrastructure/Persistence/WireToGateStore.cs)
+  build: ['0 Error(s)']
+  Failed ControlServer.Tests.StoppedRebuildExitTests.OnlyThisVehiclesBlockedJourneyAwaitingAHandoffHoldsItsSession [2 s]
+  Failed!  - Failed:     1, Passed:    41, Skipped:     0, Total:    42, Duration: 46 s - ControlServer.Tests.dll (net8.0)
+== S3-claim-ignores-blocked: applied (2	2	src/ControlServer.Host/Runtime/OwnOrderRebuilds.cs)
+  build: ['0 Error(s)']
+  Failed ControlServer.Tests.StoppedRebuildExitTests.AHandoffRecordWhoseJourneyIsNoLongerBlockedAsksTheVehicleForNothing [2 s]
+  Failed!  - Failed:     1, Passed:    41, Skipped:     0, Total:    42, Duration: 45 s - ControlServer.Tests.dll (net8.0)
+== H6r-claim-not-extended: applied (2	2	src/ControlServer.Host/Runtime/OwnOrderRebuilds.cs)
+  build: ['0 Error(s)']
+  Failed ControlServer.Tests.StoppedRebuildExitTests.AFailedHandoffLeavesTheTripAWayOut [2 s]
+  Failed ControlServer.Tests.StoppedRebuildExitTests.ACargoNotInPlaceIsHandedToTheExceptionSessionAndEndsThere(session: "not-ready-on-own-order") [2 s]
+  Failed ControlServer.Tests.StoppedRebuildExitTests.ACargoNotInPlaceIsHandedToTheExceptionSessionAndEndsThere(session: "ready") [2 s]
+  Failed ControlServer.Tests.StoppedRebuildExitTests.TheSameHandoffPreparationTwiceIsDoneOnce [2 s]
+  Failed!  - Failed:     4, Passed:    38, Skipped:     0, Total:    42, Duration: 44 s - ControlServer.Tests.dll (net8.0)
+== M1a-giveup-rejects-handoff-state: applied (1	1	src/ControlServer.Host/Runtime/Faults/VehicleFaultRecoveryService.StoppedRebuild.cs)
+  build: ['0 Error(s)']
+  Failed ControlServer.Tests.StoppedRebuildExitTests.AFailedHandoffLeavesTheTripAWayOut [2 s]
+  Failed ControlServer.Tests.StoppedRebuildExitTests.APartialHandoffLetsThePersonGiveTheRestUp [2 s]
+  Failed!  - Failed:     2, Passed:    40, Skipped:     0, Total:    42, Duration: 45 s - ControlServer.Tests.dll (net8.0)
+== M1b-prepare-rejects-handoff-state: applied (1	1	src/ControlServer.Host/Runtime/Faults/VehicleFaultRecoveryService.StoppedRebuild.cs)
+  build: ['0 Error(s)']
+  Failed ControlServer.Tests.StoppedRebuildExitTests.AFailedHandoffLeavesTheTripAWayOut [2 s]
+  Failed ControlServer.Tests.StoppedRebuildExitTests.APartialHandoffLetsThePersonGiveTheRestUp [2 s]
+  Failed ControlServer.Tests.StoppedRebuildExitTests.TheSameHandoffPreparationTwiceIsDoneOnce [2 s]
+  Failed!  - Failed:     3, Passed:    39, Skipped:     0, Total:    42, Duration: 57 s - ControlServer.Tests.dll (net8.0)
+== M1d-handoff-record-not-read: applied (1	1	src/ControlServer.Host/Runtime/Faults/VehicleFaultRecoveryService.StoppedRebuild.cs)
+  build: ['C:\\Users\\szy\\Desktop\\8005-workspace-v2\\worktrees\\cs345-8005-agv-control-server\\src\\ControlServer.Host\\Runtime\\Faults\\VehicleFaultRecoveryService.StoppedRebuild.cs(375,45): error CS8602: Dereference of a possibly null reference. [C:\\Users\\szy\\Desktop\\8005-workspace-v2\\worktrees\\cs345-8005-agv-control-server\\src\\ControlServer.Host\\ControlServer.Host.csproj]', 'C:\\Users\\szy\\Desktop\\8005-workspace-v2\\worktrees\\cs345-8005-agv-control-server\\src\\ControlServer.Host\\Runtime\\Faults\\VehicleFaultRecoveryService.StoppedRebuild.cs(375,45): error CS8602: Dereference of a possibly null reference. [C:\\Users\\szy\\Desktop\\8005-workspace-v2\\worktrees\\cs345-8005-agv-control-server\\src\\ControlServer.Host\\ControlServer.Host.csproj]', '1 Error(s)']
+  NO SUMMARY; tail:
+    Test run for C:\Users\szy\Desktop\8005-workspace-v2\worktrees\cs345-8005-agv-control-server\tests\ControlServer.Tests\bin\Release\net8.0\win-x64\ControlServer.Tests.dll (.NETCoreApp,Version=v8.0)
+    VSTest version 17.11.1 (x64)
+    
+    The test source file "C:\Users\szy\Desktop\8005-workspace-v2\worktrees\cs345-8005-agv-control-server\tests\ControlServer.Tests\bin\Release\net8.0\win-x64\ControlServer.Tests.dll" provided was not foun
+== M1e-rebuild-accepts-handoff-state: applied (1	1	src/ControlServer.Host/Runtime/Faults/VehicleFaultRecoveryService.StoppedRebuild.cs)
+  build: ['0 Error(s)']
+  Failed ControlServer.Tests.StoppedRebuildExitTests.AHandedOverTripIsNotRebuiltByAPerson [4 s]
+  Failed ControlServer.Tests.StoppedRebuildExitTests.TheSameHandoffPreparationTwiceIsDoneOnce [2 s]
+  Failed!  - Failed:     2, Passed:    40, Skipped:     0, Total:    42, Duration: 1 m 7 s - ControlServer.Tests.dll (net8.0)
+== S1-giveup-before-confirmation: applied (1	1	src/ControlServer.Host/Runtime/Faults/VehicleFaultRecoveryService.StoppedRebuild.cs)
+  build: ['0 Error(s)']
+  Failed ControlServer.Tests.StoppedRebuildExitTests.GivingUpARebuildStoppedBeforeItsNewOrderWasConfirmedIsRefused [95 ms]
+  Failed!  - Failed:     1, Passed:    41, Skipped:     0, Total:    42, Duration: 59 s - ControlServer.Tests.dll (net8.0)
+== S5a-giveup-ignores-latch: applied (1	2	src/ControlServer.Host/Runtime/Faults/VehicleFaultRecoveryService.StoppedRebuild.cs)
+  build: ['0 Error(s)']
+  Failed ControlServer.Tests.StoppedRebuildExitTests.AStoppedTripIsNotGivenUpUnderALatchOrAFault(state: "latched", refusal: "FAULT_RECOVERY_EMERGENCY_LATCHED") [207 ms]
+  Failed!  - Failed:     1, Passed:    41, Skipped:     0, Total:    42, Duration: 49 s - ControlServer.Tests.dll (net8.0)
+== S5b-giveup-ignores-fault: applied (1	1	src/ControlServer.Host/Runtime/Faults/VehicleFaultRecoveryService.StoppedRebuild.cs)
+  build: ['0 Error(s)']
+  Failed ControlServer.Tests.StoppedRebuildExitTests.AStoppedTripIsNotGivenUpUnderALatchOrAFault(state: "fault-in-effect", refusal: "FAULT_RECOVERY_FAULT_IN_EFFECT") [285 ms]
+  Failed!  - Failed:     1, Passed:    41, Skipped:     0, Total:    42, Duration: 1 m 11 s - ControlServer.Tests.dll (net8.0)
+== S2a-giveup-operator-not-kept: applied (1	2	src/ControlServer.Host/Runtime/Faults/VehicleFaultRecoveryService.StoppedRebuild.cs)
+  build: ['0 Error(s)']
+  Failed ControlServer.Tests.StoppedRebuildExitTests.AStoppedTripWithNothingOnBoardIsGivenUpOnAPersonsRequest(session: "not-ready-on-own-order") [170 ms]
+  Failed ControlServer.Tests.StoppedRebuildExitTests.AStoppedTripWithNothingOnBoardIsGivenUpOnAPersonsRequest(session: "ready") [102 ms]
+  Failed!  - Failed:     2, Passed:    40, Skipped:     0, Total:    42, Duration: 1 m 1 s - ControlServer.Tests.dll (net8.0)
+== S2b-terminated-not-returned: applied (1	1	src/ControlServer.Host/Runtime/Faults/VehicleFaultRecoveryService.StoppedRebuild.cs)
+  build: ['0 Error(s)']
+  Failed ControlServer.Tests.VehicleFaultRecoveryEndpointsTests.AnExitFromAStoppedRebuildIsOkOnceAndAlreadyDoneAfterwards(action: "TERMINATE_STOPPED_TRIP", outcome: "TripTerminated", disposition: "TRIP_TERMINATED") [385 ms
+  Failed ControlServer.Tests.StoppedRebuildExitTests.AStoppedTripWithNothingOnBoardIsGivenUpOnAPersonsRequest(session: "not-ready-on-own-order") [393 ms]
+  Failed ControlServer.Tests.StoppedRebuildExitTests.AStoppedTripWithNothingOnBoardIsGivenUpOnAPersonsRequest(session: "ready") [312 ms]
+  Failed ControlServer.Tests.StoppedRebuildExitTests.APartialHandoffLetsThePersonGiveTheRestUp [2 s]
+  Failed!  - Failed:     4, Passed:    58, Skipped:     0, Total:    62, Duration: 54 s - ControlServer.Tests.dll (net8.0)
+== S2c-prepare-operator-not-kept: applied (1	2	src/ControlServer.Host/Runtime/Faults/VehicleFaultRecoveryService.StoppedRebuild.cs)
+  build: ['0 Error(s)']
+  Failed ControlServer.Tests.StoppedRebuildExitTests.AStoppedTripWithCargoOnBoardCanBeHandedToTheExceptionSession [3 s]
+  Failed!  - Failed:     1, Passed:    41, Skipped:     0, Total:    42, Duration: 1 m 2 s - ControlServer.Tests.dll (net8.0)
+== S4a-forced-mechanical-not-settled: applied (1	1	src/ControlServer.Host/Transport/OnboardRecoveryCoordinator.cs)
+  build: ['0 Error(s)']
+  Failed ControlServer.Tests.StoppedRebuildExitTests.AForcedMechanicalRecoveryOfAHandedOverTripSettlesItsBinding [3 s]
+  Failed!  - Failed:     1, Passed:    41, Skipped:     0, Total:    42, Duration: 59 s - ControlServer.Tests.dll (net8.0)
+== S4b-giveup-ignores-person: applied (1	1	src/ControlServer.Host/Runtime/Faults/VehicleFaultRecoveryService.StoppedRebuild.cs)
+  build: ['0 Error(s)']
+  Failed ControlServer.Tests.StoppedRebuildExitTests.AnUnnamedOrUnconfirmedRequestIsRefusedForBoth(action: TerminateStoppedTrip) [565 ms]
+  Failed!  - Failed:     1, Passed:    41, Skipped:     0, Total:    42, Duration: 52 s - ControlServer.Tests.dll (net8.0)
+== S4c-prepare-ignores-person: applied (1	1	src/ControlServer.Host/Runtime/Faults/VehicleFaultRecoveryService.StoppedRebuild.cs)
+  build: ['0 Error(s)']
+  Failed ControlServer.Tests.StoppedRebuildExitTests.AnUnnamedOrUnconfirmedRequestIsRefusedForBoth(action: PrepareCargoHandoff) [2 s]
+  Failed!  - Failed:     1, Passed:    41, Skipped:     0, Total:    42, Duration: 46 s - ControlServer.Tests.dll (net8.0)
+clean
+exit=0

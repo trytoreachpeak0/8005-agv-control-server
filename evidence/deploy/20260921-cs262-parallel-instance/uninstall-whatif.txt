@@ -1,0 +1,17 @@
+[10:35:25] Uninstalling factory01-v2-parallel (service '8005 AGV ControlServer V2')
+[10:35:25]   remove   ScheduledTask      8005 AGV ControlServer V2 FakeMesIngest
+[10:35:25]   remove   Service            8005 AGV ControlServer V2
+[10:35:25]   remove   FirewallRule       8005 AGV ControlServer V2 58105
+[10:35:25]   remove   FirewallRule       8005 AGV ControlServer V2 58107
+[10:35:25]   remove   Directory          C:\Program Files\8005 AGV\ControlServer.V2.FakeMesIngest
+[10:35:25]   remove   Directory          C:\Program Files\8005 AGV\ControlServer.V2
+[10:35:25]   remove   Directory          D:\zhengyushao\ControlServer.V2
+[10:35:25]   remove   Directory          D:\zhengyushao\ControlServer.V2.previous
+[10:35:25]   remove   Directory          D:\zhengyushao\control-server-v2-staging
+[10:35:25]   keep (data) Directory          C:\ProgramData\8005\ControlServer.V2
+[10:35:25]   keep (data) Directory          C:\ProgramData\8005\ControlServer.V2-backups
+[10:35:25]   keep (data) Directory          D:\zhengyushao\control-server-v2-ops
+[10:35:25]   remove   MachineEnvironment CONTROL_SERVER_V2_ONBOARD_CERTIFICATE_PASSWORD
+[10:35:25]   keep     UserEnvironment    CONTROL_SERVER_RIOT_CALL_API_KEY (shared with the MVP deployment)
+What if: Performing the operation "Uninstall the v2 parallel instance" on target "8005 AGV ControlServer V2".
+[10:35:25] WhatIf: nothing removed.

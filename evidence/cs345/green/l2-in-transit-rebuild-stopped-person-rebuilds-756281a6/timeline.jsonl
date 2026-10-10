@@ -1,0 +1,54 @@
+{"at":"2026-09-23T17:30:29.6904588+00:00","note":"L2 run 20260923T173029624Z starting for scenario 'in-transit-rebuild-stopped-person-rebuilds'."}
+{"at":"2026-09-23T17:30:29.7981432+00:00","note":"L2 port block lock acquired (slot 0, Global\\W2G-L2PortBlock)."}
+{"at":"2026-09-23T17:30:29.8024256+00:00","note":"Building ControlServer and the test doubles."}
+{"at":"2026-09-23T17:30:56.3549035+00:00","criterion":"fake-riot-live","value":"live"}
+{"at":"2026-09-23T17:30:56.7114171+00:00","criterion":"fake-mes-live","value":"live"}
+{"at":"2026-09-23T17:30:56.8579404+00:00","note":"Task type station preset: default (map 25, WIRE_TO_GATE -> 关卡/210)"}
+{"at":"2026-09-23T17:31:03.9348597+00:00","note":"Package capacity rules imported."}
+{"at":"2026-09-23T17:31:06.0681373+00:00","criterion":"control-server-live","value":"(null)"}
+{"at":"2026-09-23T17:31:07.5415556+00:00","criterion":"control-server-live","value":"live"}
+{"at":"2026-09-23T17:31:07.8877107+00:00","note":"Protocol release identity: protocol-v2.0.0 (profileId AGV_FULL_PRODUCT, protocolVersion 3, APPROVED_RELEASE)."}
+{"at":"2026-09-23T17:31:08.7317958+00:00","criterion":"onboard-readiness","value":"DISCONNECTED"}
+{"at":"2026-09-23T17:31:10.0287982+00:00","criterion":"onboard-readiness","value":"READY"}
+{"at":"2026-09-23T17:31:10.3608579+00:00","criterion":"control-server-ready","value":"ready"}
+{"at":"2026-09-23T17:31:10.4863653+00:00","note":"FieldOps: seed-approved-facts --database C:\\Users\\szy\\AppData\\Local\\Temp\\l2-20260923T173029624Z\\controlserver.db"}
+{"at":"2026-09-23T17:31:15.7152938+00:00","criterion":"slot-model-preseed:seed-approved-facts","value":"OK","detail":{"output":{"command":"seed-approved-facts","outcome":"OK","modelKey":"8005-eight-slot","slotModelVersionId":"ce32123035ad4eaca3a9d27c6be5544e","version":1,"slotCount":8}}}
+{"at":"2026-09-23T17:31:15.7290069+00:00","note":"FieldOps: bind-io --database C:\\Users\\szy\\AppData\\Local\\Temp\\l2-20260923T173029624Z\\controlserver.db --agv AGV-L2-001"}
+{"at":"2026-09-23T17:31:19.7269564+00:00","criterion":"slot-model-preseed:bind-io:AGV-L2-001","value":"OK","detail":{"output":{"command":"bind-io","outcome":"OK","agvId":"AGV-L2-001","slotModelVersionId":"ce32123035ad4eaca3a9d27c6be5544e","boundSlots":8,"version":1}}}
+{"at":"2026-09-23T17:31:19.8740794+00:00","criterion":"slot-model-preseed:dispatch-zones","value":"0"}
+{"at":"2026-09-23T17:31:19.8786903+00:00","note":"FieldOps: import-area-assignments --database C:\\Users\\szy\\AppData\\Local\\Temp\\l2-20260923T173029624Z\\controlserver.db --input C:\\Users\\szy\\AppData\\Local\\Temp\\cs345-l2\\green-756281a6-in-transit-rebuild-stopped-person-rebuilds\\snapshots\\preseed-area-assignments.csv"}
+{"at":"2026-09-23T17:31:25.4408389+00:00","criterion":"slot-model-preseed:import-area-assignments","value":"OK","detail":{"output":{"command":"import-area-assignments","outcome":"OK","dryRun":false,"input":"C:\\Users\\szy\\AppData\\Local\\Temp\\cs345-l2\\green-756281a6-in-transit-rebuild-stopped-person-rebuilds\\snapshots\\preseed-area-assignments.csv","entryCount":3,"version":1,"contentSha256":"4291a509c2c0b75ea4bde0ac4dcde04b6e8632b54a21a67eee2772a6f8d0ff8e","snapshotId":"c29ca76c551349a2b28ffc3cafe5b626","importedAt":"2026-09-24T01:31:20.3417554+08:00","errorCount":0,"errors":[],"preview":[]}}}
+{"at":"2026-09-23T17:31:25.4486055+00:00","note":"Per-zone dispatch parameters left unconfigured (the default precondition)."}
+{"at":"2026-09-23T17:31:25.4637539+00:00","note":"Environment is up; entering scenario 'in-transit-rebuild-stopped-person-rebuilds'."}
+{"at":"2026-09-23T17:31:25.5442181+00:00","note":"Publishing demand 8d99c6eea2c94915b84b6539b470ff28 (area N1-3)."}
+{"at":"2026-09-23T17:31:25.6396588+00:00","criterion":"first-journey","value":"(null)"}
+{"at":"2026-09-23T17:31:27.4852065+00:00","criterion":"first-journey","value":"@{JourneyId=journey:8d99c6ee-a2c9-4915-b84b-6539b470ff28; PickupUpperId=W2G-8d99c6ee-a2c9-4915-b84b-6539b470ff28-PICKUP-1; VehicleKey=BROKERX-L2-0001; OrderId=; Status=CREATE_ATTEMPTED; DestinationStationId=12}"}
+{"at":"2026-09-23T17:31:27.7545552+00:00","criterion":"first-journey","value":"@{JourneyId=journey:8d99c6ee-a2c9-4915-b84b-6539b470ff28; PickupUpperId=W2G-8d99c6ee-a2c9-4915-b84b-6539b470ff28-PICKUP-1; VehicleKey=BROKERX-L2-0001; OrderId=ORDER-000001; Status=CONFIRMED; DestinationStationId=12}"}
+{"at":"2026-09-23T17:31:27.8686590+00:00","criterion":"runtime-iterations","value":"21"}
+{"at":"2026-09-23T17:31:28.4062415+00:00","criterion":"runtime-iterations","value":"22"}
+{"at":"2026-09-23T17:31:29.1953379+00:00","criterion":"runtime-iterations","value":"23"}
+{"at":"2026-09-23T17:31:29.1976595+00:00","note":"A person cancels W2G-8d99c6ee-a2c9-4915-b84b-6539b470ff28-PICKUP-1 in RIoT."}
+{"at":"2026-09-23T17:31:29.2546688+00:00","criterion":"first-rebuild","value":"@{UpperId=W2G-8d99c6ee-a2c9-4915-b84b-6539b470ff28-PICKUP-1; OrderId=ORDER-000001; Status=CONFIRMED}"}
+{"at":"2026-09-23T17:31:38.4648500+00:00","criterion":"first-rebuild","value":"@{UpperId=W2G-8d99c6ee-a2c9-4915-b84b-6539b470ff28-REBUILD-1-1; OrderId=ORDER-000002; Status=CONFIRMED}"}
+{"at":"2026-09-23T17:31:38.5663526+00:00","criterion":"runtime-iterations","value":"32"}
+{"at":"2026-09-23T17:31:39.3783162+00:00","criterion":"runtime-iterations","value":"33"}
+{"at":"2026-09-23T17:31:40.1638297+00:00","criterion":"runtime-iterations","value":"34"}
+{"at":"2026-09-23T17:31:40.1662606+00:00","note":"The rebuilt order W2G-8d99c6ee-a2c9-4915-b84b-6539b470ff28-REBUILD-1-1 is cancelled again, within the window."}
+{"at":"2026-09-23T17:31:40.2255645+00:00","criterion":"third-guard","value":"@{Stage=AwaitingPickupArrival; Code=; Intents=2; Journeys=1; Records=1; Removed=0}"}
+{"at":"2026-09-23T17:31:40.4980295+00:00","criterion":"third-guard","value":"@{Stage=AwaitingPickupArrival; Code=OWN_ORDER_REBUILD_STOPPED; Intents=2; Journeys=1; Records=2; Removed=0}"}
+{"at":"2026-09-23T17:31:41.3513436+00:00","criterion":"runtime-iterations","value":"35"}
+{"at":"2026-09-23T17:31:42.4084089+00:00","criterion":"runtime-iterations","value":"36"}
+{"at":"2026-09-23T17:31:43.1997191+00:00","criterion":"runtime-iterations","value":"37"}
+{"at":"2026-09-23T17:31:43.3196302+00:00","note":"Stopped rebuild exit (unconfirmed) -> 409: {\"type\":\"https://tools.ietf.org/html/rfc9110#section-15.5.10\",\"title\":\"Vehicle fault recovery refused\",\"status\":409,\"detail\":\"FAULT_RECOVERY_REMEDY_NOT_CONFIRMED\",\"agvId\":\"AGV-L2-001\",\"action\":\"REBUILD_STOPPED_ORDER\",\"outcome\":\"Refused\",\"reasons\":[\"FAULT_RECOVERY_REMEDY_NOT_CONFIRMED\"],\"faultGeneration\":null}"}
+{"at":"2026-09-23T17:31:44.4128993+00:00","criterion":"runtime-iterations","value":"38"}
+{"at":"2026-09-23T17:31:45.2001631+00:00","criterion":"runtime-iterations","value":"39"}
+{"at":"2026-09-23T17:31:45.2787214+00:00","note":"Stopped rebuild exit (rebuild) -> 200: {\"agvId\":\"AGV-L2-001\",\"action\":\"REBUILD_STOPPED_ORDER\",\"outcome\":\"RebuildRequested\",\"disposition\":\"REBUILD_SCHEDULED\",\"reasons\":[],\"faultGeneration\":null}"}
+{"at":"2026-09-23T17:31:45.3050207+00:00","criterion":"person-rebuild","value":"@{Sequence=1; StationId=N1-3_N1-7; UpperId=W2G-8d99c6ee-a2c9-4915-b84b-6539b470ff28-REBUILD-1-1; DemandId=8d99c6ee-a2c9-4915-b84b-6539b470ff28; VehicleKey=BROKERX-L2-0001; DestinationStationId=12; Status=CONFIRMED; Stage=AwaitingPickupArrival; BlockReasonCode=ORDER_ENDED_WITHOUT_ARRIVAL}"}
+{"at":"2026-09-23T17:31:46.3610298+00:00","criterion":"person-rebuild","value":"@{Sequence=1; StationId=N1-3_N1-7; UpperId=W2G-8d99c6ee-a2c9-4915-b84b-6539b470ff28-REBUILD-1-2; DemandId=8d99c6ee-a2c9-4915-b84b-6539b470ff28; VehicleKey=BROKERX-L2-0001; DestinationStationId=12; Status=CONFIRMED; Stage=AwaitingPickupArrival; BlockReasonCode=}"}
+{"at":"2026-09-23T17:31:46.4380680+00:00","note":"Stopped rebuild exit (rebuild again) -> 200: {\"agvId\":\"AGV-L2-001\",\"action\":\"REBUILD_STOPPED_ORDER\",\"outcome\":\"AlreadyDone\",\"disposition\":\"NONE\",\"reasons\":[],\"faultGeneration\":null}"}
+{"at":"2026-09-23T17:31:46.4516453+00:00","criterion":"runtime-iterations","value":"40"}
+{"at":"2026-09-23T17:31:47.2468939+00:00","criterion":"runtime-iterations","value":"41"}
+{"at":"2026-09-23T17:31:48.2903404+00:00","criterion":"runtime-iterations","value":"42"}
+{"at":"2026-09-23T17:31:49.3464671+00:00","criterion":"runtime-iterations","value":"43"}
+{"at":"2026-09-23T17:31:49.3633143+00:00","note":"护栏三停住之后，人经 #299 的入口人工重建一次：未确认的被拒，确认的被受理，同车同需求建出第三张单，重复请求不再建。"}
+{"at":"2026-09-23T17:31:49.9529924+00:00","note":"L2 port block lock released."}

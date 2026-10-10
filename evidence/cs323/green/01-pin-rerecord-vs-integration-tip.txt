@@ -1,0 +1,126 @@
+control-server#323：重录的 16 份基线与集成分支 fp/v2-impl@a98ae9be 上旧基线的对照
+
+判据
+- ZeroChangePins（10 份）：旧基线每一行原样都在（删除 0 行），新增恰好 3 行，类型恰好是 CurrentStopWorklistSnapshot、UpcomingStopPlanSnapshot、VehicleBusinessStateSnapshot，全部 AcknowledgedAt=NULL。
+- WirePins（5 份单趟）：从新基线删掉收尾形状的报文（items 为空的清单、legs 为空的计划、activePurpose 为 null 的业务状态）及其载荷行、去掉行首序号之后，与旧基线逐行相同。
+- WirePins/two-journeys-one-vehicle：同上删掉两趟各三张收尾快照之后，行数相同；逐行比较，其余差异必须全部是「修订号恰好 +1（连同载荷里的修订号与载荷摘要）」，且后移的报文没有一条属于第一趟（第一趟的 messageId 与 normal-journey 基线相同，用它交叉核对）。第二趟整体后移一位，是因为第一趟的收尾快照占了一个号，按车计数器随之推高：下一趟首号大于收尾号，正是本票要的。
+
+## pin_check.py 输出
+ZeroChangePins/cancellation-before-sublot.txt: removed=0 added=3 types=['CurrentStopWorklistSnapshot', 'UpcomingStopPlanSnapshot', 'VehicleBusinessStateSnapshot'] -> OK
+ZeroChangePins/commanded-ending-FaultCargoRecoveryResult.txt: removed=0 added=3 types=['CurrentStopWorklistSnapshot', 'UpcomingStopPlanSnapshot', 'VehicleBusinessStateSnapshot'] -> OK
+ZeroChangePins/commanded-ending-LoadCancellationResult.txt: removed=0 added=3 types=['CurrentStopWorklistSnapshot', 'UpcomingStopPlanSnapshot', 'VehicleBusinessStateSnapshot'] -> OK
+ZeroChangePins/commanded-ending-LoadCompensationResult.txt: removed=0 added=3 types=['CurrentStopWorklistSnapshot', 'UpcomingStopPlanSnapshot', 'VehicleBusinessStateSnapshot'] -> OK
+ZeroChangePins/determinate-load-failure.txt: removed=0 added=3 types=['CurrentStopWorklistSnapshot', 'UpcomingStopPlanSnapshot', 'VehicleBusinessStateSnapshot'] -> OK
+ZeroChangePins/fault-cargo-handoff.txt: removed=0 added=3 types=['CurrentStopWorklistSnapshot', 'UpcomingStopPlanSnapshot', 'VehicleBusinessStateSnapshot'] -> OK
+ZeroChangePins/forced-mechanical-recovery.txt: removed=0 added=3 types=['CurrentStopWorklistSnapshot', 'UpcomingStopPlanSnapshot', 'VehicleBusinessStateSnapshot'] -> OK
+ZeroChangePins/in-flight-cancellation.txt: removed=0 added=3 types=['CurrentStopWorklistSnapshot', 'UpcomingStopPlanSnapshot', 'VehicleBusinessStateSnapshot'] -> OK
+ZeroChangePins/station-deadline.txt: removed=0 added=3 types=['CurrentStopWorklistSnapshot', 'UpcomingStopPlanSnapshot', 'VehicleBusinessStateSnapshot'] -> OK
+ZeroChangePins/unload.txt: removed=0 added=3 types=['CurrentStopWorklistSnapshot', 'UpcomingStopPlanSnapshot', 'VehicleBusinessStateSnapshot'] -> OK
+WirePins/cancellation-before-sublot.txt: closure-shaped ids in new=3 old-has-closure=0 identical-after-removing-closure-and-renumbering=True
+WirePins/determinate-load-failure.txt: closure-shaped ids in new=3 old-has-closure=0 identical-after-removing-closure-and-renumbering=True
+WirePins/in-flight-cancellation.txt: closure-shaped ids in new=3 old-has-closure=0 identical-after-removing-closure-and-renumbering=True
+WirePins/normal-journey.txt: closure-shaped ids in new=3 old-has-closure=0 identical-after-removing-closure-and-renumbering=True
+WirePins/station-deadline.txt: closure-shaped ids in new=3 old-has-closure=0 identical-after-removing-closure-and-renumbering=True
+WirePins/two-journeys-one-vehicle.txt: closure-shaped ids in new=6 old-has-closure=0 identical-after-removing-closure-and-renumbering=False
+
+## pin_check2.py 输出
+WirePins/two-journeys-one-vehicle.txt: identical=75 shifted-by-exactly-one=43 other=0
+shifted ids that belong to the first journey: []
+distinct shifted message ids: 8
+
+## pin_check.py
+import re, subprocess, sys, json
+
+BASE = 'origin/fp/v2-impl'
+ROOT = 'tests/ControlServer.Tests/'
+ID = re.compile(r"messageId=['\"]?([0-9a-f-]{36})")
+
+
+def show(path):
+    return subprocess.run(['git', 'show', f'{BASE}:{ROOT}{path}'], capture_output=True, text=True,
+                          encoding='utf-8', check=True).stdout
+
+
+def current(path):
+    return open(ROOT + path, encoding='utf-8', newline='').read()
+
+
+def closure_ids(text):
+    """Every messageId whose payload is closure-shaped (empty items / empty legs / activePurpose null)."""
+    ids = set()
+    lines = text.split('\n')
+    for i, line in enumerate(lines):
+        m = ID.search(line)
+        if not m or i + 1 >= len(lines) or not lines[i + 1].startswith('   payload='):
+            continue
+        payload = json.loads(lines[i + 1][len('   payload='):])
+        if payload.get('items') == [] or payload.get('legs') == [] or \
+                ('activePurpose' in payload and payload['activePurpose'] is None):
+            ids.add(m.group(1))
+    return ids
+
+
+def strip(text, ids):
+    out, skip = [], False
+    for line in text.split('\n'):
+        if skip and line.startswith('   payload='):
+            skip = False
+            continue
+        skip = False
+        m = ID.search(line)
+        if m and m.group(1) in ids:
+            skip = True
+            continue
+        out.append(re.sub(r'^\d+ ', '', line))
+    return out
+
+
+if __name__ == '__main__':
+    zero = sys.argv[1].split(',')
+    wire = sys.argv[2].split(',')
+    for name in zero:
+        path = f'ZeroChangePins/{name}.txt'
+        old, new = show(path), current(path)
+        # 零变化基线的发件箱一节只有 id、类型、确认时刻，没有载荷：收尾快照的 id 从同名报文基线或本票算式取不到，
+        # 所以按「新增的行」判：旧基线的每一行在新基线里原样都在，新增的恰好三行、全是三种快照类型、全未确认。
+        o, n = old.split('\n'), new.split('\n')
+        added = [l for l in n if l not in o]
+        removed = [l for l in o if l not in n]
+        types = sorted(re.search(r"MessageType='(\w+)'", l).group(1) for l in added)
+        ok = not removed and len(added) == 3 and types == sorted(
+            ['CurrentStopWorklistSnapshot', 'UpcomingStopPlanSnapshot', 'VehicleBusinessStateSnapshot']) and \
+            all(l.endswith('AcknowledgedAt=NULL') for l in added)
+        print(f'{path}: removed={len(removed)} added={len(added)} types={types} -> {"OK" if ok else "UNEXPECTED"}')
+    for name in wire:
+        path = f'WirePins/{name}.txt'
+        old, new = show(path), current(path)
+        ids = closure_ids(new)
+        same = strip(old, set()) == strip(new, ids)
+        print(f'{path}: closure-shaped ids in new={len(ids)} old-has-closure={len(closure_ids(old))} '
+              f'identical-after-removing-closure-and-renumbering={same}')
+    
+## pin_check2.py
+import re, sys
+sys.path.insert(0, sys.argv[1])
+from pin_check import show, current, closure_ids, strip
+p = 'WirePins/two-journeys-one-vehicle.txt'
+new = current(p)
+o, n = strip(show(p), set()), strip(new, closure_ids(new))
+assert len(o) == len(n), (len(o), len(n))
+first_journey_ids = set(re.findall(r'"demandId":"10000000-0000-4000-8000-000000000001"', ''))
+def bump(line):
+    line = re.sub(r'revision=(\d+)', lambda m: f'revision={int(m.group(1))+1}', line)
+    line = re.sub(r'"(worklistRevision|planRevision|vehicleBusinessStateRevision)":(\d+)', lambda m: f'"{m.group(1)}":{int(m.group(2))+1}', line)
+    return re.sub(r'payloadSha256=[0-9a-f]{64}', 'payloadSha256=<sha>', line)
+nosha = lambda l: re.sub(r'payloadSha256=[0-9a-f]{64}', 'payloadSha256=<sha>', l)
+same = shifted = other = 0
+for a, b in zip(o, n):
+    if a == b: same += 1
+    elif bump(a) == nosha(b): shifted += 1
+    else: other += 1; print('OTHER:', a[:160], '\n    ->', b[:160])
+print(f'{p}: identical={same} shifted-by-exactly-one={shifted} other={other}')
+ID = re.compile(r'messageId=([0-9a-f-]{36})')
+first = set(ID.findall(show('WirePins/normal-journey.txt')))
+shifted_ids = {ID.search(a).group(1) for a, b in zip(o, n) if a != b and ID.search(a)}
+print('shifted ids that belong to the first journey:', sorted(shifted_ids & first))
+print('distinct shifted message ids:', len(shifted_ids))

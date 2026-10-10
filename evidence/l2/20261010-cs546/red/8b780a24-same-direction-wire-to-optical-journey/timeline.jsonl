@@ -1,0 +1,37 @@
+{"at":"2026-10-10T10:56:49.2245739+00:00","note":"L2 run 20261010T105649178Z starting for scenario 'same-direction-wire-to-optical-journey'."}
+{"at":"2026-10-10T10:56:49.2714740+00:00","note":"L2 port block lock acquired (slot 0, Global\\W2G-L2PortBlock)."}
+{"at":"2026-10-10T10:56:49.2738367+00:00","note":"Build skipped (-SkipBuild); running the output already built."}
+{"at":"2026-10-10T10:56:50.1483951+00:00","criterion":"fake-riot-live","value":"live"}
+{"at":"2026-10-10T10:56:50.3555221+00:00","criterion":"fake-mes-live","value":"live"}
+{"at":"2026-10-10T10:56:50.4981470+00:00","note":"Fake RIoT stations on map 25: 11=C15-13, 12=N1-3_N1-7, 210=关卡, 403=三光"}
+{"at":"2026-10-10T10:56:50.5352800+00:00","note":"Task type station preset: the scenario's own (2 binding(s))"}
+{"at":"2026-10-10T10:56:58.2944330+00:00","note":"Package capacity rules imported."}
+{"at":"2026-10-10T10:56:58.3012326+00:00","note":"No waiting point registration: a single-vehicle rig, or WaitingPoints = $false."}
+{"at":"2026-10-10T10:57:00.3785521+00:00","criterion":"control-server-live","value":"(null)"}
+{"at":"2026-10-10T10:57:01.8288923+00:00","criterion":"control-server-live","value":"live"}
+{"at":"2026-10-10T10:57:01.9409350+00:00","note":"Protocol release identity: protocol-v3.0.0 (profileId AGV_FULL_PRODUCT, protocolVersion 4, APPROVED_RELEASE)."}
+{"at":"2026-10-10T10:57:02.7134669+00:00","criterion":"onboard-readiness","value":"DISCONNECTED"}
+{"at":"2026-10-10T10:57:02.9909083+00:00","criterion":"onboard-readiness","value":"READY"}
+{"at":"2026-10-10T10:57:03.0526693+00:00","criterion":"control-server-ready","value":"ready"}
+{"at":"2026-10-10T10:57:03.1460926+00:00","note":"FieldOps: seed-approved-facts --database C:\\Users\\szy\\AppData\\Local\\Temp\\l2-20261010T105649178Z\\controlserver.db"}
+{"at":"2026-10-10T10:57:05.3364729+00:00","criterion":"slot-model-preseed:seed-approved-facts","value":"OK","detail":{"output":{"command":"seed-approved-facts","outcome":"OK","modelKey":"8005-eight-slot","slotModelVersionId":"2d383147cb7a454cbd00880e64e0fc2e","version":1,"slotCount":8}}}
+{"at":"2026-10-10T10:57:05.3707499+00:00","note":"FieldOps: bind-io --database C:\\Users\\szy\\AppData\\Local\\Temp\\l2-20261010T105649178Z\\controlserver.db --agv AGV-L2-001"}
+{"at":"2026-10-10T10:57:07.9129273+00:00","criterion":"slot-model-preseed:bind-io:AGV-L2-001","value":"OK","detail":{"output":{"command":"bind-io","outcome":"OK","agvId":"AGV-L2-001","slotModelVersionId":"2d383147cb7a454cbd00880e64e0fc2e","boundSlots":8,"version":1}}}
+{"at":"2026-10-10T10:57:07.9843099+00:00","criterion":"slot-model-preseed:dispatch-zones","value":"0"}
+{"at":"2026-10-10T10:57:07.9883976+00:00","note":"FieldOps: import-area-assignments --database C:\\Users\\szy\\AppData\\Local\\Temp\\l2-20261010T105649178Z\\controlserver.db --input C:\\Users\\szy\\Desktop\\8005-workspace-v2\\worktrees\\b10-02-8005-agv-control-server\\evidence\\l2\\20261010-cs546\\red\\8b780a24-same-direction-wire-to-optical-journey\\snapshots\\preseed-area-assignments.csv"}
+{"at":"2026-10-10T10:57:10.3503611+00:00","criterion":"slot-model-preseed:import-area-assignments","value":"OK","detail":{"output":{"command":"import-area-assignments","outcome":"OK","dryRun":false,"input":"C:\\Users\\szy\\Desktop\\8005-workspace-v2\\worktrees\\b10-02-8005-agv-control-server\\evidence\\l2\\20261010-cs546\\red\\8b780a24-same-direction-wire-to-optical-journey\\snapshots\\preseed-area-assignments.csv","entryCount":2,"version":1,"contentSha256":"04efbe7b636d311420caf517f8af22cd0a39d4e17d2976caf9251637eecc0556","snapshotId":"38f9be4beb39440db244dc2386b6c2ad","importedAt":"2026-10-10T18:57:08.2446164+08:00","errorCount":0,"errors":[],"preview":[]}}}
+{"at":"2026-10-10T10:57:10.3654419+00:00","note":"FieldOps: import-charging-policy --database C:\\Users\\szy\\AppData\\Local\\Temp\\l2-20261010T105649178Z\\controlserver.db --input C:\\Users\\szy\\Desktop\\8005-workspace-v2\\worktrees\\b10-02-8005-agv-control-server\\evidence\\l2\\20261010-cs546\\red\\8b780a24-same-direction-wire-to-optical-journey\\snapshots\\preseed-charging-policy.json --fleet BROKERX-L2-0001"}
+{"at":"2026-10-10T10:57:12.4432775+00:00","note":"FieldOps: approve-charging-policy --database C:\\Users\\szy\\AppData\\Local\\Temp\\l2-20261010T105649178Z\\controlserver.db --version 1 --approved-by L2 orchestrator --role L2_PRESET --basis scripts/l2/L2ChargingPolicy.psm1 --source L2_PRESET"}
+{"at":"2026-10-10T10:57:14.3398213+00:00","note":"FieldOps: activate-charging-policy --database C:\\Users\\szy\\AppData\\Local\\Temp\\l2-20261010T105649178Z\\controlserver.db --version 1 --activated-by L2 orchestrator --fleet BROKERX-L2-0001 --allow-non-field-approval"}
+{"at":"2026-10-10T10:57:16.4017516+00:00","criterion":"preseed:charging-policy","value":"OK","detail":{"version":1,"coveredAfter":["BROKERX-L2-0001"],"source":"L2_PRESET","withoutPolicy":[]}}
+{"at":"2026-10-10T10:57:16.4032675+00:00","note":"Per-zone dispatch parameters left unconfigured (the default precondition)."}
+{"at":"2026-10-10T10:57:16.4096223+00:00","note":"Environment is up; entering scenario 'same-direction-wire-to-optical-journey'."}
+{"at":"2026-10-10T10:57:16.5397692+00:00","note":"FieldOps: area-assignments --database C:\\Users\\szy\\AppData\\Local\\Temp\\l2-20261010T105649178Z\\controlserver.db"}
+{"at":"2026-10-10T10:57:18.6026687+00:00","note":"Vehicle AGV-L2-001 slot model 2d383147cb7a454cbd00880e64e0fc2e via LatestPublishedIoBinding: 1=FRONT, 2=FRONT, 3=FRONT, 4=FRONT, 5=REAR, 6=REAR, 7=REAR, 8=REAR"}
+{"at":"2026-10-10T10:57:18.6202770+00:00","note":"Publishing WIRE_TO_OPTICAL demand d1705455124c40b6bbcfae39d1e3035a (sublot L2-SDJ-N1-3-20261010T105649178Z, AREA N1-3, 2 baskets)."}
+{"at":"2026-10-10T10:57:18.6919912+00:00","criterion":"L2-SDJ-WOP-REAR-admission","value":"@{Stage=; WorkType=; ReasonCode=}"}
+{"at":"2026-10-10T10:57:19.4648962+00:00","criterion":"L2-SDJ-WOP-REAR-admission","value":"@{Stage=; WorkType=; ReasonCode=TASK_TYPE_NOT_YET_EXECUTABLE}"}
+{"at":"2026-10-10T10:58:48.7745749+00:00","note":"Not reached: Timed out after 90s waiting for: the WIRE_TO_OPTICAL demand (N1-3) was accepted and dispatched to the machine station. Last observed: {\"Stage\":null,\"WorkType\":null,\"ReasonCode\":\"TASK_TYPE_NOT_YET_EXECUTABLE\"}"}
+{"at":"2026-10-10T10:58:48.7852933+00:00","note":"Run failed: L2-SDJ-WOP-REAR-01 did not hold: the WIRE_TO_OPTICAL demand (N1-3) was not accepted (backlog reason 'TASK_TYPE_NOT_YET_EXECUTABLE'); every later criterion needs its journey."}
+{"at":"2026-10-10T10:58:48.7880670+00:00","note":"Failure at: at Test-L2SameDirectionDemand, C:\\Users\\szy\\Desktop\\8005-workspace-v2\\worktrees\\b10-02-red-8b780a24\\scripts\\l2\\scenarios\\SameDirectionJourneyCommon.ps1: line 130\r\nat Invoke-L2SameDirectionJourneyScenario, C:\\Users\\szy\\Desktop\\8005-workspace-v2\\worktrees\\b10-02-red-8b780a24\\scripts\\l2\\scenarios\\SameDirectionJourneyCommon.ps1: line 238\r\nat <ScriptBlock>, C:\\Users\\szy\\Desktop\\8005-workspace-v2\\worktrees\\b10-02-red-8b780a24\\scripts\\l2\\scenarios\\same-direction-wire-to-optical-journey.ps1: line 18\r\nat <ScriptBlock>, C:\\Users\\szy\\Desktop\\8005-workspace-v2\\worktrees\\b10-02-red-8b780a24\\scripts\\l2\\Invoke-L2Scenario.ps1: line 1432"}
+{"at":"2026-10-10T10:58:49.2463577+00:00","note":"L2 port block lock released."}

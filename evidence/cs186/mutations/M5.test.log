@@ -1,0 +1,44 @@
+Test run for C:\Users\szy\Desktop\8005-workspace-v2\worktrees\cs186-8005-agv-control-server\tests\ControlServer.Tests\bin\Release\net8.0\win-x64\ControlServer.Tests.dll (.NETCoreApp,Version=v8.0)
+A total of 1 test files matched the specified pattern.
+[xUnit.net 00:00:13.40]     ControlServer.Tests.MapRenameEngineTests.AFailedMapListReadNeitherStopsTheRoundNorHolds(failure: "invalid") [FAIL]
+  Failed ControlServer.Tests.MapRenameEngineTests.AFailedMapListReadNeitherStopsTheRoundNorHolds(failure: "invalid") [1 s]
+  Error Message:
+   Assert.Null() Failure: Value is not null
+Expected: null
+Actual:   MapNameBaseline { MapId = 25, Name = MAP-25, EstablishedAt = 8/26/2026 1:00:00 AM +00:00, PendingName = , PendingSince = , AcceptedAt = , AcceptedBy =  }
+  Stack Trace:
+     at ControlServer.Tests.MapRenameEngineTests.AFailedMapListReadNeitherStopsTheRoundNorHolds(String failure) in C:\Users\szy\Desktop\8005-workspace-v2\worktrees\cs186-8005-agv-control-server\tests\ControlServer.Tests\MapRenameEngineTests.cs:line 64
+   at ControlServer.Tests.MapRenameEngineTests.AFailedMapListReadNeitherStopsTheRoundNorHolds(String failure) in C:\Users\szy\Desktop\8005-workspace-v2\worktrees\cs186-8005-agv-control-server\tests\ControlServer.Tests\MapRenameEngineTests.cs:line 65
+--- End of stack trace from previous location ---
+[xUnit.net 00:00:14.48]     ControlServer.Tests.MapRenameEngineTests.AFailedMapListReadNeitherStopsTheRoundNorHolds(failure: "http") [FAIL]
+  Failed ControlServer.Tests.MapRenameEngineTests.AFailedMapListReadNeitherStopsTheRoundNorHolds(failure: "http") [1 s]
+  Error Message:
+   Assert.Null() Failure: Value is not null
+Expected: null
+Actual:   MapNameBaseline { MapId = 25, Name = MAP-25, EstablishedAt = 8/26/2026 1:00:00 AM +00:00, PendingName = , PendingSince = , AcceptedAt = , AcceptedBy =  }
+  Stack Trace:
+     at ControlServer.Tests.MapRenameEngineTests.AFailedMapListReadNeitherStopsTheRoundNorHolds(String failure) in C:\Users\szy\Desktop\8005-workspace-v2\worktrees\cs186-8005-agv-control-server\tests\ControlServer.Tests\MapRenameEngineTests.cs:line 64
+   at ControlServer.Tests.MapRenameEngineTests.AFailedMapListReadNeitherStopsTheRoundNorHolds(String failure) in C:\Users\szy\Desktop\8005-workspace-v2\worktrees\cs186-8005-agv-control-server\tests\ControlServer.Tests\MapRenameEngineTests.cs:line 65
+--- End of stack trace from previous location ---
+[xUnit.net 00:00:15.37]     ControlServer.Tests.MapRenameEngineTests.AFailedMapListReadNeitherStopsTheRoundNorHolds(failure: "timeout") [FAIL]
+[xUnit.net 00:00:15.95]     ControlServer.Tests.MapRenameEngineTests.MapIdentityIsNeitherTheBaselineNorComparedWithIt [FAIL]
+  Failed ControlServer.Tests.MapRenameEngineTests.AFailedMapListReadNeitherStopsTheRoundNorHolds(failure: "timeout") [880 ms]
+  Error Message:
+   Assert.Null() Failure: Value is not null
+Expected: null
+Actual:   MapNameBaseline { MapId = 25, Name = MAP-25, EstablishedAt = 8/26/2026 1:00:00 AM +00:00, PendingName = , PendingSince = , AcceptedAt = , AcceptedBy =  }
+  Stack Trace:
+     at ControlServer.Tests.MapRenameEngineTests.AFailedMapListReadNeitherStopsTheRoundNorHolds(String failure) in C:\Users\szy\Desktop\8005-workspace-v2\worktrees\cs186-8005-agv-control-server\tests\ControlServer.Tests\MapRenameEngineTests.cs:line 64
+   at ControlServer.Tests.MapRenameEngineTests.AFailedMapListReadNeitherStopsTheRoundNorHolds(String failure) in C:\Users\szy\Desktop\8005-workspace-v2\worktrees\cs186-8005-agv-control-server\tests\ControlServer.Tests\MapRenameEngineTests.cs:line 65
+--- End of stack trace from previous location ---
+  Failed ControlServer.Tests.MapRenameEngineTests.MapIdentityIsNeitherTheBaselineNorComparedWithIt [580 ms]
+  Error Message:
+   System.InvalidOperationException : Sequence contains no elements.
+  Stack Trace:
+     at Microsoft.EntityFrameworkCore.Query.ShapedQueryCompilingExpressionVisitor.SingleAsync[TSource](IAsyncEnumerable`1 asyncEnumerable, CancellationToken cancellationToken)
+   at Microsoft.EntityFrameworkCore.Query.ShapedQueryCompilingExpressionVisitor.SingleAsync[TSource](IAsyncEnumerable`1 asyncEnumerable, CancellationToken cancellationToken)
+   at ControlServer.Tests.MapRenameEngineTests.MapIdentityIsNeitherTheBaselineNorComparedWithIt() in C:\Users\szy\Desktop\8005-workspace-v2\worktrees\cs186-8005-agv-control-server\tests\ControlServer.Tests\MapRenameEngineTests.cs:line 154
+   at ControlServer.Tests.MapRenameEngineTests.MapIdentityIsNeitherTheBaselineNorComparedWithIt() in C:\Users\szy\Desktop\8005-workspace-v2\worktrees\cs186-8005-agv-control-server\tests\ControlServer.Tests\MapRenameEngineTests.cs:line 161
+--- End of stack trace from previous location ---
+
+Failed!  - Failed:     4, Passed:    66, Skipped:     0, Total:    70, Duration: 1 m 10 s - ControlServer.Tests.dll (net8.0)

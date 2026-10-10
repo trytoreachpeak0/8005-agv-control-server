@@ -18,9 +18,46 @@ public static class JourneyIdentity
         return Prefix + demandId;
     }
 
+    /// <summary>
+    /// 一条需求这一次受理派生身份所用的键（批次7-10，control-server#215）。
+    /// </summary>
+    /// <remarks>
+    /// <para>
+    /// <b>第一次受理（<paramref name="redispatchGeneration"/> 为空）就是需求 id 本身</b>，所以改派出现之前的每一个 id 逐字不变
+    /// ——单需求旅程的零变化钉子钉的正是这些 id。释放改派之后再受理，键带上新代次，旅程 id、停靠 id 与所有按它派生的报文、
+    /// attempt id 都换一套：同一条需求的第二趟旅程与第一趟的行并存，主键不撞，旧行也不被覆盖。
+    /// </para>
+    /// <para>
+    /// 判据是「是不是这条需求的第一条归属」，不是「代次等不等于部署基准」：部署基准改过之后，后者会让一次改派算出与首次相同的键。
+    /// 键只进 id 派生的输入，不出现在发给车的字段里——车载端对 movementLegId、operationSessionId、messageId 只认标准 UUID，
+    /// 这些 id 仍是 <c>StableGuid</c>／<c>DeterministicGuid</c> 的输出。
+    /// </para>
+    /// </remarks>
+    public static string DerivationKey(string demandId, long? redispatchGeneration)
+    {
+        ArgumentException.ThrowIfNullOrWhiteSpace(demandId);
+        return redispatchGeneration is { } generation
+            ? string.Create(System.Globalization.CultureInfo.InvariantCulture, $"{demandId}|g{generation}")
+            : demandId;
+    }
+
     public static string PickupStopId(string journeyId) => $"{journeyId}|{JourneyStopRoles.Pickup}";
 
     public static string UnloadStopId(string journeyId) => $"{journeyId}|{JourneyStopRoles.Unload}";
+
+    /// <summary>
+    /// 途中追加带来的停靠，身份取<b>被追加的那条需求</b>（批次7-06，control-server#211）。
+    /// </summary>
+    /// <remarks>
+    /// 不取旅程加序号：序号是可变的序位，下一次追加就会把它推走，而停靠的身份必须在换序之后仍然指着同一个停靠
+    /// （MVP 拿序号当身份的那个坑）。一条需求至多有一个未移除的归属，所以「这条需求带来的取货停靠」是唯一的。
+    /// </remarks>
+    public static string AppendedPickupStopId(string demandId) =>
+        $"{Prefix}{demandId}|{JourneyStopRoles.Pickup}";
+
+    /// <inheritdoc cref="AppendedPickupStopId"/>
+    public static string AppendedUnloadStopId(string demandId) =>
+        $"{Prefix}{demandId}|{JourneyStopRoles.Unload}";
 }
 
 /// <summary>停靠的角色。</summary>
@@ -28,6 +65,31 @@ public static class JourneyStopRoles
 {
     public const string Pickup = "PICKUP";
     public const string Unload = "UNLOAD";
+
+    /// <summary>
+    /// 去充电桩的停靠（批次 9；control-server#401 先立这个值，产生这种停靠的是 control-server#404）。
+    /// </summary>
+    public const string Charger = "CHARGER";
+
+    /// <summary>
+    /// 空闲返回开往等待点的那一个停靠（批次8-19，control-server#390）。没有需求、没有清单、不问录入；它的单经
+    /// <see cref="OrderShapeOf"/> 是单段移动。
+    /// </summary>
+    public const string WaitingPoint = "WAITING_POINT";
+
+    /// <summary>
+    /// 这个停靠的订单是哪一种形态：<see cref="Charger"/> 是充电单 <see cref="ControlServer.Domain.OrderShapes.Charge"/>
+    /// （<c>move(桩) + act(78,1,0)</c>），其余都是单段移动。
+    /// </summary>
+    /// <remarks>
+    /// 构造订单意图的每一条路都从这里取形态（control-server#401 调度评论）：<c>WireToGateStore.Matches</c> 比较形态，
+    /// 同一段腿若一处按充电、一处按单段构造，授权时每轮都抛冲突，这台车之后的车全都不再推进；自建单重建若不带形态，
+    /// 充电单会被降成单段移动，车到桩上却不通电。两条路读同一个函数，就不会各说各的。
+    /// </remarks>
+    public static string OrderShapeOf(string stopRole) =>
+        string.Equals(stopRole, Charger, StringComparison.Ordinal)
+            ? ControlServer.Domain.OrderShapes.Charge
+            : ControlServer.Domain.OrderShapes.SingleMove;
 }
 
 /// <summary>停靠的状态：待到、进行、完成、移除。</summary>
@@ -39,19 +101,46 @@ public static class JourneyStopStatuses
     public const string Removed = "REMOVED";
 }
 
-/// <summary>从属需求的状态：待装、已装、已卸、已终结。</summary>
+/// <summary>从属需求的状态：待装、正在装、已装、已卸、已终结。</summary>
+/// <remarks>
+/// <see cref="Loading"/> 由批次7-06（control-server#211）加进来，它就是「<b>这个停靠此刻在装哪一条需求</b>」这个状态本身：
+/// 录入已受理、装货命令已发、结果还没到。一个停靠上至多一条需求处在这个状态（同一站多条需求逐条串行，规格第 22 节补记），
+/// 而推进段等装货结果时查的正是它的 attempt。没有它，「录入范围是整个停靠」与「下游按锚需求走」这两件事之间就只剩下
+/// 两个坏答案：发第二条的仓位却查第一条的结果，或者反过来。
+/// </remarks>
 public static class JourneyDemandStatuses
 {
     public const string PendingLoad = "PENDING_LOAD";
+
+    /// <summary>录入已受理、装货命令已发、结果未到。一个停靠上至多一条。</summary>
+    public const string Loading = "LOADING";
+
     public const string Loaded = "LOADED";
     public const string Unloaded = "UNLOADED";
     public const string Terminated = "TERMINATED";
 }
 
-/// <summary>车辆占有的用途。本批只有搬运一种（规格 3.3 第 9 项）；<c>REQ-0290</c> 的其余用途在批次 8。</summary>
+/// <summary>
+/// 车辆占有的用途，四值一次定全（规格 5.4，批次 8 建表票 control-server#386）。<c>VehiclePurposeClaims</c> 与
+/// <c>VehiclePurposeClaimRecords</c> 的 <c>Purpose</c> 列由 CHECK 约束只收这四个值，约束的值表就取自 <see cref="All"/>。
+/// </summary>
+/// <remarks>
+/// 与线上 <c>activePurpose</c> 的常量（<c>ControlServer.Domain.VehicleActivePurposes</c>）是两件事：这里是服务端占有的记录，
+/// 那里是协议报文的取值，随协议版本走。今天两边的拼写逐字相同（协议 <c>VehicleBusinessStateSnapshot.activePurpose</c> 的枚举也是这四个），
+/// 由 <c>Batch8PersistencePortTests.TheFourPurposesAreDefinedOnceAndEachHasItsWireCounterpartInTheProtocolEnum</c> 钉住「这里每个值在协议枚举里都有」，这里多出协议没有的值、或协议删掉这里在用的值，它就红；把一边的值原样写到另一边是
+/// 批次8-18（control-server#389）的事。本批实际会取得的只有 <see cref="Transport"/> 与 <see cref="IdleReturn"/>。
+/// </remarks>
 public static class VehiclePurposes
 {
     public const string Transport = "TRANSPORT";
+
+    public const string Charging = "CHARGING";
+
+    public const string ClearingMaintenance = "CLEARING_MAINTENANCE";
+
+    public const string IdleReturn = "IDLE_RETURN";
+
+    public static IReadOnlyList<string> All { get; } = [Transport, Charging, ClearingMaintenance, IdleReturn];
 }
 
 /// <summary>每区派车参数版本从哪来。</summary>
@@ -144,20 +233,6 @@ public interface IJourneyMembershipStore
 
 /// <summary>车辆被哪种用途、哪趟旅程占着。</summary>
 public sealed record VehiclePurposeClaim(string VehicleKey, string Purpose, string JourneyId, DateTimeOffset ClaimedAt);
-
-/// <summary>车辆用途占有（规格 3.3 第 9 项、5.2）。谁占到由主键冲突决定，不先读后写。</summary>
-public interface IVehiclePurposeClaimStore
-{
-    Task<VehiclePurposeClaim?> ReadAsync(string vehicleKey, CancellationToken cancellationToken);
-
-    /// <summary>
-    /// 为这趟旅程占住车辆。占到或这趟旅程本来就占着时为真；被别的旅程或用途占着时为假，现有占有不变。
-    /// </summary>
-    Task<bool> TryClaimAsync(VehiclePurposeClaim claim, CancellationToken cancellationToken);
-
-    /// <summary>释放这趟旅程对车辆的占有；车辆没被它占着时什么也不做。</summary>
-    Task ReleaseAsync(string vehicleKey, string journeyId, CancellationToken cancellationToken);
-}
 
 /// <summary>一个业务键的终态抑制。</summary>
 public sealed record TransportDemandSuppression(

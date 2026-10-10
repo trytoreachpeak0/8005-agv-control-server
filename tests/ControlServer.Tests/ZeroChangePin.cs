@@ -21,13 +21,106 @@ namespace ControlServer.Tests;
 /// 工作树上跑出来，再搬回来。**重录只有这一种做法**：在集成分支上录，不在本票分支上录；红了就是行为变了，不能重录来变绿。
 /// 那次重录唯一的差别是 <c>JourneyRuntimes</c> 多了 cs#228 的新列 <c>AreaEndAdmissionRevokedSince=NULL</c>，其余逐字未动。
 /// </para>
+/// <para>
+/// <b>批次7-06（control-server#211）之后，这批基线钉的不再是「什么都没变」，而是「只有 Status 变了」。</b>那一票让
+/// <c>JourneyStops.Status</c> 与 <c>JourneyDemands.Status</c> 真的动起来——当前停靠与装货进度从此是落库的状态，
+/// 不再从阶段反推——所以基线在这两列上必然变，那是它要的变化。<b>它仍然不是「重录来变绿」</b>，而这一点由
+/// 与<b>集成分支顶端</b>（<c>fp/v2-impl@10175635</c>）的逐字段比对撑着，不是与本票自己的上一个提交比：
+/// <c>evidence/b7-06/green/04-zero-change-pin-vs-integration-tip.txt</c>。
+/// </para>
+/// <para>
+/// 那份比对的全部差异是两类。<b>同一行内被改写 12 处，三种形状，全部是 <c>Status</c></b>：
+/// <c>JourneyDemands</c> 的 <c>'PENDING_LOAD'→'TERMINATED'</c> 9 处、<c>'PENDING_LOAD'→'UNLOADED'</c> 1 处，
+/// <c>JourneyStops</c> 的 <c>'PENDING'→'COMPLETED'</c> 2 处；每一处都只变了一列，这不是读出来的，
+/// 是统计脚本对「一行里变了不止一列」单独报出来、结果为零。<b>纯新增 6 行</b>，全部是 <c>JourneyStops</c>：
+/// 三份 <c>commanded-ending-*</c> 各多两行，因为手写旅程行的夹具改用了 <c>JourneyMembershipSeed.Seed</c>。
+/// <b>删除 0 行。</b>七张表的其余每一列、以及出站消息的确认时刻，逐字未动。判别力正在这里：差异越出这两类，
+/// 就是改坏了别的东西。
+/// </para>
+/// <para>
+/// <b>这几个数字数错过一次，值得记着怎么错的。</b>第一版统计把「行数不等」的文件整份跳过逐字段比对，于是三份
+/// <c>commanded-ending-*</c> 里各一处 <c>Status</c> 改写没被算进去，报出来是 9 处改写而不是 12 处。
+/// 对不上的是总行数：证据文件里 +18/−12 行，而 9 处改写加 6 行新增只能是 +15/−9。<b>先算出该是多少，再去对</b>——
+/// 否则一个漏了三处的统计看上去和对的一样。
+/// </para>
+/// <para>
+/// <b>批次7-12（control-server#217）给两份阻断旅程看板基线加了三个字段，其余逐字未动。</b>那一票让阻断旅程端点每一行多给
+/// <c>blockReasonDescription</c>、<c>journeyId</c>、<c>demands</c>（只加字段、不改名不删字段），所以
+/// <c>dashboard-blocked-journeys-*</c> 两份在这三个字段上必然变。判据是「把新输出里这三个字段删掉，与旧基线按键序逐字相同」：
+/// 两份各 3 行、7 行全部成立，删掉的是 9 个与 21 个字段，值只有 <c>null</c>、<c>[]</c> 与各行自己的旅程 id
+/// （<c>evidence/cs217/green/01-dashboard-pin-rerecord-additions-only.txt</c>，在工作区证据目录）。期待动作超时的两份基线不受影响。
+/// </para>
+/// <para>
+/// <b>control-server#273 给十份终结状态基线的 <c>JourneyRuntimes</c> 行加了四列，其余逐字未动。</b>那一票加了等人起点
+/// <c>WaitingSince</c> 与等人监看的三列（<c>WaitingBatteryPercent</c>、<c>WaitingBatteryObservedAt</c>、<c>WaitingWarnedAt</c>）。
+/// 判据与 cs#228、cs#217 同一个形状：把新输出里这四个字段删掉，与<b>集成分支上的</b>旧基线（<c>fp/v2-impl@8ec088b1</c>）逐字相同。
+/// 十份都成立，每份恰好删掉四个字段，而且都在 <c>JourneyRuntimes</c> 那一行上。十份的 <c>WaitingSince</c> 与
+/// <c>WaitingWarnedAt</c> 全为 <c>NULL</c>——终结之后的旅程不在等人；有七份记下了电量 80（夹具的默认值），三份
+/// <c>commanded-ending-*</c> 的电量两列为 <c>NULL</c>。看板四份基线不受影响。
+/// </para>
+/// <para>
+/// <b>control-server#323 给十份终结状态基线的发件箱一节各加了三行，其余逐字未动。</b>那一票让旅程收尾时给车发三张收尾快照
+/// （空清单、空计划、不带旅程的业务状态），它们与收尾同一次保存落库、此刻还没被确认。判据：与<b>集成分支上的</b>旧基线
+/// （<c>fp/v2-impl@a98ae9be</c>）相比，删除 0 行，新增恰好 3 行，三行的类型恰好是那三种快照、全部 <c>AcknowledgedAt=NULL</c>。
+/// 十份都成立；七张表一列未动。同票重录的六份 <c>WirePins/</c> 另有判据，见 <c>evidence/cs323/green/01-pin-rerecord-vs-integration-tip.txt</c>。
+/// </para>
+/// <para>
+/// <b>control-server#339 给十份终结状态基线的 <c>JourneyStops</c> 行各加了一列 <c>WorklistRefills=0</c>，其余逐字未动。</b>那一票加了
+/// 「本停靠的清单因离站期限重填多发了几版」，这十条路径都没有断线重连，所以全为 0。判据与 cs#273 同一个形状：把新基线里的
+/// <c>|WorklistRefills=0</c> 删掉，与<b>集成分支上的</b>旧基线（<c>fp/v2-impl@012c31b2</c>）逐字相同——十四份全部成立（没有
+/// <c>JourneyStops</c> 行的四份看板基线本来就没动）。先算出该是多少再去对：十份各两行停靠，应有 20 处，实数 20 处
+/// （<c>evidence/l1/20260923-cs339-pins/SUMMARY.md</c>）。列插在 <c>Status</c> 之前，是 <c>EnsureCreated</c> 按属性声明顺序建表的结果。
+/// </para>
+/// <para>
+/// <b>control-server#357 给十份终结状态基线的 <c>JourneyRuntimes</c> 行各加了一段 <c>|Version=&lt;set&gt;</c>，其余逐字未动。</b>
+/// 那一票给旅程行加了并发令牌 <c>Version</c>，它数的是这一行被保存了几次，所以只钉「有没有值」（<see cref="SetOrNotOnly"/>）：
+/// 一条路径多存一次不是结果变了。判据与 cs#339 同一个形状：把新基线里的 <c>|Version=&lt;set&gt;</c> 删掉，与<b>集成分支上的</b>
+/// 旧基线（<c>fp/v2-impl@2ded1b38</c>）逐字相同。先算出该是多少：十份各一行旅程，应有 10 处，实数 10 处，十四份全部相同
+/// （<c>evidence/cs357/green/</c>）。这一列在集成分支上还不存在，所以录只能在本票分支上录；它不是「重录来变绿」，
+/// 撑着它的是与集成分支旧基线的逐字比对。
+/// </para>
+/// <para>
+/// <b>control-server#387 退役了租约与订单占用：十份终结状态基线里，租约一节换成占有记录一节，<c>OrderIntents</c> 每行少了
+/// 末尾两列，其余逐字未动。</b>这两样在集成分支上已经不存在（表删了、列删了），所以同 cs#357，只能在本票分支上录。判据：与
+/// <b>集成分支上的</b>旧基线（<c>fp/v2-impl@af2b02cb</c>）按表逐字段比——每条租约行对应恰好一条占有记录，车、旅程、取得与释放
+/// 时刻逐字相同（记录的 <c>RecordId</c> 是随机 GUID，只钉有没有值）；每行 <c>OrderIntents</c> 去掉
+/// 订单占用的认领与释放两列后逐字相同；其余各节与四份看板基线逐字相同。先算出该是
+/// 多少：十份各一条租约，应有 10 条对应，实数 10；取货单十份、另有三份 <c>commanded-ending-*</c> 与 <c>unload</c> 各多一行去关卡
+/// 的单，应有 14 行少两列，实数 14；其余差异 0（<c>evidence/cs387/green/01-zero-change-pin-vs-integration-tip.txt</c>）。
+/// 订单占用「晚一轮释放」在这里看不出来：这批夹具的钟不走，两个时刻本来就相同。
+/// </para>
+/// <para>
+/// <b>control-server#399（批次 9 建表）给十份终结状态基线加了三个字段，其余逐字未动。</b>那一票给 <c>OrderIntents</c> 加了订单形态
+/// （缺省即回填 <c>SINGLE_MOVE</c>），给 <c>JourneyRuntimes</c> 加了两列今天全空的列。这三列在集成分支上还不存在，所以同 cs#357
+/// 只能在本票分支上录。判据：把新基线里的 <c>|OrderShape='SINGLE_MOVE'</c>、<c>|ChargingPolicyVersion=NULL</c>、
+/// <c>|PublishedBatteryState=NULL</c> 删掉，与<b>集成分支上的</b>旧基线（<c>fp/v2-impl@3fc3587b</c>）逐字相同，十四份全部成立。
+/// 先算出该是多少：旧基线里 <c>OrderIntents</c> 共 14 行、<c>JourneyRuntimes</c> 共 10 行，新基线里三个字段实数 14、10、10；
+/// 比对脚本另改一个无关字符验过会报红（<c>evidence/cs399/green/</c>）。
+/// </para>
+/// <para>
+/// <b>control-server#403 给七份终结状态基线的 <c>JourneyRuntimes</c> 行各改了两个值，其余逐字未动。</b>那一票在派车受理时把判它的充电策略版本号
+/// 与第一版 <c>batteryState</c> 投影写进 cs#399 建的两列，所以走产品派车路径的旅程上 <c>ChargingPolicyVersion=NULL|PublishedBatteryState=NULL</c>
+/// 变成 <c>=1|='SUFFICIENT'</c>（夹具的测试策略版本 1、电量 80 高于线 40）。同样只能在本票分支上录。判据：把新基线里这 7 处换回 <c>NULL</c>，
+/// 与<b>集成分支上的</b>旧基线（<c>fp/v2-impl@99c35544</c>）逐字相同，十四份全部成立。先算出该是多少：派车路径七份各 1 处，三份
+/// <c>commanded-ending-*</c>（手写旅程行）与四份看板基线 0 处；实数相同。比对脚本另改一个无关字符验过会报红（工作区 <c>evidence/cs403/pins/</c>）。
+/// 下发载荷没有变：WirePins 与出站 schema 检查都绿，投影在这组夹具下就是原来写死的那个值。
+/// </para>
+/// <para>
+/// <b>control-server#384 给期待动作超时的两份看板基线各加了一个字段，其余逐字未动。</b>那一票让数据面每行带出这个仓在当前装卸上
+/// 最近一次人工判故障（<c>declaration</c>，这组夹具里没有判定，为 <c>null</c>）。这个字段在集成分支上还不存在，所以同 cs#357
+/// 只能在本票分支上录。判据与 cs#217 同一个形状：把新基线里的 <c>,"declaration":null</c> 删掉，与<b>集成分支上的</b>旧基线
+/// （<c>fp/v2-impl@abd29c23</c>，与 <c>batch-p3/v3@9497b75b</c> 上的逐字相同）逐字相同，两份都成立。先算出该是多少：两份旧基线
+/// 各一行，应各一处，实数各一处；比对脚本另改一个无关字符验过会报红（<c>evidence/cs384/pins/</c>）。十份终结状态基线不受影响。
+/// </para>
 /// </remarks>
 internal static class ZeroChangePin
 {
     private static readonly string[] Tables =
     [
         "AcceptedDemands",
-        "VehicleDispatchLeases",
+        // control-server#387 retired the lease: the claim's record carries what the lease row did (the vehicle, the journey,
+        // when it was taken and given back).
+        "VehiclePurposeClaimRecords",
         "VehiclePurposeClaims",
         "OrderIntents",
         "JourneyRuntimes",
@@ -49,6 +142,13 @@ internal static class ZeroChangePin
         "LastCreateReceiptJson",
         "LastReconciliationOutcomeAt",
         "LastReconciliationReceiptJson",
+        // control-server#357: the journey row's concurrency token counts saves. A path that saves once more has not changed
+        // its outcome, and pinning the count would turn every such change red without saying anything about behaviour. Keyed
+        // by column name like the rest: of the tables pinned here only JourneyRuntimes has a column named exactly Version
+        // (PolicyVersion and the like are other names and stay pinned in full).
+        "Version",
+        // control-server#387: a claim record's key is a fresh GUID on every acceptance.
+        "RecordId",
     };
 
     internal static async Task AssertMatchesAsync(

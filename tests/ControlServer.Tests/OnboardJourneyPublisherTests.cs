@@ -135,7 +135,8 @@ public sealed class OnboardJourneyPublisherTests
                 operationSessionId,
                 null,
                 [new CurrentStopWorklistItem(
-                    demandId, "SUBLOT-001|WIRE_TO_GATE", "SUBLOT-001", "WIRE_TO_GATE", "PICKUP", 2)]),
+                    demandId, "SUBLOT-001|WIRE_TO_GATE", "SUBLOT-001", "WIRE_TO_GATE", "PICKUP", 2)],
+                StopEndedReason: null),
             TestContext.Current.CancellationToken);
         await publisher.PublishUpcomingStopPlanAsync(
             "00000000-0000-4000-8000-000000000325",
@@ -215,6 +216,183 @@ public sealed class OnboardJourneyPublisherTests
         Assert.Equal(
             stored.RootElement.GetProperty("sentAt").GetDateTimeOffset(),
             stored.RootElement.GetProperty("payload").GetProperty("observedAt").GetDateTimeOffset());
+    }
+
+    // control-server#331：到站那一段重跑时，车辆业务状态与清单带 keepAcknowledgedIgnoring 发——车确认过的那一版除信封（与清单的
+    // 期限）外一字不差就沿用它，不入队、不发。重放校验本身（WireToGateStore.RefreshOutboundEnvelopeAsync）一字未改，第一条钉住这一点。
+    // 后面几条各钉放行条件的一边：放行的那一种一条；条件各缺一项的三种各一条，每一条都必须仍然被拒。
+
+    /// <summary>
+    /// 不带 <c>keepAcknowledgedIgnoring</c> 时，已确认的快照即使内容不变、代次前移也照旧被拒：重放校验与 af01fd27 一样，本票没有放宽它。
+    /// </summary>
+    [Fact]
+    [Trait("IntegrationSlice", "FP-IS-00")]
+    [Trait("IntegrationSlice", "FP-IS-06")]
+    [Trait("ProtocolVector", "CV-RELIABLE-RETRY-SAME-CONTENT")]
+    public async Task WithoutTheOptInAnAcknowledgedSnapshotIsStillNeverRewritten()
+    {
+        await using AcknowledgedSnapshot snapshot = await AcknowledgedSnapshot.CreateAsync();
+
+        await Assert.ThrowsAsync<ProtocolContentConflictException>(() =>
+            snapshot.RepublishAsync(generation: 3, snapshot.Projection, keepAcknowledgedIgnoring: null));
+
+        snapshot.AssertLeftAsAcknowledged();
+    }
+
+    /// <summary>
+    /// 带 <c>keepAcknowledgedIgnoring</c>、已确认的快照在新的一代以同样的内容再发一次：沿用那一行，不改写、不再发送，也不抛。
+    /// </summary>
+    [Fact]
+    [Trait("IntegrationSlice", "FP-IS-00")]
+    [Trait("IntegrationSlice", "FP-IS-06")]
+    [Trait("ProtocolVector", "CV-RELIABLE-RETRY-SAME-CONTENT")]
+    public async Task AnAcknowledgedSnapshotRepublishedUnchangedIntoANewGenerationIsLeftAsAcknowledged()
+    {
+        await using AcknowledgedSnapshot snapshot = await AcknowledgedSnapshot.CreateAsync();
+
+        await snapshot.RepublishAsync(generation: 3, snapshot.Projection, EnvelopeOnly);
+
+        snapshot.AssertLeftAsAcknowledged();
+    }
+
+    /// <summary>
+    /// 带 <c>keepAcknowledgedIgnoring</c>、已确认的快照在新的一代换了内容：仍然拒绝，那一行不动。放行按内容比，不按「确认过」。
+    /// </summary>
+    [Fact]
+    [Trait("IntegrationSlice", "FP-IS-00")]
+    [Trait("IntegrationSlice", "FP-IS-06")]
+    [Trait("ProtocolVector", "CV-RELIABLE-RETRY-DIFFERENT-CONTENT")]
+    public async Task AnAcknowledgedSnapshotRepublishedWithDifferentContentIsStillRefused()
+    {
+        await using AcknowledgedSnapshot snapshot = await AcknowledgedSnapshot.CreateAsync();
+
+        await Assert.ThrowsAsync<ProtocolContentConflictException>(() =>
+            snapshot.RepublishAsync(generation: 3, snapshot.Projection with { BatteryState = "LOW" }, EnvelopeOnly));
+
+        snapshot.AssertLeftAsAcknowledged();
+    }
+
+    /// <summary>
+    /// 带 <c>keepAcknowledgedIgnoring</c>、已确认的快照以同样的内容发进更旧的一代：仍然拒绝，那一行不动。
+    /// 比较去掉代次是为了放过「新的一代再说一次」，不是放过倒退。
+    /// </summary>
+    [Fact]
+    [Trait("IntegrationSlice", "FP-IS-00")]
+    [Trait("IntegrationSlice", "FP-IS-06")]
+    [Trait("ProtocolVector", "CV-RELIABLE-RETRY-SAME-CONTENT")]
+    public async Task AnAcknowledgedSnapshotRepublishedIntoAnOlderGenerationIsStillRefused()
+    {
+        await using AcknowledgedSnapshot snapshot = await AcknowledgedSnapshot.CreateAsync();
+
+        await Assert.ThrowsAsync<ProtocolContentConflictException>(() =>
+            snapshot.RepublishAsync(generation: 1, snapshot.Projection, EnvelopeOnly));
+
+        snapshot.AssertLeftAsAcknowledged();
+    }
+
+    /// <summary>
+    /// 带 <c>keepAcknowledgedIgnoring</c>、没确认的快照在新的一代换了内容：仍然拒绝，那一行不动。放行只看已确认的行。
+    /// </summary>
+    [Fact]
+    [Trait("IntegrationSlice", "FP-IS-00")]
+    [Trait("IntegrationSlice", "FP-IS-06")]
+    [Trait("ProtocolVector", "CV-RELIABLE-RETRY-DIFFERENT-CONTENT")]
+    public async Task AnUnacknowledgedSnapshotRepublishedWithDifferentContentIsStillRefused()
+    {
+        await using AcknowledgedSnapshot snapshot = await AcknowledgedSnapshot.CreateAsync(acknowledge: false);
+
+        await Assert.ThrowsAsync<ProtocolContentConflictException>(() =>
+            snapshot.RepublishAsync(generation: 3, snapshot.Projection with { BatteryState = "LOW" }, EnvelopeOnly));
+
+        ProtocolOutboxRow row = await snapshot.Context.ProtocolOutbox.AsNoTracking()
+            .SingleAsync(TestContext.Current.CancellationToken);
+        Assert.Null(row.AcknowledgedAt);
+        Assert.Equal(snapshot.StoredWire, row.PayloadJson);
+        Assert.Single(snapshot.Peer.Lines);
+    }
+
+    /// <summary>只放过信封：车辆业务状态在到站那一段重跑时用的就是它。</summary>
+    private static readonly IReadOnlySet<string> EnvelopeOnly = new HashSet<string>(StringComparer.Ordinal);
+
+    /// <summary>
+    /// 第 2 代发出的一张车辆业务状态快照，默认已被车确认；上面几条都从这里开始。
+    /// </summary>
+    private sealed class AcknowledgedSnapshot : IAsyncDisposable
+    {
+        private const string MessageId = "00000000-0000-4000-8000-000000000332";
+
+        private readonly SqliteConnection _connection;
+
+        private AcknowledgedSnapshot(
+            SqliteConnection connection, ControlServerDbContext context, RecordingPeer peer, OnboardJourneyPublisher publisher)
+        {
+            _connection = connection;
+            Context = context;
+            Peer = peer;
+            Publisher = publisher;
+        }
+
+        public ControlServerDbContext Context { get; }
+
+        public RecordingPeer Peer { get; }
+
+        public OnboardJourneyPublisher Publisher { get; }
+
+        public VehicleBusinessProjection Projection { get; } =
+            new(2, "READY", "TRANSPORT", false, "SUFFICIENT", "NOT_CHARGING", LoadingPhaseProjection.Loading, []);
+
+        public string StoredWire { get; private set; } = "";
+
+        public static async Task<AcknowledgedSnapshot> CreateAsync(bool acknowledge = true)
+        {
+            SqliteConnection connection = new("Data Source=:memory:");
+            await connection.OpenAsync(TestContext.Current.CancellationToken);
+            DbContextOptions<ControlServerDbContext> options = new DbContextOptionsBuilder<ControlServerDbContext>()
+                .UseSqlite(connection)
+                .Options;
+            ControlServerDbContext context = new(options);
+            await context.Database.EnsureCreatedAsync(TestContext.Current.CancellationToken);
+            WireToGateStore store = new(context);
+            RecordingPeer peer = new(context);
+            AdvancingTimeProvider clock = new();
+            AcknowledgedSnapshot snapshot = new(connection, context, peer, new OnboardJourneyPublisher(store, peer, clock));
+            await snapshot.RepublishAsync(generation: 2, snapshot.Projection, keepAcknowledgedIgnoring: null);
+            snapshot.StoredWire = (await context.ProtocolOutbox.SingleAsync(TestContext.Current.CancellationToken))
+                .PayloadJson;
+            if (acknowledge)
+            {
+                await store.AcknowledgeOutboundEnvelopeAsync(
+                    MessageId,
+                    "VehicleBusinessStateSnapshot",
+                    Sha256(snapshot.StoredWire),
+                    appliedRevision: 2,
+                    clock.GetUtcNow(),
+                    TestContext.Current.CancellationToken);
+            }
+
+            return snapshot;
+        }
+
+        public Task RepublishAsync(
+            long generation, VehicleBusinessProjection projection, IReadOnlySet<string>? keepAcknowledgedIgnoring) =>
+            Publisher.PublishVehicleBusinessStateAsync(
+                MessageId, "AGV-001", generation, projection, TestContext.Current.CancellationToken,
+                keepAcknowledgedIgnoring);
+
+        /// <summary>那一行仍是车确认过的那几个字节、仍记着已确认，车也没有再收到第二行。</summary>
+        public void AssertLeftAsAcknowledged()
+        {
+            ProtocolOutboxRow row = Context.ProtocolOutbox.AsNoTracking().Single();
+            Assert.NotNull(row.AcknowledgedAt);
+            Assert.Equal(StoredWire, row.PayloadJson);
+            Assert.Single(Peer.Lines);
+        }
+
+        public async ValueTask DisposeAsync()
+        {
+            await Context.DisposeAsync();
+            await _connection.DisposeAsync();
+        }
     }
 
     [Fact]
@@ -323,6 +501,7 @@ public sealed class OnboardJourneyPublisherTests
             11,
             new PreDepartureSafetyCheckCommand(
                 "00000000-0000-4000-8000-000000000407",
+                PreDepartureCheckPurposes.Departure,
                 demandId,
                 "00000000-0000-4000-8000-000000000408",
                 17,
@@ -372,6 +551,8 @@ public sealed class OnboardJourneyPublisherTests
             .GetProperty("expectedFinalPhysicalState").GetString());
         Assert.Equal(17, safetyEnvelope.RootElement.GetProperty("payload")
             .GetProperty("expectedSafetyStateVersion").GetInt64());
+        Assert.Equal("DEPARTURE", safetyEnvelope.RootElement.GetProperty("payload")
+            .GetProperty("checkPurpose").GetString());
         Assert.Null(unloadEnvelope.RootElement.GetProperty("correlationId").GetString());
         Assert.Equal("UNLOAD", unloadEnvelope.RootElement.GetProperty("payload")
             .GetProperty("operationType").GetString());
@@ -392,6 +573,157 @@ public sealed class OnboardJourneyPublisherTests
                     envelope.RootElement.GetProperty("protocolReleaseManifestSha256").GetString());
                 Assert.Equal(11, envelope.RootElement.GetProperty("sessionGeneration").GetInt64());
             });
+    }
+
+    /// <summary>
+    /// v3 的 <c>checkPurpose</c>（control-server#382、#385）：组装 <c>DEPARTURE</c> 与 <c>HOLD_RELEASE</c>，<c>NON_BUSINESS_MOVE</c>
+    /// 与不认识的用途拒绝组装。
+    /// </summary>
+    /// <remarks>
+    /// <c>NON_BUSINESS_MOVE</c> 归空闲返回与自动充电的票；在那之前组出一条来，车载端没有对应的移动可言。
+    /// </remarks>
+    [Theory]
+    [Trait("IntegrationSlice", "FP-IS-03")]
+    [InlineData("NON_BUSINESS_MOVE")]
+    [InlineData("SOMETHING_ELSE")]
+    public async Task OnlyDepartureAndHoldReleaseChecksAreAssembled(string checkPurpose)
+    {
+        await using SqliteConnection connection = new("Data Source=:memory:");
+        await connection.OpenAsync(TestContext.Current.CancellationToken);
+        DbContextOptions<ControlServerDbContext> options = new DbContextOptionsBuilder<ControlServerDbContext>()
+            .UseSqlite(connection)
+            .Options;
+        await using ControlServerDbContext context = new(options);
+        await context.Database.EnsureCreatedAsync(TestContext.Current.CancellationToken);
+        RecordingPeer peer = new(context);
+        OnboardJourneyPublisher publisher = new(new WireToGateStore(context), peer, new AdvancingTimeProvider());
+
+        await Assert.ThrowsAsync<ArgumentOutOfRangeException>(() => publisher.PublishPreDepartureSafetyCheckAsync(
+            "00000000-0000-4000-8000-000000000431",
+            "AGV-001",
+            1,
+            new PreDepartureSafetyCheckCommand(
+                "00000000-0000-4000-8000-000000000432",
+                checkPurpose,
+                "00000000-0000-4000-8000-000000000433",
+                "00000000-0000-4000-8000-000000000434",
+                3,
+                "GATE-01"),
+            TestContext.Current.CancellationToken));
+        Assert.Empty(peer.Lines);
+    }
+
+    /// <summary>
+    /// <c>HOLD_RELEASE</c>（control-server#385）三个字段都发 null；带着任何一个就拒绝组装——schema 的 <c>if/then</c> 要求三者为 null，
+    /// 车载端会按 schema 拒收，而本服务端运行时不按 schema 校验出站报文。
+    /// </summary>
+    [Theory]
+    [Trait("IntegrationSlice", "FP-IS-07")]
+    [InlineData(null, null, null, true)]
+    [InlineData("00000000-0000-4000-8000-000000000433", null, null, false)]
+    [InlineData(null, "00000000-0000-4000-8000-000000000434", null, false)]
+    [InlineData(null, null, "GATE-01", false)]
+    public async Task AHoldReleaseCheckCarriesNoDemandLegOrTargetStation(
+        string? demandId, string? movementLegId, string? targetStationId, bool assembled)
+    {
+        await using SqliteConnection connection = new("Data Source=:memory:");
+        await connection.OpenAsync(TestContext.Current.CancellationToken);
+        DbContextOptions<ControlServerDbContext> options = new DbContextOptionsBuilder<ControlServerDbContext>()
+            .UseSqlite(connection)
+            .Options;
+        await using ControlServerDbContext context = new(options);
+        await context.Database.EnsureCreatedAsync(TestContext.Current.CancellationToken);
+        RecordingPeer peer = new(context);
+        OnboardJourneyPublisher publisher = new(new WireToGateStore(context), peer, new AdvancingTimeProvider());
+        PreDepartureSafetyCheckCommand command = new(
+            "00000000-0000-4000-8000-000000000432", "HOLD_RELEASE", demandId, movementLegId, 3, targetStationId);
+
+        Task Publish() => publisher.PublishPreDepartureSafetyCheckAsync(
+            "00000000-0000-4000-8000-000000000431", "AGV-001", 1, command, TestContext.Current.CancellationToken);
+
+        if (!assembled)
+        {
+            await Assert.ThrowsAsync<InvalidDataException>(Publish);
+            Assert.Empty(peer.Lines);
+            return;
+        }
+        await Publish();
+        using JsonDocument sent = JsonDocument.Parse(Assert.Single(peer.Lines));
+        JsonElement payload = sent.RootElement.GetProperty("payload");
+        Assert.Equal("HOLD_RELEASE", payload.GetProperty("checkPurpose").GetString());
+        Assert.Equal(JsonValueKind.Null, payload.GetProperty("demandId").ValueKind);
+        Assert.Equal(JsonValueKind.Null, payload.GetProperty("movementLegId").ValueKind);
+        Assert.Equal(JsonValueKind.Null, payload.GetProperty("targetStationId").ValueKind);
+        Assert.Equal(3, payload.GetProperty("expectedSafetyStateVersion").GetInt64());
+    }
+
+    /// <summary>
+    /// Every business state of a held vehicle says so, whoever built it (control-server#385 review N2 (a)): published or
+    /// staged, a READY projection with no fact leaves as RECOVERY_REQUIRED listing each slot of every hold still standing
+    /// -- one on file, one only in the unsaved change -- and not a lifted one; another vehicle's hold changes nothing, and
+    /// with none left standing the projection leaves as built.
+    /// </summary>
+    [Fact]
+    [Trait("IntegrationSlice", "FP-IS-07")]
+    public async Task EveryBusinessStateOfAHeldVehicleSaysItIsHeld()
+    {
+        CancellationToken token = TestContext.Current.CancellationToken;
+        await using SqliteConnection connection = new("Data Source=:memory:");
+        await connection.OpenAsync(token);
+        DbContextOptions<ControlServerDbContext> options = new DbContextOptionsBuilder<ControlServerDbContext>()
+            .UseSqlite(connection)
+            .Options;
+        await using ControlServerDbContext context = new(options);
+        await context.Database.EnsureCreatedAsync(token);
+        DateTimeOffset heldAt = new(2026, 9, 30, 8, 0, 0, TimeSpan.Zero);
+        context.SlotDoorHolds.AddRange(
+            new SlotDoorHoldRow { HoldId = "h-on-file", AgvId = "AGV-001", DemandId = "D1", SlotsJson = "[3]", HeldAt = heldAt },
+            new SlotDoorHoldRow
+            {
+                HoldId = "h-lifted", AgvId = "AGV-001", DemandId = "D2", SlotsJson = "[4]", HeldAt = heldAt,
+                ReleasedByActionId = "r", ReleasedAt = heldAt
+            },
+            new SlotDoorHoldRow { HoldId = "h-other-vehicle", AgvId = "AGV-002", DemandId = "D3", SlotsJson = "[5]", HeldAt = heldAt });
+        await context.SaveChangesAsync(token);
+        context.SlotDoorHolds.Add(
+            new SlotDoorHoldRow { HoldId = "h-unsaved", AgvId = "AGV-001", DemandId = "D4", SlotsJson = "[1]", HeldAt = heldAt });
+        WireToGateStore store = new(context);
+        RecordingPeer peer = new(context);
+        OnboardJourneyPublisher publisher = new(store, peer, new AdvancingTimeProvider());
+        VehicleBusinessProjection ready = new(
+            4, "READY", "TRANSPORT", false, "SUFFICIENT", "NOT_CHARGING", LoadingPhaseProjection.Loading, []);
+
+        Assert.True(await OnboardJourneyPublisher.StageVehicleBusinessStateAsync(
+            store, "00000000-0000-4000-8000-000000000451", "AGV-001", 7, ready, heldAt, token));
+        await context.SaveChangesAsync(token);
+        await publisher.PublishVehicleBusinessStateAsync(
+            "00000000-0000-4000-8000-000000000452", "AGV-001", 7, ready with { Revision = 5 }, token);
+        (await context.SlotDoorHolds.SingleAsync(row => row.HoldId == "h-on-file", token)).ReleasedAt = heldAt;
+        (await context.SlotDoorHolds.SingleAsync(row => row.HoldId == "h-unsaved", token)).ReleasedAt = heldAt;
+        await context.SaveChangesAsync(token);
+        await publisher.PublishVehicleBusinessStateAsync(
+            "00000000-0000-4000-8000-000000000453", "AGV-001", 7, ready with { Revision = 6 }, token);
+
+        string[] wires = await context.ProtocolOutbox.AsNoTracking()
+            .OrderBy(row => row.MessageId).Select(row => row.PayloadJson).ToArrayAsync(token);
+        (string Readiness, string Facts, string? Purpose)[] seen =
+        [
+            .. wires.Select(wire =>
+            {
+                using JsonDocument document = JsonDocument.Parse(wire);
+                JsonElement payload = document.RootElement.GetProperty("payload");
+                return (
+                    payload.GetProperty("readiness").GetString()!,
+                    string.Join(",", payload.GetProperty("blockingFacts").EnumerateArray().Select(fact =>
+                        $"{fact.GetProperty("reasonCode").GetString()}/{fact.GetProperty("subjectType").GetString()}/" +
+                        fact.GetProperty("subjectId").GetString())),
+                    payload.GetProperty("activePurpose").GetString());
+            })
+        ];
+        const string Held = "SLOT_DOOR_LOCK_UNPROVEN_AFTER_EMPTY/SLOT/1,SLOT_DOOR_LOCK_UNPROVEN_AFTER_EMPTY/SLOT/3";
+        Assert.Equal(
+            [("RECOVERY_REQUIRED", Held, "TRANSPORT"), ("RECOVERY_REQUIRED", Held, "TRANSPORT"), ("READY", "", "TRANSPORT")],
+            seen);
     }
 
     [Fact]

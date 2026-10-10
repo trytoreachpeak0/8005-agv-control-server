@@ -1,0 +1,29 @@
+head 39362cf6f6b4c25d791a83b00416f0386ed4cae3 state=R2a-journal-only-keep-republish iterations=300
+-            if (!_connected || _handshakeOpen)
+-            {
+-                return $"not published: session not publishable, state kept for the republish after the next handshake{mapped}";
+-            }
++            if (!_connected || _handshakeOpen)
++            {
++                return $"v{version} journalled, not sent{mapped}";
++            }
+build:     0 Error(s)
+xUnit.net v3 In-Process Runner v3.2.2+728c1dce01 (64-bit .NET 8.0.31)
+  Discovering: ControlServer.Tests
+  Discovered:  ControlServer.Tests
+  Starting:    ControlServer.Tests
+  Finished:    ControlServer.Tests (ID = '2ab93302b615c6e6d65489acf5de8b39ee11b80189e7b478212e63bfb1c6d0a2')
+=== TEST EXECUTION SUMMARY ===
+   ControlServer.Tests  Total: 1, Errors: 0, Failed: 0, Skipped: 0, Not Run: 0, Time: 56.200s
+restored OK
+--- report
+iterations=300 masterSeed=342
+per combination (ms): n=300 mean=186.4 p50=157.6 p90=249.7 max=2954.2; wall total 56.1s
+per combination excluding the first (ms): n=299 mean=177.2; first=2954.2
+setup mean=108.3ms; engine rounds per combination mean=4.1; per round (excluding setup) mean=18.9ms
+ack conflicts=0 vehicle regressions=0
+entry request reached the vehicle in 300 of 300
+rounds from the last recovery to the entry request: 1: 292, 2: 8
+DifferentMessageAccepted by where: handshake open 0, handshake done 0
+rounds that failed while carrying a wait-on-person code: 6
+  by code: ONBOARD_SESSION_LOST (exempt: heard inside the liveness window): 2, ORDER_HANG: 6

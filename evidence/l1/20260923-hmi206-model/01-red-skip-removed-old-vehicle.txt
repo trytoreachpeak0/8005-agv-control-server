@@ -1,0 +1,20 @@
+commit under test: ef9ba849925164ad4aa1a049c4ecf70a3a7b72bd (test commit; binary built from the identical working tree, git status clean)
+xUnit.net v3 In-Process Runner v3.2.2+728c1dce01 (64-bit .NET 8.0.31)
+  Discovering: ControlServer.Tests
+  Discovered:  ControlServer.Tests
+  Starting:    ControlServer.Tests
+    ControlServer.Tests.ReconnectModelRegressionTests.ASafetyChangeLostInFlightDoesNotGetTheNextHandshakeRefused(unsafeChange: True) [FAIL]
+      Assert.Empty() Failure: Collection was not empty
+      Collection: [Tuple (LegitimateMessageRefused, "SafetyStateSnapshot (generation 2, handshake open)"···)]
+      Stack Trace:
+        tests\ControlServer.Tests\ReconnectModelRegressionTests.cs(221,0): at ControlServer.Tests.ReconnectModelRegressionTests.ASafetyChangeLostInFlightDoesNotGetTheNextHandshakeRefused(Boolean unsafeChange)
+        --- End of stack trace from previous location ---
+    ControlServer.Tests.ReconnectModelRegressionTests.ASafetyChangeLostInFlightDoesNotGetTheNextHandshakeRefused(unsafeChange: False) [FAIL]
+      Assert.Empty() Failure: Collection was not empty
+      Collection: [Tuple (LegitimateMessageRefused, "SafetyStateSnapshot (generation 2, handshake open)"···)]
+      Stack Trace:
+        tests\ControlServer.Tests\ReconnectModelRegressionTests.cs(221,0): at ControlServer.Tests.ReconnectModelRegressionTests.ASafetyChangeLostInFlightDoesNotGetTheNextHandshakeRefused(Boolean unsafeChange)
+        --- End of stack trace from previous location ---
+  Finished:    ControlServer.Tests (ID = '2ab93302b615c6e6d65489acf5de8b39ee11b80189e7b478212e63bfb1c6d0a2')
+=== TEST EXECUTION SUMMARY ===
+   ControlServer.Tests  Total: 2, Errors: 0, Failed: 2, Skipped: 0, Not Run: 0, Time: 11.749s

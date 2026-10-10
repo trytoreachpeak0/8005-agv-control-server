@@ -1,0 +1,81 @@
+{
+  "schemaVersion": 1,
+  "scenario": "real-onboard-refilled-deadline-reaches-vehicle",
+  "runId": "20260923T181340252Z",
+  "outcome": "FAIL",
+  "failureReason": "",
+  "identity": {
+    "rig": "RealOnboard",
+    "protocolFaultProxy": true,
+    "stageRoot": "C:\\Users\\szy\\AppData\\Local\\Temp\\l2-20260923T181340252Z",
+    "onboardHmiCommit": "1184bb0762462f443736de749fe242fc9aa2f0d7",
+    "vehicleKey": "BROKERX-L2-0001",
+    "protocolReleaseIdentity": {
+      "repository": "8005-agv-protocol",
+      "releaseVersion": "2.0.0",
+      "tag": "protocol-v2.0.0",
+      "commit": "86575456c847041515b7b75e8851a00e0d939804",
+      "protocolVersion": 3,
+      "profileId": "AGV_FULL_PRODUCT",
+      "manifestSha256": "4ac095ad371d3aaa60d7c2e0198cfd64cff5f3068230fc3420e9cdf5616422a7",
+      "schemaBundleSha256": "9db0dbdc22fed7e39edf8d01b1fc40a12f5d70a7414f696f909ab2a87eb8c221",
+      "vectorsSha256": "391fa69a7d6e9f86ea139ba4c74eadf4994bf0a87e89d3dc5258dd7968d9182a",
+      "approvalStatus": "APPROVED_RELEASE"
+    },
+    "batchId": "unspecified",
+    "slotsSimulatorCommit": "fb5f7c593742bf98bc3957b8729a38aad5321f28",
+    "agvId": "AGV-L2-001",
+    "controlServerCommit": "5b2a689a7cd0624082ed1f27c5b640def3b42d9f"
+  },
+  "assertions": [
+    {
+      "id": "L2-RD-01",
+      "description": "前提：到站之后，车载端采纳的清单就是到站那一版，期限与服务端一致（到站起点加 5 分钟）",
+      "outcome": "PASS",
+      "expected": "r1 / 2026-09-23T18:19:12.7664680+00:00",
+      "actual": "r1 / 2026-09-23T18:19:12.7664680+00:00"
+    },
+    {
+      "id": "L2-RD-02",
+      "description": "断开一次之后会话在新的一代回到 Ready",
+      "outcome": "PASS",
+      "expected": "gen > 1 / Ready",
+      "actual": "gen 2 / Ready / READY"
+    },
+    {
+      "id": "L2-RD-03",
+      "description": "服务端按 ADR-cross-0055 重填了期限：起点换成重连之后的时刻",
+      "outcome": "PASS",
+      "expected": "> 2026-09-23T18:14:12.7664680+00:00",
+      "actual": "2026-09-23T18:14:26.7050434+00:00"
+    },
+    {
+      "id": "L2-RD-04",
+      "description": "车载端采纳的清单期限等于服务端此刻判定用的期限，并且不是到站那一个",
+      "outcome": "FAIL",
+      "expected": "车上 = 服务端 ≠ 到站那一个 2026-09-23T18:19:12.7664680+00:00（第一次重填是 2026-09-23T18:19:26.7050434+00:00）",
+      "actual": "车上 r1 2026-09-23T18:19:12.7664680+00:00 / 服务端 2026-09-23T18:19:26.7050434+00:00"
+    },
+    {
+      "id": "L2-RD-05",
+      "description": "车载端采纳的是一版号更大的清单：重填作为新的一版下发，不是同号改内容",
+      "outcome": "FAIL",
+      "expected": "r > 1",
+      "actual": "r1"
+    },
+    {
+      "id": "L2-RD-06",
+      "description": "服务端最后发出的录入请求答的是车手上那一版清单，旅程仍在等录入",
+      "outcome": "PASS",
+      "expected": "录入请求 r1 / AwaitingSublot",
+      "actual": "录入请求 r1 / AwaitingSublot"
+    },
+    {
+      "id": "L2-RD-07",
+      "description": "操作员看到的离站倒计时就是服务端的期限（容差 2 秒），不是到站那一个",
+      "outcome": "FAIL",
+      "expected": "约 225 秒（到站那一个此刻约 211 秒）",
+      "actual": "「03:31」于 2026-09-23T18:15:42.1587041+00:00"
+    }
+  ]
+}

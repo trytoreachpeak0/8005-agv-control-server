@@ -1,0 +1,20 @@
+Test run for C:\Users\szy\Desktop\8005-workspace-v2\worktrees\cs334-8005-agv-control-server\tests\ControlServer.Tests\bin\Debug\net8.0\win-x64\ControlServer.Tests.dll (.NETCoreApp,Version=v8.0)
+VSTest version 17.11.1 (x64)
+
+Starting test execution, please wait...
+A total of 1 test files matched the specified pattern.
+[xUnit.net 00:00:15.28]     ControlServer.Tests.GateHeldOnboardSendTests.NoFaultRecoveryPathCallsRiotOrSendsToAVehicleWhileTheGateIsHeld(path: "give-up-stopped") [FAIL]
+  Failed ControlServer.Tests.GateHeldOnboardSendTests.NoFaultRecoveryPathCallsRiotOrSendsToAVehicleWhileTheGateIsHeld(path: "give-up-stopped") [569 ms]
+  Error Message:
+   Assert.Empty() Failure: Collection was not empty
+Collection: ["{\"protocolVersion\":3,\"profileId\":\"AGV_FULL_PR"···, "{\"protocolVersion\":3,\"profileId\":\"AGV_FULL_PR"···, "{\"protocolVersion\":3,\"profileId\":\"AGV_FULL_PR"···]
+  Stack Trace:
+     at ControlServer.Tests.GateHeldOnboardSendTests.NoFaultRecoveryPathCallsRiotOrSendsToAVehicleWhileTheGateIsHeld(String path) in C:\Users\szy\Desktop\8005-workspace-v2\worktrees\cs334-8005-agv-control-server\tests\ControlServer.Tests\GateHeldOnboardSendTests.cs:line 169
+   at ControlServer.Tests.GateHeldOnboardSendTests.NoFaultRecoveryPathCallsRiotOrSendsToAVehicleWhileTheGateIsHeld(String path) in C:\Users\szy\Desktop\8005-workspace-v2\worktrees\cs334-8005-agv-control-server\tests\ControlServer.Tests\GateHeldOnboardSendTests.cs:line 169
+--- End of stack trace from previous location ---
+  Standard Output Messages:
+ give-up-stopped: 2 RIoT calls, 3 onboard sends
+
+
+
+Failed!  - Failed:     1, Passed:   304, Skipped:     0, Total:   305, Duration: 1 m 10 s - ControlServer.Tests.dll (net8.0)

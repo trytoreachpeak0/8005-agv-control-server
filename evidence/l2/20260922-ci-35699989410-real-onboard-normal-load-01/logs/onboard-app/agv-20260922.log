@@ -1,0 +1,26 @@
+2026-09-22T15:50:40.1688214+08:00	Information	SingleInstanceGuard	抢到了整机单例名字。名字=Global\SQCD.Agv.Wpf.Onboard。
+2026-09-22T15:50:40.2233010+08:00	Information	App	车载端启动：agvId=AGV-L2-001，environment=Development，version=0.2.0-safety-mock-travel+86d42ce5362a8273525b8ba1acb387e4331bcfed。
+2026-09-22T15:50:41.1667847+08:00	Information	ModbusTcpIoModuleClient	已连接IO模块 127.0.0.1:48412，UnitId=255。
+2026-09-22T15:50:41.1852063+08:00	Information	OnboardController	IO模块在线。
+2026-09-22T15:50:41.1865761+08:00	Information	OnboardController	启动IO安全快照验证通过。
+2026-09-22T15:50:42.7180499+08:00	Information	WireToGateSessionService	上层会话已建立：generation=1，readiness=Ready。
+2026-09-22T15:50:56.2798114+08:00	Information	App	服务端请求录入Sublot：station=N1-3_N1-7，revision=1，expectedSublots=L2-SUBLOT-20260922T075024707Z。 
+2026-09-22T15:50:57.3411915+08:00	Information	App	服务端请求录入Sublot：station=N1-3_N1-7，revision=1，expectedSublots=L2-SUBLOT-20260922T075024707Z。 
+2026-09-22T15:50:58.4888167+08:00	Information	ModbusTcpIoModuleClient	已向物理1号仓发送开锁脉冲触发，DO地址=100。硬件负责自动复位。 
+2026-09-22T15:50:58.5879866+08:00	Information	ModbusTcpIoModuleClient	1号仓IO变化：DO 0->1，锁DI 1->0，光幕DI 1->1。
+2026-09-22T15:50:59.0945111+08:00	Information	ModbusTcpIoModuleClient	1号仓IO变化：DO 1->0，锁DI 0->0，光幕DI 1->1。
+2026-09-22T15:50:59.2468692+08:00	Information	WireToGateBusinessService	忽略并发重复SlotOperationCommand：attempt=ce09a5b5-9531-c357-baa9-844fce00401d。
+2026-09-22T15:50:59.8865456+08:00	Information	ModbusTcpIoModuleClient	1号仓IO变化：DO 0->0，锁DI 0->0，光幕DI 1->0。
+2026-09-22T15:51:00.1242259+08:00	Information	ModbusTcpIoModuleClient	1号仓IO变化：DO 0->0，锁DI 0->1，光幕DI 0->0。
+2026-09-22T15:51:00.3501965+08:00	Information	WireToGateBusinessService	忽略并发重复SlotOperationCommand：attempt=ce09a5b5-9531-c357-baa9-844fce00401d。
+2026-09-22T15:51:01.6033321+08:00	Information	WireToGateBusinessService	忽略重复SlotOperationCommand：attempt=ce09a5b5-9531-c357-baa9-844fce00401d，保留原OperationResult重放。
+2026-09-22T15:51:38.1181037+08:00	Information	ModbusTcpIoModuleClient	已向物理1号仓发送开锁脉冲触发，DO地址=100。硬件负责自动复位。 
+2026-09-22T15:51:38.1780889+08:00	Information	ModbusTcpIoModuleClient	1号仓IO变化：DO 0->1，锁DI 1->1，光幕DI 0->0。
+2026-09-22T15:51:38.3360480+08:00	Information	ModbusTcpIoModuleClient	1号仓IO变化：DO 1->1，锁DI 1->0，光幕DI 0->0。
+2026-09-22T15:51:38.6187232+08:00	Information	WireToGateBusinessService	忽略并发重复SlotOperationCommand：attempt=368586ce-fad4-cb52-8201-885a70dd842f。
+2026-09-22T15:51:38.6855806+08:00	Information	ModbusTcpIoModuleClient	1号仓IO变化：DO 1->0，锁DI 0->0，光幕DI 0->0。
+2026-09-22T15:51:39.1713115+08:00	Information	WireToGateBusinessService	忽略并发重复SlotOperationCommand：attempt=368586ce-fad4-cb52-8201-885a70dd842f。
+2026-09-22T15:51:39.3837927+08:00	Information	ModbusTcpIoModuleClient	1号仓IO变化：DO 0->0，锁DI 0->0，光幕DI 0->1。
+2026-09-22T15:51:39.7316665+08:00	Information	ModbusTcpIoModuleClient	1号仓IO变化：DO 0->0，锁DI 0->1，光幕DI 1->1。
+2026-09-22T15:51:40.0264238+08:00	Information	WireToGateBusinessService	忽略并发重复SlotOperationCommand：attempt=368586ce-fad4-cb52-8201-885a70dd842f。
+2026-09-22T15:51:41.2165834+08:00	Information	WireToGateBusinessService	忽略重复SlotOperationCommand：attempt=368586ce-fad4-cb52-8201-885a70dd842f，保留原OperationResult重放。

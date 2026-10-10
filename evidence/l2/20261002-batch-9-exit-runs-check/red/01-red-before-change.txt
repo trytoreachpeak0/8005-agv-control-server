@@ -1,0 +1,26 @@
+charging-policy-missing-vehicle-not-commissioned   Runs=1 DefaultRuns=- FAIL
+mandatory-charge-vehicle-takes-no-transport        Runs=1 DefaultRuns=- FAIL
+charging-thresholds-relation-refused               Runs=1 DefaultRuns=- FAIL
+charging-one-charger-three-vehicles-contend        Runs=1 DefaultRuns=- FAIL
+charging-registry-emptied-degrades-and-resumes     Runs=1 DefaultRuns=- FAIL
+charging-full-cycle                                Runs=1 DefaultRuns=- FAIL
+charging-full-vehicle-yields-charger               Runs=1 DefaultRuns=- FAIL
+charging-unable-to-charge-pauses-charger           Runs=1 DefaultRuns=- FAIL
+charging-general-fault-does-not-pause              Runs=1 DefaultRuns=- FAIL
+charging-interruption-isolates                     Runs=1 DefaultRuns=- FAIL
+charging-no-progress-isolates                      Runs=1 DefaultRuns=- FAIL
+charging-clearance-to-waiting-point                Runs=1 DefaultRuns=- FAIL
+timeout-minutes: workflow_dispatch 180, otherwise 120
+expected batch-9: 12; batch-9 lines: 12; all scenarios: 79; synthetic scenario files: 79; unlisted files: 0
+FAIL: charging-policy-missing-vehicle-not-commissioned: Runs = 1, expected 3
+FAIL: mandatory-charge-vehicle-takes-no-transport: Runs = 1, expected 3
+FAIL: charging-thresholds-relation-refused: Runs = 1, expected 3
+FAIL: charging-one-charger-three-vehicles-contend: Runs = 1, expected 3
+FAIL: charging-registry-emptied-degrades-and-resumes: Runs = 1, expected 3
+FAIL: charging-full-cycle: Runs = 1, expected 3
+FAIL: charging-full-vehicle-yields-charger: Runs = 1, expected 3
+FAIL: charging-unable-to-charge-pauses-charger: Runs = 1, expected 3
+FAIL: charging-general-fault-does-not-pause: Runs = 1, expected 3
+FAIL: charging-interruption-isolates: Runs = 1, expected 3
+FAIL: charging-no-progress-isolates: Runs = 1, expected 3
+FAIL: charging-clearance-to-waiting-point: Runs = 1, expected 3

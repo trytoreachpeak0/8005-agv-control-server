@@ -1,0 +1,50 @@
+{
+  "schemaVersion": 1,
+  "scenario": "in-transit-order-cancelled-held",
+  "runId": "20260922T120111779Z",
+  "outcome": "PASS",
+  "failureReason": "",
+  "identity": {
+    "controlServerCommit": "dab517d3207c7b5890b85e08906b779524927474",
+    "protocolReleaseIdentity": {
+      "repository": "8005-agv-protocol",
+      "releaseVersion": "2.0.0",
+      "tag": "protocol-v2.0.0",
+      "commit": "86575456c847041515b7b75e8851a00e0d939804",
+      "protocolVersion": 3,
+      "profileId": "AGV_FULL_PRODUCT",
+      "manifestSha256": "4ac095ad371d3aaa60d7c2e0198cfd64cff5f3068230fc3420e9cdf5616422a7",
+      "schemaBundleSha256": "9db0dbdc22fed7e39edf8d01b1fc40a12f5d70a7414f696f909ab2a87eb8c221",
+      "vectorsSha256": "391fa69a7d6e9f86ea139ba4c74eadf4994bf0a87e89d3dc5258dd7968d9182a",
+      "approvalStatus": "APPROVED_RELEASE"
+    },
+    "agvId": "AGV-L2-001",
+    "stageRoot": "C:\\Users\\szy\\AppData\\Local\\Temp\\l2-20260922T120111779Z",
+    "vehicleKey": "BROKERX-L2-0001",
+    "rig": "SyntheticOnboard",
+    "batchId": "unspecified"
+  },
+  "assertions": [
+    {
+      "id": "L2-OC-01",
+      "description": "订单被取消后旅程写 ORDER_ENDED_WITHOUT_ARRIVAL，仍停在开往取货站",
+      "outcome": "PASS",
+      "expected": "AwaitingPickupArrival / ORDER_ENDED_WITHOUT_ARRIVAL",
+      "actual": "AwaitingPickupArrival / ORDER_ENDED_WITHOUT_ARRIVAL"
+    },
+    {
+      "id": "L2-OC-02",
+      "description": "不释放、不改派、不重建：归属未移除，仍只有一趟旅程、一张移动意图",
+      "outcome": "PASS",
+      "expected": "未移除 / 1 趟 / 1 张",
+      "actual": "未移除 / 1 趟 / 1 张"
+    },
+    {
+      "id": "L2-OC-03",
+      "description": "没有发出任何订单命令或急停（包括对已终结的单再发取消），码与开始时刻不变",
+      "outcome": "PASS",
+      "expected": "0 / 0 / ORDER_ENDED_WITHOUT_ARRIVAL / 2026-09-22 12:01:36.9881023+00:00",
+      "actual": "0 / 0 / ORDER_ENDED_WITHOUT_ARRIVAL / 2026-09-22 12:01:36.9881023+00:00"
+    }
+  ]
+}

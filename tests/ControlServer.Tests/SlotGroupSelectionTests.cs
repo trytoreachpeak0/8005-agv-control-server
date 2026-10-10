@@ -2,6 +2,7 @@ using ControlServer.Application;
 using ControlServer.Domain;
 using ControlServer.Host.Runtime;
 using ControlServer.Host.Runtime.Dispatch;
+using ControlServer.Host.Runtime.Fleet;
 using ControlServer.Host.Runtime.Dispatch.Criteria;
 using ControlServer.Infrastructure.Persistence;
 using Microsoft.Extensions.Logging.Abstractions;
@@ -206,26 +207,45 @@ public sealed class SlotGroupSelectionTests
     // ---- 排序不占优 ------------------------------------------------------------------------------
 
     /// <summary>
-    /// 通过判据之后，组内空仓多少不影响排序（REQ-0208 仓位半句的后半）：排序器只比路径成本、首次看到、创建时间与
-    /// 需求号。把两条候选各自装进的分组、目标仓与花篮数对调，选中的仍是同一条。
+    /// 通过判据之后，组内空仓多少不影响排序（REQ-0208 仓位半句的后半）：排序层只比边际成本与带内那几层，
+    /// 不看这条需求要占哪一侧、占几个仓。把两辆车各自接的那条候选的分组、目标仓与花篮数对调，选中的仍是同一辆。
     /// </summary>
+    /// <remarks>
+    /// 批次7-06（control-server#211）把轮次翻成任务优先之后，排序比的是<b>车</b>而不是候选，所以这一条也跟着搬到
+    /// 车辆侧；它要守的东西没变——仓位富余不该换来优先权。
+    /// </remarks>
     [Theory]
     [InlineData(null, null)]
     [InlineData(100L, 100L)]
-    public void RankingIgnoresHowMuchRoomACandidatesGroupHas(long? olderCost, long? newerCost)
+    public void RankingIgnoresHowMuchRoomACandidatesGroupHas(long? cheaperCost, long? dearerCost)
     {
-        LayeredDispatchCandidateRanker ranker = DispatchCandidateOrdering.Ranker();
-        EligibleDispatchCandidate older = Eligible("10000000-0000-4000-8000-000000000001", Now.AddMinutes(-10), olderCost);
-        EligibleDispatchCandidate newer = Eligible("10000000-0000-4000-8000-000000000002", Now.AddMinutes(-5), newerCost);
-        // 旧的那条挤进 FRONT 最后两个空仓，新的那条在全空的 REAR 里还有富余。
-        EligibleDispatchCandidate tightOlder = older with { TargetSlots = [3, 4], ExpectedBasketCount = 2, RequiredSlotPosition = "FRONT" };
-        EligibleDispatchCandidate roomyNewer = newer with { TargetSlots = [5], ExpectedBasketCount = 1, RequiredSlotPosition = "REAR" };
-        EligibleDispatchCandidate roomyOlder = older with { TargetSlots = [5], ExpectedBasketCount = 1, RequiredSlotPosition = "REAR" };
-        EligibleDispatchCandidate tightNewer = newer with { TargetSlots = [3, 4], ExpectedBasketCount = 2, RequiredSlotPosition = "FRONT" };
+        EligibleDispatchCandidate tight = Eligible("10000000-0000-4000-8000-000000000001", Now.AddMinutes(-10), cheaperCost)
+            with { TargetSlots = [3, 4], ExpectedBasketCount = 2, RequiredSlotPosition = "FRONT" };
+        EligibleDispatchCandidate roomy = Eligible("10000000-0000-4000-8000-000000000002", Now.AddMinutes(-5), dearerCost)
+            with { TargetSlots = [5], ExpectedBasketCount = 1, RequiredSlotPosition = "REAR" };
 
-        Assert.Same(tightOlder, ranker.SelectNext([roomyNewer, tightOlder]));
-        Assert.Same(roomyOlder, ranker.SelectNext([tightNewer, roomyOlder]));
+        // 两辆车成本相同（或都算不出），所以由带内层与车号定：agv-a 在前，不论它接的那条挤不挤。
+        Assert.Equal("agv-a", DispatchVehicleOrdering.SelectNext(
+            [RankOffer("agv-b", dearerCost, roomy), RankOffer("agv-a", cheaperCost, tight)]).Vehicle.AgvId);
+        Assert.Equal("agv-a", DispatchVehicleOrdering.SelectNext(
+            [RankOffer("agv-b", dearerCost, tight), RankOffer("agv-a", cheaperCost, roomy)]).Vehicle.AgvId);
     }
+
+    /// <summary>一辆车对某条任务的出价，只填排序层读的那几样。</summary>
+    private static EligibleVehicleOffer RankOffer(string agvId, long? marginalCostMm, EligibleDispatchCandidate candidate) =>
+        new(
+            new FleetVehicle(agvId, $"VK-{agvId}", 1),
+            new DispatchVehicleFacts(
+                $"VK-{agvId}",
+                agvId,
+                new OnboardDispatchFacts(1, [1], true, true, true, true, false),
+                new RiotVehicleObservation(
+                    $"VK-{agvId}", true, true, "IDLE", "MAP-25-WIRE_TO_GATE", 12, 90, "DISCHARGING", 0, Now),
+                Now),
+            candidate,
+            marginalCostMm,
+            Placement: null,
+            DispatchZoneParameterVersion: null);
 
     // ---- helpers ---------------------------------------------------------------------------------
 

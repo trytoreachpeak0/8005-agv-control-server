@@ -43,6 +43,8 @@ public sealed class AuditDatabaseImmutabilityTests
 
     private const string MigrationBefore = "20260919200353_AreaEndAdmissionRevokedSince";
 
+    private const string ThisMigration = "20260920001500_AuditImmutabilityTriggers";
+
     private const string BusinessTable = "BusinessAuditRecords";
     private const string TamperAgain =
         "UPDATE \"BusinessAuditRecords\" SET Action = 'TAMPERED_AGAIN' WHERE Action = 'TAMPERED'";
@@ -497,7 +499,9 @@ public sealed class AuditDatabaseImmutabilityTests
         string[] rowsBefore = await DumpBothTablesAsync(fixture.Connection);
         Assert.Empty(await TriggersAsync(fixture.Connection));
 
-        await fixture.Context.Database.MigrateAsync(Token);
+        // Up to this ticket's migration, not the latest: a later migration's own schema change (control-server#273 added
+        // columns) is not this migration's, and the claim is about what this one adds.
+        await fixture.Context.GetService<IMigrator>().MigrateAsync(ThisMigration, Token);
 
         Assert.Equal(rowsBefore, await DumpBothTablesAsync(fixture.Connection));
         Assert.Equal(

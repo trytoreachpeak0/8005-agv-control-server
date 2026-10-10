@@ -1,0 +1,23 @@
+cs#366 mutations, 2026-09-28T14:41:55.992678, HEAD b0a3d24a322a8849ba8bfb6af85ac697b2e7059d
+=== M3-free-round-keeps-floor (src\ControlServer.Host\Runtime\JourneyRuntimeEngine.OwnOrderRebuild.cs) replacements: 1 (expected 1)
+    diff: 2	2	src/ControlServer.Host/Runtime/JourneyRuntimeEngine.OwnOrderRebuild.cs
+    build exit 0, 0 Error(s)
+    test exit 1; Total tests: 215, Passed: 208, Failed: 7
+    RED ControlServer.Tests.EmergencyReleaseVersusOwnOrderRebuildTests.UnderSomeoneElsesStopAnEmptiedVehicleWhoseOwnOrderIsCancelledIsNotRebuiltAndStopsForAPerson
+    RED ControlServer.Tests.OwnOrderRebuildCargoProofTests.ASnapshotReceivedBeforeTheRecoveryDoesNotCount
+    RED ControlServer.Tests.OwnOrderRebuildCargoProofTests.CargoProvenThenTakenUnderSomeoneElsesStopIsNotRebuilt
+    RED ControlServer.Tests.OwnOrderRebuildCargoProofTests.FaultWindowACargoProvenThenTakenWhileTheVehicleIsHeldIsNotRebuilt
+    RED ControlServer.Tests.OwnOrderRebuildCargoProofTests.WhileTheSessionIsNotReadyOnItsOwnOrderASnapshotDoesNotCountAndReadinessAsksForAFreshOne
+    RED ControlServer.Tests.OwnOrderRebuildCargoProofTests.WhileTheVehicleStaysHeldTheRecordIsWrittenOnceAndTheFirstFreeRoundMovesTheFloor
+    RED ControlServer.Tests.VehicleFaultRecoveryTests.AClearanceWhileTheSessionIsNotReadyOnItsOwnOrderRebuildsOnceTheSessionIsReady(cargo: "loaded")
+    verdict: 7 red, expected 7 -> as expected
+    src clean after restore: ''
+=== M4-stale-request-not-withdrawn (src\ControlServer.Host\Runtime\JourneyRuntimeEngine.OwnOrderRebuild.cs) replacements: 1 (expected 1)
+    diff: 1	1	src/ControlServer.Host/Runtime/JourneyRuntimeEngine.OwnOrderRebuild.cs
+    build exit 0, 0 Error(s)
+    test exit 1; Total tests: 215, Passed: 214, Failed: 1
+    RED ControlServer.Tests.OwnOrderRebuildCargoProofTests.ARequestAnsweredJustBeforeTheDueTimeIsMadeAgainAtTheDueRound
+    verdict: 1 red, expected 1 -> as expected
+    src clean after restore: ''
+=== rebuild after all restores: exit 0, 0 Error(s)
+=== overall: all as expected

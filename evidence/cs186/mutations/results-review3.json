@@ -1,0 +1,51 @@
+{
+  "W3-invalid-first-attempt": {
+    "file": "src/ControlServer.Infrastructure/Persistence/MapRenameHoldWriter.cs",
+    "models": "Making a version active holds its task types whenever the Map has a baseline, pending rename or not (the reviewer's W3).",
+    "diffStat": ".../Persistence/MapRenameHoldWriter.cs             | 22 +++++++++++++++++-----\n 1 file changed, 17 insertions(+), 5 deletions(-)",
+    "buildExit": 1,
+    "testExit": null,
+    "failed": null,
+    "passed": null,
+    "expected": [
+      "TaskTypeStationStartupTests.AFirstStartWithABaselineButNoPendingRenameHoldsNothing",
+      "MapNameBaselineAcceptanceTests.AnActivationWithABaselineButNoPendingRenameHoldsNothing"
+    ],
+    "red": [],
+    "expectedButGreen": [
+      "TaskTypeStationStartupTests.AFirstStartWithABaselineButNoPendingRenameHoldsNothing",
+      "MapNameBaselineAcceptanceTests.AnActivationWithABaselineButNoPendingRenameHoldsNothing"
+    ],
+    "redButNotExpected": [],
+    "where": {}
+  },
+  "W3": {
+    "file": "src/ControlServer.Infrastructure/Persistence/MapRenameHoldWriter.cs",
+    "models": "Making a version active holds its task types whenever the Map has a baseline, pending rename or not (the reviewer's W3).",
+    "diffStat": ".../Persistence/MapRenameHoldWriter.cs             | 22 +++++++++++++++++-----\n 1 file changed, 17 insertions(+), 5 deletions(-)",
+    "buildExit": 0,
+    "testExit": 1,
+    "failed": 2,
+    "passed": 70,
+    "expected": [
+      "TaskTypeStationStartupTests.AFirstStartWithABaselineButNoPendingRenameHoldsNothing",
+      "MapNameBaselineAcceptanceTests.AnActivationWithABaselineButNoPendingRenameHoldsNothing"
+    ],
+    "red": [
+      "TaskTypeStationStartupTests.AFirstStartWithABaselineButNoPendingRenameHoldsNothing",
+      "MapNameBaselineAcceptanceTests.AnActivationWithABaselineButNoPendingRenameHoldsNothing"
+    ],
+    "expectedButGreen": [],
+    "redButNotExpected": [],
+    "where": {
+      "TaskTypeStationStartupTests.AFirstStartWithABaselineButNoPendingRenameHoldsNothing": {
+        "at": "TaskTypeStationStartupTests.cs:248",
+        "message": "Assert.Empty() Failure: Collection was not empty"
+      },
+      "MapNameBaselineAcceptanceTests.AnActivationWithABaselineButNoPendingRenameHoldsNothing": {
+        "at": "MapNameBaselineAcceptanceTests.cs:263",
+        "message": "Assert.DoesNotContain() Failure: Filter matched in collection"
+      }
+    }
+  }
+}

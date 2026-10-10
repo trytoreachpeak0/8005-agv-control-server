@@ -9,6 +9,7 @@
     <FrameworkReference Include="Microsoft.AspNetCore.App" />
   </ItemGroup>
   <ItemGroup>
+    <PackageReference Include="CsCheck" />
     <PackageReference Include="Microsoft.EntityFrameworkCore.Sqlite" />
     <PackageReference Include="Microsoft.NET.Test.Sdk" />
     <PackageReference Include="xunit.v3" />
@@ -48,6 +49,11 @@
     <AssemblyAttribute Include="System.Reflection.AssemblyMetadataAttribute">
       <_Parameter1>ControlServer.FieldOps.Path</_Parameter1>
       <_Parameter2>$(MSBuildProjectDirectory)\..\..\tools\ControlServer.FieldOps\bin\$(Configuration)\$(TargetFramework)\$(RuntimeIdentifier)\ControlServer.FieldOps.exe</_Parameter2>
+    </AssemblyAttribute>
+    <!-- WaitingPointStartupCheckTests runs the host with its migrate-only switch as its own process (control-server#388). -->
+    <AssemblyAttribute Include="System.Reflection.AssemblyMetadataAttribute">
+      <_Parameter1>ControlServer.Host.Path</_Parameter1>
+      <_Parameter2>$(MSBuildProjectDirectory)\..\..\src\ControlServer.Host\bin\$(Configuration)\$(TargetFramework)\$(RuntimeIdentifier)\ControlServer.Host.exe</_Parameter2>
     </AssemblyAttribute>
   </ItemGroup>
 </Project>

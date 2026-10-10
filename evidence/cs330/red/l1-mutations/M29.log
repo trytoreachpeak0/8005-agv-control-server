@@ -1,0 +1,53 @@
+# M29: cancel gate: ignored (a cancel sent while the gate is closed)
+# file: src/ControlServer.Host/Runtime/ForeignOrders/ForeignRunningOrderSupervisor.cs
+# - '        if (!cancelGate.Value.Enabled)\n'
+# + '        if (Environment.TickCount64 < 0 && !cancelGate.Value.Enabled)\n'
+  Determining projects to restore...
+  All projects are up-to-date for restore.
+  ControlServer.Domain -> C:\Users\szy\Desktop\8005-workspace-v2\worktrees\cs330-8005-agv-control-server\src\ControlServer.Domain\bin\Release\net8.0\win-x64\ControlServer.Domain.dll
+  ControlServer.TestDoubles -> C:\Users\szy\Desktop\8005-workspace-v2\worktrees\cs330-8005-agv-control-server\tools\ControlServer.TestDoubles\bin\Release\net8.0\win-x64\ControlServer.TestDoubles.dll
+  ControlServer.Dashboard -> C:\Users\szy\Desktop\8005-workspace-v2\worktrees\cs330-8005-agv-control-server\src\ControlServer.Dashboard\bin\Release\net8.0\win-x64\ControlServer.Dashboard.dll
+  ControlServer.Application -> C:\Users\szy\Desktop\8005-workspace-v2\worktrees\cs330-8005-agv-control-server\src\ControlServer.Application\bin\Release\net8.0\win-x64\ControlServer.Application.dll
+  ControlServer.FakeRiot -> C:\Users\szy\Desktop\8005-workspace-v2\worktrees\cs330-8005-agv-control-server\tools\ControlServer.FakeRiot\bin\Release\net8.0\win-x64\ControlServer.FakeRiot.dll
+  ControlServer.ClockSkewProxy -> C:\Users\szy\Desktop\8005-workspace-v2\worktrees\cs330-8005-agv-control-server\tools\ControlServer.ClockSkewProxy\bin\Release\net8.0\win-x64\ControlServer.ClockSkewProxy.dll
+  ControlServer.ProtocolFaultProxy -> C:\Users\szy\Desktop\8005-workspace-v2\worktrees\cs330-8005-agv-control-server\tools\ControlServer.ProtocolFaultProxy\bin\Release\net8.0\win-x64\ControlServer.ProtocolFaultProxy.dll
+  ControlServer.FakeOnboard -> C:\Users\szy\Desktop\8005-workspace-v2\worktrees\cs330-8005-agv-control-server\tools\ControlServer.FakeOnboard\bin\Release\net8.0\win-x64\ControlServer.FakeOnboard.dll
+  ControlServer.Infrastructure -> C:\Users\szy\Desktop\8005-workspace-v2\worktrees\cs330-8005-agv-control-server\src\ControlServer.Infrastructure\bin\Release\net8.0\win-x64\ControlServer.Infrastructure.dll
+  ControlServer.FieldOps -> C:\Users\szy\Desktop\8005-workspace-v2\worktrees\cs330-8005-agv-control-server\tools\ControlServer.FieldOps\bin\Release\net8.0\win-x64\ControlServer.FieldOps.dll
+  ControlServer.Host -> C:\Users\szy\Desktop\8005-workspace-v2\worktrees\cs330-8005-agv-control-server\src\ControlServer.Host\bin\Release\net8.0\win-x64\ControlServer.Host.dll
+  ControlServer.SchemaConformance -> C:\Users\szy\Desktop\8005-workspace-v2\worktrees\cs330-8005-agv-control-server\tools\ControlServer.SchemaConformance\bin\Release\net8.0\win-x64\ControlServer.SchemaConformance.dll
+  ControlServer.Tests -> C:\Users\szy\Desktop\8005-workspace-v2\worktrees\cs330-8005-agv-control-server\tests\ControlServer.Tests\bin\Release\net8.0\win-x64\ControlServer.Tests.dll
+
+Build succeeded.
+    0 Warning(s)
+    0 Error(s)
+
+Time Elapsed 00:00:04.10
+Test run for C:\Users\szy\Desktop\8005-workspace-v2\worktrees\cs330-8005-agv-control-server\tests\ControlServer.Tests\bin\Release\net8.0\win-x64\ControlServer.Tests.dll (.NETCoreApp,Version=v8.0)
+VSTest version 17.11.1 (x64)
+
+Starting test execution, please wait...
+A total of 1 test files matched the specified pattern.
+  Failed ControlServer.Tests.ForeignRunningOrderTests.Req0164AHeldOrderThatLeavesTheRunningListingWithoutEndingGoesToAPersonAndKeepsHoldingTheVehicle(variant: "cancel-not-authorized-then-suspended") [333 ms]
+  Error Message:
+   Assert.Equal() Failure: Strings differ
+           ↓ (pos 0)
+Expected: "HELD_CANCEL_NOT_AUTHORIZED"
+Actual:   "CANCEL_SENT"
+           ↑ (pos 0)
+  Stack Trace:
+     at ControlServer.Tests.ForeignRunningOrderTests.Req0164AHeldOrderThatLeavesTheRunningListingWithoutEndingGoesToAPersonAndKeepsHoldingTheVehicle(String variant) in C:\Users\szy\Desktop\8005-workspace-v2\worktrees\cs330-8005-agv-control-server\tests\ControlServer.Tests\ForeignRunningOrderTests.cs:line 773
+   at ControlServer.Tests.ForeignRunningOrderTests.Req0164AHeldOrderThatLeavesTheRunningListingWithoutEndingGoesToAPersonAndKeepsHoldingTheVehicle(String variant) in C:\Users\szy\Desktop\8005-workspace-v2\worktrees\cs330-8005-agv-control-server\tests\ControlServer.Tests\ForeignRunningOrderTests.cs:line 815
+--- End of stack trace from previous location ---
+  Failed ControlServer.Tests.ForeignRunningOrderTests.Req0164WithTheCancelGateClosedAForeignOrderIsHeldAndAlarmedAndNeverCancelledUntilTheGateIsOpened [348 ms]
+  Error Message:
+   Assert.Empty() Failure: Collection was not empty
+Collection: [Tuple (Cancel, "order-foreign-0001", "FOREIGN_RUNNING_ORDER_ON_MANAGED_VEHICLE")]
+  Stack Trace:
+     at ControlServer.Tests.ForeignRunningOrderTests.Req0164WithTheCancelGateClosedAForeignOrderIsHeldAndAlarmedAndNeverCancelledUntilTheGateIsOpened() in C:\Users\szy\Desktop\8005-workspace-v2\worktrees\cs330-8005-agv-control-server\tests\ControlServer.Tests\ForeignRunningOrderTests.cs:line 687
+   at ControlServer.Tests.ForeignRunningOrderTests.Req0164WithTheCancelGateClosedAForeignOrderIsHeldAndAlarmedAndNeverCancelledUntilTheGateIsOpened() in C:\Users\szy\Desktop\8005-workspace-v2\worktrees\cs330-8005-agv-control-server\tests\ControlServer.Tests\ForeignRunningOrderTests.cs:line 717
+--- End of stack trace from previous location ---
+
+Failed!  - Failed:     2, Passed:   163, Skipped:     0, Total:   165, Duration: 27 s - ControlServer.Tests.dll (net8.0)
+[xUnit.net 00:00:11.77]     ControlServer.Tests.ForeignRunningOrderTests.Req0164AHeldOrderThatLeavesTheRunningListingWithoutEndingGoesToAPersonAndKeepsHoldingTheVehicle(variant: "cancel-not-authorized-then-suspended") [FAIL]
+[xUnit.net 00:00:12.12]     ControlServer.Tests.ForeignRunningOrderTests.Req0164WithTheCancelGateClosedAForeignOrderIsHeldAndAlarmedAndNeverCancelledUntilTheGateIsOpened [FAIL]

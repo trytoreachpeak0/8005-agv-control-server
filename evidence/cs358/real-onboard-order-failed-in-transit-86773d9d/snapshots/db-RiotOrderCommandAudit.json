@@ -1,0 +1,44 @@
+[
+  {
+    "CommandAuditId": "13fa4be923db468ead6c90f921c47c6c",
+    "CommandType": "OrderHold",
+    "AgvId": "AGV-L2-001",
+    "TargetUpperId": "W2G-589dcdec-7f74-4809-9d85-76ab4daf8b1f-PICKUP-1",
+    "TargetOrderId": "ORDER-000001",
+    "AttemptNumber": 1,
+    "RequestSemanticSha256": "b33b21a912f9f0d7de002b4e7108a1880f82e1fd65d26ab7f66efc207fffe3b9",
+    "IssuedAt": "2026-09-26 16:04:27.8649013+00:00",
+    "Outcome": "Failed",
+    "ReconciledAt": "2026-09-26 16:04:27.9332564+00:00",
+    "ReceiptJson": "{\"reason\":\"VEHICLE_ORDER_FAILED\",\"call\":{\"disposition\":\"Accepted\",\"Operation\":\"OrderHold\",\"Classification\":\"SdkAccepted\",\"HttpStatusCode\":null,\"BusinessCode\":null,\"FailureCategory\":null,\"observedAt\":\"2026-09-26T16:04:27.9257832+00:00\"},\"observation\":{\"kind\":\"Terminal\",\"OrderId\":\"ORDER-000001\",\"OrderState\":4}}",
+    "FaultGeneration": 1
+  },
+  {
+    "CommandAuditId": "0ba671c3bb844526bef6892a57dcd25f",
+    "CommandType": "triggerEmergency",
+    "AgvId": "AGV-L2-001",
+    "TargetUpperId": "vehicle:BROKERX-L2-0001",
+    "TargetOrderId": null,
+    "AttemptNumber": 1,
+    "RequestSemanticSha256": "da6321c9791dbfdecccac85cf5a6336297e9e795b2d572103083dcbfc9ba5f7a",
+    "IssuedAt": "2026-09-26 16:04:27.9937838+00:00",
+    "Outcome": "Pending",
+    "ReconciledAt": "2026-09-26 16:04:28.0183773+00:00",
+    "ReceiptJson": "{\"source\":\"Automatic\",\"requesterIdentity\":null,\"agvId\":\"AGV-L2-001\",\"deviceKey\":\"BROKERX-L2-0001\",\"Reason\":\"STOP_PROOF_MOTION_OBSERVED,STOP_PROOF_POSITION_UNKNOWN,STOP_PROOF_TOO_FEW_SAMPLES\",\"call\":{\"disposition\":\"Accepted\",\"Operation\":\"triggerEmergency\",\"Classification\":\"SdkAccepted\",\"HttpStatusCode\":null,\"BusinessCode\":null,\"FailureCategory\":null,\"observedAt\":\"2026-09-26T16:04:28.0119929\\u002B00:00\"},\"emergencyState\":\"OK\"}",
+    "FaultGeneration": 1
+  },
+  {
+    "CommandAuditId": "31f688e78c344a72b563016d27655166",
+    "CommandType": "triggerEmergency",
+    "AgvId": "AGV-L2-001",
+    "TargetUpperId": "vehicle:BROKERX-L2-0001",
+    "TargetOrderId": null,
+    "AttemptNumber": 2,
+    "RequestSemanticSha256": "6efe9fef1752eca2ee082a308fd9ca5f82f5995d51fba36f6db543a57a29d2f6",
+    "IssuedAt": "2026-09-26 16:04:30.7934288+00:00",
+    "Outcome": "Pending",
+    "ReconciledAt": "2026-09-26 16:04:30.8007925+00:00",
+    "ReceiptJson": "{\"source\":\"Automatic\",\"requesterIdentity\":null,\"agvId\":\"AGV-L2-001\",\"deviceKey\":\"BROKERX-L2-0001\",\"Reason\":\"EMERGENCY_STOP_UNCONFIRMED\",\"call\":{\"disposition\":\"Accepted\",\"Operation\":\"triggerEmergency\",\"Classification\":\"SdkAccepted\",\"HttpStatusCode\":null,\"BusinessCode\":null,\"FailureCategory\":null,\"observedAt\":\"2026-09-26T16:04:30.7986859\\u002B00:00\"},\"emergencyState\":\"OK\"}",
+    "FaultGeneration": 1
+  }
+]

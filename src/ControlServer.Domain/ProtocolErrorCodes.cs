@@ -14,14 +14,20 @@ namespace ControlServer.Domain;
 /// rather than each message against its schema.
 /// </para>
 /// <para>
-/// **This list and the identity beside it name the same candidate.** The 58 values below are
+/// **This list and the identity beside it name the same candidate.** The 62 values below are
 /// <c>$defs/ErrorCode</c> of <c>schemas/common/types.schema.json</c> at protocol candidate manifest
-/// <c>4ac095ad371d3aaa60d7c2e0198cfd64cff5f3068230fc3420e9cdf5616422a7</c>
-/// (<c>status: CONTENT_SNAPSHOT</c>, profile <c>AGV_FULL_PRODUCT</c>, release <c>2.0.0</c>,
-/// <c>protocolVersion: 3</c>), and <see cref="ProtocolCandidateIdentity"/> names that same commit. The
-/// <c>2.0.0</c> candidate appended four: <c>SUBLOT_NOT_IN_DISPATCH_SCOPE</c>,
-/// <c>SUBLOT_BOX_COUNT_UNAVAILABLE</c> and <c>PACKAGE_CAPACITY_UNRESOLVED</c>
-/// (<c>8005-agv-program#93</c>), and <c>OPERATOR_TIMEOUT</c> (<c>8005-agv-program#91</c>).
+/// <c>d5e1a53f1fd61f105a890dc0267e1b0a9ac5ea49f713d2cf730b0f554df9db9e</c>
+/// (<c>status: CONTENT_SNAPSHOT</c>, profile <c>AGV_FULL_PRODUCT</c>, release <c>3.0.0</c>,
+/// <c>protocolVersion: 4</c>, registry <c>1.2.0</c>), and <see cref="ProtocolCandidateIdentity"/>
+/// names that same commit. The <c>2.0.0</c> candidate appended four:
+/// <c>SUBLOT_NOT_IN_DISPATCH_SCOPE</c>, <c>SUBLOT_BOX_COUNT_UNAVAILABLE</c> and
+/// <c>PACKAGE_CAPACITY_UNRESOLVED</c> (<c>8005-agv-program#93</c>), and <c>OPERATOR_TIMEOUT</c>
+/// (<c>8005-agv-program#91</c>). The <c>3.0.0</c> candidate appended four more
+/// (<c>8005-agv-program#146</c> to <c>#150</c>): <c>SLOT_FAULT_DECLARED</c>,
+/// <c>RECOVERY_ACTION_RESULT_NOT_RECONCILED</c>, <c>ONBOARD_FATAL_FAULT_LATCHED</c> and
+/// <c>SLOT_DOOR_LOCK_UNPROVEN_AFTER_EMPTY</c>. Being in this list only means the server recognises
+/// the code; none of the four is emitted yet, and <c>ONBOARD_FATAL_FAULT_LATCHED</c> in particular
+/// is one the vehicle reports and the server must never forgive as a departure-safety reason.
 /// </para>
 /// <para>
 /// **Re-sync this list whenever the protocol's error surface moves**, which from here means either a
@@ -95,7 +101,11 @@ public static class ProtocolErrorCodes
         "SUBLOT_NOT_IN_DISPATCH_SCOPE",
         "SUBLOT_BOX_COUNT_UNAVAILABLE",
         "PACKAGE_CAPACITY_UNRESOLVED",
-        "OPERATOR_TIMEOUT"
+        "OPERATOR_TIMEOUT",
+        "SLOT_FAULT_DECLARED",
+        "RECOVERY_ACTION_RESULT_NOT_RECONCILED",
+        "ONBOARD_FATAL_FAULT_LATCHED",
+        "SLOT_DOOR_LOCK_UNPROVEN_AFTER_EMPTY"
     };
 
     public static bool Contains(string code) => Codes.Contains(code);
@@ -140,6 +150,10 @@ public static class ProtocolErrorCodes
         "OPERATION_RECOVERY_REQUIRED" => "SESSION_RECOVERY_REQUIRED",
         // After a forced mechanical recovery, until its HardwareRecoveryRecord (control-server#137).
         "FORCED_RECOVERY_HARDWARE_RECOVERY_REQUIRED" => "SESSION_RECOVERY_REQUIRED",
+        // A stopped trip with cargo on board handed to the exception recovery session (control-server#345).
+        "CARGO_HANDOFF_REQUIRED" => "SESSION_RECOVERY_REQUIRED",
+        // Held for a repair release after slots settled empty with a door unproven (REQ-0364, control-server#385).
+        "SLOT_DOOR_REPAIR_RELEASE_REQUIRED" => "SESSION_RECOVERY_REQUIRED",
         "RECOVERY_REQUIRED" => "SESSION_RECOVERY_REQUIRED",
 
         // An unmapped code is a bug in this switch, not something to put on the wire. Failing here

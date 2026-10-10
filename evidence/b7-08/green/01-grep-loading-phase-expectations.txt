@@ -1,0 +1,66 @@
+$ git grep -n -i "loadingPhase\|WAITING_STATION_YIELD\|closedReason" -- scripts/ ":!scripts/l2/scenarios/waiting-station-yield*" ":!scripts/l2/scenarios/StationYieldCommon.ps1"
+scripts/l2/README.md:818:    - **装货阶段**（批次7-07，`JourneyRuntimeEngine.ReconcileLoadingPhaseAsync`）：`JourneyRuntimes` 的
+scripts/l2/README.md:819:      `LoadingPhaseState`、`LoadingClosedReason`、`FullSlotPositionsJson` 与它引出的那张车辆业务状态快照是同一次保存
+scripts/l2/README.md:826:      或另一台车离站时停靠 `COMPLETED` 那一次保存。等单车的 `CLOSED/WAITING_STATION_YIELD` 与那张快照是等单车自己下一轮的
+scripts/l2/Test-L2DispatchZoneParameters.ps1:105:foreach ($later in @('CargoHoldingYieldWindow', 'LoadingPhaseClosedReason', 'ZoneParameters', 'StarvationEscalation')) {
+scripts/l2/scenarios/CargoHoldingCommon.ps1:9:**写入边界**（scripts/l2/README.md 第 14 条要的那张表，这一票的那一格）：装货阶段三列（JourneyRuntimes.LoadingPhaseState、
+scripts/l2/scenarios/CargoHoldingCommon.ps1:10:LoadingClosedReason、CargoHoldingStartedAt）与它引出的那一张车辆业务状态快照是**同一次保存**
+scripts/l2/scenarios/CargoHoldingCommon.ps1:11:（JourneyRuntimeEngine.ReconcileLoadingPhaseAsync：先改旅程行，再由发布把发件箱行与旅程行一起存）。所以等到列变了再读快照是
+scripts/l2/scenarios/CargoHoldingCommon.ps1:49:        "SELECT r.JourneyId, r.Stage, r.LoadingPhaseState, r.LoadingClosedReason, r.CargoHoldingStartedAt, " +
+scripts/l2/scenarios/CargoHoldingCommon.ps1:58:    $state = if ($null -eq $Row.LoadingPhaseState -or [string]$Row.LoadingPhaseState -eq '') { 'LOADING(null)' } else { [string]$Row.LoadingPhaseState }
+scripts/l2/scenarios/CargoHoldingCommon.ps1:59:    $reason = if ($null -eq $Row.LoadingClosedReason -or [string]$Row.LoadingClosedReason -eq '') { '' } else { "/$($Row.LoadingClosedReason)" }
+scripts/l2/scenarios/CargoHoldingCommon.ps1:64:function Wait-L2LoadingPhase {
+scripts/l2/scenarios/CargoHoldingCommon.ps1:77:                "SELECT r.JourneyId, r.Stage, r.LoadingPhaseState, r.LoadingClosedReason, r.CargoHoldingStartedAt, " +
+scripts/l2/scenarios/CargoHoldingCommon.ps1:86:            $state = if ($null -eq $v.LoadingPhaseState -or [string]$v.LoadingPhaseState -eq '') { 'LOADING' } else { [string]$v.LoadingPhaseState }
+scripts/l2/scenarios/CargoHoldingCommon.ps1:91:# 发件箱里全部车辆业务状态快照的 loadingPhase，按修订号。
+scripts/l2/scenarios/CargoHoldingCommon.ps1:92:function Get-L2LoadingPhaseSnapshots([object]$Connection) {
+scripts/l2/scenarios/CargoHoldingCommon.ps1:100:            State     = [string]$payload.loadingPhase.state
+scripts/l2/scenarios/CargoHoldingCommon.ps1:101:            Deadline  = if ($null -eq $payload.loadingPhase.cargoHoldingDeadlineAt) { $null } else {
+scripts/l2/scenarios/CargoHoldingCommon.ps1:102:                [DateTimeOffset]::Parse([string]$payload.loadingPhase.cargoHoldingDeadlineAt, [Globalization.CultureInfo]::InvariantCulture) }
+scripts/l2/scenarios/CargoHoldingCommon.ps1:103:            Reason    = if ($null -eq $payload.loadingPhase.closedReason) { $null } else { [string]$payload.loadingPhase.closedReason }
+scripts/l2/scenarios/CargoHoldingCommon.ps1:110:function Format-L2LoadingPhaseSnapshots([object[]]$Snapshots) {
+scripts/l2/scenarios/cargo-holding-disabled-when-append-forbidden.ps1:74:            [string]$row.LoadingPhaseState -eq 'CLOSED' -and [string]$row.LoadingClosedReason -eq 'PLANNED_LOADING_COMPLETE'),
+scripts/l2/scenarios/cargo-holding-disabled-when-append-forbidden.ps1:86:    $all = Get-L2LoadingPhaseSnapshots $connection
+scripts/l2/scenarios/cargo-holding-disabled-when-append-forbidden.ps1:89:    $journal.Observe("loading-phase-snapshots-$Label", (Format-L2LoadingPhaseSnapshots $mine), @{ snapshots = $mine })
+scripts/l2/scenarios/cargo-holding-side-full.ps1:49:$afterA = Wait-L2LoadingPhase -Context $Context -DemandId $a.Id -States @('CARGO_HOLDING_WAIT', 'VEHICLE_FULL', 'CLOSED') `
+scripts/l2/scenarios/cargo-holding-side-full.ps1:53:    ([string]$afterA.LoadingPhaseState -eq 'CARGO_HOLDING_WAIT' -and $null -ne $afterA.CargoHoldingStartedAt -and
+scripts/l2/scenarios/cargo-holding-side-full.ps1:68:$null = Wait-L2LoadingPhase -Context $Context -DemandId $a.Id -States @('LOADING') -Criterion 'phase-loading-again' -TimeoutSeconds 60
+scripts/l2/scenarios/cargo-holding-side-full.ps1:74:            "SELECT r.LoadingPhaseState, r.LoadingClosedReason, r.CargoHoldingStartedAt, r.FullSlotPositionsJson, d.Status AS DemandStatus " +
+scripts/l2/scenarios/cargo-holding-side-full.ps1:80:    -Until { param($v) $null -ne $v -and [string]$v.DemandStatus -eq 'LOADED' -and [string]$v.LoadingPhaseState -eq 'CARGO_HOLDING_WAIT' }
+scripts/l2/scenarios/cargo-holding-side-full.ps1:83:    ($null -ne $afterB -and [string]$afterB.LoadingPhaseState -eq 'CARGO_HOLDING_WAIT' -and
+scripts/l2/scenarios/cargo-holding-side-full.ps1:86:    $(if ($null -eq $afterB) { '(no row)' } else { "$($afterB.LoadingPhaseState) ($($afterB.DemandStatus)), started $($afterB.CargoHoldingStartedAt)" }))
+scripts/l2/scenarios/cargo-holding-side-full.ps1:93:    ([string]$stillWaiting.LoadingPhaseState -eq 'CARGO_HOLDING_WAIT'),
+scripts/l2/scenarios/cargo-holding-side-full.ps1:99:$full = Wait-L2LoadingPhase -Context $Context -DemandId $a.Id -States @('VEHICLE_FULL', 'CLOSED') -Criterion 'phase-full' -TimeoutSeconds 90
+scripts/l2/scenarios/cargo-holding-side-full.ps1:103:    ([string]$full.LoadingPhaseState -in @('VEHICLE_FULL', 'CLOSED') -and
+scripts/l2/scenarios/cargo-holding-side-full.ps1:104:        ([string]$full.LoadingPhaseState -ne 'CLOSED' -or [string]$full.LoadingClosedReason -eq 'VEHICLE_FULL') -and
+scripts/l2/scenarios/cargo-holding-side-full.ps1:110:$closed = Wait-L2LoadingPhase -Context $Context -DemandId $a.Id -States @('CLOSED') -Criterion 'phase-closed' -TimeoutSeconds 120
+scripts/l2/scenarios/cargo-holding-side-full.ps1:113:    ([string]$closed.LoadingPhaseState -eq 'CLOSED' -and [string]$closed.LoadingClosedReason -eq 'VEHICLE_FULL'),
+scripts/l2/scenarios/cargo-holding-side-full.ps1:128:$snapshots = Get-L2LoadingPhaseSnapshots $connection
+scripts/l2/scenarios/cargo-holding-side-full.ps1:129:$journal.Observe('loading-phase-snapshots', (Format-L2LoadingPhaseSnapshots $snapshots), @{ snapshots = $snapshots })
+scripts/l2/scenarios/cargo-holding-timeout.ps1:50:$waiting = Wait-L2LoadingPhase -Context $Context -DemandId $a.Id -States @('CARGO_HOLDING_WAIT', 'VEHICLE_FULL', 'CLOSED') `
+scripts/l2/scenarios/cargo-holding-timeout.ps1:54:    ([string]$waiting.LoadingPhaseState -eq 'CARGO_HOLDING_WAIT' -and $null -ne $waiting.CargoHoldingStartedAt -and
+scripts/l2/scenarios/cargo-holding-timeout.ps1:76:    ($observedAt -lt $deadline -and [string]$mid.LoadingPhaseState -eq 'CARGO_HOLDING_WAIT' -and
+scripts/l2/scenarios/cargo-holding-timeout.ps1:84:$closed = Wait-L2LoadingPhase -Context $Context -DemandId $a.Id -States @('CLOSED') -Criterion 'phase-closed' -TimeoutSeconds 90
+scripts/l2/scenarios/cargo-holding-timeout.ps1:85:$closedSnapshot = @((Get-L2LoadingPhaseSnapshots $connection) | Where-Object { $_.State -eq 'CLOSED' }) | Select-Object -First 1
+scripts/l2/scenarios/cargo-holding-timeout.ps1:92:    ([string]$closed.LoadingPhaseState -eq 'CLOSED' -and [string]$closed.LoadingClosedReason -eq 'CARGO_HOLDING_TIMEOUT' -and
+scripts/l2/scenarios/cargo-holding-timeout.ps1:119:$snapshots = Get-L2LoadingPhaseSnapshots $connection
+scripts/l2/scenarios/cargo-holding-timeout.ps1:120:$journal.Observe('loading-phase-snapshots', (Format-L2LoadingPhaseSnapshots $snapshots), @{ snapshots = $snapshots })
+scripts/l2/scenarios/vehicle-full-ignores-oversized-and-gated.ps1:21:Batch7LoadingPhaseDispatchTests.OnlyOwnCargoVerdictsMarkASideAndEachSideOnce 守。
+scripts/l2/scenarios/vehicle-full-ignores-oversized-and-gated.ps1:53:            [string]$row.LoadingPhaseState -eq 'CARGO_HOLDING_WAIT' -and [string]$row.FullSlotPositionsJson -ceq '["FRONT"]'),
+scripts/l2/scenarios/vehicle-full-ignores-oversized-and-gated.ps1:67:$waiting = Wait-L2LoadingPhase -Context $Context -DemandId $a.Id -States @('CARGO_HOLDING_WAIT', 'VEHICLE_FULL', 'CLOSED') `
+scripts/l2/scenarios/vehicle-full-ignores-oversized-and-gated.ps1:71:    ([string]$waiting.LoadingPhaseState -eq 'CARGO_HOLDING_WAIT' -and [string]$waiting.FullSlotPositionsJson -ceq '["FRONT"]'),
+scripts/l2/scenarios/vehicle-full-still-appends-before-departure.ps1:54:            "SELECT r.Stage, r.LoadingPhaseState, r.LoadingClosedReason, r.FullSlotPositionsJson, d.Status AS DemandStatus " +
+scripts/l2/scenarios/vehicle-full-still-appends-before-departure.ps1:60:    -Until { param($v) $null -ne $v -and [string]$v.DemandStatus -eq 'LOADED' -and [string]$v.LoadingPhaseState -eq 'CARGO_HOLDING_WAIT' }
+scripts/l2/scenarios/vehicle-full-still-appends-before-departure.ps1:63:    ($null -ne $waiting -and [string]$waiting.LoadingPhaseState -eq 'CARGO_HOLDING_WAIT' -and
+scripts/l2/scenarios/vehicle-full-still-appends-before-departure.ps1:66:    $(if ($null -eq $waiting) { '(no row)' } else { "$($waiting.Stage) $($waiting.LoadingPhaseState) ($($waiting.DemandStatus)), $($waiting.FullSlotPositionsJson)" }))
+scripts/l2/scenarios/vehicle-full-still-appends-before-departure.ps1:71:$full = Wait-L2LoadingPhase -Context $Context -DemandId $a.Id -States @('VEHICLE_FULL', 'CLOSED') -Criterion 'phase-full' -TimeoutSeconds 60
+scripts/l2/scenarios/vehicle-full-still-appends-before-departure.ps1:74:    ([string]$full.LoadingPhaseState -eq 'VEHICLE_FULL' -and [string]$full.Stage -eq 'AwaitingStationDeparture'),
+scripts/l2/scenarios/vehicle-full-still-appends-before-departure.ps1:116:    (($phasesUntilJoined -join ',') -ceq 'VEHICLE_FULL' -and [string]$fullAfterJoin.LoadingPhaseState -eq 'VEHICLE_FULL'),
+scripts/l2/scenarios/vehicle-full-still-appends-before-departure.ps1:131:$closed = Wait-L2LoadingPhase -Context $Context -DemandId $a.Id -States @('CLOSED') -Criterion 'phase-closed' -TimeoutSeconds 180
+scripts/l2/scenarios/vehicle-full-still-appends-before-departure.ps1:134:    ($loadedE -eq 'LOADED' -and [string]$closed.LoadingPhaseState -eq 'CLOSED' -and [string]$closed.LoadingClosedReason -eq 'VEHICLE_FULL'),
+scripts/l2/scenarios/vehicle-full-still-appends-before-departure.ps1:137:$snapshots = Get-L2LoadingPhaseSnapshots $connection
+scripts/l2/scenarios/vehicle-full-still-appends-before-departure.ps1:138:$journal.Observe('loading-phase-snapshots', (Format-L2LoadingPhaseSnapshots $snapshots), @{ snapshots = $snapshots })
+scripts/l2/scenarios/vehicle-full-still-appends-before-departure.ps1:148:    'a FULL, then neither WAIT nor LOADING', "$(Format-L2LoadingPhaseSnapshots $snapshots)")
+
+$ git grep -n "vehicleBusinessStateRevision\|VehicleBusinessRevision" -- scripts/
+scripts/l2/scenarios/CargoHoldingCommon.ps1:99:            Revision  = [long]$payload.vehicleBusinessStateRevision

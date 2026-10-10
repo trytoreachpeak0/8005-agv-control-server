@@ -1,0 +1,11 @@
+ok    without a block: a commit between two reads gives the old cycle next to the new hold (the CI red) -> EN_ROUTE | holds=1
+ok    inside a block: a commit between the reads is seen by none of them, across tables -> S1 | 1 | S1
+ok    the writer committed while the block was open (WAL: a read transaction holds no writer up) -> step=2
+ok    the next block sees what was committed between the two (the transaction was ended) -> S2 | 2
+ok    a throwing block rethrows its own error -> threw: probe failed
+ok    after a throwing block, the next block opens and sees the newer commit -> S3 | 3
+ok    after a block, plain reads are back in autocommit and see each commit -> S3 -> S4
+BAD   a nested block is refused and the outer snapshot holds after it -> threw: Exception calling "ExecuteNonQuery" with "0" argument(s): "SQLite Error 1: 'cannot commit - no transaction is active'."
+ok    after the outer block, the next one sees the commit made inside it -> S5
+L2ReadSnapshot self-check: 1 of 9 cases came out the wrong way.
+exit=1

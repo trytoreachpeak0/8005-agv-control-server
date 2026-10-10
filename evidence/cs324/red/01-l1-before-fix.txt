@@ -1,0 +1,81 @@
+Test run for C:\Users\szy\Desktop\8005-workspace-v2\worktrees\cs324-8005-agv-control-server\tests\ControlServer.Tests\bin\Release\net8.0\win-x64\ControlServer.Tests.dll (.NETCoreApp,Version=v8.0)
+VSTest version 17.11.1 (x64)
+
+Starting test execution, please wait...
+A total of 1 test files matched the specified pattern.
+[xUnit.net 00:00:08.12]     ControlServer.Tests.JourneyRuntimeWorkerLoadCancellationBeforeSublotTests.ACancellationAfterTheDeadlineClosedTheJourneyIsRejectedAsStale [FAIL]
+  Failed ControlServer.Tests.JourneyRuntimeWorkerLoadCancellationBeforeSublotTests.ACancellationAfterTheDeadlineClosedTheJourneyIsRejectedAsStale [378 ms]
+  Error Message:
+   Assert.Equal() Failure: Strings differ
+           ↓ (pos 0)
+Expected: "WORKLIST_REVISION_STALE"
+Actual:   "ACTION_NOT_ALLOWED_IN_STATE"
+           ↑ (pos 0)
+  Stack Trace:
+     at ControlServer.Tests.JourneyRuntimeWorkerLoadCancellationBeforeSublotTests.ACancellationAfterTheDeadlineClosedTheJourneyIsRejectedAsStale() in C:\Users\szy\Desktop\8005-workspace-v2\worktrees\cs324-8005-agv-control-server\tests\ControlServer.Tests\JourneyRuntimeWorkerLoadCancellationBeforeSublotTests.cs:line 589
+   at ControlServer.Tests.JourneyRuntimeWorkerLoadCancellationBeforeSublotTests.ACancellationAfterTheDeadlineClosedTheJourneyIsRejectedAsStale() in C:\Users\szy\Desktop\8005-workspace-v2\worktrees\cs324-8005-agv-control-server\tests\ControlServer.Tests\JourneyRuntimeWorkerLoadCancellationBeforeSublotTests.cs:line 589
+   at ControlServer.Tests.JourneyRuntimeWorkerLoadCancellationBeforeSublotTests.ACancellationAfterTheDeadlineClosedTheJourneyIsRejectedAsStale() in C:\Users\szy\Desktop\8005-workspace-v2\worktrees\cs324-8005-agv-control-server\tests\ControlServer.Tests\JourneyRuntimeWorkerLoadCancellationBeforeSublotTests.cs:line 589
+--- End of stack trace from previous location ---
+[xUnit.net 00:00:09.84]     ControlServer.Tests.JourneyRuntimeWorkerLoadCancellationBeforeSublotTests.ASublotEnteredAfterTheDeadlineClosedTheJourneyIsRejectedAsStale [FAIL]
+[xUnit.net 00:00:10.35]     ControlServer.Tests.StopEndedJourneyContinuesTests.TheNextStopsWorklistStartsAboveTheEmptyOne [FAIL]
+  Failed ControlServer.Tests.JourneyRuntimeWorkerLoadCancellationBeforeSublotTests.ASublotEnteredAfterTheDeadlineClosedTheJourneyIsRejectedAsStale [206 ms]
+  Error Message:
+   Assert.Single() Failure: The collection was empty
+  Stack Trace:
+     at ControlServer.Tests.JourneyRuntimeWorkerLoadCancellationBeforeSublotTests.ASublotEnteredAfterTheDeadlineClosedTheJourneyIsRejectedAsStale() in C:\Users\szy\Desktop\8005-workspace-v2\worktrees\cs324-8005-agv-control-server\tests\ControlServer.Tests\JourneyRuntimeWorkerLoadCancellationBeforeSublotTests.cs:line 506
+   at ControlServer.Tests.JourneyRuntimeWorkerLoadCancellationBeforeSublotTests.ASublotEnteredAfterTheDeadlineClosedTheJourneyIsRejectedAsStale() in C:\Users\szy\Desktop\8005-workspace-v2\worktrees\cs324-8005-agv-control-server\tests\ControlServer.Tests\JourneyRuntimeWorkerLoadCancellationBeforeSublotTests.cs:line 518
+   at ControlServer.Tests.JourneyRuntimeWorkerLoadCancellationBeforeSublotTests.ASublotEnteredAfterTheDeadlineClosedTheJourneyIsRejectedAsStale() in C:\Users\szy\Desktop\8005-workspace-v2\worktrees\cs324-8005-agv-control-server\tests\ControlServer.Tests\JourneyRuntimeWorkerLoadCancellationBeforeSublotTests.cs:line 518
+--- End of stack trace from previous location ---
+  Failed ControlServer.Tests.StopEndedJourneyContinuesTests.TheNextStopsWorklistStartsAboveTheEmptyOne [8 s]
+  Error Message:
+   Assert.Single() Failure: The collection did not contain any matching items
+Expected:   (predicate expression)
+Collection: [Snapshot { MessageType = CurrentStopWorklistSnapshot, MessageId = 362d6740-b2af-d653-a06b-dd961734f5cc, Revision = 1, Payload = {"stationId":"N1-1","worklistRevision":1,"operationSessionId":"7e7ee0e2-5b9f-0e52-a69a-df22d71c836a","stationDepartureDeadlineAt":null,"items":[{"demandId":"10000000-0000-4000-8000-000000000001","transportDemandKey":"SUBLOT-001|WIRE_TO_GATE","sublot":"SUBLOT-001","workType":"WIRE_TO_GATE","stopRole":"PICKUP","expectedBasketCount":2}]} }, Snapshot { MessageType = CurrentStopWorklistSnapshot, MessageId = d842bf82-75ed-8958-a817-135a5e98eaa4, Revision = 2, Payload = {"stationId":"N1-2","worklistRevision":2,"operationSessionId":"a4f2ff71-aaf8-7350-a4f1-6bbb25a3b015","stationDepartureDeadlineAt":null,"items":[{"demandId":"10000000-0000-4000-8000-000000000002","transportDemandKey":"SUBLOT-002|WIRE_TO_GATE","sublot":"SUBLOT-002","workType":"WIRE_TO_GATE","stopRole":"PICKUP","expectedBasketCount":2}]} }, Snapshot { MessageType = CurrentStopWorklistSnapshot, MessageId = 28e480a6-0e6a-cf5d-97b4-3352d8391cd0, Revision = 4, Payload = {"stationId":"\u5173\u5361","worklistRevision":4,"operationSessionId":"7e7ee0e2-5b9f-0e52-a69a-df22d71c836a","stationDepartureDeadlineAt":null,"items":[{"demandId":"10000000-0000-4000-8000-000000000001","transportDemandKey":"SUBLOT-001|WIRE_TO_GATE","sublot":"SUBLOT-001","workType":"WIRE_TO_GATE","stopRole":"DROPOFF","expectedBasketCount":2}]} }]
+  Stack Trace:
+     at ControlServer.Tests.StopEndedJourneyContinuesTests.TheNextStopsWorklistStartsAboveTheEmptyOne() in C:\Users\szy\Desktop\8005-workspace-v2\worktrees\cs324-8005-agv-control-server\tests\ControlServer.Tests\StopEndedJourneyContinuesTests.cs:line 118
+   at ControlServer.Tests.StopEndedJourneyContinuesTests.TheNextStopsWorklistStartsAboveTheEmptyOne() in C:\Users\szy\Desktop\8005-workspace-v2\worktrees\cs324-8005-agv-control-server\tests\ControlServer.Tests\StopEndedJourneyContinuesTests.cs:line 125
+--- End of stack trace from previous location ---
+[xUnit.net 00:00:12.71]     ControlServer.Tests.StopEndedJourneyContinuesTests.AnEndedStopTheJourneyLeavesWithCargoSendsTheVehicleAnEmptyWorklist [FAIL]
+  Failed ControlServer.Tests.StopEndedJourneyContinuesTests.AnEndedStopTheJourneyLeavesWithCargoSendsTheVehicleAnEmptyWorklist [2 s]
+  Error Message:
+   Assert.Single() Failure: The collection did not contain any matching items
+Expected:   (predicate expression)
+Collection: [Snapshot { MessageType = CurrentStopWorklistSnapshot, MessageId = 362d6740-b2af-d653-a06b-dd961734f5cc, Revision = 1, Payload = {"stationId":"N1-1","worklistRevision":1,"operationSessionId":"7e7ee0e2-5b9f-0e52-a69a-df22d71c836a","stationDepartureDeadlineAt":null,"items":[{"demandId":"10000000-0000-4000-8000-000000000001","transportDemandKey":"SUBLOT-001|WIRE_TO_GATE","sublot":"SUBLOT-001","workType":"WIRE_TO_GATE","stopRole":"PICKUP","expectedBasketCount":2}]} }, Snapshot { MessageType = CurrentStopWorklistSnapshot, MessageId = d842bf82-75ed-8958-a817-135a5e98eaa4, Revision = 2, Payload = {"stationId":"N1-2","worklistRevision":2,"operationSessionId":"a4f2ff71-aaf8-7350-a4f1-6bbb25a3b015","stationDepartureDeadlineAt":null,"items":[{"demandId":"10000000-0000-4000-8000-000000000002","transportDemandKey":"SUBLOT-002|WIRE_TO_GATE","sublot":"SUBLOT-002","workType":"WIRE_TO_GATE","stopRole":"PICKUP","expectedBasketCount":2}]} }]
+  Stack Trace:
+     at ControlServer.Tests.StopEndedJourneyContinuesTests.AnEndedStopTheJourneyLeavesWithCargoSendsTheVehicleAnEmptyWorklist() in C:\Users\szy\Desktop\8005-workspace-v2\worktrees\cs324-8005-agv-control-server\tests\ControlServer.Tests\StopEndedJourneyContinuesTests.cs:line 58
+   at ControlServer.Tests.StopEndedJourneyContinuesTests.AnEndedStopTheJourneyLeavesWithCargoSendsTheVehicleAnEmptyWorklist() in C:\Users\szy\Desktop\8005-workspace-v2\worktrees\cs324-8005-agv-control-server\tests\ControlServer.Tests\StopEndedJourneyContinuesTests.cs:line 94
+--- End of stack trace from previous location ---
+[xUnit.net 00:00:15.03]     ControlServer.Tests.StopEndedJourneyContinuesTests.ASublotEnteredAfterTheStopEndedIsRejectedAsStale [FAIL]
+  Failed ControlServer.Tests.StopEndedJourneyContinuesTests.ASublotEnteredAfterTheStopEndedIsRejectedAsStale [2 s]
+  Error Message:
+   Assert.Single() Failure: The collection was empty
+  Stack Trace:
+     at ControlServer.Tests.StopEndedJourneyContinuesTests.ASublotEnteredAfterTheStopEndedIsRejectedAsStale() in C:\Users\szy\Desktop\8005-workspace-v2\worktrees\cs324-8005-agv-control-server\tests\ControlServer.Tests\StopEndedJourneyContinuesTests.cs:line 196
+   at ControlServer.Tests.StopEndedJourneyContinuesTests.ASublotEnteredAfterTheStopEndedIsRejectedAsStale() in C:\Users\szy\Desktop\8005-workspace-v2\worktrees\cs324-8005-agv-control-server\tests\ControlServer.Tests\StopEndedJourneyContinuesTests.cs:line 208
+   at ControlServer.Tests.StopEndedJourneyContinuesTests.ASublotEnteredAfterTheStopEndedIsRejectedAsStale() in C:\Users\szy\Desktop\8005-workspace-v2\worktrees\cs324-8005-agv-control-server\tests\ControlServer.Tests\StopEndedJourneyContinuesTests.cs:line 208
+--- End of stack trace from previous location ---
+[xUnit.net 00:00:17.15]     ControlServer.Tests.StopEndedJourneyContinuesTests.ACancellationAfterTheStopEndedIsRejectedAsStale [FAIL]
+  Failed ControlServer.Tests.StopEndedJourneyContinuesTests.ACancellationAfterTheStopEndedIsRejectedAsStale [2 s]
+  Error Message:
+   Assert.Equal() Failure: Strings differ
+           ↓ (pos 0)
+Expected: "WORKLIST_REVISION_STALE"
+Actual:   "ACTION_NOT_ALLOWED_IN_STATE"
+           ↑ (pos 0)
+  Stack Trace:
+     at ControlServer.Tests.StopEndedJourneyContinuesTests.ACancellationAfterTheStopEndedIsRejectedAsStale() in C:\Users\szy\Desktop\8005-workspace-v2\worktrees\cs324-8005-agv-control-server\tests\ControlServer.Tests\StopEndedJourneyContinuesTests.cs:line 240
+   at ControlServer.Tests.StopEndedJourneyContinuesTests.ACancellationAfterTheStopEndedIsRejectedAsStale() in C:\Users\szy\Desktop\8005-workspace-v2\worktrees\cs324-8005-agv-control-server\tests\ControlServer.Tests\StopEndedJourneyContinuesTests.cs:line 240
+   at ControlServer.Tests.StopEndedJourneyContinuesTests.ACancellationAfterTheStopEndedIsRejectedAsStale() in C:\Users\szy\Desktop\8005-workspace-v2\worktrees\cs324-8005-agv-control-server\tests\ControlServer.Tests\StopEndedJourneyContinuesTests.cs:line 240
+--- End of stack trace from previous location ---
+[xUnit.net 00:00:19.20]     ControlServer.Tests.StopEndedJourneyContinuesTests.AfterAReconnectTheEmptyWorklistIsReplayedAndTheOldOneIsNot [FAIL]
+  Failed ControlServer.Tests.StopEndedJourneyContinuesTests.AfterAReconnectTheEmptyWorklistIsReplayedAndTheOldOneIsNot [2 s]
+  Error Message:
+   Assert.Single() Failure: The collection did not contain any matching items
+Expected:   (predicate expression)
+Collection: [Snapshot { MessageType = CurrentStopWorklistSnapshot, MessageId = 362d6740-b2af-d653-a06b-dd961734f5cc, Revision = 1, Payload = {"stationId":"N1-1","worklistRevision":1,"operationSessionId":"7e7ee0e2-5b9f-0e52-a69a-df22d71c836a","stationDepartureDeadlineAt":null,"items":[{"demandId":"10000000-0000-4000-8000-000000000001","transportDemandKey":"SUBLOT-001|WIRE_TO_GATE","sublot":"SUBLOT-001","workType":"WIRE_TO_GATE","stopRole":"PICKUP","expectedBasketCount":2}]} }, Snapshot { MessageType = CurrentStopWorklistSnapshot, MessageId = d842bf82-75ed-8958-a817-135a5e98eaa4, Revision = 2, Payload = {"stationId":"N1-2","worklistRevision":2,"operationSessionId":"a4f2ff71-aaf8-7350-a4f1-6bbb25a3b015","stationDepartureDeadlineAt":null,"items":[{"demandId":"10000000-0000-4000-8000-000000000002","transportDemandKey":"SUBLOT-002|WIRE_TO_GATE","sublot":"SUBLOT-002","workType":"WIRE_TO_GATE","stopRole":"PICKUP","expectedBasketCount":2}]} }]
+  Stack Trace:
+     at ControlServer.Tests.StopEndedJourneyContinuesTests.AfterAReconnectTheEmptyWorklistIsReplayedAndTheOldOneIsNot() in C:\Users\szy\Desktop\8005-workspace-v2\worktrees\cs324-8005-agv-control-server\tests\ControlServer.Tests\StopEndedJourneyContinuesTests.cs:line 138
+   at ControlServer.Tests.StopEndedJourneyContinuesTests.AfterAReconnectTheEmptyWorklistIsReplayedAndTheOldOneIsNot() in C:\Users\szy\Desktop\8005-workspace-v2\worktrees\cs324-8005-agv-control-server\tests\ControlServer.Tests\StopEndedJourneyContinuesTests.cs:line 155
+--- End of stack trace from previous location ---
+
+Failed!  - Failed:     7, Passed:    25, Skipped:     0, Total:    32, Duration: 16 s - ControlServer.Tests.dll (net8.0)

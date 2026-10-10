@@ -21,7 +21,12 @@ namespace ControlServer.Host.Dashboard;
 /// 向车要的（<c>OnboardMessageProcessor</c>）；读数之后车又报告这个仓变了、新读数还没到的，如实标出来。
 /// </para>
 /// <para>
-/// 只读：不写任何行，不下发任何消息，不改阻塞看板的升级分档。判定表单与写接口属于 <c>protocol-v3.0.0</c> 的票（program#115）。
+/// 每行还带出这个仓在当前装卸上最近的一次人工判故障（REQ-0359）：状态、判定时刻，车载端拒绝时它给的原因。数据取自判定接口
+/// （control-server#383）落的判定记录，这里只读，不另算。判定的入口是看板的「人工判故障」动作（control-server#384），
+/// 它把提交转给判定接口；这一行在车载端撤下告警之前一直在，判定状态就标在行上。
+/// </para>
+/// <para>
+/// 只读：不写任何行，不下发任何消息，不改阻塞看板的升级分档。
 /// </para>
 /// </remarks>
 internal sealed class ExpectedActionOverdueQueryEndpoint : IDashboardQueryEndpoint
@@ -64,6 +69,7 @@ internal sealed class ExpectedActionOverdueQueryEndpoint : IDashboardQueryEndpoi
             }
             JourneyContext journey = await JourneyAsync(dbContext, vehicle.AgvId, cancellationToken);
             SafetyReadings readings = await SafetyReadingsAsync(dbContext, vehicle.AgvId, cancellationToken);
+            Declarations declarations = await DeclarationsAsync(dbContext, vehicle.AgvId, cancellationToken);
             foreach (OnboardAlarmEntry alarm in overdue)
             {
                 int slot = alarm.PhysicalSlotNumber!.Value;
@@ -78,7 +84,8 @@ internal sealed class ExpectedActionOverdueQueryEndpoint : IDashboardQueryEndpoi
                     raisedAt = alarm.RaisedAt,
                     waitedSeconds = (long)(_options.Threshold + sinceOverdue).TotalSeconds,
                     stationTimeoutDoorNotClosed = journey.StationTimeoutDoorNotClosed,
-                    readings = readings.For(slot)
+                    readings = readings.For(slot),
+                    declaration = declarations.For(slot)
                 });
             }
         }
@@ -121,6 +128,92 @@ internal sealed class ExpectedActionOverdueQueryEndpoint : IDashboardQueryEndpoi
             JourneyRuntimeStage.AwaitingUnloadResult => new JourneyContext(runtime.GateStationId, "UNLOAD", stationTimeout),
             _ => new JourneyContext(null, null, stationTimeout)
         };
+    }
+
+    /// <summary>
+    /// 这台车当前装卸上的人工判故障。「当前装卸」与判定接口认的是同一个（<c>SlotFaultDeclarationService</c>）：在途旅程及其需求的
+    /// 各次装卸里还在进行的那一次；没有进行中的，就是最近的那一次——判定生效后那次装卸进 <c>RecoveryRequired</c>，不再进行，
+    /// 行上仍要标「已生效」。别的装卸上的判定不替这一行说话。
+    /// </summary>
+    private static async Task<Declarations> DeclarationsAsync(
+        ControlServerDbContext dbContext, string agvId, CancellationToken cancellationToken)
+    {
+        JourneyRuntimeRow[] journeys = await dbContext.JourneyRuntimes.AsNoTracking()
+            .Where(row => row.AgvId == agvId && row.Stage != JourneyRuntimeStage.Completed)
+            .ToArrayAsync(cancellationToken);
+        string[] journeyIds = [.. journeys.Select(row => row.JourneyId)];
+        JourneyDemandRow[] members = await dbContext.Set<JourneyDemandRow>().AsNoTracking()
+            .Where(row => journeyIds.Contains(row.JourneyId) && row.RemovedAt == null)
+            .ToArrayAsync(cancellationToken);
+        string[] attempts =
+        [
+            .. journeys.SelectMany(row => new[] { row.LoadSlotOperationAttemptId, row.UnloadSlotOperationAttemptId })
+                .Concat(members.SelectMany(row => new[] { row.LoadSlotOperationAttemptId, row.UnloadSlotOperationAttemptId }))
+                .Where(attempt => attempt is not null)
+                .Select(attempt => attempt!)
+                .Distinct(StringComparer.Ordinal)
+        ];
+        StationOperationRow[] operations = await dbContext.StationOperations.AsNoTracking()
+            .Where(row => attempts.Contains(row.SlotOperationAttemptId))
+            .ToArrayAsync(cancellationToken);
+        // Ordered in memory: SQLite cannot ORDER BY a DateTimeOffset.
+        StationOperationRow[] latestFirst = [.. operations.OrderByDescending(row => row.CreatedAt)];
+        StationOperationRow? current = latestFirst.FirstOrDefault(row => row.Status == StationOperationStatus.Prepared)
+                                       ?? latestFirst.FirstOrDefault();
+        if (current is null)
+        {
+            return Declarations.None;
+        }
+        SlotFaultDeclarationRow[] rows = await dbContext.Set<SlotFaultDeclarationRow>().AsNoTracking()
+            .Where(row => row.AgvId == agvId && row.SlotOperationAttemptId == current.SlotOperationAttemptId)
+            .ToArrayAsync(cancellationToken);
+        return new Declarations(rows);
+    }
+
+    private sealed class Declarations(IReadOnlyList<SlotFaultDeclarationRow> rows)
+    {
+        public static Declarations None { get; } = new([]);
+
+        /// <summary>这个仓最近的一次判定；没有时为 null，看板给出判定入口。</summary>
+        public object? For(int slot)
+        {
+            // Ordered in memory: SQLite cannot ORDER BY a DateTimeOffset.
+            SlotFaultDeclarationRow? latest = rows
+                .Where(row => row.SlotNo == slot)
+                .OrderByDescending(row => row.DeclaredAt)
+                .FirstOrDefault();
+            if (latest is null)
+            {
+                return null;
+            }
+            string? reasonCode = null;
+            string? displayMessage = null;
+            if (latest.ResultProblemJson is string problemJson)
+            {
+                using JsonDocument problem = JsonDocument.Parse(problemJson);
+                reasonCode = problem.RootElement.TryGetProperty("reasonCode", out JsonElement code)
+                             && code.ValueKind == JsonValueKind.String
+                    ? code.GetString()
+                    : null;
+                displayMessage = problem.RootElement.TryGetProperty("displayMessage", out JsonElement message)
+                                 && message.ValueKind == JsonValueKind.String
+                    ? message.GetString()
+                    : null;
+            }
+            return new
+            {
+                state = latest.State,
+                declaredAt = latest.DeclaredAt,
+                administratorId = latest.AdministratorId,
+                faultCategory = latest.FaultCategory,
+                resultReceivedAt = latest.ResultReceivedAt,
+                reasonCode,
+                displayMessage,
+                // 这次装卸上有没有车载端放弃了应答的判定（control-server#481）。有的话装货取消一直被挡，而行上只显示最近一次
+                // 判定：之后再判、车回 NOT_APPLICABLE 时，那一格也要说出这件事。按整次装卸算，因为取消挡的是整次装卸。
+                unreconciledOnOperation = rows.Any(row => row.State == SlotFaultDeclarationStates.Unreconciled)
+            };
+        }
     }
 
     /// <summary>

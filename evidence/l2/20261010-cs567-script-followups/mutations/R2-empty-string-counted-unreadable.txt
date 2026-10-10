@@ -1,0 +1,21 @@
+ok    A1 fixture: a box that read back empty is typed again, journaled, then submitted once
+ok    A2 fixture: a box that changed between typing and submit is typed again, not submitted with the wrong text
+ok    A3 fixture: a box that never reads back the sublot ends RIG_FIXTURE after 3 typings, nothing submitted
+ok    A4 product: a refused submit fails PRODUCT_REFUSED with box text, code and time, and is not submitted again
+ok    A5 product: a refusal logged before the submit is not this submit's; the operation is returned
+ok    A6 product: a sublot the server rejected is found with its reason as the code; one logged before the submit is not
+ok    B1 fixture: not found, then throwing, then AT_WAITING_POINT -- re-read, both failures journaled, value returned
+ok    B2 fixture: unreadable on all 3 reads is reported unreadable with its reason, never as a value
+ok    B3 product: a wrong value read is returned at once, not re-read
+ok    B4 product: an empty string read is the product's value, returned at once, not re-read
+ok    B5 scenario: g3-waiting-point-idle-return.ps1 parses
+ok    B6 scenario: the held window reads through Read-L2UiaItemStatus and its Until fires on unreadable or a read value other than AT_WAITING_POINT
+ok    B7 scenario: G3-12-07 judges the held window's reading ($heldReading.Readable and $heldAtPoint), not the first one
+ok    B8 scenario: G3-12-03 needs the held reading readable, and $heldAtPoint is never AT_WAITING_POINT when it is not
+ok    C1 scripts touched by control-server#567 parse
+ok    C2 scenario: an unreadable ChargingStatus in the charger window is recorded unreadable, not as a $null value
+ok    C3 scenario: the charger window still ends only on CanSubmit, and G3-13-03 reads only CanSubmit from it
+ok    D1 g3-unable-to-charge-field-confirmation.ps1 parses and has the G3-13-27 hold
+ok    D2 scenario: an unreadable UnableToChargeStatus read is recorded unreadable, not as an empty value
+BAD   D3 scenario: G3-13-27 passes only on every read readable and CONFIRMED; an unreadable read fails it as unreadable -> reads CONFIRMED,,CONFIRMED -> {"Id":"G3-13-27","Pass":false,"Actual":"3 reads, 1 not CONFIRMED (first: ''), 1 unreadable (first: '')"}
+1 case(s) came out the other way.

@@ -10,6 +10,13 @@ public sealed class FakeRiotSeed
     public string VehicleKey { get; set; } = "BROKERX-0c20ff0600d644869a6a80c186065d85";
     public string MapIdentity { get; set; } = "老厂前线new";
     public int MapId { get; set; } = 25;
+
+    /// <summary>
+    /// The Map's display name in RIoT's Map list (control-server#186). Deliberately its own setting rather than
+    /// <see cref="MapIdentity"/>, which is the vehicles' reported <c>CurrentMap</c>: on site the two are not the same
+    /// literal either (map 26 is 「老厂前线new_wk」 in the list while its vehicles report 「老厂前线new」).
+    /// </summary>
+    public string MapName { get; set; } = "老厂前线new_wk";
     public int StartStationId { get; set; } = 210;
     public int BatteryPercent { get; set; } = 80;
     public string BatteryState { get; set; } = "NO_CHARGE";
@@ -42,7 +49,11 @@ public sealed class FakeRiotSeed
     {
         ["11"] = 1,
         ["12"] = 3,
-        ["210"] = 5
+        ["210"] = 5,
+        // 批次7-10（control-server#215，看板例外第 13 条）：派工待送站与第三个机台站的节点。默认站表里没有这两个站，
+        // 所以不替换站表的场景一个字都不变；替换站表、把它们列进来的场景才用得上（见 PlaceStations）。
+        ["305"] = 2,
+        ["13"] = 4
     };
 
     /// <summary>Node id to (x, y) in mm.</summary>
@@ -148,8 +159,27 @@ public sealed class FakeRiotSeed
                 [MapId] = RemovedStationIds
             },
             RouteCostsByStation = new Dictionary<string, long>(RouteCosts, StringComparer.Ordinal),
+            MapNamesByMapId = new Dictionary<int, string> { [MapId] = MapName },
             NextOrderSequence = 1
         };
+    }
+
+    /// <summary>
+    /// 场景替换站表时建出的站：<see cref="StationNodes"/> 里有节点的放到节点上，与初始建表同一条规则；没有的不在路网上
+    /// （批次7-10，control-server#215）。
+    /// </summary>
+    /// <remarks>
+    /// 在这之前替换站表一律建出不带坐标的站，连原有的站也一起掉出路网——「换了站表又开路网」的场景里任何路径代价都算不出。
+    /// 边取这张图此刻的边（<paramref name="edges"/>），节点坐标取 seed：替换站表不改路网本身。
+    /// </remarks>
+    internal FakeStation[] PlaceStations(IEnumerable<KeyValuePair<int, string>> stations, IReadOnlyList<FakeEdge> edges)
+    {
+        Dictionary<int, int[]> nodes = Nodes.ToDictionary(
+            pair => int.Parse(pair.Key, System.Globalization.CultureInfo.InvariantCulture),
+            pair => pair.Value);
+        return [.. stations
+            .Select(pair => BuildStation(pair.Key, pair.Value, nodes, edges))
+            .OrderBy(station => station.Id)];
     }
 
     private static FakeEdge BuildEdge(int id, int startNode, int endNode, Dictionary<int, int[]> nodes)

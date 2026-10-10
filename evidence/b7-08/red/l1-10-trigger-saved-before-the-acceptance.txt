@@ -1,0 +1,24 @@
+# injection: l1-10-trigger-saved-before-the-acceptance
+# file: src/ControlServer.Infrastructure/Persistence/WireToGateStore.cs
+--- 
++++ 
+@@ -1001,2 +1001,8 @@
+ 
++        if (journey is not null)
++        {
++            await StationYield.StageTriggerAsync(
++                dbContext, orderIntent.VehicleKey, journey.PickupStationRiotId, snapshot.AcceptedAt, cancellationToken);
++            await dbContext.SaveChangesAsync(cancellationToken);
++        }
+         await using var transaction = await dbContext.Database.BeginTransactionAsync(cancellationToken).ConfigureAwait(false);
+# build:
+0 Error(s)
+# test run (filter: FullyQualifiedName~Batch7StationYield|FullyQualifiedName~LoadingPhaseMachineTests|FullyQualifiedName~DispatchVehicleOrderingTests):
+  Failed ControlServer.Tests.Batch7StationYieldTriggerTests.AnAcceptanceThatFailsAtTheCommitLeavesNoTriggerBehind [1 s]
+  Error Message:
+   Assert.Null() Failure: Value of type 'Nullable<DateTimeOffset>' has a value
+Expected: null
+Actual:   2026-09-19T09:03:00.0000000+00:00
+     at ControlServer.Tests.Batch7StationYieldTriggerTests.AnAcceptanceThatFailsAtTheCommitLeavesNoTriggerBehind() in C:\Users\szy\Desktop\8005-workspace-v2\worktrees\b7-08-8005-agv-control-server\tests\ControlServer.Tests\Batch7StationYieldTriggerTests.cs:line 128
+   at ControlServer.Tests.Batch7StationYieldTriggerTests.AnAcceptanceThatFailsAtTheCommitLeavesNoTriggerBehind() in C:\Users\szy\Desktop\8005-workspace-v2\worktrees\b7-08-8005-agv-control-server\tests\ControlServer.Tests\Batch7StationYieldTriggerTests.cs:line 133
+Failed!  - Failed:     1, Passed:   111, Skipped:     0, Total:   112, Duration: 51 s - ControlServer.Tests.dll (net8.0)

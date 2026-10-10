@@ -1,0 +1,18 @@
+{
+  "schemaVersion": "1.0.0",
+  "candidateVersion": "3.0.0",
+  "status": "APPROVED",
+  "protocolCommit": "3f091cb2eae7c58cec54a95dd9389c9180bc7b4c",
+  "contentManifestSha256": "d5e1a53f1fd61f105a890dc0267e1b0a9ac5ea49f713d2cf730b0f554df9db9e",
+  "approvals": [
+    {
+      "ownerId": "claude-opus-5-5 (Claude Code agent)",
+      "approverKind": "AI_AGENT",
+      "authorizedBy": "Zhengyu Shao",
+      "decidedAt": "2026-10-09T10:41:00Z",
+      "decision": "APPROVED",
+      "statement": "Zhengyu Shao, the product owner, authorized the Claude Code agent executing trytoreachpeak0/8005-agv-program#152 to approve protocol-v3.0.0 on the product owner's behalf, in the coordinator session on 2026-10-09 at 18:41 CST (recorded in trytoreachpeak0/8005-agv-program#152 issuecomment-6079269621), naming commit 3f091cb2eae7c58cec54a95dd9389c9180bc7b4c and content manifest d5e1a53f1fd61f105a890dc0267e1b0a9ac5ea49f713d2cf730b0f554df9db9e. Before approving, this agent confirmed that fp/v2-candidate had been fast-forwarded from 86575456c847041515b7b75e8851a00e0d939804 to that commit, that manifest/release.json hashed to that value, that no protocol-v3* tag existed, that candidate G1 passed on a clean clone, and that the candidate had not been reissued since trytoreachpeak0/8005-agv-program#151 published it. Before release, the control server (8005-agv-control-server#382 to #385) and the onboard HMI (8005-agv-onboard-hmi#214 to #216) merged their v3 work into their batch branches with CI green, and passed L1 and development-mode G2 on this candidate, marked UNRELEASED_CANDIDATE; v3 has not run on a vehicle, because a candidate cannot be packaged for one. Gate evidence (G2, G3, L2) bound to this released identity does not exist yet; 8005-agv-control-server#393 re-runs it after this release."
+    }
+  ],
+  "statement": "Approval of protocol-v3.0.0 at commit 3f091cb2eae7c58cec54a95dd9389c9180bc7b4c and content manifest d5e1a53f1fd61f105a890dc0267e1b0a9ac5ea49f713d2cf730b0f554df9db9e. Kept outside Git and published as a GitHub Release Asset, so it changes neither the manifest hash nor the commit it approves."
+}

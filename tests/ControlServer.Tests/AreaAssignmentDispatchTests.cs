@@ -279,7 +279,8 @@ public sealed class AreaAssignmentDispatchTests
     {
         CancellationToken cancellationToken = TestContext.Current.CancellationToken;
         Assert.Empty(await reader.AcceptedDemands.ToArrayAsync(cancellationToken));
-        Assert.Empty(await reader.VehicleDispatchLeases.ToArrayAsync(cancellationToken));
+        Assert.Empty(await reader.Set<VehiclePurposeClaimRow>().ToArrayAsync(cancellationToken));
+        Assert.Empty(await reader.Set<VehiclePurposeClaimRecordRow>().ToArrayAsync(cancellationToken));
         Assert.Empty(await reader.OrderIntents.ToArrayAsync(cancellationToken));
         Assert.Empty(await reader.JourneyRuntimes.ToArrayAsync(cancellationToken));
         Assert.Empty(await reader.Set<ConfigurationConsumerBindingRow>().ToArrayAsync(cancellationToken));
@@ -437,7 +438,7 @@ public sealed class AreaAssignmentDispatchTests
             Directory.CreateDirectory(directory);
             AcceptanceDatabase database = new(directory);
             await using ControlServerDbContext context = database.Open();
-            await context.Database.MigrateAsync(TestContext.Current.CancellationToken);
+            await MigratedDatabaseTemplate.ApplyAsync(context.Database, TestContext.Current.CancellationToken);
             return database;
         }
 

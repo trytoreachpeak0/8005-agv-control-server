@@ -1,0 +1,26 @@
+# injection: l1-08-a-vehicles-own-plan-makes-it-yield
+# file: src/ControlServer.Infrastructure/Persistence/StationYield.cs
+--- 
++++ 
+@@ -101,3 +101,2 @@
+                           row.Stage != JourneyRuntimeStage.Blocked &&
+-                          row.VehicleKey != triggeringVehicleKey &&
+                           row.YieldTriggeredAt == null &&
+# file: src/ControlServer.Infrastructure/Persistence/StationYield.cs
+--- 
++++ 
+@@ -110,4 +110,3 @@
+             // 查询在数据库上筛，这里按实例此刻的值再判一次：同一个上下文里未保存的改动（例如本轮刚关闭的装货阶段）以它为准。
+-            if (runtime.YieldTriggeredAt is not null ||
+-                string.Equals(runtime.VehicleKey, triggeringVehicleKey, StringComparison.Ordinal))
++            if (runtime.YieldTriggeredAt is not null)
+             {
+# build:
+0 Error(s)
+# test run (filter: FullyQualifiedName~Batch7StationYield|FullyQualifiedName~LoadingPhaseMachineTests|FullyQualifiedName~DispatchVehicleOrderingTests):
+  Failed ControlServer.Tests.Batch7StationYieldTriggerTests.AVehiclesOwnPlanNeverMakesItYield [593 ms]
+  Error Message:
+   Assert.Empty() Failure: Collection was not empty
+     at ControlServer.Tests.Batch7StationYieldTriggerTests.AVehiclesOwnPlanNeverMakesItYield() in C:\Users\szy\Desktop\8005-workspace-v2\worktrees\b7-08-8005-agv-control-server\tests\ControlServer.Tests\Batch7StationYieldTriggerTests.cs:line 241
+   at ControlServer.Tests.Batch7StationYieldTriggerTests.AVehiclesOwnPlanNeverMakesItYield() in C:\Users\szy\Desktop\8005-workspace-v2\worktrees\b7-08-8005-agv-control-server\tests\ControlServer.Tests\Batch7StationYieldTriggerTests.cs:line 242
+Failed!  - Failed:     1, Passed:   111, Skipped:     0, Total:   112, Duration: 48 s - ControlServer.Tests.dll (net8.0)

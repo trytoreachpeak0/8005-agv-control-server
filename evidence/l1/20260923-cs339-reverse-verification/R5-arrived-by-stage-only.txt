@@ -1,0 +1,9 @@
+mutation R5-arrived-by-stage-only: JourneyRuntimeEngine.cs matches=1
+    0 Error(s)
+  Failed ControlServer.Tests.RefilledStationDeadlineReachesVehicleTests.AHoldingJourneyWhoseLoadingPhaseChangedAcrossTheInterruptedArrivalStillAdvances [580 ms]
+  Error Message:
+   Assert.Empty() Failure: Collection was not empty
+Collection: [Tuple ("VehicleBusinessStateSnapshot", 1), Tuple ("VehicleBusinessStateSnapshot", 1)]
+--- End of stack trace from previous location ---
+ first round: ok ; second round: ok ; stage AwaitingSublot, code , server phase VEHICLE_FULL, vehicle phase LOADING, vehicle refused (VehicleBusinessStateSnapshot, 1),(VehicleBusinessStateSnapshot, 1), regressions 0
+Failed!  - Failed:     1, Passed:    29, Skipped:     0, Total:    30, Duration: 20 s - ControlServer.Tests.dll (net8.0)

@@ -7,7 +7,7 @@ namespace ControlServer.Host.Runtime.Dispatch;
 /// </remarks>
 public sealed class DemandIdOrdinalLayer : IDispatchCandidateComparisonLayer
 {
-    public int Compare(EligibleDispatchCandidate x, EligibleDispatchCandidate y)
+    public int Compare(DispatchTask x, DispatchTask y)
     {
         ArgumentNullException.ThrowIfNull(x);
         ArgumentNullException.ThrowIfNull(y);

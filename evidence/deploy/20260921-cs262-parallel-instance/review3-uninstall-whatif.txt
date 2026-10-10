@@ -1,0 +1,29 @@
+=== 1. the shipped definition (placeholders still in it) ===
+[12:08:40] Definition: C:\Users\szy\Desktop\8005-workspace-v2\worktrees\b7-262-8005-agv-control-server\scripts\parallel\instance-factory01-v2.json
+threw: The parallel instance definition was refused (3 reason(s)):
+  - journeyRuntime.dispatchZone is still the placeholder 'REPLACE_WITH_MAP26_DISPATCH_ZONE'; fill in the value from the site before deploying.
+  - journeyRuntime.allowedDispatchZones[0] is still the placeholder 'REPLACE_WITH_MAP26_DISPATCH_ZONE'; fill in the value from the site before deploying.
+  - journeyRuntime.admissionPolicyDeploymentId is still the placeholder 'REPLACE_WITH_MAP26_ADMISSION_POLICY_DEPLOYMENT_ID'; fill in the value from the site before deploying.
+
+=== 2. a copy with the two map-26 placeholders filled with test values ===
+[12:08:40] Definition: C:\Users\szy\AppData\Local\Temp\cs262-whatif-37848.json
+[12:08:40] Uninstalling factory01-v2-parallel (service '8005 AGV ControlServer V2')
+[12:08:40]   remove      Service            8005 AGV ControlServer V2
+[12:08:40]   remove      ScheduledTask      8005 AGV ControlServer V2 FakeMesIngest
+[12:08:40]   remove      FirewallRule       8005 AGV ControlServer V2 58105
+[12:08:40]   remove      FirewallRule       8005 AGV ControlServer V2 58107
+[12:08:40]   remove      MachineEnvironment CONTROL_SERVER_V2_ONBOARD_CERTIFICATE_PASSWORD
+[12:08:40]   remove      Directory          C:\Program Files\8005 AGV\ControlServer.V2.FakeMesIngest
+[12:08:40]   remove      Directory          C:\Program Files\8005 AGV\ControlServer.V2
+[12:08:40]   remove      Directory          D:\zhengyushao\ControlServer.V2
+[12:08:40]   remove      Directory          D:\zhengyushao\ControlServer.V2.previous
+[12:08:40]   remove      DirectoryPattern   D:\zhengyushao\ControlServer.V2.incoming-*
+[12:08:40]   remove      DirectoryPattern   D:\zhengyushao\ControlServer.V2.rollback-*
+[12:08:40]   remove      Directory          D:\zhengyushao\control-server-v2-staging
+[12:08:40]   keep (data) Directory          C:\ProgramData\8005\ControlServer.V2
+[12:08:40]   keep (data) Directory          C:\ProgramData\8005\ControlServer.V2-backups
+[12:08:40]   keep (data) Directory          D:\zhengyushao\control-server-v2-ops
+[12:08:40]   keep        UserEnvironment    CONTROL_SERVER_RIOT_CALL_API_KEY (shared with the MVP deployment)
+What if: Performing the operation "Uninstall the v2 parallel instance" on target "8005 AGV ControlServer V2".
+[12:08:40] WhatIf: nothing removed.
+(returned without an exception)

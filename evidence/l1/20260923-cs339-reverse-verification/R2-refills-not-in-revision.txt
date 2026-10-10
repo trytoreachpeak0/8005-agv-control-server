@@ -1,0 +1,35 @@
+mutation R2-refills-not-in-revision: JourneyStopCursor.cs matches=1
+    0 Error(s)
+  Failed ControlServer.Tests.RefilledStationDeadlineReachesVehicleTests.ARefillOnTheArrivalRerunReachesTheVehicle [4 s]
+  Error Message:
+   ControlServer.Domain.ProtocolContentConflictException : Outbound MessageId was replayed with different semantics or a non-advancing session generation.
+--- End of stack trace from previous location ---
+  Failed ControlServer.Tests.RefilledStationDeadlineReachesVehicleTests.AfterARefillTheJourneyReachesTheGateWithTheWorklistRevisionStrictlyAdvancing(enteredAgainst: 1) [647 ms]
+  Error Message:
+   ControlServer.Domain.ProtocolContentConflictException : Outbound MessageId was replayed with different semantics or a non-advancing session generation.
+--- End of stack trace from previous location ---
+  Failed ControlServer.Tests.RefilledStationDeadlineReachesVehicleTests.AfterARefillTheJourneyReachesTheGateWithTheWorklistRevisionStrictlyAdvancing(enteredAgainst: 0) [579 ms]
+  Error Message:
+   ControlServer.Domain.ProtocolContentConflictException : Outbound MessageId was replayed with different semantics or a non-advancing session generation.
+--- End of stack trace from previous location ---
+  Failed ControlServer.Tests.RefilledStationDeadlineReachesVehicleTests.ARefillWhileAwaitingTheEntryReachesTheVehicle [459 ms]
+  Error Message:
+   ControlServer.Domain.ProtocolContentConflictException : Outbound MessageId was replayed with different semantics or a non-advancing session generation.
+--- End of stack trace from previous location ---
+  Failed ControlServer.Tests.RefilledStationDeadlineReachesVehicleTests.TheRealOnboardsUnreadyShapeRefillsOnceAndTheVehicleHoldsIt [316 ms]
+  Error Message:
+   ControlServer.Domain.ProtocolContentConflictException : Outbound MessageId was replayed with different semantics or a non-advancing session generation.
+--- End of stack trace from previous location ---
+  Failed ControlServer.Tests.RefilledStationDeadlineReachesVehicleTests.ARefillWhileTheLoadResultIsOutstandingReachesTheVehicle [546 ms]
+  Error Message:
+   ControlServer.Domain.ProtocolContentConflictException : Outbound MessageId was replayed with different semantics or a non-advancing session generation.
+--- End of stack trace from previous location ---
+  Failed ControlServer.Tests.ArrivalPublishInterruptedThenReconnectedTests.TheEntryRequestReachesTheVehicleWhenARoundBehindTheClosedGateVoidedTheWaitBeforeTheReconnect [276 ms]
+  Error Message:
+   ControlServer.Domain.ProtocolContentConflictException : Outbound MessageId was replayed with different semantics or a non-advancing session generation.
+--- End of stack trace from previous location ---
+  Failed ControlServer.Tests.ArrivalPublishInterruptedThenReconnectedTests.ACutOnTheWorklistThenARefillSendsANewerWorklistInsteadOfFailingARound [196 ms]
+  Error Message:
+   ControlServer.Domain.ProtocolContentConflictException : Outbound MessageId was replayed with different semantics or a non-advancing session generation.
+--- End of stack trace from previous location ---
+Failed!  - Failed:     8, Passed:    22, Skipped:     0, Total:    30, Duration: 10 s - ControlServer.Tests.dll (net8.0)

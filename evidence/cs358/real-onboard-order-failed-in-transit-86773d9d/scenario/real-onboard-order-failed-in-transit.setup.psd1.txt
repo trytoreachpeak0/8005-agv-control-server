@@ -1,0 +1,7 @@
+# control-server#358（一次性，不进 l2.yml）：真车载端在场时，行驶中订单 FAILED。
+#
+# 真车载端 WPF + 真 slots-simulator，理由同 real-onboard-order-hang-continue。
+@{
+    Onboard                     = 'Real'
+    StationDepartureWaitTimeout = '00:00:30'
+}

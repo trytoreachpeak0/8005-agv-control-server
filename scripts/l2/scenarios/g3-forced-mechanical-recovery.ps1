@@ -11,7 +11,8 @@ G3 `FP-IS-07`：装载失败后由维护人员在车上发起强制机械恢复�
 （control-server#128 起，此前是「空关后等车载端超时」，v2 上不可达）。车载端「强制机械恢复」按钮是 2026-09-14 补的入口（车载端仓
 `docs/W2G_FP_IS_07_OPERATOR_ENTRIES.md`）。onboard-hmi#107 起车载端收到命令后不发开锁、也不上报，等现场人员按「已隔离并完成机械取出」
 并在「确认强制机械取出」答是之后才报结果；场景自 control-server#156 起按这一步。场景不按「提交硬件恢复记录」，所以 `G3-07-44` 读到的是
-记录到达之前的就绪。
+记录到达之前的就绪：车载端没有重连，原因码必须是 `FORCED_RECOVERY_HARDWARE_RECOVERY_REQUIRED`，不是
+`FORCED_RECOVERY_GENERATION_MISMATCH`（control-server#556）。
 #>
 [CmdletBinding()]
 param([Parameter(Mandatory)][object]$Context)
@@ -19,6 +20,7 @@ param([Parameter(Mandatory)][object]$Context)
 Set-StrictMode -Version Latest
 $ErrorActionPreference = 'Stop'
 . (Join-Path $PSScriptRoot 'G3RecoveryCommon.ps1')
+Import-Module (Join-Path (Split-Path -Parent $PSScriptRoot) 'L2ConditionOrLast.psm1') -Force
 
 $journal = $Context.Journal
 $assertions = $Context.Assertions
@@ -57,11 +59,28 @@ $null = Invoke-G3ConfirmedButton $onboard $journal '强制机械恢复' '强制�
 # unlock and reports nothing until the person at the vehicle says the slots were isolated and the cargo taken out
 # by hand -- 「已隔离并完成机械取出」, then Yes on 「确认强制机械取出」. Until control-server#156 this scenario never
 # pressed it, so the result never came and the run aborted with the workflow AwaitingResult.
-$confirmOffered = Wait-G3ButtonOffered $onboard $journal '已隔离并完成机械取出' 'onboard-forced-recovery-confirm-entry' 60
-if (-not $confirmOffered) {
-    $why = if (@($onboard.WindowTitles()) -contains '强制机械恢复失败') { '强制机械恢复未被接受（车载端弹出「强制机械恢复失败」）' }
-           else { '车载端没有给出「已隔离并完成机械取出」入口' }
+$failureTitles = Get-G3ForcedRecoveryFailureTitle
+# Protocol 3.0.0 (CP-0008, onboard-hmi#216): the confirm stays disabled until the hand-off is filled in -- the sublot of the
+# demand as the current stop's worklist names it (another sublot raises a warning and needs a second press) and the
+# person it was handed to. The server settles the demand on that record only (control-server#385).
+# So the order is form, fill, then the enabled button (control-server#541). This used to wait for the enabled button first and
+# fill the form after, which no run could get past: the button enables only once the form is filled.
+$formShown = Wait-G3ElementPresent $onboard $journal 'ForcedHandoffSublot' 'onboard-forced-handoff-form' 60
+if (-not $formShown) {
+    $shownFailure = @(@($onboard.WindowTitles()) | Where-Object { $_ -in $failureTitles })
+    $why = if ($shownFailure.Count -gt 0) { "强制机械恢复未被接受（车载端弹出「$($shownFailure[0])」）" }
+           else { '车载端没有给出强制机械取出的交接框（ForcedHandoffSublot）' }
     Add-G3NotReached $assertions $ids $why
+    return
+}
+$handoffSublot = [string](Get-G3Scalar $connection "SELECT Sublot AS Value FROM AcceptedDemands WHERE DemandId = '$demandId'")
+$handoffReceiver = 'G3 交接人 王五'
+$journal.Note("Maintenance fills the hand-off: sublot $handoffSublot, receiver $handoffReceiver.")
+$onboard.SetTextBox('ForcedHandoffSublot', $handoffSublot)
+$onboard.SetTextBox('ForcedHandoffReceiverName', $handoffReceiver)
+$confirmOffered = Wait-G3ButtonOffered $onboard $journal '已隔离并完成机械取出' 'onboard-forced-recovery-confirm-entry' 30
+if (-not $confirmOffered) {
+    Add-G3NotReached $assertions $ids '填好交接框后「已隔离并完成机械取出」仍不可用'
     return
 }
 $journal.Note('Maintenance has taken the cargo out by hand; presses 已隔离并完成机械取出 and confirms.')
@@ -73,11 +92,11 @@ $result = Wait-L2Condition -Description 'the server received ForcedMechanicalRec
         $received = Get-G3Inbound $connection 'ForcedMechanicalRecoveryResult'
         $titles = @($onboard.WindowTitles())
         if ($received.Count -ge 1) { $received[0] }
-        elseif ($titles -contains '强制机械恢复失败' -or $titles -contains '确认失败') { 'REFUSED' }
+        elseif (@($titles | Where-Object { $_ -in $failureTitles }).Count -gt 0) { 'REFUSED' }
         else { $null }
     } -Until { param($v) $null -ne $v }
 if ($result -is [string]) {
-    Add-G3NotReached $assertions $ids '强制机械恢复未被接受（车载端弹出「强制机械恢复失败」或「确认失败」）'
+    Add-G3NotReached $assertions $ids "强制机械恢复未被接受（车载端弹出「$((@(@($onboard.WindowTitles()) | Where-Object { $_ -in $failureTitles }) + '(已关闭)')[0])」）"
     return
 }
 $actionId = [string]$result.Payload.recoveryActionId
@@ -110,19 +129,41 @@ $assertions.Add(
     "代数 $generationBefore → $($generationBefore + 1) / 工作流 $($generationBefore + 1) / 命令 $($generationBefore + 1)",
     "代数 $generationBefore → $generationAfter / 工作流 $workflowGeneration / 命令 $commandGeneration")
 
+# Protocol 3.0.0 (CP-0008, control-server#385): the result copies the command's demand and, on a session with a demand, carries
+# the named hand-off -- the sublot identified at the vehicle, who took it, when. The server settles the demand on that record
+# only; without it the result is kept and settles nothing, so G3-07-44 would read the demand still blocked.
+$demandSublot = [string](Get-G3Scalar $connection "SELECT Sublot AS Value FROM AcceptedDemands WHERE DemandId = '$demandId'")
+$handoff = if ($result.Payload.PSObject.Properties['cargoHandoff']) { $result.Payload.cargoHandoff } else { $null }
+$handoffOk = $null -ne $handoff -and [string]$result.Payload.demandId -eq $demandId -and
+    [string]$handoff.sublot -eq $demandSublot -and [string]$handoff.sublot -eq $handoffSublot -and
+    [string]$handoff.receiverName -eq $handoffReceiver -and -not [string]::IsNullOrWhiteSpace([string]$handoff.handedOverAt)
 $assertions.Add(
     'G3-07-43',
-    '车载端报强制恢复结果：MECHANICALLY_ISOLATED，带命令的代数，电子空载与车辆就绪两项证明都没有声称，只报仓位集合（REPORT_FORCED_RECOVERY_OUTCOME / REFUSE_STALE_FORCED_RECOVERY_GENERATION 的正向一半：车载端采纳的是当前代数）',
+    '车载端报强制恢复结果：MECHANICALLY_ISOLATED，带命令的代数，电子空载与车辆就绪两项证明都没有声称，只报仓位集合，抄回命令的需求并带具名交接记录（批号与交接人即界面上所填、批号即该需求的批号、带交接时刻）（REPORT_FORCED_RECOVERY_OUTCOME / REPORT_CARGO_HANDOFF_RECORD_IN_RESULT / COPY_COMMAND_DEMAND_INTO_RESULT / REFUSE_STALE_FORCED_RECOVERY_GENERATION 的正向一半：车载端采纳的是当前代数）',
     ([string]$result.Payload.outcome -eq 'MECHANICALLY_ISOLATED' -and [long]$result.Payload.forcedRecoveryGeneration -eq $commandGeneration -and
         -not [bool]$result.Payload.electronicEmptyProven -and -not [bool]$result.Payload.vehicleReadyProven -and
-        (Format-G3Slots $result.Payload.slots) -eq (Format-G3Slots $load.TargetSlots) -and -not $result.Payload.PSObject.Properties['slotResults']),
-    "MECHANICALLY_ISOLATED / 代数 $commandGeneration / proof false,false / 仓 $(Format-G3Slots $load.TargetSlots) / 无 slotResults",
-    "$($result.Payload.outcome) / 代数 $($result.Payload.forcedRecoveryGeneration) / proof $($result.Payload.electronicEmptyProven),$($result.Payload.vehicleReadyProven) / 仓 $(Format-G3Slots $result.Payload.slots) / slotResults=$([bool]$result.Payload.PSObject.Properties['slotResults'])")
+        (Format-G3Slots $result.Payload.slots) -eq (Format-G3Slots $load.TargetSlots) -and -not $result.Payload.PSObject.Properties['slotResults'] -and
+        $handoffOk),
+    "MECHANICALLY_ISOLATED / 代数 $commandGeneration / proof false,false / 仓 $(Format-G3Slots $load.TargetSlots) / 无 slotResults / 需求 $demandId / 交接 $handoffSublot→$handoffReceiver",
+    "$($result.Payload.outcome) / 代数 $($result.Payload.forcedRecoveryGeneration) / proof $($result.Payload.electronicEmptyProven),$($result.Payload.vehicleReadyProven) / 仓 $(Format-G3Slots $result.Payload.slots) / slotResults=$([bool]$result.Payload.PSObject.Properties['slotResults']) / 需求 $($result.Payload.demandId) / 交接 $(if ($null -eq $handoff) { '无' } else { "$($handoff.sublot)→$($handoff.receiverName) @ $($handoff.handedOverAt)" })")
 
 $workflowState = Get-G3Scalar $connection "SELECT State AS Value FROM RecoveryWorkflows WHERE WorkflowId = '$actionId'"
+$handoffRecorded = [string](Get-G3Scalar $connection "SELECT HandoffReceiverName AS Value FROM RecoveryWorkflows WHERE WorkflowId = '$actionId'")
 $journey = "$(Get-G3Scalar $connection "SELECT Stage AS Value FROM JourneyRuntimes WHERE DemandId = '$demandId'")/$(Get-G3Scalar $connection "SELECT BlockReasonCode AS Value FROM JourneyRuntimes WHERE DemandId = '$demandId'")"
-$session = Get-G3Session $connection
+# control-server#556: what the vehicle waits for once the result is in and before any reconnect is its hardware recovery
+# record, so the session is held under FORCED_RECOVERY_HARDWARE_RECOVERY_REQUIRED. Readiness alone could not tell that from
+# FORCED_RECOVERY_GENERATION_MISMATCH -- the vehicle stuck until something made it reconnect -- and this read PASS over it.
+# The reason is written by the readiness decision that follows the result's save, so wait for it rather than read once.
+$session = Wait-L2ConditionOrLast -Description 'the session is held for the forced recovery''s hardware record' `
+    -Journal $journal -Criterion 'forced-recovery-hardware-hold' -TimeoutSeconds 30 `
+    -Probe { Get-G3Session $connection } `
+    -Until { param($v) $null -ne $v -and [string]$v.ReasonCode -eq 'FORCED_RECOVERY_HARDWARE_RECOVERY_REQUIRED' }
 $recoverySession = Get-G3Scalar $connection "SELECT State AS Value FROM ExceptionRecoverySessions WHERE ExceptionRecoverySessionId = '$([string]$result.Payload.exceptionRecoverySessionId)'"
+$closedReason = Get-G3Scalar $connection "SELECT ClosedReason AS Value FROM ExceptionRecoverySessions WHERE ExceptionRecoverySessionId = '$([string]$result.Payload.exceptionRecoverySessionId)'"
+# control-server#555: Get-G3Scalar returns [string]$rows[0].Value, so a NULL column reads back as "" and can never be
+# $null or DBNull -- the old test of $closedReason was false whatever the server wrote. Ask SQLite whether the column is
+# NULL instead: that keeps NULL apart from an empty string, which a NULL-or-empty test would let through.
+$closedReasonIsNull = (Get-G3Scalar $connection "SELECT ClosedReason IS NULL AS Value FROM ExceptionRecoverySessions WHERE ExceptionRecoverySessionId = '$([string]$result.Payload.exceptionRecoverySessionId)'") -eq '1'
 $demandStatus = Get-G3Scalar $connection "SELECT Status AS Value FROM AcceptedDemands WHERE DemandId = '$demandId'"
 $toGate = Get-G3Count $connection "SELECT COUNT(*) AS Total FROM OrderIntents WHERE DemandId = '$demandId' AND Purpose = 'TO_GATE'"
 # control-server#137 (REQ-0242): the forced result closes the cargo's business as a named handoff -- demand
@@ -135,11 +176,15 @@ $toGate = Get-G3Count $connection "SELECT COUNT(*) AS Total FROM OrderIntents WH
 # (「提交硬件恢复记录」) is a separate button it never touches.
 $assertions.Add(
     'G3-07-44',
-    '强制恢复只结算货物业务：工作流 Reconciled，需求 Cancelled，旅程 Completed/TERMINATED_BY_FAULT_CARGO_HANDOFF，恢复会话 CLOSED，没有去关卡；车辆会话仍 RecoveryRequired，等硬件恢复记录（REQ-0242 / forbidden ready-before-reconciliation、unknown-as-success）',
+    '强制恢复只结算货物业务：工作流 Reconciled 并记下结果里的交接人，需求 Cancelled，旅程 Completed/TERMINATED_BY_FAULT_CARGO_HANDOFF，恢复会话按交接 CLOSED（closedReason 为空），没有去关卡；车辆会话仍 RecoveryRequired，原因 FORCED_RECOVERY_HARDWARE_RECOVERY_REQUIRED（等硬件恢复记录，不经重连；车载端报过的代数由结果更新为当前代数，cs#556）（REQ-0242 / SETTLE_DEMAND_ONLY_ON_NAMED_HANDOFF / forbidden ready-before-reconciliation、unknown-as-success）',
     ($workflowState -eq 'Reconciled' -and $journey -eq 'Completed/TERMINATED_BY_FAULT_CARGO_HANDOFF' -and $recoverySession -eq 'CLOSED' -and
-        [string]$session.Readiness -eq 'RecoveryRequired' -and $demandStatus -eq 'Cancelled' -and $toGate -eq 0),
-    'Reconciled / Completed/TERMINATED_BY_FAULT_CARGO_HANDOFF / 会话 CLOSED / RecoveryRequired / Cancelled / TO_GATE 0',
-    "$workflowState / $journey / 会话 $recoverySession / $($session.Readiness) ($($session.ReasonCode)) / $demandStatus / TO_GATE $toGate")
+        [string]$session.Readiness -eq 'RecoveryRequired' -and
+        [string]$session.ReasonCode -eq 'FORCED_RECOVERY_HARDWARE_RECOVERY_REQUIRED' -and
+        [long]$session.ReportedForcedRecoveryGeneration -eq $generationAfter -and $demandStatus -eq 'Cancelled' -and $toGate -eq 0 -and
+        $null -ne $handoff -and $handoffRecorded -eq $handoffReceiver -and
+        $closedReasonIsNull),
+    "Reconciled（交接人 G3 交接人 王五）/ Completed/TERMINATED_BY_FAULT_CARGO_HANDOFF / 会话 CLOSED（原因 NULL）/ RecoveryRequired (FORCED_RECOVERY_HARDWARE_RECOVERY_REQUIRED，报过的代数 $generationAfter) / Cancelled / TO_GATE 0",
+    "$workflowState（交接人 $handoffRecorded）/ $journey / 会话 $recoverySession（原因 $(if ($closedReasonIsNull) { 'NULL' } else { "'$closedReason'" })）/ $($session.Readiness) ($($session.ReasonCode)，报过的代数 $($session.ReportedForcedRecoveryGeneration)) / $demandStatus / TO_GATE $toGate")
 
 $unlocksAfterRequest = @((Get-G3Progress $connection $attemptId) | Where-Object { $_.Phase -eq 'UNLOCKING' -and $_.At -gt $requestedAt })
 $physical = ($load.TargetSlots | Sort-Object | ForEach-Object { "$_=$(Get-G3SlotState $simulator $_)" }) -join ' '

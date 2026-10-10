@@ -106,6 +106,26 @@ function Wait-G3ButtonOffered([object]$Onboard, [object]$Journal, [string]$Name,
     }
 }
 
+# An element of the onboard's main window by AutomationId, present or not, whatever its IsEnabled (control-server#541). A form
+# that is shown before the button it unlocks is enabled has to be waited for this way: Wait-G3ButtonOffered asks for an enabled
+# button, and a button that only enables once the form is filled never is while nobody fills it.
+function Wait-G3ElementPresent([object]$Onboard, [object]$Journal, [string]$AutomationId, [string]$Criterion, [int]$TimeoutSeconds) {
+    $deadline = [DateTimeOffset]::UtcNow.AddSeconds($TimeoutSeconds)
+    while ($true) {
+        $present = $null -ne $Onboard.Element('AutomationId', $AutomationId)
+        $Journal.Observe($Criterion, $present, $null)
+        if ($present -or [DateTimeOffset]::UtcNow -ge $deadline) { return $present }
+        Start-Sleep -Milliseconds 500
+    }
+}
+
+# The titles of the onboard's own failure notices for a forced mechanical recovery. 「强制机械取出未上报」 is the one the confirm step
+# raises when the result was not reported (onboard MainWindow.xaml.cs, OnConfirmForcedMechanicalRecoveryClick, hmi#216); until
+# control-server#541 the scenario knew only the other two, and that refusal read as a two-minute wait for a result.
+function Get-G3ForcedRecoveryFailureTitle {
+    return , @('强制机械恢复失败', '确认失败', '强制机械取出未上报')
+}
+
 if (-not ('G3L2.DialogNative' -as [type])) {
     Add-Type -Namespace 'G3L2' -Name 'DialogNative' -MemberDefinition @'
 [System.Runtime.InteropServices.DllImport("user32.dll", SetLastError = true)]
@@ -303,8 +323,8 @@ function Invoke-G3UnknownLoad([object]$Context, [string]$SublotPrefix) {
 
 <#
 结算之后车辆真的放出来了（control-server#128，按调度会话 2026-09-18 的要求补；缺口本身是 control-server#131）：
-这条需求的 TO_PICKUP 单 `VehicleOccupancyReleasedAt` 有值，而且同一台车在 60 秒内接了下一单——下一单的旅程到
-`AwaitingPickupArrival`，不是建了旅程却 `Blocked / VEHICLE_OCCUPANCY_CONFLICT`。写法同 `real-onboard-load-door-closed-empty-reopens`
+这条需求所在旅程的用途占有记录有释放时刻（`VehiclePurposeClaimRecords.ReleasedAt`；control-server#387 之前读的是 TO_PICKUP 单上
+的订单占用释放时刻，那两列已删），而且同一台车在 60 秒内接了下一单——下一单的旅程到 `AwaitingPickupArrival`，没有停摆原因码。写法同 `real-onboard-load-door-closed-empty-reopens`
 的 `L2-DC-10`、`L2-DC-12`，两层合成一条判据。
 
 发下一单会在假 RIoT 上多出一张单，所以调用方把它放在所有数 RIoT 单的判据之后。不用 Wait-L2Condition：派不出去
@@ -313,7 +333,10 @@ function Invoke-G3UnknownLoad([object]$Context, [string]$SublotPrefix) {
 function Add-G3VehicleReleasedForNextDemand([object]$Context, [string]$Id, [string]$Description, [string]$DemandId, [string]$SublotPrefix) {
     $connection = $Context.Connection
     $journal = $Context.Journal
-    $occupancy = Get-G3Scalar $connection "SELECT VehicleOccupancyReleasedAt AS Value FROM OrderIntents WHERE DemandId = '$DemandId' AND Purpose = 'TO_PICKUP'"
+    $occupancy = Get-G3Scalar $connection @"
+SELECT r.ReleasedAt AS Value FROM VehiclePurposeClaimRecords AS r JOIN JourneyDemands AS d ON d.JourneyId = r.JourneyId
+WHERE d.DemandId = '$DemandId' ORDER BY r.AcquiredAt DESC LIMIT 1
+"@
 
     $nextGuid = [guid]::NewGuid()
     $nextDemandId = $nextGuid.ToString('D')
@@ -327,8 +350,9 @@ function Add-G3VehicleReleasedForNextDemand([object]$Context, [string]$Id, [stri
     #   1. `DispatchRoundRunner.cs:499` → `WireToGateOrchestration.AcceptAndDispatchToPickupAsync`：
     #      先 `AcceptJourneyAsync` 写 JourneyRuntimes（阶段 `AwaitingPickupArrival`），**紧接着**
     #      `ReconcileOrCreateAsync` 建 RIoT 单并把 TO_PICKUP 意图置 `CONFIRMED`；
-    #   2. `DispatchRoundRunner.cs:548` `TryClaimVehicleOccupancyAsync` 在**这之后**，失败才
-    #      `Block(...)`（`:712` 把 Stage 设为 `Blocked` 并写 `VEHICLE_OCCUPANCY_CONFLICT`）；
+    #   2. （control-server#387 之前）`TryClaimVehicleOccupancyAsync` 在**这之后**认领订单占用，失败才
+    #      `Block(...)` 写 `VEHICLE_OCCUPANCY_CONFLICT`。那一步已随订单占用退役：车由受理那一次提交里的用途占有
+    #      主键认领，被占着时受理整体被拒、旅程根本不建；
     #   3. `DispatchRoundRunner.cs:560` 另一条分支：建单没到 `Confirmed` 时只 `SetBlockReason(...)`，
     #      **不改 Stage**。
     #
@@ -363,7 +387,7 @@ function Add-G3VehicleReleasedForNextDemand([object]$Context, [string]$Id, [stri
     # 原来 L2-DC-12 那份用的是 `SELECT *` 再按名字过滤属性——那不是随手写的，是因为它不假设列名；
     # 我把它「改进」成显式列名时照搬了一个不存在的 Status，三次真装置运行白跑在
     # `SQLite Error 1: 'no such column: Status'` 上。
-    $backlog = @(Invoke-L2Query -Connection $connection -Sql "SELECT ReasonCode, AcceptedAt FROM JourneyBacklog WHERE DemandId = '$nextDemandId'")
+    $backlog = Invoke-L2Query -Connection $connection -Sql "SELECT ReasonCode, AcceptedAt FROM JourneyBacklog WHERE DemandId = '$nextDemandId'"
     $backlogText = if ($backlog.Count -ge 1) {
         "积压 $($backlog[0].ReasonCode)，受理时间 $(if (Test-G3Present $backlog[0].AcceptedAt) { $backlog[0].AcceptedAt } else { '(无)' })"
     } else { '无积压行' }
@@ -375,6 +399,6 @@ function Add-G3VehicleReleasedForNextDemand([object]$Context, [string]$Id, [stri
         ((Test-G3Present $occupancy) -and $null -ne $next -and [string]$next.Stage -eq 'AwaitingPickupArrival' -and
             [string]$next.AgvId -eq [string]$Context.AgvId -and [string]$intentStatus -eq 'CONFIRMED' -and
             -not (Test-G3Present $next.BlockReasonCode)),
-        "TO_PICKUP 占用已释放 / 下一单 AwaitingPickupArrival on $($Context.AgvId)，TO_PICKUP 意图 CONFIRMED，没有停摆原因码",
-        "VehicleOccupancyReleasedAt='$occupancy' / $nextText")
+        "用途占有记录已释放 / 下一单 AwaitingPickupArrival on $($Context.AgvId)，TO_PICKUP 意图 CONFIRMED，没有停摆原因码",
+        "ClaimRecord.ReleasedAt='$occupancy' / $nextText")
 }

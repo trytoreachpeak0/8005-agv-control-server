@@ -1,0 +1,113 @@
+{
+  "schemaVersion": 1,
+  "scenario": "blocked-journey-dashboard-projection",
+  "runId": "20260922T074623393Z",
+  "outcome": "PASS",
+  "failureReason": "",
+  "identity": {
+    "protocolReleaseIdentity": {
+      "repository": "8005-agv-protocol",
+      "releaseVersion": "2.0.0",
+      "tag": "protocol-v2.0.0",
+      "commit": "86575456c847041515b7b75e8851a00e0d939804",
+      "protocolVersion": 3,
+      "profileId": "AGV_FULL_PRODUCT",
+      "manifestSha256": "4ac095ad371d3aaa60d7c2e0198cfd64cff5f3068230fc3420e9cdf5616422a7",
+      "schemaBundleSha256": "9db0dbdc22fed7e39edf8d01b1fc40a12f5d70a7414f696f909ab2a87eb8c221",
+      "vectorsSha256": "391fa69a7d6e9f86ea139ba4c74eadf4994bf0a87e89d3dc5258dd7968d9182a",
+      "approvalStatus": "APPROVED_RELEASE"
+    },
+    "stageRoot": "C:\\actions-runner\\win11-01-control-server\\_work\\_temp\\l2-35699901251-1\\_stage\\l2-20260922T074623393Z-slot2",
+    "controlServerCommit": "f2ddd40522432925580d6048dca2d6d54171a7a8",
+    "rig": "SyntheticOnboard",
+    "batchId": "batch-5",
+    "agvId": "AGV-L2-001",
+    "vehicleKey": "BROKERX-L2-0001"
+  },
+  "assertions": [
+    {
+      "id": "L2-BJ-01",
+      "description": "行驶中没有阻断时端点不列这条旅程",
+      "outcome": "PASS",
+      "expected": "(not listed)",
+      "actual": "(not listed)"
+    },
+    {
+      "id": "L2-BJ-02",
+      "description": "检查点等待挂上后端点列出车、站、阻断码与开始时间，开始时间就是库里记下的那一个",
+      "outcome": "PASS",
+      "expected": "AGV-L2-001 / N1-3_N1-7 / VEHICLE_WAITING_AT_CHECKPOINT since 2026-09-22 07:46:41.8984527+00:00 (Operator)",
+      "actual": "AGV-L2-001 / N1-3_N1-7 / VEHICLE_WAITING_AT_CHECKPOINT since 2026-09-22T07:46:41.8984527+00:00 (0 s, Operator, AwaitingPickupArrival @ N1-3_N1-7)"
+    },
+    {
+      "id": "L2-BJ-03",
+      "description": "码被清掉后端点不再列出这条旅程，库里阻断码与开始时间一并清空",
+      "outcome": "PASS",
+      "expected": "(not listed) / code null / since null",
+      "actual": "(not listed) / code '' / since ''"
+    },
+    {
+      "id": "L2-BJ-04",
+      "description": "会话未就绪挂上后端点带开始时间与会话的原因码、安全原因码、SafetyUnknownPresent，安全证据不全直接最高档",
+      "outcome": "PASS",
+      "expected": "ONBOARD_SESSION_NOT_READY with since, session reason, [\"IO_FACT_UNKNOWN\"], unknown=True, MaintenanceAdministrator",
+      "actual": "ONBOARD_SESSION_NOT_READY since 2026-09-22T07:46:43.8558789+00:00 (0 s, MaintenanceAdministrator, AwaitingPickupArrival @ N1-3_N1-7); session {\"present\":true,\"reasonCode\":\"DEPARTURE_SAFETY_NOT_READY\",\"safetyReasonCodesJson\":\"[\\\"IO_FACT_UNKNOWN\\\"]\",\"safetyUnknownPresent\":true}"
+    },
+    {
+      "id": "L2-BJ-05",
+      "description": "这一行被后续写入（同码、UpdatedAt 前移）之后，端点与库里的开始时间都不变，已挂时长照实增长",
+      "outcome": "PASS",
+      "expected": "since 2026-09-22T07:46:43.8558789+00:00, UpdatedAt > since + 2 s, blockedSeconds > 0",
+      "actual": "since 2026-09-22T07:46:43.8558789+00:00 (db 2026-09-22 07:46:43.8558789+00:00), UpdatedAt 2026-09-22 07:46:46.8491674+00:00, 3 s"
+    },
+    {
+      "id": "L2-BJ-06",
+      "description": "看板的旅程阻断卡片渲染出这条阻断：车、取货站、阻断码、安全原因码，按维护管理员那一档上色",
+      "outcome": "PASS",
+      "expected": "escalation-maintenance-administrator AGV-L2-001 N1-3_N1-7 ONBOARD_SESSION_NOT_READY ... IO_FACT_UNKNOWN",
+      "actual": "escalation-maintenance-administrator AGV-L2-001  N1-3_N1-7  ONBOARD_SESSION_NOT_READY  2026-09-22 15:46:43  0 分 3 秒  维护管理员  原因码 DEPARTURE_SAFETY_NOT_READY；安全原因码 [\"IO_FACT_UNKNOWN\"]；安全证据有未知项：是  L2-SUBLOT-20260922T074623393Z|WIRE_TO_GATE：待装"
+    },
+    {
+      "id": "L2-BJ-07",
+      "description": "到站换段之后会话未就绪那条阻断已清掉，端点不再列出这条旅程",
+      "outcome": "PASS",
+      "expected": "(not listed) / code null",
+      "actual": "(not listed) / code ''"
+    },
+    {
+      "id": "L2-BJ-10",
+      "description": "仓门未闭告警挂上后端点列出 AwaitingLoadResult（不是 Blocked）、取货站与开始时间，开始时间就是库里记下的那一个，按操作员档",
+      "outcome": "PASS",
+      "expected": "(not listed) → AwaitingLoadResult @ N1-3_N1-7, STATION_TIMEOUT_DOOR_NOT_CLOSED since 2026-09-22 07:47:18.8463069+00:00 (Operator)",
+      "actual": "(not listed) → STATION_TIMEOUT_DOOR_NOT_CLOSED since 2026-09-22T07:47:18.8463069+00:00 (0 s, Operator, AwaitingLoadResult @ N1-3_N1-7)"
+    },
+    {
+      "id": "L2-BJ-11",
+      "description": "告警挂着期间运行时又跑了几轮，码与开始时间不变，stage 仍是 AwaitingLoadResult",
+      "outcome": "PASS",
+      "expected": "STATION_TIMEOUT_DOOR_NOT_CLOSED since 2026-09-22T07:47:18.8463069+00:00 (AwaitingLoadResult)",
+      "actual": "STATION_TIMEOUT_DOOR_NOT_CLOSED since 2026-09-22T07:47:18.8463069+00:00 (4 s, Operator, AwaitingLoadResult @ N1-3_N1-7)"
+    },
+    {
+      "id": "L2-BJ-12",
+      "description": "门关上后端点不再列出这条旅程，库里阻断码与开始时间一并清空，本站仍在等装货结果",
+      "outcome": "PASS",
+      "expected": "(not listed) / code null / since null / AwaitingLoadResult",
+      "actual": "(not listed) / code '' / since '' / AwaitingLoadResult"
+    },
+    {
+      "id": "L2-BJ-08",
+      "description": "装货结果需要恢复挂上后端点列出 Blocked、取货站与开始时间，开始时间就是库里记下的那一个",
+      "outcome": "PASS",
+      "expected": "Blocked @ N1-3_N1-7, LOAD_RESULT_REQUIRES_RECOVERY since 2026-09-22 07:47:24.8543534+00:00",
+      "actual": "LOAD_RESULT_REQUIRES_RECOVERY since 2026-09-22T07:47:24.8543534+00:00 (0 s, Operator, Blocked @ N1-3_N1-7)"
+    },
+    {
+      "id": "L2-BJ-09",
+      "description": "停摆期间运行时又跑了几轮，阻断码与开始时间不变",
+      "outcome": "PASS",
+      "expected": "LOAD_RESULT_REQUIRES_RECOVERY since 2026-09-22T07:47:24.8543534+00:00",
+      "actual": "LOAD_RESULT_REQUIRES_RECOVERY since 2026-09-22T07:47:24.8543534+00:00 (4 s, Operator, Blocked @ N1-3_N1-7)"
+    }
+  ]
+}

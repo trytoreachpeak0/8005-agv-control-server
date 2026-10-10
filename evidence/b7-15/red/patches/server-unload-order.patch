@@ -1,0 +1,26 @@
+From b43fa390ce616913f13af0c04b34e39e61b3d9b1 Mon Sep 17 00:00:00 2001
+From: Zhengyu Shao <trytoreachpeak0@gmail.com>
+Date: Tue, 22 Sep 2026 02:11:58 +0800
+Subject: [PATCH] DEFECT(cs#218 red evidence, local only, never push):
+ unload-order
+
+---
+ src/ControlServer.Host/Runtime/JourneyStopCursor.cs | 2 +-
+ 1 file changed, 1 insertion(+), 1 deletion(-)
+
+diff --git a/src/ControlServer.Host/Runtime/JourneyStopCursor.cs b/src/ControlServer.Host/Runtime/JourneyStopCursor.cs
+index 8c997f72..d87f56fd 100644
+--- a/src/ControlServer.Host/Runtime/JourneyStopCursor.cs
++++ b/src/ControlServer.Host/Runtime/JourneyStopCursor.cs
+@@ -346,7 +346,7 @@ internal sealed class JourneyStopCursor
+             stops,
+             [.. everCarried
+                 .Where(row => row.Membership.RemovedAt == null)
+-                .OrderBy(row => row.Membership.AddedAt)
++                .OrderByDescending(row => row.Membership.AddedAt) // DEFECT cs#218: latest-added (rear) demand is unloaded first
+                 .ThenBy(row => row.Membership.DemandId, StringComparer.Ordinal)],
+             everCarried.Length > 1,
+             new HashSet<string>(
+-- 
+2.55.0.windows.5
+

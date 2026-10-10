@@ -1,0 +1,80 @@
+  Failed ControlServer.Tests.IntegrationSliceTraitArchitectureTests.EveryTestOutsideTheSliceFamilyIsAccountedFor
+         The ledger of partly-outside classes no longer matches the suite: HttpRiotMovementGatewayTests has 26 tests outside the family, ledgered as 23
+  Failed ControlServer.Tests.ForeignRunningOrderTests.Req0164ACancelIsSentOnceAndAnOrderStillRunningAfterItIsHandedToAPerson(disposition: Failed) [4 s]
+         System.InvalidOperationException : Sequence contains no elements.
+  Failed ControlServer.Tests.ForeignRunningOrderTests.Req0164ACancelIsSentOnceAndAnOrderStillRunningAfterItIsHandedToAPerson(disposition: Unknown)
+         System.InvalidOperationException : Sequence contains no elements.
+  Failed ControlServer.Tests.ForeignRunningOrderTests.Req0164ACancelIsSentOnceAndAnOrderStillRunningAfterItIsHandedToAPerson(disposition: Accepted)
+         System.InvalidOperationException : Sequence contains no elements.
+  Failed ControlServer.Tests.ForeignRunningOrderTests.Req0164TheDashboardShowsEveryVehicleAForeignOrderHoldsWithItsDedicatedReason
+         Assert.Equal() Failure: Collections differ
+  Failed ControlServer.Tests.ForeignRunningOrderTests.Req0164ACrashAfterTheCancelWentOutAndBeforeItWasRecordedDoesNotSendItAgain(cancelTakesEffect: True)
+         Assert.Throws() Failure: No exception was thrown
+  Failed ControlServer.Tests.ForeignRunningOrderTests.Req0164ACrashAfterTheCancelWentOutAndBeforeItWasRecordedDoesNotSendItAgain(cancelTakesEffect: False)
+         Assert.Throws() Failure: No exception was thrown
+  Failed ControlServer.Tests.ForeignRunningOrderTests.Req0164TheOrderIsReadAgainBeforeTheCancelAndLeftAloneWhenItNoLongerRunsOnOurVehicle(change: "ended", expectedState: "ENDED")
+         Assert.True() Failure
+  Failed ControlServer.Tests.MultiVehicleExecutionTests.AVehicleAForeignOrderHoldsTakesNoAppendedDemandUntilTheOrderHasEnded [6 s]
+         Assert.Single() Failure: The collection contained 2 items
+  Failed ControlServer.Tests.BlockedJourneyDashboardTests.AForeignOrderHoldingTheVehicleIsNotExplainedAsItsOwnMoveOrder(foreignState: "STILL_RUNNING_AFTER_CANCEL", expectedLevel: "MaintenanceAdministrator", explained: False) [1 s]
+         Assert.Equal() Failure: Strings differ
+  Failed ControlServer.Tests.ForeignRunningOrderTests.Req0164TheOrderIsReadAgainBeforeTheCancelAndLeftAloneWhenItNoLongerRunsOnOurVehicle(change: "back-in-the-queue", expectedState: "LEFT_VEHICLE")
+         Assert.True() Failure
+  Failed ControlServer.Tests.ForeignRunningOrderTests.Req0164TheOrderIsReadAgainBeforeTheCancelAndLeftAloneWhenItNoLongerRunsOnOurVehicle(change: "moved-to-another-vehicle", expectedState: "LEFT_VEHICLE")
+         Assert.True() Failure
+  Failed ControlServer.Tests.ForeignRunningOrderTests.Req0164AnOrderThisServerHasAnIntentForIsItsOwnWhateverItsUpperIdLooksLike(match: "by-upper-id")
+         Assert.True() Failure
+  Failed ControlServer.Tests.ForeignRunningOrderTests.Req0164AnOrderThisServerHasAnIntentForIsItsOwnWhateverItsUpperIdLooksLike(match: "by-riot-order-id")
+         Assert.True() Failure
+  Failed ControlServer.Tests.ForeignRunningOrderTests.Req0164AVehicleAForeignOrderRunsOnTakesNoNewDispatchUntilTheOrderIsReadBackEnded(variant: "cancel-not-yet-effective")
+         Assert.Empty() Failure: Collection was not empty
+  Failed ControlServer.Tests.BlockedJourneyDashboardTests.AForeignOrderHoldingTheVehicleIsNotExplainedAsItsOwnMoveOrder(foreignState: "CANCEL_SENT", expectedLevel: "MaintenanceAdministrator", explained: False) [1 s]
+         Assert.Equal() Failure: Strings differ
+  Failed ControlServer.Tests.ForeignRunningOrderTests.Req0164AVehicleAForeignOrderRunsOnTakesNoNewDispatchUntilTheOrderIsReadBackEnded(variant: "ownership-unproven")
+         Assert.Empty() Failure: Collection was not empty
+  Failed ControlServer.Tests.ForeignRunningOrderTests.Req0164AnOrderThisServerHasCommandedButHasNoIntentForIsNotProvablyForeign
+         System.InvalidOperationException : Sequence contains no elements.
+  Failed ControlServer.Tests.ForeignRunningOrderTests.Req0164AnUpperIdShapedLikeOursWithoutAnIntentIsHeldAndAlarmedButNeverCancelled(upperId: "w2g-99999999-9999-4999-8999-999999999999-GATE-1")
+         System.InvalidOperationException : Sequence contains no elements.
+  Failed ControlServer.Tests.ForeignRunningOrderTests.Req0164AnUpperIdShapedLikeOursWithoutAnIntentIsHeldAndAlarmedButNeverCancelled(upperId: "  W2G-99999999-9999-4999-8999-999999999999-REBUILD"···)
+         System.InvalidOperationException : Sequence contains no elements.
+  Failed ControlServer.Tests.BlockedJourneyDashboardTests.AForeignOrderHoldingTheVehicleIsNotExplainedAsItsOwnMoveOrder(foreignState: "HELD_UNPROVEN", expectedLevel: "MaintenanceAdministrator", explained: False) [1 s]
+         Assert.Equal() Failure: Strings differ
+  Failed ControlServer.Tests.ForeignRunningOrderTests.Req0164AnUpperIdShapedLikeOursWithoutAnIntentIsHeldAndAlarmedButNeverCancelled(upperId: "W2G-99999999-9999-4999-8999-999999999999-PICKUP-1")
+         System.InvalidOperationException : Sequence contains no elements.
+  Failed ControlServer.Tests.ForeignRunningOrderTests.Req0164AnOrderThatDoesNotShowItRunsOnOurVehicleIsNeitherRecordedNorAlarmedNorCommanded(variant: "queueing-appointed-to-our-vehicle")
+         The listing was read 0 times.
+  Failed ControlServer.Tests.ForeignRunningOrderTests.Req0164AnOrderThatDoesNotShowItRunsOnOurVehicleIsNeitherRecordedNorAlarmedNorCommanded(variant: "running-on-another-vehicle")
+         The listing was read 0 times.
+  Failed ControlServer.Tests.ForeignRunningOrderTests.Req0164AnOrderThatDoesNotShowItRunsOnOurVehicleIsNeitherRecordedNorAlarmedNorCommanded(variant: "running-without-an-executing-vehicle")
+         The listing was read 0 times.
+  Failed ControlServer.Tests.ForeignRunningOrderTests.Req0164AnOrderThatDoesNotShowItRunsOnOurVehicleIsNeitherRecordedNorAlarmedNorCommanded(variant: "queueing-with-our-key-as-executing-vehicle")
+         The listing was read 0 times.
+  Failed ControlServer.Tests.ForeignRunningOrderTests.Req0164AnOrderThatDoesNotShowItRunsOnOurVehicleIsNeitherRecordedNorAlarmedNorCommanded(variant: "running-on-our-archived-vehicle")
+         The listing was read 0 times.
+  Failed ControlServer.Tests.ForeignRunningOrderTests.Req0164AForeignOrderOnTheVehicleIsNotExplainedAsTheOwnOrderInFlight(variant: "cancel-not-yet-effective")
+         Assert.Equal() Failure: Collections differ
+  Failed ControlServer.Tests.ForeignRunningOrderTests.Req0164AForeignOrderOnTheVehicleIsNotExplainedAsTheOwnOrderInFlight(variant: "ownership-unproven")
+         Assert.Equal() Failure: Collections differ
+  Failed ControlServer.Tests.ForeignRunningOrderTests.Req0164AForeignOrderRunningOnOurVehicleIsCancelledOnceAndOnlyCancelled(orderState: 7)
+         Assert.Equal() Failure: Collections differ
+  Failed ControlServer.Tests.ForeignRunningOrderTests.Req0164AForeignOrderRunningOnOurVehicleIsCancelledOnceAndOnlyCancelled(orderState: 9)
+         Assert.Equal() Failure: Collections differ
+  Failed ControlServer.Tests.ForeignRunningOrderTests.Req0164AForeignOrderRunningOnOurVehicleIsCancelledOnceAndOnlyCancelled(orderState: 3)
+         Assert.Equal() Failure: Collections differ
+  Failed ControlServer.Tests.ForeignRunningOrderTests.Req0164AReReadThatDoesNotAnswerDefersTheCancelToARoundWhoseReReadDoes
+         System.InvalidOperationException : Sequence contains no elements.
+  Failed ControlServer.Tests.ForeignRunningOrderTests.Req0164ACrashAfterTheCancelWasDecidedAndBeforeItWentOutSendsItOnceAfterTheRestart
+         Assert.Throws() Failure: No exception was thrown
+  Failed ControlServer.Tests.ForeignRunningOrderTests.Req0164TheAlarmAndTheAuditRecordNameTheOrderTheVehicleTheTimeAndTheCancelResult
+         System.InvalidOperationException : Sequence contains no elements.
+  Failed ControlServer.Tests.ForeignRunningOrderTests.Req0164AnOrderCancelledOnceThatComesBackToOurVehicleIsNotCancelledAgain
+         Assert.Single() Failure: The collection was empty
+  Failed ControlServer.Tests.ForeignRunningOrderTests.Req0164AForeignOrderIsRecognisedWhileTheSessionIsNotReadyOnTheOwnOrderAndOnlyItIsCancelled
+         Assert.Equal() Failure: Collections differ
+  Failed ControlServer.Tests.ForeignRunningOrderTests.Req0164ThisServersOwnRunningOrderIsNeverTakenForAForeignOne
+         Assert.True() Failure
+  Failed ControlServer.Tests.ForeignRunningOrderTests.Req0164AnIncompleteListingConcludesNothing
+         Assert.True() Failure
+  Failed ControlServer.Tests.ForeignRunningOrderTests.Req0164ACancelDecidedBeforeACrashIsNotSentWhenTheOrderLeftOurVehicleMeanwhile
+         Assert.Throws() Failure: No exception was thrown

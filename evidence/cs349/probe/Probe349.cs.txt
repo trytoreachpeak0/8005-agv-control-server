@@ -1,0 +1,66 @@
+// Evidence only, not part of any project (control-server#349, cited by control-server#358).
+// The temporary probe as it ran on fp/v2-impl@da1eaf8a. To run it again, copy it to
+// tests/ControlServer.Tests/Probe349.cs and run:
+//   dotnet test tests/ControlServer.Tests/ControlServer.Tests.csproj -c Release --filter "FullyQualifiedName~Probe349" --logger "console;verbosity=detailed"
+// Its recorded output is probe-output.txt next to this file. The same behaviour is pinned by
+// EmergencyReleaseVersusOwnOrderRebuildTests.WithTheRealOnboardsSessionNotReadyTheRebuildWaitsForTheSessionAsWellAsTheDelay.
+using ControlServer.Application;
+using ControlServer.Domain;
+using ControlServer.Host.Runtime;
+using ControlServer.Infrastructure.Persistence;
+using Microsoft.EntityFrameworkCore;
+using static ControlServer.Tests.Batch7StopDrivenAdvanceDriver;
+using static ControlServer.Tests.JourneyRuntimeWorkerTestKit;
+
+namespace ControlServer.Tests;
+
+// Temporary probe for #349; deleted before commit.
+public sealed class Probe349
+{
+    [Fact]
+    public async Task SessionNotReadyThenFailed()
+    {
+        var token = TestContext.Current.CancellationToken;
+        await using RuntimeFixture fixture = await RuntimeFixture.CreateAsync();
+        fixture.Catalog.Set(fixture.Demand(FirstDemandId, FirstSublot, Now.AddMinutes(-10)));
+        fixture.BoxCounts.Set(FirstSublot, 7);
+        await TickAndRunAsync(fixture);
+        fixture.Context.ChangeTracker.Clear();
+        JourneyRuntimeRow j = await fixture.RuntimeAsync();
+        await OwnOrderRebuildTests.DropSessionOnOwnOrderAsync(fixture);
+        await Dump(fixture, "dropped");
+        fixture.Riot.MovementState = "MT_RUNNING";
+        fixture.Riot.FailOrder(j.PickupUpperId);
+        for (int i = 0; i < 3; i++)
+        {
+            fixture.Clock.Advance(TimeSpan.FromSeconds(1));
+            await fixture.HearFromPeerAsync();
+            fixture.Context.ChangeTracker.Clear();
+            await fixture.Engine.ExecuteOnceAsync(token);
+            fixture.Context.ChangeTracker.Clear();
+            await Dump(fixture, $"round{i}");
+        }
+
+        await fixture.RestoreSessionReadyAsync();
+        fixture.Context.ChangeTracker.Clear();
+        for (int i = 0; i < 2; i++)
+        {
+            fixture.Clock.Advance(TimeSpan.FromSeconds(1));
+            await fixture.HearFromPeerAsync();
+            fixture.Context.ChangeTracker.Clear();
+            await fixture.Engine.ExecuteOnceAsync(token);
+            fixture.Context.ChangeTracker.Clear();
+            await Dump(fixture, $"ready{i}");
+        }
+    }
+
+    private static async Task Dump(RuntimeFixture fixture, string label)
+    {
+        await using ControlServerDbContext r = new(fixture.DbOptionsForTests);
+        var j = await r.JourneyRuntimes.AsNoTracking().SingleAsync();
+        var faults = await r.VehicleFaultStates.AsNoTracking().ToArrayAsync();
+        var trig = await r.RiotOrderCommandAudit.AsNoTracking().Select(x => x.CommandType + ":" + x.Outcome).ToArrayAsync();
+        TestContext.Current.TestOutputHelper!.WriteLine(
+            $"{label}: stage={j.Stage} code={j.BlockReasonCode} faults=[{string.Join(",", faults.Select(f => f.Level + "/" + f.FaultGeneration))}] audit=[{string.Join(",", trig)}]");
+    }
+}

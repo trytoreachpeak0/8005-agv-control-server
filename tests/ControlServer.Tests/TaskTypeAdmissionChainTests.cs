@@ -32,7 +32,6 @@ public sealed class TaskTypeAdmissionChainTests : IAsyncDisposable
         MapId = 25,
         AllowedWorkTypes = [.. TransportTaskTypes.All],
         AllowedDispatchZones = ["MAP-25-WIRE_TO_GATE"],
-        MinimumBatteryPercent = 30,
         MaximumEvidenceAge = TimeSpan.FromMinutes(2),
     };
 
@@ -89,26 +88,32 @@ public sealed class TaskTypeAdmissionChainTests : IAsyncDisposable
     }
 
     /// <summary>
-    /// 绑定齐全、但本构建还不会执行的任务类型是「尚未可执行」；同一任务类型缺绑定时报的是缺绑定——两者可区分，
-    /// 缺绑定在前，所以一条未绑定的 <c>STAGING_TO_WIRE</c> 需求今天就报缺绑定，而不是笼统挡成范围外。
-    /// 「尚未可执行」的例子自 control-server#163 起是同向的 <c>DIE_TO_OVEN</c>（批次 10）：<c>STAGING_TO_WIRE</c> 已可执行。
+    /// 缺绑定点名为缺绑定，不笼统挡成范围外：部署允许、规则表认识、只是本图没绑定的任务类型，每一类都报
+    /// <c>TASK_TYPE_BINDING_MISSING</c>（REQ-0335）。
     /// </summary>
-    [Fact]
+    /// <remarks>
+    /// 批次 10（control-server#545）之前这条还以 <c>DIE_TO_OVEN</c> 为例钉「绑定齐全、本构建还不会执行」判
+    /// <c>TASK_TYPE_NOT_YET_EXECUTABLE</c>。六类都可执行之后那一半没有真实的例子可举，只能伪造一个不可执行的类型，
+    /// 所以删掉了；判据分支与原因码作为扩类型的接缝保留，理由见 <c>WorkTypeScopeCriterion</c>。
+    /// </remarks>
+    [Theory]
     [Trait("IntegrationSlice", "FP-IS-10")]
-    public async Task ABoundTaskTypeThisBuildCannotExecuteIsNotYetExecutableAndAMissingBindingIsNamedFirst()
+    [InlineData(TransportTaskTypes.StagingToWire, FixedStationEnd.Origin)]
+    [InlineData(TransportTaskTypes.DieToWireStaging, FixedStationEnd.Destination)]
+    [InlineData(TransportTaskTypes.DieToOven, FixedStationEnd.Destination)]
+    [InlineData(TransportTaskTypes.WireToOptical, FixedStationEnd.Destination)]
+    [InlineData(TransportTaskTypes.WireToNitrogen, FixedStationEnd.Destination)]
+    public async Task AMissingBindingIsNamedAsSuchForEveryTaskTypeTheDeploymentAllows(string taskType, FixedStationEnd end)
     {
         DispatchAdmissionChain chain = await ChainAsync(Configured);
 
         Assert.Equal(
-            DispatchReasonCodes.TaskTypeNotYetExecutable,
-            await chain.EvaluateAsync(Evaluation(Round(Bound), TransportTaskTypes.DieToOven), Token));
-        Assert.Equal(
             DispatchReasonCodes.TaskTypeBindingMissing,
             await chain.EvaluateAsync(
                 Evaluation(
-                    Round(taskType => FixedTaskStationResolution.Refused(
-                        taskType, FixedStationEnd.Origin, DispatchReasonCodes.TaskTypeBindingMissing)),
-                    TransportTaskTypes.StagingToWire),
+                    Round(unbound => FixedTaskStationResolution.Refused(
+                        unbound, end, DispatchReasonCodes.TaskTypeBindingMissing)),
+                    taskType),
                 Token));
     }
 
@@ -155,7 +160,10 @@ public sealed class TaskTypeAdmissionChainTests : IAsyncDisposable
             new WireToGateStore(_context),
             new VehicleFaultStore(_context),
             new JourneyRuntimeWorkerTestKit.RecordingBoxCounts(),
-            NullLogger<SlotCapacityCriterion>.Instance));
+            NullLogger<SlotCapacityCriterion>.Instance,
+            new TransportDemandSuppressionStore(_context),
+            _context,
+            TestChargingPolicies.AllApproved));
     }
 
     private static DispatchRoundFacts Round(Func<string, FixedTaskStationResolution> resolve) => new(

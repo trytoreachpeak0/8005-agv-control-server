@@ -1,0 +1,46 @@
+# L2 场景证据：stop-ended-journey-continues
+
+结论：**PASS**
+
+## 身份
+
+| 项 | 值 |
+| --- | --- |
+| runId | `20260926T121515785Z` |
+| agvId | `AGV-L2-001` |
+| batchId | `unspecified` |
+| controlServerCommit | `8e9f140e517e6aaac45c26f9910ebf7890b369b0` |
+| protocolReleaseIdentity.repository | `8005-agv-protocol` |
+| protocolReleaseIdentity.releaseVersion | `2.0.0` |
+| protocolReleaseIdentity.tag | `protocol-v2.0.0` |
+| protocolReleaseIdentity.commit | `86575456c847041515b7b75e8851a00e0d939804` |
+| protocolReleaseIdentity.protocolVersion | `3` |
+| protocolReleaseIdentity.profileId | `AGV_FULL_PRODUCT` |
+| protocolReleaseIdentity.manifestSha256 | `4ac095ad371d3aaa60d7c2e0198cfd64cff5f3068230fc3420e9cdf5616422a7` |
+| protocolReleaseIdentity.schemaBundleSha256 | `9db0dbdc22fed7e39edf8d01b1fc40a12f5d70a7414f696f909ab2a87eb8c221` |
+| protocolReleaseIdentity.vectorsSha256 | `391fa69a7d6e9f86ea139ba4c74eadf4994bf0a87e89d3dc5258dd7968d9182a` |
+| protocolReleaseIdentity.approvalStatus | `APPROVED_RELEASE` |
+| rig | `SyntheticOnboard` |
+| stageRoot | `C:\Users\szy\AppData\Local\Temp\l2-20260926T121515785Z` |
+| vehicleKey | `BROKERX-L2-0001` |
+
+## 判据
+
+| 判据 | 结论 | 期望 | 实际 |
+| --- | --- | --- | --- |
+| 站点等待到期：乙被终结，甲仍在车上，旅程没有收尾（B 形态） | PASS | `B TERMINATED, A LOADED, not Completed` | `B TERMINATED, A LOADED, AwaitingStationDeparture CLOSED/CARGO_HOLDING_TIMEOUT` |
+| 车收到并确认了一张 11 号站的空清单：号比此前每一版都大，作业会话与期限为 null | PASS | `one acknowledged empty worklist above every other` | `1@N1-3_N1-7x1+ 2@C15-13x1+ 3@C15-13x0+` |
+| 迟到的扫码得到 SublotRejected / WORKLIST_REVISION_STALE：demandId 为 null，currentWorklistRevision 是空清单的号 | PASS | `WORKLIST_REVISION_STALE @ 3` | `WORKLIST_REVISION_STALE demand= @ 3` |
+| 迟到的取消被拒，原因码 WORKLIST_REVISION_STALE（不再是误导人去查授权的 ACTION_NOT_ALLOWED_IN_STATE） | PASS | `REJECTED / WORKLIST_REVISION_STALE` | `REJECTED / WORKLIST_REVISION_STALE` |
+| 关卡那一版清单的号在空清单之上，整条清单流没有两版同号 | PASS | `gate above the empty one, all distinct` | `1@N1-3_N1-7x1+ 2@C15-13x1+ 3@C15-13x0+ 5@关卡x1+` |
+| 从到 11 号站起会话没断过：合成车载端的会话代不变、没进过 FAULTED，旅程在关卡卸完收尾 | PASS | `generation 1, Completed` | `generation 1 (READY), Completed CLOSED/CARGO_HOLDING_TIMEOUT` |
+
+## 目录内容
+
+- `assertions.json` —— 机器可读的判据结论
+- `timeline.jsonl` —— 一行一次判据翻转，只追加
+- `logs/` —— 每个组件的 stdout 与 stderr
+- `snapshots/` —— 收尾时各控制面与服务端数据库的快照
+
+L2 PASS 只证明服务端在假 RIoT、假 MesIngest 与合成车载端下的跨端时序，
+**不代表真实 RCS、真车、真实 IO 模块或接线合格**。

@@ -1,0 +1,73 @@
+{
+  "schemaVersion": 1,
+  "scenario": "g3-exception-compensate",
+  "runId": "20261010T045222857Z",
+  "outcome": "PASS",
+  "failureReason": "",
+  "identity": {
+    "vehicleKey": "BROKERX-L2-0001",
+    "protocolReleaseIdentity": {
+      "repository": "8005-agv-protocol",
+      "releaseVersion": "3.0.0",
+      "tag": "protocol-v3.0.0",
+      "commit": "3f091cb2eae7c58cec54a95dd9389c9180bc7b4c",
+      "protocolVersion": 4,
+      "profileId": "AGV_FULL_PRODUCT",
+      "manifestSha256": "d5e1a53f1fd61f105a890dc0267e1b0a9ac5ea49f713d2cf730b0f554df9db9e",
+      "schemaBundleSha256": "e435b2b14d9ccd60c89f07df909da7626fef056a6b8a2241087557fd7dc3df43",
+      "vectorsSha256": "be849f9749b004296ebd9e7bffa98faf2f8ffa90b63308ca3b210c68e7b8656e",
+      "approvalStatus": "APPROVED_RELEASE"
+    },
+    "rig": "RealOnboard",
+    "agvId": "AGV-L2-001",
+    "controlServerCommit": "1f63fe0bb173f37c05dd5059c78455da57ed100b",
+    "batchId": "unspecified",
+    "onboardHmiCommit": "b9e67a538ba4cdf1916d201a08af40dd28270d14",
+    "slotsSimulatorCommit": "fb5f7c593742bf98bc3957b8729a38aad5321f28",
+    "stageRoot": "C:\\Users\\szy\\AppData\\Local\\Temp\\l2-20261010T045222857Z"
+  },
+  "assertions": [
+    {
+      "id": "G3-07-21",
+      "description": "消息顺序与向量一致，各一次：SessionRequested → Opened → ActionSubmitted(COMPENSATE_LOAD_ALL_EMPTY) → Accepted → LoadCompensationRequested → LoadCompensationCommand → LoadCompensationResult（CV-EXCEPTION-COMPENSATE orderedExpectedMessages）",
+      "outcome": "PASS",
+      "expected": "各 1，按向量顺序",
+      "actual": "SessionRequested×1 / Action×1 COMPENSATE_LOAD_ALL_EMPTY / CompensationRequested×1 / Command×1 / Result×1 / 有序=True"
+    },
+    {
+      "id": "G3-07-22",
+      "description": "补偿依托恢复会话授权：工作流挂在这次打开的恢复会话上，命令就是工作流绑定的那一条，指向同一会话、同一尝试、同一仓位（AUTHORIZE_COMPENSATION_AGAINST_RECOVERY_SESSION）",
+      "outcome": "PASS",
+      "expected": "会话 a377fd3f-d953-115d-9354-965f79cdcb36 / 命令 = 工作流绑定 / attempt 921c53e0-1de7-db5e-b7fb-7df8e290cbac / 仓 1",
+      "actual": "会话 a377fd3f-d953-115d-9354-965f79cdcb36 / 命令 f2f1d46e-38f9-9858-bb49-b125d6fccda1 vs 绑定 f2f1d46e-38f9-9858-bb49-b125d6fccda1 / attempt 921c53e0-1de7-db5e-b7fb-7df8e290cbac / 仓 1"
+    },
+    {
+      "id": "G3-07-23",
+      "description": "补偿只执行一次、证空不开门：一条命令、一份结果；按下补偿之后没有任何开锁（EXECUTE_COMPENSATION_ONCE / forbidden duplicate-slot-unlock）",
+      "outcome": "PASS",
+      "expected": "命令 1 / 结果 1 / 补偿后开锁 0",
+      "actual": "命令 1 / 结果 1 / 补偿后开锁 0"
+    },
+    {
+      "id": "G3-07-24",
+      "description": "车载端报补偿后的仓位状态：ALL_EMPTY，每仓空、锁上、输出复位，与模拟器一致（REPORT_COMPENSATED_SLOT_STATE）",
+      "outcome": "PASS",
+      "expected": "ALL_EMPTY 1=COMPLETED/EMPTY/LOCKED/RESET / 1=CLOSED/EMPTY/1/0",
+      "actual": "ALL_EMPTY 1=COMPLETED/EMPTY/LOCKED/RESET / 1=CLOSED/EMPTY/1/0"
+    },
+    {
+      "id": "G3-07-25",
+      "description": "补偿收敛且无重复提交：工作流 Reconciled、恢复会话 CLOSED、需求与装载 Cancelled、租约释放、旅程以 CANCELLED_BY_LOAD_COMPENSATION 收尾，没有去关卡，RIoT 上只有取货那一张单（finalState NO_DUPLICATE_COMMIT / NO_UNPROVEN_STATE）",
+      "outcome": "PASS",
+      "expected": "Reconciled / CLOSED / Cancelled / Cancelled / 释放 / Completed/CANCELLED_BY_LOAD_COMPENSATION / TO_GATE 0 / RIoT 单 1",
+      "actual": "Reconciled / CLOSED / Cancelled / Cancelled / 释放=True / Completed/CANCELLED_BY_LOAD_COMPENSATION / TO_GATE 0 / RIoT 单 1"
+    },
+    {
+      "id": "G3-07-26",
+      "description": "补偿收敛之后车辆放出来了：这条需求所在旅程的用途占有记录已释放，同一台车在 60 秒内接了下一单（旅程到 AwaitingPickupArrival、没有停摆原因码；control-server#131，#387 起读用途占有）",
+      "outcome": "PASS",
+      "expected": "用途占有记录已释放 / 下一单 AwaitingPickupArrival on AGV-L2-001，TO_PICKUP 意图 CONFIRMED，没有停摆原因码",
+      "actual": "ClaimRecord.ReleasedAt='2026-10-10 04:53:29.7616561+00:00' / 下一单 AwaitingPickupArrival/ TO_PICKUP=CONFIRMED on AGV-L2-001"
+    }
+  ]
+}

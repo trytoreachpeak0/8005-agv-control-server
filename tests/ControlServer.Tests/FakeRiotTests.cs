@@ -143,6 +143,31 @@ public sealed class FakeRiotTests
         Assert.Equal(RiotOrderObservationKind.NotFound, result.Kind);
     }
 
+    /// <summary>
+    /// control-server#375's injection: armed once, the next read of an absent order answers what the gateway makes a non-exact
+    /// Unknown, and only that one -- the vehicle read beside it and the read after it are untouched.
+    /// </summary>
+    [Fact]
+    public async Task AnArmedAbsentOrderReadFaultFailsExactlyTheNextAbsentReadAndNothingElse()
+    {
+        await using FakeRiotFixture fixture = await FakeRiotFixture.StartAsync();
+        HttpRiotMovementGateway gateway = fixture.Gateway();
+        await fixture.CommandAsync(HttpMethod.Put, "faults/absent-order-reads", new { count = 1 });
+
+        RiotVehicleObservation vehicle = await gateway.ReadVehicleAsync(VehicleKey, TestContext.Current.CancellationToken);
+        RiotOrderObservation failed = await gateway.ReconcileByUpperIdAsync("UPPER-375", TestContext.Current.CancellationToken);
+        RiotOrderObservation next = await gateway.ReconcileByUpperIdAsync("UPPER-375", TestContext.Current.CancellationToken);
+        JsonElement faults = (await fixture.CommandAsync(HttpMethod.Put, "faults/absent-order-reads", new { count = 0 }))
+            .GetProperty("body").GetProperty("absentOrderReadFaults");
+
+        Assert.True(vehicle.Connected);
+        Assert.Equal(RiotOrderObservationKind.Unknown, failed.Kind);
+        Assert.Equal("SdkFailure", failed.Receipt?.Classification);
+        Assert.NotNull(failed.Receipt?.FailureCategory);
+        Assert.Equal(RiotOrderObservationKind.NotFound, next.Kind);
+        Assert.Equal(["UPPER-375"], faults.GetProperty("failedUpperIds").EnumerateArray().Select(item => item.GetString()));
+    }
+
     [Fact]
     public async Task AServerErrorFaultLeavesTheAdapterFailClosedRatherThanOptimistic()
     {
@@ -325,13 +350,16 @@ public sealed class FakeRiotTests
         1,
         1);
 
-    private sealed class FakeRiotFixture : IAsyncDisposable
+    internal sealed class FakeRiotFixture : IAsyncDisposable
     {
         private WebApplication app = null!;
 
         public HttpClient Client { get; private set; } = null!;
 
-        public static async Task<FakeRiotFixture> StartAsync()
+        public static Task<FakeRiotFixture> StartAsync() => StartAsync(TimeProvider.System);
+
+        /// <summary>With the clock the battery simulation reads, and any further seed switches (control-server#402).</summary>
+        public static async Task<FakeRiotFixture> StartAsync(TimeProvider clock, params string[] extraArgs)
         {
             FakeRiotFixture fixture = new();
             // Port 0 lets the OS pick, so parallel test classes never collide on 58008 and no test
@@ -341,8 +369,9 @@ public sealed class FakeRiotTests
                 "--FakeRiot:port=0",
                 "--FakeRiot:instanceId=fake-riot-test",
                 "--FakeRiot:Seed:vehicleKey=" + VehicleKey,
-                "--FakeRiot:Seed:mapIdentity=MAP-TEST"
-            ]);
+                "--FakeRiot:Seed:mapIdentity=MAP-TEST",
+                .. extraArgs
+            ], clock);
             Assert.NotNull(app);
             fixture.app = app;
             await app.StartAsync(TestContext.Current.CancellationToken);
@@ -403,7 +432,7 @@ public sealed class FakeRiotTests
             return await Client.SendAsync(request, TestContext.Current.CancellationToken);
         }
 
-        private async Task<JsonElement> SnapshotAsync()
+        public async Task<JsonElement> SnapshotAsync()
         {
             string json = await Client.GetStringAsync(
                 new Uri("/control/v1/snapshot", UriKind.Relative), TestContext.Current.CancellationToken);

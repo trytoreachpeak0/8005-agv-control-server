@@ -41,6 +41,10 @@ public sealed class StructuralDispatchBlockTests
     [InlineData("VEHICLE_FAULT_SUSPECTED_BLOCK", DispatchReasonClass.Backlog)]
     [InlineData("VEHICLE_FAULT_ISOLATED", DispatchReasonClass.Backlog)]
     [InlineData("VEHICLE_FAULT_IDENTITY_UNRESOLVED", DispatchReasonClass.Backlog)]
+    [InlineData("VEHICLE_COMMITTED_TO_IDLE_RETURN", DispatchReasonClass.Backlog)]
+    [InlineData("VEHICLE_SLOT_DOOR_HOLD", DispatchReasonClass.Backlog)]
+    [InlineData("VEHICLE_COMMITTED_TO_CHARGING", DispatchReasonClass.Backlog)]
+    [InlineData("VEHICLE_IN_MANUAL_CHARGING_HOLD", DispatchReasonClass.Backlog)]
     [InlineData("OUT_OF_SCOPE_WORK_TYPE", DispatchReasonClass.Backlog)]
     [InlineData("TASK_TYPE_BINDING_MISSING", DispatchReasonClass.Backlog)]
     [InlineData("TASK_TYPE_BINDING_STATION_NOT_IN_CATALOG", DispatchReasonClass.Backlog)]
@@ -100,6 +104,38 @@ public sealed class StructuralDispatchBlockTests
     [InlineData("FINAL_JOURNEY_PLAN_INCOMPLETE", DispatchReasonClass.Backlog)]
     [InlineData("DEMAND_DECISION_FACT_CHANGED", DispatchReasonClass.Backlog)]
     [InlineData("DEMAND_LEFT_CATALOG", DispatchReasonClass.Backlog)]
+    // 批次7-06（control-server#211）。八条都归普通积压：仓位被本车自己的货占着会随卸货腾出来；
+    // 途中追加的六种拒绝会随参数批准、车开过那一站、别的需求卸完而在下一轮通过；一个 Sublot 命中多种任务类型
+    // 是 MES 那一侧的数据自相矛盾，下一份快照就能改掉。没有一条是「整个车队都接不了」。
+    [InlineData("SLOT_GROUP_OCCUPIED_BY_OWN_CARGO", DispatchReasonClass.Backlog)]
+    [InlineData("EN_ROUTE_APPEND_NOT_CONFIGURED", DispatchReasonClass.Backlog)]
+    [InlineData("EN_ROUTE_APPEND_DELAY_GATE_EXCEEDED", DispatchReasonClass.Backlog)]
+    [InlineData("EN_ROUTE_APPEND_DELAY_UNCOMPUTABLE", DispatchReasonClass.Backlog)]
+    // 这一行断的是「分类表里有这个码」，不是「它会被产出」。当前模型下没有任何输入能让它成为最终结论——
+    // 相邻插入总有合法位，而腿数一旦触发，撞上腿数的那个位置就 continue 掉、不会再贡献连续性理由
+    // （Batch7EnRouteAppendPlannerTests 里那段 remarks 有完整的两层机理，以及它为什么今天还没有判据）。
+    // 能通过它的错误实现：把规划器里 refusals.Add(EnRouteAppendBreaksZoneContiguity) 换成别的码，这一行照绿。
+    // 留着它是因为登记一个今天产不出的码，成本是一行，而将来模型一变就不必再新增码、改仪表盘文案。
+    [InlineData("EN_ROUTE_APPEND_BREAKS_ZONE_CONTIGUITY", DispatchReasonClass.Backlog)]
+    [InlineData("EN_ROUTE_APPEND_PLAN_LIMIT_REACHED", DispatchReasonClass.Backlog)]
+    [InlineData("EN_ROUTE_APPEND_NO_INSERTION_POINT", DispatchReasonClass.Backlog)]
+    [InlineData("EN_ROUTE_APPEND_DEMAND_LEFT_THIS_JOURNEY", DispatchReasonClass.Backlog)]
+    // 批次7-07（control-server#212）：装货阶段结束的在途车不再接追加。只是这一辆车的旅程，别的车照接。
+    [InlineData("LOADING_PHASE_CLOSED", DispatchReasonClass.Backlog)]
+    // 批次8-20（control-server#391，REQ-0204）：公共站点被别的车预占或占用着。那辆车离点之后就放，这条需求那时再派。
+    [InlineData("FIXED_TASK_STATION_RESERVED_BY_OTHER_VEHICLE", DispatchReasonClass.Backlog)]
+    [InlineData("FIXED_TASK_STATION_OCCUPIED_BY_OTHER_VEHICLE", DispatchReasonClass.Backlog)]
+    [InlineData("FIXED_TASK_STATION_APPROACHED_BY_OTHER_VEHICLE", DispatchReasonClass.Backlog)]
+    [InlineData("SUBLOT_TASK_TYPE_CONFLICT", DispatchReasonClass.Backlog)]
+    // 批次7-05（control-server#210）：按业务键抑制与同键已受理，都是有意不执行，不是故障，归普通积压。
+    [InlineData("TRANSPORT_DEMAND_KEY_SUPPRESSED", DispatchReasonClass.Backlog)]
+    [InlineData("TRANSPORT_DEMAND_KEY_ALREADY_ACCEPTED", DispatchReasonClass.Backlog)]
+    // 批次9-02（control-server#400）：没有已批准策略的车不承接新用途，车辆侧的状态，别的车照常，归普通积压。
+    [InlineData("CHARGING_POLICY_NOT_APPROVED", DispatchReasonClass.Backlog)]
+    // 批次9-05（control-server#403）：低于强制充电线的车属于充电、不接新任务，车辆侧的状态，别的车照常，归普通积压。
+    [InlineData("MANDATORY_CHARGE_REQUIRED", DispatchReasonClass.Backlog)]
+    // 批次9-05（control-server#403）：生效策略的强制充电线不高于救命线，整版不可用；车辆侧，激活一版合格的即解除，归普通积压。
+    [InlineData("CHARGING_POLICY_ENTRY_NOT_ABOVE_RESCUE_LINE", DispatchReasonClass.Backlog)]
     public void EveryReasonCodeHasItsClassAndARationale(string reasonCode, DispatchReasonClass expected)
     {
         DispatchReasonClassification row = Assert.Contains(reasonCode, StructuralDispatchClassification.ByCode);
@@ -123,8 +159,8 @@ public sealed class StructuralDispatchBlockTests
         string root = FindRepositoryRoot();
         string runtime = Path.Combine(root, "src", "ControlServer.Host", "Runtime");
         Regex code = new("\"([A-Z][A-Z0-9]*(?:_[A-Z0-9]+)+)\"");
-        // Leg types the plan builder writes into a plan; not verdicts.
-        HashSet<string> notReasonCodes = new(StringComparer.Ordinal) { "WIRE_TO_GATE", "TO_PICKUP", "TO_GATE", "TO_DROPOFF" };
+        // Leg types and stop purposes the plan builder writes into a plan; not verdicts.
+        HashSet<string> notReasonCodes = new(StringComparer.Ordinal) { "WIRE_TO_GATE", "TO_PICKUP", "TO_GATE", "TO_DROPOFF", "WAITING_POINT" };
 
         HashSet<string> written = new(StringComparer.Ordinal);
         foreach (string file in Directory.GetFiles(Path.Combine(runtime, "Dispatch", "Criteria"), "*.cs"))
@@ -288,7 +324,17 @@ public sealed class StructuralDispatchBlockTests
         Assert.Equal(DispatchReasonClass.Backlog, StructuralDispatchClassification.ClassOf("SOME_CODE_NOBODY_REGISTERED"));
     }
 
-    /// <summary>主机注册的轮末钩子是本票的汇总；四个批次 4 端口仍只由 GovernanceModule 注册，这里不重复注册。</summary>
+    /// <summary>
+    /// 主机注册的轮末钩子里有本票的汇总；四个批次 4 端口仍只由 GovernanceModule 注册，这里不重复注册。
+    /// </summary>
+    /// <remarks>
+    /// 批次7-09（control-server#214）起轮末钩子是一个组合（<see cref="DispatchRoundOutcomeSinks"/>）：结构性阻断在前，
+    /// 防饥饿升级（<see cref="StarvationEscalationSink"/>）在后。钩子仍只注册一个——派车轮只认一个——实现类型就是那个组合；
+    /// 两个汇总是它的构造参数，先后写在它自己的 <c>RecordAsync</c> 里，注册处没有可以排反的列表
+    /// （审查中 1：原来的注册是一个工厂里的列表，两项对调后全部用例照样绿）。先后由
+    /// <see cref="Batch7StarvationEscalationTests.ADemandUnderAStructuralDispatchBlockIsNotEscalatedHoweverLongItWaits"/> 守着：
+    /// 测试夹具与宿主用的是同一个组合类。
+    /// </remarks>
     [Fact]
     public void TheHostRegistersTheStructuralSummaryAsTheRoundEndHookAndNothingElseOfBatch4()
     {
@@ -296,7 +342,9 @@ public sealed class StructuralDispatchBlockTests
         services.AddDispatchAdmission();
 
         ServiceDescriptor hook = Assert.Single(services, descriptor => descriptor.ServiceType == typeof(IDispatchRoundOutcomeSink));
-        Assert.Equal(typeof(StructuralDispatchBlockSink), hook.ImplementationType);
+        Assert.Equal(typeof(DispatchRoundOutcomeSinks), hook.ImplementationType);
+        Assert.Single(services, descriptor => descriptor.ServiceType == typeof(StructuralDispatchBlockSink));
+        Assert.Single(services, descriptor => descriptor.ServiceType == typeof(StarvationEscalationSink));
         Assert.DoesNotContain(services, descriptor =>
             descriptor.ServiceType == typeof(IStructuralDispatchBlockStore) ||
             descriptor.ServiceType == typeof(IVehicleSlotPositionReader));

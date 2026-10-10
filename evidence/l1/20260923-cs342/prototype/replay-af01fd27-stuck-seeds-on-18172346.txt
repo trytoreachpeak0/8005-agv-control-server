@@ -1,0 +1,412 @@
+0000000006a1 violation=none [Arrive, CutAfter(2), Round(6s), NotReady, Round(8s), Round(4s), BeginHandshake]
+0000000006h1 violation=none [Arrive, CutAfter(3), CompleteHandshake, Round(2s), Ack, BeginHandshake, NotReady, NotReady, Round(4s), BeginHandshake, CompleteHandshake, CutAfter(1)]
+0000000006J1 violation=none [CutAfter(3), Arrive, Ack, Ack, Arrive, Round(6s), Round(1s), CutAfter(0), BeginHandshake, Round(6s), Arrive, Round(7s)]
+0000000006O1 violation=none [Arrive, CutAfter(1), CutAfter(2), Ack, Round(5s), Ack, BeginHandshake, Ack, NotReady, NotReady(ownOrder), Round(8s), CompleteHandshake]
+0000000006R1 violation=none [Ack, Arrive, CutAfter(2), Round(6s), CompleteHandshake]
+0000000007e1 violation=none [Arrive, CutAfter(2), Round(4s)]
+0000000007u1 violation=none [Arrive, Arrive, CutAfter(3), Round(3s), CompleteHandshake, NotReady(ownOrder), CutAfter(1), Round(3s), Arrive, Arrive]
+0000000007O1 violation=none [Ack, CutAfter(0), CutAfter(4), Round(3s), Round(2s), BeginHandshake, Arrive, CompleteHandshake, CutAfter(3), Ack, Round(6s), CutAfter(2), Ack, CutAfter(4), Ack]
+0000000007Y1 violation=none [Round(5s), CutAfter(2), Ack, Round(5s), Ack, Arrive, Arrive, Round(7s), Round(3s), BeginHandshake]
+0000000007-1 violation=none [CutAfter(3), Ack, Round(3s), Arrive, Round(1s), BeginHandshake, CutAfter(1), Arrive, Round(7s), Round(8s), CutAfter(0), Ack, Ack, BeginHandshake, Arrive, BeginHandshake, BeginHandshake]
+0000000008A1 violation=none [Round(5s), CutAfter(3), Arrive, Round(7s), Round(2s), BeginHandshake]
+0000000008R1 violation=none [Round(3s), BeginHandshake, Arrive, Round(1s), Round(7s), Ready, CompleteHandshake, CutAfter(1), CutAfter(4), Round(4s), Ack, Round(5s), Round(2s)]
+0000000008V1 violation=none [Ready, CompleteHandshake, CutAfter(3), Round(1s), CutAfter(4), Arrive, Round(4s), BeginHandshake, CutAfter(3), CompleteHandshake, Round(6s), Ack, Round(4s), Round(1s), Arrive, NotReady, Round(8s), Round(5s), Round(7s)]
+0000000008-1 violation=none [NotReady(ownOrder), CompleteHandshake, Arrive, Ack, Ready, Arrive, CompleteHandshake, CutAfter(3), Round(3s), Arrive, Round(6s), CompleteHandshake, Round(8s), CompleteHandshake, NotReady(ownOrder), CutAfter(0), CompleteHandshake, BeginHandshake, CompleteHandshake, CutAfter(4)]
+0000000009r1 violation=none [CompleteHandshake, Ack, Arrive, CutAfter(3), Round(8s), Arrive, Ack, NotReady(ownOrder), BeginHandshake, Round(3s), NotReady, BeginHandshake, CompleteHandshake, CutAfter(0), Ack, NotReady(ownOrder), CompleteHandshake, NotReady(ownOrder), Round(2s), NotReady(ownOrder), CutAfter(4), CutAfter(4), BeginHandshake]
+0000000009U1 violation=none [Ready, Round(5s), Ready, CompleteHandshake, Arrive, CutAfter(3), Round(6s), CutAfter(0), Round(5s), Arrive, NotReady]
+000000000a31 violation=none [Ack, Arrive, Ready, Ack, CutAfter(4), Ack, Arrive, Arrive, Round(3s), NotReady, CompleteHandshake, NotReady, Arrive, Ack, CompleteHandshake, CompleteHandshake, CutAfter(4), CutAfter(3), Round(7s), BeginHandshake, Round(6s), CompleteHandshake, Round(4s)]
+
+== 0000000006a1
+final: stage=AwaitingSublot block=null generation=2 entryReachedVehicle=True ackConflicts=0 regressions=0
+trace:
+  Arrive
+  CutAfter(2)
+  Round(6s) -> threw IOException: The model connection dropped while this line was being sent.; stage=AwaitingPickupArrival block=JOURNEY_ADVANCE_FAILED; delivered Plan@1,VBS@1
+  NotReady
+  Round(8s) -> ok; stage=AwaitingPickupArrival block=ONBOARD_SESSION_NOT_READY
+  Round(4s) -> ok; stage=AwaitingPickupArrival block=ONBOARD_SESSION_NOT_READY
+  BeginHandshake
+  tail CompleteHandshake
+  tail Ready
+  tail Arrive -> no-op
+  tail Round(2s) -> threw ProtocolContentConflictException: Outbound MessageId was replayed with different semantics or a non-advancing session generation.; stage=AwaitingPickupArrival block=JOURNEY_ADVANCE_FAILED; delivered Plan@2,Worklist@2,VBS@2,VBS@2
+  tail Ack
+  tail Round(2s) -> ok; stage=AwaitingSublot block=-; delivered Plan@2,Entry@2
+  tail Ack
+
+== 0000000006h1
+final: stage=AwaitingSublot block=null generation=3 entryReachedVehicle=True ackConflicts=0 regressions=0
+trace:
+  Arrive
+  CutAfter(3)
+  CompleteHandshake -> no-op
+  Round(2s) -> threw IOException: The model connection dropped while this line was being sent.; stage=AwaitingPickupArrival block=JOURNEY_ADVANCE_FAILED; delivered Plan@1,VBS@1,Worklist@1
+  Ack
+  BeginHandshake
+  NotReady -> no-op
+  NotReady -> no-op
+  Round(4s) -> ok; stage=AwaitingPickupArrival block=ONBOARD_SESSION_NOT_READY
+  BeginHandshake
+  CompleteHandshake
+  CutAfter(1)
+  tail Ready
+  tail Arrive -> no-op
+  tail Round(2s) -> ok; stage=AwaitingSublot block=-; delivered Plan@3,Plan@3,Entry@3
+  tail Ack
+
+== 0000000006J1
+final: stage=AwaitingSublot block=null generation=2 entryReachedVehicle=True ackConflicts=0 regressions=0
+trace:
+  CutAfter(3)
+  Arrive
+  Ack
+  Ack
+  Arrive -> no-op
+  Round(6s) -> threw IOException: The model connection dropped while this line was being sent.; stage=AwaitingPickupArrival block=JOURNEY_ADVANCE_FAILED; delivered Plan@1,VBS@1,Worklist@1
+  Round(1s) -> threw IOException: No recovered Onboard peer is connected for the model vehicle.; stage=AwaitingPickupArrival block=JOURNEY_ADVANCE_FAILED
+  CutAfter(0) -> no-op
+  BeginHandshake
+  Round(6s) -> ok; stage=AwaitingPickupArrival block=ONBOARD_SESSION_NOT_READY
+  Arrive -> no-op
+  Round(7s) -> ok; stage=AwaitingPickupArrival block=ONBOARD_SESSION_NOT_READY
+  tail CompleteHandshake
+  tail Ready
+  tail Arrive -> no-op
+  tail Round(2s) -> threw ProtocolContentConflictException: Outbound MessageId was replayed with different semantics or a non-advancing session generation.; stage=AwaitingPickupArrival block=JOURNEY_ADVANCE_FAILED; delivered Plan@2,Worklist@2,VBS@2,VBS@2
+  tail Ack
+  tail Round(2s) -> ok; stage=AwaitingSublot block=-; delivered Entry@2
+  tail Ack
+
+== 0000000006O1
+final: stage=AwaitingSublot block=null generation=2 entryReachedVehicle=True ackConflicts=0 regressions=0
+trace:
+  Arrive
+  CutAfter(1)
+  CutAfter(2)
+  Ack
+  Round(5s) -> threw IOException: The model connection dropped while this line was being sent.; stage=AwaitingPickupArrival block=JOURNEY_ADVANCE_FAILED; delivered Plan@1,VBS@1
+  Ack
+  BeginHandshake
+  Ack
+  NotReady -> no-op
+  NotReady(ownOrder) -> no-op
+  Round(8s) -> ok; stage=AwaitingPickupArrival block=ONBOARD_SESSION_NOT_READY
+  CompleteHandshake
+  tail Ready
+  tail Arrive -> no-op
+  tail Round(2s) -> threw ProtocolContentConflictException: Outbound MessageId was replayed with different semantics or a non-advancing session generation.; stage=AwaitingPickupArrival block=JOURNEY_ADVANCE_FAILED; delivered Worklist@2
+  tail Ack
+  tail Round(2s) -> ok; stage=AwaitingSublot block=-; delivered Plan@2,Entry@2
+  tail Ack
+
+== 0000000006R1
+final: stage=AwaitingSublot block=null generation=2 entryReachedVehicle=True ackConflicts=0 regressions=0
+trace:
+  Ack
+  Arrive
+  CutAfter(2)
+  Round(6s) -> threw IOException: The model connection dropped while this line was being sent.; stage=AwaitingPickupArrival block=JOURNEY_ADVANCE_FAILED; delivered Plan@1,VBS@1
+  CompleteHandshake -> no-op
+  tail BeginHandshake
+  tail CompleteHandshake
+  tail Ready
+  tail Arrive -> no-op
+  tail Round(2s) -> threw ProtocolContentConflictException: Outbound MessageId was replayed with different semantics or a non-advancing session generation.; stage=AwaitingPickupArrival block=JOURNEY_ADVANCE_FAILED; delivered Plan@2,Worklist@2,VBS@2,VBS@2
+  tail Ack
+  tail Round(2s) -> ok; stage=AwaitingSublot block=-; delivered Plan@2,Entry@2
+  tail Ack
+
+== 0000000007e1
+final: stage=AwaitingSublot block=null generation=2 entryReachedVehicle=True ackConflicts=0 regressions=0
+trace:
+  Arrive
+  CutAfter(2)
+  Round(4s) -> threw IOException: The model connection dropped while this line was being sent.; stage=AwaitingPickupArrival block=JOURNEY_ADVANCE_FAILED; delivered Plan@1,VBS@1
+  tail BeginHandshake
+  tail CompleteHandshake
+  tail Ready
+  tail Arrive -> no-op
+  tail Round(2s) -> threw ProtocolContentConflictException: Outbound MessageId was replayed with different semantics or a non-advancing session generation.; stage=AwaitingPickupArrival block=JOURNEY_ADVANCE_FAILED; delivered Plan@2,Worklist@2,VBS@2,VBS@2
+  tail Ack
+  tail Round(2s) -> ok; stage=AwaitingSublot block=-; delivered Plan@2,Entry@2
+  tail Ack
+
+== 0000000007u1
+final: stage=AwaitingSublot block=null generation=2 entryReachedVehicle=True ackConflicts=0 regressions=0
+trace:
+  Arrive
+  Arrive -> no-op
+  CutAfter(3)
+  Round(3s) -> threw IOException: The model connection dropped while this line was being sent.; stage=AwaitingPickupArrival block=JOURNEY_ADVANCE_FAILED; delivered Plan@1,VBS@1,Worklist@1
+  CompleteHandshake -> no-op
+  NotReady(ownOrder)
+  CutAfter(1) -> no-op
+  Round(3s) -> ok; stage=AwaitingPickupArrival block=ONBOARD_SESSION_NOT_READY
+  Arrive -> no-op
+  Arrive -> no-op
+  tail BeginHandshake
+  tail CompleteHandshake
+  tail Ready
+  tail Arrive -> no-op
+  tail Round(2s) -> threw ProtocolContentConflictException: Outbound MessageId was replayed with different semantics or a non-advancing session generation.; stage=AwaitingPickupArrival block=JOURNEY_ADVANCE_FAILED; delivered Plan@2,Worklist@2,VBS@2,VBS@2
+  tail Ack
+  tail Round(2s) -> ok; stage=AwaitingSublot block=-; delivered Entry@2
+  tail Ack
+
+== 0000000007O1
+final: stage=AwaitingSublot block=null generation=3 entryReachedVehicle=True ackConflicts=0 regressions=0
+trace:
+  Ack
+  CutAfter(0)
+  CutAfter(4) -> no-op
+  Round(3s) -> threw IOException: No recovered Onboard peer is connected for the model vehicle.; stage=AwaitingPickupArrival block=JOURNEY_ADVANCE_FAILED
+  Round(2s) -> threw IOException: No recovered Onboard peer is connected for the model vehicle.; stage=AwaitingPickupArrival block=JOURNEY_ADVANCE_FAILED
+  BeginHandshake
+  Arrive
+  CompleteHandshake
+  CutAfter(3)
+  Ack
+  Round(6s) -> threw IOException: The model connection dropped while this line was being sent.; stage=AwaitingPickupArrival block=JOURNEY_ADVANCE_FAILED; delivered Plan@2,VBS@2,Worklist@2
+  CutAfter(2) -> no-op
+  Ack
+  CutAfter(4) -> no-op
+  Ack
+  tail BeginHandshake
+  tail CompleteHandshake
+  tail Ready
+  tail Arrive -> no-op
+  tail Round(2s) -> ok; stage=AwaitingSublot block=-; delivered Plan@3,Plan@3,Entry@3
+  tail Ack
+
+== 0000000007Y1
+final: stage=AwaitingSublot block=null generation=2 entryReachedVehicle=True ackConflicts=0 regressions=0
+trace:
+  Round(5s) -> ok; stage=AwaitingPickupArrival block=-; delivered Plan@1
+  CutAfter(2)
+  Ack
+  Round(5s) -> ok; stage=AwaitingPickupArrival block=-
+  Ack
+  Arrive
+  Arrive -> no-op
+  Round(7s) -> threw IOException: The model connection dropped while this line was being sent.; stage=AwaitingPickupArrival block=JOURNEY_ADVANCE_FAILED; delivered VBS@1,Worklist@1
+  Round(3s) -> threw IOException: No recovered Onboard peer is connected for the model vehicle.; stage=AwaitingPickupArrival block=JOURNEY_ADVANCE_FAILED
+  BeginHandshake
+  tail CompleteHandshake
+  tail Ready
+  tail Arrive -> no-op
+  tail Round(2s) -> threw ProtocolContentConflictException: Outbound MessageId was replayed with different semantics or a non-advancing session generation.; stage=AwaitingPickupArrival block=JOURNEY_ADVANCE_FAILED; delivered Plan@2,Worklist@2,VBS@2,VBS@2
+  tail Ack
+  tail Round(2s) -> ok; stage=AwaitingSublot block=-; delivered Entry@2
+  tail Ack
+
+== 0000000007-1
+final: stage=AwaitingSublot block=null generation=5 entryReachedVehicle=True ackConflicts=0 regressions=0
+trace:
+  CutAfter(3)
+  Ack
+  Round(3s) -> ok; stage=AwaitingPickupArrival block=-; delivered Plan@1
+  Arrive
+  Round(1s) -> threw IOException: The model connection dropped while this line was being sent.; stage=AwaitingPickupArrival block=JOURNEY_ADVANCE_FAILED; delivered Plan@1,VBS@1
+  BeginHandshake
+  CutAfter(1) -> no-op
+  Arrive -> no-op
+  Round(7s) -> ok; stage=AwaitingPickupArrival block=ONBOARD_SESSION_NOT_READY
+  Round(8s) -> ok; stage=AwaitingPickupArrival block=ONBOARD_SESSION_NOT_READY
+  CutAfter(0) -> no-op
+  Ack
+  Ack
+  BeginHandshake
+  Arrive -> no-op
+  BeginHandshake
+  BeginHandshake
+  tail CompleteHandshake
+  tail Ready
+  tail Arrive -> no-op
+  tail Round(2s) -> threw ProtocolContentConflictException: Outbound MessageId was replayed with different semantics or a non-advancing session generation.; stage=AwaitingPickupArrival block=JOURNEY_ADVANCE_FAILED; delivered Plan@5,Worklist@5,VBS@5,VBS@5
+  tail Ack
+  tail Round(2s) -> ok; stage=AwaitingSublot block=-; delivered Plan@5,Entry@5
+  tail Ack
+
+== 0000000008A1
+final: stage=AwaitingSublot block=null generation=2 entryReachedVehicle=True ackConflicts=0 regressions=0
+trace:
+  Round(5s) -> ok; stage=AwaitingPickupArrival block=-; delivered Plan@1
+  CutAfter(3)
+  Arrive
+  Round(7s) -> threw IOException: The model connection dropped while this line was being sent.; stage=AwaitingPickupArrival block=JOURNEY_ADVANCE_FAILED; delivered Plan@1,VBS@1,Worklist@1
+  Round(2s) -> threw IOException: No recovered Onboard peer is connected for the model vehicle.; stage=AwaitingPickupArrival block=JOURNEY_ADVANCE_FAILED
+  BeginHandshake
+  tail CompleteHandshake
+  tail Ready
+  tail Arrive -> no-op
+  tail Round(2s) -> threw ProtocolContentConflictException: Outbound MessageId was replayed with different semantics or a non-advancing session generation.; stage=AwaitingPickupArrival block=JOURNEY_ADVANCE_FAILED; delivered Plan@2,Worklist@2,VBS@2,VBS@2
+  tail Ack
+  tail Round(2s) -> ok; stage=AwaitingSublot block=-; delivered Entry@2
+  tail Ack
+
+== 0000000008R1
+final: stage=AwaitingSublot block=null generation=3 entryReachedVehicle=True ackConflicts=0 regressions=0
+trace:
+  Round(3s) -> ok; stage=AwaitingPickupArrival block=-; delivered Plan@1
+  BeginHandshake
+  Arrive
+  Round(1s) -> ok; stage=AwaitingPickupArrival block=ONBOARD_SESSION_NOT_READY
+  Round(7s) -> ok; stage=AwaitingPickupArrival block=ONBOARD_SESSION_NOT_READY
+  Ready -> no-op
+  CompleteHandshake
+  CutAfter(1)
+  CutAfter(4)
+  Round(4s) -> threw IOException: The model connection dropped while this line was being sent.; stage=AwaitingPickupArrival block=JOURNEY_ADVANCE_FAILED; delivered Plan@2,VBS@2,Worklist@2,Plan@2
+  Ack
+  Round(5s) -> threw IOException: No recovered Onboard peer is connected for the model vehicle.; stage=AwaitingPickupArrival block=JOURNEY_ADVANCE_FAILED
+  Round(2s) -> ok; stage=AwaitingPickupArrival block=ONBOARD_SESSION_LOST
+  tail BeginHandshake
+  tail CompleteHandshake
+  tail Ready
+  tail Arrive -> no-op
+  tail Round(2s) -> ok; stage=AwaitingSublot block=-; delivered Entry@3,Entry@3
+  tail Ack
+
+== 0000000008V1
+final: stage=AwaitingSublot block=ONBOARD_SESSION_NOT_READY generation=2 entryReachedVehicle=True ackConflicts=0 regressions=0
+trace:
+  Ready
+  CompleteHandshake -> no-op
+  CutAfter(3)
+  Round(1s) -> ok; stage=AwaitingPickupArrival block=-; delivered Plan@1
+  CutAfter(4)
+  Arrive
+  Round(4s) -> threw IOException: The model connection dropped while this line was being sent.; stage=AwaitingPickupArrival block=JOURNEY_ADVANCE_FAILED; delivered Plan@1,VBS@1,Worklist@1,Plan@1
+  BeginHandshake
+  CutAfter(3) -> no-op
+  CompleteHandshake
+  Round(6s) -> threw ProtocolContentConflictException: Outbound MessageId was replayed with different semantics or a non-advancing session generation.; stage=AwaitingPickupArrival block=JOURNEY_ADVANCE_FAILED; delivered Entry@2,Plan@2,Worklist@2,VBS@2,VBS@2
+  Ack
+  Round(4s) -> ok; stage=AwaitingSublot block=-; delivered Entry@2,Entry@2
+  Round(1s) -> ok; stage=AwaitingSublot block=-; delivered Entry@2
+  Arrive -> no-op
+  NotReady
+  Round(8s) -> ok; stage=AwaitingSublot block=ONBOARD_SESSION_NOT_READY
+  Round(5s) -> ok; stage=AwaitingSublot block=ONBOARD_SESSION_NOT_READY
+  Round(7s) -> ok; stage=AwaitingSublot block=ONBOARD_SESSION_NOT_READY
+  tail Ready
+  tail Arrive -> no-op
+  tail Round(2s) -> ok; stage=AwaitingSublot block=ONBOARD_SESSION_NOT_READY; delivered Entry@2
+  tail Ack
+
+== 0000000008-1
+final: stage=AwaitingSublot block=null generation=2 entryReachedVehicle=True ackConflicts=0 regressions=0
+trace:
+  NotReady(ownOrder)
+  CompleteHandshake -> no-op
+  Arrive
+  Ack
+  Ready
+  Arrive -> no-op
+  CompleteHandshake -> no-op
+  CutAfter(3)
+  Round(3s) -> threw IOException: The model connection dropped while this line was being sent.; stage=AwaitingPickupArrival block=JOURNEY_ADVANCE_FAILED; delivered Plan@1,VBS@1,Worklist@1
+  Arrive -> no-op
+  Round(6s) -> threw IOException: No recovered Onboard peer is connected for the model vehicle.; stage=AwaitingPickupArrival block=JOURNEY_ADVANCE_FAILED
+  CompleteHandshake -> no-op
+  Round(8s) -> ok; stage=AwaitingPickupArrival block=ONBOARD_SESSION_LOST
+  CompleteHandshake -> no-op
+  NotReady(ownOrder)
+  CutAfter(0) -> no-op
+  CompleteHandshake -> no-op
+  BeginHandshake
+  CompleteHandshake
+  CutAfter(4)
+  tail Ready
+  tail Arrive -> no-op
+  tail Round(2s) -> threw ProtocolContentConflictException: Outbound MessageId was replayed with different semantics or a non-advancing session generation.; stage=AwaitingPickupArrival block=JOURNEY_ADVANCE_FAILED; delivered Plan@2,Worklist@2,VBS@2,VBS@2
+  tail Ack
+  tail Round(2s) -> ok; stage=AwaitingSublot block=-; delivered Entry@2
+  tail Ack
+
+== 0000000009r1
+final: stage=AwaitingSublot block=null generation=4 entryReachedVehicle=True ackConflicts=0 regressions=0
+trace:
+  CompleteHandshake -> no-op
+  Ack
+  Arrive
+  CutAfter(3)
+  Round(8s) -> threw IOException: The model connection dropped while this line was being sent.; stage=AwaitingPickupArrival block=JOURNEY_ADVANCE_FAILED; delivered Plan@1,VBS@1,Worklist@1
+  Arrive -> no-op
+  Ack
+  NotReady(ownOrder)
+  BeginHandshake
+  Round(3s) -> ok; stage=AwaitingPickupArrival block=ONBOARD_SESSION_NOT_READY
+  NotReady -> no-op
+  BeginHandshake
+  CompleteHandshake
+  CutAfter(0)
+  Ack
+  NotReady(ownOrder)
+  CompleteHandshake -> no-op
+  NotReady(ownOrder)
+  Round(2s) -> ok; stage=AwaitingPickupArrival block=ONBOARD_SESSION_NOT_READY
+  NotReady(ownOrder)
+  CutAfter(4) -> no-op
+  CutAfter(4) -> no-op
+  BeginHandshake
+  tail CompleteHandshake
+  tail Ready
+  tail Arrive -> no-op
+  tail Round(2s) -> ok; stage=AwaitingSublot block=-; delivered Plan@4,Plan@4,Entry@4
+  tail Ack
+
+== 0000000009U1
+final: stage=AwaitingSublot block=null generation=2 entryReachedVehicle=True ackConflicts=0 regressions=0
+trace:
+  Ready
+  Round(5s) -> ok; stage=AwaitingPickupArrival block=-; delivered Plan@1
+  Ready
+  CompleteHandshake -> no-op
+  Arrive
+  CutAfter(3)
+  Round(6s) -> threw IOException: The model connection dropped while this line was being sent.; stage=AwaitingPickupArrival block=JOURNEY_ADVANCE_FAILED; delivered Plan@1,VBS@1,Worklist@1
+  CutAfter(0) -> no-op
+  Round(5s) -> threw IOException: No recovered Onboard peer is connected for the model vehicle.; stage=AwaitingPickupArrival block=JOURNEY_ADVANCE_FAILED
+  Arrive -> no-op
+  NotReady
+  tail BeginHandshake
+  tail CompleteHandshake
+  tail Ready
+  tail Arrive -> no-op
+  tail Round(2s) -> threw ProtocolContentConflictException: Outbound MessageId was replayed with different semantics or a non-advancing session generation.; stage=AwaitingPickupArrival block=JOURNEY_ADVANCE_FAILED; delivered Plan@2,Worklist@2,VBS@2,VBS@2
+  tail Ack
+  tail Round(2s) -> ok; stage=AwaitingSublot block=-; delivered Entry@2
+  tail Ack
+
+== 000000000a31
+final: stage=AwaitingSublot block=null generation=2 entryReachedVehicle=True ackConflicts=0 regressions=0
+trace:
+  Ack
+  Arrive
+  Ready
+  Ack
+  CutAfter(4)
+  Ack
+  Arrive -> no-op
+  Arrive -> no-op
+  Round(3s) -> threw IOException: The model connection dropped while this line was being sent.; stage=AwaitingPickupArrival block=JOURNEY_ADVANCE_FAILED; delivered Plan@1,VBS@1,Worklist@1,Plan@1
+  NotReady
+  CompleteHandshake -> no-op
+  NotReady
+  Arrive -> no-op
+  Ack
+  CompleteHandshake -> no-op
+  CompleteHandshake -> no-op
+  CutAfter(4) -> no-op
+  CutAfter(3) -> no-op
+  Round(7s) -> ok; stage=AwaitingPickupArrival block=ONBOARD_SESSION_NOT_READY
+  BeginHandshake
+  Round(6s) -> ok; stage=AwaitingPickupArrival block=ONBOARD_SESSION_NOT_READY
+  CompleteHandshake
+  Round(4s) -> ok; stage=AwaitingSublot block=-; delivered Entry@2,Entry@2
+  tail Ready
+  tail Arrive -> no-op
+  tail Round(2s) -> ok; stage=AwaitingSublot block=-; delivered Entry@2
+  tail Ack
+

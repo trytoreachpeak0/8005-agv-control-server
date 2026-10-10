@@ -1,0 +1,88 @@
+{
+  "schemaVersion": 1,
+  "scenario": "real-onboard-clock-skew",
+  "runId": "20260922T052525168Z",
+  "outcome": "PASS",
+  "failureReason": "",
+  "identity": {
+    "vehicleKey": "BROKERX-L2-0001",
+    "slotsSimulatorCommit": "fb5f7c593742bf98bc3957b8729a38aad5321f28",
+    "stageRoot": "C:\\actions-runner\\win11-01-control-server-desktop\\_work\\_temp\\real-rig-35689381489-1\\_stage\\l2-20260922T052525168Z",
+    "clockSkewMs": 100,
+    "agvId": "AGV-L2-001",
+    "protocolReleaseIdentity": {
+      "repository": "8005-agv-protocol",
+      "releaseVersion": "2.0.0",
+      "tag": "protocol-v2.0.0",
+      "commit": "86575456c847041515b7b75e8851a00e0d939804",
+      "protocolVersion": 3,
+      "profileId": "AGV_FULL_PRODUCT",
+      "manifestSha256": "4ac095ad371d3aaa60d7c2e0198cfd64cff5f3068230fc3420e9cdf5616422a7",
+      "schemaBundleSha256": "9db0dbdc22fed7e39edf8d01b1fc40a12f5d70a7414f696f909ab2a87eb8c221",
+      "vectorsSha256": "391fa69a7d6e9f86ea139ba4c74eadf4994bf0a87e89d3dc5258dd7968d9182a",
+      "approvalStatus": "APPROVED_RELEASE"
+    },
+    "onboardHmiCommit": "ecdb3a0be1d95ef51e7d40493808ba4659274f41",
+    "controlServerCommit": "f1286c29aa0cbeffdd750f3016a52590dd4659b9",
+    "batchId": "batch-7",
+    "rig": "RealOnboard"
+  },
+  "assertions": [
+    {
+      "id": "L2-CS-01",
+      "description": "车载端的安全投影确实经过了偏差代理，且 observedAt 被推后",
+      "outcome": "PASS",
+      "expected": "forwardedRequests >= 1，位移 = 100 ms",
+      "actual": "forwardedRequests = 7，位移 = 100 ms"
+    },
+    {
+      "id": "L2-CS-02",
+      "description": "车载端时钟慢 100 ms（容差内）时会话正常建立",
+      "outcome": "PASS",
+      "expected": "Ready/…",
+      "actual": "Ready/READY"
+    },
+    {
+      "id": "L2-CS-03",
+      "description": "偏差 3000 ms 超出容差时车载端仍然 fail-closed，会话降级",
+      "outcome": "PASS",
+      "expected": "RecoveryRequired/DEPARTURE_SAFETY_NOT_READY",
+      "actual": "RecoveryRequired/DEPARTURE_SAFETY_NOT_READY"
+    },
+    {
+      "id": "L2-CS-04",
+      "description": "需求随之被拒，判 ONBOARD_FACTS_NOT_READY",
+      "outcome": "PASS",
+      "expected": "ONBOARD_FACTS_NOT_READY",
+      "actual": "ONBOARD_FACTS_NOT_READY"
+    },
+    {
+      "id": "L2-CS-05",
+      "description": "运行时又转了几轮，仍然没有为这条需求建 journey",
+      "outcome": "PASS",
+      "expected": "(没有 journey)",
+      "actual": "(没有 journey)"
+    },
+    {
+      "id": "L2-CS-06",
+      "description": "偏差回到容差内后，同一条需求被受理——车载端自行恢复，没有重启",
+      "outcome": "PASS",
+      "expected": "ACCEPTED",
+      "actual": "ACCEPTED"
+    },
+    {
+      "id": "L2-CS-07",
+      "description": "恢复之后旅程真的建起来并派车",
+      "outcome": "PASS",
+      "expected": "AwaitingPickupArrival",
+      "actual": "AwaitingPickupArrival"
+    },
+    {
+      "id": "L2-CS-08",
+      "description": "会话从 RecoveryRequired 自己回到 Ready，全程没有重启车载端",
+      "outcome": "PASS",
+      "expected": "Ready/…",
+      "actual": "Ready/READY"
+    }
+  ]
+}

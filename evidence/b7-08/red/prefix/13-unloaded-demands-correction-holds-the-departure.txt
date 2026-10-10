@@ -1,0 +1,13 @@
+# 修前红：离站判定查纠错取旅程全部需求（5a772043 的写法），新用例在这版代码上跑
+# build:
+    0 Error(s)
+# test run (filter: AnOpenCorrectionOnADemandAlreadyUnloadedDoesNotHoldTheDeparture):
+[xUnit.net 00:00:18.70]     ControlServer.Tests.Batch7StationYieldTests.AnOpenCorrectionOnADemandAlreadyUnloadedDoesNotHoldTheDeparture [FAIL]
+  Failed ControlServer.Tests.Batch7StationYieldTests.AnOpenCorrectionOnADemandAlreadyUnloadedDoesNotHoldTheDeparture [14 s]
+  Error Message:
+   Assert.NotEqual() Failure: Strings are equal
+Expected: Not "LOAD_CORRECTION_IN_PROGRESS"
+Actual:       "LOAD_CORRECTION_IN_PROGRESS"
+  Stack Trace:
+--
+Failed!  - Failed:     1, Passed:     0, Skipped:     0, Total:     1, Duration: 14 s - ControlServer.Tests.dll (net8.0)

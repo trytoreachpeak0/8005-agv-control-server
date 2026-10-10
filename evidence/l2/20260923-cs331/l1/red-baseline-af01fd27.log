@@ -1,0 +1,106 @@
+  Determining projects to restore...
+  All projects are up-to-date for restore.
+  ControlServer.Domain -> C:\Users\szy\Desktop\8005-workspace-v2\worktrees\cs331-8005-agv-control-server\src\ControlServer.Domain\bin\Debug\net8.0\win-x64\ControlServer.Domain.dll
+  ControlServer.Dashboard -> C:\Users\szy\Desktop\8005-workspace-v2\worktrees\cs331-8005-agv-control-server\src\ControlServer.Dashboard\bin\Debug\net8.0\win-x64\ControlServer.Dashboard.dll
+  ControlServer.TestDoubles -> C:\Users\szy\Desktop\8005-workspace-v2\worktrees\cs331-8005-agv-control-server\tools\ControlServer.TestDoubles\bin\Debug\net8.0\win-x64\ControlServer.TestDoubles.dll
+  ControlServer.Application -> C:\Users\szy\Desktop\8005-workspace-v2\worktrees\cs331-8005-agv-control-server\src\ControlServer.Application\bin\Debug\net8.0\win-x64\ControlServer.Application.dll
+  ControlServer.ProtocolFaultProxy -> C:\Users\szy\Desktop\8005-workspace-v2\worktrees\cs331-8005-agv-control-server\tools\ControlServer.ProtocolFaultProxy\bin\Debug\net8.0\win-x64\ControlServer.ProtocolFaultProxy.dll
+  ControlServer.FakeOnboard -> C:\Users\szy\Desktop\8005-workspace-v2\worktrees\cs331-8005-agv-control-server\tools\ControlServer.FakeOnboard\bin\Debug\net8.0\win-x64\ControlServer.FakeOnboard.dll
+  ControlServer.FakeRiot -> C:\Users\szy\Desktop\8005-workspace-v2\worktrees\cs331-8005-agv-control-server\tools\ControlServer.FakeRiot\bin\Debug\net8.0\win-x64\ControlServer.FakeRiot.dll
+  ControlServer.ClockSkewProxy -> C:\Users\szy\Desktop\8005-workspace-v2\worktrees\cs331-8005-agv-control-server\tools\ControlServer.ClockSkewProxy\bin\Debug\net8.0\win-x64\ControlServer.ClockSkewProxy.dll
+  ControlServer.Infrastructure -> C:\Users\szy\Desktop\8005-workspace-v2\worktrees\cs331-8005-agv-control-server\src\ControlServer.Infrastructure\bin\Debug\net8.0\win-x64\ControlServer.Infrastructure.dll
+  ControlServer.FieldOps -> C:\Users\szy\Desktop\8005-workspace-v2\worktrees\cs331-8005-agv-control-server\tools\ControlServer.FieldOps\bin\Debug\net8.0\win-x64\ControlServer.FieldOps.dll
+  ControlServer.Host -> C:\Users\szy\Desktop\8005-workspace-v2\worktrees\cs331-8005-agv-control-server\src\ControlServer.Host\bin\Debug\net8.0\win-x64\ControlServer.Host.dll
+  ControlServer.SchemaConformance -> C:\Users\szy\Desktop\8005-workspace-v2\worktrees\cs331-8005-agv-control-server\tools\ControlServer.SchemaConformance\bin\Debug\net8.0\win-x64\ControlServer.SchemaConformance.dll
+  ControlServer.Tests -> C:\Users\szy\Desktop\8005-workspace-v2\worktrees\cs331-8005-agv-control-server\tests\ControlServer.Tests\bin\Debug\net8.0\win-x64\ControlServer.Tests.dll
+Test run for C:\Users\szy\Desktop\8005-workspace-v2\worktrees\cs331-8005-agv-control-server\tests\ControlServer.Tests\bin\Debug\net8.0\win-x64\ControlServer.Tests.dll (.NETCoreApp,Version=v8.0)
+A total of 1 test files matched the specified pattern.
+  Failed ControlServer.Tests.ArrivalPublishInterruptedThenReconnectedTests.TheEntryRequestReachesTheVehicleAfterAReconnectInterruptedTheArrivalPublish [6 s]
+  Error Message:
+   ControlServer.Domain.ProtocolContentConflictException : Outbound MessageId was replayed with different semantics or a non-advancing session generation.
+  Stack Trace:
+     at ControlServer.Infrastructure.Persistence.WireToGateStore.RefreshOutboundEnvelopeAsync(ProtocolOutboxRow existing, String messageType, String candidateWire, DateTimeOffset candidateCreatedAt, CancellationToken cancellationToken) in C:\Users\szy\Desktop\8005-workspace-v2\worktrees\cs331-8005-agv-control-server\src\ControlServer.Infrastructure\Persistence\WireToGateStore.cs:line 3291
+   at ControlServer.Infrastructure.Persistence.WireToGateStore.QueueOutboundEnvelopeAsync(String messageId, String messageType, String wireJson, DateTimeOffset createdAt, CancellationToken cancellationToken) in C:\Users\szy\Desktop\8005-workspace-v2\worktrees\cs331-8005-agv-control-server\src\ControlServer.Infrastructure\Persistence\WireToGateStore.cs:line 2086
+   at ControlServer.Host.Transport.OnboardJourneyPublisher.QueueEnvelopeAsync(String messageType, String messageId, String correlationId, String agvId, Int64 sessionGeneration, Func`2 payloadFactory, CancellationToken cancellationToken) in C:\Users\szy\Desktop\8005-workspace-v2\worktrees\cs331-8005-agv-control-server\src\ControlServer.Host\Transport\OnboardJourneyPublisher.cs:line 805
+   at ControlServer.Host.Transport.OnboardJourneyPublisher.PublishStampedEnvelopeAsync(String messageType, String messageId, String correlationId, String agvId, Int64 sessionGeneration, Func`2 payloadFactory, CancellationToken cancellationToken) in C:\Users\szy\Desktop\8005-workspace-v2\worktrees\cs331-8005-agv-control-server\src\ControlServer.Host\Transport\OnboardJourneyPublisher.cs:line 767
+   at ControlServer.Host.Transport.OnboardJourneyPublisher.PublishStampedSnapshotAsync(String messageType, String messageId, String agvId, Int64 sessionGeneration, Int64 revision, Func`2 payloadFactory, CancellationToken cancellationToken) in C:\Users\szy\Desktop\8005-workspace-v2\worktrees\cs331-8005-agv-control-server\src\ControlServer.Host\Transport\OnboardJourneyPublisher.cs:line 736
+   at ControlServer.Host.Runtime.JourneyRuntimeEngine.PublishPickupStateAsync(JourneyRuntimeRow runtime, JourneyStopCursor stops, SessionRecoveryRow session, Boolean holdingApplicable, CancellationToken cancellationToken) in C:\Users\szy\Desktop\8005-workspace-v2\worktrees\cs331-8005-agv-control-server\src\ControlServer.Host\Runtime\JourneyRuntimeEngine.cs:line 1672
+   at ControlServer.Host.Runtime.JourneyRuntimeEngine.AdvanceAsync(JourneyRuntimeRow runtime, RiotMapStationCatalogSnapshot currentMap, CancellationToken cancellationToken) in C:\Users\szy\Desktop\8005-workspace-v2\worktrees\cs331-8005-agv-control-server\src\ControlServer.Host\Runtime\JourneyRuntimeEngine.cs:line 648
+   at ControlServer.Host.Runtime.JourneyRuntimeEngine.ExecuteRoundAsync(CancellationToken cancellationToken) in C:\Users\szy\Desktop\8005-workspace-v2\worktrees\cs331-8005-agv-control-server\src\ControlServer.Host\Runtime\JourneyRuntimeEngine.cs:line 421
+   at ControlServer.Host.Runtime.JourneyRuntimeEngine.ExecuteOnceAsync(CancellationToken cancellationToken) in C:\Users\szy\Desktop\8005-workspace-v2\worktrees\cs331-8005-agv-control-server\src\ControlServer.Host\Runtime\JourneyRuntimeEngine.cs:line 280
+   at ControlServer.Host.Runtime.JourneyRuntimeEngine.ExecuteOnceAsync(CancellationToken cancellationToken) in C:\Users\szy\Desktop\8005-workspace-v2\worktrees\cs331-8005-agv-control-server\src\ControlServer.Host\Runtime\JourneyRuntimeEngine.cs:line 294
+   at ControlServer.Tests.ArrivalPublishInterruptedThenReconnectedTests.TheEntryRequestReachesTheVehicleAfterAReconnectInterruptedTheArrivalPublish() in C:\Users\szy\Desktop\8005-workspace-v2\worktrees\cs331-8005-agv-control-server\tests\ControlServer.Tests\ArrivalPublishInterruptedThenReconnectedTests.cs:line 65
+   at ControlServer.Tests.ArrivalPublishInterruptedThenReconnectedTests.TheEntryRequestReachesTheVehicleAfterAReconnectInterruptedTheArrivalPublish() in C:\Users\szy\Desktop\8005-workspace-v2\worktrees\cs331-8005-agv-control-server\tests\ControlServer.Tests\ArrivalPublishInterruptedThenReconnectedTests.cs:line 74
+--- End of stack trace from previous location ---
+  Failed ControlServer.Tests.ArrivalPublishInterruptedThenReconnectedTests.AnAcknowledgedWorklistThatDiffersBeyondItsDeadlineIsStillRefusedAndTheBoardSaysSo [601 ms]
+  Error Message:
+   Assert.Equal() Failure: Strings differ
+           ↓ (pos 0)
+Expected: "JOURNEY_ADVANCE_FAILED"
+Actual:   "ONBOARD_SESSION_NOT_READY"
+           ↑ (pos 0)
+  Stack Trace:
+     at ControlServer.Tests.ArrivalPublishInterruptedThenReconnectedTests.AnAcknowledgedWorklistThatDiffersBeyondItsDeadlineIsStillRefusedAndTheBoardSaysSo() in C:\Users\szy\Desktop\8005-workspace-v2\worktrees\cs331-8005-agv-control-server\tests\ControlServer.Tests\ArrivalPublishInterruptedThenReconnectedTests.cs:line 162
+   at ControlServer.Tests.ArrivalPublishInterruptedThenReconnectedTests.AnAcknowledgedWorklistThatDiffersBeyondItsDeadlineIsStillRefusedAndTheBoardSaysSo() in C:\Users\szy\Desktop\8005-workspace-v2\worktrees\cs331-8005-agv-control-server\tests\ControlServer.Tests\ArrivalPublishInterruptedThenReconnectedTests.cs:line 163
+--- End of stack trace from previous location ---
+  Failed ControlServer.Tests.ArrivalPublishInterruptedThenReconnectedTests.TheFailedAdvanceKeepsTheTimeItStartedWhileEveryRoundFailsTheSameWay [316 ms]
+  Error Message:
+   System.InvalidOperationException : Nullable object must have a value.
+  Stack Trace:
+     at System.Nullable`1.get_Value()
+   at ControlServer.Tests.ArrivalPublishInterruptedThenReconnectedTests.TheFailedAdvanceKeepsTheTimeItStartedWhileEveryRoundFailsTheSameWay() in C:\Users\szy\Desktop\8005-workspace-v2\worktrees\cs331-8005-agv-control-server\tests\ControlServer.Tests\ArrivalPublishInterruptedThenReconnectedTests.cs:line 217
+   at ControlServer.Tests.ArrivalPublishInterruptedThenReconnectedTests.TheFailedAdvanceKeepsTheTimeItStartedWhileEveryRoundFailsTheSameWay() in C:\Users\szy\Desktop\8005-workspace-v2\worktrees\cs331-8005-agv-control-server\tests\ControlServer.Tests\ArrivalPublishInterruptedThenReconnectedTests.cs:line 227
+--- End of stack trace from previous location ---
+  Failed ControlServer.Tests.ArrivalPublishInterruptedThenReconnectedTests.TheEntryRequestReachesTheVehicleWhenARoundBehindTheClosedGateVoidedTheWaitBeforeTheReconnect [330 ms]
+  Error Message:
+   ControlServer.Domain.ProtocolContentConflictException : Outbound MessageId was replayed with different semantics or a non-advancing session generation.
+  Stack Trace:
+     at ControlServer.Infrastructure.Persistence.WireToGateStore.RefreshOutboundEnvelopeAsync(ProtocolOutboxRow existing, String messageType, String candidateWire, DateTimeOffset candidateCreatedAt, CancellationToken cancellationToken) in C:\Users\szy\Desktop\8005-workspace-v2\worktrees\cs331-8005-agv-control-server\src\ControlServer.Infrastructure\Persistence\WireToGateStore.cs:line 3291
+   at ControlServer.Infrastructure.Persistence.WireToGateStore.QueueOutboundEnvelopeAsync(String messageId, String messageType, String wireJson, DateTimeOffset createdAt, CancellationToken cancellationToken) in C:\Users\szy\Desktop\8005-workspace-v2\worktrees\cs331-8005-agv-control-server\src\ControlServer.Infrastructure\Persistence\WireToGateStore.cs:line 2086
+   at ControlServer.Host.Transport.OnboardJourneyPublisher.QueueEnvelopeAsync(String messageType, String messageId, String correlationId, String agvId, Int64 sessionGeneration, Func`2 payloadFactory, CancellationToken cancellationToken) in C:\Users\szy\Desktop\8005-workspace-v2\worktrees\cs331-8005-agv-control-server\src\ControlServer.Host\Transport\OnboardJourneyPublisher.cs:line 805
+   at ControlServer.Host.Transport.OnboardJourneyPublisher.PublishStampedEnvelopeAsync(String messageType, String messageId, String correlationId, String agvId, Int64 sessionGeneration, Func`2 payloadFactory, CancellationToken cancellationToken) in C:\Users\szy\Desktop\8005-workspace-v2\worktrees\cs331-8005-agv-control-server\src\ControlServer.Host\Transport\OnboardJourneyPublisher.cs:line 767
+   at ControlServer.Host.Transport.OnboardJourneyPublisher.PublishStampedSnapshotAsync(String messageType, String messageId, String agvId, Int64 sessionGeneration, Int64 revision, Func`2 payloadFactory, CancellationToken cancellationToken) in C:\Users\szy\Desktop\8005-workspace-v2\worktrees\cs331-8005-agv-control-server\src\ControlServer.Host\Transport\OnboardJourneyPublisher.cs:line 736
+   at ControlServer.Host.Runtime.JourneyRuntimeEngine.PublishPickupStateAsync(JourneyRuntimeRow runtime, JourneyStopCursor stops, SessionRecoveryRow session, Boolean holdingApplicable, CancellationToken cancellationToken) in C:\Users\szy\Desktop\8005-workspace-v2\worktrees\cs331-8005-agv-control-server\src\ControlServer.Host\Runtime\JourneyRuntimeEngine.cs:line 1672
+   at ControlServer.Host.Runtime.JourneyRuntimeEngine.AdvanceAsync(JourneyRuntimeRow runtime, RiotMapStationCatalogSnapshot currentMap, CancellationToken cancellationToken) in C:\Users\szy\Desktop\8005-workspace-v2\worktrees\cs331-8005-agv-control-server\src\ControlServer.Host\Runtime\JourneyRuntimeEngine.cs:line 648
+   at ControlServer.Host.Runtime.JourneyRuntimeEngine.ExecuteRoundAsync(CancellationToken cancellationToken) in C:\Users\szy\Desktop\8005-workspace-v2\worktrees\cs331-8005-agv-control-server\src\ControlServer.Host\Runtime\JourneyRuntimeEngine.cs:line 421
+   at ControlServer.Host.Runtime.JourneyRuntimeEngine.ExecuteOnceAsync(CancellationToken cancellationToken) in C:\Users\szy\Desktop\8005-workspace-v2\worktrees\cs331-8005-agv-control-server\src\ControlServer.Host\Runtime\JourneyRuntimeEngine.cs:line 280
+   at ControlServer.Host.Runtime.JourneyRuntimeEngine.ExecuteOnceAsync(CancellationToken cancellationToken) in C:\Users\szy\Desktop\8005-workspace-v2\worktrees\cs331-8005-agv-control-server\src\ControlServer.Host\Runtime\JourneyRuntimeEngine.cs:line 294
+   at ControlServer.Tests.ArrivalPublishInterruptedThenReconnectedTests.TheEntryRequestReachesTheVehicleWhenARoundBehindTheClosedGateVoidedTheWaitBeforeTheReconnect() in C:\Users\szy\Desktop\8005-workspace-v2\worktrees\cs331-8005-agv-control-server\tests\ControlServer.Tests\ArrivalPublishInterruptedThenReconnectedTests.cs:line 112
+   at ControlServer.Tests.ArrivalPublishInterruptedThenReconnectedTests.TheEntryRequestReachesTheVehicleWhenARoundBehindTheClosedGateVoidedTheWaitBeforeTheReconnect() in C:\Users\szy\Desktop\8005-workspace-v2\worktrees\cs331-8005-agv-control-server\tests\ControlServer.Tests\ArrivalPublishInterruptedThenReconnectedTests.cs:line 117
+--- End of stack trace from previous location ---
+  Failed ControlServer.Tests.ArrivalPublishInterruptedThenReconnectedTests.TheFailedAdvanceCodeIsClearedByAWaitingRoundThatGetsThroughAgain [348 ms]
+  Error Message:
+   ControlServer.Domain.ProtocolContentConflictException : Outbound MessageId was replayed with different semantics or a non-advancing session generation.
+  Stack Trace:
+     at ControlServer.Infrastructure.Persistence.WireToGateStore.RefreshOutboundEnvelopeAsync(ProtocolOutboxRow existing, String messageType, String candidateWire, DateTimeOffset candidateCreatedAt, CancellationToken cancellationToken) in C:\Users\szy\Desktop\8005-workspace-v2\worktrees\cs331-8005-agv-control-server\src\ControlServer.Infrastructure\Persistence\WireToGateStore.cs:line 3291
+   at ControlServer.Infrastructure.Persistence.WireToGateStore.QueueOutboundEnvelopeAsync(String messageId, String messageType, String wireJson, DateTimeOffset createdAt, CancellationToken cancellationToken) in C:\Users\szy\Desktop\8005-workspace-v2\worktrees\cs331-8005-agv-control-server\src\ControlServer.Infrastructure\Persistence\WireToGateStore.cs:line 2086
+   at ControlServer.Host.Transport.OnboardJourneyPublisher.QueueEnvelopeAsync(String messageType, String messageId, String correlationId, String agvId, Int64 sessionGeneration, Func`2 payloadFactory, CancellationToken cancellationToken) in C:\Users\szy\Desktop\8005-workspace-v2\worktrees\cs331-8005-agv-control-server\src\ControlServer.Host\Transport\OnboardJourneyPublisher.cs:line 805
+   at ControlServer.Host.Transport.OnboardJourneyPublisher.PublishStampedEnvelopeAsync(String messageType, String messageId, String correlationId, String agvId, Int64 sessionGeneration, Func`2 payloadFactory, CancellationToken cancellationToken) in C:\Users\szy\Desktop\8005-workspace-v2\worktrees\cs331-8005-agv-control-server\src\ControlServer.Host\Transport\OnboardJourneyPublisher.cs:line 767
+   at ControlServer.Host.Transport.OnboardJourneyPublisher.PublishStampedSnapshotAsync(String messageType, String messageId, String agvId, Int64 sessionGeneration, Int64 revision, Func`2 payloadFactory, CancellationToken cancellationToken) in C:\Users\szy\Desktop\8005-workspace-v2\worktrees\cs331-8005-agv-control-server\src\ControlServer.Host\Transport\OnboardJourneyPublisher.cs:line 736
+   at ControlServer.Host.Runtime.JourneyRuntimeEngine.PublishPickupStateAsync(JourneyRuntimeRow runtime, JourneyStopCursor stops, SessionRecoveryRow session, Boolean holdingApplicable, CancellationToken cancellationToken) in C:\Users\szy\Desktop\8005-workspace-v2\worktrees\cs331-8005-agv-control-server\src\ControlServer.Host\Runtime\JourneyRuntimeEngine.cs:line 1672
+   at ControlServer.Host.Runtime.JourneyRuntimeEngine.AdvanceAsync(JourneyRuntimeRow runtime, RiotMapStationCatalogSnapshot currentMap, CancellationToken cancellationToken) in C:\Users\szy\Desktop\8005-workspace-v2\worktrees\cs331-8005-agv-control-server\src\ControlServer.Host\Runtime\JourneyRuntimeEngine.cs:line 648
+   at ControlServer.Host.Runtime.JourneyRuntimeEngine.ExecuteRoundAsync(CancellationToken cancellationToken) in C:\Users\szy\Desktop\8005-workspace-v2\worktrees\cs331-8005-agv-control-server\src\ControlServer.Host\Runtime\JourneyRuntimeEngine.cs:line 421
+   at ControlServer.Host.Runtime.JourneyRuntimeEngine.ExecuteOnceAsync(CancellationToken cancellationToken) in C:\Users\szy\Desktop\8005-workspace-v2\worktrees\cs331-8005-agv-control-server\src\ControlServer.Host\Runtime\JourneyRuntimeEngine.cs:line 280
+   at ControlServer.Host.Runtime.JourneyRuntimeEngine.ExecuteOnceAsync(CancellationToken cancellationToken) in C:\Users\szy\Desktop\8005-workspace-v2\worktrees\cs331-8005-agv-control-server\src\ControlServer.Host\Runtime\JourneyRuntimeEngine.cs:line 294
+   at ControlServer.Tests.ArrivalPublishInterruptedThenReconnectedTests.TheFailedAdvanceCodeIsClearedByAWaitingRoundThatGetsThroughAgain() in C:\Users\szy\Desktop\8005-workspace-v2\worktrees\cs331-8005-agv-control-server\tests\ControlServer.Tests\ArrivalPublishInterruptedThenReconnectedTests.cs:line 248
+   at ControlServer.Tests.ArrivalPublishInterruptedThenReconnectedTests.TheFailedAdvanceCodeIsClearedByAWaitingRoundThatGetsThroughAgain() in C:\Users\szy\Desktop\8005-workspace-v2\worktrees\cs331-8005-agv-control-server\tests\ControlServer.Tests\ArrivalPublishInterruptedThenReconnectedTests.cs:line 263
+--- End of stack trace from previous location ---
+  Failed ControlServer.Tests.ArrivalPublishInterruptedThenReconnectedTests.AFailedAdvanceNamesItselfOnTheBoardInsteadOfTheCodeLeftBeforeIt [486 ms]
+  Error Message:
+   Assert.Equal() Failure: Strings differ
+           ↓ (pos 0)
+Expected: "JOURNEY_ADVANCE_FAILED"
+Actual:   "ONBOARD_SESSION_NOT_READY"
+           ↑ (pos 0)
+  Stack Trace:
+     at ControlServer.Tests.ArrivalPublishInterruptedThenReconnectedTests.AFailedAdvanceNamesItselfOnTheBoardInsteadOfTheCodeLeftBeforeIt() in C:\Users\szy\Desktop\8005-workspace-v2\worktrees\cs331-8005-agv-control-server\tests\ControlServer.Tests\ArrivalPublishInterruptedThenReconnectedTests.cs:line 196
+   at ControlServer.Tests.ArrivalPublishInterruptedThenReconnectedTests.AFailedAdvanceNamesItselfOnTheBoardInsteadOfTheCodeLeftBeforeIt() in C:\Users\szy\Desktop\8005-workspace-v2\worktrees\cs331-8005-agv-control-server\tests\ControlServer.Tests\ArrivalPublishInterruptedThenReconnectedTests.cs:line 197
+--- End of stack trace from previous location ---
+
+Failed!  - Failed:     6, Passed:     7, Skipped:     0, Total:    13, Duration: 10 s - ControlServer.Tests.dll (net8.0)
+[xUnit.net 00:00:11.45]     ControlServer.Tests.ArrivalPublishInterruptedThenReconnectedTests.TheEntryRequestReachesTheVehicleAfterAReconnectInterruptedTheArrivalPublish [FAIL]
+[xUnit.net 00:00:12.05]     ControlServer.Tests.ArrivalPublishInterruptedThenReconnectedTests.AnAcknowledgedWorklistThatDiffersBeyondItsDeadlineIsStillRefusedAndTheBoardSaysSo [FAIL]
+[xUnit.net 00:00:14.24]     ControlServer.Tests.ArrivalPublishInterruptedThenReconnectedTests.TheFailedAdvanceKeepsTheTimeItStartedWhileEveryRoundFailsTheSameWay [FAIL]
+[xUnit.net 00:00:14.90]     ControlServer.Tests.ArrivalPublishInterruptedThenReconnectedTests.TheEntryRequestReachesTheVehicleWhenARoundBehindTheClosedGateVoidedTheWaitBeforeTheReconnect [FAIL]
+[xUnit.net 00:00:15.65]     ControlServer.Tests.ArrivalPublishInterruptedThenReconnectedTests.TheFailedAdvanceCodeIsClearedByAWaitingRoundThatGetsThroughAgain [FAIL]
+[xUnit.net 00:00:16.15]     ControlServer.Tests.ArrivalPublishInterruptedThenReconnectedTests.AFailedAdvanceNamesItselfOnTheBoardInsteadOfTheCodeLeftBeforeIt [FAIL]

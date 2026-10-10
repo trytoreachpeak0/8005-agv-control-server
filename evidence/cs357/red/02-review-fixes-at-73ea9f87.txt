@@ -1,0 +1,13 @@
+# 本票测试文件原样拷到上一轮 head 73ea9f87（稀疏 worktree，不含 evidence/）上跑，filter: JourneyRowLostUpdateTests | MultiVehicleExecutionTests.OneVehicles | MultiVehicleExecutionTests.AVehicleThatYields | Batch7JourneyAppendPersistenceTests
+  Failed ControlServer.Tests.MultiVehicleExecutionTests.AVehicleThatYieldsWithdrawsWhatItStagedOnAnotherVehiclesRowAndThatVehicleStillAdvances [2 s]
+Expected: Tuple ("VEHICLE_WAITING_AT_CHECKPOINT", null)
+Actual:   Tuple (null, null)
+  Failed ControlServer.Tests.JourneyRowLostUpdateTests.AJourneyWrittenAfterTheGateOrderWasCreatedIsReplayedWithoutASecondOrder(blockedThenRecovered: False) [2 s]
+Expected: null
+Actual:   ControlServer.Domain.BusinessIdentityConflictException: Movement identity is already bound to different intent content.
+  Failed ControlServer.Tests.Batch7JourneyAppendPersistenceTests.AnAppendOntoAJourneyBlockedSinceTheRoundReadItIsRefusedWhenTheRoundsOwnContextStillHoldsTheOldRow [1 s]
+Expected: typeof(ControlServer.Domain.BusinessIdentityConflictException)
+  Failed ControlServer.Tests.JourneyRowLostUpdateTests.AJourneyWrittenAfterTheGateOrderWasCreatedIsReplayedWithoutASecondOrder(blockedThenRecovered: True) [2 s]
+Expected: null
+Actual:   ControlServer.Domain.BusinessIdentityConflictException: Movement identity is already bound to different intent content.
+Failed!  - Failed:     4, Passed:    14, Skipped:     0, Total:    18, Duration: 12 s - ControlServer.Tests.dll (net8.0)

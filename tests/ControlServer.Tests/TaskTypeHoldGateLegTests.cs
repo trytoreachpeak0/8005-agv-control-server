@@ -69,7 +69,7 @@ public sealed class TaskTypeHoldGateLegTests
             .SingleAsync(row => row.UpperId == onTheWay.GateUpperId, Token);
         await RaiseHoldAsync(fixture);
 
-        fixture.Riot.SetSuccessfulArrival("TO_GATE", onTheWay.GateUpperId, TaskTypeStationRuntimeSeed.GateStationRiotId);
+        fixture.Riot.SetSuccessfulArrival("TO_GATE", onTheWay.GateUpperId!, TaskTypeStationRuntimeSeed.GateStationRiotId);
         fixture.Riot.Vehicle = fixture.Riot.Vehicle with { CurrentStationId = TaskTypeStationRuntimeSeed.GateStationRiotId };
         fixture.Context.ChangeTracker.Clear();
         await fixture.Engine.ExecuteOnceAsync(Token);

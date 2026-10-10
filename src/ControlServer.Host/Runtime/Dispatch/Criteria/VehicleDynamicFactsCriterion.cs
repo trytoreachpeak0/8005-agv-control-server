@@ -4,7 +4,7 @@ namespace ControlServer.Host.Runtime.Dispatch.Criteria;
 
 /// <summary>
 /// The vehicle must currently be safe, available, idle, on the right Map, freshly observed,
-/// adequately charged, stopped and unoccupied.
+/// adequately charged (<see cref="BatteryEligibility"/>), stopped and unoccupied.
 /// </summary>
 /// <remarks>
 /// <para>
@@ -25,6 +25,15 @@ public sealed class VehicleDynamicFactsCriterion(IOptions<JourneyRuntimeOptions>
 {
     private readonly JourneyRuntimeOptions _options = options.Value;
 
+    /// <summary>The vehicle's battery is not reported. Named because the idle return reads it (control-server#389).</summary>
+    public const string BatteryFactUnknownReason = "BATTERY_FACT_UNKNOWN";
+
+    /// <summary>
+    /// The vehicle is charging, or its battery less one task's estimated consumption would fall below the approved post-task
+    /// margin (control-server#403). Named for the same reason.
+    /// </summary>
+    public const string BatteryPolicyNotSatisfiedReason = "BATTERY_POLICY_NOT_SATISFIED";
+
     public int Order => 80;
 
     public Task<string> EvaluateAsync(
@@ -35,6 +44,20 @@ public sealed class VehicleDynamicFactsCriterion(IOptions<JourneyRuntimeOptions>
         _ = cancellationToken;
 
         return Task.FromResult(Evaluate(evaluation.Vehicle, _options));
+    }
+
+    /// <summary>
+    /// Whether Onboard's safety summary vouches for sending this vehicle off: departure safe by its own judgement, stopped,
+    /// every target slot locked, every unlock output reset, and nothing unknown. One definition for dispatch admission and for
+    /// the rebuild of an order that ended (control-server#318, REQ-0239's "normal dispatch and safety gates"), so the two cannot
+    /// come to disagree about what "may depart" means.
+    /// </summary>
+    public static bool SaysTheVehicleMayDepart(OnboardDispatchFacts onboard)
+    {
+        ArgumentNullException.ThrowIfNull(onboard);
+        return onboard.DepartureSafe && onboard.VehicleStopped &&
+               onboard.AllTargetSlotsLocked && onboard.AllUnlockOutputsReset &&
+               !onboard.UnknownPresent;
     }
 
     /// <summary>
@@ -51,9 +74,7 @@ public sealed class VehicleDynamicFactsCriterion(IOptions<JourneyRuntimeOptions>
             return "ONBOARD_FACTS_NOT_READY";
         }
 
-        if (!facts.Onboard.DepartureSafe || !facts.Onboard.VehicleStopped ||
-            !facts.Onboard.AllTargetSlotsLocked || !facts.Onboard.AllUnlockOutputsReset ||
-            facts.Onboard.UnknownPresent)
+        if (!SaysTheVehicleMayDepart(facts.Onboard))
         {
             return "ONBOARD_DEPARTURE_UNSAFE";
         }
@@ -86,15 +107,14 @@ public sealed class VehicleDynamicFactsCriterion(IOptions<JourneyRuntimeOptions>
             return "RIOT_VEHICLE_FACT_STALE";
         }
 
-        if (facts.Vehicle.BatteryPercent is null || string.IsNullOrWhiteSpace(facts.Vehicle.BatteryState))
+        // 电量一段（批次9-05，control-server#403）：阈值来自这一轮为这辆车读的策略版本，一趟新任务按一份耗电估计算。
+        // 本周期已充满、仍插在桩上报 CHARGING 的车不因 CHARGING 被拒（批次9-07，control-server#405）。
+        string battery = BatteryEligibility.Judge(
+            facts.Vehicle, facts.BatteryPolicy, tasksToCover: 1, options.WaitingJourneyRescueBatteryPercent,
+            facts.ChargingCycleComplete);
+        if (battery != DispatchAdmissionChain.Eligible)
         {
-            return "BATTERY_FACT_UNKNOWN";
-        }
-
-        if (string.Equals(facts.Vehicle.BatteryState, "CHARGING", StringComparison.Ordinal) ||
-            facts.Vehicle.BatteryPercent < options.MinimumBatteryPercent)
-        {
-            return "BATTERY_POLICY_NOT_SATISFIED";
+            return battery;
         }
 
         if (facts.Vehicle.Speed is null || facts.Vehicle.Speed != 0)

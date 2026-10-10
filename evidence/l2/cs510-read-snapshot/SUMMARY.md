@@ -1,0 +1,98 @@
+# control-server#510：充电场景探针读到新旧混合状态（同一读快照）
+
+Found by: CI l2 run 37595371819（cs#503 / PR #509 的那一轮，第 1 次尝试红 L2-UTC-01，第 2 次尝试红 L2-CWP-05）。
+
+被测提交：`a0553a0a15d73e3487f0c9cdbc3cc96b6ec7589a`（本分支），本机合成装置，端口槽位 0，2026-10-08，调度放行的时段。
+
+## 结论
+
+- **产品没有中间态。** 暂停、周期迁移到 `UNABLE_TO_CHARGE`/`CLEARING`、用途、旅程码是同一次 `SaveChanges`
+  （`JourneyRuntimeEngine.UnableToCharge.cs` `ConfirmUnableToChargeAsync`）；到等待点完成清桩是一个显式事务
+  （`JourneyRuntimeEngine.ClearanceMove.cs` `CompleteClearanceAtWaitingPointAsync`）。本票不改产品代码。
+- **红的原因在探针。** 探针先单独读充电周期，再用几条查询读其余各项，连接是自动提交，每条 `SELECT` 各读各的时刻；
+  服务端在第一条和第二条之间提交，就得到库里从没有过的「周期是提交前、其余是提交后」，而等待条件只看后读的那段。
+- **修法：** 新增 `Invoke-L2ReadSnapshot`（一个读事务，几条读看到同一个已提交状态），7 处探针改用它；能等整串的改为等整串。
+
+## 注入证据
+
+**重放：** `variants/run.ps1` 写死了作者本机的工作树与 scratch 路径，不能原样运行。变体文件没有入库，要从
+`variants/*.diff` 重建：旧变体与 B 变体是对基线 `a419a2a8` 的场景文件打补丁，新变体是对 `a0553a0a` 的场景文件打补丁。
+
+注入：只在第一次探针里，读完充电周期之后，另开一个只读连接轮询，直到服务端那次提交可见（UTC 看暂停行出现，CWP 看周期
+`ENDED`），再接着读。这把 CI 碰巧撞上的时序变成每次必然。改动见 `variants/*.diff`，没有提交进分支，跑完用
+`git checkout` 还原（`variants/run.ps1`）。每次都以 journal 里的 `CS510_INJECTION_FIRED` 为准：6 次注入全部触发。
+
+| # | 场景 | 变体 | 注入 | 结果 | 判据 |
+| --- | --- | --- | --- | --- | --- |
+| 1 | charging-unable-to-charge-pauses-charger | 新（快照 + 等整串） | 无 | PASS | 6/6 |
+| 2 | 同上 | 旧（基线 `a419a2a8` 的探针与等待） | FIRED | **FAIL** | L2-UTC-01 红，其余 5 条绿 |
+| 3 | 同上 | B（旧探针，只把等待改成等整串） | FIRED | PASS | 6/6 |
+| 4 | 同上 | 新 | FIRED | PASS | 6/6 |
+| 5 | charging-clearance-to-waiting-point | 新 | 无 | PASS | 6/6 |
+| 6 | 同上 | 旧 | FIRED | **FAIL** | L2-CWP-05 红，其余 5 条绿 |
+| 7 | 同上 | B | FIRED | PASS | 6/6 |
+| 8 | 同上 | 新 | FIRED | PASS | 6/6 |
+| 9 | charging-full-cycle | 新 | 无 | PASS | 5/5 |
+
+两次红的读数与 CI 那两次逐字同形：
+
+- 2 号 L2-UTC-01 实际：`UNABLE_TO_CHARGE_CONFIRMED UNKNOWN recovered=0 | EN_ROUTE ACTIVE | CLEARING_MAINTENANCE … | CHARGING_UNABLE_TO_CHARGE`
+- 6 号 L2-CWP-05 实际：`(none) | CHARGER_RELEASED_ON_CLEARANCE_AT_WAITING_POINT | CLEARING  | Completed … | … | OCCUPIED …`
+
+### 方案 B 在注入下也是绿的
+
+如实记录：只把等待条件改成等整串（3、7 号），在这两条判据上就足以不红。但它读到了混合状态，只是没停在那一行——
+`timeline.jsonl` 里注入那一轮的观测：
+
+- 3 号（B）：`… | EN_ROUTE ACTIVE | CLEARING_MAINTENANCE … | CHARGING_UNABLE_TO_CHARGE`，下一轮才是一致的新状态。
+- 4 号（新）：`(none) | EN_ROUTE ACTIVE | CHARGING … |`，即提交前的一致状态，下一轮是提交后的一致状态。
+- 7 号（B）：`(none) | CHARGER_RELEASED_… | CLEARING  | Completed …`；8 号（新）：`RESERVED … |  | CLEARING  | AwaitingPickupArrival …`。
+
+所以 B 不够的地方在于：等待条件不能写成等整串的探针。G3-13-02（`g3-automatic-charging-cycle`）的等待条件故意在
+「任何不是两种进行中状态的值」上停下，用来抓错误迁移；那种写法下混合读数（`CHARGING | (none)`）会直接停下并变红，只有快照能防。
+
+## 自检与变异（`self-check/`）
+
+`Test-L2ReadSnapshot.ps1`，真实 SQLite（WAL），9 格全绿（`head.txt`）。三个变异都由具体格子杀死，不是脚本崩溃：
+
+| 变异 | 红的格子 |
+| --- | --- |
+| M1 去掉事务 | 2：块内跨表同一状态；嵌套被拒 |
+| M2 COMMIT 不在 finally | 4：抛错之后下一块读到新提交；之后回到自动提交；嵌套；嵌套之后 |
+| M3 不 COMMIT | 6：下一块读到新提交，及其后全部 |
+| R1 BEGIN 移进 try（审查 R1） | 1：嵌套被拒（审查时这一变异让脚本崩溃；S3 之后 9 格跑完，红在这一格，见 `R1-begin-inside-try.txt`） |
+
+M1–M3 的输出是 S3 之前的自检版本跑出来的；S3 只改了出错的记法（不再中途崩溃），每格的判定没变。
+
+`g3-automatic-charging-cycle` 是真车载端的 G3 场景：本机没跑，也没申请真装置，只做了语法解析（0 错误）。G3 跑的是绑定提交里的场景脚本，
+这处改动要等 G3 绑定前移之后才生效。
+
+## 审查 S1：快照内只等被等的段，钉住「同一次提交」（`s1-split-save/`）
+
+审查指出：等待条件改成等整串后，产品若把 `ConfirmUnableToChargeAsync` 那一次保存拆成两次，场景会等到第二次落库再判绿，
+「同一次提交」这个前提就丢了；G2 只看终态，也抓不到。所以改为：快照保留，等待条件退回只等被等的那段，断言仍比整串。
+
+证据：在临时副本里把产品拆成两次保存（`product-split.diff`：加完暂停行先单独 `SaveChanges`，等 3 秒再保存其余），
+四次都跑在这个产品上。变异没有提交，跑完用 `git checkout` 还原。变异版编译结果 `0 Error(s)`（`runs/s1-1-utc-wholeline/build.log`）。
+被测提交 `f123562b`，本机合成装置，槽位 0，调度放行的时段。
+
+| # | 场景 | 场景版本 | 结果 | 判据 |
+| --- | --- | --- | --- | --- |
+| 1 | charging-unable-to-charge-pauses-charger | `319343d1`（快照 + 等整串） | PASS | 6/6 |
+| 2 | 同上 | `f123562b`（快照内只等暂停） | **FAIL** | L2-UTC-01 红，其余 5 条绿 |
+| 3 | charging-clearance-to-waiting-point | `319343d1` | PASS | 6/6 |
+| 4 | 同上 | `f123562b` | **FAIL** | L2-CWP-01 红，其余 5 条绿 |
+
+第 1、3 次判绿，依据是 `timeline.jsonl`（它只在读数变化时记一行）。两次都持续读到「暂停已在、周期未迁移」的中间态，
+等整串的等待一直等过了这段：
+
+- 第 1 次：`UNABLE_TO_CHARGE_CONFIRMED … | EN_ROUTE ACTIVE | CLEARING_MAINTENANCE … | ORDER_HANG`，从 03:30:34.857 持续到 03:30:37.764（2.9 秒）。
+- 第 3 次：`UNABLE_TO_CHARGE_CONFIRMED recovered=0 | ACTIVE | CLEARING_MAINTENANCE …`，从 03:32:23.840 持续到 03:32:27.020（3.2 秒）。
+
+第 2、4 次红，读数就是那段中间态：
+
+- L2-UTC-01 实际：`UNABLE_TO_CHARGE_CONFIRMED UNKNOWN recovered=0 | EN_ROUTE ACTIVE | CLEARING_MAINTENANCE … | ORDER_HANG`。
+  用途已是 `CLEARING_MAINTENANCE`，是因为它在拆开之前就已暂存，跟着第一次保存落库；周期与旅程码在第二次保存里。
+- L2-CWP-01 实际：`UNABLE_TO_CHARGE_CONFIRMED recovered=0 | ACTIVE | CLEARING_MAINTENANCE …`。
+
+`run-s1.ps1` 同样写死了作者本机路径；重放时从 `product-split.diff` 与 `319343d1` 的场景文件重建。

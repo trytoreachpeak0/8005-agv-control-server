@@ -1,0 +1,22 @@
+mutation H-no-entry-request-heal: JourneyRuntimeEngine.cs matches=[1]
+diff --git a/src/ControlServer.Host/Runtime/JourneyRuntimeEngine.cs b/src/ControlServer.Host/Runtime/JourneyRuntimeEngine.cs
+index a1178c08..1a614d7b 100644
+--- a/src/ControlServer.Host/Runtime/JourneyRuntimeEngine.cs
++++ b/src/ControlServer.Host/Runtime/JourneyRuntimeEngine.cs
+@@ -2250,7 +2250,7 @@ public sealed partial class JourneyRuntimeEngine(
+             .Where(row => row.MessageId == worklistId || row.MessageId == entryId)
+             .Select(row => row.MessageId)
+             .ToListAsync(cancellationToken).ConfigureAwait(false);
+-        return queued.Contains(worklistId) && !queued.Contains(entryId);
++        return queued.Count < 0;
+     }
+ 
+     /// <summary>
+  Failed ControlServer.Tests.RefilledStationDeadlineReachesVehicleTests.ACrashBetweenTheRefilledWorklistAndItsEntryRequestIsHealedOnTheNextRound [719 ms]
+  Error Message:
+Expected: 2
+Actual:   1
+     at ControlServer.Tests.RefilledStationDeadlineReachesVehicleTests.AssertTheLastEntryRequestAnswersTheHeldWorklist(RuntimeFixture fixture, AdoptingPeer vehicle) in tests\ControlServer.Tests\RefilledStationDeadlineReachesVehicleTests.cs:line 725
+   at ControlServer.Tests.RefilledStationDeadlineReachesVehicleTests.ACrashBetweenTheRefilledWorklistAndItsEntryRequestIsHealedOnTheNextRound() in tests\ControlServer.Tests\RefilledStationDeadlineReachesVehicleTests.cs:line 271
+   at ControlServer.Tests.RefilledStationDeadlineReachesVehicleTests.ACrashBetweenTheRefilledWorklistAndItsEntryRequestIsHealedOnTheNextRound() in tests\ControlServer.Tests\RefilledStationDeadlineReachesVehicleTests.cs:line 282
+Failed!  - Failed:     1, Passed:    33, Skipped:     0, Total:    34, Duration: 14 s - ControlServer.Tests.dll (net8.0)

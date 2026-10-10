@@ -1,0 +1,139 @@
+#Requires -Version 7
+
+<#
+真车载端在场时，行驶中订单 FAILED（control-server#358，一次性场景，不进 l2.yml）。
+
+照 real-onboard-order-hang-continue 的前半段：派往取货站、车在途、真车载端因本服务端在途单掉出 Ready，闸门先写
+ONBOARD_SESSION_NOT_READY。然后假 RIoT 把单报 FAILED（4），车仍在动（MT_RUNNING、速度 0.8）。
+
+要回答两件事：
+  A. 这时真车载端会话就不就绪——只记录（journal 的 session-at-fault 与 session-later），不断言：这是票面要核实的事实本身；
+  B. 修后服务端有没有记故障、发 Hold 与急停（断言，L2-RFF-01..03）。
+
+断言只从服务端 SQLite 与假 RIoT 读。
+#>
+[CmdletBinding()]
+param([Parameter(Mandatory)][object]$Context)
+
+Set-StrictMode -Version Latest
+$ErrorActionPreference = 'Stop'
+
+$journal = $Context.Journal
+$assertions = $Context.Assertions
+$riot = $Context.Riot
+$mes = $Context.MesIngest
+$connection = $Context.Connection
+$agvId = [string]$Context.AgvId
+
+$demandGuid = [guid]::NewGuid()
+$demandId = $demandGuid.ToString('D')
+
+function Invoke-Scalar([string]$sql) {
+    $rows = Invoke-L2Query -Connection $connection -Sql $sql
+    if ($rows.Count -eq 0) { return $null }
+    return $rows[0]
+}
+
+function Get-Runtime {
+    return Invoke-Scalar "SELECT Stage, BlockReasonCode, BlockReasonSince FROM JourneyRuntimes WHERE DemandId = '$demandId'"
+}
+
+function Get-Session {
+    return Invoke-Scalar "SELECT Readiness, ReasonCode FROM SessionRecoveries WHERE AgvId = '$agvId'"
+}
+
+function Get-RiotInvocations([string]$commandType) {
+    return , @(@($riot.Snapshot().body.commandInvocations) | Where-Object { [string]$_.commandType -eq $commandType })
+}
+
+# --- 1. 受理、派往取货站、车在途、闸门关上 ------------------------------------------------------------------
+
+$journal.Note("Publishing demand $($demandGuid.ToString('N')) (area N1-3).")
+$null = $mes.Command('Put', "demands/$($demandGuid.ToString('N'))", @{
+    sublot = "L2-RFF-$($Context.RunId)"; area = 'N1-3'
+    eqp = 'EQP-L2-01'; package = 'L2-PACKAGE'; maxBoxCount = 4
+})
+
+$intent = Wait-L2Condition -Description 'the TO_PICKUP intent was confirmed' `
+    -Journal $journal -Criterion 'to-pickup-intent' -TimeoutSeconds 180 `
+    -Probe {
+        $row = Invoke-Scalar "SELECT UpperId, OrderId, Status FROM OrderIntents WHERE DemandId = '$demandId' AND Purpose = 'TO_PICKUP'"
+        if ($row -and [string]$row.Status -eq 'CONFIRMED') { $row } else { $null }
+    } `
+    -Until { param($v) $null -ne $v }
+
+$journal.Note('Vehicle departs for the pickup station.')
+$null = $riot.Command('Put', "orders/$($intent.UpperId)", @{ orderState = 3; executeVehicleKey = $Context.VehicleKey })
+$null = $riot.Command('Put', 'vehicle', @{
+    vehicleKey = $Context.VehicleKey; procState = 'RUNNING'; movementState = 'MT_RUNNING'; speed = 0.8
+    processingOrder = $true; orderTaskId = $intent.OrderId; currentPosition = 0
+})
+$gate = Wait-L2Condition -Description 'the readiness gate wrote its own code for the journey in transit' `
+    -Journal $journal -Criterion 'gate-closed-in-transit' -TimeoutSeconds 90 `
+    -Probe { Get-Runtime } `
+    -Until { param($v) $v -and [string]$v.BlockReasonCode -eq 'ONBOARD_SESSION_NOT_READY' }
+$assertions.Add(
+    'L2-RFF-00',
+    '前提：车在途时真车载端会话掉出 Ready，闸门先为旅程写了 ONBOARD_SESSION_NOT_READY（FAILED 在这之后才注入）',
+    ([string]$gate.BlockReasonCode -eq 'ONBOARD_SESSION_NOT_READY'),
+    'ONBOARD_SESSION_NOT_READY',
+    [string]$gate.BlockReasonCode)
+$sessionBefore = Get-Session
+$journal.Observe('session-before-failure', "$($sessionBefore.Readiness)/$($sessionBefore.ReasonCode)",
+    @{ readiness = [string]$sessionBefore.Readiness; reasonCode = [string]$sessionBefore.ReasonCode })
+
+# --- 2. 行驶中 FAILED，车仍在动 ------------------------------------------------------------------------------
+
+$journal.Note("RIoT reports $($intent.UpperId) FAILED while the vehicle is still moving.")
+$null = $riot.Command('Put', "orders/$($intent.UpperId)", @{ orderState = 4 })
+$null = $riot.Command('Put', 'vehicle', @{
+    vehicleKey = $Context.VehicleKey; procState = 'RUNNING'; movementState = 'MT_RUNNING'; speed = 0.8
+    processingOrder = $false; clearOrderTaskId = $true; currentPosition = 0
+})
+
+# 记下故障第一次出现那一刻的会话，与故障行一起取：会话在那之后变不变是另一件事。
+$atFault = Wait-L2Condition -Description 'a fault was recorded for the failed order' `
+    -Journal $journal -Criterion 'fault-recorded' -TimeoutSeconds 60 `
+    -Probe {
+        $fault = Invoke-Scalar "SELECT Level, EvidenceCode, EscalatedAt FROM VehicleFaultStates WHERE AgvId = '$agvId'"
+        if ($null -eq $fault) { return $null }
+        $session = Get-Session
+        [pscustomobject]@{ Fault = $fault; Session = $session }
+    } `
+    -Until { param($v) $null -ne $v }
+$journal.Observe('session-at-fault', "$($atFault.Session.Readiness)/$($atFault.Session.ReasonCode)",
+    @{ readiness = [string]$atFault.Session.Readiness; reasonCode = [string]$atFault.Session.ReasonCode })
+
+$null = Wait-L2Iterations -Riot $riot -Count 4 -Journal $journal
+$sessionLater = Get-Session
+$journal.Observe('session-later', "$($sessionLater.Readiness)/$($sessionLater.ReasonCode)",
+    @{ readiness = [string]$sessionLater.Readiness; reasonCode = [string]$sessionLater.ReasonCode })
+
+$fault = Invoke-Scalar "SELECT Level, EvidenceCode, EscalatedAt FROM VehicleFaultStates WHERE AgvId = '$agvId'"
+$assertions.Add(
+    'L2-RFF-01',
+    '订单 FAILED、车在动：记下 SuspectedBlocked 故障，证据码 VEHICLE_ORDER_FAILED，并已升级',
+    ([string]$fault.Level -eq 'SuspectedBlocked' -and [string]$fault.EvidenceCode -eq 'VEHICLE_ORDER_FAILED' -and
+        $null -ne $fault.EscalatedAt -and [string]$fault.EscalatedAt -ne ''),
+    'SuspectedBlocked / VEHICLE_ORDER_FAILED / 有升级时刻',
+    "$([string]$fault.Level) / $([string]$fault.EvidenceCode) / $([string]$fault.EscalatedAt)")
+
+$holds = Invoke-L2Query -Connection $connection -Sql "SELECT AttemptNumber, Outcome FROM RiotOrderCommandAudit WHERE CommandType = 'OrderHold'"
+$triggers = Invoke-L2Query -Connection $connection -Sql "SELECT AttemptNumber, Outcome FROM RiotOrderCommandAudit WHERE CommandType = 'triggerEmergency'"
+$triggerCalls = Get-RiotInvocations 'triggerEmergency'
+$assertions.Add(
+    'L2-RFF-02',
+    '命令审计里有 OrderHold 与 triggerEmergency，假 RIoT 收到了急停触发',
+    ($holds.Count -ge 1 -and $triggers.Count -ge 1 -and $triggerCalls.Count -ge 1),
+    'OrderHold>=1 / triggerEmergency>=1 / RIoT 急停调用>=1',
+    "$($holds.Count) / $($triggers.Count) / $($triggerCalls.Count)")
+
+$runtime = Get-Runtime
+$assertions.Add(
+    'L2-RFF-03',
+    '旅程码是 VEHICLE_ORDER_FAILED，没被闸门的 ONBOARD_SESSION_NOT_READY 盖掉',
+    ([string]$runtime.BlockReasonCode -eq 'VEHICLE_ORDER_FAILED'),
+    'VEHICLE_ORDER_FAILED',
+    [string]$runtime.BlockReasonCode)
+
+$journal.Note("会话：注入前 $($sessionBefore.Readiness)/$($sessionBefore.ReasonCode)，记故障时 $($atFault.Session.Readiness)/$($atFault.Session.ReasonCode)，4 轮后 $($sessionLater.Readiness)/$($sessionLater.ReasonCode)。")

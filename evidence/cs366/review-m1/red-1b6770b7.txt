@@ -1,0 +1,6 @@
+修前红 1b6770b7（只改 tests；src = a932c418），dotnet build --no-incremental 0 Error(s)，dotnet test 退出码 1。
+四格都红在断言「the Host must ask for a snapshot for a decided rebuild never sent」（输出里出现 8 次，每格两遍）。
+Failed ControlServer.Tests.StoppedRebuildExitTests.ADecidedRebuildNeverSentThatReadsTheSlotEmptyStopsAndIsHandedOverToTheEnd
+Failed ControlServer.Tests.OwnOrderRebuildCargoProofTests.ADecidedRebuildNeverSentThatIsHeldOnceIsAskedForAFreshSnapshotAndRebuilt(hold:
+Failed ControlServer.Tests.OwnOrderRebuildCargoProofTests.ADecidedRebuildNeverSentThatIsHeldOnceIsAskedForAFreshSnapshotAndRebuilt(hold:
+Failed ControlServer.Tests.OwnOrderRebuildCargoProofTests.ADecidedRebuildNeverSentThatIsHeldOnceIsAskedForAFreshSnapshotAndRebuilt(hold:

@@ -40,11 +40,32 @@ public sealed class JourneyStopRow
     /// <summary>取货停靠的批次录入请求；卸货停靠为空。</summary>
     public string? SublotRequestMessageId { get; set; }
 
-    /// <summary>离开本停靠之前的离站核验请求消息；今天只有取货停靠有。</summary>
+    /// <summary>
+    /// 离开本停靠之前的离站核验请求消息。受理时只给取货停靠写；卸货停靠在<b>第一次要离站时</b>由
+    /// <c>JourneyRuntimeEngine.EnsureDepartureCheckIdsAsync</c> 补上并落库（批次7-06，control-server#211）。
+    /// </summary>
     public string? DepartureSafetyCheckMessageId { get; set; }
 
-    /// <summary>离开本停靠之前的离站核验 id；今天只有取货停靠有。</summary>
+    /// <summary>
+    /// 离开本停靠之前的离站核验 id。受理时只给取货停靠写；卸货停靠在<b>第一次要离站时</b>补上并落库
+    /// ——在本票之前卸货停靠永远是旅程终点，没有「离开之前」可言（批次7-06，control-server#211）。
+    /// </summary>
     public string? DepartureSafetyCheckId { get; set; }
+
+    /// <summary>
+    /// 本停靠的清单因离站期限重填而多发了几版（control-server#339）。受理时为零，只增不减。
+    /// </summary>
+    /// <remarks>
+    /// <para>
+    /// 断联使离站等待作废、恢复后从此刻重填（ADR-cross-0055）。重填出来的期限与车手上那一版不同时，它要作为新的一版送到车上：
+    /// 车载端按消息类型与修订号采纳清单，同号不同内容当场拒收（<c>SNAPSHOT_REVISION_CONTENT_CONFLICT</c>），也从不自己作废或重新计满期限。
+    /// 所以重填必须让修订号前进，而修订号是从停靠推出来的（<c>JourneyStopCursor.WorklistRevisionAt</c>），这一列就是推导里「重填」那一项。
+    /// </para>
+    /// <para>
+    /// <b>落库而不是每轮现算</b>：重填的次数是历史，不是此刻的事实能重新推出来的——推不出来，重启之后修订号就会退回车已经采纳过的号。
+    /// </para>
+    /// </remarks>
+    public long WorklistRefills { get; set; }
 
     public required string Status { get; set; }
     public DateTimeOffset CreatedAt { get; set; }
@@ -90,8 +111,9 @@ public sealed class JourneyDemandRow
 /// 车辆被哪种用途、哪趟旅程占着（规格 3.3 第 9 项、5.2，REQ-0290 的搬运一半）。批次 7 起它是车辆占用的权威。
 /// </summary>
 /// <remarks>
-/// 主键 <c>VehicleKey</c>：一车一行，谁占到由主键冲突决定，不先读后写。释放即删除行；占用的历史由租约行的 <c>ReleasedAt</c> 承载。
-/// 另两套占用（<c>VehicleDispatchLeases</c> 与 <c>OrderIntents.VehicleOccupancy*</c>）本批行为不变，批次 8 退役。
+/// 主键 <c>VehicleKey</c>：一车一行，谁占到由主键冲突决定，不先读后写。释放即删除行；占用的历史在
+/// <c>VehiclePurposeClaimRecords</c>，与占有行同一次保存写入、关闭（<c>VehiclePurposeClaimWrites</c>）。
+/// 批次 8-16（control-server#387）起它是车辆占用的唯一载体：租约表与订单占用列已删。
 /// </remarks>
 public sealed class VehiclePurposeClaimRow
 {

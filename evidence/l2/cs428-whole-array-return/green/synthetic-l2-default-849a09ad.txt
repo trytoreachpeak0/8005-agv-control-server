@@ -1,0 +1,75 @@
+HEAD 849a09ade04e4099a9a2a23096033dc492ac760e
+default mode, 2 lanes, 2093s wall, 72 runs: 72 PASS, 0 FAIL
+
+PASS   59s  lane 2 slot 2  area-assignment-import-rejects
+PASS   33s  lane 2 slot 2  area-assignment-unmapped-silent
+PASS   73s  lane 1 slot 1  area-assignment-version-freeze
+PASS   34s  lane 2 slot 2  area-eqp-unique-across-task-types
+PASS  152s  lane 1 slot 1  binding-hold-dashboard-not-cascading
+PASS   76s  lane 2 slot 2  blocked-journey-dashboard-projection
+PASS   42s  lane 2 slot 2  cargo-holding-dashboard-projection
+PASS   53s  lane 1 slot 1  cargo-holding-disabled-when-append-forbidden
+PASS   85s  lane 2 slot 2  cargo-holding-side-full
+PASS   60s  lane 2 slot 2  cargo-holding-timeout
+PASS   80s  lane 2 slot 2  catalog-change-binding-hold
+PASS   25s  lane 1 slot 1  charging-policy-missing-vehicle-not-commissioned
+PASS   31s  lane 2 slot 2  charging-thresholds-relation-refused
+PASS   71s  lane 2 slot 2  command-surface-order-hold
+PASS   24s  lane 1 slot 1  create-gate
+PASS   25s  lane 2 slot 2  create-gate-unapproved
+PASS   32s  lane 1 slot 1  dispatch-zone-parameters-import-rejects
+PASS   49s  lane 1 slot 1  emergency-stop-operator-release
+PASS   53s  lane 1 slot 1  emergency-stop-single-trigger
+PASS   46s  lane 2 slot 2  en-route-append-delay-gate
+PASS   34s  lane 1 slot 1  en-route-append-not-configured
+PASS  154s  lane 2 slot 2  fixed-station-single-occupancy
+PASS   27s  lane 1 slot 1  idle-and-inflight-vehicles-compete
+PASS   68s  lane 2 slot 2  idle-return-two-vehicles-contend-one-waiting-point
+PASS   35s  lane 2 slot 2  in-transit-door-not-locked
+PASS   43s  lane 1 slot 1  in-transit-order-cancelled-rebuilt
+PASS   58s  lane 2 slot 2  in-transit-order-hang-continue
+PASS   43s  lane 1 slot 1  in-transit-rebuild-stopped-person-rebuilds
+PASS   31s  lane 2 slot 2  load-cancelled-before-sublot
+PASS   32s  lane 2 slot 2  load-command-never-answered
+PASS   78s  lane 2 slot 2  load-determinate-failure-and-door-open-timeout
+PASS   58s  lane 1 slot 1  load-result-requires-recovery
+PASS   73s  lane 2 slot 2  mandatory-charge-vehicle-takes-no-transport
+PASS  115s  lane 1 slot 1  map-rename-holds-all-task-types
+PASS   95s  lane 1 slot 1  mixed-side-station-two-trips
+PASS   26s  lane 1 slot 1  multi-stop-append-same-zone
+PASS   73s  lane 1 slot 1  normal-load
+PASS   27s  lane 1 slot 1  onboard-alarm-snapshot-dashboard
+PASS   42s  lane 2 slot 2  onboard-silent-liveness-loss
+PASS   27s  lane 1 slot 1  plan-reorder-and-drop-cancelled
+PASS   41s  lane 2 slot 2  reassign-when-vehicle-ineligible
+PASS   23s  lane 2 slot 2  route-graph-engine
+PASS   61s  lane 1 slot 1  route-graph-staleness
+PASS   29s  lane 1 slot 1  session-established-while-moving (1/3)
+PASS   28s  lane 1 slot 1  session-established-while-moving (2/3)
+PASS   30s  lane 1 slot 1  session-established-while-moving (3/3)
+PASS   29s  lane 2 slot 2  slot-configuration-activation-replay
+PASS   22s  lane 1 slot 1  slot-group-disabled-no-alert
+PASS   62s  lane 2 slot 2  slot-group-selection
+PASS   25s  lane 1 slot 1  slot-group-temporarily-full
+PASS  102s  lane 2 slot 2  staging-to-wire-reversed-journey
+PASS   93s  lane 1 slot 1  staging-to-wire-slot-group
+PASS  104s  lane 2 slot 2  starvation-threshold-escalation
+PASS   79s  lane 1 slot 1  station-deadline-sublot-timeout
+PASS   75s  lane 1 slot 1  stop-ended-journey-continues
+PASS   28s  lane 2 slot 2  structural-block-oversized-demand
+PASS   36s  lane 1 slot 1  sublot-rejected-after-entry
+PASS   60s  lane 2 slot 2  task-type-binding-admits-bound-station
+PASS   67s  lane 1 slot 1  task-type-binding-missing-not-cascading
+PASS    9s  lane 2 slot 2  task-type-binding-station-reused-refuses-start
+PASS   68s  lane 1 slot 1  task-type-priority-band
+PASS   22s  lane 1 slot 1  three-synthetic-peers
+PASS   74s  lane 1 slot 1  three-vehicle-exit
+PASS   51s  lane 2 slot 2  transport-demand-key-suppressed
+PASS   44s  lane 2 slot 2  vehicle-fault-operator-clearance
+PASS   60s  lane 1 slot 1  vehicle-full-ignores-oversized-and-gated
+PASS  215s  lane 1 slot 1  vehicle-full-still-appends-before-departure
+PASS   41s  lane 2 slot 2  waiting-journey-battery-watch
+PASS  107s  lane 2 slot 2  waiting-point-exclusive-reserve-occupy-release
+PASS   28s  lane 1 slot 1  waiting-points-fewer-than-vehicles-refuses-start
+PASS   51s  lane 1 slot 1  waiting-station-yield
+PASS   65s  lane 2 slot 2  waiting-station-yield-waits-for-door

@@ -156,7 +156,7 @@ public sealed class JourneyRuntimeWorkerSublotRejectedAfterEntryTests
         // Step 1: the entry request is what the operator is answering.
         JourneyRuntimeRow runtime = await fixture.RuntimeAsync();
         Assert.Contains("SublotEntryRequested", await fixture.OutboxTypesAsync());
-        JsonElement request = await fixture.OutboxPayloadAsync(runtime.SublotRequestMessageId);
+        JsonElement request = await fixture.OutboxPayloadAsync(runtime.SublotRequestMessageId!);
         Assert.Equal(
             [RejectedEntrySublot],
             request.GetProperty("expectedSublots").EnumerateArray().Select(item => item.GetString()));
@@ -280,7 +280,7 @@ public sealed class JourneyRuntimeWorkerSublotRejectedAfterEntryTests
         Assert.Equal(runtime.TargetSlotsJson, refused.TargetSlotsJson);
         Assert.Equal(runtime.ExpectedBasketCount, refused.ExpectedBasketCount);
         Assert.Equal(0, await fixture.Context.StationOperations.CountAsync(token));
-        Assert.Null((await fixture.LeaseAsync()).ReleasedAt);
+        Assert.Null((await fixture.ClaimRecordAsync()).ReleasedAt);
     }
 
     /// <summary>
@@ -349,7 +349,7 @@ public sealed class JourneyRuntimeWorkerSublotRejectedAfterEntryTests
         Assert.Equal(runtime.TargetSlotsJson, refused.TargetSlotsJson);
         Assert.DoesNotContain("SlotOperationCommand", await fixture.OutboxTypesAsync());
         Assert.Empty(await fixture.Context.StationOperations.AsNoTracking().ToArrayAsync(token));
-        Assert.Null((await fixture.LeaseAsync()).ReleasedAt);
+        Assert.Null((await fixture.ClaimRecordAsync()).ReleasedAt);
         Assert.Equal(DemandExecutionStatus.Accepted, (await fixture.DemandRowAsync()).Status);
     }
 
@@ -491,7 +491,7 @@ public sealed class JourneyRuntimeWorkerSublotRejectedAfterEntryTests
         Assert.Equal(JourneyRuntimeStage.Completed, ended.Stage);
         Assert.Equal(JourneyRuntimeEngine.StationTimeoutCancellationReason, ended.BlockReasonCode);
         Assert.Equal(DemandExecutionStatus.Cancelled, (await fixture.DemandRowAsync()).Status);
-        Assert.NotNull((await fixture.LeaseAsync()).ReleasedAt);
+        Assert.NotNull((await fixture.ClaimRecordAsync()).ReleasedAt);
         Assert.DoesNotContain("SlotOperationCommand", await fixture.OutboxTypesAsync());
     }
 

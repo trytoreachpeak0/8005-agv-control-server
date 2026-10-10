@@ -1,0 +1,103 @@
+{
+  "schemaVersion": 1,
+  "scenario": "cargo-holding-dashboard-projection",
+  "runId": "20260922T074015622Z",
+  "outcome": "PASS",
+  "failureReason": "",
+  "identity": {
+    "vehicleKey": "BROKERX-L2-0001",
+    "stageRoot": "C:\\actions-runner\\win11-01-control-server\\_work\\_temp\\l2-35699901251-1\\_stage\\l2-20260922T074015622Z-slot3",
+    "batchId": "batch-7",
+    "agvId": "AGV-L2-001",
+    "controlServerCommit": "f2ddd40522432925580d6048dca2d6d54171a7a8",
+    "rig": "SyntheticOnboard",
+    "protocolReleaseIdentity": {
+      "repository": "8005-agv-protocol",
+      "releaseVersion": "2.0.0",
+      "tag": "protocol-v2.0.0",
+      "commit": "86575456c847041515b7b75e8851a00e0d939804",
+      "protocolVersion": 3,
+      "profileId": "AGV_FULL_PRODUCT",
+      "manifestSha256": "4ac095ad371d3aaa60d7c2e0198cfd64cff5f3068230fc3420e9cdf5616422a7",
+      "schemaBundleSha256": "9db0dbdc22fed7e39edf8d01b1fc40a12f5d70a7414f696f909ab2a87eb8c221",
+      "vectorsSha256": "391fa69a7d6e9f86ea139ba4c74eadf4994bf0a87e89d3dc5258dd7968d9182a",
+      "approvalStatus": "APPROVED_RELEASE"
+    },
+    "fleet": [
+      "AGV-L2-001/BROKERX-L2-0001",
+      "AGV-L2-002/BROKERX-L2-0002"
+    ]
+  },
+  "assertions": [
+    {
+      "id": "L2-CHD-01",
+      "description": "持单车 AGV-L2-001 装完需求甲（1 花篮）、两侧都没满，在 12 号站上 CARGO_HOLDING_WAIT",
+      "outcome": "PASS",
+      "expected": "AwaitingStationDeparture CARGO_HOLDING_WAIT",
+      "actual": "AwaitingStationDeparture CARGO_HOLDING_WAIT"
+    },
+    {
+      "id": "L2-CHD-05",
+      "description": "端点列出主车持货等单，期限等于库里的起算点加服务端配置的 10 分钟，剩余时间在 (0, 600] 秒",
+      "outcome": "PASS",
+      "expected": "CARGO_HOLDING_WAIT deadline 2026-09-22T07:50:38.0447392+00:00, remaining in (0, 600]",
+      "actual": "CARGO_HOLDING_WAIT deadline 2026-09-22T07:50:38.0447392+00:00 remaining 599 s yieldedTo ''"
+    },
+    {
+      "id": "L2-CHD-06",
+      "description": "过一会儿再读：剩余时间比第一次少，期限一秒不差",
+      "outcome": "PASS",
+      "expected": "remaining < 599, deadline 2026-09-22T07:50:38.0447392+00:00",
+      "actual": "CARGO_HOLDING_WAIT deadline 2026-09-22T07:50:38.0447392+00:00 remaining 598 s yieldedTo ''"
+    },
+    {
+      "id": "L2-CHD-07",
+      "description": "看板那一页的持货等单卡片渲染出主车这一行：持货等单、剩余时间",
+      "outcome": "PASS",
+      "expected": "持货等单 … N 分 N 秒",
+      "actual": "AGV-L2-001  N1-3_N1-7  持货等单  2026-09-22 15:50:38  9 分 58 秒  前侧：未满；后侧：未满    L2-CH-A-20260922T074015622Z|WIRE_TO_GATE：已装"
+    },
+    {
+      "id": "L2-CHD-02",
+      "description": "需求乙由另一台车 AGV-L2-002 受理，它的下一停靠就是持单车所在的 12 号站",
+      "outcome": "PASS",
+      "expected": "AGV-L2-002 AwaitingPickupArrival → 12",
+      "actual": "AGV-L2-002 AwaitingPickupArrival → 12"
+    },
+    {
+      "id": "L2-CHD-03",
+      "description": "另一台车受理之后，持单车装货阶段 CLOSED/WAITING_STATION_YIELD；触发列记的是那台车，时刻不早于受理",
+      "outcome": "PASS",
+      "expected": "CLOSED/WAITING_STATION_YIELD by BROKERX-L2-0002 at or after 2026-09-22T07:40:40.3202692+00:00",
+      "actual": "AwaitingStationDeparture CLOSED/WAITING_STATION_YIELD by 'BROKERX-L2-0002' at 2026-09-22T07:40:40.3202692+00:00"
+    },
+    {
+      "id": "L2-CHD-04",
+      "description": "持单车收到了 CLOSED/WAITING_STATION_YIELD 那张车辆业务状态快照",
+      "outcome": "PASS",
+      "expected": ">= 1",
+      "actual": 1
+    },
+    {
+      "id": "L2-CHD-08",
+      "description": "端点里主车那一行 CLOSED/WAITING_STATION_YIELD，触发的车是另一台车 BROKERX-L2-0002，不再倒计时",
+      "outcome": "PASS",
+      "expected": "CLOSED/WAITING_STATION_YIELD yieldedTo 'BROKERX-L2-0002' remaining (null)",
+      "actual": "CLOSED/WAITING_STATION_YIELD deadline 2026-09-22T07:50:38.0447392+00:00 remaining  s yieldedTo 'BROKERX-L2-0002'"
+    },
+    {
+      "id": "L2-CHD-09",
+      "description": "看板那一页主车那一行写着已结束与让站原因、触发的车",
+      "outcome": "PASS",
+      "expected": "已结束 … 另一辆车以本站为下一停靠，本车结束等单（BROKERX-L2-0002）",
+      "actual": "AGV-L2-001  N1-3_N1-7  已结束  2026-09-22 15:50:38    前侧：已满；后侧：未满  另一辆车以本站为下一停靠，本车结束等单（BROKERX-L2-0002）  L2-CH-A-20260922T074015622Z|WIRE_TO_GATE：已装"
+    },
+    {
+      "id": "L2-CHD-10",
+      "description": "放行离站核验之后主车离站（库里取货停靠 COMPLETED），端点与看板那一页都不再列这台车",
+      "outcome": "PASS",
+      "expected": "check answered, PICKUP COMPLETED, not listed",
+      "actual": "check answered, PICKUP COMPLETED, endpoint (not listed), page (no row)"
+    }
+  ]
+}

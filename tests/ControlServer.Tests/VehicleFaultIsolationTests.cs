@@ -231,6 +231,24 @@ public sealed class VehicleFaultIsolationTests
         Assert.Equal(expected, await fixture.AdmitAsync(Subject.AgvId));
     }
 
+    /// <summary>
+    /// control-server#385 (REQ-0364): a vehicle held for an unproven door takes no new transport until its repair release --
+    /// the same verdict the idle return reads (VehicleNewPurposeReadiness) -- and takes it again once the hold is released.
+    /// A hold on another vehicle does not block this one.
+    /// </summary>
+    [Theory]
+    [InlineData(false, false, DispatchReasonCodes.VehicleSlotDoorHold)]
+    [InlineData(true, false, DispatchAdmissionChain.Eligible)]
+    [InlineData(false, true, DispatchAdmissionChain.Eligible)]
+    public async Task AVehicleHeldForAnUnprovenDoorTakesNoNewWorkUntilReleased(
+        bool released, bool anotherVehicle, string expected)
+    {
+        await using Fixture fixture = await Fixture.CreateAsync();
+        await fixture.HoldForUnprovenDoorAsync(anotherVehicle ? "AGV-OTHER" : Subject.AgvId, released);
+
+        Assert.Equal(expected, await fixture.AdmitAsync(Subject.AgvId));
+    }
+
     [Fact]
     public async Task AVehicleWithNoFaultFactIsAdmitted() =>
         Assert.Equal(
@@ -1122,11 +1140,20 @@ public sealed class VehicleFaultIsolationTests
 
     /// <summary>
     /// The join between this ticket and ticket 10. Only a fault that was really cleared — level
-    /// None with a clearing timestamp — plus a proven stop lets the supervisor release the latch;
-    /// a resumption that clears both is what makes the vehicle recoverable without a person.
+    /// None with a clearing timestamp — plus a proven stop lets the supervisor release the latch.
     /// </summary>
+    /// <remarks>
+    /// Until control-server#335 the fault was cleared here by a resumption issued under the latch:
+    /// continue first, release after. That order is now refused (RESUME_EMERGENCY_LATCHED, no
+    /// continue sent): round-44 (rcs/riot-behavior-lab/evidence/rounds/2026-09-28-round-44,
+    /// BC-ORDER-020, OBSERVED) saw RIoT accept CONTINUE_FROM_HELD while latched and run the order
+    /// 7 -> 3, leaving only the latch between the vehicle and moving; whether it then drives off on
+    /// release was never observed (item 5, INFERRED). The recovery service, the resumption's one
+    /// caller, already refused it; this test used to call the coordinator directly. The clearing
+    /// the join needs is now done on the store, as another clearance would.
+    /// </remarks>
     [Fact]
-    public async Task AResumptionThatClearsTheFaultLetsTheEmergencyLatchBeReleased()
+    public async Task AClearedFaultLetsTheEmergencyLatchBeReleasedButAResumptionUnderTheLatchIsRefused()
     {
         await using Fixture fixture = await Fixture.CreateAsync();
         fixture.Riot.HoldWorks = true;
@@ -1139,7 +1166,17 @@ public sealed class VehicleFaultIsolationTests
 
         fixture.Clock.Advance(TimeSpan.FromSeconds(1));
         await fixture.ObserveStoppedRoundsAsync(3);
-        await fixture.ResumeAsync();
+        VehicleFaultResumeDecision underLatch = await fixture.ResumeAsync();
+        Assert.False(underLatch.Resumed);
+        Assert.Equal(["RESUME_EMERGENCY_LATCHED"], underLatch.Refusals);
+        Assert.DoesNotContain(
+            fixture.Riot.OrderCalls,
+            call => call.CommandType == RiotCommandTypeNames.OrderContinue);
+
+        VehicleFaultFact standing = await fixture.ReadFaultAsync();
+        await fixture.Faults.ClearAsync(
+            Subject.AgvId, standing.FaultGeneration, "cleared elsewhere", fixture.Clock.GetUtcNow(),
+            TestContext.Current.CancellationToken);
         fixture.Riot.LatchAfterRelease = RiotVehicleEmergencyObservation.Ok;
         EmergencyStopDecision released = await fixture.Supervisor.EvaluateAsync(
             Subject, TestContext.Current.CancellationToken);
@@ -1368,7 +1405,7 @@ public sealed class VehicleFaultIsolationTests
                 Faults, Riot, Motion, Riot, audit, commands, Supervisor,
                 new VehicleMotionLedger(faultOptions), faultOptions, Clock,
                 NullLogger<VehicleFaultCoordinator>.Instance);
-            criterion = new VehicleFaultBlockCriterion(Faults);
+            criterion = new VehicleFaultBlockCriterion(Faults, context);
         }
 
         public MovableClock Clock { get; } = new(Now);
@@ -1392,7 +1429,7 @@ public sealed class VehicleFaultIsolationTests
             DbContextOptions<ControlServerDbContext> options =
                 new DbContextOptionsBuilder<ControlServerDbContext>().UseSqlite(connection).Options;
             ControlServerDbContext context = new(options);
-            await context.Database.MigrateAsync(TestContext.Current.CancellationToken);
+            await MigratedDatabaseTemplate.ApplyAsync(context.Database, TestContext.Current.CancellationToken);
             return new Fixture(connection, context);
         }
 
@@ -1457,6 +1494,22 @@ public sealed class VehicleFaultIsolationTests
         /// </summary>
         public Task<string> AdmitAsync(string agvId) =>
             criterion.EvaluateAsync(Evaluation(agvId), TestContext.Current.CancellationToken);
+
+        /// <summary>A door-unproven hold on <paramref name="agvId"/> (control-server#385), lifted when <paramref name="released"/>.</summary>
+        public async Task HoldForUnprovenDoorAsync(string agvId, bool released)
+        {
+            context.SlotDoorHolds.Add(new SlotDoorHoldRow
+            {
+                HoldId = "f3850000-0000-4000-8000-000000000201",
+                AgvId = agvId,
+                DemandId = "f3850000-0000-4000-8000-000000000202",
+                SlotsJson = "[1,2]",
+                HeldAt = Now.AddMinutes(-2),
+                ReleasedByActionId = released ? "f3850000-0000-4000-8000-000000000203" : null,
+                ReleasedAt = released ? Now.AddMinutes(-1) : null
+            });
+            await context.SaveChangesAsync(TestContext.Current.CancellationToken);
+        }
 
         public async Task<VehicleFaultFact> ReadFaultAsync() =>
             await ReadFaultOrNullAsync() ?? throw new InvalidOperationException("No fault fact.");

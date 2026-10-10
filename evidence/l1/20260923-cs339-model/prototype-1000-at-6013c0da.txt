@@ -1,0 +1,16 @@
+iterations=1000 masterSeed=342
+per combination (ms): n=1000 mean=297.5 p50=244.2 p90=459.4 max=12970.3; wall total 298.0s
+per combination excluding the first (ms): n=999 mean=284.8; first=12970.3
+setup mean=161.2ms; engine rounds per combination mean=4.4; per round (excluding setup) mean=31.0ms
+ack conflicts=0 vehicle regressions=0
+entry request reached the vehicle in 1000 of 1000
+rounds from the last recovery to the entry request: 1: 1000
+DifferentMessageAccepted by where: handshake open 0, handshake done 0
+rounds that failed while carrying a wait-on-person code: 11
+  by code: ORDER_HANG: 11
+LegitimateMessageRefused: 399 of 1000
+(报告其余部分为首例逐步记录与化简过程，未入库；全文在本机 scratchpad)
+first LegitimateMessageRefused: index=0 seed=0000000005p1 steps=22
+violation LegitimateMessageRefused: SafetyStateSnapshot (generation 3, handshake open) refused: ProtocolContentConflictException: safety revision 11 has conflicting content.
+synthetic [Safety(NotSafe,LostInFlight)]
+violation LegitimateMessageRefused: SafetyStateSnapshot (generation 2, handshake open) refused: ProtocolContentConflictException: safety revision 8 has conflicting content.

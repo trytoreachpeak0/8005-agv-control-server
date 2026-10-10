@@ -45,7 +45,7 @@ namespace ControlServer.Host.Runtime.Dispatch;
 /// </para>
 /// <para>
 /// <b>REQ-0210 is only partly implemented here.</b> Escalating an alarm once a zone's anti-starvation threshold is
-/// reached belongs with REQ-0203 in batch 7, which is where that threshold is approved.
+/// reached is <see cref="StarvationEscalationSink"/>'s (control-server#214), the round-end sink registered after this one.
 /// </para>
 /// </remarks>
 public sealed class StructuralDispatchBlockSink(

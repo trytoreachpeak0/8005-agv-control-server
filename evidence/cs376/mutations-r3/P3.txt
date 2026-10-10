@@ -1,0 +1,12 @@
+== P3 src/ControlServer.Host/Runtime/Faults/VehicleFaultRecoveryService.StoppedRebuild.cs
+hits=1 line=300
+--- before
+        if (refusal is null && !await MayCarryAsync(agvId, trip.Runtime!, cancellationToken).ConfigureAwait(false))
+--- after
+        await VehicleFaultCoordinator.ReleaseCargoOfOtherJourneysAsync(
+            faults, agvId, timeProvider.GetUtcNow(), logger, cancellationToken).ConfigureAwait(false);
+        if (refusal is null && !await MayCarryAsync(agvId, trip.Runtime!, cancellationToken).ConfigureAwait(false))
+build exit=0
+test exit=1
+Failed FaultedCargoBindingLifecycleTests.ARefusedRequestReleasesNothing(request: "handoff-nothing-on-board")
+Failed!  - Failed:     1, Passed:   526, Skipped:     0, Total:   527, Duration: 1 m 31 s - dll (net8.0)

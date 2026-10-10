@@ -70,6 +70,23 @@ public interface IOnboardPeer
     Task SendAsync(ReadOnlyMemory<byte> ndjsonLine, CancellationToken cancellationToken);
 }
 
+/// <summary>
+/// Whether a vehicle has a connection this server can send to right now: its handshake is done and it is routable. A
+/// vehicle in its handshake, or with none, is not connected (control-server#483).
+/// </summary>
+public interface IOnboardConnectionPresence
+{
+    /// <summary>The session generation of the vehicle's routable connection, or null when it has none.</summary>
+    long? ConnectedSessionGeneration(string agvId);
+
+    /// <summary>
+    /// Whether a connection naming the vehicle has sent a SessionHello and is not routable yet: the vehicle is in its
+    /// handshake, where it replays what it has not had acknowledged -- results included -- before its recovery report
+    /// is answered (review of control-server#483).
+    /// </summary>
+    bool IsHandshaking(string agvId);
+}
+
 public interface IDemandAcceptanceStore
 {
     Task AcceptWithOrderIntentAsync(
@@ -87,6 +104,25 @@ public interface IJourneyAcceptanceStore : IDemandAcceptanceStore
         CancellationToken cancellationToken);
 }
 
+/// <summary>
+/// 把一条需求追加进一辆在途车已有的旅程（票面第 3 条，批次7-06，control-server#211）。
+/// </summary>
+/// <remarks>
+/// <para>
+/// 与 <see cref="IJourneyAcceptanceStore"/> 的区别不在「写多少」，在「不写什么」：追加<b>不建旅程行、不取租约、
+/// 不认领车辆占用、不建移动订单</b>——那辆车已经被这趟旅程占着，而新的那一段腿要等前面的停靠走完才发。
+/// 它写的是需求行、归属、两个新停靠，以及既有停靠重排后的序位，<b>全部在同一个事务里</b>：
+/// 「占了仓位却不在计划里的需求」正是这四样分开写才会留下的东西。
+/// </para>
+/// </remarks>
+public interface IJourneyAppendStore : IDemandAcceptanceStore
+{
+    Task AppendToJourneyAsync(
+        AcceptedDemandSnapshot snapshot,
+        JourneyAppendPlan plan,
+        CancellationToken cancellationToken);
+}
+
 public interface IMovementIntentStore
 {
     Task<StoredMovementIntent?> GetByUpperIdAsync(string upperId, CancellationToken cancellationToken);
@@ -101,6 +137,17 @@ public interface IMovementIntentStore
         DispatchAuditWrite audit,
         bool markResultUnknown,
         CancellationToken cancellationToken);
+
+    /// <summary>
+    /// Called once the create is certain to be dispatched and before the at-most-once counter is spent: from here on every
+    /// save records an external side effect, and none of them may be thrown away because the caller's journey was written to
+    /// meanwhile (control-server#357). Up to here -- the reconciliation GET and its audit -- a journey the inbound blocked
+    /// still stops the create. Not later: once the counter is spent a refused save would leave the intent needing
+    /// reconciliation.
+    /// </summary>
+    void ReleaseJourneyGuardBeforeExternalEffect()
+    {
+    }
 
     Task<CreateDispatchAttempt> ArmCreateDispatchAsync(
         string upperId,
@@ -214,7 +261,29 @@ public sealed record RiotOrderObservation(
     string? VehicleKey = null,
     int? MapId = null,
     int? DestinationStationId = null,
-    RiotOrderCallReceipt? Receipt = null);
+    RiotOrderCallReceipt? Receipt = null)
+{
+    /// <summary>
+    /// The exact absent-at-observation read of <paramref name="expectedUpperId"/>: a RECONCILE that RIoT answered HTTP 200 /
+    /// business code 0 with no result, classified as nothing more than that. It is the form real RIoT answers an upperId it
+    /// has no order for -- only HTTP 404 reads <see cref="RiotOrderObservationKind.NotFound"/>, and RIoT does not answer
+    /// that (the 2026-08-29 field run's reconciliations before every create, control-server#404 review M-A). Any failure
+    /// category, status code, business code or result makes it an ordinary unknown.
+    /// </summary>
+    public bool IsExactAbsentAtObservation(string expectedUpperId) =>
+        Kind == RiotOrderObservationKind.Unknown &&
+        string.Equals(UpperId, expectedUpperId, StringComparison.Ordinal) &&
+        OrderId is null &&
+        Receipt is
+        {
+            Operation: "RECONCILE",
+            Classification: "AbsentAtObservation",
+            HttpStatusCode: null,
+            BusinessCode: null,
+            ResultPresent: false,
+            FailureCategory: null
+        };
+}
 
 public sealed record RiotVehicleObservation(
     string VehicleKey,
@@ -252,6 +321,11 @@ public sealed record RiotMapStationCatalogSnapshot(
     string ContentSha256,
     IReadOnlyList<RiotMapStation> Stations);
 
+/// <param name="NeverSentAfterUnansweredReads">
+/// RESULT_UNKNOWN only because every read before its create answered nothing (control-server#375): audit version 1, no create
+/// ever armed, no experimental permit, and no read on its audit chain that returned or may have returned an order. Such an
+/// intent was never sent, so RIoT answering that the order is absent makes it eligible for its one create, as a pending one is.
+/// </param>
 public sealed record StoredMovementIntent(
     OrderIntent Intent,
     string Status,
@@ -260,7 +334,8 @@ public sealed record StoredMovementIntent(
     string? CreateAttemptId,
     int? CreateAttemptCount,
     string? ExperimentalAuthorizationId = null,
-    string? EligibilityBasis = null);
+    string? EligibilityBasis = null,
+    bool NeverSentAfterUnansweredReads = false);
 
 // ======== Batch 2, track B: the four capability lanes' storage ports (ticket 06) ===========
 //
@@ -298,21 +373,6 @@ public interface IVehicleDispatchPolicyStore
     Task ReplacePolicyAsync(
         VehicleDispatchPolicy policy,
         DateTimeOffset updatedAt,
-        CancellationToken cancellationToken);
-
-    /// <summary>
-    /// Claims a vehicle for one in-flight order, returning false when it is already occupied.
-    /// This is the uniqueness that moved down from the lease table onto OrderIntents: the unique
-    /// index is what decides, not a read-then-write.
-    /// </summary>
-    Task<bool> TryClaimVehicleOccupancyAsync(
-        string upperId,
-        DateTimeOffset claimedAt,
-        CancellationToken cancellationToken);
-
-    Task ReleaseVehicleOccupancyAsync(
-        string upperId,
-        DateTimeOffset releasedAt,
         CancellationToken cancellationToken);
 }
 
@@ -520,6 +580,21 @@ public interface IVehicleFaultStore
         CancellationToken cancellationToken);
 
     Task<FaultedCargoBinding?> ReadLiveCargoAsync(string agvId, CancellationToken cancellationToken);
+
+    /// <summary>
+    /// Releases the vehicle's live bindings left by a journey that has closed and is not its current one, and returns them
+    /// (control-server#376). Called before a binding is read to decide anything about the vehicle's current journey.
+    /// </summary>
+    Task<IReadOnlyList<FaultedCargoBinding>> ReleaseCargoOfOtherJourneysAsync(
+        string agvId,
+        DateTimeOffset releasedAt,
+        CancellationToken cancellationToken);
+
+    /// <summary>
+    /// The ids of the bindings <see cref="ReleaseCargoOfOtherJourneysAsync"/> would release, without releasing them: a request is
+    /// judged on it, and only one that goes ahead releases (control-server#376 review).
+    /// </summary>
+    Task<IReadOnlySet<string>> ReadCargoOfOtherJourneysAsync(string agvId, CancellationToken cancellationToken);
 
     Task ReleaseCargoAsync(
         string cargoBindingId,

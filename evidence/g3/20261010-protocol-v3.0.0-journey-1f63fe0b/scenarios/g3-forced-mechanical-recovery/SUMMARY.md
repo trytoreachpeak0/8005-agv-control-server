@@ -1,0 +1,50 @@
+# L2 场景证据：g3-forced-mechanical-recovery
+
+结论：**PASS**
+
+## 身份
+
+| 项 | 值 |
+| --- | --- |
+| runId | `20261010T045438552Z` |
+| agvId | `AGV-L2-001` |
+| batchId | `unspecified` |
+| controlServerCommit | `1f63fe0bb173f37c05dd5059c78455da57ed100b` |
+| onboardHmiCommit | `b9e67a538ba4cdf1916d201a08af40dd28270d14` |
+| protocolReleaseIdentity.repository | `8005-agv-protocol` |
+| protocolReleaseIdentity.releaseVersion | `3.0.0` |
+| protocolReleaseIdentity.tag | `protocol-v3.0.0` |
+| protocolReleaseIdentity.commit | `3f091cb2eae7c58cec54a95dd9389c9180bc7b4c` |
+| protocolReleaseIdentity.protocolVersion | `4` |
+| protocolReleaseIdentity.profileId | `AGV_FULL_PRODUCT` |
+| protocolReleaseIdentity.manifestSha256 | `d5e1a53f1fd61f105a890dc0267e1b0a9ac5ea49f713d2cf730b0f554df9db9e` |
+| protocolReleaseIdentity.schemaBundleSha256 | `e435b2b14d9ccd60c89f07df909da7626fef056a6b8a2241087557fd7dc3df43` |
+| protocolReleaseIdentity.vectorsSha256 | `be849f9749b004296ebd9e7bffa98faf2f8ffa90b63308ca3b210c68e7b8656e` |
+| protocolReleaseIdentity.approvalStatus | `APPROVED_RELEASE` |
+| rig | `RealOnboard` |
+| slotsSimulatorCommit | `fb5f7c593742bf98bc3957b8729a38aad5321f28` |
+| stageRoot | `C:\Users\szy\AppData\Local\Temp\l2-20261010T045438552Z` |
+| vehicleKey | `BROKERX-L2-0001` |
+
+## 判据
+
+| 判据 | 结论 | 期望 | 实际 |
+| --- | --- | --- | --- |
+| 消息顺序与向量一致，各一次：RecoveryActionSubmitted(FORCED_MECHANICAL_RECOVERY) → RecoveryActionAccepted → ForcedMechanicalRecoveryCommand → ForcedMechanicalRecoveryResult（CV-FORCED-MECHANICAL-RECOVERY orderedExpectedMessages） | PASS | `各 1，按向量顺序` | `Action×1 RecoveryActionAccepted FORCED_MECHANICAL_RECOVERY / Command×1 / Result×1 / 有序=True` |
+| 强制恢复按代数设栅栏：接受这次动作使本车强制恢复代数恰好加一，工作流、命令都签在新代数下（FENCE_FORCED_RECOVERY_BY_GENERATION） | PASS | `代数 0 → 1 / 工作流 1 / 命令 1` | `代数 0 → 1 / 工作流 1 / 命令 1` |
+| 车载端报强制恢复结果：MECHANICALLY_ISOLATED，带命令的代数，电子空载与车辆就绪两项证明都没有声称，只报仓位集合，抄回命令的需求并带具名交接记录（批号与交接人即界面上所填、批号即该需求的批号、带交接时刻）（REPORT_FORCED_RECOVERY_OUTCOME / REPORT_CARGO_HANDOFF_RECORD_IN_RESULT / COPY_COMMAND_DEMAND_INTO_RESULT / REFUSE_STALE_FORCED_RECOVERY_GENERATION 的正向一半：车载端采纳的是当前代数） | PASS | `MECHANICALLY_ISOLATED / 代数 1 / proof false,false / 仓 1 / 无 slotResults / 需求 0ec8a86a-4cfb-44d6-9d8c-c9ce7b8be482 / 交接 G3-07M-20261010T045438552Z→G3 交接人 王五` | `MECHANICALLY_ISOLATED / 代数 1 / proof False,False / 仓 1 / slotResults=False / 需求 0ec8a86a-4cfb-44d6-9d8c-c9ce7b8be482 / 交接 G3-07M-20261010T045438552Z→G3 交接人 王五 @ 10/10/2026 12:55:28` |
+| 强制恢复只结算货物业务：工作流 Reconciled 并记下结果里的交接人，需求 Cancelled，旅程 Completed/TERMINATED_BY_FAULT_CARGO_HANDOFF，恢复会话按交接 CLOSED（closedReason 为空），没有去关卡；车辆会话仍 RecoveryRequired，等硬件恢复记录（REQ-0242 / SETTLE_DEMAND_ONLY_ON_NAMED_HANDOFF / forbidden ready-before-reconciliation、unknown-as-success） | PASS | `Reconciled（交接人 G3 交接人 王五）/ Completed/TERMINATED_BY_FAULT_CARGO_HANDOFF / 会话 CLOSED（原因 NULL）/ RecoveryRequired / Cancelled / TO_GATE 0` | `Reconciled（交接人 G3 交接人 王五）/ Completed/TERMINATED_BY_FAULT_CARGO_HANDOFF / 会话 CLOSED（原因 NULL）/ RecoveryRequired (FORCED_RECOVERY_GENERATION_MISMATCH) / Cancelled / TO_GATE 0` |
+| 车辆没有替人撬门做电子动作：按下之后没有开锁，仓位物理状态不变，RIoT 上只有取货那一张单（forbidden duplicate-slot-unlock、duplicate-riot-order / NO_UNPROVEN_STATE） | PASS | `开锁 0 / 1=CLOSED/EMPTY/1/0 / RIoT 单 1` | `开锁 0 / 1=CLOSED/EMPTY/1/0 / RIoT 单 1` |
+
+## 目录内容
+
+- `assertions.json` —— 机器可读的判据结论
+- `timeline.jsonl` —— 一行一次判据翻转，只追加
+- `logs/` —— 每个组件的 stdout 与 stderr
+- `snapshots/` —— 收尾时各控制面与服务端数据库的快照
+
+本次跑的是真 ControlServer + **真车载端 WPF** + **真 slots-simulator** + 假 RIoT + 假 MesIngest。
+条码由 UI Automation 写进 `ScanTextBox` 并点「手动提交」，装卸货是真 Modbus IO 闭环。
+
+L2 PASS 仍**不代表真实 RCS、真车、真实 IO 模块或接线合格**——模拟器只证明软件 IO 闭环。
+见 `docs/RELEASE-CANDIDATE.md` 第 11 节。

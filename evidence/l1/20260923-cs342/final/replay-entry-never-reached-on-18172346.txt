@@ -1,0 +1,88 @@
+== real [BeginHandshake, Safety(OwnOrder,Delivered), Safety(OwnOrder,Delivered), Safety(Safe,Delivered), Safety(NotSafe,Delivered), ConflictingResend, Safety(OwnOrder,Delivered), Safety(NotSafe,Delivered), Safety(NotSafe,Delivered)] violation=OneInboundManyAnswers
+final: onboard=real stage=AwaitingPickupArrival block=ONBOARD_SESSION_NOT_READY session=Ready/READY generation=11 entryReachedVehicle=False ackConflicts=0 regressions=0
+violation OneInboundManyAnswers: SafetyStateChanged in the handshake of generation 3 was answered with DurableAck+SessionReadiness, expected DurableAck
+violation OneInboundManyAnswers: SafetyStateChanged in the handshake of generation 4 was answered with DurableAck+SessionReadiness, expected DurableAck
+violation OneInboundManyAnswers: SafetyStateChanged in the handshake of generation 5 was answered with DurableAck+SessionReadiness, expected DurableAck
+violation OneInboundManyAnswers: SafetyStateChanged in the handshake of generation 6 was answered with DurableAck+SessionReadiness, expected DurableAck
+violation OneInboundManyAnswers: SafetyStateChanged in the handshake of generation 7 was answered with DurableAck+SessionReadiness, expected DurableAck
+violation OneInboundManyAnswers: SafetyStateChanged in the handshake of generation 8 was answered with DurableAck+SessionReadiness, expected DurableAck
+violation OneInboundManyAnswers: SafetyStateChanged in the handshake of generation 9 was answered with DurableAck+SessionReadiness, expected DurableAck
+violation OneInboundManyAnswers: SafetyStateChanged in the handshake of generation 10 was answered with DurableAck+SessionReadiness, expected DurableAck
+violation EntryNeverReachedVehicle: stage=AwaitingPickupArrival block=ONBOARD_SESSION_NOT_READY session=Ready/READY generation=11
+trace:
+  start real onboard: Safety(OwnOrder,Delivered) -> v8 answered DurableAck+SessionReadiness
+    handshake SessionHello -> SessionAccepted
+  BeginHandshake
+  Safety(OwnOrder,Delivered) -> v9 journalled, not sent
+  Safety(OwnOrder,Delivered) -> v10 journalled, not sent
+  Safety(Safe,Delivered) -> v11 journalled, not sent
+  Safety(NotSafe,Delivered) -> v12 journalled, not sent
+    refused as expected: ProtocolContentConflictException: MessageId was replayed with different normalized content.
+  ConflictingResend -> resend of e73382ce with different content refused
+  Safety(OwnOrder,Delivered) -> v13 journalled, not sent
+  Safety(NotSafe,Delivered) -> v14 journalled, not sent
+  Safety(NotSafe,Delivered) -> v15 journalled, not sent
+    handshake SessionHello -> SessionAccepted
+    handshake SafetyStateChanged -> DurableAck+SessionReadiness
+  !! OneInboundManyAnswers: SafetyStateChanged in the handshake of generation 3 was answered with DurableAck+SessionReadiness, expected DurableAck
+  tail BeginHandshake -> handshake broke after the resent SafetyStateChanged
+  tail Arrive -> vehicle reports safe: v16 journalled, not sent
+  tail Round(2s) -> ok; stage=AwaitingPickupArrival block=ONBOARD_SESSION_NOT_READY wait=-
+  tail Ack
+    handshake SessionHello -> SessionAccepted
+    handshake SafetyStateChanged -> DurableAck+SessionReadiness
+  !! OneInboundManyAnswers: SafetyStateChanged in the handshake of generation 4 was answered with DurableAck+SessionReadiness, expected DurableAck
+  tail BeginHandshake -> handshake broke after the resent SafetyStateChanged
+  tail CompleteHandshake -> no-op
+  tail Round(2s) -> ok; stage=AwaitingPickupArrival block=ONBOARD_SESSION_NOT_READY wait=-
+  tail Ack
+    handshake SessionHello -> SessionAccepted
+    handshake SafetyStateChanged -> DurableAck+SessionReadiness
+  !! OneInboundManyAnswers: SafetyStateChanged in the handshake of generation 5 was answered with DurableAck+SessionReadiness, expected DurableAck
+  tail BeginHandshake -> handshake broke after the resent SafetyStateChanged
+  tail CompleteHandshake -> no-op
+  tail Round(2s) -> ok; stage=AwaitingPickupArrival block=ONBOARD_SESSION_NOT_READY wait=-
+  tail Ack
+    handshake SessionHello -> SessionAccepted
+    handshake SafetyStateChanged -> DurableAck+SessionReadiness
+  !! OneInboundManyAnswers: SafetyStateChanged in the handshake of generation 6 was answered with DurableAck+SessionReadiness, expected DurableAck
+  tail BeginHandshake -> handshake broke after the resent SafetyStateChanged
+  tail CompleteHandshake -> no-op
+  tail Round(2s) -> ok; stage=AwaitingPickupArrival block=ONBOARD_SESSION_NOT_READY wait=-
+  tail Ack
+    handshake SessionHello -> SessionAccepted
+    handshake SafetyStateChanged -> DurableAck+SessionReadiness
+  !! OneInboundManyAnswers: SafetyStateChanged in the handshake of generation 7 was answered with DurableAck+SessionReadiness, expected DurableAck
+  tail BeginHandshake -> handshake broke after the resent SafetyStateChanged
+  tail CompleteHandshake -> no-op
+  tail Round(2s) -> ok; stage=AwaitingPickupArrival block=ONBOARD_SESSION_NOT_READY wait=-
+  tail Ack
+    handshake SessionHello -> SessionAccepted
+    handshake SafetyStateChanged -> DurableAck+SessionReadiness
+  !! OneInboundManyAnswers: SafetyStateChanged in the handshake of generation 8 was answered with DurableAck+SessionReadiness, expected DurableAck
+  tail BeginHandshake -> handshake broke after the resent SafetyStateChanged
+  tail CompleteHandshake -> no-op
+  tail Round(2s) -> ok; stage=AwaitingPickupArrival block=ONBOARD_SESSION_NOT_READY wait=-
+  tail Ack
+    handshake SessionHello -> SessionAccepted
+    handshake SafetyStateChanged -> DurableAck+SessionReadiness
+  !! OneInboundManyAnswers: SafetyStateChanged in the handshake of generation 9 was answered with DurableAck+SessionReadiness, expected DurableAck
+  tail BeginHandshake -> handshake broke after the resent SafetyStateChanged
+  tail CompleteHandshake -> no-op
+  tail Round(2s) -> ok; stage=AwaitingPickupArrival block=ONBOARD_SESSION_NOT_READY wait=-
+  tail Ack
+    handshake SessionHello -> SessionAccepted
+    handshake SafetyStateChanged -> DurableAck+SessionReadiness
+  !! OneInboundManyAnswers: SafetyStateChanged in the handshake of generation 10 was answered with DurableAck+SessionReadiness, expected DurableAck
+  tail BeginHandshake -> handshake broke after the resent SafetyStateChanged
+  tail CompleteHandshake -> no-op
+  tail Round(2s) -> ok; stage=AwaitingPickupArrival block=ONBOARD_SESSION_NOT_READY wait=-
+  tail Ack
+    handshake SessionHello -> SessionAccepted
+  tail BeginHandshake
+    handshake CapabilitySnapshot -> SnapshotAppliedAck
+    handshake SafetyStateSnapshot -> SnapshotAppliedAck
+    handshake OnboardAlarmSnapshot -> SnapshotAppliedAck
+    handshake RecoveryStateReport -> DurableAck+SessionReadiness
+  tail CompleteHandshake
+

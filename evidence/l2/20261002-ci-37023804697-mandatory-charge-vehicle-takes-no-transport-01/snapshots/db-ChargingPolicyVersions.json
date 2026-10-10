@@ -1,0 +1,30 @@
+[
+  {
+    "Version": 1,
+    "ContentSha256": "3b6a51de64e4aa1d051e361d3c4f460ac59f4297bdebab735853724bb5a93869",
+    "SnapshotId": "df7ce19435f5429a8ad509ce4ea70e92",
+    "WrittenAt": "2026-10-02 23:40:43.0870553+08:00",
+    "ChangeNote": "L2 preset (scripts/l2/L2ChargingPolicy.psm1): the test fixture values, never a field approval.",
+    "MinimumPostTaskBatteryMarginPercent": 30,
+    "MandatoryChargeEntryThresholdPercent": 30,
+    "ChargingCompletionThresholdPercent": 80,
+    "EstimatedTaskConsumptionPercent": 0,
+    "ProgressStabilizationSeconds": 180,
+    "ProgressObservationWindowSeconds": 600,
+    "ProgressMinimumIncreasePercent": 3
+  },
+  {
+    "Version": 2,
+    "ContentSha256": "acce051f8c6624ce620b318926f3913fc601c99b01e0a0c9442274e60e8eb8de",
+    "SnapshotId": "431d03ea9010405aa3a71e9f878315aa",
+    "WrittenAt": "2026-10-02 23:40:50.6597035+08:00",
+    "ChangeNote": "L2 mandatory-charge-vehicle-takes-no-transport: entry 30 above margin 20, so only the entry line blocks 25 %",
+    "MinimumPostTaskBatteryMarginPercent": 20,
+    "MandatoryChargeEntryThresholdPercent": 30,
+    "ChargingCompletionThresholdPercent": 80,
+    "EstimatedTaskConsumptionPercent": 0,
+    "ProgressStabilizationSeconds": 180,
+    "ProgressObservationWindowSeconds": 600,
+    "ProgressMinimumIncreasePercent": 3
+  }
+]

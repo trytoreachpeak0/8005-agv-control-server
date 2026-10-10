@@ -46,7 +46,7 @@ public sealed class CatalogBindingHoldConvergence(
     TimeProvider timeProvider)
 {
     /// <summary>The business audit action written when a catalog change raises a hold.</summary>
-    public const string HoldRaisedAction = "TASK_TYPE_STATION_HOLD_RAISED";
+    public const string HoldRaisedAction = TaskTypeStationHoldAuditActions.Raised;
 
     /// <summary>Risk class of a rename: the identity holds, the use on site needs a review.</summary>
     public const string SiteReviewRequired = "SITE_REVIEW_REQUIRED";
@@ -191,21 +191,7 @@ public static class TaskTypeInFlightDemands
         string taskType,
         CancellationToken cancellationToken)
     {
-        ArgumentNullException.ThrowIfNull(dbContext);
-        // Each demand a journey carries, through the demand memberships (control-server#207): in a single-demand journey
-        // that is the journey row's own demand, as before.
-        return dbContext.JourneyRuntimes.AsNoTracking()
-            .Where(journey => journey.MapId == mapId && journey.Stage != JourneyRuntimeStage.Completed)
-            .Join(
-                DemandJourneyLookup.Memberships(dbContext).AsNoTracking(),
-                journey => journey.JourneyId,
-                membership => membership.JourneyId,
-                (journey, membership) => membership.DemandId)
-            .Join(
-                dbContext.AcceptedDemands.AsNoTracking().Where(demand => demand.WorkType == taskType),
-                demandId => demandId,
-                demand => demand.DemandId,
-                (demandId, demand) => demandId)
-            .CountAsync(cancellationToken);
+        // Moved to the Infrastructure unchanged (control-server#186), so the activation store counts the same way.
+        return TaskTypeInFlightDemandCount.CountAsync(dbContext, mapId, taskType, cancellationToken);
     }
 }

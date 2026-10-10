@@ -1,0 +1,13 @@
+Scan: 188 scripts under <copy of scripts/>, 121 functions return their array whole (35 of them in shared files).
+WHOLE ARRAY ENUMERATED (wrapped): l2/scenarios/g3-sublot-rejected.ps1:391  Invoke-L2Query -Connection $connection -Sql "SELECT OverallOutcome FROM OperationResults WHERE SlotOperationAttemptId = '$attemptId'"
+WHOLE ARRAY ENUMERATED (wrapped): l2/scenarios/g3-waiting-point-idle-return.ps1:98  Get-PlanLegs $Plan
+WHOLE ARRAY ENUMERATED (foreach): l2/scenarios/normal-load.ps1:224  Invoke-L2Query -Connection $connection -Sql 'SELECT 1'
+WHOLE ARRAY ENUMERATED (piped): l2/scenarios/real-onboard-cancellation-authorization-lost.ps1:65  Get-L2RealInbound $connection 'LoadCancellationStartRequested' | Where-Object { [string]$_.Payload.demandId -eq $demandId }
+WHOLE ARRAY ENUMERATED (wrapped): l2/scenarios/sublot-rejected-after-entry.ps1:337  invoke-l2query   -Connection $connection `
+WHOLE ARRAY ENUMERATED (wrapped): l2/scenarios/three-vehicle-exit.ps1:288  Get-Journeys
+WHOLE ARRAY FUNCTION RESHAPED: l2/Test-L2SecondLegIntentWait.ps1:31  function Invoke-L2Query hands back unrolled; L2.psm1:936 returns whole
+
+7 finding(s). A function that returns its array whole must be assigned first: $rows = Helper ...; then use $rows.
+wrapped: .Count is 1 whatever the result, and an empty result throws on the first property read.
+reshaped: a stand-in must end in `return , $rows` like the function it replaces. See scripts/l2/README.md.
+exit=1

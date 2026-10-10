@@ -1,0 +1,20 @@
+ok    no key leaves both ends at their shipped defaults -> no error
+ok    a time span on the real rig is that threshold -> no error
+ok    the synthetic rig is refused -> threw: ExpectedActionOverdueThreshold in t needs Onboard = 'Real': the synthetic peer never raises SLOT_EXPECTED_ACTION_OVERDUE, so a threshold would leave the scenario green about something else.
+ok    zero is refused -> threw: ExpectedActionOverdueThreshold in t must be positive, not '00:00:00'.
+ok    a malformed value is refused -> threw: ExpectedActionOverdueThreshold in t is not a time span such as '00:00:20': '20 seconds'.
+ok    a bare number is refused rather than read as days or milliseconds -> threw: ExpectedActionOverdueThreshold in t is not a time span such as '00:00:20': '20'.
+ok    a value the onboard cannot hold in whole milliseconds is refused -> threw: ExpectedActionOverdueThreshold in t must be whole milliseconds up to 2147483647 ms, the onboard's workflow.expectedActionOverdueMs is an int: '00:00:20.0005'.
+ok    the server gets the threshold as a time span it parses back to the same value -> no error
+ok    without a threshold the server environment gets no key, so its shipped file decides -> no error
+ok    the onboard stage copy gets workflow.expectedActionOverdueMs in milliseconds -> no error
+ok    without a threshold the onboard stage copy has no expectedActionOverdueMs, so 3 x operationTimeoutMs applies -> no error
+ok    the defect: the load snapshot alone met the old probe (code and slot only) but does not meet the bounded one -> no error
+ok    a later snapshot still listing the load alarm does not count: raisedAt is bounded, not arrival -> no error
+ok    the unload alarm raised after the bound is found, in the newest matching snapshot -> no error
+ok    an alarm raised exactly at the bound counts -> no error
+ok    another slot or another code does not count -> no error
+ok    an alarm whose raisedAt is missing or does not parse does not count -> no error
+ok    no snapshots at all is $null, not an error -> no error
+All cases as expected.
+exit=0

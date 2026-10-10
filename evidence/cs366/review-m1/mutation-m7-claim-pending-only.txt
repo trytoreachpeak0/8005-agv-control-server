@@ -1,0 +1,13 @@
+cs#366 mutations, 2026-09-28T16:17:42.361863, HEAD 72e0634388fcb75351b5b8f128a01920b651daec
+=== M7-claim-pending-only (src\ControlServer.Host\Runtime\OwnOrderRebuilds.cs) replacements: 2 (expected 2)
+    diff: 2	2	src/ControlServer.Host/Runtime/OwnOrderRebuilds.cs
+    build exit 0, 0 Error(s)
+    test exit 1; Total tests: 219, Passed: 215, Failed: 4
+    RED ControlServer.Tests.OwnOrderRebuildCargoProofTests.ADecidedRebuildNeverSentThatIsHeldOnceIsAskedForAFreshSnapshotAndRebuilt(hold: "emergency")
+    RED ControlServer.Tests.OwnOrderRebuildCargoProofTests.ADecidedRebuildNeverSentThatIsHeldOnceIsAskedForAFreshSnapshotAndRebuilt(hold: "riot-unreadable")
+    RED ControlServer.Tests.OwnOrderRebuildCargoProofTests.ADecidedRebuildNeverSentThatIsHeldOnceIsAskedForAFreshSnapshotAndRebuilt(hold: "session-not-ready")
+    RED ControlServer.Tests.StoppedRebuildExitTests.ADecidedRebuildNeverSentThatReadsTheSlotEmptyStopsAndIsHandedOverToTheEnd
+    verdict: 4 red, expected 4 -> as expected
+    src clean after restore: ''
+=== rebuild after all restores: exit 0, 0 Error(s)
+=== overall: all as expected

@@ -1,0 +1,80 @@
+{
+  "schemaVersion": 1,
+  "scenario": "g3-multi-stop-plan",
+  "runId": "20260922T155514603Z",
+  "outcome": "PASS",
+  "failureReason": "",
+  "identity": {
+    "agvId": "AGV-L2-001",
+    "onboardHmiCommit": "7cf1dcbaf5bf7886f3276179895c77f02fcfdcc6",
+    "vehicleKey": "BROKERX-L2-0001",
+    "protocolReleaseIdentity": {
+      "repository": "8005-agv-protocol",
+      "releaseVersion": "2.0.0",
+      "tag": "protocol-v2.0.0",
+      "commit": "86575456c847041515b7b75e8851a00e0d939804",
+      "protocolVersion": 3,
+      "profileId": "AGV_FULL_PRODUCT",
+      "manifestSha256": "4ac095ad371d3aaa60d7c2e0198cfd64cff5f3068230fc3420e9cdf5616422a7",
+      "schemaBundleSha256": "9db0dbdc22fed7e39edf8d01b1fc40a12f5d70a7414f696f909ab2a87eb8c221",
+      "vectorsSha256": "391fa69a7d6e9f86ea139ba4c74eadf4994bf0a87e89d3dc5258dd7968d9182a",
+      "approvalStatus": "APPROVED_RELEASE"
+    },
+    "slotsSimulatorCommit": "fb5f7c593742bf98bc3957b8729a38aad5321f28",
+    "controlServerCommit": "8ab2a084ec05c28894de3fd54176cb96ce5e0eb9",
+    "batchId": "unspecified",
+    "stageRoot": "C:\\Users\\szy\\AppData\\Local\\Temp\\l2-20260922T155514603Z",
+    "rig": "RealOnboard"
+  },
+  "assertions": [
+    {
+      "id": "G3-08-05",
+      "description": "追加之前：车载端确认了追加前最后一版计划（两条腿，车在 12 号站装完甲之后）之后，计划腿列表的行数与行序等于服务端那一版的 sequence（DISPLAY_FULL_JOURNEY_PLAN）",
+      "outcome": "PASS",
+      "expected": "两条腿，行序 1,2",
+      "actual": "服务端 plan r2 wire[1,2] 1:TO_PICKUP@N1-3_N1-7:ARRIVED:BUSINESS,2:TO_DROPOFF@关卡:PLANNED:BUSINESS / 界面 1(name)[1|BUSINESS|ARRIVED],2(name)[2|BUSINESS|PLANNED]"
+    },
+    {
+      "id": "G3-08-06",
+      "description": "追加之后：车载端确认了三条腿那一版计划之后，计划腿列表的行数与行序等于服务端那一版的 sequence；站点刻意挑成按站名排会是 2,1,3，本地重排就红（DISPLAY_FULL_JOURNEY_PLAN、NEVER_REORDER_LEGS_LOCALLY）",
+      "outcome": "PASS",
+      "expected": "行序 1,2,3",
+      "actual": "服务端 plan r3 wire[1,2,3] 1:TO_PICKUP@N1-3_N1-7:ARRIVED:BUSINESS,2:TO_PICKUP@C15-13:PLANNED:BUSINESS,3:TO_DROPOFF@关卡:PLANNED:BUSINESS / 界面 1(name)[1|BUSINESS|ARRIVED],2(name)[2|BUSINESS|PLANNED],3(name)[3|BUSINESS|PLANNED]"
+    },
+    {
+      "id": "G3-08-01",
+      "description": "这趟旅程的每一版计划：腿的 sequence 从 1 起连续、无重复，每条腿都有 stopPurposeCategory（CATEGORISE_EVERY_STOP_PURPOSE）",
+      "outcome": "PASS",
+      "expected": "至少两版计划，全部 1..n 连续且每腿有用途类别",
+      "actual": "7 版计划，不合格 0 版"
+    },
+    {
+      "id": "G3-08-02",
+      "description": "追加之后的计划修订号大于此前每一版，腿数不少于 3、不多于 9；乙进的是同一趟旅程（归属两条、旅程行一行）（PLAN_UP_TO_NINE_LEGS 的 G3 面，九条由两端 G2 证）",
+      "outcome": "PASS",
+      "expected": "修订号 > 此前最大 / 3..9 条腿 / 归属 2 / 旅程行 1",
+      "actual": "r3 对此前最大 r2 / 3 条腿 / 归属 2 / 旅程行 1"
+    },
+    {
+      "id": "G3-08-03",
+      "description": "线上计划按 sequence 下发：每一版 UpcomingStopPlanSnapshot 的 legs 数组，原文的先后就是 sequence 从小到大（读发件箱原文，不排序）（ORDER_LEGS_BY_SEQUENCE）",
+      "outcome": "PASS",
+      "expected": "每一版原文升序",
+      "actual": "7 版，乱序 0 版"
+    },
+    {
+      "id": "G3-08-04",
+      "description": "消息顺序与向量一致：这趟旅程第一份快照是计划，清单在它之后；每一份计划与清单都被真车载端确认（SnapshotAppliedAck）；作废过的只能是后面有同一流更高号一份的那种",
+      "outcome": "PASS",
+      "expected": "计划在前 / 全部确认 / 没有无后继的作废",
+      "actual": "plan r1 wire[1,2] 1:TO_PICKUP@N1-3_N1-7:ACTIVE:BUSINESS,2:TO_DROPOFF@关卡:PLANNED:BUSINESS ack=True fenced=False | worklist r1 @N1-3_N1-7 G3-08-A-20260922T155514603Z/PICKUP ack=True fenced=False | plan r2 wire[1,2] 1:TO_PICKUP@N1-3_N1-7:ARRIVED:BUSINESS,2:TO_DROPOFF@关卡:PLANNED:BUSINESS ack=True fenced=False | plan r3 wire[1,2,3] 1:TO_PICKUP@N1-3_N1-7:ARRIVED:BUSINESS,2:TO_PICKUP@C15-13:PLANNED:BUSINESS,3:TO_DROPOFF@关卡:PLANNED:BUSINESS ack=True fenced=False | plan r4 wire[1,2,3] 1:TO_PICKUP@N1-3_N1-7:COMPLETED:BUSINESS,2:TO_PICKUP@C15-13:ACTIVE:BUSINESS,3:TO_DROPOFF@关卡:PLANNED:BUSINESS ack=True fenced=False | worklist r2 @C15-13 G3-08-B-20260922T155514603Z/PICKUP ack=True fenced=False | plan r5 wire[1,2,3] 1:TO_PICKUP@N1-3_N1-7:COMPLETED:BUSINESS,2:TO_PICKUP@C15-13:ARRIVED:BUSINESS,3:TO_DROPOFF@关卡:PLANNED:BUSINESS ack=True fenced=False | plan r6 wire[1,2,3] 1:TO_PICKUP@N1-3_N1-7:COMPLETED:BUSINESS,2:TO_PICKUP@C15-13:COMPLETED:BUSINESS,3:TO_DROPOFF@关卡:ACTIVE:BUSINESS ack=True fenced=False | worklist r3 @关卡 G3-08-A-20260922T155514603Z/DROPOFF,G3-08-B-20260922T155514603Z/DROPOFF ack=True fenced=False | plan r7 wire[1,2,3] 1:TO_PICKUP@N1-3_N1-7:COMPLETED:BUSINESS,2:TO_PICKUP@C15-13:COMPLETED:BUSINESS,3:TO_DROPOFF@关卡:ARRIVED:BUSINESS ack=True fenced=False | worklist r4 @关卡 G3-08-B-20260922T155514603Z/DROPOFF ack=True fenced=False"
+    },
+    {
+      "id": "G3-08-07",
+      "description": "旅程走完：两条需求各一次装、一次卸、都 Committed，需求 Succeeded，旅程 Completed；关卡上两笔卸货各属一条需求；装过的两个仓最后关门、空、锁上、开锁输出复位（NO_DUPLICATE_COMMIT）",
+      "outcome": "PASS",
+      "expected": "Completed / A:Succeeded/ops 2/load 1/unload 1 B:Succeeded/ops 2/load 1/unload 1 / 两笔卸货两条需求 / 仓 CLOSED/EMPTY/1/0",
+      "actual": "Completed / A:Succeeded/ops 2/load 1/unload 1 B:Succeeded/ops 2/load 1/unload 1 / 卸货需求 2 笔 / 1=CLOSED/EMPTY/1/0 2=CLOSED/EMPTY/1/0"
+    }
+  ]
+}

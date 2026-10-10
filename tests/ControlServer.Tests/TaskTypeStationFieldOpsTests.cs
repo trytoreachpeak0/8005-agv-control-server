@@ -245,7 +245,7 @@ public sealed class TaskTypeStationFieldOpsTests
         return path;
     }
 
-    private static async Task<(int ExitCode, JsonElement Output)> RunAsync(params string[] arguments)
+    internal static async Task<(int ExitCode, JsonElement Output)> RunAsync(params string[] arguments)
     {
         Assert.True(File.Exists(FieldOps), $"FieldOps was not built next to the tests: {FieldOps}");
         ProcessStartInfo start = new(FieldOps)

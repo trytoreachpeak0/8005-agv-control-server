@@ -89,11 +89,11 @@ public sealed class OnboardDispatchFactsReader(
         // session-start snapshot. MaximumEvidenceAge still separately governs the RIoT vehicle
         // observation in ValidateDynamicFacts, which genuinely is polled.
         //
-        // supportsBatchUnlock is deliberately not consulted: the protocol declares it with no
-        // semantics -- a bare boolean in CapabilitySnapshot, unchanged from protocol-v0.1.1 through
-        // the v2 candidate -- and its own canonical example sets it false, while the real question,
-        // can the vehicle operate this slot set, is answered against AvailableSlots when the command
-        // is actually sent. See docs/defects/20260829-intake-gates-on-unspecified-onboard-facts.md.
+        // There is no supportsBatchUnlock to consult: protocol 3.0.0 deleted it from CapabilitySnapshot
+        // (8005-agv-program#148, control-server#382). Until then it was deliberately ignored here -- a
+        // bare boolean with no semantics that the protocol's own canonical example set false -- and the
+        // real question, can the vehicle operate this slot set, is still answered against AvailableSlots
+        // when the command is actually sent. See docs/defects/20260829-intake-gates-on-unspecified-onboard-facts.md.
         DateTimeOffset now = timeProvider.GetUtcNow();
         DateTimeOffset capabilityAt = capabilityPayload.GetProperty("observedAt").GetDateTimeOffset();
         DateTimeOffset safetyAt = safetySummaryPayload.GetProperty("observedAt").GetDateTimeOffset();
@@ -288,6 +288,84 @@ public sealed class OnboardDispatchFactsReader(
     /// docs/defects/20260916-arrival-trusted-on-a-session-row-pinned-for-one-iteration.md.
     /// </para>
     /// </remarks>
+    /// <summary>
+    /// 这一代会话里，车载端安全状态中「不能出发」的几条（批次8-19 空闲返回的出发前安全门，control-server#390）：空表即全部仓位锁闭、
+    /// 开锁输出复位、当前安全摘要无阻断事实。读不到这一代的安全状态时答 <c>SAFETY_STATE_UNREADABLE</c>。
+    /// </summary>
+    /// <remarks>
+    /// <para>
+    /// 两处都看。仓位逐个的锁态只在 <c>SafetyStateSnapshot</c> 上（<c>SafetyStateChanged</c> 只说哪几个仓位变了），取这一代最新的那一张：
+    /// 八个仓位都要 <c>LOCKED</c>、<c>RESET</c>。它之后的变化由当前那一版摘要说（<see cref="LatestSafetySummaryForSessionAsync"/>，
+    /// 与派车读的是同一版）：摘要的 <c>reasonCodes</c> 要为空——<see cref="ReadOnboardFactsAsync"/> 与派车只看五个布尔，不看这一栏。
+    /// </para>
+    /// <para>
+    /// 新鲜度不在这里判：它是会话存活（<see cref="ReadOnboardFactsAsync"/> 的 <c>MaximumEvidenceAge</c>），调用方先要那一份不为空。
+    /// </para>
+    /// </remarks>
+    public async Task<IReadOnlyList<string>> ReadDepartureSafetyGapsAsync(
+        string agvId,
+        long generation,
+        long safetyRevision,
+        CancellationToken cancellationToken)
+    {
+        // Review L2: filtered in the database by message type only, with just the JSON column read, and parsed one row at a
+        // time. Not by vehicle: the inbox has no vehicle column, and a text match on the id does not work -- the serializer
+        // escapes non-ASCII, and the fleet's ids are Chinese (老厂前线新多仓位1 is stored with each character escaped, \u8001 and so on), so such a filter found
+        // no row for any real vehicle and read every one as SAFETY_STATE_UNREADABLE: no idle return would ever set off.
+        string[] snapshots = await dbContext.ProtocolInbox.AsNoTracking()
+            .Where(row => row.MessageType == "SafetyStateSnapshot")
+            .Select(row => row.RequestJson)
+            .ToArrayAsync(cancellationToken).ConfigureAwait(false);
+        JsonDocument? latest = null;
+        long latestVersion = long.MinValue;
+        try
+        {
+            foreach (string json in snapshots)
+            {
+                JsonDocument document = JsonDocument.Parse(json);
+                JsonElement root = document.RootElement;
+                long version = RequiredString(root, "agvId") == agvId && root.GetProperty("sessionGeneration").GetInt64() == generation
+                    ? root.GetProperty("payload").GetProperty("safetyStateVersion").GetInt64()
+                    : long.MinValue;
+                if (version > latestVersion)
+                {
+                    latest?.Dispose();
+                    latest = document;
+                    latestVersion = version;
+                }
+                else
+                {
+                    document.Dispose();
+                }
+            }
+            JsonElement? latestSlots = latest?.RootElement.GetProperty("payload").GetProperty("slotStates");
+
+            ProtocolInboxRow? summaryRow = await LatestSafetySummaryForSessionAsync(
+                agvId, generation, safetyRevision, cancellationToken).ConfigureAwait(false);
+            if (latestSlots is not JsonElement slots || summaryRow is null)
+            {
+                return ["SAFETY_STATE_UNREADABLE"];
+            }
+
+            List<string> gaps = [];
+            foreach (JsonElement slot in slots.EnumerateArray())
+            {
+                if (RequiredString(slot, "lockState") != "LOCKED" || RequiredString(slot, "unlockOutputState") != "RESET")
+                {
+                    gaps.Add(FormattableString.Invariant($"SLOT_{slot.GetProperty("slotNo").GetInt32()}_NOT_LOCKED"));
+                }
+            }
+            using JsonDocument summary = JsonDocument.Parse(summaryRow.RequestJson);
+            gaps.AddRange(summary.RootElement.GetProperty("payload").GetProperty("safety").GetProperty("reasonCodes")
+                .EnumerateArray().Select(code => code.GetString() ?? "UNNAMED_SAFETY_REASON"));
+            return gaps;
+        }
+        finally
+        {
+            latest?.Dispose();
+        }
+    }
+
     public Task<SessionRecoveryRow?> CurrentReadySessionAsync(string agvId, CancellationToken cancellationToken) =>
         dbContext.SessionRecoveries.AsNoTracking().SingleOrDefaultAsync(
             row => row.AgvId == agvId && row.Readiness == SessionReadiness.Ready,

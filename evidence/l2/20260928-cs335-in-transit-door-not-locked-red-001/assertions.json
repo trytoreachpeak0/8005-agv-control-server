@@ -1,0 +1,36 @@
+{
+  "schemaVersion": 1,
+  "scenario": "in-transit-door-not-locked",
+  "runId": "20260928T075258423Z",
+  "outcome": "FAIL",
+  "failureReason": "Timed out after 90s waiting for: the server issued the emergency stop. Last observed: 0",
+  "identity": {
+    "stageRoot": "C:\\Users\\szy\\AppData\\Local\\Temp\\l2-20260928T075258423Z",
+    "protocolReleaseIdentity": {
+      "repository": "8005-agv-protocol",
+      "releaseVersion": "2.0.0",
+      "tag": "protocol-v2.0.0",
+      "commit": "86575456c847041515b7b75e8851a00e0d939804",
+      "protocolVersion": 3,
+      "profileId": "AGV_FULL_PRODUCT",
+      "manifestSha256": "4ac095ad371d3aaa60d7c2e0198cfd64cff5f3068230fc3420e9cdf5616422a7",
+      "schemaBundleSha256": "9db0dbdc22fed7e39edf8d01b1fc40a12f5d70a7414f696f909ab2a87eb8c221",
+      "vectorsSha256": "391fa69a7d6e9f86ea139ba4c74eadf4994bf0a87e89d3dc5258dd7968d9182a",
+      "approvalStatus": "APPROVED_RELEASE"
+    },
+    "agvId": "AGV-L2-001",
+    "batchId": "unspecified",
+    "controlServerCommit": "6e10044ec383e30b2a24ab2f8558d4251295cdfb",
+    "rig": "SyntheticOnboard",
+    "vehicleKey": "BROKERX-L2-0001"
+  },
+  "assertions": [
+    {
+      "id": "L2-DL-01",
+      "description": "车在正常行驶、门锁着时，不发 Hold、不发急停",
+      "outcome": "PASS",
+      "expected": "0 / 0",
+      "actual": "0 / 0"
+    }
+  ]
+}

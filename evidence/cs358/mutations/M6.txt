@@ -1,0 +1,17 @@
+Test run for C:\Users\szy\Desktop\8005-workspace-v2\worktrees\cs358-8005-agv-control-server\tests\ControlServer.Tests\bin\Release\net8.0\win-x64\ControlServer.Tests.dll (.NETCoreApp,Version=v8.0)
+VSTest version 17.11.1 (x64)
+
+Starting test execution, please wait...
+A total of 1 test files matched the specified pattern.
+[xUnit.net 00:00:13.03]     ControlServer.Tests.FailedOrderBehindSessionGateTests.ARebuildDueWhileTheReadySessionIsSilentWaitsForTheVehicleToBeHeard [FAIL]
+  Failed ControlServer.Tests.FailedOrderBehindSessionGateTests.ARebuildDueWhileTheReadySessionIsSilentWaitsForTheVehicleToBeHeard [394 ms]
+  Error Message:
+   Assert.Equal() Failure: Values differ
+Expected: 1
+Actual:   2
+  Stack Trace:
+     at ControlServer.Tests.FailedOrderBehindSessionGateTests.ARebuildDueWhileTheReadySessionIsSilentWaitsForTheVehicleToBeHeard() in C:\Users\szy\Desktop\8005-workspace-v2\worktrees\cs358-8005-agv-control-server\tests\ControlServer.Tests\FailedOrderBehindSessionGateTests.cs:line 228
+   at ControlServer.Tests.FailedOrderBehindSessionGateTests.ARebuildDueWhileTheReadySessionIsSilentWaitsForTheVehicleToBeHeard() in C:\Users\szy\Desktop\8005-workspace-v2\worktrees\cs358-8005-agv-control-server\tests\ControlServer.Tests\FailedOrderBehindSessionGateTests.cs:line 238
+--- End of stack trace from previous location ---
+
+Failed!  - Failed:     1, Passed:   197, Skipped:     0, Total:   198, Duration: 53 s - ControlServer.Tests.dll (net8.0)

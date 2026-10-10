@@ -1,0 +1,172 @@
+M01 ownership: every running order taken for this server's own (a foreign order let through)
+  totals: Failed! 41 124
+  red: ControlServer.Tests.ForeignRunningOrderTests.AFailingSupervisionDoesNotStopTheRoundAndAHeldVehicleStaysHeld
+  red: ControlServer.Tests.ForeignRunningOrderTests.Req0164ACancelDecidedBeforeACrashIsNotSentWhenTheOrderLeftOurVehicleMeanwhile
+  red: ControlServer.Tests.ForeignRunningOrderTests.Req0164ACancelIsSentOnceAndAnOrderStillRunningAfterItIsHandedToAPerson(disposition:
+  red: ControlServer.Tests.ForeignRunningOrderTests.Req0164ACrashAfterTheAttemptWasArmedIsNeverFollowedByASecondArmingOrSend
+  red: ControlServer.Tests.ForeignRunningOrderTests.Req0164ACrashAfterTheCancelWasDecidedAndBeforeItWentOutSendsItOnceAfterTheRestart
+  red: ControlServer.Tests.ForeignRunningOrderTests.Req0164ACrashAfterTheCancelWentOutAndBeforeItWasRecordedDoesNotSendItAgain(cancelTakesEffect:
+  red: ControlServer.Tests.ForeignRunningOrderTests.Req0164AForeignOrderIsRecognisedWhileTheSessionIsNotReadyOnTheOwnOrderAndOnlyItIsCancelled
+  red: ControlServer.Tests.ForeignRunningOrderTests.Req0164AForeignOrderOnTheVehicleIsNotExplainedAsTheOwnOrderInFlight(variant:
+  red: ControlServer.Tests.ForeignRunningOrderTests.Req0164AForeignOrderRunningOnOurVehicleIsCancelledOnceAndOnlyCancelled(orderState:
+  red: ControlServer.Tests.ForeignRunningOrderTests.Req0164AHeldOrderThatLeavesTheRunningListingWithoutEndingGoesToAPersonAndKeepsHoldingTheVehicle(variant:
+  red: ControlServer.Tests.ForeignRunningOrderTests.Req0164AReReadThatDoesNotAnswerDefersTheCancelToARoundWhoseReReadDoes
+  red: ControlServer.Tests.ForeignRunningOrderTests.Req0164AVehicleAForeignOrderRunsOnTakesNoNewDispatchUntilTheOrderIsReadBackEnded(variant:
+  red: ControlServer.Tests.ForeignRunningOrderTests.Req0164AnIncompleteListingConcludesNothing
+  red: ControlServer.Tests.ForeignRunningOrderTests.Req0164AnOrderCancelledOnceThatComesBackToOurVehicleIsNotCancelledAgain
+  red: ControlServer.Tests.ForeignRunningOrderTests.Req0164AnOrderThatMovesToAnotherOfOurVehiclesBetweenTheReadsIsFollowedAndCancelledAfterAFreshReRead
+  red: ControlServer.Tests.ForeignRunningOrderTests.Req0164AnOrderThisServerHasCommandedButHasNoIntentForIsNotProvablyForeign
+  red: ControlServer.Tests.ForeignRunningOrderTests.Req0164AnUpperIdShapedLikeOursWithoutAnIntentIsHeldAndAlarmedButNeverCancelled(upperId:
+  red: ControlServer.Tests.ForeignRunningOrderTests.Req0164OnlyAnExplicitEndingReadBackReleasesTheVehicle(readBack:
+  red: ControlServer.Tests.ForeignRunningOrderTests.Req0164TheAlarmAndTheAuditRecordNameTheOrderTheVehicleTheTimeAndTheCancelResult
+  red: ControlServer.Tests.ForeignRunningOrderTests.Req0164TheOrderIsReadAgainBeforeTheCancelAndLeftAloneWhenItNoLongerRunsOnOurVehicle(change:
+  red: ControlServer.Tests.ForeignRunningOrderTests.Req0164WithTheCancelGateClosedAForeignOrderIsHeldAndAlarmedAndNeverCancelledUntilTheGateIsOpened
+M02 ownership: the OrderIntent check off (this server's own order judged without it)
+  totals: Failed! 11 154
+  red: ControlServer.Tests.ForeignRunningOrderTests.Req0164AForeignOrderOnTheVehicleIsNotExplainedAsTheOwnOrderInFlight(variant:
+  red: ControlServer.Tests.ForeignRunningOrderTests.Req0164AnOrderThisServerHasAnIntentForIsItsOwnWhateverItsUpperIdLooksLike(match:
+  red: ControlServer.Tests.ForeignRunningOrderTests.Req0164ThisServersOwnRunningOrderIsNeverTakenForAForeignOne
+  red: ControlServer.Tests.ForeignRunningOrderTests.TheBlockedJourneyNotePointsAtAForeignOrderOnlyWhileOneHoldsTheVehicle
+  red: ControlServer.Tests.OwnOrderRebuildTests.ALoadedOrderCancelledInRiotIsRebuiltToTheSameUnloadStop
+  red: ControlServer.Tests.OwnOrderRebuildTests.AnOrderCancelledInRiotIsRebuiltForTheSameVehicleAndDemandOnceTheDelayIsOver
+  red: ControlServer.Tests.PickupDispatchPlanPastOwnOrderTests.AReconnectStillOnTheOwnOrderGetsThePlanReplayedOnlyOnceItsHandshakeIsDone
+  red: ControlServer.Tests.PickupDispatchPlanPastOwnOrderTests.TheFirstReadyAdvanceDoesNotSendTheAcknowledgedPlanAgain
+  red: ControlServer.Tests.PickupDispatchPlanPastOwnOrderTests.ThePickupPlanReachesTheVehicleWhoseSessionDroppedOnTheOwnOrderBeforeTheFirstAdvance
+M03 ownership: an intent matched by upperId only, not by RIoT orderId
+  totals: Failed! 1 164
+  red: ControlServer.Tests.ForeignRunningOrderTests.Req0164AnOrderThisServerHasAnIntentForIsItsOwnWhateverItsUpperIdLooksLike(match:
+M04 ownership: the order command audit check off
+  totals: Failed! 1 164
+  red: ControlServer.Tests.ForeignRunningOrderTests.Req0164AnOrderThisServerHasCommandedButHasNoIntentForIsNotProvablyForeign
+M05 ownership: the upperId-shaped-as-ours check off
+  totals: Failed! 4 161
+  red: ControlServer.Tests.ForeignRunningOrderTests.Req0164AHeldOrderThatLeavesTheRunningListingWithoutEndingGoesToAPersonAndKeepsHoldingTheVehicle(variant:
+  red: ControlServer.Tests.ForeignRunningOrderTests.Req0164AnUpperIdShapedLikeOursWithoutAnIntentIsHeldAndAlarmedButNeverCancelled(upperId:
+M06 ownership: the prefix compared case-sensitively
+  totals: Failed! 1 164
+  red: ControlServer.Tests.ForeignRunningOrderTests.Req0164AnUpperIdShapedLikeOursWithoutAnIntentIsHeldAndAlarmedButNeverCancelled(upperId:
+M07 ownership: leading whitespace before the prefix not trimmed
+  totals: Failed! 1 164
+  red: ControlServer.Tests.ForeignRunningOrderTests.Req0164AnUpperIdShapedLikeOursWithoutAnIntentIsHeldAndAlarmedButNeverCancelled(upperId:
+M08 scope: a QUEUEING order counted as running
+  totals: Failed! 1 164
+  red: ControlServer.Tests.ForeignRunningOrderTests.Req0164AnOrderThatDoesNotShowItRunsOnOurVehicleIsNeitherRecordedNorAlarmedNorCommanded(variant:
+M09 scope: the "--" placeholder guard off (expected covered by the roster lookup)
+  totals: Passed! 0 165
+  red: (none)
+M10 scope: an order on a vehicle that is not ours taken for one on ours
+  totals: Failed! 4 161
+  red: ControlServer.Tests.ForeignRunningOrderTests.Req0164ACancelDecidedBeforeACrashIsNotSentWhenTheOrderLeftOurVehicleMeanwhile
+  red: ControlServer.Tests.ForeignRunningOrderTests.Req0164AnOrderCancelledOnceThatComesBackToOurVehicleIsNotCancelledAgain
+  red: ControlServer.Tests.ForeignRunningOrderTests.Req0164AnOrderThatDoesNotShowItRunsOnOurVehicleIsNeitherRecordedNorAlarmedNorCommanded(variant:
+  red: ControlServer.Tests.ForeignRunningOrderTests.Req0164TheOrderIsReadAgainBeforeTheCancelAndLeftAloneWhenItNoLongerRunsOnOurVehicle(change:
+M11 scope: an archived vehicle still counted as ours
+  totals: Failed! 1 164
+  red: ControlServer.Tests.ForeignRunningOrderTests.Req0164AnOrderThatDoesNotShowItRunsOnOurVehicleIsNeitherRecordedNorAlarmedNorCommanded(variant:
+M12 guard: the re-read before the cancel ignored (cancelled though no longer running on our vehicle)
+  totals: Failed! 3 162
+  red: ControlServer.Tests.ForeignRunningOrderTests.Req0164TheOrderIsReadAgainBeforeTheCancelAndLeftAloneWhenItNoLongerRunsOnOurVehicle(change:
+M13 guard: "the same vehicle" dropped from the re-read
+  totals: Failed! 1 164
+  red: ControlServer.Tests.ForeignRunningOrderTests.Req0164AnOrderThatMovesToAnotherOfOurVehiclesBetweenTheReadsIsFollowedAndCancelledAfterAFreshReRead
+M14 guard: an incomplete re-read acted on (expected covered by the explicit-ending read)
+  totals: Passed! 0 165
+  red: (none)
+M15 once: an armed attempt no longer stops a second cancel
+  totals: Failed! 1 164
+  red: ControlServer.Tests.ForeignRunningOrderTests.Req0164ACrashAfterTheAttemptWasArmedIsNeverFollowedByASecondArmingOrSend
+M16 once: M15 and a cancelled order coming back to our vehicle taken up as never cancelled
+  totals: Failed! 2 163
+  red: ControlServer.Tests.ForeignRunningOrderTests.Req0164ACrashAfterTheAttemptWasArmedIsNeverFollowedByASecondArmingOrSend
+  red: ControlServer.Tests.ForeignRunningOrderTests.Req0164AnOrderCancelledOnceThatComesBackToOurVehicleIsNotCancelledAgain
+M17 only the cancel: HELD sent instead
+  totals: Failed! 9 156
+  red: ControlServer.Tests.ForeignRunningOrderTests.Req0164ACrashAfterTheCancelWasDecidedAndBeforeItWentOutSendsItOnceAfterTheRestart
+  red: ControlServer.Tests.ForeignRunningOrderTests.Req0164ACrashAfterTheCancelWentOutAndBeforeItWasRecordedDoesNotSendItAgain(cancelTakesEffect:
+  red: ControlServer.Tests.ForeignRunningOrderTests.Req0164AForeignOrderIsRecognisedWhileTheSessionIsNotReadyOnTheOwnOrderAndOnlyItIsCancelled
+  red: ControlServer.Tests.ForeignRunningOrderTests.Req0164AForeignOrderRunningOnOurVehicleIsCancelledOnceAndOnlyCancelled(orderState:
+  red: ControlServer.Tests.ForeignRunningOrderTests.Req0164AReReadThatDoesNotAnswerDefersTheCancelToARoundWhoseReReadDoes
+  red: ControlServer.Tests.ForeignRunningOrderTests.Req0164AnOrderThatMovesToAnotherOfOurVehiclesBetweenTheReadsIsFollowedAndCancelledAfterAFreshReRead
+  red: ControlServer.Tests.ForeignRunningOrderTests.Req0164WithTheCancelGateClosedAForeignOrderIsHeldAndAlarmedAndNeverCancelledUntilTheGateIsOpened
+M18 hand-over: a cancel that did not take is never handed to a person
+  totals: Failed! 6 159
+  red: ControlServer.Tests.ForeignRunningOrderTests.Req0164ACancelIsSentOnceAndAnOrderStillRunningAfterItIsHandedToAPerson(disposition:
+  red: ControlServer.Tests.ForeignRunningOrderTests.Req0164ACrashAfterTheAttemptWasArmedIsNeverFollowedByASecondArmingOrSend
+  red: ControlServer.Tests.ForeignRunningOrderTests.Req0164ACrashAfterTheCancelWentOutAndBeforeItWasRecordedDoesNotSendItAgain(cancelTakesEffect:
+  red: ControlServer.Tests.ForeignRunningOrderTests.Req0164AnOrderCancelledOnceThatComesBackToOurVehicleIsNotCancelledAgain
+M19 ending: SUSPENDED read as an explicit ending
+  totals: Failed! 3 162
+  red: ControlServer.Tests.ForeignRunningOrderTests.Req0164AHeldOrderThatLeavesTheRunningListingWithoutEndingGoesToAPersonAndKeepsHoldingTheVehicle(variant:
+  red: ControlServer.Tests.ForeignRunningOrderTests.Req0164OnlyAnExplicitEndingReadBackReleasesTheVehicle(readBack:
+M20 listing: an incomplete listing acted on (expected covered by the explicit-ending read)
+  totals: Passed! 0 165
+  red: (none)
+M21 0/1 gate: a held vehicle offered as free for new dispatch
+  totals: Failed! 3 162
+  red: ControlServer.Tests.ForeignRunningOrderTests.Req0164AVehicleAForeignOrderRunsOnTakesNoNewDispatchUntilTheOrderIsReadBackEnded(variant:
+M22 0/1 gate: a held vehicle offered for appended demand
+  totals: Failed! 1 164
+  red: ControlServer.Tests.MultiVehicleExecutionTests.AVehicleAForeignOrderHoldsTakesNoAppendedDemandUntilTheOrderHasEnded
+M23 explanation: a foreign order on the vehicle ignored
+  totals: Failed! 6 159
+  red: ControlServer.Tests.BlockedJourneyDashboardTests.AForeignOrderHoldingTheVehicleIsNotExplainedAsItsOwnMoveOrder(foreignState:
+  red: ControlServer.Tests.BlockedJourneyDashboardTests.AnUnknownIsNotExplainedWhileAForeignOrderHoldsTheVehicle
+  red: ControlServer.Tests.ForeignRunningOrderTests.Req0164AForeignOrderOnTheVehicleIsNotExplainedAsTheOwnOrderInFlight(variant:
+M24 explanation: the engine (#314 plan) passes "no foreign order"
+  totals: Failed! 2 163
+  red: ControlServer.Tests.ForeignRunningOrderTests.Req0164AForeignOrderOnTheVehicleIsNotExplainedAsTheOwnOrderInFlight(variant:
+M25 explanation: the blocked-journey dashboard passes "no foreign order"
+  totals: Failed! 5 160
+  red: ControlServer.Tests.BlockedJourneyDashboardTests.AForeignOrderHoldingTheVehicleIsNotExplainedAsItsOwnMoveOrder(foreignState:
+  red: ControlServer.Tests.ForeignRunningOrderTests.Req0164AForeignOrderOnTheVehicleIsNotExplainedAsTheOwnOrderInFlight(variant:
+M26 isolation: a failing supervision ends the round
+  totals: Failed! 6 159
+  red: ControlServer.Tests.ForeignRunningOrderTests.AFailingSupervisionDoesNotStopTheRoundAndAHeldVehicleStaysHeld
+  red: ControlServer.Tests.ForeignRunningOrderTests.Req0164ACancelDecidedBeforeACrashIsNotSentWhenTheOrderLeftOurVehicleMeanwhile
+  red: ControlServer.Tests.ForeignRunningOrderTests.Req0164ACrashAfterTheAttemptWasArmedIsNeverFollowedByASecondArmingOrSend
+  red: ControlServer.Tests.ForeignRunningOrderTests.Req0164ACrashAfterTheCancelWasDecidedAndBeforeItWentOutSendsItOnceAfterTheRestart
+  red: ControlServer.Tests.ForeignRunningOrderTests.Req0164ACrashAfterTheCancelWentOutAndBeforeItWasRecordedDoesNotSendItAgain(cancelTakesEffect:
+M27 dashboard: rows that hold nothing listed too
+  totals: Failed! 1 164
+  red: ControlServer.Tests.ForeignRunningOrderTests.Req0164TheDashboardShowsEveryVehicleAForeignOrderHoldsWithItsDedicatedReason
+M28 ending: an explicit ending does not release the vehicle
+  totals: Failed! 26 139
+  red: ControlServer.Tests.ForeignRunningOrderTests.Req0164ACancelIsSentOnceAndAnOrderStillRunningAfterItIsHandedToAPerson(disposition:
+  red: ControlServer.Tests.ForeignRunningOrderTests.Req0164ACrashAfterTheCancelWasDecidedAndBeforeItWentOutSendsItOnceAfterTheRestart
+  red: ControlServer.Tests.ForeignRunningOrderTests.Req0164ACrashAfterTheCancelWentOutAndBeforeItWasRecordedDoesNotSendItAgain(cancelTakesEffect:
+  red: ControlServer.Tests.ForeignRunningOrderTests.Req0164AForeignOrderIsRecognisedWhileTheSessionIsNotReadyOnTheOwnOrderAndOnlyItIsCancelled
+  red: ControlServer.Tests.ForeignRunningOrderTests.Req0164AForeignOrderOnTheVehicleIsNotExplainedAsTheOwnOrderInFlight(variant:
+  red: ControlServer.Tests.ForeignRunningOrderTests.Req0164AForeignOrderRunningOnOurVehicleIsCancelledOnceAndOnlyCancelled(orderState:
+  red: ControlServer.Tests.ForeignRunningOrderTests.Req0164AHeldOrderThatLeavesTheRunningListingWithoutEndingGoesToAPersonAndKeepsHoldingTheVehicle(variant:
+  red: ControlServer.Tests.ForeignRunningOrderTests.Req0164AReReadThatDoesNotAnswerDefersTheCancelToARoundWhoseReReadDoes
+  red: ControlServer.Tests.ForeignRunningOrderTests.Req0164AVehicleAForeignOrderRunsOnTakesNoNewDispatchUntilTheOrderIsReadBackEnded(variant:
+  red: ControlServer.Tests.ForeignRunningOrderTests.Req0164AnOrderThatMovesToAnotherOfOurVehiclesBetweenTheReadsIsFollowedAndCancelledAfterAFreshReRead
+  red: ControlServer.Tests.ForeignRunningOrderTests.Req0164OnlyAnExplicitEndingReadBackReleasesTheVehicle(readBack:
+  red: ControlServer.Tests.ForeignRunningOrderTests.Req0164TheOrderIsReadAgainBeforeTheCancelAndLeftAloneWhenItNoLongerRunsOnOurVehicle(change:
+  red: ControlServer.Tests.ForeignRunningOrderTests.Req0164WithTheCancelGateClosedAForeignOrderIsHeldAndAlarmedAndNeverCancelledUntilTheGateIsOpened
+M29 cancel gate: ignored (a cancel sent while the gate is closed)
+  totals: Failed! 2 163
+  red: ControlServer.Tests.ForeignRunningOrderTests.Req0164AHeldOrderThatLeavesTheRunningListingWithoutEndingGoesToAPersonAndKeepsHoldingTheVehicle(variant:
+  red: ControlServer.Tests.ForeignRunningOrderTests.Req0164WithTheCancelGateClosedAForeignOrderIsHeldAndAlarmedAndNeverCancelledUntilTheGateIsOpened
+M30 cancel gate: an order held for a closed gate never taken up once it is opened
+  totals: Failed! 1 164
+  red: ControlServer.Tests.ForeignRunningOrderTests.Req0164WithTheCancelGateClosedAForeignOrderIsHeldAndAlarmedAndNeverCancelledUntilTheGateIsOpened
+M31 cancel gate: HELD_CANCEL_NOT_AUTHORIZED does not hold the vehicle
+  totals: Failed! 3 162
+  red: ControlServer.Tests.ForeignRunningOrderTests.Req0164AVehicleAForeignOrderRunsOnTakesNoNewDispatchUntilTheOrderIsReadBackEnded(variant:
+  red: ControlServer.Tests.ForeignRunningOrderTests.Req0164TheDashboardShowsEveryVehicleAForeignOrderHoldsWithItsDedicatedReason
+  red: ControlServer.Tests.ForeignRunningOrderTests.Req0164WithTheCancelGateClosedAForeignOrderIsHeldAndAlarmedAndNeverCancelledUntilTheGateIsOpened
+M32 unsettled: an order that left the listing without ending never goes to a person
+  totals: Failed! 4 161
+  red: ControlServer.Tests.ForeignRunningOrderTests.Req0164AHeldOrderThatLeavesTheRunningListingWithoutEndingGoesToAPersonAndKeepsHoldingTheVehicle(variant:
+M33 unsettled: UNSETTLED does not hold the vehicle
+  totals: Failed! 6 159
+  red: ControlServer.Tests.ForeignRunningOrderTests.Req0164AHeldOrderThatLeavesTheRunningListingWithoutEndingGoesToAPersonAndKeepsHoldingTheVehicle(variant:
+  red: ControlServer.Tests.ForeignRunningOrderTests.Req0164TheDashboardShowsEveryVehicleAForeignOrderHoldsWithItsDedicatedReason
+  red: ControlServer.Tests.MultiVehicleExecutionTests.AVehicleAForeignOrderHoldsTakesNoAppendedDemandUntilTheOrderHasEnded
+M34 cancel result: not rewritten when the order ends (a hand-over stays STILL_RUNNING)
+  totals: Failed! 3 162
+  red: ControlServer.Tests.ForeignRunningOrderTests.Req0164ACancelIsSentOnceAndAnOrderStillRunningAfterItIsHandedToAPerson(disposition:
+M35 blocked-journey card: no note pointing at the foreign order
+  totals: Failed! 2 163
+  red: ControlServer.Tests.ForeignRunningOrderTests.Req0164AForeignOrderOnTheVehicleIsNotExplainedAsTheOwnOrderInFlight(variant:

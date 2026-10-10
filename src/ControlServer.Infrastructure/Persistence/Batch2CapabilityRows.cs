@@ -40,23 +40,8 @@ internal static class Batch2CapabilityModel
         modelBuilder.Entity<DispatchZoneVehicleRow>()
             .HasKey(row => new { row.Zone, row.AgvId });
         modelBuilder.Entity<VehicleDispatchBudgetRow>().HasKey(row => row.AgvId);
-
-        // Vehicle-occupancy uniqueness, moved down from the lease table onto OrderIntents
-        // (specification 5.1). Two deliberate choices here:
-        //
-        // 1. The filter also requires ClaimedAt to be set. OrderIntents keeps historical rows, so
-        //    the same VehicleKey already appears many times over; an unconditional unique index
-        //    would be violated by existing data on the first migration. Nothing writes ClaimedAt
-        //    yet, so every current and newly inserted row sits outside the index and behaviour is
-        //    unchanged — exactly what ticket 06 requires. Ticket 09 turns the constraint on by
-        //    writing the two timestamps; no schema change is needed then.
-        // 2. The lease table's own unique index stays. Dropping it here would be a behaviour
-        //    change in the batch that promised none, and the two are not in conflict: a lease is
-        //    one demand's claim, an occupancy is one vehicle's in-flight order.
-        modelBuilder.Entity<OrderIntentRow>()
-            .HasIndex(row => row.VehicleKey)
-            .IsUnique()
-            .HasFilter("VehicleOccupancyClaimedAt IS NOT NULL AND VehicleOccupancyReleasedAt IS NULL");
+        // The vehicle-occupancy columns and their filtered unique index on OrderIntents were retired in batch 8-16
+        // (control-server#387): a vehicle's one occupancy is its VehiclePurposeClaims row.
     }
 
     // ---- RouteGraphSnapshot engine (ticket 12) -----------------------------------------
@@ -240,8 +225,10 @@ public sealed class RouteGraphEdgeRow
 /// <c>ResolvedNode</c> is derived, not read off the wire: RIoT gives a station its <c>edge_id</c>
 /// and coordinates, and the node is whichever of that edge's two endpoints the station sits
 /// nearer. Round 43 measured this on map25 — 206 stations onto 206 distinct nodes, zero
-/// collisions, every station at t=0 or t=1 and none mid-edge. <c>station_offset</c> is zero on all
-/// of them and cannot be used for this.
+/// collisions, every station at t=0 or t=1 and none mid-edge. That is map25's measurement only;
+/// map26, the map the v2 line runs on, has not been measured, and the route graph does not rely on
+/// the absence of collisions (control-server#431). <c>station_offset</c> is zero on all of them and
+/// cannot be used for this.
 /// </remarks>
 public sealed class RouteGraphStationRow
 {

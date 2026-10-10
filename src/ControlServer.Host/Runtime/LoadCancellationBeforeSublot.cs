@@ -16,10 +16,13 @@ namespace ControlServer.Host.Runtime;
 /// <b>Exclusive with the entry, the first persisted winning.</b> The entry and the cancellation request
 /// arrive on the same connection and are made durable one after the other, so their order in the store is
 /// their order on the wire. The coordinator refuses a cancellation once an entry for the stop is durable
-/// (<see cref="IsEntryForStop"/>); the runtime reads the inbox first and the open cancellation second
-/// (<see cref="HasOpenCancellationAsync"/>), so an entry it can see was persisted after a cancellation it
-/// can see as well. Reading them the other way round would leave a window in which both a load and the
-/// cancellation go ahead.
+/// (<see cref="IsEntryForStop"/>). The runtime reads the inbox and then the open cancellation
+/// (<see cref="HasOpenCancellationAsync"/>) without a lock, which only saves it an iteration: a cancellation
+/// can open -- or settle -- between those two reads, since the coordinator writes it inbound, outside the
+/// runtime's gate. What keeps a load and the cancellation from both going ahead is the runtime asking again,
+/// under the write lock and in the transaction that stages the command (control-server#362,
+/// <c>JourneyRuntimeEngine.EnteredDemandStillLoadableAsync</c>). Until then the order of the two reads was
+/// taken as the guarantee, and it is not one.
 /// </para>
 /// <para>
 /// <b>Exclusive with an entry that was refused, and there the entry loses.</b> Since
@@ -66,6 +69,13 @@ public static class LoadCancellationBeforeSublot
     /// vehicle, the stop's operation session, station and worklist revision.
     /// </summary>
     /// <remarks>
+    /// <para>
+    /// <b>The address is the stop's, not the journey row's</b> (control-server#211). It used to read four columns off
+    /// the journey row, one of which -- the worklist revision -- had a single value per journey; a stop that publishes
+    /// several worklist revisions makes that one a range, and the type carries it so neither reader compares its own
+    /// selection of columns.
+    /// </para>
+    /// <para>
     /// <b>Deliberately blind to the session generation</b>, and the two readers want it differently. The
     /// runtime acts only on an answer of the current generation and checks that itself; the cancellation
     /// refuses on an entry of any generation, because an entry made before a reconnect may be the one the
@@ -73,14 +83,13 @@ public static class LoadCancellationBeforeSublot
     /// review). This is the one definition of the address both read; the runtime adds the generation, the
     /// cancellation adds nothing.
     /// </remarks>
-    public static bool AnswersTheStop(JsonElement submission, JourneyRuntimeRow runtime)
+    internal static bool AnswersTheStop(JsonElement submission, StopEntryAddress address)
     {
-        ArgumentNullException.ThrowIfNull(runtime);
         JsonElement payload = submission.GetProperty("payload");
-        return submission.GetProperty("agvId").GetString() == runtime.AgvId &&
-               payload.GetProperty("operationSessionId").GetString() == runtime.OperationSessionId &&
-               payload.GetProperty("stationId").GetString() == runtime.PickupStationId &&
-               payload.GetProperty("worklistRevision").GetInt64() == runtime.WorklistRevision;
+        return submission.GetProperty("agvId").GetString() == address.AgvId &&
+               payload.GetProperty("operationSessionId").GetString() == address.OperationSessionId &&
+               payload.GetProperty("stationId").GetString() == address.StationId &&
+               address.Covers(payload.GetProperty("worklistRevision").GetInt64());
     }
 
     /// <summary>
@@ -93,11 +102,11 @@ public static class LoadCancellationBeforeSublot
     /// <c>8005-agv-control-server#82</c>; this predicate is the part of it the cancellation already
     /// needs, and it stays a pure one so both readers can use it without a database.
     /// </remarks>
-    public static bool IsEntryForStop(
+    internal static bool IsEntryForStop(
         JsonElement submission,
-        JourneyRuntimeRow runtime,
+        StopEntryAddress address,
         string demandSublot) =>
-        AnswersTheStop(submission, runtime) &&
+        AnswersTheStop(submission, address) &&
         submission.GetProperty("payload").GetProperty("sublot").GetString() == demandSublot;
 
     /// <summary>

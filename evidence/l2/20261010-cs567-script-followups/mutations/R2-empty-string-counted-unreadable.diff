@@ -1,0 +1,13 @@
+diff --git a/scripts/l2/scenarios/g3-unable-to-charge-field-confirmation.ps1 b/scripts/l2/scenarios/g3-unable-to-charge-field-confirmation.ps1
+index e7366acb8..d792539a4 100644
+--- a/scripts/l2/scenarios/g3-unable-to-charge-field-confirmation.ps1
++++ b/scripts/l2/scenarios/g3-unable-to-charge-field-confirmation.ps1
+@@ -212,7 +212,7 @@ if ($null -eq $state -or -not $state.Acknowledged) {
+         $reads.Add((Read-L2UiaItemStatus $onboard 'UnableToChargeStatus' $journal))
+         Start-Sleep -Milliseconds 200
+     }
+-    $unreadable = @($reads | Where-Object { -not $_.Readable })
++    $unreadable = @($reads | Where-Object { -not $_.Readable -or $_.Value -eq '' })
+     $off = @($reads | Where-Object { $_.Readable -and $_.Value -ne 'CONFIRMED' })
+     $journal.Observe('hmi-unable-to-charge-status-held', "$($reads.Count) reads, $($off.Count) not CONFIRMED, $($unreadable.Count) unreadable",
+         @{ reads = @($reads | ForEach-Object { Format-L2UiaReading $_ }) })

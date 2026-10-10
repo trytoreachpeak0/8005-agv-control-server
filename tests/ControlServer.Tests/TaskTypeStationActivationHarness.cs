@@ -64,7 +64,7 @@ internal sealed class TaskTypeStationActivationHarness : IAsyncDisposable
         CancellationToken cancellationToken = TestContext.Current.CancellationToken;
 
         ControlServerDbContext context = harness.NewContext();
-        await context.Database.MigrateAsync(cancellationToken);
+        await MigratedDatabaseTemplate.ApplyAsync(context.Database, cancellationToken);
         Stack stack = StackOver(context);
         TaskTypeStationVersionWrite<TaskTypeStationRuleVersion> rules = await stack.Rules.WriteVersionAsync(
             TaskTypeStationTestData.SixRules, TaskTypeStationTestData.Source, Now.AddHours(-1), cancellationToken);
@@ -105,7 +105,7 @@ internal sealed class TaskTypeStationActivationHarness : IAsyncDisposable
             activations = wrap(activations);
         }
         TaskTypeStationActivationService service = new(
-            rules, bindings, activations, new CatalogAvailabilityStore(context), audit);
+            rules, bindings, activations, new CatalogAvailabilityStore(context), audit, new MapNameBaselineStore(context, audit));
         return new Stack(context, governance, rules, bindings, new TaskTypeStationHoldStore(context), activations, service);
     }
 
@@ -163,7 +163,7 @@ internal sealed class TaskTypeStationActivationHarness : IAsyncDisposable
         JourneyRuntimeRow journey = Journey(demandId, JourneyRuntimeStage.AwaitingGateArrival);
         context.JourneyRuntimes.Add(journey);
         // control-server#207: acceptance writes the demand's membership beside the journey row.
-        context.Set<JourneyDemandRow>().Add(JourneyMembershipSeed.For(journey));
+        JourneyMembershipSeed.Seed(context, journey);
         context.OrderIntents.Add(new OrderIntentRow
         {
             MovementLegId = $"gate-leg-{demandId}",

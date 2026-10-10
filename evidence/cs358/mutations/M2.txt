@@ -1,0 +1,788 @@
+Test run for C:\Users\szy\Desktop\8005-workspace-v2\worktrees\cs358-8005-agv-control-server\tests\ControlServer.Tests\bin\Release\net8.0\win-x64\ControlServer.Tests.dll (.NETCoreApp,Version=v8.0)
+VSTest version 17.11.1 (x64)
+
+Starting test execution, please wait...
+A total of 1 test files matched the specified pattern.
+[xUnit.net 00:00:07.38]     ControlServer.Tests.VehicleFaultRecoveryTests.OnlyAFailedOrderLetsTheFaultBeCleared(orderState: 2, terminal: True, refusal: "FAULT_RECOVERY_CURRENT_ORDER_CANCELLED_IN_RIOT") [FAIL]
+[xUnit.net 00:00:07.85]     ControlServer.Tests.VehicleFaultRecoveryTests.OnlyAFailedOrderLetsTheFaultBeCleared(orderState: 9, terminal: False, refusal: "FAULT_RECOVERY_CURRENT_ORDER_NOT_ENDED") [FAIL]
+  Failed ControlServer.Tests.VehicleFaultRecoveryTests.OnlyAFailedOrderLetsTheFaultBeCleared(orderState: 2, terminal: True, refusal: "FAULT_RECOVERY_CURRENT_ORDER_CANCELLED_IN_RIOT") [4 s]
+  Error Message:
+   Assert.Equal() Failure: Strings differ
+Expected: "VEHICLE_ORDER_FAILED"
+Actual:   null
+  Stack Trace:
+     at ControlServer.Tests.VehicleFaultRecoveryTests.FaultedOnTheWayToPickupAsync(String movementState) in C:\Users\szy\Desktop\8005-workspace-v2\worktrees\cs358-8005-agv-control-server\tests\ControlServer.Tests\VehicleFaultRecoveryTests.cs:line 1461
+   at ControlServer.Tests.VehicleFaultRecoveryTests.OnlyAFailedOrderLetsTheFaultBeCleared(Int32 orderState, Boolean terminal, String refusal) in C:\Users\szy\Desktop\8005-workspace-v2\worktrees\cs358-8005-agv-control-server\tests\ControlServer.Tests\VehicleFaultRecoveryTests.cs:line 252
+--- End of stack trace from previous location ---
+  Failed ControlServer.Tests.VehicleFaultRecoveryTests.OnlyAFailedOrderLetsTheFaultBeCleared(orderState: 9, terminal: False, refusal: "FAULT_RECOVERY_CURRENT_ORDER_NOT_ENDED") [467 ms]
+  Error Message:
+   Assert.Equal() Failure: Strings differ
+Expected: "VEHICLE_ORDER_FAILED"
+Actual:   null
+  Stack Trace:
+     at ControlServer.Tests.VehicleFaultRecoveryTests.FaultedOnTheWayToPickupAsync(String movementState) in C:\Users\szy\Desktop\8005-workspace-v2\worktrees\cs358-8005-agv-control-server\tests\ControlServer.Tests\VehicleFaultRecoveryTests.cs:line 1461
+   at ControlServer.Tests.VehicleFaultRecoveryTests.OnlyAFailedOrderLetsTheFaultBeCleared(Int32 orderState, Boolean terminal, String refusal) in C:\Users\szy\Desktop\8005-workspace-v2\worktrees\cs358-8005-agv-control-server\tests\ControlServer.Tests\VehicleFaultRecoveryTests.cs:line 252
+--- End of stack trace from previous location ---
+[xUnit.net 00:00:08.32]     ControlServer.Tests.VehicleFaultRecoveryTests.OnlyAFailedOrderLetsTheFaultBeCleared(orderState: 3, terminal: False, refusal: "FAULT_RECOVERY_CURRENT_ORDER_NOT_ENDED") [FAIL]
+[xUnit.net 00:00:08.78]     ControlServer.Tests.VehicleFaultRecoveryTests.OnlyAFailedOrderLetsTheFaultBeCleared(orderState: 1, terminal: False, refusal: "FAULT_RECOVERY_CURRENT_ORDER_NOT_ENDED") [FAIL]
+[xUnit.net 00:00:09.13]     ControlServer.Tests.VehicleFaultRecoveryTests.OnlyAFailedOrderLetsTheFaultBeCleared(orderState: 7, terminal: False, refusal: "FAULT_RECOVERY_CURRENT_ORDER_NOT_ENDED") [FAIL]
+  Failed ControlServer.Tests.VehicleFaultRecoveryTests.OnlyAFailedOrderLetsTheFaultBeCleared(orderState: 3, terminal: False, refusal: "FAULT_RECOVERY_CURRENT_ORDER_NOT_ENDED") [475 ms]
+  Error Message:
+   Assert.Equal() Failure: Strings differ
+Expected: "VEHICLE_ORDER_FAILED"
+Actual:   null
+  Stack Trace:
+     at ControlServer.Tests.VehicleFaultRecoveryTests.FaultedOnTheWayToPickupAsync(String movementState) in C:\Users\szy\Desktop\8005-workspace-v2\worktrees\cs358-8005-agv-control-server\tests\ControlServer.Tests\VehicleFaultRecoveryTests.cs:line 1461
+   at ControlServer.Tests.VehicleFaultRecoveryTests.OnlyAFailedOrderLetsTheFaultBeCleared(Int32 orderState, Boolean terminal, String refusal) in C:\Users\szy\Desktop\8005-workspace-v2\worktrees\cs358-8005-agv-control-server\tests\ControlServer.Tests\VehicleFaultRecoveryTests.cs:line 252
+--- End of stack trace from previous location ---
+  Failed ControlServer.Tests.VehicleFaultRecoveryTests.OnlyAFailedOrderLetsTheFaultBeCleared(orderState: 1, terminal: False, refusal: "FAULT_RECOVERY_CURRENT_ORDER_NOT_ENDED") [446 ms]
+  Error Message:
+   Assert.Equal() Failure: Strings differ
+Expected: "VEHICLE_ORDER_FAILED"
+Actual:   null
+  Stack Trace:
+     at ControlServer.Tests.VehicleFaultRecoveryTests.FaultedOnTheWayToPickupAsync(String movementState) in C:\Users\szy\Desktop\8005-workspace-v2\worktrees\cs358-8005-agv-control-server\tests\ControlServer.Tests\VehicleFaultRecoveryTests.cs:line 1461
+   at ControlServer.Tests.VehicleFaultRecoveryTests.OnlyAFailedOrderLetsTheFaultBeCleared(Int32 orderState, Boolean terminal, String refusal) in C:\Users\szy\Desktop\8005-workspace-v2\worktrees\cs358-8005-agv-control-server\tests\ControlServer.Tests\VehicleFaultRecoveryTests.cs:line 252
+--- End of stack trace from previous location ---
+  Failed ControlServer.Tests.VehicleFaultRecoveryTests.OnlyAFailedOrderLetsTheFaultBeCleared(orderState: 7, terminal: False, refusal: "FAULT_RECOVERY_CURRENT_ORDER_NOT_ENDED") [352 ms]
+  Error Message:
+   Assert.Equal() Failure: Strings differ
+Expected: "VEHICLE_ORDER_FAILED"
+Actual:   null
+  Stack Trace:
+     at ControlServer.Tests.VehicleFaultRecoveryTests.FaultedOnTheWayToPickupAsync(String movementState) in C:\Users\szy\Desktop\8005-workspace-v2\worktrees\cs358-8005-agv-control-server\tests\ControlServer.Tests\VehicleFaultRecoveryTests.cs:line 1461
+   at ControlServer.Tests.VehicleFaultRecoveryTests.OnlyAFailedOrderLetsTheFaultBeCleared(Int32 orderState, Boolean terminal, String refusal) in C:\Users\szy\Desktop\8005-workspace-v2\worktrees\cs358-8005-agv-control-server\tests\ControlServer.Tests\VehicleFaultRecoveryTests.cs:line 252
+--- End of stack trace from previous location ---
+[xUnit.net 00:00:09.45]     ControlServer.Tests.VehicleFaultRecoveryTests.OnlyAFailedOrderLetsTheFaultBeCleared(orderState: 4, terminal: True, refusal: null) [FAIL]
+[xUnit.net 00:00:09.72]     ControlServer.Tests.VehicleFaultRecoveryTests.OnlyAFailedOrderLetsTheFaultBeCleared(orderState: 8, terminal: True, refusal: "FAULT_RECOVERY_CURRENT_ORDER_NOT_ENDED") [FAIL]
+[xUnit.net 00:00:10.14]     ControlServer.Tests.VehicleFaultRecoveryTests.OnlyAFailedOrderLetsTheFaultBeCleared(orderState: 10, terminal: False, refusal: "FAULT_RECOVERY_CURRENT_ORDER_NOT_ENDED") [FAIL]
+[xUnit.net 00:00:10.24]     ControlServer.Tests.StoppedRebuildExitTests.ACargoNotInPlaceIsHandedToTheExceptionSessionAndEndsThere(session: "not-ready-on-own-order") [FAIL]
+  Failed ControlServer.Tests.VehicleFaultRecoveryTests.OnlyAFailedOrderLetsTheFaultBeCleared(orderState: 4, terminal: True, refusal: null) [312 ms]
+  Error Message:
+   Assert.Equal() Failure: Strings differ
+Expected: "VEHICLE_ORDER_FAILED"
+Actual:   null
+  Stack Trace:
+     at ControlServer.Tests.VehicleFaultRecoveryTests.FaultedOnTheWayToPickupAsync(String movementState) in C:\Users\szy\Desktop\8005-workspace-v2\worktrees\cs358-8005-agv-control-server\tests\ControlServer.Tests\VehicleFaultRecoveryTests.cs:line 1461
+   at ControlServer.Tests.VehicleFaultRecoveryTests.OnlyAFailedOrderLetsTheFaultBeCleared(Int32 orderState, Boolean terminal, String refusal) in C:\Users\szy\Desktop\8005-workspace-v2\worktrees\cs358-8005-agv-control-server\tests\ControlServer.Tests\VehicleFaultRecoveryTests.cs:line 252
+--- End of stack trace from previous location ---
+  Failed ControlServer.Tests.VehicleFaultRecoveryTests.OnlyAFailedOrderLetsTheFaultBeCleared(orderState: 8, terminal: True, refusal: "FAULT_RECOVERY_CURRENT_ORDER_NOT_ENDED") [266 ms]
+  Error Message:
+   Assert.Equal() Failure: Strings differ
+Expected: "VEHICLE_ORDER_FAILED"
+Actual:   null
+  Stack Trace:
+     at ControlServer.Tests.VehicleFaultRecoveryTests.FaultedOnTheWayToPickupAsync(String movementState) in C:\Users\szy\Desktop\8005-workspace-v2\worktrees\cs358-8005-agv-control-server\tests\ControlServer.Tests\VehicleFaultRecoveryTests.cs:line 1461
+   at ControlServer.Tests.VehicleFaultRecoveryTests.OnlyAFailedOrderLetsTheFaultBeCleared(Int32 orderState, Boolean terminal, String refusal) in C:\Users\szy\Desktop\8005-workspace-v2\worktrees\cs358-8005-agv-control-server\tests\ControlServer.Tests\VehicleFaultRecoveryTests.cs:line 252
+--- End of stack trace from previous location ---
+  Failed ControlServer.Tests.VehicleFaultRecoveryTests.OnlyAFailedOrderLetsTheFaultBeCleared(orderState: 10, terminal: False, refusal: "FAULT_RECOVERY_CURRENT_ORDER_NOT_ENDED") [403 ms]
+  Error Message:
+   Assert.Equal() Failure: Strings differ
+Expected: "VEHICLE_ORDER_FAILED"
+Actual:   null
+  Stack Trace:
+     at ControlServer.Tests.VehicleFaultRecoveryTests.FaultedOnTheWayToPickupAsync(String movementState) in C:\Users\szy\Desktop\8005-workspace-v2\worktrees\cs358-8005-agv-control-server\tests\ControlServer.Tests\VehicleFaultRecoveryTests.cs:line 1461
+   at ControlServer.Tests.VehicleFaultRecoveryTests.OnlyAFailedOrderLetsTheFaultBeCleared(Int32 orderState, Boolean terminal, String refusal) in C:\Users\szy\Desktop\8005-workspace-v2\worktrees\cs358-8005-agv-control-server\tests\ControlServer.Tests\VehicleFaultRecoveryTests.cs:line 252
+--- End of stack trace from previous location ---
+  Failed ControlServer.Tests.StoppedRebuildExitTests.ACargoNotInPlaceIsHandedToTheExceptionSessionAndEndsThere(session: "not-ready-on-own-order") [7 s]
+  Error Message:
+   Assert.Equal() Failure: Strings differ
+Expected: "VEHICLE_ORDER_FAILED"
+Actual:   null
+  Stack Trace:
+     at ControlServer.Tests.VehicleFaultRecoveryTests.FaultedOnTheWayToGateAsync() in C:\Users\szy\Desktop\8005-workspace-v2\worktrees\cs358-8005-agv-control-server\tests\ControlServer.Tests\VehicleFaultRecoveryTests.cs:line 1476
+   at ControlServer.Tests.StoppedRebuildExitTests.StoppedWithCargoNotInPlaceAsync() in C:\Users\szy\Desktop\8005-workspace-v2\worktrees\cs358-8005-agv-control-server\tests\ControlServer.Tests\StoppedRebuildExitTests.cs:line 1474
+   at ControlServer.Tests.StoppedRebuildExitTests.ACargoNotInPlaceIsHandedToTheExceptionSessionAndEndsThere(String session) in C:\Users\szy\Desktop\8005-workspace-v2\worktrees\cs358-8005-agv-control-server\tests\ControlServer.Tests\StoppedRebuildExitTests.cs:line 685
+--- End of stack trace from previous location ---
+[xUnit.net 00:00:10.57]     ControlServer.Tests.VehicleFaultRecoveryTests.OnlyAFailedOrderLetsTheFaultBeCleared(orderState: 6, terminal: True, refusal: "FAULT_RECOVERY_CURRENT_ORDER_CANCELLED_IN_RIOT") [FAIL]
+  Failed ControlServer.Tests.VehicleFaultRecoveryTests.OnlyAFailedOrderLetsTheFaultBeCleared(orderState: 6, terminal: True, refusal: "FAULT_RECOVERY_CURRENT_ORDER_CANCELLED_IN_RIOT") [437 ms]
+  Error Message:
+   Assert.Equal() Failure: Strings differ
+Expected: "VEHICLE_ORDER_FAILED"
+Actual:   null
+  Stack Trace:
+     at ControlServer.Tests.VehicleFaultRecoveryTests.FaultedOnTheWayToPickupAsync(String movementState) in C:\Users\szy\Desktop\8005-workspace-v2\worktrees\cs358-8005-agv-control-server\tests\ControlServer.Tests\VehicleFaultRecoveryTests.cs:line 1461
+   at ControlServer.Tests.VehicleFaultRecoveryTests.OnlyAFailedOrderLetsTheFaultBeCleared(Int32 orderState, Boolean terminal, String refusal) in C:\Users\szy\Desktop\8005-workspace-v2\worktrees\cs358-8005-agv-control-server\tests\ControlServer.Tests\VehicleFaultRecoveryTests.cs:line 252
+--- End of stack trace from previous location ---
+[xUnit.net 00:00:11.02]     ControlServer.Tests.VehicleFaultRecoveryTests.OnlyAFailedOrderLetsTheFaultBeCleared(orderState: 5, terminal: True, refusal: "FAULT_RECOVERY_CURRENT_ORDER_NOT_ENDED") [FAIL]
+[xUnit.net 00:00:11.23]     ControlServer.Tests.EmergencyReleaseVersusOwnOrderRebuildTests.WithTheRealOnboardsSessionNotReadyTheRebuildWaitsForTheSessionAsWellAsTheDelay [FAIL]
+[xUnit.net 00:00:11.36]     ControlServer.Tests.VehicleFaultRecoveryTests.EachCriterionRefusesOnItsOwn(missing: "operator") [FAIL]
+  Failed ControlServer.Tests.VehicleFaultRecoveryTests.OnlyAFailedOrderLetsTheFaultBeCleared(orderState: 5, terminal: True, refusal: "FAULT_RECOVERY_CURRENT_ORDER_NOT_ENDED") [443 ms]
+  Error Message:
+   Assert.Equal() Failure: Strings differ
+Expected: "VEHICLE_ORDER_FAILED"
+Actual:   null
+  Stack Trace:
+     at ControlServer.Tests.VehicleFaultRecoveryTests.FaultedOnTheWayToPickupAsync(String movementState) in C:\Users\szy\Desktop\8005-workspace-v2\worktrees\cs358-8005-agv-control-server\tests\ControlServer.Tests\VehicleFaultRecoveryTests.cs:line 1461
+   at ControlServer.Tests.VehicleFaultRecoveryTests.OnlyAFailedOrderLetsTheFaultBeCleared(Int32 orderState, Boolean terminal, String refusal) in C:\Users\szy\Desktop\8005-workspace-v2\worktrees\cs358-8005-agv-control-server\tests\ControlServer.Tests\VehicleFaultRecoveryTests.cs:line 252
+--- End of stack trace from previous location ---
+  Failed ControlServer.Tests.EmergencyReleaseVersusOwnOrderRebuildTests.WithTheRealOnboardsSessionNotReadyTheRebuildWaitsForTheSessionAsWellAsTheDelay [653 ms]
+  Error Message:
+   Assert.Equal() Failure: Values differ
+Expected: Confirmed
+Actual:   Pending
+  Stack Trace:
+     at ControlServer.Tests.EmergencyReleaseVersusOwnOrderRebuildTests.WithTheRealOnboardsSessionNotReadyTheRebuildWaitsForTheSessionAsWellAsTheDelay() in C:\Users\szy\Desktop\8005-workspace-v2\worktrees\cs358-8005-agv-control-server\tests\ControlServer.Tests\EmergencyReleaseVersusOwnOrderRebuildTests.cs:line 260
+   at ControlServer.Tests.EmergencyReleaseVersusOwnOrderRebuildTests.WithTheRealOnboardsSessionNotReadyTheRebuildWaitsForTheSessionAsWellAsTheDelay() in C:\Users\szy\Desktop\8005-workspace-v2\worktrees\cs358-8005-agv-control-server\tests\ControlServer.Tests\EmergencyReleaseVersusOwnOrderRebuildTests.cs:line 294
+--- End of stack trace from previous location ---
+  Failed ControlServer.Tests.VehicleFaultRecoveryTests.EachCriterionRefusesOnItsOwn(missing: "operator") [338 ms]
+  Error Message:
+   Assert.Equal() Failure: Strings differ
+Expected: "VEHICLE_ORDER_FAILED"
+Actual:   null
+  Stack Trace:
+     at ControlServer.Tests.VehicleFaultRecoveryTests.FaultedOnTheWayToPickupAsync(String movementState) in C:\Users\szy\Desktop\8005-workspace-v2\worktrees\cs358-8005-agv-control-server\tests\ControlServer.Tests\VehicleFaultRecoveryTests.cs:line 1461
+   at ControlServer.Tests.VehicleFaultRecoveryTests.EachCriterionRefusesOnItsOwn(String missing) in C:\Users\szy\Desktop\8005-workspace-v2\worktrees\cs358-8005-agv-control-server\tests\ControlServer.Tests\VehicleFaultRecoveryTests.cs:line 190
+--- End of stack trace from previous location ---
+[xUnit.net 00:00:11.53]     ControlServer.Tests.FailedOrderBehindSessionGateTests.AStopAlreadyTriggeredIsConfirmedAndRetriggeredWhileTheSessionIsNotReady [FAIL]
+[xUnit.net 00:00:11.81]     ControlServer.Tests.VehicleFaultRecoveryTests.EachCriterionRefusesOnItsOwn(missing: "emergency-unknown") [FAIL]
+  Failed ControlServer.Tests.FailedOrderBehindSessionGateTests.AStopAlreadyTriggeredIsConfirmedAndRetriggeredWhileTheSessionIsNotReady [387 ms]
+  Error Message:
+   Assert.Equal() Failure: Values differ
+Expected: Pending
+Actual:   null
+  Stack Trace:
+     at ControlServer.Tests.FailedOrderBehindSessionGateTests.AStopAlreadyTriggeredIsConfirmedAndRetriggeredWhileTheSessionIsNotReady() in C:\Users\szy\Desktop\8005-workspace-v2\worktrees\cs358-8005-agv-control-server\tests\ControlServer.Tests\FailedOrderBehindSessionGateTests.cs:line 118
+   at ControlServer.Tests.FailedOrderBehindSessionGateTests.AStopAlreadyTriggeredIsConfirmedAndRetriggeredWhileTheSessionIsNotReady() in C:\Users\szy\Desktop\8005-workspace-v2\worktrees\cs358-8005-agv-control-server\tests\ControlServer.Tests\FailedOrderBehindSessionGateTests.cs:line 141
+--- End of stack trace from previous location ---
+  Failed ControlServer.Tests.VehicleFaultRecoveryTests.EachCriterionRefusesOnItsOwn(missing: "emergency-unknown") [445 ms]
+  Error Message:
+   Assert.Equal() Failure: Strings differ
+Expected: "VEHICLE_ORDER_FAILED"
+Actual:   null
+  Stack Trace:
+     at ControlServer.Tests.VehicleFaultRecoveryTests.FaultedOnTheWayToPickupAsync(String movementState) in C:\Users\szy\Desktop\8005-workspace-v2\worktrees\cs358-8005-agv-control-server\tests\ControlServer.Tests\VehicleFaultRecoveryTests.cs:line 1461
+   at ControlServer.Tests.VehicleFaultRecoveryTests.EachCriterionRefusesOnItsOwn(String missing) in C:\Users\szy\Desktop\8005-workspace-v2\worktrees\cs358-8005-agv-control-server\tests\ControlServer.Tests\VehicleFaultRecoveryTests.cs:line 190
+--- End of stack trace from previous location ---
+[xUnit.net 00:00:12.31]     ControlServer.Tests.VehicleFaultRecoveryTests.EachCriterionRefusesOnItsOwn(missing: "latched") [FAIL]
+[xUnit.net 00:00:12.61]     ControlServer.Tests.VehicleFaultRecoveryTests.EachCriterionRefusesOnItsOwn(missing: "unfinished") [FAIL]
+[xUnit.net 00:00:12.81]     ControlServer.Tests.FailedOrderBehindSessionGateTests.WithTheSessionReadyTheSameFailedOrderReachesTheFaultModelInTheSameShape [FAIL]
+[xUnit.net 00:00:12.87]     ControlServer.Tests.VehicleFaultRecoveryTests.EachCriterionRefusesOnItsOwn(missing: "remedy") [FAIL]
+  Failed ControlServer.Tests.VehicleFaultRecoveryTests.EachCriterionRefusesOnItsOwn(missing: "latched") [485 ms]
+  Error Message:
+   Assert.Equal() Failure: Strings differ
+Expected: "VEHICLE_ORDER_FAILED"
+Actual:   null
+  Stack Trace:
+     at ControlServer.Tests.VehicleFaultRecoveryTests.FaultedOnTheWayToPickupAsync(String movementState) in C:\Users\szy\Desktop\8005-workspace-v2\worktrees\cs358-8005-agv-control-server\tests\ControlServer.Tests\VehicleFaultRecoveryTests.cs:line 1461
+   at ControlServer.Tests.VehicleFaultRecoveryTests.EachCriterionRefusesOnItsOwn(String missing) in C:\Users\szy\Desktop\8005-workspace-v2\worktrees\cs358-8005-agv-control-server\tests\ControlServer.Tests\VehicleFaultRecoveryTests.cs:line 190
+--- End of stack trace from previous location ---
+  Failed ControlServer.Tests.VehicleFaultRecoveryTests.EachCriterionRefusesOnItsOwn(missing: "unfinished") [295 ms]
+  Error Message:
+   Assert.Equal() Failure: Strings differ
+Expected: "VEHICLE_ORDER_FAILED"
+Actual:   null
+  Stack Trace:
+     at ControlServer.Tests.VehicleFaultRecoveryTests.FaultedOnTheWayToPickupAsync(String movementState) in C:\Users\szy\Desktop\8005-workspace-v2\worktrees\cs358-8005-agv-control-server\tests\ControlServer.Tests\VehicleFaultRecoveryTests.cs:line 1461
+   at ControlServer.Tests.VehicleFaultRecoveryTests.EachCriterionRefusesOnItsOwn(String missing) in C:\Users\szy\Desktop\8005-workspace-v2\worktrees\cs358-8005-agv-control-server\tests\ControlServer.Tests\VehicleFaultRecoveryTests.cs:line 190
+--- End of stack trace from previous location ---
+  Failed ControlServer.Tests.FailedOrderBehindSessionGateTests.WithTheSessionReadyTheSameFailedOrderReachesTheFaultModelInTheSameShape [302 ms]
+  Error Message:
+   Assert.Single() Failure: The collection was empty
+  Stack Trace:
+     at ControlServer.Tests.FailedOrderBehindSessionGateTests.AssertRecordedHeldAndStoppedAsync(RuntimeFixture fixture, String upperId) in C:\Users\szy\Desktop\8005-workspace-v2\worktrees\cs358-8005-agv-control-server\tests\ControlServer.Tests\FailedOrderBehindSessionGateTests.cs:line 321
+   at ControlServer.Tests.FailedOrderBehindSessionGateTests.AssertRecordedHeldAndStoppedAsync(RuntimeFixture fixture, String upperId) in C:\Users\szy\Desktop\8005-workspace-v2\worktrees\cs358-8005-agv-control-server\tests\ControlServer.Tests\FailedOrderBehindSessionGateTests.cs:line 333
+   at ControlServer.Tests.FailedOrderBehindSessionGateTests.WithTheSessionReadyTheSameFailedOrderReachesTheFaultModelInTheSameShape() in C:\Users\szy\Desktop\8005-workspace-v2\worktrees\cs358-8005-agv-control-server\tests\ControlServer.Tests\FailedOrderBehindSessionGateTests.cs:line 294
+   at ControlServer.Tests.FailedOrderBehindSessionGateTests.WithTheSessionReadyTheSameFailedOrderReachesTheFaultModelInTheSameShape() in C:\Users\szy\Desktop\8005-workspace-v2\worktrees\cs358-8005-agv-control-server\tests\ControlServer.Tests\FailedOrderBehindSessionGateTests.cs:line 294
+--- End of stack trace from previous location ---
+  Failed ControlServer.Tests.VehicleFaultRecoveryTests.EachCriterionRefusesOnItsOwn(missing: "remedy") [254 ms]
+  Error Message:
+   Assert.Equal() Failure: Strings differ
+Expected: "VEHICLE_ORDER_FAILED"
+Actual:   null
+  Stack Trace:
+     at ControlServer.Tests.VehicleFaultRecoveryTests.FaultedOnTheWayToPickupAsync(String movementState) in C:\Users\szy\Desktop\8005-workspace-v2\worktrees\cs358-8005-agv-control-server\tests\ControlServer.Tests\VehicleFaultRecoveryTests.cs:line 1461
+   at ControlServer.Tests.VehicleFaultRecoveryTests.EachCriterionRefusesOnItsOwn(String missing) in C:\Users\szy\Desktop\8005-workspace-v2\worktrees\cs358-8005-agv-control-server\tests\ControlServer.Tests\VehicleFaultRecoveryTests.cs:line 190
+--- End of stack trace from previous location ---
+[xUnit.net 00:00:12.91]     ControlServer.Tests.StoppedRebuildExitTests.ACargoNotInPlaceIsHandedToTheExceptionSessionAndEndsThere(session: "ready") [FAIL]
+[xUnit.net 00:00:13.23]     ControlServer.Tests.VehicleFaultRecoveryTests.EachCriterionRefusesOnItsOwn(missing: "orders-unknown") [FAIL]
+  Failed ControlServer.Tests.StoppedRebuildExitTests.ACargoNotInPlaceIsHandedToTheExceptionSessionAndEndsThere(session: "ready") [2 s]
+  Error Message:
+   Assert.Equal() Failure: Strings differ
+Expected: "VEHICLE_ORDER_FAILED"
+Actual:   null
+  Stack Trace:
+     at ControlServer.Tests.VehicleFaultRecoveryTests.FaultedOnTheWayToGateAsync() in C:\Users\szy\Desktop\8005-workspace-v2\worktrees\cs358-8005-agv-control-server\tests\ControlServer.Tests\VehicleFaultRecoveryTests.cs:line 1476
+   at ControlServer.Tests.StoppedRebuildExitTests.StoppedWithCargoNotInPlaceAsync() in C:\Users\szy\Desktop\8005-workspace-v2\worktrees\cs358-8005-agv-control-server\tests\ControlServer.Tests\StoppedRebuildExitTests.cs:line 1474
+   at ControlServer.Tests.StoppedRebuildExitTests.ACargoNotInPlaceIsHandedToTheExceptionSessionAndEndsThere(String session) in C:\Users\szy\Desktop\8005-workspace-v2\worktrees\cs358-8005-agv-control-server\tests\ControlServer.Tests\StoppedRebuildExitTests.cs:line 685
+--- End of stack trace from previous location ---
+  Failed ControlServer.Tests.VehicleFaultRecoveryTests.EachCriterionRefusesOnItsOwn(missing: "orders-unknown") [353 ms]
+  Error Message:
+   Assert.Equal() Failure: Strings differ
+Expected: "VEHICLE_ORDER_FAILED"
+Actual:   null
+  Stack Trace:
+     at ControlServer.Tests.VehicleFaultRecoveryTests.FaultedOnTheWayToPickupAsync(String movementState) in C:\Users\szy\Desktop\8005-workspace-v2\worktrees\cs358-8005-agv-control-server\tests\ControlServer.Tests\VehicleFaultRecoveryTests.cs:line 1461
+   at ControlServer.Tests.VehicleFaultRecoveryTests.EachCriterionRefusesOnItsOwn(String missing) in C:\Users\szy\Desktop\8005-workspace-v2\worktrees\cs358-8005-agv-control-server\tests\ControlServer.Tests\VehicleFaultRecoveryTests.cs:line 190
+--- End of stack trace from previous location ---
+[xUnit.net 00:00:13.97]     ControlServer.Tests.EmergencyReleaseVersusOwnOrderRebuildTests.OnTheWayToTheGateAnEmptiedVehicleIsReleasedButItsDeliveryIsNeverRebuilt [FAIL]
+[xUnit.net 00:00:14.14]     ControlServer.Tests.VehicleFaultRecoveryTests.AClearanceCutShortLeavesNothingBehindAndCanBeMadeAgain [FAIL]
+[xUnit.net 00:00:14.20]     ControlServer.Tests.InTransitOrderStallTests.AFailedOrderStillGoesToTheFaultModel [FAIL]
+[xUnit.net 00:00:14.34]     ControlServer.Tests.EmergencyReleaseVersusOwnOrderRebuildTests.OnTheWayToPickupTheReleaseAloneBuildsNothingAndOnlyTheClearanceRebuildsAfterTheDelay [FAIL]
+  Failed ControlServer.Tests.EmergencyReleaseVersusOwnOrderRebuildTests.OnTheWayToTheGateAnEmptiedVehicleIsReleasedButItsDeliveryIsNeverRebuilt [2 s]
+  Error Message:
+   System.InvalidOperationException : Sequence contains no elements.
+  Stack Trace:
+     at Microsoft.EntityFrameworkCore.Query.ShapedQueryCompilingExpressionVisitor.SingleAsync[TSource](IAsyncEnumerable`1 asyncEnumerable, CancellationToken cancellationToken)
+   at Microsoft.EntityFrameworkCore.Query.ShapedQueryCompilingExpressionVisitor.SingleAsync[TSource](IAsyncEnumerable`1 asyncEnumerable, CancellationToken cancellationToken)
+   at ControlServer.Tests.VehicleFaultRecoveryTests.FaultAsync(RuntimeFixture fixture) in C:\Users\szy\Desktop\8005-workspace-v2\worktrees\cs358-8005-agv-control-server\tests\ControlServer.Tests\VehicleFaultRecoveryTests.cs:line 1545
+   at ControlServer.Tests.VehicleFaultRecoveryTests.FaultAsync(RuntimeFixture fixture) in C:\Users\szy\Desktop\8005-workspace-v2\worktrees\cs358-8005-agv-control-server\tests\ControlServer.Tests\VehicleFaultRecoveryTests.cs:line 1545
+   at ControlServer.Tests.EmergencyReleaseVersusOwnOrderRebuildTests.FailWhileMovingThenLatchAsync(RuntimeFixture fixture, String upperId) in C:\Users\szy\Desktop\8005-workspace-v2\worktrees\cs358-8005-agv-control-server\tests\ControlServer.Tests\EmergencyReleaseVersusOwnOrderRebuildTests.cs:line 500
+   at ControlServer.Tests.EmergencyReleaseVersusOwnOrderRebuildTests.OnTheWayToTheGateAnEmptiedVehicleIsReleasedButItsDeliveryIsNeverRebuilt() in C:\Users\szy\Desktop\8005-workspace-v2\worktrees\cs358-8005-agv-control-server\tests\ControlServer.Tests\EmergencyReleaseVersusOwnOrderRebuildTests.cs:line 161
+   at ControlServer.Tests.EmergencyReleaseVersusOwnOrderRebuildTests.OnTheWayToTheGateAnEmptiedVehicleIsReleasedButItsDeliveryIsNeverRebuilt() in C:\Users\szy\Desktop\8005-workspace-v2\worktrees\cs358-8005-agv-control-server\tests\ControlServer.Tests\EmergencyReleaseVersusOwnOrderRebuildTests.cs:line 200
+--- End of stack trace from previous location ---
+  Failed ControlServer.Tests.VehicleFaultRecoveryTests.AClearanceCutShortLeavesNothingBehindAndCanBeMadeAgain [352 ms]
+  Error Message:
+   Assert.Equal() Failure: Strings differ
+Expected: "VEHICLE_ORDER_FAILED"
+Actual:   null
+  Stack Trace:
+     at ControlServer.Tests.VehicleFaultRecoveryTests.FaultedOnTheWayToPickupAsync(String movementState) in C:\Users\szy\Desktop\8005-workspace-v2\worktrees\cs358-8005-agv-control-server\tests\ControlServer.Tests\VehicleFaultRecoveryTests.cs:line 1461
+   at ControlServer.Tests.VehicleFaultRecoveryTests.AClearanceCutShortLeavesNothingBehindAndCanBeMadeAgain() in C:\Users\szy\Desktop\8005-workspace-v2\worktrees\cs358-8005-agv-control-server\tests\ControlServer.Tests\VehicleFaultRecoveryTests.cs:line 1146
+--- End of stack trace from previous location ---
+  Failed ControlServer.Tests.InTransitOrderStallTests.AFailedOrderStillGoesToTheFaultModel [366 ms]
+  Error Message:
+   Assert.Equal() Failure: Strings differ
+Expected: "VEHICLE_ORDER_FAILED"
+Actual:   null
+  Stack Trace:
+     at ControlServer.Tests.InTransitOrderStallTests.AFailedOrderStillGoesToTheFaultModel() in C:\Users\szy\Desktop\8005-workspace-v2\worktrees\cs358-8005-agv-control-server\tests\ControlServer.Tests\InTransitOrderStallTests.cs:line 216
+   at ControlServer.Tests.InTransitOrderStallTests.AFailedOrderStillGoesToTheFaultModel() in C:\Users\szy\Desktop\8005-workspace-v2\worktrees\cs358-8005-agv-control-server\tests\ControlServer.Tests\InTransitOrderStallTests.cs:line 217
+--- End of stack trace from previous location ---
+  Failed ControlServer.Tests.EmergencyReleaseVersusOwnOrderRebuildTests.OnTheWayToPickupTheReleaseAloneBuildsNothingAndOnlyTheClearanceRebuildsAfterTheDelay [364 ms]
+  Error Message:
+   System.InvalidOperationException : Sequence contains no elements.
+  Stack Trace:
+     at Microsoft.EntityFrameworkCore.Query.ShapedQueryCompilingExpressionVisitor.SingleAsync[TSource](IAsyncEnumerable`1 asyncEnumerable, CancellationToken cancellationToken)
+   at Microsoft.EntityFrameworkCore.Query.ShapedQueryCompilingExpressionVisitor.SingleAsync[TSource](IAsyncEnumerable`1 asyncEnumerable, CancellationToken cancellationToken)
+   at ControlServer.Tests.VehicleFaultRecoveryTests.FaultAsync(RuntimeFixture fixture) in C:\Users\szy\Desktop\8005-workspace-v2\worktrees\cs358-8005-agv-control-server\tests\ControlServer.Tests\VehicleFaultRecoveryTests.cs:line 1545
+   at ControlServer.Tests.VehicleFaultRecoveryTests.FaultAsync(RuntimeFixture fixture) in C:\Users\szy\Desktop\8005-workspace-v2\worktrees\cs358-8005-agv-control-server\tests\ControlServer.Tests\VehicleFaultRecoveryTests.cs:line 1545
+   at ControlServer.Tests.EmergencyReleaseVersusOwnOrderRebuildTests.FailWhileMovingThenLatchAsync(RuntimeFixture fixture, String upperId) in C:\Users\szy\Desktop\8005-workspace-v2\worktrees\cs358-8005-agv-control-server\tests\ControlServer.Tests\EmergencyReleaseVersusOwnOrderRebuildTests.cs:line 500
+   at ControlServer.Tests.EmergencyReleaseVersusOwnOrderRebuildTests.OnTheWayToPickupTheReleaseAloneBuildsNothingAndOnlyTheClearanceRebuildsAfterTheDelay() in C:\Users\szy\Desktop\8005-workspace-v2\worktrees\cs358-8005-agv-control-server\tests\ControlServer.Tests\EmergencyReleaseVersusOwnOrderRebuildTests.cs:line 76
+   at ControlServer.Tests.EmergencyReleaseVersusOwnOrderRebuildTests.OnTheWayToPickupTheReleaseAloneBuildsNothingAndOnlyTheClearanceRebuildsAfterTheDelay() in C:\Users\szy\Desktop\8005-workspace-v2\worktrees\cs358-8005-agv-control-server\tests\ControlServer.Tests\EmergencyReleaseVersusOwnOrderRebuildTests.cs:line 136
+--- End of stack trace from previous location ---
+[xUnit.net 00:00:16.65]     ControlServer.Tests.VehicleFaultRecoveryTests.AClearanceWhileTheSessionIsNotReadyOnItsOwnOrderRebuildsOnceTheSessionIsReady(cargo: "loaded") [FAIL]
+  Failed ControlServer.Tests.VehicleFaultRecoveryTests.AClearanceWhileTheSessionIsNotReadyOnItsOwnOrderRebuildsOnceTheSessionIsReady(cargo: "loaded") [2 s]
+  Error Message:
+   Assert.Equal() Failure: Strings differ
+Expected: "VEHICLE_ORDER_FAILED"
+Actual:   null
+  Stack Trace:
+     at ControlServer.Tests.VehicleFaultRecoveryTests.FaultedOnTheWayToGateAsync() in C:\Users\szy\Desktop\8005-workspace-v2\worktrees\cs358-8005-agv-control-server\tests\ControlServer.Tests\VehicleFaultRecoveryTests.cs:line 1476
+   at ControlServer.Tests.VehicleFaultRecoveryTests.AClearanceWhileTheSessionIsNotReadyOnItsOwnOrderRebuildsOnceTheSessionIsReady(String cargo) in C:\Users\szy\Desktop\8005-workspace-v2\worktrees\cs358-8005-agv-control-server\tests\ControlServer.Tests\VehicleFaultRecoveryTests.cs:line 1324
+--- End of stack trace from previous location ---
+[xUnit.net 00:00:16.95]     ControlServer.Tests.VehicleFaultRecoveryTests.AClearanceWhileTheSessionIsNotReadyOnItsOwnOrderRebuildsOnceTheSessionIsReady(cargo: "empty") [FAIL]
+[xUnit.net 00:00:17.64]     ControlServer.Tests.StoppedRebuildExitTests.AForcedMechanicalRecoveryOfAHandedOverTripSettlesItsBinding [FAIL]
+  Failed ControlServer.Tests.VehicleFaultRecoveryTests.AClearanceWhileTheSessionIsNotReadyOnItsOwnOrderRebuildsOnceTheSessionIsReady(cargo: "empty") [283 ms]
+  Error Message:
+   Assert.Equal() Failure: Strings differ
+Expected: "VEHICLE_ORDER_FAILED"
+Actual:   null
+  Stack Trace:
+     at ControlServer.Tests.VehicleFaultRecoveryTests.FaultedOnTheWayToPickupAsync(String movementState) in C:\Users\szy\Desktop\8005-workspace-v2\worktrees\cs358-8005-agv-control-server\tests\ControlServer.Tests\VehicleFaultRecoveryTests.cs:line 1461
+   at ControlServer.Tests.VehicleFaultRecoveryTests.AClearanceWhileTheSessionIsNotReadyOnItsOwnOrderRebuildsOnceTheSessionIsReady(String cargo) in C:\Users\szy\Desktop\8005-workspace-v2\worktrees\cs358-8005-agv-control-server\tests\ControlServer.Tests\VehicleFaultRecoveryTests.cs:line 1324
+--- End of stack trace from previous location ---
+  Failed ControlServer.Tests.StoppedRebuildExitTests.AForcedMechanicalRecoveryOfAHandedOverTripSettlesItsBinding [2 s]
+  Error Message:
+   Assert.Equal() Failure: Strings differ
+Expected: "VEHICLE_ORDER_FAILED"
+Actual:   null
+  Stack Trace:
+     at ControlServer.Tests.VehicleFaultRecoveryTests.FaultedOnTheWayToGateAsync() in C:\Users\szy\Desktop\8005-workspace-v2\worktrees\cs358-8005-agv-control-server\tests\ControlServer.Tests\VehicleFaultRecoveryTests.cs:line 1476
+   at ControlServer.Tests.StoppedRebuildExitTests.StoppedWithCargoNotInPlaceAsync() in C:\Users\szy\Desktop\8005-workspace-v2\worktrees\cs358-8005-agv-control-server\tests\ControlServer.Tests\StoppedRebuildExitTests.cs:line 1474
+   at ControlServer.Tests.StoppedRebuildExitTests.AForcedMechanicalRecoveryOfAHandedOverTripSettlesItsBinding() in C:\Users\szy\Desktop\8005-workspace-v2\worktrees\cs358-8005-agv-control-server\tests\ControlServer.Tests\StoppedRebuildExitTests.cs:line 806
+--- End of stack trace from previous location ---
+[xUnit.net 00:00:19.33]     ControlServer.Tests.VehicleFaultRecoveryTests.Req0362ASnapshotFromBeforeTheClearanceDoesNotProveTheCargo [FAIL]
+[xUnit.net 00:00:20.09]     ControlServer.Tests.StoppedRebuildExitTests.OnlyThisVehiclesBlockedJourneyAwaitingAHandoffHoldsItsSession [FAIL]
+  Failed ControlServer.Tests.VehicleFaultRecoveryTests.Req0362ASnapshotFromBeforeTheClearanceDoesNotProveTheCargo [2 s]
+  Error Message:
+   Assert.Equal() Failure: Strings differ
+Expected: "VEHICLE_ORDER_FAILED"
+Actual:   null
+  Stack Trace:
+     at ControlServer.Tests.VehicleFaultRecoveryTests.FaultedOnTheWayToGateAsync() in C:\Users\szy\Desktop\8005-workspace-v2\worktrees\cs358-8005-agv-control-server\tests\ControlServer.Tests\VehicleFaultRecoveryTests.cs:line 1476
+   at ControlServer.Tests.VehicleFaultRecoveryTests.Req0362ASnapshotFromBeforeTheClearanceDoesNotProveTheCargo() in C:\Users\szy\Desktop\8005-workspace-v2\worktrees\cs358-8005-agv-control-server\tests\ControlServer.Tests\VehicleFaultRecoveryTests.cs:line 407
+--- End of stack trace from previous location ---
+  Failed ControlServer.Tests.StoppedRebuildExitTests.OnlyThisVehiclesBlockedJourneyAwaitingAHandoffHoldsItsSession [2 s]
+  Error Message:
+   Assert.Equal() Failure: Strings differ
+Expected: "VEHICLE_ORDER_FAILED"
+Actual:   null
+  Stack Trace:
+     at ControlServer.Tests.VehicleFaultRecoveryTests.FaultedOnTheWayToGateAsync() in C:\Users\szy\Desktop\8005-workspace-v2\worktrees\cs358-8005-agv-control-server\tests\ControlServer.Tests\VehicleFaultRecoveryTests.cs:line 1476
+   at ControlServer.Tests.StoppedRebuildExitTests.StoppedWithCargoNotInPlaceAsync() in C:\Users\szy\Desktop\8005-workspace-v2\worktrees\cs358-8005-agv-control-server\tests\ControlServer.Tests\StoppedRebuildExitTests.cs:line 1474
+   at ControlServer.Tests.StoppedRebuildExitTests.OnlyThisVehiclesBlockedJourneyAwaitingAHandoffHoldsItsSession() in C:\Users\szy\Desktop\8005-workspace-v2\worktrees\cs358-8005-agv-control-server\tests\ControlServer.Tests\StoppedRebuildExitTests.cs:line 899
+--- End of stack trace from previous location ---
+[xUnit.net 00:00:21.69]     ControlServer.Tests.VehicleFaultRecoveryTests.Req0362AFreshSnapshotThatDoesNotShowTheCargoInPlaceStopsTheRebuild(shows: "empty") [FAIL]
+[xUnit.net 00:00:22.52]     ControlServer.Tests.StoppedRebuildExitTests.AHandedOverTripIsNotRebuiltByAPerson [FAIL]
+  Failed ControlServer.Tests.VehicleFaultRecoveryTests.Req0362AFreshSnapshotThatDoesNotShowTheCargoInPlaceStopsTheRebuild(shows: "empty") [2 s]
+  Error Message:
+   Assert.Equal() Failure: Strings differ
+Expected: "VEHICLE_ORDER_FAILED"
+Actual:   null
+  Stack Trace:
+     at ControlServer.Tests.VehicleFaultRecoveryTests.FaultedOnTheWayToGateAsync() in C:\Users\szy\Desktop\8005-workspace-v2\worktrees\cs358-8005-agv-control-server\tests\ControlServer.Tests\VehicleFaultRecoveryTests.cs:line 1476
+   at ControlServer.Tests.VehicleFaultRecoveryTests.Req0362AFreshSnapshotThatDoesNotShowTheCargoInPlaceStopsTheRebuild(String shows) in C:\Users\szy\Desktop\8005-workspace-v2\worktrees\cs358-8005-agv-control-server\tests\ControlServer.Tests\VehicleFaultRecoveryTests.cs:line 439
+--- End of stack trace from previous location ---
+  Failed ControlServer.Tests.StoppedRebuildExitTests.AHandedOverTripIsNotRebuiltByAPerson [2 s]
+  Error Message:
+   Assert.Equal() Failure: Strings differ
+Expected: "VEHICLE_ORDER_FAILED"
+Actual:   null
+  Stack Trace:
+     at ControlServer.Tests.VehicleFaultRecoveryTests.FaultedOnTheWayToGateAsync() in C:\Users\szy\Desktop\8005-workspace-v2\worktrees\cs358-8005-agv-control-server\tests\ControlServer.Tests\VehicleFaultRecoveryTests.cs:line 1476
+   at ControlServer.Tests.StoppedRebuildExitTests.StoppedWithCargoNotInPlaceAsync() in C:\Users\szy\Desktop\8005-workspace-v2\worktrees\cs358-8005-agv-control-server\tests\ControlServer.Tests\StoppedRebuildExitTests.cs:line 1474
+   at ControlServer.Tests.StoppedRebuildExitTests.AHandedOverTripIsNotRebuiltByAPerson() in C:\Users\szy\Desktop\8005-workspace-v2\worktrees\cs358-8005-agv-control-server\tests\ControlServer.Tests\StoppedRebuildExitTests.cs:line 626
+--- End of stack trace from previous location ---
+[xUnit.net 00:00:23.02]     ControlServer.Tests.OnboardSessionLostBlockTests.ASilentSessionDoesNotOverwriteAFailedOrderAsTheReason [FAIL]
+  Failed ControlServer.Tests.OnboardSessionLostBlockTests.ASilentSessionDoesNotOverwriteAFailedOrderAsTheReason [2 s]
+  Error Message:
+   Assert.Equal() Failure: Strings differ
+Expected: "VEHICLE_ORDER_FAILED"
+Actual:   null
+  Stack Trace:
+     at ControlServer.Tests.OnboardSessionLostBlockTests.ASilentSessionDoesNotOverwriteAFailedOrderAsTheReason() in C:\Users\szy\Desktop\8005-workspace-v2\worktrees\cs358-8005-agv-control-server\tests\ControlServer.Tests\OnboardSessionLostBlockTests.cs:line 125
+   at ControlServer.Tests.OnboardSessionLostBlockTests.ASilentSessionDoesNotOverwriteAFailedOrderAsTheReason() in C:\Users\szy\Desktop\8005-workspace-v2\worktrees\cs358-8005-agv-control-server\tests\ControlServer.Tests\OnboardSessionLostBlockTests.cs:line 135
+--- End of stack trace from previous location ---
+[xUnit.net 00:00:24.08]     ControlServer.Tests.VehicleFaultRecoveryTests.Req0362AFreshSnapshotThatDoesNotShowTheCargoInPlaceStopsTheRebuild(shows: "one-of-two-empty") [FAIL]
+[xUnit.net 00:00:24.73]     ControlServer.Tests.VehicleFaultRecoveryTests.AnAlreadyClearedVehicleStillNeedsANamedConfirmedRequest(missing: "remedy") [FAIL]
+[xUnit.net 00:00:24.97]     ControlServer.Tests.VehicleFaultRecoveryTests.AnAlreadyClearedVehicleStillNeedsANamedConfirmedRequest(missing: "operator") [FAIL]
+[xUnit.net 00:00:25.19]     ControlServer.Tests.VehicleFaultRecoveryTests.AResumeIsRefusedForEveryUnmetCriterionIncludingALatch [FAIL]
+  Failed ControlServer.Tests.VehicleFaultRecoveryTests.Req0362AFreshSnapshotThatDoesNotShowTheCargoInPlaceStopsTheRebuild(shows: "one-of-two-empty") [2 s]
+  Error Message:
+   Assert.Equal() Failure: Strings differ
+Expected: "VEHICLE_ORDER_FAILED"
+Actual:   null
+  Stack Trace:
+     at ControlServer.Tests.VehicleFaultRecoveryTests.FaultedOnTheWayToGateAsync() in C:\Users\szy\Desktop\8005-workspace-v2\worktrees\cs358-8005-agv-control-server\tests\ControlServer.Tests\VehicleFaultRecoveryTests.cs:line 1476
+   at ControlServer.Tests.VehicleFaultRecoveryTests.Req0362AFreshSnapshotThatDoesNotShowTheCargoInPlaceStopsTheRebuild(String shows) in C:\Users\szy\Desktop\8005-workspace-v2\worktrees\cs358-8005-agv-control-server\tests\ControlServer.Tests\VehicleFaultRecoveryTests.cs:line 439
+--- End of stack trace from previous location ---
+  Failed ControlServer.Tests.VehicleFaultRecoveryTests.AnAlreadyClearedVehicleStillNeedsANamedConfirmedRequest(missing: "remedy") [269 ms]
+  Error Message:
+   Assert.Equal() Failure: Strings differ
+Expected: "VEHICLE_ORDER_FAILED"
+Actual:   null
+  Stack Trace:
+     at ControlServer.Tests.VehicleFaultRecoveryTests.FaultedOnTheWayToPickupAsync(String movementState) in C:\Users\szy\Desktop\8005-workspace-v2\worktrees\cs358-8005-agv-control-server\tests\ControlServer.Tests\VehicleFaultRecoveryTests.cs:line 1461
+   at ControlServer.Tests.VehicleFaultRecoveryTests.AnAlreadyClearedVehicleStillNeedsANamedConfirmedRequest(String missing) in C:\Users\szy\Desktop\8005-workspace-v2\worktrees\cs358-8005-agv-control-server\tests\ControlServer.Tests\VehicleFaultRecoveryTests.cs:line 990
+--- End of stack trace from previous location ---
+  Failed ControlServer.Tests.VehicleFaultRecoveryTests.AnAlreadyClearedVehicleStillNeedsANamedConfirmedRequest(missing: "operator") [241 ms]
+  Error Message:
+   Assert.Equal() Failure: Strings differ
+Expected: "VEHICLE_ORDER_FAILED"
+Actual:   null
+  Stack Trace:
+     at ControlServer.Tests.VehicleFaultRecoveryTests.FaultedOnTheWayToPickupAsync(String movementState) in C:\Users\szy\Desktop\8005-workspace-v2\worktrees\cs358-8005-agv-control-server\tests\ControlServer.Tests\VehicleFaultRecoveryTests.cs:line 1461
+   at ControlServer.Tests.VehicleFaultRecoveryTests.AnAlreadyClearedVehicleStillNeedsANamedConfirmedRequest(String missing) in C:\Users\szy\Desktop\8005-workspace-v2\worktrees\cs358-8005-agv-control-server\tests\ControlServer.Tests\VehicleFaultRecoveryTests.cs:line 990
+--- End of stack trace from previous location ---
+  Failed ControlServer.Tests.VehicleFaultRecoveryTests.AResumeIsRefusedForEveryUnmetCriterionIncludingALatch [209 ms]
+  Error Message:
+   Assert.Equal() Failure: Strings differ
+Expected: "VEHICLE_ORDER_FAILED"
+Actual:   null
+  Stack Trace:
+     at ControlServer.Tests.VehicleFaultRecoveryTests.FaultedOnTheWayToPickupAsync(String movementState) in C:\Users\szy\Desktop\8005-workspace-v2\worktrees\cs358-8005-agv-control-server\tests\ControlServer.Tests\VehicleFaultRecoveryTests.cs:line 1461
+   at ControlServer.Tests.VehicleFaultRecoveryTests.AResumeIsRefusedForEveryUnmetCriterionIncludingALatch() in C:\Users\szy\Desktop\8005-workspace-v2\worktrees\cs358-8005-agv-control-server\tests\ControlServer.Tests\VehicleFaultRecoveryTests.cs:line 1417
+--- End of stack trace from previous location ---
+[xUnit.net 00:00:25.39]     ControlServer.Tests.VehicleFaultRecoveryTests.TwoResumesAtOnceContinueOnce [FAIL]
+  Failed ControlServer.Tests.VehicleFaultRecoveryTests.TwoResumesAtOnceContinueOnce [206 ms]
+  Error Message:
+   Assert.Equal() Failure: Strings differ
+Expected: "VEHICLE_ORDER_FAILED"
+Actual:   null
+  Stack Trace:
+     at ControlServer.Tests.VehicleFaultRecoveryTests.FaultedOnTheWayToPickupAsync(String movementState) in C:\Users\szy\Desktop\8005-workspace-v2\worktrees\cs358-8005-agv-control-server\tests\ControlServer.Tests\VehicleFaultRecoveryTests.cs:line 1461
+   at ControlServer.Tests.VehicleFaultRecoveryTests.TwoResumesAtOnceContinueOnce() in C:\Users\szy\Desktop\8005-workspace-v2\worktrees\cs358-8005-agv-control-server\tests\ControlServer.Tests\VehicleFaultRecoveryTests.cs:line 1039
+--- End of stack trace from previous location ---
+[xUnit.net 00:00:27.83]     ControlServer.Tests.VehicleFaultRecoveryTests.Req0362ASnapshotThatCannotSettleWhereTheCargoIsKeepsTheRebuildWaiting(shows: "slot-not-reported") [FAIL]
+  Failed ControlServer.Tests.VehicleFaultRecoveryTests.Req0362ASnapshotThatCannotSettleWhereTheCargoIsKeepsTheRebuildWaiting(shows: "slot-not-reported") [2 s]
+  Error Message:
+   Assert.Equal() Failure: Strings differ
+Expected: "VEHICLE_ORDER_FAILED"
+Actual:   null
+  Stack Trace:
+     at ControlServer.Tests.VehicleFaultRecoveryTests.FaultedOnTheWayToGateAsync() in C:\Users\szy\Desktop\8005-workspace-v2\worktrees\cs358-8005-agv-control-server\tests\ControlServer.Tests\VehicleFaultRecoveryTests.cs:line 1476
+   at ControlServer.Tests.VehicleFaultRecoveryTests.Req0362ASnapshotThatCannotSettleWhereTheCargoIsKeepsTheRebuildWaiting(String shows) in C:\Users\szy\Desktop\8005-workspace-v2\worktrees\cs358-8005-agv-control-server\tests\ControlServer.Tests\VehicleFaultRecoveryTests.cs:line 502
+--- End of stack trace from previous location ---
+[xUnit.net 00:00:29.55]     ControlServer.Tests.StoppedRebuildExitTests.AnUnnamedOrUnconfirmedRequestIsRefusedForBoth(action: PrepareCargoHandoff) [FAIL]
+[xUnit.net 00:00:30.14]     ControlServer.Tests.VehicleFaultRecoveryTests.Req0362ASnapshotThatCannotSettleWhereTheCargoIsKeepsTheRebuildWaiting(shows: "no-committed-load") [FAIL]
+  Failed ControlServer.Tests.StoppedRebuildExitTests.AnUnnamedOrUnconfirmedRequestIsRefusedForBoth(action: PrepareCargoHandoff) [2 s]
+  Error Message:
+   Assert.Equal() Failure: Strings differ
+Expected: "VEHICLE_ORDER_FAILED"
+Actual:   null
+  Stack Trace:
+     at ControlServer.Tests.VehicleFaultRecoveryTests.FaultedOnTheWayToGateAsync() in C:\Users\szy\Desktop\8005-workspace-v2\worktrees\cs358-8005-agv-control-server\tests\ControlServer.Tests\VehicleFaultRecoveryTests.cs:line 1476
+   at ControlServer.Tests.StoppedRebuildExitTests.StoppedWithCargoNotInPlaceAsync() in C:\Users\szy\Desktop\8005-workspace-v2\worktrees\cs358-8005-agv-control-server\tests\ControlServer.Tests\StoppedRebuildExitTests.cs:line 1474
+   at ControlServer.Tests.StoppedRebuildExitTests.AnUnnamedOrUnconfirmedRequestIsRefusedForBoth(VehicleFaultRecoveryAction action) in C:\Users\szy\Desktop\8005-workspace-v2\worktrees\cs358-8005-agv-control-server\tests\ControlServer.Tests\StoppedRebuildExitTests.cs:line 153
+--- End of stack trace from previous location ---
+  Failed ControlServer.Tests.VehicleFaultRecoveryTests.Req0362ASnapshotThatCannotSettleWhereTheCargoIsKeepsTheRebuildWaiting(shows: "no-committed-load") [2 s]
+  Error Message:
+   Assert.Equal() Failure: Strings differ
+Expected: "VEHICLE_ORDER_FAILED"
+Actual:   null
+  Stack Trace:
+     at ControlServer.Tests.VehicleFaultRecoveryTests.FaultedOnTheWayToGateAsync() in C:\Users\szy\Desktop\8005-workspace-v2\worktrees\cs358-8005-agv-control-server\tests\ControlServer.Tests\VehicleFaultRecoveryTests.cs:line 1476
+   at ControlServer.Tests.VehicleFaultRecoveryTests.Req0362ASnapshotThatCannotSettleWhereTheCargoIsKeepsTheRebuildWaiting(String shows) in C:\Users\szy\Desktop\8005-workspace-v2\worktrees\cs358-8005-agv-control-server\tests\ControlServer.Tests\VehicleFaultRecoveryTests.cs:line 502
+--- End of stack trace from previous location ---
+[xUnit.net 00:00:32.34]     ControlServer.Tests.VehicleFaultRecoveryTests.Req0362ASnapshotThatCannotSettleWhereTheCargoIsKeepsTheRebuildWaiting(shows: "physical-unknown") [FAIL]
+[xUnit.net 00:00:32.79]     ControlServer.Tests.StoppedRebuildExitTests.ARequestForAJourneyNotStoppedByTheThirdGuardIsRefusedAndChangesNothing(state: "cargo-not-in-place", refusal: "OWN_ORDER_REBUILD_EXIT_CARGO_NOT_IN_PLACE") [FAIL]
+  Failed ControlServer.Tests.VehicleFaultRecoveryTests.Req0362ASnapshotThatCannotSettleWhereTheCargoIsKeepsTheRebuildWaiting(shows: "physical-unknown") [2 s]
+  Error Message:
+   Assert.Equal() Failure: Strings differ
+Expected: "VEHICLE_ORDER_FAILED"
+Actual:   null
+  Stack Trace:
+     at ControlServer.Tests.VehicleFaultRecoveryTests.FaultedOnTheWayToGateAsync() in C:\Users\szy\Desktop\8005-workspace-v2\worktrees\cs358-8005-agv-control-server\tests\ControlServer.Tests\VehicleFaultRecoveryTests.cs:line 1476
+   at ControlServer.Tests.VehicleFaultRecoveryTests.Req0362ASnapshotThatCannotSettleWhereTheCargoIsKeepsTheRebuildWaiting(String shows) in C:\Users\szy\Desktop\8005-workspace-v2\worktrees\cs358-8005-agv-control-server\tests\ControlServer.Tests\VehicleFaultRecoveryTests.cs:line 502
+--- End of stack trace from previous location ---
+  Failed ControlServer.Tests.StoppedRebuildExitTests.ARequestForAJourneyNotStoppedByTheThirdGuardIsRefusedAndChangesNothing(state: "cargo-not-in-place", refusal: "OWN_ORDER_REBUILD_EXIT_CARGO_NOT_IN_PLACE") [2 s]
+  Error Message:
+   Assert.Equal() Failure: Strings differ
+Expected: "VEHICLE_ORDER_FAILED"
+Actual:   null
+  Stack Trace:
+     at ControlServer.Tests.VehicleFaultRecoveryTests.FaultedOnTheWayToGateAsync() in C:\Users\szy\Desktop\8005-workspace-v2\worktrees\cs358-8005-agv-control-server\tests\ControlServer.Tests\VehicleFaultRecoveryTests.cs:line 1476
+   at ControlServer.Tests.StoppedRebuildExitTests.StoppedWithCargoNotInPlaceAsync() in C:\Users\szy\Desktop\8005-workspace-v2\worktrees\cs358-8005-agv-control-server\tests\ControlServer.Tests\StoppedRebuildExitTests.cs:line 1474
+   at ControlServer.Tests.StoppedRebuildExitTests.ARequestForAJourneyNotStoppedByTheThirdGuardIsRefusedAndChangesNothing(String state, String refusal) in C:\Users\szy\Desktop\8005-workspace-v2\worktrees\cs358-8005-agv-control-server\tests\ControlServer.Tests\StoppedRebuildExitTests.cs:line 129
+--- End of stack trace from previous location ---
+[xUnit.net 00:00:34.35]     ControlServer.Tests.VehicleFaultRecoveryTests.Req0362ASnapshotThatCannotSettleWhereTheCargoIsKeepsTheRebuildWaiting(shows: "unlocked") [FAIL]
+  Failed ControlServer.Tests.VehicleFaultRecoveryTests.Req0362ASnapshotThatCannotSettleWhereTheCargoIsKeepsTheRebuildWaiting(shows: "unlocked") [2 s]
+  Error Message:
+   Assert.Equal() Failure: Strings differ
+Expected: "VEHICLE_ORDER_FAILED"
+Actual:   null
+  Stack Trace:
+     at ControlServer.Tests.VehicleFaultRecoveryTests.FaultedOnTheWayToGateAsync() in C:\Users\szy\Desktop\8005-workspace-v2\worktrees\cs358-8005-agv-control-server\tests\ControlServer.Tests\VehicleFaultRecoveryTests.cs:line 1476
+   at ControlServer.Tests.VehicleFaultRecoveryTests.Req0362ASnapshotThatCannotSettleWhereTheCargoIsKeepsTheRebuildWaiting(String shows) in C:\Users\szy\Desktop\8005-workspace-v2\worktrees\cs358-8005-agv-control-server\tests\ControlServer.Tests\VehicleFaultRecoveryTests.cs:line 502
+--- End of stack trace from previous location ---
+[xUnit.net 00:00:34.97]     ControlServer.Tests.StoppedRebuildExitTests.APersonsRebuildWithCargoOnBoardStillNeedsAFreshSnapshotOfTheCargo [FAIL]
+[xUnit.net 00:00:36.34]     ControlServer.Tests.VehicleFaultRecoveryTests.Req0362ASnapshotThatCannotSettleWhereTheCargoIsKeepsTheRebuildWaiting(shows: "output-not-reset") [FAIL]
+  Failed ControlServer.Tests.StoppedRebuildExitTests.APersonsRebuildWithCargoOnBoardStillNeedsAFreshSnapshotOfTheCargo [2 s]
+  Error Message:
+   Assert.Equal() Failure: Strings differ
+Expected: "VEHICLE_ORDER_FAILED"
+Actual:   null
+  Stack Trace:
+     at ControlServer.Tests.VehicleFaultRecoveryTests.FaultedOnTheWayToGateAsync() in C:\Users\szy\Desktop\8005-workspace-v2\worktrees\cs358-8005-agv-control-server\tests\ControlServer.Tests\VehicleFaultRecoveryTests.cs:line 1476
+   at ControlServer.Tests.StoppedRebuildExitTests.APersonsRebuildWithCargoOnBoardStillNeedsAFreshSnapshotOfTheCargo() in C:\Users\szy\Desktop\8005-workspace-v2\worktrees\cs358-8005-agv-control-server\tests\ControlServer.Tests\StoppedRebuildExitTests.cs:line 308
+--- End of stack trace from previous location ---
+  Failed ControlServer.Tests.VehicleFaultRecoveryTests.Req0362ASnapshotThatCannotSettleWhereTheCargoIsKeepsTheRebuildWaiting(shows: "output-not-reset") [1 s]
+  Error Message:
+   Assert.Equal() Failure: Strings differ
+Expected: "VEHICLE_ORDER_FAILED"
+Actual:   null
+  Stack Trace:
+     at ControlServer.Tests.VehicleFaultRecoveryTests.FaultedOnTheWayToGateAsync() in C:\Users\szy\Desktop\8005-workspace-v2\worktrees\cs358-8005-agv-control-server\tests\ControlServer.Tests\VehicleFaultRecoveryTests.cs:line 1476
+   at ControlServer.Tests.VehicleFaultRecoveryTests.Req0362ASnapshotThatCannotSettleWhereTheCargoIsKeepsTheRebuildWaiting(String shows) in C:\Users\szy\Desktop\8005-workspace-v2\worktrees\cs358-8005-agv-control-server\tests\ControlServer.Tests\VehicleFaultRecoveryTests.cs:line 502
+--- End of stack trace from previous location ---
+[xUnit.net 00:00:36.99]     ControlServer.Tests.StoppedRebuildExitTests.APartialHandoffLetsThePersonGiveTheRestUp [FAIL]
+  Failed ControlServer.Tests.StoppedRebuildExitTests.APartialHandoffLetsThePersonGiveTheRestUp [2 s]
+  Error Message:
+   Assert.Equal() Failure: Strings differ
+Expected: "VEHICLE_ORDER_FAILED"
+Actual:   null
+  Stack Trace:
+     at ControlServer.Tests.VehicleFaultRecoveryTests.FaultedOnTheWayToGateAsync() in C:\Users\szy\Desktop\8005-workspace-v2\worktrees\cs358-8005-agv-control-server\tests\ControlServer.Tests\VehicleFaultRecoveryTests.cs:line 1476
+   at ControlServer.Tests.StoppedRebuildExitTests.StoppedWithCargoNotInPlaceAsync() in C:\Users\szy\Desktop\8005-workspace-v2\worktrees\cs358-8005-agv-control-server\tests\ControlServer.Tests\StoppedRebuildExitTests.cs:line 1474
+   at ControlServer.Tests.StoppedRebuildExitTests.APartialHandoffLetsThePersonGiveTheRestUp() in C:\Users\szy\Desktop\8005-workspace-v2\worktrees\cs358-8005-agv-control-server\tests\ControlServer.Tests\StoppedRebuildExitTests.cs:line 1042
+--- End of stack trace from previous location ---
+[xUnit.net 00:00:38.40]     ControlServer.Tests.VehicleFaultRecoveryTests.Req0362ASnapshotThatCannotSettleWhereTheCargoIsKeepsTheRebuildWaiting(shows: "load-not-settled") [FAIL]
+[xUnit.net 00:00:39.01]     ControlServer.Tests.StoppedRebuildExitTests.AHandoffRecordWhoseJourneyIsNoLongerBlockedAsksTheVehicleForNothing [FAIL]
+  Failed ControlServer.Tests.VehicleFaultRecoveryTests.Req0362ASnapshotThatCannotSettleWhereTheCargoIsKeepsTheRebuildWaiting(shows: "load-not-settled") [2 s]
+  Error Message:
+   Assert.Equal() Failure: Strings differ
+Expected: "VEHICLE_ORDER_FAILED"
+Actual:   null
+  Stack Trace:
+     at ControlServer.Tests.VehicleFaultRecoveryTests.FaultedOnTheWayToGateAsync() in C:\Users\szy\Desktop\8005-workspace-v2\worktrees\cs358-8005-agv-control-server\tests\ControlServer.Tests\VehicleFaultRecoveryTests.cs:line 1476
+   at ControlServer.Tests.VehicleFaultRecoveryTests.Req0362ASnapshotThatCannotSettleWhereTheCargoIsKeepsTheRebuildWaiting(String shows) in C:\Users\szy\Desktop\8005-workspace-v2\worktrees\cs358-8005-agv-control-server\tests\ControlServer.Tests\VehicleFaultRecoveryTests.cs:line 502
+--- End of stack trace from previous location ---
+  Failed ControlServer.Tests.StoppedRebuildExitTests.AHandoffRecordWhoseJourneyIsNoLongerBlockedAsksTheVehicleForNothing [2 s]
+  Error Message:
+   Assert.Equal() Failure: Strings differ
+Expected: "VEHICLE_ORDER_FAILED"
+Actual:   null
+  Stack Trace:
+     at ControlServer.Tests.VehicleFaultRecoveryTests.FaultedOnTheWayToGateAsync() in C:\Users\szy\Desktop\8005-workspace-v2\worktrees\cs358-8005-agv-control-server\tests\ControlServer.Tests\VehicleFaultRecoveryTests.cs:line 1476
+   at ControlServer.Tests.StoppedRebuildExitTests.StoppedWithCargoNotInPlaceAsync() in C:\Users\szy\Desktop\8005-workspace-v2\worktrees\cs358-8005-agv-control-server\tests\ControlServer.Tests\StoppedRebuildExitTests.cs:line 1474
+   at ControlServer.Tests.StoppedRebuildExitTests.AHandoffRecordWhoseJourneyIsNoLongerBlockedAsksTheVehicleForNothing() in C:\Users\szy\Desktop\8005-workspace-v2\worktrees\cs358-8005-agv-control-server\tests\ControlServer.Tests\StoppedRebuildExitTests.cs:line 1123
+--- End of stack trace from previous location ---
+[xUnit.net 00:00:40.48]     ControlServer.Tests.VehicleFaultRecoveryTests.Req0362ASnapshotThatCannotSettleWhereTheCargoIsKeepsTheRebuildWaiting(shows: "unknown-present") [FAIL]
+[xUnit.net 00:00:40.61]     ControlServer.Tests.VehicleFaultRecoveryTests.Req0361ACancellationSoonAfterAFaultRebuildStopsTheRebuilding [FAIL]
+[xUnit.net 00:00:40.74]     ControlServer.Tests.VehicleFaultRecoveryTests.ARequestThatCannotGetTheGateInTimeGivesUpAndChangesNothing [FAIL]
+[xUnit.net 00:00:40.85]     ControlServer.Tests.VehicleFaultRecoveryTests.TheSameClearanceTwiceDoesNothingTheSecondTime [FAIL]
+  Failed ControlServer.Tests.VehicleFaultRecoveryTests.Req0362ASnapshotThatCannotSettleWhereTheCargoIsKeepsTheRebuildWaiting(shows: "unknown-present") [2 s]
+  Error Message:
+   Assert.Equal() Failure: Strings differ
+Expected: "VEHICLE_ORDER_FAILED"
+Actual:   null
+  Stack Trace:
+     at ControlServer.Tests.VehicleFaultRecoveryTests.FaultedOnTheWayToGateAsync() in C:\Users\szy\Desktop\8005-workspace-v2\worktrees\cs358-8005-agv-control-server\tests\ControlServer.Tests\VehicleFaultRecoveryTests.cs:line 1476
+   at ControlServer.Tests.VehicleFaultRecoveryTests.Req0362ASnapshotThatCannotSettleWhereTheCargoIsKeepsTheRebuildWaiting(String shows) in C:\Users\szy\Desktop\8005-workspace-v2\worktrees\cs358-8005-agv-control-server\tests\ControlServer.Tests\VehicleFaultRecoveryTests.cs:line 502
+--- End of stack trace from previous location ---
+  Failed ControlServer.Tests.VehicleFaultRecoveryTests.Req0361ACancellationSoonAfterAFaultRebuildStopsTheRebuilding [125 ms]
+  Error Message:
+   Assert.Equal() Failure: Strings differ
+Expected: "VEHICLE_ORDER_FAILED"
+Actual:   null
+  Stack Trace:
+     at ControlServer.Tests.VehicleFaultRecoveryTests.FaultedOnTheWayToPickupAsync(String movementState) in C:\Users\szy\Desktop\8005-workspace-v2\worktrees\cs358-8005-agv-control-server\tests\ControlServer.Tests\VehicleFaultRecoveryTests.cs:line 1461
+   at ControlServer.Tests.VehicleFaultRecoveryTests.Req0361ACancellationSoonAfterAFaultRebuildStopsTheRebuilding() in C:\Users\szy\Desktop\8005-workspace-v2\worktrees\cs358-8005-agv-control-server\tests\ControlServer.Tests\VehicleFaultRecoveryTests.cs:line 793
+--- End of stack trace from previous location ---
+  Failed ControlServer.Tests.VehicleFaultRecoveryTests.ARequestThatCannotGetTheGateInTimeGivesUpAndChangesNothing [131 ms]
+  Error Message:
+   Assert.Equal() Failure: Strings differ
+Expected: "VEHICLE_ORDER_FAILED"
+Actual:   null
+  Stack Trace:
+     at ControlServer.Tests.VehicleFaultRecoveryTests.FaultedOnTheWayToPickupAsync(String movementState) in C:\Users\szy\Desktop\8005-workspace-v2\worktrees\cs358-8005-agv-control-server\tests\ControlServer.Tests\VehicleFaultRecoveryTests.cs:line 1461
+   at ControlServer.Tests.VehicleFaultRecoveryTests.ARequestThatCannotGetTheGateInTimeGivesUpAndChangesNothing() in C:\Users\szy\Desktop\8005-workspace-v2\worktrees\cs358-8005-agv-control-server\tests\ControlServer.Tests\VehicleFaultRecoveryTests.cs:line 1197
+--- End of stack trace from previous location ---
+  Failed ControlServer.Tests.VehicleFaultRecoveryTests.TheSameClearanceTwiceDoesNothingTheSecondTime [103 ms]
+  Error Message:
+   Assert.Equal() Failure: Strings differ
+Expected: "VEHICLE_ORDER_FAILED"
+Actual:   null
+  Stack Trace:
+     at ControlServer.Tests.VehicleFaultRecoveryTests.FaultedOnTheWayToPickupAsync(String movementState) in C:\Users\szy\Desktop\8005-workspace-v2\worktrees\cs358-8005-agv-control-server\tests\ControlServer.Tests\VehicleFaultRecoveryTests.cs:line 1461
+   at ControlServer.Tests.VehicleFaultRecoveryTests.TheSameClearanceTwiceDoesNothingTheSecondTime() in C:\Users\szy\Desktop\8005-workspace-v2\worktrees\cs358-8005-agv-control-server\tests\ControlServer.Tests\VehicleFaultRecoveryTests.cs:line 962
+--- End of stack trace from previous location ---
+[xUnit.net 00:00:41.04]     ControlServer.Tests.StoppedRebuildExitTests.AFailedHandoffLeavesTheTripAWayOut [FAIL]
+  Failed ControlServer.Tests.StoppedRebuildExitTests.AFailedHandoffLeavesTheTripAWayOut [2 s]
+  Error Message:
+   Assert.Equal() Failure: Strings differ
+Expected: "VEHICLE_ORDER_FAILED"
+Actual:   null
+  Stack Trace:
+     at ControlServer.Tests.VehicleFaultRecoveryTests.FaultedOnTheWayToGateAsync() in C:\Users\szy\Desktop\8005-workspace-v2\worktrees\cs358-8005-agv-control-server\tests\ControlServer.Tests\VehicleFaultRecoveryTests.cs:line 1476
+   at ControlServer.Tests.StoppedRebuildExitTests.StoppedWithCargoNotInPlaceAsync() in C:\Users\szy\Desktop\8005-workspace-v2\worktrees\cs358-8005-agv-control-server\tests\ControlServer.Tests\StoppedRebuildExitTests.cs:line 1474
+   at ControlServer.Tests.StoppedRebuildExitTests.AFailedHandoffLeavesTheTripAWayOut() in C:\Users\szy\Desktop\8005-workspace-v2\worktrees\cs358-8005-agv-control-server\tests\ControlServer.Tests\StoppedRebuildExitTests.cs:line 954
+--- End of stack trace from previous location ---
+[xUnit.net 00:00:42.89]     ControlServer.Tests.VehicleFaultRecoveryTests.AClearedFaultWithCargoOnBoardRebuildsTheOrderToDeliverIt [FAIL]
+[xUnit.net 00:00:42.99]     ControlServer.Tests.VehicleFaultRecoveryTests.EveryUnmetCriterionIsNamedAndNothingIsChanged [FAIL]
+[xUnit.net 00:00:43.58]     ControlServer.Tests.StoppedRebuildExitTests.GivingUpAJourneyNotStoppedByTheThirdGuardIsRefusedAndChangesNothing(state: "cargo-not-in-place", refusal: "OWN_ORDER_REBUILD_EXIT_CARGO_NOT_IN_PLACE") [FAIL]
+  Failed ControlServer.Tests.VehicleFaultRecoveryTests.AClearedFaultWithCargoOnBoardRebuildsTheOrderToDeliverIt [2 s]
+  Error Message:
+   Assert.Equal() Failure: Strings differ
+Expected: "VEHICLE_ORDER_FAILED"
+Actual:   null
+  Stack Trace:
+     at ControlServer.Tests.VehicleFaultRecoveryTests.FaultedOnTheWayToGateAsync() in C:\Users\szy\Desktop\8005-workspace-v2\worktrees\cs358-8005-agv-control-server\tests\ControlServer.Tests\VehicleFaultRecoveryTests.cs:line 1476
+   at ControlServer.Tests.VehicleFaultRecoveryTests.AClearedFaultWithCargoOnBoardRebuildsTheOrderToDeliverIt() in C:\Users\szy\Desktop\8005-workspace-v2\worktrees\cs358-8005-agv-control-server\tests\ControlServer.Tests\VehicleFaultRecoveryTests.cs:line 352
+--- End of stack trace from previous location ---
+  Failed ControlServer.Tests.VehicleFaultRecoveryTests.EveryUnmetCriterionIsNamedAndNothingIsChanged [102 ms]
+  Error Message:
+   Assert.Equal() Failure: Strings differ
+Expected: "VEHICLE_ORDER_FAILED"
+Actual:   null
+  Stack Trace:
+     at ControlServer.Tests.VehicleFaultRecoveryTests.FaultedOnTheWayToPickupAsync(String movementState) in C:\Users\szy\Desktop\8005-workspace-v2\worktrees\cs358-8005-agv-control-server\tests\ControlServer.Tests\VehicleFaultRecoveryTests.cs:line 1461
+   at ControlServer.Tests.VehicleFaultRecoveryTests.EveryUnmetCriterionIsNamedAndNothingIsChanged() in C:\Users\szy\Desktop\8005-workspace-v2\worktrees\cs358-8005-agv-control-server\tests\ControlServer.Tests\VehicleFaultRecoveryTests.cs:line 157
+--- End of stack trace from previous location ---
+  Failed ControlServer.Tests.StoppedRebuildExitTests.GivingUpAJourneyNotStoppedByTheThirdGuardIsRefusedAndChangesNothing(state: "cargo-not-in-place", refusal: "OWN_ORDER_REBUILD_EXIT_CARGO_NOT_IN_PLACE") [2 s]
+  Error Message:
+   Assert.Equal() Failure: Strings differ
+Expected: "VEHICLE_ORDER_FAILED"
+Actual:   null
+  Stack Trace:
+     at ControlServer.Tests.VehicleFaultRecoveryTests.FaultedOnTheWayToGateAsync() in C:\Users\szy\Desktop\8005-workspace-v2\worktrees\cs358-8005-agv-control-server\tests\ControlServer.Tests\VehicleFaultRecoveryTests.cs:line 1476
+   at ControlServer.Tests.StoppedRebuildExitTests.StoppedWithCargoNotInPlaceAsync() in C:\Users\szy\Desktop\8005-workspace-v2\worktrees\cs358-8005-agv-control-server\tests\ControlServer.Tests\StoppedRebuildExitTests.cs:line 1474
+   at ControlServer.Tests.StoppedRebuildExitTests.GivingUpAJourneyNotStoppedByTheThirdGuardIsRefusedAndChangesNothing(String state, String refusal) in C:\Users\szy\Desktop\8005-workspace-v2\worktrees\cs358-8005-agv-control-server\tests\ControlServer.Tests\StoppedRebuildExitTests.cs:line 556
+--- End of stack trace from previous location ---
+[xUnit.net 00:00:45.10]     ControlServer.Tests.VehicleFaultRecoveryTests.Req0362ASnapshotFromAnotherVehicleSaysNothingAboutThisOnesCargo [FAIL]
+[xUnit.net 00:00:45.22]     ControlServer.Tests.VehicleFaultRecoveryTests.AnOrderThatCannotBeReadIsNotTakenAsEnded(read: "unknown") [FAIL]
+[xUnit.net 00:00:45.35]     ControlServer.Tests.VehicleFaultRecoveryTests.AnOrderThatCannotBeReadIsNotTakenAsEnded(read: "not-found") [FAIL]
+  Failed ControlServer.Tests.VehicleFaultRecoveryTests.Req0362ASnapshotFromAnotherVehicleSaysNothingAboutThisOnesCargo [2 s]
+  Error Message:
+   Assert.Equal() Failure: Strings differ
+Expected: "VEHICLE_ORDER_FAILED"
+Actual:   null
+  Stack Trace:
+     at ControlServer.Tests.VehicleFaultRecoveryTests.FaultedOnTheWayToGateAsync() in C:\Users\szy\Desktop\8005-workspace-v2\worktrees\cs358-8005-agv-control-server\tests\ControlServer.Tests\VehicleFaultRecoveryTests.cs:line 1476
+   at ControlServer.Tests.VehicleFaultRecoveryTests.Req0362ASnapshotFromAnotherVehicleSaysNothingAboutThisOnesCargo() in C:\Users\szy\Desktop\8005-workspace-v2\worktrees\cs358-8005-agv-control-server\tests\ControlServer.Tests\VehicleFaultRecoveryTests.cs:line 654
+--- End of stack trace from previous location ---
+  Failed ControlServer.Tests.VehicleFaultRecoveryTests.AnOrderThatCannotBeReadIsNotTakenAsEnded(read: "unknown") [122 ms]
+  Error Message:
+   Assert.Equal() Failure: Strings differ
+Expected: "VEHICLE_ORDER_FAILED"
+Actual:   null
+  Stack Trace:
+     at ControlServer.Tests.VehicleFaultRecoveryTests.FaultedOnTheWayToPickupAsync(String movementState) in C:\Users\szy\Desktop\8005-workspace-v2\worktrees\cs358-8005-agv-control-server\tests\ControlServer.Tests\VehicleFaultRecoveryTests.cs:line 1461
+   at ControlServer.Tests.VehicleFaultRecoveryTests.AnOrderThatCannotBeReadIsNotTakenAsEnded(String read) in C:\Users\szy\Desktop\8005-workspace-v2\worktrees\cs358-8005-agv-control-server\tests\ControlServer.Tests\VehicleFaultRecoveryTests.cs:line 280
+--- End of stack trace from previous location ---
+  Failed ControlServer.Tests.VehicleFaultRecoveryTests.AnOrderThatCannotBeReadIsNotTakenAsEnded(read: "not-found") [125 ms]
+  Error Message:
+   Assert.Equal() Failure: Strings differ
+Expected: "VEHICLE_ORDER_FAILED"
+Actual:   null
+  Stack Trace:
+     at ControlServer.Tests.VehicleFaultRecoveryTests.FaultedOnTheWayToPickupAsync(String movementState) in C:\Users\szy\Desktop\8005-workspace-v2\worktrees\cs358-8005-agv-control-server\tests\ControlServer.Tests\VehicleFaultRecoveryTests.cs:line 1461
+   at ControlServer.Tests.VehicleFaultRecoveryTests.AnOrderThatCannotBeReadIsNotTakenAsEnded(String read) in C:\Users\szy\Desktop\8005-workspace-v2\worktrees\cs358-8005-agv-control-server\tests\ControlServer.Tests\VehicleFaultRecoveryTests.cs:line 280
+--- End of stack trace from previous location ---
+[xUnit.net 00:00:45.56]     ControlServer.Tests.VehicleFaultRecoveryTests.NoRiotCallIsMadeWhileTheGateIsHeld(path: "resume") [FAIL]
+[xUnit.net 00:00:45.77]     ControlServer.Tests.StoppedRebuildExitTests.TheSameHandoffPreparationTwiceIsDoneOnce [FAIL]
+  Failed ControlServer.Tests.VehicleFaultRecoveryTests.NoRiotCallIsMadeWhileTheGateIsHeld(path: "resume") [210 ms]
+  Error Message:
+   Assert.Equal() Failure: Strings differ
+Expected: "VEHICLE_ORDER_FAILED"
+Actual:   null
+  Stack Trace:
+     at ControlServer.Tests.VehicleFaultRecoveryTests.FaultedOnTheWayToPickupAsync(String movementState) in C:\Users\szy\Desktop\8005-workspace-v2\worktrees\cs358-8005-agv-control-server\tests\ControlServer.Tests\VehicleFaultRecoveryTests.cs:line 1461
+   at ControlServer.Tests.VehicleFaultRecoveryTests.NoRiotCallIsMadeWhileTheGateIsHeld(String path) in C:\Users\szy\Desktop\8005-workspace-v2\worktrees\cs358-8005-agv-control-server\tests\ControlServer.Tests\VehicleFaultRecoveryTests.cs:line 1084
+--- End of stack trace from previous location ---
+  Failed ControlServer.Tests.StoppedRebuildExitTests.TheSameHandoffPreparationTwiceIsDoneOnce [2 s]
+  Error Message:
+   Assert.Equal() Failure: Strings differ
+Expected: "VEHICLE_ORDER_FAILED"
+Actual:   null
+  Stack Trace:
+     at ControlServer.Tests.VehicleFaultRecoveryTests.FaultedOnTheWayToGateAsync() in C:\Users\szy\Desktop\8005-workspace-v2\worktrees\cs358-8005-agv-control-server\tests\ControlServer.Tests\VehicleFaultRecoveryTests.cs:line 1476
+   at ControlServer.Tests.StoppedRebuildExitTests.StoppedWithCargoNotInPlaceAsync() in C:\Users\szy\Desktop\8005-workspace-v2\worktrees\cs358-8005-agv-control-server\tests\ControlServer.Tests\StoppedRebuildExitTests.cs:line 1474
+   at ControlServer.Tests.StoppedRebuildExitTests.TheSameHandoffPreparationTwiceIsDoneOnce() in C:\Users\szy\Desktop\8005-workspace-v2\worktrees\cs358-8005-agv-control-server\tests\ControlServer.Tests\StoppedRebuildExitTests.cs:line 870
+--- End of stack trace from previous location ---
+[xUnit.net 00:00:47.62]     ControlServer.Tests.VehicleFaultRecoveryTests.NoRiotCallIsMadeWhileTheGateIsHeld(path: "clear-loaded") [FAIL]
+[xUnit.net 00:00:47.70]     ControlServer.Tests.VehicleFaultRecoveryTests.NoRiotCallIsMadeWhileTheGateIsHeld(path: "clear-empty") [FAIL]
+[xUnit.net 00:00:47.84]     ControlServer.Tests.VehicleFaultRecoveryTests.TheSameResumeTwiceContinuesOnce [FAIL]
+[xUnit.net 00:00:47.95]     ControlServer.Tests.VehicleFaultRecoveryTests.AJourneyThatMovedOnBetweenTheReadAndTheGateIsNotDisposedOf [FAIL]
+[xUnit.net 00:00:48.09]     ControlServer.Tests.VehicleFaultRecoveryTests.Req0361AFailureSoonAfterACancellationRebuildIsNotARepeat [FAIL]
+  Failed ControlServer.Tests.VehicleFaultRecoveryTests.NoRiotCallIsMadeWhileTheGateIsHeld(path: "clear-loaded") [2 s]
+  Error Message:
+   Assert.Equal() Failure: Strings differ
+Expected: "VEHICLE_ORDER_FAILED"
+Actual:   null
+  Stack Trace:
+     at ControlServer.Tests.VehicleFaultRecoveryTests.FaultedOnTheWayToGateAsync() in C:\Users\szy\Desktop\8005-workspace-v2\worktrees\cs358-8005-agv-control-server\tests\ControlServer.Tests\VehicleFaultRecoveryTests.cs:line 1476
+   at ControlServer.Tests.VehicleFaultRecoveryTests.NoRiotCallIsMadeWhileTheGateIsHeld(String path) in C:\Users\szy\Desktop\8005-workspace-v2\worktrees\cs358-8005-agv-control-server\tests\ControlServer.Tests\VehicleFaultRecoveryTests.cs:line 1084
+--- End of stack trace from previous location ---
+  Failed ControlServer.Tests.VehicleFaultRecoveryTests.NoRiotCallIsMadeWhileTheGateIsHeld(path: "clear-empty") [79 ms]
+  Error Message:
+   Assert.Equal() Failure: Strings differ
+Expected: "VEHICLE_ORDER_FAILED"
+Actual:   null
+  Stack Trace:
+     at ControlServer.Tests.VehicleFaultRecoveryTests.FaultedOnTheWayToPickupAsync(String movementState) in C:\Users\szy\Desktop\8005-workspace-v2\worktrees\cs358-8005-agv-control-server\tests\ControlServer.Tests\VehicleFaultRecoveryTests.cs:line 1461
+   at ControlServer.Tests.VehicleFaultRecoveryTests.NoRiotCallIsMadeWhileTheGateIsHeld(String path) in C:\Users\szy\Desktop\8005-workspace-v2\worktrees\cs358-8005-agv-control-server\tests\ControlServer.Tests\VehicleFaultRecoveryTests.cs:line 1084
+--- End of stack trace from previous location ---
+  Failed ControlServer.Tests.VehicleFaultRecoveryTests.TheSameResumeTwiceContinuesOnce [75 ms]
+  Error Message:
+   Assert.Equal() Failure: Strings differ
+Expected: "VEHICLE_ORDER_FAILED"
+Actual:   null
+  Stack Trace:
+     at ControlServer.Tests.VehicleFaultRecoveryTests.FaultedOnTheWayToPickupAsync(String movementState) in C:\Users\szy\Desktop\8005-workspace-v2\worktrees\cs358-8005-agv-control-server\tests\ControlServer.Tests\VehicleFaultRecoveryTests.cs:line 1461
+   at ControlServer.Tests.VehicleFaultRecoveryTests.TheSameResumeTwiceContinuesOnce() in C:\Users\szy\Desktop\8005-workspace-v2\worktrees\cs358-8005-agv-control-server\tests\ControlServer.Tests\VehicleFaultRecoveryTests.cs:line 1010
+--- End of stack trace from previous location ---
+  Failed ControlServer.Tests.VehicleFaultRecoveryTests.AJourneyThatMovedOnBetweenTheReadAndTheGateIsNotDisposedOf [102 ms]
+  Error Message:
+   Assert.Equal() Failure: Strings differ
+Expected: "VEHICLE_ORDER_FAILED"
+Actual:   null
+  Stack Trace:
+     at ControlServer.Tests.VehicleFaultRecoveryTests.FaultedOnTheWayToPickupAsync(String movementState) in C:\Users\szy\Desktop\8005-workspace-v2\worktrees\cs358-8005-agv-control-server\tests\ControlServer.Tests\VehicleFaultRecoveryTests.cs:line 1461
+   at ControlServer.Tests.VehicleFaultRecoveryTests.AJourneyThatMovedOnBetweenTheReadAndTheGateIsNotDisposedOf() in C:\Users\szy\Desktop\8005-workspace-v2\worktrees\cs358-8005-agv-control-server\tests\ControlServer.Tests\VehicleFaultRecoveryTests.cs:line 1112
+--- End of stack trace from previous location ---
+  Failed ControlServer.Tests.VehicleFaultRecoveryTests.Req0361AFailureSoonAfterACancellationRebuildIsNotARepeat [135 ms]
+  Error Message:
+   System.InvalidOperationException : Sequence contains no elements.
+  Stack Trace:
+     at Microsoft.EntityFrameworkCore.Query.ShapedQueryCompilingExpressionVisitor.SingleAsync[TSource](IAsyncEnumerable`1 asyncEnumerable, CancellationToken cancellationToken)
+   at Microsoft.EntityFrameworkCore.Query.ShapedQueryCompilingExpressionVisitor.SingleAsync[TSource](IAsyncEnumerable`1 asyncEnumerable, CancellationToken cancellationToken)
+   at ControlServer.Tests.VehicleFaultRecoveryTests.FaultAsync(RuntimeFixture fixture) in C:\Users\szy\Desktop\8005-workspace-v2\worktrees\cs358-8005-agv-control-server\tests\ControlServer.Tests\VehicleFaultRecoveryTests.cs:line 1545
+   at ControlServer.Tests.VehicleFaultRecoveryTests.FaultAsync(RuntimeFixture fixture) in C:\Users\szy\Desktop\8005-workspace-v2\worktrees\cs358-8005-agv-control-server\tests\ControlServer.Tests\VehicleFaultRecoveryTests.cs:line 1545
+   at ControlServer.Tests.VehicleFaultRecoveryTests.Req0361AFailureSoonAfterACancellationRebuildIsNotARepeat() in C:\Users\szy\Desktop\8005-workspace-v2\worktrees\cs358-8005-agv-control-server\tests\ControlServer.Tests\VehicleFaultRecoveryTests.cs:line 767
+   at ControlServer.Tests.VehicleFaultRecoveryTests.Req0361AFailureSoonAfterACancellationRebuildIsNotARepeat() in C:\Users\szy\Desktop\8005-workspace-v2\worktrees\cs358-8005-agv-control-server\tests\ControlServer.Tests\VehicleFaultRecoveryTests.cs:line 780
+--- End of stack trace from previous location ---
+[xUnit.net 00:00:48.25]     ControlServer.Tests.VehicleFaultRecoveryTests.AFaultClearedAgainSoonAfterTheRebuildStopsTheRebuilding [FAIL]
+[xUnit.net 00:00:48.38]     ControlServer.Tests.VehicleFaultRecoveryTests.AClearedFaultOnAnEmptyVehicleKeepsTheDemandAndRebuildsTheOrder [FAIL]
+  Failed ControlServer.Tests.VehicleFaultRecoveryTests.AFaultClearedAgainSoonAfterTheRebuildStopsTheRebuilding [158 ms]
+  Error Message:
+   Assert.Equal() Failure: Strings differ
+Expected: "VEHICLE_ORDER_FAILED"
+Actual:   null
+  Stack Trace:
+     at ControlServer.Tests.VehicleFaultRecoveryTests.FaultedOnTheWayToPickupAsync(String movementState) in C:\Users\szy\Desktop\8005-workspace-v2\worktrees\cs358-8005-agv-control-server\tests\ControlServer.Tests\VehicleFaultRecoveryTests.cs:line 1461
+   at ControlServer.Tests.VehicleFaultRecoveryTests.AFaultClearedAgainSoonAfterTheRebuildStopsTheRebuilding() in C:\Users\szy\Desktop\8005-workspace-v2\worktrees\cs358-8005-agv-control-server\tests\ControlServer.Tests\VehicleFaultRecoveryTests.cs:line 711
+--- End of stack trace from previous location ---
+  Failed ControlServer.Tests.VehicleFaultRecoveryTests.AClearedFaultOnAnEmptyVehicleKeepsTheDemandAndRebuildsTheOrder [135 ms]
+  Error Message:
+   Assert.Equal() Failure: Strings differ
+Expected: "VEHICLE_ORDER_FAILED"
+Actual:   null
+  Stack Trace:
+     at ControlServer.Tests.VehicleFaultRecoveryTests.FaultedOnTheWayToPickupAsync(String movementState) in C:\Users\szy\Desktop\8005-workspace-v2\worktrees\cs358-8005-agv-control-server\tests\ControlServer.Tests\VehicleFaultRecoveryTests.cs:line 1461
+   at ControlServer.Tests.VehicleFaultRecoveryTests.AClearedFaultOnAnEmptyVehicleKeepsTheDemandAndRebuildsTheOrder() in C:\Users\szy\Desktop\8005-workspace-v2\worktrees\cs358-8005-agv-control-server\tests\ControlServer.Tests\VehicleFaultRecoveryTests.cs:line 61
+--- End of stack trace from previous location ---
+[xUnit.net 00:00:50.62]     ControlServer.Tests.VehicleFaultRecoveryTests.Req0362AnInconclusiveSnapshotIsAskedForAgainAfterAWhile [FAIL]
+[xUnit.net 00:00:50.62]     ControlServer.Tests.StoppedRebuildExitTests.AHandedOffCargoBindingIsNotTakenForTheVehiclesNextFault [FAIL]
+[xUnit.net 00:00:50.73]     ControlServer.Tests.VehicleFaultRecoveryTests.AHeldOrderIsContinuedAndTheFaultClearedOnlyAfterward [FAIL]
+  Failed ControlServer.Tests.VehicleFaultRecoveryTests.Req0362AnInconclusiveSnapshotIsAskedForAgainAfterAWhile [2 s]
+  Error Message:
+   Assert.Equal() Failure: Strings differ
+Expected: "VEHICLE_ORDER_FAILED"
+Actual:   null
+  Stack Trace:
+     at ControlServer.Tests.VehicleFaultRecoveryTests.FaultedOnTheWayToGateAsync() in C:\Users\szy\Desktop\8005-workspace-v2\worktrees\cs358-8005-agv-control-server\tests\ControlServer.Tests\VehicleFaultRecoveryTests.cs:line 1476
+   at ControlServer.Tests.VehicleFaultRecoveryTests.Req0362AnInconclusiveSnapshotIsAskedForAgainAfterAWhile() in C:\Users\szy\Desktop\8005-workspace-v2\worktrees\cs358-8005-agv-control-server\tests\ControlServer.Tests\VehicleFaultRecoveryTests.cs:line 592
+--- End of stack trace from previous location ---
+  Failed ControlServer.Tests.StoppedRebuildExitTests.AHandedOffCargoBindingIsNotTakenForTheVehiclesNextFault [2 s]
+  Error Message:
+   Assert.Equal() Failure: Strings differ
+Expected: "VEHICLE_ORDER_FAILED"
+Actual:   null
+  Stack Trace:
+     at ControlServer.Tests.VehicleFaultRecoveryTests.FaultedOnTheWayToGateAsync() in C:\Users\szy\Desktop\8005-workspace-v2\worktrees\cs358-8005-agv-control-server\tests\ControlServer.Tests\VehicleFaultRecoveryTests.cs:line 1476
+   at ControlServer.Tests.StoppedRebuildExitTests.StoppedWithCargoNotInPlaceAsync() in C:\Users\szy\Desktop\8005-workspace-v2\worktrees\cs358-8005-agv-control-server\tests\ControlServer.Tests\StoppedRebuildExitTests.cs:line 1474
+   at ControlServer.Tests.StoppedRebuildExitTests.AHandedOffCargoBindingIsNotTakenForTheVehiclesNextFault() in C:\Users\szy\Desktop\8005-workspace-v2\worktrees\cs358-8005-agv-control-server\tests\ControlServer.Tests\StoppedRebuildExitTests.cs:line 1149
+--- End of stack trace from previous location ---
+  Failed ControlServer.Tests.VehicleFaultRecoveryTests.AHeldOrderIsContinuedAndTheFaultClearedOnlyAfterward [107 ms]
+  Error Message:
+   Assert.Equal() Failure: Strings differ
+Expected: "VEHICLE_ORDER_FAILED"
+Actual:   null
+  Stack Trace:
+     at ControlServer.Tests.VehicleFaultRecoveryTests.FaultedOnTheWayToPickupAsync(String movementState) in C:\Users\szy\Desktop\8005-workspace-v2\worktrees\cs358-8005-agv-control-server\tests\ControlServer.Tests\VehicleFaultRecoveryTests.cs:line 1461
+   at ControlServer.Tests.VehicleFaultRecoveryTests.AHeldOrderIsContinuedAndTheFaultClearedOnlyAfterward() in C:\Users\szy\Desktop\8005-workspace-v2\worktrees\cs358-8005-agv-control-server\tests\ControlServer.Tests\VehicleFaultRecoveryTests.cs:line 1385
+--- End of stack trace from previous location ---
+[xUnit.net 00:00:51.66]     ControlServer.Tests.VehicleFaultRecoveryTests.AClearedFaultKeepsTheJourneySoNoClosureIsSentAndTheOrderIsRebuilt [FAIL]
+[xUnit.net 00:00:51.75]     ControlServer.Tests.VehicleFaultRecoveryTests.AnEmergencyStopStillOpenRefusesTheClearance [FAIL]
+[xUnit.net 00:00:51.85]     ControlServer.Tests.VehicleFaultRecoveryTests.AClearanceWaitsForTheRuntimeRoundInProgress [FAIL]
+  Failed ControlServer.Tests.VehicleFaultRecoveryTests.AClearedFaultKeepsTheJourneySoNoClosureIsSentAndTheOrderIsRebuilt [112 ms]
+  Error Message:
+   Assert.Equal() Failure: Strings differ
+Expected: "VEHICLE_ORDER_FAILED"
+Actual:   null
+  Stack Trace:
+     at ControlServer.Tests.VehicleFaultRecoveryTests.FaultedOnTheWayToPickupAsync(String movementState) in C:\Users\szy\Desktop\8005-workspace-v2\worktrees\cs358-8005-agv-control-server\tests\ControlServer.Tests\VehicleFaultRecoveryTests.cs:line 1461
+   at ControlServer.Tests.VehicleFaultRecoveryTests.AClearedFaultKeepsTheJourneySoNoClosureIsSentAndTheOrderIsRebuilt() in C:\Users\szy\Desktop\8005-workspace-v2\worktrees\cs358-8005-agv-control-server\tests\ControlServer.Tests\VehicleFaultRecoveryTests.cs:line 123
+--- End of stack trace from previous location ---
+  Failed ControlServer.Tests.VehicleFaultRecoveryTests.AnEmergencyStopStillOpenRefusesTheClearance [92 ms]
+  Error Message:
+   Assert.Equal() Failure: Strings differ
+Expected: "VEHICLE_ORDER_FAILED"
+Actual:   null
+  Stack Trace:
+     at ControlServer.Tests.VehicleFaultRecoveryTests.FaultedOnTheWayToPickupAsync(String movementState) in C:\Users\szy\Desktop\8005-workspace-v2\worktrees\cs358-8005-agv-control-server\tests\ControlServer.Tests\VehicleFaultRecoveryTests.cs:line 1461
+   at ControlServer.Tests.VehicleFaultRecoveryTests.AnEmergencyStopStillOpenRefusesTheClearance() in C:\Users\szy\Desktop\8005-workspace-v2\worktrees\cs358-8005-agv-control-server\tests\ControlServer.Tests\VehicleFaultRecoveryTests.cs:line 319
+--- End of stack trace from previous location ---
+  Failed ControlServer.Tests.VehicleFaultRecoveryTests.AClearanceWaitsForTheRuntimeRoundInProgress [94 ms]
+  Error Message:
+   Assert.Equal() Failure: Strings differ
+Expected: "VEHICLE_ORDER_FAILED"
+Actual:   null
+  Stack Trace:
+     at ControlServer.Tests.VehicleFaultRecoveryTests.FaultedOnTheWayToPickupAsync(String movementState) in C:\Users\szy\Desktop\8005-workspace-v2\worktrees\cs358-8005-agv-control-server\tests\ControlServer.Tests\VehicleFaultRecoveryTests.cs:line 1461
+   at ControlServer.Tests.VehicleFaultRecoveryTests.AClearanceWaitsForTheRuntimeRoundInProgress() in C:\Users\szy\Desktop\8005-workspace-v2\worktrees\cs358-8005-agv-control-server\tests\ControlServer.Tests\VehicleFaultRecoveryTests.cs:line 1177
+--- End of stack trace from previous location ---
+[xUnit.net 00:00:53.93]     ControlServer.Tests.VehicleFaultRecoveryTests.Req0362ALoadedClearanceWhoseSessionNeverBecomesReadyWaitsForTheSnapshot [FAIL]
+  Failed ControlServer.Tests.VehicleFaultRecoveryTests.Req0362ALoadedClearanceWhoseSessionNeverBecomesReadyWaitsForTheSnapshot [2 s]
+  Error Message:
+   Assert.Equal() Failure: Strings differ
+Expected: "VEHICLE_ORDER_FAILED"
+Actual:   null
+  Stack Trace:
+     at ControlServer.Tests.VehicleFaultRecoveryTests.FaultedOnTheWayToGateAsync() in C:\Users\szy\Desktop\8005-workspace-v2\worktrees\cs358-8005-agv-control-server\tests\ControlServer.Tests\VehicleFaultRecoveryTests.cs:line 1476
+   at ControlServer.Tests.VehicleFaultRecoveryTests.Req0362ALoadedClearanceWhoseSessionNeverBecomesReadyWaitsForTheSnapshot() in C:\Users\szy\Desktop\8005-workspace-v2\worktrees\cs358-8005-agv-control-server\tests\ControlServer.Tests\VehicleFaultRecoveryTests.cs:line 680
+--- End of stack trace from previous location ---
+
+Failed!  - Failed:    76, Passed:   122, Skipped:     0, Total:   198, Duration: 51 s - ControlServer.Tests.dll (net8.0)

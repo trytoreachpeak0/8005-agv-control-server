@@ -1,0 +1,33 @@
+[15:45:31 INF] Executed DbCommand (17ms) [Parameters=[], CommandType='Text', CommandTimeout='30']
+SELECT COUNT(*) FROM "sqlite_master" WHERE "name" = '__EFMigrationsHistory' AND "type" = 'table';
+[15:45:31 INF] Executed DbCommand (0ms) [Parameters=[], CommandType='Text', CommandTimeout='30']
+SELECT COUNT(*) FROM "sqlite_master" WHERE "name" = '__EFMigrationsHistory' AND "type" = 'table';
+[15:45:31 INF] Executed DbCommand (1ms) [Parameters=[], CommandType='Text', CommandTimeout='30']
+SELECT "MigrationId", "ProductVersion"
+FROM "__EFMigrationsHistory"
+ORDER BY "MigrationId";
+[15:45:31 INF] No migrations were applied. The database is already up to date.
+[15:45:31 INF] Executed DbCommand (0ms) [Parameters=[], CommandType='Text', CommandTimeout='30']
+SELECT "a"."AuditRecordId", "a"."Action", "a"."ActorAttribution", "a"."ActorIdentity", "a"."ClaimedAdministratorRole", "a"."DetailJson", "a"."ObjectId", "a"."ObjectKind", "a"."Outcome", "a"."RecordedAt", "a"."RecordedAtUtcTicks", "a"."SnapshotId", "a"."Version"
+FROM "AdministratorAuditRecords" AS "a"
+WHERE "a"."Action" = 'AUDIT_RETENTION_POLICY_CONFIGURED'
+ORDER BY "a"."RecordedAtUtcTicks" DESC, "a"."AuditRecordId" DESC
+LIMIT 1
+[15:45:31 INF] Executed DbCommand (3ms) [Parameters=[@__rule_Pattern_0='?' (Size = 10), @__rule_MatchType_1='?' (Size = 5)], CommandType='Text', CommandTimeout='30']
+SELECT "p"."RuleId", "p"."EffectiveAt", "p"."MatchType", "p"."MaxBoxesPerBasket", "p"."Pattern", "p"."Source", "p"."SupersededAt", "p"."Version"
+FROM "PackageCapacityRules" AS "p"
+WHERE "p"."Pattern" = @__rule_Pattern_0 AND "p"."MatchType" = @__rule_MatchType_1 AND "p"."SupersededAt" IS NULL
+LIMIT 2
+[15:45:32 INF] Executed DbCommand (0ms) [Parameters=[@__ruleId_0='?' (Size = 19)], CommandType='Text', CommandTimeout='30']
+SELECT EXISTS (
+    SELECT 1
+    FROM "PackageCapacityRules" AS "p"
+    WHERE "p"."RuleId" = @__ruleId_0)
+[15:45:32 INF] Executed DbCommand (2ms) [Parameters=[@p1='?' (Size = 19), @p0='?' (DbType = DateTimeOffset)], CommandType='Text', CommandTimeout='30']
+UPDATE "PackageCapacityRules" SET "SupersededAt" = @p0
+WHERE "RuleId" = @p1
+RETURNING 1;
+[15:45:32 INF] Executed DbCommand (1ms) [Parameters=[@p0='?' (Size = 19), @p1='?' (DbType = DateTimeOffset), @p2='?' (Size = 5), @p3='?' (DbType = Int32), @p4='?' (Size = 10), @p5='?' (Size = 11), @p6='?' (DbType = DateTimeOffset), @p7='?' (DbType = Int32)], CommandType='Text', CommandTimeout='30']
+INSERT INTO "PackageCapacityRules" ("RuleId", "EffectiveAt", "MatchType", "MaxBoxesPerBasket", "Pattern", "Source", "SupersededAt", "Version")
+VALUES (@p0, @p1, @p2, @p3, @p4, @p5, @p6, @p7);
+Package capacity import complete: inserted=1, unchanged=0, superseded=1.
