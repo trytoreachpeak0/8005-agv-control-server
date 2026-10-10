@@ -124,4 +124,23 @@ function Format-NightlyG3Comment {
     return ($lines -join "`n")
 }
 
-Export-ModuleMember -Function Get-NightlyG3Verdict, Format-NightlyG3Comment
+function Select-NightlyG3BusyRealRigJob {
+    param(
+        [Parameter(Mandatory)][AllowEmptyCollection()][object[]]$Runs,
+        [Parameter(Mandatory)][System.Collections.IDictionary]$JobsByRun
+    )
+    return @()
+}
+
+function Wait-NightlyG3RigIdle {
+    param(
+        [Parameter(Mandatory)][scriptblock]$GetBusy,
+        [Parameter(Mandatory)][double]$WaitMinutes,
+        [int]$PollSeconds = 60,
+        [scriptblock]$Sleep = { param($seconds) Start-Sleep -Seconds $seconds },
+        [scriptblock]$Now = { [DateTimeOffset]::UtcNow }
+    )
+    return $null
+}
+
+Export-ModuleMember -Function Get-NightlyG3Verdict, Format-NightlyG3Comment, Select-NightlyG3BusyRealRigJob, Wait-NightlyG3RigIdle

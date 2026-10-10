@@ -18,6 +18,10 @@
          four PASS, naming each red runner and what is red in it (cut at ten, saying how many more), the commits and
          the run link, saying that it is not gate evidence; a round that stopped early or never started says why. A
          `|` inside a failure reason is escaped, so it cannot break the table.
+      3. Waiting for the CI real rig (l2.yml's real-rig job, the other holder of the cs-desktop runner): which runs are
+         busy, read from the REST shapes, and the wait on a fake clock -- idle at once, busy then idle, busy for the
+         whole limit (NOT_STARTED_RIG_BUSY, naming what was busy), and a query that cannot answer, which is busy, not
+         idle. Nothing is ever cancelled; the wait only decides whether this night starts.
 
     Exits 1 when any check comes out the other way, and prints every check either way.
 
@@ -145,6 +149,62 @@ try {
         $extra = @($case.NotContains | Where-Object { $null -ne $comment -and $comment.Contains($_) })
         Check "comment, $($case.Name)" ($null -eq $thrown -and $missing.Count -eq 0 -and $extra.Count -eq 0) `
             "$thrown missing=[$($missing -join ', ')] extra=[$($extra -join ', ')]"
+    }
+
+    # --- 3. waiting for the CI real rig --------------------------------------------------------------------------
+    # Which l2.yml runs hold or want the cs-desktop runner, from the REST shapes of /actions/workflows/l2.yml/runs and
+    # /actions/runs/{id}/jobs: a real-rig job not completed, whatever its run's event. A synthetic dispatch or a pull
+    # request run carries a real-rig job too, skipped, and that is not busy.
+    $runs = @(
+        [ordered]@{ id = 1; event = 'workflow_dispatch'; status = 'in_progress' },
+        [ordered]@{ id = 2; event = 'workflow_dispatch'; status = 'queued' },
+        [ordered]@{ id = 3; event = 'workflow_dispatch'; status = 'in_progress' },
+        [ordered]@{ id = 4; event = 'pull_request'; status = 'in_progress' },
+        [ordered]@{ id = 5; event = 'workflow_dispatch'; status = 'completed' })
+    $jobsByRun = @{
+        1 = @([ordered]@{ name = 'scenarios'; status = 'completed'; conclusion = 'skipped' }, [ordered]@{ name = 'real-rig'; status = 'in_progress'; conclusion = $null })
+        2 = @([ordered]@{ name = 'real-rig'; status = 'queued'; conclusion = $null })
+        3 = @([ordered]@{ name = 'scenarios'; status = 'in_progress'; conclusion = $null }, [ordered]@{ name = 'real-rig'; status = 'completed'; conclusion = 'skipped' })
+        4 = @([ordered]@{ name = 'scenarios'; status = 'in_progress'; conclusion = $null }, [ordered]@{ name = 'real-rig'; status = 'completed'; conclusion = 'skipped' })
+        5 = @([ordered]@{ name = 'real-rig'; status = 'completed'; conclusion = 'success' })
+    }
+    $busy = $null
+    $thrown = $null
+    try { $busy = @(Select-NightlyG3BusyRealRigJob -Runs $runs -JobsByRun $jobsByRun) } catch { $thrown = $_.Exception.Message }
+    Check 'real-rig busy: the in-progress and the queued real-rig job, not the synthetic dispatch, the pull request or the finished one' `
+        ($null -eq $thrown -and $busy.Count -eq 2 -and ($busy -join ';') -match '\brun 1\b.*in_progress' -and ($busy -join ';') -match '\brun 2\b.*queued') "$thrown [$($busy -join '; ')]"
+
+    # The wait itself, on a fake clock: GetBusy answers in turn, Sleep advances the clock and is counted.
+    function Invoke-Wait([object[]]$Answers, [double]$WaitMinutes) {
+        $state = @{ Now = [DateTimeOffset]::Parse('2026-10-10T17:00:00Z'); Calls = 0; Sleeps = 0 }
+        $result = Wait-NightlyG3RigIdle -WaitMinutes $WaitMinutes -PollSeconds 60 `
+            -GetBusy {
+                $answer = $Answers[[Math]::Min($state.Calls, $Answers.Count - 1)]
+                $state.Calls++
+                if ($answer -is [string] -and $answer -like 'THROW:*') { throw $answer.Substring(6) }
+                return @($answer)
+            }.GetNewClosure() `
+            -Sleep { param($seconds) $state.Now = $state.Now.AddSeconds($seconds); $state.Sleeps++ }.GetNewClosure() `
+            -Now { $state.Now }.GetNewClosure()
+        return [pscustomobject]@{ Result = $result; Sleeps = $state.Sleeps; Elapsed = ($state.Now - [DateTimeOffset]::Parse('2026-10-10T17:00:00Z')).TotalMinutes }
+    }
+    $waitCases = @(
+        @{ Name = 'idle at once'; Answers = @(, @()); Idle = $true; Sleeps = 0; Contains = $null }
+        @{ Name = 'busy twice, then idle'; Answers = @('run 1 job real-rig in_progress', 'run 1 job real-rig in_progress', @()); Idle = $true; Sleeps = 2; Contains = $null }
+        @{ Name = 'busy for the whole 30 minutes'; Answers = @('run 1 job real-rig in_progress'); Idle = $false; Sleeps = 30; Contains = 'run 1 job real-rig in_progress' }
+        # A query that cannot answer is not idle: a night that ran blind beside the real rig is what this wait is for.
+        @{ Name = 'a query that keeps failing'; Answers = @('THROW:401 Bad credentials'); Idle = $false; Sleeps = 30; Contains = '401 Bad credentials' }
+        @{ Name = 'a query that fails once, then idle'; Answers = @('THROW:timeout', @()); Idle = $true; Sleeps = 1; Contains = $null }
+    )
+    foreach ($case in $waitCases) {
+        $outcome = $null
+        $thrown = $null
+        try { $outcome = Invoke-Wait $case.Answers 30 } catch { $thrown = $_.Exception.Message }
+        $text = if ($null -ne $outcome) { @($outcome.Result.busy) -join '; ' } else { '' }
+        Check "rig wait, $($case.Name): $(if ($case.Idle) { 'idle' } else { 'NOT_STARTED_RIG_BUSY' }) after $($case.Sleeps) sleeps" `
+            ($null -eq $thrown -and $null -ne $outcome -and $outcome.Result.idle -eq $case.Idle -and $outcome.Sleeps -eq $case.Sleeps -and
+             $outcome.Elapsed -le 30 -and ($null -eq $case.Contains -or $text.Contains($case.Contains))) `
+            "$thrown idle=$(${outcome}?.Result.idle) sleeps=$(${outcome}?.Sleeps) elapsed=$(${outcome}?.Elapsed) busy=[$text]"
     }
 }
 finally {
