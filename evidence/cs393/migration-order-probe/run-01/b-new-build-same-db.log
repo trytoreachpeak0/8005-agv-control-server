@@ -1,0 +1,77 @@
+[21:52:01 INF] Executed DbCommand (26ms) [Parameters=[], CommandType='Text', CommandTimeout='30']
+SELECT COUNT(*) FROM "sqlite_master" WHERE "name" = '__EFMigrationsHistory' AND "type" = 'table';
+[21:52:02 INF] Executed DbCommand (1ms) [Parameters=[], CommandType='Text', CommandTimeout='30']
+SELECT COUNT(*) FROM "sqlite_master" WHERE "name" = '__EFMigrationsHistory' AND "type" = 'table';
+[21:52:02 INF] Executed DbCommand (1ms) [Parameters=[], CommandType='Text', CommandTimeout='30']
+SELECT "MigrationId", "ProductVersion"
+FROM "__EFMigrationsHistory"
+ORDER BY "MigrationId";
+[21:52:02 INF] Applying migration '20260930012829_Batch8SlotFaultDeclarations'.
+[21:52:02 INF] Executed DbCommand (1ms) [Parameters=[], CommandType='Text', CommandTimeout='30']
+CREATE TABLE "SlotFaultDeclarations" (
+    "DeclarationId" TEXT NOT NULL CONSTRAINT "PK_SlotFaultDeclarations" PRIMARY KEY,
+    "RequestId" TEXT NOT NULL,
+    "RequestContentHash" TEXT NOT NULL,
+    "AgvId" TEXT NOT NULL,
+    "DemandId" TEXT NOT NULL,
+    "SlotOperationAttemptId" TEXT NOT NULL,
+    "OperationType" TEXT NOT NULL,
+    "SlotNo" INTEGER NOT NULL,
+    "FaultCategory" TEXT NOT NULL,
+    "Note" TEXT NOT NULL,
+    "AdministratorId" TEXT NOT NULL,
+    "AdministratorRole" TEXT NOT NULL,
+    "DeclaredAt" TEXT NOT NULL,
+    "ReadingsJson" TEXT NULL,
+    "CommandMessageId" TEXT NOT NULL,
+    "State" TEXT NOT NULL,
+    "ResultMessageId" TEXT NULL,
+    "ResultOutcome" TEXT NULL,
+    "ResultProblemJson" TEXT NULL,
+    "ResultReceivedAt" TEXT NULL
+);
+[21:52:02 INF] Executed DbCommand (0ms) [Parameters=[], CommandType='Text', CommandTimeout='30']
+CREATE INDEX "IX_SlotFaultDeclarations_AgvId" ON "SlotFaultDeclarations" ("AgvId");
+[21:52:02 INF] Executed DbCommand (0ms) [Parameters=[], CommandType='Text', CommandTimeout='30']
+CREATE UNIQUE INDEX "IX_SlotFaultDeclarations_CommandMessageId" ON "SlotFaultDeclarations" ("CommandMessageId");
+[21:52:02 INF] Executed DbCommand (0ms) [Parameters=[], CommandType='Text', CommandTimeout='30']
+CREATE UNIQUE INDEX "IX_SlotFaultDeclarations_PendingAttempt" ON "SlotFaultDeclarations" ("SlotOperationAttemptId") WHERE State = 'PENDING';
+[21:52:02 INF] Executed DbCommand (0ms) [Parameters=[], CommandType='Text', CommandTimeout='30']
+CREATE UNIQUE INDEX "IX_SlotFaultDeclarations_RequestId" ON "SlotFaultDeclarations" ("RequestId");
+[21:52:02 INF] Executed DbCommand (0ms) [Parameters=[], CommandType='Text', CommandTimeout='30']
+INSERT INTO "__EFMigrationsHistory" ("MigrationId", "ProductVersion")
+VALUES ('20260930012829_Batch8SlotFaultDeclarations', '8.0.30');
+[21:52:02 INF] Applying migration '20260930041750_Batch8RecoverySurface'.
+[21:52:02 INF] Executed DbCommand (2ms) [Parameters=[], CommandType='Text', CommandTimeout='30']
+ALTER TABLE "RecoveryWorkflows" ADD "HandedOverAt" TEXT NULL;
+[21:52:02 INF] Executed DbCommand (1ms) [Parameters=[], CommandType='Text', CommandTimeout='30']
+ALTER TABLE "RecoveryWorkflows" ADD "HandoffReceiverName" TEXT NULL;
+[21:52:02 INF] Executed DbCommand (1ms) [Parameters=[], CommandType='Text', CommandTimeout='30']
+ALTER TABLE "RecoveryWorkflows" ADD "HandoffSublot" TEXT NULL;
+[21:52:02 INF] Executed DbCommand (2ms) [Parameters=[], CommandType='Text', CommandTimeout='30']
+ALTER TABLE "ExceptionRecoverySessions" ADD "ClosedReason" TEXT NULL;
+[21:52:02 INF] Executed DbCommand (0ms) [Parameters=[], CommandType='Text', CommandTimeout='30']
+CREATE TABLE "SlotDoorHolds" (
+    "HoldId" TEXT NOT NULL CONSTRAINT "PK_SlotDoorHolds" PRIMARY KEY,
+    "AgvId" TEXT NOT NULL,
+    "DemandId" TEXT NOT NULL,
+    "SlotsJson" TEXT NOT NULL,
+    "HeldAt" TEXT NOT NULL,
+    "ReleasedByActionId" TEXT NULL,
+    "ReleasedAt" TEXT NULL
+);
+[21:52:02 INF] Executed DbCommand (0ms) [Parameters=[], CommandType='Text', CommandTimeout='30']
+CREATE INDEX "IX_SlotDoorHolds_AgvId" ON "SlotDoorHolds" ("AgvId");
+[21:52:02 INF] Executed DbCommand (0ms) [Parameters=[], CommandType='Text', CommandTimeout='30']
+INSERT INTO "__EFMigrationsHistory" ("MigrationId", "ProductVersion")
+VALUES ('20260930041750_Batch8RecoverySurface', '8.0.30');
+[21:52:02 INF] Executed DbCommand (0ms) [Parameters=[], CommandType='Text', CommandTimeout='30']
+SELECT "j"."BlockReasonCode"
+FROM "JourneyRuntimes" AS "j"
+WHERE "j"."Stage" = 'Blocked' AND "j"."BlockReasonCode" IS NOT NULL
+[21:52:02 INF] Executed DbCommand (0ms) [Parameters=[], CommandType='Text', CommandTimeout='30']
+SELECT "a"."AuditRecordId", "a"."Action", "a"."ActorAttribution", "a"."ActorIdentity", "a"."ClaimedAdministratorRole", "a"."DetailJson", "a"."ObjectId", "a"."ObjectKind", "a"."Outcome", "a"."RecordedAt", "a"."RecordedAtUtcTicks", "a"."SnapshotId", "a"."Version"
+FROM "AdministratorAuditRecords" AS "a"
+WHERE "a"."Action" = 'AUDIT_RETENTION_POLICY_CONFIGURED'
+ORDER BY "a"."RecordedAtUtcTicks" DESC, "a"."AuditRecordId" DESC
+LIMIT 1

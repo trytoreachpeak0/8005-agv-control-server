@@ -1,0 +1,132 @@
+{
+  "protocol": {
+    "tag": "protocol-v3.0.0",
+    "releaseVersion": "3.0.0",
+    "profileId": "AGV_FULL_PRODUCT",
+    "protocolVersion": 4,
+    "approvalStatus": "APPROVED_RELEASE",
+    "manifestSha256": "d5e1a53f1fd61f105a890dc0267e1b0a9ac5ea49f713d2cf730b0f554df9db9e",
+    "schemaBundleSha256": "e435b2b14d9ccd60c89f07df909da7626fef056a6b8a2241087557fd7dc3df43",
+    "vendoredSchemaFiles": 71
+  },
+  "validator": "Corvus.Json.Validator 4.6.7",
+  "linesObserved": 669,
+  "testAuthoredLinesSkipped": 12,
+  "linesChecked": 657,
+  "distinctLinesChecked": 411,
+  "linesInViolation": 0,
+  "linesInKnownViolation": 0,
+  "knownViolationsMatched": 0,
+  "knownViolationEntriesNotMatched": [],
+  "schemaCompilationMilliseconds": 123141,
+  "validationMilliseconds": 4761,
+  "schemaCompilationProcesses": 4,
+  "serverMessageTypesNotObserved": [
+    "CapabilitySnapshotRequested",
+    "DemandSelectionResult",
+    "ExceptionRecoverySessionRejected",
+    "LoadCompensationRejected",
+    "LoadCorrectionRejected",
+    "RecoveryActionRejected",
+    "SessionRejected",
+    "SlotConfigurationActivationCommand",
+    "SlotFaultDeclarationCommand",
+    "SublotRejected",
+    "UnableToChargeFieldConfirmationResult"
+  ],
+  "byMessageType": {
+    "CapabilitySnapshot": {
+      "synthetic-peer": 8
+    },
+    "CurrentStopWorklistSnapshot": {
+      "product": 43
+    },
+    "DurableAck": {
+      "product": 61
+    },
+    "ExceptionRecoverySessionOpened": {
+      "product": 21
+    },
+    "ExceptionRecoverySessionSnapshot": {
+      "product": 59
+    },
+    "FaultCargoRecoveryCommand": {
+      "product": 7
+    },
+    "ForcedMechanicalRecoveryCommand": {
+      "product": 1
+    },
+    "HardwareRecoveryRecordResult": {
+      "product": 3
+    },
+    "Heartbeat": {
+      "synthetic-peer": 6
+    },
+    "HeartbeatAck": {
+      "product": 7
+    },
+    "LoadCancellationAuthorization": {
+      "product": 6
+    },
+    "LoadCompensationCommand": {
+      "product": 3
+    },
+    "LoadCorrectionCommand": {
+      "product": 1
+    },
+    "ManualChargingReturnToServiceResult": {
+      "product": 7
+    },
+    "ManualStationClearanceConfirmationResult": {
+      "product": 1
+    },
+    "OnboardAlarmSnapshot": {
+      "synthetic-peer": 8
+    },
+    "PreDepartureSafetyCheck": {
+      "product": 16
+    },
+    "ProtocolProblem": {
+      "product": 38
+    },
+    "RecoveryActionAccepted": {
+      "product": 19
+    },
+    "RecoveryStateReport": {
+      "synthetic-peer": 8
+    },
+    "SafetyStateSnapshot": {
+      "synthetic-peer": 8
+    },
+    "SafetyStateSnapshotRequested": {
+      "product": 8
+    },
+    "SessionAccepted": {
+      "product": 17
+    },
+    "SessionHello": {
+      "synthetic-peer": 8
+    },
+    "SessionReadiness": {
+      "product": 34
+    },
+    "SlotOperationCommand": {
+      "product": 31
+    },
+    "SlotOperationResumeCommand": {
+      "product": 7
+    },
+    "SnapshotAppliedAck": {
+      "product": 44
+    },
+    "SublotEntryRequested": {
+      "product": 29
+    },
+    "UpcomingStopPlanSnapshot": {
+      "product": 73
+    },
+    "VehicleBusinessStateSnapshot": {
+      "product": 75
+    }
+  }
+}

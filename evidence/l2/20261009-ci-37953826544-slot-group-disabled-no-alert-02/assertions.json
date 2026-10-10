@@ -1,0 +1,64 @@
+{
+  "schemaVersion": 1,
+  "scenario": "slot-group-disabled-no-alert",
+  "runId": "20261009T163926638Z",
+  "outcome": "PASS",
+  "failureReason": "",
+  "identity": {
+    "agvId": "AGV-L2-001",
+    "rig": "SyntheticOnboard",
+    "batchId": "batch-4",
+    "vehicleKey": "BROKERX-L2-0001",
+    "protocolReleaseIdentity": {
+      "repository": "8005-agv-protocol",
+      "releaseVersion": "3.0.0",
+      "tag": "protocol-v3.0.0",
+      "commit": "3f091cb2eae7c58cec54a95dd9389c9180bc7b4c",
+      "protocolVersion": 4,
+      "profileId": "AGV_FULL_PRODUCT",
+      "manifestSha256": "d5e1a53f1fd61f105a890dc0267e1b0a9ac5ea49f713d2cf730b0f554df9db9e",
+      "schemaBundleSha256": "e435b2b14d9ccd60c89f07df909da7626fef056a6b8a2241087557fd7dc3df43",
+      "vectorsSha256": "be849f9749b004296ebd9e7bffa98faf2f8ffa90b63308ca3b210c68e7b8656e",
+      "approvalStatus": "APPROVED_RELEASE"
+    },
+    "stageRoot": "C:\\actions-runner\\win11-01-control-server\\_work\\_temp\\l2-37953826544-1\\_stage\\l2-20261009T163926638Z-slot3",
+    "controlServerCommit": "563242d071de6f243c59f11722b197d683fee2a4"
+  },
+  "assertions": [
+    {
+      "id": "L2-SGD-01",
+      "description": "前置：禁用的 [1,2] 属于本车 FRONT 组；组内可用仓少于 3 个，组的物理仓位数不少于 3 个",
+      "outcome": "PASS",
+      "expected": "FRONT physical [1,2,3,4] >= 3, available in group < 3, disabled not available",
+      "actual": "FRONT physical [1,2,3,4], available in group [3,4], all available [3,4,5,6,7,8]"
+    },
+    {
+      "id": "L2-SGD-02",
+      "description": "积压原因为「所需分组暂时空仓不足」，再过三轮仍是",
+      "outcome": "PASS",
+      "expected": "SLOT_GROUP_CAPACITY_TEMPORARILY_UNAVAILABLE",
+      "actual": "first SLOT_GROUP_CAPACITY_TEMPORARILY_UNAVAILABLE, after three rounds SLOT_GROUP_CAPACITY_TEMPORARILY_UNAVAILABLE"
+    },
+    {
+      "id": "L2-SGD-03",
+      "description": "不受理：没有受理行、没有旅程、没有建 RIoT 单",
+      "outcome": "PASS",
+      "expected": "AcceptedDemands 0, JourneyRuntimes 0, RIoT orders 0",
+      "actual": "AcceptedDemands 0, JourneyRuntimes 0, RIoT orders 0"
+    },
+    {
+      "id": "L2-SGD-04",
+      "description": "StructuralDispatchBlocks 没有这条需求的行（含已清除的）：仓位临时禁用不是结构性阻断",
+      "outcome": "PASS",
+      "expected": 0,
+      "actual": 0
+    },
+    {
+      "id": "L2-SGD-05",
+      "description": "服务端日志里没有这条需求的「结构性派车阻断形成」记录",
+      "outcome": "PASS",
+      "expected": "0 records",
+      "actual": "0 records"
+    }
+  ]
+}
