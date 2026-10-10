@@ -119,7 +119,7 @@ $boundStage = Wait-L2ConditionOrLast -Description 'the bound WIRE_TO_GATE demand
     -Journal $journal -Criterion 'wire-to-gate-accepted' -TimeoutSeconds 90 `
     -Probe { Get-Stage $bound.Id } -Until { param($v) $v -eq 'AwaitingPickupArrival' }
 $assertions.Add(
-    'L2-SDBM-01', 'WIRE_TO_GATE（已绑定、最后发布）被受理：派车轮已经跑过，排在它前面的四条同向需求已经被判过',
+    'L2-SDBM-01', 'WIRE_TO_GATE（已绑定、最后发布）被受理：派车轮已经跑过，比它先发布的四条同向需求那时已在目录里',
     ($boundStage -eq 'AwaitingPickupArrival'), 'AwaitingPickupArrival', $(if ($boundStage) { $boundStage } else { '(no journey)' }))
 
 # 受理之后再等四条的积压行都落到缺绑定：积压行与受理不一定同一次提交，另等，不直读。
