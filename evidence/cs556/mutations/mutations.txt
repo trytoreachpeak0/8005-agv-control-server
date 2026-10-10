@@ -1,0 +1,22 @@
+=== M0 no update at all
+Failed ControlServer.Tests.RecoveryStateMachineG2Tests.AForcedResultResentAndThenTheReconnectsReportAgreeWithWhatTheResultAlreadyGave [491 ms]
+Failed ControlServer.Tests.RecoveryStateMachineG2Tests.AFailedForcedResultWithoutAReconnectLeavesTheNextSessionFreeToAct [364 ms]
+Failed ControlServer.Tests.RecoveryStateMachineG2Tests.AForcedResultWithoutAReconnectHoldsTheVehicleForItsHardwareRecordAndTheRecordMakesItReady [366 ms]
+Failed!  - Failed:     3, Passed:     4, Skipped:     0, Total:     7, Duration: 7 s - ControlServer.Tests.dll (net8.0)
+exit 1 -> KILLED
+=== M1 raise-only dropped (lowers too)
+Failed ControlServer.Tests.RecoveryStateMachineG2Tests.AForcedResultNeverLowersAGenerationTheVehicleReported [8 s]
+Failed!  - Failed:     1, Passed:     6, Skipped:     0, Total:     7, Duration: 11 s - ControlServer.Tests.dll (net8.0)
+exit 1 -> KILLED
+=== M2 historical result also counts
+Failed ControlServer.Tests.RecoveryStateMachineG2Tests.AForcedResultOfAnOlderGenerationDoesNotStandForTheVehiclesReport [476 ms]
+Failed!  - Failed:     1, Passed:     6, Skipped:     0, Total:     7, Duration: 7 s - ControlServer.Tests.dll (net8.0)
+exit 1 -> KILLED
+=== M3 administrator-closed counts
+Failed ControlServer.Tests.RecoveryStateMachineG2Tests.AForcedResultOfAWorkflowAnAdministratorClosedDoesNotStandForTheVehiclesReport [899 ms]
+Failed!  - Failed:     1, Passed:     6, Skipped:     0, Total:     7, Duration: 8 s - ControlServer.Tests.dll (net8.0)
+exit 1 -> KILLED
+=== M4 any connection counts
+Failed ControlServer.Tests.RecoveryStateMachineG2Tests.AForcedResultOfAnEarlierConnectionDoesNotStandForTheCurrentOnesReport [271 ms]
+Failed!  - Failed:     1, Passed:     6, Skipped:     0, Total:     7, Duration: 4 s - ControlServer.Tests.dll (net8.0)
+exit 1 -> KILLED
