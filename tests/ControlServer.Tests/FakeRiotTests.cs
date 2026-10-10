@@ -409,11 +409,11 @@ public sealed class FakeRiotTests
         HttpRiotMovementGateway gateway = fixture.Gateway();
         await fixture.CommandAsync(HttpMethod.Put, "faults/nonfinal-listing-churn", new { padding = 250, period = 0, burst = 0 });
         RiotVehicleSafetyObservation complete = await gateway.ReadForOnboardAsync(
-            VehicleKey, TimeSpan.FromSeconds(3), new NoOwnOrders(), TestContext.Current.CancellationToken);
+            VehicleKey, TimeSpan.FromMilliseconds(1_500), new NoOwnOrders(), TestContext.Current.CancellationToken);
 
         await fixture.CommandAsync(HttpMethod.Put, "faults/nonfinal-listing-churn", new { padding = 250, period = 1, burst = 1 });
         RiotVehicleSafetyObservation carried = await gateway.ReadForOnboardAsync(
-            VehicleKey, TimeSpan.FromSeconds(3), new NoOwnOrders(), TestContext.Current.CancellationToken);
+            VehicleKey, TimeSpan.FromMilliseconds(1_500), new NoOwnOrders(), TestContext.Current.CancellationToken);
         RiotVehicleSafetyObservation strict = await gateway.ReadVehicleSafetyAsync(VehicleKey, TestContext.Current.CancellationToken);
 
         Assert.Equal(RiotVehicleMotionState.Stopped, complete.MotionState);

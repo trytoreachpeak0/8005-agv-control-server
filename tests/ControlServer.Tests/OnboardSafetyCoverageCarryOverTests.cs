@@ -18,7 +18,7 @@ namespace ControlServer.Tests;
 /// 现场 cs#566（2026-10-10，agv02）：全厂约 250 张非终态单、3 页，订单不停在变，每一两分钟就有一次读到一半总数变了，
 /// cs#525 判读不全、投影回一次 <c>RIOT_NONFINAL_ORDER_COVERAGE_UNKNOWN</c>，车载端闪一次未就绪，两端都把 5 分钟离站等待重新计满，
 /// 车在站 15 走不了。修法（调度批准的「甲′ + 丁」）：只对这条投影，读不全先当场重读，最多共 3 次；仍读不全时，
-/// 「本车有没有单」沿用不超过 3 秒的上一次读全的清单，<c>observedAt</c> 填那次读全的开始时刻，车辆状态照常现读。
+/// 「本车有没有单」沿用不超过 1.5 秒的上一次读全的清单，<c>observedAt</c> 填那次读全的开始时刻，车辆状态照常现读。
 /// </para>
 /// <para>
 /// 沿用之前还要过两道，各有用例：读不全的那几页里出现本车的单，就是有单；本服务端自己的库里有一张 T₀ − 1 秒之后建的（或正在建的）
@@ -29,7 +29,7 @@ public sealed class OnboardSafetyCoverageCarryOverTests
 {
     private const string Vehicle = "VEHICLE-KEY-01";
     private static readonly DateTimeOffset T0 = new(2026, 10, 10, 11, 20, 0, TimeSpan.Zero);
-    private static readonly TimeSpan CarryOver = TimeSpan.FromSeconds(3);
+    private static readonly TimeSpan CarryOver = TimeSpan.FromMilliseconds(1_500);
 
     /// <summary>取红用例：上一次读全、本车无单；这一次三遍都读不全。修复前回 <c>COVERAGE_UNKNOWN</c>，车载端闪一次未就绪。</summary>
     [Fact]
@@ -48,8 +48,8 @@ public sealed class OnboardSafetyCoverageCarryOverTests
     }
 
     [Theory]
-    [InlineData(3_000, true)]
-    [InlineData(3_001, false)]
+    [InlineData(1_500, true)]
+    [InlineData(1_501, false)]
     public async Task TheCarryOverEndsAtItsLimit(int ageMs, bool carried)
     {
         await using Rig rig = new();
@@ -135,7 +135,7 @@ public sealed class OnboardSafetyCoverageCarryOverTests
         await using Rig rig = new();
         await rig.OnboardAsync();
 
-        rig.Clock.Set(T0.AddSeconds(2));
+        rig.Clock.Set(T0.AddSeconds(1));
         rig.Orders.FaultEveryReadFrom(rig.Orders.Reads + 1);
         rig.Ledger.Answer = true;
         RiotVehicleSafetyObservation result = await rig.OnboardAsync();
@@ -143,6 +143,35 @@ public sealed class OnboardSafetyCoverageCarryOverTests
         Assert.Equal(RiotVehicleMotionState.Unknown, result.MotionState);
         Assert.Equal(["RIOT_NONFINAL_ORDER_PRESENT"], result.ReasonCodes);
         Assert.Equal((Vehicle, T0.AddSeconds(-1)), (rig.Ledger.LastVehicleKey, rig.Ledger.LastSince));
+    }
+
+    /// <summary>
+    /// 窗口按「即将交出去」那一刻算，不按问本库之前算：真装置 run 38069023213 里一次沿用的请求问完本库已是 2.27 秒之后，
+    /// 那份证据在车载端手里没撑到下一次拉取返回就过了 5 秒，车载端闪了一次。问本库期间时钟走过窗口，就回今天的答案。
+    /// </summary>
+    [Theory]
+    [InlineData(1_500, true)]
+    [InlineData(1_501, false)]
+    public async Task TheCarryOverIsMeasuredWhenTheAnswerLeavesNotBeforeTheLedgerIsAsked(int ageAfterAskingMs, bool carried)
+    {
+        await using Rig rig = new();
+        await rig.OnboardAsync();
+
+        rig.Clock.Set(T0.AddMilliseconds(500));
+        rig.Orders.FaultEveryReadFrom(rig.Orders.Reads + 1);
+        rig.Ledger.OnAsk = () => rig.Clock.Set(T0.AddMilliseconds(ageAfterAskingMs));
+        RiotVehicleSafetyObservation result = await rig.OnboardAsync();
+
+        if (carried)
+        {
+            Assert.Equal(RiotVehicleMotionState.Stopped, result.MotionState);
+            Assert.Equal(T0, result.ObservedAt);
+        }
+        else
+        {
+            AssertCoverageUnknown(result);
+        }
+        Assert.Equal(1, rig.Ledger.Calls);
     }
 
     [Theory]
@@ -448,6 +477,7 @@ public sealed class OnboardSafetyCoverageCarryOverTests
         public int Calls { get; private set; }
         public string? LastVehicleKey { get; private set; }
         public DateTimeOffset? LastSince { get; private set; }
+        public Action? OnAsk { get; set; }
 
         public async Task<bool> MayHaveCreatedSinceAsync(
             string vehicleKey, DateTimeOffset since, CancellationToken cancellationToken)
@@ -455,6 +485,7 @@ public sealed class OnboardSafetyCoverageCarryOverTests
             Calls++;
             LastVehicleKey = vehicleKey;
             LastSince = since;
+            OnAsk?.Invoke();
             switch (Failure)
             {
                 case "throws": throw new InvalidOperationException("database is locked");

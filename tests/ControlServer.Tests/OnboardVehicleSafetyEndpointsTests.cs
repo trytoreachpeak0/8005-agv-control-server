@@ -87,7 +87,7 @@ public sealed class OnboardVehicleSafetyEndpointsTests
         Assert.Equal(["RIOT_MOVEMENT_NOT_FINISHED"], ok.Value.ReasonCodes);
         Assert.Equal(1, facts.ReadCount);
         Assert.Equal("VEHICLE-KEY-01", facts.LastVehicleKey);
-        Assert.Equal(TimeSpan.FromSeconds(3), facts.LastCarryOver);
+        Assert.Equal(TimeSpan.FromMilliseconds(1_500), facts.LastCarryOver);
         Assert.IsType<ThrowingLedger>(facts.LastLedger);
         Assert.Equal("no-store", context.Response.Headers.CacheControl);
         Assert.Equal("no-cache", context.Response.Headers.Pragma);
@@ -120,17 +120,18 @@ public sealed class OnboardVehicleSafetyEndpointsTests
     }
 
     /// <summary>
-    /// control-server#573：沿用窗口 0～4000 毫秒——车载端合同 5000 毫秒减它的时钟容差上限 1000 毫秒（<c>VehicleSafetySettings</c>）。
+    /// control-server#573：沿用窗口 0～2000 毫秒——车载端合同 5000 毫秒，减它的时钟容差上限 1000、拉取间隔 1000、留给下一次请求的 1000
+    /// （<c>VehicleSafetySettings</c>；车载端每次用证据时按当时的时刻判时效，所以沿用来的证据要撑到下一次拉取返回）。
     /// 越界就拒绝启动；投影关着也照查，免得打开那天才发现。
     /// </summary>
     [Theory]
     [InlineData(-1, true, false)]
     [InlineData(0, true, true)]
-    [InlineData(3_000, true, true)]
-    [InlineData(4_000, true, true)]
-    [InlineData(4_001, true, false)]
+    [InlineData(1_500, true, true)]
+    [InlineData(2_000, true, true)]
+    [InlineData(2_001, true, false)]
     [InlineData(-1, false, false)]
-    [InlineData(4_001, false, false)]
+    [InlineData(2_001, false, false)]
     public void TheOrderCoverageCarryOverIsBoundedByTheOnboardEvidenceAge(int carryOverMs, bool enabled, bool accepted)
     {
         string variable = "CONTROL_SERVER_TEST_" + Guid.NewGuid().ToString("N");
@@ -149,8 +150,8 @@ public sealed class OnboardVehicleSafetyEndpointsTests
     }
 
     [Fact]
-    public void TheOrderCoverageCarryOverDefaultsToThreeSeconds() =>
-        Assert.Equal(3_000, new OnboardSafetyProjectionOptions().OrderCoverageCarryOverMs);
+    public void TheOrderCoverageCarryOverDefaultsToOneAndAHalfSeconds() =>
+        Assert.Equal(1_500, new OnboardSafetyProjectionOptions().OrderCoverageCarryOverMs);
 
     [Theory]
     [InlineData("OnboardTransport:serverCertificatePath", "C:\\certs\\server.pfx")]
