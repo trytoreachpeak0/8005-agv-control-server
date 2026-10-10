@@ -48,6 +48,21 @@ $mutations = @(
         From = "        if (`$at -lt `$Since) { continue }`n        `$source = [string] `$event['SourceContext']"
         To = "        `$source = [string] `$event['SourceContext']"
         Expect = @('held read-back: an activity event from an earlier process does not count', 'held read-back: event 2001 only from an earlier process') }
+    @{ Id = 'M13'; File = "$p/ParallelHost.psm1"; What = 'second read-back refusal leaves enabled=true'
+        From = '        throw "$($_.Exception.Message) $(& $setBackFalse)"'; To = '        throw $_.Exception.Message'
+        Expect = @('first install: a second read-back that does not match', 'upgrade: a second read-back that does not match', 'rollback: a second read-back that does not match') }
+    @{ Id = 'M14'; File = "$p/ParallelHost.psm1"; What = 'configuration step ignores JourneyRuntime environment keys'
+        From = '    if ($overrides.Count -gt 0) {'; To = '    if ($false) {'
+        Expect = @('first install: JourneyRuntime__Enabled in the service', 'upgrade: JourneyRuntime__Enabled in the service', 'rollback: JourneyRuntime__Enabled in the service', 'first install: a DOTNET_-prefixed', 'upgrade: a DOTNET_-prefixed', 'rollback: a DOTNET_-prefixed') }
+    @{ Id = 'M15'; File = "$p/ParallelInstance.psm1"; What = 'environment override ignores the DOTNET_/ASPNETCORE_ prefixes'
+        From = '(?:DOTNET_|ASPNETCORE_)?JourneyRuntime'; To = 'JourneyRuntime'
+        Expect = @('environment override: only JourneyRuntime keys count', 'first install: a DOTNET_-prefixed', 'upgrade: a DOTNET_-prefixed', 'rollback: a DOTNET_-prefixed') }
+    @{ Id = 'M16'; File = "$p/Install-ParallelInstanceLocal.ps1"; What = 'installer computes the machine-level override but does not throw it'
+        From = '    if ($environmentOverrides.Count -gt 0) {'; To = '    if ($false) {'
+        Expect = @('wiring: a JourneyRuntime environment key found before the product script is thrown') }
+    @{ Id = 'M17'; File = "$p/Install-ParallelInstanceLocal.ps1"; What = 'read-back refusal without the log file facts'
+        From = '$where $logFacts $serviceName'; To = '$where $serviceName'
+        Expect = @('wiring: a read-back refusal carries the log files') }
 )
 $report = [System.Collections.Generic.List[string]]::new()
 foreach ($m in $mutations) {
