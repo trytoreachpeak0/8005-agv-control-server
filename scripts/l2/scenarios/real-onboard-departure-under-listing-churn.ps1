@@ -12,8 +12,10 @@
 所以只有真车载端看得到这件事。
 
 **强度从哪来。**现场 10-10 18 时～10-11 00 时 v2 实例日志实测，单次读不全约 0.2%～0.5%，最坏的 5 分钟约 1.3%（PR 正文有出处）。
-2.5% 约为现场的 5 倍。**必须是计数，不能是按概率随机**：修复后一次请求最多读 3 遍，被搅的读相隔 N 次，所以 3 遍至多撞上 1 遍，
-按构造不会闪；随机的话，修复后每次拉取闪的概率是 p³，判据就靠运气了。计数由 `FakeRiotTests` 的离线自检钉住。
+2.5% 约为现场的 5 倍。**必须是计数，不能是按概率随机**：被搅的读在全局读序里相隔 N 次（N ≥ 3），所以全局任意连续 3 次读里至多 1 次
+被搅。修复后一次请求最多读 3 遍：没有别的调用方的读插进来时，这 3 遍就是全局连续的 3 次读，至多撞上 1 遍，按构造不会闪；有插入时，
+3 遍要全部撞上，得每两遍之间恰好插进 N − 1 次别人的读、而且都发生在一次请求的约 100 毫秒里——这不是构造保证，是极不可能。
+随机的话，修复后每次拉取闪的概率是 p³，判据就靠运气了。计数由 `FakeRiotTests` 的离线自检钉住。
 
 **修复前**一读不全就闪。装置上全部调用方合计每秒约 1.8 次清单读，每 40 次搅 1 次即每 22 秒左右 1 次，车载端那条读约占 55%，
 约每 40 秒闪一次；180 秒等待里至少闪一次的概率约 99%，`L2-LC-02`、`L2-LC-03` 红。20 秒的等待做不到这一点（修复前一半以上能走）。
@@ -31,8 +33,10 @@
   建单之后车载端看到本服务端自己的在途单而报未就绪是设计如此（cs#138），不在窗口里。
 - 04 旅程照常走完，`Completed`。
 
-`-ChurnFrom PickupArrival`（场景 `real-onboard-load-under-listing-churn` 传它）从车到取货站就开始搅，N=4（25%，仍是计数、仍不连续），
-离站等待 20 秒、预算 80 秒——装货只有十几秒，N=40 打不中。多判装货那一段：
+`-ChurnFrom PickupArrival`（场景 `real-onboard-load-under-listing-churn` 传它）从车到取货站就开始搅，N=3（约 33%，仍是计数、仍不连续），
+离站等待 20 秒、预算 80 秒——装货只有十几秒，N=40 打不中。N=3 是全局任意连续 3 次读里**恰好** 1 次被搅的最大强度；第一版取 N=4，
+修复后 CI 真装置 run 38073442180 的三遍装货期间只搅中 3、3、2 次，`L2-LC-05` 的门槛 5 没达到（其余判据全绿），于是加到 N=3、门槛不降。
+上一段关于插入的说明对 N=3 同样成立。多判装货那一段：
 - 05 装货期间注入确实打中了：车到站到装货提交之间至少搅乱 5 次。
 - 06 真车载端的 `WAITING_OPERATOR` 进度送到了服务端（120 秒内）。修复前这一条就是 run 38067577157 的样子：开锁后撞上一次未就绪，
   进度发不出去、此后不补发，服务端干等（`evidence/cs573/rig-red-load-phase-38067577157`）。不补发是车载端另一个缺陷，调度另开票；
@@ -59,7 +63,7 @@ Import-Module (Join-Path (Split-Path -Parent $PSScriptRoot) 'L2ConditionOrLast.p
 # Every Period-th read churned, Burst 1: a deterministic count, never a draw (header, "强度从哪来"). The departure budget is the
 # setup's StationDepartureWaitTimeout plus 60 seconds; both scenarios' setups carry their own wait.
 $plan = if ($ChurnFrom -eq 'PickupArrival') {
-    @{ Period = 4; Burst = 1; DepartureBudgetSeconds = 80; MinimumChurned = 5 }
+    @{ Period = 3; Burst = 1; DepartureBudgetSeconds = 80; MinimumChurned = 5 }
 } else {
     @{ Period = 40; Burst = 1; DepartureBudgetSeconds = 240; MinimumChurned = 3 }
 }
