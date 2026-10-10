@@ -54,7 +54,8 @@ public sealed class AdmissionPolicyVersionGuardTests
     [Trait("IntegrationSlice", "FP-IS-10")]
     public void NoShippedAdmissionPolicyVersionIsBelowTheOneItsExecutableSetRequires()
     {
-        long required = RequiredVersion() ?? long.MaxValue;
+        // A set with no row is the test above's red, not this one's.
+        long required = RequiredVersion() ?? 0;
 
         Assert.All(
             ShippedVersions(),
