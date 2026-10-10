@@ -266,6 +266,9 @@ public sealed class OnboardRecoveryCoordinator(
             ? payload.GetProperty("forcedRecoveryGeneration").GetInt64()
             : workflow.ForcedRecoveryGeneration;
         bool historicalOnly = resultGeneration < currentGeneration;
+        // Read before this result writes the workflow: an administrator's closing leaves it RecoveryRequired, and only a
+        // workflow still awaiting its result can stand for the vehicle's report (TakeForcedResultAsReportedGenerationAsync).
+        bool awaitedResult = workflow.State is RecoveryWorkflowState.CommandPending or RecoveryWorkflowState.AwaitingResult;
         string outcome = ResultOutcome(messageType, payload);
         DateTimeOffset observedAt = payload.GetProperty("observedAt").GetDateTimeOffset();
         dbContext.RecoveryResultEvidence.Add(new RecoveryResultEvidenceRow
@@ -292,6 +295,12 @@ public sealed class OnboardRecoveryCoordinator(
         {
             await ApplyCurrentResultAsync(messageType, payload, workflow, cancellationToken)
                 .ConfigureAwait(false);
+            if (messageType == "ForcedMechanicalRecoveryResult" && awaitedResult &&
+                resultGeneration == currentGeneration && resultGeneration == workflow.ForcedRecoveryGeneration)
+            {
+                await TakeForcedResultAsReportedGenerationAsync(agvId, sessionGeneration, resultGeneration, cancellationToken)
+                    .ConfigureAwait(false);
+            }
             await AdvanceSessionAfterResultAsync(
                 workflow,
                 sessionGeneration,
@@ -2879,6 +2888,36 @@ public sealed class OnboardRecoveryCoordinator(
         byte[] suppliedBytes = Encoding.UTF8.GetBytes(supplied);
         return expectedBytes.Length == suppliedBytes.Length &&
                CryptographicOperations.FixedTimeEquals(expectedBytes, suppliedBytes);
+    }
+
+    /// <summary>
+    /// Takes a current forced result as the vehicle reporting its generation (control-server#556): the onboard raises its
+    /// generation only by binding the ForcedMechanicalRecoveryCommand, and the result carries the generation it bound, after
+    /// the forcing was done. Until #556 only the handshake's RecoveryStateReport counted, so a vehicle that sent its result and
+    /// did not reconnect stayed on FORCED_RECOVERY_GENERATION_MISMATCH: every action refused
+    /// FORCED_RECOVERY_GENERATION_STALE, and a hardware record taken but lifting nothing.
+    /// </summary>
+    /// <remarks>
+    /// The fence (<see cref="ForcedFenceLiftedOverAdministratorClosingsAsync"/>) waits to know the vehicle has taken the
+    /// forced recovery in; its result says more than a report does -- the recovery was carried out to its end. The caller
+    /// passes only the result of the server's current generation, of the workflow issued under it, which was still awaiting
+    /// its result: an older generation's result is history, and a workflow an administrator closed stands for nothing until
+    /// the vehicle's own report. Only for the connection the result arrived on, and only ever raised: a later report is the
+    /// vehicle's word and replaces this as before.
+    /// </remarks>
+    private async Task TakeForcedResultAsReportedGenerationAsync(
+        string agvId,
+        long sessionGeneration,
+        long generation,
+        CancellationToken cancellationToken)
+    {
+        SessionRecoveryRow? connection = await dbContext.SessionRecoveries.SingleOrDefaultAsync(
+            row => row.AgvId == agvId, cancellationToken).ConfigureAwait(false);
+        if (connection is null || connection.SessionGeneration != sessionGeneration ||
+            connection.ReportedForcedRecoveryGeneration >= generation)
+            return;
+        connection.ReportedForcedRecoveryGeneration = generation;
+        connection.UpdatedAt = timeProvider.GetUtcNow();
     }
 
     private async Task<long> CurrentForcedGenerationAsync(string agvId, CancellationToken cancellationToken) =>
