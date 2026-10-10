@@ -40,6 +40,7 @@ control-server#262。约 2026-10-08 起 `factory01` 上同时跑两套 ControlSe
 | `journeyRuntime.mapIdentity` | `老厂前线new_wk` | `evidence/field/2026-09-19-B6-map-name-baseline-check/real-riot/fields.json` |
 | `journeyRuntime.dispatchZone`、`allowedDispatchZones` | `WIRE` | 用户 2026-09-18 定：`evidence/field/2026-09-18-B4-site-prerequisites/03-area-assignment-table.md` 第 58、122 行（区域分配表的 `dispatch_zone` 全部是 `WIRE`，实例必须配成同一个值，否则那张表导入会报 `DISPATCH_ZONE_NOT_FOUND`） |
 | `journeyRuntime.admissionPolicyDeploymentId` | `MAP-26-WIRE_TO_GATE-20261007` | 调度 2026-10-07 定，格式沿用 map 25 的 `MAP-25-WIRE_TO_GATE-20260827`（control-server#411）。它是部署标签，不是业务参数。**实例第一次带着运行时启动之后，它就和 `admissionPolicyVersion` 一起固定在库里**：只改标签、不升版本，服务端会报 `Admission policy version is already bound to different content or deployment identity.`，判为准入策略漂移（`WireToGateStore.cs` 的 `ApplyAdmissionPolicyAsync`）。要换标签，就同时升 `admissionPolicyVersion` |
+| `journeyRuntime.admissionPolicyVersion` | `3` | 批次 10（control-server#545）放开同向四类时由 2 升到 3，与 `appsettings.json` 一致。**今后用批次 10 之后的包重装时，两份定义都必须是这个值或更高**，见下文「准入策略版本」 |
 | `taskTypeStations.settingsFile` | `task-type-stations.map-26.settings.json` | control-server#518。包里随 Host 带一份 26 号图站点清单，定义点名它，覆盖层写成 `TaskTypeStations:settingsFile`（Host 按安装目录解析相对路径）。包内默认的 `task-type-stations.settings.json` 仍绑 25，给 MVP 线用，不动。见下文 |
 
 这三个值都是服务端自己的配置：调度区存在本实例的库里，准入策略部署号是服务端写库时带的标签。**RIoT 里没有它们，也就无从「从 RIoT 取回」**——此前这里和工作区文档都这么写过，那是错的（control-server#411）。
@@ -124,6 +125,100 @@ control-server#262。约 2026-10-08 起 `factory01` 上同时跑两套 ControlSe
 
 **恢复办法是重新部署当前在跑的那个 commit（或修好的新包），不要用 `-Rollback` 来恢复开关。**安装模式失败时代际对调还没发生，
 这时再跑 `-Rollback`，装上的是 `.previous`，也就是更早一代，车载端版本可能对不上。
+
+## 准入策略版本：批次 10 起是 3（control-server#545）
+
+**先说要做什么：带批次 10（control-server#545）及之后代码的包，装到 factory01 上已有的 v2 实例时，用的实例定义里
+`journeyRuntime.admissionPolicyVersion` 必须是 3。今后 factory01 上的 v2 实例用批次 10 之后的包重装时，两份实例定义
+（`instance-factory01-v2.json` 与 `instance-factory01-v2.production-mes.json`）的 `admissionPolicyVersion` 都必须跟着升到
+本票的值 3（以后的票再升，就是那时的值），不能沿用控制端手上那份旧定义。**本仓两份定义与 `appsettings.json` 已经一起改成 3。
+
+反过来同样不行，而且更隐蔽：**批次 10 之前的包（例如 `e03d8e8b`）不得配版本 3 的定义。**旧包配 3 装上去当时不报错——3 比库里的
+2 高，库就把 3 绑到旧包的两类种子上；之后再装批次 10 的包、配 3，同一个版本号下内容不同，判漂移、停接单（L1
+`SameDirectionTaskTypeJourneyRuntimeTests.AnOldPackageInstalledUnderVersionThreeTakesTheVersionAndThisBuildThenDrifts`）。所以：
+
+- **部署脚本 19（`8005-workspace` 仓 `remote-ops/factory-server/scripts/19-deploy-control-server-parallel.ps1`）的
+  `-ControlServerRepository` 必须检出到与安装包同一个 control-server 提交**（包里 `release-manifest.json` 的
+  `components.controlServer.commit`）。19 的实例定义取自这个克隆的 `scripts/parallel/`，不从包里取；克隆停在顶端、包是旧的，
+  定义就是新的。要部署旧包，就为那个提交建一个 detached worktree 当 `-ControlServerRepository`。19 自己做这道核对是
+  control-server#552，在那之前只能靠人核。
+- **本票合入之后、批次 10 的 release 跑出来之前，不要用不带 `-RunId` 的默认方式部署。**19 不带 `-RunId` 时取
+  `release.yml` 最近一次成功的产物，那时它还是批次 10 之前的包，而克隆顶端的定义已经是 3——正是上面这种错配。
+
+为什么：服务端每一轮都把「本图每个 AREA 命名的机台站 × 本构建能执行的每个任务类型」写进库，作为站点准入（准入种子），
+并和 `admissionPolicyVersion`、`admissionPolicyDeploymentId` 一起固定下来。同一个版本号下种子内容变了，库拒绝重绑，
+本轮判准入策略漂移（`ADMISSION_POLICY_DRIFT`）：**已经在途的旅程照常走完，任何新需求都不再受理**——生产来源模式下正在试运行的
+`STAGING_TO_WIRE` 也一样停接单（缺陷记录 `docs/defects/20260915-admission-policy-drift-halts-runtime.md`）。批次 10 让
+`DIE_TO_WIRE_STAGING`、`DIE_TO_OVEN`、`WIRE_TO_OPTICAL`、`WIRE_TO_NITROGEN` 可执行（`ExecutableTaskTypes`），种子由两类变成六类，
+所以版本由 2 升到 3。这与 `allowedWorkTypes` 无关：生产来源模式只允许 `STAGING_TO_WIRE`，种子照样是六类。
+
+`AdmissionPolicyVersionGuardTests` 守着这件事：版本表逐个写出每一代的可执行集合，版本必须严格递增，本构建的集合必须等于最后
+一行；协议里每个任务类型都必须明确表态可执行或不可执行；`appsettings.json` 与 `scripts/parallel/instance-*.json` 的每一份定义
+都不得低于最后一行的版本，且彼此一致。它守的是仓库里同一个提交的文件，**守不住控制端拿别的提交的定义或别的包去装**——那一步
+只能靠这一节。
+
+部署标签 `admissionPolicyDeploymentId` 不换：本票没有改任何站点绑定，标签照旧是 `MAP-26-WIRE_TO_GATE-20261007`。
+
+### 装错了是什么样、怎么判
+
+种子只在 `JourneyRuntime.enabled=true` 时写，所以运行时关着装上去不会立刻出事，**开运行时的第一轮**才漂移。
+
+- 看板「派车积压」里，新需求的原因码全部是 `ADMISSION_POLICY_DRIFT`，不分任务类型；
+- 服务端日志有警告事件 2116（`LogAdmissionPolicyDrift`），每轮一条。它的文案是按「站点变了」写的，**本票这种情形里
+  `added: none; removed: none`**——站点没变，变的是任务类型集合，原因在附带的异常文本里，二选一：
+  - `Admission policy version is already bound to different content or deployment identity.`：配置的版本等于库里的版本，内容不同。
+    三种来路：
+    1. 用旧定义（版本 2）装了新包；
+    2. 用新定义（版本 3）回滚了旧包；
+    3. **定义和包都是新的，仍然漂移**：之前某次用旧包配版本 3 的定义装过（见本节开头），库里的 3 已经绑着旧包的两类种子。
+  - `Admission policy version cannot move backwards.`：配置的版本低于库里已经绑过的版本（回滚，见下）。
+- 核对实例实际读到的值：`C:\Program Files\8005 AGV\ControlServer.V2\appsettings.Production.json` 的
+  `JourneyRuntime.admissionPolicyVersion`；库里已绑的版本见下面「读库里已绑的版本」。
+
+恢复：**把定义里的版本设为库里已绑的版本 + 1**，按上面「升级与回滚前先把旅程运行时关掉」的流程重新部署同一个包。不用动库；版本
+一升，下一轮就按这个包的种子重新绑定、恢复受理。**照原样把定义「改回 3」没有用**：第 3 种来路里库里本来就是 3，配 3 还是漂移。
+
+### 读库里已绑的版本
+
+库里 `AdmissionPolicyState` 表只有一行（`Id = 1`），`Version` 就是这个实例绑过的最高版本（版本只升不降）。v2 实例的库是
+`C:\ProgramData\8005\ControlServer.V2\data\controlserver.db`。**不是** MVP 的 `C:\ProgramData\8005\ControlServer\data\controlserver.db`，
+两者只差一个 `.V2`，MVP 的生产库不碰。
+
+在 factory01 上另起一个用完就退出的 pwsh 进程只读查询，DLL 从 opsRoot 的 `sqlite-tools` 副本加载，**不要从安装目录加载**：
+`Add-Type` 加载的 `e_sqlite3.dll` 在进程退出前不释放，常驻进程会锁住安装目录，之后卸载会 `ABORTED`（10-09 踩过）。
+
+```powershell
+pwsh -NoProfile -Command {
+    $tools = 'D:\zhengyushao\control-server-v2-ops\sqlite-tools'
+    Get-ChildItem $tools -Filter '*.dll' | Where-Object Name -NotLike 'e_sqlite3*' | ForEach-Object { Add-Type -Path $_.FullName }
+    [SQLitePCL.Batteries_V2]::Init()
+    $connection = [Microsoft.Data.Sqlite.SqliteConnection]::new(
+        'Data Source=C:\ProgramData\8005\ControlServer.V2\data\controlserver.db;Mode=ReadOnly')
+    $connection.Open()
+    $command = $connection.CreateCommand()
+    $command.CommandText = 'SELECT Version, DeploymentId, ImportedAt FROM AdmissionPolicyState WHERE Id = 1'
+    $reader = $command.ExecuteReader()
+    while ($reader.Read()) { '{0}  {1}  {2}' -f $reader.GetInt64(0), $reader.GetString(1), $reader.GetString(2) }
+    $connection.Dispose()
+}
+```
+
+这段命令是按调度 10-09 起用 `sqlite-tools` 副本读 v2 库的做法写的，**本票没有在 factory01 上实跑过**；目录里的 DLL 名以实际为准。
+`AdmissionPolicyAudit` 表留着每一次绑定（版本、内容哈希、时间），要看历史时查它。
+
+### 回滚：库不跟着回滚，版本只能往上走（已实测）
+
+`-Rollback` 换回旧包，然后按控制端**这一次传入的**实例定义重写覆盖层。库里一旦绑过版本 3（批次 10 的六类种子），旧包
+（只种两类）就**既不能用 2，也不能用 3**：2 是版本倒退，库拒绝；3 已经绑着别的内容，库也拒绝。两种都判漂移、停接单。
+L1 `SameDirectionTaskTypeJourneyRuntimeTests.AfterVersionThreeIsBoundTheRolledBackBuildBindsOnlyUnderAHigherVersion` 钉着这个结果。
+
+所以回滚时：
+
+1. 回滚用的定义副本里，把 `admissionPolicyVersion` 设为**这个实例装过的最高版本 + 1**（第一次从 3 回滚就是 4）。最高版本以
+   库里为准（上面「读库里已绑的版本」），部署记录只作对照。只改那一次部署用的副本，不提交回本仓。
+2. 之后再装回批次 10 及之后的包，又要**再高一个**（上例是 5）。这时仓库里的三处出厂值低于实例实际用过的值，护栏不会替你发现；
+   要么部署时用副本写更高的值，要么开票把三处一起升上去。
+3. 每次部署都在部署记录里写下用的版本号，回滚时才知道「装过的最高版本」是多少。
 
 ## 路径和名字只认一种写法
 

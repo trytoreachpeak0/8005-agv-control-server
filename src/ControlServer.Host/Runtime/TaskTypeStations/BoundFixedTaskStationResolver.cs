@@ -7,12 +7,30 @@ namespace ControlServer.Host.Runtime.TaskTypeStations;
 /// <summary>
 /// The task types this build can execute end to end. Everything else that clears its binding is refused as
 /// <see cref="DispatchReasonCodes.TaskTypeNotYetExecutable"/> (control-server#160). STAGING_TO_WIRE since control-server#163;
-/// the four same-direction task types wait for batch 10.
+/// the four same-direction task types since batch 10 (control-server#545), so today it is all six.
 /// </summary>
+/// <remarks>
+/// The set is also the station admission seed's task types (<c>JourneyRuntimeEngine.AdmissionSeedTaskTypesAsync</c>):
+/// changing it changes the seed's content, which the store refuses under the version it was bound with. So a change
+/// here moves <c>JourneyRuntime:admissionPolicyVersion</c> with it, in <c>appsettings.json</c> and in both v2 instance
+/// definitions under <c>scripts/parallel/</c>; <c>AdmissionPolicyVersionGuardTests</c> holds the table that says how far.
+/// <para>
+/// Named one by one, never derived from <see cref="TransportTaskTypes.All"/>: a task type added to the protocol's
+/// literals must not become executable -- and change the seed -- without anyone deciding so here (control-server#545
+/// review M1).
+/// </para>
+/// </remarks>
 public static class ExecutableTaskTypes
 {
-    public static IReadOnlySet<string> All { get; } =
-        new HashSet<string>(StringComparer.Ordinal) { TransportTaskTypes.WireToGate, TransportTaskTypes.StagingToWire };
+    public static IReadOnlySet<string> All { get; } = new HashSet<string>(StringComparer.Ordinal)
+    {
+        TransportTaskTypes.WireToGate,
+        TransportTaskTypes.StagingToWire,
+        TransportTaskTypes.DieToWireStaging,
+        TransportTaskTypes.DieToOven,
+        TransportTaskTypes.WireToOptical,
+        TransportTaskTypes.WireToNitrogen,
+    };
 
     public static bool Contains(string taskType) => All.Contains(taskType);
 }
