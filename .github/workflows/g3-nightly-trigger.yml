@@ -1,0 +1,46 @@
+name: g3-nightly-trigger
+
+# Starts the nightly G3 (control-server#582) and does nothing else. GitHub runs `schedule` only from the workflow files
+# on the default branch, which is this one (main), while the nightly G3 itself -- .github/workflows/g3.yml, its jobs,
+# its gates and its comment on control-server#581 -- lives on the integration branch fp/v2-impl, which never merges
+# here. So this file holds the clock and g3.yml holds everything else; nothing of g3.yml is copied here.
+#
+# It dispatches g3.yml on fp/v2-impl with ref=fp/v2-impl, the same as
+#   gh workflow run g3.yml -R trytoreachpeak0/8005-agv-control-server --ref fp/v2-impl -f ref=fp/v2-impl
+# through the REST call that command makes: the runners on win11-01 have no gh. A dispatch by GITHUB_TOKEN does start a
+# workflow run (workflow_dispatch is one of the two events exempt from the rule that GITHUB_TOKEN events start none),
+# which needs actions: write.
+#
+# It depends on g3.yml being on fp/v2-impl. Before that merges, the dispatch is refused (the workflow file is not
+# found at that ref) and this run goes red, which is the right signal: no nightly G3 ran.
+#
+# 01:00 CST. g3.yml itself waits for the CI real rig, stops starting runners at 04:00 CST, and comments every night.
+on:
+  schedule:
+    - cron: '0 17 * * *'
+  # By hand, to check the trigger itself: gh workflow run g3-nightly-trigger.yml -R trytoreachpeak0/8005-agv-control-server
+  workflow_dispatch:
+
+permissions:
+  actions: write
+
+jobs:
+  trigger:
+    runs-on: [self-hosted, headless]
+    timeout-minutes: 10
+    steps:
+      - name: Dispatch g3.yml on fp/v2-impl
+        shell: pwsh
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          $request = @{
+              Uri = "https://api.github.com/repos/$env:GITHUB_REPOSITORY/actions/workflows/g3.yml/dispatches"
+              Method = 'POST'
+              Headers = @{ Authorization = "Bearer $env:GH_TOKEN"; Accept = 'application/vnd.github+json'; 'X-GitHub-Api-Version' = '2022-11-28' }
+              Body = (@{ ref = 'fp/v2-impl'; inputs = @{ ref = 'fp/v2-impl' } } | ConvertTo-Json -Compress)
+              ContentType = 'application/json; charset=utf-8'
+              TimeoutSec = 45
+          }
+          Invoke-RestMethod @request | Out-Null
+          Write-Host "Dispatched g3.yml on fp/v2-impl. The run: $env:GITHUB_SERVER_URL/$env:GITHUB_REPOSITORY/actions/workflows/g3.yml"
