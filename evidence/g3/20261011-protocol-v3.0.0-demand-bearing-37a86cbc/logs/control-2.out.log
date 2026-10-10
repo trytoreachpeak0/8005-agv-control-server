@@ -1,0 +1,91 @@
+[01:11:39 INF] Executed DbCommand (27ms) [Parameters=[], CommandType='Text', CommandTimeout='30']
+SELECT COUNT(*) FROM "sqlite_master" WHERE "name" = '__EFMigrationsHistory' AND "type" = 'table';
+[01:11:39 INF] Executed DbCommand (1ms) [Parameters=[], CommandType='Text', CommandTimeout='30']
+SELECT COUNT(*) FROM "sqlite_master" WHERE "name" = '__EFMigrationsHistory' AND "type" = 'table';
+[01:11:39 INF] Executed DbCommand (2ms) [Parameters=[], CommandType='Text', CommandTimeout='30']
+SELECT "MigrationId", "ProductVersion"
+FROM "__EFMigrationsHistory"
+ORDER BY "MigrationId";
+[01:11:39 INF] No migrations were applied. The database is already up to date.
+[01:11:40 INF] Executed DbCommand (0ms) [Parameters=[], CommandType='Text', CommandTimeout='30']
+SELECT "j"."BlockReasonCode"
+FROM "JourneyRuntimes" AS "j"
+WHERE "j"."Stage" = 'Blocked' AND "j"."BlockReasonCode" IS NOT NULL
+[01:11:40 INF] Executed DbCommand (1ms) [Parameters=[], CommandType='Text', CommandTimeout='30']
+SELECT "a"."AuditRecordId", "a"."Action", "a"."ActorAttribution", "a"."ActorIdentity", "a"."ClaimedAdministratorRole", "a"."DetailJson", "a"."ObjectId", "a"."ObjectKind", "a"."Outcome", "a"."RecordedAt", "a"."RecordedAtUtcTicks", "a"."SnapshotId", "a"."Version"
+FROM "AdministratorAuditRecords" AS "a"
+WHERE "a"."Action" = 'AUDIT_RETENTION_POLICY_CONFIGURED'
+ORDER BY "a"."RecordedAtUtcTicks" DESC, "a"."AuditRecordId" DESC
+LIMIT 1
+[01:11:40 INF] Executed DbCommand (0ms) [Parameters=[], CommandType='Text', CommandTimeout='30']
+SELECT "s"."CommandMessageId"
+FROM "SlotFaultDeclarations" AS "s"
+WHERE "s"."State" <> 'PENDING'
+[01:11:40 INF] Executed DbCommand (0ms) [Parameters=[], CommandType='Text', CommandTimeout='30']
+SELECT "s"."AgvId"
+FROM "SlotFaultDeclarations" AS "s"
+WHERE "s"."State" = 'PENDING'
+[01:11:40 INF] Executed DbCommand (0ms) [Parameters=[], CommandType='Text', CommandTimeout='30']
+SELECT "p"."PayloadJson"
+FROM "ProtocolOutbox" AS "p"
+WHERE "p"."AcknowledgedAt" IS NULL AND "p"."FencedAt" IS NULL
+[01:11:40 INF] Executed DbCommand (0ms) [Parameters=[], CommandType='Text', CommandTimeout='30']
+SELECT "c"."ActivationId", "c"."ActivatedAt", "c"."ActivatedBy", "c"."Sequence", "c"."Version"
+FROM "ChargingPolicyActivations" AS "c"
+ORDER BY "c"."Sequence" DESC
+LIMIT 1
+[01:11:40 INF] Executed DbCommand (3ms) [Parameters=[@__version_0='?' (DbType = Int64)], CommandType='Text', CommandTimeout='30']
+SELECT "c"."ApprovalId", "c"."ApprovedAt", "c"."ApprovedBy", "c"."ApproverRole", "c"."BasisReference", "c"."Source", "c"."Version"
+FROM "ChargingPolicyApprovals" AS "c"
+WHERE "c"."Version" = @__version_0
+[01:11:40 INF] Executed DbCommand (0ms) [Parameters=[], CommandType='Text', CommandTimeout='30']
+SELECT "j"."JourneyId", "j"."ChargingPolicyVersion" AS "Version"
+FROM "JourneyRuntimes" AS "j"
+WHERE "j"."Stage" <> 'Completed' AND "j"."ChargingPolicyVersion" IS NOT NULL
+[01:11:40 INF] Executed DbCommand (1ms) [Parameters=[], CommandType='Text', CommandTimeout='30']
+SELECT DISTINCT "c"."VehicleKey"
+FROM "ChargingCycles" AS "c"
+WHERE "c"."Phase" <> 'ENDED'
+[01:11:40 INF] Executed DbCommand (0ms) [Parameters=[@__version_0='?' (DbType = Int64)], CommandType='Text', CommandTimeout='30']
+SELECT "c"."Version", "c"."ChangeNote", "c"."ChargingCompletionThresholdPercent", "c"."ContentSha256", "c"."EstimatedTaskConsumptionPercent", "c"."MandatoryChargeEntryThresholdPercent", "c"."MinimumPostTaskBatteryMarginPercent", "c"."ProgressMinimumIncreasePercent", "c"."ProgressObservationWindowSeconds", "c"."ProgressStabilizationSeconds", "c"."SnapshotId", "c"."WrittenAt"
+FROM "ChargingPolicyVersions" AS "c"
+WHERE "c"."Version" = @__version_0
+LIMIT 2
+[01:11:40 INF] Executed DbCommand (0ms) [Parameters=[@__version_0='?' (DbType = Int64)], CommandType='Text', CommandTimeout='30']
+SELECT "c"."VehicleKey"
+FROM "ChargingPolicyVehicleScopes" AS "c"
+WHERE "c"."Version" = @__version_0
+[01:11:41 INF] Onboard NDJSON listener started on 127.0.0.1:58305; transport=plaintext
+[01:11:41 WRN] Journey runtime is disabled; MesIngest polling and movement dispatch are fail-closed.
+[01:11:41 INF] Now listening on: http://127.0.0.1:58307
+[01:11:41 INF] Application started. Press Ctrl+C to shut down.
+[01:11:41 INF] Hosting environment: Production
+[01:11:41 INF] Content root path: C:\b10f\c\publish\control-server
+[01:11:41 INF] EFFECTIVE_CONFIGURATION allowedWorkTypes=["DIE_TO_WIRE_STAGING", "DIE_TO_OVEN", "WIRE_TO_GATE", "WIRE_TO_OPTICAL", "STAGING_TO_WIRE", "WIRE_TO_NITROGEN"] allowedDispatchZones=["MAP-25-WIRE_TO_GATE"] mesIngestBaseUrl=http://127.0.0.1:1 fleet=[]
+[01:11:41 INF] HTTP GET /version responded 200 in 18.1119 ms
+[01:11:41 INF] Executed DbCommand (2ms) [Parameters=[@__messageId_0='?' (Size = 36)], CommandType='Text', CommandTimeout='30']
+SELECT "p"."MessageId", "p"."ContentHash", "p"."FirstResponseJson", "p"."MessageType", "p"."ReceivedAt", "p"."RequestJson"
+FROM "ProtocolInbox" AS "p"
+WHERE "p"."MessageId" = @__messageId_0
+LIMIT 2
+[01:11:41 INF] Executed DbCommand (0ms) [Parameters=[@__agvId_0='?' (Size = 10)], CommandType='Text', CommandTimeout='30']
+SELECT "s"."SessionGeneration"
+FROM "SessionRecoveries" AS "s"
+WHERE "s"."AgvId" = @__agvId_0
+LIMIT 2
+[01:11:41 INF] Executed DbCommand (0ms) [Parameters=[@__identity_AgvId_0='?' (Size = 10)], CommandType='Text', CommandTimeout='30']
+SELECT "s"."AgvId", "s"."ActiveUnlockSlotsJson", "s"."CapabilityHash", "s"."CapabilityRevision", "s"."DepartureSafe", "s"."ForcedRecoveryGeneration", "s"."ManifestSha256", "s"."PendingAttemptIdsJson", "s"."PendingResultIdsJson", "s"."ProfileId", "s"."ProtocolCommit", "s"."ProtocolVersion", "s"."ProvenRecoveryCheckpoint", "s"."Readiness", "s"."ReasonCode", "s"."RecoveryReportId", "s"."ReportedForcedRecoveryGeneration", "s"."ReportedSlotConfigurationFingerprint", "s"."SafetyHash", "s"."SafetyReasonCodesJson", "s"."SafetyRevision", "s"."SafetyUnknownPresent", "s"."SessionGeneration", "s"."UnsettledSlotOperationAttemptId", "s"."UpdatedAt"
+FROM "SessionRecoveries" AS "s"
+WHERE "s"."AgvId" = @__identity_AgvId_0
+LIMIT 2
+[01:11:41 INF] Executed DbCommand (1ms) [Parameters=[@__identity_AgvId_0='?' (Size = 10)], CommandType='Text', CommandTimeout='30']
+SELECT "j"."JourneyId", "j"."AgvId", "j"."AgvLifecycleGeneration", "j"."AreaEndAdmissionRevokedSince", "j"."BlockReasonCode", "j"."BlockReasonSince", "j"."CargoHoldingStartedAt", "j"."ChargingPolicyVersion", "j"."ConsumedSafetyResultMessageId", "j"."ConsumedSublotMessageId", "j"."CreatedAt", "j"."DemandId", "j"."DispatchGeneration", "j"."DispatchZone", "j"."ExpectedBasketCount", "j"."FullSlotPositionsJson", "j"."GateMovementLegId", "j"."GatePlanMessageId", "j"."GateStationId", "j"."GateStationRiotId", "j"."GateUpperId", "j"."GateVehicleBusinessMessageId", "j"."GateWorklistMessageId", "j"."LoadCommandMessageId", "j"."LoadSlotOperationAttemptId", "j"."LoadingClosedReason", "j"."LoadingPhaseState", "j"."MapId", "j"."MapIdentity", "j"."OperationSessionId", "j"."PickupMovementLegId", "j"."PickupStationId", "j"."PickupStationRiotId", "j"."PickupUpperId", "j"."PlanMessageId", "j"."PlanRevision", "j"."PreDepartureSafetyCheckId", "j"."PreDepartureSafetyCheckMessageId", "j"."PublishedBatteryState", "j"."RouteEvidenceId", "j"."Stage", "j"."StationDepartureWaitStartedAt", "j"."SublotRequestMessageId", "j"."TargetSlotsJson", "j"."UnloadCommandMessageId", "j"."UnloadSlotOperationAttemptId", "j"."UpdatedAt", "j"."VehicleBusinessMessageId", "j"."VehicleBusinessRevision", "j"."VehicleKey", "j"."Version", "j"."WaitingBatteryObservedAt", "j"."WaitingBatteryPercent", "j"."WaitingSince", "j"."WaitingWarnedAt", "j"."WorklistMessageId", "j"."WorklistRevision", "j"."YieldTriggeredAt", "j"."YieldTriggeredByVehicleKey"
+FROM "JourneyRuntimes" AS "j"
+WHERE "j"."AgvId" = @__identity_AgvId_0 AND "j"."StationDepartureWaitStartedAt" IS NOT NULL
+[01:11:41 INF] Executed DbCommand (4ms) [Parameters=[@p2='?' (Size = 10), @p0='?' (DbType = Int64), @p1='?' (DbType = DateTimeOffset)], CommandType='Text', CommandTimeout='30']
+UPDATE "SessionRecoveries" SET "SessionGeneration" = @p0, "UpdatedAt" = @p1
+WHERE "AgvId" = @p2
+RETURNING 1;
+[01:11:42 INF] Executed DbCommand (1ms) [Parameters=[@p0='?' (Size = 36), @p1='?' (Size = 64), @p2='?' (Size = 1089), @p3='?' (Size = 12), @p4='?' (DbType = DateTimeOffset), @p5='?' (Size = 1057)], CommandType='Text', CommandTimeout='30']
+INSERT INTO "ProtocolInbox" ("MessageId", "ContentHash", "FirstResponseJson", "MessageType", "ReceivedAt", "RequestJson")
+VALUES (@p0, @p1, @p2, @p3, @p4, @p5);

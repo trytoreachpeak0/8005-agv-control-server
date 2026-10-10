@@ -133,8 +133,17 @@ param(
     #     merged because the coordinator asked for the round at once. Merging it into fp/v2-impl adds only a merge
     #     commit with the same tree. git diff 5f3adc42 76c9cfe2 -- src tests tools is empty. Onboard, simulator and
     #     protocol unchanged.
-    [string]$ControlServerCommit = '76c9cfe26f8bd06fc42f954b608edfdd108d5962',
-    [string]$OnboardCommit = 'b9e67a538ba4cdf1916d201a08af40dd28270d14',
+    #
+    # 2026-10-11, batch 10 exit (control-server#549): no new slice; the four same-direction task types become
+    #   executable (cs#545). First formal run of cs#556 (G3-07-44 reason code) and cs#567 (staged harness clean
+    #   check, g3-slice-evidence.ps1 functions, charging and G3-13-27 reads).
+    #   $ControlServerCommit -> 37a86cbc, the fp/v2-impl tip at the exit freeze: batch 10's cs#545 and cs#546, the
+    #     follow-ups cs#556, cs#567, cs#571, and PR #278 (.editorconfig only).
+    #   $OnboardCommit -> 535c94fc, the w2g/fp-v2-impl tip. b9e67a53..535c94fc is the batch-8 G2 evidence
+    #     (onboard-hmi#288, evidence/ only) and onboard-hmi#289 (PR #290, two test files); no product change.
+    #   $SimulatorCommit and $ProtocolCommit unchanged: batch 10 changes no protocol and no simulator.
+    [string]$ControlServerCommit = '37a86cbc6bec866e32126f50c850c37a1a9cac40',
+    [string]$OnboardCommit = '535c94fce47a10879ba1f404d04f603ba1a65bbf',
     [string]$SimulatorCommit = 'fb5f7c593742bf98bc3957b8729a38aad5321f28',
     [string]$ProtocolCommit = '3f091cb2eae7c58cec54a95dd9389c9180bc7b4c',
     # The ref whose tip -OnboardCommit must equal. It is a parameter rather than a literal because the
