@@ -1,0 +1,334 @@
+watch pid 1932 start 2026-10-11T00:34:55.6984141+08:00
+00:34:55 J:  || backlog=a1000566:DEMAND_LEFT_CATALOG,d0000566:ELIGIBLE || orders=W2G-a1000566-0000-0000-0000-000000000001-PICKUP-1:CONFIRMED,W2G-a1000566-0000-0000-0000-000000000003-PICKUP-1:CONFIRMED,W2G-a1000566-0000-0000-0000-000000000001-GATE-1:CONFIRMED,W2G-a1000566-0000-0000-0000-000000000001-REBUILD-1-1:CONFIRMED,W2G-b1000566-0000-0000-0000-000000000001-PICKUP-1:CONFIRMED,W2G-b1000566-0000-0000-0000-000000000002-PICKUP-1:CONFIRMED,W2G-b1000566-0000-0000-0000-000000000002-GATE-1:CONFIRMED,W2G-a2000566-0000-0000-0000-000000000001-PICKUP-1:CONFIRMED,W2G-a2000566-0000-0000-0000-000000000002-PICKUP-1:CONFIRMED,W2G-a2000566-0000-0000-0000-000000000001-GATE-1:CONFIRMED,W2G-a2100566-0000-0000-0000-000000000001-PICKUP-1:CONFIRMED,W2G-a2100566-0000-0000-0000-000000000002-PICKUP-1:CONFIRMED,W2G-a2100566-0000-0000-0000-000000000001-GATE-1:CONFIRMED || riot st=210 proc=IDLE move=MT_FINISHED emerg=OK bat=58
+00:34:58 LOG Warning 2101 LogCatalogPollFailed MesIngest catalog polling failed closed; no journey was accepted.
+00:34:59 LOG Warning 2101 LogCatalogPollFailed MesIngest catalog polling failed closed; no journey was accepted.
+00:34:59 LOG Warning 2101 LogCatalogPollFailed MesIngest catalog polling failed closed; no journey was accepted.
+00:34:59 LOG Warning 2101 LogCatalogPollFailed MesIngest catalog polling failed closed; no journey was accepted.
+00:34:59 LOG Warning 2101 LogCatalogPollFailed MesIngest catalog polling failed closed; no journey was accepted.
+00:34:59 LOG Warning 2101 LogCatalogPollFailed MesIngest catalog polling failed closed; no journey was accepted.
+00:34:59 LOG Warning 2101 LogCatalogPollFailed MesIngest catalog polling failed closed; no journey was accepted.
+00:34:59 LOG Warning 9305 TaskTypeStationPresetNotApplied Task type station preset {Path} was not applied to Map {MapId} (pointer state {State}): {Standing}; a different version only comes from a FieldOps activation or
+00:34:59 LOG Warning 2272 LogUnavailableAtStartup The manual station clearance exit is not available ({Reasons}). Until it is, a vehicle that cannot charge at its charger is left on ORDER_HANG instead of being 
+00:35:00 LOG Warning 9305 TaskTypeStationPresetNotApplied Task type station preset {Path} was not applied to Map {MapId} (pointer state {State}): {Standing}; a different version only comes from a FieldOps activation or
+00:35:00 LOG Warning 2272 LogUnavailableAtStartup The manual station clearance exit is not available ({Reasons}). Until it is, a vehicle that cannot charge at its charger is left on ORDER_HANG instead of being 
+00:35:00 LOG Warning 2193 LogYieldedToUnavailableConnection Vehicle {AgvId}'s journey {JourneyId} yielded this iteration: its Onboard connection is not available (not connected, another session generation, a write past i
+00:35:01 LOG Warning 9305 TaskTypeStationPresetNotApplied Task type station preset {Path} was not applied to Map {MapId} (pointer state {State}): {Standing}; a different version only comes from a FieldOps activation or
+00:35:01 LOG Warning 2272 LogUnavailableAtStartup The manual station clearance exit is not available ({Reasons}). Until it is, a vehicle that cannot charge at its charger is left on ORDER_HANG instead of being 
+00:35:05 J: d0000566 AwaitingPickupArrival block=PICKUP_CreateDispatchDisabled load= stops=[PICKUP@N1-3:PENDING,UNLOAD@关卡:PENDING] demands=[d0000566:PENDING_LOAD] || backlog=a1000566:DEMAND_LEFT_CATALOG || orders=W2G-a1000566-0000-0000-0000-000000000001-PICKUP-1:CONFIRMED,W2G-a1000566-0000-0000-0000-000000000003-PICKUP-1:CONFIRMED,W2G-a1000566-0000-0000-0000-000000000001-GATE-1:CONFIRMED,W2G-a1000566-0000-0000-0000-000000000001-REBUILD-1-1:CONFIRMED,W2G-b1000566-0000-0000-0000-000000000001-PICKUP-1:CONFIRMED,W2G-b1000566-0000-0000-0000-000000000002-PICKUP-1:CONFIRMED,W2G-b1000566-0000-0000-0000-000000000002-GATE-1:CONFIRMED,W2G-a2000566-0000-0000-0000-000000000001-PICKUP-1:CONFIRMED,W2G-a2000566-0000-0000-0000-000000000002-PICKUP-1:CONFIRMED,W2G-a2000566-0000-0000-0000-000000000001-GATE-1:CONFIRMED,W2G-a2100566-0000-0000-0000-000000000001-PICKUP-1:CONFIRMED,W2G-a2100566-0000-0000-0000-000000000002-PICKUP-1:CONFIRMED,W2G-a2100566-0000-0000-0000-000000000001-GATE-1:CONFIRMED,W2G-d0000566-0000-0000-0000-000000000001-PICKUP-1:PENDING_RECONCILIATION || riot st=210 proc=IDLE move=MT_FINISHED emerg=OK bat=58
+00:36:58 LOG Error 20004 Microsoft.EntityFrameworkCore.Database.Connection.ConnectionError An error occurred using the connection to database '{database}' on server '{server}'.
+00:36:58 LOG Warning 9305 TaskTypeStationPresetNotApplied Task type station preset {Path} was not applied to Map {MapId} (pointer state {State}): {Standing}; a different version only comes from a FieldOps activation or
+00:36:58 LOG Warning 2272 LogUnavailableAtStartup The manual station clearance exit is not available ({Reasons}). Until it is, a vehicle that cannot charge at its charger is left on ORDER_HANG instead of being 
+00:37:01 J: d0000566 AwaitingPickupArrival block=ONBOARD_SESSION_NOT_READY load= stops=[PICKUP@N1-3:PENDING,UNLOAD@关卡:PENDING] demands=[d0000566:PENDING_LOAD] || backlog=a1000566:DEMAND_LEFT_CATALOG || orders=W2G-a1000566-0000-0000-0000-000000000001-PICKUP-1:CONFIRMED,W2G-a1000566-0000-0000-0000-000000000003-PICKUP-1:CONFIRMED,W2G-a1000566-0000-0000-0000-000000000001-GATE-1:CONFIRMED,W2G-a1000566-0000-0000-0000-000000000001-REBUILD-1-1:CONFIRMED,W2G-b1000566-0000-0000-0000-000000000001-PICKUP-1:CONFIRMED,W2G-b1000566-0000-0000-0000-000000000002-PICKUP-1:CONFIRMED,W2G-b1000566-0000-0000-0000-000000000002-GATE-1:CONFIRMED,W2G-a2000566-0000-0000-0000-000000000001-PICKUP-1:CONFIRMED,W2G-a2000566-0000-0000-0000-000000000002-PICKUP-1:CONFIRMED,W2G-a2000566-0000-0000-0000-000000000001-GATE-1:CONFIRMED,W2G-a2100566-0000-0000-0000-000000000001-PICKUP-1:CONFIRMED,W2G-a2100566-0000-0000-0000-000000000002-PICKUP-1:CONFIRMED,W2G-a2100566-0000-0000-0000-000000000001-GATE-1:CONFIRMED,W2G-d0000566-0000-0000-0000-000000000001-PICKUP-1:CONFIRMED || riot st=0 proc=PROCESSING_ORDER move=MT_RUNNING emerg=OK bat=58
+00:37:35 LOG Warning 2194 LogDoorsNotProvenLocked Vehicle {AgvId} is driving on order {UpperId} with its doors {DoorState} (generation {Generation}, safety version {SafetyStateVersion}); handed to the fault mod
+00:37:35 LOG Warning 9200 VehicleFaultLevel Vehicle {AgvId} is at fault level {Level} on evidence {EvidenceCode} (generation {FaultGeneration}).
+00:37:35 LOG Fatal 9101 EmergencyStopAlarm Emergency stop alarm {AlarmCode} for {AgvId}; field confirmation and area isolation required.
+00:37:35 LOG Fatal 9201 VehicleFaultAlarm Vehicle fault alarm {AlarmCode} for {AgvId}: {Reasons}.
+00:37:35 LOG Warning 2194 LogDoorsNotProvenLocked Vehicle {AgvId} is driving on order {UpperId} with its doors {DoorState} (generation {Generation}, safety version {SafetyStateVersion}); handed to the fault mod
+00:37:35 LOG Warning 9200 VehicleFaultLevel Vehicle {AgvId} is at fault level {Level} on evidence {EvidenceCode} (generation {FaultGeneration}).
+00:37:35 LOG Fatal 9201 VehicleFaultAlarm Vehicle fault alarm {AlarmCode} for {AgvId}: {Reasons}.
+00:37:35 LOG Warning 2194 LogDoorsNotProvenLocked Vehicle {AgvId} is driving on order {UpperId} with its doors {DoorState} (generation {Generation}, safety version {SafetyStateVersion}); handed to the fault mod
+00:37:35 LOG Warning 9200 VehicleFaultLevel Vehicle {AgvId} is at fault level {Level} on evidence {EvidenceCode} (generation {FaultGeneration}).
+00:37:38 J: d0000566 AwaitingPickupArrival block=VEHICLE_DOOR_NOT_PROVEN_LOCKED load= stops=[PICKUP@N1-3:PENDING,UNLOAD@关卡:PENDING] demands=[d0000566:PENDING_LOAD] || backlog=a1000566:DEMAND_LEFT_CATALOG || orders=W2G-a1000566-0000-0000-0000-000000000001-PICKUP-1:CONFIRMED,W2G-a1000566-0000-0000-0000-000000000003-PICKUP-1:CONFIRMED,W2G-a1000566-0000-0000-0000-000000000001-GATE-1:CONFIRMED,W2G-a1000566-0000-0000-0000-000000000001-REBUILD-1-1:CONFIRMED,W2G-b1000566-0000-0000-0000-000000000001-PICKUP-1:CONFIRMED,W2G-b1000566-0000-0000-0000-000000000002-PICKUP-1:CONFIRMED,W2G-b1000566-0000-0000-0000-000000000002-GATE-1:CONFIRMED,W2G-a2000566-0000-0000-0000-000000000001-PICKUP-1:CONFIRMED,W2G-a2000566-0000-0000-0000-000000000002-PICKUP-1:CONFIRMED,W2G-a2000566-0000-0000-0000-000000000001-GATE-1:CONFIRMED,W2G-a2100566-0000-0000-0000-000000000001-PICKUP-1:CONFIRMED,W2G-a2100566-0000-0000-0000-000000000002-PICKUP-1:CONFIRMED,W2G-a2100566-0000-0000-0000-000000000001-GATE-1:CONFIRMED,W2G-d0000566-0000-0000-0000-000000000001-PICKUP-1:CONFIRMED || riot st=0 proc=USER_FORCE_IDLE move=MT_PAUSED emerg=CAN_RECOVER bat=58
+00:37:44 LOG Warning 2194 LogDoorsNotProvenLocked Vehicle {AgvId} is driving on order {UpperId} with its doors {DoorState} (generation {Generation}, safety version {SafetyStateVersion}); handed to the fault mod
+00:37:44 LOG Warning 9200 VehicleFaultLevel Vehicle {AgvId} is at fault level {Level} on evidence {EvidenceCode} (generation {FaultGeneration}).
+00:37:44 LOG Warning 2194 LogDoorsNotProvenLocked Vehicle {AgvId} is driving on order {UpperId} with its doors {DoorState} (generation {Generation}, safety version {SafetyStateVersion}); handed to the fault mod
+00:37:44 LOG Warning 9200 VehicleFaultLevel Vehicle {AgvId} is at fault level {Level} on evidence {EvidenceCode} (generation {FaultGeneration}).
+00:37:44 LOG Warning 2194 LogDoorsNotProvenLocked Vehicle {AgvId} is driving on order {UpperId} with its doors {DoorState} (generation {Generation}, safety version {SafetyStateVersion}); handed to the fault mod
+00:37:44 LOG Warning 9200 VehicleFaultLevel Vehicle {AgvId} is at fault level {Level} on evidence {EvidenceCode} (generation {FaultGeneration}).
+00:37:44 LOG Warning 2194 LogDoorsNotProvenLocked Vehicle {AgvId} is driving on order {UpperId} with its doors {DoorState} (generation {Generation}, safety version {SafetyStateVersion}); handed to the fault mod
+00:37:44 LOG Warning 9200 VehicleFaultLevel Vehicle {AgvId} is at fault level {Level} on evidence {EvidenceCode} (generation {FaultGeneration}).
+00:37:56 LOG Warning 2194 LogDoorsNotProvenLocked Vehicle {AgvId} is driving on order {UpperId} with its doors {DoorState} (generation {Generation}, safety version {SafetyStateVersion}); handed to the fault mod
+00:37:56 LOG Warning 9200 VehicleFaultLevel Vehicle {AgvId} is at fault level {Level} on evidence {EvidenceCode} (generation {FaultGeneration}).
+00:37:56 LOG Warning 2194 LogDoorsNotProvenLocked Vehicle {AgvId} is driving on order {UpperId} with its doors {DoorState} (generation {Generation}, safety version {SafetyStateVersion}); handed to the fault mod
+00:37:56 LOG Warning 9200 VehicleFaultLevel Vehicle {AgvId} is at fault level {Level} on evidence {EvidenceCode} (generation {FaultGeneration}).
+00:37:56 LOG Warning 2194 LogDoorsNotProvenLocked Vehicle {AgvId} is driving on order {UpperId} with its doors {DoorState} (generation {Generation}, safety version {SafetyStateVersion}); handed to the fault mod
+00:37:56 LOG Warning 9200 VehicleFaultLevel Vehicle {AgvId} is at fault level {Level} on evidence {EvidenceCode} (generation {FaultGeneration}).
+00:37:56 LOG Warning 2194 LogDoorsNotProvenLocked Vehicle {AgvId} is driving on order {UpperId} with its doors {DoorState} (generation {Generation}, safety version {SafetyStateVersion}); handed to the fault mod
+00:37:56 LOG Warning 9200 VehicleFaultLevel Vehicle {AgvId} is at fault level {Level} on evidence {EvidenceCode} (generation {FaultGeneration}).
+00:37:56 LOG Warning 2194 LogDoorsNotProvenLocked Vehicle {AgvId} is driving on order {UpperId} with its doors {DoorState} (generation {Generation}, safety version {SafetyStateVersion}); handed to the fault mod
+00:37:56 LOG Warning 9200 VehicleFaultLevel Vehicle {AgvId} is at fault level {Level} on evidence {EvidenceCode} (generation {FaultGeneration}).
+00:38:05 LOG Warning 2194 LogDoorsNotProvenLocked Vehicle {AgvId} is driving on order {UpperId} with its doors {DoorState} (generation {Generation}, safety version {SafetyStateVersion}); handed to the fault mod
+00:38:05 LOG Warning 9200 VehicleFaultLevel Vehicle {AgvId} is at fault level {Level} on evidence {EvidenceCode} (generation {FaultGeneration}).
+00:38:05 LOG Warning 2194 LogDoorsNotProvenLocked Vehicle {AgvId} is driving on order {UpperId} with its doors {DoorState} (generation {Generation}, safety version {SafetyStateVersion}); handed to the fault mod
+00:38:05 LOG Warning 9200 VehicleFaultLevel Vehicle {AgvId} is at fault level {Level} on evidence {EvidenceCode} (generation {FaultGeneration}).
+00:38:05 LOG Warning 2194 LogDoorsNotProvenLocked Vehicle {AgvId} is driving on order {UpperId} with its doors {DoorState} (generation {Generation}, safety version {SafetyStateVersion}); handed to the fault mod
+00:38:05 LOG Warning 9200 VehicleFaultLevel Vehicle {AgvId} is at fault level {Level} on evidence {EvidenceCode} (generation {FaultGeneration}).
+00:38:05 LOG Warning 2194 LogDoorsNotProvenLocked Vehicle {AgvId} is driving on order {UpperId} with its doors {DoorState} (generation {Generation}, safety version {SafetyStateVersion}); handed to the fault mod
+00:38:05 LOG Warning 9200 VehicleFaultLevel Vehicle {AgvId} is at fault level {Level} on evidence {EvidenceCode} (generation {FaultGeneration}).
+00:38:05 LOG Warning 2194 LogDoorsNotProvenLocked Vehicle {AgvId} is driving on order {UpperId} with its doors {DoorState} (generation {Generation}, safety version {SafetyStateVersion}); handed to the fault mod
+00:38:05 LOG Warning 9200 VehicleFaultLevel Vehicle {AgvId} is at fault level {Level} on evidence {EvidenceCode} (generation {FaultGeneration}).
+00:38:05 LOG Warning 9200 VehicleFaultLevel Vehicle {AgvId} is at fault level {Level} on evidence {EvidenceCode} (generation {FaultGeneration}).
+00:38:08 J: d0000566 AwaitingPickupArrival block=VEHICLE_DOOR_NOT_PROVEN_LOCKED load= stops=[PICKUP@N1-3:PENDING,UNLOAD@关卡:PENDING] demands=[d0000566:PENDING_LOAD] || backlog=a1000566:DEMAND_LEFT_CATALOG || orders=W2G-a1000566-0000-0000-0000-000000000001-PICKUP-1:CONFIRMED,W2G-a1000566-0000-0000-0000-000000000003-PICKUP-1:CONFIRMED,W2G-a1000566-0000-0000-0000-000000000001-GATE-1:CONFIRMED,W2G-a1000566-0000-0000-0000-000000000001-REBUILD-1-1:CONFIRMED,W2G-b1000566-0000-0000-0000-000000000001-PICKUP-1:CONFIRMED,W2G-b1000566-0000-0000-0000-000000000002-PICKUP-1:CONFIRMED,W2G-b1000566-0000-0000-0000-000000000002-GATE-1:CONFIRMED,W2G-a2000566-0000-0000-0000-000000000001-PICKUP-1:CONFIRMED,W2G-a2000566-0000-0000-0000-000000000002-PICKUP-1:CONFIRMED,W2G-a2000566-0000-0000-0000-000000000001-GATE-1:CONFIRMED,W2G-a2100566-0000-0000-0000-000000000001-PICKUP-1:CONFIRMED,W2G-a2100566-0000-0000-0000-000000000002-PICKUP-1:CONFIRMED,W2G-a2100566-0000-0000-0000-000000000001-GATE-1:CONFIRMED,W2G-d0000566-0000-0000-0000-000000000001-PICKUP-1:CONFIRMED || riot st=0 proc=USER_FORCE_IDLE move=MT_PAUSED emerg=OK bat=58
+00:38:13 LOG Fatal 9101 EmergencyStopAlarm Emergency stop alarm {AlarmCode} for {AgvId}; field confirmation and area isolation required.
+00:38:13 LOG Warning 9200 VehicleFaultLevel Vehicle {AgvId} is at fault level {Level} on evidence {EvidenceCode} (generation {FaultGeneration}).
+00:38:13 LOG Fatal 9101 EmergencyStopAlarm Emergency stop alarm {AlarmCode} for {AgvId}; field confirmation and area isolation required.
+00:38:13 LOG Warning 9200 VehicleFaultLevel Vehicle {AgvId} is at fault level {Level} on evidence {EvidenceCode} (generation {FaultGeneration}).
+00:38:13 LOG Fatal 9201 VehicleFaultAlarm Vehicle fault alarm {AlarmCode} for {AgvId}: {Reasons}.
+00:38:13 LOG Warning 9200 VehicleFaultLevel Vehicle {AgvId} is at fault level {Level} on evidence {EvidenceCode} (generation {FaultGeneration}).
+00:38:13 LOG Fatal 9201 VehicleFaultAlarm Vehicle fault alarm {AlarmCode} for {AgvId}: {Reasons}.
+00:38:13 LOG Warning 9200 VehicleFaultLevel Vehicle {AgvId} is at fault level {Level} on evidence {EvidenceCode} (generation {FaultGeneration}).
+00:38:13 LOG Fatal 9201 VehicleFaultAlarm Vehicle fault alarm {AlarmCode} for {AgvId}: {Reasons}.
+00:38:22 LOG Warning 9200 VehicleFaultLevel Vehicle {AgvId} is at fault level {Level} on evidence {EvidenceCode} (generation {FaultGeneration}).
+00:38:22 LOG Fatal 9201 VehicleFaultAlarm Vehicle fault alarm {AlarmCode} for {AgvId}: {Reasons}.
+00:38:22 LOG Warning 9200 VehicleFaultLevel Vehicle {AgvId} is at fault level {Level} on evidence {EvidenceCode} (generation {FaultGeneration}).
+00:38:22 LOG Fatal 9201 VehicleFaultAlarm Vehicle fault alarm {AlarmCode} for {AgvId}: {Reasons}.
+00:38:22 LOG Warning 9200 VehicleFaultLevel Vehicle {AgvId} is at fault level {Level} on evidence {EvidenceCode} (generation {FaultGeneration}).
+00:38:22 LOG Fatal 9201 VehicleFaultAlarm Vehicle fault alarm {AlarmCode} for {AgvId}: {Reasons}.
+00:38:22 LOG Warning 9200 VehicleFaultLevel Vehicle {AgvId} is at fault level {Level} on evidence {EvidenceCode} (generation {FaultGeneration}).
+00:38:22 LOG Fatal 9201 VehicleFaultAlarm Vehicle fault alarm {AlarmCode} for {AgvId}: {Reasons}.
+00:38:33 LOG Warning 9200 VehicleFaultLevel Vehicle {AgvId} is at fault level {Level} on evidence {EvidenceCode} (generation {FaultGeneration}).
+00:38:33 LOG Fatal 9201 VehicleFaultAlarm Vehicle fault alarm {AlarmCode} for {AgvId}: {Reasons}.
+00:38:33 LOG Warning 9200 VehicleFaultLevel Vehicle {AgvId} is at fault level {Level} on evidence {EvidenceCode} (generation {FaultGeneration}).
+00:38:33 LOG Fatal 9201 VehicleFaultAlarm Vehicle fault alarm {AlarmCode} for {AgvId}: {Reasons}.
+00:38:33 LOG Warning 9200 VehicleFaultLevel Vehicle {AgvId} is at fault level {Level} on evidence {EvidenceCode} (generation {FaultGeneration}).
+00:38:33 LOG Fatal 9201 VehicleFaultAlarm Vehicle fault alarm {AlarmCode} for {AgvId}: {Reasons}.
+00:38:33 LOG Warning 9200 VehicleFaultLevel Vehicle {AgvId} is at fault level {Level} on evidence {EvidenceCode} (generation {FaultGeneration}).
+00:38:33 LOG Fatal 9201 VehicleFaultAlarm Vehicle fault alarm {AlarmCode} for {AgvId}: {Reasons}.
+00:38:33 LOG Warning 9200 VehicleFaultLevel Vehicle {AgvId} is at fault level {Level} on evidence {EvidenceCode} (generation {FaultGeneration}).
+00:38:33 LOG Fatal 9201 VehicleFaultAlarm Vehicle fault alarm {AlarmCode} for {AgvId}: {Reasons}.
+00:38:33 LOG Warning 9200 VehicleFaultLevel Vehicle {AgvId} is at fault level {Level} on evidence {EvidenceCode} (generation {FaultGeneration}).
+00:38:33 LOG Fatal 9201 VehicleFaultAlarm Vehicle fault alarm {AlarmCode} for {AgvId}: {Reasons}.
+00:38:43 LOG Warning 9200 VehicleFaultLevel Vehicle {AgvId} is at fault level {Level} on evidence {EvidenceCode} (generation {FaultGeneration}).
+00:38:43 LOG Fatal 9201 VehicleFaultAlarm Vehicle fault alarm {AlarmCode} for {AgvId}: {Reasons}.
+00:38:43 LOG Warning 9200 VehicleFaultLevel Vehicle {AgvId} is at fault level {Level} on evidence {EvidenceCode} (generation {FaultGeneration}).
+00:38:43 LOG Fatal 9201 VehicleFaultAlarm Vehicle fault alarm {AlarmCode} for {AgvId}: {Reasons}.
+00:38:43 LOG Warning 9200 VehicleFaultLevel Vehicle {AgvId} is at fault level {Level} on evidence {EvidenceCode} (generation {FaultGeneration}).
+00:38:43 LOG Fatal 9201 VehicleFaultAlarm Vehicle fault alarm {AlarmCode} for {AgvId}: {Reasons}.
+00:38:43 LOG Warning 9200 VehicleFaultLevel Vehicle {AgvId} is at fault level {Level} on evidence {EvidenceCode} (generation {FaultGeneration}).
+00:38:43 LOG Fatal 9201 VehicleFaultAlarm Vehicle fault alarm {AlarmCode} for {AgvId}: {Reasons}.
+00:38:43 LOG Warning 9200 VehicleFaultLevel Vehicle {AgvId} is at fault level {Level} on evidence {EvidenceCode} (generation {FaultGeneration}).
+00:38:43 LOG Fatal 9201 VehicleFaultAlarm Vehicle fault alarm {AlarmCode} for {AgvId}: {Reasons}.
+00:38:54 LOG Warning 9200 VehicleFaultLevel Vehicle {AgvId} is at fault level {Level} on evidence {EvidenceCode} (generation {FaultGeneration}).
+00:38:54 LOG Fatal 9201 VehicleFaultAlarm Vehicle fault alarm {AlarmCode} for {AgvId}: {Reasons}.
+00:38:54 LOG Warning 9200 VehicleFaultLevel Vehicle {AgvId} is at fault level {Level} on evidence {EvidenceCode} (generation {FaultGeneration}).
+00:38:54 LOG Fatal 9201 VehicleFaultAlarm Vehicle fault alarm {AlarmCode} for {AgvId}: {Reasons}.
+00:38:54 LOG Warning 9200 VehicleFaultLevel Vehicle {AgvId} is at fault level {Level} on evidence {EvidenceCode} (generation {FaultGeneration}).
+00:38:54 LOG Fatal 9201 VehicleFaultAlarm Vehicle fault alarm {AlarmCode} for {AgvId}: {Reasons}.
+00:38:54 LOG Warning 9200 VehicleFaultLevel Vehicle {AgvId} is at fault level {Level} on evidence {EvidenceCode} (generation {FaultGeneration}).
+00:38:54 LOG Fatal 9201 VehicleFaultAlarm Vehicle fault alarm {AlarmCode} for {AgvId}: {Reasons}.
+00:38:54 LOG Warning 9200 VehicleFaultLevel Vehicle {AgvId} is at fault level {Level} on evidence {EvidenceCode} (generation {FaultGeneration}).
+00:38:54 LOG Fatal 9201 VehicleFaultAlarm Vehicle fault alarm {AlarmCode} for {AgvId}: {Reasons}.
+00:39:04 LOG Warning 9200 VehicleFaultLevel Vehicle {AgvId} is at fault level {Level} on evidence {EvidenceCode} (generation {FaultGeneration}).
+00:39:04 LOG Fatal 9201 VehicleFaultAlarm Vehicle fault alarm {AlarmCode} for {AgvId}: {Reasons}.
+00:39:04 LOG Warning 9200 VehicleFaultLevel Vehicle {AgvId} is at fault level {Level} on evidence {EvidenceCode} (generation {FaultGeneration}).
+00:39:04 LOG Fatal 9201 VehicleFaultAlarm Vehicle fault alarm {AlarmCode} for {AgvId}: {Reasons}.
+00:39:04 LOG Warning 9200 VehicleFaultLevel Vehicle {AgvId} is at fault level {Level} on evidence {EvidenceCode} (generation {FaultGeneration}).
+00:39:04 LOG Fatal 9201 VehicleFaultAlarm Vehicle fault alarm {AlarmCode} for {AgvId}: {Reasons}.
+00:39:04 LOG Warning 9200 VehicleFaultLevel Vehicle {AgvId} is at fault level {Level} on evidence {EvidenceCode} (generation {FaultGeneration}).
+00:39:04 LOG Fatal 9201 VehicleFaultAlarm Vehicle fault alarm {AlarmCode} for {AgvId}: {Reasons}.
+00:39:04 LOG Warning 9200 VehicleFaultLevel Vehicle {AgvId} is at fault level {Level} on evidence {EvidenceCode} (generation {FaultGeneration}).
+00:39:04 LOG Fatal 9201 VehicleFaultAlarm Vehicle fault alarm {AlarmCode} for {AgvId}: {Reasons}.
+00:39:04 LOG Warning 9200 VehicleFaultLevel Vehicle {AgvId} is at fault level {Level} on evidence {EvidenceCode} (generation {FaultGeneration}).
+00:39:04 LOG Fatal 9201 VehicleFaultAlarm Vehicle fault alarm {AlarmCode} for {AgvId}: {Reasons}.
+00:39:14 LOG Warning 9200 VehicleFaultLevel Vehicle {AgvId} is at fault level {Level} on evidence {EvidenceCode} (generation {FaultGeneration}).
+00:39:14 LOG Fatal 9201 VehicleFaultAlarm Vehicle fault alarm {AlarmCode} for {AgvId}: {Reasons}.
+00:39:14 LOG Warning 9200 VehicleFaultLevel Vehicle {AgvId} is at fault level {Level} on evidence {EvidenceCode} (generation {FaultGeneration}).
+00:39:14 LOG Fatal 9201 VehicleFaultAlarm Vehicle fault alarm {AlarmCode} for {AgvId}: {Reasons}.
+00:39:14 LOG Warning 9200 VehicleFaultLevel Vehicle {AgvId} is at fault level {Level} on evidence {EvidenceCode} (generation {FaultGeneration}).
+00:39:14 LOG Fatal 9201 VehicleFaultAlarm Vehicle fault alarm {AlarmCode} for {AgvId}: {Reasons}.
+00:39:14 LOG Warning 9200 VehicleFaultLevel Vehicle {AgvId} is at fault level {Level} on evidence {EvidenceCode} (generation {FaultGeneration}).
+00:39:14 LOG Fatal 9201 VehicleFaultAlarm Vehicle fault alarm {AlarmCode} for {AgvId}: {Reasons}.
+00:39:17 J: d0000566 AwaitingPickupArrival block=VEHICLE_DOOR_NOT_PROVEN_LOCKED load= stops=[PICKUP@N1-3:PENDING,UNLOAD@关卡:PENDING] demands=[d0000566:PENDING_LOAD] || backlog=a1000566:DEMAND_LEFT_CATALOG || orders=W2G-a1000566-0000-0000-0000-000000000001-PICKUP-1:CONFIRMED,W2G-a1000566-0000-0000-0000-000000000003-PICKUP-1:CONFIRMED,W2G-a1000566-0000-0000-0000-000000000001-GATE-1:CONFIRMED,W2G-a1000566-0000-0000-0000-000000000001-REBUILD-1-1:CONFIRMED,W2G-b1000566-0000-0000-0000-000000000001-PICKUP-1:CONFIRMED,W2G-b1000566-0000-0000-0000-000000000002-PICKUP-1:CONFIRMED,W2G-b1000566-0000-0000-0000-000000000002-GATE-1:CONFIRMED,W2G-a2000566-0000-0000-0000-000000000001-PICKUP-1:CONFIRMED,W2G-a2000566-0000-0000-0000-000000000002-PICKUP-1:CONFIRMED,W2G-a2000566-0000-0000-0000-000000000001-GATE-1:CONFIRMED,W2G-a2100566-0000-0000-0000-000000000001-PICKUP-1:CONFIRMED,W2G-a2100566-0000-0000-0000-000000000002-PICKUP-1:CONFIRMED,W2G-a2100566-0000-0000-0000-000000000001-GATE-1:CONFIRMED,W2G-d0000566-0000-0000-0000-000000000001-PICKUP-1:CONFIRMED || riot st=0 proc=USER_FORCE_IDLE move=MT_PAUSED emerg=OK bat=57
+00:39:25 LOG Warning 9200 VehicleFaultLevel Vehicle {AgvId} is at fault level {Level} on evidence {EvidenceCode} (generation {FaultGeneration}).
+00:39:25 LOG Fatal 9201 VehicleFaultAlarm Vehicle fault alarm {AlarmCode} for {AgvId}: {Reasons}.
+00:39:25 LOG Warning 9200 VehicleFaultLevel Vehicle {AgvId} is at fault level {Level} on evidence {EvidenceCode} (generation {FaultGeneration}).
+00:39:25 LOG Fatal 9201 VehicleFaultAlarm Vehicle fault alarm {AlarmCode} for {AgvId}: {Reasons}.
+00:39:25 LOG Warning 9200 VehicleFaultLevel Vehicle {AgvId} is at fault level {Level} on evidence {EvidenceCode} (generation {FaultGeneration}).
+00:39:25 LOG Fatal 9201 VehicleFaultAlarm Vehicle fault alarm {AlarmCode} for {AgvId}: {Reasons}.
+00:39:25 LOG Warning 9200 VehicleFaultLevel Vehicle {AgvId} is at fault level {Level} on evidence {EvidenceCode} (generation {FaultGeneration}).
+00:39:25 LOG Fatal 9201 VehicleFaultAlarm Vehicle fault alarm {AlarmCode} for {AgvId}: {Reasons}.
+00:39:25 LOG Warning 9200 VehicleFaultLevel Vehicle {AgvId} is at fault level {Level} on evidence {EvidenceCode} (generation {FaultGeneration}).
+00:39:25 LOG Fatal 9201 VehicleFaultAlarm Vehicle fault alarm {AlarmCode} for {AgvId}: {Reasons}.
+00:39:25 LOG Warning 9200 VehicleFaultLevel Vehicle {AgvId} is at fault level {Level} on evidence {EvidenceCode} (generation {FaultGeneration}).
+00:39:25 LOG Fatal 9201 VehicleFaultAlarm Vehicle fault alarm {AlarmCode} for {AgvId}: {Reasons}.
+00:39:36 LOG Warning 9200 VehicleFaultLevel Vehicle {AgvId} is at fault level {Level} on evidence {EvidenceCode} (generation {FaultGeneration}).
+00:39:36 LOG Fatal 9201 VehicleFaultAlarm Vehicle fault alarm {AlarmCode} for {AgvId}: {Reasons}.
+00:39:36 LOG Warning 9200 VehicleFaultLevel Vehicle {AgvId} is at fault level {Level} on evidence {EvidenceCode} (generation {FaultGeneration}).
+00:39:36 LOG Fatal 9201 VehicleFaultAlarm Vehicle fault alarm {AlarmCode} for {AgvId}: {Reasons}.
+00:39:36 LOG Warning 9200 VehicleFaultLevel Vehicle {AgvId} is at fault level {Level} on evidence {EvidenceCode} (generation {FaultGeneration}).
+00:39:36 LOG Fatal 9201 VehicleFaultAlarm Vehicle fault alarm {AlarmCode} for {AgvId}: {Reasons}.
+00:39:36 LOG Warning 9200 VehicleFaultLevel Vehicle {AgvId} is at fault level {Level} on evidence {EvidenceCode} (generation {FaultGeneration}).
+00:39:36 LOG Fatal 9201 VehicleFaultAlarm Vehicle fault alarm {AlarmCode} for {AgvId}: {Reasons}.
+00:39:36 LOG Warning 9200 VehicleFaultLevel Vehicle {AgvId} is at fault level {Level} on evidence {EvidenceCode} (generation {FaultGeneration}).
+00:39:36 LOG Fatal 9201 VehicleFaultAlarm Vehicle fault alarm {AlarmCode} for {AgvId}: {Reasons}.
+00:39:47 LOG Warning 9200 VehicleFaultLevel Vehicle {AgvId} is at fault level {Level} on evidence {EvidenceCode} (generation {FaultGeneration}).
+00:39:47 LOG Fatal 9201 VehicleFaultAlarm Vehicle fault alarm {AlarmCode} for {AgvId}: {Reasons}.
+00:39:47 LOG Warning 9200 VehicleFaultLevel Vehicle {AgvId} is at fault level {Level} on evidence {EvidenceCode} (generation {FaultGeneration}).
+00:39:47 LOG Fatal 9201 VehicleFaultAlarm Vehicle fault alarm {AlarmCode} for {AgvId}: {Reasons}.
+00:39:47 LOG Warning 9200 VehicleFaultLevel Vehicle {AgvId} is at fault level {Level} on evidence {EvidenceCode} (generation {FaultGeneration}).
+00:39:47 LOG Fatal 9201 VehicleFaultAlarm Vehicle fault alarm {AlarmCode} for {AgvId}: {Reasons}.
+00:39:47 LOG Warning 9200 VehicleFaultLevel Vehicle {AgvId} is at fault level {Level} on evidence {EvidenceCode} (generation {FaultGeneration}).
+00:39:47 LOG Fatal 9201 VehicleFaultAlarm Vehicle fault alarm {AlarmCode} for {AgvId}: {Reasons}.
+00:39:47 LOG Warning 9200 VehicleFaultLevel Vehicle {AgvId} is at fault level {Level} on evidence {EvidenceCode} (generation {FaultGeneration}).
+00:39:47 LOG Fatal 9201 VehicleFaultAlarm Vehicle fault alarm {AlarmCode} for {AgvId}: {Reasons}.
+00:39:47 LOG Warning 9200 VehicleFaultLevel Vehicle {AgvId} is at fault level {Level} on evidence {EvidenceCode} (generation {FaultGeneration}).
+00:39:47 LOG Fatal 9201 VehicleFaultAlarm Vehicle fault alarm {AlarmCode} for {AgvId}: {Reasons}.
+00:39:59 LOG Warning 9200 VehicleFaultLevel Vehicle {AgvId} is at fault level {Level} on evidence {EvidenceCode} (generation {FaultGeneration}).
+00:39:59 LOG Fatal 9201 VehicleFaultAlarm Vehicle fault alarm {AlarmCode} for {AgvId}: {Reasons}.
+00:39:59 LOG Warning 9200 VehicleFaultLevel Vehicle {AgvId} is at fault level {Level} on evidence {EvidenceCode} (generation {FaultGeneration}).
+00:39:59 LOG Fatal 9201 VehicleFaultAlarm Vehicle fault alarm {AlarmCode} for {AgvId}: {Reasons}.
+00:39:59 LOG Warning 9200 VehicleFaultLevel Vehicle {AgvId} is at fault level {Level} on evidence {EvidenceCode} (generation {FaultGeneration}).
+00:39:59 LOG Fatal 9201 VehicleFaultAlarm Vehicle fault alarm {AlarmCode} for {AgvId}: {Reasons}.
+00:39:59 LOG Warning 9200 VehicleFaultLevel Vehicle {AgvId} is at fault level {Level} on evidence {EvidenceCode} (generation {FaultGeneration}).
+00:39:59 LOG Fatal 9201 VehicleFaultAlarm Vehicle fault alarm {AlarmCode} for {AgvId}: {Reasons}.
+00:39:59 LOG Warning 9200 VehicleFaultLevel Vehicle {AgvId} is at fault level {Level} on evidence {EvidenceCode} (generation {FaultGeneration}).
+00:39:59 LOG Fatal 9201 VehicleFaultAlarm Vehicle fault alarm {AlarmCode} for {AgvId}: {Reasons}.
+00:39:59 LOG Warning 9200 VehicleFaultLevel Vehicle {AgvId} is at fault level {Level} on evidence {EvidenceCode} (generation {FaultGeneration}).
+00:39:59 LOG Fatal 9201 VehicleFaultAlarm Vehicle fault alarm {AlarmCode} for {AgvId}: {Reasons}.
+00:40:11 LOG Warning 9200 VehicleFaultLevel Vehicle {AgvId} is at fault level {Level} on evidence {EvidenceCode} (generation {FaultGeneration}).
+00:40:11 LOG Fatal 9201 VehicleFaultAlarm Vehicle fault alarm {AlarmCode} for {AgvId}: {Reasons}.
+00:40:11 LOG Warning 9200 VehicleFaultLevel Vehicle {AgvId} is at fault level {Level} on evidence {EvidenceCode} (generation {FaultGeneration}).
+00:40:11 LOG Fatal 9201 VehicleFaultAlarm Vehicle fault alarm {AlarmCode} for {AgvId}: {Reasons}.
+00:40:11 LOG Warning 9200 VehicleFaultLevel Vehicle {AgvId} is at fault level {Level} on evidence {EvidenceCode} (generation {FaultGeneration}).
+00:40:11 LOG Fatal 9201 VehicleFaultAlarm Vehicle fault alarm {AlarmCode} for {AgvId}: {Reasons}.
+00:40:11 LOG Warning 9200 VehicleFaultLevel Vehicle {AgvId} is at fault level {Level} on evidence {EvidenceCode} (generation {FaultGeneration}).
+00:40:11 LOG Fatal 9201 VehicleFaultAlarm Vehicle fault alarm {AlarmCode} for {AgvId}: {Reasons}.
+00:40:11 LOG Warning 9200 VehicleFaultLevel Vehicle {AgvId} is at fault level {Level} on evidence {EvidenceCode} (generation {FaultGeneration}).
+00:40:11 LOG Fatal 9201 VehicleFaultAlarm Vehicle fault alarm {AlarmCode} for {AgvId}: {Reasons}.
+00:40:11 LOG Warning 9200 VehicleFaultLevel Vehicle {AgvId} is at fault level {Level} on evidence {EvidenceCode} (generation {FaultGeneration}).
+00:40:11 LOG Fatal 9201 VehicleFaultAlarm Vehicle fault alarm {AlarmCode} for {AgvId}: {Reasons}.
+00:40:23 LOG Warning 9200 VehicleFaultLevel Vehicle {AgvId} is at fault level {Level} on evidence {EvidenceCode} (generation {FaultGeneration}).
+00:40:23 LOG Fatal 9201 VehicleFaultAlarm Vehicle fault alarm {AlarmCode} for {AgvId}: {Reasons}.
+00:40:23 LOG Warning 9200 VehicleFaultLevel Vehicle {AgvId} is at fault level {Level} on evidence {EvidenceCode} (generation {FaultGeneration}).
+00:40:23 LOG Fatal 9201 VehicleFaultAlarm Vehicle fault alarm {AlarmCode} for {AgvId}: {Reasons}.
+00:40:23 LOG Warning 9200 VehicleFaultLevel Vehicle {AgvId} is at fault level {Level} on evidence {EvidenceCode} (generation {FaultGeneration}).
+00:40:23 LOG Fatal 9201 VehicleFaultAlarm Vehicle fault alarm {AlarmCode} for {AgvId}: {Reasons}.
+00:40:23 LOG Warning 9200 VehicleFaultLevel Vehicle {AgvId} is at fault level {Level} on evidence {EvidenceCode} (generation {FaultGeneration}).
+00:40:23 LOG Fatal 9201 VehicleFaultAlarm Vehicle fault alarm {AlarmCode} for {AgvId}: {Reasons}.
+00:40:23 LOG Warning 9200 VehicleFaultLevel Vehicle {AgvId} is at fault level {Level} on evidence {EvidenceCode} (generation {FaultGeneration}).
+00:40:23 LOG Fatal 9201 VehicleFaultAlarm Vehicle fault alarm {AlarmCode} for {AgvId}: {Reasons}.
+00:40:23 LOG Warning 9200 VehicleFaultLevel Vehicle {AgvId} is at fault level {Level} on evidence {EvidenceCode} (generation {FaultGeneration}).
+00:40:23 LOG Fatal 9201 VehicleFaultAlarm Vehicle fault alarm {AlarmCode} for {AgvId}: {Reasons}.
+00:40:35 LOG Warning 9200 VehicleFaultLevel Vehicle {AgvId} is at fault level {Level} on evidence {EvidenceCode} (generation {FaultGeneration}).
+00:40:35 LOG Fatal 9201 VehicleFaultAlarm Vehicle fault alarm {AlarmCode} for {AgvId}: {Reasons}.
+00:40:35 LOG Warning 9200 VehicleFaultLevel Vehicle {AgvId} is at fault level {Level} on evidence {EvidenceCode} (generation {FaultGeneration}).
+00:40:35 LOG Fatal 9201 VehicleFaultAlarm Vehicle fault alarm {AlarmCode} for {AgvId}: {Reasons}.
+00:40:35 LOG Warning 9200 VehicleFaultLevel Vehicle {AgvId} is at fault level {Level} on evidence {EvidenceCode} (generation {FaultGeneration}).
+00:40:35 LOG Fatal 9201 VehicleFaultAlarm Vehicle fault alarm {AlarmCode} for {AgvId}: {Reasons}.
+00:40:35 LOG Warning 9200 VehicleFaultLevel Vehicle {AgvId} is at fault level {Level} on evidence {EvidenceCode} (generation {FaultGeneration}).
+00:40:35 LOG Fatal 9201 VehicleFaultAlarm Vehicle fault alarm {AlarmCode} for {AgvId}: {Reasons}.
+00:40:35 LOG Warning 9200 VehicleFaultLevel Vehicle {AgvId} is at fault level {Level} on evidence {EvidenceCode} (generation {FaultGeneration}).
+00:40:35 LOG Fatal 9201 VehicleFaultAlarm Vehicle fault alarm {AlarmCode} for {AgvId}: {Reasons}.
+00:40:47 LOG Warning 9200 VehicleFaultLevel Vehicle {AgvId} is at fault level {Level} on evidence {EvidenceCode} (generation {FaultGeneration}).
+00:40:47 LOG Fatal 9201 VehicleFaultAlarm Vehicle fault alarm {AlarmCode} for {AgvId}: {Reasons}.
+00:40:47 LOG Warning 9200 VehicleFaultLevel Vehicle {AgvId} is at fault level {Level} on evidence {EvidenceCode} (generation {FaultGeneration}).
+00:40:47 LOG Fatal 9201 VehicleFaultAlarm Vehicle fault alarm {AlarmCode} for {AgvId}: {Reasons}.
+00:40:47 LOG Warning 9200 VehicleFaultLevel Vehicle {AgvId} is at fault level {Level} on evidence {EvidenceCode} (generation {FaultGeneration}).
+00:40:47 LOG Fatal 9201 VehicleFaultAlarm Vehicle fault alarm {AlarmCode} for {AgvId}: {Reasons}.
+00:40:47 LOG Warning 9200 VehicleFaultLevel Vehicle {AgvId} is at fault level {Level} on evidence {EvidenceCode} (generation {FaultGeneration}).
+00:40:47 LOG Fatal 9201 VehicleFaultAlarm Vehicle fault alarm {AlarmCode} for {AgvId}: {Reasons}.
+00:40:47 LOG Warning 9200 VehicleFaultLevel Vehicle {AgvId} is at fault level {Level} on evidence {EvidenceCode} (generation {FaultGeneration}).
+00:40:47 LOG Fatal 9201 VehicleFaultAlarm Vehicle fault alarm {AlarmCode} for {AgvId}: {Reasons}.
+00:40:47 LOG Warning 9200 VehicleFaultLevel Vehicle {AgvId} is at fault level {Level} on evidence {EvidenceCode} (generation {FaultGeneration}).
+00:40:47 LOG Fatal 9201 VehicleFaultAlarm Vehicle fault alarm {AlarmCode} for {AgvId}: {Reasons}.
+00:40:47 LOG Warning 9200 VehicleFaultLevel Vehicle {AgvId} is at fault level {Level} on evidence {EvidenceCode} (generation {FaultGeneration}).
+00:40:47 LOG Fatal 9201 VehicleFaultAlarm Vehicle fault alarm {AlarmCode} for {AgvId}: {Reasons}.
+00:40:58 LOG Warning 9200 VehicleFaultLevel Vehicle {AgvId} is at fault level {Level} on evidence {EvidenceCode} (generation {FaultGeneration}).
+00:40:58 LOG Fatal 9201 VehicleFaultAlarm Vehicle fault alarm {AlarmCode} for {AgvId}: {Reasons}.
+00:40:58 LOG Warning 9200 VehicleFaultLevel Vehicle {AgvId} is at fault level {Level} on evidence {EvidenceCode} (generation {FaultGeneration}).
+00:40:58 LOG Fatal 9201 VehicleFaultAlarm Vehicle fault alarm {AlarmCode} for {AgvId}: {Reasons}.
+00:40:58 LOG Warning 9200 VehicleFaultLevel Vehicle {AgvId} is at fault level {Level} on evidence {EvidenceCode} (generation {FaultGeneration}).
+00:40:58 LOG Fatal 9201 VehicleFaultAlarm Vehicle fault alarm {AlarmCode} for {AgvId}: {Reasons}.
+00:40:58 LOG Warning 9200 VehicleFaultLevel Vehicle {AgvId} is at fault level {Level} on evidence {EvidenceCode} (generation {FaultGeneration}).
+00:40:58 LOG Fatal 9201 VehicleFaultAlarm Vehicle fault alarm {AlarmCode} for {AgvId}: {Reasons}.
+00:40:58 LOG Warning 9200 VehicleFaultLevel Vehicle {AgvId} is at fault level {Level} on evidence {EvidenceCode} (generation {FaultGeneration}).
+00:40:58 LOG Fatal 9201 VehicleFaultAlarm Vehicle fault alarm {AlarmCode} for {AgvId}: {Reasons}.
+00:41:12 LOG Warning 9200 VehicleFaultLevel Vehicle {AgvId} is at fault level {Level} on evidence {EvidenceCode} (generation {FaultGeneration}).
+00:41:12 LOG Fatal 9201 VehicleFaultAlarm Vehicle fault alarm {AlarmCode} for {AgvId}: {Reasons}.
+00:41:12 LOG Warning 9200 VehicleFaultLevel Vehicle {AgvId} is at fault level {Level} on evidence {EvidenceCode} (generation {FaultGeneration}).
+00:41:12 LOG Fatal 9201 VehicleFaultAlarm Vehicle fault alarm {AlarmCode} for {AgvId}: {Reasons}.
+00:41:12 LOG Warning 9200 VehicleFaultLevel Vehicle {AgvId} is at fault level {Level} on evidence {EvidenceCode} (generation {FaultGeneration}).
+00:41:12 LOG Fatal 9201 VehicleFaultAlarm Vehicle fault alarm {AlarmCode} for {AgvId}: {Reasons}.
+00:41:12 LOG Warning 9200 VehicleFaultLevel Vehicle {AgvId} is at fault level {Level} on evidence {EvidenceCode} (generation {FaultGeneration}).
+00:41:12 LOG Fatal 9201 VehicleFaultAlarm Vehicle fault alarm {AlarmCode} for {AgvId}: {Reasons}.
+00:41:12 LOG Warning 9200 VehicleFaultLevel Vehicle {AgvId} is at fault level {Level} on evidence {EvidenceCode} (generation {FaultGeneration}).
+00:41:12 LOG Fatal 9201 VehicleFaultAlarm Vehicle fault alarm {AlarmCode} for {AgvId}: {Reasons}.
+00:41:12 LOG Warning 9200 VehicleFaultLevel Vehicle {AgvId} is at fault level {Level} on evidence {EvidenceCode} (generation {FaultGeneration}).
+00:41:12 LOG Fatal 9201 VehicleFaultAlarm Vehicle fault alarm {AlarmCode} for {AgvId}: {Reasons}.
+00:41:12 LOG Warning 9200 VehicleFaultLevel Vehicle {AgvId} is at fault level {Level} on evidence {EvidenceCode} (generation {FaultGeneration}).
+00:41:12 LOG Fatal 9201 VehicleFaultAlarm Vehicle fault alarm {AlarmCode} for {AgvId}: {Reasons}.
+00:41:24 LOG Warning 9200 VehicleFaultLevel Vehicle {AgvId} is at fault level {Level} on evidence {EvidenceCode} (generation {FaultGeneration}).
+00:41:24 LOG Fatal 9201 VehicleFaultAlarm Vehicle fault alarm {AlarmCode} for {AgvId}: {Reasons}.
+00:41:24 LOG Warning 9200 VehicleFaultLevel Vehicle {AgvId} is at fault level {Level} on evidence {EvidenceCode} (generation {FaultGeneration}).
+00:41:24 LOG Fatal 9201 VehicleFaultAlarm Vehicle fault alarm {AlarmCode} for {AgvId}: {Reasons}.
+00:41:24 LOG Warning 9200 VehicleFaultLevel Vehicle {AgvId} is at fault level {Level} on evidence {EvidenceCode} (generation {FaultGeneration}).
+00:41:24 LOG Fatal 9201 VehicleFaultAlarm Vehicle fault alarm {AlarmCode} for {AgvId}: {Reasons}.
+00:41:24 LOG Warning 9200 VehicleFaultLevel Vehicle {AgvId} is at fault level {Level} on evidence {EvidenceCode} (generation {FaultGeneration}).
+00:41:24 LOG Fatal 9201 VehicleFaultAlarm Vehicle fault alarm {AlarmCode} for {AgvId}: {Reasons}.
+00:41:24 LOG Warning 9200 VehicleFaultLevel Vehicle {AgvId} is at fault level {Level} on evidence {EvidenceCode} (generation {FaultGeneration}).
+00:41:24 LOG Fatal 9201 VehicleFaultAlarm Vehicle fault alarm {AlarmCode} for {AgvId}: {Reasons}.
+00:41:24 LOG Warning 9200 VehicleFaultLevel Vehicle {AgvId} is at fault level {Level} on evidence {EvidenceCode} (generation {FaultGeneration}).
+00:41:24 LOG Fatal 9201 VehicleFaultAlarm Vehicle fault alarm {AlarmCode} for {AgvId}: {Reasons}.
+00:41:34 LOG Warning 9200 VehicleFaultLevel Vehicle {AgvId} is at fault level {Level} on evidence {EvidenceCode} (generation {FaultGeneration}).
+00:41:34 LOG Fatal 9201 VehicleFaultAlarm Vehicle fault alarm {AlarmCode} for {AgvId}: {Reasons}.
+00:41:34 LOG Warning 9200 VehicleFaultLevel Vehicle {AgvId} is at fault level {Level} on evidence {EvidenceCode} (generation {FaultGeneration}).
+00:41:34 LOG Fatal 9201 VehicleFaultAlarm Vehicle fault alarm {AlarmCode} for {AgvId}: {Reasons}.
+00:41:34 LOG Warning 9200 VehicleFaultLevel Vehicle {AgvId} is at fault level {Level} on evidence {EvidenceCode} (generation {FaultGeneration}).
+00:41:34 LOG Fatal 9201 VehicleFaultAlarm Vehicle fault alarm {AlarmCode} for {AgvId}: {Reasons}.
+00:41:34 LOG Warning 9200 VehicleFaultLevel Vehicle {AgvId} is at fault level {Level} on evidence {EvidenceCode} (generation {FaultGeneration}).
+00:41:34 LOG Fatal 9201 VehicleFaultAlarm Vehicle fault alarm {AlarmCode} for {AgvId}: {Reasons}.
+00:41:34 LOG Warning 9200 VehicleFaultLevel Vehicle {AgvId} is at fault level {Level} on evidence {EvidenceCode} (generation {FaultGeneration}).
+00:41:34 LOG Fatal 9201 VehicleFaultAlarm Vehicle fault alarm {AlarmCode} for {AgvId}: {Reasons}.
+00:41:45 LOG Warning 9200 VehicleFaultLevel Vehicle {AgvId} is at fault level {Level} on evidence {EvidenceCode} (generation {FaultGeneration}).
+00:41:45 LOG Fatal 9201 VehicleFaultAlarm Vehicle fault alarm {AlarmCode} for {AgvId}: {Reasons}.
+00:41:45 LOG Warning 9200 VehicleFaultLevel Vehicle {AgvId} is at fault level {Level} on evidence {EvidenceCode} (generation {FaultGeneration}).
+00:41:45 LOG Fatal 9201 VehicleFaultAlarm Vehicle fault alarm {AlarmCode} for {AgvId}: {Reasons}.
+00:41:45 LOG Warning 9200 VehicleFaultLevel Vehicle {AgvId} is at fault level {Level} on evidence {EvidenceCode} (generation {FaultGeneration}).
+00:41:45 LOG Fatal 9201 VehicleFaultAlarm Vehicle fault alarm {AlarmCode} for {AgvId}: {Reasons}.
+00:41:45 LOG Warning 9200 VehicleFaultLevel Vehicle {AgvId} is at fault level {Level} on evidence {EvidenceCode} (generation {FaultGeneration}).
+00:41:45 LOG Fatal 9201 VehicleFaultAlarm Vehicle fault alarm {AlarmCode} for {AgvId}: {Reasons}.
+00:41:45 LOG Warning 9200 VehicleFaultLevel Vehicle {AgvId} is at fault level {Level} on evidence {EvidenceCode} (generation {FaultGeneration}).
+00:41:45 LOG Fatal 9201 VehicleFaultAlarm Vehicle fault alarm {AlarmCode} for {AgvId}: {Reasons}.
+00:41:45 LOG Warning 9200 VehicleFaultLevel Vehicle {AgvId} is at fault level {Level} on evidence {EvidenceCode} (generation {FaultGeneration}).
+00:41:45 LOG Fatal 9201 VehicleFaultAlarm Vehicle fault alarm {AlarmCode} for {AgvId}: {Reasons}.
+00:41:56 LOG Warning 9200 VehicleFaultLevel Vehicle {AgvId} is at fault level {Level} on evidence {EvidenceCode} (generation {FaultGeneration}).
+00:41:56 LOG Fatal 9201 VehicleFaultAlarm Vehicle fault alarm {AlarmCode} for {AgvId}: {Reasons}.
+00:41:56 LOG Warning 9200 VehicleFaultLevel Vehicle {AgvId} is at fault level {Level} on evidence {EvidenceCode} (generation {FaultGeneration}).
+00:41:56 LOG Fatal 9201 VehicleFaultAlarm Vehicle fault alarm {AlarmCode} for {AgvId}: {Reasons}.
+00:41:56 LOG Warning 9200 VehicleFaultLevel Vehicle {AgvId} is at fault level {Level} on evidence {EvidenceCode} (generation {FaultGeneration}).
+00:41:56 LOG Fatal 9201 VehicleFaultAlarm Vehicle fault alarm {AlarmCode} for {AgvId}: {Reasons}.
+00:41:56 LOG Warning 9200 VehicleFaultLevel Vehicle {AgvId} is at fault level {Level} on evidence {EvidenceCode} (generation {FaultGeneration}).
+00:41:56 LOG Fatal 9201 VehicleFaultAlarm Vehicle fault alarm {AlarmCode} for {AgvId}: {Reasons}.
+00:41:56 LOG Warning 9200 VehicleFaultLevel Vehicle {AgvId} is at fault level {Level} on evidence {EvidenceCode} (generation {FaultGeneration}).
+00:41:56 LOG Fatal 9201 VehicleFaultAlarm Vehicle fault alarm {AlarmCode} for {AgvId}: {Reasons}.
+00:42:08 LOG Warning 9200 VehicleFaultLevel Vehicle {AgvId} is at fault level {Level} on evidence {EvidenceCode} (generation {FaultGeneration}).
+00:42:08 LOG Fatal 9201 VehicleFaultAlarm Vehicle fault alarm {AlarmCode} for {AgvId}: {Reasons}.
+00:42:08 LOG Warning 9200 VehicleFaultLevel Vehicle {AgvId} is at fault level {Level} on evidence {EvidenceCode} (generation {FaultGeneration}).
+00:42:08 LOG Fatal 9201 VehicleFaultAlarm Vehicle fault alarm {AlarmCode} for {AgvId}: {Reasons}.
+00:42:08 LOG Warning 9200 VehicleFaultLevel Vehicle {AgvId} is at fault level {Level} on evidence {EvidenceCode} (generation {FaultGeneration}).
+00:42:08 LOG Fatal 9201 VehicleFaultAlarm Vehicle fault alarm {AlarmCode} for {AgvId}: {Reasons}.
+00:42:08 LOG Warning 9200 VehicleFaultLevel Vehicle {AgvId} is at fault level {Level} on evidence {EvidenceCode} (generation {FaultGeneration}).
+00:42:08 LOG Fatal 9201 VehicleFaultAlarm Vehicle fault alarm {AlarmCode} for {AgvId}: {Reasons}.
+00:42:08 LOG Warning 9200 VehicleFaultLevel Vehicle {AgvId} is at fault level {Level} on evidence {EvidenceCode} (generation {FaultGeneration}).
+00:42:08 LOG Fatal 9201 VehicleFaultAlarm Vehicle fault alarm {AlarmCode} for {AgvId}: {Reasons}.
+00:42:08 LOG Warning 9200 VehicleFaultLevel Vehicle {AgvId} is at fault level {Level} on evidence {EvidenceCode} (generation {FaultGeneration}).
+00:42:08 LOG Fatal 9201 VehicleFaultAlarm Vehicle fault alarm {AlarmCode} for {AgvId}: {Reasons}.
+00:42:20 LOG Warning 9200 VehicleFaultLevel Vehicle {AgvId} is at fault level {Level} on evidence {EvidenceCode} (generation {FaultGeneration}).
+00:42:20 LOG Fatal 9201 VehicleFaultAlarm Vehicle fault alarm {AlarmCode} for {AgvId}: {Reasons}.
+00:42:20 LOG Warning 9200 VehicleFaultLevel Vehicle {AgvId} is at fault level {Level} on evidence {EvidenceCode} (generation {FaultGeneration}).
+00:42:20 LOG Fatal 9201 VehicleFaultAlarm Vehicle fault alarm {AlarmCode} for {AgvId}: {Reasons}.
+00:42:20 LOG Warning 9200 VehicleFaultLevel Vehicle {AgvId} is at fault level {Level} on evidence {EvidenceCode} (generation {FaultGeneration}).
+00:42:20 LOG Fatal 9201 VehicleFaultAlarm Vehicle fault alarm {AlarmCode} for {AgvId}: {Reasons}.
+00:42:20 LOG Warning 9200 VehicleFaultLevel Vehicle {AgvId} is at fault level {Level} on evidence {EvidenceCode} (generation {FaultGeneration}).
+00:42:20 LOG Fatal 9201 VehicleFaultAlarm Vehicle fault alarm {AlarmCode} for {AgvId}: {Reasons}.
+00:42:20 LOG Warning 9200 VehicleFaultLevel Vehicle {AgvId} is at fault level {Level} on evidence {EvidenceCode} (generation {FaultGeneration}).
+00:42:20 LOG Fatal 9201 VehicleFaultAlarm Vehicle fault alarm {AlarmCode} for {AgvId}: {Reasons}.
+00:42:20 LOG Warning 9200 VehicleFaultLevel Vehicle {AgvId} is at fault level {Level} on evidence {EvidenceCode} (generation {FaultGeneration}).
+00:42:20 LOG Fatal 9201 VehicleFaultAlarm Vehicle fault alarm {AlarmCode} for {AgvId}: {Reasons}.
+00:42:30 LOG Warning 9200 VehicleFaultLevel Vehicle {AgvId} is at fault level {Level} on evidence {EvidenceCode} (generation {FaultGeneration}).
+00:42:30 LOG Fatal 9201 VehicleFaultAlarm Vehicle fault alarm {AlarmCode} for {AgvId}: {Reasons}.
+00:42:30 LOG Warning 9200 VehicleFaultLevel Vehicle {AgvId} is at fault level {Level} on evidence {EvidenceCode} (generation {FaultGeneration}).
+00:42:30 LOG Fatal 9201 VehicleFaultAlarm Vehicle fault alarm {AlarmCode} for {AgvId}: {Reasons}.
+00:42:30 LOG Warning 9200 VehicleFaultLevel Vehicle {AgvId} is at fault level {Level} on evidence {EvidenceCode} (generation {FaultGeneration}).
+00:42:30 LOG Fatal 9201 VehicleFaultAlarm Vehicle fault alarm {AlarmCode} for {AgvId}: {Reasons}.
+00:42:30 LOG Warning 9200 VehicleFaultLevel Vehicle {AgvId} is at fault level {Level} on evidence {EvidenceCode} (generation {FaultGeneration}).
+00:42:30 LOG Fatal 9201 VehicleFaultAlarm Vehicle fault alarm {AlarmCode} for {AgvId}: {Reasons}.
+00:42:30 LOG Warning 9200 VehicleFaultLevel Vehicle {AgvId} is at fault level {Level} on evidence {EvidenceCode} (generation {FaultGeneration}).
+00:42:30 LOG Fatal 9201 VehicleFaultAlarm Vehicle fault alarm {AlarmCode} for {AgvId}: {Reasons}.
+00:42:42 LOG Warning 9200 VehicleFaultLevel Vehicle {AgvId} is at fault level {Level} on evidence {EvidenceCode} (generation {FaultGeneration}).
+00:42:42 LOG Fatal 9201 VehicleFaultAlarm Vehicle fault alarm {AlarmCode} for {AgvId}: {Reasons}.
+00:42:42 LOG Warning 9200 VehicleFaultLevel Vehicle {AgvId} is at fault level {Level} on evidence {EvidenceCode} (generation {FaultGeneration}).
+00:42:42 LOG Fatal 9201 VehicleFaultAlarm Vehicle fault alarm {AlarmCode} for {AgvId}: {Reasons}.
+00:44:36 J: d0000566 AwaitingPickupArrival block=VEHICLE_DOOR_NOT_PROVEN_LOCKED load= stops=[PICKUP@N1-3:PENDING,UNLOAD@关卡:PENDING] demands=[d0000566:PENDING_LOAD] || backlog=a1000566:DEMAND_LEFT_CATALOG || orders=W2G-a1000566-0000-0000-0000-000000000001-PICKUP-1:CONFIRMED,W2G-a1000566-0000-0000-0000-000000000003-PICKUP-1:CONFIRMED,W2G-a1000566-0000-0000-0000-000000000001-GATE-1:CONFIRMED,W2G-a1000566-0000-0000-0000-000000000001-REBUILD-1-1:CONFIRMED,W2G-b1000566-0000-0000-0000-000000000001-PICKUP-1:CONFIRMED,W2G-b1000566-0000-0000-0000-000000000002-PICKUP-1:CONFIRMED,W2G-b1000566-0000-0000-0000-000000000002-GATE-1:CONFIRMED,W2G-a2000566-0000-0000-0000-000000000001-PICKUP-1:CONFIRMED,W2G-a2000566-0000-0000-0000-000000000002-PICKUP-1:CONFIRMED,W2G-a2000566-0000-0000-0000-000000000001-GATE-1:CONFIRMED,W2G-a2100566-0000-0000-0000-000000000001-PICKUP-1:CONFIRMED,W2G-a2100566-0000-0000-0000-000000000002-PICKUP-1:CONFIRMED,W2G-a2100566-0000-0000-0000-000000000001-GATE-1:CONFIRMED,W2G-d0000566-0000-0000-0000-000000000001-PICKUP-1:CONFIRMED || riot st=0 proc=USER_FORCE_IDLE move=MT_PAUSED emerg=OK bat=56
+00:46:18 J: d0000566 AwaitingPickupArrival block=VEHICLE_DOOR_NOT_PROVEN_LOCKED load= stops=[PICKUP@N1-3:PENDING,UNLOAD@关卡:PENDING] demands=[d0000566:PENDING_LOAD] || backlog=a1000566:DEMAND_LEFT_CATALOG || orders=W2G-a1000566-0000-0000-0000-000000000001-PICKUP-1:CONFIRMED,W2G-a1000566-0000-0000-0000-000000000003-PICKUP-1:CONFIRMED,W2G-a1000566-0000-0000-0000-000000000001-GATE-1:CONFIRMED,W2G-a1000566-0000-0000-0000-000000000001-REBUILD-1-1:CONFIRMED,W2G-b1000566-0000-0000-0000-000000000001-PICKUP-1:CONFIRMED,W2G-b1000566-0000-0000-0000-000000000002-PICKUP-1:CONFIRMED,W2G-b1000566-0000-0000-0000-000000000002-GATE-1:CONFIRMED,W2G-a2000566-0000-0000-0000-000000000001-PICKUP-1:CONFIRMED,W2G-a2000566-0000-0000-0000-000000000002-PICKUP-1:CONFIRMED,W2G-a2000566-0000-0000-0000-000000000001-GATE-1:CONFIRMED,W2G-a2100566-0000-0000-0000-000000000001-PICKUP-1:CONFIRMED,W2G-a2100566-0000-0000-0000-000000000002-PICKUP-1:CONFIRMED,W2G-a2100566-0000-0000-0000-000000000001-GATE-1:CONFIRMED,W2G-d0000566-0000-0000-0000-000000000001-PICKUP-1:CONFIRMED || riot st=0 proc=INNER_FORCE_IDLE move=MT_NA emerg=OK bat=56
+00:47:59 J: d0000566 AwaitingPickupArrival block=VEHICLE_DOOR_NOT_PROVEN_LOCKED load= stops=[PICKUP@N1-3:PENDING,UNLOAD@关卡:PENDING] demands=[d0000566:PENDING_LOAD] || backlog=a1000566:DEMAND_LEFT_CATALOG || orders=W2G-a1000566-0000-0000-0000-000000000001-PICKUP-1:CONFIRMED,W2G-a1000566-0000-0000-0000-000000000003-PICKUP-1:CONFIRMED,W2G-a1000566-0000-0000-0000-000000000001-GATE-1:CONFIRMED,W2G-a1000566-0000-0000-0000-000000000001-REBUILD-1-1:CONFIRMED,W2G-b1000566-0000-0000-0000-000000000001-PICKUP-1:CONFIRMED,W2G-b1000566-0000-0000-0000-000000000002-PICKUP-1:CONFIRMED,W2G-b1000566-0000-0000-0000-000000000002-GATE-1:CONFIRMED,W2G-a2000566-0000-0000-0000-000000000001-PICKUP-1:CONFIRMED,W2G-a2000566-0000-0000-0000-000000000002-PICKUP-1:CONFIRMED,W2G-a2000566-0000-0000-0000-000000000001-GATE-1:CONFIRMED,W2G-a2100566-0000-0000-0000-000000000001-PICKUP-1:CONFIRMED,W2G-a2100566-0000-0000-0000-000000000002-PICKUP-1:CONFIRMED,W2G-a2100566-0000-0000-0000-000000000001-GATE-1:CONFIRMED,W2G-d0000566-0000-0000-0000-000000000001-PICKUP-1:CONFIRMED || riot st=0 proc=IDLE move=MT_NA emerg=OK bat=56
