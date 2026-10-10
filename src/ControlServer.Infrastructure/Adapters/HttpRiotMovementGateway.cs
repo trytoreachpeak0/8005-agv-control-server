@@ -350,13 +350,40 @@ public sealed class HttpRiotMovementGateway : IRiotMovementGateway, IRiotVehicle
         }
     }
 
-    public Task<RiotVehicleSafetyObservation> ReadForOnboardAsync(
+    public async Task<RiotVehicleSafetyObservation> ReadForOnboardAsync(
         string vehicleKey,
         int listingRereads,
         CancellationToken cancellationToken)
     {
-        _ = listingRereads;
-        return ReadVehicleSafetyAsync(vehicleKey, cancellationToken);
+        ArgumentException.ThrowIfNullOrWhiteSpace(vehicleKey);
+        ArgumentOutOfRangeException.ThrowIfNegative(listingRereads);
+        try
+        {
+            VehicleExecutionFacts vehicle = await riotSession.Tasks.GetVehicleExecutionFactsAsync(
+                vehicleKey, cancellationToken).ConfigureAwait(false);
+            // Each read is a whole one, judged alone by control-server#525's rule; pages of two reads are never put together.
+            for (int read = 0; read <= listingRereads; read++)
+            {
+                NonFinalOrderRead orders = await ReadAllNonFinalOrdersAsync(cancellationToken).ConfigureAwait(false);
+                if (orders.IsComplete)
+                {
+                    return Safety(vehicleKey, vehicle, orders.Records);
+                }
+            }
+            return UnknownSafety(vehicleKey, "RIOT_NONFINAL_ORDER_COVERAGE_UNKNOWN");
+        }
+        catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
+        {
+            throw;
+        }
+        catch (Exception error) when (RiotCallFailureClassification.IsTimeout(error))
+        {
+            return UnknownSafety(vehicleKey, "RIOT_READ_TIMEOUT");
+        }
+        catch (Exception error) when (RiotCallFailureClassification.IsSdkFailure(error))
+        {
+            return UnknownSafety(vehicleKey, "RIOT_READ_FAILED");
+        }
     }
 
     /// <summary>The safety predicate over one vehicle read and one complete non-final order listing.</summary>
