@@ -66,6 +66,8 @@ public sealed class OnboardSafetyCoverageCarryOverTests
         else
         {
             AssertCoverageUnknown(result);
+            // Already past the window: not worth a database read (the check after the ledger would catch it too).
+            Assert.Equal(0, rig.Ledger.Calls);
         }
     }
 
