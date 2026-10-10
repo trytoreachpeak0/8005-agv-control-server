@@ -1,0 +1,7 @@
+M1 KILLED exit=1 expected A2 red; red: A2  (drop the pre-submit read-back check)
+M2 KILLED exit=1 expected A4 red; red: A4  (swallow a refusal instead of failing)
+M3 KILLED exit=1 expected A4 red; red: A4,A5  (take a refusal logged before the submit)
+M4 KILLED exit=1 expected B4 red; red: B4  (treat an empty read value as unreadable and re-read)
+M5 KILLED exit=1 expected B1 red; red: B1,B2  (no re-read: one read only)
+M6 KILLED exit=1 expected B6 red; red: B6  (held window ignores an unreadable reading)
+M7 KILLED exit=1 expected B7 red; red: B7  (G3-12-07 back on the first reading)
