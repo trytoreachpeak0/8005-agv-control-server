@@ -34,9 +34,16 @@
 - 04 旅程照常走完，`Completed`。
 
 `-ChurnFrom PickupArrival`（场景 `real-onboard-load-under-listing-churn` 传它）从车到取货站就开始搅，N=3（约 33%，仍是计数、仍不连续），
-离站等待 20 秒、预算 80 秒——装货只有十几秒，N=40 打不中。N=3 是全局任意连续 3 次读里**恰好** 1 次被搅的最大强度；第一版取 N=4，
+离站等待 60 秒、预算 120 秒（见下文「操作员停 10 秒」）——装货只有十几秒，N=40 打不中。N=3 是全局任意连续 3 次读里**恰好** 1 次被搅的最大强度；第一版取 N=4，
 修复后 CI 真装置 run 38073442180 的三遍装货期间只搅中 3、3、2 次，`L2-LC-05` 的门槛 5 没达到（其余判据全绿），于是加到 N=3、门槛不降。
-上一段关于插入的说明对 N=3 同样成立。多判装货那一段：
+上一段关于插入的说明对 N=3 同样成立。
+
+**操作员停 10 秒。**N=3 之后 run 38079050243 三遍仍只搅中 4、4、4 次：N 已经不能再小（再小就会连续两次被搅），缺的是时间——装货这一段
+只有约 6～7 秒、12 次读。所以这一模式下，扮演操作员的那一步在收到 `WAITING_OPERATOR` 之后停 10 秒再放货关门：一是脚本本来就比人快
+（真人放一篮货要几秒，`real-onboard-normal-load` 头注释里那次误报就是脚本太快），二是「门开着等人」那几秒在现场正是车最容易被一次
+未就绪打断的时候，要让它落在搅动下。车载端的操作超时是 120 秒（`OperationTimeoutMs`），不受影响。
+**离站等待因此配 60 秒、预算 120 秒**：这个值从到站起算、同时是本站的站点期限，装货中途不重置（`real-onboard-mixed-side-one-stop`
+的 setup 写过）；到站后录入约 5 秒、再停 10 秒，装货要到第 16～18 秒才落定，20 秒离期限太近。多判装货那一段：
 - 05 装货期间注入确实打中了：车到站到装货提交之间至少搅乱 5 次。
 - 06 真车载端的 `WAITING_OPERATOR` 进度送到了服务端（120 秒内）。修复前这一条就是 run 38067577157 的样子：开锁后撞上一次未就绪，
   进度发不出去、此后不补发，服务端干等（`evidence/cs573/rig-red-load-phase-38067577157`）。不补发是车载端另一个缺陷，调度另开票；
@@ -63,9 +70,9 @@ Import-Module (Join-Path (Split-Path -Parent $PSScriptRoot) 'L2ConditionOrLast.p
 # Every Period-th read churned, Burst 1: a deterministic count, never a draw (header, "强度从哪来"). The departure budget is the
 # setup's StationDepartureWaitTimeout plus 60 seconds; both scenarios' setups carry their own wait.
 $plan = if ($ChurnFrom -eq 'PickupArrival') {
-    @{ Period = 3; Burst = 1; DepartureBudgetSeconds = 80; MinimumChurned = 5 }
+    @{ Period = 3; Burst = 1; DepartureBudgetSeconds = 120; MinimumChurned = 5; OperatorPauseSeconds = 10 }
 } else {
-    @{ Period = 40; Burst = 1; DepartureBudgetSeconds = 240; MinimumChurned = 3 }
+    @{ Period = 40; Burst = 1; DepartureBudgetSeconds = 240; MinimumChurned = 3; OperatorPauseSeconds = 0 }
 }
 
 $journal = $Context.Journal
@@ -154,6 +161,11 @@ function Invoke-SlotOperation([string]$operationType, [string]$cargoState) {
         -Probe { @(Get-Progress $attemptId | Where-Object { $_.phase -eq 'WAITING_OPERATOR' }).Count } `
         -Until { param($v) $v -ge 1 })
     if ($waiting -lt 1) { return [pscustomobject]@{ SlotNo = $slotNo; WaitingReported = $false } }
+    # The operator's few seconds with the door open (header, "操作员停 10 秒"): only the load under PickupArrival pauses.
+    if ($operationType -eq 'Load' -and $plan.OperatorPauseSeconds -gt 0) {
+        $journal.Note("Operator holds the door open for $($plan.OperatorPauseSeconds) s before placing the cargo.")
+        Start-Sleep -Seconds $plan.OperatorPauseSeconds
+    }
     $null = $simulator.Command('Put', "slots/$slotNo/cargo", @{ state = $cargoState })
     $null = $simulator.Command('Post', "slots/$slotNo/close-door", @{})
     return [pscustomobject]@{ SlotNo = $slotNo; WaitingReported = $true }
