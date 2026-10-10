@@ -1,0 +1,61 @@
+Test run for C:\Users\szy\Desktop\8005-workspace-v2\worktrees\cs571-8005-agv-control-server\tests\ControlServer.Tests\bin\Release\net8.0\win-x64\ControlServer.Tests.dll (.NETCoreApp,Version=v8.0)
+VSTest version 17.11.1 (x64)
+
+Starting test execution, please wait...
+A total of 1 test files matched the specified pattern.
+[xUnit.net 00:00:05.64]     ControlServer.Tests.ParallelInstanceEffectiveConfigurationTests.InstallerReadBackJudgesTheEventTheHostReallyLogs(definitionFile: "instance-factory01-v2.two-car-example.json", dropLastVehicle: True, expectedAction: "StopServiceAndRefuse") [FAIL]
+  Failed ControlServer.Tests.ParallelInstanceEffectiveConfigurationTests.InstallerReadBackJudgesTheEventTheHostReallyLogs(definitionFile: "instance-factory01-v2.two-car-example.json", dropLastVehicle: True, expectedAction: "StopServiceAndRefuse") [1 s]
+  Error Message:
+   generating the overlay failed (exit 1): Exception: The parallel instance definition was refused (3 reason(s)):   - journeyRuntime.fleet is a vehicle roster. The parallel
+instance drives one vehicle, and the agv02/agv03 pair check never looks inside a roster -- an agv01 entry there would
+pass.   - journeyRuntime.agvId must be set explicitly.   - journeyRuntime.vehicleKey must be set explicitly.
+
+  Stack Trace:
+     at ControlServer.Tests.ParallelInstanceEffectiveConfigurationTests.GenerateOverlay(String root, String definitionFile) in C:\Users\szy\Desktop\8005-workspace-v2\worktrees\cs571-8005-agv-control-server\tests\ControlServer.Tests\ParallelInstanceEffectiveConfigurationTests.cs:line 376
+   at ControlServer.Tests.ParallelInstanceEffectiveConfigurationTests.InstallerReadBackJudgesTheEventTheHostReallyLogs(String definitionFile, Boolean dropLastVehicle, String expectedAction) in C:\Users\szy\Desktop\8005-workspace-v2\worktrees\cs571-8005-agv-control-server\tests\ControlServer.Tests\ParallelInstanceEffectiveConfigurationTests.cs:line 237
+   at System.RuntimeMethodHandle.InvokeMethod(Object target, Void** arguments, Signature sig, Boolean isConstructor)
+   at System.Reflection.MethodBaseInvoker.InvokeDirectByRefWithFewArgs(Object obj, Span`1 copyOfArgs, BindingFlags invokeAttr)
+[xUnit.net 00:00:08.21]     ControlServer.Tests.ParallelInstanceEffectiveConfigurationTests.InstallerReadBackJudgesTheEventTheHostReallyLogs(definitionFile: "instance-factory01-v2.two-car-example.json", dropLastVehicle: False, expectedAction: "Pass") [FAIL]
+[xUnit.net 00:00:09.17]     ControlServer.Tests.ParallelInstanceEffectiveConfigurationTests.TwoCarExampleOverPackageAppSettingsBindsBothRowsWholeWithAgv02Primary [FAIL]
+[xUnit.net 00:00:09.20]     ControlServer.Tests.ParallelInstanceEffectiveConfigurationTests.EffectiveConfigurationEventCarriesEachRosterVehicleWithExactlyFourFields [FAIL]
+  Failed ControlServer.Tests.ParallelInstanceEffectiveConfigurationTests.InstallerReadBackJudgesTheEventTheHostReallyLogs(definitionFile: "instance-factory01-v2.two-car-example.json", dropLastVehicle: False, expectedAction: "Pass") [1 s]
+  Error Message:
+   generating the overlay failed (exit 1): Exception: The parallel instance definition was refused (3 reason(s)):   - journeyRuntime.fleet is a vehicle roster. The parallel
+instance drives one vehicle, and the agv02/agv03 pair check never looks inside a roster -- an agv01 entry there would
+pass.   - journeyRuntime.agvId must be set explicitly.   - journeyRuntime.vehicleKey must be set explicitly.
+
+  Stack Trace:
+     at ControlServer.Tests.ParallelInstanceEffectiveConfigurationTests.GenerateOverlay(String root, String definitionFile) in C:\Users\szy\Desktop\8005-workspace-v2\worktrees\cs571-8005-agv-control-server\tests\ControlServer.Tests\ParallelInstanceEffectiveConfigurationTests.cs:line 376
+   at ControlServer.Tests.ParallelInstanceEffectiveConfigurationTests.InstallerReadBackJudgesTheEventTheHostReallyLogs(String definitionFile, Boolean dropLastVehicle, String expectedAction) in C:\Users\szy\Desktop\8005-workspace-v2\worktrees\cs571-8005-agv-control-server\tests\ControlServer.Tests\ParallelInstanceEffectiveConfigurationTests.cs:line 237
+   at InvokeStub_ParallelInstanceEffectiveConfigurationTests.InstallerReadBackJudgesTheEventTheHostReallyLogs(Object, Span`1)
+   at System.Reflection.MethodBaseInvoker.InvokeWithFewArgs(Object obj, BindingFlags invokeAttr, Binder binder, Object[] parameters, CultureInfo culture)
+  Failed ControlServer.Tests.ParallelInstanceEffectiveConfigurationTests.TwoCarExampleOverPackageAppSettingsBindsBothRowsWholeWithAgv02Primary [961 ms]
+  Error Message:
+   generating the overlay failed (exit 1): Exception: The parallel instance definition was refused (3 reason(s)):   - journeyRuntime.fleet is a vehicle roster. The parallel
+instance drives one vehicle, and the agv02/agv03 pair check never looks inside a roster -- an agv01 entry there would
+pass.   - journeyRuntime.agvId must be set explicitly.   - journeyRuntime.vehicleKey must be set explicitly.
+
+  Stack Trace:
+     at ControlServer.Tests.ParallelInstanceEffectiveConfigurationTests.GenerateOverlay(String root, String definitionFile) in C:\Users\szy\Desktop\8005-workspace-v2\worktrees\cs571-8005-agv-control-server\tests\ControlServer.Tests\ParallelInstanceEffectiveConfigurationTests.cs:line 376
+   at ControlServer.Tests.ParallelInstanceEffectiveConfigurationTests.TwoCarExampleOverPackageAppSettingsBindsBothRowsWholeWithAgv02Primary() in C:\Users\szy\Desktop\8005-workspace-v2\worktrees\cs571-8005-agv-control-server\tests\ControlServer.Tests\ParallelInstanceEffectiveConfigurationTests.cs:line 155
+   at System.RuntimeMethodHandle.InvokeMethod(Object target, Void** arguments, Signature sig, Boolean isConstructor)
+   at System.Reflection.MethodBaseInvoker.InvokeWithNoArgs(Object obj, BindingFlags invokeAttr)
+  Failed ControlServer.Tests.ParallelInstanceEffectiveConfigurationTests.EffectiveConfigurationEventCarriesEachRosterVehicleWithExactlyFourFields [22 ms]
+  Error Message:
+   System.Collections.Generic.KeyNotFoundException : The given key was not present in the dictionary.
+  Stack Trace:
+     at System.Text.Json.JsonElement.GetProperty(String propertyName)
+   at ControlServer.Tests.ParallelInstanceEffectiveConfigurationTests.EffectiveConfigurationEventCarriesEachRosterVehicleWithExactlyFourFields() in C:\Users\szy\Desktop\8005-workspace-v2\worktrees\cs571-8005-agv-control-server\tests\ControlServer.Tests\ParallelInstanceEffectiveConfigurationTests.cs:line 205
+   at System.RuntimeMethodHandle.InvokeMethod(Object target, Void** arguments, Signature sig, Boolean isConstructor)
+   at System.Reflection.MethodBaseInvoker.InvokeWithNoArgs(Object obj, BindingFlags invokeAttr)
+[xUnit.net 00:00:10.97]     ControlServer.Tests.ParallelInstanceEffectiveConfigurationTests.EffectiveConfigurationEventOfASingleVehicleDeploymentCarriesAnEmptyRoster [FAIL]
+  Failed ControlServer.Tests.ParallelInstanceEffectiveConfigurationTests.EffectiveConfigurationEventOfASingleVehicleDeploymentCarriesAnEmptyRoster [< 1 ms]
+  Error Message:
+   System.Collections.Generic.KeyNotFoundException : The given key was not present in the dictionary.
+  Stack Trace:
+     at System.Text.Json.JsonElement.GetProperty(String propertyName)
+   at ControlServer.Tests.ParallelInstanceEffectiveConfigurationTests.EffectiveConfigurationEventOfASingleVehicleDeploymentCarriesAnEmptyRoster() in C:\Users\szy\Desktop\8005-workspace-v2\worktrees\cs571-8005-agv-control-server\tests\ControlServer.Tests\ParallelInstanceEffectiveConfigurationTests.cs:line 223
+   at System.RuntimeMethodHandle.InvokeMethod(Object target, Void** arguments, Signature sig, Boolean isConstructor)
+   at System.Reflection.MethodBaseInvoker.InvokeWithNoArgs(Object obj, BindingFlags invokeAttr)
+
+Failed!  - Failed:     5, Passed:    11, Skipped:     0, Total:    16, Duration: 7 s - ControlServer.Tests.dll (net8.0)

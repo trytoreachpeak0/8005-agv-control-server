@@ -125,11 +125,13 @@ $script:MvpWorkType = 'WIRE_TO_GATE'
     Source: remote-ops/fleet.md, itself read from RIoT GET /api/device/v1/devices on
     2026-09-03. deviceKey is the durable coordinate -- deviceName is human-editable and RIoT
     does not enforce uniqueness on it -- so the key is what anchors each row, and the name
-    must agree with the key rather than being trusted on its own.
+    must agree with the key rather than being trusted on its own. RiotId is RIoT's own id, the
+    other durable coordinate; a roster row (control-server#571) states it, the single-vehicle
+    keys do not.
 #>
 $script:AllowedVehicles = @(
-    [pscustomobject]@{ Alias = 'agv02'; AgvId = '老厂前线新多仓位2'; VehicleKey = 'BROKERX-f38975561adf46ccb1d2f23833c7d0e4' }
-    [pscustomobject]@{ Alias = 'agv03'; AgvId = '老厂前线新多仓位3'; VehicleKey = 'BROKERX-7daca4ee91da498d8026c68b7b941127' }
+    [pscustomobject]@{ Alias = 'agv02'; AgvId = '老厂前线新多仓位2'; VehicleKey = 'BROKERX-f38975561adf46ccb1d2f23833c7d0e4'; RiotId = 59 }
+    [pscustomobject]@{ Alias = 'agv03'; AgvId = '老厂前线新多仓位3'; VehicleKey = 'BROKERX-7daca4ee91da498d8026c68b7b941127'; RiotId = 60 }
 )
 
 # Named separately from "not in the allowed list" so that pointing the parallel instance at
@@ -140,6 +142,7 @@ $script:ProductionVehicle = [pscustomobject]@{
     Alias = 'agv01'
     AgvId = '老厂前线新多仓位1'
     VehicleKey = 'BROKERX-0c20ff0600d644869a6a80c186065d85'
+    RiotId = 58
 }
 
 <#
@@ -152,11 +155,12 @@ $script:ProductionVehicle = [pscustomobject]@{
     treats the two spellings as one setting. Checking by name can only see the keys it thought
     of; refusing the ones it did not is what closes the rest.
 
-    journeyRuntime mirrors JourneyRuntimeOptions minus Fleet. Fleet is excluded on purpose: it
-    is a second vehicle list, the options validator only requires it to *contain* the primary
-    pair, and the pair whitelist below would never look at it. Test-ParallelInstance.ps1
-    asserts these names against the C# properties, so a rename there fails here instead of
-    binding to nothing.
+    journeyRuntime mirrors JourneyRuntimeOptions. Fleet was excluded until control-server#571:
+    it is a second vehicle list, the options validator only requires it to *contain* the primary
+    pair, and the pair check never looked inside it. Since #571 it is read row by row
+    (Test-FleetIdentity, $script:FleetRowKeys) and stands instead of the single-vehicle keys,
+    never beside them. Test-ParallelInstance.ps1 asserts these names against the C# properties,
+    so a rename there fails here instead of binding to nothing.
 #>
 $script:AllowedKeys = [ordered]@{
     '' = @('instanceId', 'serviceName', 'installRoot', 'dataRoot', 'backupRoot', 'packageRoot',
@@ -169,7 +173,7 @@ $script:AllowedKeys = [ordered]@{
     'routeGraph' = @('enabled', 'mapId', 'designStateTtl', 'runtimeRefreshPeriod', 'runtimeStateMaxAge')
     'riotCreateDispatch' = @('enabled')
     'riotForeignOrderCancel' = @('enabled')
-    'journeyRuntime' = @('enabled', 'pollInterval', 'agvId', 'vehicleKey', 'agvLifecycleGeneration',
+    'journeyRuntime' = @('enabled', 'pollInterval', 'agvId', 'vehicleKey', 'agvLifecycleGeneration', 'fleet',
         'mapId', 'mapIdentity', 'dispatchZone', 'dispatchGeneration',
         'maximumEvidenceAge', 'departureSafetyResultWait', 'stationDepartureWaitTimeout',
         'cargoHoldingTimeout', 'sublotBoxCountPath', 'allowedWorkTypes', 'allowedDispatchZones',
@@ -182,6 +186,18 @@ $script:AllowedKeys = [ordered]@{
     # control-server#518. TaskTypeStationPreset.SettingsFileKey; there is no options class to mirror.
     'taskTypeStations' = @('settingsFile')
 }
+
+<#
+    control-server#571. The keys a journeyRuntime.fleet row may carry, spelled exactly. The first six
+    are FleetVehicleOptions' (Test-ParallelInstance.ps1 asserts them against the C# properties) and are
+    what the overlay writes. deviceKey and riotId are this deployment's: remote-ops/fleet.md's RIoT
+    coordinates, stated so that each row is checked against the registry on all of them, and never
+    written to the overlay. roundTimeoutMilliseconds alone may be left out (the product default).
+#>
+$script:FleetRowProductKeys = @('agvId', 'vehicleKey', 'agvLifecycleGeneration', 'allowedTaskTypes', 'zones', 'roundTimeoutMilliseconds')
+$script:FleetRowKeys = @($script:FleetRowProductKeys) + @('deviceKey', 'riotId')
+# The single-vehicle keys a roster replaces. Writing one beside the roster is refused, not reconciled.
+$script:SingleVehicleKeys = @('agvId', 'vehicleKey', 'agvLifecycleGeneration')
 
 # Names only this instance uses, shared by the installer and the uninstaller so the two cannot
 # drift apart. The certificate variable matters most: Update-ControlServerLocal.ps1 deletes the
@@ -201,6 +217,16 @@ function Get-ParallelInstanceAllowedKey {
     [CmdletBinding()]
     param()
     return $script:AllowedKeys
+}
+
+function Get-ParallelInstanceFleetRowKey {
+    <#
+        .SYNOPSIS
+            The keys a journeyRuntime.fleet row may carry (control-server#571).
+    #>
+    [CmdletBinding()]
+    param()
+    return $script:FleetRowKeys
 }
 
 function Get-ParallelInstanceAllowedVehicle {
@@ -1036,25 +1062,22 @@ function Get-StringLeaf {
 
 function Test-SectionKey {
     <#
-        Every key in the section that is not on the whitelist, spelled exactly. Three messages,
-        because the three ways to get here need three different fixes: a roster (remove it --
-        the parallel instance drives one vehicle), a case variant of a known key (delete the
-        duplicate), and anything else (a typo, or a new option this module has not been taught).
+        Every key in the section that is not on the whitelist, spelled exactly. Two messages,
+        because the two ways to get here need two different fixes: a case variant of a known key
+        (delete the duplicate), and anything else (a typo, or a new option this module has not
+        been taught). -Allowed and -Prefix are for a node that is not a whitelisted section: a
+        journeyRuntime.fleet row (control-server#571).
     #>
-    param([System.Collections.IDictionary] $Node, [string] $Section)
+    param([System.Collections.IDictionary] $Node, [string] $Section, [string[]] $Allowed, [string] $Prefix)
 
     [string[]] $failures = @()
-    $allowed = $script:AllowedKeys[$Section]
-    $prefix = $Section -eq '' ? '' : "$Section."
+    $allowed = $PSBoundParameters.ContainsKey('Allowed') ? $Allowed : $script:AllowedKeys[$Section]
+    $prefix = $PSBoundParameters.ContainsKey('Prefix') ? $Prefix : ($Section -eq '' ? '' : "$Section.")
     foreach ($key in @($Node.Keys)) {
         # Ordinal: -ccontains is a culture comparison that skips zero-width characters, and would
         # accept 'enabled<U+200B>' as 'enabled' while .NET configuration binds it as a different key
         # (see the allowlist note on ConvertTo-MapComparisonKey; evidence review3-string-equality.txt).
         if (@($allowed | Where-Object { [string]::Equals($_, $key, [StringComparison]::Ordinal) }).Count -gt 0) { continue }
-        if ($Section -eq 'journeyRuntime' -and $key -ieq 'fleet') {
-            $failures += "journeyRuntime.$key is a vehicle roster. The parallel instance drives one vehicle, and the agv02/agv03 pair check never looks inside a roster -- an agv01 entry there would pass."
-            continue
-        }
         $twin = $allowed | Where-Object { [string]::Equals($_, $key, [StringComparison]::OrdinalIgnoreCase) } | Select-Object -First 1
         if ($twin) {
             $failures += "$prefix$key differs only in case from $prefix$twin. .NET configuration is case-insensitive, so the two would be bound as one setting while this check reads only '$twin'."
@@ -1080,6 +1103,12 @@ function Test-VehicleIdentity {
     [CmdletBinding()]
     [OutputType([string[]])]
     param([Parameter(Mandatory = $true)][hashtable] $Journey)
+
+    # control-server#571: a roster stands instead of the single-vehicle keys. Ordinal 'fleet' only: a case
+    # variant ('Fleet') is refused by the key whitelist, and so is the whole definition.
+    if ($Journey.ContainsKey('fleet')) {
+        return @(Test-FleetIdentity -Journey $Journey)
+    }
 
     [string[]] $failures = @()
 
@@ -1122,6 +1151,183 @@ function Test-VehicleIdentity {
     }
 
     return @()
+}
+
+function Get-RowIndexLabel {
+    # 'journeyRuntime.fleet[1].vehicleKey' -> 'journeyRuntime.fleet[1]'; anything not under a row -> the roster itself.
+    param([string] $Path)
+    $match = [regex]::Match($Path, '\AjourneyRuntime\.fleet\[\d+\]')
+    return $match.Success ? $match.Value : 'journeyRuntime.fleet'
+}
+
+function Test-FleetIdentity {
+    <#
+        .SYNOPSIS
+            control-server#571. The two-car roster, checked row by row against remote-ops/fleet.md.
+
+        .DESCRIPTION
+            Four steps, each a gate for the next:
+
+              1. agv01 anywhere in the roster -- any string that is its name or its key, or a riotId of 58,
+                 in any row, under any key -- refuses the whole definition, one message per row naming the
+                 fields, and nothing else is said: the ticket's failure definition is "agv01 in the roster
+                 passed", and the cheapest way to never pass it is to look before anything can return early.
+                 Compared leniently (-eq), as the single-vehicle agv01 refusal is: in a refusal, lenient
+                 refuses more.
+              2. The roster beside the single-vehicle keys is refused: two ways of naming the vehicles, and
+                 this deployment does not guess which one counts.
+              3. The shape: a non-empty list of objects, each with whitelisted keys only.
+              4. Each row's identity quadruple -- vehicleKey, deviceKey, agvId, riotId -- must be one registry
+                 row (Ordinal, as the single-vehicle pair is), and its policy slice must be one the Host and
+                 this instance can honour: task types within allowedWorkTypes, zones within
+                 allowedDispatchZones (the Host refuses to start otherwise), no car twice.
+    #>
+    [CmdletBinding()]
+    [OutputType([string[]])]
+    param([Parameter(Mandatory = $true)][hashtable] $Journey)
+
+    $fleet = $Journey['fleet']
+
+    # ---- 1. agv01 ----
+    $hits = [ordered]@{}
+    foreach ($leaf in @(Get-StringLeaf -Node $fleet -Path 'journeyRuntime.fleet')) {
+        if ($leaf.Value -eq $script:ProductionVehicle.AgvId -or $leaf.Value -eq $script:ProductionVehicle.VehicleKey) {
+            $row = Get-RowIndexLabel $leaf.Path
+            if (-not $hits.Contains($row)) { $hits[$row] = [System.Collections.Generic.List[string]]::new() }
+            $hits[$row].Add($leaf.Path.Substring([Math]::Min($row.Length + 1, $leaf.Path.Length)))
+        }
+    }
+    $rowsToScan = ($fleet -is [System.Collections.IList]) ? @($fleet) : @()
+    for ($i = 0; $i -lt $rowsToScan.Count; $i++) {
+        $row = $rowsToScan[$i]
+        if ($row -isnot [System.Collections.IDictionary]) { continue }
+        foreach ($key in @($row.Keys | Where-Object { $_ -ieq 'riotId' })) {
+            # Lenient, like the strings above: 58 written as a string is refused as agv01 too, not only as malformed.
+            if ((ConvertTo-IntegerOrNull $row[$key]) -eq $script:ProductionVehicle.RiotId -or "$($row[$key])".Trim() -eq "$($script:ProductionVehicle.RiotId)") {
+                $label = "journeyRuntime.fleet[$i]"
+                if (-not $hits.Contains($label)) { $hits[$label] = [System.Collections.Generic.List[string]]::new() }
+                $hits[$label].Add($key)
+            }
+        }
+    }
+    if ($hits.Count -gt 0) {
+        return @($hits.Keys | ForEach-Object {
+                "$_ names agv01 ($($hits[$_] -join ', ')), the vehicle the MVP service is driving in production. The parallel instance may only drive agv02 or agv03; the whole definition is refused."
+            })
+    }
+
+    # ---- 2. one way of naming the vehicles ----
+    $single = @($Journey.Keys | Where-Object { $key = $_; $script:SingleVehicleKeys | Where-Object { [string]::Equals($_, $key, [StringComparison]::Ordinal) } })
+    if ($single.Count -gt 0) {
+        $named = ($script:SingleVehicleKeys | Where-Object { $single -ccontains $_ } | ForEach-Object { "journeyRuntime.$_" }) -join ', '
+        return @("journeyRuntime.fleet and $named are both set. The roster and the single-vehicle keys ($($script:SingleVehicleKeys -join ', ')) are two ways of naming the vehicles, and this deployment does not guess which one counts: write one of them.")
+    }
+
+    # ---- 3. shape ----
+    if ($fleet -isnot [System.Collections.IList] -or $fleet -is [string]) {
+        return @('journeyRuntime.fleet must be a JSON array of vehicles, one object per car.')
+    }
+    $rows = @($fleet)
+    if ($rows.Count -eq 0) {
+        return @('journeyRuntime.fleet names no vehicle. Leave the roster out and use agvId/vehicleKey for one car, or list the cars.')
+    }
+
+    [string[]] $failures = @()
+    $allowedWorkTypes = ($Journey['allowedWorkTypes'] -is [System.Collections.IList]) ? @($Journey['allowedWorkTypes']) : $null
+    $allowedZones = ($Journey['allowedDispatchZones'] -is [System.Collections.IList]) ? @($Journey['allowedDispatchZones']) : $null
+    $seen = @{}
+    for ($i = 0; $i -lt $rows.Count; $i++) {
+        $prefix = "journeyRuntime.fleet[$i]"
+        $row = $rows[$i]
+        if ($row -isnot [System.Collections.IDictionary]) {
+            $failures += "$prefix must be an object describing one car."
+            continue
+        }
+        $keyFailures = @(Test-SectionKey -Node $row -Allowed $script:FleetRowKeys -Prefix "$prefix.")
+        if ($keyFailures.Count -gt 0) {
+            $failures += $keyFailures
+            continue
+        }
+
+        $rowFailures = @()
+        foreach ($key in @('agvId', 'vehicleKey', 'deviceKey')) {
+            if (-not $row.Contains($key)) {
+                $rowFailures += "$prefix.$key must be set explicitly."
+            } elseif ($row[$key] -isnot [string] -or [string]::IsNullOrWhiteSpace($row[$key])) {
+                $rowFailures += "$prefix.$key must be a non-empty string."
+            }
+        }
+        foreach ($key in @('riotId', 'agvLifecycleGeneration')) {
+            if (-not $row.Contains($key)) {
+                $rowFailures += "$prefix.$key must be set explicitly."
+                continue
+            }
+            $number = ConvertTo-IntegerOrNull $row[$key]
+            if ($null -eq $number -or $number -le 0) {
+                $rowFailures += ($key -ceq 'riotId') ? "$prefix.riotId must be RIoT's positive integer id, got '$($row[$key])'." `
+                    : "$prefix.agvLifecycleGeneration must be a positive integer, got '$($row[$key])'."
+            }
+        }
+        if ($row.Contains('roundTimeoutMilliseconds')) {
+            $timeout = ConvertTo-IntegerOrNull $row['roundTimeoutMilliseconds']
+            if ($null -eq $timeout -or $timeout -lt 1000 -or $timeout -gt 600000) {
+                $rowFailures += "$prefix.roundTimeoutMilliseconds must be an integer in 1000..600000, got '$($row['roundTimeoutMilliseconds'])'."
+            }
+        }
+        foreach ($list in @(
+                @{ Key = 'allowedTaskTypes'; Scope = $allowedWorkTypes
+                    Outside = "which journeyRuntime.allowedWorkTypes does not allow; the instance refuses that type before this car's slice is consulted" }
+                @{ Key = 'zones'; Scope = $allowedZones
+                    Outside = 'which journeyRuntime.allowedDispatchZones omits; the Host would refuse to start' })) {
+            $key = $list.Key
+            if (-not $row.Contains($key)) {
+                $rowFailures += "$prefix.$key must be set explicitly (an empty list means none)."
+                continue
+            }
+            $value = $row[$key]
+            if ($value -isnot [System.Collections.IList] -or $value -is [string]) {
+                $rowFailures += "$prefix.$key must be a JSON array of names, got '$value'."
+                continue
+            }
+            foreach ($item in @($value)) {
+                if ($item -isnot [string] -or [string]::IsNullOrWhiteSpace($item)) {
+                    $rowFailures += "$prefix.$key must not name an empty or non-string entry."
+                } elseif ($null -ne $list.Scope -and -not ($list.Scope | Where-Object { [string]::Equals($_, $item, [StringComparison]::Ordinal) })) {
+                    $rowFailures += "$prefix.$key names '$item', $($list.Outside)."
+                }
+            }
+        }
+        if ($rowFailures.Count -gt 0) {
+            $failures += $rowFailures
+            continue
+        }
+
+        # ---- 4. the identity quadruple ----
+        $vehicleKey = [string] $row['vehicleKey']
+        $deviceKey = [string] $row['deviceKey']
+        $match = $script:AllowedVehicles | Where-Object { [string]::Equals($_.VehicleKey, $vehicleKey, [StringComparison]::Ordinal) } | Select-Object -First 1
+        if ($null -eq $match) {
+            $allowed = ($script:AllowedVehicles | ForEach-Object { "$($_.Alias)=$($_.VehicleKey)" }) -join ', '
+            $failures += "$prefix.vehicleKey '$vehicleKey' is not a spare vehicle. Allowed: $allowed."
+            continue
+        }
+        if (-not [string]::Equals($deviceKey, $vehicleKey, [StringComparison]::Ordinal)) {
+            $failures += "$prefix.deviceKey '$deviceKey' is not $prefix.vehicleKey '$vehicleKey'. RIoT's deviceKey is the vehicle key; the two must be the same string."
+        }
+        if (-not [string]::Equals([string] $row['agvId'], $match.AgvId, [StringComparison]::Ordinal)) {
+            $failures += "$prefix.agvId '$($row['agvId'])' does not match the RIoT deviceName of $($match.Alias), which is '$($match.AgvId)'. The name and the key must describe the same car."
+        }
+        $riotId = ConvertTo-IntegerOrNull $row['riotId']
+        if ($riotId -ne $match.RiotId) {
+            $failures += "$prefix.riotId $riotId does not match the RIoT id of $($match.Alias), which is $($match.RiotId)."
+        }
+        if ($seen.ContainsKey($match.Alias)) {
+            $failures += "journeyRuntime.fleet names $($match.Alias) twice (rows $($seen[$match.Alias]) and $i)."
+        } else {
+            $seen[$match.Alias] = $i
+        }
+    }
+    return $failures
 }
 
 function Test-ParallelInstancePathIsProduction {
@@ -1691,7 +1897,10 @@ function Find-ParallelEffectiveConfiguration {
 
         .DESCRIPTION
             Program.cs logs it once the Host has started: the AllowedWorkTypes and AllowedDispatchZones
-            it really bound, and the MesIngest baseUrl it reads. That -- not the definition, not the
+            it really bound, the MesIngest baseUrl it reads and, since control-server#571, the vehicle
+            roster (Fleet: AgvId, VehicleKey, AllowedTaskTypes, Zones per car; an empty list for one car).
+            Fleet is $null when the event does not carry it -- a package older than #571 -- which is not
+            the same as an empty roster. That -- not the definition, not the
             overlay file -- is what the deployment's read-back compares, because M1 was a definition and
             an overlay that both said ["STAGING_TO_WIRE"] while the Host bound six types. -Since is the
             service process's start: a line from an earlier process proves nothing about this one.
@@ -1721,11 +1930,24 @@ function Find-ParallelEffectiveConfiguration {
         if ($at -lt $Since) { continue }
         # The newest by @t, not the last one met: the installer reads the newest file first (re-review S5).
         if ($null -ne $found -and $at -le $found.At) { continue }
+        $fleet = $null
+        if ($event.ContainsKey('Fleet')) {
+            $fleet = @(@($event['Fleet']) | ForEach-Object {
+                    $vehicle = ($_ -is [System.Collections.IDictionary]) ? $_ : @{}
+                    [pscustomobject]@{
+                        AgvId = [string] $vehicle['AgvId']
+                        VehicleKey = [string] $vehicle['VehicleKey']
+                        AllowedTaskTypes = [string[]] @($vehicle['AllowedTaskTypes'])
+                        Zones = [string[]] @($vehicle['Zones'])
+                    }
+                })
+        }
         $found = [pscustomobject]@{
             At = $at
             AllowedWorkTypes = [string[]] @($event['AllowedWorkTypes'])
             AllowedDispatchZones = [string[]] @($event['AllowedDispatchZones'])
             MesIngestBaseUrl = [string] $event['MesIngestBaseUrl']
+            Fleet = $fleet
         }
     }
     return $found
@@ -1741,6 +1963,12 @@ function Get-ParallelEffectiveConfigurationRefusal {
             Each list is compared whole, in order, ordinal. $null for -Effective (no event found) is
             EFFECTIVE_CONFIGURATION_UNREAD: no evidence is not a pass. 'production' is additionally held to
             ["STAGING_TO_WIRE"] here, so a definition that slipped past the checks still cannot read back green.
+
+            control-server#571: the roster is compared car by car, keyed by VehicleKey -- a car missing, a car
+            extra, and per car its agvId, allowedTaskTypes and zones, each list whole, in order, ordinal. A
+            definition with a roster read back from an event without one (a package older than #571) is
+            EFFECTIVE_CONFIGURATION_FLEET_UNREAD; a single-car definition accepts that event as before, but not
+            an event showing a roster it did not write (one left over from an earlier two-car install).
     #>
     [CmdletBinding()]
     [OutputType([string])]
@@ -1768,8 +1996,55 @@ function Get-ParallelEffectiveConfigurationRefusal {
     if ($Effective.MesIngestBaseUrl -cne [string] $Definition['mesIngest']['baseUrl']) {
         $problems += "mesIngestBaseUrl bound '$($Effective.MesIngestBaseUrl)', the definition says '$($Definition['mesIngest']['baseUrl'])'"
     }
+    $definesFleet = $journey.ContainsKey('fleet')
+    $hasFleet = $null -ne $Effective.PSObject.Properties['Fleet'] -and $null -ne $Effective.Fleet
+    if ($definesFleet -and -not $hasFleet) {
+        return 'EFFECTIVE_CONFIGURATION_FLEET_UNREAD: the definition has a vehicle roster, and the Host''s EFFECTIVE_CONFIGURATION event does not carry one (a package older than control-server#571), so which cars it really bound is unknown.'
+    }
+    if ($hasFleet) {
+        $problems += @(Compare-ParallelEffectiveFleet -Defined ($definesFleet ? @($journey['fleet']) : @()) -Bound @($Effective.Fleet))
+    }
     if ($problems.Count -eq 0) { return $null }
     return "EFFECTIVE_CONFIGURATION_MISMATCH: $($problems -join '; ')."
+}
+
+function Compare-ParallelEffectiveFleet {
+    <#
+        control-server#571. Every difference between the defined roster and the bound one, car by car, keyed by
+        VehicleKey (ordinal): missing, extra, bound twice, and per car agvId, allowedTaskTypes, zones.
+    #>
+    param([object[]] $Defined, [object[]] $Bound)
+    [string[]] $problems = @()
+    $Defined = @($Defined | Where-Object { $_ -is [System.Collections.IDictionary] })
+    $Bound = @($Bound | Where-Object { $null -ne $_ })
+    foreach ($row in $Defined) {
+        $key = [string] $row['vehicleKey']
+        $sameKey = @($Bound | Where-Object { [string]::Equals($_.VehicleKey, $key, [StringComparison]::Ordinal) })
+        if ($sameKey.Count -eq 0) {
+            $problems += "fleet: $key ('$($row['agvId'])') is in the definition, the Host did not bind it"
+            continue
+        }
+        if ($sameKey.Count -gt 1) {
+            $problems += "fleet: $key is bound $($sameKey.Count) times"
+        }
+        $car = $sameKey[0]
+        if (-not [string]::Equals($car.AgvId, [string] $row['agvId'], [StringComparison]::Ordinal)) {
+            $problems += "fleet: $key agvId bound '$($car.AgvId)', the definition says '$($row['agvId'])'"
+        }
+        foreach ($pair in @(
+                @{ Name = 'allowedTaskTypes'; Expected = @($row['allowedTaskTypes']); Actual = @($car.AllowedTaskTypes) }
+                @{ Name = 'zones'; Expected = @($row['zones']); Actual = @($car.Zones) })) {
+            if ((@($pair.Expected) -join "`n") -cne (@($pair.Actual) -join "`n")) {
+                $problems += "fleet: $key $($pair.Name) bound [$(@($pair.Actual) -join ',')], the definition says [$(@($pair.Expected) -join ',')]"
+            }
+        }
+    }
+    foreach ($car in $Bound) {
+        if (-not ($Defined | Where-Object { [string]::Equals([string] $_['vehicleKey'], $car.VehicleKey, [StringComparison]::Ordinal) })) {
+            $problems += "fleet: $($car.VehicleKey) ('$($car.AgvId)') is bound, the definition does not name it"
+        }
+    }
+    return $problems
 }
 
 function Get-ParallelEffectiveConfigurationAction {
@@ -1784,7 +2059,9 @@ function Get-ParallelEffectiveConfigurationAction {
             rolled back onto a pre-#535 'fake' package does exactly that, since that package still merges
             the list by index. So a mismatch in either mode, and nothing read back in 'production', stop the
             V2 service before the installer throws. Nothing read back in 'fake' only warns: a package older
-            than #535 does not log the event, and its lists are the package's own length.
+            than #535 does not log the event, and its lists are the package's own length -- unless the
+            definition has a vehicle roster (control-server#571): which cars the Host drives is not something
+            to warn about, so that, too, stops the service.
     #>
     [CmdletBinding()]
     param(
@@ -1793,7 +2070,8 @@ function Get-ParallelEffectiveConfigurationAction {
     )
     $message = Get-ParallelEffectiveConfigurationRefusal -Definition $Definition -Effective $Effective
     $action = if ($null -eq $message) { 'Pass' }
-        elseif ($null -eq $Effective -and (Get-MesIngestSource -Definition $Definition) -cne 'production') { 'Warn' }
+        elseif ($null -eq $Effective -and (Get-MesIngestSource -Definition $Definition) -cne 'production' -and
+            -not $Definition['journeyRuntime'].ContainsKey('fleet')) { 'Warn' }
         else { 'StopServiceAndRefuse' }
     return [pscustomobject]@{ Action = $action; Message = $message }
 }
@@ -1822,7 +2100,32 @@ function New-ParallelInstanceConfigurationOverlay {
     $routeGraph = $Definition['routeGraph']
 
     $journeyOverlay = [ordered]@{}
-    foreach ($key in $journey.Keys) { $journeyOverlay[$key] = $journey[$key] }
+    foreach ($key in $journey.Keys) {
+        if ($key -cne 'fleet') { $journeyOverlay[$key] = $journey[$key] }
+    }
+    # control-server#571. The roster is always written, whole, so it replaces whatever an earlier install left in
+    # appsettings.Production.json (Merge-ConfigurationTree replaces a list wholesale): a single-car definition writes
+    # an empty one, so a roster from a two-car install does not survive a reinstall. The package's appsettings.json
+    # has no roster, so the .NET by-index merge has nothing under it to leave behind; the read-back checks that.
+    # Each row carries the product's keys only -- deviceKey and riotId are this deployment's checks, not options.
+    # With a roster the Host still requires the primary pair to be one of its rows, and the package's appsettings.json
+    # names agv01 there, so the primary is written too: the first row, never inherited.
+    if ($journey.ContainsKey('fleet')) {
+        $rows = @($journey['fleet'])
+        $journeyOverlay['agvId'] = $rows[0]['agvId']
+        $journeyOverlay['vehicleKey'] = $rows[0]['vehicleKey']
+        $journeyOverlay['agvLifecycleGeneration'] = $rows[0]['agvLifecycleGeneration']
+        $journeyOverlay['fleet'] = @(foreach ($row in $rows) {
+                $written = [ordered]@{}
+                foreach ($key in $script:FleetRowProductKeys) {
+                    if (-not $row.Contains($key)) { continue }
+                    $written[$key] = ($row[$key] -is [System.Collections.IList]) ? @($row[$key]) : $row[$key]
+                }
+                $written
+            })
+    } else {
+        $journeyOverlay['fleet'] = @()
+    }
 
     $routeGraphOverlay = [ordered]@{}
     foreach ($key in $routeGraph.Keys) { $routeGraphOverlay[$key] = $routeGraph[$key] }
@@ -2405,6 +2708,7 @@ function Merge-ConfigurationTree {
 
 Export-ModuleMember -Function @(
     'Get-ParallelInstanceAllowedKey'
+    'Get-ParallelInstanceFleetRowKey'
     'Get-ParallelInstanceFootprint'
     'Get-ParallelInstanceLayout'
     'Test-ParallelInstanceOwnedPath'

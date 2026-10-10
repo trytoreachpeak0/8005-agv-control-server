@@ -1,0 +1,14 @@
+# PR #575 review round: M26-M29 at df58e1e75
+
+Id  What                                                        Killed Note
+--  ----                                                        ------ ----
+M26 registry lookup InvariantCulture (skips zero-width)           True red: 1; expected but green: 
+M27 deviceKey compare InvariantCulture                            True red: 1; expected but green: 
+M28 agvId compare InvariantCulture                                True red: 1; expected but green: 
+M29 agv01 scan off alone: still refused, but not for agv01 (C#)   True red: 1; expected but green: 
+
+
+# M29 failure message (refused, but not naming agv01)
+  Error Message:
+   Assert.Contains() Failure: Sub-string not found
+String:    "REFUSED: The parallel instance definition was refu"路路路

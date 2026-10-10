@@ -591,9 +591,10 @@ $cases = @(
     @{
         # The case the review found: a roster the pair check never reads, copied verbatim into
         # the overlay, and accepted by the server's own validator as long as it *contains* the
-        # primary pair.
+        # primary pair. Since control-server#571 the roster is read, row by row, and agv01 in any
+        # row refuses the whole definition before anything else is said about it.
         Name = 'journeyRuntime.fleet roster with agv01 mixed in'
-        Expect = 'journeyRuntime.fleet is a vehicle roster'
+        Expect = 'journeyRuntime.fleet[1] names agv01'
         Mutate = {
             param($d)
             $d['journeyRuntime']['fleet'] = @(
@@ -606,8 +607,9 @@ $cases = @(
     @{
         # The same roster spelled the way the C# property is. -AsHashtable is case-sensitive,
         # so a check for 'fleet' by name would not see it; .NET configuration would bind it.
+        # control-server#571: the case-variant refusal of the key whitelist is what catches it now.
         Name = 'journeyRuntime.Fleet, capitalised as the C# property'
-        Expect = 'journeyRuntime.Fleet is a vehicle roster'
+        Expect = 'journeyRuntime.Fleet differs only in case from journeyRuntime.fleet'
         Mutate = {
             param($d)
             $d['journeyRuntime']['Fleet'] = @(@{ agvId = '老厂前线新多仓位1'; vehicleKey = 'BROKERX-0c20ff0600d644869a6a80c186065d85' })
@@ -1660,7 +1662,8 @@ function Get-OptionProperty {
 }
 $allowedKeys = Get-ParallelInstanceAllowedKey
 $optionSources = @(
-    @{ Section = 'journeyRuntime'; Path = 'src/ControlServer.Host/Runtime/JourneyRuntimeOptions.cs'; Class = 'JourneyRuntimeOptions'; Excluded = @('Fleet') }
+    # control-server#571: Fleet is no longer excluded; its rows are checked against FleetVehicleOptions below.
+    @{ Section = 'journeyRuntime'; Path = 'src/ControlServer.Host/Runtime/JourneyRuntimeOptions.cs'; Class = 'JourneyRuntimeOptions'; Excluded = @() }
     @{ Section = 'routeGraph'; Path = 'src/ControlServer.Host/Runtime/RouteGraph/RouteGraphOptions.cs'; Class = 'RouteGraphOptions'; Excluded = @() }
     @{ Section = 'riotCreateDispatch'; Path = 'src/ControlServer.Host/Runtime/RiotCreateDispatchOptions.cs'; Class = 'RiotCreateDispatchOptions'; Excluded = @() }
     @{ Section = 'riotForeignOrderCancel'; Path = 'src/ControlServer.Host/Runtime/ForeignOrders/RiotForeignOrderCancelOptions.cs'; Class = 'RiotForeignOrderCancelOptions'; Excluded = @() }
@@ -2726,9 +2729,10 @@ foreach ($case in $dbCases) {
         -Name "gate: database path from $($case.Name) -> $($case.Expect ?? 'refused, naming the file')" -Detail "got: $got thrown: $thrown"
 }
 
-# --- The server facts the refusal rests on live in the .NET suite, which CI runs (review S3): this script is not in
-# CI, and the literal pins it used to carry were weaker than they read (a substring that appeared three times, a
-# gate-order check that saw only two of the calls that could come first). Here only that they are still there.
+# --- The server facts the refusal rests on live in the .NET suite, which CI runs (review S3): this script was not in
+# CI then (it is since control-server#571, as a step after the suite), and the literal pins it used to carry were
+# weaker than they read (a substring that appeared three times, a gate-order check that saw only two of the calls
+# that could come first). Here only that they are still there.
 $premiseTests = Get-Content -LiteralPath (Join-Path $repoRoot 'tests/ControlServer.Tests/DispatchGatePremiseArchitectureTests.cs') -Raw
 $premiseNames = @('RiotOrdersAreCreatedAtExactlyOneCallSite', 'OnlyTheTwoCreatePathsReachTheCreateAttempt',
     'EachCreatePathChecksTheGateBeforeAnythingElseAwaits', 'AClosedGateWritesNothing',
@@ -3599,9 +3603,12 @@ Invoke-SourceCase 'effective: fake bound as defined (six types, the double) is a
     @{ Ok = $null -eq $r; Detail = "got: $r" }
 }
 Invoke-SourceCase 'effective: the Host source names the event the module looks for' {
-    $hostSource = Get-Content -Raw -LiteralPath (Join-Path $repoRoot 'src/ControlServer.Host/Program.cs')
-    @{ Ok = $hostSource.Contains('EFFECTIVE_CONFIGURATION allowedWorkTypes={AllowedWorkTypes} allowedDispatchZones={AllowedDispatchZones} mesIngestBaseUrl={MesIngestBaseUrl}')
-        Detail = 'Program.cs does not log the EFFECTIVE_CONFIGURATION template' }
+    # control-server#571 moved the definition out of Program.cs and appended the roster; the three fields this
+    # module reads keep their names and their place at the head of the template.
+    $hostSources = @(Get-ChildItem -LiteralPath (Join-Path $repoRoot 'src/ControlServer.Host') -Recurse -Filter '*.cs' |
+        Where-Object { (Get-Content -Raw -LiteralPath $_.FullName).Contains('"EFFECTIVE_CONFIGURATION allowedWorkTypes={AllowedWorkTypes} allowedDispatchZones={AllowedDispatchZones} mesIngestBaseUrl={MesIngestBaseUrl}') })
+    @{ Ok = $hostSources.Count -eq 1
+        Detail = "the EFFECTIVE_CONFIGURATION template is defined in $($hostSources.Count) Host source files, expected 1" }
 }
 
 # The installer's wiring and ordering (review M2(b), S1, S2, S3), from its source.
@@ -3698,6 +3705,321 @@ Invoke-SourceCase 'S5: the newest event by @t wins, whatever order the lines com
     )
     $e = Find-ParallelEffectiveConfiguration -Lines $lines -Since $effectiveSince
     @{ Ok = ($null -ne $e -and (@($e.AllowedWorkTypes) -join ',') -ceq 'STAGING_TO_WIRE'); Detail = "got: $(ConvertTo-Json $e -Compress)" }
+}
+
+# ------------------------------------------------------------------------------------------------
+# control-server#571. The parallel instance takes a two-car roster, journeyRuntime.fleet. The ticket's
+# failure definition: agv01 in the roster passes the check, or the Host binds a roster different from
+# the definition without an error. Every row is held to remote-ops/fleet.md (agvId, vehicleKey,
+# deviceKey and the RIoT id must describe one spare car), agv01 anywhere in a row refuses the whole
+# definition, and the roster cannot be written beside the single-vehicle keys.
+# ------------------------------------------------------------------------------------------------
+Write-Host ''
+Write-Host 'Two-car roster (control-server#571)' -ForegroundColor Cyan
+
+$agv01Key = 'BROKERX-0c20ff0600d644869a6a80c186065d85'
+$agv02Key = 'BROKERX-f38975561adf46ccb1d2f23833c7d0e4'
+$agv03Key = 'BROKERX-7daca4ee91da498d8026c68b7b941127'
+function New-FleetRow([string] $AgvId, [string] $Key, $RiotId, [string[]] $Types, [string[]] $Zones = @('MAP-26-WIRE_TO_GATE')) {
+    return @{ agvId = $AgvId; vehicleKey = $Key; deviceKey = $Key; riotId = $RiotId; agvLifecycleGeneration = 1
+        allowedTaskTypes = @($Types); zones = @($Zones) }
+}
+function New-FleetDefinition($From) {
+    $d = Copy-Definition $From
+    foreach ($key in @('agvId', 'vehicleKey', 'agvLifecycleGeneration')) { $d['journeyRuntime'].Remove($key) }
+    $d['journeyRuntime']['fleet'] = @(
+        (New-FleetRow '老厂前线新多仓位2' $agv02Key 59 @('STAGING_TO_WIRE'))
+        (New-FleetRow '老厂前线新多仓位3' $agv03Key 60 @('WIRE_TO_GATE', 'DIE_TO_OVEN'))
+    )
+    # Round-trip through JSON, as Read-ParallelInstanceDefinition reads a file: numbers come back as long.
+    return Copy-Definition $d
+}
+$fleetBaseline = New-FleetDefinition $baseline
+function Edit-Fleet([scriptblock] $Edit) {
+    $d = Copy-Definition $fleetBaseline
+    $null = & $Edit $d
+    return $d
+}
+
+Invoke-SourceCase 'fleet: two cars, agv02 and agv03, each row consistent with fleet.md -- accepted' {
+    Test-ExactFailure $fleetBaseline @()
+}
+Invoke-SourceCase 'fleet: Assert- accepts the two-car definition and returns it' {
+    $returned = Assert-ParallelInstanceDefinition -Definition (Copy-Definition $fleetBaseline)
+    @{ Ok = ($null -ne $returned); Detail = 'returned $null' }
+}
+
+# --- agv01 in the roster: the whole definition is refused, naming the row and the field --------
+Invoke-SourceCase 'fleet: agv01 in place of the second row is refused, naming row 1' {
+    Test-ExactFailure (Edit-Fleet { param($d) $d['journeyRuntime']['fleet'][1] = New-FleetRow '老厂前线新多仓位1' $agv01Key 58 @('STAGING_TO_WIRE') }) @('journeyRuntime.fleet[1] names agv01')
+}
+Invoke-SourceCase 'fleet: agv01 appended as a third row is refused, naming row 2' {
+    Test-ExactFailure (Edit-Fleet { param($d) $d['journeyRuntime']['fleet'] += New-FleetRow '老厂前线新多仓位1' $agv01Key 58 @('STAGING_TO_WIRE') }) @('journeyRuntime.fleet[2] names agv01')
+}
+Invoke-SourceCase 'fleet: only the RIoT id of row 0 is agv01''s (58) -- refused as agv01, naming riotId' {
+    Test-ExactFailure (Edit-Fleet { param($d) $d['journeyRuntime']['fleet'][0]['riotId'] = 58 }) @('journeyRuntime.fleet[0] names agv01 (riotId')
+}
+Invoke-SourceCase 'fleet: only the deviceKey of row 1 is agv01''s -- refused as agv01, naming deviceKey' {
+    Test-ExactFailure (Edit-Fleet { param($d) $d['journeyRuntime']['fleet'][1]['deviceKey'] = $agv01Key }) @('journeyRuntime.fleet[1] names agv01 (deviceKey')
+}
+Invoke-SourceCase 'fleet: only the agvId of row 0 is agv01''s -- refused as agv01, naming agvId' {
+    Test-ExactFailure (Edit-Fleet { param($d) $d['journeyRuntime']['fleet'][0]['agvId'] = '老厂前线新多仓位1' }) @('journeyRuntime.fleet[0] names agv01 (agvId')
+}
+Invoke-SourceCase 'fleet: agv01''s vehicleKey in lower case is still refused as agv01 (lenient refuses more)' {
+    Test-ExactFailure (Edit-Fleet { param($d) $d['journeyRuntime']['fleet'][1]['vehicleKey'] = $agv01Key.ToLowerInvariant() }) @('journeyRuntime.fleet[1] names agv01 (vehicleKey')
+}
+Invoke-SourceCase 'fleet: agv01 refused even when the gate switches are passed' {
+    $d = Edit-Fleet { param($d) $d['journeyRuntime']['fleet'][1] = New-FleetRow '老厂前线新多仓位1' $agv01Key 58 @('STAGING_TO_WIRE') }
+    [string[]] $got = @(Test-ParallelInstanceDefinition -Definition $d -AllowRiotCreateDispatch -AllowRiotForeignOrderCancel)
+    @{ Ok = ($got.Count -eq 1 -and $got[0].Contains('journeyRuntime.fleet[1] names agv01')); Detail = "got: $($got -join ' | ')" }
+}
+Invoke-SourceCase 'fleet: Assert- throws on agv01 in the roster' {
+    $d = Edit-Fleet { param($d) $d['journeyRuntime']['fleet'][0] = New-FleetRow '老厂前线新多仓位1' $agv01Key 58 @('STAGING_TO_WIRE') }
+    $threw = $false
+    try { $null = Assert-ParallelInstanceDefinition -Definition $d } catch { $threw = $_.Exception.Message.Contains('names agv01') }
+    @{ Ok = $threw; Detail = 'expected a throw naming agv01' }
+}
+
+# --- The identity quadruple: agvId, vehicleKey, deviceKey, riotId describe one spare car -------
+Invoke-SourceCase 'fleet: row 0''s RIoT id is agv03''s (60) while the rest is agv02 -- refused, naming riotId' {
+    Test-ExactFailure (Edit-Fleet { param($d) $d['journeyRuntime']['fleet'][0]['riotId'] = 60 }) @('journeyRuntime.fleet[0].riotId 60 does not match the RIoT id of agv02, which is 59')
+}
+Invoke-SourceCase 'fleet: row 0''s deviceKey is agv03''s while its vehicleKey is agv02''s -- refused, naming deviceKey' {
+    Test-ExactFailure (Edit-Fleet { param($d) $d['journeyRuntime']['fleet'][0]['deviceKey'] = $agv03Key }) @('journeyRuntime.fleet[0].deviceKey')
+}
+Invoke-SourceCase 'fleet: row 1''s agvId is agv02''s name on agv03''s key -- refused, naming agvId' {
+    Test-ExactFailure (Edit-Fleet { param($d) $d['journeyRuntime']['fleet'][1]['agvId'] = '老厂前线新多仓位2' }) @('journeyRuntime.fleet[1].agvId ''老厂前线新多仓位2'' does not match the RIoT deviceName of agv03')
+}
+Invoke-SourceCase 'fleet: row 1 names a key of no registered vehicle -- refused as not a spare vehicle' {
+    Test-ExactFailure (Edit-Fleet { param($d)
+            $d['journeyRuntime']['fleet'][1]['vehicleKey'] = 'BROKERX-00000000000000000000000000000000'
+            $d['journeyRuntime']['fleet'][1]['deviceKey'] = 'BROKERX-00000000000000000000000000000000' }) @('journeyRuntime.fleet[1].vehicleKey ''BROKERX-00000000000000000000000000000000'' is not a spare vehicle')
+}
+Invoke-SourceCase 'fleet: row 0''s vehicleKey and deviceKey in lower case -- refused (RIoT keys are exact)' {
+    Test-ExactFailure (Edit-Fleet { param($d)
+            $d['journeyRuntime']['fleet'][0]['vehicleKey'] = $agv02Key.ToLowerInvariant()
+            $d['journeyRuntime']['fleet'][0]['deviceKey'] = $agv02Key.ToLowerInvariant() }) @('is not a spare vehicle')
+}
+# Zero-width lookalikes (PR #575 review, item 1). A culture comparison skips U+200B, so each of these would match a
+# spare car while .NET configuration and RIoT see a different string. Each goes red if its Ordinal is put back to
+# InvariantCulture (or CurrentCulture).
+Invoke-SourceCase 'fleet: row 0''s vehicleKey and deviceKey with a zero-width space appended -- refused as not a spare vehicle' {
+    Test-ExactFailure (Edit-Fleet { param($d)
+            $d['journeyRuntime']['fleet'][0]['vehicleKey'] = "$agv02Key$([char]0x200B)"
+            $d['journeyRuntime']['fleet'][0]['deviceKey'] = "$agv02Key$([char]0x200B)" }) @('journeyRuntime.fleet[0].vehicleKey')
+}
+Invoke-SourceCase 'fleet: row 1''s deviceKey with a zero-width space appended -- refused, naming deviceKey' {
+    Test-ExactFailure (Edit-Fleet { param($d) $d['journeyRuntime']['fleet'][1]['deviceKey'] = "$agv03Key$([char]0x200B)" }) @('journeyRuntime.fleet[1].deviceKey')
+}
+Invoke-SourceCase 'fleet: row 0''s agvId with a zero-width space appended -- refused, naming agvId' {
+    Test-ExactFailure (Edit-Fleet { param($d) $d['journeyRuntime']['fleet'][0]['agvId'] = "老厂前线新多仓位2$([char]0x200B)" }) @('journeyRuntime.fleet[0].agvId')
+}
+Invoke-SourceCase 'fleet: row 1 without riotId -- refused, the durable coordinate must be stated' {
+    Test-ExactFailure (Edit-Fleet { param($d) $d['journeyRuntime']['fleet'][1].Remove('riotId') }) @('journeyRuntime.fleet[1].riotId must be set explicitly')
+}
+Invoke-SourceCase 'fleet: row 0 without deviceKey -- refused' {
+    Test-ExactFailure (Edit-Fleet { param($d) $d['journeyRuntime']['fleet'][0].Remove('deviceKey') }) @('journeyRuntime.fleet[0].deviceKey must be set explicitly')
+}
+
+# --- One way of naming the vehicles, not two ----------------------------------------------------
+Invoke-SourceCase 'fleet: roster beside journeyRuntime.agvId/vehicleKey -- refused, no guessing which counts' {
+    Test-ExactFailure (Edit-Fleet { param($d)
+            $d['journeyRuntime']['agvId'] = '老厂前线新多仓位2'
+            $d['journeyRuntime']['vehicleKey'] = $agv02Key }) @('journeyRuntime.fleet and journeyRuntime.agvId, journeyRuntime.vehicleKey are both set')
+}
+Invoke-SourceCase 'fleet: roster beside journeyRuntime.agvLifecycleGeneration -- refused' {
+    Test-ExactFailure (Edit-Fleet { param($d) $d['journeyRuntime']['agvLifecycleGeneration'] = 1 }) @('journeyRuntime.fleet and journeyRuntime.agvLifecycleGeneration are both set')
+}
+Invoke-SourceCase 'fleet: the single-vehicle definition still passes as it is (no roster needed)' {
+    Test-ExactFailure $baseline @()
+}
+
+# --- Shape of the roster and of each row ---------------------------------------------------------
+Invoke-SourceCase 'fleet: the same car twice -- refused' {
+    Test-ExactFailure (Edit-Fleet { param($d) $d['journeyRuntime']['fleet'][1] = New-FleetRow '老厂前线新多仓位2' $agv02Key 59 @('DIE_TO_OVEN') }) @('journeyRuntime.fleet names agv02 twice')
+}
+Invoke-SourceCase 'fleet: an empty roster -- refused' {
+    Test-ExactFailure (Edit-Fleet { param($d) $d['journeyRuntime']['fleet'] = @() }) @('journeyRuntime.fleet names no vehicle')
+}
+Invoke-SourceCase 'fleet: a roster that is an object, not a list -- refused' {
+    Test-ExactFailure (Edit-Fleet { param($d) $d['journeyRuntime']['fleet'] = New-FleetRow '老厂前线新多仓位2' $agv02Key 59 @('STAGING_TO_WIRE') }) @('journeyRuntime.fleet must be a JSON array')
+}
+Invoke-SourceCase 'fleet: a row key differing only in case (agvID) -- refused' {
+    Test-ExactFailure (Edit-Fleet { param($d) $d['journeyRuntime']['fleet'][0]['agvID'] = '老厂前线新多仓位2' }) @('journeyRuntime.fleet[0].agvID differs only in case from journeyRuntime.fleet[0].agvId')
+}
+Invoke-SourceCase 'fleet: an unknown row key -- refused' {
+    Test-ExactFailure (Edit-Fleet { param($d) $d['journeyRuntime']['fleet'][0]['priority'] = 1 }) @('journeyRuntime.fleet[0].priority is not a key this deployment knows')
+}
+Invoke-SourceCase 'fleet: a row zone outside allowedDispatchZones -- refused before the Host would refuse to start' {
+    Test-ExactFailure (Edit-Fleet { param($d) $d['journeyRuntime']['fleet'][1]['zones'] = @('OVEN') }) @('journeyRuntime.fleet[1].zones names ''OVEN'', which journeyRuntime.allowedDispatchZones omits')
+}
+Invoke-SourceCase 'fleet: a row task type outside allowedWorkTypes -- refused' {
+    Test-ExactFailure (Edit-Fleet { param($d) $d['journeyRuntime']['fleet'][0]['allowedTaskTypes'] = @('STAGING_TO_WIRE', 'NO_SUCH_TYPE') }) @('journeyRuntime.fleet[0].allowedTaskTypes names ''NO_SUCH_TYPE'', which journeyRuntime.allowedWorkTypes does not allow')
+}
+Invoke-SourceCase 'fleet: production MesIngest source, a row allowing WIRE_TO_GATE -- refused' {
+    $d = New-ProductionSourceDefinition $fleetBaseline
+    $d['journeyRuntime']['fleet'][0]['allowedTaskTypes'] = @('STAGING_TO_WIRE')
+    Test-ExactFailure $d @('journeyRuntime.fleet[1].allowedTaskTypes names ''WIRE_TO_GATE''', 'journeyRuntime.fleet[1].allowedTaskTypes names ''DIE_TO_OVEN''')
+}
+Invoke-SourceCase 'fleet: allowedTaskTypes written as a string, not a list -- refused' {
+    Test-ExactFailure (Edit-Fleet { param($d) $d['journeyRuntime']['fleet'][0]['allowedTaskTypes'] = 'STAGING_TO_WIRE' }) @('journeyRuntime.fleet[0].allowedTaskTypes must be a JSON array')
+}
+Invoke-SourceCase 'fleet: allowedTaskTypes left out -- refused (stated, never inherited)' {
+    Test-ExactFailure (Edit-Fleet { param($d) $d['journeyRuntime']['fleet'][1].Remove('allowedTaskTypes') }) @('journeyRuntime.fleet[1].allowedTaskTypes must be set explicitly')
+}
+Invoke-SourceCase 'fleet: agvLifecycleGeneration 0 -- refused' {
+    Test-ExactFailure (Edit-Fleet { param($d) $d['journeyRuntime']['fleet'][0]['agvLifecycleGeneration'] = 0 }) @('journeyRuntime.fleet[0].agvLifecycleGeneration must be a positive integer')
+}
+Invoke-SourceCase 'fleet: roundTimeoutMilliseconds below 1000 -- refused' {
+    Test-ExactFailure (Edit-Fleet { param($d) $d['journeyRuntime']['fleet'][0]['roundTimeoutMilliseconds'] = 500 }) @('journeyRuntime.fleet[0].roundTimeoutMilliseconds must be an integer in 1000..600000')
+}
+Invoke-SourceCase 'fleet: roundTimeoutMilliseconds in range -- accepted' {
+    Test-ExactFailure (Edit-Fleet { param($d) $d['journeyRuntime']['fleet'][0]['roundTimeoutMilliseconds'] = 15000 }) @()
+}
+
+# --- The shipped files: single-car definitions unchanged, a two-car example beside them ----------
+$exampleFleetPath = Join-Path $PSScriptRoot 'instance-factory01-v2.two-car-example.json'
+Invoke-SourceCase 'fleet: the two-car example ships and is accepted as it stands' {
+    $example = Read-ParallelInstanceDefinition -Path $exampleFleetPath
+    $got = @(Test-ParallelInstanceDefinition -Definition $example)
+    $rows = @($example['journeyRuntime']['fleet'])
+    @{ Ok = ($got.Count -eq 0 -and $rows.Count -eq 2); Detail = "rows: $($rows.Count); failures: $($got -join ' | ')" }
+}
+Invoke-SourceCase 'fleet: the installed-definition files stay single-car' {
+    $single = @('instance-factory01-v2.json', 'instance-factory01-v2.production-mes.json' | Where-Object {
+            $j = (Read-ParallelInstanceDefinition -Path (Join-Path $PSScriptRoot $_))['journeyRuntime']
+            -not $j.ContainsKey('fleet') -and $j.ContainsKey('agvId') })
+    @{ Ok = ($single.Count -eq 2); Detail = "single-car: $($single -join ', ')" }
+}
+
+# --- Whitelist of row keys against FleetVehicleOptions -------------------------------------------
+Invoke-SourceCase 'fleet: every product row key names a FleetVehicleOptions property, and every property is whitelisted' {
+    $properties = Get-OptionProperty -RelativePath 'src/ControlServer.Host/Runtime/JourneyRuntimeOptions.cs' -ClassName 'FleetVehicleOptions'
+    $rowKeys = @(Get-ParallelInstanceFleetRowKey)
+    $product = @($rowKeys | Where-Object { $_ -cnotin @('deviceKey', 'riotId') })
+    $orphans = @($product | Where-Object { $key = $_; -not ($properties | Where-Object { $_ -ieq $key }) })
+    $missing = @($properties | Where-Object { $p = $_; -not ($product | Where-Object { $_ -ieq $p }) })
+    @{ Ok = ($properties.Count -gt 0 -and $orphans.Count -eq 0 -and $missing.Count -eq 0); Detail = "orphans: $($orphans -join ', '); not whitelisted: $($missing -join ', ')" }
+}
+
+# --- Overlay: the roster as the Host reads it, whole -------------------------------------------
+Invoke-SourceCase 'fleet overlay: product keys only (no deviceKey / riotId), values as defined' {
+    $o = New-ParallelInstanceConfigurationOverlay -Definition (Copy-Definition $fleetBaseline)
+    $rows = @($o['JourneyRuntime']['fleet'])
+    $keys = @($rows | ForEach-Object { (@($_.Keys) | Sort-Object) -join ',' })
+    $types = @($rows | ForEach-Object { @($_['allowedTaskTypes']) -join ',' })
+    @{ Ok = ($rows.Count -eq 2 -and ($keys | Select-Object -Unique) -ceq 'agvId,agvLifecycleGeneration,allowedTaskTypes,vehicleKey,zones' -and
+            $types[0] -ceq 'STAGING_TO_WIRE' -and $types[1] -ceq 'WIRE_TO_GATE,DIE_TO_OVEN' -and $rows[1]['vehicleKey'] -ceq $agv03Key)
+        Detail = "keys: $($keys -join ' / '); types: $($types -join ' / ')" }
+}
+Invoke-SourceCase 'fleet overlay: the primary pair the Host requires is the first row, so the package''s agv01 cannot stay primary' {
+    $o = New-ParallelInstanceConfigurationOverlay -Definition (Copy-Definition $fleetBaseline)
+    $j = $o['JourneyRuntime']
+    @{ Ok = ($j['agvId'] -ceq '老厂前线新多仓位2' -and $j['vehicleKey'] -ceq $agv02Key -and $j['agvLifecycleGeneration'] -eq 1)
+        Detail = "agvId '$($j['agvId'])', vehicleKey '$($j['vehicleKey'])', generation '$($j['agvLifecycleGeneration'])'" }
+}
+Invoke-SourceCase 'fleet overlay: merged over a stale three-row roster with agv01, the result is exactly the two defined rows' {
+    $base = [ordered]@{ JourneyRuntime = [ordered]@{ enabled = $false; Fleet = @(
+                [ordered]@{ agvId = '老厂前线新多仓位1'; vehicleKey = $agv01Key; allowedTaskTypes = @('WIRE_TO_GATE') }
+                [ordered]@{ agvId = 'x'; vehicleKey = 'y' }
+                [ordered]@{ agvId = 'z'; vehicleKey = 'w' }) } }
+    $m = Merge-ConfigurationTree -Base $base -Overlay (New-ParallelInstanceConfigurationOverlay -Definition (Copy-Definition $fleetBaseline))
+    $fleetKeys = @($m['JourneyRuntime'].Keys | Where-Object { $_ -ieq 'fleet' })
+    $rows = @($m['JourneyRuntime'][$fleetKeys[0]])
+    $json = ConvertTo-Json -Depth 12 -Compress $m
+    @{ Ok = ($fleetKeys.Count -eq 1 -and $rows.Count -eq 2 -and -not $json.Contains($agv01Key)); Detail = "fleet keys: $($fleetKeys -join ','); rows: $($rows.Count); $json" }
+}
+Invoke-SourceCase 'single-car overlay: writes an empty roster, so a roster left by an earlier two-car install is cleared' {
+    $base = [ordered]@{ JourneyRuntime = [ordered]@{ Fleet = @([ordered]@{ agvId = '老厂前线新多仓位3'; vehicleKey = $agv03Key }) } }
+    $o = New-ParallelInstanceConfigurationOverlay -Definition (Copy-Definition $baseline)
+    $m = Merge-ConfigurationTree -Base $base -Overlay $o
+    $fleetKeys = @($m['JourneyRuntime'].Keys | Where-Object { $_ -ieq 'fleet' })
+    @{ Ok = ($fleetKeys.Count -eq 1 -and @($m['JourneyRuntime'][$fleetKeys[0]]).Count -eq 0 -and $o['JourneyRuntime']['agvId'] -ceq '老厂前线新多仓位2')
+        Detail = "fleet keys: $($fleetKeys -join ','); merged: $(ConvertTo-Json -Depth 12 -Compress $m['JourneyRuntime'])" }
+}
+
+# --- Read-back: what the Host bound, vehicle by vehicle -------------------------------------------
+$fleetTemplate = 'EFFECTIVE_CONFIGURATION allowedWorkTypes={AllowedWorkTypes} allowedDispatchZones={AllowedDispatchZones} mesIngestBaseUrl={MesIngestBaseUrl} fleet={Fleet}'
+function New-BoundVehicle([string] $AgvId, [string] $Key, [string[]] $Types, [string[]] $Zones = @('MAP-26-WIRE_TO_GATE')) {
+    return [ordered]@{ AgvId = $AgvId; VehicleKey = $Key; AllowedTaskTypes = @($Types); Zones = @($Zones) }
+}
+$boundAsDefined = @(
+    (New-BoundVehicle '老厂前线新多仓位2' $agv02Key @('STAGING_TO_WIRE'))
+    (New-BoundVehicle '老厂前线新多仓位3' $agv03Key @('WIRE_TO_GATE', 'DIE_TO_OVEN'))
+)
+# -Fleet $null leaves the property out, as a package older than #571 logs the event.
+function New-FleetEffectiveLine($Definition, $Fleet, [switch] $NoFleet) {
+    $event = [ordered]@{
+        '@t' = '2026-10-10T01:00:06Z'
+        '@mt' = $NoFleet ? 'EFFECTIVE_CONFIGURATION allowedWorkTypes={AllowedWorkTypes} allowedDispatchZones={AllowedDispatchZones} mesIngestBaseUrl={MesIngestBaseUrl}' : $fleetTemplate
+        AllowedWorkTypes = @($Definition['journeyRuntime']['allowedWorkTypes'])
+        AllowedDispatchZones = @($Definition['journeyRuntime']['allowedDispatchZones'])
+        MesIngestBaseUrl = [string] $Definition['mesIngest']['baseUrl']
+    }
+    if (-not $NoFleet) { $event['Fleet'] = @($Fleet) }
+    return ConvertTo-Json -Compress -Depth 8 -InputObject $event
+}
+function Get-FleetReadBack($Definition, $Fleet, [switch] $NoFleet) {
+    $e = Find-ParallelEffectiveConfiguration -Lines @(New-FleetEffectiveLine $Definition $Fleet -NoFleet:$NoFleet) -Since $effectiveSince
+    return Get-ParallelEffectiveConfigurationAction -Definition $Definition -Effective $e
+}
+
+Invoke-SourceCase 'fleet read-back: bound exactly as defined -- pass' {
+    $a = Get-FleetReadBack $fleetBaseline $boundAsDefined
+    @{ Ok = ($a.Action -ceq 'Pass'); Detail = "got: $(ConvertTo-Json $a -Compress)" }
+}
+Invoke-SourceCase 'fleet read-back: one car fewer than defined -- stop and refuse, naming the missing car' {
+    $a = Get-FleetReadBack $fleetBaseline @($boundAsDefined[0])
+    @{ Ok = ($a.Action -ceq 'StopServiceAndRefuse' -and $a.Message.Contains('EFFECTIVE_CONFIGURATION_MISMATCH') -and $a.Message.Contains($agv03Key))
+        Detail = "got: $(ConvertTo-Json $a -Compress)" }
+}
+Invoke-SourceCase 'fleet read-back: one car more than defined (agv01) -- stop and refuse, naming the extra car' {
+    $a = Get-FleetReadBack $fleetBaseline @($boundAsDefined + @(New-BoundVehicle '老厂前线新多仓位1' $agv01Key @('WIRE_TO_GATE')))
+    @{ Ok = ($a.Action -ceq 'StopServiceAndRefuse' -and $a.Message.Contains('EFFECTIVE_CONFIGURATION_MISMATCH') -and $a.Message.Contains($agv01Key))
+        Detail = "got: $(ConvertTo-Json $a -Compress)" }
+}
+Invoke-SourceCase 'fleet read-back: a car bound with different task types (index-merged extra) -- stop and refuse, naming the car and allowedTaskTypes' {
+    $bound = @($boundAsDefined[0], (New-BoundVehicle '老厂前线新多仓位3' $agv03Key @('WIRE_TO_GATE', 'DIE_TO_OVEN', 'WIRE_TO_OPTICAL')))
+    $a = Get-FleetReadBack $fleetBaseline $bound
+    @{ Ok = ($a.Action -ceq 'StopServiceAndRefuse' -and $a.Message.Contains('allowedTaskTypes') -and $a.Message.Contains($agv03Key))
+        Detail = "got: $(ConvertTo-Json $a -Compress)" }
+}
+Invoke-SourceCase 'fleet read-back: a car bound with different zones -- stop and refuse, naming zones' {
+    $bound = @((New-BoundVehicle '老厂前线新多仓位2' $agv02Key @('STAGING_TO_WIRE') @('MAP-26-WIRE_TO_GATE', 'OVEN')), $boundAsDefined[1])
+    $a = Get-FleetReadBack $fleetBaseline $bound
+    @{ Ok = ($a.Action -ceq 'StopServiceAndRefuse' -and $a.Message.Contains('zones') -and $a.Message.Contains($agv02Key))
+        Detail = "got: $(ConvertTo-Json $a -Compress)" }
+}
+Invoke-SourceCase 'fleet read-back: a car bound under a different agvId -- stop and refuse' {
+    $bound = @((New-BoundVehicle '老厂前线新多仓位3' $agv02Key @('STAGING_TO_WIRE')), $boundAsDefined[1])
+    $a = Get-FleetReadBack $fleetBaseline $bound
+    @{ Ok = ($a.Action -ceq 'StopServiceAndRefuse' -and $a.Message.Contains('agvId')); Detail = "got: $(ConvertTo-Json $a -Compress)" }
+}
+Invoke-SourceCase 'fleet read-back: a Host that does not log the roster (older package) -- stop and refuse, the roster is unread' {
+    $a = Get-FleetReadBack $fleetBaseline $null -NoFleet
+    @{ Ok = ($a.Action -ceq 'StopServiceAndRefuse' -and $a.Message.Contains('EFFECTIVE_CONFIGURATION_FLEET_UNREAD')); Detail = "got: $(ConvertTo-Json $a -Compress)" }
+}
+Invoke-SourceCase 'fleet read-back: no EFFECTIVE_CONFIGURATION event at all, fake source -- stop and refuse, not warn' {
+    $a = Get-ParallelEffectiveConfigurationAction -Definition $fleetBaseline -Effective $null
+    @{ Ok = ($a.Action -ceq 'StopServiceAndRefuse' -and $a.Message.Contains('EFFECTIVE_CONFIGURATION_UNREAD')); Detail = "got: $(ConvertTo-Json $a -Compress)" }
+}
+Invoke-SourceCase 'single-car read-back: the new event with an empty roster -- pass' {
+    $a = Get-FleetReadBack $baseline @()
+    @{ Ok = ($a.Action -ceq 'Pass'); Detail = "got: $(ConvertTo-Json $a -Compress)" }
+}
+Invoke-SourceCase 'single-car read-back: the event as an older package logs it (no roster field) -- pass, as before' {
+    $a = Get-FleetReadBack $baseline $null -NoFleet
+    @{ Ok = ($a.Action -ceq 'Pass'); Detail = "got: $(ConvertTo-Json $a -Compress)" }
+}
+Invoke-SourceCase 'single-car read-back: the Host bound a roster the definition does not have (left over) -- stop and refuse' {
+    $a = Get-FleetReadBack $baseline @(New-BoundVehicle '老厂前线新多仓位3' $agv03Key @('WIRE_TO_GATE'))
+    @{ Ok = ($a.Action -ceq 'StopServiceAndRefuse' -and $a.Message.Contains($agv03Key)); Detail = "got: $(ConvertTo-Json $a -Compress)" }
+}
+Invoke-SourceCase 'fleet read-back: the Host source logs the roster under the template the module reads' {
+    $hostSource = Get-Content -Raw -LiteralPath (Join-Path $repoRoot 'src/ControlServer.Host/Program.cs')
+    $eventSource = Get-ChildItem -LiteralPath (Join-Path $repoRoot 'src/ControlServer.Host') -Recurse -Filter '*.cs' |
+        Where-Object { (Get-Content -Raw -LiteralPath $_.FullName).Contains($fleetTemplate) }
+    @{ Ok = (@($eventSource).Count -eq 1 -and $hostSource.Contains('EffectiveConfigurationEvent')); Detail = "template found in: $(@($eventSource | ForEach-Object Name) -join ', ')" }
 }
 
 Write-Host ''

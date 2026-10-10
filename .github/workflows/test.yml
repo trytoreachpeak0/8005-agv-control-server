@@ -49,9 +49,15 @@ jobs:
     # queue behind each other.
     # 95 since control-server#567, which added two steps after Test: the v3 script-branch check (seconds) and the
     # staged content-conflict check (197 s on the control host, its own limit 15, and only on pull requests that change
-    # what it checks). 60 + 6m28s + 15 + upload is about 82 minutes when every step runs to its own limit, which 80 no
-    # longer covered.
-    timeout-minutes: 95
+    # what it checks). control-server#571 added the parallel instance self-check after Test as well (about 40 s, its own
+    # limit 10), and the two merged on the same day, so the number was recomputed for both:
+    #   the slowest pre-Test 6m28s (measured before #567) + the two steps #567 put before Test, 5 + 5
+    #   + Test 60 + after Test 10 (#571) + 5 + 5 + 15 (#567) + upload and post-checkout about 15 s
+    #   = about 112 minutes if every step ran to its own limit.
+    # 120 keeps the job limit above that sum, so whatever hangs is recorded as a failed step and never as a cancelled
+    # job. It only acts when something has already gone wrong.
+    # Any step added later counts against it the same way.
+    timeout-minutes: 120
     env:
       # NuGet's vulnerability audit fetches its data from nuget.org during every restore, and with
       # TreatWarningsAsErrors a failed fetch (NU1900) is a red run that says nothing about the code:
@@ -289,6 +295,19 @@ jobs:
         run: |
           [System.Diagnostics.Process]::GetCurrentProcess().PriorityClass = 'BelowNormal'
           dotnet test tests/ControlServer.Tests/ControlServer.Tests.csproj -c Release --logger 'trx;LogFileName=test-results.trx'
+
+      # control-server#571. The v2 parallel instance's offline self-check: the definition checks (agv01 never in
+      # the vehicle roster, each roster row's identity against remote-ops/fleet.md), the overlay, and the
+      # read-back of what the Host really bound. Nothing in it touches a machine. It was run by hand only, and
+      # what is run by hand only is found broken at a batch exit. After Test, so its one case that borrows the
+      # SQLite provider from a Host build finds one instead of skipping; !cancelled() so it reports even when
+      # the suite is red. About 40 s on the laptop; with the step limit the job's 120 (see timeout-minutes
+      # above) stays above every step's, so a hang here is a failed step, not a cancelled job.
+      - name: Parallel instance self-check
+        if: ${{ !cancelled() }}
+        shell: pwsh
+        timeout-minutes: 10
+        run: pwsh -NoProfile -File ./scripts/parallel/Test-ParallelInstance.ps1
 
       # A few seconds, no rig, no window (control-server#555, #567): the two journey G3 script branches no run reached before
       # the batch-8 exit. After Test, not with the self-checks above, because its SQLite cases borrow Microsoft.Data.Sqlite

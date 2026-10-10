@@ -1,0 +1,18 @@
+  FAIL  journeyRuntime.fleet roster with agv01 mixed in
+        expected 'journeyRuntime.fleet[1] names agv01', got: journeyRuntime.fleet and journeyRuntime.agvId, journeyRuntime.vehicleKey, journeyRuntime.agvLifecycleGeneration are both set. The roster and the single-vehicle keys (agvId, vehicleKey, agvLifecycleGeneration) are two ways of naming the vehicles, and this deployment does not guess which one counts: write one of them.
+  FAIL  fleet: agv01 in place of the second row is refused, naming row 1
+        expected exactly 'journeyRuntime.fleet[1] names agv01'; got 1: journeyRuntime.fleet[1].vehicleKey 'BROKERX-0c20ff0600d644869a6a80c186065d85' is not a spare vehicle. Allowed: agv02=BROKERX-f38975561adf46ccb1d2f23833c7d0e4, agv03=BROKERX-7daca4ee91da498d8026c68b7b941127.
+  FAIL  fleet: agv01 appended as a third row is refused, naming row 2
+        expected exactly 'journeyRuntime.fleet[2] names agv01'; got 1: journeyRuntime.fleet[2].vehicleKey 'BROKERX-0c20ff0600d644869a6a80c186065d85' is not a spare vehicle. Allowed: agv02=BROKERX-f38975561adf46ccb1d2f23833c7d0e4, agv03=BROKERX-7daca4ee91da498d8026c68b7b941127.
+  FAIL  fleet: only the RIoT id of row 0 is agv01's (58) -- refused as agv01, naming riotId
+        expected exactly 'journeyRuntime.fleet[0] names agv01 (riotId'; got 1: journeyRuntime.fleet[0].riotId 58 does not match the RIoT id of agv02, which is 59.
+  FAIL  fleet: only the deviceKey of row 1 is agv01's -- refused as agv01, naming deviceKey
+        expected exactly 'journeyRuntime.fleet[1] names agv01 (deviceKey'; got 1: journeyRuntime.fleet[1].deviceKey 'BROKERX-0c20ff0600d644869a6a80c186065d85' is not journeyRuntime.fleet[1].vehicleKey 'BROKERX-7daca4ee91da498d8026c68b7b941127'. RIoT's deviceKey is the vehicle key; the two must be the same string.
+  FAIL  fleet: only the agvId of row 0 is agv01's -- refused as agv01, naming agvId
+        expected exactly 'journeyRuntime.fleet[0] names agv01 (agvId'; got 1: journeyRuntime.fleet[0].agvId '老厂前线新多仓位1' does not match the RIoT deviceName of agv02, which is '老厂前线新多仓位2'. The name and the key must describe the same car.
+  FAIL  fleet: agv01's vehicleKey in lower case is still refused as agv01 (lenient refuses more)
+        expected exactly 'journeyRuntime.fleet[1] names agv01 (vehicleKey'; got 1: journeyRuntime.fleet[1].vehicleKey 'brokerx-0c20ff0600d644869a6a80c186065d85' is not a spare vehicle. Allowed: agv02=BROKERX-f38975561adf46ccb1d2f23833c7d0e4, agv03=BROKERX-7daca4ee91da498d8026c68b7b941127.
+  FAIL  fleet: agv01 refused even when the gate switches are passed
+        got: journeyRuntime.fleet[1].vehicleKey 'BROKERX-0c20ff0600d644869a6a80c186065d85' is not a spare vehicle. Allowed: agv02=BROKERX-f38975561adf46ccb1d2f23833c7d0e4, agv03=BROKERX-7daca4ee91da498d8026c68b7b941127.
+  FAIL  fleet: Assert- throws on agv01 in the roster
+        expected a throw naming agv01
