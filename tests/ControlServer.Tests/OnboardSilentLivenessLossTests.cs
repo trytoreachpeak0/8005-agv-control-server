@@ -387,7 +387,7 @@ public sealed class OnboardSilentLivenessLossTests
     }
 
     /// <summary>
-    /// 夹具挑中的端口从挑中那一刻起就一直被占着，直到被测服务绑上它——中间没有「端口空着、谁都能拿」的时刻。
+    /// 夹具挑中的端口，从挑中那一刻起到被测服务绑上它，都不会被系统分给别人——中间没有「系统可以把它分出去」的时刻。
     /// </summary>
     /// <remarks>
     /// <para>
@@ -395,13 +395,17 @@ public sealed class OnboardSilentLivenessLossTests
     /// 同机并行的别的测试或 L2 泳道向系统要一个临时端口，系统可能恰好给出这一个，服务于是绑不上——偶发红。
     /// </para>
     /// <para>
-    /// 「一直被占着」用一个独占绑定去试：它绑得上，说明端口当时没人占。服务那一种绑定（<c>127.0.0.1</c> 上的普通
-    /// <c>TcpListener</c>）照样要绑得上，否则这个占位等于把被测服务也挡在外面。
+    /// 「不会被分出去」用一个独占通配绑定去试：它绑得上，说明端口当时没被任何套接字占着，系统也就可以把它分出去。
+    /// 服务那一种绑定（<c>127.0.0.1</c> 上的普通 <c>TcpListener</c>）照样要绑得上，否则这个占位等于把被测服务也挡在外面。
+    /// </para>
+    /// <para>
+    /// <b>占位挡不住什么。</b>别的进程若不向系统要端口、而是自己写死这个端口号在 <c>127.0.0.1</c> 上直接绑，占位挡不住，
+    /// 之后服务会绑不上。那不是本票修的空窗：那种撞车与端口怎么挑无关，任何挑法都躲不开。
     /// </para>
     /// </remarks>
     [Fact]
     [Trait("IntegrationSlice", "FP-IS-05")]
-    public void TheRigsPortIsHeldFromTheMomentItIsChosenUntilTheServerBindsIt()
+    public void TheRigsPortIsNotHandedOutFromTheMomentItIsChosenUntilTheServerBindsIt()
     {
         using PortReservation reservation = PortReservation.Take();
 
@@ -420,6 +424,31 @@ public sealed class OnboardSilentLivenessLossTests
     }
 
     /// <summary>
+    /// 夹具活着的整段时间里，占位一直在：服务绑上之后它也不提前放掉。
+    /// </summary>
+    /// <remarks>
+    /// <para>
+    /// 上一条只在服务起来之前试占位；夹具若在服务绑上之前就把占位放了，上一条照样绿，只有这一条会红。
+    /// </para>
+    /// <para>
+    /// <b>为什么用普通通配绑定、不用独占的。</b>服务在 <c>127.0.0.1:P</c> 上监听时，独占通配绑定不论占位在不在都会被拒
+    /// （本机实测，两种情况都是 <c>AddressAlreadyInUse</c>），分不出两者。普通通配绑定分得出：占位还在时它与占位撞车被拒；
+    /// 占位已放、只剩服务那个具体地址的绑定时，Windows 允许它绑上。
+    /// </para>
+    /// </remarks>
+    [Fact]
+    [Trait("IntegrationSlice", "FP-IS-05")]
+    public async Task TheRigKeepsItsPortPlaceholderForAsLongAsItRuns()
+    {
+        await using LivenessRig rig = await LivenessRig.StartAsync(TimeSpan.FromMilliseconds(250));
+
+        using Socket contender = new(AddressFamily.InterNetwork, SocketType.Stream, ProtocolType.Tcp);
+        SocketException refused = Assert.Throws<SocketException>(
+            () => contender.Bind(new IPEndPoint(IPAddress.Any, rig.Port)));
+        Assert.Equal(SocketError.AddressAlreadyInUse, refused.SocketErrorCode);
+    }
+
+    /// <summary>
     /// 测试读库用的上下文不是服务线程正在用的那个，也不共用它的连接。
     /// </summary>
     /// <remarks>
@@ -433,8 +462,7 @@ public sealed class OnboardSilentLivenessLossTests
         await using LivenessRig rig = await LivenessRig.StartAsync(TimeSpan.FromMilliseconds(250));
         await using ControlServerDbContext read = await rig.OpenReadContextAsync();
 
-        Assert.NotSame(rig.ServerContext, read);
-        Assert.NotSame(rig.ServerContext.Database.GetDbConnection(), read.Database.GetDbConnection());
+        Assert.False(rig.SharesStateWith(read), "测试拿到的读库上下文与服务线程共用了上下文或连接。");
     }
 
     // --- 辅助 ----------------------------------------------------------------------------------------
@@ -599,8 +627,8 @@ public sealed class OnboardSilentLivenessLossTests
     }
 
     /// <summary>
-    /// A loopback port for the server under test, held from the moment it is chosen until <see cref="Dispose"/>
-    /// (control-server#256).
+    /// A loopback port for the server under test that the system cannot hand out to anyone else from the moment it is
+    /// chosen until <see cref="Dispose"/> (control-server#256).
     /// </summary>
     /// <remarks>
     /// <para>
@@ -616,6 +644,12 @@ public sealed class OnboardSilentLivenessLossTests
     /// made without <c>SO_EXCLUSIVEADDRUSE</c>; the most specific binding receives the connections, and the
     /// placeholder, not listening, receives none. Should a runtime ever make that bind fail, the server fails to
     /// start at once and loudly, every run, rather than now and then.
+    /// </para>
+    /// <para>
+    /// This rests on Windows binding semantics, measured on Windows 11, which is also what the CI runner (win11-01)
+    /// runs; it has not been measured on any other platform. What it does not stop is a process that binds this port number on <c>127.0.0.1</c> directly, without asking the
+    /// system for a port: that succeeds and the server's bind then fails. That collision is not the window this
+    /// ticket closes; no way of choosing a port avoids it.
     /// </para>
     /// </remarks>
     private sealed class PortReservation : IDisposable
@@ -686,8 +720,16 @@ public sealed class OnboardSilentLivenessLossTests
         PortReservation port,
         OnboardTcpServer server) : IAsyncDisposable
     {
-        /// <summary>The context the server's processor uses. Only for asserting it is not shared; never read through it.</summary>
-        public ControlServerDbContext ServerContext { get; } = context;
+        /// <summary>
+        /// The context the server's processor uses. Private so that no test can read through it; see
+        /// <see cref="OpenReadContextAsync"/>.
+        /// </summary>
+        private ControlServerDbContext ServerContext { get; } = context;
+
+        /// <summary>Whether <paramref name="read"/> is, or shares a connection with, the server's own context.</summary>
+        public bool SharesStateWith(ControlServerDbContext read) =>
+            ReferenceEquals(read, ServerContext) ||
+            ReferenceEquals(read.Database.GetDbConnection(), ServerContext.Database.GetDbConnection());
 
         /// <summary>
         /// A context of the test's own, on a connection of its own, to the same database the server writes
