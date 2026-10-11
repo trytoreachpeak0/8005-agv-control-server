@@ -149,6 +149,21 @@ try {
     Test-Order 'Install: rollback waits before deleting the install directory and the data root' $installSource "-NotDone '删除安装目录" `
         @('Remove-Item -LiteralPath $installPath -Recurse -Force', 'Get-ChildItem -LiteralPath $dataRoot -Force | Remove-Item -Recurse -Force')
 
+    # control-server#605. With zero lock files the function's return is unrolled to $null, with one to a bare string;
+    # under StrictMode .Count throws on both. Every call either discards the result or collects it with @().
+    foreach ($path in @($updatePath, $installPath)) {
+        $sites = @($asts[$path].FindAll({ param($n)
+                    $n -is [Management.Automation.Language.CommandAst] -and $n.GetCommandName() -eq 'Wait-DataRootReleased' }, $true))
+        $bare = @($sites | Where-Object {
+                $outer = $_.Parent.Parent
+                $discarded = $outer -is [Management.Automation.Language.AssignmentStatementAst] -and $outer.Left.Extent.Text -eq '$null'
+                $collected = $outer -is [Management.Automation.Language.StatementBlockAst] -and
+                    $outer.Parent -is [Management.Automation.Language.ArrayExpressionAst]
+                -not ($discarded -or $collected) } | ForEach-Object { "line $($_.Extent.StartLineNumber)" })
+        Write-Result ($sites.Count -ge 1 -and $bare.Count -eq 0) `
+            "$(Split-Path -Leaf $path): every Wait-DataRootReleased call is `$null = or @(...)" "calls=$($sites.Count) bare=$($bare -join ',')"
+    }
+
     # --- 2. The function on its own ---------------------------------------------------------------
     . ([ScriptBlock]::Create($functionText[$updatePath]))
 
@@ -209,8 +224,12 @@ try {
 #Requires -Version 7
 param([string]$Kind, [string]$Script, [string]$Case, [string]$HolderLock, [int]$HolderSeconds, [switch]$HealthFails, [switch]$FailBackupCopy)
 $ErrorActionPreference = 'Stop'
+# control-server#605. Install-ParallelInstanceLocal.ps1 sets StrictMode 3.0 and both product scripts inherit it
+# there; without it here, a .Count on $null passed this self-test and threw on factory01.
+Set-StrictMode -Version Latest
 Add-Type -TypeDefinition @"
 public static class Cs503SelftestEnvironment {
+    public static string NewLine { get { return System.Environment.NewLine; } }
     public static string GetEnvironmentVariable(string name, System.EnvironmentVariableTarget target) {
         if (name == "CONTROL_SERVER_RIOT_CALL_API_KEY" && target == System.EnvironmentVariableTarget.User) return "stub-riot";
         if (name == "CONTROL_SERVER_ONBOARD_CREDENTIAL" && target == System.EnvironmentVariableTarget.Machine) return "stub-onboard";
@@ -220,6 +239,7 @@ public static class Cs503SelftestEnvironment {
 }
 "@
 $global:ServiceStatus = if ($Kind -eq 'Update') { 'Running' } else { $null }
+$global:HolderStarted = $false
 function Start-StubHolder {
     if (-not $HolderLock -or $global:HolderStarted) { return }
     $global:HolderStarted = $true
@@ -355,6 +375,17 @@ catch {
     $result = Invoke-Case 'Update' $case
     Write-Result ($result.Outcome -eq 'COMPLETED' -and (Test-Pass $case) -and $result.Diagnostic -match 'data-root-released lockFiles=0') `
         'U3 no lock file: the upgrade completes as before' "$($result.Outcome) seconds=$($result.Seconds)"
+
+    # U6 (control-server#605): two databases, two lock files, nobody holding either: counted as two.
+    $case = New-Case 'u6-two-lock-files' $true $true
+    # ... and an empty OnboardTransport section, which the plaintext conversion reads under StrictMode.
+    [IO.File]::WriteAllText((Join-Path $case.Install 'appsettings.Production.json'),
+        '{ "Health": { "url": "http://127.0.0.1:1" }, "JourneyRuntime": { "enabled": false }, "OnboardTransport": {} }')
+    $second = New-Item -ItemType Directory -Path (Join-Path $case.Data 'data2')
+    [IO.File]::WriteAllText((Join-Path $second 'other.db.instance-lock'), 'lock')
+    $result = Invoke-Case 'Update' $case
+    Write-Result ($result.Outcome -eq 'COMPLETED' -and (Test-Pass $case) -and $result.Diagnostic -match 'data-root-released lockFiles=2') `
+        'U6 two lock files: the upgrade completes and counts both' "$($result.Outcome) seconds=$($result.Seconds)"
 
     # U4: the replacement takes the lock, its health check fails, and it outlives Stop-Service: the rollback must
     # touch neither the install directory nor the data root, and must say how to restore by hand.

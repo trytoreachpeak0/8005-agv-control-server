@@ -177,6 +177,12 @@ v2 instance run side by side on factory01 as two ControlServer.Host processes, s
 a "stop ControlServer.Host" instruction stops production. -NotDone says what the refusal left undone,
 -NextSteps what the operator does instead; both are the caller's, because only the caller knows its state.
 
+Returns the lock files it waited on. Collect the result with @(...) or discard it with $null =: with no lock file
+PowerShell unrolls the returned array to $null and with one to a bare string, and under Set-StrictMode -- which
+Install-ParallelInstanceLocal.ps1 sets, and both scripts inherit there -- .Count on either throws (control-server#605).
+scripts/Test-DataRootLockWait.ps1 checks every call. Not `return ,$lockFiles`: that hands a caller who does write
+@(...) a one-element array holding the array, so the count would always be 1.
+
 Keep this function identical in Update-ControlServerLocal.ps1 and Install-ControlServerLocal.ps1;
 scripts/Test-DataRootLockWait.ps1 compares the two.
 #>

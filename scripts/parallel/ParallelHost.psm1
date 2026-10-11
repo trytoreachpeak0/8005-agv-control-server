@@ -450,11 +450,151 @@ function Invoke-ParallelProductUpgrade {
             "(service status: $($status ?? 'absent')). If the upgrade script failed in its own preflight the service is still " +
             'stopped; if it failed after that, its own rollback restarted the previous binaries with the runtime off. Either way ' +
             'this instance dispatches nothing. To recover, redeploy the commit that is running now (or a fixed package): that ' +
-            'writes the definition''s value back. Do NOT use -Rollback for this: after a failed install the package swap has not ' +
+            'writes the definition''s value back. The upgrade runs the Update-ControlServerLocal.ps1 inside the package being ' +
+            'deployed, not this installer''s: if the running package predates control-server#605 its upgrade fails again at the same ' +
+            '.Count, so only a package that contains that fix recovers it. Do NOT use -Rollback for this: after a failed install the package swap has not ' +
             'happened, so -Rollback installs the generation before the running one, which the onboard side may not match.')
         throw
     }
     return $wasEnabled
+}
+
+function Test-ParallelProductRollbackFailed {
+    <#
+        .SYNOPSIS
+            Whether a product script's failure says its own rollback failed too. Walks the inner exceptions.
+
+        .DESCRIPTION
+            control-server#605. Update-ControlServerLocal.ps1 throws an AggregateException ('ControlServer upgrade
+            and rollback both failed.') and Install-ControlServerLocal.ps1 'Deployment failed and rollback reported:
+            ...' only then; any other failure of theirs comes after a rollback that completed, or before they
+            changed anything. A refusal of Invoke-ParallelProductUpgrade's own is neither, and reads as false.
+    #>
+    [CmdletBinding()]
+    param([AllowNull()][Exception] $Exception)
+    for ($e = $Exception; $null -ne $e; $e = $e.InnerException) {
+        if ($e -is [AggregateException] -or $e.Message -like 'ControlServer upgrade and rollback both failed.*' -or
+            $e.Message -like 'Deployment failed and rollback reported:*') { return $true }
+    }
+    return $false
+}
+
+function Test-ParallelInstalledRecordRestorable {
+    <#
+        .SYNOPSIS
+            After a failed install, upgrade or -Rollback: whether the installer puts back the installed-instance.json
+            it replaced. Pure.
+
+        .DESCRIPTION
+            control-server#605. The installer records the definition it is about to install
+            (<opsRoot>\installed-instance.json) before anything changes. When the run then fails before the product
+            script, or the product script fails and its own rollback completes, the binaries, the data root and the
+            admission policy the database bound are the previous run's -- but the record names this run's
+            definition. 19-deploy-control-server-parallel.ps1 holds the next deployment to that record's version
+            (ADMISSION_POLICY_VERSION_BELOW_INSTALLED for a redeploy of the running commit, which is what
+            JOURNEY_RUNTIME_LEFT_DISABLED tells the operator to do), and the uninstaller and the dispatch gate script
+            read a definition that was never installed (field run of control-server#566, 2026-10-11).
+
+            Restorable: there was a previous record, and the product script either never started or failed with its
+            rollback complete. Not: it returned (this run's binaries are installed and the record matches them), its
+            rollback failed too (what is installed is unknown), or there was no previous record (a first install:
+            the uninstaller needs one to clean up).
+
+        .PARAMETER ProductStage
+            NotStarted, Running (the product script, or Invoke-ParallelProductUpgrade around it, threw) or Returned.
+    #>
+    [CmdletBinding()]
+    param(
+        [Parameter(Mandatory = $true)][ValidateSet('NotStarted', 'Running', 'Returned')][string] $ProductStage,
+        [Parameter(Mandatory = $true)][bool] $ProductRollbackFailed,
+        [Parameter(Mandatory = $true)][bool] $PreviousRecordExists
+    )
+    if (-not $PreviousRecordExists) { return $false }
+    if ($ProductStage -ceq 'NotStarted') { return $true }
+    return $ProductStage -ceq 'Running' -and -not $ProductRollbackFailed
+}
+
+function Format-ParallelFailedInstallState {
+    <#
+        .SYNOPSIS
+            The lines a failed install, upgrade or -Rollback ends with: what it changed that is still changed, and
+            how to undo each. Pure; the installer prints them as warnings.
+
+        .DESCRIPTION
+            control-server#605. Three things outlive a failure, and each gets a line:
+
+              * installed-instance.json (RecordOutcome): Restored, Kept (why depends on the stage), or a restore that
+                failed ('RestoreFailed: <message>'), with the saved copy to put back by hand.
+              * JourneyRuntime.enabled, as read from the file now. The upgrade branch sets it false before the
+                product script and does not put it back: false is the safe direction (control-server#454), and
+                turning it on is the release step with its read-backs, which only a completed deployment runs.
+              * on -Rollback, the package directories, swapped before the product script and not swapped back.
+    #>
+    [CmdletBinding()]
+    param(
+        [Parameter(Mandatory = $true)][ValidateSet('NotStarted', 'Running', 'Returned')][string] $ProductStage,
+        [Parameter(Mandatory = $true)][bool] $ProductRollbackFailed,
+        [Parameter(Mandatory = $true)][bool] $PreviousRecordExists,
+        [Parameter(Mandatory = $true)][string] $RecordOutcome,
+        [Parameter(Mandatory = $true)][string] $RecordPath,
+        [AllowEmptyString()][string] $PreviousRecordCopyPath,
+        [Parameter(Mandatory = $true)][string] $ServiceName,
+        [AllowEmptyString()][string] $ServiceStatus,
+        [Parameter(Mandatory = $true)][string] $ConfigurationPath,
+        [AllowEmptyString()][string] $JourneyRuntimeEnabled,
+        [bool] $Rollback,
+        [bool] $PackagesSwapped,
+        [AllowEmptyString()][string] $PackageRoot,
+        [AllowEmptyString()][string] $PreviousRoot
+    )
+    $lines = [Collections.Generic.List[string]]::new()
+    $lines.Add('PARALLEL_INSTALL_FAILED_STATE: what this run changed that is still changed, and how to undo it.')
+
+    $copy = [string]::IsNullOrWhiteSpace($PreviousRecordCopyPath) ? '(no copy was saved)' : $PreviousRecordCopyPath
+    $floor = '19-deploy-control-server-parallel.ps1 holds the next deployment to the admission policy version of that record'
+    if ($RecordOutcome -ceq 'Restored') {
+        $lines.Add("INSTALLED_RECORD=RESTORED: $RecordPath is the previous run's record again; this run's definition was never " +
+            "installed (the run stopped before the product script, or the product script rolled itself back). A copy is kept at $copy.")
+    } elseif ($RecordOutcome -like 'RestoreFailed:*') {
+        $lines.Add("INSTALLED_RECORD=NOT_RESTORED: putting the previous record back failed ($($RecordOutcome.Substring('RestoreFailed:'.Length).Trim())). " +
+            "$RecordPath still names this run's definition, which was never installed. Copy $copy over it by hand; until then $floor.")
+    } elseif (-not $PreviousRecordExists) {
+        $lines.Add("INSTALLED_RECORD=NEW (first install, nothing to put back): $RecordPath names this run's definition, so " +
+            'Uninstall-ParallelInstanceLocal.ps1 finds what to remove.')
+    } elseif ($ProductStage -ceq 'Returned') {
+        $lines.Add("INSTALLED_RECORD=NEW: the product script installed this run's binaries, so $RecordPath names this run's " +
+            "definition, which matches them. The previous record is kept at $copy.")
+    } elseif ($ProductRollbackFailed) {
+        $lines.Add("INSTALLED_RECORD=NEW, STATE UNKNOWN: the product script's own rollback failed too, so it is not known whether " +
+            "this run's binaries or the previous ones are installed. $RecordPath names this run's definition. If you restore the " +
+            "previous version by hand (the product script's message above has the steps), also copy $copy over $RecordPath; " +
+            "otherwise $floor.")
+    } else {
+        $lines.Add("INSTALLED_RECORD=NEW: $RecordPath names this run's definition (outcome '$RecordOutcome'). The previous record is kept at $copy.")
+    }
+
+    $status = [string]::IsNullOrWhiteSpace($ServiceStatus) ? 'absent' : $ServiceStatus
+    $value = [string]::IsNullOrWhiteSpace($JourneyRuntimeEnabled) ? '(unreadable)' : $JourneyRuntimeEnabled
+    if ($ProductStage -cne 'NotStarted' -and $value -ieq 'false') {
+        $lines.Add("JOURNEY_RUNTIME=false in $ConfigurationPath (service '$ServiceName': $status): this instance places no orders. " +
+            'An upgrade sets it false before the product script and the configuration step holds it so until the read-back (a value ' +
+            'an earlier failed run left reads the same); it is left so on purpose: false is the safe direction, and turning ' +
+            'it on is the release step with its read-backs, which only a deployment that completes runs. Do not edit it to true by hand. ' +
+            'It comes back with the next deployment that completes: redeploy the commit that is running now, or a fixed package. ' +
+            'The upgrade (and -Rollback) runs the Update-ControlServerLocal.ps1 inside the package it installs, not this installer''s: a ' +
+            'package older than control-server#605 fails again at the same .Count, so then only a package that contains that fix recovers it.')
+    } else {
+        $lines.Add("JOURNEY_RUNTIME=$value in $ConfigurationPath (service '$ServiceName': $status).")
+    }
+
+    if ($Rollback -and $PackagesSwapped -and $ProductStage -cne 'Returned') {
+        $lines.Add("PACKAGE_DIRECTORIES_SWAPPED: this -Rollback moved the generation to roll back to into $PackageRoot and the running " +
+            "one to $PreviousRoot before the product script ran, and did not move them back. To undo, with the service as it is: " +
+            "Move-Item -LiteralPath '$PackageRoot' -Destination '$PackageRoot.undo'; Move-Item -LiteralPath '$PreviousRoot' -Destination '$PackageRoot'; " +
+            "Move-Item -LiteralPath '$PackageRoot.undo' -Destination '$PreviousRoot'.")
+    }
+    # Always two lines or more; callers collect it with @(...) all the same.
+    return $lines.ToArray()
 }
 
 function Get-ParallelJourneyDispatchState {
@@ -1188,6 +1328,7 @@ Export-ModuleMember -Function @('Get-MvpFingerprint', 'Assert-MvpUntouched', 'Fo
     'Get-ParallelProductUninstallerPath', 'Test-ParallelProductUninstallerPremise', 'Invoke-ParallelProductUninstaller',
     'Update-ParallelInstanceConfigurationFile', 'Set-ParallelInstanceJourneyRuntimeDisabled', 'Set-ParallelInstanceConfigurationFlag',
     'Get-ParallelJourneyDispatchState', 'Invoke-ParallelDispatchGateChange',
-    'Invoke-ParallelProductUpgrade', 'Invoke-ParallelInstanceConfigurationStep', 'Invoke-ParallelJourneyRuntimeRelease',
+    'Invoke-ParallelProductUpgrade', 'Test-ParallelProductRollbackFailed', 'Test-ParallelInstalledRecordRestorable', 'Format-ParallelFailedInstallState',
+    'Invoke-ParallelInstanceConfigurationStep', 'Invoke-ParallelJourneyRuntimeRelease',
     'Get-ParallelFakeMesIngestTaskAction', 'Register-ParallelFakeMesIngestTask', 'Get-ParallelFakeMesIngestTaskReport',
     'Wait-ParallelFakeMesIngestTask', 'Invoke-ParallelFakeMesIngestSeed')

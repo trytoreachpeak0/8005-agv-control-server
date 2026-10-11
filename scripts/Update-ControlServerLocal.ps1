@@ -138,6 +138,12 @@ v2 instance run side by side on factory01 as two ControlServer.Host processes, s
 a "stop ControlServer.Host" instruction stops production. -NotDone says what the refusal left undone,
 -NextSteps what the operator does instead; both are the caller's, because only the caller knows its state.
 
+Returns the lock files it waited on. Collect the result with @(...) or discard it with $null =: with no lock file
+PowerShell unrolls the returned array to $null and with one to a bare string, and under Set-StrictMode -- which
+Install-ParallelInstanceLocal.ps1 sets, and both scripts inherit there -- .Count on either throws (control-server#605).
+scripts/Test-DataRootLockWait.ps1 checks every call. Not `return ,$lockFiles`: that hands a caller who does write
+@(...) a one-element array holding the array, so the count would always be 1.
+
 Keep this function identical in Update-ControlServerLocal.ps1 and Install-ControlServerLocal.ps1;
 scripts/Test-DataRootLockWait.ps1 compares the two.
 #>
@@ -253,16 +259,20 @@ function Convert-RetainedConfigurationToPlaintext([string]$Path) {
         @{ Section = 'OnboardTransport'; Key = 'serverCertificatePasswordEnvironmentVariable' },
         @{ Section = 'OnboardTransport'; Key = 'allowInsecureLoopback' },
         @{ Section = 'OnboardSafetyProjection'; Key = 'requireHttps' })) {
-        $section = $configuration.$($removal.Section)
-        if ($null -ne $section -and $section.PSObject.Properties.Name -contains $removal.Key) {
+        # Through PSObject.Properties, not $configuration.<Section>: under Set-StrictMode an absent section throws
+        # there instead of reading $null (control-server#605).
+        $section = $configuration.PSObject.Properties[$removal.Section]?.Value
+        # @(... ForEach-Object Name): on an empty section (`{}`) .Properties.Name throws under StrictMode too.
+        if ($null -ne $section -and @($section.PSObject.Properties | ForEach-Object Name) -contains $removal.Key) {
             $section.PSObject.Properties.Remove($removal.Key)
             $removedKeys.Add("$($removal.Section):$($removal.Key)")
         }
     }
     $healthUrlRewritten = $false
-    if ($null -ne $configuration.Health -and $configuration.Health.url -is [string] -and
-        $configuration.Health.url.StartsWith('https://', [StringComparison]::OrdinalIgnoreCase)) {
-        $configuration.Health.url = 'http://' + $configuration.Health.url.Substring('https://'.Length)
+    $health = $configuration.PSObject.Properties['Health']?.Value
+    $healthUrl = $health -is [psobject] ? $health.PSObject.Properties['url']?.Value : $null
+    if ($healthUrl -is [string] -and $healthUrl.StartsWith('https://', [StringComparison]::OrdinalIgnoreCase)) {
+        $health.url = 'http://' + $healthUrl.Substring('https://'.Length)
         $healthUrlRewritten = $true
     }
     [IO.File]::WriteAllText(
@@ -272,7 +282,8 @@ function Convert-RetainedConfigurationToPlaintext([string]$Path) {
     return [ordered]@{
         removedKeys = @($removedKeys)
         healthUrlRewritten = $healthUrlRewritten
-        healthUrl = $configuration.Health.url
+        # Absent is $null, which the caller refuses with its own message.
+        healthUrl = $health -is [psobject] ? $health.PSObject.Properties['url']?.Value : $null
     }
 }
 
@@ -299,11 +310,12 @@ try {
     Wait-ServiceState 'Stopped'
     $serviceStopped = $true
     Write-Diagnostic 'service-stopped'
-    $releasedLocks = Wait-DataRootReleased -Root $dataRoot -InstallPath $installPath -AfterServiceStop `
+    # @(...), not a bare call (control-server#605): see the function's description.
+    $releasedLocks = @(Wait-DataRootReleased -Root $dataRoot -InstallPath $installPath -AfterServiceStop `
         -NotDone '备份数据目录、也没有换二进制' `
         -NextSteps ("安装目录与数据目录都没动，仍是升级前的版本。按上面的命令确认本实例的 Host 已经退出（没有输出）；" +
             "本脚本随后会尝试把服务起回来，但旧进程还占着库时新起的进程也会拒绝启动，所以之后要看 Get-Service '$serviceName'，" +
-            "没在运行就 Start-Service '$serviceName' 并读回 /health/live。服务恢复后再重新执行本脚本升级。")
+            "没在运行就 Start-Service '$serviceName' 并读回 /health/live。服务恢复后再重新执行本脚本升级。"))
     Write-Diagnostic ("data-root-released lockFiles={0}" -f $releasedLocks.Count)
 
     New-Item -ItemType Directory -Path $backupPath -Force | Out-Null

@@ -141,6 +141,58 @@ function Assert-Administrator {
     }
 }
 
+# ------------------------------------------------- a failed run's leftovers ---
+
+# control-server#605: how far a failed run got, for Write-FailedInstallState.
+$recordWritten = $false
+$previousRecordBytes = $null
+$previousRecordCopy = ''
+$productStage = 'NotStarted'
+$packagesSwapped = $false
+
+function Write-FailedInstallState {
+    <#
+        control-server#605. A failed run after the installed definition was recorded: puts the previous record back
+        when the instance is where it was (Test-ParallelInstalledRecordRestorable), then warns what is still changed
+        and how to undo it (Format-ParallelFailedInstallState). Never throws: it runs on the way out of a failure,
+        and a throw here would replace the real error.
+    #>
+    param([Management.Automation.ErrorRecord] $Failure)
+    try {
+        $rollbackFailed = Test-ParallelProductRollbackFailed -Exception $Failure.Exception
+        $restorable = Test-ParallelInstalledRecordRestorable -ProductStage $productStage -ProductRollbackFailed $rollbackFailed `
+            -PreviousRecordExists ($null -ne $previousRecordBytes)
+        $outcome = 'Kept'
+        if ($restorable) {
+            try {
+                [IO.File]::WriteAllBytes($layout.InstalledDefinitionPath, $previousRecordBytes)
+                $readBack = [IO.File]::ReadAllBytes($layout.InstalledDefinitionPath)
+                $outcome = ([Convert]::ToBase64String($readBack) -ceq [Convert]::ToBase64String($previousRecordBytes)) ?
+                    'Restored' : 'RestoreFailed: the file does not read back as the previous record'
+            } catch {
+                $outcome = "RestoreFailed: $($_.Exception.Message)"
+            }
+        }
+        $configurationPath = Join-Path $layout.InstallRoot 'appsettings.Production.json'
+        $journeyRuntime = try {
+            $configuration = [IO.File]::ReadAllText($configurationPath) | ConvertFrom-Json -AsHashtable -Depth 20
+            $section = @($configuration.Keys | Where-Object { $_ -ieq 'JourneyRuntime' }) | Select-Object -First 1
+            $null -eq $section ? '' : [string] $configuration[$section]['enabled']
+        } catch { '' }
+        $lines = @(Format-ParallelFailedInstallState -ProductStage $productStage -ProductRollbackFailed $rollbackFailed `
+                -PreviousRecordExists ($null -ne $previousRecordBytes) -RecordOutcome $outcome -RecordPath $layout.InstalledDefinitionPath `
+                -PreviousRecordCopyPath $previousRecordCopy -ServiceName $layout.ServiceName `
+                -ServiceStatus ([string] (Get-Service -Name $layout.ServiceName -ErrorAction SilentlyContinue)?.Status) `
+                -ConfigurationPath $configurationPath -JourneyRuntimeEnabled $journeyRuntime -Rollback ([bool] $Rollback) `
+                -PackagesSwapped $packagesSwapped -PackageRoot $layout.PackageRoot -PreviousRoot $layout.PreviousRoot)
+        foreach ($line in $lines) { Write-Warning $line }
+    } catch {
+        Write-Warning ("PARALLEL_INSTALL_FAILED_STATE could not be worked out ($($_.Exception.Message)). Check by hand: " +
+            "$($layout.InstalledDefinitionPath) may name a definition that was never installed (the previous one is at " +
+            "'$previousRecordCopy'), and JourneyRuntime.enabled in the installed appsettings.Production.json may be false.")
+    }
+}
+
 # ------------------------------------------------------- the secrets file ---
 
 # deploy-config.json holds the RIoT call API key, the MesIngest shared secret and (control-server#454) the
@@ -149,7 +201,8 @@ function Assert-Administrator {
 # starts before the first check, so a refused definition, a refused config path, a missing
 # elevation and a failure half way through all reach the finally below. Anything that cannot be
 # removed safely is reported as SECRET_FILE_LEFT_BEHIND -- never silently (S1 re-review, round 3).
-# Only the two Import-Module lines above run outside it; without them there is no way to delete
+# Only the two Import-Module lines above run outside it (and the plain assignments and the function
+# definition of the section before this one, which cannot fail); without them there is no way to delete
 # the file by the rules, and the control host checks for it again after this script exits.
 $layout = $null
 $installSucceeded = $false
@@ -362,7 +415,15 @@ try {
     # not what the control host's definition says today (control-server#262 re-review, M2). Written
     # first so that a half-finished first install -- the case the uninstaller is the recovery for --
     # has it too.
+    # control-server#605: the record this replaces, kept so that a failure which leaves the instance where it was can
+    # put it back (Write-FailedInstallState), and saved beside this run's result so it can be put back by hand.
+    if (Test-Path -LiteralPath $layout.InstalledDefinitionPath -PathType Leaf) {
+        $previousRecordBytes = [IO.File]::ReadAllBytes($layout.InstalledDefinitionPath)
+        $previousRecordCopy = Join-Path $resultRoot "install-$runId.previous-installed-instance.json"
+        [IO.File]::WriteAllBytes($previousRecordCopy, $previousRecordBytes)
+    }
     Copy-Item -LiteralPath $InstanceDefinitionPath -Destination $layout.InstalledDefinitionPath -Force
+    $recordWritten = $true
     Write-Step "Installed definition recorded at $($layout.InstalledDefinitionPath)"
 
     function Invoke-ProductInstaller {
@@ -655,8 +716,11 @@ try {
         if (Test-Path -LiteralPath $packageRoot) { Move-Item -LiteralPath $packageRoot -Destination $swap }
         Move-Item -LiteralPath $previousRoot -Destination $packageRoot
         if (Test-Path -LiteralPath $swap) { Move-Item -LiteralPath $swap -Destination $previousRoot }
+        $packagesSwapped = $true
 
+        $productStage = 'Running'
         Invoke-ProductInstaller -PackageDirectory $packageRoot
+        $productStage = 'Returned'
         # The same proof of completion the install path asks for (incremental review, item 4).
         if (-not (Test-Path -LiteralPath $resultPath -PathType Leaf)) {
             throw "The product installer produced no result file at $resultPath."
@@ -732,7 +796,9 @@ try {
 
         # ----------------------------------------------------------------- install ---
 
+        $productStage = 'Running'
         Invoke-ProductInstaller -PackageDirectory $staged
+        $productStage = 'Returned'
 
         if (-not (Test-Path -LiteralPath $resultPath -PathType Leaf)) {
             throw "The product installer produced no result file at $resultPath."
@@ -810,7 +876,10 @@ try {
         $completed = $true
 
     } finally {
-        if (-not $completed) {
+        # Only once the product script returned (control-server#605): a failure before it, or inside it, left the previous
+        # binaries in place, and "remove the partial instance" would uninstall a working one. Write-FailedInstallState
+        # reports those.
+        if (-not $completed -and $productStage -ceq 'Returned') {
             Write-Warning 'The parallel install did NOT complete. The instance may be half-installed.'
             Write-Warning 'Nothing was rolled back after the product installer returned. Check the MVP first:'
             Write-Warning ("  MVP now: " + (Format-MvpFingerprint (Get-MvpFingerprint)))
@@ -834,6 +903,10 @@ try {
     }
 
     $installSucceeded = $true
+} catch {
+    # A failure before the definition was recorded changed nothing that this needs to report; the refusals say so.
+    if ($recordWritten) { Write-FailedInstallState -Failure $_ }
+    throw
 } finally {
     # -Rollback has no config file: the parameter belongs to the Install parameter set.
     if (-not $Rollback) {
