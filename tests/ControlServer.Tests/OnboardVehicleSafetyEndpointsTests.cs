@@ -289,6 +289,179 @@ public sealed class OnboardVehicleSafetyEndpointsTests
         Assert.True(result.Succeeded);
     }
 
+    /// <summary>
+    /// control-server#600：两车实例里每台车用自己的凭据，各自拿到自己的投影。修前接口固定读 JourneyRuntime.VehicleKey，
+    /// agv03 拿到的是 agv02 的投影（cs#566 现场续场二，16-agv03-deploy-onboard.txt）。
+    /// </summary>
+    [Fact]
+    public async Task EachVehicleReadsItsOwnProjectionWithItsOwnCredential()
+    {
+        using TwoCarCredentials cars = new();
+
+        foreach ((string credential, string vehicleKey) in new[]
+                 {
+                     (TwoCarCredentials.Agv02Credential, Agv02Key),
+                     (TwoCarCredentials.Agv03Credential, Agv03Key)
+                 })
+        {
+            DefaultHttpContext context = Request(credential);
+            RecordingSafetyFacts facts = new() { EchoRequestedVehicle = true };
+
+            var result = await OnboardVehicleSafetyEndpoints.HandleAsync(
+                context,
+                facts,
+                Options.Create(TwoCarJourneyOptions()),
+                Options.Create(cars.ProjectionOptions()),
+                NullLoggerFactory.Instance,
+                TestContext.Current.CancellationToken);
+
+            Ok<OnboardVehicleSafetyResponse> ok = Assert.IsType<Ok<OnboardVehicleSafetyResponse>>(result.Result);
+            Assert.Equal(vehicleKey, ok.Value!.VehicleKey);
+            Assert.Equal(vehicleKey, facts.LastVehicleKey);
+            Assert.Equal(1, facts.ReadCount);
+        }
+    }
+
+    /// <summary>control-server#600：agv03 的凭据自称 agv02，被拒（403），不读 RIoT，也不回任何一台车的投影。</summary>
+    [Fact]
+    public async Task AVehicleNamingAnotherVehicleIsRefusedWithoutReadingRiot()
+    {
+        using TwoCarCredentials cars = new();
+        DefaultHttpContext context = Request(TwoCarCredentials.Agv03Credential, "?vehicleKey=" + Agv02Key);
+        RecordingSafetyFacts facts = new() { EchoRequestedVehicle = true };
+
+        var result = await OnboardVehicleSafetyEndpoints.HandleAsync(
+            context,
+            facts,
+            Options.Create(TwoCarJourneyOptions()),
+            Options.Create(cars.ProjectionOptions()),
+            NullLoggerFactory.Instance,
+            TestContext.Current.CancellationToken);
+
+        ProblemHttpResult problem = Assert.IsType<ProblemHttpResult>(result.Result);
+        Assert.Equal(StatusCodes.Status403Forbidden, problem.StatusCode);
+        Assert.Equal(0, facts.ReadCount);
+    }
+
+    /// <summary>control-server#600：车队表外的车号被拒（403），单车与两车配置都一样，不读 RIoT。</summary>
+    [Fact]
+    public async Task AVehicleOutsideTheRosterIsRefusedWithoutReadingRiot()
+    {
+        using TwoCarCredentials cars = new();
+        foreach ((string credential, JourneyRuntimeOptions journey, OnboardSafetyProjectionOptions projection) in new[]
+                 {
+                     (TwoCarCredentials.Agv02Credential, TwoCarJourneyOptions(), cars.ProjectionOptions()),
+                     (TwoCarCredentials.SharedCredential, JourneyOptions(), ProjectionOptions(cars.SharedVariable))
+                 })
+        {
+            DefaultHttpContext context = Request(credential, "?vehicleKey=BROKERX-NOT-IN-ROSTER");
+            RecordingSafetyFacts facts = new() { EchoRequestedVehicle = true };
+
+            var result = await OnboardVehicleSafetyEndpoints.HandleAsync(
+                context,
+                facts,
+                Options.Create(journey),
+                Options.Create(projection),
+                NullLoggerFactory.Instance,
+                TestContext.Current.CancellationToken);
+
+            ProblemHttpResult problem = Assert.IsType<ProblemHttpResult>(result.Result);
+            Assert.Equal(StatusCodes.Status403Forbidden, problem.StatusCode);
+            Assert.Equal(0, facts.ReadCount);
+        }
+    }
+
+    /// <summary>
+    /// control-server#600：单车配置（没有车队表、没有按车凭据）照旧用共享凭据读 JourneyRuntime.VehicleKey；车载端新模板会在
+    /// 地址里带上自己的车号，带对了照旧回投影。
+    /// </summary>
+    [Fact]
+    public async Task ASingleVehicleDeploymentStillAnswersTheSharedCredentialWithOrWithoutItsVehicleKey()
+    {
+        using TwoCarCredentials cars = new();
+        foreach (string? query in new[] { null, "?vehicleKey=VEHICLE-KEY-01" })
+        {
+            DefaultHttpContext context = Request(TwoCarCredentials.SharedCredential, query);
+            RecordingSafetyFacts facts = new() { EchoRequestedVehicle = true };
+
+            var result = await OnboardVehicleSafetyEndpoints.HandleAsync(
+                context,
+                facts,
+                Options.Create(JourneyOptions()),
+                Options.Create(ProjectionOptions(cars.SharedVariable)),
+                NullLoggerFactory.Instance,
+                TestContext.Current.CancellationToken);
+
+            Ok<OnboardVehicleSafetyResponse> ok = Assert.IsType<Ok<OnboardVehicleSafetyResponse>>(result.Result);
+            Assert.Equal("VEHICLE-KEY-01", ok.Value!.VehicleKey);
+            Assert.Equal("VEHICLE-KEY-01", facts.LastVehicleKey);
+        }
+    }
+
+    private const string Agv02Key = "BROKERX-AGV02";
+    private const string Agv03Key = "BROKERX-AGV03";
+
+    private static DefaultHttpContext Request(string credential, string? query = null)
+    {
+        DefaultHttpContext context = new();
+        context.Request.Scheme = "http";
+        context.Request.Headers.Authorization = "Bearer " + credential;
+        if (query is not null) context.Request.QueryString = new QueryString(query);
+        return context;
+    }
+
+    /// <summary>The two-car roster of instance-factory01-v2.two-car-example.json, agv02 primary.</summary>
+    private static JourneyRuntimeOptions TwoCarJourneyOptions() => new()
+    {
+        AgvId = "AGV02",
+        VehicleKey = Agv02Key,
+        Fleet =
+        [
+            new FleetVehicleOptions { AgvId = "AGV02", VehicleKey = Agv02Key, AgvLifecycleGeneration = 1 },
+            new FleetVehicleOptions { AgvId = "AGV03", VehicleKey = Agv03Key, AgvLifecycleGeneration = 1 }
+        ]
+    };
+
+    /// <summary>
+    /// Environment variables for the shared TCP credential and one projection credential per car, each with its own value.
+    /// </summary>
+    private sealed class TwoCarCredentials : IDisposable
+    {
+        public const string SharedCredential = "shared-tcp-credential";
+        public const string Agv02Credential = "agv02-safety-credential";
+        public const string Agv03Credential = "agv03-safety-credential";
+
+        private readonly string suffix = Guid.NewGuid().ToString("N");
+        private readonly List<EnvironmentVariableScope> scopes = [];
+
+        public TwoCarCredentials()
+        {
+            scopes.Add(new EnvironmentVariableScope(SharedVariable, SharedCredential));
+            scopes.Add(new EnvironmentVariableScope(Agv02Variable, Agv02Credential));
+            scopes.Add(new EnvironmentVariableScope(Agv03Variable, Agv03Credential));
+        }
+
+        public string SharedVariable => "CONTROL_SERVER_TEST_SHARED_" + suffix;
+        public string Agv02Variable => "CONTROL_SERVER_TEST_AGV02_" + suffix;
+        public string Agv03Variable => "CONTROL_SERVER_TEST_AGV03_" + suffix;
+
+        public OnboardSafetyProjectionOptions ProjectionOptions() => new()
+        {
+            Enabled = true,
+            CredentialEnvironmentVariable = SharedVariable,
+            VehicleCredentials =
+            [
+                new OnboardSafetyVehicleCredentialOptions { VehicleKey = Agv02Key, CredentialEnvironmentVariable = Agv02Variable },
+                new OnboardSafetyVehicleCredentialOptions { VehicleKey = Agv03Key, CredentialEnvironmentVariable = Agv03Variable }
+            ]
+        };
+
+        public void Dispose()
+        {
+            foreach (EnvironmentVariableScope scope in scopes) scope.Dispose();
+        }
+    }
+
     private static JourneyRuntimeOptions JourneyOptions() => new()
     {
         VehicleKey = "VEHICLE-KEY-01"
@@ -315,6 +488,9 @@ public sealed class OnboardVehicleSafetyEndpointsTests
         public CancellationTokenSource? CancelDuringRead { get; init; }
         public bool ThrowUnaskedCancellation { get; init; }
 
+        /// <summary>Answer with the vehicle that was asked for, as the real read does.</summary>
+        public bool EchoRequestedVehicle { get; init; }
+
         public Task<RiotVehicleSafetyObservation> ReadForOnboardAsync(
             string vehicleKey,
             int listingRereads,
@@ -334,7 +510,7 @@ public sealed class OnboardVehicleSafetyEndpointsTests
                 CancelDuringRead.Cancel();
                 cancellationToken.ThrowIfCancellationRequested();
             }
-            return Task.FromResult(Observation);
+            return Task.FromResult(EchoRequestedVehicle ? Observation with { VehicleKey = vehicleKey } : Observation);
         }
     }
 

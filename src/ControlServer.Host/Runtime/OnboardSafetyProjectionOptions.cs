@@ -37,6 +37,16 @@ public sealed class OnboardSafetyProjectionOptions
     /// once it reread (run 38082575561).
     /// </remarks>
     public int ReadBudgetMilliseconds { get; set; } = 2_000;
+
+    /// <summary>One projection credential per vehicle (control-server#600).</summary>
+    public OnboardSafetyVehicleCredentialOptions[] VehicleCredentials { get; set; } = [];
+}
+
+/// <summary>The environment variable holding one vehicle's projection credential (control-server#600).</summary>
+public sealed class OnboardSafetyVehicleCredentialOptions
+{
+    public string VehicleKey { get; set; } = string.Empty;
+    public string CredentialEnvironmentVariable { get; set; } = string.Empty;
 }
 
 public sealed class OnboardSafetyProjectionOptionsValidator : IValidateOptions<OnboardSafetyProjectionOptions>
