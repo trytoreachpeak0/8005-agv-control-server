@@ -85,6 +85,127 @@ public sealed class G2GateScriptReportLocationTests : IDisposable
         Assert.Contains("SCHEMA_REPORT_MISSING", run.Console, StringComparison.Ordinal);
     }
 
+    /// <summary>
+    /// A failed test run keeps its own exit code and is not reported as a lost report: without the
+    /// validator's report on a failed run there is nothing unusual to shout about.
+    /// </summary>
+    [Fact]
+    public void AFailedRunKeepsItsExitCodeAndIsNotReportedAsALostReport()
+    {
+        GateRun run = Run(output: "failed", reportMode: "lose", testExitCode: 7);
+
+        JsonElement result = run.GateResult(Path.Combine(caller, "failed"));
+        Assert.Equal("FAIL", result.GetProperty("status").GetString());
+        Assert.Equal(7, result.GetProperty("testExitCode").GetInt32());
+        Assert.True(result.GetProperty("schemaConformanceMissing").GetBoolean());
+        Assert.Equal(7, run.ExitCode);
+        Assert.DoesNotContain("SCHEMA_REPORT_MISSING", run.Console, StringComparison.Ordinal);
+    }
+
+    /// <summary>
+    /// The second run into the same relative -Output is refused before anything is written, as it
+    /// was before the path became absolute.
+    /// </summary>
+    [Fact]
+    public void ASecondRunIntoTheSameRelativeOutputIsRefused()
+    {
+        Assert.Equal(0, Run(output: "once", reportMode: "write", testExitCode: 0).ExitCode);
+        string before = File.ReadAllText(Path.Combine(caller, "once", "gate-result.json"));
+
+        GateRun second = Run(output: "once", reportMode: "write", testExitCode: 0);
+
+        Assert.NotEqual(0, second.ExitCode);
+        Assert.Contains("Output directory already exists", second.Console, StringComparison.Ordinal);
+        Assert.Equal(before, File.ReadAllText(Path.Combine(caller, "once", "gate-result.json")));
+    }
+
+    /// <summary>
+    /// A relative -ProtocolManifest is resolved against the caller too.
+    /// </summary>
+    [Fact]
+    public void ARelativeProtocolManifestIsResolvedAgainstTheCaller()
+    {
+        string relative = Path.GetRelativePath(caller, ProtocolIdentityArchitectureTests.ManifestPath());
+        Assert.False(Path.IsPathRooted(relative), "the temp directory and the repository are on different drives.");
+
+        GateRun run = Run(output: "manifest", reportMode: "write", testExitCode: 0, protocolManifest: relative);
+
+        Assert.Equal(0, run.ExitCode);
+        Assert.Equal("PASS", run.GateResult(Path.Combine(caller, "manifest")).GetProperty("status").GetString());
+    }
+
+    /// <summary>
+    /// The guard against moving the conversion back downstream: both path parameters are made
+    /// absolute before the script first uses either, and before it creates the evidence directory or
+    /// starts dotnet. It shows the conversion is written first, not that it is right -- the tests
+    /// above and the run recorded under evidence/cs559/ show that.
+    /// </summary>
+    [Fact]
+    public void BothPathsAreMadeAbsoluteBeforeTheirFirstUse()
+    {
+        string path = Path.Combine(ProtocolIdentityArchitectureTests.RepositoryRoot(), "scripts", "test-wire-to-gate.ps1");
+        string text = File.ReadAllText(path);
+
+        // Parsed by pwsh itself so that comments and strings are not mistaken for code: each line is
+        // "<kind>|<offset>|<text>" for the conversions, the evidence directory, the dotnet calls and
+        // every read of the two variables.
+        string listing = RunPwsh(
+            "$errors = $null; $ast = [System.Management.Automation.Language.Parser]::ParseFile(" +
+            $"'{path.Replace("'", "''", StringComparison.Ordinal)}', [ref]$null, [ref]$errors); " +
+            "\"errors|0|$($errors.Count)\"; " +
+            "$ast.EndBlock.FindAll({ param($n) $n -is [System.Management.Automation.Language.AssignmentStatementAst] -and " +
+            "$n.Left.VariablePath.UserPath -in 'Output','ProtocolManifest' -and $n.Right.Extent.Text -like '*GetUnresolvedProviderPathFromPSPath*' }, $true) | " +
+            "ForEach-Object { \"convert-$($_.Left.VariablePath.UserPath)|$($_.Extent.StartOffset)|\" }; " +
+            "$ast.EndBlock.FindAll({ param($n) $n -is [System.Management.Automation.Language.VariableExpressionAst] -and " +
+            "$n.VariablePath.UserPath -in 'Output','ProtocolManifest' -and -not ($n.Parent -is [System.Management.Automation.Language.AssignmentStatementAst] -and $n.Parent.Left -eq $n) }, $true) | " +
+            "ForEach-Object { \"use-$($_.VariablePath.UserPath)|$($_.Extent.StartOffset)|\" }; " +
+            "$ast.EndBlock.FindAll({ param($n) $n -is [System.Management.Automation.Language.CommandAst] -and " +
+            "($n.GetCommandName() -eq 'New-Item' -or $n.CommandElements[0].Extent.Text -eq '$dotnet') }, $true) | " +
+            "ForEach-Object { \"command|$($_.Extent.StartOffset)|$($_.CommandElements[0].Extent.Text)\" }");
+        List<(string Kind, int Offset)> found = [.. listing
+            .Split('\n', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries)
+            .Select(line => line.Split('|'))
+            .Select(parts => (parts[0], int.Parse(parts[1], System.Globalization.CultureInfo.InvariantCulture)))];
+
+        Assert.Contains("errors|0|0", listing, StringComparison.Ordinal);
+        foreach (string name in new[] { "Output", "ProtocolManifest" })
+        {
+            int[] conversions = [.. found.Where(item => item.Kind == "convert-" + name).Select(item => item.Offset)];
+            Assert.True(conversions.Length == 1, $"expected one conversion of ${name}, found {conversions.Length}. {listing}");
+            int conversion = conversions[0];
+            // The conversion's own right-hand side reads the variable, after the statement's start offset.
+            Assert.False(
+                found.Any(item => item.Kind == "use-" + name && item.Offset < conversion),
+                $"${name} is read before it is made absolute. {listing}");
+            Assert.False(
+                found.Any(item => item.Kind == "command" && item.Offset < conversion),
+                $"New-Item or dotnet runs before ${name} is made absolute. {listing}");
+        }
+        Assert.Contains("GetUnresolvedProviderPathFromPSPath", text, StringComparison.Ordinal);
+    }
+
+    private static string RunPwsh(string command)
+    {
+        ProcessStartInfo start = new("pwsh")
+        {
+            RedirectStandardOutput = true,
+            RedirectStandardError = true,
+            UseShellExecute = false,
+            StandardOutputEncoding = Encoding.UTF8,
+            StandardErrorEncoding = Encoding.UTF8,
+        };
+        foreach (string argument in new[] { "-NoProfile", "-NonInteractive", "-Command", "$ErrorActionPreference = 'Stop'; " + command })
+        {
+            start.ArgumentList.Add(argument);
+        }
+        using Process process = Process.Start(start) ?? throw new InvalidOperationException("pwsh did not start.");
+        string stdout = process.StandardOutput.ReadToEnd();
+        string stderr = process.StandardError.ReadToEnd();
+        process.WaitForExit();
+        Assert.True(process.ExitCode == 0, $"pwsh failed (exit {process.ExitCode}): {stdout}{stderr}");
+        return stdout;
+    }
+
     private GateRun Run(string output, string reportMode, int testExitCode, string? protocolManifest = null)
     {
         string root = ProtocolIdentityArchitectureTests.RepositoryRoot();
