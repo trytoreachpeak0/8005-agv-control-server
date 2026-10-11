@@ -87,6 +87,18 @@ Assert-Case -Name 'rounds-say-whether-they-counted-with-lane-and-wall-seconds' `
     -Condition ($actualRounds -eq $expectedRounds) `
     -Detail "expected $expectedRounds; got $actualRounds"
 
+
+# Against the fixture's table (vehicle-full-still-appends-before-departure, create-gate, retired-scenario):
+# ran in a counted round but not in the table -- the scenario whose only run failed included, since it ran --
+# and in the table but run in no counted round. Scenarios only the skipped rounds ran do not count as run.
+$expectedRan = 'same-direction-die-to-oven-journey, session-established-while-moving, station-deadline-sublot-timeout, structural-block-oversized-demand'
+$actualRan = if ($result) { @($result.RanNotRegistered) -join ', ' }
+Assert-Case -Name 'ran-but-not-in-the-table' -Condition ($actualRan -eq $expectedRan) `
+    -Detail "expected $expectedRan; got $actualRan"
+$actualListed = if ($result) { @($result.RegisteredNotRan) -join ', ' }
+Assert-Case -Name 'in-the-table-but-not-run' -Condition ($actualListed -eq 'retired-scenario') `
+    -Detail "expected retired-scenario; got $actualListed"
+
 if ($failures.Count -gt 0) {
     [Console]::Error.WriteLine("L2_LANE_ESTIMATES_SELFTEST_FAILED: $($failures -join ', ')")
     exit 1
