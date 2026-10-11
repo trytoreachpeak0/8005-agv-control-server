@@ -1,0 +1,74 @@
+mutation M1-no-conversion
+--- diff ---
+diff --git a/scripts/test-wire-to-gate.ps1 b/scripts/test-wire-to-gate.ps1
+index 3ad2af986..4b2406619 100644
+--- a/scripts/test-wire-to-gate.ps1
++++ b/scripts/test-wire-to-gate.ps1
+@@ -16,8 +16,6 @@ $ErrorActionPreference = 'Stop'
+ # output (control-server#559). Fixing it at the entry, not where the variable is set, keeps every later
+ # use of either path from having to know. Same conversion as the G3 runners (control-server#264).
+ # G2GateScriptReportLocationTests runs this script against a stand-in test host to keep it so.
+-$Output = $ExecutionContext.SessionState.Path.GetUnresolvedProviderPathFromPSPath($Output)
+-$ProtocolManifest = $ExecutionContext.SessionState.Path.GetUnresolvedProviderPathFromPSPath($ProtocolManifest)
+ if (-not (Test-Path -LiteralPath $ProtocolManifest -PathType Leaf)) { throw "Protocol manifest not found: $ProtocolManifest" }
+ $root = Split-Path -Parent $PSScriptRoot
+ 
+Test run for C:\Users\szy\Desktop\8005-workspace-v2\worktrees\cs559-8005-agv-control-server\tests\ControlServer.Tests\bin\Release\net8.0\win-x64\ControlServer.Tests.dll (.NETCoreApp,Version=v8.0)
+VSTest version 17.11.1 (x64)
+
+Starting test execution, please wait...
+A total of 1 test files matched the specified pattern.
+[xUnit.net 00:00:10.52]     ControlServer.Tests.G2GateScriptReportLocationTests.BothPathsAreMadeAbsoluteBeforeTheirFirstUse [FAIL]
+  Failed ControlServer.Tests.G2GateScriptReportLocationTests.BothPathsAreMadeAbsoluteBeforeTheirFirstUse [1 s]
+  Error Message:
+   expected one conversion of $Output, found 0. errors|0|0
+use-ProtocolManifest|1126|
+use-ProtocolManifest|1199|
+use-ProtocolManifest|2833|
+use-ProtocolManifest|3107|
+use-Output|3920|
+use-Output|3971|
+use-Output|5750|
+use-Output|6298|
+use-Output|6458|
+use-Output|6632|
+use-Output|10571|
+command|5313|$dotnet
+command|5715|New-Item
+command|6318|$dotnet
+
+  Stack Trace:
+     at ControlServer.Tests.G2GateScriptReportLocationTests.BothPathsAreMadeAbsoluteBeforeTheirFirstUse() in C:\Users\szy\Desktop\8005-workspace-v2\worktrees\cs559-8005-agv-control-server\tests\ControlServer.Tests\G2GateScriptReportLocationTests.cs:line 174
+   at System.RuntimeMethodHandle.InvokeMethod(Object target, Void** arguments, Signature sig, Boolean isConstructor)
+   at System.Reflection.MethodBaseInvoker.InvokeWithNoArgs(Object obj, BindingFlags invokeAttr)
+[xUnit.net 00:00:14.77]     ControlServer.Tests.G2GateScriptReportLocationTests.ARelativeOutputGetsTheSchemaReportNextToTheGateResult [FAIL]
+  Failed ControlServer.Tests.G2GateScriptReportLocationTests.ARelativeOutputGetsTheSchemaReportNextToTheGateResult [4 s]
+  Error Message:
+   schema-coverage.json is not under -Output. SCHEMA_REPORT_MISSING: the tests exited 0 but there is no evidence\rel\schema-coverage.json. The outbound schema report was written somewhere else or not at all, so this slice is recorded as FAIL.
+
+  Stack Trace:
+     at ControlServer.Tests.G2GateScriptReportLocationTests.ARelativeOutputGetsTheSchemaReportNextToTheGateResult() in C:\Users\szy\Desktop\8005-workspace-v2\worktrees\cs559-8005-agv-control-server\tests\ControlServer.Tests\G2GateScriptReportLocationTests.cs:line 56
+   at System.RuntimeMethodHandle.InvokeMethod(Object target, Void** arguments, Signature sig, Boolean isConstructor)
+   at System.Reflection.MethodBaseInvoker.InvokeWithNoArgs(Object obj, BindingFlags invokeAttr)
+[xUnit.net 00:00:19.19]     ControlServer.Tests.G2GateScriptReportLocationTests.ARelativeProtocolManifestIsResolvedAgainstTheCaller [FAIL]
+  Failed ControlServer.Tests.G2GateScriptReportLocationTests.ARelativeProtocolManifestIsResolvedAgainstTheCaller [1 s]
+  Error Message:
+   Assert.Equal() Failure: Values differ
+Expected: 0
+Actual:   1
+  Stack Trace:
+     at ControlServer.Tests.G2GateScriptReportLocationTests.ARelativeProtocolManifestIsResolvedAgainstTheCaller() in C:\Users\szy\Desktop\8005-workspace-v2\worktrees\cs559-8005-agv-control-server\tests\ControlServer.Tests\G2GateScriptReportLocationTests.cs:line 133
+   at System.RuntimeMethodHandle.InvokeMethod(Object target, Void** arguments, Signature sig, Boolean isConstructor)
+   at System.Reflection.MethodBaseInvoker.InvokeWithNoArgs(Object obj, BindingFlags invokeAttr)
+[xUnit.net 00:00:21.12]     ControlServer.Tests.G2GateScriptReportLocationTests.ASecondRunIntoTheSameRelativeOutputIsRefused [FAIL]
+  Failed ControlServer.Tests.G2GateScriptReportLocationTests.ASecondRunIntoTheSameRelativeOutputIsRefused [1 s]
+  Error Message:
+   Assert.Equal() Failure: Values differ
+Expected: 0
+Actual:   1
+  Stack Trace:
+     at ControlServer.Tests.G2GateScriptReportLocationTests.ASecondRunIntoTheSameRelativeOutputIsRefused() in C:\Users\szy\Desktop\8005-workspace-v2\worktrees\cs559-8005-agv-control-server\tests\ControlServer.Tests\G2GateScriptReportLocationTests.cs:line 112
+   at System.RuntimeMethodHandle.InvokeMethod(Object target, Void** arguments, Signature sig, Boolean isConstructor)
+   at System.Reflection.MethodBaseInvoker.InvokeWithNoArgs(Object obj, BindingFlags invokeAttr)
+
+Failed!  - Failed:     4, Passed:     2, Skipped:     0, Total:     6, Duration: 15 s - ControlServer.Tests.dll (net8.0)
