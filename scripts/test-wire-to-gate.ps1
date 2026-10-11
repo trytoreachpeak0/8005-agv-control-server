@@ -8,6 +8,16 @@ param(
 )
 
 $ErrorActionPreference = 'Stop'
+# Both paths are made absolute here, against the location the script was called from, and only the
+# absolute values are used below. -Output in particular leaves this process: it is handed to the test
+# host as WIRE_TO_GATE_SCHEMA_REPORT_DIR, and the test host resolves a relative path against its own
+# working directory under bin/. Batch 8's exit ran all fifteen slices that way, and every
+# gate-result.json said PASS with schemaConformance null while schema-coverage.json sat in the build
+# output (control-server#559). Fixing it at the entry, not where the variable is set, keeps every later
+# use of either path from having to know. Same conversion as the G3 runners (control-server#264).
+# G2GateScriptReportLocationTests runs this script against a stand-in test host to keep it so.
+$Output = $ExecutionContext.SessionState.Path.GetUnresolvedProviderPathFromPSPath($Output)
+$ProtocolManifest = $ExecutionContext.SessionState.Path.GetUnresolvedProviderPathFromPSPath($ProtocolManifest)
 if (-not (Test-Path -LiteralPath $ProtocolManifest -PathType Leaf)) { throw "Protocol manifest not found: $ProtocolManifest" }
 $root = Split-Path -Parent $PSScriptRoot
 
@@ -90,15 +100,32 @@ try {
 }
 $schemaCoveragePath = Join-Path $Output 'schema-coverage.json'
 $schemaCoverage = if (Test-Path -LiteralPath $schemaCoveragePath) { Get-Content -LiteralPath $schemaCoveragePath -Raw | ConvertFrom-Json } else { $null }
+# A clean exit with no report is lost evidence, never "this slice sent nothing" (control-server#559).
+# Read from the code, not assumed: tools/ControlServer.SchemaConformance writes schema-coverage.json on
+# every run that gets as far as validating, zero lines included (linesChecked 0), and every way it stops
+# earlier returns non-zero, which OutboundSchemaConformance turns into a failed test run. The onboard
+# side's run-w2g-g2.ps1 does record null for a slice that sends nothing; this side has no such case, so
+# there is nothing to tell apart and the missing report is a FAIL. The check did run when the tests
+# exited 0 -- a violation would have failed them -- but a PASS whose proof of that is gone is not
+# evidence an exit can cite.
+$schemaReportMissing = $null -eq $schemaCoverage
+$schemaReportLost = $testExitCode -eq 0 -and $schemaReportMissing
+if ($schemaReportLost) {
+    [Console]::Error.WriteLine(
+        "SCHEMA_REPORT_MISSING: the tests exited 0 but $schemaCoveragePath is missing or empty. The outbound " +
+        "schema report was written somewhere else or not at all, so this slice is recorded as FAIL.")
+}
 $result = [ordered]@{
     # 1.2.0, not 1.1.0: this run adds schemaConformance. Additive again, and for the same reason the
     # version moved to 1.1.0 -- a consumer that cannot tell the two shapes apart cannot tell an
     # evidence directory that had its outbound lines checked against the contract from one that did
     # not, and from control-server#85 on, CONTROL_SERVER_G2 means both.
-    schemaVersion = '1.2.0'
+    # 1.3.0 adds schemaConformanceMissing, and with it a FAIL whose testExitCode is 0. A consumer that
+    # inferred status from testExitCode reads a 1.3.0 result wrongly; read status.
+    schemaVersion = '1.3.0'
     gate = $Gate
     integrationSliceId = $Slice
-    status = if ($testExitCode -eq 0) { 'PASS' } else { 'FAIL' }
+    status = if ($testExitCode -eq 0 -and -not $schemaReportLost) { 'PASS' } else { 'FAIL' }
     startedAt = $startedAt.ToString('O')
     finishedAt = ([DateTimeOffset]::UtcNow).ToString('O')
     implementationRepository = '8005-agv-control-server'
@@ -116,8 +143,8 @@ $result = [ordered]@{
     selectedTestCount = $selected.Count
     vectorIds = @($sliceEntry.vectorIds)
     # What the outbound schema check made of this slice's traffic. $null means the report is not
-    # there, which is itself worth recording: an evidence directory whose schemaConformance is null
-    # says the slice ran without its lines being compared with the contract.
+    # there: schemaConformanceMissing below says so, and on a run whose tests passed status is FAIL.
+    # It does not mean the lines went unchecked -- see where $schemaReportLost is computed.
     schemaConformance = if ($schemaCoverage) {
         [ordered]@{
             linesChecked = $schemaCoverage.linesChecked
@@ -128,7 +155,11 @@ $result = [ordered]@{
     } else {
         $null
     }
+    # True whenever schema-coverage.json is absent. On a run whose tests failed that is expected (the
+    # validator stops before writing it); on a run whose tests passed it is what made status FAIL.
+    schemaConformanceMissing = $schemaReportMissing
     testExitCode = $testExitCode
 }
 $result | ConvertTo-Json | Set-Content -LiteralPath (Join-Path $Output 'gate-result.json') -Encoding utf8NoBOM
-exit $testExitCode
+# Non-zero whenever status is FAIL, so a caller that reads only the exit code is not told PASS.
+exit ($schemaReportLost ? 1 : $testExitCode)

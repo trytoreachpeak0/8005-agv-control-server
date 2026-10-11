@@ -1,0 +1,56 @@
+mutation M2-output-converted-after-new-item
+--- diff ---
+diff --git a/scripts/test-wire-to-gate.ps1 b/scripts/test-wire-to-gate.ps1
+index 3ad2af986..52c5c30fd 100644
+--- a/scripts/test-wire-to-gate.ps1
++++ b/scripts/test-wire-to-gate.ps1
+@@ -16,7 +16,6 @@ $ErrorActionPreference = 'Stop'
+ # output (control-server#559). Fixing it at the entry, not where the variable is set, keeps every later
+ # use of either path from having to know. Same conversion as the G3 runners (control-server#264).
+ # G2GateScriptReportLocationTests runs this script against a stand-in test host to keep it so.
+-$Output = $ExecutionContext.SessionState.Path.GetUnresolvedProviderPathFromPSPath($Output)
+ $ProtocolManifest = $ExecutionContext.SessionState.Path.GetUnresolvedProviderPathFromPSPath($ProtocolManifest)
+ if (-not (Test-Path -LiteralPath $ProtocolManifest -PathType Leaf)) { throw "Protocol manifest not found: $ProtocolManifest" }
+ $root = Split-Path -Parent $PSScriptRoot
+@@ -85,6 +84,7 @@ if ($selected.Count -eq 0) {
+ }
+ 
+ New-Item -ItemType Directory -Path $Output | Out-Null
++$Output = $ExecutionContext.SessionState.Path.GetUnresolvedProviderPathFromPSPath($Output)
+ $startedAt = [DateTimeOffset]::UtcNow
+ # Every line the slice's tests send is validated against the protocol's JSON Schemas when the run ends
+ # (tests/ControlServer.Tests/OutboundSchemaConformance.cs). A violation makes dotnet test exit
+Test run for C:\Users\szy\Desktop\8005-workspace-v2\worktrees\cs559-8005-agv-control-server\tests\ControlServer.Tests\bin\Release\net8.0\win-x64\ControlServer.Tests.dll (.NETCoreApp,Version=v8.0)
+VSTest version 17.11.1 (x64)
+
+Starting test execution, please wait...
+A total of 1 test files matched the specified pattern.
+[xUnit.net 00:00:14.63]     ControlServer.Tests.G2GateScriptReportLocationTests.BothPathsAreMadeAbsoluteBeforeTheirFirstUse [FAIL]
+  Failed ControlServer.Tests.G2GateScriptReportLocationTests.BothPathsAreMadeAbsoluteBeforeTheirFirstUse [3 s]
+  Error Message:
+   $Output is read before it is made absolute. errors|0|0
+convert-ProtocolManifest|1093|
+convert-Output|5882|
+use-ProtocolManifest|1185|
+use-ProtocolManifest|1238|
+use-ProtocolManifest|1311|
+use-ProtocolManifest|2945|
+use-ProtocolManifest|3219|
+use-Output|4032|
+use-Output|4083|
+use-Output|5862|
+use-Output|5964|
+use-Output|6502|
+use-Output|6662|
+use-Output|6836|
+use-Output|10775|
+command|5425|$dotnet
+command|5827|New-Item
+command|6522|$dotnet
+
+  Stack Trace:
+     at ControlServer.Tests.G2GateScriptReportLocationTests.BothPathsAreMadeAbsoluteBeforeTheirFirstUse() in C:\Users\szy\Desktop\8005-workspace-v2\worktrees\cs559-8005-agv-control-server\tests\ControlServer.Tests\G2GateScriptReportLocationTests.cs:line 177
+   at System.RuntimeMethodHandle.InvokeMethod(Object target, Void** arguments, Signature sig, Boolean isConstructor)
+   at System.Reflection.MethodBaseInvoker.InvokeWithNoArgs(Object obj, BindingFlags invokeAttr)
+
+Failed!  - Failed:     1, Passed:     5, Skipped:     0, Total:     6, Duration: 28 s - ControlServer.Tests.dll (net8.0)

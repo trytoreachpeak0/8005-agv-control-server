@@ -1,0 +1,4 @@
+#Requires -Version 7
+# Stand-in for dotnet that loses the schema report (same as G2GateScriptReportLocationTests' "lose" mode).
+if ($args -contains '--list-tests') { '    ControlServer.Tests.FakeSlice.Selected'; exit 0 }
+exit 0
