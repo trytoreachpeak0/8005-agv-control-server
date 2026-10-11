@@ -681,10 +681,6 @@ jobs:
           # Runs is each scenario's consecutive count, as in the scenarios job. Batch 6's exit (control-server#165)
           # ran real-onboard-expected-action-overdue and real-onboard-durable-ack-lost three times and the
           # rest once; that is what `consecutive` reproduces. Adding a real-onboard scenario: one line.
-          #
-          # real-onboard-recovery-entry-missing is absent on purpose: it is red by design until the
-          # recovery entry it asserts exists (scripts/l2/README.md), and a round that is always red
-          # reads as noise and trains nobody to look.
           $scenarios = @(
               @{ Name = 'real-onboard-normal-load';                           Runs = 1 }
               @{ Name = 'real-onboard-clock-skew';                            Runs = 1 }
@@ -741,6 +737,11 @@ jobs:
               # control-server#573: the same churn from arrival at the pickup on, so the load's WAITING_OPERATOR progress
               # still reaches the server (before the fix it was lost to a not-ready flash, run 38067577157).
               @{ Name = 'real-onboard-load-under-listing-churn';             Runs = 1 }
+              # control-server#250: after a load the real onboard reports UNKNOWN the journey blocks and the onboard offers a
+              # recovery entry. It was kept out of this list as red by design; that root cause was fixed on 2026-09-04
+              # (docs/defects/20260904-recovery-required-never-reaches-session-state.md), the scenario passed on the rig on
+              # 2026-09-13 (evidence/l2/20260913-b2close-real-onboard-recovery-entry-missing-001) and again in CI (cs#250).
+              @{ Name = 'real-onboard-recovery-entry-missing';               Runs = 1 }
           )
 
           # Registered before anything can fail, so the upload step always has a path.
