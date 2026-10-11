@@ -110,9 +110,10 @@ jobs:
       # How many port slots the scenarios run in side by side (scripts/l2/L2Lanes.psm1, control-server#130).
       # Four of the eight slots besides slot 0 (eight since control-server#630). Memory, not slots, is what
       # holds it at four: a lane commits about 0.7 GB, an onboard-hmi CI round about 2.9 GB, and past
-      # win11-01's commit limit (16 GiB since 2026-09-19) an allocation fails outright rather than slowing
-      # down. Raise it only after measuring the commit peak with the other repositories' jobs running too
-      # (the v2 workspace's ci-research/memory-budget.md). 1 is the old serial run, in slot 1.
+      # win11-01's commit limit (18.5 GiB since 2026-10-11: 10.5 GB of memory, 8 GB of page file) an
+      # allocation fails outright rather than slowing down. Raise it only after measuring the commit peak
+      # with the other repositories' jobs running too (the v2 workspace's ci-research/memory-budget.md).
+      # 1 is the old serial run, in slot 1.
       L2_LANES: '4'
       L2_ONLY: ${{ inputs.scenarios || '' }}
       L2_PR_NUMBER: ${{ github.event.pull_request.number }}
