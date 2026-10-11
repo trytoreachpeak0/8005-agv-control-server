@@ -471,6 +471,11 @@ SELECT UpperId, DispatchGeneration, Sequence, Phase, Outcome, EligibilityBasis,
     }
 }
 
+function Get-ExpectedClaimRecordCount {
+    param([Parameter(Mandatory)]$Baseline)
+    throw 'Get-ExpectedClaimRecordCount is not implemented yet (control-server#544).'
+}
+
 $control = $null
 $runError = $null
 $storeGenerator = $null
