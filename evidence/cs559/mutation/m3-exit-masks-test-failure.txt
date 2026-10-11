@@ -1,0 +1,29 @@
+mutation M3-exit-masks-test-failure
+--- diff ---
+diff --git a/scripts/test-wire-to-gate.ps1 b/scripts/test-wire-to-gate.ps1
+index 3ad2af986..cc4e988c4 100644
+--- a/scripts/test-wire-to-gate.ps1
++++ b/scripts/test-wire-to-gate.ps1
+@@ -162,4 +162,4 @@ $result = [ordered]@{
+ }
+ $result | ConvertTo-Json | Set-Content -LiteralPath (Join-Path $Output 'gate-result.json') -Encoding utf8NoBOM
+ # Non-zero whenever status is FAIL, so a caller that reads only the exit code is not told PASS.
+-exit ($schemaReportLost ? 1 : $testExitCode)
++exit ($schemaReportMissing ? 1 : $testExitCode)
+Test run for C:\Users\szy\Desktop\8005-workspace-v2\worktrees\cs559-8005-agv-control-server\tests\ControlServer.Tests\bin\Release\net8.0\win-x64\ControlServer.Tests.dll (.NETCoreApp,Version=v8.0)
+VSTest version 17.11.1 (x64)
+
+Starting test execution, please wait...
+A total of 1 test files matched the specified pattern.
+[xUnit.net 00:00:35.82]     ControlServer.Tests.G2GateScriptReportLocationTests.AFailedRunKeepsItsExitCodeAndIsNotReportedAsALostReport [FAIL]
+  Failed ControlServer.Tests.G2GateScriptReportLocationTests.AFailedRunKeepsItsExitCodeAndIsNotReportedAsALostReport [1 s]
+  Error Message:
+   Assert.Equal() Failure: Values differ
+Expected: 7
+Actual:   1
+  Stack Trace:
+     at ControlServer.Tests.G2GateScriptReportLocationTests.AFailedRunKeepsItsExitCodeAndIsNotReportedAsALostReport() in C:\Users\szy\Desktop\8005-workspace-v2\worktrees\cs559-8005-agv-control-server\tests\ControlServer.Tests\G2GateScriptReportLocationTests.cs:line 101
+   at System.RuntimeMethodHandle.InvokeMethod(Object target, Void** arguments, Signature sig, Boolean isConstructor)
+   at System.Reflection.MethodBaseInvoker.InvokeWithNoArgs(Object obj, BindingFlags invokeAttr)
+
+Failed!  - Failed:     1, Passed:     5, Skipped:     0, Total:     6, Duration: 27 s - ControlServer.Tests.dll (net8.0)

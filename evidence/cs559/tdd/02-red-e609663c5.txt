@@ -1,0 +1,17 @@
+Test run for C:\Users\szy\Desktop\8005-workspace-v2\worktrees\cs559-8005-agv-control-server\tests\ControlServer.Tests\bin\Release\net8.0\win-x64\ControlServer.Tests.dll (.NETCoreApp,Version=v8.0)
+VSTest version 17.11.1 (x64)
+
+Starting test execution, please wait...
+A total of 1 test files matched the specified pattern.
+[xUnit.net 00:00:16.73]     ControlServer.Tests.G2GateScriptReportLocationTests.AMissingReportIsNotCertifiedAsPass [FAIL]
+  Failed ControlServer.Tests.G2GateScriptReportLocationTests.AMissingReportIsNotCertifiedAsPass [3 s]
+  Error Message:
+   Assert.NotEqual() Failure: Strings are equal
+Expected: Not "PASS"
+Actual:       "PASS"
+  Stack Trace:
+     at ControlServer.Tests.G2GateScriptReportLocationTests.AMissingReportIsNotCertifiedAsPass() in C:\Users\szy\Desktop\8005-workspace-v2\worktrees\cs559-8005-agv-control-server\tests\ControlServer.Tests\G2GateScriptReportLocationTests.cs:line 80
+   at System.RuntimeMethodHandle.InvokeMethod(Object target, Void** arguments, Signature sig, Boolean isConstructor)
+   at System.Reflection.MethodBaseInvoker.InvokeWithNoArgs(Object obj, BindingFlags invokeAttr)
+
+Failed!  - Failed:     1, Passed:     1, Skipped:     0, Total:     2, Duration: 6 s - ControlServer.Tests.dll (net8.0)

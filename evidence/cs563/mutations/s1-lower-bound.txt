@@ -1,0 +1,5 @@
+S1 mutations re-run (tests at this commit's parent tree + S1 guards), each a one-line change to notBefore -> null:
+- M3a OnboardDispatchFactsReader.cs:104: Failed 4 (DispatchFactsOfASilentVehicle... x2, AnEngineRound... x2)
+- JourneyRuntimeEngine.cs:5333 (station deadline): Failed 1 (AnEngineRound...(AwaitingSublot))
+- M3d JourneyRuntimeEngine.cs:5507 (determinate load failure): Failed 1 (AnEngineRound...(AwaitingLoadResult))
+Before the S1 guards (c18ab242) M3a and M3d survived (independent review).

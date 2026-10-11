@@ -1,0 +1,23 @@
+PASS run-staged-g3.ps1: declares -SelfCheckControlServerCommit, validated as a lowercase full SHA-1
+PASS run-staged-g3.ps1: declares -SelfCheckOnboardCommit, validated as a lowercase full SHA-1
+PASS run-staged-g3.ps1: one top-level -SelfCheck* branch per override parameter
+PASS run-staged-g3.ps1: assigns $commitSources once, at top level
+PASS run-staged-g3.ps1: the -SelfCheck* branches come after $commitSources, so the override is what the record keeps
+PASS run-staged-g3.ps1: the -SelfCheck* branches run before the first statement that touches $StageRoot
+PASS run-staged-g3.ps1, no override: the commits it uses and their sources
+PASS run-staged-g3.ps1, no override: an all-PASS slice is a formal pass
+PASS run-staged-g3.ps1, -SelfCheckControlServerCommit: the commits it uses and their sources
+PASS run-staged-g3.ps1, -SelfCheckControlServerCommit: an all-PASS slice is withheld as SELF_CHECK_OVERRIDE
+PASS run-staged-g3.ps1, -SelfCheckOnboardCommit: the commits it uses and their sources
+PASS run-staged-g3.ps1, -SelfCheckOnboardCommit: an all-PASS slice is withheld as SELF_CHECK_OVERRIDE
+PASS run-staged-g3.ps1, -SelfCheckControlServerCommit naming the bound commit: the commits it uses and their sources
+PASS run-staged-g3.ps1, -SelfCheckControlServerCommit naming the bound commit: an all-PASS slice is withheld as SELF_CHECK_OVERRIDE
+PASS run-staged-g3.ps1, -SelfCheckOnboardCommit naming the bound commit: the commits it uses and their sources
+PASS run-staged-g3.ps1, -SelfCheckOnboardCommit naming the bound commit: an all-PASS slice is withheld as SELF_CHECK_OVERRIDE
+FAIL run-staged-g3-restart.ps1: declares -SelfCheckControlServerCommit, validated as a lowercase full SHA-1 -- 0 declared, pattern ''
+FAIL run-staged-g3-restart.ps1: declares -SelfCheckOnboardCommit, validated as a lowercase full SHA-1 -- 0 declared, pattern ''
+FAIL run-staged-g3-restart.ps1: one top-level -SelfCheck* branch per override parameter -- 0 found
+PASS run-staged-g3-restart.ps1: assigns $commitSources once, at top level
+PASS run-staged-g3-restart.ps1: no parameter can redirect where the binding is read from
+PASS run-staged-g3-restart.ps1: $CommitBindingSource is assigned once, to run-staged-g3.ps1 beside it
+3 check(s) failed.
