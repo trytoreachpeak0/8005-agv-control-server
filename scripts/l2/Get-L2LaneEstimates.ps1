@@ -66,4 +66,13 @@ $passing | Group-Object Scenario |
     Sort-Object -Property @{ Expression = 'Seconds'; Descending = $true }, Name |
     ForEach-Object { $estimates[$_.Name] = $_.Seconds }
 
-[pscustomobject]@{ Rounds = $rounds; Estimates = $estimates }
+# The table this would replace, to say what it lacks and what it lists for nothing.
+$table = (Get-Content -Raw -LiteralPath $EstimatesPath | ConvertFrom-Json -AsHashtable).estimates
+$ran = @($counted | ForEach-Object Runs | ForEach-Object Scenario | Sort-Object -Unique)
+$ranNotRegistered = @($ran | Where-Object { -not $table.Contains($_) })
+$registeredNotRan = @($table.Keys | Where-Object { $_ -notin $ran } | Sort-Object)
+
+[pscustomobject]@{
+    Rounds = $rounds; Estimates = $estimates
+    RanNotRegistered = $ranNotRegistered; RegisteredNotRan = $registeredNotRan
+}
