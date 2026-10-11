@@ -40,7 +40,11 @@ function Read-L2Round([string]$Id, [string[]]$Lines) {
         elseif ($only) { 'only some scenarios' }
         elseif ($superseded) { 'superseded' }
         elseif ($null -eq $wall) { 'no summary line: the job did not finish' }
-    [pscustomobject]@{ RunId = $Id; Mode = $mode; WallSeconds = $wall; Skipped = $skip; Runs = @($runs) }
+    # A lane runs its scenarios one after another, so the sum of its run times is about how long it took.
+    $lanes = @($runs | Group-Object Lane | Sort-Object { [int]$_.Name } | ForEach-Object {
+        [pscustomobject]@{ Lane = [int]$_.Name; Seconds = ($_.Group | Measure-Object Seconds -Sum).Sum; Runs = $_.Count }
+    })
+    [pscustomobject]@{ RunId = $Id; Mode = $mode; WallSeconds = $wall; Skipped = $skip; Lanes = $lanes; Runs = @($runs) }
 }
 
 function Get-Median([int[]]$Values) {
