@@ -1,4 +1,6 @@
 using System.Globalization;
+using System.Security.Cryptography;
+using System.Text;
 
 namespace ControlServer.Application;
 
@@ -20,27 +22,62 @@ public static class RiotUpperIds
     /// <summary>The prefix every upperId this server creates starts with.</summary>
     public const string Prefix = "W2G-";
 
-    /// <summary>A demand's pickup leg: <c>W2G-{demandId}-PICKUP-{generation}</c>.</summary>
+    /// <summary>A demand's pickup leg: <c>W2G-{demandId}-PICKUP-{generation}</c>, 49 characters at generation 1.</summary>
     public static string Pickup(string demandId, long generation) =>
-        Prefix + demandId + "-PICKUP-" + generation.ToString(CultureInfo.InvariantCulture);
+        Bounded(Prefix + demandId + "-PICKUP-" + generation.ToString(CultureInfo.InvariantCulture));
 
-    /// <summary>A demand's gate leg: <c>W2G-{demandId}-GATE-{generation}</c>.</summary>
+    /// <summary>A demand's gate leg: <c>W2G-{demandId}-GATE-{generation}</c>, 47 characters at generation 1.</summary>
     public static string Gate(string demandId, long generation) =>
-        Prefix + demandId + "-GATE-" + generation.ToString(CultureInfo.InvariantCulture);
+        Bounded(Prefix + demandId + "-GATE-" + generation.ToString(CultureInfo.InvariantCulture));
 
-    /// <summary>A demand's rebuilt leg: <c>W2G-{demandId}-REBUILD-{generation}-{ordinal}</c>.</summary>
+    /// <summary>A demand's rebuilt leg: <c>W2G-{demandId}-REBUILD-{generation}-{ordinal}</c>, 52 characters at 1-1.</summary>
     public static string Rebuild(string demandId, long generation, int ordinal) =>
-        Prefix + demandId + "-REBUILD-" + generation.ToString(CultureInfo.InvariantCulture) + "-" +
-        ordinal.ToString(CultureInfo.InvariantCulture);
+        Bounded(Prefix + demandId + "-REBUILD-" + generation.ToString(CultureInfo.InvariantCulture) + "-" +
+                ordinal.ToString(CultureInfo.InvariantCulture));
 
     /// <summary>
     /// A journey without a demand, from what follows its journey id's prefix (<c>{vehicleKey}:{yyyyMMddTHHmmssfffZ}</c>):
-    /// <c>W2G-{kind}-{vehicleKey}-{instant}</c>.
+    /// <c>W2G-{kind}-{vehicle tag}-{instant}</c>, 39 characters for <c>CHARGE</c> and 37 for <c>IDLE</c>.
     /// </summary>
+    /// <remarks>
+    /// The device key is not written out: a real one is 40 characters (<c>BROKERX-</c> and 32 hex digits), which made these
+    /// upperIds 69 to 71 long. <see cref="VehicleTag"/> stands in for it. Which vehicle the order is for is on the order itself
+    /// (<c>appointVehicleKey</c>), and this server knows its own orders by the upperId stored on the intent, never by parsing one.
+    /// </remarks>
     public static string VehicleJourney(string kind, string vehicleAndInstant)
     {
         ArgumentException.ThrowIfNullOrWhiteSpace(kind);
         ArgumentException.ThrowIfNullOrWhiteSpace(vehicleAndInstant);
-        return Prefix + kind + "-" + vehicleAndInstant.Replace(':', '-');
+        int separator = vehicleAndInstant.LastIndexOf(':');
+        if (separator <= 0 || separator == vehicleAndInstant.Length - 1)
+        {
+            throw new ArgumentException($"'{vehicleAndInstant}' is not '{{vehicleKey}}:{{instant}}'.", nameof(vehicleAndInstant));
+        }
+        return Bounded(Prefix + kind + "-" + VehicleTag(vehicleAndInstant[..separator]) + "-" + vehicleAndInstant[(separator + 1)..]);
     }
+
+    /// <summary>
+    /// Eight lowercase hex digits of the device key's SHA-256. Two vehicles share one with a chance of about 1 in 2^32 per pair,
+    /// and their upperIds would then still differ unless both committed in the same millisecond.
+    /// </summary>
+    public static string VehicleTag(string vehicleKey)
+    {
+        ArgumentException.ThrowIfNullOrWhiteSpace(vehicleKey);
+        return Sha256Hex(vehicleKey)[..8];
+    }
+
+    /// <summary>
+    /// <paramref name="upperId"/> as it is when it fits <see cref="MaxLength"/>; otherwise <c>W2G-H-</c> and 32 hex digits of its
+    /// SHA-256 (38 characters). The readable shapes fit at every value in use; this is what keeps a generation, a rebuild ordinal
+    /// or a clearance attempt that runs into many digits from producing an upperId RIoT refuses. The same input always gives the
+    /// same upperId, so a retry or a restart never changes it (REQ-0283).
+    /// </summary>
+    public static string Bounded(string upperId)
+    {
+        ArgumentException.ThrowIfNullOrWhiteSpace(upperId);
+        return upperId.Length <= MaxLength ? upperId : Prefix + "H-" + Sha256Hex(upperId)[..32];
+    }
+
+    private static string Sha256Hex(string value) =>
+        Convert.ToHexString(SHA256.HashData(Encoding.UTF8.GetBytes(value))).ToLowerInvariant();
 }

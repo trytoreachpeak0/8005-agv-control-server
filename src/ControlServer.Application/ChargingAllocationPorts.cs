@@ -32,8 +32,9 @@ public static class ChargingIdentity
     public static string CycleIdFor(string journeyId) => CycleIdPrefix + Suffix(journeyId);
 
     /// <summary>
-    /// 这次充电的 RIoT 单号：<c>charging:BROKERX-0001:20260930T081500123Z</c> → <c>W2G-CHARGE-BROKERX-0001-20260930T081500123Z</c>。
-    /// 与搬运（<c>W2G-{需求}-PICKUP-{代次}</c>）、空闲返回（<c>W2G-IDLE-…</c>）同一个前缀、不同的第二段。
+    /// 这次充电的 RIoT 单号：<c>charging:{deviceKey}:20260930T081500123Z</c> → <c>W2G-CHARGE-{车标}-20260930T081500123Z</c>，39 字符；
+    /// 车标是 deviceKey 的 8 位短哈希（<see cref="RiotUpperIds.VehicleTag"/>），不写整个 deviceKey——真车的 40 字符 key 会把单号撑到 71，
+    /// RIoT 回 <c>00002</c>（control-server#616）。与搬运（<c>W2G-{需求}-PICKUP-{代次}</c>）、空闲返回（<c>W2G-IDLE-…</c>）同一个前缀、不同的第二段。
     /// </summary>
     public static string UpperIdFor(string journeyId) => RiotUpperIds.VehicleJourney(UpperIdKind, Suffix(journeyId));
 

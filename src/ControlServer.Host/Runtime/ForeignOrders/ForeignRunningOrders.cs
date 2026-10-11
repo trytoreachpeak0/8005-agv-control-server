@@ -11,12 +11,12 @@ namespace ControlServer.Host.Runtime.ForeignOrders;
 public static class ForeignRunningOrders
 {
     /// <summary>
-    /// The prefix of every <c>upperId</c> this server creates orders under (<c>JourneyPlanBuilder</c>'s pickup and gate legs,
-    /// <c>OwnOrderRebuilds</c>' rebuilt legs). An auxiliary hint only (REQ-0164: "upperId 的形态只作辅助，不能单独作判据"): it can
+    /// The prefix of every <c>upperId</c> this server creates orders under (<see cref="RiotUpperIds"/> builds them all:
+    /// pickup, gate and rebuilt legs, charge, idle return and clearance moves). An auxiliary hint only (REQ-0164: "upperId 的形态只作辅助，不能单独作判据"): it can
     /// only make an order unprovable, never prove it this server's or foreign. <c>ForeignRunningOrderTests</c> pins that the
     /// upperIds this server creates do start with it.
     /// </summary>
-    public const string OwnUpperIdPrefix = "W2G-";
+    public const string OwnUpperIdPrefix = RiotUpperIds.Prefix;
 
     /// <summary>
     /// The dashboard code of a vehicle held while this server cancels a proven foreign order running on it.
