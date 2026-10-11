@@ -178,6 +178,26 @@ $e = $null -eq $v
 '@
         $nulls = Find-StringHelperNullComparison -Path $shadowString -Helpers $repoStringHelpers
         Add-Case 'string-null: a file whose own Get-G3Scalar returns rows is not judged as the shared one' (@($nulls.Findings).Count -eq 0) (Format-Finding $nulls.Findings)
+
+        # An exemption names file, function and variable, and must still match: one that matches nothing is reported stale.
+        $exempt = New-Fixture 'exempt.ps1' @'
+function Get-FleetGeneration {
+    $value = Get-G3Scalar $connection "SELECT ForcedRecoveryGeneration AS Value FROM VehicleRecoveryGenerations"
+    if ($null -eq $value) { return 0 }
+    return [long]$value
+}
+$other = Get-G3Scalar $connection 'SELECT 1 AS Value'
+$f = $null -eq $other
+'@
+        $exemptions = @(
+            @{ File = 'exempt.ps1'; Function = 'Get-FleetGeneration'; Variable = 'value'; Reason = 'fixture' }
+            @{ File = 'exempt.ps1'; Function = 'Get-Nothing'; Variable = 'value'; Reason = 'fixture, stale' }
+        )
+        $nulls = Find-StringHelperNullComparison -Path $exempt -Helpers $repoStringHelpers -Exemptions $exemptions
+        Add-Case 'string-null: an exempted comparison is not reported, the one beside it is' (
+            (@($nulls.Findings | ForEach-Object Line) -join ',') -eq '7' -and $nulls.Exempted -eq 1) "$(Format-Finding $nulls.Findings); exempted $($nulls.Exempted)"
+        Add-Case 'string-null: an exemption that matches nothing is reported stale' (
+            (@($nulls.StaleExemptions | ForEach-Object { $_.Function }) -join ',') -eq 'Get-Nothing') "$(@($nulls.StaleExemptions | ForEach-Object { $_.Function }) -join ',')"
     } finally {
         Remove-Item -LiteralPath $scratch -Recurse -Force -ErrorAction SilentlyContinue
     }
@@ -209,10 +229,18 @@ if ($full) {
 
 # The string helpers are always derived from the whole of ScriptRoot, so a -Path scan of an old copy knows Get-G3Scalar.
 $stringHelpers = Get-StringHelperCatalog -Path @(Get-ChildItem -LiteralPath $ScriptRoot -Recurse -File -Include '*.ps1', '*.psm1' | ForEach-Object FullName)
-$nulls = Find-StringHelperNullComparison -Path $targets -Helpers $stringHelpers
-Write-Host ("string-null: {0} [string] helpers ({1}); {2} comparisons with `$null on their results" -f @($stringHelpers).Count, ($stringHelpers -join ', '), $nulls.Comparisons)
+$nulls = Find-StringHelperNullComparison -Path $targets -Helpers $stringHelpers -Exemptions (Get-StringNullExemption)
+Write-Host ("string-null: {0} NULL-folding readers ({1}); {2} comparisons with `$null read, {3} variables held a reader's result, {4} exempted" -f
+    @($stringHelpers).Count, ($stringHelpers -join ', '), $nulls.Comparisons, $nulls.Variables, $nulls.Exempted)
 foreach ($f in $nulls.Findings) { Write-Host "  STRING-NULL  $($f.File):$($f.Line) $($f.Message)" }
-Add-Case 'repository: no [string] helper result compared with $null' (@($nulls.Findings).Count -eq 0) "$(@($nulls.Findings).Count) findings"
+foreach ($e in $nulls.StaleExemptions) { Write-Host "  STRING-NULL  stale exemption: $($e.File) $($e.Function) `$$($e.Variable)" }
+Add-Case 'repository: no NULL-folding reader result compared with $null' (@($nulls.Findings).Count -eq 0) "$(@($nulls.Findings).Count) findings"
+if ($full) {
+    Add-Case 'repository: every string-null exemption still matches' (@($nulls.StaleExemptions).Count -eq 0) "$(@($nulls.StaleExemptions).Count) stale"
+    # Get-G3Scalar plus the scenario-local Get-Scalar copies on fp/v2-impl@da6e40e2; 1800+ $null comparisons read.
+    Add-Case 'repository: string-null derived Get-G3Scalar and read at least 1000 $null comparisons' (
+        $stringHelpers -contains 'Get-G3Scalar' -and $nulls.Comparisons -ge 1000) "$($nulls.Comparisons)"
+}
 
 $failed = @($cases | Where-Object { -not $_.Ok })
 foreach ($c in $cases) { Write-Host ("{0}  {1}{2}" -f ($c.Ok ? 'ok  ' : 'FAIL'), $c.Name, ($c.Ok ? '' : " -- $($c.Actual)")) }
