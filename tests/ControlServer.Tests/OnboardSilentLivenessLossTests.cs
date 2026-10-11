@@ -579,30 +579,57 @@ public sealed class OnboardSilentLivenessLossTests
         public void Advance(TimeSpan by) => _timestamp += by.Ticks;
     }
 
-    /// <summary>A loopback port for the server under test. Stub: still probes and releases (control-server#256).</summary>
+    /// <summary>
+    /// A loopback port for the server under test, held from the moment it is chosen until <see cref="Dispose"/>
+    /// (control-server#256).
+    /// </summary>
+    /// <remarks>
+    /// <para>
+    /// <c>OnboardTcpServer</c> opens its own listener on a configured port and refuses port 0, and this ticket does not
+    /// touch product code, so the listener cannot be handed over. Probing a port and releasing it for the server to
+    /// bind leaves the port free in between, and a concurrent test or L2 lane asking the system for an ephemeral port
+    /// can be given exactly that one.
+    /// </para>
+    /// <para>
+    /// Instead a socket is bound, never listening, to the wildcard address on port 0 and kept bound. The system never
+    /// hands out a port another socket is bound to, so no ephemeral allocation can land on it while it is held. The
+    /// server binds the specific loopback address on the same port, which Windows allows next to a wildcard binding
+    /// made without <c>SO_EXCLUSIVEADDRUSE</c>; the most specific binding receives the connections, and the
+    /// placeholder, not listening, receives none. Should a runtime ever make that bind fail, the server fails to
+    /// start at once and loudly, every run, rather than now and then.
+    /// </para>
+    /// </remarks>
     private sealed class PortReservation : IDisposable
     {
-        private PortReservation(int port) => Port = port;
+        private readonly Socket _placeholder;
+
+        private PortReservation(Socket placeholder)
+        {
+            _placeholder = placeholder;
+            Port = ((IPEndPoint)placeholder.LocalEndPoint!).Port;
+        }
 
         public int Port { get; }
 
         public static PortReservation Take()
         {
-            TcpListener probe = new(IPAddress.Loopback, 0);
-            probe.Start();
+            Socket placeholder = new(AddressFamily.InterNetwork, SocketType.Stream, ProtocolType.Tcp)
+            {
+                ExclusiveAddressUse = false
+            };
             try
             {
-                return new PortReservation(((IPEndPoint)probe.LocalEndpoint).Port);
+                placeholder.Bind(new IPEndPoint(IPAddress.Any, 0));
+                return new PortReservation(placeholder);
             }
-            finally
+            catch
             {
-                probe.Stop();
+                placeholder.Dispose();
+                throw;
             }
         }
 
-        public void Dispose()
-        {
-        }
+        public void Dispose() => _placeholder.Dispose();
     }
 
     private sealed class FixedClock : TimeProvider
@@ -637,6 +664,7 @@ public sealed class OnboardSilentLivenessLossTests
         SqliteConnection connection,
         ControlServerDbContext context,
         ServiceProvider provider,
+        PortReservation port,
         OnboardTcpServer server) : IAsyncDisposable
     {
         public ControlServerDbContext Context { get; } = context;
@@ -706,24 +734,34 @@ public sealed class OnboardSilentLivenessLossTests
             services.AddScoped(_ => processor);
             ServiceProvider provider = services.BuildServiceProvider();
 
-            int port = ReserveFreePort();
+            // Held until DisposeAsync, after the server has stopped: never free between being chosen and being bound.
+            PortReservation port = PortReservation.Take();
             EventRecordingLogger<OnboardTcpServer> log = new();
             OnboardTcpServer server = new(
                 Options.Create(new OnboardTransportOptions
                 {
                     Enabled = true,
                     ListenAddress = "127.0.0.1",
-                    Port = port
+                    Port = port.Port
                 }),
                 provider.GetRequiredService<IServiceScopeFactory>(),
                 new OnboardPeer(),
                 log,
                 TimeProvider.System,
                 idleTimeout);
-            await server.StartAsync(TestContext.Current.CancellationToken);
-            return new LivenessRig(connection, context, provider, server)
+            try
             {
-                Port = port,
+                await server.StartAsync(TestContext.Current.CancellationToken);
+            }
+            catch
+            {
+                server.Dispose();
+                port.Dispose();
+                throw;
+            }
+            return new LivenessRig(connection, context, provider, port, server)
+            {
+                Port = port.Port,
                 Log = log,
                 CredentialBefore = credentialBefore
             };
@@ -735,6 +773,7 @@ public sealed class OnboardSilentLivenessLossTests
             {
                 await server.StopAsync(CancellationToken.None);
                 server.Dispose();
+                port.Dispose();
                 await provider.DisposeAsync();
                 await Context.DisposeAsync();
                 await connection.DisposeAsync();
@@ -744,20 +783,6 @@ public sealed class OnboardSilentLivenessLossTests
                 // After the server has stopped: it reads the variable on every SessionHello, so restoring it any
                 // earlier could refuse a handshake still in flight.
                 Environment.SetEnvironmentVariable(CredentialVariable, CredentialBefore);
-            }
-        }
-
-        private static int ReserveFreePort()
-        {
-            TcpListener probe = new(IPAddress.Loopback, 0);
-            probe.Start();
-            try
-            {
-                return ((IPEndPoint)probe.LocalEndpoint).Port;
-            }
-            finally
-            {
-                probe.Stop();
             }
         }
     }
