@@ -99,6 +99,25 @@ $actualListed = if ($result) { @($result.RegisteredNotRan) -join ', ' }
 Assert-Case -Name 'in-the-table-but-not-run' -Condition ($actualListed -eq 'retired-scenario') `
     -Detail "expected retired-scenario; got $actualListed"
 
+
+# -AsJson prints the whole data file l2.yml reads, ready to replace it: the same estimates in the same order,
+# and a source naming the rounds that counted and the script. Nothing is written, the fixture included.
+$before = (Get-ChildItem -LiteralPath $fixture -File | Get-FileHash | ForEach-Object { "$($_.Path)=$($_.Hash)" }) -join ';'
+$json = $null
+try {
+    $json = (& $script -LogPath $logs -EstimatesPath (Join-Path $fixture 'estimates.json') -AsJson) -join "`n" |
+        ConvertFrom-Json -AsHashtable
+} catch {
+    Write-Host "-AsJson threw: $_"
+}
+$after = (Get-ChildItem -LiteralPath $fixture -File | Get-FileHash | ForEach-Object { "$($_.Path)=$($_.Hash)" }) -join ';'
+$jsonText = if ($json) { (@($json.estimates.Keys | ForEach-Object { "$_=$($json.estimates[$_])" }) -join ', ') }
+Assert-Case -Name 'as-json-is-the-data-file-with-the-same-estimates' `
+    -Condition ($jsonText -eq $expectedText -and $json.source -match '38103886702, 38102686787' -and
+        $json.source -match 'Get-L2LaneEstimates\.ps1') `
+    -Detail "estimates $jsonText; source $($json.source)"
+Assert-Case -Name 'reads-only' -Condition ($before -eq $after) -Detail 'no file in the fixture changed'
+
 if ($failures.Count -gt 0) {
     [Console]::Error.WriteLine("L2_LANE_ESTIMATES_SELFTEST_FAILED: $($failures -join ', ')")
     exit 1
