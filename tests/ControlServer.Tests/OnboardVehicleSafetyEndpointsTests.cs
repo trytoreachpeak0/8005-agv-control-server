@@ -398,6 +398,126 @@ public sealed class OnboardVehicleSafetyEndpointsTests
         }
     }
 
+    /// <summary>
+    /// control-server#600：车队表两台以上、投影开着、却没配按车凭据，启动就拒绝，报错写清缺什么、去哪配。
+    /// 服务端此时分不出是哪台车在问；回 503 会让每台车悄悄变成未就绪，启动失败在部署时当场就能看到。
+    /// </summary>
+    [Fact]
+    public void ARosterOfTwoWithoutPerVehicleCredentialsRefusesToStart()
+    {
+        using TwoCarCredentials cars = new();
+
+        ValidateOptionsResult result = new OnboardSafetyProjectionOptionsValidator(TwoCarJourneyOptions(), cars.Transport())
+            .Validate(null, ProjectionOptions(cars.SharedVariable));
+
+        Assert.True(result.Failed);
+        string failure = Assert.Single(result.Failures!);
+        Assert.Contains("OnboardSafetyProjection:vehicleCredentials", failure, StringComparison.Ordinal);
+        Assert.Contains(Agv02Key, failure, StringComparison.Ordinal);
+        Assert.Contains(Agv03Key, failure, StringComparison.Ordinal);
+    }
+
+    /// <summary>投影关着时多车不必配按车凭据：没有人会读到这个接口。</summary>
+    [Fact]
+    public void ARosterOfTwoNeedsNoPerVehicleCredentialsWhileTheProjectionIsOff()
+    {
+        using TwoCarCredentials cars = new();
+        OnboardSafetyProjectionOptions options = ProjectionOptions(cars.SharedVariable);
+        options.Enabled = false;
+
+        Assert.True(new OnboardSafetyProjectionOptionsValidator(TwoCarJourneyOptions(), cars.Transport())
+            .Validate(null, options).Succeeded);
+    }
+
+    [Fact]
+    public void TwoVehiclesWithTheirOwnCredentialsStart()
+    {
+        using TwoCarCredentials cars = new();
+
+        ValidateOptionsResult result = new OnboardSafetyProjectionOptionsValidator(TwoCarJourneyOptions(), cars.Transport())
+            .Validate(null, cars.ProjectionOptions());
+
+        Assert.True(result.Succeeded, string.Join(" | ", result.Failures ?? []));
+    }
+
+    /// <summary>
+    /// control-server#600 启动校验：按车凭据表里的车必须都在车队表里、不重复、车队表每台都有；每个变量必须有值、值两两不同、
+    /// 且不能等于共享凭据（TCP 用的那个）。报错只写变量名，不写值。
+    /// </summary>
+    [Theory]
+    [InlineData("outside-roster", "is not in the roster")]
+    [InlineData("duplicate-vehicle", "more than once")]
+    [InlineData("roster-vehicle-missing", "has no projection credential")]
+    [InlineData("empty-variable-name", "must name an environment variable")]
+    [InlineData("unpopulated-variable", "is not set")]
+    [InlineData("same-value-twice", "share one value")]
+    [InlineData("equals-projection-shared", "equals the shared onboard credential")]
+    [InlineData("equals-transport-shared", "equals the shared onboard credential")]
+    public void PerVehicleCredentialsAreCheckedAtStartup(string defect, string expected)
+    {
+        using TwoCarCredentials cars = new();
+        OnboardSafetyProjectionOptions options = cars.ProjectionOptions();
+        OnboardTransportOptions transport = cars.Transport();
+        string transportVariable = "CONTROL_SERVER_TEST_TCP_" + Guid.NewGuid().ToString("N");
+        using EnvironmentVariableScope tcp = new(transportVariable, "tcp-only-credential");
+        using EnvironmentVariableScope blank = new(cars.Agv03Variable + "_BLANK", "");
+        switch (defect)
+        {
+            case "outside-roster":
+                options.VehicleCredentials[1].VehicleKey = "BROKERX-NOT-IN-ROSTER";
+                break;
+            case "duplicate-vehicle":
+                options.VehicleCredentials[1].VehicleKey = Agv02Key;
+                break;
+            case "roster-vehicle-missing":
+                options.VehicleCredentials = [options.VehicleCredentials[0]];
+                break;
+            case "empty-variable-name":
+                options.VehicleCredentials[1].CredentialEnvironmentVariable = " ";
+                break;
+            case "unpopulated-variable":
+                options.VehicleCredentials[1].CredentialEnvironmentVariable = cars.Agv03Variable + "_BLANK";
+                break;
+            case "same-value-twice":
+                options.VehicleCredentials[1].CredentialEnvironmentVariable = cars.Agv02Variable;
+                break;
+            case "equals-projection-shared":
+                options.VehicleCredentials[1].CredentialEnvironmentVariable = cars.SharedVariable;
+                break;
+            case "equals-transport-shared":
+                transport.CredentialEnvironmentVariable = transportVariable;
+                Environment.SetEnvironmentVariable(cars.Agv03Variable, "tcp-only-credential");
+                break;
+        }
+
+        ValidateOptionsResult result = new OnboardSafetyProjectionOptionsValidator(TwoCarJourneyOptions(), transport)
+            .Validate(null, options);
+
+        Assert.True(result.Failed, defect);
+        Assert.Contains(result.Failures!, failure => failure.Contains(expected, StringComparison.Ordinal));
+        foreach (string failure in result.Failures!)
+        {
+            foreach (string value in new[]
+                     {
+                         TwoCarCredentials.SharedCredential, TwoCarCredentials.Agv02Credential,
+                         TwoCarCredentials.Agv03Credential, "tcp-only-credential"
+                     })
+            {
+                Assert.DoesNotContain(value, failure, StringComparison.Ordinal);
+            }
+        }
+    }
+
+    /// <summary>单车配置的启动校验不变：只有一台车时不要求按车凭据。</summary>
+    [Fact]
+    public void ASingleVehicleNeedsNoPerVehicleCredentials()
+    {
+        using TwoCarCredentials cars = new();
+
+        Assert.True(new OnboardSafetyProjectionOptionsValidator(JourneyOptions(), cars.Transport())
+            .Validate(null, ProjectionOptions(cars.SharedVariable)).Succeeded);
+    }
+
     private const string Agv02Key = "BROKERX-AGV02";
     private const string Agv03Key = "BROKERX-AGV03";
 
@@ -455,6 +575,9 @@ public sealed class OnboardVehicleSafetyEndpointsTests
                 new OnboardSafetyVehicleCredentialOptions { VehicleKey = Agv03Key, CredentialEnvironmentVariable = Agv03Variable }
             ]
         };
+
+        /// <summary>The TCP transport reading the same shared credential, as appsettings.json ships it.</summary>
+        public OnboardTransportOptions Transport() => new() { CredentialEnvironmentVariable = SharedVariable };
 
         public void Dispose()
         {

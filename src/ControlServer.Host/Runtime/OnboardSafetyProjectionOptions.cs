@@ -1,3 +1,4 @@
+using ControlServer.Host.Transport;
 using Microsoft.Extensions.Options;
 
 namespace ControlServer.Host.Runtime;
@@ -71,13 +72,17 @@ public sealed class OnboardSafetyVehicleCredentialOptions
     public string CredentialEnvironmentVariable { get; set; } = string.Empty;
 }
 
-public sealed class OnboardSafetyProjectionOptionsValidator : IValidateOptions<OnboardSafetyProjectionOptions>
+public sealed class OnboardSafetyProjectionOptionsValidator(
+    JourneyRuntimeOptions? journey = null,
+    OnboardTransportOptions? transport = null) : IValidateOptions<OnboardSafetyProjectionOptions>
 {
     internal const int MaximumNonFinalOrderReadRetries = 4;
 
     public ValidateOptionsResult Validate(string? name, OnboardSafetyProjectionOptions options)
     {
         _ = name;
+        _ = journey;
+        _ = transport;
         // control-server#573: checked even while the projection is off, so a bad value is found before the day it is turned on.
         if (options.NonFinalOrderReadRetries is < 0 or > MaximumNonFinalOrderReadRetries)
             return ValidateOptionsResult.Fail(
