@@ -8,6 +8,16 @@ param(
 )
 
 $ErrorActionPreference = 'Stop'
+# Both paths are made absolute here, against the location the script was called from, and only the
+# absolute values are used below. -Output in particular leaves this process: it is handed to the test
+# host as WIRE_TO_GATE_SCHEMA_REPORT_DIR, and the test host resolves a relative path against its own
+# working directory under bin/. Batch 8's exit ran all fifteen slices that way, and every
+# gate-result.json said PASS with schemaConformance null while schema-coverage.json sat in the build
+# output (control-server#559). Fixing it at the entry, not where the variable is set, keeps every later
+# use of either path from having to know. Same conversion as the G3 runners (control-server#264).
+# G2GateScriptReportLocationTests runs this script against a stand-in test host to keep it so.
+$Output = $ExecutionContext.SessionState.Path.GetUnresolvedProviderPathFromPSPath($Output)
+$ProtocolManifest = $ExecutionContext.SessionState.Path.GetUnresolvedProviderPathFromPSPath($ProtocolManifest)
 if (-not (Test-Path -LiteralPath $ProtocolManifest -PathType Leaf)) { throw "Protocol manifest not found: $ProtocolManifest" }
 $root = Split-Path -Parent $PSScriptRoot
 
