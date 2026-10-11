@@ -1,0 +1,11 @@
+PASS  longest-first-onto-the-least-loaded-lane -- lane 1/slot 1: s10x1,s5x1 (15s); lane 2/slot 2: s9x1,s6x1 (15s); lane 3/slot 3: s8x1,s7x1 (15s)
+PASS  lanes-take-slots-one-to-n-never-zero -- lane 1/slot 1: s10x1,s5x1 (15s); lane 2/slot 2: s9x1,s6x1 (15s); lane 3/slot 3: s8x1,s7x1 (15s)
+PASS  every-run-of-a-scenario-is-in-one-lane -- lane 1/slot 1: triplex3 (60s); lane 2/slot 2: longx1,shortx1 (65s)
+PASS  every-scenario-is-planned-exactly-once -- planned: long, short, triple
+PASS  no-empty-lanes -- lane 1/slot 1: onlyx1 (40s)
+PASS  a-scenario-without-an-estimate-counts-thirty-seconds -- lane 1/slot 1: knownx1,unknownx1 (61s)
+FAIL  eight-lanes-take-slots-one-to-eight -- LaneCount 8 refused: Cannot validate argument on parameter 'LaneCount'. The 8 argument is greater than the maximum allowed range of 4. Supply an argument that is less than or equal to 4 and then try the command again.
+PASS  no-more-lanes-than-slots -- LaneCount 9 is refused: there are eight slots besides slot 0
+PASS  no-l2-class-names-a-lazily-loaded-type -- no class in scripts/l2/*.psm1 names a Microsoft.PowerShell.Commands.* type
+L2_LANES_SELFTEST_FAILED: eight-lanes-take-slots-one-to-eight
+exit=1

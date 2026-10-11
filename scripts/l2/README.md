@@ -954,7 +954,7 @@ actual 里写着行数。`-Required` 给不在探针里的读取用：零行也�
 
 ### 端口槽位（control-server#130）
 
-上表是**槽位 0**，也是 `Invoke-L2Scenario.ps1` 不带 `-PortSlot` 时用的那一组。`-PortSlot N`（1～4）把整组端口
+上表是**槽位 0**，也是 `Invoke-L2Scenario.ps1` 不带 `-PortSlot` 时用的那一组。`-PortSlot N`（1～8）把整组端口
 下移 `1000 × N`，锁名加后缀 `-slotN`：
 
 | 槽位 | 端口 | 锁 |
@@ -964,14 +964,20 @@ actual 里写着行数。`-Required` 给不在探针里的读取用：零行也�
 | 2 | 46405–46416，假车载端 46420 起 | `Global\W2G-L2PortBlock-slot2` |
 | 3 | 45405–45416，假车载端 45420 起 | `Global\W2G-L2PortBlock-slot3` |
 | 4 | 44405–44416，假车载端 44420 起 | `Global\W2G-L2PortBlock-slot4` |
+| 5 | 43405–43416，假车载端 43420 起 | `Global\W2G-L2PortBlock-slot5` |
+| 6 | 42405–42416，假车载端 42420 起 | `Global\W2G-L2PortBlock-slot6` |
+| 7 | 41405–41416，假车载端 41420 起 | `Global\W2G-L2PortBlock-slot7` |
+| 8 | 40405–40416，假车载端 40420 起 | `Global\W2G-L2PortBlock-slot8` |
 
 **槽位 0 的端口与锁名和加槽位之前逐字相同**，真装置场景、`run-journey-g3.ps1` 和比槽位更早的检出都不知道槽位的
-存在，照旧拿槽位 0，彼此照旧排队。CI 的分路只用槽位 1～4，所以不会和它们抢。
+存在，照旧拿槽位 0，彼此照旧排队。CI 的分路只用槽位 1～8（`L2_LANES` 路就用 1～`L2_LANES`），所以不会和它们抢。
+槽位 5～8 是 control-server#630 加的，给以后调高路数或加第二个 L2 runner 留位置；2026-10-11 在 win11-01 上实测
+39000～49151 之间除 L2 自己的槽位外只有 OneDrive 的 `::1:42050` 在监听，不在任何槽位的端口段里，系统保留端口也只有 5357。
 
 为什么往下移：槽位 0 已经紧贴在 Windows 动态端口范围（49152 起）下面，往上就进了动态范围，那正是 2026-09-08
 搬家要躲的东西（见上一节）。往下这一段里唯一被系统保留的是 47001（WinRM 的 HTTP 监听，控制端笔记本
 `netsh int ipv4 show excludedportrange protocol=tcp` 里有，win11-01 上只保留了 5357），各槽位都躲开了。
-`Test-L2PortLockQueueing.ps1` 断言槽位 0 的端口和锁名是上表的字面值、编排器参数默认值就是槽位 0、五个槽位两两
+`Test-L2PortLockQueueing.ps1` 断言槽位 0 的端口和锁名是上表的字面值、编排器参数默认值就是槽位 0、带 `-PortSlot` 的脚本都接受 0～8、九个槽位两两
 不重叠且都在 49152 以下、不碰保留端口，并且槽位 0 被占着时槽位 1 照样拿得到锁。
 
 **几个槽位同时跑时共用一份构建输出。**同一个检出里并行跑，要先构建一次，每一趟都带 `-SkipBuild`；否则一趟的构建

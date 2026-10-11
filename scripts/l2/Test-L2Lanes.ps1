@@ -88,9 +88,17 @@ Assert-Case -Name 'a-scenario-without-an-estimate-counts-thirty-seconds' `
     -Condition ((($plan[0].Items.Name) -join ',') -eq 'known,unknown' -and $plan[0].EstimateSeconds -eq 61) `
     -Detail (Format-Plan $plan)
 
+# Eight slots besides slot 0 since control-server#630: eight lanes are planned onto slots 1..8, a ninth is refused.
+$eight = @(1..8 | ForEach-Object { [pscustomobject]@{ Name = "s$_"; Runs = 1; EstimateSeconds = 10 } })
+$accepted = $null
+try { $accepted = @(Get-L2LanePlan -Items $eight -LaneCount 8) } catch { $accepted = $_.Exception.Message }
+Assert-Case -Name 'eight-lanes-take-slots-one-to-eight' `
+    -Condition ($accepted -is [array] -and (($accepted.Slot | Sort-Object) -join ',') -eq '1,2,3,4,5,6,7,8') `
+    -Detail $(if ($accepted -is [array]) { Format-Plan $accepted } else { "LaneCount 8 refused: $accepted" })
+
 $refused = $false
-try { $null = Get-L2LanePlan -Items $items -LaneCount 5 } catch { $refused = $true }
-Assert-Case -Name 'no-more-lanes-than-slots' -Condition $refused -Detail 'LaneCount 5 is refused: there are four slots besides slot 0'
+try { $null = Get-L2LanePlan -Items $items -LaneCount 9 } catch { $refused = $true }
+Assert-Case -Name 'no-more-lanes-than-slots' -Condition $refused -Detail 'LaneCount 9 is refused: there are eight slots besides slot 0'
 
 # Lanes start several pwsh processes at the same moment, and every one of them imports L2.psm1 before it
 # does anything. A PowerShell class is compiled when its module is parsed, so every type it names must
