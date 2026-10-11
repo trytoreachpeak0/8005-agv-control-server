@@ -31,6 +31,12 @@ function Get-NightlyG3Verdict {
         return [pscustomobject]$verdict
     }
 
+    # JSON null or an array parses, and then indexing it throws out of here (review B of PR #591).
+    if ($runResult -isnot [System.Collections.IDictionary]) {
+        $verdict.result = 'ERROR'
+        $verdict.detail = "run-result.json is not a JSON object (exit $ExitCode)"
+        return [pscustomobject]$verdict
+    }
     $verdict.status = "$($runResult['status'])"
     if ($verdict.status -ceq 'INCONCLUSIVE_RUNNER_ERROR') {
         $verdict.result = 'ERROR'
@@ -74,7 +80,11 @@ function Format-NightlyG3Comment {
         [Parameter(Mandatory)][System.Collections.IDictionary]$Commits,
         [Parameter(Mandatory)][DateTimeOffset]$StartedAtUtc,
         [string]$StoppedBy,
-        [string]$Note
+        [string]$Note,
+        # The g3 job's result, when it ran. Anything but success keeps a night from reading 全绿 (review B of PR #591).
+        [string]$JobResult,
+        # The runners a complete round has a verdict for; one missing keeps a night from reading 全绿.
+        [string[]]$ExpectedRunners = @('staged', 'restart', 'demand-bearing', 'journey')
     )
 
     # One comment a night on control-server#581, in Chinese because a person reads it. Its absence means the night did
@@ -84,13 +94,25 @@ function Format-NightlyG3Comment {
     $night = $StartedAtUtc.ToOffset([TimeSpan]::FromHours(8)).ToString('yyyy-MM-dd')
     $red = @($Verdicts | Where-Object { $_.result -in 'FAIL', 'ERROR' })
     $notStarted = @($Verdicts | Where-Object { "$($_.result)" -like 'NOT_STARTED_*' })
+    $passed = @($Verdicts | Where-Object { $_.result -eq 'PASS' } | ForEach-Object runner)
+    $missing = @($ExpectedRunners | Where-Object { $_ -notin @($Verdicts | ForEach-Object runner) })
+    # 全绿 is earned, never the fall-through: every expected runner PASS, no reason to stop, and the job succeeded.
+    $green = $Verdicts.Count -gt 0 -and $missing.Count -eq 0 -and $notStarted.Count -eq 0 -and -not $StoppedBy -and
+        @($ExpectedRunners | Where-Object { $_ -notin $passed }).Count -eq 0 -and ([string]::IsNullOrEmpty($JobResult) -or $JobResult -eq 'success')
+    $incomplete = @(
+        if ($StoppedBy) { $StoppedBy }
+        if ($notStarted.Count -gt 0 -and -not $StoppedBy) { ($notStarted | ForEach-Object result | Select-Object -Unique) -join '、' }
+        if ($missing.Count -gt 0) { "缺 $($missing -join '、') 的结论" }
+        # A red runner already fails the job (the round exits 1), so the job's result says something only without one.
+        if ($red.Count -eq 0 -and -not [string]::IsNullOrEmpty($JobResult) -and $JobResult -ne 'success') { "g3 作业 $JobResult" }
+    )
     $headline = if ($red.Count -gt 0) {
-        "红：$(($red | ForEach-Object runner) -join '、')$(if ($StoppedBy) { "；未跑完：$StoppedBy" })"
+        "红：$(($red | ForEach-Object runner) -join '、')$(if ($incomplete.Count -gt 0) { "；未跑完：$($incomplete -join '；')" })"
     } elseif ($Verdicts.Count -eq 0) {
         "未跑：$(if ($StoppedBy) { $StoppedBy } else { '没有任何 runner 的结论' })"
-    } elseif ($StoppedBy -or $notStarted.Count -gt 0) {
-        "未跑完：$(if ($StoppedBy) { $StoppedBy } else { ($notStarted | ForEach-Object result | Select-Object -Unique) -join '、' })"
-    } else { '全绿' }
+    } elseif ($green) { '全绿' } else {
+        "未跑完：$(if ($incomplete.Count -gt 0) { $incomplete -join '；' } else { '结论不全' })"
+    }
 
     $lines = [System.Collections.Generic.List[string]]::new()
     $lines.Add("**每晚 G3 · $night · $headline**")

@@ -178,6 +178,13 @@ jobs:
               Write-Host "$name $(& $name --version) at $($command.Source)"
           }
 
+      # Crash dialogs already up before the round, so the cleanup after it only blames this one (as l2.yml real-rig does).
+      - name: Crash dialogs before the round
+        shell: pwsh
+        run: |
+          $before = @(Get-Process WerFault -ErrorAction SilentlyContinue | ForEach-Object Id) -join ','
+          "G3_WER_BEFORE=$before" | Out-File -FilePath $env:GITHUB_ENV -Append -Encoding utf8
+
       - name: Run the four G3 runners
         id: round
         shell: pwsh
@@ -199,6 +206,37 @@ jobs:
           }
           exit $exitCode
 
+      # What the round left behind, as l2.yml's real-rig job checks (review E of PR #591). This desktop renders golden
+      # baselines (8005-mes-ingest's verify near 05:30), so a leftover onboard or simulator window, an orphaned server or
+      # double, or a crash dialog of ours is a defect: listed, closed, and the job fails, which keeps the night's comment
+      # from reading 全绿. Only processes started from this job's own directories -- the work root, the checkout and the
+      # peer publish cache -- and crash dialogs raised for such a process; anyone else's are left alone.
+      - name: Leftover processes and crash dialogs
+        if: always()
+        shell: pwsh
+        run: |
+          $ownRoots = @(@((Join-Path $env:RUNNER_TEMP 'g3'), $env:GITHUB_WORKSPACE, (Join-Path $env:LOCALAPPDATA '8005-l2-peers')) |
+              ForEach-Object { $_.TrimEnd([char]'\') + [char]'\' })
+          $isOurs = { param($path) $path -and @($ownRoots | Where-Object { $path.StartsWith($_, [StringComparison]::OrdinalIgnoreCase) }).Count -gt 0 }
+          $werBefore = @($env:G3_WER_BEFORE -split ',' | Where-Object { $_ } | ForEach-Object { [int]$_ })
+          $leftovers = @(Get-Process | Where-Object { & $isOurs $_.Path })
+          foreach ($wer in @(Get-CimInstance Win32_Process -Filter "Name = 'WerFault.exe'" -ErrorAction SilentlyContinue)) {
+              if ($wer.ProcessId -in $werBefore) { continue }
+              $crashedPid = if ($wer.CommandLine -match '-p\s+(\d+)') { [int]$Matches[1] } else { $null }
+              $crashed = if ($crashedPid) { Get-Process -Id $crashedPid -ErrorAction SilentlyContinue } else { $null }
+              if ($crashed -and (& $isOurs $crashed.Path)) {
+                  $leftovers += @(Get-Process -Id $wer.ProcessId -ErrorAction SilentlyContinue)
+              } else {
+                  Write-Host "::warning title=Crash dialog not ours::WerFault pid $($wer.ProcessId) for pid $crashedPid; left alone"
+              }
+          }
+          foreach ($process in $leftovers) {
+              Write-Host "::error title=Leftover process::$($process.ProcessName) (pid $($process.Id)) $($process.Path) window '$($process.MainWindowTitle)'"
+              Stop-Process -Id $process.Id -Force -ErrorAction SilentlyContinue
+          }
+          if ($leftovers.Count -gt 0) { exit 1 }
+          Write-Host 'No leftover process or crash dialog of this round.'
+
       # Evidence of every runner, and what is left of a red runner's stage (runtime, journals, logs; its clones and
       # builds are already gone). Diagnostic material, not a deliverable, so a failed upload does not turn the run red.
       - name: Upload G3 evidence
@@ -216,7 +254,18 @@ jobs:
         if: always() && env.G3_WORK_ROOT != ''
         continue-on-error: true
         shell: pwsh
-        run: Remove-Item -LiteralPath $env:G3_WORK_ROOT -Recurse -Force -ErrorAction SilentlyContinue
+        # Said, not swallowed (review E of PR #591): a work root left behind is gigabytes on a disk that has run short.
+        run: |
+          try {
+              Remove-Item -LiteralPath $env:G3_WORK_ROOT -Recurse -Force -ErrorAction Stop
+              Write-Host "Removed $env:G3_WORK_ROOT"
+          } catch {
+              $left = @(Get-ChildItem -LiteralPath $env:G3_WORK_ROOT -Recurse -Force -File -ErrorAction Ignore)
+              $gib = [Math]::Round((($left | Measure-Object Length -Sum).Sum) / 1GB, 2)
+              Write-Host "::warning title=Work root not removed::$env:G3_WORK_ROOT keeps $($left.Count) files, $gib GiB: $($_.Exception.Message)"
+              "Work root not removed: $env:G3_WORK_ROOT keeps $($left.Count) files, $gib GiB." | Out-File -FilePath $env:GITHUB_STEP_SUMMARY -Append -Encoding utf8
+              exit 1
+          }
 
   report:
     needs: [gate, g3]
@@ -263,7 +312,7 @@ jobs:
           $started = if ($env:G3_STARTED) { [DateTimeOffset]::Parse($env:G3_STARTED) } else { [DateTimeOffset]::UtcNow }
           $kind = if ($env:G3_NIGHTLY -eq 'true') { 'schedule' } else { $env:GITHUB_EVENT_NAME }
           $body = Format-NightlyG3Comment -Verdicts $verdicts -RunUrl $runUrl -Trigger $kind -Ref $env:G3_REF `
-              -Commits $commits -StartedAtUtc $started -StoppedBy $stoppedBy -Note ($notes -join ' ')
+              -Commits $commits -StartedAtUtc $started -StoppedBy $stoppedBy -Note ($notes -join ' ') -JobResult $env:G3_JOB_RESULT
           $body | Out-File -FilePath $env:GITHUB_STEP_SUMMARY -Append -Encoding utf8
           $comment = Send-NightlyG3Comment -Repository $env:GITHUB_REPOSITORY -Issue ([int]$env:G3_ISSUE) -Body $body -Token $env:GH_TOKEN
           Write-Host "Commented: $($comment.html_url)"

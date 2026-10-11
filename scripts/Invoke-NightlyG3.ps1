@@ -15,11 +15,13 @@
     runners of a night should name one identity.
 
     In a row, never two at once: staged and restart both bind Modbus 1502, and three of the four put WPF windows on
-    the one interactive desktop. Before each runner, three gates, and the first that holds stops the round: the start
-    deadline (NOT_STARTED_DEADLINE), whole-machine committed memory above -CommitCeilingGiB after waiting
-    -CommitWaitMinutes (NOT_STARTED_COMMIT_GUARD, l2.yml's real-rig guard), and less than -MinFreeGiB free on the
-    work root's drive (NOT_STARTED_DISK; vm01 had 7.9 GB free on 2026-10-11 and a runner's stage is about 1.7 GB).
-    The runners left are recorded with that code and never started.
+    the one interactive desktop. Before each runner, three gates, and the first that holds stops the round:
+    whole-machine committed memory above -CommitCeilingGiB after waiting -CommitWaitMinutes (NOT_STARTED_COMMIT_GUARD,
+    l2.yml's real-rig guard), the start deadline, checked after that wait (NOT_STARTED_DEADLINE), and less than
+    -MinFreeGiB free on the work root's drive (NOT_STARTED_DISK; vm01 had 7.9 GB free on 2026-10-11 and a runner's
+    stage is about 1.7 GB). The runners left are recorded with that code and never started. Anything that throws while
+    a runner is handled stops the round too: stoppedBy is ERROR_ROUND: <runner>: <message>, that runner ERROR and the
+    ones left NOT_STARTED_ERROR, so a round never ends with fewer verdicts and no reason.
 
     After each runner its stage goes: all of it on PASS; on anything else sources/, publish/ and peers/ (clones and
     builds, rebuilt from the commits in a minute) and the rest -- runtime databases, journals, logs -- stays for the
@@ -94,14 +96,15 @@ function Remove-Tree([string]$Path) {
 $verdicts = [System.Collections.Generic.List[object]]::new()
 $runs = [System.Collections.Generic.List[object]]::new()
 $stoppedBy = $null
+# What the runners left are recorded as once the round stops: the stop reason itself, except after an exception, whose
+# stoppedBy carries the message (ERROR_ROUND: ...) and whose runners left are NOT_STARTED_ERROR (review B of PR #591).
+$notStartedCode = $null
 try {
     foreach ($runner in $runners) {
-        if ($null -eq $stoppedBy) {
-            if ([DateTimeOffset]::UtcNow -gt $StartDeadlineUtc) {
-                Write-Host "::error title=Nightly G3::$($runner.Name) not started: past the start deadline $($StartDeadlineUtc.ToString('o'))"
-                $stoppedBy = 'NOT_STARTED_DEADLINE'
-            }
-        }
+      $verdictAdded = $false
+      try {
+        # The memory wait first and the deadline after it (review F of PR #591): up to CommitWaitMinutes may pass in
+        # that wait, and a runner must not start past the deadline because it was checked before the wait.
         if ($null -eq $stoppedBy) {
             $waited = [Diagnostics.Stopwatch]::StartNew()
             $committed = Get-CommittedGiB
@@ -112,18 +115,24 @@ try {
             }
             if ($committed -gt $CommitCeilingGiB) {
                 Write-Host "::error title=Nightly G3::$($runner.Name) not started: $committed GiB committed after waiting $CommitWaitMinutes minutes (ceiling $CommitCeilingGiB)"
-                $stoppedBy = 'NOT_STARTED_COMMIT_GUARD'
+                $stoppedBy = $notStartedCode = 'NOT_STARTED_COMMIT_GUARD'
+            }
+        }
+        if ($null -eq $stoppedBy) {
+            if ([DateTimeOffset]::UtcNow -gt $StartDeadlineUtc) {
+                Write-Host "::error title=Nightly G3::$($runner.Name) not started: past the start deadline $($StartDeadlineUtc.ToString('o'))"
+                $stoppedBy = $notStartedCode = 'NOT_STARTED_DEADLINE'
             }
         }
         if ($null -eq $stoppedBy) {
             $free = Get-FreeGiB
             if ($free -lt $MinFreeGiB) {
                 Write-Host "::error title=Nightly G3::$($runner.Name) not started: $free GiB free on $([IO.Path]::GetPathRoot($WorkRoot)), below $MinFreeGiB"
-                $stoppedBy = 'NOT_STARTED_DISK'
+                $stoppedBy = $notStartedCode = 'NOT_STARTED_DISK'
             }
         }
         if ($null -ne $stoppedBy) {
-            $verdicts.Add((Get-NightlyG3Verdict -Runner $runner.Name -EvidenceRoot '' -ExitCode $stoppedBy))
+            $verdicts.Add((Get-NightlyG3Verdict -Runner $runner.Name -EvidenceRoot '' -ExitCode $notStartedCode))
             continue
         }
 
@@ -145,6 +154,7 @@ try {
 
         $verdict = Get-NightlyG3Verdict -Runner $runner.Name -EvidenceRoot $evidence -ExitCode $exitCode
         $verdicts.Add($verdict)
+        $verdictAdded = $true
         $stageRemoved = if ($verdict.result -eq 'PASS') { Remove-Tree $stage } else {
             foreach ($bulk in 'sources', 'publish', 'peers') { $null = Remove-Tree (Join-Path $stage $bulk) }
             $false
@@ -152,6 +162,18 @@ try {
         $runs.Add([ordered]@{ runner = $runner.Name; exitCode = $exitCode; seconds = $seconds; stage = $stage; stageRemoved = $stageRemoved
                 evidence = $evidence; log = $log })
         Write-Host "G3_NIGHTLY_RUNNER_DONE: $($runner.Name) $($verdict.result) in ${seconds}s$(if ($verdict.failed.Count) { ': ' + ($verdict.failed -join '; ') })$(if ($verdict.detail) { " ($($verdict.detail))" })"
+      }
+      catch {
+        # Anything that throws while a runner is handled stops the round with its own message, and that runner says
+        # ERROR -- never a night with fewer verdicts and no reason, which would read as green.
+        $message = ($_.Exception.Message -replace '\s+', ' ').Trim()
+        Write-Host "::error title=Nightly G3::$($runner.Name): $message"
+        $stoppedBy = "ERROR_ROUND: $($runner.Name): $message"
+        $notStartedCode = 'NOT_STARTED_ERROR'
+        if (-not $verdictAdded) {
+            $verdicts.Add([pscustomobject][ordered]@{ runner = $runner.Name; result = 'ERROR'; status = $null; failed = @(); detail = "ERROR_ROUND: $message" })
+        }
+      }
     }
 }
 finally {

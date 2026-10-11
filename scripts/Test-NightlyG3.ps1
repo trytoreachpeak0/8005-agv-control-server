@@ -10,12 +10,15 @@
 
       1. The verdict of one runner, from its exit code and its run-result.json. Only exit 0 together with a status
          ending in _PASS and no assertion other than PASS is PASS; INCONCLUSIVE_RUNNER_ERROR, a missing or
-         unreadable run-result.json is ERROR, with the runner's own message; anything else is FAIL, naming every
+         unreadable run-result.json, or one that is JSON null or an array, is ERROR, with the runner's own message and
+         without throwing (review B of PR #591); anything else is FAIL, naming every
          assertion that is not PASS and every scenario that did not PASS with its failure reason. The rows are
          shaped like the batch-10 exit's own evidence (evidence/g3/20261010-protocol-v3.0.0-*), inlined so that a
          clone without the evidence tree can run this.
       2. The comment on the fixed issue (control-server#581). Named by the plant's date (CST), headed 全绿 only when all
-         four PASS, naming each red runner and what is red in it (cut at ten, saying how many more), the commits and
+         four runners have a PASS verdict, nothing stopped the round and the g3 job succeeded (two verdicts and no
+         reason, or four PASS from a failed job, read 未跑完; a red runner's own job failure is not blamed twice), naming
+         each red runner and what is red in it (cut at ten, saying how many more), the commits and
          the run link, saying that it is not gate evidence; a round that stopped early or never started says why. A
          `|` inside a failure reason is escaped, so it cannot break the table.
       3. Waiting for the CI real rig (l2.yml's real-rig job, the other holder of the cs-desktop runner): which runs are
@@ -29,9 +32,15 @@
          no onboard one) and a stage and evidence root of its own; a PASS runner's stage is removed, a red one keeps
          its runtime but not its sources or publish (vm01 has single-digit gigabytes free); results.json carries the
          verdicts and the four commits; past the deadline, under the commit guard or short of disk, the runners left
-         are recorded NOT_STARTED_* and never started; red exits 1, green 0.
-      6. The workflow's load-bearing lines, as text: nothing in .github/workflows/g3.yml cancels a job, and its g3 job
-         runs Invoke-NightlyG3.ps1 on [self-hosted, cs-desktop] with the whole history checked out.
+         are recorded NOT_STARTED_* and never started; a run-result.json that is JSON null makes that runner ERROR and
+         the round goes on; an exception mid-round (injected into a copy of the round script's module) stops it with
+         ERROR_ROUND and its message, that runner ERROR and the next NOT_STARTED_ERROR, never started; red exits 1,
+         green 0.
+      6. The workflow's load-bearing lines, as text: nothing in .github/workflows/g3.yml cancels a job, its g3 job runs
+         Invoke-NightlyG3.ps1 on [self-hosted, cs-desktop] with the whole history checked out, there is no schedule of
+         its own and nightly=true grades a night, the report job runs always(), the g3 job closes the round's leftover
+         processes and crash dialogs and reports a work root it cannot remove, and test.yml runs this self-check and
+         the override one.
 
     Exits 1 when any check comes out the other way, and prints every check either way.
 
@@ -169,6 +178,10 @@ try {
            Contains = @('g3 作业 failure'); NotContains = @('全绿') }
         @{ Name = 'four PASS from a g3 job that succeeded'; Args = @{ Trigger = 'schedule'; Verdicts = $allPass; JobResult = 'success' }
            Contains = @('全绿'); NotContains = @('未跑完') }
+        @{ Name = 'a red runner fails the job, and the headline does not blame the job for it'; Args = @{ Trigger = 'schedule'; JobResult = 'failure'; Verdicts = @(
+                   (New-Verdict 'staged' 'FAIL' @('secondForcedRecoveryWhileFirstUnsettledIsRejected')), (New-Verdict 'restart' 'PASS'),
+                   (New-Verdict 'demand-bearing' 'PASS'), (New-Verdict 'journey' 'PASS')) }
+           Contains = @('红：staged**'); NotContains = @('g3 作业', '全绿') }
     )
     foreach ($case in $commentCases) {
         $arguments = @{} + $common + $case.Args

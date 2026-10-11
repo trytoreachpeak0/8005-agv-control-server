@@ -278,8 +278,8 @@ control-server#581 下评论一条，全绿也写一行，**某晚没有评论�
 | 作业 | runner | 做什么 |
 | --- | --- | --- |
 | `gate` | headless | 取两个提交和开跑截止时间；看本仓有没有正在跑或排队的 `l2.yml` `real-rig` 作业，有就每分钟查一次、最多等 30 分钟，仍忙就本晚记 `NOT_STARTED_RIG_BUSY`。等待放在这里而不在 cs-desktop 上，是因为排在本作业后面的真装置作业要等本作业让出 runner，在 cs-desktop 上等它只会等满上限 |
-| `g3` | `cs-desktop` | `scripts/Invoke-NightlyG3.ps1`：按出口顺序 staged → restart → 需求承载 → journey 串行（staged 与 restart 都占 Modbus 1502，三个要桌面）。每个 runner 开跑前三道闸门：截止时间、整机已提交内存（照真装置那套，超过 12 GiB 等最多 30 分钟）、C 盘剩余至少 4 GiB；任一不过，其余 runner 记 `NOT_STARTED_DEADLINE`／`NOT_STARTED_COMMIT_GUARD`／`NOT_STARTED_DISK`，不启动 |
-| `report` | headless | 不管前两个作业怎样，都在 #581 下评论 |
+| `g3` | `cs-desktop` | `scripts/Invoke-NightlyG3.ps1`：按出口顺序 staged → restart → 需求承载 → journey 串行（staged 与 restart 都占 Modbus 1502，三个要桌面）。每个 runner 开跑前三道闸门，依次是：整机已提交内存（照真装置那套，超过 12 GiB 等最多 30 分钟）、截止时间（放在内存等待之后，等完再看一次）、C 盘剩余至少 4 GiB；任一不过，其余 runner 记 `NOT_STARTED_COMMIT_GUARD`／`NOT_STARTED_DEADLINE`／`NOT_STARTED_DISK`，不启动。处理某个 runner 时编排自己抛了异常，这一轮停下：`stoppedBy` 写 `ERROR_ROUND: <runner>: <报错>`，那个 runner 记 ERROR，其余记 `NOT_STARTED_ERROR`。跑完关掉本轮留在桌面上的残留进程和崩溃对话框（只认本作业目录里起的），有就判作业失败 |
+| `report` | headless | `if: always()`：不管前两个作业怎样，都在 #581 下评论 |
 
 - **时间。** 夜间一轮（`nightly=true`）不在北京时间 04:00 之后开新 runner，避开 05:30 前后 mes-ingest 的黄金渲染 verify；GitHub 把定时触发
   推迟到 04:00 之后时，那晚什么都不跑（评论写 `NOT_STARTED_DEADLINE`）。手动触发的截止是开跑后 180 分钟。
@@ -290,8 +290,11 @@ control-server#581 下评论一条，全绿也写一行，**某晚没有评论�
   2026-10-11 核过），协议仓自己的 `g1.yml` 用的就是这一套；协议仓没有 `packageManager` 字段。workflow 不另装，只打印版本，
   缺了就在跑任何 runner 之前失败。
 - **判定。** 退出码 0、`status` 以 `_PASS` 结尾、没有非 PASS 的判据，三者都满足才算 PASS；`INCONCLUSIVE_RUNNER_ERROR`、没有或读不了
-  `run-result.json` 算 ERROR，带 runner 自己的报错。都在 `scripts/NightlyG3.psm1` 里，离线自检 `scripts/Test-NightlyG3.ps1`
-  在 `test.yml` 里跑；两个 staged runner 的覆盖参数由 `scripts/Test-G3SelfCheckOverride.ps1` 自检。
+  `run-result.json`（包括内容是 JSON null 或数组）算 ERROR，带 runner 自己的报错。评论标题只在四个 runner 都有 PASS 结论、
+  没有停下的原因、`g3` 作业本身也成功时才写「全绿」；少一个 runner 的结论，或 `g3` 作业在全 PASS 之后失败（比如收尾发现残留进程），
+  都写「未跑完」并说明缺什么。都在 `scripts/NightlyG3.psm1` 里，离线自检 `scripts/Test-NightlyG3.ps1` 在 `test.yml` 里跑；两个
+  staged runner 的覆盖参数由 `scripts/Test-G3SelfCheckOverride.ps1` 自检，也在 `test.yml` 里。
+- **删不掉工作目录要说出来。** 上传证据后删 `$RUNNER_TEMP\g3`；删不掉时留一条警告和作业摘要，写明还剩多少文件、多大。
 
 **手动触发。** 任何带 `g3.yml` 的分支都行，`--ref` 决定用哪一版 workflow，`-f ref=` 决定测哪个提交：
 
@@ -300,7 +303,12 @@ gh workflow run g3.yml -R trytoreachpeak0/8005-agv-control-server --ref fp/v2-im
 gh workflow run g3.yml -R trytoreachpeak0/8005-agv-control-server --ref <分支> -f ref=<分支> -f note='说明这一轮为什么跑'
 ```
 
-它占 cs-desktop 约 45 分钟，和「CI 真装置」是同一格：手动跑之前先向调度要那一格。
+它占 cs-desktop 约 60 分钟（2026-10-11 首轮实测：staged 7.7、restart 5.8、需求承载 4.9、journey 40.6 分钟），和「CI 真装置」
+是同一格：手动跑之前先向调度要那一格。
+
+**别在一轮正在跑、又有一轮在排队时再手动触发。** `g3.yml` 的 `concurrency` 一次只放一轮、`cancel-in-progress: false`，正在跑的
+那轮不会被取消；但 GitHub 对同一组只保留一个排队中的运行，再触发一次会把原来排队的那轮顶掉（被顶掉的运行直接结束，三个作业
+都不跑，所以 #581 下不会留下它的评论）。
 
 **每晚由 `main` 上的触发器启动。** GitHub 只按默认分支（本仓是 `main`）上的 workflow 文件排 `schedule`，而 `fp/v2-impl` 不合入
 `main`，所以 `g3.yml` 自己不写 `schedule`（写了也永远不会触发）。用户 2026-10-11 定：`main` 上放一个只做触发的
