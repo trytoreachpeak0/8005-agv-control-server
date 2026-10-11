@@ -267,6 +267,26 @@ control-server#518 时它只绑 `WIRE_TO_GATE` → 210「关卡」，核对号�
   和名单文件。两节缺失、或入口开着却没有凭据：抛 `CLEARANCE_EXIT_BROKEN`，安装算失败。出口不可用（例如第一阶段名单为空）：
   打 `CLEARANCE_EXIT_UNAVAILABLE` 警告并列原因码，不算失败。它读的是服务将读的文件，不是运行中进程的判定，服务端没有对外暴露这个状态。
 
+## 多车实例每台车一个出发安全投影凭据（control-server#600）
+
+车载端每秒向服务端要一次「这台车在 RIoT 上停稳了没有」（`/api/onboard/v1/vehicle-safety`）。以前全车共用一个凭据、请求里也不带车号，
+服务端分不出是谁在问，一律回 `JourneyRuntime.vehicleKey` 那一台的投影；两车实例里另一台车按车号不符拒收，永远「出发安全未就绪」
+（control-server#566 现场续场二，agv03 拿到 agv02 的投影）。现在服务端凭凭据认车：
+
+- 定义带车队表（`journeyRuntime.fleet`）时，覆盖层给每行写一条 `OnboardSafetyProjection:vehicleCredentials`，变量名按 RIoT id 取
+  `CONTROL_SERVER_V2_ONBOARD_SAFETY_CREDENTIAL_RIOT<riotId>`（agv02 是 `RIOT59`，agv03 是 `RIOT60`）。单车定义写空表，照旧用共享凭据。
+- 值由控制端 `19-deploy-control-server-parallel.ps1` 从 DPAPI 秘密存储取，放进 `deploy-config.json` 的 `onboardSafetyCredentials`
+  （`vehicleKey -> 值`）；没有就沿用服务 `Environment` 里已有的。安装脚本**在产品脚本运行之前**解析：哪台车两处都没有、两台车同值、
+  某台车的值等于共享的 `CONTROL_SERVER_ONBOARD_CREDENTIAL`，都在停任何东西之前拒绝（`ONBOARD_SAFETY_CREDENTIAL_MISSING`／
+  `ONBOARD_SAFETY_CREDENTIAL_SHARED`），报错只写车号和变量名。服务端启动时再查一遍同样的规则。
+- 配置步骤把每台车的值写进服务的 `Environment`，并删掉车队表里已经没有的车留下的旧变量。
+- 服务端：车队表两台以上、投影开着、却没有按车凭据，**拒绝启动**；配了按车凭据后共享凭据读不到任何一台车的投影（401）；
+  请求可以带 `?vehicleKey=`，与凭据的车不符、为空、重复或不在车队表里一律 403，不读 RIoT。
+- 车载端要拿到自己那一份：`06-deploy-onboard-hmi.ps1` 把它写进车上的 `CONTROL_SERVER_ONBOARD_SAFETY_CREDENTIAL`。凭据在控制端用
+  `Set-ControlServerSecret.ps1 -NewVehicleSafetyCredential <别名>` 生成。换凭据要服务端与那台车一起重新部署。
+
+TCP 会话仍然是全车共用一个凭据、车靠握手自报身份，本票没有动它。
+
 ## 升级与回滚前先把旅程运行时关掉（control-server#454）
 
 产品升级脚本 `Update-ControlServerLocal.ps1` 的预检要求已装配置里 `JourneyRuntime.enabled` 为 false（`ae2f99be9` 起）：
