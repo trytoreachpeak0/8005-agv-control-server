@@ -164,8 +164,8 @@ jobs:
           }
           $decision = & ./scripts/l2/Select-L2ScenarioRun.ps1 -ChangedPath $changed -PullRequestBody $env:L2_PR_BODY -GitHubOutput $env:GITHUB_OUTPUT
           if (-not $decision.Run) {
-            Write-Host "::notice title=L2 round skipped::$($decision.Reason)"
-            Add-Content -LiteralPath $env:GITHUB_STEP_SUMMARY -Value "### L2 round **skipped**`n`n$($decision.Reason)`n`nChanged: $(($changed | Select-Object -First 20) -join ', ')$(if ($changed.Count -gt 20) { ", ... ($($changed.Count) in all)" })"
+            Write-Host "::notice title=L2 round skipped::本 PR 未运行 L2，绿不代表 L2 通过。$($decision.Reason)"
+            Add-Content -LiteralPath $env:GITHUB_STEP_SUMMARY -Value "### 本 PR 未运行 L2，绿不代表 L2 通过`n`n$($decision.Reason)`n`nChanged: $(($changed | Select-Object -First 20) -join ', ')$(if ($changed.Count -gt 20) { ", ... ($($changed.Count) in all)" })"
           }
 
       # Every scenario runs even when an earlier one fails: one red scenario must not hide the

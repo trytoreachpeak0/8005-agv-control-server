@@ -100,7 +100,6 @@ $skips = @(
     'scripts/Install-ControlServerLocal.ps1'
     'scripts/Update-ControlServerLocal.ps1'
     'scripts/Test-DataRootLockWait.ps1'
-    'scripts/a-script-that-does-not-exist-yet.ps1'
 )
 foreach ($path in $skips) {
     $decision = Decide @($path)
@@ -131,6 +130,9 @@ $runs = @(
     '.gitattributes'
     '.editorconfig'
     '.config/dotnet-tools.json'
+    # Not in the checkout: deleted, or the old name of a rename (review M1 of PR #631). Whether L2 code named it
+    # cannot be read off a file that is gone, so it counts.
+    'scripts/a-script-that-is-not-in-the-checkout.ps1'
     # Unknown: whatever is not known to be left out runs the round.
     'a-new-top-level-directory/file.txt'
     'docs.md'
@@ -173,8 +175,35 @@ Import-Module (Join-Path (Split-Path -Parent $PSScriptRoot) 'Direct.psm1')
         $decision = & $Selector -ChangedPath @($case.Path) -Repository $sandbox 6>$null
         Check "closure: $($case.Path) $(if ($case.Run) { 'runs' } else { 'skips' })" ($decision.Run -eq $case.Run) ($decision | ConvertTo-Json -Compress)
     }
+    # Review M1 of PR #631: a file L2 code loads, deleted or renamed by the pull request, is gone from the checkout the
+    # selector reads -- and the code naming it may be unchanged, so the round would break with nothing to run it.
+    Remove-Item -LiteralPath (Join-Path $sandbox 'scripts/Direct.psm1')
+    $deleted = & $Selector -ChangedPath @('scripts/Direct.psm1') -Repository $sandbox 6>$null
+    Check 'closure: Direct.psm1 deleted, only in the change list, runs' ($deleted.Run -eq $true) ($deleted | ConvertTo-Json -Compress)
+    Move-Item -LiteralPath (Join-Path $sandbox 'scripts/Transitive.ps1') -Destination (Join-Path $sandbox 'scripts/Renamed.ps1')
+    $renamed = & $Selector -ChangedPath @('scripts/Transitive.ps1', 'scripts/Renamed.ps1') -Repository $sandbox 6>$null
+    Check 'closure: Transitive.ps1 renamed, runs' ($renamed.Run -eq $true -and $renamed.Inputs -contains 'scripts/Transitive.ps1') ($renamed | ConvertTo-Json -Compress)
 } finally {
     Remove-Item -LiteralPath $sandbox -Recurse -Force -ErrorAction SilentlyContinue
+}
+
+# --- 3b. Every root file scripts/l2 loads by name counts (review S1 of PR #631). ---------------------------------------
+# An independent source for what the closure must contain: the Import-Module and dot-source calls in scripts/l2's own
+# files that reach one level up, Join-Path (Split-Path -Parent $PSScriptRoot) '<leaf>', read from the syntax tree.
+$loaded = [Collections.Generic.SortedSet[string]]::new([StringComparer]::OrdinalIgnoreCase)
+foreach ($file in Get-ChildItem -Path (Join-Path $Repository 'scripts/l2/*') -File -Include *.ps1, *.psm1) {
+    $ast = [System.Management.Automation.Language.Parser]::ParseFile($file.FullName, [ref]$null, [ref]$null)
+    foreach ($command in $ast.FindAll({ param($n) $n -is [System.Management.Automation.Language.CommandAst] }, $true)) {
+        $isLoad = $command.InvocationOperator -eq 'Dot' -or $command.GetCommandName() -eq 'Import-Module'
+        $match = [regex]::Match($command.Extent.Text, 'Join-Path \(Split-Path -Parent \$PSScriptRoot\) ''([^''/\\]+)''')
+        if ($isLoad -and $match.Success) { $null = $loaded.Add($match.Groups[1].Value) }
+    }
+}
+Check 'scripts/l2 loads at least DesktopLock.psm1 from scripts/' ($loaded.Contains('DesktopLock.psm1')) "found: $($loaded -join ', ')"
+$loadedPaths = @($loaded | ForEach-Object { "scripts/$_" })
+$loadedDecision = Decide $loadedPaths
+foreach ($path in $loadedPaths) {
+    Check "loaded by scripts/l2, counts: $path" (@($loadedDecision.Inputs) -contains $path) ($loadedDecision | ConvertTo-Json -Compress)
 }
 
 # --- 4. Never skipped. -----------------------------------------------------------------------------------------------
@@ -222,6 +251,7 @@ Check 'l2-scope comes before the scenarios run' ($order[0] -ge 0 -and $order[0] 
 $runStep = [regex]::Match($scenariosJob, '(?ms)^      - name: Run synthetic L2 scenarios\r?\n(.*?)(?=^        run: )').Groups[1].Value
 Check 'the scenarios run is gated on l2-scope' ($runStep -match "if: steps\.l2-scope\.outputs\.run == 'true'") $runStep
 $upload = [regex]::Match($scenariosJob, '(?ms)^      - name: Upload L2 evidence\r?\n(.*?)(?=^        uses: )').Groups[1].Value
+Check 'a skip says first that L2 did not run' ($decide -match [regex]::Escape('本 PR 未运行 L2，绿不代表 L2 通过')) $decide
 Check 'the evidence upload is gated on l2-scope' ($upload -match "if: always\(\) && steps\.l2-scope\.outputs\.run == 'true'") $upload
 
 # --- 6. No build server outlives the scenarios job's build (control-server#630, item 2). -----------------------------

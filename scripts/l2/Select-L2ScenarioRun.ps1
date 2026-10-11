@@ -17,6 +17,8 @@
       README.md, CLAUDE.md, ControlServer.http
       .github/workflows/test.yml, g3.yml, release.yml   l2.yml itself, and any other file under .github/, runs it.
       A file directly under scripts/ that no L2 code names: the G3 runners, the install scripts, their self-checks.
+                                    Only one that is in the checkout: a deleted file, or a rename's old name, counts,
+                                    since what named it cannot be read off a file that is gone.
 
     "Named" is worked out from the checkout, not listed here, so it cannot go stale: every string in the code of
     scripts/l2 (*.ps1, *.psm1, *.psd1, read through the PowerShell parser, so comments do not count) and the whole text
@@ -114,8 +116,12 @@ if ($NotAPullRequest) {
         $isLeftOut = $leftOutFiles -ccontains $path -or
             @($leftOutPrefixes | Where-Object { $path.StartsWith($_, [StringComparison]::Ordinal) }).Count -gt 0
         if (-not $isLeftOut -and $path -cmatch '^scripts/[^/]+$') {
-            if ($null -eq $named) { $named = Get-NamedScriptRootLeaves $Repository }
-            $isLeftOut = -not $named.Contains($path.Substring('scripts/'.Length))
+            # Not in the checkout means deleted, or the old name of a rename: whether L2 code loaded it cannot be read
+            # off a file that is gone, and the code naming it may be unchanged, so it counts (review M1 of PR #631).
+            if (Test-Path -LiteralPath (Join-Path $Repository $path) -PathType Leaf) {
+                if ($null -eq $named) { $named = Get-NamedScriptRootLeaves $Repository }
+                $isLeftOut = -not $named.Contains($path.Substring('scripts/'.Length))
+            }
         }
         if ($isLeftOut) { $leftOut.Add($path) } else { $inputs.Add($path) }
     }
