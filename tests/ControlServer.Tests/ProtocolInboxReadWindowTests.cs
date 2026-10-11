@@ -9,6 +9,8 @@ using ControlServer.Infrastructure.Persistence;
 using Microsoft.Data.Sqlite;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.Diagnostics;
+using Microsoft.EntityFrameworkCore.Infrastructure;
+using Microsoft.EntityFrameworkCore.Migrations;
 using Microsoft.Extensions.Options;
 
 namespace ControlServer.Tests;
@@ -60,6 +62,86 @@ public sealed class ProtocolInboxReadWindowTests
 
         // 窗口里只有一行：一次读到它，一次答「没有了」。
         Assert.Equal((true, 2, AgvId, 2), (single, singleRead, string.Join(",", all), allRead));
+    }
+
+    /// <summary>
+    /// 迁移在有收件箱数据的库上走一个来回：升上来时，存量行的 <see cref="ProtocolInboxRow.ReceivedAtUtcTicks"/> 按 <c>ReceivedAt</c> 的原文
+    /// <b>精确</b>回填（与 setter 写的逐行相同），两个索引都在；退回上一个迁移时列与索引都去掉，行一条不少、<c>ReceivedAt</c> 原文不变。
+    /// </summary>
+    /// <remarks>
+    /// <para>
+    /// 回填不精确，判定就会在升级那一刻变：MVP 的 <c>ef5dad8e</c> 回填到整秒，存量行读起来比真实收件早不到一秒，于是升级后的
+    /// 六秒存活窗口与三十秒证据窗口里，边上的行会被当成窗口外。这里要它逐 tick 相同。
+    /// </para>
+    /// <para>
+    /// 存量行由今天的模型写下再退回上一个迁移得到，不手写 SQL：<c>ReceivedAt</c> 的原文是 EF 写出的那一种（<c>yyyy-MM-dd HH:mm:ss.FFFFFFFzzz</c>），
+    /// 回填要解析的正是它。几个时刻覆盖整秒（没有小数点）、七位小数、负时区、UTC，以及 <c>.9999999</c>——
+    /// 交给 SQLite 的日期函数时它会按毫秒进位到下一秒。
+    /// </para>
+    /// </remarks>
+    [Fact]
+    public async Task MigratingUpBackfillsEveryStoredRowExactlyAndMigratingDownDropsOnlyTheColumnAndIndexes()
+    {
+        DateTimeOffset[] receivedAt =
+        [
+            new(2026, 10, 11, 8, 0, 0, TimeSpan.FromHours(8)),
+            new DateTimeOffset(2026, 10, 11, 8, 0, 1, TimeSpan.FromHours(8)).AddTicks(1_234_567),
+            new DateTimeOffset(2026, 10, 10, 19, 30, 2, TimeSpan.FromHours(-5.5)).AddTicks(5_000_000),
+            new DateTimeOffset(2026, 10, 11, 0, 0, 3, TimeSpan.Zero).AddTicks(1),
+            new DateTimeOffset(2026, 10, 11, 8, 0, 4, TimeSpan.FromHours(8)).AddTicks(9_999_999),
+        ];
+        await using Batch7JourneyFixture fixture = await Batch7JourneyFixture.CreateMigratedForRealAsync();
+        Dictionary<string, long> expected = [];
+        foreach (DateTimeOffset at in receivedAt)
+        {
+            ProtocolInboxRow row = HeardFrom(AgvId, Generation, at);
+            fixture.Context.ProtocolInbox.Add(row);
+            expected[row.MessageId] = at.UtcTicks;
+        }
+        await fixture.Context.SaveChangesAsync(Token);
+        string[] storedText = await ColumnAsync(fixture, "ReceivedAt");
+
+        await fixture.Context.GetService<IMigrator>().MigrateAsync(MigrationBeforeReadIndexes, Token);
+        string[] columnsDown = await ColumnNamesAsync(fixture);
+        string[] indexesDown = await IndexNamesAsync(fixture);
+        string[] textDown = await ColumnAsync(fixture, "ReceivedAt");
+
+        await fixture.Context.Database.MigrateAsync(Token);
+        await fixture.RenewContextAsync();
+        Dictionary<string, long> backfilled = await fixture.Context.ProtocolInbox.AsNoTracking()
+            .ToDictionaryAsync(row => row.MessageId, row => row.ReceivedAtUtcTicks, Token);
+
+        Assert.DoesNotContain("ReceivedAtUtcTicks", columnsDown);
+        Assert.DoesNotContain(indexesDown, name => name.StartsWith("IX_ProtocolInbox_", StringComparison.Ordinal));
+        Assert.Equal(storedText, textDown);
+        Assert.Equal(expected.OrderBy(pair => pair.Key), backfilled.OrderBy(pair => pair.Key));
+        Assert.Equal(
+            ["IX_ProtocolInbox_MessageType", "IX_ProtocolInbox_ReceivedAtUtcTicks"],
+            (await IndexNamesAsync(fixture)).Where(name => name.StartsWith("IX_ProtocolInbox_", StringComparison.Ordinal)));
+    }
+
+    private const string MigrationBeforeReadIndexes = "20261008052643_UnreleasableNotReconciledBlocksBeforeUpgrade";
+
+    private static Task<string[]> ColumnNamesAsync(Batch7JourneyFixture fixture) =>
+        QueryAsync(fixture, """SELECT name FROM pragma_table_info('ProtocolInbox') ORDER BY cid""");
+
+    private static Task<string[]> IndexNamesAsync(Batch7JourneyFixture fixture) =>
+        QueryAsync(fixture, """SELECT name FROM pragma_index_list('ProtocolInbox') ORDER BY name""");
+
+    private static Task<string[]> ColumnAsync(Batch7JourneyFixture fixture, string column) =>
+        QueryAsync(fixture, $"""SELECT "{column}" FROM "ProtocolInbox" ORDER BY "MessageId" """);
+
+    private static async Task<string[]> QueryAsync(Batch7JourneyFixture fixture, string sql)
+    {
+        await using SqliteCommand command = fixture.Connection.CreateCommand();
+        command.CommandText = sql;
+        List<string> values = [];
+        await using SqliteDataReader reader = await command.ExecuteReaderAsync(Token);
+        while (await reader.ReadAsync(Token))
+        {
+            values.Add(reader.GetString(0));
+        }
+        return [.. values];
     }
 
     /// <summary>
