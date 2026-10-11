@@ -1,0 +1,7 @@
+PASS the runner defines every function this self-check calls
+FAIL the runner assigns each judgement once, at top level -- missing or repeated: claimRecordsMatchTheBackfillPass
+FAIL the migration left what the baseline calls for: both judgements pass -- {"backfill":null,"noExternal":true,"previous":true}
+FAIL the migration left 14 fewer than the baseline calls for: both judgements fail -- {"backfill":null,"noExternal":true,"previous":true}
+     control: the previous criterion (afterProbe = final) is PASS for that store
+FAIL a record added after the restart is not this judgement's to catch -- {"backfill":null,"noExternal":false,"previous":false}
+DemandBearingClaimRecordBackfill self-check: 4 check(s) came out the other way.

@@ -1,0 +1,11 @@
+PASS the runner defines every function this self-check calls
+FAIL leases and records present: the runner's expectation has the hand-computed parts -- Get-ExpectedClaimRecordCount is not implemented yet (control-server#544). claimBackfills= (hand-computed 19); leaseBackfills= (hand-computed 14); migrationState= (hand-computed LEASES_NOT_YET_RETIRED); originalRecords= (hand-computed 22); expected= (hand-computed 55)
+FAIL leases and records present: the real migration leaves the count the runner expected -- expected , the migration left 55
+     control: the previous criterion (afterProbe = final) is PASS here; it never reads the baseline
+FAIL before batch 8, no record table: the runner's expectation has the hand-computed parts -- Get-ExpectedClaimRecordCount is not implemented yet (control-server#544). claimBackfills= (hand-computed 9); leaseBackfills= (hand-computed 7); migrationState= (hand-computed RECORD_TABLE_NOT_YET_CREATED); originalRecords= (hand-computed 0); expected= (hand-computed 16)
+FAIL before batch 8, no record table: the real migration leaves the count the runner expected -- expected , the migration left 16
+     control: the previous criterion (afterProbe = final) is PASS here; it never reads the baseline
+FAIL already migrated: the runner's expectation has the hand-computed parts -- Get-ExpectedClaimRecordCount is not implemented yet (control-server#544). claimBackfills= (hand-computed 0); leaseBackfills= (hand-computed 0); migrationState= (hand-computed ALREADY_RETIRED); originalRecords= (hand-computed 55); expected= (hand-computed 55)
+FAIL already migrated: the real migration leaves the count the runner expected -- expected , the migration left 55
+     control: the previous criterion (afterProbe = final) is PASS here; it never reads the baseline
+DemandBearingClaimRecordBackfill self-check: 6 check(s) came out the other way.
