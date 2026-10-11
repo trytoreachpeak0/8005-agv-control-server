@@ -1,0 +1,182 @@
+19:14:58 agv02 pos=216 move=MT_FINISHED sys=IDLE battery=87 emergency=OK
+19:14:58 agv03 pos=0 move=MT_RUNNING sys=EXECUTING battery=79 emergency=OK
+    RIoT nonfinal: W2G-c1000566-0000-0000-0000-000000000004-PICKUP-1 (len 49) state=3
+## SELECT JourneyId, AgvId, LoadingPhaseState, LoadingClosedReason, YieldTriggeredByVehicleKey, YieldTriggeredAt, CargoHoldingStartedAt, BlockReasonCode, UpdatedAt FROM JourneyRuntimes WHERE JourneyId LIKE 'journey:%' ORDER BY rowid DESC LIMIT 4
+JourneyId=journey:c1000566-0000-0000-0000-000000000004 | AgvId=老厂前线新多仓位3 | LoadingPhaseState= | LoadingClosedReason= | YieldTriggeredByVehicleKey= | YieldTriggeredAt= | CargoHoldingStartedAt= | BlockReasonCode=ONBOARD_SESSION_NOT_READY | UpdatedAt=2026-10-11 11:14:58.7825192+00:00
+## SELECT DemandId, JourneyId, Status, ExpectedBasketCount, TargetSlotsJson FROM JourneyDemands ORDER BY rowid DESC LIMIT 4
+DemandId=c1000566-0000-0000-0000-000000000004 | JourneyId=journey:c1000566-0000-0000-0000-000000000004 | Status=PENDING_LOAD | ExpectedBasketCount=1 | TargetSlotsJson=[1]
+## SELECT StationId, StationKind, State, VehicleKey, JourneyId FROM StationExclusivities
+StationId=216 | StationKind=WAITING_POINT | State=OCCUPIED | VehicleKey=BROKERX-f38975561adf46ccb1d2f23833c7d0e4 | JourneyId=idle-return:BROKERX-f38975561adf46ccb1d2f23833c7d0e4:20261011T111106039Z
+19:14:42.000 Information 2210 "WAITING_POINT" 26/214 released by vehicle "BROKERX-7daca4ee91da498d8026c68b7b941127" on departure evidence (journey "idle-return:BROKERX-7daca4ee91da498d8026c68b7b941127:20261011T111134194Z").
+19:15:11 agv02 pos=216 move=MT_FINISHED sys=IDLE battery=87 emergency=OK
+19:15:11 agv03 pos=0 move=MT_RUNNING sys=EXECUTING battery=79 emergency=OK
+    RIoT nonfinal: W2G-c1000566-0000-0000-0000-000000000004-PICKUP-1 (len 49) state=3
+## SELECT JourneyId, AgvId, LoadingPhaseState, LoadingClosedReason, YieldTriggeredByVehicleKey, YieldTriggeredAt, CargoHoldingStartedAt, BlockReasonCode, UpdatedAt FROM JourneyRuntimes WHERE JourneyId LIKE 'journey:%' ORDER BY rowid DESC LIMIT 4
+JourneyId=journey:c1000566-0000-0000-0000-000000000004 | AgvId=老厂前线新多仓位3 | LoadingPhaseState= | LoadingClosedReason= | YieldTriggeredByVehicleKey= | YieldTriggeredAt= | CargoHoldingStartedAt= | BlockReasonCode=ONBOARD_SESSION_NOT_READY | UpdatedAt=2026-10-11 11:15:10.7664653+00:00
+## SELECT DemandId, JourneyId, Status, ExpectedBasketCount, TargetSlotsJson FROM JourneyDemands ORDER BY rowid DESC LIMIT 4
+DemandId=c1000566-0000-0000-0000-000000000004 | JourneyId=journey:c1000566-0000-0000-0000-000000000004 | Status=PENDING_LOAD | ExpectedBasketCount=1 | TargetSlotsJson=[1]
+## SELECT StationId, StationKind, State, VehicleKey, JourneyId FROM StationExclusivities
+StationId=216 | StationKind=WAITING_POINT | State=OCCUPIED | VehicleKey=BROKERX-f38975561adf46ccb1d2f23833c7d0e4 | JourneyId=idle-return:BROKERX-f38975561adf46ccb1d2f23833c7d0e4:20261011T111106039Z
+19:14:42.000 Information 2210 "WAITING_POINT" 26/214 released by vehicle "BROKERX-7daca4ee91da498d8026c68b7b941127" on departure evidence (journey "idle-return:BROKERX-7daca4ee91da498d8026c68b7b941127:20261011T111134194Z").
+19:15:23 agv02 pos=216 move=MT_FINISHED sys=IDLE battery=87 emergency=OK
+19:15:23 agv03 pos=0 move=MT_RUNNING sys=EXECUTING battery=79 emergency=OK
+    RIoT nonfinal: W2G-c1000566-0000-0000-0000-000000000004-PICKUP-1 (len 49) state=3
+## SELECT JourneyId, AgvId, LoadingPhaseState, LoadingClosedReason, YieldTriggeredByVehicleKey, YieldTriggeredAt, CargoHoldingStartedAt, BlockReasonCode, UpdatedAt FROM JourneyRuntimes WHERE JourneyId LIKE 'journey:%' ORDER BY rowid DESC LIMIT 4
+JourneyId=journey:c1000566-0000-0000-0000-000000000004 | AgvId=老厂前线新多仓位3 | LoadingPhaseState= | LoadingClosedReason= | YieldTriggeredByVehicleKey= | YieldTriggeredAt= | CargoHoldingStartedAt= | BlockReasonCode=ONBOARD_SESSION_NOT_READY | UpdatedAt=2026-10-11 11:15:22.7837892+00:00
+## SELECT DemandId, JourneyId, Status, ExpectedBasketCount, TargetSlotsJson FROM JourneyDemands ORDER BY rowid DESC LIMIT 4
+DemandId=c1000566-0000-0000-0000-000000000004 | JourneyId=journey:c1000566-0000-0000-0000-000000000004 | Status=PENDING_LOAD | ExpectedBasketCount=1 | TargetSlotsJson=[1]
+## SELECT StationId, StationKind, State, VehicleKey, JourneyId FROM StationExclusivities
+StationId=216 | StationKind=WAITING_POINT | State=OCCUPIED | VehicleKey=BROKERX-f38975561adf46ccb1d2f23833c7d0e4 | JourneyId=idle-return:BROKERX-f38975561adf46ccb1d2f23833c7d0e4:20261011T111106039Z
+19:14:42.000 Information 2210 "WAITING_POINT" 26/214 released by vehicle "BROKERX-7daca4ee91da498d8026c68b7b941127" on departure evidence (journey "idle-return:BROKERX-7daca4ee91da498d8026c68b7b941127:20261011T111134194Z").
+19:15:36 agv02 pos=216 move=MT_FINISHED sys=IDLE battery=87 emergency=OK
+19:15:36 agv03 pos=0 move=MT_RUNNING sys=EXECUTING battery=79 emergency=OK
+    RIoT nonfinal: W2G-c1000566-0000-0000-0000-000000000004-PICKUP-1 (len 49) state=3
+## SELECT JourneyId, AgvId, LoadingPhaseState, LoadingClosedReason, YieldTriggeredByVehicleKey, YieldTriggeredAt, CargoHoldingStartedAt, BlockReasonCode, UpdatedAt FROM JourneyRuntimes WHERE JourneyId LIKE 'journey:%' ORDER BY rowid DESC LIMIT 4
+JourneyId=journey:c1000566-0000-0000-0000-000000000004 | AgvId=老厂前线新多仓位3 | LoadingPhaseState= | LoadingClosedReason= | YieldTriggeredByVehicleKey= | YieldTriggeredAt= | CargoHoldingStartedAt= | BlockReasonCode=ONBOARD_SESSION_NOT_READY | UpdatedAt=2026-10-11 11:15:34.7936014+00:00
+## SELECT DemandId, JourneyId, Status, ExpectedBasketCount, TargetSlotsJson FROM JourneyDemands ORDER BY rowid DESC LIMIT 4
+DemandId=c1000566-0000-0000-0000-000000000004 | JourneyId=journey:c1000566-0000-0000-0000-000000000004 | Status=PENDING_LOAD | ExpectedBasketCount=1 | TargetSlotsJson=[1]
+## SELECT StationId, StationKind, State, VehicleKey, JourneyId FROM StationExclusivities
+StationId=216 | StationKind=WAITING_POINT | State=OCCUPIED | VehicleKey=BROKERX-f38975561adf46ccb1d2f23833c7d0e4 | JourneyId=idle-return:BROKERX-f38975561adf46ccb1d2f23833c7d0e4:20261011T111106039Z
+19:14:42.000 Information 2210 "WAITING_POINT" 26/214 released by vehicle "BROKERX-7daca4ee91da498d8026c68b7b941127" on departure evidence (journey "idle-return:BROKERX-7daca4ee91da498d8026c68b7b941127:20261011T111134194Z").
+19:15:48 agv02 pos=216 move=MT_FINISHED sys=IDLE battery=87 emergency=OK
+19:15:48 agv03 pos=0 move=MT_RUNNING sys=EXECUTING battery=79 emergency=OK
+    RIoT nonfinal: W2G-c1000566-0000-0000-0000-000000000004-PICKUP-1 (len 49) state=3
+## SELECT JourneyId, AgvId, LoadingPhaseState, LoadingClosedReason, YieldTriggeredByVehicleKey, YieldTriggeredAt, CargoHoldingStartedAt, BlockReasonCode, UpdatedAt FROM JourneyRuntimes WHERE JourneyId LIKE 'journey:%' ORDER BY rowid DESC LIMIT 4
+JourneyId=journey:c1000566-0000-0000-0000-000000000004 | AgvId=老厂前线新多仓位3 | LoadingPhaseState= | LoadingClosedReason= | YieldTriggeredByVehicleKey= | YieldTriggeredAt= | CargoHoldingStartedAt= | BlockReasonCode=ONBOARD_SESSION_NOT_READY | UpdatedAt=2026-10-11 11:15:46.8173222+00:00
+## SELECT DemandId, JourneyId, Status, ExpectedBasketCount, TargetSlotsJson FROM JourneyDemands ORDER BY rowid DESC LIMIT 4
+DemandId=c1000566-0000-0000-0000-000000000004 | JourneyId=journey:c1000566-0000-0000-0000-000000000004 | Status=PENDING_LOAD | ExpectedBasketCount=1 | TargetSlotsJson=[1]
+## SELECT StationId, StationKind, State, VehicleKey, JourneyId FROM StationExclusivities
+StationId=216 | StationKind=WAITING_POINT | State=OCCUPIED | VehicleKey=BROKERX-f38975561adf46ccb1d2f23833c7d0e4 | JourneyId=idle-return:BROKERX-f38975561adf46ccb1d2f23833c7d0e4:20261011T111106039Z
+19:14:42.000 Information 2210 "WAITING_POINT" 26/214 released by vehicle "BROKERX-7daca4ee91da498d8026c68b7b941127" on departure evidence (journey "idle-return:BROKERX-7daca4ee91da498d8026c68b7b941127:20261011T111134194Z").
+19:16:00 agv02 pos=216 move=MT_FINISHED sys=IDLE battery=87 emergency=OK
+19:16:00 agv03 pos=0 move=MT_RUNNING sys=EXECUTING battery=79 emergency=OK
+    RIoT nonfinal: W2G-c1000566-0000-0000-0000-000000000004-PICKUP-1 (len 49) state=3
+## SELECT JourneyId, AgvId, LoadingPhaseState, LoadingClosedReason, YieldTriggeredByVehicleKey, YieldTriggeredAt, CargoHoldingStartedAt, BlockReasonCode, UpdatedAt FROM JourneyRuntimes WHERE JourneyId LIKE 'journey:%' ORDER BY rowid DESC LIMIT 4
+JourneyId=journey:c1000566-0000-0000-0000-000000000004 | AgvId=老厂前线新多仓位3 | LoadingPhaseState= | LoadingClosedReason= | YieldTriggeredByVehicleKey= | YieldTriggeredAt= | CargoHoldingStartedAt= | BlockReasonCode=ONBOARD_SESSION_NOT_READY | UpdatedAt=2026-10-11 11:16:00.7861353+00:00
+## SELECT DemandId, JourneyId, Status, ExpectedBasketCount, TargetSlotsJson FROM JourneyDemands ORDER BY rowid DESC LIMIT 4
+DemandId=c1000566-0000-0000-0000-000000000004 | JourneyId=journey:c1000566-0000-0000-0000-000000000004 | Status=PENDING_LOAD | ExpectedBasketCount=1 | TargetSlotsJson=[1]
+## SELECT StationId, StationKind, State, VehicleKey, JourneyId FROM StationExclusivities
+StationId=216 | StationKind=WAITING_POINT | State=OCCUPIED | VehicleKey=BROKERX-f38975561adf46ccb1d2f23833c7d0e4 | JourneyId=idle-return:BROKERX-f38975561adf46ccb1d2f23833c7d0e4:20261011T111106039Z
+19:14:42.000 Information 2210 "WAITING_POINT" 26/214 released by vehicle "BROKERX-7daca4ee91da498d8026c68b7b941127" on departure evidence (journey "idle-return:BROKERX-7daca4ee91da498d8026c68b7b941127:20261011T111134194Z").
+19:16:12 agv02 pos=216 move=MT_FINISHED sys=IDLE battery=87 emergency=OK
+19:16:13 agv03 pos=0 move=MT_RUNNING sys=EXECUTING battery=79 emergency=OK
+    RIoT nonfinal: W2G-c1000566-0000-0000-0000-000000000004-PICKUP-1 (len 49) state=3
+## SELECT JourneyId, AgvId, LoadingPhaseState, LoadingClosedReason, YieldTriggeredByVehicleKey, YieldTriggeredAt, CargoHoldingStartedAt, BlockReasonCode, UpdatedAt FROM JourneyRuntimes WHERE JourneyId LIKE 'journey:%' ORDER BY rowid DESC LIMIT 4
+JourneyId=journey:c1000566-0000-0000-0000-000000000004 | AgvId=老厂前线新多仓位3 | LoadingPhaseState= | LoadingClosedReason= | YieldTriggeredByVehicleKey= | YieldTriggeredAt= | CargoHoldingStartedAt= | BlockReasonCode=ONBOARD_SESSION_NOT_READY | UpdatedAt=2026-10-11 11:16:12.7868207+00:00
+## SELECT DemandId, JourneyId, Status, ExpectedBasketCount, TargetSlotsJson FROM JourneyDemands ORDER BY rowid DESC LIMIT 4
+DemandId=c1000566-0000-0000-0000-000000000004 | JourneyId=journey:c1000566-0000-0000-0000-000000000004 | Status=PENDING_LOAD | ExpectedBasketCount=1 | TargetSlotsJson=[1]
+## SELECT StationId, StationKind, State, VehicleKey, JourneyId FROM StationExclusivities
+StationId=216 | StationKind=WAITING_POINT | State=OCCUPIED | VehicleKey=BROKERX-f38975561adf46ccb1d2f23833c7d0e4 | JourneyId=idle-return:BROKERX-f38975561adf46ccb1d2f23833c7d0e4:20261011T111106039Z
+19:14:42.000 Information 2210 "WAITING_POINT" 26/214 released by vehicle "BROKERX-7daca4ee91da498d8026c68b7b941127" on departure evidence (journey "idle-return:BROKERX-7daca4ee91da498d8026c68b7b941127:20261011T111134194Z").
+19:16:25 agv02 pos=216 move=MT_FINISHED sys=IDLE battery=87 emergency=OK
+19:16:25 agv03 pos=0 move=MT_RUNNING sys=EXECUTING battery=79 emergency=OK
+    RIoT nonfinal: W2G-c1000566-0000-0000-0000-000000000004-PICKUP-1 (len 49) state=3
+## SELECT JourneyId, AgvId, LoadingPhaseState, LoadingClosedReason, YieldTriggeredByVehicleKey, YieldTriggeredAt, CargoHoldingStartedAt, BlockReasonCode, UpdatedAt FROM JourneyRuntimes WHERE JourneyId LIKE 'journey:%' ORDER BY rowid DESC LIMIT 4
+JourneyId=journey:c1000566-0000-0000-0000-000000000004 | AgvId=老厂前线新多仓位3 | LoadingPhaseState= | LoadingClosedReason= | YieldTriggeredByVehicleKey= | YieldTriggeredAt= | CargoHoldingStartedAt= | BlockReasonCode=ONBOARD_SESSION_NOT_READY | UpdatedAt=2026-10-11 11:16:24.7935469+00:00
+## SELECT DemandId, JourneyId, Status, ExpectedBasketCount, TargetSlotsJson FROM JourneyDemands ORDER BY rowid DESC LIMIT 4
+DemandId=c1000566-0000-0000-0000-000000000004 | JourneyId=journey:c1000566-0000-0000-0000-000000000004 | Status=PENDING_LOAD | ExpectedBasketCount=1 | TargetSlotsJson=[1]
+## SELECT StationId, StationKind, State, VehicleKey, JourneyId FROM StationExclusivities
+StationId=216 | StationKind=WAITING_POINT | State=OCCUPIED | VehicleKey=BROKERX-f38975561adf46ccb1d2f23833c7d0e4 | JourneyId=idle-return:BROKERX-f38975561adf46ccb1d2f23833c7d0e4:20261011T111106039Z
+19:14:42.000 Information 2210 "WAITING_POINT" 26/214 released by vehicle "BROKERX-7daca4ee91da498d8026c68b7b941127" on departure evidence (journey "idle-return:BROKERX-7daca4ee91da498d8026c68b7b941127:20261011T111134194Z").
+19:16:37 agv02 pos=216 move=MT_FINISHED sys=IDLE battery=87 emergency=OK
+19:16:37 agv03 pos=0 move=MT_RUNNING sys=EXECUTING battery=79 emergency=OK
+    RIoT nonfinal: W2G-c1000566-0000-0000-0000-000000000004-PICKUP-1 (len 49) state=3
+## SELECT JourneyId, AgvId, LoadingPhaseState, LoadingClosedReason, YieldTriggeredByVehicleKey, YieldTriggeredAt, CargoHoldingStartedAt, BlockReasonCode, UpdatedAt FROM JourneyRuntimes WHERE JourneyId LIKE 'journey:%' ORDER BY rowid DESC LIMIT 4
+JourneyId=journey:c1000566-0000-0000-0000-000000000004 | AgvId=老厂前线新多仓位3 | LoadingPhaseState= | LoadingClosedReason= | YieldTriggeredByVehicleKey= | YieldTriggeredAt= | CargoHoldingStartedAt= | BlockReasonCode=ONBOARD_SESSION_NOT_READY | UpdatedAt=2026-10-11 11:16:36.7806989+00:00
+## SELECT DemandId, JourneyId, Status, ExpectedBasketCount, TargetSlotsJson FROM JourneyDemands ORDER BY rowid DESC LIMIT 4
+DemandId=c1000566-0000-0000-0000-000000000004 | JourneyId=journey:c1000566-0000-0000-0000-000000000004 | Status=PENDING_LOAD | ExpectedBasketCount=1 | TargetSlotsJson=[1]
+## SELECT StationId, StationKind, State, VehicleKey, JourneyId FROM StationExclusivities
+StationId=216 | StationKind=WAITING_POINT | State=OCCUPIED | VehicleKey=BROKERX-f38975561adf46ccb1d2f23833c7d0e4 | JourneyId=idle-return:BROKERX-f38975561adf46ccb1d2f23833c7d0e4:20261011T111106039Z
+19:14:42.000 Information 2210 "WAITING_POINT" 26/214 released by vehicle "BROKERX-7daca4ee91da498d8026c68b7b941127" on departure evidence (journey "idle-return:BROKERX-7daca4ee91da498d8026c68b7b941127:20261011T111134194Z").
+19:16:50 agv02 pos=216 move=MT_FINISHED sys=IDLE battery=86 emergency=OK
+19:16:50 agv03 pos=0 move=MT_RUNNING sys=EXECUTING battery=79 emergency=OK
+    RIoT nonfinal: W2G-c1000566-0000-0000-0000-000000000004-PICKUP-1 (len 49) state=3
+## SELECT JourneyId, AgvId, LoadingPhaseState, LoadingClosedReason, YieldTriggeredByVehicleKey, YieldTriggeredAt, CargoHoldingStartedAt, BlockReasonCode, UpdatedAt FROM JourneyRuntimes WHERE JourneyId LIKE 'journey:%' ORDER BY rowid DESC LIMIT 4
+JourneyId=journey:c1000566-0000-0000-0000-000000000004 | AgvId=老厂前线新多仓位3 | LoadingPhaseState= | LoadingClosedReason= | YieldTriggeredByVehicleKey= | YieldTriggeredAt= | CargoHoldingStartedAt= | BlockReasonCode=ONBOARD_SESSION_NOT_READY | UpdatedAt=2026-10-11 11:16:48.8067008+00:00
+## SELECT DemandId, JourneyId, Status, ExpectedBasketCount, TargetSlotsJson FROM JourneyDemands ORDER BY rowid DESC LIMIT 4
+DemandId=c1000566-0000-0000-0000-000000000004 | JourneyId=journey:c1000566-0000-0000-0000-000000000004 | Status=PENDING_LOAD | ExpectedBasketCount=1 | TargetSlotsJson=[1]
+## SELECT StationId, StationKind, State, VehicleKey, JourneyId FROM StationExclusivities
+StationId=216 | StationKind=WAITING_POINT | State=OCCUPIED | VehicleKey=BROKERX-f38975561adf46ccb1d2f23833c7d0e4 | JourneyId=idle-return:BROKERX-f38975561adf46ccb1d2f23833c7d0e4:20261011T111106039Z
+19:14:42.000 Information 2210 "WAITING_POINT" 26/214 released by vehicle "BROKERX-7daca4ee91da498d8026c68b7b941127" on departure evidence (journey "idle-return:BROKERX-7daca4ee91da498d8026c68b7b941127:20261011T111134194Z").
+19:17:02 agv02 pos=216 move=MT_FINISHED sys=IDLE battery=86 emergency=OK
+19:17:02 agv03 pos=0 move=MT_RUNNING sys=EXECUTING battery=79 emergency=OK
+    RIoT nonfinal: W2G-c1000566-0000-0000-0000-000000000004-PICKUP-1 (len 49) state=3
+## SELECT JourneyId, AgvId, LoadingPhaseState, LoadingClosedReason, YieldTriggeredByVehicleKey, YieldTriggeredAt, CargoHoldingStartedAt, BlockReasonCode, UpdatedAt FROM JourneyRuntimes WHERE JourneyId LIKE 'journey:%' ORDER BY rowid DESC LIMIT 4
+JourneyId=journey:c1000566-0000-0000-0000-000000000004 | AgvId=老厂前线新多仓位3 | LoadingPhaseState= | LoadingClosedReason= | YieldTriggeredByVehicleKey= | YieldTriggeredAt= | CargoHoldingStartedAt= | BlockReasonCode=ONBOARD_SESSION_NOT_READY | UpdatedAt=2026-10-11 11:17:02.7975669+00:00
+## SELECT DemandId, JourneyId, Status, ExpectedBasketCount, TargetSlotsJson FROM JourneyDemands ORDER BY rowid DESC LIMIT 4
+DemandId=c1000566-0000-0000-0000-000000000004 | JourneyId=journey:c1000566-0000-0000-0000-000000000004 | Status=PENDING_LOAD | ExpectedBasketCount=1 | TargetSlotsJson=[1]
+## SELECT StationId, StationKind, State, VehicleKey, JourneyId FROM StationExclusivities
+StationId=216 | StationKind=WAITING_POINT | State=OCCUPIED | VehicleKey=BROKERX-f38975561adf46ccb1d2f23833c7d0e4 | JourneyId=idle-return:BROKERX-f38975561adf46ccb1d2f23833c7d0e4:20261011T111106039Z
+19:14:42.000 Information 2210 "WAITING_POINT" 26/214 released by vehicle "BROKERX-7daca4ee91da498d8026c68b7b941127" on departure evidence (journey "idle-return:BROKERX-7daca4ee91da498d8026c68b7b941127:20261011T111134194Z").
+19:17:15 agv02 pos=216 move=MT_FINISHED sys=IDLE battery=86 emergency=OK
+19:17:15 agv03 pos=0 move=MT_RUNNING sys=PAUSE battery=78 emergency=OK
+    RIoT nonfinal: W2G-c1000566-0000-0000-0000-000000000004-PICKUP-1 (len 49) state=3
+## SELECT JourneyId, AgvId, LoadingPhaseState, LoadingClosedReason, YieldTriggeredByVehicleKey, YieldTriggeredAt, CargoHoldingStartedAt, BlockReasonCode, UpdatedAt FROM JourneyRuntimes WHERE JourneyId LIKE 'journey:%' ORDER BY rowid DESC LIMIT 4
+JourneyId=journey:c1000566-0000-0000-0000-000000000004 | AgvId=老厂前线新多仓位3 | LoadingPhaseState= | LoadingClosedReason= | YieldTriggeredByVehicleKey= | YieldTriggeredAt= | CargoHoldingStartedAt= | BlockReasonCode=ONBOARD_SESSION_NOT_READY | UpdatedAt=2026-10-11 11:17:14.7853115+00:00
+## SELECT DemandId, JourneyId, Status, ExpectedBasketCount, TargetSlotsJson FROM JourneyDemands ORDER BY rowid DESC LIMIT 4
+DemandId=c1000566-0000-0000-0000-000000000004 | JourneyId=journey:c1000566-0000-0000-0000-000000000004 | Status=PENDING_LOAD | ExpectedBasketCount=1 | TargetSlotsJson=[1]
+## SELECT StationId, StationKind, State, VehicleKey, JourneyId FROM StationExclusivities
+StationId=216 | StationKind=WAITING_POINT | State=OCCUPIED | VehicleKey=BROKERX-f38975561adf46ccb1d2f23833c7d0e4 | JourneyId=idle-return:BROKERX-f38975561adf46ccb1d2f23833c7d0e4:20261011T111106039Z
+19:14:42.000 Information 2210 "WAITING_POINT" 26/214 released by vehicle "BROKERX-7daca4ee91da498d8026c68b7b941127" on departure evidence (journey "idle-return:BROKERX-7daca4ee91da498d8026c68b7b941127:20261011T111134194Z").
+19:17:27 agv02 pos=216 move=MT_FINISHED sys=IDLE battery=86 emergency=OK
+19:17:27 agv03 pos=0 move=MT_RUNNING sys=EXECUTING battery=78 emergency=OK
+    RIoT nonfinal: W2G-c1000566-0000-0000-0000-000000000004-PICKUP-1 (len 49) state=3
+## SELECT JourneyId, AgvId, LoadingPhaseState, LoadingClosedReason, YieldTriggeredByVehicleKey, YieldTriggeredAt, CargoHoldingStartedAt, BlockReasonCode, UpdatedAt FROM JourneyRuntimes WHERE JourneyId LIKE 'journey:%' ORDER BY rowid DESC LIMIT 4
+JourneyId=journey:c1000566-0000-0000-0000-000000000004 | AgvId=老厂前线新多仓位3 | LoadingPhaseState= | LoadingClosedReason= | YieldTriggeredByVehicleKey= | YieldTriggeredAt= | CargoHoldingStartedAt= | BlockReasonCode=ONBOARD_SESSION_NOT_READY | UpdatedAt=2026-10-11 11:17:26.8131036+00:00
+## SELECT DemandId, JourneyId, Status, ExpectedBasketCount, TargetSlotsJson FROM JourneyDemands ORDER BY rowid DESC LIMIT 4
+DemandId=c1000566-0000-0000-0000-000000000004 | JourneyId=journey:c1000566-0000-0000-0000-000000000004 | Status=PENDING_LOAD | ExpectedBasketCount=1 | TargetSlotsJson=[1]
+## SELECT StationId, StationKind, State, VehicleKey, JourneyId FROM StationExclusivities
+StationId=216 | StationKind=WAITING_POINT | State=OCCUPIED | VehicleKey=BROKERX-f38975561adf46ccb1d2f23833c7d0e4 | JourneyId=idle-return:BROKERX-f38975561adf46ccb1d2f23833c7d0e4:20261011T111106039Z
+19:14:42.000 Information 2210 "WAITING_POINT" 26/214 released by vehicle "BROKERX-7daca4ee91da498d8026c68b7b941127" on departure evidence (journey "idle-return:BROKERX-7daca4ee91da498d8026c68b7b941127:20261011T111134194Z").
+19:17:40 agv02 pos=216 move=MT_FINISHED sys=IDLE battery=86 emergency=OK
+19:17:40 agv03 pos=0 move=MT_RUNNING sys=EXECUTING battery=78 emergency=OK
+    RIoT nonfinal: W2G-c1000566-0000-0000-0000-000000000004-PICKUP-1 (len 49) state=3
+## SELECT JourneyId, AgvId, LoadingPhaseState, LoadingClosedReason, YieldTriggeredByVehicleKey, YieldTriggeredAt, CargoHoldingStartedAt, BlockReasonCode, UpdatedAt FROM JourneyRuntimes WHERE JourneyId LIKE 'journey:%' ORDER BY rowid DESC LIMIT 4
+JourneyId=journey:c1000566-0000-0000-0000-000000000004 | AgvId=老厂前线新多仓位3 | LoadingPhaseState= | LoadingClosedReason= | YieldTriggeredByVehicleKey= | YieldTriggeredAt= | CargoHoldingStartedAt= | BlockReasonCode=ONBOARD_SESSION_NOT_READY | UpdatedAt=2026-10-11 11:17:38.7951639+00:00
+## SELECT DemandId, JourneyId, Status, ExpectedBasketCount, TargetSlotsJson FROM JourneyDemands ORDER BY rowid DESC LIMIT 4
+DemandId=c1000566-0000-0000-0000-000000000004 | JourneyId=journey:c1000566-0000-0000-0000-000000000004 | Status=PENDING_LOAD | ExpectedBasketCount=1 | TargetSlotsJson=[1]
+## SELECT StationId, StationKind, State, VehicleKey, JourneyId FROM StationExclusivities
+StationId=216 | StationKind=WAITING_POINT | State=OCCUPIED | VehicleKey=BROKERX-f38975561adf46ccb1d2f23833c7d0e4 | JourneyId=idle-return:BROKERX-f38975561adf46ccb1d2f23833c7d0e4:20261011T111106039Z
+19:14:42.000 Information 2210 "WAITING_POINT" 26/214 released by vehicle "BROKERX-7daca4ee91da498d8026c68b7b941127" on departure evidence (journey "idle-return:BROKERX-7daca4ee91da498d8026c68b7b941127:20261011T111134194Z").
+19:17:52 agv02 pos=216 move=MT_FINISHED sys=IDLE battery=86 emergency=OK
+19:17:52 agv03 pos=0 move=MT_RUNNING sys=EXECUTING battery=78 emergency=OK
+    RIoT nonfinal: W2G-c1000566-0000-0000-0000-000000000004-PICKUP-1 (len 49) state=3
+## SELECT JourneyId, AgvId, LoadingPhaseState, LoadingClosedReason, YieldTriggeredByVehicleKey, YieldTriggeredAt, CargoHoldingStartedAt, BlockReasonCode, UpdatedAt FROM JourneyRuntimes WHERE JourneyId LIKE 'journey:%' ORDER BY rowid DESC LIMIT 4
+JourneyId=journey:c1000566-0000-0000-0000-000000000004 | AgvId=老厂前线新多仓位3 | LoadingPhaseState= | LoadingClosedReason= | YieldTriggeredByVehicleKey= | YieldTriggeredAt= | CargoHoldingStartedAt= | BlockReasonCode=ONBOARD_SESSION_NOT_READY | UpdatedAt=2026-10-11 11:17:52.7758724+00:00
+## SELECT DemandId, JourneyId, Status, ExpectedBasketCount, TargetSlotsJson FROM JourneyDemands ORDER BY rowid DESC LIMIT 4
+DemandId=c1000566-0000-0000-0000-000000000004 | JourneyId=journey:c1000566-0000-0000-0000-000000000004 | Status=PENDING_LOAD | ExpectedBasketCount=1 | TargetSlotsJson=[1]
+## SELECT StationId, StationKind, State, VehicleKey, JourneyId FROM StationExclusivities
+StationId=216 | StationKind=WAITING_POINT | State=OCCUPIED | VehicleKey=BROKERX-f38975561adf46ccb1d2f23833c7d0e4 | JourneyId=idle-return:BROKERX-f38975561adf46ccb1d2f23833c7d0e4:20261011T111106039Z
+19:14:42.000 Information 2210 "WAITING_POINT" 26/214 released by vehicle "BROKERX-7daca4ee91da498d8026c68b7b941127" on departure evidence (journey "idle-return:BROKERX-7daca4ee91da498d8026c68b7b941127:20261011T111134194Z").
+19:18:05 agv02 pos=216 move=MT_FINISHED sys=IDLE battery=86 emergency=OK
+19:18:05 agv03 pos=0 move=MT_RUNNING sys=EXECUTING battery=78 emergency=OK
+    RIoT nonfinal: W2G-c1000566-0000-0000-0000-000000000004-PICKUP-1 (len 49) state=3
+## SELECT JourneyId, AgvId, LoadingPhaseState, LoadingClosedReason, YieldTriggeredByVehicleKey, YieldTriggeredAt, CargoHoldingStartedAt, BlockReasonCode, UpdatedAt FROM JourneyRuntimes WHERE JourneyId LIKE 'journey:%' ORDER BY rowid DESC LIMIT 4
+JourneyId=journey:c1000566-0000-0000-0000-000000000004 | AgvId=老厂前线新多仓位3 | LoadingPhaseState= | LoadingClosedReason= | YieldTriggeredByVehicleKey= | YieldTriggeredAt= | CargoHoldingStartedAt= | BlockReasonCode=ONBOARD_SESSION_NOT_READY | UpdatedAt=2026-10-11 11:18:04.8159176+00:00
+## SELECT DemandId, JourneyId, Status, ExpectedBasketCount, TargetSlotsJson FROM JourneyDemands ORDER BY rowid DESC LIMIT 4
+DemandId=c1000566-0000-0000-0000-000000000004 | JourneyId=journey:c1000566-0000-0000-0000-000000000004 | Status=PENDING_LOAD | ExpectedBasketCount=1 | TargetSlotsJson=[1]
+## SELECT StationId, StationKind, State, VehicleKey, JourneyId FROM StationExclusivities
+StationId=216 | StationKind=WAITING_POINT | State=OCCUPIED | VehicleKey=BROKERX-f38975561adf46ccb1d2f23833c7d0e4 | JourneyId=idle-return:BROKERX-f38975561adf46ccb1d2f23833c7d0e4:20261011T111106039Z
+19:14:42.000 Information 2210 "WAITING_POINT" 26/214 released by vehicle "BROKERX-7daca4ee91da498d8026c68b7b941127" on departure evidence (journey "idle-return:BROKERX-7daca4ee91da498d8026c68b7b941127:20261011T111134194Z").
+19:18:17 agv02 pos=216 move=MT_FINISHED sys=IDLE battery=86 emergency=OK
+19:18:17 agv03 pos=0 move=MT_RUNNING sys=EXECUTING battery=78 emergency=OK
+    RIoT nonfinal: W2G-c1000566-0000-0000-0000-000000000004-PICKUP-1 (len 49) state=3
+## SELECT JourneyId, AgvId, LoadingPhaseState, LoadingClosedReason, YieldTriggeredByVehicleKey, YieldTriggeredAt, CargoHoldingStartedAt, BlockReasonCode, UpdatedAt FROM JourneyRuntimes WHERE JourneyId LIKE 'journey:%' ORDER BY rowid DESC LIMIT 4
+JourneyId=journey:c1000566-0000-0000-0000-000000000004 | AgvId=老厂前线新多仓位3 | LoadingPhaseState= | LoadingClosedReason= | YieldTriggeredByVehicleKey= | YieldTriggeredAt= | CargoHoldingStartedAt= | BlockReasonCode=ONBOARD_SESSION_NOT_READY | UpdatedAt=2026-10-11 11:18:16.787739+00:00
+## SELECT DemandId, JourneyId, Status, ExpectedBasketCount, TargetSlotsJson FROM JourneyDemands ORDER BY rowid DESC LIMIT 4
+DemandId=c1000566-0000-0000-0000-000000000004 | JourneyId=journey:c1000566-0000-0000-0000-000000000004 | Status=PENDING_LOAD | ExpectedBasketCount=1 | TargetSlotsJson=[1]
+## SELECT StationId, StationKind, State, VehicleKey, JourneyId FROM StationExclusivities
+StationId=216 | StationKind=WAITING_POINT | State=OCCUPIED | VehicleKey=BROKERX-f38975561adf46ccb1d2f23833c7d0e4 | JourneyId=idle-return:BROKERX-f38975561adf46ccb1d2f23833c7d0e4:20261011T111106039Z
+19:14:42.000 Information 2210 "WAITING_POINT" 26/214 released by vehicle "BROKERX-7daca4ee91da498d8026c68b7b941127" on departure evidence (journey "idle-return:BROKERX-7daca4ee91da498d8026c68b7b941127:20261011T111134194Z").
+19:18:30 agv02 pos=216 move=MT_FINISHED sys=IDLE battery=86 emergency=OK
+19:18:30 agv03 pos=0 move=MT_RUNNING sys=EXECUTING battery=78 emergency=OK
+    RIoT nonfinal: W2G-c1000566-0000-0000-0000-000000000004-PICKUP-1 (len 49) state=3
+## SELECT JourneyId, AgvId, LoadingPhaseState, LoadingClosedReason, YieldTriggeredByVehicleKey, YieldTriggeredAt, CargoHoldingStartedAt, BlockReasonCode, UpdatedAt FROM JourneyRuntimes WHERE JourneyId LIKE 'journey:%' ORDER BY rowid DESC LIMIT 4
+JourneyId=journey:c1000566-0000-0000-0000-000000000004 | AgvId=老厂前线新多仓位3 | LoadingPhaseState= | LoadingClosedReason= | YieldTriggeredByVehicleKey= | YieldTriggeredAt= | CargoHoldingStartedAt= | BlockReasonCode=ONBOARD_SESSION_NOT_READY | UpdatedAt=2026-10-11 11:18:28.7944628+00:00
+## SELECT DemandId, JourneyId, Status, ExpectedBasketCount, TargetSlotsJson FROM JourneyDemands ORDER BY rowid DESC LIMIT 4
+DemandId=c1000566-0000-0000-0000-000000000004 | JourneyId=journey:c1000566-0000-0000-0000-000000000004 | Status=PENDING_LOAD | ExpectedBasketCount=1 | TargetSlotsJson=[1]
+## SELECT StationId, StationKind, State, VehicleKey, JourneyId FROM StationExclusivities
+StationId=216 | StationKind=WAITING_POINT | State=OCCUPIED | VehicleKey=BROKERX-f38975561adf46ccb1d2f23833c7d0e4 | JourneyId=idle-return:BROKERX-f38975561adf46ccb1d2f23833c7d0e4:20261011T111106039Z
+19:14:42.000 Information 2210 "WAITING_POINT" 26/214 released by vehicle "BROKERX-7daca4ee91da498d8026c68b7b941127" on departure evidence (journey "idle-return:BROKERX-7daca4ee91da498d8026c68b7b941127:20261011T111134194Z").
+19:18:43 agv02 pos=216 move=MT_FINISHED sys=IDLE battery=86 emergency=OK
+19:18:43 agv03 pos=3 move=MT_FINISHED sys=IDLE battery=78 emergency=OK

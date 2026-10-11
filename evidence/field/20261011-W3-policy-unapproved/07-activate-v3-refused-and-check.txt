@@ -1,0 +1,10 @@
+2026-10-11 17:09:34 step=activate
+{"command":"activate-charging-policy","outcome":"REJECTED","dryRun":false,"version":3,"previousActiveVersion":1,"activationId":null,"sequence":null,"activatedAt":null,"allowNonFieldApproval":false,"approvals":[],"errorCount":1,"errors":[{"reasonCode":"CHARGING_POLICY_VERSION_NOT_APPROVED","field":"version","detail":"Charging policy version 3 has no approval; only an approved version can be activated (REQ-0282)."}],"impact":{"comparedWithActiveVersion":1,"changes":[{"field":"mandatoryChargeEntryThresholdPercent","before":"30","after":"98"},{"field":"chargingCompletionThresholdPercent","before":"80","after":"99"}],"coveredAfter":["BROKERX-f38975561adf46ccb1d2f23833c7d0e4"],"vehiclesLosingPolicy":[],"vehiclesWithoutPolicyAfter":[],"warning":null,"openCycles":[],"retention":"Charging cycles already under way keep the policy version they froze until they end; a new version applies only to new dispatch decisions and new charging cycles (REQ-0282)."}}
+exit=1
+2026-10-11 17:09:36 step=check
+activeVersion=1 active.forced=30 active.completion=80
+  history v1 approvals=1 sha=5d34c6051c9f
+  history v2 approvals=1 sha=85fecd17e9e8
+  history v3 approvals=0 sha=cdb6b595d5a0
+  vehicle reason=CHARGING_POLICY_EFFECTIVE policyVersion=1 commissioned=True
+  openCycles=0

@@ -1,0 +1,16 @@
+=== 21:08:52
+21:08:52 agv02 pos=0 move=MT_RUNNING sys=EXECUTING battery=79 emergency=OK
+    RIoT nonfinal: W2G-IDLE-62d6bd7c-20261011T130737661Z (len 37) state=3
+21:08:52 agv03 pos=146 move=MT_FINISHED sys=IDLE battery=61 emergency=OK
+=== 21:09:14
+21:09:14 agv02 pos=0 move=MT_RUNNING sys=EXECUTING battery=79 emergency=OK
+    RIoT nonfinal: W2G-IDLE-62d6bd7c-20261011T130737661Z (len 37) state=3
+21:09:14 agv03 pos=146 move=MT_FINISHED sys=IDLE battery=61 emergency=OK
+=== 21:09:36
+21:09:36 agv02 pos=0 move=MT_RUNNING sys=EXECUTING battery=78 emergency=OK
+    RIoT nonfinal: W2G-IDLE-62d6bd7c-20261011T130737661Z (len 37) state=3
+21:09:36 agv03 pos=146 move=MT_FINISHED sys=IDLE battery=61 emergency=OK
+=== 21:09:58
+21:09:59 agv02 pos=216 move=MT_FINISHED sys=IDLE battery=78 emergency=OK
+21:09:59 agv03 pos=146 move=MT_FINISHED sys=IDLE battery=60 emergency=OK
+## SELECT JourneyId, AgvId, LoadingPhaseState, LoadingClosedReason, YieldTriggeredByVehicleKey, YieldTriggeredAt, CargoHoldingStartedAt, BlockReasonCode, UpdatedAt FROM JourneyRuntimes WHERE JourneyId LIKE 'journey:%' ORDER BY rowid DESC LIMIT 4

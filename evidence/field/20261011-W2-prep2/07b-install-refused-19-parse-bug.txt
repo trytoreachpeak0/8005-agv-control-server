@@ -1,0 +1,19 @@
+[10:33:13] Clone C:\w566cs is clean at da6e40e27b2dd4ef00a1d9f920281e1c3191aca5; definition scripts/parallel/instance-factory01-v2.two-car-example.json is tracked there; the files sent match HEAD
+[10:33:13] ADMISSION_POLICY_VERSION=3 -- write it into the deployment record; a rollback needs the highest one ever installed + 1
+[10:33:14] Instance definition accepted: factory01-v2-parallel (from C:/w566cs/scripts/parallel/instance-factory01-v2.two-car-example.json)
+[10:33:14] MES_INGEST_SOURCE=fake baseUrl=http://127.0.0.1:58188 allowedWorkTypes=DIE_TO_WIRE_STAGING,DIE_TO_OVEN,WIRE_TO_GATE,WIRE_TO_OPTICAL,STAGING_TO_WIRE,WIRE_TO_NITROGEN -- injected demand from this instance's own FakeMesIngest double, task '8005 AGV ControlServer V2 FakeMesIngest'
+[10:33:14] Target: factory01  service '8005 AGV ControlServer V2'
+[10:33:14] Vehicle 1/2: ÀÏ³§Ç°ÏßÐÂ¶à²ÖÎ»2 (BROKERX-f38975561adf46ccb1d2f23833c7d0e4)
+[10:33:14] Vehicle 2/2: ÀÏ³§Ç°ÏßÐÂ¶à²ÖÎ»3 (BROKERX-7daca4ee91da498d8026c68b7b941127)
+[10:33:14] RouteGraph: enabled=False mapId=26   RiotCreateDispatch: enabled=False
+[10:33:14] Clearance exit: VehicleFaultRecovery enabled=False   FieldOperatorRoles roster=D:\zhengyushao\control-server-v2-ops\field-operator-roles.json onboardEntryDeclared=False
+[31;1mException: [0mC:\Users\szy\Desktop\8005-workspace-v2\worktrees\ws-cs566b\remote-ops\factory-server\scripts\19-deploy-control-server-parallel.ps1:354[0m
+[31;1m[0m[36;1mLine |[0m
+[31;1m[0m[36;1m[36;1m 354 | [0m         [36;1mthrow ("INSTALLED_VERSION_UNREAD: could not read $Path on $Ss[0m ¡­[0m
+[31;1m[0m[36;1m[36;1m[0m[36;1m[0m[36;1m     | [31;1m         ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~[0m
+[31;1m[0m[36;1m[36;1m[0m[36;1m[0m[36;1m[31;1m[31;1m[36;1m     | [31;1mINSTALLED_VERSION_UNREAD: could not read D:\zhengyushao\control-server-v2-ops\installed-instance.json on[0m
+[31;1m[0m[36;1m[36;1m[0m[36;1m[0m[36;1m[31;1m[31;1m[36;1m[31;1m[36;1m     | [31;1mfactory01 (ssh exit 1): [31;1mParserError: [0m | [31;1m[36;1mLine |[0m | [31;1m[36;1m[36;1m   1 | [0m
+[31;1m[0m[36;1m[36;1m[0m[36;1m[0m[36;1m[31;1m[31;1m[36;1m[31;1m[36;1m[31;1m[31;1m[0m[31;1m[36;1m[0m[31;1m[36;1m[36;1m[0m[36;1m     | [31;1mâ€?licyVersion']; 'INSTALLED_DEFINITION=PRESENT version=' + $v }[36;1m;[0m catch  â€¦_x001B_[0m |[0m
+[31;1m[0m[36;1m[36;1m[0m[36;1m[0m[36;1m[31;1m[31;1m[36;1m[31;1m[36;1m[31;1m[31;1m[0m[31;1m[36;1m[0m[31;1m[36;1m[36;1m[0m[36;1m[31;1m[36;1m[0m[36;1m     | [31;1m[31;1m[36;1m[36;1m[0m[36;1m[0m[36;1m     | [31;1m                                                       [0m
+[31;1m[0m[36;1m[36;1m[0m[36;1m[0m[36;1m[31;1m[31;1m[36;1m[31;1m[36;1m[31;1m[31;1m[0m[31;1m[36;1m[0m[31;1m[36;1m[36;1m[0m[36;1m[31;1m[36;1m[0m[36;1m[31;1m[31;1m[36;1m[36;1m[0m[36;1m[0m[36;1m[31;1m[36;1m     | [31;1m~[0m | [31;1m[36;1m[36;1m[0m[36;1m[0m[36;1m[31;1m[31;1m[36;1m     | [31;1mThe Try statement is[0m
+[31;1m[0m[36;1m[36;1m[0m[36;1m[0m[36;1m[31;1m[31;1m[36;1m[31;1m[36;1m[31;1m[31;1m[0m[31;1m[36;1m[0m[31;1m[36;1m[36;1m[0m[36;1m[31;1m[36;1m[0m[36;1m[31;1m[31;1m[36;1m[36;1m[0m[36;1m[0m[36;1m[31;1m[36;1m[31;1m[0m[31;1m[36;1m[36;1m[0m[36;1m[0m[36;1m[31;1m[31;1m[36;1m[31;1m[36;1m     | [31;1mmissing its Catch or Finally block.[0m. The version check needs it. Nothing was downloaded or copied.[0m

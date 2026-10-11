@@ -1,0 +1,491 @@
+20:16:58 agv02 pos=0 move=MT_RUNNING sys=EXECUTING battery=77 emergency=OK
+    RIoT nonfinal: W2G-CHARGE-62d6bd7c-20261011T121516351Z (len 39) state=3
+20:16:59 agv03 pos=0 move=MT_FINISHED sys=IDLE battery=69 emergency=OK
+## SELECT JourneyId, AgvId, LoadingPhaseState, LoadingClosedReason, YieldTriggeredByVehicleKey, YieldTriggeredAt, CargoHoldingStartedAt, BlockReasonCode, UpdatedAt FROM JourneyRuntimes WHERE JourneyId LIKE 'journey:%' ORDER BY rowid DESC LIMIT 4
+JourneyId=journey:c1000566-0000-0000-0000-000000000005 | AgvId=老厂前线新多仓位2 | LoadingPhaseState=CLOSED | LoadingClosedReason=CARGO_HOLDING_TIMEOUT | YieldTriggeredByVehicleKey= | YieldTriggeredAt= | CargoHoldingStartedAt=2026-10-11 11:24:54.7718148+00:00 | BlockReasonCode= | UpdatedAt=2026-10-11 11:30:52.7886133+00:00
+JourneyId=journey:c1000566-0000-0000-0000-000000000004 | AgvId=老厂前线新多仓位3 | LoadingPhaseState=CLOSED | LoadingClosedReason=WAITING_STATION_YIELD | YieldTriggeredByVehicleKey=BROKERX-f38975561adf46ccb1d2f23833c7d0e4 | YieldTriggeredAt=2026-10-11 11:19:23.1636885+00:00 | CargoHoldingStartedAt=2026-10-11 11:19:14.9559536+00:00 | BlockReasonCode= | UpdatedAt=2026-10-11 11:24:06.7573843+00:00
+## SELECT DemandId, JourneyId, Status, ExpectedBasketCount, TargetSlotsJson FROM JourneyDemands ORDER BY rowid DESC LIMIT 4
+DemandId=c1000566-0000-0000-0000-000000000005 | JourneyId=journey:c1000566-0000-0000-0000-000000000005 | Status=UNLOADED | ExpectedBasketCount=4 | TargetSlotsJson=[1,2,3,4]
+DemandId=c1000566-0000-0000-0000-000000000004 | JourneyId=journey:c1000566-0000-0000-0000-000000000004 | Status=UNLOADED | ExpectedBasketCount=1 | TargetSlotsJson=[1]
+## SELECT StationId, StationKind, State, VehicleKey, JourneyId FROM StationExclusivities
+StationId=211 | StationKind=CHARGER | State=RESERVED | VehicleKey=BROKERX-f38975561adf46ccb1d2f23833c7d0e4 | JourneyId=charging:BROKERX-f38975561adf46ccb1d2f23833c7d0e4:20261011T121516351Z
+20:16:45.000 Information  Application is shutting down...
+20:16:47.000 Information 20405 No migrations were applied. The database is already up to date.
+20:16:47.000 Warning 9305 Task type station preset "C:\\Program Files\\8005 AGV\\ControlServer.V2\\task-type-stations.map-26.settings.json" was not applied to Map 26 (pointer state "ACTIVE"): "binding set version 2 stays active"; a different version only comes from a FieldOps activation or rollback.
+20:16:48.000 Information 1002 Onboard NDJSON listener started on "172.19.205.222":58105; transport=plaintext
+20:16:48.000 Information 14 Now listening on: "http://172.19.205.222:58107"
+20:16:48.000 Information  Application started. Hosting environment: "Production"; Content root path: "C:\\Program Files\\8005 AGV\\ControlServer.V2"
+20:16:48.000 Information 5350 EFFECTIVE_CONFIGURATION allowedWorkTypes=["DIE_TO_WIRE_STAGING","DIE_TO_OVEN","WIRE_TO_GATE","WIRE_TO_OPTICAL","STAGING_TO_WIRE","WIRE_TO_NITROGEN"] allowedDispatchZones="WIRE" mesIngestBaseUrl="http://127.0.0.1:58188" fleet=[{"AgvId":"老厂前线新多仓位2","VehicleKey":"BROKERX-f38975561adf46ccb1d2f23833c7d0e4","AllowedTaskTypes":["DIE_TO_WIRE_STAGING","DIE_TO_OVEN","WIRE_TO_GATE","WIRE_TO_OPTICAL","STAGING_TO_WIRE","WIRE_TO_NITROGEN"],"Zones":["WIRE"]},{"AgvId":"老厂前线新多仓位3","VehicleKey":"BROKERX-7daca4ee9
+20:16:50.000 Information 5870 RIoT command "POST" "http://172.19.206.222:8888/api/order/v1/add/byDefaultMissions" sent
+20:16:50.000 Information 5871 RIoT command "POST" "http://172.19.206.222:8888/api/order/v1/add/byDefaultMissions" answered 200 after 129.478 ms
+20:16:50.000 Information 2252 Charging journey "charging:BROKERX-f38975561adf46ccb1d2f23833c7d0e4:20261011T121516351Z": RIoT confirmed order "W2G-CHARGE-62d6bd7c-20261011T121516351Z"; vehicle "BROKERX-f38975561adf46ccb1d2f23833c7d0e4" is en route to charger 211.
+20:16:50.000 Warning 2205 Vehicle "BROKERX-7daca4ee91da498d8026c68b7b941127" is below its mandatory charge entry threshold: battery 69% < 80% (charging policy version 2). It takes no new transport, no en-route append and no idle return until it has charged (REQ-0290, "MANDATORY_CHARGE_REQUIRED"); a journey it is carrying finishes as planned (REQ-0281).
+20:16:50.000 Information 2241 Charging not allocated for vehicle "老厂前线新多仓位3": "ONBOARD_FACTS_NOT_READY". ""
+20:16:50.000 Information 2199 Idle return not committed for vehicle "老厂前线新多仓位3": "ONBOARD_FACTS_NOT_READY". ""
+20:16:52.000 Information 2210 "WAITING_POINT" 26/216 released by vehicle "BROKERX-f38975561adf46ccb1d2f23833c7d0e4" on departure evidence (journey "idle-return:BROKERX-f38975561adf46ccb1d2f23833c7d0e4:20261011T115215830Z").
+20:17:16 agv02 pos=0 move=MT_RUNNING sys=EXECUTING battery=77 emergency=OK
+    RIoT nonfinal: W2G-CHARGE-62d6bd7c-20261011T121516351Z (len 39) state=3
+20:17:16 agv03 pos=0 move=MT_FINISHED sys=IDLE battery=69 emergency=OK
+## SELECT JourneyId, AgvId, LoadingPhaseState, LoadingClosedReason, YieldTriggeredByVehicleKey, YieldTriggeredAt, CargoHoldingStartedAt, BlockReasonCode, UpdatedAt FROM JourneyRuntimes WHERE JourneyId LIKE 'journey:%' ORDER BY rowid DESC LIMIT 4
+JourneyId=journey:c1000566-0000-0000-0000-000000000005 | AgvId=老厂前线新多仓位2 | LoadingPhaseState=CLOSED | LoadingClosedReason=CARGO_HOLDING_TIMEOUT | YieldTriggeredByVehicleKey= | YieldTriggeredAt= | CargoHoldingStartedAt=2026-10-11 11:24:54.7718148+00:00 | BlockReasonCode= | UpdatedAt=2026-10-11 11:30:52.7886133+00:00
+JourneyId=journey:c1000566-0000-0000-0000-000000000004 | AgvId=老厂前线新多仓位3 | LoadingPhaseState=CLOSED | LoadingClosedReason=WAITING_STATION_YIELD | YieldTriggeredByVehicleKey=BROKERX-f38975561adf46ccb1d2f23833c7d0e4 | YieldTriggeredAt=2026-10-11 11:19:23.1636885+00:00 | CargoHoldingStartedAt=2026-10-11 11:19:14.9559536+00:00 | BlockReasonCode= | UpdatedAt=2026-10-11 11:24:06.7573843+00:00
+## SELECT DemandId, JourneyId, Status, ExpectedBasketCount, TargetSlotsJson FROM JourneyDemands ORDER BY rowid DESC LIMIT 4
+DemandId=c1000566-0000-0000-0000-000000000005 | JourneyId=journey:c1000566-0000-0000-0000-000000000005 | Status=UNLOADED | ExpectedBasketCount=4 | TargetSlotsJson=[1,2,3,4]
+DemandId=c1000566-0000-0000-0000-000000000004 | JourneyId=journey:c1000566-0000-0000-0000-000000000004 | Status=UNLOADED | ExpectedBasketCount=1 | TargetSlotsJson=[1]
+## SELECT StationId, StationKind, State, VehicleKey, JourneyId FROM StationExclusivities
+StationId=211 | StationKind=CHARGER | State=RESERVED | VehicleKey=BROKERX-f38975561adf46ccb1d2f23833c7d0e4 | JourneyId=charging:BROKERX-f38975561adf46ccb1d2f23833c7d0e4:20261011T121516351Z
+20:16:45.000 Information  Application is shutting down...
+20:16:47.000 Information 20405 No migrations were applied. The database is already up to date.
+20:16:47.000 Warning 9305 Task type station preset "C:\\Program Files\\8005 AGV\\ControlServer.V2\\task-type-stations.map-26.settings.json" was not applied to Map 26 (pointer state "ACTIVE"): "binding set version 2 stays active"; a different version only comes from a FieldOps activation or rollback.
+20:16:48.000 Information 1002 Onboard NDJSON listener started on "172.19.205.222":58105; transport=plaintext
+20:16:48.000 Information 14 Now listening on: "http://172.19.205.222:58107"
+20:16:48.000 Information  Application started. Hosting environment: "Production"; Content root path: "C:\\Program Files\\8005 AGV\\ControlServer.V2"
+20:16:48.000 Information 5350 EFFECTIVE_CONFIGURATION allowedWorkTypes=["DIE_TO_WIRE_STAGING","DIE_TO_OVEN","WIRE_TO_GATE","WIRE_TO_OPTICAL","STAGING_TO_WIRE","WIRE_TO_NITROGEN"] allowedDispatchZones="WIRE" mesIngestBaseUrl="http://127.0.0.1:58188" fleet=[{"AgvId":"老厂前线新多仓位2","VehicleKey":"BROKERX-f38975561adf46ccb1d2f23833c7d0e4","AllowedTaskTypes":["DIE_TO_WIRE_STAGING","DIE_TO_OVEN","WIRE_TO_GATE","WIRE_TO_OPTICAL","STAGING_TO_WIRE","WIRE_TO_NITROGEN"],"Zones":["WIRE"]},{"AgvId":"老厂前线新多仓位3","VehicleKey":"BROKERX-7daca4ee9
+20:16:50.000 Information 5870 RIoT command "POST" "http://172.19.206.222:8888/api/order/v1/add/byDefaultMissions" sent
+20:16:50.000 Information 5871 RIoT command "POST" "http://172.19.206.222:8888/api/order/v1/add/byDefaultMissions" answered 200 after 129.478 ms
+20:16:50.000 Information 2252 Charging journey "charging:BROKERX-f38975561adf46ccb1d2f23833c7d0e4:20261011T121516351Z": RIoT confirmed order "W2G-CHARGE-62d6bd7c-20261011T121516351Z"; vehicle "BROKERX-f38975561adf46ccb1d2f23833c7d0e4" is en route to charger 211.
+20:16:50.000 Warning 2205 Vehicle "BROKERX-7daca4ee91da498d8026c68b7b941127" is below its mandatory charge entry threshold: battery 69% < 80% (charging policy version 2). It takes no new transport, no en-route append and no idle return until it has charged (REQ-0290, "MANDATORY_CHARGE_REQUIRED"); a journey it is carrying finishes as planned (REQ-0281).
+20:16:50.000 Information 2241 Charging not allocated for vehicle "老厂前线新多仓位3": "ONBOARD_FACTS_NOT_READY". ""
+20:16:50.000 Information 2199 Idle return not committed for vehicle "老厂前线新多仓位3": "ONBOARD_FACTS_NOT_READY". ""
+20:16:52.000 Information 2210 "WAITING_POINT" 26/216 released by vehicle "BROKERX-f38975561adf46ccb1d2f23833c7d0e4" on departure evidence (journey "idle-return:BROKERX-f38975561adf46ccb1d2f23833c7d0e4:20261011T115215830Z").
+20:17:33 agv02 pos=0 move=MT_RUNNING sys=EXECUTING battery=77 emergency=OK
+    RIoT nonfinal: W2G-CHARGE-62d6bd7c-20261011T121516351Z (len 39) state=3
+20:17:33 agv03 pos=0 move=MT_FINISHED sys=IDLE battery=69 emergency=OK
+## SELECT JourneyId, AgvId, LoadingPhaseState, LoadingClosedReason, YieldTriggeredByVehicleKey, YieldTriggeredAt, CargoHoldingStartedAt, BlockReasonCode, UpdatedAt FROM JourneyRuntimes WHERE JourneyId LIKE 'journey:%' ORDER BY rowid DESC LIMIT 4
+JourneyId=journey:c1000566-0000-0000-0000-000000000005 | AgvId=老厂前线新多仓位2 | LoadingPhaseState=CLOSED | LoadingClosedReason=CARGO_HOLDING_TIMEOUT | YieldTriggeredByVehicleKey= | YieldTriggeredAt= | CargoHoldingStartedAt=2026-10-11 11:24:54.7718148+00:00 | BlockReasonCode= | UpdatedAt=2026-10-11 11:30:52.7886133+00:00
+JourneyId=journey:c1000566-0000-0000-0000-000000000004 | AgvId=老厂前线新多仓位3 | LoadingPhaseState=CLOSED | LoadingClosedReason=WAITING_STATION_YIELD | YieldTriggeredByVehicleKey=BROKERX-f38975561adf46ccb1d2f23833c7d0e4 | YieldTriggeredAt=2026-10-11 11:19:23.1636885+00:00 | CargoHoldingStartedAt=2026-10-11 11:19:14.9559536+00:00 | BlockReasonCode= | UpdatedAt=2026-10-11 11:24:06.7573843+00:00
+## SELECT DemandId, JourneyId, Status, ExpectedBasketCount, TargetSlotsJson FROM JourneyDemands ORDER BY rowid DESC LIMIT 4
+DemandId=c1000566-0000-0000-0000-000000000005 | JourneyId=journey:c1000566-0000-0000-0000-000000000005 | Status=UNLOADED | ExpectedBasketCount=4 | TargetSlotsJson=[1,2,3,4]
+DemandId=c1000566-0000-0000-0000-000000000004 | JourneyId=journey:c1000566-0000-0000-0000-000000000004 | Status=UNLOADED | ExpectedBasketCount=1 | TargetSlotsJson=[1]
+## SELECT StationId, StationKind, State, VehicleKey, JourneyId FROM StationExclusivities
+StationId=211 | StationKind=CHARGER | State=RESERVED | VehicleKey=BROKERX-f38975561adf46ccb1d2f23833c7d0e4 | JourneyId=charging:BROKERX-f38975561adf46ccb1d2f23833c7d0e4:20261011T121516351Z
+20:16:45.000 Information  Application is shutting down...
+20:16:47.000 Information 20405 No migrations were applied. The database is already up to date.
+20:16:47.000 Warning 9305 Task type station preset "C:\\Program Files\\8005 AGV\\ControlServer.V2\\task-type-stations.map-26.settings.json" was not applied to Map 26 (pointer state "ACTIVE"): "binding set version 2 stays active"; a different version only comes from a FieldOps activation or rollback.
+20:16:48.000 Information 1002 Onboard NDJSON listener started on "172.19.205.222":58105; transport=plaintext
+20:16:48.000 Information 14 Now listening on: "http://172.19.205.222:58107"
+20:16:48.000 Information  Application started. Hosting environment: "Production"; Content root path: "C:\\Program Files\\8005 AGV\\ControlServer.V2"
+20:16:48.000 Information 5350 EFFECTIVE_CONFIGURATION allowedWorkTypes=["DIE_TO_WIRE_STAGING","DIE_TO_OVEN","WIRE_TO_GATE","WIRE_TO_OPTICAL","STAGING_TO_WIRE","WIRE_TO_NITROGEN"] allowedDispatchZones="WIRE" mesIngestBaseUrl="http://127.0.0.1:58188" fleet=[{"AgvId":"老厂前线新多仓位2","VehicleKey":"BROKERX-f38975561adf46ccb1d2f23833c7d0e4","AllowedTaskTypes":["DIE_TO_WIRE_STAGING","DIE_TO_OVEN","WIRE_TO_GATE","WIRE_TO_OPTICAL","STAGING_TO_WIRE","WIRE_TO_NITROGEN"],"Zones":["WIRE"]},{"AgvId":"老厂前线新多仓位3","VehicleKey":"BROKERX-7daca4ee9
+20:16:50.000 Information 5870 RIoT command "POST" "http://172.19.206.222:8888/api/order/v1/add/byDefaultMissions" sent
+20:16:50.000 Information 5871 RIoT command "POST" "http://172.19.206.222:8888/api/order/v1/add/byDefaultMissions" answered 200 after 129.478 ms
+20:16:50.000 Information 2252 Charging journey "charging:BROKERX-f38975561adf46ccb1d2f23833c7d0e4:20261011T121516351Z": RIoT confirmed order "W2G-CHARGE-62d6bd7c-20261011T121516351Z"; vehicle "BROKERX-f38975561adf46ccb1d2f23833c7d0e4" is en route to charger 211.
+20:16:50.000 Warning 2205 Vehicle "BROKERX-7daca4ee91da498d8026c68b7b941127" is below its mandatory charge entry threshold: battery 69% < 80% (charging policy version 2). It takes no new transport, no en-route append and no idle return until it has charged (REQ-0290, "MANDATORY_CHARGE_REQUIRED"); a journey it is carrying finishes as planned (REQ-0281).
+20:16:50.000 Information 2241 Charging not allocated for vehicle "老厂前线新多仓位3": "ONBOARD_FACTS_NOT_READY". ""
+20:16:50.000 Information 2199 Idle return not committed for vehicle "老厂前线新多仓位3": "ONBOARD_FACTS_NOT_READY". ""
+20:16:52.000 Information 2210 "WAITING_POINT" 26/216 released by vehicle "BROKERX-f38975561adf46ccb1d2f23833c7d0e4" on departure evidence (journey "idle-return:BROKERX-f38975561adf46ccb1d2f23833c7d0e4:20261011T115215830Z").
+20:17:50 agv02 pos=0 move=MT_RUNNING sys=EXECUTING battery=77 emergency=OK
+    RIoT nonfinal: W2G-CHARGE-62d6bd7c-20261011T121516351Z (len 39) state=3
+20:17:50 agv03 pos=0 move=MT_FINISHED sys=IDLE battery=69 emergency=OK
+## SELECT JourneyId, AgvId, LoadingPhaseState, LoadingClosedReason, YieldTriggeredByVehicleKey, YieldTriggeredAt, CargoHoldingStartedAt, BlockReasonCode, UpdatedAt FROM JourneyRuntimes WHERE JourneyId LIKE 'journey:%' ORDER BY rowid DESC LIMIT 4
+JourneyId=journey:c1000566-0000-0000-0000-000000000005 | AgvId=老厂前线新多仓位2 | LoadingPhaseState=CLOSED | LoadingClosedReason=CARGO_HOLDING_TIMEOUT | YieldTriggeredByVehicleKey= | YieldTriggeredAt= | CargoHoldingStartedAt=2026-10-11 11:24:54.7718148+00:00 | BlockReasonCode= | UpdatedAt=2026-10-11 11:30:52.7886133+00:00
+JourneyId=journey:c1000566-0000-0000-0000-000000000004 | AgvId=老厂前线新多仓位3 | LoadingPhaseState=CLOSED | LoadingClosedReason=WAITING_STATION_YIELD | YieldTriggeredByVehicleKey=BROKERX-f38975561adf46ccb1d2f23833c7d0e4 | YieldTriggeredAt=2026-10-11 11:19:23.1636885+00:00 | CargoHoldingStartedAt=2026-10-11 11:19:14.9559536+00:00 | BlockReasonCode= | UpdatedAt=2026-10-11 11:24:06.7573843+00:00
+## SELECT DemandId, JourneyId, Status, ExpectedBasketCount, TargetSlotsJson FROM JourneyDemands ORDER BY rowid DESC LIMIT 4
+DemandId=c1000566-0000-0000-0000-000000000005 | JourneyId=journey:c1000566-0000-0000-0000-000000000005 | Status=UNLOADED | ExpectedBasketCount=4 | TargetSlotsJson=[1,2,3,4]
+DemandId=c1000566-0000-0000-0000-000000000004 | JourneyId=journey:c1000566-0000-0000-0000-000000000004 | Status=UNLOADED | ExpectedBasketCount=1 | TargetSlotsJson=[1]
+## SELECT StationId, StationKind, State, VehicleKey, JourneyId FROM StationExclusivities
+StationId=211 | StationKind=CHARGER | State=RESERVED | VehicleKey=BROKERX-f38975561adf46ccb1d2f23833c7d0e4 | JourneyId=charging:BROKERX-f38975561adf46ccb1d2f23833c7d0e4:20261011T121516351Z
+20:16:45.000 Information  Application is shutting down...
+20:16:47.000 Information 20405 No migrations were applied. The database is already up to date.
+20:16:47.000 Warning 9305 Task type station preset "C:\\Program Files\\8005 AGV\\ControlServer.V2\\task-type-stations.map-26.settings.json" was not applied to Map 26 (pointer state "ACTIVE"): "binding set version 2 stays active"; a different version only comes from a FieldOps activation or rollback.
+20:16:48.000 Information 1002 Onboard NDJSON listener started on "172.19.205.222":58105; transport=plaintext
+20:16:48.000 Information 14 Now listening on: "http://172.19.205.222:58107"
+20:16:48.000 Information  Application started. Hosting environment: "Production"; Content root path: "C:\\Program Files\\8005 AGV\\ControlServer.V2"
+20:16:48.000 Information 5350 EFFECTIVE_CONFIGURATION allowedWorkTypes=["DIE_TO_WIRE_STAGING","DIE_TO_OVEN","WIRE_TO_GATE","WIRE_TO_OPTICAL","STAGING_TO_WIRE","WIRE_TO_NITROGEN"] allowedDispatchZones="WIRE" mesIngestBaseUrl="http://127.0.0.1:58188" fleet=[{"AgvId":"老厂前线新多仓位2","VehicleKey":"BROKERX-f38975561adf46ccb1d2f23833c7d0e4","AllowedTaskTypes":["DIE_TO_WIRE_STAGING","DIE_TO_OVEN","WIRE_TO_GATE","WIRE_TO_OPTICAL","STAGING_TO_WIRE","WIRE_TO_NITROGEN"],"Zones":["WIRE"]},{"AgvId":"老厂前线新多仓位3","VehicleKey":"BROKERX-7daca4ee9
+20:16:50.000 Information 5870 RIoT command "POST" "http://172.19.206.222:8888/api/order/v1/add/byDefaultMissions" sent
+20:16:50.000 Information 5871 RIoT command "POST" "http://172.19.206.222:8888/api/order/v1/add/byDefaultMissions" answered 200 after 129.478 ms
+20:16:50.000 Information 2252 Charging journey "charging:BROKERX-f38975561adf46ccb1d2f23833c7d0e4:20261011T121516351Z": RIoT confirmed order "W2G-CHARGE-62d6bd7c-20261011T121516351Z"; vehicle "BROKERX-f38975561adf46ccb1d2f23833c7d0e4" is en route to charger 211.
+20:16:50.000 Warning 2205 Vehicle "BROKERX-7daca4ee91da498d8026c68b7b941127" is below its mandatory charge entry threshold: battery 69% < 80% (charging policy version 2). It takes no new transport, no en-route append and no idle return until it has charged (REQ-0290, "MANDATORY_CHARGE_REQUIRED"); a journey it is carrying finishes as planned (REQ-0281).
+20:16:50.000 Information 2241 Charging not allocated for vehicle "老厂前线新多仓位3": "ONBOARD_FACTS_NOT_READY". ""
+20:16:50.000 Information 2199 Idle return not committed for vehicle "老厂前线新多仓位3": "ONBOARD_FACTS_NOT_READY". ""
+20:16:52.000 Information 2210 "WAITING_POINT" 26/216 released by vehicle "BROKERX-f38975561adf46ccb1d2f23833c7d0e4" on departure evidence (journey "idle-return:BROKERX-f38975561adf46ccb1d2f23833c7d0e4:20261011T115215830Z").
+20:18:07 agv02 pos=0 move=MT_RUNNING sys=EXECUTING battery=77 emergency=OK
+    RIoT nonfinal: W2G-CHARGE-62d6bd7c-20261011T121516351Z (len 39) state=3
+20:18:07 agv03 pos=0 move=MT_FINISHED sys=IDLE battery=69 emergency=OK
+## SELECT JourneyId, AgvId, LoadingPhaseState, LoadingClosedReason, YieldTriggeredByVehicleKey, YieldTriggeredAt, CargoHoldingStartedAt, BlockReasonCode, UpdatedAt FROM JourneyRuntimes WHERE JourneyId LIKE 'journey:%' ORDER BY rowid DESC LIMIT 4
+JourneyId=journey:c1000566-0000-0000-0000-000000000005 | AgvId=老厂前线新多仓位2 | LoadingPhaseState=CLOSED | LoadingClosedReason=CARGO_HOLDING_TIMEOUT | YieldTriggeredByVehicleKey= | YieldTriggeredAt= | CargoHoldingStartedAt=2026-10-11 11:24:54.7718148+00:00 | BlockReasonCode= | UpdatedAt=2026-10-11 11:30:52.7886133+00:00
+JourneyId=journey:c1000566-0000-0000-0000-000000000004 | AgvId=老厂前线新多仓位3 | LoadingPhaseState=CLOSED | LoadingClosedReason=WAITING_STATION_YIELD | YieldTriggeredByVehicleKey=BROKERX-f38975561adf46ccb1d2f23833c7d0e4 | YieldTriggeredAt=2026-10-11 11:19:23.1636885+00:00 | CargoHoldingStartedAt=2026-10-11 11:19:14.9559536+00:00 | BlockReasonCode= | UpdatedAt=2026-10-11 11:24:06.7573843+00:00
+## SELECT DemandId, JourneyId, Status, ExpectedBasketCount, TargetSlotsJson FROM JourneyDemands ORDER BY rowid DESC LIMIT 4
+DemandId=c1000566-0000-0000-0000-000000000005 | JourneyId=journey:c1000566-0000-0000-0000-000000000005 | Status=UNLOADED | ExpectedBasketCount=4 | TargetSlotsJson=[1,2,3,4]
+DemandId=c1000566-0000-0000-0000-000000000004 | JourneyId=journey:c1000566-0000-0000-0000-000000000004 | Status=UNLOADED | ExpectedBasketCount=1 | TargetSlotsJson=[1]
+## SELECT StationId, StationKind, State, VehicleKey, JourneyId FROM StationExclusivities
+StationId=211 | StationKind=CHARGER | State=RESERVED | VehicleKey=BROKERX-f38975561adf46ccb1d2f23833c7d0e4 | JourneyId=charging:BROKERX-f38975561adf46ccb1d2f23833c7d0e4:20261011T121516351Z
+20:16:45.000 Information  Application is shutting down...
+20:16:47.000 Information 20405 No migrations were applied. The database is already up to date.
+20:16:47.000 Warning 9305 Task type station preset "C:\\Program Files\\8005 AGV\\ControlServer.V2\\task-type-stations.map-26.settings.json" was not applied to Map 26 (pointer state "ACTIVE"): "binding set version 2 stays active"; a different version only comes from a FieldOps activation or rollback.
+20:16:48.000 Information 1002 Onboard NDJSON listener started on "172.19.205.222":58105; transport=plaintext
+20:16:48.000 Information 14 Now listening on: "http://172.19.205.222:58107"
+20:16:48.000 Information  Application started. Hosting environment: "Production"; Content root path: "C:\\Program Files\\8005 AGV\\ControlServer.V2"
+20:16:48.000 Information 5350 EFFECTIVE_CONFIGURATION allowedWorkTypes=["DIE_TO_WIRE_STAGING","DIE_TO_OVEN","WIRE_TO_GATE","WIRE_TO_OPTICAL","STAGING_TO_WIRE","WIRE_TO_NITROGEN"] allowedDispatchZones="WIRE" mesIngestBaseUrl="http://127.0.0.1:58188" fleet=[{"AgvId":"老厂前线新多仓位2","VehicleKey":"BROKERX-f38975561adf46ccb1d2f23833c7d0e4","AllowedTaskTypes":["DIE_TO_WIRE_STAGING","DIE_TO_OVEN","WIRE_TO_GATE","WIRE_TO_OPTICAL","STAGING_TO_WIRE","WIRE_TO_NITROGEN"],"Zones":["WIRE"]},{"AgvId":"老厂前线新多仓位3","VehicleKey":"BROKERX-7daca4ee9
+20:16:50.000 Information 5870 RIoT command "POST" "http://172.19.206.222:8888/api/order/v1/add/byDefaultMissions" sent
+20:16:50.000 Information 5871 RIoT command "POST" "http://172.19.206.222:8888/api/order/v1/add/byDefaultMissions" answered 200 after 129.478 ms
+20:16:50.000 Information 2252 Charging journey "charging:BROKERX-f38975561adf46ccb1d2f23833c7d0e4:20261011T121516351Z": RIoT confirmed order "W2G-CHARGE-62d6bd7c-20261011T121516351Z"; vehicle "BROKERX-f38975561adf46ccb1d2f23833c7d0e4" is en route to charger 211.
+20:16:50.000 Warning 2205 Vehicle "BROKERX-7daca4ee91da498d8026c68b7b941127" is below its mandatory charge entry threshold: battery 69% < 80% (charging policy version 2). It takes no new transport, no en-route append and no idle return until it has charged (REQ-0290, "MANDATORY_CHARGE_REQUIRED"); a journey it is carrying finishes as planned (REQ-0281).
+20:16:50.000 Information 2241 Charging not allocated for vehicle "老厂前线新多仓位3": "ONBOARD_FACTS_NOT_READY". ""
+20:16:50.000 Information 2199 Idle return not committed for vehicle "老厂前线新多仓位3": "ONBOARD_FACTS_NOT_READY". ""
+20:16:52.000 Information 2210 "WAITING_POINT" 26/216 released by vehicle "BROKERX-f38975561adf46ccb1d2f23833c7d0e4" on departure evidence (journey "idle-return:BROKERX-f38975561adf46ccb1d2f23833c7d0e4:20261011T115215830Z").
+20:18:25 agv02 pos=0 move=MT_RUNNING sys=EXECUTING battery=77 emergency=OK
+    RIoT nonfinal: W2G-CHARGE-62d6bd7c-20261011T121516351Z (len 39) state=3
+20:18:25 agv03 pos=0 move=MT_FINISHED sys=IDLE battery=69 emergency=OK
+## SELECT JourneyId, AgvId, LoadingPhaseState, LoadingClosedReason, YieldTriggeredByVehicleKey, YieldTriggeredAt, CargoHoldingStartedAt, BlockReasonCode, UpdatedAt FROM JourneyRuntimes WHERE JourneyId LIKE 'journey:%' ORDER BY rowid DESC LIMIT 4
+JourneyId=journey:c1000566-0000-0000-0000-000000000005 | AgvId=老厂前线新多仓位2 | LoadingPhaseState=CLOSED | LoadingClosedReason=CARGO_HOLDING_TIMEOUT | YieldTriggeredByVehicleKey= | YieldTriggeredAt= | CargoHoldingStartedAt=2026-10-11 11:24:54.7718148+00:00 | BlockReasonCode= | UpdatedAt=2026-10-11 11:30:52.7886133+00:00
+JourneyId=journey:c1000566-0000-0000-0000-000000000004 | AgvId=老厂前线新多仓位3 | LoadingPhaseState=CLOSED | LoadingClosedReason=WAITING_STATION_YIELD | YieldTriggeredByVehicleKey=BROKERX-f38975561adf46ccb1d2f23833c7d0e4 | YieldTriggeredAt=2026-10-11 11:19:23.1636885+00:00 | CargoHoldingStartedAt=2026-10-11 11:19:14.9559536+00:00 | BlockReasonCode= | UpdatedAt=2026-10-11 11:24:06.7573843+00:00
+## SELECT DemandId, JourneyId, Status, ExpectedBasketCount, TargetSlotsJson FROM JourneyDemands ORDER BY rowid DESC LIMIT 4
+DemandId=c1000566-0000-0000-0000-000000000005 | JourneyId=journey:c1000566-0000-0000-0000-000000000005 | Status=UNLOADED | ExpectedBasketCount=4 | TargetSlotsJson=[1,2,3,4]
+DemandId=c1000566-0000-0000-0000-000000000004 | JourneyId=journey:c1000566-0000-0000-0000-000000000004 | Status=UNLOADED | ExpectedBasketCount=1 | TargetSlotsJson=[1]
+## SELECT StationId, StationKind, State, VehicleKey, JourneyId FROM StationExclusivities
+StationId=211 | StationKind=CHARGER | State=RESERVED | VehicleKey=BROKERX-f38975561adf46ccb1d2f23833c7d0e4 | JourneyId=charging:BROKERX-f38975561adf46ccb1d2f23833c7d0e4:20261011T121516351Z
+20:16:45.000 Information  Application is shutting down...
+20:16:47.000 Information 20405 No migrations were applied. The database is already up to date.
+20:16:47.000 Warning 9305 Task type station preset "C:\\Program Files\\8005 AGV\\ControlServer.V2\\task-type-stations.map-26.settings.json" was not applied to Map 26 (pointer state "ACTIVE"): "binding set version 2 stays active"; a different version only comes from a FieldOps activation or rollback.
+20:16:48.000 Information 1002 Onboard NDJSON listener started on "172.19.205.222":58105; transport=plaintext
+20:16:48.000 Information 14 Now listening on: "http://172.19.205.222:58107"
+20:16:48.000 Information  Application started. Hosting environment: "Production"; Content root path: "C:\\Program Files\\8005 AGV\\ControlServer.V2"
+20:16:48.000 Information 5350 EFFECTIVE_CONFIGURATION allowedWorkTypes=["DIE_TO_WIRE_STAGING","DIE_TO_OVEN","WIRE_TO_GATE","WIRE_TO_OPTICAL","STAGING_TO_WIRE","WIRE_TO_NITROGEN"] allowedDispatchZones="WIRE" mesIngestBaseUrl="http://127.0.0.1:58188" fleet=[{"AgvId":"老厂前线新多仓位2","VehicleKey":"BROKERX-f38975561adf46ccb1d2f23833c7d0e4","AllowedTaskTypes":["DIE_TO_WIRE_STAGING","DIE_TO_OVEN","WIRE_TO_GATE","WIRE_TO_OPTICAL","STAGING_TO_WIRE","WIRE_TO_NITROGEN"],"Zones":["WIRE"]},{"AgvId":"老厂前线新多仓位3","VehicleKey":"BROKERX-7daca4ee9
+20:16:50.000 Information 5870 RIoT command "POST" "http://172.19.206.222:8888/api/order/v1/add/byDefaultMissions" sent
+20:16:50.000 Information 5871 RIoT command "POST" "http://172.19.206.222:8888/api/order/v1/add/byDefaultMissions" answered 200 after 129.478 ms
+20:16:50.000 Information 2252 Charging journey "charging:BROKERX-f38975561adf46ccb1d2f23833c7d0e4:20261011T121516351Z": RIoT confirmed order "W2G-CHARGE-62d6bd7c-20261011T121516351Z"; vehicle "BROKERX-f38975561adf46ccb1d2f23833c7d0e4" is en route to charger 211.
+20:16:50.000 Warning 2205 Vehicle "BROKERX-7daca4ee91da498d8026c68b7b941127" is below its mandatory charge entry threshold: battery 69% < 80% (charging policy version 2). It takes no new transport, no en-route append and no idle return until it has charged (REQ-0290, "MANDATORY_CHARGE_REQUIRED"); a journey it is carrying finishes as planned (REQ-0281).
+20:16:50.000 Information 2241 Charging not allocated for vehicle "老厂前线新多仓位3": "ONBOARD_FACTS_NOT_READY". ""
+20:16:50.000 Information 2199 Idle return not committed for vehicle "老厂前线新多仓位3": "ONBOARD_FACTS_NOT_READY". ""
+20:16:52.000 Information 2210 "WAITING_POINT" 26/216 released by vehicle "BROKERX-f38975561adf46ccb1d2f23833c7d0e4" on departure evidence (journey "idle-return:BROKERX-f38975561adf46ccb1d2f23833c7d0e4:20261011T115215830Z").
+20:18:42 agv02 pos=211 move=MT_FINISHED sys=EXECUTING battery=77 emergency=OK
+    RIoT nonfinal: W2G-CHARGE-62d6bd7c-20261011T121516351Z (len 39) state=3
+20:18:42 agv03 pos=0 move=MT_FINISHED sys=IDLE battery=69 emergency=OK
+## SELECT JourneyId, AgvId, LoadingPhaseState, LoadingClosedReason, YieldTriggeredByVehicleKey, YieldTriggeredAt, CargoHoldingStartedAt, BlockReasonCode, UpdatedAt FROM JourneyRuntimes WHERE JourneyId LIKE 'journey:%' ORDER BY rowid DESC LIMIT 4
+JourneyId=journey:c1000566-0000-0000-0000-000000000005 | AgvId=老厂前线新多仓位2 | LoadingPhaseState=CLOSED | LoadingClosedReason=CARGO_HOLDING_TIMEOUT | YieldTriggeredByVehicleKey= | YieldTriggeredAt= | CargoHoldingStartedAt=2026-10-11 11:24:54.7718148+00:00 | BlockReasonCode= | UpdatedAt=2026-10-11 11:30:52.7886133+00:00
+JourneyId=journey:c1000566-0000-0000-0000-000000000004 | AgvId=老厂前线新多仓位3 | LoadingPhaseState=CLOSED | LoadingClosedReason=WAITING_STATION_YIELD | YieldTriggeredByVehicleKey=BROKERX-f38975561adf46ccb1d2f23833c7d0e4 | YieldTriggeredAt=2026-10-11 11:19:23.1636885+00:00 | CargoHoldingStartedAt=2026-10-11 11:19:14.9559536+00:00 | BlockReasonCode= | UpdatedAt=2026-10-11 11:24:06.7573843+00:00
+## SELECT DemandId, JourneyId, Status, ExpectedBasketCount, TargetSlotsJson FROM JourneyDemands ORDER BY rowid DESC LIMIT 4
+DemandId=c1000566-0000-0000-0000-000000000005 | JourneyId=journey:c1000566-0000-0000-0000-000000000005 | Status=UNLOADED | ExpectedBasketCount=4 | TargetSlotsJson=[1,2,3,4]
+DemandId=c1000566-0000-0000-0000-000000000004 | JourneyId=journey:c1000566-0000-0000-0000-000000000004 | Status=UNLOADED | ExpectedBasketCount=1 | TargetSlotsJson=[1]
+## SELECT StationId, StationKind, State, VehicleKey, JourneyId FROM StationExclusivities
+StationId=211 | StationKind=CHARGER | State=RESERVED | VehicleKey=BROKERX-f38975561adf46ccb1d2f23833c7d0e4 | JourneyId=charging:BROKERX-f38975561adf46ccb1d2f23833c7d0e4:20261011T121516351Z
+20:16:45.000 Information  Application is shutting down...
+20:16:47.000 Information 20405 No migrations were applied. The database is already up to date.
+20:16:47.000 Warning 9305 Task type station preset "C:\\Program Files\\8005 AGV\\ControlServer.V2\\task-type-stations.map-26.settings.json" was not applied to Map 26 (pointer state "ACTIVE"): "binding set version 2 stays active"; a different version only comes from a FieldOps activation or rollback.
+20:16:48.000 Information 1002 Onboard NDJSON listener started on "172.19.205.222":58105; transport=plaintext
+20:16:48.000 Information 14 Now listening on: "http://172.19.205.222:58107"
+20:16:48.000 Information  Application started. Hosting environment: "Production"; Content root path: "C:\\Program Files\\8005 AGV\\ControlServer.V2"
+20:16:48.000 Information 5350 EFFECTIVE_CONFIGURATION allowedWorkTypes=["DIE_TO_WIRE_STAGING","DIE_TO_OVEN","WIRE_TO_GATE","WIRE_TO_OPTICAL","STAGING_TO_WIRE","WIRE_TO_NITROGEN"] allowedDispatchZones="WIRE" mesIngestBaseUrl="http://127.0.0.1:58188" fleet=[{"AgvId":"老厂前线新多仓位2","VehicleKey":"BROKERX-f38975561adf46ccb1d2f23833c7d0e4","AllowedTaskTypes":["DIE_TO_WIRE_STAGING","DIE_TO_OVEN","WIRE_TO_GATE","WIRE_TO_OPTICAL","STAGING_TO_WIRE","WIRE_TO_NITROGEN"],"Zones":["WIRE"]},{"AgvId":"老厂前线新多仓位3","VehicleKey":"BROKERX-7daca4ee9
+20:16:50.000 Information 5870 RIoT command "POST" "http://172.19.206.222:8888/api/order/v1/add/byDefaultMissions" sent
+20:16:50.000 Information 5871 RIoT command "POST" "http://172.19.206.222:8888/api/order/v1/add/byDefaultMissions" answered 200 after 129.478 ms
+20:16:50.000 Information 2252 Charging journey "charging:BROKERX-f38975561adf46ccb1d2f23833c7d0e4:20261011T121516351Z": RIoT confirmed order "W2G-CHARGE-62d6bd7c-20261011T121516351Z"; vehicle "BROKERX-f38975561adf46ccb1d2f23833c7d0e4" is en route to charger 211.
+20:16:50.000 Warning 2205 Vehicle "BROKERX-7daca4ee91da498d8026c68b7b941127" is below its mandatory charge entry threshold: battery 69% < 80% (charging policy version 2). It takes no new transport, no en-route append and no idle return until it has charged (REQ-0290, "MANDATORY_CHARGE_REQUIRED"); a journey it is carrying finishes as planned (REQ-0281).
+20:16:50.000 Information 2241 Charging not allocated for vehicle "老厂前线新多仓位3": "ONBOARD_FACTS_NOT_READY". ""
+20:16:50.000 Information 2199 Idle return not committed for vehicle "老厂前线新多仓位3": "ONBOARD_FACTS_NOT_READY". ""
+20:16:52.000 Information 2210 "WAITING_POINT" 26/216 released by vehicle "BROKERX-f38975561adf46ccb1d2f23833c7d0e4" on departure evidence (journey "idle-return:BROKERX-f38975561adf46ccb1d2f23833c7d0e4:20261011T115215830Z").
+20:18:59 agv02 pos=211 move=MT_FINISHED sys=EXECUTING battery=77 emergency=OK
+    RIoT nonfinal: W2G-CHARGE-62d6bd7c-20261011T121516351Z (len 39) state=3
+20:19:00 agv03 pos=0 move=MT_FINISHED sys=IDLE battery=69 emergency=OK
+## SELECT JourneyId, AgvId, LoadingPhaseState, LoadingClosedReason, YieldTriggeredByVehicleKey, YieldTriggeredAt, CargoHoldingStartedAt, BlockReasonCode, UpdatedAt FROM JourneyRuntimes WHERE JourneyId LIKE 'journey:%' ORDER BY rowid DESC LIMIT 4
+JourneyId=journey:c1000566-0000-0000-0000-000000000005 | AgvId=老厂前线新多仓位2 | LoadingPhaseState=CLOSED | LoadingClosedReason=CARGO_HOLDING_TIMEOUT | YieldTriggeredByVehicleKey= | YieldTriggeredAt= | CargoHoldingStartedAt=2026-10-11 11:24:54.7718148+00:00 | BlockReasonCode= | UpdatedAt=2026-10-11 11:30:52.7886133+00:00
+JourneyId=journey:c1000566-0000-0000-0000-000000000004 | AgvId=老厂前线新多仓位3 | LoadingPhaseState=CLOSED | LoadingClosedReason=WAITING_STATION_YIELD | YieldTriggeredByVehicleKey=BROKERX-f38975561adf46ccb1d2f23833c7d0e4 | YieldTriggeredAt=2026-10-11 11:19:23.1636885+00:00 | CargoHoldingStartedAt=2026-10-11 11:19:14.9559536+00:00 | BlockReasonCode= | UpdatedAt=2026-10-11 11:24:06.7573843+00:00
+## SELECT DemandId, JourneyId, Status, ExpectedBasketCount, TargetSlotsJson FROM JourneyDemands ORDER BY rowid DESC LIMIT 4
+DemandId=c1000566-0000-0000-0000-000000000005 | JourneyId=journey:c1000566-0000-0000-0000-000000000005 | Status=UNLOADED | ExpectedBasketCount=4 | TargetSlotsJson=[1,2,3,4]
+DemandId=c1000566-0000-0000-0000-000000000004 | JourneyId=journey:c1000566-0000-0000-0000-000000000004 | Status=UNLOADED | ExpectedBasketCount=1 | TargetSlotsJson=[1]
+## SELECT StationId, StationKind, State, VehicleKey, JourneyId FROM StationExclusivities
+StationId=211 | StationKind=CHARGER | State=RESERVED | VehicleKey=BROKERX-f38975561adf46ccb1d2f23833c7d0e4 | JourneyId=charging:BROKERX-f38975561adf46ccb1d2f23833c7d0e4:20261011T121516351Z
+20:16:45.000 Information  Application is shutting down...
+20:16:47.000 Information 20405 No migrations were applied. The database is already up to date.
+20:16:47.000 Warning 9305 Task type station preset "C:\\Program Files\\8005 AGV\\ControlServer.V2\\task-type-stations.map-26.settings.json" was not applied to Map 26 (pointer state "ACTIVE"): "binding set version 2 stays active"; a different version only comes from a FieldOps activation or rollback.
+20:16:48.000 Information 1002 Onboard NDJSON listener started on "172.19.205.222":58105; transport=plaintext
+20:16:48.000 Information 14 Now listening on: "http://172.19.205.222:58107"
+20:16:48.000 Information  Application started. Hosting environment: "Production"; Content root path: "C:\\Program Files\\8005 AGV\\ControlServer.V2"
+20:16:48.000 Information 5350 EFFECTIVE_CONFIGURATION allowedWorkTypes=["DIE_TO_WIRE_STAGING","DIE_TO_OVEN","WIRE_TO_GATE","WIRE_TO_OPTICAL","STAGING_TO_WIRE","WIRE_TO_NITROGEN"] allowedDispatchZones="WIRE" mesIngestBaseUrl="http://127.0.0.1:58188" fleet=[{"AgvId":"老厂前线新多仓位2","VehicleKey":"BROKERX-f38975561adf46ccb1d2f23833c7d0e4","AllowedTaskTypes":["DIE_TO_WIRE_STAGING","DIE_TO_OVEN","WIRE_TO_GATE","WIRE_TO_OPTICAL","STAGING_TO_WIRE","WIRE_TO_NITROGEN"],"Zones":["WIRE"]},{"AgvId":"老厂前线新多仓位3","VehicleKey":"BROKERX-7daca4ee9
+20:16:50.000 Information 5870 RIoT command "POST" "http://172.19.206.222:8888/api/order/v1/add/byDefaultMissions" sent
+20:16:50.000 Information 5871 RIoT command "POST" "http://172.19.206.222:8888/api/order/v1/add/byDefaultMissions" answered 200 after 129.478 ms
+20:16:50.000 Information 2252 Charging journey "charging:BROKERX-f38975561adf46ccb1d2f23833c7d0e4:20261011T121516351Z": RIoT confirmed order "W2G-CHARGE-62d6bd7c-20261011T121516351Z"; vehicle "BROKERX-f38975561adf46ccb1d2f23833c7d0e4" is en route to charger 211.
+20:16:50.000 Warning 2205 Vehicle "BROKERX-7daca4ee91da498d8026c68b7b941127" is below its mandatory charge entry threshold: battery 69% < 80% (charging policy version 2). It takes no new transport, no en-route append and no idle return until it has charged (REQ-0290, "MANDATORY_CHARGE_REQUIRED"); a journey it is carrying finishes as planned (REQ-0281).
+20:16:50.000 Information 2241 Charging not allocated for vehicle "老厂前线新多仓位3": "ONBOARD_FACTS_NOT_READY". ""
+20:16:50.000 Information 2199 Idle return not committed for vehicle "老厂前线新多仓位3": "ONBOARD_FACTS_NOT_READY". ""
+20:16:52.000 Information 2210 "WAITING_POINT" 26/216 released by vehicle "BROKERX-f38975561adf46ccb1d2f23833c7d0e4" on departure evidence (journey "idle-return:BROKERX-f38975561adf46ccb1d2f23833c7d0e4:20261011T115215830Z").
+20:19:17 agv02 pos=0 move=MT_RUNNING sys=EXECUTING battery=77 emergency=OK
+    RIoT nonfinal: W2G-CHARGE-62d6bd7c-20261011T121516351Z (len 39) state=3
+20:19:17 agv03 pos=0 move=MT_FINISHED sys=IDLE battery=69 emergency=OK
+## SELECT JourneyId, AgvId, LoadingPhaseState, LoadingClosedReason, YieldTriggeredByVehicleKey, YieldTriggeredAt, CargoHoldingStartedAt, BlockReasonCode, UpdatedAt FROM JourneyRuntimes WHERE JourneyId LIKE 'journey:%' ORDER BY rowid DESC LIMIT 4
+JourneyId=journey:c1000566-0000-0000-0000-000000000005 | AgvId=老厂前线新多仓位2 | LoadingPhaseState=CLOSED | LoadingClosedReason=CARGO_HOLDING_TIMEOUT | YieldTriggeredByVehicleKey= | YieldTriggeredAt= | CargoHoldingStartedAt=2026-10-11 11:24:54.7718148+00:00 | BlockReasonCode= | UpdatedAt=2026-10-11 11:30:52.7886133+00:00
+JourneyId=journey:c1000566-0000-0000-0000-000000000004 | AgvId=老厂前线新多仓位3 | LoadingPhaseState=CLOSED | LoadingClosedReason=WAITING_STATION_YIELD | YieldTriggeredByVehicleKey=BROKERX-f38975561adf46ccb1d2f23833c7d0e4 | YieldTriggeredAt=2026-10-11 11:19:23.1636885+00:00 | CargoHoldingStartedAt=2026-10-11 11:19:14.9559536+00:00 | BlockReasonCode= | UpdatedAt=2026-10-11 11:24:06.7573843+00:00
+## SELECT DemandId, JourneyId, Status, ExpectedBasketCount, TargetSlotsJson FROM JourneyDemands ORDER BY rowid DESC LIMIT 4
+DemandId=c1000566-0000-0000-0000-000000000005 | JourneyId=journey:c1000566-0000-0000-0000-000000000005 | Status=UNLOADED | ExpectedBasketCount=4 | TargetSlotsJson=[1,2,3,4]
+DemandId=c1000566-0000-0000-0000-000000000004 | JourneyId=journey:c1000566-0000-0000-0000-000000000004 | Status=UNLOADED | ExpectedBasketCount=1 | TargetSlotsJson=[1]
+## SELECT StationId, StationKind, State, VehicleKey, JourneyId FROM StationExclusivities
+StationId=211 | StationKind=CHARGER | State=RESERVED | VehicleKey=BROKERX-f38975561adf46ccb1d2f23833c7d0e4 | JourneyId=charging:BROKERX-f38975561adf46ccb1d2f23833c7d0e4:20261011T121516351Z
+20:16:45.000 Information  Application is shutting down...
+20:16:47.000 Information 20405 No migrations were applied. The database is already up to date.
+20:16:47.000 Warning 9305 Task type station preset "C:\\Program Files\\8005 AGV\\ControlServer.V2\\task-type-stations.map-26.settings.json" was not applied to Map 26 (pointer state "ACTIVE"): "binding set version 2 stays active"; a different version only comes from a FieldOps activation or rollback.
+20:16:48.000 Information 1002 Onboard NDJSON listener started on "172.19.205.222":58105; transport=plaintext
+20:16:48.000 Information 14 Now listening on: "http://172.19.205.222:58107"
+20:16:48.000 Information  Application started. Hosting environment: "Production"; Content root path: "C:\\Program Files\\8005 AGV\\ControlServer.V2"
+20:16:48.000 Information 5350 EFFECTIVE_CONFIGURATION allowedWorkTypes=["DIE_TO_WIRE_STAGING","DIE_TO_OVEN","WIRE_TO_GATE","WIRE_TO_OPTICAL","STAGING_TO_WIRE","WIRE_TO_NITROGEN"] allowedDispatchZones="WIRE" mesIngestBaseUrl="http://127.0.0.1:58188" fleet=[{"AgvId":"老厂前线新多仓位2","VehicleKey":"BROKERX-f38975561adf46ccb1d2f23833c7d0e4","AllowedTaskTypes":["DIE_TO_WIRE_STAGING","DIE_TO_OVEN","WIRE_TO_GATE","WIRE_TO_OPTICAL","STAGING_TO_WIRE","WIRE_TO_NITROGEN"],"Zones":["WIRE"]},{"AgvId":"老厂前线新多仓位3","VehicleKey":"BROKERX-7daca4ee9
+20:16:50.000 Information 5870 RIoT command "POST" "http://172.19.206.222:8888/api/order/v1/add/byDefaultMissions" sent
+20:16:50.000 Information 5871 RIoT command "POST" "http://172.19.206.222:8888/api/order/v1/add/byDefaultMissions" answered 200 after 129.478 ms
+20:16:50.000 Information 2252 Charging journey "charging:BROKERX-f38975561adf46ccb1d2f23833c7d0e4:20261011T121516351Z": RIoT confirmed order "W2G-CHARGE-62d6bd7c-20261011T121516351Z"; vehicle "BROKERX-f38975561adf46ccb1d2f23833c7d0e4" is en route to charger 211.
+20:16:50.000 Warning 2205 Vehicle "BROKERX-7daca4ee91da498d8026c68b7b941127" is below its mandatory charge entry threshold: battery 69% < 80% (charging policy version 2). It takes no new transport, no en-route append and no idle return until it has charged (REQ-0290, "MANDATORY_CHARGE_REQUIRED"); a journey it is carrying finishes as planned (REQ-0281).
+20:16:50.000 Information 2241 Charging not allocated for vehicle "老厂前线新多仓位3": "ONBOARD_FACTS_NOT_READY". ""
+20:16:50.000 Information 2199 Idle return not committed for vehicle "老厂前线新多仓位3": "ONBOARD_FACTS_NOT_READY". ""
+20:16:52.000 Information 2210 "WAITING_POINT" 26/216 released by vehicle "BROKERX-f38975561adf46ccb1d2f23833c7d0e4" on departure evidence (journey "idle-return:BROKERX-f38975561adf46ccb1d2f23833c7d0e4:20261011T115215830Z").
+20:19:34 agv02 pos=211 move=MT_FINISHED sys=EXECUTING battery=76 emergency=OK
+    RIoT nonfinal: W2G-CHARGE-62d6bd7c-20261011T121516351Z (len 39) state=3
+20:19:35 agv03 pos=0 move=MT_FINISHED sys=IDLE battery=69 emergency=OK
+## SELECT JourneyId, AgvId, LoadingPhaseState, LoadingClosedReason, YieldTriggeredByVehicleKey, YieldTriggeredAt, CargoHoldingStartedAt, BlockReasonCode, UpdatedAt FROM JourneyRuntimes WHERE JourneyId LIKE 'journey:%' ORDER BY rowid DESC LIMIT 4
+JourneyId=journey:c1000566-0000-0000-0000-000000000005 | AgvId=老厂前线新多仓位2 | LoadingPhaseState=CLOSED | LoadingClosedReason=CARGO_HOLDING_TIMEOUT | YieldTriggeredByVehicleKey= | YieldTriggeredAt= | CargoHoldingStartedAt=2026-10-11 11:24:54.7718148+00:00 | BlockReasonCode= | UpdatedAt=2026-10-11 11:30:52.7886133+00:00
+JourneyId=journey:c1000566-0000-0000-0000-000000000004 | AgvId=老厂前线新多仓位3 | LoadingPhaseState=CLOSED | LoadingClosedReason=WAITING_STATION_YIELD | YieldTriggeredByVehicleKey=BROKERX-f38975561adf46ccb1d2f23833c7d0e4 | YieldTriggeredAt=2026-10-11 11:19:23.1636885+00:00 | CargoHoldingStartedAt=2026-10-11 11:19:14.9559536+00:00 | BlockReasonCode= | UpdatedAt=2026-10-11 11:24:06.7573843+00:00
+## SELECT DemandId, JourneyId, Status, ExpectedBasketCount, TargetSlotsJson FROM JourneyDemands ORDER BY rowid DESC LIMIT 4
+DemandId=c1000566-0000-0000-0000-000000000005 | JourneyId=journey:c1000566-0000-0000-0000-000000000005 | Status=UNLOADED | ExpectedBasketCount=4 | TargetSlotsJson=[1,2,3,4]
+DemandId=c1000566-0000-0000-0000-000000000004 | JourneyId=journey:c1000566-0000-0000-0000-000000000004 | Status=UNLOADED | ExpectedBasketCount=1 | TargetSlotsJson=[1]
+## SELECT StationId, StationKind, State, VehicleKey, JourneyId FROM StationExclusivities
+StationId=211 | StationKind=CHARGER | State=RESERVED | VehicleKey=BROKERX-f38975561adf46ccb1d2f23833c7d0e4 | JourneyId=charging:BROKERX-f38975561adf46ccb1d2f23833c7d0e4:20261011T121516351Z
+20:16:45.000 Information  Application is shutting down...
+20:16:47.000 Information 20405 No migrations were applied. The database is already up to date.
+20:16:47.000 Warning 9305 Task type station preset "C:\\Program Files\\8005 AGV\\ControlServer.V2\\task-type-stations.map-26.settings.json" was not applied to Map 26 (pointer state "ACTIVE"): "binding set version 2 stays active"; a different version only comes from a FieldOps activation or rollback.
+20:16:48.000 Information 1002 Onboard NDJSON listener started on "172.19.205.222":58105; transport=plaintext
+20:16:48.000 Information 14 Now listening on: "http://172.19.205.222:58107"
+20:16:48.000 Information  Application started. Hosting environment: "Production"; Content root path: "C:\\Program Files\\8005 AGV\\ControlServer.V2"
+20:16:48.000 Information 5350 EFFECTIVE_CONFIGURATION allowedWorkTypes=["DIE_TO_WIRE_STAGING","DIE_TO_OVEN","WIRE_TO_GATE","WIRE_TO_OPTICAL","STAGING_TO_WIRE","WIRE_TO_NITROGEN"] allowedDispatchZones="WIRE" mesIngestBaseUrl="http://127.0.0.1:58188" fleet=[{"AgvId":"老厂前线新多仓位2","VehicleKey":"BROKERX-f38975561adf46ccb1d2f23833c7d0e4","AllowedTaskTypes":["DIE_TO_WIRE_STAGING","DIE_TO_OVEN","WIRE_TO_GATE","WIRE_TO_OPTICAL","STAGING_TO_WIRE","WIRE_TO_NITROGEN"],"Zones":["WIRE"]},{"AgvId":"老厂前线新多仓位3","VehicleKey":"BROKERX-7daca4ee9
+20:16:50.000 Information 5870 RIoT command "POST" "http://172.19.206.222:8888/api/order/v1/add/byDefaultMissions" sent
+20:16:50.000 Information 5871 RIoT command "POST" "http://172.19.206.222:8888/api/order/v1/add/byDefaultMissions" answered 200 after 129.478 ms
+20:16:50.000 Information 2252 Charging journey "charging:BROKERX-f38975561adf46ccb1d2f23833c7d0e4:20261011T121516351Z": RIoT confirmed order "W2G-CHARGE-62d6bd7c-20261011T121516351Z"; vehicle "BROKERX-f38975561adf46ccb1d2f23833c7d0e4" is en route to charger 211.
+20:16:50.000 Warning 2205 Vehicle "BROKERX-7daca4ee91da498d8026c68b7b941127" is below its mandatory charge entry threshold: battery 69% < 80% (charging policy version 2). It takes no new transport, no en-route append and no idle return until it has charged (REQ-0290, "MANDATORY_CHARGE_REQUIRED"); a journey it is carrying finishes as planned (REQ-0281).
+20:16:50.000 Information 2241 Charging not allocated for vehicle "老厂前线新多仓位3": "ONBOARD_FACTS_NOT_READY". ""
+20:16:50.000 Information 2199 Idle return not committed for vehicle "老厂前线新多仓位3": "ONBOARD_FACTS_NOT_READY". ""
+20:16:52.000 Information 2210 "WAITING_POINT" 26/216 released by vehicle "BROKERX-f38975561adf46ccb1d2f23833c7d0e4" on departure evidence (journey "idle-return:BROKERX-f38975561adf46ccb1d2f23833c7d0e4:20261011T115215830Z").
+20:19:52 agv02 pos=211 move=MT_FINISHED sys=EXECUTING battery=76 emergency=OK
+    RIoT nonfinal: W2G-CHARGE-62d6bd7c-20261011T121516351Z (len 39) state=3
+20:19:52 agv03 pos=0 move=MT_FINISHED sys=IDLE battery=68 emergency=OK
+## SELECT JourneyId, AgvId, LoadingPhaseState, LoadingClosedReason, YieldTriggeredByVehicleKey, YieldTriggeredAt, CargoHoldingStartedAt, BlockReasonCode, UpdatedAt FROM JourneyRuntimes WHERE JourneyId LIKE 'journey:%' ORDER BY rowid DESC LIMIT 4
+JourneyId=journey:c1000566-0000-0000-0000-000000000005 | AgvId=老厂前线新多仓位2 | LoadingPhaseState=CLOSED | LoadingClosedReason=CARGO_HOLDING_TIMEOUT | YieldTriggeredByVehicleKey= | YieldTriggeredAt= | CargoHoldingStartedAt=2026-10-11 11:24:54.7718148+00:00 | BlockReasonCode= | UpdatedAt=2026-10-11 11:30:52.7886133+00:00
+JourneyId=journey:c1000566-0000-0000-0000-000000000004 | AgvId=老厂前线新多仓位3 | LoadingPhaseState=CLOSED | LoadingClosedReason=WAITING_STATION_YIELD | YieldTriggeredByVehicleKey=BROKERX-f38975561adf46ccb1d2f23833c7d0e4 | YieldTriggeredAt=2026-10-11 11:19:23.1636885+00:00 | CargoHoldingStartedAt=2026-10-11 11:19:14.9559536+00:00 | BlockReasonCode= | UpdatedAt=2026-10-11 11:24:06.7573843+00:00
+## SELECT DemandId, JourneyId, Status, ExpectedBasketCount, TargetSlotsJson FROM JourneyDemands ORDER BY rowid DESC LIMIT 4
+DemandId=c1000566-0000-0000-0000-000000000005 | JourneyId=journey:c1000566-0000-0000-0000-000000000005 | Status=UNLOADED | ExpectedBasketCount=4 | TargetSlotsJson=[1,2,3,4]
+DemandId=c1000566-0000-0000-0000-000000000004 | JourneyId=journey:c1000566-0000-0000-0000-000000000004 | Status=UNLOADED | ExpectedBasketCount=1 | TargetSlotsJson=[1]
+## SELECT StationId, StationKind, State, VehicleKey, JourneyId FROM StationExclusivities
+StationId=211 | StationKind=CHARGER | State=RESERVED | VehicleKey=BROKERX-f38975561adf46ccb1d2f23833c7d0e4 | JourneyId=charging:BROKERX-f38975561adf46ccb1d2f23833c7d0e4:20261011T121516351Z
+20:16:45.000 Information  Application is shutting down...
+20:16:47.000 Information 20405 No migrations were applied. The database is already up to date.
+20:16:47.000 Warning 9305 Task type station preset "C:\\Program Files\\8005 AGV\\ControlServer.V2\\task-type-stations.map-26.settings.json" was not applied to Map 26 (pointer state "ACTIVE"): "binding set version 2 stays active"; a different version only comes from a FieldOps activation or rollback.
+20:16:48.000 Information 1002 Onboard NDJSON listener started on "172.19.205.222":58105; transport=plaintext
+20:16:48.000 Information 14 Now listening on: "http://172.19.205.222:58107"
+20:16:48.000 Information  Application started. Hosting environment: "Production"; Content root path: "C:\\Program Files\\8005 AGV\\ControlServer.V2"
+20:16:48.000 Information 5350 EFFECTIVE_CONFIGURATION allowedWorkTypes=["DIE_TO_WIRE_STAGING","DIE_TO_OVEN","WIRE_TO_GATE","WIRE_TO_OPTICAL","STAGING_TO_WIRE","WIRE_TO_NITROGEN"] allowedDispatchZones="WIRE" mesIngestBaseUrl="http://127.0.0.1:58188" fleet=[{"AgvId":"老厂前线新多仓位2","VehicleKey":"BROKERX-f38975561adf46ccb1d2f23833c7d0e4","AllowedTaskTypes":["DIE_TO_WIRE_STAGING","DIE_TO_OVEN","WIRE_TO_GATE","WIRE_TO_OPTICAL","STAGING_TO_WIRE","WIRE_TO_NITROGEN"],"Zones":["WIRE"]},{"AgvId":"老厂前线新多仓位3","VehicleKey":"BROKERX-7daca4ee9
+20:16:50.000 Information 5870 RIoT command "POST" "http://172.19.206.222:8888/api/order/v1/add/byDefaultMissions" sent
+20:16:50.000 Information 5871 RIoT command "POST" "http://172.19.206.222:8888/api/order/v1/add/byDefaultMissions" answered 200 after 129.478 ms
+20:16:50.000 Information 2252 Charging journey "charging:BROKERX-f38975561adf46ccb1d2f23833c7d0e4:20261011T121516351Z": RIoT confirmed order "W2G-CHARGE-62d6bd7c-20261011T121516351Z"; vehicle "BROKERX-f38975561adf46ccb1d2f23833c7d0e4" is en route to charger 211.
+20:16:50.000 Warning 2205 Vehicle "BROKERX-7daca4ee91da498d8026c68b7b941127" is below its mandatory charge entry threshold: battery 69% < 80% (charging policy version 2). It takes no new transport, no en-route append and no idle return until it has charged (REQ-0290, "MANDATORY_CHARGE_REQUIRED"); a journey it is carrying finishes as planned (REQ-0281).
+20:16:50.000 Information 2241 Charging not allocated for vehicle "老厂前线新多仓位3": "ONBOARD_FACTS_NOT_READY". ""
+20:16:50.000 Information 2199 Idle return not committed for vehicle "老厂前线新多仓位3": "ONBOARD_FACTS_NOT_READY". ""
+20:16:52.000 Information 2210 "WAITING_POINT" 26/216 released by vehicle "BROKERX-f38975561adf46ccb1d2f23833c7d0e4" on departure evidence (journey "idle-return:BROKERX-f38975561adf46ccb1d2f23833c7d0e4:20261011T115215830Z").
+20:20:10 agv02 pos=0 move=MT_RUNNING sys=EXECUTING battery=76 emergency=OK
+    RIoT nonfinal: W2G-CHARGE-62d6bd7c-20261011T121516351Z (len 39) state=3
+20:20:10 agv03 pos=0 move=MT_FINISHED sys=IDLE battery=68 emergency=OK
+## SELECT JourneyId, AgvId, LoadingPhaseState, LoadingClosedReason, YieldTriggeredByVehicleKey, YieldTriggeredAt, CargoHoldingStartedAt, BlockReasonCode, UpdatedAt FROM JourneyRuntimes WHERE JourneyId LIKE 'journey:%' ORDER BY rowid DESC LIMIT 4
+JourneyId=journey:c1000566-0000-0000-0000-000000000005 | AgvId=老厂前线新多仓位2 | LoadingPhaseState=CLOSED | LoadingClosedReason=CARGO_HOLDING_TIMEOUT | YieldTriggeredByVehicleKey= | YieldTriggeredAt= | CargoHoldingStartedAt=2026-10-11 11:24:54.7718148+00:00 | BlockReasonCode= | UpdatedAt=2026-10-11 11:30:52.7886133+00:00
+JourneyId=journey:c1000566-0000-0000-0000-000000000004 | AgvId=老厂前线新多仓位3 | LoadingPhaseState=CLOSED | LoadingClosedReason=WAITING_STATION_YIELD | YieldTriggeredByVehicleKey=BROKERX-f38975561adf46ccb1d2f23833c7d0e4 | YieldTriggeredAt=2026-10-11 11:19:23.1636885+00:00 | CargoHoldingStartedAt=2026-10-11 11:19:14.9559536+00:00 | BlockReasonCode= | UpdatedAt=2026-10-11 11:24:06.7573843+00:00
+## SELECT DemandId, JourneyId, Status, ExpectedBasketCount, TargetSlotsJson FROM JourneyDemands ORDER BY rowid DESC LIMIT 4
+DemandId=c1000566-0000-0000-0000-000000000005 | JourneyId=journey:c1000566-0000-0000-0000-000000000005 | Status=UNLOADED | ExpectedBasketCount=4 | TargetSlotsJson=[1,2,3,4]
+DemandId=c1000566-0000-0000-0000-000000000004 | JourneyId=journey:c1000566-0000-0000-0000-000000000004 | Status=UNLOADED | ExpectedBasketCount=1 | TargetSlotsJson=[1]
+## SELECT StationId, StationKind, State, VehicleKey, JourneyId FROM StationExclusivities
+StationId=211 | StationKind=CHARGER | State=RESERVED | VehicleKey=BROKERX-f38975561adf46ccb1d2f23833c7d0e4 | JourneyId=charging:BROKERX-f38975561adf46ccb1d2f23833c7d0e4:20261011T121516351Z
+20:16:45.000 Information  Application is shutting down...
+20:16:47.000 Information 20405 No migrations were applied. The database is already up to date.
+20:16:47.000 Warning 9305 Task type station preset "C:\\Program Files\\8005 AGV\\ControlServer.V2\\task-type-stations.map-26.settings.json" was not applied to Map 26 (pointer state "ACTIVE"): "binding set version 2 stays active"; a different version only comes from a FieldOps activation or rollback.
+20:16:48.000 Information 1002 Onboard NDJSON listener started on "172.19.205.222":58105; transport=plaintext
+20:16:48.000 Information 14 Now listening on: "http://172.19.205.222:58107"
+20:16:48.000 Information  Application started. Hosting environment: "Production"; Content root path: "C:\\Program Files\\8005 AGV\\ControlServer.V2"
+20:16:48.000 Information 5350 EFFECTIVE_CONFIGURATION allowedWorkTypes=["DIE_TO_WIRE_STAGING","DIE_TO_OVEN","WIRE_TO_GATE","WIRE_TO_OPTICAL","STAGING_TO_WIRE","WIRE_TO_NITROGEN"] allowedDispatchZones="WIRE" mesIngestBaseUrl="http://127.0.0.1:58188" fleet=[{"AgvId":"老厂前线新多仓位2","VehicleKey":"BROKERX-f38975561adf46ccb1d2f23833c7d0e4","AllowedTaskTypes":["DIE_TO_WIRE_STAGING","DIE_TO_OVEN","WIRE_TO_GATE","WIRE_TO_OPTICAL","STAGING_TO_WIRE","WIRE_TO_NITROGEN"],"Zones":["WIRE"]},{"AgvId":"老厂前线新多仓位3","VehicleKey":"BROKERX-7daca4ee9
+20:16:50.000 Information 5870 RIoT command "POST" "http://172.19.206.222:8888/api/order/v1/add/byDefaultMissions" sent
+20:16:50.000 Information 5871 RIoT command "POST" "http://172.19.206.222:8888/api/order/v1/add/byDefaultMissions" answered 200 after 129.478 ms
+20:16:50.000 Information 2252 Charging journey "charging:BROKERX-f38975561adf46ccb1d2f23833c7d0e4:20261011T121516351Z": RIoT confirmed order "W2G-CHARGE-62d6bd7c-20261011T121516351Z"; vehicle "BROKERX-f38975561adf46ccb1d2f23833c7d0e4" is en route to charger 211.
+20:16:50.000 Warning 2205 Vehicle "BROKERX-7daca4ee91da498d8026c68b7b941127" is below its mandatory charge entry threshold: battery 69% < 80% (charging policy version 2). It takes no new transport, no en-route append and no idle return until it has charged (REQ-0290, "MANDATORY_CHARGE_REQUIRED"); a journey it is carrying finishes as planned (REQ-0281).
+20:16:50.000 Information 2241 Charging not allocated for vehicle "老厂前线新多仓位3": "ONBOARD_FACTS_NOT_READY". ""
+20:16:50.000 Information 2199 Idle return not committed for vehicle "老厂前线新多仓位3": "ONBOARD_FACTS_NOT_READY". ""
+20:16:52.000 Information 2210 "WAITING_POINT" 26/216 released by vehicle "BROKERX-f38975561adf46ccb1d2f23833c7d0e4" on departure evidence (journey "idle-return:BROKERX-f38975561adf46ccb1d2f23833c7d0e4:20261011T115215830Z").
+20:20:27 agv02 pos=211 move=MT_FINISHED sys=EXECUTING battery=76 emergency=OK
+    RIoT nonfinal: W2G-CHARGE-62d6bd7c-20261011T121516351Z (len 39) state=3
+20:20:28 agv03 pos=0 move=MT_FINISHED sys=IDLE battery=68 emergency=OK
+## SELECT JourneyId, AgvId, LoadingPhaseState, LoadingClosedReason, YieldTriggeredByVehicleKey, YieldTriggeredAt, CargoHoldingStartedAt, BlockReasonCode, UpdatedAt FROM JourneyRuntimes WHERE JourneyId LIKE 'journey:%' ORDER BY rowid DESC LIMIT 4
+JourneyId=journey:c1000566-0000-0000-0000-000000000005 | AgvId=老厂前线新多仓位2 | LoadingPhaseState=CLOSED | LoadingClosedReason=CARGO_HOLDING_TIMEOUT | YieldTriggeredByVehicleKey= | YieldTriggeredAt= | CargoHoldingStartedAt=2026-10-11 11:24:54.7718148+00:00 | BlockReasonCode= | UpdatedAt=2026-10-11 11:30:52.7886133+00:00
+JourneyId=journey:c1000566-0000-0000-0000-000000000004 | AgvId=老厂前线新多仓位3 | LoadingPhaseState=CLOSED | LoadingClosedReason=WAITING_STATION_YIELD | YieldTriggeredByVehicleKey=BROKERX-f38975561adf46ccb1d2f23833c7d0e4 | YieldTriggeredAt=2026-10-11 11:19:23.1636885+00:00 | CargoHoldingStartedAt=2026-10-11 11:19:14.9559536+00:00 | BlockReasonCode= | UpdatedAt=2026-10-11 11:24:06.7573843+00:00
+## SELECT DemandId, JourneyId, Status, ExpectedBasketCount, TargetSlotsJson FROM JourneyDemands ORDER BY rowid DESC LIMIT 4
+DemandId=c1000566-0000-0000-0000-000000000005 | JourneyId=journey:c1000566-0000-0000-0000-000000000005 | Status=UNLOADED | ExpectedBasketCount=4 | TargetSlotsJson=[1,2,3,4]
+DemandId=c1000566-0000-0000-0000-000000000004 | JourneyId=journey:c1000566-0000-0000-0000-000000000004 | Status=UNLOADED | ExpectedBasketCount=1 | TargetSlotsJson=[1]
+## SELECT StationId, StationKind, State, VehicleKey, JourneyId FROM StationExclusivities
+StationId=211 | StationKind=CHARGER | State=RESERVED | VehicleKey=BROKERX-f38975561adf46ccb1d2f23833c7d0e4 | JourneyId=charging:BROKERX-f38975561adf46ccb1d2f23833c7d0e4:20261011T121516351Z
+20:16:45.000 Information  Application is shutting down...
+20:16:47.000 Information 20405 No migrations were applied. The database is already up to date.
+20:16:47.000 Warning 9305 Task type station preset "C:\\Program Files\\8005 AGV\\ControlServer.V2\\task-type-stations.map-26.settings.json" was not applied to Map 26 (pointer state "ACTIVE"): "binding set version 2 stays active"; a different version only comes from a FieldOps activation or rollback.
+20:16:48.000 Information 1002 Onboard NDJSON listener started on "172.19.205.222":58105; transport=plaintext
+20:16:48.000 Information 14 Now listening on: "http://172.19.205.222:58107"
+20:16:48.000 Information  Application started. Hosting environment: "Production"; Content root path: "C:\\Program Files\\8005 AGV\\ControlServer.V2"
+20:16:48.000 Information 5350 EFFECTIVE_CONFIGURATION allowedWorkTypes=["DIE_TO_WIRE_STAGING","DIE_TO_OVEN","WIRE_TO_GATE","WIRE_TO_OPTICAL","STAGING_TO_WIRE","WIRE_TO_NITROGEN"] allowedDispatchZones="WIRE" mesIngestBaseUrl="http://127.0.0.1:58188" fleet=[{"AgvId":"老厂前线新多仓位2","VehicleKey":"BROKERX-f38975561adf46ccb1d2f23833c7d0e4","AllowedTaskTypes":["DIE_TO_WIRE_STAGING","DIE_TO_OVEN","WIRE_TO_GATE","WIRE_TO_OPTICAL","STAGING_TO_WIRE","WIRE_TO_NITROGEN"],"Zones":["WIRE"]},{"AgvId":"老厂前线新多仓位3","VehicleKey":"BROKERX-7daca4ee9
+20:16:50.000 Information 5870 RIoT command "POST" "http://172.19.206.222:8888/api/order/v1/add/byDefaultMissions" sent
+20:16:50.000 Information 5871 RIoT command "POST" "http://172.19.206.222:8888/api/order/v1/add/byDefaultMissions" answered 200 after 129.478 ms
+20:16:50.000 Information 2252 Charging journey "charging:BROKERX-f38975561adf46ccb1d2f23833c7d0e4:20261011T121516351Z": RIoT confirmed order "W2G-CHARGE-62d6bd7c-20261011T121516351Z"; vehicle "BROKERX-f38975561adf46ccb1d2f23833c7d0e4" is en route to charger 211.
+20:16:50.000 Warning 2205 Vehicle "BROKERX-7daca4ee91da498d8026c68b7b941127" is below its mandatory charge entry threshold: battery 69% < 80% (charging policy version 2). It takes no new transport, no en-route append and no idle return until it has charged (REQ-0290, "MANDATORY_CHARGE_REQUIRED"); a journey it is carrying finishes as planned (REQ-0281).
+20:16:50.000 Information 2241 Charging not allocated for vehicle "老厂前线新多仓位3": "ONBOARD_FACTS_NOT_READY". ""
+20:16:50.000 Information 2199 Idle return not committed for vehicle "老厂前线新多仓位3": "ONBOARD_FACTS_NOT_READY". ""
+20:16:52.000 Information 2210 "WAITING_POINT" 26/216 released by vehicle "BROKERX-f38975561adf46ccb1d2f23833c7d0e4" on departure evidence (journey "idle-return:BROKERX-f38975561adf46ccb1d2f23833c7d0e4:20261011T115215830Z").
+20:20:45 agv02 pos=0 move=MT_RUNNING sys=EXECUTING battery=76 emergency=OK
+    RIoT nonfinal: W2G-CHARGE-62d6bd7c-20261011T121516351Z (len 39) state=3
+20:20:45 agv03 pos=0 move=MT_FINISHED sys=IDLE battery=68 emergency=OK
+## SELECT JourneyId, AgvId, LoadingPhaseState, LoadingClosedReason, YieldTriggeredByVehicleKey, YieldTriggeredAt, CargoHoldingStartedAt, BlockReasonCode, UpdatedAt FROM JourneyRuntimes WHERE JourneyId LIKE 'journey:%' ORDER BY rowid DESC LIMIT 4
+JourneyId=journey:c1000566-0000-0000-0000-000000000005 | AgvId=老厂前线新多仓位2 | LoadingPhaseState=CLOSED | LoadingClosedReason=CARGO_HOLDING_TIMEOUT | YieldTriggeredByVehicleKey= | YieldTriggeredAt= | CargoHoldingStartedAt=2026-10-11 11:24:54.7718148+00:00 | BlockReasonCode= | UpdatedAt=2026-10-11 11:30:52.7886133+00:00
+JourneyId=journey:c1000566-0000-0000-0000-000000000004 | AgvId=老厂前线新多仓位3 | LoadingPhaseState=CLOSED | LoadingClosedReason=WAITING_STATION_YIELD | YieldTriggeredByVehicleKey=BROKERX-f38975561adf46ccb1d2f23833c7d0e4 | YieldTriggeredAt=2026-10-11 11:19:23.1636885+00:00 | CargoHoldingStartedAt=2026-10-11 11:19:14.9559536+00:00 | BlockReasonCode= | UpdatedAt=2026-10-11 11:24:06.7573843+00:00
+## SELECT DemandId, JourneyId, Status, ExpectedBasketCount, TargetSlotsJson FROM JourneyDemands ORDER BY rowid DESC LIMIT 4
+DemandId=c1000566-0000-0000-0000-000000000005 | JourneyId=journey:c1000566-0000-0000-0000-000000000005 | Status=UNLOADED | ExpectedBasketCount=4 | TargetSlotsJson=[1,2,3,4]
+DemandId=c1000566-0000-0000-0000-000000000004 | JourneyId=journey:c1000566-0000-0000-0000-000000000004 | Status=UNLOADED | ExpectedBasketCount=1 | TargetSlotsJson=[1]
+## SELECT StationId, StationKind, State, VehicleKey, JourneyId FROM StationExclusivities
+StationId=211 | StationKind=CHARGER | State=RESERVED | VehicleKey=BROKERX-f38975561adf46ccb1d2f23833c7d0e4 | JourneyId=charging:BROKERX-f38975561adf46ccb1d2f23833c7d0e4:20261011T121516351Z
+20:16:45.000 Information  Application is shutting down...
+20:16:47.000 Information 20405 No migrations were applied. The database is already up to date.
+20:16:47.000 Warning 9305 Task type station preset "C:\\Program Files\\8005 AGV\\ControlServer.V2\\task-type-stations.map-26.settings.json" was not applied to Map 26 (pointer state "ACTIVE"): "binding set version 2 stays active"; a different version only comes from a FieldOps activation or rollback.
+20:16:48.000 Information 1002 Onboard NDJSON listener started on "172.19.205.222":58105; transport=plaintext
+20:16:48.000 Information 14 Now listening on: "http://172.19.205.222:58107"
+20:16:48.000 Information  Application started. Hosting environment: "Production"; Content root path: "C:\\Program Files\\8005 AGV\\ControlServer.V2"
+20:16:48.000 Information 5350 EFFECTIVE_CONFIGURATION allowedWorkTypes=["DIE_TO_WIRE_STAGING","DIE_TO_OVEN","WIRE_TO_GATE","WIRE_TO_OPTICAL","STAGING_TO_WIRE","WIRE_TO_NITROGEN"] allowedDispatchZones="WIRE" mesIngestBaseUrl="http://127.0.0.1:58188" fleet=[{"AgvId":"老厂前线新多仓位2","VehicleKey":"BROKERX-f38975561adf46ccb1d2f23833c7d0e4","AllowedTaskTypes":["DIE_TO_WIRE_STAGING","DIE_TO_OVEN","WIRE_TO_GATE","WIRE_TO_OPTICAL","STAGING_TO_WIRE","WIRE_TO_NITROGEN"],"Zones":["WIRE"]},{"AgvId":"老厂前线新多仓位3","VehicleKey":"BROKERX-7daca4ee9
+20:16:50.000 Information 5870 RIoT command "POST" "http://172.19.206.222:8888/api/order/v1/add/byDefaultMissions" sent
+20:16:50.000 Information 5871 RIoT command "POST" "http://172.19.206.222:8888/api/order/v1/add/byDefaultMissions" answered 200 after 129.478 ms
+20:16:50.000 Information 2252 Charging journey "charging:BROKERX-f38975561adf46ccb1d2f23833c7d0e4:20261011T121516351Z": RIoT confirmed order "W2G-CHARGE-62d6bd7c-20261011T121516351Z"; vehicle "BROKERX-f38975561adf46ccb1d2f23833c7d0e4" is en route to charger 211.
+20:16:50.000 Warning 2205 Vehicle "BROKERX-7daca4ee91da498d8026c68b7b941127" is below its mandatory charge entry threshold: battery 69% < 80% (charging policy version 2). It takes no new transport, no en-route append and no idle return until it has charged (REQ-0290, "MANDATORY_CHARGE_REQUIRED"); a journey it is carrying finishes as planned (REQ-0281).
+20:16:50.000 Information 2241 Charging not allocated for vehicle "老厂前线新多仓位3": "ONBOARD_FACTS_NOT_READY". ""
+20:16:50.000 Information 2199 Idle return not committed for vehicle "老厂前线新多仓位3": "ONBOARD_FACTS_NOT_READY". ""
+20:16:52.000 Information 2210 "WAITING_POINT" 26/216 released by vehicle "BROKERX-f38975561adf46ccb1d2f23833c7d0e4" on departure evidence (journey "idle-return:BROKERX-f38975561adf46ccb1d2f23833c7d0e4:20261011T115215830Z").
+20:21:03 agv02 pos=0 move=MT_RUNNING sys=EXECUTING battery=76 emergency=OK
+    RIoT nonfinal: W2G-CHARGE-62d6bd7c-20261011T121516351Z (len 39) state=3
+20:21:03 agv03 pos=0 move=MT_FINISHED sys=IDLE battery=68 emergency=OK
+## SELECT JourneyId, AgvId, LoadingPhaseState, LoadingClosedReason, YieldTriggeredByVehicleKey, YieldTriggeredAt, CargoHoldingStartedAt, BlockReasonCode, UpdatedAt FROM JourneyRuntimes WHERE JourneyId LIKE 'journey:%' ORDER BY rowid DESC LIMIT 4
+JourneyId=journey:c1000566-0000-0000-0000-000000000005 | AgvId=老厂前线新多仓位2 | LoadingPhaseState=CLOSED | LoadingClosedReason=CARGO_HOLDING_TIMEOUT | YieldTriggeredByVehicleKey= | YieldTriggeredAt= | CargoHoldingStartedAt=2026-10-11 11:24:54.7718148+00:00 | BlockReasonCode= | UpdatedAt=2026-10-11 11:30:52.7886133+00:00
+JourneyId=journey:c1000566-0000-0000-0000-000000000004 | AgvId=老厂前线新多仓位3 | LoadingPhaseState=CLOSED | LoadingClosedReason=WAITING_STATION_YIELD | YieldTriggeredByVehicleKey=BROKERX-f38975561adf46ccb1d2f23833c7d0e4 | YieldTriggeredAt=2026-10-11 11:19:23.1636885+00:00 | CargoHoldingStartedAt=2026-10-11 11:19:14.9559536+00:00 | BlockReasonCode= | UpdatedAt=2026-10-11 11:24:06.7573843+00:00
+## SELECT DemandId, JourneyId, Status, ExpectedBasketCount, TargetSlotsJson FROM JourneyDemands ORDER BY rowid DESC LIMIT 4
+DemandId=c1000566-0000-0000-0000-000000000005 | JourneyId=journey:c1000566-0000-0000-0000-000000000005 | Status=UNLOADED | ExpectedBasketCount=4 | TargetSlotsJson=[1,2,3,4]
+DemandId=c1000566-0000-0000-0000-000000000004 | JourneyId=journey:c1000566-0000-0000-0000-000000000004 | Status=UNLOADED | ExpectedBasketCount=1 | TargetSlotsJson=[1]
+## SELECT StationId, StationKind, State, VehicleKey, JourneyId FROM StationExclusivities
+StationId=211 | StationKind=CHARGER | State=RESERVED | VehicleKey=BROKERX-f38975561adf46ccb1d2f23833c7d0e4 | JourneyId=charging:BROKERX-f38975561adf46ccb1d2f23833c7d0e4:20261011T121516351Z
+20:16:45.000 Information  Application is shutting down...
+20:16:47.000 Information 20405 No migrations were applied. The database is already up to date.
+20:16:47.000 Warning 9305 Task type station preset "C:\\Program Files\\8005 AGV\\ControlServer.V2\\task-type-stations.map-26.settings.json" was not applied to Map 26 (pointer state "ACTIVE"): "binding set version 2 stays active"; a different version only comes from a FieldOps activation or rollback.
+20:16:48.000 Information 1002 Onboard NDJSON listener started on "172.19.205.222":58105; transport=plaintext
+20:16:48.000 Information 14 Now listening on: "http://172.19.205.222:58107"
+20:16:48.000 Information  Application started. Hosting environment: "Production"; Content root path: "C:\\Program Files\\8005 AGV\\ControlServer.V2"
+20:16:48.000 Information 5350 EFFECTIVE_CONFIGURATION allowedWorkTypes=["DIE_TO_WIRE_STAGING","DIE_TO_OVEN","WIRE_TO_GATE","WIRE_TO_OPTICAL","STAGING_TO_WIRE","WIRE_TO_NITROGEN"] allowedDispatchZones="WIRE" mesIngestBaseUrl="http://127.0.0.1:58188" fleet=[{"AgvId":"老厂前线新多仓位2","VehicleKey":"BROKERX-f38975561adf46ccb1d2f23833c7d0e4","AllowedTaskTypes":["DIE_TO_WIRE_STAGING","DIE_TO_OVEN","WIRE_TO_GATE","WIRE_TO_OPTICAL","STAGING_TO_WIRE","WIRE_TO_NITROGEN"],"Zones":["WIRE"]},{"AgvId":"老厂前线新多仓位3","VehicleKey":"BROKERX-7daca4ee9
+20:16:50.000 Information 5870 RIoT command "POST" "http://172.19.206.222:8888/api/order/v1/add/byDefaultMissions" sent
+20:16:50.000 Information 5871 RIoT command "POST" "http://172.19.206.222:8888/api/order/v1/add/byDefaultMissions" answered 200 after 129.478 ms
+20:16:50.000 Information 2252 Charging journey "charging:BROKERX-f38975561adf46ccb1d2f23833c7d0e4:20261011T121516351Z": RIoT confirmed order "W2G-CHARGE-62d6bd7c-20261011T121516351Z"; vehicle "BROKERX-f38975561adf46ccb1d2f23833c7d0e4" is en route to charger 211.
+20:16:50.000 Warning 2205 Vehicle "BROKERX-7daca4ee91da498d8026c68b7b941127" is below its mandatory charge entry threshold: battery 69% < 80% (charging policy version 2). It takes no new transport, no en-route append and no idle return until it has charged (REQ-0290, "MANDATORY_CHARGE_REQUIRED"); a journey it is carrying finishes as planned (REQ-0281).
+20:16:50.000 Information 2241 Charging not allocated for vehicle "老厂前线新多仓位3": "ONBOARD_FACTS_NOT_READY". ""
+20:16:50.000 Information 2199 Idle return not committed for vehicle "老厂前线新多仓位3": "ONBOARD_FACTS_NOT_READY". ""
+20:16:52.000 Information 2210 "WAITING_POINT" 26/216 released by vehicle "BROKERX-f38975561adf46ccb1d2f23833c7d0e4" on departure evidence (journey "idle-return:BROKERX-f38975561adf46ccb1d2f23833c7d0e4:20261011T115215830Z").
+20:21:21 agv02 pos=211 move=MT_FINISHED sys=EXECUTING battery=76 emergency=OK
+    RIoT nonfinal: W2G-CHARGE-62d6bd7c-20261011T121516351Z (len 39) state=3
+20:21:21 agv03 pos=0 move=MT_FINISHED sys=IDLE battery=68 emergency=OK
+## SELECT JourneyId, AgvId, LoadingPhaseState, LoadingClosedReason, YieldTriggeredByVehicleKey, YieldTriggeredAt, CargoHoldingStartedAt, BlockReasonCode, UpdatedAt FROM JourneyRuntimes WHERE JourneyId LIKE 'journey:%' ORDER BY rowid DESC LIMIT 4
+JourneyId=journey:c1000566-0000-0000-0000-000000000005 | AgvId=老厂前线新多仓位2 | LoadingPhaseState=CLOSED | LoadingClosedReason=CARGO_HOLDING_TIMEOUT | YieldTriggeredByVehicleKey= | YieldTriggeredAt= | CargoHoldingStartedAt=2026-10-11 11:24:54.7718148+00:00 | BlockReasonCode= | UpdatedAt=2026-10-11 11:30:52.7886133+00:00
+JourneyId=journey:c1000566-0000-0000-0000-000000000004 | AgvId=老厂前线新多仓位3 | LoadingPhaseState=CLOSED | LoadingClosedReason=WAITING_STATION_YIELD | YieldTriggeredByVehicleKey=BROKERX-f38975561adf46ccb1d2f23833c7d0e4 | YieldTriggeredAt=2026-10-11 11:19:23.1636885+00:00 | CargoHoldingStartedAt=2026-10-11 11:19:14.9559536+00:00 | BlockReasonCode= | UpdatedAt=2026-10-11 11:24:06.7573843+00:00
+## SELECT DemandId, JourneyId, Status, ExpectedBasketCount, TargetSlotsJson FROM JourneyDemands ORDER BY rowid DESC LIMIT 4
+DemandId=c1000566-0000-0000-0000-000000000005 | JourneyId=journey:c1000566-0000-0000-0000-000000000005 | Status=UNLOADED | ExpectedBasketCount=4 | TargetSlotsJson=[1,2,3,4]
+DemandId=c1000566-0000-0000-0000-000000000004 | JourneyId=journey:c1000566-0000-0000-0000-000000000004 | Status=UNLOADED | ExpectedBasketCount=1 | TargetSlotsJson=[1]
+## SELECT StationId, StationKind, State, VehicleKey, JourneyId FROM StationExclusivities
+StationId=211 | StationKind=CHARGER | State=RESERVED | VehicleKey=BROKERX-f38975561adf46ccb1d2f23833c7d0e4 | JourneyId=charging:BROKERX-f38975561adf46ccb1d2f23833c7d0e4:20261011T121516351Z
+20:16:45.000 Information  Application is shutting down...
+20:16:47.000 Information 20405 No migrations were applied. The database is already up to date.
+20:16:47.000 Warning 9305 Task type station preset "C:\\Program Files\\8005 AGV\\ControlServer.V2\\task-type-stations.map-26.settings.json" was not applied to Map 26 (pointer state "ACTIVE"): "binding set version 2 stays active"; a different version only comes from a FieldOps activation or rollback.
+20:16:48.000 Information 1002 Onboard NDJSON listener started on "172.19.205.222":58105; transport=plaintext
+20:16:48.000 Information 14 Now listening on: "http://172.19.205.222:58107"
+20:16:48.000 Information  Application started. Hosting environment: "Production"; Content root path: "C:\\Program Files\\8005 AGV\\ControlServer.V2"
+20:16:48.000 Information 5350 EFFECTIVE_CONFIGURATION allowedWorkTypes=["DIE_TO_WIRE_STAGING","DIE_TO_OVEN","WIRE_TO_GATE","WIRE_TO_OPTICAL","STAGING_TO_WIRE","WIRE_TO_NITROGEN"] allowedDispatchZones="WIRE" mesIngestBaseUrl="http://127.0.0.1:58188" fleet=[{"AgvId":"老厂前线新多仓位2","VehicleKey":"BROKERX-f38975561adf46ccb1d2f23833c7d0e4","AllowedTaskTypes":["DIE_TO_WIRE_STAGING","DIE_TO_OVEN","WIRE_TO_GATE","WIRE_TO_OPTICAL","STAGING_TO_WIRE","WIRE_TO_NITROGEN"],"Zones":["WIRE"]},{"AgvId":"老厂前线新多仓位3","VehicleKey":"BROKERX-7daca4ee9
+20:16:50.000 Information 5870 RIoT command "POST" "http://172.19.206.222:8888/api/order/v1/add/byDefaultMissions" sent
+20:16:50.000 Information 5871 RIoT command "POST" "http://172.19.206.222:8888/api/order/v1/add/byDefaultMissions" answered 200 after 129.478 ms
+20:16:50.000 Information 2252 Charging journey "charging:BROKERX-f38975561adf46ccb1d2f23833c7d0e4:20261011T121516351Z": RIoT confirmed order "W2G-CHARGE-62d6bd7c-20261011T121516351Z"; vehicle "BROKERX-f38975561adf46ccb1d2f23833c7d0e4" is en route to charger 211.
+20:16:50.000 Warning 2205 Vehicle "BROKERX-7daca4ee91da498d8026c68b7b941127" is below its mandatory charge entry threshold: battery 69% < 80% (charging policy version 2). It takes no new transport, no en-route append and no idle return until it has charged (REQ-0290, "MANDATORY_CHARGE_REQUIRED"); a journey it is carrying finishes as planned (REQ-0281).
+20:16:50.000 Information 2241 Charging not allocated for vehicle "老厂前线新多仓位3": "ONBOARD_FACTS_NOT_READY". ""
+20:16:50.000 Information 2199 Idle return not committed for vehicle "老厂前线新多仓位3": "ONBOARD_FACTS_NOT_READY". ""
+20:16:52.000 Information 2210 "WAITING_POINT" 26/216 released by vehicle "BROKERX-f38975561adf46ccb1d2f23833c7d0e4" on departure evidence (journey "idle-return:BROKERX-f38975561adf46ccb1d2f23833c7d0e4:20261011T115215830Z").
+20:21:38 agv02 pos=0 move=MT_RUNNING sys=EXECUTING battery=76 emergency=OK
+    RIoT nonfinal: W2G-CHARGE-62d6bd7c-20261011T121516351Z (len 39) state=3
+20:21:38 agv03 pos=0 move=MT_FINISHED sys=IDLE battery=68 emergency=OK
+## SELECT JourneyId, AgvId, LoadingPhaseState, LoadingClosedReason, YieldTriggeredByVehicleKey, YieldTriggeredAt, CargoHoldingStartedAt, BlockReasonCode, UpdatedAt FROM JourneyRuntimes WHERE JourneyId LIKE 'journey:%' ORDER BY rowid DESC LIMIT 4
+JourneyId=journey:c1000566-0000-0000-0000-000000000005 | AgvId=老厂前线新多仓位2 | LoadingPhaseState=CLOSED | LoadingClosedReason=CARGO_HOLDING_TIMEOUT | YieldTriggeredByVehicleKey= | YieldTriggeredAt= | CargoHoldingStartedAt=2026-10-11 11:24:54.7718148+00:00 | BlockReasonCode= | UpdatedAt=2026-10-11 11:30:52.7886133+00:00
+JourneyId=journey:c1000566-0000-0000-0000-000000000004 | AgvId=老厂前线新多仓位3 | LoadingPhaseState=CLOSED | LoadingClosedReason=WAITING_STATION_YIELD | YieldTriggeredByVehicleKey=BROKERX-f38975561adf46ccb1d2f23833c7d0e4 | YieldTriggeredAt=2026-10-11 11:19:23.1636885+00:00 | CargoHoldingStartedAt=2026-10-11 11:19:14.9559536+00:00 | BlockReasonCode= | UpdatedAt=2026-10-11 11:24:06.7573843+00:00
+## SELECT DemandId, JourneyId, Status, ExpectedBasketCount, TargetSlotsJson FROM JourneyDemands ORDER BY rowid DESC LIMIT 4
+DemandId=c1000566-0000-0000-0000-000000000005 | JourneyId=journey:c1000566-0000-0000-0000-000000000005 | Status=UNLOADED | ExpectedBasketCount=4 | TargetSlotsJson=[1,2,3,4]
+DemandId=c1000566-0000-0000-0000-000000000004 | JourneyId=journey:c1000566-0000-0000-0000-000000000004 | Status=UNLOADED | ExpectedBasketCount=1 | TargetSlotsJson=[1]
+## SELECT StationId, StationKind, State, VehicleKey, JourneyId FROM StationExclusivities
+StationId=211 | StationKind=CHARGER | State=RESERVED | VehicleKey=BROKERX-f38975561adf46ccb1d2f23833c7d0e4 | JourneyId=charging:BROKERX-f38975561adf46ccb1d2f23833c7d0e4:20261011T121516351Z
+20:16:45.000 Information  Application is shutting down...
+20:16:47.000 Information 20405 No migrations were applied. The database is already up to date.
+20:16:47.000 Warning 9305 Task type station preset "C:\\Program Files\\8005 AGV\\ControlServer.V2\\task-type-stations.map-26.settings.json" was not applied to Map 26 (pointer state "ACTIVE"): "binding set version 2 stays active"; a different version only comes from a FieldOps activation or rollback.
+20:16:48.000 Information 1002 Onboard NDJSON listener started on "172.19.205.222":58105; transport=plaintext
+20:16:48.000 Information 14 Now listening on: "http://172.19.205.222:58107"
+20:16:48.000 Information  Application started. Hosting environment: "Production"; Content root path: "C:\\Program Files\\8005 AGV\\ControlServer.V2"
+20:16:48.000 Information 5350 EFFECTIVE_CONFIGURATION allowedWorkTypes=["DIE_TO_WIRE_STAGING","DIE_TO_OVEN","WIRE_TO_GATE","WIRE_TO_OPTICAL","STAGING_TO_WIRE","WIRE_TO_NITROGEN"] allowedDispatchZones="WIRE" mesIngestBaseUrl="http://127.0.0.1:58188" fleet=[{"AgvId":"老厂前线新多仓位2","VehicleKey":"BROKERX-f38975561adf46ccb1d2f23833c7d0e4","AllowedTaskTypes":["DIE_TO_WIRE_STAGING","DIE_TO_OVEN","WIRE_TO_GATE","WIRE_TO_OPTICAL","STAGING_TO_WIRE","WIRE_TO_NITROGEN"],"Zones":["WIRE"]},{"AgvId":"老厂前线新多仓位3","VehicleKey":"BROKERX-7daca4ee9
+20:16:50.000 Information 5870 RIoT command "POST" "http://172.19.206.222:8888/api/order/v1/add/byDefaultMissions" sent
+20:16:50.000 Information 5871 RIoT command "POST" "http://172.19.206.222:8888/api/order/v1/add/byDefaultMissions" answered 200 after 129.478 ms
+20:16:50.000 Information 2252 Charging journey "charging:BROKERX-f38975561adf46ccb1d2f23833c7d0e4:20261011T121516351Z": RIoT confirmed order "W2G-CHARGE-62d6bd7c-20261011T121516351Z"; vehicle "BROKERX-f38975561adf46ccb1d2f23833c7d0e4" is en route to charger 211.
+20:16:50.000 Warning 2205 Vehicle "BROKERX-7daca4ee91da498d8026c68b7b941127" is below its mandatory charge entry threshold: battery 69% < 80% (charging policy version 2). It takes no new transport, no en-route append and no idle return until it has charged (REQ-0290, "MANDATORY_CHARGE_REQUIRED"); a journey it is carrying finishes as planned (REQ-0281).
+20:16:50.000 Information 2241 Charging not allocated for vehicle "老厂前线新多仓位3": "ONBOARD_FACTS_NOT_READY". ""
+20:16:50.000 Information 2199 Idle return not committed for vehicle "老厂前线新多仓位3": "ONBOARD_FACTS_NOT_READY". ""
+20:16:52.000 Information 2210 "WAITING_POINT" 26/216 released by vehicle "BROKERX-f38975561adf46ccb1d2f23833c7d0e4" on departure evidence (journey "idle-return:BROKERX-f38975561adf46ccb1d2f23833c7d0e4:20261011T115215830Z").
+20:21:56 agv02 pos=0 move=MT_RUNNING sys=EXECUTING battery=76 emergency=OK
+    RIoT nonfinal: W2G-CHARGE-62d6bd7c-20261011T121516351Z (len 39) state=3
+20:21:56 agv03 pos=0 move=MT_FINISHED sys=IDLE battery=68 emergency=OK
+## SELECT JourneyId, AgvId, LoadingPhaseState, LoadingClosedReason, YieldTriggeredByVehicleKey, YieldTriggeredAt, CargoHoldingStartedAt, BlockReasonCode, UpdatedAt FROM JourneyRuntimes WHERE JourneyId LIKE 'journey:%' ORDER BY rowid DESC LIMIT 4
+JourneyId=journey:c1000566-0000-0000-0000-000000000005 | AgvId=老厂前线新多仓位2 | LoadingPhaseState=CLOSED | LoadingClosedReason=CARGO_HOLDING_TIMEOUT | YieldTriggeredByVehicleKey= | YieldTriggeredAt= | CargoHoldingStartedAt=2026-10-11 11:24:54.7718148+00:00 | BlockReasonCode= | UpdatedAt=2026-10-11 11:30:52.7886133+00:00
+JourneyId=journey:c1000566-0000-0000-0000-000000000004 | AgvId=老厂前线新多仓位3 | LoadingPhaseState=CLOSED | LoadingClosedReason=WAITING_STATION_YIELD | YieldTriggeredByVehicleKey=BROKERX-f38975561adf46ccb1d2f23833c7d0e4 | YieldTriggeredAt=2026-10-11 11:19:23.1636885+00:00 | CargoHoldingStartedAt=2026-10-11 11:19:14.9559536+00:00 | BlockReasonCode= | UpdatedAt=2026-10-11 11:24:06.7573843+00:00
+## SELECT DemandId, JourneyId, Status, ExpectedBasketCount, TargetSlotsJson FROM JourneyDemands ORDER BY rowid DESC LIMIT 4
+DemandId=c1000566-0000-0000-0000-000000000005 | JourneyId=journey:c1000566-0000-0000-0000-000000000005 | Status=UNLOADED | ExpectedBasketCount=4 | TargetSlotsJson=[1,2,3,4]
+DemandId=c1000566-0000-0000-0000-000000000004 | JourneyId=journey:c1000566-0000-0000-0000-000000000004 | Status=UNLOADED | ExpectedBasketCount=1 | TargetSlotsJson=[1]
+## SELECT StationId, StationKind, State, VehicleKey, JourneyId FROM StationExclusivities
+StationId=211 | StationKind=CHARGER | State=RESERVED | VehicleKey=BROKERX-f38975561adf46ccb1d2f23833c7d0e4 | JourneyId=charging:BROKERX-f38975561adf46ccb1d2f23833c7d0e4:20261011T121516351Z
+20:16:45.000 Information  Application is shutting down...
+20:16:47.000 Information 20405 No migrations were applied. The database is already up to date.
+20:16:47.000 Warning 9305 Task type station preset "C:\\Program Files\\8005 AGV\\ControlServer.V2\\task-type-stations.map-26.settings.json" was not applied to Map 26 (pointer state "ACTIVE"): "binding set version 2 stays active"; a different version only comes from a FieldOps activation or rollback.
+20:16:48.000 Information 1002 Onboard NDJSON listener started on "172.19.205.222":58105; transport=plaintext
+20:16:48.000 Information 14 Now listening on: "http://172.19.205.222:58107"
+20:16:48.000 Information  Application started. Hosting environment: "Production"; Content root path: "C:\\Program Files\\8005 AGV\\ControlServer.V2"
+20:16:48.000 Information 5350 EFFECTIVE_CONFIGURATION allowedWorkTypes=["DIE_TO_WIRE_STAGING","DIE_TO_OVEN","WIRE_TO_GATE","WIRE_TO_OPTICAL","STAGING_TO_WIRE","WIRE_TO_NITROGEN"] allowedDispatchZones="WIRE" mesIngestBaseUrl="http://127.0.0.1:58188" fleet=[{"AgvId":"老厂前线新多仓位2","VehicleKey":"BROKERX-f38975561adf46ccb1d2f23833c7d0e4","AllowedTaskTypes":["DIE_TO_WIRE_STAGING","DIE_TO_OVEN","WIRE_TO_GATE","WIRE_TO_OPTICAL","STAGING_TO_WIRE","WIRE_TO_NITROGEN"],"Zones":["WIRE"]},{"AgvId":"老厂前线新多仓位3","VehicleKey":"BROKERX-7daca4ee9
+20:16:50.000 Information 5870 RIoT command "POST" "http://172.19.206.222:8888/api/order/v1/add/byDefaultMissions" sent
+20:16:50.000 Information 5871 RIoT command "POST" "http://172.19.206.222:8888/api/order/v1/add/byDefaultMissions" answered 200 after 129.478 ms
+20:16:50.000 Information 2252 Charging journey "charging:BROKERX-f38975561adf46ccb1d2f23833c7d0e4:20261011T121516351Z": RIoT confirmed order "W2G-CHARGE-62d6bd7c-20261011T121516351Z"; vehicle "BROKERX-f38975561adf46ccb1d2f23833c7d0e4" is en route to charger 211.
+20:16:50.000 Warning 2205 Vehicle "BROKERX-7daca4ee91da498d8026c68b7b941127" is below its mandatory charge entry threshold: battery 69% < 80% (charging policy version 2). It takes no new transport, no en-route append and no idle return until it has charged (REQ-0290, "MANDATORY_CHARGE_REQUIRED"); a journey it is carrying finishes as planned (REQ-0281).
+20:16:50.000 Information 2241 Charging not allocated for vehicle "老厂前线新多仓位3": "ONBOARD_FACTS_NOT_READY". ""
+20:16:50.000 Information 2199 Idle return not committed for vehicle "老厂前线新多仓位3": "ONBOARD_FACTS_NOT_READY". ""
+20:16:52.000 Information 2210 "WAITING_POINT" 26/216 released by vehicle "BROKERX-f38975561adf46ccb1d2f23833c7d0e4" on departure evidence (journey "idle-return:BROKERX-f38975561adf46ccb1d2f23833c7d0e4:20261011T115215830Z").
+20:22:14 agv02 pos=211 move=MT_FINISHED sys=EXECUTING battery=76 emergency=OK
+    RIoT nonfinal: W2G-CHARGE-62d6bd7c-20261011T121516351Z (len 39) state=3
+20:22:14 agv03 pos=0 move=MT_FINISHED sys=IDLE battery=68 emergency=OK
+## SELECT JourneyId, AgvId, LoadingPhaseState, LoadingClosedReason, YieldTriggeredByVehicleKey, YieldTriggeredAt, CargoHoldingStartedAt, BlockReasonCode, UpdatedAt FROM JourneyRuntimes WHERE JourneyId LIKE 'journey:%' ORDER BY rowid DESC LIMIT 4
+JourneyId=journey:c1000566-0000-0000-0000-000000000005 | AgvId=老厂前线新多仓位2 | LoadingPhaseState=CLOSED | LoadingClosedReason=CARGO_HOLDING_TIMEOUT | YieldTriggeredByVehicleKey= | YieldTriggeredAt= | CargoHoldingStartedAt=2026-10-11 11:24:54.7718148+00:00 | BlockReasonCode= | UpdatedAt=2026-10-11 11:30:52.7886133+00:00
+JourneyId=journey:c1000566-0000-0000-0000-000000000004 | AgvId=老厂前线新多仓位3 | LoadingPhaseState=CLOSED | LoadingClosedReason=WAITING_STATION_YIELD | YieldTriggeredByVehicleKey=BROKERX-f38975561adf46ccb1d2f23833c7d0e4 | YieldTriggeredAt=2026-10-11 11:19:23.1636885+00:00 | CargoHoldingStartedAt=2026-10-11 11:19:14.9559536+00:00 | BlockReasonCode= | UpdatedAt=2026-10-11 11:24:06.7573843+00:00
+## SELECT DemandId, JourneyId, Status, ExpectedBasketCount, TargetSlotsJson FROM JourneyDemands ORDER BY rowid DESC LIMIT 4
+DemandId=c1000566-0000-0000-0000-000000000005 | JourneyId=journey:c1000566-0000-0000-0000-000000000005 | Status=UNLOADED | ExpectedBasketCount=4 | TargetSlotsJson=[1,2,3,4]
+DemandId=c1000566-0000-0000-0000-000000000004 | JourneyId=journey:c1000566-0000-0000-0000-000000000004 | Status=UNLOADED | ExpectedBasketCount=1 | TargetSlotsJson=[1]
+## SELECT StationId, StationKind, State, VehicleKey, JourneyId FROM StationExclusivities
+StationId=211 | StationKind=CHARGER | State=RESERVED | VehicleKey=BROKERX-f38975561adf46ccb1d2f23833c7d0e4 | JourneyId=charging:BROKERX-f38975561adf46ccb1d2f23833c7d0e4:20261011T121516351Z
+20:16:45.000 Information  Application is shutting down...
+20:16:47.000 Information 20405 No migrations were applied. The database is already up to date.
+20:16:47.000 Warning 9305 Task type station preset "C:\\Program Files\\8005 AGV\\ControlServer.V2\\task-type-stations.map-26.settings.json" was not applied to Map 26 (pointer state "ACTIVE"): "binding set version 2 stays active"; a different version only comes from a FieldOps activation or rollback.
+20:16:48.000 Information 1002 Onboard NDJSON listener started on "172.19.205.222":58105; transport=plaintext
+20:16:48.000 Information 14 Now listening on: "http://172.19.205.222:58107"
+20:16:48.000 Information  Application started. Hosting environment: "Production"; Content root path: "C:\\Program Files\\8005 AGV\\ControlServer.V2"
+20:16:48.000 Information 5350 EFFECTIVE_CONFIGURATION allowedWorkTypes=["DIE_TO_WIRE_STAGING","DIE_TO_OVEN","WIRE_TO_GATE","WIRE_TO_OPTICAL","STAGING_TO_WIRE","WIRE_TO_NITROGEN"] allowedDispatchZones="WIRE" mesIngestBaseUrl="http://127.0.0.1:58188" fleet=[{"AgvId":"老厂前线新多仓位2","VehicleKey":"BROKERX-f38975561adf46ccb1d2f23833c7d0e4","AllowedTaskTypes":["DIE_TO_WIRE_STAGING","DIE_TO_OVEN","WIRE_TO_GATE","WIRE_TO_OPTICAL","STAGING_TO_WIRE","WIRE_TO_NITROGEN"],"Zones":["WIRE"]},{"AgvId":"老厂前线新多仓位3","VehicleKey":"BROKERX-7daca4ee9
+20:16:50.000 Information 5870 RIoT command "POST" "http://172.19.206.222:8888/api/order/v1/add/byDefaultMissions" sent
+20:16:50.000 Information 5871 RIoT command "POST" "http://172.19.206.222:8888/api/order/v1/add/byDefaultMissions" answered 200 after 129.478 ms
+20:16:50.000 Information 2252 Charging journey "charging:BROKERX-f38975561adf46ccb1d2f23833c7d0e4:20261011T121516351Z": RIoT confirmed order "W2G-CHARGE-62d6bd7c-20261011T121516351Z"; vehicle "BROKERX-f38975561adf46ccb1d2f23833c7d0e4" is en route to charger 211.
+20:16:50.000 Warning 2205 Vehicle "BROKERX-7daca4ee91da498d8026c68b7b941127" is below its mandatory charge entry threshold: battery 69% < 80% (charging policy version 2). It takes no new transport, no en-route append and no idle return until it has charged (REQ-0290, "MANDATORY_CHARGE_REQUIRED"); a journey it is carrying finishes as planned (REQ-0281).
+20:16:50.000 Information 2241 Charging not allocated for vehicle "老厂前线新多仓位3": "ONBOARD_FACTS_NOT_READY". ""
+20:16:50.000 Information 2199 Idle return not committed for vehicle "老厂前线新多仓位3": "ONBOARD_FACTS_NOT_READY". ""
+20:16:52.000 Information 2210 "WAITING_POINT" 26/216 released by vehicle "BROKERX-f38975561adf46ccb1d2f23833c7d0e4" on departure evidence (journey "idle-return:BROKERX-f38975561adf46ccb1d2f23833c7d0e4:20261011T115215830Z").
+20:22:31 agv02 pos=211 move=MT_FINISHED sys=IDLE battery=76 emergency=OK
+    RIoT nonfinal: W2G-CHARGE-62d6bd7c-20261011T121516351Z (len 39) state=9
+20:22:32 agv03 pos=0 move=MT_FINISHED sys=IDLE battery=68 emergency=OK
+## SELECT JourneyId, AgvId, LoadingPhaseState, LoadingClosedReason, YieldTriggeredByVehicleKey, YieldTriggeredAt, CargoHoldingStartedAt, BlockReasonCode, UpdatedAt FROM JourneyRuntimes WHERE JourneyId LIKE 'journey:%' ORDER BY rowid DESC LIMIT 4
+JourneyId=journey:c1000566-0000-0000-0000-000000000005 | AgvId=老厂前线新多仓位2 | LoadingPhaseState=CLOSED | LoadingClosedReason=CARGO_HOLDING_TIMEOUT | YieldTriggeredByVehicleKey= | YieldTriggeredAt= | CargoHoldingStartedAt=2026-10-11 11:24:54.7718148+00:00 | BlockReasonCode= | UpdatedAt=2026-10-11 11:30:52.7886133+00:00
+JourneyId=journey:c1000566-0000-0000-0000-000000000004 | AgvId=老厂前线新多仓位3 | LoadingPhaseState=CLOSED | LoadingClosedReason=WAITING_STATION_YIELD | YieldTriggeredByVehicleKey=BROKERX-f38975561adf46ccb1d2f23833c7d0e4 | YieldTriggeredAt=2026-10-11 11:19:23.1636885+00:00 | CargoHoldingStartedAt=2026-10-11 11:19:14.9559536+00:00 | BlockReasonCode= | UpdatedAt=2026-10-11 11:24:06.7573843+00:00
+## SELECT DemandId, JourneyId, Status, ExpectedBasketCount, TargetSlotsJson FROM JourneyDemands ORDER BY rowid DESC LIMIT 4
+DemandId=c1000566-0000-0000-0000-000000000005 | JourneyId=journey:c1000566-0000-0000-0000-000000000005 | Status=UNLOADED | ExpectedBasketCount=4 | TargetSlotsJson=[1,2,3,4]
+DemandId=c1000566-0000-0000-0000-000000000004 | JourneyId=journey:c1000566-0000-0000-0000-000000000004 | Status=UNLOADED | ExpectedBasketCount=1 | TargetSlotsJson=[1]
+## SELECT StationId, StationKind, State, VehicleKey, JourneyId FROM StationExclusivities
+StationId=211 | StationKind=CHARGER | State=RESERVED | VehicleKey=BROKERX-f38975561adf46ccb1d2f23833c7d0e4 | JourneyId=charging:BROKERX-f38975561adf46ccb1d2f23833c7d0e4:20261011T121516351Z
+20:16:47.000 Warning 9305 Task type station preset "C:\\Program Files\\8005 AGV\\ControlServer.V2\\task-type-stations.map-26.settings.json" was not applied to Map 26 (pointer state "ACTIVE"): "binding set version 2 stays active"; a different version only comes from a FieldOps activation or rollback.
+20:16:48.000 Information 1002 Onboard NDJSON listener started on "172.19.205.222":58105; transport=plaintext
+20:16:48.000 Information 14 Now listening on: "http://172.19.205.222:58107"
+20:16:48.000 Information  Application started. Hosting environment: "Production"; Content root path: "C:\\Program Files\\8005 AGV\\ControlServer.V2"
+20:16:48.000 Information 5350 EFFECTIVE_CONFIGURATION allowedWorkTypes=["DIE_TO_WIRE_STAGING","DIE_TO_OVEN","WIRE_TO_GATE","WIRE_TO_OPTICAL","STAGING_TO_WIRE","WIRE_TO_NITROGEN"] allowedDispatchZones="WIRE" mesIngestBaseUrl="http://127.0.0.1:58188" fleet=[{"AgvId":"老厂前线新多仓位2","VehicleKey":"BROKERX-f38975561adf46ccb1d2f23833c7d0e4","AllowedTaskTypes":["DIE_TO_WIRE_STAGING","DIE_TO_OVEN","WIRE_TO_GATE","WIRE_TO_OPTICAL","STAGING_TO_WIRE","WIRE_TO_NITROGEN"],"Zones":["WIRE

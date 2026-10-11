@@ -1,0 +1,27 @@
+##### agv02
+host=DESKTOP-94OA6CK now=2026-10-11T10:24:40.7210863+08:00
+Local CMOS Clock
+task \W2G-ClockResyncAtStartup Ready
+task \Microsoft\Windows\Time Synchronization\ForceSynchronizeTime Ready
+task \Microsoft\Windows\Time Synchronization\SynchronizeTime Ready
+task \Microsoft\Windows\Time Zone\SynchronizeTimeZone Ready
+C:\8005 exists=True
+C:\8005\SlotsSimulator exists=True
+C:\8005\OnboardHmi exists=True
+pwsh=7.6.5 dotnet runtimes:
+[31;1m&: [31;1mThe term 'C:\Program Files\dotnet\dotnet.exe' is not recognized as a name of a cmdlet, function, script file, or executable program.[0m
+[31;1m[31;1mCheck the spelling of the name, or if a path was included, verify that the path is correct and try again.[0m
+OPERATOR_ID set=True
+##### agv03
+host=DESKTOP-94OA6CK now=2026-10-11T10:24:46.5002695+08:00
+172.19.205.222,0x9 
+task \Microsoft\Windows\Time Synchronization\ForceSynchronizeTime Ready
+task \Microsoft\Windows\Time Synchronization\SynchronizeTime Ready
+task \Microsoft\Windows\Time Zone\SynchronizeTimeZone Ready
+C:\8005 exists=False
+C:\8005\SlotsSimulator exists=False
+C:\8005\OnboardHmi exists=False
+pwsh=7.6.5 dotnet runtimes:
+[31;1m&: [31;1mThe term 'C:\Program Files\dotnet\dotnet.exe' is not recognized as a name of a cmdlet, function, script file, or executable program.[0m
+[31;1m[31;1mCheck the spelling of the name, or if a path was included, verify that the path is correct and try again.[0m
+OPERATOR_ID set=False

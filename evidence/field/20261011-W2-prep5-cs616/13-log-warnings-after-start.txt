@@ -1,0 +1,13 @@
+16:36:15.000 Information  Application is shutting down...
+16:36:17.000 Information 20405 No migrations were applied. The database is already up to date.
+16:36:18.000 Information 9302 Task type station preset "C:\\Program Files\\8005 AGV\\ControlServer.V2\\task-type-stations.map-26.settings.json" loaded: rule version 1 ("new"), Map 26 binding set version 1 ("new") active.
+16:36:18.000 Warning 2272 The manual station clearance exit is not available ("FIELD_OPERATOR_ROSTER_EMPTY,STATION_CLEARANCE_ENTRY_NOT_OFFERED"). Until it is, a vehicle that cannot charge at its charger is left on ORDER_HANG instead of being paused for a manual clearance (control-server#406). Configure FieldOperatorRoles:Path with at least one R-11 or R-13, and VehicleFaultRecovery:enabled or FieldOperatorRoles:OnboardClearanceEntryDeclared.
+16:36:18.000 Information 1002 Onboard NDJSON listener started on "172.19.205.222":58105; transport=plaintext
+16:36:18.000 Information 14 Now listening on: "http://172.19.205.222:58107"
+16:36:18.000 Information  Application started. Hosting environment: "Production"; Content root path: "C:\\Program Files\\8005 AGV\\ControlServer.V2"
+16:36:18.000 Information 5350 EFFECTIVE_CONFIGURATION allowedWorkTypes=["DIE_TO_WIRE_STAGING","DIE_TO_OVEN","WIRE_TO_GATE","WIRE_TO_OPTICAL","STAGING_TO_WIRE","WIRE_TO_NITROGEN"] allowedDispatchZones="WIRE" mesIngestBaseUrl="http://127.0.0.1:58188" fleet=
+16:36:20.000 Information 2241 Charging not allocated for vehicle "老厂前线新多仓位2": "CHARGING_POLICY_NOT_APPROVED". ""
+16:36:20.000 Information 2199 Idle return not committed for vehicle "老厂前线新多仓位2": "CHARGING_POLICY_NOT_APPROVED". ""
+16:36:31.000 Information  HTTP "GET" "/health/live" responded 200 in {Elapsed:0.0000} ms
+16:37:28.000 Information 2241 Charging not allocated for vehicle "老厂前线新多仓位2": "CHARGING_NOT_REQUIRED". ""
+16:37:28.000 Information 2199 Idle return not committed for vehicle "老厂前线新多仓位2": "ONBOARD_FACTS_NOT_READY". ""

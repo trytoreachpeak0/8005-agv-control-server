@@ -1,0 +1,11 @@
+{
+  "minimumPostTaskBatteryMarginPercent": 20,
+  "mandatoryChargeEntryThresholdPercent": 38,
+  "chargingCompletionThresholdPercent": 80,
+  "estimatedTaskConsumptionPercent": 10,
+  "progressStabilizationSeconds": 180,
+  "progressObservationWindowSeconds": 600,
+  "progressMinimumIncreasePercent": 3,
+  "vehicleScope": [],
+  "changeNote": "测试期临时策略（cs#566 续场二 F 段，2026-10-11）：强制线 38 高于当时电量 36，让 agv02 立即进入强制充电；完成线 80、余量 20、每趟 10 与 v1 相同。80 > 38 >= 20。F 段做完立即 activate-charging-policy --version 1 换回。用户本会话授权「确认 agv01 不去 211，可以开始」。"
+}

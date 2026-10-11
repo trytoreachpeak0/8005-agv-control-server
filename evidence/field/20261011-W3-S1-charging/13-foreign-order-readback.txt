@@ -1,0 +1,13 @@
+2026-10-11 15:23:21 GET detailByOrderId/order-2109181133127286784 -> HTTP 200
+code=0 message=成功 resultPresent=True
+id=1757698 orderId=order-2109181133127286784 upperId=[] upperIdIsNull=False orderState=2 orderName=iiii createBy=
+
+# 读到的（上面一段，按订单号只读 GET，不带凭据值）
+RIoT 对用户网页单回 HTTP 200、code 0、result 完整，orderState=2（已结束），但 upperId 是空串。
+
+# 代码（读到的，da6e40e2 与 riot-sdk 工作区克隆）
+- riot-sdk csharp/RIoT.Sdk.Facade/OrderClient.cs:129-141 ToOrderRef：upperId 为空即抛 RiotApiException("detailByOrderId returned incomplete order identifiers.", businessCode "order-ref-missing")。
+- HttpRiotMovementGateway.cs:631-651 ReadOrderStateAsync：IsSdkFailure 吞掉，返回 OrderState=null（日志里的 UNREAD）。
+- ForeignRunningOrderSupervisor.cs:319-343：不在运行列表 → 按号回读 → 非明确结束 → 120 秒后 Unsettled（2187），继续按住；:65-74 注释写明除明确结束外没有释放途径，服务端也没有人工释放。
+# 结论（推的）
+没有 upperId 的外来单（网页手派单正是这种）一旦离开运行列表，就永远读不出结束，车被永久按住。与 real-riot-absent-order-is-200-not-404 不是同一机理：这里 RIoT 找到了单，是 SDK 对「外来单没有 upperId」的校验把有效答复变成了失败。

@@ -1,0 +1,20 @@
+16:26:03
+==> RC from F:/8005-scratch/ca1859-probe/0c396ba7 @ 0c396ba7bba8f42c0ad452130b3cde0b549b0957 into F:\8005-scratch\t566-cs616\wire-to-gate-20261011-162604 (direct, not via Build-LocalRc's fresh clone)
+[31;1mException: [0mF:\8005-scratch\ca1859-probe\0c396ba7\scripts\New-WireToGateReleaseCandidate.ps1:46[0m
+[31;1m[0m[36;1mLine |[0m
+[31;1m[0m[36;1m[36;1m  46 | [0m         [36;1mthrow "$FailureMessage (exit $LASTEXITCODE): $($output | Sele[0m бн[0m
+[31;1m[0m[36;1m[36;1m[0m[36;1m[0m[36;1m     | [31;1m         ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~[0m
+[31;1m[0m[36;1m[36;1m[0m[36;1m[0m[36;1m[31;1m[31;1m[36;1m     | [31;1mControlServer publish failed (exit 1):   Determining projects to restore...;   Restored[0m
+[31;1m[0m[36;1m[36;1m[0m[36;1m[0m[36;1m[31;1m[31;1m[36;1m[31;1m[36;1m     | [31;1mF:\8005-scratch\ca1859-probe\0c396ba7\src\ControlServer.Application\ControlServer.Application.csproj (in 319[0m
+[31;1m[0m[36;1m[36;1m[0m[36;1m[0m[36;1m[31;1m[31;1m[36;1m[31;1m[36;1m[31;1m[36;1m     | [31;1mms).;   Restored F:\8005-scratch\ca1859-probe\0c396ba7\src\ControlServer.Domain\ControlServer.Domain.csproj (in[0m
+[31;1m[0m[36;1m[36;1m[0m[36;1m[0m[36;1m[31;1m[31;1m[36;1m[31;1m[36;1m[31;1m[36;1m[31;1m[36;1m     | [31;1m311 ms).;   Restored[0m
+[31;1m[0m[36;1m[36;1m[0m[36;1m[0m[36;1m[31;1m[31;1m[36;1m[31;1m[36;1m[31;1m[36;1m[31;1m[36;1m[31;1m[36;1m     | [31;1mF:\8005-scratch\ca1859-probe\0c396ba7\src\ControlServer.Infrastructure\ControlServer.Infrastructure.csproj (in[0m
+[31;1m[0m[36;1m[36;1m[0m[36;1m[0m[36;1m[31;1m[31;1m[36;1m[31;1m[36;1m[31;1m[36;1m[31;1m[36;1m[31;1m[36;1m[31;1m[36;1m     | [31;1m417 ms).;   Restored F:\8005-scratch\ca1859-probe\0c396ba7\src\ControlServer.Host\ControlServer.Host.csproj (in[0m
+[31;1m[0m[36;1m[36;1m[0m[36;1m[0m[36;1m[31;1m[31;1m[36;1m[31;1m[36;1m[31;1m[36;1m[31;1m[36;1m[31;1m[36;1m[31;1m[36;1m[31;1m[36;1m     | [31;1m417 ms).;   ControlServer.Domain ->[0m
+[31;1m[0m[36;1m[36;1m[0m[36;1m[0m[36;1m[31;1m[31;1m[36;1m[31;1m[36;1m[31;1m[36;1m[31;1m[36;1m[31;1m[36;1m[31;1m[36;1m[31;1m[36;1m[31;1m[36;1m     | [31;1mF:\8005-scratch\ca1859-probe\0c396ba7\src\ControlServer.Domain\bin\Release\net8.0\win-x64\ControlServer.Domain.dll; F:\8005-scratch\ca1859-probe\0c396ba7\src\ControlServer.Application\MapNameBaselineAcceptanceService.cs(102,49): error CA1859: Change type of parameter 'refused' from 'System.Collections.Generic.IReadOnlyList<ControlServer.Application.TaskTypeStationViolation>' to 'ControlServer.Application.TaskTypeStationViolation[]' for improved performance (https://learn.microsoft.com/dotnet/fundamentals/code-analysis/quality-rules/ca1859) [F:\8005-scratch\ca1859-probe\0c396ba7\src\ControlServer.Application\ControlServer.Application.csproj][0m
+[31;1mException: [0mF:\8005-scratch\cs566b-reopen\rc-direct.ps1:9[0m
+[31;1m[0m[36;1mLine |[0m
+[31;1m[0m[36;1m[36;1m   9 | [0m if ($LASTEXITCODE -ne 0) { [36;1mthrow "RC failed (exit $LASTEXITCODE)"[0m }[0m
+[31;1m[0m[36;1m[36;1m[0m[36;1m[0m[36;1m     | [31;1m                            ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~[0m
+[31;1m[0m[36;1m[36;1m[0m[36;1m[0m[36;1m[31;1m[31;1m[36;1m     | [31;1mRC failed (exit 1)[0m
+exit=1

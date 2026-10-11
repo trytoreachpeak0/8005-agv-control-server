@@ -1,0 +1,13 @@
+before sha=A0CF346FA193451E9D5340C65297932A6D993E48FF67EDABA5D10D128484C605 backup=D:\zhengyushao\control-server-v2-ops\cs566b\appsettings.Production.json.bak-20261011184959-before-runtime-on
+after sha=D80CEAFBAC6AAA43CBB74542CEA0CB20B0271AEA6A2D604075ADA38FEDE79D17
+readback: JR.enabled=True RG.enabled=True mapId=26 gate=False admission=5 depWait=00:01:30 cargo=00:02:00
+readback: MapStationCatalog={"ApprovedSyncPeriod":"00:00:30","ApprovedMaxUnconfirmed":"00:05:00"}
+readback: FileSink.Args={"path":"C:\\ProgramData\\8005\\ControlServer.V2\\logs\\controlserver-.ndjson","formatter":"Serilog.Formatting.Compact.CompactJsonFormatter, Serilog.Formatting.Compact","rollingInterval":"Day","shared":true,"rollOnFileSizeLimit":true,"fileSizeLimitBytes":67108864,"retainedFileCountLimit":48}
+readback: fleet=2 agvIds=老厂前线新多仓位2,老厂前线新多仓位3
+readback: MesIngest.baseUrl=http://127.0.0.1:58188 IdleReturn={"Enabled":true} admission=5 fleetKey=True
+[31;1mRestart-Service: [0mD:\zhengyushao\control-server-v2-ops\cs566b\cfg2.ps1:31[0m
+[31;1m[0m[36;1mLine |[0m
+[31;1m[0m[36;1m[36;1m  31 | [0m [36;1mRestart-Service -Name '8005 AGV ControlServer V2'[0m
+[31;1m[0m[36;1m[36;1m[0m[36;1m[0m[36;1m     | [31;1m ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~[0m
+[31;1m[0m[36;1m[36;1m[0m[36;1m[0m[36;1m[31;1m[31;1m[36;1m     | [31;1mService '8005 AGV ControlServer V2 (8005 AGV ControlServer V2)' cannot be started due to the following error:[0m
+[31;1m[0m[36;1m[36;1m[0m[36;1m[0m[36;1m[31;1m[31;1m[36;1m[31;1m[36;1m     | [31;1mCannot start service '8005 AGV ControlServer V2' on computer '.'.[0m

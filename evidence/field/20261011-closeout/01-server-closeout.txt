@@ -1,0 +1,29 @@
+=== 2026-10-11 21:41:13 close-out start
+MVP state=Running pid=15624 startMode=Auto
+--- 1. stop V2
+V2 state=Stopped startMode=Manual
+--- 2/3/4. configuration
+backup=D:\zhengyushao\control-server-v2-ops\cs566b\appsettings.Production.json.bak-20261011214114-before-closeout
+before: gate=False stationDepartureWaitTimeout=00:01:30 cargoHoldingTimeout=00:02:00 VehicleFaultRecovery={"enabled":true,"credentialEnvironmentVariable":"CONTROL_SERVER_V2_FAULT_RECOVERY_CREDENTIAL"} FieldOperatorRoles={"path":"D:\\zhengyushao\\control-server-v2-ops\\field-operator-roles.json","onboardClearanceEntryDeclared":true}
+after (re-read): gate=False stationDepartureWaitTimeout=00:05:00 cargoHoldingTimeout=00:05:00 VehicleFaultRecovery={"enabled":false,"credentialEnvironmentVariable":"CONTROL_SERVER_V2_FAULT_RECOVERY_CREDENTIAL"} FieldOperatorRoles={"path":"D:\\zhengyushao\\control-server-v2-ops\\field-operator-roles.json","onboardClearanceEntryDeclared":false}
+--- 3b. registry Environment
+before keys: DOTNET_ENVIRONMENT,CONTROL_SERVER_RIOT_CALL_API_KEY,CONTROL_SERVER_ONBOARD_CREDENTIAL,CONTROL_SERVER_V2_ONBOARD_SAFETY_CREDENTIAL_RIOT59,CONTROL_SERVER_V2_ONBOARD_SAFETY_CREDENTIAL_RIOT60,CONTROL_SERVER_MES_INGEST_SHARED_SECRET,CONTROL_SERVER_V2_FAULT_RECOVERY_CREDENTIAL
+after keys (re-read): DOTNET_ENVIRONMENT,CONTROL_SERVER_RIOT_CALL_API_KEY,CONTROL_SERVER_ONBOARD_CREDENTIAL,CONTROL_SERVER_V2_ONBOARD_SAFETY_CREDENTIAL_RIOT59,CONTROL_SERVER_V2_ONBOARD_SAFETY_CREDENTIAL_RIOT60,CONTROL_SERVER_MES_INGEST_SHARED_SECRET
+CONTROL_SERVER_V2_FAULT_RECOVERY_CREDENTIAL present after: False
+--- 5. charger roster empty, policy v1
+{"command":"import-charger-roster","outcome":"OK","dryRun":false,"input":"D:\\zhengyushao\\control-server-v2-ops\\field-2fe490d7\\charger-roster-empty.json","catalog":"D:\\zhengyushao\\control-server-v2-ops\\stations-26-20261011-214114.json","mapId":26,"fleet":["BROKERX-f38975561adf46ccb1d2f23833c7d0e4","BROKERX-7daca4ee91da498d8026c68b7b941127"],"entryCount":0,"emptyRoster":true,"previousVersion":2,"version":3,"contentSha256":"8939cc82b4dd68ca94e29e2123728f193cdb0de398bcef43e38e634c187598f1","snapshotId":"05f1cb886d184c2f8dca478d805eb902","loadedAt":"2026-10-11T21:41:19.5829694+08:00","approvedBy":"Zhengyu Shao","approvalBasis":"用户 2026-09-29 定（control-server#400）：授权窗口之外 v2 名册置空，v2 不会分配站 211，MVP 与 agv01 照常使用","changeNote":"关窗：空名册。进行中的充电周期按原快照继续到结束。","errorCount":0,"errors":[],"changes":[{"mapId":26,"stationId":211,"kind":"REMOVED","before":{"mapId":26,"stationId":211,"stationName":"充电点1","entryStationId":212,"exitStationId":212,"vehicleScope":[]},"after":null}],"inProgress":{"openCycleCount":0,"openCycles":[],"chargerReservations":[],"retention":"These continue under the snapshot they started with until they end; this import affects only new allocations (REQ-0282, REQ-0173). It cancels no order, releases no reservation and ends no cycle."},"windowCanClose":true,"windowNote":"No charging is under way; the window can close."}
+exit=0
+{"command":"charger-roster","outcome":"OK","version":3,"contentSha256":"8939cc82b4dd68ca94e29e2123728f193cdb0de398bcef43e38e634c187598f1","snapshotId":"05f1cb886d184c2f8dca478d805eb902","loadedAt":"2026-10-11T21:41:19.5829694+08:00","source":"GOVERNED_IMPORT","approvedBy":"Zhengyu Shao","approvalBasis":"用户 2026-09-29 定（control-server#400）：授权窗口之外 v2 名册置空，v2 不会分配站 211，MVP 与 agv01 照常使用","changeNote":"关窗：空名册。进行中的充电周期按原快照继续到结束。","emptyRoster":true,"chargers":[],"inProgress":{"openCycleCount":0,"openCycles":[],"chargerReservations":[],"retention":"These continue under the snapshot they started with until they end; this import affects only new allocations (REQ-0282, REQ-0173). It cancels no order, releases no reservation and ends no cycle."}}
+exit=0
+activeVersion=1 active={"minimumPostTaskBatteryMarginPercent":20,"mandatoryChargeEntryThresholdPercent":30,"chargingCompletionThresholdPercent":80,"estimatedTaskConsumptionPercent":10,"progressStabilizationSeconds":180,"progressObservationWindowSeconds":600,"progressMinimumIncreasePercent":3,"vehicleScope":[]}
+--- 6. residue on 211
+## select * from StationExclusivities
+MapId=26 | StationId=216 | StationKind=WAITING_POINT | State=OCCUPIED | VehicleKey=BROKERX-f38975561adf46ccb1d2f23833c7d0e4 | JourneyId=idle-return:BROKERX-f38975561adf46ccb1d2f23833c7d0e4:20261011T133515220Z | StateSince=2026-10-11 13:35:57.0846745+00:00 | WaitingPointVersion=1 | RecordId=03e73984-5864-4979-bfb9-3cebdf7db41b | ChargerRosterVersion=
+## select HoldId,StationId,Trigger from ChargingStationAllocationHolds h where not exists (select 1 from ChargingStationRecoveries r where r.HoldId=h.HoldId)
+## select * from VehicleChargingEligibilityHolds
+## select * from ManualChargingHolds
+## select CycleId,StationId,Phase,EndReason from ChargingCycles where Phase<>'ENDED'
+--- 7. V2 Manual
+V2 state=Stopped startMode=Manual
+MVP state=Running pid=15624 startMode=Auto
+=== 2026-10-11 21:41:27 close-out done

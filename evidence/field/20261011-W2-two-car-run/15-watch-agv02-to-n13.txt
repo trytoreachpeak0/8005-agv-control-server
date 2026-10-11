@@ -1,0 +1,269 @@
+19:20:06 agv02 pos=0 move=MT_RUNNING sys=EXECUTING battery=86 emergency=OK
+    RIoT nonfinal: W2G-c1000566-0000-0000-0000-000000000005-PICKUP-1 (len 49) state=3
+19:20:06 agv03 pos=3 move=MT_FINISHED sys=IDLE battery=78 emergency=OK
+## SELECT JourneyId, AgvId, LoadingPhaseState, LoadingClosedReason, YieldTriggeredByVehicleKey, YieldTriggeredAt, CargoHoldingStartedAt, BlockReasonCode, UpdatedAt FROM JourneyRuntimes WHERE JourneyId LIKE 'journey:%' ORDER BY rowid DESC LIMIT 4
+JourneyId=journey:c1000566-0000-0000-0000-000000000005 | AgvId=老厂前线新多仓位2 | LoadingPhaseState= | LoadingClosedReason= | YieldTriggeredByVehicleKey= | YieldTriggeredAt= | CargoHoldingStartedAt= | BlockReasonCode=ONBOARD_SESSION_NOT_READY | UpdatedAt=2026-10-11 11:20:04.7761905+00:00
+JourneyId=journey:c1000566-0000-0000-0000-000000000004 | AgvId=老厂前线新多仓位3 | LoadingPhaseState=CLOSED | LoadingClosedReason=WAITING_STATION_YIELD | YieldTriggeredByVehicleKey=BROKERX-f38975561adf46ccb1d2f23833c7d0e4 | YieldTriggeredAt=2026-10-11 11:19:23.1636885+00:00 | CargoHoldingStartedAt=2026-10-11 11:19:14.9559536+00:00 | BlockReasonCode= | UpdatedAt=2026-10-11 11:19:24.8022072+00:00
+## SELECT DemandId, JourneyId, Status, ExpectedBasketCount, TargetSlotsJson FROM JourneyDemands ORDER BY rowid DESC LIMIT 4
+DemandId=c1000566-0000-0000-0000-000000000005 | JourneyId=journey:c1000566-0000-0000-0000-000000000005 | Status=PENDING_LOAD | ExpectedBasketCount=4 | TargetSlotsJson=[1,2,3,4]
+DemandId=c1000566-0000-0000-0000-000000000004 | JourneyId=journey:c1000566-0000-0000-0000-000000000004 | Status=LOADED | ExpectedBasketCount=1 | TargetSlotsJson=[1]
+## SELECT StationId, StationKind, State, VehicleKey, JourneyId FROM StationExclusivities
+StationId=210 | StationKind=FIXED_TASK_STATION | State=RESERVED | VehicleKey=BROKERX-7daca4ee91da498d8026c68b7b941127 | JourneyId=journey:c1000566-0000-0000-0000-000000000004
+19:20:18 agv02 pos=0 move=MT_RUNNING sys=EXECUTING battery=86 emergency=OK
+    RIoT nonfinal: W2G-c1000566-0000-0000-0000-000000000005-PICKUP-1 (len 49) state=3
+19:20:19 agv03 pos=3 move=MT_FINISHED sys=IDLE battery=78 emergency=OK
+## SELECT JourneyId, AgvId, LoadingPhaseState, LoadingClosedReason, YieldTriggeredByVehicleKey, YieldTriggeredAt, CargoHoldingStartedAt, BlockReasonCode, UpdatedAt FROM JourneyRuntimes WHERE JourneyId LIKE 'journey:%' ORDER BY rowid DESC LIMIT 4
+JourneyId=journey:c1000566-0000-0000-0000-000000000005 | AgvId=老厂前线新多仓位2 | LoadingPhaseState= | LoadingClosedReason= | YieldTriggeredByVehicleKey= | YieldTriggeredAt= | CargoHoldingStartedAt= | BlockReasonCode=ONBOARD_SESSION_NOT_READY | UpdatedAt=2026-10-11 11:20:18.771226+00:00
+JourneyId=journey:c1000566-0000-0000-0000-000000000004 | AgvId=老厂前线新多仓位3 | LoadingPhaseState=CLOSED | LoadingClosedReason=WAITING_STATION_YIELD | YieldTriggeredByVehicleKey=BROKERX-f38975561adf46ccb1d2f23833c7d0e4 | YieldTriggeredAt=2026-10-11 11:19:23.1636885+00:00 | CargoHoldingStartedAt=2026-10-11 11:19:14.9559536+00:00 | BlockReasonCode= | UpdatedAt=2026-10-11 11:19:24.8022072+00:00
+## SELECT DemandId, JourneyId, Status, ExpectedBasketCount, TargetSlotsJson FROM JourneyDemands ORDER BY rowid DESC LIMIT 4
+DemandId=c1000566-0000-0000-0000-000000000005 | JourneyId=journey:c1000566-0000-0000-0000-000000000005 | Status=PENDING_LOAD | ExpectedBasketCount=4 | TargetSlotsJson=[1,2,3,4]
+DemandId=c1000566-0000-0000-0000-000000000004 | JourneyId=journey:c1000566-0000-0000-0000-000000000004 | Status=LOADED | ExpectedBasketCount=1 | TargetSlotsJson=[1]
+## SELECT StationId, StationKind, State, VehicleKey, JourneyId FROM StationExclusivities
+StationId=210 | StationKind=FIXED_TASK_STATION | State=RESERVED | VehicleKey=BROKERX-7daca4ee91da498d8026c68b7b941127 | JourneyId=journey:c1000566-0000-0000-0000-000000000004
+19:20:31 agv02 pos=0 move=MT_RUNNING sys=EXECUTING battery=86 emergency=OK
+    RIoT nonfinal: W2G-c1000566-0000-0000-0000-000000000005-PICKUP-1 (len 49) state=3
+19:20:31 agv03 pos=3 move=MT_FINISHED sys=IDLE battery=78 emergency=OK
+## SELECT JourneyId, AgvId, LoadingPhaseState, LoadingClosedReason, YieldTriggeredByVehicleKey, YieldTriggeredAt, CargoHoldingStartedAt, BlockReasonCode, UpdatedAt FROM JourneyRuntimes WHERE JourneyId LIKE 'journey:%' ORDER BY rowid DESC LIMIT 4
+JourneyId=journey:c1000566-0000-0000-0000-000000000005 | AgvId=老厂前线新多仓位2 | LoadingPhaseState= | LoadingClosedReason= | YieldTriggeredByVehicleKey= | YieldTriggeredAt= | CargoHoldingStartedAt= | BlockReasonCode=ONBOARD_SESSION_NOT_READY | UpdatedAt=2026-10-11 11:20:30.8128941+00:00
+JourneyId=journey:c1000566-0000-0000-0000-000000000004 | AgvId=老厂前线新多仓位3 | LoadingPhaseState=CLOSED | LoadingClosedReason=WAITING_STATION_YIELD | YieldTriggeredByVehicleKey=BROKERX-f38975561adf46ccb1d2f23833c7d0e4 | YieldTriggeredAt=2026-10-11 11:19:23.1636885+00:00 | CargoHoldingStartedAt=2026-10-11 11:19:14.9559536+00:00 | BlockReasonCode= | UpdatedAt=2026-10-11 11:19:24.8022072+00:00
+## SELECT DemandId, JourneyId, Status, ExpectedBasketCount, TargetSlotsJson FROM JourneyDemands ORDER BY rowid DESC LIMIT 4
+DemandId=c1000566-0000-0000-0000-000000000005 | JourneyId=journey:c1000566-0000-0000-0000-000000000005 | Status=PENDING_LOAD | ExpectedBasketCount=4 | TargetSlotsJson=[1,2,3,4]
+DemandId=c1000566-0000-0000-0000-000000000004 | JourneyId=journey:c1000566-0000-0000-0000-000000000004 | Status=LOADED | ExpectedBasketCount=1 | TargetSlotsJson=[1]
+## SELECT StationId, StationKind, State, VehicleKey, JourneyId FROM StationExclusivities
+StationId=210 | StationKind=FIXED_TASK_STATION | State=RESERVED | VehicleKey=BROKERX-7daca4ee91da498d8026c68b7b941127 | JourneyId=journey:c1000566-0000-0000-0000-000000000004
+19:20:43 agv02 pos=0 move=MT_RUNNING sys=EXECUTING battery=86 emergency=OK
+    RIoT nonfinal: W2G-c1000566-0000-0000-0000-000000000005-PICKUP-1 (len 49) state=3
+19:20:43 agv03 pos=3 move=MT_FINISHED sys=IDLE battery=78 emergency=OK
+## SELECT JourneyId, AgvId, LoadingPhaseState, LoadingClosedReason, YieldTriggeredByVehicleKey, YieldTriggeredAt, CargoHoldingStartedAt, BlockReasonCode, UpdatedAt FROM JourneyRuntimes WHERE JourneyId LIKE 'journey:%' ORDER BY rowid DESC LIMIT 4
+JourneyId=journey:c1000566-0000-0000-0000-000000000005 | AgvId=老厂前线新多仓位2 | LoadingPhaseState= | LoadingClosedReason= | YieldTriggeredByVehicleKey= | YieldTriggeredAt= | CargoHoldingStartedAt= | BlockReasonCode=ONBOARD_SESSION_NOT_READY | UpdatedAt=2026-10-11 11:20:42.7872189+00:00
+JourneyId=journey:c1000566-0000-0000-0000-000000000004 | AgvId=老厂前线新多仓位3 | LoadingPhaseState=CLOSED | LoadingClosedReason=WAITING_STATION_YIELD | YieldTriggeredByVehicleKey=BROKERX-f38975561adf46ccb1d2f23833c7d0e4 | YieldTriggeredAt=2026-10-11 11:19:23.1636885+00:00 | CargoHoldingStartedAt=2026-10-11 11:19:14.9559536+00:00 | BlockReasonCode= | UpdatedAt=2026-10-11 11:19:24.8022072+00:00
+## SELECT DemandId, JourneyId, Status, ExpectedBasketCount, TargetSlotsJson FROM JourneyDemands ORDER BY rowid DESC LIMIT 4
+DemandId=c1000566-0000-0000-0000-000000000005 | JourneyId=journey:c1000566-0000-0000-0000-000000000005 | Status=PENDING_LOAD | ExpectedBasketCount=4 | TargetSlotsJson=[1,2,3,4]
+DemandId=c1000566-0000-0000-0000-000000000004 | JourneyId=journey:c1000566-0000-0000-0000-000000000004 | Status=LOADED | ExpectedBasketCount=1 | TargetSlotsJson=[1]
+## SELECT StationId, StationKind, State, VehicleKey, JourneyId FROM StationExclusivities
+StationId=210 | StationKind=FIXED_TASK_STATION | State=RESERVED | VehicleKey=BROKERX-7daca4ee91da498d8026c68b7b941127 | JourneyId=journey:c1000566-0000-0000-0000-000000000004
+19:20:55 agv02 pos=0 move=MT_RUNNING sys=EXECUTING battery=86 emergency=OK
+    RIoT nonfinal: W2G-c1000566-0000-0000-0000-000000000005-PICKUP-1 (len 49) state=3
+19:20:55 agv03 pos=0 move=MT_RUNNING sys=EXECUTING battery=78 emergency=OK
+    RIoT nonfinal: W2G-c1000566-0000-0000-0000-000000000004-GATE-1 (len 47) state=3
+## SELECT JourneyId, AgvId, LoadingPhaseState, LoadingClosedReason, YieldTriggeredByVehicleKey, YieldTriggeredAt, CargoHoldingStartedAt, BlockReasonCode, UpdatedAt FROM JourneyRuntimes WHERE JourneyId LIKE 'journey:%' ORDER BY rowid DESC LIMIT 4
+JourneyId=journey:c1000566-0000-0000-0000-000000000005 | AgvId=老厂前线新多仓位2 | LoadingPhaseState= | LoadingClosedReason= | YieldTriggeredByVehicleKey= | YieldTriggeredAt= | CargoHoldingStartedAt= | BlockReasonCode=ONBOARD_SESSION_NOT_READY | UpdatedAt=2026-10-11 11:20:54.9058885+00:00
+JourneyId=journey:c1000566-0000-0000-0000-000000000004 | AgvId=老厂前线新多仓位3 | LoadingPhaseState=CLOSED | LoadingClosedReason=WAITING_STATION_YIELD | YieldTriggeredByVehicleKey=BROKERX-f38975561adf46ccb1d2f23833c7d0e4 | YieldTriggeredAt=2026-10-11 11:19:23.1636885+00:00 | CargoHoldingStartedAt=2026-10-11 11:19:14.9559536+00:00 | BlockReasonCode=ONBOARD_SESSION_NOT_READY | UpdatedAt=2026-10-11 11:20:54.7867117+00:00
+## SELECT DemandId, JourneyId, Status, ExpectedBasketCount, TargetSlotsJson FROM JourneyDemands ORDER BY rowid DESC LIMIT 4
+DemandId=c1000566-0000-0000-0000-000000000005 | JourneyId=journey:c1000566-0000-0000-0000-000000000005 | Status=PENDING_LOAD | ExpectedBasketCount=4 | TargetSlotsJson=[1,2,3,4]
+DemandId=c1000566-0000-0000-0000-000000000004 | JourneyId=journey:c1000566-0000-0000-0000-000000000004 | Status=LOADED | ExpectedBasketCount=1 | TargetSlotsJson=[1]
+## SELECT StationId, StationKind, State, VehicleKey, JourneyId FROM StationExclusivities
+StationId=210 | StationKind=FIXED_TASK_STATION | State=RESERVED | VehicleKey=BROKERX-7daca4ee91da498d8026c68b7b941127 | JourneyId=journey:c1000566-0000-0000-0000-000000000004
+19:20:46.000 Information 5870 RIoT command "POST" "http://172.19.206.222:8888/api/task/v1/route/getRouteCostsBy" sent
+19:20:46.000 Information 5871 RIoT command "POST" "http://172.19.206.222:8888/api/task/v1/route/getRouteCostsBy" answered 200 after 19.722 ms
+19:20:47.000 Information 5870 RIoT command "POST" "http://172.19.206.222:8888/api/order/v1/add/byDefaultMissions" sent
+19:20:47.000 Information 5871 RIoT command "POST" "http://172.19.206.222:8888/api/order/v1/add/byDefaultMissions" answered 200 after 127.1915 ms
+19:21:08 agv02 pos=0 move=MT_RUNNING sys=EXECUTING battery=86 emergency=OK
+    RIoT nonfinal: W2G-c1000566-0000-0000-0000-000000000005-PICKUP-1 (len 49) state=3
+19:21:08 agv03 pos=0 move=MT_RUNNING sys=EXECUTING battery=78 emergency=OK
+    RIoT nonfinal: W2G-c1000566-0000-0000-0000-000000000004-GATE-1 (len 47) state=3
+## SELECT JourneyId, AgvId, LoadingPhaseState, LoadingClosedReason, YieldTriggeredByVehicleKey, YieldTriggeredAt, CargoHoldingStartedAt, BlockReasonCode, UpdatedAt FROM JourneyRuntimes WHERE JourneyId LIKE 'journey:%' ORDER BY rowid DESC LIMIT 4
+JourneyId=journey:c1000566-0000-0000-0000-000000000005 | AgvId=老厂前线新多仓位2 | LoadingPhaseState= | LoadingClosedReason= | YieldTriggeredByVehicleKey= | YieldTriggeredAt= | CargoHoldingStartedAt= | BlockReasonCode=ONBOARD_SESSION_NOT_READY | UpdatedAt=2026-10-11 11:21:06.8981032+00:00
+JourneyId=journey:c1000566-0000-0000-0000-000000000004 | AgvId=老厂前线新多仓位3 | LoadingPhaseState=CLOSED | LoadingClosedReason=WAITING_STATION_YIELD | YieldTriggeredByVehicleKey=BROKERX-f38975561adf46ccb1d2f23833c7d0e4 | YieldTriggeredAt=2026-10-11 11:19:23.1636885+00:00 | CargoHoldingStartedAt=2026-10-11 11:19:14.9559536+00:00 | BlockReasonCode=ONBOARD_SESSION_NOT_READY | UpdatedAt=2026-10-11 11:21:06.774752+00:00
+## SELECT DemandId, JourneyId, Status, ExpectedBasketCount, TargetSlotsJson FROM JourneyDemands ORDER BY rowid DESC LIMIT 4
+DemandId=c1000566-0000-0000-0000-000000000005 | JourneyId=journey:c1000566-0000-0000-0000-000000000005 | Status=PENDING_LOAD | ExpectedBasketCount=4 | TargetSlotsJson=[1,2,3,4]
+DemandId=c1000566-0000-0000-0000-000000000004 | JourneyId=journey:c1000566-0000-0000-0000-000000000004 | Status=LOADED | ExpectedBasketCount=1 | TargetSlotsJson=[1]
+## SELECT StationId, StationKind, State, VehicleKey, JourneyId FROM StationExclusivities
+StationId=210 | StationKind=FIXED_TASK_STATION | State=RESERVED | VehicleKey=BROKERX-7daca4ee91da498d8026c68b7b941127 | JourneyId=journey:c1000566-0000-0000-0000-000000000004
+19:20:46.000 Information 5870 RIoT command "POST" "http://172.19.206.222:8888/api/task/v1/route/getRouteCostsBy" sent
+19:20:46.000 Information 5871 RIoT command "POST" "http://172.19.206.222:8888/api/task/v1/route/getRouteCostsBy" answered 200 after 19.722 ms
+19:20:47.000 Information 5870 RIoT command "POST" "http://172.19.206.222:8888/api/order/v1/add/byDefaultMissions" sent
+19:20:47.000 Information 5871 RIoT command "POST" "http://172.19.206.222:8888/api/order/v1/add/byDefaultMissions" answered 200 after 127.1915 ms
+19:21:20 agv02 pos=0 move=MT_RUNNING sys=EXECUTING battery=86 emergency=OK
+    RIoT nonfinal: W2G-c1000566-0000-0000-0000-000000000005-PICKUP-1 (len 49) state=3
+19:21:20 agv03 pos=0 move=MT_RUNNING sys=EXECUTING battery=78 emergency=OK
+    RIoT nonfinal: W2G-c1000566-0000-0000-0000-000000000004-GATE-1 (len 47) state=3
+## SELECT JourneyId, AgvId, LoadingPhaseState, LoadingClosedReason, YieldTriggeredByVehicleKey, YieldTriggeredAt, CargoHoldingStartedAt, BlockReasonCode, UpdatedAt FROM JourneyRuntimes WHERE JourneyId LIKE 'journey:%' ORDER BY rowid DESC LIMIT 4
+JourneyId=journey:c1000566-0000-0000-0000-000000000005 | AgvId=老厂前线新多仓位2 | LoadingPhaseState= | LoadingClosedReason= | YieldTriggeredByVehicleKey= | YieldTriggeredAt= | CargoHoldingStartedAt= | BlockReasonCode=ONBOARD_SESSION_NOT_READY | UpdatedAt=2026-10-11 11:21:18.8842666+00:00
+JourneyId=journey:c1000566-0000-0000-0000-000000000004 | AgvId=老厂前线新多仓位3 | LoadingPhaseState=CLOSED | LoadingClosedReason=WAITING_STATION_YIELD | YieldTriggeredByVehicleKey=BROKERX-f38975561adf46ccb1d2f23833c7d0e4 | YieldTriggeredAt=2026-10-11 11:19:23.1636885+00:00 | CargoHoldingStartedAt=2026-10-11 11:19:14.9559536+00:00 | BlockReasonCode=ONBOARD_SESSION_NOT_READY | UpdatedAt=2026-10-11 11:21:18.7638814+00:00
+## SELECT DemandId, JourneyId, Status, ExpectedBasketCount, TargetSlotsJson FROM JourneyDemands ORDER BY rowid DESC LIMIT 4
+DemandId=c1000566-0000-0000-0000-000000000005 | JourneyId=journey:c1000566-0000-0000-0000-000000000005 | Status=PENDING_LOAD | ExpectedBasketCount=4 | TargetSlotsJson=[1,2,3,4]
+DemandId=c1000566-0000-0000-0000-000000000004 | JourneyId=journey:c1000566-0000-0000-0000-000000000004 | Status=LOADED | ExpectedBasketCount=1 | TargetSlotsJson=[1]
+## SELECT StationId, StationKind, State, VehicleKey, JourneyId FROM StationExclusivities
+StationId=210 | StationKind=FIXED_TASK_STATION | State=RESERVED | VehicleKey=BROKERX-7daca4ee91da498d8026c68b7b941127 | JourneyId=journey:c1000566-0000-0000-0000-000000000004
+19:20:46.000 Information 5870 RIoT command "POST" "http://172.19.206.222:8888/api/task/v1/route/getRouteCostsBy" sent
+19:20:46.000 Information 5871 RIoT command "POST" "http://172.19.206.222:8888/api/task/v1/route/getRouteCostsBy" answered 200 after 19.722 ms
+19:20:47.000 Information 5870 RIoT command "POST" "http://172.19.206.222:8888/api/order/v1/add/byDefaultMissions" sent
+19:20:47.000 Information 5871 RIoT command "POST" "http://172.19.206.222:8888/api/order/v1/add/byDefaultMissions" answered 200 after 127.1915 ms
+19:21:33 agv02 pos=0 move=MT_RUNNING sys=EXECUTING battery=86 emergency=OK
+    RIoT nonfinal: W2G-c1000566-0000-0000-0000-000000000005-PICKUP-1 (len 49) state=3
+19:21:33 agv03 pos=0 move=MT_RUNNING sys=PAUSE battery=78 emergency=OK
+    RIoT nonfinal: W2G-c1000566-0000-0000-0000-000000000004-GATE-1 (len 47) state=3
+## SELECT JourneyId, AgvId, LoadingPhaseState, LoadingClosedReason, YieldTriggeredByVehicleKey, YieldTriggeredAt, CargoHoldingStartedAt, BlockReasonCode, UpdatedAt FROM JourneyRuntimes WHERE JourneyId LIKE 'journey:%' ORDER BY rowid DESC LIMIT 4
+JourneyId=journey:c1000566-0000-0000-0000-000000000005 | AgvId=老厂前线新多仓位2 | LoadingPhaseState= | LoadingClosedReason= | YieldTriggeredByVehicleKey= | YieldTriggeredAt= | CargoHoldingStartedAt= | BlockReasonCode=ONBOARD_SESSION_NOT_READY | UpdatedAt=2026-10-11 11:21:32.8897621+00:00
+JourneyId=journey:c1000566-0000-0000-0000-000000000004 | AgvId=老厂前线新多仓位3 | LoadingPhaseState=CLOSED | LoadingClosedReason=WAITING_STATION_YIELD | YieldTriggeredByVehicleKey=BROKERX-f38975561adf46ccb1d2f23833c7d0e4 | YieldTriggeredAt=2026-10-11 11:19:23.1636885+00:00 | CargoHoldingStartedAt=2026-10-11 11:19:14.9559536+00:00 | BlockReasonCode=ONBOARD_SESSION_NOT_READY | UpdatedAt=2026-10-11 11:21:32.7660908+00:00
+## SELECT DemandId, JourneyId, Status, ExpectedBasketCount, TargetSlotsJson FROM JourneyDemands ORDER BY rowid DESC LIMIT 4
+DemandId=c1000566-0000-0000-0000-000000000005 | JourneyId=journey:c1000566-0000-0000-0000-000000000005 | Status=PENDING_LOAD | ExpectedBasketCount=4 | TargetSlotsJson=[1,2,3,4]
+DemandId=c1000566-0000-0000-0000-000000000004 | JourneyId=journey:c1000566-0000-0000-0000-000000000004 | Status=LOADED | ExpectedBasketCount=1 | TargetSlotsJson=[1]
+## SELECT StationId, StationKind, State, VehicleKey, JourneyId FROM StationExclusivities
+StationId=210 | StationKind=FIXED_TASK_STATION | State=RESERVED | VehicleKey=BROKERX-7daca4ee91da498d8026c68b7b941127 | JourneyId=journey:c1000566-0000-0000-0000-000000000004
+19:20:46.000 Information 5870 RIoT command "POST" "http://172.19.206.222:8888/api/task/v1/route/getRouteCostsBy" sent
+19:20:46.000 Information 5871 RIoT command "POST" "http://172.19.206.222:8888/api/task/v1/route/getRouteCostsBy" answered 200 after 19.722 ms
+19:20:47.000 Information 5870 RIoT command "POST" "http://172.19.206.222:8888/api/order/v1/add/byDefaultMissions" sent
+19:20:47.000 Information 5871 RIoT command "POST" "http://172.19.206.222:8888/api/order/v1/add/byDefaultMissions" answered 200 after 127.1915 ms
+19:21:45 agv02 pos=0 move=MT_RUNNING sys=EXECUTING battery=86 emergency=OK
+    RIoT nonfinal: W2G-c1000566-0000-0000-0000-000000000005-PICKUP-1 (len 49) state=3
+19:21:45 agv03 pos=0 move=MT_RUNNING sys=EXECUTING battery=78 emergency=OK
+    RIoT nonfinal: W2G-c1000566-0000-0000-0000-000000000004-GATE-1 (len 47) state=3
+## SELECT JourneyId, AgvId, LoadingPhaseState, LoadingClosedReason, YieldTriggeredByVehicleKey, YieldTriggeredAt, CargoHoldingStartedAt, BlockReasonCode, UpdatedAt FROM JourneyRuntimes WHERE JourneyId LIKE 'journey:%' ORDER BY rowid DESC LIMIT 4
+JourneyId=journey:c1000566-0000-0000-0000-000000000005 | AgvId=老厂前线新多仓位2 | LoadingPhaseState= | LoadingClosedReason= | YieldTriggeredByVehicleKey= | YieldTriggeredAt= | CargoHoldingStartedAt= | BlockReasonCode=ONBOARD_SESSION_NOT_READY | UpdatedAt=2026-10-11 11:21:44.8886631+00:00
+JourneyId=journey:c1000566-0000-0000-0000-000000000004 | AgvId=老厂前线新多仓位3 | LoadingPhaseState=CLOSED | LoadingClosedReason=WAITING_STATION_YIELD | YieldTriggeredByVehicleKey=BROKERX-f38975561adf46ccb1d2f23833c7d0e4 | YieldTriggeredAt=2026-10-11 11:19:23.1636885+00:00 | CargoHoldingStartedAt=2026-10-11 11:19:14.9559536+00:00 | BlockReasonCode=ONBOARD_SESSION_NOT_READY | UpdatedAt=2026-10-11 11:21:44.7639818+00:00
+## SELECT DemandId, JourneyId, Status, ExpectedBasketCount, TargetSlotsJson FROM JourneyDemands ORDER BY rowid DESC LIMIT 4
+DemandId=c1000566-0000-0000-0000-000000000005 | JourneyId=journey:c1000566-0000-0000-0000-000000000005 | Status=PENDING_LOAD | ExpectedBasketCount=4 | TargetSlotsJson=[1,2,3,4]
+DemandId=c1000566-0000-0000-0000-000000000004 | JourneyId=journey:c1000566-0000-0000-0000-000000000004 | Status=LOADED | ExpectedBasketCount=1 | TargetSlotsJson=[1]
+## SELECT StationId, StationKind, State, VehicleKey, JourneyId FROM StationExclusivities
+StationId=210 | StationKind=FIXED_TASK_STATION | State=RESERVED | VehicleKey=BROKERX-7daca4ee91da498d8026c68b7b941127 | JourneyId=journey:c1000566-0000-0000-0000-000000000004
+19:20:46.000 Information 5870 RIoT command "POST" "http://172.19.206.222:8888/api/task/v1/route/getRouteCostsBy" sent
+19:20:46.000 Information 5871 RIoT command "POST" "http://172.19.206.222:8888/api/task/v1/route/getRouteCostsBy" answered 200 after 19.722 ms
+19:20:47.000 Information 5870 RIoT command "POST" "http://172.19.206.222:8888/api/order/v1/add/byDefaultMissions" sent
+19:20:47.000 Information 5871 RIoT command "POST" "http://172.19.206.222:8888/api/order/v1/add/byDefaultMissions" answered 200 after 127.1915 ms
+19:21:58 agv02 pos=0 move=MT_RUNNING sys=EXECUTING battery=86 emergency=OK
+    RIoT nonfinal: W2G-c1000566-0000-0000-0000-000000000005-PICKUP-1 (len 49) state=3
+19:21:58 agv03 pos=0 move=MT_RUNNING sys=EXECUTING battery=78 emergency=OK
+    RIoT nonfinal: W2G-c1000566-0000-0000-0000-000000000004-GATE-1 (len 47) state=3
+## SELECT JourneyId, AgvId, LoadingPhaseState, LoadingClosedReason, YieldTriggeredByVehicleKey, YieldTriggeredAt, CargoHoldingStartedAt, BlockReasonCode, UpdatedAt FROM JourneyRuntimes WHERE JourneyId LIKE 'journey:%' ORDER BY rowid DESC LIMIT 4
+JourneyId=journey:c1000566-0000-0000-0000-000000000005 | AgvId=老厂前线新多仓位2 | LoadingPhaseState= | LoadingClosedReason= | YieldTriggeredByVehicleKey= | YieldTriggeredAt= | CargoHoldingStartedAt= | BlockReasonCode=ONBOARD_SESSION_NOT_READY | UpdatedAt=2026-10-11 11:21:56.920288+00:00
+JourneyId=journey:c1000566-0000-0000-0000-000000000004 | AgvId=老厂前线新多仓位3 | LoadingPhaseState=CLOSED | LoadingClosedReason=WAITING_STATION_YIELD | YieldTriggeredByVehicleKey=BROKERX-f38975561adf46ccb1d2f23833c7d0e4 | YieldTriggeredAt=2026-10-11 11:19:23.1636885+00:00 | CargoHoldingStartedAt=2026-10-11 11:19:14.9559536+00:00 | BlockReasonCode=ONBOARD_SESSION_NOT_READY | UpdatedAt=2026-10-11 11:21:56.7630174+00:00
+## SELECT DemandId, JourneyId, Status, ExpectedBasketCount, TargetSlotsJson FROM JourneyDemands ORDER BY rowid DESC LIMIT 4
+DemandId=c1000566-0000-0000-0000-000000000005 | JourneyId=journey:c1000566-0000-0000-0000-000000000005 | Status=PENDING_LOAD | ExpectedBasketCount=4 | TargetSlotsJson=[1,2,3,4]
+DemandId=c1000566-0000-0000-0000-000000000004 | JourneyId=journey:c1000566-0000-0000-0000-000000000004 | Status=LOADED | ExpectedBasketCount=1 | TargetSlotsJson=[1]
+## SELECT StationId, StationKind, State, VehicleKey, JourneyId FROM StationExclusivities
+StationId=210 | StationKind=FIXED_TASK_STATION | State=RESERVED | VehicleKey=BROKERX-7daca4ee91da498d8026c68b7b941127 | JourneyId=journey:c1000566-0000-0000-0000-000000000004
+19:20:46.000 Information 5870 RIoT command "POST" "http://172.19.206.222:8888/api/task/v1/route/getRouteCostsBy" sent
+19:20:46.000 Information 5871 RIoT command "POST" "http://172.19.206.222:8888/api/task/v1/route/getRouteCostsBy" answered 200 after 19.722 ms
+19:20:47.000 Information 5870 RIoT command "POST" "http://172.19.206.222:8888/api/order/v1/add/byDefaultMissions" sent
+19:20:47.000 Information 5871 RIoT command "POST" "http://172.19.206.222:8888/api/order/v1/add/byDefaultMissions" answered 200 after 127.1915 ms
+19:22:10 agv02 pos=0 move=MT_RUNNING sys=EXECUTING battery=85 emergency=OK
+    RIoT nonfinal: W2G-c1000566-0000-0000-0000-000000000005-PICKUP-1 (len 49) state=3
+19:22:10 agv03 pos=0 move=MT_RUNNING sys=EXECUTING battery=78 emergency=OK
+    RIoT nonfinal: W2G-c1000566-0000-0000-0000-000000000004-GATE-1 (len 47) state=3
+## SELECT JourneyId, AgvId, LoadingPhaseState, LoadingClosedReason, YieldTriggeredByVehicleKey, YieldTriggeredAt, CargoHoldingStartedAt, BlockReasonCode, UpdatedAt FROM JourneyRuntimes WHERE JourneyId LIKE 'journey:%' ORDER BY rowid DESC LIMIT 4
+JourneyId=journey:c1000566-0000-0000-0000-000000000005 | AgvId=老厂前线新多仓位2 | LoadingPhaseState= | LoadingClosedReason= | YieldTriggeredByVehicleKey= | YieldTriggeredAt= | CargoHoldingStartedAt= | BlockReasonCode=ONBOARD_SESSION_NOT_READY | UpdatedAt=2026-10-11 11:22:08.9181013+00:00
+JourneyId=journey:c1000566-0000-0000-0000-000000000004 | AgvId=老厂前线新多仓位3 | LoadingPhaseState=CLOSED | LoadingClosedReason=WAITING_STATION_YIELD | YieldTriggeredByVehicleKey=BROKERX-f38975561adf46ccb1d2f23833c7d0e4 | YieldTriggeredAt=2026-10-11 11:19:23.1636885+00:00 | CargoHoldingStartedAt=2026-10-11 11:19:14.9559536+00:00 | BlockReasonCode=ONBOARD_SESSION_NOT_READY | UpdatedAt=2026-10-11 11:22:10.756586+00:00
+## SELECT DemandId, JourneyId, Status, ExpectedBasketCount, TargetSlotsJson FROM JourneyDemands ORDER BY rowid DESC LIMIT 4
+DemandId=c1000566-0000-0000-0000-000000000005 | JourneyId=journey:c1000566-0000-0000-0000-000000000005 | Status=PENDING_LOAD | ExpectedBasketCount=4 | TargetSlotsJson=[1,2,3,4]
+DemandId=c1000566-0000-0000-0000-000000000004 | JourneyId=journey:c1000566-0000-0000-0000-000000000004 | Status=LOADED | ExpectedBasketCount=1 | TargetSlotsJson=[1]
+## SELECT StationId, StationKind, State, VehicleKey, JourneyId FROM StationExclusivities
+StationId=210 | StationKind=FIXED_TASK_STATION | State=RESERVED | VehicleKey=BROKERX-7daca4ee91da498d8026c68b7b941127 | JourneyId=journey:c1000566-0000-0000-0000-000000000004
+19:20:46.000 Information 5870 RIoT command "POST" "http://172.19.206.222:8888/api/task/v1/route/getRouteCostsBy" sent
+19:20:46.000 Information 5871 RIoT command "POST" "http://172.19.206.222:8888/api/task/v1/route/getRouteCostsBy" answered 200 after 19.722 ms
+19:20:47.000 Information 5870 RIoT command "POST" "http://172.19.206.222:8888/api/order/v1/add/byDefaultMissions" sent
+19:20:47.000 Information 5871 RIoT command "POST" "http://172.19.206.222:8888/api/order/v1/add/byDefaultMissions" answered 200 after 127.1915 ms
+19:22:23 agv02 pos=0 move=MT_RUNNING sys=EXECUTING battery=85 emergency=OK
+    RIoT nonfinal: W2G-c1000566-0000-0000-0000-000000000005-PICKUP-1 (len 49) state=3
+19:22:23 agv03 pos=0 move=MT_RUNNING sys=EXECUTING battery=77 emergency=OK
+    RIoT nonfinal: W2G-c1000566-0000-0000-0000-000000000004-GATE-1 (len 47) state=3
+## SELECT JourneyId, AgvId, LoadingPhaseState, LoadingClosedReason, YieldTriggeredByVehicleKey, YieldTriggeredAt, CargoHoldingStartedAt, BlockReasonCode, UpdatedAt FROM JourneyRuntimes WHERE JourneyId LIKE 'journey:%' ORDER BY rowid DESC LIMIT 4
+JourneyId=journey:c1000566-0000-0000-0000-000000000005 | AgvId=老厂前线新多仓位2 | LoadingPhaseState= | LoadingClosedReason= | YieldTriggeredByVehicleKey= | YieldTriggeredAt= | CargoHoldingStartedAt= | BlockReasonCode=ONBOARD_SESSION_NOT_READY | UpdatedAt=2026-10-11 11:22:22.8940695+00:00
+JourneyId=journey:c1000566-0000-0000-0000-000000000004 | AgvId=老厂前线新多仓位3 | LoadingPhaseState=CLOSED | LoadingClosedReason=WAITING_STATION_YIELD | YieldTriggeredByVehicleKey=BROKERX-f38975561adf46ccb1d2f23833c7d0e4 | YieldTriggeredAt=2026-10-11 11:19:23.1636885+00:00 | CargoHoldingStartedAt=2026-10-11 11:19:14.9559536+00:00 | BlockReasonCode=ONBOARD_SESSION_NOT_READY | UpdatedAt=2026-10-11 11:22:22.7695015+00:00
+## SELECT DemandId, JourneyId, Status, ExpectedBasketCount, TargetSlotsJson FROM JourneyDemands ORDER BY rowid DESC LIMIT 4
+DemandId=c1000566-0000-0000-0000-000000000005 | JourneyId=journey:c1000566-0000-0000-0000-000000000005 | Status=PENDING_LOAD | ExpectedBasketCount=4 | TargetSlotsJson=[1,2,3,4]
+DemandId=c1000566-0000-0000-0000-000000000004 | JourneyId=journey:c1000566-0000-0000-0000-000000000004 | Status=LOADED | ExpectedBasketCount=1 | TargetSlotsJson=[1]
+## SELECT StationId, StationKind, State, VehicleKey, JourneyId FROM StationExclusivities
+StationId=210 | StationKind=FIXED_TASK_STATION | State=RESERVED | VehicleKey=BROKERX-7daca4ee91da498d8026c68b7b941127 | JourneyId=journey:c1000566-0000-0000-0000-000000000004
+19:20:46.000 Information 5870 RIoT command "POST" "http://172.19.206.222:8888/api/task/v1/route/getRouteCostsBy" sent
+19:20:46.000 Information 5871 RIoT command "POST" "http://172.19.206.222:8888/api/task/v1/route/getRouteCostsBy" answered 200 after 19.722 ms
+19:20:47.000 Information 5870 RIoT command "POST" "http://172.19.206.222:8888/api/order/v1/add/byDefaultMissions" sent
+19:20:47.000 Information 5871 RIoT command "POST" "http://172.19.206.222:8888/api/order/v1/add/byDefaultMissions" answered 200 after 127.1915 ms
+19:22:36 agv02 pos=0 move=MT_RUNNING sys=EXECUTING battery=85 emergency=OK
+    RIoT nonfinal: W2G-c1000566-0000-0000-0000-000000000005-PICKUP-1 (len 49) state=3
+19:22:36 agv03 pos=0 move=MT_RUNNING sys=EXECUTING battery=77 emergency=OK
+    RIoT nonfinal: W2G-c1000566-0000-0000-0000-000000000004-GATE-1 (len 47) state=3
+## SELECT JourneyId, AgvId, LoadingPhaseState, LoadingClosedReason, YieldTriggeredByVehicleKey, YieldTriggeredAt, CargoHoldingStartedAt, BlockReasonCode, UpdatedAt FROM JourneyRuntimes WHERE JourneyId LIKE 'journey:%' ORDER BY rowid DESC LIMIT 4
+JourneyId=journey:c1000566-0000-0000-0000-000000000005 | AgvId=老厂前线新多仓位2 | LoadingPhaseState= | LoadingClosedReason= | YieldTriggeredByVehicleKey= | YieldTriggeredAt= | CargoHoldingStartedAt= | BlockReasonCode=ONBOARD_SESSION_NOT_READY | UpdatedAt=2026-10-11 11:22:34.8625298+00:00
+JourneyId=journey:c1000566-0000-0000-0000-000000000004 | AgvId=老厂前线新多仓位3 | LoadingPhaseState=CLOSED | LoadingClosedReason=WAITING_STATION_YIELD | YieldTriggeredByVehicleKey=BROKERX-f38975561adf46ccb1d2f23833c7d0e4 | YieldTriggeredAt=2026-10-11 11:19:23.1636885+00:00 | CargoHoldingStartedAt=2026-10-11 11:19:14.9559536+00:00 | BlockReasonCode=ONBOARD_SESSION_NOT_READY | UpdatedAt=2026-10-11 11:22:34.7434677+00:00
+## SELECT DemandId, JourneyId, Status, ExpectedBasketCount, TargetSlotsJson FROM JourneyDemands ORDER BY rowid DESC LIMIT 4
+DemandId=c1000566-0000-0000-0000-000000000005 | JourneyId=journey:c1000566-0000-0000-0000-000000000005 | Status=PENDING_LOAD | ExpectedBasketCount=4 | TargetSlotsJson=[1,2,3,4]
+DemandId=c1000566-0000-0000-0000-000000000004 | JourneyId=journey:c1000566-0000-0000-0000-000000000004 | Status=LOADED | ExpectedBasketCount=1 | TargetSlotsJson=[1]
+## SELECT StationId, StationKind, State, VehicleKey, JourneyId FROM StationExclusivities
+StationId=210 | StationKind=FIXED_TASK_STATION | State=RESERVED | VehicleKey=BROKERX-7daca4ee91da498d8026c68b7b941127 | JourneyId=journey:c1000566-0000-0000-0000-000000000004
+19:20:46.000 Information 5870 RIoT command "POST" "http://172.19.206.222:8888/api/task/v1/route/getRouteCostsBy" sent
+19:20:46.000 Information 5871 RIoT command "POST" "http://172.19.206.222:8888/api/task/v1/route/getRouteCostsBy" answered 200 after 19.722 ms
+19:20:47.000 Information 5870 RIoT command "POST" "http://172.19.206.222:8888/api/order/v1/add/byDefaultMissions" sent
+19:20:47.000 Information 5871 RIoT command "POST" "http://172.19.206.222:8888/api/order/v1/add/byDefaultMissions" answered 200 after 127.1915 ms
+19:22:48 agv02 pos=0 move=MT_RUNNING sys=EXECUTING battery=85 emergency=OK
+    RIoT nonfinal: W2G-c1000566-0000-0000-0000-000000000005-PICKUP-1 (len 49) state=3
+19:22:48 agv03 pos=0 move=MT_RUNNING sys=EXECUTING battery=77 emergency=OK
+    RIoT nonfinal: W2G-c1000566-0000-0000-0000-000000000004-GATE-1 (len 47) state=3
+## SELECT JourneyId, AgvId, LoadingPhaseState, LoadingClosedReason, YieldTriggeredByVehicleKey, YieldTriggeredAt, CargoHoldingStartedAt, BlockReasonCode, UpdatedAt FROM JourneyRuntimes WHERE JourneyId LIKE 'journey:%' ORDER BY rowid DESC LIMIT 4
+JourneyId=journey:c1000566-0000-0000-0000-000000000005 | AgvId=老厂前线新多仓位2 | LoadingPhaseState= | LoadingClosedReason= | YieldTriggeredByVehicleKey= | YieldTriggeredAt= | CargoHoldingStartedAt= | BlockReasonCode=ONBOARD_SESSION_NOT_READY | UpdatedAt=2026-10-11 11:22:46.8724915+00:00
+JourneyId=journey:c1000566-0000-0000-0000-000000000004 | AgvId=老厂前线新多仓位3 | LoadingPhaseState=CLOSED | LoadingClosedReason=WAITING_STATION_YIELD | YieldTriggeredByVehicleKey=BROKERX-f38975561adf46ccb1d2f23833c7d0e4 | YieldTriggeredAt=2026-10-11 11:19:23.1636885+00:00 | CargoHoldingStartedAt=2026-10-11 11:19:14.9559536+00:00 | BlockReasonCode=ONBOARD_SESSION_NOT_READY | UpdatedAt=2026-10-11 11:22:46.7652636+00:00
+## SELECT DemandId, JourneyId, Status, ExpectedBasketCount, TargetSlotsJson FROM JourneyDemands ORDER BY rowid DESC LIMIT 4
+DemandId=c1000566-0000-0000-0000-000000000005 | JourneyId=journey:c1000566-0000-0000-0000-000000000005 | Status=PENDING_LOAD | ExpectedBasketCount=4 | TargetSlotsJson=[1,2,3,4]
+DemandId=c1000566-0000-0000-0000-000000000004 | JourneyId=journey:c1000566-0000-0000-0000-000000000004 | Status=LOADED | ExpectedBasketCount=1 | TargetSlotsJson=[1]
+## SELECT StationId, StationKind, State, VehicleKey, JourneyId FROM StationExclusivities
+StationId=210 | StationKind=FIXED_TASK_STATION | State=RESERVED | VehicleKey=BROKERX-7daca4ee91da498d8026c68b7b941127 | JourneyId=journey:c1000566-0000-0000-0000-000000000004
+19:20:46.000 Information 5870 RIoT command "POST" "http://172.19.206.222:8888/api/task/v1/route/getRouteCostsBy" sent
+19:20:46.000 Information 5871 RIoT command "POST" "http://172.19.206.222:8888/api/task/v1/route/getRouteCostsBy" answered 200 after 19.722 ms
+19:20:47.000 Information 5870 RIoT command "POST" "http://172.19.206.222:8888/api/order/v1/add/byDefaultMissions" sent
+19:20:47.000 Information 5871 RIoT command "POST" "http://172.19.206.222:8888/api/order/v1/add/byDefaultMissions" answered 200 after 127.1915 ms
+19:23:01 agv02 pos=0 move=MT_RUNNING sys=EXECUTING battery=85 emergency=OK
+    RIoT nonfinal: W2G-c1000566-0000-0000-0000-000000000005-PICKUP-1 (len 49) state=3
+19:23:01 agv03 pos=0 move=MT_RUNNING sys=EXECUTING battery=77 emergency=OK
+    RIoT nonfinal: W2G-c1000566-0000-0000-0000-000000000004-GATE-1 (len 47) state=3
+## SELECT JourneyId, AgvId, LoadingPhaseState, LoadingClosedReason, YieldTriggeredByVehicleKey, YieldTriggeredAt, CargoHoldingStartedAt, BlockReasonCode, UpdatedAt FROM JourneyRuntimes WHERE JourneyId LIKE 'journey:%' ORDER BY rowid DESC LIMIT 4
+JourneyId=journey:c1000566-0000-0000-0000-000000000005 | AgvId=老厂前线新多仓位2 | LoadingPhaseState= | LoadingClosedReason= | YieldTriggeredByVehicleKey= | YieldTriggeredAt= | CargoHoldingStartedAt= | BlockReasonCode=ONBOARD_SESSION_NOT_READY | UpdatedAt=2026-10-11 11:23:00.8598015+00:00
+JourneyId=journey:c1000566-0000-0000-0000-000000000004 | AgvId=老厂前线新多仓位3 | LoadingPhaseState=CLOSED | LoadingClosedReason=WAITING_STATION_YIELD | YieldTriggeredByVehicleKey=BROKERX-f38975561adf46ccb1d2f23833c7d0e4 | YieldTriggeredAt=2026-10-11 11:19:23.1636885+00:00 | CargoHoldingStartedAt=2026-10-11 11:19:14.9559536+00:00 | BlockReasonCode=ONBOARD_SESSION_NOT_READY | UpdatedAt=2026-10-11 11:23:00.7426644+00:00
+## SELECT DemandId, JourneyId, Status, ExpectedBasketCount, TargetSlotsJson FROM JourneyDemands ORDER BY rowid DESC LIMIT 4
+DemandId=c1000566-0000-0000-0000-000000000005 | JourneyId=journey:c1000566-0000-0000-0000-000000000005 | Status=PENDING_LOAD | ExpectedBasketCount=4 | TargetSlotsJson=[1,2,3,4]
+DemandId=c1000566-0000-0000-0000-000000000004 | JourneyId=journey:c1000566-0000-0000-0000-000000000004 | Status=LOADED | ExpectedBasketCount=1 | TargetSlotsJson=[1]
+## SELECT StationId, StationKind, State, VehicleKey, JourneyId FROM StationExclusivities
+StationId=210 | StationKind=FIXED_TASK_STATION | State=RESERVED | VehicleKey=BROKERX-7daca4ee91da498d8026c68b7b941127 | JourneyId=journey:c1000566-0000-0000-0000-000000000004
+19:20:46.000 Information 5870 RIoT command "POST" "http://172.19.206.222:8888/api/task/v1/route/getRouteCostsBy" sent
+19:20:46.000 Information 5871 RIoT command "POST" "http://172.19.206.222:8888/api/task/v1/route/getRouteCostsBy" answered 200 after 19.722 ms
+19:20:47.000 Information 5870 RIoT command "POST" "http://172.19.206.222:8888/api/order/v1/add/byDefaultMissions" sent
+19:20:47.000 Information 5871 RIoT command "POST" "http://172.19.206.222:8888/api/order/v1/add/byDefaultMissions" answered 200 after 127.1915 ms
+19:23:13 agv02 pos=0 move=MT_RUNNING sys=EXECUTING battery=85 emergency=OK
+    RIoT nonfinal: W2G-c1000566-0000-0000-0000-000000000005-PICKUP-1 (len 49) state=3
+19:23:13 agv03 pos=0 move=MT_RUNNING sys=EXECUTING battery=77 emergency=OK
+    RIoT nonfinal: W2G-c1000566-0000-0000-0000-000000000004-GATE-1 (len 47) state=3
+## SELECT JourneyId, AgvId, LoadingPhaseState, LoadingClosedReason, YieldTriggeredByVehicleKey, YieldTriggeredAt, CargoHoldingStartedAt, BlockReasonCode, UpdatedAt FROM JourneyRuntimes WHERE JourneyId LIKE 'journey:%' ORDER BY rowid DESC LIMIT 4
+JourneyId=journey:c1000566-0000-0000-0000-000000000005 | AgvId=老厂前线新多仓位2 | LoadingPhaseState= | LoadingClosedReason= | YieldTriggeredByVehicleKey= | YieldTriggeredAt= | CargoHoldingStartedAt= | BlockReasonCode=ONBOARD_SESSION_NOT_READY | UpdatedAt=2026-10-11 11:23:12.8602101+00:00
+JourneyId=journey:c1000566-0000-0000-0000-000000000004 | AgvId=老厂前线新多仓位3 | LoadingPhaseState=CLOSED | LoadingClosedReason=WAITING_STATION_YIELD | YieldTriggeredByVehicleKey=BROKERX-f38975561adf46ccb1d2f23833c7d0e4 | YieldTriggeredAt=2026-10-11 11:19:23.1636885+00:00 | CargoHoldingStartedAt=2026-10-11 11:19:14.9559536+00:00 | BlockReasonCode=ONBOARD_SESSION_NOT_READY | UpdatedAt=2026-10-11 11:23:12.7402136+00:00
+## SELECT DemandId, JourneyId, Status, ExpectedBasketCount, TargetSlotsJson FROM JourneyDemands ORDER BY rowid DESC LIMIT 4
+DemandId=c1000566-0000-0000-0000-000000000005 | JourneyId=journey:c1000566-0000-0000-0000-000000000005 | Status=PENDING_LOAD | ExpectedBasketCount=4 | TargetSlotsJson=[1,2,3,4]
+DemandId=c1000566-0000-0000-0000-000000000004 | JourneyId=journey:c1000566-0000-0000-0000-000000000004 | Status=LOADED | ExpectedBasketCount=1 | TargetSlotsJson=[1]
+## SELECT StationId, StationKind, State, VehicleKey, JourneyId FROM StationExclusivities
+StationId=210 | StationKind=FIXED_TASK_STATION | State=RESERVED | VehicleKey=BROKERX-7daca4ee91da498d8026c68b7b941127 | JourneyId=journey:c1000566-0000-0000-0000-000000000004
+19:20:46.000 Information 5870 RIoT command "POST" "http://172.19.206.222:8888/api/task/v1/route/getRouteCostsBy" sent
+19:20:46.000 Information 5871 RIoT command "POST" "http://172.19.206.222:8888/api/task/v1/route/getRouteCostsBy" answered 200 after 19.722 ms
+19:20:47.000 Information 5870 RIoT command "POST" "http://172.19.206.222:8888/api/order/v1/add/byDefaultMissions" sent
+19:20:47.000 Information 5871 RIoT command "POST" "http://172.19.206.222:8888/api/order/v1/add/byDefaultMissions" answered 200 after 127.1915 ms
+19:23:26 agv02 pos=0 move=MT_RUNNING sys=EXECUTING battery=85 emergency=OK
+    RIoT nonfinal: W2G-c1000566-0000-0000-0000-000000000005-PICKUP-1 (len 49) state=3
+19:23:26 agv03 pos=0 move=MT_RUNNING sys=EXECUTING battery=77 emergency=OK
+    RIoT nonfinal: W2G-c1000566-0000-0000-0000-000000000004-GATE-1 (len 47) state=3
+## SELECT JourneyId, AgvId, LoadingPhaseState, LoadingClosedReason, YieldTriggeredByVehicleKey, YieldTriggeredAt, CargoHoldingStartedAt, BlockReasonCode, UpdatedAt FROM JourneyRuntimes WHERE JourneyId LIKE 'journey:%' ORDER BY rowid DESC LIMIT 4
+JourneyId=journey:c1000566-0000-0000-0000-000000000005 | AgvId=老厂前线新多仓位2 | LoadingPhaseState= | LoadingClosedReason= | YieldTriggeredByVehicleKey= | YieldTriggeredAt= | CargoHoldingStartedAt= | BlockReasonCode=ONBOARD_SESSION_NOT_READY | UpdatedAt=2026-10-11 11:23:24.8814351+00:00
+JourneyId=journey:c1000566-0000-0000-0000-000000000004 | AgvId=老厂前线新多仓位3 | LoadingPhaseState=CLOSED | LoadingClosedReason=WAITING_STATION_YIELD | YieldTriggeredByVehicleKey=BROKERX-f38975561adf46ccb1d2f23833c7d0e4 | YieldTriggeredAt=2026-10-11 11:19:23.1636885+00:00 | CargoHoldingStartedAt=2026-10-11 11:19:14.9559536+00:00 | BlockReasonCode=ONBOARD_SESSION_NOT_READY | UpdatedAt=2026-10-11 11:23:24.7650027+00:00
+## SELECT DemandId, JourneyId, Status, ExpectedBasketCount, TargetSlotsJson FROM JourneyDemands ORDER BY rowid DESC LIMIT 4
+DemandId=c1000566-0000-0000-0000-000000000005 | JourneyId=journey:c1000566-0000-0000-0000-000000000005 | Status=PENDING_LOAD | ExpectedBasketCount=4 | TargetSlotsJson=[1,2,3,4]
+DemandId=c1000566-0000-0000-0000-000000000004 | JourneyId=journey:c1000566-0000-0000-0000-000000000004 | Status=LOADED | ExpectedBasketCount=1 | TargetSlotsJson=[1]
+## SELECT StationId, StationKind, State, VehicleKey, JourneyId FROM StationExclusivities
+StationId=210 | StationKind=FIXED_TASK_STATION | State=RESERVED | VehicleKey=BROKERX-7daca4ee91da498d8026c68b7b941127 | JourneyId=journey:c1000566-0000-0000-0000-000000000004
+19:20:46.000 Information 5870 RIoT command "POST" "http://172.19.206.222:8888/api/task/v1/route/getRouteCostsBy" sent
+19:20:46.000 Information 5871 RIoT command "POST" "http://172.19.206.222:8888/api/task/v1/route/getRouteCostsBy" answered 200 after 19.722 ms
+19:20:47.000 Information 5870 RIoT command "POST" "http://172.19.206.222:8888/api/order/v1/add/byDefaultMissions" sent
+19:20:47.000 Information 5871 RIoT command "POST" "http://172.19.206.222:8888/api/order/v1/add/byDefaultMissions" answered 200 after 127.1915 ms
+19:23:38 agv02 pos=0 move=MT_RUNNING sys=EXECUTING battery=85 emergency=OK
+    RIoT nonfinal: W2G-c1000566-0000-0000-0000-000000000005-PICKUP-1 (len 49) state=3
+19:23:39 agv03 pos=0 move=MT_RUNNING sys=EXECUTING battery=77 emergency=OK
+    RIoT nonfinal: W2G-c1000566-0000-0000-0000-000000000004-GATE-1 (len 47) state=3
+## SELECT JourneyId, AgvId, LoadingPhaseState, LoadingClosedReason, YieldTriggeredByVehicleKey, YieldTriggeredAt, CargoHoldingStartedAt, BlockReasonCode, UpdatedAt FROM JourneyRuntimes WHERE JourneyId LIKE 'journey:%' ORDER BY rowid DESC LIMIT 4
+JourneyId=journey:c1000566-0000-0000-0000-000000000005 | AgvId=老厂前线新多仓位2 | LoadingPhaseState= | LoadingClosedReason= | YieldTriggeredByVehicleKey= | YieldTriggeredAt= | CargoHoldingStartedAt= | BlockReasonCode=ONBOARD_SESSION_NOT_READY | UpdatedAt=2026-10-11 11:23:38.8659+00:00
+JourneyId=journey:c1000566-0000-0000-0000-000000000004 | AgvId=老厂前线新多仓位3 | LoadingPhaseState=CLOSED | LoadingClosedReason=WAITING_STATION_YIELD | YieldTriggeredByVehicleKey=BROKERX-f38975561adf46ccb1d2f23833c7d0e4 | YieldTriggeredAt=2026-10-11 11:19:23.1636885+00:00 | CargoHoldingStartedAt=2026-10-11 11:19:14.9559536+00:00 | BlockReasonCode=ONBOARD_SESSION_NOT_READY | UpdatedAt=2026-10-11 11:23:38.744984+00:00
+## SELECT DemandId, JourneyId, Status, ExpectedBasketCount, TargetSlotsJson FROM JourneyDemands ORDER BY rowid DESC LIMIT 4
+DemandId=c1000566-0000-0000-0000-000000000005 | JourneyId=journey:c1000566-0000-0000-0000-000000000005 | Status=PENDING_LOAD | ExpectedBasketCount=4 | TargetSlotsJson=[1,2,3,4]
+DemandId=c1000566-0000-0000-0000-000000000004 | JourneyId=journey:c1000566-0000-0000-0000-000000000004 | Status=LOADED | ExpectedBasketCount=1 | TargetSlotsJson=[1]
+## SELECT StationId, StationKind, State, VehicleKey, JourneyId FROM StationExclusivities
+StationId=210 | StationKind=FIXED_TASK_STATION | State=RESERVED | VehicleKey=BROKERX-7daca4ee91da498d8026c68b7b941127 | JourneyId=journey:c1000566-0000-0000-0000-000000000004
+19:20:46.000 Information 5870 RIoT command "POST" "http://172.19.206.222:8888/api/task/v1/route/getRouteCostsBy" sent
+19:20:46.000 Information 5871 RIoT command "POST" "http://172.19.206.222:8888/api/task/v1/route/getRouteCostsBy" answered 200 after 19.722 ms
+19:20:47.000 Information 5870 RIoT command "POST" "http://172.19.206.222:8888/api/order/v1/add/byDefaultMissions" sent
+19:20:47.000 Information 5871 RIoT command "POST" "http://172.19.206.222:8888/api/order/v1/add/byDefaultMissions" answered 200 after 127.1915 ms
+19:23:51 agv02 pos=3 move=MT_FINISHED sys=IDLE battery=85 emergency=OK

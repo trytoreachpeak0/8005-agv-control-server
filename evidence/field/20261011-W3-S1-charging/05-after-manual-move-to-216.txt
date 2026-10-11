@@ -1,0 +1,14 @@
+用户原话：「已经开到216了」（现场在 RIoT 上手动派 agv02 210→216）
+read at 2026-10-11T15:04:51.8968493+08:00 (RIoT read-only, GET only)
+### agv01  actionState=AT_FINISHED battery=54 batteryState=NO_CHARGE currentMap=老厂前线new currentPosition=80 emergencyState=OK movementState=MT_FINISHED speed=0 sysState=IDLE
+### agv02  actionState=AT_FINISHED battery=35 batteryState=NO_CHARGE currentMap=老厂前线new_wk currentPosition=216 emergencyState=OK movementState=MT_FINISHED speed=0 sysState=IDLE
+### agv03  actionState=AT_FINISHED battery=63 batteryState=NO_CHARGE currentMap=老厂前线new_wk currentPosition=222 emergencyState=OK movementState=MT_FINISHED speed=0 sysState=IDLE
+nonfinal orders total read: 252
+nonfinal orders mentioning agv01: 0
+nonfinal orders mentioning agv02: 0
+nonfinal orders mentioning agv03: 0
+15:04:54 pos=216 move=MT_FINISHED sys=IDLE proc=IDLE battery=35 emerg=OK speed=0
+JourneyId=idle-return:BROKERX-f38975561adf46ccb1d2f23833c7d0e4:20261011T065712286Z | Stage=AwaitingPickupArrival | BlockReasonCode=WAITING_POINT_ResultUnknown
+StationId=216 | State=RESERVED
+UpperId=W2G-IDLE-BROKERX-f38975561adf46ccb1d2f23833c7d0e4-20261011T065712286Z | Status=RESULT_UNKNOWN | LastCreateOutcome=CreateResponseUnknown
+## SELECT * FROM VehicleFaultStates
