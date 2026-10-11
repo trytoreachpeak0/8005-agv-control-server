@@ -15,10 +15,13 @@ namespace ControlServer.Host.Runtime;
 /// </para>
 /// <para>
 /// So: a command (anything but GET and HEAD) is logged when it is sent and when it is answered; any request answered
-/// with a status that is not success, or failing with an exception, is logged too; all of these at Information, the
-/// level the default loggers used, so the set of Warning records -- which several L2 "silent" criteria read, and the
-/// fake RIoT answers an absent order with 404 -- is what it was. A successful read is logged at Debug, which the Host's
-/// minimum level drops; the caller still logs its own verdict on a failed read. To count reads again for a diagnosis (control-server#573 did so from
+/// with a status that is not success, or failing with an exception, is logged too; all of these at Information. That is
+/// no weaker than before: with Microsoft.Extensions.Http 8.0.1 the default loggers wrote a status failure as two
+/// Information events 101, and an exception not at all (PR #595 review, measured). Not Warning, because the reads come
+/// about ten a second: a RIoT outage would write ten Warnings a second and bury the server's own alarms. (Raising a
+/// failed command to Warning, and summarising failed reads into one Warning per outage edge, is a follow-up.)
+/// A successful read is logged at Debug, which the Host's minimum level drops; the caller still logs its own verdict
+/// on a failed read. To count reads again for a diagnosis (control-server#573 did so from
 /// these lines), set <c>Serilog:MinimumLevel:Override:ControlServer.Host.Runtime.RiotHttpTrafficLogger</c> to
 /// <c>Debug</c> in the instance's <c>appsettings.Production.json</c> and restart.
 /// </para>

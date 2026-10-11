@@ -82,6 +82,26 @@ public sealed class ServerLogVolumeTests
     }
 
     [Fact]
+    public void HostAppliesTheFileLimitsBeforeItBindsSerilog()
+    {
+        // PR #595 review S1 (mutation M6): deleting the Host's call left every other test green, because they bind the sink
+        // through their own helper. The call has to be in Program.cs, outside a comment, and before UseSerilog reads the
+        // configuration.
+        string[] lines = File.ReadAllLines(Path.Combine(FindRepositoryRoot(), "src", "ControlServer.Host", "Program.cs"));
+        int Line(string start)
+        {
+            int[] found = [.. lines.Select((line, index) => (Text: line.Trim(), Index: index))
+                .Where(item => item.Text.StartsWith(start, StringComparison.Ordinal))
+                .Select(item => item.Index)];
+            return Assert.Single(found);
+        }
+
+        Assert.True(
+            Line("ServerLogFileLimits.Apply(builder.Configuration);") < Line("builder.Host.UseSerilog("),
+            "ServerLogFileLimits.Apply must run before builder.Host.UseSerilog binds the File sink");
+    }
+
+    [Fact]
     public void PackageLogLevelsDropPerStatementSqlAndDuplicateMesIngestLinesButKeepWhatTheReadBackAndSafetyNeed()
     {
         IConfigurationRoot configuration = new ConfigurationBuilder()
@@ -129,8 +149,9 @@ public sealed class ServerLogVolumeTests
         // Every command, request and response, at Information.
         Assert.Equal(2, riot.Count(entry => entry.Level == LogLevel.Information && entry.Message.Contains("POST", StringComparison.Ordinal)
             && entry.Message.Contains("/api/device/v1/command/sync/service/K2/triggerEmergency", StringComparison.Ordinal)));
-        // Every failure, a status that is not success and an exception, at Information: the level the default loggers
-        // used, so no Warning record appears that L2's "silent" criteria would read (the fake RIoT answers 404 often).
+        // Every failure, a status that is not success and an exception, at Information: the default loggers wrote a status
+        // failure at Information and an exception not at all, and at ten reads a second an outage as Warnings would bury
+        // the server's own alarms.
         Assert.Contains(riot, entry => entry.Level == LogLevel.Information && entry.Message.Contains("/api/fail", StringComparison.Ordinal)
             && entry.Message.Contains("500", StringComparison.Ordinal));
         Assert.Contains(riot, entry => entry.Level == LogLevel.Information && entry.Message.Contains("/api/throw", StringComparison.Ordinal)
@@ -162,7 +183,7 @@ public sealed class ServerLogVolumeTests
         string json = JsonSerializer.Serialize(new { Serilog = new { WriteTo = new[] { new { Name = "File", Args = args } } } });
         ConfigurationManager configuration = new();
         configuration.AddJsonStream(new MemoryStream(Encoding.UTF8.GetBytes(json)));
-        configuration.AddInMemoryCollection(ServerLogFileLimits.MissingSettings(configuration));
+        ServerLogFileLimits.Apply(configuration);
         return new LoggerConfiguration()
             .ReadFrom.Configuration(configuration, new ConfigurationReaderOptions(
                 typeof(Serilog.FileLoggerConfigurationExtensions).Assembly,

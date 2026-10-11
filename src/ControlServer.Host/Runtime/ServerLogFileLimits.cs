@@ -35,6 +35,17 @@ public static class ServerLogFileLimits
     /// </summary>
     public const int RetainedFileCountLimit = 48;
 
+    /// <summary>
+    /// Adds <see cref="MissingSettings"/> as the last configuration source. Program.cs calls this before UseSerilog, and
+    /// the tests bind the sink through this same call (PR #595 review S1: a copy of the wiring left the Host's line
+    /// untested).
+    /// </summary>
+    public static void Apply(ConfigurationManager configuration)
+    {
+        ArgumentNullException.ThrowIfNull(configuration);
+        configuration.AddInMemoryCollection(MissingSettings(configuration));
+    }
+
     /// <summary>The configuration keys to add so that every File sink rolls at its size limit.</summary>
     public static IReadOnlyDictionary<string, string?> MissingSettings(IConfiguration configuration)
     {
