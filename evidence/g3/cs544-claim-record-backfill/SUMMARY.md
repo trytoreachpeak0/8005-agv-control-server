@@ -32,3 +32,12 @@ PR：https://github.com/trytoreachpeak0/8005-agv-control-server/pull/606
 | `5-skipstores-after-review.log` | 审查后 | `-SkipStores` 全 PASS（第 0 节两项、第 3 节判据与两条 AST 检查） | — |
 
 `green/4-*/store-generator/` 精简过：只留 `assertions.json`（`run-result.json` 的 `storeProvenance.generator` 取自它）与 `SUMMARY.md`；`logs/`、`snapshots/`、`timeline.jsonl` 已删，所以 `run-result.json` 的 `evidenceFiles` 里列着、但本目录里找不到这些文件。删除发生在它们入库（`d00683f3`）之后，分支历史里仍有。
+
+## 审查后 CI 抓到的退役名护栏
+
+`test` 38118677487 在 `a183441b` 上红 1 条（读到的）：`Batch8OccupancyRetirementMigrationTests.NothingUnderScriptsTestsSrcToolsDocsOrWorkflowsNamesTheRetiredOccupancyAnyMore`，`Collection: ["scripts/Test-DemandBearingClaimRecordBackfill.ps1", "scripts/run-demand-bearing-g3-vectors.ps1"]`。两个脚本必须读批次 8 之前的租约表，按调度裁定登记进该护栏的 `counted`（次数按护栏自己的算法：三个退役名、不分大小写，runner 6、自检 3），不加整文件豁免、不改护栏逻辑、不改写脚本躲匹配。
+
+| 文件 | 读到的 | 自述／推论 |
+| --- | --- | --- |
+| `red/8-retired-name-guard-count-minus-one.log` | runner 的次数临时改 5：`Collection: ["scripts/run-demand-bearing-g3-vectors.ps1"]`，1 失败 | 改完已还原为 6（自述） |
+| `green/6-retired-name-guard-and-architecture-tests.log` | 护栏 + `ArchitectureTests` 80 通过；护栏单独 1 通过 | 本机定向，Release |
