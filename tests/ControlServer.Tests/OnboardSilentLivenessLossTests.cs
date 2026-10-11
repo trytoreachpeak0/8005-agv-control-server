@@ -342,7 +342,7 @@ public sealed class OnboardSilentLivenessLossTests
             }
         }
 
-        string[] recorded = await rig.Context.ProtocolInbox.AsNoTracking()
+        string[] recorded = await rig.ServerContext.ProtocolInbox.AsNoTracking()
             .Select(row => row.MessageId)
             .ToArrayAsync(TestContext.Current.CancellationToken);
 
@@ -416,6 +416,24 @@ public sealed class OnboardSilentLivenessLossTests
         TcpListener server = new(IPAddress.Loopback, reservation.Port);
         server.Start();
         server.Stop();
+    }
+
+    /// <summary>
+    /// 测试读库用的上下文不是服务线程正在用的那个，也不共用它的连接。
+    /// </summary>
+    /// <remarks>
+    /// <c>DbContext</c> 与 <c>SqliteConnection</c> 都不是线程安全的。原来测试线程直接读服务那个上下文，没出事只因为断言时
+    /// 服务恰好没在用它——那是时序上的运气：机器变快或变慢，服务的某次写就可能与断言的读撞在同一个实例上。
+    /// </remarks>
+    [Fact]
+    [Trait("IntegrationSlice", "FP-IS-05")]
+    public async Task TheTestReadsThroughAContextAndConnectionOfItsOwn()
+    {
+        await using LivenessRig rig = await LivenessRig.StartAsync(TimeSpan.FromMilliseconds(250));
+        await using ControlServerDbContext read = await rig.OpenReadContextAsync();
+
+        Assert.NotSame(rig.ServerContext, read);
+        Assert.NotSame(rig.ServerContext.Database.GetDbConnection(), read.Database.GetDbConnection());
     }
 
     // --- 辅助 ----------------------------------------------------------------------------------------
@@ -667,7 +685,11 @@ public sealed class OnboardSilentLivenessLossTests
         PortReservation port,
         OnboardTcpServer server) : IAsyncDisposable
     {
-        public ControlServerDbContext Context { get; } = context;
+        /// <summary>The context the server's processor uses. Only for asserting it is not shared; never read through it.</summary>
+        public ControlServerDbContext ServerContext { get; } = context;
+
+        /// <summary>Stub (control-server#256): still hands out the server's own context.</summary>
+        public Task<ControlServerDbContext> OpenReadContextAsync() => Task.FromResult(ServerContext);
 
         public int Port { get; private init; }
 
@@ -775,7 +797,7 @@ public sealed class OnboardSilentLivenessLossTests
                 server.Dispose();
                 port.Dispose();
                 await provider.DisposeAsync();
-                await Context.DisposeAsync();
+                await ServerContext.DisposeAsync();
                 await connection.DisposeAsync();
             }
             finally
