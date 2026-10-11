@@ -29,7 +29,10 @@ public static class ServerLogFileLimits
     /// <summary>64 MiB: a read-back reads whole files, and at the 2026-10-11 rate (300 MB/h) a file still lasts ~13 min.</summary>
     public const long FileSizeLimitBytes = 64L * 1024 * 1024;
 
-    /// <summary>48 files: about two weeks at the volume left after #587's level changes (about 180 MB a day).</summary>
+    /// <summary>
+    /// 48 files: over three weeks at the volume left after #587's level changes (about 1.5 % of the 2026-10-11 sample,
+    /// some 110 MB a day), and still 10 hours if those changes were undone.
+    /// </summary>
     public const int RetainedFileCountLimit = 48;
 
     /// <summary>The configuration keys to add so that every File sink rolls at its size limit.</summary>
