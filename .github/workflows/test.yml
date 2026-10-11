@@ -73,9 +73,11 @@ jobs:
       MSBUILDDISABLENODEREUSE: '1'
       # No build servers either, as in l2.yml (control-server#632, after #630 did the same there). The line above was
       # already here for a different reason, and it covers MSBuild worker nodes only: the MSBuild server and the shared
-      # compiler (VBCSCompiler) outlive the build regardless, and on 2026-10-12 about 1.2 GiB of dotnet that no job
-      # owned sat on win11-01 from this job's build until the job ended, next to an l2 round on the same machine (the v2
-      # workspace's ci-research/memory-budget.md). The build here runs once, so a warm compiler buys nothing.
+      # compiler (VBCSCompiler) outlive the build regardless. Sampled on win11-01 during run 38157565509 (2026-10-12): no
+      # MSBuild node or server was left, but one VBCSCompiler started by the host build in the Scenario SQL self-check
+      # and held up to 2.0 GiB private, owned by no job, until the runner killed it at job end, next to an l2 round on the
+      # same machine (control-server#632's PR; the v2 workspace's ci-research/memory-budget.md). The builds here are
+      # few, so a warm compiler buys little.
       # MSBuild reads UseSharedCompilation from the environment like any property, so it reaches the host build inside
       # Test-ScenarioSqlExplain.ps1 as well as the one in dotnet test.
       DOTNET_CLI_USE_MSBUILD_SERVER: '0'
