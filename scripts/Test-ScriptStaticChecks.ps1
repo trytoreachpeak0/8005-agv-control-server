@@ -234,11 +234,12 @@ $f = $null -eq $other
 
 # --- the repository ---------------------------------------------------------------------------------------------------
 $full = -not $Path
-$targets = if ($full) {
-    @(Get-ChildItem -LiteralPath $ScriptRoot -Recurse -File -Include '*.ps1', '*.psm1' | ForEach-Object FullName)
+# @() around the if: one -Path file would otherwise come out of it as a bare string.
+$targets = @(if ($full) {
+    Get-ChildItem -LiteralPath $ScriptRoot -Recurse -File -Include '*.ps1', '*.psm1' | ForEach-Object FullName
 } else {
-    @($Path | ForEach-Object { (Resolve-Path -LiteralPath $_).ProviderPath })
-}
+    $Path | ForEach-Object { (Resolve-Path -LiteralPath $_).ProviderPath }
+})
 
 $parse = Test-ScriptParse -Path $targets
 Write-Host "parse: $($parse.Files) files read, $(@($parse.Findings).Count) with errors"

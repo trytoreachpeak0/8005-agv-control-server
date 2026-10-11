@@ -594,8 +594,8 @@ function Get-ParameterName([System.Management.Automation.Language.FunctionDefini
     return @($parameters | ForEach-Object { Get-VariableName $_.Name })
 }
 
-# The AST passed as a command's Sql parameter, by name or by position; $null when there is none.
-function Get-SqlArgument([System.Management.Automation.Language.CommandAst]$Command, [int]$Position) {
+# The AST passed as a command's Sql parameter (or another, by -Name), by name or by position; $null when there is none.
+function Get-SqlArgument([System.Management.Automation.Language.CommandAst]$Command, [int]$Position, [string]$Name = 'Sql') {
     $elements = @($Command.CommandElements)
     $positional = 0
     for ($i = 1; $i -lt $elements.Count; $i++) {
@@ -606,7 +606,7 @@ function Get-SqlArgument([System.Management.Automation.Language.CommandAst]$Comm
                 $i++
                 $value = $elements[$i]
             }
-            if ($element.ParameterName -eq 'Sql') { return $value }
+            if ($element.ParameterName -eq $Name) { return $value }
             continue
         }
         if ($positional -eq $Position) { return $element }
@@ -675,11 +675,18 @@ checked: most scenario SQL carries a demand id, so this is the larger part, and 
 function Get-ScenarioLiteralSql {
     param([Parameter(Mandatory)][string[]]$Path, [Parameter(Mandatory)][hashtable]$Sinks)
     $literal = [System.Collections.Generic.List[object]]::new()
-    $nonLiteral = 0
+    $nonLiteral = 0; $otherDatabase = 0
     foreach ($file in $Path) {
         $ast = (Get-ParsedScript $file).Ast
         $local = @{} + $Sinks
         while (Add-DerivedSink $ast $local) { }
+        # Connections the script opens itself (SqliteConnection::new -- the onboard journal in the real-onboard scenarios):
+        # the server's connection always arrives from the orchestrator ($Context.Connection) or Open-L2Database.
+        $ownConnections = [System.Collections.Generic.HashSet[string]]::new([StringComparer]::OrdinalIgnoreCase)
+        foreach ($assignment in $ast.FindAll({ param($a) $a -is [System.Management.Automation.Language.AssignmentStatementAst] -and
+                $a.Left -is [System.Management.Automation.Language.VariableExpressionAst] -and $a.Right.Extent.Text -match 'SqliteConnection\]::new\(' }, $true)) {
+            $null = $ownConnections.Add((Get-VariableName $assignment.Left))
+        }
         foreach ($call in $ast.FindAll({ param($a) $a -is [System.Management.Automation.Language.CommandAst] }, $true)) {
             $name = $call.GetCommandName()
             if (-not $name) { continue }
@@ -693,12 +700,18 @@ function Get-ScenarioLiteralSql {
                 while ($null -ne $enclosing -and $enclosing -isnot [System.Management.Automation.Language.FunctionDefinitionAst]) { $enclosing = $enclosing.Parent }
                 if ($null -ne $enclosing -and @(Get-ParameterName $enclosing) -contains 'Sql') { continue }
             }
+            # The connection comes first wherever a sink takes one (-Connection, or position 0 ahead of the SQL).
+            $connection = if ($local[$name] -gt 0) { Get-SqlArgument $call 0 'Connection' } else { Get-SqlArgument $call 99 'Connection' }
+            if ($connection -is [System.Management.Automation.Language.VariableExpressionAst] -and $ownConnections.Contains((Get-VariableName $connection))) {
+                $otherDatabase++
+                continue
+            }
             $sql = Get-LiteralString $argument
             if ($null -eq $sql) { $nonLiteral++; continue }
             $literal.Add([pscustomobject]@{ File = $file; Line = $call.Extent.StartLineNumber; Sql = $sql })
         }
     }
-    return [pscustomobject]@{ Literal = $literal.ToArray(); NonLiteral = $nonLiteral }
+    return [pscustomobject]@{ Literal = $literal.ToArray(); NonLiteral = $nonLiteral; OtherDatabase = $otherDatabase }
 }
 
 # Where a ControlServer database lives for real: %ProgramData% (the MVP production default), the two install roots.
@@ -737,10 +750,20 @@ function Assert-TempDatabasePath {
     Assert-ClearOfProduction $full 'Temporary database path'
 }
 
+# Length and last write of a file, 'absent', or 'inaccessible' when this account may not even look (the control host's
+# %ProgramData%\8005 is like that). A host started by the same account could not write there either, so comparing
+# 'inaccessible' before and after still says the run did not touch it.
 function Get-FileStamp([string]$File) {
-    if (-not (Test-Path -LiteralPath $File)) { return 'absent' }
-    $item = Get-Item -LiteralPath $File
-    return "$($item.Length) $($item.LastWriteTimeUtc.Ticks)"
+    try {
+        if (-not (Test-Path -LiteralPath $File -ErrorAction Stop)) { return 'absent' }
+        $item = Get-Item -LiteralPath $File -ErrorAction Stop
+        return "$($item.Length) $($item.LastWriteTimeUtc.Ticks)"
+    } catch [System.UnauthorizedAccessException] {
+        return 'inaccessible'
+    } catch {
+        if ($_.Exception -is [System.UnauthorizedAccessException] -or $_.CategoryInfo.Category -eq 'PermissionDenied') { return 'inaccessible' }
+        throw
+    }
 }
 
 function Import-HostSqlite([string]$HostDirectory) {

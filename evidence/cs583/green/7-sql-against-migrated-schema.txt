@@ -1,0 +1,18 @@
+connection string data source passed to --migrate-only: F:\8005-scratch\cs583-sql\scenario-sql-672b9e2059014f76acaea255ac5169bc\db\controlserver.db
+migrated: F:\8005-scratch\cs583-sql\scenario-sql-672b9e2059014f76acaea255ac5169bc\db\controlserver.db (106 tables, 9 s); production database untouched: True
+sql: 196 files, 161 literal statements compiled, 690 skipped as interpolated or built elsewhere, 10 skipped as sent to another database, 9 sinks (Get-Count, Get-G3Count, Get-G3Scalar, Get-L2RealCount, Get-L2RealScalar, Get-Scalar, Invoke-L2Query, Invoke-L2SnapshotStatement, Invoke-Scalar)
+ok    sinks: Invoke-L2Query, and Get-G3Scalar / Get-G3Count derived from G3RecoveryCommon.ps1
+ok    extract: named, positional, folded + and a file-local wrapper are literal
+ok    extract: the folded statement is joined
+ok    extract: interpolated and variable SQL are skipped and counted
+ok    extract: SQL sent on a connection the script opens itself (the onboard journal) is not the server's
+ok    temp database: the MVP production database path is refused
+ok    temp database: a path outside the work root is refused
+ok    temp database: a path under the work root is accepted
+ok    temp database: a work root under %ProgramData% is refused
+ok    temp database: --migrate-only is never started for a database outside the work root
+ok    temp database: created, migrated, and the default database left as it was
+ok    explain: a misspelt column and a missing table are reported, a good statement is not
+ok    repository: every literal statement compiles against the migrated schema
+ok    repository: at least 150 literal statements were compiled
+14/14 passed

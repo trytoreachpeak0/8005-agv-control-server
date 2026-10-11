@@ -164,7 +164,8 @@ $c = Get-G3Scalar $journalConnection 'SELECT 1 AS Value FROM WireToGateRecoveryS
         }
 
         $full = -not $Path
-        $targets = if ($full) { $serverSql } else { @($Path | ForEach-Object { (Resolve-Path -LiteralPath $_).ProviderPath }) }
+        # @() around the if: one -Path file would otherwise come out of it as a bare string.
+        $targets = @(if ($full) { $serverSql } else { $Path | ForEach-Object { (Resolve-Path -LiteralPath $_).ProviderPath } })
         $found = Get-ScenarioLiteralSql -Path $targets -Sinks $sinks
         $explained = @(Test-SqlExplain -Connection $connection -Statement $found.Literal)
         Write-Host ("sql: {0} files, {1} literal statements compiled, {2} skipped as interpolated or built elsewhere, {3} skipped as sent to another database, {4} sinks ({5})" -f
