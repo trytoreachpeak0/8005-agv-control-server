@@ -84,7 +84,8 @@ $g = Get-Count 'SELECT COUNT(*) AS N FROM OrderIntents'
         $lines = @($found.Literal | ForEach-Object Line) -join ','
         Add-Case 'extract: named, positional, folded + and a file-local wrapper are literal' ($lines -eq '1,2,3,9') (Format-Sql $found.Literal)
         Add-Case 'extract: the folded statement is joined' (@($found.Literal | Where-Object { $_.Line -eq 3 -and $_.Sql -eq "SELECT MessageId FROM ProtocolInbox WHERE MessageType = 'X'" }).Count -eq 1) (Format-Sql $found.Literal)
-        Add-Case 'extract: interpolated and variable SQL are skipped and counted' ($found.NonLiteral -eq 3) "$($found.NonLiteral)"
+        # Lines 5 and 7. The wrapper's own forwarding of $sql on line 8 is neither: it is not a statement.
+        Add-Case 'extract: interpolated and variable SQL are skipped and counted' ($found.NonLiteral -eq 2) "$($found.NonLiteral)"
 
         # --- the temporary database's path ----------------------------------------------------------------------------
         $refusedProgramData = try { Assert-TempDatabasePath (Join-Path $env:ProgramData '8005\ControlServer\data\controlserver.db'); '' } catch { "$_" }
@@ -102,8 +103,9 @@ $g = Get-Count 'SELECT COUNT(*) AS N FROM OrderIntents'
         if ($LASTEXITCODE -ne 0) { throw "dotnet build of ControlServer.Host failed ($LASTEXITCODE)." }
     }
     if (-not (Test-Path -LiteralPath $hostExe)) {
-        Write-Host "No ${hostExe}: build src/ControlServer.Host -c Release, or pass -Build. Nothing was checked."
-        exit 2
+        foreach ($c in $cases) { Write-Host ("{0}  {1}{2}" -f ($c.Ok ? 'ok  ' : 'FAIL'), $c.Name, ($c.Ok ? '' : " -- $($c.Actual)")) }
+        Write-Host "No ${hostExe}: build src/ControlServer.Host -c Release, or pass -Build. No SQL was compiled."
+        exit (@($cases | Where-Object { -not $_.Ok }).Count -gt 0 ? 1 : 2)
     }
     $database = Join-Path $scratch 'db\controlserver.db'
     $migration = New-MigratedTempDatabase -HostDirectory $HostDirectory -DatabasePath $database
@@ -133,7 +135,8 @@ $g = Get-Count 'SELECT COUNT(*) AS N FROM OrderIntents'
         foreach ($f in $explained) { Write-Host "  SQL  $($f.File):$($f.Line) $($f.Message)`n       $($f.Sql)" }
         Add-Case 'repository: every literal statement compiles against the migrated schema' ($explained.Count -eq 0) "$($explained.Count) failed"
         if ($full) {
-            Add-Case 'repository: at least 100 literal statements were compiled' (@($found.Literal).Count -ge 100) "$(@($found.Literal).Count)"
+            # 168 literal and 693 skipped on fp/v2-impl@da6e40e2.
+            Add-Case 'repository: at least 150 literal statements were compiled' (@($found.Literal).Count -ge 150) "$(@($found.Literal).Count)"
         }
     } finally {
         $connection.Dispose()

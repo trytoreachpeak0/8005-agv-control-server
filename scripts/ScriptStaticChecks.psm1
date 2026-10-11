@@ -8,6 +8,19 @@ These are regression guards for the commonest shapes, not proofs. Each check's h
 
 Set-StrictMode -Version Latest
 
+# Every check reads the same files; each is parsed once per session, keyed by path and last write.
+$script:ParseCache = @{}
+function Get-ParsedScript([string]$File) {
+    $full = [IO.Path]::GetFullPath($File)
+    $key = "$full|$((Get-Item -LiteralPath $full).LastWriteTimeUtc.Ticks)"
+    if (-not $script:ParseCache.ContainsKey($key)) {
+        $errors = $null
+        $ast = [System.Management.Automation.Language.Parser]::ParseFile($full, [ref]$null, [ref]$errors)
+        $script:ParseCache[$key] = [pscustomobject]@{ Ast = $ast; Errors = @($errors) }
+    }
+    return $script:ParseCache[$key]
+}
+
 <#
 Parses every file with Parser::ParseFile and returns { Files; Findings = { File, Line, Column, Message } }.
 
@@ -20,9 +33,7 @@ function Test-ScriptParse {
     $files = 0
     foreach ($file in $Path) {
         $files++
-        $errors = $null
-        $null = [System.Management.Automation.Language.Parser]::ParseFile($file, [ref]$null, [ref]$errors)
-        foreach ($e in @($errors)) {
+        foreach ($e in @((Get-ParsedScript $file).Errors)) {
             $findings.Add([pscustomobject]@{
                 File    = $file
                 Line    = $e.Extent.StartLineNumber
@@ -118,7 +129,7 @@ function Get-HelperShapeCatalog {
         $file = Join-Path $ScriptRoot $entry.File
         if (-not $parsed.ContainsKey($file)) {
             if (-not (Test-Path -LiteralPath $file)) { throw "Helper catalog: $($entry.Name) is listed in $($entry.File), which does not exist." }
-            $parsed[$file] = [System.Management.Automation.Language.Parser]::ParseFile($file, [ref]$null, [ref]$null)
+            $parsed[$file] = (Get-ParsedScript $file).Ast
         }
         $definitions = @(Get-StaticFunction $parsed[$file] $entry.Name)
         if ($definitions.Count -ne 1) { throw "Helper catalog: $($entry.Name) is defined $($definitions.Count) times in $($entry.File), not once." }
@@ -186,13 +197,17 @@ function Resolve-HelperShape([System.Management.Automation.Language.Ast]$Ast, [h
     }
     if ($Ast -is [System.Management.Automation.Language.PipelineAst]) {
         $elements = @($Ast.PipelineElements)
-        foreach ($next in ($elements | Select-Object -Skip 1)) {
+        for ($i = 1; $i -lt $elements.Count; $i++) {
+            $next = $elements[$i]
             if ($next -isnot [System.Management.Automation.Language.CommandAst]) { return $null }
             $name = $next.GetCommandName()
             if ($name -in 'Where-Object', 'where', '?', 'Sort-Object', 'sort') { continue }
             if ($name -in 'Select-Object', 'select') {
-                $parameters = @($next.CommandElements | Where-Object { $_ -is [System.Management.Automation.Language.CommandParameterAst] } | ForEach-Object ParameterName)
-                if (@($parameters | Where-Object { $_ -notin 'First', 'Last', 'Skip', 'Unique' }).Count -eq 0) { continue }
+                $shapeKept = $true
+                foreach ($element in $next.CommandElements) {
+                    if ($element -is [System.Management.Automation.Language.CommandParameterAst] -and $element.ParameterName -notin 'First', 'Last', 'Skip', 'Unique') { $shapeKept = $false }
+                }
+                if ($shapeKept) { continue }
             }
             return $null
         }
@@ -256,7 +271,7 @@ function Find-HelperPropertyMisuse {
     $findings = [System.Collections.Generic.List[object]]::new()
     $variables = 0; $reads = 0; $unresolved = 0; $shadowed = 0
     foreach ($file in $Path) {
-        $ast = [System.Management.Automation.Language.Parser]::ParseFile($file, [ref]$null, [ref]$null)
+        $ast = (Get-ParsedScript $file).Ast
         $normalised = $file.Replace('\', '/')
         # A file's own definition of a listed name wins, except in the file the list points at.
         $local = @{}
@@ -267,6 +282,11 @@ function Find-HelperPropertyMisuse {
             }
         }
 
+        # Only a right-hand side whose text names a listed, relayed or shadowing function is worth resolving: a cheap
+        # pre-filter, since resolving every one of the repository's assignments is most of this check's time.
+        $names = @($shapes.PSBase.Keys) + @($relays.PSBase.Keys) + @($local.PSBase.Keys) | ForEach-Object { [regex]::Escape($_) }
+        $mentions = [regex]::new("(?<![\w-])($($names -join '|'))(?![\w-])", 'IgnoreCase')
+
         # scope -> variable -> what each assignment resolved to ($null for unrecognised)
         $assigned = @{}
         $add = {
@@ -276,32 +296,44 @@ function Find-HelperPropertyMisuse {
             # '' for unrecognised, not $null: a $null in the list would be dropped by the pipeline below.
             $assigned[$Scope][$Variable].Add([string]$Helper)
         }
+        # Every assignment as (node, variable, helper), the helper resolved only when the text mentions one; then scopes and
+        # records only for the variables some assignment resolved for, which is a few hundred of the tens of thousands.
+        $entries = [System.Collections.Generic.List[object]]::new()
+        $resolvedNames = [System.Collections.Generic.HashSet[string]]::new([StringComparer]::OrdinalIgnoreCase)
         foreach ($node in $ast.FindAll({ param($a)
             $a -is [System.Management.Automation.Language.AssignmentStatementAst] -or $a -is [System.Management.Automation.Language.ForEachStatementAst] -or
                 $a -is [System.Management.Automation.Language.ParameterAst] }, $true)) {
-            $scope = Get-ScopeKey $node
             if ($node -is [System.Management.Automation.Language.ParameterAst]) {
-                & $add $scope (Get-VariableName $node.Name) $null
+                $entries.Add(@($node, $node.Name, ''))
             } elseif ($node -is [System.Management.Automation.Language.ForEachStatementAst]) {
-                & $add $scope (Get-VariableName $node.Variable) (Resolve-HelperShape $node.Condition $shapes $relays $local)
+                $helper = if ($mentions.IsMatch($node.Condition.Extent.Text)) { [string](Resolve-HelperShape $node.Condition $shapes $relays $local) } else { '' }
+                $entries.Add(@($node, $node.Variable, $helper))
             } elseif ($node.Left -is [System.Management.Automation.Language.VariableExpressionAst]) {
-                $helper = if ($node.Operator -eq 'Equals') { Resolve-HelperShape $node.Right $shapes $relays $local } else { $null }
-                & $add $scope (Get-VariableName $node.Left) $helper
+                $helper = if ($node.Operator -eq 'Equals' -and $mentions.IsMatch($node.Right.Extent.Text)) { [string](Resolve-HelperShape $node.Right $shapes $relays $local) } else { '' }
+                $entries.Add(@($node, $node.Left, $helper))
             } else {
                 foreach ($target in $node.Left.FindAll({ param($a) $a -is [System.Management.Automation.Language.VariableExpressionAst] }, $true)) {
-                    & $add $scope (Get-VariableName $target) $null
+                    $entries.Add(@($node, $target, ''))
                 }
             }
+            if ($entries[-1][2] -ne '') { $null = $resolvedNames.Add((Get-VariableName $entries[-1][1])) }
+        }
+        foreach ($entry in $entries) {
+            $variable = $entry[1].VariablePath.UserPath -replace '^(script|global|local|private|using):', ''
+            if (-not $resolvedNames.Contains($variable)) { continue }
+            & $add (Get-ScopeKey $entry[0]) $variable $entry[2]
         }
         $known = @{}
+        $candidates = [System.Collections.Generic.HashSet[string]]::new([StringComparer]::OrdinalIgnoreCase)
         foreach ($scope in $assigned.PSBase.Keys) {
             $known[$scope] = @{}
             foreach ($variable in $assigned[$scope].PSBase.Keys) {
-                $helpers = @($assigned[$scope][$variable] | Select-Object -Unique)
+                $helpers = @([System.Collections.Generic.HashSet[string]]::new([string[]]$assigned[$scope][$variable]))
                 if ($helpers.Count -eq 1 -and $helpers[0] -ne '') {
                     $known[$scope][$variable] = $helpers[0]
+                    $null = $candidates.Add($variable)
                     $variables++
-                } elseif (@($helpers | Where-Object { $_ -ne '' }).Count -gt 0) {
+                } elseif ($helpers.Count -gt 1) {
                     $unresolved++
                 }
             }
@@ -311,8 +343,9 @@ function Find-HelperPropertyMisuse {
             $a -is [System.Management.Automation.Language.MemberExpressionAst] -and $a -isnot [System.Management.Automation.Language.InvokeMemberExpressionAst] -and
                 -not $a.Static -and $a.Expression -is [System.Management.Automation.Language.VariableExpressionAst] -and
                 $a.Member -is [System.Management.Automation.Language.StringConstantExpressionAst] }, $true)) {
+            $variable = $read.Expression.VariablePath.UserPath -replace '^(script|global|local|private|using):', ''
+            if (-not $candidates.Contains($variable)) { continue }
             $scope = Get-ScopeKey $read
-            $variable = (Get-VariableName $read.Expression)
             if (-not $known.ContainsKey($scope) -or -not $known[$scope].ContainsKey($variable)) { continue }
             $helper = $known[$scope][$variable]
             $reads++
@@ -382,7 +415,7 @@ function Get-StringHelperCatalog {
     param([Parameter(Mandatory)][string[]]$Path)
     $verdicts = @{}
     foreach ($file in $Path) {
-        $ast = [System.Management.Automation.Language.Parser]::ParseFile($file, [ref]$null, [ref]$null)
+        $ast = (Get-ParsedScript $file).Ast
         foreach ($function in $ast.FindAll({ param($a) $a -is [System.Management.Automation.Language.FunctionDefinitionAst] }, $true)) {
             $ok = Test-NullFoldingReader $function
             $verdicts[$function.Name] = $verdicts.ContainsKey($function.Name) ? ($verdicts[$function.Name] -and $ok) : $ok
@@ -405,7 +438,7 @@ function Find-StringHelperNullComparison {
     $comparisons = 0; $variables = 0; $exempted = 0
     $used = @{}
     foreach ($file in $Path) {
-        $ast = [System.Management.Automation.Language.Parser]::ParseFile($file, [ref]$null, [ref]$null)
+        $ast = (Get-ParsedScript $file).Ast
         $effective = @{}
         foreach ($name in $Helpers) { $effective[$name] = $true }
         foreach ($function in $ast.FindAll({ param($a) $a -is [System.Management.Automation.Language.FunctionDefinitionAst] }, $true)) {
@@ -448,7 +481,7 @@ function Find-StringHelperNullComparison {
         }
         $known = @{}
         foreach ($key in $assigned.PSBase.Keys) {
-            $sources = @($assigned[$key] | Select-Object -Unique)
+            $sources = @([System.Collections.Generic.HashSet[string]]::new([string[]]$assigned[$key]))
             if ($sources.Count -eq 1 -and $sources[0] -ne '') { $known[$key] = $sources[0]; $variables++ }
         }
 
@@ -505,12 +538,236 @@ function Get-StringNullExemption {
 
 # --- 4. literal SQL compiled against a migrated temporary database ---------------------------------------------------
 
-function Get-SqlSinkCatalog { param([Parameter(Mandatory)][string[]]$Path) throw 'Get-SqlSinkCatalog: not implemented' }
-function Get-ScenarioLiteralSql { param([Parameter(Mandatory)][string[]]$Path, [Parameter(Mandatory)][hashtable]$Sinks) throw 'Get-ScenarioLiteralSql: not implemented' }
-function Assert-TempDatabasePath { param([Parameter(Mandatory)][string]$DatabasePath) throw 'Assert-TempDatabasePath: not implemented' }
-function New-MigratedTempDatabase { param([Parameter(Mandatory)][string]$HostDirectory, [Parameter(Mandatory)][string]$DatabasePath) throw 'New-MigratedTempDatabase: not implemented' }
-function Open-ExplainConnection { param([Parameter(Mandatory)][string]$HostDirectory, [Parameter(Mandatory)][string]$DatabasePath) throw 'Open-ExplainConnection: not implemented' }
-function Test-SqlExplain { param([Parameter(Mandatory)][object]$Connection, [object[]]$Statement) throw 'Test-SqlExplain: not implemented' }
+# The functions every scenario's SQL reaches the server database through, with the 0-based position of their Sql
+# parameter. Get-SqlSinkCatalog adds every function that hands its own $Sql on to one of these.
+$script:SqlRoots = @{ 'Invoke-L2Query' = 1; 'Invoke-L2SnapshotStatement' = 1 }
+
+function Get-ParameterName([System.Management.Automation.Language.FunctionDefinitionAst]$Function) {
+    $parameters = if ($Function.Parameters) { $Function.Parameters } elseif ($Function.Body.ParamBlock) { $Function.Body.ParamBlock.Parameters } else { @() }
+    return @($parameters | ForEach-Object { Get-VariableName $_.Name })
+}
+
+# The AST passed as a command's Sql parameter, by name or by position; $null when there is none.
+function Get-SqlArgument([System.Management.Automation.Language.CommandAst]$Command, [int]$Position) {
+    $elements = @($Command.CommandElements)
+    $positional = 0
+    for ($i = 1; $i -lt $elements.Count; $i++) {
+        $element = $elements[$i]
+        if ($element -is [System.Management.Automation.Language.CommandParameterAst]) {
+            $value = $element.Argument
+            if ($null -eq $value -and $i + 1 -lt $elements.Count -and $elements[$i + 1] -isnot [System.Management.Automation.Language.CommandParameterAst]) {
+                $i++
+                $value = $elements[$i]
+            }
+            if ($element.ParameterName -eq 'Sql') { return $value }
+            continue
+        }
+        if ($positional -eq $Position) { return $element }
+        $positional++
+    }
+    return $null
+}
+
+function Add-DerivedSink([System.Management.Automation.Language.Ast]$Ast, [hashtable]$Sinks) {
+    $changed = $false
+    foreach ($function in $Ast.FindAll({ param($a) $a -is [System.Management.Automation.Language.FunctionDefinitionAst] }, $true)) {
+        $names = Get-ParameterName $function
+        $index = [array]::IndexOf([string[]]@($names | ForEach-Object { $_.ToLowerInvariant() }), 'sql')
+        if ($index -lt 0 -or ($Sinks.ContainsKey($function.Name) -and $Sinks[$function.Name] -eq $index)) { continue }
+        foreach ($call in $function.Body.FindAll({ param($a) $a -is [System.Management.Automation.Language.CommandAst] }, $true)) {
+            $callee = $call.GetCommandName()
+            if (-not $callee -or -not $Sinks.ContainsKey($callee) -or $callee -eq $function.Name) { continue }
+            $argument = Get-SqlArgument $call $Sinks[$callee]
+            if ($argument -is [System.Management.Automation.Language.VariableExpressionAst] -and (Get-VariableName $argument) -eq 'Sql') {
+                $Sinks[$function.Name] = $index
+                $changed = $true
+                break
+            }
+        }
+    }
+    return $changed
+}
+
+<#
+Invoke-L2Query and Invoke-L2SnapshotStatement, plus every function in the given files that passes its own parameter named
+Sql on to one of them (Get-G3Scalar, Get-G3Count, the scenario-local Get-Count and Get-Scalar), to a fixed point. Name to
+position of the Sql parameter.
+#>
+function Get-SqlSinkCatalog {
+    param([Parameter(Mandatory)][string[]]$Path)
+    $sinks = @{} + $script:SqlRoots
+    $asts = @($Path | ForEach-Object { (Get-ParsedScript $_).Ast })
+    do {
+        $changed = $false
+        foreach ($ast in $asts) { if (Add-DerivedSink $ast $sinks) { $changed = $true } }
+    } while ($changed)
+    return $sinks
+}
+
+# A string the parser can fix without running anything: a constant, a double-quoted string with nothing to expand, or a
+# + of such. $null otherwise.
+function Get-LiteralString([System.Management.Automation.Language.Ast]$Ast) {
+    $Ast = Get-Unwrapped $Ast
+    if ($Ast -is [System.Management.Automation.Language.StringConstantExpressionAst]) { return $Ast.Value }
+    if ($Ast -is [System.Management.Automation.Language.ExpandableStringExpressionAst]) {
+        return $Ast.NestedExpressions.Count -eq 0 ? $Ast.Value : $null
+    }
+    if ($Ast -is [System.Management.Automation.Language.BinaryExpressionAst] -and $Ast.Operator -eq 'Plus') {
+        $left = Get-LiteralString $Ast.Left
+        $right = Get-LiteralString $Ast.Right
+        return ($null -ne $left -and $null -ne $right) ? $left + $right : $null
+    }
+    return $null
+}
+
+<#
+Every literal SQL argument of a call to a sink, with its file and line. Sinks are the given catalog plus the file's own
+wrappers. Anything else -- $ interpolation, a variable, a here-string built elsewhere -- is counted in NonLiteral and not
+checked: most scenario SQL carries a demand id, so this is the larger part, and the count is the measure of the blind spot.
+#>
+function Get-ScenarioLiteralSql {
+    param([Parameter(Mandatory)][string[]]$Path, [Parameter(Mandatory)][hashtable]$Sinks)
+    $literal = [System.Collections.Generic.List[object]]::new()
+    $nonLiteral = 0
+    foreach ($file in $Path) {
+        $ast = (Get-ParsedScript $file).Ast
+        $local = @{} + $Sinks
+        while (Add-DerivedSink $ast $local) { }
+        foreach ($call in $ast.FindAll({ param($a) $a -is [System.Management.Automation.Language.CommandAst] }, $true)) {
+            $name = $call.GetCommandName()
+            if (-not $name) { continue }
+            $name = ($name -split '\\')[-1]
+            if (-not $local.ContainsKey($name)) { continue }
+            $argument = Get-SqlArgument $call $local[$name]
+            if ($null -eq $argument) { continue }
+            # A wrapper's own forwarding of its $Sql parameter is not a statement; a script-level $sql is.
+            if ($argument -is [System.Management.Automation.Language.VariableExpressionAst] -and (Get-VariableName $argument) -eq 'Sql') {
+                $enclosing = $call.Parent
+                while ($null -ne $enclosing -and $enclosing -isnot [System.Management.Automation.Language.FunctionDefinitionAst]) { $enclosing = $enclosing.Parent }
+                if ($null -ne $enclosing -and @(Get-ParameterName $enclosing) -contains 'Sql') { continue }
+            }
+            $sql = Get-LiteralString $argument
+            if ($null -eq $sql) { $nonLiteral++; continue }
+            $literal.Add([pscustomobject]@{ File = $file; Line = $call.Extent.StartLineNumber; Sql = $sql })
+        }
+    }
+    return [pscustomobject]@{ Literal = $literal.ToArray(); NonLiteral = $nonLiteral }
+}
+
+<#
+Throws unless the path is under the system temp directory and clear of %ProgramData% and any ControlServer install or data
+root. --migrate-only with no connection string migrates the MVP production database, so this check runs before the host
+is ever started.
+#>
+function Assert-TempDatabasePath {
+    param([Parameter(Mandatory)][string]$DatabasePath)
+    $full = [IO.Path]::GetFullPath($DatabasePath)
+    $temp = [IO.Path]::GetFullPath([IO.Path]::GetTempPath())
+    if (-not $full.StartsWith($temp, [StringComparison]::OrdinalIgnoreCase)) {
+        throw "Temporary database path '$full' is not under the temp directory '$temp'."
+    }
+    $forbidden = @($env:ProgramData, 'C:\Program Files\8005 AGV', 'D:\zhengyushao') | Where-Object { $_ }
+    foreach ($root in $forbidden) {
+        if ($full.StartsWith([IO.Path]::GetFullPath($root), [StringComparison]::OrdinalIgnoreCase)) {
+            throw "Temporary database path '$full' is under '$root'."
+        }
+    }
+    if ($full -match '\\ControlServer\\data\\') { throw "Temporary database path '$full' looks like a ControlServer data root." }
+}
+
+function Get-FileStamp([string]$File) {
+    if (-not (Test-Path -LiteralPath $File)) { return 'absent' }
+    $item = Get-Item -LiteralPath $File
+    return "$($item.Length) $($item.LastWriteTimeUtc.Ticks)"
+}
+
+function Import-HostSqlite([string]$HostDirectory) {
+    foreach ($assembly in @('SQLitePCLRaw.core.dll', 'SQLitePCLRaw.provider.e_sqlite3.dll', 'SQLitePCLRaw.batteries_v2.dll', 'Microsoft.Data.Sqlite.dll')) {
+        $file = Join-Path $HostDirectory $assembly
+        if (Test-Path -LiteralPath $file) { Add-Type -LiteralPath $file -ErrorAction SilentlyContinue }
+    }
+    # As in Open-L2Database (scripts/l2/L2.psm1): Batteries_V2 reports a missing type on some builds and works regardless.
+    try { [SQLitePCL.Batteries_V2]::Init() } catch { }
+}
+
+<#
+Runs the built ControlServer.Host once with --migrate-only against DatabasePath, passed as ConnectionStrings__ControlServer
+in the child's environment (an argument with a space in it was split once, control-server#503). Returns the number of
+tables, whether the default production database is exactly as it was, and how long it took.
+#>
+function New-MigratedTempDatabase {
+    param([Parameter(Mandatory)][string]$HostDirectory, [Parameter(Mandatory)][string]$DatabasePath, [int]$TimeoutSeconds = 180)
+    Assert-TempDatabasePath $DatabasePath
+    $production = Join-Path ($env:ProgramData ?? 'C:\ProgramData') '8005\ControlServer\data\controlserver.db'
+    $before = Get-FileStamp $production
+    $null = New-Item -ItemType Directory -Path (Split-Path -Parent $DatabasePath) -Force
+
+    $start = [Diagnostics.ProcessStartInfo]::new((Join-Path $HostDirectory 'ControlServer.Host.exe'))
+    $start.ArgumentList.Add('--migrate-only')
+    $start.WorkingDirectory = $HostDirectory
+    $start.UseShellExecute = $false
+    $start.RedirectStandardOutput = $true
+    $start.RedirectStandardError = $true
+    $start.Environment['ConnectionStrings__ControlServer'] = "Data Source=$DatabasePath"
+    $start.Environment['DOTNET_ENVIRONMENT'] = 'Production'
+    $watch = [Diagnostics.Stopwatch]::StartNew()
+    $process = [Diagnostics.Process]::Start($start)
+    $stdout = $process.StandardOutput.ReadToEndAsync()
+    $stderr = $process.StandardError.ReadToEndAsync()
+    if (-not $process.WaitForExit($TimeoutSeconds * 1000)) {
+        $process.Kill($true)
+        throw "ControlServer.Host --migrate-only did not exit within $TimeoutSeconds s."
+    }
+    $process.WaitForExit()
+    if ($process.ExitCode -ne 0) {
+        throw "ControlServer.Host --migrate-only exited $($process.ExitCode).`n$($stdout.Result)`n$($stderr.Result)"
+    }
+    if (-not (Test-Path -LiteralPath $DatabasePath)) { throw "ControlServer.Host --migrate-only exited 0 but did not create $DatabasePath." }
+
+    Import-HostSqlite $HostDirectory
+    $connection = [Microsoft.Data.Sqlite.SqliteConnection]::new("Data Source=$DatabasePath;Mode=ReadOnly;Pooling=False")
+    try {
+        $connection.Open()
+        $command = $connection.CreateCommand()
+        $command.CommandText = "SELECT COUNT(*) FROM sqlite_master WHERE type = 'table'"
+        $tables = [int]$command.ExecuteScalar()
+        $command.Dispose()
+    } finally {
+        $connection.Dispose()
+    }
+    return [pscustomobject]@{ Tables = $tables; ProductionUntouched = ((Get-FileStamp $production) -eq $before); Elapsed = $watch.Elapsed }
+}
+
+function Open-ExplainConnection {
+    param([Parameter(Mandatory)][string]$HostDirectory, [Parameter(Mandatory)][string]$DatabasePath)
+    Assert-TempDatabasePath $DatabasePath
+    Import-HostSqlite $HostDirectory
+    $connection = [Microsoft.Data.Sqlite.SqliteConnection]::new("Data Source=$DatabasePath;Mode=ReadOnly;Pooling=False")
+    $connection.Open()
+    return $connection
+}
+
+<#
+Compiles each statement with EXPLAIN (which prepares the statement and runs nothing) and returns the ones SQLite refused:
+an unknown table or column, a syntax error. Not seen: a double-quoted identifier SQLite falls back to reading as a string,
+anything only the data could reveal, and type mismatches SQLite allows.
+#>
+function Test-SqlExplain {
+    param([Parameter(Mandatory)][object]$Connection, [object[]]$Statement)
+    foreach ($s in @($Statement)) {
+        $command = $Connection.CreateCommand()
+        try {
+            $command.CommandText = "EXPLAIN $($s.Sql)"
+            $reader = $command.ExecuteReader()
+            try { while ($reader.Read()) { } } finally { $reader.Dispose() }
+        } catch {
+            $message = $_.Exception.InnerException?.Message ?? $_.Exception.Message
+            [pscustomobject]@{ File = $s.File; Line = $s.Line; Sql = $s.Sql; Message = $message }
+        } finally {
+            $command.Dispose()
+        }
+    }
+}
 
 Export-ModuleMember -Function Get-SqlSinkCatalog, Get-ScenarioLiteralSql, Assert-TempDatabasePath, New-MigratedTempDatabase,
     Open-ExplainConnection, Test-SqlExplain, Get-StringNullExemption, Test-ScriptParse, Get-HelperShapeCatalog, Find-HelperPropertyMisuse, Get-StringHelperCatalog, Find-StringHelperNullComparison
