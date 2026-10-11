@@ -524,7 +524,8 @@ SELECT UpperId, DispatchGeneration, Sequence, Phase, Outcome, EligibilityBasis,
 #   1. an open record whose vehicle and journey hold no claim is closed: a row changed, none added;
 #   2. each claim with no open record of its vehicle and journey gets one ('backfill:');
 #   3. each released lease whose vehicle and journey have no record at all after step 2 gets one ('lease:').
-# No later migration adds or deletes a record (checked through 20261008052643 for control-server#544); a store past the
+# No later migration adds or deletes a record (checked through 20261011005905 for control-server#544; that last one,
+# ProtocolInboxReadIndexes, touches ProtocolInbox alone); a store past the
 # lease table's drop has nothing backfilled. Nothing the probe window does adds one either: a record is only inserted
 # with a claim -- an acceptance, a charging, idle-return or purpose transition -- and this run keeps the journey runtime
 # off and sends only session and OperationResult messages; releasing a claim closes its records, it adds none.

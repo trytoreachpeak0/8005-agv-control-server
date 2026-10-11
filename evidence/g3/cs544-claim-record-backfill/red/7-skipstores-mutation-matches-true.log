@@ -1,0 +1,11 @@
+PASS the runner defines every function this self-check calls
+PASS in memory, leases and records present: the runner's expectation has the hand-computed parts
+PASS in memory, before batch 8: the runner's expectation has the hand-computed parts
+PASS the runner assigns each judgement once, at top level
+PASS the migration left what the baseline calls for: both judgements pass
+PASS the migration left 14 fewer than the baseline calls for: both judgements fail
+     control: the previous criterion (afterProbe = final) is PASS for that store
+PASS a record added after the restart is not this judgement's to catch
+FAIL the evidence record's matches is the judgement itself -- 1 assignment(s) of $claimRecordBackfill; matches = $true
+PASS both store provenance branches carry claimRecordBackfill
+DemandBearingClaimRecordBackfill self-check: 1 check(s) came out the other way.

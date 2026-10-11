@@ -14,6 +14,10 @@
     Every `dotnet ef` call names its database with --connection. Never drop that: without a connection string the
     host's own migration path falls back to the MVP production database.
 
+    0. The expectation alone, no build: 1a's and 1b's seeds below, turned into the baseline rows Read-ControlDatabase
+       would read and handed straight to Get-ExpectedClaimRecordCount, must give the hand-computed parts. Runs under
+       -SkipStores too.
+
     1. Backfill count, from three starting states. The runner's Get-ExpectedClaimRecordCount, taken from its AST,
        is given the runner's own Read-ControlDatabase baseline of a seeded store; then the real migrations take the
        store to the latest schema and the claim record table is counted directly. They must agree, and the parts
@@ -24,8 +28,8 @@
            in step two and so no lease record in step three;
          - before batch 8 (MapNameBaselines): no claim record table at all;
          - already migrated: the expected count is the count it already has.
-       The runner's previous criterion (afterProbe equal to final) is printed beside it as a control: it never
-       looks at the baseline, so it is green whatever the migration wrote.
+       Beside each, afterProbe = final is printed, but it is the same file read twice and so true by construction;
+       the evidence that the previous criterion stays green over a short backfill is section 3.
 
     2. Missing tables. Copies of the migrated store, each with one table renamed away, read by the runner's
        Read-ControlDatabase: in the baseline read and in the after-migration read (-AfterMigration, which the
@@ -37,7 +41,9 @@
        $noExternalSideEffectsPass statements, taken from its AST, run over made-up counts: a migration that left what
        the baseline calls for passes; one that left 14 records fewer fails, where the previous criterion
        (afterProbe = final, printed as a control) passes; and a record added after the restart is left to
-       vehicleClaimRecordSurvivesTheHostRestart. -SkipStores runs this section alone.
+       vehicleClaimRecordSurvivesTheHostRestart. From the AST as well: the evidence record's matches is that
+       judgement itself, and both branches of the store provenance record (which reaches every gate result) carry
+       it. -SkipStores runs sections 0 and 3 only.
 
     Exits 1 when any check comes out the other way, and prints every check either way.
 
@@ -52,7 +58,7 @@ param(
     [string]$Repository = (Split-Path -Parent $PSScriptRoot),
     # Keep the stores for inspection instead of removing them.
     [switch]$KeepWork,
-    # Only section 3, which needs no build and no store: seconds instead of minutes.
+    # Only sections 0 and 3, which need no build and no store: seconds instead of minutes.
     [switch]$SkipStores
 )
 
@@ -128,16 +134,99 @@ function Get-RecordCount([string]$Path) {
     return Invoke-SqliteScalarLong -DatabasePath $Path -Sql 'SELECT COUNT(*) FROM VehiclePurposeClaimRecords'
 }
 
-$at = "'2026-09-20 08:00:00+00:00'"
-$later = "'2026-09-20 09:00:00+00:00'"
-function Claim([string]$Vehicle, [string]$Journey) {
-    "INSERT INTO VehiclePurposeClaims (VehicleKey, Purpose, JourneyId, ClaimedAt) VALUES ('$Vehicle', 'TRANSPORT', '$Journey', $at);"
+# A seed is a list of rows, each a claim, a lease or a record of a vehicle and a journey. The same list becomes SQL
+# for a real store (sections 1a, 1b) and an in-memory baseline handed straight to Get-ExpectedClaimRecordCount
+# (section 0, no build), so the two can never be seeded differently.
+$at = '2026-09-20 08:00:00+00:00'
+$later = '2026-09-20 09:00:00+00:00'
+function Claim([string]$Vehicle, [string]$Journey) { [pscustomobject]@{ Kind = 'Claim'; Vehicle = $Vehicle; Journey = $Journey; Released = $false } }
+function Lease([string]$Vehicle, [string]$Journey, [bool]$Released) { [pscustomobject]@{ Kind = 'Lease'; Vehicle = $Vehicle; Journey = $Journey; Released = $Released } }
+function Record([string]$Vehicle, [string]$Journey, [bool]$Released) { [pscustomobject]@{ Kind = 'Record'; Vehicle = $Vehicle; Journey = $Journey; Released = $Released } }
+
+function ConvertTo-SeedSql($Seed) {
+    $released = { param($row) if ($row.Released) { "'$later'" } else { 'NULL' } }
+    return @(foreach ($row in $Seed) {
+            switch ($row.Kind) {
+                'Claim' { "INSERT INTO VehiclePurposeClaims (VehicleKey, Purpose, JourneyId, ClaimedAt) VALUES ('$($row.Vehicle)', 'TRANSPORT', '$($row.Journey)', '$at');" }
+                'Lease' { "INSERT INTO VehicleDispatchLeases (JourneyId, AcquiredAt, DemandId, ReleasedAt, VehicleKey) VALUES ('$($row.Journey)', '$at', 'demand-$($row.Journey)', $(& $released $row), '$($row.Vehicle)');" }
+                'Record' { "INSERT INTO VehiclePurposeClaimRecords (RecordId, VehicleKey, Purpose, JourneyId, AcquiredAt, ReleasedAt, ReleaseReason) VALUES ('seed:$($row.Vehicle):$($row.Journey)', '$($row.Vehicle)', 'TRANSPORT', '$($row.Journey)', '$at', $(& $released $row), $(if ($row.Released) { "'SEEDED'" } else { 'NULL' }));" }
+            }
+        }) -join "`n"
 }
-function Lease([string]$Vehicle, [string]$Journey, [bool]$Released) {
-    "INSERT INTO VehicleDispatchLeases (JourneyId, AcquiredAt, DemandId, ReleasedAt, VehicleKey) VALUES ('$Journey', $at, 'demand-$Journey', $(if ($Released) { $later } else { 'NULL' }), '$Vehicle');"
+
+# The keys Read-ControlDatabase's baseline gives the expectation, in its row shape.
+function ConvertTo-MemoryBaseline($Seed, [bool]$RecordTablePresent) {
+    $releasedAt = { param($row) if ($row.Released) { $later } else { $null } }
+    return [ordered]@{
+        claimRecordTablePresent = $RecordTablePresent
+        vehicleClaimRecordRows = @($Seed | Where-Object Kind -eq 'Record' | ForEach-Object {
+                [ordered]@{ journeyId = $_.Journey; vehicleKey = $_.Vehicle; acquiredAt = $at; releasedAt = (& $releasedAt $_) } })
+        vehiclePurposeClaimRows = @($Seed | Where-Object Kind -eq 'Claim' | ForEach-Object {
+                [ordered]@{ vehicleKey = $_.Vehicle; journeyId = $_.Journey } })
+        vehicleDispatchLeaseRows = @($Seed | Where-Object Kind -eq 'Lease' | ForEach-Object {
+                [ordered]@{ journeyId = $_.Journey; vehicleKey = $_.Vehicle; releasedAt = (& $releasedAt $_) } })
+    }
 }
-function Record([string]$Vehicle, [string]$Journey, [bool]$Released) {
-    "INSERT INTO VehiclePurposeClaimRecords (RecordId, VehicleKey, Purpose, JourneyId, AcquiredAt, ReleasedAt, ReleaseReason) VALUES ('seed:${Vehicle}:${Journey}', '$Vehicle', 'TRANSPORT', '$Journey', $at, $(if ($Released) { "$later, 'SEEDED'" } else { 'NULL, NULL' }));"
+
+function Test-Parts([string]$Label, $Expectation, [string]$Thrown, [hashtable]$Parts) {
+    $wrong = @(foreach ($key in $Parts.Keys) {
+            if ($null -eq $Expectation -or "$($Expectation[$key])" -cne "$($Parts[$key])") {
+                "$key=$(${Expectation}?[$key]) (hand-computed $($Parts[$key]))"
+            }
+        })
+    Check "${Label}: the runner's expectation has the hand-computed parts" ([string]::IsNullOrEmpty($Thrown) -and $wrong.Count -eq 0) "$Thrown $($wrong -join '; ')"
+}
+
+# --- 1a's seed: leases and records both present, between the two batch-8 migrations ----------------------------
+# Hand-computed, group by group, in the migration's own order (step 1 closes, step 2 backfills claims, step 3
+# backfills released leases whose vehicle and journey have no record after step 2):
+#   A  8 claims, each with its unreleased lease and an open record          records 8, backfill 0, lease 0
+#   B 10 claims, each with its unreleased lease, no record                  records 0, backfill 10, lease 0
+#   C  5 claims with only a released record of the same journey             records 5, backfill 5, lease 0
+#   F  4 claims whose own journey's lease is released, no record            records 0, backfill 4, lease 0
+#        (step 2 writes their record, so step 3 writes none: the order matters)
+#   D 12 released leases, 3 on each of 4 vehicles, no claim, no record      records 0, backfill 0, lease 12
+#   E  6 released leases, each with a released record of its journey       records 6, backfill 0, lease 0
+#   G  3 open records without a claim (step 1 closes them, adds nothing);   records 3, backfill 0, lease 0
+#        one has a released lease of the same journey (has a record: none),
+#        another a released lease of a journey with no record                                      lease 1
+#   H  1 released lease on an A vehicle under a journey with no record      records 0, backfill 0, lease 1
+#   total: records 22, backfill 19, lease 14, expected 55
+$seedBetween = [System.Collections.Generic.List[object]]::new()
+foreach ($i in 1..8) { $seedBetween.Add((Claim "VA$i" "jA$i")); $seedBetween.Add((Lease "VA$i" "jA$i" $false)); $seedBetween.Add((Record "VA$i" "jA$i" $false)) }
+foreach ($i in 1..10) { $seedBetween.Add((Claim "VB$i" "jB$i")); $seedBetween.Add((Lease "VB$i" "jB$i" $false)) }
+foreach ($i in 1..5) { $seedBetween.Add((Claim "VC$i" "jC$i")); $seedBetween.Add((Record "VC$i" "jC$i" $true)) }
+foreach ($i in 1..4) { $seedBetween.Add((Claim "VF$i" "jF$i")); $seedBetween.Add((Lease "VF$i" "jF$i" $true)) }
+foreach ($v in 1..4) { foreach ($k in 1..3) { $seedBetween.Add((Lease "VD$v" "jD$v-$k" $true)) } }
+foreach ($i in 1..6) { $seedBetween.Add((Lease "VE$i" "jE$i" $true)); $seedBetween.Add((Record "VE$i" "jE$i" $true)) }
+foreach ($i in 1..3) { $seedBetween.Add((Record "VG$i" "jG$i" $false)) }
+$seedBetween.Add((Lease 'VG1' 'jG1' $true))
+$seedBetween.Add((Lease 'VG2' 'jG2-other' $true))
+$seedBetween.Add((Lease 'VA1' 'jH1' $true))
+$partsBetween = @{ migrationState = 'LEASES_NOT_YET_RETIRED'; originalRecords = 22; claimBackfills = 19; leaseBackfills = 14; expected = 55 }
+
+# --- 1b's seed: before batch 8, no record table yet --------------------------------------------------------------
+#   6 claims with their unreleased lease                                    backfill 6
+#   3 claims whose own journey's lease is released                           backfill 3, lease 0 (step 2 wrote one)
+#   7 released leases on 2 vehicles with no claim                            lease 7
+#   total: records 0, backfill 9, lease 7, expected 16
+$seedBefore = [System.Collections.Generic.List[object]]::new()
+foreach ($i in 1..6) { $seedBefore.Add((Claim "VP$i" "jP$i")); $seedBefore.Add((Lease "VP$i" "jP$i" $false)) }
+foreach ($i in 1..3) { $seedBefore.Add((Claim "VQ$i" "jQ$i")); $seedBefore.Add((Lease "VQ$i" "jQ$i" $true)) }
+foreach ($i in 1..7) { $seedBefore.Add((Lease "VR$($i % 2)" "jR$i" $true)) }
+$partsBefore = @{ migrationState = 'RECORD_TABLE_NOT_YET_CREATED'; originalRecords = 0; claimBackfills = 9; leaseBackfills = 7; expected = 16 }
+
+# --- 0. the expectation alone, from in-memory baselines (no build, also under -SkipStores) ------------------------
+# What -SkipStores could not catch before review: an expectation that, say, forgets step 2's records when it looks for
+# step 3's, gives the wrong parts for 1a here without a store being made.
+foreach ($case in @(
+        @{ Label = 'in memory, leases and records present'; Seed = $seedBetween; RecordTable = $true; Parts = $partsBetween },
+        @{ Label = 'in memory, before batch 8'; Seed = $seedBefore; RecordTable = $false; Parts = $partsBefore })) {
+    $expectation = $null
+    $thrown = $null
+    try { $expectation = Get-ExpectedClaimRecordCount -Baseline (ConvertTo-MemoryBaseline $case.Seed $case.RecordTable) }
+    catch { $thrown = $_.Exception.Message }
+    Test-Parts $case.Label $expectation $thrown $case.Parts
 }
 
 # The baseline as the runner reads it, then the expectation as the runner computes it from that baseline alone.
@@ -151,24 +240,19 @@ function Test-Expectation([string]$Label, [string]$Path, [hashtable]$Parts) {
     $expectation = $null
     $thrown = $null
     try { $expectation = Get-Expectation $Path } catch { $thrown = $_.Exception.Message }
-    $wrong = @(foreach ($key in $Parts.Keys) {
-            if ($null -eq $expectation -or "$($expectation[$key])" -cne "$($Parts[$key])") {
-                "$key=$(${expectation}?[$key]) (hand-computed $($Parts[$key]))"
-            }
-        })
-    Check "${Label}: the runner's expectation has the hand-computed parts" ($null -eq $thrown -and $wrong.Count -eq 0) "$thrown $($wrong -join '; ')"
+    Test-Parts $Label $expectation $thrown $Parts
     Update-Store $Path $null
     $actual = Get-RecordCount $Path
     $expected = ${expectation}?['expected']
     Check "${Label}: the real migration leaves the count the runner expected" ($null -ne $expected -and [long]$expected -eq $actual) `
         "expected $expected, the migration left $actual"
-    # The runner's criterion before control-server#544: the count after the first host equal to the count after the
-    # second. Here the second read follows the first with nothing in between, as in a run where nothing writes a
-    # record after the migration, so it holds whatever the migration wrote.
+    # The runner's criterion before control-server#544 compared the count after the first host with the count after the
+    # second. Here that is the same file read twice with nothing in between, so it is true by construction and shows
+    # nothing about the old runner by itself. That the old runner stays green over a short backfill is section 3 against
+    # the old statements (evidence red/3, dc15b3ca: 41 against 41 judged true).
     $oldCriterion = (Get-RecordCount $Path) -eq $actual
-    Write-Host ("     control: the previous criterion (afterProbe = final) is {0} here; it never reads the baseline" -f
+    Write-Host ("     control: afterProbe = final, the same file read twice, is {0} by construction; see section 3" -f
         $(if ($oldCriterion) { 'PASS' } else { 'FAIL' }))
-    return $actual
 }
 
 if (-not $SkipStores) {
@@ -179,58 +263,25 @@ try {
     $hostOutput = Join-Path $hostProject 'bin/Debug/net8.0/win-x64'
     Add-Type -Path (Join-Path $hostOutput 'Microsoft.Data.Sqlite.dll')
 
-    # --- 1a. leases and records both present: between the two batch-8 migrations --------------------------------
-    # Hand-computed, group by group, in the migration's own order (step 1 closes, step 2 backfills claims, step 3
-    # backfills released leases whose vehicle and journey have no record after step 2):
-    #   A  8 claims, each with its unreleased lease and an open record          records 8, backfill 0, lease 0
-    #   B 10 claims, each with its unreleased lease, no record                  records 0, backfill 10, lease 0
-    #   C  5 claims with only a released record of the same journey             records 5, backfill 5, lease 0
-    #   F  4 claims whose own journey's lease is released, no record            records 0, backfill 4, lease 0
-    #        (step 2 writes their record, so step 3 writes none: the order matters)
-    #   D 12 released leases, 3 on each of 4 vehicles, no claim, no record      records 0, backfill 0, lease 12
-    #   E  6 released leases, each with a released record of its journey       records 6, backfill 0, lease 0
-    #   G  3 open records without a claim (step 1 closes them, adds nothing);   records 3, backfill 0, lease 0
-    #        one has a released lease of the same journey (has a record: none),
-    #        another a released lease of a journey with no record                                      lease 1
-    #   H  1 released lease on an A vehicle under a journey with no record      records 0, backfill 0, lease 1
-    #   total: records 22, backfill 19, lease 14, expected 55
+    # --- 1a. leases and records both present: between the two batch-8 migrations (seed and parts above) ----------
     $between = Join-Path $work 'between-batch8-migrations.db'
     Update-Store $between $beforeRetirement
-    $seed = [System.Collections.Generic.List[string]]::new()
-    foreach ($i in 1..8) { $seed.Add((Claim "VA$i" "jA$i")); $seed.Add((Lease "VA$i" "jA$i" $false)); $seed.Add((Record "VA$i" "jA$i" $false)) }
-    foreach ($i in 1..10) { $seed.Add((Claim "VB$i" "jB$i")); $seed.Add((Lease "VB$i" "jB$i" $false)) }
-    foreach ($i in 1..5) { $seed.Add((Claim "VC$i" "jC$i")); $seed.Add((Record "VC$i" "jC$i" $true)) }
-    foreach ($i in 1..4) { $seed.Add((Claim "VF$i" "jF$i")); $seed.Add((Lease "VF$i" "jF$i" $true)) }
-    foreach ($v in 1..4) { foreach ($k in 1..3) { $seed.Add((Lease "VD$v" "jD$v-$k" $true)) } }
-    foreach ($i in 1..6) { $seed.Add((Lease "VE$i" "jE$i" $true)); $seed.Add((Record "VE$i" "jE$i" $true)) }
-    foreach ($i in 1..3) { $seed.Add((Record "VG$i" "jG$i" $false)) }
-    $seed.Add((Lease 'VG1' 'jG1' $true))
-    $seed.Add((Lease 'VG2' 'jG2-other' $true))
-    $seed.Add((Lease 'VA1' 'jH1' $true))
-    Invoke-StoreSql $between ($seed -join "`n")
-    $migratedCount = Test-Expectation 'leases and records present' $between @{
-        migrationState = 'LEASES_NOT_YET_RETIRED'; originalRecords = 22; claimBackfills = 19; leaseBackfills = 14; expected = 55 }
+    Invoke-StoreSql $between (ConvertTo-SeedSql $seedBetween)
+    Test-Expectation 'leases and records present' $between $partsBetween
 
-    # --- 1b. before batch 8: no record table yet --------------------------------------------------------------
-    #   6 claims with their unreleased lease                                    backfill 6
-    #   3 claims whose own journey's lease is released                           backfill 3, lease 0 (step 2 wrote one)
-    #   7 released leases on 2 vehicles with no claim                            lease 7
-    #   total: records 0, backfill 9, lease 7, expected 16
+    # --- 1b. before batch 8: no record table yet (seed and parts above) -------------------------------------------
     $beforeRecords = Join-Path $work 'before-batch8.db'
     Update-Store $beforeRecords $beforeBatch8
-    $seed = [System.Collections.Generic.List[string]]::new()
-    foreach ($i in 1..6) { $seed.Add((Claim "VP$i" "jP$i")); $seed.Add((Lease "VP$i" "jP$i" $false)) }
-    foreach ($i in 1..3) { $seed.Add((Claim "VQ$i" "jQ$i")); $seed.Add((Lease "VQ$i" "jQ$i" $true)) }
-    foreach ($i in 1..7) { $seed.Add((Lease "VR$($i % 2)" "jR$i" $true)) }
-    Invoke-StoreSql $beforeRecords ($seed -join "`n")
-    [void](Test-Expectation 'before batch 8, no record table' $beforeRecords @{
-        migrationState = 'RECORD_TABLE_NOT_YET_CREATED'; originalRecords = 0; claimBackfills = 9; leaseBackfills = 7; expected = 16 })
+    Invoke-StoreSql $beforeRecords (ConvertTo-SeedSql $seedBefore)
+    Test-Expectation 'before batch 8, no record table' $beforeRecords $partsBefore
 
     # --- 1c. already migrated: the lease table is gone, nothing is backfilled ------------------------------------
+    # 1a's store after its migration holds the 55 records 1a's hand computation calls for; a constant, not 1a's
+    # measured count, so that a migration that wrote the wrong number does not also move what 1c expects.
     $migrated = Join-Path $work 'already-migrated.db'
     Copy-Store $between $migrated
-    [void](Test-Expectation 'already migrated' $migrated @{
-        migrationState = 'ALREADY_RETIRED'; originalRecords = $migratedCount; claimBackfills = 0; leaseBackfills = 0; expected = $migratedCount })
+    Test-Expectation 'already migrated' $migrated @{
+        migrationState = 'ALREADY_RETIRED'; originalRecords = 55; claimBackfills = 0; leaseBackfills = 0; expected = 55 }
 
     # --- 2. which tables may be missing ---------------------------------------------------------------------
     # Each read is of a copy of the migrated store with one table renamed away. Only the claim record table, and only
@@ -308,6 +359,35 @@ Write-Host ("     control: the previous criterion (afterProbe = final) is {0} fo
 # afterProbe against final is vehicleClaimRecordSurvivesTheHostRestart's alone now; this judgement no longer repeats it.
 $grewAfterRestart = Get-Judgement -ExpectedCount 55 -AfterProbeCount 55 -FinalCount 56
 Check 'a record added after the restart is not this judgement''s to catch' ($grewAfterRestart.noExternal -eq $true) "$($grewAfterRestart | ConvertTo-Json -Compress)"
+
+# The evidence says what the judgement said: matches is the judgement variable, not a value that could drift from it
+# (review of PR #606 set it to $true and every other self-check stayed green), and both branches of the store
+# provenance record carry the record, so every gate result has it whichever store the run restored.
+function Get-TopLevelAssignment([string]$Name) {
+    return @($runnerAst.EndBlock.Statements | Where-Object {
+            $_ -is [System.Management.Automation.Language.AssignmentStatementAst] -and $_.Left.Extent.Text -eq "`$$Name" })
+}
+function Get-HashtableValue($Hashtable, [string]$Key) {
+    $pair = @($Hashtable.KeyValuePairs | Where-Object { $_.Item1.Extent.Text -eq $Key })
+    if ($pair.Count -ne 1) { return $null }
+    return $pair[0].Item2.Extent.Text.Trim()
+}
+$backfillRecord = Get-TopLevelAssignment 'claimRecordBackfill'
+$backfillTable = if ($backfillRecord.Count -eq 1) {
+    @($backfillRecord[0].Right.FindAll({ param($node) $node -is [System.Management.Automation.Language.HashtableAst] }, $true)) | Select-Object -First 1
+} else { $null }
+$matchesValue = if ($null -ne $backfillTable) { Get-HashtableValue $backfillTable 'matches' } else { $null }
+Check 'the evidence record''s matches is the judgement itself' ($matchesValue -ceq '$claimRecordsMatchTheBackfillPass') `
+    "$($backfillRecord.Count) assignment(s) of `$claimRecordBackfill; matches = $matchesValue"
+$provenance = Get-TopLevelAssignment 'fieldStoreProvenanceRecord'
+$branches = if ($provenance.Count -eq 1) {
+    @($provenance[0].Right.FindAll({
+                param($node) $node -is [System.Management.Automation.Language.HashtableAst] -and
+                    @($node.KeyValuePairs | Where-Object { $_.Item1.Extent.Text -eq 'storeSource' }).Count -eq 1 }, $true))
+} else { @() }
+$carrying = @($branches | Where-Object { (Get-HashtableValue $_ 'claimRecordBackfill') -ceq '$claimRecordBackfill' })
+Check 'both store provenance branches carry claimRecordBackfill' ($branches.Count -eq 2 -and $carrying.Count -eq 2) `
+    "$($branches.Count) branch(es), $($carrying.Count) carrying it"
 
 if ($failures.Count -gt 0) {
     Write-Host "DemandBearingClaimRecordBackfill self-check: $($failures.Count) check(s) came out the other way."
