@@ -27,6 +27,12 @@
        The runner's previous criterion (afterProbe equal to final) is printed beside it as a control: it never
        looks at the baseline, so it is green whatever the migration wrote.
 
+    2. Missing tables. Copies of the migrated store, each with one table renamed away, read by the runner's
+       Read-ControlDatabase: in the baseline read and in the after-migration read (-AfterMigration, which the
+       runner uses for afterProbe and final). Only the claim record table, and only in the baseline read, may be
+       missing; each of the other nine counted tables, the claim record table after migration, and the claims a
+       baseline's backfill is worked out from are refused with an error that names the table.
+
     Exits 1 when any check comes out the other way, and prints every check either way.
 
 .EXAMPLE
@@ -101,6 +107,14 @@ function Invoke-StoreSql([string]$Path, [string]$Sql) {
         $command = $connection.CreateCommand()
         try { $command.CommandText = $Sql; [void]$command.ExecuteNonQuery() } finally { $command.Dispose() }
     } finally { $connection.Dispose() }
+}
+
+# The store is in WAL mode, and what the migration wrote may still be only in -wal: a copy of the main file alone is
+# the store from before the migration (control-server#503). Copied whole, as the runner restores one.
+function Copy-Store([string]$From, [string]$To) {
+    foreach ($suffix in '', '-wal', '-shm') {
+        if (Test-Path -LiteralPath ($From + $suffix) -PathType Leaf) { Copy-Item -LiteralPath ($From + $suffix) -Destination ($To + $suffix) }
+    }
 }
 
 function Get-RecordCount([string]$Path) {
@@ -205,9 +219,44 @@ try {
 
     # --- 1c. already migrated: the lease table is gone, nothing is backfilled ------------------------------------
     $migrated = Join-Path $work 'already-migrated.db'
-    Copy-Item -LiteralPath $between -Destination $migrated
+    Copy-Store $between $migrated
     [void](Test-Expectation 'already migrated' $migrated @{
         migrationState = 'ALREADY_RETIRED'; originalRecords = $migratedCount; claimBackfills = 0; leaseBackfills = 0; expected = $migratedCount })
+
+    # --- 2. which tables may be missing ---------------------------------------------------------------------
+    # Each read is of a copy of the migrated store with one table renamed away. Only the claim record table, and only
+    # in the baseline read, may be missing; every other missing table is a refusal that names it, where the runner
+    # before control-server#544 counted it as 0 and went on.
+    function Test-MissingTable([string]$Label, [string]$Table, [switch]$AfterMigration, [switch]$Allowed) {
+        $copy = Join-Path $work ("missing-$Table-$([guid]::NewGuid().ToString('n').Substring(0, 6)).db")
+        Copy-Store $migrated $copy
+        Invoke-StoreSql $copy "ALTER TABLE `"$Table`" RENAME TO `"${Table}_RenamedBySelfCheck`";"
+        $script:controlDatabasePath = $copy
+        $read = $null
+        $thrown = $null
+        try { $read = if ($AfterMigration) { Read-ControlDatabase -AfterMigration } else { Read-ControlDatabase } }
+        catch { $thrown = $_.Exception.Message }
+        if ($Allowed) {
+            Check "${Label}: read without $Table" ($null -eq $thrown) "it threw: $thrown"
+        } else {
+            $counted = if ($null -ne $read -and $read.counts.Contains($Table)) { " counted $Table = $($read.counts[$Table]) and went on" } else { '' }
+            # The runner's own refusal, not whatever a later query happens to throw: SQLite's "no such table: X" names the
+            # table too, but only for the tables the read also selects rows from, and only by accident.
+            Check "${Label}: a missing $Table is refused, by name" `
+                ($null -ne $thrown -and $thrown.Contains("CONTROL_TABLE_MISSING: $Table ", [StringComparison]::Ordinal)) `
+                "$(if ($null -eq $thrown) { 'Read-ControlDatabase did not throw;' + $counted } else { "it threw, but not the runner's own refusal naming the table: $thrown" })"
+        }
+    }
+    foreach ($table in 'OrderIntents', 'RiotDispatchAuditEvents', 'AcceptedDemands', 'StationOperations', 'OperationResults',
+                       'UnloadBatches', 'StopClosures', 'TransportDemandCompletions', 'ProtocolInbox') {
+        Test-MissingTable 'baseline' $table
+        Test-MissingTable 'after migration' $table -AfterMigration
+    }
+    Test-MissingTable 'baseline' 'VehiclePurposeClaimRecords' -Allowed
+    Test-MissingTable 'after migration' 'VehiclePurposeClaimRecords' -AfterMigration
+    # What the backfill is worked out from: without the claims it cannot be, so the baseline refuses rather than
+    # expecting a count it never computed.
+    Test-MissingTable 'baseline' 'VehiclePurposeClaims'
 } finally {
     [Microsoft.Data.Sqlite.SqliteConnection]::ClearAllPools()
     if ($KeepWork) { Write-Host "Stores kept in $work" }

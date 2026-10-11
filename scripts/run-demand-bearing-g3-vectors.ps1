@@ -418,17 +418,23 @@ function Test-RowsPreserved {
 }
 
 function Read-ControlDatabase {
+    function Test-ControlTable {
+        param([Parameter(Mandatory)][string]$Table)
+        return (Invoke-SqliteScalarLong -DatabasePath $controlDatabasePath `
+            -Sql "SELECT COUNT(*) FROM sqlite_master WHERE type = 'table' AND name = '$Table'") -ne 0
+    }
+
     $countedTables = @(
         'OrderIntents', 'RiotDispatchAuditEvents', 'AcceptedDemands', 'VehiclePurposeClaimRecords',
         'StationOperations', 'OperationResults', 'UnloadBatches', 'StopClosures',
         'TransportDemandCompletions', 'ProtocolInbox')
     $counts = [ordered]@{}
+    $claimRecordTablePresent = Test-ControlTable 'VehiclePurposeClaimRecords'
     foreach ($table in $countedTables) {
         # The claim record table (control-server#386/#387) does not exist yet in a field store restored from before
         # batch 8; the baseline reads it before the server has migrated that store. Absent counts as 0.
-        $present = Invoke-SqliteScalarLong -DatabasePath $controlDatabasePath `
-            -Sql "SELECT COUNT(*) FROM sqlite_master WHERE type = 'table' AND name = '$table'"
-        $counts[$table] = if ($present -eq 0) { 0 } else {
+        $present = Test-ControlTable $table
+        $counts[$table] = if (-not $present) { 0 } else {
             Invoke-SqliteScalarLong -DatabasePath $controlDatabasePath -Sql "SELECT COUNT(*) FROM $table"
         }
     }
@@ -445,6 +451,20 @@ function Read-ControlDatabase {
             Invoke-SqliteRows -DatabasePath $controlDatabasePath `
                 -Sql 'SELECT JourneyId, VehicleKey, AcquiredAt, ReleasedAt FROM VehiclePurposeClaimRecords ORDER BY JourneyId, AcquiredAt' `
                 -Columns @('journeyId', 'vehicleKey', 'acquiredAt', 'releasedAt')
+        }
+        # What Batch8RetireOldVehicleOccupancy backfills the records from (control-server#544): the claims, and the
+        # dispatch leases, which that migration drops -- so only a read taken before the first host has them. Null
+        # when the table is not there: for the leases that means the store is already past that migration.
+        claimRecordTablePresent = $claimRecordTablePresent
+        vehiclePurposeClaimRows = if (-not (Test-ControlTable 'VehiclePurposeClaims')) { $null } else {
+            Invoke-SqliteRows -DatabasePath $controlDatabasePath `
+                -Sql 'SELECT VehicleKey, JourneyId FROM VehiclePurposeClaims ORDER BY VehicleKey' `
+                -Columns @('vehicleKey', 'journeyId')
+        }
+        vehicleDispatchLeaseRows = if (-not (Test-ControlTable 'VehicleDispatchLeases')) { $null } else {
+            Invoke-SqliteRows -DatabasePath $controlDatabasePath `
+                -Sql 'SELECT JourneyId, VehicleKey, ReleasedAt FROM VehicleDispatchLeases ORDER BY JourneyId' `
+                -Columns @('journeyId', 'vehicleKey', 'releasedAt')
         }
         auditRows = Invoke-SqliteRows -DatabasePath $controlDatabasePath -Sql @'
 SELECT UpperId, DispatchGeneration, Sequence, Phase, Outcome, EligibilityBasis,
@@ -471,9 +491,68 @@ SELECT UpperId, DispatchGeneration, Sequence, Phase, Outcome, EligibilityBasis,
     }
 }
 
+# control-server#544. How many claim records the restored store must hold once the first host has migrated it, worked out
+# from the baseline alone, so that the count after the probe is checked against something other than itself. The
+# conditions are Batch8RetireOldVehicleOccupancy's BackfillClaimHistorySql, re-derived here over the baseline's rows in
+# the order that migration runs them; Test-DemandBearingClaimRecordBackfill.ps1 holds this to the real migration.
+#   1. an open record whose vehicle and journey hold no claim is closed: a row changed, none added;
+#   2. each claim with no open record of its vehicle and journey gets one ('backfill:');
+#   3. each released lease whose vehicle and journey have no record at all after step 2 gets one ('lease:').
+# No later migration adds or deletes a record (checked through 20261008052643 for control-server#544); a store past the
+# lease table's drop has nothing backfilled. Nothing the probe window does adds one either: a record is only inserted
+# with a claim -- an acceptance, a charging, idle-return or purpose transition -- and this run keeps the journey runtime
+# off and sends only session and OperationResult messages; releasing a claim closes its records, it adds none.
 function Get-ExpectedClaimRecordCount {
     param([Parameter(Mandatory)]$Baseline)
-    throw 'Get-ExpectedClaimRecordCount is not implemented yet (control-server#544).'
+
+    $records = @($Baseline.vehicleClaimRecordRows | Where-Object { $null -ne $_ })
+    if ($null -eq $Baseline.vehicleDispatchLeaseRows) {
+        return [ordered]@{
+            migrationState = 'ALREADY_RETIRED'
+            originalRecords = $records.Count
+            claimBackfills = 0
+            leaseBackfills = 0
+            expected = $records.Count
+        }
+    }
+    if ($null -eq $Baseline.vehiclePurposeClaimRows) {
+        throw ('The baseline has dispatch leases but no VehiclePurposeClaims table: a store from before batch 7, whose ' +
+               'migration also writes claims. The expected claim record count is not worked out for it.')
+    }
+    $claims = @($Baseline.vehiclePurposeClaimRows | Where-Object { $null -ne $_ })
+    $leases = @($Baseline.vehicleDispatchLeaseRows | Where-Object { $null -ne $_ })
+    $key = { param($row) "$($row['vehicleKey'])`u{001f}$($row['journeyId'])" }
+
+    $claimKeys = [System.Collections.Generic.HashSet[string]]::new()
+    foreach ($claim in $claims) { [void]$claimKeys.Add((& $key $claim)) }
+    # Step 1 leaves open only the records whose claim is still there.
+    $openKeys = [System.Collections.Generic.HashSet[string]]::new()
+    $recordKeys = [System.Collections.Generic.HashSet[string]]::new()
+    foreach ($record in $records) {
+        $recordKey = & $key $record
+        [void]$recordKeys.Add($recordKey)
+        if ($null -eq $record['releasedAt'] -and $claimKeys.Contains($recordKey)) { [void]$openKeys.Add($recordKey) }
+    }
+    # Step 2.
+    $claimBackfills = 0
+    foreach ($claim in $claims) {
+        $claimKey = & $key $claim
+        if (-not $openKeys.Contains($claimKey)) {
+            $claimBackfills++
+            [void]$recordKeys.Add($claimKey)
+        }
+    }
+    # Step 3, against the records as step 2 left them.
+    $leaseBackfills = @($leases | Where-Object {
+            $null -ne $_['releasedAt'] -and -not $recordKeys.Contains((& $key $_)) }).Count
+
+    return [ordered]@{
+        migrationState = if ($Baseline.claimRecordTablePresent) { 'LEASES_NOT_YET_RETIRED' } else { 'RECORD_TABLE_NOT_YET_CREATED' }
+        originalRecords = $records.Count
+        claimBackfills = $claimBackfills
+        leaseBackfills = $leaseBackfills
+        expected = $records.Count + $claimBackfills + $leaseBackfills
+    }
 }
 
 $control = $null
