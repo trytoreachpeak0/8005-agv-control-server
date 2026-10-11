@@ -342,6 +342,12 @@ public sealed class Batch8OccupancyRetirementMigrationTests
             // WriteLeasesTheWayTheOldVersionDidAsync: the one INSERT that turns seeded records into the leases the old
             // version wrote, for migration tests that seed a schema from before the drop.
             ["tests/ControlServer.Tests/Batch7JourneyFixture.cs"] = 1,
+            // Get-ExpectedClaimRecordCount and Read-ControlDatabase's baseline: read the lease table of a store from before
+            // batch 8, before the first host drops it (control-server#544); one more use turns this red.
+            ["scripts/run-demand-bearing-g3-vectors.ps1"] = 6,
+            // Seeds the lease table of a store from before batch 8 and reads the runner's baseline of it
+            // (control-server#544); one more use turns this red.
+            ["scripts/Test-DemandBearingClaimRecordBackfill.ps1"] = 3,
         };
         string[] offenders =
         [

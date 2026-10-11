@@ -418,22 +418,53 @@ function Test-RowsPreserved {
 }
 
 function Read-ControlDatabase {
+    param(
+        # The reads after a host has started on the store (afterProbe, final): that host migrated it, so from then on
+        # every counted table, the claim record table included, has to be there. The baseline is read without it.
+        [switch]$AfterMigration
+    )
+
+    function Test-ControlTable {
+        param([Parameter(Mandatory)][string]$Table)
+        return (Invoke-SqliteScalarLong -DatabasePath $controlDatabasePath `
+            -Sql "SELECT COUNT(*) FROM sqlite_master WHERE type = 'table' AND name = '$Table'") -ne 0
+    }
+    function Assert-ControlTable {
+        param([Parameter(Mandatory)][string]$Table, [Parameter(Mandatory)][string]$Why)
+        if (-not (Test-ControlTable $Table)) {
+            throw ("CONTROL_TABLE_MISSING: $Table is not in $controlDatabasePath ($(if ($AfterMigration) { 'after a host migrated it' } else { 'baseline' })). " +
+                   "$Why A missing table is not counted as empty.")
+        }
+    }
+
     $countedTables = @(
         'OrderIntents', 'RiotDispatchAuditEvents', 'AcceptedDemands', 'VehiclePurposeClaimRecords',
         'StationOperations', 'OperationResults', 'UnloadBatches', 'StopClosures',
         'TransportDemandCompletions', 'ProtocolInbox')
     $counts = [ordered]@{}
+    $claimRecordTablePresent = Test-ControlTable 'VehiclePurposeClaimRecords'
     foreach ($table in $countedTables) {
         # The claim record table (control-server#386/#387) does not exist yet in a field store restored from before
-        # batch 8; the baseline reads it before the server has migrated that store. Absent counts as 0.
-        $present = Invoke-SqliteScalarLong -DatabasePath $controlDatabasePath `
-            -Sql "SELECT COUNT(*) FROM sqlite_master WHERE type = 'table' AND name = '$table'"
-        $counts[$table] = if ($present -eq 0) { 0 } else {
-            Invoke-SqliteScalarLong -DatabasePath $controlDatabasePath -Sql "SELECT COUNT(*) FROM $table"
+        # batch 8, and the baseline reads it before the server has migrated that store: there, and only there, absent
+        # counts as 0. Any other table missing, or that one after a migration, means this is not the store the run
+        # thinks it is, and counting it as 0 would let the judgements below compare against a number nobody read
+        # (control-server#544).
+        if ($table -eq 'VehiclePurposeClaimRecords' -and -not $AfterMigration -and -not $claimRecordTablePresent) {
+            $counts[$table] = 0
+            continue
+        }
+        Assert-ControlTable $table 'This run counts it.'
+        $counts[$table] = Invoke-SqliteScalarLong -DatabasePath $controlDatabasePath -Sql "SELECT COUNT(*) FROM $table"
+    }
+    if (-not $AfterMigration) {
+        Assert-ControlTable 'VehiclePurposeClaims' 'The expected claim record count is worked out from it (Get-ExpectedClaimRecordCount).'
+        if (-not $claimRecordTablePresent) {
+            Assert-ControlTable 'VehicleDispatchLeases' ('A store without the claim record table predates batch 8 and still has ' +
+                'its dispatch leases, which the expected claim record count is worked out from.')
         }
     }
 
-    return [ordered]@{
+    $read = [ordered]@{
         file = Get-FileFingerprint -Path $controlDatabasePath
         counts = $counts
         acceptedDemandRows = Invoke-SqliteRows -DatabasePath $controlDatabasePath `
@@ -469,6 +500,84 @@ SELECT UpperId, DispatchGeneration, Sequence, Phase, Outcome, EligibilityBasis,
             -Sql "SELECT MessageId, ContentHash, FirstResponseJson, RequestJson FROM ProtocolInbox WHERE MessageType = 'OperationResult' ORDER BY ReceivedAt" `
             -Columns @('messageId', 'contentHash', 'firstResponseJson', 'requestJson')
     }
+    if (-not $AfterMigration) {
+        # What Batch8RetireOldVehicleOccupancy backfills the records from (control-server#544): the claims, and the
+        # dispatch leases, which that migration drops -- so only the baseline has them. Null leases: the store is
+        # already past that migration.
+        $read['claimRecordTablePresent'] = $claimRecordTablePresent
+        $read['vehiclePurposeClaimRows'] = Invoke-SqliteRows -DatabasePath $controlDatabasePath `
+            -Sql 'SELECT VehicleKey, JourneyId FROM VehiclePurposeClaims ORDER BY VehicleKey' `
+            -Columns @('vehicleKey', 'journeyId')
+        $read['vehicleDispatchLeaseRows'] = if (-not (Test-ControlTable 'VehicleDispatchLeases')) { $null } else {
+            Invoke-SqliteRows -DatabasePath $controlDatabasePath `
+                -Sql 'SELECT JourneyId, VehicleKey, ReleasedAt FROM VehicleDispatchLeases ORDER BY JourneyId' `
+                -Columns @('journeyId', 'vehicleKey', 'releasedAt')
+        }
+    }
+    return $read
+}
+
+# control-server#544. How many claim records the restored store must hold once the first host has migrated it, worked out
+# from the baseline alone, so that the count after the probe is checked against something other than itself. The
+# conditions are Batch8RetireOldVehicleOccupancy's BackfillClaimHistorySql, re-derived here over the baseline's rows in
+# the order that migration runs them; Test-DemandBearingClaimRecordBackfill.ps1 holds this to the real migration.
+#   1. an open record whose vehicle and journey hold no claim is closed: a row changed, none added;
+#   2. each claim with no open record of its vehicle and journey gets one ('backfill:');
+#   3. each released lease whose vehicle and journey have no record at all after step 2 gets one ('lease:').
+# No later migration adds or deletes a record (checked through 20261011005905 for control-server#544; that last one,
+# ProtocolInboxReadIndexes, touches ProtocolInbox alone); a store past the
+# lease table's drop has nothing backfilled. Nothing the probe window does adds one either: a record is only inserted
+# with a claim -- an acceptance, a charging, idle-return or purpose transition -- and this run keeps the journey runtime
+# off and sends only session and OperationResult messages; releasing a claim closes its records, it adds none.
+function Get-ExpectedClaimRecordCount {
+    param([Parameter(Mandatory)]$Baseline)
+
+    $records = @($Baseline.vehicleClaimRecordRows | Where-Object { $null -ne $_ })
+    if ($null -eq $Baseline.vehicleDispatchLeaseRows) {
+        return [ordered]@{
+            migrationState = 'ALREADY_RETIRED'
+            originalRecords = $records.Count
+            claimBackfills = 0
+            leaseBackfills = 0
+            expected = $records.Count
+        }
+    }
+    # Read-ControlDatabase has already refused a baseline without VehiclePurposeClaims: a store from before batch 7,
+    # whose own migration writes claims, which this does not work out.
+    $claims = @($Baseline.vehiclePurposeClaimRows | Where-Object { $null -ne $_ })
+    $leases = @($Baseline.vehicleDispatchLeaseRows | Where-Object { $null -ne $_ })
+    $key = { param($row) "$($row['vehicleKey'])`u{001f}$($row['journeyId'])" }
+
+    $claimKeys = [System.Collections.Generic.HashSet[string]]::new()
+    foreach ($claim in $claims) { [void]$claimKeys.Add((& $key $claim)) }
+    # Step 1 leaves open only the records whose claim is still there.
+    $openKeys = [System.Collections.Generic.HashSet[string]]::new()
+    $recordKeys = [System.Collections.Generic.HashSet[string]]::new()
+    foreach ($record in $records) {
+        $recordKey = & $key $record
+        [void]$recordKeys.Add($recordKey)
+        if ($null -eq $record['releasedAt'] -and $claimKeys.Contains($recordKey)) { [void]$openKeys.Add($recordKey) }
+    }
+    # Step 2.
+    $claimBackfills = 0
+    foreach ($claim in $claims) {
+        $claimKey = & $key $claim
+        if (-not $openKeys.Contains($claimKey)) {
+            $claimBackfills++
+            [void]$recordKeys.Add($claimKey)
+        }
+    }
+    # Step 3, against the records as step 2 left them.
+    $leaseBackfills = @($leases | Where-Object {
+            $null -ne $_['releasedAt'] -and -not $recordKeys.Contains((& $key $_)) }).Count
+
+    return [ordered]@{
+        migrationState = if ($Baseline.claimRecordTablePresent) { 'LEASES_NOT_YET_RETIRED' } else { 'RECORD_TABLE_NOT_YET_CREATED' }
+        originalRecords = $records.Count
+        claimBackfills = $claimBackfills
+        leaseBackfills = $leaseBackfills
+        expected = $records.Count + $claimBackfills + $leaseBackfills
+    }
 }
 
 $control = $null
@@ -480,6 +589,7 @@ $handshakeResult = $null
 $version = $null
 $versionAfterRestart = $null
 $baseline = $null
+$claimRecordExpectation = $null
 $afterProbe = $null
 $final = $null
 $restart = [ordered]@{
@@ -569,6 +679,8 @@ try {
 
     $baseline = Read-ControlDatabase
     Assert-FieldRunStoreIsNotGenerated -StoreSource $storeSource -Baseline $baseline
+    # Before the first host migrates the store, from this baseline alone (control-server#544).
+    $claimRecordExpectation = Get-ExpectedClaimRecordCount -Baseline $baseline
     $preparedRows =@($baseline.stationOperationRows | Where-Object { $_['status'] -eq 'Prepared' })
     $committedRows = @($baseline.stationOperationRows | Where-Object { $_['status'] -eq 'Committed' })
     if ($preparedRows.Count -ne 1) {
@@ -644,7 +756,7 @@ try {
     Stop-ProcessSafely -Process $control
     $restart.firstHostExitedBeforeRestart = $control.HasExited
     Start-Sleep -Seconds 2
-    $afterProbe = Read-ControlDatabase
+    $afterProbe = Read-ControlDatabase -AfterMigration
 
     $control = Start-ControlServer -Ordinal 2
     $restart.secondHostProcessId = $control.Id
@@ -664,7 +776,7 @@ finally {
     Stop-ProcessSafely -Process $control
     Start-Sleep -Seconds 2
     if (Test-Path -LiteralPath $controlDatabasePath -PathType Leaf) {
-        try { $final = Read-ControlDatabase } catch { if ($null -eq $runError) { $runError = $_ } }
+        try { $final = Read-ControlDatabase -AfterMigration } catch { if ($null -eq $runError) { $runError = $_ } }
     }
 }
 
@@ -844,15 +956,29 @@ $demandClosureRowsPass = $null -ne $baseline -and $null -ne $final -and
 
 # Nothing left this machine. The restored store gains business rows -- that is the vector -- but the
 # tables that only an external call can grow must be byte-for-byte the same count as the baseline.
-# The claim records are compared from after the first host, not from the baseline: that host migrated the restored
-# store, and the migration backfills a record per claim and per released lease it finds (control-server#387). What
-# only an acceptance can add is what must not grow from there on.
+# The claim records are the exception: the first host migrated the restored store, and the migration backfills a record
+# per claim and per released lease it finds (control-server#387). So the count after that host is held to what the
+# baseline calls for (control-server#544, Get-ExpectedClaimRecordCount), which also covers the probe window, since only
+# an acceptance could add one there. Until #544 it was compared with the final count instead, which
+# vehicleClaimRecordSurvivesTheHostRestart already does and which no backfill shortfall can fail. On a generated store
+# (already migrated) the expectation is the baseline's own count.
 $externalTables = @('OrderIntents', 'RiotDispatchAuditEvents', 'AcceptedDemands')
+$claimRecordsMatchTheBackfillPass = $null -ne $claimRecordExpectation -and $null -ne $afterProbe -and
+    [long]$afterProbe.counts['VehiclePurposeClaimRecords'] -eq [long]$claimRecordExpectation['expected']
 $noExternalSideEffectsPass = $null -ne $baseline -and $null -ne $final -and $null -ne $afterProbe -and
     @($externalTables | Where-Object {
         [long]$baseline.counts[$_] -ne [long]$final.counts[$_] }).Count -eq 0 -and
-    [long]$afterProbe.counts['VehiclePurposeClaimRecords'] -eq [long]$final.counts['VehiclePurposeClaimRecords'] -and
+    $claimRecordsMatchTheBackfillPass -and
     [long]$final.counts['StationOperations'] -eq [long]$baseline.counts['StationOperations']
+# Written into the evidence beside the parts, so a reader does not have to work the count out again.
+$claimRecordBackfill = [ordered]@{
+    expectation = $claimRecordExpectation
+    afterProbeActual = if ($null -ne $afterProbe) { [long]$afterProbe.counts['VehiclePurposeClaimRecords'] } else { $null }
+    matches = $claimRecordsMatchTheBackfillPass
+    rule = 'Batch8RetireOldVehicleOccupancy BackfillClaimHistorySql, worked out from the baseline in its own order: ' +
+           'original records + claims without an open record + released leases whose vehicle and journey have no ' +
+           'record after that; 0 backfilled once the lease table is gone. Asserted in noMovementOrExternalSideEffects.'
+}
 
 # --- the demand-bearing half of the process restart vector ------------------------------------------
 # A restart the OS did not actually perform proves nothing, so the replaced process identity carries
@@ -941,6 +1067,9 @@ $fieldStoreProvenanceRecord = if ($storeSource -eq 'FIELD_RUN') {
         # The RIoT create audit read out of the same restored store. Asserted until the control-server#60
         # review (2026-09-18): every row was written by the field run's build before this server started,
         # so it judged that history rather than the bound commit. Recorded exactly as measured instead.
+        # control-server#544: what the first host's migration had to leave in the claim record table, its parts, and
+        # what it left. Here so it reaches every gate result, not only run-result.json.
+        claimRecordBackfill = $claimRecordBackfill
         riotCreateAuditHistory = [ordered]@{
             legs = $auditLegs.Count
             preCreateReconciliationObservedUnknownOnEveryLeg = $riotUnknownObservedPass
@@ -970,6 +1099,9 @@ $fieldStoreProvenanceRecord = if ($storeSource -eq 'FIELD_RUN') {
                'show the store was written by this build, not catch a product regression.'
         # The fake RIoT does not answer a never-created upperId the way the real one does, so these say
         # nothing about RIoT; kept so the shape of the record does not depend on where the store came from.
+        # control-server#544: what the first host's migration had to leave in the claim record table, its parts, and
+        # what it left. Here so it reaches every gate result, not only run-result.json.
+        claimRecordBackfill = $claimRecordBackfill
         riotCreateAuditHistory = [ordered]@{
             legs = $auditLegs.Count
             preCreateReconciliationObservedUnknownOnEveryLeg = $riotUnknownObservedPass
@@ -1162,10 +1294,12 @@ $result = [ordered]@{
     # What an assertion actually checked, where a PASS alone would not say. Only names whose meaning depends on the run.
     assertionDetails = [ordered]@{
         protocolAndBuildIdentityBoundToTheSharedBinding = $protocolCommitConjunct
+        noMovementOrExternalSideEffects = "claim records after the first host: $($claimRecordBackfill.afterProbeActual), expected from the baseline: $(${claimRecordExpectation}?['expected']) ($(${claimRecordExpectation}?['migrationState']))"
     }
     failedAssertions = $failedAssertions
     probe = $probeResult
     contentConflictStore = $contentConflictStore
+    claimRecordBackfill = $claimRecordBackfill
     handshakeAfterRestart = $handshakeResult
     restart = $restart
     controlDatabaseBaseline = $baseline

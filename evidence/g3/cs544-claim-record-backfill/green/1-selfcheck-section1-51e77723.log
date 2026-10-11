@@ -1,0 +1,11 @@
+PASS the runner defines every function this self-check calls
+PASS leases and records present: the runner's expectation has the hand-computed parts
+PASS leases and records present: the real migration leaves the count the runner expected
+     control: the previous criterion (afterProbe = final) is PASS here; it never reads the baseline
+PASS before batch 8, no record table: the runner's expectation has the hand-computed parts
+PASS before batch 8, no record table: the real migration leaves the count the runner expected
+     control: the previous criterion (afterProbe = final) is PASS here; it never reads the baseline
+FAIL already migrated: the runner's expectation has the hand-computed parts --  leaseBackfills=14 (hand-computed 0); claimBackfills=19 (hand-computed 0); originalRecords=22 (hand-computed 55); migrationState=LEASES_NOT_YET_RETIRED (hand-computed ALREADY_RETIRED)
+PASS already migrated: the real migration leaves the count the runner expected
+     control: the previous criterion (afterProbe = final) is PASS here; it never reads the baseline
+DemandBearingClaimRecordBackfill self-check: 1 check(s) came out the other way.

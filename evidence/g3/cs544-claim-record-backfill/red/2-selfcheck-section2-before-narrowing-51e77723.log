@@ -1,0 +1,32 @@
+PASS the runner defines every function this self-check calls
+PASS leases and records present: the runner's expectation has the hand-computed parts
+PASS leases and records present: the real migration leaves the count the runner expected
+     control: the previous criterion (afterProbe = final) is PASS here; it never reads the baseline
+PASS before batch 8, no record table: the runner's expectation has the hand-computed parts
+PASS before batch 8, no record table: the real migration leaves the count the runner expected
+     control: the previous criterion (afterProbe = final) is PASS here; it never reads the baseline
+PASS already migrated: the runner's expectation has the hand-computed parts
+PASS already migrated: the real migration leaves the count the runner expected
+     control: the previous criterion (afterProbe = final) is PASS here; it never reads the baseline
+FAIL baseline: a missing OrderIntents is refused, by name -- it threw, but not the runner's own refusal naming the table: Exception calling "ExecuteReader" with "0" argument(s): "SQLite Error 1: 'no such table: OrderIntents'."
+FAIL after migration: a missing OrderIntents is refused, by name -- it threw, but not the runner's own refusal naming the table: Exception calling "ExecuteReader" with "0" argument(s): "SQLite Error 1: 'no such table: OrderIntents'."
+FAIL baseline: a missing RiotDispatchAuditEvents is refused, by name -- it threw, but not the runner's own refusal naming the table: Exception calling "ExecuteReader" with "0" argument(s): "SQLite Error 1: 'no such table: RiotDispatchAuditEvents'."
+FAIL after migration: a missing RiotDispatchAuditEvents is refused, by name -- it threw, but not the runner's own refusal naming the table: Exception calling "ExecuteReader" with "0" argument(s): "SQLite Error 1: 'no such table: RiotDispatchAuditEvents'."
+FAIL baseline: a missing AcceptedDemands is refused, by name -- it threw, but not the runner's own refusal naming the table: Exception calling "ExecuteReader" with "0" argument(s): "SQLite Error 1: 'no such table: AcceptedDemands'."
+FAIL after migration: a missing AcceptedDemands is refused, by name -- it threw, but not the runner's own refusal naming the table: Exception calling "ExecuteReader" with "0" argument(s): "SQLite Error 1: 'no such table: AcceptedDemands'."
+FAIL baseline: a missing StationOperations is refused, by name -- it threw, but not the runner's own refusal naming the table: Exception calling "ExecuteReader" with "0" argument(s): "SQLite Error 1: 'no such table: StationOperations'."
+FAIL after migration: a missing StationOperations is refused, by name -- it threw, but not the runner's own refusal naming the table: Exception calling "ExecuteReader" with "0" argument(s): "SQLite Error 1: 'no such table: StationOperations'."
+FAIL baseline: a missing OperationResults is refused, by name -- it threw, but not the runner's own refusal naming the table: Exception calling "ExecuteReader" with "0" argument(s): "SQLite Error 1: 'no such table: OperationResults'."
+FAIL after migration: a missing OperationResults is refused, by name -- it threw, but not the runner's own refusal naming the table: Exception calling "ExecuteReader" with "0" argument(s): "SQLite Error 1: 'no such table: OperationResults'."
+FAIL baseline: a missing UnloadBatches is refused, by name -- Read-ControlDatabase did not throw; counted UnloadBatches = 0 and went on
+FAIL after migration: a missing UnloadBatches is refused, by name -- Read-ControlDatabase did not throw; counted UnloadBatches = 0 and went on
+FAIL baseline: a missing StopClosures is refused, by name -- Read-ControlDatabase did not throw; counted StopClosures = 0 and went on
+FAIL after migration: a missing StopClosures is refused, by name -- Read-ControlDatabase did not throw; counted StopClosures = 0 and went on
+FAIL baseline: a missing TransportDemandCompletions is refused, by name -- Read-ControlDatabase did not throw; counted TransportDemandCompletions = 0 and went on
+FAIL after migration: a missing TransportDemandCompletions is refused, by name -- Read-ControlDatabase did not throw; counted TransportDemandCompletions = 0 and went on
+FAIL baseline: a missing ProtocolInbox is refused, by name -- it threw, but not the runner's own refusal naming the table: Exception calling "ExecuteReader" with "0" argument(s): "SQLite Error 1: 'no such table: ProtocolInbox'."
+FAIL after migration: a missing ProtocolInbox is refused, by name -- it threw, but not the runner's own refusal naming the table: Exception calling "ExecuteReader" with "0" argument(s): "SQLite Error 1: 'no such table: ProtocolInbox'."
+PASS baseline: read without VehiclePurposeClaimRecords
+FAIL after migration: a missing VehiclePurposeClaimRecords is refused, by name -- Read-ControlDatabase did not throw; counted VehiclePurposeClaimRecords = 0 and went on
+FAIL baseline: a missing VehiclePurposeClaims is refused, by name -- Read-ControlDatabase did not throw;
+DemandBearingClaimRecordBackfill self-check: 20 check(s) came out the other way.
