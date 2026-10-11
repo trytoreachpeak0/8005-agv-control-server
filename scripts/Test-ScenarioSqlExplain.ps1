@@ -102,7 +102,7 @@ $g = Get-Count 'SELECT COUNT(*) AS N FROM OrderIntents'
         if ($LASTEXITCODE -ne 0) { throw "dotnet build of ControlServer.Host failed ($LASTEXITCODE)." }
     }
     if (-not (Test-Path -LiteralPath $hostExe)) {
-        Write-Host "No $hostExe: build src/ControlServer.Host -c Release, or pass -Build. Nothing was checked."
+        Write-Host "No ${hostExe}: build src/ControlServer.Host -c Release, or pass -Build. Nothing was checked."
         exit 2
     }
     $database = Join-Path $scratch 'db\controlserver.db'
