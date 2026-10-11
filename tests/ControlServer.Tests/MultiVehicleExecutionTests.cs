@@ -2118,6 +2118,9 @@ public sealed partial class MultiVehicleExecutionTests
           IRiotRouteCostProbe, IRiotOrderCommandGateway, IRiotVehicleEmergencyFacts, IRiotVehicleOrderFacts,
           IRiotVehicleSafetyFacts, IRiotMapNameCatalog, IRiotOrderListingFacts, IRiotOrderMissionFacts
     {
+        /// <summary>What real RIoT answers a create whose upperId is too long (control-server#616).</summary>
+        public const string UpperIdTooLongBusinessCode = "00002";
+
         /// <summary>每一次建单的意图，按先后（control-server#404：充电单的形态、目的站与单号都在意图上）。</summary>
         public List<OrderIntent> CreatedIntents { get; } = [];
 
@@ -2412,6 +2415,18 @@ public sealed partial class MultiVehicleExecutionTests
             if (CreateAnswer?.Invoke(intent) is { } answer)
             {
                 return Task.FromResult(answer);
+            }
+            if (intent.UpperId.Length > RiotUpperIds.MaxLength)
+            {
+                // control-server#616: real RIoT answers HTTP 200 with business code 00002 to an upperId longer than it takes
+                // (69 and 71 on 2026-10-11), creates nothing, and the gateway reads that as an unknown result.
+                return Task.FromResult(new RiotOrderObservation(
+                    intent.UpperId,
+                    RiotOrderObservationKind.Unknown,
+                    null,
+                    Receipt: new RiotOrderCallReceipt(
+                        "CREATE", "SdkFailure", clock.GetUtcNow(), HttpStatusCode: 200, BusinessCode: UpperIdTooLongBusinessCode,
+                        FailureCategory: "RIOT_API_FAILURE")));
             }
             RiotOrderObservation active = new(
                 intent.UpperId,

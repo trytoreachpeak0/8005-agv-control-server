@@ -34,8 +34,9 @@ internal static class IdleReturnJourneyShape
     public const string NoDispatchZone = "IDLE_RETURN";
 
     /// <summary>
-    /// 这次空闲返回的 RIoT 单号，从旅程 id 派生：<c>idle-return:BROKERX-0001:20260929T081500123Z</c> →
-    /// <c>W2G-IDLE-BROKERX-0001-20260929T081500123Z</c>。与搬运单号（<c>W2G-{需求}-PICKUP-{代次}</c>）同一个前缀、不同的第二段，看一眼就分得开。
+    /// 这次空闲返回的 RIoT 单号，从旅程 id 派生：<c>idle-return:{deviceKey}:20260929T081500123Z</c> →
+    /// <c>W2G-IDLE-{车标}-20260929T081500123Z</c>，37 字符（车标见 <see cref="RiotUpperIds.VehicleTag"/>，control-server#616）。
+    /// 与搬运单号（<c>W2G-{需求}-PICKUP-{代次}</c>）同一个前缀、不同的第二段，看一眼就分得开。
     /// </summary>
     public static string UpperIdFor(string journeyId)
     {
@@ -44,7 +45,7 @@ internal static class IdleReturnJourneyShape
         {
             throw new ArgumentException($"'{journeyId}' is not an idle return journey id.", nameof(journeyId));
         }
-        return "W2G-IDLE-" + journeyId[IdleReturnIdentity.JourneyIdPrefix.Length..].Replace(':', '-');
+        return RiotUpperIds.VehicleJourney("IDLE", journeyId[IdleReturnIdentity.JourneyIdPrefix.Length..]);
     }
 
     public static (JourneyRuntimeRow Runtime, JourneyStopRow Stop, OrderIntent Intent) Build(
