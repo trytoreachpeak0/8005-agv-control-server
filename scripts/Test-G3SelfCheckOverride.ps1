@@ -90,14 +90,18 @@ foreach ($file in $runners.Keys) {
         $accepts = [System.Collections.Hashtable]::new([StringComparer]::Ordinal)
         if ($declared.Count -eq 1) {
             $probe = [scriptblock]::Create("param($($declared[0].Extent.Text)) `$true")
-            foreach ($value in @(('e' * 40), ('E' * 40), ('e' * 39))) {
+            # A real SHA-1 with digits in it (the protocol binding), so a pattern of letters only fails; and 41 characters,
+            # so a pattern not anchored at the end fails (review G3/G4 of PR #591).
+            $realSha = '3f091cb2eae7c58cec54a95dd9389c9180bc7b4c'
+            foreach ($value in @(('e' * 40), $realSha, ('E' * 40), ('e' * 39), ('e' * 41))) {
                 $arguments = @{ $name = $value }
                 $accepts[$value] = try { $null = & $probe @arguments; $true } catch { $false }
             }
         }
-        Check "${file}: declares -$name, which takes a lowercase full SHA-1 and refuses an uppercase or short one" `
-            ($declared.Count -eq 1 -and $accepts[('e' * 40)] -eq $true -and $accepts[('E' * 40)] -eq $false -and $accepts[('e' * 39)] -eq $false) `
-            "$($declared.Count) declared; lowercase $($accepts[('e' * 40)]), uppercase $($accepts[('E' * 40)]), short $($accepts[('e' * 39)])"
+        Check "${file}: declares -$name, which takes a lowercase full SHA-1 and refuses an uppercase, short or long one" `
+            ($declared.Count -eq 1 -and $accepts[('e' * 40)] -eq $true -and $accepts[$realSha] -eq $true -and $accepts[('E' * 40)] -eq $false -and
+             $accepts[('e' * 39)] -eq $false -and $accepts[('e' * 41)] -eq $false) `
+            "$($declared.Count) declared; lowercase $($accepts[('e' * 40)]), real $($accepts[$realSha]), uppercase $($accepts[('E' * 40)]), short $($accepts[('e' * 39)]), long $($accepts[('e' * 41)])"
     }
 
     # 2. The runner's own statements, in their order.
@@ -109,7 +113,7 @@ foreach ($file in $runners.Keys) {
             ($_ -is [System.Management.Automation.Language.AssignmentStatementAst] -and (
                 ($_.Left -is [System.Management.Automation.Language.VariableExpressionAst] -and $_.Left.VariablePath.UserPath -in 'commitSources', 'commitsRecord') -or
                 ($_.Left -is [System.Management.Automation.Language.IndexExpressionAst] -and $_.Left.Target -is [System.Management.Automation.Language.VariableExpressionAst] -and
-                 $_.Left.Target.VariablePath.UserPath -eq 'commitSources'))) -or
+                 $_.Left.Target.VariablePath.UserPath -in 'commitSources', 'commitsRecord'))) -or
             ($_ -is [System.Management.Automation.Language.IfStatementAst] -and
              $_.Clauses[0].Item1.Extent.Text -match '\$SelfCheck\w*Commit\b')
         })

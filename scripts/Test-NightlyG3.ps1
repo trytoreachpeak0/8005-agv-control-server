@@ -357,12 +357,31 @@ exit $(if ($red) { 1 } else { 0 })
              -not (Test-Path -LiteralPath (Join-Path $stages[1] 'publish'))) "$(Get-ChildItem -LiteralPath $stages[1] -ErrorAction SilentlyContinue | ForEach-Object Name)"
     }
 
-    # A round that passes the deadline after its first runner: the others are recorded, not run.
-    $round = Invoke-Round 'deadline' @{ NIGHTLY_G3_STANDIN_SLEEP_STAGED = '8' } @{ StartDeadlineUtc = [DateTimeOffset]::UtcNow.AddSeconds(5).ToString('o') }
+    # A round that passes the deadline after its first runner: the others are recorded, not run. The margins are wide on
+    # purpose (review 2-1 of PR #591): from here to staged starting was measured at 2.4 to 3.3 seconds, 7.7 on a busy
+    # machine, plus a cold CIM query; with the deadline 5 seconds out this case went red once on unchanged logic, and it
+    # runs in test.yml for every pull request. Twelve seconds to start staged, twenty seconds of staged.
+    $round = Invoke-Round 'deadline' @{ NIGHTLY_G3_STANDIN_SLEEP_STAGED = '20' } @{ StartDeadlineUtc = [DateTimeOffset]::UtcNow.AddSeconds(12).ToString('o') }
     $verdicts = @(${round}.Results?['verdicts'] | Where-Object { $null -ne $_ })
     Check 'round past the deadline: staged ran, the other three NOT_STARTED_DEADLINE and never started' `
         (($verdicts | ForEach-Object { $_['result'] }) -join ',' -ceq 'PASS,NOT_STARTED_DEADLINE,NOT_STARTED_DEADLINE,NOT_STARTED_DEADLINE' -and
          $round.Results['stoppedBy'] -ceq 'NOT_STARTED_DEADLINE' -and $null -eq (Get-Arguments $round.Work 'restart') -and $round.Exit -eq 1) `
+        "exit $($round.Exit); $(($verdicts | ForEach-Object { "$($_['runner'])=$($_['result'])" }) -join ', ') $($round.Output)"
+
+    # The deadline passing during the memory wait (review F1 of PR #591): memory reads high until after the deadline, then
+    # low. The deadline is checked after the wait, so staged is NOT_STARTED_DEADLINE; checked before it, staged would start.
+    $highProbe = Join-Path $scratch 'commit-probe.ps1'
+    Set-Content -LiteralPath $highProbe -Value @'
+#Requires -Version 7
+if ([DateTimeOffset]::UtcNow -lt [DateTimeOffset]::Parse($env:NIGHTLY_G3_TEST_COMMIT_HIGH_UNTIL)) { 1000 } else { 1 }
+'@
+    $deadlineAt = [DateTimeOffset]::UtcNow.AddSeconds(10)
+    $round = Invoke-Round 'deadline-during-memory-wait' @{ NIGHTLY_G3_TEST_COMMIT_HIGH_UNTIL = $deadlineAt.AddSeconds(5).ToString('o') } @{
+        StartDeadlineUtc = $deadlineAt.ToString('o'); CommitCeilingGiB = '12'; CommitWaitMinutes = '2'; CommitPollSeconds = '1'; CommitProbeScript = $highProbe }
+    $verdicts = @(${round}.Results?['verdicts'] | Where-Object { $null -ne $_ })
+    Check 'round whose deadline passes during the memory wait: staged NOT_STARTED_DEADLINE, never started' `
+        (($verdicts | ForEach-Object { $_['result'] }) -join ',' -ceq 'NOT_STARTED_DEADLINE,NOT_STARTED_DEADLINE,NOT_STARTED_DEADLINE,NOT_STARTED_DEADLINE' -and
+         $null -eq (Get-Arguments $round.Work 'staged') -and $round.Exit -eq 1) `
         "exit $($round.Exit); $(($verdicts | ForEach-Object { "$($_['runner'])=$($_['result'])" }) -join ', ') $($round.Output)"
 
     foreach ($gate in @(
@@ -404,8 +423,15 @@ exit $(if ($red) { 1 } else { 0 })
     $reportJob = [regex]::Match($workflow, '(?ms)^  report:\s*$.*').Value
     Check 'g3.yml: the report job runs always(), outside pull requests' ($reportJob -match "(?m)^    if:\s*always\(\)\s*&&\s*github\.event_name\s*!=\s*'pull_request'\s*$") 'see g3.yml'
     $removeStep = [regex]::Match($g3Job, '(?ms)- name: Remove the work root.*?(?=^      - |\z)').Value
-    Check 'g3.yml: the g3 job closes leftover processes and crash dialogs of the round, and reports a work root it cannot remove' `
-        ($g3Job -match 'WerFault' -and $g3Job -match 'Leftover process' -and $removeStep -ne '' -and $removeStep -notmatch 'SilentlyContinue') 'see g3.yml'
+    Check 'g3.yml: a work root the g3 job cannot remove is reported, not swallowed' ($removeStep -ne '' -and $removeStep -notmatch 'SilentlyContinue') 'see g3.yml'
+    # Review 2-2/2-3 of PR #591: the leftover step decides through Select-NightlyG3LeftoverProcess (section 7) over
+    # Win32_Process -- command lines included, since three runners start `dotnet <dll>` -- runs always(), fails the job on
+    # a leftover, and does not count %LOCALAPPDATA%\8005-l2-peers as ours (no G3 runner uses it; a hand-run L2 might).
+    $leftoverStep = [regex]::Match($g3Job, '(?ms)- name: Leftover processes and crash dialogs.*?(?=^      - |\z)').Value
+    Check 'g3.yml: the leftover step runs always(), reads Win32_Process through Select-NightlyG3LeftoverProcess, and fails the job on a leftover' `
+        ($leftoverStep -match '(?m)^        if:\s*always\(\)\s*$' -and $leftoverStep -match 'Win32_Process' -and $leftoverStep -match 'Select-NightlyG3LeftoverProcess' -and
+         $leftoverStep -match 'WerBefore' -and $leftoverStep -match '(?m)^\s*if \(\$leftovers\.Count -gt 0\) \{ exit 1 \}\s*$') 'see g3.yml'
+    Check 'g3.yml: the g3 job does not count the L2 peer cache as its own' ($g3Job -notmatch '8005-l2-peers') 'see g3.yml'
 
     # Review B of PR #591, the round's half. The reviewer's probe: the third runner writes a run-result.json that is JSON
     # null. That runner is ERROR and the round goes on.
@@ -431,6 +457,40 @@ exit $(if ($red) { 1 } else { 0 })
          ($verdicts | ForEach-Object { $_['result'] }) -join ',' -ceq 'PASS,PASS,ERROR,NOT_STARTED_ERROR' -and
          $null -eq (Get-Arguments $round.Work 'journey') -and $round.Exit -eq 1) `
         "exit $($round.Exit); stoppedBy=$(${round}.Results?['stoppedBy']); $(($verdicts | ForEach-Object { "$($_['runner'])=$($_['result'])" }) -join ', ') $($round.Output)"
+
+    # --- 7. whose leftover process is it ------------------------------------------------------------------------
+    # Select-NightlyG3LeftoverProcess over Win32_Process-shaped rows (review 2-2/2-3 of PR #591). A process is this job's
+    # when its executable path or its command line is under one of the job's roots: staged, restart and demand-bearing
+    # start `dotnet <dll>`, whose path is C:\Program Files\dotnet\dotnet.exe and whose dll is only on the command line.
+    # A crash dialog is ours when it is new since the round started and raised for one of our processes.
+    $roots = @('C:\actions-runner\cs-desktop\_work\_temp\g3', 'C:\actions-runner\cs-desktop\_work\8005-agv-control-server\8005-agv-control-server')
+    function New-Row($ProcessId, $Name, $Path, $CommandLine) {
+        [pscustomobject]@{ ProcessId = $ProcessId; Name = $Name; ExecutablePath = $Path; CommandLine = $CommandLine }
+    }
+    $rows = @(
+        (New-Row 101 'dotnet.exe' 'C:\Program Files\dotnet\dotnet.exe' '"C:\Program Files\dotnet\dotnet.exe" C:\actions-runner\cs-desktop\_work\_temp\g3\st\publish\control-server\ControlServer.Host.dll --urls http://127.0.0.1:58207'),
+        (New-Row 102 'SQCD.Agv.Wpf.exe' 'C:\ACTIONS-RUNNER\cs-desktop\_work\_temp\g3\jo\sources\onboard-hmi\bin\SQCD.Agv.Wpf.exe' 'SQCD.Agv.Wpf.exe'),
+        (New-Row 103 'dotnet.exe' 'C:\Program Files\dotnet\dotnet.exe' '"C:\Program Files\dotnet\dotnet.exe" C:\Users\agvops\AppData\Local\8005-l2-peers\abc\SlotsSimulator.dll'),
+        (New-Row 104 'MesIngest.Watch.exe' 'C:\actions-runner\win11-01-mes-ingest-desktop\_work\8005-mes-ingest\Watch\MesIngest.Watch.exe' 'MesIngest.Watch.exe'),
+        (New-Row 105 'dotnet.exe' 'C:\Program Files\dotnet\dotnet.exe' 'dotnet C:\actions-runner\cs-desktop\_work\_temp\g3x\Host.dll'),
+        (New-Row 106 'WerFault.exe' 'C:\Windows\System32\WerFault.exe' 'C:\Windows\system32\WerFault.exe -u -p 101 -s 1234'),
+        (New-Row 107 'WerFault.exe' 'C:\Windows\System32\WerFault.exe' 'C:\Windows\system32\WerFault.exe -u -p 104 -s 99'),
+        (New-Row 108 'WerFault.exe' 'C:\Windows\System32\WerFault.exe' 'C:\Windows\system32\WerFault.exe -u -p 102 -s 5'),
+        (New-Row 109 'pwsh.exe' 'C:\Program Files\PowerShell\7\pwsh.exe' 'pwsh -File C:\actions-runner\cs-desktop\_work\_temp\g3\cleanup.ps1')
+    )
+    $selected = $null
+    $thrown = $null
+    try { $selected = @(Select-NightlyG3LeftoverProcess -Processes $rows -OwnRoots $roots -WerBefore @(108) -ExcludeProcessId 109) } catch { $thrown = $_.Exception.Message }
+    $ids = @($selected | ForEach-Object { [int]$_.ProcessId } | Sort-Object)
+    Check 'leftovers: dotnet with our dll on its command line (101), our WPF by path in another case (102), and the new crash dialog for 101 (106)' `
+        ($null -eq $thrown -and ($ids -join ',') -ceq '101,102,106') "$thrown selected [$($ids -join ',')]"
+    Check 'leftovers: not the L2 peer cache (103), not another repository (104), not a sibling of our root (105), not a crash dialog for someone else (107)' `
+        ($null -eq $thrown -and @($ids | Where-Object { $_ -in 103, 104, 105, 107 }).Count -eq 0) "$thrown selected [$($ids -join ',')]"
+    Check 'leftovers: not a crash dialog that was up before the round (108), not the cleanup itself (109)' `
+        ($null -eq $thrown -and $ids -notcontains 108 -and $ids -notcontains 109) "$thrown selected [$($ids -join ',')]"
+    $none = $null
+    try { $none = @(Select-NightlyG3LeftoverProcess -Processes @($rows[2], $rows[3]) -OwnRoots $roots -WerBefore @() -ExcludeProcessId 0) } catch { $thrown = $_.Exception.Message }
+    Check 'leftovers: none of ours among others'' processes is an empty answer' ($null -ne $none -and $none.Count -eq 0) "$thrown [$(@($none | ForEach-Object ProcessId) -join ',')]"
 
     # All green exits 0.
     $round = Invoke-Round 'green' @{} @{}
