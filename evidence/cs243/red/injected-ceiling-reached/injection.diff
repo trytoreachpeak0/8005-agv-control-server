@@ -1,0 +1,13 @@
+diff --git a/tests/ControlServer.Tests/MultiVehicleExecutionTests.cs b/tests/ControlServer.Tests/MultiVehicleExecutionTests.cs
+index 88b24b619..95f5e76cf 100644
+--- a/tests/ControlServer.Tests/MultiVehicleExecutionTests.cs
++++ b/tests/ControlServer.Tests/MultiVehicleExecutionTests.cs
+@@ -72,7 +72,7 @@ public sealed partial class MultiVehicleExecutionTests
+     /// </remarks>
+     private static async Task HangAsync(string hook, Action<string> reached, CancellationToken cancellationToken)
+     {
+-        await Task.Delay(HangCeiling, cancellationToken).ConfigureAwait(false);
++        await Task.Delay(HangCeiling, CancellationToken.None).ConfigureAwait(false); // INJECTED: cs#243 red evidence
+         reached(hook);
+         throw new TimeoutException(HangCeilingReachedMessage(hook));
+     }
