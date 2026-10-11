@@ -110,6 +110,12 @@ try {
            Result = 'FAIL'; Names = @('recoveryReplay'); NotNames = @('identityRejections') }
         @{ Name = 'a runner that never started'; Runner = 'journey'; Exit = 'NOT_STARTED_DEADLINE'; RunResult = $null
            Result = 'NOT_STARTED_DEADLINE'; Names = @(); NotNames = @() }
+        # Review B of PR #591: a run-result.json that is JSON null used to throw out of the verdict ("Cannot index into a
+        # null array") and, through the round, leave a night with two PASS verdicts and no reason headed 全绿.
+        @{ Name = 'a run-result.json that is JSON null'; Runner = 'demand-bearing'; Exit = 1; RunResult = 'null'
+           Result = 'ERROR'; Names = @('run-result.json'); NotNames = @() }
+        @{ Name = 'a run-result.json that is a JSON array'; Runner = 'demand-bearing'; Exit = 0; RunResult = '[1, 2]'
+           Result = 'ERROR'; Names = @('run-result.json'); NotNames = @() }
     )
     $i = 0
     foreach ($case in $verdictCases) {
@@ -155,6 +161,14 @@ try {
            Contains = @('手动触发', '红证据，临时分支'); NotContains = @() }
         @{ Name = 'a long red list is cut, and says how much'; Args = @{ Trigger = 'schedule'; Verdicts = @((New-Verdict 'staged' 'FAIL' $manyFailed)) }
            Contains = @('criterion1', 'criterion10', '另 4 条'); NotContains = @('criterion11', 'criterion14') }
+        # Review B of PR #591: 全绿 only when every runner of the round has a PASS verdict, and only when the g3 job itself
+        # succeeded. Two PASS verdicts and no reason, or four PASS from a job that failed after them, are not a green night.
+        @{ Name = 'two of four verdicts and no reason'; Args = @{ Trigger = 'schedule'; Verdicts = @((New-Verdict 'staged' 'PASS'), (New-Verdict 'restart' 'PASS')) }
+           Contains = @('未跑完', 'demand-bearing', 'journey'); NotContains = @('全绿') }
+        @{ Name = 'four PASS from a g3 job that failed'; Args = @{ Trigger = 'schedule'; Verdicts = $allPass; JobResult = 'failure' }
+           Contains = @('g3 作业 failure'); NotContains = @('全绿') }
+        @{ Name = 'four PASS from a g3 job that succeeded'; Args = @{ Trigger = 'schedule'; Verdicts = $allPass; JobResult = 'success' }
+           Contains = @('全绿'); NotContains = @('未跑完') }
     )
     foreach ($case in $commentCases) {
         $arguments = @{} + $common + $case.Args
@@ -259,6 +273,7 @@ New-Item -ItemType Directory -Path $EvidenceRoot, (Join-Path $StageRoot 'sources
 Set-Content -LiteralPath (Join-Path $StageRoot 'runtime\controlserver.db') -Value 'db'
 [ordered]@{ runner = '__NAME__'; parameters = $PSBoundParameters } | ConvertTo-Json -Depth 4 | Set-Content -LiteralPath (Join-Path $EvidenceRoot 'arguments.json')
 Start-Sleep -Seconds ([int]('0' + $env:NIGHTLY_G3_STANDIN_SLEEP___VAR__))
+if ($env:NIGHTLY_G3_STANDIN_NULL -split ',' -contains '__NAME__') { Set-Content -LiteralPath (Join-Path $EvidenceRoot 'run-result.json') -Value 'null'; exit 1 }
 $red = $env:NIGHTLY_G3_STANDIN_RED -split ',' -contains '__NAME__'
 [ordered]@{ status = $(if ($red) { 'STAGED_SLICE_FAIL' } else { 'STAGED_SLICE_PASS' }); error = $null
     assertions = [ordered]@{ standInAssertion = $(if ($red) { 'FAIL' } else { 'PASS' }) } } | ConvertTo-Json -Depth 4 |
@@ -274,9 +289,9 @@ exit $(if ($red) { 1 } else { 0 })
     $order = @('staged', 'restart', 'demand-bearing', 'journey')
     $cs = 'c' * 40
     $ob = 'b' * 40
-    function Invoke-Round([string]$Name, [hashtable]$Environment, [hashtable]$Extra) {
+    function Invoke-Round([string]$Name, [hashtable]$Environment, [hashtable]$Extra, [string]$RoundScriptRoot = $ScriptRoot) {
         $work = Join-Path $scratch "round-$Name"
-        $arguments = @('-NoProfile', '-File', (Join-Path $ScriptRoot 'Invoke-NightlyG3.ps1'), '-WorkRoot', $work, '-RunnerRoot', $standIns,
+        $arguments = @('-NoProfile', '-File', (Join-Path $RoundScriptRoot 'Invoke-NightlyG3.ps1'), '-WorkRoot', $work, '-RunnerRoot', $standIns,
             '-ControlServerCommit', $cs, '-OnboardCommit', $ob, '-CommitCeilingGiB', '100000', '-MinFreeGiB', '0',
             '-StartDeadlineUtc', ([DateTimeOffset]::UtcNow.AddHours(1).ToString('o')))
         foreach ($key in $Extra.Keys) { $index = [array]::IndexOf($arguments, "-$key"); if ($index -ge 0) { $arguments[$index + 1] = $Extra[$key] } else { $arguments += "-$key", $Extra[$key] } }
@@ -364,6 +379,45 @@ exit $(if ($red) { 1 } else { 0 })
     Check 'g3.yml: no schedule of its own, a nightly input, and nightly runs are graded as the schedule in gate and report' `
         ($workflow -notmatch '(?m)^\s*schedule:\s*$' -and $workflow -match '(?m)^\s*nightly:\s*$' -and
          ([regex]::Matches($workflow, "G3_NIGHTLY\s*-eq\s*'true'")).Count -ge 2) 'see g3.yml'
+
+    # Review A, D, E of PR #591. A: this self-check runs in test.yml, beside the override one, as the documents say.
+    # D: the report job runs whatever the other two did, or a red g3 job leaves no comment and "no comment = no run" lies.
+    # E: the g3 job closes what the round left on the shared desktop, and a work root it cannot remove is said, not
+    # swallowed.
+    $testWorkflowPath = Join-Path (Split-Path -Parent $ScriptRoot) '.github\workflows\test.yml'
+    $testWorkflow = if (Test-Path -LiteralPath $testWorkflowPath) { Get-Content -Raw -LiteralPath $testWorkflowPath } else { '' }
+    Check 'test.yml runs Test-NightlyG3.ps1 and Test-G3SelfCheckOverride.ps1' `
+        ($testWorkflow -match 'pwsh -NoProfile -File \./scripts/Test-NightlyG3\.ps1' -and $testWorkflow -match 'pwsh -NoProfile -File \./scripts/Test-G3SelfCheckOverride\.ps1') 'see test.yml'
+    $reportJob = [regex]::Match($workflow, '(?ms)^  report:\s*$.*').Value
+    Check 'g3.yml: the report job runs always(), outside pull requests' ($reportJob -match "(?m)^    if:\s*always\(\)\s*&&\s*github\.event_name\s*!=\s*'pull_request'\s*$") 'see g3.yml'
+    $removeStep = [regex]::Match($g3Job, '(?ms)- name: Remove the work root.*?(?=^      - |\z)').Value
+    Check 'g3.yml: the g3 job closes leftover processes and crash dialogs of the round, and reports a work root it cannot remove' `
+        ($g3Job -match 'WerFault' -and $g3Job -match 'Leftover process' -and $removeStep -ne '' -and $removeStep -notmatch 'SilentlyContinue') 'see g3.yml'
+
+    # Review B of PR #591, the round's half. The reviewer's probe: the third runner writes a run-result.json that is JSON
+    # null. That runner is ERROR and the round goes on.
+    $round = Invoke-Round 'null-run-result' @{ NIGHTLY_G3_STANDIN_NULL = 'demand-bearing' } @{}
+    $verdicts = @(${round}.Results?['verdicts'] | Where-Object { $null -ne $_ })
+    Check 'round with a JSON-null run-result.json: demand-bearing ERROR, journey still runs, exit 1' `
+        (($verdicts | ForEach-Object { $_['result'] }) -join ',' -ceq 'PASS,PASS,ERROR,PASS' -and $round.Exit -eq 1) `
+        "exit $($round.Exit); $(($verdicts | ForEach-Object { "$($_['runner'])=$($_['result'])" }) -join ', ') $($round.Output)"
+    # Anything else that throws mid-round: a copy of the round script whose verdict throws on the third runner. The round
+    # still writes results.json, names why it stopped, records that runner ERROR and the one after NOT_STARTED_ERROR.
+    $throwing = Join-Path $scratch 'throwing-round'
+    New-Item -ItemType Directory -Path $throwing | Out-Null
+    Copy-Item -LiteralPath (Join-Path $ScriptRoot 'Invoke-NightlyG3.ps1'), (Join-Path $ScriptRoot 'run-staged-g3.ps1') -Destination $throwing
+    $module = Get-Content -Raw -LiteralPath (Join-Path $ScriptRoot 'NightlyG3.psm1')
+    $anchor = '    $verdict = [ordered]@{ runner = $Runner;'
+    Check 'round, thrown mid-round: the injection point exists in NightlyG3.psm1' ($module.Contains($anchor)) 'Get-NightlyG3Verdict changed shape; move the injection'
+    Set-Content -LiteralPath (Join-Path $throwing 'NightlyG3.psm1') -NoNewline -Value $module.Replace($anchor,
+        "    if (`$Runner -eq 'demand-bearing' -and `$ExitCode -isnot [string]) { throw 'injected verdict failure' }`n$anchor")
+    $round = Invoke-Round 'thrown' @{} @{} $throwing
+    $verdicts = @(${round}.Results?['verdicts'] | Where-Object { $null -ne $_ })
+    Check 'round, thrown mid-round: results.json says ERROR_ROUND with the message, demand-bearing ERROR, journey NOT_STARTED_ERROR and never started, exit 1' `
+        ("$(${round}.Results?['stoppedBy'])" -like 'ERROR_ROUND:*injected verdict failure*' -and
+         ($verdicts | ForEach-Object { $_['result'] }) -join ',' -ceq 'PASS,PASS,ERROR,NOT_STARTED_ERROR' -and
+         $null -eq (Get-Arguments $round.Work 'journey') -and $round.Exit -eq 1) `
+        "exit $($round.Exit); stoppedBy=$(${round}.Results?['stoppedBy']); $(($verdicts | ForEach-Object { "$($_['runner'])=$($_['result'])" }) -join ', ') $($round.Output)"
 
     # All green exits 0.
     $round = Invoke-Round 'green' @{} @{}
