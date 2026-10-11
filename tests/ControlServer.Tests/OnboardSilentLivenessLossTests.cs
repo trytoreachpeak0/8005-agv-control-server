@@ -350,6 +350,41 @@ public sealed class OnboardSilentLivenessLossTests
         Assert.DoesNotContain(lateMessageId, recorded);
     }
 
+    // --- 夹具本身：不把进程级状态留给后面的测试（control-server#256） ------------------------------------
+
+    /// <summary>
+    /// 夹具设的凭据环境变量，拆夹具时还原成设之前的样子；原来没有就还原成没有，不是空串。
+    /// </summary>
+    /// <remarks>
+    /// 环境变量是进程级的，同一个测试进程里所有测试类共用。夹具设了不还原，同进程里后跑的测试看到的就是被改过的环境——
+    /// 哪一条测试受影响取决于执行顺序，于是表现为偶发。两种原值各钉一次：<c>null</c> 那一种最容易被还原成空串，
+    /// 而空串与「没有」在 <c>string.IsNullOrWhiteSpace</c> 之外的读法下并不等价。
+    /// </remarks>
+    [Theory]
+    [InlineData(null)]
+    [InlineData("value-set-before-the-rig")]
+    [Trait("IntegrationSlice", "FP-IS-05")]
+    public async Task TheRigRestoresTheCredentialVariableItSet(string? before)
+    {
+        string? outside = Environment.GetEnvironmentVariable(CredentialVariable);
+        try
+        {
+            Environment.SetEnvironmentVariable(CredentialVariable, before);
+
+            await using (LivenessRig rig = await LivenessRig.StartAsync(TimeSpan.FromMilliseconds(250)))
+            {
+                // 夹具活着的时候它确实设了——否则下面的还原断言可能是因为它根本没设而成立。
+                Assert.Equal(Credential, Environment.GetEnvironmentVariable(CredentialVariable));
+            }
+
+            Assert.Equal(before, Environment.GetEnvironmentVariable(CredentialVariable));
+        }
+        finally
+        {
+            Environment.SetEnvironmentVariable(CredentialVariable, outside);
+        }
+    }
+
     // --- 辅助 ----------------------------------------------------------------------------------------
 
     /// <summary>
