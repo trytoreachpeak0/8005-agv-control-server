@@ -1,0 +1,18 @@
+ok    sinks: Invoke-L2Query, and Get-G3Scalar / Get-G3Count derived from G3RecoveryCommon.ps1
+ok    extract: named, positional, folded + and a file-local wrapper are literal
+ok    extract: the folded statement is joined
+ok    extract: interpolated and variable SQL are skipped and counted
+ok    extract: SQL on a connection opened on the onboard journal is skipped; a server store copy and a same-named parameter are checked
+ok    temp database: the MVP production database path is refused
+ok    temp database: a path outside the work root is refused
+ok    temp database: a path under the work root is accepted
+ok    temp database: a work root under %ProgramData% is refused
+ok    temp database: --migrate-only is never started for a database outside the work root
+ok    production verdict: inaccessible is UNVERIFIED, never True; unchanged is True; changed or created is False
+ok    production stamp: a file under a directory that refuses a listing is inaccessible, not absent
+ok    production stamp: a file missing under directories that can be listed is absent
+ok    production verdict: the locked directory before and after is UNVERIFIED
+ok    start info: no other connection string spelling reaches the child
+ok    start info: the connection string parses to exactly the temporary database, a ';' in the path included
+ok    start info: a host directory under %ProgramData% is refused
+No F:\8005-scratch\cs583-no-host\ControlServer.Host.exe: build src/ControlServer.Host -c Release, or pass -Build. No SQL was compiled.

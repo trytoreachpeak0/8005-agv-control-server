@@ -1,0 +1,9 @@
+parse: 2 files read, 0 with errors
+property: 8 variables recognised, 29 reads checked; skipped: 0 variables also assigned from something unrecognised, 0 calls in files that shadow a listed name
+  PROPERTY  F:\8005-scratch\cs583-red\l2\scenarios\g3-slot-fault-declaration.ps1:293 $result.PayloadJson: Get-L2OperationResults returns no property PayloadJson (it has At, MessageId, Payload, Response, ResponsePayload); under StrictMode the read throws
+string-null: 2 NULL-folding readers (Get-G3Scalar, Get-Scalar); 28 comparisons with $null read, 6 variables held a reader's result, 1 exempted
+  STRING-NULL  F:\8005-scratch\cs583-red\l2\scenarios\g3-forced-mechanical-recovery.ps1:170 $closedReason is compared with $null, but Get-G3Scalar returns [string]: a NULL column comes back as '' and the test never sees it
+ok    repository: every script parses
+FAIL  repository: no property read outside its helper's object -- 1 findings
+FAIL  repository: no NULL-folding reader result compared with $null -- 1 findings
+1/3 passed
