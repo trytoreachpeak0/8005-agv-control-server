@@ -2741,11 +2741,18 @@ namespace ControlServer.Infrastructure.Persistence.Migrations
                     b.Property<DateTimeOffset>("ReceivedAt")
                         .HasColumnType("TEXT");
 
+                    b.Property<long>("ReceivedAtUtcTicks")
+                        .HasColumnType("INTEGER");
+
                     b.Property<string>("RequestJson")
                         .IsRequired()
                         .HasColumnType("TEXT");
 
                     b.HasKey("MessageId");
+
+                    b.HasIndex("MessageType");
+
+                    b.HasIndex("ReceivedAtUtcTicks");
 
                     b.ToTable("ProtocolInbox");
                 });
