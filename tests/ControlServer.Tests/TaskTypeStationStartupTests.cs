@@ -1,5 +1,6 @@
 using System.Text.Json;
 using ControlServer.Application;
+using ControlServer.Domain;
 using ControlServer.Host.Composition;
 using ControlServer.Host.Runtime;
 using ControlServer.Host.Runtime.TaskTypeStations;
@@ -84,8 +85,34 @@ public sealed class TaskTypeStationStartupTests
     /// <summary>The Map 26 preset the v2 parallel instance names (control-server#518), relative to the host directory.</summary>
     private const string Map26PresetFile = "task-type-stations.map-26.settings.json";
 
-    private static readonly TaskTypeStationBinding Map26GateBinding =
-        new(TransportTaskTypes.WireToGate, 210, "关卡", "MAP-26-WIRE_TO_GATE-B6-IDENTITY-20260919");
+    /// <summary>
+    /// control-server#548: the six stations the user filled in on 2026-10-10 (control-server#547), in the file's order, each with
+    /// the site-use verification the user made in person that day. 220 and 221 are two docking positions of one cabinet.
+    /// </summary>
+    private static readonly TaskTypeStationBinding[] Map26Bindings =
+    [
+        new(TransportTaskTypes.WireToGate, 210, "关卡", "MAP-26-WIRE_TO_GATE-SITE-20261010"),
+        new(TransportTaskTypes.StagingToWire, 217, "派工待送取货", "MAP-26-STAGING_TO_WIRE-SITE-20261010"),
+        new(TransportTaskTypes.DieToOven, 218, "烘箱", "MAP-26-DIE_TO_OVEN-SITE-20261010"),
+        new(TransportTaskTypes.WireToOptical, 219, "三光", "MAP-26-WIRE_TO_OPTICAL-SITE-20261010"),
+        new(TransportTaskTypes.DieToWireStaging, 220, "装片氮气柜", "MAP-26-DIE_TO_WIRE_STAGING-SITE-20261010"),
+        new(TransportTaskTypes.WireToNitrogen, 221, "焊线氮气柜", "MAP-26-WIRE_TO_NITROGEN-SITE-20261010"),
+    ];
+
+    private static readonly string[] Map26RequiredTaskTypes =
+    [
+        TransportTaskTypes.WireToGate,
+        TransportTaskTypes.StagingToWire,
+        TransportTaskTypes.DieToWireStaging,
+        TransportTaskTypes.DieToOven,
+        TransportTaskTypes.WireToOptical,
+        TransportTaskTypes.WireToNitrogen,
+    ];
+
+    /// <summary>The station list of Map 26 read from RIoT, read-only, when control-server#548 started.</summary>
+    private static string Map26CatalogPath() => Path.Combine(
+        ProtocolIdentityArchitectureTests.RepositoryRoot(),
+        "evidence", "field", "20261011-B10-05-map26-task-type-stations", "catalog-26.json");
 
     private static JourneyRuntimeOptions Map26Runtime(int mapId) => new() { Enabled = true, MapId = mapId };
 
@@ -104,8 +131,8 @@ public sealed class TaskTypeStationStartupTests
         Assert.Equal(
             SixRules.OrderBy(rule => rule.TaskType, StringComparer.Ordinal),
             preset.Configuration.Rules.OrderBy(rule => rule.TaskType, StringComparer.Ordinal));
-        Assert.Equal([TransportTaskTypes.WireToGate], preset.Configuration.Map.RequiredTaskTypes);
-        Assert.Equal([Map26GateBinding], preset.Configuration.Map.Bindings);
+        Assert.Equal(Map26RequiredTaskTypes, preset.Configuration.Map.RequiredTaskTypes);
+        Assert.Equal(Map26Bindings, preset.Configuration.Map.Bindings);
         Assert.Empty(TaskTypeStationConfigurationValidator.ValidateStatic(preset.Configuration, 26));
 
         await using Harness harness = await Harness.CreateAsync(
@@ -119,8 +146,36 @@ public sealed class TaskTypeStationStartupTests
         ITaskTypeStationBindingStore bindings = scope.ServiceProvider.GetRequiredService<ITaskTypeStationBindingStore>();
         TaskTypeStationBindingSetVersion active = Assert.IsType<TaskTypeStationBindingSetVersion>(
             await bindings.ReadActiveAsync(26, Token));
-        Assert.Equal([Map26GateBinding], active.Bindings);
+        // The stored version keeps its bindings ordered by task type, not in the file's order.
+        Assert.Equal(Map26Bindings.OrderBy(binding => binding.TaskType, StringComparer.Ordinal), active.Bindings);
         Assert.Null(await bindings.ReadActivePointerAsync(25, Token));
+    }
+
+    [Fact]
+    public void TheMap26PresetAndTheActivationCandidateCarryTheSameBindings()
+    {
+        // control-server#548: an instance that keeps its database is changed by activating the candidate under
+        // scripts/parallel/; one that gets a new database is loaded from this preset. The two must agree, or the same
+        // instance ends up on different stations depending on whether its database was replaced.
+        string candidatePath = Path.Combine(
+            ProtocolIdentityArchitectureTests.RepositoryRoot(), "scripts", "parallel", "task-type-stations.map-26.candidate.json");
+        using JsonDocument candidate = JsonDocument.Parse(File.ReadAllText(candidatePath));
+        JsonElement root = candidate.RootElement;
+        TaskTypeStationMapConfiguration preset =
+            TaskTypeStationPreset.Load(AppContext.BaseDirectory, Map26PresetFile)!.Configuration.Map;
+
+        Assert.Equal(preset.MapId, root.GetProperty("mapId").GetInt32());
+        Assert.Equal(1, root.GetProperty("ruleVersion").GetInt64());
+        Assert.Equal(
+            preset.RequiredTaskTypes,
+            root.GetProperty("requiredTaskTypes").EnumerateArray().Select(taskType => taskType.GetString()!));
+        Assert.Equal(
+            preset.Bindings,
+            root.GetProperty("bindings").EnumerateArray().Select(binding => new TaskTypeStationBinding(
+                binding.GetProperty("taskType").GetString()!,
+                binding.GetProperty("stationRiotId").GetInt32(),
+                binding.GetProperty("stationName").GetString()!,
+                binding.GetProperty("siteVerificationRef").GetString()!)));
     }
 
     [Fact]
@@ -140,15 +195,13 @@ public sealed class TaskTypeStationStartupTests
     }
 
     [Fact]
-    public void TheMap26PresetsGateAndTheFirstTripsPickupAreaAreStationsInTheCommittedMap26Catalog()
+    public void EveryMap26PresetBindingAndTheFirstTripsPickupAreaAreStationsInTheCommittedMap26Catalog()
     {
-        // Derived from committed data only, never a RIoT read: catalog-26.json is the 2026-10-01 station list of Map 26
-        // (its SUMMARY, section 4). The gate binding must name the one station called 关卡, and the first WIRE_TO_GATE
-        // trip's pickup area N1-3 (B4 area-assignments-N-revised.csv) must be a station of the same map.
-        string catalogPath = Path.Combine(
-            ProtocolIdentityArchitectureTests.RepositoryRoot(),
-            "evidence", "field", "2026-10-03-B9-charging-roster-and-policy", "catalog-26.json");
-        using JsonDocument catalog = JsonDocument.Parse(File.ReadAllText(catalogPath));
+        // Derived from committed data only, never a RIoT read: catalog-26.json is Map 26's station list as RIoT answered
+        // it on 2026-10-11 (control-server#548; the 2026-10-03 copy predates stations 217-221). Each binding must name the
+        // one station of its name, under its id, and not an AREA-named machine station; the first WIRE_TO_GATE trip's
+        // pickup area N1-3 (B4 area-assignments-N-revised.csv) must be a station of the same map.
+        using JsonDocument catalog = JsonDocument.Parse(File.ReadAllText(Map26CatalogPath()));
         Assert.Equal(26, catalog.RootElement.GetProperty("mapId").GetInt32());
         (int Id, string Name)[] stations =
         [
@@ -156,9 +209,14 @@ public sealed class TaskTypeStationStartupTests
                 .Select(station => (station.GetProperty("stationId").GetInt32(), station.GetProperty("stationName").GetString()!))
         ];
 
-        TaskTypeStationBinding gate = Assert.Single(
-            TaskTypeStationPreset.Load(AppContext.BaseDirectory, Map26PresetFile)!.Configuration.Map.Bindings);
-        Assert.Equal([(gate.StationRiotId, gate.StationName)], stations.Where(station => station.Name == gate.StationName));
+        IReadOnlyList<TaskTypeStationBinding> bindings =
+            TaskTypeStationPreset.Load(AppContext.BaseDirectory, Map26PresetFile)!.Configuration.Map.Bindings;
+        Assert.Equal(6, bindings.Count);
+        Assert.All(bindings, binding =>
+        {
+            Assert.Equal([(binding.StationRiotId, binding.StationName)], stations.Where(station => station.Name == binding.StationName));
+            Assert.False(AreaNamedStationName.IsAreaNamed(binding.StationName));
+        });
         Assert.Equal([(3, "N1-3")], stations.Where(station => station.Name == "N1-3"));
     }
 
