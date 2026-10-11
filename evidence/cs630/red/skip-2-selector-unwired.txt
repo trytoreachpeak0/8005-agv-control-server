@@ -1,0 +1,13 @@
+swept 1093 tracked input files
+BAD   the scenarios job has a step with id l2-scope -> no step with id l2-scope
+BAD   l2-scope asks Select-L2ScenarioRun.ps1, with -NotAPullRequest off pull requests -> 
+BAD   l2-scope diffs the merge commit against its first parent, without renames -> 
+BAD   l2-scope comes before the scenarios run -> offsets -1, 4895
+BAD   the scenarios run is gated on l2-scope ->         shell: pwsh
+
+BAD   the evidence upload is gated on l2-scope ->         if: always()
+        continue-on-error: true
+
+1158 case(s) passed
+L2_SCENARIO_RUN_SCOPE_SELFTEST_FAILED: 6 case(s)
+exit=1

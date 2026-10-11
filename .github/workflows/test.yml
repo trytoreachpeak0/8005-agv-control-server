@@ -164,6 +164,15 @@ jobs:
         shell: pwsh
         run: pwsh -NoProfile -File ./scripts/Test-StagedG3ContentConflictScope.ps1
 
+      # About 25 seconds on the control host, most of it one pass over every tracked file outside evidence/: which pull
+      # requests l2.yml's scenarios job runs the synthetic round for (control-server#630). A selector that skipped a change
+      # it should have run would leave L2 silent on exactly the change that broke it, so every tracked input file must
+      # count, anything unknown must count, and l2.yml must be wired to the answer.
+      - name: L2 self-check (scenario round scope)
+        timeout-minutes: 5
+        shell: pwsh
+        run: pwsh -NoProfile -File ./scripts/Test-L2ScenarioRunScope.ps1
+
       # About 27 seconds (measured 26.4 / 26.8 / 26.7 on the control host), 24 of which are twelve
       # deliberate 2-second timeouts: every case where a criterion must NOT be satisfied has to run out
       # its clock. The twelve is the load-bearing number, and it comes from reading the invocations.

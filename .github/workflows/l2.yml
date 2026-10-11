@@ -121,9 +121,51 @@ jobs:
       # pasted into the script so nothing in it is ever executed.
       L2_PR_BODY: ${{ github.event.pull_request.body }}
       GITHUB_TOKEN: ${{ github.token }}
+      # No build servers, as in the real-rig job below (control-server#630). This job builds once and then runs
+      # scenarios for half an hour, and on 2026-10-11 the MSBuild nodes and VBCSCompiler the build left behind held
+      # about 1.4 GiB of win11-01's 8 GB through the whole round (the v2 workspace's ci-research/l2-second-runner.md).
+      MSBUILDDISABLENODEREUSE: '1'
+      DOTNET_CLI_USE_MSBUILD_SERVER: '0'
+      UseSharedCompilation: 'false'
 
     steps:
       - uses: actions/checkout@v7
+
+      # Since control-server#630 (the user's decision on 2026-10-11): a pull request whose changes reach nothing this
+      # round consumes ends the job green here, without building or running a scenario, and says so in a notice and
+      # the job summary, so a green job is not read as "it ran". On 2026-10-11 8 of the 19 pull requests behind 25
+      # rounds of about 30 minutes changed only tests, G3 runners, install scripts or evidence (the v2 workspace's
+      # ci-research/l2-second-runner.md). Select-L2ScenarioRun.ps1 holds the rule and leans one way: a path is left
+      # out only when it is known not to reach the round, anything new runs it. The job still runs and reports, so
+      # it is still the ticket's one round. A push, a dispatched run and a body with an L2-Consecutive line always
+      # run. The diff is the merge commit's (GITHUB_SHA) against its first parent, without rename detection, so a
+      # file moved out of an input still counts -- test.yml's content-conflict scope does the same. A diff that
+      # cannot be read runs the round rather than failing it: a network fault must not stand in for a verdict.
+      # Its self-check runs in test.yml; it is not named here because every name in this file counts as an L2
+      # input, and the self-check names the very scripts it expects to be left out.
+      - name: Decide whether this pull request runs the L2 round
+        id: l2-scope
+        timeout-minutes: 5
+        shell: pwsh
+        run: |
+          if ($env:GITHUB_EVENT_NAME -ne 'pull_request') {
+            $null = & ./scripts/l2/Select-L2ScenarioRun.ps1 -NotAPullRequest -GitHubOutput $env:GITHUB_OUTPUT
+            exit 0
+          }
+          $changed = @()
+          git fetch --no-tags --quiet --depth=2 origin $env:GITHUB_SHA
+          if ($LASTEXITCODE -eq 0) {
+            $changed = @(git diff --no-renames --name-only "$env:GITHUB_SHA^1" $env:GITHUB_SHA)
+            if ($LASTEXITCODE -ne 0) { $changed = @() }
+          }
+          if ($changed.Count -eq 0) {
+            Write-Host "::warning title=L2 scope::Could not read this pull request's changed paths; running the round."
+          }
+          $decision = & ./scripts/l2/Select-L2ScenarioRun.ps1 -ChangedPath $changed -PullRequestBody $env:L2_PR_BODY -GitHubOutput $env:GITHUB_OUTPUT
+          if (-not $decision.Run) {
+            Write-Host "::notice title=L2 round skipped::$($decision.Reason)"
+            Add-Content -LiteralPath $env:GITHUB_STEP_SUMMARY -Value "### L2 round **skipped**`n`n$($decision.Reason)`n`nChanged: $(($changed | Select-Object -First 20) -join ', ')$(if ($changed.Count -gt 20) { ", ... ($($changed.Count) in all)" })"
+          }
 
       # Every scenario runs even when an earlier one fails: one red scenario must not hide the
       # state of the others, which is the whole reason to have more than one.
@@ -160,6 +202,7 @@ jobs:
       # Exit code is the contract -- the guest is zh-CN and the runner prints 已通过! not Passed!,
       # so nothing here may match on English console text. Invoke-L2Scenario.ps1 exits 1 on FAIL.
       - name: Run synthetic L2 scenarios
+        if: steps.l2-scope.outputs.run == 'true'
         shell: pwsh
         run: |
           $scenarios = @(
@@ -565,7 +608,7 @@ jobs:
       # release.yml is deliberately NOT like this: that one uploads the release package itself, so
       # a failed upload there IS a failed run.
       - name: Upload L2 evidence
-        if: always()
+        if: always() && steps.l2-scope.outputs.run == 'true'
         continue-on-error: true
         uses: actions/upload-artifact@v7
         with:
