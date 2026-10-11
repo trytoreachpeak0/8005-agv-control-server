@@ -1,7 +1,8 @@
 # control-server#205 证据：`real-onboard-inflight-load-reconnect` 转正式场景
 
 两次 CI 真装置（`l2.yml` 的 `real-rig` 作业，vm01 `win11-01-control-server-desktop`），2026-10-11，各跑这一个场景一遍。
-每个目录是 artifact `real-rig-evidence` 去掉 `_stage/`（运行时的临时构建副本）之后的全部内容。
+每个目录是 artifact `real-rig-evidence` 去掉 `_stage/`（运行时的临时构建副本）之后的全量，未精简（红轮的
+`logs/control-server.out.log` 约 3.7 MB）；原始 artifact 见 run `38111328241`、`38111342946`。
 
 | 目录 | run | 控制端 | 车载端 | 模拟器 | 结论 |
 | --- | --- | --- | --- | --- | --- |
