@@ -1,0 +1,16 @@
+PASS verdict, staged red on two content-conflict criteria (the batch-10 exit, 5f3adc42): FAIL
+PASS verdict, restart all PASS: PASS
+PASS verdict, journey red, failed assertions and a scenario reason (the batch-10 exit, 3411887d): FAIL
+PASS verdict, a runner error carries its own message: ERROR
+PASS verdict, no run-result.json at all: ERROR
+PASS verdict, an unreadable run-result.json: ERROR
+PASS verdict, a PASS status with a non-zero exit: FAIL
+PASS verdict, a PASS status with an assertion that is not PASS: FAIL
+PASS verdict, a runner that never started: NOT_STARTED_DEADLINE
+FAIL comment, all green --  missing=[2026-10-11, 全绿, actions/runs/123, 不是门禁证据, 11111111, 22222222, 33333333, 44444444] extra=[]
+FAIL comment, staged and journey red, error on restart --  missing=[红：staged、restart、journey, sameMessageIdDifferentContentStableConflict, clone-onboard exited with code 128, a \| b, 不是门禁证据] extra=[]
+FAIL comment, a round stopped at the deadline --  missing=[journey, NOT_STARTED_DEADLINE, 未跑完] extra=[]
+FAIL comment, not run at all, the rig busy --  missing=[未跑, NOT_STARTED_RIG_BUSY, actions/runs/123, run 999 job real-rig in_progress] extra=[]
+FAIL comment, a manual dispatch says so --  missing=[手动触发, 红证据，临时分支] extra=[]
+FAIL comment, a long red list is cut, and says how much --  missing=[criterion1, criterion10, 另 4 条] extra=[]
+6 check(s) failed.
