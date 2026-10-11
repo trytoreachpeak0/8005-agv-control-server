@@ -112,7 +112,7 @@ $schemaReportMissing = $null -eq $schemaCoverage
 $schemaReportLost = $testExitCode -eq 0 -and $schemaReportMissing
 if ($schemaReportLost) {
     [Console]::Error.WriteLine(
-        "SCHEMA_REPORT_MISSING: the tests exited 0 but there is no $schemaCoveragePath. The outbound " +
+        "SCHEMA_REPORT_MISSING: the tests exited 0 but $schemaCoveragePath is missing or empty. The outbound " +
         "schema report was written somewhere else or not at all, so this slice is recorded as FAIL.")
 }
 $result = [ordered]@{

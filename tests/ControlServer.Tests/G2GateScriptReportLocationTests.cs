@@ -125,8 +125,12 @@ public sealed class G2GateScriptReportLocationTests : IDisposable
     [Fact]
     public void ARelativeProtocolManifestIsResolvedAgainstTheCaller()
     {
-        string relative = Path.GetRelativePath(caller, ProtocolIdentityArchitectureTests.ManifestPath());
-        Assert.False(Path.IsPathRooted(relative), "the temp directory and the repository are on different drives.");
+        // A copy next to the caller, not a path into the repository: the temp directory and the
+        // checkout are often on different drives (worktrees live on F:), where no relative path
+        // between them exists. The script checks the copy's hash, so it has to be the same bytes.
+        string copy = Path.Combine(Directory.CreateDirectory(Path.Combine(work, "proto")).FullName, "release.json");
+        File.Copy(ProtocolIdentityArchitectureTests.ManifestPath(), copy);
+        string relative = Path.Combine("..", "proto", "release.json");
 
         GateRun run = Run(output: "manifest", reportMode: "write", testExitCode: 0, protocolManifest: relative);
 
