@@ -164,6 +164,8 @@ control-server#518 时它只绑 `WIRE_TO_GATE` → 210「关卡」，核对号�
 
 **绑定集是整份替换，不是逐条增减**：候选是整张图的 `requiredTaskTypes` 与全部 `bindings`，激活后新版本的内容就是候选本身
 （`TaskTypeStationActivationService`）。所以候选里必须带上实例上**现有**的绑定（210、217），漏掉的类型会从新版本里消失。
+`requiredTaskTypes` 也不是可有可无：派车只采用列在需求集里的类型的绑定，不在需求集里的类型即使绑了站，也按 `TASK_TYPE_BINDING_MISSING`
+拒绝（`BoundFixedTaskStationResolver.cs` 的 `Resolve`）。所以候选的需求集是六类，与绑定一一对应。
 
 ### 步骤
 
