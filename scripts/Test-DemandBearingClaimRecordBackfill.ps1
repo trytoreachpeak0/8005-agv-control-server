@@ -235,8 +235,11 @@ try {
     # --- 2. which tables may be missing ---------------------------------------------------------------------
     # Each read is of a copy of the migrated store with one table renamed away. Only the claim record table, and only
     # in the baseline read, may be missing; every other missing table is a refusal that names it, where the runner
-    # before control-server#544 counted it as 0 and went on.
-    function Test-MissingTable([string]$Label, [string]$Table, [switch]$AfterMigration, [switch]$Allowed) {
+    # before control-server#544 counted it as 0 and went on. The allowed case is 1b's baseline, a store from before
+    # batch 8: it has its dispatch leases. A migrated store has none, so with its record table renamed away it is a
+    # store that cannot exist (neither the records nor the leases they would be backfilled from), and the refusal
+    # names the leases.
+    function Test-MissingTable([string]$Label, [string]$Table, [switch]$AfterMigration, [string]$RefusedAs = $Table) {
         $copy = Join-Path $work ("missing-$Table-$([guid]::NewGuid().ToString('n').Substring(0, 6)).db")
         Copy-Store $migrated $copy
         Invoke-StoreSql $copy "ALTER TABLE `"$Table`" RENAME TO `"${Table}_RenamedBySelfCheck`";"
@@ -245,23 +248,19 @@ try {
         $thrown = $null
         try { $read = if ($AfterMigration) { Read-ControlDatabase -AfterMigration } else { Read-ControlDatabase } }
         catch { $thrown = $_.Exception.Message }
-        if ($Allowed) {
-            Check "${Label}: read without $Table" ($null -eq $thrown) "it threw: $thrown"
-        } else {
-            $counted = if ($null -ne $read -and $read.counts.Contains($Table)) { " counted $Table = $($read.counts[$Table]) and went on" } else { '' }
-            # The runner's own refusal, not whatever a later query happens to throw: SQLite's "no such table: X" names the
-            # table too, but only for the tables the read also selects rows from, and only by accident.
-            Check "${Label}: a missing $Table is refused, by name" `
-                ($null -ne $thrown -and $thrown.Contains("CONTROL_TABLE_MISSING: $Table ", [StringComparison]::Ordinal)) `
-                "$(if ($null -eq $thrown) { 'Read-ControlDatabase did not throw;' + $counted } else { "it threw, but not the runner's own refusal naming the table: $thrown" })"
-        }
+        $counted = if ($null -ne $read -and $read.counts.Contains($Table)) { " counted $Table = $($read.counts[$Table]) and went on" } else { '' }
+        # The runner's own refusal, not whatever a later query happens to throw: SQLite's "no such table: X" names the
+        # table too, but only for the tables the read also selects rows from, and only by accident.
+        Check "${Label}: a missing $Table is refused, naming $RefusedAs" `
+            ($null -ne $thrown -and $thrown.Contains("CONTROL_TABLE_MISSING: $RefusedAs ", [StringComparison]::Ordinal)) `
+            "$(if ($null -eq $thrown) { 'Read-ControlDatabase did not throw;' + $counted } else { "it threw, but not the runner's own refusal naming the table: $thrown" })"
     }
     foreach ($table in 'OrderIntents', 'RiotDispatchAuditEvents', 'AcceptedDemands', 'StationOperations', 'OperationResults',
                        'UnloadBatches', 'StopClosures', 'TransportDemandCompletions', 'ProtocolInbox') {
         Test-MissingTable 'baseline' $table
         Test-MissingTable 'after migration' $table -AfterMigration
     }
-    Test-MissingTable 'baseline' 'VehiclePurposeClaimRecords' -Allowed
+    Test-MissingTable 'baseline, no leases either' 'VehiclePurposeClaimRecords' -RefusedAs 'VehicleDispatchLeases'
     Test-MissingTable 'after migration' 'VehiclePurposeClaimRecords' -AfterMigration
     # What the backfill is worked out from: without the claims it cannot be, so the baseline refuses rather than
     # expecting a count it never computed.
