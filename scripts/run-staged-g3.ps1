@@ -166,8 +166,10 @@ param(
     # formalSlicePass false. Passing a commit as -ControlServerCommit / -OnboardCommit is recorded the same way
     # (control-server#460) unless it equals the binding; these parameters say what is meant, and win over those two.
     # The onboard commit must still be the tip of -OnboardRemoteRef: New-ExactClone checks it either way.
-    [ValidatePattern('^[0-9a-f]{40}$')][string]$SelfCheckControlServerCommit,
-    [ValidatePattern('^[0-9a-f]{40}$')][string]$SelfCheckOnboardCommit
+    # -cmatch, not ValidatePattern: that one matches case-insensitively and would take an uppercase SHA-1, which every
+    # byte-for-byte binding comparison downstream then gets wrong.
+    [ValidateScript({ $_ -cmatch '^[0-9a-f]{40}$' })][string]$SelfCheckControlServerCommit,
+    [ValidateScript({ $_ -cmatch '^[0-9a-f]{40}$' })][string]$SelfCheckOnboardCommit
 )
 
 $ErrorActionPreference = 'Stop'

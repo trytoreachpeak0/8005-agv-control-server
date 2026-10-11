@@ -18,8 +18,9 @@ param(
     # still read off run-staged-g3.ps1 below, through a path that stays a non-parameter; these replace a commit for
     # one run, recorded as SELF_CHECK_OVERRIDE (even when it names the bound commit), and every slice is graded
     # formalSlicePass false.
-    [ValidatePattern('^[0-9a-f]{40}$')][string]$SelfCheckControlServerCommit,
-    [ValidatePattern('^[0-9a-f]{40}$')][string]$SelfCheckOnboardCommit
+    # -cmatch, not ValidatePattern, as in run-staged-g3.ps1: an uppercase SHA-1 is refused here, not compared wrongly later.
+    [ValidateScript({ $_ -cmatch '^[0-9a-f]{40}$' })][string]$SelfCheckControlServerCommit,
+    [ValidateScript({ $_ -cmatch '^[0-9a-f]{40}$' })][string]$SelfCheckOnboardCommit
 )
 
 $ErrorActionPreference = 'Stop'

@@ -86,7 +86,8 @@ foreach ($file in $runners.Keys) {
         # Behaviour, not spelling (review G of PR #591): the parameter's own declaration is run as a param block and
         # handed a lowercase SHA-1, an uppercase one and a short one. ValidatePattern matches case-insensitively, so it
         # takes the uppercase spelling, which then fails the byte-for-byte comparison every binding check makes.
-        $accepts = @{}
+        # Ordinal: a plain @{} folds case, and would file the uppercase answer over the lowercase one.
+        $accepts = [System.Collections.Hashtable]::new([StringComparer]::Ordinal)
         if ($declared.Count -eq 1) {
             $probe = [scriptblock]::Create("param($($declared[0].Extent.Text)) `$true")
             foreach ($value in @(('e' * 40), ('E' * 40), ('e' * 39))) {
