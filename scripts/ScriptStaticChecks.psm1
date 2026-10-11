@@ -503,4 +503,14 @@ function Get-StringNullExemption {
     )
 }
 
-Export-ModuleMember -Function Get-StringNullExemption, Test-ScriptParse, Get-HelperShapeCatalog, Find-HelperPropertyMisuse, Get-StringHelperCatalog, Find-StringHelperNullComparison
+# --- 4. literal SQL compiled against a migrated temporary database ---------------------------------------------------
+
+function Get-SqlSinkCatalog { param([Parameter(Mandatory)][string[]]$Path) throw 'Get-SqlSinkCatalog: not implemented' }
+function Get-ScenarioLiteralSql { param([Parameter(Mandatory)][string[]]$Path, [Parameter(Mandatory)][hashtable]$Sinks) throw 'Get-ScenarioLiteralSql: not implemented' }
+function Assert-TempDatabasePath { param([Parameter(Mandatory)][string]$DatabasePath) throw 'Assert-TempDatabasePath: not implemented' }
+function New-MigratedTempDatabase { param([Parameter(Mandatory)][string]$HostDirectory, [Parameter(Mandatory)][string]$DatabasePath) throw 'New-MigratedTempDatabase: not implemented' }
+function Open-ExplainConnection { param([Parameter(Mandatory)][string]$HostDirectory, [Parameter(Mandatory)][string]$DatabasePath) throw 'Open-ExplainConnection: not implemented' }
+function Test-SqlExplain { param([Parameter(Mandatory)][object]$Connection, [object[]]$Statement) throw 'Test-SqlExplain: not implemented' }
+
+Export-ModuleMember -Function Get-SqlSinkCatalog, Get-ScenarioLiteralSql, Assert-TempDatabasePath, New-MigratedTempDatabase,
+    Open-ExplainConnection, Test-SqlExplain, Get-StringNullExemption, Test-ScriptParse, Get-HelperShapeCatalog, Find-HelperPropertyMisuse, Get-StringHelperCatalog, Find-StringHelperNullComparison
