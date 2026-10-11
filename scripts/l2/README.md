@@ -21,7 +21,7 @@ pwsh .\scripts\l2\Invoke-L2Scenario.ps1 -Scenario normal-load -EvidenceRoot .\ev
 | `load-result-requires-recovery` | 合成 | 装载跑掉操作员超时，旅程与整台车正确停摆 | `evidence/l2/20260903-load-result-requires-recovery-006` |
 | `real-onboard-normal-load` | **真的** | 同一条链路，但条码走 UIA、装卸走真 Modbus | `evidence/l2/20260903-real-onboard-normal-load-005` |
 | `real-onboard-clock-skew` | **真的** | 车载端时钟偏差的有界容差，界内、界外、恢复三段 | `evidence/l2/20260903-real-onboard-clock-skew-007` |
-| `real-onboard-recovery-entry-missing` | **真的** | 装载失败后车上发起不了任何恢复：授权是齐的，入口是缺的 | **红的，而且红得对**，见下 |
+| `real-onboard-recovery-entry-missing` | **真的** | 装载失败后车上出现恢复入口（原来红在入口缺失） | **不在清单里，造故障的手法已被车载端改设计作废**，见下。入口缺失 2026-09-04 已修，`evidence/l2/20260913-b2close-real-onboard-recovery-entry-missing-001` 绿；2026-10-11 CI run `38107859209` 红在第一条判据之前（`evidence/l2/20261011-ci-38107859209-real-onboard-recovery-entry-missing-01`） |
 | `three-synthetic-peers` | 合成 ×3 | 三个合成车载端同时在线，两侧互不冒充，服务端同时持有三条 Ready 会话（票 09 之前它钉的是相反的边界：accept 循环串行，只有第一台到 READY） | `evidence/l2/20260909-ticket09-three-synthetic-peers-002` |
 | `route-graph-engine` | 合成 | 路网引擎开着跑一趟：五个 imap 端点读回、快照不陈旧、可达性判据放行 | `evidence/l2/20260907-ticket12-route-graph-engine-001` |
 | `create-gate` | 合成 | 建单前置门禁：目录被完整确认、两端点冻结、两个证据源分别落进审计 | `evidence/l2/20260908-ticket13-create-gate-002` |
@@ -76,10 +76,28 @@ pwsh .\scripts\l2\Invoke-L2Scenario.ps1 -Scenario normal-load -EvidenceRoot .\ev
 `load-result-requires-recovery` **到 Blocked 为止，不跑到「恢复并继续」**：出口是五步恢复握手，
 而合成对端不发起它。给它编出那五条出站消息只会让这条场景变绿而证不出任何新东西。
 
-`real-onboard-recovery-entry-missing` 补的是那半条的**入口**，**它现在是红的，而且红得对**。前四条
-判据全过——真车载端确实报回不完美的装载结果，服务端确实判 `RecoveryRequired` 并停摆，失败结果确实
-作为该 attempt 唯一一份存活结果落库。第五条过不去：**停摆之后，车载端 HMI 上的恢复入口从来不出现**，
-所以任何恢复动作都发起不了。
+`real-onboard-recovery-entry-missing` 补的是那半条的**入口**。它的状态经历了三段，**今天它不在清单里，原因
+已经不是「红得对」**（control-server#250 核实）：
+
+1. **2026-09-04 以前红在第五条，红得对。**前四条判据全过——真车载端报回不完美的装载结果，服务端判
+   `RecoveryRequired` 并停摆，失败结果作为该 attempt 唯一一份存活结果落库；第五条过不去：停摆之后车载端
+   HMI 上的恢复入口从来不出现。根因见下面两段，2026-09-04 已修。
+2. **2026-09-13 在 v2 线上本机真装置五条全绿**，第五条成立：`evidence/l2/20260913-b2close-real-onboard-recovery-entry-missing-001`
+   （服务端 `33e7bde3`、车载端 `c86bac5`、模拟器 `fb5f7c5`）。
+3. **2026-10-11 CI run `38107859209` 红在第一条判据之前，与旧根因无关**：
+   `evidence/l2/20261011-ci-38107859209-real-onboard-recovery-entry-missing-01`（服务端 `f7285314`、车载端
+   `8bdee644`、模拟器 `fb5f7c5`）。场景空关仓门之后，车载端约 3 秒内自己重开了门，之后一直等操作员，不报结果；
+   旅程停在 `AwaitingLoadResult`，等「旅程因不完整的装载结果停摆」的 240 秒超时，五条判据一条都没走到。这是
+   车载端按设计改的行为：onboard-hmi#72（`b85b97a`，2026-09-16）起相反态自动重开、只有 `UNKNOWN` 进恢复，
+   onboard-hmi#78（`96dffa0`，2026-09-18）起期限过后仍重开（ADR-cross-0058 决策 1、5 的 2026-09-18 改写，
+   清单内由 `real-onboard-load-door-closed-empty-reopens` 判）。所以第 11 条那种「关门不放货、等 120 秒超时」
+   的造故障手法在今天的车载端上**造不出失败结果**；09-13 那次绿，是因为 `c86bac5` 早于 onboard-hmi#72。
+
+**后续（用户 2026-10-11 选定，另开票）**：先核清单内经 `Invoke-G3UnknownLoad`（装货中重启车载端）造出 `UNKNOWN`
+再判恢复入口的两条——`real-onboard-restart-with-open-recovery-session`（「申请恢复」入口）与
+`real-onboard-compensate-then-reconnect`（「补偿清空」入口）——是否覆盖本场景的断言；覆盖则退役本场景，否则改造它的
+造故障手法后放回清单。**是否覆盖目前只是读代码的推断，没有核过。**在那之前别把它原样放进 `l2.yml`，它会红在与产品
+无关的地方。
 
 **这条场景 2026-09-04 改过向量，原来测的是 `RESUME_AFTER_REPAIR`，那是错的。**它制造的状态是「装载
 跑完、门关着锁上了、仓位仍是空的」，对应 `COMPENSATE_LOAD_ALL_EMPTY`；而 `RESUME_AFTER_REPAIR` 要的
@@ -88,9 +106,10 @@ pwsh .\scripts\l2\Invoke-L2Scenario.ps1 -Scenario normal-load -EvidenceRoot .\ev
 resume 是设计不是缺陷。
 
 **服务端没有洞。**同一状态下 `COMPENSATE_LOAD_ALL_EMPTY` 是被授权的，有 L1 为证：
-`RecoveryStateMachineG2Tests.AfterARefusedResultResumeIsRefusedButCompensationIsAuthorized`。缺的是
+`RecoveryStateMachineG2Tests.AfterARefusedResultResumeIsRefusedButCompensationIsAuthorized`。**当时**缺的是
 **入口**：车载端按「会话进入 `RecoveryRequired`」显示恢复入口，而 `DecideReadinessAsync` 不看
-`StationOperationStatus.RecoveryRequired`，于是会话停在 `Ready`。完整复盘（含三轮归因里错的那两轮）
+`StationOperationStatus.RecoveryRequired`，于是会话停在 `Ready`。**这个根因 2026-09-04 已修**（`64e9bcc`、
+`248d8eb`，缺陷文档状态 resolved），上面第 2 段的绿就是修复后的复证。完整复盘（含三轮归因里错的那两轮）
 在 `docs/defects/20260904-recovery-required-never-reaches-session-state.md`。红证据：
 `evidence/l2/20260904-real-onboard-resume-after-repair-f0465d9-001`（改名前的最后一次运行）。
 
@@ -224,7 +243,8 @@ gh workflow run l2.yml --ref <分支> -f rig=real -f onboard_ref=<...> -f simula
   vm01 `agvops` 的 `%LOCALAPPDATA%\8005-l2-peers`，同一对提交第二次起不再构建。
 - **清单与遍数。** `real-rig` 作业里有自己的手写清单，`Runs` 的含义与合成清单相同（三连次数）；模式 `default` 每个一遍、
   `consecutive` 按 `Runs`、`consecutive-all` 至少三遍。`consecutive` 配上批次 6 出口那 8 个场景，就是批次 6 出口的真装置清单。
-  `real-onboard-recovery-entry-missing` 不在清单里，它按设计是红的。`real-onboard-restart-with-open-recovery-session`
+  `real-onboard-recovery-entry-missing` 不在清单里，原因已不是「按设计是红的」（那个入口缺失 2026-09-04 已修，09-13 绿过）：
+  onboard-hmi#72 之后它造不出失败的装载结果，CI run `38107859209` 红在第一条判据之前，见上文「现有场景」后的说明（control-server#250）。`real-onboard-restart-with-open-recovery-session`
   09-19 一度移出（`evidence/l2/20260919-ci-real-rig-runs/`），control-server#222 查明是场景自己的毛病、与车载端无关：公共前置
   `Invoke-G3UnknownLoad` 自 control-server#128 起会重启车载端，场景没有重取 `$Context.Onboard`，一直在已关掉的窗口里找按钮。
   修好后放回清单，证据 `evidence/l2/20260920-cs222/`。自检 `Test-L2OnboardHandleAfterRestart.ps1` 防同类再犯。
@@ -1040,6 +1060,9 @@ pwsh -NoProfile -File .\scripts\l2\Test-L2PortLockQueueing.ps1
     `FAILED`。服务端一样判 `RecoveryRequired`，因为判据是「没有安全完成」而不是「报了失败」。
     等这一步的判据要给到 240 秒。**不要为了跑得快去 stage 副本里调短那个超时**：它是安全相关的
     时序，调短之后场景证的就是一份没人真的在跑的配置。
+    **这个手法自 onboard-hmi#72（2026-09-16）起不再成立**：车载端读到空关的相反态就自己重开门、继续等操作员，
+    不再等满超时报 `UNKNOWN`（CI run `38107859209`，control-server#250）。今天要让真车载端报一份不完美的装载结果，
+    用 `G3RecoveryCommon.ps1` 的 `Invoke-G3UnknownLoad`（装货中重启车载端）。
     setup 键 `ExpectedActionOverdueThreshold`（control-server#167）调短的是另一个值，不违反这一条：`operationTimeoutMs`
     它不动；期待动作超时门槛按 `REQ-0358` 说明 2、3 是投运时按现场实测标定的参数，只决定车载端何时上报、服务端看板
     何时出一行，不改变任何执行器时序（不判失败、不进恢复、不停闭环、不改站点期限，ADR-cross-0062）。
