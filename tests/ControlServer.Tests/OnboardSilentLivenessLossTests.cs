@@ -342,7 +342,8 @@ public sealed class OnboardSilentLivenessLossTests
             }
         }
 
-        string[] recorded = await rig.ServerContext.ProtocolInbox.AsNoTracking()
+        await using ControlServerDbContext read = await rig.OpenReadContextAsync();
+        string[] recorded = await read.ProtocolInbox.AsNoTracking()
             .Select(row => row.MessageId)
             .ToArrayAsync(TestContext.Current.CancellationToken);
 
@@ -688,8 +689,24 @@ public sealed class OnboardSilentLivenessLossTests
         /// <summary>The context the server's processor uses. Only for asserting it is not shared; never read through it.</summary>
         public ControlServerDbContext ServerContext { get; } = context;
 
-        /// <summary>Stub (control-server#256): still hands out the server's own context.</summary>
-        public Task<ControlServerDbContext> OpenReadContextAsync() => Task.FromResult(ServerContext);
+        /// <summary>
+        /// A context of the test's own, on a connection of its own, to the same database the server writes
+        /// (control-server#256). The caller disposes it, and with it its connection.
+        /// </summary>
+        /// <remarks>
+        /// Neither <see cref="DbContext"/> nor <see cref="SqliteConnection"/> is thread-safe, and the server's processor
+        /// uses <see cref="ServerContext"/> on the listener's threads. Reading through that instance from the test thread
+        /// was safe only while the server happened to be idle at the moment of the read. The database is a named
+        /// shared-cache in-memory one, kept alive by the server's connection, so a second connection sees the same rows;
+        /// SQLite serialises the two connections itself, which is what makes the read safe by construction.
+        /// </remarks>
+        public async Task<ControlServerDbContext> OpenReadContextAsync()
+        {
+            ControlServerDbContext read = new(
+                new DbContextOptionsBuilder<ControlServerDbContext>().UseSqlite(connection.ConnectionString).Options);
+            await read.Database.OpenConnectionAsync(TestContext.Current.CancellationToken);
+            return read;
+        }
 
         public int Port { get; private init; }
 
@@ -737,7 +754,10 @@ public sealed class OnboardSilentLivenessLossTests
             TimeSpan idleTimeout,
             string? credentialBefore)
         {
-            SqliteConnection connection = new("Data Source=:memory:");
+            // Named and shared-cache so that OpenReadContextAsync can reach it on a second connection; this one stays
+            // open for the rig's lifetime, which is what keeps an in-memory database alive.
+            SqliteConnection connection = new(
+                $"Data Source=liveness-{Guid.NewGuid():N};Mode=Memory;Cache=Shared");
             await connection.OpenAsync(TestContext.Current.CancellationToken);
             ControlServerDbContext context = new(
                 new DbContextOptionsBuilder<ControlServerDbContext>().UseSqlite(connection).Options);
