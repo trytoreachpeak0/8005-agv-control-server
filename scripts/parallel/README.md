@@ -155,8 +155,9 @@ control-server#518 时它只绑 `WIRE_TO_GATE` → 210「关卡」，核对号�
 
 **这一步改什么、不改什么**：
 
-- 只改 v2 实例自己库里的绑定集版本，**不碰派车闸门**（`RiotCreateDispatch.enabled`），不碰 MVP，不碰 RIoT。闸门关着时做这一步不用问用户；
-  打开闸门让车去这些站，每一次都要用户单独授权（见「关、开派车闸门」）。
+- 只改 v2 实例自己库里的绑定集版本，不改派车闸门的开关（`RiotCreateDispatch.enabled`），不碰 MVP，不碰 RIoT。**但它不隔着闸门生效**：
+  派车每轮从库里读生效版本，闸门开着时一激活，下一轮就可能向 218～221 派车。所以闸门关着（或实例是生产来源模式）时做这一步不用问用户；
+  闸门开着而 `allowedWorkTypes` 含四类之一时，激活就等于放车去新站，要先问用户（工作区 `CLAUDE.md`「Ask first」第 1 类），见第 2 步。
 - **生产来源模式的实例激活了六类也只派 `STAGING_TO_WIRE`**：它的 `allowedWorkTypes` 只有这一类（`instance-factory01-v2.production-mes.json`），
   别的类型的需求根本进不来。绑定只回答「这一类去哪个站」，不放行任务类型。
 - 不用重启服务：派车每轮从库里读生效版本（`BoundFixedTaskStationResolver`）。新站进路网要等下一次路网刷新，
@@ -174,7 +175,8 @@ control-server#518 时它只绑 `WIRE_TO_GATE` → 210「关卡」，核对号�
 下面 `<db>` 指 v2 库，`<ops>` 指运维目录，`FieldOps` 指那里的 `ControlServer.FieldOps.exe`。
 
 1. **取新鲜目录**。在 factory01 上用本仓 `scripts/field/Export-RiotStationCatalog.ps1`（只发一次 GET，不写 RIoT），密钥取自
-   `CONTROL_SERVER_RIOT_CALL_API_KEY`：
+   `CONTROL_SERVER_RIOT_CALL_API_KEY`。**19 不会把这个脚本放进运维目录**：从与已装包同一提交的检出（19 的 `-ControlServerRepository`）
+   里把 `scripts\field\Export-RiotStationCatalog.ps1` 拷到 `<ops>`（10-09 就是这样手工放的），或在检出里原地运行：
 
    ```powershell
    pwsh -File <ops>\Export-RiotStationCatalog.ps1 -MapId 26 -OutFile <ops>\stations-26-<yyyyMMdd-HHmmss>.json
@@ -190,9 +192,15 @@ control-server#518 时它只绑 `WIRE_TO_GATE` → 210「关卡」，核对号�
    FieldOps task-type-stations --database <db> --map 26
    ```
 
-   记下 `activeVersion`（回滚要用），并核对：`state` 是 `Active`，`unreleasedHolds` 与 `openAttempt` 都为空，`active.bindings` 是
-   `WIRE_TO_GATE` → 210、`STAGING_TO_WIRE` → 217。**与此不符就停，报调度**：候选是按这个现状写的，现状变了，整份替换可能丢掉别人加的绑定。
+   记下 `activeVersion`（回滚要用），并核对：`state` 是 `Active`，`unreleasedHolds` 与 `openAttempt` 都为空，`active.ruleVersion` 是 1，
+   `active.bindings` 是 `WIRE_TO_GATE` → 210、`STAGING_TO_WIRE` → 217。**与此不符就停，报调度**：候选是按这个现状写的，现状变了，整份替换
+   可能丢掉别人加的绑定；候选写死了 `ruleVersion: 1`，规则版本对不上时 dry-run 会以 `TASK_TYPE_BINDING_RULE_VERSION_NOT_CURRENT` 拒绝。
    有未解除的暂停或未结的激活尝试，也先停。
+
+   **再确认派车闸门**：读 `C:\Program Files\8005 AGV\ControlServer.V2\appsettings.Production.json` 的 `RiotCreateDispatch.enabled`。
+   是 `false`（关着），或实例是生产来源模式（`allowedWorkTypes` 只有 `STAGING_TO_WIRE`，见上文「需求来源」），才往下做。闸门开着而
+   `JourneyRuntime.allowedWorkTypes` 含 `DIE_TO_OVEN`、`WIRE_TO_OPTICAL`、`DIE_TO_WIRE_STAGING`、`WIRE_TO_NITROGEN` 之一——出厂
+   `instance-factory01-v2.json` 与两车示例都含全部六类——**激活就等于放车去新站，先停下问用户**，或先按「关、开派车闸门」把闸门关上。
 
 3. **dry-run**（只校验、出预览，除一条审计外什么都不写）：
 

@@ -50,3 +50,10 @@
 
 L2 PASS 只证明服务端在假 RIoT、假 MesIngest 与合成车载端下的跨端时序，
 **不代表真实 RCS、真车、真实 IO 模块或接线合格**。
+
+## 补注（control-server#548 审查后加，不是台架生成的内容）
+
+这一轮是在**未提交的 worktree** 上跑的：基线是上表 `controlServerCommit` 的 `da6e40e2`，本票的改动（候选、预置、测试、README）当时还在工作区、没有提交，
+本票的第一个提交 `107b947d8` 在这一轮之后。FieldOps 行为证据仍然成立：产品代码本票一行没改；演练库的起点是台架按场景配置
+`b10-05-map26-activation.setup.psd1` 自己写的预置（本票之前的 26 号图内容），不读包里那份；激活用的候选
+`scripts/parallel/task-type-stations.map-26.candidate.json` 在这一轮之后没有再改过。
