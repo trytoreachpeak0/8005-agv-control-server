@@ -597,11 +597,24 @@ public sealed partial class JourneyRuntimeEngine(
         catch (BusinessIdentityConflictException error)
         {
             admissionPolicyDrifted = true;
+            // Wording the log must not cost the round or hide the refusal: a failed read falls back to the store's words.
+            string driftCauses;
+            try
+            {
+                driftCauses = await DescribeAdmissionPolicyDriftAsync(
+                    liveStationNames, seededTaskTypes, seededRelations.Length, error, cancellationToken)
+                    .ConfigureAwait(false);
+            }
+            catch (Exception describeError) when (!cancellationToken.IsCancellationRequested)
+            {
+                driftCauses = $"the store said: {error.Message} (the cause could not be read from the database: " +
+                              $"{describeError.GetType().Name}: {describeError.Message})";
+            }
             LogAdmissionPolicyDrift(
                 logger,
                 runtimeOptions.AdmissionPolicyVersion,
                 runtimeOptions.MapId,
-                await DescribeAdmissionPolicyDriftAsync(seededRelations, error, cancellationToken).ConfigureAwait(false),
+                driftCauses,
                 error);
         }
 
@@ -835,19 +848,33 @@ public sealed partial class JourneyRuntimeEngine(
     /// version are not there to mix in; the filter keeps the comparison right should that ever stop being so.
     /// </para>
     /// <para>
+    /// The stations and the task types are compared as this build seeds them, not as read back from the relations: the
+    /// relations are their product, and with either side empty the other would read as empty too (review S1).
+    /// </para>
+    /// <para>
     /// A refusal none of the four explains -- the relations pair the same stations with the same task types
     /// differently, or the store refused for another reason -- is said to be one, with the store's own words. It is
-    /// never reported as a drift of nothing.
+    /// never reported as a drift of nothing. Above the bound version the store compares neither content nor identity,
+    /// so a refusal there is always one of these (review S4).
     /// </para>
     /// </remarks>
     private async Task<string> DescribeAdmissionPolicyDriftAsync(
-        StationTaskTypeAdmission[] seededRelations,
+        string[] liveStationNames,
+        string[] seededTaskTypes,
+        int seededRelationCount,
         BusinessIdentityConflictException refusal,
         CancellationToken cancellationToken)
     {
         AdmissionPolicyStateRow? bound = await dbContext.AdmissionPolicyState.AsNoTracking()
             .SingleOrDefaultAsync(row => row.Id == 1, cancellationToken).ConfigureAwait(false);
-        long boundVersion = bound?.Version ?? 0;
+        if (bound is null || runtimeOptions.AdmissionPolicyVersion > bound.Version)
+        {
+            return $"cause not distinguished from the database (configured version " +
+                   $"{runtimeOptions.AdmissionPolicyVersion} is above the bound version {bound?.Version ?? 0}, where " +
+                   $"the store refuses only the relations themselves; the store said: {refusal.Message})";
+        }
+
+        long boundVersion = bound.Version;
         StationTaskTypeAdmission[] boundRelations = await dbContext.StationTaskTypeAdmissions.AsNoTracking()
             .Where(row => row.PolicyVersion == boundVersion)
             .Select(row => new StationTaskTypeAdmission(row.StationId, row.TaskType))
@@ -855,7 +882,7 @@ public sealed partial class JourneyRuntimeEngine(
 
         List<string> causes = [];
         string[] boundStations = Distinct(boundRelations.Select(relation => relation.StationId));
-        string[] seededStations = Distinct(seededRelations.Select(relation => relation.StationId));
+        string[] seededStations = Distinct(liveStationNames);
         if (!boundStations.SequenceEqual(seededStations, StringComparer.Ordinal))
         {
             causes.Add(
@@ -865,18 +892,17 @@ public sealed partial class JourneyRuntimeEngine(
         }
 
         string[] boundTaskTypes = Distinct(boundRelations.Select(relation => relation.TaskType));
-        string[] seededTaskTypes = Distinct(seededRelations.Select(relation => relation.TaskType));
-        if (!boundTaskTypes.SequenceEqual(seededTaskTypes, StringComparer.Ordinal))
+        string[] seeded = Distinct(seededTaskTypes);
+        if (!boundTaskTypes.SequenceEqual(seeded, StringComparer.Ordinal))
         {
             causes.Add(
                 $"executable task types changed under bound version {boundVersion} " +
-                $"(bound: {List(boundTaskTypes)}; this build seeds: {List(seededTaskTypes)}; " +
-                $"added: {List(seededTaskTypes.Except(boundTaskTypes, StringComparer.Ordinal))}; " +
-                $"removed: {List(boundTaskTypes.Except(seededTaskTypes, StringComparer.Ordinal))})");
+                $"(bound: {List(boundTaskTypes)}; this build seeds: {List(seeded)}; " +
+                $"added: {List(seeded.Except(boundTaskTypes, StringComparer.Ordinal))}; " +
+                $"removed: {List(boundTaskTypes.Except(seeded, StringComparer.Ordinal))})");
         }
 
-        if (bound is not null &&
-            !string.Equals(bound.DeploymentId, runtimeOptions.AdmissionPolicyDeploymentId, StringComparison.Ordinal))
+        if (!string.Equals(bound.DeploymentId, runtimeOptions.AdmissionPolicyDeploymentId, StringComparison.Ordinal))
         {
             causes.Add(
                 $"deployment identity changed (bound: {bound.DeploymentId}; " +
@@ -893,7 +919,7 @@ public sealed partial class JourneyRuntimeEngine(
         return causes.Count > 0
             ? string.Join("; ", causes)
             : $"cause not distinguished from the database (bound version {boundVersion} holds " +
-              $"{boundRelations.Length} relations, this build seeds {seededRelations.Length}, over the same stations, " +
+              $"{boundRelations.Length} relations, this build seeds {seededRelationCount}, over the same stations, " +
               $"task types and deployment identity; the store said: {refusal.Message})";
 
         static string[] Distinct(IEnumerable<string> values) =>
