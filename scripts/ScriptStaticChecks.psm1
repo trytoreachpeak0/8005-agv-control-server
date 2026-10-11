@@ -517,9 +517,14 @@ function Find-StringHelperNullComparison {
             $void = ''
             if ($exemption.Count -gt 0) {
                 $used[$exemption[0]] = $true
-                if ($premises[$exemption[0]].Holds) { $exempted++; continue }
+                $premise = $exemption[0]['Premise']
+                # The premise is about the column the exempted function reads; a function that no longer reads it is not
+                # covered by it, whatever the snapshot says.
+                $readsColumn = -not $premise -or ($p ?? $ast).Extent.Text.Contains($premise.Property, [StringComparison]::OrdinalIgnoreCase)
+                if ($premises[$exemption[0]].Holds -and $readsColumn) { $exempted++; continue }
                 # Matched, but what it rests on no longer holds: report, and say why the exemption did not apply.
-                $void = " (exemption void -- $($premises[$exemption[0]].Detail))"
+                $void = if (-not $readsColumn) { " (exemption void -- $function no longer reads $($premise.Property), the column its premise is about)" }
+                        else { " (exemption void -- $($premises[$exemption[0]].Detail))" }
             }
             $findings.Add([pscustomobject]@{
                 File    = $file
@@ -680,12 +685,16 @@ function Get-ScenarioLiteralSql {
         $ast = (Get-ParsedScript $file).Ast
         $local = @{} + $Sinks
         while (Add-DerivedSink $ast $local) { }
-        # Connections the script opens itself (SqliteConnection::new -- the onboard journal in the real-onboard scenarios):
-        # the server's connection always arrives from the orchestrator ($Context.Connection) or Open-L2Database.
-        $ownConnections = [System.Collections.Generic.HashSet[string]]::new([StringComparer]::OrdinalIgnoreCase)
+        # Connections the script opens itself on the onboard journal (SqliteConnection::new over OnboardJournalPath, the
+        # real-onboard scenarios): another database. A connection opened on anything else -- a copy of the server's own store
+        # (demand-bearing-store-at-unload.ps1) -- is the server's schema and is checked. Keyed by scope, so a function's
+        # $Connection parameter is not a script-level $Connection of the same name (L2.psm1:318; review of control-server#583).
+        $journalConnections = [System.Collections.Generic.HashSet[string]]::new([StringComparer]::OrdinalIgnoreCase)
         foreach ($assignment in $ast.FindAll({ param($a) $a -is [System.Management.Automation.Language.AssignmentStatementAst] -and
                 $a.Left -is [System.Management.Automation.Language.VariableExpressionAst] -and $a.Right.Extent.Text -match 'SqliteConnection\]::new\(' }, $true)) {
-            $null = $ownConnections.Add((Get-VariableName $assignment.Left))
+            if ($assignment.Right.Extent.Text -match 'Journal') {
+                $null = $journalConnections.Add("$(Get-ScopeKey $assignment)|$(Get-VariableName $assignment.Left)")
+            }
         }
         foreach ($call in $ast.FindAll({ param($a) $a -is [System.Management.Automation.Language.CommandAst] }, $true)) {
             $name = $call.GetCommandName()
@@ -702,7 +711,8 @@ function Get-ScenarioLiteralSql {
             }
             # The connection comes first wherever a sink takes one (-Connection, or position 0 ahead of the SQL).
             $connection = if ($local[$name] -gt 0) { Get-SqlArgument $call 0 'Connection' } else { Get-SqlArgument $call 99 'Connection' }
-            if ($connection -is [System.Management.Automation.Language.VariableExpressionAst] -and $ownConnections.Contains((Get-VariableName $connection))) {
+            if ($connection -is [System.Management.Automation.Language.VariableExpressionAst] -and
+                $journalConnections.Contains("$(Get-ScopeKey $call)|$(Get-VariableName $connection)")) {
                 $otherDatabase++
                 continue
             }
@@ -761,19 +771,45 @@ function Compare-ProductionStamp {
     return $Before -ceq $After ? 'True' : 'False'
 }
 
-# Length and last write of a file, 'absent', or 'inaccessible' when this account may not even look (the control host's
-# %ProgramData%\8005 is like that). Compare-ProductionStamp turns 'inaccessible' into UNVERIFIED, not into a pass.
+<#
+Length and last write of a file, 'absent', or 'inaccessible' when this account may not look (the control host's
+%ProgramData%\8005 is like that). Compare-ProductionStamp turns 'inaccessible' into UNVERIFIED, not into a pass.
+
+'absent' is a claim, not a default: Test-Path answers $false without an error for a file under a directory this account may
+not list (review M1 of control-server#583). So the path is walked from its root, listing each directory: a directory that
+refuses a listing makes the answer 'inaccessible'; only a listing that shows the next level missing makes it 'absent'.
+#>
 function Get-FileStamp([string]$File) {
+    $full = [IO.Path]::GetFullPath($File)
+    $directory = [IO.Path]::GetPathRoot($full)
+    $parts = @($full.Substring($directory.Length).Split([IO.Path]::DirectorySeparatorChar, [StringSplitOptions]::RemoveEmptyEntries))
+    for ($i = 0; $i -lt $parts.Count; $i++) {
+        try {
+            $names = @([IO.Directory]::GetFileSystemEntries($directory) | ForEach-Object { [IO.Path]::GetFileName($_) })
+        } catch [System.UnauthorizedAccessException] {
+            return 'inaccessible'
+        } catch [System.Security.SecurityException] {
+            return 'inaccessible'
+        }
+        if ($names -notcontains $parts[$i]) { return 'absent' }
+        $directory = Join-Path $directory $parts[$i]
+    }
     try {
-        if (-not (Test-Path -LiteralPath $File -ErrorAction Stop)) { return 'absent' }
-        $item = Get-Item -LiteralPath $File -ErrorAction Stop
+        $item = [IO.FileInfo]::new($full)
+        $item.Refresh()
+        if (-not $item.Exists) { return 'inaccessible' }   # listed, yet not readable as a file
         return "$($item.Length) $($item.LastWriteTimeUtc.Ticks)"
     } catch [System.UnauthorizedAccessException] {
         return 'inaccessible'
-    } catch {
-        if ($_.Exception -is [System.UnauthorizedAccessException] -or $_.CategoryInfo.Category -eq 'PermissionDenied') { return 'inaccessible' }
-        throw
     }
+}
+
+# Data Source=<path> built by the connection string builder, so a ';' or '=' in the path is quoted rather than read as
+# another keyword.
+function New-SqliteConnectionString([string]$DatabasePath, [string]$Extra = '') {
+    $builder = [System.Data.Common.DbConnectionStringBuilder]::new()
+    $builder['Data Source'] = $DatabasePath
+    return $Extra ? "$($builder.get_ConnectionString());$Extra" : $builder.get_ConnectionString()
 }
 
 function Import-HostSqlite([string]$HostDirectory) {
@@ -783,6 +819,51 @@ function Import-HostSqlite([string]$HostDirectory) {
     }
     # As in Open-L2Database (scripts/l2/L2.psm1): Batteries_V2 reports a missing type on some builds and works regardless.
     try { [SQLitePCL.Batteries_V2]::Init() } catch { }
+}
+
+# Every way the host's configuration can carry a connection string through the environment: the __ and : spellings of
+# ConnectionStrings, and the four Azure App Service prefixes .NET maps onto ConnectionStrings.
+$script:ConnectionStringVariable = '^(ConnectionStrings(__|:)|(CUSTOM|SQL|SQLAZURE|MYSQL)CONNSTR_)'
+
+<#
+The ProcessStartInfo for one --migrate-only run, not started. The child inherits this process's environment, so every
+variable that could carry a connection string is removed first (review M2 of control-server#583: CUSTOMCONNSTR_, SQLCONNSTR_
+and a literal ConnectionStrings:ControlServer each beat ours some of the time), then ConnectionStrings__ControlServer is set
+to the temporary database, and that value is parsed back as a connection string -- one keyword, Data Source, exactly this
+path under the work root -- before it is returned. The host directory must be clear of production too: with
+DOTNET_ENVIRONMENT=Production the host would load an install's appsettings.Production.json.
+#>
+function New-MigrateStartInfo {
+    param(
+        [Parameter(Mandatory)][string]$HostDirectory, [Parameter(Mandatory)][string]$DatabasePath,
+        [Parameter(Mandatory)][AllowEmptyString()][string]$WorkRoot
+    )
+    Assert-TempDatabasePath -DatabasePath $DatabasePath -WorkRoot $WorkRoot
+    Assert-ClearOfProduction ([IO.Path]::GetFullPath($HostDirectory)) 'Host directory'
+    $DatabasePath = [IO.Path]::GetFullPath($DatabasePath)
+
+    $start = [Diagnostics.ProcessStartInfo]::new((Join-Path $HostDirectory 'ControlServer.Host.exe'))
+    $start.ArgumentList.Add('--migrate-only')
+    $start.WorkingDirectory = $HostDirectory
+    $start.UseShellExecute = $false
+    $start.RedirectStandardOutput = $true
+    $start.RedirectStandardError = $true
+    foreach ($key in @($start.Environment.Keys)) {
+        if ($key -match $script:ConnectionStringVariable) { $null = $start.Environment.Remove($key) }
+    }
+    $start.Environment['ConnectionStrings__ControlServer'] = New-SqliteConnectionString $DatabasePath
+    $start.Environment['DOTNET_ENVIRONMENT'] = 'Production'
+
+    $left = @($start.Environment.Keys | Where-Object { $_ -match $script:ConnectionStringVariable -and $_ -ne 'ConnectionStrings__ControlServer' })
+    if ($left.Count -gt 0) { throw "Refusing to start --migrate-only: the child would still see $($left -join ', ')." }
+    $parsed = [System.Data.Common.DbConnectionStringBuilder]::new()
+    # set_ConnectionString, not .ConnectionString = : the builder is a dictionary, and PowerShell would add a key named ConnectionString.
+    $parsed.set_ConnectionString($start.Environment['ConnectionStrings__ControlServer'])
+    if ($parsed.Count -ne 1 -or -not $parsed.ContainsKey('Data Source') -or [string]$parsed['Data Source'] -ne $DatabasePath) {
+        throw "Refusing to start --migrate-only: ConnectionStrings__ControlServer does not name exactly the temporary database."
+    }
+    Assert-TempDatabasePath -DatabasePath ([string]$parsed['Data Source']) -WorkRoot $WorkRoot
+    return $start
 }
 
 <#
@@ -796,27 +877,11 @@ function New-MigratedTempDatabase {
         [Parameter(Mandatory)][AllowEmptyString()][string]$WorkRoot, [int]$TimeoutSeconds = 180
     )
     # Before anything else, and before any process exists.
-    Assert-TempDatabasePath -DatabasePath $DatabasePath -WorkRoot $WorkRoot
+    $start = New-MigrateStartInfo -HostDirectory $HostDirectory -DatabasePath $DatabasePath -WorkRoot $WorkRoot
     $DatabasePath = [IO.Path]::GetFullPath($DatabasePath)
     $production = Join-Path ($env:ProgramData ?? 'C:\ProgramData') '8005\ControlServer\data\controlserver.db'
     $before = Get-FileStamp $production
     $null = New-Item -ItemType Directory -Path (Split-Path -Parent $DatabasePath) -Force
-
-    $start = [Diagnostics.ProcessStartInfo]::new((Join-Path $HostDirectory 'ControlServer.Host.exe'))
-    $start.ArgumentList.Add('--migrate-only')
-    $start.WorkingDirectory = $HostDirectory
-    $start.UseShellExecute = $false
-    $start.RedirectStandardOutput = $true
-    $start.RedirectStandardError = $true
-    $start.Environment['ConnectionStrings__ControlServer'] = "Data Source=$DatabasePath"
-    $start.Environment['DOTNET_ENVIRONMENT'] = 'Production'
-    # The connection string the host will read, checked as it will be handed over: given, and naming exactly the path
-    # asserted above. Without it the host would fall back to the production default.
-    $given = $start.Environment['ConnectionStrings__ControlServer']
-    if ($given -notmatch '^Data Source=(.+)$' -or $Matches[1] -ne $DatabasePath) {
-        throw "Refusing to start --migrate-only: ConnectionStrings__ControlServer is '$given', not the temporary database."
-    }
-    Assert-TempDatabasePath -DatabasePath $Matches[1] -WorkRoot $WorkRoot
     $watch = [Diagnostics.Stopwatch]::StartNew()
     $process = [Diagnostics.Process]::Start($start)
     $stdout = $process.StandardOutput.ReadToEndAsync()
@@ -832,7 +897,7 @@ function New-MigratedTempDatabase {
     if (-not (Test-Path -LiteralPath $DatabasePath)) { throw "ControlServer.Host --migrate-only exited 0 but did not create $DatabasePath." }
 
     Import-HostSqlite $HostDirectory
-    $connection = [Microsoft.Data.Sqlite.SqliteConnection]::new("Data Source=$DatabasePath;Mode=ReadOnly;Pooling=False")
+    $connection = [Microsoft.Data.Sqlite.SqliteConnection]::new((New-SqliteConnectionString $DatabasePath 'Mode=ReadOnly;Pooling=False'))
     try {
         $connection.Open()
         $command = $connection.CreateCommand()
@@ -851,8 +916,9 @@ function New-MigratedTempDatabase {
 function Open-ExplainConnection {
     param([Parameter(Mandatory)][string]$HostDirectory, [Parameter(Mandatory)][string]$DatabasePath, [Parameter(Mandatory)][string]$WorkRoot)
     Assert-TempDatabasePath -DatabasePath $DatabasePath -WorkRoot $WorkRoot
+    Assert-ClearOfProduction ([IO.Path]::GetFullPath($HostDirectory)) 'Host directory'
     Import-HostSqlite $HostDirectory
-    $connection = [Microsoft.Data.Sqlite.SqliteConnection]::new("Data Source=$DatabasePath;Mode=ReadOnly;Pooling=False")
+    $connection = [Microsoft.Data.Sqlite.SqliteConnection]::new((New-SqliteConnectionString $DatabasePath 'Mode=ReadOnly;Pooling=False'))
     $connection.Open()
     return $connection
 }
@@ -879,5 +945,5 @@ function Test-SqlExplain {
     }
 }
 
-Export-ModuleMember -Function Compare-ProductionStamp, Test-StringNullExemptionPremise, Assert-WorkRoot, Get-SqlSinkCatalog, Get-ScenarioLiteralSql, Assert-TempDatabasePath, New-MigratedTempDatabase,
+Export-ModuleMember -Function Get-FileStamp, New-MigrateStartInfo, Compare-ProductionStamp, Test-StringNullExemptionPremise, Assert-WorkRoot, Get-SqlSinkCatalog, Get-ScenarioLiteralSql, Assert-TempDatabasePath, New-MigratedTempDatabase,
     Open-ExplainConnection, Test-SqlExplain, Get-StringNullExemption, Test-ScriptParse, Get-HelperShapeCatalog, Find-HelperPropertyMisuse, Get-StringHelperCatalog, Find-StringHelperNullComparison

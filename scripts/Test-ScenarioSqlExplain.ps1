@@ -196,7 +196,7 @@ function Read-Session([object]$Connection) { Invoke-L2Query -Connection $Connect
             $left = @($start.Environment.Keys | Where-Object { $_ -match '^(ConnectionStrings(__|:)|(CUSTOM|SQL|SQLAZURE|MYSQL)CONNSTR_)' -and $_ -ne 'ConnectionStrings__ControlServer' })
             Add-Case 'start info: no other connection string spelling reaches the child' ($left.Count -eq 0) ($left -join ',')
             $builder = [System.Data.Common.DbConnectionStringBuilder]::new()
-            $builder.ConnectionString = $start.Environment['ConnectionStrings__ControlServer']
+            $builder.set_ConnectionString($start.Environment['ConnectionStrings__ControlServer'])
             Add-Case 'start info: the connection string parses to exactly the temporary database, a '';'' in the path included' (
                 $builder.Count -eq 1 -and $builder['Data Source'] -eq [IO.Path]::GetFullPath((Join-Path $semicolon 'controlserver.db'))) $start.Environment['ConnectionStrings__ControlServer']
         } finally {
@@ -225,12 +225,18 @@ function Read-Session([object]$Connection) { Invoke-L2Query -Connection $Connect
     Write-Host "connection string data source passed to --migrate-only: $($migration.DataSource)"
     Write-Host "migrated: $database ($($migration.Tables) tables, $([int]$migration.Elapsed.TotalSeconds) s); production database untouched: $($migration.ProductionUntouched)"
     Add-Case 'temp database: created and migrated' ($migration.Tables -ge 20) "$($migration.Tables) tables"
-    # False fails. UNVERIFIED does not (a CI runner can read the path, so there it is True or False), but it is never
-    # shown as True and it gets a warning line of its own.
-    Add-Case 'temp database: the production database file was not changed (False fails; UNVERIFIED is printed, not passed off as True)' (
-        $migration.ProductionUntouched -cne 'False') "untouched $($migration.ProductionUntouched)"
+    # False fails. UNVERIFIED does not (a CI runner can read the path, so there it is True or False), but it is not a case
+    # that passed either: no "ok" line claims the file was checked, and the warning reaches the job's annotations and
+    # summary, where a green step is otherwise read as "checked".
     if ($migration.ProductionUntouched -like 'UNVERIFIED*') {
-        Write-Host "WARN  production database untouched: $($migration.ProductionUntouched) -- this account cannot read the production path, so the run could not check it"
+        $warning = "production database untouched: $($migration.ProductionUntouched) -- this account cannot read the production path, so this run could not check it"
+        Write-Host "WARN  $warning"
+        if ($env:GITHUB_ACTIONS -eq 'true') {
+            Write-Host "::warning title=Scenario SQL self-check: production database not verified::$warning"
+            if ($env:GITHUB_STEP_SUMMARY) { Add-Content -LiteralPath $env:GITHUB_STEP_SUMMARY -Value "Scenario SQL self-check: **$warning**" }
+        }
+    } else {
+        Add-Case 'temp database: the production database file was not changed' ($migration.ProductionUntouched -ceq 'True') "untouched $($migration.ProductionUntouched)"
     }
 
     $connection = Open-ExplainConnection -HostDirectory $HostDirectory -DatabasePath $database -WorkRoot $WorkRoot
@@ -256,7 +262,8 @@ function Read-Session([object]$Connection) { Invoke-L2Query -Connection $Connect
         foreach ($f in $explained) { Write-Host "  SQL  $($f.File):$($f.Line) $($f.Message)`n       $($f.Sql)" }
         Add-Case 'repository: every literal statement compiles against the migrated schema' ($explained.Count -eq 0) "$($explained.Count) failed"
         if ($full) {
-            # 168 literal and 693 skipped on fp/v2-impl@da6e40e2.
+            # 164 literal, 693 interpolated and 4 onboard-journal statements on fp/v2-impl@aa3e723a (161 / 690 / 10 before review
+            # showed that 5 of the 10 ran on a copy of the server store and 1 was a same-named parameter in L2.psm1).
             Add-Case 'repository: at least 150 literal statements were compiled' (@($found.Literal).Count -ge 150) "$(@($found.Literal).Count)"
         }
     } finally {

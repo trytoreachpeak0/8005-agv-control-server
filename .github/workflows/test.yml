@@ -57,9 +57,11 @@ jobs:
     # 120 keeps the job limit above that sum, so whatever hangs is recorded as a failed step and never as a cancelled
     # job. It only acts when something has already gone wrong.
     # Any step added later counts against it the same way.
-    # 180 since control-server#583, which put nine steps before Test with their own limits: the script static checks 10,
-    # seven self-checks 5 each, the scenario SQL check 15 -- 60 more, about 172 if every step ran to its own limit.
-    timeout-minutes: 180
+    # 150 since control-server#583, which put nine steps before Test with their own limits, set from measurement (static
+    # checks 32-40 s, the seven self-checks 1-2 s each, the SQL check 36 s plus a 26 s host build on the control host): the
+    # script static checks 5, seven self-checks 2 each, the scenario SQL check 10 -- 29 more, about 141 if every step ran
+    # to its own limit.
+    timeout-minutes: 150
     env:
       # NuGet's vulnerability audit fetches its data from nuget.org during every restore, and with
       # TreatWarningsAsErrors a failed fetch (NU1900) is a red run that says nothing about the code:
@@ -300,7 +302,7 @@ jobs:
       # to the last two (bc22cfd25, control-server#555): both scripts were G3-only and nothing ran them by day. Each check
       # replays its own fixtures first and asserts how much it read, so a scan that broke cannot report zero findings.
       - name: Script static checks (parse, helper properties, string-null)
-        timeout-minutes: 10
+        timeout-minutes: 5
         shell: pwsh
         run: pwsh -NoProfile -File ./scripts/Test-ScriptStaticChecks.ps1
 
@@ -309,37 +311,37 @@ jobs:
       # request with the reason for each (they take the machine-wide desktop or port lock, start real orchestrators,
       # register a SYSTEM task, or already run in l2.yml).
       - name: G3 runner self-check (runner claims)
-        timeout-minutes: 5
+        timeout-minutes: 2
         shell: pwsh
         run: pwsh -NoProfile -File ./scripts/Test-G3RunnerClaims.ps1
 
       - name: L2 scenario self-check (dispatch zone parameters)
-        timeout-minutes: 5
+        timeout-minutes: 2
         shell: pwsh
         run: pwsh -NoProfile -File ./scripts/l2/Test-L2DispatchZoneParameters.ps1
 
       - name: L2 scenario self-check (CI lane plan)
-        timeout-minutes: 5
+        timeout-minutes: 2
         shell: pwsh
         run: pwsh -NoProfile -File ./scripts/l2/Test-L2Lanes.ps1
 
       - name: L2 scenario self-check (real inbound reads)
-        timeout-minutes: 5
+        timeout-minutes: 2
         shell: pwsh
         run: pwsh -NoProfile -File ./scripts/l2/Test-L2RealInbound.ps1
 
       - name: L2 scenario self-check (session continuity verdict)
-        timeout-minutes: 5
+        timeout-minutes: 2
         shell: pwsh
         run: pwsh -NoProfile -File ./scripts/l2/Test-L2SessionContinuity.ps1
 
       - name: L2 scenario self-check (slot groups)
-        timeout-minutes: 5
+        timeout-minutes: 2
         shell: pwsh
         run: pwsh -NoProfile -File ./scripts/l2/Test-L2SlotGroups.ps1
 
       - name: L2 scenario self-check (task type stations)
-        timeout-minutes: 5
+        timeout-minutes: 2
         shell: pwsh
         run: pwsh -NoProfile -File ./scripts/l2/Test-L2TaskTypeStations.ps1
 
@@ -351,7 +353,7 @@ jobs:
       # it hands over names a database under the work root, and afterwards that the production path is untouched; it
       # prints the data source it used. SQL with $ interpolation is skipped and counted (most of it): a blind spot, printed.
       - name: Scenario SQL self-check (literal SQL against the migrated schema)
-        timeout-minutes: 15
+        timeout-minutes: 10
         shell: pwsh
         run: pwsh -NoProfile -File ./scripts/Test-ScenarioSqlExplain.ps1 -Build
 
