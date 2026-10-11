@@ -385,6 +385,39 @@ public sealed class OnboardSilentLivenessLossTests
         }
     }
 
+    /// <summary>
+    /// 夹具挑中的端口从挑中那一刻起就一直被占着，直到被测服务绑上它——中间没有「端口空着、谁都能拿」的时刻。
+    /// </summary>
+    /// <remarks>
+    /// <para>
+    /// 原来的写法是绑 0 号端口、读回端口号、<c>Stop()</c>、再交给服务去绑。<c>Stop()</c> 与服务绑定之间端口是空的，
+    /// 同机并行的别的测试或 L2 泳道向系统要一个临时端口，系统可能恰好给出这一个，服务于是绑不上——偶发红。
+    /// </para>
+    /// <para>
+    /// 「一直被占着」用一个独占绑定去试：它绑得上，说明端口当时没人占。服务那一种绑定（<c>127.0.0.1</c> 上的普通
+    /// <c>TcpListener</c>）照样要绑得上，否则这个占位等于把被测服务也挡在外面。
+    /// </para>
+    /// </remarks>
+    [Fact]
+    [Trait("IntegrationSlice", "FP-IS-05")]
+    public void TheRigsPortIsHeldFromTheMomentItIsChosenUntilTheServerBindsIt()
+    {
+        using PortReservation reservation = PortReservation.Take();
+
+        using (Socket contender = new(AddressFamily.InterNetwork, SocketType.Stream, ProtocolType.Tcp))
+        {
+            contender.ExclusiveAddressUse = true;
+            SocketException refused = Assert.Throws<SocketException>(
+                () => contender.Bind(new IPEndPoint(IPAddress.Any, reservation.Port)));
+            TestContext.Current.TestOutputHelper?.WriteLine(
+                $"占位期间别人绑 {reservation.Port}：{refused.SocketErrorCode}");
+        }
+
+        TcpListener server = new(IPAddress.Loopback, reservation.Port);
+        server.Start();
+        server.Stop();
+    }
+
     // --- 辅助 ----------------------------------------------------------------------------------------
 
     /// <summary>
@@ -544,6 +577,32 @@ public sealed class OnboardSilentLivenessLossTests
         public override long GetTimestamp() => _timestamp;
 
         public void Advance(TimeSpan by) => _timestamp += by.Ticks;
+    }
+
+    /// <summary>A loopback port for the server under test. Stub: still probes and releases (control-server#256).</summary>
+    private sealed class PortReservation : IDisposable
+    {
+        private PortReservation(int port) => Port = port;
+
+        public int Port { get; }
+
+        public static PortReservation Take()
+        {
+            TcpListener probe = new(IPAddress.Loopback, 0);
+            probe.Start();
+            try
+            {
+                return new PortReservation(((IPEndPoint)probe.LocalEndpoint).Port);
+            }
+            finally
+            {
+                probe.Stop();
+            }
+        }
+
+        public void Dispose()
+        {
+        }
     }
 
     private sealed class FixedClock : TimeProvider
