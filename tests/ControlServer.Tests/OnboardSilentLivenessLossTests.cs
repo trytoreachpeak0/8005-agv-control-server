@@ -342,12 +342,127 @@ public sealed class OnboardSilentLivenessLossTests
             }
         }
 
-        string[] recorded = await rig.Context.ProtocolInbox.AsNoTracking()
+        await using ControlServerDbContext read = await rig.OpenReadContextAsync();
+        string[] recorded = await read.ProtocolInbox.AsNoTracking()
             .Select(row => row.MessageId)
             .ToArrayAsync(TestContext.Current.CancellationToken);
 
         Assert.Contains(acceptedMessageId, recorded);
         Assert.DoesNotContain(lateMessageId, recorded);
+    }
+
+    // --- 夹具本身：不把进程级状态留给后面的测试（control-server#256） ------------------------------------
+
+    /// <summary>
+    /// 夹具设的凭据环境变量，拆夹具时还原成设之前的样子；原来没有就还原成没有，不是空串。
+    /// </summary>
+    /// <remarks>
+    /// 环境变量是进程级的，同一个测试进程里所有测试类共用。夹具设了不还原，同进程里后跑的测试看到的就是被改过的环境——
+    /// 哪一条测试受影响取决于执行顺序，于是表现为偶发。两种原值各钉一次：<c>null</c> 那一种最容易被还原成空串，
+    /// 而空串与「没有」在 <c>string.IsNullOrWhiteSpace</c> 之外的读法下并不等价。
+    /// </remarks>
+    [Theory]
+    [InlineData(null)]
+    [InlineData("value-set-before-the-rig")]
+    [Trait("IntegrationSlice", "FP-IS-05")]
+    public async Task TheRigRestoresTheCredentialVariableItSet(string? before)
+    {
+        string? outside = Environment.GetEnvironmentVariable(CredentialVariable);
+        try
+        {
+            Environment.SetEnvironmentVariable(CredentialVariable, before);
+
+            await using (LivenessRig rig = await LivenessRig.StartAsync(TimeSpan.FromMilliseconds(250)))
+            {
+                // 夹具活着的时候它确实设了——否则下面的还原断言可能是因为它根本没设而成立。
+                Assert.Equal(Credential, Environment.GetEnvironmentVariable(CredentialVariable));
+            }
+
+            Assert.Equal(before, Environment.GetEnvironmentVariable(CredentialVariable));
+        }
+        finally
+        {
+            Environment.SetEnvironmentVariable(CredentialVariable, outside);
+        }
+    }
+
+    /// <summary>
+    /// 夹具挑中的端口，从挑中那一刻起到被测服务绑上它，都不会被系统分给别人——中间没有「系统可以把它分出去」的时刻。
+    /// </summary>
+    /// <remarks>
+    /// <para>
+    /// 原来的写法是绑 0 号端口、读回端口号、<c>Stop()</c>、再交给服务去绑。<c>Stop()</c> 与服务绑定之间端口是空的，
+    /// 同机并行的别的测试或 L2 泳道向系统要一个临时端口，系统可能恰好给出这一个，服务于是绑不上——偶发红。
+    /// </para>
+    /// <para>
+    /// 「不会被分出去」用一个独占通配绑定去试：它绑得上，说明端口当时没被任何套接字占着，系统也就可以把它分出去。
+    /// 服务那一种绑定（<c>127.0.0.1</c> 上的普通 <c>TcpListener</c>）照样要绑得上，否则这个占位等于把被测服务也挡在外面。
+    /// </para>
+    /// <para>
+    /// <b>占位挡不住什么。</b>别的进程若不向系统要端口、而是自己写死这个端口号在 <c>127.0.0.1</c> 上直接绑，占位挡不住，
+    /// 之后服务会绑不上。那不是本票修的空窗：那种撞车与端口怎么挑无关，任何挑法都躲不开。
+    /// </para>
+    /// </remarks>
+    [Fact]
+    [Trait("IntegrationSlice", "FP-IS-05")]
+    public void TheRigsPortIsNotHandedOutFromTheMomentItIsChosenUntilTheServerBindsIt()
+    {
+        using PortReservation reservation = PortReservation.Take();
+
+        using (Socket contender = new(AddressFamily.InterNetwork, SocketType.Stream, ProtocolType.Tcp))
+        {
+            contender.ExclusiveAddressUse = true;
+            SocketException refused = Assert.Throws<SocketException>(
+                () => contender.Bind(new IPEndPoint(IPAddress.Any, reservation.Port)));
+            TestContext.Current.TestOutputHelper?.WriteLine(
+                $"占位期间别人绑 {reservation.Port}：{refused.SocketErrorCode}");
+        }
+
+        TcpListener server = new(IPAddress.Loopback, reservation.Port);
+        server.Start();
+        server.Stop();
+    }
+
+    /// <summary>
+    /// 夹具活着的整段时间里，占位一直在：服务绑上之后它也不提前放掉。
+    /// </summary>
+    /// <remarks>
+    /// <para>
+    /// 上一条只在服务起来之前试占位；夹具若在服务绑上之前就把占位放了，上一条照样绿，只有这一条会红。
+    /// </para>
+    /// <para>
+    /// <b>为什么用普通通配绑定、不用独占的。</b>服务在 <c>127.0.0.1:P</c> 上监听时，独占通配绑定不论占位在不在都会被拒
+    /// （本机实测，两种情况都是 <c>AddressAlreadyInUse</c>），分不出两者。普通通配绑定分得出：占位还在时它与占位撞车被拒；
+    /// 占位已放、只剩服务那个具体地址的绑定时，Windows 允许它绑上。
+    /// </para>
+    /// </remarks>
+    [Fact]
+    [Trait("IntegrationSlice", "FP-IS-05")]
+    public async Task TheRigKeepsItsPortPlaceholderForAsLongAsItRuns()
+    {
+        await using LivenessRig rig = await LivenessRig.StartAsync(TimeSpan.FromMilliseconds(250));
+
+        using Socket contender = new(AddressFamily.InterNetwork, SocketType.Stream, ProtocolType.Tcp);
+        SocketException refused = Assert.Throws<SocketException>(
+            () => contender.Bind(new IPEndPoint(IPAddress.Any, rig.Port)));
+        Assert.Equal(SocketError.AddressAlreadyInUse, refused.SocketErrorCode);
+    }
+
+    /// <summary>
+    /// 测试读库用的上下文不是服务线程正在用的那个，也不共用它的连接。
+    /// </summary>
+    /// <remarks>
+    /// <c>DbContext</c> 与 <c>SqliteConnection</c> 都不是线程安全的。原来测试线程直接读服务那个上下文，没出事只因为断言时
+    /// 服务恰好没在用它——那是时序上的运气：机器变快或变慢，服务的某次写就可能与断言的读撞在同一个实例上。
+    /// </remarks>
+    [Fact]
+    [Trait("IntegrationSlice", "FP-IS-05")]
+    public async Task TheTestReadsThroughAContextAndConnectionOfItsOwn()
+    {
+        await using LivenessRig rig = await LivenessRig.StartAsync(TimeSpan.FromMilliseconds(250));
+        await using ControlServerDbContext read = await rig.OpenReadContextAsync();
+
+        Assert.False(rig.SharesStateWith(read), "测试拿到的读库上下文与服务线程共用了上下文或连接。");
     }
 
     // --- 辅助 ----------------------------------------------------------------------------------------
@@ -511,6 +626,65 @@ public sealed class OnboardSilentLivenessLossTests
         public void Advance(TimeSpan by) => _timestamp += by.Ticks;
     }
 
+    /// <summary>
+    /// A loopback port for the server under test that the system cannot hand out to anyone else from the moment it is
+    /// chosen until <see cref="Dispose"/> (control-server#256).
+    /// </summary>
+    /// <remarks>
+    /// <para>
+    /// <c>OnboardTcpServer</c> opens its own listener on a configured port and refuses port 0, and this ticket does not
+    /// touch product code, so the listener cannot be handed over. Probing a port and releasing it for the server to
+    /// bind leaves the port free in between, and a concurrent test or L2 lane asking the system for an ephemeral port
+    /// can be given exactly that one.
+    /// </para>
+    /// <para>
+    /// Instead a socket is bound, never listening, to the wildcard address on port 0 and kept bound. The system never
+    /// hands out a port another socket is bound to, so no ephemeral allocation can land on it while it is held. The
+    /// server binds the specific loopback address on the same port, which Windows allows next to a wildcard binding
+    /// made without <c>SO_EXCLUSIVEADDRUSE</c>; the most specific binding receives the connections, and the
+    /// placeholder, not listening, receives none. Should a runtime ever make that bind fail, the server fails to
+    /// start at once and loudly, every run, rather than now and then.
+    /// </para>
+    /// <para>
+    /// This rests on Windows binding semantics, measured on Windows 11, which is also what the CI runner (win11-01)
+    /// runs; it has not been measured on any other platform. What it does not stop is a process that binds this port number on <c>127.0.0.1</c> directly, without asking the
+    /// system for a port: that succeeds and the server's bind then fails. That collision is not the window this
+    /// ticket closes; no way of choosing a port avoids it.
+    /// </para>
+    /// </remarks>
+    private sealed class PortReservation : IDisposable
+    {
+        private readonly Socket _placeholder;
+
+        private PortReservation(Socket placeholder)
+        {
+            _placeholder = placeholder;
+            Port = ((IPEndPoint)placeholder.LocalEndPoint!).Port;
+        }
+
+        public int Port { get; }
+
+        public static PortReservation Take()
+        {
+            Socket placeholder = new(AddressFamily.InterNetwork, SocketType.Stream, ProtocolType.Tcp)
+            {
+                ExclusiveAddressUse = false
+            };
+            try
+            {
+                placeholder.Bind(new IPEndPoint(IPAddress.Any, 0));
+                return new PortReservation(placeholder);
+            }
+            catch
+            {
+                placeholder.Dispose();
+                throw;
+            }
+        }
+
+        public void Dispose() => _placeholder.Dispose();
+    }
+
     private sealed class FixedClock : TimeProvider
     {
         public override DateTimeOffset GetUtcNow() => Now;
@@ -543,9 +717,38 @@ public sealed class OnboardSilentLivenessLossTests
         SqliteConnection connection,
         ControlServerDbContext context,
         ServiceProvider provider,
+        PortReservation port,
         OnboardTcpServer server) : IAsyncDisposable
     {
-        public ControlServerDbContext Context { get; } = context;
+        /// <summary>
+        /// The context the server's processor uses. Private so that no test can read through it; see
+        /// <see cref="OpenReadContextAsync"/>.
+        /// </summary>
+        private ControlServerDbContext ServerContext { get; } = context;
+
+        /// <summary>Whether <paramref name="read"/> is, or shares a connection with, the server's own context.</summary>
+        public bool SharesStateWith(ControlServerDbContext read) =>
+            ReferenceEquals(read, ServerContext) ||
+            ReferenceEquals(read.Database.GetDbConnection(), ServerContext.Database.GetDbConnection());
+
+        /// <summary>
+        /// A context of the test's own, on a connection of its own, to the same database the server writes
+        /// (control-server#256). The caller disposes it, and with it its connection.
+        /// </summary>
+        /// <remarks>
+        /// Neither <see cref="DbContext"/> nor <see cref="SqliteConnection"/> is thread-safe, and the server's processor
+        /// uses <see cref="ServerContext"/> on the listener's threads. Reading through that instance from the test thread
+        /// was safe only while the server happened to be idle at the moment of the read. The database is a named
+        /// shared-cache in-memory one, kept alive by the server's connection, so a second connection sees the same rows;
+        /// SQLite serialises the two connections itself, which is what makes the read safe by construction.
+        /// </remarks>
+        public async Task<ControlServerDbContext> OpenReadContextAsync()
+        {
+            ControlServerDbContext read = new(
+                new DbContextOptionsBuilder<ControlServerDbContext>().UseSqlite(connection.ConnectionString).Options);
+            await read.Database.OpenConnectionAsync(TestContext.Current.CancellationToken);
+            return read;
+        }
 
         public int Port { get; private init; }
 
@@ -564,10 +767,39 @@ public sealed class OnboardSilentLivenessLossTests
             }
         }
 
+        /// <summary>
+        /// The credential variable as it was before this rig set it; <see cref="DisposeAsync"/> writes it back.
+        /// </summary>
+        /// <remarks>
+        /// The variable is process-wide, so leaving it set hands a changed environment to whichever test runs next in
+        /// this process (control-server#256). <c>null</c> is restored as <c>null</c>, not as an empty string.
+        /// </remarks>
+        private string? CredentialBefore { get; init; }
+
         public static async Task<LivenessRig> StartAsync(TimeSpan idleTimeout)
         {
+            string? credentialBefore = Environment.GetEnvironmentVariable(CredentialVariable);
             Environment.SetEnvironmentVariable(CredentialVariable, Credential);
-            SqliteConnection connection = new("Data Source=:memory:");
+            try
+            {
+                return await StartWithCredentialSetAsync(idleTimeout, credentialBefore);
+            }
+            catch
+            {
+                // A rig that never started has no DisposeAsync to restore it.
+                Environment.SetEnvironmentVariable(CredentialVariable, credentialBefore);
+                throw;
+            }
+        }
+
+        private static async Task<LivenessRig> StartWithCredentialSetAsync(
+            TimeSpan idleTimeout,
+            string? credentialBefore)
+        {
+            // Named and shared-cache so that OpenReadContextAsync can reach it on a second connection; this one stays
+            // open for the rig's lifetime, which is what keeps an in-memory database alive.
+            SqliteConnection connection = new(
+                $"Data Source=liveness-{Guid.NewGuid():N};Mode=Memory;Cache=Shared");
             await connection.OpenAsync(TestContext.Current.CancellationToken);
             ControlServerDbContext context = new(
                 new DbContextOptionsBuilder<ControlServerDbContext>().UseSqlite(connection).Options);
@@ -586,44 +818,55 @@ public sealed class OnboardSilentLivenessLossTests
             services.AddScoped(_ => processor);
             ServiceProvider provider = services.BuildServiceProvider();
 
-            int port = ReserveFreePort();
+            // Held until DisposeAsync, after the server has stopped: never free between being chosen and being bound.
+            PortReservation port = PortReservation.Take();
             EventRecordingLogger<OnboardTcpServer> log = new();
             OnboardTcpServer server = new(
                 Options.Create(new OnboardTransportOptions
                 {
                     Enabled = true,
                     ListenAddress = "127.0.0.1",
-                    Port = port
+                    Port = port.Port
                 }),
                 provider.GetRequiredService<IServiceScopeFactory>(),
                 new OnboardPeer(),
                 log,
                 TimeProvider.System,
                 idleTimeout);
-            await server.StartAsync(TestContext.Current.CancellationToken);
-            return new LivenessRig(connection, context, provider, server) { Port = port, Log = log };
+            try
+            {
+                await server.StartAsync(TestContext.Current.CancellationToken);
+            }
+            catch
+            {
+                server.Dispose();
+                port.Dispose();
+                throw;
+            }
+            return new LivenessRig(connection, context, provider, port, server)
+            {
+                Port = port.Port,
+                Log = log,
+                CredentialBefore = credentialBefore
+            };
         }
 
         public async ValueTask DisposeAsync()
         {
-            await server.StopAsync(CancellationToken.None);
-            server.Dispose();
-            await provider.DisposeAsync();
-            await Context.DisposeAsync();
-            await connection.DisposeAsync();
-        }
-
-        private static int ReserveFreePort()
-        {
-            TcpListener probe = new(IPAddress.Loopback, 0);
-            probe.Start();
             try
             {
-                return ((IPEndPoint)probe.LocalEndpoint).Port;
+                await server.StopAsync(CancellationToken.None);
+                server.Dispose();
+                port.Dispose();
+                await provider.DisposeAsync();
+                await ServerContext.DisposeAsync();
+                await connection.DisposeAsync();
             }
             finally
             {
-                probe.Stop();
+                // After the server has stopped: it reads the variable on every SessionHello, so restoring it any
+                // earlier could refuse a handshake still in flight.
+                Environment.SetEnvironmentVariable(CredentialVariable, CredentialBefore);
             }
         }
     }

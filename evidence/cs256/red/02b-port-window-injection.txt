@@ -1,0 +1,10 @@
+cs#256 port window injection, 2026-10-11T11:39:18.1469631+08:00, pwsh 7.6.6
+--- before the fix: probe on 127.0.0.1:0, Stop(), contender binds the port, then the server binds it
+probe released 62563; contender bound it
+server bind: FAILED: Only one usage of each socket address (protocol/network address/port) is normally permitted.
+--- after the fix: placeholder bound on 0.0.0.0:0 and held; the same contender tries the port, then the server binds it
+placeholder holds 62565
+contender (exclusive wildcard): refused: Only one usage of each socket address (protocol/network address/port) is normally permitted.
+contender (ephemeral request) was given 62566 (reserved is 62565; equal would be a failure: False)
+server bind: OK; a loopback client connected and the server accepted it
+--- earlier on this machine (same session): with a placeholder held, 14601 ephemeral binds on 127.0.0.1 and 14606 on 0.0.0.0 (the whole free ephemeral range, until WSAENOBUFS) never returned the reserved port

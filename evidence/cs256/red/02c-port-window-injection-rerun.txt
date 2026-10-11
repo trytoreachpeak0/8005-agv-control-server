@@ -1,0 +1,13 @@
+cs#256 port window injection, 2026-10-11T13:37:27.5035595+08:00, pwsh 7.6.6, Microsoft Windows 10.0.26200
+--- before the fix: probe on 127.0.0.1:0, Stop(), a contender binds the port, then the server binds it
+probe released 57014; contender bound it
+server bind: FAILED: AddressAlreadyInUse: Only one usage of each socket address (protocol/network address/port) is normally permitted.
+--- after the fix: placeholder bound on 0.0.0.0:0 and held; contenders try the port, then the server binds it
+placeholder holds 57015
+contender (exclusive wildcard): refused: AddressAlreadyInUse: Only one usage of each socket address (protocol/network address/port) is normally permitted.
+contender (asks the system for a port on 127.0.0.1) was given 57016; reserved is 57015; equal would be a failure: False
+server bind: OK; a loopback client connected and the server accepted it
+--- limit (independent review S1): a process that binds the port number on 127.0.0.1 directly is not stopped
+placeholder holds 57018
+direct bind on 127.0.0.1:57018: OK (the placeholder does not stop it)
+server bind after the direct bind: FAILED: AddressAlreadyInUse: Only one usage of each socket address (protocol/network address/port) is normally permitted.
