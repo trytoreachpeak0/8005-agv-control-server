@@ -856,7 +856,7 @@ public static class StagedG3TlsHarness
         // The one path that still ends the connection (control-server#478): a SessionHello whose messageId is on file
         // with other content. There is no session yet to correlate a ProtocolProblem to, so the server closes. Pinned
         // here so the change above cannot quietly carry it along. "Closed" means the stream ended, not that nothing
-        // arrived in time -- ExpectClosedAsync cannot tell those two apart. And ended well inside 3 seconds: the server
+        // arrived in time -- ExpectClosedAsync (removed in control-server#543) could not tell those two apart. And ended well inside 3 seconds: the server
         // also closes any connection silent for 6 (ADR-cross-0027, SessionLiveness.Timeout), so a server that did nothing
         // with the conflicting hello would still end the stream, just later. A window past 6 seconds would pass it.
         string helloConflictId = StableGuid("hello:duplicate");
@@ -1942,33 +1942,6 @@ public static class StagedG3TlsHarness
     }
 
     /// <summary>
-    /// Opens a fresh session, sends one line the server has to refuse, and reports whether it closed.
-    /// </summary>
-    private static async Task<bool> ExpectRefusalAsync(
-        int port,
-        string credential,
-        string agvId,
-        string helloMessageId,
-        Func<long, string> buildLine,
-        CancellationToken cancellationToken)
-    {
-        await using Connection connection = await Connection.OpenAsync(port, cancellationToken)
-            .ConfigureAwait(false);
-        long generation = await HandshakeAsync(connection, agvId, helloMessageId, credential, cancellationToken)
-            .ConfigureAwait(false);
-        await connection.WriteAsync(buildLine(generation), cancellationToken).ConfigureAwait(false);
-        while (true)
-        {
-            string? line = await connection.ReadAsync(TimeSpan.FromSeconds(10), cancellationToken)
-                .ConfigureAwait(false);
-            if (line is null) return true;
-            // The server pushes snapshots of its own alongside a session; only a DurableAck for this
-            // message would mean the refusal did not happen.
-            if (Property(line, "messageType") == "DurableAck") return false;
-        }
-    }
-
-    /// <summary>
     /// Opens a fresh session, sends one line stamped with a superseded session generation, and reports whether the
     /// server ended the connection without answering it (control-server#543).
     /// </summary>
@@ -2185,7 +2158,7 @@ public static class StagedG3TlsHarness
     /// Reads until the server ends the stream, and reports whether it did and what came before.
     /// </summary>
     /// <remarks>
-    /// Unlike ExpectClosedAsync, a timeout is not taken for a close: the stream has to end. Keep the timeout well under
+    /// Unlike ExpectClosedAsync did (removed in control-server#543), a timeout is not taken for a close: the stream has to end. Keep the timeout well under
     /// the server's 6-second silence close (ADR-cross-0027), or that close passes for the one being asserted;
     /// elapsedMilliseconds records how long the end took. Given answeredMessageId, it also records whether any line
     /// before the end answered that message -- correlated to it, or a DurableAck naming it (control-server#543).
@@ -3034,9 +3007,6 @@ public static class StagedG3TlsHarness
         public async Task<string> ReadRequiredAsync(TimeSpan timeout, CancellationToken cancellationToken) =>
             await ReadAsync(timeout, cancellationToken).ConfigureAwait(false) ??
             throw new EndOfStreamException("Expected an NDJSON response.");
-
-        public async Task<bool> ExpectClosedAsync(TimeSpan timeout, CancellationToken cancellationToken) =>
-            await ReadAsync(timeout, cancellationToken).ConfigureAwait(false) is null;
 
         /// <summary>
         /// One line, or the stream's end, kept apart from a timeout -- which ReadAsync folds into the same null
