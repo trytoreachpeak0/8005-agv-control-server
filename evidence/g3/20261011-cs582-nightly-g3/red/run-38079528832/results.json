@@ -1,0 +1,80 @@
+{
+  "stoppedBy": null,
+  "startDeadlineUtc": "2026-10-10T22:22:40.1889625+00:00",
+  "commits": {
+    "controlServer": "2f8af5dbb6498227be23734c932128e8a3821b87",
+    "onboardHmi": "c60013ae70d04a99915c12562bc3086126436a81",
+    "slotsSimulator": "fb5f7c593742bf98bc3957b8729a38aad5321f28",
+    "protocol": "3f091cb2eae7c58cec54a95dd9389c9180bc7b4c"
+  },
+  "verdicts": [
+    {
+      "runner": "staged",
+      "result": "FAIL",
+      "status": "STAGED_SLICE_FAIL",
+      "failed": [
+        "secondForcedRecoveryWhileFirstUnsettledIsRejected"
+      ],
+      "detail": "status STAGED_SLICE_FAIL, exit 1"
+    },
+    {
+      "runner": "restart",
+      "result": "PASS",
+      "status": "STAGED_G3_PROCESS_RESTART_PASS",
+      "failed": [],
+      "detail": ""
+    },
+    {
+      "runner": "demand-bearing",
+      "result": "PASS",
+      "status": "DEMAND_BEARING_G3_VECTORS_PASS",
+      "failed": [],
+      "detail": ""
+    },
+    {
+      "runner": "journey",
+      "result": "PASS",
+      "status": "JOURNEY_G3_PASS",
+      "failed": [],
+      "detail": ""
+    }
+  ],
+  "runs": [
+    {
+      "runner": "staged",
+      "exitCode": 1,
+      "seconds": 224.0,
+      "stage": "C:\\actions-runner\\win11-01-control-server-desktop\\_work\\_temp\\g3\\st",
+      "stageRemoved": false,
+      "evidence": "C:\\actions-runner\\win11-01-control-server-desktop\\_work\\_temp\\g3\\evidence\\staged",
+      "log": "C:\\actions-runner\\win11-01-control-server-desktop\\_work\\_temp\\g3\\logs\\staged.log"
+    },
+    {
+      "runner": "restart",
+      "exitCode": 0,
+      "seconds": 236.0,
+      "stage": "C:\\actions-runner\\win11-01-control-server-desktop\\_work\\_temp\\g3\\rs",
+      "stageRemoved": true,
+      "evidence": "C:\\actions-runner\\win11-01-control-server-desktop\\_work\\_temp\\g3\\evidence\\restart",
+      "log": "C:\\actions-runner\\win11-01-control-server-desktop\\_work\\_temp\\g3\\logs\\restart.log"
+    },
+    {
+      "runner": "demand-bearing",
+      "exitCode": 0,
+      "seconds": 195.0,
+      "stage": "C:\\actions-runner\\win11-01-control-server-desktop\\_work\\_temp\\g3\\db",
+      "stageRemoved": true,
+      "evidence": "C:\\actions-runner\\win11-01-control-server-desktop\\_work\\_temp\\g3\\evidence\\demand-bearing",
+      "log": "C:\\actions-runner\\win11-01-control-server-desktop\\_work\\_temp\\g3\\logs\\demand-bearing.log"
+    },
+    {
+      "runner": "journey",
+      "exitCode": 0,
+      "seconds": 1806.0,
+      "stage": "C:\\actions-runner\\win11-01-control-server-desktop\\_work\\_temp\\g3\\jo",
+      "stageRemoved": true,
+      "evidence": "C:\\actions-runner\\win11-01-control-server-desktop\\_work\\_temp\\g3\\evidence\\journey",
+      "log": "C:\\actions-runner\\win11-01-control-server-desktop\\_work\\_temp\\g3\\logs\\journey.log"
+    }
+  ]
+}
