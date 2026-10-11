@@ -177,6 +177,7 @@ public sealed class IntegrationSliceTraitArchitectureTests
             ["ProtocolEnvelopeObserverArchitectureTests"] = "cross-cutting guard on the observation point every slice's outbound lines pass through (control-server#85); hanging it off one would defer the guard with that slice",
             ["ProtocolEnvelopeTests"] = "cross-cutting guard on the one place an outbound protocol line is built (control-server#85); every slice sends through it, so hanging it off one would defer the guard with that slice",
             ["ProtocolIdentityArchitectureTests"] = "cross-cutting architecture guard; hanging it off a slice would defer the guard with the slice",
+            ["ProtocolInboxReadWindowTests"] = "control-server#563 liveness reads only the inbox rows inside its window, and the inbox is indexed by message type and receive time; a read-path performance change under every slice that reads the inbox, server-internal, no wire message",
             ["ProtocolMessageSurfaceArchitectureTests"] = "cross-cutting architecture guard; hanging it off a slice would defer the guard with the slice",
             ["ProtocolPayloadShapeArchitectureTests"] = "cross-cutting architecture guard; hanging it off a slice would defer the guard with the slice",
             ["ProtocolVectorTestBindingArchitectureTests"] = "cross-cutting architecture guard; hanging it off a slice would defer the guard with the slice",
