@@ -599,9 +599,35 @@ public sealed class OnboardSilentLivenessLossTests
             }
         }
 
+        /// <summary>
+        /// The credential variable as it was before this rig set it; <see cref="DisposeAsync"/> writes it back.
+        /// </summary>
+        /// <remarks>
+        /// The variable is process-wide, so leaving it set hands a changed environment to whichever test runs next in
+        /// this process (control-server#256). <c>null</c> is restored as <c>null</c>, not as an empty string.
+        /// </remarks>
+        private string? CredentialBefore { get; init; }
+
         public static async Task<LivenessRig> StartAsync(TimeSpan idleTimeout)
         {
+            string? credentialBefore = Environment.GetEnvironmentVariable(CredentialVariable);
             Environment.SetEnvironmentVariable(CredentialVariable, Credential);
+            try
+            {
+                return await StartWithCredentialSetAsync(idleTimeout, credentialBefore);
+            }
+            catch
+            {
+                // A rig that never started has no DisposeAsync to restore it.
+                Environment.SetEnvironmentVariable(CredentialVariable, credentialBefore);
+                throw;
+            }
+        }
+
+        private static async Task<LivenessRig> StartWithCredentialSetAsync(
+            TimeSpan idleTimeout,
+            string? credentialBefore)
+        {
             SqliteConnection connection = new("Data Source=:memory:");
             await connection.OpenAsync(TestContext.Current.CancellationToken);
             ControlServerDbContext context = new(
@@ -636,16 +662,30 @@ public sealed class OnboardSilentLivenessLossTests
                 TimeProvider.System,
                 idleTimeout);
             await server.StartAsync(TestContext.Current.CancellationToken);
-            return new LivenessRig(connection, context, provider, server) { Port = port, Log = log };
+            return new LivenessRig(connection, context, provider, server)
+            {
+                Port = port,
+                Log = log,
+                CredentialBefore = credentialBefore
+            };
         }
 
         public async ValueTask DisposeAsync()
         {
-            await server.StopAsync(CancellationToken.None);
-            server.Dispose();
-            await provider.DisposeAsync();
-            await Context.DisposeAsync();
-            await connection.DisposeAsync();
+            try
+            {
+                await server.StopAsync(CancellationToken.None);
+                server.Dispose();
+                await provider.DisposeAsync();
+                await Context.DisposeAsync();
+                await connection.DisposeAsync();
+            }
+            finally
+            {
+                // After the server has stopped: it reads the variable on every SessionHello, so restoring it any
+                // earlier could refuse a handshake still in flight.
+                Environment.SetEnvironmentVariable(CredentialVariable, CredentialBefore);
+            }
         }
 
         private static int ReserveFreePort()
