@@ -1,3 +1,4 @@
+using ControlServer.Host.Transport;
 using Microsoft.Extensions.Options;
 
 namespace ControlServer.Host.Runtime;
@@ -37,9 +38,43 @@ public sealed class OnboardSafetyProjectionOptions
     /// once it reread (run 38082575561).
     /// </remarks>
     public int ReadBudgetMilliseconds { get; set; } = 2_000;
+
+    /// <summary>One projection credential per vehicle (control-server#600).</summary>
+    /// <remarks>
+    /// <para>
+    /// <b>Empty means one vehicle and the shared credential</b>: <see cref="CredentialEnvironmentVariable"/> answers for the
+    /// vehicle <c>JourneyRuntime:VehicleKey</c> names, as before control-server#600. With a roster of more than one vehicle the
+    /// server cannot tell from a shared credential which vehicle is asking, so that combination is refused at startup.
+    /// </para>
+    /// <para>
+    /// When set, the bearer decides the vehicle: each credential reads its own vehicle's projection and no other, the shared
+    /// credential reads none, and a <c>vehicleKey</c> the request names must be that vehicle. Every vehicle listed must be in the
+    /// roster, and every value must differ from the others and from the shared onboard credential the TCP session uses -- a
+    /// vehicle whose projection credential were the shared one could be read by every vehicle.
+    /// </para>
+    /// </remarks>
+    public OnboardSafetyVehicleCredentialOptions[] VehicleCredentials { get; set; } = [];
+
+    /// <summary>
+    /// The vehicle keys this server drives: the roster, or the single vehicle <c>JourneyRuntime:VehicleKey</c> names when there is
+    /// none (the same rule as <c>VehicleRoster</c>).
+    /// </summary>
+    internal static IReadOnlySet<string> RosterVehicleKeys(JourneyRuntimeOptions journey) =>
+        journey.Fleet.Length == 0
+            ? new HashSet<string>([journey.VehicleKey], StringComparer.Ordinal)
+            : new HashSet<string>(journey.Fleet.Select(vehicle => vehicle.VehicleKey), StringComparer.Ordinal);
 }
 
-public sealed class OnboardSafetyProjectionOptionsValidator : IValidateOptions<OnboardSafetyProjectionOptions>
+/// <summary>The environment variable holding one vehicle's projection credential (control-server#600).</summary>
+public sealed class OnboardSafetyVehicleCredentialOptions
+{
+    public string VehicleKey { get; set; } = string.Empty;
+    public string CredentialEnvironmentVariable { get; set; } = string.Empty;
+}
+
+public sealed class OnboardSafetyProjectionOptionsValidator(
+    JourneyRuntimeOptions? journey = null,
+    OnboardTransportOptions? transport = null) : IValidateOptions<OnboardSafetyProjectionOptions>
 {
     internal const int MaximumNonFinalOrderReadRetries = 4;
 
@@ -61,6 +96,102 @@ public sealed class OnboardSafetyProjectionOptionsValidator : IValidateOptions<O
         if (string.IsNullOrWhiteSpace(options.CredentialEnvironmentVariable) ||
             string.IsNullOrWhiteSpace(Environment.GetEnvironmentVariable(options.CredentialEnvironmentVariable)))
             failures.Add("OnboardSafetyProjection must name a populated external credential variable.");
+        // control-server#600. Null only for a validator built without the runtime and transport options; the Host always
+        // passes both (Program.cs).
+        if (journey is not null) ValidateVehicleCredentials(options, journey, transport, failures);
         return failures.Count == 0 ? ValidateOptionsResult.Success : ValidateOptionsResult.Fail(failures);
+    }
+
+    /// <summary>
+    /// control-server#600: which vehicle may read which projection. Every message names variables and vehicles, never a value.
+    /// </summary>
+    private static void ValidateVehicleCredentials(
+        OnboardSafetyProjectionOptions options,
+        JourneyRuntimeOptions journey,
+        OnboardTransportOptions? transport,
+        List<string> failures)
+    {
+        IReadOnlySet<string> roster = OnboardSafetyProjectionOptions.RosterVehicleKeys(journey);
+        string rosterList = string.Join(", ", roster.Order(StringComparer.Ordinal));
+        if (options.VehicleCredentials.Length == 0)
+        {
+            if (roster.Count > 1)
+                failures.Add(
+                    $"JourneyRuntime:fleet names {roster.Count} vehicles ({rosterList}), but OnboardSafetyProjection:vehicleCredentials " +
+                    "is empty. With one shared credential the vehicle-safety projection cannot tell which vehicle is asking " +
+                    "(control-server#600). Give every roster vehicle an entry { vehicleKey, credentialEnvironmentVariable } naming a " +
+                    "variable of its own in the service's Environment (scripts/parallel writes them), or turn the projection off.");
+            return;
+        }
+
+        HashSet<string> seen = new(StringComparer.Ordinal);
+        foreach (OnboardSafetyVehicleCredentialOptions vehicle in options.VehicleCredentials)
+        {
+            if (!roster.Contains(vehicle.VehicleKey))
+                failures.Add(
+                    $"OnboardSafetyProjection:vehicleCredentials names vehicle '{vehicle.VehicleKey}', which is not in the roster " +
+                    $"({rosterList}).");
+            if (!seen.Add(vehicle.VehicleKey))
+                failures.Add($"OnboardSafetyProjection:vehicleCredentials names vehicle '{vehicle.VehicleKey}' more than once.");
+            if (string.IsNullOrWhiteSpace(vehicle.CredentialEnvironmentVariable))
+                failures.Add(
+                    $"OnboardSafetyProjection:vehicleCredentials entry for '{vehicle.VehicleKey}' must name an environment variable.");
+            else if (string.IsNullOrWhiteSpace(Environment.GetEnvironmentVariable(vehicle.CredentialEnvironmentVariable)))
+                failures.Add(
+                    $"OnboardSafetyProjection:vehicleCredentials variable {vehicle.CredentialEnvironmentVariable} for " +
+                    $"'{vehicle.VehicleKey}' is not set.");
+        }
+        foreach (string vehicleKey in roster.Where(key => !seen.Contains(key)).Order(StringComparer.Ordinal))
+            failures.Add(
+                $"Roster vehicle '{vehicleKey}' has no projection credential in OnboardSafetyProjection:vehicleCredentials; it could " +
+                "never read its vehicle-safety projection.");
+
+        // A projection credential equal to the shared one could be presented by every vehicle; two vehicles sharing one value
+        // could each read the other's projection.
+        Dictionary<string, string> sharedValues = new(StringComparer.Ordinal);
+        foreach (string? variable in new[] { options.CredentialEnvironmentVariable, transport?.CredentialEnvironmentVariable })
+        {
+            if (string.IsNullOrWhiteSpace(variable)) continue;
+            string? value = Environment.GetEnvironmentVariable(variable);
+            if (!string.IsNullOrWhiteSpace(value)) sharedValues.TryAdd(value, variable);
+        }
+        Dictionary<string, string> byValue = new(StringComparer.Ordinal);
+        foreach (OnboardSafetyVehicleCredentialOptions vehicle in options.VehicleCredentials)
+        {
+            if (string.IsNullOrWhiteSpace(vehicle.CredentialEnvironmentVariable)) continue;
+            string? value = Environment.GetEnvironmentVariable(vehicle.CredentialEnvironmentVariable);
+            if (string.IsNullOrWhiteSpace(value)) continue;
+            if (sharedValues.TryGetValue(value, out string? sharedVariable))
+                failures.Add(
+                    $"OnboardSafetyProjection:vehicleCredentials variable {vehicle.CredentialEnvironmentVariable} for " +
+                    $"'{vehicle.VehicleKey}' equals the shared onboard credential in {sharedVariable}; every vehicle holds that one.");
+            if (byValue.TryGetValue(value, out string? other) && !string.Equals(other, vehicle.VehicleKey, StringComparison.Ordinal))
+                failures.Add(
+                    $"OnboardSafetyProjection:vehicleCredentials for '{other}' and '{vehicle.VehicleKey}' share one value; each " +
+                    "vehicle needs its own.");
+            byValue.TryAdd(value, vehicle.VehicleKey);
+        }
+    }
+}
+
+public static class OnboardSafetyProjectionServiceCollectionExtensions
+{
+    /// <summary>
+    /// Binds <see cref="OnboardSafetyProjectionOptions"/>, validated at startup against the journey runtime's roster and the
+    /// onboard transport's shared credential (control-server#600). The validator must be built with both: without them it
+    /// skips every per-vehicle check, and a roster of two would start with one shared credential.
+    /// </summary>
+    public static IServiceCollection AddOnboardSafetyProjectionOptions(
+        this IServiceCollection services,
+        IConfiguration configuration)
+    {
+        services.AddOptions<OnboardSafetyProjectionOptions>()
+            .Bind(configuration.GetSection(OnboardSafetyProjectionOptions.SectionName))
+            .ValidateOnStart();
+        services.AddSingleton<IValidateOptions<OnboardSafetyProjectionOptions>>(provider =>
+            new OnboardSafetyProjectionOptionsValidator(
+                provider.GetRequiredService<IOptions<JourneyRuntimeOptions>>().Value,
+                provider.GetRequiredService<IOptions<OnboardTransportOptions>>().Value));
+        return services;
     }
 }

@@ -3950,6 +3950,135 @@ Invoke-SourceCase 'single-car overlay: writes an empty roster, so a roster left 
         Detail = "fleet keys: $($fleetKeys -join ','); merged: $(ConvertTo-Json -Depth 12 -Compress $m['JourneyRuntime'])" }
 }
 
+# --- control-server#600: one vehicle-safety projection credential per roster vehicle -------------
+# The Host answers a vehicle's projection only to that vehicle's own credential, and refuses to start a roster of two
+# without them. The overlay names one service-Environment variable per row (by RIoT id, the durable coordinate), the
+# installer resolves every value -- from deploy-config.json, else what the service already holds -- before anything is
+# stopped, and the configuration step writes them. Values never appear in a failure.
+Write-Host ''
+Write-Host 'Per-vehicle projection credentials (control-server#600)' -ForegroundColor Cyan
+
+$agv02SafetyVariable = 'CONTROL_SERVER_V2_ONBOARD_SAFETY_CREDENTIAL_RIOT59'
+$agv03SafetyVariable = 'CONTROL_SERVER_V2_ONBOARD_SAFETY_CREDENTIAL_RIOT60'
+Invoke-SourceCase 'safety credentials overlay: a two-car roster names one variable per row, by RIoT id' {
+    $o = New-ParallelInstanceConfigurationOverlay -Definition (Copy-Definition $fleetBaseline)
+    $rows = @($o['OnboardSafetyProjection']['vehicleCredentials'])
+    @{ Ok = ($rows.Count -eq 2 -and $rows[0]['vehicleKey'] -ceq $agv02Key -and $rows[0]['credentialEnvironmentVariable'] -ceq $agv02SafetyVariable -and
+            $rows[1]['vehicleKey'] -ceq $agv03Key -and $rows[1]['credentialEnvironmentVariable'] -ceq $agv03SafetyVariable)
+        Detail = ConvertTo-Json -Depth 6 -Compress $rows }
+}
+Invoke-SourceCase 'safety credentials overlay: single-car writes an empty list, so a list left by an earlier two-car install is cleared' {
+    $base = [ordered]@{ OnboardSafetyProjection = [ordered]@{ enabled = $true; credentialEnvironmentVariable = 'CONTROL_SERVER_ONBOARD_CREDENTIAL'
+            vehicleCredentials = @([ordered]@{ vehicleKey = $agv03Key; credentialEnvironmentVariable = $agv03SafetyVariable }) } }
+    $m = Merge-ConfigurationTree -Base $base -Overlay (New-ParallelInstanceConfigurationOverlay -Definition (Copy-Definition $baseline))
+    $p = $m['OnboardSafetyProjection']
+    @{ Ok = (@($p['vehicleCredentials']).Count -eq 0 -and $p['enabled'] -eq $true -and $p['credentialEnvironmentVariable'] -ceq 'CONTROL_SERVER_ONBOARD_CREDENTIAL')
+        Detail = ConvertTo-Json -Depth 6 -Compress $p }
+}
+Invoke-SourceCase 'safety credentials overlay: merged over the product''s section, enabled and the shared variable stay' {
+    $m = Merge-ConfigurationTree -Base (Copy-Definition $productConfiguration) -Overlay (New-ParallelInstanceConfigurationOverlay -Definition (Copy-Definition $fleetBaseline))
+    $p = $m['OnboardSafetyProjection']
+    @{ Ok = ($p['enabled'] -eq $true -and $p['credentialEnvironmentVariable'] -ceq 'CONTROL_SERVER_ONBOARD_CREDENTIAL' -and @($p['vehicleCredentials']).Count -eq 2)
+        Detail = ConvertTo-Json -Depth 6 -Compress $p }
+}
+
+$sharedSecret = 'selftest-shared-onboard'
+$suppliedBoth = @{ $agv02Key = 'selftest-agv02-safety'; $agv03Key = 'selftest-agv03-safety' }
+function Invoke-SafetyResolve($Definition, $Supplied, [string[]] $Environment = @(), [string] $Shared = $sharedSecret) {
+    try {
+        return @{ Value = (Resolve-ParallelOnboardSafetyCredential -Definition $Definition -Supplied $Supplied -ServiceEnvironment $Environment -SharedCredential $Shared); Error = $null }
+    } catch { return @{ Value = $null; Error = $_.Exception.Message } }
+}
+function Test-NoSecretIn([string] $Text) {
+    return -not (@($sharedSecret, 'selftest-agv02-safety', 'selftest-agv03-safety', 'selftest-carried') | Where-Object { $Text.Contains($_) })
+}
+Invoke-SourceCase 'safety credentials: supplied for both cars, each lands under its own variable' {
+    $r = Invoke-SafetyResolve (Copy-Definition $fleetBaseline) $suppliedBoth
+    $v = $r.Value
+    @{ Ok = ($null -eq $r.Error -and @($v.Keys).Count -eq 2 -and $v[$agv02SafetyVariable] -ceq 'selftest-agv02-safety' -and $v[$agv03SafetyVariable] -ceq 'selftest-agv03-safety')
+        Detail = "error: $($r.Error); variables: $(@($v.Keys) -join ', ')" }
+}
+Invoke-SourceCase 'safety credentials: deploy-config.json as ConvertFrom-Json reads it (a PSCustomObject) is read the same way' {
+    $supplied = ConvertFrom-Json (ConvertTo-Json $suppliedBoth)
+    $r = Invoke-SafetyResolve (Copy-Definition $fleetBaseline) $supplied
+    @{ Ok = ($null -eq $r.Error -and $r.Value[$agv03SafetyVariable] -ceq 'selftest-agv03-safety'); Detail = "error: $($r.Error)" }
+}
+Invoke-SourceCase 'safety credentials: a car not supplied keeps what the service already holds (a rollback supplies none)' {
+    $r = Invoke-SafetyResolve (Copy-Definition $fleetBaseline) $null @("$agv02SafetyVariable=selftest-agv02-safety", "$agv03SafetyVariable=selftest-carried")
+    @{ Ok = ($null -eq $r.Error -and $r.Value[$agv03SafetyVariable] -ceq 'selftest-carried'); Detail = "error: $($r.Error)" }
+}
+Invoke-SourceCase 'safety credentials: a car with neither is refused before anything changes, naming the car and not a value' {
+    $r = Invoke-SafetyResolve (Copy-Definition $fleetBaseline) @{ $agv02Key = 'selftest-agv02-safety' }
+    @{ Ok = ($null -ne $r.Error -and $r.Error.Contains('ONBOARD_SAFETY_CREDENTIAL_MISSING') -and $r.Error.Contains($agv03Key) -and
+            -not $r.Error.Contains($agv02Key) -and $r.Error.Contains('Nothing was stopped or changed') -and (Test-NoSecretIn $r.Error))
+        Detail = "error: $($r.Error)" }
+}
+Invoke-SourceCase 'safety credentials: two cars with one value are refused (each could read the other''s projection)' {
+    $r = Invoke-SafetyResolve (Copy-Definition $fleetBaseline) @{ $agv02Key = 'selftest-agv02-safety'; $agv03Key = 'selftest-agv02-safety' }
+    @{ Ok = ($null -ne $r.Error -and $r.Error.Contains('ONBOARD_SAFETY_CREDENTIAL_SHARED') -and (Test-NoSecretIn $r.Error)); Detail = "error: $($r.Error)" }
+}
+Invoke-SourceCase 'safety credentials: a car whose value is the shared onboard credential is refused (every car holds that one)' {
+    $r = Invoke-SafetyResolve (Copy-Definition $fleetBaseline) @{ $agv02Key = 'selftest-agv02-safety'; $agv03Key = $sharedSecret }
+    @{ Ok = ($null -ne $r.Error -and $r.Error.Contains('ONBOARD_SAFETY_CREDENTIAL_SHARED') -and $r.Error.Contains($agv03Key) -and (Test-NoSecretIn $r.Error))
+        Detail = "error: $($r.Error)" }
+}
+Invoke-SourceCase 'safety credentials: single-car needs none and takes none, whatever is supplied' {
+    $r = Invoke-SafetyResolve (Copy-Definition $baseline) $suppliedBoth
+    @{ Ok = ($null -eq $r.Error -and @($r.Value.Keys).Count -eq 0); Detail = "error: $($r.Error); variables: $(@($r.Value.Keys) -join ', ')" }
+}
+
+Invoke-SourceCase 'safety credentials: the configuration step writes each car''s value and drops a car no longer in the roster' {
+    $directory = Join-Path ([IO.Path]::GetTempPath()) "cs600-$([guid]::NewGuid().ToString('N'))"
+    New-Item -ItemType Directory -Path $directory | Out-Null
+    try {
+        $file = Join-Path $directory 'appsettings.Production.json'
+        [IO.File]::WriteAllText($file, (ConvertTo-Json -InputObject $productConfiguration -Depth 12), [Text.UTF8Encoding]::new($false))
+        $service = @{ Environment = [string[]] @($productEnvironment + 'CONTROL_SERVER_V2_ONBOARD_SAFETY_CREDENTIAL_RIOT61=selftest-carried') }
+        $definition = Copy-Definition $fleetBaseline
+        $null = Invoke-ParallelInstanceConfigurationStep -ConfigurationPath $file -Definition $definition -Credential $null `
+            -CredentialVariable $credentialName -RosterPath (Join-Path $directory 'roles.json') `
+            -OnboardSafetyCredentials ([ordered]@{ $agv02SafetyVariable = 'selftest-agv02-safety'; $agv03SafetyVariable = 'selftest-agv03-safety' }) -Actions @{
+                GetEnvironment = { $service.Environment }
+                SetEnvironment = { param([string[]] $Environment) $service.Environment = $Environment }
+                RestartService = { }
+                GetMachineEnvironment = { @() }
+            }
+        $e = @($service.Environment)
+    } finally {
+        Remove-Item -LiteralPath $directory -Recurse -Force -ErrorAction SilentlyContinue
+    }
+    @{ Ok = ($e -ccontains "$agv02SafetyVariable=selftest-agv02-safety" -and $e -ccontains "$agv03SafetyVariable=selftest-agv03-safety" -and
+            -not ($e | Where-Object { $_ -like 'CONTROL_SERVER_V2_ONBOARD_SAFETY_CREDENTIAL_RIOT61=*' }) -and
+            ($e | Where-Object { $_ -like 'CONTROL_SERVER_RIOT_CALL_API_KEY=*' }))
+        Detail = "names: $(@($e | ForEach-Object { ($_ -split '=', 2)[0] }) -join ', ')" }
+}
+
+# The installer's side: resolved from deploy-config.json and the service's Environment before the product script runs,
+# and handed to the configuration step.
+$safetyResolve = @($installerAst.FindAll({ param($n) $n -is [System.Management.Automation.Language.CommandAst] -and $n.GetCommandName() -eq 'Resolve-ParallelOnboardSafetyCredential' }, $true))
+$firstProduct = @($installerAst.FindAll({ param($n) $n -is [System.Management.Automation.Language.CommandAst] -and $n.GetCommandName() -eq 'Invoke-ProductInstaller' }, $true) |
+        ForEach-Object { $_.Extent.StartOffset } | Sort-Object | Select-Object -First 1)
+Write-Result -Ok ($safetyResolve.Count -eq 1 -and $firstProduct.Count -eq 1 -and $safetyResolve[0].Extent.StartOffset -lt $firstProduct[0] -and
+    $safetyResolve[0].Extent.Text.Contains('onboardSafetyCredentials') -and $safetyResolve[0].Extent.Text.Contains('Get-ServiceEnvironment') -and
+    $safetyResolve[0].Extent.Text.Contains("GetEnvironmentVariable('CONTROL_SERVER_ONBOARD_CREDENTIAL', 'Machine')")) `
+    -Name 'wiring: the installer resolves the per-vehicle projection credentials before any product script runs' `
+    -Detail ("calls: $($safetyResolve.Count)" + $(if ($safetyResolve.Count) { "; text: $($safetyResolve[0].Extent.Text)" }))
+# Review S4: the outer function the install, upgrade and rollback paths call. Its credentials parameter is required (an
+# omitted one would write none and delete the service's per-vehicle variables as stale), and every call passes it.
+$setInstance = $installerAst.Find({ param($n) $n -is [System.Management.Automation.Language.FunctionDefinitionAst] -and $n.Name -eq 'Set-InstanceConfiguration' }, $true)
+$setParam = $null -eq $setInstance ? $null : @($setInstance.Body.ParamBlock.Parameters | Where-Object { $_.Name.VariablePath.UserPath -eq 'OnboardSafetyCredentials' })[0]
+$setParamText = $null -eq $setParam ? '' : $setParam.Extent.Text
+Write-Result -Ok ($null -ne $setParam -and $setParamText.Contains('Mandatory = $true') -and $setParamText.Contains('[AllowEmptyCollection()]') -and $null -eq $setParam.DefaultValue) `
+    -Name 'wiring: Set-InstanceConfiguration requires -OnboardSafetyCredentials (empty allowed), with no default' -Detail "parameter: $setParamText"
+$setCalls = @($installerAst.FindAll({ param($n) $n -is [System.Management.Automation.Language.CommandAst] -and $n.GetCommandName() -eq 'Set-InstanceConfiguration' }, $true))
+Write-Result -Ok ($setCalls.Count -ge 2 -and @($setCalls | Where-Object { -not $_.Extent.Text.Contains('-OnboardSafetyCredentials $onboardSafetyCredentials') }).Count -eq 0) `
+    -Name 'wiring: every Set-InstanceConfiguration call passes the resolved per-vehicle projection credentials' `
+    -Detail (($setCalls | ForEach-Object { "line $($_.Extent.StartLineNumber): $($_.Extent.Text)" }) -join ' | ')
+$stepCalls = @($installerAst.FindAll({ param($n) $n -is [System.Management.Automation.Language.CommandAst] -and $n.GetCommandName() -eq 'Invoke-ParallelInstanceConfigurationStep' }, $true))
+Write-Result -Ok ($stepCalls.Count -gt 0 -and @($stepCalls | Where-Object { -not $_.Extent.Text.Contains('-OnboardSafetyCredentials') }).Count -eq 0) `
+    -Name 'wiring: every configuration step call writes the per-vehicle projection credentials' `
+    -Detail (($stepCalls | ForEach-Object { $_.Extent.Text }) -join ' | ')
+
 # --- Read-back: what the Host bound, vehicle by vehicle -------------------------------------------
 $fleetTemplate = 'EFFECTIVE_CONFIGURATION allowedWorkTypes={AllowedWorkTypes} allowedDispatchZones={AllowedDispatchZones} mesIngestBaseUrl={MesIngestBaseUrl} fleet={Fleet}'
 function New-BoundVehicle([string] $AgvId, [string] $Key, [string[]] $Types, [string[]] $Zones = @('MAP-26-WIRE_TO_GATE')) {

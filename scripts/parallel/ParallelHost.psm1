@@ -680,7 +680,8 @@ function Invoke-ParallelInstanceConfigurationStep {
             control-server#454. In order:
               1. merge the overlay into appsettings.Production.json and check every value landed
                  (Update-ParallelInstanceConfigurationFile);
-              2. put the fault recovery credential into the service's Environment, when there is one;
+              2. put the fault recovery credential into the service's Environment, when there is one, and every roster
+                 vehicle's projection credential (control-server#600), dropping any left for a vehicle no longer in it;
               3. create an empty roster where the definition points, if there is no file there --
                  never overwriting one;
               4. judge the clearance exit from what the service will read, and throw
@@ -703,7 +704,9 @@ function Invoke-ParallelInstanceConfigurationStep {
         [AllowNull()][AllowEmptyString()][string] $Credential,
         [Parameter(Mandatory = $true)][string] $CredentialVariable,
         [Parameter(Mandatory = $true)][string] $RosterPath,
-        [Parameter(Mandatory = $true)][hashtable] $Actions
+        [Parameter(Mandatory = $true)][hashtable] $Actions,
+        # control-server#600: variable -> value, from Resolve-ParallelOnboardSafetyCredential; empty for a single car.
+        [System.Collections.IDictionary] $OnboardSafetyCredentials = @{}
     )
     $missing = @('GetEnvironment', 'SetEnvironment', 'RestartService', 'GetMachineEnvironment' | Where-Object { -not ($Actions.ContainsKey($_) -and $Actions[$_] -is [scriptblock]) })
     if ($missing.Count -gt 0) { throw "Invoke-ParallelInstanceConfigurationStep: missing action(s) $($missing -join ', '); nothing was run." }
@@ -719,9 +722,24 @@ function Invoke-ParallelInstanceConfigurationStep {
 
     $effective = Update-ParallelInstanceConfigurationFile -Path $ConfigurationPath -Definition $Definition
 
+    # The fault recovery credential, when there is one, and (control-server#600) every roster vehicle's projection
+    # credential, written whole: a projection credential left for a vehicle the roster no longer names is removed, so no
+    # credential outlives the vehicle it was issued for. Read once and written once: always when there is a fault
+    # recovery credential, as before, otherwise only when something changed.
+    [string[]] $before = @(& $Actions.GetEnvironment)
+    $prefix = (Get-ParallelInstanceName).OnboardSafetyCredentialVariablePrefix
+    [string[]] $environment = @($before | Where-Object {
+            $null -ne $_ -and -not ($_.StartsWith($prefix, [StringComparison]::OrdinalIgnoreCase) -and
+                -not $OnboardSafetyCredentials.Contains(($_ -split '=', 2)[0])) })
     if (-not [string]::IsNullOrWhiteSpace($Credential)) {
-        [string[]] $before = @(& $Actions.GetEnvironment)
-        $null = & $Actions.SetEnvironment (Set-ParallelServiceEnvironmentEntry -Environment $before -Name $CredentialVariable -Value $Credential)
+        $environment = Set-ParallelServiceEnvironmentEntry -Environment $environment -Name $CredentialVariable -Value $Credential
+    }
+    foreach ($variable in @($OnboardSafetyCredentials.Keys)) {
+        $environment = Set-ParallelServiceEnvironmentEntry -Environment $environment -Name $variable -Value ([string] $OnboardSafetyCredentials[$variable])
+    }
+    if (-not [string]::IsNullOrWhiteSpace($Credential) -or
+        (@($environment) -join "`0") -cne (@($before | Where-Object { $null -ne $_ }) -join "`0")) {
+        $null = & $Actions.SetEnvironment $environment
     }
 
     # An empty roster rather than none: the two read the same to the server ("nobody holds the

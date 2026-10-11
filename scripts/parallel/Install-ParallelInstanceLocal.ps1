@@ -315,6 +315,15 @@ try {
         -Supplied (($null -ne $config -and $config.PSObject.Properties.Name -contains 'faultRecoveryCredential') ? [string] $config.faultRecoveryCredential : $null) `
         -Carried (Get-ParallelServiceEnvironmentEntry -Environment (Get-ServiceEnvironment) -Name (Get-ParallelInstanceName).FaultRecoveryCredentialVariable)
 
+    # control-server#600: every roster vehicle's vehicle-safety projection credential -- deploy-config.json's (the control
+    # host's DPAPI store), else what the service already holds, read now for the same reason as above. A vehicle with
+    # neither, two vehicles with one value, or a value equal to the shared onboard credential refuses here, before anything
+    # changes: the Host would refuse to start. None for a single-car definition.
+    $onboardSafetyCredentials = Resolve-ParallelOnboardSafetyCredential -Definition $definition `
+        -Supplied (($null -ne $config -and $config.PSObject.Properties.Name -contains 'onboardSafetyCredentials') ? $config.onboardSafetyCredentials : $null) `
+        -ServiceEnvironment @(Get-ServiceEnvironment) `
+        -SharedCredential ([Environment]::GetEnvironmentVariable('CONTROL_SERVER_ONBOARD_CREDENTIAL', 'Machine'))
+
     # The MesIngest shared secret (control-server#535): deploy-config.json's on an install, what the service
     # already holds on a rollback. 'production' refuses here without one -- every read would be 401.
     $mesIngestSecretVariable = 'CONTROL_SERVER_MES_INGEST_SHARED_SECRET'
@@ -422,7 +431,12 @@ try {
             rewrites both the file and the Environment; anything merged in by hand used to be lost
             there without a word.
         #>
-        param([AllowNull()][AllowEmptyString()][string] $FaultRecoveryCredential)
+        param(
+            [AllowNull()][AllowEmptyString()][string] $FaultRecoveryCredential,
+            # control-server#600 review S4: required, so a call that leaves it out fails instead of writing none -- with none,
+            # the step deletes every per-vehicle variable the service holds as stale, and the new service refuses to start.
+            [Parameter(Mandatory = $true)][AllowEmptyCollection()][System.Collections.IDictionary] $OnboardSafetyCredentials
+        )
 
         $configurationPath = Join-Path $installRoot 'appsettings.Production.json'
         $rosterPath = $layout.FieldOperatorRosterPath
@@ -431,13 +445,13 @@ try {
         # before any restart -- and only then restart (ParallelHost.psm1).
         $readiness = Invoke-ParallelInstanceConfigurationStep -ConfigurationPath $configurationPath -Definition $definition `
             -Credential $FaultRecoveryCredential -CredentialVariable (Get-ParallelInstanceName).FaultRecoveryCredentialVariable `
-            -RosterPath $rosterPath -Actions @{
+            -RosterPath $rosterPath -OnboardSafetyCredentials $OnboardSafetyCredentials -Actions @{
                 GetEnvironment = { Get-ServiceEnvironment }
                 SetEnvironment = { param([string[]] $Environment) Set-ServiceEnvironment $Environment }
                 RestartService = { Restart-Service -Name $serviceName -Force }
                 GetMachineEnvironment = { [Environment]::GetEnvironmentVariables('Machine').GetEnumerator() | ForEach-Object { "$($_.Key)=$($_.Value)" } }
             }
-        Write-Step "Configuration overlay merged into $configurationPath and verified (vehicle identity, MesIngest origin, clearance exit sections); credential $([string]::IsNullOrWhiteSpace($FaultRecoveryCredential) ? 'not supplied' : 'written, value not shown'); $serviceName restarted"
+        Write-Step "Configuration overlay merged into $configurationPath and verified (vehicle identity, MesIngest origin, clearance exit sections); credential $([string]::IsNullOrWhiteSpace($FaultRecoveryCredential) ? 'not supplied' : 'written, value not shown'); projection credentials: $(@($OnboardSafetyCredentials.Keys).Count ? ((@($OnboardSafetyCredentials.Keys) -join ', ') + ' written, values not shown') : 'none (single car, shared credential)'); $serviceName restarted"
         Write-Step $readiness.Line
         Write-Output $readiness.Line
         if (@($readiness.Reasons).Count -gt 0) {
@@ -651,7 +665,7 @@ try {
         # The overlay is reapplied: an upgrade keeps the existing appsettings.Production.json, but a
         # rollback to a generation installed before some overlay key existed would otherwise come
         # back without it.
-        Set-InstanceConfiguration -FaultRecoveryCredential $faultRecoveryCredential
+        Set-InstanceConfiguration -FaultRecoveryCredential $faultRecoveryCredential -OnboardSafetyCredentials $onboardSafetyCredentials
         if ($productionSource) {
             # A rollback that lands in the product's first-install branch rebuilds the Environment; the
             # token the service held (checked above) is written back so the production reads keep working.
@@ -725,7 +739,7 @@ try {
         }
         Write-Step "Installer result written to $resultPath"
 
-        Set-InstanceConfiguration -FaultRecoveryCredential $faultRecoveryCredential
+        Set-InstanceConfiguration -FaultRecoveryCredential $faultRecoveryCredential -OnboardSafetyCredentials $onboardSafetyCredentials
 
         # ------------------------------------------------- MesIngest bearer token ---
 

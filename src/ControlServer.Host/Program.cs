@@ -144,10 +144,8 @@ builder.Services.AddHttpClient<IMesIngestCatalog, HttpMesIngestCatalog>((service
     }
 });
 builder.Services.AddRiotSdkIntegration(builder.Configuration);
-builder.Services.AddOptions<OnboardSafetyProjectionOptions>()
-    .Bind(builder.Configuration.GetSection(OnboardSafetyProjectionOptions.SectionName))
-    .ValidateOnStart();
-builder.Services.AddSingleton<IValidateOptions<OnboardSafetyProjectionOptions>, OnboardSafetyProjectionOptionsValidator>();
+// control-server#600: the projection's per-vehicle credentials are checked against the roster and the TCP credential.
+builder.Services.AddOnboardSafetyProjectionOptions(builder.Configuration);
 builder.Services.AddOptions<SlotConfigurationActivationOptions>()
     .Bind(builder.Configuration.GetSection(SlotConfigurationActivationOptions.SectionName))
     .ValidateOnStart();

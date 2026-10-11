@@ -208,6 +208,9 @@ $script:FirewallRuleFormat = '8005 AGV ControlServer V2 {0}'
 # control-server#454. Its own name, not the product default CONTROL_SERVER_FAULT_RECOVERY_CREDENTIAL,
 # as for every variable the two instances could otherwise share (coordinator, 2026-10-03).
 $script:FaultRecoveryCredentialVariable = 'CONTROL_SERVER_V2_FAULT_RECOVERY_CREDENTIAL'
+# control-server#600. One vehicle-safety projection credential per roster row, named by the row's RIoT id (the durable
+# coordinate in remote-ops/fleet.md): RIOT59 is agv02, RIOT60 agv03. This instance's own names, like the one above.
+$script:OnboardSafetyCredentialVariablePrefix = 'CONTROL_SERVER_V2_ONBOARD_SAFETY_CREDENTIAL_RIOT'
 
 function Get-ParallelInstanceAllowedKey {
     <#
@@ -1646,6 +1649,7 @@ function Get-ParallelInstanceName {
         ProductionCertificatePasswordVariable = $script:ProductionCertificatePasswordVariable
         FirewallRuleFormat = $script:FirewallRuleFormat
         FaultRecoveryCredentialVariable = $script:FaultRecoveryCredentialVariable
+        OnboardSafetyCredentialVariablePrefix = $script:OnboardSafetyCredentialVariablePrefix
     }
 }
 
@@ -2264,7 +2268,102 @@ function New-ParallelInstanceConfigurationOverlay {
         }
         # control-server#518. Read only while the runtime is on, so written on every install whether it is or not.
         TaskTypeStations = [ordered]@{ settingsFile = $Definition['taskTypeStations']['settingsFile'] }
+        # control-server#600. Always written, whole: a single-car definition writes an empty list, so a list from a two-car
+        # install does not survive a reinstall. Variables are named here, never valued; enabled and the shared variable are
+        # the product installer's and stay as it wrote them.
+        OnboardSafetyProjection = [ordered]@{
+            vehicleCredentials = @(Get-ParallelOnboardSafetyCredentialSlot -Definition $Definition | ForEach-Object {
+                    [ordered]@{ vehicleKey = $_.VehicleKey; credentialEnvironmentVariable = $_.Variable } })
+        }
     }
+}
+
+function Get-ParallelOnboardSafetyCredentialSlot {
+    <#
+        .SYNOPSIS
+            control-server#600. One row per roster vehicle: VehicleKey, RiotId and the service-Environment Variable that
+            holds its vehicle-safety projection credential. One per row of journeyRuntime.fleet -- a roster of one row
+            included; none for a definition without a roster (the single-vehicle keys), which keeps the shared credential.
+    #>
+    [CmdletBinding()]
+    param([Parameter(Mandatory = $true)][System.Collections.IDictionary] $Definition)
+    $journey = $Definition['journeyRuntime']
+    if (-not $journey.Contains('fleet')) { return }
+    foreach ($row in @($journey['fleet'])) {
+        [pscustomobject]@{
+            VehicleKey = [string] $row['vehicleKey']
+            RiotId = [long] $row['riotId']
+            Variable = "$($script:OnboardSafetyCredentialVariablePrefix)$([long] $row['riotId'])"
+        }
+    }
+}
+
+function Resolve-ParallelOnboardSafetyCredential {
+    <#
+        .SYNOPSIS
+            control-server#600. The vehicle-safety projection credential of every roster vehicle, as an ordered map from
+            service-Environment variable to value. Empty for a definition without a roster. Throws, naming vehicles and never a
+            value, when one is missing or two would let one vehicle read another's projection.
+
+        .DESCRIPTION
+            Per vehicle, in this order:
+              * -Supplied: deploy-config.json's onboardSafetyCredentials, vehicleKey -> value, which the control host fills
+                from its DPAPI store (an install or upgrade; a rollback has none);
+              * what the service's Environment already holds under that vehicle's variable -- read before the product
+                script, because a first install rebuilds the Environment.
+            The Host checks the same things at startup (OnboardSafetyProjectionOptionsValidator) and refuses to start; by
+            then the old service is already down, so the installer refuses here first.
+    #>
+    [CmdletBinding()]
+    param(
+        [Parameter(Mandatory = $true)][System.Collections.IDictionary] $Definition,
+        [AllowNull()] $Supplied,
+        [AllowNull()][AllowEmptyCollection()][string[]] $ServiceEnvironment,
+        [AllowNull()][AllowEmptyString()][string] $SharedCredential
+    )
+    $result = [ordered]@{}
+    $missing = @()
+    foreach ($slot in @(Get-ParallelOnboardSafetyCredentialSlot -Definition $Definition)) {
+        $value = $null
+        if ($Supplied -is [System.Collections.IDictionary]) {
+            if ($Supplied.Contains($slot.VehicleKey)) { $value = [string] $Supplied[$slot.VehicleKey] }
+        } elseif ($null -ne $Supplied -and $Supplied.PSObject.Properties.Name -ccontains $slot.VehicleKey) {
+            $value = [string] $Supplied.($slot.VehicleKey)
+        }
+        if ([string]::IsNullOrWhiteSpace($value)) {
+            $value = Get-ParallelServiceEnvironmentEntry -Environment $ServiceEnvironment -Name $slot.Variable
+        }
+        if ([string]::IsNullOrWhiteSpace($value)) {
+            $missing += "$($slot.VehicleKey) (riotId $($slot.RiotId), $($slot.Variable))"
+            continue
+        }
+        $result[$slot.Variable] = $value
+    }
+    if ($missing.Count -gt 0) {
+        throw ("ONBOARD_SAFETY_CREDENTIAL_MISSING: no vehicle-safety projection credential for $($missing -join '; '). " +
+            'deploy-config.json carries none for it and the service''s Environment holds none. The Host would refuse to start ' +
+            '(control-server#600). On the control host: control-server\Set-ControlServerSecret.ps1 -NewVehicleSafetyCredential ' +
+            '<alias>, then deploy again and redeploy that vehicle''s onboard half. Nothing was stopped or changed.')
+    }
+    $slots = @(Get-ParallelOnboardSafetyCredentialSlot -Definition $Definition)
+    $shared = @()
+    for ($i = 0; $i -lt $slots.Count; $i++) {
+        $value = $result[$slots[$i].Variable]
+        if (-not [string]::IsNullOrWhiteSpace($SharedCredential) -and [string]::Equals($value, $SharedCredential, [StringComparison]::Ordinal)) {
+            $shared += "$($slots[$i].VehicleKey) holds the shared onboard credential, which every vehicle has"
+        }
+        for ($j = 0; $j -lt $i; $j++) {
+            if ([string]::Equals($value, $result[$slots[$j].Variable], [StringComparison]::Ordinal)) {
+                $shared += "$($slots[$j].VehicleKey) and $($slots[$i].VehicleKey) hold one value"
+            }
+        }
+    }
+    if ($shared.Count -gt 0) {
+        throw ("ONBOARD_SAFETY_CREDENTIAL_SHARED: $($shared -join '; '). Each vehicle needs a projection credential of its own, " +
+            'or one vehicle can read another''s (control-server#600). Generate new ones with ' +
+            'control-server\Set-ControlServerSecret.ps1 -NewVehicleSafetyCredential <alias>. Nothing was stopped or changed.')
+    }
+    return $result
 }
 
 function Get-ParallelJourneyRuntimeEnvironmentOverride {
@@ -2959,6 +3058,8 @@ Export-ModuleMember -Function @(
     'Get-ParallelServiceEnvironmentEntry'
     'Set-ParallelServiceEnvironmentEntry'
     'Resolve-ParallelFaultRecoveryCredential'
+    'Get-ParallelOnboardSafetyCredentialSlot'
+    'Resolve-ParallelOnboardSafetyCredential'
     'Get-ParallelClearanceExitReadiness'
     'Get-ParallelUpgradeRefusal'
     'Get-ParallelPreInstallRefusal'
