@@ -38,8 +38,11 @@ namespace ControlServer.Infrastructure.Persistence;
 /// 而那时单调的那个是对的。不要把会话层改成读 UTC 来「对齐」。
 /// </para>
 /// <para>
-/// 代价与 <c>JourneyRuntimeEngine</c> 派车前那一处相同：agvId 与会话代只在信封 JSON 里，要扫一遍收件箱。
-/// 只有落在存活窗口之内的行才被解析。
+/// <b>只从库里读窗口之内的行</b>（control-server#563，移植 MVP 的 <c>ef5dad8e</c>）：收件箱留着车发过的每一条心跳、从不清理，
+/// 整表读回来再逐行判，三车三天的量就要几秒，而看板每两秒、旅程每轮每条都判一次。下推的条件就是 <see cref="InsideWindow"/>
+/// 的时间部分，按 <see cref="ProtocolInboxRow.ReceivedAtUtcTicks"/> 比较（SQLite 不能在库里比较 <see cref="DateTimeOffset"/>）；
+/// 两者对同一行答案相同，所以判定一条不变。agvId 与会话代只在信封 JSON 里，下推不了：窗口里的行仍逐行解析，
+/// 它们只有窗口里那几秒的量（三车约十行）。
 /// </para>
 /// </remarks>
 public static class SessionLiveness
@@ -64,8 +67,7 @@ public static class SessionLiveness
             return heard;
         }
 
-        ProtocolInboxRow[] inbound = await context.ProtocolInbox.AsNoTracking()
-            .ToArrayAsync(cancellationToken);
+        ProtocolInboxRow[] inbound = await ReadWindowAsync(context, now, cancellationToken);
         foreach (ProtocolInboxRow row in inbound)
         {
             if (!InsideWindow(row, now))
@@ -102,8 +104,7 @@ public static class SessionLiveness
         ArgumentNullException.ThrowIfNull(context);
         ArgumentException.ThrowIfNullOrWhiteSpace(agvId);
 
-        ProtocolInboxRow[] inbound = await context.ProtocolInbox.AsNoTracking()
-            .ToArrayAsync(cancellationToken);
+        ProtocolInboxRow[] inbound = await ReadWindowAsync(context, now, cancellationToken);
         foreach (ProtocolInboxRow row in inbound)
         {
             if (!InsideWindow(row, now))
@@ -118,6 +119,22 @@ public static class SessionLiveness
             }
         }
         return false;
+    }
+
+    /// <summary>
+    /// 收件箱里收件时间落在存活窗口里的行，在库里按 <see cref="ProtocolInboxRow.ReceivedAtUtcTicks"/> 筛：与 <see cref="InsideWindow"/>
+    /// 的时间条件逐行等价，所以读回来的行仍过一遍 <see cref="InsideWindow"/> 只是把规则留在一处，不改变哪些行算数。
+    /// </summary>
+    private static Task<ProtocolInboxRow[]> ReadWindowAsync(
+        ControlServerDbContext context,
+        DateTimeOffset now,
+        CancellationToken cancellationToken)
+    {
+        long windowStartTicks = (now - Timeout).UtcTicks;
+        long nowTicks = now.UtcTicks;
+        return context.ProtocolInbox.AsNoTracking()
+            .Where(row => row.ReceivedAtUtcTicks >= windowStartTicks && row.ReceivedAtUtcTicks <= nowTicks)
+            .ToArrayAsync(cancellationToken);
     }
 
     /// <summary>这一行入站是否落在存活窗口里：收件时间不在未来，且距今不超过 <see cref="Timeout"/>。</summary>

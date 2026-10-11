@@ -1,0 +1,50 @@
+{
+  "mapId": 26,
+  "ruleVersion": 1,
+  "requiredTaskTypes": [
+    "WIRE_TO_GATE",
+    "STAGING_TO_WIRE",
+    "DIE_TO_WIRE_STAGING",
+    "DIE_TO_OVEN",
+    "WIRE_TO_OPTICAL",
+    "WIRE_TO_NITROGEN"
+  ],
+  "bindings": [
+    {
+      "taskType": "WIRE_TO_GATE",
+      "stationRiotId": 210,
+      "stationName": "关卡",
+      "siteVerificationRef": "MAP-26-WIRE_TO_GATE-SITE-20261010"
+    },
+    {
+      "taskType": "STAGING_TO_WIRE",
+      "stationRiotId": 217,
+      "stationName": "派工待送取货",
+      "siteVerificationRef": "MAP-26-STAGING_TO_WIRE-SITE-20261010"
+    },
+    {
+      "taskType": "DIE_TO_OVEN",
+      "stationRiotId": 218,
+      "stationName": "烘箱",
+      "siteVerificationRef": "MAP-26-DIE_TO_OVEN-SITE-20261010"
+    },
+    {
+      "taskType": "WIRE_TO_OPTICAL",
+      "stationRiotId": 3,
+      "stationName": "N1-3",
+      "siteVerificationRef": "MAP-26-WIRE_TO_OPTICAL-SITE-20261010"
+    },
+    {
+      "taskType": "DIE_TO_WIRE_STAGING",
+      "stationRiotId": 220,
+      "stationName": "装片氮气柜",
+      "siteVerificationRef": "MAP-26-DIE_TO_WIRE_STAGING-SITE-20261010"
+    },
+    {
+      "taskType": "WIRE_TO_NITROGEN",
+      "stationRiotId": 221,
+      "stationName": "焊线氮气柜",
+      "siteVerificationRef": "MAP-26-WIRE_TO_NITROGEN-SITE-20261010"
+    }
+  ]
+}
