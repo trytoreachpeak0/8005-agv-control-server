@@ -1846,15 +1846,23 @@ public static class StagedG3TlsHarness
         cases.Add(Case(transcriptPath, "alreadyCommittedAttemptRefusesASecondResult", null,
             Equals(committedAttempt["refused"], true), committedAttempt));
 
-        bool staleGenerationClosed = await ExpectRefusalAsync(
-            port, credential, agvId, StableGuid("demand-bearing:hello:" + helloSequence++),
+        // control-server#543: a result stamped with the generation before this connection's. protocol-v3.0.0 names the
+        // code (STALE_SESSION_GENERATION, retryDisposition AFTER_RECONNECT) and the server's duty
+        // (FENCE_STALE_GENERATIONS), but nowhere says whether such a line is answered or its connection closed. So the
+        // expectation is what the server does today: no answer, and the connection ended at once (RequireCurrentSession
+        // throws, nothing in the processor catches it, and HandleClientAsync ends). Until #543 this was judged by
+        // ExpectRefusalAsync, which took ten seconds without a line for a close: a server that ignored the stale result
+        // entirely passed it.
+        string staleGenerationMessageId = StableGuid("demand-bearing:stale-generation-result");
+        Dictionary<string, object?> staleGeneration = await ExpectStaleGenerationClosedAsync(
+            port, credential, agvId, StableGuid("demand-bearing:hello:" + helloSequence++), staleGenerationMessageId,
             generation => OperationResultLine(
-                agvId, StableGuid("demand-bearing:stale-generation-result"), generation - 1, demandId,
+                agvId, staleGenerationMessageId, generation - 1, demandId,
                 preparedAttemptId, preparedOperationType, preparedSlots, "COMPLETED"),
             cancellationToken).ConfigureAwait(false);
+        staleGeneration["acceptedGeneration"] = acceptedGeneration;
         cases.Add(Case(transcriptPath, "resultFromASupersededSessionGenerationIsRefused", null,
-            staleGenerationClosed,
-            new Dictionary<string, object?> { ["acceptedGeneration"] = acceptedGeneration }));
+            Equals(staleGeneration["closed"], true), staleGeneration));
 
         return JsonSerializer.Serialize(new Dictionary<string, object?>
         {
@@ -1933,6 +1941,51 @@ public static class StagedG3TlsHarness
             if (Property(line, "messageType") == "DurableAck") return false;
         }
     }
+
+    /// <summary>
+    /// Opens a fresh session, sends one line stamped with a superseded session generation, and reports whether the
+    /// server ended the connection without answering it (control-server#543).
+    /// </summary>
+    /// <remarks>
+    /// Closed means all three: the stream ended -- a read timeout is not an end; it ended within
+    /// StaleGenerationCloseWindow; and no line before the end answered the stale message. The window is what keeps this
+    /// from passing on the server's other close: a connection without a legal message for 6 seconds is ended anyway
+    /// (ADR-cross-0027, SessionLiveness.Timeout), and the stale line does not refresh that, so a server that did nothing
+    /// with it would still end the stream about 6 seconds after the handshake. 3 seconds is half that, the same window
+    /// the SessionHello content conflict above is held to: today's close happens as the line is processed, on
+    /// loopback, in milliseconds, so the margin is for a slow machine, not for the server.
+    /// </remarks>
+    private static async Task<Dictionary<string, object?>> ExpectStaleGenerationClosedAsync(
+        int port,
+        string credential,
+        string agvId,
+        string helloMessageId,
+        string staleMessageId,
+        Func<long, string> buildLine,
+        CancellationToken cancellationToken)
+    {
+        await using Connection connection = await Connection.OpenAsync(port, cancellationToken)
+            .ConfigureAwait(false);
+        long generation = await HandshakeAsync(connection, agvId, helloMessageId, credential, cancellationToken)
+            .ConfigureAwait(false);
+        string line = buildLine(generation);
+        await connection.WriteAsync(line, cancellationToken).ConfigureAwait(false);
+        Dictionary<string, object?> end = await ExpectEndOfStreamAsync(
+            connection, StaleGenerationCloseWindow, cancellationToken, staleMessageId).ConfigureAwait(false);
+        bool answered = end["answersBeforeEnd"] is List<string?> { Count: > 0 };
+        return new Dictionary<string, object?>
+        {
+            ["closed"] = Equals(end["streamEnded"], true) && !answered,
+            ["messageId"] = staleMessageId,
+            ["sessionGeneration"] = generation,
+            ["staleSessionGeneration"] = NumberProperty(line, "sessionGeneration"),
+            ["requestSha256"] = Sha256(line),
+            ["answeredBeforeEnd"] = answered,
+            ["observation"] = end
+        };
+    }
+
+    private static readonly TimeSpan StaleGenerationCloseWindow = TimeSpan.FromSeconds(3);
 
     /// <summary>
     /// Opens a fresh session, sends one line the server has to refuse for its content, and reports the answer.
@@ -2108,14 +2161,17 @@ public static class StagedG3TlsHarness
     /// <remarks>
     /// Unlike ExpectClosedAsync, a timeout is not taken for a close: the stream has to end. Keep the timeout well under
     /// the server's 6-second silence close (ADR-cross-0027), or that close passes for the one being asserted;
-    /// elapsedMilliseconds records how long the end took.
+    /// elapsedMilliseconds records how long the end took. Given answeredMessageId, it also records whether any line
+    /// before the end answered that message -- correlated to it, or a DurableAck naming it (control-server#543).
     /// </remarks>
     private static async Task<Dictionary<string, object?>> ExpectEndOfStreamAsync(
         Connection connection,
         TimeSpan timeout,
-        CancellationToken cancellationToken)
+        CancellationToken cancellationToken,
+        string? answeredMessageId = null)
     {
         var seen = new List<string?>();
+        var answers = new List<string?>();
         bool ended = false;
         var elapsed = System.Diagnostics.Stopwatch.StartNew();
         DateTimeOffset deadline = DateTimeOffset.UtcNow + timeout;
@@ -2132,8 +2188,15 @@ public static class StagedG3TlsHarness
             }
             if (line is null) break;
             seen.Add(Property(line, "messageType"));
+            if (answeredMessageId is not null &&
+                (Property(line, "correlationId") == answeredMessageId ||
+                 (Property(line, "messageType") == "DurableAck" &&
+                  NestedProperty(line, "payload", "acceptedMessageId") == answeredMessageId)))
+            {
+                answers.Add(Property(line, "messageType"));
+            }
         }
-        return new Dictionary<string, object?>
+        var observation = new Dictionary<string, object?>
         {
             ["streamEnded"] = ended,
             ["elapsedMilliseconds"] = elapsed.ElapsedMilliseconds,
@@ -2141,6 +2204,12 @@ public static class StagedG3TlsHarness
             ["sessionAccepted"] = seen.Contains("SessionAccepted"),
             ["linesBeforeEnd"] = seen
         };
+        if (answeredMessageId is not null)
+        {
+            observation["answeredMessageId"] = answeredMessageId;
+            observation["answersBeforeEnd"] = answers;
+        }
+        return observation;
     }
 
     /// <summary>
