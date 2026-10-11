@@ -1,0 +1,13 @@
+diff --git a/F:/8005-scratch/cs543-runners/old/run-staged-g3.ps1 b/F:/8005-scratch/cs543-runners/site2-old-mut/run-staged-g3.ps1
+index 7993d21df..c628c8f4a 100644
+--- a/F:/8005-scratch/cs543-runners/old/run-staged-g3.ps1
++++ b/F:/8005-scratch/cs543-runners/site2-old-mut/run-staged-g3.ps1
+@@ -1466,7 +1466,7 @@ public static class StagedG3TlsHarness
+             }
+ 
+             // Armed only now, so none of the refused actions above can consume the one-shot rule.
+-            AddFault("server-to-client", "ForcedMechanicalRecoveryCommand", null, "drop-and-close", 0);
++            // MUTATION cs#543: drop-and-close rule removed
+             string accepted = await ExchangeAsync(
+                 connection,
+                 ActionSubmit(
