@@ -1,5 +1,6 @@
 using ControlServer.Application;
 using ControlServer.Infrastructure.Adapters;
+using Microsoft.Extensions.DependencyInjection.Extensions;
 using RIoT.Sdk.Core;
 using RIoT.Sdk.Facade;
 
@@ -33,7 +34,11 @@ internal static class RiotSdkRegistration
             .ConfigurePrimaryHttpMessageHandler(() => primaryHandlerFactory?.Invoke() ?? new HttpClientHandler
             {
                 AllowAutoRedirect = false
-            });
+            })
+            // control-server#587: every command and every failure, not four lines for each of ten reads a second.
+            .RemoveAllLoggers()
+            .AddLogger<RiotHttpTrafficLogger>();
+        services.TryAddSingleton<RiotHttpTrafficLogger>();
 
         services.AddScoped(serviceProvider =>
         {
