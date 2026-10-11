@@ -31,6 +31,26 @@ public sealed partial class MultiVehicleExecutionTests
     private static readonly DateTimeOffset Now = new(2026, 9, 8, 6, 0, 0, TimeSpan.Zero);
     private static readonly JsonSerializerOptions SerializerOptions = new(JsonSerializerDefaults.Web);
 
+    /// <summary>
+    /// How long any of the fleet doubles' hang hooks waits before giving up, rather than waiting forever.
+    /// </summary>
+    /// <remarks>
+    /// <para>
+    /// Longer than any budget a test sets, so it never ends a wait the test meant something else to end: the
+    /// semantics are those of an unanswered call either way. What it rules out is a caller that forgets the
+    /// short budget, or a refactor that carries <see cref="CancellationToken.None"/> down to this layer --
+    /// either would hang the whole test process here. A wedged run is worse than one red test: the job's
+    /// timeout cancels it, and cancelling a job on a self-hosted runner wedges the runner session, and the
+    /// server's <c>test</c> workflow has one runner.
+    /// </para>
+    /// <para>
+    /// One value for every hook (control-server#243), not a copy per double: the rule "longer than any budget"
+    /// is one rule, and a copy shortened in one double would quietly start ending the waits its tests meant a
+    /// budget or a shutdown to end. Do not shorten it for the same reason.
+    /// </para>
+    /// </remarks>
+    private static readonly TimeSpan HangCeiling = TimeSpan.FromSeconds(60);
+
     // ---- session isolation ---------------------------------------------------------------
 
     /// <summary>
@@ -1797,7 +1817,15 @@ public sealed partial class MultiVehicleExecutionTests
 
         public int ReadCount { get; private set; }
 
-        /// <summary>The read, counted from 1, that never comes back; null when every read answers.</summary>
+        /// <summary>The read, counted from 1, that does not come back; null when every read answers.</summary>
+        /// <remarks>
+        /// It waits <see cref="HangCeiling"/>, not forever, and the ceiling is not what a test means to end it. The
+        /// one caller, <see cref="WhenAVehicleExhaustsItsBudgetTheHookIsStillCalledOnceWithOnlyTheVehiclesThatFinished"/>,
+        /// hangs the first vehicle's intake re-read and has it ended by that vehicle's round budget:
+        /// <c>FleetFixture.CreateAsync(budgetMilliseconds: 1000)</c> sets every vehicle's
+        /// <c>RoundTimeoutMilliseconds</c> to one second. A new caller must likewise give the hanging vehicle a
+        /// budget, or cancel the round itself, well short of the ceiling.
+        /// </remarks>
         public int? HangOnRead { get; set; }
 
         /// <summary>Whether every catalog read fails the way an unreachable MesIngest does.</summary>
@@ -1841,7 +1869,7 @@ public sealed partial class MultiVehicleExecutionTests
             }
             if (ReadCount == HangOnRead)
             {
-                await Task.Delay(Timeout.InfiniteTimeSpan, cancellationToken).ConfigureAwait(false);
+                await Task.Delay(HangCeiling, cancellationToken).ConfigureAwait(false);
             }
 
             if (Unreachable)
@@ -1879,7 +1907,21 @@ public sealed partial class MultiVehicleExecutionTests
     {
         public int Calls { get; private set; }
 
-        /// <summary>The call, counted from 1, that never comes back; null when every call answers.</summary>
+        /// <summary>The call, counted from 1, that does not come back; null when every call answers.</summary>
+        /// <remarks>
+        /// It waits <see cref="HangCeiling"/>, not forever, and the ceiling is not what a test means to end it. What
+        /// does differs by caller:
+        /// <list type="bullet">
+        /// <item><see cref="AVehicleCutOffInTheMiddleOfTheChainDecidesAsBeforeTheMove"/> and
+        /// <see cref="WhatAVehicleCutOffMidChainHadStagedIsNotSavedWithTheNextVehicle"/>: the first vehicle's round
+        /// budget, <c>Fleet[0].RoundTimeoutMilliseconds = CutOffBudgetMilliseconds</c> (one second).</item>
+        /// <item><see cref="TheHostsShutdownCancellationLeavesTheRoundRatherThanBeingCaught"/>: the host's shutdown
+        /// token, which <see cref="OnHang"/> cancels just before the wait starts. No budget is involved; the
+        /// vehicle keeps the fixture's default 30-second one.</item>
+        /// </list>
+        /// A new caller must likewise give the hanging vehicle a budget, or cancel the round itself, well short of
+        /// the ceiling.
+        /// </remarks>
         public int? HangOnCall { get; set; }
 
         /// <summary>Runs just before the hanging call starts to wait, so a test can see the state it hangs in.</summary>
@@ -1898,7 +1940,7 @@ public sealed partial class MultiVehicleExecutionTests
             if (Calls == HangOnCall)
             {
                 OnHang?.Invoke();
-                await Task.Delay(Timeout.InfiniteTimeSpan, cancellationToken).ConfigureAwait(false);
+                await Task.Delay(HangCeiling, cancellationToken).ConfigureAwait(false);
             }
 
             return 4;
@@ -2023,19 +2065,6 @@ public sealed partial class MultiVehicleExecutionTests
         /// </summary>
         /// <inheritdoc cref="HangBeforeFirstAccept" path="/remarks"/>
         public bool HangAfterFirstAccept { get; set; }
-
-        /// <summary>
-        /// How long either hook waits before giving up, rather than waiting forever.
-        /// </summary>
-        /// <remarks>
-        /// Longer than any budget a test sets, so it never ends a wait the test meant the budget to end: the
-        /// semantics are those of an unanswered call either way. What it rules out is a caller that forgets the
-        /// short budget, or a refactor that carries <see cref="CancellationToken.None"/> down to this layer --
-        /// either would hang the whole test process here. A wedged run is worse than one red test: the job's
-        /// timeout cancels it, and cancelling a job on a self-hosted runner wedges the runner session, and the
-        /// server's <c>test</c> workflow has one runner.
-        /// </remarks>
-        private static readonly TimeSpan HangCeiling = TimeSpan.FromSeconds(60);
 
         public Task AcceptWithOrderIntentAsync(
             AcceptedDemandSnapshot snapshot,
@@ -2228,7 +2257,18 @@ public sealed partial class MultiVehicleExecutionTests
         /// <summary>What the safety read names for every vehicle; empty means stopped with nothing in the way.</summary>
         public string[] SafetyReasons { get; set; } = [];
 
-        /// <summary>The vehicle key whose reads never come back, or null.</summary>
+        /// <summary>The vehicle key whose reads do not come back, or null.</summary>
+        /// <remarks>
+        /// It waits <see cref="HangCeiling"/>, not forever, and the ceiling is not what a test means to end it. Every
+        /// caller has the hanging vehicle's round budget end it:
+        /// <see cref="AVehicleThatExhaustsItsBudgetDoesNotCostTheOthersTheirRound"/> and
+        /// <see cref="AVehicleThatTimedOutIsServedAgainInTheNextRound"/> through
+        /// <c>FleetFixture.CreateAsync(budgetMilliseconds: 1000)</c>, which sets every vehicle's
+        /// <c>RoundTimeoutMilliseconds</c> to one second, and
+        /// <c>IdleReturnExecutionTests.AVehicleCutOffByItsRoundBudgetReadsAsNotEvaluatedRatherThanItsPreviousVerdict</c>
+        /// through <c>Fleet[0].RoundTimeoutMilliseconds = 1000</c> on that vehicle alone. A new caller must likewise
+        /// give the hanging vehicle a budget, or cancel the round itself, well short of the ceiling.
+        /// </remarks>
         public string? HangOn { get; set; }
 
         /// <summary>What RIoT reports in movementState; null reads as Unknown.</summary>
@@ -2262,7 +2302,7 @@ public sealed partial class MultiVehicleExecutionTests
             VehicleReads.Add(vehicleKey);
             if (string.Equals(HangOn, vehicleKey, StringComparison.Ordinal))
             {
-                await Task.Delay(Timeout.InfiniteTimeSpan, cancellationToken).ConfigureAwait(false);
+                await Task.Delay(HangCeiling, cancellationToken).ConfigureAwait(false);
             }
 
             if (string.Equals(FailOn, vehicleKey, StringComparison.Ordinal))
