@@ -2313,11 +2313,25 @@ function Format-ParallelLogFileFacts {
             }) -join '; ') + '.'
 }
 
+$script:ReadBackLogFileLimit = 16
+
 function Get-ParallelLogFilesSince {
     <#
         .SYNOPSIS
             control-server#587. The Host's log files a read-back reads, newest first: every file the process may have
             written since -Since (its start).
+
+        .DESCRIPTION
+            The Host's log rolls at its size limit (ServerLogFileLimits), so the events logged as the process starts --
+            EFFECTIVE_CONFIGURATION, 2001 -- can be any number of files back. Until #587 the read-back took the two
+            newest files by last write time, and a log that rolled twice after the start read back as
+            JOURNEY_RUNTIME_NOT_HELD and stopped the service.
+
+            Newest first by creation time, the order Serilog created them in (the name breaks a tie, ordinally:
+            "x-20261011.ndjson" before "x-20261011_001.ndjson"), down to and including the first file created at or
+            before -Since -- the file the process started writing into; no older file can hold a line it wrote.
+            At most $script:ReadBackLogFileLimit files: a read-back runs within minutes of the start, so more than that
+            means something else is wrong, and the events it then misses are read back as missing, which refuses.
     #>
     [CmdletBinding()]
     param(
@@ -2325,15 +2339,29 @@ function Get-ParallelLogFilesSince {
         [Parameter(Mandatory = $true)][string] $Filter,
         [Parameter(Mandatory = $true)][datetimeoffset] $Since
     )
-    return @(Get-ChildItem -LiteralPath $Directory -Filter $Filter -File -ErrorAction SilentlyContinue |
-            Sort-Object LastWriteTimeUtc -Descending | Select-Object -First 2)
+    $files = [Collections.Generic.List[IO.FileInfo]]::new()
+    foreach ($file in @(Get-ChildItem -LiteralPath $Directory -Filter $Filter -File -ErrorAction SilentlyContinue)) { $files.Add($file) }
+    $files.Sort([Comparison[IO.FileInfo]] {
+            param($left, $right)
+            $byCreation = $right.CreationTimeUtc.CompareTo($left.CreationTimeUtc)
+            ($byCreation -ne 0) ? $byCreation : [string]::CompareOrdinal($right.Name, $left.Name)
+        })
+    $selected = [Collections.Generic.List[IO.FileInfo]]::new()
+    foreach ($file in $files) {
+        if ($selected.Count -ge $script:ReadBackLogFileLimit) { break }
+        $selected.Add($file)
+        if ([datetimeoffset]::new([datetime]::SpecifyKind($file.CreationTimeUtc, [DateTimeKind]::Utc)) -le $Since) { break }
+    }
+    return @($selected)
 }
 
 function Read-ParallelLogLines {
     <#
         .SYNOPSIS
             control-server#587. Every line of the given log files, in the order given. The Host holds its current file
-            open (shared = true), so each is read without asking for exclusive access.
+            open (shared = true), so each is read without asking for exclusive access. (Not with FileShare.Delete
+            as well: this module's delete guard reads that as a delete, and Serilog's retention skips a file it cannot
+            delete and tries again at its next roll.)
     #>
     [CmdletBinding()]
     [OutputType([string])]

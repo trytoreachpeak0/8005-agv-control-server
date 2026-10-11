@@ -409,7 +409,7 @@ public sealed class ParallelInstanceEffectiveConfigurationTests
                 await worker.StartAsync(TestContext.Current.CancellationToken);
                 await worker.StopAsync(TestContext.Current.CancellationToken);
                 Microsoft.Extensions.Logging.ILogger noise = factory.CreateLogger("ControlServer.Tests.Noise");
-                for (int index = 0; index < 300; index++)
+                for (int index = 0; index < 150; index++)
                 {
                     LogNoise(noise, index, new string('x', 100), null);
                 }

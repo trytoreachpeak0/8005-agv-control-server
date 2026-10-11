@@ -408,7 +408,9 @@ try {
                         path = (Join-Path $logDirectory 'controlserver-.ndjson')
                         formatter = 'Serilog.Formatting.Compact.CompactJsonFormatter, Serilog.Formatting.Compact'
                         rollingInterval = 'Day'
-                        retainedFileCountLimit = 14
+                        # control-server#587: rollOnFileSizeLimit, fileSizeLimitBytes and retainedFileCountLimit are
+                        # the Host's (ServerLogFileLimits fills them in at startup, for this file and for every file
+                        # an older installer wrote, which an upgrade keeps): 48 files of 64 MiB, 3 GiB at most.
                         shared = $true
                     }
                 }

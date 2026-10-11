@@ -129,11 +129,13 @@ public sealed class ServerLogVolumeTests
         // Every command, request and response, at Information.
         Assert.Equal(2, riot.Count(entry => entry.Level == LogLevel.Information && entry.Message.Contains("POST", StringComparison.Ordinal)
             && entry.Message.Contains("/api/device/v1/command/sync/service/K2/triggerEmergency", StringComparison.Ordinal)));
-        // Every failure, at Warning: a status that is not success, and an exception.
-        Assert.Contains(riot, entry => entry.Level == LogLevel.Warning && entry.Message.Contains("/api/fail", StringComparison.Ordinal)
+        // Every failure, a status that is not success and an exception, at Information: the level the default loggers
+        // used, so no Warning record appears that L2's "silent" criteria would read (the fake RIoT answers 404 often).
+        Assert.Contains(riot, entry => entry.Level == LogLevel.Information && entry.Message.Contains("/api/fail", StringComparison.Ordinal)
             && entry.Message.Contains("500", StringComparison.Ordinal));
-        Assert.Contains(riot, entry => entry.Level == LogLevel.Warning && entry.Message.Contains("/api/throw", StringComparison.Ordinal)
+        Assert.Contains(riot, entry => entry.Level == LogLevel.Information && entry.Message.Contains("/api/throw", StringComparison.Ordinal)
             && entry.Exception is HttpRequestException);
+        Assert.DoesNotContain(riot, entry => entry.Level >= LogLevel.Warning);
         // A successful read: Debug only, so it can be turned back on for a diagnosis such as control-server#573.
         Assert.DoesNotContain(riot, entry => entry.Level >= LogLevel.Information && entry.Message.Contains("orderRecord", StringComparison.Ordinal));
         Assert.Contains(riot, entry => entry.Level == LogLevel.Debug && entry.Message.Contains("orderRecord?pageNum=1", StringComparison.Ordinal));
