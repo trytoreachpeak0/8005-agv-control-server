@@ -148,7 +148,7 @@ internal static class OwnOrderRebuilds
             RecordedAt = now,
             DueAt = now + options.OwnOrderRebuildDelay,
             OperatorId = operatorId,
-            NewUpperId = $"W2G-{runtime.DemandId}-REBUILD-{runtime.DispatchGeneration}-{ordinal}",
+            NewUpperId = RiotUpperIds.Rebuild(runtime.DemandId!, runtime.DispatchGeneration, ordinal),
             NewMovementLegId = JourneyPlanBuilder.StableGuid(rebuildId, "rebuilt-leg"),
             State = rebuiltRecently ? OwnOrderRebuildStates.Stopped : OwnOrderRebuildStates.Pending,
             StoppedReason = rebuiltRecently ? EndedAgainWithinWindow : null,
@@ -245,7 +245,7 @@ internal static class OwnOrderRebuilds
             RecordedAt = now,
             DueAt = now,
             OperatorId = operatorId,
-            NewUpperId = $"W2G-{runtime.DemandId}-REBUILD-{runtime.DispatchGeneration}-{ordinal}",
+            NewUpperId = RiotUpperIds.Rebuild(runtime.DemandId!, runtime.DispatchGeneration, ordinal),
             NewMovementLegId = JourneyPlanBuilder.StableGuid(rebuildId, "rebuilt-leg"),
             State = OwnOrderRebuildStates.Pending,
         };

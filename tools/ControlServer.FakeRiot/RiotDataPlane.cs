@@ -12,6 +12,12 @@ namespace ControlServer.FakeRiot;
 /// </summary>
 public static class RiotDataPlane
 {
+    /// <summary>
+    /// The longest upperId this fake accepts: the longest real RIoT is known to have accepted (control-server#616). The control
+    /// server's own bound is <c>RiotUpperIds.MaxLength</c>; this project does not reference it, so the two are kept equal by hand.
+    /// </summary>
+    internal const int LongestAcceptedUpperId = 52;
+
     public static void MapRiotDataPlane(this WebApplication app)
     {
         ArgumentNullException.ThrowIfNull(app);
@@ -225,6 +231,13 @@ public static class RiotDataPlane
                 upperIdElement.GetString() is not { Length: > 0 } upperId)
             {
                 return Results.Json(new { code = "0610001", message = "upperId is required" });
+            }
+            if (upperId.Length > LongestAcceptedUpperId)
+            {
+                // control-server#616: real RIoT refused upperIds of 69 and 71 characters with HTTP 200 and business code
+                // 00002 and created nothing (2026-10-11). Its real limit is unknown, so anything longer than the longest it
+                // is known to have accepted is refused here. The field logs did not keep RIoT's message, so none is made up.
+                return Results.Json(new { code = "00002" });
             }
             string? appointVehicleKey = root.TryGetProperty("appointVehicleKey", out JsonElement appointed)
                 ? appointed.GetString()

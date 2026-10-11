@@ -1,0 +1,10 @@
+connection string data source passed to --migrate-only: F:\8005-scratch\cs583-sql\scenario-sql-074ef9dba552494caa80a29760d171d8\db\controlserver.db
+migrated: F:\8005-scratch\cs583-sql\scenario-sql-074ef9dba552494caa80a29760d171d8\db\controlserver.db (106 tables, 7 s); production database untouched: True
+sql: 1 files, 3 literal statements compiled, 0 skipped as interpolated or built elsewhere, 0 skipped as sent to another database, 9 sinks (Get-Count, Get-G3Count, Get-G3Scalar, Get-L2RealCount, Get-L2RealScalar, Get-Scalar, Invoke-L2Query, Invoke-L2SnapshotStatement, Invoke-Scalar)
+  SQL  F:\8005-scratch\cs583-misspelt\misspelt-scenario.ps1:2 SQLite Error 1: 'no such column: Statuss'.
+       SELECT DemandId, Statuss FROM AcceptedDemands
+  SQL  F:\8005-scratch\cs583-misspelt\misspelt-scenario.ps1:3 SQLite Error 1: 'no such table: OrderIntent'.
+       SELECT COUNT(*) AS Total FROM OrderIntent
+ok    temp database: created, migrated, and the default database left as it was
+FAIL  repository: every literal statement compiles against the migrated schema -- 2 failed
+1/2 passed

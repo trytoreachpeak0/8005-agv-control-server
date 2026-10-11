@@ -37,7 +37,7 @@ internal static class ClearanceMoveShape
         stop.StopRole == JourneyStopRoles.WaitingPoint && stop.StopId.Contains(StopIdMarker, StringComparison.Ordinal);
 
     public static string UpperIdFor(string journeyId, int attempt) =>
-        ChargingIdentity.UpperIdFor(journeyId) + "-CLR" + attempt.ToString(CultureInfo.InvariantCulture);
+        RiotUpperIds.Bounded(ChargingIdentity.UpperIdFor(journeyId) + "-CLR" + attempt.ToString(CultureInfo.InvariantCulture));
 
     /// <summary>这次尝试在途中的计划（原桩腿 <c>COMPLETED</c>，等待点腿 <c>ACTIVE</c>）。</summary>
     public static string PlanMessageId(string journeyId, int attempt) =>

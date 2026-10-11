@@ -904,6 +904,25 @@ actual 里写着行数。`-Required` 给不在探针里的读取用：零行也�
 这就是那一幕。收尾时的快照抓不到已经停掉的替身，所以停之前先把它的 `/snapshot` 自己存一份到
 `$Context.SnapshotRoot`。
 
+**写完场景先过两道离线检查（control-server#583，`test.yml` 每轮都跑，不起任何进程）。**批次 8 出口的 journey G3
+红在两处低级错误上（bc22cfd25）：从 `Get-L2OperationResults` 的结果读了它没有的 `PayloadJson`，把 `Get-G3Scalar`
+的结果拿去判 `$null`——它把 NULL 列转成了 `''`，那一项永远为假。两个场景平时没人跑，拖到出口才看见。
+
+- `pwsh -NoProfile -File ./scripts/Test-ScriptStaticChecks.ps1`：`scripts/` 下每个脚本 `ParseFile` 零错误；从清单里的
+  共用读取函数（`Get-L2Inbound`、`Get-L2RealInbound`、`Get-G3Inbound` 等，清单写在 `ScriptStaticChecks.psm1` 里、
+  每项都重读源码核对）拿到的变量，读的属性必须在那个函数的 `[pscustomobject]@{...}` 字面量里，经
+  `Wait-L2RealOrLast` 等的 `-Probe` 转交也认；「收任意 SQL、转 `[string]` 之前不判 NULL」的读取函数
+  （`Get-G3Scalar`、场景自带的 `Get-Scalar`）的结果不许与 `$null` 比较——要判 NULL 就在 SQL 里写 `IS NULL`。
+  查无此行时有意返回 `$null` 的固定列读取函数不在此列。
+- `pwsh -NoProfile -File ./scripts/Test-ScenarioSqlExplain.ps1 -Build -WorkRoot <数据盘上的新目录>`（CI 不给
+  `-WorkRoot`，用 `$RUNNER_TEMP`）：把传给 `Invoke-L2Query` 及转交 `-Sql` 的读取函数的**纯字面量** SQL，对
+  `ControlServer.Host --migrate-only` 在工作目录下建的库逐条 `EXPLAIN`，列名、表名拼错当场红。`--migrate-only` 拿不到
+  连接串时迁移的是 MVP 生产库，所以没有工作目录脚本就什么都不跑；启动 Host 之前断言交给它的连接串指向工作目录下的库。
+
+两道都是挡常见写法的护栏，不是证明。看不到的：带 `$` 插值或放在变量里的 SQL（大多数，跳过并计数打印）；
+清单外的函数、`$var.$name` 这类动态读取、经 `[ref]`／`-OutVariable` 赋值的变量。确属无害的个别命中在
+`Get-StringNullExemption` 里按文件、函数、变量写明理由豁免，豁免不再命中就报过期。
+
 ## 端口
 
 | 组件 | 端口 |

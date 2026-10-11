@@ -1,0 +1,7 @@
+parse: 2 files read, 0 with errors
+property: 8 variables recognised, 29 reads checked; skipped: 0 variables also assigned from something unrecognised, 0 calls in files that shadow a listed name
+string-null: 2 NULL-folding readers (Get-G3Scalar, Get-Scalar); 28 comparisons with $null read, 6 variables held a reader's result, 1 exempted
+ok    repository: every script parses
+ok    repository: no property read outside its helper's object
+ok    repository: no NULL-folding reader result compared with $null
+3/3 passed
