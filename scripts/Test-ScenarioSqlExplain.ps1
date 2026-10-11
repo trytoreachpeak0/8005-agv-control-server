@@ -102,6 +102,18 @@ $g = Get-Count 'SELECT COUNT(*) AS N FROM OrderIntents'
         # Lines 5 and 7. The wrapper's own forwarding of $sql on line 8 is neither: it is not a statement.
         Add-Case 'extract: interpolated and variable SQL are skipped and counted' ($found.NonLiteral -eq 2) "$($found.NonLiteral)"
 
+        # control-server#583's first run against the migrated schema: four real-onboard scenarios read the onboard journal
+        # through a connection they open themselves. That SQL is not the server's; it is skipped and counted on its own.
+        $journal = New-Fixture 'journal.ps1' @'
+$journalConnection = [Microsoft.Data.Sqlite.SqliteConnection]::new("Data Source=$($Context.OnboardJournalPath);Mode=ReadOnly")
+$a = Invoke-L2Query -Connection $journalConnection -Sql 'SELECT ContentJson FROM WireToGateRecoveryState WHERE Id = 1'
+$b = Invoke-L2Query -Connection $Context.Connection -Sql 'SELECT DemandId FROM AcceptedDemands'
+$c = Get-G3Scalar $journalConnection 'SELECT 1 AS Value FROM WireToGateRecoveryState'
+'@
+        $found = Get-ScenarioLiteralSql -Path $journal -Sinks $sinks
+        Add-Case 'extract: SQL sent on a connection the script opens itself (the onboard journal) is not the server''s' (
+            (@($found.Literal | ForEach-Object Line) -join ',') -eq '3' -and $found.OtherDatabase -eq 2) "$(Format-Sql $found.Literal); other $($found.OtherDatabase)"
+
         # --- the temporary database's path ----------------------------------------------------------------------------
         $production = Join-Path $env:ProgramData '8005\ControlServer\data\controlserver.db'
         $refusedProgramData = try { Assert-TempDatabasePath -DatabasePath $production -WorkRoot $WorkRoot; '' } catch { "$_" }
@@ -155,8 +167,8 @@ $g = Get-Count 'SELECT COUNT(*) AS N FROM OrderIntents'
         $targets = if ($full) { $serverSql } else { @($Path | ForEach-Object { (Resolve-Path -LiteralPath $_).ProviderPath }) }
         $found = Get-ScenarioLiteralSql -Path $targets -Sinks $sinks
         $explained = @(Test-SqlExplain -Connection $connection -Statement $found.Literal)
-        Write-Host ("sql: {0} files, {1} literal statements compiled, {2} skipped as interpolated or built elsewhere, {3} sinks ({4})" -f
-            $targets.Count, @($found.Literal).Count, $found.NonLiteral, $sinks.Count, (($sinks.Keys | Sort-Object) -join ', '))
+        Write-Host ("sql: {0} files, {1} literal statements compiled, {2} skipped as interpolated or built elsewhere, {3} skipped as sent to another database, {4} sinks ({5})" -f
+            $targets.Count, @($found.Literal).Count, $found.NonLiteral, $found.OtherDatabase, $sinks.Count, (($sinks.Keys | Sort-Object) -join ', '))
         foreach ($f in $explained) { Write-Host "  SQL  $($f.File):$($f.Line) $($f.Message)`n       $($f.Sql)" }
         Add-Case 'repository: every literal statement compiles against the migrated schema' ($explained.Count -eq 0) "$($explained.Count) failed"
         if ($full) {
