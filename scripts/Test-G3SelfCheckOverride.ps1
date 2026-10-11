@@ -83,27 +83,44 @@ foreach ($file in $runners.Keys) {
     # 1. The parameters.
     foreach ($name in $overrides.Keys) {
         $declared = @($ast.ParamBlock.Parameters | Where-Object { $_.Name.VariablePath.UserPath -eq $name })
-        $pattern = @($declared | ForEach-Object { $_.Attributes } | Where-Object {
-                $_ -is [System.Management.Automation.Language.AttributeAst] -and $_.TypeName.Name -eq 'ValidatePattern' } |
-            ForEach-Object { $_.PositionalArguments[0].Value })
-        Check "${file}: declares -$name, validated as a lowercase full SHA-1" `
-            ($declared.Count -eq 1 -and $pattern.Count -eq 1 -and $pattern[0] -ceq '^[0-9a-f]{40}$') "$($declared.Count) declared, pattern '$($pattern -join ',')'"
+        # Behaviour, not spelling (review G of PR #591): the parameter's own declaration is run as a param block and
+        # handed a lowercase SHA-1, an uppercase one and a short one. ValidatePattern matches case-insensitively, so it
+        # takes the uppercase spelling, which then fails the byte-for-byte comparison every binding check makes.
+        $accepts = @{}
+        if ($declared.Count -eq 1) {
+            $probe = [scriptblock]::Create("param($($declared[0].Extent.Text)) `$true")
+            foreach ($value in @(('e' * 40), ('E' * 40), ('e' * 39))) {
+                $arguments = @{ $name = $value }
+                $accepts[$value] = try { $null = & $probe @arguments; $true } catch { $false }
+            }
+        }
+        Check "${file}: declares -$name, which takes a lowercase full SHA-1 and refuses an uppercase or short one" `
+            ($declared.Count -eq 1 -and $accepts[('e' * 40)] -eq $true -and $accepts[('E' * 40)] -eq $false -and $accepts[('e' * 39)] -eq $false) `
+            "$($declared.Count) declared; lowercase $($accepts[('e' * 40)]), uppercase $($accepts[('E' * 40)]), short $($accepts[('e' * 39)])"
     }
 
     # 2. The runner's own statements, in their order.
     $topLevel = @($ast.EndBlock.Statements)
+    # Every top-level statement that writes the sources or the record (review C of PR #591): the $commitSources
+    # assignment, any assignment to one of its keys (a reset after the override branches would otherwise pass), the
+    # override branches, and the $commitsRecord literal the evidence is written from.
     $statements = @($topLevel | Where-Object {
-            ($_ -is [System.Management.Automation.Language.AssignmentStatementAst] -and
-             $_.Left -is [System.Management.Automation.Language.VariableExpressionAst] -and
-             $_.Left.VariablePath.UserPath -eq 'commitSources') -or
+            ($_ -is [System.Management.Automation.Language.AssignmentStatementAst] -and (
+                ($_.Left -is [System.Management.Automation.Language.VariableExpressionAst] -and $_.Left.VariablePath.UserPath -in 'commitSources', 'commitsRecord') -or
+                ($_.Left -is [System.Management.Automation.Language.IndexExpressionAst] -and $_.Left.Target -is [System.Management.Automation.Language.VariableExpressionAst] -and
+                 $_.Left.Target.VariablePath.UserPath -eq 'commitSources'))) -or
             ($_ -is [System.Management.Automation.Language.IfStatementAst] -and
              $_.Clauses[0].Item1.Extent.Text -match '\$SelfCheck\w*Commit\b')
         })
     $branches = @($statements | Where-Object { $_ -is [System.Management.Automation.Language.IfStatementAst] })
     Check "${file}: one top-level -SelfCheck* branch per override parameter" ($branches.Count -eq $overrides.Count) "$($branches.Count) found"
-    $assignments = @($statements | Where-Object { $_ -is [System.Management.Automation.Language.AssignmentStatementAst] })
+    $assignments = @($statements | Where-Object { $_ -is [System.Management.Automation.Language.AssignmentStatementAst] -and
+            $_.Left -is [System.Management.Automation.Language.VariableExpressionAst] -and $_.Left.VariablePath.UserPath -eq 'commitSources' })
     Check "${file}: assigns `$commitSources once, at top level" ($assignments.Count -eq 1) "$($assignments.Count) found"
-    if ($branches.Count -eq 0 -or $assignments.Count -ne 1) { continue }
+    $records = @($statements | Where-Object { $_ -is [System.Management.Automation.Language.AssignmentStatementAst] -and
+            $_.Left -is [System.Management.Automation.Language.VariableExpressionAst] -and $_.Left.VariablePath.UserPath -eq 'commitsRecord' })
+    Check "${file}: assigns `$commitsRecord once, at top level" ($records.Count -eq 1) "$($records.Count) found"
+    if ($branches.Count -eq 0 -or $assignments.Count -ne 1 -or $records.Count -ne 1) { continue }
     $firstBranch = [array]::IndexOf($topLevel, $branches[0])
     Check "${file}: the -SelfCheck* branches come after `$commitSources, so the override is what the record keeps" `
         ($firstBranch -gt [array]::IndexOf($topLevel, $assignments[0])) 'a branch precedes the $commitSources assignment'
@@ -125,8 +142,11 @@ foreach ($file in $runners.Keys) {
         $ControlServerCommit = $binding['ControlServerCommit']; $OnboardCommit = $binding['OnboardCommit']
         $SimulatorCommit = $binding['SimulatorCommit']; $ProtocolCommit = $binding['ProtocolCommit']
         $commitBinding = [ordered]@{} + $binding
-        $runnerProvenance = [ordered]@{ bindingAtHead = ([ordered]@{} + $binding); runnerSource = 'COMMITTED_RUNNER' }
+        $runnerProvenance = [ordered]@{ bindingAtHead = ([ordered]@{} + $binding); runnerSource = 'COMMITTED_RUNNER'
+            runnerCommit = 'a' * 40; runnerWorktreeClean = $true }
+        $runnerCommit = 'a' * 40; $runnerWorktreeClean = $true; $harnessCommit = 'a' * 40; $harnessWorktreeClean = $true
         $commitSources = $null
+        $commitsRecord = $null
         $thrown = $null
         try { . $block } catch { $thrown = $_.Exception.Message }
 
@@ -140,8 +160,16 @@ foreach ($file in $runners.Keys) {
                     "$($sourceNames[$_])=$(${commitSources}?[$sourceNames[$_]]) (expected $expectedSource)" }
             })
         Check "${file}, $($case.Name): the commits it uses and their sources" ($null -eq $thrown -and $wrong.Count -eq 0) "$thrown $($wrong -join '; ')"
-        if ($null -ne $commitSources) {
-            $graded = Get-G3FormalSlicePass -RunKind $runKind -SliceStatus 'PASS' -Commits ([ordered]@{ runnerSource = 'COMMITTED_RUNNER' } + $commitSources)
+        # What the evidence is written from: the record carries each commit's source and the commit the run used.
+        $recordWrong = @($sourceNames.Keys | ForEach-Object {
+                $expectedSource = if ($_ -eq $changed) { 'SELF_CHECK_OVERRIDE' } else { 'SHARED_BINDING' }
+                if ($null -eq $commitsRecord -or "$($commitsRecord[$sourceNames[$_]])" -cne $expectedSource) {
+                    "record $($sourceNames[$_])=$(${commitsRecord}?[$sourceNames[$_]]) (expected $expectedSource)" }
+            })
+        if ($null -ne $commitsRecord -and "$($commitsRecord['controlServer'])" -cne $used['ControlServerCommit']) { $recordWrong += "record controlServer=$($commitsRecord['controlServer'])" }
+        Check "${file}, $($case.Name): the commits record carries those sources" ($null -eq $thrown -and $recordWrong.Count -eq 0) "$thrown $($recordWrong -join '; ')"
+        if ($null -ne $commitsRecord) {
+            $graded = Get-G3FormalSlicePass -RunKind $runKind -SliceStatus 'PASS' -Commits $commitsRecord
             $ok = if ($null -eq $changed) { $graded.formalSlicePass -eq $true } else {
                 $graded.formalSlicePass -eq $false -and $graded.formalSliceWithheldReason -eq 'SELF_CHECK_OVERRIDE' }
             Check "${file}, $($case.Name): an all-PASS slice is $(if ($null -eq $changed) { 'a formal pass' } else { 'withheld as SELF_CHECK_OVERRIDE' })" `
