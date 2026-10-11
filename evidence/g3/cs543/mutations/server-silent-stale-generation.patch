@@ -1,0 +1,17 @@
+diff --git a/src/ControlServer.Host/Transport/OnboardMessageProcessor.cs b/src/ControlServer.Host/Transport/OnboardMessageProcessor.cs
+index fe4c2e259..e08a5b6c4 100644
+--- a/src/ControlServer.Host/Transport/OnboardMessageProcessor.cs
++++ b/src/ControlServer.Host/Transport/OnboardMessageProcessor.cs
+@@ -127,6 +127,12 @@ public sealed partial class OnboardMessageProcessor(
+         }
+ 
+         ValidateEnvelopeIdentity(root);
++        // MUTATION cs#543 (never pushed): a stale generation is neither answered nor closed.
++        if (state.SessionGeneration is not null &&
++            root.GetProperty("sessionGeneration").GetInt64() != state.SessionGeneration)
++        {
++            return string.Empty;
++        }
+         RequireCurrentSession(root, state, agvId);
+         string persistedRequest = messageType == "ExceptionRecoverySessionRequested"
+             ? RedactRecoveryAuthenticationProof(line)
