@@ -332,14 +332,175 @@ function Find-HelperPropertyMisuse {
     }
 }
 
+# --- 3. a [string] helper's result compared with $null ----------------------------------------------------------------
+
+<#
+True for a NULL-folding reader: it takes any SQL (a parameter named Sql), every return is a [string] cast or $null with at
+least one cast, and no cast's operand was first tested by an `if` that returns $null -- so a NULL column comes back as ''.
+#>
+function Test-NullFoldingReader([System.Management.Automation.Language.FunctionDefinitionAst]$Function) {
+    $takesSql = @($Function.FindAll({ param($a) $a -is [System.Management.Automation.Language.ParameterAst] -and
+        (Get-VariableName $a.Name) -eq 'Sql' -and (Get-ScopeKey $a) -eq "$($Function.Extent.StartOffset)" }, $true)).Count -gt 0
+    if (-not $takesSql) { return $false }
+    $returns = @($Function.Body.FindAll({ param($a) $a -is [System.Management.Automation.Language.ReturnStatementAst] }, $true))
+    $casts = [System.Collections.Generic.List[string]]::new()
+    foreach ($return in $returns) {
+        $value = if ($null -eq $return.Pipeline) { $null } else { Get-Unwrapped $return.Pipeline }
+        if ($null -eq $value -or ($value -is [System.Management.Automation.Language.VariableExpressionAst] -and $value.VariablePath.UserPath -eq 'null')) { continue }
+        if ($value -is [System.Management.Automation.Language.ConvertExpressionAst] -and $value.Type.TypeName.FullName -eq 'string') {
+            $casts.Add($value.Child.Extent.Text)
+            continue
+        }
+        return $false
+    }
+    if ($casts.Count -eq 0) { return $false }
+    # A guard: an if whose condition names the cast operand and whose branch returns $null (Get-L2RealScalar's shape).
+    foreach ($if in $Function.Body.FindAll({ param($a) $a -is [System.Management.Automation.Language.IfStatementAst] }, $true)) {
+        foreach ($clause in $if.Clauses) {
+            $returnsNull = @($clause.Item2.FindAll({ param($a) $a -is [System.Management.Automation.Language.ReturnStatementAst] -and
+                $null -ne $a.Pipeline -and $a.Pipeline.Extent.Text -eq '$null' }, $true)).Count -gt 0
+            if (-not $returnsNull) { continue }
+            foreach ($operand in $casts) {
+                if ($clause.Item1.Extent.Text.Contains($operand, [StringComparison]::OrdinalIgnoreCase)) { return $false }
+            }
+        }
+    }
+    return $true
+}
+
+<#
+The NULL-folding readers (Test-NullFoldingReader) defined in the given files. A name defined more than once is kept only if
+every definition qualifies. Get-G3Scalar (G3RecoveryCommon.ps1) is the first: `return [string]$rows[0].Value` turns a NULL
+column into '', so `$null -eq` on its result is true for "no row" and false for "row with NULL" -- bc22cfd25's G3-07-44 read
+the second as the first.
+
+Not judged, on purpose: a reader of one fixed column (Get-L2JourneyStage and kin) returns $null for "no row", which is what
+its callers test for, and whether that column can be NULL is the schema's business; a reader that passes another reader's
+result straight back (`function Get-Stage { return Get-Scalar ... }`) is not followed.
+#>
 function Get-StringHelperCatalog {
     param([Parameter(Mandatory)][string[]]$Path)
-    throw 'Get-StringHelperCatalog: not implemented'
+    $verdicts = @{}
+    foreach ($file in $Path) {
+        $ast = [System.Management.Automation.Language.Parser]::ParseFile($file, [ref]$null, [ref]$null)
+        foreach ($function in $ast.FindAll({ param($a) $a -is [System.Management.Automation.Language.FunctionDefinitionAst] }, $true)) {
+            $ok = Test-NullFoldingReader $function
+            $verdicts[$function.Name] = $verdicts.ContainsKey($function.Name) ? ($verdicts[$function.Name] -and $ok) : $ok
+        }
+    }
+    return @($verdicts.PSBase.Keys | Where-Object { $verdicts[$_] } | Sort-Object)
 }
 
+<#
+Reports `$null -eq/-ne X` and `X -eq/-ne $null` where X is a call of a [string] helper, or a variable whose every assignment
+in its scope is one. A file's own definition of a helper name is judged on its own (string or not).
+
+Blind spots: a result passed through anything first (a parameter, a property, a pipeline, [string] again), -is [DBNull]
+and other forms of the same test, `if (-not $x)` (which is right for '' anyway), and helpers that return a string without
+a [string] cast.
+#>
 function Find-StringHelperNullComparison {
-    param([Parameter(Mandatory)][string[]]$Path, [string[]]$Helpers)
-    throw 'Find-StringHelperNullComparison: not implemented'
+    param([Parameter(Mandatory)][string[]]$Path, [string[]]$Helpers, [object[]]$Exemptions = @())
+    $findings = [System.Collections.Generic.List[object]]::new()
+    $comparisons = 0; $variables = 0; $exempted = 0
+    $used = @{}
+    foreach ($file in $Path) {
+        $ast = [System.Management.Automation.Language.Parser]::ParseFile($file, [ref]$null, [ref]$null)
+        $effective = @{}
+        foreach ($name in $Helpers) { $effective[$name] = $true }
+        foreach ($function in $ast.FindAll({ param($a) $a -is [System.Management.Automation.Language.FunctionDefinitionAst] }, $true)) {
+            $effective[$function.Name] = Test-NullFoldingReader $function
+        }
+        $isCall = {
+            param($Node)
+            $node = Get-Unwrapped $Node
+            if ($node -is [System.Management.Automation.Language.PipelineAst] -and $node.PipelineElements.Count -eq 1) { $node = $node.PipelineElements[0] }
+            if ($node -isnot [System.Management.Automation.Language.CommandAst]) { return '' }
+            $name = $node.GetCommandName()
+            if (-not $name) { return '' }
+            $name = ($name -split '\\')[-1]
+            return ($effective.ContainsKey($name) -and $effective[$name]) ? $name : ''
+        }
+
+        $assigned = @{}
+        foreach ($node in $ast.FindAll({ param($a)
+            $a -is [System.Management.Automation.Language.AssignmentStatementAst] -or $a -is [System.Management.Automation.Language.ForEachStatementAst] -or
+                $a -is [System.Management.Automation.Language.ParameterAst] }, $true)) {
+            $scope = Get-ScopeKey $node
+            # Each entry is a variable name and what it was assigned from ('' for anything but a [string] helper call).
+            $pairs = [System.Collections.Generic.List[object]]::new()
+            if ($node -is [System.Management.Automation.Language.ParameterAst]) {
+                $pairs.Add(@((Get-VariableName $node.Name), ''))
+            } elseif ($node -is [System.Management.Automation.Language.ForEachStatementAst]) {
+                $pairs.Add(@((Get-VariableName $node.Variable), ''))
+            } elseif ($node.Left -is [System.Management.Automation.Language.VariableExpressionAst]) {
+                $pairs.Add(@((Get-VariableName $node.Left), ($node.Operator -eq 'Equals' ? (& $isCall $node.Right) : '')))
+            } else {
+                foreach ($target in $node.Left.FindAll({ param($a) $a -is [System.Management.Automation.Language.VariableExpressionAst] }, $true)) {
+                    $pairs.Add(@((Get-VariableName $target), ''))
+                }
+            }
+            foreach ($pair in $pairs) {
+                $key = "$scope|$($pair[0])"
+                if (-not $assigned.ContainsKey($key)) { $assigned[$key] = [System.Collections.Generic.List[string]]::new() }
+                $assigned[$key].Add($pair[1])
+            }
+        }
+        $known = @{}
+        foreach ($key in $assigned.PSBase.Keys) {
+            $sources = @($assigned[$key] | Select-Object -Unique)
+            if ($sources.Count -eq 1 -and $sources[0] -ne '') { $known[$key] = $sources[0]; $variables++ }
+        }
+
+        foreach ($compare in $ast.FindAll({ param($a)
+            $a -is [System.Management.Automation.Language.BinaryExpressionAst] -and $a.Operator -in 'Ieq', 'Ine', 'Ceq', 'Cne' }, $true)) {
+            $isNull = { param($n) $n -is [System.Management.Automation.Language.VariableExpressionAst] -and $n.VariablePath.UserPath -eq 'null' }
+            $other = if (& $isNull $compare.Left) { $compare.Right } elseif (& $isNull $compare.Right) { $compare.Left } else { $null }
+            if ($null -eq $other) { continue }
+            $comparisons++
+            $helper = & $isCall $other
+            $what = "($($other.Extent.Text))"
+            if ($helper -eq '') {
+                $inner = Get-Unwrapped $other
+                if ($inner -is [System.Management.Automation.Language.VariableExpressionAst]) {
+                    $key = "$(Get-ScopeKey $compare)|$(Get-VariableName $inner)"
+                    if ($known.ContainsKey($key)) { $helper = $known[$key]; $what = $inner.Extent.Text }
+                }
+            }
+            if ($helper -eq '') { continue }
+            $function = ''
+            for ($p = $compare.Parent; $null -ne $p; $p = $p.Parent) {
+                if ($p -is [System.Management.Automation.Language.FunctionDefinitionAst]) { $function = $p.Name; break }
+            }
+            $normalised = $file.Replace('\', '/')
+            $exemption = @($Exemptions | Where-Object {
+                $normalised.EndsWith("/$($_.File)", [StringComparison]::OrdinalIgnoreCase) -and $_.Function -eq $function -and "`$$($_.Variable)" -eq $what })
+            if ($exemption.Count -gt 0) { $used[$exemption[0]] = $true; $exempted++; continue }
+            $findings.Add([pscustomobject]@{
+                File    = $file
+                Line    = $compare.Extent.StartLineNumber
+                Message = "$what is compared with `$null, but $helper returns [string]: a NULL column comes back as '' and the test never sees it"
+            })
+        }
+    }
+    return [pscustomobject]@{
+        Files = $Path.Count; Variables = $variables; Comparisons = $comparisons; Exempted = $exempted
+        Findings = $findings.ToArray()
+        StaleExemptions = @($Exemptions | Where-Object { -not $used.ContainsKey($_) } | ForEach-Object { [pscustomobject]$_ })
+    }
 }
 
-Export-ModuleMember -Function Test-ScriptParse, Get-HelperShapeCatalog, Find-HelperPropertyMisuse, Get-StringHelperCatalog, Find-StringHelperNullComparison
+<#
+Comparisons the string-null check knowingly lets through, each by file (relative to scripts/), enclosing function and
+variable, with the reason. Each must still match a comparison, or the self-check reports it stale. Scenario scripts are not
+changed by control-server#583; whether an entry here is rewritten instead is the coordinator's call.
+#>
+function Get-StringNullExemption {
+    return @(
+        @{ File = 'l2/scenarios/g3-forced-mechanical-recovery.ps1'; Function = 'Get-FleetGeneration'; Variable = 'value'
+           Reason = 'VehicleRecoveryGenerations.ForcedRecoveryGeneration is a non-null long column, and [long]'''' is 0 anyway, ' +
+                    'the same as the no-row branch: the comparison cannot change the result (found on the first run, control-server#583).' }
+    )
+}
+
+Export-ModuleMember -Function Get-StringNullExemption, Test-ScriptParse, Get-HelperShapeCatalog, Find-HelperPropertyMisuse, Get-StringHelperCatalog, Find-StringHelperNullComparison
