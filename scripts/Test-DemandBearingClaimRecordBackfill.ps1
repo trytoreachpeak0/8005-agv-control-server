@@ -33,6 +33,12 @@
        missing; each of the other nine counted tables, the claim record table after migration, and the claims a
        baseline's backfill is worked out from are refused with an error that names the table.
 
+    3. The judgement. The runner's own $externalTables, $claimRecordsMatchTheBackfillPass and
+       $noExternalSideEffectsPass statements, taken from its AST, run over made-up counts: a migration that left what
+       the baseline calls for passes; one that left 14 records fewer fails, where the previous criterion
+       (afterProbe = final, printed as a control) passes; and a record added after the restart is left to
+       vehicleClaimRecordSurvivesTheHostRestart. -SkipStores runs this section alone.
+
     Exits 1 when any check comes out the other way, and prints every check either way.
 
 .EXAMPLE
@@ -45,7 +51,9 @@ param(
     [string]$RunnerSource = (Join-Path $PSScriptRoot 'run-demand-bearing-g3-vectors.ps1'),
     [string]$Repository = (Split-Path -Parent $PSScriptRoot),
     # Keep the stores for inspection instead of removing them.
-    [switch]$KeepWork
+    [switch]$KeepWork,
+    # Only section 3, which needs no build and no store: seconds instead of minutes.
+    [switch]$SkipStores
 )
 
 $ErrorActionPreference = 'Stop'
@@ -77,7 +85,6 @@ foreach ($name in 'Invoke-SqliteRows', 'Invoke-SqliteScalarLong', 'Get-FileFinge
 Check 'the runner defines every function this self-check calls' ($missingFunctions.Count -eq 0) "missing: $($missingFunctions -join ', ')"
 
 $work = Join-Path $WorkRoot ('cs544-claim-records-' + [guid]::NewGuid().ToString('n').Substring(0, 8))
-New-Item -ItemType Directory -Path $work | Out-Null
 $hostProject = Join-Path $Repository 'src/ControlServer.Host'
 $infrastructureProject = Join-Path $Repository 'src/ControlServer.Infrastructure'
 
@@ -164,6 +171,8 @@ function Test-Expectation([string]$Label, [string]$Path, [hashtable]$Parts) {
     return $actual
 }
 
+if (-not $SkipStores) {
+New-Item -ItemType Directory -Path $work | Out-Null
 try {
     Invoke-Dotnet @('tool', 'restore') 'dotnet tool restore'
     Invoke-Dotnet @('build', $hostProject, '-c', 'Debug', '--nologo', '-v', 'q') 'dotnet build ControlServer.Host'
@@ -262,6 +271,44 @@ try {
     if ($KeepWork) { Write-Host "Stores kept in $work" }
     else { Remove-Item -LiteralPath $work -Recurse -Force -ErrorAction SilentlyContinue }
 }
+}
+
+# --- 3. the judgement uses the expectation --------------------------------------------------------------------
+# The runner's own statements, taken from its AST and run over made-up reads: $externalTables, the backfill judgement
+# and noExternalSideEffectsPass, in that order. The second case is the one the previous criterion missed: the first
+# host's migration left fewer records than the baseline calls for, and nothing changed after it.
+$judgementNames = 'externalTables', 'claimRecordsMatchTheBackfillPass', 'noExternalSideEffectsPass'
+$judgements = foreach ($name in $judgementNames) {
+    $found = @($runnerAst.EndBlock.Statements | Where-Object {
+            $_ -is [System.Management.Automation.Language.AssignmentStatementAst] -and $_.Left.Extent.Text -eq "`$$name" })
+    if ($found.Count -eq 1) { $found[0].Extent.Text } else { $null }
+}
+Check 'the runner assigns each judgement once, at top level' (@($judgements | Where-Object { $null -eq $_ }).Count -eq 0) `
+    "missing or repeated: $(@(for ($i = 0; $i -lt $judgementNames.Count; $i++) { if ($null -eq @($judgements)[$i]) { $judgementNames[$i] } }) -join ', ')"
+function Get-Judgement([long]$ExpectedCount, [long]$AfterProbeCount, [long]$FinalCount) {
+    $counts = { param($records) [ordered]@{ OrderIntents = 2; RiotDispatchAuditEvents = 10; AcceptedDemands = 1
+                                            StationOperations = 2; VehiclePurposeClaimRecords = $records } }
+    $baseline = [ordered]@{ counts = (& $counts 0) }
+    $afterProbe = [ordered]@{ counts = (& $counts $AfterProbeCount) }
+    $final = [ordered]@{ counts = (& $counts $FinalCount) }
+    $claimRecordExpectation = [ordered]@{ expected = $ExpectedCount }
+    $claimRecordsMatchTheBackfillPass = $null
+    $noExternalSideEffectsPass = $null
+    foreach ($statement in $judgements) { if ($null -ne $statement) { . ([scriptblock]::Create($statement)) } }
+    return [pscustomobject]@{
+        backfill = $claimRecordsMatchTheBackfillPass
+        noExternal = $noExternalSideEffectsPass
+        previous = $AfterProbeCount -eq $FinalCount
+    }
+}
+$matching = Get-Judgement -ExpectedCount 55 -AfterProbeCount 55 -FinalCount 55
+Check 'the migration left what the baseline calls for: both judgements pass' ($matching.backfill -eq $true -and $matching.noExternal -eq $true) "$($matching | ConvertTo-Json -Compress)"
+$short = Get-Judgement -ExpectedCount 55 -AfterProbeCount 41 -FinalCount 41
+Check 'the migration left 14 fewer than the baseline calls for: both judgements fail' ($short.backfill -eq $false -and $short.noExternal -eq $false) "$($short | ConvertTo-Json -Compress)"
+Write-Host ("     control: the previous criterion (afterProbe = final) is {0} for that store" -f $(if ($short.previous) { 'PASS' } else { 'FAIL' }))
+# afterProbe against final is vehicleClaimRecordSurvivesTheHostRestart's alone now; this judgement no longer repeats it.
+$grewAfterRestart = Get-Judgement -ExpectedCount 55 -AfterProbeCount 55 -FinalCount 56
+Check 'a record added after the restart is not this judgement''s to catch' ($grewAfterRestart.noExternal -eq $true) "$($grewAfterRestart | ConvertTo-Json -Compress)"
 
 if ($failures.Count -gt 0) {
     Write-Host "DemandBearingClaimRecordBackfill self-check: $($failures.Count) check(s) came out the other way."
