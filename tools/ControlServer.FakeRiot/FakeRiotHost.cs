@@ -37,6 +37,7 @@ public static class FakeRiotHost
         builder.Services.AddSingleton<MapStationReadCounter>();
         builder.Services.AddSingleton<MapListReadCounter>();
         builder.Services.AddSingleton<AbsentOrderReadFaults>();
+        builder.Services.AddSingleton<NonFinalListingChurn>();
         builder.Services.AddSingleton(clock);
 
         IPEndPoint? listener = ControlPlaneConventions.ResolveLoopbackListener(

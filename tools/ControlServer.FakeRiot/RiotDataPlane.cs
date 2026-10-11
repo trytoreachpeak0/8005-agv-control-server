@@ -19,6 +19,7 @@ public static class RiotDataPlane
         MapStationReadCounter mapStationReads = app.Services.GetRequiredService<MapStationReadCounter>();
         MapListReadCounter mapListReads = app.Services.GetRequiredService<MapListReadCounter>();
         AbsentOrderReadFaults absentOrderReadFaults = app.Services.GetRequiredService<AbsentOrderReadFaults>();
+        NonFinalListingChurn nonFinalListingChurn = app.Services.GetRequiredService<NonFinalListingChurn>();
         TimeProvider clock = app.Services.GetRequiredService<TimeProvider>();
 
         app.MapGet("/api/task/vehicles/getVehicleInfoByDeviceKey", async (
@@ -180,11 +181,25 @@ public static class RiotDataPlane
                 ? parsedPage
                 : 1;
             FakeRiotState state = engine.Snapshot().State;
-            object[] records = state.OrdersByUpperId.Values
-                .Where(order => states.Length == 0 || states.Contains(order.OrderState))
-                .OrderBy(order => order.Id)
-                .Select(OrderBody)
-                .ToArray();
+            (int padding, int totalDelta) = nonFinalListingChurn.ForPage(pageNum);
+            object[] records =
+            [
+                .. state.OrdersByUpperId.Values
+                    .Where(order => states.Length == 0 || states.Contains(order.OrderState))
+                    .OrderBy(order => order.Id)
+                    .Select(OrderBody),
+                // control-server#573: other lines' state-8 orders, on no vehicle, as the plant's listing carried them.
+                .. Enumerable.Range(0, states.Length == 0 || states.Contains(8) ? padding : 0)
+                    .Select(index => (object)new
+                    {
+                        id = NonFinalListingChurn.FirstPaddingId + index,
+                        orderId = $"PLANT-{index + 1}",
+                        upperId = $"PLANT-UPPER-{index + 1}",
+                        orderState = 8,
+                        appointVehicleKey = (string?)null,
+                        executeVehicleKey = "--"
+                    }),
+            ];
             // total is what the gateway checks its page coverage against: reporting more than this
             // page carries makes it answer RIOT_NONFINAL_ORDER_COVERAGE_UNKNOWN, so it must be the
             // honest total and not the page length. pageNum is honoured (control-server#525): the gateway pages through a
@@ -193,7 +208,7 @@ public static class RiotDataPlane
             {
                 current = pageNum,
                 size,
-                total = records.Length,
+                total = records.Length + totalDelta,
                 records = records.Skip((pageNum - 1) * size).Take(size).ToArray()
             });
         });
@@ -432,6 +447,69 @@ public sealed class AbsentOrderReadFaults
         lock (gate)
         {
             return new { remaining, failedUpperIds = failed.ToArray() };
+        }
+    }
+}
+
+/// <summary>
+/// The non-final order listing as the real RIoT served it on 2026-10-10 (control-server#573): some 250 other lines' orders
+/// over three pages, and the plant's orders changing while a reader pages through them.
+/// </summary>
+/// <remarks>
+/// <para>
+/// <c>padding</c> adds that many state-8 orders on no vehicle after the scenario's own, ids from <see cref="FirstPaddingId"/>,
+/// so the listing spans pages the way the plant's did. A read is counted at each page-1 request; read n (from 1) is churned
+/// when <c>(n - 1) % period &lt; burst</c>, and a churned read reports a total one higher on every later page -- "an order
+/// arrived while I was paging" -- which control-server#525 rightly reads as incomplete. <c>period</c> 0 churns nothing.
+/// </para>
+/// <para>
+/// Readers share the count, as they share the real RIoT: a later page belongs to whichever read last asked for page 1, so
+/// two readers interleaving move churn between them. That is churn too, which is all a scenario asks of it. Outside the
+/// command engine for the reason <see cref="MapStationReadCounter"/> is.
+/// </para>
+/// </remarks>
+public sealed class NonFinalListingChurn
+{
+    public const long FirstPaddingId = 900_001;
+
+    private readonly object gate = new();
+    private int padding;
+    private int period;
+    private int burst;
+    private long reads;
+    private long churnedReads;
+    private bool currentReadChurned;
+
+    public void Arm(int padding, int period, int burst)
+    {
+        lock (gate)
+        {
+            this.padding = padding;
+            this.period = period;
+            this.burst = burst;
+        }
+    }
+
+    /// <summary>The padding to append and what to add to the total, for one page request.</summary>
+    public (int Padding, int TotalDelta) ForPage(int pageNum)
+    {
+        lock (gate)
+        {
+            if (pageNum == 1)
+            {
+                reads++;
+                currentReadChurned = period > 0 && (reads - 1) % period < burst;
+                if (currentReadChurned) churnedReads++;
+            }
+            return (padding, pageNum >= 2 && currentReadChurned ? 1 : 0);
+        }
+    }
+
+    public object Describe()
+    {
+        lock (gate)
+        {
+            return new { padding, period, burst, reads, churnedReads };
         }
     }
 }

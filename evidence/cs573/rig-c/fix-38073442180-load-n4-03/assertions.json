@@ -1,0 +1,80 @@
+{
+  "schemaVersion": 1,
+  "scenario": "real-onboard-load-under-listing-churn",
+  "runId": "20261010T191106669Z",
+  "outcome": "FAIL",
+  "failureReason": "",
+  "identity": {
+    "protocolReleaseIdentity": {
+      "repository": "8005-agv-protocol",
+      "releaseVersion": "3.0.0",
+      "tag": "protocol-v3.0.0",
+      "commit": "3f091cb2eae7c58cec54a95dd9389c9180bc7b4c",
+      "protocolVersion": 4,
+      "profileId": "AGV_FULL_PRODUCT",
+      "manifestSha256": "d5e1a53f1fd61f105a890dc0267e1b0a9ac5ea49f713d2cf730b0f554df9db9e",
+      "schemaBundleSha256": "e435b2b14d9ccd60c89f07df909da7626fef056a6b8a2241087557fd7dc3df43",
+      "vectorsSha256": "be849f9749b004296ebd9e7bffa98faf2f8ffa90b63308ca3b210c68e7b8656e",
+      "approvalStatus": "APPROVED_RELEASE"
+    },
+    "controlServerCommit": "2718804926553bba966d821c703b2cada05f4c0d",
+    "onboardHmiCommit": "535c94fce47a10879ba1f404d04f603ba1a65bbf",
+    "stageRoot": "C:\\actions-runner\\win11-01-control-server-desktop\\_work\\_temp\\real-rig-38073442180-1\\_stage\\l2-20261010T191106669Z",
+    "agvId": "AGV-L2-001",
+    "rig": "RealOnboard",
+    "vehicleKey": "BROKERX-L2-0001",
+    "slotsSimulatorCommit": "fb5f7c593742bf98bc3957b8729a38aad5321f28",
+    "batchId": "unspecified"
+  },
+  "assertions": [
+    {
+      "id": "L2-LC-06",
+      "description": "装货时全厂订单在变，真车载端的 WAITING_OPERATOR 进度照样送到服务端（120 秒内）",
+      "outcome": "PASS",
+      "expected": true,
+      "actual": true
+    },
+    {
+      "id": "L2-LC-05",
+      "description": "装货期间全厂订单确实在变：假 RIoT 至少搅乱了 5 次清单读取",
+      "outcome": "FAIL",
+      "expected": ">= 5",
+      "actual": 2
+    },
+    {
+      "id": "L2-LC-07",
+      "description": "装货在清单搅动下照常提交（Committed）",
+      "outcome": "PASS",
+      "expected": "Committed",
+      "actual": "Committed"
+    },
+    {
+      "id": "L2-LC-01",
+      "description": "离站等待期间全厂订单确实在变：假 RIoT 至少搅乱了 5 次清单读取",
+      "outcome": "PASS",
+      "expected": ">= 5",
+      "actual": 11
+    },
+    {
+      "id": "L2-LC-02",
+      "description": "全厂订单在变时，车等满离站等待后照样离站（80 秒内走到 AwaitingGateArrival、TO_GATE 单已确认）",
+      "outcome": "PASS",
+      "expected": "AwaitingGateArrival / CONFIRMED",
+      "actual": "AwaitingGateArrival / CONFIRMED"
+    },
+    {
+      "id": "L2-LC-03",
+      "description": "装货提交到建 TO_GATE 单之间，真车载端一次都没报 VEHICLE_NOT_READY（投影没闪）",
+      "outcome": "PASS",
+      "expected": 0,
+      "actual": "0 "
+    },
+    {
+      "id": "L2-LC-04",
+      "description": "旅程走到 Completed",
+      "outcome": "PASS",
+      "expected": "Completed",
+      "actual": "Completed"
+    }
+  ]
+}
