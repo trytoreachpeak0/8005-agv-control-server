@@ -298,7 +298,8 @@ $scenarioAssertions = [ordered]@{
     # Batch 9 (control-server#410, registered by the exit ticket control-server#412): CV-UNABLE-TO-CHARGE-FIELD-CONFIRMATION.
     # A HANG at 211 without the verified 407802 is not confirmed automatically; an R-11 operator confirms "cannot connect" on
     # the real onboard (onboard-hmi#222, entry switched on for this run by the scenario's setup), the server decides
-    # MANUAL_CHARGING_HOLD centrally, pauses 211 and holds the vehicle in CLEARING_MAINTENANCE. G3-13-27 needs onboard-hmi#242.
+    # MANUAL_CHARGING_HOLD centrally, pauses 211 and holds the vehicle in CLEARING_MAINTENANCE. G3-13-27 relies on onboard-hmi#242
+    # (fixed and closed 2026-10-02, in w2g/fp-v2-impl since 4e40e196) and is expected green.
     'g3-unable-to-charge-field-confirmation' = [ordered]@{
         'G3-13-21' = 'hangWithoutVerifiedCodeIsNotConfirmedAutomatically'
         'G3-13-22' = 'onboardShowsUnableToChargeEntryAtCharger'
