@@ -418,10 +418,23 @@ function Test-RowsPreserved {
 }
 
 function Read-ControlDatabase {
+    param(
+        # The reads after a host has started on the store (afterProbe, final): that host migrated it, so from then on
+        # every counted table, the claim record table included, has to be there. The baseline is read without it.
+        [switch]$AfterMigration
+    )
+
     function Test-ControlTable {
         param([Parameter(Mandatory)][string]$Table)
         return (Invoke-SqliteScalarLong -DatabasePath $controlDatabasePath `
             -Sql "SELECT COUNT(*) FROM sqlite_master WHERE type = 'table' AND name = '$Table'") -ne 0
+    }
+    function Assert-ControlTable {
+        param([Parameter(Mandatory)][string]$Table, [Parameter(Mandatory)][string]$Why)
+        if (-not (Test-ControlTable $Table)) {
+            throw ("CONTROL_TABLE_MISSING: $Table is not in $controlDatabasePath ($(if ($AfterMigration) { 'after a host migrated it' } else { 'baseline' })). " +
+                   "$Why A missing table is not counted as empty.")
+        }
     }
 
     $countedTables = @(
@@ -432,14 +445,26 @@ function Read-ControlDatabase {
     $claimRecordTablePresent = Test-ControlTable 'VehiclePurposeClaimRecords'
     foreach ($table in $countedTables) {
         # The claim record table (control-server#386/#387) does not exist yet in a field store restored from before
-        # batch 8; the baseline reads it before the server has migrated that store. Absent counts as 0.
-        $present = Test-ControlTable $table
-        $counts[$table] = if (-not $present) { 0 } else {
-            Invoke-SqliteScalarLong -DatabasePath $controlDatabasePath -Sql "SELECT COUNT(*) FROM $table"
+        # batch 8, and the baseline reads it before the server has migrated that store: there, and only there, absent
+        # counts as 0. Any other table missing, or that one after a migration, means this is not the store the run
+        # thinks it is, and counting it as 0 would let the judgements below compare against a number nobody read
+        # (control-server#544).
+        if ($table -eq 'VehiclePurposeClaimRecords' -and -not $AfterMigration -and -not $claimRecordTablePresent) {
+            $counts[$table] = 0
+            continue
+        }
+        Assert-ControlTable $table 'This run counts it.'
+        $counts[$table] = Invoke-SqliteScalarLong -DatabasePath $controlDatabasePath -Sql "SELECT COUNT(*) FROM $table"
+    }
+    if (-not $AfterMigration) {
+        Assert-ControlTable 'VehiclePurposeClaims' 'The expected claim record count is worked out from it (Get-ExpectedClaimRecordCount).'
+        if (-not $claimRecordTablePresent) {
+            Assert-ControlTable 'VehicleDispatchLeases' ('A store without the claim record table predates batch 8 and still has ' +
+                'its dispatch leases, which the expected claim record count is worked out from.')
         }
     }
 
-    return [ordered]@{
+    $read = [ordered]@{
         file = Get-FileFingerprint -Path $controlDatabasePath
         counts = $counts
         acceptedDemandRows = Invoke-SqliteRows -DatabasePath $controlDatabasePath `
@@ -451,20 +476,6 @@ function Read-ControlDatabase {
             Invoke-SqliteRows -DatabasePath $controlDatabasePath `
                 -Sql 'SELECT JourneyId, VehicleKey, AcquiredAt, ReleasedAt FROM VehiclePurposeClaimRecords ORDER BY JourneyId, AcquiredAt' `
                 -Columns @('journeyId', 'vehicleKey', 'acquiredAt', 'releasedAt')
-        }
-        # What Batch8RetireOldVehicleOccupancy backfills the records from (control-server#544): the claims, and the
-        # dispatch leases, which that migration drops -- so only a read taken before the first host has them. Null
-        # when the table is not there: for the leases that means the store is already past that migration.
-        claimRecordTablePresent = $claimRecordTablePresent
-        vehiclePurposeClaimRows = if (-not (Test-ControlTable 'VehiclePurposeClaims')) { $null } else {
-            Invoke-SqliteRows -DatabasePath $controlDatabasePath `
-                -Sql 'SELECT VehicleKey, JourneyId FROM VehiclePurposeClaims ORDER BY VehicleKey' `
-                -Columns @('vehicleKey', 'journeyId')
-        }
-        vehicleDispatchLeaseRows = if (-not (Test-ControlTable 'VehicleDispatchLeases')) { $null } else {
-            Invoke-SqliteRows -DatabasePath $controlDatabasePath `
-                -Sql 'SELECT JourneyId, VehicleKey, ReleasedAt FROM VehicleDispatchLeases ORDER BY JourneyId' `
-                -Columns @('journeyId', 'vehicleKey', 'releasedAt')
         }
         auditRows = Invoke-SqliteRows -DatabasePath $controlDatabasePath -Sql @'
 SELECT UpperId, DispatchGeneration, Sequence, Phase, Outcome, EligibilityBasis,
@@ -489,6 +500,21 @@ SELECT UpperId, DispatchGeneration, Sequence, Phase, Outcome, EligibilityBasis,
             -Sql "SELECT MessageId, ContentHash, FirstResponseJson, RequestJson FROM ProtocolInbox WHERE MessageType = 'OperationResult' ORDER BY ReceivedAt" `
             -Columns @('messageId', 'contentHash', 'firstResponseJson', 'requestJson')
     }
+    if (-not $AfterMigration) {
+        # What Batch8RetireOldVehicleOccupancy backfills the records from (control-server#544): the claims, and the
+        # dispatch leases, which that migration drops -- so only the baseline has them. Null leases: the store is
+        # already past that migration.
+        $read['claimRecordTablePresent'] = $claimRecordTablePresent
+        $read['vehiclePurposeClaimRows'] = Invoke-SqliteRows -DatabasePath $controlDatabasePath `
+            -Sql 'SELECT VehicleKey, JourneyId FROM VehiclePurposeClaims ORDER BY VehicleKey' `
+            -Columns @('vehicleKey', 'journeyId')
+        $read['vehicleDispatchLeaseRows'] = if (-not (Test-ControlTable 'VehicleDispatchLeases')) { $null } else {
+            Invoke-SqliteRows -DatabasePath $controlDatabasePath `
+                -Sql 'SELECT JourneyId, VehicleKey, ReleasedAt FROM VehicleDispatchLeases ORDER BY JourneyId' `
+                -Columns @('journeyId', 'vehicleKey', 'releasedAt')
+        }
+    }
+    return $read
 }
 
 # control-server#544. How many claim records the restored store must hold once the first host has migrated it, worked out
@@ -515,10 +541,8 @@ function Get-ExpectedClaimRecordCount {
             expected = $records.Count
         }
     }
-    if ($null -eq $Baseline.vehiclePurposeClaimRows) {
-        throw ('The baseline has dispatch leases but no VehiclePurposeClaims table: a store from before batch 7, whose ' +
-               'migration also writes claims. The expected claim record count is not worked out for it.')
-    }
+    # Read-ControlDatabase has already refused a baseline without VehiclePurposeClaims: a store from before batch 7,
+    # whose own migration writes claims, which this does not work out.
     $claims = @($Baseline.vehiclePurposeClaimRows | Where-Object { $null -ne $_ })
     $leases = @($Baseline.vehicleDispatchLeaseRows | Where-Object { $null -ne $_ })
     $key = { param($row) "$($row['vehicleKey'])`u{001f}$($row['journeyId'])" }
@@ -728,7 +752,7 @@ try {
     Stop-ProcessSafely -Process $control
     $restart.firstHostExitedBeforeRestart = $control.HasExited
     Start-Sleep -Seconds 2
-    $afterProbe = Read-ControlDatabase
+    $afterProbe = Read-ControlDatabase -AfterMigration
 
     $control = Start-ControlServer -Ordinal 2
     $restart.secondHostProcessId = $control.Id
@@ -748,7 +772,7 @@ finally {
     Stop-ProcessSafely -Process $control
     Start-Sleep -Seconds 2
     if (Test-Path -LiteralPath $controlDatabasePath -PathType Leaf) {
-        try { $final = Read-ControlDatabase } catch { if ($null -eq $runError) { $runError = $_ } }
+        try { $final = Read-ControlDatabase -AfterMigration } catch { if ($null -eq $runError) { $runError = $_ } }
     }
 }
 
