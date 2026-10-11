@@ -750,9 +750,19 @@ function Assert-TempDatabasePath {
     Assert-ClearOfProduction $full 'Temporary database path'
 }
 
+<#
+The verdict on the production database file from its stamps before and after the migration, as text: 'True' (unchanged),
+'False' (changed, created or removed), or 'UNVERIFIED (access denied)' when either stamp could not be read. Never 'True'
+for something that was not looked at.
+#>
+function Compare-ProductionStamp {
+    param([Parameter(Mandatory)][string]$Before, [Parameter(Mandatory)][string]$After)
+    if ($Before -eq 'inaccessible' -or $After -eq 'inaccessible') { return 'UNVERIFIED (access denied)' }
+    return $Before -ceq $After ? 'True' : 'False'
+}
+
 # Length and last write of a file, 'absent', or 'inaccessible' when this account may not even look (the control host's
-# %ProgramData%\8005 is like that). A host started by the same account could not write there either, so comparing
-# 'inaccessible' before and after still says the run did not touch it.
+# %ProgramData%\8005 is like that). Compare-ProductionStamp turns 'inaccessible' into UNVERIFIED, not into a pass.
 function Get-FileStamp([string]$File) {
     try {
         if (-not (Test-Path -LiteralPath $File -ErrorAction Stop)) { return 'absent' }
@@ -833,7 +843,7 @@ function New-MigratedTempDatabase {
         $connection.Dispose()
     }
     return [pscustomobject]@{
-        Tables = $tables; ProductionUntouched = ((Get-FileStamp $production) -eq $before); Elapsed = $watch.Elapsed
+        Tables = $tables; ProductionUntouched = (Compare-ProductionStamp -Before $before -After (Get-FileStamp $production)); Elapsed = $watch.Elapsed
         DataSource = $DatabasePath
     }
 }
@@ -869,5 +879,5 @@ function Test-SqlExplain {
     }
 }
 
-Export-ModuleMember -Function Test-StringNullExemptionPremise, Assert-WorkRoot, Get-SqlSinkCatalog, Get-ScenarioLiteralSql, Assert-TempDatabasePath, New-MigratedTempDatabase,
+Export-ModuleMember -Function Compare-ProductionStamp, Test-StringNullExemptionPremise, Assert-WorkRoot, Get-SqlSinkCatalog, Get-ScenarioLiteralSql, Assert-TempDatabasePath, New-MigratedTempDatabase,
     Open-ExplainConnection, Test-SqlExplain, Get-StringNullExemption, Test-ScriptParse, Get-HelperShapeCatalog, Find-HelperPropertyMisuse, Get-StringHelperCatalog, Find-StringHelperNullComparison
