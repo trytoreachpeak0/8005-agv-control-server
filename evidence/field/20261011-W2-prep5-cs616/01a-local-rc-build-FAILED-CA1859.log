@@ -1,0 +1,22 @@
+==> cloning ControlServer HEAD @ 0c396ba into F:\8005-scratch\t566-cs616\control-server
+==> assembling release candidate into F:\8005-scratch\t566-cs616\wire-to-gate-20261011-161336
+[31;1mException: [0mF:\8005-scratch\t566-cs616\control-server\scripts\New-WireToGateReleaseCandidate.ps1:46[0m
+[31;1m[0m[36;1mLine |[0m
+[31;1m[0m[36;1m[36;1m  46 | [0m         [36;1mthrow "$FailureMessage (exit $LASTEXITCODE): $($output | Sele[0m бн[0m
+[31;1m[0m[36;1m[36;1m[0m[36;1m[0m[36;1m     | [31;1m         ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~[0m
+[31;1m[0m[36;1m[36;1m[0m[36;1m[0m[36;1m[31;1m[31;1m[36;1m     | [31;1mControlServer publish failed (exit 1):   Determining projects to restore...;   Restored[0m
+[31;1m[0m[36;1m[36;1m[0m[36;1m[0m[36;1m[31;1m[31;1m[36;1m[31;1m[36;1m     | [31;1mF:\8005-scratch\t566-cs616\control-server\src\ControlServer.Domain\ControlServer.Domain.csproj (in 321 ms).;  [0m
+[31;1m[0m[36;1m[36;1m[0m[36;1m[0m[36;1m[31;1m[31;1m[36;1m[31;1m[36;1m[31;1m[36;1m     | [31;1mRestored[0m
+[31;1m[0m[36;1m[36;1m[0m[36;1m[0m[36;1m[31;1m[31;1m[36;1m[31;1m[36;1m[31;1m[36;1m[31;1m[36;1m     | [31;1mF:\8005-scratch\t566-cs616\control-server\src\ControlServer.Application\ControlServer.Application.csproj (in 321[0m
+[31;1m[0m[36;1m[36;1m[0m[36;1m[0m[36;1m[31;1m[31;1m[36;1m[31;1m[36;1m[31;1m[36;1m[31;1m[36;1m[31;1m[36;1m     | [31;1mms).;   Restored[0m
+[31;1m[0m[36;1m[36;1m[0m[36;1m[0m[36;1m[31;1m[31;1m[36;1m[31;1m[36;1m[31;1m[36;1m[31;1m[36;1m[31;1m[36;1m[31;1m[36;1m     | [31;1mF:\8005-scratch\t566-cs616\control-server\src\ControlServer.Infrastructure\ControlServer.Infrastructure.csproj[0m
+[31;1m[0m[36;1m[36;1m[0m[36;1m[0m[36;1m[31;1m[31;1m[36;1m[31;1m[36;1m[31;1m[36;1m[31;1m[36;1m[31;1m[36;1m[31;1m[36;1m[31;1m[36;1m     | [31;1m(in 574 ms).;   Restored[0m
+[31;1m[0m[36;1m[36;1m[0m[36;1m[0m[36;1m[31;1m[31;1m[36;1m[31;1m[36;1m[31;1m[36;1m[31;1m[36;1m[31;1m[36;1m[31;1m[36;1m[31;1m[36;1m[31;1m[36;1m     | [31;1mF:\8005-scratch\t566-cs616\control-server\src\ControlServer.Host\ControlServer.Host.csproj (in 574 ms).;  [0m
+[31;1m[0m[36;1m[36;1m[0m[36;1m[0m[36;1m[31;1m[31;1m[36;1m[31;1m[36;1m[31;1m[36;1m[31;1m[36;1m[31;1m[36;1m[31;1m[36;1m[31;1m[36;1m[31;1m[36;1m[31;1m[36;1m     | [31;1mControlServer.Domain ->[0m
+[31;1m[0m[36;1m[36;1m[0m[36;1m[0m[36;1m[31;1m[31;1m[36;1m[31;1m[36;1m[31;1m[36;1m[31;1m[36;1m[31;1m[36;1m[31;1m[36;1m[31;1m[36;1m[31;1m[36;1m[31;1m[36;1m[31;1m[36;1m     | [31;1mF:\8005-scratch\t566-cs616\control-server\src\ControlServer.Domain\bin\Release\net8.0\win-x64\ControlServer.Domain.dll; F:\8005-scratch\t566-cs616\control-server\src\ControlServer.Application\MapNameBaselineAcceptanceService.cs(102,49): error CA1859: Change type of parameter 'refused' from 'System.Collections.Generic.IReadOnlyList<ControlServer.Application.TaskTypeStationViolation>' to 'ControlServer.Application.TaskTypeStationViolation[]' for improved performance (https://learn.microsoft.com/dotnet/fundamentals/code-analysis/quality-rules/ca1859) [F:\8005-scratch\t566-cs616\control-server\src\ControlServer.Application\ControlServer.Application.csproj][0m
+[31;1mException: [0mF:\8005-scratch\cs566b-reopen\Build-LocalRc.ps1:115[0m
+[31;1m[0m[36;1mLine |[0m
+[31;1m[0m[36;1m[36;1m 115 | [0m     [36;1mthrow "New-WireToGateReleaseCandidate.ps1 failed (exit $LASTEXITC[0m бн[0m
+[31;1m[0m[36;1m[36;1m[0m[36;1m[0m[36;1m     | [31;1m     ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~[0m
+[31;1m[0m[36;1m[36;1m[0m[36;1m[0m[36;1m[31;1m[31;1m[36;1m     | [31;1mNew-WireToGateReleaseCandidate.ps1 failed (exit 1); its own error is printed above.[0m
+exit=1
