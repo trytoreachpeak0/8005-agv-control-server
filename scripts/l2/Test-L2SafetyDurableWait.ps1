@@ -51,7 +51,7 @@ param(
     [ValidateRange(1000, 20000)]
     [int]$HoldMilliseconds = 4000,
 
-    [ValidateRange(0, 4)]
+    [ValidateRange(0, 8)]
     [int]$PortSlot = 0,
 
     [switch]$SkipBuild

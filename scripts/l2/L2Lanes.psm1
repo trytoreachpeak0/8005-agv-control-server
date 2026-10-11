@@ -46,8 +46,8 @@ function Get-L2LanePlan {
     [CmdletBinding()]
     param(
         [Parameter(Mandatory)][AllowEmptyCollection()][object[]]$Items,
-        # Four: the slots besides slot 0 (L2PortLock.psm1).
-        [Parameter(Mandatory)][ValidateRange(1, 4)][int]$LaneCount
+        # Eight: the slots besides slot 0 (L2PortLock.psm1, control-server#630).
+        [Parameter(Mandatory)][ValidateRange(1, 8)][int]$LaneCount
     )
 
     $weighted = @($Items | ForEach-Object {

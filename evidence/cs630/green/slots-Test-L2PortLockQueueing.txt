@@ -1,0 +1,15 @@
+PASS  lock-name-is-the-contract -- Get-L2PortLockName returned 'Global\W2G-L2PortBlock'
+PASS  slot-0-ports-and-lock-name-are-unchanged -- slot 0: ControlPort=48405, HealthPort=48407, FakeRiotPort=48408, FakeMesIngestPort=48409, SimulatorHttpPort=48411, SimulatorModbusPort=48412, ClockSkewProxyPort=48413, DashboardPort=48414, ProtocolFaultProxyPort=48415, ProtocolFaultProxyListenPort=48416, FakeOnboardPort=48420; lock 'Global\W2G-L2PortBlock'; differing: 
+PASS  orchestrator-defaults-are-slot-0 -- PortSlot default '0'; port defaults differing from slot 0: 
+PASS  every-port-slot-parameter-accepts-slots-0-to-8 -- ranges other than 0..8: 
+PASS  slots-are-disjoint-and-below-the-dynamic-range -- locks: Global\W2G-L2PortBlock, Global\W2G-L2PortBlock-slot1, Global\W2G-L2PortBlock-slot2, Global\W2G-L2PortBlock-slot3, Global\W2G-L2PortBlock-slot4, Global\W2G-L2PortBlock-slot5, Global\W2G-L2PortBlock-slot6, Global\W2G-L2PortBlock-slot7, Global\W2G-L2PortBlock-slot8; ports shared by two slots: ; out of range or reserved: 
+PASS  lock-is-open-to-every-authenticated-account -- rules: S-1-5-11 Allow FullControl
+PASS  zero-timeout-still-fails-fast -- acquired=False, 0.1s, message='L2_PORT_LOCK_BUSY: another L2 run owns this machine's L2 port block (Global\W2G-L2PortBlock); waited 0s for: L2 port lock self-check'
+PASS  another-slot-is-not-held-up-by-slot-0 -- slot 1 with slot 0 held: acquired=True, 0.1s, message=''
+PASS  second-holder-queues-instead-of-failing -- acquired=True, waited 3.2s (lower bound 3s)
+PASS  queued-run-says-it-is-queueing -- the log carries both L2_PORT_LOCK_WAITING and L2_PORT_LOCK_ACQUIRED
+PASS  abandoned-lock-is-inherited-not-poisoned -- acquired=True after the holder was killed, 0.2s
+PASS  abandoned-lock-is-reported -- the log carries the L2_PORT_LOCK_ABANDONED warning
+PASS  orchestrator-takes-port-lock-first-and-releases-it-last -- offsets: Enter-L2PortLock 27094 < dotnet build 28067 < Enter-DesktopLock 30160; Exit-DesktopLock 108212 < Exit-L2PortLock 108587; released by the enclosing finally: True
+L2_PORT_LOCK_SELFTEST_PASSED: the port lock queues and is taken in order; the two orchestrators were skipped.
+exit=0

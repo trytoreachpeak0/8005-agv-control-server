@@ -39,12 +39,13 @@ its own: slot N binds every port of slot 0 moved down by 1000 x N and takes the 
 `-slotN` appended. **Slot 0 is the block and the name above, unchanged**, and it is what every caller
 gets that does not ask for a slot -- the real-onboard rig, run-journey-g3.ps1, and every checkout older
 than the slots, none of which know slots exist. So an old checkout and a new one still queue against
-each other on slot 0, and only a caller that asks for slot 1-4 runs beside them.
+each other on slot 0, and only a caller that asks for slot 1-8 runs beside them.
 
 Why down by 1000: slot 0 already sits just below Windows' dynamic range (49152-65535, see
 Invoke-L2Scenario.ps1 for what binding inside it cost), so the other slots go further down, not up.
-Slots 1-4 are 47405-47429, 46405-46429, 45405-45429 and 44405-44429. They step clear of the one
-excluded port in that stretch on this workspace's machines, 47001 (WinRM's HTTP listener, in
+Slots 1-4 are 47405-47429, 46405-46429, 45405-45429 and 44405-44429; slots 5-8 (control-server#630, room
+for more lanes or a second L2 runner) are 43405-43429, 42405-42429, 41405-41429 and 40405-40429. They step
+clear of the one excluded port in that stretch on this workspace's machines, 47001 (WinRM's HTTP listener, in
 `netsh int ipv4 show excludedportrange protocol=tcp` on the control machine; win11-01 excludes only
 5357). Test-L2PortLockQueueing.ps1 asserts the slots are disjoint and outside those ports.
 
@@ -106,7 +107,7 @@ function Get-L2PortLockName {
     [CmdletBinding()]
     [OutputType([string])]
     param(
-        [ValidateRange(0, 4)]
+        [ValidateRange(0, 8)]
         [int]$Slot = 0
     )
 
@@ -121,7 +122,7 @@ function Get-L2PortBlock {
     [CmdletBinding()]
     [OutputType([Collections.Specialized.OrderedDictionary])]
     param(
-        [ValidateRange(0, 4)]
+        [ValidateRange(0, 8)]
         [int]$Slot = 0
     )
 
@@ -162,7 +163,7 @@ function Enter-L2PortLock {
         [ValidateRange(0, 86400)]
         [int]$TimeoutSeconds = $script:DefaultPortLockTimeoutSeconds,
 
-        [ValidateRange(0, 4)]
+        [ValidateRange(0, 8)]
         [int]$Slot = 0
     )
 

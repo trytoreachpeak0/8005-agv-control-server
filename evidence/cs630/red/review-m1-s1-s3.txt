@@ -1,0 +1,66 @@
+swept 1094 tracked input files
+BAD   runs when scripts/a-script-that-is-not-in-the-checkout.ps1 changed -> {"Run":false,"Reason":"skipped: none of the 2 changed path(s) reaches the L2 round (only docs/, evidence/, tests/, root documents, the other workflows, or scripts/ files no L2 code names)","Inputs":[],"LeftOut":["docs/README.md","scripts/a-script-that-is-not-in-the-checkout.ps1"]}
+BAD   closure: Direct.psm1 deleted, only in the change list, runs -> {"Run":false,"Reason":"skipped: none of the 1 changed path(s) reaches the L2 round (only docs/, evidence/, tests/, root documents, the other workflows, or scripts/ files no L2 code names)","Inputs":[],"LeftOut":["scripts/Direct.psm1"]}
+BAD   closure: Transitive.ps1 renamed, runs -> {"Run":false,"Reason":"skipped: none of the 2 changed path(s) reaches the L2 round (only docs/, evidence/, tests/, root documents, the other workflows, or scripts/ files no L2 code names)","Inputs":[],"LeftOut":["scripts/Transitive.ps1","scripts/Renamed.ps1"]}
+BAD   a skip says first that L2 did not run ->       - name: Decide whether this pull request runs the L2 round
+        id: l2-scope
+        timeout-minutes: 5
+        shell: pwsh
+        run: |
+          if ($env:GITHUB_EVENT_NAME -ne 'pull_request') {
+            $null = & ./scripts/l2/Select-L2ScenarioRun.ps1 -NotAPullRequest -GitHubOutput $env:GITHUB_OUTPUT
+            exit 0
+          }
+          $changed = @()
+          git fetch --no-tags --quiet --depth=2 origin $env:GITHUB_SHA
+          if ($LASTEXITCODE -eq 0) {
+            $changed = @(git diff --no-renames --name-only "$env:GITHUB_SHA^1" $env:GITHUB_SHA)
+            if ($LASTEXITCODE -ne 0) { $changed = @() }
+          }
+          if ($changed.Count -eq 0) {
+            Write-Host "::warning title=L2 scope::Could not read this pull request's changed paths; running the round."
+          }
+          $decision = & ./scripts/l2/Select-L2ScenarioRun.ps1 -ChangedPath $changed -PullRequestBody $env:L2_PR_BODY -GitHubOutput $env:GITHUB_OUTPUT
+          if (-not $decision.Run) {
+            Write-Host "::notice title=L2 round skipped::$($decision.Reason)"
+            Add-Content -LiteralPath $env:GITHUB_STEP_SUMMARY -Value "### L2 round **skipped**`n`n$($decision.Reason)`n`nChanged: $(($changed | Select-Object -First 20) -join ', ')$(if ($changed.Count -gt 20) { ", ... ($($changed.Count) in all)" })"
+          }
+
+      # Every scenario runs even when an earlier one fails: one red scenario must not hide the
+      # state of the others, which is the whole reason to have more than one.
+      #
+      # Two modes, one list. `Runs` is each scenario's CONSECUTIVE count (specification 8.3): L2
+      # spans processes, so one pass cannot tell "correct" from "the scheduler happened to line up
+      # this time", and a batch's scenarios must pass three in a row, each run with its own evidence
+      # directory. Since 2026-09-17 that count is paid on demand, not on every push -- it was 46% of
+      # an L2 job (618 of 1354 seconds in run 35171499974) on a single runner that four parallel
+      # tickets queue behind:
+      #
+      #   default (push, pull_request)  each scenario `DefaultRuns` times, 1 when absent
+      #   consecutive (dispatch)        each scenario `Runs` times
+      #   consecutive-all (dispatch)    each scenario at least three times -- a batch exit
+      #
+      # `DefaultRuns = 3` is for a scenario that guards a race already seen red in CI, where one pass
+      # on a pull request would not catch it coming back. What the default mode gives up: a
+      # low-rate race in the other scenarios is now caught only by a consecutive run, so a ticket
+      # touching timing (engine advance, connection session, recovery, emergency stop, or any
+      # `Runs = 3` scenario) runs one before it merges.
+      #
+      # Since 2026-09-17 a ticket is meant to need one round, so that consecutive run goes inside it:
+      # a line `L2-Consecutive: a, b` in the pull request body runs those scenarios three times each in
+      # this round, the rest as default. A name not in the list fails the round -- a typo must not
+      # quietly turn three runs into one.
+      #
+      # A pull request run whose head has moved on skips its remaining scenarios and ends green:
+      # the newer push has its own run, and cancelling -- by hand or by `cancel-in-progress` -- wedges
+      # this runner (see above). The check never skips a dispatched run.
+      #
+      # Adding a scenario: one line, `@{ Name = '...'; Runs = 1 }`, `Runs = 3` when it needs three in
+      # a row. Add `DefaultRuns = 3` only for the reason above.
+      #
+      # Exit code is the contract -- the guest is zh-CN and the runner prints ÒÑÍ¨¹ý! not Passed!,
+      # so nothing here may match on English console text. Invoke-L2Scenario.ps1 exits 1 on FAIL.
+
+1169 case(s) passed
+L2_SCENARIO_RUN_SCOPE_SELFTEST_FAILED: 4 case(s)
+exit=1

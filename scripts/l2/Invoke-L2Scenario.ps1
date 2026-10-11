@@ -69,9 +69,9 @@ param(
 
     # Which port slot this run binds, and whose lock it queues for (L2PortLock.psm1). 0 is the block
     # above, under the lock every checkout has always taken; the real-onboard rig and run-journey-g3.ps1
-    # never pass this. Slots 1-4 exist so CI can run several synthetic scenarios at once, each in its
+    # never pass this. Slots 1-8 exist so CI can run several synthetic scenarios at once, each in its
     # own slot. A port given explicitly above wins over the slot's.
-    [ValidateRange(0, 4)]
+    [ValidateRange(0, 8)]
     [int]$PortSlot = 0,
 
     # Run what is already built instead of building first. For a caller that runs several slots at

@@ -1,0 +1,12 @@
+PASS  lock-name-is-the-contract -- Get-L2PortLockName returned 'Global\W2G-L2PortBlock'
+PASS  slot-0-ports-and-lock-name-are-unchanged -- slot 0: ControlPort=48405, HealthPort=48407, FakeRiotPort=48408, FakeMesIngestPort=48409, SimulatorHttpPort=48411, SimulatorModbusPort=48412, ClockSkewProxyPort=48413, DashboardPort=48414, ProtocolFaultProxyPort=48415, ProtocolFaultProxyListenPort=48416, FakeOnboardPort=48420; lock 'Global\W2G-L2PortBlock'; differing: 
+PASS  orchestrator-defaults-are-slot-0 -- PortSlot default '0'; port defaults differing from slot 0: 
+FAIL  every-port-slot-parameter-accepts-slots-0-to-8 -- ranges other than 0..8: Invoke-L2Scenario.ps1: [ValidateRange(0, 4)]; Test-L2SafetyDurableWait.ps1: [ValidateRange(0, 4)]
+[33;1mWARNING: Self-check stage kept for diagnosis: C:\Users\szy\AppData\Local\Temp\l2-port-lock-selftest-6e461ec9b4454d5a8b47ca23f3b37203[0m
+[31;1mGet-L2PortBlock: [0mF:\8005-wt\cs630-8005-agv-control-server\scripts\l2\Test-L2PortLockQueueing.ps1:344[0m
+[31;1m[0m[36;1mLine |[0m
+[31;1m[0m[36;1m[36;1m 344 | [0m         $block = Get-L2PortBlock -Slot [36;1m$slot[0m
+[31;1m[0m[36;1m[36;1m[0m[36;1m[0m[36;1m     | [31;1m                                        ~~~~~[0m
+[31;1m[0m[36;1m[36;1m[0m[36;1m[0m[36;1m[31;1m[31;1m[36;1m     | [31;1mCannot validate argument on parameter 'Slot'. The 5 argument is greater than the maximum allowed range of 4.[0m
+[31;1m[0m[36;1m[36;1m[0m[36;1m[0m[36;1m[31;1m[31;1m[36;1m[31;1m[36;1m     | [31;1mSupply an argument that is less than or equal to 4 and then try the command again.[0m
+exit=1

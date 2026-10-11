@@ -324,9 +324,23 @@ try {
         -Condition ($defaultDiff.Count -eq 0 -and $defaults['PortSlot'] -eq '0') `
         -Detail "PortSlot default '$($defaults['PortSlot'])'; port defaults differing from slot 0: $($defaultDiff -join ', ')"
 
+    # 1b'. Every script that takes -PortSlot accepts the same slots the module does (control-server#630): a
+    #      range left at 4 in one of them would refuse lane 5..8 only when that lane first runs.
+    $slotTakers = @($orchestratorPath, (Join-Path $PSScriptRoot 'Test-L2SafetyDurableWait.ps1'))
+    $narrow = @(foreach ($taker in $slotTakers) {
+        $takerAst = [Management.Automation.Language.Parser]::ParseFile($taker, [ref]$null, [ref]$null)
+        $parameter = $takerAst.ParamBlock.Parameters | Where-Object { $_.Name.VariablePath.UserPath -eq 'PortSlot' }
+        $range = $parameter.Attributes | Where-Object { $_.TypeName.Name -eq 'ValidateRange' }
+        $text = if ($range) { $range.Extent.Text } else { '(none)' }
+        if ($text -notmatch '^\[ValidateRange\(0,\s*8\)\]$') { "$(Split-Path -Leaf $taker): $text" }
+    })
+    Assert-Case -Name 'every-port-slot-parameter-accepts-slots-0-to-8' `
+        -Condition ($narrow.Count -eq 0) -Detail "ranges other than 0..8: $($narrow -join '; ')"
+
     # 1c. Every slot a CI lane can take: its own lock, and ports no other slot binds, all below the
-    #     dynamic range (49152 up) and off the ports Windows reserves for itself below it.
-    $slotRanges = foreach ($slot in 0..4) {
+    #     dynamic range (49152 up) and off the ports Windows reserves for itself below it. Slots 1..8 since
+    #     control-server#630; slot 8's control port is the literal 40405, 1000 x 8 below slot 0's.
+    $slotRanges = foreach ($slot in 0..8) {
         $block = Get-L2PortBlock -Slot $slot
         # Ten synthetic peers is more than any scenario starts; the range is what the slot promises.
         $ports = @($block.Keys | Where-Object { $_ -ne 'FakeOnboardPort' } | ForEach-Object { $block[$_] }) +
@@ -340,7 +354,9 @@ try {
     Assert-Case -Name 'slots-are-disjoint-and-below-the-dynamic-range' `
         -Condition ($duplicates.Count -eq 0 -and $outOfRange.Count -eq 0 -and
             @($locks | Select-Object -Unique).Count -eq $locks.Count -and
-            (Get-L2PortLockName -Slot 3) -ceq 'Global\W2G-L2PortBlock-slot3') `
+            (Get-L2PortLockName -Slot 3) -ceq 'Global\W2G-L2PortBlock-slot3' -and
+            (Get-L2PortLockName -Slot 8) -ceq 'Global\W2G-L2PortBlock-slot8' -and
+            (Get-L2PortBlock -Slot 8).ControlPort -eq 40405) `
         -Detail ("locks: $($locks -join ', '); ports shared by two slots: $($duplicates -join ', '); " +
             "out of range or reserved: $($outOfRange -join ', ')")
 
