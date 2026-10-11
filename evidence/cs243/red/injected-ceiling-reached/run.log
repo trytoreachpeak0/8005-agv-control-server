@@ -1,0 +1,97 @@
+Test run for C:\Users\szy\Desktop\8005-workspace-v2\worktrees\cs243-8005-agv-control-server\tests\ControlServer.Tests\bin\Release\net8.0\win-x64\ControlServer.Tests.dll (.NETCoreApp,Version=v8.0)
+VSTest version 17.11.1 (x64)
+
+Starting test execution, please wait...
+A total of 1 test files matched the specified pattern.
+[xUnit.net 00:01:26.87]     ControlServer.Tests.MultiVehicleExecutionTests.TheHostsShutdownCancellationLeavesTheRoundRatherThanBeingCaught [FAIL]
+  Failed ControlServer.Tests.MultiVehicleExecutionTests.TheHostsShutdownCancellationLeavesTheRoundRatherThanBeingCaught [1 m 18 s]
+  Error Message:
+   Hang hook HangOnCall was not cancelled within HangCeiling (60 s): the budget or shutdown the test meant to end it did not (control-server#243).
+  Stack Trace:
+     at ControlServer.Tests.MultiVehicleExecutionTests.FleetFixture.<.ctor>b__9_0() in C:\Users\szy\Desktop\8005-workspace-v2\worktrees\cs243-8005-agv-control-server\tests\ControlServer.Tests\MultiVehicleExecutionTests.cs:line 1004
+   at ControlServer.Tests.MultiVehicleExecutionTests.FleetFixture.DisposeAsync() in C:\Users\szy\Desktop\8005-workspace-v2\worktrees\cs243-8005-agv-control-server\tests\ControlServer.Tests\MultiVehicleExecutionTests.cs:line 1402
+   at ControlServer.Tests.MultiVehicleExecutionTests.TheHostsShutdownCancellationLeavesTheRoundRatherThanBeingCaught() in C:\Users\szy\Desktop\8005-workspace-v2\worktrees\cs243-8005-agv-control-server\tests\ControlServer.Tests\MultiVehicleExecutionTests.DispatchRound.cs:line 1185
+--- End of stack trace from previous location ---
+[xUnit.net 00:01:27.56]     ControlServer.Tests.IdleReturnExecutionTests.AVehicleCutOffByItsRoundBudgetReadsAsNotEvaluatedRatherThanItsPreviousVerdict [FAIL]
+[xUnit.net 00:01:28.27]     ControlServer.Tests.MultiVehicleExecutionTests.WhatAVehicleCutOffMidChainHadStagedIsNotSavedWithTheNextVehicle [FAIL]
+  Failed ControlServer.Tests.IdleReturnExecutionTests.AVehicleCutOffByItsRoundBudgetReadsAsNotEvaluatedRatherThanItsPreviousVerdict [1 m 19 s]
+  Error Message:
+   Hang hook HangOn was not cancelled within HangCeiling (60 s): the budget or shutdown the test meant to end it did not (control-server#243).
+  Stack Trace:
+     at ControlServer.Tests.MultiVehicleExecutionTests.FleetFixture.<.ctor>b__9_0() in C:\Users\szy\Desktop\8005-workspace-v2\worktrees\cs243-8005-agv-control-server\tests\ControlServer.Tests\MultiVehicleExecutionTests.cs:line 1004
+   at ControlServer.Tests.MultiVehicleExecutionTests.FleetFixture.DisposeAsync() in C:\Users\szy\Desktop\8005-workspace-v2\worktrees\cs243-8005-agv-control-server\tests\ControlServer.Tests\MultiVehicleExecutionTests.cs:line 1402
+   at ControlServer.Tests.IdleReturnExecutionTests.AVehicleCutOffByItsRoundBudgetReadsAsNotEvaluatedRatherThanItsPreviousVerdict() in C:\Users\szy\Desktop\8005-workspace-v2\worktrees\cs243-8005-agv-control-server\tests\ControlServer.Tests\IdleReturnExecutionTests.DashboardVerdicts.cs:line 103
+--- End of stack trace from previous location ---
+  Failed ControlServer.Tests.MultiVehicleExecutionTests.WhatAVehicleCutOffMidChainHadStagedIsNotSavedWithTheNextVehicle [1 s]
+  Error Message:
+   Assert.NotEmpty() Failure: Collection was empty
+  Stack Trace:
+     at ControlServer.Tests.MultiVehicleExecutionTests.WhatAVehicleCutOffMidChainHadStagedIsNotSavedWithTheNextVehicle() in C:\Users\szy\Desktop\8005-workspace-v2\worktrees\cs243-8005-agv-control-server\tests\ControlServer.Tests\MultiVehicleExecutionTests.DispatchRound.cs:line 275
+   at ControlServer.Tests.MultiVehicleExecutionTests.WhatAVehicleCutOffMidChainHadStagedIsNotSavedWithTheNextVehicle() in C:\Users\szy\Desktop\8005-workspace-v2\worktrees\cs243-8005-agv-control-server\tests\ControlServer.Tests\MultiVehicleExecutionTests.DispatchRound.cs:line 285
+--- End of stack trace from previous location ---
+[xUnit.net 00:02:29.55]     ControlServer.Tests.MultiVehicleExecutionTests.AVehicleThatTimedOutIsServedAgainInTheNextRound [FAIL]
+  Failed ControlServer.Tests.MultiVehicleExecutionTests.AVehicleThatTimedOutIsServedAgainInTheNextRound [1 m 1 s]
+  Error Message:
+   Hang hook HangOn was not cancelled within HangCeiling (60 s): the budget or shutdown the test meant to end it did not (control-server#243).
+  Stack Trace:
+     at ControlServer.Tests.MultiVehicleExecutionTests.FleetFixture.<.ctor>b__9_0() in C:\Users\szy\Desktop\8005-workspace-v2\worktrees\cs243-8005-agv-control-server\tests\ControlServer.Tests\MultiVehicleExecutionTests.cs:line 1004
+   at ControlServer.Tests.MultiVehicleExecutionTests.FleetFixture.DisposeAsync() in C:\Users\szy\Desktop\8005-workspace-v2\worktrees\cs243-8005-agv-control-server\tests\ControlServer.Tests\MultiVehicleExecutionTests.cs:line 1402
+   at ControlServer.Tests.MultiVehicleExecutionTests.AVehicleThatTimedOutIsServedAgainInTheNextRound() in C:\Users\szy\Desktop\8005-workspace-v2\worktrees\cs243-8005-agv-control-server\tests\ControlServer.Tests\MultiVehicleExecutionTests.cs:line 271
+--- End of stack trace from previous location ---
+[xUnit.net 00:03:30.07]     ControlServer.Tests.MultiVehicleExecutionTests.AVehicleThatExhaustsItsBudgetDoesNotCostTheOthersTheirRound [FAIL]
+  Failed ControlServer.Tests.MultiVehicleExecutionTests.AVehicleThatExhaustsItsBudgetDoesNotCostTheOthersTheirRound [1 m]
+  Error Message:
+   Hang hook HangOn was not cancelled within HangCeiling (60 s): the budget or shutdown the test meant to end it did not (control-server#243).
+  Stack Trace:
+     at ControlServer.Tests.MultiVehicleExecutionTests.FleetFixture.<.ctor>b__9_0() in C:\Users\szy\Desktop\8005-workspace-v2\worktrees\cs243-8005-agv-control-server\tests\ControlServer.Tests\MultiVehicleExecutionTests.cs:line 1004
+   at ControlServer.Tests.MultiVehicleExecutionTests.FleetFixture.DisposeAsync() in C:\Users\szy\Desktop\8005-workspace-v2\worktrees\cs243-8005-agv-control-server\tests\ControlServer.Tests\MultiVehicleExecutionTests.cs:line 1402
+   at ControlServer.Tests.MultiVehicleExecutionTests.AVehicleThatExhaustsItsBudgetDoesNotCostTheOthersTheirRound() in C:\Users\szy\Desktop\8005-workspace-v2\worktrees\cs243-8005-agv-control-server\tests\ControlServer.Tests\MultiVehicleExecutionTests.cs:line 253
+--- End of stack trace from previous location ---
+[xUnit.net 00:04:30.45]     ControlServer.Tests.MultiVehicleExecutionTests.AVehicleCutOffInTheMiddleOfTheChainDecidesAsBeforeTheMove [FAIL]
+  Failed ControlServer.Tests.MultiVehicleExecutionTests.AVehicleCutOffInTheMiddleOfTheChainDecidesAsBeforeTheMove [1 m]
+  Error Message:
+   Hang hook HangOnCall was not cancelled within HangCeiling (60 s): the budget or shutdown the test meant to end it did not (control-server#243).
+  Stack Trace:
+     at ControlServer.Tests.MultiVehicleExecutionTests.FleetFixture.<.ctor>b__9_0() in C:\Users\szy\Desktop\8005-workspace-v2\worktrees\cs243-8005-agv-control-server\tests\ControlServer.Tests\MultiVehicleExecutionTests.cs:line 1004
+   at ControlServer.Tests.MultiVehicleExecutionTests.FleetFixture.DisposeAsync() in C:\Users\szy\Desktop\8005-workspace-v2\worktrees\cs243-8005-agv-control-server\tests\ControlServer.Tests\MultiVehicleExecutionTests.cs:line 1402
+   at ControlServer.Tests.MultiVehicleExecutionTests.AVehicleCutOffInTheMiddleOfTheChainDecidesAsBeforeTheMove() in C:\Users\szy\Desktop\8005-workspace-v2\worktrees\cs243-8005-agv-control-server\tests\ControlServer.Tests\MultiVehicleExecutionTests.DispatchRound.cs:line 173
+--- End of stack trace from previous location ---
+[xUnit.net 00:05:30.61]     ControlServer.Tests.MultiVehicleExecutionTests.AClaimTheBudgetCutOffAfterItsAcceptanceIsNotWithdrawn [FAIL]
+  Failed ControlServer.Tests.MultiVehicleExecutionTests.AClaimTheBudgetCutOffAfterItsAcceptanceIsNotWithdrawn [1 m]
+  Error Message:
+   Hang hook HangAfterFirstAccept was not cancelled within HangCeiling (60 s): the budget or shutdown the test meant to end it did not (control-server#243).
+  Stack Trace:
+     at ControlServer.Tests.MultiVehicleExecutionTests.FleetFixture.<.ctor>b__9_0() in C:\Users\szy\Desktop\8005-workspace-v2\worktrees\cs243-8005-agv-control-server\tests\ControlServer.Tests\MultiVehicleExecutionTests.cs:line 1004
+   at ControlServer.Tests.MultiVehicleExecutionTests.FleetFixture.DisposeAsync() in C:\Users\szy\Desktop\8005-workspace-v2\worktrees\cs243-8005-agv-control-server\tests\ControlServer.Tests\MultiVehicleExecutionTests.cs:line 1402
+   at ControlServer.Tests.MultiVehicleExecutionTests.AClaimTheBudgetCutOffAfterItsAcceptanceIsNotWithdrawn() in C:\Users\szy\Desktop\8005-workspace-v2\worktrees\cs243-8005-agv-control-server\tests\ControlServer.Tests\MultiVehicleExecutionTests.DispatchRound.cs:line 1482
+--- End of stack trace from previous location ---
+[xUnit.net 00:06:30.82]     ControlServer.Tests.MultiVehicleExecutionTests.WhenAVehicleExhaustsItsBudgetTheHookIsStillCalledOnceWithOnlyTheVehiclesThatFinished [FAIL]
+  Failed ControlServer.Tests.MultiVehicleExecutionTests.WhenAVehicleExhaustsItsBudgetTheHookIsStillCalledOnceWithOnlyTheVehiclesThatFinished [1 m]
+  Error Message:
+   Hang hook HangOnRead was not cancelled within HangCeiling (60 s): the budget or shutdown the test meant to end it did not (control-server#243).
+  Stack Trace:
+     at ControlServer.Tests.MultiVehicleExecutionTests.FleetFixture.<.ctor>b__9_0() in C:\Users\szy\Desktop\8005-workspace-v2\worktrees\cs243-8005-agv-control-server\tests\ControlServer.Tests\MultiVehicleExecutionTests.cs:line 1004
+   at ControlServer.Tests.MultiVehicleExecutionTests.FleetFixture.DisposeAsync() in C:\Users\szy\Desktop\8005-workspace-v2\worktrees\cs243-8005-agv-control-server\tests\ControlServer.Tests\MultiVehicleExecutionTests.cs:line 1402
+   at ControlServer.Tests.MultiVehicleExecutionTests.WhenAVehicleExhaustsItsBudgetTheHookIsStillCalledOnceWithOnlyTheVehiclesThatFinished() in C:\Users\szy\Desktop\8005-workspace-v2\worktrees\cs243-8005-agv-control-server\tests\ControlServer.Tests\MultiVehicleExecutionTests.cs:line 472
+--- End of stack trace from previous location ---
+[xUnit.net 00:07:30.91]     ControlServer.Tests.MultiVehicleExecutionTests.AClaimTheBudgetCutOffBeforeItsAcceptanceDoesNotClearAStructuralBlock [FAIL]
+  Failed ControlServer.Tests.MultiVehicleExecutionTests.AClaimTheBudgetCutOffBeforeItsAcceptanceDoesNotClearAStructuralBlock [1 m]
+  Error Message:
+   Hang hook HangBeforeFirstAccept was not cancelled within HangCeiling (60 s): the budget or shutdown the test meant to end it did not (control-server#243).
+  Stack Trace:
+     at ControlServer.Tests.MultiVehicleExecutionTests.FleetFixture.<.ctor>b__9_0() in C:\Users\szy\Desktop\8005-workspace-v2\worktrees\cs243-8005-agv-control-server\tests\ControlServer.Tests\MultiVehicleExecutionTests.cs:line 1004
+   at ControlServer.Tests.MultiVehicleExecutionTests.FleetFixture.DisposeAsync() in C:\Users\szy\Desktop\8005-workspace-v2\worktrees\cs243-8005-agv-control-server\tests\ControlServer.Tests\MultiVehicleExecutionTests.cs:line 1402
+   at ControlServer.Tests.MultiVehicleExecutionTests.AClaimTheBudgetCutOffBeforeItsAcceptanceDoesNotClearAStructuralBlock() in C:\Users\szy\Desktop\8005-workspace-v2\worktrees\cs243-8005-agv-control-server\tests\ControlServer.Tests\MultiVehicleExecutionTests.DispatchRound.cs:line 1439
+--- End of stack trace from previous location ---
+[xUnit.net 00:08:31.06]     ControlServer.Tests.MultiVehicleExecutionTests.AClaimTheBudgetCutOffIsBackInPlayForTheVehicleBehindInTheSameRound [FAIL]
+  Failed ControlServer.Tests.MultiVehicleExecutionTests.AClaimTheBudgetCutOffIsBackInPlayForTheVehicleBehindInTheSameRound [1 m]
+  Error Message:
+   Hang hook HangBeforeFirstAccept was not cancelled within HangCeiling (60 s): the budget or shutdown the test meant to end it did not (control-server#243).
+  Stack Trace:
+     at ControlServer.Tests.MultiVehicleExecutionTests.FleetFixture.<.ctor>b__9_0() in C:\Users\szy\Desktop\8005-workspace-v2\worktrees\cs243-8005-agv-control-server\tests\ControlServer.Tests\MultiVehicleExecutionTests.cs:line 1004
+   at ControlServer.Tests.MultiVehicleExecutionTests.FleetFixture.DisposeAsync() in C:\Users\szy\Desktop\8005-workspace-v2\worktrees\cs243-8005-agv-control-server\tests\ControlServer.Tests\MultiVehicleExecutionTests.cs:line 1402
+   at ControlServer.Tests.MultiVehicleExecutionTests.AClaimTheBudgetCutOffIsBackInPlayForTheVehicleBehindInTheSameRound() in C:\Users\szy\Desktop\8005-workspace-v2\worktrees\cs243-8005-agv-control-server\tests\ControlServer.Tests\MultiVehicleExecutionTests.DispatchRound.cs:line 1519
+--- End of stack trace from previous location ---
+Results File: F:\8005-scratch\cs243\red-injected\red.trx
+
+Failed!  - Failed:    10, Passed:     0, Skipped:     0, Total:    10, Duration: 8 m 22 s - ControlServer.Tests.dll (net8.0)

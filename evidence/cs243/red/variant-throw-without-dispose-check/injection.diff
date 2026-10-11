@@ -1,0 +1,22 @@
+diff --git a/tests/ControlServer.Tests/MultiVehicleExecutionTests.cs b/tests/ControlServer.Tests/MultiVehicleExecutionTests.cs
+index 88b24b619..1a736c317 100644
+--- a/tests/ControlServer.Tests/MultiVehicleExecutionTests.cs
++++ b/tests/ControlServer.Tests/MultiVehicleExecutionTests.cs
+@@ -72,7 +72,7 @@ public sealed partial class MultiVehicleExecutionTests
+     /// </remarks>
+     private static async Task HangAsync(string hook, Action<string> reached, CancellationToken cancellationToken)
+     {
+-        await Task.Delay(HangCeiling, cancellationToken).ConfigureAwait(false);
++        await Task.Delay(HangCeiling, CancellationToken.None).ConfigureAwait(false); // INJECTED variant B
+         reached(hook);
+         throw new TimeoutException(HangCeilingReachedMessage(hook));
+     }
+@@ -999,7 +999,7 @@ public sealed partial class MultiVehicleExecutionTests
+                         Acceptances.HangCeilingReached,
+                     }.OfType<string>(),
+                 ];
+-                if (reached.Length > 0)
++                if (reached.Length > 0 && false) // INJECTED variant B
+                 {
+                     Assert.Fail(string.Join(Environment.NewLine, reached.Select(HangCeilingReachedMessage)));
+                 }

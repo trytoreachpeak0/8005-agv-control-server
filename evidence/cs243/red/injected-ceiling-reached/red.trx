@@ -1,0 +1,278 @@
+﻿<?xml version="1.0" encoding="utf-8"?>
+<TestRun id="ade02520-2220-40bc-9a49-f0caeec84a83" name="szy@LAB-WIN-01 2026-10-11 12:43:13" runUser="LAB-WIN-01\szy" xmlns="http://microsoft.com/schemas/VisualStudio/TeamTest/2010">
+  <Times creation="2026-10-11T12:43:13.2004157+08:00" queuing="2026-10-11T12:43:13.2004161+08:00" start="2026-10-11T12:41:43.8506103+08:00" finish="2026-10-11T12:50:38.5743154+08:00" />
+  <TestSettings name="default" id="46ad9f39-6489-4a0e-8ca4-979b41054059">
+    <Deployment runDeploymentRoot="szy_LAB-WIN-01_2026-10-11_12_43_13" />
+  </TestSettings>
+  <Results>
+    <UnitTestResult executionId="554765fe-74b7-416f-94bc-aac2ee0abab0" testId="e355e910-168d-e58e-7949-5faf52db456b" testName="ControlServer.Tests.MultiVehicleExecutionTests.AVehicleCutOffInTheMiddleOfTheChainDecidesAsBeforeTheMove" computerName="LAB-WIN-01" duration="00:01:00.3684755" startTime="2026-10-11T12:45:16.3242011+08:00" endTime="2026-10-11T12:46:16.6951791+08:00" testType="13cdc9d9-ddb5-4fa4-a97d-d965ccfc6d4b" outcome="Failed" testListId="8c84fa94-04c1-424b-9868-57a2d4851a1d" relativeResultsDirectory="554765fe-74b7-416f-94bc-aac2ee0abab0">
+      <Output>
+        <ErrorInfo>
+          <Message>Hang hook HangOnCall was not cancelled within HangCeiling (60 s): the budget or shutdown the test meant to end it did not (control-server#243).</Message>
+          <StackTrace>   at ControlServer.Tests.MultiVehicleExecutionTests.FleetFixture.&lt;.ctor&gt;b__9_0() in C:\Users\szy\Desktop\8005-workspace-v2\worktrees\cs243-8005-agv-control-server\tests\ControlServer.Tests\MultiVehicleExecutionTests.cs:line 1004&#xD;
+   at ControlServer.Tests.MultiVehicleExecutionTests.FleetFixture.DisposeAsync() in C:\Users\szy\Desktop\8005-workspace-v2\worktrees\cs243-8005-agv-control-server\tests\ControlServer.Tests\MultiVehicleExecutionTests.cs:line 1402&#xD;
+   at ControlServer.Tests.MultiVehicleExecutionTests.AVehicleCutOffInTheMiddleOfTheChainDecidesAsBeforeTheMove() in C:\Users\szy\Desktop\8005-workspace-v2\worktrees\cs243-8005-agv-control-server\tests\ControlServer.Tests\MultiVehicleExecutionTests.DispatchRound.cs:line 173&#xD;
+--- End of stack trace from previous location ---</StackTrace>
+        </ErrorInfo>
+      </Output>
+    </UnitTestResult>
+    <UnitTestResult executionId="0ac0425b-d26e-405e-8732-b33b6ccfc874" testId="68e74147-779d-3444-e5ce-92dc425568b5" testName="ControlServer.Tests.IdleReturnExecutionTests.AVehicleCutOffByItsRoundBudgetReadsAsNotEvaluatedRatherThanItsPreviousVerdict" computerName="LAB-WIN-01" duration="00:01:19.2448724" startTime="2026-10-11T12:41:54.5257317+08:00" endTime="2026-10-11T12:43:13.8088415+08:00" testType="13cdc9d9-ddb5-4fa4-a97d-d965ccfc6d4b" outcome="Failed" testListId="8c84fa94-04c1-424b-9868-57a2d4851a1d" relativeResultsDirectory="0ac0425b-d26e-405e-8732-b33b6ccfc874">
+      <Output>
+        <ErrorInfo>
+          <Message>Hang hook HangOn was not cancelled within HangCeiling (60 s): the budget or shutdown the test meant to end it did not (control-server#243).</Message>
+          <StackTrace>   at ControlServer.Tests.MultiVehicleExecutionTests.FleetFixture.&lt;.ctor&gt;b__9_0() in C:\Users\szy\Desktop\8005-workspace-v2\worktrees\cs243-8005-agv-control-server\tests\ControlServer.Tests\MultiVehicleExecutionTests.cs:line 1004&#xD;
+   at ControlServer.Tests.MultiVehicleExecutionTests.FleetFixture.DisposeAsync() in C:\Users\szy\Desktop\8005-workspace-v2\worktrees\cs243-8005-agv-control-server\tests\ControlServer.Tests\MultiVehicleExecutionTests.cs:line 1402&#xD;
+   at ControlServer.Tests.IdleReturnExecutionTests.AVehicleCutOffByItsRoundBudgetReadsAsNotEvaluatedRatherThanItsPreviousVerdict() in C:\Users\szy\Desktop\8005-workspace-v2\worktrees\cs243-8005-agv-control-server\tests\ControlServer.Tests\IdleReturnExecutionTests.DashboardVerdicts.cs:line 103&#xD;
+--- End of stack trace from previous location ---</StackTrace>
+        </ErrorInfo>
+      </Output>
+    </UnitTestResult>
+    <UnitTestResult executionId="df297b71-79f2-47cd-bc08-dca53a84c442" testId="a8650a4d-56ee-6794-3635-7a99513d2d33" testName="ControlServer.Tests.MultiVehicleExecutionTests.TheHostsShutdownCancellationLeavesTheRoundRatherThanBeingCaught" computerName="LAB-WIN-01" duration="00:01:18.3499925" startTime="2026-10-11T12:41:54.5249609+08:00" endTime="2026-10-11T12:43:13.1050221+08:00" testType="13cdc9d9-ddb5-4fa4-a97d-d965ccfc6d4b" outcome="Failed" testListId="8c84fa94-04c1-424b-9868-57a2d4851a1d" relativeResultsDirectory="df297b71-79f2-47cd-bc08-dca53a84c442">
+      <Output>
+        <ErrorInfo>
+          <Message>Hang hook HangOnCall was not cancelled within HangCeiling (60 s): the budget or shutdown the test meant to end it did not (control-server#243).</Message>
+          <StackTrace>   at ControlServer.Tests.MultiVehicleExecutionTests.FleetFixture.&lt;.ctor&gt;b__9_0() in C:\Users\szy\Desktop\8005-workspace-v2\worktrees\cs243-8005-agv-control-server\tests\ControlServer.Tests\MultiVehicleExecutionTests.cs:line 1004&#xD;
+   at ControlServer.Tests.MultiVehicleExecutionTests.FleetFixture.DisposeAsync() in C:\Users\szy\Desktop\8005-workspace-v2\worktrees\cs243-8005-agv-control-server\tests\ControlServer.Tests\MultiVehicleExecutionTests.cs:line 1402&#xD;
+   at ControlServer.Tests.MultiVehicleExecutionTests.TheHostsShutdownCancellationLeavesTheRoundRatherThanBeingCaught() in C:\Users\szy\Desktop\8005-workspace-v2\worktrees\cs243-8005-agv-control-server\tests\ControlServer.Tests\MultiVehicleExecutionTests.DispatchRound.cs:line 1185&#xD;
+--- End of stack trace from previous location ---</StackTrace>
+        </ErrorInfo>
+      </Output>
+    </UnitTestResult>
+    <UnitTestResult executionId="cd8be8cb-33f6-4fcb-9b01-8ee3a90d36e8" testId="e97849ad-6232-69f4-f527-dafc9bed6c43" testName="ControlServer.Tests.MultiVehicleExecutionTests.AVehicleThatExhaustsItsBudgetDoesNotCostTheOthersTheirRound" computerName="LAB-WIN-01" duration="00:01:00.5155129" startTime="2026-10-11T12:44:15.8040242+08:00" endTime="2026-10-11T12:45:16.3214669+08:00" testType="13cdc9d9-ddb5-4fa4-a97d-d965ccfc6d4b" outcome="Failed" testListId="8c84fa94-04c1-424b-9868-57a2d4851a1d" relativeResultsDirectory="cd8be8cb-33f6-4fcb-9b01-8ee3a90d36e8">
+      <Output>
+        <ErrorInfo>
+          <Message>Hang hook HangOn was not cancelled within HangCeiling (60 s): the budget or shutdown the test meant to end it did not (control-server#243).</Message>
+          <StackTrace>   at ControlServer.Tests.MultiVehicleExecutionTests.FleetFixture.&lt;.ctor&gt;b__9_0() in C:\Users\szy\Desktop\8005-workspace-v2\worktrees\cs243-8005-agv-control-server\tests\ControlServer.Tests\MultiVehicleExecutionTests.cs:line 1004&#xD;
+   at ControlServer.Tests.MultiVehicleExecutionTests.FleetFixture.DisposeAsync() in C:\Users\szy\Desktop\8005-workspace-v2\worktrees\cs243-8005-agv-control-server\tests\ControlServer.Tests\MultiVehicleExecutionTests.cs:line 1402&#xD;
+   at ControlServer.Tests.MultiVehicleExecutionTests.AVehicleThatExhaustsItsBudgetDoesNotCostTheOthersTheirRound() in C:\Users\szy\Desktop\8005-workspace-v2\worktrees\cs243-8005-agv-control-server\tests\ControlServer.Tests\MultiVehicleExecutionTests.cs:line 253&#xD;
+--- End of stack trace from previous location ---</StackTrace>
+        </ErrorInfo>
+      </Output>
+    </UnitTestResult>
+    <UnitTestResult executionId="dc8c7ad4-1cad-49e6-8a5c-6e77ca11e079" testId="66e3d334-4160-1f56-d71e-68cbdecf76c8" testName="ControlServer.Tests.MultiVehicleExecutionTests.AClaimTheBudgetCutOffAfterItsAcceptanceIsNotWithdrawn" computerName="LAB-WIN-01" duration="00:01:00.1627237" startTime="2026-10-11T12:46:16.6981890+08:00" endTime="2026-10-11T12:47:16.8639450+08:00" testType="13cdc9d9-ddb5-4fa4-a97d-d965ccfc6d4b" outcome="Failed" testListId="8c84fa94-04c1-424b-9868-57a2d4851a1d" relativeResultsDirectory="dc8c7ad4-1cad-49e6-8a5c-6e77ca11e079">
+      <Output>
+        <ErrorInfo>
+          <Message>Hang hook HangAfterFirstAccept was not cancelled within HangCeiling (60 s): the budget or shutdown the test meant to end it did not (control-server#243).</Message>
+          <StackTrace>   at ControlServer.Tests.MultiVehicleExecutionTests.FleetFixture.&lt;.ctor&gt;b__9_0() in C:\Users\szy\Desktop\8005-workspace-v2\worktrees\cs243-8005-agv-control-server\tests\ControlServer.Tests\MultiVehicleExecutionTests.cs:line 1004&#xD;
+   at ControlServer.Tests.MultiVehicleExecutionTests.FleetFixture.DisposeAsync() in C:\Users\szy\Desktop\8005-workspace-v2\worktrees\cs243-8005-agv-control-server\tests\ControlServer.Tests\MultiVehicleExecutionTests.cs:line 1402&#xD;
+   at ControlServer.Tests.MultiVehicleExecutionTests.AClaimTheBudgetCutOffAfterItsAcceptanceIsNotWithdrawn() in C:\Users\szy\Desktop\8005-workspace-v2\worktrees\cs243-8005-agv-control-server\tests\ControlServer.Tests\MultiVehicleExecutionTests.DispatchRound.cs:line 1482&#xD;
+--- End of stack trace from previous location ---</StackTrace>
+        </ErrorInfo>
+      </Output>
+    </UnitTestResult>
+    <UnitTestResult executionId="fe378805-1c56-4ce8-a248-191f73ca1e4b" testId="3b7ded43-22e7-108f-7e2d-f4f4b468e4c0" testName="ControlServer.Tests.MultiVehicleExecutionTests.AClaimTheBudgetCutOffBeforeItsAcceptanceDoesNotClearAStructuralBlock" computerName="LAB-WIN-01" duration="00:01:00.0875925" startTime="2026-10-11T12:48:17.0698004+08:00" endTime="2026-10-11T12:49:17.1606498+08:00" testType="13cdc9d9-ddb5-4fa4-a97d-d965ccfc6d4b" outcome="Failed" testListId="8c84fa94-04c1-424b-9868-57a2d4851a1d" relativeResultsDirectory="fe378805-1c56-4ce8-a248-191f73ca1e4b">
+      <Output>
+        <ErrorInfo>
+          <Message>Hang hook HangBeforeFirstAccept was not cancelled within HangCeiling (60 s): the budget or shutdown the test meant to end it did not (control-server#243).</Message>
+          <StackTrace>   at ControlServer.Tests.MultiVehicleExecutionTests.FleetFixture.&lt;.ctor&gt;b__9_0() in C:\Users\szy\Desktop\8005-workspace-v2\worktrees\cs243-8005-agv-control-server\tests\ControlServer.Tests\MultiVehicleExecutionTests.cs:line 1004&#xD;
+   at ControlServer.Tests.MultiVehicleExecutionTests.FleetFixture.DisposeAsync() in C:\Users\szy\Desktop\8005-workspace-v2\worktrees\cs243-8005-agv-control-server\tests\ControlServer.Tests\MultiVehicleExecutionTests.cs:line 1402&#xD;
+   at ControlServer.Tests.MultiVehicleExecutionTests.AClaimTheBudgetCutOffBeforeItsAcceptanceDoesNotClearAStructuralBlock() in C:\Users\szy\Desktop\8005-workspace-v2\worktrees\cs243-8005-agv-control-server\tests\ControlServer.Tests\MultiVehicleExecutionTests.DispatchRound.cs:line 1439&#xD;
+--- End of stack trace from previous location ---</StackTrace>
+        </ErrorInfo>
+      </Output>
+    </UnitTestResult>
+    <UnitTestResult executionId="b998f28d-a281-45dc-ba03-0c8eb3f0a816" testId="69d48051-d8e0-bf49-97f8-4fcce4c26094" testName="ControlServer.Tests.MultiVehicleExecutionTests.WhenAVehicleExhaustsItsBudgetTheHookIsStillCalledOnceWithOnlyTheVehiclesThatFinished" computerName="LAB-WIN-01" duration="00:01:00.1990040" startTime="2026-10-11T12:47:16.8665355+08:00" endTime="2026-10-11T12:48:17.0677947+08:00" testType="13cdc9d9-ddb5-4fa4-a97d-d965ccfc6d4b" outcome="Failed" testListId="8c84fa94-04c1-424b-9868-57a2d4851a1d" relativeResultsDirectory="b998f28d-a281-45dc-ba03-0c8eb3f0a816">
+      <Output>
+        <ErrorInfo>
+          <Message>Hang hook HangOnRead was not cancelled within HangCeiling (60 s): the budget or shutdown the test meant to end it did not (control-server#243).</Message>
+          <StackTrace>   at ControlServer.Tests.MultiVehicleExecutionTests.FleetFixture.&lt;.ctor&gt;b__9_0() in C:\Users\szy\Desktop\8005-workspace-v2\worktrees\cs243-8005-agv-control-server\tests\ControlServer.Tests\MultiVehicleExecutionTests.cs:line 1004&#xD;
+   at ControlServer.Tests.MultiVehicleExecutionTests.FleetFixture.DisposeAsync() in C:\Users\szy\Desktop\8005-workspace-v2\worktrees\cs243-8005-agv-control-server\tests\ControlServer.Tests\MultiVehicleExecutionTests.cs:line 1402&#xD;
+   at ControlServer.Tests.MultiVehicleExecutionTests.WhenAVehicleExhaustsItsBudgetTheHookIsStillCalledOnceWithOnlyTheVehiclesThatFinished() in C:\Users\szy\Desktop\8005-workspace-v2\worktrees\cs243-8005-agv-control-server\tests\ControlServer.Tests\MultiVehicleExecutionTests.cs:line 472&#xD;
+--- End of stack trace from previous location ---</StackTrace>
+        </ErrorInfo>
+      </Output>
+    </UnitTestResult>
+    <UnitTestResult executionId="6520fa33-907f-41a9-83cb-80412f9b92f3" testId="8aac4560-f6d5-2137-d877-ba5d5d65068c" testName="ControlServer.Tests.MultiVehicleExecutionTests.AVehicleThatTimedOutIsServedAgainInTheNextRound" computerName="LAB-WIN-01" duration="00:01:01.2769688" startTime="2026-10-11T12:43:14.5210187+08:00" endTime="2026-10-11T12:44:15.8009663+08:00" testType="13cdc9d9-ddb5-4fa4-a97d-d965ccfc6d4b" outcome="Failed" testListId="8c84fa94-04c1-424b-9868-57a2d4851a1d" relativeResultsDirectory="6520fa33-907f-41a9-83cb-80412f9b92f3">
+      <Output>
+        <ErrorInfo>
+          <Message>Hang hook HangOn was not cancelled within HangCeiling (60 s): the budget or shutdown the test meant to end it did not (control-server#243).</Message>
+          <StackTrace>   at ControlServer.Tests.MultiVehicleExecutionTests.FleetFixture.&lt;.ctor&gt;b__9_0() in C:\Users\szy\Desktop\8005-workspace-v2\worktrees\cs243-8005-agv-control-server\tests\ControlServer.Tests\MultiVehicleExecutionTests.cs:line 1004&#xD;
+   at ControlServer.Tests.MultiVehicleExecutionTests.FleetFixture.DisposeAsync() in C:\Users\szy\Desktop\8005-workspace-v2\worktrees\cs243-8005-agv-control-server\tests\ControlServer.Tests\MultiVehicleExecutionTests.cs:line 1402&#xD;
+   at ControlServer.Tests.MultiVehicleExecutionTests.AVehicleThatTimedOutIsServedAgainInTheNextRound() in C:\Users\szy\Desktop\8005-workspace-v2\worktrees\cs243-8005-agv-control-server\tests\ControlServer.Tests\MultiVehicleExecutionTests.cs:line 271&#xD;
+--- End of stack trace from previous location ---</StackTrace>
+        </ErrorInfo>
+      </Output>
+    </UnitTestResult>
+    <UnitTestResult executionId="5a3b6ed9-cfea-4b09-a993-e80b7720c1ba" testId="1299438f-554e-d383-88e4-8ae392232e5c" testName="ControlServer.Tests.MultiVehicleExecutionTests.AClaimTheBudgetCutOffIsBackInPlayForTheVehicleBehindInTheSameRound" computerName="LAB-WIN-01" duration="00:01:00.1470935" startTime="2026-10-11T12:49:17.1626413+08:00" endTime="2026-10-11T12:50:17.3119101+08:00" testType="13cdc9d9-ddb5-4fa4-a97d-d965ccfc6d4b" outcome="Failed" testListId="8c84fa94-04c1-424b-9868-57a2d4851a1d" relativeResultsDirectory="5a3b6ed9-cfea-4b09-a993-e80b7720c1ba">
+      <Output>
+        <ErrorInfo>
+          <Message>Hang hook HangBeforeFirstAccept was not cancelled within HangCeiling (60 s): the budget or shutdown the test meant to end it did not (control-server#243).</Message>
+          <StackTrace>   at ControlServer.Tests.MultiVehicleExecutionTests.FleetFixture.&lt;.ctor&gt;b__9_0() in C:\Users\szy\Desktop\8005-workspace-v2\worktrees\cs243-8005-agv-control-server\tests\ControlServer.Tests\MultiVehicleExecutionTests.cs:line 1004&#xD;
+   at ControlServer.Tests.MultiVehicleExecutionTests.FleetFixture.DisposeAsync() in C:\Users\szy\Desktop\8005-workspace-v2\worktrees\cs243-8005-agv-control-server\tests\ControlServer.Tests\MultiVehicleExecutionTests.cs:line 1402&#xD;
+   at ControlServer.Tests.MultiVehicleExecutionTests.AClaimTheBudgetCutOffIsBackInPlayForTheVehicleBehindInTheSameRound() in C:\Users\szy\Desktop\8005-workspace-v2\worktrees\cs243-8005-agv-control-server\tests\ControlServer.Tests\MultiVehicleExecutionTests.DispatchRound.cs:line 1519&#xD;
+--- End of stack trace from previous location ---</StackTrace>
+        </ErrorInfo>
+      </Output>
+    </UnitTestResult>
+    <UnitTestResult executionId="4f3ac7f8-9b5f-4d1d-b5c2-e61a33615b19" testId="2accce1e-46cd-1396-ccb6-d48907e26d07" testName="ControlServer.Tests.MultiVehicleExecutionTests.WhatAVehicleCutOffMidChainHadStagedIsNotSavedWithTheNextVehicle" computerName="LAB-WIN-01" duration="00:00:01.3833641" startTime="2026-10-11T12:43:13.1317497+08:00" endTime="2026-10-11T12:43:14.5191115+08:00" testType="13cdc9d9-ddb5-4fa4-a97d-d965ccfc6d4b" outcome="Failed" testListId="8c84fa94-04c1-424b-9868-57a2d4851a1d" relativeResultsDirectory="4f3ac7f8-9b5f-4d1d-b5c2-e61a33615b19">
+      <Output>
+        <ErrorInfo>
+          <Message>Assert.NotEmpty() Failure: Collection was empty</Message>
+          <StackTrace>   at ControlServer.Tests.MultiVehicleExecutionTests.WhatAVehicleCutOffMidChainHadStagedIsNotSavedWithTheNextVehicle() in C:\Users\szy\Desktop\8005-workspace-v2\worktrees\cs243-8005-agv-control-server\tests\ControlServer.Tests\MultiVehicleExecutionTests.DispatchRound.cs:line 275&#xD;
+   at ControlServer.Tests.MultiVehicleExecutionTests.WhatAVehicleCutOffMidChainHadStagedIsNotSavedWithTheNextVehicle() in C:\Users\szy\Desktop\8005-workspace-v2\worktrees\cs243-8005-agv-control-server\tests\ControlServer.Tests\MultiVehicleExecutionTests.DispatchRound.cs:line 285&#xD;
+--- End of stack trace from previous location ---</StackTrace>
+        </ErrorInfo>
+      </Output>
+    </UnitTestResult>
+  </Results>
+  <TestDefinitions>
+    <UnitTest name="ControlServer.Tests.MultiVehicleExecutionTests.AClaimTheBudgetCutOffBeforeItsAcceptanceDoesNotClearAStructuralBlock" storage="c:\users\szy\desktop\8005-workspace-v2\worktrees\cs243-8005-agv-control-server\tests\controlserver.tests\bin\release\net8.0\win-x64\controlserver.tests.dll" id="3b7ded43-22e7-108f-7e2d-f4f4b468e4c0">
+      <Execution id="fe378805-1c56-4ce8-a248-191f73ca1e4b" />
+      <TestMethod codeBase="C:\Users\szy\Desktop\8005-workspace-v2\worktrees\cs243-8005-agv-control-server\tests\ControlServer.Tests\bin\Release\net8.0\win-x64\ControlServer.Tests.dll" adapterTypeName="executor://xunit/VsTestRunner3/netcore/" className="ControlServer.Tests.MultiVehicleExecutionTests" name="AClaimTheBudgetCutOffBeforeItsAcceptanceDoesNotClearAStructuralBlock" />
+    </UnitTest>
+    <UnitTest name="ControlServer.Tests.MultiVehicleExecutionTests.TheHostsShutdownCancellationLeavesTheRoundRatherThanBeingCaught" storage="c:\users\szy\desktop\8005-workspace-v2\worktrees\cs243-8005-agv-control-server\tests\controlserver.tests\bin\release\net8.0\win-x64\controlserver.tests.dll" id="a8650a4d-56ee-6794-3635-7a99513d2d33">
+      <Execution id="df297b71-79f2-47cd-bc08-dca53a84c442" />
+      <TestMethod codeBase="C:\Users\szy\Desktop\8005-workspace-v2\worktrees\cs243-8005-agv-control-server\tests\ControlServer.Tests\bin\Release\net8.0\win-x64\ControlServer.Tests.dll" adapterTypeName="executor://xunit/VsTestRunner3/netcore/" className="ControlServer.Tests.MultiVehicleExecutionTests" name="TheHostsShutdownCancellationLeavesTheRoundRatherThanBeingCaught" />
+    </UnitTest>
+    <UnitTest name="ControlServer.Tests.MultiVehicleExecutionTests.AClaimTheBudgetCutOffIsBackInPlayForTheVehicleBehindInTheSameRound" storage="c:\users\szy\desktop\8005-workspace-v2\worktrees\cs243-8005-agv-control-server\tests\controlserver.tests\bin\release\net8.0\win-x64\controlserver.tests.dll" id="1299438f-554e-d383-88e4-8ae392232e5c">
+      <Execution id="5a3b6ed9-cfea-4b09-a993-e80b7720c1ba" />
+      <TestMethod codeBase="C:\Users\szy\Desktop\8005-workspace-v2\worktrees\cs243-8005-agv-control-server\tests\ControlServer.Tests\bin\Release\net8.0\win-x64\ControlServer.Tests.dll" adapterTypeName="executor://xunit/VsTestRunner3/netcore/" className="ControlServer.Tests.MultiVehicleExecutionTests" name="AClaimTheBudgetCutOffIsBackInPlayForTheVehicleBehindInTheSameRound" />
+    </UnitTest>
+    <UnitTest name="ControlServer.Tests.IdleReturnExecutionTests.AVehicleCutOffByItsRoundBudgetReadsAsNotEvaluatedRatherThanItsPreviousVerdict" storage="c:\users\szy\desktop\8005-workspace-v2\worktrees\cs243-8005-agv-control-server\tests\controlserver.tests\bin\release\net8.0\win-x64\controlserver.tests.dll" id="68e74147-779d-3444-e5ce-92dc425568b5">
+      <Execution id="0ac0425b-d26e-405e-8732-b33b6ccfc874" />
+      <TestMethod codeBase="C:\Users\szy\Desktop\8005-workspace-v2\worktrees\cs243-8005-agv-control-server\tests\ControlServer.Tests\bin\Release\net8.0\win-x64\ControlServer.Tests.dll" adapterTypeName="executor://xunit/VsTestRunner3/netcore/" className="ControlServer.Tests.IdleReturnExecutionTests" name="AVehicleCutOffByItsRoundBudgetReadsAsNotEvaluatedRatherThanItsPreviousVerdict" />
+    </UnitTest>
+    <UnitTest name="ControlServer.Tests.MultiVehicleExecutionTests.AVehicleThatExhaustsItsBudgetDoesNotCostTheOthersTheirRound" storage="c:\users\szy\desktop\8005-workspace-v2\worktrees\cs243-8005-agv-control-server\tests\controlserver.tests\bin\release\net8.0\win-x64\controlserver.tests.dll" id="e97849ad-6232-69f4-f527-dafc9bed6c43">
+      <Execution id="cd8be8cb-33f6-4fcb-9b01-8ee3a90d36e8" />
+      <TestMethod codeBase="C:\Users\szy\Desktop\8005-workspace-v2\worktrees\cs243-8005-agv-control-server\tests\ControlServer.Tests\bin\Release\net8.0\win-x64\ControlServer.Tests.dll" adapterTypeName="executor://xunit/VsTestRunner3/netcore/" className="ControlServer.Tests.MultiVehicleExecutionTests" name="AVehicleThatExhaustsItsBudgetDoesNotCostTheOthersTheirRound" />
+    </UnitTest>
+    <UnitTest name="ControlServer.Tests.MultiVehicleExecutionTests.AVehicleCutOffInTheMiddleOfTheChainDecidesAsBeforeTheMove" storage="c:\users\szy\desktop\8005-workspace-v2\worktrees\cs243-8005-agv-control-server\tests\controlserver.tests\bin\release\net8.0\win-x64\controlserver.tests.dll" id="e355e910-168d-e58e-7949-5faf52db456b">
+      <Execution id="554765fe-74b7-416f-94bc-aac2ee0abab0" />
+      <TestMethod codeBase="C:\Users\szy\Desktop\8005-workspace-v2\worktrees\cs243-8005-agv-control-server\tests\ControlServer.Tests\bin\Release\net8.0\win-x64\ControlServer.Tests.dll" adapterTypeName="executor://xunit/VsTestRunner3/netcore/" className="ControlServer.Tests.MultiVehicleExecutionTests" name="AVehicleCutOffInTheMiddleOfTheChainDecidesAsBeforeTheMove" />
+    </UnitTest>
+    <UnitTest name="ControlServer.Tests.MultiVehicleExecutionTests.WhatAVehicleCutOffMidChainHadStagedIsNotSavedWithTheNextVehicle" storage="c:\users\szy\desktop\8005-workspace-v2\worktrees\cs243-8005-agv-control-server\tests\controlserver.tests\bin\release\net8.0\win-x64\controlserver.tests.dll" id="2accce1e-46cd-1396-ccb6-d48907e26d07">
+      <Execution id="4f3ac7f8-9b5f-4d1d-b5c2-e61a33615b19" />
+      <TestMethod codeBase="C:\Users\szy\Desktop\8005-workspace-v2\worktrees\cs243-8005-agv-control-server\tests\ControlServer.Tests\bin\Release\net8.0\win-x64\ControlServer.Tests.dll" adapterTypeName="executor://xunit/VsTestRunner3/netcore/" className="ControlServer.Tests.MultiVehicleExecutionTests" name="WhatAVehicleCutOffMidChainHadStagedIsNotSavedWithTheNextVehicle" />
+    </UnitTest>
+    <UnitTest name="ControlServer.Tests.MultiVehicleExecutionTests.AClaimTheBudgetCutOffAfterItsAcceptanceIsNotWithdrawn" storage="c:\users\szy\desktop\8005-workspace-v2\worktrees\cs243-8005-agv-control-server\tests\controlserver.tests\bin\release\net8.0\win-x64\controlserver.tests.dll" id="66e3d334-4160-1f56-d71e-68cbdecf76c8">
+      <Execution id="dc8c7ad4-1cad-49e6-8a5c-6e77ca11e079" />
+      <TestMethod codeBase="C:\Users\szy\Desktop\8005-workspace-v2\worktrees\cs243-8005-agv-control-server\tests\ControlServer.Tests\bin\Release\net8.0\win-x64\ControlServer.Tests.dll" adapterTypeName="executor://xunit/VsTestRunner3/netcore/" className="ControlServer.Tests.MultiVehicleExecutionTests" name="AClaimTheBudgetCutOffAfterItsAcceptanceIsNotWithdrawn" />
+    </UnitTest>
+    <UnitTest name="ControlServer.Tests.MultiVehicleExecutionTests.AVehicleThatTimedOutIsServedAgainInTheNextRound" storage="c:\users\szy\desktop\8005-workspace-v2\worktrees\cs243-8005-agv-control-server\tests\controlserver.tests\bin\release\net8.0\win-x64\controlserver.tests.dll" id="8aac4560-f6d5-2137-d877-ba5d5d65068c">
+      <Execution id="6520fa33-907f-41a9-83cb-80412f9b92f3" />
+      <TestMethod codeBase="C:\Users\szy\Desktop\8005-workspace-v2\worktrees\cs243-8005-agv-control-server\tests\ControlServer.Tests\bin\Release\net8.0\win-x64\ControlServer.Tests.dll" adapterTypeName="executor://xunit/VsTestRunner3/netcore/" className="ControlServer.Tests.MultiVehicleExecutionTests" name="AVehicleThatTimedOutIsServedAgainInTheNextRound" />
+    </UnitTest>
+    <UnitTest name="ControlServer.Tests.MultiVehicleExecutionTests.WhenAVehicleExhaustsItsBudgetTheHookIsStillCalledOnceWithOnlyTheVehiclesThatFinished" storage="c:\users\szy\desktop\8005-workspace-v2\worktrees\cs243-8005-agv-control-server\tests\controlserver.tests\bin\release\net8.0\win-x64\controlserver.tests.dll" id="69d48051-d8e0-bf49-97f8-4fcce4c26094">
+      <Execution id="b998f28d-a281-45dc-ba03-0c8eb3f0a816" />
+      <TestMethod codeBase="C:\Users\szy\Desktop\8005-workspace-v2\worktrees\cs243-8005-agv-control-server\tests\ControlServer.Tests\bin\Release\net8.0\win-x64\ControlServer.Tests.dll" adapterTypeName="executor://xunit/VsTestRunner3/netcore/" className="ControlServer.Tests.MultiVehicleExecutionTests" name="WhenAVehicleExhaustsItsBudgetTheHookIsStillCalledOnceWithOnlyTheVehiclesThatFinished" />
+    </UnitTest>
+  </TestDefinitions>
+  <TestEntries>
+    <TestEntry testId="e355e910-168d-e58e-7949-5faf52db456b" executionId="554765fe-74b7-416f-94bc-aac2ee0abab0" testListId="8c84fa94-04c1-424b-9868-57a2d4851a1d" />
+    <TestEntry testId="68e74147-779d-3444-e5ce-92dc425568b5" executionId="0ac0425b-d26e-405e-8732-b33b6ccfc874" testListId="8c84fa94-04c1-424b-9868-57a2d4851a1d" />
+    <TestEntry testId="a8650a4d-56ee-6794-3635-7a99513d2d33" executionId="df297b71-79f2-47cd-bc08-dca53a84c442" testListId="8c84fa94-04c1-424b-9868-57a2d4851a1d" />
+    <TestEntry testId="e97849ad-6232-69f4-f527-dafc9bed6c43" executionId="cd8be8cb-33f6-4fcb-9b01-8ee3a90d36e8" testListId="8c84fa94-04c1-424b-9868-57a2d4851a1d" />
+    <TestEntry testId="66e3d334-4160-1f56-d71e-68cbdecf76c8" executionId="dc8c7ad4-1cad-49e6-8a5c-6e77ca11e079" testListId="8c84fa94-04c1-424b-9868-57a2d4851a1d" />
+    <TestEntry testId="3b7ded43-22e7-108f-7e2d-f4f4b468e4c0" executionId="fe378805-1c56-4ce8-a248-191f73ca1e4b" testListId="8c84fa94-04c1-424b-9868-57a2d4851a1d" />
+    <TestEntry testId="69d48051-d8e0-bf49-97f8-4fcce4c26094" executionId="b998f28d-a281-45dc-ba03-0c8eb3f0a816" testListId="8c84fa94-04c1-424b-9868-57a2d4851a1d" />
+    <TestEntry testId="8aac4560-f6d5-2137-d877-ba5d5d65068c" executionId="6520fa33-907f-41a9-83cb-80412f9b92f3" testListId="8c84fa94-04c1-424b-9868-57a2d4851a1d" />
+    <TestEntry testId="1299438f-554e-d383-88e4-8ae392232e5c" executionId="5a3b6ed9-cfea-4b09-a993-e80b7720c1ba" testListId="8c84fa94-04c1-424b-9868-57a2d4851a1d" />
+    <TestEntry testId="2accce1e-46cd-1396-ccb6-d48907e26d07" executionId="4f3ac7f8-9b5f-4d1d-b5c2-e61a33615b19" testListId="8c84fa94-04c1-424b-9868-57a2d4851a1d" />
+  </TestEntries>
+  <TestLists>
+    <TestList name="Results Not in a List" id="8c84fa94-04c1-424b-9868-57a2d4851a1d" />
+    <TestList name="All Loaded Results" id="19431567-8539-422a-85d7-44ee4e166bda" />
+  </TestLists>
+  <ResultSummary outcome="Failed">
+    <Counters total="10" executed="10" passed="0" failed="10" error="0" timeout="0" aborted="0" inconclusive="0" passedButRunAborted="0" notRunnable="0" notExecuted="0" disconnected="0" warning="0" completed="0" inProgress="0" pending="0" />
+    <Output>
+      <StdOut>[xUnit.net 00:00:00.00] xUnit.net VSTest Adapter v3.1.5+1b188a7b0a (64-bit .NET 8.0.31)&#xD;
+[xUnit.net 00:00:02.07]   Discovering: ControlServer.Tests&#xD;
+[xUnit.net 00:00:07.05]   Discovered:  ControlServer.Tests&#xD;
+[xUnit.net 00:00:08.15]   Starting:    ControlServer.Tests&#xD;
+[xUnit.net 00:01:26.87]       Hang hook HangOnCall was not cancelled within HangCeiling (60 s): the budget or shutdown the test meant to end it did not (control-server#243).&#xD;
+[xUnit.net 00:01:26.88]       Stack Trace:&#xD;
+[xUnit.net 00:01:26.88]         C:\Users\szy\Desktop\8005-workspace-v2\worktrees\cs243-8005-agv-control-server\tests\ControlServer.Tests\MultiVehicleExecutionTests.cs(1004,0): at ControlServer.Tests.MultiVehicleExecutionTests.FleetFixture.&lt;.ctor&gt;b__9_0()&#xD;
+[xUnit.net 00:01:26.88]         C:\Users\szy\Desktop\8005-workspace-v2\worktrees\cs243-8005-agv-control-server\tests\ControlServer.Tests\MultiVehicleExecutionTests.cs(1402,0): at ControlServer.Tests.MultiVehicleExecutionTests.FleetFixture.DisposeAsync()&#xD;
+[xUnit.net 00:01:26.88]         C:\Users\szy\Desktop\8005-workspace-v2\worktrees\cs243-8005-agv-control-server\tests\ControlServer.Tests\MultiVehicleExecutionTests.DispatchRound.cs(1185,0): at ControlServer.Tests.MultiVehicleExecutionTests.TheHostsShutdownCancellationLeavesTheRoundRatherThanBeingCaught()&#xD;
+[xUnit.net 00:01:26.88]         --- End of stack trace from previous location ---&#xD;
+[xUnit.net 00:01:27.56]       Hang hook HangOn was not cancelled within HangCeiling (60 s): the budget or shutdown the test meant to end it did not (control-server#243).&#xD;
+[xUnit.net 00:01:27.56]       Stack Trace:&#xD;
+[xUnit.net 00:01:27.56]         C:\Users\szy\Desktop\8005-workspace-v2\worktrees\cs243-8005-agv-control-server\tests\ControlServer.Tests\MultiVehicleExecutionTests.cs(1004,0): at ControlServer.Tests.MultiVehicleExecutionTests.FleetFixture.&lt;.ctor&gt;b__9_0()&#xD;
+[xUnit.net 00:01:27.56]         C:\Users\szy\Desktop\8005-workspace-v2\worktrees\cs243-8005-agv-control-server\tests\ControlServer.Tests\MultiVehicleExecutionTests.cs(1402,0): at ControlServer.Tests.MultiVehicleExecutionTests.FleetFixture.DisposeAsync()&#xD;
+[xUnit.net 00:01:27.56]         C:\Users\szy\Desktop\8005-workspace-v2\worktrees\cs243-8005-agv-control-server\tests\ControlServer.Tests\IdleReturnExecutionTests.DashboardVerdicts.cs(103,0): at ControlServer.Tests.IdleReturnExecutionTests.AVehicleCutOffByItsRoundBudgetReadsAsNotEvaluatedRatherThanItsPreviousVerdict()&#xD;
+[xUnit.net 00:01:27.56]         --- End of stack trace from previous location ---&#xD;
+[xUnit.net 00:01:28.27]       Assert.NotEmpty() Failure: Collection was empty&#xD;
+[xUnit.net 00:01:28.27]       Stack Trace:&#xD;
+[xUnit.net 00:01:28.27]         C:\Users\szy\Desktop\8005-workspace-v2\worktrees\cs243-8005-agv-control-server\tests\ControlServer.Tests\MultiVehicleExecutionTests.DispatchRound.cs(275,0): at ControlServer.Tests.MultiVehicleExecutionTests.WhatAVehicleCutOffMidChainHadStagedIsNotSavedWithTheNextVehicle()&#xD;
+[xUnit.net 00:01:28.27]         C:\Users\szy\Desktop\8005-workspace-v2\worktrees\cs243-8005-agv-control-server\tests\ControlServer.Tests\MultiVehicleExecutionTests.DispatchRound.cs(285,0): at ControlServer.Tests.MultiVehicleExecutionTests.WhatAVehicleCutOffMidChainHadStagedIsNotSavedWithTheNextVehicle()&#xD;
+[xUnit.net 00:01:28.27]         --- End of stack trace from previous location ---&#xD;
+[xUnit.net 00:02:29.55]       Hang hook HangOn was not cancelled within HangCeiling (60 s): the budget or shutdown the test meant to end it did not (control-server#243).&#xD;
+[xUnit.net 00:02:29.55]       Stack Trace:&#xD;
+[xUnit.net 00:02:29.55]         C:\Users\szy\Desktop\8005-workspace-v2\worktrees\cs243-8005-agv-control-server\tests\ControlServer.Tests\MultiVehicleExecutionTests.cs(1004,0): at ControlServer.Tests.MultiVehicleExecutionTests.FleetFixture.&lt;.ctor&gt;b__9_0()&#xD;
+[xUnit.net 00:02:29.55]         C:\Users\szy\Desktop\8005-workspace-v2\worktrees\cs243-8005-agv-control-server\tests\ControlServer.Tests\MultiVehicleExecutionTests.cs(1402,0): at ControlServer.Tests.MultiVehicleExecutionTests.FleetFixture.DisposeAsync()&#xD;
+[xUnit.net 00:02:29.55]         C:\Users\szy\Desktop\8005-workspace-v2\worktrees\cs243-8005-agv-control-server\tests\ControlServer.Tests\MultiVehicleExecutionTests.cs(271,0): at ControlServer.Tests.MultiVehicleExecutionTests.AVehicleThatTimedOutIsServedAgainInTheNextRound()&#xD;
+[xUnit.net 00:02:29.55]         --- End of stack trace from previous location ---&#xD;
+[xUnit.net 00:03:30.07]       Hang hook HangOn was not cancelled within HangCeiling (60 s): the budget or shutdown the test meant to end it did not (control-server#243).&#xD;
+[xUnit.net 00:03:30.07]       Stack Trace:&#xD;
+[xUnit.net 00:03:30.07]         C:\Users\szy\Desktop\8005-workspace-v2\worktrees\cs243-8005-agv-control-server\tests\ControlServer.Tests\MultiVehicleExecutionTests.cs(1004,0): at ControlServer.Tests.MultiVehicleExecutionTests.FleetFixture.&lt;.ctor&gt;b__9_0()&#xD;
+[xUnit.net 00:03:30.07]         C:\Users\szy\Desktop\8005-workspace-v2\worktrees\cs243-8005-agv-control-server\tests\ControlServer.Tests\MultiVehicleExecutionTests.cs(1402,0): at ControlServer.Tests.MultiVehicleExecutionTests.FleetFixture.DisposeAsync()&#xD;
+[xUnit.net 00:03:30.07]         C:\Users\szy\Desktop\8005-workspace-v2\worktrees\cs243-8005-agv-control-server\tests\ControlServer.Tests\MultiVehicleExecutionTests.cs(253,0): at ControlServer.Tests.MultiVehicleExecutionTests.AVehicleThatExhaustsItsBudgetDoesNotCostTheOthersTheirRound()&#xD;
+[xUnit.net 00:03:30.07]         --- End of stack trace from previous location ---&#xD;
+[xUnit.net 00:04:30.45]       Hang hook HangOnCall was not cancelled within HangCeiling (60 s): the budget or shutdown the test meant to end it did not (control-server#243).&#xD;
+[xUnit.net 00:04:30.45]       Stack Trace:&#xD;
+[xUnit.net 00:04:30.45]         C:\Users\szy\Desktop\8005-workspace-v2\worktrees\cs243-8005-agv-control-server\tests\ControlServer.Tests\MultiVehicleExecutionTests.cs(1004,0): at ControlServer.Tests.MultiVehicleExecutionTests.FleetFixture.&lt;.ctor&gt;b__9_0()&#xD;
+[xUnit.net 00:04:30.45]         C:\Users\szy\Desktop\8005-workspace-v2\worktrees\cs243-8005-agv-control-server\tests\ControlServer.Tests\MultiVehicleExecutionTests.cs(1402,0): at ControlServer.Tests.MultiVehicleExecutionTests.FleetFixture.DisposeAsync()&#xD;
+[xUnit.net 00:04:30.45]         C:\Users\szy\Desktop\8005-workspace-v2\worktrees\cs243-8005-agv-control-server\tests\ControlServer.Tests\MultiVehicleExecutionTests.DispatchRound.cs(173,0): at ControlServer.Tests.MultiVehicleExecutionTests.AVehicleCutOffInTheMiddleOfTheChainDecidesAsBeforeTheMove()&#xD;
+[xUnit.net 00:04:30.45]         --- End of stack trace from previous location ---&#xD;
+[xUnit.net 00:05:30.62]       Hang hook HangAfterFirstAccept was not cancelled within HangCeiling (60 s): the budget or shutdown the test meant to end it did not (control-server#243).&#xD;
+[xUnit.net 00:05:30.62]       Stack Trace:&#xD;
+[xUnit.net 00:05:30.62]         C:\Users\szy\Desktop\8005-workspace-v2\worktrees\cs243-8005-agv-control-server\tests\ControlServer.Tests\MultiVehicleExecutionTests.cs(1004,0): at ControlServer.Tests.MultiVehicleExecutionTests.FleetFixture.&lt;.ctor&gt;b__9_0()&#xD;
+[xUnit.net 00:05:30.62]         C:\Users\szy\Desktop\8005-workspace-v2\worktrees\cs243-8005-agv-control-server\tests\ControlServer.Tests\MultiVehicleExecutionTests.cs(1402,0): at ControlServer.Tests.MultiVehicleExecutionTests.FleetFixture.DisposeAsync()&#xD;
+[xUnit.net 00:05:30.62]         C:\Users\szy\Desktop\8005-workspace-v2\worktrees\cs243-8005-agv-control-server\tests\ControlServer.Tests\MultiVehicleExecutionTests.DispatchRound.cs(1482,0): at ControlServer.Tests.MultiVehicleExecutionTests.AClaimTheBudgetCutOffAfterItsAcceptanceIsNotWithdrawn()&#xD;
+[xUnit.net 00:05:30.62]         --- End of stack trace from previous location ---&#xD;
+[xUnit.net 00:06:30.82]       Hang hook HangOnRead was not cancelled within HangCeiling (60 s): the budget or shutdown the test meant to end it did not (control-server#243).&#xD;
+[xUnit.net 00:06:30.82]       Stack Trace:&#xD;
+[xUnit.net 00:06:30.82]         C:\Users\szy\Desktop\8005-workspace-v2\worktrees\cs243-8005-agv-control-server\tests\ControlServer.Tests\MultiVehicleExecutionTests.cs(1004,0): at ControlServer.Tests.MultiVehicleExecutionTests.FleetFixture.&lt;.ctor&gt;b__9_0()&#xD;
+[xUnit.net 00:06:30.82]         C:\Users\szy\Desktop\8005-workspace-v2\worktrees\cs243-8005-agv-control-server\tests\ControlServer.Tests\MultiVehicleExecutionTests.cs(1402,0): at ControlServer.Tests.MultiVehicleExecutionTests.FleetFixture.DisposeAsync()&#xD;
+[xUnit.net 00:06:30.82]         C:\Users\szy\Desktop\8005-workspace-v2\worktrees\cs243-8005-agv-control-server\tests\ControlServer.Tests\MultiVehicleExecutionTests.cs(472,0): at ControlServer.Tests.MultiVehicleExecutionTests.WhenAVehicleExhaustsItsBudgetTheHookIsStillCalledOnceWithOnlyTheVehiclesThatFinished()&#xD;
+[xUnit.net 00:06:30.82]         --- End of stack trace from previous location ---&#xD;
+[xUnit.net 00:07:30.91]       Hang hook HangBeforeFirstAccept was not cancelled within HangCeiling (60 s): the budget or shutdown the test meant to end it did not (control-server#243).&#xD;
+[xUnit.net 00:07:30.91]       Stack Trace:&#xD;
+[xUnit.net 00:07:30.91]         C:\Users\szy\Desktop\8005-workspace-v2\worktrees\cs243-8005-agv-control-server\tests\ControlServer.Tests\MultiVehicleExecutionTests.cs(1004,0): at ControlServer.Tests.MultiVehicleExecutionTests.FleetFixture.&lt;.ctor&gt;b__9_0()&#xD;
+[xUnit.net 00:07:30.91]         C:\Users\szy\Desktop\8005-workspace-v2\worktrees\cs243-8005-agv-control-server\tests\ControlServer.Tests\MultiVehicleExecutionTests.cs(1402,0): at ControlServer.Tests.MultiVehicleExecutionTests.FleetFixture.DisposeAsync()&#xD;
+[xUnit.net 00:07:30.91]         C:\Users\szy\Desktop\8005-workspace-v2\worktrees\cs243-8005-agv-control-server\tests\ControlServer.Tests\MultiVehicleExecutionTests.DispatchRound.cs(1439,0): at ControlServer.Tests.MultiVehicleExecutionTests.AClaimTheBudgetCutOffBeforeItsAcceptanceDoesNotClearAStructuralBlock()&#xD;
+[xUnit.net 00:07:30.91]         --- End of stack trace from previous location ---&#xD;
+[xUnit.net 00:08:31.06]       Hang hook HangBeforeFirstAccept was not cancelled within HangCeiling (60 s): the budget or shutdown the test meant to end it did not (control-server#243).&#xD;
+[xUnit.net 00:08:31.06]       Stack Trace:&#xD;
+[xUnit.net 00:08:31.06]         C:\Users\szy\Desktop\8005-workspace-v2\worktrees\cs243-8005-agv-control-server\tests\ControlServer.Tests\MultiVehicleExecutionTests.cs(1004,0): at ControlServer.Tests.MultiVehicleExecutionTests.FleetFixture.&lt;.ctor&gt;b__9_0()&#xD;
+[xUnit.net 00:08:31.06]         C:\Users\szy\Desktop\8005-workspace-v2\worktrees\cs243-8005-agv-control-server\tests\ControlServer.Tests\MultiVehicleExecutionTests.cs(1402,0): at ControlServer.Tests.MultiVehicleExecutionTests.FleetFixture.DisposeAsync()&#xD;
+[xUnit.net 00:08:31.06]         C:\Users\szy\Desktop\8005-workspace-v2\worktrees\cs243-8005-agv-control-server\tests\ControlServer.Tests\MultiVehicleExecutionTests.DispatchRound.cs(1519,0): at ControlServer.Tests.MultiVehicleExecutionTests.AClaimTheBudgetCutOffIsBackInPlayForTheVehicleBehindInTheSameRound()&#xD;
+[xUnit.net 00:08:31.06]         --- End of stack trace from previous location ---&#xD;
+[xUnit.net 00:08:52.00]   Finished:    ControlServer.Tests (ID = 'cb965b5a10edad375866a7f0f76ebf4e22062c4c8e661970cc1045e73b2a91c3')&#xD;
+</StdOut>
+    </Output>
+    <RunInfos>
+      <RunInfo computerName="LAB-WIN-01" outcome="Error" timestamp="2026-10-11T12:43:13.1244283+08:00">
+        <Text>[xUnit.net 00:01:26.87]     ControlServer.Tests.MultiVehicleExecutionTests.TheHostsShutdownCancellationLeavesTheRoundRatherThanBeingCaught [FAIL]</Text>
+      </RunInfo>
+      <RunInfo computerName="LAB-WIN-01" outcome="Error" timestamp="2026-10-11T12:43:13.8103787+08:00">
+        <Text>[xUnit.net 00:01:27.56]     ControlServer.Tests.IdleReturnExecutionTests.AVehicleCutOffByItsRoundBudgetReadsAsNotEvaluatedRatherThanItsPreviousVerdict [FAIL]</Text>
+      </RunInfo>
+      <RunInfo computerName="LAB-WIN-01" outcome="Error" timestamp="2026-10-11T12:43:14.5202442+08:00">
+        <Text>[xUnit.net 00:01:28.27]     ControlServer.Tests.MultiVehicleExecutionTests.WhatAVehicleCutOffMidChainHadStagedIsNotSavedWithTheNextVehicle [FAIL]</Text>
+      </RunInfo>
+      <RunInfo computerName="LAB-WIN-01" outcome="Error" timestamp="2026-10-11T12:44:15.8037565+08:00">
+        <Text>[xUnit.net 00:02:29.55]     ControlServer.Tests.MultiVehicleExecutionTests.AVehicleThatTimedOutIsServedAgainInTheNextRound [FAIL]</Text>
+      </RunInfo>
+      <RunInfo computerName="LAB-WIN-01" outcome="Error" timestamp="2026-10-11T12:45:16.3237484+08:00">
+        <Text>[xUnit.net 00:03:30.07]     ControlServer.Tests.MultiVehicleExecutionTests.AVehicleThatExhaustsItsBudgetDoesNotCostTheOthersTheirRound [FAIL]</Text>
+      </RunInfo>
+      <RunInfo computerName="LAB-WIN-01" outcome="Error" timestamp="2026-10-11T12:46:16.6966308+08:00">
+        <Text>[xUnit.net 00:04:30.45]     ControlServer.Tests.MultiVehicleExecutionTests.AVehicleCutOffInTheMiddleOfTheChainDecidesAsBeforeTheMove [FAIL]</Text>
+      </RunInfo>
+      <RunInfo computerName="LAB-WIN-01" outcome="Error" timestamp="2026-10-11T12:47:16.8657947+08:00">
+        <Text>[xUnit.net 00:05:30.61]     ControlServer.Tests.MultiVehicleExecutionTests.AClaimTheBudgetCutOffAfterItsAcceptanceIsNotWithdrawn [FAIL]</Text>
+      </RunInfo>
+      <RunInfo computerName="LAB-WIN-01" outcome="Error" timestamp="2026-10-11T12:48:17.0691360+08:00">
+        <Text>[xUnit.net 00:06:30.82]     ControlServer.Tests.MultiVehicleExecutionTests.WhenAVehicleExhaustsItsBudgetTheHookIsStillCalledOnceWithOnlyTheVehiclesThatFinished [FAIL]</Text>
+      </RunInfo>
+      <RunInfo computerName="LAB-WIN-01" outcome="Error" timestamp="2026-10-11T12:49:17.1620280+08:00">
+        <Text>[xUnit.net 00:07:30.91]     ControlServer.Tests.MultiVehicleExecutionTests.AClaimTheBudgetCutOffBeforeItsAcceptanceDoesNotClearAStructuralBlock [FAIL]</Text>
+      </RunInfo>
+      <RunInfo computerName="LAB-WIN-01" outcome="Error" timestamp="2026-10-11T12:50:17.3130736+08:00">
+        <Text>[xUnit.net 00:08:31.06]     ControlServer.Tests.MultiVehicleExecutionTests.AClaimTheBudgetCutOffIsBackInPlayForTheVehicleBehindInTheSameRound [FAIL]</Text>
+      </RunInfo>
+    </RunInfos>
+  </ResultSummary>
+</TestRun>
