@@ -66,6 +66,25 @@ public sealed class G2GateScriptReportLocationTests : IDisposable
         Assert.Equal(0, run.ExitCode);
     }
 
+    /// <summary>
+    /// The test run exits 0 and leaves no report. On this side that is never "the slice sent
+    /// nothing": the validator writes schema-coverage.json on every run, zero lines included, and
+    /// any failure of its own fails the run. So a missing report is lost evidence, and is not PASS.
+    /// </summary>
+    [Fact]
+    public void AMissingReportIsNotCertifiedAsPass()
+    {
+        GateRun run = Run(output: "lost", reportMode: "lose", testExitCode: 0);
+
+        JsonElement result = run.GateResult(Path.Combine(caller, "lost"));
+        Assert.NotEqual("PASS", result.GetProperty("status").GetString());
+        Assert.True(result.GetProperty("schemaConformanceMissing").GetBoolean());
+        Assert.Equal(JsonValueKind.Null, result.GetProperty("schemaConformance").ValueKind);
+        Assert.Equal(0, result.GetProperty("testExitCode").GetInt32());
+        Assert.NotEqual(0, run.ExitCode);
+        Assert.Contains("SCHEMA_REPORT_MISSING", run.Console, StringComparison.Ordinal);
+    }
+
     private GateRun Run(string output, string reportMode, int testExitCode, string? protocolManifest = null)
     {
         string root = ProtocolIdentityArchitectureTests.RepositoryRoot();
