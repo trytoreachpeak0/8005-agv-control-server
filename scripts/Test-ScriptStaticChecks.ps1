@@ -129,13 +129,29 @@ function Get-Text([object]$c, [string]$Sql) {
 }
 function Get-Number([object]$c, [string]$Sql) { return [int](Invoke-L2Query -Connection $c -Sql $Sql)[0].Total }
 function Get-Mixed([object]$c) { if ($c) { return [string]$c } return $c }
+function Get-Guarded([object]$c, [string]$Sql) {
+    $rows = Invoke-L2Query -Connection $c -Sql $Sql
+    if ($rows.Count -eq 0) { return $null }
+    if (-not (Test-L2RealPresent $rows[0].Value)) { return $null }
+    return [string]$rows[0].Value
+}
+function Get-Column([object]$c, [string]$Id) {
+    $row = Read-L2SingleRow (Invoke-L2Query -Connection $c -Sql "SELECT Stage FROM JourneyRuntimes WHERE DemandId = '$Id'")
+    if ($null -eq $row) { return $null }
+    return [string]$row.Stage
+}
 '@
         $stringHelpers = Get-StringHelperCatalog -Path $helpers
-        Add-Case 'string catalog: a function returning [string] or $null is a string helper; [int] and mixed returns are not' (
+        # Only a reader that takes any SQL and casts the value without first testing it for NULL folds NULL into ''. A guarded
+        # reader (Get-L2RealScalar's shape) answers $null for NULL too; a fixed-column reader returns $null for "no row" on
+        # purpose, and whether its column can be NULL is the schema's business, not this scan's.
+        Add-Case 'string catalog: only an unguarded any-SQL reader casting to [string] is a NULL-folding helper' (
             ($stringHelpers -join ',') -eq 'Get-Text') ($stringHelpers -join ',')
         $repoStringHelpers = Get-StringHelperCatalog -Path @(Get-ChildItem -LiteralPath $ScriptRoot -Recurse -File -Include '*.ps1', '*.psm1' | ForEach-Object FullName)
         Add-Case 'string catalog: Get-G3Scalar is derived from G3RecoveryCommon.ps1, Get-G3Count is not' (
             $repoStringHelpers -contains 'Get-G3Scalar' -and $repoStringHelpers -notcontains 'Get-G3Count') ($repoStringHelpers -join ',')
+        Add-Case 'string catalog: Get-L2RealScalar (guarded) and Get-L2JourneyStage (fixed column) are not NULL-folding' (
+            $repoStringHelpers -notcontains 'Get-L2RealScalar' -and $repoStringHelpers -notcontains 'Get-L2JourneyStage') ($repoStringHelpers -join ',')
 
         # g3-forced-mechanical-recovery.ps1 at bc22cfd25^, lines 153 and 170, reduced to the comparison that matters.
         $forced = New-Fixture 'forced.ps1' @'
