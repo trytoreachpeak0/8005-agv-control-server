@@ -4422,7 +4422,8 @@ Write-Result -Ok ($s[0] -like 'PARALLEL_INSTALL_FAILED_STATE:*' -and @($s | Wher
     -Name 'state lines: a restored record says so and where the copy is' -Detail ($s -join ' | ')
 $journeyLine = @($s | Where-Object { $_ -like 'JOURNEY_RUNTIME=false*' })
 Write-Result -Ok ($journeyLine.Count -eq 1 -and $journeyLine[0].Contains($v2Configuration) -and $journeyLine[0].Contains("'$v2Service': Running") -and
-    $journeyLine[0].Contains('places no orders') -and $journeyLine[0].Contains('redeploy the commit that is running now') -and $journeyLine[0].Contains('Do not edit it to true')) `
+    $journeyLine[0].Contains('places no orders') -and $journeyLine[0].Contains('redeploy the commit that is running now') -and $journeyLine[0].Contains('Do not edit it to true') -and
+    $journeyLine[0].Contains('a package older than control-server#605 fails again at the same .Count')) `
     -Name 'state lines: JourneyRuntime left false is said, with the file, the service and how it comes back' -Detail ($journeyLine -join ' | ')
 $s = @(Format-ParallelFailedInstallState @stateArgs -ProductStage NotStarted -RecordOutcome Restored -JourneyRuntimeEnabled 'True')
 Write-Result -Ok (@($s | Where-Object { $_ -ceq "JOURNEY_RUNTIME=True in $v2Configuration (service '$v2Service': Running)." }).Count -eq 1) `
@@ -4519,6 +4520,29 @@ $outerTry = @($installerAst605.EndBlock.Statements | Where-Object { $_ -is [Syst
 $catchText = ($null -ne $outerTry -and @($outerTry.CatchClauses).Count -eq 1) ? $outerTry.CatchClauses[0].Body.Extent.Text : ''
 Write-Result -Ok ($catchText.Contains('if ($recordWritten) { Write-FailedInstallState -Failure $_ }') -and $catchText.TrimEnd('}', ' ', "`r", "`n").EndsWith('throw')) `
     -Name 'wiring: the outer try catches, reports the state once the record was written, and rethrows' -Detail $catchText
+# The inner finally's "half-installed, uninstall it" only once the product script returned: before that the instance is the
+# previous, working one (review M2, mutation g1).
+$innerTry = @($installerAst605.FindAll({ param($n) $n -is [System.Management.Automation.Language.TryStatementAst] -and
+            $null -ne $n.Finally -and $n.Finally.Extent.Text.Contains('The parallel install did NOT complete') }, $true))
+$innerIf = $innerTry.Count -eq 1 ? @($innerTry[0].Finally.Statements)[0] : $null
+$innerCondition = $innerIf -is [System.Management.Automation.Language.IfStatementAst] ? $innerIf.Clauses[0].Item1.Extent.Text : ''
+Write-Result -Ok ($innerTry.Count -eq 1 -and $innerCondition -ceq "-not `$completed -and `$productStage -ceq 'Returned'" -and
+    $innerIf.Clauses[0].Item2.Extent.Text.Contains('Uninstall-ParallelInstanceLocal.ps1')) `
+    -Name 'wiring: the inner finally tells the operator to uninstall only once the product script returned' -Detail "condition: $innerCondition"
+# $packagesSwapped is set by the statement right after the -Rollback swap and right before its product call (review M2, mutation g2).
+$swapFlags = @($installerAst605.FindAll({ param($n) $n -is [System.Management.Automation.Language.AssignmentStatementAst] -and
+            $n.Extent.Text -ceq '$packagesSwapped = $true' }, $true))
+$swapPrevious = ''; $swapNext = ''
+if ($swapFlags.Count -eq 1) {
+    $list = @($swapFlags[0].Parent.Statements)
+    $i = [Array]::IndexOf($list, $swapFlags[0])
+    $swapPrevious = $i -ge 1 ? $list[$i - 1].Extent.Text : ''
+    $swapNext = $i -lt $list.Count - 1 ? $list[$i + 1].Extent.Text : ''
+}
+Write-Result -Ok ($swapFlags.Count -eq 1 -and $swapPrevious.Contains('Move-Item -LiteralPath $swap -Destination $previousRoot') -and
+    $swapNext -ceq "`$productStage = 'Running'") `
+    -Name 'wiring: $packagesSwapped is set right after the -Rollback swap, right before its product call' `
+    -Detail "found: $($swapFlags.Count); before: $swapPrevious; after: $swapNext"
 
 Write-Host ''
 Write-Host ("{0} passed, {1} failed" -f $script:Passed, $script:Failed) `

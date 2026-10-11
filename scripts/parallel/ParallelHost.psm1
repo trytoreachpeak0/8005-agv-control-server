@@ -450,7 +450,9 @@ function Invoke-ParallelProductUpgrade {
             "(service status: $($status ?? 'absent')). If the upgrade script failed in its own preflight the service is still " +
             'stopped; if it failed after that, its own rollback restarted the previous binaries with the runtime off. Either way ' +
             'this instance dispatches nothing. To recover, redeploy the commit that is running now (or a fixed package): that ' +
-            'writes the definition''s value back. Do NOT use -Rollback for this: after a failed install the package swap has not ' +
+            'writes the definition''s value back. The upgrade runs the Update-ControlServerLocal.ps1 inside the package being ' +
+            'deployed, not this installer''s: if the running package predates control-server#605 its upgrade fails again at the same ' +
+            '.Count, so only a package that contains that fix recovers it. Do NOT use -Rollback for this: after a failed install the package swap has not ' +
             'happened, so -Rollback installs the generation before the running one, which the onboard side may not match.')
         throw
     }
@@ -575,10 +577,12 @@ function Format-ParallelFailedInstallState {
     $value = [string]::IsNullOrWhiteSpace($JourneyRuntimeEnabled) ? '(unreadable)' : $JourneyRuntimeEnabled
     if ($ProductStage -cne 'NotStarted' -and $value -ieq 'false') {
         $lines.Add("JOURNEY_RUNTIME=false in $ConfigurationPath (service '$ServiceName': $status): this instance places no orders. " +
-            'This run set it false (the upgrade before the product script; the configuration step holds it so until the read-back) and ' +
-            'leaves it so on purpose: false is the safe direction, and turning ' +
+            'An upgrade sets it false before the product script and the configuration step holds it so until the read-back (a value ' +
+            'an earlier failed run left reads the same); it is left so on purpose: false is the safe direction, and turning ' +
             'it on is the release step with its read-backs, which only a deployment that completes runs. Do not edit it to true by hand. ' +
-            'It comes back with the next deployment that completes: redeploy the commit that is running now, or a fixed package.')
+            'It comes back with the next deployment that completes: redeploy the commit that is running now, or a fixed package. ' +
+            'The upgrade (and -Rollback) runs the Update-ControlServerLocal.ps1 inside the package it installs, not this installer''s: a ' +
+            'package older than control-server#605 fails again at the same .Count, so then only a package that contains that fix recovers it.')
     } else {
         $lines.Add("JOURNEY_RUNTIME=$value in $ConfigurationPath (service '$ServiceName': $status).")
     }

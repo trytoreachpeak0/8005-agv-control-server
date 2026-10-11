@@ -262,7 +262,8 @@ function Convert-RetainedConfigurationToPlaintext([string]$Path) {
         # Through PSObject.Properties, not $configuration.<Section>: under Set-StrictMode an absent section throws
         # there instead of reading $null (control-server#605).
         $section = $configuration.PSObject.Properties[$removal.Section]?.Value
-        if ($null -ne $section -and $section.PSObject.Properties.Name -contains $removal.Key) {
+        # @(... ForEach-Object Name): on an empty section (`{}`) .Properties.Name throws under StrictMode too.
+        if ($null -ne $section -and @($section.PSObject.Properties | ForEach-Object Name) -contains $removal.Key) {
             $section.PSObject.Properties.Remove($removal.Key)
             $removedKeys.Add("$($removal.Section):$($removal.Key)")
         }

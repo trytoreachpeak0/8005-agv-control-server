@@ -378,6 +378,9 @@ catch {
 
     # U6 (control-server#605): two databases, two lock files, nobody holding either: counted as two.
     $case = New-Case 'u6-two-lock-files' $true $true
+    # ... and an empty OnboardTransport section, which the plaintext conversion reads under StrictMode.
+    [IO.File]::WriteAllText((Join-Path $case.Install 'appsettings.Production.json'),
+        '{ "Health": { "url": "http://127.0.0.1:1" }, "JourneyRuntime": { "enabled": false }, "OnboardTransport": {} }')
     $second = New-Item -ItemType Directory -Path (Join-Path $case.Data 'data2')
     [IO.File]::WriteAllText((Join-Path $second 'other.db.instance-lock'), 'lock')
     $result = Invoke-Case 'Update' $case
