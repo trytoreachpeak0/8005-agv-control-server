@@ -1464,7 +1464,9 @@ $marks = [ordered]@{
     'first check'      = "`n    Assert-Administrator`n"
     'path check call'  = '$configRefusal = Test-ParallelInstanceDeploymentConfigPath -Path $DeploymentConfigPath -Layout $layout'
     'path check throw' = 'if ($configRefusal) { throw "-DeploymentConfigPath $configRefusal." }'
-    'outer finally'    = "`n    `$installSucceeded = `$true`n} finally {`n"
+    # control-server#605: a catch between the two, which reports a failed run's leftovers and rethrows.
+    'outer catch'      = "`n    `$installSucceeded = `$true`n} catch {`n"
+    'outer finally'    = "`n    throw`n} finally {`n"
     'cleanup call'     = 'Remove-ParallelInstanceDeploymentConfig -Path $DeploymentConfigPath -Layout $layout -FallbackDirectory $PSScriptRoot'
     'loud on success'  = 'if ($installSucceeded) { throw $message }'
 }
@@ -4364,6 +4366,159 @@ $directJudges = $null -eq $assertFunction ? @() : @($assertFunction.Body.FindAll
 Write-Result -Ok ($readBackDecisions.Count -gt 0 -and @($readBackDecisions | Where-Object { $_.Extent.Text -notlike '*-Phase $Phase*' }).Count -eq 0 -and $directJudges.Count -eq 0) `
     -Name 'wiring: the installer''s read-back decides through Get-ParallelReadBackAction -Phase $Phase only (the decision the path cases run)' `
     -Detail ("Get-ParallelReadBackAction calls: $($readBackDecisions.Count); direct judges: $($directJudges.Count)")
+
+Write-Host ''
+Write-Host 'A failed run says what it left changed, and puts the installed record back when nothing was installed (control-server#605)' -ForegroundColor Cyan
+
+<#
+    Field run of control-server#566, 2026-10-11: the upgrade failed inside Update-ControlServerLocal.ps1 after the service
+    was stopped and before anything was backed up; that script restarted the old binaries, but installed-instance.json
+    already named the new definition and JourneyRuntime.enabled was false. 19-deploy-control-server-parallel.ps1 holds the
+    next deployment to the recorded admission policy version, so the redeploy of the running commit that
+    JOURNEY_RUNTIME_LEFT_DISABLED asks for was held to a version the database never bound.
+#>
+# Whether the product script's own rollback failed: the two messages, through inner exceptions, and through the wrapper.
+$aggregate = [AggregateException]::new('ControlServer upgrade and rollback both failed.', @([Exception]::new('a'), [Exception]::new('b')))
+$wrapperThrown = $null
+try {
+    $file = Join-Path ([IO.Path]::GetTempPath()) "cs605-wrapper-$([guid]::NewGuid().ToString('N')).json"
+    [IO.File]::WriteAllText($file, $installedText, [Text.UTF8Encoding]::new($false))
+    $null = Invoke-ParallelProductUpgrade -ConfigurationPath $file -ServiceName $v2Service -WarningAction SilentlyContinue -Actions @{
+        StopService = { }; ServiceStatus = { 'Running' }
+        InvokeUpdate = { throw [AggregateException]::new('ControlServer upgrade and rollback both failed.', @([Exception]::new('x'))) }
+    }
+} catch { $wrapperThrown = $_.Exception } finally { Remove-Item -LiteralPath $file -Force -ErrorAction SilentlyContinue }
+$rollbackCases = @(
+    @{ Name = 'the upgrade script''s AggregateException'; Exception = $aggregate; Expected = $true }
+    @{ Name = 'the install script''s "rollback reported"'; Exception = [Management.Automation.RuntimeException]::new('Deployment failed and rollback reported: data-root: x'); Expected = $true }
+    @{ Name = 'either, as an inner exception'; Exception = [Exception]::new('outer', $aggregate); Expected = $true }
+    @{ Name = 'an AggregateException thrown by the update, after Invoke-ParallelProductUpgrade rethrew it'; Exception = $wrapperThrown; Expected = $true }
+    @{ Name = 'a failure whose rollback completed (U5)'; Exception = [Exception]::new('HTTP GET of http://127.0.0.1:1/health/live failed: refused'); Expected = $false }
+    @{ Name = 'the field failure (.Count, before the backup)'; Exception = [Management.Automation.RuntimeException]::new("The property 'Count' cannot be found on this object."); Expected = $false }
+    @{ Name = 'no exception'; Exception = $null; Expected = $false }
+)
+foreach ($case in $rollbackCases) {
+    $got = Test-ParallelProductRollbackFailed -Exception $case.Exception
+    Write-Result -Ok ($got -eq $case.Expected) -Name "rollback-failed detection: $($case.Name) -> $($case.Expected)" -Detail "got $got"
+}
+
+# The decision, every combination.
+foreach ($stage in 'NotStarted', 'Running', 'Returned') {
+    foreach ($rollbackFailed in $false, $true) {
+        foreach ($previous in $false, $true) {
+            $wantRestore = $previous -and ($stage -ceq 'NotStarted' -or ($stage -ceq 'Running' -and -not $rollbackFailed))
+            $got = Test-ParallelInstalledRecordRestorable -ProductStage $stage -ProductRollbackFailed $rollbackFailed -PreviousRecordExists $previous
+            Write-Result -Ok ($got -eq $wantRestore) -Name "record restorable: stage=$stage rollbackFailed=$rollbackFailed previous=$previous -> $wantRestore" -Detail "got $got"
+        }
+    }
+}
+
+# The lines.
+$stateArgs = @{ ProductRollbackFailed = $false; PreviousRecordExists = $true; RecordPath = 'D:\ops\installed-instance.json'
+    PreviousRecordCopyPath = 'D:\ops\results\install-1.previous-installed-instance.json'; ServiceName = $v2Service; ServiceStatus = 'Running'
+    ConfigurationPath = $v2Configuration; JourneyRuntimeEnabled = 'False'; PackageRoot = 'D:\pkg'; PreviousRoot = 'D:\pkg.previous' }
+$s = @(Format-ParallelFailedInstallState @stateArgs -ProductStage Running -RecordOutcome Restored)
+Write-Result -Ok ($s[0] -like 'PARALLEL_INSTALL_FAILED_STATE:*' -and @($s | Where-Object { $_ -like 'INSTALLED_RECORD=RESTORED:*' -and $_.Contains($stateArgs.PreviousRecordCopyPath) }).Count -eq 1) `
+    -Name 'state lines: a restored record says so and where the copy is' -Detail ($s -join ' | ')
+$journeyLine = @($s | Where-Object { $_ -like 'JOURNEY_RUNTIME=false*' })
+Write-Result -Ok ($journeyLine.Count -eq 1 -and $journeyLine[0].Contains($v2Configuration) -and $journeyLine[0].Contains("'$v2Service': Running") -and
+    $journeyLine[0].Contains('places no orders') -and $journeyLine[0].Contains('redeploy the commit that is running now') -and $journeyLine[0].Contains('Do not edit it to true')) `
+    -Name 'state lines: JourneyRuntime left false is said, with the file, the service and how it comes back' -Detail ($journeyLine -join ' | ')
+$s = @(Format-ParallelFailedInstallState @stateArgs -ProductStage NotStarted -RecordOutcome Restored -JourneyRuntimeEnabled 'True')
+Write-Result -Ok (@($s | Where-Object { $_ -ceq "JOURNEY_RUNTIME=True in $v2Configuration (service '$v2Service': Running)." }).Count -eq 1) `
+    -Name 'state lines: before the product script, JourneyRuntime is only reported' -Detail ($s -join ' | ')
+$s = @(Format-ParallelFailedInstallState @stateArgs -ProductStage Running -ProductRollbackFailed $true -RecordOutcome Kept)
+Write-Result -Ok (@($s | Where-Object { $_ -like 'INSTALLED_RECORD=NEW, STATE UNKNOWN:*' -and $_.Contains("copy $($stateArgs.PreviousRecordCopyPath) over $($stateArgs.RecordPath)") }).Count -eq 1) `
+    -Name 'state lines: a failed product rollback keeps the record and says to put the copy back after a manual restore' -Detail ($s -join ' | ')
+$s = @(Format-ParallelFailedInstallState @stateArgs -ProductStage Returned -RecordOutcome Kept)
+Write-Result -Ok (@($s | Where-Object { $_ -like 'INSTALLED_RECORD=NEW: the product script installed*' }).Count -eq 1) `
+    -Name 'state lines: after the product script returned, the new record matches the binaries' -Detail ($s -join ' | ')
+$s = @(Format-ParallelFailedInstallState @stateArgs -ProductStage Running -PreviousRecordExists $false -PreviousRecordCopyPath '' -RecordOutcome Kept)
+Write-Result -Ok (@($s | Where-Object { $_ -like 'INSTALLED_RECORD=NEW (first install*' }).Count -eq 1) `
+    -Name 'state lines: a first install keeps its record for the uninstaller' -Detail ($s -join ' | ')
+$s = @(Format-ParallelFailedInstallState @stateArgs -ProductStage Running -RecordOutcome 'RestoreFailed: access denied')
+Write-Result -Ok (@($s | Where-Object { $_ -like 'INSTALLED_RECORD=NOT_RESTORED: putting the previous record back failed (access denied)*' -and
+            $_.Contains("Copy $($stateArgs.PreviousRecordCopyPath) over it by hand") }).Count -eq 1) `
+    -Name 'state lines: a restore that failed says how to do it by hand' -Detail ($s -join ' | ')
+$s = @(Format-ParallelFailedInstallState @stateArgs -ProductStage Running -RecordOutcome Restored -Rollback $true -PackagesSwapped $true)
+$swapLine = @($s | Where-Object { $_ -like 'PACKAGE_DIRECTORIES_SWAPPED:*' })
+Write-Result -Ok ($swapLine.Count -eq 1 -and $swapLine[0].Contains("Move-Item -LiteralPath 'D:\pkg.previous' -Destination 'D:\pkg'")) `
+    -Name 'state lines: a failed -Rollback says its package directories are swapped and how to swap them back' -Detail ($s -join ' | ')
+$s = @(Format-ParallelFailedInstallState @stateArgs -ProductStage Returned -RecordOutcome Kept -Rollback $true -PackagesSwapped $true)
+Write-Result -Ok (@($s | Where-Object { $_ -like 'PACKAGE_DIRECTORIES_SWAPPED:*' }).Count -eq 0) `
+    -Name 'state lines: a -Rollback whose product script returned does not call its swap a leftover' -Detail ($s -join ' | ')
+
+# The installer's own Write-FailedInstallState, lifted out of its AST and run against a temporary record: the field case
+# (upgrade, the product script failed before its backup and restarted the old binaries) puts the previous record back
+# byte for byte and warns; a failed product rollback leaves this run's record.
+$installerAst605 = [System.Management.Automation.Language.Parser]::ParseFile((Join-Path $PSScriptRoot 'Install-ParallelInstanceLocal.ps1'), [ref]$null, [ref]$null)
+$writeState = $installerAst605.Find({ param($n) $n -is [System.Management.Automation.Language.FunctionDefinitionAst] -and $n.Name -eq 'Write-FailedInstallState' }, $true)
+function Invoke-FailedStateCase {
+    param([string] $Stage, [Exception] $Failure, [bool] $WithPrevious = $true)
+    $root = Join-Path ([IO.Path]::GetTempPath()) "cs605-state-$([guid]::NewGuid().ToString('N'))"
+    New-Item -ItemType Directory -Path (Join-Path $root 'install') -Force | Out-Null
+    $record = Join-Path $root 'installed-instance.json'
+    # A BOM and a Chinese agvId, so "byte for byte" means something.
+    $previousBytes = [byte[]] (@(0xEF, 0xBB, 0xBF) + [Text.Encoding]::UTF8.GetBytes('{ "instanceId": "previous", "agvId": "二号车" }'))
+    [IO.File]::WriteAllText($record, '{ "instanceId": "this-run" }')
+    [IO.File]::WriteAllText((Join-Path $root 'install\appsettings.Production.json'), '{ "journeyRuntime": { "enabled": false } }')
+    # 3>&1: Write-FailedInstallState is a plain function, without -WarningVariable.
+    $warnings = @(& {
+        . ([scriptblock]::Create($writeState.Extent.Text))
+        $layout = [pscustomobject]@{ InstalledDefinitionPath = $record; InstallRoot = (Join-Path $root 'install'); ServiceName = 'cs605-no-such-service'
+            PackageRoot = (Join-Path $root 'pkg'); PreviousRoot = (Join-Path $root 'pkg.previous') }
+        $previousRecordBytes = $WithPrevious ? $previousBytes : $null
+        $previousRecordCopy = Join-Path $root 'copy.json'
+        $productStage = $Stage
+        $packagesSwapped = $false
+        $Rollback = $false
+        $errorRecord = [Management.Automation.ErrorRecord]::new($Failure, 'cs605', 'NotSpecified', $null)
+        Write-FailedInstallState -Failure $errorRecord 3>&1
+    })
+    $after = [IO.File]::ReadAllBytes($record)
+    Remove-Item -LiteralPath $root -Recurse -Force -ErrorAction SilentlyContinue
+    return [pscustomobject]@{ Restored = ([Convert]::ToBase64String($after) -ceq [Convert]::ToBase64String($previousBytes)); Warnings = @($warnings | ForEach-Object { "$_" }) }
+}
+Write-Result -Ok ($null -ne $writeState) -Name 'the installer defines Write-FailedInstallState' -Detail 'not found'
+if ($null -ne $writeState) {
+    $r = Invoke-FailedStateCase -Stage Running -Failure ([Management.Automation.RuntimeException]::new("The property 'Count' cannot be found on this object."))
+    Write-Result -Ok ($r.Restored -and @($r.Warnings | Where-Object { $_ -like 'INSTALLED_RECORD=RESTORED:*' }).Count -eq 1 -and
+        @($r.Warnings | Where-Object { $_ -like 'JOURNEY_RUNTIME=false*' -and $_.Contains("'cs605-no-such-service': absent") }).Count -eq 1) `
+        -Name 'installer, field case: the previous record is back byte for byte, and the warnings say so and that JourneyRuntime is false' -Detail ($r.Warnings -join ' | ')
+    $r = Invoke-FailedStateCase -Stage Running -Failure $aggregate
+    Write-Result -Ok (-not $r.Restored -and @($r.Warnings | Where-Object { $_ -like 'INSTALLED_RECORD=NEW, STATE UNKNOWN:*' }).Count -eq 1) `
+        -Name 'installer, product rollback failed: this run''s record is left, and the warning says what to do after a manual restore' -Detail ($r.Warnings -join ' | ')
+    $r = Invoke-FailedStateCase -Stage Returned -Failure ([Exception]::new('health/live returned 503.'))
+    Write-Result -Ok (-not $r.Restored -and @($r.Warnings | Where-Object { $_ -like 'INSTALLED_RECORD=NEW: the product script installed*' }).Count -eq 1) `
+        -Name 'installer, failure after the product script: this run''s record is left' -Detail ($r.Warnings -join ' | ')
+}
+
+# Wiring: the stage around both product calls, the record flag right after the record, and the outer catch.
+$productSites = @($installerAst605.FindAll({ param($n) $n -is [System.Management.Automation.Language.CommandAst] -and $n.GetCommandName() -eq 'Invoke-ProductInstaller' }, $true))
+$bracketed = @($productSites | Where-Object {
+        $statement = $_.Parent
+        $block = $statement.Parent
+        $list = @($block.Statements)
+        $i = [Array]::IndexOf($list, $statement)
+        $i -ge 1 -and $i -lt $list.Count - 1 -and
+            $list[$i - 1].Extent.Text -ceq "`$productStage = 'Running'" -and $list[$i + 1].Extent.Text -ceq "`$productStage = 'Returned'" })
+Write-Result -Ok ($productSites.Count -eq 2 -and $bracketed.Count -eq 2) `
+    -Name 'wiring: both product script calls are bracketed by $productStage = ''Running'' / ''Returned''' -Detail "calls: $($productSites.Count); bracketed: $($bracketed.Count)"
+$recordCopy = @($installerAst605.FindAll({ param($n) $n -is [System.Management.Automation.Language.CommandAst] -and $n.GetCommandName() -eq 'Copy-Item' -and $n.Extent.Text.Contains('InstalledDefinitionPath') }, $true))
+$recordNext = $null
+$previousRead = $null
+if ($recordCopy.Count -eq 1) {
+    $list = @($recordCopy[0].Parent.Parent.Statements)
+    $i = [Array]::IndexOf($list, $recordCopy[0].Parent)
+    $recordNext = $list[$i + 1].Extent.Text
+    $previousRead = @($list[0..($i - 1)] | Where-Object { $_.Extent.Text.Contains('ReadAllBytes($layout.InstalledDefinitionPath)') })
+}
+Write-Result -Ok ($recordNext -ceq '$recordWritten = $true' -and @($previousRead).Count -eq 1) `
+    -Name 'wiring: the previous record is read before the record is written, and $recordWritten is set right after it' -Detail "next: $recordNext"
+$outerTry = @($installerAst605.EndBlock.Statements | Where-Object { $_ -is [System.Management.Automation.Language.TryStatementAst] }) | Select-Object -First 1
+$catchText = ($null -ne $outerTry -and @($outerTry.CatchClauses).Count -eq 1) ? $outerTry.CatchClauses[0].Body.Extent.Text : ''
+Write-Result -Ok ($catchText.Contains('if ($recordWritten) { Write-FailedInstallState -Failure $_ }') -and $catchText.TrimEnd('}', ' ', "`r", "`n").EndsWith('throw')) `
+    -Name 'wiring: the outer try catches, reports the state once the record was written, and rethrows' -Detail $catchText
 
 Write-Host ''
 Write-Host ("{0} passed, {1} failed" -f $script:Passed, $script:Failed) `
