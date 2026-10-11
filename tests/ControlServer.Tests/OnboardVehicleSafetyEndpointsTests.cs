@@ -398,6 +398,104 @@ public sealed class OnboardVehicleSafetyEndpointsTests
         }
     }
 
+    /// <summary>control-server#600：车号为空或出现两次都被拒（403），不读 RIoT。</summary>
+    [Theory]
+    [InlineData("?vehicleKey=")]
+    [InlineData("?vehicleKey=%20")]
+    [InlineData("?vehicleKey=BROKERX-AGV02&vehicleKey=BROKERX-AGV02")]
+    public async Task AnEmptyOrRepeatedVehicleKeyIsRefused(string query)
+    {
+        using TwoCarCredentials cars = new();
+        DefaultHttpContext context = Request(TwoCarCredentials.Agv02Credential, query);
+        RecordingSafetyFacts facts = new() { EchoRequestedVehicle = true };
+
+        var result = await OnboardVehicleSafetyEndpoints.HandleAsync(
+            context,
+            facts,
+            Options.Create(TwoCarJourneyOptions()),
+            Options.Create(cars.ProjectionOptions()),
+            NullLoggerFactory.Instance,
+            TestContext.Current.CancellationToken);
+
+        ProblemHttpResult problem = Assert.IsType<ProblemHttpResult>(result.Result);
+        Assert.Equal(StatusCodes.Status403Forbidden, problem.StatusCode);
+        Assert.Equal(0, facts.ReadCount);
+    }
+
+    /// <summary>
+    /// control-server#600：配了按车凭据，共享凭据（每台车都有）就不再能读任何一台车的投影（401）；带上自己的车号也不行。
+    /// </summary>
+    [Theory]
+    [InlineData(null)]
+    [InlineData("?vehicleKey=BROKERX-AGV02")]
+    public async Task TheSharedCredentialReadsNoProjectionOncePerVehicleCredentialsAreSet(string? query)
+    {
+        using TwoCarCredentials cars = new();
+        DefaultHttpContext context = Request(TwoCarCredentials.SharedCredential, query);
+        RecordingSafetyFacts facts = new() { EchoRequestedVehicle = true };
+
+        var result = await OnboardVehicleSafetyEndpoints.HandleAsync(
+            context,
+            facts,
+            Options.Create(TwoCarJourneyOptions()),
+            Options.Create(cars.ProjectionOptions()),
+            NullLoggerFactory.Instance,
+            TestContext.Current.CancellationToken);
+
+        Assert.IsType<UnauthorizedHttpResult>(result.Result);
+        Assert.Equal(0, facts.ReadCount);
+    }
+
+    /// <summary>
+    /// control-server#600：多车却没配按车凭据（启动校验本该挡住）时，接口也不把主车的投影回给拿共享凭据的车：503，不读 RIoT。
+    /// 这正是 cs#566 现场续场二 agv03 拿到 agv02 投影的那个配置。
+    /// </summary>
+    [Fact]
+    public async Task ARosterOfTwoWithOnlyTheSharedCredentialAnswersNobody()
+    {
+        using TwoCarCredentials cars = new();
+        DefaultHttpContext context = Request(TwoCarCredentials.SharedCredential);
+        RecordingSafetyFacts facts = new() { EchoRequestedVehicle = true };
+
+        var result = await OnboardVehicleSafetyEndpoints.HandleAsync(
+            context,
+            facts,
+            Options.Create(TwoCarJourneyOptions()),
+            Options.Create(ProjectionOptions(cars.SharedVariable)),
+            NullLoggerFactory.Instance,
+            TestContext.Current.CancellationToken);
+
+        ProblemHttpResult problem = Assert.IsType<ProblemHttpResult>(result.Result);
+        Assert.Equal(StatusCodes.Status503ServiceUnavailable, problem.StatusCode);
+        Assert.Equal(0, facts.ReadCount);
+    }
+
+    /// <summary>control-server#600：拒绝记一条警告（事件 5731），写原因与凭据的车，不写请求里的车号，更不写凭据。</summary>
+    [Fact]
+    public async Task ARefusalIsLoggedWithTheCredentialsVehicleAndNotTheClaim()
+    {
+        using TwoCarCredentials cars = new();
+        DefaultHttpContext context = Request(TwoCarCredentials.Agv03Credential, "?vehicleKey=" + Agv02Key);
+        RecordingLoggerFactory logs = new();
+
+        await OnboardVehicleSafetyEndpoints.HandleAsync(
+            context,
+            new RecordingSafetyFacts(),
+            Options.Create(TwoCarJourneyOptions()),
+            Options.Create(cars.ProjectionOptions()),
+            logs,
+            TestContext.Current.CancellationToken);
+
+        (LogLevel level, EventId eventId, string message) = Assert.Single(logs.Entries);
+        Assert.Equal(LogLevel.Warning, level);
+        Assert.Equal(5731, eventId.Id);
+        Assert.Contains("VEHICLE_KEY_NOT_THE_CREDENTIALS", message, StringComparison.Ordinal);
+        Assert.Contains(Agv03Key, message, StringComparison.Ordinal);
+        Assert.DoesNotContain(Agv02Key, message, StringComparison.Ordinal);
+        Assert.DoesNotContain(TwoCarCredentials.Agv03Credential, message, StringComparison.Ordinal);
+        Assert.DoesNotContain(TwoCarCredentials.Agv02Credential, message, StringComparison.Ordinal);
+    }
+
     /// <summary>
     /// control-server#600：车队表两台以上、投影开着、却没配按车凭据，启动就拒绝，报错写清缺什么、去哪配。
     /// 服务端此时分不出是哪台车在问；回 503 会让每台车悄悄变成未就绪，启动失败在部署时当场就能看到。
