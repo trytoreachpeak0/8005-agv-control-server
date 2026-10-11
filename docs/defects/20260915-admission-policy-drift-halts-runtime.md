@@ -93,7 +93,7 @@ ADR-cross-0050 与 0051 的要求正相反：准入配置变化只影响尚未�
    - `cause not distinguished from the database`：原因不在上面四种里，记下存储层原话转给开发，恢复照下面第 2 步做。
 
    control-server#551 之前的包只写站点增减，任务类型变了时是「`added: none; removed: none`」，要看附带的异常原文。
-2. 把部署配置里的 `JourneyRuntime:admissionPolicyVersion` 加 1。选项在启动时读取，必须重启服务才生效。
+2. 把部署配置里的 `JourneyRuntime:admissionPolicyVersion` 改成库里已绑版本 + 1（同版本漂移时就是加 1；版本倒退时见上面第 1 步）。选项在启动时读取，必须重启服务才生效。
 3. 下一轮服务端把新集合绑到新版本，写一行 `AdmissionPolicyAudit`，接单恢复。
 
 修复上线前，同样的第 2 步也是唯一的恢复办法，只是期间在途的车会一直停着。
@@ -113,10 +113,12 @@ ADR-cross-0050 与 0051 的要求正相反：准入配置变化只影响尚未�
   不建新的取货订单。MVP 版测的是「到站时不把第二条装进工作清单」，v2 没有这个入口，测的是同一条规则在 v2 上真正
   会被问到的那一刻。
 
-2116 的文案（control-server#551）由同一个类里的六条测试守：四种漂移各一条
+2116 的文案（control-server#551）由同一个类里的八条测试守：四种漂移各一条
 （`ADriftInTheExecutableTaskTypesAloneIsLoggedAsATaskTypeDriftWithBothSets`、`AnAreaStationAddedUnderTheSameVersionIsLoggedAsAStationDrift`、
 `ANewDeploymentIdentityUnderTheSameVersionIsLoggedWithTheOldAndTheNewIdentity`、`AVersionBelowTheBoundOneIsLoggedAsMovingBackwardsWithBothVersions`），
-比较只取绑定版本一条（`TheStationDriftIsTakenAgainstTheBoundVersionAloneWhenAnEarlierVersionHeldOtherStations`），
+比较只取绑定版本两条（`TheStationDriftIsTakenAgainstTheBoundVersionAloneWhenAnEarlierVersionHeldOtherStations` 走存储层的真实路径；
+`ARelationRowOfAnotherVersionIsLeftOutOfTheComparison` 手工插一行别的版本的关系，守住按 `PolicyVersion` 过滤），
+区号站全部消失时只报站点、不报任务类型一条（`EveryAreaStationGoneIsAStationDriftAndNotATaskTypeOne`），
 分不出原因时不写 `none` 一条（`ADriftTheDatabaseCannotExplainSaysSoInsteadOfNone`）。
 
 MVP 线上的第四条 `AStationAddedToTheSharedMapDoesNotStopAChargingRunUnderWay` 没有移植：v2 没有自动充电运行时。

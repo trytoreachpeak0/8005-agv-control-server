@@ -365,9 +365,11 @@ control-server#518 时它只绑 `WIRE_TO_GATE` → 210「关卡」，核对号�
 
   几种可以同时出现。四种都对不上时写 `cause not distinguished from the database (...; the store said: <存储层原话>)`，
   不会写成 `none`。这说明拒绝的原因不在这四种里（例如库里的关系与种子站点、任务类型都相同只是配对不同，或者存储层因别的原因拒绝），
-  存储层原话就是线索；按缺陷记录的恢复步骤照样升版本，并把这条日志转给开发。比较对象是库里绑定版本那一版的关系行（按 `PolicyVersion` 取）。
+  存储层原话就是线索；按缺陷记录的恢复步骤照样升版本，并把这条日志转给开发。配置的版本高于库里的版本时，存储层只会因关系本身（重复或缺字段）拒绝，也写在这一支。
+  读库本身失败时，原因一栏退回成 `the store said: <存储层原话> (the cause could not be read from the database: ...)`。比较对象是库里绑定版本那一版的关系行（按 `PolicyVersion` 取）。
 
-  日志文件是 Serilog Compact JSON（`controlserver-<日期>.ndjson`，一行一个事件），2116 那一行的 `EventId.Id` 是 `2116`，
+  日志文件是 Serilog Compact JSON（`controlserver-<日期>.ndjson`，一行一个事件；control-server#587 起按大小滚动，同一天写满一个文件后
+  续写的分片带 `_NNN` 后缀，如 `controlserver-<日期>_001.ndjson`，查 2116 要连分片一起查），2116 那一行的 `EventId.Id` 是 `2116`，
   渲染前的模板在 `@mt`，原因在 `DriftCauses` 字段，存储层的异常在 `@x`。异常原文仍是下面两句之一，与上面的原因对应：
   - `Admission policy version is already bound to different content or deployment identity.`：配置的版本等于库里的版本，
     内容（站点或任务类型）或部署标签不同。任务类型变了的三种来路：
