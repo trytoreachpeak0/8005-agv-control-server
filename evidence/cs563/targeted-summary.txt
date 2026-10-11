@@ -1,0 +1,12 @@
+  Failed ControlServer.Tests.MultiVehicleExecutionTests.WhenAVehicleExhaustsItsBudgetTheHookIsStillCalledOnceWithOnlyTheVehiclesThatFinished [3 s]
+Failed!  - Failed:     1, Passed:   663, Skipped:     0, Total:   664, Duration: 3 m 49 s - ControlServer.Tests.dll (net8.0)
+  Failed ControlServer.Tests.MultiVehicleExecutionTests.WhenAVehicleExhaustsItsBudgetTheHookIsStillCalledOnceWithOnlyTheVehiclesThatFinished [3 s]
+  Error Message:
+   Assert.Equal() Failure: Collections differ
+                        ↓ (pos 1)
+Expected: ["老厂前线新多仓位2", "老厂前线新多仓位3"]
+Actual:   ["老厂前线新多仓位2"]
+  Stack Trace:
+     at ControlServer.Tests.MultiVehicleExecutionTests.WhenAVehicleExhaustsItsBudgetTheHookIsStillCalledOnceWithOnlyTheVehiclesThatFinished() in C:\Users\szy\Desktop\8005-workspace-v2\worktrees\cs563-8005-agv-control-server\tests\ControlServer.Tests\MultiVehicleExecutionTests.cs:line 419
+   at ControlServer.Tests.MultiVehicleExecutionTests.WhenAVehicleExhaustsItsBudgetTheHookIsStillCalledOnceWithOnlyTheVehiclesThatFinished() in C:\Users\szy\Desktop\8005-workspace-v2\worktrees\cs563-8005-agv-control-server\tests\ControlServer.Tests\MultiVehicleExecutionTests.cs:line 422
+rerun alone x3 at 20126a0c: Passed 1/1 each

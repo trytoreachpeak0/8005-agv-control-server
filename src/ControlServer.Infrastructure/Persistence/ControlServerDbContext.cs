@@ -128,6 +128,11 @@ public sealed class ControlServerDbContext(DbContextOptions<ControlServerDbConte
         modelBuilder.Entity<SessionRecoveryRow>().HasKey(row => row.AgvId);
         modelBuilder.Entity<SessionRecoveryRow>().Property(row => row.Readiness).HasConversion<string>();
         modelBuilder.Entity<ProtocolInboxRow>().HasKey(row => row.MessageId);
+        // The inbox keeps every heartbeat a vehicle ever sent -- one every two seconds while it is connected, nearly all of
+        // the table -- and nothing prunes it. Without these every read by message type and every liveness read scanned all
+        // of it (control-server#563, after the MVP's ef5dad8e).
+        modelBuilder.Entity<ProtocolInboxRow>().HasIndex(row => row.MessageType);
+        modelBuilder.Entity<ProtocolInboxRow>().HasIndex(row => row.ReceivedAtUtcTicks);
         modelBuilder.Entity<ProtocolOutboxRow>().HasKey(row => row.MessageId);
         modelBuilder.Entity<StationOperationRow>().HasKey(row => row.SlotOperationAttemptId);
         modelBuilder.Entity<StationOperationRow>().Property(row => row.Status).HasConversion<string>();
@@ -431,12 +436,31 @@ public sealed class SessionRecoveryRow
 
 public sealed class ProtocolInboxRow
 {
+    private DateTimeOffset receivedAt;
+
     public required string MessageId { get; set; }
     public required string MessageType { get; set; }
     public required string RequestJson { get; set; }
     public required string ContentHash { get; set; }
     public required string FirstResponseJson { get; set; }
-    public DateTimeOffset ReceivedAt { get; set; }
+
+    /// <summary>When the message was received. Setting it also sets <see cref="ReceivedAtUtcTicks"/>.</summary>
+    public DateTimeOffset ReceivedAt
+    {
+        get => receivedAt;
+        set
+        {
+            receivedAt = value;
+            ReceivedAtUtcTicks = value.UtcTicks;
+        }
+    }
+
+    /// <summary>
+    /// <see cref="ReceivedAt"/> as UTC ticks, the only form of it SQLite can filter or order on in the store. It is derived
+    /// in the setter rather than assigned by each writer: the inbox has several writers, test fixtures among them, and one
+    /// that forgot would make its rows invisible to every read by time (control-server#563).
+    /// </summary>
+    public long ReceivedAtUtcTicks { get; private set; }
 }
 
 public sealed class ProtocolOutboxRow
