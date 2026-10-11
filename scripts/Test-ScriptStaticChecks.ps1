@@ -58,6 +58,67 @@ if (-not $SkipSelfTest) {
         Add-Case 'parse: a syntax error is reported with its file and line' ($hit.Count -ge 1 -and $hit[0].Line -eq 3) (Format-Finding $parse.Findings)
         Add-Case 'parse: a clean file is not reported' (@($parse.Findings | Where-Object { $_.File -eq $clean }).Count -eq 0) (Format-Finding $parse.Findings)
         Add-Case 'parse: both files were read' ($parse.Files -eq 2) "$($parse.Files)"
+
+        # --- 2. properties read off a helper's literal object -----------------------------------------------------------
+        $catalog = Get-HelperShapeCatalog -ScriptRoot $ScriptRoot
+        $shape = @{}; foreach ($entry in $catalog) { $shape[$entry.Name] = $entry.Properties }
+        Add-Case 'catalog: every listed helper resolved to a literal object' (@($catalog | Where-Object { @($_.Properties).Count -eq 0 }).Count -eq 0 -and @($catalog).Count -ge 8) "$(@($catalog).Count) entries"
+        # The two premises the bc22cfd25 counterexample rests on (L2RealStation.psm1, L2RealOnboard.psm1).
+        Add-Case 'catalog: Get-L2OperationResults has the shape of Get-L2Inbound, without PayloadJson' (
+            $shape.ContainsKey('Get-L2OperationResults') -and ($shape['Get-L2OperationResults'] -join ',') -eq ($shape['Get-L2Inbound'] -join ',') -and
+            $shape['Get-L2Inbound'] -notcontains 'PayloadJson' -and $shape['Get-L2Inbound'] -contains 'Payload') "$($shape['Get-L2OperationResults'] -join ',')"
+        Add-Case 'catalog: Get-L2RealInbound carries PayloadJson' ($shape.ContainsKey('Get-L2RealInbound') -and $shape['Get-L2RealInbound'] -contains 'PayloadJson') "$($shape['Get-L2RealInbound'] -join ',')"
+
+        # A listed function that does not return one literal object must stop the catalog, not shrink it.
+        $notLiteral = New-Fixture 'NotLiteral.psm1' "function Get-Rows { param(`$c) return Invoke-L2Query -Connection `$c -Sql 'SELECT 1' }`n"
+        $refused = try { $null = Get-HelperShapeCatalog -ScriptRoot $scratch -Entries @(@{ Name = 'Get-Rows'; File = 'NotLiteral.psm1' }); '' } catch { "$_" }
+        Add-Case 'catalog: a listed function without a literal object is refused' ($refused -like '*Get-Rows*') $refused
+
+        # g3-slot-fault-declaration.ps1 at bc22cfd25^, lines 269-293 and 201-222, reduced to the reads that matter.
+        $slotFault = New-Fixture 'slot-fault.ps1' @'
+$refusal = Wait-L2RealOrLast -Description 'the onboard answered the replayed declaration' `
+    -Journal $journal -Criterion 'declaration-not-applicable' -TimeoutSeconds 90 `
+    -Probe { @((Get-L2RealInbound $connection 'SlotFaultDeclarationResult') | Where-Object { [string]$_.Payload.declarationId -eq $lostId }) | Select-Object -First 1 } `
+    -Until { param($v) $null -ne $v }
+$refusalId = if ($refusal) { ([string]$refusal.MessageId).ToLowerInvariant() } else { '' }
+$x = $(if ($refusal) { $refusal.PayloadJson } else { '(no result)' })
+$result = Wait-L2RealOrLast -Description 'the onboard reported the unload' `
+    -Journal $journal -Criterion 'unload-result' -TimeoutSeconds 30 `
+    -Probe { (Get-L2OperationResults -Connection $connection -AttemptId $unloadAttempt) | Select-Object -First 1 } `
+    -Until { param($v) $null -ne $v }
+$resultId = if ($result) { ([string]$result.MessageId).ToLowerInvariant() } else { '' }
+$y = $(if ($result) { $result.PayloadJson } else { '(no OperationResult)' })
+'@
+        $audit = Find-HelperPropertyMisuse -Path $slotFault -Catalog $catalog
+        Add-Case 'property: $result.PayloadJson off Get-L2OperationResults through Wait-L2RealOrLast is reported at line 12' (
+            @($audit.Findings | Where-Object { $_.Line -eq 12 -and $_.Message -like '*PayloadJson*Get-L2OperationResults*' }).Count -eq 1) (Format-Finding $audit.Findings)
+        Add-Case 'property: $refusal.PayloadJson off Get-L2RealInbound is not reported (bc22cfd25^ line 222)' (
+            @($audit.Findings | Where-Object { $_.Line -ne 12 }).Count -eq 0) (Format-Finding $audit.Findings)
+        Add-Case 'property: both variables were recognised' ($audit.Variables -eq 2) "$($audit.Variables)"
+
+        $shapes = New-Fixture 'shapes.ps1' @'
+$rows = Get-L2Inbound -Connection $c -MessageType 'X'
+$n = $rows.Count
+$bad = $rows.Bogus
+foreach ($m in (Get-L2Inbound -Connection $c -MessageType 'Y')) { $m.Payload; $m.Nope }
+$first = @(Get-L2OperationProgress -Connection $c -AttemptId 'a')[0]
+$first.Phase; $first.PhaseName
+$twice = Get-L2Inbound -Connection $c -MessageType 'X'
+$twice = Get-Something
+$twice.Whatever
+'@
+        $audit = Find-HelperPropertyMisuse -Path $shapes -Catalog $catalog
+        $lines = @($audit.Findings | ForEach-Object Line | Sort-Object)
+        Add-Case 'property: direct assignment, foreach variable and an index into @() are each checked' (($lines -join ',') -eq '3,4,6') (Format-Finding $audit.Findings)
+        Add-Case 'property: a variable also assigned from something unknown is skipped and counted' ($audit.Unresolved -eq 1) "$($audit.Unresolved)"
+
+        $shadow = New-Fixture 'shadow.ps1' @'
+function Get-L2Inbound { [pscustomobject]@{ Mine = 1 } }
+$rows = Get-L2Inbound
+$rows.Mine
+'@
+        $audit = Find-HelperPropertyMisuse -Path $shadow -Catalog $catalog
+        Add-Case 'property: a file that defines its own function of a listed name is not judged by the listed shape' (@($audit.Findings).Count -eq 0 -and $audit.Shadowed -eq 1) "$(Format-Finding $audit.Findings); shadowed $($audit.Shadowed)"
     } finally {
         Remove-Item -LiteralPath $scratch -Recurse -Force -ErrorAction SilentlyContinue
     }
@@ -77,6 +138,15 @@ foreach ($f in $parse.Findings) { Write-Host "  PARSE  $($f.File):$($f.Line):$($
 Add-Case 'repository: every script parses' (@($parse.Findings).Count -eq 0) "$(@($parse.Findings).Count) errors"
 # 231 .ps1/.psm1 under scripts/ on fp/v2-impl@da6e40e2; the bound leaves room to delete some, not to lose the glob.
 if ($full) { Add-Case 'repository: parse read at least 200 scripts' ($parse.Files -ge 200) "$($parse.Files)" }
+
+$audit = Find-HelperPropertyMisuse -Path $targets -Catalog (Get-HelperShapeCatalog -ScriptRoot $ScriptRoot)
+Write-Host ("property: {0} variables recognised, {1} reads checked; skipped: {2} variables also assigned from something unrecognised, {3} calls in files that shadow a listed name" -f
+    $audit.Variables, $audit.Reads, $audit.Unresolved, $audit.Shadowed)
+foreach ($f in $audit.Findings) { Write-Host "  PROPERTY  $($f.File):$($f.Line) $($f.Message)" }
+Add-Case 'repository: no property read outside its helper''s object' (@($audit.Findings).Count -eq 0) "$(@($audit.Findings).Count) findings"
+if ($full) {
+    Add-Case 'repository: property audit recognised at least 40 variables and 100 reads' ($audit.Variables -ge 40 -and $audit.Reads -ge 100) "$($audit.Variables) / $($audit.Reads)"
+}
 
 $failed = @($cases | Where-Object { -not $_.Ok })
 foreach ($c in $cases) { Write-Host ("{0}  {1}{2}" -f ($c.Ok ? 'ok  ' : 'FAIL'), $c.Name, ($c.Ok ? '' : " -- $($c.Actual)")) }

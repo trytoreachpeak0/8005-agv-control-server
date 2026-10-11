@@ -34,4 +34,14 @@ function Test-ScriptParse {
     return [pscustomobject]@{ Files = $files; Findings = $findings.ToArray() }
 }
 
-Export-ModuleMember -Function Test-ScriptParse
+function Get-HelperShapeCatalog {
+    param([Parameter(Mandatory)][string]$ScriptRoot, [object[]]$Entries)
+    throw 'Get-HelperShapeCatalog: not implemented'
+}
+
+function Find-HelperPropertyMisuse {
+    param([Parameter(Mandatory)][string[]]$Path, [Parameter(Mandatory)][object[]]$Catalog)
+    throw 'Find-HelperPropertyMisuse: not implemented'
+}
+
+Export-ModuleMember -Function Test-ScriptParse, Get-HelperShapeCatalog, Find-HelperPropertyMisuse
