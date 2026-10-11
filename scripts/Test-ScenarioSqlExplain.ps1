@@ -129,6 +129,22 @@ $c = Get-G3Scalar $journalConnection 'SELECT 1 AS Value FROM WireToGateRecoveryS
         $beforeStart = try { $null = New-MigratedTempDatabase -HostDirectory (Join-Path $scratch 'no-host') -DatabasePath $production -WorkRoot $WorkRoot; '' } catch { "$_" }
         Add-Case 'temp database: --migrate-only is never started for a database outside the work root' (
             $beforeStart -like '*not under the work root*') $beforeStart
+
+        # --- the verdict on the production database file ----------------------------------------------------------------
+        # A path this account may not read cannot be verified, and must never be reported as verified (the control host's
+        # %ProgramData%\8005 is like that; the coordinator's ruling on control-server#583).
+        $verdicts = @(
+            @{ Before = 'inaccessible'; After = 'inaccessible'; Expected = 'UNVERIFIED (access denied)' }
+            @{ Before = 'absent'; After = 'inaccessible'; Expected = 'UNVERIFIED (access denied)' }
+            @{ Before = 'absent'; After = 'absent'; Expected = 'True' }
+            @{ Before = '4096 638900000000000000'; After = '4096 638900000000000000'; Expected = 'True' }
+            @{ Before = '4096 638900000000000000'; After = '8192 638900000000009999'; Expected = 'False' }
+            @{ Before = 'absent'; After = '4096 638900000000000000'; Expected = 'False' }
+        )
+        $wrong = @($verdicts | Where-Object { (Compare-ProductionStamp -Before $_.Before -After $_.After) -cne $_.Expected } |
+            ForEach-Object { "$($_.Before) -> $($_.After): $(Compare-ProductionStamp -Before $_.Before -After $_.After), expected $($_.Expected)" })
+        Add-Case 'production verdict: inaccessible is UNVERIFIED, never True; unchanged is True; changed or created is False' (
+            $wrong.Count -eq 0) ($wrong -join ' | ')
     }
 
     # --- the migrated database ------------------------------------------------------------------------------------------
@@ -147,8 +163,14 @@ $c = Get-G3Scalar $journalConnection 'SELECT 1 AS Value FROM WireToGateRecoveryS
     # The data source the host was actually given (path only), for the evidence.
     Write-Host "connection string data source passed to --migrate-only: $($migration.DataSource)"
     Write-Host "migrated: $database ($($migration.Tables) tables, $([int]$migration.Elapsed.TotalSeconds) s); production database untouched: $($migration.ProductionUntouched)"
-    Add-Case 'temp database: created, migrated, and the default database left as it was' (
-        $migration.Tables -ge 20 -and $migration.ProductionUntouched) "$($migration.Tables) tables; untouched $($migration.ProductionUntouched)"
+    Add-Case 'temp database: created and migrated' ($migration.Tables -ge 20) "$($migration.Tables) tables"
+    # False fails. UNVERIFIED does not (a CI runner can read the path, so there it is True or False), but it is never
+    # shown as True and it gets a warning line of its own.
+    Add-Case 'temp database: the production database file was not changed (False fails; UNVERIFIED is printed, not passed off as True)' (
+        $migration.ProductionUntouched -cne 'False') "untouched $($migration.ProductionUntouched)"
+    if ($migration.ProductionUntouched -like 'UNVERIFIED*') {
+        Write-Host "WARN  production database untouched: $($migration.ProductionUntouched) -- this account cannot read the production path, so the run could not check it"
+    }
 
     $connection = Open-ExplainConnection -HostDirectory $HostDirectory -DatabasePath $database -WorkRoot $WorkRoot
     try {
