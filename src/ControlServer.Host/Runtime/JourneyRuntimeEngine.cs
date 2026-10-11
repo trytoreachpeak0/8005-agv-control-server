@@ -172,13 +172,14 @@ public sealed partial class JourneyRuntimeEngine(
             new EventId(2110, nameof(LogDeterminateLoadFailureSettled)),
             "Vehicle {AgvId} reported a determinate load failure after the station departure deadline; " +
             "demand {DemandId} ended as {TerminalReason} and the vehicle was released.");
-    private static readonly Action<ILogger, long, int, string, string, Exception?> LogAdmissionPolicyDrift =
-        LoggerMessage.Define<long, int, string, string>(
+    // control-server#551: names which drift the store refused -- stations, executable task types, deployment identity, a
+    // version moving backwards, several at once -- with the old and the new value of each (DescribeAdmissionPolicyDrift).
+    private static readonly Action<ILogger, long, int, string, Exception?> LogAdmissionPolicyDrift =
+        LoggerMessage.Define<long, int, string>(
             LogLevel.Warning,
             new EventId(2116, nameof(LogAdmissionPolicyDrift)),
-            "Admission policy version {AdmissionPolicyVersion} is bound to other area-named stations than " +
-            "map {MapId} now carries (added: {AddedStations}; removed: {RemovedStations}). Journeys already " +
-            "under way continue on the bound policy; no further demand is taken on until " +
+            "Admission policy version {AdmissionPolicyVersion} cannot be bound for map {MapId}: {DriftCauses}. " +
+            "Journeys already under way continue on the bound policy; no further demand is taken on until " +
             "admissionPolicyVersion is raised.");
 
     private static readonly Action<ILogger, string, string, string, TimeSpan, Exception?> LogAreaEndAdmissionRevokedTimeout =
@@ -573,43 +574,35 @@ public sealed partial class JourneyRuntimeEngine(
             .Distinct(StringComparer.Ordinal)
             .ToArray();
         bool admissionPolicyDrifted = false;
+        // Each area-named station is paired with every task type this build can execute, whichever end of the
+        // route the station is (control-server#163): the admission follows the AREA machine end, which is the
+        // pickup for WIRE_TO_GATE and the drop-off for STAGING_TO_WIRE. Adding STAGING_TO_WIRE changed the
+        // relations and their hash, so the shipped admissionPolicyVersion moved past 1 with it; adding the four
+        // same-direction task types (control-server#545) moved it to 3 (AdmissionPolicyVersionGuardTests).
+        string[] seededTaskTypes = await AdmissionSeedTaskTypesAsync(cancellationToken).ConfigureAwait(false);
+        StationTaskTypeAdmission[] seededRelations = liveStationNames
+            .SelectMany(stationName => seededTaskTypes
+                .Select(taskType => new StationTaskTypeAdmission(stationName, taskType)))
+            .ToArray();
         try
         {
-            // Each area-named station is paired with every task type this build can execute, whichever end of the
-            // route the station is (control-server#163): the admission follows the AREA machine end, which is the
-            // pickup for WIRE_TO_GATE and the drop-off for STAGING_TO_WIRE. Adding STAGING_TO_WIRE changed the
-            // relations and their hash, so the shipped admissionPolicyVersion moved past 1 with it; adding the four
-            // same-direction task types (control-server#545) moved it to 3 (AdmissionPolicyVersionGuardTests).
-            string[] seededTaskTypes = await AdmissionSeedTaskTypesAsync(cancellationToken).ConfigureAwait(false);
             await store.ApplyAdmissionPolicyAsync(
                 new AdmissionPolicyDefinition(
                     runtimeOptions.AdmissionPolicyVersion,
                     runtimeOptions.AdmissionPolicyDeploymentId,
-                    liveStationNames
-                        .SelectMany(stationName => seededTaskTypes
-                            .Select(taskType => new StationTaskTypeAdmission(stationName, taskType)))
-                        .ToArray(),
+                    seededRelations,
                     timeProvider.GetUtcNow()),
                 cancellationToken).ConfigureAwait(false);
         }
         catch (BusinessIdentityConflictException error)
         {
             admissionPolicyDrifted = true;
-            string[] boundStationNames = await dbContext.StationTaskTypeAdmissions.AsNoTracking()
-                .Select(row => row.StationId)
-                .ToArrayAsync(cancellationToken).ConfigureAwait(false);
             LogAdmissionPolicyDrift(
                 logger,
                 runtimeOptions.AdmissionPolicyVersion,
                 runtimeOptions.MapId,
-                Describe(liveStationNames.Except(boundStationNames, StringComparer.Ordinal)),
-                Describe(boundStationNames.Except(liveStationNames, StringComparer.Ordinal)),
+                await DescribeAdmissionPolicyDriftAsync(seededRelations, error, cancellationToken).ConfigureAwait(false),
                 error);
-
-            static string Describe(IEnumerable<string> stationNames) =>
-                string.Join(", ", stationNames.Order(StringComparer.Ordinal)) is { Length: > 0 } names
-                    ? names
-                    : "none";
         }
 
         // control-server#390: an idle return commitment the dispatch round made (a purpose claim and a waiting point
@@ -828,6 +821,87 @@ public sealed partial class JourneyRuntimeEngine(
                 .Select(rule => rule.TaskType)
                 .Order(StringComparer.Ordinal)
         ];
+    }
+
+    /// <summary>
+    /// What EventId 2116 says the store refused (control-server#551): each of the four drifts that holds, with its old
+    /// and its new value, joined by "; ".
+    /// </summary>
+    /// <remarks>
+    /// <para>
+    /// The comparison is against the version the store has bound, read by its <c>PolicyVersion</c>. Under the same
+    /// version that is the configured one; when the configured version moved backwards it is the higher one bound, and
+    /// the log names it. The store replaces every relation row when it binds a new version, so rows of an earlier
+    /// version are not there to mix in; the filter keeps the comparison right should that ever stop being so.
+    /// </para>
+    /// <para>
+    /// A refusal none of the four explains -- the relations pair the same stations with the same task types
+    /// differently, or the store refused for another reason -- is said to be one, with the store's own words. It is
+    /// never reported as a drift of nothing.
+    /// </para>
+    /// </remarks>
+    private async Task<string> DescribeAdmissionPolicyDriftAsync(
+        StationTaskTypeAdmission[] seededRelations,
+        BusinessIdentityConflictException refusal,
+        CancellationToken cancellationToken)
+    {
+        AdmissionPolicyStateRow? bound = await dbContext.AdmissionPolicyState.AsNoTracking()
+            .SingleOrDefaultAsync(row => row.Id == 1, cancellationToken).ConfigureAwait(false);
+        long boundVersion = bound?.Version ?? 0;
+        StationTaskTypeAdmission[] boundRelations = await dbContext.StationTaskTypeAdmissions.AsNoTracking()
+            .Where(row => row.PolicyVersion == boundVersion)
+            .Select(row => new StationTaskTypeAdmission(row.StationId, row.TaskType))
+            .ToArrayAsync(cancellationToken).ConfigureAwait(false);
+
+        List<string> causes = [];
+        string[] boundStations = Distinct(boundRelations.Select(relation => relation.StationId));
+        string[] seededStations = Distinct(seededRelations.Select(relation => relation.StationId));
+        if (!boundStations.SequenceEqual(seededStations, StringComparer.Ordinal))
+        {
+            causes.Add(
+                $"stations changed under bound version {boundVersion} " +
+                $"(added: {List(seededStations.Except(boundStations, StringComparer.Ordinal))}; " +
+                $"removed: {List(boundStations.Except(seededStations, StringComparer.Ordinal))})");
+        }
+
+        string[] boundTaskTypes = Distinct(boundRelations.Select(relation => relation.TaskType));
+        string[] seededTaskTypes = Distinct(seededRelations.Select(relation => relation.TaskType));
+        if (!boundTaskTypes.SequenceEqual(seededTaskTypes, StringComparer.Ordinal))
+        {
+            causes.Add(
+                $"executable task types changed under bound version {boundVersion} " +
+                $"(bound: {List(boundTaskTypes)}; this build seeds: {List(seededTaskTypes)}; " +
+                $"added: {List(seededTaskTypes.Except(boundTaskTypes, StringComparer.Ordinal))}; " +
+                $"removed: {List(boundTaskTypes.Except(seededTaskTypes, StringComparer.Ordinal))})");
+        }
+
+        if (bound is not null &&
+            !string.Equals(bound.DeploymentId, runtimeOptions.AdmissionPolicyDeploymentId, StringComparison.Ordinal))
+        {
+            causes.Add(
+                $"deployment identity changed (bound: {bound.DeploymentId}; " +
+                $"configured: {runtimeOptions.AdmissionPolicyDeploymentId})");
+        }
+
+        if (runtimeOptions.AdmissionPolicyVersion < boundVersion)
+        {
+            causes.Add(
+                $"version moved backwards (configured: {runtimeOptions.AdmissionPolicyVersion}; " +
+                $"highest bound: {boundVersion})");
+        }
+
+        return causes.Count > 0
+            ? string.Join("; ", causes)
+            : $"cause not distinguished from the database (bound version {boundVersion} holds " +
+              $"{boundRelations.Length} relations, this build seeds {seededRelations.Length}, over the same stations, " +
+              $"task types and deployment identity; the store said: {refusal.Message})";
+
+        static string[] Distinct(IEnumerable<string> values) =>
+            [.. values.Distinct(StringComparer.Ordinal).Order(StringComparer.Ordinal)];
+
+        // An empty side of one cause is written out as such; the whole description is never "none" (see the remarks).
+        static string List(IEnumerable<string> values) =>
+            string.Join(", ", values) is { Length: > 0 } joined ? joined : "none";
     }
 
     /// <summary>
