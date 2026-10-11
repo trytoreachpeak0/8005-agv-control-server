@@ -918,6 +918,239 @@ public sealed class JourneyRuntimeWorkerAdmissionTests
         new RiotMapStation(300, "等待点")
     ];
 
+    // control-server#551: EventId 2116 names which of the four drifts the store refused -- stations, executable task
+    // types, deployment identity, a version moving backwards -- with the old and the new value of each. Until then it
+    // compared stations alone, so batch 10's six-type seed under the version that held two types logged
+    // "added: none; removed: none", which sent the reader of docs/defects/20260915-admission-policy-drift-halts-runtime.md
+    // looking for a station change that was not there.
+
+    [Fact]
+    [Trait("IntegrationSlice", "FP-IS-01")]
+    public async Task ADriftInTheExecutableTaskTypesAloneIsLoggedAsATaskTypeDriftWithBothSets()
+    {
+        await using RuntimeFixture fixture = await RuntimeFixture.CreateAsync();
+        // The build before batch 10 bound each area station with these two types under version 1; this build seeds six.
+        await BindUnderVersionOneAsync(
+            fixture,
+            [
+                .. DefaultAreaStations.SelectMany(station => new[]
+                {
+                    new StationTaskTypeAdmission(station, TransportTaskTypes.StagingToWire),
+                    new StationTaskTypeAdmission(station, TransportTaskTypes.WireToGate),
+                }),
+            ]);
+
+        await fixture.Engine.ExecuteOnceAsync(TestContext.Current.CancellationToken);
+
+        string drift = Assert.Single(DriftLogs(fixture));
+        Assert.Contains(
+            "executable task types changed under bound version 1 (bound: STAGING_TO_WIRE, WIRE_TO_GATE; " +
+            "this build seeds: DIE_TO_OVEN, DIE_TO_WIRE_STAGING, STAGING_TO_WIRE, WIRE_TO_GATE, WIRE_TO_NITROGEN, " +
+            "WIRE_TO_OPTICAL; added: DIE_TO_OVEN, DIE_TO_WIRE_STAGING, WIRE_TO_NITROGEN, WIRE_TO_OPTICAL; removed: none)",
+            drift,
+            StringComparison.Ordinal);
+        Assert.DoesNotContain("stations changed", drift, StringComparison.Ordinal);
+        Assert.DoesNotContain("deployment identity changed", drift, StringComparison.Ordinal);
+        Assert.DoesNotContain("moved backwards", drift, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    [Trait("IntegrationSlice", "FP-IS-01")]
+    public async Task AnAreaStationAddedUnderTheSameVersionIsLoggedAsAStationDrift()
+    {
+        await using RuntimeFixture fixture = await RuntimeFixture.CreateAsync();
+        await fixture.Engine.ExecuteOnceAsync(TestContext.Current.CancellationToken);
+        fixture.Riot.SetMapStations(MapWithAStationAdded());
+
+        await fixture.Engine.ExecuteOnceAsync(TestContext.Current.CancellationToken);
+
+        string drift = Assert.Single(DriftLogs(fixture));
+        Assert.Contains(
+            "stations changed under bound version 1 (added: N1-4; removed: none)", drift, StringComparison.Ordinal);
+        Assert.DoesNotContain("task types changed", drift, StringComparison.Ordinal);
+        Assert.DoesNotContain("deployment identity changed", drift, StringComparison.Ordinal);
+        Assert.DoesNotContain("moved backwards", drift, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    [Trait("IntegrationSlice", "FP-IS-01")]
+    public async Task ANewDeploymentIdentityUnderTheSameVersionIsLoggedWithTheOldAndTheNewIdentity()
+    {
+        await using RuntimeFixture fixture = await RuntimeFixture.CreateAsync();
+        await fixture.Engine.ExecuteOnceAsync(TestContext.Current.CancellationToken);
+        fixture.Options.AdmissionPolicyDeploymentId = "TEST-DEPLOYMENT-2";
+
+        await fixture.Engine.ExecuteOnceAsync(TestContext.Current.CancellationToken);
+
+        string drift = Assert.Single(DriftLogs(fixture));
+        Assert.Contains(
+            "deployment identity changed (bound: TEST-DEPLOYMENT-1; configured: TEST-DEPLOYMENT-2)",
+            drift,
+            StringComparison.Ordinal);
+        Assert.DoesNotContain("stations changed", drift, StringComparison.Ordinal);
+        Assert.DoesNotContain("task types changed", drift, StringComparison.Ordinal);
+        Assert.DoesNotContain("moved backwards", drift, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    [Trait("IntegrationSlice", "FP-IS-01")]
+    public async Task AVersionBelowTheBoundOneIsLoggedAsMovingBackwardsWithBothVersions()
+    {
+        await using RuntimeFixture fixture = await RuntimeFixture.CreateAsync();
+        fixture.Options.AdmissionPolicyVersion = 3;
+        await fixture.Engine.ExecuteOnceAsync(TestContext.Current.CancellationToken);
+        fixture.Options.AdmissionPolicyVersion = 2;
+
+        await fixture.Engine.ExecuteOnceAsync(TestContext.Current.CancellationToken);
+
+        string drift = Assert.Single(DriftLogs(fixture));
+        Assert.Contains("version moved backwards (configured: 2; highest bound: 3)", drift, StringComparison.Ordinal);
+        Assert.DoesNotContain("stations changed", drift, StringComparison.Ordinal);
+        Assert.DoesNotContain("task types changed", drift, StringComparison.Ordinal);
+        Assert.DoesNotContain("deployment identity changed", drift, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    [Trait("IntegrationSlice", "FP-IS-01")]
+    public async Task TheStationDriftIsTakenAgainstTheBoundVersionAloneWhenAnEarlierVersionHeldOtherStations()
+    {
+        // Version 1 bound N1-4 and version 2 dropped it. A drift under version 2 is against version 2's stations: N1-4
+        // must not be reported as removed because an earlier version once held it.
+        await using RuntimeFixture fixture = await RuntimeFixture.CreateAsync();
+        fixture.Riot.SetMapStations(MapWithAStationAdded());
+        await fixture.Engine.ExecuteOnceAsync(TestContext.Current.CancellationToken);
+        fixture.Riot.SetMapStations(TheDefaultMap());
+        fixture.Options.AdmissionPolicyVersion = 2;
+        await fixture.Engine.ExecuteOnceAsync(TestContext.Current.CancellationToken);
+        Assert.Empty(DriftLogs(fixture));
+        fixture.Riot.SetMapStations([.. TheDefaultMap(), new RiotMapStation(15, "N1-5")]);
+
+        await fixture.Engine.ExecuteOnceAsync(TestContext.Current.CancellationToken);
+
+        string drift = Assert.Single(DriftLogs(fixture));
+        Assert.Contains(
+            "stations changed under bound version 2 (added: N1-5; removed: none)", drift, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    [Trait("IntegrationSlice", "FP-IS-01")]
+    public async Task EveryAreaStationGoneIsAStationDriftAndNotATaskTypeOne()
+    {
+        // The seed is stations x task types, so with no area station left it holds no relation at all. The task types
+        // this build seeds are still six; read back from the empty relations they would look like none
+        // (control-server#551 review S1).
+        await using RuntimeFixture fixture = await RuntimeFixture.CreateAsync();
+        await fixture.Engine.ExecuteOnceAsync(TestContext.Current.CancellationToken);
+        fixture.Riot.SetMapStations(new RiotMapStation(210, "关卡"), new RiotMapStation(300, "等待点"));
+
+        await fixture.Engine.ExecuteOnceAsync(TestContext.Current.CancellationToken);
+
+        string drift = Assert.Single(DriftLogs(fixture));
+        Assert.Contains(
+            "stations changed under bound version 1 (added: none; removed: N1-1, N1-2_N1-3)",
+            drift,
+            StringComparison.Ordinal);
+        Assert.DoesNotContain("task types changed", drift, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    [Trait("IntegrationSlice", "FP-IS-01")]
+    public async Task ARelationRowOfAnotherVersionIsLeftOutOfTheComparison()
+    {
+        // The store replaces every relation row when it binds a version, so no row of another version is there today.
+        // This puts one there by hand -- N1-9 under version 1 while version 2 is bound -- to hold the comparison to the
+        // bound version should that ever stop being so (control-server#551 review S2).
+        await using RuntimeFixture fixture = await RuntimeFixture.CreateAsync();
+        fixture.Options.AdmissionPolicyVersion = 2;
+        await fixture.Engine.ExecuteOnceAsync(TestContext.Current.CancellationToken);
+        await using (ControlServerDbContext context = new(fixture.DbOptionsForTests))
+        {
+            context.StationTaskTypeAdmissions.Add(new StationTaskTypeAdmissionRow
+            {
+                StationId = "N1-9",
+                TaskType = TransportTaskTypes.WireToGate,
+                PolicyVersion = 1
+            });
+            await context.SaveChangesAsync(TestContext.Current.CancellationToken);
+        }
+        fixture.Riot.SetMapStations(MapWithAStationAdded());
+
+        await fixture.Engine.ExecuteOnceAsync(TestContext.Current.CancellationToken);
+
+        string drift = Assert.Single(DriftLogs(fixture));
+        Assert.Contains(
+            "stations changed under bound version 2 (added: N1-4; removed: none)", drift, StringComparison.Ordinal);
+        Assert.DoesNotContain("N1-9", drift, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    [Trait("IntegrationSlice", "FP-IS-01")]
+    public async Task ADriftTheDatabaseCannotExplainSaysSoInsteadOfNone()
+    {
+        // Same stations, same task types, same deployment identity, same version -- but one pairing missing, which no
+        // build of this server seeds and no set comparison shows. The log says the cause was not found, never "none".
+        await using RuntimeFixture fixture = await RuntimeFixture.CreateAsync();
+        string[] sixTypes =
+        [
+            TransportTaskTypes.DieToOven, TransportTaskTypes.DieToWireStaging, TransportTaskTypes.StagingToWire,
+            TransportTaskTypes.WireToGate, TransportTaskTypes.WireToNitrogen, TransportTaskTypes.WireToOptical,
+        ];
+        await BindUnderVersionOneAsync(
+            fixture,
+            [
+                .. sixTypes.Select(taskType => new StationTaskTypeAdmission("N1-1", taskType)),
+                .. sixTypes.Where(taskType => taskType != TransportTaskTypes.WireToOptical)
+                    .Select(taskType => new StationTaskTypeAdmission("N1-2_N1-3", taskType)),
+            ]);
+
+        await fixture.Engine.ExecuteOnceAsync(TestContext.Current.CancellationToken);
+
+        string drift = Assert.Single(DriftLogs(fixture));
+        Assert.Contains("cause not distinguished from the database", drift, StringComparison.Ordinal);
+        Assert.Contains(
+            "Admission policy version is already bound to different content or deployment identity.",
+            drift,
+            StringComparison.Ordinal);
+        Assert.DoesNotContain("none", drift, StringComparison.Ordinal);
+    }
+
+    private static readonly string[] DefaultAreaStations = ["N1-1", "N1-2_N1-3"];
+
+    /// <summary>The fixture's default map: two area-named stations, the gate and a waiting point.</summary>
+    private static RiotMapStation[] TheDefaultMap() =>
+    [
+        new RiotMapStation(12, "N1-1"),
+        new RiotMapStation(13, "N1-2_N1-3"),
+        new RiotMapStation(210, "关卡"),
+        new RiotMapStation(300, "等待点")
+    ];
+
+    /// <summary>Binds <paramref name="relations"/> under version 1 through the store the engine binds with.</summary>
+    private static async Task BindUnderVersionOneAsync(RuntimeFixture fixture, StationTaskTypeAdmission[] relations)
+    {
+        await using ControlServerDbContext context = new(fixture.DbOptionsForTests);
+        await new WireToGateStore(context).ApplyAdmissionPolicyAsync(
+            new AdmissionPolicyDefinition(1, fixture.Options.AdmissionPolicyDeploymentId, relations, Now),
+            TestContext.Current.CancellationToken);
+    }
+
+    /// <summary>
+    /// EventId 2116's entries. The recording logger keeps level and text only, so they are told apart by the opening
+    /// words the template has always had.
+    /// </summary>
+    private static string[] DriftLogs(RuntimeFixture fixture)
+    {
+        lock (fixture.EngineLog.Entries)
+        {
+            return
+            [
+                .. fixture.EngineLog.Entries
+                    .Where(entry => entry.Message.StartsWith("Admission policy version ", StringComparison.Ordinal))
+                    .Select(entry => entry.Message),
+            ];
+        }
+    }
+
     [Fact]
     [Trait("IntegrationSlice", "FP-IS-01")]
     public async Task TheCatalogIsConfirmedOnAWholeReadAndOnlyOnAWholeRead()

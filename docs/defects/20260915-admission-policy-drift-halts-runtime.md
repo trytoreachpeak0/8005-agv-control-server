@@ -62,6 +62,10 @@ ADR-cross-0050 与 0051 的要求正相反：准入配置变化只影响尚未�
    「一台车的旅程照常推进、另一台空闲车被拒」发生在同一轮里。v2 的旅程一车一单，也没有 MVP 那种「在途旅程到站时
    再追加需求」的入口，所以不需要第二处拦截。
 4. **单独记一条日志。**EventId 2116，Warning，写明版本号、地图号，以及实时地图比已绑定的集合多了哪些、少了哪些站点。
+   control-server#551 起它写明是哪一种漂移、各带新旧值：站点集合、可执行任务类型集合、部署标签、版本倒退，几种同时成立都写；
+   都对不上时写「`cause not distinguished from the database`」并附存储层原话，不写 `none`。比较对象是库里绑定版本那一版的
+   关系行。那之前它只比站点：批次 10（control-server#545）把种子由两类任务类型变成六类时，站点没变，日志写的是
+   「`added: none; removed: none`」，原因只在附带的异常文本里。
 
 与 MVP 不同的两处：
 
@@ -81,8 +85,15 @@ ADR-cross-0050 与 0051 的要求正相反：准入配置变化只影响尚未�
 
 ## 恢复接单
 
-1. 从 EventId 2116 日志读出增减的站点，确认新的站点集合是想要的（新增站点会被允许做 `WIRE_TO_GATE`）。
-2. 把部署配置里的 `JourneyRuntime:admissionPolicyVersion` 加 1。选项在启动时读取，必须重启服务才生效。
+1. 从 EventId 2116 日志读出是哪一种漂移（control-server#551 之后的包；文案与字段见 `scripts/parallel/README.md`「装错了是什么样、怎么判」）：
+   - `stations changed`：确认新的站点集合是想要的（新增站点会被允许做本构建能执行的每个任务类型）；
+   - `executable task types changed`：`bound` 与 `this build seeds` 两个集合对照，确认装的是想要的包，不是旧定义配新包或新定义配旧包；
+   - `deployment identity changed`：确认新标签是有意换的；
+   - `version moved backwards`：配置的版本低于库里绑过的最高版本，新版本要设成那个最高版本 + 1，不是「改回」原来的值；
+   - `cause not distinguished from the database`：原因不在上面四种里，记下存储层原话转给开发，恢复照下面第 2 步做。
+
+   control-server#551 之前的包只写站点增减，任务类型变了时是「`added: none; removed: none`」，要看附带的异常原文。
+2. 把部署配置里的 `JourneyRuntime:admissionPolicyVersion` 改成库里已绑版本 + 1（同版本漂移时就是加 1；版本倒退时见上面第 1 步）。选项在启动时读取，必须重启服务才生效。
 3. 下一轮服务端把新集合绑到新版本，写一行 `AdmissionPolicyAudit`，接单恢复。
 
 修复上线前，同样的第 2 步也是唯一的恢复办法，只是期间在途的车会一直停着。
@@ -101,6 +112,14 @@ ADR-cross-0050 与 0051 的要求正相反：准入配置变化只影响尚未�
   同站出现第二条需求；本单照常装货、建关卡段订单、卸货完成；车空出来的下一轮，第二条需求记 `ADMISSION_POLICY_DRIFT`，
   不建新的取货订单。MVP 版测的是「到站时不把第二条装进工作清单」，v2 没有这个入口，测的是同一条规则在 v2 上真正
   会被问到的那一刻。
+
+2116 的文案（control-server#551）由同一个类里的八条测试守：四种漂移各一条
+（`ADriftInTheExecutableTaskTypesAloneIsLoggedAsATaskTypeDriftWithBothSets`、`AnAreaStationAddedUnderTheSameVersionIsLoggedAsAStationDrift`、
+`ANewDeploymentIdentityUnderTheSameVersionIsLoggedWithTheOldAndTheNewIdentity`、`AVersionBelowTheBoundOneIsLoggedAsMovingBackwardsWithBothVersions`），
+比较只取绑定版本两条（`TheStationDriftIsTakenAgainstTheBoundVersionAloneWhenAnEarlierVersionHeldOtherStations` 走存储层的真实路径；
+`ARelationRowOfAnotherVersionIsLeftOutOfTheComparison` 手工插一行别的版本的关系，守住按 `PolicyVersion` 过滤），
+区号站全部消失时只报站点、不报任务类型一条（`EveryAreaStationGoneIsAStationDriftAndNotATaskTypeOne`），
+分不出原因时不写 `none` 一条（`ADriftTheDatabaseCannotExplainSaysSoInsteadOfNone`）。
 
 MVP 线上的第四条 `AStationAddedToTheSharedMapDoesNotStopAChargingRunUnderWay` 没有移植：v2 没有自动充电运行时。
 
