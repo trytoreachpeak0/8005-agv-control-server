@@ -26,15 +26,13 @@ foreach ($r in $runs) {
   $root = "$ev/$($r.Kind)/$($r.Name)"
   $stage = "F:/8005-scratch/cs543-stage-$($r.Id)"
   Write-Host "=== $($r.Name) start $(Get-Date -Format o) runner=$($r.Runner) server=$($r.Commit)"
-  do {
-    if ($r.Id -in 'A','B','C') {
-      & pwsh -NoProfile -File $heavy -Ticket 'cs#543' pwsh -NoProfile -File "$wt/scripts/run-demand-bearing-g3-vectors.ps1" -StageRoot $stage -EvidenceRoot $root -SelfCheckControlServerCommit $r.Commit -SharedRunnerSource $r.Runner
-    } else {
-      & pwsh -NoProfile -File $heavy -Ticket 'cs#543' pwsh -NoProfile -File "$wt/scripts/Test-StagedG3ContentConflict.ps1" -ControlServerCommit $r.Commit -StageRoot $stage -EvidenceRoot $root -Expect Pass -RunnerPath $r.Runner -ControlServerRepository $wt
-    }
-    $code = $LASTEXITCODE
-    if ($code -eq 3) { Write-Host "heavy-local gate busy (exit 3), retry in 5 min"; Start-Sleep -Seconds 300 }
-  } while ($code -eq 3)
+  if ($r.Id -in 'A','B','C') {
+    & pwsh -NoProfile -File $heavy -Ticket 'cs#543' pwsh -NoProfile -File "$wt/scripts/run-demand-bearing-g3-vectors.ps1" -StageRoot $stage -EvidenceRoot $root -SelfCheckControlServerCommit $r.Commit -SharedRunnerSource $r.Runner
+  } else {
+    & pwsh -NoProfile -File $heavy -Ticket 'cs#543' pwsh -NoProfile -File "$wt/scripts/Test-StagedG3ContentConflict.ps1" -ControlServerCommit $r.Commit -StageRoot $stage -EvidenceRoot $root -Expect Pass -RunnerPath $r.Runner -ControlServerRepository $wt
+  }
+  $code = $LASTEXITCODE
+  if ($code -eq 3) { throw "Invoke-HeavyLocal refused (exit 3) before $($r.Name): ask the coordinator, do not retry in a loop." }
   Write-Host "=== $($r.Name) exit $code $(Get-Date -Format o)"
   if ($r.Id -in 'A','B','C') {
     $p = Join-Path $root 'probe-result.json'

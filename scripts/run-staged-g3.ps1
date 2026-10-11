@@ -1896,9 +1896,12 @@ public static class StagedG3TlsHarness
         // code (STALE_SESSION_GENERATION, retryDisposition AFTER_RECONNECT) and the server's duty
         // (FENCE_STALE_GENERATIONS), but nowhere says whether such a line is answered or its connection closed. So the
         // expectation is what the server does today: no answer, and the connection ended at once (RequireCurrentSession
-        // throws, nothing in the processor catches it, and HandleClientAsync ends). Until #543 this was judged by
-        // ExpectRefusalAsync, which took ten seconds without a line for a close: a server that ignored the stale result
-        // entirely passed it.
+        // throws, nothing in the processor catches it, and HandleClientAsync ends). The gap is on the protocol's
+        // backlog, trytoreachpeak0/8005-agv-program#168. If the protocol settles on "answer with a ProtocolProblem and
+        // keep the connection", this case must change with it -- assert STALE_SESSION_GENERATION correlated to the stale
+        // result, the way ReadContentConflictAnswerAsync asserts a content conflict -- or it goes falsely red on a server
+        // that does what the protocol asks. Until #543 this was judged by ExpectRefusalAsync, which took ten seconds
+        // without a line for a close: a server that ignored the stale result entirely passed it.
         string staleGenerationMessageId = StableGuid("demand-bearing:stale-generation-result");
         Dictionary<string, object?> staleGeneration = await ExpectStaleGenerationClosedAsync(
             port, credential, agvId, StableGuid("demand-bearing:hello:" + helloSequence++), staleGenerationMessageId,
@@ -1969,8 +1972,10 @@ public static class StagedG3TlsHarness
     /// Closed means all three: the stream ended -- a read timeout is not an end; it ended within
     /// PromptCloseWindow; and no line before the end answered the stale message. The window is what keeps this
     /// from passing on the server's other close: a connection without a legal message for 6 seconds is ended anyway
-    /// (ADR-cross-0027, SessionLiveness.Timeout), and the stale line does not refresh that, so a server that did nothing
-    /// with it would still end the stream about 6 seconds after the handshake. 3 seconds is half that, the same window
+    /// (ADR-cross-0027, SessionLiveness.Timeout), so a server that did nothing with the stale line would still end the
+    /// stream, 6 seconds after the handshake -- or, if processing it threw nothing, 6 seconds after the stale line
+    /// itself, because OnboardTcpServer refreshes the window from a line's arrival once it is processed without an
+    /// exception. Either way about 6 seconds after the write, which follows the handshake at once. 3 seconds is half that, the same window
     /// the SessionHello content conflict above is held to: today's close happens as the line is processed, on
     /// loopback, in milliseconds, so the margin is for a slow machine, not for the server.
     /// </remarks>

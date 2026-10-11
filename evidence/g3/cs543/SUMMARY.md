@@ -4,6 +4,10 @@
 运行时间：2026-10-11 11:44–12:07（CST），本机，经 `Invoke-HeavyLocal.ps1 -Ticket cs#543`，暂存目录在 F 盘。
 驱动脚本：`run-evidence.ps1`，完整输出：`run-evidence.log`。
 
+入库的 `run-evidence.ps1` 与实际运行的那份只差一处：运行时那份在 `Invoke-HeavyLocal.ps1` 退出 3 时会睡 300 秒再重试，违反 10-11 定的「退出码 3 不写重试脚本」。这次六次运行都没有触发它（`run-evidence.log` 里没有 `heavy-local gate busy`）。入库版改成退出 3 时直接报错退出，由人去问调度。
+
+**目录说明：**`red/` 与 `green/` 按「被测对象是变异还是未变异」分，不按「判据判了红还是绿」分。`red/` 下的 A 是变异组里的旧判据，它被骗了、判的是 `PASS`，这正是它在 `red/` 下要证明的事；B、D、E 判的是 `FAIL`。
+
 **这些运行都不是 G3 门禁证据。**判据脚本取自命令行（`RUNNER_INPUT_OVERRIDE`）或服务端提交取自 `-SelfCheckControlServerCommit`（`SELF_CHECK_OVERRIDE`），不给任何切片记正式通过。它们只用来证明新判据能区分正常与变异的行为。
 
 ## 提交
