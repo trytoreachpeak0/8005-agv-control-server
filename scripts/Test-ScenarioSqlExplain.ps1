@@ -109,10 +109,17 @@ $journalConnection = [Microsoft.Data.Sqlite.SqliteConnection]::new("Data Source=
 $a = Invoke-L2Query -Connection $journalConnection -Sql 'SELECT ContentJson FROM WireToGateRecoveryState WHERE Id = 1'
 $b = Invoke-L2Query -Connection $Context.Connection -Sql 'SELECT DemandId FROM AcceptedDemands'
 $c = Get-G3Scalar $journalConnection 'SELECT 1 AS Value FROM WireToGateRecoveryState'
+$store = [Microsoft.Data.Sqlite.SqliteConnection]::new("Data Source=$storePath;Mode=ReadOnly;Pooling=False")
+$d = Invoke-L2Query -Connection $store -Sql 'SELECT ResultId FROM OperationResults'
+$Connection = [Microsoft.Data.Sqlite.SqliteConnection]::new("Data Source=$($Context.OnboardJournalPath)")
+function Read-Session([object]$Connection) { Invoke-L2Query -Connection $Connection -Sql 'SELECT SessionGeneration FROM SessionRecoveries' }
 '@
         $found = Get-ScenarioLiteralSql -Path $journal -Sinks $sinks
-        Add-Case 'extract: SQL sent on a connection the script opens itself (the onboard journal) is not the server''s' (
-            (@($found.Literal | ForEach-Object Line) -join ',') -eq '3' -and $found.OtherDatabase -eq 2) "$(Format-Sql $found.Literal); other $($found.OtherDatabase)"
+        # Review of control-server#583: only a connection opened on the onboard journal is another database. A connection the
+        # script opens on a copy of the server's own store (demand-bearing-store-at-unload.ps1) is the server's schema, and
+        # a function's $Connection parameter is not the script-level $Connection of the same name (L2.psm1:318).
+        Add-Case 'extract: SQL on a connection opened on the onboard journal is skipped; a server store copy and a same-named parameter are checked' (
+            (@($found.Literal | ForEach-Object Line) -join ',') -eq '3,6,8' -and $found.OtherDatabase -eq 2) "$(Format-Sql $found.Literal); other $($found.OtherDatabase)"
 
         # --- the temporary database's path ----------------------------------------------------------------------------
         $production = Join-Path $env:ProgramData '8005\ControlServer\data\controlserver.db'
@@ -145,6 +152,60 @@ $c = Get-G3Scalar $journalConnection 'SELECT 1 AS Value FROM WireToGateRecoveryS
             ForEach-Object { "$($_.Before) -> $($_.After): $(Compare-ProductionStamp -Before $_.Before -After $_.After), expected $($_.Expected)" })
         Add-Case 'production verdict: inaccessible is UNVERIFIED, never True; unchanged is True; changed or created is False' (
             $wrong.Count -eq 0) ($wrong -join ' | ')
+
+        # Review M1: a file under a directory this account may not list. Test-Path answers $false there without an error,
+        # which read as 'absent' before and after, and so as True. Now any ancestor that refuses a listing makes it
+        # inaccessible; only a listing that shows the next level missing makes it absent.
+        $locked = Join-Path $scratch 'locked'
+        $null = New-Item -ItemType Directory -Path (Join-Path $locked 'inner') -Force
+        $me = [System.Security.Principal.WindowsIdentity]::GetCurrent().User
+        $deny = [System.Security.AccessControl.FileSystemAccessRule]::new($me, 'ListDirectory', 'Deny')
+        $acl = Get-Acl -LiteralPath $locked
+        $acl.AddAccessRule($deny)
+        Set-Acl -LiteralPath $locked -AclObject $acl
+        try {
+            $deep = Get-FileStamp (Join-Path $locked 'inner\controlserver.db')
+            $direct = Get-FileStamp (Join-Path $locked 'controlserver.db')
+            $open = Get-FileStamp (Join-Path $scratch 'nothing-here\controlserver.db')
+            Add-Case 'production stamp: a file under a directory that refuses a listing is inaccessible, not absent' (
+                $deep -eq 'inaccessible' -and $direct -eq 'inaccessible') "deep $deep; direct $direct"
+            Add-Case 'production stamp: a file missing under directories that can be listed is absent' ($open -eq 'absent') $open
+            Add-Case 'production verdict: the locked directory before and after is UNVERIFIED' (
+                (Compare-ProductionStamp -Before $deep -After $deep) -eq 'UNVERIFIED (access denied)') (Compare-ProductionStamp -Before $deep -After $deep)
+        } finally {
+            $acl = Get-Acl -LiteralPath $locked
+            $null = $acl.RemoveAccessRule($deny)
+            Set-Acl -LiteralPath $locked -AclObject $acl
+        }
+
+        # Review M2: the child inherits the parent's environment, and the host reads its connection string from more than
+        # one place. Every other spelling of it must be gone from the child's environment, and the one handed over must
+        # parse -- as a connection string, not by a regex -- to exactly the temporary database, even with a ';' in the path.
+        $planted = @{
+            'CUSTOMCONNSTR_ControlServer'   = 'Data Source=C:\ProgramData\8005\ControlServer\data\controlserver.db'
+            'SQLCONNSTR_ControlServer'      = 'Data Source=C:\ProgramData\8005\ControlServer\data\controlserver.db'
+            'SQLAZURECONNSTR_ControlServer' = 'Data Source=C:\ProgramData\8005\ControlServer\data\controlserver.db'
+            'MYSQLCONNSTR_ControlServer'    = 'Data Source=C:\ProgramData\8005\ControlServer\data\controlserver.db'
+            'ConnectionStrings:ControlServer' = 'Data Source=C:\ProgramData\8005\ControlServer\data\controlserver.db'
+        }
+        $saved = @{}
+        foreach ($key in $planted.Keys) { $saved[$key] = [Environment]::GetEnvironmentVariable($key); [Environment]::SetEnvironmentVariable($key, $planted[$key]) }
+        try {
+            $semicolon = Join-Path $scratch 'a;Data Source=C:\ProgramData\8005\x\controlserver.db'
+            $start = New-MigrateStartInfo -HostDirectory (Join-Path $scratch 'no-host') -DatabasePath (Join-Path $semicolon 'controlserver.db') -WorkRoot $WorkRoot
+            $left = @($start.Environment.Keys | Where-Object { $_ -match '^(ConnectionStrings(__|:)|(CUSTOM|SQL|SQLAZURE|MYSQL)CONNSTR_)' -and $_ -ne 'ConnectionStrings__ControlServer' })
+            Add-Case 'start info: no other connection string spelling reaches the child' ($left.Count -eq 0) ($left -join ',')
+            $builder = [System.Data.Common.DbConnectionStringBuilder]::new()
+            $builder.ConnectionString = $start.Environment['ConnectionStrings__ControlServer']
+            Add-Case 'start info: the connection string parses to exactly the temporary database, a '';'' in the path included' (
+                $builder.Count -eq 1 -and $builder['Data Source'] -eq [IO.Path]::GetFullPath((Join-Path $semicolon 'controlserver.db'))) $start.Environment['ConnectionStrings__ControlServer']
+        } finally {
+            foreach ($key in $planted.Keys) { [Environment]::SetEnvironmentVariable($key, $saved[$key]) }
+        }
+
+        # A host directory that is an install (DOTNET_ENVIRONMENT=Production would load its appsettings.Production.json).
+        $installHost = try { $null = New-MigrateStartInfo -HostDirectory (Join-Path $env:ProgramData '8005\ControlServer') -DatabasePath (Join-Path $scratch 'db\controlserver.db') -WorkRoot $WorkRoot; '' } catch { "$_" }
+        Add-Case 'start info: a host directory under %ProgramData% is refused' ($installHost -like '*Host directory*') $installHost
     }
 
     # --- the migrated database ------------------------------------------------------------------------------------------

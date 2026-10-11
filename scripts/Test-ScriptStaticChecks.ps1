@@ -227,6 +227,20 @@ $f = $null -eq $other
         $nulls = Find-StringHelperNullComparison -Path $exempt -Helpers $repoStringHelpers -Exemptions @($voided) -RepositoryRoot $scratch
         Add-Case 'string-null premise: a voided exemption lets the comparison be reported, saying why' (
             @($nulls.Findings | Where-Object { $_.Line -eq 3 -and $_.Message -like '*premise*' }).Count -eq 1 -and $nulls.Exempted -eq 0) (Format-Finding $nulls.Findings)
+
+        # The premise is about the column the exempted function reads, so the function must still read that column: a
+        # rewrite to SELECT another column voids the exemption even while the snapshot is unchanged (review, optional).
+        $otherColumn = New-Fixture 'exempt-other-column.ps1' @'
+function Get-FleetGeneration {
+    $value = Get-G3Scalar $connection "SELECT ForcedRecoveryPending AS Value FROM VehicleRecoveryGenerations"
+    if ($null -eq $value) { return 0 }
+    return [long]$value
+}
+'@
+        $moved = @{ File = 'exempt-other-column.ps1'; Function = 'Get-FleetGeneration'; Variable = 'value'; Reason = 'fixture'; Premise = $real.Premise }
+        $nulls = Find-StringHelperNullComparison -Path $otherColumn -Helpers $repoStringHelpers -Exemptions @($moved) -RepositoryRoot $repositoryRoot
+        Add-Case 'string-null premise: an exempted function that no longer reads the premised column is reported' (
+            @($nulls.Findings | Where-Object { $_.Line -eq 3 -and $_.Message -like '*ForcedRecoveryGeneration*' }).Count -eq 1) (Format-Finding $nulls.Findings)
     } finally {
         Remove-Item -LiteralPath $scratch -Recurse -Force -ErrorAction SilentlyContinue
     }
@@ -268,8 +282,9 @@ Add-Case 'repository: no NULL-folding reader result compared with $null' (@($nul
 if ($full) {
     Add-Case 'repository: every string-null exemption still matches' (@($nulls.StaleExemptions).Count -eq 0) "$(@($nulls.StaleExemptions).Count) stale"
     # Get-G3Scalar plus the scenario-local Get-Scalar copies on fp/v2-impl@da6e40e2; 1800+ $null comparisons read.
-    Add-Case 'repository: string-null derived Get-G3Scalar and read at least 1000 $null comparisons' (
-        $stringHelpers -contains 'Get-G3Scalar' -and $nulls.Comparisons -ge 1000) "$($nulls.Comparisons)"
+    # 38 variables held a reader's result on fp/v2-impl@15d96bea.
+    Add-Case 'repository: string-null derived Get-G3Scalar, read at least 1000 $null comparisons and 30 reader variables' (
+        $stringHelpers -contains 'Get-G3Scalar' -and $nulls.Comparisons -ge 1000 -and $nulls.Variables -ge 30) "$($nulls.Comparisons) / $($nulls.Variables)"
 }
 
 $failed = @($cases | Where-Object { -not $_.Ok })
