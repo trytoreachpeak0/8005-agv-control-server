@@ -4,6 +4,8 @@ using ControlServer.Host.Transport;
 using Microsoft.AspNetCore.Http;
 using Microsoft.AspNetCore.Http.HttpResults;
 using Microsoft.Extensions.Configuration;
+using Microsoft.Extensions.DependencyInjection;
+using Microsoft.Extensions.Hosting;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Logging.Abstractions;
 using Microsoft.Extensions.Options;
@@ -513,6 +515,64 @@ public sealed class OnboardVehicleSafetyEndpointsTests
         Assert.Contains("OnboardSafetyProjection:vehicleCredentials", failure, StringComparison.Ordinal);
         Assert.Contains(Agv02Key, failure, StringComparison.Ordinal);
         Assert.Contains(Agv03Key, failure, StringComparison.Ordinal);
+    }
+
+    /// <summary>
+    /// control-server#600 审查 S1：校验器要经 Host 的注册拿到车队表与 TCP 凭据，否则按车检查全部跳过。两车车队表、投影开着、
+    /// 只有共享凭据时，Host.StartAsync 必须抛 OptionsValidationException。
+    /// </summary>
+    [Fact]
+    public async Task TheHostRefusesToStartARosterOfTwoWithOnlyTheSharedCredential()
+    {
+        using TwoCarCredentials cars = new();
+        HostApplicationBuilder builder = Microsoft.Extensions.Hosting.Host.CreateApplicationBuilder(
+            new HostApplicationBuilderSettings
+            {
+                DisableDefaults = true,
+                ApplicationName = typeof(OnboardVehicleSafetyEndpointsTests).Assembly.GetName().Name!
+            });
+        builder.Configuration.AddInMemoryCollection(new Dictionary<string, string?>
+        {
+            [$"{OnboardSafetyProjectionOptions.SectionName}:Enabled"] = "true",
+            [$"{OnboardSafetyProjectionOptions.SectionName}:CredentialEnvironmentVariable"] = cars.SharedVariable,
+            [$"{OnboardTransportOptions.SectionName}:CredentialEnvironmentVariable"] = cars.SharedVariable,
+            [$"{JourneyRuntimeOptions.SectionName}:AgvId"] = "AGV02",
+            [$"{JourneyRuntimeOptions.SectionName}:VehicleKey"] = Agv02Key,
+            [$"{JourneyRuntimeOptions.SectionName}:Fleet:0:AgvId"] = "AGV02",
+            [$"{JourneyRuntimeOptions.SectionName}:Fleet:0:VehicleKey"] = Agv02Key,
+            [$"{JourneyRuntimeOptions.SectionName}:Fleet:1:AgvId"] = "AGV03",
+            [$"{JourneyRuntimeOptions.SectionName}:Fleet:1:VehicleKey"] = Agv03Key
+        });
+        builder.Services.AddJourneyRuntimeOptions(builder.Configuration);
+        builder.Services.AddOptions<OnboardTransportOptions>()
+            .Bind(builder.Configuration.GetSection(OnboardTransportOptions.SectionName));
+        builder.Services.AddOnboardSafetyProjectionOptions(builder.Configuration);
+        using IHost host = builder.Build();
+
+        OptionsValidationException error = await Assert.ThrowsAsync<OptionsValidationException>(() =>
+            host.StartAsync(TestContext.Current.CancellationToken));
+
+        Assert.Contains(error.Failures, failure =>
+            failure.Contains("OnboardSafetyProjection:vehicleCredentials", StringComparison.Ordinal) &&
+            failure.Contains(Agv03Key, StringComparison.Ordinal));
+    }
+
+    /// <summary>Program.cs 注册投影选项只走这个扩展方法（审查 S1）：直接注册无参校验器会跳过按车检查。</summary>
+    [Fact]
+    public void TheHostRegistersTheProjectionOptionsThroughTheExtension()
+    {
+        string program = File.ReadAllText(Path.Combine(RepositoryRoot(), "src", "ControlServer.Host", "Program.cs"));
+
+        Assert.Contains("builder.Services.AddOnboardSafetyProjectionOptions(builder.Configuration);", program, StringComparison.Ordinal);
+        Assert.DoesNotContain("OnboardSafetyProjectionOptionsValidator", program, StringComparison.Ordinal);
+    }
+
+    private static string RepositoryRoot()
+    {
+        DirectoryInfo? directory = new(AppContext.BaseDirectory);
+        while (directory is not null && !File.Exists(Path.Combine(directory.FullName, "ControlServer.sln")))
+            directory = directory.Parent;
+        return directory?.FullName ?? throw new InvalidOperationException("ControlServer.sln not found above the test output.");
     }
 
     /// <summary>投影关着时多车不必配按车凭据：没有人会读到这个接口。</summary>

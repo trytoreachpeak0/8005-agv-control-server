@@ -4063,6 +4063,17 @@ Write-Result -Ok ($safetyResolve.Count -eq 1 -and $firstProduct.Count -eq 1 -and
     $safetyResolve[0].Extent.Text.Contains("GetEnvironmentVariable('CONTROL_SERVER_ONBOARD_CREDENTIAL', 'Machine')")) `
     -Name 'wiring: the installer resolves the per-vehicle projection credentials before any product script runs' `
     -Detail ("calls: $($safetyResolve.Count)" + $(if ($safetyResolve.Count) { "; text: $($safetyResolve[0].Extent.Text)" }))
+# Review S4: the outer function the install, upgrade and rollback paths call. Its credentials parameter is required (an
+# omitted one would write none and delete the service's per-vehicle variables as stale), and every call passes it.
+$setInstance = $installerAst.Find({ param($n) $n -is [System.Management.Automation.Language.FunctionDefinitionAst] -and $n.Name -eq 'Set-InstanceConfiguration' }, $true)
+$setParam = $null -eq $setInstance ? $null : @($setInstance.Body.ParamBlock.Parameters | Where-Object { $_.Name.VariablePath.UserPath -eq 'OnboardSafetyCredentials' })[0]
+$setParamText = $null -eq $setParam ? '' : $setParam.Extent.Text
+Write-Result -Ok ($null -ne $setParam -and $setParamText.Contains('Mandatory = $true') -and $setParamText.Contains('[AllowEmptyCollection()]') -and $null -eq $setParam.DefaultValue) `
+    -Name 'wiring: Set-InstanceConfiguration requires -OnboardSafetyCredentials (empty allowed), with no default' -Detail "parameter: $setParamText"
+$setCalls = @($installerAst.FindAll({ param($n) $n -is [System.Management.Automation.Language.CommandAst] -and $n.GetCommandName() -eq 'Set-InstanceConfiguration' }, $true))
+Write-Result -Ok ($setCalls.Count -ge 2 -and @($setCalls | Where-Object { -not $_.Extent.Text.Contains('-OnboardSafetyCredentials $onboardSafetyCredentials') }).Count -eq 0) `
+    -Name 'wiring: every Set-InstanceConfiguration call passes the resolved per-vehicle projection credentials' `
+    -Detail (($setCalls | ForEach-Object { "line $($_.Extent.StartLineNumber): $($_.Extent.Text)" }) -join ' | ')
 $stepCalls = @($installerAst.FindAll({ param($n) $n -is [System.Management.Automation.Language.CommandAst] -and $n.GetCommandName() -eq 'Invoke-ParallelInstanceConfigurationStep' }, $true))
 Write-Result -Ok ($stepCalls.Count -gt 0 -and @($stepCalls | Where-Object { -not $_.Extent.Text.Contains('-OnboardSafetyCredentials') }).Count -eq 0) `
     -Name 'wiring: every configuration step call writes the per-vehicle projection credentials' `

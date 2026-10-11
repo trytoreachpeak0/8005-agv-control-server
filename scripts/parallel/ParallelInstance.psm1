@@ -2282,7 +2282,8 @@ function Get-ParallelOnboardSafetyCredentialSlot {
     <#
         .SYNOPSIS
             control-server#600. One row per roster vehicle: VehicleKey, RiotId and the service-Environment Variable that
-            holds its vehicle-safety projection credential. None for a single-car definition, which keeps the shared one.
+            holds its vehicle-safety projection credential. One per row of journeyRuntime.fleet -- a roster of one row
+            included; none for a definition without a roster (the single-vehicle keys), which keeps the shared credential.
     #>
     [CmdletBinding()]
     param([Parameter(Mandatory = $true)][System.Collections.IDictionary] $Definition)
@@ -2301,7 +2302,7 @@ function Resolve-ParallelOnboardSafetyCredential {
     <#
         .SYNOPSIS
             control-server#600. The vehicle-safety projection credential of every roster vehicle, as an ordered map from
-            service-Environment variable to value. Empty for a single-car definition. Throws, naming vehicles and never a
+            service-Environment variable to value. Empty for a definition without a roster. Throws, naming vehicles and never a
             value, when one is missing or two would let one vehicle read another's projection.
 
         .DESCRIPTION

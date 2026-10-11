@@ -433,7 +433,9 @@ try {
         #>
         param(
             [AllowNull()][AllowEmptyString()][string] $FaultRecoveryCredential,
-            [System.Collections.IDictionary] $OnboardSafetyCredentials = @{}
+            # control-server#600 review S4: required, so a call that leaves it out fails instead of writing none -- with none,
+            # the step deletes every per-vehicle variable the service holds as stale, and the new service refuses to start.
+            [Parameter(Mandatory = $true)][AllowEmptyCollection()][System.Collections.IDictionary] $OnboardSafetyCredentials
         )
 
         $configurationPath = Join-Path $installRoot 'appsettings.Production.json'

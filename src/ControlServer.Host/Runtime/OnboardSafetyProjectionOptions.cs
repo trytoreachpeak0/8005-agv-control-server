@@ -173,3 +173,25 @@ public sealed class OnboardSafetyProjectionOptionsValidator(
         }
     }
 }
+
+public static class OnboardSafetyProjectionServiceCollectionExtensions
+{
+    /// <summary>
+    /// Binds <see cref="OnboardSafetyProjectionOptions"/>, validated at startup against the journey runtime's roster and the
+    /// onboard transport's shared credential (control-server#600). The validator must be built with both: without them it
+    /// skips every per-vehicle check, and a roster of two would start with one shared credential.
+    /// </summary>
+    public static IServiceCollection AddOnboardSafetyProjectionOptions(
+        this IServiceCollection services,
+        IConfiguration configuration)
+    {
+        services.AddOptions<OnboardSafetyProjectionOptions>()
+            .Bind(configuration.GetSection(OnboardSafetyProjectionOptions.SectionName))
+            .ValidateOnStart();
+        services.AddSingleton<IValidateOptions<OnboardSafetyProjectionOptions>>(provider =>
+            new OnboardSafetyProjectionOptionsValidator(
+                provider.GetRequiredService<IOptions<JourneyRuntimeOptions>>().Value,
+                provider.GetRequiredService<IOptions<OnboardTransportOptions>>().Value));
+        return services;
+    }
+}
