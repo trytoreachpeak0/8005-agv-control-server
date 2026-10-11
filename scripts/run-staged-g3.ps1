@@ -663,22 +663,36 @@ public static class StagedG3TlsHarness
         string messageType,
         string? acceptedMessageType,
         string action,
+        int delayMilliseconds) =>
+        ArmFault(direction, messageType, acceptedMessageType, action, delayMilliseconds);
+
+    /// <summary>
+    /// AddFault for the probes in here, which keep the rule to assert afterwards that it fired (control-server#543).
+    /// AddFault stays void: the runner calls it from PowerShell, where a return value would land in the pipeline.
+    /// </summary>
+    private static FaultRule ArmFault(
+        string direction,
+        string messageType,
+        string? acceptedMessageType,
+        string action,
         int delayMilliseconds)
     {
+        var rule = new FaultRule
+        {
+            Direction = direction,
+            MessageType = messageType,
+            // PowerShell marshals $null into a string parameter as the empty string, so a rule
+            // armed from the runner would otherwise carry "" and never match an accepted type.
+            // Empty and null both mean "any accepted type".
+            AcceptedMessageType = string.IsNullOrEmpty(acceptedMessageType) ? null : acceptedMessageType,
+            Action = action,
+            DelayMilliseconds = delayMilliseconds
+        };
         lock (FaultGate)
         {
-            Faults.Add(new FaultRule
-            {
-                Direction = direction,
-                MessageType = messageType,
-                // PowerShell marshals $null into a string parameter as the empty string, so a rule
-                // armed from the runner would otherwise carry "" and never match an accepted type.
-                // Empty and null both mean "any accepted type".
-                AcceptedMessageType = string.IsNullOrEmpty(acceptedMessageType) ? null : acceptedMessageType,
-                Action = action,
-                DelayMilliseconds = delayMilliseconds
-            });
+            Faults.Add(rule);
         }
+        return rule;
     }
 
     private static FaultRule? MatchFault(string direction, Dictionary<string, object?> metadata)
@@ -1466,7 +1480,8 @@ public static class StagedG3TlsHarness
             }
 
             // Armed only now, so none of the refused actions above can consume the one-shot rule.
-            AddFault("server-to-client", "ForcedMechanicalRecoveryCommand", null, "drop-and-close", 0);
+            FaultRule commandDrop = ArmFault(
+                "server-to-client", "ForcedMechanicalRecoveryCommand", null, "drop-and-close", 0);
             string accepted = await ExchangeAsync(
                 connection,
                 ActionSubmit(
@@ -1475,14 +1490,25 @@ public static class StagedG3TlsHarness
                     eventId, null, scope, administratorId),
                 "RecoveryActionAccepted", cancellationToken).ConfigureAwait(false);
             acceptedFirstActionId = NestedProperty(accepted, "payload", "recoveryActionId");
-            commandConnectionClosed = await connection
-                .ExpectClosedAsync(TimeSpan.FromSeconds(10), cancellationToken).ConfigureAwait(false);
+            // control-server#543: the close has to be the proxy's. Until then this was ExpectClosedAsync over ten
+            // seconds, which took a read timeout for a close and also passed on the server's own close of a connection
+            // silent for 6 seconds (ADR-cross-0027) -- the very thing that passed it while the rule was firing on the
+            // wrong connection (control-server#306, above). So: the stream really ends, within the window the stale
+            // generation close is held to (see ExpectStaleGenerationClosedAsync), and the rule armed above is the one
+            // that fired. The proxy writes the same fact to its transcript, which the runner also counts
+            // (recoveryFaultInjection.droppedCommandCount); this is the probe's own record of it.
+            Dictionary<string, object?> commandConnectionEnd = await ExpectEndOfStreamAsync(
+                connection, PromptCloseWindow, cancellationToken).ConfigureAwait(false);
+            bool commandDropFired = Volatile.Read(ref commandDrop.Fired) == 1;
+            commandConnectionClosed = Equals(commandConnectionEnd["streamEnded"], true) && commandDropFired;
             Log(transcriptPath, new Dictionary<string, object?>
             {
                 ["case"] = "forced-mechanical-command-lost-to-disconnect",
                 ["status"] = commandConnectionClosed ? "PASS" : "FAIL",
                 ["recoveryActionId"] = acceptedFirstActionId,
-                ["connectionClosed"] = commandConnectionClosed
+                ["connectionClosed"] = commandConnectionClosed,
+                ["dropRuleFired"] = commandDropFired,
+                ["observation"] = commandConnectionEnd
             });
         }
 
@@ -1948,7 +1974,7 @@ public static class StagedG3TlsHarness
     /// </summary>
     /// <remarks>
     /// Closed means all three: the stream ended -- a read timeout is not an end; it ended within
-    /// StaleGenerationCloseWindow; and no line before the end answered the stale message. The window is what keeps this
+    /// PromptCloseWindow; and no line before the end answered the stale message. The window is what keeps this
     /// from passing on the server's other close: a connection without a legal message for 6 seconds is ended anyway
     /// (ADR-cross-0027, SessionLiveness.Timeout), and the stale line does not refresh that, so a server that did nothing
     /// with it would still end the stream about 6 seconds after the handshake. 3 seconds is half that, the same window
@@ -1971,7 +1997,7 @@ public static class StagedG3TlsHarness
         string line = buildLine(generation);
         await connection.WriteAsync(line, cancellationToken).ConfigureAwait(false);
         Dictionary<string, object?> end = await ExpectEndOfStreamAsync(
-            connection, StaleGenerationCloseWindow, cancellationToken, staleMessageId).ConfigureAwait(false);
+            connection, PromptCloseWindow, cancellationToken, staleMessageId).ConfigureAwait(false);
         bool answered = end["answersBeforeEnd"] is List<string?> { Count: > 0 };
         return new Dictionary<string, object?>
         {
@@ -1985,7 +2011,7 @@ public static class StagedG3TlsHarness
         };
     }
 
-    private static readonly TimeSpan StaleGenerationCloseWindow = TimeSpan.FromSeconds(3);
+    private static readonly TimeSpan PromptCloseWindow = TimeSpan.FromSeconds(3);
 
     /// <summary>
     /// Opens a fresh session, sends one line the server has to refuse for its content, and reports the answer.
