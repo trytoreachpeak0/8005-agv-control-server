@@ -111,6 +111,96 @@ public sealed class ProtocolInboxReadWindowTests
     }
 
     /// <summary>
+    /// 静默车：会话行还是 Ready，车已经不发了，另一台车还在发心跳。派车事实读取判这台车不活，而读回次数不随另一台车的心跳条数增长——
+    /// 证据窗口的下界在这里才起作用（审查 S1）：车在线时它的心跳总是最新那一行，从新到旧读第一行就停，有没有下界读回次数一样；
+    /// 车静默时没有下界，就要从此刻一路往回扫到它最后那一条，断线一天每轮约 8.6 万行。
+    /// </summary>
+    /// <remarks>
+    /// 读回次数逐条数得出来：三处按类型读各 2；判存活只读证据窗口里另一台车的 15 条心跳（此刻之前 1、3、……、29 秒）加一次「没有了」。
+    /// 合计 6 + 16 = 22，另一台车在窗口之前多发多少条都一样。
+    /// </remarks>
+    [Theory]
+    [InlineData(50)]
+    [InlineData(400)]
+    public async Task DispatchFactsOfASilentVehicleDoNotReadBackPastTheEvidenceWindow(int otherVehicleHeartbeats)
+    {
+        await using InboxDatabase database = await InboxDatabase.CreateAsync();
+        await SeedReadyVehicleAsync(database.Context, AgvId, Now - TimeSpan.FromHours(2));
+        database.Context.ProtocolInbox.Add(HeardFrom(AgvId, Generation, Now - TimeSpan.FromHours(1)));
+        for (int beat = 0; beat < otherVehicleHeartbeats; beat++)
+        {
+            database.Context.ProtocolInbox.Add(HeardFrom("AGV-02", Generation, Now - TimeSpan.FromSeconds(1 + (2 * beat))));
+        }
+        await database.Context.SaveChangesAsync(Token);
+
+        database.Reads.Reset();
+        OnboardDispatchFacts? facts = await Reader(database.Context).ReadOnboardFactsAsync(AgvId, Token);
+
+        Assert.Equal((null, 22), (facts, database.Reads.Rows));
+    }
+
+    /// <summary>
+    /// 引擎里另外两处判存活（站点期限到点结束停靠、确定性装货失败，<c>JourneyRuntimeEngine</c> 里传证据窗口下界的那两处）对静默车同样不往回扫：
+    /// 车静默一分钟，其间另一台车发了 N 条心跳（都在证据窗口与存活窗口之前），整轮读回收件箱的次数不随 N 变，旅程照旧停着不动——
+    /// 与 <c>JourneyRuntimeWorkerTests.TheStationDeadlineDoesNotEndTheStopWhileTheVehicleIsOffAir</c>、
+    /// <see cref="JourneyRuntimeWorkerLoadDeadlineTests.ADeterminateLoadFailureIsNotSettledWhileTheVehicleIsOffAir"/> 同一个判定。
+    /// </summary>
+    [Theory]
+    [InlineData(nameof(JourneyRuntimeStage.AwaitingSublot))]
+    [InlineData(nameof(JourneyRuntimeStage.AwaitingLoadResult))]
+    public async Task AnEngineRoundOverASilentVehicleDoesNotReadBackPastTheEvidenceWindow(string waitingIn)
+    {
+        JourneyRuntimeStage stage = Enum.Parse<JourneyRuntimeStage>(waitingIn);
+        (JourneyRuntimeStage Stage, int Reads) few = await SilentVehicleRoundAsync(stage, otherVehicleHeartbeats: 10);
+        (JourneyRuntimeStage Stage, int Reads) many = await SilentVehicleRoundAsync(stage, otherVehicleHeartbeats: 400);
+
+        Assert.Equal((stage, stage, few.Reads), (few.Stage, many.Stage, many.Reads));
+    }
+
+    /// <summary>
+    /// 一趟停在 <paramref name="stage"/> 的旅程，站点期限（十秒）已过、车静默一分钟、证据窗口五秒；其间另一台车的心跳都在两个窗口之前。
+    /// 跑一轮，答旅程停在哪一段、这一轮从收件箱读回几次。
+    /// </summary>
+    private static async Task<(JourneyRuntimeStage Stage, int Reads)> SilentVehicleRoundAsync(
+        JourneyRuntimeStage stage, int otherVehicleHeartbeats)
+    {
+        InboxRowsRead reads = new();
+        await using JourneyRuntimeWorkerTestKit.RuntimeFixture fixture =
+            await JourneyRuntimeWorkerTestKit.RuntimeFixture.CreateAsync(commands: reads);
+        fixture.Options.MaximumEvidenceAge = TimeSpan.FromSeconds(5);
+        if (stage == JourneyRuntimeStage.AwaitingSublot)
+        {
+            fixture.Options.StationDepartureWaitTimeout = TimeSpan.FromSeconds(10);
+            fixture.Catalog.Set(fixture.Demand(
+                "10000000-0000-4000-8000-000000000001", "SUBLOT-001", createdAt: JourneyRuntimeWorkerTestKit.Now.AddMinutes(-10)));
+            fixture.BoxCounts.Set("SUBLOT-001", 7);
+            await fixture.AdvanceToSublotWaitAsync();
+            await fixture.ProveSlotDoorsClosedAsync();
+        }
+        else
+        {
+            await JourneyRuntimeWorkerLoadDeadlineTests.AdvanceToLoadWithStationDeadlineAsync(fixture);
+            fixture.Clock.Advance(TimeSpan.FromSeconds(11));
+            await JourneyRuntimeWorkerLoadDeadlineTests.ReportLoadResultAsync(
+                fixture, JourneyRuntimeWorkerLoadDeadlineTests.DeterminateFailureSlots(fixture, "OPERATOR_TIMEOUT"));
+        }
+        DateTimeOffset lastHeard = fixture.Clock.GetUtcNow();
+        fixture.Clock.Advance(TimeSpan.FromMinutes(1));
+        for (int beat = 0; beat < otherVehicleHeartbeats; beat++)
+        {
+            fixture.Context.ProtocolInbox.Add(HeardFrom(
+                "AGV-OTHER", Generation, lastHeard + TimeSpan.FromMilliseconds(100 * (beat + 1))));
+        }
+        await fixture.Context.SaveChangesAsync(Token);
+        fixture.Context.ChangeTracker.Clear();
+
+        reads.Reset();
+        await fixture.Engine.ExecuteOnceAsync(Token);
+        int read = reads.Rows;
+        return ((await fixture.RuntimeAsync()).Stage, read);
+    }
+
+    /// <summary>
     /// 证据窗口的边：最后一条入站恰好在 <c>now - MaximumEvidenceAge</c> 时仍算活，早一个 tick 就不算；收件时间晚于此刻的不算活。
     /// 改动前后都是这样——这一条守的是下推之后窗口的下界仍是闭的、上界仍判「来自未来」，不是新行为。
     /// </summary>
@@ -269,6 +359,8 @@ public sealed class ProtocolInboxReadWindowTests
     /// <summary>
     /// 量测（不进默认运行，<c>Explicit</c>）：三台车各连续在线 <c>CS563_MEASURE_DAYS</c> 天（缺省 3）的收件箱上，四条热路径读法每次读回几行、用多久。
     /// 结果写进 <c>CS563_MEASURE_OUT</c> 指的文件（缺省在临时目录）。改动前后在同一台机器上各跑一次，对照写进 PR。
+    /// <c>CS563_MEASURE_SILENT_HOURS</c>（缺省 0）让 AGV-01 在最后这么多小时里不再发心跳、会话行仍是 Ready：断线没人改会话行时的样子，
+    /// 证据窗口的下界只在这时才省下读回的行（审查 S1）。
     /// </summary>
     /// <remarks>
     /// <para>
@@ -286,9 +378,12 @@ public sealed class ProtocolInboxReadWindowTests
     public async Task MeasureHotPathInboxReads()
     {
         int days = int.TryParse(Environment.GetEnvironmentVariable("CS563_MEASURE_DAYS"), out int parsed) ? parsed : 3;
+        int silentHours = int.TryParse(Environment.GetEnvironmentVariable("CS563_MEASURE_SILENT_HOURS"), out int silent) ? silent : 0;
         string output = Environment.GetEnvironmentVariable("CS563_MEASURE_OUT")
                         ?? Path.Combine(Path.GetTempPath(), "cs563-measure.txt");
-        string databasePath = Path.Combine(Path.GetTempPath(), $"cs563-measure-{Guid.NewGuid():N}.db");
+        // The database runs to hundreds of MiB; CS563_MEASURE_DIR puts it on a roomier disk than the temp directory's.
+        string databasePath = Path.Combine(
+            Environment.GetEnvironmentVariable("CS563_MEASURE_DIR") ?? Path.GetTempPath(), $"cs563-measure-{Guid.NewGuid():N}.db");
         string[] vehicles = ["AGV-01", "AGV-02", "AGV-03"];
         InboxRowsRead reads = new();
         DbContextOptions<ControlServerDbContext> options = new DbContextOptionsBuilder<ControlServerDbContext>()
@@ -299,10 +394,10 @@ public sealed class ProtocolInboxReadWindowTests
         try
         {
             Stopwatch seeding = Stopwatch.StartNew();
-            long rows = await SeedMeasurementInboxAsync(options, vehicles, days);
+            long rows = await SeedMeasurementInboxAsync(options, vehicles, days, silentHours);
             seeding.Stop();
             lines.Add(FormattableString.Invariant(
-                $"inbox rows={rows} days={days} vehicles={vehicles.Length} seed={seeding.Elapsed.TotalSeconds:F1}s db={new FileInfo(databasePath).Length / 1024 / 1024}MiB"));
+                $"inbox rows={rows} days={days} vehicles={vehicles.Length} agv01SilentHours={silentHours} seed={seeding.Elapsed.TotalSeconds:F1}s db={new FileInfo(databasePath).Length / 1024 / 1024}MiB"));
 
             await using ControlServerDbContext context = new(options);
             OnboardDispatchFactsReader reader = new(
@@ -349,20 +444,31 @@ public sealed class ProtocolInboxReadWindowTests
     }
 
     private static async Task<long> SeedMeasurementInboxAsync(
-        DbContextOptions<ControlServerDbContext> options, string[] vehicles, int days)
+        DbContextOptions<ControlServerDbContext> options, string[] vehicles, int days, int silentHours)
     {
         await using ControlServerDbContext context = new(options);
         await context.Database.MigrateAsync(Token);
         long lastSafetyRevision = (days * 24 * 6) + 1;
+        DateTimeOffset start = Now - TimeSpan.FromDays(days);
+        // A silent AGV-01 sends nothing at all after the cutoff -- any inbound message counts as alive -- and its session row
+        // stays Ready on the last safety version it sent before going quiet, as a dropped link leaves it.
+        DateTimeOffset silentFrom = Now - TimeSpan.FromHours(silentHours);
+        bool Sends(string vehicle, DateTimeOffset at) => vehicle != "AGV-01" || at <= silentFrom;
+        static DateTimeOffset SafetyChangedAt(DateTimeOffset start, long revision) =>
+            start + TimeSpan.FromMinutes(10 * (revision - 1)) - TimeSpan.FromSeconds(3);
         foreach (string vehicle in vehicles)
         {
             SessionRecoveryRow session = Session(vehicle, Generation);
-            session.SafetyRevision = lastSafetyRevision;
+            long revision = lastSafetyRevision;
+            while (revision > 1 && !Sends(vehicle, SafetyChangedAt(start, revision)))
+            {
+                revision--;
+            }
+            session.SafetyRevision = revision;
             context.SessionRecoveries.Add(session);
         }
         await context.SaveChangesAsync(Token);
 
-        DateTimeOffset start = Now - TimeSpan.FromDays(days);
         long count = 0;
         List<ProtocolInboxRow> batch = [];
         async Task FlushAsync()
@@ -380,12 +486,19 @@ public sealed class ProtocolInboxReadWindowTests
             batch.Add(Envelope("SafetyStateSnapshot", vehicle, start, SafetyPayload(1, start, withSlots: true)));
             for (long revision = 2; revision <= lastSafetyRevision; revision++)
             {
-                DateTimeOffset at = start + TimeSpan.FromMinutes(10 * (revision - 1)) - TimeSpan.FromSeconds(3);
-                batch.Add(Envelope("SafetyStateChanged", vehicle, at, SafetyPayload(revision, at, withSlots: false)));
+                DateTimeOffset at = SafetyChangedAt(start, revision);
+                if (Sends(vehicle, at))
+                {
+                    batch.Add(Envelope("SafetyStateChanged", vehicle, at, SafetyPayload(revision, at, withSlots: false)));
+                }
             }
             for (int sublot = 0; sublot < days * 50; sublot++)
             {
                 DateTimeOffset at = start + TimeSpan.FromMinutes(sublot * 28.8);
+                if (!Sends(vehicle, at))
+                {
+                    continue;
+                }
                 batch.Add(Envelope(
                     "SublotSubmitted",
                     vehicle,
@@ -398,6 +511,10 @@ public sealed class ProtocolInboxReadWindowTests
         {
             foreach (string vehicle in vehicles)
             {
+                if (!Sends(vehicle, at))
+                {
+                    continue;
+                }
                 batch.Add(Envelope("Heartbeat", vehicle, at, new { }));
             }
             if (batch.Count >= 30_000)
