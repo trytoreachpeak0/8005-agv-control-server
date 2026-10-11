@@ -119,20 +119,135 @@ control-server#262。约 2026-10-08 起 `factory01` 上同时跑两套 ControlSe
 
 **站点清单与准入策略都只在 `JourneyRuntime.enabled=true` 时才会被读**（`TaskTypeStationStartup.cs` 在运行时关着时直接返回；准入策略在 `JourneyRuntimeEngine` 的一轮迭代里写库）。所以运行时关着的实例用不到它们；开运行时要用的 26 版站点清单已经随包提供，并由定义点名（见下一段）。
 
-**26 版站点清单自 control-server#518 起在包里**：`src/ControlServer.Host/task-type-stations.map-26.settings.json`，只绑
-`WIRE_TO_GATE` → 210「关卡」。站号与站名取自已入库证据（`evidence/field/2026-09-19-B6-map-name-baseline-check/SUMMARY.md` 结论 4、
-`evidence/field/2026-10-03-B9-charging-roster-and-policy/catalog-26.json`），没有读 RIoT。`siteVerificationRef` 是
-`MAP-26-WIRE_TO_GATE-B6-IDENTITY-20260919`：依据的是 B6 的身份核对（26 号图上唯一叫「关卡」的站是 210），**不是现场用途核对**
-（`REQ-0338`）。预置清单只装进一张图的第一版；以后做了关卡 210 的现场用途核对，用 FieldOps 激活新版本换成真实记录号，重启不会覆盖。
+**26 版站点清单自 control-server#518 起在包里**：`src/ControlServer.Host/task-type-stations.map-26.settings.json`。
+control-server#518 时它只绑 `WIRE_TO_GATE` → 210「关卡」，核对号是 B6 的身份核对 `MAP-26-WIRE_TO_GATE-B6-IDENTITY-20260919`，不是现场
+用途核对。**control-server#548 起它绑六类**，与下文「26 号图的六类站点绑定」的激活候选逐条相同，核对号全部换成用户 2026-10-10 本人做的
+现场用途核对（`REQ-0338`）。预置清单只装进一张图的第一版：**已有库的实例改预置不起作用**，要用那一节的 FieldOps 步骤激活，重启不会覆盖。
 
 - 定义必须写 `taskTypeStations.settingsFile`，缺了就拒绝。它只能是裸文件名 `task-type-stations.map-<N>.settings.json`，
   不带目录：文件来自包、装在安装目录里，每次装包随 Host 一起替换，所以与 Host 永远同一构建。`<N>` 必须等于
   `journeyRuntime.mapId`，否则装的时候就拒绝，而不是等开运行时被 `BindingMapMismatch` 拦下。
-- 文件内容与图号由 `TaskTypeStationStartupTests` 钉住（26 号图启动不报 `BindingMapMismatch`，并与 `catalog-26.json` 交叉核对）；
+- 文件内容与图号由 `TaskTypeStationStartupTests` 钉住（26 号图启动不报 `BindingMapMismatch`；六个站与 control-server#548 只读读回的
+  `evidence/field/20261011-B10-05-map26-task-type-stations/catalog-26.json` 交叉核对；与激活候选 `task-type-stations.map-26.candidate.json` 逐条相同）；
   覆盖层写的键与 Host 的 `TaskTypeStationPreset.SettingsFileKey` 一致、点名的文件确实由 Host 项目输出，由 `Test-ParallelInstance.ps1` 核对。
 - 取货端（例如 N1-3）是 AREA 端，不进这份清单，靠站点目录与区域分配表导入解析。
 
 **所以出厂定义里 `journeyRuntime.enabled` 与 `routeGraph.enabled` 都是 `false`**（control-server#411 审查 S2）。当时包里的站点清单只有绑 map 25 的那份（control-server#518 之后定义改为点名 26 版，见上文）；运行时开着时，站点清单的图号与 `JourneyRuntime:mapId`（26）对不上，Host 会以 `BindingMapMismatch` 拒绝启动（`TaskTypeStationConfigurationValidator.cs`），照原样装会再次半装。两个开关必须一起改：只开路网引擎、不开运行时会被校验拒绝。**打开运行时是以后单独授权的一步，前提是 26 版站点清单已经进包。**10-07 的首装用的就是这两项为 `false` 的定义。
+
+## 26 号图的六类站点绑定：激活候选与操作步骤（control-server#548）
+
+**先说要做什么**：已经在跑的 v2 实例（库里已有 26 号图的生效绑定），要用 FieldOps 把 `task-type-stations.map-26.candidate.json`
+激活成新版本，才会有下面六条绑定；改包里的预置对它不起作用。这一步由人在 factory01 上执行，时间由调度与用户约；本仓不替你执行。
+
+| 任务类型 | 站名 | 站号 | 现场用途核对记录号 |
+| --- | --- | --- | --- |
+| `WIRE_TO_GATE` | 关卡 | 210 | `MAP-26-WIRE_TO_GATE-SITE-20261010` |
+| `STAGING_TO_WIRE` | 派工待送取货 | 217 | `MAP-26-STAGING_TO_WIRE-SITE-20261010` |
+| `DIE_TO_OVEN` | 烘箱 | 218 | `MAP-26-DIE_TO_OVEN-SITE-20261010` |
+| `WIRE_TO_OPTICAL` | 三光 | 219 | `MAP-26-WIRE_TO_OPTICAL-SITE-20261010` |
+| `DIE_TO_WIRE_STAGING` | 装片氮气柜 | 220 | `MAP-26-DIE_TO_WIRE_STAGING-SITE-20261010` |
+| `WIRE_TO_NITROGEN` | 焊线氮气柜 | 221 | `MAP-26-WIRE_TO_NITROGEN-SITE-20261010` |
+
+站号与站名是用户 2026-10-10 回填的（control-server#547），2026-10-11 只读读 RIoT 核对过：六个站都在、站名逐字一致、在图上各自唯一、
+都不是 AREA 格式；每站的坐标与所在边见 `evidence/field/20261011-B10-05-map26-task-type-stations/`。六条核对都是用户本人 2026-10-10
+在现场做的。220 与 221 是**同一个氮气柜的两个停靠位**，各是一个站、各绑一类；站点独占按站号算（`StationExclusivities` 的主键是
+`MapId + StationId`），两辆车可以同时各停一个，这是用户接受的现场形态。
+
+**这一步改什么、不改什么**：
+
+- 只改 v2 实例自己库里的绑定集版本，不改派车闸门的开关（`RiotCreateDispatch.enabled`），不碰 MVP，不碰 RIoT。**但它不隔着闸门生效**：
+  派车每轮从库里读生效版本，闸门开着时一激活，下一轮就可能向 218～221 派车。所以闸门关着（或实例是生产来源模式）时做这一步不用问用户；
+  闸门开着而 `allowedWorkTypes` 含四类之一时，激活就等于放车去新站，要先问用户（工作区 `CLAUDE.md`「Ask first」第 1 类），见第 2 步。
+- **生产来源模式的实例激活了六类也只派 `STAGING_TO_WIRE`**：它的 `allowedWorkTypes` 只有这一类（`instance-factory01-v2.production-mes.json`），
+  别的类型的需求根本进不来。绑定只回答「这一类去哪个站」，不放行任务类型。
+- 不用重启服务：派车每轮从库里读生效版本（`BoundFixedTaskStationResolver`）。新站进路网要等下一次路网刷新，
+  与激活无关。
+
+**绑定集是整份替换，不是逐条增减**：候选是整张图的 `requiredTaskTypes` 与全部 `bindings`，激活后新版本的内容就是候选本身
+（`TaskTypeStationActivationService`）。所以候选里必须带上实例上**现有**的绑定（210、217），漏掉的类型会从新版本里消失。
+`requiredTaskTypes` 也不是可有可无：派车只采用列在需求集里的类型的绑定，不在需求集里的类型即使绑了站，也按 `TASK_TYPE_BINDING_MISSING`
+拒绝（`BoundFixedTaskStationResolver.cs` 的 `Resolve`）。所以候选的需求集是六类，与绑定一一对应。
+
+### 步骤
+
+前提：实例在跑、旅程运行时开着（目录只有运行着的服务端才会每轮确认）；FieldOps 用与已装包同一提交发布的那份（10-09 起放在运维目录
+`D:\zhengyushao\control-server-v2-ops` 下）；库是 v2 的 `C:\ProgramData\8005\ControlServer.V2\data\controlserver.db`，**不是** MVP 的那个。
+下面 `<db>` 指 v2 库，`<ops>` 指运维目录，`FieldOps` 指那里的 `ControlServer.FieldOps.exe`。
+
+1. **取新鲜目录**。在 factory01 上用本仓 `scripts/field/Export-RiotStationCatalog.ps1`（只发一次 GET，不写 RIoT），密钥取自
+   `CONTROL_SERVER_RIOT_CALL_API_KEY`。**19 不会把这个脚本放进运维目录**：从与已装包同一提交的检出（19 的 `-ControlServerRepository`）
+   里把 `scripts\field\Export-RiotStationCatalog.ps1` 拷到 `<ops>`（10-09 就是这样手工放的），或在检出里原地运行：
+
+   ```powershell
+   pwsh -File <ops>\Export-RiotStationCatalog.ps1 -MapId 26 -OutFile <ops>\stations-26-<yyyyMMdd-HHmmss>.json
+   ```
+
+   打开导出的 json 核一遍：210、217～221 都在、站名与上表逐字一致。对不上就停，不要改候选去迁就目录。
+   这份目录必须正好是服务端最近一次完整确认的那份，且确认还在批准的新鲜度窗口内（库里 `MapStationCatalogStates.ApprovedMaxUnconfirmedSeconds`，
+   导出后尽快做完第 2～5 步）；超时或不一致时，后面每一步都会报 `TASK_TYPE_BINDING_CATALOG_NOT_FRESH`，重新导一份即可。
+
+2. **先读现状**（只读，库以 SQLite 只读模式打开）：
+
+   ```powershell
+   FieldOps task-type-stations --database <db> --map 26
+   ```
+
+   记下 `activeVersion`（回滚要用），并核对：`state` 是 `Active`，`unreleasedHolds` 与 `openAttempt` 都为空，`active.ruleVersion` 是 1，
+   `active.bindings` 是 `WIRE_TO_GATE` → 210、`STAGING_TO_WIRE` → 217。**与此不符就停，报调度**：候选是按这个现状写的，现状变了，整份替换
+   可能丢掉别人加的绑定；候选写死了 `ruleVersion: 1`，规则版本对不上时 dry-run 会以 `TASK_TYPE_BINDING_RULE_VERSION_NOT_CURRENT` 拒绝。
+   有未解除的暂停或未结的激活尝试，也先停。
+
+   **再确认派车闸门**：读 `C:\Program Files\8005 AGV\ControlServer.V2\appsettings.Production.json` 的 `RiotCreateDispatch.enabled`。
+   是 `false`（关着），或实例是生产来源模式（`allowedWorkTypes` 只有 `STAGING_TO_WIRE`，见上文「需求来源」），才往下做。闸门开着而
+   `JourneyRuntime.allowedWorkTypes` 含 `DIE_TO_OVEN`、`WIRE_TO_OPTICAL`、`DIE_TO_WIRE_STAGING`、`WIRE_TO_NITROGEN` 之一——出厂
+   `instance-factory01-v2.json` 与两车示例都含全部六类——**激活就等于放车去新站，先停下问用户**，或先按「关、开派车闸门」把闸门关上。
+
+3. **dry-run**（只校验、出预览，除一条审计外什么都不写）：
+
+   ```powershell
+   FieldOps activate-task-type-stations --database <db> --input <ops>\task-type-stations.map-26.candidate.json --catalog <第 1 步的文件> --reason "control-server#548 同向四类绑定 dry-run" --dry-run
+   ```
+
+   期望：退出码 0，`outcome` 为 `PREVIEW`，`violations` 为空。
+
+4. **看 diff**：`changes` 应当**恰好是四条新增**——`DIE_TO_OVEN` → 218、`WIRE_TO_OPTICAL` → 219、`DIE_TO_WIRE_STAGING` → 220、
+   `WIRE_TO_NITROGEN` → 221，每条 `before` 为 `null`。210、217 只换核对记录号、站号站名不变，**预览不列它们**（预览只比站号与站名），
+   记录号换没换在第 6 步核对。`impact.affected` 应为空：四类之前没有绑定，不会有在途需求冻结在别的站上。任何一条与此不符就停。
+
+5. **正式激活**：去掉 `--dry-run`，`--reason` 写清是谁、为什么：
+
+   ```powershell
+   FieldOps activate-task-type-stations --database <db> --input <ops>\task-type-stations.map-26.candidate.json --catalog <第 1 步的文件> --reason "control-server#548 同向四类绑定，用户 2026-10-10 现场核对"
+   ```
+
+   期望：退出码 0，`outcome` 为 `OK`，`targetVersion` 是第 2 步的 `activeVersion + 1`，`detail` 写着该版本读回的内容哈希。
+   退出码 1 且 `outcome` 为 `REJECTED`：什么都没切换，按 `violations` 的原因码处理。**`RESULT_UNKNOWN`：不要重试激活**，
+   跑 `FieldOps reconcile-task-type-stations --database <db> --map 26 --reason "<为什么>"` 让它读回实际生效的版本下结论。
+
+6. **只读核对**：再跑一次第 2 步的命令。期望 `activeVersion` 等于第 5 步的 `targetVersion`，`active.requiredTaskTypes` 是六类，
+   `active.bindings` 与上表**逐条相同，包括六个核对记录号**（210、217 的旧记录号在这里才看得出换掉了），`unreleasedHolds`、`openAttempt` 为空。
+
+7. **出问题时回滚**：回滚不是把指针拨回去，而是把历史版本的内容当一次新的激活重新全量校验，生效的是一个更高的新版本号。所以同样要新鲜目录，
+   先 dry-run：
+
+   ```powershell
+   FieldOps rollback-task-type-stations --database <db> --map 26 --version <第 2 步的 activeVersion> --catalog <新鲜目录> --reason "<为什么回滚>" --dry-run
+   FieldOps rollback-task-type-stations --database <db> --map 26 --version <第 2 步的 activeVersion> --catalog <新鲜目录> --reason "<为什么回滚>"
+   ```
+
+   然后按第 6 步核对：`activeVersion` 又加了 1，内容与回滚目标版本相同。
+
+本地演练（假 RIoT 给的就是 RIoT 读回的 216 个站，库从本票之前的预置起步）四段输出与三种错误候选被拒的输出，在
+`evidence/field/20261011-B10-05-map26-task-type-stations/rehearsal/`。
+
+### 与部署的关系
+
+- 这一步不装包。以后要换包，照常走 19（`8005-workspace` 仓 `remote-ops/factory-server/scripts/19-deploy-control-server-parallel.ps1`）：
+  它会核对包与克隆是同一提交、读服务器上记下的已装准入策略版本（control-server#552，见「准入策略版本」）；回滚用的
+  `admissionPolicyVersion` 是**装过的最高版本 + 1**，带 `-AdmissionPolicyVersionOverride`。
+- **保留数据目录装包，绑定就一直在**：启动时库里已有生效版本，就不写预置，只记一条 Warning `9305 TaskTypeStationPresetNotApplied`。
+- **换了新库**（或删了数据目录），启动时预置作为第一版装进新库，六类绑定随之生效，不用再激活；这就是预置必须与候选逐条相同的原因，
+  `TaskTypeStationStartupTests.TheMap26PresetAndTheActivationCandidateCarryTheSameBindings` 钉着。换库还要连车载端日志簿一起清，那是另一回事。
 
 ## 清桩出口的两节配置与恢复凭据由部署链写，不再手工合入（control-server#454）
 

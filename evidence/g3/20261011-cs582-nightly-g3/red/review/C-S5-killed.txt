@@ -1,0 +1,47 @@
+FAIL run-staged-g3.ps1: declares -SelfCheckControlServerCommit, which takes a lowercase full SHA-1 and refuses an uppercase or short one -- 1 declared; lowercase True, uppercase True, short False
+FAIL run-staged-g3.ps1: declares -SelfCheckOnboardCommit, which takes a lowercase full SHA-1 and refuses an uppercase or short one -- 1 declared; lowercase True, uppercase True, short False
+PASS run-staged-g3.ps1: one top-level -SelfCheck* branch per override parameter
+PASS run-staged-g3.ps1: assigns $commitSources once, at top level
+PASS run-staged-g3.ps1: assigns $commitsRecord once, at top level
+PASS run-staged-g3.ps1: the -SelfCheck* branches come after $commitSources, so the override is what the record keeps
+PASS run-staged-g3.ps1: the -SelfCheck* branches run before the first statement that touches $StageRoot
+PASS run-staged-g3.ps1, no override: the commits it uses and their sources
+PASS run-staged-g3.ps1, no override: the commits record carries those sources
+PASS run-staged-g3.ps1, no override: an all-PASS slice is a formal pass
+PASS run-staged-g3.ps1, -SelfCheckControlServerCommit: the commits it uses and their sources
+PASS run-staged-g3.ps1, -SelfCheckControlServerCommit: the commits record carries those sources
+PASS run-staged-g3.ps1, -SelfCheckControlServerCommit: an all-PASS slice is withheld as SELF_CHECK_OVERRIDE
+PASS run-staged-g3.ps1, -SelfCheckOnboardCommit: the commits it uses and their sources
+PASS run-staged-g3.ps1, -SelfCheckOnboardCommit: the commits record carries those sources
+PASS run-staged-g3.ps1, -SelfCheckOnboardCommit: an all-PASS slice is withheld as SELF_CHECK_OVERRIDE
+PASS run-staged-g3.ps1, -SelfCheckControlServerCommit naming the bound commit: the commits it uses and their sources
+PASS run-staged-g3.ps1, -SelfCheckControlServerCommit naming the bound commit: the commits record carries those sources
+PASS run-staged-g3.ps1, -SelfCheckControlServerCommit naming the bound commit: an all-PASS slice is withheld as SELF_CHECK_OVERRIDE
+PASS run-staged-g3.ps1, -SelfCheckOnboardCommit naming the bound commit: the commits it uses and their sources
+PASS run-staged-g3.ps1, -SelfCheckOnboardCommit naming the bound commit: the commits record carries those sources
+PASS run-staged-g3.ps1, -SelfCheckOnboardCommit naming the bound commit: an all-PASS slice is withheld as SELF_CHECK_OVERRIDE
+FAIL run-staged-g3-restart.ps1: declares -SelfCheckControlServerCommit, which takes a lowercase full SHA-1 and refuses an uppercase or short one -- 1 declared; lowercase True, uppercase True, short False
+FAIL run-staged-g3-restart.ps1: declares -SelfCheckOnboardCommit, which takes a lowercase full SHA-1 and refuses an uppercase or short one -- 1 declared; lowercase True, uppercase True, short False
+PASS run-staged-g3-restart.ps1: one top-level -SelfCheck* branch per override parameter
+PASS run-staged-g3-restart.ps1: assigns $commitSources once, at top level
+PASS run-staged-g3-restart.ps1: assigns $commitsRecord once, at top level
+PASS run-staged-g3-restart.ps1: the -SelfCheck* branches come after $commitSources, so the override is what the record keeps
+PASS run-staged-g3-restart.ps1: the -SelfCheck* branches run before the first statement that touches $StageRoot
+PASS run-staged-g3-restart.ps1, no override: the commits it uses and their sources
+PASS run-staged-g3-restart.ps1, no override: the commits record carries those sources
+PASS run-staged-g3-restart.ps1, no override: an all-PASS slice is a formal pass
+FAIL run-staged-g3-restart.ps1, -SelfCheckControlServerCommit: the commits it uses and their sources --  controlServerCommitSource=SHARED_BINDING (expected SELF_CHECK_OVERRIDE)
+FAIL run-staged-g3-restart.ps1, -SelfCheckControlServerCommit: the commits record carries those sources --  record controlServerCommitSource=SHARED_BINDING (expected SELF_CHECK_OVERRIDE)
+FAIL run-staged-g3-restart.ps1, -SelfCheckControlServerCommit: an all-PASS slice is withheld as SELF_CHECK_OVERRIDE -- {"formalSlicePass":true,"formalSliceWithheldReason":null}
+PASS run-staged-g3-restart.ps1, -SelfCheckOnboardCommit: the commits it uses and their sources
+PASS run-staged-g3-restart.ps1, -SelfCheckOnboardCommit: the commits record carries those sources
+PASS run-staged-g3-restart.ps1, -SelfCheckOnboardCommit: an all-PASS slice is withheld as SELF_CHECK_OVERRIDE
+FAIL run-staged-g3-restart.ps1, -SelfCheckControlServerCommit naming the bound commit: the commits it uses and their sources --  controlServerCommitSource=SHARED_BINDING (expected SELF_CHECK_OVERRIDE)
+FAIL run-staged-g3-restart.ps1, -SelfCheckControlServerCommit naming the bound commit: the commits record carries those sources --  record controlServerCommitSource=SHARED_BINDING (expected SELF_CHECK_OVERRIDE)
+FAIL run-staged-g3-restart.ps1, -SelfCheckControlServerCommit naming the bound commit: an all-PASS slice is withheld as SELF_CHECK_OVERRIDE -- {"formalSlicePass":true,"formalSliceWithheldReason":null}
+PASS run-staged-g3-restart.ps1, -SelfCheckOnboardCommit naming the bound commit: the commits it uses and their sources
+PASS run-staged-g3-restart.ps1, -SelfCheckOnboardCommit naming the bound commit: the commits record carries those sources
+PASS run-staged-g3-restart.ps1, -SelfCheckOnboardCommit naming the bound commit: an all-PASS slice is withheld as SELF_CHECK_OVERRIDE
+PASS run-staged-g3-restart.ps1: no parameter can redirect where the binding is read from
+PASS run-staged-g3-restart.ps1: $CommitBindingSource is assigned once, to run-staged-g3.ps1 beside it
+10 check(s) failed.

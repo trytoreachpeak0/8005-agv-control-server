@@ -22,6 +22,9 @@ using ControlServer.Host.Runtime.TaskTypeStations;
 
 WebApplicationBuilder builder = WebApplication.CreateBuilder(args);
 builder.Host.UseWindowsService(options => options.ServiceName = "8005 AGV ControlServer");
+// control-server#587: the installed File sink rolls at its size limit instead of stopping there, whatever an older
+// installer left out of appsettings.Production.json (ServerLogFileLimits).
+ServerLogFileLimits.Apply(builder.Configuration);
 builder.Host.UseSerilog((context, services, configuration) => configuration
     .ReadFrom.Configuration(context.Configuration)
     .ReadFrom.Services(services)

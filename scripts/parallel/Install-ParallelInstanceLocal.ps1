@@ -505,12 +505,8 @@ try {
         $verdict = Get-ParallelReadBackAction -Phase $Phase -Definition $definition -Lines @() -Since $since
         $deadline = $logPath ? [DateTime]::UtcNow.AddSeconds(120) : [DateTime]::UtcNow
         while ($logPath) {
-            $lines = foreach ($file in @(Get-ChildItem -LiteralPath $logDirectory -Filter $logFilter -File -ErrorAction SilentlyContinue |
-                        Sort-Object LastWriteTimeUtc -Descending | Select-Object -First 2)) {
-                # The Host holds the file open (shared = true): read it without asking for exclusive access.
-                $stream = [IO.File]::Open($file.FullName, [IO.FileMode]::Open, [IO.FileAccess]::Read, [IO.FileShare]::ReadWrite)
-                try { ([IO.StreamReader]::new($stream, [Text.Encoding]::UTF8)).ReadToEnd() -split "`r?`n" } finally { $stream.Dispose() }
-            }
+            # control-server#587: every file written since the process started, however often the log rolled.
+            $lines = Read-ParallelLogLines -Files (Get-ParallelLogFilesSince -Directory $logDirectory -Filter $logFilter -Since $since)
             # Held: the worker logs 2001 as it starts, around the time of the event; the decision waits for both.
             $verdict = Get-ParallelReadBackAction -Phase $Phase -Definition $definition -Lines @($lines) -Since $since
             if (-not $verdict.Waiting -or [DateTime]::UtcNow -ge $deadline) { break }
@@ -528,8 +524,7 @@ try {
             $state = [string] (Get-Service -Name $serviceName -ErrorAction SilentlyContinue)?.Status
             # Review item 3: the size and last write time of what was read. A Host that stopped writing (control-server#587,
             # 1 GiB) reads back as JOURNEY_RUNTIME_NOT_HELD or EFFECTIVE_CONFIGURATION_UNREAD, and these show why.
-            $logFacts = Format-ParallelLogFileFacts -Files @($logPath ? @(Get-ChildItem -LiteralPath $logDirectory -Filter $logFilter -File -ErrorAction SilentlyContinue |
-                        Sort-Object LastWriteTimeUtc -Descending | Select-Object -First 2) : @())
+            $logFacts = Format-ParallelLogFileFacts -Files @($logPath ? (Get-ParallelLogFilesSince -Directory $logDirectory -Filter $logFilter -Since $since) : @())
             throw "$($verdict.Message) $where $logFacts $serviceName was stopped (now: $state). The RIoT dispatch gate is untouched; fix the cause, then install again or -Rollback."
         }
         $line = "EFFECTIVE_CONFIGURATION=allowedWorkTypes=$(@($effective.AllowedWorkTypes) -join ',') " +
