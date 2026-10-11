@@ -685,12 +685,13 @@ jobs:
           # real-onboard-recovery-entry-missing is absent on purpose, and no longer for the reason it was taken out
           # (scripts/l2/README.md). The missing recovery entry it was red on was fixed on 2026-09-04, and it passed on
           # 2026-09-13 (evidence/l2/20260913-b2close-real-onboard-recovery-entry-missing-001). Since onboard-hmi#72
-          # (2026-09-16) the onboard reopens a slot door closed empty instead of timing out to UNKNOWN, so the way this
-          # scenario makes a failed load no longer produces one: CI run 38107859209 (control-server#250) timed out before
-          # its first criterion. A recovery entry after an UNKNOWN load is also asserted, through Invoke-G3UnknownLoad, by
-          # real-onboard-restart-with-open-recovery-session and real-onboard-compensate-then-reconnect below; listing this
-          # one as it stands would add a round that is red for a reason of its own. Whether to rebuild or retire it is the
-          # coordinator's call (control-server#250).
+          # (b85b97a, 2026-09-16) and onboard-hmi#78 (96dffa0, 2026-09-18), per ADR-cross-0058's 2026-09-18 rewrite, the
+          # onboard reopens a slot door closed empty instead of timing out to UNKNOWN, so the way this scenario makes a
+          # failed load no longer produces one: CI run 38107859209 (control-server#250) timed out before its first
+          # criterion. Listing it as it stands would add a round that is red for a reason of its own. Follow-up (a separate
+          # ticket): check whether real-onboard-restart-with-open-recovery-session and
+          # real-onboard-compensate-then-reconnect, which make an UNKNOWN load through Invoke-G3UnknownLoad, cover its
+          # assertion -- retire it if they do, rebuild its fault injection otherwise. That coverage is not yet checked.
           $scenarios = @(
               @{ Name = 'real-onboard-normal-load';                           Runs = 1 }
               @{ Name = 'real-onboard-clock-skew';                            Runs = 1 }

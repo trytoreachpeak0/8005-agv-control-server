@@ -93,10 +93,11 @@ pwsh .\scripts\l2\Invoke-L2Scenario.ps1 -Scenario normal-load -EvidenceRoot .\ev
    清单内由 `real-onboard-load-door-closed-empty-reopens` 判）。所以第 11 条那种「关门不放货、等 120 秒超时」
    的造故障手法在今天的车载端上**造不出失败结果**；09-13 那次绿，是因为 `c86bac5` 早于 onboard-hmi#72。
 
-「装载结果为 `UNKNOWN`、停摆后车上出现恢复入口」这件事，清单内另有两条经 `Invoke-G3UnknownLoad`（装货中重启
-车载端）造出 `UNKNOWN` 再判入口：`real-onboard-restart-with-open-recovery-session`（「申请恢复」入口）与
-`real-onboard-compensate-then-reconnect`（「补偿清空」入口）。这条场景是改造故障手法后放回清单，还是退役，
-交调度定（control-server#250）；在那之前别把它原样放进 `l2.yml`，它会红在与产品无关的地方。
+**后续（用户 2026-10-11 选定，另开票）**：先核清单内经 `Invoke-G3UnknownLoad`（装货中重启车载端）造出 `UNKNOWN`
+再判恢复入口的两条——`real-onboard-restart-with-open-recovery-session`（「申请恢复」入口）与
+`real-onboard-compensate-then-reconnect`（「补偿清空」入口）——是否覆盖本场景的断言；覆盖则退役本场景，否则改造它的
+造故障手法后放回清单。**是否覆盖目前只是读代码的推断，没有核过。**在那之前别把它原样放进 `l2.yml`，它会红在与产品
+无关的地方。
 
 **这条场景 2026-09-04 改过向量，原来测的是 `RESUME_AFTER_REPAIR`，那是错的。**它制造的状态是「装载
 跑完、门关着锁上了、仓位仍是空的」，对应 `COMPENSATE_LOAD_ALL_EMPTY`；而 `RESUME_AFTER_REPAIR` 要的
