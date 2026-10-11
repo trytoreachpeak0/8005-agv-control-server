@@ -62,7 +62,7 @@ if (-not $SkipSelfTest) {
         # --- 2. properties read off a helper's literal object -----------------------------------------------------------
         $catalog = Get-HelperShapeCatalog -ScriptRoot $ScriptRoot
         $shape = @{}; foreach ($entry in $catalog) { $shape[$entry.Name] = $entry.Properties }
-        Add-Case 'catalog: every listed helper resolved to a literal object' (@($catalog | Where-Object { @($_.Properties).Count -eq 0 }).Count -eq 0 -and @($catalog).Count -ge 8) "$(@($catalog).Count) entries"
+        Add-Case 'catalog: every listed helper resolved to a literal object' (@($catalog | Where-Object { -not $_.Relay -and @($_.Properties).Count -eq 0 }).Count -eq 0 -and @($catalog | Where-Object { -not $_.Relay }).Count -ge 8) "$(@($catalog).Count) entries"
         # The two premises the bc22cfd25 counterexample rests on (L2RealStation.psm1, L2RealOnboard.psm1).
         Add-Case 'catalog: Get-L2OperationResults has the shape of Get-L2Inbound, without PayloadJson' (
             $shape.ContainsKey('Get-L2OperationResults') -and ($shape['Get-L2OperationResults'] -join ',') -eq ($shape['Get-L2Inbound'] -join ',') -and
@@ -145,7 +145,7 @@ Write-Host ("property: {0} variables recognised, {1} reads checked; skipped: {2}
 foreach ($f in $audit.Findings) { Write-Host "  PROPERTY  $($f.File):$($f.Line) $($f.Message)" }
 Add-Case 'repository: no property read outside its helper''s object' (@($audit.Findings).Count -eq 0) "$(@($audit.Findings).Count) findings"
 if ($full) {
-    Add-Case 'repository: property audit recognised at least 40 variables and 100 reads' ($audit.Variables -ge 40 -and $audit.Reads -ge 100) "$($audit.Variables) / $($audit.Reads)"
+    Add-Case 'repository: property audit recognised at least 100 variables and 250 reads' ($audit.Variables -ge 100 -and $audit.Reads -ge 250) "$($audit.Variables) / $($audit.Reads)"
 }
 
 $failed = @($cases | Where-Object { -not $_.Ok })
