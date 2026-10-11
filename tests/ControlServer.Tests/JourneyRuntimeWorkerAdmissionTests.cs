@@ -1034,6 +1034,57 @@ public sealed class JourneyRuntimeWorkerAdmissionTests
 
     [Fact]
     [Trait("IntegrationSlice", "FP-IS-01")]
+    public async Task EveryAreaStationGoneIsAStationDriftAndNotATaskTypeOne()
+    {
+        // The seed is stations x task types, so with no area station left it holds no relation at all. The task types
+        // this build seeds are still six; read back from the empty relations they would look like none
+        // (control-server#551 review S1).
+        await using RuntimeFixture fixture = await RuntimeFixture.CreateAsync();
+        await fixture.Engine.ExecuteOnceAsync(TestContext.Current.CancellationToken);
+        fixture.Riot.SetMapStations(new RiotMapStation(210, "关卡"), new RiotMapStation(300, "等待点"));
+
+        await fixture.Engine.ExecuteOnceAsync(TestContext.Current.CancellationToken);
+
+        string drift = Assert.Single(DriftLogs(fixture));
+        Assert.Contains(
+            "stations changed under bound version 1 (added: none; removed: N1-1, N1-2_N1-3)",
+            drift,
+            StringComparison.Ordinal);
+        Assert.DoesNotContain("task types changed", drift, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    [Trait("IntegrationSlice", "FP-IS-01")]
+    public async Task ARelationRowOfAnotherVersionIsLeftOutOfTheComparison()
+    {
+        // The store replaces every relation row when it binds a version, so no row of another version is there today.
+        // This puts one there by hand -- N1-9 under version 1 while version 2 is bound -- to hold the comparison to the
+        // bound version should that ever stop being so (control-server#551 review S2).
+        await using RuntimeFixture fixture = await RuntimeFixture.CreateAsync();
+        fixture.Options.AdmissionPolicyVersion = 2;
+        await fixture.Engine.ExecuteOnceAsync(TestContext.Current.CancellationToken);
+        await using (ControlServerDbContext context = new(fixture.DbOptionsForTests))
+        {
+            context.StationTaskTypeAdmissions.Add(new StationTaskTypeAdmissionRow
+            {
+                StationId = "N1-9",
+                TaskType = TransportTaskTypes.WireToGate,
+                PolicyVersion = 1
+            });
+            await context.SaveChangesAsync(TestContext.Current.CancellationToken);
+        }
+        fixture.Riot.SetMapStations(MapWithAStationAdded());
+
+        await fixture.Engine.ExecuteOnceAsync(TestContext.Current.CancellationToken);
+
+        string drift = Assert.Single(DriftLogs(fixture));
+        Assert.Contains(
+            "stations changed under bound version 2 (added: N1-4; removed: none)", drift, StringComparison.Ordinal);
+        Assert.DoesNotContain("N1-9", drift, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    [Trait("IntegrationSlice", "FP-IS-01")]
     public async Task ADriftTheDatabaseCannotExplainSaysSoInsteadOfNone()
     {
         // Same stations, same task types, same deployment identity, same version -- but one pairing missing, which no
