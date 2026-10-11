@@ -1,0 +1,40 @@
+compare current vs appsettings.Production.json.bak-20261011200735-before-clearance-entry
+=> /JourneyRuntime/stationDepartureWaitTimeout=00:05:00
+=> /JourneyRuntime/cargoHoldingTimeout=00:05:00
+<= /JourneyRuntime/stationDepartureWaitTimeout=00:01:30
+<= /JourneyRuntime/cargoHoldingTimeout=00:02:00
+(end)
+compare current vs appsettings.Production.json.bak-20261011150851-before-fast-newdb
+=> /OnboardSafetyProjection/vehicleCredentials[0]/vehicleKey=BROKERX-f38975561adf46ccb1d2f23833c7d0e4
+=> /OnboardSafetyProjection/vehicleCredentials[0]/credentialEnvironmentVariable=CONTROL_SERVER_V2_ONBOARD_SAFETY_CREDENTIAL_RIOT59
+=> /OnboardSafetyProjection/vehicleCredentials[1]/vehicleKey=BROKERX-7daca4ee91da498d8026c68b7b941127
+=> /OnboardSafetyProjection/vehicleCredentials[1]/credentialEnvironmentVariable=CONTROL_SERVER_V2_ONBOARD_SAFETY_CREDENTIAL_RIOT60
+=> /JourneyRuntime/stationDepartureWaitTimeout=00:05:00
+=> /JourneyRuntime/cargoHoldingTimeout=00:05:00
+=> /JourneyRuntime/admissionPolicyVersion=5
+=> /JourneyRuntime/fleet[0]/agvId=老厂前线新多仓位2
+=> /JourneyRuntime/fleet[0]/vehicleKey=BROKERX-f38975561adf46ccb1d2f23833c7d0e4
+=> /JourneyRuntime/fleet[0]/agvLifecycleGeneration=1
+=> /JourneyRuntime/fleet[0]/allowedTaskTypes[0]=DIE_TO_WIRE_STAGING
+=> /JourneyRuntime/fleet[0]/allowedTaskTypes[1]=DIE_TO_OVEN
+=> /JourneyRuntime/fleet[0]/allowedTaskTypes[2]=WIRE_TO_GATE
+=> /JourneyRuntime/fleet[0]/allowedTaskTypes[3]=WIRE_TO_OPTICAL
+=> /JourneyRuntime/fleet[0]/allowedTaskTypes[4]=STAGING_TO_WIRE
+=> /JourneyRuntime/fleet[0]/allowedTaskTypes[5]=WIRE_TO_NITROGEN
+=> /JourneyRuntime/fleet[0]/zones[0]=WIRE
+=> /JourneyRuntime/fleet[1]/agvId=老厂前线新多仓位3
+=> /JourneyRuntime/fleet[1]/vehicleKey=BROKERX-7daca4ee91da498d8026c68b7b941127
+=> /JourneyRuntime/fleet[1]/agvLifecycleGeneration=1
+=> /JourneyRuntime/fleet[1]/allowedTaskTypes[0]=DIE_TO_WIRE_STAGING
+=> /JourneyRuntime/fleet[1]/allowedTaskTypes[1]=DIE_TO_OVEN
+=> /JourneyRuntime/fleet[1]/allowedTaskTypes[2]=WIRE_TO_GATE
+=> /JourneyRuntime/fleet[1]/allowedTaskTypes[3]=WIRE_TO_OPTICAL
+=> /JourneyRuntime/fleet[1]/allowedTaskTypes[4]=STAGING_TO_WIRE
+=> /JourneyRuntime/fleet[1]/allowedTaskTypes[5]=WIRE_TO_NITROGEN
+=> /JourneyRuntime/fleet[1]/zones[0]=WIRE
+=> /RiotCreateDispatch/enabled=False
+<= /JourneyRuntime/stationDepartureWaitTimeout=00:01:30
+<= /JourneyRuntime/cargoHoldingTimeout=00:02:00
+<= /JourneyRuntime/admissionPolicyVersion=4
+<= /RiotCreateDispatch/enabled=True
+(end)

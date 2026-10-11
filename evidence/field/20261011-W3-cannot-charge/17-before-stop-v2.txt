@@ -1,0 +1,10 @@
+20:31:52 agv02 pos=211 move=MT_FINISHED sys=IDLE battery=75 emergency=OK
+20:31:52 agv03 pos=134 move=MT_FINISHED sys=IDLE battery=67 emergency=OK
+## SELECT JourneyId, AgvId, LoadingPhaseState, LoadingClosedReason, YieldTriggeredByVehicleKey, YieldTriggeredAt, CargoHoldingStartedAt, BlockReasonCode, UpdatedAt FROM JourneyRuntimes WHERE JourneyId LIKE 'journey:%' ORDER BY rowid DESC LIMIT 4
+JourneyId=journey:c1000566-0000-0000-0000-000000000005 | AgvId=老厂前线新多仓位2 | LoadingPhaseState=CLOSED | LoadingClosedReason=CARGO_HOLDING_TIMEOUT | YieldTriggeredByVehicleKey= | YieldTriggeredAt= | CargoHoldingStartedAt=2026-10-11 11:24:54.7718148+00:00 | BlockReasonCode= | UpdatedAt=2026-10-11 11:30:52.7886133+00:00
+JourneyId=journey:c1000566-0000-0000-0000-000000000004 | AgvId=老厂前线新多仓位3 | LoadingPhaseState=CLOSED | LoadingClosedReason=WAITING_STATION_YIELD | YieldTriggeredByVehicleKey=BROKERX-f38975561adf46ccb1d2f23833c7d0e4 | YieldTriggeredAt=2026-10-11 11:19:23.1636885+00:00 | CargoHoldingStartedAt=2026-10-11 11:19:14.9559536+00:00 | BlockReasonCode= | UpdatedAt=2026-10-11 11:24:06.7573843+00:00
+## SELECT DemandId, JourneyId, Status, ExpectedBasketCount, TargetSlotsJson FROM JourneyDemands ORDER BY rowid DESC LIMIT 4
+DemandId=c1000566-0000-0000-0000-000000000005 | JourneyId=journey:c1000566-0000-0000-0000-000000000005 | Status=UNLOADED | ExpectedBasketCount=4 | TargetSlotsJson=[1,2,3,4]
+DemandId=c1000566-0000-0000-0000-000000000004 | JourneyId=journey:c1000566-0000-0000-0000-000000000004 | Status=UNLOADED | ExpectedBasketCount=1 | TargetSlotsJson=[1]
+## SELECT StationId, StationKind, State, VehicleKey, JourneyId FROM StationExclusivities
+StationId=211 | StationKind=CHARGER | State=RESERVED | VehicleKey=BROKERX-f38975561adf46ccb1d2f23833c7d0e4 | JourneyId=charging:BROKERX-f38975561adf46ccb1d2f23833c7d0e4:20261011T121516351Z
