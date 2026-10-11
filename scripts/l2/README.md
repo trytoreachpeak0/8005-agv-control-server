@@ -893,8 +893,10 @@ actual 里写着行数。`-Required` 给不在探针里的读取用：零行也�
   `Wait-L2RealOrLast` 等的 `-Probe` 转交也认；「收任意 SQL、转 `[string]` 之前不判 NULL」的读取函数
   （`Get-G3Scalar`、场景自带的 `Get-Scalar`）的结果不许与 `$null` 比较——要判 NULL 就在 SQL 里写 `IS NULL`。
   查无此行时有意返回 `$null` 的固定列读取函数不在此列。
-- `pwsh -NoProfile -File ./scripts/Test-ScenarioSqlExplain.ps1 -Build`：把传给 `Invoke-L2Query` 及转交 `-Sql` 的
-  读取函数的**纯字面量** SQL，对 `ControlServer.Host --migrate-only` 在临时目录建的库逐条 `EXPLAIN`，列名、表名拼错当场红。
+- `pwsh -NoProfile -File ./scripts/Test-ScenarioSqlExplain.ps1 -Build -WorkRoot <数据盘上的新目录>`（CI 不给
+  `-WorkRoot`，用 `$RUNNER_TEMP`）：把传给 `Invoke-L2Query` 及转交 `-Sql` 的读取函数的**纯字面量** SQL，对
+  `ControlServer.Host --migrate-only` 在工作目录下建的库逐条 `EXPLAIN`，列名、表名拼错当场红。`--migrate-only` 拿不到
+  连接串时迁移的是 MVP 生产库，所以没有工作目录脚本就什么都不跑；启动 Host 之前断言交给它的连接串指向工作目录下的库。
 
 两道都是挡常见写法的护栏，不是证明。看不到的：带 `$` 插值或放在变量里的 SQL（大多数，跳过并计数打印）；
 清单外的函数、`$var.$name` 这类动态读取、经 `[ref]`／`-OutVariable` 赋值的变量。确属无害的个别命中在

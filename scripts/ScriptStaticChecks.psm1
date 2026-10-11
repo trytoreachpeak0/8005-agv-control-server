@@ -433,10 +433,16 @@ and other forms of the same test, `if (-not $x)` (which is right for '' anyway),
 a [string] cast.
 #>
 function Find-StringHelperNullComparison {
-    param([Parameter(Mandatory)][string[]]$Path, [string[]]$Helpers, [object[]]$Exemptions = @())
+    param(
+        [Parameter(Mandatory)][string[]]$Path, [string[]]$Helpers, [object[]]$Exemptions = @(),
+        # Where an exemption's Premise.Snapshot is read from; this module sits in scripts/.
+        [string]$RepositoryRoot = (Split-Path -Parent $PSScriptRoot)
+    )
     $findings = [System.Collections.Generic.List[object]]::new()
     $comparisons = 0; $variables = 0; $exempted = 0
     $used = @{}
+    $premises = @{}
+    foreach ($e in $Exemptions) { $premises[$e] = Test-StringNullExemptionPremise -RepositoryRoot $RepositoryRoot -Exemption $e }
     foreach ($file in $Path) {
         $ast = (Get-ParsedScript $file).Ast
         $effective = @{}
@@ -508,11 +514,17 @@ function Find-StringHelperNullComparison {
             $normalised = $file.Replace('\', '/')
             $exemption = @($Exemptions | Where-Object {
                 $normalised.EndsWith("/$($_.File)", [StringComparison]::OrdinalIgnoreCase) -and $_.Function -eq $function -and "`$$($_.Variable)" -eq $what })
-            if ($exemption.Count -gt 0) { $used[$exemption[0]] = $true; $exempted++; continue }
+            $void = ''
+            if ($exemption.Count -gt 0) {
+                $used[$exemption[0]] = $true
+                if ($premises[$exemption[0]].Holds) { $exempted++; continue }
+                # Matched, but what it rests on no longer holds: report, and say why the exemption did not apply.
+                $void = " (exemption void -- $($premises[$exemption[0]].Detail))"
+            }
             $findings.Add([pscustomobject]@{
                 File    = $file
                 Line    = $compare.Extent.StartLineNumber
-                Message = "$what is compared with `$null, but $helper returns [string]: a NULL column comes back as '' and the test never sees it"
+                Message = "$what is compared with `$null, but $helper returns [string]: a NULL column comes back as '' and the test never sees it$void"
             })
         }
     }
@@ -532,8 +544,43 @@ function Get-StringNullExemption {
     return @(
         @{ File = 'l2/scenarios/g3-forced-mechanical-recovery.ps1'; Function = 'Get-FleetGeneration'; Variable = 'value'
            Reason = 'VehicleRecoveryGenerations.ForcedRecoveryGeneration is a non-null long column, and [long]'''' is 0 anyway, ' +
-                    'the same as the no-row branch: the comparison cannot change the result (found on the first run, control-server#583).' }
+                    'the same as the no-row branch: the comparison cannot change the result (found on the first run, control-server#583).'
+           # The first half of the reason, re-read from the EF model snapshot on every run: if the column ever becomes
+           # nullable, Test-StringNullExemptionPremise fails and the comparison is reported again.
+           Premise = @{
+               Snapshot = 'src/ControlServer.Infrastructure/Persistence/Migrations/ControlServerDbContextModelSnapshot.cs'
+               Entity   = 'ControlServer.Infrastructure.Persistence.VehicleRecoveryGenerationRow'
+               Property = 'ForcedRecoveryGeneration'
+               ClrType  = 'long'
+           } }
     )
+}
+
+<#
+Whether an exemption's schema premise still holds: in the model snapshot, inside the modelBuilder.Entity("<Entity>") block,
+the property is declared b.Property<ClrType>("<Property>") with exactly that type (long, not long?). Returns
+{ Holds; Detail }. An exemption without a Premise holds trivially.
+#>
+function Test-StringNullExemptionPremise {
+    param([Parameter(Mandatory)][string]$RepositoryRoot, [Parameter(Mandatory)][object]$Exemption)
+    $premise = $Exemption['Premise']
+    if (-not $premise) { return [pscustomobject]@{ Holds = $true; Detail = 'no premise' } }
+    $file = Join-Path $RepositoryRoot $premise.Snapshot
+    if (-not (Test-Path -LiteralPath $file)) { return [pscustomobject]@{ Holds = $false; Detail = "premise: $($premise.Snapshot) does not exist" } }
+    $text = Get-Content -Raw -LiteralPath $file
+    $start = $text.IndexOf("modelBuilder.Entity(`"$($premise.Entity)`"", [StringComparison]::Ordinal)
+    if ($start -lt 0) { return [pscustomobject]@{ Holds = $false; Detail = "premise: no entity $($premise.Entity) in $($premise.Snapshot)" } }
+    $next = $text.IndexOf('modelBuilder.Entity(', $start + 1, [StringComparison]::Ordinal)
+    $block = $next -lt 0 ? $text.Substring($start) : $text.Substring($start, $next - $start)
+    $declared = [regex]::Match($block, "b\.Property<([^>]+)>\(`"$([regex]::Escape($premise.Property))`"\)")
+    if (-not $declared.Success) {
+        return [pscustomobject]@{ Holds = $false; Detail = "premise: $($premise.Entity) has no property $($premise.Property)" }
+    }
+    $type = $declared.Groups[1].Value
+    return [pscustomobject]@{
+        Holds  = $type -eq $premise.ClrType
+        Detail = "premise: $($premise.Entity).$($premise.Property) is $type in the snapshot, the exemption needs $($premise.ClrType)"
+    }
 }
 
 # --- 4. literal SQL compiled against a migrated temporary database ---------------------------------------------------
@@ -654,25 +701,40 @@ function Get-ScenarioLiteralSql {
     return [pscustomobject]@{ Literal = $literal.ToArray(); NonLiteral = $nonLiteral }
 }
 
+# Where a ControlServer database lives for real: %ProgramData% (the MVP production default), the two install roots.
+function Assert-ClearOfProduction([string]$Full, [string]$What) {
+    $forbidden = @($env:ProgramData, 'C:\ProgramData', 'C:\Program Files\8005 AGV', 'D:\zhengyushao') | Where-Object { $_ }
+    foreach ($root in $forbidden) {
+        $rootFull = [IO.Path]::GetFullPath($root).TrimEnd('\') + '\'
+        if (($Full.TrimEnd('\') + '\').StartsWith($rootFull, [StringComparison]::OrdinalIgnoreCase)) { throw "$What '$Full' is under '$root'." }
+    }
+    if ($Full -match '\\ControlServer\\data(\\|$)') { throw "$What '$Full' looks like a ControlServer data root." }
+}
+
 <#
-Throws unless the path is under the system temp directory and clear of %ProgramData% and any ControlServer install or data
-root. --migrate-only with no connection string migrates the MVP production database, so this check runs before the host
-is ever started.
+Throws unless the work root is given and clear of %ProgramData% and any ControlServer install. Test-ScenarioSqlExplain.ps1
+takes it from -WorkRoot or $RUNNER_TEMP and runs nothing without one.
+#>
+function Assert-WorkRoot {
+    param([Parameter(Mandatory)][AllowEmptyString()][string]$WorkRoot)
+    if (-not $WorkRoot) { throw 'No work root given for the temporary database.' }
+    Assert-ClearOfProduction ([IO.Path]::GetFullPath($WorkRoot)) 'Work root'
+}
+
+<#
+Throws unless the database path is under the work root and clear of %ProgramData% and any ControlServer install or data
+root. --migrate-only with no connection string migrates the MVP production database, so this runs before the host is ever
+started.
 #>
 function Assert-TempDatabasePath {
-    param([Parameter(Mandatory)][string]$DatabasePath)
+    param([Parameter(Mandatory)][string]$DatabasePath, [Parameter(Mandatory)][AllowEmptyString()][string]$WorkRoot)
+    Assert-WorkRoot $WorkRoot
     $full = [IO.Path]::GetFullPath($DatabasePath)
-    $temp = [IO.Path]::GetFullPath([IO.Path]::GetTempPath())
-    if (-not $full.StartsWith($temp, [StringComparison]::OrdinalIgnoreCase)) {
-        throw "Temporary database path '$full' is not under the temp directory '$temp'."
+    $root = [IO.Path]::GetFullPath($WorkRoot).TrimEnd('\') + '\'
+    if (-not $full.StartsWith($root, [StringComparison]::OrdinalIgnoreCase)) {
+        throw "Temporary database path '$full' is not under the work root '$root'."
     }
-    $forbidden = @($env:ProgramData, 'C:\Program Files\8005 AGV', 'D:\zhengyushao') | Where-Object { $_ }
-    foreach ($root in $forbidden) {
-        if ($full.StartsWith([IO.Path]::GetFullPath($root), [StringComparison]::OrdinalIgnoreCase)) {
-            throw "Temporary database path '$full' is under '$root'."
-        }
-    }
-    if ($full -match '\\ControlServer\\data\\') { throw "Temporary database path '$full' looks like a ControlServer data root." }
+    Assert-ClearOfProduction $full 'Temporary database path'
 }
 
 function Get-FileStamp([string]$File) {
@@ -696,8 +758,13 @@ in the child's environment (an argument with a space in it was split once, contr
 tables, whether the default production database is exactly as it was, and how long it took.
 #>
 function New-MigratedTempDatabase {
-    param([Parameter(Mandatory)][string]$HostDirectory, [Parameter(Mandatory)][string]$DatabasePath, [int]$TimeoutSeconds = 180)
-    Assert-TempDatabasePath $DatabasePath
+    param(
+        [Parameter(Mandatory)][string]$HostDirectory, [Parameter(Mandatory)][string]$DatabasePath,
+        [Parameter(Mandatory)][AllowEmptyString()][string]$WorkRoot, [int]$TimeoutSeconds = 180
+    )
+    # Before anything else, and before any process exists.
+    Assert-TempDatabasePath -DatabasePath $DatabasePath -WorkRoot $WorkRoot
+    $DatabasePath = [IO.Path]::GetFullPath($DatabasePath)
     $production = Join-Path ($env:ProgramData ?? 'C:\ProgramData') '8005\ControlServer\data\controlserver.db'
     $before = Get-FileStamp $production
     $null = New-Item -ItemType Directory -Path (Split-Path -Parent $DatabasePath) -Force
@@ -710,6 +777,13 @@ function New-MigratedTempDatabase {
     $start.RedirectStandardError = $true
     $start.Environment['ConnectionStrings__ControlServer'] = "Data Source=$DatabasePath"
     $start.Environment['DOTNET_ENVIRONMENT'] = 'Production'
+    # The connection string the host will read, checked as it will be handed over: given, and naming exactly the path
+    # asserted above. Without it the host would fall back to the production default.
+    $given = $start.Environment['ConnectionStrings__ControlServer']
+    if ($given -notmatch '^Data Source=(.+)$' -or $Matches[1] -ne $DatabasePath) {
+        throw "Refusing to start --migrate-only: ConnectionStrings__ControlServer is '$given', not the temporary database."
+    }
+    Assert-TempDatabasePath -DatabasePath $Matches[1] -WorkRoot $WorkRoot
     $watch = [Diagnostics.Stopwatch]::StartNew()
     $process = [Diagnostics.Process]::Start($start)
     $stdout = $process.StandardOutput.ReadToEndAsync()
@@ -735,12 +809,15 @@ function New-MigratedTempDatabase {
     } finally {
         $connection.Dispose()
     }
-    return [pscustomobject]@{ Tables = $tables; ProductionUntouched = ((Get-FileStamp $production) -eq $before); Elapsed = $watch.Elapsed }
+    return [pscustomobject]@{
+        Tables = $tables; ProductionUntouched = ((Get-FileStamp $production) -eq $before); Elapsed = $watch.Elapsed
+        DataSource = $DatabasePath
+    }
 }
 
 function Open-ExplainConnection {
-    param([Parameter(Mandatory)][string]$HostDirectory, [Parameter(Mandatory)][string]$DatabasePath)
-    Assert-TempDatabasePath $DatabasePath
+    param([Parameter(Mandatory)][string]$HostDirectory, [Parameter(Mandatory)][string]$DatabasePath, [Parameter(Mandatory)][string]$WorkRoot)
+    Assert-TempDatabasePath -DatabasePath $DatabasePath -WorkRoot $WorkRoot
     Import-HostSqlite $HostDirectory
     $connection = [Microsoft.Data.Sqlite.SqliteConnection]::new("Data Source=$DatabasePath;Mode=ReadOnly;Pooling=False")
     $connection.Open()
@@ -769,5 +846,5 @@ function Test-SqlExplain {
     }
 }
 
-Export-ModuleMember -Function Get-SqlSinkCatalog, Get-ScenarioLiteralSql, Assert-TempDatabasePath, New-MigratedTempDatabase,
+Export-ModuleMember -Function Test-StringNullExemptionPremise, Assert-WorkRoot, Get-SqlSinkCatalog, Get-ScenarioLiteralSql, Assert-TempDatabasePath, New-MigratedTempDatabase,
     Open-ExplainConnection, Test-SqlExplain, Get-StringNullExemption, Test-ScriptParse, Get-HelperShapeCatalog, Find-HelperPropertyMisuse, Get-StringHelperCatalog, Find-StringHelperNullComparison
