@@ -16,7 +16,7 @@ public static class ChargingIdentity
 
     private const string CycleIdPrefix = "charging-cycle:";
 
-    private const string UpperIdPrefix = "W2G-CHARGE-";
+    private const string UpperIdKind = "CHARGE";
 
     /// <summary>
     /// 一次充电承诺的旅程 id，形如 <c>charging:BROKERX-0001:20260930T081500123Z</c>：车与承诺时刻各一段，同一辆车先后两次承诺不会同名。
@@ -35,7 +35,7 @@ public static class ChargingIdentity
     /// 这次充电的 RIoT 单号：<c>charging:BROKERX-0001:20260930T081500123Z</c> → <c>W2G-CHARGE-BROKERX-0001-20260930T081500123Z</c>。
     /// 与搬运（<c>W2G-{需求}-PICKUP-{代次}</c>）、空闲返回（<c>W2G-IDLE-…</c>）同一个前缀、不同的第二段。
     /// </summary>
-    public static string UpperIdFor(string journeyId) => UpperIdPrefix + Suffix(journeyId).Replace(':', '-');
+    public static string UpperIdFor(string journeyId) => RiotUpperIds.VehicleJourney(UpperIdKind, Suffix(journeyId));
 
     private static string Suffix(string journeyId)
     {

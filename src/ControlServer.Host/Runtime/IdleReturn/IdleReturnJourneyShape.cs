@@ -44,7 +44,7 @@ internal static class IdleReturnJourneyShape
         {
             throw new ArgumentException($"'{journeyId}' is not an idle return journey id.", nameof(journeyId));
         }
-        return "W2G-IDLE-" + journeyId[IdleReturnIdentity.JourneyIdPrefix.Length..].Replace(':', '-');
+        return RiotUpperIds.VehicleJourney("IDLE", journeyId[IdleReturnIdentity.JourneyIdPrefix.Length..]);
     }
 
     public static (JourneyRuntimeRow Runtime, JourneyStopRow Stop, OrderIntent Intent) Build(

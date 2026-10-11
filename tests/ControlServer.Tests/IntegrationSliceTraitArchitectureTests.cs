@@ -191,6 +191,7 @@ public sealed class IntegrationSliceTraitArchitectureTests
             ["RiotRequestSemanticDigestTests"] = "control-server#401 the create audit's request-semantic digest per order shape, single-move unchanged; server-internal audit, no wire message",
             ["RiotSdkPackageProvenanceTests"] = "vendored SDK package provenance; not a protocol fact",
             ["RiotSdkRegistrationTests"] = "SDK composition-root wiring; no wire message",
+            ["RiotUpperIdShapeTests"] = "control-server#616 every upperId this server sends RIoT fits the length RIoT is known to accept, stays unique and keeps the own prefix; single-ended server-to-RIoT, no wire message",
             ["RollbackAndImpactPreviewTests"] = "batch 3 rollback and impact preview; a rollback is a new activation of an existing frozen version, server-internal",
             ["RouteGraphDispatchTests"] = "7.5 #6, RouteGraphSnapshot engine; single-ended server-to-RIoT",
             ["RouteGraphEngineTests"] = "7.5 #6, RouteGraphSnapshot engine; single-ended server-to-RIoT",
