@@ -2313,6 +2313,37 @@ function Format-ParallelLogFileFacts {
             }) -join '; ') + '.'
 }
 
+function Get-ParallelLogFilesSince {
+    <#
+        .SYNOPSIS
+            control-server#587. The Host's log files a read-back reads, newest first: every file the process may have
+            written since -Since (its start).
+    #>
+    [CmdletBinding()]
+    param(
+        [Parameter(Mandatory = $true)][string] $Directory,
+        [Parameter(Mandatory = $true)][string] $Filter,
+        [Parameter(Mandatory = $true)][datetimeoffset] $Since
+    )
+    return @(Get-ChildItem -LiteralPath $Directory -Filter $Filter -File -ErrorAction SilentlyContinue |
+            Sort-Object LastWriteTimeUtc -Descending | Select-Object -First 2)
+}
+
+function Read-ParallelLogLines {
+    <#
+        .SYNOPSIS
+            control-server#587. Every line of the given log files, in the order given. The Host holds its current file
+            open (shared = true), so each is read without asking for exclusive access.
+    #>
+    [CmdletBinding()]
+    [OutputType([string])]
+    param([AllowEmptyCollection()][object[]] $Files)
+    foreach ($file in @($Files | Where-Object { $null -ne $_ })) {
+        $stream = [IO.File]::Open($file.FullName, [IO.FileMode]::Open, [IO.FileAccess]::Read, [IO.FileShare]::ReadWrite)
+        try { ([IO.StreamReader]::new($stream, [Text.Encoding]::UTF8)).ReadToEnd() -split "`r?`n" } finally { $stream.Dispose() }
+    }
+}
+
 function Get-ParallelServiceEnvironmentEntry {
     <#
         .SYNOPSIS
@@ -2894,6 +2925,8 @@ Export-ModuleMember -Function @(
     'Get-ParallelReadBackAction'
     'Get-ParallelJourneyRuntimeEnvironmentOverride'
     'Format-ParallelLogFileFacts'
+    'Get-ParallelLogFilesSince'
+    'Read-ParallelLogLines'
     'Merge-ConfigurationTree'
     'Get-ParallelServiceEnvironmentEntry'
     'Set-ParallelServiceEnvironmentEntry'

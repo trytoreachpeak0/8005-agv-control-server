@@ -380,6 +380,63 @@ public sealed class ParallelInstanceEffectiveConfigurationTests
         Assert.Contains("journeyRuntime.fleet[1] names agv01", output, StringComparison.Ordinal);
     }
 
+    // ------------------------------------------------------------------------------------------------
+    // control-server#587. The Host's log now rolls at its size limit. The installer's read-back looks for
+    // EFFECTIVE_CONFIGURATION and 2001, logged as the process starts, and used to read only the two newest files:
+    // once the log rolled more than once after the start, both events were in a file it did not read.
+    // ------------------------------------------------------------------------------------------------
+
+    [Fact]
+    public async Task InstallerReadBackFindsTheEffectiveConfigurationAnd2001AfterTheLogRolledManyTimes()
+    {
+        string root = FindRepositoryRoot();
+        const string definitionFile = "instance-factory01-v2.json";
+        JourneyRuntimeOptions options = Bind(
+            File.ReadAllText(Path.Combine(root, "src", "ControlServer.Host", "appsettings.json")), GenerateOverlay(root, definitionFile), out IConfiguration bound);
+        string directory = ServerLogVolumeTests.NewDirectory();
+        try
+        {
+            // As the installer takes it: the service process's start, less two seconds.
+            DateTimeOffset since = DateTimeOffset.UtcNow.AddSeconds(-2);
+            using (Serilog.Core.Logger serilog = ServerLogVolumeTests.CreateInstalledFileLogger(directory, fileSizeLimitBytes: 4096, rollOnFileSizeLimit: true))
+            using (Serilog.Extensions.Logging.SerilogLoggerFactory factory = new(serilog))
+            {
+                EffectiveConfigurationEvent.Log(factory.CreateLogger("ControlServer.Host"), options, bound["MesIngest:baseUrl"] ?? "http://127.0.0.1:5088");
+                // The real 2001: the worker with its runtime held off, as the installer's Held phase starts it.
+                using JourneyMutationGate gate = new();
+                JourneyRuntimeWorker worker = new(null!, gate, Options.Create(new JourneyRuntimeOptions { Enabled = false }),
+                    TimeProvider.System, new Microsoft.Extensions.Logging.Logger<JourneyRuntimeWorker>(factory));
+                await worker.StartAsync(TestContext.Current.CancellationToken);
+                await worker.StopAsync(TestContext.Current.CancellationToken);
+                Microsoft.Extensions.Logging.ILogger noise = factory.CreateLogger("ControlServer.Tests.Noise");
+                for (int index = 0; index < 300; index++)
+                {
+                    LogNoise(noise, index, new string('x', 100), null);
+                }
+            }
+            Assert.True(ServerLogVolumeTests.LogFilesNewestFirst(directory).Length >= 6, "the log should have rolled several times");
+
+            string parallel = Path.Combine(root, "scripts", "parallel");
+            string verdict = RunPwsh(
+                $"Import-Module '{Path.Combine(parallel, "ParallelInstance.psm1")}' -Force; " +
+                $"$d = Read-ParallelInstanceDefinition -Path '{Path.Combine(parallel, definitionFile)}'; " +
+                $"$since = [datetimeoffset]::Parse('{since:o}', [cultureinfo]::InvariantCulture); " +
+                $"$files = Get-ParallelLogFilesSince -Directory '{directory}' -Filter 'controlserver-*.ndjson' -Since $since; " +
+                "$v = Get-ParallelReadBackAction -Phase Held -Definition $d -Lines @(Read-ParallelLogLines -Files $files) -Since $since; " +
+                "\"$($v.Action)|$($v.Waiting)|$($v.Message)\"",
+                allowFailure: false).Trim();
+
+            Assert.StartsWith("Pass|False|", verdict, StringComparison.Ordinal);
+        }
+        finally
+        {
+            Directory.Delete(directory, recursive: true);
+        }
+    }
+
+    private static readonly Action<Microsoft.Extensions.Logging.ILogger, int, string, Exception?> LogNoise =
+        Microsoft.Extensions.Logging.LoggerMessage.Define<int, string>(Microsoft.Extensions.Logging.LogLevel.Information, new Microsoft.Extensions.Logging.EventId(1), "noise {Index} {Padding}");
+
     private static string RenderEvent(JourneyRuntimeOptions options, string mesIngestBaseUrl)
     {
         using StringWriter writer = new();
