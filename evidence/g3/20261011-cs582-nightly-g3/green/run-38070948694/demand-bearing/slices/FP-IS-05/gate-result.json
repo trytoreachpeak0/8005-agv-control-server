@@ -1,0 +1,78 @@
+{
+  "schemaVersion": "1.4.0",
+  "gate": "G3",
+  "runKind": "DEMAND_BEARING_G3_RESULT_AND_RIOT_UNKNOWN_VECTORS_NO_MOVEMENT",
+  "runId": "20261010T175116335Z",
+  "integrationSliceId": "FP-IS-05",
+  "status": "PASS",
+  "assuranceLevel": "DEMAND_BEARING_RESTORE",
+  "formalSlicePass": false,
+  "formalSliceWithheldReason": "SELF_CHECK_OVERRIDE",
+  "startedAt": "2026-10-10T17:51:16.3358684+00:00",
+  "finishedAt": "2026-10-10T17:56:10.9315708+00:00",
+  "implementationRepository": "8005-agv-control-server",
+  "commits": {
+    "controlServer": "4b0bfb8fad9f9611312096417745ccee1b9a544f",
+    "controlServerCommitSource": "SELF_CHECK_OVERRIDE",
+    "onboardHmi": "b9e67a538ba4cdf1916d201a08af40dd28270d14",
+    "onboardCommitSource": "SHARED_BINDING",
+    "slotsSimulator": "fb5f7c593742bf98bc3957b8729a38aad5321f28",
+    "simulatorCommitSource": "SHARED_BINDING",
+    "protocol": "3f091cb2eae7c58cec54a95dd9389c9180bc7b4c",
+    "protocolCommitSource": "SHARED_BINDING",
+    "runner": "4b0bfb8fad9f9611312096417745ccee1b9a544f",
+    "runnerWorktreeCleanAtStart": true,
+    "runnerSource": "COMMITTED_RUNNER"
+  },
+  "protocolReleaseVersion": "3.0.0",
+  "protocolTag": "protocol-v3.0.0",
+  "protocolProfileId": "AGV_FULL_PRODUCT",
+  "protocolVersion": 4,
+  "protocolApprovalStatus": "APPROVED_RELEASE",
+  "protocolRepositoryCommit": "3f091cb2eae7c58cec54a95dd9389c9180bc7b4c",
+  "protocolManifestSha256": "d5e1a53f1fd61f105a890dc0267e1b0a9ac5ea49f713d2cf730b0f554df9db9e",
+  "protocolSchemaBundleSha256": "e435b2b14d9ccd60c89f07df909da7626fef056a6b8a2241087557fd7dc3df43",
+  "protocolVectorsSha256": "be849f9749b004296ebd9e7bffa98faf2f8ffa90b63308ca3b210c68e7b8656e",
+  "integrationSliceIndexSha256": "4f1ec1b186089f0f4dca9fa749cae2ad0044f061b868bac7f1f98b312b1b68b5",
+  "integrationSliceIndexSource": "vendor/8005-agv-protocol/integration-slices/index.json",
+  "vectorIds": [
+    "CV-CONNECTION-LOSS-SAFE-FINISH",
+    "CV-SESSION-RECONNECT-DURING-RECOVERY"
+  ],
+  "fieldStoreProvenance": {
+    "storeSource": "SYNTHETIC_RIG",
+    "protocolCommit": "3f091cb2eae7c58cec54a95dd9389c9180bc7b4c",
+    "matchesBoundProtocolCommit": true,
+    "protocolCommitAsserted": true,
+    "protocolCommitConjunct": "SYNTHETIC_RIG: seventh conjunct in force; store protocolCommit 3f091cb2eae7c58cec54a95dd9389c9180bc7b4c must equal bound 3f091cb2eae7c58cec54a95dd9389c9180bc7b4c -> equal",
+    "exemption": null,
+    "generator": {
+      "scenario": "demand-bearing-store-at-unload",
+      "evidence": "store-generator",
+      "runId": "20261010T175339971Z",
+      "outcome": "PASS",
+      "rig": "SyntheticOnboard",
+      "controlServerCommit": "4b0bfb8fad9f9611312096417745ccee1b9a544f"
+    },
+    "note": "Generated on the spot by the bound ControlServer commit on the synthetic rig: a synthetic onboard peer and the fake RIoT, not a real vehicle and not the real RIoT. Weaker than a field store in two ways (control-server#453): the state was not written by a real demand on a real vehicle; and it was written by the build under test in its own schema, so restoring it migrates nothing -- the restart and side-effect assertions no longer also show that a store another build wrote, in an older schema, is taken over. Its protocolCommit is asserted inside protocolAndBuildIdentityBoundToTheSharedBinding, where it holds by construction: it can only show the store was written by this build, not catch a product regression.",
+    "riotCreateAuditHistory": {
+      "legs": 2,
+      "preCreateReconciliationObservedUnknownOnEveryLeg": false,
+      "unknownWasAnExactAbsentAtObservation": false,
+      "unknownStillCreatedExactlyOncePerLeg": true,
+      "unknownResolvedToTheOrderItCreated": true,
+      "note": "Written against the fake RIoT, whose answers are not the real RIoT's. Recorded, not asserted, and not evidence about RIoT."
+    }
+  },
+  "assertionIds": {
+    "resultFromASupersededSessionGenerationIsRefused": "PASS",
+    "acceptedDemandSurvivesTheHostRestart": "PASS",
+    "vehicleClaimRecordSurvivesTheHostRestart": "PASS",
+    "restartedHostServesTheSameStore": "PASS",
+    "protocolAndBuildIdentityBoundToTheSharedBinding": "PASS",
+    "controlServerHostProcessWasActuallyReplaced": "PASS",
+    "noMovementOrExternalSideEffects": "PASS",
+    "listenersReleased": "PASS",
+    "secretScan": "PASS"
+  }
+}

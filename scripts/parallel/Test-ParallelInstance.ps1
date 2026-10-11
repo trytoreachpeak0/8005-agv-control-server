@@ -4232,6 +4232,52 @@ Invoke-SourceCase 'log facts: no file read is said so' {
     $text = Format-ParallelLogFileFacts -Files @()
     @{ Ok = ($text.Contains('no log file')); Detail = "got: $text" }
 }
+
+# control-server#587: the Host's log rolls at its size limit, so the read-back reads every file written since the start.
+function New-RolledLogDirectory([hashtable] $CreatedAt) {
+    $directory = Join-Path ([IO.Path]::GetTempPath()) "cs587-selftest-$([guid]::NewGuid().ToString('N'))"
+    $null = New-Item -ItemType Directory -Path $directory
+    foreach ($name in $CreatedAt.Keys) {
+        $path = Join-Path $directory $name
+        [IO.File]::WriteAllText($path, '{}')
+        [IO.File]::SetCreationTimeUtc($path, $CreatedAt[$name].UtcDateTime)
+    }
+    return $directory
+}
+$rollSince = [datetimeoffset] '2026-10-11T08:00:00Z'
+Invoke-SourceCase 'log files since start: newest first, down to the file current at the start, and no older' {
+    $directory = New-RolledLogDirectory @{
+        'controlserver-20261010.ndjson' = $rollSince.AddDays(-1)
+        'controlserver-20261011.ndjson' = $rollSince.AddMinutes(-30)
+        'controlserver-20261011_001.ndjson' = $rollSince.AddSeconds(10)
+        'controlserver-20261011_002.ndjson' = $rollSince.AddSeconds(20)
+        'other-20261011.ndjson' = $rollSince.AddSeconds(30)
+    }
+    try {
+        $names = @(Get-ParallelLogFilesSince -Directory $directory -Filter 'controlserver-*.ndjson' -Since $rollSince | ForEach-Object Name)
+        @{ Ok = (($names -join ',') -ceq 'controlserver-20261011_002.ndjson,controlserver-20261011_001.ndjson,controlserver-20261011.ndjson'); Detail = "got: $($names -join ',')" }
+    } finally { Remove-Item -LiteralPath $directory -Recurse -Force }
+}
+Invoke-SourceCase 'log files since start: on equal creation times the _NNN roll is the newer, by ordinal name' {
+    $directory = New-RolledLogDirectory @{
+        'controlserver-20261011.ndjson' = $rollSince.AddSeconds(5)
+        'controlserver-20261011_001.ndjson' = $rollSince.AddSeconds(5)
+        'controlserver-20261010.ndjson' = $rollSince.AddDays(-1)
+    }
+    try {
+        $names = @(Get-ParallelLogFilesSince -Directory $directory -Filter 'controlserver-*.ndjson' -Since $rollSince | ForEach-Object Name)
+        @{ Ok = (($names -join ',') -ceq 'controlserver-20261011_001.ndjson,controlserver-20261011.ndjson,controlserver-20261010.ndjson'); Detail = "got: $($names -join ',')" }
+    } finally { Remove-Item -LiteralPath $directory -Recurse -Force }
+}
+Invoke-SourceCase 'log files since start: at most 16, the newest' {
+    $created = @{}
+    foreach ($index in 1..20) { $created['controlserver-20261011_{0:000}.ndjson' -f $index] = $rollSince.AddSeconds($index) }
+    $directory = New-RolledLogDirectory $created
+    try {
+        $names = @(Get-ParallelLogFilesSince -Directory $directory -Filter 'controlserver-*.ndjson' -Since $rollSince | ForEach-Object Name)
+        @{ Ok = ($names.Count -eq 16 -and $names[0] -ceq 'controlserver-20261011_020.ndjson' -and $names[15] -ceq 'controlserver-20261011_005.ndjson'); Detail = "got: $($names -join ',')" }
+    } finally { Remove-Item -LiteralPath $directory -Recurse -Force }
+}
 Invoke-PathCase 'held, phase-one process still alive after the stop' {
     $s = Invoke-HeldPath -BaseConfiguration (Copy-Definition $productConfiguration) -ProcessLingers
     Write-Result -Ok ($s.Error -like 'JOURNEY_RUNTIME_RELEASE_REFUSED:*' -and $s.Final -eq $false -and -not (@($s.Log) -match '^start')) `
@@ -4302,6 +4348,14 @@ $refusalThrow = $null -eq $assertFunction ? @() : @($assertFunction.Body.FindAll
 Write-Result -Ok ($null -ne $factsCall -and $refusalThrow.Count -eq 1 -and $refusalThrow[0].Extent.Text.Contains('$logFacts')) `
     -Name 'wiring: a read-back refusal carries the log files'' size and last write time (Format-ParallelLogFileFacts)' `
     -Detail ("facts call: $($null -ne $factsCall); refusal throws: " + (($refusalThrow | ForEach-Object { $_.Extent.Text }) -join ' | '))
+
+$logSelections = $null -eq $assertFunction ? @() : @($assertFunction.Body.FindAll({ param($n) $n -is [System.Management.Automation.Language.CommandAst] -and
+            $n.GetCommandName() -eq 'Get-ParallelLogFilesSince' }, $true))
+$directListings = $null -eq $assertFunction ? @() : @($assertFunction.Body.FindAll({ param($n) $n -is [System.Management.Automation.Language.CommandAst] -and
+            $n.GetCommandName() -eq 'Get-ChildItem' }, $true))
+Write-Result -Ok ($logSelections.Count -eq 2 -and @($logSelections | Where-Object { $_.Extent.Text -notlike '*-Since $since*' }).Count -eq 0 -and $directListings.Count -eq 0) `
+    -Name 'wiring: the read-back and its refusal read the log files written since the process started (Get-ParallelLogFilesSince, control-server#587)' `
+    -Detail ("Get-ParallelLogFilesSince calls: $($logSelections.Count); Get-ChildItem calls: $($directListings.Count)")
 
 $readBackDecisions = $null -eq $assertFunction ? @() : @($assertFunction.Body.FindAll({ param($n) $n -is [System.Management.Automation.Language.CommandAst] -and
             $n.GetCommandName() -eq 'Get-ParallelReadBackAction' }, $true))
