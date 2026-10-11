@@ -40,7 +40,16 @@
          Invoke-NightlyG3.ps1 on [self-hosted, cs-desktop] with the whole history checked out, there is no schedule of
          its own and nightly=true grades a night, the report job runs always(), the g3 job closes the round's leftover
          processes and crash dialogs and reports a work root it cannot remove, and test.yml runs this self-check and
-         the override one.
+         the override one. The leftover step decides through Select-NightlyG3LeftoverProcess over Win32_Process, runs
+         always(), fails the job on a leftover, and does not count the L2 peer cache as the job's.
+      7. Whose leftover process it is (Select-NightlyG3LeftoverProcess): dotnet.exe with this job's dll on its command
+         line and a WPF peer by its path are the job's, in any letter case; another repository's process, the L2 peer
+         cache, a sibling directory whose name only starts like a root, a crash dialog for someone else's process, one
+         that was up before the round, and the cleanup itself are not.
+
+    Section 5 also covers the deadline passing during the memory wait (memory reads high through an injected probe
+    until after the deadline): the deadline is checked after that wait, so no runner starts. The deadline case's margins
+    are wide on purpose, since this runs in test.yml for every pull request.
 
     Exits 1 when any check comes out the other way, and prints every check either way.
 

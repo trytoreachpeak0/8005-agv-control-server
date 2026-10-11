@@ -209,30 +209,23 @@ jobs:
       # What the round left behind, as l2.yml's real-rig job checks (review E of PR #591). This desktop renders golden
       # baselines (8005-mes-ingest's verify near 05:30), so a leftover onboard or simulator window, an orphaned server or
       # double, or a crash dialog of ours is a defect: listed, closed, and the job fails, which keeps the night's comment
-      # from reading 全绿. Only processes started from this job's own directories -- the work root, the checkout and the
-      # peer publish cache -- and crash dialogs raised for such a process; anyone else's are left alone.
+      # from reading 全绿. Ours means started from this job's own directories -- the work root and the checkout -- by
+      # executable path or by command line (review 2-2 of PR #591: staged, restart and demand-bearing start `dotnet <dll>`,
+      # whose path is dotnet.exe's and whose dll is only on the command line), and crash dialogs raised for such a process
+      # since the round began. Decided by Select-NightlyG3LeftoverProcess, which Test-NightlyG3.ps1 checks. The L2 peer
+      # cache is not ours: no G3 runner uses it (journey's peers are under its stage), and a hand-run L2 might.
       - name: Leftover processes and crash dialogs
         if: always()
         shell: pwsh
         run: |
-          $ownRoots = @(@((Join-Path $env:RUNNER_TEMP 'g3'), $env:GITHUB_WORKSPACE, (Join-Path $env:LOCALAPPDATA '8005-l2-peers')) |
-              ForEach-Object { $_.TrimEnd([char]'\') + [char]'\' })
-          $isOurs = { param($path) $path -and @($ownRoots | Where-Object { $path.StartsWith($_, [StringComparison]::OrdinalIgnoreCase) }).Count -gt 0 }
+          Import-Module ./scripts/NightlyG3.psm1 -Force
           $werBefore = @($env:G3_WER_BEFORE -split ',' | Where-Object { $_ } | ForEach-Object { [int]$_ })
-          $leftovers = @(Get-Process | Where-Object { & $isOurs $_.Path })
-          foreach ($wer in @(Get-CimInstance Win32_Process -Filter "Name = 'WerFault.exe'" -ErrorAction SilentlyContinue)) {
-              if ($wer.ProcessId -in $werBefore) { continue }
-              $crashedPid = if ($wer.CommandLine -match '-p\s+(\d+)') { [int]$Matches[1] } else { $null }
-              $crashed = if ($crashedPid) { Get-Process -Id $crashedPid -ErrorAction SilentlyContinue } else { $null }
-              if ($crashed -and (& $isOurs $crashed.Path)) {
-                  $leftovers += @(Get-Process -Id $wer.ProcessId -ErrorAction SilentlyContinue)
-              } else {
-                  Write-Host "::warning title=Crash dialog not ours::WerFault pid $($wer.ProcessId) for pid $crashedPid; left alone"
-              }
-          }
-          foreach ($process in $leftovers) {
-              Write-Host "::error title=Leftover process::$($process.ProcessName) (pid $($process.Id)) $($process.Path) window '$($process.MainWindowTitle)'"
-              Stop-Process -Id $process.Id -Force -ErrorAction SilentlyContinue
+          $processes = @(Get-CimInstance Win32_Process | Select-Object ProcessId, Name, ExecutablePath, CommandLine)
+          $leftovers = @(Select-NightlyG3LeftoverProcess -Processes $processes -WerBefore $werBefore -ExcludeProcessId $PID `
+              -OwnRoots @((Join-Path $env:RUNNER_TEMP 'g3'), $env:GITHUB_WORKSPACE))
+          foreach ($leftover in $leftovers) {
+              Write-Host "::error title=Leftover process::$($leftover.Name) (pid $($leftover.ProcessId)): $($leftover.Reason)"
+              Stop-Process -Id $leftover.ProcessId -Force -ErrorAction SilentlyContinue
           }
           if ($leftovers.Count -gt 0) { exit 1 }
           Write-Host 'No leftover process or crash dialog of this round.'

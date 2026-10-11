@@ -42,7 +42,11 @@ param(
     [string]$RunnerRoot = $PSScriptRoot,
     [double]$CommitCeilingGiB = 12,
     [double]$CommitWaitMinutes = 30,
-    [double]$MinFreeGiB = 4
+    [double]$MinFreeGiB = 4,
+    [int]$CommitPollSeconds = 30,
+    # A script printing the committed GiB, in place of the machine's own reading. Only scripts/Test-NightlyG3.ps1 passes
+    # it, to make memory read high until a given moment (the deadline passing during the memory wait).
+    [string]$CommitProbeScript
 )
 
 $ErrorActionPreference = 'Stop'
@@ -77,6 +81,7 @@ $commits = [ordered]@{
 }
 
 function Get-CommittedGiB {
+    if ($CommitProbeScript) { return [double](& pwsh -NoProfile -File $CommitProbeScript | Select-Object -Last 1) }
     $memory = Get-CimInstance Win32_PerfFormattedData_PerfOS_Memory
     return [Math]::Round($memory.CommittedBytes / 1GB, 2)
 }
@@ -110,7 +115,7 @@ try {
             $committed = Get-CommittedGiB
             while ($committed -gt $CommitCeilingGiB -and $waited.Elapsed.TotalMinutes -lt $CommitWaitMinutes) {
                 Write-Host "G3_NIGHTLY_COMMIT_WAITING: $committed GiB committed, starting at or below $CommitCeilingGiB"
-                Start-Sleep -Seconds 30
+                Start-Sleep -Seconds $CommitPollSeconds
                 $committed = Get-CommittedGiB
             }
             if ($committed -gt $CommitCeilingGiB) {
@@ -186,5 +191,5 @@ finally {
     } | ConvertTo-Json -Depth 8 | Set-Content -LiteralPath (Join-Path $WorkRoot 'results.json') -Encoding utf8NoBOM
 }
 
-$green = $verdicts.Count -eq $runners.Count -and @($verdicts | Where-Object { $_.result -ne 'PASS' }).Count -eq 0
+$green = $null -eq $stoppedBy -and $verdicts.Count -eq $runners.Count -and @($verdicts | Where-Object { $_.result -ne 'PASS' }).Count -eq 0
 exit $(if ($green) { 0 } else { 1 })

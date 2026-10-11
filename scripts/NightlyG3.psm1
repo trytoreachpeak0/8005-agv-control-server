@@ -214,6 +214,49 @@ function Get-NightlyG3StartDeadline {
     return $StartedAtUtc.ToUniversalTime().AddMinutes($DispatchMinutes)
 }
 
+function Select-NightlyG3LeftoverProcess {
+    param(
+        # Win32_Process-shaped rows: ProcessId, Name, ExecutablePath, CommandLine.
+        [Parameter(Mandatory)][AllowEmptyCollection()][object[]]$Processes,
+        [Parameter(Mandatory)][string[]]$OwnRoots,
+        # Crash dialogs already up before the round: not this round's.
+        [AllowEmptyCollection()][int[]]$WerBefore = @(),
+        # The cleanup's own process, whose command line may well name a root.
+        [int]$ExcludeProcessId = 0
+    )
+
+    # What the round left on the shared desktop (review 2-2 of PR #591). A process is ours when its executable path or its
+    # command line is under one of the job's roots: staged, restart and demand-bearing start `dotnet <dll>`, so the path
+    # is dotnet.exe's and only the command line names the dll. Roots end in a separator, so a sibling directory whose
+    # name merely starts the same is not ours. A crash dialog is ours when it is new since the round started and raised
+    # for one of our processes. Returns ProcessId, Name and Reason for each.
+    $roots = @($OwnRoots | Where-Object { $_ } | ForEach-Object { $_.TrimEnd([char]'\') + [char]'\' })
+    $isOurs = {
+        param($row)
+        foreach ($text in @($row.ExecutablePath, $row.CommandLine)) {
+            if ([string]::IsNullOrEmpty($text)) { continue }
+            foreach ($root in $roots) { if ($text.IndexOf($root, [StringComparison]::OrdinalIgnoreCase) -ge 0) { return $true } }
+        }
+        return $false
+    }
+    $ours = @{}
+    foreach ($row in $Processes) {
+        if ([int]$row.ProcessId -ne $ExcludeProcessId -and "$($row.Name)" -ne 'WerFault.exe' -and (& $isOurs $row)) { $ours[[int]$row.ProcessId] = $row }
+    }
+    $selected = [System.Collections.Generic.List[object]]::new()
+    foreach ($row in $ours.Values) {
+        $selected.Add([pscustomobject]@{ ProcessId = [int]$row.ProcessId; Name = $row.Name; Reason = "started from this job: $($row.ExecutablePath)" })
+    }
+    foreach ($row in $Processes) {
+        if ("$($row.Name)" -ne 'WerFault.exe' -or [int]$row.ProcessId -in $WerBefore) { continue }
+        $crashed = if ("$($row.CommandLine)" -match '-p\s+(\d+)') { [int]$Matches[1] } else { $null }
+        if ($null -ne $crashed -and $ours.ContainsKey($crashed)) {
+            $selected.Add([pscustomobject]@{ ProcessId = [int]$row.ProcessId; Name = $row.Name; Reason = "crash dialog for pid $crashed ($($ours[$crashed].Name))" })
+        }
+    }
+    return @($selected)
+}
+
 # The two calls to GitHub, kept thin: everything they decide is in the functions above, which the self-check covers.
 function Invoke-NightlyG3Api {
     param(
@@ -259,4 +302,4 @@ function Send-NightlyG3Comment {
 }
 
 Export-ModuleMember -Function Get-NightlyG3Verdict, Format-NightlyG3Comment, Select-NightlyG3BusyRealRigJob, Wait-NightlyG3RigIdle,
-    Get-NightlyG3StartDeadline, Get-NightlyG3BusyRealRigJob, Send-NightlyG3Comment
+    Get-NightlyG3StartDeadline, Get-NightlyG3BusyRealRigJob, Send-NightlyG3Comment, Select-NightlyG3LeftoverProcess

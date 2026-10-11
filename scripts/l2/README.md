@@ -280,7 +280,7 @@ control-server#581 下评论一条，全绿也写一行，**某晚没有评论�
 | 作业 | runner | 做什么 |
 | --- | --- | --- |
 | `gate` | headless | 取两个提交和开跑截止时间；看本仓有没有正在跑或排队的 `l2.yml` `real-rig` 作业，有就每分钟查一次、最多等 30 分钟，仍忙就本晚记 `NOT_STARTED_RIG_BUSY`。等待放在这里而不在 cs-desktop 上，是因为排在本作业后面的真装置作业要等本作业让出 runner，在 cs-desktop 上等它只会等满上限 |
-| `g3` | `cs-desktop` | `scripts/Invoke-NightlyG3.ps1`：按出口顺序 staged → restart → 需求承载 → journey 串行（staged 与 restart 都占 Modbus 1502，三个要桌面）。每个 runner 开跑前三道闸门，依次是：整机已提交内存（照真装置那套，超过 12 GiB 等最多 30 分钟）、截止时间（放在内存等待之后，等完再看一次）、C 盘剩余至少 4 GiB；任一不过，其余 runner 记 `NOT_STARTED_COMMIT_GUARD`／`NOT_STARTED_DEADLINE`／`NOT_STARTED_DISK`，不启动。处理某个 runner 时编排自己抛了异常，这一轮停下：`stoppedBy` 写 `ERROR_ROUND: <runner>: <报错>`，那个 runner 记 ERROR，其余记 `NOT_STARTED_ERROR`。跑完关掉本轮留在桌面上的残留进程和崩溃对话框（只认本作业目录里起的），有就判作业失败 |
+| `g3` | `cs-desktop` | `scripts/Invoke-NightlyG3.ps1`：按出口顺序 staged → restart → 需求承载 → journey 串行（staged 与 restart 都占 Modbus 1502，三个要桌面）。每个 runner 开跑前三道闸门，依次是：整机已提交内存（照真装置那套，超过 12 GiB 等最多 30 分钟）、截止时间（放在内存等待之后，等完再看一次）、C 盘剩余至少 4 GiB；任一不过，其余 runner 记 `NOT_STARTED_COMMIT_GUARD`／`NOT_STARTED_DEADLINE`／`NOT_STARTED_DISK`，不启动。处理某个 runner 时编排自己抛了异常，这一轮停下：`stoppedBy` 写 `ERROR_ROUND: <runner>: <报错>`，那个 runner 记 ERROR，其余记 `NOT_STARTED_ERROR`。跑完关掉本轮留在桌面上的残留进程和崩溃对话框，有就判作业失败。「本轮的」指可执行文件路径或命令行落在本作业的工作目录（`$RUNNER_TEMP\g3`）或检出目录下：staged、restart、需求承载都用 `dotnet <dll>` 起进程，路径是 `dotnet.exe`，只有命令行里才有 dll；崩溃对话框要是开跑后新出现的、且是为本轮进程弹的。L2 的对端缓存 `8005-l2-peers` 不算（G3 用不到它，有人手动跑 L2 时它的进程不能被误杀）。判定在 `Select-NightlyG3LeftoverProcess` 里，有离线自检 |
 | `report` | headless | `if: always()`：不管前两个作业怎样，都在 #581 下评论 |
 
 - **时间。** 夜间一轮（`nightly=true`）不在北京时间 04:00 之后开新 runner，避开 05:30 前后 mes-ingest 的黄金渲染 verify；GitHub 把定时触发
