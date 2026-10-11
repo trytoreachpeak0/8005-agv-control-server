@@ -198,6 +198,35 @@ $f = $null -eq $other
             (@($nulls.Findings | ForEach-Object Line) -join ',') -eq '7' -and $nulls.Exempted -eq 1) "$(Format-Finding $nulls.Findings); exempted $($nulls.Exempted)"
         Add-Case 'string-null: an exemption that matches nothing is reported stale' (
             (@($nulls.StaleExemptions | ForEach-Object { $_.Function }) -join ',') -eq 'Get-Nothing') "$(@($nulls.StaleExemptions | ForEach-Object { $_.Function }) -join ',')"
+
+        # An exemption that rests on a fact about the schema carries that fact, and the check re-reads it from the EF model
+        # snapshot every run: if the column ever becomes nullable, the exemption is void and the comparison is reported.
+        $repositoryRoot = Split-Path -Parent $ScriptRoot
+        $real = @(Get-StringNullExemption)[0]
+        $premise = Test-StringNullExemptionPremise -RepositoryRoot $repositoryRoot -Exemption $real
+        Add-Case 'string-null premise: ForcedRecoveryGeneration is a non-null long in the repository''s model snapshot' ($premise.Holds) $premise.Detail
+        $null = New-Fixture 'Snapshot.cs' @'
+            modelBuilder.Entity("ControlServer.Infrastructure.Persistence.OtherRow", b =>
+                {
+                    b.Property<long>("ForcedRecoveryGeneration")
+                        .HasColumnType("INTEGER");
+                });
+
+            modelBuilder.Entity("ControlServer.Infrastructure.Persistence.VehicleRecoveryGenerationRow", b =>
+                {
+                    b.Property<long?>("ForcedRecoveryGeneration")
+                        .HasColumnType("INTEGER");
+
+                    b.ToTable("VehicleRecoveryGenerations");
+                });
+'@
+        $voided = @{ File = 'exempt.ps1'; Function = 'Get-FleetGeneration'; Variable = 'value'; Reason = 'fixture'
+            Premise = @{ Snapshot = 'Snapshot.cs'; Entity = $real.Premise.Entity; Property = $real.Premise.Property; ClrType = $real.Premise.ClrType } }
+        $premise = Test-StringNullExemptionPremise -RepositoryRoot $scratch -Exemption $voided
+        Add-Case 'string-null premise: the same column as long? in that entity voids it (a long in another entity does not save it)' (-not $premise.Holds) $premise.Detail
+        $nulls = Find-StringHelperNullComparison -Path $exempt -Helpers $repoStringHelpers -Exemptions @($voided) -RepositoryRoot $scratch
+        Add-Case 'string-null premise: a voided exemption lets the comparison be reported, saying why' (
+            @($nulls.Findings | Where-Object { $_.Line -eq 3 -and $_.Message -like '*premise*' }).Count -eq 1 -and $nulls.Exempted -eq 0) (Format-Finding $nulls.Findings)
     } finally {
         Remove-Item -LiteralPath $scratch -Recurse -Force -ErrorAction SilentlyContinue
     }

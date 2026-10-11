@@ -8,21 +8,27 @@
     No rig, no window, no fixed port. The SQL every scenario sends through Invoke-L2Query (and the readers that pass their
     -Sql on to it, Get-G3Scalar among them) is otherwise compiled for the first time by SQLite on the rig, so a misspelt
     column or table reads as a red scenario hours later. Here every literal statement is compiled with EXPLAIN against a
-    database the built ControlServer.Host migrated with --migrate-only into %TEMP%.
+    database the built ControlServer.Host migrated with --migrate-only into -WorkRoot ($RUNNER_TEMP in CI).
 
     Only literal SQL is checked: a statement with $ interpolation, or one built in a variable, is skipped and counted. That
     is most of them (they carry a demand id), and the count is printed so the blind spot is visible.
 
-    The temporary database: the path is asserted to be under the system temp directory and nowhere near %ProgramData% or
-    a ControlServer install, and is passed to the host as ConnectionStrings__ControlServer. --migrate-only with no
-    connection string migrates the MVP production database (%ProgramData%\8005\ControlServer\data\controlserver.db), so
-    the check also asserts that file is exactly as it was before and that the temporary one was created.
+    The temporary database. --migrate-only with no connection string migrates the MVP production database
+    (%ProgramData%\8005\ControlServer\data\controlserver.db). So: without -WorkRoot or $RUNNER_TEMP nothing runs (exit 2);
+    the work root must be clear of %ProgramData% and any ControlServer install; the database path must be under it; the
+    host is started only with ConnectionStrings__ControlServer set in its own environment to exactly that path, and both
+    are asserted before the process is started. Afterwards the check asserts the production database file is exactly as
+    it was and the temporary one was created, and prints the data source it passed (the path only).
 
     Needs ControlServer.Host built in Release (for the host and for Microsoft.Data.Sqlite). -Build builds it first;
     without -Build and without a build it exits 2, never 0, so a skip cannot pass.
 
 .EXAMPLE
     pwsh -NoProfile -File ./scripts/Test-ScenarioSqlExplain.ps1 -Build
+    In CI ($RUNNER_TEMP is the work root).
+
+.EXAMPLE
+    pwsh -NoProfile -File ./scripts/Test-ScenarioSqlExplain.ps1 -WorkRoot F:/8005-scratch/cs583-sql
 #>
 [CmdletBinding()]
 param(
@@ -32,6 +38,10 @@ param(
 
     # Scan these files instead of every script under ScriptRoot (the lower bounds apply only to the full scan).
     [string[]]$Path,
+
+    # Where the temporary database and fixtures go. CI passes nothing and gets $RUNNER_TEMP; on the control host pass a
+    # directory on a data drive (F:/8005-scratch/cs583-...), not %TEMP% on C:. Nothing at all is run without one.
+    [string]$WorkRoot = $env:RUNNER_TEMP,
 
     [switch]$Build,
 
@@ -55,7 +65,12 @@ $allScripts = @(Get-ChildItem -LiteralPath $ScriptRoot -Recurse -File -Include '
 $serverSql = @($allScripts | Where-Object { [IO.Path]::GetFileName($_) -notlike 'Test-*.ps1' -and [IO.Path]::GetFileName($_) -ne 'ScriptStaticChecks.psm1' })
 $sinks = Get-SqlSinkCatalog -Path $serverSql
 
-$scratch = Join-Path ([IO.Path]::GetTempPath()) "scenario-sql-$([guid]::NewGuid().ToString('N'))"
+if (-not $WorkRoot) {
+    Write-Host 'No -WorkRoot and no RUNNER_TEMP: refusing to pick a database location. Nothing was run.'
+    exit 2
+}
+Assert-WorkRoot $WorkRoot
+$scratch = Join-Path $WorkRoot "scenario-sql-$([guid]::NewGuid().ToString('N'))"
 $null = New-Item -ItemType Directory -Path $scratch -Force
 try {
     if (-not $SkipSelfTest) {
@@ -88,12 +103,20 @@ $g = Get-Count 'SELECT COUNT(*) AS N FROM OrderIntents'
         Add-Case 'extract: interpolated and variable SQL are skipped and counted' ($found.NonLiteral -eq 2) "$($found.NonLiteral)"
 
         # --- the temporary database's path ----------------------------------------------------------------------------
-        $refusedProgramData = try { Assert-TempDatabasePath (Join-Path $env:ProgramData '8005\ControlServer\data\controlserver.db'); '' } catch { "$_" }
-        Add-Case 'temp database: a path under %ProgramData% is refused' ($refusedProgramData -ne '') $refusedProgramData
-        $refusedInstall = try { Assert-TempDatabasePath 'C:\Program Files\8005 AGV\ControlServer\data\controlserver.db'; '' } catch { "$_" }
-        Add-Case 'temp database: a path outside the temp directory is refused' ($refusedInstall -ne '') $refusedInstall
-        $accepted = try { Assert-TempDatabasePath (Join-Path $scratch 'db\controlserver.db'); 'ok' } catch { "$_" }
-        Add-Case 'temp database: a path under the temp directory is accepted' ($accepted -eq 'ok') $accepted
+        $production = Join-Path $env:ProgramData '8005\ControlServer\data\controlserver.db'
+        $refusedProgramData = try { Assert-TempDatabasePath -DatabasePath $production -WorkRoot $WorkRoot; '' } catch { "$_" }
+        Add-Case 'temp database: the MVP production database path is refused' ($refusedProgramData -ne '') $refusedProgramData
+        $refusedInstall = try { Assert-TempDatabasePath -DatabasePath 'C:\Program Files\8005 AGV\ControlServer\data\controlserver.db' -WorkRoot $WorkRoot; '' } catch { "$_" }
+        Add-Case 'temp database: a path outside the work root is refused' ($refusedInstall -ne '') $refusedInstall
+        $accepted = try { Assert-TempDatabasePath -DatabasePath (Join-Path $scratch 'db\controlserver.db') -WorkRoot $WorkRoot; 'ok' } catch { "$_" }
+        Add-Case 'temp database: a path under the work root is accepted' ($accepted -eq 'ok') $accepted
+        $refusedRoot = try { Assert-WorkRoot (Join-Path $env:ProgramData '8005'); '' } catch { "$_" }
+        Add-Case 'temp database: a work root under %ProgramData% is refused' ($refusedRoot -ne '') $refusedRoot
+        # The path is checked before anything is started: with a host directory that does not exist, the refusal must be
+        # about the path, not about a missing executable.
+        $beforeStart = try { $null = New-MigratedTempDatabase -HostDirectory (Join-Path $scratch 'no-host') -DatabasePath $production -WorkRoot $WorkRoot; '' } catch { "$_" }
+        Add-Case 'temp database: --migrate-only is never started for a database outside the work root' (
+            $beforeStart -like '*not under the work root*') $beforeStart
     }
 
     # --- the migrated database ------------------------------------------------------------------------------------------
@@ -108,12 +131,14 @@ $g = Get-Count 'SELECT COUNT(*) AS N FROM OrderIntents'
         exit (@($cases | Where-Object { -not $_.Ok }).Count -gt 0 ? 1 : 2)
     }
     $database = Join-Path $scratch 'db\controlserver.db'
-    $migration = New-MigratedTempDatabase -HostDirectory $HostDirectory -DatabasePath $database
+    $migration = New-MigratedTempDatabase -HostDirectory $HostDirectory -DatabasePath $database -WorkRoot $WorkRoot
+    # The data source the host was actually given (path only), for the evidence.
+    Write-Host "connection string data source passed to --migrate-only: $($migration.DataSource)"
     Write-Host "migrated: $database ($($migration.Tables) tables, $([int]$migration.Elapsed.TotalSeconds) s); production database untouched: $($migration.ProductionUntouched)"
     Add-Case 'temp database: created, migrated, and the default database left as it was' (
         $migration.Tables -ge 20 -and $migration.ProductionUntouched) "$($migration.Tables) tables; untouched $($migration.ProductionUntouched)"
 
-    $connection = Open-ExplainConnection -HostDirectory $HostDirectory -DatabasePath $database
+    $connection = Open-ExplainConnection -HostDirectory $HostDirectory -DatabasePath $database -WorkRoot $WorkRoot
     try {
         if (-not $SkipSelfTest) {
             $statements = @(
