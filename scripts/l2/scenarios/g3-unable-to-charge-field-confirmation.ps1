@@ -30,9 +30,11 @@ MANUAL_CHARGING_HOLD → 211 暂停（记确认人）、车进清桩中保持原
 - G3-13-26（服务端，forbiddenSideEffects `duplicate-riot-order`；车保持原位）：RIoT 上恰好一张充电单，没有任何订单命令，211 仍是这一趟的。
 - G3-13-27（车载端）：清桩中的业务状态被车载端确认**之后**，界面结果一行 `UnableToChargeStatus` 在随后 3 秒里每次读都是 CONFIRMED，
   任何一次读到别的值即红（调度 10-02：只读到一次 CONFIRMED，读的时刻离清桩中状态到达太近，证明不了「清桩中之后结果还在」）。
-  **已知红，等 onboard-hmi#242**：车载端在业务状态的 activePurpose
-  不再是 CHARGING 时清掉上一次结果（`ServerSaysTheChargingIsOver`），而确认之后服务端把用途转成 CLEARING_MAINTENANCE，结果一行只闪一下。
-  第一遍（G3-13-23 拆分之前）的红证据：`evidence/l2/20261002-cs410-g3-unable-to-charge-field-confirmation-red-before-g3-13-23-split`。
+  **预期为绿，红即回归**：onboard-hmi#242 已于 2026-10-02 修复关闭（onboard-hmi PR #243，合入 `w2g/fp-v2-impl@4e40e196`），
+  用途从 CHARGING 转为 CLEARING_MAINTENANCE 不再算「充电已结束」，结果一行保留到用途离开这两者或周期收尾。
+  这条判据要抓的正是修复之前的行为：车载端在业务状态的 activePurpose 不再是 CHARGING 时清掉上一次结果（`ServerSaysTheChargingIsOver`），
+  而确认之后服务端把用途转成 CLEARING_MAINTENANCE，结果一行只闪一下。
+  修复之前、第一遍（G3-13-23 拆分之前）的红证据：`evidence/l2/20261002-cs410-g3-unable-to-charge-field-confirmation-red-before-g3-13-23-split`。
 #>
 [CmdletBinding()]
 param([Parameter(Mandatory)][object]$Context)
@@ -198,11 +200,13 @@ $assertions.Add(
     "after $answeredAt, acknowledged",
     "$(${state}?.At), acknowledged=$(${state}?.Acknowledged)")
 
-# Known red until onboard-hmi#242: the onboard forgets the outcome once activePurpose leaves CHARGING, and a confirmation turns
-# it into CLEARING_MAINTENANCE within a second. Read only after that business state is acknowledged -- applied on the vehicle --
-# and then held: every read over the next three seconds must say CONFIRMED, so a result that is gone, or going, is red.
+# Expected green; a red here is a regression. Before onboard-hmi#242 (fixed and closed 2026-10-02, onboard-hmi PR #243) the
+# onboard forgot the outcome once activePurpose left CHARGING, and a confirmation turns it into CLEARING_MAINTENANCE within a
+# second; the fix keeps it through CLEARING_MAINTENANCE. Read only after that business state is acknowledged -- applied on the
+# vehicle -- and then held: every read over the next three seconds must say CONFIRMED, so a result that is gone, or going, is red.
 # control-server#567: each read goes through Read-L2UiaItemStatus, so a read UI Automation could not make is re-read and, if
-# still unreadable, counted apart from a value that is not CONFIRMED. It still fails G3-13-27 -- never a pass -- but says so.
+# still unreadable, counted apart from a value that is not CONFIRMED. An unreadable read still fails G3-13-27 -- never a pass --
+# but says so.
 if ($null -eq $state -or -not $state.Acknowledged) {
     Add-L2RealNotReached $assertions @('G3-13-27') '清桩中的业务状态没有被车载端确认，结果一行无从在它之后读'
 } else {
@@ -218,7 +222,7 @@ if ($null -eq $state -or -not $state.Acknowledged) {
         @{ reads = @($reads | ForEach-Object { Format-L2UiaReading $_ }) })
     $assertions.Add(
         'G3-13-27',
-        '清桩中的业务状态被车载端确认之后，界面结果一行 UnableToChargeStatus 在随后 3 秒里每次读都是 CONFIRMED（已知红，等 onboard-hmi#242：用途转为 CLEARING_MAINTENANCE 时车载端清掉了结果）',
+        '清桩中的业务状态被车载端确认之后，界面结果一行 UnableToChargeStatus 在随后 3 秒里每次读都是 CONFIRMED（onboard-hmi#242 已修，预期为绿：用途转为 CLEARING_MAINTENANCE 时车载端保留结果）',
         ($reads.Count -gt 0 -and $off.Count -eq 0 -and $unreadable.Count -eq 0),
         "$($reads.Count) reads, all CONFIRMED",
         ("$($reads.Count) reads, $($off.Count) not CONFIRMED (first: $(if ($off.Count -gt 0) { Format-L2UiaReading $off[0] } else { '-' })), " +
