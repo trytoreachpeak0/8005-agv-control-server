@@ -352,14 +352,32 @@ control-server#518 时它只绑 `WIRE_TO_GATE` → 210「关卡」，核对号�
 种子只在 `JourneyRuntime.enabled=true` 时写，所以运行时关着装上去不会立刻出事，**开运行时的第一轮**才漂移。
 
 - 看板「派车积压」里，新需求的原因码全部是 `ADMISSION_POLICY_DRIFT`，不分任务类型；
-- 服务端日志有警告事件 2116（`LogAdmissionPolicyDrift`），每轮一条。它的文案是按「站点变了」写的，**本票这种情形里
-  `added: none; removed: none`**——站点没变，变的是任务类型集合，原因在附带的异常文本里，二选一：
-  - `Admission policy version is already bound to different content or deployment identity.`：配置的版本等于库里的版本，内容不同。
-    三种来路：
+- 服务端日志有警告事件 2116（`LogAdmissionPolicyDrift`），每轮一条。**看 2116 就知道是哪一种漂移**（control-server#551）：
+  文案是「`Admission policy version <配置的版本> cannot be bound for map <图号>: <原因>. ...`」，原因一栏（结构化字段
+  `DriftCauses`）列出成立的每一种，用「`; `」隔开，各带新旧值：
+  - `stations changed under bound version <V> (added: ...; removed: ...)`：实时地图上的区号站点比库里绑的版本 V 多了、少了哪些；
+  - `executable task types changed under bound version <V> (bound: ...; this build seeds: ...; added: ...; removed: ...)`：
+    库里绑的任务类型集合与这个包要种的集合。**本节这种情形就是它**——用旧定义（版本 2）装新包，或用新定义（版本 3）回滚旧包，
+    都写在这里，`bound` 与 `this build seeds` 哪边是两类、哪边是六类，就看出装的是哪个包；
+  - `deployment identity changed (bound: ...; configured: ...)`：部署标签 `admissionPolicyDeploymentId` 换了；
+  - `version moved backwards (configured: ...; highest bound: ...)`：配置的版本低于库里绑过的最高版本（回滚，见下）。
+    此时前面几种比的是库里那个更高的版本，日志里写明是哪个版本。
+
+  几种可以同时出现。四种都对不上时写 `cause not distinguished from the database (...; the store said: <存储层原话>)`，
+  不会写成 `none`。这说明拒绝的原因不在这四种里（例如库里的关系与种子站点、任务类型都相同只是配对不同，或者存储层因别的原因拒绝），
+  存储层原话就是线索；按缺陷记录的恢复步骤照样升版本，并把这条日志转给开发。比较对象是库里绑定版本那一版的关系行（按 `PolicyVersion` 取）。
+
+  日志文件是 Serilog Compact JSON（`controlserver-<日期>.ndjson`，一行一个事件），2116 那一行的 `EventId.Id` 是 `2116`，
+  渲染前的模板在 `@mt`，原因在 `DriftCauses` 字段，存储层的异常在 `@x`。异常原文仍是下面两句之一，与上面的原因对应：
+  - `Admission policy version is already bound to different content or deployment identity.`：配置的版本等于库里的版本，
+    内容（站点或任务类型）或部署标签不同。任务类型变了的三种来路：
     1. 用旧定义（版本 2）装了新包；
     2. 用新定义（版本 3）回滚了旧包；
     3. **定义和包都是新的，仍然漂移**：之前某次用旧包配版本 3 的定义装过（见本节开头），库里的 3 已经绑着旧包的两类种子。
   - `Admission policy version cannot move backwards.`：配置的版本低于库里已经绑过的版本（回滚，见下）。
+
+  control-server#551 合入之前的包里，2116 只比站点，任务类型变了时写的是 `added: none; removed: none`，要靠异常原文分辨；
+  判读这类旧包的日志时按异常原文读。
 - 核对实例实际读到的值：`C:\Program Files\8005 AGV\ControlServer.V2\appsettings.Production.json` 的
   `JourneyRuntime.admissionPolicyVersion`；库里已绑的版本见下面「读库里已绑的版本」。
 
