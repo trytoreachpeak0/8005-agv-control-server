@@ -1,0 +1,21 @@
+[12:41:48] Target: factory01  v2 parallel instance, server-side script D:\zhengyushao\control-server-v2-ops\dispatch-gate\da6e40e27b2dd4ef00a1d9f920281e1c3191aca5\Set-ParallelDispatchGateLocal.ps1 (control-server da6e40e27b2dd4ef00a1d9f920281e1c3191aca5)
+[12:41:48] Requested: RiotCreateDispatch.enabled=false (the server resolves the V2 service and file from installed-instance.json)
+[12:41:53] Server-side script and modules staged in D:\zhengyushao\control-server-v2-ops\dispatch-gate\da6e40e27b2dd4ef00a1d9f920281e1c3191aca5 (what 19 deployed in D:\zhengyushao\control-server-v2-ops is untouched)
+  [12:41:58] Definition: D:\zhengyushao\control-server-v2-ops\installed-instance.json (factory01-v2-parallel)
+  [12:41:58] Service: '8005 AGV ControlServer V2'  configuration: C:\Program Files\8005 AGV\ControlServer.V2\appsettings.Production.json
+  [12:41:58] Journey state (read-only): C:\ProgramData\8005\ControlServer.V2\data\controlserver.db
+  [12:41:58] Requested: RiotCreateDispatch.enabled=false
+  [12:41:59] MVP service before: present=True status=Running startType=Automatic pathName="C:\Program Files\8005 AGV\ControlServer\ControlServer.Host.exe" --contentRoot "C:\Program Files\8005 AGV\ControlServer" --environment Production processId=15624
+  [12:41:59] MVP service after:  present=True status=Running startType=Automatic pathName="C:\Program Files\8005 AGV\ControlServer\ControlServer.Host.exe" --contentRoot "C:\Program Files\8005 AGV\ControlServer" --environment Production processId=15624
+  [31;1mException: [31;1mCONFIGURATION_CHANGED_SINCE_START: C:\Program Files\8005 AGV\ControlServer.V2\appsettings.Production.json was written[0m
+  [31;1m[31;1mat 2026-10-11T04:41:27.3555391Z, after the process of '8005 AGV ControlServer V2' started at[0m
+  [31;1m[31;1m2026-10-11T03:59:41.1323618Z. The running process still works on what the file said when it started -- an open RIoT[0m
+  [31;1m[31;1mdispatch gate, possibly. Restart '8005 AGV ControlServer V2' (the V2 service, NOT '8005 AGV ControlServer') so it reads[0m
+  [31;1m[31;1mthe file, then run this again. Nothing was stopped or changed.[0m
+[31;1mException: [0mC:\Users\szy\Desktop\8005-workspace-v2\worktrees\ws-cs566b\remote-ops\factory-server\scripts\20-set-control-server-parallel-dispatch-gate.ps1:100[0m
+[31;1m[0m[36;1mLine |[0m
+[31;1m[0m[36;1m[36;1m 100 | [0m бн EXITCODE -ne 0) { [36;1mthrow "ssh $SshAlias failed (exit $LASTEXITCODE)"[0m }[0m
+[31;1m[0m[36;1m[36;1m[0m[36;1m[0m[36;1m     | [31;1m                     ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~[0m
+[31;1m[0m[36;1m[36;1m[0m[36;1m[0m[36;1m[31;1m[31;1m[36;1m     | [31;1mssh factory01 failed (exit 1)[0m
+readback: gate=True depWait=00:03:00 cargo=00:03:00
+V2 Running pid=400 started=11:59:41 MVP pid=15624

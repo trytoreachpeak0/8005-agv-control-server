@@ -1,0 +1,7 @@
+## SELECT * FROM SessionRecoveries
+AgvId=老厂前线新多仓位2 | SessionGeneration=1 | ProtocolCommit=3f091cb2eae7c58cec54a95dd9389c9180bc7b4c | ManifestSha256=d5e1a53f1fd61f105a890dc0267e1b0a9ac5ea49f713d2cf730b0f554df9db9e | ProfileId=AGV_FULL_PRODUCT | ProtocolVersion=4 | CapabilityRevision=1 | CapabilityHash=1bdecc05c5838f9ee413375b35aef5c63d69b543eb11d8c7cc9653fa1dba80d5 | SafetyRevision=2 | SafetyHash=43c2fc358e247e8c298a887d88fd3962c2519f59ea19ccc19b91f9ef045c1085 | DepartureSafe=1 | RecoveryReportId=a7d97e24-3881-4739-a01b-e3de98c89241 | ForcedRecoveryGeneration=0 | PendingAttemptIdsJson=[] | PendingResultIdsJson=[] | Readiness=Ready | ReasonCode=READY | UpdatedAt=2026-10-11 03:56:20.6659471+00:00 | ActiveUnlockSlotsJson=[] | ProvenRecoveryCheckpoint=NONE | ReportedForcedRecoveryGeneration=0 | UnsettledSlotOperationAttemptId= | SafetyReasonCodesJson=[] | SafetyUnknownPresent=0 | ReportedSlotConfigurationFingerprint=de93ca3d9eda7b619dd3ea2e8824f8592a3471b11ff723eba3dbc12ea6f69da9
+## SELECT JourneyId, AgvId, Stage, BlockReasonCode FROM JourneyRuntimes
+## SELECT * FROM ManualChargingHolds
+## SELECT * FROM VehicleFaultStates
+11:56:20.000 Information 1103 SessionReadiness "445ef17a-e449-40d2-ba9c-1ae8bca7aea2" to "老厂前线新多仓位2" generation 1: "READY" [null], after the answer to "RecoveryStateReport" "854a5ab7-416f-4563-8548-065f0bb87e40".
+11:56:20.000 Information 1103 SessionReadiness "9841c242-7a4f-452d-b16b-252a94dd3d07" to "老厂前线新多仓位2" generation 1: "READY" [null], after the answer to "SafetyStateChanged" "ad6f4693-df0c-4e58-ae33-af5a5188baac".

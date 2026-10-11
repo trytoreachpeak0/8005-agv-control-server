@@ -1,0 +1,26 @@
+=== before (service running)
+## SELECT Version, DeploymentId, ContentHash FROM AdmissionPolicyState
+Version=3 | DeploymentId=MAP-26-WIRE_TO_GATE-20261007 | ContentHash=2f07a058d5ce8ab07fd5202f878ac5471c793d1a110170e6e52b141f95289575
+## SELECT count(*) AS n FROM StationTaskTypeAdmissions
+n=1230
+MVP pid=15624
+stopped: Stopped at 13:23:43
+backup=D:\zhengyushao\control-server-v2-ops\cs566b\appsettings.Production.json.bak-20261011132344-before-v4 sha=9F8CA06500E5D10D5CCE85B456D137B89224948962E5F4B570CCA19538165C49
+before: gate=True admission=3 depWait=00:03:00 cargo=00:03:00 idle={"Enabled":true}
+after:  gate=False admission=4 deploymentId=MAP-26-WIRE_TO_GATE-20261007 depWait=00:01:30 cargo=00:02:00 idle={"Enabled":true} JR=True agvId=老厂前线新多仓位2 sha=A6FBE240221942C4D92D7EDED7221BAF2B78300CF0FFE1B84F839A998F1DB05F
+=== after start: V2 Running Manual pid=16768 live=200 MVP pid=15624
+## SELECT Version, DeploymentId, ContentHash, ImportedAt FROM AdmissionPolicyState
+Version=4 | DeploymentId=MAP-26-WIRE_TO_GATE-20261007 | ContentHash=559a09b062c62f00b62c38075d16d5907dde3c61a43c3d5c8c6c2f1edd116ef9 | ImportedAt=2026-10-11 05:23:47.4683563+00:00
+## SELECT Version, PreviousContentHash, ContentHash, ImportedAt FROM AdmissionPolicyAudit ORDER BY rowid DESC LIMIT 1
+Version=4 | PreviousContentHash=2f07a058d5ce8ab07fd5202f878ac5471c793d1a110170e6e52b141f95289575 | ContentHash=559a09b062c62f00b62c38075d16d5907dde3c61a43c3d5c8c6c2f1edd116ef9 | ImportedAt=2026-10-11 05:23:47.4683563+00:00
+## SELECT count(*) AS n, count(DISTINCT StationId) AS stations FROM StationTaskTypeAdmissions
+n=1230 | stations=205
+## SELECT group_concat(StationId, ' ') AS t45 FROM (SELECT DISTINCT StationId FROM StationTaskTypeAdmissions WHERE StationId LIKE 'T4%' OR StationId LIKE 'T5%' OR StationId LIKE 'T04%' OR StationId LIKE 'T05%' ORDER BY StationId)
+t45=T4-1 T4-2 T4-3 T4-4 T4-5 T4-6 T4-7 T4-8 T5-1 T5-2 T5-3 T5-4 T5-5 T5-6 T5-7 T5-8
+## SELECT count(*) AS s222 FROM StationTaskTypeAdmissions WHERE StationId LIKE '%222%'
+s222=0
+## SELECT JourneyId, Stage, BlockReasonCode FROM JourneyRuntimes WHERE Stage <> 'Completed'
+JourneyId=idle-return:BROKERX-f38975561adf46ccb1d2f23833c7d0e4:20261011T044415037Z | Stage=AwaitingPickupArrival | BlockReasonCode=WAITING_POINT_ResultUnknown
+2116 since start: 0
+13:23:46.000 Warning 9305 Task type station preset "C:\\Program Files\\8005 AGV\\ControlServer.V2\\task-type-stations.map-26.settings.json" was not applied to Map 26 (pointer state "ACTIVE"): "binding set version 2 stays active"; a different version only comes from a FieldOps activation or rollback.
+13:23:46.000 Warning 2272 The manual station clearance exit is not available ("FIELD_OPERATOR_ROSTER_EMPTY,STATION_CLEARANCE_ENTRY_NOT_OFFERED"). Until it is, a vehicle that cannot charge at its charger is left on ORDER_HANG instead of being paused for a manual clearance (control-server#406). Configure FieldOperatorRoles:Path with at least one R-11 or R-13, and VehicleFaultRecovery:enabled or FieldOperatorRoles:OnboardClearanceEntryDeclared.

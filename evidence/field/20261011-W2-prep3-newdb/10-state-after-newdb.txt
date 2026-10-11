@@ -1,0 +1,15 @@
+## SELECT Readiness, ReasonCode, DepartureSafe FROM SessionRecoveries
+Readiness=Ready | ReasonCode=READY | DepartureSafe=1
+## SELECT Version FROM AdmissionPolicyState
+Version=4
+## SELECT JourneyId, Stage, BlockReasonCode FROM JourneyRuntimes WHERE Stage <> 'Completed'
+JourneyId=idle-return:BROKERX-f38975561adf46ccb1d2f23833c7d0e4:20261011T065712286Z | Stage=AwaitingPickupArrival | BlockReasonCode=WAITING_POINT_CreateDispatchDisabled
+## SELECT StationId, State, JourneyId FROM StationExclusivities
+StationId=216 | State=RESERVED | JourneyId=idle-return:BROKERX-f38975561adf46ccb1d2f23833c7d0e4:20261011T065712286Z
+## SELECT * FROM ManualChargingHolds
+gate=False
+14:54:56.000 Information 2199 Idle return not committed for vehicle "老厂前线新多仓位2": "CHARGING_POLICY_NOT_APPROVED". ""
+14:56:00.000 Information 2199 Idle return not committed for vehicle "老厂前线新多仓位2": "ONBOARD_FACTS_NOT_READY". ""
+14:57:12.000 Information 2198 Idle return committed: vehicle "老厂前线新多仓位2" reserved waiting point 216 (registration version 1) as journey "idle-return:BROKERX-f38975561adf46ccb1d2f23833c7d0e4:20261011T065712286Z", route cost 6170 mm; charge line "30 (charging policy version 1: MandatoryChargeEntryThreshold)".
+14:57:14.000 Information 2220 Idle return "idle-return:BROKERX-f38975561adf46ccb1d2f23833c7d0e4:20261011T065712286Z" materialized for vehicle "BROKERX-f38975561adf46ccb1d2f23833c7d0e4": one move to waiting point 216.
+14:57:47 pos=210 move=MT_FINISHED sys=IDLE proc=IDLE battery=36 emerg=OK speed=0

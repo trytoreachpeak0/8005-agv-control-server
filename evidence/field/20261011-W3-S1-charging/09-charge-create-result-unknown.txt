@@ -1,0 +1,8 @@
+## SELECT Phase, Outcome, ReceiptClassification, HttpStatusCode, BusinessCode, FailureCategory, count(*) AS n, min(OccurredAt) AS first, max(OccurredAt) AS last FROM RiotDispatchAuditEvents WHERE UpperId LIKE 'W2G-CHARGE-%' GROUP BY Phase, Outcome, ReceiptClassification, HttpStatusCode, BusinessCode, FailureCategory
+Phase=CREATE_DISPATCH | Outcome=ARMED | ReceiptClassification= | HttpStatusCode= | BusinessCode= | FailureCategory= | n=1 | first=2026-10-11 07:13:51.9501136+00:00 | last=2026-10-11 07:13:51.9501136+00:00
+Phase=CREATE_REQUEST | Outcome=STARTED | ReceiptClassification= | HttpStatusCode= | BusinessCode= | FailureCategory= | n=1 | first=2026-10-11 07:13:51.9694007+00:00 | last=2026-10-11 07:13:51.9694007+00:00
+Phase=CREATE_RESPONSE | Outcome=UNKNOWN | ReceiptClassification=SdkFailure | HttpStatusCode=200 | BusinessCode=00002 | FailureCategory=RIOT_API_FAILURE | n=1 | first=2026-10-11 07:13:52.1483224+00:00 | last=2026-10-11 07:13:52.1483224+00:00
+Phase=POST_CREATE_RECONCILIATION | Outcome=UNKNOWN | ReceiptClassification=AbsentAtObservation | HttpStatusCode= | BusinessCode= | FailureCategory= | n=22 | first=2026-10-11 07:13:52.7469408+00:00 | last=2026-10-11 07:14:34.1563639+00:00
+Phase=PRE_CREATE_RECONCILIATION | Outcome=UNKNOWN | ReceiptClassification=AbsentAtObservation | HttpStatusCode= | BusinessCode= | FailureCategory= | n=1 | first=2026-10-11 07:13:51.8430642+00:00 | last=2026-10-11 07:13:51.8430642+00:00
+## SELECT UpperId, Purpose, OrderShape, DestinationStationId, Status, CreateAttemptCount FROM OrderIntents
+UpperId=W2G-CHARGE-BROKERX-f38975561adf46ccb1d2f23833c7d0e4-20261011T071230770Z | Purpose=TO_CHARGER | OrderShape=CHARGE | DestinationStationId=211 | Status=RESULT_UNKNOWN | CreateAttemptCount=1

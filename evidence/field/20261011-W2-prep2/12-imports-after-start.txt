@@ -1,0 +1,14 @@
+Map 26: 216 stations read at 2026-10-11T10:48:29.3688352+08:00 via em4; wrote D:\zhengyushao\control-server-v2-ops\stations-26-20261011-104826.json and D:\zhengyushao\control-server-v2-ops\stations-26-20261011-104826.raw.json.
+export exit=0 file=D:\zhengyushao\control-server-v2-ops\stations-26-20261011-104826.json
+### import-area-assignments
+{"command":"import-area-assignments","outcome":"OK","dryRun":false,"input":"D:\\zhengyushao\\control-server-v2-ops\\area-assignments-N-revised.csv","entryCount":217,"version":1,"contentSha256":"d7f6e6cd04c18cffb03604130628471f2e9243f9e732cd816546d6330caefaeb","snapshotId":"89e6050cf2f547ed81a2898e5f7ae591","importedAt":"2026-10-11T10:48:29.9336375+08:00","errorCount":0,"errors":[],"preview":[]}
+exit=0
+### activate-task-type-stations dry-run
+{"command":"activate-task-type-stations","outcome":"PREVIEW","dryRun":true,"requestCategory":"ACTIVATE","mapId":26,"attemptId":"913ba06e9e4940cfbb192fba7cfb4f9d","previousVersion":1,"targetVersion":null,"ruleVersion":1,"catalogRevision":3498438256227867560,"violations":[],"changes":[{"taskType":"STAGING_TO_WIRE","before":null,"after":{"stationRiotId":217,"stationName":"派工待送取货","siteVerificationRef":"MAP-26-STAGING_TO_WIRE-SITE-20261009"}}],"impact":{"inFlightDemandCount":0,"affected":[]},"auditRecordIds":["8a81b1a0531a4514abc9330f5a97ec94"],"detail":null}
+exit=0
+### activate-task-type-stations
+{"command":"activate-task-type-stations","outcome":"OK","dryRun":false,"requestCategory":"ACTIVATE","mapId":26,"attemptId":"53e4f0c1a3494bd3be8cd11744cd3f1c","previousVersion":1,"targetVersion":2,"ruleVersion":1,"catalogRevision":3498438256227867560,"violations":[],"changes":[{"taskType":"STAGING_TO_WIRE","before":null,"after":{"stationRiotId":217,"stationName":"派工待送取货","siteVerificationRef":"MAP-26-STAGING_TO_WIRE-SITE-20261009"}}],"impact":{"inFlightDemandCount":0,"affected":[]},"auditRecordIds":["c44929de92f449d0b0ab1751b4ff5def"],"detail":"Map 26 version 2 reads back with content 3789a2638a8e6d799e5f1529d71ffe11130218b8c7df870f9f4a2c19c0604ee6."}
+exit=0
+### read-waiting-points
+{"command":"read-waiting-points","outcome":"OK","version":1,"contentSha256":"1b5e0bd997a0400272c3ae35b4a70ef57b851a9aa7dc892bb2917d4a646fe8eb","snapshotId":"a932b09cc85c481c8e39c093db2c9ebb","loadedAt":"2026-10-11T10:44:41.6891631+08:00","source":"GOVERNED_IMPORT","points":[{"mapId":26,"stationId":214,"stationName":"等待点1","enabled":true,"vehicleScope":[]},{"mapId":26,"stationId":215,"stationName":"等待点2","enabled":true,"vehicleScope":[]},{"mapId":26,"stationId":216,"stationName":"等待点3","enabled":true,"vehicleScope":[]}],"coverage":null}
+exit=0

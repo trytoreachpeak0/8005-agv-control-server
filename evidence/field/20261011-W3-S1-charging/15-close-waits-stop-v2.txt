@@ -1,0 +1,6 @@
+2026-10-11 15:27:36 cs#566 收工：等待时间改回生产值、停 V2、启动类型 Manual（用户本会话选「停掉，启动类型 Manual」）
+MVP pid before=15624
+before: gate=False depWait=00:01:30 cargo=00:02:00
+after (read back): gate=False depWait=00:05:00 cargo=00:05:00 idleReturn=False admission=4
+V2 state=Stopped startMode=Manual pid=0
+MVP pid after=15624 state=Running

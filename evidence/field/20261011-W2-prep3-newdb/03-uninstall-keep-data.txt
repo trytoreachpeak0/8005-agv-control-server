@@ -1,0 +1,71 @@
+[14:51:27] Uninstall: using opsRoot D:\zhengyushao\control-server-v2-ops from F:/8005-wt/rig-cs566b-8005-agv-control-server/scripts/parallel/instance-factory01-v2.json; the server asserts its own installed definition.
+[14:51:27] Target: factory01  service '8005 AGV ControlServer V2'
+[14:51:27] Vehicle: 老厂前线新多仓位2 (BROKERX-f38975561adf46ccb1d2f23833c7d0e4)
+[14:51:27] RouteGraph: enabled=False mapId=26   RiotCreateDispatch: enabled=False
+  [14:51:34] Definition: D:\zhengyushao\control-server-v2-ops\installed-instance.json
+  [14:51:34] Uninstalling factory01-v2-parallel (service '8005 AGV ControlServer V2')
+  [14:51:34]   remove      Service            8005 AGV ControlServer V2
+  [14:51:34]   remove      ScheduledTask      8005 AGV ControlServer V2 FakeMesIngest
+  [14:51:34]   remove      FirewallRule       8005 AGV ControlServer V2 58105
+  [14:51:34]   remove      FirewallRule       8005 AGV ControlServer V2 58107
+  [14:51:34]   remove      MachineEnvironment CONTROL_SERVER_V2_ONBOARD_CERTIFICATE_PASSWORD
+  [14:51:34]   remove      Directory          C:\Program Files\8005 AGV\ControlServer.V2.FakeMesIngest
+  [14:51:34]   remove      Directory          C:\Program Files\8005 AGV\ControlServer.V2
+  [14:51:34]   remove      Directory          D:\zhengyushao\ControlServer.V2
+  [14:51:34]   remove      Directory          D:\zhengyushao\ControlServer.V2.previous
+  [14:51:34]   remove      DirectoryPattern   D:\zhengyushao\ControlServer.V2.incoming-*
+  [14:51:34]   remove      DirectoryPattern   D:\zhengyushao\ControlServer.V2.rollback-*
+  [14:51:34]   remove      Directory          D:\zhengyushao\control-server-v2-staging
+  [14:51:34]   keep (data) Directory          C:\ProgramData\8005\ControlServer.V2
+  [14:51:34]   keep (data) Directory          C:\ProgramData\8005\ControlServer.V2-backups
+  [14:51:34]   keep (data) Directory          D:\zhengyushao\control-server-v2-ops
+  [14:51:34]   keep        UserEnvironment    CONTROL_SERVER_RIOT_CALL_API_KEY (shared with the MVP deployment)
+  [14:51:35] MVP service before: present=True status=Running startType=Automatic pathName="C:\Program Files\8005 AGV\ControlServer\ControlServer.Host.exe" --contentRoot "C:\Program Files\8005 AGV\ControlServer" --environment Production processId=15624
+      product uninstaller D:\zhengyushao\ControlServer.V2\scripts\Uninstall-ControlServerLocal.ps1, result D:\zhengyushao\control-server-v2-ops\results\uninstall-20261011-145135-d015fc933d6a4d729e040ba712102ec3.json
+      | ControlServer uninstall PASS. Result: D:\zhengyushao\control-server-v2-ops\results\uninstall-20261011-145135-d015fc933d6a4d729e040ba712102ec3.json
+  [14:51:46] MVP service unchanged.
+  [14:51:46]   removed  service '8005 AGV ControlServer V2'
+  [14:51:46]   removed  ScheduledTask '8005 AGV ControlServer V2 FakeMesIngest'
+  [14:51:46]   removed  FirewallRule '8005 AGV ControlServer V2 58105'
+  [14:51:46]   removed  FirewallRule '8005 AGV ControlServer V2 58107'
+  [14:51:46]   removed  MachineEnvironment 'CONTROL_SERVER_V2_ONBOARD_CERTIFICATE_PASSWORD'
+  [14:51:46]   removed  directory C:\Program Files\8005 AGV\ControlServer.V2.FakeMesIngest
+  [14:51:46]   removed  directory C:\Program Files\8005 AGV\ControlServer.V2
+  [14:51:46]   removed  directory D:\zhengyushao\ControlServer.V2
+  [14:51:46]   removed  directory D:\zhengyushao\ControlServer.V2.previous
+  [14:51:46]   removed  directory D:\zhengyushao\control-server-v2-staging
+  [14:51:46] Parallel instance uninstalled.
+[14:51:34] Definition: D:\zhengyushao\control-server-v2-ops\installed-instance.json
+[14:51:34] Uninstalling factory01-v2-parallel (service '8005 AGV ControlServer V2')
+[14:51:34]   remove      Service            8005 AGV ControlServer V2
+[14:51:34]   remove      ScheduledTask      8005 AGV ControlServer V2 FakeMesIngest
+[14:51:34]   remove      FirewallRule       8005 AGV ControlServer V2 58105
+[14:51:34]   remove      FirewallRule       8005 AGV ControlServer V2 58107
+[14:51:34]   remove      MachineEnvironment CONTROL_SERVER_V2_ONBOARD_CERTIFICATE_PASSWORD
+[14:51:34]   remove      Directory          C:\Program Files\8005 AGV\ControlServer.V2.FakeMesIngest
+[14:51:34]   remove      Directory          C:\Program Files\8005 AGV\ControlServer.V2
+[14:51:34]   remove      Directory          D:\zhengyushao\ControlServer.V2
+[14:51:34]   remove      Directory          D:\zhengyushao\ControlServer.V2.previous
+[14:51:34]   remove      DirectoryPattern   D:\zhengyushao\ControlServer.V2.incoming-*
+[14:51:34]   remove      DirectoryPattern   D:\zhengyushao\ControlServer.V2.rollback-*
+[14:51:34]   remove      Directory          D:\zhengyushao\control-server-v2-staging
+[14:51:34]   keep (data) Directory          C:\ProgramData\8005\ControlServer.V2
+[14:51:34]   keep (data) Directory          C:\ProgramData\8005\ControlServer.V2-backups
+[14:51:34]   keep (data) Directory          D:\zhengyushao\control-server-v2-ops
+[14:51:34]   keep        UserEnvironment    CONTROL_SERVER_RIOT_CALL_API_KEY (shared with the MVP deployment)
+[14:51:35] MVP service before: present=True status=Running startType=Automatic pathName="C:\Program Files\8005 AGV\ControlServer\ControlServer.Host.exe" --contentRoot "C:\Program Files\8005 AGV\ControlServer" --environment Production processId=15624
+    product uninstaller D:\zhengyushao\ControlServer.V2\scripts\Uninstall-ControlServerLocal.ps1, result D:\zhengyushao\control-server-v2-ops\results\uninstall-20261011-145135-d015fc933d6a4d729e040ba712102ec3.json
+    | ControlServer uninstall PASS. Result: D:\zhengyushao\control-server-v2-ops\results\uninstall-20261011-145135-d015fc933d6a4d729e040ba712102ec3.json
+[14:51:46] MVP service unchanged.
+[14:51:46]   removed  service '8005 AGV ControlServer V2'
+[14:51:46]   removed  ScheduledTask '8005 AGV ControlServer V2 FakeMesIngest'
+[14:51:46]   removed  FirewallRule '8005 AGV ControlServer V2 58105'
+[14:51:46]   removed  FirewallRule '8005 AGV ControlServer V2 58107'
+[14:51:46]   removed  MachineEnvironment 'CONTROL_SERVER_V2_ONBOARD_CERTIFICATE_PASSWORD'
+[14:51:46]   removed  directory C:\Program Files\8005 AGV\ControlServer.V2.FakeMesIngest
+[14:51:46]   removed  directory C:\Program Files\8005 AGV\ControlServer.V2
+[14:51:46]   removed  directory D:\zhengyushao\ControlServer.V2
+[14:51:46]   removed  directory D:\zhengyushao\ControlServer.V2.previous
+[14:51:46]   removed  directory D:\zhengyushao\control-server-v2-staging
+[14:51:46] Parallel instance uninstalled.
+[14:51:45] Uninstall complete. The MVP service was not involved.

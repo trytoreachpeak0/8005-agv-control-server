@@ -1,0 +1,16 @@
+用户原话：「agv03已经挪开了，我挪到了一个新建站点，站号是222」
+read at 2026-10-11T12:49:09.8377980+08:00 (RIoT read-only, GET only)
+### agv01  actionState=AT_FINISHED battery=77 batteryState=NO_CHARGE currentMap=老厂前线new currentPosition=7 emergencyState=OK movementState=MT_FINISHED speed=0 sysState=IDLE
+### agv02  actionState=AT_FINISHED battery=55 batteryState=NO_CHARGE currentMap=老厂前线new_wk currentPosition=210 emergencyState=OK movementState=MT_FINISHED speed=0 sysState=IDLE
+### agv03  actionState=AT_FINISHED battery=83 batteryState=NO_CHARGE currentMap=老厂前线new_wk currentPosition=222 emergencyState=OK movementState=MT_FINISHED speed=0 sysState=IDLE
+nonfinal orders total read: 247
+nonfinal orders mentioning agv01: 0
+nonfinal orders mentioning agv02: 0
+nonfinal orders mentioning agv03: 0
+## SELECT * FROM StationExclusivities
+MapId=26 | StationId=210 | StationKind=FIXED_TASK_STATION | State=OCCUPIED | VehicleKey=BROKERX-f38975561adf46ccb1d2f23833c7d0e4 | JourneyId=journey:c1000566-0000-0000-0000-000000000001 | StateSince=2026-10-11 04:39:23.3399889+00:00 | WaitingPointVersion= | RecordId=97a04449-de37-443e-b7c5-d4214ebb3fba | ChargerRosterVersion=
+MapId=26 | StationId=216 | StationKind=WAITING_POINT | State=RESERVED | VehicleKey=BROKERX-f38975561adf46ccb1d2f23833c7d0e4 | JourneyId=idle-return:BROKERX-f38975561adf46ccb1d2f23833c7d0e4:20261011T044415037Z | StateSince=2026-10-11 04:44:15.0379954+00:00 | WaitingPointVersion=1 | RecordId=b25f3515-65bf-4460-8e34-0457ee4e9b01 | ChargerRosterVersion=
+## SELECT JourneyId, Stage, BlockReasonCode FROM JourneyRuntimes WHERE Stage <> 'Completed'
+JourneyId=idle-return:BROKERX-f38975561adf46ccb1d2f23833c7d0e4:20261011T044415037Z | Stage=AwaitingPickupArrival | BlockReasonCode=WAITING_POINT_CreateDispatchDisabled
+## SELECT Readiness, ReasonCode, DepartureSafe FROM SessionRecoveries
+Readiness=Ready | ReasonCode=READY | DepartureSafe=1

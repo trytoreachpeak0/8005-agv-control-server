@@ -1,0 +1,19 @@
+MVP pid before=15624
+V2 Stopped 15:08:51
+renamed to ControlServer.V2.pre-cs566b-newdb3-20261011; new empty dir created with copied ACL (owner=BUILTIN\Administrators)
+before: gate=True idle={"Enabled":true}
+after: gate=False idle={"Enabled":false} admission=4 depWait=00:01:30 cargo=00:02:00 JR=True RG=True backup=D:\zhengyushao\control-server-v2-ops\cs566b\appsettings.Production.json.bak-20261011150851-before-fast-newdb
+V2 Running Manual pid=15012 live=200 MVP pid=15624
+  \data 1
+  \logs 1
+  \data\controlserver.db 4096
+  \data\controlserver.db.instance-lock 0
+  \data\controlserver.db-shm 32768
+  \data\controlserver.db-wal 3217752
+  \logs\controlserver-20261011.ndjson 0
+## SELECT count(*) AS migrations FROM __EFMigrationsHistory
+migrations=40
+## SELECT Version, ImportedAt FROM AdmissionPolicyState
+Version=4 | ImportedAt=2026-10-11 07:08:57.599847+00:00
+## SELECT count(*) AS journeys FROM JourneyRuntimes
+journeys=0

@@ -1,0 +1,10 @@
+## SELECT Readiness, ReasonCode, DepartureSafe FROM SessionRecoveries
+Readiness=Ready | ReasonCode=READY | DepartureSafe=1
+## SELECT Version FROM AdmissionPolicyState
+Version=4
+## SELECT JourneyId, Stage, BlockReasonCode FROM JourneyRuntimes WHERE Stage <> 'Completed'
+## SELECT StationId, State, JourneyId FROM StationExclusivities
+## SELECT * FROM ManualChargingHolds
+gate=False
+15:08:58.000 Information 2199 Idle return not committed for vehicle "老厂前线新多仓位2": "IDLE_RETURN_DISABLED". ""
+15:12:00 pos=216 move=MT_FINISHED sys=IDLE proc=IDLE battery=34 emerg=OK speed=0

@@ -1,0 +1,34 @@
+[11:19:45] OnboardHmi deployment to agv03
+[11:19:46] Site values from site-agv03.json
+[11:19:46] Secrets loaded from the DPAPI store
+[11:19:48] Onboard client state on agv03: STOPPED
+[11:19:48] Using local package C:\t566\release-stage\WireToGate-20261011-022635-da6e40e.zip
+[11:19:49] Package hash verified (fdba6a519a0b3d4c56b039581f439d49284cea3f1b1fa1672bbbc4fca9d25f75)
+[11:20:31] OnboardHmi commit:    c60013ae70d04a99915c12562bc3086126436a81
+[11:20:31] ControlServer commit: da6e40e27b2dd4ef00a1d9f920281e1c3191aca5
+[11:20:32] wireToGate endpoint: 172.19.205.222:58105
+[11:20:33] Configuration rendered and validated
+[11:20:33] Staging on agv03
+  ready
+ready
+[11:20:57] Copying payload (80.8 MB)
+[11:21:10] Placing the payload on the vehicle
+  hash verified
+  placed: C:\8005\OnboardHmi
+  wireToGate endpoint read back: 172.19.205.222:58105
+  credentials set (machine scope)
+  shortcut: C:\Users\Public\Desktop\8005 AGV 车载�?lnk
+  vehicle-safety 200: {"vehicleKey":"BROKERX-f38975561adf46ccb1d2f23833c7d0e4","motionState":"UNKNOWN","observedAt":"2026-10-11T03:21:29.6287358+00:00","source":"RIOT_BEHAVIOR_LAB_R41","reasonCodes":["RIOT_MOVEMENT_NOT_FINISHED"]}
+
+[11:21:28] Staged. NOT started -- that part is yours.
+
+  On the vehicle, from a desktop session:
+    C:\8005\OnboardHmi\SQCD.Agv.Wpf.exe
+
+  Before you do:
+    - confirm the vehicle is where you think it is and is meant to move;
+    - the vehicle-safety line above must be 200 with a matching vehicleKey,
+      motionState=STOPPED and fresh observedAt, or a clean session stays in
+      RecoveryRequired / DEPARTURE_SAFETY_NOT_READY. That is the gate working,
+      not a bug;
+    - the previous build is at C:\8005\OnboardHmi.previous if you need it back.

@@ -1,0 +1,5 @@
+# V2 改为单车：已装定义、实际配置与回读（2026-10-11 11:43～11:48）
+
+1. **已装定义记的是单车。** 11:45:58 19 号脚本按 `instance-factory01-v2.json`（da6e40e2，单车 agv02，准入 3）写入 `D:\zhengyushao\control-server-v2-ops\installed-instance.json`，随后包内 `Update-ControlServerLocal.ps1:307` 抛错、原地升级中止（cs#605；库与二进制未动）。11:48 读回：installed-instance `fleet=False agvId=老厂前线新多仓位2 vehicleKey=BROKERX-f38975561adf46ccb1d2f23833c7d0e4 admission=3`（`20-config-single-car.txt` 第 2 行）。
+2. **实际配置是手改出来的。** 闸门关着，在 `appsettings.Production.json` 上删掉 `JourneyRuntime.fleet`、把 `JourneyRuntime.enabled` 设回 true（升级脚本中止前把它改成了 false），其余不动。改前备份 `D:\zhengyushao\control-server-v2-ops\cs566b\appsettings.Production.json.bak-20261011114806-before-single-car`，sha 3DD1507B… → 658F8903…。
+3. **两者一致的回读。** 重启后（pid 16716）Host 的 5350 `EFFECTIVE_CONFIGURATION`：`fleet=`（空，单车）、allowedWorkTypes 六类、allowedDispatchZones=WIRE、mesIngestBaseUrl=http://127.0.0.1:58188；配置回读 agvId/vehicleKey=agv02、gate=False、admission=3、RouteGraph 开、MapStationCatalog 30s/5min、日志 64 MiB 滚动。与 installed-instance.json 的单车定义一致（定义里运行时与路网为关，实际为开，这是本次手工打开的两项）。MVP pid 15624 不变。
