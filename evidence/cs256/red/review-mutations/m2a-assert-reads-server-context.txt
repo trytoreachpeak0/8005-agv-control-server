@@ -1,0 +1,24 @@
+mutation M2a on 730e5a4c65560a27e59da1c5e11871d3af7ca18b: NothingSentAfterTheCloseIsProcessed reads through rig.ServerContext
+diff --git a/tests/ControlServer.Tests/OnboardSilentLivenessLossTests.cs b/tests/ControlServer.Tests/OnboardSilentLivenessLossTests.cs
+index 1e70f8069..0cb9ab747 100644
+--- a/tests/ControlServer.Tests/OnboardSilentLivenessLossTests.cs
++++ b/tests/ControlServer.Tests/OnboardSilentLivenessLossTests.cs
+@@ -346 +346 @@ public sealed class OnboardSilentLivenessLossTests
+-        string[] recorded = await read.ProtocolInbox.AsNoTracking()
++        string[] recorded = await rig.ServerContext.ProtocolInbox.AsNoTracking()
+  Determining projects to restore...
+  All projects are up-to-date for restore.
+  ControlServer.Domain -> C:\Users\szy\Desktop\8005-workspace-v2\worktrees\cs256-8005-agv-control-server\src\ControlServer.Domain\bin\Release\net8.0\win-x64\ControlServer.Domain.dll
+  ControlServer.TestDoubles -> C:\Users\szy\Desktop\8005-workspace-v2\worktrees\cs256-8005-agv-control-server\tools\ControlServer.TestDoubles\bin\Release\net8.0\win-x64\ControlServer.TestDoubles.dll
+  ControlServer.Dashboard -> C:\Users\szy\Desktop\8005-workspace-v2\worktrees\cs256-8005-agv-control-server\src\ControlServer.Dashboard\bin\Release\net8.0\win-x64\ControlServer.Dashboard.dll
+  ControlServer.Application -> C:\Users\szy\Desktop\8005-workspace-v2\worktrees\cs256-8005-agv-control-server\src\ControlServer.Application\bin\Release\net8.0\win-x64\ControlServer.Application.dll
+  ControlServer.FakeRiot -> C:\Users\szy\Desktop\8005-workspace-v2\worktrees\cs256-8005-agv-control-server\tools\ControlServer.FakeRiot\bin\Release\net8.0\win-x64\ControlServer.FakeRiot.dll
+  ControlServer.FakeOnboard -> C:\Users\szy\Desktop\8005-workspace-v2\worktrees\cs256-8005-agv-control-server\tools\ControlServer.FakeOnboard\bin\Release\net8.0\win-x64\ControlServer.FakeOnboard.dll
+  ControlServer.ClockSkewProxy -> C:\Users\szy\Desktop\8005-workspace-v2\worktrees\cs256-8005-agv-control-server\tools\ControlServer.ClockSkewProxy\bin\Release\net8.0\win-x64\ControlServer.ClockSkewProxy.dll
+  ControlServer.ProtocolFaultProxy -> C:\Users\szy\Desktop\8005-workspace-v2\worktrees\cs256-8005-agv-control-server\tools\ControlServer.ProtocolFaultProxy\bin\Release\net8.0\win-x64\ControlServer.ProtocolFaultProxy.dll
+  ControlServer.Infrastructure -> C:\Users\szy\Desktop\8005-workspace-v2\worktrees\cs256-8005-agv-control-server\src\ControlServer.Infrastructure\bin\Release\net8.0\win-x64\ControlServer.Infrastructure.dll
+  ControlServer.FieldOps -> C:\Users\szy\Desktop\8005-workspace-v2\worktrees\cs256-8005-agv-control-server\tools\ControlServer.FieldOps\bin\Release\net8.0\win-x64\ControlServer.FieldOps.dll
+  ControlServer.Host -> C:\Users\szy\Desktop\8005-workspace-v2\worktrees\cs256-8005-agv-control-server\src\ControlServer.Host\bin\Release\net8.0\win-x64\ControlServer.Host.dll
+  ControlServer.SchemaConformance -> C:\Users\szy\Desktop\8005-workspace-v2\worktrees\cs256-8005-agv-control-server\tools\ControlServer.SchemaConformance\bin\Release\net8.0\win-x64\ControlServer.SchemaConformance.dll
+C:\Users\szy\Desktop\8005-workspace-v2\worktrees\cs256-8005-agv-control-server\tests\ControlServer.Tests\OnboardSilentLivenessLossTests.cs(346,39): error CS0122: 'OnboardSilentLivenessLossTests.LivenessRig.ServerContext' is inaccessible due to its protection level [C:\Users\szy\Desktop\8005-workspace-v2\worktrees\cs256-8005-agv-control-server\tests\ControlServer.Tests\ControlServer.Tests.csproj]
+C:\Users\szy\Desktop\8005-workspace-v2\worktrees\cs256-8005-agv-control-server\tests\ControlServer.Tests\OnboardSilentLivenessLossTests.cs(347,32): error CS1061: 'TEntity' does not contain a definition for 'MessageId' and no accessible extension method 'MessageId' accepting a first argument of type 'TEntity' could be found (are you missing a using directive or an assembly reference?) [C:\Users\szy\Desktop\8005-workspace-v2\worktrees\cs256-8005-agv-control-server\tests\ControlServer.Tests\ControlServer.Tests.csproj]
