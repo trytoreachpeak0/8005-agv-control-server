@@ -233,7 +233,7 @@ $nulls = Find-StringHelperNullComparison -Path $targets -Helpers $stringHelpers 
 Write-Host ("string-null: {0} NULL-folding readers ({1}); {2} comparisons with `$null read, {3} variables held a reader's result, {4} exempted" -f
     @($stringHelpers).Count, ($stringHelpers -join ', '), $nulls.Comparisons, $nulls.Variables, $nulls.Exempted)
 foreach ($f in $nulls.Findings) { Write-Host "  STRING-NULL  $($f.File):$($f.Line) $($f.Message)" }
-foreach ($e in $nulls.StaleExemptions) { Write-Host "  STRING-NULL  stale exemption: $($e.File) $($e.Function) `$$($e.Variable)" }
+if ($full) { foreach ($e in $nulls.StaleExemptions) { Write-Host "  STRING-NULL  stale exemption: $($e.File) $($e.Function) `$$($e.Variable)" } }
 Add-Case 'repository: no NULL-folding reader result compared with $null' (@($nulls.Findings).Count -eq 0) "$(@($nulls.Findings).Count) findings"
 if ($full) {
     Add-Case 'repository: every string-null exemption still matches' (@($nulls.StaleExemptions).Count -eq 0) "$(@($nulls.StaleExemptions).Count) stale"
