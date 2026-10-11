@@ -39,7 +39,29 @@ public sealed class OnboardSafetyProjectionOptions
     public int ReadBudgetMilliseconds { get; set; } = 2_000;
 
     /// <summary>One projection credential per vehicle (control-server#600).</summary>
+    /// <remarks>
+    /// <para>
+    /// <b>Empty means one vehicle and the shared credential</b>: <see cref="CredentialEnvironmentVariable"/> answers for the
+    /// vehicle <c>JourneyRuntime:VehicleKey</c> names, as before control-server#600. With a roster of more than one vehicle the
+    /// server cannot tell from a shared credential which vehicle is asking, so that combination is refused at startup.
+    /// </para>
+    /// <para>
+    /// When set, the bearer decides the vehicle: each credential reads its own vehicle's projection and no other, the shared
+    /// credential reads none, and a <c>vehicleKey</c> the request names must be that vehicle. Every vehicle listed must be in the
+    /// roster, and every value must differ from the others and from the shared onboard credential the TCP session uses -- a
+    /// vehicle whose projection credential were the shared one could be read by every vehicle.
+    /// </para>
+    /// </remarks>
     public OnboardSafetyVehicleCredentialOptions[] VehicleCredentials { get; set; } = [];
+
+    /// <summary>
+    /// The vehicle keys this server drives: the roster, or the single vehicle <c>JourneyRuntime:VehicleKey</c> names when there is
+    /// none (the same rule as <c>VehicleRoster</c>).
+    /// </summary>
+    internal static IReadOnlySet<string> RosterVehicleKeys(JourneyRuntimeOptions journey) =>
+        journey.Fleet.Length == 0
+            ? new HashSet<string>([journey.VehicleKey], StringComparer.Ordinal)
+            : new HashSet<string>(journey.Fleet.Select(vehicle => vehicle.VehicleKey), StringComparer.Ordinal);
 }
 
 /// <summary>The environment variable holding one vehicle's projection credential (control-server#600).</summary>
