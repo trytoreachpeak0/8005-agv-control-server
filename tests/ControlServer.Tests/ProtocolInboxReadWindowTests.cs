@@ -65,6 +65,106 @@ public sealed class ProtocolInboxReadWindowTests
     }
 
     /// <summary>
+    /// 每轮每车的派车事实读取（<see cref="OnboardDispatchFactsReader.ReadOnboardFactsAsync"/>）判存活只读证据窗口
+    /// （<see cref="JourneyRuntimeOptions.MaximumEvidenceAge"/>）里的行：窗口之前那四十条心跳不读回来，车照样算活、事实照样读出。
+    /// </summary>
+    /// <remarks>
+    /// 读回次数逐条数得出来：能力快照、基线安全快照、当前安全摘要三处按类型读，各一行加一次「没有了」；判存活只读窗口里那一条心跳，
+    /// 读到它就停。合计 2 + 2 + 2 + 1 = 7。今天判存活整表读回 43 行再加一次「没有了」，合计 50。
+    /// </remarks>
+    [Fact]
+    public async Task DispatchFactsReadOnlyTheEvidenceWindowToJudgeLiveness()
+    {
+        await using InboxDatabase database = await InboxDatabase.CreateAsync();
+        await SeedReadyVehicleAsync(database.Context, AgvId, Now - TimeSpan.FromHours(2));
+        for (int minutes = 1; minutes <= 40; minutes++)
+        {
+            database.Context.ProtocolInbox.Add(HeardFrom(AgvId, Generation, Now - TimeSpan.FromMinutes(minutes)));
+        }
+        database.Context.ProtocolInbox.Add(HeardFrom(AgvId, Generation, Now - TimeSpan.FromSeconds(1)));
+        await database.Context.SaveChangesAsync(Token);
+
+        database.Reads.Reset();
+        OnboardDispatchFacts? facts = await Reader(database.Context).ReadOnboardFactsAsync(AgvId, Token);
+
+        Assert.Equal((Generation, 7), (facts?.SessionGeneration, database.Reads.Rows));
+    }
+
+    /// <summary>
+    /// 证据窗口的边：最后一条入站恰好在 <c>now - MaximumEvidenceAge</c> 时仍算活，早一个 tick 就不算；收件时间晚于此刻的不算活。
+    /// 改动前后都是这样——这一条守的是下推之后窗口的下界仍是闭的、上界仍判「来自未来」，不是新行为。
+    /// </summary>
+    [Theory]
+    [InlineData(0, true)]
+    [InlineData(1, false)]
+    public async Task DispatchFactsCountTheLastInboundExactlyAtTheEdgeOfTheEvidenceWindow(long ticksBeyondTheEdge, bool live)
+    {
+        await using InboxDatabase database = await InboxDatabase.CreateAsync();
+        await SeedReadyVehicleAsync(database.Context, AgvId, Now - TimeSpan.FromHours(2));
+        DateTimeOffset edge = Now - new JourneyRuntimeOptions().MaximumEvidenceAge;
+        database.Context.ProtocolInbox.Add(HeardFrom(AgvId, Generation, edge.AddTicks(-ticksBeyondTheEdge)));
+        await database.Context.SaveChangesAsync(Token);
+
+        OnboardDispatchFacts? facts = await Reader(database.Context).ReadOnboardFactsAsync(AgvId, Token);
+
+        Assert.Equal(live, facts is not null);
+    }
+
+    /// <summary>收件时间晚于此刻的入站让派车事实失败关闭，与今天一样：读窗口时不能只留下界、把它当成「最新」。</summary>
+    [Fact]
+    public async Task DispatchFactsFailClosedOnAnInboundReceivedAfterNow()
+    {
+        await using InboxDatabase database = await InboxDatabase.CreateAsync();
+        await SeedReadyVehicleAsync(database.Context, AgvId, Now - TimeSpan.FromHours(2));
+        database.Context.ProtocolInbox.Add(HeardFrom(AgvId, Generation, Now - TimeSpan.FromSeconds(1)));
+        database.Context.ProtocolInbox.Add(HeardFrom(AgvId, Generation, Now + TimeSpan.FromSeconds(1)));
+        await database.Context.SaveChangesAsync(Token);
+
+        Assert.Null(await Reader(database.Context).ReadOnboardFactsAsync(AgvId, Token));
+    }
+
+    /// <summary>
+    /// 不给下界时（会话失联那一刻记日志用），答的仍是这一代会话最后一次入站的收件时间，哪怕它早于证据窗口；而且从新到旧读，
+    /// 读到这一代的第一行就停——此后另一台车的十条心跳读了，这台车更早的二十条不读。
+    /// </summary>
+    [Fact]
+    public async Task WithoutALowerBoundTheLastInboundIsStillFoundNewestFirst()
+    {
+        await using InboxDatabase database = await InboxDatabase.CreateAsync();
+        for (int minutes = 6; minutes <= 25; minutes++)
+        {
+            database.Context.ProtocolInbox.Add(HeardFrom(AgvId, Generation, Now - TimeSpan.FromMinutes(minutes)));
+        }
+        DateTimeOffset lastHeard = Now - TimeSpan.FromMinutes(5);
+        database.Context.ProtocolInbox.Add(HeardFrom(AgvId, Generation, lastHeard));
+        for (int minutes = 1; minutes <= 10; minutes++)
+        {
+            database.Context.ProtocolInbox.Add(HeardFrom("AGV-02", Generation, lastHeard + TimeSpan.FromSeconds(minutes)));
+        }
+        await database.Context.SaveChangesAsync(Token);
+
+        database.Reads.Reset();
+        DateTimeOffset? latest = await Reader(database.Context).LatestInboundAtForSessionAsync(
+            AgvId, Generation, notBefore: null, Token);
+
+        Assert.Equal((lastHeard, 11), (latest, database.Reads.Rows));
+    }
+
+    private static OnboardDispatchFactsReader Reader(ControlServerDbContext context) =>
+        new(context, Options.Create(new JourneyRuntimeOptions()), new MeasurementClock(Now));
+
+    /// <summary>一台就绪的车：会话行（安全版本 1），与它握手时那一条能力快照、一条安全快照，收件时间都是 <paramref name="at"/>。</summary>
+    private static async Task SeedReadyVehicleAsync(ControlServerDbContext context, string agvId, DateTimeOffset at)
+    {
+        SessionRecoveryRow session = Session(agvId, Generation);
+        session.SafetyRevision = 1;
+        context.SessionRecoveries.Add(session);
+        context.ProtocolInbox.Add(CapabilitySnapshot(agvId, at));
+        context.ProtocolInbox.Add(Envelope("SafetyStateSnapshot", agvId, at, SafetyPayload(1, at, withSlots: true)));
+        await context.SaveChangesAsync(Token);
+    }
+
+    /// <summary>
     /// 迁移在有收件箱数据的库上走一个来回：升上来时，存量行的 <see cref="ProtocolInboxRow.ReceivedAtUtcTicks"/> 按 <c>ReceivedAt</c> 的原文
     /// <b>精确</b>回填（与 setter 写的逐行相同），两个索引都在；退回上一个迁移时列与索引都去掉，行一条不少、<c>ReceivedAt</c> 原文不变。
     /// </summary>
@@ -256,21 +356,7 @@ public sealed class ProtocolInboxReadWindowTests
 
         foreach (string vehicle in vehicles)
         {
-            batch.Add(Envelope("CapabilitySnapshot", vehicle, start, new
-            {
-                capabilityVersion = 1,
-                activeSlotConfigurationFingerprint = new string('0', 64),
-                observedAt = start,
-                slotStates = Enumerable.Range(1, 8).Select(slot => new
-                {
-                    slotNo = slot,
-                    operability = "OPERABLE",
-                    administrativeAvailability = "ENABLED",
-                    physicalState = "EMPTY",
-                    lockState = "LOCKED",
-                    unlockOutputState = "RESET",
-                }).ToArray(),
-            }));
+            batch.Add(CapabilitySnapshot(vehicle, start));
             batch.Add(Envelope("SafetyStateSnapshot", vehicle, start, SafetyPayload(1, start, withSlots: true)));
             for (long revision = 2; revision <= lastSafetyRevision; revision++)
             {
@@ -302,6 +388,22 @@ public sealed class ProtocolInboxReadWindowTests
         await FlushAsync();
         return count;
     }
+
+    private static ProtocolInboxRow CapabilitySnapshot(string agvId, DateTimeOffset at) => Envelope("CapabilitySnapshot", agvId, at, new
+    {
+        capabilityVersion = 1,
+        activeSlotConfigurationFingerprint = new string('0', 64),
+        observedAt = at,
+        slotStates = Enumerable.Range(1, 8).Select(slot => new
+        {
+            slotNo = slot,
+            operability = "OPERABLE",
+            administrativeAvailability = "ENABLED",
+            physicalState = "EMPTY",
+            lockState = "LOCKED",
+            unlockOutputState = "RESET",
+        }).ToArray(),
+    });
 
     private static object SafetyPayload(long revision, DateTimeOffset observedAt, bool withSlots)
     {

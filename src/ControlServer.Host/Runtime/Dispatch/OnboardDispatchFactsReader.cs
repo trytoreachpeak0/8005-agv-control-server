@@ -228,6 +228,14 @@ public sealed class OnboardDispatchFactsReader(
         });
     }
 
+    /// <summary>Compile-only stub for control-server#563's tests; replaced in the implementation commit.</summary>
+    public Task<DateTimeOffset?> LatestInboundAtForSessionAsync(
+        string agvId,
+        long generation,
+        DateTimeOffset? notBefore,
+        CancellationToken cancellationToken) =>
+        LatestInboundAtForSessionAsync(agvId, generation, cancellationToken);
+
     /// <summary>
     /// Server-observed liveness of one session generation: when any inbound message from it was
     /// last received. Uses the receive time rather than a payload timestamp so a stopped or
