@@ -2382,8 +2382,9 @@ public sealed partial class JourneyRuntimeEngine(
         // Blocked journey's recovery code. Redundant today, load-bearing the day someone widens it.
         if (!CarriesACodeThatNamesAWaitOnAPerson(runtime))
         {
+            // No lower bound: the log says when the vehicle was last heard from, however long ago that was.
             DateTimeOffset? lastInboundAt = await LatestInboundAtForSessionAsync(
-                runtime.AgvId, session.SessionGeneration, cancellationToken).ConfigureAwait(false);
+                runtime.AgvId, session.SessionGeneration, notBefore: null, cancellationToken).ConfigureAwait(false);
             LogOnboardSessionLost(
                 logger, runtime.AgvId, session.SessionGeneration, runtime.DemandId ?? runtime.JourneyId, lastInboundAt, null);
             runtime.SetBlockReason(OnboardSessionLostReason, now);
@@ -3892,8 +3893,9 @@ public sealed partial class JourneyRuntimeEngine(
     private Task<DateTimeOffset?> LatestInboundAtForSessionAsync(
         string agvId,
         long generation,
+        DateTimeOffset? notBefore,
         CancellationToken cancellationToken) =>
-        onboardFacts.LatestInboundAtForSessionAsync(agvId, generation, cancellationToken);
+        onboardFacts.LatestInboundAtForSessionAsync(agvId, generation, notBefore, cancellationToken);
 
     /// <summary>
     /// Re-runs the pre-create gate for the gate-bound move order, against the endpoint this demand
@@ -5329,7 +5331,8 @@ public sealed partial class JourneyRuntimeEngine(
         // generation, within MaximumEvidenceAge. Coming back on the same generation is not a reconnect,
         // so a deadline that passed meanwhile still stands; a real reconnect voids it at the handshake.
         DateTimeOffset? lastInboundAt = await LatestInboundAtForSessionAsync(
-            runtime.AgvId, session.SessionGeneration, cancellationToken).ConfigureAwait(false);
+            runtime.AgvId, session.SessionGeneration, now - runtimeOptions.MaximumEvidenceAge, cancellationToken)
+            .ConfigureAwait(false);
         if (lastInboundAt is null || now - lastInboundAt.Value > runtimeOptions.MaximumEvidenceAge)
         {
             return false;
@@ -5502,7 +5505,8 @@ public sealed partial class JourneyRuntimeEngine(
         CancellationToken cancellationToken)
     {
         DateTimeOffset? lastInboundAt = await LatestInboundAtForSessionAsync(
-            runtime.AgvId, session.SessionGeneration, cancellationToken).ConfigureAwait(false);
+            runtime.AgvId, session.SessionGeneration, now - runtimeOptions.MaximumEvidenceAge, cancellationToken)
+            .ConfigureAwait(false);
         if (lastInboundAt is null || now - lastInboundAt.Value > runtimeOptions.MaximumEvidenceAge)
         {
             return false;

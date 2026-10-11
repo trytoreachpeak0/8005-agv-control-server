@@ -85,6 +85,8 @@ public sealed class Batch6MigrationDisciplineTests
         "20260930041750_Batch8RecoverySurface",
         // control-server#505：**只改数据，不动 schema**——升级那一刻停在 Blocked、阻塞码以 _NOT_RECONCILED 结尾的旅程，码加后缀 _BEFORE_UPGRADE，成为不可放行的那一族（那时的码不保证有 RecoveryRequired 的需求作标记，而升级前第 5 条本来就一律不放，现场行为不变）；Down 去掉两个新后缀。调度 Coordinator 9 于 2026-10-08 给了迁移通道。自己的断言在 RecoveryEndingReleasesBlockedJourneyTests.Migration.cs。
         "20261008052643_UnreleasableNotReconciledBlocksBeforeUpgrade",
+        // control-server#563：收件箱读法提速——ProtocolInbox 加列 ReceivedAtUtcTicks（存量行在迁移里按 ReceivedAt 原文精确回填）与 MessageType、ReceivedAtUtcTicks 两个普通索引；纯 ADD COLUMN 与 CREATE INDEX，既有行只多一列。调度 Coordinator 10 于 2026-10-11 给了迁移通道。自己的断言在 ProtocolInboxReadWindowTests。
+        "20261011005905_ProtocolInboxReadIndexes",
     ];
 
     [Fact]
