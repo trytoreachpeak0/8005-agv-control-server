@@ -104,6 +104,22 @@ public sealed class RiotUpperIdShapeTests
     }
 
     /// <summary>
+    /// An upperId too long for RIoT falls back to <c>W2G-H-</c> and a hash of it, and the same input gives the same upperId every
+    /// time: a retry or a restart that rebuilds it must reconcile the order it already created, not create a second one (REQ-0283).
+    /// </summary>
+    [Fact]
+    public void AnUpperIdThatFallsBackToTheHashedShapeIsTheSameEveryTime()
+    {
+        string first = RiotUpperIds.Rebuild(DemandId, 10, 1);
+        string second = RiotUpperIds.Rebuild(DemandId, 10, 1);
+
+        Assert.Equal(first, second);
+        Assert.StartsWith("W2G-H-", first, StringComparison.Ordinal);
+        Assert.Equal(38, first.Length);
+        Assert.NotEqual(first, RiotUpperIds.Rebuild(DemandId, 10, 2));
+    }
+
+    /// <summary>
     /// What a person reads off a charge, idle-return or clearance upperId survives the shortening: the kind, and the instant the
     /// journey was committed. The device key itself is on the RIoT order already (<c>appointVehicleKey</c>).
     /// </summary>
