@@ -681,6 +681,16 @@ jobs:
           # Runs is each scenario's consecutive count, as in the scenarios job. Batch 6's exit (control-server#165)
           # ran real-onboard-expected-action-overdue and real-onboard-durable-ack-lost three times and the
           # rest once; that is what `consecutive` reproduces. Adding a real-onboard scenario: one line.
+          #
+          # real-onboard-recovery-entry-missing is absent on purpose, and no longer for the reason it was taken out
+          # (scripts/l2/README.md). The missing recovery entry it was red on was fixed on 2026-09-04, and it passed on
+          # 2026-09-13 (evidence/l2/20260913-b2close-real-onboard-recovery-entry-missing-001). Since onboard-hmi#72
+          # (2026-09-16) the onboard reopens a slot door closed empty instead of timing out to UNKNOWN, so the way this
+          # scenario makes a failed load no longer produces one: CI run 38107859209 (control-server#250) timed out before
+          # its first criterion. A recovery entry after an UNKNOWN load is also asserted, through Invoke-G3UnknownLoad, by
+          # real-onboard-restart-with-open-recovery-session and real-onboard-compensate-then-reconnect below; listing this
+          # one as it stands would add a round that is red for a reason of its own. Whether to rebuild or retire it is the
+          # coordinator's call (control-server#250).
           $scenarios = @(
               @{ Name = 'real-onboard-normal-load';                           Runs = 1 }
               @{ Name = 'real-onboard-clock-skew';                            Runs = 1 }
@@ -737,11 +747,6 @@ jobs:
               # control-server#573: the same churn from arrival at the pickup on, so the load's WAITING_OPERATOR progress
               # still reaches the server (before the fix it was lost to a not-ready flash, run 38067577157).
               @{ Name = 'real-onboard-load-under-listing-churn';             Runs = 1 }
-              # control-server#250: after a load the real onboard reports UNKNOWN the journey blocks and the onboard offers a
-              # recovery entry. It was kept out of this list as red by design; that root cause was fixed on 2026-09-04
-              # (docs/defects/20260904-recovery-required-never-reaches-session-state.md), the scenario passed on the rig on
-              # 2026-09-13 (evidence/l2/20260913-b2close-real-onboard-recovery-entry-missing-001) and again in CI (cs#250).
-              @{ Name = 'real-onboard-recovery-entry-missing';               Runs = 1 }
           )
 
           # Registered before anything can fail, so the upload step always has a path.
