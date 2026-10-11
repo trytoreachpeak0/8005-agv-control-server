@@ -65,6 +65,26 @@ public sealed class ProtocolInboxReadWindowTests
     }
 
     /// <summary>
+    /// 存活窗口的边：最后一条入站恰好在 <c>now - Timeout</c> 时两个重载都算活，早一个 tick 就都不算。改动前后都是这样——
+    /// 这一条守的是库里那个下界与 <c>InsideWindow</c> 一样是闭的。
+    /// </summary>
+    [Theory]
+    [InlineData(0, true)]
+    [InlineData(1, false)]
+    public async Task SessionLivenessCountsTheLastInboundExactlyAtTheEdgeOfItsWindow(long ticksBeyondTheEdge, bool live)
+    {
+        await using InboxDatabase database = await InboxDatabase.CreateAsync();
+        database.Context.SessionRecoveries.Add(Session(AgvId, Generation));
+        database.Context.ProtocolInbox.Add(HeardFrom(AgvId, Generation, (Now - SessionLiveness.Timeout).AddTicks(-ticksBeyondTheEdge)));
+        await database.Context.SaveChangesAsync(Token);
+
+        bool single = await SessionLiveness.HeardFromAsync(database.Context, AgvId, Generation, Now, Token);
+        HashSet<string> all = await SessionLiveness.HeardFromAsync(database.Context, Now, Token);
+
+        Assert.Equal((live, live), (single, all.Contains(AgvId)));
+    }
+
+    /// <summary>
     /// 每轮每车的派车事实读取（<see cref="OnboardDispatchFactsReader.ReadOnboardFactsAsync"/>）判存活只读证据窗口
     /// （<see cref="JourneyRuntimeOptions.MaximumEvidenceAge"/>）里的行：窗口之前那四十条心跳不读回来，车照样算活、事实照样读出。
     /// </summary>

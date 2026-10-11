@@ -102,7 +102,7 @@ public sealed class OnboardDispatchFactsReader(
             return null;
         }
         DateTimeOffset? lastInboundAt = await LatestInboundAtForSessionAsync(
-            agvId, session.SessionGeneration, cancellationToken).ConfigureAwait(false);
+            agvId, session.SessionGeneration, now - runtimeOptions.MaximumEvidenceAge, cancellationToken).ConfigureAwait(false);
         if (lastInboundAt is null || lastInboundAt > now ||
             now - lastInboundAt.Value > runtimeOptions.MaximumEvidenceAge)
         {
@@ -228,49 +228,58 @@ public sealed class OnboardDispatchFactsReader(
         });
     }
 
-    /// <summary>Compile-only stub for control-server#563's tests; replaced in the implementation commit.</summary>
-    public Task<DateTimeOffset?> LatestInboundAtForSessionAsync(
-        string agvId,
-        long generation,
-        DateTimeOffset? notBefore,
-        CancellationToken cancellationToken) =>
-        LatestInboundAtForSessionAsync(agvId, generation, cancellationToken);
-
     /// <summary>
     /// Server-observed liveness of one session generation: when any inbound message from it was
     /// last received. Uses the receive time rather than a payload timestamp so a stopped or
     /// misconfigured peer clock cannot make a dead session look alive.
     /// </summary>
+    /// <param name="notBefore">
+    /// Reads only messages received at or after this. Every liveness decision passes <c>now - MaximumEvidenceAge</c>, which
+    /// decides nothing differently: an older message cannot make the session live, and those callers treat "none" and "too
+    /// old" alike. <see langword="null"/> reads back as far as the last message of this generation -- only for saying when that
+    /// was, as the log does when the session is found silent.
+    /// </param>
+    /// <remarks>
+    /// The inbox keeps every heartbeat a vehicle ever sent and nothing prunes it, so this used to load and parse the whole table
+    /// on every call -- once per round per vehicle -- which on three vehicles' three days of heartbeats took seconds
+    /// (control-server#563, after the MVP's ef5dad8e). It now reads newest first and stops at the first message of this
+    /// generation, which is the latest one. Who sent a message is only in its JSON, so the rows read are the ones newer than
+    /// that, every vehicle's, plus the one it stops at.
+    /// </remarks>
     public async Task<DateTimeOffset?> LatestInboundAtForSessionAsync(
         string agvId,
         long generation,
+        DateTimeOffset? notBefore,
         CancellationToken cancellationToken)
     {
-        ProtocolInboxRow[] rows = await dbContext.ProtocolInbox.AsNoTracking()
-            .ToArrayAsync(cancellationToken).ConfigureAwait(false);
-        DateTimeOffset? latest = null;
-        foreach (ProtocolInboxRow row in rows)
+        IQueryable<ProtocolInboxRow> inbound = dbContext.ProtocolInbox.AsNoTracking();
+        if (notBefore is DateTimeOffset lowerBound)
+        {
+            long lowerBoundTicks = lowerBound.UtcTicks;
+            inbound = inbound.Where(row => row.ReceivedAtUtcTicks >= lowerBoundTicks);
+        }
+        await foreach (ProtocolInboxRow row in inbound
+                           .OrderByDescending(row => row.ReceivedAtUtcTicks)
+                           .AsAsyncEnumerable()
+                           .WithCancellation(cancellationToken)
+                           .ConfigureAwait(false))
         {
             using JsonDocument document = JsonDocument.Parse(row.RequestJson);
             JsonElement root = document.RootElement;
-            // This scans every inbound message, so unlike the per-type readers it meets envelopes
+            // This reads every message type, so unlike the per-type readers it meets envelopes
             // that carry no generation yet (or none at all). Those prove nothing about this
             // session's liveness and are skipped rather than throwing.
-            if (!root.TryGetProperty("agvId", out JsonElement agv) ||
-                agv.ValueKind != JsonValueKind.String ||
-                agv.GetString() != agvId ||
-                !root.TryGetProperty("sessionGeneration", out JsonElement sessionGeneration) ||
-                sessionGeneration.ValueKind != JsonValueKind.Number ||
-                sessionGeneration.GetInt64() != generation)
+            if (root.TryGetProperty("agvId", out JsonElement agv) &&
+                agv.ValueKind == JsonValueKind.String &&
+                agv.GetString() == agvId &&
+                root.TryGetProperty("sessionGeneration", out JsonElement sessionGeneration) &&
+                sessionGeneration.ValueKind == JsonValueKind.Number &&
+                sessionGeneration.GetInt64() == generation)
             {
-                continue;
-            }
-            if (latest is null || row.ReceivedAt > latest.Value)
-            {
-                latest = row.ReceivedAt;
+                return row.ReceivedAt;
             }
         }
-        return latest;
+        return null;
     }
 
     /// <summary>
