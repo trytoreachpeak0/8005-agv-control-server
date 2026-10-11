@@ -70,6 +70,23 @@ Assert-Case -Name 'medians-of-passing-runs-match-the-hand-worked-ones' `
     -Condition ($actualText -eq $expectedText) `
     -Detail "expected $expectedText; got $actualText"
 
+
+# Which rounds counted and why the others did not, with each counted round's lanes: the sum of the run times
+# printed for that lane (lane 1: 223 + 85 + 32 + 33 + 32 = 405 and lane 2: 101 + 33 = 134 in 38103886702;
+# 223 + 86 + 32 + 32 + 32 = 405 and 100 + 26 + 41 = 167 in 38102686787, the FAIL counting toward its lane)
+# and the round's wall clock from the summary line. That is the before/after comparison the ticket asks for.
+$expectedRounds = '38103886702 counted 1702s lanes 405/134; 38102686787 counted 1731s lanes 405/167; ' +
+    '38101363125 skipped (superseded); 38060390711 skipped (mode consecutive-all)'
+$actualRounds = if ($result) {
+    (@($result.Rounds | ForEach-Object {
+        if ($_.Skipped) { "$($_.RunId) skipped ($($_.Skipped))" }
+        else { "$($_.RunId) counted $($_.WallSeconds)s lanes $((@($_.Lanes | ForEach-Object Seconds)) -join '/')" }
+    }) -join '; ')
+}
+Assert-Case -Name 'rounds-say-whether-they-counted-with-lane-and-wall-seconds' `
+    -Condition ($actualRounds -eq $expectedRounds) `
+    -Detail "expected $expectedRounds; got $actualRounds"
+
 if ($failures.Count -gt 0) {
     [Console]::Error.WriteLine("L2_LANE_ESTIMATES_SELFTEST_FAILED: $($failures -join ', ')")
     exit 1
