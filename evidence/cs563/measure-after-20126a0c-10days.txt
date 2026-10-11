@@ -1,0 +1,5 @@
+inbox rows=1301826 days=10 vehicles=3 seed=249.8s db=538MiB
+SessionLiveness.HeardFromAsync(all): answer=AGV-01,AGV-02,AGV-03 inboxReadCalls=13 medianMs=17.5 minMs=15.4 maxMs=26.1
+SessionLiveness.HeardFromAsync(AGV-01): answer=True inboxReadCalls=13 medianMs=10.1 minMs=7.2 maxMs=13.3
+OnboardDispatchFactsReader.ReadOnboardFactsAsync(AGV-01): answer=OnboardDispatchFacts { SessionGeneration = 3, AvailableSlots = System.Int32[], DepartureSafe = True, VehicleStopped = True, AllTargetSlotsLocked = True, AllUnlockOutputsReset = True, UnknownPresent = False } inboxReadCalls=4334 medianMs=91.6 minMs=74.9 maxMs=115.7
+SublotSubmitted by type (FindMatchingSublotAsync shape): answer=1 inboxReadCalls=2 medianMs=16.6 minMs=13.0 maxMs=18.4
