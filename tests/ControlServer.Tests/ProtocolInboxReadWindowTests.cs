@@ -59,7 +59,7 @@ public sealed class ProtocolInboxReadWindowTests
         int allRead = database.Reads.Rows;
 
         // 窗口里只有一行：一次读到它，一次答「没有了」。
-        Assert.Equal((true, 2, [AgvId], 2), (single, singleRead, all.ToArray(), allRead));
+        Assert.Equal((true, 2, AgvId, 2), (single, singleRead, string.Join(",", all), allRead));
     }
 
     /// <summary>
