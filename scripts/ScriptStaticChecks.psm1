@@ -332,4 +332,14 @@ function Find-HelperPropertyMisuse {
     }
 }
 
-Export-ModuleMember -Function Test-ScriptParse, Get-HelperShapeCatalog, Find-HelperPropertyMisuse
+function Get-StringHelperCatalog {
+    param([Parameter(Mandatory)][string[]]$Path)
+    throw 'Get-StringHelperCatalog: not implemented'
+}
+
+function Find-StringHelperNullComparison {
+    param([Parameter(Mandatory)][string[]]$Path, [string[]]$Helpers)
+    throw 'Find-StringHelperNullComparison: not implemented'
+}
+
+Export-ModuleMember -Function Test-ScriptParse, Get-HelperShapeCatalog, Find-HelperPropertyMisuse, Get-StringHelperCatalog, Find-StringHelperNullComparison

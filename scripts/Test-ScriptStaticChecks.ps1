@@ -119,6 +119,49 @@ $rows.Mine
 '@
         $audit = Find-HelperPropertyMisuse -Path $shadow -Catalog $catalog
         Add-Case 'property: a file that defines its own function of a listed name is not judged by the listed shape' (@($audit.Findings).Count -eq 0 -and $audit.Shadowed -eq 1) "$(Format-Finding $audit.Findings); shadowed $($audit.Shadowed)"
+
+        # --- 3. a [string] helper's result compared with $null ----------------------------------------------------------
+        $helpers = New-Fixture 'StringHelpers.psm1' @'
+function Get-Text([object]$c, [string]$Sql) {
+    $rows = Invoke-L2Query -Connection $c -Sql $Sql
+    if ($rows.Count -eq 0) { return $null }
+    return [string]$rows[0].Value
+}
+function Get-Number([object]$c, [string]$Sql) { return [int](Invoke-L2Query -Connection $c -Sql $Sql)[0].Total }
+function Get-Mixed([object]$c) { if ($c) { return [string]$c } return $c }
+'@
+        $stringHelpers = Get-StringHelperCatalog -Path $helpers
+        Add-Case 'string catalog: a function returning [string] or $null is a string helper; [int] and mixed returns are not' (
+            ($stringHelpers -join ',') -eq 'Get-Text') ($stringHelpers -join ',')
+        $repoStringHelpers = Get-StringHelperCatalog -Path @(Get-ChildItem -LiteralPath $ScriptRoot -Recurse -File -Include '*.ps1', '*.psm1' | ForEach-Object FullName)
+        Add-Case 'string catalog: Get-G3Scalar is derived from G3RecoveryCommon.ps1, Get-G3Count is not' (
+            $repoStringHelpers -contains 'Get-G3Scalar' -and $repoStringHelpers -notcontains 'Get-G3Count') ($repoStringHelpers -join ',')
+
+        # g3-forced-mechanical-recovery.ps1 at bc22cfd25^, lines 153 and 170, reduced to the comparison that matters.
+        $forced = New-Fixture 'forced.ps1' @'
+$closedReason = Get-G3Scalar $connection "SELECT ClosedReason AS Value FROM ExceptionRecoverySessions WHERE ExceptionRecoverySessionId = 'x'"
+$ok = ($recoverySession -eq 'CLOSED' -and
+    ($null -eq $closedReason -or $closedReason -is [System.DBNull]))
+$closedReasonIsNull = (Get-G3Scalar $connection "SELECT ClosedReason IS NULL AS Value FROM ExceptionRecoverySessions") -eq '1'
+$a = $closedReason -eq $null
+$b = $null -ne (Get-G3Scalar $connection 'SELECT 1 AS Value')
+$c = $closedReason -eq ''
+$n = Get-G3Count $connection 'SELECT COUNT(*) AS Total FROM AcceptedDemands'
+$d = $null -eq $n
+'@
+        $nulls = Find-StringHelperNullComparison -Path $forced -Helpers $repoStringHelpers
+        $lines = @($nulls.Findings | ForEach-Object Line | Sort-Object)
+        Add-Case 'string-null: $null -eq $closedReason (bc22cfd25^ line 170), $x -eq $null and $null -ne (Get-G3Scalar ...) are reported' (
+            ($lines -join ',') -eq '3,5,6') (Format-Finding $nulls.Findings)
+        Add-Case 'string-null: the comparisons that were checked include the three' ($nulls.Comparisons -ge 3) "$($nulls.Comparisons)"
+
+        $shadowString = New-Fixture 'shadow-string.ps1' @'
+function Get-G3Scalar([object]$c, [string]$Sql) { return (Invoke-L2Query -Connection $c -Sql $Sql)[0] }
+$v = Get-G3Scalar $connection 'SELECT 1 AS Value'
+$e = $null -eq $v
+'@
+        $nulls = Find-StringHelperNullComparison -Path $shadowString -Helpers $repoStringHelpers
+        Add-Case 'string-null: a file whose own Get-G3Scalar returns rows is not judged as the shared one' (@($nulls.Findings).Count -eq 0) (Format-Finding $nulls.Findings)
     } finally {
         Remove-Item -LiteralPath $scratch -Recurse -Force -ErrorAction SilentlyContinue
     }
@@ -147,6 +190,13 @@ Add-Case 'repository: no property read outside its helper''s object' (@($audit.F
 if ($full) {
     Add-Case 'repository: property audit recognised at least 100 variables and 250 reads' ($audit.Variables -ge 100 -and $audit.Reads -ge 250) "$($audit.Variables) / $($audit.Reads)"
 }
+
+# The string helpers are always derived from the whole of ScriptRoot, so a -Path scan of an old copy knows Get-G3Scalar.
+$stringHelpers = Get-StringHelperCatalog -Path @(Get-ChildItem -LiteralPath $ScriptRoot -Recurse -File -Include '*.ps1', '*.psm1' | ForEach-Object FullName)
+$nulls = Find-StringHelperNullComparison -Path $targets -Helpers $stringHelpers
+Write-Host ("string-null: {0} [string] helpers ({1}); {2} comparisons with `$null on their results" -f @($stringHelpers).Count, ($stringHelpers -join ', '), $nulls.Comparisons)
+foreach ($f in $nulls.Findings) { Write-Host "  STRING-NULL  $($f.File):$($f.Line) $($f.Message)" }
+Add-Case 'repository: no [string] helper result compared with $null' (@($nulls.Findings).Count -eq 0) "$(@($nulls.Findings).Count) findings"
 
 $failed = @($cases | Where-Object { -not $_.Ok })
 foreach ($c in $cases) { Write-Host ("{0}  {1}{2}" -f ($c.Ok ? 'ok  ' : 'FAIL'), $c.Name, ($c.Ok ? '' : " -- $($c.Actual)")) }
