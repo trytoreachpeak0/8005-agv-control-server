@@ -57,7 +57,9 @@ jobs:
     # 120 keeps the job limit above that sum, so whatever hangs is recorded as a failed step and never as a cancelled
     # job. It only acts when something has already gone wrong.
     # Any step added later counts against it the same way.
-    timeout-minutes: 120
+    # 180 since control-server#583, which put nine steps before Test with their own limits: the script static checks 10,
+    # seven self-checks 5 each, the scenario SQL check 15 -- 60 more, about 172 if every step ran to its own limit.
+    timeout-minutes: 180
     env:
       # NuGet's vulnerability audit fetches its data from nuget.org during every restore, and with
       # TreatWarningsAsErrors a failed fetch (NU1900) is a red run that says nothing about the code:
@@ -290,6 +292,66 @@ jobs:
       - name: L2 scenario self-check (single-row read)
         shell: pwsh
         run: pwsh -NoProfile -File ./scripts/l2/Test-L2SingleRow.ps1
+
+      # control-server#583. Three static checks over every script under scripts/, pure parsing, no rig: every file
+      # parses with ParseFile (an AST check built on ParseInput keeps passing on a file that does not parse at all,
+      # control-server#472); a property read off a listed helper's [pscustomobject] literal that the literal lacks; and
+      # a $null test on a reader that folds a NULL column into '' (Get-G3Scalar). The batch-8 exit lost about 1.6 hours
+      # to the last two (bc22cfd25, control-server#555): both scripts were G3-only and nothing ran them by day. Each check
+      # replays its own fixtures first and asserts how much it read, so a scan that broke cannot report zero findings.
+      - name: Script static checks (parse, helper properties, string-null)
+        timeout-minutes: 10
+        shell: pwsh
+        run: pwsh -NoProfile -File ./scripts/Test-ScriptStaticChecks.ps1
+
+      # control-server#583: seven self-checks that existed but no workflow ran. Each is pure input -- no window, no fixed
+      # port, no rig, no elevation -- and takes seconds. The five control-server#583 left out are listed in its pull
+      # request with the reason for each (they take the machine-wide desktop or port lock, start real orchestrators,
+      # register a SYSTEM task, or already run in l2.yml).
+      - name: G3 runner self-check (runner claims)
+        timeout-minutes: 5
+        shell: pwsh
+        run: pwsh -NoProfile -File ./scripts/Test-G3RunnerClaims.ps1
+
+      - name: L2 scenario self-check (dispatch zone parameters)
+        timeout-minutes: 5
+        shell: pwsh
+        run: pwsh -NoProfile -File ./scripts/l2/Test-L2DispatchZoneParameters.ps1
+
+      - name: L2 scenario self-check (CI lane plan)
+        timeout-minutes: 5
+        shell: pwsh
+        run: pwsh -NoProfile -File ./scripts/l2/Test-L2Lanes.ps1
+
+      - name: L2 scenario self-check (real inbound reads)
+        timeout-minutes: 5
+        shell: pwsh
+        run: pwsh -NoProfile -File ./scripts/l2/Test-L2RealInbound.ps1
+
+      - name: L2 scenario self-check (session continuity verdict)
+        timeout-minutes: 5
+        shell: pwsh
+        run: pwsh -NoProfile -File ./scripts/l2/Test-L2SessionContinuity.ps1
+
+      - name: L2 scenario self-check (slot groups)
+        timeout-minutes: 5
+        shell: pwsh
+        run: pwsh -NoProfile -File ./scripts/l2/Test-L2SlotGroups.ps1
+
+      - name: L2 scenario self-check (task type stations)
+        timeout-minutes: 5
+        shell: pwsh
+        run: pwsh -NoProfile -File ./scripts/l2/Test-L2TaskTypeStations.ps1
+
+      # control-server#583. Every literal SQL statement the L2 and G3 scripts send (through Invoke-L2Query and the readers
+      # that pass their -Sql on) compiled with EXPLAIN against a database ControlServer.Host --migrate-only creates in
+      # %TEMP%. The script builds the host first; the Test step's build below then finds it up to date, so the build time
+      # is moved, not added. It asserts the database path is under the temp directory and that the default production
+      # database path is untouched. SQL with $ interpolation is skipped and counted (most of it): a blind spot, printed.
+      - name: Scenario SQL self-check (literal SQL against the migrated schema)
+        timeout-minutes: 15
+        shell: pwsh
+        run: pwsh -NoProfile -File ./scripts/Test-ScenarioSqlExplain.ps1 -Build
 
       # Exit code is the contract — the guest is zh-CN and prints 已通过! not
       # Passed!, so no step here may match on English console text.
