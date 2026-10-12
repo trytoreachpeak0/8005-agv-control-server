@@ -3454,11 +3454,16 @@ public sealed partial class JourneyRuntimeEngine(
     }
 
     /// <summary>车上那一版的腿，与现在应该发的那一份，是不是同一串。</summary>
-    private static bool PlanOnTheWireMatches(string payloadJson, UpcomingStopPlanProjection current)
+    /// <remarks>
+    /// 比的是线上那一份（<see cref="OnboardJourneyPublisher.WireLegs"/>：排好序、<c>sequence</c> 从 1 重新编号），不是投影原样——
+    /// 停靠序号有空档时两者不同，按投影比会把车上那一版判成「变了」而白白重发一次（control-server#664）。
+    /// </remarks>
+    internal static bool PlanOnTheWireMatches(string payloadJson, UpcomingStopPlanProjection current)
     {
+        IReadOnlyList<UpcomingMovementLeg> wire = OnboardJourneyPublisher.WireLegs(current);
         using JsonDocument document = JsonDocument.Parse(payloadJson);
         JsonElement legs = document.RootElement.GetProperty("payload").GetProperty("legs");
-        if (legs.GetArrayLength() != current.Legs.Count)
+        if (legs.GetArrayLength() != wire.Count)
         {
             return false;
         }
@@ -3466,7 +3471,7 @@ public sealed partial class JourneyRuntimeEngine(
         int index = 0;
         foreach (JsonElement leg in legs.EnumerateArray())
         {
-            UpcomingMovementLeg expected = current.Legs[index++];
+            UpcomingMovementLeg expected = wire[index++];
             if (RequiredString(leg, "movementLegId") != expected.MovementLegId ||
                 leg.GetProperty("sequence").GetInt32() != expected.Sequence ||
                 RequiredString(leg, "stationId") != expected.StationId ||

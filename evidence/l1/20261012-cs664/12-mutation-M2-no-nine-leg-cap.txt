@@ -1,0 +1,15 @@
+mutation M2-no-nine-leg-cap: src/ControlServer.Host/Transport/OnboardJourneyPublisher.cs
+- if (projection.Legs.Count > EnRouteAppendPlanner.MaximumLegs)
++ if (projection.Legs.Count > int.MaxValue - 1)
+replacements: 1
+git diff --stat: src/ControlServer.Host/Transport/OnboardJourneyPublisher.cs | 2 +-
+ 1 file changed, 1 insertion(+), 1 deletion(-)
+build exit 0; ['    0 Error(s)']
+dotnet test --filter "FullyQualifiedName~UpcomingStopPlanWireSequenceTests|FullyQualifiedName~ChargingClearanceToWaitingPointTests|FullyQualifiedName~ArchitectureTests" exit 1
+
+  Failed ControlServer.Tests.UpcomingStopPlanWireSequenceTests.NineLegsAreNumberedOneToNineAndATenthIsRefusedHere [7 ms]
+  Error Message:
+   Assert.Throws() Failure: No exception was thrown
+Expected: typeof(System.IO.InvalidDataException)
+Failed!  - Failed:     1, Passed:   139, Skipped:     0, Total:   140, Duration: 54 s - ControlServer.Tests.dll (net8.0)
+[xUnit.net 00:00:15.89]     ControlServer.Tests.UpcomingStopPlanWireSequenceTests.NineLegsAreNumberedOneToNineAndATenthIsRefusedHere [FAIL]

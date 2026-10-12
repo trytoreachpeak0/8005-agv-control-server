@@ -1,0 +1,53 @@
+mutation M1-pre-fix-payload: src/ControlServer.Host/Transport/OnboardJourneyPublisher.cs
+- legs = WireLegs(projection).Select(leg => new
++ legs = projection.Legs.Select(leg => new
+replacements: 1
+git diff --stat: src/ControlServer.Host/Transport/OnboardJourneyPublisher.cs | 2 +-
+ 1 file changed, 1 insertion(+), 1 deletion(-)
+build exit 0; ['    0 Error(s)']
+dotnet test --filter "FullyQualifiedName~UpcomingStopPlanWireSequenceTests|FullyQualifiedName~ChargingClearanceToWaitingPointTests|FullyQualifiedName~ArchitectureTests" exit 1
+
+  Failed ControlServer.Tests.UpcomingStopPlanWireSequenceTests.TheStagedPlanCarriesItsLegsNumberedFromOne(stopSequences: [2], expected: [1]) [5 s]
+  Error Message:
+   Assert.Equal() Failure: Collections differ
+Expected: int[]                                 [1]
+Actual:   SelectArrayIterator<JsonElement, int> [2]
+  Failed ControlServer.Tests.UpcomingStopPlanWireSequenceTests.TheStagedPlanCarriesItsLegsNumberedFromOne(stopSequences: [3, 1], expected: [1, 2]) [572 ms]
+  Error Message:
+   Assert.Equal() Failure: Collections differ
+Expected: int[]                                 [1, 2]
+Actual:   SelectArrayIterator<JsonElement, int> [3, 1]
+  Failed ControlServer.Tests.UpcomingStopPlanWireSequenceTests.TheStagedPlanCarriesItsLegsNumberedFromOne(stopSequences: [1, 10], expected: [1, 2]) [307 ms]
+  Error Message:
+   Assert.Equal() Failure: Collections differ
+Expected: int[]                                 [1, 2]
+Actual:   SelectArrayIterator<JsonElement, int> [1, 10]
+  Failed ControlServer.Tests.UpcomingStopPlanWireSequenceTests.TheStagedPlanCarriesItsLegsNumberedFromOne(stopSequences: [1, 3], expected: [1, 2]) [274 ms]
+  Error Message:
+   Assert.Equal() Failure: Collections differ
+Expected: int[]                                 [1, 2]
+Actual:   SelectArrayIterator<JsonElement, int> [1, 3]
+  Failed ControlServer.Tests.UpcomingStopPlanWireSequenceTests.TheReSendCheckComparesWithTheRenumberedLegs [450 ms]
+  Error Message:
+   Assert.True() Failure
+Expected: True
+Actual:   False
+  Failed ControlServer.Tests.ChargingClearanceToWaitingPointTests.TheFirstClearanceSendsItsPlansNumberedFromOne [411 ms]
+  Error Message:
+   Assert.Equal() Failure: Values differ
+Expected: Tuple (1, "0fbbcdaa-435f-fc53-9d21-44344c203c22", "ARRIVED")
+Actual:   Tuple (2, "0fbbcdaa-435f-fc53-9d21-44344c203c22", "ARRIVED")
+  Failed ControlServer.Tests.ChargingClearanceToWaitingPointTests.ASecondClearanceAttemptSendsItsPlanNumberedFromOne [728 ms]
+  Error Message:
+   Assert.Equal() Failure: Collections differ
+Expected: [1, 2]
+Actual:   [1, 3]
+Failed!  - Failed:     7, Passed:   133, Skipped:     0, Total:   140, Duration: 47 s - ControlServer.Tests.dll (net8.0)
+[xUnit.net 00:00:14.35]     ControlServer.Tests.UpcomingStopPlanWireSequenceTests.TheStagedPlanCarriesItsLegsNumberedFromOne(stopSequences: [2], expected: [1]) [FAIL]
+[xUnit.net 00:00:14.92]     ControlServer.Tests.UpcomingStopPlanWireSequenceTests.TheStagedPlanCarriesItsLegsNumberedFromOne(stopSequences: [3, 1], expected: [1, 2]) [FAIL]
+[xUnit.net 00:00:15.53]     ControlServer.Tests.UpcomingStopPlanWireSequenceTests.TheStagedPlanCarriesItsLegsNumberedFromOne(stopSequences: [1, 10], expected: [1, 2]) [FAIL]
+[xUnit.net 00:00:15.81]     ControlServer.Tests.UpcomingStopPlanWireSequenceTests.TheStagedPlanCarriesItsLegsNumberedFromOne(stopSequences: [1, 3], expected: [1, 2]) [FAIL]
+[xUnit.net 00:00:16.27]     ControlServer.Tests.UpcomingStopPlanWireSequenceTests.TheReSendCheckComparesWithTheRenumberedLegs [FAIL]
+[xUnit.net 00:00:46.35]     ControlServer.Tests.ChargingClearanceToWaitingPointTests.TheFirstClearanceSendsItsPlansNumberedFromOne [FAIL]
+[xUnit.net 00:00:54.01]     ControlServer.Tests.ChargingClearanceToWaitingPointTests.ASecondClearanceAttemptSendsItsPlanNumberedFromOne [FAIL]
+[xUnit.net 00:01:26.93]     [Test Assembly Cleanup Failure (F:\8005-wt\cs664-8005-agv-control-server\tests\ControlServer.Tests\bin\Debug\net8.0\win-x64\ControlServer.Tests.dll)] Xunit.Sdk.TestPipelineException
