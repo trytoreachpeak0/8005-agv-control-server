@@ -1,0 +1,16 @@
+### Test-ParallelInstance -DefinitionPath req0178-field-on
+  PASS  clearance read-back: defined on and nothing read back at all -- stop and refuse, not the fake-mode warning
+  PASS  clearance read-back: the Host source logs the switch under the template the module reads
+
+562 passed, 171 failed
+exit=0
+### Test-ParallelInstance -DefinitionPath req0178-field-off
+  PASS  clearance read-back: defined on and nothing read back at all -- stop and refuse, not the fake-mode warning
+  PASS  clearance read-back: the Host source logs the switch under the template the module reads
+
+571 passed, 162 failed
+exit=0
+### Test-ScriptStaticChecks
+ok    repository: every string-null exemption still matches
+ok    repository: string-null derived Get-G3Scalar, read at least 1000 $null comparisons and 30 reader variables
+32/32 passed
