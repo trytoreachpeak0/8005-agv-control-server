@@ -393,9 +393,13 @@ public sealed class RouteGraphSnapshotStore(ControlServerDbContext dbContext) : 
             return;
         }
 
-        // First reason wins: StaleSince has to answer "since when", and a second trigger arriving
-        // while already stale must not restart that clock.
-        if (row.StaleReason is null)
+        // A sticky reason starts its own clock every time it is written, whatever stood before: StaleSince then answers
+        // "since the latest change under the graph", which is what the release compares the design state's read against
+        // (control-server#659). Inheriting the clock of a self-clearing reason, or of an earlier sticky one, let a release go
+        // through on a design state read before the latest change. Callers write a sticky reason only on a detection: the
+        // staleness evaluation does not echo one back.
+        // Otherwise the first reason wins: a second self-clearing trigger arriving while already stale must not restart it.
+        if (RouteGraphStickyStaleReasons.IsSticky(reason) || row.StaleReason is null)
         {
             row.StaleSince = at;
         }

@@ -107,24 +107,124 @@ public sealed class RouteGraphStickyStaleTests
     }
 
     /// <summary>
-    /// 两条黏住原因先后出现：后一条覆盖前一条（保持现状，是有意的），陈旧起始时刻仍是第一条的。原因串只剩一条没关系——解除时操作员确认的是当前
-    /// 边组指纹与动态代价有无，两件事都要看过才放得出去。
+    /// 两条黏住原因先后出现：后一条覆盖前一条（保持现状，是有意的），陈旧起始时刻是后一次检测的时刻（审查 S1 后调度裁定）。原因串只剩一条没关系——
+    /// 解除时操作员确认的是当前边组指纹与动态代价有无，两件事都要看过才放得出去；起始时刻跟着最近一次变化走，「图在变化之后重读过」比的才是那一次。
     /// </summary>
     [Fact]
-    public async Task AStickyReasonReplacesTheOtherStickyReasonAndKeepsTheFirstSince()
+    public async Task AStickyReasonReplacesTheOtherStickyReasonAndRestartsTheSince()
     {
         await using Fixture fixture = await Fixture.CreateAsync();
         await fixture.RefreshAsync();
 
         fixture.Source.EdgeGroups = OneGroup;
         await fixture.RefreshAsync(TimeSpan.FromSeconds(10));
-        DateTimeOffset since = (await fixture.HeaderAsync()).StaleSince!.Value;
+        DateTimeOffset first = (await fixture.HeaderAsync()).StaleSince!.Value;
 
         fixture.Source.DynamicRouteCostPresent = true;
         await fixture.RefreshAsync(TimeSpan.FromSeconds(10));
 
         RouteGraphSnapshotHeader header = await fixture.HeaderAsync();
-        Assert.Equal((RouteGraphStaleReasons.DynamicRouteCostAppeared, since), (header.StaleReason, header.StaleSince));
+        Assert.Equal(
+            (RouteGraphStaleReasons.DynamicRouteCostAppeared, first.AddSeconds(10)),
+            (header.StaleReason, header.StaleSince));
+    }
+
+    /// <summary>
+    /// 失败发生在黏住之后很久——设计态 TTL 都过了、图已经在变化之后重读过——仍然盖不掉黏住原因，之后的成功刷新也清不掉它（审查 L4，守「只在
+    /// 刚黏住时才不让盖」这种变异）。
+    /// </summary>
+    [Theory]
+    [InlineData(Failure.TimeOut)]
+    [InlineData(Failure.HttpRequest)]
+    public async Task AFailureLongAfterTheChangeStillDoesNotEraseIt(Failure failure)
+    {
+        await using Fixture fixture = await Fixture.CreateAsync();
+        await fixture.RefreshAsync();
+        fixture.Source.EdgeGroups = OneGroup;
+        await fixture.RefreshAsync(TimeSpan.FromSeconds(10));
+        await fixture.RefreshAsync(TimeSpan.FromMinutes(11));
+        DateTimeOffset since = (await fixture.HeaderAsync()).StaleSince!.Value;
+
+        fixture.Source.Fail = failure;
+        await fixture.RefreshAsync(TimeSpan.FromMinutes(5));
+        fixture.Source.Fail = null;
+        await fixture.RefreshAsync(TimeSpan.FromSeconds(10));
+
+        RouteGraphSnapshotHeader header = await fixture.HeaderAsync();
+        Assert.Equal((RouteGraphStaleReasons.EdgeGroupFingerprintChanged, since), (header.StaleReason, header.StaleSince));
+        Assert.Equal(RouteGraphStaleReasons.EdgeGroupFingerprintChanged, await fixture.ReachabilityAsync());
+    }
+
+    /// <summary>
+    /// 审查探针 P1：黏住原因落在一条会自愈的原因之上，起始时刻不能继承那条原因的。t=590s 读超时，原因变刷新失败；t=600s 设计态到期先重读、
+    /// 同一轮读边组判出指纹变化。图是在这次变化之前（同一轮读边组之前）读的，照 GET 填好的确认立即提交必须被拒。
+    /// </summary>
+    [Fact]
+    public async Task AStickyChangeOverAFailedRefreshDoesNotInheritItsSince()
+    {
+        await using Fixture fixture = await Fixture.CreateAsync();
+        await fixture.RefreshAsync();
+        fixture.Source.Fail = Failure.TimeOut;
+        await fixture.RefreshAsync(TimeSpan.FromSeconds(590));
+        Assert.Equal(RouteGraphStaleReasons.RefreshFailed, (await fixture.HeaderAsync()).StaleReason);
+
+        fixture.Source.Fail = null;
+        fixture.Source.EdgeGroups = OneGroup;
+        await fixture.RefreshAsync(TimeSpan.FromSeconds(10));
+        RouteGraphSnapshotHeader header = await fixture.HeaderAsync();
+        Assert.Equal(
+            (RouteGraphStaleReasons.EdgeGroupFingerprintChanged, fixture.Clock.GetUtcNow()),
+            (header.StaleReason, header.StaleSince));
+
+        RouteGraphStickyStaleReleaseResult refused = await fixture.ReleaseAsync(await fixture.AcknowledgedAsync());
+
+        Assert.Equal([RouteGraphStickyStaleReleaseCodes.DesignNotRefreshedSinceStale], refused.Codes);
+        Assert.Equal(RouteGraphStaleReasons.EdgeGroupFingerprintChanged, await fixture.ReachabilityAsync());
+    }
+
+    /// <summary>
+    /// 审查探针 P1b：动态代价先黏住（t=10s），10 分钟后设计态重读，再过 10 秒边组指纹变化覆盖原因。这次编辑之后图还没重读过，立即提交必须被拒。
+    /// </summary>
+    [Fact]
+    public async Task AStickyChangeOverAnotherStickyReasonDoesNotInheritItsSince()
+    {
+        await using Fixture fixture = await Fixture.CreateAsync();
+        await fixture.RefreshAsync();
+        fixture.Source.DynamicRouteCostPresent = true;
+        await fixture.RefreshAsync(TimeSpan.FromSeconds(10));
+        await fixture.RefreshAsync(TimeSpan.FromMinutes(10));
+
+        fixture.Source.EdgeGroups = OneGroup;
+        await fixture.RefreshAsync(TimeSpan.FromSeconds(10));
+
+        RouteGraphStickyStaleReleaseResult refused = await fixture.ReleaseAsync(await fixture.AcknowledgedAsync());
+
+        Assert.Equal([RouteGraphStickyStaleReleaseCodes.DesignNotRefreshedSinceStale], refused.Codes);
+        Assert.Equal(RouteGraphStaleReasons.EdgeGroupFingerprintChanged, await fixture.ReachabilityAsync());
+    }
+
+    /// <summary>
+    /// 审查探针 P2：刷新轮的陈旧判定已经读到黏住原因，这时一次解除落了地。判定不能把读到的黏住原因原样写回去（那只是回声）：解除报了成功、写了
+    /// RELEASED 审计，库里就必须是清掉的。
+    /// </summary>
+    [Fact]
+    public async Task TheStalenessEvaluationDoesNotEchoAStickyReasonBackOverARelease()
+    {
+        await using Fixture fixture = await Fixture.CreateAsync();
+        await fixture.RefreshAsync();
+        fixture.Source.EdgeGroups = OneGroup;
+        await fixture.RefreshAsync(TimeSpan.FromSeconds(10));
+        await fixture.RefreshAsync(TimeSpan.FromMinutes(10));
+        RouteGraphStickyStaleReleaseRequest acknowledged = await fixture.AcknowledgedAsync();
+
+        RouteGraphStickyStaleReleaseResult? released = null;
+        await fixture.RefreshAsync(
+            TimeSpan.FromSeconds(10),
+            afterEvaluationRead: async () => released = await fixture.ReleaseAsync(acknowledged));
+
+        Assert.True(released?.Released, string.Join(',', released?.Codes ?? []));
+        Assert.Null((await fixture.HeaderAsync()).StaleReason);
+        Assert.Equal(DispatchAdmissionChain.Eligible, await fixture.ReachabilityAsync());
     }
 
     /// <summary>
@@ -288,10 +388,15 @@ public sealed class RouteGraphStickyStaleTests
     }
 
     /// <summary>
-    /// 判定读完、清除之前，刷新器把指纹又改了（同刻写）：带条件的清除更新到 0 行，拒绝 <c>STATE_CHANGED_SINCE_READ</c>，原因不清，不写成功审计。
+    /// 判定读完、清除之前，刷新器把快照改了（同刻写）：指纹、原因（换成另一条黏住原因）、动态代价有无、起始时刻（同一条原因再次检测到）任何一项，
+    /// 带条件的清除都更新到 0 行，拒绝 <c>STATE_CHANGED_SINCE_READ</c>，原因不清，不写成功审计（审查 L2、L3）。
     /// </summary>
-    [Fact]
-    public async Task ARefreshChangingTheSnapshotBetweenTheReadAndTheClearWins()
+    [Theory]
+    [InlineData("\"EdgeGroupFingerprint\" = 'changed-meanwhile'")]
+    [InlineData("\"StaleReason\" = 'ROUTE_GRAPH_DYNAMIC_ROUTE_COST_APPEARED'")]
+    [InlineData("\"DynamicRouteCostPresent\" = 1")]
+    [InlineData("\"StaleSince\" = '2026-09-07 08:20:20+00:00'")]
+    public async Task ARefreshChangingTheSnapshotBetweenTheReadAndTheClearWins(string meanwhile)
     {
         await using Fixture fixture = await Fixture.CreateAsync();
         await fixture.RefreshAsync();
@@ -301,10 +406,10 @@ public sealed class RouteGraphStickyStaleTests
 
         RouteGraphStickyStaleReleaseResult refused = await fixture.ReleaseAsync(
             await fixture.AcknowledgedAsync(),
-            new BeforeTheClear("UPDATE \"RouteGraphSnapshots\" SET \"EdgeGroupFingerprint\" = 'changed-meanwhile'"));
+            new BeforeTheClear("UPDATE \"RouteGraphSnapshots\" SET " + meanwhile));
 
         Assert.Equal([RouteGraphStickyStaleReleaseCodes.StateChangedSinceRead], refused.Codes);
-        Assert.Equal(RouteGraphStaleReasons.EdgeGroupFingerprintChanged, (await fixture.HeaderAsync()).StaleReason);
+        Assert.True(RouteGraphStickyStaleReasons.IsSticky((await fixture.HeaderAsync()).StaleReason));
         Assert.Equal(GovernanceActionOutcome.Failed, (await fixture.SingleAuditAsync()).Outcome);
     }
 
@@ -411,6 +516,60 @@ public sealed class RouteGraphStickyStaleTests
         public Task<bool> ReadDynamicRouteCostPresentAsync(CancellationToken ct) => Task.FromResult(DynamicRouteCostPresent);
     }
 
+    /// <summary>The real store, except that the <c>onRead</c>-th header read runs <c>interleave</c> after reading and before returning.</summary>
+    private sealed class InterleavingStore(IRouteGraphSnapshotStore inner, int onRead, Func<Task> interleave) : IRouteGraphSnapshotStore
+    {
+        private int _reads;
+
+        public async Task<RouteGraphSnapshotHeader?> ReadHeaderAsync(int mapId, CancellationToken cancellationToken)
+        {
+            RouteGraphSnapshotHeader? header = await inner.ReadHeaderAsync(mapId, cancellationToken);
+            if (++_reads == onRead)
+            {
+                await interleave();
+            }
+            return header;
+        }
+
+        public Task<RouteGraphState?> ReadStateAsync(int mapId, CancellationToken cancellationToken) =>
+            inner.ReadStateAsync(mapId, cancellationToken);
+
+        public Task<long> ReplaceDesignStateAsync(
+            int mapId,
+            IReadOnlyList<RouteGraphEdgeFact> edges,
+            IReadOnlyList<RouteGraphStationFact> stations,
+            string? sourceGmtUpdate,
+            DateTimeOffset refreshedAt,
+            CancellationToken cancellationToken) =>
+            inner.ReplaceDesignStateAsync(mapId, edges, stations, sourceGmtUpdate, refreshedAt, cancellationToken);
+
+        public Task ReplaceRuntimeStateAsync(
+            int mapId,
+            IReadOnlyList<int> removedEdgeIds,
+            IReadOnlyList<int> removedStationIds,
+            DateTimeOffset observedAt,
+            CancellationToken cancellationToken) =>
+            inner.ReplaceRuntimeStateAsync(mapId, removedEdgeIds, removedStationIds, observedAt, cancellationToken);
+
+        public Task ReplaceEdgeGroupsAsync(
+            int mapId,
+            IReadOnlyList<RouteGraphEdgeGroupFact> groups,
+            string fingerprint,
+            DateTimeOffset observedAt,
+            CancellationToken cancellationToken) =>
+            inner.ReplaceEdgeGroupsAsync(mapId, groups, fingerprint, observedAt, cancellationToken);
+
+        public Task RecordDynamicRouteCostObservationAsync(
+            int mapId, bool present, DateTimeOffset observedAt, CancellationToken cancellationToken) =>
+            inner.RecordDynamicRouteCostObservationAsync(mapId, present, observedAt, cancellationToken);
+
+        public Task MarkStaleAsync(int mapId, string reason, DateTimeOffset at, CancellationToken cancellationToken) =>
+            inner.MarkStaleAsync(mapId, reason, at, cancellationToken);
+
+        public Task ClearStaleAsync(int mapId, DateTimeOffset at, CancellationToken cancellationToken) =>
+            inner.ClearStaleAsync(mapId, at, cancellationToken);
+    }
+
     private sealed class AdvanceableClock(DateTimeOffset now) : TimeProvider
     {
         private DateTimeOffset _now = now;
@@ -470,16 +629,22 @@ public sealed class RouteGraphStickyStaleTests
         public ControlServerDbContext NewContext(params IInterceptor[] interceptors) =>
             new(new DbContextOptionsBuilder<ControlServerDbContext>().UseSqlite(_connection).AddInterceptors(interceptors).Options);
 
-        public async Task RefreshAsync(TimeSpan? after = null)
+        /// <param name="afterEvaluationRead">Runs right after the staleness evaluation has read the header, before it writes.</param>
+        public async Task RefreshAsync(TimeSpan? after = null, Func<Task>? afterEvaluationRead = null)
         {
             if (after is { } by)
             {
                 Clock.Advance(by);
             }
             await using ControlServerDbContext context = NewContext();
+            IRouteGraphSnapshotStore store = new RouteGraphSnapshotStore(context);
+            if (afterEvaluationRead is not null)
+            {
+                // The refresh reads the header twice: once at the start, once in the staleness evaluation.
+                store = new InterleavingStore(store, onRead: 2, afterEvaluationRead);
+            }
             RouteGraphRefresher refresher = new(
-                Source, new RouteGraphSnapshotStore(context), Options.Create(GraphOptions()), Clock,
-                NullLogger<RouteGraphRefresher>.Instance);
+                Source, store, Options.Create(GraphOptions()), Clock, NullLogger<RouteGraphRefresher>.Instance);
             await refresher.RefreshOnceAsync(Token);
         }
 

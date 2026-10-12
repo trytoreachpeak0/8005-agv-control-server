@@ -129,6 +129,14 @@ public sealed class RouteGraphRefresher(
             .ReadHeaderAsync(mapId, cancellationToken).ConfigureAwait(false);
         string? reason = StaleReason(header, now, _options);
 
+        // A sticky reason already standing is only echoed back by the verdict: writing it again would restart its clock, and
+        // would put it back over a release that landed after this read (control-server#659). It is written on a detection only.
+        if (RouteGraphStickyStaleReasons.IsSticky(header?.StaleReason))
+        {
+            LogStale(logger, mapId, header!.StaleReason!, null);
+            return;
+        }
+
         if (reason is null)
         {
             await store.ClearStaleAsync(mapId, now, cancellationToken).ConfigureAwait(false);

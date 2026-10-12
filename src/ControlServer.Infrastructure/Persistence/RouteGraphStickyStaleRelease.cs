@@ -83,11 +83,13 @@ public static class RouteGraphStickyStaleReleaseCodes
 /// </para>
 /// <para>
 /// <b>图要在变化之后重读过</b>（<see cref="RouteGraphStickyStaleReleaseCodes.DesignNotRefreshedSinceStale"/>）：设计态的刷新时刻严格晚于陈旧起始时刻，
-/// 否则放行的仍是变化之前的那张图。相等也不算：检测到变化的那一轮里，设计态是在读边组之前读的。
+/// 否则放行的仍是变化之前的那张图。相等也不算：检测到变化的那一轮里，设计态是在读边组之前读的。起始时刻是最近一次检测到黏住变化的时刻
+/// （<c>MarkStaleAsync</c> 每次写黏住原因都重置它），所以比的是最近那次变化，不是先前某条原因留下的时刻。
 /// </para>
 /// <para>
-/// <b>清除是一次带条件的更新</b>：条件是原因、边组指纹与动态代价有无仍是读到的样子。刷新器同刻改了其中任何一项，更新到 0 行，拒绝码
-/// <see cref="RouteGraphStickyStaleReleaseCodes.StateChangedSinceRead"/>，什么也不清。陈旧起始时刻在黏住期间只有解除能改，所以按读到的值核对就够了。
+/// <b>清除是一次带条件的更新</b>：条件是原因、陈旧起始时刻、边组指纹与动态代价有无仍是读到的样子。刷新器同刻改了其中任何一项，更新到 0 行，拒绝码
+/// <see cref="RouteGraphStickyStaleReleaseCodes.StateChangedSinceRead"/>，什么也不清。陈旧起始时刻也在条件里：每次检测到黏住变化都会重置它，
+/// 同一条原因被再次检测到时，只有它能说明「这已经不是操作员核实的那一次」。
 /// </para>
 /// <para>
 /// 解除只把陈旧原因与起始时刻置空。之后的判定照旧：<c>RouteGraphAccess</c> 按时钟重判过期，下一次刷新失败照常标陈旧。动态代价仍在时放行等于接受它：
@@ -220,11 +222,13 @@ public static class RouteGraphStickyStaleRelease
             string staleReason = snapshot!.StaleReason!;
             string edgeGroupFingerprint = snapshot.EdgeGroupFingerprint;
             bool dynamicRouteCostPresent = snapshot.DynamicRouteCostPresent;
+            DateTimeOffset? staleSince = snapshot.StaleSince;
             int cleared = await dbContext.RouteGraphSnapshots
                 .Where(row => row.MapId == request.MapId &&
                               row.StaleReason == staleReason &&
                               row.EdgeGroupFingerprint == edgeGroupFingerprint &&
-                              row.DynamicRouteCostPresent == dynamicRouteCostPresent)
+                              row.DynamicRouteCostPresent == dynamicRouteCostPresent &&
+                              row.StaleSince == staleSince)
                 .ExecuteUpdateAsync(
                     setters => setters
                         .SetProperty(row => row.StaleReason, (string?)null)
