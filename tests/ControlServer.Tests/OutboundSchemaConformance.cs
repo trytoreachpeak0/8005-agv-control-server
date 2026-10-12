@@ -30,11 +30,19 @@ namespace ControlServer.Tests;
 /// the moment the line is built. A line whose nearest caller is a test is that test exercising the
 /// envelope itself, and is skipped rather than validated.
 /// </para>
+/// <para>
+/// One rule beyond the schemas rides along (control-server#664): every <c>UpcomingStopPlanSnapshot</c> the product sends must
+/// carry leg sequences that, sorted, are exactly 1..n -- the rule onboard builds before hmi#327 enforce. The schema only asks for
+/// 1..9, and a plan of <c>[2]</c> passes it while such a vehicle refuses it, drops the session and gets it replayed on every
+/// reconnect. Those builds stay in the field until each vehicle is redeployed, so this side keeps sending what they accept. A
+/// violation fails the run the same way a schema violation does.
+/// </para>
 /// </remarks>
 public sealed class OutboundSchemaConformance : IAsyncDisposable
 {
     private const string ReportDirectoryVariable = "WIRE_TO_GATE_SCHEMA_REPORT_DIR";
     private readonly ConcurrentQueue<ObservedLine> lines = new();
+    private readonly ConcurrentQueue<string> legacyPlanViolations = new();
 
     public OutboundSchemaConformance() => ProtocolEnvelope.OutboundObserver = Observe;
 
@@ -84,6 +92,12 @@ public sealed class OutboundSchemaConformance : IAsyncDisposable
                     $"Outbound schema conformance failed (exit {process.ExitCode}); report in {reportDirectory}." +
                     Environment.NewLine + report);
             }
+            if (!legacyPlanViolations.IsEmpty)
+            {
+                throw new InvalidOperationException(
+                    "UpcomingStopPlanSnapshot leg sequences are not 1..n, which onboard builds before hmi#327 refuse " +
+                    "(control-server#664):" + Environment.NewLine + string.Join(Environment.NewLine, legacyPlanViolations.Take(20)));
+            }
         }
         finally
         {
@@ -95,6 +109,23 @@ public sealed class OutboundSchemaConformance : IAsyncDisposable
     {
         (string origin, string site) = Locate(new StackTrace(1, false));
         lines.Enqueue(new ObservedLine(messageType, origin, site, line));
+        if (messageType == "UpcomingStopPlanSnapshot" && origin != "test" &&
+            LegacyOnboardRefusesPlan(line) is { } sequences)
+        {
+            legacyPlanViolations.Enqueue($"[{sequences}] from {site}");
+        }
+    }
+
+    /// <summary>
+    /// The onboard check before hmi#327 (<c>ValidateUpcomingStopPlan</c>): the leg sequences, sorted, must equal 1..n. Returns the
+    /// offending sequences, or null when the plan passes.
+    /// </summary>
+    internal static string? LegacyOnboardRefusesPlan(string line)
+    {
+        using JsonDocument document = JsonDocument.Parse(line);
+        int[] sequences = [.. document.RootElement.GetProperty("payload").GetProperty("legs").EnumerateArray()
+            .Select(leg => leg.GetProperty("sequence").GetInt32())];
+        return sequences.Order().SequenceEqual(Enumerable.Range(1, sequences.Length)) ? null : string.Join(",", sequences);
     }
 
     private static (string Origin, string Site) Locate(StackTrace trace)

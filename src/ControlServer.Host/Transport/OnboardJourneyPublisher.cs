@@ -3,6 +3,7 @@ using System.Text.Json;
 using System.Text.Json.Nodes;
 using ControlServer.Application;
 using ControlServer.Domain;
+using ControlServer.Host.Runtime.Dispatch;
 using ControlServer.Infrastructure.Persistence;
 
 namespace ControlServer.Host.Transport;
@@ -811,10 +812,39 @@ public sealed class OnboardJourneyPublisher(
                 "stopEndedReason must be present exactly when the worklist has no items.");
     }
 
+    /// <summary>
+    /// 计划快照在线上的那几条腿：按停靠序号排好，<c>sequence</c> 重新从 1 连续编号（control-server#664）。
+    /// </summary>
+    /// <remarks>
+    /// <para>
+    /// 投影里的 <c>Sequence</c> 是库里停靠的序号，不保证从 1 起、不保证连续：清桩移动停靠是 <c>charger.Sequence + attempt</c>
+    /// （<c>ClearanceMoveShape.Build</c>），到点收尾那张计划只有这一条腿，于是发出去的是 <c>[2]</c>；第二次清桩途中是 <c>[1, 3]</c>，
+    /// 第九次是 <c>[1, 10]</c>，越出协议的 1～9。协议只要求 1～9、不要求连续，但 hmi#327 之前的车载端要求排序后等于 1..n，拒收后断会话、
+    /// 服务端每个新会话重放，于是约每 4 秒重连一次。只改发出去的这一份：库里停靠的 <c>Sequence</c> 与 <c>movementLegId</c> 不动，
+    /// 车载端认腿靠 <c>movementLegId</c>，<c>sequence</c> 只用来排序。
+    /// </para>
+    /// <para>
+    /// 超过协议上限 9 条腿时当场抛出，不截断、不发：截断会静默丢腿，发出去车载端按 schema 拒收、断会话。正常路径到不了这里——
+    /// 追加门禁按整条旅程数腿（<see cref="EnRouteAppendPlanner.MaximumLegs"/>），清桩与充电计划最多两条。
+    /// </para>
+    /// <para>
+    /// 追加后的重发判定（<c>JourneyRuntimeEngine.PlanOnTheWireMatches</c>）拿线上那一版与这里的结果比，不与投影原样比。
+    /// </para>
+    /// </remarks>
+    internal static IReadOnlyList<UpcomingMovementLeg> WireLegs(UpcomingStopPlanProjection projection)
+    {
+        ArgumentNullException.ThrowIfNull(projection);
+        if (projection.Legs.Count > EnRouteAppendPlanner.MaximumLegs)
+            throw new InvalidDataException(
+                $"An upcoming stop plan carries at most {EnRouteAppendPlanner.MaximumLegs} legs; this one has {projection.Legs.Count}.");
+        // OrderBy is stable, so legs that happen to share a stop sequence keep the order they were given in.
+        return [.. projection.Legs.OrderBy(leg => leg.Sequence).Select((leg, index) => leg with { Sequence = index + 1 })];
+    }
+
     private static object UpcomingStopPlanPayload(UpcomingStopPlanProjection projection) => new
     {
         planRevision = projection.Revision,
-        legs = projection.Legs.Select(leg => new
+        legs = WireLegs(projection).Select(leg => new
         {
             leg.MovementLegId,
             leg.LegType,
