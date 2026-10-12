@@ -470,6 +470,8 @@ public sealed class ParallelInstanceEffectiveConfigurationTests
     [InlineData(TwoCarExample)]
     [InlineData("instance-factory01-v2.req0178-field-off.json")]
     [InlineData("instance-factory01-v2.req0178-field-on.json")]
+    [InlineData("instance-factory01-v2.batch89-auto.json")]
+    [InlineData("instance-factory01-v2.batch89-manual.json")]
     public void EveryShippedDefinitionBindsTheApprovedPairOverThePackageAppSettings(string definitionFile)
     {
         string root = FindRepositoryRoot();

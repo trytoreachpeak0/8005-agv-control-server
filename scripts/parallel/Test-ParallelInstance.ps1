@@ -4956,7 +4956,9 @@ Write-Host 'Map/Station catalog approval (control-server#531)' -ForegroundColor 
 
 $catalogTemplate = "$clearanceTemplate mapStationCatalog={MapStationCatalog}"
 $shippedDefinitionNames = @('instance-factory01-v2.json', 'instance-factory01-v2.production-mes.json', 'instance-factory01-v2.two-car-example.json',
-    'instance-factory01-v2.req0178-field-off.json', 'instance-factory01-v2.req0178-field-on.json')
+    'instance-factory01-v2.req0178-field-off.json', 'instance-factory01-v2.req0178-field-on.json',
+    # control-server#665 (merged before this ticket): the batch 8/9 field definitions. PR #666 review S1.
+    'instance-factory01-v2.batch89-auto.json', 'instance-factory01-v2.batch89-manual.json')
 function Set-CatalogSection($Definition, $Section, [switch] $Remove) {
     $d = Copy-Definition $Definition
     if ($Remove) { $d.Remove('mapStationCatalog') } else { $d['mapStationCatalog'] = $Section }
@@ -5106,6 +5108,29 @@ foreach ($case in @(
         @{ Ok = ($a.Action -ceq $case.Action -and ($null -eq $case.Says -or ([string] $a.Message).Contains($case.Says))); Detail = "got: $(ConvertTo-Json $a -Compress)" }
     }
 }
+# --- PR #666 review L1: an environment layer above the file is refused before anything is restarted ------------------
+Invoke-SourceCase 'catalog environment override: MapStationCatalog keys count like JourneyRuntime ones, ignoring case, prefixes included' {
+    $found = @(Get-ParallelJourneyRuntimeEnvironmentOverride -ServiceEnvironment @('MapStationCatalog__ApprovedMaxUnconfirmed=00:10:00', 'MapStationCatalogX=1') `
+            -MachineEnvironment @('DOTNET_mapstationcatalog:ApprovedSyncPeriod=00:00:30', 'MyMapStationCatalog__ApprovedSyncPeriod=1', 'MapStationCatalogNotes=1'))
+    $expected = 'service MapStationCatalog__ApprovedMaxUnconfirmed|machine DOTNET_mapstationcatalog:ApprovedSyncPeriod'
+    @{ Ok = (($found -join '|') -ceq $expected); Detail = "got: $($found -join '|')" }
+}
+Invoke-PathCase 'catalog environment override in the configuration step' {
+    $s = Invoke-HeldPath -BaseConfiguration (Copy-Definition $productConfiguration) -ServiceEnvironmentExtra @('MapStationCatalog__ApprovedMaxUnconfirmed=00:10:00')
+    Write-Result -Ok ($s.Error -like 'JOURNEY_RUNTIME_ENVIRONMENT_OVERRIDE*' -and $s.Error.Contains('MapStationCatalog__ApprovedMaxUnconfirmed') -and
+            $s.Error.Contains('MapStationCatalog above') -and @($s.Log).Count -eq 0) `
+        -Name 'catalog environment override: MapStationCatalog__ApprovedMaxUnconfirmed in the service''s Environment is refused before any restart, naming the key' `
+        -Detail ("log: " + (@($s.Log) -join ',') + "; error: $($s.Error)")
+    $s = Invoke-HeldPath -BaseConfiguration (Copy-Definition $productConfiguration) -MachineEnvironment @('Path=C:\Windows', 'ASPNETCORE_MapStationCatalog__ApprovedSyncPeriod=00:00:10')
+    Write-Result -Ok ($s.Error -like 'JOURNEY_RUNTIME_ENVIRONMENT_OVERRIDE*' -and $s.Error.Contains('ASPNETCORE_MapStationCatalog__ApprovedSyncPeriod') -and @($s.Log).Count -eq 0) `
+        -Name 'catalog environment override: an ASPNETCORE_-prefixed MapStationCatalog key in the machine''s environment is refused before any restart' `
+        -Detail ("log: " + (@($s.Log) -join ',') + "; error: $($s.Error)")
+}
+Invoke-SourceCase 'catalog environment override: the installer''s machine-level refusal names MapStationCatalog' {
+    $installer = Get-Content -Raw -LiteralPath (Join-Path $PSScriptRoot 'Install-ParallelInstanceLocal.ps1')
+    @{ Ok = $installer.Contains("'or MapStationCatalog (control-server#531) above appsettings.Production.json."); Detail = 'Install-ParallelInstanceLocal.ps1 JOURNEY_RUNTIME_ENVIRONMENT_OVERRIDE text does not name MapStationCatalog' }
+}
+
 Invoke-SourceCase 'catalog read-back line: the bound values are said, and no warning' {
     $f = Format-ParallelMapStationCatalogReadBack -Effective (Get-CatalogReadBack $baseline $boundApproved).Effective
     @{ Ok = ($f.Line -ceq 'mapStationCatalog approvedSyncPeriod=00:00:30 approvedMaxUnconfirmed=00:05:00' -and $null -eq $f.Warning); Detail = "got: $(ConvertTo-Json $f -Compress)" }

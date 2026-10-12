@@ -322,7 +322,7 @@ try {
             -MachineEnvironment @([Environment]::GetEnvironmentVariables('Machine').GetEnumerator() | ForEach-Object { "$($_.Key)=$($_.Value)" }))
     if ($environmentOverrides.Count -gt 0) {
         throw ("JOURNEY_RUNTIME_ENVIRONMENT_OVERRIDE (nothing was stopped or changed): $($environmentOverrides -join ', ') set JourneyRuntime " +
-            'above appsettings.Production.json. Remove the variable(s), then install again.')
+            'or MapStationCatalog (control-server#531) above appsettings.Production.json. Remove the variable(s), then install again.')
     }
 
     # A rollback needs a previous generation the product script can install from; checked before the

@@ -65,6 +65,18 @@ scratch 目录启动 `dotnet`，没读到 `global.json`，用了别的 SDK，报
 在未变异时 Host 编译 0 错误、上述测试类 44/44。另：副本里自检总数是 798（工作树 794），多出的 4 条出现在副本编译过之后，推断是有检查会
 枚举编译产物目录里的脚本，未追查；这些都不影响上表的「被抓」判定。
 
+## 审查后的修改（PR #666 独立审查，`b305341c`）
+
+- S1：合入 `fp/v2-impl` `0ec25d2dc` 后，control-server#665 新增的 `instance-factory01-v2.batch89-auto.json`、`batch89-manual.json`
+  没有 `mapStationCatalog`。两份补上同一节，加进自检的出厂清单与 C# 的 `[InlineData]`（出厂定义从五份变成七份）。
+- L1：`Get-ParallelJourneyRuntimeEnvironmentOverride` 的匹配扩到 `MapStationCatalog`（同样忽略大小写、含 `DOTNET_`／`ASPNETCORE_` 前缀），
+  安装器的机器级预检与配置步骤的服务级预检因此都在动服务之前拒绝 `MapStationCatalog__*`。错误码仍是 `JOURNEY_RUNTIME_ENVIRONMENT_OVERRIDE`，
+  文案补上 `MapStationCatalog`。新增自检 4 条。
+- L2：README 写明 `board.md` 是私有工作区里的记录，公开可核对的出处是 control-server#531 票面。
+
+修改后（读到的）：`Test-ParallelInstance.ps1` 802 passed, 0 failed，退出码 0（`selftest-review-fix.txt`）；`Test-ScriptStaticChecks.ps1` 32/32；
+定向测试（同一过滤条件）125 passed, 0 failed，退出码 0，比上一轮 123 多出的 2 条正是新加的两个 `[InlineData]`。这一轮没有重做变异：L1 只核了一处取红：把 `MapStationCatalog__ApprovedMaxUnconfirmed` 分别对修前、修后两条正则做 `-match`，结果 `False`／`True`（读到的），没有对整个自检重跑修前版本。
+
 ## 剩余风险与失败方式
 
 见 PR 正文。

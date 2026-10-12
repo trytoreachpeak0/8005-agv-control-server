@@ -2607,6 +2607,10 @@ function Get-ParallelJourneyRuntimeEnvironmentOverride {
             ASPNETCORE_-prefixed variables into its configuration, so those count too. A name is matched ignoring
             case, with __ or : after JourneyRuntime; JourneyRuntimeX or MyJourneyRuntime__ is not this section.
             Values are never returned.
+
+            control-server#531 review L1: MapStationCatalog too, the same way. REQ-0302's two approved values come from the
+            instance definition alone; MapStationCatalog__ApprovedMaxUnconfirmed in an environment layer (the L2 rig injects
+            them so, Invoke-L2Scenario.ps1) would bind over the file, and the read-back would see it only after a restart.
     #>
     [CmdletBinding()]
     [OutputType([string])]
@@ -2614,7 +2618,7 @@ function Get-ParallelJourneyRuntimeEnvironmentOverride {
         [AllowEmptyCollection()][AllowNull()][string[]] $ServiceEnvironment,
         [AllowEmptyCollection()][AllowNull()][string[]] $MachineEnvironment
     )
-    $pattern = '^(?i:(?:DOTNET_|ASPNETCORE_)?JourneyRuntime(?:__|:))'
+    $pattern = '^(?i:(?:DOTNET_|ASPNETCORE_)?(?:JourneyRuntime|MapStationCatalog)(?:__|:))'
     foreach ($pair in @(@{ Where = 'service'; Entries = $ServiceEnvironment }, @{ Where = 'machine'; Entries = $MachineEnvironment })) {
         foreach ($entry in @($pair.Entries | Where-Object { -not [string]::IsNullOrEmpty($_) })) {
             $name = ($entry -split '=', 2)[0]
