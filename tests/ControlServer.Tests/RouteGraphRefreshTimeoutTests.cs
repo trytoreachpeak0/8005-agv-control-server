@@ -152,12 +152,34 @@ public sealed class RouteGraphRefreshTimeoutTests
     [Trait("Requirement", "REQ-0246")]
     public async Task ARefreshFailingOutsideTheRefresherStillRunsTheEngine()
     {
-        await using WorkerFixture fixture = await WorkerFixture.CreateAsync(headerReadFails: true);
+        await using WorkerFixture fixture = await WorkerFixture.CreateAsync(
+            headerReadFailure: () => new InvalidOperationException("The database is unavailable."));
 
         await fixture.RunOneRoundAsync();
 
         await AssertStoppedThisRoundAsync(fixture.Runtime);
         Assert.Contains(fixture.WorkerLog.Entries, entry => entry.EventId.Id == 2156);
+        Assert.DoesNotContain(fixture.WorkerLog.Entries, entry => entry.EventId.Id == 2002);
+    }
+
+    /// <summary>
+    /// 刷新器的 try 之外抛出一个调用方没要求的取消（读快照头时超时）：worker 不把它当停机，记 2156、照常跑引擎、同一轮照样急停。
+    /// </summary>
+    /// <remarks>
+    /// 守的是 worker 放行停机的那道 catch 只认已取消的 <c>stoppingToken</c>（审查 L1）。它若接住任何
+    /// <see cref="OperationCanceledException"/> 就 return，一次这样的取消会让 worker 退出，整个车队运行时停掉。
+    /// </remarks>
+    [Fact]
+    [Trait("Requirement", "REQ-0246")]
+    public async Task ACancellationNobodyAskedForOutsideTheRefresherDoesNotStopTheWorker()
+    {
+        await using WorkerFixture fixture = await WorkerFixture.CreateAsync(
+            headerReadFailure: () => new TaskCanceledException("The database read timed out."));
+
+        await fixture.RunOneRoundAsync();
+
+        await AssertStoppedThisRoundAsync(fixture.Runtime);
+        Assert.Single(fixture.WorkerLog.Entries, entry => entry.EventId.Id == 2156);
         Assert.DoesNotContain(fixture.WorkerLog.Entries, entry => entry.EventId.Id == 2002);
     }
 
@@ -267,13 +289,14 @@ public sealed class RouteGraphRefreshTimeoutTests
         public Task<bool> ReadDynamicRouteCostPresentAsync(CancellationToken ct) => Task.FromResult(false);
     }
 
-    /// <summary>The real store, except that reading the header fails the way a database that is not there does.</summary>
-    private sealed class HeaderFailingStore(IRouteGraphSnapshotStore inner, Action onRead) : IRouteGraphSnapshotStore
+    /// <summary>The real store, except that reading the header throws what the test hands it.</summary>
+    private sealed class HeaderFailingStore(IRouteGraphSnapshotStore inner, Action onRead, Func<Exception> failure)
+        : IRouteGraphSnapshotStore
     {
         public Task<RouteGraphSnapshotHeader?> ReadHeaderAsync(int mapId, CancellationToken cancellationToken)
         {
             onRead();
-            throw new InvalidOperationException("The database is unavailable.");
+            throw failure();
         }
 
         public Task<RouteGraphState?> ReadStateAsync(int mapId, CancellationToken cancellationToken) =>
@@ -504,8 +527,9 @@ public sealed class RouteGraphRefreshTimeoutTests
 
         private Task RefreshEntered { get; }
 
-        public static async Task<WorkerFixture> CreateAsync(bool headerReadFails = false)
+        public static async Task<WorkerFixture> CreateAsync(Func<Exception>? headerReadFailure = null)
         {
+            bool headerReadFails = headerReadFailure is not null;
             RuntimeFixture runtime = await RuntimeFixture.CreateAsync();
             runtime.Catalog.Set(runtime.Demand(FirstDemandId, FirstSublot, Now.AddMinutes(-10)));
             runtime.BoxCounts.Set(FirstSublot, 7);
@@ -533,7 +557,7 @@ public sealed class RouteGraphRefreshTimeoutTests
             services.AddScoped<IRouteGraphSnapshotStore>(provider =>
             {
                 RouteGraphSnapshotStore store = new(provider.GetRequiredService<ControlServerDbContext>());
-                return headerReadFails ? new HeaderFailingStore(store, () => headerRead.TrySetResult()) : store;
+                return headerReadFails ? new HeaderFailingStore(store, () => headerRead.TrySetResult(), headerReadFailure!) : store;
             });
             services.AddScoped(provider => new RouteGraphRefresher(
                 source,

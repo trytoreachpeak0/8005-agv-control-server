@@ -19,13 +19,14 @@
 
 ## 测试与变异
 
-新测试类 `RouteGraphRefreshTimeoutTests`，6 条：刷新器层 3 条，真 `JourneyRuntimeWorker` 层 3 条。
+新测试类 `RouteGraphRefreshTimeoutTests`，7 条：刷新器层 3 条，真 `JourneyRuntimeWorker` 层 4 条（第 4 条按独立审查 L1 补：
+刷新器的 try 之外抛出非停机的 `TaskCanceledException`，worker 不得退出）。
 worker 层用「取货单 FAILED、车还在动」作这一轮必须照常发生的监看，断言同一轮记故障、升级、急停触发一次。
 
-定向测试：`RouteGraphRefreshTimeoutTests`、`RouteGraphEngineTests`、`RouteGraphDispatchTests`，42 条全过（`01-targeted-tests.txt`）。
+定向测试：`RouteGraphRefreshTimeoutTests`、`RouteGraphEngineTests`、`RouteGraphDispatchTests`，43 条全过，退出码 0（`01-targeted-tests.txt`）。
 `Test-ParallelInstance.ps1` 自测 738 passed、0 failed，其中含新加的 2156 一条。
 
-每个变异单独施加、重新构建、跑上面 42 条，然后还原：
+每个变异单独施加、重新构建、跑上面的定向测试（M1～M6 时 42 条，R1 时 43 条），然后还原：
 
 | 变异 | 改了什么 | 变红的用例 |
 | --- | --- | --- |
@@ -36,7 +37,9 @@ worker 层用「取货单 FAILED、车还在动」作这一轮必须照常发生
 | M5 | worker 刷新的 try 不再放行停机取消 | `AShutdownDuringTheRefreshStopsTheWorker` |
 | M6 | `RouteGraphAccess` 去掉按时钟重判 stale | `AnUnmarkedSnapshotStillAgesOutOfDispatch`、`RouteGraphEngineTests.TheRuntimeStateGoingStaleBlocksEvenThoughTheDesignStateIsFine` |
 
-修前代码等于 M1 加 M4 同时施加，两组用例都会红。
+| R1（独立审查 L1） | worker 刷新的 try 放行任何 OCE（`catch (OperationCanceledException) { return; }`） | `ACancellationNobodyAskedForOutsideTheRefresherDoesNotStopTheWorker` |
+
+修前代码等于 M1 加 M4 同时施加，两组用例都会红。R1 在审查时对前 42 条存活，补了这条用例后被杀死。
 
 一个测量上的坑，写在这里免得重踩：第一次跑 M6 时变异没编译过（`CS9113`，`timeProvider` 未读），而脚本照样跑了测试，
 跑的是上一个变异留下的 DLL，结果作废后换了能编译的写法重跑。另外用 `mv` 还原源文件会带回旧的修改时间，MSBuild 会认为不必重编，
