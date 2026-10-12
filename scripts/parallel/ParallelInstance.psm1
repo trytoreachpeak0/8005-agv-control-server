@@ -964,6 +964,15 @@ function Test-ParallelInstanceDefinition {
             }
         }
 
+        # control-server#614 review L2. Left out, the overlay writes nothing and the Host falls back to the package's
+        # appsettings.json -- the executable-set version, below what this instance has bound -- and the first runtime
+        # round reads it as the version moving backwards. 19 accepts any tracked definition, evidence copies included.
+        if (-not (Test-KeyPresent -Node $journey -Key 'admissionPolicyVersion')) {
+            $failures += 'journeyRuntime.admissionPolicyVersion must be set explicitly; left out, the package default applies, which is below the version this instance has bound.'
+        } elseif ($null -eq (ConvertTo-IntegerOrNull $journey['admissionPolicyVersion']) -or (ConvertTo-IntegerOrNull $journey['admissionPolicyVersion']) -le 0) {
+            $failures += "journeyRuntime.admissionPolicyVersion must be a positive JSON integer, got '$($journey['admissionPolicyVersion'])'."
+        }
+
         # @() for the same reason as in Assert-: a function returning an empty array returns
         # nothing, and += against an unwrapped result is where a stray $null element comes from.
         $failures += @(Test-VehicleIdentity -Journey $journey)
