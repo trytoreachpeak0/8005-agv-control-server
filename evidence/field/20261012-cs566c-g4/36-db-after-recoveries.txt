@@ -1,0 +1,8 @@
+## select h.HoldId,h.StationId,r.RecovererRole,r.RecoveredAt,r.Basis from ChargingStationAllocationHolds h join ChargingStationRecoveries r on r.HoldId=h.HoldId where h.HoldId='d849b761-a37a-4e51-a12e-3c4303a55544'
+HoldId=d849b761-a37a-4e51-a12e-3c4303a55544 | StationId=211 | RecovererRole=R-11 | RecoveredAt=2026-10-12 02:12:07.3341636+00:00 | Basis=现场已给桩 211 合闸，桩恢复出电（cs#566 续场三 G4 拉闸后）
+## select v.HoldId,r.RecovererRole,r.RecoveredAt,r.Basis from VehicleChargingEligibilityHolds v join VehicleChargingEligibilityRecoveries r on r.HoldId=v.HoldId
+HoldId=2a9a736f-183b-845d-a520-f18d51b7a0c7 | RecovererRole=R-11 | RecoveredAt=2026-10-12 02:12:09.2862464+00:00 | Basis=G4 充电中断由现场拉闸造成，桩已合闸恢复出电，车辆本身无故障（cs#566 续场三）
+## select count(*) as unrecoveredStationHolds from ChargingStationAllocationHolds h where not exists (select 1 from ChargingStationRecoveries r where r.HoldId=h.HoldId)
+unrecoveredStationHolds=0
+## select count(*) as unrecoveredVehicleHolds from VehicleChargingEligibilityHolds v where not exists (select 1 from VehicleChargingEligibilityRecoveries r where r.HoldId=v.HoldId)
+unrecoveredVehicleHolds=0

@@ -1,0 +1,3 @@
+## select StationId,StationKind,State,VehicleKey,JourneyId,StateSince from StationExclusivities
+StationId=216 | StationKind=WAITING_POINT | State=OCCUPIED | VehicleKey=BROKERX-f38975561adf46ccb1d2f23833c7d0e4 | JourneyId=idle-return:BROKERX-f38975561adf46ccb1d2f23833c7d0e4:20261011T133515220Z | StateSince=2026-10-11 13:35:57.0846745+00:00
+## select CycleId,StationId,Phase,WireState,ChargingPolicyVersion,AllocatedAt from ChargingCycles where AllocatedAt > '2026-10-12'

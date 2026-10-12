@@ -1,0 +1,19 @@
+[11:52:39] Target: factory01  v2 parallel instance, server-side script D:\zhengyushao\control-server-v2-ops\dispatch-gate\83a766893c07d0f039121481b74bcfc3e73c5e08\Set-ParallelDispatchGateLocal.ps1 (control-server 83a766893c07d0f039121481b74bcfc3e73c5e08)
+[11:52:39] Requested: RiotCreateDispatch.enabled=false (the server resolves the V2 service and file from installed-instance.json)
+[11:52:45] Server-side script and modules staged in D:\zhengyushao\control-server-v2-ops\dispatch-gate\83a766893c07d0f039121481b74bcfc3e73c5e08 (what 19 deployed in D:\zhengyushao\control-server-v2-ops is untouched)
+  [11:52:51] Definition: D:\zhengyushao\control-server-v2-ops\installed-instance.json (factory01-v2-parallel)
+  [11:52:51] Service: '8005 AGV ControlServer V2'  configuration: C:\Program Files\8005 AGV\ControlServer.V2\appsettings.Production.json
+  [11:52:51] Journey state (read-only): C:\ProgramData\8005\ControlServer.V2\data\controlserver.db
+  [11:52:51] Requested: RiotCreateDispatch.enabled=false
+  [11:52:51] MVP service before: present=True status=Running startType=Automatic pathName="C:\Program Files\8005 AGV\ControlServer\ControlServer.Host.exe" --contentRoot "C:\Program Files\8005 AGV\ControlServer" --environment Production processId=10912
+  [11:52:52] MVP service after:  present=True status=Running startType=Automatic pathName="C:\Program Files\8005 AGV\ControlServer\ControlServer.Host.exe" --contentRoot "C:\Program Files\8005 AGV\ControlServer" --environment Production processId=10912
+  [31;1mException: [31;1mGATE_CLOSE_REFUSED_IN_FLIGHT: C:\ProgramData\8005\ControlServer.V2\data\controlserver.db has 2 journey(s) of '8005 AGV[0m
+  [31;1m[31;1mControlServer V2' not Completed: idle-return:BROKERX-f38975561adf46ccb1d2f23833c7d0e4:20261012T035142545Z (老厂前线新多仓位2,[0m
+  [31;1m[31;1mAwaitingPickupArrival); charging:BROKERX-7daca4ee91da498d8026c68b7b941127:20261012T035156638Z (老厂前线新多仓位3,[0m
+  [31;1m[31;1mAwaitingPickupArrival). Stop injecting demand into its FakeMesIngest, wait until agv02 and agv03 have finished, and run[0m
+  [31;1m[31;1mthis again. Nothing was stopped or changed.[0m
+[31;1mException: [0mF:\8005-wt\rig-cs566c-8005-workspace\remote-ops\factory-server\scripts\20-set-control-server-parallel-dispatch-gate.ps1:100[0m
+[31;1m[0m[36;1mLine |[0m
+[31;1m[0m[36;1m[36;1m 100 | [0m �� EXITCODE -ne 0) { [36;1mthrow "ssh $SshAlias failed (exit $LASTEXITCODE)"[0m }[0m
+[31;1m[0m[36;1m[36;1m[0m[36;1m[0m[36;1m     | [31;1m                     ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~[0m
+[31;1m[0m[36;1m[36;1m[0m[36;1m[0m[36;1m[31;1m[31;1m[36;1m     | [31;1mssh factory01 failed (exit 1)[0m
