@@ -4191,6 +4191,7 @@ $script:HeldRuntimeActivityCases = @(
     @{ Id = 2131; Name = 'LogBlockedVehicleJudgedACandidate'; Source = 'ControlServer.Host.Runtime.JourneyRuntimeEngine'; Mark = 'JourneyRuntimeEngine' }
     @{ Id = 2002; Name = 'LogIterationFailed'; Source = 'ControlServer.Host.Runtime.JourneyRuntimeWorker'; Mark = '2002' }
     @{ Id = 2153; Name = 'LogReleaseFailed'; Source = 'ControlServer.Host.Runtime.JourneyRuntimeWorker'; Mark = '2153' }
+    @{ Id = 2156; Name = 'LogRouteGraphRefreshFailed'; Source = 'ControlServer.Host.Runtime.JourneyRuntimeWorker'; Mark = '2156' }
     @{ Id = 100; Name = 'RequestPipelineStart'; Source = 'System.Net.Http.HttpClient.IMesIngestCatalog.LogicalHandler'; Mark = 'IMesIngestCatalog'
         Extra = @{ HttpMethod = 'GET'; Uri = 'http://127.0.0.1:5088/api/v2/externally-readable-demand-catalog' } }
     @{ Id = 2240; Name = 'LogCommitted'; Source = 'ControlServer.Host.Runtime.Charging.ChargingAllocator'; Mark = '2240' }
