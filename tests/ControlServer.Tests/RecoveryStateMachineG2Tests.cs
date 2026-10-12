@@ -3844,10 +3844,17 @@ public sealed partial class RecoveryStateMachineG2Tests
     /// 开门命令，只能以 VEHICLE_NOT_READY 拒绝，修正工作流就一直挂在 AwaitingResult。授权面现在以旅程是否
     /// 仍在取货点等待离站为准。
     /// </summary>
+    /// <remarks>
+    /// 同站还有待装时（<c>AwaitingSublot</c>、下一批的 <c>AwaitingLoadResult</c>）也不授权（control-server#643 钉住的前提）：离站等待只在
+    /// 离站等待那一段读纠错闭环（<c>StationDepartureWaitIsOverAsync</c>），中间批次那一支不读。哪天这两格开始授权，中间批次的纠错闭环就得
+    /// 一并重新计时，这两行会先红。
+    /// </remarks>
     [Theory]
     [Trait("IntegrationSlice", "FP-IS-02")]
     [Trait("ProtocolVector", "CV-LOAD-CORRECTION")]
     [InlineData(JourneyRuntimeStage.AwaitingStationDeparture, true)]
+    [InlineData(JourneyRuntimeStage.AwaitingSublot, false)]
+    [InlineData(JourneyRuntimeStage.AwaitingLoadResult, false)]
     [InlineData(JourneyRuntimeStage.AwaitingDepartureSafety, false)]
     [InlineData(JourneyRuntimeStage.AwaitingGateArrival, false)]
     public async Task LoadCorrectionIsAuthorizedOnlyWhileTheVehicleStillWaitsAtThePickup(

@@ -1,6 +1,7 @@
 using System.Text.Json;
 using ControlServer.Application;
 using ControlServer.Domain;
+using ControlServer.Host.Runtime;
 using ControlServer.Infrastructure.Persistence;
 using Microsoft.EntityFrameworkCore;
 using static ControlServer.Tests.Batch7StopDrivenAdvanceDriver;
@@ -129,12 +130,16 @@ public sealed class ResumeAfterAcknowledgedReconnectTests
     }
 
     /// <summary>
-    /// 不是续跑的那一条路保持原样：断联作废了离站等待，结果在就绪后第一轮之前已落库，这一轮刚落定、本站还有待装——发出的那一版清单
-    /// 照旧不带期限，补填留给下一轮等录入那一处（续跑那一支的补填不碰正常路径，cs#291 审查追问）。
+    /// 不是续跑的那一条路：断联作废了离站等待，结果在就绪后第一轮之前已落库，这一轮刚落定、本站还有待装——这是一次 LoadBatch 闭环，
+    /// 起点重置为此刻，发出的那一版清单带的就是服务端判定用的那个期限（ADR-cross-0055，control-server#643）。
     /// </summary>
+    /// <remarks>
+    /// 这一条原本钉的是反面（cs#291 审查追问，<c>855fff718</c>）：那一版清单不带期限，补填留给下一轮等录入那一处再升一版。它守的是
+    /// 「cs#291 不改正常路径」这个范围，不是期限的口径；cs#643 让正常落定也重新计时，于是一版就带上期限，车上少收一版没有期限的清单。
+    /// </remarks>
     [Fact]
     [Trait("IntegrationSlice", "FP-IS-08")]
-    public async Task AFreshLoadAfterAVoidedWaitStillSendsItsWorklistWithoutADeadlineAsBefore()
+    public async Task AFreshLoadAfterAVoidedWaitSendsItsWorklistWithTheRestartedDeadline()
     {
         await using RuntimeFixture fixture = await RuntimeFixture.CreateAsync();
         fixture.Options.StationDepartureWaitTimeout = TimeSpan.FromSeconds(10);
@@ -163,9 +168,11 @@ public sealed class ResumeAfterAcknowledgedReconnectTests
             .Select(row => row.PayloadJson)
             .ToArrayAsync(TestContext.Current.CancellationToken));
         using JsonDocument document = JsonDocument.Parse(payload);
+        JourneyRuntimeRow after = await JourneyOfAsync(fixture, FirstDemandId);
+        Assert.Equal(fixture.Clock.GetUtcNow(), after.StationDepartureWaitStartedAt);
         Assert.Equal(
-            JsonValueKind.Null,
-            document.RootElement.GetProperty("payload").GetProperty("stationDepartureDeadlineAt").ValueKind);
+            JourneyRuntimeEngine.StationDepartureDeadline(after, fixture.Options.StationDepartureWaitTimeout),
+            document.RootElement.GetProperty("payload").GetProperty("stationDepartureDeadlineAt").GetDateTimeOffset());
     }
 
     private static async Task<string[]> WorklistIdsAsync(RuntimeFixture fixture) =>

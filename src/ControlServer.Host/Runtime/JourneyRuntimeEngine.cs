@@ -1452,15 +1452,22 @@ public sealed partial class JourneyRuntimeEngine(
                     if (stops.OutstandingAtCurrentStop.Count > 0)
                     {
                         // 这一支刚落定、#289 的续跑（resumingAfterCommit）与本站在装那一条被终结之后的续跑（resumingAfterEnding）共用。
-                        // 不要在这里无条件重置离站等待起点：resumingAfterEnding 一条都没装上，不是 LoadBatch 闭环（ADR-cross-0055），
-                        // 它不开始新的纠正时间；断联作废过的才按「此刻」补填，与等录入那一处同一个规则。
                         //
-                        // 补填只给续跑：刚落定的正常路径也走这一支，而断联作废之后结果先落库、就绪后第一轮直接走到这里时起点也是空的。
-                        // 正常路径原来就是发一版不带期限的清单、下一轮在等录入那一处补填并升一版，这里不改它（cs#291 审查追问）。
-                        if (resumingAfterCommit || resumingAfterEnding)
-                        {
-                            runtime.StationDepartureWaitStartedAt ??= now;
-                        }
+                        // 一个 LoadBatch 安全闭环，离站等待就从完整时长重新计时（ADR-cross-0055，control-server#643），与最后一批落定
+                        // 那一处（下面转入离站等待之前）同一个口径、同一个判别。这之前这里只在续跑时补填空起点，正常落定不碰它，
+                        // 于是同站后面每一条可录的时间都比前一条少，闭环之后几十秒本站就被期限结束、还没录的需求被终结。
+                        // #289 的续跑同样重置：那一批确实闭环了，只是崩在阶段前移之前；起点取此刻而不是闭环那一轮，代价是期限推后
+                        // 宕机的时长，与 control-server#633 取服务端此刻同一个取舍。
+                        //
+                        // resumingAfterEnding 一条都没装上，不是 LoadBatch 闭环，不开始新的计时；断联作废过的才按「此刻」补填，
+                        // 与等录入那一处同一个规则。
+                        //
+                        // 重置写在发清单之前：下面那一版清单本来就因待做项变了而升号，带的就是新期限，车上与服务端判定用的是同一个值。
+                        // 续跑时那一版上一轮已经写盘、带的是上一轮的起点，升号来自紧接着的 AdvanceWorklistPastAStaleDeadlineAsync
+                        // （期限与排给车的那一版不同就升一版），所以那一次调用在每次崩溃续跑里都是承重的。
+                        runtime.StationDepartureWaitStartedAt = resumingAfterEnding
+                            ? runtime.StationDepartureWaitStartedAt ?? now
+                            : now;
                         // 续跑重发的是上一轮已经写盘的那一版（control-server#291 独立审查）。车确认过、又换了一代时，候选报文只有信封不同，
                         // 不带 keepAcknowledgedIgnoring 就被重放校验拒；断联作废过离站等待时期限也变了，那就升一版（control-server#339），
                         // 与到站重跑（PublishPickupStateAsync）同一个做法。第一次发这一版时发件箱里还没有它，两样都不起作用。
