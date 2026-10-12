@@ -55,6 +55,8 @@
 
 判据：20:24:57（在 211）与 20:27:01（在 215）两次 17 号截屏 `CAPTURED`，「确认清桩」出现；215 那张会话就绪、允许发车（`59`、`60`）。现场按下（授权 `61`）→ 20:27:55 记 2266 `"CONFIRMED", station released true ("SUCCESS")`；`StationClearances` 新行 `Proof=MANUAL_CONFIRMATION`、`ConfirmedByRole=R-11`、`ConfirmedBy` 有值（已脱敏）、`VehicleFinalPosition=老厂前线new_wk/215`、`OldOrderDisposition=SUCCESS`、`ClearedCondition=STATION_EMPTY`；211 分配暂停与 agv02 资格暂停仍在，之后分配报 `CHARGING_VEHICLE_ELIGIBILITY_HELD`（`62`）。20:29:02 关闸（`63`）。
 
+59 号截屏（20:24:57～20:25:19 截取）里，agv02 在 211 显示「上层会话：需恢复，DEPARTURE_UNSAFE」。读到的：V2 在 20:25:02 下发 1103 `RECOVERY_REQUIRED ["DEPARTURE_UNSAFE"]`；RIoT 20:24:32 车仍停在 211、20:25:05 已在移动（用户在 RIoT 挪车去 215）；hmi#327 的循环此前已于 20:18 停止。时间与挪车相符，但截图画面落在哪一秒无法核定；调度提出也可能与充电中断有关。**未定因**，hmi#330 定因时看到了这一处。215 那张（60 号）会话已恢复就绪。
+
 截图两处（调度开票）：清桩开关为 false 时顶栏仍写「清桩：前往等待点」；清桩界面残留上一趟的「补偿目标：子批 B89-1012-H-1」「只能修正本站最后一次装货」（`59`、`60`）。
 
 ## hmi#327 现场复现
@@ -82,6 +84,8 @@
 | 日志滚动 64 MiB | 未覆盖，未手改 | 今天的日志量不需要 |
 | `MapStationCatalog` 两值 | **未覆盖，19:46 手改** | cs#531 未合，定义写不进；第 5 项被 2110 挡住后由调度定手加。19 号换定义（20:15）时被保留；收工 19 号装回原值后仍被保留，20:44 在服务器上删掉并回读 null |
 | 空闲返回 `IdleReturn.Enabled=true` | 未覆盖，未手改 | 定义里没有这个键，今天空闲返回关着；第 5 项卸完车停在 210 |
+
+注：`06a-*`、`06-deploy-onboard-*`、`72-*` 等 06 号输出里车名显示为乱码（GBK 按 UTF-8 读了），按 `-SshAlias` 对应：agv02 = 老厂前线新多仓位2，agv03 = 老厂前线新多仓位3。`46`、`47`、`67` 里请求体中文乱码同理，服务端收到的是正确的 UTF-8（按车名解析出了正确的 vehicleKey）。
 
 ## 失误与教训
 
