@@ -83,6 +83,16 @@ public sealed record WaitingPointArrivalSettlementResult(
 /// （<see cref="StateChanged"/>），什么也不写，人再提交一次。保存时 EF 再按同一个版本令牌核一次。
 /// </para>
 /// <para>
+/// <b>第二种情形：建单结果未知、RIoT 查无此单</b>（control-server#611）。空闲返回停在 <c>WAITING_POINT_ResultUnknown</c>、引擎的自动放弃凑不齐证据
+/// （车离线过、未完成订单清单读不全、对账时断时续）时，同一个入口、同一组人、同一个时长门槛也能收它。前提里换掉的只有订单那一条：
+/// 不是「精确 SUCCESS」，而是「RIoT 按这个 <c>upperId</c> 精确答查无此单（HTTP 404，或 HTTP 200、业务码 0、不带 result），订单意图从没拿到单号」
+/// ——单还在、或读不到，一律拒绝（<see cref="OrderNotAbsent"/>、<see cref="OrderUnreadable"/>），所以这个入口不会让一张其实建成了的单失去看管。
+/// 车停稳没单、结论与读数不冲突这几条照旧。说在点上（人在 RIoT 上把车手动开了过去）按到点收尾
+/// （<see cref="IdleReturnExecutionReasons.NeverAppearedAtWaitingPointByOperator"/>），说不在按已确认失败
+/// （<see cref="IdleReturnExecutionReasons.NeverAppearedByOperator"/>）。两种收尾之后那张单若在 RIoT 上冒出来，外来单监督器挡车并告警
+/// （<see cref="AbandonedIdleReturnOrders"/>）。
+/// </para>
+/// <para>
 /// <b>收尾走正常路径的记账</b>：在点上——空闲返回与引擎收敛同一套（预占转占用、用途释放、收尾快照留 <c>ARRIVED</c> 的等待点腿），清桩与引擎到点完成的
 /// 后一半同一套（<see cref="ClearanceAtWaitingPointClosure"/>）；不在点上——空闲返回按已确认失败（<see cref="IdleReturnEnding"/>，点留给离点清扫），
 /// 清桩与「单被人结束、车证明停稳」同一套（<see cref="ClearanceMoveEnding"/>，原因 <see cref="ClearanceMoveReleaseReasons.Ended"/>）。
@@ -118,6 +128,7 @@ public sealed class WaitingPointArrivalSettlement(
     public const string ClearanceStillOpen = "ARRIVAL_SETTLEMENT_CLEARANCE_STILL_OPEN";
     public const string OrderUnreadable = "ARRIVAL_SETTLEMENT_ORDER_UNREADABLE";
     public const string OrderNotExactSuccess = "ARRIVAL_SETTLEMENT_ORDER_NOT_EXACT_SUCCESS";
+    public const string OrderNotAbsent = "ARRIVAL_SETTLEMENT_ORDER_NOT_ABSENT";
     public const string VehicleUnreadable = "ARRIVAL_SETTLEMENT_VEHICLE_UNREADABLE";
     public const string VehicleOffline = "ARRIVAL_SETTLEMENT_VEHICLE_OFFLINE";
     public const string VehicleNotProvenStopped = "ARRIVAL_SETTLEMENT_VEHICLE_NOT_PROVEN_STOPPED";
@@ -145,12 +156,13 @@ public sealed class WaitingPointArrivalSettlement(
         [JourneyCompleted] = "这趟旅程已经收尾了，不用再办",
         [NotAWaitingPointMove] = "这趟旅程此刻不是在开往等待点（不是空闲返回，也没有一次进行中的清桩移动）",
         [StationMismatch] = "填的等待点不是这趟旅程正开往的那一个：请核对站号",
-        [ArrivalNotNamed] = "服务端还没把这趟判成「到点证明不了」（看板上不是那个码）：单可能还在走，或另有别的原因，先按看板上的码处理",
-        [TooEarly] = "到点证明不了的时长还没超过配置项 JourneyRuntime:OwnOrderRebuildRepeatWindow 规定的时长：车可能还在停稳、读数可能还在更新，过了再办",
+        [ArrivalNotNamed] = "服务端还没把这趟判成「到点证明不了」或「建单结果未知」（看板上不是这两个码之一）：单可能还在走，或另有别的原因，先按看板上的码处理",
+        [TooEarly] = "到点证明不了（或建单结果未知）的时长还没超过配置项 JourneyRuntime:OwnOrderRebuildRepeatWindow 规定的时长：车可能还在停稳、读数可能还在更新，服务端也可能自己收尾，过了再办",
         [WaitingPointNotHeld] = "这个等待点已不归这趟旅程（被人工释放或归了别的车）：服务端会按点丢失自己收尾，不用再办",
         [ClearanceStillOpen] = "清桩还没完成：车在等待点上时，先由 R-11／R-13 名单里的人确认清桩，再来办这一项",
         [OrderUnreadable] = "这一刻读不到 RIoT 上这张单：稍后再办",
         [OrderNotExactSuccess] = "RIoT 上这张单不是已完成（或去的不是这个点、不是这辆车）：单还没结束时车可能还在动，不能收尾",
+        [OrderNotAbsent] = "建单结果未知的这一趟，RIoT 按这个单号查得到单（或答得含糊、或服务端已拿到过单号）：那张单可能建成了，不能当作没建成收尾。请到 RIoT 核对这张单",
         [VehicleUnreadable] = "这一刻读不到车的状态（RIoT 不应答）：等 RIoT 恢复、能读到车之后再办",
         [VehicleOffline] = "车离线：服务端证明不了它没在动，不能收尾。请等车重新上线、停稳之后再办",
         [VehicleNotProvenStopped] = "读到车不是停稳没单（在执行任务、速度不为零、不在空闲状态，或运动安全读数不是停止）：等车停稳、身上没有单之后再办",
@@ -341,8 +353,13 @@ public sealed class WaitingPointArrivalSettlement(
         {
             JourneyStopRow stop = await dbContext.Set<JourneyStopRow>()
                 .SingleAsync(row => row.JourneyId == runtime.JourneyId, cancellationToken).ConfigureAwait(false);
-            return stop.Status is JourneyStopStatuses.Completed or JourneyStopStatuses.Removed
-                ? null
+            if (stop.Status is JourneyStopStatuses.Completed or JourneyStopStatuses.Removed)
+            {
+                return null;
+            }
+            // control-server#611: a create whose result is unknown is the second case this entry closes.
+            return string.Equals(runtime.BlockReasonCode, CreateResultUnknownCode, StringComparison.Ordinal)
+                ? new Move(stop, null, CreateResultUnknownCode, NeverAppeared: true)
                 : new Move(stop, null, IdleReturnExecutionReasons.ArrivalNotProven);
         }
         if (!runtime.IsCharging())
@@ -427,6 +444,10 @@ public sealed class WaitingPointArrivalSettlement(
         }
         OrderIntentRow? intent = await dbContext.OrderIntents.AsNoTracking()
             .SingleOrDefaultAsync(row => row.UpperId == move.Stop.UpperId, cancellationToken).ConfigureAwait(false);
+        // control-server#611: "no such order" exactly -- a 404, or real RIoT's HTTP 200 / code 0 with no result -- for an intent
+        // that never learned an order id. Anything else may be an order that was created after all.
+        bool exactAbsent = order is not null && intent is not null && intent.OrderId is null &&
+                           (order.Kind == RiotOrderObservationKind.NotFound || order.IsExactAbsentAtObservation(move.Stop.UpperId));
 
         RiotVehicleObservation? vehicle;
         RiotVehicleSafetyObservation? safety;
@@ -453,6 +474,7 @@ public sealed class WaitingPointArrivalSettlement(
             order.VehicleKey == runtime.VehicleKey &&
             order.MapId == runtime.MapId &&
             order.DestinationStationId == move.Stop.StationRiotId,
+            exactAbsent,
             vehicle is not null,
             vehicle?.Connected,
             vehicle?.ProcState,
@@ -474,9 +496,9 @@ public sealed class WaitingPointArrivalSettlement(
         {
             codes.Add(OrderUnreadable);
         }
-        else if (!facts.ExactSuccess)
+        else if (move.NeverAppeared ? !facts.ExactAbsent : !facts.ExactSuccess)
         {
-            codes.Add(OrderNotExactSuccess);
+            codes.Add(move.NeverAppeared ? OrderNotAbsent : OrderNotExactSuccess);
         }
 
         if (!facts.VehicleRead)
@@ -525,21 +547,25 @@ public sealed class WaitingPointArrivalSettlement(
             if (at)
             {
                 // ConvergeIdleReturnAsync's bookkeeping, under the operator's code.
+                string arrived = move.NeverAppeared
+                    ? IdleReturnExecutionReasons.NeverAppearedAtWaitingPointByOperator
+                    : IdleReturnExecutionReasons.ArrivalConfirmedByOperator;
                 await WaitingPointExclusivity.StageOccupyAsync(dbContext, held, now, cancellationToken).ConfigureAwait(false);
                 await IdleReturnEnding.StageAsync(
-                        dbContext, runtime, move.Stop, IdleReturnExecutionReasons.ArrivalConfirmedByOperator,
-                        IdleReturnExecutionReasons.ArrivalConfirmedByOperator, stillAtWaitingPoint: true, releaseStationNow: null, now,
+                        dbContext, runtime, move.Stop, arrived, arrived, stillAtWaitingPoint: true, releaseStationNow: null, now,
                         cancellationToken)
                     .ConfigureAwait(false);
-                return IdleReturnExecutionReasons.ArrivalConfirmedByOperator;
+                return arrived;
             }
             // A confirmed failure, as JudgeEndedIdleReturnOrderAsync ends one: the reservation is left to the departure sweep.
+            string failed = move.NeverAppeared
+                ? IdleReturnExecutionReasons.NeverAppearedByOperator
+                : IdleReturnExecutionReasons.NotAtWaitingPointByOperator;
             await IdleReturnEnding.StageAsync(
-                    dbContext, runtime, move.Stop, IdleReturnExecutionReasons.NotAtWaitingPointByOperator,
-                    IdleReturnExecutionReasons.NotAtWaitingPointByOperator, stillAtWaitingPoint: false, releaseStationNow: null, now,
+                    dbContext, runtime, move.Stop, failed, failed, stillAtWaitingPoint: false, releaseStationNow: null, now,
                     cancellationToken)
                 .ConfigureAwait(false);
-            return IdleReturnExecutionReasons.NotAtWaitingPointByOperator;
+            return failed;
         }
 
         if (at)
@@ -593,7 +619,12 @@ public sealed class WaitingPointArrivalSettlement(
 
     private static string? Trimmed(string? text) => string.IsNullOrWhiteSpace(text) ? null : text.Trim();
 
-    private sealed record Move(JourneyStopRow Stop, JourneyStopRow? Charger, string NotProvenCode);
+    /// <summary>空闲返回建单结果未知时旅程上的码（control-server#611 的第二种情形）。</summary>
+    private static readonly string CreateResultUnknownCode =
+        IdleReturnExecutionReasons.LegOutcomeCode(MovementDispatchOutcome.ResultUnknown);
+
+    /// <param name="NeverAppeared">第二种情形（control-server#611）：建单结果未知，订单前提是「精确查无此单」而不是「精确 SUCCESS」。</param>
+    private sealed record Move(JourneyStopRow Stop, JourneyStopRow? Charger, string NotProvenCode, bool NeverAppeared = false);
 
     /// <summary>这一次从 RIoT 读到的，原样进审计。</summary>
     private sealed record RiotFacts(
@@ -602,6 +633,7 @@ public sealed class WaitingPointArrivalSettlement(
         string? OrderId,
         string? IntentOrderId,
         bool ExactSuccess,
+        bool ExactAbsent,
         bool VehicleRead,
         bool? Connected,
         string? ProcState,

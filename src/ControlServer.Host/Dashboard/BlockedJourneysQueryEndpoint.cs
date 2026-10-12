@@ -178,8 +178,11 @@ internal sealed class BlockedJourneysQueryEndpoint : IDashboardQueryEndpoint
                 + "请到现场看车停在哪里：过了这个时长，R-11／R-13 名单里的人可经等待点到点人工收尾入口说明车在不在点上，由服务端收尾。"
                 + "车离线或读不到时入口会拒绝，要等车重新上线、停稳之后再办",
             [IdleReturnExecutionReasons.LegOutcomeCode(MovementDispatchOutcome.ResultUnknown)] =
-                "开往等待点的单发给 RIoT 之后结果未知：服务端每一轮按同一个单号对账，不会建第二张，车、等待点与用途都保持不动。"
-                + "持续不消失请到 RIoT 核对这张单",
+                "开往等待点的单发给 RIoT 之后结果未知（应答丢了，或 RIoT 回了业务失败码，例如 00002）：服务端每一轮按同一个单号对账，"
+                + "不会建第二张，车、等待点与用途都保持不动。RIoT 连续 2 分钟（JourneyRuntime:ChargingOrderAbsentAbandonAfter）答查无此单、"
+                + "车停稳且名下没有单时，服务端自动放弃这张单、结束这趟空闲返回（事件 2232）。车离线或读不到时不会自动结束："
+                + "过了配置项 JourneyRuntime:OwnOrderRebuildRepeatWindow 规定的时长，R-11／R-13 名单里的人可经等待点到点人工收尾入口收尾。"
+                + "RIoT 为什么回失败，看服务端日志里 RIoT 网关的告警（事件 2166）",
             [IdleReturnExecutionReasons.LegOutcomeCode(MovementDispatchOutcome.CreateDispatchDisabled)] =
                 "开往等待点的单没有发出：服务端的建单开关此刻关着。开关打开后下一轮自动建单",
             [IdleReturnExecutionReasons.LegOutcomeCode(MovementDispatchOutcome.UnsupportedOrderShape)] =
@@ -201,6 +204,16 @@ internal sealed class BlockedJourneysQueryEndpoint : IDashboardQueryEndpoint
             [IdleReturnExecutionReasons.NotAtWaitingPointByOperator] =
                 "到点证明不了，现场人员经等待点到点人工收尾入口确认车不在等待点上：这趟空闲返回按已确认失败结束，不重建；"
                 + "等待点在车被读到停在别的站之后由离点清扫释放。下一次空闲返回不再选这个点，冷却与再次失败后停止的规则同单被取消",
+            [IdleReturnExecutionReasons.OrderNeverAppeared] =
+                "开往等待点的单发出后结果未知，RIoT 连续 2 分钟答查无此单，车停稳、名下没有单：服务端放弃这张单，这趟空闲返回按已确认失败结束，"
+                + "不重建。下一次空闲返回不再选这个点，冷却与再次失败后停止的规则同单被取消。那张单若事后在 RIoT 上出现并开动这辆车，"
+                + "服务端挡住这辆车不接新活并告警（事件 2181），请到 RIoT 处理那张单",
+            [IdleReturnExecutionReasons.NeverAppearedAtWaitingPointByOperator] =
+                "开往等待点的单结果未知、RIoT 查无此单，现场人员经等待点到点人工收尾入口确认车就停在等待点上（例如在 RIoT 上手动开了过去）："
+                + "这趟空闲返回按到点收尾，车占着那个等待点，用途已释放。谁确认的、依据是什么记在管理员审计里",
+            [IdleReturnExecutionReasons.NeverAppearedByOperator] =
+                "开往等待点的单结果未知、RIoT 查无此单，现场人员经等待点到点人工收尾入口确认车不在等待点上：这趟空闲返回按已确认失败结束，"
+                + "不重建；下一次空闲返回不再选这个点，冷却与再次失败后停止的规则同单被取消",
             [IdleReturnExecutionReasons.CommitmentOrphaned] =
                 "空闲返回的承诺变不成一趟行程（车已不在车队、等待点预占已不在、点在别的地图上或已不在登记表上）：承诺作废并释放",
             // control-server#404：充电旅程（车电量到线后自己开往充电桩）在到桩之前写在旅程上的码。前面几个是途中的，会出现在这张卡片上；

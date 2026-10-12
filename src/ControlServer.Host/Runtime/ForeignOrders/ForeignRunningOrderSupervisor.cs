@@ -55,7 +55,13 @@ namespace ControlServer.Host.Runtime.ForeignOrders;
 /// no foreign-order authorisation. CP-0010 ratified this branch after it had merged.
 /// </para>
 /// <para>
-/// <b>Such an order is chased while it is still queueing</b> (review S-b): for <c>JourneyRuntime:OwnOrderRebuildRepeatWindow</c>
+/// <b>An idle return order the server gave up is held, not cancelled</b> (control-server#611,
+/// <see cref="IdleReturn.AbandonedIdleReturnOrders"/>): its create went out, RIoT answered "no such order" for long enough and
+/// the idle return was closed. Running on a vehicle of ours after all, it is recorded as unprovable -- the vehicle held, a person
+/// alarmed (event 2181) -- because REQ-0148's second case covers charge orders only. It is not chased while queueing.
+/// </para>
+/// <para>
+/// <b>An abandoned charge order is chased while it is still queueing</b> (review S-b): for <c>JourneyRuntime:OwnOrderRebuildRepeatWindow</c>
 /// after the commitment was given up, any unfinished order RIoT lists under its <c>upperId</c> is taken up, running or not --
 /// a queueing one would otherwise be dispatched first and caught only once it had set the vehicle moving. It is held against
 /// the charging vehicle until RIoT names one, and for it "still there" before the cancel is "still listed", not "still
@@ -537,9 +543,17 @@ public sealed class ForeignRunningOrderSupervisor(
         {
             // control-server#404: a charge order this server gave up has an intent too, and nothing of this server's is
             // watching it any more. It is cancelled like a foreign one.
-            return await Charging.AbandonedChargeOrders.IsAbandonedAsync(dbContext, orderId, upperId, cancellationToken)
+            if (await Charging.AbandonedChargeOrders.IsAbandonedAsync(dbContext, orderId, upperId, cancellationToken)
+                    .ConfigureAwait(false))
+            {
+                return (ForeignRiotOrderOwnership.Foreign, Charging.AbandonedChargeOrders.OwnershipBasis);
+            }
+
+            // control-server#611: so does an idle return order given up as never having appeared. REQ-0148 grants no cancel for
+            // it, so it is held and alarmed for a person, never cancelled.
+            return await IdleReturn.AbandonedIdleReturnOrders.IsAbandonedAsync(dbContext, orderId, upperId, cancellationToken)
                 .ConfigureAwait(false)
-                ? (ForeignRiotOrderOwnership.Foreign, Charging.AbandonedChargeOrders.OwnershipBasis)
+                ? (ForeignRiotOrderOwnership.Unproven, IdleReturn.AbandonedIdleReturnOrders.OwnershipBasis)
                 : (null, "ORDER_INTENT");
         }
 

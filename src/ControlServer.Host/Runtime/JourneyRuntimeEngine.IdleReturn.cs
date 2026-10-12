@@ -84,6 +84,17 @@ public sealed partial class JourneyRuntimeEngine
             "released by time. Check where the vehicle is; once it is online and stopped, a person can close it through the " +
             "waiting point arrival settlement entry (control-server#447).");
 
+    private static readonly Action<ILogger, string, string, string, TimeSpan, int, Exception?> LogIdleReturnOrderAbandoned =
+        LoggerMessage.Define<string, string, string, TimeSpan, int>(
+            LogLevel.Warning,
+            new EventId(2232, nameof(LogIdleReturnOrderAbandoned)),
+            "IDLE_RETURN_ORDER_NEVER_APPEARED: the create of idle return order {UpperId} (journey {JourneyId}, vehicle " +
+            "{VehicleKey}) went out and its result was never learned; RIoT has answered 'no such order' for {Absent} without a " +
+            "break, the vehicle is proven stopped and has no unfinished order. The order is given up and the idle return to " +
+            "waiting point {StationId} ends as a confirmed failure; the vehicle is judged again after the cooldown, without that " +
+            "point. Should RIoT show that order running on the vehicle after all, the vehicle is held and a person is alarmed " +
+            "(event 2181, basis OWN_IDLE_RETURN_ORDER_ABANDONED).");
+
     /// <summary>
     /// 物化：有 <c>IDLE_RETURN</c> 用途占有、却还没有那个 <c>JourneyId</c> 的旅程行的承诺，建旅程行、开往等待点的停靠与订单意图，按
     /// <c>JourneyId</c> 幂等（<see cref="WireToGateStore.MaterializeIdleReturnAsync"/>）。
@@ -203,6 +214,13 @@ public sealed partial class JourneyRuntimeEngine
     /// <para>
     /// <b>不按超时释放。</b>到点证据缺哪一样都只是这一轮不收敛，下一轮再判；这里没有一个会因为等久了而放车或放点的分支。
     /// </para>
+    /// <para>
+    /// <b>结果未知的出口</b>（control-server#611）：保持不能是永久的。RIoT 回 HTTP 200 加业务失败码（现场 2026-10-11 两次 <c>00002</c>）或应答丢了，
+    /// 而 RIoT 上根本没有这张单时，旅程停在 <c>WAITING_POINT_ResultUnknown</c>，这辆车整个派车轮都轮不到（不受理需求、不分配充电），只能改库解开。
+    /// 现在与充电单、清桩移动同一组证据（<see cref="OrderNeverAppearedAsync"/>）全部成立时放弃这张单、按已确认失败收尾
+    /// （<see cref="IdleReturnExecutionReasons.OrderNeverAppeared"/>）；不重建、不换单号再建——下一次出发是新承诺、新 <c>upperId</c>，并且排除这个点、
+    /// 走冷却与「两次即停」。证据凑不齐时（车离线、读不到清单）由人经等待点到点人工收尾入口收尾（<c>WaitingPointArrivalSettlement</c>）。
+    /// </para>
     /// </remarks>
     private async Task AdvanceIdleReturnAsync(
         JourneyRuntimeRow runtime,
@@ -281,6 +299,17 @@ public sealed partial class JourneyRuntimeEngine
                 runtime.SetBlockReason(IdleReturnExecutionReasons.LegOutcomeCode(result.Outcome), timeProvider.GetUtcNow());
                 runtime.UpdatedAt = timeProvider.GetUtcNow();
                 await dbContext.SaveChangesAsync(cancellationToken).ConfigureAwait(false);
+                // The governed way out of "result unknown" (control-server#611): only for a create that did go out.
+                if (result.Outcome == MovementDispatchOutcome.ResultUnknown &&
+                    !await store.IsNeverSentAsync(
+                            await dbContext.OrderIntents.AsNoTracking()
+                                .SingleAsync(row => row.UpperId == stop.UpperId, cancellationToken).ConfigureAwait(false),
+                            cancellationToken)
+                        .ConfigureAwait(false))
+                {
+                    await AbandonIdleReturnIfItNeverAppearedAsync(runtime, stop, pointHeld: true, cancellationToken)
+                        .ConfigureAwait(false);
+                }
                 return;
             }
             // TerminalReconciliationRequired: the order ended before its create was confirmed. Judged below exactly like a
@@ -288,6 +317,8 @@ public sealed partial class JourneyRuntimeEngine
             intent = await dbContext.OrderIntents.AsNoTracking()
                 .SingleAsync(row => row.UpperId == stop.UpperId, cancellationToken).ConfigureAwait(false);
         }
+        // RIoT has the order (or had it): any run of "no such order" counted for it is over.
+        dispatchRound.Charging.Board.SeenOrUnread(stop.UpperId);
 
         RiotOrderObservation order = await vehicleFacts.ReconcileByUpperIdAsync(stop.UpperId, cancellationToken)
             .ConfigureAwait(false);
@@ -517,6 +548,39 @@ public sealed partial class JourneyRuntimeEngine
 
         await HoldIdleReturnAsync(runtime, IdleReturnExecutionReasons.WaitingPointLostOrderInFlight, now, cancellationToken)
             .ConfigureAwait(false);
+        // ... but not for ever (control-server#611): a create whose result was never learned, with RIoT answering "no such order"
+        // for long enough and the vehicle proven stopped without one, is given up on the same evidence as on the main path.
+        if (intent.OrderId is null && order.Kind != RiotOrderObservationKind.Active)
+        {
+            await AbandonIdleReturnIfItNeverAppearedAsync(runtime, stop, pointHeld: false, cancellationToken).ConfigureAwait(false);
+        }
+    }
+
+    /// <summary>
+    /// 建单发出过、结果未知：RIoT 对这张单连续答「查无此单」够久、车证明停稳、名下没有未完成的单（<see cref="OrderNeverAppearedAsync"/>），就放弃这张单、
+    /// 按已确认失败收尾（control-server#611）。缺任何一项这一轮什么也不做。
+    /// </summary>
+    /// <param name="pointHeld">等待点独占此刻仍是这一趟的：车若就停在那个点上，收尾计划留那条腿、预占留给离点清扫（与单被取消同一个判法）。</param>
+    private async Task AbandonIdleReturnIfItNeverAppearedAsync(
+        JourneyRuntimeRow runtime,
+        JourneyStopRow stop,
+        bool pointHeld,
+        CancellationToken cancellationToken)
+    {
+        if (await OrderNeverAppearedAsync(stop.UpperId, runtime.VehicleKey, cancellationToken).ConfigureAwait(false)
+            is not { } evidence)
+        {
+            return;
+        }
+
+        await EndIdleReturnAsync(
+                runtime, stop, IdleReturnExecutionReasons.OrderNeverAppeared,
+                stillAtWaitingPoint: pointHeld && evidence.StationId == stop.StationRiotId,
+                releaseStationNow: null, evidence.ReadAt, cancellationToken)
+            .ConfigureAwait(false);
+        dispatchRound.Charging.Board.SeenOrUnread(stop.UpperId);
+        LogIdleReturnOrderAbandoned(
+            logger, stop.UpperId, runtime.JourneyId, runtime.VehicleKey, evidence.Absent, stop.StationRiotId, null);
     }
 
     /// <summary>
