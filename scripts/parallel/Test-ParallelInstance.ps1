@@ -5161,6 +5161,38 @@ Invoke-SourceCase 'catalog read-back: Program.cs logs the MapStationCatalogOptio
     @{ Ok = $ok; Detail = 'Program.cs does not log IOptions<MapStationCatalogOptions>.Value in its EFFECTIVE_CONFIGURATION event' }
 }
 
+# ------------------------------------------------------------------------------------------------
+# control-server#614. Map 26's machine stations were renamed on 10-11 and the map re-uploaded on 10-12; the factory01 v2
+# database bound versions 4, 5 and 6 for it, the last two hand-set in appsettings.Production.json. 19 holds a deployment
+# to the version in installed-instance.json, not to the one in that file, so a reinstall from a definition still at 3
+# passed it and then drifted. AdmissionPolicyVersionGuardTests pins the definitions' value; this pins that the value
+# reaches the file the Host reads, on every install path, whatever the file said before.
+# ------------------------------------------------------------------------------------------------
+Write-Host ''
+Write-Host 'Admission policy version on disk after the configuration step (control-server#614)' -ForegroundColor Cyan
+
+function Get-AdmissionVersionOnDisk($Configuration) {
+    $sections = @($Configuration.Keys | Where-Object { $_ -ieq 'JourneyRuntime' })
+    if ($sections.Count -ne 1) { return "sections: $($sections -join ',')" }
+    $j = $Configuration[$sections[0]]
+    $values = @($j.Keys | Where-Object { $_ -ieq 'admissionPolicyVersion' } | ForEach-Object { $j[$_] })
+    return "version=$($values -join '|') twins=$(@(Find-CaseTwin -Node $Configuration -Path '').Count)"
+}
+# The 10-12 hand edit, PascalCase as the field session writes it; and a file still at the old shipped 3.
+$handSetSix = Copy-Definition $productConfiguration
+$handSetSix['JourneyRuntime'] = [ordered]@{ enabled = $false; AdmissionPolicyVersion = 6 }
+$staleThree = Copy-Definition $productConfiguration
+$staleThree['JourneyRuntime'] = [ordered]@{ enabled = $false; admissionPolicyVersion = 3 }
+foreach ($definitionFile in $shippedDefinitionNames) {
+    foreach ($base in @(@{ Name = 'first install'; Value = $productConfiguration }, @{ Name = 'over the hand-set 6'; Value = $handSetSix },
+            @{ Name = 'over a file at 3'; Value = $staleThree })) {
+        Invoke-SourceCase "admission version: $definitionFile, $($base.Name), reads back 6" {
+            $got = Get-AdmissionVersionOnDisk (Invoke-CatalogFileStep (Read-ParallelInstanceDefinition -Path (Join-Path $PSScriptRoot $definitionFile)) (Copy-Definition $base.Value))
+            @{ Ok = ($got -ceq 'version=6 twins=0'); Detail = "expected 'version=6 twins=0', got '$got'" }
+        }
+    }
+}
+
 Write-Host ''
 Write-Host ("{0} passed, {1} failed" -f $script:Passed, $script:Failed) `
     -ForegroundColor ($script:Failed -eq 0 ? 'Green' : 'Red')

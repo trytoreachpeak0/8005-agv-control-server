@@ -122,7 +122,7 @@ control-server#262。约 2026-10-08 起 `factory01` 上同时跑两套 ControlSe
 | `journeyRuntime.mapIdentity` | `老厂前线new_wk` | `evidence/field/2026-09-19-B6-map-name-baseline-check/real-riot/fields.json` |
 | `journeyRuntime.dispatchZone`、`allowedDispatchZones` | `WIRE` | 用户 2026-09-18 定：`evidence/field/2026-09-18-B4-site-prerequisites/03-area-assignment-table.md` 第 58、122 行（区域分配表的 `dispatch_zone` 全部是 `WIRE`，实例必须配成同一个值，否则那张表导入会报 `DISPATCH_ZONE_NOT_FOUND`） |
 | `journeyRuntime.admissionPolicyDeploymentId` | `MAP-26-WIRE_TO_GATE-20261007` | 调度 2026-10-07 定，格式沿用 map 25 的 `MAP-25-WIRE_TO_GATE-20260827`（control-server#411）。它是部署标签，不是业务参数。**实例第一次带着运行时启动之后，它就和 `admissionPolicyVersion` 一起固定在库里**：只改标签、不升版本，服务端会报 `Admission policy version is already bound to different content or deployment identity.`，判为准入策略漂移（`WireToGateStore.cs` 的 `ApplyAdmissionPolicyAsync`）。要换标签，就同时升 `admissionPolicyVersion` |
-| `journeyRuntime.admissionPolicyVersion` | `3` | 批次 10（control-server#545）放开同向四类时由 2 升到 3，与 `appsettings.json` 一致。**今后用批次 10 之后的包重装时，两份定义都必须是这个值或更高**，见下文「准入策略版本」 |
+| `journeyRuntime.admissionPolicyVersion` | `6` | 批次 10（control-server#545）放开同向四类时由 2 升到 3；之后 26 号图机台站两次改名、一次重传，factory01 v2 库依次绑了 4、5、6，control-server#614 把七份定义一起升到 6。包里的 `appsettings.json` 仍是 3（它绑的是 25 号图，不随 26 号图站名走）。**今后重装时，定义都必须是这个值或更高**，见下文「准入策略版本」 |
 | `taskTypeStations.settingsFile` | `task-type-stations.map-26.settings.json` | control-server#518。包里随 Host 带一份 26 号图站点清单，定义点名它，覆盖层写成 `TaskTypeStations:settingsFile`（Host 按安装目录解析相对路径）。包内默认的 `task-type-stations.settings.json` 仍绑 25，给 MVP 线用，不动。见下文 |
 
 这三个值都是服务端自己的配置：调度区存在本实例的库里，准入策略部署号是服务端写库时带的标签。**RIoT 里没有它们，也就无从「从 RIoT 取回」**——此前这里和工作区文档都这么写过，那是错的（control-server#411）。
@@ -389,6 +389,9 @@ TCP 会话仍然是全车共用一个凭据、车靠握手自报身份，本票�
 （`instance-factory01-v2.json` 与 `instance-factory01-v2.production-mes.json`）的 `admissionPolicyVersion` 都必须跟着升到
 本票的值 3（以后的票再升，就是那时的值），不能沿用控制端手上那份旧定义。**本仓两份定义与 `appsettings.json` 已经一起改成 3。
 
+**control-server#614 之后，`scripts/parallel/` 下七份实例定义都是 6**，原因不是可执行集合变了，而是 26 号图的机台站名变了，
+见下面「地图站名变化也会漂移」。
+
 反过来同样不行，而且更隐蔽：**批次 10 之前的包（例如 `e03d8e8b`）不得配版本 3 的定义。**旧包配 3 装上去当时不报错——3 比库里的
 2 高，库就把 3 绑到旧包的两类种子上；之后再装批次 10 的包、配 3，同一个版本号下内容不同，判漂移、停接单（L1
 `SameDirectionTaskTypeJourneyRuntimeTests.AnOldPackageInstalledUnderVersionThreeTakesTheVersionAndThisBuildThenDrifts`）。所以：
@@ -413,10 +416,38 @@ TCP 会话仍然是全车共用一个凭据、车靠握手自报身份，本票�
 
 `AdmissionPolicyVersionGuardTests` 守着这件事：版本表逐个写出每一代的可执行集合，版本必须严格递增，本构建的集合必须等于最后
 一行；协议里每个任务类型都必须明确表态可执行或不可执行；`appsettings.json` 与 `scripts/parallel/instance-*.json` 的每一份定义
-都不得低于最后一行的版本，且彼此一致。它守的是仓库里同一个提交的文件，**守不住控制端拿别的提交的定义或别的包去装**——那一步
+都不得低于最后一行的版本；各份定义彼此一致，并且不低于 26 号图站名变化的最后一行（control-server#614 起，见下一小节）。它守的是仓库里同一个提交的文件，**守不住控制端拿别的提交的定义或别的包去装**——那一步
 只能靠这一节。
 
 部署标签 `admissionPolicyDeploymentId` 不换：本票没有改任何站点绑定，标签照旧是 `MAP-26-WIRE_TO_GATE-20261007`。
+
+### 地图站名变化也会漂移：factory01 v2 定义是 6（control-server#614）
+
+**先说要做什么：用户在 RIoT 上改了 26 号图的 AREA 机台站名（改名、增删），factory01 v2 实例下一轮就判漂移、停接单，处置与上面
+一样——把版本设为库里已绑的版本 + 1 重启，然后开票把 `scripts/parallel/` 下全部实例定义一起升到这个值。**不用出新包。
+
+为什么：准入种子 = 实时地图上每个 AREA 命名的机台站 × 本实例种子任务类型，站名每轮现读（`JourneyRuntimeEngine` 里的
+`liveStationNames`）。站名一变，同一版本号下种子内容就变了。种子任务类型取自库里生效绑定集所基于的那一版任务类型规则，与本构建
+`ExecutableTaskTypes` 取交集（`AdmissionSeedTaskTypesAsync`）。所以种子与包的关系只有一条：**包换了可执行集合才会改种子**；同一
+可执行集合的新包不改种子。反过来，**在 FieldOps 激活一份规则版本不同、任务类型集合不同的绑定集，也会改种子**，那同样要升版本。
+
+已经发生过的三次，`AdmissionPolicyVersionGuardTests.Map26StationChanges` 逐行记着：
+
+| 版本 | 时间 | 变化 |
+| --- | --- | --- |
+| 4 | 2026-10-11 | `T04-01…08`、`T05-01…08` 改名 `T4-1…8`、`T5-1…8`，新建临时停车站 222（control-server#566 现场手设） |
+| 5 | 2026-10-11 | factory01 v2 库 10:50:50Z 绑定（批次 10 调度读库所得），又一次站名变化 |
+| 6 | 2026-10-12 | 26 号图重传并于 21:12 定稿：203 站，机台站 78 个，`T08-11` 改 `T8-11` 等；绑定六站 210、217～221 不变 |
+
+护栏的分工：可执行集合表（1、2、3）约束包的 `appsettings.json` 与全部定义；`Map26StationChanges` 只约束定义（全部必须在 26 号图上，
+否则测试要求先决定那张图的历史记在哪），定义彼此一致、不低于它的最后一行。**下次站名再变就是 7**：在 `Map26StationChanges` 末尾加一行，
+七份定义一起升，护栏会把漏掉的那份标红。
+
+**19 的版本下限看不见手设的值。**19（`8005-workspace` 仓）比对的是服务器上 `<opsRoot>\installed-instance.json` 里记下的定义版本，
+不读 `appsettings.Production.json`。在 `appsettings.Production.json` 里手升版本之后，`installed-instance.json` 仍是上次装的值，
+用更低版本的定义重装照样能过 19，装完开运行时就判版本倒退、停接单。本票之后仓库定义已是 6，按仓库定义重装不再倒退；但**任何一次
+手升都要紧跟一张升定义的票**，在它合入前重装须给 19 带 `-AdmissionPolicyVersionOverride`。`Test-ParallelInstance.ps1` 钉着
+「每份定义经配置步骤写到磁盘上的 `JourneyRuntime.admissionPolicyVersion` 是 6」，无论原文件是首装、手设的 6 还是旧的 3。
 
 ### 装错了是什么样、怎么判
 

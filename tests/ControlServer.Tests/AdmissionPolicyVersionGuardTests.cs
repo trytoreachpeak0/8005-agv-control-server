@@ -18,6 +18,13 @@ namespace ControlServer.Tests;
 /// version stops taking demands the moment it starts.
 /// </para>
 /// <para>
+/// The executable set is not the only input: the seed is re-read from the live map's area-named stations every round,
+/// so renaming one on the map is drift too, under every version already bound. Those bumps belong to one instance's
+/// database, not to the package, so they bind the instance definitions only (<c>Map26StationChanges</c>,
+/// control-server#614): the definitions agree with each other and sit at or above its last row, and the package's
+/// <c>appsettings.json</c> stays at the executable-set version.
+/// </para>
+/// <para>
 /// The table is history, written out task type by task type; nothing in it or in <see cref="ExecutableTaskTypes"/> is
 /// derived from <see cref="TransportTaskTypes.All"/>, so neither can follow a change to the other without someone
 /// writing it down (control-server#545 review M1).
@@ -36,6 +43,26 @@ public sealed class AdmissionPolicyVersionGuardTests
         (["WIRE_TO_GATE", "STAGING_TO_WIRE"], 2),
         // control-server#545 (batch 10): the four same-direction task types.
         (["WIRE_TO_GATE", "STAGING_TO_WIRE", "DIE_TO_WIRE_STAGING", "DIE_TO_OVEN", "WIRE_TO_OPTICAL", "WIRE_TO_NITROGEN"], 3),
+        // Versions 4, 5 and 6 are not here: the executable set did not change. They are map 26 station-name changes
+        // under the factory01 v2 instance, in Map26StationChanges below (control-server#614).
+    ];
+
+    /// <summary>
+    /// Every version the factory01 v2 instance's database (map 26) has bound because the live map's area-named machine
+    /// stations changed under it, not because the executable set did: the seed is those stations times the executable
+    /// task types, so a renamed station is drift too. Oldest first; a further change is a new last row, never an edit.
+    /// </summary>
+    /// <remarks>
+    /// These bind the instance definitions under <c>scripts/parallel/</c> only, all of which install that one instance
+    /// on map 26. The package's <c>appsettings.json</c> is not bound to map 26 (it names map 25's deployment identity)
+    /// and stays at the executable-set version. A definition below the last row reinstalls the instance under a version
+    /// its database has already passed: <c>Admission policy version cannot move backwards.</c>, no demand taken on.
+    /// </remarks>
+    private static readonly (long Version, string Change)[] Map26StationChanges =
+    [
+        (4, "2026-10-11: T04-01..08 and T05-01..08 renamed T4-1..8 and T5-1..8, station 222 added (control-server#566, #614)"),
+        (5, "2026-10-11: bound on factory01 at 10:50:50Z, read back by the batch 10 coordinator; a further station-name change (control-server#614)"),
+        (6, "2026-10-12: map 26 re-uploaded and finalised at 21:12, 78 machine stations, renames such as T08-11 to T8-11 (control-server#614)"),
     ];
 
     /// <summary>
@@ -103,22 +130,63 @@ public sealed class AdmissionPolicyVersionGuardTests
 
     [Fact]
     [Trait("IntegrationSlice", "FP-IS-10")]
-    public void TheShippedAdmissionPolicyVersionsAgree()
+    public void TheMap26StationChangesMoveStrictlyUpwardFromTheExecutableSetVersion()
     {
-        (string File, long Version)[] shipped = ShippedVersions();
+        long[] versions = [VersionByExecutableSet[^1].Version, .. Map26StationChanges.Select(row => row.Version)];
 
         Assert.True(
-            shipped.Select(item => item.Version).Distinct().Count() == 1,
-            "The shipped admissionPolicyVersion differs between files: " +
-            string.Join(", ", shipped.Select(item => $"{item.File} = {item.Version}")) +
-            ". They describe the same seed, so they move together.");
+            versions.Zip(versions.Skip(1)).All(pair => pair.Second > pair.First),
+            $"The executable-set version followed by the map 26 station changes is {string.Join(", ", versions)}; each " +
+            "change binds a version above the one before.");
+    }
+
+    [Fact]
+    [Trait("IntegrationSlice", "FP-IS-10")]
+    public void NoInstanceDefinitionIsBelowTheLastMap26StationChange()
+    {
+        long required = Math.Max(VersionByExecutableSet[^1].Version, Map26StationChanges[^1].Version);
+
+        Assert.All(
+            ShippedVersions().Where(shipped => shipped.MapId == 26),
+            shipped => Assert.True(
+                shipped.Version >= required,
+                $"{shipped.File} installs the factory01 v2 instance on map 26 under admissionPolicyVersion {shipped.Version}, " +
+                $"but that instance's database has bound {required} ({Map26StationChanges[^1].Change}): reinstalled with it, " +
+                "the version moves backwards and the server takes on no demand."));
+    }
+
+    [Fact]
+    [Trait("IntegrationSlice", "FP-IS-10")]
+    public void EveryInstanceDefinitionIsOnMap26()
+    {
+        // Map26StationChanges binds map 26 only. A definition for another map is a decision about where that map's
+        // history is written down, not something this guard may skip quietly.
+        Assert.All(
+            ShippedVersions().Where(shipped => shipped.File.StartsWith("scripts/", StringComparison.Ordinal)),
+            shipped => Assert.True(
+                shipped.MapId == 26,
+                $"{shipped.File} is for map {shipped.MapId}; Map26StationChanges covers map 26 only."));
+    }
+
+    [Fact]
+    [Trait("IntegrationSlice", "FP-IS-10")]
+    public void TheInstanceDefinitionsAgree()
+    {
+        (string File, long Version, long MapId)[] definitions =
+            [.. ShippedVersions().Where(shipped => shipped.File.StartsWith("scripts/", StringComparison.Ordinal))];
+
+        Assert.True(
+            definitions.Select(item => item.Version).Distinct().Count() == 1,
+            "The instance definitions' admissionPolicyVersion differs: " +
+            string.Join(", ", definitions.Select(item => $"{item.File} = {item.Version}")) +
+            ". They install the same instance against the same database, so they move together.");
     }
 
     /// <summary>
     /// The package's settings and every v2 instance definition. At least the two factory01 definitions must be found,
     /// so a renamed directory or pattern cannot leave the guard checking nothing.
     /// </summary>
-    private static (string File, long Version)[] ShippedVersions()
+    private static (string File, long Version, long MapId)[] ShippedVersions()
     {
         string root = FindRepositoryRoot();
         string[] definitions =
@@ -133,15 +201,16 @@ public sealed class AdmissionPolicyVersionGuardTests
             "instance-factory01-v2.json and instance-factory01-v2.production-mes.json.");
         return
         [
-            ("src/ControlServer.Host/appsettings.json", ReadVersion(root, "src/ControlServer.Host/appsettings.json", "JourneyRuntime")),
-            .. definitions.Select(file => (file, ReadVersion(root, file, "journeyRuntime"))),
+            Read(root, "src/ControlServer.Host/appsettings.json", "JourneyRuntime"),
+            .. definitions.Select(file => Read(root, file, "journeyRuntime")),
         ];
     }
 
-    private static long ReadVersion(string root, string file, string section)
+    private static (string File, long Version, long MapId) Read(string root, string file, string section)
     {
         using JsonDocument document = JsonDocument.Parse(File.ReadAllText(Path.Combine(root, file)));
-        return document.RootElement.GetProperty(section).GetProperty("admissionPolicyVersion").GetInt64();
+        JsonElement journeyRuntime = document.RootElement.GetProperty(section);
+        return (file, journeyRuntime.GetProperty("admissionPolicyVersion").GetInt64(), journeyRuntime.GetProperty("mapId").GetInt64());
     }
 
     private static string Describe(IEnumerable<string> taskTypes) =>
