@@ -5491,6 +5491,27 @@ public sealed partial class JourneyRuntimeEngine(
             return true;
         }
 
+        // 同站追加的新需求排成了当前停靠之后的新停靠（REQ-0196：当前停靠不可改），车物理上不动，新需求要等车「离站再到站」
+        // 才进清单（control-server#646）。不提前结束，操作员就得空等原停靠的倒计时走完（生产最长约 5 分钟）才能录它；
+        // 用户 2026-10-12 定：当前取货停靠已装完、紧接着的下一个停靠是同一站的取货停靠时，不等原倒计时，这一轮就走原地的
+        // 离站核验与「到站」，新停靠到站时从完整时长重新计时。
+        //
+        // 只有这一个条件。纠错闸在上面照判；仓门扣车与持货等单在调用方照判；离站核验与原地到站流程不变。不碰起点：离站时
+        // 调用方把它清空，到站时新停靠种下自己的。下一个停靠是同站卸货（先装后卸）不在此列，那是 control-server#647 的。
+        if (stops.Current.StopRole == JourneyStopRoles.Pickup &&
+            stops.OutstandingAtCurrentStop.Count == 0 &&
+            stops.OpenStops.FirstOrDefault(stop => stop.Sequence > stops.Current.Sequence) is
+                { StopRole: JourneyStopRoles.Pickup } next &&
+            string.Equals(next.StationId, stops.Current.StationId, StringComparison.Ordinal))
+        {
+            if (runtime.BlockReasonCode is not null)
+            {
+                runtime.SetBlockReason(null, now);
+                runtime.UpdatedAt = now;
+            }
+            return true;
+        }
+
         DateTimeOffset startedAt = runtime.StationDepartureWaitStartedAt ?? now;
         foreach (RecoveryWorkflowRow closed in corrections.Where(row => row.State == RecoveryWorkflowState.Reconciled))
         {

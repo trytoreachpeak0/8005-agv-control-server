@@ -1,0 +1,7 @@
+R0 : exit=1 red=[ASameStationAppendSendsTheVehicleOnAtOnceAndTheNewStopGetsTheFullWait]
+M1 : exit=1 red=[AnAppendAtAnotherStationStillWaitsOutTheStationDeadline, ASameStationUnloadNextDoesNotEndThePickupWait]
+M2 : exit=1 red=[ASameStationAppendDoesNotEndTheWaitWhileTheCurrentStopHasALoadOutstanding]
+M3 : exit=1 red=[ASameStationAppendDoesNotEndTheWaitWhileACorrectionIsOpen]
+M4 : exit=1 red=[ASameStationUnloadNextDoesNotEndThePickupWait]
+M5 : exit=0 red=[]
+M6 : exit=1 red=[ASameStationAppendDoesNotSendAVehicleHeldForItsSlotDoorOn]
