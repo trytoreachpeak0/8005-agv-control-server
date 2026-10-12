@@ -58,6 +58,10 @@ control-server#262。约 2026-10-08 起 `factory01` 上同时跑两套 ControlSe
 结果行（`19-deploy-control-server-parallel.ps1` 整行比对那一行），单独打一行日志。两份出厂定义都不写它。打开它是一次会让车动的运行，
 每次都要用户授权、现场有人。
 
+回滚时同样适用：`-Rollback` 到 control-server#638 之前的包，而当前定义打开了这个开关，第一次回读就报
+`EFFECTIVE_CONFIGURATION_CLEARANCE_UNREAD` 并停掉 v2 服务——旧包不记这个字段，没法确认它到底开没开。这是往安全方向的失败：
+把定义里的开关去掉（或改成 `false`）后再回滚一次即可。
+
 已知限制：一层写空数组 `"fleet": []` 读作「没写」，清不掉更早一层的车队表。今天包内 `appsettings.json` 没有车队表，回读也会拒绝定义里
 没写、却绑出来的车队表；包内一旦加车队表，必须先改这条语义（`PackageAppSettingsRosterArchitectureTests` 会在那天变红）。
 

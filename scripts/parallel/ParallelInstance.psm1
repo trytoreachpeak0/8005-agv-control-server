@@ -889,7 +889,10 @@ function Test-ParallelInstanceDefinition {
 
         # control-server#638. REQ-0178's clearance move (JourneyRuntimeOptions.ClearanceToWaitingPointEnabled): on, a vehicle
         # in the clearing loop drives itself to a waiting point. Optional -- absent is off, and the overlay writes false --
-        # but when written it is a JSON boolean: .NET would bind the string "true" as on, and this check would not see it.
+        # but when written it is a JSON boolean. This check is what makes a non-boolean loud: the overlay
+        # (Get-ParallelClearanceToWaitingPoint) writes anything that is not a boolean as false, and the read-back expects
+        # that same false, so without this check a definition saying "true" would install off and read back green --
+        # written on, not in effect, and nobody told (PR #640 review L3).
         if ((Test-KeyPresent -Node $journey -Key 'clearanceToWaitingPointEnabled') -and $journey['clearanceToWaitingPointEnabled'] -isnot [bool]) {
             $failures += "journeyRuntime.clearanceToWaitingPointEnabled must be a JSON boolean, got '$($journey['clearanceToWaitingPointEnabled'])'."
         }
