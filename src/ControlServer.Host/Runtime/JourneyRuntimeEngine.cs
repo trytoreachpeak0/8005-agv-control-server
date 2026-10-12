@@ -131,6 +131,14 @@ public sealed partial class JourneyRuntimeEngine(
             new EventId(2108, nameof(LogStationDeadlineEndedStop)),
             "Nobody entered a sublot at vehicle {AgvId}'s pickup before the station departure deadline " +
             "{Deadline}; demand {DemandId} ended as CANCELLED_BY_STATION_TIMEOUT and the vehicle was released.");
+    private static readonly Action<ILogger, string, string, DateTimeOffset?, DateTimeOffset?, long, Exception?>
+        LogLoadedStopDeadlineRefreshed =
+            LoggerMessage.Define<string, string, DateTimeOffset?, DateTimeOffset?, long>(
+                LogLevel.Information,
+                new EventId(2139, nameof(LogLoadedStopDeadlineRefreshed)),
+                "Vehicle {AgvId} has loaded everything at pickup {StationId} and still waits there; its worklist carried " +
+                "the station departure deadline {SentDeadline}, the server now judges by {Deadline}, so worklist revision " +
+                "{Revision} was sent with no items and the server's deadline.");
     private static readonly Action<ILogger, string, string, string, Exception?> LogLoadYieldedToEndedDemand =
         LoggerMessage.Define<string, string, string>(
             LogLevel.Information,
@@ -1521,7 +1529,12 @@ public sealed partial class JourneyRuntimeEngine(
                 await ReconcileLoadingPhaseAsync(
                     runtime, stops, session, holdingApplicable, departingFrom: null, now, cancellationToken)
                     .ConfigureAwait(false);
-                if (!await StationDepartureWaitIsOverAsync(runtime, stops, now, cancellationToken).ConfigureAwait(false))
+                bool stationWaitOver =
+                    await StationDepartureWaitIsOverAsync(runtime, stops, now, cancellationToken).ConfigureAwait(false);
+                // 期限此刻定了，再对一次车上的那一个（control-server#633）：最后一批落定重置了起点、纠错闭环把起点往后挪，
+                // 两处都不经过任何发清单的路。放在判定之后，是因为纠错那一挪就在上面这次判定里。
+                await RefreshDeadlineOfALoadedStopAsync(runtime, stops, session, cancellationToken).ConfigureAwait(false);
+                if (!stationWaitOver)
                 {
                     await dbContext.SaveChangesAsync(cancellationToken).ConfigureAwait(false);
                     return;
@@ -2974,6 +2987,115 @@ public sealed partial class JourneyRuntimeEngine(
         tracked.WorklistRefills += 1;
         return await JourneyStopCursor.LoadIncludingUnsavedChangesAsync(dbContext, runtime, cancellationToken)
             .ConfigureAwait(false);
+    }
+
+    /// <summary>
+    /// 取货停靠的需求都装完了、车还停在这里等离站时，车上那一版清单带的期限不是服务端此刻判定用的那一个：升一版，发一张空清单把期限
+    /// 送到车上（control-server#633）。发了返回真。
+    /// </summary>
+    /// <remarks>
+    /// <para>
+    /// <b>为什么会不一致。</b>最后一批落定时离站等待的起点重置为此刻（ADR-cross-0054 的纠正时间），纠错闭环时起点挪到闭环那一刻
+    /// （<see cref="StationDepartureWaitIsOverAsync"/>）。两处都在本站已无待做项之后，<see cref="PublishStopWorklistAsync"/> 在那时什么也不发，
+    /// 车上留着的是装最后一条之前那一版，期限是旧的。车载端永远照最新一版清单上的期限显示（<see cref="AdvanceWorklistPastAStaleDeadlineAsync"/>
+    /// 的同一个理由），于是装得慢的一站车上已显示「已到期」，服务端的纠正时间却还开着。
+    /// </para>
+    /// <para>
+    /// <b>为什么是空清单、为什么是 COMPLETED。</b>清单载的是本站还没做完的需求，此刻一条都没有；v3 schema 规定没有项时
+    /// <c>stopEndedReason</c> 必填，本站的待做项是装完的，取 <c>COMPLETED</c>。作业会话照写本站那一个、期限照写服务端那一个：
+    /// 本站作业会话仍按离站期限结束（REQ-0355），结束本站不等于车辆离开。号数与 <see cref="StopEndWorklist"/> 同一个做法——用本停靠
+    /// 此刻的「下一号」并让本停靠多占一版，后面停靠的首号跟着顺延。
+    /// </para>
+    /// <para>
+    /// <b>判据与 <see cref="AdvanceWorklistPastAStaleDeadlineAsync"/> 同一个：排给车的那一版与服务端此刻的期限是否一致。</b>期限开关关着时
+    /// 两边都是空，永远一致，一版也不多发。车上那一版的作业会话为空——本站被期限、取消或补偿结束（<see cref="StopEndWorklist"/>）——时不发：
+    /// 那张空清单说的是本站为什么结束，不能拿 COMPLETED 盖掉它。卸货停靠没有离站期限，不在此列。
+    /// </para>
+    /// </remarks>
+    private async Task<bool> RefreshDeadlineOfALoadedStopAsync(
+        JourneyRuntimeRow runtime,
+        JourneyStopCursor stops,
+        SessionRecoveryRow session,
+        CancellationToken cancellationToken)
+    {
+        if (stops.OpenStops.Count == 0)
+        {
+            return false;
+        }
+        JourneyStopRow stop = stops.Current;
+        if (stop.StopRole != JourneyStopRoles.Pickup || stops.OutstandingAtCurrentStop.Count > 0)
+        {
+            return false;
+        }
+
+        long first = stops.FirstWorklistRevisionAt(runtime.WorklistRevision, stop);
+        long formula = stops.WorklistRevisionAt(runtime.WorklistRevision, stop);
+        if (formula <= first)
+        {
+            return false;
+        }
+        // 车上的是本停靠此刻「下一号」的前一号：装完最后一条之前那一版、或本方法上一次发的那张空清单。
+        string onVehicle = stops.WorklistMessageIdAt(runtime.WorklistRevision, stop, formula - 1);
+        string? queued = await dbContext.ProtocolOutbox.AsNoTracking()
+            .Where(row => row.MessageId == onVehicle)
+            .Select(row => row.PayloadJson)
+            .SingleOrDefaultAsync(cancellationToken).ConfigureAwait(false);
+        if (queued is null)
+        {
+            return false;
+        }
+
+        string? sentSession = null;
+        DateTimeOffset? sent = null;
+        using (JsonDocument document = JsonDocument.Parse(queued))
+        {
+            if (document.RootElement.TryGetProperty("payload", out JsonElement payload))
+            {
+                if (payload.TryGetProperty("operationSessionId", out JsonElement session0) &&
+                    session0.ValueKind == JsonValueKind.String)
+                {
+                    sentSession = session0.GetString();
+                }
+                if (payload.TryGetProperty("stationDepartureDeadlineAt", out JsonElement deadline0) &&
+                    deadline0.ValueKind != JsonValueKind.Null)
+                {
+                    sent = deadline0.GetDateTimeOffset();
+                }
+            }
+        }
+        DateTimeOffset? deadline = StationDepartureDeadline(runtime, runtimeOptions.StationDepartureWaitTimeout);
+        if (sentSession is null || sent == deadline)
+        {
+            return false;
+        }
+
+        // 与 StopEndWorklist 同一道保险：算式万一算低了，也不发一个车上已有的号。
+        long revision = Math.Max(
+            formula,
+            (await JourneyClosure.HighestSentRevisionAsync(
+                    dbContext, runtime.AgvId, "CurrentStopWorklistSnapshot", cancellationToken)
+                .ConfigureAwait(false) ?? 0) + 1);
+        // 本停靠此前发给车的每一版都退役，补发不能把车上的期限拨回去。只打标记，随下面入队那一次保存落库。
+        for (long earlier = first; earlier < formula; earlier++)
+        {
+            await FenceSupersededSnapshotAsync(
+                    stops.WorklistMessageIdAt(runtime.WorklistRevision, stop, earlier), cancellationToken)
+                .ConfigureAwait(false);
+        }
+        JourneyStopRow tracked = await dbContext.Set<JourneyStopRow>()
+            .SingleAsync(row => row.StopId == stop.StopId, cancellationToken).ConfigureAwait(false);
+        tracked.WorklistRefills += revision - formula + 1;
+        runtime.UpdatedAt = timeProvider.GetUtcNow();
+
+        await publisher.PublishCurrentStopWorklistAsync(
+            stops.WorklistMessageIdAt(runtime.WorklistRevision, stop, revision),
+            runtime.AgvId,
+            session.SessionGeneration,
+            new CurrentStopWorklistProjection(
+                stop.StationId, revision, stop.OperationSessionId, deadline, [], StopEndedReasons.ForEnding(null)),
+            cancellationToken).ConfigureAwait(false);
+        LogLoadedStopDeadlineRefreshed(logger, runtime.AgvId, stop.StationId, sent, deadline, revision, null);
+        return true;
     }
 
     /// <summary>
