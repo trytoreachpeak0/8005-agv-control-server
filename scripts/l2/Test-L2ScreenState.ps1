@@ -15,9 +15,14 @@
       - a pause holds the run until its release file or its window, writes a marker and a record, and never throws;
       - a wait whose accepting value is a pause point returns that value even when the pause outlasts the wait's own
         timeout -- the pause does not turn a green criterion red;
-      - the plan's scenarios are real-onboard scenarios and every point's criterion or dialog title is a literal in
-        that scenario or the helpers it uses, so a renamed criterion does not leave a point that is never reached;
-      - the watcher releases a pause after its rounds and stops when the run writes assertions.json.
+      - the plan's scenarios are real-onboard scenarios and every point is, by the scenario's syntax tree, a value
+        one of its waits accepts -- the criterion, the value, and for a dialog the title argument rather than a button
+        caption that happens to match -- so a renamed criterion or a changed value does not leave a point that is
+        never reached; the check is shown to go red on such points;
+      - the orchestrator's calls, its one OnCheckpoint write and its ledger fields all sit under the plan guard;
+      - IO-offline lines in the onboard's log are counted per pause;
+      - the watcher releases a pause after its rounds, marks a pause too short for every round incomplete, and stops
+        when the run writes assertions.json.
 
     No real-rig round reaches any of this with the switch off, and with it on a point that never fires looks like a
     run that simply had no pause. That is why it is checked here.
@@ -212,8 +217,63 @@ $cases += @{
     }
 }
 
+# The positional or named argument of a command, as a string constant; $null when it is anything else.
+function Get-ArgumentConstant([System.Management.Automation.Language.CommandAst]$Command, [int]$Position, [string]$Name) {
+    $elements = $Command.CommandElements
+    if ($Name) {
+        for ($i = 1; $i -lt $elements.Count - 1; $i++) {
+            if ($elements[$i] -is [System.Management.Automation.Language.CommandParameterAst] -and $elements[$i].ParameterName -eq $Name) {
+                $next = $elements[$i + 1]
+                return ($next -is [System.Management.Automation.Language.StringConstantExpressionAst]) ? $next.Value : $null
+            }
+        }
+        return $null
+    }
+    if ($Position -lt $elements.Count -and $elements[$Position] -is [System.Management.Automation.Language.StringConstantExpressionAst]) {
+        return $elements[$Position].Value
+    }
+    return $null
+}
+function Get-Commands([System.Management.Automation.Language.Ast]$Ast, [string[]]$Names) {
+    return @($Ast.FindAll({ param($a) $a -is [System.Management.Automation.Language.CommandAst] -and $a.GetCommandName() -in $Names }, $true))
+}
+
+<#
+Where each kind of point can come from, read off the scenario's syntax tree (cs#653 review S3):
+  '@dialog=T'   a confirmed-button call whose dialog title (4th argument) is T, or a dialog-button call whose title
+                (3rd) is T -- not merely T appearing somewhere, since a button and its dialog often share a caption;
+  'c=True'      a Wait-*ButtonOffered call observing criterion c (4th argument): those observe True when offered;
+  'c=v'         a Wait-L2Condition / Wait-L2RealOrLast with -Criterion c whose -Until holds the literal v.
+#>
+function Get-PointProblems([string]$Scenario, [string]$Point, [System.Management.Automation.Language.Ast]$Ast) {
+    $criterion, $value = ($Point -split '=', 2)
+    if ($criterion -eq '@dialog') {
+        $confirmed = @(Get-Commands $Ast @('Invoke-L2RealConfirmedButton', 'Invoke-G3ConfirmedButton') | Where-Object { (Get-ArgumentConstant $_ 4) -ceq $value })
+        $direct = @(Get-Commands $Ast @('Invoke-L2RealDialogButton', 'Invoke-G3DialogButton') | Where-Object { (Get-ArgumentConstant $_ 3) -ceq $value })
+        if ($confirmed.Count + $direct.Count -eq 0) { return "$Scenario answers no dialog titled '$value'" }
+        return $null
+    }
+    if ($value -ieq 'True' -and $value -cne 'True') { return "$Scenario point '$Point': the journal renders a boolean as 'True', so '$value' is never reached" }
+    if ($value -ceq 'True') {
+        $offered = @(Get-Commands $Ast @('Wait-L2RealButtonOffered', 'Wait-G3ButtonOffered') | Where-Object { (Get-ArgumentConstant $_ 4) -ceq $criterion })
+        if ($offered.Count -eq 0) { return "$Scenario has no button-offered wait observing '$criterion' (the only kind whose accepting value is True)" }
+        return $null
+    }
+    $waits = @(Get-Commands $Ast @('Wait-L2Condition', 'Wait-L2RealOrLast') | Where-Object { (Get-ArgumentConstant $_ 0 'Criterion') -ceq $criterion })
+    if ($waits.Count -eq 0) { return "$Scenario has no wait on criterion '$criterion'" }
+    $accepting = @($waits | Where-Object {
+        $elements = $_.CommandElements
+        $until = for ($i = 1; $i -lt $elements.Count - 1; $i++) {
+            if ($elements[$i] -is [System.Management.Automation.Language.CommandParameterAst] -and $elements[$i].ParameterName -eq 'Until') { $elements[$i + 1] }
+        }
+        $null -ne $until -and @($until.FindAll({ param($a) $a -is [System.Management.Automation.Language.StringConstantExpressionAst] -and $a.Value -ceq $value }, $true)).Count -gt 0
+    })
+    if ($accepting.Count -eq 0) { return "$Scenario's wait on '$criterion' does not accept the literal '$value'" }
+    return $null
+}
+
 $cases += @{
-    Name  = "the plan's scenarios are real-onboard ones and every point is a literal where the scenario can reach it"
+    Name  = "the plan's scenarios are real-onboard ones and every point is a value a wait in that scenario accepts"
     Check = {
         $plan = Import-PowerShellDataFile -LiteralPath $planPath
         $scenarioRoot = Join-Path $PSScriptRoot 'scenarios'
@@ -224,62 +284,153 @@ $cases += @{
                 "$(Split-Path -Leaf $helper) lost its dialog checkpoint"
             }
         })
+        $checked = 0
         $problems += @(foreach ($scenario in $plan.Scenarios.Keys) {
             $setupPath = Join-Path $scenarioRoot "$scenario.setup.psd1"
             if (-not (Test-Path -LiteralPath $setupPath)) { "$scenario has no setup file"; continue }
             if ((Import-PowerShellDataFile -LiteralPath $setupPath).Onboard -ne 'Real') { "$scenario is not a real-onboard scenario" }
-            $body = Get-Content -Raw -LiteralPath (Join-Path $scenarioRoot "$scenario.ps1")
+            $ast = [System.Management.Automation.Language.Parser]::ParseFile((Join-Path $scenarioRoot "$scenario.ps1"), [ref]$null, [ref]$null)
             foreach ($point in @($plan.Scenarios[$scenario].PauseAt)) {
-                $criterion, $value = ([string]$point -split '=', 2)
-                if ($criterion -eq '@dialog') {
-                    if (-not $body.Contains("'$value'")) { "$scenario never names the dialog '$value'" }
-                } elseif (-not $body.Contains("'$criterion'")) {
-                    "$scenario has no criterion '$criterion'"
-                }
+                $checked++
+                Get-PointProblems $scenario ([string]$point) $ast
             }
         })
-        @{ Ok = ($problems.Count -eq 0); Actual = $(if ($problems.Count -eq 0) { "$($plan.Scenarios.Count) scenarios and 2 dialog helpers checked" } else { $problems -join '; ' }) }
+        $problems = @($problems | Where-Object { $_ })
+        @{ Ok = ($problems.Count -eq 0 -and $checked -eq 7)
+           Actual = $(if ($problems.Count -eq 0) { "$checked points in $($plan.Scenarios.Count) scenarios and 2 dialog helpers checked" } else { $problems -join '; ' }) }
     }
 }
 
 $cases += @{
-    Name  = 'the orchestrator only reaches the snapshot through the plan, and the dialog helpers only through the checkpoint'
+    Name  = 'the point check itself goes red on a wrong value, a bare button caption and a non-accepting value'
     Check = {
-        $orchestrator = Get-Content -Raw -LiteralPath (Join-Path $PSScriptRoot 'Invoke-L2Scenario.ps1')
-        $calls = [regex]::Matches($orchestrator, '(?m)^(?!\s*#).*\b(Set-L2ScreenStateOnboardSetting|New-L2ScreenStateCheckpoint|Complete-L2ScreenState)\b.*$') |
-            ForEach-Object { $_.Value.Trim() }
-        $guarded = @($calls | Where-Object { $_ -match 'Set-L2ScreenStateOnboardSetting -Settings \$settings -Plan \$screenStatePlan' -or
-                $_ -match '^\$screenStateCheckpoint = New-L2ScreenStateCheckpoint' -or $_ -match '^if \(\$screenStatePlan\) \{ \$identity' })
-        $checkpointBlock = [regex]::Match($orchestrator, '(?s)if \(\$screenStatePlan\) \{\s*\$screenStatePlan\.SnapshotDirectory.*?\$journal\.OnCheckpoint = ').Success
-        @{ Ok = (@($calls).Count -eq 3 -and $guarded.Count -eq 3 -and $checkpointBlock)
-           Actual = "$(@($calls).Count) call(s), $($guarded.Count) as expected, checkpoint inside the plan guard: $checkpointBlock" }
+        $source = @(
+            "`$null = Wait-L2RealButtonOffered `$onboard `$journal '补偿清空' 'entry' 90"
+            "`$null = Invoke-L2RealConfirmedButton `$onboard `$journal '补偿清空' '确认补偿'"
+            "`$x = Wait-L2Condition -Description 'd' -Journal `$journal -Criterion 'stage' -Probe { 1 } -Until { param(`$v) `$v -eq 'Blocked' }"
+        ) -join "`n"
+        $ast = [System.Management.Automation.Language.Parser]::ParseInput($source, [ref]$null, [ref]$null)
+        $good = @('entry=True', '@dialog=确认补偿', 'stage=Blocked' | ForEach-Object { Get-PointProblems 's' $_ $ast } | Where-Object { $_ })
+        $bad = @('entry=true', '@dialog=补偿清空', 'stage=Moving', 'other=True' | ForEach-Object { Get-PointProblems 's' $_ $ast } | Where-Object { $_ })
+        @{ Ok = ($good.Count -eq 0 -and $bad.Count -eq 4); Actual = "good flagged $($good.Count) ($($good -join '; ')), bad flagged $($bad.Count) of 4" }
+    }
+}
+
+# Inside `if ($screenStatePlan) { ... }`, at any depth.
+function Test-InsidePlanGuard([System.Management.Automation.Language.Ast]$Ast) {
+    for ($node = $Ast.Parent; $null -ne $node; $node = $node.Parent) {
+        if ($node -is [System.Management.Automation.Language.IfStatementAst]) {
+            foreach ($clause in $node.Clauses) {
+                if ($clause.Item1.Extent.Text -eq '$screenStatePlan' -and
+                    $Ast.Extent.StartOffset -ge $clause.Item2.Extent.StartOffset -and $Ast.Extent.EndOffset -le $clause.Item2.Extent.EndOffset) { return $true }
+            }
+        }
+    }
+    return $false
+}
+
+$cases += @{
+    Name  = 'the orchestrator only reaches the snapshot through the plan, and only the switch makes a plan'
+    Check = {
+        $ast = [System.Management.Automation.Language.Parser]::ParseFile((Join-Path $PSScriptRoot 'Invoke-L2Scenario.ps1'), [ref]$null, [ref]$null)
+        $problems = [System.Collections.Generic.List[string]]::new()
+        $resolve = @(Get-Commands $ast @('Resolve-L2ScreenStatePlan'))
+        if ($resolve.Count -ne 1 -or $resolve[0].Extent.Text -notmatch '-Enabled \$ScreenState\.IsPresent\b') { $problems.Add('the plan is not resolved from -ScreenState alone') }
+        # The setting call carries the plan and returns at once when it is $null; the other two run only under the guard.
+        $setting = @(Get-Commands $ast @('Set-L2ScreenStateOnboardSetting'))
+        if ($setting.Count -ne 1 -or $setting[0].Extent.Text -notmatch '-Plan \$screenStatePlan$') { $problems.Add('the onboard setting is not handed the plan') }
+        $guardedCalls = @(Get-Commands $ast @('New-L2ScreenStateCheckpoint', 'Complete-L2ScreenState'))
+        foreach ($call in $guardedCalls) {
+            if (-not (Test-InsidePlanGuard $call)) { $problems.Add("$($call.GetCommandName()) outside the plan guard") }
+        }
+        if ($guardedCalls.Count -ne 2) { $problems.Add('expected one checkpoint and one completion call') }
+        # Every write of OnCheckpoint, and of the ledger's screen-state fields, under the guard (review L1, S5).
+        $writes = @($ast.FindAll({ param($a) $a -is [System.Management.Automation.Language.AssignmentStatementAst] -and
+                    $a.Left.Extent.Text -match "OnCheckpoint|\['screenState'\]|\['pauseSecondsTotal'\]" }, $true))
+        foreach ($write in $writes) { if (-not (Test-InsidePlanGuard $write)) { $problems.Add("'$($write.Left.Extent.Text)' written outside the plan guard") } }
+        if (@($writes | Where-Object { $_.Left.Extent.Text -match 'OnCheckpoint' }).Count -ne 1) { $problems.Add('OnCheckpoint is not written exactly once') }
+        if (@($writes | Where-Object { $_.Left.Extent.Text -match 'ledgerFields' }).Count -ne 3) { $problems.Add('the ledger does not get screenState on start and end and the pause total on end') }
+        @{ Ok = ($problems.Count -eq 0); Actual = $(if ($problems.Count -eq 0) { "$($writes.Count) guarded writes, calls as expected" } else { $problems -join '; ' }) }
+    }
+}
+
+$cases += @{
+    Name  = 'semicolons separate points given on the command line'
+    Check = {
+        $plan = New-Plan -PauseAt @('a=1;@dialog=补偿清空', 'b=x')
+        @{ Ok = (($plan.Points.Point -join '|') -ceq 'a=1|@dialog=补偿清空|b=x'); Actual = $plan.Points.Point -join ' | ' }
+    }
+}
+
+$cases += @{
+    Name  = "IO-offline lines in the onboard's log are counted per pause and for the run"
+    Check = {
+        $plan = New-Plan -PauseAt @('stage=Blocked') -PauseSeconds 30
+        $checkpoint = New-L2ScreenStateCheckpoint -Plan $plan -Journal (New-L2Journal -Path (Join-Path $scratch 'io.jsonl'))
+        $from = [DateTimeOffset]::Parse('2026-10-12T19:36:00+08:00')
+        $checkpoint.State.Pauses.Add([ordered]@{ sequence = 1; point = 'stage=Blocked'; reachedAt = $from.ToString('o')
+                endedAt = $from.AddSeconds(60).ToString('o'); seconds = 60.0; ending = 'released' })
+        $logs = Join-Path $scratch 'onboard-app'; $null = New-Item -ItemType Directory -Path $logs -Force
+        $line = { param($At, $Text) "$($At.ToString('o'))`tWarning`tOnboardController`t$Text" }
+        Set-Content -LiteralPath (Join-Path $logs 'agv-20261012.log') -Encoding utf8NoBOM -Value @(
+            (& $line $from.AddSeconds(-30) 'IO模块离线。'),
+            (& $line $from.AddSeconds(5) 'IO模块离线。'),
+            (& $line $from.AddSeconds(6) 'IO模块在线。'),
+            (& $line $from.AddSeconds(40).ToUniversalTime() 'IO模块离线。'),
+            (& $line $from.AddSeconds(90) 'IO模块离线。'))
+        $identity = Complete-L2ScreenState -Plan $plan -Checkpoint $checkpoint -OnboardLogDirectory $logs
+        $recorded = Get-Content -LiteralPath (Join-Path $plan.PauseDirectory 'pauses.json') -Raw | ConvertFrom-Json
+        @{ Ok = ($identity.ioOffline -eq '2 in pauses, 4 in the run' -and $recorded.pauses[0].ioOfflineLines -eq 2 -and
+                 $identity.pauseSecondsTotal -eq 60 -and -not $identity.Contains('completionError'))
+           Actual = "ioOffline=$($identity.ioOffline) pause=$($recorded.pauses[0].ioOfflineLines) total=$($identity.pauseSecondsTotal) $($identity['completionError'])" }
+    }
+}
+
+# One pause driven through the real watcher, with a stand-in reader that answers MATCH after $RoundMilliseconds.
+function Invoke-WatchedPause([string]$Name, [int]$PauseSeconds, [int]$Repetitions, [int]$MarginSeconds, [int]$RoundMilliseconds) {
+    $root = Join-Path $scratch $Name
+    $plan = New-Plan -PauseAt @('stage=Blocked') -PauseSeconds $PauseSeconds -Root $root
+    $journal = New-L2Journal -Path (Join-Path $root 'timeline.jsonl')
+    $checkpoint = New-L2ScreenStateCheckpoint -Plan $plan -Journal $journal -PollMilliseconds 50
+    $journal.OnCheckpoint = $checkpoint.Checkpoint
+    $watcher = Start-ThreadJob -ArgumentList (Join-Path $PSScriptRoot 'Watch-L2ScreenStatePauses.ps1'), $root, $Repetitions, $MarginSeconds, $RoundMilliseconds {
+        param($Script, $Root, $Repetitions, $MarginSeconds, $RoundMilliseconds)
+        & $Script -EvidenceRoot $Root -ReaderScript 'stand-in' -Repetitions $Repetitions -MarginSeconds $MarginSeconds -TimeoutMinutes 1 -ReaderInvoker {
+            param($Pause, $Round, $Directory)
+            Start-Sleep -Milliseconds $RoundMilliseconds
+            Set-Content -LiteralPath (Join-Path $Directory 'x-crosscheck.json') -Value '{"outcome":"MATCH"}'
+            0
+        }.GetNewClosure() *>&1 | Out-String
+    }
+    $journal.Observe('stage', 'Blocked', $null)
+    Set-Content -LiteralPath (Join-Path $root 'assertions.json') -Value '{}'
+    $output = $watcher | Wait-Job -Timeout 60 | Receive-Job; $watcher | Remove-Job -Force
+    return [pscustomobject]@{
+        Output = "$output"
+        Record = Get-Content -LiteralPath (Join-Path $plan.PauseDirectory 'pause-01.crosscheck.json') -Raw | ConvertFrom-Json
+        Pause  = @($checkpoint.State.Pauses)[0]
     }
 }
 
 $cases += @{
     Name  = 'the watcher runs its rounds, releases the pause and stops when the run writes assertions.json'
     Check = {
-        $root = Join-Path $scratch 'watched-run'
-        $plan = New-Plan -PauseAt @('stage=Blocked') -PauseSeconds 30 -Root $root
-        $journal = New-L2Journal -Path (Join-Path $root 'timeline.jsonl')
-        $checkpoint = New-L2ScreenStateCheckpoint -Plan $plan -Journal $journal -PollMilliseconds 50
-        $journal.OnCheckpoint = $checkpoint.Checkpoint
-        $watcher = Start-ThreadJob -ArgumentList (Join-Path $PSScriptRoot 'Watch-L2ScreenStatePauses.ps1'), $root {
-            param($Script, $Root)
-            & $Script -EvidenceRoot $Root -ReaderScript 'stand-in' -Repetitions 3 -TimeoutMinutes 1 -ReaderInvoker {
-                param($Pause, $Round, $Directory)
-                Set-Content -LiteralPath (Join-Path $Directory 'x-crosscheck.json') -Value '{"outcome":"MATCH"}'
-                0
-            } *>&1 | Out-String
-        }
-        $journal.Observe('stage', 'Blocked', $null)
-        Set-Content -LiteralPath (Join-Path $root 'assertions.json') -Value '{}'
-        $output = $watcher | Wait-Job -Timeout 60 | Receive-Job; $watcher | Remove-Job -Force
-        $record = Get-Content -LiteralPath (Join-Path $plan.PauseDirectory 'pause-01.crosscheck.json') -Raw | ConvertFrom-Json
-        $pauses = @($checkpoint.State.Pauses)
-        @{ Ok = ($pauses.Count -eq 1 -and $pauses[0].ending -eq 'released' -and @($record.rounds).Count -eq 3 -and
-                 @($record.rounds | Where-Object outcome -eq 'MATCH').Count -eq 3 -and "$output" -like '*MATCH x3*')
-           Actual = "ending $($pauses[0].ending), $(@($record.rounds).Count) round(s)" }
+        $result = Invoke-WatchedPause -Name 'watched-run' -PauseSeconds 30 -Repetitions 3 -MarginSeconds 20 -RoundMilliseconds 0
+        @{ Ok = ($result.Pause.ending -eq 'released' -and $result.Record.roundsRun -eq 3 -and $result.Record.incomplete -eq $false -and
+                 @($result.Record.rounds | Where-Object outcome -eq 'MATCH').Count -eq 3 -and $result.Output -like '*MATCH x3*' -and
+                 $result.Output -notlike '*INCOMPLETE*')
+           Actual = "ending $($result.Pause.ending), $($result.Record.roundsRun) round(s), incomplete $($result.Record.incomplete)" }
+    }
+}
+
+$cases += @{
+    Name  = 'a window too short for every round is released before it runs out and marked incomplete (review S2, S4)'
+    Check = {
+        # 8 s window, 1 s margin, 2 s rounds: the watcher must stop starting rounds once 1.5 x 2 s no longer fits.
+        $result = Invoke-WatchedPause -Name 'short-window' -PauseSeconds 8 -Repetitions 10 -MarginSeconds 1 -RoundMilliseconds 2000
+        @{ Ok = ($result.Pause.ending -eq 'released' -and $result.Record.incomplete -eq $true -and
+                 $result.Record.roundsRun -ge 1 -and $result.Record.roundsRun -lt 10 -and $result.Output -like '*INCOMPLETE*')
+           Actual = "ending $($result.Pause.ending) after $($result.Pause.seconds)s, $($result.Record.roundsRun) round(s), incomplete $($result.Record.incomplete)" }
     }
 }
 

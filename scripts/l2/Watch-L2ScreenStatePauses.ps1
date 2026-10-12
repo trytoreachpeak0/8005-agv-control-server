@@ -12,9 +12,11 @@
       1. runs the reader -Repetitions times:
              pwsh -File <ReaderScript> -Local -Directory <evidence>/screen-state -CrossCheck
                   -EvidenceDirectory <evidence>/screen-state-pauses/pause-NN-crosscheck/<i>
-         stopping early when the pause's own deadline is less than -MarginSeconds away, so the release always
-         arrives before the run's window runs out on its own;
-      2. writes pause-NN.crosscheck.json (each round's exit code and outcome, read off the reader's own record);
+         starting a round only while the pause's own deadline is further away than -MarginSeconds and than half again
+         the longest round so far, so a round never runs past the point where the run carries on by itself;
+      2. writes pause-NN.crosscheck.json (each round's exit code and outcome, read off the reader's own record), with
+         incomplete = true when fewer than -Repetitions rounds fitted -- T3 counts ten per point, and a short pause
+         must not pass for a full one;
       3. writes pause-NN.release, which lets the run carry on.
 
     It stops once the run has written assertions.json, and prints one line per pause. It judges nothing about the
@@ -38,8 +40,9 @@ param(
     [Parameter(Mandatory)][string]$ReaderScript,
     # Ten per pause point is the T3 acceptance count (research section 5); a run is up to that many per point.
     [ValidateRange(1, 50)][int]$Repetitions = 10,
-    # Released no later than this many seconds before the pause's own deadline.
-    [ValidateRange(1, 60)][int]$MarginSeconds = 10,
+    # Released no later than this many seconds before the pause's own deadline. A round has been measured at 6-12 s
+    # (two pwsh starts, an Add-Type, a UIA walk, a 1.5 s settle and a second read); 20 s keeps one whole round clear.
+    [ValidateRange(1, 120)][int]$MarginSeconds = 20,
     # How long to wait for the run to start and to finish, in all.
     [ValidateRange(1, 600)][int]$TimeoutMinutes = 90,
     # Off-rig tests only: what runs instead of `pwsh -File <ReaderScript> ...`. Called as (pauseDocument, round, directory)
@@ -84,24 +87,30 @@ while ($true) {
             $pauseDeadline = [DateTimeOffset]::Parse($pause.deadline).AddSeconds(-$MarginSeconds)
             Write-Host "[$(Get-Date -Format 'HH:mm:ss')] $name at '$($pause.point)'"
             $rounds = [System.Collections.Generic.List[object]]::new()
+            $longest = 0.0
             for ($round = 1; $round -le $Repetitions; $round++) {
-                if ([DateTimeOffset]::UtcNow -ge $pauseDeadline) {
+                if ([DateTimeOffset]::UtcNow.AddSeconds(1.5 * $longest) -ge $pauseDeadline) {
                     Write-Host "  stopping after $($round - 1) round(s): the pause's window is nearly out."
                     break
                 }
+                $roundStarted = [DateTimeOffset]::UtcNow
                 $directory = Join-Path $pauseDirectory ("$name-crosscheck/{0:D2}" -f $round)
                 $null = New-Item -ItemType Directory -Path $directory -Force
                 $exit = try { Invoke-Reader $pause $round $directory } catch { Write-Host "  round ${round}: $($_.Exception.Message)"; -1 }
                 $outcome = Read-Outcome $directory
-                $rounds.Add([ordered]@{ round = $round; exitCode = $exit; outcome = $outcome; directory = $directory })
+                $roundSeconds = ([DateTimeOffset]::UtcNow - $roundStarted).TotalSeconds
+                $longest = [math]::Max($longest, $roundSeconds)
+                $rounds.Add([ordered]@{ round = $round; exitCode = $exit; outcome = $outcome; seconds = [math]::Round($roundSeconds, 1); directory = $directory })
                 Write-Host "  round ${round}: $outcome (exit $exit)"
             }
             [IO.File]::WriteAllText((Join-Path $pauseDirectory "$name.crosscheck.json"), ([ordered]@{
-                    point = $pause.point; repetitions = $Repetitions; rounds = $rounds
+                    point = $pause.point; repetitions = $Repetitions; roundsRun = $rounds.Count
+                    incomplete = $rounds.Count -lt $Repetitions; rounds = $rounds
                 } | ConvertTo-Json -Depth 5), [Text.UTF8Encoding]::new($false))
             [IO.File]::WriteAllText((Join-Path $pauseDirectory "$name.release"), [DateTimeOffset]::UtcNow.ToString('o'))
             $counts = ($rounds | Group-Object { $_.outcome } | ForEach-Object { "$($_.Name) x$($_.Count)" }) -join ', '
-            $summary.Add("$name '$($pause.point)': $(if ($counts) { $counts } else { 'no round' })")
+            $short = if ($rounds.Count -lt $Repetitions) { " -- INCOMPLETE, $($rounds.Count) of $Repetitions rounds" } else { '' }
+            $summary.Add("$name '$($pause.point)': $(if ($counts) { $counts } else { 'no round' })$short")
         }
     }
     if (Test-Path -LiteralPath $finished) { break }

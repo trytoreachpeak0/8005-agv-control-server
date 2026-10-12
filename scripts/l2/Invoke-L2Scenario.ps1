@@ -502,7 +502,7 @@ try {
         # all, and the file control-server#164 worked from was appended to by that session's wrapper
         # scripts. Two batches appended at once and it silently lost two lines.
         $ledgerStarted = [DateTimeOffset]::UtcNow
-        $null = Write-L2RunLedgerEvent -Event 'start' -RunId $runId -Fields @{
+        $ledgerFields = @{
             scenario        = $Scenario
             rig             = 'RealOnboard'
             controlServer   = (& git -C $Repository rev-parse HEAD 2>$null)
@@ -512,6 +512,9 @@ try {
             batchId         = $BatchId
             portSlot        = $PortSlot
         }
+        # Only with -ScreenState: a run that pauses is not a timing sample, and the ledger must say so (control-server#653).
+        if ($screenStatePlan) { $ledgerFields['screenState'] = $true }
+        $null = Write-L2RunLedgerEvent -Event 'start' -RunId $runId -Fields $ledgerFields
     }
 
     $configuration = 'Release'
@@ -1592,7 +1595,10 @@ try {
     if ($onboardPublish) { $identity['onboardHmiCommit'] = $onboardPublish.Commit }
     if ($simulatorPublish) { $identity['slotsSimulatorCommit'] = $simulatorPublish.Commit }
     # Only with -ScreenState, so a run without it carries the identity it always did. Never decides the outcome.
-    if ($screenStatePlan) { $identity['screenState'] = Complete-L2ScreenState -Plan $screenStatePlan -Checkpoint $screenStateCheckpoint }
+    if ($screenStatePlan) {
+        $identity['screenState'] = Complete-L2ScreenState -Plan $screenStatePlan -Checkpoint $screenStateCheckpoint `
+            -OnboardLogDirectory (Join-Path $logRoot 'onboard-app')
+    }
     Write-L2Evidence -EvidenceRoot $EvidenceRoot -Scenario $Scenario -RunId $runId `
         -Assertions $assertions -Outcome $outcome -FailureReason $failureReason `
         -Rig $identity.rig -Identity $identity
@@ -1616,13 +1622,19 @@ try {
     # desktop never appeared in the ledger, and a lone exit line would read as a run whose entry was
     # lost, which is the very thing this ledger exists to rule out.
     if ($null -ne $ledgerStarted) {
-        $null = Write-L2RunLedgerEvent -Event 'end' -RunId $runId -Fields @{
+        $ledgerFields = @{
             scenario        = $Scenario
             outcome         = $outcome
             durationSeconds = [math]::Round(([DateTimeOffset]::UtcNow - $ledgerStarted).TotalSeconds, 1)
             evidenceRoot    = $EvidenceRoot
             failureReason   = $failureReason
         }
+        # durationSeconds includes every screen-state pause; how much of it was paused goes beside it.
+        if ($screenStatePlan) {
+            $ledgerFields['screenState'] = $true
+            $ledgerFields['pauseSecondsTotal'] = $identity['screenState']['pauseSecondsTotal']
+        }
+        $null = Write-L2RunLedgerEvent -Event 'end' -RunId $runId -Fields $ledgerFields
     }
 
     # Last, after the peers are stopped. Releasing earlier would hand the desktop to another

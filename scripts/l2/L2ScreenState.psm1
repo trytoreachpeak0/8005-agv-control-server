@@ -19,7 +19,8 @@ On, three things:
      pause-NN.release appears next to it, or the pause window runs out, whichever comes first, then carries on.
      Watch-L2ScreenStatePauses.ps1 is the other end: it runs the cross-check and writes the release file.
 
-  3. screen-state-pauses/pauses.json at the end: every point, whether it was reached, how each pause ended.
+  3. screen-state-pauses/pauses.json at the end: every point, whether it was reached, how each pause ended, and how
+     many 「IO模块离线」 lines the onboard's technical log wrote inside each pause and in the whole run.
 
 What a pause can and cannot change, which is the ticket's failure definition:
 
@@ -72,7 +73,9 @@ function Resolve-L2ScreenStatePlan {
     $points = @()
     if ($explicit) {
         $source = 'parameter'
-        $points = @($PauseAt)
+        # Semicolons separate points as well as array elements: `pwsh -File` cannot pass an array, so
+        # `-ScreenStatePauseAt a=b,c=d` arrives as one point whose value is 'b,c=d' and is never reached.
+        $points = @($PauseAt | ForEach-Object { [string]$_ -split ';' } | Where-Object { $_ -ne '' })
     } else {
         $plan = Import-PowerShellDataFile -LiteralPath $PlanPath
         if ($plan.Scenarios.ContainsKey($Scenario)) {
@@ -180,11 +183,33 @@ function Invoke-L2ScreenStateCheckpoint {
 }
 
 <#
+When the onboard logged 「IO模块离线」 (OnboardController, one line per transition), read off its technical log
+(agv-yyyyMMdd.log, tab-separated, ISO timestamp first). The reader the watcher starts runs a pwsh that compiles C#,
+and the bench has seen the onboard's 1-second Modbus timeout fire while that happened (cs#653 coordinator comments):
+an IO-offline inside a pause is the one way the cross-check can reach a scenario's judgement, through the safety
+evaluation, so every pause carries its own count.
+#>
+function Get-L2OnboardIoOfflineTimes {
+    param([AllowNull()][AllowEmptyString()][string]$LogDirectory)
+    if (-not $LogDirectory -or -not (Test-Path -LiteralPath $LogDirectory -PathType Container)) { return @() }
+    $times = foreach ($file in @(Get-ChildItem -LiteralPath $LogDirectory -Filter 'agv-*.log' -File)) {
+        foreach ($line in [IO.File]::ReadAllLines($file.FullName)) {
+            $fields = $line -split "`t"
+            if ($fields.Count -lt 2 -or $fields[-1] -notlike 'IO模块离线*') { continue }
+            $at = [DateTimeOffset]::MinValue
+            if ([DateTimeOffset]::TryParse($fields[0], [Globalization.CultureInfo]::InvariantCulture,
+                    [Globalization.DateTimeStyles]::RoundtripKind, [ref]$at)) { $at }
+        }
+    }
+    return @($times)
+}
+
+<#
 The end of a run with the snapshot on: pauses.json, and the flat identity assertions.json and SUMMARY.md carry. Never
 throws -- it runs in the orchestrator's `finally`, and nothing about the snapshot may decide a run's outcome.
 #>
 function Complete-L2ScreenState {
-    param([Parameter(Mandatory)][object]$Plan, [AllowNull()][object]$Checkpoint)
+    param([Parameter(Mandatory)][object]$Plan, [AllowNull()][object]$Checkpoint, [string]$OnboardLogDirectory)
     $identity = [ordered]@{ enabled = $true; directory = 'screen-state'; pointSource = $Plan.Source }
     try {
         # @() around the whole if: one pause coming out of an if-expression would be unrolled to the record itself,
@@ -192,6 +217,16 @@ function Complete-L2ScreenState {
         $pauses = @(if ($Checkpoint) { $Checkpoint.State.Pauses })
         $reached = @($pauses | ForEach-Object { $_.point })
         $unreached = @($Plan.Points | Where-Object { $_.Point -notin $reached } | ForEach-Object { $_.Point })
+        $ioOffline = @(Get-L2OnboardIoOfflineTimes -LogDirectory $OnboardLogDirectory)
+        $ioOfflineInPauses = 0
+        foreach ($pause in $pauses) {
+            $from = [DateTimeOffset]::Parse($pause.reachedAt); $to = [DateTimeOffset]::Parse($pause.endedAt)
+            $pause['ioOfflineLines'] = @($ioOffline | Where-Object { $_ -ge $from -and $_ -le $to }).Count
+            $ioOfflineInPauses += $pause['ioOfflineLines']
+        }
+        $pauseSeconds = 0.0
+        foreach ($pause in $pauses) { $pauseSeconds += [double]$pause.seconds }
+        $pauseSeconds = [math]::Round($pauseSeconds, 1)
         $current = Test-Path -LiteralPath (Join-Path $Plan.SnapshotDirectory 'hmi-state.json') -PathType Leaf
         $timelines = @(Get-ChildItem -LiteralPath $Plan.SnapshotDirectory -File -ErrorAction SilentlyContinue |
             Where-Object Name -Match '^hmi-state-\d{8}\.ndjson$' | ForEach-Object Name)
@@ -202,6 +237,10 @@ function Complete-L2ScreenState {
                 points        = @($Plan.Points | ForEach-Object { $_.Point })
                 pauses        = $pauses
                 unreached     = $unreached
+                pauseSecondsTotal      = $pauseSeconds
+                ioOfflineLinesInPauses = $ioOfflineInPauses
+                ioOfflineLinesInRun    = $ioOffline.Count
+                onboardLogDirectory    = $OnboardLogDirectory
                 currentFile   = $current
                 timelineFiles = $timelines
             } | ConvertTo-Json -Depth 6), [Text.UTF8Encoding]::new($false))
@@ -210,11 +249,13 @@ function Complete-L2ScreenState {
         $identity['points'] = @($Plan.Points).Count
         $identity['pauses'] = "$($pauses.Count) ($(@($pauses | Where-Object { $_.ending -eq 'released' }).Count) released)"
         $identity['unreached'] = if ($unreached.Count -eq 0) { '(none)' } else { $unreached -join '; ' }
+        $identity['pauseSecondsTotal'] = $pauseSeconds
+        $identity['ioOffline'] = "$ioOfflineInPauses in pauses, $($ioOffline.Count) in the run"
     } catch {
         $identity['completionError'] = $_.Exception.Message
     }
     return $identity
 }
 
-Export-ModuleMember -Function Resolve-L2ScreenStatePlan, Set-L2ScreenStateOnboardSetting, New-L2ScreenStateCheckpoint,
+Export-ModuleMember -Function Get-L2OnboardIoOfflineTimes, Resolve-L2ScreenStatePlan, Set-L2ScreenStateOnboardSetting, New-L2ScreenStateCheckpoint,
     Invoke-L2ScreenStateCheckpoint, Complete-L2ScreenState
