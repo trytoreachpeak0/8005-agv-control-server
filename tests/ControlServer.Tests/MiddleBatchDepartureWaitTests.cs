@@ -162,6 +162,70 @@ public sealed class MiddleBatchDepartureWaitTests
     }
 
     /// <summary>
+    /// 崩在更晚的那一刻：清单与新起点已经提交，录入请求还没写（PR #651 审查探针 P1 的形状）。续跑那一轮起点又置为此刻，期限与车上那一版
+    /// 不同，清单升一版下发；车采纳的期限等于服务端判定用的那个，没有内容冲突、没有修订号回退；再跑一轮不再变。
+    /// </summary>
+    /// <remarks>
+    /// 这一条守的是续跑那一支里 <c>AdvanceWorklistPastAStaleDeadlineAsync</c> 那次升号：本票之后每次崩溃续跑起点都会变，那次调用从此承重。
+    /// 删掉它，续跑会对已写盘的那一号同号重发、带着新期限，车按「同号不同内容」拒收。
+    /// </remarks>
+    [Fact]
+    [Trait("IntegrationSlice", "FP-IS-08")]
+    public async Task AResumeAfterTheWorklistWasStoredRaisesItAgainWithTheResumingRoundsDeadline()
+    {
+        UnloadCrashResumeTests.FailOnce crash = new(command =>
+            command.CommandText.Contains("INSERT INTO \"ProtocolOutbox\"", StringComparison.Ordinal) &&
+            UnloadCrashResumeTests.HasParameter(command, "SublotEntryRequested"));
+        await using RuntimeFixture fixture = await RuntimeFixture.CreateAsync(commands: crash);
+        fixture.Options.StationDepartureWaitTimeout = Wait;
+        AdoptingPeer vehicle = Attach(fixture);
+        JourneyRuntimeRow runtime = await Batch7MultiDemandAdvanceTests.TwoDemandsAtThePickupAsync(fixture);
+        await vehicle.DeliverBufferedAcksAsync();
+        await AddInboxAsync(
+            fixture, FirstSubmissionId, "SublotSubmitted", await SublotSubmissionAsync(fixture, runtime, SecondSublot));
+        await TickAndRunAsync(fixture);
+        await vehicle.DeliverBufferedAcksAsync();
+        fixture.Clock.Advance(Loading);
+        await ApplySafeResultAsync(fixture, SecondDemandId, SlotOperationType.Load, SlotBusinessState.Occupied);
+        await fixture.HearFromPeerAsync();
+        crash.Armed = true;
+        await TickAndRunExpectingCrashAsync(fixture);
+        Assert.True(crash.Fired, "The injected failure never fired, so this proved nothing.");
+        DateTimeOffset closedAt = fixture.Clock.GetUtcNow();
+        await vehicle.DeliverBufferedAcksAsync();
+
+        await fixture.RecreateEngineAsync();
+        JourneyRuntimeRow crashed = await JourneyOfAsync(fixture, FirstDemandId);
+        (long storedRevision, DateTimeOffset? storedDeadline) = await LatestWorklistAsync(fixture);
+        // 前提：清单与新起点已提交、阶段还没前移——这一轮走的才是续跑那一支，而且发件箱里已有那一版。
+        Assert.Equal(JourneyRuntimeStage.AwaitingLoadResult, crashed.Stage);
+        Assert.Equal(closedAt, crashed.StationDepartureWaitStartedAt);
+        Assert.Equal(closedAt + Wait, storedDeadline);
+
+        fixture.Clock.Advance(TimeSpan.FromSeconds(7));
+        await fixture.HearFromPeerAsync();
+        await fixture.Engine.ExecuteOnceAsync(Token);
+        DateTimeOffset resumedAt = fixture.Clock.GetUtcNow();
+        await vehicle.DeliverBufferedAcksAsync();
+
+        JourneyRuntimeRow after = await JourneyOfAsync(fixture, FirstDemandId);
+        (long revision, DateTimeOffset? deadline) = await LatestWorklistAsync(fixture);
+        Assert.Equal(JourneyRuntimeStage.AwaitingSublot, after.Stage);
+        Assert.Equal(resumedAt, after.StationDepartureWaitStartedAt);
+        Assert.True(revision > storedRevision, $"The worklist was not raised past r{storedRevision}.");
+        Assert.Equal(resumedAt + Wait, deadline);
+        Assert.Empty(vehicle.Conflicts);
+        Assert.Empty(vehicle.Regressions);
+        Assert.Equal(resumedAt + Wait, VehicleDeadline(vehicle));
+
+        await fixture.HearFromPeerAsync();
+        await TickAndRunAsync(fixture);
+        await vehicle.DeliverBufferedAcksAsync();
+        Assert.Equal(resumedAt, (await JourneyOfAsync(fixture, FirstDemandId)).StationDepartureWaitStartedAt);
+        Assert.Equal((revision, deadline), await LatestWorklistAsync(fixture));
+    }
+
+    /// <summary>
     /// 本站在装那一条被终结、同站还有一条（resumingAfterEnding）：一条都没装上，不是 LoadBatch 闭环，起点不动。
     /// </summary>
     [Fact]

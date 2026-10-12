@@ -20,7 +20,7 @@
 ## 反向验证（`reverse/`）
 
 每个变异都从修后的文件按内容改出，跑本票的定向用例；结束后按字节写回，`git diff -- src` 只剩本票那一处。
-MR1、MR3、MR4、MC1、MC2 跑时 #499 子情形的用例还没写（共 11 条）；R0、MR2 在补上它之后重跑（共 12 条）。
+MX2 在审查（`bc91e401`）之后补上崩在录入请求写入那一条用例时跑，过滤条件另含 `ResumeAfterAcknowledgedReconnectTests`（共 17 条）。MR1、MR3、MR4、MC1、MC2 跑时 #499 子情形的用例还没写（共 11 条）；R0、MR2 在补上它之后重跑（共 12 条）。
 
 | 变异 | 改了什么 | 红的用例 |
 | --- | --- | --- |
@@ -30,6 +30,7 @@ MR1、MR3、MR4、MC1、MC2 跑时 #499 子情形的用例还没写（共 11 条
 | MR4 | 最后一批也只补填、不重置 | `TheLastBatchStillRestartsTheWaitAtItsOwnClosure` |
 | MC1 | 纠错授权放宽到 `AwaitingSublot` | 纠错按阶段拒收那一行 `AwaitingSublot` |
 | MC2 | 纠错授权放宽到 `AwaitingLoadResult` | 纠错按阶段拒收那一行 `AwaitingLoadResult` |
+| MX2 | 删掉续跑那一支里 `AdvanceWorklistPastAStaleDeadlineAsync` 的升号调用（审查 L1） | `AResumeAfterTheWorklistWasStored…`（审查后补）、原有的 `WithTheStationDeadlineOn…AfterTheReconnect` |
 
 ## 定向回归
 

@@ -1463,6 +1463,8 @@ public sealed partial class JourneyRuntimeEngine(
                         // 与等录入那一处同一个规则。
                         //
                         // 重置写在发清单之前：下面那一版清单本来就因待做项变了而升号，带的就是新期限，车上与服务端判定用的是同一个值。
+                        // 续跑时那一版上一轮已经写盘、带的是上一轮的起点，升号来自紧接着的 AdvanceWorklistPastAStaleDeadlineAsync
+                        // （期限与排给车的那一版不同就升一版），所以那一次调用在每次崩溃续跑里都是承重的。
                         runtime.StationDepartureWaitStartedAt = resumingAfterEnding
                             ? runtime.StationDepartureWaitStartedAt ?? now
                             : now;
