@@ -194,6 +194,132 @@ public sealed class LoadedStopDeadlineReachesVehicleTests
         Assert.Equal(0, (await PickupStopAsync(fixture)).WorklistRefills);
     }
 
+    /// <summary>
+    /// 车收到了到站那一版与空清单，两者的确认都在路上丢了，然后断线重连：补发的是空清单，不是到站那一版。
+    /// </summary>
+    /// <remarks>
+    /// 退役那一步守的就是这个（PR #636 审查 S1）。不退役，到站那一版还算「没确认、没作废」，重连时与空清单一起被补发；车手上已是
+    /// 空清单那一号，按 <c>SNAPSHOT_REVISION_REGRESSION</c> 拒收并拆会话，每次重连都一样——车停在这一站上出不来。
+    /// 已确认的行本来就不补发，所以要让到站那一版在空清单发出的那一轮里仍是「没确认」：确认一条都不送回去。
+    /// </remarks>
+    [Fact]
+    [Trait("IntegrationSlice", "FP-IS-00")]
+    [Trait("IntegrationSlice", "FP-IS-02")]
+    [Trait("ProtocolVector", "CV-SESSION-RECONNECT-DURING-RECOVERY")]
+    public async Task AfterAReconnectTheWorklistBeforeTheEmptyOneIsNotReplayed()
+    {
+        await using RuntimeFixture fixture = await DeadlineFixtureAsync();
+        AdoptingPeer vehicle = Attach(fixture);
+        Assert.Equal(JourneyRuntimeStage.AwaitingLoadResult, (await fixture.AdvanceToLoadResultAsync()).Stage);
+        vehicle.LoseBufferedAcks();
+        string[] beforeTheEmpty = [.. SentLines(fixture, "CurrentStopWorklistSnapshot")
+            .Select(line => line.GetProperty("messageId").GetString()!)
+            .Distinct()];
+        Assert.NotEmpty(beforeTheEmpty);
+
+        fixture.Clock.Advance(Loading);
+        StationOperationRow load = await fixture.OperationAsync(SlotOperationType.Load);
+        await fixture.ApplySafeResultAsync(load, SlotOperationType.Load, SlotBusinessState.Occupied);
+        await fixture.HearFromPeerAsync();
+        await fixture.Engine.ExecuteOnceAsync(Token);
+        vehicle.LoseBufferedAcks();
+        Assert.Equal(0, vehicle.HeldPayload("CurrentStopWorklistSnapshot")!.Value.GetProperty("items").GetArrayLength());
+
+        await fixture.ReconnectAsync(2);
+        await fixture.AdvanceSessionAsync(2);
+        await fixture.HearFromPeerAsync();
+        int before = fixture.Peer.Lines.Count;
+        // 钟不走：重连作废的起点在同一时刻重填，期限与车上那张空清单的相同，这一轮不再升版——补发什么全看发件箱里谁还没退役。
+        // 钟一走，重填出来的期限不同，这一轮会再发一张空清单并把更早各版一起退役，盖住了要验证的那一步。
+        await fixture.Engine.ExecuteOnceAsync(Token);
+        await vehicle.DeliverBufferedAcksAsync();
+
+        string[] replayed = [.. fixture.Peer.Lines.Skip(before)
+            .Select(line => JsonDocument.Parse(Encoding.UTF8.GetString(line)).RootElement)
+            .Where(root => root.GetProperty("messageType").GetString() == "CurrentStopWorklistSnapshot")
+            .Select(root => root.GetProperty("messageId").GetString()!)];
+        TestContext.Current.TestOutputHelper?.WriteLine(
+            $"before the empty one: {string.Join(",", beforeTheEmpty)}; sent after the reconnect: {string.Join(",", replayed)}; " +
+            $"regressions {string.Join(",", vehicle.Regressions)}");
+        // 补发确实发生了（空清单没确认，要补），否则「没补发到站那一版」什么也不说明。
+        Assert.NotEmpty(replayed);
+        Assert.DoesNotContain(replayed, beforeTheEmpty.Contains);
+        Assert.Empty(vehicle.Regressions);
+        Assert.Empty(vehicle.Conflicts);
+    }
+
+    /// <summary>
+    /// 卸货停靠不发这张空清单：多停靠计划里卸完货、还有下一站时，服务端在卸货站也有离站期限，但卸货站的清单不带期限，
+    /// 「装完了」的空清单发到那里说的是假话（PR #636 审查 S2；车载端 hmi#310 的「装货完成」文案依赖这一条）。
+    /// </summary>
+    [Fact]
+    [Trait("IntegrationSlice", "FP-IS-08")]
+    public async Task AnUnloadStopFollowedByAnotherStopGetsNoEmptyWorklist()
+    {
+        await using RuntimeFixture fixture = await RuntimeFixture.CreateAsync();
+        fixture.Options.StationDepartureWaitTimeout = Wait;
+        fixture.Catalog.Set(fixture.Demand(
+            Batch7StopDrivenAdvanceDriver.FirstDemandId, Batch7StopDrivenAdvanceDriver.FirstSublot, Now.AddMinutes(-10)));
+        fixture.BoxCounts.Set(Batch7StopDrivenAdvanceDriver.FirstSublot, 7);
+        await Batch7StopDrivenAdvanceDriver.TickAndRunAsync(fixture);
+        JourneyRuntimeRow runtime = await fixture.RuntimeAsync(Batch7StopDrivenAdvanceDriver.FirstDemandId);
+        // 卸货站之后再挂一个停靠，形状照 Batch7ThreeStopJourneyTests.LeavingAnUnloadStopAuthorisesTheLegToTheNextStop。
+        string extraId = $"{runtime.JourneyId}|EXTRA-UNLOAD";
+        fixture.Context.Set<JourneyStopRow>().Add(new JourneyStopRow
+        {
+            StopId = extraId,
+            JourneyId = runtime.JourneyId,
+            Sequence = 3,
+            StopRole = JourneyStopRoles.Unload,
+            StationId = runtime.GateStationId!,
+            StationRiotId = runtime.GateStationRiotId,
+            DispatchZone = runtime.DispatchZone,
+            OperationSessionId = JourneyPlanBuilder.StableGuid(extraId, "session"),
+            MovementLegId = JourneyPlanBuilder.StableGuid(extraId, "leg"),
+            UpperId = $"W2G-{extraId}",
+            VehicleBusinessMessageId = JourneyPlanBuilder.StableGuid(extraId, "vehicle-state"),
+            WorklistMessageId = JourneyPlanBuilder.StableGuid(extraId, "worklist"),
+            PlanMessageId = JourneyPlanBuilder.StableGuid(extraId, "plan"),
+            Status = JourneyStopStatuses.Pending,
+            CreatedAt = runtime.CreatedAt
+        });
+        await fixture.Context.SaveChangesAsync(Token);
+
+        await Batch7StopDrivenAdvanceDriver.ArriveAtPickupAsync(fixture, Batch7StopDrivenAdvanceDriver.FirstDemandId);
+        await Batch7StopDrivenAdvanceDriver.EnterSublotAsync(
+            fixture, Batch7StopDrivenAdvanceDriver.FirstDemandId, Batch7StopDrivenAdvanceDriver.FirstSublot,
+            Batch7StopDrivenAdvanceDriver.FirstSubmissionId);
+        await Batch7StopDrivenAdvanceDriver.SettleLoadAsync(fixture, Batch7StopDrivenAdvanceDriver.FirstDemandId);
+        fixture.Clock.Advance(Wait);
+        await Batch7StopDrivenAdvanceDriver.TickAndRunAsync(fixture);
+        await Batch7StopDrivenAdvanceDriver.AnswerDepartureSafetyAsync(
+            fixture, Batch7StopDrivenAdvanceDriver.FirstDemandId, Batch7StopDrivenAdvanceDriver.FirstSafetyResultId);
+        JourneyRuntimeRow atGate = await Batch7StopDrivenAdvanceDriver.ArriveAtGateAndUnloadAsync(
+            fixture, Batch7StopDrivenAdvanceDriver.FirstDemandId);
+        for (int round = 0; round < 2; round++)
+        {
+            await Batch7StopDrivenAdvanceDriver.TickAndRunAsync(fixture);
+        }
+
+        // 前提：车确实停在卸完货的卸货站上等离站，服务端那一侧有期限——否则这条用例什么也没证明。
+        atGate = await Batch7StopDrivenAdvanceDriver.JourneyOfAsync(fixture, Batch7StopDrivenAdvanceDriver.FirstDemandId);
+        Assert.Equal(JourneyRuntimeStage.AwaitingStationDeparture, atGate.Stage);
+        Assert.Equal(JourneyStopRoles.Unload,
+            (await Batch7StopDrivenAdvanceDriver.CurrentStopAsync(fixture, Batch7StopDrivenAdvanceDriver.FirstDemandId)).StopRole);
+        Assert.NotNull(JourneyRuntimeEngine.StationDepartureDeadline(atGate, Wait));
+
+        JsonElement[] atTheGate = [.. (await fixture.Context.ProtocolOutbox.AsNoTracking()
+                .Where(row => row.MessageType == "CurrentStopWorklistSnapshot")
+                .Select(row => row.PayloadJson)
+                .ToArrayAsync(Token))
+            .Select(json => JsonDocument.Parse(json).RootElement.GetProperty("payload").Clone())
+            .Where(payload => payload.GetProperty("stationId").GetString() == runtime.GateStationId)];
+        Assert.NotEmpty(atTheGate);
+        Assert.DoesNotContain(atTheGate, payload =>
+            payload.GetProperty("items").GetArrayLength() == 0 &&
+            payload.GetProperty("stationDepartureDeadlineAt").ValueKind != JsonValueKind.Null);
+    }
+
     /// <summary>到站、录入、装货命令已发；钟走 <see cref="Loading"/> 后装货安全闭环、引擎跑一轮。返回车在到站时拿到的期限。</summary>
     private static async Task<DateTimeOffset> LoadTheOnlyDemandAsync(RuntimeFixture fixture, AdoptingPeer vehicle)
     {

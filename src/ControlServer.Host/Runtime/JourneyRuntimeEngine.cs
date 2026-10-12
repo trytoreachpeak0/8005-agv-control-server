@@ -1533,7 +1533,7 @@ public sealed partial class JourneyRuntimeEngine(
                     await StationDepartureWaitIsOverAsync(runtime, stops, now, cancellationToken).ConfigureAwait(false);
                 // 期限此刻定了，再对一次车上的那一个（control-server#633）：最后一批落定重置了起点、纠错闭环把起点往后挪，
                 // 两处都不经过任何发清单的路。放在判定之后，是因为纠错那一挪就在上面这次判定里。
-                await RefreshDeadlineOfALoadedStopAsync(runtime, stops, session, cancellationToken).ConfigureAwait(false);
+                await RefreshDeadlineOfALoadedStopAsync(runtime, stops, session, now, cancellationToken).ConfigureAwait(false);
                 if (!stationWaitOver)
                 {
                     await dbContext.SaveChangesAsync(cancellationToken).ConfigureAwait(false);
@@ -2837,7 +2837,8 @@ public sealed partial class JourneyRuntimeEngine(
     /// 这是时机上的选择，不是协议不许——<b>这里曾写着空清单「违反 schema」，那是错的</b>（control-server#323）：<c>minItems: 1</c>
     /// 只在录入请求的 <c>expectedSublots</c> 上，<c>CurrentStopWorklistSnapshot.items</c> 没有下限，空清单是合法报文。
     /// 旅程收尾时的空清单就由 <see cref="JourneyClosure"/> 发；本站被期限、取消或补偿结束而旅程继续的那种（B 形态）由
-    /// <see cref="StopEndWorklist"/> 发（control-server#324）。正常装完最后一条、车直接离站的那一刻仍然不发。
+    /// <see cref="StopEndWorklist"/> 发（control-server#324）。正常装完最后一条、车直接离站的那一刻仍然不发；离站等待开着、车还停在
+    /// 取货停靠上而期限挪过时，由 <see cref="RefreshDeadlineOfALoadedStopAsync"/> 发一张带期限的空清单（control-server#633）。
     /// </para>
     /// </remarks>
     private async Task PublishStopWorklistAsync(
@@ -2991,7 +2992,7 @@ public sealed partial class JourneyRuntimeEngine(
 
     /// <summary>
     /// 取货停靠的需求都装完了、车还停在这里等离站时，车上那一版清单带的期限不是服务端此刻判定用的那一个：升一版，发一张空清单把期限
-    /// 送到车上（control-server#633）。发了返回真。
+    /// 送到车上（control-server#633）。
     /// </summary>
     /// <remarks>
     /// <para>
@@ -3012,27 +3013,28 @@ public sealed partial class JourneyRuntimeEngine(
     /// 那张空清单说的是本站为什么结束，不能拿 COMPLETED 盖掉它。卸货停靠没有离站期限，不在此列。
     /// </para>
     /// </remarks>
-    private async Task<bool> RefreshDeadlineOfALoadedStopAsync(
+    private async Task RefreshDeadlineOfALoadedStopAsync(
         JourneyRuntimeRow runtime,
         JourneyStopCursor stops,
         SessionRecoveryRow session,
+        DateTimeOffset now,
         CancellationToken cancellationToken)
     {
         if (stops.OpenStops.Count == 0)
         {
-            return false;
+            return;
         }
         JourneyStopRow stop = stops.Current;
         if (stop.StopRole != JourneyStopRoles.Pickup || stops.OutstandingAtCurrentStop.Count > 0)
         {
-            return false;
+            return;
         }
 
         long first = stops.FirstWorklistRevisionAt(runtime.WorklistRevision, stop);
         long formula = stops.WorklistRevisionAt(runtime.WorklistRevision, stop);
         if (formula <= first)
         {
-            return false;
+            return;
         }
         // 车上的是本停靠此刻「下一号」的前一号：装完最后一条之前那一版、或本方法上一次发的那张空清单。
         string onVehicle = stops.WorklistMessageIdAt(runtime.WorklistRevision, stop, formula - 1);
@@ -3042,7 +3044,7 @@ public sealed partial class JourneyRuntimeEngine(
             .SingleOrDefaultAsync(cancellationToken).ConfigureAwait(false);
         if (queued is null)
         {
-            return false;
+            return;
         }
 
         string? sentSession = null;
@@ -3066,7 +3068,7 @@ public sealed partial class JourneyRuntimeEngine(
         DateTimeOffset? deadline = StationDepartureDeadline(runtime, runtimeOptions.StationDepartureWaitTimeout);
         if (sentSession is null || sent == deadline)
         {
-            return false;
+            return;
         }
 
         // 与 StopEndWorklist 同一道保险：算式万一算低了，也不发一个车上已有的号。
@@ -3085,7 +3087,7 @@ public sealed partial class JourneyRuntimeEngine(
         JourneyStopRow tracked = await dbContext.Set<JourneyStopRow>()
             .SingleAsync(row => row.StopId == stop.StopId, cancellationToken).ConfigureAwait(false);
         tracked.WorklistRefills += revision - formula + 1;
-        runtime.UpdatedAt = timeProvider.GetUtcNow();
+        runtime.UpdatedAt = now;
 
         await publisher.PublishCurrentStopWorklistAsync(
             stops.WorklistMessageIdAt(runtime.WorklistRevision, stop, revision),
@@ -3095,7 +3097,6 @@ public sealed partial class JourneyRuntimeEngine(
                 stop.StationId, revision, stop.OperationSessionId, deadline, [], StopEndedReasons.ForEnding(null)),
             cancellationToken).ConfigureAwait(false);
         LogLoadedStopDeadlineRefreshed(logger, runtime.AgvId, stop.StationId, sent, deadline, revision, null);
-        return true;
     }
 
     /// <summary>
