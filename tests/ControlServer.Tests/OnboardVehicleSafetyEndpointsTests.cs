@@ -103,6 +103,46 @@ public sealed class OnboardVehicleSafetyEndpointsTests
         Assert.DoesNotContain("credential", ok.Value.ToString(), StringComparison.OrdinalIgnoreCase);
     }
 
+    /// <summary>
+    /// The source is the gateway's, passed through as given (control-server#639, review L1): a stopped answer that rests on MT_NA
+    /// read through mode and brake carries its own source, so it can be told apart from MT_FINISHED afterwards. Nothing on
+    /// either side branches on it; it is a diagnostic field, and only this keeps the endpoint from writing its own.
+    /// </summary>
+    [Fact]
+    public async Task TheGatewaysSourceIsPassedThroughAsGiven()
+    {
+        string variable = "CONTROL_SERVER_TEST_" + Guid.NewGuid().ToString("N");
+        using EnvironmentVariableScope credential = new(variable, "onboard-only-credential");
+        DefaultHttpContext context = new();
+        context.Request.Scheme = "http";
+        context.Request.Headers.Authorization = "Bearer onboard-only-credential";
+        DateTimeOffset observedAt = new(2026, 10, 12, 2, 0, 0, TimeSpan.Zero);
+        RecordingSafetyFacts facts = new()
+        {
+            Observation = new RiotVehicleSafetyObservation(
+                "VEHICLE-KEY-01",
+                RiotVehicleMotionState.Stopped,
+                observedAt,
+                ControlServer.Infrastructure.Adapters.HttpRiotMovementGateway.BootStoppedSource,
+                [])
+        };
+
+        var result = await OnboardVehicleSafetyEndpoints.HandleAsync(
+            context,
+            facts,
+            Options.Create(JourneyOptions()),
+            Options.Create(ProjectionOptions(variable)),
+            NullLoggerFactory.Instance,
+            TestContext.Current.CancellationToken);
+
+        Ok<OnboardVehicleSafetyResponse> ok = Assert.IsType<Ok<OnboardVehicleSafetyResponse>>(result.Result);
+        Assert.NotNull(ok.Value);
+        Assert.Equal("STOPPED", ok.Value.MotionState);
+        Assert.Equal(ControlServer.Infrastructure.Adapters.HttpRiotMovementGateway.BootStoppedSource, ok.Value.Source);
+        Assert.Equal(observedAt, ok.Value.ObservedAt);
+        Assert.Empty(ok.Value.ReasonCodes);
+    }
+
     [Fact]
     public void EnabledProjectionRequiresOnlyAPopulatedCredentialVariable()
     {

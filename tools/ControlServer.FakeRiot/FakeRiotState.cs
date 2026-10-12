@@ -29,6 +29,9 @@ public sealed record FakeVehicle
     public string ControlState { get; init; } = "CONTROL_STATE_OK";
     public string EmergencyState { get; init; } = "OK";
     public string BreakSwitchState { get; init; } = "MOVABLE";
+
+    /// <summary>MODE_AUTO or MODE_MANUAL; the safety projection reads anything but MODE_AUTO as not stopped (control-server#639).</summary>
+    public string Mode { get; init; } = "MODE_AUTO";
     public string LocationState { get; init; } = "LOCATION_STATE_RUNNING";
     public bool ProcessingOrder { get; init; }
     public string IntegrationLevel { get; init; } = "ON_LINE";

@@ -207,7 +207,8 @@ public sealed class OnboardSafetyListingRereadTests
         {
           "vehicle":{"movementState":"{{{movementState}}}","controlState":"CONTROL_STATE_OK",
             "emergencyState":"OK","breakSwitchState":"MOVABLE",
-            "locationState":"LOCATION_STATE_RUNNING","speed":{{{speed.ToString(System.Globalization.CultureInfo.InvariantCulture)}}}},
+            "locationState":"LOCATION_STATE_RUNNING","speed":{{{speed.ToString(System.Globalization.CultureInfo.InvariantCulture)}}},
+            "mode":"MODE_AUTO"},
           "vehicleTaskInfo":{"key":"VEHICLE-KEY-01","procState":"IDLE",
             "processingOrder":false,"enable":true,"integrationLevel":"ON_LINE"}
         }

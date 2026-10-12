@@ -6,8 +6,8 @@ namespace ControlServer.Tests;
 
 public sealed class RiotSdkPackageProvenanceTests
 {
-    private const string PackageVersion = "0.2.0-fp.4";
-    private const string RepositoryCommit = "073e40fd0f01c91302990df2684c0bc12a7e40f4";
+    private const string PackageVersion = "0.2.0-fp.5";
+    private const string RepositoryCommit = "4d3b4381160a61f9e01cab00143cebe7a5d3714c";
     private static readonly string[] PackageIds =
     [
         "RIoT.Sdk.Core",
@@ -79,6 +79,41 @@ public sealed class RiotSdkPackageProvenanceTests
 
         Assert.Equal(PackageVersion, dependencies["RIoT.Sdk.Core"]);
         Assert.Equal(PackageVersion, dependencies["RIoT.Sdk.Generated"]);
+    }
+
+    /// <summary>
+    /// The version this class checks is the version the build consumes. <see cref="FindPackageDirectory"/> finds the vendor
+    /// directory by <see cref="PackageVersion"/> alone, and old version directories stay in the repository, so a package bump
+    /// that left the constant behind went on checking the old directory and stayed green (control-server#639). Both places
+    /// that choose the package are tied to the constant: the central package version and the local feed directory.
+    /// </summary>
+    [Fact]
+    public void TheCheckedVersionIsTheVersionTheBuildConsumes()
+    {
+        string root = FindRepositoryRoot();
+        XElement facade = XDocument.Load(Path.Combine(root, "Directory.Packages.props")).Descendants()
+            .Single(element => element.Name.LocalName == "PackageVersion" &&
+                               element.Attribute("Include")?.Value == "RIoT.Sdk.Facade");
+        XElement feed = XDocument.Load(Path.Combine(root, "NuGet.Config")).Descendants()
+            .Single(element => element.Name.LocalName == "add" && element.Attribute("key")?.Value == "riot-sdk-local");
+
+        Assert.Equal(PackageVersion, facade.Attribute("Version")?.Value);
+        Assert.Equal(
+            Path.Combine("vendor", "nuget", "riot-sdk", PackageVersion),
+            feed.Attribute("value")?.Value.Replace('\\', Path.DirectorySeparatorChar).Replace('/', Path.DirectorySeparatorChar));
+    }
+
+    private static string FindRepositoryRoot()
+    {
+        for (DirectoryInfo? directory = new(AppContext.BaseDirectory); directory is not null; directory = directory.Parent)
+        {
+            if (File.Exists(Path.Combine(directory.FullName, "ControlServer.sln")))
+            {
+                return directory.FullName;
+            }
+        }
+
+        throw new DirectoryNotFoundException("Could not locate the ControlServer repository root.");
     }
 
     private static string FindPackageDirectory()

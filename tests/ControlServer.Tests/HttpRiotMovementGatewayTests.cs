@@ -581,6 +581,7 @@ public sealed class HttpRiotMovementGatewayTests
             "RIOT_VEHICLE_NOT_ONLINE",
             "RIOT_EMERGENCY_NOT_OK",
             "RIOT_BRAKE_NOT_MOVABLE",
+            "RIOT_MODE_NOT_AUTO",
             "RIOT_CONTROL_NOT_OK",
             "RIOT_LOCATION_NOT_RUNNING",
             "RIOT_SPEED_NOT_ZERO",
@@ -627,24 +628,136 @@ public sealed class HttpRiotMovementGatewayTests
         Assert.Equal(2, handler.CallCount);
     }
 
+    /// <summary>
+    /// control-server#639: a freshly powered-on vehicle reports MT_NA until its first movement task. With automatic mode and the
+    /// brake engaged -- the user's statement of 2026-10-12 is that only RIoT/matrix commands, manual mode and a released brake
+    /// move it -- and every other fact safe, it is stopped, under a source of its own.
+    /// </summary>
     [Fact]
-    public async Task VehicleSafetyReturnsUnknownForObservedMtNaEvenWhenEveryOtherFactIsSafe()
+    public async Task VehicleSafetyReadsMtNaAsStoppedInAutomaticModeWithTheBrakeEngaged()
+    {
+        RiotVehicleSafetyObservation result = await ReadSafetyAsync(SafeVehicleJson("MT_NA", 0));
+
+        Assert.Equal(RiotVehicleMotionState.Stopped, result.MotionState);
+        Assert.Empty(result.ReasonCodes);
+        Assert.Equal(HttpRiotMovementGateway.BootStoppedSource, result.Source);
+    }
+
+    /// <summary>
+    /// control-server#639: mode and brake are what MT_NA rests on; without either it is still not finished, and the missing
+    /// one is named.
+    /// </summary>
+    [Theory]
+    [InlineData("MODE_MANUAL", "MOVABLE", "RIOT_MODE_NOT_AUTO")]
+    [InlineData("MODE_AUTO", "UNMOVABLE", "RIOT_BRAKE_NOT_MOVABLE")]
+    [InlineData("MODE_AUTO", "UNKNOWN", "RIOT_BRAKE_NOT_MOVABLE")]
+    public async Task VehicleSafetyKeepsMtNaUnknownInManualModeOrWithTheBrakeReleased(
+        string mode, string breakSwitchState, string missing)
+    {
+        RiotVehicleSafetyObservation result = await ReadSafetyAsync(
+            SafeVehicleJson("MT_NA", 0, mode, breakSwitchState));
+
+        Assert.Equal(RiotVehicleMotionState.Unknown, result.MotionState);
+        Assert.Equal([missing, "RIOT_MOVEMENT_NOT_FINISHED"], result.ReasonCodes);
+        Assert.Equal("RIOT_BEHAVIOR_LAB_R41", result.Source);
+    }
+
+    /// <summary>
+    /// control-server#639: automatic mode is required, not merely manual mode refused. A mode RIoT left out, sent as UNKNOWN
+    /// or as a value the SDK does not know (which it reads as null) keeps every movement state unknown, MT_FINISHED included,
+    /// since manual mode moves a vehicle whatever its last movement task did.
+    /// </summary>
+    [Theory]
+    [InlineData("MT_NA", null)]
+    [InlineData("MT_NA", "UNKNOWN")]
+    [InlineData("MT_NA", "MODE_REMOTE")]
+    [InlineData("MT_FINISHED", null)]
+    [InlineData("MT_FINISHED", "UNKNOWN")]
+    [InlineData("MT_FINISHED", "MODE_MANUAL")]
+    [InlineData("MT_FINISHED", "MODE_REMOTE")]
+    public async Task VehicleSafetyIsNeverStoppedOutsideAutomaticMode(string movementState, string? mode)
+    {
+        RiotVehicleSafetyObservation result = await ReadSafetyAsync(SafeVehicleJson(movementState, 0, mode));
+
+        Assert.Equal(RiotVehicleMotionState.Unknown, result.MotionState);
+        Assert.Contains("RIOT_MODE_NOT_AUTO", result.ReasonCodes);
+    }
+
+    /// <summary>control-server#639: the brake rule was already there for MT_FINISHED and stays.</summary>
+    [Fact]
+    public async Task VehicleSafetyKeepsMtFinishedUnknownWithTheBrakeReleased()
+    {
+        RiotVehicleSafetyObservation result = await ReadSafetyAsync(
+            SafeVehicleJson("MT_FINISHED", 0, breakSwitchState: "UNMOVABLE"));
+
+        Assert.Equal(RiotVehicleMotionState.Unknown, result.MotionState);
+        Assert.Equal(["RIOT_BRAKE_NOT_MOVABLE"], result.ReasonCodes);
+    }
+
+    /// <summary>
+    /// control-server#639: no movement state other than MT_FINISHED and MT_NA counts, whatever mode and brake say.
+    /// </summary>
+    [Theory]
+    [InlineData("MT_PAUSED")]
+    [InlineData("MT_WAIT_FOR_START")]
+    [InlineData("MT_WAIT_FOR_CHECKPOINT")]
+    [InlineData("MT_IN_CANCEL")]
+    public async Task VehicleSafetyKeepsOtherMovementStatesUnknownInAutomaticModeWithTheBrakeEngaged(string movementState)
+    {
+        RiotVehicleSafetyObservation result = await ReadSafetyAsync(SafeVehicleJson(movementState, 0));
+
+        Assert.Equal(RiotVehicleMotionState.Unknown, result.MotionState);
+        Assert.Equal(["RIOT_MOVEMENT_NOT_FINISHED"], result.ReasonCodes);
+    }
+
+    /// <summary>
+    /// control-server#639: motion wins over mode and brake. MT_NA with a speed -- Round 44's manual-mode sample moved at 0.43 --
+    /// and MT_RUNNING are moving whatever the mode.
+    /// </summary>
+    [Theory]
+    [InlineData("MT_NA", 0.43, "MODE_MANUAL")]
+    [InlineData("MT_NA", 0.43, "MODE_AUTO")]
+    [InlineData("MT_RUNNING", 0, "MODE_AUTO")]
+    [InlineData("MT_RUNNING", 0, "MODE_MANUAL")]
+    public async Task VehicleSafetyReadsMotionAsMovingWhateverTheMode(string movementState, double speed, string mode)
+    {
+        RiotVehicleSafetyObservation result = await ReadSafetyAsync(SafeVehicleJson(movementState, speed, mode));
+
+        Assert.Equal(RiotVehicleMotionState.Moving, result.MotionState);
+        Assert.Equal(["RIOT_MOTION_ACTIVE"], result.ReasonCodes);
+    }
+
+    /// <summary>control-server#639: MT_NA in automatic mode with the brake engaged still needs every other composite fact.</summary>
+    [Fact]
+    public async Task VehicleSafetyKeepsMtNaUnknownWithAnUnfinishedOrderOnTheVehicle()
+    {
+        const string matchingOrder = """
+            {"code":"0","result":{"current":1,"size":100,"total":1,"records":[
+              {"id":1,"orderId":"ORDER-1","upperId":"UPPER-1","orderState":1,
+               "appointVehicleKey":"VEHICLE-KEY-01","executeVehicleKey":null}]}}
+            """;
+        RiotVehicleSafetyObservation result = await ReadSafetyAsync(SafeVehicleJson("MT_NA", 0), matchingOrder);
+
+        Assert.Equal(RiotVehicleMotionState.Unknown, result.MotionState);
+        Assert.Equal(["RIOT_NONFINAL_ORDER_PRESENT"], result.ReasonCodes);
+    }
+
+    private static async Task<RiotVehicleSafetyObservation> ReadSafetyAsync(string vehicleBody, string? ordersBody = null)
     {
         RecordingHandler handler = SafetyHandler(
             clock: null,
             afterVehicle: null,
             afterOrders: null,
-            SafeVehicleJson("MT_NA", 0),
-            CompleteOrdersJson());
+            vehicleBody,
+            ordersBody ?? CompleteOrdersJson());
         await using RiotSession session = CreateSession(handler);
         HttpRiotMovementGateway gateway = new(session);
 
         RiotVehicleSafetyObservation result = await gateway.ReadVehicleSafetyAsync(
             "VEHICLE-KEY-01", TestContext.Current.CancellationToken);
 
-        Assert.Equal(RiotVehicleMotionState.Unknown, result.MotionState);
-        Assert.Equal(["RIOT_MOVEMENT_NOT_FINISHED"], result.ReasonCodes);
         Assert.Equal(2, handler.CallCount);
+        return result;
     }
 
     [Fact]
@@ -1126,15 +1239,22 @@ public sealed class HttpRiotMovementGatewayTests
         "batteryState":"NO_CHARGE","speed":0,"lockStatus":0,"orderTaskId":null}}
         """;
 
-    private static string SafeVehicleJson(string movementState, double speed) => $$$"""
+    /// <summary>A vehicle every composite fact calls safe, but for the ones a test passes. Null mode leaves the member out.</summary>
+    private static string SafeVehicleJson(
+        string movementState, double speed, string? mode = "MODE_AUTO", string breakSwitchState = "MOVABLE")
+    {
+        string modeMember = mode is null ? "" : $",\"mode\":\"{mode}\"";
+        string speedText = speed.ToString(System.Globalization.CultureInfo.InvariantCulture);
+        return $$$"""
         {
           "vehicle":{"movementState":"{{{movementState}}}","controlState":"CONTROL_STATE_OK",
-            "emergencyState":"OK","breakSwitchState":"MOVABLE",
-            "locationState":"LOCATION_STATE_RUNNING","speed":{{{speed}}}},
+            "emergencyState":"OK","breakSwitchState":"{{{breakSwitchState}}}",
+            "locationState":"LOCATION_STATE_RUNNING","speed":{{{speedText}}}{{{modeMember}}}},
           "vehicleTaskInfo":{"key":"VEHICLE-KEY-01","procState":"IDLE",
             "processingOrder":false,"enable":true,"integrationLevel":"ON_LINE"}
         }
         """;
+    }
 
     private static string CompleteOrdersJson() =>
         """{"code":"0","result":{"current":1,"size":100,"total":0,"records":[]}}""";

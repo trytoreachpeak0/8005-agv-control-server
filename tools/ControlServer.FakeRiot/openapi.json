@@ -292,6 +292,7 @@
               "controlState": { "type": "string" },
               "emergencyState": { "type": "string" },
               "breakSwitchState": { "type": "string" },
+              "mode": { "type": "string", "enum": ["MODE_AUTO", "MODE_MANUAL", "UNKNOWN"] },
               "locationState": { "type": "string" },
               "processingOrder": { "type": "boolean" },
               "integrationLevel": { "type": "string" }
@@ -446,7 +447,8 @@
               "emergencyState": { "type": "string" },
               "breakSwitchState": { "type": "string" },
               "locationState": { "type": "string" },
-              "speed": { "type": "number" }
+              "speed": { "type": "number" },
+              "mode": { "type": "string" }
             }
           },
           "vehicleTaskInfo": {
