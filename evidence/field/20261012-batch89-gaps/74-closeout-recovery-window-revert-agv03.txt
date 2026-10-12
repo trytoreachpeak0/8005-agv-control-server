@@ -1,0 +1,22 @@
+[20:41:00] Close the v2 recovery window on agv03 (site site-agv03.json, install root C:\8005\OnboardHmi)
+[20:41:00] Server: factory01, the instance recorded in D:\zhengyushao\control-server-v2-ops\installed-instance.json; control-server modules from d7a9f912795e67b9b15645ad5cd24b06281881a4
+[20:41:00] Store C:\Users\szy\AppData\Local\AgvOpsSecrets\w2g-v2-recovery-window.xml: open on agv03
+[20:41:00] Vehicle: CONTROL_SERVER_RECOVERY_PROOF removed after the switch is off; recoveryResumeEnabled false
+[20:41:00] Server: checked first; CONTROL_SERVER_RECOVERY_AUTHENTICATION_PROOF removed after the vehicle (needs the V2 instance idle)
+[20:41:01] Proof: not needed
+[20:41:09] Server check on factory01 (read-only)
+  Definition: D:\zhengyushao\control-server-v2-ops\installed-instance.json (factory01-v2-parallel); registry HKEY_LOCAL_MACHINE\SYSTEM\CurrentControlSet\Services\8005 AGV ControlServer V2; configuration C:\Program Files\8005 AGV\ControlServer.V2\appsettings.Production.json; onboard port 58105
+  ENTRY=different
+  CONNECTED_VEHICLES=0
+  CHECK_PASSED
+[20:41:22] Vehicle half on agv03
+  recoveryResumeEnabled=False
+  CONTROL_SERVER_RECOVERY_PROOF=removed
+[20:41:25] Server half on factory01
+  Definition: D:\zhengyushao\control-server-v2-ops\installed-instance.json (factory01-v2-parallel); registry HKEY_LOCAL_MACHINE\SYSTEM\CurrentControlSet\Services\8005 AGV ControlServer V2; configuration C:\Program Files\8005 AGV\ControlServer.V2\appsettings.Production.json; onboard port 58105
+  ENTRY=different
+  CONNECTED_VEHICLES=0
+  service environment now carries: DOTNET_ENVIRONMENT, CONTROL_SERVER_RIOT_CALL_API_KEY, CONTROL_SERVER_ONBOARD_CREDENTIAL, CONTROL_SERVER_V2_FAULT_RECOVERY_CREDENTIAL, CONTROL_SERVER_V2_ONBOARD_SAFETY_CREDENTIAL_RIOT59, CONTROL_SERVER_V2_ONBOARD_SAFETY_CREDENTIAL_RIOT60, CONTROL_SERVER_MES_INGEST_SHARED_SECRET
+  service '8005 AGV ControlServer V2' restarted, Running
+  MVP service fingerprint unchanged.
+[20:41:34] Recovery window closed on the last open vehicle. Server entry removed, stored proof deleted.

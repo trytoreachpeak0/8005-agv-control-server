@@ -1,0 +1,17 @@
+=== 2026-10-12 20:44:58 batch89 close-out start
+MVP state=Running pid=10912 startMode=Auto (read only)
+config: gate=False routeGraph=False journeyRuntime.enabled=False clearanceToWaitingPointEnabled=False VFR=False onboardClearanceEntryDeclared=False admission=5 depWait=00:05:00 cargo=00:30:00 MapStationCatalog={"ApprovedSyncPeriod":"00:00:30","ApprovedMaxUnconfirmed":"00:05:00"}
+--- stop V2
+V2 state=Stopped startMode=Manual
+--- registry Environment: remove CONTROL_SERVER_V2_FAULT_RECOVERY_CREDENTIAL
+before keys: DOTNET_ENVIRONMENT,CONTROL_SERVER_RIOT_CALL_API_KEY,CONTROL_SERVER_ONBOARD_CREDENTIAL,CONTROL_SERVER_V2_FAULT_RECOVERY_CREDENTIAL,CONTROL_SERVER_V2_ONBOARD_SAFETY_CREDENTIAL_RIOT59,CONTROL_SERVER_V2_ONBOARD_SAFETY_CREDENTIAL_RIOT60,CONTROL_SERVER_MES_INGEST_SHARED_SECRET
+after keys (re-read): DOTNET_ENVIRONMENT,CONTROL_SERVER_RIOT_CALL_API_KEY,CONTROL_SERVER_ONBOARD_CREDENTIAL,CONTROL_SERVER_V2_ONBOARD_SAFETY_CREDENTIAL_RIOT59,CONTROL_SERVER_V2_ONBOARD_SAFETY_CREDENTIAL_RIOT60,CONTROL_SERVER_MES_INGEST_SHARED_SECRET
+CONTROL_SERVER_V2_FAULT_RECOVERY_CREDENTIAL present after: False
+--- appsettings: remove hand-added MapStationCatalog
+backup=D:\zhengyushao\control-server-v2-ops\cs566b\appsettings.Production.json.bak-20261012204459-before-b89-catalog-remove
+top-level sections changed: MapStationCatalog
+--- V2 Manual
+V2 state=Stopped startMode=Manual
+config (re-read): gate=False routeGraph=False journeyRuntime.enabled=False clearanceToWaitingPointEnabled=False VFR=False onboardClearanceEntryDeclared=False admission=5 depWait=00:05:00 cargo=00:30:00 MapStationCatalog=null
+MVP state=Running pid=10912 startMode=Auto (read only)
+=== 2026-10-12 20:44:59 close-out done

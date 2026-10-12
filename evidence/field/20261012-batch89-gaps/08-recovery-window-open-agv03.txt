@@ -1,0 +1,26 @@
+[19:07:31] Open the v2 recovery window on agv03 (site site-agv03.json, install root C:\8005\OnboardHmi)
+[19:07:31] Server: factory01, the instance recorded in D:\zhengyushao\control-server-v2-ops\installed-instance.json; control-server modules from d7a9f912795e67b9b15645ad5cd24b06281881a4
+[19:07:31] Store C:\Users\szy\AppData\Local\AgvOpsSecrets\w2g-v2-recovery-window.xml: open on agv02
+[19:07:31] Vehicle: CONTROL_SERVER_RECOVERY_PROOF set and read back before the switch; recoveryResumeEnabled true
+[19:07:31] Server: checked first; CONTROL_SERVER_RECOVERY_AUTHENTICATION_PROOF set after the vehicle (no restart when it already holds the proof)
+[19:07:31] Proof: reused from the store
+[19:07:36] Server check on factory01 (read-only)
+  Definition: D:\zhengyushao\control-server-v2-ops\installed-instance.json (factory01-v2-parallel); registry HKEY_LOCAL_MACHINE\SYSTEM\CurrentControlSet\Services\8005 AGV ControlServer V2; configuration C:\Program Files\8005 AGV\ControlServer.V2\appsettings.Production.json; onboard port 58105
+  ENTRY=same
+  NO_CHANGE: the service already holds what this needs; no write, no restart.
+  CHECK_PASSED
+[19:07:42] Vehicle half on agv03
+  CONTROL_SERVER_RECOVERY_PROOF=set (machine scope, value not shown)
+  recoveryResumeEnabled=True
+[19:07:44] Server half on factory01
+  Definition: D:\zhengyushao\control-server-v2-ops\installed-instance.json (factory01-v2-parallel); registry HKEY_LOCAL_MACHINE\SYSTEM\CurrentControlSet\Services\8005 AGV ControlServer V2; configuration C:\Program Files\8005 AGV\ControlServer.V2\appsettings.Production.json; onboard port 58105
+  ENTRY=same
+  NO_CHANGE: the service already holds what this needs; no write, no restart.
+  MVP service fingerprint unchanged.
+[19:07:47] Recovery window open on agv03. The client is still stopped -- starting it is a field step.
+
+  Start the client with 10-start-onboard-stack.ps1 (field authorization), not by a double click:
+  a client started from an Explorer that predates the variable does not see it and refuses to start.
+  Close the window when it ends:
+    pwsh -File remote-ops/onboard-hmi/scripts/18-set-v2-recovery-window.ps1 -SshAlias agv03 -ControlServerRepository <checkout> -Revert
+  Re-run the open after re-deploying the onboard client, or after a first install of the V2 service.

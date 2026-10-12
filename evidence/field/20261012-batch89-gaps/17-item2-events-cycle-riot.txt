@@ -1,0 +1,26 @@
+19:38:39.000 Warning 2205 Vehicle "BROKERX-f38975561adf46ccb1d2f23833c7d0e4" is below its mandatory charge entry threshold: battery 32% < 60% (charging policy version 8). It takes no new transport, no en-route append and no idle return until it has charged (REQ-0290, "MANDATORY_CHARGE_REQUIRED"); a journey it is carrying finishes as planned (REQ-0281).
+19:38:39.000 Warning 2205 Vehicle "BROKERX-7daca4ee91da498d8026c68b7b941127" is below its mandatory charge entry threshold: battery 40% < 60% (charging policy version 8). It takes no new transport, no en-route append and no idle return until it has charged (REQ-0290, "MANDATORY_CHARGE_REQUIRED"); a journey it is carrying finishes as planned (REQ-0281).
+19:38:40.000 Information 2240 Charging committed: vehicle "老厂前线新多仓位2" reserved charger 211 as journey "charging:BROKERX-f38975561adf46ccb1d2f23833c7d0e4:20261012T113839490Z", route cost 37871 mm, battery 32%. "battery=32"
+19:38:40.000 Information 2241 Charging not allocated for vehicle "老厂前线新多仓位3": "CHARGING_NO_CHARGER_AVAILABLE". "battery=40; 211=CHARGER_RESERVED_OR_OCCUPIED"
+19:38:40.000 Warning 2246 Vehicle "老厂前线新多仓位3" is below its mandatory charge line and no charger can be allocated to it: "CHARGING_NO_CHARGER_AVAILABLE". "battery=40; 211=CHARGER_RESERVED_OR_OCCUPIED" It stays queued, takes no transport and no idle return, and its battery goes on falling. Check on site: is the charger free and is nothing standing on it (CHARGER_RESERVED_OR_OCCUPIED, CHARGER_OCCUPIED_BY_VEHICLE, CHARGER_TARGETED_BY_RUNNING_ORDER); can RIoT read every fleet vehicle and its unfinished orders (CHARGER_OCCUPAN
+## select substr(VehicleKey,9,6) as V,StationId,Phase,WireState,ChargingPolicyVersion,AllocatedAt from ChargingCycles where Phase<>'ENDED'
+V=f38975 | StationId=211 | Phase=ACTIVE | WireState=ALLOCATED | ChargingPolicyVersion=8 | AllocatedAt=2026-10-12 11:38:39.4905459+00:00
+## select JourneyId,Status,BlockReasonCode from JourneyRuntimes where JourneyId like 'charging:%' order by rowid desc limit 1
+MethodInvocationException: D:\zhengyushao\control-server-v2-ops\cs566b\dbq.ps1:9
+Line |
+   9 |  … Command(); $cmd.CommandText = $sql; $r = $cmd.ExecuteReader(); while  …
+     |                                        ~~~~~~~~~~~~~~~~~~~~~~~~~
+     | Exception calling "ExecuteReader" with "0" argument(s): "SQLite Error 1: 'no such column: Status'."
+InvalidOperation: D:\zhengyushao\control-server-v2-ops\cs566b\dbq.ps1:9
+Line |
+   9 |  … mmandText = $sql; $r = $cmd.ExecuteReader(); while ($r.Read()) { (0.. …
+     |                                                        ~~~~~~~~~
+     | You cannot call a method on a null-valued expression.
+InvalidOperation: D:\zhengyushao\control-server-v2-ops\cs566b\dbq.ps1:9
+Line |
+   9 |  … "$($r.GetName($_))=$($r.GetValue($_))" }) -join ' | ' }; $r.Close() }
+     |                                                             ~~~~~~~~~~
+     | You cannot call a method on a null-valued expression.
+nonfinal orders mentioning agv01: 1
+nonfinal orders mentioning agv02: 0
+nonfinal orders mentioning agv03: 0

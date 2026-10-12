@@ -1,0 +1,7 @@
+20:11:00.000 Warning 2127 RIoT reports order "W2G-CHARGE-62d6bd7c-20261012T120202571Z" of journey "charging:BROKERX-f38975561adf46ccb1d2f23833c7d0e4:20261012T120202571Z" on vehicle "老厂前线新多仓位2" in state 9; the journey names "ORDER_HANG" and waits for a person. No order command, emergency stop or fault is issued for it.
+20:11:03.000 Warning 2264 UNABLE_TO_CHARGE_CONFIRMED: vehicle "BROKERX-f38975561adf46ccb1d2f23833c7d0e4" (journey "charging:BROKERX-f38975561adf46ccb1d2f23833c7d0e4:20261012T120202571Z") could not charge at charger 211: RIoT returned "407802" for the start-charging action and order "W2G-CHARGE-62d6bd7c-20261012T120202571Z" ended in HANG, with no CHARGING read this cycle. The charger is paused for all 8005 allocation (root cause UNKNOWN; nothing is blamed on the vehicle or the charger) and the vehicle stays where it is: n
+## select StartedAt,CompletedAt,Proof from StationClearances where VehicleKey like '%f38975%' order by rowid desc limit 1
+StartedAt=2026-10-12 12:11:02.9632568+00:00 | CompletedAt= | Proof=
+## select Trigger,StationId,HeldAt,FinalHangAt from ChargingStationAllocationHolds order by rowid desc limit 1
+Trigger=UNABLE_TO_CHARGE_CONFIRMED | StationId=211 | HeldAt=2026-10-12 12:11:02.9632568+00:00 | FinalHangAt=2026-10-12 12:11:02.9632568+00:00
+currentPosition=211 movementState=MT_FINISHED procState=INNER_FORCE_IDLE speed=0 sysState=IDLE 

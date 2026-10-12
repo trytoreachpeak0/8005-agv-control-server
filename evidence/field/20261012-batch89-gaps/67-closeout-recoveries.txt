@@ -1,0 +1,14 @@
+route interface=Wi-Fi
+POST /api/charging/v1/station-recoveries at 2026-10-12 20:32:49.755 auth=Bearer <CONTROL_SERVER_V2_FAULT_RECOVERY_CREDENTIAL>
+request={"mapId":26,"stationId":211,"operatorId":"<redacted>","basis":"现场已给桩 211 合闸，桩恢复出电（批次 8/9 缺口第 4 项收工）","claimedRole":"R-11"}
+status=200
+response={"mapId":26,"stationId":211,"outcome":"RECOVERED","holdIds":["e2bce182-ada3-3058-b593-b2e99673e193"],"codes":[]}
+route interface=Wi-Fi
+POST /api/charging/v1/vehicle-eligibility-recoveries at 2026-10-12 20:32:51.534 auth=Bearer <CONTROL_SERVER_V2_FAULT_RECOVERY_CREDENTIAL>
+request={"agvId":"老厂前线新多仓位2","operatorId":"<redacted>","basis":"充电中断由现场拉闸造成（批次 8/9 缺口第 4 项），桩已合闸恢复出电，车辆本身无故障","claimedRole":"R-11"}
+status=200
+response={"agvId":"老厂前线新多仓位2","vehicleKey":"BROKERX-f38975561adf46ccb1d2f23833c7d0e4","outcome":"RECOVERED","holdIds":["2b186e01-3075-905f-b658-369421cc37e1"],"codes":[]}
+## select count(*) as UnrecoveredStationHolds from ChargingStationAllocationHolds h where not exists (select 1 from ChargingStationRecoveries r where r.HoldId=h.HoldId)
+UnrecoveredStationHolds=0
+## select count(*) as UnrecoveredVehicleHolds from VehicleChargingEligibilityHolds h where not exists (select 1 from VehicleChargingEligibilityRecoveries r where r.HoldId=h.HoldId)
+UnrecoveredVehicleHolds=0
