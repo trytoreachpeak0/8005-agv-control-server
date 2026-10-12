@@ -212,6 +212,7 @@ public sealed class OwnOrderRebuildTests
     [InlineData("RIOT_VEHICLE_NOT_ENABLED")]
     [InlineData("RIOT_VEHICLE_NOT_ONLINE")]
     [InlineData("RIOT_BRAKE_NOT_MOVABLE")]
+    [InlineData("RIOT_MODE_NOT_AUTO")]
     [InlineData("RIOT_CONTROL_NOT_OK")]
     [InlineData("VEHICLE_FAULT_IN_EFFECT")]
     [InlineData("RIOT_VEHICLE_MAP_MISMATCH")]

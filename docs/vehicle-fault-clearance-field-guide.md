@@ -126,7 +126,7 @@ continue，另一个回 409 `FAULT_RECOVERY_RESUME_IN_PROGRESS`，过一会儿�
    急停或切到手动**，重建会一直等下去（见第 2 条）。
 2. **车况不允许就不建**：服务端读 RIoT 的车辆安全读取——车载端安全投影用的同一次读、同一组原因码——再加服务端自己的
    故障事实与车所在的图。车在急停（`RIOT_EMERGENCY_NOT_OK`）、手动或下线（`RIOT_VEHICLE_NOT_ENABLED`、
-   `RIOT_VEHICLE_NOT_ONLINE`、解抱闸 `RIOT_BRAKE_NOT_MOVABLE`）、故障（`RIOT_CONTROL_NOT_OK`、服务端的
+   `RIOT_VEHICLE_NOT_ONLINE`、解抱闸 `RIOT_BRAKE_NOT_MOVABLE`、手动模式 `RIOT_MODE_NOT_AUTO`）、故障（`RIOT_CONTROL_NOT_OK`、服务端的
    `VEHICLE_FAULT_IN_EFFECT`）、不在本图（`RIOT_VEHICLE_MAP_MISMATCH`）、车上还挂着别的单或还在动时，都不建。
    **车载端也要说这辆车可以走**：会话已就绪，且车载端的安全摘要是可离站、车已停、目标仓全锁、开锁输出全复位、没有未知——
    与一趟旅程派第一张单时同一组判据（记录上写 `ONBOARD_FACTS_NOT_READY` 或 `ONBOARD_DEPARTURE_UNSAFE`）。车载端会话没就绪时

@@ -84,7 +84,8 @@ public static class RiotDataPlane
                     emergencyState = vehicle.EmergencyState,
                     breakSwitchState = vehicle.BreakSwitchState,
                     locationState = vehicle.LocationState,
-                    speed = vehicle.Speed
+                    speed = vehicle.Speed,
+                    mode = vehicle.Mode
                 },
                 vehicleTaskInfo = new
                 {

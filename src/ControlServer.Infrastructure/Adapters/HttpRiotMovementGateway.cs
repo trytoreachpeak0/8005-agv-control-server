@@ -51,6 +51,36 @@ public sealed class HttpRiotMovementGateway : IRiotMovementGateway, IRiotVehicle
     /// </remarks>
     private static readonly string[] NotMovingStates = ["MT_FINISHED", "MT_PAUSED"];
 
+    /// <summary>
+    /// The safety projection's source when <c>STOPPED</c> rests on <c>MT_NA</c> read through mode and brake rather than on
+    /// <c>MT_FINISHED</c> (control-server#639), so the two are told apart afterwards.
+    /// </summary>
+    /// <remarks>
+    /// <para>
+    /// <c>MT_NA</c> is what RIoT reports from power-on until the vehicle's first movement task (behaviour lab Rounds 22, 30,
+    /// 33-36, raw <c>moveTaskNo=0</c>). It is not a statement that the vehicle is still: Round 44 has one MT_NA sample of a
+    /// vehicle in <c>MODE_MANUAL</c> moving at 0.43. Until #639 a freshly powered-on vehicle therefore stayed UNKNOWN until
+    /// somebody drove it on RIoT by hand.
+    /// </para>
+    /// <para>
+    /// What lets it count is the user's statement of 2026-10-12 (用户 2026-10-12 陈述), quoted as given:
+    /// 「MT_NA确实不能判定为停稳，但是车子除了正常移动时可以移动（RIOT或者matrix下达指令），处于手动模式或解抱闸时也可以移动，
+    /// 其他情况均无法移动，所以只要判断其在不在手动模式和解抱闸状态就行了」. So MT_NA counts only with <c>MODE_AUTO</c> and the
+    /// brake engaged (<c>breakSwitchState=MOVABLE</c>; the name runs against intuition, Round 22 / Q-031: UNMOVABLE is the
+    /// released brake), on top of every other fact the composite already requires. <c>MODE_AUTO</c> is required for every
+    /// movement state, not just MT_NA, because manual mode is a source of motion of its own.
+    /// </para>
+    /// <para>
+    /// <b>Where that premise breaks.</b> A movement command from RIoT or matrix moves the vehicle before
+    /// <c>movementState</c> leaves MT_NA: nothing else in the composite sees it, since an on-vehicle go-to-station run keeps
+    /// <c>procState=IDLE</c> and <c>processingOrder=false</c> and is no RIoT order (Round 38 M1). The same window exists for
+    /// MT_FINISHED, which also jumps straight to MT_RUNNING there. A stale <c>mode</c>, as on an offline vehicle whose fields
+    /// freeze, is held off only by the <c>ON_LINE</c> fact. Any source of motion beyond the three the user named is not
+    /// covered at all.
+    /// </para>
+    /// </remarks>
+    public const string BootStoppedSource = "RIOT_BEHAVIOR_LAB_R41_MT_NA_AUTO_BRAKED";
+
     /// <summary>Page size for the non-final order listing; 100 is what every read used before paging (control-server#525).</summary>
     private const int NonFinalOrderPageSize = 100;
 
@@ -430,24 +460,31 @@ public sealed class HttpRiotMovementGateway : IRiotMovementGateway, IRiotVehicle
                 ["RIOT_MOTION_ACTIVE"]);
         }
 
+        bool auto = string.Equals(vehicle.Mode, "MODE_AUTO", StringComparison.Ordinal);
+        bool braked = string.Equals(vehicle.BreakSwitchState, "MOVABLE", StringComparison.Ordinal);
+        bool finished = string.Equals(vehicle.MovementState, "MT_FINISHED", StringComparison.Ordinal);
+        // control-server#639: MT_NA counts only through mode and brake, never on its own (see BootStoppedSource).
+        bool bootAtRest = string.Equals(vehicle.MovementState, "MT_NA", StringComparison.Ordinal) && auto && braked;
+
         List<string> reasons = [];
         if (!string.Equals(vehicle.ProcState, "IDLE", StringComparison.Ordinal)) reasons.Add("RIOT_PROC_NOT_IDLE");
         if (vehicle.ProcessingOrder != false) reasons.Add("RIOT_PROCESSING_ORDER_UNKNOWN_OR_ACTIVE");
         if (vehicle.Enable != true) reasons.Add("RIOT_VEHICLE_NOT_ENABLED");
         if (!string.Equals(vehicle.IntegrationLevel, "ON_LINE", StringComparison.Ordinal)) reasons.Add("RIOT_VEHICLE_NOT_ONLINE");
         if (!string.Equals(vehicle.EmergencyState, "OK", StringComparison.Ordinal)) reasons.Add("RIOT_EMERGENCY_NOT_OK");
-        if (!string.Equals(vehicle.BreakSwitchState, "MOVABLE", StringComparison.Ordinal)) reasons.Add("RIOT_BRAKE_NOT_MOVABLE");
+        if (!braked) reasons.Add("RIOT_BRAKE_NOT_MOVABLE");
+        if (!auto) reasons.Add("RIOT_MODE_NOT_AUTO");
         if (!string.Equals(vehicle.ControlState, "CONTROL_STATE_OK", StringComparison.Ordinal)) reasons.Add("RIOT_CONTROL_NOT_OK");
         if (!string.Equals(vehicle.LocationState, "LOCATION_STATE_RUNNING", StringComparison.Ordinal)) reasons.Add("RIOT_LOCATION_NOT_RUNNING");
         if (vehicle.Speed is null || vehicle.Speed != 0) reasons.Add("RIOT_SPEED_NOT_ZERO");
-        if (!string.Equals(vehicle.MovementState, "MT_FINISHED", StringComparison.Ordinal)) reasons.Add("RIOT_MOVEMENT_NOT_FINISHED");
+        if (!finished && !bootAtRest) reasons.Add("RIOT_MOVEMENT_NOT_FINISHED");
         if (hasNonFinalOrder) reasons.Add("RIOT_NONFINAL_ORDER_PRESENT");
 
         return new RiotVehicleSafetyObservation(
             vehicleKey,
             reasons.Count == 0 ? RiotVehicleMotionState.Stopped : RiotVehicleMotionState.Unknown,
             observedAt,
-            "RIOT_BEHAVIOR_LAB_R41",
+            reasons.Count == 0 && !finished ? BootStoppedSource : "RIOT_BEHAVIOR_LAB_R41",
             reasons);
     }
 

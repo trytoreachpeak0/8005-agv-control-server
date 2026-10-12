@@ -25,6 +25,7 @@ public sealed record VehicleCommand : CommandEnvelope
     public string? ControlState { get; init; }
     public string? EmergencyState { get; init; }
     public string? BreakSwitchState { get; init; }
+    public string? Mode { get; init; }
     public string? LocationState { get; init; }
     public bool? ProcessingOrder { get; init; }
     public string? IntegrationLevel { get; init; }
@@ -256,6 +257,7 @@ public static class ControlPlane
                     ControlState = command.ControlState ?? vehicle.ControlState,
                     EmergencyState = command.EmergencyState ?? vehicle.EmergencyState,
                     BreakSwitchState = command.BreakSwitchState ?? vehicle.BreakSwitchState,
+                    Mode = command.Mode ?? vehicle.Mode,
                     LocationState = command.LocationState ?? vehicle.LocationState,
                     ProcessingOrder = command.ProcessingOrder ?? vehicle.ProcessingOrder,
                     IntegrationLevel = command.IntegrationLevel ?? vehicle.IntegrationLevel

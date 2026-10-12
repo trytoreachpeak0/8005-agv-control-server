@@ -909,14 +909,14 @@ public sealed partial class JourneyRuntimeEngine
     /// <summary>
     /// The vehicle's condition, the second guard: every reason it may not be sent off now, or none. Read from RIoT's vehicle
     /// safety read -- the same read, the same reason codes, the onboard's safety projection is built from
-    /// (<see cref="IRiotVehicleSafetyFacts"/>: <c>emergencyState</c>, <c>breakSwitchState</c>, <c>controlState</c>,
+    /// (<see cref="IRiotVehicleSafetyFacts"/>: <c>emergencyState</c>, <c>breakSwitchState</c>, <c>mode</c>, <c>controlState</c>,
     /// <c>enable</c>/<c>integrationLevel</c>, <c>procState</c>, <c>locationState</c>, speed and movement, and no unfinished order on
     /// the vehicle) -- from RIoT's vehicle read for the Map it stands on, and from this server's own fault fact
     /// (<c>VehicleFaultStates.Level</c>).
     /// </summary>
     /// <remarks>
     /// An emergency stop reads <c>RIOT_EMERGENCY_NOT_OK</c>; manual or offline reads <c>RIOT_VEHICLE_NOT_ENABLED</c>,
-    /// <c>RIOT_VEHICLE_NOT_ONLINE</c> or <c>RIOT_BRAKE_NOT_MOVABLE</c>; a fault reads <c>RIOT_CONTROL_NOT_OK</c> on RIoT's side and
+    /// <c>RIOT_VEHICLE_NOT_ONLINE</c>, <c>RIOT_BRAKE_NOT_MOVABLE</c> or <c>RIOT_MODE_NOT_AUTO</c> (control-server#639); a fault reads <c>RIOT_CONTROL_NOT_OK</c> on RIoT's side and
     /// <c>VEHICLE_FAULT_IN_EFFECT</c> on this server's; another Map reads <c>RIOT_VEHICLE_MAP_MISMATCH</c>. Anything the read
     /// cannot vouch for counts against it: a vehicle is sent
     /// off only when RIoT says it is standing still with nothing in the way.

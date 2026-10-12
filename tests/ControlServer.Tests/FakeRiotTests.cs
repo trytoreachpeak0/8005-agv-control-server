@@ -82,6 +82,31 @@ public sealed class FakeRiotTests
         Assert.Equal(12, card.CurrentStationId);
     }
 
+    /// <summary>
+    /// control-server#639: the fake reports MODE_AUTO unless a scenario says otherwise, so every scenario that leaves the
+    /// mode alone still sees a stopped vehicle, and a scenario can put it in manual mode.
+    /// </summary>
+    [Fact]
+    [Trait("IntegrationSlice", "FP-IS-01")]
+    public async Task TheVehicleIsInAutomaticModeUntilTheControlPlaneSaysManual()
+    {
+        await using FakeRiotFixture fixture = await FakeRiotFixture.StartAsync();
+        HttpRiotMovementGateway gateway = fixture.Gateway();
+
+        await fixture.CommandAsync(HttpMethod.Put, "vehicle", new { vehicleKey = VehicleKey, movementState = "MT_NA" });
+        RiotVehicleSafetyObservation automatic = await gateway.ReadVehicleSafetyAsync(
+            VehicleKey, TestContext.Current.CancellationToken);
+
+        await fixture.CommandAsync(HttpMethod.Put, "vehicle", new { vehicleKey = VehicleKey, mode = "MODE_MANUAL" });
+        RiotVehicleSafetyObservation manual = await gateway.ReadVehicleSafetyAsync(
+            VehicleKey, TestContext.Current.CancellationToken);
+
+        Assert.Equal(RiotVehicleMotionState.Stopped, automatic.MotionState);
+        Assert.Equal(HttpRiotMovementGateway.BootStoppedSource, automatic.Source);
+        Assert.Equal(RiotVehicleMotionState.Unknown, manual.MotionState);
+        Assert.Equal(["RIOT_MODE_NOT_AUTO", "RIOT_MOVEMENT_NOT_FINISHED"], manual.ReasonCodes);
+    }
+
     [Fact]
     [Trait("IntegrationSlice", "FP-IS-03")]
     public async Task CreatingAnOrderQueuesItAndTheSameUpperIdIsRefusedAsAlreadyExisting()
