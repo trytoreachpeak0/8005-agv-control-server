@@ -330,6 +330,12 @@ try {
     if ($Rollback -and -not (Test-Path -LiteralPath (Join-Path $previousRoot 'controlserver') -PathType Container)) {
         throw "No previous generation to roll back to: $previousRoot\controlserver does not exist. Nothing was stopped or changed."
     }
+    # control-server#652 R2: with a vehicle roster, a previous generation whose upgrade script predates the per-vehicle
+    # safety projection check (control-server#649) fails that check every time; refused here, before the swap.
+    $previousUpdatePath = Join-Path $previousRoot 'scripts\Update-ControlServerLocal.ps1'
+    $rollbackTargetRefusal = $Rollback ? (Get-ParallelRollbackTargetRefusal -Definition $definition -UpdateScriptPath $previousUpdatePath `
+            -UpdateScriptText ((Test-Path -LiteralPath $previousUpdatePath -PathType Leaf) ? [IO.File]::ReadAllText($previousUpdatePath) : $null)) : $null
+    if ($rollbackTargetRefusal) { throw $rollbackTargetRefusal }
 
     # control-server#535 review S1: a 'fake' rollback restarts the double from the directory it is in; when
     # a 'production' install retired that directory, say so now, not after the configuration was rewritten.
@@ -452,6 +458,14 @@ try {
                 StopService = {
                     Stop-Service -Name $serviceName -Force
                     (Get-Service -Name $serviceName).WaitForStatus('Stopped', [TimeSpan]::FromSeconds(60))
+                }
+                # control-server#652 R1: the upgrade's preflight reads each roster vehicle's credential from the service's
+                # Environment; put the resolved ones there first, or a redeploy refuses the same way every time.
+                WriteVehicleSafetyCredentials = {
+                    Write-ParallelOnboardSafetyCredentialForUpgrade -Credentials $onboardSafetyCredentials -Actions @{
+                        GetEnvironment = { Get-ServiceEnvironment }
+                        SetEnvironment = { param([string[]] $Environment) Set-ServiceEnvironment $Environment }
+                    }
                 }
                 InvokeUpdate = {
                     & (Join-Path $scripts 'Update-ControlServerLocal.ps1') `

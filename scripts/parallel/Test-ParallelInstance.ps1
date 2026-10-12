@@ -1385,6 +1385,9 @@ $scanTargets = [ordered]@{
             'Invoke-ParallelRemovalSequence::$Actions.ReparsePoint', 'Invoke-ParallelRemovalSequence::$Actions.Directory',
             'Invoke-ParallelRemovalSequence::$result'); Owners = $deleteFunctions; Expected = 12 }
     'ParallelHost.psm1'                   = @{ Dynamic = @('Invoke-ParallelProductUninstaller::$UninstallerPath',
+            # control-server#652: the credential write before the upgrade, and its own injected Environment actions.
+            'Invoke-ParallelProductUpgrade::$Actions.WriteVehicleSafetyCredentials',
+            'Write-ParallelOnboardSafetyCredentialForUpgrade::$Actions.GetEnvironment', 'Write-ParallelOnboardSafetyCredentialForUpgrade::$Actions.SetEnvironment',
             # control-server#454: the write seam and the injected machine actions.
             'Update-ParallelInstanceConfigurationFile::$Writer',
             'Invoke-ParallelProductUpgrade::$Actions.StopService', 'Invoke-ParallelProductUpgrade::$Actions.InvokeUpdate',
@@ -1400,7 +1403,7 @@ $scanTargets = [ordered]@{
             'Invoke-ParallelJourneyRuntimeRelease::$Actions.ServiceProcessId', 'Invoke-ParallelJourneyRuntimeRelease::$Actions.StopService',
             'Invoke-ParallelJourneyRuntimeRelease::$Actions.ProcessExited', 'Invoke-ParallelJourneyRuntimeRelease::$Actions.StartService',
             # control-server#578 review: the machine environment read before the restart, and setting the flag back to false.
-            'Invoke-ParallelInstanceConfigurationStep::$Actions.GetMachineEnvironment', 'Invoke-ParallelJourneyRuntimeRelease::$setBackFalse'); Owners = @(); Expected = 36 }
+            'Invoke-ParallelInstanceConfigurationStep::$Actions.GetMachineEnvironment', 'Invoke-ParallelJourneyRuntimeRelease::$setBackFalse'); Owners = @(); Expected = 40 }
     'Set-ParallelDispatchGateLocal.ps1'   = @{ Dynamic = @(); Owners = @(); Expected = 0 }
 }
 foreach ($file in $scanTargets.Keys) {
@@ -2183,7 +2186,7 @@ Invoke-PathCase 'disable before upgrade' {
 # the flag stays false, JOURNEY_RUNTIME_LEFT_DISABLED says how to recover, and the failure is
 # rethrown; with RIoT dispatch open nothing at all happens (review S3, S4 M5/M6).
 function Invoke-UpgradeCase {
-    param([string] $InstalledText, [scriptblock] $Update = { 'upgrade ran' })
+    param([string] $InstalledText, [scriptblock] $Update = { 'upgrade ran' }, [scriptblock] $Write = { 'credentials written' })
     $directory = Join-Path ([IO.Path]::GetTempPath()) "cs454-upgrade-$([guid]::NewGuid().ToString('N'))"
     New-Item -ItemType Directory -Path $directory | Out-Null
     $file = Join-Path $directory 'appsettings.Production.json'
@@ -2194,6 +2197,7 @@ function Invoke-UpgradeCase {
     try {
         $null = Invoke-ParallelProductUpgrade -ConfigurationPath $file -ServiceName '8005 AGV ControlServer V2' -WarningVariable +warnings -WarningAction SilentlyContinue -Actions @{
             StopService = { $seen.Add("stop(flag=$(& $flagOf))") }
+            WriteVehicleSafetyCredentials = { $seen.Add("write(flag=$(& $flagOf))"); & $Write }
             InvokeUpdate = { $seen.Add("update(flag=$(& $flagOf))"); & $Update }
             ServiceStatus = { 'Running' }
         }
@@ -2206,8 +2210,8 @@ function Invoke-UpgradeCase {
 
 Invoke-PathCase 'upgrade wrapper, success' {
     $r = Invoke-UpgradeCase -InstalledText $installedText
-    Write-Result -Ok ((@($r.Seen) -join ',') -ceq 'stop(flag=true),update(flag=false)' -and $null -eq $r.Thrown -and $r.FlagAfter -eq 'false') `
-        -Name 'upgrade: the service is stopped while the flag is still true, the upgrade runs with it false, and it stays false for the overlay to restore' `
+    Write-Result -Ok ((@($r.Seen) -join ',') -ceq 'stop(flag=true),write(flag=true),update(flag=false)' -and $null -eq $r.Thrown -and $r.FlagAfter -eq 'false') `
+        -Name 'upgrade: the service is stopped while the flag is still true, the vehicle credentials are written after the stop and before the upgrade (control-server#652), the upgrade runs with it false, and it stays false for the overlay to restore' `
         -Detail ("seen: " + (@($r.Seen) -join ',') + " thrown: $($r.Thrown) after: $($r.FlagAfter)")
 }
 Invoke-PathCase 'upgrade wrapper, failure' {
@@ -2227,6 +2231,90 @@ Invoke-PathCase 'upgrade wrapper, dispatch open' {
         -Name 'dispatch open: refused before the service is stopped, the file untouched (review S3)' `
         -Detail ("thrown: $($r.Thrown); seen: " + (@($r.Seen) -join ',') + "; file unchanged: $($r.Text -ceq $openText)")
 }
+Invoke-PathCase 'upgrade wrapper, MISSING after the credentials were written (control-server#652 R1)' {
+    $r = Invoke-UpgradeCase -InstalledText $installedText -Update { throw 'SAFETY_PROJECTION_VEHICLE_CREDENTIAL_MISSING: selftest' }
+    $warning = @($r.Warnings | Where-Object { $_ -like 'JOURNEY_RUNTIME_LEFT_DISABLED*' })
+    Write-Result -Ok ($warning.Count -eq 1 -and $warning[0].Contains('lists a vehicle this definition does not') -and
+        $warning[0].Contains('-Uninstall without -RemoveData') -and $r.Thrown -ceq 'SAFETY_PROJECTION_VEHICLE_CREDENTIAL_MISSING: selftest') `
+        -Name 'a MISSING upgrade says a redeploy of the same definition fails the same way and to uninstall keeping the data, then install (control-server#652 R1)' `
+        -Detail ("warnings: " + ($r.Warnings -join ' | '))
+    $other = Invoke-UpgradeCase -InstalledText $installedText -Update { throw 'simulated upgrade failure' }
+    Write-Result -Ok (-not (($other.Warnings -join ' ').Contains('-Uninstall without -RemoveData'))) `
+        -Name 'any other upgrade failure does not carry the MISSING advice' -Detail ("warnings: " + ($other.Warnings -join ' | '))
+}
+Invoke-PathCase 'upgrade wrapper, the credential write fails (control-server#652 review S1)' {
+    $r = Invoke-UpgradeCase -InstalledText $installedText -Write { throw 'VEHICLE_SAFETY_CREDENTIAL_NOT_WRITTEN: selftest' }
+    Write-Result -Ok ((@($r.Seen) -join ',') -ceq 'stop(flag=true),write(flag=true)' -and $r.Thrown -ceq 'VEHICLE_SAFETY_CREDENTIAL_NOT_WRITTEN: selftest' -and
+        $r.FlagAfter -eq 'true' -and @($r.Warnings | Where-Object { $_ -like 'JOURNEY_RUNTIME_LEFT_DISABLED*' }).Count -eq 0) `
+        -Name 'upgrade: a failed credential write is rethrown unchanged, after the stop and before the flag and the upgrade (the flag stays true, no LEFT_DISABLED)' `
+        -Detail ("seen: " + (@($r.Seen) -join ',') + "; thrown: $($r.Thrown); after: $($r.FlagAfter); warnings: " + ($r.Warnings -join ' | '))
+}
+Invoke-PathCase 'upgrade wrapper, no credential action' {
+    $file = Join-Path ([IO.Path]::GetTempPath()) "cs652-noaction-$([guid]::NewGuid().ToString('N')).json"
+    [IO.File]::WriteAllText($file, $installedText, [Text.UTF8Encoding]::new($false))
+    $stopped = $false; $thrown = $null
+    try {
+        $null = Invoke-ParallelProductUpgrade -ConfigurationPath $file -ServiceName '8005 AGV ControlServer V2' -Actions @{
+            StopService = { $stopped = $true }; InvokeUpdate = { }; ServiceStatus = { 'Running' }
+        }
+    } catch { $thrown = $_.Exception.Message } finally { Remove-Item -LiteralPath $file -Force -ErrorAction SilentlyContinue }
+    Write-Result -Ok ($null -ne $thrown -and $thrown.Contains('WriteVehicleSafetyCredentials') -and -not $stopped) `
+        -Name 'upgrade: a caller without WriteVehicleSafetyCredentials is refused before the service is stopped (control-server#652)' -Detail "thrown: $thrown"
+}
+
+# control-server#652 R1: Write-ParallelOnboardSafetyCredentialForUpgrade -- adds and replaces, never removes, writes only when
+# something changed, reads back presence (not values), and no value in what it returns or throws.
+$safetyPrefix = (Get-ParallelInstanceName).OnboardSafetyCredentialVariablePrefix
+# Defined here: Invoke-SourceCase, which it mirrors, comes later in this file.
+function Invoke-CredentialWriteCase([string] $Name, [scriptblock] $Body) {
+    try { $verdict = & $Body; Write-Result -Ok ([bool] $verdict.Ok) -Name $Name -Detail ([string] $verdict.Detail) }
+    catch { Write-Result -Ok $false -Name $Name -Detail "threw: $($_.Exception.Message)" }
+}
+function Invoke-CredentialWrite {
+    param([System.Collections.IDictionary] $Credentials, [string[]] $Environment, [scriptblock] $Store)
+    $state = @{ Environment = $Environment; Gets = 0; Sets = 0 }
+    $thrown = $null; $line = $null
+    try {
+        $line = Write-ParallelOnboardSafetyCredentialForUpgrade -Credentials $Credentials -Actions @{
+            GetEnvironment = { $state.Gets++; $state.Environment }
+            SetEnvironment = { param([string[]] $New) $state.Sets++; $state.Environment = $null -eq $Store ? $New : (& $Store $New) }
+        }
+    } catch { $thrown = $_.Exception.Message }
+    return [pscustomobject]@{ Line = $line; Thrown = $thrown; Environment = @($state.Environment); Gets = $state.Gets; Sets = $state.Sets }
+}
+$twoCredentials = [ordered]@{ "${safetyPrefix}59" = 'cs652-value-59'; "${safetyPrefix}60" = 'cs652-value-60' }
+Invoke-CredentialWriteCase 'R1 credential write: two cars -- one replaced, one added, the rest kept (a stale vehicle''s too), values not shown' {
+    $r = Invoke-CredentialWrite -Credentials $twoCredentials -Environment @('DOTNET_ENVIRONMENT=Production', "${safetyPrefix}59=cs652-old", "${safetyPrefix}99=cs652-stale")
+    $expected = @('DOTNET_ENVIRONMENT=Production', "${safetyPrefix}59=cs652-value-59", "${safetyPrefix}99=cs652-stale", "${safetyPrefix}60=cs652-value-60")
+    @{ Ok = ($null -eq $r.Thrown -and $r.Sets -eq 1 -and (@($r.Environment | Sort-Object) -join '|') -ceq (@($expected | Sort-Object) -join '|') -and
+            $r.Line.Contains("${safetyPrefix}59") -and $r.Line.Contains("${safetyPrefix}60") -and -not $r.Line.Contains('cs652-')) ; Detail = "line: $($r.Line); thrown: $($r.Thrown); sets: $($r.Sets); names: $(@($r.Environment | ForEach-Object { ($_ -split '=', 2)[0] }) -join ',')" }
+}
+Invoke-CredentialWriteCase 'R1 credential write: already in place, with an entry after them -- nothing written (review L1)' {
+    $r = Invoke-CredentialWrite -Credentials $twoCredentials -Environment @('A=1', "${safetyPrefix}59=cs652-value-59", "${safetyPrefix}60=cs652-value-60", 'CONTROL_SERVER_MES_INGEST_SHARED_SECRET=cs652-s')
+    @{ Ok = ($null -eq $r.Thrown -and $r.Sets -eq 0); Detail = "sets: $($r.Sets); thrown: $($r.Thrown)" }
+}
+Invoke-CredentialWriteCase 'R1 credential write: a name in other casing with the same value -- nothing written (Windows names ignore case)' {
+    $r = Invoke-CredentialWrite -Credentials $twoCredentials -Environment @("$($safetyPrefix.ToLowerInvariant())59=cs652-value-59", "${safetyPrefix}60=cs652-value-60", 'A=1')
+    @{ Ok = ($null -eq $r.Thrown -and $r.Sets -eq 0); Detail = "sets: $($r.Sets); thrown: $($r.Thrown)" }
+}
+Invoke-CredentialWriteCase 'R1 credential write: single car (no roster) -- the Environment is neither read nor written' {
+    $r = Invoke-CredentialWrite -Credentials ([ordered]@{}) -Environment @('A=1')
+    @{ Ok = ($null -eq $r.Thrown -and $r.Gets -eq 0 -and $r.Sets -eq 0 -and $r.Line.Contains('none')); Detail = "gets: $($r.Gets); sets: $($r.Sets); line: $($r.Line)" }
+}
+Invoke-CredentialWriteCase 'R1 credential write: a write that did not land -- VEHICLE_SAFETY_CREDENTIAL_NOT_WRITTEN naming the variables, no value' {
+    $r = Invoke-CredentialWrite -Credentials $twoCredentials -Environment @('A=1') -Store { param($New) @('A=1') }
+    @{ Ok = ($null -ne $r.Thrown -and $r.Thrown.StartsWith('VEHICLE_SAFETY_CREDENTIAL_NOT_WRITTEN') -and $r.Thrown.Contains("${safetyPrefix}60") -and -not $r.Thrown.Contains('cs652-')); Detail = "thrown: $($r.Thrown)" }
+}
+Invoke-CredentialWriteCase 'R1 credential write: a value read back blank -- refused, naming only that variable' {
+    $r = Invoke-CredentialWrite -Credentials $twoCredentials -Environment @() -Store { param($New) @($New | ForEach-Object { $_ -like "${safetyPrefix}60=*" ? "${safetyPrefix}60= " : $_ }) }
+    @{ Ok = ($null -ne $r.Thrown -and $r.Thrown.Contains("${safetyPrefix}60") -and -not $r.Thrown.Contains("${safetyPrefix}59")); Detail = "thrown: $($r.Thrown)" }
+}
+Invoke-CredentialWriteCase 'R1 credential write: an action missing -- refused, nothing run' {
+    $thrown = $null
+    try { $null = Write-ParallelOnboardSafetyCredentialForUpgrade -Credentials $twoCredentials -Actions @{ GetEnvironment = { @() } } } catch { $thrown = $_.Exception.Message }
+    @{ Ok = ($null -ne $thrown -and $thrown.Contains('SetEnvironment')); Detail = "thrown: $thrown" }
+}
+
 $v2Configuration = 'C:\Program Files\8005 AGV\ControlServer.V2\appsettings.Production.json'
 $v2Service = '8005 AGV ControlServer V2'
 $mvpConfiguration = 'C:\Program Files\8005 AGV\ControlServer\appsettings.Production.json'
@@ -2485,6 +2573,8 @@ $actionWiring = @(
     @{ Function = 'Invoke-ParallelProductUpgrade'; Key = 'StopService'; Expect = @('Stop-Service', 'Get-Service'); Text = "WaitForStatus('Stopped'" }
     @{ Function = 'Invoke-ParallelProductUpgrade'; Key = 'InvokeUpdate'; Expect = @("(Join-Path `$scripts 'Update-ControlServerLocal.ps1')"); Text = '-ServiceName $serviceName' }
     @{ Function = 'Invoke-ParallelProductUpgrade'; Key = 'ServiceStatus'; Expect = @('Get-Service'); Text = '-Name $serviceName' }
+    # control-server#652 R1: this installer's resolved credentials, into this service's own Environment.
+    @{ Function = 'Invoke-ParallelProductUpgrade'; Key = 'WriteVehicleSafetyCredentials'; Expect = @('Write-ParallelOnboardSafetyCredentialForUpgrade', 'Get-ServiceEnvironment', 'Set-ServiceEnvironment'); Text = '-Credentials $onboardSafetyCredentials' }
     @{ Function = 'Invoke-ParallelInstanceConfigurationStep'; Key = 'GetEnvironment'; Expect = @('Get-ServiceEnvironment'); Text = $null }
     @{ Function = 'Invoke-ParallelInstanceConfigurationStep'; Key = 'SetEnvironment'; Expect = @('Set-ServiceEnvironment'); Text = 'Set-ServiceEnvironment $Environment' }
     @{ Function = 'Invoke-ParallelInstanceConfigurationStep'; Key = 'RestartService'; Expect = @('Restart-Service'); Text = '-Name $serviceName' }
@@ -4513,7 +4603,7 @@ try {
     $file = Join-Path ([IO.Path]::GetTempPath()) "cs605-wrapper-$([guid]::NewGuid().ToString('N')).json"
     [IO.File]::WriteAllText($file, $installedText, [Text.UTF8Encoding]::new($false))
     $null = Invoke-ParallelProductUpgrade -ConfigurationPath $file -ServiceName $v2Service -WarningAction SilentlyContinue -Actions @{
-        StopService = { }; ServiceStatus = { 'Running' }
+        StopService = { }; ServiceStatus = { 'Running' }; WriteVehicleSafetyCredentials = { }
         InvokeUpdate = { throw [AggregateException]::new('ControlServer upgrade and rollback both failed.', @([Exception]::new('x'))) }
     }
 } catch { $wrapperThrown = $_.Exception } finally { Remove-Item -LiteralPath $file -Force -ErrorAction SilentlyContinue }
@@ -4760,6 +4850,98 @@ Invoke-SourceCase 'clearance read-back: the Host source logs the switch under th
     $eventSource = @(Get-ChildItem -LiteralPath (Join-Path $repoRoot 'src/ControlServer.Host') -Recurse -Filter '*.cs' |
             Where-Object { (Get-Content -Raw -LiteralPath $_.FullName).Contains($clearanceTemplate) })
     @{ Ok = ($eventSource.Count -eq 1 -and $eventSource[0].Name -ceq 'EffectiveConfigurationEvent.cs'); Detail = "template found in: $(@($eventSource | ForEach-Object Name) -join ', ')" }
+}
+
+# ------------------------------------------------------------------------------------------------
+# control-server#652 R2: a -Rollback whose previous generation's upgrade script predates the per-vehicle safety projection
+# check (control-server#649) is refused on a definition with a roster, before anything changes.
+# ------------------------------------------------------------------------------------------------
+Write-Host ''
+Write-Host 'Rollback target (control-server#652 R2)' -ForegroundColor Cyan
+
+$r2TwoCar = Read-ParallelInstanceDefinition -Path $exampleFleetPath
+$r2Marker = 'SAFETY_PROJECTION_VEHICLE_CREDENTIAL_MISSING'
+$r2Current = [IO.File]::ReadAllText((Join-Path $repoRoot 'scripts/Update-ControlServerLocal.ps1'))
+$r2Old = $r2Current.Replace($r2Marker, 'PRE_CS649_SELFTEST')
+foreach ($case in @(
+        @{ Name = 'two cars, previous script older than #649 -> refused'; Definition = $r2TwoCar; Text = $r2Old; Refused = $true; Says = 'has no SAFETY_PROJECTION_VEHICLE_CREDENTIAL_MISSING' }
+        @{ Name = 'two cars, previous script missing -> refused'; Definition = $r2TwoCar; Text = $null; Refused = $true; Says = 'does not exist' }
+        @{ Name = 'two cars, previous script from this commit -> allowed'; Definition = $r2TwoCar; Text = $r2Current; Refused = $false; Says = $null }
+        @{ Name = 'single car, previous script older than #649 -> allowed (the shared credential still reads)'; Definition = $baseline; Text = $r2Old; Refused = $false; Says = $null })) {
+    Invoke-SourceCase "R2 rollback target: $($case.Name)" {
+        $got = Get-ParallelRollbackTargetRefusal -Definition $case.Definition -UpdateScriptPath 'X:\previous\scripts\Update-ControlServerLocal.ps1' -UpdateScriptText $case.Text
+        $ok = $case.Refused ? ($null -ne $got -and $got.StartsWith('ROLLBACK_TARGET_PREDATES_PER_VEHICLE_CHECK (nothing was stopped or changed; the package directories were not swapped)') -and
+                $got.Contains($case.Says) -and $got.Contains('Fix forward')) : ($null -eq $got)
+        @{ Ok = $ok; Detail = "got: $got" }
+    }
+}
+
+# Where the installer asks: one call, under `$Rollback ?` and no if, thrown by the very next statement, ahead of every change
+# the rollback makes -- the record, the retirement of a double, the package swap, the product script.
+$r2Commands = @($installerAst.FindAll({ param($n) $n -is [System.Management.Automation.Language.CommandAst] }, $true))
+$r2Call = @($r2Commands | Where-Object { $_.GetCommandName() -eq 'Get-ParallelRollbackTargetRefusal' })
+$r2Throw = @($installerAst.FindAll({ param($n) $n -is [System.Management.Automation.Language.ThrowStatementAst] -and $n.Extent.Text -ceq 'throw $rollbackTargetRefusal' }, $true))
+$r2Ifs = @(); $r2Assignment = $null
+if ($r2Call.Count -eq 1) {
+    $a = $r2Call[0].Parent
+    while ($a) {
+        if ($a -is [System.Management.Automation.Language.IfStatementAst]) { $r2Ifs += $a }
+        if ($null -eq $r2Assignment -and $a -is [System.Management.Automation.Language.AssignmentStatementAst]) { $r2Assignment = $a }
+        $a = $a.Parent
+    }
+}
+$r2Siblings = $null -eq $r2Assignment ? @() : @($r2Assignment.Parent.Statements)
+$r2At = [array]::IndexOf($r2Siblings, $r2Assignment)
+$r2Next = ($r2At -ge 0 -and $r2At + 1 -lt $r2Siblings.Count) ? $r2Siblings[$r2At + 1].Extent.Text : ''
+$r2Previous = $r2At -ge 1 ? $r2Siblings[$r2At - 1] : $null
+$r2Firsts = [ordered]@{
+    record = @($r2Commands | Where-Object { $_.GetCommandName() -eq 'Copy-Item' -and $_.Extent.Text.Contains('InstalledDefinitionPath') })
+    retire = @($r2Commands | Where-Object { $_.GetCommandName() -in @('Get-ParallelRetiredFakeMesIngest', 'Unregister-ScheduledTask', 'Stop-Process') })
+    swap = @($r2Commands | Where-Object { $_.GetCommandName() -eq 'Move-Item' })
+    product = @($r2Commands | Where-Object { $_.GetCommandName() -eq 'Invoke-ProductInstaller' })
+}
+$r2Late = @($r2Firsts.Keys | Where-Object { $r2Firsts[$_].Count -eq 0 -or $r2Throw.Count -ne 1 -or
+        ($r2Firsts[$_] | ForEach-Object { $_.Extent.StartOffset } | Sort-Object | Select-Object -First 1) -le $r2Throw[0].Extent.StartOffset })
+Write-Result -Ok ($r2Call.Count -eq 1 -and $r2Throw.Count -eq 1 -and $r2Late.Count -eq 0 -and $r2Ifs.Count -eq 0 -and
+    $null -ne $r2Assignment -and $r2Assignment.Left.Extent.Text -ceq '$rollbackTargetRefusal' -and $r2Assignment.Right.Extent.Text.StartsWith('$Rollback ? (Get-ParallelRollbackTargetRefusal') -and
+    $r2Next -ceq 'if ($rollbackTargetRefusal) { throw $rollbackTargetRefusal }') `
+    -Name 'R2 wiring: the rollback target refusal is asked once, on $Rollback alone and inside no if, thrown by the next statement, before the record, the retirement, the package swap and the product script' `
+    -Detail ("calls: $($r2Call.Count); throws: $($r2Throw.Count); not after it: $($r2Late -join ', '); ifs: $($r2Ifs.Count); next: $r2Next")
+
+# And run: the installer's own three statements (the path, the refusal, its throw), against a layout on disk -- the refusal
+# is thrown and not a file moves.
+$r2Statement = ($null -eq $r2Previous -or $r2Next -eq '') ? $null :
+    [pscustomobject]@{ Extent = [pscustomobject]@{ Text = ($r2Previous.Extent.Text + "`n" + $r2Assignment.Extent.Text + "`n" + $r2Next) } }
+Write-Result -Ok ($null -ne $r2Previous -and $r2Previous.Extent.Text.StartsWith('$previousUpdatePath = Join-Path $previousRoot')) `
+    -Name 'R2 wiring: the statement before the refusal is the previous generation''s upgrade script path' -Detail (${r2Previous}?.Extent.Text)
+function Get-R2Snapshot([string] $Root) {
+    @(Get-ChildItem -LiteralPath $Root -Recurse -Force | Sort-Object FullName | ForEach-Object {
+            $relative = [IO.Path]::GetRelativePath($Root, $_.FullName)
+            $_.PSIsContainer ? "$relative/" : "$relative=$((Get-FileHash -LiteralPath $_.FullName -Algorithm SHA256).Hash)" }) -join "`n"
+}
+foreach ($case in @(
+        @{ Name = 'previous generation older than #649: refused, nothing moved'; Previous = $r2Old; Refused = $true }
+        @{ Name = 'previous generation from this commit: not refused'; Previous = $r2Current; Refused = $false })) {
+    Invoke-SourceCase "R2 run: $($case.Name)" {
+        $root = Join-Path ([IO.Path]::GetTempPath()) "cs652-r2-$([guid]::NewGuid().ToString('N'))"
+        try {
+            foreach ($generation in @(@{ Dir = 'package'; Text = $r2Current; Binary = 'running' }, @{ Dir = 'package.previous'; Text = $case.Previous; Binary = 'previous' })) {
+                New-Item -ItemType Directory -Path (Join-Path $root "$($generation.Dir)/scripts"), (Join-Path $root "$($generation.Dir)/controlserver") -Force | Out-Null
+                [IO.File]::WriteAllText((Join-Path $root "$($generation.Dir)/scripts/Update-ControlServerLocal.ps1"), $generation.Text)
+                [IO.File]::WriteAllText((Join-Path $root "$($generation.Dir)/controlserver/ControlServer.Host.exe"), $generation.Binary)
+            }
+            $before = Get-R2Snapshot $root
+            $thrown = $null
+            $Rollback = $true; $definition = $r2TwoCar; $previousRoot = Join-Path $root 'package.previous'
+            try { $null = & ([scriptblock]::Create($r2Statement.Extent.Text)) } catch { $thrown = $_.Exception.Message }
+            $after = Get-R2Snapshot $root
+            $ok = ($case.Refused ? ($null -ne $thrown -and $thrown.StartsWith('ROLLBACK_TARGET_PREDATES_PER_VEHICLE_CHECK')) : ($null -eq $thrown)) -and
+                $before -ceq $after -and [IO.File]::ReadAllText((Join-Path $root 'package/controlserver/ControlServer.Host.exe')) -ceq 'running'
+            @{ Ok = $ok; Detail = "thrown: $thrown; layout unchanged: $($before -ceq $after)" }
+        } finally {
+            Remove-Item -LiteralPath $root -Recurse -Force -ErrorAction SilentlyContinue
+        }
+    }
 }
 
 Write-Host ''

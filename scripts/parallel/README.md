@@ -292,6 +292,15 @@ control-server#518 时它只绑 `WIRE_TO_GATE` → 210「关卡」，核对号�
   某台车的值等于共享的 `CONTROL_SERVER_ONBOARD_CREDENTIAL`，都在停任何东西之前拒绝（`ONBOARD_SAFETY_CREDENTIAL_MISSING`／
   `ONBOARD_SAFETY_CREDENTIAL_SHARED`），报错只写车号和变量名。服务端启动时再查一遍同样的规则。
 - 配置步骤把每台车的值写进服务的 `Environment`，并删掉车队表里已经没有的车留下的旧变量。
+- 升级时（control-server#652）：`Invoke-ParallelProductUpgrade` 停服务之后、调产品升级脚本之前，先把解析好的每车凭据写进服务
+  `Environment`（`Write-ParallelOnboardSafetyCredentialForUpgrade`，只增改不删，回读只核「在且非空」），因为升级脚本的预检要从那里
+  按车读安全投影（control-server#649）。以前要等升级脚本返回后才写，`Environment` 里缺值时每次重新部署都同样以
+  `SAFETY_PROJECTION_VEHICLE_CREDENTIAL_MISSING` 失败。升级失败不还原：写进去的就是下一次成功部署要写的值，变量名按 riotId、新旧两代
+  相同，服务端只读配置里点名的变量，旧二进制多看到几个变量无害。现在仍报 MISSING，只可能是已装配置列着一台当前定义里没有的车，
+  重新部署同样会失败，改为 19 号 `-Uninstall`（不带 `-RemoveData`）后再装。
+- 回滚时（control-server#652）：定义带车队表，而上一代包里的升级脚本早于 control-server#649（没有按车读投影），`-Rollback` 在动任何东西
+  之前拒绝（`ROLLBACK_TARGET_PREDATES_PER_VEHICLE_CHECK`，包目录不对调）：那个脚本只会拿共享凭据去读、必然 401。这时只能往前修；
+  也不要卸载后装 #649 之前的包。再部署一次含 #649 的提交、让上一代也含它之后，`-Rollback` 才可用。
 - 服务端：车队表两台以上、投影开着、却没有按车凭据，**拒绝启动**；配了按车凭据后共享凭据读不到任何一台车的投影（401）；
   请求可以带 `?vehicleKey=`，与凭据的车不符、为空、重复或不在车队表里一律 403，不读 RIoT。
 - 车载端要拿到自己那一份：`06-deploy-onboard-hmi.ps1` 把它写进车上的 `CONTROL_SERVER_ONBOARD_SAFETY_CREDENTIAL`。凭据在控制端用

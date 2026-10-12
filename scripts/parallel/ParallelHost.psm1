@@ -392,6 +392,63 @@ function Set-ParallelInstanceJourneyRuntimeDisabled {
     return Set-ParallelInstanceConfigurationFlag -Path $Path -Section 'JourneyRuntime' -Value $false -Writer $Writer
 }
 
+function Write-ParallelOnboardSafetyCredentialForUpgrade {
+    <#
+        .SYNOPSIS
+            control-server#652 R1. Puts every roster vehicle's vehicle-safety projection credential into the service's
+            Environment before the product upgrade script runs. Adds and replaces only; reads back. Returns a line naming
+            the variables, never a value.
+
+        .DESCRIPTION
+            Update-ControlServerLocal.ps1's preflight reads each listed vehicle's credential from the service's Environment
+            (control-server#649). The installer resolves them before anything changes (Resolve-ParallelOnboardSafetyCredential)
+            but the configuration step writes them only after the product script returned -- so an Environment without them
+            refused the upgrade with SAFETY_PROJECTION_VEHICLE_CREDENTIAL_MISSING on every redeploy. Called from
+            Invoke-ParallelProductUpgrade with the service stopped, before the upgrade.
+
+            Adds and replaces, never removes: dropping a credential for a vehicle the roster no longer names is the
+            configuration step's, after the upgrade. Not restored when the upgrade then fails: the values are the ones the
+            next deployment that completes writes, under the same names (the prefix plus the riotId), and a Host reads only
+            the variables its configuration names (OnboardSafetyProjectionOptionsValidator), so an older binary started by
+            the upgrade's own rollback does not mind the extra entries. The read-back checks each variable is present and not
+            blank; it does not compare values, and no value leaves this function.
+
+        .PARAMETER Credentials
+            Variable -> value, from Resolve-ParallelOnboardSafetyCredential; empty for a single car, which writes nothing.
+
+        .PARAMETER Actions
+            GetEnvironment (returns the service's Environment multi-string) and SetEnvironment (takes the new one), both required.
+    #>
+    [CmdletBinding()]
+    param(
+        [Parameter(Mandatory = $true)][AllowEmptyCollection()][System.Collections.IDictionary] $Credentials,
+        [Parameter(Mandatory = $true)][hashtable] $Actions
+    )
+    $missing = @('GetEnvironment', 'SetEnvironment' | Where-Object { -not ($Actions.ContainsKey($_) -and $Actions[$_] -is [scriptblock]) })
+    if ($missing.Count -gt 0) { throw "Write-ParallelOnboardSafetyCredentialForUpgrade: missing action(s) $($missing -join ', '); nothing was run." }
+    $variables = @($Credentials.Keys | ForEach-Object { [string] $_ })
+    if ($variables.Count -eq 0) { return 'Vehicle-safety projection credentials before the upgrade: none (single car, shared credential).' }
+
+    # Written only when some variable's value differs, compared by name and value: Set-ParallelServiceEnvironmentEntry moves a
+    # replaced entry to the end, so comparing the whole multi-string would rewrite one that only changed order (review L1).
+    [string[]] $environment = @(@(& $Actions.GetEnvironment) | Where-Object { $null -ne $_ })
+    $differ = @($variables | Where-Object { (Get-ParallelServiceEnvironmentEntry -Environment $environment -Name $_) -cne [string] $Credentials[$_] })
+    if ($differ.Count -gt 0) {
+        foreach ($variable in $differ) {
+            $environment = Set-ParallelServiceEnvironmentEntry -Environment $environment -Name $variable -Value ([string] $Credentials[$variable])
+        }
+        $null = & $Actions.SetEnvironment $environment
+    }
+
+    [string[]] $after = @(& $Actions.GetEnvironment)
+    $absent = @($variables | Where-Object { [string]::IsNullOrWhiteSpace((Get-ParallelServiceEnvironmentEntry -Environment $after -Name $_)) })
+    if ($absent.Count -gt 0) {
+        throw ("VEHICLE_SAFETY_CREDENTIAL_NOT_WRITTEN: $($absent -join ', ') not in the service's Environment after it was written. " +
+            'The service is stopped; JourneyRuntime and the package are as they were. Deploy again.')
+    }
+    return "Vehicle-safety projection credentials put into the service's Environment before the upgrade: $($variables -join ', ') (values not shown)."
+}
+
 function Invoke-ParallelProductUpgrade {
     <#
         .SYNOPSIS
@@ -408,6 +465,9 @@ function Invoke-ParallelProductUpgrade {
                  stopping the service also stops the runtime's fault supervision of a vehicle that
                  may be under way. Nothing has been touched yet.
               2. Stop the service (StopService), so a running service never sees the flag change.
+                 Then (control-server#652 R1) put the roster vehicles' projection credentials into its Environment
+                 (WriteVehicleSafetyCredentials, Write-ParallelOnboardSafetyCredentialForUpgrade): the upgrade's
+                 preflight reads them there, and the configuration step would write them only after it.
               3. Set JourneyRuntime.enabled false in the file. The upgrade's lifecycle check then runs
                  with the runtime off, its backup holds false, and its rollback restores false --
                  the preflight's intent, kept rather than bypassed.
@@ -418,7 +478,8 @@ function Invoke-ParallelProductUpgrade {
 
         .PARAMETER Actions
             Hashtable of scriptblocks, all required: StopService (returns once the service is
-            stopped), InvokeUpdate (runs the product upgrade script; throws on failure), and
+            stopped), WriteVehicleSafetyCredentials (control-server#652; returns a line for the log),
+            InvokeUpdate (runs the product upgrade script; throws on failure), and
             ServiceStatus (returns the service's status, for the failure report).
     #>
     [CmdletBinding()]
@@ -428,7 +489,7 @@ function Invoke-ParallelProductUpgrade {
         [Parameter(Mandatory = $true)][string] $ServiceName,
         [Parameter(Mandatory = $true)][hashtable] $Actions
     )
-    $missing = @('StopService', 'InvokeUpdate', 'ServiceStatus' | Where-Object { -not ($Actions.ContainsKey($_) -and $Actions[$_] -is [scriptblock]) })
+    $missing = @('StopService', 'WriteVehicleSafetyCredentials', 'InvokeUpdate', 'ServiceStatus' | Where-Object { -not ($Actions.ContainsKey($_) -and $Actions[$_] -is [scriptblock]) })
     if ($missing.Count -gt 0) { throw "Invoke-ParallelProductUpgrade: missing action(s) $($missing -join ', '); nothing was run." }
     if (-not (Test-Path -LiteralPath $ConfigurationPath -PathType Leaf)) {
         throw "No installed configuration at $ConfigurationPath."
@@ -439,11 +500,13 @@ function Invoke-ParallelProductUpgrade {
     if ($refusal) { throw $refusal }
 
     $null = & $Actions.StopService
+    Write-Host (& $Actions.WriteVehicleSafetyCredentials)
     $wasEnabled = Set-ParallelInstanceJourneyRuntimeDisabled -Path $ConfigurationPath
     Write-Host "JourneyRuntime.enabled set false for the upgrade, with the service stopped (was '$wasEnabled')"
     try {
         & $Actions.InvokeUpdate | Out-Host
     } catch {
+        $failure = $_
         $status = try { & $Actions.ServiceStatus } catch { "unknown: $($_.Exception.Message)" }
         $flagNow = try { (Get-Content -LiteralPath $ConfigurationPath -Raw -Encoding utf8 | ConvertFrom-Json).JourneyRuntime.enabled } catch { "unreadable: $($_.Exception.Message)" }
         Write-Warning ("JOURNEY_RUNTIME_LEFT_DISABLED: the upgrade failed, and $ConfigurationPath has JourneyRuntime.enabled=$flagNow " +
@@ -453,7 +516,14 @@ function Invoke-ParallelProductUpgrade {
             'writes the definition''s value back. The upgrade runs the Update-ControlServerLocal.ps1 inside the package being ' +
             'deployed, not this installer''s: if the running package predates control-server#605 its upgrade fails again at the same ' +
             '.Count, so only a package that contains that fix recovers it. Do NOT use -Rollback for this: after a failed install the package swap has not ' +
-            'happened, so -Rollback installs the generation before the running one, which the onboard side may not match.')
+            'happened, so -Rollback installs the generation before the running one, which the onboard side may not match.' +
+            # control-server#652 R1: this installer puts every roster vehicle's credential in before the upgrade, so a MISSING
+            # here is a vehicle the installed configuration lists and this definition does not.
+            (($failure.Exception.Message -like 'SAFETY_PROJECTION_VEHICLE_CREDENTIAL_MISSING*') ?
+                (' SAFETY_PROJECTION_VEHICLE_CREDENTIAL_MISSING: this installer put every roster vehicle''s projection credential into ' +
+                    'the service''s Environment before the upgrade, so the installed configuration lists a vehicle this definition does ' +
+                    'not, and nothing holds its credential. Redeploying the same definition fails the same way: uninstall keeping the data ' +
+                    '(19-deploy-control-server-parallel.ps1 -Uninstall without -RemoveData), then install.') : ''))
         throw
     }
     return $wasEnabled
@@ -1328,7 +1398,7 @@ Export-ModuleMember -Function @('Get-MvpFingerprint', 'Assert-MvpUntouched', 'Fo
     'Get-ParallelProductUninstallerPath', 'Test-ParallelProductUninstallerPremise', 'Invoke-ParallelProductUninstaller',
     'Update-ParallelInstanceConfigurationFile', 'Set-ParallelInstanceJourneyRuntimeDisabled', 'Set-ParallelInstanceConfigurationFlag',
     'Get-ParallelJourneyDispatchState', 'Invoke-ParallelDispatchGateChange',
-    'Invoke-ParallelProductUpgrade', 'Test-ParallelProductRollbackFailed', 'Test-ParallelInstalledRecordRestorable', 'Format-ParallelFailedInstallState',
+    'Write-ParallelOnboardSafetyCredentialForUpgrade', 'Invoke-ParallelProductUpgrade', 'Test-ParallelProductRollbackFailed', 'Test-ParallelInstalledRecordRestorable', 'Format-ParallelFailedInstallState',
     'Invoke-ParallelInstanceConfigurationStep', 'Invoke-ParallelJourneyRuntimeRelease',
     'Get-ParallelFakeMesIngestTaskAction', 'Register-ParallelFakeMesIngestTask', 'Get-ParallelFakeMesIngestTaskReport',
     'Wait-ParallelFakeMesIngestTask', 'Invoke-ParallelFakeMesIngestSeed')

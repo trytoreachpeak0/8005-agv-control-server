@@ -247,7 +247,10 @@ function Get-SafetyProjectionPlan($Configuration) {
         if ([string]::IsNullOrWhiteSpace($vehicleKey) -or [string]::IsNullOrWhiteSpace($variable) -or [string]::IsNullOrWhiteSpace($credential)) {
             throw ("SAFETY_PROJECTION_VEHICLE_CREDENTIAL_MISSING: 安装的配置 OnboardSafetyProjection:vehicleCredentials 为车 '$vehicleKey' " +
                 "列了变量 '$variable'，但服务 '$serviceName' 的 Environment 里没有它的值，升级后的安全投影自检没法用这台车自己的凭据去读。" +
-                '本脚本还什么都没有改。按车凭据由 scripts/parallel 的安装器写进服务 Environment；用它重新部署，不要改用共享凭据。')
+                '本脚本没有停服务，也没有换包和数据目录；但经 scripts/parallel（19 号）部署时，外层在调用本脚本之前已经停了服务，' +
+                '并把 JourneyRuntime 置为 false。不要改用共享凭据。出路：控制端先用 Set-ControlServerSecret.ps1 -NewVehicleSafetyCredential ' +
+                '存好这台车的凭据，再用含 control-server#652 的提交重新部署（它的安装器在调用本脚本前把每车凭据写进服务 Environment）；' +
+                '若这台车已不在当前实例定义里，重新部署会同样失败，改为 19 号 -Uninstall（不带 -RemoveData，保留数据）后再安装。')
         }
         [pscustomobject]@{ VehicleKey = $vehicleKey; Variable = $variable; Credential = $credential }
     }

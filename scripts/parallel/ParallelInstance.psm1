@@ -2413,6 +2413,45 @@ function Resolve-ParallelOnboardSafetyCredential {
     return $result
 }
 
+function Get-ParallelRollbackTargetRefusal {
+    <#
+        .SYNOPSIS
+            control-server#652 R2. Why a -Rollback to the previous generation would fail on this definition, or $null. Pure.
+
+        .DESCRIPTION
+            -Rollback runs the Update-ControlServerLocal.ps1 inside the previous generation's package. On a definition with a
+            vehicle roster (Get-ParallelOnboardSafetyCredentialSlot: per-vehicle projection credentials, control-server#600)
+            the Host answers the shared onboard credential 401, and an upgrade script older than control-server#649 knows no
+            other: its safety projection check fails every time, it rolls itself back, and the instance is left with its
+            package directories swapped and JourneyRuntime off. So the installer refuses such a rollback before anything
+            changes. The one fact read is the reason code control-server#649 introduced with the per-vehicle check,
+            SAFETY_PROJECTION_VEHICLE_CREDENTIAL_MISSING, in that script's text -- one marker, not a list of features. A
+            script that is not there refuses too. A definition without a roster keeps the shared credential and is not refused.
+
+        .PARAMETER UpdateScriptText
+            The previous generation's scripts\Update-ControlServerLocal.ps1, or $null when it is not there.
+    #>
+    [CmdletBinding()]
+    param(
+        [Parameter(Mandatory = $true)][System.Collections.IDictionary] $Definition,
+        [Parameter(Mandatory = $true)][string] $UpdateScriptPath,
+        [AllowNull()][AllowEmptyString()][string] $UpdateScriptText
+    )
+    $slots = @(Get-ParallelOnboardSafetyCredentialSlot -Definition $Definition)
+    if ($slots.Count -eq 0) { return $null }
+    $marker = 'SAFETY_PROJECTION_VEHICLE_CREDENTIAL_MISSING'
+    if (-not [string]::IsNullOrEmpty($UpdateScriptText) -and $UpdateScriptText.Contains($marker, [StringComparison]::Ordinal)) { return $null }
+    $found = [string]::IsNullOrEmpty($UpdateScriptText) ? 'does not exist' : "has no $marker"
+    return ('ROLLBACK_TARGET_PREDATES_PER_VEHICLE_CHECK (nothing was stopped or changed; the package directories were not swapped): ' +
+        "this definition lists $($slots.Count) roster vehicle(s) ($((@($slots | ForEach-Object VehicleKey)) -join ', ')), so the Host " +
+        'answers the shared onboard credential 401 (control-server#600), and the previous generation''s upgrade script ' +
+        "$UpdateScriptPath $found -- it predates the per-vehicle safety projection check (control-server#649). A -Rollback " +
+        'would run it, fail that check every time, roll itself back and leave the package directories swapped with JourneyRuntime ' +
+        'off. Fix forward instead: deploy a fixed commit. Do not uninstall and install a package older than control-server#649 ' +
+        'either: its installer stops at the first readiness read of a retained data root. -Rollback becomes available again once ' +
+        'a second deployment that contains control-server#649 has made the previous generation one that does.')
+}
+
 function Get-ParallelJourneyRuntimeEnvironmentOverride {
     <#
         .SYNOPSIS
@@ -3106,6 +3145,7 @@ Export-ModuleMember -Function @(
     'Set-ParallelServiceEnvironmentEntry'
     'Resolve-ParallelFaultRecoveryCredential'
     'Get-ParallelOnboardSafetyCredentialSlot'
+    'Get-ParallelRollbackTargetRefusal'
     'Resolve-ParallelOnboardSafetyCredential'
     'Get-ParallelClearanceExitReadiness'
     'Get-ParallelUpgradeRefusal'
