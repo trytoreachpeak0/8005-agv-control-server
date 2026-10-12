@@ -1,4 +1,5 @@
 using System.Text.Json;
+using ControlServer.Application;
 using ControlServer.Domain;
 using ControlServer.Host.Runtime;
 using ControlServer.Host.Transport;
@@ -18,6 +19,8 @@ namespace ControlServer.Tests;
 [Trait("IntegrationSlice", "FP-IS-01")]
 public sealed class UpcomingStopPlanWireSequenceTests
 {
+    private static readonly int[] OneThree = [1, 3];
+
     private static readonly DateTimeOffset StagedAt = new(2026, 10, 12, 8, 0, 0, TimeSpan.Zero);
 
     private static CancellationToken Token => TestContext.Current.CancellationToken;
@@ -64,6 +67,38 @@ public sealed class UpcomingStopPlanWireSequenceTests
         Assert.Equal(
             projection.Legs.OrderBy(leg => leg.Sequence).Select(leg => leg.MovementLegId),
             legs.Select(leg => leg.GetProperty("movementLegId").GetString()));
+    }
+
+    /// <summary>
+    /// 发布路径（<see cref="OnboardJourneyPublisher.PublishUpcomingStopPlanAsync"/>）同样重新编号：停靠序号 <c>[1, 3]</c> 的搬运计划
+    /// （<see cref="JourneyPlanBuilder.Plan"/> 投影出来的），车收到的那一行和发件箱里那一行都是 <c>[1, 2]</c>（审查 S1）。
+    /// </summary>
+    [Fact]
+    public async Task APublishedTransportPlanWithAGapInItsStopsReachesTheVehicleNumberedFromOne()
+    {
+        await using SqliteConnection connection = new("Data Source=:memory:");
+        await connection.OpenAsync(Token);
+        await using ControlServerDbContext context = await ContextAsync(connection);
+        JourneyRuntimeWorkerTestKit.RecordingPeer peer = new();
+        OnboardJourneyPublisher publisher = new(new WireToGateStore(context), peer, TimeProvider.System);
+        JourneyRuntimeRow runtime = Batch7PlanRevisionTests.PlanRuntime();
+        JourneyStopRow pickup = Batch7PlanRevisionTests.StopRow("s-pickup", 1, JourneyStopRoles.Pickup, JourneyStopStatuses.Active);
+        JourneyStopRow unload = Batch7PlanRevisionTests.StopRow("s-unload", 3, JourneyStopRoles.Unload, JourneyStopStatuses.Pending);
+        UpcomingStopPlanProjection plan = JourneyPlanBuilder.Plan(runtime, [pickup, unload], pickup, arrivedAtCurrent: false, revision: 5);
+        Assert.Equal(OneThree, plan.Legs.Select(leg => leg.Sequence));
+
+        await publisher.PublishUpcomingStopPlanAsync("00000000-0000-4000-8000-000000066403", runtime.AgvId, 1, plan, Token);
+
+        string sent = System.Text.Encoding.UTF8.GetString(Assert.Single(peer.Lines));
+        string stored = (await context.ProtocolOutbox.AsNoTracking().SingleAsync(Token)).PayloadJson;
+        foreach (string line in new[] { sent, stored })
+        {
+            using JsonDocument envelope = JsonDocument.Parse(line);
+            Assert.Equal(
+                [("leg-s-pickup", 1), ("leg-s-unload", 2)],
+                envelope.RootElement.GetProperty("payload").GetProperty("legs").EnumerateArray()
+                    .Select(leg => (leg.GetProperty("movementLegId").GetString(), leg.GetProperty("sequence").GetInt32())));
+        }
     }
 
     /// <summary>9 条腿照常编号 1..9；第 10 条在服务端当场失败，不截断、不发出去让车拆会话。</summary>
