@@ -1,0 +1,29 @@
+[19:07:02] Open the v2 recovery window on agv02 (site site-agv02.json, install root C:\8005\OnboardHmi)
+[19:07:02] Server: factory01, the instance recorded in D:\zhengyushao\control-server-v2-ops\installed-instance.json; control-server modules from d7a9f912795e67b9b15645ad5cd24b06281881a4
+[19:07:02] Store C:\Users\szy\AppData\Local\AgvOpsSecrets\w2g-v2-recovery-window.xml: (none)
+[19:07:02] Vehicle: CONTROL_SERVER_RECOVERY_PROOF set and read back before the switch; recoveryResumeEnabled true
+[19:07:02] Server: checked first; CONTROL_SERVER_RECOVERY_AUTHENTICATION_PROOF set after the vehicle (no restart when it already holds the proof)
+[19:07:02] Proof: to be generated and stored
+[19:07:02] Generated a new proof and stored it at C:\Users\szy\AppData\Local\AgvOpsSecrets\w2g-v2-recovery-window.xml
+[19:07:08] Server check on factory01 (read-only)
+  Definition: D:\zhengyushao\control-server-v2-ops\installed-instance.json (factory01-v2-parallel); registry HKEY_LOCAL_MACHINE\SYSTEM\CurrentControlSet\Services\8005 AGV ControlServer V2; configuration C:\Program Files\8005 AGV\ControlServer.V2\appsettings.Production.json; onboard port 58105
+  ENTRY=absent
+  CONNECTED_VEHICLES=0
+  CHECK_PASSED
+[19:07:19] Vehicle half on agv02
+  CONTROL_SERVER_RECOVERY_PROOF=set (machine scope, value not shown)
+  recoveryResumeEnabled=True
+[19:07:21] Server half on factory01
+  Definition: D:\zhengyushao\control-server-v2-ops\installed-instance.json (factory01-v2-parallel); registry HKEY_LOCAL_MACHINE\SYSTEM\CurrentControlSet\Services\8005 AGV ControlServer V2; configuration C:\Program Files\8005 AGV\ControlServer.V2\appsettings.Production.json; onboard port 58105
+  ENTRY=absent
+  CONNECTED_VEHICLES=0
+  service environment now carries: DOTNET_ENVIRONMENT, CONTROL_SERVER_RIOT_CALL_API_KEY, CONTROL_SERVER_ONBOARD_CREDENTIAL, CONTROL_SERVER_V2_FAULT_RECOVERY_CREDENTIAL, CONTROL_SERVER_V2_ONBOARD_SAFETY_CREDENTIAL_RIOT59, CONTROL_SERVER_V2_ONBOARD_SAFETY_CREDENTIAL_RIOT60, CONTROL_SERVER_MES_INGEST_SHARED_SECRET, CONTROL_SERVER_RECOVERY_AUTHENTICATION_PROOF
+  service '8005 AGV ControlServer V2' restarted, Running
+  MVP service fingerprint unchanged.
+[19:07:30] Recovery window open on agv02. The client is still stopped -- starting it is a field step.
+
+  Start the client with 10-start-onboard-stack.ps1 (field authorization), not by a double click:
+  a client started from an Explorer that predates the variable does not see it and refuses to start.
+  Close the window when it ends:
+    pwsh -File remote-ops/onboard-hmi/scripts/18-set-v2-recovery-window.ps1 -SshAlias agv02 -ControlServerRepository <checkout> -Revert
+  Re-run the open after re-deploying the onboard client, or after a first install of the V2 service.

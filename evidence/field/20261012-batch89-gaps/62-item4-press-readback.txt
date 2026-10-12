@@ -1,0 +1,12 @@
+20:27:55.000 Warning 2266 Manual station clearance "9f97bacf-0e64-445a-84bb-5c27d5365b3e" for vehicle "老厂前线新多仓位2" at charger "充电点1": "CONFIRMED", station released true ("SUCCESS"). The charger's allocation hold, if any, stays until a ChargingStationRecoveryConfirmation.
+20:27:59.000 Information 2241 Charging not allocated for vehicle "老厂前线新多仓位2": "CHARGING_VEHICLE_ELIGIBILITY_HELD". ""
+20:27:59.000 Warning 2246 Vehicle "老厂前线新多仓位2" is below its mandatory charge line and no charger can be allocated to it: "CHARGING_VEHICLE_ELIGIBILITY_HELD". "" It stays queued, takes no transport and no idle return, and its battery goes on falling. Check on site: is the charger free and is nothing standing on it (CHARGER_RESERVED_OR_OCCUPIED, CHARGER_OCCUPIED_BY_VEHICLE, CHARGER_TARGETED_BY_RUNNING_ORDER); can RIoT read every fleet vehicle and its unfinished orders (CHARGER_OCCUPANCY_UNKNOWN names what could not be read)
+## select StationId,CompletedAt,Proof,ConfirmedBy,ConfirmedByRole,VehicleFinalPosition,OldOrderDisposition,ClearedCondition from StationClearances order by rowid desc limit 1
+StationId=211 | CompletedAt=2026-10-12 12:27:55.6188578+00:00 | Proof=MANUAL_CONFIRMATION | ConfirmedBy=<OPERATOR> | ConfirmedByRole=R-11 | VehicleFinalPosition=老厂前线new_wk/215 | OldOrderDisposition=SUCCESS | ClearedCondition=STATION_EMPTY
+2026-10-12T20:28:13.3291375+08:00 unrecovered holds
+## select count(*) as UnrecoveredStationHolds from ChargingStationAllocationHolds h where not exists (select 1 from ChargingStationRecoveries r where r.HoldId=h.HoldId)
+UnrecoveredStationHolds=1
+## select count(*) as UnrecoveredVehicleHolds from VehicleChargingEligibilityHolds h where not exists (select 1 from VehicleChargingEligibilityRecoveries r where r.HoldId=h.HoldId)
+UnrecoveredVehicleHolds=1
+## select h.HoldId,h.StationId,h.Trigger,h.HeldAt from ChargingStationAllocationHolds h where not exists (select 1 from ChargingStationRecoveries r where r.HoldId=h.HoldId)
+HoldId=e2bce182-ada3-3058-b593-b2e99673e193 | StationId=211 | Trigger=INTERRUPTION_CONFIRMED | HeldAt=2026-10-12 12:24:14.9829719+00:00

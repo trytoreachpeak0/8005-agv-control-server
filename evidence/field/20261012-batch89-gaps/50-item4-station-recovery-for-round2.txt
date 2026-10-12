@@ -1,0 +1,6 @@
+route interface=Wi-Fi
+POST /api/charging/v1/station-recoveries at 2026-10-12 20:18:03.786 auth=Bearer <CONTROL_SERVER_V2_FAULT_RECOVERY_CREDENTIAL>
+request={"mapId":26,"stationId":211,"operatorId":"<redacted>","basis":"测试中解除：桩 211 仍断电（20:04 现场拉闸），为批次 8/9 缺口第 4 项第二轮造充不上场景而解除本轮暂停，不表示桩已恢复；第 4 项做完合闸后再按实际恢复","claimedRole":"R-11"}
+status=200
+response={"mapId":26,"stationId":211,"outcome":"RECOVERED","holdIds":["8896a6d1-2954-9e53-b88f-3e6c2b98ba3d"],"codes":[]}
+20:18:06.000 Information 2240 Charging committed: vehicle "鑰佸巶鍓嶇嚎鏂板浠撲綅2" reserved charger 211 as journey "charging:BROKERX-f38975561adf46ccb1d2f23833c7d0e4:20261012T121806350Z", route cost 37871 mm, battery 26%. "battery=26"

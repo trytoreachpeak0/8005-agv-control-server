@@ -1,0 +1,7 @@
+2026-10-12T20:15:03.4108369+08:00 unrecovered holds
+## select count(*) as UnrecoveredStationHolds from ChargingStationAllocationHolds h where not exists (select 1 from ChargingStationRecoveries r where r.HoldId=h.HoldId)
+UnrecoveredStationHolds=1
+## select count(*) as UnrecoveredVehicleHolds from VehicleChargingEligibilityHolds h where not exists (select 1 from VehicleChargingEligibilityRecoveries r where r.HoldId=h.HoldId)
+UnrecoveredVehicleHolds=0
+## select h.HoldId,h.StationId,h.Trigger,h.HeldAt from ChargingStationAllocationHolds h where not exists (select 1 from ChargingStationRecoveries r where r.HoldId=h.HoldId)
+HoldId=8896a6d1-2954-9e53-b88f-3e6c2b98ba3d | StationId=211 | Trigger=UNABLE_TO_CHARGE_CONFIRMED | HeldAt=2026-10-12 12:11:02.9632568+00:00

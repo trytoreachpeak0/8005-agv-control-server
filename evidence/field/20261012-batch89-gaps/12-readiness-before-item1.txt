@@ -1,0 +1,14 @@
+2026-10-12T19:33:57.8054584+08:00 readiness / purposes readback
+19:33:46.000 Information 1103 SessionReadiness "2df5f274-5f13-469a-966a-827d026a2b7d" to "老厂前线新多仓位2" generation 240: "READY" [null], after the answer to "RecoveryStateReport" "62d1b6c1-9cd0-43fa-9933-a9fc550e8fef".
+19:33:46.000 Information 1103 SessionReadiness "5e9a84e9-1fdf-49b1-b9b9-fb371c9f0b11" to "老厂前线新多仓位2" generation 240: "READY" [null], after the answer to "SafetyStateChanged" "cb8f26e7-d16e-0e59-8e2f-1dcb2cd2a2df".
+19:33:50.000 Information 1103 SessionReadiness "53d26ff4-7708-478b-a42f-7c29bc2b8e00" to "老厂前线新多仓位2" generation 241: "READY" [null], after the answer to "RecoveryStateReport" "822a50da-7e7e-42f6-8c43-705389752c69".
+19:33:50.000 Information 1103 SessionReadiness "dfdb697b-195b-41cc-bc4b-bf1089ffdaec" to "老厂前线新多仓位2" generation 241: "READY" [null], after the answer to "SafetyStateChanged" "724b0954-3c2d-195b-b1c0-49c0efc104ad".
+19:33:54.000 Information 1103 SessionReadiness "44aa6bf6-ce56-4565-bbcc-4e51c19b25c5" to "老厂前线新多仓位2" generation 242: "READY" [null], after the answer to "RecoveryStateReport" "c0e07d41-8048-4f7a-a92c-1ccdcb3593d7".
+19:33:54.000 Information 1103 SessionReadiness "ea897596-a521-4ec7-9a1b-c1d6f14593da" to "老厂前线新多仓位2" generation 242: "READY" [null], after the answer to "SafetyStateChanged" "ce3f7ea4-1c90-e351-851f-ed1e7a4eee85".
+--- allocation / policy events since 2026-10-12T19:32:00+08:00
+## select VehicleKey, Purpose, ClaimedAt from VehiclePurposeClaims
+## select count(*) as ManualHolds from ManualChargingHolds
+ManualHolds=0
+## select count(*) as OpenCycles from ChargingCycles where Phase<>'ENDED'
+OpenCycles=0
+## select StationId,StationKind,State,substr(VehicleKey,9,6) as V from StationExclusivities
