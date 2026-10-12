@@ -264,9 +264,17 @@ function Invoke-LiveCheck {
     if ($response.status -ne 'live') { throw 'HTTP live check returned an unexpected response.' }
 }
 
+# control-server#649: a ready response is {"status":"ready"} and has no reason (Program.cs, /health/ready). Under the
+# StrictMode Install-ParallelInstanceLocal.ps1 sets, $response.reason throws on it, so the reason is read through
+# PSObject.Properties wherever a ready response can reach -- here and in the result below. A first install on a data root
+# whose database already holds a ready session (a v2 uninstall keeps its data root) is ready on the first read.
+function Get-ReadyReason($Response) {
+    return $Response.PSObject.Properties['reason']?.Value
+}
+
 function Get-ReadyCheck {
     $response = Invoke-HealthJson "$healthCheckOrigin/health/ready" -AllowErrorStatus
-    if ($response.status -eq 'not-ready' -and $response.reason -eq 'DATABASE_UNAVAILABLE') {
+    if ($response.status -eq 'not-ready' -and (Get-ReadyReason $response) -eq 'DATABASE_UNAVAILABLE') {
         throw 'Readiness reports the database is unavailable after migration.'
     }
     if ($response.status -ne 'ready' -and $response.status -ne 'not-ready') {
@@ -538,7 +546,7 @@ try {
         transport = 'plaintext'
         firstStartReadiness = [ordered]@{
             status = $firstReadiness.status
-            reason = $firstReadiness.reason
+            reason = Get-ReadyReason $firstReadiness
         }
         externalSecrets = [ordered]@{
             machineEnvironmentInjected = $machineEnvironmentInjected
