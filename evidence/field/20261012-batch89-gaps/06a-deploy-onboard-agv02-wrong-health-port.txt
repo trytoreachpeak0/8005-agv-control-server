@@ -1,0 +1,41 @@
+[18:26:29] OnboardHmi deployment to agv02
+[18:26:29] Site values from site-agv02.json
+[18:26:29] Secrets loaded from the DPAPI store
+[18:26:30] Onboard client state on agv02: STOPPED
+[18:26:32] Installed IO on agv02: present 127.0.0.1:1502
+[18:26:32] Using local package F:\8005-scratch\b89-pkg\WireToGate-20261012-095912-d7a9f91\WireToGate-20261012-095912-d7a9f91.zip
+[18:26:33] Package hash verified (6fc0987faaee635da6415803ac885e35126aac7014ae3477948544f9435cb46d)
+[18:26:46] OnboardHmi commit:    27ecf245e2742883657f3bd5f293ea97be387de0
+[18:26:46] ControlServer commit: d7a9f912795e67b9b15645ad5cd24b06281881a4
+[18:26:46] wireToGate endpoint: 172.19.205.222:58105
+[18:26:46] IO target: simulator 127.0.0.1:1502, kept from the installed configuration (-KeepCurrentIo); before: simulator 127.0.0.1:1502
+[18:26:46] Vehicle-safety credential: CONTROL_SERVER_ONBOARD_SAFETY_CREDENTIAL from OnboardSafetyCredential:BROKERX-f38975561adf46ccb1d2f23833c7d0e4 (this vehicle's own projection credential); value not shown
+[18:26:46] Configuration rendered and validated
+[18:26:46] Staging on agv02
+  ready
+ready
+[18:26:56] Copying payload (80.9 MB)
+[18:27:07] Placing the payload on the vehicle
+  hash verified
+  placed: C:\8005\OnboardHmi
+  wireToGate endpoint read back: 172.19.205.222:58105
+  ioModule read back: 127.0.0.1:1502
+  credentials set (machine scope)
+  shortcut: C:\Users\Public\Desktop\8005 AGV 车载�?lnk
+  vehicle-safety 401: 
+
+[18:27:23] Staged. NOT started -- that part is yours.
+[18:27:23] IO target: simulator 127.0.0.1:1502, kept from the installed configuration (-KeepCurrentIo); before: simulator 127.0.0.1:1502
+
+  On the vehicle, from a desktop session:
+    C:\8005\OnboardHmi\SQCD.Agv.Wpf.exe
+
+  Before you do:
+    - confirm the vehicle is where you think it is and is meant to move;
+    - the vehicle-safety line above must be 200 with a matching vehicleKey,
+      motionState=STOPPED and fresh observedAt, or a clean session stays in
+      RecoveryRequired / DEPARTURE_SAFETY_NOT_READY. That is the gate working,
+      not a bug;
+    - the previous build is at C:\8005\OnboardHmi.previous if you need it back.
+WARNING: The server refused this vehicle's projection request (401: not this vehicle's credential on that server; 403: the endpoint's vehicleKey is not the credential's vehicle or not in its roster).
+WARNING: See remote-ops/factory-server/docs/wire-to-gate-parallel-cd.md section 7.2: a multi-car server needs -NewVehicleSafetyCredential and a redeploy; a single-car server needs -SharedSafetyCredential.

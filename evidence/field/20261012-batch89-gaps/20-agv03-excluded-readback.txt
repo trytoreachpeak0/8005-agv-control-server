@@ -1,0 +1,12 @@
+### agv03 2026-10-12 19:42:11 read only
+ioModule=127.0.0.1:1502
+stack processes: 
+### V2 log agv03 session / allocation since stop
+19:40:25.000 Information 2241 Charging not allocated for vehicle "老厂前线新多仓位3": "CHARGING_NOT_REQUIRED". ""
+### purposes
+## select VehicleKey, Purpose from VehiclePurposeClaims
+status=200
+老厂前线新多仓位2 pass=10/12/2026 19:42:21 battery=32 reason=CHARGING_NOT_REQUIRED detail= purpose=
+### V2 log lines mentioning agv03 (deviceKey 7daca4 or 多仓位3) 19:40:50-now
+status=200 19:42:43
+unavailableVehicles={"agvId":"老厂前线新多仓位3","reason":"车辆失联"}

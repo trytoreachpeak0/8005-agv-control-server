@@ -1,0 +1,94 @@
+[20:34:18] Clone F:\8005-wt\b89-8005-agv-control-server is clean at d7a9f912795e67b9b15645ad5cd24b06281881a4; definition scripts/parallel/instance-factory01-v2.two-car-example.json is tracked there; the files sent match HEAD
+[20:34:18] ADMISSION_POLICY_VERSION_OVERRIDE=5 definition=3 reason=operator raised the version above the definition (e.g. reinstalling after a rollback)
+WARNING: ADMISSION_POLICY_VERSION_OVERRIDE=5 definition=3 reason=operator raised the version above the definition (e.g. reinstalling after a rollback)
+[20:34:18] journeyRuntime.admissionPolicyVersion=5 read back from the derived definition C:\Users\szy\AppData\Local\Temp\control-server-v2-definition-20261012-203418-e0572655\instance-factory01-v2.two-car-example.json
+[20:34:18] ADMISSION_POLICY_VERSION=5 -- write it into the deployment record; a rollback needs the highest one ever installed + 1
+[20:34:18] Instance definition accepted: factory01-v2-parallel (from C:\Users\szy\AppData\Local\Temp\control-server-v2-definition-20261012-203418-e0572655\instance-factory01-v2.two-car-example.json)
+[20:34:18] MES_INGEST_SOURCE=fake baseUrl=http://127.0.0.1:58188 allowedWorkTypes=DIE_TO_WIRE_STAGING,DIE_TO_OVEN,WIRE_TO_GATE,WIRE_TO_OPTICAL,STAGING_TO_WIRE,WIRE_TO_NITROGEN -- injected demand from this instance's own FakeMesIngest double, task '8005 AGV ControlServer V2 FakeMesIngest'
+[20:34:18] Target: factory01  service '8005 AGV ControlServer V2'
+[20:34:18] Vehicle 1/2: 老厂前线新多仓位2 (BROKERX-f38975561adf46ccb1d2f23833c7d0e4)
+[20:34:18] Vehicle 2/2: 老厂前线新多仓位3 (BROKERX-7daca4ee91da498d8026c68b7b941127)
+[20:34:18] RouteGraph: enabled=False mapId=26   RiotCreateDispatch: enabled=False
+[20:34:18] Clearance exit: VehicleFaultRecovery enabled=False   FieldOperatorRoles roster=D:\zhengyushao\control-server-v2-ops\field-operator-roles.json onboardEntryDeclared=False
+[20:34:18] Clearance to a waiting point (REQ-0178): journeyRuntime.clearanceToWaitingPointEnabled=False
+[20:34:20] INSTALLED_ADMISSION_POLICY_VERSION=5 (from D:\zhengyushao\control-server-v2-ops\installed-instance.json on factory01); sending 5
+[20:34:20] Secrets loaded from the DPAPI store (V2FaultRecoveryCredential present, will be sent)
+[20:34:20] Vehicle-safety projection credentials loaded for BROKERX-f38975561adf46ccb1d2f23833c7d0e4, BROKERX-7daca4ee91da498d8026c68b7b941127 (values not shown)
+[20:34:20] Using local package F:\8005-scratch\b89-pkg\WireToGate-20261012-095912-d7a9f91\WireToGate-20261012-095912-d7a9f91.zip
+[20:34:20] Package hash verified (6fc0987faaee635da6415803ac885e35126aac7014ae3477948544f9435cb46d)
+[20:34:21] PACKAGE_COMMIT_MATCHES_CLONE=d7a9f912795e67b9b15645ad5cd24b06281881a4 (release-manifest.json components.controlServer.commit)
+[20:34:21] Package onboard commit: 27ecf245e2742883657f3bd5f293ea97be387de0 (components.onboardHmi.commit)
+[20:34:21] Building FakeMesIngest from the control-server repository
+  Determining projects to restore...
+  All projects are up-to-date for restore.
+  ControlServer.Domain -> F:\8005-wt\b89-8005-agv-control-server\src\ControlServer.Domain\bin\Release\net8.0\win-x64\ControlServer.Domain.dll
+  ControlServer.TestDoubles -> F:\8005-wt\b89-8005-agv-control-server\tools\ControlServer.TestDoubles\bin\Release\net8.0\win-x64\ControlServer.TestDoubles.dll
+  ControlServer.Application -> F:\8005-wt\b89-8005-agv-control-server\src\ControlServer.Application\bin\Release\net8.0\win-x64\ControlServer.Application.dll
+  ControlServer.Infrastructure -> F:\8005-wt\b89-8005-agv-control-server\src\ControlServer.Infrastructure\bin\Release\net8.0\win-x64\ControlServer.Infrastructure.dll
+  ControlServer.FakeMesIngest -> F:\8005-wt\b89-8005-agv-control-server\tools\ControlServer.FakeMesIngest\bin\Release\net8.0\win-x64\ControlServer.FakeMesIngest.dll
+  ControlServer.FakeMesIngest -> C:\Users\szy\AppData\Local\Temp\control-server-v2-deploy-20261012-203420\fake-mes-ingest\
+Published FakeMesIngest: C:\Users\szy\AppData\Local\Temp\control-server-v2-deploy-20261012-203420\fake-mes-ingest.zip
+Source commit: d7a9f912795e67b9b15645ad5cd24b06281881a4
+SHA-256: 8eff1fd4bf01674aadd1de911c0a3a13af6e9bb33aede2660c156f16bcb878d0
+[20:34:37] FakeMesIngest package: C:\Users\szy\AppData\Local\Temp\control-server-v2-deploy-20261012-203420\fake-mes-ingest.zip
+[20:34:45] Parallel scripts and instance definition staged in D:\zhengyushao\control-server-v2-ops
+  ready: D:\zhengyushao\control-server-v2-ops
+  ready: D:\zhengyushao\control-server-v2-staging
+ready: D:\zhengyushao\control-server-v2-ops
+ready: D:\zhengyushao\control-server-v2-staging
+[20:34:49] Copying package (176.5 MB)
+[20:35:07] Running the parallel installer on the server
+  [20:35:11] Instance definition accepted: factory01-v2-parallel
+  [20:35:11] MES_INGEST_SOURCE=fake baseUrl=http://127.0.0.1:58188 allowedWorkTypes=DIE_TO_WIRE_STAGING,DIE_TO_OVEN,WIRE_TO_GATE,WIRE_TO_OPTICAL,STAGING_TO_WIRE,WIRE_TO_NITROGEN -- injected demand from this instance's own FakeMesIngest double, task '8005 AGV ControlServer V2 FakeMesIngest'
+  [20:35:11] MVP service before: present=True status=Running startType=Automatic pathName="C:\Program Files\8005 AGV\ControlServer\ControlServer.Host.exe" --contentRoot "C:\Program Files\8005 AGV\ControlServer" --environment Production processId=10912
+  [20:35:12] Package hash verified (6fc0987faaee635da6415803ac885e35126aac7014ae3477948544f9435cb46d)
+  [20:35:12] Installed definition recorded at D:\zhengyushao\control-server-v2-ops\installed-instance.json
+  [20:35:17] Unpacked to D:\zhengyushao\ControlServer.V2.incoming-20261012-203511
+  [20:35:17] Release: controlserver d7a9f91  onboard 27ecf24
+  [20:35:17] RIoT key written to the user scope (shared with the MVP deployment, same value today); machine scope read, not written
+  [20:35:17] Upgrading 8005 AGV ControlServer V2 with Update-ControlServerLocal.ps1
+  Vehicle-safety projection credentials put into the service's Environment before the upgrade: CONTROL_SERVER_V2_ONBOARD_SAFETY_CREDENTIAL_RIOT59, CONTROL_SERVER_V2_ONBOARD_SAFETY_CREDENTIAL_RIOT60 (values not shown).
+  JourneyRuntime.enabled set false for the upgrade, with the service stopped (was 'True')
+  [20:35:31] Installer result written to D:\zhengyushao\control-server-v2-ops\results\install-20261012-203511.json
+  [20:35:33] Configuration overlay merged into C:\Program Files\8005 AGV\ControlServer.V2\appsettings.Production.json and verified (vehicle identity, MesIngest origin, clearance exit sections); credential written, value not shown; projection credentials: CONTROL_SERVER_V2_ONBOARD_SAFETY_CREDENTIAL_RIOT59, CONTROL_SERVER_V2_ONBOARD_SAFETY_CREDENTIAL_RIOT60 written, values not shown; 8005 AGV ControlServer V2 restarted
+  [20:35:33] CLEARANCE_EXIT_READINESS vehicleFaultRecovery=disabled credential=CONTROL_SERVER_V2_FAULT_RECOVERY_CREDENTIAL:present fieldOperatorRoles=present roster=D:\zhengyushao\control-server-v2-ops\field-operator-roles.json:named onboardEntryDeclared=false exit=unavailable(STATION_CLEARANCE_ENTRY_NOT_OFFERED,CHARGING_RECOVERY_ENTRY_NOT_OFFERED)
+  CLEARANCE_EXIT_READINESS vehicleFaultRecovery=disabled credential=CONTROL_SERVER_V2_FAULT_RECOVERY_CREDENTIAL:present fieldOperatorRoles=present roster=D:\zhengyushao\control-server-v2-ops\field-operator-roles.json:named onboardEntryDeclared=false exit=unavailable(STATION_CLEARANCE_ENTRY_NOT_OFFERED,CHARGING_RECOVERY_ENTRY_NOT_OFFERED)
+  WARNING: CLEARANCE_EXIT_UNAVAILABLE (STATION_CLEARANCE_ENTRY_NOT_OFFERED,CHARGING_RECOVERY_ENTRY_NOT_OFFERED): a vehicle that cannot charge stays on ORDER_HANG and isolation is not written (server alarms 2271/2272). Intended in phase 1; otherwise fill in the roster at D:\zhengyushao\control-server-v2-ops\field-operator-roles.json and set vehicleFaultRecovery / fieldOperatorRoles in the instance definition.
+  [20:35:36] MesIngest bearer token added to this service's environment and read back; service restarted
+  [20:35:38] Stopping the existing 8005 AGV ControlServer V2 FakeMesIngest
+  [20:35:40] FakeMesIngest unpacked to C:\Program Files\8005 AGV\ControlServer.V2.FakeMesIngest
+  [20:35:40] Scheduled task '8005 AGV ControlServer V2 FakeMesIngest' registered and started (C:\Program Files\8005 AGV\ControlServer.V2.FakeMesIngest\ControlServer.FakeMesIngest.exe --FakeMesIngest:listenAddress=127.0.0.1 --FakeMesIngest:port=58188)
+  [20:35:43] FakeMesIngest live: {"schemaVersion":"1","instanceId":"fake-mes-ingest-1","runId":"run-be24af21","revision":1,"observedAt":"2026-10-12T12:35:43.164372+00:00","body":{"status":"live","demandCount":0}}
+  2026-10-12T20:35:43.1995573+08:00 FakeMesIngest seeding the running double: port=58188 seed=D:\zhengyushao\control-server-v2-ops\fake-mes-ingest-seed.json
+  2026-10-12T20:35:43.2387283+08:00 Catalog reset; this round is run-9a0c16a0
+  2026-10-12T20:35:43.2767580+08:00 Seeded 4 of 4 demand(s) under runId run-9a0c16a0
+  2026-10-12T20:35:43.3083188+08:00 Catalog now holds 4 demand(s) at revision 5
+  2026-10-12T20:35:43.3104778+08:00 Seeded. The double keeps running under its scheduled task.
+  [20:35:43] FakeMesIngest seeded from D:\zhengyushao\control-server-v2-ops\fake-mes-ingest-seed.json: Catalog now holds 4 demand(s) at revision 5
+  [20:35:47] Firewall open for TCP 58105 and 58107 (V2 rules only)
+  [20:35:47] health/live 200: {"status":"live"}
+  [20:35:51] [Held] What the Host bound, read back from its log at 2026-10-12T12:35:35.9458380+00:00: EFFECTIVE_CONFIGURATION=allowedWorkTypes=DIE_TO_WIRE_STAGING,DIE_TO_OVEN,WIRE_TO_GATE,WIRE_TO_OPTICAL,STAGING_TO_WIRE,WIRE_TO_NITROGEN allowedDispatchZones=WIRE mesIngestBaseUrl=http://127.0.0.1:58188
+  [20:35:51]   fleet: 鑰佸巶鍓嶇嚎鏂板浠撲綅2 (BROKERX-f38975561adf46ccb1d2f23833c7d0e4) allowedTaskTypes=DIE_TO_WIRE_STAGING,DIE_TO_OVEN,WIRE_TO_GATE,WIRE_TO_OPTICAL,STAGING_TO_WIRE,WIRE_TO_NITROGEN zones=WIRE
+  [20:35:51]   fleet: 鑰佸巶鍓嶇嚎鏂板浠撲綅3 (BROKERX-7daca4ee91da498d8026c68b7b941127) allowedTaskTypes=DIE_TO_WIRE_STAGING,DIE_TO_OVEN,WIRE_TO_GATE,WIRE_TO_OPTICAL,STAGING_TO_WIRE,WIRE_TO_NITROGEN zones=WIRE
+  [20:35:51]   clearanceToWaitingPointEnabled=False
+  [20:35:51] JourneyRuntime stays disabled in C:\Program Files\8005 AGV\ControlServer.V2\appsettings.Production.json: the definition does not enable it. '8005 AGV ControlServer V2' read back as defined with the runtime off.
+  EFFECTIVE_CONFIGURATION=allowedWorkTypes=DIE_TO_WIRE_STAGING,DIE_TO_OVEN,WIRE_TO_GATE,WIRE_TO_OPTICAL,STAGING_TO_WIRE,WIRE_TO_NITROGEN allowedDispatchZones=WIRE mesIngestBaseUrl=http://127.0.0.1:58188
+  [20:35:52] Package at D:\zhengyushao\ControlServer.V2; previous generation kept at D:\zhengyushao\ControlServer.V2.previous
+  [20:35:52] MVP service unchanged (status, start type, binary path and pid all identical)
+  [20:35:52] Parallel deployment complete.
+  RESULT_PATH=D:\zhengyushao\control-server-v2-ops\results\install-20261012-203511.json
+  ONBOARD_ENDPOINT=tcp://172.19.205.222:58105
+  HEALTH_ENDPOINT=http://172.19.205.222:58107
+  MES_INGEST_SOURCE=fake baseUrl=http://127.0.0.1:58188 allowedWorkTypes=DIE_TO_WIRE_STAGING,DIE_TO_OVEN,WIRE_TO_GATE,WIRE_TO_OPTICAL,STAGING_TO_WIRE,WIRE_TO_NITROGEN -- injected demand from this instance's own FakeMesIngest double, task '8005 AGV ControlServer V2 FakeMesIngest'
+  FAKE_MES_INGEST=http://127.0.0.1:58188
+[20:35:50] MesIngest source confirmed by the server: MES_INGEST_SOURCE=fake baseUrl=http://127.0.0.1:58188 allowedWorkTypes=DIE_TO_WIRE_STAGING,DIE_TO_OVEN,WIRE_TO_GATE,WIRE_TO_OPTICAL,STAGING_TO_WIRE,WIRE_TO_NITROGEN -- injected demand from this instance's own FakeMesIngest double, task '8005 AGV ControlServer V2 FakeMesIngest'
+[20:35:50] What the Host bound, confirmed by the server: EFFECTIVE_CONFIGURATION=allowedWorkTypes=DIE_TO_WIRE_STAGING,DIE_TO_OVEN,WIRE_TO_GATE,WIRE_TO_OPTICAL,STAGING_TO_WIRE,WIRE_TO_NITROGEN allowedDispatchZones=WIRE mesIngestBaseUrl=http://127.0.0.1:58188
+[20:35:51] Verifying http://172.19.205.222:58107/health/live from this machine
+[20:35:56] health/live 200: {"status":"live"}
+[20:35:56] Deployed. Onboard NDJSON: tcp://172.19.205.222:58105
+[20:35:57] Vehicle safety: http://172.19.205.222:58107/api/onboard/v1/vehicle-safety
+[20:35:57] Package root on the server: D:\zhengyushao\ControlServer.V2
+[20:35:57] Next: deploy the matching onboard commit to agv02/agv03 with
+[20:35:57]   remote-ops/onboard-hmi/scripts/06-deploy-onboard-hmi.ps1 -SshAlias agv02 -OnboardPort 58105 -HealthPort 58107
+[20:35:57]   Each vehicle reads its projection with its own credential now: redeploy its onboard half with 06-deploy.
+  deploy-config.json: not on the server

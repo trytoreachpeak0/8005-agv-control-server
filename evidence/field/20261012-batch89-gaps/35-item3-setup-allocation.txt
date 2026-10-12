@@ -1,0 +1,14 @@
+2026-10-12 20:01:55 batch89 item 3 setup (gate closed): roster 211, re-activate v8 (60/95)
+gate=False clearanceToWaitingPointEnabled=True
+### roster 211
+exit=0
+### activate v8
+exit=0
+20:02:02.000 Warning 2205 Vehicle "BROKERX-f38975561adf46ccb1d2f23833c7d0e4" is below its mandatory charge entry threshold: battery 28% < 60% (charging policy version 8). It takes no new transport, no en-route append and no idle return until it has charged (REQ-0290, "MANDATORY_CHARGE_REQUIRED"); a journey it is carrying finishes as planned (REQ-0281).
+20:02:02.000 Warning 2205 Vehicle "BROKERX-7daca4ee91da498d8026c68b7b941127" is below its mandatory charge entry threshold: battery 37% < 60% (charging policy version 8). It takes no new transport, no en-route append and no idle return until it has charged (REQ-0290, "MANDATORY_CHARGE_REQUIRED"); a journey it is carrying finishes as planned (REQ-0281).
+20:02:02.000 Information 2241 Charging not allocated for vehicle "老厂前线新多仓位3": "ONBOARD_FACTS_NOT_READY". ""
+20:02:03.000 Information 2240 Charging committed: vehicle "老厂前线新多仓位2" reserved charger 211 as journey "charging:BROKERX-f38975561adf46ccb1d2f23833c7d0e4:20261012T120202571Z", route cost 35121 mm, battery 28%. "battery=28"
+## select substr(VehicleKey,9,6) as V,StationId,Phase,WireState,ChargingPolicyVersion from ChargingCycles where Phase<>'ENDED'
+V=f38975 | StationId=211 | Phase=ACTIVE | WireState=ALLOCATED | ChargingPolicyVersion=8
+status=200 20:02:18
+unavailableVehicles={"agvId":"老厂前线新多仓位3","reason":"车辆失联"}
