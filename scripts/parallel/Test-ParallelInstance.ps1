@@ -5184,7 +5184,13 @@ Write-Result -Ok ($admissionDefinitionFiles.Count -ge 2) -Name 'admission versio
     -Detail "found: $($admissionDefinitionFiles -join ', ')"
 foreach ($definitionFile in $admissionDefinitionFiles) {
     $admissionDefinition = Read-ParallelInstanceDefinition -Path (Join-Path $PSScriptRoot $definitionFile)
-    $admissionVersion = [long] $admissionDefinition['journeyRuntime']['admissionPolicyVersion']
+    # Review L1: a missing key would cast to 0 and pass only because 0 matches nothing read back. Fail it by name.
+    $admissionJourney = $admissionDefinition['journeyRuntime']
+    if ($admissionJourney -isnot [System.Collections.IDictionary] -or -not $admissionJourney.Contains('admissionPolicyVersion')) {
+        Write-Result -Ok $false -Name "admission version: $definitionFile carries journeyRuntime.admissionPolicyVersion" -Detail 'the definition has no journeyRuntime.admissionPolicyVersion'
+        continue
+    }
+    $admissionVersion = [long] $admissionJourney['admissionPolicyVersion']
     # PascalCase, as a field session hand-edits the file.
     $below = Copy-Definition $productConfiguration
     $below['JourneyRuntime'] = [ordered]@{ enabled = $false; AdmissionPolicyVersion = $admissionVersion - 1 }
@@ -5196,6 +5202,18 @@ foreach ($definitionFile in $admissionDefinitionFiles) {
             $got = Get-AdmissionVersionOnDisk (Invoke-CatalogFileStep (Copy-Definition $admissionDefinition) (Copy-Definition $base.Value))
             @{ Ok = ($got -ceq "version=$admissionVersion twins=0"); Detail = "expected 'version=$admissionVersion twins=0', got '$got'" }
         }
+    }
+}
+
+# Review L2: the definition check refuses a definition without the key, or with one that is not a positive integer.
+foreach ($case in @(
+        @{ Name = 'left out'; Edit = { param($j) $j.Remove('admissionPolicyVersion') }; Expect = @('journeyRuntime.admissionPolicyVersion must be set explicitly') }
+        @{ Name = 'zero'; Edit = { param($j) $j['admissionPolicyVersion'] = 0 }; Expect = @('journeyRuntime.admissionPolicyVersion must be a positive JSON integer') }
+        @{ Name = 'a JSON string'; Edit = { param($j) $j['admissionPolicyVersion'] = '6' }; Expect = @('journeyRuntime.admissionPolicyVersion must be a positive JSON integer') })) {
+    Invoke-SourceCase "admission version refused: $($case.Name)" {
+        $d = Copy-Definition $baseline
+        $null = & $case.Edit $d['journeyRuntime']
+        Test-ExactFailure $d $case.Expect
     }
 }
 
