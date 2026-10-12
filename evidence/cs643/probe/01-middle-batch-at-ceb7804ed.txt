@@ -1,0 +1,12 @@
+探针 AMiddleBatchRestartsTheDepartureWait（提交 0ceb6a608，代码 ceb7804ed，修前）。一站两条，离站等待 60s，装货 40s，期限那一轮前已证明门关着。
+断言写的是 ADR-cross-0055 要求的行为，红即确认偏离。
+
+ arrival start 2026-08-26T01:00:02.0000000+00:00; worklist r1 deadline 2026-08-26T01:01:02.0000000+00:00
+ first batch closed at 2026-08-26T01:00:43.0000000+00:00; stage AwaitingSublot; start 2026-08-26T01:00:02.0000000+00:00; worklist r2 deadline 2026-08-26T01:01:02.0000000+00:00
+ next round: stage AwaitingSublot; start 2026-08-26T01:00:02.0000000+00:00; worklist r2 deadline 2026-08-26T01:01:02.0000000+00:00
+ at 2026-08-26T01:01:03.0000000+00:00 (arrival+wait+1s, closure+00:00:20): stage AwaitingStationDeparture / ; first TERMINATED, second LOADED
+
+Assert.Equal() Failure: Values differ
+Expected: 2026-08-26T01:00:43.0000000+00:00
+Actual:   2026-08-26T01:00:02.0000000+00:00
+Failed: 1, Total: 1

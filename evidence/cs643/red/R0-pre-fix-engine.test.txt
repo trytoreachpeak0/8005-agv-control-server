@@ -1,0 +1,17 @@
+  Failed ControlServer.Tests.MiddleBatchDepartureWaitTests.AMiddleBatchRestartsTheWaitAndTheVehicleHoldsTheSameDeadline [9 s]
+  Error Message:
+   Assert.Equal() Failure: Values differ
+  Failed ControlServer.Tests.ResumeAfterAcknowledgedReconnectTests.AFreshLoadAfterAVoidedWaitSendsItsWorklistWithTheRestartedDeadline [9 s]
+  Error Message:
+   Assert.Equal() Failure: Values differ
+  Failed ControlServer.Tests.RecoveryEndingReleasesBlockedJourneyTests.ACompensationWithOneLoadedAndOneStillToLoadRestartsTheDepartureWait [10 s]
+  Error Message:
+   Assert.Equal() Failure: Values differ
+  Failed ControlServer.Tests.MiddleBatchDepartureWaitTests.TheStopOutlivesTheArrivalDeadlineAndEndsAtTheRestartedOne [1 s]
+  Error Message:
+   Assert.Equal() Failure: Values differ
+  Failed ControlServer.Tests.MiddleBatchDepartureWaitTests.AResumeAfterACrashBeforeTheStageMovedRestartsTheWaitAtTheResumingRound [1 s]
+  Error Message:
+   Assert.Equal() Failure: Values differ
+Failed!  - Failed:     5, Passed:     7, Skipped:     0, Total:    12, Duration: 16 s - ControlServer.Tests.dll (net8.0)
+exit code 1
