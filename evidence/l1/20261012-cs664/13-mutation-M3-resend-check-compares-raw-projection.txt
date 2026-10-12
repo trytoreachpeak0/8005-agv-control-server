@@ -1,0 +1,16 @@
+mutation M3-resend-check-compares-raw-projection: src/ControlServer.Host/Runtime/JourneyRuntimeEngine.cs
+- IReadOnlyList<UpcomingMovementLeg> wire = OnboardJourneyPublisher.WireLegs(current);
++ IReadOnlyList<UpcomingMovementLeg> wire = current.Legs;
+replacements: 1
+git diff --stat: src/ControlServer.Host/Runtime/JourneyRuntimeEngine.cs | 2 +-
+ 1 file changed, 1 insertion(+), 1 deletion(-)
+build exit 0; ['    0 Error(s)']
+dotnet test --filter "FullyQualifiedName~UpcomingStopPlanWireSequenceTests|FullyQualifiedName~ChargingClearanceToWaitingPointTests|FullyQualifiedName~ArchitectureTests" exit 1
+
+  Failed ControlServer.Tests.UpcomingStopPlanWireSequenceTests.TheReSendCheckComparesWithTheRenumberedLegs [349 ms]
+  Error Message:
+   Assert.True() Failure
+Expected: True
+Actual:   False
+Failed!  - Failed:     1, Passed:   139, Skipped:     0, Total:   140, Duration: 37 s - ControlServer.Tests.dll (net8.0)
+[xUnit.net 00:00:16.97]     ControlServer.Tests.UpcomingStopPlanWireSequenceTests.TheReSendCheckComparesWithTheRenumberedLegs [FAIL]
