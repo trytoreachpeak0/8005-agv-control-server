@@ -24,3 +24,14 @@
 第 15 份说明门禁独立起作用：没有任何断言看序号，整轮仍因发出 `[2]` 的收尾计划而非 0。同一轮的 schema 报告是 0 处违规，所以清理失败来自旧车载端规则——这一点是排除法推的，异常原文在 TRX 里，控制台没打出来。
 
 修前红：M1 就是修前的载荷，清桩两条用例在 M1 下红，即「修前红」。
+
+## 审查之后（S1）
+
+审查 S1：重新编号在发布路径（`PublishUpcomingStopPlanAsync`）上没有用例守着，审查的变异 M7 存活。补了 `APublishedTransportPlanWithAGapInItsStopsReachesTheVehicleNumberedFromOne`：停靠序号 `[1,3]` 的搬运计划由 `JourneyPlanBuilder.Plan` 投影出来、走发布路径，车收到的那一行和发件箱里存的那一行都是 `[1,2]`。
+
+| 文件 | 内容 | 结果 |
+| --- | --- | --- |
+| `16-mutation-M7-publish-path-not-renumbered.txt` | 在 `eeb7768a2` 上把发布路径的载荷换成不重新编号的投影原样，替换 1 处，构建 0 错误 | 新用例红（线上 `[1,3]`），退出码 1 |
+| `22-green-after-review-s1.txt` | 还原、重新构建后，定向集合加上 `Batch7PlanRevisionTests` | 195 条全过，退出码 0 |
+
+插曲：第一版新用例借了 `Batch7PlanRevisionTests` 的辅助方法，腿 id 和需求 id 不是 UUID。第一次跑出的结果是 195 条全过、退出码 1，原因是出站 schema 门禁拦下了这条用例自己发出的报文（`movementLegId` 要求 `uuid` 格式）。改用 UUID 之后，上表两份是重跑的结果。

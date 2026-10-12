@@ -1,0 +1,15 @@
+mutation M7 (review S1) on eeb7768a2a7b664db536290fd3ece23708e99142: PublishUpcomingStopPlanAsync payload not renumbered
+- UpcomingStopPlanPayload(projection),
++ new { planRevision = projection.Revision, legs = projection.Legs },
+replacements: 1
+git diff --stat: src/ControlServer.Host/Transport/OnboardJourneyPublisher.cs | 2 +-
+ 1 file changed, 1 insertion(+), 1 deletion(-)
+build exit 0; ['    0 Error(s)']
+dotnet test --filter "FullyQualifiedName~UpcomingStopPlanWireSequenceTests|FullyQualifiedName~Batch7PlanRevisionTests|FullyQualifiedName~ArchitectureTests" exit 1
+
+  Failed ControlServer.Tests.UpcomingStopPlanWireSequenceTests.APublishedTransportPlanWithAGapInItsStopsReachesTheVehicleNumberedFromOne [208 ms]
+  Error Message:
+   Assert.Equal() Failure: Collections differ
+Expected: <>z__ReadOnlyArray<ValueTuple<string, int>>                    [Tuple ("00000000-0000-4000-8000-000000066411", 1), Tuple ("00000000-0000-4000-8000-000000066412", 2)]
+Actual:   SelectEnumerableIterator<JsonElement, ValueTuple<string, int>> [Tuple ("00000000-0000-4000-8000-000000066411", 1), Tuple ("00000000-0000-4000-8000-000000066412", 3)]
+Failed!  - Failed:     1, Passed:   113, Skipped:     0, Total:   114, Duration: 7 s - ControlServer.Tests.dll (net8.0)
