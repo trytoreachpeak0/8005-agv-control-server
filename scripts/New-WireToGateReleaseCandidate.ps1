@@ -352,6 +352,19 @@ $onboardTemplatePath = Join-Path $onboardPackage 'appsettings.Production.templat
 [IO.File]::WriteAllText($onboardTemplatePath, $onboardTemplate, [Text.UTF8Encoding]::new($false))
 $onboardRemainingPlaceholders = @([regex]::Matches($onboardTemplate, 'REPLACE_[A-Z0-9_]+') |
     ForEach-Object { $_.Value } | Sort-Object -Unique)
+# Where the shipped onboard writes its technical log, read from the template the vehicle actually runs
+# rather than written down here: onboard-hmi#312 moved it from beside the executable (which every
+# redeployment renames away) to %LOCALAPPDATA%, and this script packs whichever onboard commit it is given.
+# An environment-variable or rooted path is reported as configured; a relative one resolves beside the
+# executable, as the onboard does.
+$onboardLogSetting = [string](($onboardTemplate | ConvertFrom-Json).logging.directory)
+$onboardLogDirectory = if ([string]::IsNullOrEmpty($onboardLogSetting)) {
+    '(logging.directory not set in the production template: the packaged build''s LogSettings default)'
+} elseif ($onboardLogSetting.Contains('%') -or [IO.Path]::IsPathRooted($onboardLogSetting)) {
+    $onboardLogSetting
+} else {
+    'onboard-hmi/' + $onboardLogSetting.Replace('\', '/')
+}
 
 # --- Protocol identity, derived from the published ControlServer settings ----
 $publishedSettingsPath = Join-Path $controlServerPackage 'appsettings.json'
@@ -488,7 +501,7 @@ $releaseManifest = [ordered]@{
                 declaredBuildCommitInDefaultSettings = $onboardDeclaredCommit
                 declaredBuildCommitMatchesBuild = ($onboardDeclaredCommit -eq $onboardResolved)
                 remainingSitePlaceholders = @($onboardRemainingPlaceholders)
-                logDirectory = 'onboard-hmi/logs'
+                logDirectory = $onboardLogDirectory
             }
             fileCount = $onboardFiles.Count
             files = $onboardFiles

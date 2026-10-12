@@ -335,7 +335,7 @@ curl.exe --noproxy 127.0.0.1 --max-time 10 'http://127.0.0.1:58007/health/live'
 | 组件 | 路径 | 格式 |
 | --- | --- | --- |
 | ControlServer | `<DataRoot>\logs\controlserver-<yyyyMMdd>.ndjson` | Serilog Compact JSON，按天滚动，保留 14 份 |
-| OnboardHmi | `<车载端安装目录>\logs\agv-<yyyyMMdd>.log` | 行文本，目录由 `logging.directory` 相对程序目录解析 |
+| OnboardHmi | `%LOCALAPPDATA%\SQCD\8005AGV\logs\agv-<yyyyMMdd>.log`（车上以 `HT` 账号运行即 `C:\Users\HT\AppData\Local\SQCD\8005AGV\logs`） | 行文本 `时间戳<Tab>等级<Tab>类别<Tab>来源<Tab>消息`，保留 30 天后由车载端自己清理。目录由 `logging.directory` 决定：环境变量先展开，相对路径按程序目录解析。onboard-hmi#312 之前的车载端写在 `<车载端安装目录>\logs`，部署改名 `.previous` 时随旧包走。实际打进包的值见 `release-manifest.json` 的 `components.onboardHmi.configuration.logDirectory` |
 | 安装过程 | `-DiagnosticPath` 指定的文件 | 每行一个带 UTC 时间戳的阶段标记 |
 
 服务端的文件日志由安装脚本生成的 `appsettings.Production.json` 配置。产品默认配置只有 Console

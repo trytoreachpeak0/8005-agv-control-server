@@ -138,8 +138,8 @@ Test-Case 'A4 product: a refused submit fails PRODUCT_REFUSED with box text, cod
     $logDir = Join-Path $scratch 'a4-onboard-app'
     $refusedAt = $entry.SubmittedAt.AddMilliseconds(560)
     Write-AppLog $logDir @(
-        "$($entry.SubmittedAt.AddSeconds(-30).ToString('o'))`tWarning`tMainViewModel`t界面命令被业务规则拒绝：SOME_EARLIER_REFUSAL。",
-        "$($refusedAt.ToString('o'))`tWarning`tMainViewModel`t界面命令被业务规则拒绝：SUBLOT_NOT_IN_WORKLIST。")
+        "$($entry.SubmittedAt.AddSeconds(-30).ToString('o'))`tWarning`tExecutionPhase`tMainViewModel`t界面命令被业务规则拒绝：SOME_EARLIER_REFUSAL。",
+        "$($refusedAt.ToString('o'))`tWarning`tExecutionPhase`tMainViewModel`t界面命令被业务规则拒绝：SUBLOT_NOT_IN_WORKLIST。")
     $message = $null
     try {
         $null = Wait-L2SubmitOutcome -GetOperation { $null } -LogDirectory $logDir -Entry $entry -Journal $journal -Label 'B' -TimeoutSeconds 5
@@ -154,7 +154,7 @@ Test-Case 'A5 product: a refusal logged before the submit is not this submit''s;
     $journal = New-Journal 'a5'
     $entry = [pscustomobject]@{ Text = $sublot; SubmittedAt = [DateTimeOffset]::Now; Typings = 1 }
     $logDir = Join-Path $scratch 'a5-onboard-app'
-    Write-AppLog $logDir @("$($entry.SubmittedAt.AddSeconds(-1).ToString('o'))`tWarning`tMainViewModel`t界面命令被业务规则拒绝：SUBLOT_NOT_IN_WORKLIST。")
+    Write-AppLog $logDir @("$($entry.SubmittedAt.AddSeconds(-1).ToString('o'))`tWarning`tExecutionPhase`tMainViewModel`t界面命令被业务规则拒绝：SUBLOT_NOT_IN_WORKLIST。")
     $script:polls = 0
     $operation = Wait-L2SubmitOutcome -GetOperation { $script:polls++; if ($script:polls -ge 3) { [pscustomobject]@{ SlotOperationAttemptId = 'op-1' } } } `
         -LogDirectory $logDir -Entry $entry -Journal $journal -Label 'B' -TimeoutSeconds 10
@@ -162,9 +162,10 @@ Test-Case 'A5 product: a refusal logged before the submit is not this submit''s;
 }
 
 # control-server#567: the line the onboard writes when the server rejects a sublot (WireToGateBusinessService.cs:2653 on
-# w2g/fp-v2-impl@ca89ef8, through FileAppLogger: time, severity, source and message, tab-separated).
+# w2g/fp-v2-impl@ca89ef8, through FileAppLogger: time, severity, category, source and message, tab-separated -- the
+# category column since onboard-hmi#312; the reader takes only column 0, so the old four-column lines still read).
 function Format-SublotRejectedLine([DateTimeOffset]$At, [string]$Reason) {
-    return "$($At.ToString('o'))`tWarning`tWireToGateBusinessService`t子批被服务端拒收：sublot=$sublot，reason=$Reason，demandId=null，currentWorklistRevision=3。"
+    return "$($At.ToString('o'))`tWarning`tExecutionPhase`tWireToGateBusinessService`t子批被服务端拒收：sublot=$sublot，reason=$Reason，demandId=null，currentWorklistRevision=3。"
 }
 
 Test-Case 'A6 product: a sublot the server rejected is found with its reason as the code; one logged before the submit is not' {
