@@ -5,6 +5,7 @@ using ControlServer.Host.Runtime.Commands;
 using ControlServer.Host.Runtime.Faults;
 using ControlServer.Host.Runtime.Fleet;
 using ControlServer.Host.Runtime.Recovery;
+using ControlServer.Host.Runtime.RouteGraph;
 using Microsoft.AspNetCore.Http.HttpResults;
 using Microsoft.Extensions.Options;
 
@@ -71,6 +72,7 @@ public static class VehicleFaultRecoveryEndpoints
         app.MapStationExclusivityRelease();
         app.MapWaitingPointArrivalSettlement();
         app.MapRecoverySessionAdministratorClose();
+        app.MapRouteGraphStickyStaleRelease();
         return true;
     }
 

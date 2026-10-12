@@ -17,11 +17,11 @@ public static class RouteGraphStaleReasons
     /// <summary>The runtime removals stood past their maximum age.</summary>
     public const string RuntimeStateExpired = "ROUTE_GRAPH_RUNTIME_STATE_EXPIRED";
 
-    /// <summary>The Map's edge-group membership changed under the graph.</summary>
-    public const string EdgeGroupFingerprintChanged = "ROUTE_GRAPH_EDGE_GROUP_FINGERPRINT_CHANGED";
+    /// <summary>The Map's edge-group membership changed under the graph. Sticky: see <see cref="RouteGraphStickyStaleReasons"/>.</summary>
+    public const string EdgeGroupFingerprintChanged = RouteGraphStickyStaleReasons.EdgeGroupFingerprintChanged;
 
-    /// <summary>Dynamic route cost went from empty to present.</summary>
-    public const string DynamicRouteCostAppeared = "ROUTE_GRAPH_DYNAMIC_ROUTE_COST_APPEARED";
+    /// <summary>Dynamic route cost went from empty to present. Sticky: see <see cref="RouteGraphStickyStaleReasons"/>.</summary>
+    public const string DynamicRouteCostAppeared = RouteGraphStickyStaleReasons.DynamicRouteCostAppeared;
 
     /// <summary>A refresh failed and the snapshot cannot be trusted to be current.</summary>
     public const string RefreshFailed = "ROUTE_GRAPH_REFRESH_FAILED";
@@ -160,8 +160,8 @@ public sealed class RouteGraphRefresher(
 
         // A pre-existing stale flag that this evaluation cannot clear stands. The two that
         // survive are the ones no amount of waiting fixes: the world changed under the graph.
-        if (header.StaleReason is RouteGraphStaleReasons.EdgeGroupFingerprintChanged or
-            RouteGraphStaleReasons.DynamicRouteCostAppeared)
+        // Only the governed release entry clears them (control-server#659).
+        if (RouteGraphStickyStaleReasons.IsSticky(header.StaleReason))
         {
             return header.StaleReason;
         }

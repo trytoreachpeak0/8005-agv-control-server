@@ -196,6 +196,8 @@ public sealed class IntegrationSliceTraitArchitectureTests
             ["RouteGraphDispatchTests"] = "7.5 #6, RouteGraphSnapshot engine; single-ended server-to-RIoT",
             ["RouteGraphEngineTests"] = "7.5 #6, RouteGraphSnapshot engine; single-ended server-to-RIoT",
             ["RouteGraphRefreshTimeoutTests"] = "7.5 #6, RouteGraphSnapshot engine (control-server#656 refresh timeout and the worker round around it); single-ended server-to-RIoT",
+            ["RouteGraphStickyStaleReleaseEndpointsTests"] = "control-server#659 the route graph sticky stale release HTTP entry point (the fault recovery entry's credential and switch, every code listed); single-ended server, no wire message",
+            ["RouteGraphStickyStaleTests"] = "7.5 #6, RouteGraphSnapshot engine (control-server#659 sticky stale reasons survive a failed refresh and are released only through the governed entry); single-ended server-to-RIoT",
             ["ServerLogVolumeTests"] = "control-server#587 the Host's own log file: size rolling and which framework categories it writes; server-internal, no wire message",
             ["SchemaConformanceToolTests"] = "cross-cutting guard on the outbound gate's own validator (control-server#85), driven as its own process over the vendored contract; the gate stands behind every slice, so hanging it off one would defer it with that slice",
             ["SlotConfigurationAuthorityTests"] = "batch 3 FP-C7 slot configuration authority; two-layer versioning inside the server, no wire message",

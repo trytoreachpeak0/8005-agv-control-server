@@ -45,7 +45,12 @@ public enum GovernedObjectKind
     /// <summary>
     /// 一个异常恢复会话。不是受治理配置、没有版本：审计的是管理员在结果永远来不了时关掉它这一次操作（control-server#483）。
     /// </summary>
-    ExceptionRecoverySession
+    ExceptionRecoverySession,
+
+    /// <summary>
+    /// 一张图的路网快照头（按 <c>MapId</c>）。不是受治理配置、没有版本：审计的是现场人员解除它黏住的陈旧原因这一次操作（control-server#659）。
+    /// </summary>
+    RouteGraphSnapshot
 }
 
 /// <summary>

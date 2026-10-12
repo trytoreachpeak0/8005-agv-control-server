@@ -376,6 +376,23 @@ public sealed class RouteGraphSnapshotStore(ControlServerDbContext dbContext) : 
         ArgumentException.ThrowIfNullOrWhiteSpace(reason);
 
         RouteGraphSnapshotRow row = await GetOrCreateHeaderAsync(mapId, cancellationToken).ConfigureAwait(false);
+        // Judged against the database, not against a copy this context tracked earlier in the round: the release entry clears
+        // the reason from another context (control-server#659), and a stale tracked copy still reading the same sticky reason
+        // would make this write look like no change and drop it.
+        if (dbContext.Entry(row).State == EntityState.Unchanged)
+        {
+            await dbContext.Entry(row).ReloadAsync(cancellationToken).ConfigureAwait(false);
+        }
+
+        // A sticky reason is never overwritten by one that clears itself (control-server#659). A failed refresh used to
+        // replace it with ROUTE_GRAPH_REFRESH_FAILED, and the next successful refresh then cleared that, so dispatch resumed
+        // on a graph nobody had looked at since the world changed under it. One sticky reason does replace the other: the
+        // release binds to the fingerprint and the dynamic cost as they stand, so neither change goes unseen.
+        if (RouteGraphStickyStaleReasons.IsSticky(row.StaleReason) && !RouteGraphStickyStaleReasons.IsSticky(reason))
+        {
+            return;
+        }
+
         // First reason wins: StaleSince has to answer "since when", and a second trigger arriving
         // while already stale must not restart that clock.
         if (row.StaleReason is null)
