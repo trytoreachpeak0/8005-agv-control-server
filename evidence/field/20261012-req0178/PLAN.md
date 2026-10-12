@@ -164,3 +164,23 @@
 - 按车凭据的安全投影探针：RIOT59（agv02）、RIOT60（agv03）都是 HTTP 200，`motionState=STOPPED`（`14`）。
 - 旧库：未恢复暂停 0、未结束周期 0、周期 8 行、等待点 3 个。独占从 2 行变为 1 行：15:09:12 V2 记 2210，因为 agv03 已不在 215（离开证据），按设计释放了 215 的占用；216 仍是 agv02 的 OCCUPIED。
 - 闸门 false；等待 5:00/30:00（off 版定义的出厂值，本次不需要改）；MVP pid 10912 未碰。
+
+## 开闸前证据：「闸门关着时清桩移动建不了单」（调度要求，15:2x）
+
+**读到的**（`d0687b29`）：
+- 清桩移动建单调用的是 `movementDispatch.ReconcileOrCreateAsync(move.UpperId)`（`JourneyRuntimeEngine.ClearanceMove.cs:309`）。它的实现在 `ControlServer.Application/WireToGateOrchestration.cs:274`，和空闲返回、充电单走的是同一个方法。
+- 这个方法里真正向 RIoT 建单的只有 `CreateAfterConfirmedAbsenceAsync`（4 处调用）和 `CreateAfterExperimentalAbsenceAsync`（1 处调用）。两者一进来先判断 `if (!createDispatchPolicy.CreateEnabled) return CreateDispatchDisabled(intent);`（`:463`、`:522`），闸门关着就直接返回 `MovementDispatchOutcome.CreateDispatchDisabled`，不调 RIoT。
+- 清桩移动收到这个结果后，按「不是 Confirmed、也不是 TerminalReconciliationRequired」处理：把码写成 `ClearanceMoveNotConfirmed`，然后返回，下一轮再试（`ClearanceMove.cs:318-321`）。
+
+**同一路径的运行实测**：今天 11:00 闸门关着时，agv02 的空闲返回经同一个方法被挡下，日志 2163 写的是 `AwaitingPickupArrival (reason WAITING_POINT_CreateDispatchDisabled)`（`20261012-cs566c-contention`）。昨晚 21:00 也是同样情形（`20261011-W3-low-battery/04`）。
+
+**没测到**：清桩移动自身在闸门关着时的运行表现。要先造出清桩才能看到，而造清桩要开闸让车进桩。
+
+## 开关打开（15:22～15:24）
+
+- 19 号用 on 版定义走**升级路径**：PASS。cs#649 的 401 修复生效：升级自检读到两车各自的按车凭据，"Vehicle-safety projection credentials loaded for … (values not shown)"。
+- 19 号摘要、Host 回读两次都是 `clearanceToWaitingPointEnabled=True`（`21`）。
+
+## 收尾清单补充
+
+- 收工时回读 agv02（以及动过的车）的 `ioModule` 指向，并记录下来。06 号部署会按 site 配置写成真模块，本次已在起栈前用 09 号 `-Simulator` 切回 `127.0.0.1:1502`（`17`）。
