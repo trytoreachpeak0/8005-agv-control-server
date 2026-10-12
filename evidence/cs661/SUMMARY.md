@@ -64,7 +64,24 @@ riot-sdk#5（合并提交 `cf58c11fe`，修 riot-sdk#4）让门面 `RiotWire.Rea
 - 结论（读代码得到的）：三种新异常在本仓都没有被当成「读到了、内容为空」吞掉，都走 fail-closed 的
   「快照过期 → 不派车」。现有测试 `RouteGraphEngineTests`（`HttpRequestException` → `ROUTE_GRAPH_REFRESH_FAILED`）与
   `RouteGraphRefreshTimeoutTests`（`TaskCanceledException` → `ROUTE_GRAPH_REFRESH_FAILED`）覆盖同一个 catch 分支；
-  没有新增专门抛 `InvalidOperationException`／`RiotApiException` 的用例。
+  审查 S1 之后补了经真实传输的用例，见下一节。
+
+## 经真实传输钉住换包要买的行为（审查 S1）
+
+`tests/ControlServer.Tests/RiotRouteGraphTransportTests.cs`（新文件，不碰 cs#659 的文件）：走本仓真实的
+`AddRiotSdkIntegration`，`RIoT:timeoutSeconds=1`，凭据放进环境变量（替身 handler 断言每个请求都带了 Bearer，
+避免「No bearer credential」的 `InvalidOperationException` 让用例假绿），守护时间 10 秒。
+
+| 用例 | fp.6 | 变异：`Directory.Packages.props` 退回 fp.5 |
+| --- | --- | --- |
+| 响应头之后响应体停住：`HttpRouteGraphSource.ReadEdgesAsync` 抛 `TaskCanceledException` | 绿（约 1 秒） | 红：10 秒守护时间到仍挂住（`TimeoutException`） |
+| 同上，`RouteGraphRefresher.RefreshOnceAsync` 返回并标 `ROUTE_GRAPH_REFRESH_FAILED` | 绿 | 红：守护时间到仍挂住 |
+| 成功信封标成 `text/plain`：读取抛 `InvalidOperationException`，刷新标 `ROUTE_GRAPH_REFRESH_FAILED` | 绿 | 红：不抛异常、照常读出 |
+| 对照：同一夹具回 `application/json` 照常读出 | 绿 | 绿 |
+
+变异时 restore 把 5 个 lock 文件悄悄改写成 fp.5（审查 L2 的现象）；还原 props 并 `dotnet restore --force-evaluate`
+后，`git status` 只剩本次的新文件与账本一行，lock 文件与提交一致。新类登记在 `IntegrationSliceTraitArchitectureTests`
+的账本里（字母序插在 `RiotRequestSemanticDigestTests` 之后，与 cs#659 新增的两行相隔十余行）。
 
 ## 验证
 
@@ -73,6 +90,9 @@ riot-sdk#5（合并提交 `cf58c11fe`，修 riot-sdk#4）让门面 `RiotWire.Rea
 - 证据文件入库后重跑：`ArchitectureTests` 与钉包来源 83 passed；会扫仓库文本的守卫（`AdmissionPolicyVersionGuardTests`、
   `Batch8OccupancyRetirementMigrationTests`、`CreateGateTests`、`ServerLogVolumeTests`、`SlotConfigurationReadinessGateTests`）
   80 passed（读到的）。全量交给 CI。
+- 补 S1 之后：`RiotRouteGraphTransportTests|ArchitectureTests|RiotSdkPackageProvenanceTests|RouteGraph|RiotSdkRegistrationTests`
+  146 passed、退出码 0；还原变异后 `RiotRouteGraphTransportTests|RiotSdkPackageProvenanceTests|ArchitectureTests` 87 passed、
+  退出码 0（读到的）。
 
 ## 剩余风险（前提在哪里失效）
 
@@ -82,4 +102,9 @@ riot-sdk#5（合并提交 `cf58c11fe`，修 riot-sdk#4）让门面 `RiotWire.Rea
 2. 数字的前提同样是今天的载荷：地图被编辑出指数写法或超大数时，同上整轮失败。
 3. `RIoT:timeoutSeconds`（默认 30 秒）现在覆盖整段响应体。今天最大的 edges 响应 155 KB、首次约 2 秒，
    离 30 秒很远；地图显著变大或网络变慢时会更早超时，结果同样是 `ROUTE_GRAPH_REFRESH_FAILED`。
-4. 只核了地图 26；`mapEdgeGroup/all` 与 `route/` 是全图接口，已覆盖。
+4. （审查 L2）本仓没有 `packageSourceMapping`，CI 的 restore 也不是 locked 模式：`NuGet.Config` 或
+   `Directory.Packages.props` 改回旧版本时，构建靠全局 NuGet 缓存照样绿，lock 文件被悄悄改写，只有钉包测试拦得住。
+   原本就有的问题，不在本票范围。
+5. （审查 L3）刷新在 `JourneyMutationGate` 里串行做最多 6 次读取，每次最长 `RIoT:timeoutSeconds`（默认 30 秒），
+   最坏把门占住约 3 分钟。fp.6 之前占用无上限，现在有上限。原本就有的设计。
+6. 只核了地图 26；`mapEdgeGroup/all` 与 `route/` 是全图接口，已覆盖。
