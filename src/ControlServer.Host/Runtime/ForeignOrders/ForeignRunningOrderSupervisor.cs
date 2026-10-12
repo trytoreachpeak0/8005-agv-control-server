@@ -58,7 +58,7 @@ namespace ControlServer.Host.Runtime.ForeignOrders;
 /// <b>An idle return order the server gave up is held, not cancelled</b> (control-server#611,
 /// <see cref="IdleReturn.AbandonedIdleReturnOrders"/>): its create went out, RIoT answered "no such order" for long enough and
 /// the idle return was closed. Running on a vehicle of ours after all, it is recorded as unprovable -- the vehicle held, a person
-/// alarmed (event 2181) -- because REQ-0148's second case covers charge orders only. It is not chased while queueing. The same
+/// alarmed (event 2201) -- because REQ-0148's second case covers charge orders only. It is not chased while queueing. The same
 /// holds for a clearance move order given up the same way (<see cref="Charging.AbandonedClearanceMoves"/>), a gap open since
 /// control-server#409: it is a single move to a waiting point, not a charge order.
 /// </para>
@@ -165,6 +165,17 @@ public sealed class ForeignRunningOrderSupervisor(
             "not one of this server's. Nothing is sent to it and no vehicle of ours is held for it. A person has to look at it " +
             "in RIoT and decide whether that vehicle should go on with it.");
 
+    private static readonly Action<ILogger, string, string?, string, string, int?, string, Exception?> LogOwnAbandonedOrderHeld =
+        LoggerMessage.Define<string, string?, string, string, int?, string>(
+            LogLevel.Error,
+            new EventId(2201, nameof(LogOwnAbandonedOrderHeld)),
+            "RIoT order {OrderId} (upperId {UpperId}) is an order this server created for vehicle {AgvId} ({DeviceKey}) and then " +
+            "gave up ({Basis}): RIoT had answered \"no such order\" for it long enough, and its idle return or clearance move was " +
+            "ended. It has now turned up in state {OrderState}. No journey is watching it. It is not cancelled -- REQ-0148 grants " +
+            "this server a cancel only for its own abandoned charge orders -- and the vehicle takes no new work until it has " +
+            "ended. A person has to end it in RIoT. It is not someone else's order: there is nobody outside to look for " +
+            "(control-server#611).");
+
     private static readonly Action<ILogger, string, string?, string, string, int?, Exception?> LogAbandonedChargeOrderFound =
         LoggerMessage.Define<string, string?, string, string, int?>(
             LogLevel.Warning,
@@ -229,6 +240,11 @@ public sealed class ForeignRunningOrderSupervisor(
 
     private static bool IsAbandonedChargeOrder(ForeignRiotOrderRow row) =>
         string.Equals(row.OwnershipBasis, Charging.AbandonedChargeOrders.OwnershipBasis, StringComparison.Ordinal);
+
+    /// <summary>An idle return or clearance move order this server gave up (control-server#611): held and alarmed, never cancelled.</summary>
+    private static bool IsOwnAbandonedHeldOrder(ForeignRiotOrderRow row) =>
+        string.Equals(row.OwnershipBasis, IdleReturn.AbandonedIdleReturnOrders.OwnershipBasis, StringComparison.Ordinal) ||
+        string.Equals(row.OwnershipBasis, Charging.AbandonedClearanceMoves.OwnershipBasis, StringComparison.Ordinal);
 
     /// <summary>
     /// Whether <paramref name="order"/> is still in play for <paramref name="row"/>: running on a vehicle of ours -- or, for a charge
@@ -516,6 +532,12 @@ public sealed class ForeignRunningOrderSupervisor(
         {
             // Not event 2180: that one tells the site the order is someone else's, and sends them looking for who made it.
             LogAbandonedChargeOrderFound(logger, row.RiotOrderId, row.UpperId, row.AgvId, row.DeviceKey, orderState, null);
+        }
+        else if (IsOwnAbandonedHeldOrder(row))
+        {
+            // Not event 2181 either: that one says whose order it is cannot be proven, and this one is provably ours.
+            LogOwnAbandonedOrderHeld(
+                logger, row.RiotOrderId, row.UpperId, row.AgvId, row.DeviceKey, orderState, row.OwnershipBasis, null);
         }
         else if (row.Ownership == ForeignRiotOrderOwnership.Foreign)
         {

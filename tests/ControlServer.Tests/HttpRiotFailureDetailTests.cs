@@ -71,6 +71,36 @@ public sealed class HttpRiotFailureDetailTests
         Assert.True(logged.Length < 1300, logged.Length.ToString(System.Globalization.CultureInfo.InvariantCulture));
     }
 
+    /// <summary>
+    /// 审查 S5：对账（RECONCILE）只有 RIoT 回了业务码才按 Information 记原话（事件 2167）；超时、断线这种没有业务回答的只记 Debug（事件 2168），
+    /// 不然 RIoT 断线时每辆在途车每轮两条，一小时上万行。
+    /// </summary>
+    [Fact]
+    public async Task AReconcileFailureIsLoggedAtInformationOnlyWhenRiotAnsweredWithACode()
+    {
+        EventRecordingLogger<HttpRiotMovementGateway> answered = new();
+        await ReconcileAsync("""{"code":"00002","message":"内部错误","result":null}""", answered);
+        var entry = Assert.Single(answered.Entries);
+        Assert.Equal((2167, LogLevel.Information), (entry.EventId.Id, entry.Level));
+        Assert.Contains("内部错误", entry.Message, StringComparison.Ordinal);
+
+        EventRecordingLogger<HttpRiotMovementGateway> unanswered = new();
+        await ReconcileAsync(null, unanswered);
+        Assert.Equal((2168, LogLevel.Debug), (Assert.Single(unanswered.Entries).EventId.Id, Assert.Single(unanswered.Entries).Level));
+    }
+
+    private static async Task ReconcileAsync(string? body, EventRecordingLogger<HttpRiotMovementGateway> log)
+    {
+        CallbackHandler handler = new(() => body is null
+            ? throw new TaskCanceledException("simulated timeout")
+            : new HttpResponseMessage(HttpStatusCode.OK) { Content = new StringContent(body, Encoding.UTF8, "application/json") });
+        await using RiotSession session = new(
+            new RiotOptions { BaseUrl = "http://riot.test", CallApiKey = "test-call-api-key" }, handler);
+        HttpRiotMovementGateway gateway = new(session, new FixedTimeProvider(ReadAt), log);
+        RiotOrderObservation result = await gateway.ReconcileByUpperIdAsync(Intent.UpperId, TestContext.Current.CancellationToken);
+        Assert.Equal(RiotOrderObservationKind.Unknown, result.Kind);
+    }
+
     private static readonly OrderIntent Intent = new(
         "LEG-IDLE", "IDLE-RETURN", "W2G-IDLE-BROKERX-0001", "TO_WAITING_POINT", "ST-216",
         ReadAt, "AGV-8005-02", 26, 216, 1, 1, OrderShapes.SingleMove);

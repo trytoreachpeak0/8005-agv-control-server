@@ -388,7 +388,7 @@ public sealed partial class IdleReturnExecutionTests
                 .Select(field => (string)field.GetRawConstantValue()!)
                 .Where(value => value.StartsWith("ARRIVAL_SETTLEMENT_", StringComparison.Ordinal)),
         ];
-        Assert.Equal(24, codes.Length);
+        Assert.Equal(25, codes.Length);
         Assert.Equal(codes.Order(StringComparer.Ordinal), WaitingPointArrivalSettlement.Descriptions.Keys.Order(StringComparer.Ordinal));
         Assert.Contains("重新上线", WaitingPointArrivalSettlement.Descriptions[WaitingPointArrivalSettlement.VehicleOffline], StringComparison.Ordinal);
         Assert.Contains("读到车", WaitingPointArrivalSettlement.Descriptions[WaitingPointArrivalSettlement.VehicleUnreadable], StringComparison.Ordinal);

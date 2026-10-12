@@ -93,7 +93,7 @@ public sealed partial class JourneyRuntimeEngine
             "break, the vehicle is proven stopped and has no unfinished order. The order is given up and the idle return to " +
             "waiting point {StationId} ends as a confirmed failure; the vehicle is judged again after the cooldown, without that " +
             "point. Should RIoT show that order running on the vehicle after all, the vehicle is held and a person is alarmed " +
-            "(event 2181, basis OWN_IDLE_RETURN_ORDER_ABANDONED).");
+            "(event 2201, basis OWN_IDLE_RETURN_ORDER_ABANDONED).");
 
     /// <summary>
     /// 物化：有 <c>IDLE_RETURN</c> 用途占有、却还没有那个 <c>JourneyId</c> 的旅程行的承诺，建旅程行、开往等待点的停靠与订单意图，按
@@ -550,7 +550,12 @@ public sealed partial class JourneyRuntimeEngine
             .ConfigureAwait(false);
         // ... but not for ever (control-server#611): a create whose result was never learned, with RIoT answering "no such order"
         // for long enough and the vehicle proven stopped without one, is given up on the same evidence as on the main path.
-        if (intent.OrderId is null && order.Kind != RiotOrderObservationKind.Active)
+        if (order.Kind == RiotOrderObservationKind.Active)
+        {
+            // The order is there: any run of "no such order" counted for it is over (review S2), as on the main path.
+            dispatchRound.Charging.Board.SeenOrUnread(stop.UpperId);
+        }
+        else if (intent.OrderId is null)
         {
             await AbandonIdleReturnIfItNeverAppearedAsync(runtime, stop, pointHeld: false, cancellationToken).ConfigureAwait(false);
         }

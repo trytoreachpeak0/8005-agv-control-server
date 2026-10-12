@@ -207,7 +207,7 @@ internal sealed class BlockedJourneysQueryEndpoint : IDashboardQueryEndpoint
             [IdleReturnExecutionReasons.OrderNeverAppeared] =
                 "开往等待点的单发出后结果未知，RIoT 连续 2 分钟答查无此单，车停稳、名下没有单：服务端放弃这张单，这趟空闲返回按已确认失败结束，"
                 + "不重建。下一次空闲返回不再选这个点，冷却与再次失败后停止的规则同单被取消。那张单若事后在 RIoT 上出现并开动这辆车，"
-                + "服务端挡住这辆车不接新活并告警（事件 2181），请到 RIoT 处理那张单",
+                + "服务端挡住这辆车不接新活并告警（事件 2201），请到 RIoT 处理那张单",
             [IdleReturnExecutionReasons.NeverAppearedAtWaitingPointByOperator] =
                 "开往等待点的单结果未知、RIoT 查无此单，现场人员经等待点到点人工收尾入口确认车就停在等待点上（例如在 RIoT 上手动开了过去）："
                 + "这趟空闲返回按到点收尾，车占着那个等待点，用途已释放。谁确认的、依据是什么记在管理员审计里",

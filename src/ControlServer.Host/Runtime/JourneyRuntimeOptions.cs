@@ -368,6 +368,16 @@ public sealed class JourneyRuntimeOptionsValidator(IConfiguration configuration)
         {
             failures.Add("ChargingOrderAbsentAbandonAfter must be positive and at most 1 h.");
         }
+        // control-server#611 review S1: two orders given up as never having appeared are at least the abandon window plus the
+        // cooldown apart. Unless that is shorter than the repeat window, "stop after the second within the window" can never
+        // fire, and a create that always fails (control-server#616) loops for ever, one give-up per window.
+        else if (options.OwnOrderRebuildRepeatWindow > TimeSpan.Zero &&
+                 options.ChargingOrderAbsentAbandonAfter + options.OwnOrderRebuildDelay >= options.OwnOrderRebuildRepeatWindow)
+        {
+            failures.Add(
+                "ChargingOrderAbsentAbandonAfter plus OwnOrderRebuildDelay must be shorter than OwnOrderRebuildRepeatWindow, " +
+                "or a repeatedly failing create is never stopped.");
+        }
         if (options.AdmissionPolicyVersion <= 0) failures.Add("AdmissionPolicyVersion must be positive.");
         RequireText(options.AdmissionPolicyDeploymentId, nameof(options.AdmissionPolicyDeploymentId), failures);
         if (!options.AllowedDispatchZones.Contains(options.DispatchZone, StringComparer.Ordinal))

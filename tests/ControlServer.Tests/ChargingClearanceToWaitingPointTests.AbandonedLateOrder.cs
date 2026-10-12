@@ -17,7 +17,7 @@ public sealed partial class ChargingClearanceToWaitingPointTests
     /// <summary>
     /// 清桩移动单结果未知、RIoT 一直查无此单，被放弃（预占以 <see cref="ClearanceMoveReleaseReasons.NeverAppeared"/> 放掉、停靠移除）；之后那张单才在
     /// RIoT 上跑到这辆车上。修前监督器查到订单意图就当本服务端自有单不管，没有任何东西看着它。现在认作「归属证明不了」：挡车不接新活、告警交人
-    /// （事件 2181），不取消——<c>REQ-0148</c> 情形二只授权取消被放弃的充电单。放弃之前同一张单在跑，是自有在途单，监督器不碰。
+    /// （事件 2201），不取消——<c>REQ-0148</c> 情形二只授权取消被放弃的充电单。放弃之前同一张单在跑，是自有在途单，监督器不碰。
     /// </summary>
     [Fact]
     public async Task AnAbandonedClearanceMoveThatTurnsUpRunningHoldsTheVehicleForAPersonAndIsNeverCancelled()
@@ -27,7 +27,12 @@ public sealed partial class ChargingClearanceToWaitingPointTests
         JourneyRuntimeRow journey = await OldOrderEndedAsync(fleet);
         await RoundAsync(fleet);
         fleet.Riot.AnswersAbsentAsRealRiot = true;
-        fleet.Riot.CreateAnswer = intent => fleet.Riot.RealRiotAbsent(intent.UpperId);
+        // What the gateway reads a create answered HTTP 200 with business code 00002 as (review L2).
+        fleet.Riot.CreateAnswer = intent => new RiotOrderObservation(
+            intent.UpperId, RiotOrderObservationKind.Unknown, null,
+            Receipt: new RiotOrderCallReceipt(
+                "CREATE", "SdkFailure", DateTimeOffset.UnixEpoch, HttpStatusCode: 200, BusinessCode: "00002",
+                FailureCategory: "RIOT_API_FAILURE"));
         await RoundAsync(fleet);
         fleet.Riot.CreateAnswer = null;
         string upperId = ClearanceMoveShape.UpperIdFor(journey.JourneyId, 1);
@@ -63,8 +68,9 @@ public sealed partial class ChargingClearanceToWaitingPointTests
             (row.UpperId, row.AgvId, row.Ownership, row.OwnershipBasis));
         Assert.DoesNotContain(fleet.Riot.OrderCommands, command => command.OrderId == "ORDER-CLR-LATE");
         Assert.Contains(AgvA, await ForeignRunningOrders.HeldAgvIdsAsync(fleet.Context, Token));
+        Assert.DoesNotContain(log.Entries, entry => entry.EventId.Id == 2181);
         Assert.Contains(
-            log.Entries, entry => entry.EventId.Id == 2181 && entry.Message.Contains("ORDER-CLR-LATE", StringComparison.Ordinal));
+            log.Entries, entry => entry.EventId.Id == 2201 && entry.Message.Contains("ORDER-CLR-LATE", StringComparison.Ordinal));
     }
 
     private static ForeignRunningOrderSupervisor ClearanceSupervisorOf(

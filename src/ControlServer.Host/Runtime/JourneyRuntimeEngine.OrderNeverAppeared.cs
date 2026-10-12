@@ -29,8 +29,9 @@ public sealed partial class JourneyRuntimeEngine
     /// 那张单事后若在 RIoT 上冒出来，各调用方有自己的兜底（充电单被取消，空闲返回单挡车并交人）。
     /// </para>
     /// <para>
-    /// 计时板借用充电分配的 <see cref="ChargingAllocationBoard"/>：按 <c>upperId</c> 记，三种单的 <c>upperId</c> 前缀互不相同，不会串。调用方在收尾之后
-    /// 调 <see cref="ChargingAllocationBoard.SeenOrUnread"/> 把这一条丢掉。
+    /// 计时板借用充电分配的 <see cref="ChargingAllocationBoard"/>：按 <c>upperId</c> 记。不会串，是因为每张单的 <c>upperId</c> 本身唯一（由各自的旅程号
+    /// 派生）；不是因为前缀不同——超长的 <c>upperId</c> 都收成 <c>W2G-H-</c> 加哈希，前缀相同，区分它们的是哈希（审查 L1）。调用方在收尾之后、
+    /// 以及读到单在的时候，调 <see cref="ChargingAllocationBoard.SeenOrUnread"/> 把这一条丢掉。
     /// </para>
     /// </remarks>
     private async Task<OrderNeverAppearedEvidence?> OrderNeverAppearedAsync(

@@ -93,6 +93,12 @@ public sealed record WaitingPointArrivalSettlementResult(
 /// （<see cref="AbandonedIdleReturnOrders"/>）。
 /// </para>
 /// <para>
+/// <b>点被释放之后的那一种</b>（control-server#611 审查 M4）：建单结果未知时等待点预占被拿掉，旅程停在
+/// <c>IDLE_RETURN_WAITING_POINT_LOST_ORDER_IN_FLIGHT</c>。同一组前提照办，只是不要求点仍归这一趟（它已经不归了），结论只收「不在点上」
+/// （<see cref="PointLostVerdictMustBeNotAt"/>）：那个点已不是它的，没有到点可言。订单前提仍是精确查无此单、意图没拿到单号——服务端为这张单发过取消、
+/// 单还在、或意图拿到过单号的，一律以 <see cref="OrderNotAbsent"/> 拒绝。
+/// </para>
+/// <para>
 /// <b>收尾走正常路径的记账</b>：在点上——空闲返回与引擎收敛同一套（预占转占用、用途释放、收尾快照留 <c>ARRIVED</c> 的等待点腿），清桩与引擎到点完成的
 /// 后一半同一套（<see cref="ClearanceAtWaitingPointClosure"/>）；不在点上——空闲返回按已确认失败（<see cref="IdleReturnEnding"/>，点留给离点清扫），
 /// 清桩与「单被人结束、车证明停稳」同一套（<see cref="ClearanceMoveEnding"/>，原因 <see cref="ClearanceMoveReleaseReasons.Ended"/>）。
@@ -125,6 +131,7 @@ public sealed class WaitingPointArrivalSettlement(
     public const string ArrivalNotNamed = "ARRIVAL_SETTLEMENT_ARRIVAL_NOT_NAMED";
     public const string TooEarly = "ARRIVAL_SETTLEMENT_TOO_EARLY";
     public const string WaitingPointNotHeld = "ARRIVAL_SETTLEMENT_WAITING_POINT_NOT_HELD";
+    public const string PointLostVerdictMustBeNotAt = "ARRIVAL_SETTLEMENT_POINT_LOST_VERDICT_MUST_BE_NOT_AT";
     public const string ClearanceStillOpen = "ARRIVAL_SETTLEMENT_CLEARANCE_STILL_OPEN";
     public const string OrderUnreadable = "ARRIVAL_SETTLEMENT_ORDER_UNREADABLE";
     public const string OrderNotExactSuccess = "ARRIVAL_SETTLEMENT_ORDER_NOT_EXACT_SUCCESS";
@@ -156,9 +163,10 @@ public sealed class WaitingPointArrivalSettlement(
         [JourneyCompleted] = "这趟旅程已经收尾了，不用再办",
         [NotAWaitingPointMove] = "这趟旅程此刻不是在开往等待点（不是空闲返回，也没有一次进行中的清桩移动）",
         [StationMismatch] = "填的等待点不是这趟旅程正开往的那一个：请核对站号",
-        [ArrivalNotNamed] = "服务端还没把这趟判成「到点证明不了」或「建单结果未知」（看板上不是这两个码之一）：单可能还在走，或另有别的原因，先按看板上的码处理",
+        [ArrivalNotNamed] = "服务端还没把这趟判成「到点证明不了」或「建单结果未知」（含点被释放之后的那一种；看板上不是这几个码之一）：单可能还在走，或另有别的原因，先按看板上的码处理",
         [TooEarly] = "到点证明不了（或建单结果未知）的时长还没超过配置项 JourneyRuntime:OwnOrderRebuildRepeatWindow 规定的时长：车可能还在停稳、读数可能还在更新，服务端也可能自己收尾，过了再办",
         [WaitingPointNotHeld] = "这个等待点已不归这趟旅程（被人工释放或归了别的车）：服务端会按点丢失自己收尾，不用再办",
+        [PointLostVerdictMustBeNotAt] = "这趟空闲返回的等待点已被人工释放或归了别的车，那个点已不是它的：只能按「车不在等待点上」（NOT_AT_WAITING_POINT）收尾",
         [ClearanceStillOpen] = "清桩还没完成：车在等待点上时，先由 R-11／R-13 名单里的人确认清桩，再来办这一项",
         [OrderUnreadable] = "这一刻读不到 RIoT 上这张单：稍后再办",
         [OrderNotExactSuccess] = "RIoT 上这张单不是已完成（或去的不是这个点、不是这辆车）：单还没结束时车可能还在动，不能收尾",
@@ -358,9 +366,15 @@ public sealed class WaitingPointArrivalSettlement(
                 return null;
             }
             // control-server#611: a create whose result is unknown is the second case this entry closes.
-            return string.Equals(runtime.BlockReasonCode, CreateResultUnknownCode, StringComparison.Ordinal)
-                ? new Move(stop, null, CreateResultUnknownCode, NeverAppeared: true)
-                : new Move(stop, null, IdleReturnExecutionReasons.ArrivalNotProven);
+            // Review M4: the same, after the waiting point was taken away with the create's result unknown.
+            return runtime.BlockReasonCode switch
+            {
+                var code when string.Equals(code, CreateResultUnknownCode, StringComparison.Ordinal) =>
+                    new Move(stop, null, CreateResultUnknownCode, NeverAppeared: true),
+                IdleReturnExecutionReasons.WaitingPointLostOrderInFlight =>
+                    new Move(stop, null, IdleReturnExecutionReasons.WaitingPointLostOrderInFlight, NeverAppeared: true, PointLost: true),
+                _ => new Move(stop, null, IdleReturnExecutionReasons.ArrivalNotProven),
+            };
         }
         if (!runtime.IsCharging())
         {
@@ -414,7 +428,15 @@ public sealed class WaitingPointArrivalSettlement(
         JourneyRuntimeRow runtime, Move move, bool at, CancellationToken cancellationToken)
     {
         List<string> codes = [];
-        if (await WaitingPointExclusivity.HeldByAsync(dbContext, runtime.MapId, move.Stop.StationRiotId, runtime.JourneyId, cancellationToken)
+        if (move.PointLost)
+        {
+            // Not held is this case's premise, not a refusal; only "not at the point" can close it.
+            if (at)
+            {
+                codes.Add(PointLostVerdictMustBeNotAt);
+            }
+        }
+        else if (await WaitingPointExclusivity.HeldByAsync(dbContext, runtime.MapId, move.Stop.StationRiotId, runtime.JourneyId, cancellationToken)
                 .ConfigureAwait(false) is null)
         {
             codes.Add(WaitingPointNotHeld);
@@ -535,6 +557,17 @@ public sealed class WaitingPointArrivalSettlement(
     private async Task<string?> StageAsync(
         JourneyRuntimeRow runtime, Move move, bool at, DateTimeOffset now, CancellationToken cancellationToken)
     {
+        if (move.PointLost)
+        {
+            // The point is no longer this journey's: nothing of it is held to convert or release (review M4).
+            await IdleReturnEnding.StageAsync(
+                    dbContext, runtime, move.Stop, IdleReturnExecutionReasons.NeverAppearedByOperator,
+                    IdleReturnExecutionReasons.NeverAppearedByOperator, stillAtWaitingPoint: false, releaseStationNow: null, now,
+                    cancellationToken)
+                .ConfigureAwait(false);
+            return IdleReturnExecutionReasons.NeverAppearedByOperator;
+        }
+
         if (move.Charger is null)
         {
             StationExclusivityRow? held = await WaitingPointExclusivity
@@ -624,7 +657,9 @@ public sealed class WaitingPointArrivalSettlement(
         IdleReturnExecutionReasons.LegOutcomeCode(MovementDispatchOutcome.ResultUnknown);
 
     /// <param name="NeverAppeared">第二种情形（control-server#611）：建单结果未知，订单前提是「精确查无此单」而不是「精确 SUCCESS」。</param>
-    private sealed record Move(JourneyStopRow Stop, JourneyStopRow? Charger, string NotProvenCode, bool NeverAppeared = false);
+    /// <param name="PointLost">点被释放之后的那一种（审查 M4）：不要求点仍归这一趟，结论只收「不在点上」。</param>
+    private sealed record Move(
+        JourneyStopRow Stop, JourneyStopRow? Charger, string NotProvenCode, bool NeverAppeared = false, bool PointLost = false);
 
     /// <summary>这一次从 RIoT 读到的，原样进审计。</summary>
     private sealed record RiotFacts(

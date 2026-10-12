@@ -189,7 +189,7 @@ public sealed partial class IdleReturnExecutionTests
 
     /// <summary>
     /// 被放弃的那张单事后才在 RIoT 上跑到这辆车上：那趟空闲返回已经收尾，没人看着它。外来单监督器认作「归属证明不了」——挡住这辆车不接新活、
-    /// 告警交人（事件 2181）——不取消：<c>REQ-0148</c> 情形二只授权取消被放弃的充电单。放弃之前同一张单在跑，是本服务端自己的在途单，监督器不碰。
+    /// 告警交人（事件 2201）——不取消：<c>REQ-0148</c> 情形二只授权取消被放弃的充电单。放弃之前同一张单在跑，是本服务端自己的在途单，监督器不碰。
     /// </summary>
     [Fact]
     public async Task AnAbandonedIdleReturnOrderThatTurnsUpRunningHoldsTheVehicleForAPersonAndIsNeverCancelled()
@@ -226,7 +226,8 @@ public sealed partial class IdleReturnExecutionTests
             (row.RiotOrderId, row.UpperId, row.AgvId, row.Ownership, row.OwnershipBasis));
         Assert.Empty(fleet.Riot.OrderCommands);
         Assert.Contains(AgvA, await ForeignRunningOrders.HeldAgvIdsAsync(fleet.Context, Token));
-        Assert.Contains(log.Entries, entry => entry.EventId.Id == 2181 && entry.Message.Contains("ORDER-LATE", StringComparison.Ordinal));
+        Assert.DoesNotContain(log.Entries, entry => entry.EventId.Id == 2181);
+        Assert.Contains(log.Entries, entry => entry.EventId.Id == 2201 && entry.Message.Contains("ORDER-LATE", StringComparison.Ordinal));
     }
 
     // ---- 人工出口 ---------------------------------------------------------------------------------------------------
