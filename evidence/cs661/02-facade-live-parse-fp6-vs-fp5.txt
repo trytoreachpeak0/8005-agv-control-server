@@ -1,0 +1,22 @@
+# cs#661 coordinator-requested step: the six RiotWire.ReadAsync reads through the real Facade, real RIoT, map 26, read-only.
+# Throwaway console outside the repo (F:/8005-scratch/cs661-probe), RiotSession(RiotOptions, HttpClientHandler{AllowAutoRedirect=false, UseProxy=false}),
+# Timeout 30 s, Bearer from $env:CONTROL_SERVER_RIOT_CALL_API_KEY. Same program run against fp.6 and fp.5.
+# hash = first 16 hex of SHA-256 over System.Text.Json serialization of the returned records.
+
+facade=0.2.0.0 info=0.2.0-fp.6+cf58c11fe3e698a57f29d77687d59aa807a27d6a
+19:58:23 OK   mapInfo/edges/26                         edges=447 backEdges=1 costNonFinite=0 (2156 ms)
+19:58:23 OK   mapInfo/stations/26                      stations=217 (43 ms)
+19:58:23 OK   mapResource/removedEdge/26               removedEdges=0 (18 ms)
+19:58:23 OK   mapResource/removedStation/26            removedStations=0 (14 ms)
+19:58:23 OK   mapEdgeGroup/all                         members=101 map26Members=0 maps=4 groups=6 (47 ms)
+19:58:23 OK   route/                                   DynamicRouteCostPresence { Present = False, EntryCount = 0 } (12 ms)
+hash edges=A42A6D33626D5B7A stations=8375A0A7BA17F0FD groups=4BDE8CCF0C9388AB removedE=4F53CDA18C2BAA0C removedS=4F53CDA18C2BAA0C
+
+facade=0.2.0.0 info=0.2.0-fp.5+4d3b4381160a61f9e01cab00143cebe7a5d3714c
+19:58:40 OK   mapInfo/edges/26                         edges=447 backEdges=1 costNonFinite=0 (842 ms)
+19:58:40 OK   mapInfo/stations/26                      stations=217 (29 ms)
+19:58:40 OK   mapResource/removedEdge/26               removedEdges=0 (14 ms)
+19:58:40 OK   mapResource/removedStation/26            removedStations=0 (14 ms)
+19:58:40 OK   mapEdgeGroup/all                         members=101 map26Members=0 maps=4 groups=6 (41 ms)
+19:58:40 OK   route/                                   DynamicRouteCostPresence { Present = False, EntryCount = 0 } (10 ms)
+hash edges=A42A6D33626D5B7A stations=8375A0A7BA17F0FD groups=4BDE8CCF0C9388AB removedE=4F53CDA18C2BAA0C removedS=4F53CDA18C2BAA0C
