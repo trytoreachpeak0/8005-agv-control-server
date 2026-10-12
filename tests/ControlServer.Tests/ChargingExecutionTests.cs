@@ -1434,6 +1434,51 @@ public sealed class ChargingExecutionTests
         Assert.Equal((KeyA, StationExclusivityStates.Reserved), await HolderAsync(fleet, Near.StationId));
     }
 
+    /// <summary>
+    /// control-server#645 审查 S2（变异 E、F）：失败周期留下的预占放不掉时，2247 写明缺的那一项里是哪一样事实没读到——
+    /// 桩不能确认空闲是因为清单读不全（第几页没对上），或者车本身读不到（哪辆车、为什么）。
+    /// </summary>
+    [Theory]
+    [InlineData("listing-incomplete", "the charger is not confirmed free (CHARGER_OCCUPANCY_UNKNOWN; unknown: ORDER_LISTING_INCOMPLETE (page 3 of 3 does not add up")]
+    [InlineData("vehicle-unreadable", "the vehicle cannot be read from RIoT (offline, or its position is missing; unknown: ")]
+    public async Task AReservationThatCannotBeReleasedForAnUnknownFactNamesTheFact(string unknown, string named)
+    {
+        await using FleetFixture fleet = await FleetAsync();
+        fleet.Riot.BatteryByVehicle[KeyA] = 20;
+        JourneyRuntimeRow journey = await CommittedAndSentAsync(fleet);
+        fleet.Riot.VehicleOverrides[KeyA] = seen => seen with { CurrentStationId = Near.StationId };
+        fleet.Riot.CancelOrder(journey.PickupUpperId);
+        await RoundAsync(fleet);
+        await RoundAsync(fleet);
+        Assert.Equal(
+            ChargingExecutionReasons.OrderEnded,
+            (await fleet.Context.Set<ChargingCycleRow>().AsNoTracking().SingleAsync(Token)).EndReason);
+
+        // Off the charger now, so the only thing missing is the fact that cannot be read.
+        fleet.Riot.VehicleOverrides.Remove(KeyA);
+        if (unknown == "listing-incomplete")
+        {
+            fleet.Riot.OrderListingIncomplete = true;
+            fleet.Riot.OrderListingIncompleteReason =
+                "page 3 of 3 does not add up (current 3, total 252 against 252, 51 records against 52, size 100)";
+        }
+        else
+        {
+            fleet.Riot.FailOn = KeyA;
+        }
+        await fleet.HearFromEveryVehicleAsync();
+        await fleet.RunRoundAsync(fleet.Options.OwnOrderRebuildRepeatWindow + TimeSpan.FromMinutes(1));
+        await RoundAsync(fleet);
+
+        var alarm = Assert.Single(fleet.ChargingLog.Entries, entry => entry.EventId.Id == 2247);
+        Assert.Contains(named, alarm.Message, StringComparison.Ordinal);
+        if (unknown == "vehicle-unreadable")
+        {
+            Assert.Contains($"[{KeyA}]:VEHICLE_POSITION_UNREADABLE (HttpRequestException)", alarm.Message, StringComparison.Ordinal);
+        }
+        Assert.Equal((KeyA, StationExclusivityStates.Reserved), await HolderAsync(fleet, Near.StationId));
+    }
+
     // ---- 按车冷却（独立审查 M3）--------------------------------------------------------------------------------------
 
     /// <summary>

@@ -955,6 +955,36 @@ public sealed class ChargingAllocationTests
         Assert.Contains("ORDER_LISTING_INCOMPLETE", fleet.ChargingLog.Entries.Last(entry => entry.EventId.Id == 2246).Message, StringComparison.Ordinal);
     }
 
+    /// <summary>
+    /// control-server#645 审查 S1、S2（变异 G、W）：清单一直读不全、而 RIoT 报的总数每轮都变（250 来张单的厂里这很平常），说法里的页号与数字跟着变。
+    /// 结论没变就不当新结论：分配拒绝（2241）与等桩告警（2246）各只记一次；看板上的细节仍是最近一轮完整的说法，写着这一轮的总数。
+    /// </summary>
+    [Fact]
+    public async Task AnIncompleteListingWhoseNumbersMoveEveryRoundIsLoggedOnceAndTheBoardShowsTheLatestWhy()
+    {
+        await using FleetFixture fleet = await FleetAsync(vehicles: 2);
+        fleet.Riot.BatteryByVehicle[KeyA] = 20;
+        fleet.Riot.OrderListingIncomplete = true;
+
+        foreach (int total in new[] { 251, 252, 253, 254 })
+        {
+            fleet.Riot.OrderListingIncompleteReason =
+                $"page 2 of 3 does not add up (current 2, total {total} against 250, 100 records against 100, size 100)";
+            await RoundAsync(fleet);
+        }
+
+        Assert.Single(
+            fleet.ChargingLog.Entries,
+            entry => entry.EventId.Id == 2241 && entry.Message.Contains(AgvA, StringComparison.Ordinal));
+        Assert.Single(
+            fleet.ChargingLog.Entries,
+            entry => entry.EventId.Id == 2246 && entry.Message.Contains(AgvA, StringComparison.Ordinal));
+        (string reason, string detail) = fleet.ChargingBoard.Verdicts[AgvA];
+        Assert.Equal(ChargingAllocationReasons.NoChargerAvailable, reason);
+        Assert.Contains("ORDER_LISTING_INCOMPLETE (page 2 of 3 does not add up (current 2, total 254 against 250,", detail, StringComparison.Ordinal);
+        await AssertNothingOfACommitmentAsync(fleet, KeyA);
+    }
+
     /// <summary>路网不可用时需要充电的车同样告警一次（同一个事件），不置人工充电等待。</summary>
     [Fact]
     public async Task AVehicleThatCannotBeRoutedToAnyChargerIsWarnedAboutOnce()

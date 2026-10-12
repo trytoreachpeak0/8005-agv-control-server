@@ -566,9 +566,10 @@ public sealed class HttpRiotMovementGateway : IRiotMovementGateway, IRiotVehicle
     /// </remarks>
     public async Task<RiotUnfinishedOrderListing> ListUnfinishedOrdersAsync(CancellationToken cancellationToken)
     {
+        NonFinalOrderProgress progress = new();
         try
         {
-            NonFinalOrderRead orders = await ReadAllNonFinalOrdersAsync(cancellationToken).ConfigureAwait(false);
+            NonFinalOrderRead orders = await ReadAllNonFinalOrdersAsync(cancellationToken, progress).ConfigureAwait(false);
             if (!orders.IsComplete)
             {
                 return new RiotUnfinishedOrderListing(false, [], timeProvider.GetUtcNow(), orders.IncompleteReason);
@@ -599,7 +600,8 @@ public sealed class HttpRiotMovementGateway : IRiotMovementGateway, IRiotVehicle
         catch (Exception error) when (RiotCallFailureClassification.IsSdkFailure(error))
         {
             return new RiotUnfinishedOrderListing(
-                false, [], timeProvider.GetUtcNow(), $"RIoT could not be read ({error.GetType().Name})");
+                false, [], timeProvider.GetUtcNow(),
+                Invariant($"RIoT could not be read at page {progress.Page}{(progress.PageCount > 0 ? Invariant($" of {progress.PageCount}") : "")} ({error.GetType().Name})"));
         }
     }
 
@@ -621,8 +623,12 @@ public sealed class HttpRiotMovementGateway : IRiotMovementGateway, IRiotVehicle
     /// that residue is accepted rather than closed.
     /// </para>
     /// </remarks>
-    private async Task<NonFinalOrderRead> ReadAllNonFinalOrdersAsync(CancellationToken cancellationToken)
+    private async Task<NonFinalOrderRead> ReadAllNonFinalOrdersAsync(
+        CancellationToken cancellationToken,
+        NonFinalOrderProgress? progress = null)
     {
+        progress ??= new NonFinalOrderProgress();
+        progress.Page = 1;
         OrderStatePage first = await riotSession.Order.ListOrdersByStatesAsync(
             NonFinalOrderStates,
             pageNum: 1,
@@ -640,6 +646,7 @@ public sealed class HttpRiotMovementGateway : IRiotMovementGateway, IRiotVehicle
         }
 
         long pageCount = (total + NonFinalOrderPageSize - 1) / NonFinalOrderPageSize;
+        progress.PageCount = pageCount;
         if (pageCount > NonFinalOrderPageCap)
         {
             return NonFinalOrderRead.IncompleteBecause(Invariant(
@@ -650,6 +657,7 @@ public sealed class HttpRiotMovementGateway : IRiotMovementGateway, IRiotVehicle
         HashSet<long> seenIds = [];
         for (int pageNum = 1; pageNum <= pageCount; pageNum++)
         {
+            progress.Page = pageNum;
             OrderStatePage page = pageNum == 1
                 ? first
                 : await riotSession.Order.ListOrdersByStatesAsync(
@@ -675,6 +683,14 @@ public sealed class HttpRiotMovementGateway : IRiotMovementGateway, IRiotVehicle
             }
         }
         return new NonFinalOrderRead(true, records);
+    }
+
+    /// <summary>Which page a non-final read was on, so a read that throws can say where (control-server#645 review L1).</summary>
+    private sealed class NonFinalOrderProgress
+    {
+        public int Page { get; set; }
+
+        public long PageCount { get; set; }
     }
 
     private static string Shown<T>(T? value)
