@@ -276,6 +276,8 @@ if (-not $slotModelPreseed -and $areaAssignmentsSetting -isnot [bool]) {
 # which is today's behaviour -- no en-route addition, no cargo holding wait, ageing without escalation. Anything else
 # would hold every existing single-demand scenario's cargo until the cargo holding timeout ran out.
 $cargoHoldingTimeout = Resolve-L2CargoHoldingTimeout -Setup $setup -Where "$Scenario.setup.psd1"
+# control-server#646. Passed only when the setup file names it; otherwise the server keeps its own 30-second default.
+$sameStationAppendCorrectionGrace = Resolve-L2SameStationAppendCorrectionGrace -Setup $setup -Where "$Scenario.setup.psd1"
 $dispatchZoneParameters = Resolve-L2DispatchZoneParameters -Setup $setup -Where "$Scenario.setup.psd1"
 # Batch 9 (control-server#400): without an approved, activated charging policy covering it a vehicle takes no new work,
 # so every scenario gets the test policy by default. Read here so a malformed key fails before anything starts.
@@ -725,6 +727,11 @@ try {
     # only when the setup file names it; otherwise the server keeps its own thirty-minute default.
     if ($null -ne $cargoHoldingTimeout) {
         $serverEnvironment['JourneyRuntime__cargoHoldingTimeout'] = $cargoHoldingTimeout
+    }
+    # The correction grace before a same-station append ends a departure wait (control-server#646), mapped the same
+    # way, beside the wait it shortens.
+    if ($null -ne $sameStationAppendCorrectionGrace) {
+        $serverEnvironment['JourneyRuntime__sameStationAppendCorrectionGrace'] = $sameStationAppendCorrectionGrace
     }
 
     # control-server#273's waiting journey watch: how long a journey may stand waiting for a person before it is logged,

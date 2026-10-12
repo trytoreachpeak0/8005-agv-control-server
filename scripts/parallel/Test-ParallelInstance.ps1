@@ -4854,6 +4854,26 @@ Invoke-SourceCase 'clearance read-back: the Host source logs the switch under th
 }
 
 # ------------------------------------------------------------------------------------------------
+# control-server#646. journeyRuntime.sameStationAppendCorrectionGrace: the correction grace a stop keeps before a
+# same-station append ends its departure wait. Whitelisted so that a definition can tune it (JourneyRuntime__* in the
+# environment is refused); left out, the overlay writes nothing and the Host keeps its own default.
+# ------------------------------------------------------------------------------------------------
+Write-Host ''
+Write-Host 'Same-station append correction grace (control-server#646)' -ForegroundColor Cyan
+
+Invoke-SourceCase 'correction grace: a definition that sets it is accepted and the overlay carries it' {
+    $d = Copy-Definition $baseline
+    $d['journeyRuntime']['sameStationAppendCorrectionGrace'] = '00:01:00'
+    $f = @(Test-ParallelInstanceDefinition -Definition $d)
+    $v = (New-ParallelInstanceConfigurationOverlay -Definition $d)['JourneyRuntime']['sameStationAppendCorrectionGrace']
+    @{ Ok = ($f.Count -eq 0 -and $v -ceq '00:01:00'); Detail = "failures: $($f -join ' | '); overlay: $v" }
+}
+Invoke-SourceCase 'correction grace: left out, the overlay does not write it (the Host default stands)' {
+    $o = New-ParallelInstanceConfigurationOverlay -Definition $baseline
+    @{ Ok = (-not $o['JourneyRuntime'].Contains('sameStationAppendCorrectionGrace')); Detail = "overlay keys: $(@($o['JourneyRuntime'].Keys) -join ', ')" }
+}
+
+# ------------------------------------------------------------------------------------------------
 # control-server#652 R2: a -Rollback whose previous generation's upgrade script predates the per-vehicle safety projection
 # check (control-server#649) is refused on a definition with a roster, before anything changes.
 # ------------------------------------------------------------------------------------------------

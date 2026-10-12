@@ -1,0 +1,19 @@
+R0 : 1 hit; exit=1 red=[WithTheGraceAtZeroTheWaitEndsInTheRoundTheLoadCommits, AnAppendBeforeTheLoadCommitsEndsTheWaitWhenTheGraceRunsOut, ASameStationAppendAfterTheGraceSendsTheVehicleOnAtOnceAndTheNewStopGetsTheFullWait, TheDeadlineOnTheVehicleIsTheMomentTheServerSendsItOn, ACorrectionClosedInTheGraceEarnsAnotherGraceBeforeTheVehicleIsSentOn]
+R1 : whole file; exit=1 red=[AnAppendBeforeTheLoadCommitsEndsTheWaitWhenTheGraceRunsOut, AGraceLongerThanTheWaitDoesNotExtendIt, AnAppendBeforeTheLoadCommitsLeavesTheGraceForACorrectionTheServerAuthorizes, TheDeadlineOnTheVehicleIsTheMomentTheServerSendsItOn, ACorrectionClosedInTheGraceEarnsAnotherGraceBeforeTheVehicleIsSentOn]
+R2 : whole file; exit=1 red=[TheDeadlineOnTheVehicleIsTheMomentTheServerSendsItOn, ACorrectionClosedInTheGraceEarnsAnotherGraceBeforeTheVehicleIsSentOn]
+M1 : 1 hit; exit=1 red=[AnAppendAtAnotherStationStillWaitsOutTheStationDeadline]
+M2 : 1 hit; exit=1 red=[ASameStationAppendDoesNotEndTheWaitWhileTheCurrentStopHasALoadOutstanding]
+M3 : 1 hit; exit=1 red=[ASameStationAppendDoesNotEndTheWaitWhileACorrectionIsOpen, AnAppendBeforeTheLoadCommitsLeavesTheGraceForACorrectionTheServerAuthorizes, AClosedCorrectionUnderASlotDoorHoldLeavesNoStaleCorrectionReason, ACorrectionClosedInTheGraceEarnsAnotherGraceBeforeTheVehicleIsSentOn]
+M4 : 1 hit; exit=1 red=[ASameStationUnloadNextDoesNotEndThePickupWait]
+M5 : 1 hit; exit=0 red=[]
+M6 : 1 hit; exit=1 red=[AClosedCorrectionUnderASlotDoorHoldLeavesNoStaleCorrectionReason, ASameStationAppendDoesNotSendAVehicleHeldForItsSlotDoorOn]
+M7 : 1 hit; exit=1 red=[AnAppendBeforeTheLoadCommitsEndsTheWaitWhenTheGraceRunsOut, AGraceLongerThanTheWaitDoesNotExtendIt, AnAppendBeforeTheLoadCommitsLeavesTheGraceForACorrectionTheServerAuthorizes, TheDeadlineOnTheVehicleIsTheMomentTheServerSendsItOn, ACorrectionClosedInTheGraceEarnsAnotherGraceBeforeTheVehicleIsSentOn]
+MC : 1 hit; exit=1 red=[AGraceLongerThanTheWaitDoesNotExtendIt]
+MS : 1 hit; exit=1 red=[TheDeadlineOnTheVehicleIsTheMomentTheServerSendsItOn, ACorrectionClosedInTheGraceEarnsAnotherGraceBeforeTheVehicleIsSentOn]
+MJ : 1 hit; exit=1 red=[WithTheGraceAtZeroTheWaitEndsInTheRoundTheLoadCommits, AnAppendBeforeTheLoadCommitsEndsTheWaitWhenTheGraceRunsOut, ASameStationAppendAfterTheGraceSendsTheVehicleOnAtOnceAndTheNewStopGetsTheFullWait, TheDeadlineOnTheVehicleIsTheMomentTheServerSendsItOn, ACorrectionClosedInTheGraceEarnsAnotherGraceBeforeTheVehicleIsSentOn]
+X2 : 1 hit; exit=1 red=[ARemovedSameStationStopDoesNotEndTheWait]
+X4 : 1 hit; exit=1 red=[AClosedCorrectionUnderASlotDoorHoldLeavesNoStaleCorrectionReason, ACorrectionClosedInTheGraceEarnsAnotherGraceBeforeTheVehicleIsSentOn]
+ME : 1 hit; exit=1 red=[SameStationAppendCorrectionGraceDefaultsToThirtySecondsAndIsNeverNegative]
+restored build: 0 Error(s)
+SW (whitelist entry removed, hits=1): exit=1   FAIL  correction grace: a definition that sets it is accepted and the overlay carries it  759 passed, 1 failed
+SL (negative grace check removed): exit=1 FAIL  a negative grace is refused -- expected a refusal matching 'non-negative time span', got '"-00:00:10"' 

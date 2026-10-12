@@ -197,5 +197,28 @@ function Write-L2DispatchZoneParameters {
     }
 }
 
-Export-ModuleMember -Function Assert-L2Batch7SetupKeysSpelled, Resolve-L2CargoHoldingTimeout,
+<#
+The SameStationAppendCorrectionGrace setup value (control-server#646) as the server's configuration binds it
+("hh:mm:ss"), or $null when the key is absent -- then nothing is passed and the server keeps its own 30-second default.
+Zero is allowed: it is the server's own "no grace". Kept beside CargoHoldingTimeout because it is read the same way, a
+time span the server binds that a misspelt value must not silently replace with the default.
+#>
+function Resolve-L2SameStationAppendCorrectionGrace {
+    param(
+        [Parameter(Mandatory)][hashtable]$Setup,
+        [Parameter(Mandatory)][string]$Where
+    )
+
+    if (-not $Setup.ContainsKey('SameStationAppendCorrectionGrace')) { return $null }
+    $value = $Setup.SameStationAppendCorrectionGrace
+    $parsed = [TimeSpan]::Zero
+    if ($value -isnot [string] -or
+        -not [TimeSpan]::TryParseExact($value, 'c', [Globalization.CultureInfo]::InvariantCulture, [ref]$parsed) -or
+        $parsed -lt [TimeSpan]::Zero) {
+        throw "SameStationAppendCorrectionGrace in $Where must be a non-negative time span written as 'hh:mm:ss', not '$value'."
+    }
+    return $parsed.ToString('c', [Globalization.CultureInfo]::InvariantCulture)
+}
+
+Export-ModuleMember -Function Assert-L2Batch7SetupKeysSpelled, Resolve-L2CargoHoldingTimeout, Resolve-L2SameStationAppendCorrectionGrace,
     Resolve-L2DispatchZoneParameters, Get-L2DispatchZoneParameterContent, Write-L2DispatchZoneParameters

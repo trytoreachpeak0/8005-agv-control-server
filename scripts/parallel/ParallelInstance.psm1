@@ -176,7 +176,7 @@ $script:AllowedKeys = [ordered]@{
     'journeyRuntime' = @('enabled', 'pollInterval', 'agvId', 'vehicleKey', 'agvLifecycleGeneration', 'fleet',
         'mapId', 'mapIdentity', 'dispatchZone', 'dispatchGeneration',
         'maximumEvidenceAge', 'departureSafetyResultWait', 'stationDepartureWaitTimeout',
-        'cargoHoldingTimeout', 'sublotBoxCountPath', 'allowedWorkTypes', 'allowedDispatchZones',
+        'sameStationAppendCorrectionGrace', 'cargoHoldingTimeout', 'sublotBoxCountPath', 'allowedWorkTypes', 'allowedDispatchZones',
         'admissionPolicyVersion', 'admissionPolicyDeploymentId', 'checkpointWaitBudget',
         'areaEndAdmissionRevokedTimeout', 'clearanceToWaitingPointEnabled')
     # control-server#454. credentialEnvironmentVariable is deliberately absent: the overlay writes

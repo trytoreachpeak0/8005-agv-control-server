@@ -38,6 +38,19 @@ public sealed class JourneyRuntimeOptions
     public TimeSpan StationDepartureWaitTimeout { get; set; } = TimeSpan.FromMinutes(5);
 
     /// <summary>
+    /// The shortest correction window a loaded pickup stop keeps when its wait is ended early because the next stop is
+    /// a pickup at the same station (control-server#646). Counted from the same start as
+    /// <see cref="StationDepartureWaitTimeout"/> -- the last load's commit, moved to a correction's closure -- so a
+    /// correction may start inside it, and one that closes earns another grace before the vehicle is sent on.
+    /// </summary>
+    /// <remarks>
+    /// Thirty seconds by default. <see cref="TimeSpan.Zero"/> ends such a wait in the round the load commits, which leaves
+    /// no correction window at all (the behaviour before the grace existed). It only ever shortens the wait: past the
+    /// station deadline the vehicle leaves whatever this says.
+    /// </remarks>
+    public TimeSpan SameStationAppendCorrectionGrace { get; set; } = TimeSpan.FromSeconds(30);
+
+    /// <summary>
     /// How long a vehicle may hold cargo waiting for more before it must leave (ADR-cross-0057), counted from the first
     /// LoadBatch's safety closure and never reset by a new stop, a disconnect or a restart. Kept apart from
     /// <see cref="StationDepartureWaitTimeout"/> on purpose: the two clocks must never share a field.
@@ -318,6 +331,10 @@ public sealed class JourneyRuntimeOptionsValidator(IConfiguration configuration)
             options.StationDepartureWaitTimeout < TimeSpan.FromSeconds(5))
         {
             failures.Add("StationDepartureWaitTimeout must be zero (off) or at least 5 s.");
+        }
+        if (options.SameStationAppendCorrectionGrace < TimeSpan.Zero)
+        {
+            failures.Add("SameStationAppendCorrectionGrace must not be negative.");
         }
         if (options.CargoHoldingTimeout <= TimeSpan.Zero) failures.Add("CargoHoldingTimeout must be positive.");
         if (options.AgvLifecycleGeneration <= 0) failures.Add("AgvLifecycleGeneration must be positive.");
