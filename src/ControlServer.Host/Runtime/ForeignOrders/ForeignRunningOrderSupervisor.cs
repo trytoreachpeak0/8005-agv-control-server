@@ -58,7 +58,9 @@ namespace ControlServer.Host.Runtime.ForeignOrders;
 /// <b>An idle return order the server gave up is held, not cancelled</b> (control-server#611,
 /// <see cref="IdleReturn.AbandonedIdleReturnOrders"/>): its create went out, RIoT answered "no such order" for long enough and
 /// the idle return was closed. Running on a vehicle of ours after all, it is recorded as unprovable -- the vehicle held, a person
-/// alarmed (event 2181) -- because REQ-0148's second case covers charge orders only. It is not chased while queueing.
+/// alarmed (event 2181) -- because REQ-0148's second case covers charge orders only. It is not chased while queueing. The same
+/// holds for a clearance move order given up the same way (<see cref="Charging.AbandonedClearanceMoves"/>), a gap open since
+/// control-server#409: it is a single move to a waiting point, not a charge order.
 /// </para>
 /// <para>
 /// <b>An abandoned charge order is chased while it is still queueing</b> (review S-b): for <c>JourneyRuntime:OwnOrderRebuildRepeatWindow</c>
@@ -549,11 +551,17 @@ public sealed class ForeignRunningOrderSupervisor(
                 return (ForeignRiotOrderOwnership.Foreign, Charging.AbandonedChargeOrders.OwnershipBasis);
             }
 
-            // control-server#611: so does an idle return order given up as never having appeared. REQ-0148 grants no cancel for
-            // it, so it is held and alarmed for a person, never cancelled.
-            return await IdleReturn.AbandonedIdleReturnOrders.IsAbandonedAsync(dbContext, orderId, upperId, cancellationToken)
+            // control-server#611: so does an idle return order, or a clearance move order (a gap since control-server#409), given
+            // up as never having appeared. REQ-0148 grants no cancel for either, so it is held and alarmed for a person, never
+            // cancelled.
+            if (await IdleReturn.AbandonedIdleReturnOrders.IsAbandonedAsync(dbContext, orderId, upperId, cancellationToken)
+                    .ConfigureAwait(false))
+            {
+                return (ForeignRiotOrderOwnership.Unproven, IdleReturn.AbandonedIdleReturnOrders.OwnershipBasis);
+            }
+            return await Charging.AbandonedClearanceMoves.IsAbandonedAsync(dbContext, orderId, upperId, cancellationToken)
                 .ConfigureAwait(false)
-                ? (ForeignRiotOrderOwnership.Unproven, IdleReturn.AbandonedIdleReturnOrders.OwnershipBasis)
+                ? (ForeignRiotOrderOwnership.Unproven, Charging.AbandonedClearanceMoves.OwnershipBasis)
                 : (null, "ORDER_INTENT");
         }
 
