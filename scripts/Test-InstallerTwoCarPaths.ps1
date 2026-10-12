@@ -95,7 +95,7 @@ try {
     $runner = Join-Path $scratch 'runner.ps1'
     [IO.File]::WriteAllText($runner, @'
 #Requires -Version 7
-param([string]$Kind, [string]$Script, [string]$Case, [string]$ListenerModule, [int]$Port)
+param([string]$Kind, [string]$Script, [string]$Case, [string]$ListenerModule)
 $ErrorActionPreference = 'Stop'
 Set-StrictMode -Version Latest
 $caseConfig = Get-Content -Raw -LiteralPath "$Case/case.json" | ConvertFrom-Json -AsHashtable
@@ -113,14 +113,17 @@ public static class Cs649SelftestEnvironment {
 "@
 
 # The Host double. Vehicle by bearer, as OnboardVehicleSafetyEndpoints.ResolveVehicle; the log names vehicles, not values.
-# -Port: the one the Update case wrote into the retained Health:url; otherwise any free one.
+# Started first, on whatever free port Start-LoopbackListener settles on (it retries a port taken in between); the Update
+# case's retained Health:url names a placeholder that is filled in with that port only now (control-server#652 R3: a port
+# reserved in the parent and listened on here could be taken in between, on a guest where several runners share ports).
 Import-Module $ListenerModule -Force
-$started = if ($Port -gt 0) {
-    $fixed = [System.Net.HttpListener]::new(); $fixed.Prefixes.Add("http://localhost:$Port/"); $fixed.Start()
-    [pscustomobject]@{ Listener = $fixed; Port = $Port }
-} else { Start-LoopbackListener }
+$started = Start-LoopbackListener
 $listener = $started.Listener
-Set-Content -LiteralPath "$Case/port.txt" -Value $started.Port
+if ($Kind -eq 'Update') {
+    $retained = "$Case/install/appsettings.Production.json"
+    [IO.File]::WriteAllText($retained, [IO.File]::ReadAllText($retained).Replace('__CS652_HEALTH_PORT__', [string]$started.Port),
+        [Text.UTF8Encoding]::new($false))
+}
 $requestLog = [Collections.ArrayList]::Synchronized([Collections.ArrayList]::new())
 $double = [powershell]::Create()
 $null = $double.AddScript({
@@ -144,6 +147,8 @@ $null = $double.AddScript({
             elseif ($bearer -ceq $Config['shared']) { $Config['singleVehicle'] } else { $null }
         $who = if ($null -ne $bearer -and $bearer -ceq $Config['shared']) { 'shared' } elseif ($null -ne $vehicle) { $vehicle } else { 'unknown' }
         if ($path -eq '/api/onboard/v1/vehicle-safety') { [void]$Log.Add("vehicle-safety|credential=$who|claimed=$claimed") }
+        # control-server#652 R4 (G): a 200 whose projection names another vehicle -- the client's own check, behind the 403.
+        $answered = $Config['bodyVehicleKey'] ?? $vehicle
         switch ($path) {
             '/health/live' { Send $context 200 '{"status":"live"}' }
             '/version' { Send $context 200 '{"protocolTag":"selftest","protocolCommit":"selftest"}' }
@@ -154,7 +159,7 @@ $null = $double.AddScript({
                 elseif ($null -ne $claimed -and $claimed -cne $vehicle) {
                     Send $context 403 '{"title":"Vehicle safety projection refused","detail":"VEHICLE_KEY_NOT_THE_CREDENTIALS"}'
                 }
-                else { Send $context 200 ('{"vehicleKey":"' + $vehicle + '","motionState":"STOPPED","observedAt":"2026-10-12T00:00:00Z","source":"selftest","reasonCodes":["A","B"]}') }
+                else { Send $context 200 ('{"vehicleKey":"' + $answered + '","motionState":"STOPPED","observedAt":"2026-10-12T00:00:00Z","source":"selftest","reasonCodes":["A","B"]}') }
             }
             default { Send $context 404 '' }
         }
@@ -184,11 +189,14 @@ function New-Service { param($Name, $BinaryPathName, $DisplayName, $Description,
 function sc.exe { }
 function Set-Acl { param([string]$LiteralPath, $AclObject) }
 function Get-CimInstance { param($ClassName, $Filter) [pscustomobject]@{ StartMode = 'Auto' } }
-# The service's registry Environment, as Update-ControlServerLocal.ps1 reads it.
+# The service's registry Environment, as Update-ControlServerLocal.ps1 reads it -- this service's key only
+# (control-server#652 R4, E): any other path, the MVP's included, reads as absent, and every read is logged.
+$registryReads = [Collections.Generic.List[string]]::new()
 function Get-ItemProperty {
     param([string]$LiteralPath, [string]$Name, $ErrorAction)
+    $registryReads.Add("$LiteralPath|$Name")
     $environment = $caseConfig['serviceEnvironment']
-    if ($null -eq $environment) { return $null }
+    if ($null -eq $environment -or $LiteralPath -cne 'HKLM:\SYSTEM\CurrentControlSet\Services\cs649-selftest' -or $Name -cne 'Environment') { return $null }
     [pscustomobject]@{ Environment = [string[]]@($environment) }
 }
 
@@ -213,6 +221,7 @@ finally {
     try { $null = $double.EndInvoke($doubleHandle) } catch { }
     $double.Dispose()
     Set-Content -LiteralPath "$Case/requests.txt" -Value (@($requestLog) -join "`n")
+    Set-Content -LiteralPath "$Case/registry-reads.txt" -Value (@($registryReads) -join "`n")
 }
 '@, [Text.UTF8Encoding]::new($false))
 
@@ -239,22 +248,24 @@ finally {
         $env:CS649_SELFTEST_SHARED = $shared
         $env:CS649_SELFTEST_REGISTRY_KEY = "$registryKey\$(Split-Path -Leaf $Case.Root)"
         if ($Case.Kind -eq 'Update') {
-            # The Update reads Health:url from the retained configuration; a port is reserved here and handed to the runner.
-            $probe = [System.Net.Sockets.TcpListener]::new([System.Net.IPAddress]::Loopback, 0)
-            $probe.Start(); $port = $probe.LocalEndpoint.Port; $probe.Stop()
+            # The Update reads Health:url from the retained configuration; the runner fills in the port its double got.
             $configuration = [ordered]@{
-                Health = [ordered]@{ url = "http://localhost:$port" }
+                Health = [ordered]@{ url = 'http://localhost:__CS652_HEALTH_PORT__' }
                 JourneyRuntime = [ordered]@{ enabled = $false }
                 OnboardSafetyProjection = [ordered]@{ enabled = $true; credentialEnvironmentVariable = 'CONTROL_SERVER_ONBOARD_CREDENTIAL' }
             }
             if ($null -ne $Case.VehicleCredentials) { $configuration.OnboardSafetyProjection['vehicleCredentials'] = @($Case.VehicleCredentials) }
             [IO.File]::WriteAllText((Join-Path $Case.Root 'install/appsettings.Production.json'), ($configuration | ConvertTo-Json -Depth 6))
         }
-        else { $port = 0 }
-        & pwsh -NoProfile -NonInteractive -File $runner -Kind $Case.Kind -Script $script -Case $Case.Root -ListenerModule $listenerModule -Port $port
+        # Captured, not left to the console (control-server#652 R4, C1): what the child pwsh prints -- Write-Host included --
+        # is checked for credential values like the result and the diagnostic.
+        $output = (& pwsh -NoProfile -NonInteractive -File $runner -Kind $Case.Kind -Script $script -Case $Case.Root -ListenerModule $listenerModule *>&1 |
+            Out-String)
         $resultPath = Join-Path $Case.Root 'result.json'
         return [pscustomobject]@{
             Outcome = (Read-Text (Join-Path $Case.Root 'outcome.txt')).Trim()
+            Output = $output
+            RegistryReads = @((Read-Text (Join-Path $Case.Root 'registry-reads.txt')).Trim() -split "`r?`n" | Where-Object { $_ })
             Diagnostic = Read-Text (Join-Path $Case.Root 'diagnostic.log')
             ResultText = Read-Text $resultPath
             Result = (Test-Path -LiteralPath $resultPath) ? (Get-Content -Raw -LiteralPath $resultPath | ConvertFrom-Json) : $null
@@ -264,9 +275,9 @@ finally {
     }
 
     function Test-NoSecret($Run, [string]$Name) {
-        $text = $Run.Outcome + $Run.Diagnostic + $Run.ResultText
+        $text = $Run.Outcome + $Run.Diagnostic + $Run.ResultText + $Run.Output
         $leaked = @($secrets | Where-Object { $text.Contains($_) })
-        Write-Result ($leaked.Count -eq 0) "$Name`: no credential value in the outcome, the diagnostic or the result" "leaked=$($leaked.Count)"
+        Write-Result ($leaked.Count -eq 0) "$Name`: no credential value in the outcome, the diagnostic, the result or the console output" "leaked=$($leaked.Count)"
     }
 
     $twoCarRows = @([ordered]@{ vehicleKey = $agv02; credentialEnvironmentVariable = $agv02Variable },
@@ -287,6 +298,10 @@ finally {
     Write-Result ((@($run.Requests) -join ',') -ceq (($expected + $expected) -join ',')) `
         'U1 two cars: each vehicle is read with its own credential and names itself, before and after the restart; the shared credential is never sent' `
         ($run.Requests -join ',')
+    # control-server#652 R4 (E): the credentials come from this service's own registry key, and from no other.
+    Write-Result ($run.RegistryReads.Count -ge 1 -and @($run.RegistryReads | Where-Object {
+                $_ -cne 'HKLM:\SYSTEM\CurrentControlSet\Services\cs649-selftest|Environment' }).Count -eq 0) `
+        'U1 two cars: the per-vehicle credentials are read from this service''s registry Environment only' ($run.RegistryReads -join ',')
     Test-NoSecret $run 'U1'
 
     # U2: what the 2026-10-12 upgrade did -- the shared credential against a two-car Host. Its configuration lists no
@@ -320,6 +335,15 @@ finally {
     Write-Result ($run.Diagnostic -notmatch 'service-stopped' -and $run.Diagnostic -notmatch 'preflight-complete' -and $run.InstalledBinary -eq 'old binary' -and
         $run.Requests.Count -eq 0) 'U5 missing per-vehicle credential: refused before the service was stopped; no request sent' "requests=$($run.Requests.Count)"
     Test-NoSecret $run 'U5'
+
+    # U7 (control-server#652 R4, G): the Host answers 200 with another vehicle's projection -- not a 403. The client's own
+    # vehicleKey check is the second line behind the server's, and refuses.
+    $run = Invoke-Case (New-Case 'u7-other-projection' 'Update' ($twoCarDouble + @{ bodyVehicleKey = 'cs652-other-vehicle' }) $twoCarRows `
+        ($baseEnvironment + "$agv02Variable=$agv02Value" + "$agv03Variable=$agv03Value"))
+    Write-Result ($run.Outcome -like 'THREW: SAFETY_PROJECTION_VEHICLE_MISMATCH:*' -and $run.Outcome.Contains('cs652-other-vehicle') -and
+        -not $run.Outcome.Contains('HTTP 403')) 'U7 a 200 naming another vehicle: SAFETY_PROJECTION_VEHICLE_MISMATCH from the client''s own check' (Get-Short $run.Outcome)
+    Write-Result ($run.Diagnostic -match 'rollback-complete' -and $run.InstalledBinary -eq 'old binary') 'U7 a 200 naming another vehicle: rolled back'
+    Test-NoSecret $run 'U7'
 
     # U6: a single-car (or factory) installation: unchanged -- the shared credential, no vehicleKey, the old result shape.
     $singleDouble = @{ shared = $shared; perVehicle = @{}; singleVehicle = $agv02; ready = $true }
