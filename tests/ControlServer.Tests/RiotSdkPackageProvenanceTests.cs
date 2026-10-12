@@ -81,6 +81,41 @@ public sealed class RiotSdkPackageProvenanceTests
         Assert.Equal(PackageVersion, dependencies["RIoT.Sdk.Generated"]);
     }
 
+    /// <summary>
+    /// The version this class checks is the version the build consumes. <see cref="FindPackageDirectory"/> finds the vendor
+    /// directory by <see cref="PackageVersion"/> alone, and old version directories stay in the repository, so a package bump
+    /// that left the constant behind went on checking the old directory and stayed green (control-server#639). Both places
+    /// that choose the package are tied to the constant: the central package version and the local feed directory.
+    /// </summary>
+    [Fact]
+    public void TheCheckedVersionIsTheVersionTheBuildConsumes()
+    {
+        string root = FindRepositoryRoot();
+        XElement facade = XDocument.Load(Path.Combine(root, "Directory.Packages.props")).Descendants()
+            .Single(element => element.Name.LocalName == "PackageVersion" &&
+                               element.Attribute("Include")?.Value == "RIoT.Sdk.Facade");
+        XElement feed = XDocument.Load(Path.Combine(root, "NuGet.Config")).Descendants()
+            .Single(element => element.Name.LocalName == "add" && element.Attribute("key")?.Value == "riot-sdk-local");
+
+        Assert.Equal(PackageVersion, facade.Attribute("Version")?.Value);
+        Assert.Equal(
+            Path.Combine("vendor", "nuget", "riot-sdk", PackageVersion),
+            feed.Attribute("value")?.Value.Replace('\\', Path.DirectorySeparatorChar).Replace('/', Path.DirectorySeparatorChar));
+    }
+
+    private static string FindRepositoryRoot()
+    {
+        for (DirectoryInfo? directory = new(AppContext.BaseDirectory); directory is not null; directory = directory.Parent)
+        {
+            if (File.Exists(Path.Combine(directory.FullName, "ControlServer.sln")))
+            {
+                return directory.FullName;
+            }
+        }
+
+        throw new DirectoryNotFoundException("Could not locate the ControlServer repository root.");
+    }
+
     private static string FindPackageDirectory()
     {
         DirectoryInfo? directory = new(AppContext.BaseDirectory);
