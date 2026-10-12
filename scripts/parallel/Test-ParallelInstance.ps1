@@ -4945,6 +4945,222 @@ foreach ($case in @(
     }
 }
 
+# ------------------------------------------------------------------------------------------------
+# control-server#531. REQ-0302's two approved values, MapStationCatalog:ApprovedSyncPeriod and ApprovedMaxUnconfirmed. The
+# whitelist had no section for them, so an install strictly from the definition left the Host unapproved and every hauling
+# demand was refused with 2110 CATALOG_PARAMETERS_NOT_APPROVED; on 10-09, 10-10, 10-11 and 10-12 the field session hand-edited
+# appsettings.Production.json after each install. The user approved 00:00:30 / 00:05:00 on 2026-10-09.
+# ------------------------------------------------------------------------------------------------
+Write-Host ''
+Write-Host 'Map/Station catalog approval (control-server#531)' -ForegroundColor Cyan
+
+$catalogTemplate = "$clearanceTemplate mapStationCatalog={MapStationCatalog}"
+$shippedDefinitionNames = @('instance-factory01-v2.json', 'instance-factory01-v2.production-mes.json', 'instance-factory01-v2.two-car-example.json',
+    'instance-factory01-v2.req0178-field-off.json', 'instance-factory01-v2.req0178-field-on.json',
+    # control-server#665 (merged before this ticket): the batch 8/9 field definitions. PR #666 review S1.
+    'instance-factory01-v2.batch89-auto.json', 'instance-factory01-v2.batch89-manual.json')
+function Set-CatalogSection($Definition, $Section, [switch] $Remove) {
+    $d = Copy-Definition $Definition
+    if ($Remove) { $d.Remove('mapStationCatalog') } else { $d['mapStationCatalog'] = $Section }
+    return $d
+}
+function Edit-Catalog([scriptblock] $Edit) {
+    $d = Copy-Definition $baseline
+    $null = & $Edit $d['mapStationCatalog']
+    return $d
+}
+$catalogAbsent = Set-CatalogSection $baseline $null -Remove
+
+# --- The shipped definitions carry the approved pair, with where the approval is recorded -------------------------
+Invoke-SourceCase 'catalog: every shipped definition carries 00:00:30 / 00:05:00 and an approval record naming 2026-10-09, and is accepted' {
+    $wrong = @($shippedDefinitionNames | Where-Object {
+            $d = Read-ParallelInstanceDefinition -Path (Join-Path $PSScriptRoot $_)
+            $c = $d.Contains('mapStationCatalog') ? $d['mapStationCatalog'] : $null
+            -not ($c -is [System.Collections.IDictionary] -and $c['approvedSyncPeriod'] -ceq '00:00:30' -and $c['approvedMaxUnconfirmed'] -ceq '00:05:00' -and
+                ([string] $c['approvalRecord']).Contains('2026-10-09') -and @(Test-ParallelInstanceDefinition -Definition $d).Count -eq 0) })
+    $all = @(Get-ChildItem -LiteralPath $PSScriptRoot -Filter 'instance-*.json' | ForEach-Object Name)
+    $unlisted = @($all | Where-Object { $_ -cnotin $shippedDefinitionNames })
+    @{ Ok = ($wrong.Count -eq 0 -and $unlisted.Count -eq 0); Detail = "wrong: $($wrong -join ', '); shipped but not checked here: $($unlisted -join ', ')" }
+}
+
+# --- Whitelist against MapStationCatalogOptions ------------------------------------------------------------------
+Invoke-SourceCase 'catalog: the two product keys name MapStationCatalogOptions'' properties, every property is whitelisted, approvalRecord is not a property' {
+    $properties = @(Get-OptionProperty -RelativePath 'src/ControlServer.Host/Runtime/CreateGate/MapStationCatalogOptions.cs' -ClassName 'MapStationCatalogOptions')
+    $keys = @((Get-ParallelInstanceAllowedKey)['mapStationCatalog'])
+    $product = @($keys | Where-Object { $_ -cne 'approvalRecord' })
+    $orphans = @($product | Where-Object { $k = $_; -not ($properties | Where-Object { $_ -ieq $k }) })
+    $missing = @($properties | Where-Object { $p = $_; -not ($product | Where-Object { $_ -ieq $p }) })
+    @{ Ok = ($properties.Count -eq 2 -and $keys -ccontains 'approvalRecord' -and -not ($properties -icontains 'approvalRecord') -and
+            $orphans.Count -eq 0 -and $missing.Count -eq 0 -and (Get-ParallelInstanceAllowedKey)[''] -ccontains 'mapStationCatalog')
+        Detail = "properties: $($properties -join ','); whitelist: $($keys -join ','); orphans: $($orphans -join ','); not whitelisted: $($missing -join ',')" }
+}
+
+# --- The definition check: both or neither, hh:mm:ss, positive, maximum above the period, a record ------------------
+Invoke-SourceCase 'catalog: left out entirely is deployable (REQ-0303: the Host boots unapproved and says so)' {
+    Test-ExactFailure $catalogAbsent @()
+}
+foreach ($case in @(
+        @{ Name = 'only approvedSyncPeriod'; Edit = { param($c) $c.Remove('approvedMaxUnconfirmed') }; Expect = @('must be written together') }
+        @{ Name = 'only approvedMaxUnconfirmed'; Edit = { param($c) $c.Remove('approvedSyncPeriod') }; Expect = @('must be written together') }
+        @{ Name = 'an empty section'; Edit = { param($c) $c.Clear() }; Expect = @('must be written together', 'approvalRecord must say') }
+        @{ Name = 'maximum equal to the period'; Edit = { param($c) $c['approvedMaxUnconfirmed'] = '00:00:30' }; Expect = @('approvedMaxUnconfirmed (00:00:30) must exceed') }
+        @{ Name = 'maximum below the period'; Edit = { param($c) $c['approvedMaxUnconfirmed'] = '00:00:10' }; Expect = @('approvedMaxUnconfirmed (00:00:10) must exceed') }
+        @{ Name = 'a zero period'; Edit = { param($c) $c['approvedSyncPeriod'] = '00:00:00' }; Expect = @('approvedSyncPeriod must be positive') }
+        @{ Name = '"30" (which .NET reads as thirty days)'; Edit = { param($c) $c['approvedSyncPeriod'] = '30' }; Expect = @('approvedSyncPeriod must be a string hh:mm:ss') }
+        @{ Name = 'a JSON number'; Edit = { param($c) $c['approvedSyncPeriod'] = 30 }; Expect = @('approvedSyncPeriod must be a string hh:mm:ss') }
+        @{ Name = 'a day part ("1.00:00:00")'; Edit = { param($c) $c['approvedMaxUnconfirmed'] = '1.00:00:00' }; Expect = @('approvedMaxUnconfirmed must be a string hh:mm:ss') }
+        @{ Name = 'a fraction ("00:00:30.5")'; Edit = { param($c) $c['approvedSyncPeriod'] = '00:00:30.5' }; Expect = @('approvedSyncPeriod must be a string hh:mm:ss') }
+        @{ Name = 'seconds out of range ("00:00:60")'; Edit = { param($c) $c['approvedSyncPeriod'] = '00:00:60' }; Expect = @('approvedSyncPeriod must be a string hh:mm:ss') }
+        @{ Name = 'no approval record'; Edit = { param($c) $c.Remove('approvalRecord') }; Expect = @('approvalRecord must say') }
+        @{ Name = 'a blank approval record'; Edit = { param($c) $c['approvalRecord'] = '  ' }; Expect = @('approvalRecord must say') }
+        @{ Name = 'a misspelt key'; Edit = { param($c) $c['approvedSyncPeriods'] = '00:00:30' }; Expect = @('mapStationCatalog.approvedSyncPeriods is not a key this deployment knows') }
+        @{ Name = 'a case twin'; Edit = { param($c) $c['ApprovedSyncPeriod'] = '00:01:00' }; Expect = @('mapStationCatalog.ApprovedSyncPeriod differs only in case') })) {
+    Invoke-SourceCase "catalog refused: $($case.Name)" {
+        $d = Edit-Catalog $case.Edit
+        Test-ExactFailure $d $case.Expect
+    }
+}
+Invoke-SourceCase 'catalog refused: a section that is not an object' {
+    Test-ExactFailure (Set-CatalogSection $baseline '00:00:30') @('mapStationCatalog must be an object')
+}
+
+# --- The overlay: always both keys, normalised; never the record -----------------------------------------------
+Invoke-SourceCase 'catalog overlay: the approved pair is written under MapStationCatalog, exactly two keys, no approvalRecord' {
+    $o = New-ParallelInstanceConfigurationOverlay -Definition (Copy-Definition $baseline)
+    $c = $o.Contains('MapStationCatalog') ? $o['MapStationCatalog'] : $null
+    @{ Ok = ($null -ne $c -and (@($c.Keys) -join ',') -ceq 'approvedSyncPeriod,approvedMaxUnconfirmed' -and
+            $c['approvedSyncPeriod'] -ceq '00:00:30' -and $c['approvedMaxUnconfirmed'] -ceq '00:05:00')
+        Detail = "got: $(ConvertTo-Json -Compress $c)" }
+}
+Invoke-SourceCase 'catalog overlay: left out, both keys are written null, so an earlier approval or hand edit does not survive a reinstall' {
+    $o = New-ParallelInstanceConfigurationOverlay -Definition (Copy-Definition $catalogAbsent)
+    $c = $o['MapStationCatalog']
+    $json = ConvertTo-Json -Compress -InputObject $c
+    @{ Ok = ($json -ceq '{"approvedSyncPeriod":null,"approvedMaxUnconfirmed":null}'); Detail = "got: $json" }
+}
+
+# --- The install paths: the step every path runs, on a real file (first install, upgrade over the hand edit, two cars) ---
+# The 10-09..10-12 hand edit, as the field session wrote it: PascalCase, beside what the product script wrote.
+$handEdited = Copy-Definition $productConfiguration
+$handEdited['MapStationCatalog'] = [ordered]@{ ApprovedSyncPeriod = '00:01:00'; ApprovedMaxUnconfirmed = '00:10:00' }
+function Invoke-CatalogFileStep($Definition, $Base) {
+    $directory = Join-Path ([IO.Path]::GetTempPath()) "cs531-$([guid]::NewGuid().ToString('N'))"
+    New-Item -ItemType Directory -Path $directory | Out-Null
+    try {
+        $file = Join-Path $directory 'appsettings.Production.json'
+        [IO.File]::WriteAllText($file, (ConvertTo-Json -InputObject $Base -Depth 12), [Text.UTF8Encoding]::new($false))
+        $null = Update-ParallelInstanceConfigurationFile -Path $file -Definition $Definition
+        return Get-Content -LiteralPath $file -Raw -Encoding utf8 | ConvertFrom-Json -AsHashtable -Depth 12
+    } finally {
+        Remove-Item -LiteralPath $directory -Recurse -Force -ErrorAction SilentlyContinue
+    }
+}
+function Get-CatalogOnDisk($Configuration) {
+    $sections = @($Configuration.Keys | Where-Object { $_ -ieq 'MapStationCatalog' })
+    if ($sections.Count -ne 1) { return "sections: $($sections -join ',')" }
+    $c = $Configuration[$sections[0]]
+    $twins = @(Find-CaseTwin -Node $Configuration -Path '')
+    $sync = @($c.Keys | Where-Object { $_ -ieq 'approvedSyncPeriod' } | ForEach-Object { $c[$_] })
+    $max = @($c.Keys | Where-Object { $_ -ieq 'approvedMaxUnconfirmed' } | ForEach-Object { $c[$_] })
+    return "sync=$($sync -join '|') max=$($max -join '|') twins=$($twins.Count)"
+}
+foreach ($case in @(
+        @{ Name = 'first install'; Definition = $baseline; Base = $productConfiguration; Expect = 'sync=00:00:30 max=00:05:00 twins=0' }
+        @{ Name = 'upgrade over the field hand edit (other values, PascalCase)'; Definition = $baseline; Base = $handEdited; Expect = 'sync=00:00:30 max=00:05:00 twins=0' }
+        @{ Name = 'two-car example, first install'; Definition = (Read-ParallelInstanceDefinition -Path $exampleFleetPath); Base = $productConfiguration; Expect = 'sync=00:00:30 max=00:05:00 twins=0' }
+        @{ Name = 'two-car example, upgrade over the field hand edit'; Definition = (Read-ParallelInstanceDefinition -Path $exampleFleetPath); Base = $handEdited; Expect = 'sync=00:00:30 max=00:05:00 twins=0' }
+        @{ Name = 'a definition without the section, over the hand edit (cleared, not inherited)'; Definition = $catalogAbsent; Base = $handEdited; Expect = 'sync= max= twins=0' })) {
+    Invoke-SourceCase "catalog on disk after the configuration step: $($case.Name)" {
+        $got = Get-CatalogOnDisk (Invoke-CatalogFileStep (Copy-Definition $case.Definition) (Copy-Definition $case.Base))
+        @{ Ok = ($got -ceq $case.Expect); Detail = "expected '$($case.Expect)', got '$got'" }
+    }
+}
+
+# --- The read-back: what the Host bound, from its EFFECTIVE_CONFIGURATION event ----------------------------------
+# -Bound '<absent>' leaves MapStationCatalog out, as a package older than #531 logs the event.
+function Get-CatalogReadBack($Definition, $Bound) {
+    $event = [ordered]@{
+        '@t' = '2026-10-12T21:00:06Z'
+        '@mt' = $catalogTemplate
+        AllowedWorkTypes = @($Definition['journeyRuntime']['allowedWorkTypes'])
+        AllowedDispatchZones = @($Definition['journeyRuntime']['allowedDispatchZones'])
+        MesIngestBaseUrl = [string] $Definition['mesIngest']['baseUrl']
+        Fleet = @()
+        ClearanceToWaitingPointEnabled = $false
+    }
+    if ($Bound -isnot [string] -or $Bound -cne '<absent>') { $event['MapStationCatalog'] = $Bound }
+    $line = ConvertTo-Json -Compress -Depth 8 -InputObject $event
+    $e = Find-ParallelEffectiveConfiguration -Lines @($line) -Since ([datetimeoffset]::Parse('2026-10-12T21:00:00Z', [cultureinfo]::InvariantCulture))
+    return [pscustomobject]@{ Action = Get-ParallelEffectiveConfigurationAction -Definition $Definition -Effective $e; Effective = $e }
+}
+$boundApproved = [ordered]@{ ApprovedSyncPeriod = '00:00:30'; ApprovedMaxUnconfirmed = '00:05:00' }
+$boundNone = [ordered]@{ ApprovedSyncPeriod = $null; ApprovedMaxUnconfirmed = $null }
+foreach ($case in @(
+        @{ Name = 'approved, bound as defined -- pass'; Definition = $baseline; Bound = $boundApproved; Action = 'Pass'; Says = $null }
+        @{ Name = 'approved, bound none (written and not in effect) -- stop and refuse'; Definition = $baseline; Bound = $boundNone; Action = 'StopServiceAndRefuse'; Says = "mapStationCatalog.approvedSyncPeriod bound 'null', the definition says '00:00:30'" }
+        @{ Name = 'approved, a different maximum bound (an environment variable, a stale layer) -- stop and refuse'; Definition = $baseline; Bound = [ordered]@{ ApprovedSyncPeriod = '00:00:30'; ApprovedMaxUnconfirmed = '00:10:00' }; Action = 'StopServiceAndRefuse'; Says = "mapStationCatalog.approvedMaxUnconfirmed bound '00:10:00', the definition says '00:05:00'" }
+        @{ Name = 'left out, values bound (left over) -- stop and refuse'; Definition = $catalogAbsent; Bound = $boundApproved; Action = 'StopServiceAndRefuse'; Says = "mapStationCatalog.approvedSyncPeriod bound '00:00:30', the definition says 'null'" }
+        @{ Name = 'left out, none bound -- pass (the installer warns)'; Definition = $catalogAbsent; Bound = $boundNone; Action = 'Pass'; Says = $null }
+        @{ Name = 'approved, bound as a non-object -- stop and refuse'; Definition = $baseline; Bound = 30; Action = 'StopServiceAndRefuse'; Says = 'mapStationCatalog.approvedSyncPeriod bound' }
+        @{ Name = 'approved, event older than #531 (no field) -- pass, so a rollback to such a package is not blocked'; Definition = $baseline; Bound = '<absent>'; Action = 'Pass'; Says = $null })) {
+    Invoke-SourceCase "catalog read-back: $($case.Name)" {
+        $a = (Get-CatalogReadBack $case.Definition $case.Bound).Action
+        @{ Ok = ($a.Action -ceq $case.Action -and ($null -eq $case.Says -or ([string] $a.Message).Contains($case.Says))); Detail = "got: $(ConvertTo-Json $a -Compress)" }
+    }
+}
+# --- PR #666 review L1: an environment layer above the file is refused before anything is restarted ------------------
+Invoke-SourceCase 'catalog environment override: MapStationCatalog keys count like JourneyRuntime ones, ignoring case, prefixes included' {
+    $found = @(Get-ParallelJourneyRuntimeEnvironmentOverride -ServiceEnvironment @('MapStationCatalog__ApprovedMaxUnconfirmed=00:10:00', 'MapStationCatalogX=1') `
+            -MachineEnvironment @('DOTNET_mapstationcatalog:ApprovedSyncPeriod=00:00:30', 'MyMapStationCatalog__ApprovedSyncPeriod=1', 'MapStationCatalogNotes=1'))
+    $expected = 'service MapStationCatalog__ApprovedMaxUnconfirmed|machine DOTNET_mapstationcatalog:ApprovedSyncPeriod'
+    @{ Ok = (($found -join '|') -ceq $expected); Detail = "got: $($found -join '|')" }
+}
+Invoke-PathCase 'catalog environment override in the configuration step' {
+    $s = Invoke-HeldPath -BaseConfiguration (Copy-Definition $productConfiguration) -ServiceEnvironmentExtra @('MapStationCatalog__ApprovedMaxUnconfirmed=00:10:00')
+    Write-Result -Ok ($s.Error -like 'JOURNEY_RUNTIME_ENVIRONMENT_OVERRIDE*' -and $s.Error.Contains('MapStationCatalog__ApprovedMaxUnconfirmed') -and
+            $s.Error.Contains('MapStationCatalog above') -and @($s.Log).Count -eq 0) `
+        -Name 'catalog environment override: MapStationCatalog__ApprovedMaxUnconfirmed in the service''s Environment is refused before any restart, naming the key' `
+        -Detail ("log: " + (@($s.Log) -join ',') + "; error: $($s.Error)")
+    $s = Invoke-HeldPath -BaseConfiguration (Copy-Definition $productConfiguration) -MachineEnvironment @('Path=C:\Windows', 'ASPNETCORE_MapStationCatalog__ApprovedSyncPeriod=00:00:10')
+    Write-Result -Ok ($s.Error -like 'JOURNEY_RUNTIME_ENVIRONMENT_OVERRIDE*' -and $s.Error.Contains('ASPNETCORE_MapStationCatalog__ApprovedSyncPeriod') -and @($s.Log).Count -eq 0) `
+        -Name 'catalog environment override: an ASPNETCORE_-prefixed MapStationCatalog key in the machine''s environment is refused before any restart' `
+        -Detail ("log: " + (@($s.Log) -join ',') + "; error: $($s.Error)")
+}
+Invoke-SourceCase 'catalog environment override: the installer''s machine-level refusal names MapStationCatalog' {
+    $installer = Get-Content -Raw -LiteralPath (Join-Path $PSScriptRoot 'Install-ParallelInstanceLocal.ps1')
+    @{ Ok = $installer.Contains("'or MapStationCatalog (control-server#531) above appsettings.Production.json."); Detail = 'Install-ParallelInstanceLocal.ps1 JOURNEY_RUNTIME_ENVIRONMENT_OVERRIDE text does not name MapStationCatalog' }
+}
+
+Invoke-SourceCase 'catalog read-back line: the bound values are said, and no warning' {
+    $f = Format-ParallelMapStationCatalogReadBack -Effective (Get-CatalogReadBack $baseline $boundApproved).Effective
+    @{ Ok = ($f.Line -ceq 'mapStationCatalog approvedSyncPeriod=00:00:30 approvedMaxUnconfirmed=00:05:00' -and $null -eq $f.Warning); Detail = "got: $(ConvertTo-Json $f -Compress)" }
+}
+Invoke-SourceCase 'catalog read-back line: none bound warns MAP_STATION_CATALOG_NOT_APPROVED and names 2110' {
+    $f = Format-ParallelMapStationCatalogReadBack -Effective (Get-CatalogReadBack $catalogAbsent $boundNone).Effective
+    @{ Ok = ($f.Line -ceq 'mapStationCatalog approvedSyncPeriod=null approvedMaxUnconfirmed=null' -and
+            ([string] $f.Warning).StartsWith('MAP_STATION_CATALOG_NOT_APPROVED') -and ([string] $f.Warning).Contains('2110')); Detail = "got: $(ConvertTo-Json $f -Compress)" }
+}
+Invoke-SourceCase 'catalog read-back line: an event older than #531 says so, without a warning' {
+    $f = Format-ParallelMapStationCatalogReadBack -Effective (Get-CatalogReadBack $baseline '<absent>').Effective
+    @{ Ok = ($f.Line.Contains('not logged') -and $null -eq $f.Warning); Detail = "got: $(ConvertTo-Json $f -Compress)" }
+}
+Invoke-SourceCase 'catalog read-back: the installer prints the line and raises the warning after every read-back' {
+    $installer = Get-Content -Raw -LiteralPath (Join-Path $PSScriptRoot 'Install-ParallelInstanceLocal.ps1')
+    $ok = [regex]::IsMatch($installer, '\$catalog = Format-ParallelMapStationCatalogReadBack -Effective \$effective\s+Write-Step "  \$\(\$catalog\.Line\)"\s+if \(\$catalog\.Warning\) \{ Write-Warning \$catalog\.Warning \}')
+    @{ Ok = $ok; Detail = 'Install-ParallelInstanceLocal.ps1 Assert-EffectiveConfiguration does not print the catalog line and warning' }
+}
+Invoke-SourceCase 'catalog read-back: the Host source logs the pair under the template the module reads' {
+    $eventSource = @(Get-ChildItem -LiteralPath (Join-Path $repoRoot 'src/ControlServer.Host') -Recurse -Filter '*.cs' |
+            Where-Object { (Get-Content -Raw -LiteralPath $_.FullName).Contains($catalogTemplate) })
+    @{ Ok = ($eventSource.Count -eq 1 -and $eventSource[0].Name -ceq 'EffectiveConfigurationEvent.cs'); Detail = "template found in: $(@($eventSource | ForEach-Object Name) -join ', ')" }
+}
+Invoke-SourceCase 'catalog read-back: Program.cs logs the MapStationCatalogOptions the Host bound and validated, not a new instance' {
+    # The unit tests render the event from options they construct; only this pins that the Host passes its own.
+    $program = Get-Content -Raw -LiteralPath (Join-Path $repoRoot 'src/ControlServer.Host/Program.cs')
+    $ok = [regex]::IsMatch($program, 'MapStationCatalogOptions catalog = app\.Services\.GetRequiredService<IOptions<MapStationCatalogOptions>>\(\)\.Value;\s+EffectiveConfigurationEvent\.Log\(app\.Logger, effective, catalog, ')
+    @{ Ok = $ok; Detail = 'Program.cs does not log IOptions<MapStationCatalogOptions>.Value in its EFFECTIVE_CONFIGURATION event' }
+}
+
 Write-Host ''
 Write-Host ("{0} passed, {1} failed" -f $script:Passed, $script:Failed) `
     -ForegroundColor ($script:Failed -eq 0 ? 'Green' : 'Red')

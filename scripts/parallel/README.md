@@ -261,6 +261,36 @@ control-server#518 时它只绑 `WIRE_TO_GATE` → 210「关卡」，核对号�
 - **换了新库**（或删了数据目录），启动时预置作为第一版装进新库，六类绑定随之生效，不用再激活；这就是预置必须与候选逐条相同的原因，
   `TaskTypeStationStartupTests.TheMap26PresetAndTheActivationCandidateCarryTheSameBindings` 钉着。换库还要连车载端日志簿一起清，那是另一回事。
 
+## 地图站点目录的两个批准值由定义带上，不再装完手改（control-server#531）
+
+REQ-0302 要求地图与站点目录的两个参数先批准再投产：同步周期 `MapStationCatalog:ApprovedSyncPeriod`、最长未确认时长
+`MapStationCatalog:ApprovedMaxUnconfirmed`。不配时服务端照常启动、照常报状态（REQ-0303），但所有依赖地图的需求都被拒，日志 2110
+`CATALOG_PARAMETERS_NOT_APPROVED`。以前实例定义的白名单没有这一节，19 带不上，10-09 到 10-12 每次重装后都在 factory01 上手改
+`appsettings.Production.json` 再重启 V2。现在写在定义里：
+
+```json
+"mapStationCatalog": {
+  "approvedSyncPeriod": "00:00:30",
+  "approvedMaxUnconfirmed": "00:05:00",
+  "approvalRecord": "REQ-0302，用户 2026-10-09 批准（…）"
+}
+```
+
+- 这两个值是用户 2026-10-09 批准的。原始记录在 workspace-v2 的 `ds-tasks/board.md` 10-09 条目里，那个仓库是私有的，公开读者看不到；
+  能公开核对的出处是 control-server#531 的票面（「出处」一节写了批准日期与两个值）。`approvalRecord` 里写的就是这两处。
+  **七份出厂定义都写了**（含 control-server#665 新增的两份 `batch89-*`）：它们装的是同一个
+  factory01 V2 实例、同一张 26 号图，批准是对这个现场的，不是对某一份定义的；而且每一份在运行时打开后都要跑依赖地图的业务
+  （搬运需求，REQ-0178 两份还有清桩开往等待点），少了它就是 10-12 夜里那种「严格按定义装完、所有需求 2110」。
+- 校验与服务端启动校验（`MapStationCatalogOptionsValidator`）一致，并且更严：两个值必须同时写或同时不写；格式只认 `hh:mm:ss`
+  的字符串（.NET 会把 `"30"` 读成 30 天，小数秒在库里只存整秒）；同步周期为正；最长未确认时长必须大于同步周期。`approvalRecord`
+  必填，写清谁、何时批准、记录在哪。整节不写是允许的，表示「未批准」。
+- 覆盖层每次都写 `MapStationCatalog` 的两个键；定义没写这一节就写两个 `null`，所以上次装的值、以及前几晚手改留下的那一节
+  （大小写不同也一样，合并按键名忽略大小写）重装后都不会残留。`approvalRecord` 不进覆盖层。
+- 回读：Host 在 `EFFECTIVE_CONFIGURATION` 事件末尾记下实际绑定的两个值（`mapStationCatalog`，`hh:mm:ss` 或 `null`），安装器与定义比对，
+  不一致按 `EFFECTIVE_CONFIGURATION_MISMATCH` 停服务；一致则单独打一行 `mapStationCatalog approvedSyncPeriod=… approvedMaxUnconfirmed=…`
+  （不进 `EFFECTIVE_CONFIGURATION=` 结果行）。绑定为空时打 `MAP_STATION_CATALOG_NOT_APPROVED` 警告，点名 2110。事件里没有这个字段
+  （control-server#531 之前的包）时照常放行、并说明「not logged」，否则回滚到旧包会被挡住。
+
 ## 清桩出口的两节配置与恢复凭据由部署链写，不再手工合入（control-server#454）
 
 人工清桩出口要两节配置：`VehicleFaultRecovery`（Host 恢复入口开关与凭据变量名）和 `FieldOperatorRoles`（名单路径、车载端入口声明）。

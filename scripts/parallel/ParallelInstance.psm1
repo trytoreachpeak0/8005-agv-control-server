@@ -166,7 +166,7 @@ $script:AllowedKeys = [ordered]@{
     '' = @('instanceId', 'serviceName', 'installRoot', 'dataRoot', 'backupRoot', 'packageRoot',
         'opsRoot', 'stagingRoot', 'listenAddress', 'healthBindAddress', 'onboardPort', 'healthPort',
         'dashboardPort', 'mesIngest', 'fakeMesIngest', 'routeGraph', 'riotCreateDispatch', 'riotForeignOrderCancel',
-        'journeyRuntime', 'vehicleFaultRecovery', 'fieldOperatorRoles', 'taskTypeStations')
+        'journeyRuntime', 'vehicleFaultRecovery', 'fieldOperatorRoles', 'taskTypeStations', 'mapStationCatalog')
     # control-server#535. source is this deployment's, not a product option: the overlay does not write it.
     'mesIngest' = @('baseUrl', 'source')
     'fakeMesIngest' = @('installRoot', 'port', 'taskName', 'seedPath')
@@ -185,6 +185,9 @@ $script:AllowedKeys = [ordered]@{
     'fieldOperatorRoles' = @('path', 'onboardClearanceEntryDeclared')
     # control-server#518. TaskTypeStationPreset.SettingsFileKey; there is no options class to mirror.
     'taskTypeStations' = @('settingsFile')
+    # control-server#531. REQ-0302's two approved values (MapStationCatalogOptions), and approvalRecord: who approved them
+    # and when. The record is this deployment's, like mesIngest.source -- the overlay does not write it.
+    'mapStationCatalog' = @('approvedSyncPeriod', 'approvedMaxUnconfirmed', 'approvalRecord')
 }
 
 <#
@@ -875,6 +878,49 @@ function Test-ParallelInstanceDefinition {
         }
     }
 
+    # ---------------------------------------------------- map/station catalog ---
+
+    # control-server#531. REQ-0302's two approved values. Optional, because "not approved" is a state the Host boots into
+    # and reports (REQ-0303) -- but then every Map/Station-dependent demand is refused with 2110
+    # CATALOG_PARAMETERS_NOT_APPROVED, which is what an install without them did on 10-09..10-12 until someone hand-edited
+    # appsettings.Production.json. Written, the pair is checked here as MapStationCatalogOptionsValidator checks it at
+    # startup -- both or neither, positive, the maximum above the period -- so a bad pair is refused before the service is
+    # stopped, not after it fails to come up. The format is stricter than .NET's: TimeSpan's converter reads "30" as thirty
+    # days and "00:00:30.5" keeps a fraction the catalog state stores as whole seconds, so only hh:mm:ss is taken.
+    if (Test-KeyPresent -Node $Definition -Key 'mapStationCatalog') {
+        $catalog = $Definition['mapStationCatalog']
+        if ($catalog -isnot [System.Collections.IDictionary]) {
+            $failures += 'mapStationCatalog must be an object holding approvedSyncPeriod, approvedMaxUnconfirmed and approvalRecord, or be left out (not approved: the Host refuses every Map/Station-dependent demand with 2110).'
+        } else {
+            $hasSync = $catalog.Contains('approvedSyncPeriod')
+            $hasMax = $catalog.Contains('approvedMaxUnconfirmed')
+            if (-not $hasSync -or -not $hasMax) {
+                $failures += 'mapStationCatalog.approvedSyncPeriod and mapStationCatalog.approvedMaxUnconfirmed must be written together (REQ-0302 approves the pair; the Host refuses to start with one of them). Leave the whole section out for "not approved".'
+            }
+            $catalogSpans = @{}
+            foreach ($key in @('approvedSyncPeriod', 'approvedMaxUnconfirmed')) {
+                if (-not $catalog.Contains($key)) { continue }
+                # Not $span: the route graph check above declares that one [timespan], which cannot hold $null.
+                $catalogSpan = ConvertTo-ParallelCatalogSpan $catalog[$key]
+                if ($null -eq $catalogSpan) {
+                    $failures += "mapStationCatalog.$key must be a string hh:mm:ss, such as ""00:00:30"", got '$($catalog[$key])'. (.NET would read ""30"" as thirty days.)"
+                } else {
+                    $catalogSpans[$key] = $catalogSpan
+                }
+            }
+            if ($catalogSpans.ContainsKey('approvedSyncPeriod') -and $catalogSpans['approvedSyncPeriod'] -le [timespan]::Zero) {
+                $failures += "mapStationCatalog.approvedSyncPeriod must be positive, got '$($catalog['approvedSyncPeriod'])'."
+            } elseif ($catalogSpans.ContainsKey('approvedSyncPeriod') -and $catalogSpans.ContainsKey('approvedMaxUnconfirmed') -and
+                $catalogSpans['approvedMaxUnconfirmed'] -le $catalogSpans['approvedSyncPeriod']) {
+                $failures += "mapStationCatalog.approvedMaxUnconfirmed ($($catalogSpans['approvedMaxUnconfirmed'])) must exceed mapStationCatalog.approvedSyncPeriod ($($catalogSpans['approvedSyncPeriod'])); equal would make the catalog stale the moment one sync is missed."
+            }
+            if (-not $catalog.Contains('approvalRecord') -or $catalog['approvalRecord'] -isnot [string] -or
+                [string]::IsNullOrWhiteSpace($catalog['approvalRecord'])) {
+                $failures += 'mapStationCatalog.approvalRecord must say who approved the two values, when, and where that is recorded; values without their approval are not an approval.'
+            }
+        }
+    }
+
     # --------------------------------------------------------- journey runtime ---
 
     $journey = Get-Node -Root $Definition -Key 'journeyRuntime'
@@ -1050,6 +1096,65 @@ function Test-ParallelInstanceDefinition {
     }
 
     return $failures
+}
+
+function ConvertTo-ParallelCatalogSpan {
+    <#
+        control-server#531. A mapStationCatalog value as a [timespan], or $null when it is not a JSON string of exactly
+        hh:mm:ss (two digits each, hours 00-23). ParseExact rather than TimeSpan's own parser, which takes "30" as days.
+    #>
+    param($Value)
+    if ($Value -isnot [string] -or $Value -notmatch '^\d{2}:\d{2}:\d{2}$') { return $null }
+    [timespan] $span = [timespan]::Zero
+    if (-not [timespan]::TryParseExact($Value, 'hh\:mm\:ss', [cultureinfo]::InvariantCulture, [ref] $span)) { return $null }
+    return $span
+}
+
+function Get-ParallelMapStationCatalogApproval {
+    <#
+        .SYNOPSIS
+            control-server#531. The two approved values as the overlay writes them and the read-back expects them: each
+            "hh:mm:ss" ([timespan] 'c' format, which is also how the Host logs them), or both $null when the definition
+            leaves mapStationCatalog out. ApprovalRecord is the definition's provenance line, never written to the overlay.
+    #>
+    [CmdletBinding()]
+    param([Parameter(Mandatory = $true)][System.Collections.IDictionary] $Definition)
+    $catalog = $Definition.Contains('mapStationCatalog') ? $Definition['mapStationCatalog'] : $null
+    $result = [ordered]@{ approvedSyncPeriod = $null; approvedMaxUnconfirmed = $null; approvalRecord = $null }
+    if ($catalog -isnot [System.Collections.IDictionary]) { return $result }
+    foreach ($key in @('approvedSyncPeriod', 'approvedMaxUnconfirmed')) {
+        if (-not $catalog.Contains($key)) { continue }
+        $span = ConvertTo-ParallelCatalogSpan $catalog[$key]
+        # A value the definition check refuses is carried as written, so nothing downstream can read it as "not approved".
+        $result[$key] = ($null -ne $span) ? $span.ToString('c', [cultureinfo]::InvariantCulture) : $catalog[$key]
+    }
+    $result['approvalRecord'] = $catalog.Contains('approvalRecord') ? $catalog['approvalRecord'] : $null
+    return $result
+}
+
+function Format-ParallelMapStationCatalogReadBack {
+    <#
+        .SYNOPSIS
+            control-server#531. The installer's line for the two approved values the Host bound, and a warning when the
+            Host bound none: Line (always) and Warning ($null, or the text to Write-Warning).
+
+        .DESCRIPTION
+            Compared beforehand by Get-ParallelEffectiveConfigurationRefusal; this only says it out loud, on its own line,
+            because 19-deploy-control-server-parallel.ps1 compares the EFFECTIVE_CONFIGURATION= result line whole. Not
+            approved is a state the Host may legitimately run in (REQ-0303), so it warns rather than fails -- but it names
+            what follows, because a field session spent three nights finding 2110 in the log after a green install.
+    #>
+    [CmdletBinding()]
+    param([AllowNull()] $Effective)
+    $bound = ($null -ne $Effective -and $null -ne $Effective.PSObject.Properties['MapStationCatalog']) ? $Effective.MapStationCatalog : $null
+    if ($null -eq $bound) {
+        return [pscustomobject]@{ Line = 'mapStationCatalog not logged (package older than control-server#531)'; Warning = $null }
+    }
+    $line = "mapStationCatalog approvedSyncPeriod=$($bound.ApprovedSyncPeriod ?? 'null') approvedMaxUnconfirmed=$($bound.ApprovedMaxUnconfirmed ?? 'null')"
+    $warning = ($null -eq $bound.ApprovedSyncPeriod -and $null -eq $bound.ApprovedMaxUnconfirmed) ?
+        ('MAP_STATION_CATALOG_NOT_APPROVED: the Host bound no MapStationCatalog approved values, so it refuses every Map/Station-dependent ' +
+            'demand with 2110 CATALOG_PARAMETERS_NOT_APPROVED. Put the approved pair into the definition''s mapStationCatalog and install again.') : $null
+    return [pscustomobject]@{ Line = $line; Warning = $warning }
 }
 
 function Get-StringLeaf {
@@ -1915,7 +2020,8 @@ function Find-ParallelEffectiveConfiguration {
             roster (Fleet: AgvId, VehicleKey, AllowedTaskTypes, Zones per car; an empty list for one car).
             Fleet is $null when the event does not carry it -- a package older than #571 -- which is not
             the same as an empty roster. Since control-server#638 it also carries ClearanceToWaitingPointEnabled,
-            $null when the event does not. That -- not the definition, not the
+            $null when the event does not, and since control-server#531 MapStationCatalog (ApprovedSyncPeriod,
+            ApprovedMaxUnconfirmed), $null when the event does not. That -- not the definition, not the
             overlay file -- is what the deployment's read-back compares, because M1 was a definition and
             an overlay that both said ["STAGING_TO_WIRE"] while the Host bound six types. -Since is the
             service process's start: a line from an earlier process proves nothing about this one.
@@ -1966,6 +2072,15 @@ function Find-ParallelEffectiveConfiguration {
             # control-server#638. As logged, not cast: $null when the event does not carry it (a package older than #638),
             # and anything that is not a JSON boolean is compared as it is, so it cannot read as false.
             ClearanceToWaitingPointEnabled = $event.ContainsKey('ClearanceToWaitingPointEnabled') ? $event['ClearanceToWaitingPointEnabled'] : $null
+            # control-server#531. $null when the event does not carry it (a package older than #531); otherwise the two values
+            # as logged -- "hh:mm:ss" strings, or $null for one the Host left unset -- not cast, so nothing else reads as a match.
+            MapStationCatalog = ($event.ContainsKey('MapStationCatalog') -and $event['MapStationCatalog'] -is [System.Collections.IDictionary]) ?
+                [pscustomobject]@{
+                    ApprovedSyncPeriod = $event['MapStationCatalog']['ApprovedSyncPeriod']
+                    ApprovedMaxUnconfirmed = $event['MapStationCatalog']['ApprovedMaxUnconfirmed']
+                } : ($event.ContainsKey('MapStationCatalog') ?
+                    # Logged, but not as an object: matches nothing, rather than reading as "not approved".
+                    [pscustomobject]@{ ApprovedSyncPeriod = '(not an object)'; ApprovedMaxUnconfirmed = '(not an object)' } : $null)
         }
     }
     return $found
@@ -1992,6 +2107,10 @@ function Get-ParallelEffectiveConfigurationRefusal {
             the Host bound; anything but that JSON boolean is a mismatch. An event without it (a package older than #638)
             is EFFECTIVE_CONFIGURATION_CLEARANCE_UNREAD when the definition turns it on -- an unconfirmed "on" is not a pass
             -- and accepted as before when the definition leaves it off.
+
+            control-server#531: mapStationCatalog's two approved values (absent in the definition is null, "not approved")
+            are compared with what the Host bound; any other value is a mismatch. An event without them (a package older
+            than #531) is accepted -- the overlay wrote them all the same, and a refusal there would block every rollback.
     #>
     [CmdletBinding()]
     [OutputType([string])]
@@ -2035,6 +2154,21 @@ function Get-ParallelEffectiveConfigurationRefusal {
         }
     } elseif ($clearanceBound -isnot [bool] -or $clearanceBound -ne $clearanceExpected) {
         $problems += "clearanceToWaitingPointEnabled bound '$clearanceBound', the definition says '$clearanceExpected'"
+    }
+    # control-server#531. The two approved values, compared as the strings the overlay writes and the Host logs ("hh:mm:ss",
+    # or null for "not approved"). An event without them is a package older than #531: accepted, as the switch above is
+    # when off -- the overlay still wrote them, and a refusal would make a rollback to such a package impossible.
+    $catalogBound = ($null -ne $Effective.PSObject.Properties['MapStationCatalog']) ? $Effective.MapStationCatalog : $null
+    if ($null -ne $catalogBound) {
+        $catalogExpected = Get-ParallelMapStationCatalogApproval -Definition $Definition
+        foreach ($pair in @(@('approvedSyncPeriod', 'ApprovedSyncPeriod'), @('approvedMaxUnconfirmed', 'ApprovedMaxUnconfirmed'))) {
+            $expected = $catalogExpected[$pair[0]]
+            $actual = $catalogBound.($pair[1])
+            $same = ($null -eq $expected) ? ($null -eq $actual) : ($actual -is [string] -and $actual -ceq $expected)
+            if (-not $same) {
+                $problems += "mapStationCatalog.$($pair[0]) bound '$($actual ?? 'null')', the definition says '$($expected ?? 'null')'"
+            }
+        }
     }
     if ($problems.Count -eq 0) { return $null }
     return "EFFECTIVE_CONFIGURATION_MISMATCH: $($problems -join '; ')."
@@ -2293,6 +2427,7 @@ function New-ParallelInstanceConfigurationOverlay {
 
     $routeGraphOverlay = [ordered]@{}
     foreach ($key in $routeGraph.Keys) { $routeGraphOverlay[$key] = $routeGraph[$key] }
+    $catalogApproval = Get-ParallelMapStationCatalogApproval -Definition $Definition
 
     return [ordered]@{
         MesIngest = [ordered]@{
@@ -2315,6 +2450,13 @@ function New-ParallelInstanceConfigurationOverlay {
         }
         # control-server#518. Read only while the runtime is on, so written on every install whether it is or not.
         TaskTypeStations = [ordered]@{ settingsFile = $Definition['taskTypeStations']['settingsFile'] }
+        # control-server#531. Always written, both keys: null when the definition leaves the section out, so values from an
+        # earlier install -- or the 10-09..10-12 hand edit, in whatever casing (Merge-ConfigurationTree matches keys ignoring
+        # case) -- do not survive a reinstall. A JSON null binds TimeSpan? as unset; the read-back checks what the Host bound.
+        MapStationCatalog = [ordered]@{
+            approvedSyncPeriod = $catalogApproval['approvedSyncPeriod']
+            approvedMaxUnconfirmed = $catalogApproval['approvedMaxUnconfirmed']
+        }
         # control-server#600. Always written, whole: a single-car definition writes an empty list, so a list from a two-car
         # install does not survive a reinstall. Variables are named here, never valued; enabled and the shared variable are
         # the product installer's and stay as it wrote them.
@@ -2465,6 +2607,10 @@ function Get-ParallelJourneyRuntimeEnvironmentOverride {
             ASPNETCORE_-prefixed variables into its configuration, so those count too. A name is matched ignoring
             case, with __ or : after JourneyRuntime; JourneyRuntimeX or MyJourneyRuntime__ is not this section.
             Values are never returned.
+
+            control-server#531 review L1: MapStationCatalog too, the same way. REQ-0302's two approved values come from the
+            instance definition alone; MapStationCatalog__ApprovedMaxUnconfirmed in an environment layer (the L2 rig injects
+            them so, Invoke-L2Scenario.ps1) would bind over the file, and the read-back would see it only after a restart.
     #>
     [CmdletBinding()]
     [OutputType([string])]
@@ -2472,7 +2618,7 @@ function Get-ParallelJourneyRuntimeEnvironmentOverride {
         [AllowEmptyCollection()][AllowNull()][string[]] $ServiceEnvironment,
         [AllowEmptyCollection()][AllowNull()][string[]] $MachineEnvironment
     )
-    $pattern = '^(?i:(?:DOTNET_|ASPNETCORE_)?JourneyRuntime(?:__|:))'
+    $pattern = '^(?i:(?:DOTNET_|ASPNETCORE_)?(?:JourneyRuntime|MapStationCatalog)(?:__|:))'
     foreach ($pair in @(@{ Where = 'service'; Entries = $ServiceEnvironment }, @{ Where = 'machine'; Entries = $MachineEnvironment })) {
         foreach ($entry in @($pair.Entries | Where-Object { -not [string]::IsNullOrEmpty($_) })) {
             $name = ($entry -split '=', 2)[0]
@@ -3134,6 +3280,8 @@ Export-ModuleMember -Function @(
     'Find-ParallelEffectiveConfiguration'
     'Get-ParallelEffectiveConfigurationRefusal'
     'Get-ParallelEffectiveConfigurationAction'
+    'Get-ParallelMapStationCatalogApproval'
+    'Format-ParallelMapStationCatalogReadBack'
     'Get-ParallelHeldRuntimeRefusal'
     'Get-ParallelReadBackAction'
     'Get-ParallelJourneyRuntimeEnvironmentOverride'

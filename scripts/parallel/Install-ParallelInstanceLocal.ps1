@@ -322,7 +322,7 @@ try {
             -MachineEnvironment @([Environment]::GetEnvironmentVariables('Machine').GetEnumerator() | ForEach-Object { "$($_.Key)=$($_.Value)" }))
     if ($environmentOverrides.Count -gt 0) {
         throw ("JOURNEY_RUNTIME_ENVIRONMENT_OVERRIDE (nothing was stopped or changed): $($environmentOverrides -join ', ') set JourneyRuntime " +
-            'above appsettings.Production.json. Remove the variable(s), then install again.')
+            'or MapStationCatalog (control-server#531) above appsettings.Production.json. Remove the variable(s), then install again.')
     }
 
     # A rollback needs a previous generation the product script can install from; checked before the
@@ -625,6 +625,10 @@ try {
         # control-server#638. Already compared above; shown on its own line because 19-deploy-control-server-parallel.ps1
         # compares the result line whole, and a package older than #638 does not log it.
         Write-Step "  clearanceToWaitingPointEnabled=$($effective.ClearanceToWaitingPointEnabled ?? 'not logged (package older than control-server#638)')"
+        # control-server#531. Likewise already compared; said out loud, and warned when the Host bound no approval (2110).
+        $catalog = Format-ParallelMapStationCatalogReadBack -Effective $effective
+        Write-Step "  $($catalog.Line)"
+        if ($catalog.Warning) { Write-Warning $catalog.Warning }
         return $line
     }
 

@@ -194,11 +194,12 @@ app.UseSerilogRequestLogging();
 // control-server#535 review M2: what this process really bound, once it has started (options validated).
 // The v2 parallel installer reads this event back from the log and compares it with the instance
 // definition; reading the definition instead is how M1 (six work types bound where one was written) passed.
-// control-server#571 added the vehicle roster (EffectiveConfigurationEvent).
+// control-server#571 added the vehicle roster, control-server#531 REQ-0302's two approved values (EffectiveConfigurationEvent).
 app.Lifetime.ApplicationStarted.Register(() =>
 {
     JourneyRuntimeOptions effective = app.Services.GetRequiredService<IOptions<JourneyRuntimeOptions>>().Value;
-    EffectiveConfigurationEvent.Log(app.Logger, effective, app.Configuration["MesIngest:baseUrl"] ?? "http://127.0.0.1:5088");
+    MapStationCatalogOptions catalog = app.Services.GetRequiredService<IOptions<MapStationCatalogOptions>>().Value;
+    EffectiveConfigurationEvent.Log(app.Logger, effective, catalog, app.Configuration["MesIngest:baseUrl"] ?? "http://127.0.0.1:5088");
 });
 
 // control-server#473：数据库一碰之前先拿与库文件绑定的锁，进程活着就一直不放；另一个进程（另一个服务端实例、正在直接写库的

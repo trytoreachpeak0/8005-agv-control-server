@@ -2,6 +2,7 @@ using System.Diagnostics;
 using System.Text;
 using System.Text.Json;
 using ControlServer.Host.Runtime;
+using ControlServer.Host.Runtime.CreateGate;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Options;
@@ -355,7 +356,7 @@ public sealed class ParallelInstanceEffectiveConfigurationTests
         {
             options.Fleet = options.Fleet[..^1];
         }
-        string line = RenderEvent(options, configuration["MesIngest:baseUrl"]!);
+        string line = RenderEvent(options, configuration["MesIngest:baseUrl"]!, BindCatalog(configuration));
 
         string verdict = JudgeReadBack(root, definitionFile, line);
 
@@ -403,7 +404,7 @@ public sealed class ParallelInstanceEffectiveConfigurationTests
 
         using JsonDocument logged = JsonDocument.Parse(RenderEvent(options, "http://127.0.0.1:58188"));
 
-        Assert.EndsWith(" clearanceToWaitingPointEnabled={ClearanceToWaitingPointEnabled}", logged.RootElement.GetProperty("@mt").GetString(), StringComparison.Ordinal);
+        Assert.Contains(" clearanceToWaitingPointEnabled={ClearanceToWaitingPointEnabled}", logged.RootElement.GetProperty("@mt").GetString(), StringComparison.Ordinal);
         Assert.Equal(enabled ? JsonValueKind.True : JsonValueKind.False, logged.RootElement.GetProperty("ClearanceToWaitingPointEnabled").ValueKind);
     }
 
@@ -441,7 +442,7 @@ public sealed class ParallelInstanceEffectiveConfigurationTests
         {
             options.ClearanceToWaitingPointEnabled = !options.ClearanceToWaitingPointEnabled;
         }
-        string line = RenderEvent(options, configuration["MesIngest:baseUrl"]!);
+        string line = RenderEvent(options, configuration["MesIngest:baseUrl"]!, BindCatalog(configuration));
 
         string verdict = JudgeReadBack(root, definitionFile, line, definitionEdit);
 
@@ -449,6 +450,108 @@ public sealed class ParallelInstanceEffectiveConfigurationTests
         if (hostFlipsIt)
         {
             Assert.Contains("clearanceToWaitingPointEnabled bound", verdict, StringComparison.Ordinal);
+        }
+    }
+
+    // ------------------------------------------------------------------------------------------------
+    // control-server#531. REQ-0302's two approved values on the parallel instance: the definition's mapStationCatalog through
+    // the overlay -- merged into an appsettings.Production.json that may carry the 10-09..10-12 field hand edit -- bound by
+    // the Host's own registration and validator, logged in its event, judged by the installer.
+    // ------------------------------------------------------------------------------------------------
+
+    private const string CatalogLeftOut = "$d.Remove('mapStationCatalog'); ";
+    private const string CatalogFieldHandEdit = """
+        { "MapStationCatalog": { "ApprovedSyncPeriod": "00:01:00", "ApprovedMaxUnconfirmed": "00:10:00" } }
+        """;
+
+    [Theory]
+    [InlineData("instance-factory01-v2.json")]
+    [InlineData("instance-factory01-v2.production-mes.json")]
+    [InlineData(TwoCarExample)]
+    [InlineData("instance-factory01-v2.req0178-field-off.json")]
+    [InlineData("instance-factory01-v2.req0178-field-on.json")]
+    [InlineData("instance-factory01-v2.batch89-auto.json")]
+    [InlineData("instance-factory01-v2.batch89-manual.json")]
+    public void EveryShippedDefinitionBindsTheApprovedPairOverThePackageAppSettings(string definitionFile)
+    {
+        string root = FindRepositoryRoot();
+        Bind(File.ReadAllText(Path.Combine(root, "src", "ControlServer.Host", "appsettings.json")),
+            GenerateOverlay(root, definitionFile), out IConfiguration configuration);
+
+        MapStationCatalogOptions catalog = BindCatalog(configuration);
+
+        Assert.True(catalog.IsApproved);
+        Assert.Equal(TimeSpan.FromSeconds(30), catalog.ApprovedSyncPeriod);
+        Assert.Equal(TimeSpan.FromMinutes(5), catalog.ApprovedMaxUnconfirmed);
+    }
+
+    [Theory]
+    [InlineData("", true)]
+    [InlineData(CatalogLeftOut, false)]
+    public void TheDefinitionWinsOverTheFieldHandEditInTheSameFile(string definitionEdit, bool approved)
+    {
+        // The upgrade path: the installed appsettings.Production.json already carries the hand edit (other values, PascalCase),
+        // and the installer merges the overlay into that very file (Merge-ConfigurationTree, keys ignoring case). Left out of
+        // the definition, the JSON nulls the overlay writes must clear the hand edit -- not leave it bound.
+        string root = FindRepositoryRoot();
+        string merged = GenerateMergedProductionFile(root, "instance-factory01-v2.json", definitionEdit, CatalogFieldHandEdit);
+        Bind(File.ReadAllText(Path.Combine(root, "src", "ControlServer.Host", "appsettings.json")), merged, out IConfiguration configuration);
+
+        MapStationCatalogOptions catalog = BindCatalog(configuration);
+
+        Assert.Equal(approved, catalog.IsApproved);
+        Assert.Equal(approved ? TimeSpan.FromSeconds(30) : null, catalog.ApprovedSyncPeriod);
+        Assert.Equal(approved ? TimeSpan.FromMinutes(5) : null, catalog.ApprovedMaxUnconfirmed);
+    }
+
+    [Fact]
+    public void EffectiveConfigurationEventCarriesTheCatalogApprovalAsExactlyTwoStrings()
+    {
+        JourneyRuntimeOptions options = new() { AgvId = "老厂前线新多仓位2", VehicleKey = Agv02Key, AllowedWorkTypes = ["WIRE_TO_GATE"], AllowedDispatchZones = ["WIRE"] };
+
+        using JsonDocument approved = JsonDocument.Parse(RenderEvent(options, "http://127.0.0.1:58188",
+            new MapStationCatalogOptions { ApprovedSyncPeriod = TimeSpan.FromSeconds(30), ApprovedMaxUnconfirmed = TimeSpan.FromMinutes(5) }));
+        using JsonDocument unset = JsonDocument.Parse(RenderEvent(options, "http://127.0.0.1:58188", new MapStationCatalogOptions()));
+
+        Assert.EndsWith(" mapStationCatalog={MapStationCatalog}", approved.RootElement.GetProperty("@mt").GetString(), StringComparison.Ordinal);
+        JsonElement logged = approved.RootElement.GetProperty("MapStationCatalog");
+        Assert.Equal(["ApprovedSyncPeriod", "ApprovedMaxUnconfirmed"], logged.EnumerateObject().Select(property => property.Name));
+        Assert.Equal("00:00:30", logged.GetProperty("ApprovedSyncPeriod").GetString());
+        Assert.Equal("00:05:00", logged.GetProperty("ApprovedMaxUnconfirmed").GetString());
+        Assert.Equal(JsonValueKind.Null, unset.RootElement.GetProperty("MapStationCatalog").GetProperty("ApprovedSyncPeriod").ValueKind);
+        Assert.Equal(JsonValueKind.Null, unset.RootElement.GetProperty("MapStationCatalog").GetProperty("ApprovedMaxUnconfirmed").ValueKind);
+    }
+
+    [Theory]
+    [InlineData("", "as-bound", "Pass")]
+    [InlineData("", "unset", "StopServiceAndRefuse")]
+    [InlineData("", "longer", "StopServiceAndRefuse")]
+    [InlineData(CatalogLeftOut, "as-bound", "Pass")]
+    [InlineData(CatalogLeftOut, "approved", "StopServiceAndRefuse")]
+    public void InstallerReadBackJudgesTheCatalogApprovalTheHostReallyLogs(string definitionEdit, string host, string expectedAction)
+    {
+        // host stands for what the Host bound: as the overlay gave it, nothing (written and not in effect), another maximum
+        // (an environment variable, a stale layer), or the approved pair under a definition that leaves it out (left over).
+        string root = FindRepositoryRoot();
+        const string definitionFile = "instance-factory01-v2.json";
+        JourneyRuntimeOptions options = Bind(
+            File.ReadAllText(Path.Combine(root, "src", "ControlServer.Host", "appsettings.json")),
+            GenerateOverlay(root, definitionFile, definitionEdit), out IConfiguration configuration);
+        MapStationCatalogOptions catalog = host switch
+        {
+            "as-bound" => BindCatalog(configuration),
+            "unset" => new MapStationCatalogOptions(),
+            "longer" => new MapStationCatalogOptions { ApprovedSyncPeriod = TimeSpan.FromSeconds(30), ApprovedMaxUnconfirmed = TimeSpan.FromMinutes(10) },
+            _ => new MapStationCatalogOptions { ApprovedSyncPeriod = TimeSpan.FromSeconds(30), ApprovedMaxUnconfirmed = TimeSpan.FromMinutes(5) },
+        };
+        string line = RenderEvent(options, configuration["MesIngest:baseUrl"]!, catalog);
+
+        string verdict = JudgeReadBack(root, definitionFile, line, definitionEdit);
+
+        Assert.StartsWith(expectedAction + "|", verdict, StringComparison.Ordinal);
+        if (expectedAction != "Pass")
+        {
+            Assert.Contains("mapStationCatalog.", verdict, StringComparison.Ordinal);
         }
     }
 
@@ -473,7 +576,7 @@ public sealed class ParallelInstanceEffectiveConfigurationTests
             using (Serilog.Core.Logger serilog = ServerLogVolumeTests.CreateInstalledFileLogger(directory, fileSizeLimitBytes: 4096, rollOnFileSizeLimit: true))
             using (Serilog.Extensions.Logging.SerilogLoggerFactory factory = new(serilog))
             {
-                EffectiveConfigurationEvent.Log(factory.CreateLogger("ControlServer.Host"), options, bound["MesIngest:baseUrl"] ?? "http://127.0.0.1:5088");
+                EffectiveConfigurationEvent.Log(factory.CreateLogger("ControlServer.Host"), options, BindCatalog(bound), bound["MesIngest:baseUrl"] ?? "http://127.0.0.1:5088");
                 // The real 2001: the worker with its runtime held off, as the installer's Held phase starts it.
                 using JourneyMutationGate gate = new();
                 JourneyRuntimeWorker worker = new(null!, gate, Options.Create(new JourneyRuntimeOptions { Enabled = false }),
@@ -509,7 +612,7 @@ public sealed class ParallelInstanceEffectiveConfigurationTests
     private static readonly Action<Microsoft.Extensions.Logging.ILogger, int, string, Exception?> LogNoise =
         Microsoft.Extensions.Logging.LoggerMessage.Define<int, string>(Microsoft.Extensions.Logging.LogLevel.Information, new Microsoft.Extensions.Logging.EventId(1), "noise {Index} {Padding}");
 
-    private static string RenderEvent(JourneyRuntimeOptions options, string mesIngestBaseUrl)
+    private static string RenderEvent(JourneyRuntimeOptions options, string mesIngestBaseUrl, MapStationCatalogOptions? catalog = null)
     {
         using StringWriter writer = new();
         using (Serilog.Core.Logger serilog = new Serilog.LoggerConfiguration()
@@ -517,7 +620,7 @@ public sealed class ParallelInstanceEffectiveConfigurationTests
                    .CreateLogger())
         using (Serilog.Extensions.Logging.SerilogLoggerFactory factory = new(serilog))
         {
-            EffectiveConfigurationEvent.Log(factory.CreateLogger("ControlServer.Host"), options, mesIngestBaseUrl);
+            EffectiveConfigurationEvent.Log(factory.CreateLogger("ControlServer.Host"), options, catalog ?? new MapStationCatalogOptions(), mesIngestBaseUrl);
         }
         return writer.ToString().Trim();
     }
@@ -587,6 +690,48 @@ public sealed class ParallelInstanceEffectiveConfigurationTests
         services.AddJourneyRuntimeOptions(root);
         using ServiceProvider provider = services.BuildServiceProvider();
         return provider.GetRequiredService<IOptions<JourneyRuntimeOptions>>().Value;
+    }
+
+    /// <summary>
+    /// <see cref="MapStationCatalogOptions"/> registered as Program.cs registers it -- bound from its section, with its validator
+    /// -- so a configuration the Host would refuse at startup throws here too.
+    /// </summary>
+    private static MapStationCatalogOptions BindCatalog(IConfiguration configuration)
+    {
+        ServiceCollection services = new();
+        services.AddOptions<MapStationCatalogOptions>().Bind(configuration.GetSection(MapStationCatalogOptions.SectionName));
+        services.AddSingleton<IValidateOptions<MapStationCatalogOptions>, MapStationCatalogOptionsValidator>();
+        using ServiceProvider provider = services.BuildServiceProvider();
+        return provider.GetRequiredService<IOptions<MapStationCatalogOptions>>().Value;
+    }
+
+    /// <summary>
+    /// appsettings.Production.json as the installer leaves it on an upgrade: the overlay merged into the file already
+    /// installed (<paramref name="installedJson"/>) with Merge-ConfigurationTree, through pwsh.
+    /// </summary>
+    private static string GenerateMergedProductionFile(string root, string definitionFile, string definitionEdit, string installedJson)
+    {
+        string parallel = Path.Combine(root, "scripts", "parallel");
+        string installed = Path.Combine(Path.GetTempPath(), $"cs531-installed-{Guid.NewGuid():N}.json");
+        string output = Path.Combine(Path.GetTempPath(), $"cs531-merged-{Guid.NewGuid():N}.json");
+        File.WriteAllText(installed, installedJson, new UTF8Encoding(false));
+        try
+        {
+            RunPwsh(
+                $"Import-Module '{Path.Combine(parallel, "ParallelInstance.psm1")}' -Force; " +
+                $"$d = Read-ParallelInstanceDefinition -Path '{Path.Combine(parallel, definitionFile)}'; {definitionEdit}" +
+                "$null = Assert-ParallelInstanceDefinition -Definition $d; " +
+                $"$base = Get-Content -Raw -LiteralPath '{installed}' -Encoding utf8 | ConvertFrom-Json -AsHashtable -Depth 12; " +
+                "Merge-ConfigurationTree -Base $base -Overlay (New-ParallelInstanceConfigurationOverlay -Definition $d) | ConvertTo-Json -Depth 12 | " +
+                $"Set-Content -LiteralPath '{output}' -Encoding utf8NoBOM",
+                allowFailure: false);
+            return File.ReadAllText(output);
+        }
+        finally
+        {
+            File.Delete(installed);
+            File.Delete(output);
+        }
     }
 
     /// <summary>

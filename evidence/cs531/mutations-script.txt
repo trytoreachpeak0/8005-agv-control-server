@@ -1,0 +1,252 @@
+M1	KILLED	('606', '188')	whitelist: mapStationCatalog not a known top-level section
+    the shipped definition is accepted as it stands, no placeholder left
+    the shipped definition is accepted
+    Assert- accepts the shipped definition and returns it
+    serviceName is the production service
+    installRoot is the production install root
+    dataRoot is a V2-named directory nested inside the production data root
+    installRoot written with forward slashes
+    installRoot under a lookalike of an allowed root (zero-width space)
+    dataRoot through a '.' segment
+    dataRoot through a '..' segment
+    installRoot through an 8.3 short name
+    packageRoot as a \\?\ device path
+    packageRoot as an administrative share
+    opsRoot with a trailing dot
+    packageRoot is the MVP's previous package generation
+    backupRoot is the production MesIngest directory
+    fakeMesIngest.installRoot is the MVP's ops directory
+    the re-review S1 reproduction definition
+    dataRoot is the same directory as installRoot
+    dataRoot is packageRoot's previous generation
+    opsRoot matches packageRoot's staging glob
+    seedPath outside opsRoot
+    seedPath written with forward slashes
+    serviceName with a trailing wildcard
+    serviceName with a single-character wildcard
+    serviceName is another production service
+    taskName is '*' (every task on the host)
+    both mapIds are the MVP map 25
+    only journeyRuntime.mapId is 25
+    mapIdentity is the MVP map's name
+    dispatchZone is the MVP map-25 zone
+    admissionPolicyDeploymentId is the MVP one
+    a map-25 zone hidden second in allowedDispatchZones
+    mapIdentity is the MVP map's name with a trailing space
+    mapIdentity is the MVP map's name in capitals
+    mapIdentity is the MVP map's name in full-width letters
+    dispatchZone is a map-25 zone with a zero-width space inside the number
+    dispatchZone is a map-25 zone written with an underscore
+    dispatchZone is a map-25 zone in lower case with a space
+    dispatchZone map_-_25 (separators mixed and repeated)
+    dispatchZone MAP-25.A (a '.' after the number)
+    dispatchZone MAP25 (no separator)
+    dispatchZone with U+2010 hyphen
+    dispatchZone with U+2011 non-breaking hyphen
+    dispatchZone with U+2013 en dash
+    dispatchZone with U+2014 em dash
+    a placeholder left in dispatchZone
+    onboardPort takes the MVP transport port
+    healthPort collides with onboardPort
+    listenAddress is the wildcard
+    listenAddress is loopback
+    mesIngest.baseUrl points at the production MesIngest
+    mesIngest.baseUrl is reachable from the plant network
+    fakeMesIngest.port disagrees with mesIngest.baseUrl
+    routeGraph section removed entirely
+    routeGraph present but an empty object
+    routeGraph.enabled is a string rather than a boolean
+    routeGraph.enabled true with no mapId
+    routeGraph refresh budget not larger than its period
+    route graph enabled under a disabled journey runtime
+    the two mapIds disagree
+    agvId is 'AGV02', a plausible but wrong spelling
+    agvId differs only in case from the registered name
+    agvId with a zero-width space appended
+    vehicleKey with a zero-width space appended
+    vehicleKey in lower case
+    vehicleKey is agv01's
+    agvId is agv01's while the key still names agv02
+    agvId is a list with agv01 mixed in
+    agvId names agv03 while vehicleKey still names agv02
+    vehicleKey is a well-formed key of no registered vehicle
+    journeyRuntime.vehicleKey removed
+    journeyRuntime.fleet roster with agv01 mixed in
+    journeyRuntime.Fleet, capitalised as the C# property
+    a second agvId spelled AgvId naming agv01
+    an unknown top-level key (a typo of a real one)
+    a known key with a zero-width space appended
+    a lookalike vehicleKey key carrying agv01's key
+    riotCreateDispatch section removed
+    riotCreateDispatch opened without the explicit switch
+    riotForeignOrderCancel section removed
+    riotForeignOrderCancel.enabled not stated
+    riotForeignOrderCancel.enabled a string
+    riotForeignOrderCancel opened without the explicit switch
+    vehicleFaultRecovery absent
+    vehicleFaultRecovery.enabled absent
+    vehicleFaultRecovery.enabled as a string
+    vehicleFaultRecovery names its own credential variable
+    fieldOperatorRoles absent
+    fieldOperatorRoles.path absent
+    fieldOperatorRoles.path inside the install root
+    fieldOperatorRoles.path written with forward slashes
+    fieldOperatorRoles.onboardClearanceEntryDeclared absent
+    fieldOperatorRoles.onboardClearanceEntryDeclared as a number
+    taskTypeStations absent
+    taskTypeStations.settingsFile absent
+    taskTypeStations.settingsFile as the package default (map 25)
+    taskTypeStations.settingsFile with a directory
+    taskTypeStations.settingsFile spelled with capitals
+    taskTypeStations.settingsFile with a trailing line feed
+    taskTypeStations.settingsFile for another map than the runtime
+    taskTypeStations.settingsFile for the MVP map
+    -AllowRiotCreateDispatch accepts the same definition the default run refused
+    -AllowRiotCreateDispatch still refuses agv01
+    -AllowRiotForeignOrderCancel accepts the definition the default run refused
+    -AllowRiotCreateDispatch does not open the foreign order cancel gate
+    -AllowRiotForeignOrderCancel still refuses agv01
+    source: production, baseUrl 5088, allowedWorkTypes exactly STAGING_TO_WIRE, no fakeMesIngest -- accepted
+    source: production with WIRE_TO_GATE beside STAGING_TO_WIRE is refused, naming the MVP
+    source: production with the shipped six work types is refused, naming the MVP
+    source: production with another work type beside STAGING_TO_WIRE is refused
+    source: production with STAGING_TO_WIRE in another case is refused
+    source: production with STAGING_TO_WIRE twice is refused
+    source: production with allowedWorkTypes left out is refused (the package default is not one type)
+    source: production with allowedWorkTypes as a bare string is refused
+    source: production with a fakeMesIngest section is refused
+    source: production with baseUrl at the fake port is refused
+    source: production with baseUrl on the plant address is refused
+    source: 'Production' is not a mode and is refused
+    source: 'real' is not a mode and is refused
+    source: '' is not a mode and is refused
+    source: a JSON true is not a mode and is refused
+    source: 'fake' written explicitly is the shipped behaviour (accepted)
+    source: 'fake' written explicitly still refuses 5088, exactly as before
+    source: absent (fake) without fakeMesIngest is refused, exactly as before
+    source: absent (fake) with only STAGING_TO_WIRE is still a fake-mode definition (the work type rule is production-only)
+    stop direction: a production definition passes -ForStopDirection
+    stop direction: a production definition installed before taskTypeStations still passes -ForStopDirection
+    stop direction: -ForStopDirection does not relax the work type rule
+    retire: production over an installed fake definition names the old task and directory
+    retire: nothing to retire for fake over fake, production over production, or no previous install
+    shipped production-mes definition: accepted, production source, STAGING_TO_WIRE only, runtime and gate off
+    fleet: two cars, agv02 and agv03, each row consistent with fleet.md -- accepted
+    fleet: Assert- accepts the two-car definition and returns it
+    fleet: agv01 in place of the second row is refused, naming row 1
+    fleet: agv01 appended as a third row is refused, naming row 2
+    fleet: only the RIoT id of row 0 is agv01's (58) -- refused as agv01, naming riotId
+    fleet: only the deviceKey of row 1 is agv01's -- refused as agv01, naming deviceKey
+    fleet: only the agvId of row 0 is agv01's -- refused as agv01, naming agvId
+    fleet: agv01's vehicleKey in lower case is still refused as agv01 (lenient refuses more)
+    fleet: agv01 refused even when the gate switches are passed
+    fleet: row 0's RIoT id is agv03's (60) while the rest is agv02 -- refused, naming riotId
+    fleet: row 0's deviceKey is agv03's while its vehicleKey is agv02's -- refused, naming deviceKey
+    fleet: row 1's agvId is agv02's name on agv03's key -- refused, naming agvId
+    fleet: row 1 names a key of no registered vehicle -- refused as not a spare vehicle
+    fleet: row 0's vehicleKey and deviceKey in lower case -- refused (RIoT keys are exact)
+    fleet: row 0's vehicleKey and deviceKey with a zero-width space appended -- refused as not a spare vehicle
+    fleet: row 1's deviceKey with a zero-width space appended -- refused, naming deviceKey
+    fleet: row 0's agvId with a zero-width space appended -- refused, naming agvId
+    fleet: row 1 without riotId -- refused, the durable coordinate must be stated
+    fleet: row 0 without deviceKey -- refused
+    fleet: roster beside journeyRuntime.agvId/vehicleKey -- refused, no guessing which counts
+    fleet: roster beside journeyRuntime.agvLifecycleGeneration -- refused
+    fleet: the single-vehicle definition still passes as it is (no roster needed)
+    fleet: the same car twice -- refused
+    fleet: an empty roster -- refused
+    fleet: a roster that is an object, not a list -- refused
+    fleet: a row key differing only in case (agvID) -- refused
+    fleet: an unknown row key -- refused
+    fleet: a row zone outside allowedDispatchZones -- refused before the Host would refuse to start
+    fleet: a row task type outside allowedWorkTypes -- refused
+    fleet: production MesIngest source, a row allowing WIRE_TO_GATE -- refused
+    fleet: allowedTaskTypes written as a string, not a list -- refused
+    fleet: allowedTaskTypes left out -- refused (stated, never inherited)
+    fleet: agvLifecycleGeneration 0 -- refused
+    fleet: roundTimeoutMilliseconds below 1000 -- refused
+    fleet: roundTimeoutMilliseconds in range -- accepted
+    fleet: the two-car example ships and is accepted as it stands
+    clearance switch: a definition that turns it on is accepted (the key is whitelisted)
+    clearance switch: a string "true" is refused, not bound as on behind the check
+    catalog: every shipped definition carries 00:00:30 / 00:05:00 and an approval record naming 2026-10-09, and is accepted
+    catalog: the two product keys name MapStationCatalogOptions' properties, every property is whitelisted, approvalRecord is not a property
+    catalog refused: only approvedSyncPeriod
+    catalog refused: only approvedMaxUnconfirmed
+    catalog refused: an empty section
+    catalog refused: maximum equal to the period
+    catalog refused: maximum below the period
+    catalog refused: a zero period
+    catalog refused: "30" (which .NET reads as thirty days)
+    catalog refused: a JSON number
+    catalog refused: a day part ("1.00:00:00")
+    catalog refused: a fraction ("00:00:30.5")
+    catalog refused: seconds out of range ("00:00:60")
+    catalog refused: no approval record
+    catalog refused: a blank approval record
+    catalog refused: a misspelt key
+    catalog refused: a case twin
+    catalog refused: a section that is not an object
+M2	KILLED	('791', '3')	both-or-neither check removed
+    catalog refused: only approvedSyncPeriod
+    catalog refused: only approvedMaxUnconfirmed
+    catalog refused: an empty section
+M3	KILLED	('791', '3')	format: TimeSpans own parser (accepts "30", days, fractions)
+    catalog refused: "30" (which .NET reads as thirty days)
+    catalog refused: a day part ("1.00:00:00")
+    catalog refused: a fraction ("00:00:30.5")
+M4	KILLED	('793', '1')	positive period check removed
+    catalog refused: a zero period
+M5	KILLED	('793', '1')	maximum equal to the period accepted (-le -> -lt)
+    catalog refused: maximum equal to the period
+M6	KILLED	('791', '3')	approvalRecord check removed
+    catalog refused: an empty section
+    catalog refused: no approval record
+    catalog refused: a blank approval record
+M7	KILLED	('787', '7')	overlay: section written only when approved (no nulls to clear an earlier value)
+    catalog overlay: the approved pair is written under MapStationCatalog, exactly two keys, no approvalRecord
+    catalog overlay: left out, both keys are written null, so an earlier approval or hand edit does not survive a reinstall
+    catalog on disk after the configuration step: first install
+    catalog on disk after the configuration step: upgrade over the field hand edit (other values, PascalCase)
+    catalog on disk after the configuration step: two-car example, first install
+    catalog on disk after the configuration step: two-car example, upgrade over the field hand edit
+    catalog on disk after the configuration step: a definition without the section, over the hand edit (cleared, not inherited)
+M8	KILLED	('789', '5')	overlay: the raw definition section (approvalRecord leaks, values not normalised)
+    catalog overlay: the approved pair is written under MapStationCatalog, exactly two keys, no approvalRecord
+    catalog on disk after the configuration step: first install
+    catalog on disk after the configuration step: upgrade over the field hand edit (other values, PascalCase)
+    catalog on disk after the configuration step: two-car example, first install
+    catalog on disk after the configuration step: two-car example, upgrade over the field hand edit
+M9	KILLED	('790', '4')	read-back: catalog comparison skipped
+    catalog read-back: approved, bound none (written and not in effect) -- stop and refuse
+    catalog read-back: approved, a different maximum bound (an environment variable, a stale layer) -- stop and refuse
+    catalog read-back: left out, values bound (left over) -- stop and refuse
+    catalog read-back: approved, bound as a non-object -- stop and refuse
+M10	KILLED	('792', '2')	read-back: a null bound value matches anything
+    catalog read-back: approved, bound none (written and not in effect) -- stop and refuse
+    catalog read-back: left out, values bound (left over) -- stop and refuse
+M11	KILLED	('787', '7')	read-back: the event field is never read
+    catalog read-back: approved, bound as defined -- pass
+    catalog read-back: approved, bound none (written and not in effect) -- stop and refuse
+    catalog read-back: approved, a different maximum bound (an environment variable, a stale layer) -- stop and refuse
+    catalog read-back: left out, values bound (left over) -- stop and refuse
+    catalog read-back: left out, none bound -- pass (the installer warns)
+    catalog read-back line: the bound values are said, and no warning
+    catalog read-back line: none bound warns MAP_STATION_CATALOG_NOT_APPROVED and names 2110
+M12	KILLED	('793', '1')	read-back line: no warning when none is bound
+    catalog read-back line: none bound warns MAP_STATION_CATALOG_NOT_APPROVED and names 2110
+M13	KILLED	('793', '1')	installer: the warning is not raised
+    catalog read-back: the installer prints the line and raises the warning after every read-back
+M16	KILLED	('787', '7')	shipped definition: a different maximum
+    shipped production-mes definition: everything except the MES source and the work types equals the fake definition
+    catalog: every shipped definition carries 00:00:30 / 00:05:00 and an approval record naming 2026-10-09, and is accepted
+    catalog overlay: the approved pair is written under MapStationCatalog, exactly two keys, no approvalRecord
+    catalog on disk after the configuration step: first install
+    catalog on disk after the configuration step: upgrade over the field hand edit (other values, PascalCase)
+    catalog read-back: approved, bound as defined -- pass
+    catalog read-back: approved, a different maximum bound (an environment variable, a stale layer) -- stop and refuse
+M14b	KILLED	('797', '1')	Host: the event placeholder renamed (compiles; the module no longer finds the template it reads)
+    catalog read-back: the Host source logs the pair under the template the module reads
+M14	INVALID-MUTANT	build failed: me\EffectiveConfigurationEvent.cs(45,180): error CA2017: Number of parameters supplied in the logging message template do not match the number of named placeholders (https://learn.microsoft.com/dotnet/fundamentals/code-analysis/quality-rules/ca2017) [F:\8005-scratch\cs531-mut\src\ControlServer.Host\ControlServer.Host.csproj]
+M15	KILLED	('797', '1')	Program.cs logs a new MapStationCatalogOptions instead of the bound one
+    catalog read-back: Program.cs logs the MapStationCatalogOptions the Host bound and validated, not a new instance

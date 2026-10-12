@@ -1,0 +1,47 @@
+# Test-ParallelInstance.ps1 after PR #666 review (fp/v2-impl 0ec25d2dc merged)
+Map/Station catalog approval (control-server#531)
+  PASS  catalog: every shipped definition carries 00:00:30 / 00:05:00 and an approval record naming 2026-10-09, and is accepted
+  PASS  catalog: the two product keys name MapStationCatalogOptions' properties, every property is whitelisted, approvalRecord is not a property
+  PASS  catalog: left out entirely is deployable (REQ-0303: the Host boots unapproved and says so)
+  PASS  catalog refused: only approvedSyncPeriod
+  PASS  catalog refused: only approvedMaxUnconfirmed
+  PASS  catalog refused: an empty section
+  PASS  catalog refused: maximum equal to the period
+  PASS  catalog refused: maximum below the period
+  PASS  catalog refused: a zero period
+  PASS  catalog refused: "30" (which .NET reads as thirty days)
+  PASS  catalog refused: a JSON number
+  PASS  catalog refused: a day part ("1.00:00:00")
+  PASS  catalog refused: a fraction ("00:00:30.5")
+  PASS  catalog refused: seconds out of range ("00:00:60")
+  PASS  catalog refused: no approval record
+  PASS  catalog refused: a blank approval record
+  PASS  catalog refused: a misspelt key
+  PASS  catalog refused: a case twin
+  PASS  catalog refused: a section that is not an object
+  PASS  catalog overlay: the approved pair is written under MapStationCatalog, exactly two keys, no approvalRecord
+  PASS  catalog overlay: left out, both keys are written null, so an earlier approval or hand edit does not survive a reinstall
+  PASS  catalog on disk after the configuration step: first install
+  PASS  catalog on disk after the configuration step: upgrade over the field hand edit (other values, PascalCase)
+  PASS  catalog on disk after the configuration step: two-car example, first install
+  PASS  catalog on disk after the configuration step: two-car example, upgrade over the field hand edit
+  PASS  catalog on disk after the configuration step: a definition without the section, over the hand edit (cleared, not inherited)
+  PASS  catalog read-back: approved, bound as defined -- pass
+  PASS  catalog read-back: approved, bound none (written and not in effect) -- stop and refuse
+  PASS  catalog read-back: approved, a different maximum bound (an environment variable, a stale layer) -- stop and refuse
+  PASS  catalog read-back: left out, values bound (left over) -- stop and refuse
+  PASS  catalog read-back: left out, none bound -- pass (the installer warns)
+  PASS  catalog read-back: approved, bound as a non-object -- stop and refuse
+  PASS  catalog read-back: approved, event older than #531 (no field) -- pass, so a rollback to such a package is not blocked
+  PASS  catalog environment override: MapStationCatalog keys count like JourneyRuntime ones, ignoring case, prefixes included
+  PASS  catalog environment override: MapStationCatalog__ApprovedMaxUnconfirmed in the service's Environment is refused before any restart, naming the key
+  PASS  catalog environment override: an ASPNETCORE_-prefixed MapStationCatalog key in the machine's environment is refused before any restart
+  PASS  catalog environment override: the installer's machine-level refusal names MapStationCatalog
+  PASS  catalog read-back line: the bound values are said, and no warning
+  PASS  catalog read-back line: none bound warns MAP_STATION_CATALOG_NOT_APPROVED and names 2110
+  PASS  catalog read-back line: an event older than #531 says so, without a warning
+  PASS  catalog read-back: the installer prints the line and raises the warning after every read-back
+  PASS  catalog read-back: the Host source logs the pair under the template the module reads
+  PASS  catalog read-back: Program.cs logs the MapStationCatalogOptions the Host bound and validated, not a new instance
+
+802 passed, 0 failed
