@@ -21,6 +21,10 @@ public sealed class JourneyRuntimeWorker(
         LogLevel.Error,
         new EventId(2153, nameof(LogReleaseFailed)),
         "Demand release iteration failed; nothing was released this round and the next round judges again.");
+    private static readonly Action<ILogger, Exception?> LogRouteGraphRefreshFailed = LoggerMessage.Define(
+        LogLevel.Error,
+        new EventId(2156, nameof(LogRouteGraphRefreshFailed)),
+        "Route graph refresh failed outside its own handling; the engine round runs, and the snapshot's age decides whether dispatch may use it.");
 
     protected override async Task ExecuteAsync(CancellationToken stoppingToken)
     {
@@ -51,23 +55,43 @@ public sealed class JourneyRuntimeWorker(
 
             using (round)
             {
+                // The route graph refreshes before dispatch decides, so a round is decided against the freshest
+                // snapshot the engine could get. A refresh that fails does not stop the round: it marks the snapshot
+                // stale, and the admission chain blocks on that -- the same outcome, reached through the fail-closed
+                // path rather than an exception.
+                //
+                // Its own scope and its own try (control-server#656). Sharing the engine's try, a refresh that threw --
+                // a RIoT map read timing out, which the refresher did not catch then -- skipped the whole engine round:
+                // every vehicle's advance, and with it the fault model's escalation, emergency-stop confirmation and
+                // REQ-0248 re-trigger, the door supervision, the dispatch round. A refresh failure is a reason not to
+                // dispatch, never a reason not to supervise. The engine running after one opens nothing: the
+                // refresher's own failures mark the snapshot stale, and one that escaped before it could still leaves
+                // a snapshot RouteGraphAccess judges against the clock, so it ages out past RuntimeStateMaxAge whether
+                // or not anyone marked it.
                 try
                 {
-                    await using AsyncServiceScope scope = scopeFactory.CreateAsyncScope();
-                    // The route graph refreshes before dispatch decides, so a round is decided against
-                    // the freshest snapshot the engine could get. A refresh that fails does not stop
-                    // the round: it marks the snapshot stale, and the admission chain blocks on that —
-                    // which is the same outcome, reached through the fail-closed path rather than an
-                    // exception.
-                    RouteGraph.RouteGraphOptions routeGraphOptions = scope.ServiceProvider
+                    await using AsyncServiceScope refreshScope = scopeFactory.CreateAsyncScope();
+                    RouteGraph.RouteGraphOptions routeGraphOptions = refreshScope.ServiceProvider
                         .GetRequiredService<IOptions<RouteGraph.RouteGraphOptions>>().Value;
                     if (routeGraphOptions.Enabled)
                     {
-                        RouteGraph.RouteGraphRefresher refresher = scope.ServiceProvider
+                        RouteGraph.RouteGraphRefresher refresher = refreshScope.ServiceProvider
                             .GetRequiredService<RouteGraph.RouteGraphRefresher>();
                         await refresher.RefreshOnceAsync(stoppingToken).ConfigureAwait(false);
                     }
+                }
+                catch (OperationCanceledException) when (stoppingToken.IsCancellationRequested)
+                {
+                    return;
+                }
+                catch (Exception error)
+                {
+                    LogRouteGraphRefreshFailed(logger, error);
+                }
 
+                try
+                {
+                    await using AsyncServiceScope scope = scopeFactory.CreateAsyncScope();
                     JourneyRuntimeEngine engine = scope.ServiceProvider.GetRequiredService<JourneyRuntimeEngine>();
                     await engine.ExecuteOnceAsync(stoppingToken).ConfigureAwait(false);
                 }

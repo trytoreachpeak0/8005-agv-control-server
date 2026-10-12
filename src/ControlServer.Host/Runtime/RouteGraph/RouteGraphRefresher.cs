@@ -72,9 +72,18 @@ public sealed class RouteGraphRefresher(
     /// Runs one refresh tick: the runtime cycle always, the design cycle when it is due.
     /// </summary>
     /// <remarks>
+    /// <para>
     /// Any failure marks the snapshot stale rather than leaving the previous one standing as if it
     /// were current. A graph that was right ten minutes ago is not evidence about now, and the
     /// whole point of the engine is that dispatch stops when the evidence stops.
+    /// </para>
+    /// <para>
+    /// A RIoT read that times out is such a failure (control-server#656). <c>HttpClient.Timeout</c>
+    /// arrives as a <see cref="TaskCanceledException"/>, an <see cref="OperationCanceledException"/>,
+    /// and the route-graph source does not rewrap it the way the station catalog read does. Only a
+    /// cancellation the caller asked for leaves here; one it did not ask for used to leave too,
+    /// unmarked, and skipped the whole fleet's engine round in the worker.
+    /// </para>
     /// </remarks>
     public async Task RefreshOnceAsync(CancellationToken cancellationToken)
     {
@@ -95,7 +104,7 @@ public sealed class RouteGraphRefresher(
             await RefreshEdgeGroupsAsync(mapId, header, now, cancellationToken).ConfigureAwait(false);
             await RefreshDynamicRouteCostAsync(mapId, header, now, cancellationToken).ConfigureAwait(false);
         }
-        catch (Exception error) when (error is not OperationCanceledException)
+        catch (Exception error) when (error is not OperationCanceledException || !cancellationToken.IsCancellationRequested)
         {
             LogRefreshFailed(logger, mapId, "refresh", error);
             await store.MarkStaleAsync(
