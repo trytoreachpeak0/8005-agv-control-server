@@ -155,3 +155,12 @@
 
 - cs#649 审查通过，没有 M 级问题，不阻碍今天部署到 v2 测试实例。
 - 装上这一版（`d0687b29`）以后，对两车实例执行 19 号 `-Rollback` **一定会因 401 失败并自动回滚**：运行时保持关闭，属于安全方向的失败。真要退回旧版，只能 `19 -Uninstall`（保留数据，不加 `-RemoveData`），再全新安装。
+- （调度 C10 补充，依据 cs#649 实读）今天装上 `d0687b29` 之后，两车实例**没有可靠的办法退回旧版**：`-Rollback` 必然 401；如果「`-Uninstall` 保留数据，再全新安装旧包」，跑的是旧包里带 reason 缺陷的 Install，保留的库第一次就绪检查就是 ready，照样回滚，也就是 `09` 那一幕。所以出了问题只能往前修，或者换空数据目录（那就不是保留数据了）。这不影响今天的步骤：出现异常时，照旧先关闸、停在安全状态，再报调度。
+
+## 恢复后的部署结果（15:07～15:10）
+
+- release `38214156334`：manifest 中 controlServer=`d0687b29`，onboard=`b2f602ec`，sha256 `4b67fdbc…`（`12`）。
+- 19 号全新安装 off 版：PASS，没有再出现 reason 缺陷。19 号摘要与 Host 回读（Held/Released 两次）都是 `clearanceToWaitingPointEnabled=False`；`CLEARANCE_EXIT_READINESS exit=available`（`13`）。
+- 按车凭据的安全投影探针：RIOT59（agv02）、RIOT60（agv03）都是 HTTP 200，`motionState=STOPPED`（`14`）。
+- 旧库：未恢复暂停 0、未结束周期 0、周期 8 行、等待点 3 个。独占从 2 行变为 1 行：15:09:12 V2 记 2210，因为 agv03 已不在 215（离开证据），按设计释放了 215 的占用；216 仍是 agv02 的 OCCUPIED。
+- 闸门 false；等待 5:00/30:00（off 版定义的出厂值，本次不需要改）；MVP pid 10912 未碰。
