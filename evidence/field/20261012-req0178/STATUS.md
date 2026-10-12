@@ -1,32 +1,56 @@
-# REQ-0178 真车补测：已暂停（2026-10-12 14:2x），等 cs#649
+# REQ-0178 真车补测：通过（2026-10-12 15:47～16:10）
 
-**结论：没测成。**部署 V2 时连续撞上两个部署脚本缺陷，按调度 C10 的决定暂停。等 cs#649（两个缺陷都并到了这张票里）合入后再做。车一直没动，没有开过闸，没有起过任何车载端栈，没有改过任何车载端配置。
+**结论：通过。** agv02 在充电桩 211 上充电时现场拉闸，V2 确认充电中断后，自己给 agv02 下了一张清桩移动单，把车开到等待点 216，到点后清桩自动完成（证明方式 `ARRIVED_AT_WAITING_POINT`，不是人工确认）。211 的分配暂停和 agv02 的资格暂停都保留，到点后 5 分钟内 V2 没有再给 agv02 下任何单。全程只用 agv02，V2 没有对 agv01 发过任何东西。
 
-## 卡在哪里
+本次没有测「人在 RIoT 上结束旧单后，车自己出发」那一路（见 `PLAN.md` 核准补充）。
+
+## 时间线（读自 V2 日志与 RIoT，`33`、`35`、`38`、`40`）
+
+| 时刻 | 事件 |
+| --- | --- |
+| 15:47:31 | 开闸（`32`，授权 `31`） |
+| 15:49:43 | agv02 到 211 开始充电，48% |
+| 15:51 | 现场拉闸（授权 `34`）；15:51:27 起 `batteryState=NO_CHARGE` |
+| 15:52:27 | 2276 `INTERRUPTION_CONFIRMED`：连续 60 秒不充电，51%，211 分配与 agv02 资格同时暂停 |
+| 15:52:29 | 2300 `CHARGING_CLEARANCE_TO_WAITING_POINT`：旧单已终结，承诺等待点 216（路程代价 37871 mm） |
+| 15:52:38 | agv02 开动，清桩移动单 `W2G-CHARGE-62d6bd7c-20261012T074050545Z-CLR1` |
+| 15:54:25 | 2305：到达 216，清桩完成，211 独占与车辆用途释放，216 转为它的占用；「the charger's allocation hold stays」 |
+| 15:54:29 起 | 每轮充电分配都被拒，原因 `CHARGING_VEHICLE_ELIGIBILITY_HELD`（2241/2246） |
+
+## 判据（读不到算失败）
+
+| 判据 | 结果 | 证据 |
+| --- | --- | --- |
+| 车到等待点 | 通过：RIoT `pos=216 move=MT_FINISHED`；2305；`StationClearances` 新行 `Proof=ARRIVED_AT_WAITING_POINT`、`WaitingPointStationId=216`、`CompletedAt=07:54:25Z` | `38`、`40`、`41` |
+| 211 独占 0 行 | 通过：`Excl211=0` | `41` |
+| 211 分配暂停仍在 | 通过：新暂停 `e644562f`（`INTERRUPTION_CONFIRMED`）在，到点时无恢复记录 | `41` |
+| 车辆资格暂停仍在、不重建充电单 | 通过：新暂停 `93a9b133` 在；到点后 5 分钟（15:54:25～15:59:39）2240 为 0、2241 拒绝 12 次、2246 共 6 次，RIoT 上 agv02 未结束单 0；2303/2304 为 0 | `41`、`42`、`43` |
+| 全程不对 agv01 发任何东西 | 通过，见下节 | `36`、`37`、`39` |
+
+### agv01 那张单
+
+15:54 监看在 RIoT 上看到一张 agv01 的未结束单 `order-2109552842959355904`（upperId `W2G-7326d984-3d34-b052-973e-b920d706e035-S1-1`，15:52:46 建，地图 25，终点 83）。判定为 MVP 生产线的正常单，与 V2 无关，依据三条：V2 库 106 张表全文搜 `7326d984` 为 0 行，搜 agv01 的 deviceKey 也为 0 行；同一脚本搜 agv02 本次旅程号能搜到 24 行（对照，证明搜索有效）；V2 只在地图 26 上运行。没有碰这张单。
+
+## 恢复与收工（16:00～16:10）
 
 | 步骤 | 结果 | 证据 |
 | --- | --- | --- |
-| 出包 | release run `38210567927` 成功；manifest 中 controlServer 为 `4771f70e`，等于部署 worktree 的 HEAD；onboard 为 `b2f602ec`；zip sha256 `489d26d8…` | `06` |
-| 19 号升级（off 版定义，覆盖为 5） | **失败**：`Update-ControlServerLocal.ps1:232` 报 "Safety projection returned HTTP 401."。读到的：升级自检用机器级共享的 `CONTROL_SERVER_ONBOARD_CREDENTIAL` 调 `/api/onboard/v1/vehicle-safety`。推测：两车实例从 cs#600 起改成按车凭据，共享凭据被拒。升级脚本自动回滚到旧二进制、运行时关闭；`installed-instance.json` 为 RESTORED。已开 **cs#649** | `07` |
-| 19 号卸载（保留数据） | 成功；`C:\ProgramData\8005\ControlServer.V2` 与库保留 | `08` |
-| 19 号全新安装（off 版定义） | **失败**：`Install-ControlServerLocal.ps1:516` 报 "The property 'reason' cannot be found on this object."。读到的：`:541` 在严格模式下读取 `$firstReadiness.reason`，而首次 `/health/ready` 回 `ready` 时响应里没有 `reason` 字段。推测：昨天 prep6 用的是全新空库，第一次一定是 not-ready 并带 reason，所以没撞上；今天沿用 newdb5、运行时开着，服务一起来就 ready。安装回滚，服务被移除。这个缺陷也已并入 cs#649 | `09` |
+| 合闸 | 用户 16:01 合闸（授权 `55`） | `55` |
+| 关闸 | 16:01:46 `RiotCreateDispatch.enabled` True→False | `44` |
+| 策略回 v1 | `activeVersion=1`，30/80 | `45` |
+| 211 分配暂停恢复 | `RECOVERED`，`e644562f` | `46` |
+| agv02 资格暂停恢复 | `RECOVERED`，`93a9b133` | `47` |
+| 残留 | 未恢复暂停 0（站、车各 0）；用途 0；人工充电保持 0；未结束周期 0；独占只剩 agv02 在 216 的等待点占用 | `48`、`49` |
+| 名册空 | `emptyRoster:true` | `50` |
+| 开关回原值 | 19 号用 `two-car-example` 定义升级（与包同一提交 `020138c9`）：routeGraph、VFR、journeyRuntime、clearanceToWaitingPoint 全为 false | `51` |
+| 凭据变量 | 19 号在加密存储里有凭据时总会写入，所以在服务器上直接从 V2 服务注册表 Environment 删掉 `CONTROL_SERVER_V2_FAULT_RECOVERY_CREDENTIAL`，回读 `present after: False` | `52` |
+| V2 停服 | Stopped，启动类型 Manual | `52` |
+| 车载端栈 | agv02 停止；agv02、agv03 进程均为 0 | `53`、`54` |
+| IO 指向 | agv02、agv03 均为 `127.0.0.1:1502`（仓位模拟器），只记录未改 | `54` |
+| MVP | Running，pid 10912，前后不变，未碰 | `52` |
 
-## 为什么停下而不绕过
+`46`、`47` 里请求体的中文显示为乱码，是 pwsh 输出到 bash 时的编码问题；服务端收到的是正确的 UTF-8（它按车名解析出了 agv02 正确的 vehicleKey，`48` 里的 Basis 也是正常中文）。
 
-调度 C10 在三条可选路线里选了「先修脚本」：
-- 部署后手改 appsettings 打开开关：这会绕过安装器的生效配置回读，而本次补测要验证的正是这道回读。
-- 再加一份 runtime=false 的引导定义，先装上，再用 off/on 版重装：重装走的是升级路径，仍会撞上 401。
-- V2 保持未安装，不用旧包恢复：上午收工时它本来就停在 Manual 状态，没有在为任何东西服务，数据目录也还在。
+## 上午的暂停（已解决）
 
-## 当前状态（14:2x 只读回读，`10`）
-
-- V2 服务不存在（服务注册表键也不存在）；安装目录不存在。
-- `installed-instance.json` 为 RESTORED，是上一次的记录：runtime=false，VFR=false，没有 clearance，`riotCreateDispatch.enabled=false`。
-- 数据目录与库都在，库最后写入时间 12:10:41（上午收工时）。独占 2 行（等待点占用，与收工时相同）；未恢复暂停 0；未结束周期 0。
-- agv02、agv03 的车载端与模拟器进程数都是 0。agv02 的车载端**没有**部署 `b2f602ec`。
-- MVP 为 Running，pid 10912，没有碰过。
-- 13:42 只读 RIoT 的 agv03 读数为 pos 0、`sys=ERROR`，按调度要求只做记录，没有碰。
-
-## 恢复时要做的
-
-cs#649 合入后，用包含修复的提交重新出包，按 `PLAN.md` 从 A 段开始。两份定义（`instance-factory01-v2.req0178-field-on.json`、`-off.json`）在本分支上，也需要随修复一起合入，或者在那时重新核对。
+上午两次部署撞上部署脚本缺陷（升级自检用共享凭据被 401，`07`；首读就 ready 时缺 `reason`，`09`），按调度决定暂停，等 cs#649。cs#649（PR #650）合入后恢复，升级与全新安装都通过（`13`、`21`）。之后又因定义漏了 `routeGraph.enabled` 被拒分配一次（`25`），修正见 `PLAN.md`「漏项记录」。

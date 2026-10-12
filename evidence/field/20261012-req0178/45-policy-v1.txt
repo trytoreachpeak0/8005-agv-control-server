@@ -1,0 +1,7 @@
+2026-10-12 16:02:04 REQ-0178 closeout: charging policy back to v1
+### activate v1
+{"command":"activate-charging-policy","outcome":"OK","dryRun":false,"version":1,"previousActiveVersion":5,"activationId":"e8e3edee-d933-42d8-a49a-1e11ca7c4854","sequence":9,"activatedAt":"2026-10-12T16:02:04.4908164+08:00","allowNonFieldApproval":false,"approvals":[{"approvalId":"e87fca33-b494-4856-b80b-2a7252974435","approvedBy":"Zhengyu Shao","approverRole":"产品负责人","approvedAt":"2026-10-11T18:51:41.5481754+08:00","basisReference":"用户 2026-10-11 经调度转达同意「批准并激活充电策略 v1，只在 V2 测试实例」；两车段换新库后重批；内容与此前批准版逐字相同（sha 5d34c605…）；原依据：批次 9 方案第七节第 6 条，用户 2026-09-29 同意（control-server#400）","source":"FIELD"}],"errorCount":0,"errors":[],"impact":{"comparedWithActiveVersion":5,"changes":[{"field":"mandatoryChargeEntryThresholdPercent","before":"75","after":"30"},{"field":"chargingCompletionThresholdPercent","before":"95","after":"80"}],"coveredAfter":["BROKERX-f38975561adf46ccb1d2f23833c7d0e4","BROKERX-7daca4ee91da498d8026c68b7b941127"],"vehiclesLosingPolicy":[],"vehiclesWithoutPolicyAfter":[],"warning":null,"openCycles":[],"retention":"Charging cycles already under way keep the policy version they froze until they end; a new version applies only to new dispatch decisions and new charging cycles (REQ-0282)."}}
+exit=0
+### charging-policy
+activeVersion=1 forced=30 completion=80
+exit=0

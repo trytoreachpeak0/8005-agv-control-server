@@ -1,0 +1,6 @@
+route interface=Wi-Fi
+POST /api/charging/v1/station-recoveries at 2026-10-12 16:03:14.453 auth=Bearer <CONTROL_SERVER_V2_FAULT_RECOVERY_CREDENTIAL>
+request={"mapId":26,"stationId":211,"operatorId":"<redacted>","basis":"现场已给桩 211 合闸，桩恢复出电（REQ-0178 补测 15:51 拉闸，16:01 合闸）","claimedRole":"R-11"}
+
+status=200
+response={"mapId":26,"stationId":211,"outcome":"RECOVERED","holdIds":["e644562f-8a3b-4550-bf64-07bc0cc90666"],"codes":[]}
