@@ -381,6 +381,75 @@ public sealed class ParallelInstanceEffectiveConfigurationTests
     }
 
     // ------------------------------------------------------------------------------------------------
+    // control-server#638. JourneyRuntime:ClearanceToWaitingPointEnabled (REQ-0178) on the parallel instance: the definition's
+    // journeyRuntime.clearanceToWaitingPointEnabled through the overlay, bound by the Host, logged in its event, judged.
+    // ------------------------------------------------------------------------------------------------
+
+    private const string ClearanceOn = "$d['journeyRuntime']['clearanceToWaitingPointEnabled'] = $true; ";
+
+    [Theory]
+    [InlineData(true)]
+    [InlineData(false)]
+    public void EffectiveConfigurationEventCarriesTheClearanceSwitchAsABoolean(bool enabled)
+    {
+        JourneyRuntimeOptions options = new()
+        {
+            AgvId = "老厂前线新多仓位2", VehicleKey = Agv02Key, AllowedWorkTypes = ["WIRE_TO_GATE"], AllowedDispatchZones = ["WIRE"],
+            ClearanceToWaitingPointEnabled = enabled,
+        };
+
+        using JsonDocument logged = JsonDocument.Parse(RenderEvent(options, "http://127.0.0.1:58188"));
+
+        Assert.EndsWith(" clearanceToWaitingPointEnabled={ClearanceToWaitingPointEnabled}", logged.RootElement.GetProperty("@mt").GetString(), StringComparison.Ordinal);
+        Assert.Equal(enabled ? JsonValueKind.True : JsonValueKind.False, logged.RootElement.GetProperty("ClearanceToWaitingPointEnabled").ValueKind);
+    }
+
+    [Theory]
+    [InlineData("instance-factory01-v2.json", "", false)]
+    [InlineData("instance-factory01-v2.production-mes.json", "", false)]
+    [InlineData("instance-factory01-v2.json", ClearanceOn, true)]
+    public void TheClearanceSwitchTheDefinitionWritesIsWhatTheHostBinds(string definitionFile, string definitionEdit, bool expected)
+    {
+        // Over the package's appsettings.json, which does not name the switch: left out of the definition it binds the
+        // product default (off), written it binds what was written.
+        string root = FindRepositoryRoot();
+        JourneyRuntimeOptions options = Bind(
+            File.ReadAllText(Path.Combine(root, "src", "ControlServer.Host", "appsettings.json")),
+            GenerateOverlay(root, definitionFile, definitionEdit), out _);
+
+        Assert.Equal(expected, options.ClearanceToWaitingPointEnabled);
+    }
+
+    [Theory]
+    [InlineData(ClearanceOn, false, "Pass")]
+    [InlineData(ClearanceOn, true, "StopServiceAndRefuse")]
+    [InlineData("", false, "Pass")]
+    [InlineData("", true, "StopServiceAndRefuse")]
+    public void InstallerReadBackJudgesTheClearanceSwitchTheHostReallyLogs(string definitionEdit, bool hostFlipsIt, string expectedAction)
+    {
+        // hostFlipsIt stands for a Host that bound the other value than the definition says: written and not in effect, or
+        // left over from an earlier layer.
+        string root = FindRepositoryRoot();
+        const string definitionFile = "instance-factory01-v2.json";
+        JourneyRuntimeOptions options = Bind(
+            File.ReadAllText(Path.Combine(root, "src", "ControlServer.Host", "appsettings.json")),
+            GenerateOverlay(root, definitionFile, definitionEdit), out IConfiguration configuration);
+        if (hostFlipsIt)
+        {
+            options.ClearanceToWaitingPointEnabled = !options.ClearanceToWaitingPointEnabled;
+        }
+        string line = RenderEvent(options, configuration["MesIngest:baseUrl"]!);
+
+        string verdict = JudgeReadBack(root, definitionFile, line, definitionEdit);
+
+        Assert.StartsWith(expectedAction + "|", verdict, StringComparison.Ordinal);
+        if (hostFlipsIt)
+        {
+            Assert.Contains("clearanceToWaitingPointEnabled bound", verdict, StringComparison.Ordinal);
+        }
+    }
+
+    // ------------------------------------------------------------------------------------------------
     // control-server#587. The Host's log now rolls at its size limit. The installer's read-back looks for
     // EFFECTIVE_CONFIGURATION and 2001, logged as the process starts, and used to read only the two newest files:
     // once the log rolled more than once after the start, both events were in a file it did not read.
@@ -458,7 +527,7 @@ public sealed class ParallelInstanceEffectiveConfigurationTests
         public void Emit(Serilog.Events.LogEvent logEvent) => _formatter.Format(logEvent, writer);
     }
 
-    private static string JudgeReadBack(string root, string definitionFile, string line)
+    private static string JudgeReadBack(string root, string definitionFile, string line, string definitionEdit = "")
     {
         string parallel = Path.Combine(root, "scripts", "parallel");
         string log = Path.Combine(Path.GetTempPath(), $"cs571-effective-{Guid.NewGuid():N}.log");
@@ -467,7 +536,7 @@ public sealed class ParallelInstanceEffectiveConfigurationTests
         {
             return RunPwsh(
                 $"Import-Module '{Path.Combine(parallel, "ParallelInstance.psm1")}' -Force; " +
-                $"$d = Read-ParallelInstanceDefinition -Path '{Path.Combine(parallel, definitionFile)}'; " +
+                $"$d = Read-ParallelInstanceDefinition -Path '{Path.Combine(parallel, definitionFile)}'; {definitionEdit}" +
                 $"$e = Find-ParallelEffectiveConfiguration -Lines @(Get-Content -LiteralPath '{log}' -Encoding utf8) -Since ([datetimeoffset]::MinValue); " +
                 "$a = Get-ParallelEffectiveConfigurationAction -Definition $d -Effective $e; \"$($a.Action)|$($a.Message)\"",
                 allowFailure: false).Trim();
@@ -521,13 +590,13 @@ public sealed class ParallelInstanceEffectiveConfigurationTests
     /// The overlay exactly as the installer writes it: New-ParallelInstanceConfigurationOverlay on the
     /// shipped definition, through pwsh, saved as UTF-8 without a BOM.
     /// </summary>
-    private static string GenerateOverlay(string root, string definitionFile)
+    private static string GenerateOverlay(string root, string definitionFile, string definitionEdit = "")
     {
         string parallel = Path.Combine(root, "scripts", "parallel");
         string output = Path.Combine(Path.GetTempPath(), $"cs535-overlay-{Guid.NewGuid():N}.json");
         string command =
             $"$ErrorActionPreference = 'Stop'; Import-Module '{Path.Combine(parallel, "ParallelInstance.psm1")}' -Force; " +
-            $"$d = Read-ParallelInstanceDefinition -Path '{Path.Combine(parallel, definitionFile)}'; " +
+            $"$d = Read-ParallelInstanceDefinition -Path '{Path.Combine(parallel, definitionFile)}'; {definitionEdit}" +
             $"$null = Assert-ParallelInstanceDefinition -Definition $d; " +
             $"New-ParallelInstanceConfigurationOverlay -Definition $d | ConvertTo-Json -Depth 12 | Set-Content -LiteralPath '{output}' -Encoding utf8NoBOM";
         ProcessStartInfo start = new("pwsh")

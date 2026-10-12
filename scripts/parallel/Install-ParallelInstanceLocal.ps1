@@ -608,6 +608,9 @@ try {
         foreach ($car in @($effective.Fleet | Where-Object { $null -ne $_ })) {
             Write-Step "  fleet: $($car.AgvId) ($($car.VehicleKey)) allowedTaskTypes=$(@($car.AllowedTaskTypes) -join ',') zones=$(@($car.Zones) -join ',')"
         }
+        # control-server#638. Already compared above; shown on its own line because 19-deploy-control-server-parallel.ps1
+        # compares the result line whole, and a package older than #638 does not log it.
+        Write-Step "  clearanceToWaitingPointEnabled=$($effective.ClearanceToWaitingPointEnabled ?? 'not logged (package older than control-server#638)')"
         return $line
     }
 

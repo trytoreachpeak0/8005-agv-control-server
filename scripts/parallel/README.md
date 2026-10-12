@@ -50,6 +50,14 @@ control-server#262。约 2026-10-08 起 `factory01` 上同时跑两套 ControlSe
 代价：每次安装多一次重启，约 10～30 秒；运行时关着时服务端不校验车队表，车队表写错要到第 3 步起服务时才报出来（那时服务起不来，
 不会派车）。没有日志文件可读时第 2 步也读不到 2001，按拒绝处理。`EFFECTIVE_CONFIGURATION=` 结果行只打一次，取最后一次回读。
 
+**清桩开往等待点的开关**（`journeyRuntime.clearanceToWaitingPointEnabled`，REQ-0178，control-server#638）是实例定义里唯一能打开
+自动清桩的地方：环境变量那条路被上面的 `JOURNEY_RUNTIME_ENVIRONMENT_OVERRIDE` 堵着。定义里可以不写，不写就是关；写了必须是 JSON
+布尔值。覆盖层每次都写出这个键（没写就写 `false`），所以上次装成开的，这次重装不会残留。Host 在 `EFFECTIVE_CONFIGURATION`
+事件里记下它实际绑定的值，回读与定义比对，不一致按 `EFFECTIVE_CONFIGURATION_MISMATCH` 停服务；定义打开而事件里没有这个字段
+（control-server#638 之前的包）报 `EFFECTIVE_CONFIGURATION_CLEARANCE_UNREAD`，定义没打开时照旧放行。它不进 `EFFECTIVE_CONFIGURATION=`
+结果行（`19-deploy-control-server-parallel.ps1` 整行比对那一行），单独打一行日志。两份出厂定义都不写它。打开它是一次会让车动的运行，
+每次都要用户授权、现场有人。
+
 已知限制：一层写空数组 `"fleet": []` 读作「没写」，清不掉更早一层的车队表。今天包内 `appsettings.json` 没有车队表，回读也会拒绝定义里
 没写、却绑出来的车队表；包内一旦加车队表，必须先改这条语义（`PackageAppSettingsRosterArchitectureTests` 会在那天变红）。
 
