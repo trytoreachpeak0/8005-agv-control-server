@@ -35,6 +35,11 @@
   这样放行的 `STOPPED` 的 source 是 `RIOT_BEHAVIOR_LAB_R41_MT_NA_AUTO_BRAKED`。
 - 速度不为 0 或 `MT_RUNNING` 仍判 `MOVING`，与模式无关。
 - `ReadMotion`（REQ-0247 停稳证明）不动。
+- 作用范围：`Safety()` 是所有车辆安全读取共用的判据，不只车载安全投影。开机 `MT_NA` 放行与「必须自动模式」同样作用到：
+  车载安全投影（`OnboardVehicleSafetyEndpoints`）；经 `NonBusinessDepartureGate.RiotStandstillGapsAsync` 的充电分配
+  （`ChargingAllocator`）与自建单重建（`JourneyRuntimeEngine.OwnOrderRebuild`）；充电前的停稳证明
+  （`JourneyRuntimeEngine.Charging` 的 `ProvenStoppedWithoutOrderAsync`）；空闲返回（`JourneyRuntimeEngine.IdleReturn`）；
+  等待点到达结算（`WaitingPointArrivalSettlement`）。`git grep` 核过只有这六处调用。
 
 ## 剩余风险（前提在哪里失效）
 
@@ -50,7 +55,14 @@
 
 ## 验证
 
-- 定向测试 397 条全过（判据、车载安全接口、假 RIoT、自建单重建、架构测试），用本地预览包编译。
+- 手动模式挡住自建单重建，走真实判据：`OwnOrderRebuildTests.ARebuildWaitsWhileTheVehicleIsInManualModeThroughTheRealSafetyPredicate`
+  让车辆安全读取经真的 `HttpRiotMovementGateway` 读 FakeRiot 的车，`MODE_MANUAL` 时重建等车、记 `RIOT_MODE_NOT_AUTO`，切回
+  `MODE_AUTO` 后建单。网关不记 `RIOT_MODE_NOT_AUTO` 时只有这一条红（原来按字符串注入原因码的那条照样绿）。
+- 车载安全接口原样回传网关的 source：`OnboardVehicleSafetyEndpointsTests.TheGatewaysSourceIsPassedThroughAsGiven`，接口把 source
+  写死时变红。
+- 钉包来源测试堵空子：`RiotSdkPackageProvenanceTests.TheCheckedVersionIsTheVersionTheBuildConsumes`。
+- 定向测试全过（判据、车载安全接口、假 RIoT、自建单重建、`NonBusinessDeparture`、架构测试、钉包来源、RIoT 调用白名单），
+  正式包 0.2.0-fp.5。
 - 变异 8 条全部被抓住：去掉模式原因码、MT_NA 分支去掉抱闸、去掉模式、MT_NA 单独放行、模式改成只排除
   MANUAL、退回旧判据、source 不区分、去掉抱闸原因码。
 

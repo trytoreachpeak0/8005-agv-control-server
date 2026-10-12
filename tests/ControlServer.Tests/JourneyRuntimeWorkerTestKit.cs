@@ -1928,10 +1928,21 @@ internal static class JourneyRuntimeWorkerTestKit
 
         public int SafetyReads { get; private set; }
 
+        /// <summary>
+        /// When set, the vehicle safety read is answered here instead of from <see cref="SafetyReasons"/>: a test that needs the
+        /// real <c>HttpRiotMovementGateway</c> predicate over a FakeRiot vehicle points this at that gateway (control-server#639,
+        /// review S2), so a vehicle state goes through the predicate rather than being handed in as a reason code.
+        /// </summary>
+        public Func<string, CancellationToken, Task<RiotVehicleSafetyObservation>>? SafetyRead { get; set; }
+
         public Task<RiotVehicleSafetyObservation> ReadVehicleSafetyAsync(string vehicleKey, CancellationToken cancellationToken)
         {
-            _ = cancellationToken;
             SafetyReads++;
+            if (SafetyRead is { } read)
+            {
+                return read(vehicleKey, cancellationToken);
+            }
+
             return Task.FromResult(new RiotVehicleSafetyObservation(
                 vehicleKey,
                 SafetyReasons.Length == 0 ? RiotVehicleMotionState.Stopped : RiotVehicleMotionState.Unknown,

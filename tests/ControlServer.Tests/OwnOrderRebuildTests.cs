@@ -1,6 +1,7 @@
 using ControlServer.Application;
 using ControlServer.Domain;
 using ControlServer.Host.Runtime;
+using ControlServer.Infrastructure.Adapters;
 using ControlServer.Infrastructure.Persistence;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Configuration;
@@ -257,6 +258,53 @@ public sealed class OwnOrderRebuildTests
         fixture.Riot.SafetyReasons = [];
         fixture.Riot.Vehicle = onTheMap;
         await ClearFaultAsync(fixture);
+        await fixture.HearFromPeerAsync();
+        await TickAndRunAsync(fixture);
+
+        Assert.Equal(2, fixture.Riot.CreateCount("TO_PICKUP"));
+        await AssertRebuiltAsync(fixture, before, stopsBefore, pickup);
+        Assert.Null((await fixture.RuntimeAsync()).BlockReasonCode);
+    }
+
+    /// <summary>
+    /// 手动模式挡住重建，走真实判据（control-server#639，审查 S2）：上一条用例把 <c>RIOT_MODE_NOT_AUTO</c> 当字符串直接塞进替身，换成任何
+    /// 字符串都会过，证明不了「车切手动，重建就等」。这一条让车辆安全读取走真的 <see cref="HttpRiotMovementGateway"/>，背后是 FakeRiot
+    /// 的车：车设成 <c>MODE_MANUAL</c>，读取经 <c>Safety()</c> 记下 <c>RIOT_MODE_NOT_AUTO</c>，重建前的停稳检查据此不建；切回
+    /// <c>MODE_AUTO</c>，下一轮就建。
+    /// </summary>
+    /// <remarks>
+    /// 现场指南「要让车别动，就在这段时间里让车急停或切到手动」靠的就是这条链。网关不记 <c>RIOT_MODE_NOT_AUTO</c>，这一条红在「建了第二张」上。
+    /// </remarks>
+    [Fact]
+    public async Task ARebuildWaitsWhileTheVehicleIsInManualModeThroughTheRealSafetyPredicate()
+    {
+        await using RuntimeFixture fixture = await DispatchedToPickupAsync();
+        string vehicleKey = fixture.Options.VehicleKey;
+        await using FakeRiotTests.FakeRiotFixture riot = await FakeRiotTests.FakeRiotFixture.StartAsync(
+            TimeProvider.System, "--FakeRiot:Seed:vehicleKey=" + vehicleKey);
+        HttpRiotMovementGateway gateway = riot.Gateway();
+        fixture.Riot.SafetyRead = gateway.ReadVehicleSafetyAsync;
+        JourneyRuntimeRow before = await fixture.RuntimeAsync();
+        JourneyStopRow[] stopsBefore = await StopsAsync(fixture, before.JourneyId);
+        JourneyStopRow pickup = stopsBefore.Single(stop => stop.StopRole == JourneyStopRoles.Pickup);
+        fixture.Riot.CancelOrder(pickup.UpperId);
+        await TickAndRunAsync(fixture);
+        await riot.CommandAsync(HttpMethod.Put, "vehicle", new { vehicleKey, mode = "MODE_MANUAL" });
+
+        await PassTheDelayAsync(fixture);
+        await fixture.HearFromPeerAsync();
+        await TickAndRunAsync(fixture);
+
+        Assert.Equal(1, fixture.Riot.CreateCount("TO_PICKUP"));
+        Assert.Equal("OWN_ORDER_REBUILD_WAITING_VEHICLE", (await fixture.RuntimeAsync()).BlockReasonCode);
+        await using (ControlServerDbContext reading = new(fixture.DbOptionsForTests))
+        {
+            OwnOrderRebuildRow waiting = await reading.OwnOrderRebuilds.AsNoTracking().SingleAsync(Token);
+            Assert.Equal(OwnOrderRebuildStates.Pending, waiting.State);
+            Assert.Contains("RIOT_MODE_NOT_AUTO", waiting.WaitingReason, StringComparison.Ordinal);
+        }
+
+        await riot.CommandAsync(HttpMethod.Put, "vehicle", new { vehicleKey, mode = "MODE_AUTO" });
         await fixture.HearFromPeerAsync();
         await TickAndRunAsync(fixture);
 

@@ -78,6 +78,16 @@ public sealed class HttpRiotMovementGateway : IRiotMovementGateway, IRiotVehicle
     /// freeze, is held off only by the <c>ON_LINE</c> fact. Any source of motion beyond the three the user named is not
     /// covered at all.
     /// </para>
+    /// <para>
+    /// <b>Who reads it.</b> <c>Safety()</c> is the predicate of every vehicle safety read, not only the onboard's, so both the
+    /// MT_NA release and the automatic-mode requirement reach: the onboard safety projection
+    /// (<c>OnboardVehicleSafetyEndpoints</c>); charging allocation and the own-order rebuild through
+    /// <c>NonBusinessDepartureGate.RiotStandstillGapsAsync</c> (<c>ChargingAllocator</c>,
+    /// <c>JourneyRuntimeEngine.OwnOrderRebuild</c>); the charging stop proof (<c>JourneyRuntimeEngine.Charging</c>,
+    /// <c>ProvenStoppedWithoutOrderAsync</c>); idle return (<c>JourneyRuntimeEngine.IdleReturn</c>); and waiting point
+    /// arrival settlement (<c>WaitingPointArrivalSettlement</c>). <c>ReadMotion</c>, the REQ-0247 stop proof, is a separate
+    /// predicate and unchanged.
+    /// </para>
     /// </remarks>
     public const string BootStoppedSource = "RIOT_BEHAVIOR_LAB_R41_MT_NA_AUTO_BRAKED";
 
