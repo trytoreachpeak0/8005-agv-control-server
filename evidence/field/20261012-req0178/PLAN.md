@@ -126,3 +126,27 @@
 - agv03（13:42 读到 `sys=ERROR`、pos 0）这次不用，也不碰，只把读数记下来。
 - 出包：dispatch 前查过，两仓都没有在跑或排队的 run，control-server 三台 runner 都 online、busy=false。release run `38209404692`（headSha `a24e8f76…`，onboard `b2f602ec`）。
 - 逐次向用户要授权：起 agv02 栈、打开开关、开闸、拉闸、合闸。
+
+---
+
+## 恢复步骤（调度 C10，2026-10-12 14:2x：用户要求尽快恢复）
+
+**部署时用的是未合入但已审过的安装脚本**：cs#649 的 PR 一通过独立审查，就把它的分支 merge 进 `evidence/req0178-field`（用 merge，不 rebase，不 force push），从合并后的 HEAD 出包、部署，和它的 CI 并行，不等它合入。部署对象只是 v2 测试实例，闸门关着，MVP 不碰。这个代价调度已认可。
+
+1. `git merge <cs#649 分支>` 进本分支，推送。合并后的 HEAD 记作 R。
+2. dispatch 前查 vm01 与两仓的 CI 是否空闲，然后在本分支上跑 `release.yml`（onboard `b2f602ec`）。
+3. 下载包，核对 sha256，并核对 manifest 的 `controlServer.commit` = R、onboard = `b2f602ec`。19 号用的 clone 是一个 detached 在 R 的 worktree。
+4. **全新安装**：V2 现在是未安装状态。19 `-PackagePath`，定义用 `req0178-field-off.json`，带 `-AdmissionPolicyVersionOverride 5`。这一步顺带验证 cs#649 对「首次就绪即 ready 时读不到 reason」的修复。回读：19 号摘要与 `EFFECTIVE_CONFIGURATION` 中 `clearanceToWaitingPointEnabled=false`；两车按车凭据的安全投影探针都返回 200；旧库数据还在（独占、暂停表的行数与收工时一致）。
+5. 部署 agv02 车载端 `b2f602ec`（06 号，`-SshAlias agv02 -OnboardPort 58105 -HealthPort 58107`），核对 hmi#312 的新日志目录。
+6. **打开开关（要用户授权）**：同一个包，定义改用 `req0178-field-on.json`，19 号走**升级路径**。这一步顺带验证 cs#649 对升级路径 401 的修复。回读：摘要与生效配置都是 `clearanceToWaitingPointEnabled=true`。
+7. 之后按本文件第五节 C～F 段执行，每段都单独授权。
+
+## 上午 F 段之后的状态（实读）
+
+- 211 的合闸与桩恢复：10:12 合闸（用户报）；10:12:07 `station-recoveries` 返回 200 `RECOVERED`；10:12:09 `vehicle-eligibility-recoveries` 返回 200 `RECOVERED`（`20261012-cs566c-g4/34`～`36`）。合闸之后 211 出电正常：D 段 agv03 在 10:16:55～10:46:43 从 29% 充到 80%，争用段两车在 11:13～11:58 也都正常充电（`20261012-cs566c-contention/12`、`16`）。此后没有再拉过闸。
+- 库（14:2x 回读，`10-state-after-stop.txt`）：未恢复的桩暂停 0、车辆资格暂停 0、未结束周期 0；独占 2 行，是 215/216 的等待点占用。
+- RIoT（14:21:15 只读，`11-riot-3cars-resume-prep.txt`）：
+  - agv02 在 **216**，不在 211；61%，`NO_CHARGE`，`sys=IDLE`，`MT_FINISHED`，无未结束单。
+  - agv03：pos 0，60%，无未结束单，不用也不碰。
+  - agv01：25 号图 pos 210，60%，无未结束单。
+- 阈值：agv02 61% < 强制线 75，完成线 95 不变；agv03 不起栈，不会被派单。
