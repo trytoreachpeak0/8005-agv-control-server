@@ -25,10 +25,15 @@ public sealed record RiotListedOrder(
 /// <see cref="IsComplete"/> is false when RIoT could not be asked, or answered with a page that does not cover every record.
 /// An incomplete listing is not "no order": nothing may be concluded from what it leaves out.
 /// </remarks>
+/// <param name="IncompleteReason">
+/// For an incomplete listing, what was not covered -- the read that failed, or the page that did not add up and how
+/// (control-server#645). Diagnostic text for logs only: no decision reads it, and null says nothing either way.
+/// </param>
 public sealed record RiotUnfinishedOrderListing(
     bool IsComplete,
     IReadOnlyList<RiotListedOrder> Orders,
-    DateTimeOffset ObservedAt);
+    DateTimeOffset ObservedAt,
+    string? IncompleteReason = null);
 
 /// <summary>
 /// One order's state read by its RIoT <c>orderId</c> (<c>detailByOrderId</c>). <see cref="OrderState"/> is null when the read

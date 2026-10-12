@@ -987,6 +987,7 @@ public sealed class HttpRiotMovementGatewayTests
     /// </summary>
     [Theory]
     [InlineData("partial-page")]
+    [InlineData("first-page-out-of-place")]
     [InlineData("read-failed")]
     [InlineData("record-without-order-id")]
     public async Task TheUnfinishedOrderListingIsIncompleteWhenRiotDoesNotAccountForEveryOrder(string answer)
@@ -994,6 +995,7 @@ public sealed class HttpRiotMovementGatewayTests
         RecordingHandler handler = new((_, _) => answer switch
         {
             "partial-page" => JsonResponse("""{"code":"0","result":{"current":1,"size":100,"total":101,"records":[]}}"""),
+            "first-page-out-of-place" => JsonResponse("""{"code":"0","result":{"current":2,"size":100,"total":150,"records":[]}}"""),
             "record-without-order-id" => JsonResponse("""
                 {"code":"0","result":{"current":1,"size":100,"total":1,"records":[
                   {"id":1,"orderId":null,"upperId":"UPPER-1","orderState":3,
@@ -1010,6 +1012,17 @@ public sealed class HttpRiotMovementGatewayTests
         RiotUnfinishedOrderListing result = await gateway.ListUnfinishedOrdersAsync(TestContext.Current.CancellationToken);
 
         Assert.False(result.IsComplete);
+        // control-server#645: what was not covered is said, so a log can tell a failed read from a page that did not add up.
+        Assert.StartsWith(
+            answer switch
+            {
+                "partial-page" => "page 1 of 2 does not add up (current 1, total 101 against 101, 0 records against 100, size 100)",
+                "first-page-out-of-place" => "page 1 cannot be paged over (current 2, size 100, total 150, 0 records)",
+                "record-without-order-id" => "1 of 1 records carry no orderId",
+                _ => "RIoT could not be read at page 1 (",
+            },
+            result.IncompleteReason,
+            StringComparison.Ordinal);
     }
 
     /// <summary>
@@ -1049,6 +1062,23 @@ public sealed class HttpRiotMovementGatewayTests
                 break;
         }
         Assert.Equal([1, 2, 3], orders.PagesAsked);
+    }
+
+    /// <summary>
+    /// control-server#645 审查 L1：分页读到中途某一页时 RIoT 答不上来，读不全的说法写出是第几页（共几页），不只是「读不到」。
+    /// </summary>
+    [Fact]
+    public async Task AListingThatFailsPartWayNamesThePageItFailedOn()
+    {
+        PagedOrders orders = new(ForeignOrders(252)) { FailOnPage = 2 };
+        await using RiotSession session = CreateSession(PagedOrdersHandler(orders));
+        HttpRiotMovementGateway gateway = new(session);
+
+        RiotUnfinishedOrderListing listing = await gateway.ListUnfinishedOrdersAsync(TestContext.Current.CancellationToken);
+
+        Assert.False(listing.IsComplete);
+        Assert.Empty(listing.Orders);
+        Assert.StartsWith("RIoT could not be read at page 2 of 3 (", listing.IncompleteReason, StringComparison.Ordinal);
     }
 
     /// <summary>
@@ -1148,6 +1178,19 @@ public sealed class HttpRiotMovementGatewayTests
                     TestContext.Current.CancellationToken);
                 Assert.False(listing.IsComplete);
                 Assert.Empty(listing.Orders);
+                // control-server#645: which page, and whether the read was cut off at the cap.
+                Assert.StartsWith(
+                    fault switch
+                    {
+                        "over-cap" => "truncated: total 2001 needs 21 pages, past the cap of 20; only page 1 was read",
+                        "total-grows" => "page 2 of 3 does not add up (current 2, total 253 against 252,",
+                        "total-shrinks" => "page 2 of 3 does not add up (current 2, total 251 against 252,",
+                        "page-repeated" => "page 2 of 3 does not add up (current 1,",
+                        "short-page" => "page 2 of 3 does not add up (current 2, total 252 against 252, 99 records against 100,",
+                        _ => "page 2 of 3 ",
+                    },
+                    listing.IncompleteReason,
+                    StringComparison.Ordinal);
                 break;
         }
         if (fault == "over-cap")
@@ -1284,6 +1327,7 @@ public sealed class HttpRiotMovementGatewayTests
     private sealed class PagedOrders(List<string> records)
     {
         public List<int> PagesAsked { get; } = [];
+        public int? FailOnPage { get; set; }
         public Func<int, int>? TotalOverride { get; set; }
         public bool IgnorePageNum { get; set; }
         public int? DropOneRecordOnPage { get; set; }
@@ -1319,6 +1363,14 @@ public sealed class HttpRiotMovementGatewayTests
             .Select(pair => pair.Split('=', 2))
             .Where(pair => pair[0] is "pageNum" or "pageSize")
             .ToDictionary(pair => pair[0], pair => pair[1]);
+        if (orders.FailOnPage is int failing &&
+            query["pageNum"] == failing.ToString(System.Globalization.CultureInfo.InvariantCulture))
+        {
+            return new HttpResponseMessage(HttpStatusCode.ServiceUnavailable)
+            {
+                Content = new StringContent("{}", Encoding.UTF8, "application/json")
+            };
+        }
         return JsonResponse(orders.Page(
             int.Parse(query["pageNum"], System.Globalization.CultureInfo.InvariantCulture),
             int.Parse(query["pageSize"], System.Globalization.CultureInfo.InvariantCulture)));

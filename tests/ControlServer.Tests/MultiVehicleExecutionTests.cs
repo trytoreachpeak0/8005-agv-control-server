@@ -2218,6 +2218,9 @@ public sealed partial class MultiVehicleExecutionTests
         /// <summary>未完成订单清单读不全（control-server#404）：分页没覆盖全部记录，或 RIoT 问不到。</summary>
         public bool OrderListingIncomplete { get; set; }
 
+        /// <summary>读不全时清单带的说法（control-server#645），照网关的写法造：哪一页、哪里对不上。</summary>
+        public string? OrderListingIncompleteReason { get; set; }
+
         /// <summary>
         /// 不是本服务端建的、却在跑的单（control-server#404）：清单里的那一行，与按单号读 mission 时答的目的站；目的站为空即读不到。
         /// </summary>
@@ -2232,7 +2235,8 @@ public sealed partial class MultiVehicleExecutionTests
             _ = cancellationToken;
             if (OrderListingIncomplete)
             {
-                return Task.FromResult(new RiotUnfinishedOrderListing(false, [], clock.GetUtcNowWithoutTick()));
+                return Task.FromResult(new RiotUnfinishedOrderListing(
+                    false, [], clock.GetUtcNowWithoutTick(), OrderListingIncompleteReason));
             }
             RiotListedOrder[] own =
             [

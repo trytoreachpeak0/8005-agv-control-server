@@ -85,7 +85,7 @@ public sealed partial class JourneyRuntimeEngine
     /// <para>
     /// <b>出发前复核，不成立就撤回承诺</b>（独立审查 M1、M2(a)；做法对照空闲返回建单前的重新核验）。承诺与出发之间可以隔很久，所以单从没发出过时，
     /// 每一轮建单之前先核：预占还是这一趟的；这一个桩按分配时的同一条候选链仍然成立（在当前生效名册里——名册被置空即不成立，窗口外不自动充电——、
-    /// 没有分配暂停、在当前地图上且站名一致、占用事实可确认空闲、路线可达，<c>ChargingAllocator.WhyCommittedChargerNoLongerStandsAsync</c>）；
+    /// 没有分配暂停、在当前地图上且站名一致、占用事实可确认空闲、路线可达，<c>ChargingAllocator.CheckCommittedChargerAsync</c>）；
     /// 这辆车按它冻结的那一版策略仍低于强制充电线。任何一条不成立，同一次保存里周期结束、<c>CHARGING</c> 用途与桩预占释放、旅程收尾，
     /// 车下一轮按正常链重评。安全门持续不过超过 <c>JourneyRuntime:OwnOrderRebuildDelay</c> 同样撤回——不让一辆出不了门的车一直占着桩；
     /// 宽限是为了不让门刚开一下就来回抖动。撤回不是失败：什么也没发出过，不计入「两次即停」，不进冷却。
@@ -438,12 +438,15 @@ public sealed partial class JourneyRuntimeEngine
         }
 
         string? charger;
+        string? chargerDetail;
         RiotVehicleObservation? vehicle;
         try
         {
-            charger = await dispatchRound.Charging
-                .WhyCommittedChargerNoLongerStandsAsync(runtime.VehicleKey, runtime.MapId, stop.StationRiotId, currentMap, cancellationToken)
+            CommittedChargerCheck check = await dispatchRound.Charging
+                .CheckCommittedChargerAsync(runtime.VehicleKey, runtime.MapId, stop.StationRiotId, currentMap, cancellationToken)
                 .ConfigureAwait(false);
+            charger = check.Reason;
+            chargerDetail = check.Detail;
             vehicle = charger is null
                 ? await vehicleFacts.ReadVehicleAsync(runtime.VehicleKey, cancellationToken).ConfigureAwait(false)
                 : null;
@@ -453,13 +456,15 @@ public sealed partial class JourneyRuntimeEngine
         {
             // RIoT could not be read: nothing about the charger is confirmed. Not knowing is not a reason to set off.
             charger = $"RIOT_UNREADABLE ({error.GetType().Name})";
+            chargerDetail = charger;
             vehicle = null;
         }
 
         if (charger is not null)
         {
             await WithdrawChargingAsync(
-                    runtime, stop, ChargingExecutionReasons.WithdrawnChargerNoLongerEligible, charger, now, cancellationToken)
+                    runtime, stop, ChargingExecutionReasons.WithdrawnChargerNoLongerEligible, chargerDetail ?? charger, now,
+                    cancellationToken)
                 .ConfigureAwait(false);
             return true;
         }

@@ -1,3 +1,4 @@
+using System.Globalization;
 using System.Security.Cryptography;
 using System.Text;
 using System.Text.Json;
@@ -565,12 +566,13 @@ public sealed class HttpRiotMovementGateway : IRiotMovementGateway, IRiotVehicle
     /// </remarks>
     public async Task<RiotUnfinishedOrderListing> ListUnfinishedOrdersAsync(CancellationToken cancellationToken)
     {
+        NonFinalOrderProgress progress = new();
         try
         {
-            NonFinalOrderRead orders = await ReadAllNonFinalOrdersAsync(cancellationToken).ConfigureAwait(false);
+            NonFinalOrderRead orders = await ReadAllNonFinalOrdersAsync(cancellationToken, progress).ConfigureAwait(false);
             if (!orders.IsComplete)
             {
-                return new RiotUnfinishedOrderListing(false, [], timeProvider.GetUtcNow());
+                return new RiotUnfinishedOrderListing(false, [], timeProvider.GetUtcNow(), orders.IncompleteReason);
             }
 
             RiotListedOrder[] listed = [.. orders.Records
@@ -584,7 +586,12 @@ public sealed class HttpRiotMovementGateway : IRiotMovementGateway, IRiotVehicle
             // A record without an orderId cannot be addressed, re-read or cancelled; one that is there all the same makes the
             // listing something this server cannot fully account for.
             return new RiotUnfinishedOrderListing(
-                listed.Length == orders.Records.Count, listed, timeProvider.GetUtcNow());
+                listed.Length == orders.Records.Count,
+                listed,
+                timeProvider.GetUtcNow(),
+                listed.Length == orders.Records.Count
+                    ? null
+                    : Invariant($"{orders.Records.Count - listed.Length} of {orders.Records.Count} records carry no orderId"));
         }
         catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
         {
@@ -592,7 +599,9 @@ public sealed class HttpRiotMovementGateway : IRiotMovementGateway, IRiotVehicle
         }
         catch (Exception error) when (RiotCallFailureClassification.IsSdkFailure(error))
         {
-            return new RiotUnfinishedOrderListing(false, [], timeProvider.GetUtcNow());
+            return new RiotUnfinishedOrderListing(
+                false, [], timeProvider.GetUtcNow(),
+                Invariant($"RIoT could not be read at page {progress.Page}{(progress.PageCount > 0 ? Invariant($" of {progress.PageCount}") : "")} ({error.GetType().Name})"));
         }
     }
 
@@ -614,8 +623,12 @@ public sealed class HttpRiotMovementGateway : IRiotMovementGateway, IRiotVehicle
     /// that residue is accepted rather than closed.
     /// </para>
     /// </remarks>
-    private async Task<NonFinalOrderRead> ReadAllNonFinalOrdersAsync(CancellationToken cancellationToken)
+    private async Task<NonFinalOrderRead> ReadAllNonFinalOrdersAsync(
+        CancellationToken cancellationToken,
+        NonFinalOrderProgress? progress = null)
     {
+        progress ??= new NonFinalOrderProgress();
+        progress.Page = 1;
         OrderStatePage first = await riotSession.Order.ListOrdersByStatesAsync(
             NonFinalOrderStates,
             pageNum: 1,
@@ -628,19 +641,23 @@ public sealed class HttpRiotMovementGateway : IRiotMovementGateway, IRiotVehicle
         if (first.Current != 1 || first.Total is not long total || total < 0 ||
             (first.Size.HasValue && first.Size.Value != NonFinalOrderPageSize))
         {
-            return NonFinalOrderRead.Incomplete;
+            return NonFinalOrderRead.IncompleteBecause(Invariant(
+                $"page 1 cannot be paged over (current {Shown(first.Current)}, size {Shown(first.Size)}, total {Shown(first.Total)}, {first.Records.Count} records)"));
         }
 
         long pageCount = (total + NonFinalOrderPageSize - 1) / NonFinalOrderPageSize;
+        progress.PageCount = pageCount;
         if (pageCount > NonFinalOrderPageCap)
         {
-            return NonFinalOrderRead.Incomplete;
+            return NonFinalOrderRead.IncompleteBecause(Invariant(
+                $"truncated: total {total} needs {pageCount} pages, past the cap of {NonFinalOrderPageCap}; only page 1 was read"));
         }
 
         List<OrderStateRecord> records = [];
         HashSet<long> seenIds = [];
         for (int pageNum = 1; pageNum <= pageCount; pageNum++)
         {
+            progress.Page = pageNum;
             OrderStatePage page = pageNum == 1
                 ? first
                 : await riotSession.Order.ListOrdersByStatesAsync(
@@ -652,13 +669,15 @@ public sealed class HttpRiotMovementGateway : IRiotMovementGateway, IRiotVehicle
             if (page.Current != pageNum || page.Total != total || page.Records.Count != expectedCount ||
                 (page.Size.HasValue && page.Size.Value != NonFinalOrderPageSize))
             {
-                return NonFinalOrderRead.Incomplete;
+                return NonFinalOrderRead.IncompleteBecause(Invariant(
+                    $"page {pageNum} of {pageCount} does not add up (current {Shown(page.Current)}, total {Shown(page.Total)} against {total}, {page.Records.Count} records against {expectedCount}, size {Shown(page.Size)})"));
             }
             foreach (OrderStateRecord record in page.Records)
             {
                 if (record.Id is long id && !seenIds.Add(id))
                 {
-                    return NonFinalOrderRead.Incomplete;
+                    return NonFinalOrderRead.IncompleteBecause(Invariant(
+                        $"page {pageNum} of {pageCount} repeats record {id} from an earlier page"));
                 }
                 records.Add(record);
             }
@@ -666,9 +685,29 @@ public sealed class HttpRiotMovementGateway : IRiotMovementGateway, IRiotVehicle
         return new NonFinalOrderRead(true, records);
     }
 
-    private sealed record NonFinalOrderRead(bool IsComplete, IReadOnlyList<OrderStateRecord> Records)
+    /// <summary>Which page a non-final read was on, so a read that throws can say where (control-server#645 review L1).</summary>
+    private sealed class NonFinalOrderProgress
     {
-        public static NonFinalOrderRead Incomplete { get; } = new(false, []);
+        public int Page { get; set; }
+
+        public long PageCount { get; set; }
+    }
+
+    private static string Shown<T>(T? value)
+        where T : struct, IFormattable =>
+        value?.ToString(null, CultureInfo.InvariantCulture) ?? "none";
+
+    private static string Invariant(FormattableString text) => text.ToString(CultureInfo.InvariantCulture);
+
+    /// <param name="IncompleteReason">
+    /// Why an incomplete read is incomplete -- which page, and what did not add up (control-server#645). Diagnostic only.
+    /// </param>
+    private sealed record NonFinalOrderRead(
+        bool IsComplete,
+        IReadOnlyList<OrderStateRecord> Records,
+        string? IncompleteReason = null)
+    {
+        public static NonFinalOrderRead IncompleteBecause(string reason) => new(false, [], reason);
     }
 
     /// <summary>

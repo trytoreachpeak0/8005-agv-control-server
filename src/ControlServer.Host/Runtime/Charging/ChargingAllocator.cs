@@ -30,6 +30,15 @@ public sealed record ChargingAllocationVerdict(
 /// <summary>一辆车在一轮分配里的结论。</summary>
 public sealed record ChargingBoardVerdict(string Reason, string Detail);
 
+/// <summary>
+/// 出发前复核的结论：<see cref="Reason"/> 为空即承诺仍成立，否则是不成立的那一条的码（control-server#645 之前那个只答码的方法答的，逐字相同）。
+/// </summary>
+/// <param name="Detail">
+/// 给撤回日志（事件 2254）的细节：码本身；码是 <c>CHARGER_OCCUPANCY_UNKNOWN</c> 时再带上哪一样事实没读到
+/// （control-server#645）。只是诊断，判定只看 <see cref="Reason"/>。
+/// </param>
+public sealed record CommittedChargerCheck(string? Reason, string? Detail);
+
 /// <summary>一辆车在一轮分配里读到的电量观测：RIoT 的电量与电池状态、按冻结策略投影的 batteryState、观测时刻。</summary>
 public sealed record ChargingBoardObservation(int? BatteryPercent, string? RiotBatteryState, string BatteryState, DateTimeOffset ObservedAt);
 
@@ -51,18 +60,26 @@ public sealed class ChargingAllocationBoard
     private readonly System.Collections.Concurrent.ConcurrentDictionary<string, (string Reason, string Detail)> _last =
         new(StringComparer.Ordinal);
 
+    private readonly System.Collections.Concurrent.ConcurrentDictionary<string, (string Reason, string Detail)> _compared =
+        new(StringComparer.Ordinal);
+
     /// <summary>
     /// 记下这辆车这一轮的结论；与上一次不同时答真。第一次见到一辆车时，「不需要充电」不算变化：那是绝大多数车绝大多数时候的结论，
     /// 每次启动为每辆车记一条没有信息。
     /// </summary>
-    public bool Record(string agvId, string reason, string detail)
+    /// <param name="comparedDetail">
+    /// 比「变了没有」时用的那份细节（control-server#645 审查 S1：去掉逐轮会变的数字的稳定写法）；不给即比 <paramref name="detail"/>。
+    /// 记下与看板读到的始终是 <paramref name="detail"/>。
+    /// </param>
+    public bool Record(string agvId, string reason, string detail, string? comparedDetail = null)
     {
         ArgumentException.ThrowIfNullOrWhiteSpace(agvId);
-        (string, string) now = (reason, detail);
-        bool changed = _last.TryGetValue(agvId, out (string Reason, string Detail) before)
+        (string, string) now = (reason, comparedDetail ?? detail);
+        bool changed = _compared.TryGetValue(agvId, out (string Reason, string Detail) before)
             ? before != now
             : reason != ChargingAllocationReasons.NotRequired;
-        _last[agvId] = now;
+        _compared[agvId] = now;
+        _last[agvId] = (reason, detail);
         lock (_passGate)
         {
             if (_staging is not null)
@@ -700,15 +717,21 @@ public sealed class ChargingAllocator(
         }
 
         string detail = excluded.Count == 0 ? batteryNote : $"{batteryNote}; {string.Join(", ", excluded)}";
+        // Review S1 (control-server#645): the log and the board carry the full why (which page, what did not add up); whether
+        // the conclusion changed is judged on the stable entries only. The page numbers and totals move from round to round
+        // while the listing stays incomplete, and each move would otherwise be logged again as a new conclusion.
+        string comparedDetail = detail;
         if (reads.Occupancy.Unknown.Count > 0)
         {
-            detail += $"; unknown: {string.Join(", ", reads.Occupancy.Unknown)}";
+            detail += $"; unknown: {reads.Occupancy.UnknownDetail}";
+            comparedDetail += $"; unknown: {string.Join(", ", reads.Occupancy.Unknown)}";
         }
         if (eligible.Count == 0)
         {
             return Refuse(
                 vehicle, ChargingAllocationReasons.NoChargerAvailable, detail,
-                waiting: string.Join(", ", excluded.Concat(reads.Occupancy.Unknown)));
+                waiting: string.Join(", ", excluded.Concat(reads.Occupancy.Unknown)),
+                comparedDetail: comparedDetail);
         }
 
         // Review S-a: what the departure gate checks on top of the dispatch facts, checked here with the same reads. Committing
@@ -729,7 +752,9 @@ public sealed class ChargingAllocator(
         if (departureGaps.Count > 0)
         {
             string gaps = string.Join(", ", departureGaps.Distinct(StringComparer.Ordinal));
-            return Refuse(vehicle, ChargingAllocationReasons.DepartureNotProven, $"{detail}; departure: {gaps}", waiting: gaps);
+            return Refuse(
+                vehicle, ChargingAllocationReasons.DepartureNotProven, $"{detail}; departure: {gaps}", waiting: gaps,
+                comparedDetail: $"{comparedDetail}; departure: {gaps}");
         }
 
         // Nearest first, over what the chain left; the lower station number on a tie. The station number is the roster's
@@ -814,7 +839,9 @@ public sealed class ChargingAllocator(
         (charger.VehicleScope.Count == 0 || charger.VehicleScope.Contains(vehicleKey, StringComparer.Ordinal));
 
     /// <summary>
-    /// 出发前复核（独立审查 M1）：一辆已经预占了这个桩、单还从没发出过的车，此刻还能不能被派去这个桩。能答空，否则答不成立的那一条的码。
+    /// 出发前复核（独立审查 M1）：一辆已经预占了这个桩、单还从没发出过的车，此刻还能不能被派去这个桩。<see cref="CommittedChargerCheck.Reason"/>
+    /// 答空即成立，否则答不成立的那一条的码；另外答一份给日志的细节，占用事实没读全时写明是哪一样（车位置、未结束单清单的覆盖、订单目的站；
+    /// control-server#645）。
     /// </summary>
     /// <remarks>
     /// <para>
@@ -827,11 +854,39 @@ public sealed class ChargingAllocator(
     /// 读不到、读不全一律按不成立答——这里没有「不知道所以照旧出发」。
     /// </para>
     /// </remarks>
-    public async Task<string?> WhyCommittedChargerNoLongerStandsAsync(
+    public async Task<CommittedChargerCheck> CheckCommittedChargerAsync(
         string vehicleKey,
         int mapId,
         int stationId,
         RiotMapStationCatalogSnapshot currentMap,
+        CancellationToken cancellationToken)
+    {
+        RoundReads reads = new();
+        string? reason = await JudgeCommittedChargerAsync(vehicleKey, mapId, stationId, currentMap, reads, cancellationToken)
+            .ConfigureAwait(false);
+        return new CommittedChargerCheck(
+            reason,
+            reason == ChargingAllocationReasons.ChargerOccupancyUnknown && reads.Occupancy is { } facts
+                ? $"{reason}; unknown: {DescribeUnknown(facts, vehicleKey)}"
+                : reason);
+    }
+
+    /// <summary>
+    /// 占用事实里没读到的那些；都读全了却仍答未知，只能是这辆车自己不在车队名册里（它的位置从来不读）。
+    /// </summary>
+    private static string DescribeUnknown(ChargerOccupancySnapshot facts, string vehicleKey) =>
+        facts.Unknown.Count > 0
+            ? facts.UnknownDetail
+            : facts.Vehicles.ContainsKey(vehicleKey)
+                ? "nothing reported unknown"
+                : $"[{vehicleKey}]:NOT_IN_FLEET_ROSTER (its position is never read)";
+
+    private async Task<string?> JudgeCommittedChargerAsync(
+        string vehicleKey,
+        int mapId,
+        int stationId,
+        RiotMapStationCatalogSnapshot currentMap,
+        RoundReads reads,
         CancellationToken cancellationToken)
     {
         ArgumentException.ThrowIfNullOrWhiteSpace(vehicleKey);
@@ -843,12 +898,9 @@ public sealed class ChargingAllocator(
             return ChargingAllocationReasons.ChargerNotInRoster;
         }
 
-        RoundReads reads = new()
-        {
-            Graph = routeGraph.Enabled && routeGraph.MapId == _runtime.MapId
-                ? await routeGraph.ReadAsync(cancellationToken).ConfigureAwait(false)
-                : RouteGraphAvailability.Stale("ROUTE_GRAPH_DISABLED_OR_OTHER_MAP"),
-        };
+        reads.Graph = routeGraph.Enabled && routeGraph.MapId == _runtime.MapId
+            ? await routeGraph.ReadAsync(cancellationToken).ConfigureAwait(false)
+            : RouteGraphAvailability.Stale("ROUTE_GRAPH_DISABLED_OR_OTHER_MAP");
         if (!reads.Graph.IsUsable)
         {
             return ChargingAllocationReasons.RouteGraphUnavailable;
@@ -942,7 +994,7 @@ public sealed class ChargingAllocator(
     /// </summary>
     private string? WhyNotYetReleasable(StationExclusivityRow row, ChargerOccupancySnapshot occupancyFacts) =>
         !occupancyFacts.Vehicles.TryGetValue(row.VehicleKey, out RiotVehicleObservation? vehicle)
-            ? "the vehicle cannot be read from RIoT (offline, or its position is missing)"
+            ? $"the vehicle cannot be read from RIoT (offline, or its position is missing; unknown: {DescribeUnknown(occupancyFacts, row.VehicleKey)})"
         : string.IsNullOrWhiteSpace(vehicle.BatteryState)
             ? "the vehicle's battery state cannot be read, so charging is not known to have stopped"
         : string.Equals(vehicle.BatteryState, BatteryEligibility.ChargingBatteryState, StringComparison.Ordinal)
@@ -950,7 +1002,9 @@ public sealed class ChargingAllocator(
         : StandsOn(vehicle, row)
             ? "the vehicle is read standing on the charger"
         : occupancyFacts.Judge(row.MapId, row.StationId, askingVehicleKey: null) is { } occupied
-            ? $"the charger is not confirmed free ({occupied})"
+            ? occupied == ChargingAllocationReasons.ChargerOccupancyUnknown
+                ? $"the charger is not confirmed free ({occupied}; unknown: {occupancyFacts.UnknownDetail})"
+                : $"the charger is not confirmed free ({occupied})"
         : null;
 
     /// <summary>
@@ -1502,9 +1556,13 @@ public sealed class ChargingAllocator(
     /// <param name="waiting">
     /// 非空：这辆车需要充电、留在队里、而此刻分不到桩（独立审查 M2(d)）——不带电量的结论，变了才告警一次（事件 2246）。别的拒绝传空。
     /// </param>
-    private ChargingAllocationVerdict Refuse(FleetVehicle vehicle, string reason, string detail, string? waiting = null)
+    /// <param name="comparedDetail">
+    /// 判「结论变了没有」时比的那份细节，不给即 <paramref name="detail"/>：日志与看板仍写完整的 <paramref name="detail"/>。
+    /// </param>
+    private ChargingAllocationVerdict Refuse(
+        FleetVehicle vehicle, string reason, string detail, string? waiting = null, string? comparedDetail = null)
     {
-        if (board.Record(vehicle.AgvId, reason, detail))
+        if (board.Record(vehicle.AgvId, reason, detail, comparedDetail))
         {
             LogNotAllocated(logger, vehicle.AgvId, reason, detail, null);
         }

@@ -17,19 +17,30 @@ public sealed class ChargerOccupancySnapshot
     private readonly List<(string VehicleKey, int MapId, int StationId)> _targets;
 
     internal ChargerOccupancySnapshot(
-        IReadOnlyList<string> unknown,
+        IReadOnlyList<(string Fact, string? Why)> unknown,
         IReadOnlyDictionary<string, RiotVehicleObservation> vehicles,
         Dictionary<string, (int MapId, int StationId)> standing,
         List<(string VehicleKey, int MapId, int StationId)> targets)
     {
-        Unknown = unknown;
+        Unknown = [.. unknown.Select(item => item.Fact)];
+        UnknownDetail = string.Join(", ", unknown.Select(item => item.Why is null ? item.Fact : $"{item.Fact} ({item.Why})"));
         Vehicles = vehicles;
         _standing = standing;
         _targets = targets;
     }
 
-    /// <summary>哪些事实没读到（例如 <c>AGV-2:VEHICLE_POSITION_STALE</c>、<c>ORDER_LISTING_INCOMPLETE</c>）；空即三样都读全了。</summary>
+    /// <summary>
+    /// 哪些事实没读到（例如 <c>AGV-2[VEHICLE-KEY-02]:VEHICLE_POSITION_STALE</c>、<c>ORDER_LISTING_INCOMPLETE</c>、
+    /// <c>ORDER_F-2[VEHICLE-KEY-02]:DESTINATION_UNREADABLE</c>）；空即三样都读全了。每一条只写稳定的部分（哪辆车、哪张单、哪一样），
+    /// 等待键与「同一条只记一次」靠它比较。
+    /// </summary>
     public IReadOnlyList<string> Unknown { get; }
+
+    /// <summary>
+    /// <see cref="Unknown"/> 的每一条加上为什么没读到——清单读到第几页、哪里对不上、是否截断，车辆读数是读不到、过期还是没有当前站
+    /// （control-server#645）。只给细节与日志用，没有任何判定读它；不带时刻，同一种读不到每轮写出来一样。空串即三样都读全了。
+    /// </summary>
+    public string UnknownDetail { get; }
 
     /// <summary>读到了、且新鲜的车辆观测，按 <c>VehicleKey</c>。读不到或过期的车不在里面。</summary>
     public IReadOnlyDictionary<string, RiotVehicleObservation> Vehicles { get; }
@@ -98,7 +109,7 @@ public sealed class ChargerOccupancyReader(
 
     public async Task<ChargerOccupancySnapshot> ReadAsync(CancellationToken cancellationToken)
     {
-        List<string> unknown = [];
+        List<(string Fact, string? Why)> unknown = [];
         Dictionary<string, RiotVehicleObservation> vehicles = new(StringComparer.Ordinal);
         Dictionary<string, (int MapId, int StationId)> standing = new(StringComparer.Ordinal);
         foreach (FleetVehicle vehicle in fleet.Vehicles)
@@ -111,20 +122,24 @@ public sealed class ChargerOccupancyReader(
             catch (Exception error) when (error is HttpRequestException or InvalidDataException or TaskCanceledException &&
                                           !cancellationToken.IsCancellationRequested)
             {
-                unknown.Add($"{vehicle.AgvId}:VEHICLE_POSITION_UNREADABLE");
+                unknown.Add(($"{vehicle.AgvId}[{vehicle.VehicleKey}]:VEHICLE_POSITION_UNREADABLE", error.GetType().Name));
                 continue;
             }
 
             DateTimeOffset now = timeProvider.GetUtcNow();
             if (observed.ObservedAt > now || now - observed.ObservedAt > _runtime.MaximumEvidenceAge)
             {
-                unknown.Add($"{vehicle.AgvId}:VEHICLE_POSITION_STALE");
+                // No timestamps in the reason: it goes into details compared round to round, and a reading that stays stale
+                // would then read as new every round.
+                unknown.Add((
+                    $"{vehicle.AgvId}[{vehicle.VehicleKey}]:VEHICLE_POSITION_STALE",
+                    observed.ObservedAt > now ? "the reading is timed in the future" : "the reading is older than MaximumEvidenceAge"));
                 continue;
             }
 
             if (observed.CurrentStationId is not int station)
             {
-                unknown.Add($"{vehicle.AgvId}:VEHICLE_POSITION_MISSING");
+                unknown.Add(($"{vehicle.AgvId}[{vehicle.VehicleKey}]:VEHICLE_POSITION_MISSING", "no current station reported"));
                 continue;
             }
 
@@ -142,7 +157,7 @@ public sealed class ChargerOccupancyReader(
         RiotUnfinishedOrderListing listing = await orderListing.ListUnfinishedOrdersAsync(cancellationToken).ConfigureAwait(false);
         if (!listing.IsComplete)
         {
-            unknown.Add("ORDER_LISTING_INCOMPLETE");
+            unknown.Add(("ORDER_LISTING_INCOMPLETE", listing.IncompleteReason ?? "the listing gave no reason"));
             return new ChargerOccupancySnapshot(unknown, vehicles, standing, targets);
         }
 
@@ -172,7 +187,7 @@ public sealed class ChargerOccupancyReader(
         {
             if (string.IsNullOrWhiteSpace(order.UpperId))
             {
-                unknown.Add($"ORDER_{order.OrderId}:NO_UPPER_ID");
+                unknown.Add(($"ORDER_{order.OrderId}[{vehicleKey}]:NO_UPPER_ID", null));
                 continue;
             }
 
@@ -186,7 +201,7 @@ public sealed class ChargerOccupancyReader(
                 .ReadOrderMissionFactsAsync(order.UpperId, cancellationToken).ConfigureAwait(false);
             if (facts.Status != RiotOrderMissionFactsStatus.Found)
             {
-                unknown.Add($"ORDER_{order.OrderId}:DESTINATION_UNREADABLE");
+                unknown.Add(($"ORDER_{order.OrderId}[{vehicleKey}]:DESTINATION_UNREADABLE", $"upperId {order.UpperId}: {facts.Status}"));
                 continue;
             }
 

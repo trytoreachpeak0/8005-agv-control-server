@@ -728,6 +728,147 @@ public sealed class ChargingExecutionTests
         }
     }
 
+    // ---- 出发前复核撤回时写明哪一样事实未知（control-server#645）-------------------------------------------------------
+
+    /// <summary>照网关读不全时的写法：250 来张单分三页读，第 2 页时总数变了（cs#566 续场三现场那一类）。</summary>
+    private const string PageTwoDidNotAddUp =
+        "page 2 of 3 does not add up (current 2, total 253 against 252, 100 records against 100, size 100)";
+
+    /// <summary>每一种把桩判为 <c>CHARGER_OCCUPANCY_UNKNOWN</c> 的未知来源，与撤回细节里必须出现的那一段。</summary>
+    public static TheoryData<string, string> UnknownOccupancySources => new()
+    {
+        { "vehicle-position-unreadable", $"{FleetFixture.AgvIds[1]}[{FleetFixture.VehicleKeys[1]}]:VEHICLE_POSITION_UNREADABLE (HttpRequestException)" },
+        { "vehicle-position-stale", $"{FleetFixture.AgvIds[1]}[{FleetFixture.VehicleKeys[1]}]:VEHICLE_POSITION_STALE (the reading is older than MaximumEvidenceAge)" },
+        { "vehicle-position-missing", $"{FleetFixture.AgvIds[1]}[{FleetFixture.VehicleKeys[1]}]:VEHICLE_POSITION_MISSING (no current station reported)" },
+        { "order-listing-incomplete", $"ORDER_LISTING_INCOMPLETE ({PageTwoDidNotAddUp})" },
+        { "order-listing-incomplete-no-reason", "ORDER_LISTING_INCOMPLETE (the listing gave no reason)" },
+        { "order-destination-unreadable", $"ORDER_F-2[{FleetFixture.VehicleKeys[1]}]:DESTINATION_UNREADABLE (upperId FOREIGN-2: Unknown)" },
+        { "order-without-upper-id", $"ORDER_F-3[{FleetFixture.VehicleKeys[1]}]:NO_UPPER_ID" },
+    };
+
+    /// <summary>
+    /// 一辆已承诺 211、被仓门挡在出发前安全门上的车：门关好之前造出一种「占用事实读不全」，再让它过门、走两轮。
+    /// </summary>
+    private static async Task<(string CycleId, string JourneyId, string UpperId)> CommitThenMakeOccupancyUnknownAsync(
+        FleetFixture fleet, string source)
+    {
+        string keyB = FleetFixture.VehicleKeys[1];
+        fleet.Riot.BatteryByVehicle[KeyA] = 20;
+        await RoundAsync(fleet);
+        (string CycleId, string JourneyId, string UpperId) before = await CommitmentOfAsync(fleet, KeyA);
+        await fleet.ReplaceSafetySnapshotAsync(AgvA, unlockedSlot: 3);
+        await RoundAsync(fleet);
+        Assert.Equal(ChargingExecutionReasons.DepartureNotProven, (await ChargingJourneyAsync(fleet, AgvA))!.BlockReasonCode);
+
+        switch (source)
+        {
+            case "vehicle-position-unreadable":
+                fleet.Riot.FailOn = keyB;
+                break;
+            case "vehicle-position-stale":
+                fleet.Riot.VehicleOverrides[keyB] = seen => seen with { ObservedAt = seen.ObservedAt.AddMinutes(-10) };
+                break;
+            case "vehicle-position-missing":
+                fleet.Riot.VehicleOverrides[keyB] = seen => seen with { CurrentStationId = null };
+                break;
+            case "order-listing-incomplete":
+                fleet.Riot.OrderListingIncomplete = true;
+                fleet.Riot.OrderListingIncompleteReason = PageTwoDidNotAddUp;
+                break;
+            case "order-listing-incomplete-no-reason":
+                fleet.Riot.OrderListingIncomplete = true;
+                break;
+            case "order-destination-unreadable":
+                fleet.Riot.ForeignOrders.Add((new RiotListedOrder("F-2", "FOREIGN-2", RiotOrderState.Executing, keyB, keyB), null));
+                break;
+            case "order-without-upper-id":
+                fleet.Riot.ForeignOrders.Add((new RiotListedOrder("F-3", null, RiotOrderState.Executing, keyB, keyB), Far.StationId));
+                break;
+            default:
+                throw new ArgumentOutOfRangeException(nameof(source), source, null);
+        }
+        fleet.Context.ChangeTracker.Clear();
+
+        await fleet.ReplaceSafetySnapshotAsync(AgvA);
+        await RoundAsync(fleet);
+        await RoundAsync(fleet);
+        return before;
+    }
+
+    /// <summary>
+    /// cs#566 续场三：出发前复核因占用事实读不全撤回了 211 的承诺，2254 只写了 <c>CHARGER_OCCUPANCY_UNKNOWN</c>，是哪一样没读全无从定因。
+    /// 现在撤回细节在码后面写明是哪一样：哪辆车（agvId 与 vehicleKey）的位置读不到／过期／没有当前站，未结束单清单哪一页没对上，
+    /// 哪张单（挂在哪辆车上）的目的站读不到或没有 upperId。
+    /// </summary>
+    [Theory]
+    [MemberData(nameof(UnknownOccupancySources))]
+    public async Task AWithdrawalBecauseOccupancyIsUnknownNamesWhichFactCouldNotBeRead(string source, string named)
+    {
+        await using FleetFixture fleet = await FleetAsync(vehicles: 2);
+
+        await CommitThenMakeOccupancyUnknownAsync(fleet, source);
+
+        var withdrawn = Assert.Single(fleet.EngineLog.Entries, entry => entry.EventId.Id == 2254);
+        Assert.Contains(
+            $"({ChargingAllocationReasons.ChargerOccupancyUnknown}; unknown: {named})", withdrawn.Message, StringComparison.Ordinal);
+    }
+
+    /// <summary>
+    /// control-server#645 只改诊断、不改判定（<c>REQ-0170</c> 未知即不分配）：每一种未知来源下，撤回的码、周期结束原因、预占的释放原因，
+    /// 与改之前逐字相同（按字面钉，不按常量——常量被改了这里也红）；去 211 的单一张也不建，下一轮也不再承诺任何桩。
+    /// </summary>
+    [Theory]
+    [MemberData(nameof(UnknownOccupancySources))]
+    public async Task TheWithdrawalVerdictForUnknownOccupancyIsWordForWordWhatItWasBefore(string source, string named)
+    {
+        _ = named;
+        await using FleetFixture fleet = await FleetAsync(vehicles: 2);
+
+        (string CycleId, string JourneyId, string UpperId) before = await CommitThenMakeOccupancyUnknownAsync(fleet, source);
+
+        Assert.DoesNotContain(
+            fleet.Riot.Creates, create => create.VehicleKey == KeyA && create.DestinationStationId == Near.StationId);
+        JourneyRuntimeRow journey = await fleet.Context.JourneyRuntimes.AsNoTracking()
+            .SingleAsync(row => row.JourneyId == before.JourneyId, Token);
+        Assert.Equal(
+            (JourneyRuntimeStage.Completed, "CHARGING_WITHDRAWN_CHARGER_NO_LONGER_ELIGIBLE"),
+            (journey.Stage, journey.BlockReasonCode));
+        ChargingCycleRow cycle = await fleet.Context.Set<ChargingCycleRow>().AsNoTracking()
+            .SingleAsync(row => row.CycleId == before.CycleId, Token);
+        Assert.Equal((ChargingCyclePhases.Ended, "CHARGING_WITHDRAWN_CHARGER_NO_LONGER_ELIGIBLE"), (cycle.Phase, cycle.EndReason));
+        Assert.Equal(
+            "CHARGING_WITHDRAWN_CHARGER_NO_LONGER_ELIGIBLE",
+            (await fleet.Context.Set<StationExclusivityRecordRow>().AsNoTracking()
+                .SingleAsync(row => row.JourneyId == before.JourneyId, Token)).ReleaseReason);
+        var withdrawn = Assert.Single(fleet.EngineLog.Entries, entry => entry.EventId.Id == 2254);
+        Assert.StartsWith("CHARGING_WITHDRAWN_CHARGER_NO_LONGER_ELIGIBLE: ", withdrawn.Message, StringComparison.Ordinal);
+        Assert.Contains("(CHARGER_OCCUPANCY_UNKNOWN; unknown: ", withdrawn.Message, StringComparison.Ordinal);
+        // Still unknown: nothing is committed to any charger (fail-closed).
+        Assert.Null(await ClaimOfAsync(fleet, KeyA));
+        Assert.Equal("CHARGING_NO_CHARGER_AVAILABLE", fleet.ChargingBoard.Verdicts[AgvA].Reason);
+    }
+
+    /// <summary>对照：不是「未知」的撤回（另一辆车停在 211 上充着电），细节仍只是那一个码，后面不加 <c>unknown</c>。</summary>
+    [Fact]
+    public async Task AWithdrawalForAKnownReasonCarriesOnlyThatCode()
+    {
+        await using FleetFixture fleet = await FleetAsync(vehicles: 2);
+        fleet.Riot.BatteryByVehicle[KeyA] = 20;
+        await RoundAsync(fleet);
+        await fleet.ReplaceSafetySnapshotAsync(AgvA, unlockedSlot: 3);
+        await RoundAsync(fleet);
+        fleet.Riot.VehicleOverrides[FleetFixture.VehicleKeys[1]] =
+            seen => seen with { CurrentStationId = Near.StationId, BatteryState = "CHARGING" };
+        fleet.Context.ChangeTracker.Clear();
+        await fleet.ReplaceSafetySnapshotAsync(AgvA);
+        await RoundAsync(fleet);
+        await RoundAsync(fleet);
+
+        var withdrawn = Assert.Single(fleet.EngineLog.Entries, entry => entry.EventId.Id == 2254);
+        Assert.Contains($"({ChargingAllocationReasons.ChargerOccupiedByVehicle})", withdrawn.Message, StringComparison.Ordinal);
+        Assert.DoesNotContain("unknown", withdrawn.Message, StringComparison.Ordinal);
+    }
+
     // ---- 承诺的出口（独立审查 M2）------------------------------------------------------------------------------------
 
     /// <summary>
@@ -1290,6 +1431,51 @@ public sealed class ChargingExecutionTests
         Assert.Equal(Microsoft.Extensions.Logging.LogLevel.Warning, alarm.Level);
         Assert.Contains(KeyA, alarm.Message, StringComparison.Ordinal);
         Assert.Contains("standing on the charger", alarm.Message, StringComparison.Ordinal);
+        Assert.Equal((KeyA, StationExclusivityStates.Reserved), await HolderAsync(fleet, Near.StationId));
+    }
+
+    /// <summary>
+    /// control-server#645 审查 S2（变异 E、F）：失败周期留下的预占放不掉时，2247 写明缺的那一项里是哪一样事实没读到——
+    /// 桩不能确认空闲是因为清单读不全（第几页没对上），或者车本身读不到（哪辆车、为什么）。
+    /// </summary>
+    [Theory]
+    [InlineData("listing-incomplete", "the charger is not confirmed free (CHARGER_OCCUPANCY_UNKNOWN; unknown: ORDER_LISTING_INCOMPLETE (page 3 of 3 does not add up")]
+    [InlineData("vehicle-unreadable", "the vehicle cannot be read from RIoT (offline, or its position is missing; unknown: ")]
+    public async Task AReservationThatCannotBeReleasedForAnUnknownFactNamesTheFact(string unknown, string named)
+    {
+        await using FleetFixture fleet = await FleetAsync();
+        fleet.Riot.BatteryByVehicle[KeyA] = 20;
+        JourneyRuntimeRow journey = await CommittedAndSentAsync(fleet);
+        fleet.Riot.VehicleOverrides[KeyA] = seen => seen with { CurrentStationId = Near.StationId };
+        fleet.Riot.CancelOrder(journey.PickupUpperId);
+        await RoundAsync(fleet);
+        await RoundAsync(fleet);
+        Assert.Equal(
+            ChargingExecutionReasons.OrderEnded,
+            (await fleet.Context.Set<ChargingCycleRow>().AsNoTracking().SingleAsync(Token)).EndReason);
+
+        // Off the charger now, so the only thing missing is the fact that cannot be read.
+        fleet.Riot.VehicleOverrides.Remove(KeyA);
+        if (unknown == "listing-incomplete")
+        {
+            fleet.Riot.OrderListingIncomplete = true;
+            fleet.Riot.OrderListingIncompleteReason =
+                "page 3 of 3 does not add up (current 3, total 252 against 252, 51 records against 52, size 100)";
+        }
+        else
+        {
+            fleet.Riot.FailOn = KeyA;
+        }
+        await fleet.HearFromEveryVehicleAsync();
+        await fleet.RunRoundAsync(fleet.Options.OwnOrderRebuildRepeatWindow + TimeSpan.FromMinutes(1));
+        await RoundAsync(fleet);
+
+        var alarm = Assert.Single(fleet.ChargingLog.Entries, entry => entry.EventId.Id == 2247);
+        Assert.Contains(named, alarm.Message, StringComparison.Ordinal);
+        if (unknown == "vehicle-unreadable")
+        {
+            Assert.Contains($"[{KeyA}]:VEHICLE_POSITION_UNREADABLE (HttpRequestException)", alarm.Message, StringComparison.Ordinal);
+        }
         Assert.Equal((KeyA, StationExclusivityStates.Reserved), await HolderAsync(fleet, Near.StationId));
     }
 
