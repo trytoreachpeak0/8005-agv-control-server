@@ -1,0 +1,11 @@
+## select HoldId,Trigger,RootCause,StationId,VehicleKey,FailedAt,ConfirmedAt from ChargingStationAllocationHolds h where not exists (select 1 from ChargingStationRecoveries r where r.HoldId=h.HoldId)
+HoldId=d849b761-a37a-4e51-a12e-3c4303a55544 | Trigger=INTERRUPTION_CONFIRMED | RootCause=UNKNOWN | StationId=211 | VehicleKey=BROKERX-7daca4ee91da498d8026c68b7b941127 | FailedAt=2026-10-12 02:03:16.1255055+00:00 | ConfirmedAt=2026-10-12 02:03:16.125509+00:00
+## select HoldId,VehicleKey,Reason,HeldAt from VehicleChargingEligibilityHolds
+HoldId=2a9a736f-183b-845d-a520-f18d51b7a0c7 | VehicleKey=BROKERX-7daca4ee91da498d8026c68b7b941127 | Reason=INTERRUPTION_CONFIRMED | HeldAt=2026-10-12 02:03:16.125509+00:00
+## select * from StationClearances order by rowid desc limit 1
+ClearanceId=c42ae3f6-0a33-e05a-ac45-5ab95ed20f52 | CycleId=charging-cycle:BROKERX-7daca4ee91da498d8026c68b7b941127:20261012T015436809Z | VehicleKey=BROKERX-7daca4ee91da498d8026c68b7b941127 | MapId=26 | StationId=211 | StartedAt=2026-10-12 02:03:16.125509+00:00 | CompletedAt= | Proof= | WaitingPointMapId= | WaitingPointStationId= | ConfirmedBy= | ConfirmedByRole= | ConfirmedAt= | VehicleFinalPosition= | OldOrderDisposition= | AssistantsJson=[] | ClearedCondition= | ConfirmationRequestId=
+## select JourneyId,BlockReasonCode from JourneyRuntimes where JourneyId like 'charging:BROKERX-7daca4ee%'
+JourneyId=charging:BROKERX-7daca4ee91da498d8026c68b7b941127:20261012T015436809Z | BlockReasonCode=CHARGING_INTERRUPTION_CONFIRMED
+## select StationId,StationKind,State,VehicleKey from StationExclusivities
+StationId=216 | StationKind=WAITING_POINT | State=OCCUPIED | VehicleKey=BROKERX-f38975561adf46ccb1d2f23833c7d0e4
+StationId=211 | StationKind=CHARGER | State=OCCUPIED | VehicleKey=BROKERX-7daca4ee91da498d8026c68b7b941127

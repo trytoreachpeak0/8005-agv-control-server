@@ -330,6 +330,29 @@ public sealed class Batch7EnRouteAppendPlannerTests
         Assert.Equal(3, decision.Placement.Resequenced.Count);
     }
 
+    /// <summary>
+    /// 同站不同角色不并入：追加需求在既有卸货停靠那一站取货，开的是一个新的取货停靠，不并进那个卸货停靠（control-server#637）。
+    /// </summary>
+    /// <remarks>
+    /// 离站等待按停靠角色判：卸货停靠不计时、取货停靠计时。这只在「一个停靠只有一个角色」时成立，并入若不看角色，
+    /// 取货需求会挂到卸货停靠上，那一站装完就不等离站期限了。这条只钉「不并」，不钉新停靠排在卸货停靠之前还是之后。
+    /// </remarks>
+    [Fact]
+    public void APickupAtAStationWithAnUnloadStopOpensItsOwnStopRatherThanMergingIntoTheUnload()
+    {
+        EnRouteAppendDecision decision = EnRouteAppendPlanner.Plan(
+            PlanOf(vehicleAt: 0, Pickup("s-p", 10, ZoneA), Unload("s-u", 20, ZoneA)),
+            CandidateOf(Pickup("new-p", 20, ZoneA), Unload("new-u", 30, ZoneA), ZoneA),
+            Zones((ZoneA, 500_000)),
+            Distance);
+
+        Assert.Null(decision.RefusalReasonCode);
+        EnRouteAppendPlacement placement = decision.Placement!;
+        Assert.Null(placement.MergeIntoPickupStopId);
+        Assert.Contains(placement.Resequenced, stop => stop.StopId == "new-p");
+        Assert.Equal(4, placement.Resequenced.Count);
+    }
+
     /// <summary>计划里一个未完成的停靠都没有时，没有「当前下一站之后」这个位置可插。</summary>
     [Fact]
     public void APlanWithNoRemainingStopsHasNowhereToInsert()

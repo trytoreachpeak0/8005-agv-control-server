@@ -1,0 +1,8 @@
+## select count(*) as unrecoveredVehicleHolds from VehicleChargingEligibilityHolds v where not exists (select 1 from VehicleChargingEligibilityRecoveries r where r.HoldId=v.HoldId)
+unrecoveredVehicleHolds=0
+## select count(*) as unrecoveredStationHolds from ChargingStationAllocationHolds h where not exists (select 1 from ChargingStationRecoveries r where r.HoldId=h.HoldId)
+unrecoveredStationHolds=0
+## select count(*) as rows211 from StationExclusivities where StationId=211
+rows211=0
+## select count(*) as openCycles from ChargingCycles where Phase<>'ENDED'
+openCycles=0

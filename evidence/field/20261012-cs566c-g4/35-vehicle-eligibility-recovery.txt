@@ -1,0 +1,5 @@
+route interface=Wi-Fi
+POST /api/charging/v1/vehicle-eligibility-recoveries at 2026-10-12 10:12:05.870 auth=Bearer <CONTROL_SERVER_V2_FAULT_RECOVERY_CREDENTIAL>
+request={"agvId":"老厂前线新多仓位3","operatorId":"<redacted>","basis":"(见请求体原文，控制台显示乱码)","claimedRole":"R-11"}
+status=200
+response={"agvId":"老厂前线新多仓位3","vehicleKey":"BROKERX-7daca4ee91da498d8026c68b7b941127","outcome":"RECOVERED","holdIds":["2a9a736f-183b-845d-a520-f18d51b7a0c7"],"codes":[]}

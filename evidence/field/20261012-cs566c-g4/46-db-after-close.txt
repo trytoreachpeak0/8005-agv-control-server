@@ -1,0 +1,5 @@
+## select StationId,StationKind,State,VehicleKey from StationExclusivities
+StationId=216 | StationKind=WAITING_POINT | State=OCCUPIED | VehicleKey=BROKERX-f38975561adf46ccb1d2f23833c7d0e4
+StationId=215 | StationKind=WAITING_POINT | State=OCCUPIED | VehicleKey=BROKERX-7daca4ee91da498d8026c68b7b941127
+## select count(*) as openCycles from ChargingCycles where Phase<>'ENDED'
+openCycles=0

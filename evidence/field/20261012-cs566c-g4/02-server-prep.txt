@@ -1,0 +1,9 @@
+local value file removed=True
+value file removed=True length=43
+V2 state=Stopped startMode=Manual
+backup=D:\zhengyushao\control-server-v2-ops\cs566b\appsettings.Production.json.bak-20261012093949-before-cs566c-prep
+before: gate=False stationDepartureWaitTimeout=00:05:00 cargoHoldingTimeout=00:05:00 ClearanceToWaitingPointEnabled=(absent) VehicleFaultRecovery={"enabled":false,"credentialEnvironmentVariable":"CONTROL_SERVER_V2_FAULT_RECOVERY_CREDENTIAL"} FieldOperatorRoles={"path":"D:\\zhengyushao\\control-server-v2-ops\\field-operator-roles.json","onboardClearanceEntryDeclared":false}
+after (re-read): gate=False stationDepartureWaitTimeout=00:01:30 cargoHoldingTimeout=00:02:00 ClearanceToWaitingPointEnabled=(absent) VehicleFaultRecovery={"enabled":true,"credentialEnvironmentVariable":"CONTROL_SERVER_V2_FAULT_RECOVERY_CREDENTIAL"} FieldOperatorRoles={"path":"D:\\zhengyushao\\control-server-v2-ops\\field-operator-roles.json","onboardClearanceEntryDeclared":true}
+registry Environment keys before: DOTNET_ENVIRONMENT,CONTROL_SERVER_RIOT_CALL_API_KEY,CONTROL_SERVER_ONBOARD_CREDENTIAL,CONTROL_SERVER_V2_ONBOARD_SAFETY_CREDENTIAL_RIOT59,CONTROL_SERVER_V2_ONBOARD_SAFETY_CREDENTIAL_RIOT60,CONTROL_SERVER_MES_INGEST_SHARED_SECRET
+registry Environment keys after (re-read, values not shown): DOTNET_ENVIRONMENT,CONTROL_SERVER_RIOT_CALL_API_KEY,CONTROL_SERVER_ONBOARD_CREDENTIAL,CONTROL_SERVER_V2_ONBOARD_SAFETY_CREDENTIAL_RIOT59,CONTROL_SERVER_V2_ONBOARD_SAFETY_CREDENTIAL_RIOT60,CONTROL_SERVER_MES_INGEST_SHARED_SECRET,CONTROL_SERVER_V2_FAULT_RECOVERY_CREDENTIAL
+field operator roster: [{"roles":["R-11","R-13"],"operatorId":"<redacted>"}]

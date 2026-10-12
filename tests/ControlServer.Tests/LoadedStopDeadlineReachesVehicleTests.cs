@@ -301,12 +301,15 @@ public sealed class LoadedStopDeadlineReachesVehicleTests
             await Batch7StopDrivenAdvanceDriver.TickAndRunAsync(fixture);
         }
 
-        // 前提：车确实停在卸完货的卸货站上等离站，服务端那一侧有期限——否则这条用例什么也没证明。
+        // 前提：车卸完货、还停在这个卸货站上，并且已经走过离站等待那一段（发清单刷新的那一处就在那里）。
+        // control-server#637 之前这里断的是「停在离站等待、服务端有期限」——那正是 #637 修掉的缺陷：卸货站本不该有期限。
+        // 修复后卸完当轮就请求离站，服务端一侧也没有期限，所以这条用例守的空清单从两头被堵住：
+        // RefreshDeadlineOfALoadedStopAsync 只看取货停靠，而卸货站上已没有可刷新的期限。
         atGate = await Batch7StopDrivenAdvanceDriver.JourneyOfAsync(fixture, Batch7StopDrivenAdvanceDriver.FirstDemandId);
-        Assert.Equal(JourneyRuntimeStage.AwaitingStationDeparture, atGate.Stage);
+        Assert.Equal(JourneyRuntimeStage.AwaitingDepartureSafety, atGate.Stage);
         Assert.Equal(JourneyStopRoles.Unload,
             (await Batch7StopDrivenAdvanceDriver.CurrentStopAsync(fixture, Batch7StopDrivenAdvanceDriver.FirstDemandId)).StopRole);
-        Assert.NotNull(JourneyRuntimeEngine.StationDepartureDeadline(atGate, Wait));
+        Assert.Null(JourneyRuntimeEngine.StationDepartureDeadline(atGate, Wait));
 
         JsonElement[] atTheGate = [.. (await fixture.Context.ProtocolOutbox.AsNoTracking()
                 .Where(row => row.MessageType == "CurrentStopWorklistSnapshot")
