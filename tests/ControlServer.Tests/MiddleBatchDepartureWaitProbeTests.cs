@@ -70,6 +70,70 @@ public sealed class MiddleBatchDepartureWaitProbeTests
         Assert.Equal(JourneyDemandStatuses.PendingLoad, first.Status);
     }
 
+    /// <summary>
+    /// 票外探针：车装完停在取货站等离站（离站等待在走），同一站追加一条需求。只观测、不判对错，看离站等待起点与车上期限怎么变。
+    /// </summary>
+    [Fact]
+    public async Task ProbeAnAppendAtTheStationTheVehicleStandsAt()
+    {
+        await using RuntimeFixture fixture = await Batch7CargoHoldingTests.HoldingFixtureAsync();
+        fixture.Options.StationDepartureWaitTimeout = Wait;
+        DateTimeOffset closure = await Batch7CargoHoldingTests.LoadTheFirstDemandAsync(fixture);
+        JourneyRuntimeRow held = await JourneyOfAsync(fixture, FirstDemandId);
+        JourneyStopRow firstPickup = await CurrentStopAsync(fixture, FirstDemandId);
+        (long r0, DateTimeOffset? d0) = await LatestWorklistAsync(fixture);
+        List<string> log =
+        [
+            $"loaded at {closure:O}; stage {held.Stage}/{held.LoadingPhaseState}; start {held.StationDepartureWaitStartedAt:O}; " +
+            $"stop {firstPickup.StopId} @ {firstPickup.StationId}; worklist r{r0} deadline {d0:O}"
+        ];
+
+        fixture.Clock.Advance(TimeSpan.FromSeconds(20));
+        fixture.BoxCounts.Set(SecondSublot, 7);
+        await Batch7ThreeStopJourneyTests.AppendDemandAsync(
+            fixture, SecondDemandId, SecondSublot, firstPickup.StationId, firstPickup.StationRiotId);
+        DateTimeOffset appendedAt = fixture.Clock.GetUtcNow();
+        JourneyStopRow[] stops = [.. (await fixture.Context.Set<JourneyStopRow>().AsNoTracking()
+                .Where(row => row.JourneyId == held.JourneyId).ToArrayAsync(Token))
+            .OrderBy(row => row.Sequence)];
+        log.Add($"appended at {appendedAt:O}; stops: {string.Join(" | ", stops.Select(s => $"{s.Sequence}:{s.StopRole}@{s.StationId}/{s.Status}"))}");
+
+        for (int round = 0; round < 3; round++)
+        {
+            await fixture.HearFromPeerAsync();
+            await TickAndRunAsync(fixture);
+            JourneyRuntimeRow now = await JourneyOfAsync(fixture, FirstDemandId);
+            (long r, DateTimeOffset? d) = await LatestWorklistAsync(fixture);
+            log.Add($"round {round} at {fixture.Clock.GetUtcNow():O}: stage {now.Stage}/{now.LoadingPhaseState}; " +
+                    $"start {now.StationDepartureWaitStartedAt:O}; current {(await CurrentStopAsync(fixture, FirstDemandId)).StopId}; " +
+                    $"worklist r{r} deadline {d:O}");
+        }
+
+        // 原站离站期限到，车被放走去「下一站」（同一站的新停靠），到站后看新起点。
+        fixture.Clock.Advance(held.StationDepartureWaitStartedAt!.Value + Wait - fixture.Clock.GetUtcNow() + TimeSpan.FromSeconds(1));
+        await fixture.HearFromPeerAsync();
+        await TickAndRunAsync(fixture);
+        JourneyRuntimeRow leaving = await JourneyOfAsync(fixture, FirstDemandId);
+        log.Add($"past the first stop's deadline at {fixture.Clock.GetUtcNow():O}: stage {leaving.Stage}; start {leaving.StationDepartureWaitStartedAt:O}");
+        if (leaving.Stage == JourneyRuntimeStage.AwaitingDepartureSafety)
+        {
+            await AnswerDepartureSafetyAsync(fixture, FirstDemandId, FirstSafetyResultId);
+            await fixture.HearFromPeerAsync();
+            JourneyRuntimeRow arrived = await ArriveAtCurrentStopAsync(fixture, SecondDemandId, "TO_GATE");
+            for (int round = 0; round < 4 && arrived.Stage == JourneyRuntimeStage.AwaitingPickupArrival; round++)
+            {
+                log.Add($"  not yet arrived: {arrived.BlockReasonCode}");
+                await fixture.HearFromPeerAsync();
+                arrived = await ArriveAtCurrentStopAsync(fixture, SecondDemandId, "TO_GATE");
+            }
+            (long r, DateTimeOffset? d) = await LatestWorklistAsync(fixture);
+            log.Add($"arrived at the appended stop {(await CurrentStopAsync(fixture, SecondDemandId)).StopId} at {fixture.Clock.GetUtcNow():O}: " +
+                    $"stage {arrived.Stage}; start {arrived.StationDepartureWaitStartedAt:O}; worklist r{r} deadline {d:O}");
+        }
+
+        TestContext.Current.TestOutputHelper?.WriteLine(string.Join(Environment.NewLine, log));
+    }
+
     /// <summary>修订号最高的那一版清单（即车此刻应持有的那一版）的修订号与期限。</summary>
     private static async Task<(long Revision, DateTimeOffset? Deadline)> LatestWorklistAsync(RuntimeFixture fixture)
     {
