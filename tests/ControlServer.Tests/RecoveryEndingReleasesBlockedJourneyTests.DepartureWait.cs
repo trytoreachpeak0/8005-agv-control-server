@@ -58,4 +58,46 @@ public sealed partial class RecoveryEndingReleasesBlockedJourneyTests
             Assert.Equal(releasedAt, after.StationDepartureWaitStartedAt);
         });
     }
+
+    /// <summary>
+    /// 补偿掉本站最后一条（甲已装、乙在装时补偿）：放行那一轮转入离站等待、起点为此刻；车上最新一版是作业会话为空、原因
+    /// <c>LOAD_COMPENSATED</c> 的空清单，期限 = 此刻 + 完整时长，不再是「无倒计时」（control-server#668，PR #674 审查 S1）。
+    /// </summary>
+    [Fact]
+    [Trait("IntegrationSlice", "FP-IS-07")]
+    [Trait("ProtocolVector", "CV-EXCEPTION-COMPENSATE")]
+    public async Task ACompensationThatEndsTheStopWithOneLoadedShowsTheDeadlineTheVehicleLeavesBy()
+    {
+        await WithProofAsync(async () =>
+        {
+            await using RuntimeFixture fixture = await RuntimeFixture.CreateAsync();
+            fixture.Options.StationDepartureWaitTimeout = TimeSpan.FromSeconds(60);
+            JourneyRuntimeRow runtime = await Batch7MultiDemandAdvanceTests.TwoDemandsAtThePickupAsync(fixture);
+            await AddInboxAsync(
+                fixture, FirstSubmissionId, "SublotSubmitted", await SublotSubmissionAsync(fixture, runtime, FirstSublot));
+            await TickAndRunAsync(fixture);
+            await ApplySafeResultAsync(fixture, FirstDemandId, SlotOperationType.Load, SlotBusinessState.Occupied);
+            await TickAndRunAsync(fixture);
+            await EnterSublotAsync(fixture, FirstDemandId, SecondSublot, SecondSubmissionId);
+            await BlockOnLoadAsync(fixture, SecondDemandId);
+
+            fixture.Clock.Advance(TimeSpan.FromSeconds(20));
+            await CompensateAsync(fixture, SecondDemandId);
+            await fixture.RestoreSessionReadyAsync();
+            Exception? round = await RunRoundAsync(fixture);
+            DateTimeOffset releasedAt = fixture.Clock.GetUtcNow();
+
+            JourneyRuntimeRow after = await JourneyOfAsync(fixture, FirstDemandId);
+            Assert.True(
+                after.Stage == JourneyRuntimeStage.AwaitingStationDeparture,
+                $"The stop has nothing left to load. stage={after.Stage} block={after.BlockReasonCode} round={round?.Message}");
+            Assert.Equal(releasedAt, after.StationDepartureWaitStartedAt);
+            CancelledLastEntryEndsIntoDepartureWaitTests.Worklist latest =
+                await CancelledLastEntryEndsIntoDepartureWaitTests.LatestWorklistAsync(fixture);
+            Assert.Empty(latest.Demands);
+            Assert.Null(latest.OperationSessionId);
+            Assert.Equal("LOAD_COMPENSATED", latest.StopEndedReason);
+            Assert.Equal(releasedAt + TimeSpan.FromSeconds(60), latest.Deadline);
+        });
+    }
 }

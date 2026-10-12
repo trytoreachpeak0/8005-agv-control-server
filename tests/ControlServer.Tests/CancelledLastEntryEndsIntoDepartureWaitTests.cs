@@ -181,6 +181,65 @@ public sealed class CancelledLastEntryEndsIntoDepartureWaitTests
             await DepartureCheckOfStopSentAsync(fixture, secondPickup.StopId), "The deadline passed and the vehicle was not sent on.");
     }
 
+    /// <summary>
+    /// 审查 M1（PR #674）：取消之后车上已经补上一版期限（此刻 + 完整时长），随后同站追加让离站提前到一个已过的时刻（起点 + 宽限）。
+    /// 那一轮就发离站核验，车上最新那一版的期限也跟着到了，不再剩着倒计时。
+    /// </summary>
+    [Fact]
+    [Trait("IntegrationSlice", "FP-IS-08")]
+    public async Task ASameStationAppendThatMovesTheDepartureIntoThePastLeavesNoCountdownOnTheVehicle()
+    {
+        // 持货等单开着：车在离站等待里装载阶段不关，才能再收同站追加（夹具默认装完即关，追加被拒）。
+        await using RuntimeFixture fixture = await Batch7CargoHoldingTests.HoldingFixtureAsync();
+        Configure(fixture, Wait);
+        JourneyStopRow pickup = await LoadTheFirstOfTwoAsync(fixture);
+        fixture.Clock.Advance(BeforeCancel);
+        await CancelTheSecondBeforeScanAsync(fixture);
+        await RoundAsync(fixture);
+        DateTimeOffset startedAt = (await JourneyOfAsync(fixture, FirstDemandId)).StationDepartureWaitStartedAt!.Value;
+        Assert.Equal(startedAt + Wait, (await LatestWorklistAsync(fixture)).Deadline);
+
+        fixture.Clock.Advance(TimeSpan.FromSeconds(30));
+        await AppendAtTheSameStationAsync(fixture, pickup);
+        await RunAtAsync(fixture, fixture.Clock.GetUtcNow());
+
+        DateTimeOffset now = fixture.Clock.GetUtcNow();
+        Assert.True(await DepartureCheckOfStopSentAsync(fixture, pickup.StopId), "The grace has passed and the vehicle was not sent on.");
+        Worklist latest = await LatestWorklistAsync(fixture);
+        Assert.True(
+            latest.Deadline is { } shown && shown <= now,
+            $"The vehicle is leaving at {now:O} while its screen still counts down to {latest.Deadline:O}.");
+        Assert.Equal("LOAD_CANCELLED", latest.StopEndedReason);
+    }
+
+    /// <summary>
+    /// 被期限结束的一站（第二个取货站没人扫码）：期限已过，车当轮就走，车上那张空清单不再多补一版已到期的期限（审查 S3）。
+    /// </summary>
+    [Fact]
+    [Trait("IntegrationSlice", "FP-IS-08")]
+    public async Task AStopEndedByItsDeadlineGetsNoExtraWorklistBeforeTheVehicleLeaves()
+    {
+        await using RuntimeFixture fixture = await RuntimeFixture.CreateAsync();
+        JourneyStopRow secondPickup = await StopEndedJourneyContinuesTests.ArriveAtTheSecondPickupAsync(fixture);
+        fixture.Options.StationDepartureWaitTimeout = TimeSpan.FromSeconds(10);
+        await fixture.ProveSlotDoorsClosedAsync();
+        fixture.Clock.Advance(TimeSpan.FromSeconds(10));
+        await RoundAsync(fixture);
+        Assert.Equal(
+            JourneyDemandStatuses.Terminated, (await Batch7MultiDemandAdvanceTests.MembershipAsync(fixture, SecondDemandId)).Status);
+        Worklist ended = await LatestWorklistAsync(fixture);
+        Assert.Equal("STATION_DEADLINE_EXPIRED", ended.StopEndedReason);
+        Assert.Null(ended.Deadline);
+
+        await RoundAsync(fixture);
+
+        Assert.True(
+            await DepartureCheckOfStopSentAsync(fixture, secondPickup.StopId), "The deadline passed and the vehicle was not sent on.");
+        Worklist after = await LatestWorklistAsync(fixture);
+        Assert.Null(after.Deadline);
+        Assert.Equal("STATION_DEADLINE_EXPIRED", after.StopEndedReason);
+    }
+
     private static void Configure(RuntimeFixture fixture, TimeSpan wait)
     {
         fixture.Options.StationDepartureWaitTimeout = wait;
@@ -269,11 +328,11 @@ public sealed class CancelledLastEntryEndsIntoDepartureWaitTests
                await fixture.Context.ProtocolOutbox.AsNoTracking().AnyAsync(row => row.MessageId == messageId, Token);
     }
 
-    private sealed record Worklist(
+    internal sealed record Worklist(
         string[] Demands, DateTimeOffset? Deadline, string? StopEndedReason, string? OperationSessionId);
 
     /// <summary>修订号最高的那一版清单，也就是此刻排给车的那一版。</summary>
-    private static async Task<Worklist> LatestWorklistAsync(RuntimeFixture fixture)
+    internal static async Task<Worklist> LatestWorklistAsync(RuntimeFixture fixture)
     {
         string[] payloads = await fixture.Context.ProtocolOutbox.AsNoTracking()
             .Where(row => row.MessageType == "CurrentStopWorklistSnapshot")

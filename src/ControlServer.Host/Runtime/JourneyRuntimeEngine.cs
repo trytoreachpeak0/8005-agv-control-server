@@ -139,6 +139,13 @@ public sealed partial class JourneyRuntimeEngine(
                 "Vehicle {AgvId} has loaded everything at pickup {StationId} and still waits there; its worklist carried " +
                 "the station departure deadline {SentDeadline}, the server now judges by {Deadline}, so worklist revision " +
                 "{Revision} was sent with no items and the server's deadline.");
+    private static readonly Action<ILogger, string, string, bool, DateTimeOffset?, Exception?> LogEmptiedStopEntersDepartureWait =
+        LoggerMessage.Define<string, string, bool, DateTimeOffset?>(
+            LogLevel.Information,
+            new EventId(2292, nameof(LogEmptiedStopEntersDepartureWait)),
+            "Vehicle {AgvId}'s pickup {StationId} has nothing left to enter (its last outstanding demand was ended before " +
+            "a sublot) while the journey goes on; it now waits for departure. Loaded at this stop: {LoadedHere}; station " +
+            "departure deadline {Deadline} (none means the wait is off and the vehicle is sent on in this round).");
     private static readonly Action<ILogger, string, string, string, Exception?> LogLoadYieldedToEndedDemand =
         LoggerMessage.Define<string, string, string>(
             LogLevel.Information,
@@ -1294,6 +1301,9 @@ public sealed partial class JourneyRuntimeEngine(
                             ? now
                             : runtime.StationDepartureWaitStartedAt ?? now;
                         SetStage(runtime, JourneyRuntimeStage.AwaitingStationDeparture, now);
+                        LogEmptiedStopEntersDepartureWait(
+                            logger, runtime.AgvId, stops.Current.StationId, loadedAtThisStop,
+                            StationDepartureDeadline(runtime, runtimeOptions.StationDepartureWaitTimeout), null);
                         goto case JourneyRuntimeStage.AwaitingStationDeparture;
                     }
                     if (await TryEndStopAtStationDeadlineAsync(runtime, stops, session, now, cancellationToken)
@@ -3105,9 +3115,11 @@ public sealed partial class JourneyRuntimeEngine(
             return;
         }
         // 车上那一版是本站被期限、取消或补偿结束时的空清单（StopEndWorklist，作业会话为空）：它说的是本站为什么结束，原因与空会话照留，
-        // 只补上期限——而且只在车还要等的时候（control-server#668）。扫码前取消、装货途中被终结之后车仍在离站等待里，不补，车上一直是
-        // 「无倒计时」，车却要等到期限才走；期限已过（被期限结束的那一种）车当轮就走，补一个已到期的时刻只多一版、什么也不告诉操作员。
-        if (sentSession is null && (deadline is not { } ahead || now >= ahead))
+        // 只补上期限（control-server#668）。扫码前取消、装货途中被终结之后车仍在离站等待里，不补，车上一直是「无倒计时」，车却要等到期限才走。
+        // 车上那一版本来就没有期限、而此刻的期限也已过时不补：被期限结束的那一种车当轮就走，补一个已到期的时刻只多一版、什么也不告诉操作员。
+        // 车上已经有期限（上面补过一版）而期限被提前到过去时照补——同站追加让离站提前到已过的时刻，车当轮就走，屏上不能还剩着倒计时
+        // （PR #674 审查 M1）；与会话不为空那一支同一个结果，屏上显示「已到期，等待本站结束」。
+        if (sentSession is null && sent is null && (deadline is not { } ahead || now >= ahead))
         {
             return;
         }

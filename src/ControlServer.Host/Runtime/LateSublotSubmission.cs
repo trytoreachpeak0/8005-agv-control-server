@@ -20,7 +20,8 @@ namespace ControlServer.Host.Runtime;
 /// <b>只答「这一站确实已经结束」的那些，不抢答。</b>判定在收件箱的写事务里做（<c>BEGIN IMMEDIATE</c>，与取消的授权同一把锁），
 /// 而且只看已落库的事实：旅程已收尾；或这一站已完成、已删；或它就是车所在的那一站、一条待做项都没有。
 /// 这一站还有待做项时——哪怕期限已过——扫码是它的合法答复，交给引擎按「先落库者胜」判（ADR-cross-0055）。
-/// 不看阶段：扫码前取消结束本站后阶段仍是等录入，而那一站已经没有可答的了（PR #361 审查）。
+/// 不看阶段：扫码前取消结束本站后，阶段在引擎下一轮把它转入离站等待之前仍是等录入，而那一站已经没有可答的了（PR #361 审查；
+/// 转入是 control-server#668 起的，之前一直停到离站期限）。
 /// </para>
 /// <para>
 /// <b>答复的 id 与引擎拒收用同一个派生</b>（<see cref="RejectionMessageId"/>）：引擎认「这条录入被答复过」读的正是这一行
@@ -126,8 +127,8 @@ internal static class LateSublotSubmission
         {
             return true;
         }
-        // 不看阶段：扫码前取消结束本站时，协调器只终结需求、不改阶段，旅程带着 0 个待做项停在 AwaitingSublot，直到离站期限
-        // （PR #361 两路审查的必修）。先前这里有一支「阶段是等录入就交给引擎」，于是那段时间里的迟到扫码被引擎按
+        // 不看阶段：扫码前取消结束本站时，协调器只终结需求、不改阶段，旅程带着 0 个待做项停在 AwaitingSublot，直到引擎下一轮
+        // 把它转入离站等待（control-server#668；在那之前一直停到离站期限）（PR #361 两路审查的必修）。先前这里有一支「阶段是等录入就交给引擎」，于是那段时间里的迟到扫码被引擎按
         // SUBLOT_NOT_IN_DISPATCH_SCOPE、号 r+1 答复。「这一站还在等录入」的真正判据是当前停靠还有待做项，下面这一句就是它。
         JourneyStopCursor stops = await JourneyStopCursor.LoadAsync(dbContext, runtime, cancellationToken)
             .ConfigureAwait(false);
