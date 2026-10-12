@@ -438,6 +438,27 @@ public sealed record RouteGraphStationFact(
 public sealed record RouteGraphEdgeGroupFact(string GroupName, int EdgeId, string GroupType);
 
 /// <summary>
+/// The two stale reasons that no amount of waiting or refreshing clears: the world changed under the graph. Only a person
+/// releases them, through the governed release entry (control-server#659).
+/// </summary>
+/// <remarks>
+/// Defined here rather than next to the other reasons in the Host so the snapshot store can tell them apart: a failed refresh
+/// must not overwrite one of these, or the next successful refresh clears what it wrote and dispatch resumes on a graph a
+/// person never looked at (control-server#659, the review of #657).
+/// </remarks>
+public static class RouteGraphStickyStaleReasons
+{
+    /// <summary>The Map's edge-group membership changed under the graph.</summary>
+    public const string EdgeGroupFingerprintChanged = "ROUTE_GRAPH_EDGE_GROUP_FINGERPRINT_CHANGED";
+
+    /// <summary>Dynamic route cost went from empty to present.</summary>
+    public const string DynamicRouteCostAppeared = "ROUTE_GRAPH_DYNAMIC_ROUTE_COST_APPEARED";
+
+    public static bool IsSticky(string? reason) =>
+        reason is EdgeGroupFingerprintChanged or DynamicRouteCostAppeared;
+}
+
+/// <summary>
 /// The snapshot header: both cycles' clocks and everything a staleness decision reads.
 /// </summary>
 /// <remarks>
