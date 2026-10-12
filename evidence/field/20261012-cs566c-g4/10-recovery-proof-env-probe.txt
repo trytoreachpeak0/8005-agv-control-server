@@ -1,0 +1,16 @@
+== agv02
+recoveryResumeEnabled=False
+recoveryAuthenticationProofEnvironmentVariable=CONTROL_SERVER_RECOVERY_PROOF
+recoveryAdministratorRole=MAINTENANCE_ADMINISTRATOR
+recoveryVerificationMethod=CONFIGURED_PROOF
+env CONTROL_SERVER_RECOVERY_PROOF in Machine present=True
+env CONTROL_SERVER_RECOVERY_PROOF in User present=False
+env CONTROL_SERVER_RECOVERY_PROOF in Process present=True
+== agv03
+recoveryResumeEnabled=True
+recoveryAuthenticationProofEnvironmentVariable=CONTROL_SERVER_RECOVERY_PROOF
+recoveryAdministratorRole=MAINTENANCE_ADMINISTRATOR
+recoveryVerificationMethod=CONFIGURED_PROOF
+env CONTROL_SERVER_RECOVERY_PROOF in Machine present=False
+env CONTROL_SERVER_RECOVERY_PROOF in User present=False
+env CONTROL_SERVER_RECOVERY_PROOF in Process present=False

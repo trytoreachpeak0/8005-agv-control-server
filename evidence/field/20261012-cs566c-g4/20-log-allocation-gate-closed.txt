@@ -1,0 +1,13 @@
+09:54:00.000 Information 1103 SessionReadiness "4e7424a0-103d-4da0-a5c8-f980f4406f20" to "老厂前线新多仓位3" generation 8: "RECOVERY_REQUIRED" ["DEPARTURE_UNSAFE"], after the answer to "SafetyStateChanged" "7a35e9d4-fb77-6550-96fd-516694e7a47d".
+09:54:03.000 Information 1103 SessionReadiness "8bcfaedd-ffa4-49f2-be44-ba511c0bb11c" to "老厂前线新多仓位3" generation 8: "READY" [null], after the answer to "SafetyStateChanged" "23aafcd6-04ca-1b5e-8ace-ca7c6a6dd17f".
+09:54:05.000 Information 2241 Charging not allocated for vehicle "老厂前线新多仓位3": "CHARGING_NO_CHARGER_AVAILABLE". "battery=25; 211=CHARGER_UNREACHABLE"
+09:54:05.000 Warning 2246 Vehicle "老厂前线新多仓位3" is below its mandatory charge line and no charger can be allocated to it: "CHARGING_NO_CHARGER_AVAILABLE". "battery=25; 211=CHARGER_UNREACHABLE" It stays queued, takes no transport and no idle return, and its battery goes on falling. Check on site: is the charger free and is nothing standing on it (CHARGER_RESERVED_OR_OCCUPIED, CHARGER_OCCUPIED_BY_VEHICLE, CHARGER_TARGETED_BY_RUNNING_ORDER); can RIoT read every fleet vehicle and its unfinished orders (CHARGER_OCCUPANCY_UNKNOW
+09:54:05.000 Information 2199 Idle return not committed for vehicle "老厂前线新多仓位3": "IDLE_RETURN_BELOW_MANDATORY_CHARGE_LINE". ""
+09:54:05.000 Information 1103 SessionReadiness "082ee251-0cf0-4ea6-9167-d0cd0011823d" to "老厂前线新多仓位3" generation 8: "RECOVERY_REQUIRED" ["DEPARTURE_UNSAFE"], after the answer to "SafetyStateChanged" "046b83ea-833d-1b50-a49b-a48db57f382d".
+09:54:06.000 Information 2241 Charging not allocated for vehicle "老厂前线新多仓位3": "ONBOARD_FACTS_NOT_READY". ""
+09:54:06.000 Information 2199 Idle return not committed for vehicle "老厂前线新多仓位3": "ONBOARD_FACTS_NOT_READY". ""
+09:54:35.000 Information 1103 SessionReadiness "646b85e2-fd8d-4366-8b2e-65d8f5520b78" to "老厂前线新多仓位3" generation 8: "READY" [null], after the answer to "SafetyStateChanged" "9183eb23-03ea-1a5d-9119-48b1e68b1289".
+09:54:37.000 Information 2240 Charging committed: vehicle "老厂前线新多仓位3" reserved charger 211 as journey "charging:BROKERX-7daca4ee91da498d8026c68b7b941127:20261012T015436809Z", route cost 39081 mm, battery 25%. "battery=25"
+09:54:37.000 Information 2199 Idle return not committed for vehicle "老厂前线新多仓位3": "IDLE_RETURN_VEHICLE_HAS_PURPOSE". ""
+## select CycleId,StationId,Phase,WireState,ChargingPolicyVersion,AllocatedAt from ChargingCycles where AllocatedAt > '2026-10-12'
+CycleId=charging-cycle:BROKERX-7daca4ee91da498d8026c68b7b941127:20261012T015436809Z | StationId=211 | Phase=ACTIVE | WireState=ALLOCATED | ChargingPolicyVersion=1 | AllocatedAt=2026-10-12 01:54:36.8098342+00:00

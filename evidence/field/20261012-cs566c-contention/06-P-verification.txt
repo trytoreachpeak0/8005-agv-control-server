@@ -1,0 +1,18 @@
+### logq -Since 11:02 -Pattern '(?i)charg|多仓位' (gate closed)
+11:03:58.000 Warning 2205 Vehicle "BROKERX-7daca4ee91da498d8026c68b7b941127" is below its mandatory charge entry threshold: battery 77% < 82% (charging policy version 4). It takes no new transport, no en-route append and no idle return until it has charged (REQ-0290, "MANDATORY_CHARGE_REQUIRED"); a journey it is carrying finishes as planned (REQ-0281).
+11:03:59.000 Information 2240 Charging committed: vehicle "老厂前线新多仓位3" reserved charger 211 as journey "charging:BROKERX-7daca4ee91da498d8026c68b7b941127:20261012T030358707Z", route cost 39081 mm, battery 77%. "battery=77"
+11:03:59.000 Information 2199 Idle return not committed for vehicle "老厂前线新多仓位3": "IDLE_RETURN_VEHICLE_HAS_PURPOSE". ""
+### sqlite: select MapId,StationId,StationKind,State,VehicleKey,JourneyId,StateSince from StationExclusivities where StationId=211
+## select MapId,StationId,StationKind,State,VehicleKey,JourneyId,StateSince from StationExclusivities where StationId=211
+MapId=26 | StationId=211 | StationKind=CHARGER | State=RESERVED | VehicleKey=BROKERX-7daca4ee91da498d8026c68b7b941127 | JourneyId=charging:BROKERX-7daca4ee91da498d8026c68b7b941127:20261012T030358707Z | StateSince=2026-10-12 03:03:58.7076635+00:00
+### sqlite: select count(*) as rows211 from StationExclusivities where StationId=211
+## select count(*) as rows211 from StationExclusivities where StationId=211
+rows211=1
+### sqlite: select CycleId,VehicleKey,StationId,Phase,WireState,ChargingPolicyVersion,AllocatedAt from ChargingCycles where Phase<>'ENDED'
+## select CycleId,VehicleKey,StationId,Phase,WireState,ChargingPolicyVersion,AllocatedAt from ChargingCycles where Phase<>'ENDED'
+CycleId=charging-cycle:BROKERX-7daca4ee91da498d8026c68b7b941127:20261012T030358707Z | VehicleKey=BROKERX-7daca4ee91da498d8026c68b7b941127 | StationId=211 | Phase=ACTIVE | WireState=ALLOCATED | ChargingPolicyVersion=4 | AllocatedAt=2026-10-12 03:03:58.7076635+00:00
+### sqlite: select JourneyId,AgvId,BlockReasonCode from JourneyRuntimes where JourneyId like 'charging:%' and JourneyId like '%20261012T03%'
+## select JourneyId,AgvId,BlockReasonCode from JourneyRuntimes where JourneyId like 'charging:%' and JourneyId like '%20261012T03%'
+JourneyId=charging:BROKERX-7daca4ee91da498d8026c68b7b941127:20261012T030358707Z | AgvId=老厂前线新多仓位3 | BlockReasonCode=CHARGER_CreateDispatchDisabled
+### gate
+11:04:40 gate=False depWait=00:01:30 cargo=00:02:00 V2=Running MVPpid=17140

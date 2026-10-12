@@ -1,0 +1,5 @@
+route interface=Wi-Fi
+POST /api/charging/v1/station-recoveries at 2026-10-12 10:12:03.843 auth=Bearer <CONTROL_SERVER_V2_FAULT_RECOVERY_CREDENTIAL>
+request={"mapId":26,"stationId":211,"operatorId":"<redacted>","basis":"(见请求体原文，控制台显示乱码)","claimedRole":"R-11"}
+status=200
+response={"mapId":26,"stationId":211,"outcome":"RECOVERED","holdIds":["d849b761-a37a-4e51-a12e-3c4303a55544"],"codes":[]}
