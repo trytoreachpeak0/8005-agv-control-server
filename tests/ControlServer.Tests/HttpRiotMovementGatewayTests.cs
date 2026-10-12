@@ -1010,6 +1010,16 @@ public sealed class HttpRiotMovementGatewayTests
         RiotUnfinishedOrderListing result = await gateway.ListUnfinishedOrdersAsync(TestContext.Current.CancellationToken);
 
         Assert.False(result.IsComplete);
+        // control-server#645: what was not covered is said, so a log can tell a failed read from a page that did not add up.
+        Assert.StartsWith(
+            answer switch
+            {
+                "partial-page" => "page 1 of 2 does not add up (current 1, total 101 against 101, 0 records against 100, size 100)",
+                "record-without-order-id" => "1 of 1 records carry no orderId",
+                _ => "RIoT could not be read (",
+            },
+            result.IncompleteReason,
+            StringComparison.Ordinal);
     }
 
     /// <summary>
@@ -1148,6 +1158,19 @@ public sealed class HttpRiotMovementGatewayTests
                     TestContext.Current.CancellationToken);
                 Assert.False(listing.IsComplete);
                 Assert.Empty(listing.Orders);
+                // control-server#645: which page, and whether the read was cut off at the cap.
+                Assert.StartsWith(
+                    fault switch
+                    {
+                        "over-cap" => "truncated: total 2001 needs 21 pages, past the cap of 20; only page 1 was read",
+                        "total-grows" => "page 2 of 3 does not add up (current 2, total 253 against 252,",
+                        "total-shrinks" => "page 2 of 3 does not add up (current 2, total 251 against 252,",
+                        "page-repeated" => "page 2 of 3 does not add up (current 1,",
+                        "short-page" => "page 2 of 3 does not add up (current 2, total 252 against 252, 99 records against 100,",
+                        _ => "page 2 of 3 ",
+                    },
+                    listing.IncompleteReason,
+                    StringComparison.Ordinal);
                 break;
         }
         if (fault == "over-cap")

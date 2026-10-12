@@ -30,6 +30,16 @@ public sealed record ChargingAllocationVerdict(
 /// <summary>一辆车在一轮分配里的结论。</summary>
 public sealed record ChargingBoardVerdict(string Reason, string Detail);
 
+/// <summary>
+/// 出发前复核的结论：<see cref="Reason"/> 为空即承诺仍成立，否则是不成立的那一条的码（与
+/// <see cref="ChargingAllocator.WhyCommittedChargerNoLongerStandsAsync"/> 答的逐字相同）。
+/// </summary>
+/// <param name="Detail">
+/// 给撤回日志（事件 2254）的细节：码本身；码是 <c>CHARGER_OCCUPANCY_UNKNOWN</c> 时再带上哪一样事实没读到
+/// （control-server#645）。只是诊断，判定只看 <see cref="Reason"/>。
+/// </param>
+public sealed record CommittedChargerCheck(string? Reason, string? Detail);
+
 /// <summary>一辆车在一轮分配里读到的电量观测：RIoT 的电量与电池状态、按冻结策略投影的 batteryState、观测时刻。</summary>
 public sealed record ChargingBoardObservation(int? BatteryPercent, string? RiotBatteryState, string BatteryState, DateTimeOffset ObservedAt);
 
@@ -702,7 +712,7 @@ public sealed class ChargingAllocator(
         string detail = excluded.Count == 0 ? batteryNote : $"{batteryNote}; {string.Join(", ", excluded)}";
         if (reads.Occupancy.Unknown.Count > 0)
         {
-            detail += $"; unknown: {string.Join(", ", reads.Occupancy.Unknown)}";
+            detail += $"; unknown: {reads.Occupancy.UnknownDetail}";
         }
         if (eligible.Count == 0)
         {
@@ -832,6 +842,47 @@ public sealed class ChargingAllocator(
         int mapId,
         int stationId,
         RiotMapStationCatalogSnapshot currentMap,
+        CancellationToken cancellationToken) =>
+        (await CheckCommittedChargerAsync(vehicleKey, mapId, stationId, currentMap, cancellationToken).ConfigureAwait(false))
+        .Reason;
+
+    /// <summary>
+    /// 与 <see cref="WhyCommittedChargerNoLongerStandsAsync"/> 同一个判定，另外答一份给日志的细节：占用事实没读全时写明是哪一样
+    /// （车位置、未结束单清单的覆盖、订单目的站；control-server#645）。
+    /// </summary>
+    public async Task<CommittedChargerCheck> CheckCommittedChargerAsync(
+        string vehicleKey,
+        int mapId,
+        int stationId,
+        RiotMapStationCatalogSnapshot currentMap,
+        CancellationToken cancellationToken)
+    {
+        RoundReads reads = new();
+        string? reason = await JudgeCommittedChargerAsync(vehicleKey, mapId, stationId, currentMap, reads, cancellationToken)
+            .ConfigureAwait(false);
+        return new CommittedChargerCheck(
+            reason,
+            reason == ChargingAllocationReasons.ChargerOccupancyUnknown && reads.Occupancy is { } facts
+                ? $"{reason}; unknown: {DescribeUnknown(facts, vehicleKey)}"
+                : reason);
+    }
+
+    /// <summary>
+    /// 占用事实里没读到的那些；都读全了却仍答未知，只能是这辆车自己不在车队名册里（它的位置从来不读）。
+    /// </summary>
+    private static string DescribeUnknown(ChargerOccupancySnapshot facts, string vehicleKey) =>
+        facts.Unknown.Count > 0
+            ? facts.UnknownDetail
+            : facts.Vehicles.ContainsKey(vehicleKey)
+                ? "nothing reported unknown"
+                : $"[{vehicleKey}]:NOT_IN_FLEET_ROSTER (its position is never read)";
+
+    private async Task<string?> JudgeCommittedChargerAsync(
+        string vehicleKey,
+        int mapId,
+        int stationId,
+        RiotMapStationCatalogSnapshot currentMap,
+        RoundReads reads,
         CancellationToken cancellationToken)
     {
         ArgumentException.ThrowIfNullOrWhiteSpace(vehicleKey);
@@ -843,12 +894,9 @@ public sealed class ChargingAllocator(
             return ChargingAllocationReasons.ChargerNotInRoster;
         }
 
-        RoundReads reads = new()
-        {
-            Graph = routeGraph.Enabled && routeGraph.MapId == _runtime.MapId
-                ? await routeGraph.ReadAsync(cancellationToken).ConfigureAwait(false)
-                : RouteGraphAvailability.Stale("ROUTE_GRAPH_DISABLED_OR_OTHER_MAP"),
-        };
+        reads.Graph = routeGraph.Enabled && routeGraph.MapId == _runtime.MapId
+            ? await routeGraph.ReadAsync(cancellationToken).ConfigureAwait(false)
+            : RouteGraphAvailability.Stale("ROUTE_GRAPH_DISABLED_OR_OTHER_MAP");
         if (!reads.Graph.IsUsable)
         {
             return ChargingAllocationReasons.RouteGraphUnavailable;
@@ -942,7 +990,7 @@ public sealed class ChargingAllocator(
     /// </summary>
     private string? WhyNotYetReleasable(StationExclusivityRow row, ChargerOccupancySnapshot occupancyFacts) =>
         !occupancyFacts.Vehicles.TryGetValue(row.VehicleKey, out RiotVehicleObservation? vehicle)
-            ? "the vehicle cannot be read from RIoT (offline, or its position is missing)"
+            ? $"the vehicle cannot be read from RIoT (offline, or its position is missing; unknown: {DescribeUnknown(occupancyFacts, row.VehicleKey)})"
         : string.IsNullOrWhiteSpace(vehicle.BatteryState)
             ? "the vehicle's battery state cannot be read, so charging is not known to have stopped"
         : string.Equals(vehicle.BatteryState, BatteryEligibility.ChargingBatteryState, StringComparison.Ordinal)
@@ -950,7 +998,9 @@ public sealed class ChargingAllocator(
         : StandsOn(vehicle, row)
             ? "the vehicle is read standing on the charger"
         : occupancyFacts.Judge(row.MapId, row.StationId, askingVehicleKey: null) is { } occupied
-            ? $"the charger is not confirmed free ({occupied})"
+            ? occupied == ChargingAllocationReasons.ChargerOccupancyUnknown
+                ? $"the charger is not confirmed free ({occupied}; unknown: {occupancyFacts.UnknownDetail})"
+                : $"the charger is not confirmed free ({occupied})"
         : null;
 
     /// <summary>

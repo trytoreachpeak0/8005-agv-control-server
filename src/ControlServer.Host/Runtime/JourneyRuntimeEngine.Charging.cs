@@ -438,12 +438,15 @@ public sealed partial class JourneyRuntimeEngine
         }
 
         string? charger;
+        string? chargerDetail;
         RiotVehicleObservation? vehicle;
         try
         {
-            charger = await dispatchRound.Charging
-                .WhyCommittedChargerNoLongerStandsAsync(runtime.VehicleKey, runtime.MapId, stop.StationRiotId, currentMap, cancellationToken)
+            CommittedChargerCheck check = await dispatchRound.Charging
+                .CheckCommittedChargerAsync(runtime.VehicleKey, runtime.MapId, stop.StationRiotId, currentMap, cancellationToken)
                 .ConfigureAwait(false);
+            charger = check.Reason;
+            chargerDetail = check.Detail;
             vehicle = charger is null
                 ? await vehicleFacts.ReadVehicleAsync(runtime.VehicleKey, cancellationToken).ConfigureAwait(false)
                 : null;
@@ -453,13 +456,15 @@ public sealed partial class JourneyRuntimeEngine
         {
             // RIoT could not be read: nothing about the charger is confirmed. Not knowing is not a reason to set off.
             charger = $"RIOT_UNREADABLE ({error.GetType().Name})";
+            chargerDetail = charger;
             vehicle = null;
         }
 
         if (charger is not null)
         {
             await WithdrawChargingAsync(
-                    runtime, stop, ChargingExecutionReasons.WithdrawnChargerNoLongerEligible, charger, now, cancellationToken)
+                    runtime, stop, ChargingExecutionReasons.WithdrawnChargerNoLongerEligible, chargerDetail ?? charger, now,
+                    cancellationToken)
                 .ConfigureAwait(false);
             return true;
         }
