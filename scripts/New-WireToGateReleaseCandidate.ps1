@@ -357,9 +357,8 @@ $onboardRemainingPlaceholders = @([regex]::Matches($onboardTemplate, 'REPLACE_[A
 # redeployment renames away) to %LOCALAPPDATA%, and this script packs whichever onboard commit it is given.
 # An environment-variable or rooted path is reported as configured; a relative one resolves beside the
 # executable, as the onboard does.
-$onboardLogMatch = [regex]::Match($onboardTemplate, '"logging"\s*:\s*\{[^}]*?"directory"\s*:\s*"(?<d>(?:[^"\\]|\\.)*)"')
-$onboardLogSetting = $onboardLogMatch.Success ? $onboardLogMatch.Groups['d'].Value.Replace('\\', '\') : $null
-$onboardLogDirectory = if ($null -eq $onboardLogSetting) {
+$onboardLogSetting = [string](($onboardTemplate | ConvertFrom-Json).logging.directory)
+$onboardLogDirectory = if ([string]::IsNullOrEmpty($onboardLogSetting)) {
     '(logging.directory not set in the production template: the packaged build''s LogSettings default)'
 } elseif ($onboardLogSetting.Contains('%') -or [IO.Path]::IsPathRooted($onboardLogSetting)) {
     $onboardLogSetting
