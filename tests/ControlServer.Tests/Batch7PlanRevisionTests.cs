@@ -433,7 +433,7 @@ public sealed class Batch7PlanRevisionTests
     private static PlanRevisionDemand Leaving(string id, string pickupStopId, string unloadStopId) =>
         new(id, pickupStopId, unloadStopId, PlanRevisionDemandState.Leaving);
 
-    private static JourneyStopRow StopRow(string stopId, int sequence, string role, string status) => new()
+    internal static JourneyStopRow StopRow(string stopId, int sequence, string role, string status) => new()
     {
         StopId = stopId,
         JourneyId = "journey-plan",
@@ -451,7 +451,7 @@ public sealed class Batch7PlanRevisionTests
         Status = status,
     };
 
-    private static JourneyRuntimeRow PlanRuntime() => new()
+    internal static JourneyRuntimeRow PlanRuntime() => new()
     {
         JourneyId = "journey-plan",
         DemandId = "demand-plan",
