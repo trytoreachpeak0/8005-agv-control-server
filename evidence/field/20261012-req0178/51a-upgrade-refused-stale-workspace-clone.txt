@@ -1,0 +1,22 @@
+[16:05:22] Clone F:\8005-wt\rig-req0178-deploy-8005-agv-control-server is clean at 020138c9b0636583d98dedae915fc31d2f26b673; definition scripts/parallel/instance-factory01-v2.two-car-example.json is tracked there; the files sent match HEAD
+[16:05:23] ADMISSION_POLICY_VERSION_OVERRIDE=5 definition=3 reason=operator raised the version above the definition (e.g. reinstalling after a rollback)
+WARNING: ADMISSION_POLICY_VERSION_OVERRIDE=5 definition=3 reason=operator raised the version above the definition (e.g. reinstalling after a rollback)
+[16:05:23] journeyRuntime.admissionPolicyVersion=5 read back from the derived definition C:\Users\szy\AppData\Local\Temp\control-server-v2-definition-20261012-160522-68ee96c2\instance-factory01-v2.two-car-example.json
+[16:05:23] ADMISSION_POLICY_VERSION=5 -- write it into the deployment record; a rollback needs the highest one ever installed + 1
+[16:05:23] Instance definition accepted: factory01-v2-parallel (from C:\Users\szy\AppData\Local\Temp\control-server-v2-definition-20261012-160522-68ee96c2\instance-factory01-v2.two-car-example.json)
+[16:05:23] MES_INGEST_SOURCE=fake baseUrl=http://127.0.0.1:58188 allowedWorkTypes=DIE_TO_WIRE_STAGING,DIE_TO_OVEN,WIRE_TO_GATE,WIRE_TO_OPTICAL,STAGING_TO_WIRE,WIRE_TO_NITROGEN -- injected demand from this instance's own FakeMesIngest double, task '8005 AGV ControlServer V2 FakeMesIngest'
+[16:05:23] Target: factory01  service '8005 AGV ControlServer V2'
+[16:05:23] Vehicle 1/2: 老厂前线新多仓位2 (BROKERX-f38975561adf46ccb1d2f23833c7d0e4)
+[16:05:23] Vehicle 2/2: 老厂前线新多仓位3 (BROKERX-7daca4ee91da498d8026c68b7b941127)
+[16:05:23] RouteGraph: enabled=False mapId=26   RiotCreateDispatch: enabled=False
+[16:05:23] Clearance exit: VehicleFaultRecovery enabled=False   FieldOperatorRoles roster=D:\zhengyushao\control-server-v2-ops\field-operator-roles.json onboardEntryDeclared=False
+Exception: C:\Users\szy\Desktop\8005-workspace\remote-ops\factory-server\scripts\19-deploy-control-server-parallel.ps1:354
+Line |
+ 354 |          throw ("INSTALLED_VERSION_UNREAD: could not read $Path on $Ss …
+     |          ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+     | INSTALLED_VERSION_UNREAD: could not read D:\zhengyushao\control-server-v2-ops\installed-instance.json on
+     | factory01 (ssh exit 1): ParserError:  | Line | |    1 | 
+     | 鈥?licyVersion']; 'INSTALLED_DEFINITION=PRESENT version=' + $v }; catch  鈥x001B_[0m |
+     |      |                                                        
+     | ~ |      | The Try statement is
+     | missing its Catch or Finally block.. The version check needs it. Nothing was downloaded or copied.

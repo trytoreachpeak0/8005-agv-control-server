@@ -1,0 +1,6 @@
+2026-10-12T16:03:57.7457335+08:00 unrecovered holds
+## select count(*) as UnrecoveredStationHolds from ChargingStationAllocationHolds h where not exists (select 1 from ChargingStationRecoveries r where r.HoldId=h.HoldId)
+UnrecoveredStationHolds=0
+## select count(*) as UnrecoveredVehicleHolds from VehicleChargingEligibilityHolds h where not exists (select 1 from VehicleChargingEligibilityRecoveries r where r.HoldId=h.HoldId)
+UnrecoveredVehicleHolds=0
+## select h.HoldId,h.StationId,h.Trigger,h.HeldAt from ChargingStationAllocationHolds h where not exists (select 1 from ChargingStationRecoveries r where r.HoldId=h.HoldId)

@@ -1,0 +1,29 @@
+diff --git a/instance-factory01-v2.two-car-example.json b/instance-factory01-v2.req0178-field-off.json
+index 58ca40ba2..993d71ffc 100644
+--- a/instance-factory01-v2.two-car-example.json
++++ b/instance-factory01-v2.req0178-field-off.json
+@@ -35,7 +35,7 @@
+     "enabled": false
+   },
+   "vehicleFaultRecovery": {
+-    "enabled": false
++    "enabled": true
+   },
+   "fieldOperatorRoles": {
+     "path": "D:\\zhengyushao\\control-server-v2-ops\\field-operator-roles.json",
+@@ -45,13 +45,14 @@
+     "settingsFile": "task-type-stations.map-26.settings.json"
+   },
+   "journeyRuntime": {
+-    "enabled": false,
++    "enabled": true,
+     "pollInterval": "00:00:02",
+     "maximumEvidenceAge": "00:00:30",
+     "checkpointWaitBudget": "00:05:00",
+     "stationDepartureWaitTimeout": "00:05:00",
+     "cargoHoldingTimeout": "00:30:00",
+     "areaEndAdmissionRevokedTimeout": "00:10:00",
++    "clearanceToWaitingPointEnabled": false,
+     "fleet": [
+       {
+         "agvId": "老厂前线新多仓位2",

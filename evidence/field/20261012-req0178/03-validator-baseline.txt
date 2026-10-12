@@ -1,0 +1,18 @@
+### baseline instance-factory01-v2.json
+733 passed, 0 failed
+### baseline instance-factory01-v2.two-car-example.json
+574 passed, 159 failed
+
+=== 2026-10-12 补记：这 159～160 条失败的原因（调度 C10 要求核对）
+
+【读到的】
+- 自检确实会读 evidence 下的一个文件：Test-ParallelInstance.ps1:2641 读 evidence/field/2026-10-03-B9-charging-roster-and-policy/import-1007/deploy-override-definition.json。
+- 本次运行时这个文件在：先执行了 git sparse-checkout disable，工作树是完整检出，ls 能看到这个文件。同一个检出里，默认定义 instance-factory01-v2.json 跑出来是 733 passed, 0 failed。所以这 159 条**不是缺这个文件造成的**。
+- 自检把 -DefinitionPath 指向的文件当成「出厂定义」（:88 $shipped），然后断言出厂定义才有的性质，比如 :106 要求 journeyRuntime.enabled 和 routeGraph.enabled 都是 false；还以它为基线做大量变异用例（serviceName、installRoot、路径变形等）。所以只要换成别的定义，就会成片失败。
+- two-car-example 的第一条失败是「the shipped definition is accepted」，原文：journeyRuntime.fleet[0].zones names 'WIRE', which journeyRuntime.allowedDispatchZones omits。但同一份文件直接调 Read-ParallelInstanceDefinition 加 Assert-ParallelInstanceDefinition 是接受的（04-assert-definition.txt：ACCEPTED two-car-example）。
+
+【推测】
+- 这条「自检里拒绝、直接调用却接受」的差异，可能是 :89 Set-Map26TestValue (Copy-Definition $shipped) 的拷贝是浅拷贝，改到了 $shipped 里共享的 journeyRuntime 子表（比如 allowedDispatchZones），于是 :100 再校验 $shipped 时读到的已经是改过的值。我没有读 Copy-Definition 和 Set-Map26TestValue 的实现，这一条没有证实。
+- 如果在稀疏检出（没有 evidence/）下跑，:2642 读文件会失败，这个自检大概会在那里报错中断，而不是累积成 159 条失败。这一条也没有实测。
+
+结论：这个自检只适用于出厂默认定义，不适合用来验证其他定义。本次判据用的是 04（部署实际调用的 Assert-ParallelInstanceDefinition）。是否开票由调度定。

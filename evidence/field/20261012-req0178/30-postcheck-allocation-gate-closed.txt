@@ -1,0 +1,17 @@
+roster version=8 entries=1 stations=
+policy activeVersion=5 forced=75 completion=95
+15:40:33.000 Information 1103 SessionReadiness "00bc325d-692e-4c13-9b9c-e5a729ded235" to "老厂前线新多仓位2" generation 26: "READY" [null], after the answer to "RecoveryStateReport" "65cad717-9d84-4f02-81b1-40c84b70caa0".
+15:40:33.000 Information 1103 SessionReadiness "04ecc05f-177e-49b9-9913-0a45fa23fe5f" to "老厂前线新多仓位2" generation 26: "READY" [null], after the answer to "SafetyStateChanged" "d5964cd6-bef3-e35b-ada9-8d99b52bf89b".
+15:40:49.000 Warning 2205 Vehicle "BROKERX-f38975561adf46ccb1d2f23833c7d0e4" is below its mandatory charge entry threshold: battery 49% < 75% (charging policy version 5). It takes no new transport, no en-route append and no idle return until it has charged (REQ-0290, "MANDATORY_CHARGE_REQUIRED"); a journey it is carrying finishes as planned (REQ-0281).
+15:40:49.000 Warning 2205 Vehicle "BROKERX-7daca4ee91da498d8026c68b7b941127" is below its mandatory charge entry threshold: battery 47% < 75% (charging policy version 5). It takes no new transport, no en-route append and no idle return until it has charged (REQ-0290, "MANDATORY_CHARGE_REQUIRED"); a journey it is carrying finishes as planned (REQ-0281).
+15:40:49.000 Information 2241 Charging not allocated for vehicle "老厂前线新多仓位2": "ONBOARD_FACTS_NOT_READY". ""
+15:40:49.000 Information 2241 Charging not allocated for vehicle "老厂前线新多仓位3": "ONBOARD_FACTS_NOT_READY". ""
+15:40:49.000 Information 1103 SessionReadiness "0894a200-7083-47db-af50-f25ef441737c" to "老厂前线新多仓位2" generation 27: "READY" [null], after the answer to "RecoveryStateReport" "55327b94-62d3-4190-a7f7-e346579f4310".
+15:40:49.000 Information 1103 SessionReadiness "c792d3ad-26f7-4cb8-9853-d38d245bff96" to "老厂前线新多仓位2" generation 27: "READY" [null], after the answer to "SafetyStateChanged" "6597c806-756d-3f55-b30e-fb3670dbc667".
+15:40:51.000 Information 2240 Charging committed: vehicle "老厂前线新多仓位2" reserved charger 211 as journey "charging:BROKERX-f38975561adf46ccb1d2f23833c7d0e4:20261012T074050545Z", route cost 37871 mm, battery 49%. "battery=49"
+## select StationId,StationKind,State,substr(VehicleKey,9,6) as V,JourneyId from StationExclusivities
+StationId=216 | StationKind=WAITING_POINT | State=OCCUPIED | V=f38975 | JourneyId=idle-return:BROKERX-f38975561adf46ccb1d2f23833c7d0e4:20261012T035142545Z
+StationId=211 | StationKind=CHARGER | State=RESERVED | V=f38975 | JourneyId=charging:BROKERX-f38975561adf46ccb1d2f23833c7d0e4:20261012T074050545Z
+## select substr(VehicleKey,9,6) as V,StationId,Phase,WireState,ChargingPolicyVersion,AllocatedAt from ChargingCycles where Phase<>'ENDED'
+V=f38975 | StationId=211 | Phase=ACTIVE | WireState=ALLOCATED | ChargingPolicyVersion=5 | AllocatedAt=2026-10-12 07:40:50.5457116+00:00
+15:41:44 gate=False depWait=00:05:00 cargo=00:30:00 V2=Running MVPpid=10912

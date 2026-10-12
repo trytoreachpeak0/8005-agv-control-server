@@ -1,0 +1,27 @@
+2026-10-12T16:03:39.2011633+08:00 V2 db read-only recovery readback
+## pragma table_info(ChargingStationRecoveries)
+cid=0 | name=RecoveryId | type=TEXT | notnull=1 | dflt_value= | pk=1
+cid=1 | name=HoldId | type=TEXT | notnull=1 | dflt_value= | pk=0
+cid=2 | name=RecoveredBy | type=TEXT | notnull=1 | dflt_value= | pk=0
+cid=3 | name=RecovererRole | type=TEXT | notnull=1 | dflt_value= | pk=0
+cid=4 | name=RecoveredAt | type=TEXT | notnull=1 | dflt_value= | pk=0
+cid=5 | name=Basis | type=TEXT | notnull=1 | dflt_value= | pk=0
+## pragma table_info(VehicleChargingEligibilityRecoveries)
+cid=0 | name=RecoveryId | type=TEXT | notnull=1 | dflt_value= | pk=1
+cid=1 | name=HoldId | type=TEXT | notnull=1 | dflt_value= | pk=0
+cid=2 | name=RecoveredBy | type=TEXT | notnull=1 | dflt_value= | pk=0
+cid=3 | name=RecovererRole | type=TEXT | notnull=1 | dflt_value= | pk=0
+cid=4 | name=RecoveredAt | type=TEXT | notnull=1 | dflt_value= | pk=0
+cid=5 | name=Basis | type=TEXT | notnull=1 | dflt_value= | pk=0
+## select * from ChargingStationRecoveries order by rowid desc limit 2
+RecoveryId=1d3af560-f2af-4967-bd7a-00b8aa197ea6 | HoldId=e644562f-8a3b-4550-bf64-07bc0cc90666 | RecoveredBy=<OPERATOR> | RecovererRole=R-11 | RecoveredAt=2026-10-12 08:03:15.2057716+00:00 | Basis=现场已给桩 211 合闸，桩恢复出电（REQ-0178 补测 15:51 拉闸，16:01 合闸）
+RecoveryId=960d41e6-8a73-47ed-bf21-58786635ddb3 | HoldId=d849b761-a37a-4e51-a12e-3c4303a55544 | RecoveredBy=<OPERATOR> | RecovererRole=R-11 | RecoveredAt=2026-10-12 02:12:07.3341636+00:00 | Basis=现场已给桩 211 合闸，桩恢复出电（cs#566 续场三 G4 拉闸后）
+## select * from VehicleChargingEligibilityRecoveries order by rowid desc limit 2
+RecoveryId=8ad73a5b-4765-41f8-84e0-cbac0249f53f | HoldId=93a9b133-00b8-1c5b-9901-f8b4b3644126 | RecoveredBy=<OPERATOR> | RecovererRole=R-11 | RecoveredAt=2026-10-12 08:03:16.450394+00:00 | Basis=充电中断由现场拉闸造成，桩已合闸恢复出电，车辆本身无故障（REQ-0178 补测）
+RecoveryId=f6b2348b-800b-42b8-8f6e-93f3979f2d7e | HoldId=2a9a736f-183b-845d-a520-f18d51b7a0c7 | RecoveredBy=<OPERATOR> | RecovererRole=R-11 | RecoveredAt=2026-10-12 02:12:09.2862464+00:00 | Basis=G4 充电中断由现场拉闸造成，桩已合闸恢复出电，车辆本身无故障（cs#566 续场三）
+## select * from VehiclePurposeClaims
+## select * from ManualChargingHolds
+## select * from StationExclusivities
+MapId=26 | StationId=216 | StationKind=WAITING_POINT | State=OCCUPIED | VehicleKey=BROKERX-f38975561adf46ccb1d2f23833c7d0e4 | JourneyId=charging:BROKERX-f38975561adf46ccb1d2f23833c7d0e4:20261012T074050545Z | StateSince=2026-10-12 07:54:25.1461211+00:00 | WaitingPointVersion=1 | RecordId=a657fb5a-2d4d-44ea-8502-4813144f2069 | ChargerRosterVersion=
+## select count(*) as OpenCycles from ChargingCycles where Phase<>'ENDED'
+OpenCycles=0

@@ -1,0 +1,69 @@
+[14:11:20] Clone F:\8005-wt\rig-req0178-deploy-8005-agv-control-server is clean at 4771f70e4527928d736abc6085ddf8098a21aa2d; definition scripts/parallel/instance-factory01-v2.req0178-field-off.json is tracked there; the files sent match HEAD
+[14:11:20] ADMISSION_POLICY_VERSION_OVERRIDE=5 definition=3 reason=operator raised the version above the definition (e.g. reinstalling after a rollback)
+WARNING: ADMISSION_POLICY_VERSION_OVERRIDE=5 definition=3 reason=operator raised the version above the definition (e.g. reinstalling after a rollback)
+[14:11:20] journeyRuntime.admissionPolicyVersion=5 read back from the derived definition C:\Users\szy\AppData\Local\Temp\control-server-v2-definition-20261012-141120-37147a20\instance-factory01-v2.req0178-field-off.json
+[14:11:20] ADMISSION_POLICY_VERSION=5 -- write it into the deployment record; a rollback needs the highest one ever installed + 1
+[14:11:21] Instance definition accepted: factory01-v2-parallel (from C:\Users\szy\AppData\Local\Temp\control-server-v2-definition-20261012-141120-37147a20\instance-factory01-v2.req0178-field-off.json)
+[14:11:21] MES_INGEST_SOURCE=fake baseUrl=http://127.0.0.1:58188 allowedWorkTypes=DIE_TO_WIRE_STAGING,DIE_TO_OVEN,WIRE_TO_GATE,WIRE_TO_OPTICAL,STAGING_TO_WIRE,WIRE_TO_NITROGEN -- injected demand from this instance's own FakeMesIngest double, task '8005 AGV ControlServer V2 FakeMesIngest'
+[14:11:21] Target: factory01  service '8005 AGV ControlServer V2'
+[14:11:21] Vehicle 1/2: 老厂前线新多仓位2 (BROKERX-f38975561adf46ccb1d2f23833c7d0e4)
+[14:11:21] Vehicle 2/2: 老厂前线新多仓位3 (BROKERX-7daca4ee91da498d8026c68b7b941127)
+[14:11:21] RouteGraph: enabled=False mapId=26   RiotCreateDispatch: enabled=False
+[14:11:21] Clearance exit: VehicleFaultRecovery enabled=True   FieldOperatorRoles roster=D:\zhengyushao\control-server-v2-ops\field-operator-roles.json onboardEntryDeclared=False
+[14:11:21] Clearance to a waiting point (REQ-0178): journeyRuntime.clearanceToWaitingPointEnabled=False
+[14:11:23] INSTALLED_ADMISSION_POLICY_VERSION=5 (from D:\zhengyushao\control-server-v2-ops\installed-instance.json on factory01); sending 5
+[14:11:23] Secrets loaded from the DPAPI store (V2FaultRecoveryCredential present, will be sent)
+[14:11:23] Vehicle-safety projection credentials loaded for BROKERX-f38975561adf46ccb1d2f23833c7d0e4, BROKERX-7daca4ee91da498d8026c68b7b941127 (values not shown)
+[14:11:23] Using local package F:\8005-scratch\req0178-pkg\WireToGate-20261012-060347-4771f70\WireToGate-20261012-060347-4771f70.zip
+[14:11:23] Package hash verified (489d26d8b3a7189fb77ac54f734ebafc61bb75479e7fad94aab1197cfc681282)
+[14:11:23] PACKAGE_COMMIT_MATCHES_CLONE=4771f70e4527928d736abc6085ddf8098a21aa2d (release-manifest.json components.controlServer.commit)
+[14:11:23] Package onboard commit: b2f602ecb107b972319106060593ad146a07c8f2 (components.onboardHmi.commit)
+[14:11:23] Building FakeMesIngest from the control-server repository
+  Determining projects to restore...
+  Restored F:\8005-wt\rig-req0178-deploy-8005-agv-control-server\tools\ControlServer.TestDoubles\ControlServer.TestDoubles.csproj (in 156 ms).
+  Restored F:\8005-wt\rig-req0178-deploy-8005-agv-control-server\src\ControlServer.Application\ControlServer.Application.csproj (in 159 ms).
+  Restored F:\8005-wt\rig-req0178-deploy-8005-agv-control-server\src\ControlServer.Domain\ControlServer.Domain.csproj (in 155 ms).
+  Restored F:\8005-wt\rig-req0178-deploy-8005-agv-control-server\tools\ControlServer.FakeMesIngest\ControlServer.FakeMesIngest.csproj (in 589 ms).
+  Restored F:\8005-wt\rig-req0178-deploy-8005-agv-control-server\src\ControlServer.Infrastructure\ControlServer.Infrastructure.csproj (in 589 ms).
+  ControlServer.Domain -> F:\8005-wt\rig-req0178-deploy-8005-agv-control-server\src\ControlServer.Domain\bin\Release\net8.0\win-x64\ControlServer.Domain.dll
+  ControlServer.TestDoubles -> F:\8005-wt\rig-req0178-deploy-8005-agv-control-server\tools\ControlServer.TestDoubles\bin\Release\net8.0\win-x64\ControlServer.TestDoubles.dll
+  ControlServer.Application -> F:\8005-wt\rig-req0178-deploy-8005-agv-control-server\src\ControlServer.Application\bin\Release\net8.0\win-x64\ControlServer.Application.dll
+  ControlServer.Infrastructure -> F:\8005-wt\rig-req0178-deploy-8005-agv-control-server\src\ControlServer.Infrastructure\bin\Release\net8.0\win-x64\ControlServer.Infrastructure.dll
+  ControlServer.FakeMesIngest -> F:\8005-wt\rig-req0178-deploy-8005-agv-control-server\tools\ControlServer.FakeMesIngest\bin\Release\net8.0\win-x64\ControlServer.FakeMesIngest.dll
+  ControlServer.FakeMesIngest -> C:\Users\szy\AppData\Local\Temp\control-server-v2-deploy-20261012-141123\fake-mes-ingest\
+Published FakeMesIngest: C:\Users\szy\AppData\Local\Temp\control-server-v2-deploy-20261012-141123\fake-mes-ingest.zip
+Source commit: 4771f70e4527928d736abc6085ddf8098a21aa2d
+SHA-256: e1b9c27f540d626347ffb057294467683e618c352810c98bb9c4567e84d81c91
+[14:11:48] FakeMesIngest package: C:\Users\szy\AppData\Local\Temp\control-server-v2-deploy-20261012-141123\fake-mes-ingest.zip
+[14:12:00] Parallel scripts and instance definition staged in D:\zhengyushao\control-server-v2-ops
+  ready: D:\zhengyushao\control-server-v2-ops
+  ready: D:\zhengyushao\control-server-v2-staging
+ready: D:\zhengyushao\control-server-v2-ops
+ready: D:\zhengyushao\control-server-v2-staging
+[14:12:05] Copying package (176.5 MB)
+[14:12:24] Running the parallel installer on the server
+  [14:12:26] Instance definition accepted: factory01-v2-parallel
+  [14:12:26] MES_INGEST_SOURCE=fake baseUrl=http://127.0.0.1:58188 allowedWorkTypes=DIE_TO_WIRE_STAGING,DIE_TO_OVEN,WIRE_TO_GATE,WIRE_TO_OPTICAL,STAGING_TO_WIRE,WIRE_TO_NITROGEN -- injected demand from this instance's own FakeMesIngest double, task '8005 AGV ControlServer V2 FakeMesIngest'
+  [14:12:27] MVP service before: present=True status=Running startType=Automatic pathName="C:\Program Files\8005 AGV\ControlServer\ControlServer.Host.exe" --contentRoot "C:\Program Files\8005 AGV\ControlServer" --environment Production processId=10912
+  [14:12:28] Package hash verified (489d26d8b3a7189fb77ac54f734ebafc61bb75479e7fad94aab1197cfc681282)
+  [14:12:28] Installed definition recorded at D:\zhengyushao\control-server-v2-ops\installed-instance.json
+  [14:12:34] Unpacked to D:\zhengyushao\ControlServer.V2.incoming-20261012-141226
+  [14:12:34] Release: controlserver 4771f70  onboard b2f602e
+  [14:12:34] RIoT key written to the user scope (shared with the MVP deployment, same value today); machine scope read, not written
+  [14:12:34] Upgrading 8005 AGV ControlServer V2 with Update-ControlServerLocal.ps1
+  JourneyRuntime.enabled set false for the upgrade, with the service stopped (was 'True')
+  WARNING: JOURNEY_RUNTIME_LEFT_DISABLED: the upgrade failed, and C:\Program Files\8005 AGV\ControlServer.V2\appsettings.Production.json has JourneyRuntime.enabled=False (service status: Running). If the upgrade script failed in its own preflight the service is still stopped; if it failed after that, its own rollback restarted the previous binaries with the runtime off. Either way this instance dispatches nothing. To recover, redeploy the commit that is running now (or a fixed package): that writes the definition's value back. The upgrade runs the Update-ControlServerLocal.ps1 inside the package being deployed, not this installer's: if the running package predates control-server#605 its upgrade fails again at the same .Count, so only a package that contains that fix recovers it. Do NOT use -Rollback for this: after a failed install the package swap has not happened, so -Rollback installs the generation before the running one, which the onboard side may not match.
+  WARNING: PARALLEL_INSTALL_FAILED_STATE: what this run changed that is still changed, and how to undo it.
+  WARNING: INSTALLED_RECORD=RESTORED: D:\zhengyushao\control-server-v2-ops\installed-instance.json is the previous run's record again; this run's definition was never installed (the run stopped before the product script, or the product script rolled itself back). A copy is kept at D:\zhengyushao\control-server-v2-ops\results\install-20261012-141226.previous-installed-instance.json.
+  WARNING: JOURNEY_RUNTIME=false in C:\Program Files\8005 AGV\ControlServer.V2\appsettings.Production.json (service '8005 AGV ControlServer V2': Running): this instance places no orders. An upgrade sets it false before the product script and the configuration step holds it so until the read-back (a value an earlier failed run left reads the same); it is left so on purpose: false is the safe direction, and turning it on is the release step with its read-backs, which only a deployment that completes runs. Do not edit it to true by hand. It comes back with the next deployment that completes: redeploy the commit that is running now, or a fixed package. The upgrade (and -Rollback) runs the Update-ControlServerLocal.ps1 inside the package it installs, not this installer's: a package older than control-server#605 fails again at the same .Count, so then only a package that contains that fix recovers it.
+  Exception: D:\zhengyushao\ControlServer.V2.incoming-20261012-141226\scripts\Update-ControlServerLocal.ps1:232
+  Line |
+   232 |              throw "Safety projection returned HTTP $([int]$response.S 鈥?[0m
+       |              ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+       | Safety projection returned HTTP 401.
+  deploy-config.json: not on the server
+Exception: F:\8005-wt\rig-req0178-8005-workspace\remote-ops\factory-server\scripts\19-deploy-control-server-parallel.ps1:165
+Line |
+ 165 |  … EXITCODE -ne 0) { throw "ssh $SshAlias failed (exit $LASTEXITCODE)" }
+     |                      ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+     | ssh factory01 failed (exit 1)

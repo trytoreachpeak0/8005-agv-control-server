@@ -1,0 +1,16 @@
+[15:19:36] Onboard stack on agv02
+  Onboard IO target: 127.0.0.1:1502 (simulator)
+  Starting the slot IO simulator
+  Simulator up: 1502 (Modbus) and 58006 (automation) listening
+  Starting the onboard client
+  Onboard client PID(s): 5432
+[15:20:02] Both up on agv02.
+  The session is not Ready until the vehicle-safety projection returns
+  motionState=STOPPED with fresh evidence. That judgement is still a person's.
+5432
+log dirs: C:\Users\HT\AppData\Local\SQCD\8005AGV\logs
+newest log: C:\Users\HT\AppData\Local\SQCD\8005AGV\logs\agv-20261012.log 10/12/2026 15:19:53
+2026-10-12T15:19:53.6978637+08:00	Information	RestartRecovery	WireToGateSessionService	上层会话已建立：generation=20，readiness=Ready。
+2026-10-12T15:19:53.7668486+08:00	Information	RestartRecovery	WireToGateSessionClient	收到SessionReadiness：messageId=4a516f44-d446-4b26-b0cb-6b3e365e5531，generation=20，readiness=READY，reasonCodes=[]，acceptedSafetyState
+2026-10-12T15:19:53.7755658+08:00	Information	RestartRecovery	WireToGateSessionClient	会话状态发布：source=SessionReadiness，connected=True，generation=20，readiness=Ready，reasonCodes=[]，safetyStateVersion=2。
+2026-10-12T15:19:53.7893415+08:00	Information	RestartRecovery	WireToGateSessionClient	会话状态发布：source=SafetyStateChanged-ack，connected=True，generation=20，readiness=Ready，reasonCodes=[]，safetyStateVersion=2。
