@@ -276,6 +276,52 @@ gh workflow run l2.yml --ref <分支> -f rig=real -f onboard_ref=<...> -f simula
 与本机对照：批次 6 出口在控制端笔记本上跑同一份清单（车载端 `44b3aa6e`，与 `4d716340` 只差证据；模拟器同为 `fb5f7c59`），正式场景 12 遍全 PASS（另有一次性副本 1 遍，CI 上不跑），
 `expected-action-overdue` 三遍 89／84／82 秒；vm01 上 86／85／86 秒。证据入库 `evidence/l2/20260919-ci-35449602428-*`。
 
+### 屏幕状态快照与停顿点（`-ScreenState`，control-server#653，默认关）
+
+车载端从 onboard-hmi#315 起能把「屏幕上显示什么、能按什么」写成快照文件（`hmi-state.json` 加按天的时间线
+`hmi-state-yyyyMMdd.ndjson`），出厂关着。onboard-hmi#316 的 T3 验收要在真装置场景的几个停顿点上，拿快照与
+UI Automation 读到的屏幕逐项对照。这一节的开关就是为它准备的，只在本机真装置上用，CI 不传。
+
+```powershell
+# 终端一：带快照与停顿点跑一个 T3 场景（停顿点取自 screen-state-crosscheck.psd1）
+pwsh -File scripts/l2/Invoke-L2Scenario.ps1 -Scenario real-onboard-compensate-then-reconnect -EvidenceRoot <目录> `
+    -OnboardRepository <车载端 worktree> -SimulatorRepository <模拟器 worktree> -ScreenState
+# 终端二：同一桌面上，每个停顿点跑 10 次对照，然后放行
+pwsh -File scripts/l2/Watch-L2ScreenStatePauses.ps1 -EvidenceRoot <同一目录> `
+    -ReaderScript <8005-workspace>/remote-ops/onboard-hmi/scripts/18-read-hmi-screen-state.ps1
+```
+
+- **关着什么都不变。** 不传 `-ScreenState` 时，暂存的车载端 `appsettings.json` 一个字节都不改，不建任何目录，
+  `timeline.jsonl` 不多一行，`assertions.json` 的身份里没有 `screenState`。停顿的钩子挂在 `L2Journal.OnCheckpoint`
+  上，默认是空，空着时判据翻转与对话框处理都不调用任何东西。
+- **开了做三件事。** 暂存的车载端设 `screenState.enabled = true`、`screenState.directory = <证据>/screen-state`；
+  走到停顿点时在 `<证据>/screen-state-pauses/` 写 `pause-NN.json`，等同目录出现 `pause-NN.release` 或等满窗口
+  （`-ScreenStatePauseSeconds`，默认 120 秒）再往下走；收尾写 `pauses.json`（每个点到没到、每次停顿怎么结束的），
+  身份里记一行 `screenState.*`。车载端提交早于 onboard-hmi#315（没有 `screenState` 段）时直接报错，不猜。
+- **停顿点怎么写。** `判据名=值`：本次运行的 timeline 里这个判据第一次翻到恰好这个值时停；`@dialog=标题`：对话框
+  辅助函数找到这个标题的对话框、还没按的时候停。`-ScreenStatePauseAt` 显式给，或者不给、取
+  `screen-state-crosscheck.psd1` 里这个场景的那一组，都没有就只写快照不停。
+- **T3 用的两个场景**（`screen-state-crosscheck.psd1`）：`real-onboard-compensate-then-reconnect` 与
+  `real-onboard-restart-with-open-recovery-session`。两个合起来，横幅的「需要恢复」状态、恢复入口（「申请恢复」「补偿清空」，
+  重启前后各一次）、确认对话框各出现两次以上；没有新增或改动任何场景判据。
+- **停顿不改判据。** 停顿发生在 timeline 写下那次翻转之后、观察它的那个等待作出判断之前。清单里的点都是那个等待
+  接受的值，所以等待照样返回同一个值，停多久都不会把它等超时（自检里有一条专门让停顿比等待的超时长）。
+  反过来，**一个不被等待接受的中间值当停顿点，会吃掉那个等待自己的预算**，所以清单只收接受值。
+- **停顿不延长产品侧超时，这也正是风险所在。** 本开关不写任何服务端或车载端超时；停顿期间产品自己的计时照走。
+  清单里的点都在「子批号已录入、产品在等操作员」的位置，到站期限已经不在计时；但车载端的预期动作超时
+  （REQ-0358，默认 3×`operationTimeoutMs`）这类计时在停顿里仍可能到点，表现是屏幕上多出一条报警，场景判据不读它。
+  若某次停顿后场景红了，先看 `pauses.json` 与 timeline 里停顿的起止，再看是不是计时到点。
+- **停顿永远不判红。** 窗口等满算一条记录（`window-elapsed`），某个点没走到也只记进 `pauses.json` 的 `unreached`。
+  对照结果（`pause-NN.crosscheck.json`，每轮的退出码与读取脚本自己的结论）也不进 L2 判据，是 T3 的事。
+- **桌面锁。** 对照脚本的 UIA 读取读的是这次 L2 运行持有 `Global\W2G-InteractiveDesktop` 时的那块桌面，算本次运行
+  自己的用法，不另外拿锁；所以 `Watch-L2ScreenStatePauses.ps1` 只能陪着一次正在跑的真装置 L2 用。
+- **上车前另核。** 读取脚本在车上起 pwsh 时，台架上见过车载端 Modbus 1 秒超时离线（cs#653 调度评论）；本机台架跑时，
+  把车载端日志 `logs/onboard-app/` 里「IO模块离线」的时刻与 `pauses.json` 的停顿起止对一遍，写进证据。
+
+自检 `Test-L2ScreenState.ps1`（`test.yml` 里跑）守住上面每一条：关着时暂存设置与 timeline 逐字不变、编排器只经由
+解析出的计划碰快照代码、停顿等放行或等满窗口、接受值上的停顿不让等待超时、清单里的判据名与对话框标题确实是那个场景
+（或两个对话框辅助函数）里的字面量、两个对话框辅助函数各自调用检查点、对照脚本按轮跑完后放行。
+
 ### 每晚 G3（`g3.yml`，control-server#582）
 
 G3 不是 L2，但和真装置共用 vm01 的同一个交互式 runner，所以写在这里。

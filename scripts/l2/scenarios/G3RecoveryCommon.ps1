@@ -157,7 +157,12 @@ function Invoke-G3DialogButton([object]$Onboard, [object]$Journal, [string]$Titl
             Start-Sleep -Milliseconds 250
             continue
         }
-        if ($null -eq $answerDeadline) { $answerDeadline = [DateTimeOffset]::UtcNow.AddSeconds(15) }
+        if ($null -eq $answerDeadline) {
+            # The dialog is up and not yet answered: the one moment a screen-state pause can see it (control-server#653).
+            # Before the answer deadline is set, so a pause never eats the 15 seconds the press is given.
+            Invoke-L2JournalCheckpoint $Journal '@dialog' $Title
+            $answerDeadline = [DateTimeOffset]::UtcNow.AddSeconds(15)
+        }
         if ([DateTimeOffset]::UtcNow -ge $answerDeadline) {
             throw "Dialog '$Title' is still open 15s after its button $ButtonAutomationId was pressed."
         }
