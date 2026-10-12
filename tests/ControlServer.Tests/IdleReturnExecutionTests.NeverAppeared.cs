@@ -290,6 +290,7 @@ public sealed partial class IdleReturnExecutionTests
     {
         { "order-present", WaitingPointArrivalSettlement.OrderNotAbsent },
         { "order-unclassified", WaitingPointArrivalSettlement.OrderNotAbsent },
+        { "intent-has-order-id", WaitingPointArrivalSettlement.OrderNotAbsent },
         { "order-unreadable", WaitingPointArrivalSettlement.OrderUnreadable },
         { "too-early", WaitingPointArrivalSettlement.TooEarly },
         { "vehicle-offline", WaitingPointArrivalSettlement.VehicleOffline },
@@ -317,6 +318,16 @@ public sealed partial class IdleReturnExecutionTests
             case "order-unclassified":
                 RiotOrderObservation real = fleet.Riot.RealRiotAbsent(journey.PickupUpperId);
                 fleet.Riot.PutOrder(real with { Receipt = real.Receipt! with { FailureCategory = "TRANSPORT_FAILURE" } });
+                break;
+            case "intent-has-order-id":
+                // RIoT answers exactly "no such order", but the server did learn an order id for this intent once (review X5): an
+                // order that existed is not one that never appeared, so the entry must not close it.
+                OrderIntentRow stored = await fleet.Context.OrderIntents.SingleAsync(row => row.UpperId == journey.PickupUpperId, Token);
+                stored.OrderId = "ORDER-ONCE-SEEN";
+                await fleet.Context.SaveChangesAsync(Token);
+                fleet.Context.ChangeTracker.Clear();
+                Assert.True((await fleet.Riot.ReconcileByUpperIdAsync(journey.PickupUpperId, Token))
+                    .IsExactAbsentAtObservation(journey.PickupUpperId));
                 break;
             case "order-unreadable":
                 fleet.Riot.BeforeReconcile = _ => throw new HttpRequestException("RIoT did not answer.");

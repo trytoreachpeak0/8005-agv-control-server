@@ -3,6 +3,9 @@ using System.Text;
 using ControlServer.Application;
 using ControlServer.Domain;
 using ControlServer.Infrastructure.Adapters;
+using ControlServer.Host.Runtime;
+using Microsoft.Extensions.Configuration;
+using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging;
 using RIoT.Sdk.Core;
 using RIoT.Sdk.Facade;
@@ -99,6 +102,77 @@ public sealed class HttpRiotFailureDetailTests
         HttpRiotMovementGateway gateway = new(session, new FixedTimeProvider(ReadAt), log);
         RiotOrderObservation result = await gateway.ReconcileByUpperIdAsync(Intent.UpperId, TestContext.Current.CancellationToken);
         Assert.Equal(RiotOrderObservationKind.Unknown, result.Kind);
+    }
+
+    /// <summary>
+    /// 审查（网关构造函数）：宿主的注册（<c>AddRiotSdkIntegration</c>）解析出来的网关真的带着日志——建单回 00002 时宿主的日志里出现 2166。
+    /// 注册哪天改成调两参构造的工厂，日志就退成 NullLogger、2166/2167 悄悄消失；直接 new 三参构造的用例看不出来，这一条看得出来。
+    /// </summary>
+    [Fact]
+    public async Task TheGatewayTheHostResolvesLogsWhatRiotSaid()
+    {
+        CallbackHandler handler = new(() => new HttpResponseMessage(HttpStatusCode.OK)
+        {
+            Content = new StringContent("""{"code":"00002","message":"内部错误","result":null}""", Encoding.UTF8, "application/json")
+        });
+        string variable = "CONTROL_SERVER_TEST_RIOT_SDK_" + Guid.NewGuid().ToString("N");
+        Environment.SetEnvironmentVariable(variable, "test-call-api-key");
+        IConfiguration configuration = new ConfigurationBuilder()
+            .AddInMemoryCollection(new Dictionary<string, string?>
+            {
+                ["RIoT:baseUrl"] = "http://riot.test",
+                ["RIoT:callApiKeyEnvironmentVariable"] = variable,
+            })
+            .Build();
+        RecordingProvider recorded = new();
+        ServiceCollection services = new();
+        services.AddSingleton(configuration);
+        services.AddSingleton(TimeProvider.System);
+        services.AddLogging(logging => logging.AddProvider(recorded));
+        services.AddRiotSdkIntegration(configuration, () => handler);
+        try
+        {
+            await using ServiceProvider provider = services.BuildServiceProvider(validateScopes: true);
+            await using AsyncServiceScope scope = provider.CreateAsyncScope();
+            HttpRiotMovementGateway gateway = scope.ServiceProvider.GetRequiredService<HttpRiotMovementGateway>();
+            await gateway.CreateAsync(Intent, TestContext.Current.CancellationToken);
+        }
+        finally
+        {
+            Environment.SetEnvironmentVariable(variable, null);
+        }
+
+        Assert.True(recorded.Entries.Any(entry =>
+            entry.Category == typeof(HttpRiotMovementGateway).FullName && entry.EventId == 2166 &&
+            entry.Message.Contains("内部错误", StringComparison.Ordinal)),
+            string.Join(" | ", recorded.Entries.Select(entry => $"{entry.Category}:{entry.EventId}:{entry.Message}")));
+    }
+
+    private sealed class RecordingProvider : ILoggerProvider
+    {
+        public List<(string Category, int EventId, string Message)> Entries { get; } = [];
+
+        public ILogger CreateLogger(string categoryName) => new Recording(this, categoryName);
+
+        public void Dispose()
+        {
+        }
+
+        private sealed class Recording(RecordingProvider owner, string category) : ILogger
+        {
+            public IDisposable? BeginScope<TState>(TState state) where TState : notnull => null;
+
+            public bool IsEnabled(LogLevel logLevel) => true;
+
+            public void Log<TState>(
+                LogLevel logLevel, EventId eventId, TState state, Exception? exception, Func<TState, Exception?, string> formatter)
+            {
+                lock (owner.Entries)
+                {
+                    owner.Entries.Add((category, eventId.Id, formatter(state, exception)));
+                }
+            }
+        }
     }
 
     private static readonly OrderIntent Intent = new(
