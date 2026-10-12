@@ -2186,7 +2186,7 @@ Invoke-PathCase 'disable before upgrade' {
 # the flag stays false, JOURNEY_RUNTIME_LEFT_DISABLED says how to recover, and the failure is
 # rethrown; with RIoT dispatch open nothing at all happens (review S3, S4 M5/M6).
 function Invoke-UpgradeCase {
-    param([string] $InstalledText, [scriptblock] $Update = { 'upgrade ran' })
+    param([string] $InstalledText, [scriptblock] $Update = { 'upgrade ran' }, [scriptblock] $Write = { 'credentials written' })
     $directory = Join-Path ([IO.Path]::GetTempPath()) "cs454-upgrade-$([guid]::NewGuid().ToString('N'))"
     New-Item -ItemType Directory -Path $directory | Out-Null
     $file = Join-Path $directory 'appsettings.Production.json'
@@ -2197,7 +2197,7 @@ function Invoke-UpgradeCase {
     try {
         $null = Invoke-ParallelProductUpgrade -ConfigurationPath $file -ServiceName '8005 AGV ControlServer V2' -WarningVariable +warnings -WarningAction SilentlyContinue -Actions @{
             StopService = { $seen.Add("stop(flag=$(& $flagOf))") }
-            WriteVehicleSafetyCredentials = { $seen.Add("write(flag=$(& $flagOf))"); 'credentials written' }
+            WriteVehicleSafetyCredentials = { $seen.Add("write(flag=$(& $flagOf))"); & $Write }
             InvokeUpdate = { $seen.Add("update(flag=$(& $flagOf))"); & $Update }
             ServiceStatus = { 'Running' }
         }
@@ -2242,6 +2242,13 @@ Invoke-PathCase 'upgrade wrapper, MISSING after the credentials were written (co
     Write-Result -Ok (-not (($other.Warnings -join ' ').Contains('-Uninstall without -RemoveData'))) `
         -Name 'any other upgrade failure does not carry the MISSING advice' -Detail ("warnings: " + ($other.Warnings -join ' | '))
 }
+Invoke-PathCase 'upgrade wrapper, the credential write fails (control-server#652 review S1)' {
+    $r = Invoke-UpgradeCase -InstalledText $installedText -Write { throw 'VEHICLE_SAFETY_CREDENTIAL_NOT_WRITTEN: selftest' }
+    Write-Result -Ok ((@($r.Seen) -join ',') -ceq 'stop(flag=true),write(flag=true)' -and $r.Thrown -ceq 'VEHICLE_SAFETY_CREDENTIAL_NOT_WRITTEN: selftest' -and
+        $r.FlagAfter -eq 'true' -and @($r.Warnings | Where-Object { $_ -like 'JOURNEY_RUNTIME_LEFT_DISABLED*' }).Count -eq 0) `
+        -Name 'upgrade: a failed credential write is rethrown unchanged, after the stop and before the flag and the upgrade (the flag stays true, no LEFT_DISABLED)' `
+        -Detail ("seen: " + (@($r.Seen) -join ',') + "; thrown: $($r.Thrown); after: $($r.FlagAfter); warnings: " + ($r.Warnings -join ' | '))
+}
 Invoke-PathCase 'upgrade wrapper, no credential action' {
     $file = Join-Path ([IO.Path]::GetTempPath()) "cs652-noaction-$([guid]::NewGuid().ToString('N')).json"
     [IO.File]::WriteAllText($file, $installedText, [Text.UTF8Encoding]::new($false))
@@ -2282,8 +2289,12 @@ Invoke-CredentialWriteCase 'R1 credential write: two cars -- one replaced, one a
     @{ Ok = ($null -eq $r.Thrown -and $r.Sets -eq 1 -and (@($r.Environment | Sort-Object) -join '|') -ceq (@($expected | Sort-Object) -join '|') -and
             $r.Line.Contains("${safetyPrefix}59") -and $r.Line.Contains("${safetyPrefix}60") -and -not $r.Line.Contains('cs652-')) ; Detail = "line: $($r.Line); thrown: $($r.Thrown); sets: $($r.Sets); names: $(@($r.Environment | ForEach-Object { ($_ -split '=', 2)[0] }) -join ',')" }
 }
-Invoke-CredentialWriteCase 'R1 credential write: already in place -- nothing written' {
-    $r = Invoke-CredentialWrite -Credentials $twoCredentials -Environment @("${safetyPrefix}59=cs652-value-59", "${safetyPrefix}60=cs652-value-60")
+Invoke-CredentialWriteCase 'R1 credential write: already in place, with an entry after them -- nothing written (review L1)' {
+    $r = Invoke-CredentialWrite -Credentials $twoCredentials -Environment @('A=1', "${safetyPrefix}59=cs652-value-59", "${safetyPrefix}60=cs652-value-60", 'CONTROL_SERVER_MES_INGEST_SHARED_SECRET=cs652-s')
+    @{ Ok = ($null -eq $r.Thrown -and $r.Sets -eq 0); Detail = "sets: $($r.Sets); thrown: $($r.Thrown)" }
+}
+Invoke-CredentialWriteCase 'R1 credential write: a name in other casing with the same value -- nothing written (Windows names ignore case)' {
+    $r = Invoke-CredentialWrite -Credentials $twoCredentials -Environment @("$($safetyPrefix.ToLowerInvariant())59=cs652-value-59", "${safetyPrefix}60=cs652-value-60", 'A=1')
     @{ Ok = ($null -eq $r.Thrown -and $r.Sets -eq 0); Detail = "sets: $($r.Sets); thrown: $($r.Thrown)" }
 }
 Invoke-CredentialWriteCase 'R1 credential write: single car (no roster) -- the Environment is neither read nor written' {

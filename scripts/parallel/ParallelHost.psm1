@@ -429,12 +429,16 @@ function Write-ParallelOnboardSafetyCredentialForUpgrade {
     $variables = @($Credentials.Keys | ForEach-Object { [string] $_ })
     if ($variables.Count -eq 0) { return 'Vehicle-safety projection credentials before the upgrade: none (single car, shared credential).' }
 
-    [string[]] $before = @(@(& $Actions.GetEnvironment) | Where-Object { $null -ne $_ })
-    [string[]] $environment = $before
-    foreach ($variable in $variables) {
-        $environment = Set-ParallelServiceEnvironmentEntry -Environment $environment -Name $variable -Value ([string] $Credentials[$variable])
+    # Written only when some variable's value differs, compared by name and value: Set-ParallelServiceEnvironmentEntry moves a
+    # replaced entry to the end, so comparing the whole multi-string would rewrite one that only changed order (review L1).
+    [string[]] $environment = @(@(& $Actions.GetEnvironment) | Where-Object { $null -ne $_ })
+    $differ = @($variables | Where-Object { (Get-ParallelServiceEnvironmentEntry -Environment $environment -Name $_) -cne [string] $Credentials[$_] })
+    if ($differ.Count -gt 0) {
+        foreach ($variable in $differ) {
+            $environment = Set-ParallelServiceEnvironmentEntry -Environment $environment -Name $variable -Value ([string] $Credentials[$variable])
+        }
+        $null = & $Actions.SetEnvironment $environment
     }
-    if ((@($environment) -join "`0") -cne (@($before) -join "`0")) { $null = & $Actions.SetEnvironment $environment }
 
     [string[]] $after = @(& $Actions.GetEnvironment)
     $absent = @($variables | Where-Object { [string]::IsNullOrWhiteSpace((Get-ParallelServiceEnvironmentEntry -Environment $after -Name $_)) })
