@@ -126,6 +126,27 @@ public sealed class JourneyRuntimeOptionsTests
     }
 
     /// <summary>
+    /// control-server#646：同站追加提前结束离站等待之前的纠错宽限默认 30 秒；零是「不留宽限」，可以；负数拒绝（PR #660 增量审查 S3）。
+    /// </summary>
+    [Fact]
+    [Trait("IntegrationSlice", "FP-IS-08")]
+    public void SameStationAppendCorrectionGraceDefaultsToThirtySecondsAndIsNeverNegative()
+    {
+        const string failure = "SameStationAppendCorrectionGrace must not be negative.";
+        Assert.Equal(TimeSpan.FromSeconds(30), new JourneyRuntimeOptions().SameStationAppendCorrectionGrace);
+        JourneyRuntimeOptionsValidator validator = new(new ConfigurationBuilder().Build());
+        JourneyRuntimeOptions options = ValidEnabledOptions();
+
+        foreach (TimeSpan accepted in new[] { TimeSpan.Zero, TimeSpan.FromSeconds(1), TimeSpan.FromMinutes(10) })
+        {
+            options.SameStationAppendCorrectionGrace = accepted;
+            Assert.DoesNotContain(failure, validator.Validate(null, options).Failures ?? [], StringComparer.Ordinal);
+        }
+        options.SameStationAppendCorrectionGrace = TimeSpan.FromSeconds(-1);
+        Assert.Contains(failure, validator.Validate(null, options).Failures ?? [], StringComparer.Ordinal);
+    }
+
+    /// <summary>
     /// control-server#198：反向旅程在机台等准入恢复的门槛默认 10 分钟，必须为正——没有「一直等」这个选项。
     /// </summary>
     [Fact]

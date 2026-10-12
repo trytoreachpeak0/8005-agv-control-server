@@ -293,6 +293,7 @@ public sealed class SameStationAppendEndsDepartureWaitTests
         Assert.Equal(closedAt, restarted.StationDepartureWaitStartedAt);
         Assert.Null(restarted.BlockReasonCode);
         Assert.False(await DepartureCheckOfStopSentAsync(fixture, firstPickup.StopId));
+        Assert.Equal(closedAt + Grace, (await LatestWorklistAsync(fixture)).Deadline);
 
         await RunAtAsync(fixture, closedAt + Grace - TimeSpan.FromSeconds(1));
         Assert.False(await DepartureCheckOfStopSentAsync(fixture, firstPickup.StopId));
@@ -302,6 +303,34 @@ public sealed class SameStationAppendEndsDepartureWaitTests
             await DepartureCheckOfStopSentAsync(fixture, firstPickup.StopId),
             "The correction closed and its grace ran out, yet the vehicle was not sent on.");
         Assert.True(fixture.Clock.GetUtcNow() < closedAt + Wait);
+    }
+
+    /// <summary>
+    /// 护栏（PR #660 增量审查 S1）：离站等待里，车上收到的期限就是服务端真正送车走的那一刻。同站追加之后车上最新一版清单的期限是
+    /// 落定 + 宽限（不是原期限）；那一刻之前一秒不发离站核验，那一刻发。判定与下发只改一边，这条就红。
+    /// </summary>
+    [Fact]
+    [Trait("IntegrationSlice", "FP-IS-02")]
+    [Trait("IntegrationSlice", "FP-IS-08")]
+    public async Task TheDeadlineOnTheVehicleIsTheMomentTheServerSendsItOn()
+    {
+        await using RuntimeFixture fixture = await Batch7CargoHoldingTests.HoldingFixtureAsync();
+        Configure(fixture);
+        JourneyStopRow firstPickup = await AppendWhileTheFirstLoadsAsync(fixture);
+        DateTimeOffset committedAt = fixture.Clock.GetUtcNow();
+        await RoundAsync(fixture);
+
+        (string[] demands, DateTimeOffset? onVehicle) = await LatestWorklistAsync(fixture);
+        Assert.Empty(demands);
+        Assert.Equal(committedAt + Grace, onVehicle);
+        Assert.NotEqual(committedAt + Wait, onVehicle);
+
+        await RunAtAsync(fixture, onVehicle!.Value - TimeSpan.FromSeconds(1));
+        Assert.False(await DepartureCheckOfStopSentAsync(fixture, firstPickup.StopId));
+        await RunAtAsync(fixture, onVehicle.Value);
+        Assert.True(
+            await DepartureCheckOfStopSentAsync(fixture, firstPickup.StopId),
+            "The vehicle was told one departure moment and sent on at another.");
     }
 
     /// <summary>
@@ -318,6 +347,29 @@ public sealed class SameStationAppendEndsDepartureWaitTests
 
         Assert.True(await DepartureCheckOfStopSentAsync(fixture, firstPickup.StopId));
         Assert.Equal(JourneyRuntimeStage.AwaitingDepartureSafety, (await JourneyOfAsync(fixture, FirstDemandId)).Stage);
+    }
+
+    /// <summary>
+    /// 宽限比期限长：宽限只截短、不延长，车照原期限离站——期限前一秒仍在等，期限那一轮发核验（PR #660 增量审查 S3）。
+    /// </summary>
+    [Fact]
+    [Trait("IntegrationSlice", "FP-IS-08")]
+    public async Task AGraceLongerThanTheWaitDoesNotExtendIt()
+    {
+        await using RuntimeFixture fixture = await Batch7CargoHoldingTests.HoldingFixtureAsync();
+        Configure(fixture);
+        fixture.Options.SameStationAppendCorrectionGrace = Wait + Wait;
+        JourneyStopRow firstPickup = await AppendWhileTheFirstLoadsAsync(fixture);
+        DateTimeOffset committedAt = fixture.Clock.GetUtcNow();
+        Assert.Equal(committedAt + Wait, (await LatestWorklistAsync(fixture)).Deadline);
+
+        await RunAtAsync(fixture, committedAt + Wait - TimeSpan.FromSeconds(1));
+        Assert.False(await DepartureCheckOfStopSentAsync(fixture, firstPickup.StopId));
+
+        await RunAtAsync(fixture, committedAt + Wait);
+        Assert.True(
+            await DepartureCheckOfStopSentAsync(fixture, firstPickup.StopId),
+            "The station deadline passed and a grace longer than the wait held the vehicle past it.");
     }
 
     /// <summary>

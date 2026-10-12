@@ -107,6 +107,14 @@ foreach ($later in @('CargoHoldingYieldWindow', 'LoadingPhaseClosedReason', 'Zon
         Resolve-L2DispatchZoneParameters -Setup @{ $later = 1 } -Where $where
     }.GetNewClosure() $null
 }
+# SameStationAppendCorrectionGrace (control-server#646)
+Test-Case 'no SameStationAppendCorrectionGrace passes nothing' { Resolve-L2SameStationAppendCorrectionGrace -Setup @{} -Where $where } $null
+Test-Case 'a ten-second grace' { Resolve-L2SameStationAppendCorrectionGrace -Setup @{ SameStationAppendCorrectionGrace = '00:00:10' } -Where $where } '00:00:10'
+Test-Case 'a zero grace is passed, not dropped' { Resolve-L2SameStationAppendCorrectionGrace -Setup @{ SameStationAppendCorrectionGrace = '00:00:00' } -Where $where } '00:00:00'
+Test-Case 'a negative grace is refused' { Resolve-L2SameStationAppendCorrectionGrace -Setup @{ SameStationAppendCorrectionGrace = '-00:00:10' } -Where $where } $null 'non-negative time span'
+Test-Case 'grace seconds as a number are refused' { Resolve-L2SameStationAppendCorrectionGrace -Setup @{ SameStationAppendCorrectionGrace = 10 } -Where $where } $null 'non-negative time span'
+Test-Case 'the grace key does not trip the batch 7 near-miss check' { Resolve-L2CargoHoldingTimeout -Setup @{ SameStationAppendCorrectionGrace = '00:00:10' } -Where $where } $null
+
 Test-Case 'unrelated keys pass untouched' {
     Resolve-L2CargoHoldingTimeout -Setup @{ StationDepartureWaitTimeout = '00:00:10'; AreaAssignments = $false } -Where $where
 } $null
