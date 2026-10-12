@@ -84,6 +84,10 @@ public sealed class UpcomingStopPlanWireSequenceTests
         JourneyRuntimeRow runtime = Batch7PlanRevisionTests.PlanRuntime();
         JourneyStopRow pickup = Batch7PlanRevisionTests.StopRow("s-pickup", 1, JourneyStopRoles.Pickup, JourneyStopStatuses.Active);
         JourneyStopRow unload = Batch7PlanRevisionTests.StopRow("s-unload", 3, JourneyStopRoles.Unload, JourneyStopStatuses.Pending);
+        // The helpers' readable ids are not UUIDs; this line goes through the outbound schema gate, so give it real ones.
+        runtime.DemandId = "00000000-0000-4000-8000-000000066410";
+        pickup.MovementLegId = "00000000-0000-4000-8000-000000066411";
+        unload.MovementLegId = "00000000-0000-4000-8000-000000066412";
         UpcomingStopPlanProjection plan = JourneyPlanBuilder.Plan(runtime, [pickup, unload], pickup, arrivedAtCurrent: false, revision: 5);
         Assert.Equal(OneThree, plan.Legs.Select(leg => leg.Sequence));
 
@@ -95,7 +99,7 @@ public sealed class UpcomingStopPlanWireSequenceTests
         {
             using JsonDocument envelope = JsonDocument.Parse(line);
             Assert.Equal(
-                [("leg-s-pickup", 1), ("leg-s-unload", 2)],
+                [(pickup.MovementLegId, 1), (unload.MovementLegId, 2)],
                 envelope.RootElement.GetProperty("payload").GetProperty("legs").EnumerateArray()
                     .Select(leg => (leg.GetProperty("movementLegId").GetString(), leg.GetProperty("sequence").GetInt32())));
         }
