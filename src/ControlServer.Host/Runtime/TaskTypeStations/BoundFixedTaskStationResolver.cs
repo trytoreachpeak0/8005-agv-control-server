@@ -12,8 +12,9 @@ namespace ControlServer.Host.Runtime.TaskTypeStations;
 /// <remarks>
 /// The set is also the station admission seed's task types (<c>JourneyRuntimeEngine.AdmissionSeedTaskTypesAsync</c>):
 /// changing it changes the seed's content, which the store refuses under the version it was bound with. So a change
-/// here moves <c>JourneyRuntime:admissionPolicyVersion</c> with it, in <c>appsettings.json</c> and in both v2 instance
-/// definitions under <c>scripts/parallel/</c>; <c>AdmissionPolicyVersionGuardTests</c> holds the table that says how far.
+/// here moves <c>JourneyRuntime:admissionPolicyVersion</c> with it, in <c>appsettings.json</c> and in every v2 instance
+/// definition under <c>scripts/parallel/</c>, to above the last version the instance has bound for any reason;
+/// <c>AdmissionPolicyVersionGuardTests</c> holds the history that says how far.
 /// <para>
 /// Named one by one, never derived from <see cref="TransportTaskTypes.All"/>: a task type added to the protocol's
 /// literals must not become executable -- and change the seed -- without anyone deciding so here (control-server#545

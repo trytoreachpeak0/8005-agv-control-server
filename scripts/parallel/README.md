@@ -382,15 +382,14 @@ TCP 会话仍然是全车共用一个凭据、车靠握手自报身份，本票�
 **恢复办法是重新部署当前在跑的那个 commit（或修好的新包），不要用 `-Rollback` 来恢复开关。**安装模式失败时代际对调还没发生，
 这时再跑 `-Rollback`，装上的是 `.previous`，也就是更早一代，车载端版本可能对不上。
 
-## 准入策略版本：批次 10 起是 3（control-server#545）
+## 准入策略版本：包是 3，实例定义是 6（control-server#545、#614）
 
-**先说要做什么：带批次 10（control-server#545）及之后代码的包，装到 factory01 上已有的 v2 实例时，用的实例定义里
-`journeyRuntime.admissionPolicyVersion` 必须是 3。今后 factory01 上的 v2 实例用批次 10 之后的包重装时，两份实例定义
-（`instance-factory01-v2.json` 与 `instance-factory01-v2.production-mes.json`）的 `admissionPolicyVersion` 都必须跟着升到
-本票的值 3（以后的票再升，就是那时的值），不能沿用控制端手上那份旧定义。**本仓两份定义与 `appsettings.json` 已经一起改成 3。
+**先说要做什么：装 factory01 上的 v2 实例，用的实例定义里 `journeyRuntime.admissionPolicyVersion` 必须等于这个实例装过、绑过的
+最高版本（control-server#614 起是 6），而且定义必须与安装包同一提交（19 自己核对）。**包里的 `appsettings.json` 是 3，只跟着可执行集合走；
+定义高于它，是因为 26 号图站名变化和换新库时的 override 也把实例的版本推高了，见下面「不只可执行集合会推高版本」。
 
-**control-server#614 之后，`scripts/parallel/` 下七份实例定义都是 6**，原因不是可执行集合变了，而是 26 号图的机台站名变了，
-见下面「地图站名变化也会漂移」。
+下面到「护栏」一段为止讲的是批次 10（control-server#545）由 2 升到 3 的那一次，当时包与定义都是 3。其中的道理今天照样成立，
+数字以当前定义为准。
 
 反过来同样不行，而且更隐蔽：**批次 10 之前的包（例如 `e03d8e8b`）不得配版本 3 的定义。**旧包配 3 装上去当时不报错——3 比库里的
 2 高，库就把 3 绑到旧包的两类种子上；之后再装批次 10 的包、配 3，同一个版本号下内容不同，判漂移、停接单（L1
@@ -416,38 +415,48 @@ TCP 会话仍然是全车共用一个凭据、车靠握手自报身份，本票�
 
 `AdmissionPolicyVersionGuardTests` 守着这件事：版本表逐个写出每一代的可执行集合，版本必须严格递增，本构建的集合必须等于最后
 一行；协议里每个任务类型都必须明确表态可执行或不可执行；`appsettings.json` 与 `scripts/parallel/instance-*.json` 的每一份定义
-都不得低于最后一行的版本；各份定义彼此一致，并且不低于 26 号图站名变化的最后一行（control-server#614 起，见下一小节）。它守的是仓库里同一个提交的文件，**守不住控制端拿别的提交的定义或别的包去装**——那一步
+的版本都要按历史表来：control-server#614 起版本表是一张按时间排的历史表，见下一小节。它守的是仓库里同一个提交的文件，**守不住控制端拿别的提交的定义或别的包去装**——那一步
 只能靠这一节。
 
 部署标签 `admissionPolicyDeploymentId` 不换：本票没有改任何站点绑定，标签照旧是 `MAP-26-WIRE_TO_GATE-20261007`。
 
-### 地图站名变化也会漂移：factory01 v2 定义是 6（control-server#614）
+### 不只可执行集合会推高版本：站名变化与换新库（control-server#614）
 
 **先说要做什么：用户在 RIoT 上改了 26 号图的 AREA 机台站名（改名、增删），factory01 v2 实例下一轮就判漂移、停接单，处置与上面
-一样——把版本设为库里已绑的版本 + 1 重启，然后开票把 `scripts/parallel/` 下全部实例定义一起升到这个值。**不用出新包。
+一样——把版本设为库里已绑的版本 + 1 重启；之后开票，在 `AdmissionPolicyVersionGuardTests.History` 末尾加一行，并把
+`scripts/parallel/` 下全部实例定义一起改成这个值。**不用出新包。换新库时用 override 装了更高的版本，也一样要补行、改定义。
 
-为什么：准入种子 = 实时地图上每个 AREA 命名的机台站 × 本实例种子任务类型，站名每轮现读（`JourneyRuntimeEngine` 里的
-`liveStationNames`）。站名一变，同一版本号下种子内容就变了。种子任务类型取自库里生效绑定集所基于的那一版任务类型规则，与本构建
-`ExecutableTaskTypes` 取交集（`AdmissionSeedTaskTypesAsync`）。所以种子与包的关系只有一条：**包换了可执行集合才会改种子**；同一
-可执行集合的新包不改种子。反过来，**在 FieldOps 激活一份规则版本不同、任务类型集合不同的绑定集，也会改种子**，那同样要升版本。
+为什么站名会改种子：准入种子 = 实时地图上每个 AREA 命名的机台站 × 种子任务类型，站名每轮现读（`JourneyRuntimeEngine` 里的
+`liveStationNames`）。种子任务类型取自库里该图生效绑定集所基于的那一版任务类型规则（没有生效绑定集时取最新规则版本），与本构建
+`ExecutableTaskTypes` 取交集（`AdmissionSeedTaskTypesAsync`）。库按「版本号 + 内容哈希 + 部署标签」绑定。由此：
 
-已经发生过的三次，`AdmissionPolicyVersionGuardTests.Map26StationChanges` 逐行记着：
+- 包只经 `ExecutableTaskTypes` 影响种子；同一可执行集合的新包不改种子。
+- 站名变了会改种子。
+- 在 FieldOps 激活一份「规则 ∩ 可执行集合」不同的绑定集，也会改种子；还没有生效绑定集时，写一版新规则同样会改。
+- 只换 `admissionPolicyDeploymentId` 也判漂移。调度区不进种子。
 
-| 版本 | 时间 | 变化 |
-| --- | --- | --- |
-| 4 | 2026-10-11 | `T04-01…08`、`T05-01…08` 改名 `T4-1…8`、`T5-1…8`，新建临时停车站 222（control-server#566 现场手设） |
-| 5 | 2026-10-11 | factory01 v2 库 10:50:50Z 绑定（批次 10 调度读库所得），又一次站名变化 |
-| 6 | 2026-10-12 | 26 号图重传并于 21:12 定稿：203 站，机台站 78 个，`T08-11` 改 `T8-11` 等；绑定六站 210、217～221 不变 |
+为什么换新库也要记：19 的版本下限读的是服务器上 `<opsRoot>\installed-instance.json`，换库不会重置它；新库本身什么版本都能绑，
+但下一次装就不能低于这个文件里的值。
 
-护栏的分工：可执行集合表（1、2、3）约束包的 `appsettings.json` 与全部定义；`Map26StationChanges` 只约束定义（全部必须在 26 号图上，
-否则测试要求先决定那张图的历史记在哪），定义彼此一致、不低于它的最后一行。**下次站名再变就是 7**：在 `Map26StationChanges` 末尾加一行，
-七份定义一起升，护栏会把漏掉的那份标红。
+历史表 `AdmissionPolicyVersionGuardTests.History` 按时间记着每一次，带类别：
 
-**19 的版本下限看不见手设的值。**19（`8005-workspace` 仓）比对的是服务器上 `<opsRoot>\installed-instance.json` 里记下的定义版本，
-不读 `appsettings.Production.json`。在 `appsettings.Production.json` 里手升版本之后，`installed-instance.json` 仍是上次装的值，
-用更低版本的定义重装照样能过 19，装完开运行时就判版本倒退、停接单。本票之后仓库定义已是 6，按仓库定义重装不再倒退；但**任何一次
-手升都要紧跟一张升定义的票**，在它合入前重装须给 19 带 `-AdmissionPolicyVersionOverride`。`Test-ParallelInstance.ps1` 钉着
-「每份定义经配置步骤写到磁盘上的 `JourneyRuntime.admissionPolicyVersion` 是 6」，无论原文件是首装、手设的 6 还是旧的 3。
+| 版本 | 类别 | 时间 | 变化 |
+| --- | --- | --- | --- |
+| 1～3 | 可执行集合 | 批次 10 及之前 | 见上文 |
+| 4 | 站名变化 | 2026-10-11 | `T04-01…08`、`T05-01…08` 改名 `T4-1…8`、`T5-1…8`，新建临时停车站 222（control-server#566 现场升到 4） |
+| 5 | 换新库时的 override | 2026-10-11 18:45 | 用 19 带 `-AdmissionPolicyVersionOverride 5` 装进全新库 newdb5（`evidence/field/20261011-W2-prep6-two-car/08-install-newdb5.txt`），10-12 的各次重装也都带 5 |
+| 6 | 站名变化 | 2026-10-12 | 26 号图重传，21:12 定稿：203 站，机台站 78 个，`T08-11` 改 `T8-11` 等；绑定六站 210、217～221 不变。库里是否已绑 6、绑的是不是定稿图的内容，重装前现场只读核对 |
+
+护栏怎么约束：历史表整体严格递增；本构建的可执行集合等于最后一个「可执行集合」行；包的 `appsettings.json` **等于**最后一个
+「可执行集合」行的版本；每份实例定义**等于**历史表最后一行的版本（相等而不是不低于，这样改了定义却没补行也会红）；定义都装同一个
+实例（`instanceId`、`dataRoot`），部署标签彼此一致。定义按通配 `instance-*.json` 找，新增的定义自动受约束。**下次可执行集合
+再变，新行的版本要高于历史表最后一行**（今天就是 7 以上），不是高于上一个可执行集合行。
+
+**19 的版本下限看不见手设的值。**19（`8005-workspace` 仓）比对的是 `installed-instance.json` 里记下的定义版本，不读
+`appsettings.Production.json`。在 `appsettings.Production.json` 里手升版本之后，`installed-instance.json` 仍是上次装的值，
+用更低版本的定义重装照样能过 19，装完开运行时就判版本倒退、停接单。**任何一次手升都要紧跟一张补行、改定义的票**，在它合入前
+重装须给 19 带 `-AdmissionPolicyVersionOverride`。`Test-ParallelInstance.ps1` 钉着「每份定义经配置步骤写到磁盘上的
+`JourneyRuntime.admissionPolicyVersion` 等于定义里的值」，原文件里的值比它低或比它高都一样被改写。
 
 ### 装错了是什么样、怎么判
 
@@ -524,12 +533,12 @@ L1 `SameDirectionTaskTypeJourneyRuntimeTests.AfterVersionThreeIsBoundTheRolledBa
 
 所以回滚时：
 
-1. 回滚用的 `admissionPolicyVersion` 设为**这个实例装过的最高版本 + 1**（第一次从 3 回滚就是 4）。最高版本以
+1. 回滚用的 `admissionPolicyVersion` 设为**这个实例装过的最高版本 + 1**（上例里第一次从 3 回滚就是 4；今天是库里的最高版本 + 1，至少 7）。最高版本以
    库里为准（上面「读库里已绑的版本」），部署记录只作对照。**control-server#552 之后用 19 的参数给，不再手改定义副本**：
    `19-deploy-control-server-parallel.ps1 -Rollback -AdmissionPolicyVersionOverride <n>`。19 只改发往服务器的那份副本，本仓的
    定义不动；`-Rollback` 不带这个参数会被拒绝，克隆外的定义副本也会被拒绝。
-2. 之后再装回批次 10 及之后的包，又要**再高一个**（上例是 5）。这时仓库里的三处出厂值低于实例实际用过的值，护栏不会替你发现；
-   要么部署时给 19 带 `-AdmissionPolicyVersionOverride`（首装与升级也接受，同提交检查照做），要么开票把三处一起升上去。
+2. 之后再装回批次 10 及之后的包，又要**再高一个**（上例是 5）。这时仓库里的实例定义低于实例实际用过的值，护栏不会替你发现；
+   要么部署时给 19 带 `-AdmissionPolicyVersionOverride`（首装与升级也接受，同提交检查照做），要么开票在历史表补行、把全部实例定义一起升上去。
 3. 每次部署都在部署记录里写下用的版本号，回滚时才知道「装过的最高版本」是多少。
 
 control-server#552 之后，19 在碰服务器之前会先用一次只读 ssh 读服务器上的 `<opsRoot>\installed-instance.json`（安装器每次安装、
