@@ -1,0 +1,15 @@
+# cs#661 step 1: one read-only GET per endpoint, real RIoT http://172.19.206.222:8888, map 26
+# 2026-10-12 19:54:41 CST, control host, route egress Wi-Fi (Find-NetRoute; not Clash), Invoke-WebRequest -NoProxy
+# Bearer from $env:CONTROL_SERVER_RIOT_CALL_API_KEY (value not printed). Bodies not saved.
+Path                                       Status ContentType                      Bytes BizCode
+/api/imap/v1/mapInfo/edges/26                 200 application/json; charset=UTF-8 155843 0
+/api/imap/v1/mapInfo/stations/26              200 application/json; charset=UTF-8 101405 0
+/api/imap/v1/mapResource/removedEdge/26       200 application/json; charset=UTF-8     67 0
+/api/imap/v1/mapResource/removedStation/26    200 application/json; charset=UTF-8     67 0
+/api/imap/v1/mapEdgeGroup/all                 200 application/json; charset=UTF-8  20013 0
+/api/task/v1/route/                           200 application/json; charset=UTF-8     67 0
+
+# In-memory regex scan of number tokens (second GET, bodies not saved)
+/api/imap/v1/mapInfo/edges/26: numbers=9834 decimal=1341 exponent=0 beyondFloat=0 intFieldWithFraction=0
+/api/imap/v1/mapInfo/stations/26: numbers=4340 decimal=651 exponent=0 beyondFloat=0 intFieldWithFraction=0
+/api/imap/v1/mapEdgeGroup/all: numbers=404 decimal=0 exponent=0 beyondFloat=0 intFieldWithFraction=0
