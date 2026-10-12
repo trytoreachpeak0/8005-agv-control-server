@@ -394,7 +394,10 @@ public sealed class ParallelInstanceEffectiveConfigurationTests
     {
         JourneyRuntimeOptions options = new()
         {
-            AgvId = "老厂前线新多仓位2", VehicleKey = Agv02Key, AllowedWorkTypes = ["WIRE_TO_GATE"], AllowedDispatchZones = ["WIRE"],
+            AgvId = "老厂前线新多仓位2",
+            VehicleKey = Agv02Key,
+            AllowedWorkTypes = ["WIRE_TO_GATE"],
+            AllowedDispatchZones = ["WIRE"],
             ClearanceToWaitingPointEnabled = enabled,
         };
 
