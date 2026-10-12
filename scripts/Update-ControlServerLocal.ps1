@@ -219,27 +219,91 @@ function Invoke-JsonGet([string]$Uri) {
     return $response.Content | ConvertFrom-Json
 }
 
-function Invoke-SafetyProjection {
-    $credential = [Environment]::GetEnvironmentVariable('CONTROL_SERVER_ONBOARD_CREDENTIAL', 'Machine')
-    if ([string]::IsNullOrWhiteSpace($credential)) { throw 'Machine Onboard credential is missing.' }
+<#
+.SYNOPSIS
+Which credential the read-only safety projection check presents, one entry per request (control-server#649).
+.DESCRIPTION
+With OnboardSafetyProjection:vehicleCredentials empty (a single-car or factory installation) the check is what it always
+was: one request with the machine-scope shared credential, read when the request is made. With entries (a two-car
+parallel instance, control-server#600) the bearer decides the vehicle and the shared credential reads none -- the server
+answers it 401, which is how the 2026-10-12 REQ-0178 upgrade failed. Then every listed vehicle is read with its own
+credential, taken from this service's registry Environment, where scripts/parallel writes it; a variable that is not
+there refuses here, in the preflight, before anything changed. Values are held in memory only and never written.
+#>
+function Get-SafetyProjectionPlan($Configuration) {
+    $projection = $Configuration.PSObject.Properties['OnboardSafetyProjection']?.Value
+    $rows = $projection -is [psobject] ? $projection.PSObject.Properties['vehicleCredentials']?.Value : $null
+    if ($null -eq $rows -or @($rows).Count -eq 0) {
+        return @([pscustomobject]@{ VehicleKey = $null; Variable = 'CONTROL_SERVER_ONBOARD_CREDENTIAL'; Credential = $null })
+    }
+    $environment = @((Get-ItemProperty -LiteralPath "HKLM:\SYSTEM\CurrentControlSet\Services\$serviceName" -Name Environment `
+        -ErrorAction SilentlyContinue)?.Environment)
+    $plan = foreach ($row in @($rows)) {
+        $vehicleKey = [string]$row.PSObject.Properties['vehicleKey']?.Value
+        $variable = [string]$row.PSObject.Properties['credentialEnvironmentVariable']?.Value
+        $entry = @($environment | Where-Object { $_ -is [string] -and $_.StartsWith("$variable=", [StringComparison]::OrdinalIgnoreCase) }) |
+            Select-Object -First 1
+        $credential = $null -eq $entry ? $null : $entry.Substring($variable.Length + 1)
+        if ([string]::IsNullOrWhiteSpace($vehicleKey) -or [string]::IsNullOrWhiteSpace($variable) -or [string]::IsNullOrWhiteSpace($credential)) {
+            throw ("SAFETY_PROJECTION_VEHICLE_CREDENTIAL_MISSING: 安装的配置 OnboardSafetyProjection:vehicleCredentials 为车 '$vehicleKey' " +
+                "列了变量 '$variable'，但服务 '$serviceName' 的 Environment 里没有它的值，升级后的安全投影自检没法用这台车自己的凭据去读。" +
+                '本脚本还什么都没有改。按车凭据由 scripts/parallel 的安装器写进服务 Environment；用它重新部署，不要改用共享凭据。')
+        }
+        [pscustomobject]@{ VehicleKey = $vehicleKey; Variable = $variable; Credential = $credential }
+    }
+    return @($plan)
+}
+
+function Invoke-SafetyProjection($Entry) {
+    $credential = $Entry.Credential
+    if ($null -eq $Entry.VehicleKey) {
+        $credential = [Environment]::GetEnvironmentVariable('CONTROL_SERVER_ONBOARD_CREDENTIAL', 'Machine')
+        if ([string]::IsNullOrWhiteSpace($credential)) { throw 'Machine Onboard credential is missing.' }
+    }
+    # The vehicle's own key in the query: the server checks it is the credential's vehicle (403 otherwise), so a crossed
+    # pair of variables is caught here and not on the vehicle. None for the shared credential, as before.
+    $uri = $null -eq $Entry.VehicleKey ? "$checkOrigin/api/onboard/v1/vehicle-safety" :
+        "$checkOrigin/api/onboard/v1/vehicle-safety?vehicleKey=$([Uri]::EscapeDataString($Entry.VehicleKey))"
+    $whose = $null -eq $Entry.VehicleKey ? "机器级共享凭据 $($Entry.Variable)" : "车 '$($Entry.VehicleKey)' 的凭据（服务 Environment 的 $($Entry.Variable)）"
     Add-Type -AssemblyName System.Net.Http
     $client = [System.Net.Http.HttpClient]::new()
     $client.DefaultRequestHeaders.Authorization = [System.Net.Http.Headers.AuthenticationHeaderValue]::new('Bearer', $credential)
     try {
-        $response = $client.GetAsync("$checkOrigin/api/onboard/v1/vehicle-safety").GetAwaiter().GetResult()
+        $response = $client.GetAsync($uri).GetAwaiter().GetResult()
         $body = $response.Content.ReadAsStringAsync().GetAwaiter().GetResult()
+        $status = [int]$response.StatusCode
+        if ($status -eq 401) {
+            $hint = $null -eq $Entry.VehicleKey ?
+                '配了 OnboardSafetyProjection:vehicleCredentials 的实例（两车并行实例，control-server#600）不认共享凭据；单车实例被拒说明机器级变量与服务 Environment 里的值不一致。' :
+                '这台车的凭据与服务端读到的不一致。'
+            throw "SAFETY_PROJECTION_CREDENTIAL_REJECTED: Safety projection returned HTTP 401. 服务端拒绝了$whose。$hint"
+        }
+        if ($status -eq 403 -and $null -ne $Entry.VehicleKey) {
+            $detail = try { ($body | ConvertFrom-Json).PSObject.Properties['detail']?.Value } catch { $null }
+            throw "SAFETY_PROJECTION_VEHICLE_MISMATCH: Safety projection returned HTTP 403 ($detail). 服务端认了$whose，但它不属于这台车。"
+        }
         if (-not $response.IsSuccessStatusCode) {
-            throw "Safety projection returned HTTP $([int]$response.StatusCode)."
+            throw "Safety projection returned HTTP $status."
         }
         $result = $body | ConvertFrom-Json
         if ($result.motionState -notin @('STOPPED', 'MOVING', 'UNKNOWN')) {
             throw 'Safety projection returned an invalid motion state.'
+        }
+        if ($null -ne $Entry.VehicleKey -and $result.PSObject.Properties['vehicleKey']?.Value -cne $Entry.VehicleKey) {
+            throw "SAFETY_PROJECTION_VEHICLE_MISMATCH: 用$whose 读到的是车 '$($result.PSObject.Properties['vehicleKey']?.Value)' 的投影。"
         }
         return $result
     }
     finally {
         $client.Dispose()
     }
+}
+
+# Every vehicle in the plan, in order; the first refusal stops the check (and the upgrade rolls back).
+function Invoke-SafetyProjectionCheck([object[]]$Plan) {
+    return @(foreach ($entry in $Plan) {
+        [pscustomobject]@{ Entry = $entry; Projection = (Invoke-SafetyProjection $entry) }
+    })
 }
 
 <#
@@ -303,7 +367,9 @@ if (-not (Test-Path -LiteralPath $productionConfiguration -PathType Leaf)) {
 }
 $configuration = Get-Content -Raw -LiteralPath $productionConfiguration | ConvertFrom-Json
 if ($configuration.JourneyRuntime.enabled -ne $false) { throw 'JourneyRuntime must remain disabled during upgrade.' }
-Write-Diagnostic 'preflight-complete'
+# control-server#649: resolved now, so a missing per-vehicle credential refuses before the service is stopped.
+$safetyPlan = if ($VerifySafetyProjectionReadOnly) { Get-SafetyProjectionPlan $configuration } else { @() }
+Write-Diagnostic ("preflight-complete safetyProjectionReads={0}" -f @($safetyPlan).Count)
 
 try {
     Stop-Service -Name $serviceName
@@ -381,12 +447,13 @@ try {
     $live = Invoke-JsonGet "$checkOrigin/health/live"
     if ($live.status -ne 'live') { throw 'Live endpoint returned an unexpected response.' }
     $version = Invoke-JsonGet "$checkOrigin/version"
-    $safety = if ($VerifySafetyProjectionReadOnly) { Invoke-SafetyProjection } else { $null }
+    # A ternary, not an if: an if statement unrolls a one-row array to the row.
+    $safety = $VerifySafetyProjectionReadOnly ? @(Invoke-SafetyProjectionCheck $safetyPlan) : $null
     Restart-Service -Name $serviceName -Force
     Wait-ServiceState 'Running'
     $liveAfterRestart = Invoke-JsonGet "$checkOrigin/health/live"
     if ($liveAfterRestart.status -ne 'live') { throw 'Post-restart live endpoint returned an unexpected response.' }
-    if ($VerifySafetyProjectionReadOnly) { $safety = Invoke-SafetyProjection }
+    if ($VerifySafetyProjectionReadOnly) { $safety = @(Invoke-SafetyProjectionCheck $safetyPlan) }
     Write-Diagnostic 'lifecycle-and-readonly-checks-complete'
 
     $resultDirectory = Split-Path -Parent $resolvedResult
@@ -418,12 +485,23 @@ try {
         }
         protocolTag = $version.protocolTag
         protocolCommit = $version.protocolCommit
-        safetyProjection = if ($safety) { [ordered]@{
+        # Single-car: the shape it always had. Per-vehicle credentials (control-server#649): one row per vehicle read, naming
+        # the variable, never its value.
+        safetyProjection = if (-not $safety) { $null } elseif ($null -eq $safety[0].Entry.VehicleKey) { [ordered]@{
             httpStatus = 200
-            motionState = $safety.motionState
-            source = $safety.source
-            reasonCount = @($safety.reasonCodes).Count
-        }} else { $null }
+            motionState = $safety[0].Projection.motionState
+            source = $safety[0].Projection.source
+            reasonCount = @($safety[0].Projection.reasonCodes).Count
+        }} else { [ordered]@{
+            httpStatus = 200
+            vehicles = @($safety | ForEach-Object { [ordered]@{
+                vehicleKey = $_.Entry.VehicleKey
+                credentialEnvironmentVariable = $_.Entry.Variable
+                motionState = $_.Projection.motionState
+                source = $_.Projection.source
+                reasonCount = @($_.Projection.reasonCodes).Count
+            } })
+        }}
         journeyRuntimeEnabled = $false
         riotMutationPerformed = $false
         orderCreated = $false

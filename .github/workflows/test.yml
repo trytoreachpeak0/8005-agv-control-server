@@ -271,6 +271,14 @@ jobs:
         shell: pwsh
         run: pwsh -NoProfile -File ./scripts/Test-DataRootLockWait.ps1
 
+      # About 40 seconds, no rig, no elevation: both product scripts end to end against stubs and a loopback double of the
+      # Host (control-server#649). The upgrade's safety projection check reads a two-car instance with each vehicle's own
+      # credential, refuses a shared or crossed one with a reason code, and leaves a single car as it was; a first install
+      # whose first readiness read is already ready (no reason) completes. Only a deployment on factory01 reaches either.
+      - name: Install and upgrade self-check (two-car safety projection, first readiness)
+        shell: pwsh
+        run: pwsh -NoProfile -File ./scripts/Test-InstallerTwoCarPaths.ps1
+
       # 1.5 seconds, and the only thing that ever executes Get-G3EvidenceLocationDiagnostic: a G3
       # runner calls it after it has already decided it found nothing, so no green run reaches it.
       # It says WHERE nothing was found, which is what control-server#211 needed and did not have --
