@@ -5547,8 +5547,13 @@ public sealed partial class JourneyRuntimeEngine(
     /// </para>
     /// <para>
     /// <b>判定与下发读这同一个值</b>（PR #660 增量审查 S1）：离站等待那一段的判定、以及送到车上的期限（<see cref="RefreshDeadlineOfALoadedStopAsync"/>），
-    /// 车载屏上的倒计时就是车真正要走的那一刻。其余读 <see cref="StationDepartureDeadline"/> 的地方——到站发清单、等录入、等装货结果、
-    /// 断联重填之后的升版、装货结果的回执——都在当前停靠还有待做项时，那时提前结束的条件不成立，两个值恒等，所以不改。
+    /// 车载屏上的倒计时就是车真正要走的那一刻。其余读 <see cref="StationDepartureDeadline"/> 的地方——到站发清单、等录入时发清单、等装货结果、
+    /// 断联重填之后的升版、仓门未闭告警、装货结果的回执——都在当前停靠还有待做项时，那时提前结束的条件不成立，两个值恒等，所以不改。
+    /// </para>
+    /// <para>
+    /// <b>例外是 <see cref="TryEndStopAtStationDeadlineAsync"/></b>（PR #660 第三轮审查 S1）：等录入阶段扫码前取消了本站最后一条待录入的需求时，
+    /// 取消那一路不改阶段，旅程留在 AwaitingSublot、本站待做项为零，提前结束的条件此时成立，而那里仍按原期限判；车上那张空清单期限为空，
+    /// 屏上显示「无倒计时」，同站追加的新需求要等到原期限才录得进去。车只是等得久，不会意外开动，这条行为在本票之前就有，本票不改。
     /// </para>
     /// <para>
     /// 只截短不延长：宽限比期限长，或等待关着（期限为空）时，就是 <see cref="StationDepartureDeadline"/>。只认下一个是同站取货：只有那时才有一条

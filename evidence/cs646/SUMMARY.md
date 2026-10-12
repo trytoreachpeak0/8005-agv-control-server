@@ -30,6 +30,8 @@
 
 其余读 `StationDepartureDeadline` 的 8 处保持不变：到站发清单、等录入时的发清单与到期结束、等装货结果、断联重填后的升版、仓门未闭告警、装货结果的回执。它们都发生在当前停靠还有待做项的时候：等录入、在装、刚到站都意味着本停靠有没做完的需求，升版那个函数开头就是「本停靠没有待做项就返回」。这时提前结束的第三个条件不成立，两个值恒等，所以不改。
 
+例外是等录入阶段的到期结束（`TryEndStopAtStationDeadlineAsync`，第三轮审查 S1）：扫码前取消了本站最后一条待录入的需求时，取消那一路不改阶段，旅程留在 `AwaitingSublot`、本站待做项为零，提前结束的条件此时成立，而那里仍按原期限判。车上那张空清单期限为空，屏上显示「无倒计时」，同站追加的新需求要等到原期限才录得进去。车只是等得久，不会意外开动；这条行为在本票之前就有，本票不改，记在 PR 的剩余风险里。
+
 ### 为什么这样就堵住了零窗口
 
 装货落定那一轮，起点被置为此刻，转入 `AwaitingStationDeparture`，同一轮判这里。宽限大于零时，实际离站时刻是「此刻 + 宽限」，还没到，于是返回 false，调用方保存。这个阶段必定落库，车载端随即可以发起纠错，服务端在这个阶段授权。宽限为零时退回第一版的行为：落定那一轮就走。
@@ -145,3 +147,9 @@ SW、SL 两项是手工做的：改一处、跑脚本自测、`git checkout` 还
 - 读到的：`HandlePreDepartureSafetyCheckAsync` 的结论只取自 `EvaluateSafety`，也就是 `WireToGateSafetyEvaluator.Evaluate`：IO 新鲜、仓门全锁、开锁输出全复位、车停稳、没有严重故障闩锁，五样都满足就答 `SAFE`。这里没有任何一处看「有没有纠错正在进行」。
 - 读到的：命令按到达顺序在同一个 `switch` 里分派（`WireToGateBusinessService.cs` 约 2520–2545 行，`LoadCorrectionCommand` 与 `PreDepartureSafetyCheck` 是同一个 `switch` 的两个分支）。
 - 推的：如果纠错命令执行期间仓门被打开，那时收到的核验会答 `UNSAFE`（门没锁）。如果核验在纠错命令开门之前、或门关好之后被处理，就会答 `SAFE`。纠错处理是在开门、关门全部结束之后才返回，还是先返回再在后台跑，没有读到底。
+
+## 转 ready 那一次的推送事故（2026-10-12）
+
+第三轮审查后，我把 `git push ... | tail -1;`、`gh pr edit`、`gh pr ready` 写在一条命令里。push 撞上网络错误失败了（`schannel: server closed abruptly (missing close_notify)`），但管道吞掉了 push 的退出码，分号又让后面几步照跑：#660 和 trytoreachpeak0/8005-agv-program#177 都转了 ready。#660 那一轮 CI 因此跑在旧 head `26853af7` 上，而最终 head 是只改了注释与本摘要的那一个提交。同一时刻，l2 的「Decide whether this pull request runs the L2 round」也因为 runner 访问 GitHub 撞上同一个错误而 exit 1，那不是产品红。
+
+调度定：再推最终 head、多跑一轮，旧那一轮 test 让它跑完、不取消。教训：push 单独执行，不和别的命令用分号或管道串起来；推完用 `gh pr view` 回读 `headRefOid`，等于本地 HEAD 之后才转 ready。

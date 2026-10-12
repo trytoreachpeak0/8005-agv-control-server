@@ -204,8 +204,10 @@ public sealed record CurrentStopWorklistItem(
 
 /// <remarks>
 /// <see cref="StationDepartureDeadlineAt"/> is when the station departure wait (ADR-cross-0055) runs
-/// out, taken from <c>JourneyRuntimeEngine.StationDepartureDeadline</c> and nowhere else; null where
-/// no such wait applies -- the drop-off stop, or the timeout switched off.
+/// out, taken from <c>JourneyRuntimeEngine.StationDepartureDeadline</c> -- or, at a loaded pickup stop
+/// whose wait a same-station append ends early (control-server#646), from
+/// <c>JourneyRuntimeEngine.EffectiveStationDepartureDeadline</c>, the same value the departure is judged by;
+/// null where no such wait applies -- the drop-off stop, or the timeout switched off.
 /// </remarks>
 public sealed record CurrentStopWorklistProjection(
     string StationId,
