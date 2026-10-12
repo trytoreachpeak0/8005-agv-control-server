@@ -625,6 +625,10 @@ try {
         # control-server#638. Already compared above; shown on its own line because 19-deploy-control-server-parallel.ps1
         # compares the result line whole, and a package older than #638 does not log it.
         Write-Step "  clearanceToWaitingPointEnabled=$($effective.ClearanceToWaitingPointEnabled ?? 'not logged (package older than control-server#638)')"
+        # control-server#531. Likewise already compared; said out loud, and warned when the Host bound no approval (2110).
+        $catalog = Format-ParallelMapStationCatalogReadBack -Effective $effective
+        Write-Step "  $($catalog.Line)"
+        if ($catalog.Warning) { Write-Warning $catalog.Warning }
         return $line
     }
 
