@@ -40,6 +40,12 @@ public sealed partial class IdleReturnExecutionTests
         Assert.Equal(journey.JourneyId, (await StationAsync(fleet, Near.StationId))!.JourneyId);
         Assert.Equal(IdleReturnReasons.VehicleHoldsStation, fleet.IdleReturnBoard.Reasons[AgvA]);
         Assert.Single(fleet.Riot.Creates);
+        // The plan follows the facts (contract item 2): standing on the point, the onboard is left with that one waiting point
+        // leg, ARRIVED -- not an empty plan, which is what a vehicle that never left gets. This is the only thing
+        // stillAtWaitingPoint decides; the reservation stays either way (mutation V06 survived on the reservation alone).
+        JsonElement leg = Assert.Single(
+            (await PayloadsAsync(fleet, AgvA, "UpcomingStopPlanSnapshot")).Last().GetProperty("legs").EnumerateArray());
+        Assert.Equal(("WAITING_POINT", "ARRIVED"), (leg.GetProperty("stopPurposeCategory").GetString(), leg.GetProperty("state").GetString()));
 
         (JsonElement vehicle, _) = await DashboardRowAsync(fleet, AgvA);
         JsonElement last = vehicle.GetProperty("lastEnded");
