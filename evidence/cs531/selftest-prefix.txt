@@ -1,0 +1,79 @@
+# Test-ParallelInstance.ps1 on origin/fp/v2-impl 0695c7627 + this PR's Test-ParallelInstance.ps1 (pre-fix)
+Map/Station catalog approval (control-server#531)
+  FAIL  catalog: every shipped definition carries 00:00:30 / 00:05:00 and an approval record naming 2026-10-09, and is accepted
+        wrong: instance-factory01-v2.json, instance-factory01-v2.production-mes.json, instance-factory01-v2.two-car-example.json, instance-factory01-v2.req0178-field-off.json, instance-factory01-v2.req0178-field-on.json; shipped but not checked here: 
+  FAIL  catalog: the two product keys name MapStationCatalogOptions' properties, every property is whitelisted, approvalRecord is not a property
+        properties: ApprovedSyncPeriod,ApprovedMaxUnconfirmed; whitelist: ; orphans: ; not whitelisted: ApprovedSyncPeriod,ApprovedMaxUnconfirmed
+  PASS  catalog: left out entirely is deployable (REQ-0303: the Host boots unapproved and says so)
+  FAIL  catalog refused: only approvedSyncPeriod
+        threw: You cannot call a method on a null-valued expression.
+  FAIL  catalog refused: only approvedMaxUnconfirmed
+        threw: You cannot call a method on a null-valued expression.
+  FAIL  catalog refused: an empty section
+        threw: You cannot call a method on a null-valued expression.
+  FAIL  catalog refused: maximum equal to the period
+        threw: Cannot index into a null array.
+  FAIL  catalog refused: maximum below the period
+        threw: Cannot index into a null array.
+  FAIL  catalog refused: a zero period
+        threw: Cannot index into a null array.
+  FAIL  catalog refused: "30" (which .NET reads as thirty days)
+        threw: Cannot index into a null array.
+  FAIL  catalog refused: a JSON number
+        threw: Cannot index into a null array.
+  FAIL  catalog refused: a day part ("1.00:00:00")
+        threw: Cannot index into a null array.
+  FAIL  catalog refused: a fraction ("00:00:30.5")
+        threw: Cannot index into a null array.
+  FAIL  catalog refused: seconds out of range ("00:00:60")
+        threw: Cannot index into a null array.
+  FAIL  catalog refused: no approval record
+        threw: You cannot call a method on a null-valued expression.
+  FAIL  catalog refused: a blank approval record
+        threw: Cannot index into a null array.
+  FAIL  catalog refused: a misspelt key
+        threw: Cannot index into a null array.
+  FAIL  catalog refused: a case twin
+        threw: Cannot index into a null array.
+  FAIL  catalog refused: a section that is not an object
+        expected exactly 'mapStationCatalog must be an object'; got 1: mapStationCatalog is not a key this deployment knows. Unknown keys are refused rather than passed through; if it is a real option, add it to the whitelist in ParallelInstance.psm1.
+  FAIL  catalog overlay: the approved pair is written under MapStationCatalog, exactly two keys, no approvalRecord
+        got: null
+  FAIL  catalog overlay: left out, both keys are written null, so an earlier approval or hand edit does not survive a reinstall
+        got: null
+  FAIL  catalog on disk after the configuration step: first install
+        expected 'sync=00:00:30 max=00:05:00 twins=0', got 'sections: '
+  FAIL  catalog on disk after the configuration step: upgrade over the field hand edit (other values, PascalCase)
+        expected 'sync=00:00:30 max=00:05:00 twins=0', got 'sync=00:01:00 max=00:10:00 twins=0'
+  FAIL  catalog on disk after the configuration step: two-car example, first install
+        expected 'sync=00:00:30 max=00:05:00 twins=0', got 'sections: '
+  FAIL  catalog on disk after the configuration step: two-car example, upgrade over the field hand edit
+        expected 'sync=00:00:30 max=00:05:00 twins=0', got 'sync=00:01:00 max=00:10:00 twins=0'
+  FAIL  catalog on disk after the configuration step: a definition without the section, over the hand edit (cleared, not inherited)
+        expected 'sync= max= twins=0', got 'sync=00:01:00 max=00:10:00 twins=0'
+  PASS  catalog read-back: approved, bound as defined -- pass
+  FAIL  catalog read-back: approved, bound none (written and not in effect) -- stop and refuse
+        got: {"Action":"Pass","Message":null}
+  FAIL  catalog read-back: approved, a different maximum bound (an environment variable, a stale layer) -- stop and refuse
+        got: {"Action":"Pass","Message":null}
+  FAIL  catalog read-back: left out, values bound (left over) -- stop and refuse
+        got: {"Action":"Pass","Message":null}
+  PASS  catalog read-back: left out, none bound -- pass (the installer warns)
+  FAIL  catalog read-back: approved, bound as a non-object -- stop and refuse
+        got: {"Action":"Pass","Message":null}
+  PASS  catalog read-back: approved, event older than #531 (no field) -- pass, so a rollback to such a package is not blocked
+  FAIL  catalog read-back line: the bound values are said, and no warning
+        threw: The term 'Format-ParallelMapStationCatalogReadBack' is not recognized as a name of a cmdlet, function, script file, or executable program.
+Check the spelling of the name, or if a path was included, verify that the path is correct and try again.
+  FAIL  catalog read-back line: none bound warns MAP_STATION_CATALOG_NOT_APPROVED and names 2110
+        threw: The term 'Format-ParallelMapStationCatalogReadBack' is not recognized as a name of a cmdlet, function, script file, or executable program.
+Check the spelling of the name, or if a path was included, verify that the path is correct and try again.
+  FAIL  catalog read-back line: an event older than #531 says so, without a warning
+        threw: The term 'Format-ParallelMapStationCatalogReadBack' is not recognized as a name of a cmdlet, function, script file, or executable program.
+Check the spelling of the name, or if a path was included, verify that the path is correct and try again.
+  FAIL  catalog read-back: the installer prints the line and raises the warning after every read-back
+        Install-ParallelInstanceLocal.ps1 Assert-EffectiveConfiguration does not print the catalog line and warning
+  FAIL  catalog read-back: the Host source logs the pair under the template the module reads
+        template found in: 
+
+759 passed, 34 failed
