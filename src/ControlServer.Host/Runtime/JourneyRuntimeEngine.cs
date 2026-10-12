@@ -1854,6 +1854,9 @@ public sealed partial class JourneyRuntimeEngine(
                     // 不断「推进没抛」——那个异常在测试这一侧什么都看不到。
                     //
                     // OpenStops 含当前停靠，所以判的是 > 1 不是 > 0。
+                    //
+                    // 离站等待那一段对卸货停靠不计时（ADR-cross-0055「纯卸货站卸完直接结束」，control-server#637）：
+                    // 只过纠错闸与扣车闸，同一轮就发离站核验。
                     SetStage(runtime, JourneyRuntimeStage.AwaitingStationDeparture, now);
                     await dbContext.SaveChangesAsync(cancellationToken).ConfigureAwait(false);
                     goto case JourneyRuntimeStage.AwaitingStationDeparture;
@@ -5463,6 +5466,22 @@ public sealed partial class JourneyRuntimeEngine(
                 runtime.UpdatedAt = now;
             }
             return false;
+        }
+
+        // ADR-cross-0055 / FR-031 AC-8: the wait belongs only to a stop that can go on loading. An unload stop
+        // that is done leaves at once (control-server#637): its worklist carries no deadline, so a wait here would
+        // hold the station for the full timeout behind a screen that shows none. A station that unloads and loads is
+        // two stops of one role each; when the planner lays them out unload first, the wait is seeded when the pickup
+        // stop is reached. (It can also lay them out load first; that order is control-server#647.) The correction gate
+        // above and the door hold after this still apply; only the clock is skipped, and no start is seeded.
+        if (stops.Current.StopRole == JourneyStopRoles.Unload)
+        {
+            if (runtime.BlockReasonCode is not null)
+            {
+                runtime.SetBlockReason(null, now);
+                runtime.UpdatedAt = now;
+            }
+            return true;
         }
 
         DateTimeOffset startedAt = runtime.StationDepartureWaitStartedAt ?? now;
