@@ -1,3 +1,4 @@
+using System.Text.Json;
 using ControlServer.Application;
 using ControlServer.Domain;
 using ControlServer.Host.Runtime;
@@ -23,8 +24,10 @@ namespace ControlServer.Tests;
 /// 车上那一版清单的期限是 null，屏上显示「无倒计时」，操作员看不出车在等什么。
 /// </para>
 /// <para>
-/// 混挂站（同一站既卸又装）在服务端是两个相邻停靠：先卸货停靠、后取货停靠，站相同——规划器只并「同站同角色」。
-/// 期限由后面那个取货停靠到站时种下，所以卸货停靠不计时与「混合站先完成全部卸货，再启动可继续装货的等待」是同一件事。
+/// 混挂站（同一站既卸又装）在服务端是两个同站停靠，一个卸货、一个取货——规划器只并「同站同角色」。
+/// 规划器落下先卸后装时，期限由后面那个取货停靠到站时种下，卸货停靠不计时与「混合站先完成全部卸货，再启动可继续装货的等待」
+/// 是同一件事。规划器也会落下先装后卸（代价打平时取先找到的插入位），那时取货停靠在本站卸货之前就开始等离站期限，
+/// 偏离 FR-031 AC-8；那不是本票引入的，由 control-server#647 跟进。
 /// </para>
 /// </remarks>
 public sealed class UnloadStopDepartureWaitTests
@@ -73,7 +76,66 @@ public sealed class UnloadStopDepartureWaitTests
             $"The unload stop is done and the vehicle was not asked to leave it. stage={after.Stage} " +
             $"waitStartedAt={after.StationDepartureWaitStartedAt:O} block={after.BlockReasonCode}");
         Assert.Equal(JourneyRuntimeStage.AwaitingDepartureSafety, after.Stage);
+        // 只说明离站时起点是空的（离站那一处本来就清空它），说明不了卸货停靠「没种起点」——那一项由上面的离站核验判。
         Assert.Null(after.StationDepartureWaitStartedAt);
+    }
+
+    /// <summary>
+    /// 升级时车正停在卸货站的离站等待里、库里已有旧版本种下的起点：新版本当轮离站，也不给这个卸货站发带期限的空清单。
+    /// </summary>
+    /// <remarks>
+    /// 修复对卸货停靠直接判「时间已满」，不清起点；旧版本在 <c>StationDepartureWaitIsOverAsync</c> 里种下的起点因此还在，
+    /// 期限算得出来。这时挡住那张空清单的只有 <c>RefreshDeadlineOfALoadedStopAsync</c> 里「只看取货停靠」那一句（control-server#633）——
+    /// 去掉它，这条红。起点在卸货结果落定之前写进库，与升级前那一行的样子相同。
+    /// </remarks>
+    [Fact]
+    [Trait("IntegrationSlice", "FP-IS-08")]
+    public async Task AStartLeftAtAnUnloadStopByAnEarlierVersionSendsNoEmptyWorklistWithADeadline()
+    {
+        await using RuntimeFixture fixture = await RuntimeFixture.CreateAsync();
+        CancellationToken token = TestContext.Current.CancellationToken;
+        fixture.Options.StationDepartureWaitTimeout = Wait;
+        fixture.Catalog.Set(fixture.Demand(FirstDemandId, FirstSublot, Now.AddMinutes(-10)));
+        fixture.BoxCounts.Set(FirstSublot, 7);
+        await TickAndRunAsync(fixture);
+        JourneyRuntimeRow runtime = await fixture.RuntimeAsync(FirstDemandId);
+        string extraId = $"{runtime.JourneyId}|EXTRA-UNLOAD";
+        fixture.Context.Set<JourneyStopRow>().Add(UnloadStop(
+            extraId, runtime.JourneyId, 3, runtime.GateStationId!, runtime.GateStationRiotId, runtime.DispatchZone,
+            runtime.CreatedAt));
+        await fixture.Context.SaveChangesAsync(token);
+
+        await ArriveAtPickupAsync(fixture, FirstDemandId);
+        await EnterSublotAsync(fixture, FirstDemandId, FirstSublot, FirstSubmissionId);
+        await SettleLoadAsync(fixture, FirstDemandId);
+        await WaitOutTheStationDeadlineAsync(fixture);
+        await AnswerDepartureSafetyAsync(fixture, FirstDemandId, FirstSafetyResultId);
+        await ArriveAtCurrentStopAsync(fixture, FirstDemandId, "TO_GATE");
+        JourneyStopRow unloadStop = await CurrentStopAsync(fixture, FirstDemandId);
+        Assert.Equal(JourneyStopRoles.Unload, unloadStop.StopRole);
+
+        JourneyRuntimeRow tracked = await fixture.Context.Set<JourneyRuntimeRow>()
+            .SingleAsync(row => row.JourneyId == runtime.JourneyId, token);
+        tracked.StationDepartureWaitStartedAt = fixture.Clock.GetUtcNow();
+        await fixture.Context.SaveChangesAsync(token);
+        fixture.Context.ChangeTracker.Clear();
+
+        await ApplySafeResultAsync(fixture, FirstDemandId, SlotOperationType.Unload, SlotBusinessState.Empty);
+        await TickAndRunAsync(fixture);
+
+        JourneyRuntimeRow after = await JourneyOfAsync(fixture, FirstDemandId);
+        Assert.Equal(JourneyRuntimeStage.AwaitingDepartureSafety, after.Stage);
+        Assert.Equal(unloadStop.StopId, (await CurrentStopAsync(fixture, FirstDemandId)).StopId);
+        JsonElement[] atTheUnloadStop = [.. (await fixture.Context.ProtocolOutbox.AsNoTracking()
+                .Where(row => row.MessageType == "CurrentStopWorklistSnapshot")
+                .Select(row => row.PayloadJson)
+                .ToArrayAsync(token))
+            .Select(json => JsonDocument.Parse(json).RootElement.GetProperty("payload").Clone())
+            .Where(payload => payload.GetProperty("stationId").GetString() == unloadStop.StationId)];
+        Assert.NotEmpty(atTheUnloadStop);
+        Assert.DoesNotContain(atTheUnloadStop, payload =>
+            payload.GetProperty("items").GetArrayLength() == 0 &&
+            payload.GetProperty("stationDepartureDeadlineAt").ValueKind != JsonValueKind.Null);
     }
 
     /// <summary>
@@ -96,12 +158,12 @@ public sealed class UnloadStopDepartureWaitTests
     }
 
     /// <summary>
-    /// 混挂站：同一站先卸后装。卸货那一个停靠卸完就走，接着的取货停靠到站时种下完整期限，装完照常等满。
+    /// 混挂站，规划器落下先卸后装时：卸货那一个停靠卸完就走，接着的取货停靠到站时种下完整期限，装完照常等满。
     /// </summary>
     /// <remarks>
-    /// 计划形状 P1(站 12，第一条装) → U1(站 13，第一条卸) → P2(站 13，第二条装) → U2(关卡，第二条卸)，直接在库里排出来，
-    /// 形状与规划器落下的一致（同站不同角色不并）。修复若按「站」而不是按「停靠」跳过等待，P2 的等待就会被误跳过，
-    /// 这条用例的后半段会红。
+    /// 计划形状 P1(站 12，第一条装) → U1(站 13，第一条卸) → P2(站 13，第二条装) → U2(关卡，第二条卸)，直接在库里排出来
+    /// （同站不同角色不并）。规划器也可能落下先装后卸，那个顺序的离站等待由 control-server#647 跟进，不在这条里。
+    /// 修复若按「站」而不是按「停靠」跳过等待，P2 的等待就会被误跳过，这条用例的后半段会红。
     /// </remarks>
     [Fact]
     [Trait("IntegrationSlice", "FP-IS-08")]
@@ -175,15 +237,21 @@ public sealed class UnloadStopDepartureWaitTests
     }
 
     /// <summary>
-    /// 卸货停靠跳过的只是时间：车上另一条货的纠错没结，卸完也不离站。
+    /// 卸货停靠跳过的只是时间：车上另一条货的纠错没结，卸完也不离站；纠错闭环后仓门扣车照样挡住；放行之后当轮离站，不从闭环时刻重新计满。
     /// </summary>
     /// <remarks>
+    /// <para>
     /// 计划形状 P1(第一条装) → P2(第二条装) → U1(第一条卸) → U2(第二条卸)。在 U1 卸第一条时，对仍在车上的第二条开一次纠错。
-    /// 纠错闸（<c>LOAD_CORRECTION_IN_PROGRESS</c>）排在角色判断之前；把角色判断挪到它前面，这条红。
+    /// 纠错闸（<c>LOAD_CORRECTION_IN_PROGRESS</c>）排在角色判断之前；把角色判断挪到它前面，前半段红。
+    /// </para>
+    /// <para>
+    /// 后半段守闭环之后：纠错的阻塞原因要清掉，仓门扣车仍挡离站（卸货停靠跳过扣车，这里红）；扣车解除后当轮离站，
+    /// 不能对卸货停靠「从闭环时刻重新计满」——那是取货停靠的规则（ADR-cross-0055）。
+    /// </para>
     /// </remarks>
     [Fact]
     [Trait("IntegrationSlice", "FP-IS-08")]
-    public async Task AnOpenCorrectionOnCargoStillAboardHoldsAnUnloadStopThatIsDone()
+    public async Task AnOpenCorrectionOnCargoStillAboardHoldsAnUnloadStopUntilItIsReconciled()
     {
         await using RuntimeFixture fixture = await RuntimeFixture.CreateAsync();
         CancellationToken token = TestContext.Current.CancellationToken;
@@ -211,7 +279,8 @@ public sealed class UnloadStopDepartureWaitTests
         Assert.Equal(firstUnloadId, (await CurrentStopAsync(fixture, FirstDemandId)).StopId);
         JourneyDemandRow second = await fixture.Context.Set<JourneyDemandRow>().AsNoTracking()
             .SingleAsync(row => row.DemandId == SecondDemandId, token);
-        // 直接写一条开着的纠错：车停在卸货停靠上时服务端不授权纠错，而纠错闸只读这张表（形状同 Batch7StationYieldTests）。
+        // 直接写一条开着的纠错，纠错闸只读这张表（形状同 Batch7StationYieldTests）。走授权入口开不出来：授权要求旅程在
+        // AwaitingStationDeparture（OnboardRecoveryCoordinator），修复之后卸货停靠卸完当轮就离开那个阶段，此刻也还在等卸货结果。
         DateTimeOffset openedAt = fixture.Clock.GetUtcNow();
         fixture.Context.RecoveryWorkflows.Add(new RecoveryWorkflowRow
         {
@@ -248,15 +317,62 @@ public sealed class UnloadStopDepartureWaitTests
             firstUnload.DepartureSafetyCheckMessageId is { } checkId &&
             await fixture.Context.ProtocolOutbox.AsNoTracking().AnyAsync(row => row.MessageId == checkId, token),
             "The unload stop was left with a correction open on the cargo still aboard.");
+
+        // 纠错闭环时车被仓门扣着：纠错那个阻塞原因要清掉（不再是它挡着车），车仍不离站。离站那一步的 SetStage 也会清阻塞原因，
+        // 所以只有车走不了的这一格分得出「闭环时清没清」——不扣车的话两种实现在同一轮都是空。
+        await using (ControlServerDbContext connection = fixture.OpenConnectionContext())
+        {
+            RecoveryWorkflowRow correction = await connection.RecoveryWorkflows
+                .SingleAsync(row => row.WorkflowId == "70000000-0000-4000-8000-000000000637", token);
+            correction.State = RecoveryWorkflowState.Reconciled;
+            correction.UpdatedAt = fixture.Clock.GetUtcNow();
+            connection.SlotDoorHolds.Add(new SlotDoorHoldRow
+            {
+                HoldId = "f6370000-0000-4000-8000-000000000001",
+                AgvId = fixture.Options.AgvId,
+                DemandId = FirstDemandId,
+                SlotsJson = "[1]",
+                HeldAt = fixture.Clock.GetUtcNow()
+            });
+            await connection.SaveChangesAsync(token);
+        }
+        await TickAndRunAsync(fixture);
+
+        JourneyRuntimeRow held = await JourneyOfAsync(fixture, FirstDemandId);
+        Assert.Equal(
+            (JourneyRuntimeStage.AwaitingStationDeparture, (string?)null),
+            (held.Stage, held.BlockReasonCode));
+
+        // 扣车解除：当轮离站，不从闭环时刻重新计满，也不种起点。
+        await using (ControlServerDbContext connection = fixture.OpenConnectionContext())
+        {
+            SlotDoorHoldRow hold = await connection.SlotDoorHolds
+                .SingleAsync(row => row.HoldId == "f6370000-0000-4000-8000-000000000001", token);
+            hold.ReleasedAt = fixture.Clock.GetUtcNow();
+            hold.ReleasedByActionId = "f6370000-0000-4000-8000-000000000002";
+            await connection.SaveChangesAsync(token);
+        }
+        await TickAndRunAsync(fixture);
+
+        JourneyRuntimeRow released = await JourneyOfAsync(fixture, FirstDemandId);
+        Assert.Equal(
+            (JourneyRuntimeStage.AwaitingDepartureSafety, (string?)null, (DateTimeOffset?)null),
+            (released.Stage, released.BlockReasonCode, released.StationDepartureWaitStartedAt));
+        firstUnload = await StopAsync(fixture, firstUnloadId);
+        Assert.True(
+            firstUnload.DepartureSafetyCheckMessageId is { } releasedCheckId &&
+            await fixture.Context.ProtocolOutbox.AsNoTracking().AnyAsync(row => row.MessageId == releasedCheckId, token),
+            "The correction was reconciled and the unload stop was still not left.");
     }
 
     /// <summary>
-    /// 钉住「混挂站 = 同站相邻的一个卸货停靠加一个取货停靠」这个前提：一个停靠只有一个角色，需求只挂一个取货停靠、一个卸货停靠。
+    /// 钉住「混挂站 = 同站的一个卸货停靠加一个取货停靠」这个前提：一个停靠只有一个角色，需求只挂一个取货停靠、一个卸货停靠。
     /// </summary>
     /// <remarks>
     /// 修复按停靠角色跳过离站等待（<c>StopRole == Unload</c>）。这只在「卸货停靠上不会有可继续装货的作业」时成立，
     /// 而那件事今天由数据形状保证：<see cref="JourneyStopRow.StopRole"/> 是单值，<see cref="JourneyDemandRow"/> 只有
-    /// <c>PickupStopId</c> 与 <c>UnloadStopId</c>，规划器只并「同站同角色」的停靠（<c>EnRouteAppendPlanner</c> 的插入位注释）。
+    /// <c>PickupStopId</c> 与 <c>UnloadStopId</c>，规划器只并「同站同角色」的停靠（规划器那一半由
+    /// <c>Batch7EnRouteAppendPlannerTests.APickupAtAStationWithAnUnloadStopOpensItsOwnStopRatherThanMergingIntoTheUnload</c> 钉住）。
     /// 哪天加了第三种带作业的角色或混合角色，这条红，提醒回来重判卸货停靠的离站等待（control-server#637）。
     /// </remarks>
     [Fact]
