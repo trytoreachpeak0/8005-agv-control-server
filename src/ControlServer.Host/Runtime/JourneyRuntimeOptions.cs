@@ -180,10 +180,12 @@ public sealed class JourneyRuntimeOptions
     /// </summary>
     /// <remarks>
     /// <para>
-    /// <b>Not to be switched on before the RIoT call allowlist names this use.</b> The order is form one of section 1.2 (one
-    /// <c>move</c> through <c>byDefaultMissions</c>, REQ-0294), whose "use" column today reads "transport, idle return" only;
-    /// the coordinator adds "clearance to a waiting point" through a change of its own. Off, this server makes no RIoT call it
-    /// did not make before.
+    /// <b>The RIoT call allowlist names this use.</b> The order is form one of section 1.2 (one <c>move</c> through
+    /// <c>byDefaultMissions</c>, REQ-0294), whose "use" column reads "transport, idle return, clearance to a waiting point"
+    /// since program#175 (2026-10-12, a compilation fix; the vendored copy follows, control-server#638). Off, this server makes
+    /// no RIoT call it did not make before. On the v2 parallel instance it is switched on only through the instance definition
+    /// (<c>journeyRuntime.clearanceToWaitingPointEnabled</c>, <c>scripts/parallel/ParallelInstance.psm1</c>), which the
+    /// installer reads back from what the Host bound (<see cref="EffectiveConfigurationEvent"/>).
     /// </para>
     /// <para>
     /// On, the vehicle sets off by itself the round after its old charge order reads ended -- which, with

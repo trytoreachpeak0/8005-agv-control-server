@@ -4673,6 +4673,95 @@ Write-Result -Ok ($swapFlags.Count -eq 1 -and $swapPrevious.Contains('Move-Item 
     -Name 'wiring: $packagesSwapped is set right after the -Rollback swap, right before its product call' `
     -Detail "found: $($swapFlags.Count); before: $swapPrevious; after: $swapNext"
 
+# ------------------------------------------------------------------------------------------------
+# control-server#638. journeyRuntime.clearanceToWaitingPointEnabled (REQ-0178's clearance move): the only governed way to
+# turn it on for this instance, since JourneyRuntime__* in the environment is refused. Written, it reaches the overlay;
+# left out, the overlay writes false; and what the Host bound is read back from its EFFECTIVE_CONFIGURATION event.
+# ------------------------------------------------------------------------------------------------
+Write-Host ''
+Write-Host 'Clearance to a waiting point switch (control-server#638)' -ForegroundColor Cyan
+
+$clearanceTemplate = 'EFFECTIVE_CONFIGURATION allowedWorkTypes={AllowedWorkTypes} allowedDispatchZones={AllowedDispatchZones} mesIngestBaseUrl={MesIngestBaseUrl} fleet={Fleet} clearanceToWaitingPointEnabled={ClearanceToWaitingPointEnabled}'
+function Set-ClearanceSwitch($Definition, $Value) {
+    $d = Copy-Definition $Definition
+    $d['journeyRuntime']['clearanceToWaitingPointEnabled'] = $Value
+    return $d
+}
+# -Bound '<absent>' leaves the property out, as a package older than #638 logs the event.
+function Get-ClearanceReadBack($Definition, $Bound) {
+    $event = [ordered]@{
+        '@t' = '2026-10-12T01:00:06Z'
+        '@mt' = $clearanceTemplate
+        AllowedWorkTypes = @($Definition['journeyRuntime']['allowedWorkTypes'])
+        AllowedDispatchZones = @($Definition['journeyRuntime']['allowedDispatchZones'])
+        MesIngestBaseUrl = [string] $Definition['mesIngest']['baseUrl']
+        Fleet = @()
+    }
+    if ($Bound -isnot [string] -or $Bound -cne '<absent>') { $event['ClearanceToWaitingPointEnabled'] = $Bound }
+    $line = ConvertTo-Json -Compress -Depth 8 -InputObject $event
+    $e = Find-ParallelEffectiveConfiguration -Lines @($line) -Since ([datetimeoffset]::Parse('2026-10-12T01:00:00Z', [cultureinfo]::InvariantCulture))
+    return Get-ParallelEffectiveConfigurationAction -Definition $Definition -Effective $e
+}
+$clearanceOn = Set-ClearanceSwitch $baseline $true
+$clearanceOff = Set-ClearanceSwitch $baseline $false
+
+Invoke-SourceCase 'clearance switch: neither shipped definition writes it (off by the product default)' {
+    $written = @('instance-factory01-v2.json', 'instance-factory01-v2.production-mes.json' | Where-Object {
+            (Get-Content -Raw -LiteralPath (Join-Path $PSScriptRoot $_)).Contains('clearanceToWaitingPoint') })
+    @{ Ok = ($written.Count -eq 0); Detail = "written in: $($written -join ', ')" }
+}
+Invoke-SourceCase 'clearance switch: a definition that turns it on is accepted (the key is whitelisted)' {
+    $f = @(Test-ParallelInstanceDefinition -Definition $clearanceOn)
+    @{ Ok = ($f.Count -eq 0); Detail = "failures: $($f -join ' | ')" }
+}
+Invoke-SourceCase 'clearance switch: a string "true" is refused, not bound as on behind the check' {
+    $f = @(Test-ParallelInstanceDefinition -Definition (Set-ClearanceSwitch $baseline 'true'))
+    @{ Ok = ($f.Count -eq 1 -and $f[0].Contains('clearanceToWaitingPointEnabled must be a JSON boolean')); Detail = "failures: $($f -join ' | ')" }
+}
+Invoke-SourceCase 'clearance switch: a case twin (ClearanceToWaitingPointEnabled) is refused' {
+    $d = Copy-Definition $baseline
+    $d['journeyRuntime']['ClearanceToWaitingPointEnabled'] = $true
+    $f = @(Test-ParallelInstanceDefinition -Definition $d)
+    @{ Ok = (@($f | Where-Object { $_.Contains('differs only in case') }).Count -eq 1); Detail = "failures: $($f -join ' | ')" }
+}
+Invoke-SourceCase 'clearance switch: on in the definition is written on in the overlay' {
+    $o = New-ParallelInstanceConfigurationOverlay -Definition $clearanceOn
+    $v = $o['JourneyRuntime']['clearanceToWaitingPointEnabled']
+    @{ Ok = ($v -is [bool] -and $v); Detail = "got: $v" }
+}
+Invoke-SourceCase 'clearance switch: left out, the overlay writes false, so an earlier install''s true does not survive a reinstall' {
+    $o = New-ParallelInstanceConfigurationOverlay -Definition $baseline
+    $earlier = Merge-ConfigurationTree -Base (Copy-Definition $productConfiguration) -Overlay (New-ParallelInstanceConfigurationOverlay -Definition $clearanceOn)
+    $again = Merge-ConfigurationTree -Base $earlier -Overlay $o
+    $v = $o['JourneyRuntime']['clearanceToWaitingPointEnabled']
+    @{ Ok = ($o['JourneyRuntime'].Contains('clearanceToWaitingPointEnabled') -and $v -is [bool] -and -not $v -and
+            $earlier['JourneyRuntime']['clearanceToWaitingPointEnabled'] -eq $true -and $again['JourneyRuntime']['clearanceToWaitingPointEnabled'] -eq $false)
+        Detail = "overlay: $v; earlier: $($earlier['JourneyRuntime']['clearanceToWaitingPointEnabled']); reinstalled: $($again['JourneyRuntime']['clearanceToWaitingPointEnabled'])" }
+}
+foreach ($case in @(
+        @{ Name = 'defined on, bound on -- pass'; Definition = $clearanceOn; Bound = $true; Action = 'Pass'; Says = $null }
+        @{ Name = 'defined on, bound off (written and not in effect) -- stop and refuse'; Definition = $clearanceOn; Bound = $false; Action = 'StopServiceAndRefuse'; Says = "clearanceToWaitingPointEnabled bound 'False', the definition says 'True'" }
+        @{ Name = 'left out, bound on (left over) -- stop and refuse'; Definition = $baseline; Bound = $true; Action = 'StopServiceAndRefuse'; Says = "clearanceToWaitingPointEnabled bound 'True', the definition says 'False'" }
+        @{ Name = 'left out, bound off (the default) -- pass'; Definition = $baseline; Bound = $false; Action = 'Pass'; Says = $null }
+        @{ Name = 'defined off, bound off -- pass'; Definition = $clearanceOff; Bound = $false; Action = 'Pass'; Says = $null }
+        @{ Name = 'defined off, bound a string "false" -- stop and refuse, not read as off'; Definition = $clearanceOff; Bound = 'false'; Action = 'StopServiceAndRefuse'; Says = 'clearanceToWaitingPointEnabled bound' }
+        @{ Name = 'defined on, event older than #638 (no field) -- stop and refuse'; Definition = $clearanceOn; Bound = '<absent>'; Action = 'StopServiceAndRefuse'; Says = 'EFFECTIVE_CONFIGURATION_CLEARANCE_UNREAD' }
+        @{ Name = 'left out, event older than #638 (no field) -- pass, as before'; Definition = $baseline; Bound = '<absent>'; Action = 'Pass'; Says = $null })) {
+    Invoke-SourceCase "clearance read-back: $($case.Name)" {
+        $a = Get-ClearanceReadBack $case.Definition $case.Bound
+        @{ Ok = ($a.Action -ceq $case.Action -and ($null -eq $case.Says -or ([string] $a.Message).Contains($case.Says))); Detail = "got: $(ConvertTo-Json $a -Compress)" }
+    }
+}
+Invoke-SourceCase 'clearance read-back: defined on and nothing read back at all -- stop and refuse, not the fake-mode warning' {
+    $a = Get-ParallelEffectiveConfigurationAction -Definition $clearanceOn -Effective $null
+    @{ Ok = ($a.Action -ceq 'StopServiceAndRefuse'); Detail = "got: $(ConvertTo-Json $a -Compress)" }
+}
+Invoke-SourceCase 'clearance read-back: the Host source logs the switch under the template the module reads' {
+    $eventSource = @(Get-ChildItem -LiteralPath (Join-Path $repoRoot 'src/ControlServer.Host') -Recurse -Filter '*.cs' |
+            Where-Object { (Get-Content -Raw -LiteralPath $_.FullName).Contains($clearanceTemplate) })
+    @{ Ok = ($eventSource.Count -eq 1 -and $eventSource[0].Name -ceq 'EffectiveConfigurationEvent.cs'); Detail = "template found in: $(@($eventSource | ForEach-Object Name) -join ', ')" }
+}
+
 Write-Host ''
 Write-Host ("{0} passed, {1} failed" -f $script:Passed, $script:Failed) `
     -ForegroundColor ($script:Failed -eq 0 ? 'Green' : 'Red')

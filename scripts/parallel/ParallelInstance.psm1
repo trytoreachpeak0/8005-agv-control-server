@@ -178,7 +178,7 @@ $script:AllowedKeys = [ordered]@{
         'maximumEvidenceAge', 'departureSafetyResultWait', 'stationDepartureWaitTimeout',
         'cargoHoldingTimeout', 'sublotBoxCountPath', 'allowedWorkTypes', 'allowedDispatchZones',
         'admissionPolicyVersion', 'admissionPolicyDeploymentId', 'checkpointWaitBudget',
-        'areaEndAdmissionRevokedTimeout')
+        'areaEndAdmissionRevokedTimeout', 'clearanceToWaitingPointEnabled')
     # control-server#454. credentialEnvironmentVariable is deliberately absent: the overlay writes
     # this instance's own variable name, so no definition can point the service at the MVP's.
     'vehicleFaultRecovery' = @('enabled')
@@ -885,6 +885,16 @@ function Test-ParallelInstanceDefinition {
             $failures += 'journeyRuntime.enabled must be stated explicitly.'
         } elseif ($journey['enabled'] -isnot [bool]) {
             $failures += "journeyRuntime.enabled must be a JSON boolean, got '$($journey['enabled'])'."
+        }
+
+        # control-server#638. REQ-0178's clearance move (JourneyRuntimeOptions.ClearanceToWaitingPointEnabled): on, a vehicle
+        # in the clearing loop drives itself to a waiting point. Optional -- absent is off, and the overlay writes false --
+        # but when written it is a JSON boolean. This check is what makes a non-boolean loud: the overlay
+        # (Get-ParallelClearanceToWaitingPoint) writes anything that is not a boolean as false, and the read-back expects
+        # that same false, so without this check a definition saying "true" would install off and read back green --
+        # written on, not in effect, and nobody told (PR #640 review L3).
+        if ((Test-KeyPresent -Node $journey -Key 'clearanceToWaitingPointEnabled') -and $journey['clearanceToWaitingPointEnabled'] -isnot [bool]) {
+            $failures += "journeyRuntime.clearanceToWaitingPointEnabled must be a JSON boolean, got '$($journey['clearanceToWaitingPointEnabled'])'."
         }
 
         # The route graph only refreshes from inside a JourneyRuntimeWorker iteration
@@ -1904,7 +1914,8 @@ function Find-ParallelEffectiveConfiguration {
             it really bound, the MesIngest baseUrl it reads and, since control-server#571, the vehicle
             roster (Fleet: AgvId, VehicleKey, AllowedTaskTypes, Zones per car; an empty list for one car).
             Fleet is $null when the event does not carry it -- a package older than #571 -- which is not
-            the same as an empty roster. That -- not the definition, not the
+            the same as an empty roster. Since control-server#638 it also carries ClearanceToWaitingPointEnabled,
+            $null when the event does not. That -- not the definition, not the
             overlay file -- is what the deployment's read-back compares, because M1 was a definition and
             an overlay that both said ["STAGING_TO_WIRE"] while the Host bound six types. -Since is the
             service process's start: a line from an earlier process proves nothing about this one.
@@ -1952,6 +1963,9 @@ function Find-ParallelEffectiveConfiguration {
             AllowedDispatchZones = [string[]] @($event['AllowedDispatchZones'])
             MesIngestBaseUrl = [string] $event['MesIngestBaseUrl']
             Fleet = $fleet
+            # control-server#638. As logged, not cast: $null when the event does not carry it (a package older than #638),
+            # and anything that is not a JSON boolean is compared as it is, so it cannot read as false.
+            ClearanceToWaitingPointEnabled = $event.ContainsKey('ClearanceToWaitingPointEnabled') ? $event['ClearanceToWaitingPointEnabled'] : $null
         }
     }
     return $found
@@ -1973,6 +1987,11 @@ function Get-ParallelEffectiveConfigurationRefusal {
             definition with a roster read back from an event without one (a package older than #571) is
             EFFECTIVE_CONFIGURATION_FLEET_UNREAD; a single-car definition accepts that event as before, but not
             an event showing a roster it did not write (one left over from an earlier two-car install).
+
+            control-server#638: clearanceToWaitingPointEnabled (absent in the definition is false) is compared with what
+            the Host bound; anything but that JSON boolean is a mismatch. An event without it (a package older than #638)
+            is EFFECTIVE_CONFIGURATION_CLEARANCE_UNREAD when the definition turns it on -- an unconfirmed "on" is not a pass
+            -- and accepted as before when the definition leaves it off.
     #>
     [CmdletBinding()]
     [OutputType([string])]
@@ -2008,8 +2027,31 @@ function Get-ParallelEffectiveConfigurationRefusal {
     if ($hasFleet) {
         $problems += @(Compare-ParallelEffectiveFleet -Defined ($definesFleet ? @($journey['fleet']) : @()) -Bound @($Effective.Fleet))
     }
+    $clearanceExpected = Get-ParallelClearanceToWaitingPoint -Definition $Definition
+    $clearanceBound = ($null -ne $Effective.PSObject.Properties['ClearanceToWaitingPointEnabled']) ? $Effective.ClearanceToWaitingPointEnabled : $null
+    if ($null -eq $clearanceBound) {
+        if ($clearanceExpected) {
+            return 'EFFECTIVE_CONFIGURATION_CLEARANCE_UNREAD: the definition turns journeyRuntime.clearanceToWaitingPointEnabled on, and the Host''s EFFECTIVE_CONFIGURATION event does not carry it (a package older than control-server#638), so whether vehicles will drive themselves to a waiting point is unknown.'
+        }
+    } elseif ($clearanceBound -isnot [bool] -or $clearanceBound -ne $clearanceExpected) {
+        $problems += "clearanceToWaitingPointEnabled bound '$clearanceBound', the definition says '$clearanceExpected'"
+    }
     if ($problems.Count -eq 0) { return $null }
     return "EFFECTIVE_CONFIGURATION_MISMATCH: $($problems -join '; ')."
+}
+
+function Get-ParallelClearanceToWaitingPoint {
+    <#
+        .SYNOPSIS
+            control-server#638. journeyRuntime.clearanceToWaitingPointEnabled as the overlay writes it and the read-back
+            expects it: the definition's boolean, false when it leaves the key out (the product default).
+    #>
+    [CmdletBinding()]
+    [OutputType([bool])]
+    param([Parameter(Mandatory = $true)][hashtable] $Definition)
+    $journey = $Definition['journeyRuntime']
+    return ($journey -is [System.Collections.IDictionary] -and $journey.Contains('clearanceToWaitingPointEnabled') -and
+        $journey['clearanceToWaitingPointEnabled'] -is [bool]) ? $journey['clearanceToWaitingPointEnabled'] : $false
 }
 
 function Compare-ParallelEffectiveFleet {
@@ -2065,7 +2107,8 @@ function Get-ParallelEffectiveConfigurationAction {
             V2 service before the installer throws. Nothing read back in 'fake' only warns: a package older
             than #535 does not log the event, and its lists are the package's own length -- unless the
             definition has a vehicle roster (control-server#571): which cars the Host drives is not something
-            to warn about, so that, too, stops the service.
+            to warn about, so that, too, stops the service; nor, since control-server#638, is whether vehicles drive
+            themselves to a waiting point (journeyRuntime.clearanceToWaitingPointEnabled on).
     #>
     [CmdletBinding()]
     param(
@@ -2075,7 +2118,8 @@ function Get-ParallelEffectiveConfigurationAction {
     $message = Get-ParallelEffectiveConfigurationRefusal -Definition $Definition -Effective $Effective
     $action = if ($null -eq $message) { 'Pass' }
         elseif ($null -eq $Effective -and (Get-MesIngestSource -Definition $Definition) -cne 'production' -and
-            -not $Definition['journeyRuntime'].ContainsKey('fleet')) { 'Warn' }
+            -not $Definition['journeyRuntime'].ContainsKey('fleet') -and
+            -not (Get-ParallelClearanceToWaitingPoint -Definition $Definition)) { 'Warn' }
         else { 'StopServiceAndRefuse' }
     return [pscustomobject]@{ Action = $action; Message = $message }
 }
@@ -2243,6 +2287,9 @@ function New-ParallelInstanceConfigurationOverlay {
     } else {
         $journeyOverlay['fleet'] = @()
     }
+    # control-server#638. Always written, false when the definition leaves it out, so a true from an earlier install does not
+    # survive a reinstall in appsettings.Production.json; the read-back compares what the Host bound with this same value.
+    $journeyOverlay['clearanceToWaitingPointEnabled'] = Get-ParallelClearanceToWaitingPoint -Definition $Definition
 
     $routeGraphOverlay = [ordered]@{}
     foreach ($key in $routeGraph.Keys) { $routeGraphOverlay[$key] = $routeGraph[$key] }

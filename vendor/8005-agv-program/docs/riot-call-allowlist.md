@@ -9,7 +9,7 @@
 | 维护者 | Zhengyu Shao |
 | 绑定环境 | `RIOT-8005-RUNTIME`，运行 build `v2.2.0.14` |
 | 绑定契约快照 | `RIOT-OPENAPI-8005-202607-EARLY-01` |
-| 本版依据 | 需求基线 `v1.1.0`（SHA-256 `5fe4b701…fb53`，tag `requirements-baseline-v1.1.0`）；第 1.5 节「解除」随需求基线 `v1.3.0`（SHA-256 `ac74c78e…bec7`，tag `requirements-baseline-v1.3.0`，`CP-0003`）跟改；第 1.2 节形态二的载体与第 1.3 节 `CMD_ORDER_CANCEL` 的使用条件随需求基线 `v1.9.0`（tag `requirements-baseline-v1.9.0`，`CP-0010`）跟改 |
+| 本版依据 | 需求基线 `v1.1.0`（SHA-256 `5fe4b701…fb53`，tag `requirements-baseline-v1.1.0`）；第 1.5 节「解除」随需求基线 `v1.3.0`（SHA-256 `ac74c78e…bec7`，tag `requirements-baseline-v1.3.0`，`CP-0003`）跟改；第 1.2 节形态二的载体与第 1.3 节 `CMD_ORDER_CANCEL` 的使用条件随需求基线 `v1.9.0`（tag `requirements-baseline-v1.9.0`，`CP-0010`）跟改；第 1.2 节形态一的「用途」于 2026-10-12 按 `REQ-0178`／`REQ-0179` 补全（汇编纠错，基线不改） |
 | 首次成文 | 2026-09-08 |
 
 ## 这份文档是什么
@@ -92,7 +92,7 @@ Evidence 段落按 `Snapshot SHA-256 = 205a1c4bd5760e3f5a50de3eec050d5d8e99eec4a
 
 ### 1.2 建单：两种形态，不是一种
 
-载体 `REQ-0147`（端点、前置条件，以及 `v1.9.0` 起写进条文的形态二，`CP-0010`）、`REQ-0171`（形态二的目标桩须在 8005 独占充电桩名册内）、`REQ-0294`（空闲返回只用单段 move）。
+载体 `REQ-0147`（端点、前置条件，以及 `v1.9.0` 起写进条文的形态二，`CP-0010`）、`REQ-0171`（形态二的目标桩须在 8005 独占充电桩名册内）、`REQ-0294`（空闲返回只用单段 move）、`REQ-0178`／`REQ-0179`（清桩中的车开往地图等待点，到点即完成清桩的系统证明）。
 
 | 方法 | 路径 | Facade | 用 |
 | --- | --- | --- | --- |
@@ -102,8 +102,17 @@ Evidence 段落按 `Snapshot SHA-256 = 205a1c4bd5760e3f5a50de3eec050d5d8e99eec4a
 
 | 形态 | 用途 | `Mission` 数组 |
 | --- | --- | --- |
-| 一、单段 move | 普通搬运、空闲返回 | `[{ Type: "move", 目标站点 }]` |
+| 一、单段 move | 普通搬运、空闲返回、清桩开往等待点 | `[{ Type: "move", 目标站点 }]` |
 | 二、move ＋ act | **前往充电桩** | `[{ Type: "move", 目标桩 }, { Type: "act", actionId: 78, actionParam1: 1, actionParam2: 0 }]` |
+
+「用途」列是汇编时对基线的说明，**不是另加的条件**：`REQ-0147` 对单段 move 只规定端点、车辆／地图／站点与
+前置条件，没有限定用途。2026-09-08 首次成文时这一格只写了当时已有的两种用途，漏了 `REQ-0178`／`REQ-0179`
+（`v1.0.0` 起生效）要求的「清桩中的车开往地图等待点」；2026-10-12 按第五节「纠正汇编错误」补上，
+基线不改。清桩开往等待点的单与空闲返回的单逐字段同形——同一个 `byDefaultMissions` 端点、同一个不带动作的
+`CreateMoveOrderAsync` 重载、`Mission` 只有一段 `move`——`REQ-0147` 的前置条件对它一条不少：稳定 `upperId`
+（不超过 52 字符）、车辆 `ON_LINE`、`RouteCost` 可达、该车名下的旧充电单已确认终结后才建单；目标只取
+`REQ-0178` 的地图等待点集合。**这一格以后再加用途，先对照基线条文：基线已覆盖的是纠错，基线没覆盖的是扩大，
+后者走第五节的变更提案。**
 
 形态二的实测依据：`actionId=78` 是 RIoT 里现成的模板动作，`actionParam1=1` 为「开始充电」、
 `=2` 为「结束充电」，`actionParam2` 均为 0（Round 24，
@@ -307,7 +316,7 @@ Facade，全部在第一节的表里：
 
 | 来源 | 内容 |
 | --- | --- |
-| `requirements/baselines/current-requirements-v1.1.0.md` | `REQ-0146`／`REQ-0147`／`REQ-0148`／`REQ-0149`（第一节主体）、`REQ-0294`（空闲返回）、`REQ-0309`（具名 Facade）、`REQ-0246`／`REQ-0248`（急停行为）、`REQ-0168`（诊断端点） |
+| `requirements/baselines/current-requirements-v1.1.0.md` | `REQ-0146`／`REQ-0147`／`REQ-0148`／`REQ-0149`（第一节主体）、`REQ-0294`（空闲返回）、`REQ-0178`／`REQ-0179`（清桩开往等待点，1.2 形态一的用途）、`REQ-0309`（具名 Facade）、`REQ-0246`／`REQ-0248`（急停行为）、`REQ-0168`（诊断端点） |
 | `requirements/change-proposals/CP-0001.md` | 1.1 末尾五个 `imap` 端点的增列依据 |
 | `requirements/change-proposals/CP-0003.md` | 1.5「解除」按修订后的 `REQ-0247`／`REQ-0248` 与新增的 `REQ-0356` 跟改的依据（需求基线 `v1.3.0`） |
 | `requirements/change-proposals/CP-0006.md` | 1.3 `CMD_ORDER_CANCEL` 可作用于已证明外来运行订单的依据（需求基线 `v1.5.0`）；这半句当时没有抄进本文档，随 `CP-0010` 补上 |

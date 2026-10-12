@@ -44,14 +44,16 @@ public sealed class RiotCallAllowlistArchitectureTests
 {
     /// <summary>
     /// SHA-256 of the approved allowlist document, over the file's bytes. Taken with <c>git show</c> from
-    /// <c>8005-agv-program</c> commit <c>01c87efe26465875d658cd2ae90133ac1d4e8faf</c> on 2026-10-01: sections 1.2 and
-    /// 1.3 brought in line with requirements baseline v1.9.0 (CP-0010, control-server#406) -- the charge-order shape
-    /// carried by REQ-0147, and <c>CMD_ORDER_CANCEL</c> for this server's own charge orders in the two cases of
-    /// REQ-0148 -- plus program#145's "used" column for <c>getALLMapInfoExcludeMapJson</c>. The approved-call rows are
-    /// unchanged from the 2026-09-08 document (<c>3bc055c4</c>).
+    /// <c>8005-agv-program</c> commit <c>e87615200e76f685604f6cb02e00b88523dc9534</c> (program#175) on 2026-10-12: section
+    /// 1.2 form one's "use" gains "clearance to a waiting point" (REQ-0178/REQ-0179, a compilation fix, baseline unchanged;
+    /// control-server#638). Before it, <c>01c87efe26465875d658cd2ae90133ac1d4e8faf</c> (2026-10-01) brought sections 1.2 and
+    /// 1.3 in line with requirements baseline v1.9.0 (CP-0010, control-server#406) -- the charge-order shape carried by
+    /// REQ-0147, and <c>CMD_ORDER_CANCEL</c> for this server's own charge orders in the two cases of REQ-0148 -- plus
+    /// program#145's "used" column for <c>getALLMapInfoExcludeMapJson</c>. The approved-call rows are unchanged from the
+    /// 2026-09-08 document (<c>3bc055c4</c>).
     /// </summary>
     private const string ApprovedAllowlistSha256 =
-        "843e017bbba7b3edc39d0e868603ecbeef88b93f6d254884c2abdb15f436809b";
+        "e3a90db72a5821a3936b0d33506f58392ae291a56daa0e8b65dfaa275b75a4d5";
 
     private const string FacadeAssembly = "RIoT.Sdk.Facade";
     private const string GeneratedAssembly = "RIoT.Sdk.Generated";
