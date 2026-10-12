@@ -5491,27 +5491,6 @@ public sealed partial class JourneyRuntimeEngine(
             return true;
         }
 
-        // 同站追加的新需求排成了当前停靠之后的新停靠（REQ-0196：当前停靠不可改），车物理上不动，新需求要等车「离站再到站」
-        // 才进清单（control-server#646）。不提前结束，操作员就得空等原停靠的倒计时走完（生产最长约 5 分钟）才能录它；
-        // 用户 2026-10-12 定：当前取货停靠已装完、紧接着的下一个停靠是同一站的取货停靠时，不等原倒计时，这一轮就走原地的
-        // 离站核验与「到站」，新停靠到站时从完整时长重新计时。
-        //
-        // 只有这一个条件。纠错闸在上面照判；仓门扣车与持货等单在调用方照判；离站核验与原地到站流程不变。不碰起点：离站时
-        // 调用方把它清空，到站时新停靠种下自己的。下一个停靠是同站卸货（先装后卸）不在此列，那是 control-server#647 的。
-        if (stops.Current.StopRole == JourneyStopRoles.Pickup &&
-            stops.OutstandingAtCurrentStop.Count == 0 &&
-            stops.OpenStops.FirstOrDefault(stop => stop.Sequence > stops.Current.Sequence) is
-                { StopRole: JourneyStopRoles.Pickup } next &&
-            string.Equals(next.StationId, stops.Current.StationId, StringComparison.Ordinal))
-        {
-            if (runtime.BlockReasonCode is not null)
-            {
-                runtime.SetBlockReason(null, now);
-                runtime.UpdatedAt = now;
-            }
-            return true;
-        }
-
         DateTimeOffset startedAt = runtime.StationDepartureWaitStartedAt ?? now;
         foreach (RecoveryWorkflowRow closed in corrections.Where(row => row.State == RecoveryWorkflowState.Reconciled))
         {
@@ -5522,6 +5501,32 @@ public sealed partial class JourneyRuntimeEngine(
             runtime.StationDepartureWaitStartedAt = startedAt;
             runtime.SetBlockReason(null, now);
             runtime.UpdatedAt = now;
+        }
+
+        // 同站追加的新需求排成了当前停靠之后的新停靠（REQ-0196：当前停靠不可改），车物理上不动，新需求要等车「离站再到站」
+        // 才进清单（control-server#646）。不提前结束，操作员就得空等原停靠的倒计时走完（生产最长约 5 分钟）才能录它；
+        // 用户 2026-10-12 定：当前取货停靠已装完、紧接着的下一个开着的停靠是同一站的取货停靠时，不等原倒计时，走原地的离站核验与
+        // 「到站」，新停靠到站时从完整时长重新计时。
+        //
+        // 但不在落定那一轮就走，要先停够一段纠错宽限（SameStationAppendCorrectionGrace，用户 2026-10-12 定，PR #660 审查 S1）。
+        // 服务端只在 AwaitingStationDeparture 授权纠错，车载端只对「最近一次完成的装货」开纠错入口；新停靠一装完，这一站已装的
+        // 那几条就再也纠正不了（REQ-0237）。没有宽限时窗口可以是零：追加早于落定，落定那一轮直接走到离站核验，这个阶段一次都不落库。
+        // 宽限从同一个起点算——最后一批落定，纠错闭环时挪到闭环那一刻——所以宽限内开的纠错照样挡车（上面的纠错闸），闭环之后再给一段
+        // 宽限，期间还能再开。ADR-cross-0055 的「闭环后从完整时长重新计时」管的是期限，那一项照旧重算；提前结束对它与对原期限一样，
+        // 只是在宽限过后把它截短：本停靠已无可装的东西，完整时长留给新停靠。
+        //
+        // 只截短不延长：宽限比期限长，或等待关着（期限为空）时，照下面的期限判。纠错闸在上面照判；仓门扣车与持货等单在调用方照判；
+        // 离站核验与原地到站流程不变；起点照上面那样写，离站时调用方清空，到站时新停靠种下自己的。
+        // 只认下一个是同站取货：只有那时才有一条等着录的新需求，提前才有收益。同站卸货（先装后卸）在这里提前，等于替
+        // control-server#647 决定那种排法的取货停靠等不等，而且纠错窗口关掉之后不会重开（卸货停靠卸完当轮就走）。
+        if (stops.Current.StopRole == JourneyStopRoles.Pickup &&
+            stops.OutstandingAtCurrentStop.Count == 0 &&
+            stops.OpenStops.FirstOrDefault(stop => stop.Sequence > stops.Current.Sequence) is
+                { StopRole: JourneyStopRoles.Pickup } next &&
+            string.Equals(next.StationId, stops.Current.StationId, StringComparison.Ordinal) &&
+            now >= startedAt + runtimeOptions.SameStationAppendCorrectionGrace)
+        {
+            return true;
         }
         // No deadline here means the wait is off: the vehicle leaves in the iteration its load commits.
         return StationDepartureDeadline(runtime, runtimeOptions.StationDepartureWaitTimeout) is not { } deadline ||

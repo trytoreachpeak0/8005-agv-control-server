@@ -19,6 +19,11 @@ namespace ControlServer.Tests;
 /// 这期间新需求不在车上的清单里，录不进去（cs#643 的探针 <c>ProbeAnAppendAtTheStationTheVehicleStandsAt</c>，提交 75f2593e4）。
 /// </para>
 /// <para>
+/// <b>纠错宽限（PR #660 审查 S1）。</b>提前结束要等最后一批落定（或纠错闭环）之后停够 <c>SameStationAppendCorrectionGrace</c>：服务端只在
+/// <c>AwaitingStationDeparture</c> 授权纠错，车载端只对最近一次完成的装货开纠错入口，新停靠一装完，这一站已装的就纠正不了了。没有宽限时，
+/// 追加早于落定的那一种窗口是零——落定那一轮直接发离站核验，这个阶段一次都不落库。
+/// </para>
+/// <para>
 /// <b>每条用例都显式打开等待。</b>夹具默认等待为零，零等于装完当轮离站，在那个设置下提前不提前看不出来。
 /// 不放行的几条都把钟拨到原期限之前一点再跑：只跑一轮、钟不走，「没发离站核验」对修前修后都成立，什么也说明不了。
 /// </para>
@@ -26,6 +31,9 @@ namespace ControlServer.Tests;
 public sealed class SameStationAppendEndsDepartureWaitTests
 {
     private static readonly TimeSpan Wait = TimeSpan.FromSeconds(60);
+
+    /// <summary>纠错宽限。比 <see cref="BeforeAppend"/> 短，比期限短得多：放行既不是因为原期限到了，宽限也看得出来。</summary>
+    private static readonly TimeSpan Grace = TimeSpan.FromSeconds(10);
 
     /// <summary>装完到追加之间钟走过的时间：比期限短得多，放行不是因为原期限到了。</summary>
     private static readonly TimeSpan BeforeAppend = TimeSpan.FromSeconds(20);
@@ -38,14 +46,15 @@ public sealed class SameStationAppendEndsDepartureWaitTests
     private static CancellationToken Token => TestContext.Current.CancellationToken;
 
     /// <summary>
-    /// 同站追加：下一轮就发离站核验（原期限还远）；原地「到站」后新停靠从到站那一轮起算完整时长，车上那一版清单列着新需求、带着这个期限。
+    /// 宽限已过之后同站追加：下一轮就发离站核验（原期限还远）；原地「到站」后新停靠从到站那一轮起算完整时长，车上那一版清单列着新需求、
+    /// 带着这个期限。
     /// </summary>
     [Fact]
     [Trait("IntegrationSlice", "FP-IS-08")]
-    public async Task ASameStationAppendSendsTheVehicleOnAtOnceAndTheNewStopGetsTheFullWait()
+    public async Task ASameStationAppendAfterTheGraceSendsTheVehicleOnAtOnceAndTheNewStopGetsTheFullWait()
     {
         await using RuntimeFixture fixture = await Batch7CargoHoldingTests.HoldingFixtureAsync();
-        fixture.Options.StationDepartureWaitTimeout = Wait;
+        Configure(fixture);
         DateTimeOffset loadedAt = await Batch7CargoHoldingTests.LoadTheFirstDemandAsync(fixture);
         JourneyStopRow firstPickup = await CurrentStopAsync(fixture, FirstDemandId);
         DateTimeOffset originalDeadline = loadedAt + Wait;
@@ -83,7 +92,7 @@ public sealed class SameStationAppendEndsDepartureWaitTests
     public async Task AnAppendAtAnotherStationStillWaitsOutTheStationDeadline()
     {
         await using RuntimeFixture fixture = await Batch7CargoHoldingTests.HoldingFixtureAsync();
-        fixture.Options.StationDepartureWaitTimeout = Wait;
+        Configure(fixture);
         DateTimeOffset loadedAt = await Batch7CargoHoldingTests.LoadTheFirstDemandAsync(fixture);
         JourneyStopRow firstPickup = await CurrentStopAsync(fixture, FirstDemandId);
 
@@ -106,7 +115,7 @@ public sealed class SameStationAppendEndsDepartureWaitTests
     public async Task ASameStationAppendDoesNotEndTheWaitWhileTheCurrentStopHasALoadOutstanding()
     {
         await using RuntimeFixture fixture = await Batch7CargoHoldingTests.HoldingFixtureAsync();
-        fixture.Options.StationDepartureWaitTimeout = Wait;
+        Configure(fixture);
         DateTimeOffset loadedAt = await Batch7CargoHoldingTests.LoadTheFirstDemandAsync(fixture);
         JourneyStopRow firstPickup = await CurrentStopAsync(fixture, FirstDemandId);
         await AppendAtAsync(fixture, firstPickup.StationId, firstPickup.StationRiotId);
@@ -131,7 +140,7 @@ public sealed class SameStationAppendEndsDepartureWaitTests
     public async Task ASameStationAppendDoesNotEndTheWaitWhileACorrectionIsOpen()
     {
         await using RuntimeFixture fixture = await Batch7CargoHoldingTests.HoldingFixtureAsync();
-        fixture.Options.StationDepartureWaitTimeout = Wait;
+        Configure(fixture);
         DateTimeOffset loadedAt = await Batch7CargoHoldingTests.LoadTheFirstDemandAsync(fixture);
         JourneyStopRow firstPickup = await CurrentStopAsync(fixture, FirstDemandId);
         await OpenCorrectionOnTheFirstDemandAsync(fixture);
@@ -150,7 +159,7 @@ public sealed class SameStationAppendEndsDepartureWaitTests
     public async Task ASameStationAppendDoesNotSendAVehicleHeldForItsSlotDoorOn()
     {
         await using RuntimeFixture fixture = await Batch7CargoHoldingTests.HoldingFixtureAsync();
-        fixture.Options.StationDepartureWaitTimeout = Wait;
+        Configure(fixture);
         DateTimeOffset loadedAt = await Batch7CargoHoldingTests.LoadTheFirstDemandAsync(fixture);
         JourneyStopRow firstPickup = await CurrentStopAsync(fixture, FirstDemandId);
         fixture.Context.SlotDoorHolds.Add(new SlotDoorHoldRow
@@ -180,7 +189,7 @@ public sealed class SameStationAppendEndsDepartureWaitTests
     public async Task ASameStationUnloadNextDoesNotEndThePickupWait()
     {
         await using RuntimeFixture fixture = await RuntimeFixture.CreateAsync();
-        fixture.Options.StationDepartureWaitTimeout = Wait;
+        Configure(fixture);
         fixture.Catalog.Set(
             fixture.Demand(FirstDemandId, FirstSublot, Now.AddMinutes(-10)),
             fixture.Demand(SecondDemandId, SecondSublot, Now.AddMinutes(-9), area: OtherPickupArea));
@@ -203,6 +212,252 @@ public sealed class SameStationAppendEndsDepartureWaitTests
         Assert.Equal(JourneyRuntimeStage.AwaitingStationDeparture, settled.Stage);
 
         await AssertHeldUntilAsync(fixture, secondPickup.StopId, settled.StationDepartureWaitStartedAt!.Value + Wait);
+    }
+
+    /// <summary>
+    /// 追加早于第一条装货落定（审查 S1 的零窗口探针）：落定那一轮停在离站等待并落库，宽限内服务端照常授权纠错，纠错开着时宽限过了也不走。
+    /// </summary>
+    [Fact]
+    [Trait("IntegrationSlice", "FP-IS-08")]
+    [Trait("IntegrationSlice", "FP-IS-02")]
+    [Trait("ProtocolVector", "CV-LOAD-CORRECTION")]
+    public async Task AnAppendBeforeTheLoadCommitsLeavesTheGraceForACorrectionTheServerAuthorizes()
+    {
+        await using RuntimeFixture fixture = await Batch7CargoHoldingTests.HoldingFixtureAsync();
+        Configure(fixture);
+        JourneyStopRow firstPickup = await AppendWhileTheFirstLoadsAsync(fixture);
+        DateTimeOffset committedAt = fixture.Clock.GetUtcNow();
+        JourneyRuntimeRow settled = await JourneyOfAsync(fixture, FirstDemandId);
+        Assert.True(
+            settled.Stage == JourneyRuntimeStage.AwaitingStationDeparture,
+            $"The load committed and the stop never stood in the departure wait. stage={settled.Stage} block={settled.BlockReasonCode}");
+        Assert.False(await DepartureCheckOfStopSentAsync(fixture, firstPickup.StopId));
+
+        fixture.Clock.Advance(TimeSpan.FromSeconds(2));
+        string answer = await RequestCorrectionOfTheFirstDemandAsync(fixture);
+        Assert.DoesNotContain("LoadCorrectionRejected", answer, StringComparison.Ordinal);
+        Assert.Contains("LoadCorrectionCommand", await fixture.OutboxTypesAsync());
+
+        await RunAtAsync(fixture, committedAt + Grace + TimeSpan.FromSeconds(5));
+        JourneyRuntimeRow held = await JourneyOfAsync(fixture, FirstDemandId);
+        Assert.False(await DepartureCheckOfStopSentAsync(fixture, firstPickup.StopId));
+        Assert.Equal(JourneyRuntimeEngine.LoadCorrectionInProgressReason, held.BlockReasonCode);
+    }
+
+    /// <summary>
+    /// 追加早于落定、没人纠错：宽限之前一秒仍停在离站等待，宽限到的那一轮发离站核验（离原期限还远）。
+    /// </summary>
+    [Fact]
+    [Trait("IntegrationSlice", "FP-IS-08")]
+    public async Task AnAppendBeforeTheLoadCommitsEndsTheWaitWhenTheGraceRunsOut()
+    {
+        await using RuntimeFixture fixture = await Batch7CargoHoldingTests.HoldingFixtureAsync();
+        Configure(fixture);
+        JourneyStopRow firstPickup = await AppendWhileTheFirstLoadsAsync(fixture);
+        DateTimeOffset committedAt = fixture.Clock.GetUtcNow();
+        Assert.Equal(committedAt, (await JourneyOfAsync(fixture, FirstDemandId)).StationDepartureWaitStartedAt);
+
+        await RunAtAsync(fixture, committedAt + Grace - TimeSpan.FromSeconds(1));
+        Assert.False(await DepartureCheckOfStopSentAsync(fixture, firstPickup.StopId));
+        Assert.Equal(JourneyRuntimeStage.AwaitingStationDeparture, (await JourneyOfAsync(fixture, FirstDemandId)).Stage);
+
+        await RunAtAsync(fixture, committedAt + Grace);
+        Assert.True(
+            await DepartureCheckOfStopSentAsync(fixture, firstPickup.StopId),
+            "The grace ran out and the vehicle was not sent on to the same-station stop.");
+        Assert.True(fixture.Clock.GetUtcNow() < committedAt + Wait - TimeSpan.FromSeconds(30));
+    }
+
+    /// <summary>
+    /// 宽限内开的纠错闭环：离站等待起点挪到闭环那一刻（ADR-cross-0055，期限从完整时长重算），提前结束再给一段宽限——
+    /// 闭环 + 宽限之前一秒仍在等，到了才走。
+    /// </summary>
+    [Fact]
+    [Trait("IntegrationSlice", "FP-IS-08")]
+    [Trait("IntegrationSlice", "FP-IS-02")]
+    [Trait("ProtocolVector", "CV-LOAD-CORRECTION")]
+    public async Task ACorrectionClosedInTheGraceEarnsAnotherGraceBeforeTheVehicleIsSentOn()
+    {
+        await using RuntimeFixture fixture = await Batch7CargoHoldingTests.HoldingFixtureAsync();
+        Configure(fixture);
+        JourneyStopRow firstPickup = await AppendWhileTheFirstLoadsAsync(fixture);
+        DateTimeOffset committedAt = fixture.Clock.GetUtcNow();
+        fixture.Clock.Advance(TimeSpan.FromSeconds(2));
+        Assert.DoesNotContain("LoadCorrectionRejected", await RequestCorrectionOfTheFirstDemandAsync(fixture), StringComparison.Ordinal);
+        await RunAtAsync(fixture, committedAt + Grace + TimeSpan.FromSeconds(5));
+        Assert.False(await DepartureCheckOfStopSentAsync(fixture, firstPickup.StopId));
+
+        DateTimeOffset closedAt = await CloseTheCorrectionAsync(fixture);
+        await RoundAsync(fixture);
+        JourneyRuntimeRow restarted = await JourneyOfAsync(fixture, FirstDemandId);
+        Assert.Equal(closedAt, restarted.StationDepartureWaitStartedAt);
+        Assert.Null(restarted.BlockReasonCode);
+        Assert.False(await DepartureCheckOfStopSentAsync(fixture, firstPickup.StopId));
+
+        await RunAtAsync(fixture, closedAt + Grace - TimeSpan.FromSeconds(1));
+        Assert.False(await DepartureCheckOfStopSentAsync(fixture, firstPickup.StopId));
+
+        await RunAtAsync(fixture, closedAt + Grace);
+        Assert.True(
+            await DepartureCheckOfStopSentAsync(fixture, firstPickup.StopId),
+            "The correction closed and its grace ran out, yet the vehicle was not sent on.");
+        Assert.True(fixture.Clock.GetUtcNow() < closedAt + Wait);
+    }
+
+    /// <summary>
+    /// 宽限为零：退回没有宽限时的行为——追加早于落定，落定那一轮就发离站核验。
+    /// </summary>
+    [Fact]
+    [Trait("IntegrationSlice", "FP-IS-08")]
+    public async Task WithTheGraceAtZeroTheWaitEndsInTheRoundTheLoadCommits()
+    {
+        await using RuntimeFixture fixture = await Batch7CargoHoldingTests.HoldingFixtureAsync();
+        Configure(fixture);
+        fixture.Options.SameStationAppendCorrectionGrace = TimeSpan.Zero;
+        JourneyStopRow firstPickup = await AppendWhileTheFirstLoadsAsync(fixture);
+
+        Assert.True(await DepartureCheckOfStopSentAsync(fixture, firstPickup.StopId));
+        Assert.Equal(JourneyRuntimeStage.AwaitingDepartureSafety, (await JourneyOfAsync(fixture, FirstDemandId)).Stage);
+    }
+
+    /// <summary>
+    /// 「下一个停靠」只看开着的：当前停靠与关卡之间夹着一个已删的同站取货停靠（旧版本修订留下的序位）时，不算同站追加，照旧等满期限
+    /// （PR #660 审查 L1 X2）。
+    /// </summary>
+    [Fact]
+    [Trait("IntegrationSlice", "FP-IS-08")]
+    public async Task ARemovedSameStationStopDoesNotEndTheWait()
+    {
+        await using RuntimeFixture fixture = await RuntimeFixture.CreateAsync();
+        Configure(fixture);
+        fixture.Catalog.Set(fixture.Demand(FirstDemandId, FirstSublot, Now.AddMinutes(-10)));
+        fixture.BoxCounts.Set(FirstSublot, 7);
+        await ArriveAtPickupAsync(fixture, FirstDemandId);
+        JourneyStopRow firstPickup = await CurrentStopAsync(fixture, FirstDemandId);
+        await InsertStopAfterAsync(fixture, firstPickup, JourneyStopRoles.Pickup, JourneyStopStatuses.Removed, "REMOVED-PICKUP");
+        await EnterSublotAsync(fixture, FirstDemandId, FirstSublot, FirstSubmissionId);
+        JourneyRuntimeRow settled = await SettleLoadAsync(fixture, FirstDemandId);
+        Assert.Equal(JourneyRuntimeStage.AwaitingStationDeparture, settled.Stage);
+
+        await AssertHeldUntilAsync(fixture, firstPickup.StopId, settled.StationDepartureWaitStartedAt!.Value + Wait);
+    }
+
+    /// <summary>
+    /// 纠错闭环时车又被仓门扣着：宽限过后提前结束成立、扣车闸挡住离站，看板上不残留过期的 <c>LOAD_CORRECTION_IN_PROGRESS</c>
+    /// （PR #660 审查 L1 X4）。
+    /// </summary>
+    [Fact]
+    [Trait("IntegrationSlice", "FP-IS-08")]
+    public async Task AClosedCorrectionUnderASlotDoorHoldLeavesNoStaleCorrectionReason()
+    {
+        await using RuntimeFixture fixture = await Batch7CargoHoldingTests.HoldingFixtureAsync();
+        Configure(fixture);
+        await Batch7CargoHoldingTests.LoadTheFirstDemandAsync(fixture);
+        JourneyStopRow firstPickup = await CurrentStopAsync(fixture, FirstDemandId);
+        await OpenCorrectionOnTheFirstDemandAsync(fixture);
+        await AppendAtAsync(fixture, firstPickup.StationId, firstPickup.StationRiotId);
+        await RoundAsync(fixture);
+        Assert.Equal(
+            JourneyRuntimeEngine.LoadCorrectionInProgressReason, (await JourneyOfAsync(fixture, FirstDemandId)).BlockReasonCode);
+
+        await HoldTheSlotDoorAsync(fixture);
+        DateTimeOffset closedAt = await CloseTheCorrectionAsync(fixture);
+        await RunAtAsync(fixture, closedAt + Grace + TimeSpan.FromSeconds(1));
+
+        JourneyRuntimeRow held = await JourneyOfAsync(fixture, FirstDemandId);
+        Assert.False(await DepartureCheckOfStopSentAsync(fixture, firstPickup.StopId));
+        Assert.Equal(JourneyRuntimeStage.AwaitingStationDeparture, held.Stage);
+        Assert.NotEqual(JourneyRuntimeEngine.LoadCorrectionInProgressReason, held.BlockReasonCode);
+    }
+
+    private static void Configure(RuntimeFixture fixture)
+    {
+        fixture.Options.StationDepartureWaitTimeout = Wait;
+        fixture.Options.SameStationAppendCorrectionGrace = Grace;
+    }
+
+    /// <summary>
+    /// 第一条到站、录入、装货命令发出；装货结果回来之前在同一站追加第二条，然后结果落定、跑一轮。返回第一个取货停靠。
+    /// </summary>
+    private static async Task<JourneyStopRow> AppendWhileTheFirstLoadsAsync(RuntimeFixture fixture)
+    {
+        fixture.Catalog.Set(fixture.Demand(FirstDemandId, FirstSublot, Now.AddMinutes(-10)));
+        fixture.BoxCounts.Set(FirstSublot, 7);
+        await ArriveAtPickupAsync(fixture, FirstDemandId);
+        await EnterSublotAsync(fixture, FirstDemandId, FirstSublot, FirstSubmissionId);
+        Assert.Equal(JourneyRuntimeStage.AwaitingLoadResult, (await JourneyOfAsync(fixture, FirstDemandId)).Stage);
+        JourneyStopRow firstPickup = await CurrentStopAsync(fixture, FirstDemandId);
+
+        fixture.BoxCounts.Set(SecondSublot, 7);
+        await Batch7ThreeStopJourneyTests.AppendDemandAsync(
+            fixture, SecondDemandId, SecondSublot, firstPickup.StationId, firstPickup.StationRiotId);
+        fixture.Context.ChangeTracker.Clear();
+        JourneyStopRow appended = await fixture.Context.Set<JourneyStopRow>().AsNoTracking()
+            .SingleAsync(row => row.StopId == JourneyIdentity.AppendedPickupStopId(SecondDemandId), Token);
+        Assert.Equal(firstPickup.Sequence + 1, appended.Sequence);
+
+        await ApplySafeResultAsync(fixture, FirstDemandId, SlotOperationType.Load, SlotBusinessState.Occupied);
+        await TickAndRunAsync(fixture);
+        return firstPickup;
+    }
+
+    /// <summary>车载端对第一条需求发起纠错，走服务端真实的授权路径。返回服务端的应答。</summary>
+    private static async Task<string> RequestCorrectionOfTheFirstDemandAsync(RuntimeFixture fixture)
+    {
+        JourneyDemandRow membership = await fixture.Context.Set<JourneyDemandRow>().AsNoTracking()
+            .SingleAsync(row => row.DemandId == FirstDemandId, Token);
+        StationOperationRow load = await fixture.Context.StationOperations.AsNoTracking()
+            .SingleAsync(row => row.SlotOperationAttemptId == membership.LoadSlotOperationAttemptId, Token);
+        await using ControlServerDbContext connection = fixture.OpenConnectionContext();
+        return await fixture.RequestLoadCorrectionOnConnectionAsync(
+            connection,
+            "70000000-0000-4000-8000-000000000649",
+            FirstDemandId,
+            load.SlotOperationAttemptId,
+            JsonSerializer.Deserialize<int[]>(load.TargetSlotsJson)!);
+    }
+
+    /// <summary>把本旅程那一条纠错标成已闭环，闭环时刻取此刻。返回闭环时刻。</summary>
+    private static async Task<DateTimeOffset> CloseTheCorrectionAsync(RuntimeFixture fixture)
+    {
+        DateTimeOffset closedAt = fixture.Clock.GetUtcNow();
+        RecoveryWorkflowRow correction = await fixture.Context.RecoveryWorkflows
+            .SingleAsync(row => row.WorkflowType == "LOAD_CORRECTION", Token);
+        correction.State = RecoveryWorkflowState.Reconciled;
+        correction.UpdatedAt = closedAt;
+        await fixture.Context.SaveChangesAsync(Token);
+        fixture.Context.ChangeTracker.Clear();
+        return closedAt;
+    }
+
+    private static async Task HoldTheSlotDoorAsync(RuntimeFixture fixture)
+    {
+        fixture.Context.SlotDoorHolds.Add(new SlotDoorHoldRow
+        {
+            HoldId = "70000000-0000-4000-8000-000000000646",
+            AgvId = fixture.Options.AgvId,
+            DemandId = FirstDemandId,
+            SlotsJson = "[1]",
+            HeldAt = fixture.Clock.GetUtcNow()
+        });
+        await fixture.Context.SaveChangesAsync(Token);
+        fixture.Context.ChangeTracker.Clear();
+    }
+
+    /// <summary>在 <paramref name="after"/> 之后插一个同站的停靠，后面的停靠序位各让一位。</summary>
+    private static async Task InsertStopAfterAsync(
+        RuntimeFixture fixture, JourneyStopRow after, string role, string status, string suffix)
+    {
+        foreach (JourneyStopRow later in await fixture.Context.Set<JourneyStopRow>()
+                     .Where(row => row.JourneyId == after.JourneyId && row.Sequence > after.Sequence)
+                     .ToArrayAsync(Token))
+        {
+            later.Sequence += 1;
+        }
+        fixture.Context.Set<JourneyStopRow>().Add(
+            StopRow($"{after.JourneyId}|{suffix}", after, after.Sequence + 1, role, after.StationId, after.StationRiotId, status));
+        await fixture.Context.SaveChangesAsync(Token);
+        fixture.Context.ChangeTracker.Clear();
     }
 
     /// <summary>车停在原停靠等离站，钟走 <see cref="BeforeAppend"/> 后在给定的站追加第二条需求。</summary>
@@ -293,29 +548,37 @@ public sealed class SameStationAppendEndsDepartureWaitTests
         Assert.Equal(secondPickup.Sequence + 1, unload.Sequence);
 
         string unloadHalfId = $"{runtime.JourneyId}|MIXED-UNLOAD-AFTER";
-        fixture.Context.Set<JourneyStopRow>().Add(new JourneyStopRow
-        {
-            StopId = unloadHalfId,
-            JourneyId = runtime.JourneyId,
-            Sequence = unload.Sequence,
-            StopRole = JourneyStopRoles.Unload,
-            StationId = secondPickup.StationId,
-            StationRiotId = secondPickup.StationRiotId,
-            DispatchZone = secondPickup.DispatchZone,
-            OperationSessionId = JourneyPlanBuilder.StableGuid(unloadHalfId, "session"),
-            MovementLegId = JourneyPlanBuilder.StableGuid(unloadHalfId, "leg"),
-            UpperId = $"W2G-{unloadHalfId}",
-            VehicleBusinessMessageId = JourneyPlanBuilder.StableGuid(unloadHalfId, "vehicle-state"),
-            WorklistMessageId = JourneyPlanBuilder.StableGuid(unloadHalfId, "worklist"),
-            PlanMessageId = JourneyPlanBuilder.StableGuid(unloadHalfId, "plan"),
-            Status = JourneyStopStatuses.Pending,
-            CreatedAt = runtime.CreatedAt
-        });
+        fixture.Context.Set<JourneyStopRow>().Add(StopRow(
+            unloadHalfId, secondPickup, unload.Sequence, JourneyStopRoles.Unload, secondPickup.StationId,
+            secondPickup.StationRiotId, JourneyStopStatuses.Pending));
         unload.Sequence += 1;
         first.UnloadStopId = unloadHalfId;
         await fixture.Context.SaveChangesAsync(Token);
         fixture.Context.ChangeTracker.Clear();
     }
+
+    /// <summary>
+    /// 一个停靠行，形状与 <c>SingleDemandJourneyShape</c> 写下的一致：录入请求与离站核验的两个 id 留空，由引擎第一次要用时补上。
+    /// </summary>
+    private static JourneyStopRow StopRow(
+        string stopId, JourneyStopRow like, int sequence, string role, string stationId, int stationRiotId, string status) => new()
+        {
+            StopId = stopId,
+            JourneyId = like.JourneyId,
+            Sequence = sequence,
+            StopRole = role,
+            StationId = stationId,
+            StationRiotId = stationRiotId,
+            DispatchZone = like.DispatchZone,
+            OperationSessionId = JourneyPlanBuilder.StableGuid(stopId, "session"),
+            MovementLegId = JourneyPlanBuilder.StableGuid(stopId, "leg"),
+            UpperId = $"W2G-{stopId}",
+            VehicleBusinessMessageId = JourneyPlanBuilder.StableGuid(stopId, "vehicle-state"),
+            WorklistMessageId = JourneyPlanBuilder.StableGuid(stopId, "worklist"),
+            PlanMessageId = JourneyPlanBuilder.StableGuid(stopId, "plan"),
+            Status = status,
+            CreatedAt = like.CreatedAt
+        };
 
     /// <summary>修订号最高的那一版清单（此刻排给车的那一版）列着哪些需求、带的期限。</summary>
     private static async Task<(string[] Demands, DateTimeOffset? Deadline)> LatestWorklistAsync(RuntimeFixture fixture)

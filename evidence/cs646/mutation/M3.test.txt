@@ -2,6 +2,9 @@
     0 Error(s)
 
 
-  Failed ControlServer.Tests.SameStationAppendEndsDepartureWaitTests.ASameStationAppendDoesNotEndTheWaitWhileACorrectionIsOpen [10 s]
-Failed!  - Failed:     1, Passed:     5, Skipped:     0, Total:     6, Duration: 17 s - ControlServer.Tests.dll (net8.0)
+  Failed ControlServer.Tests.SameStationAppendEndsDepartureWaitTests.ASameStationAppendDoesNotEndTheWaitWhileACorrectionIsOpen [12 s]
+  Failed ControlServer.Tests.SameStationAppendEndsDepartureWaitTests.AnAppendBeforeTheLoadCommitsLeavesTheGraceForACorrectionTheServerAuthorizes [2 s]
+  Failed ControlServer.Tests.SameStationAppendEndsDepartureWaitTests.AClosedCorrectionUnderASlotDoorHoldLeavesNoStaleCorrectionReason [2 s]
+  Failed ControlServer.Tests.SameStationAppendEndsDepartureWaitTests.ACorrectionClosedInTheGraceEarnsAnotherGraceBeforeTheVehicleIsSentOn [2 s]
+Failed!  - Failed:     4, Passed:     8, Skipped:     0, Total:    12, Duration: 31 s - ControlServer.Tests.dll (net8.0)
 
