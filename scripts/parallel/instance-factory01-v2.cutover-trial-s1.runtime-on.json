@@ -1,0 +1,96 @@
+{
+  "instanceId": "factory01-v2-parallel",
+  "serviceName": "8005 AGV ControlServer V2",
+  "installRoot": "C:\\Program Files\\8005 AGV\\ControlServer.V2",
+  "dataRoot": "C:\\ProgramData\\8005\\ControlServer.V2",
+  "backupRoot": "C:\\ProgramData\\8005\\ControlServer.V2-backups",
+  "packageRoot": "D:\\zhengyushao\\ControlServer.V2",
+  "opsRoot": "D:\\zhengyushao\\control-server-v2-ops",
+  "stagingRoot": "D:\\zhengyushao\\control-server-v2-staging",
+  "listenAddress": "172.19.205.222",
+  "healthBindAddress": "172.19.205.222",
+  "onboardPort": 58105,
+  "healthPort": 58107,
+  "dashboardPort": 58109,
+  "mesIngest": {
+    "source": "production",
+    "baseUrl": "http://127.0.0.1:5088"
+  },
+  "routeGraph": {
+    "enabled": true,
+    "mapId": 26,
+    "runtimeRefreshPeriod": "00:00:10",
+    "runtimeStateMaxAge": "00:00:45",
+    "designStateTtl": "00:10:00"
+  },
+  "riotCreateDispatch": {
+    "enabled": false
+  },
+  "riotForeignOrderCancel": {
+    "enabled": false
+  },
+  "vehicleFaultRecovery": {
+    "enabled": false
+  },
+  "foreignRunningOrderRelease": {
+    "enabled": true
+  },
+  "fieldOperatorRoles": {
+    "path": "D:\\zhengyushao\\control-server-v2-ops\\field-operator-roles.json",
+    "onboardClearanceEntryDeclared": false
+  },
+  "taskTypeStations": {
+    "settingsFile": "task-type-stations.map-26.settings.json"
+  },
+  "mapStationCatalog": {
+    "approvedSyncPeriod": "00:00:30",
+    "approvedMaxUnconfirmed": "00:05:00",
+    "approvalRecord": "REQ-0302，用户 2026-10-09 批准（8005-workspace-v2 ds-tasks/board.md 10-09 条目；control-server#531）"
+  },
+  "productionCutover": {
+    "approvalRecord": "Zhengyu Shao 于 2026-10-13 在 Claude 对话中批准 v2 生产切换试跑：停 MVP，agv01 转 v2（map 26），v2 读生产 MesIngest 六类需求，三车按 S1→S3 逐台加入，仓位模拟、脚本自动扫码与上下货；每次动车与碰 MVP/agv01 仍逐次授权。（用户原话，8005-workspace-v2 ds-tasks/board.md 10-13 条目；control-server#564 第 7a 步）",
+    "phase": "trial"
+  },
+  "journeyRuntime": {
+    "enabled": true,
+    "pollInterval": "00:00:02",
+    "maximumEvidenceAge": "00:00:30",
+    "checkpointWaitBudget": "00:05:00",
+    "stationDepartureWaitTimeout": "00:05:00",
+    "cargoHoldingTimeout": "00:05:00",
+    "areaEndAdmissionRevokedTimeout": "00:10:00",
+    "fleet": [
+      {
+        "agvId": "老厂前线新多仓位2",
+        "vehicleKey": "BROKERX-f38975561adf46ccb1d2f23833c7d0e4",
+        "deviceKey": "BROKERX-f38975561adf46ccb1d2f23833c7d0e4",
+        "riotId": 59,
+        "agvLifecycleGeneration": 1,
+        "allowedTaskTypes": [
+          "STAGING_TO_WIRE"
+        ],
+        "zones": [
+          "WIRE_BONDING"
+        ]
+      }
+    ],
+    "mapId": 26,
+    "mapIdentity": "老厂前线new_wk",
+    "dispatchZone": "WIRE_BONDING",
+    "dispatchGeneration": 1,
+    "sublotBoxCountPath": "/api/v2/sublot-box-count",
+    "allowedWorkTypes": [
+      "DIE_TO_WIRE_STAGING",
+      "DIE_TO_OVEN",
+      "WIRE_TO_GATE",
+      "WIRE_TO_OPTICAL",
+      "STAGING_TO_WIRE",
+      "WIRE_TO_NITROGEN"
+    ],
+    "allowedDispatchZones": [
+      "WIRE_BONDING"
+    ],
+    "admissionPolicyVersion": 6,
+    "admissionPolicyDeploymentId": "MAP-26-WIRE_TO_GATE-20261007"
+  }
+}

@@ -5048,6 +5048,16 @@ $shippedDefinitionNames = @('instance-factory01-v2.json', 'instance-factory01-v2
 # The runtime-on twin (PR #676 review M2) is the one the cutover runs on: the two zones reach the database only through a
 # dispatch round, which needs the runtime.
 $cutoverDefinitionNames = @('instance-factory01-v2.cutover-two-zones.json', 'instance-factory01-v2.cutover-two-zones.runtime-on.json')
+# control-server#564 step 7a: the trial stage definitions, committed on the cutover day with the user's approval written
+# in (productionCutover, phase trial). Unlike the two above they are deployable -- with -ProductionCutover only -- so
+# they are held to acceptance with the switch, CUTOVER_RECORD_WITHOUT_SWITCH without it, and the per-stage roster and
+# zones of the plan's section 8 table (S1 agv02; S2 agv01+agv02; S3 all three with DIE_ATTACH). Name -> riot ids, zones.
+$trialStageDefinitions = [ordered]@{
+    'instance-factory01-v2.cutover-trial-s1.json'            = @{ RiotIds = @(59); Zones = @('WIRE_BONDING'); Runtime = $false }
+    'instance-factory01-v2.cutover-trial-s1.runtime-on.json' = @{ RiotIds = @(59); Zones = @('WIRE_BONDING'); Runtime = $true }
+    'instance-factory01-v2.cutover-trial-s2.runtime-on.json' = @{ RiotIds = @(58, 59); Zones = @('WIRE_BONDING'); Runtime = $true }
+    'instance-factory01-v2.cutover-trial-s3.runtime-on.json' = @{ RiotIds = @(58, 59, 60); Zones = @('WIRE_BONDING', 'DIE_ATTACH'); Runtime = $true }
+}
 $cutoverHeldRefusals = @(
     'journeyRuntime.allowedWorkTypes ["DIE_TO_WIRE_STAGING","DIE_TO_OVEN","WIRE_TO_GATE","WIRE_TO_OPTICAL","STAGING_TO_WIRE","WIRE_TO_NITROGEN"] includes WIRE_TO_GATE, which the MVP takes from the same catalog'
     'journeyRuntime.fleet[0] names agv01 (agvId, vehicleKey, deviceKey, riotId), the vehicle the MVP service is driving in production.')
@@ -5071,7 +5081,7 @@ Invoke-SourceCase 'catalog: every shipped definition carries 00:00:30 / 00:05:00
             -not ($c -is [System.Collections.IDictionary] -and $c['approvedSyncPeriod'] -ceq '00:00:30' -and $c['approvedMaxUnconfirmed'] -ceq '00:05:00' -and
                 ([string] $c['approvalRecord']).Contains('2026-10-09') -and @(Test-ParallelInstanceDefinition -Definition $d).Count -eq 0) })
     $all = @(Get-ChildItem -LiteralPath $PSScriptRoot -Filter 'instance-*.json' | ForEach-Object Name)
-    $unlisted = @($all | Where-Object { $_ -cnotin $shippedDefinitionNames -and $_ -cnotin $cutoverDefinitionNames })
+    $unlisted = @($all | Where-Object { $_ -cnotin $shippedDefinitionNames -and $_ -cnotin $cutoverDefinitionNames -and -not $trialStageDefinitions.Contains($_) })
     @{ Ok = ($wrong.Count -eq 0 -and $unlisted.Count -eq 0); Detail = "wrong: $($wrong -join ', '); shipped but not checked here: $($unlisted -join ', ')" }
 }
 Invoke-SourceCase 'catalog: the cutover definition carries the same approved pair, and is refused for exactly the two guards control-server#564 opens' {
@@ -5095,6 +5105,27 @@ Invoke-SourceCase 'cutover switch: each shipped cutover definition is accepted w
                 @($cutoverHeldRefusals | Where-Object { $h = $_; -not ($asShipped | Where-Object { $_.Contains($h) }) }).Count -eq 0 -and
                 $withRecord.Count -eq 0 -and
                 $recordNoSwitch.Count -eq 3 -and @($recordNoSwitch | Where-Object { $_.StartsWith('CUTOVER_RECORD_WITHOUT_SWITCH:') }).Count -eq 1) })
+    @{ Ok = ($wrong.Count -eq 0); Detail = "wrong: $($wrong -join ', ')" }
+}
+Invoke-SourceCase 'cutover trial stages: each stage definition carries the 2026-10-13 approval (phase trial), is accepted with -ProductionCutover, refused with CUTOVER_RECORD_WITHOUT_SWITCH without it, and holds its stage roster and zones (control-server#564 step 7a)' {
+    $wrong = @($trialStageDefinitions.Keys | Where-Object {
+            $name = $_
+            $want = $trialStageDefinitions[$name]
+            $path = Join-Path $PSScriptRoot $name
+            if (-not (Test-Path -LiteralPath $path)) { return $true }
+            $d = Read-ParallelInstanceDefinition -Path $path
+            $cut = $d['productionCutover']
+            $j = $d['journeyRuntime']
+            [string[]] $withSwitch = @(Test-ParallelInstanceDefinition -Definition (Copy-Definition $d) -ProductionCutover)
+            [string[]] $noSwitch = @(Test-ParallelInstanceDefinition -Definition (Copy-Definition $d))
+            $ids = @($j['fleet'] | ForEach-Object { [int] $_['riotId'] } | Sort-Object)
+            -not ($cut -is [System.Collections.IDictionary] -and $cut['phase'] -ceq 'trial' -and
+                ([string] $cut['approvalRecord']).Contains('2026-10-13') -and
+                $withSwitch.Count -eq 0 -and
+                @($noSwitch | Where-Object { $_.StartsWith('CUTOVER_RECORD_WITHOUT_SWITCH:') }).Count -eq 1 -and
+                (($ids -join ',') -ceq (($want.RiotIds | Sort-Object) -join ',')) -and
+                ((@($j['allowedDispatchZones']) -join ',') -ceq ($want.Zones -join ',')) -and
+                ([bool] $j['enabled'] -eq $want.Runtime) -and ([bool] $d['routeGraph']['enabled'] -eq $want.Runtime)) })
     @{ Ok = ($wrong.Count -eq 0); Detail = "wrong: $($wrong -join ', ')" }
 }
 
