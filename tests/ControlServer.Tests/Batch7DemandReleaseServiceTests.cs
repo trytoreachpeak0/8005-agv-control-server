@@ -280,6 +280,50 @@ public sealed class Batch7DemandReleaseServiceTests
     }
 
     /// <summary>
+    /// control-server#673 审查 H2（探针 P2）：取货腿的建单结果未知、判作没建成、等着同车重建，这段时间里车对这条需求不再合格：重建停在
+    /// <c>VEHICLE_NO_LONGER_ELIGIBLE</c>，释放服务照常释放改派、不发取消。停靠仍指着旧单号，旧意图永远是 <c>RESULT_UNKNOWN</c>、没有单号——
+    /// 修之前释放每轮以 <c>ORDER_STATE_UNKNOWN</c> 拒绝，需求永远挂在这辆车上。
+    /// </summary>
+    [Fact]
+    [Trait("Requirement", "REQ-0328")]
+    public async Task AVehicleNoLongerEligibleWhileANeverCreatedPickupWaitsToBeRebuiltHasTheDemandReleased()
+    {
+        await using RuntimeFixture fixture = await RuntimeFixture.CreateAsync();
+        fixture.Catalog.Set(fixture.Demand(FirstDemandId, FirstSublot, Now.AddMinutes(-10)));
+        fixture.BoxCounts.Set(FirstSublot, 7);
+        fixture.Riot.AbsentOrdersReadAsRealRiot = true;
+        fixture.Riot.RefuseNextCreateOf = "TO_PICKUP";
+        await TickAndRunAsync(fixture);
+        foreach (TimeSpan elapsed in new[] { TimeSpan.FromSeconds(1), TimeSpan.FromSeconds(130) })
+        {
+            fixture.Clock.Advance(elapsed);
+            await fixture.HearFromPeerAsync();
+            fixture.Context.ChangeTracker.Clear();
+            await fixture.Engine.ExecuteOnceAsync(Token);
+        }
+        fixture.Context.ChangeTracker.Clear();
+        Assert.Equal("OWN_ORDER_NEVER_APPEARED", (await fixture.RuntimeAsync(FirstDemandId)).BlockReasonCode);
+
+        fixture.Options.AllowedWorkTypes = ["STAGING_TO_WIRE"];
+        fixture.Clock.Advance(fixture.Options.OwnOrderRebuildDelay);
+        await fixture.HearFromPeerAsync();
+        await fixture.Engine.ExecuteOnceAsync(Token);
+        fixture.Context.ChangeTracker.Clear();
+        Assert.Equal("OWN_ORDER_REBUILD_VEHICLE_INELIGIBLE", (await fixture.RuntimeAsync(FirstDemandId)).BlockReasonCode);
+
+        CancellingGateway gateway = new(fixture.Clock, _ => { });
+        IReadOnlyList<DemandReleaseOutcome> outcomes = await Service(fixture, gateway).RunOnceAsync(Token);
+
+        Assert.Equal("RELEASED", Assert.Single(outcomes).Result);
+        Assert.Equal(0, gateway.Cancels);
+        Assert.Equal(1, fixture.Riot.CreateCount("TO_PICKUP"));
+        await using ControlServerDbContext reading = new ControlServerDbContext(fixture.DbOptionsForTests);
+        JourneyRuntimeRow after = await reading.JourneyRuntimes.AsNoTracking().SingleAsync(Token);
+        Assert.Equal((JourneyRuntimeStage.Completed, DemandReleaseReasons.Released), (after.Stage, after.BlockReasonCode));
+        Assert.True(await DemandJourneyLookup.ReleasedForRedispatch(reading).AnyAsync(row => row.DemandId == FirstDemandId, Token));
+    }
+
+    /// <summary>
     /// 一次重建的新单确认前被取消，接手的那一次重建建成了：前一条记录转 <c>ENDED</c>，只留作历史。之后车对需求不合格了，释放服务照常
     /// 取消在途单、释放改派——那条 <c>ENDED</c> 记录不算「这趟旅程还在等同车重建」。
     /// </summary>

@@ -2347,6 +2347,8 @@ public sealed partial class JourneyRuntimeEngine(
             catch (Exception error) when (error is HttpRequestException or InvalidDataException or TaskCanceledException &&
                                           !cancellationToken.IsCancellationRequested)
             {
+                // control-server#673 review S2: an unread round breaks the run of "no such order".
+                dispatchRound.Charging.Board.SeenOrUnread(intent.UpperId);
                 return false;
             }
 
@@ -2685,8 +2687,19 @@ public sealed partial class JourneyRuntimeEngine(
                 return false;
             }
         }
-        MovementDispatchResult result = await movementDispatch.ReconcileOrCreateAsync(
-            upperId, cancellationToken).ConfigureAwait(false);
+        MovementDispatchResult result;
+        try
+        {
+            result = await movementDispatch.ReconcileOrCreateAsync(upperId, cancellationToken).ConfigureAwait(false);
+        }
+        catch
+        {
+            // control-server#673 review S2: a round that could not read RIoT breaks "no such order without a break" as much as an
+            // unread answer inside the shared judgement does. The exception goes on as before.
+            dispatchRound.Charging.Board.SeenOrUnread(upperId);
+            throw;
+        }
+
         if (result.Outcome == MovementDispatchOutcome.Confirmed)
         {
             runtime.SetBlockReason(null, timeProvider.GetUtcNow());

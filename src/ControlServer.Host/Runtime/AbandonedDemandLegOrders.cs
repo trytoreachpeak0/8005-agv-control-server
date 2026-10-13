@@ -35,10 +35,48 @@ public static class AbandonedDemandLegOrders
             .Select(row => row.UpperId)
             .ToArrayAsync(cancellationToken).ConfigureAwait(false);
         return upperIds.Length > 0 &&
-               await dbContext.OwnOrderRebuilds.AsNoTracking()
-                   .AnyAsync(
-                       row => upperIds.Contains(row.EndedUpperId) && row.Source == OwnOrderRebuildSources.OrderNeverAppeared,
-                       cancellationToken)
-                   .ConfigureAwait(false);
+               await NeverCreatedUpperIds(dbContext).AnyAsync(ended => upperIds.Contains(ended), cancellationToken).ConfigureAwait(false);
+    }
+
+    /// <summary>
+    /// 被判作没建成的单号：有一条来源为 <see cref="OwnOrderRebuildSources.OrderNeverAppeared"/> 的重建记录以它为终结单。可以嵌进别的查询。
+    /// </summary>
+    public static IQueryable<string> NeverCreatedUpperIds(ControlServerDbContext dbContext)
+    {
+        ArgumentNullException.ThrowIfNull(dbContext);
+        return dbContext.OwnOrderRebuilds.AsNoTracking()
+            .Where(row => row.Source == OwnOrderRebuildSources.OrderNeverAppeared)
+            .Select(row => row.EndedUpperId);
+    }
+
+    /// <summary>
+    /// 这条意图的单已被判作没建成、而且从没拿到过单号：在本库的账上它没有订单（审查 H2、M1）。释放结算与空闲返回的「结果未知」检查都按这一条
+    /// 把它当成已了结——否则它永远是 <c>RESULT_UNKNOWN</c>，需求放不掉、车再也不空闲返回。旧单真冒出来时由外来单监督器挡车。
+    /// </summary>
+    public static async Task<bool> TakenAsNeverCreatedAsync(
+        ControlServerDbContext dbContext,
+        OrderIntentRow intent,
+        CancellationToken cancellationToken)
+    {
+        ArgumentNullException.ThrowIfNull(intent);
+        string upperId = intent.UpperId;
+        return intent.OrderId is null &&
+               await NeverCreatedUpperIds(dbContext).AnyAsync(ended => ended == upperId, cancellationToken).ConfigureAwait(false);
+    }
+
+    /// <summary>
+    /// RIoT 是否曾就这条意图答过一张单：派车审计里有「接受」，或者带回过单号（审查 S1）。意图上的 <c>OrderId</c> 只在确认或终态时写，
+    /// 建单应答带回的单号只留在审计里，所以「从没建成」的前提要连它一起看。
+    /// </summary>
+    public static Task<bool> RiotEverAnsweredWithAnOrderAsync(
+        ControlServerDbContext dbContext,
+        OrderIntentRow intent,
+        CancellationToken cancellationToken)
+    {
+        ArgumentNullException.ThrowIfNull(dbContext);
+        ArgumentNullException.ThrowIfNull(intent);
+        string leg = intent.MovementLegId;
+        return dbContext.RiotDispatchAuditEvents.AsNoTracking()
+            .AnyAsync(row => row.MovementLegId == leg && (row.ReturnedOrderId != null || row.Outcome == "ACCEPTED"), cancellationToken);
     }
 }

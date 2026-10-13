@@ -187,6 +187,23 @@ public sealed class OwnOrderNeverAppearedTests
     }
 
     /// <summary>
+    /// 审查 S1：建单应答带回过单号（只留在派车审计里，意图上的 <c>OrderId</c> 仍为空），之后 RIoT 怎么答查无此单都不判没建成。
+    /// </summary>
+    [Fact]
+    public async Task ACreateAnswerThatCarriedAnOrderIdIsNeverTakenAsNeverCreated()
+    {
+        await using RuntimeFixture fixture = await PickupCreateRefusedAsync();
+        await AuditAReturnedOrderIdAsync(fixture, (await CurrentStopAsync(fixture, FirstDemandId)).UpperId);
+
+        await RunAfterAsync(fixture, TimeSpan.FromSeconds(130));
+        await RunAfterAsync(fixture, TimeSpan.FromSeconds(300));
+
+        Assert.Empty(await RebuildsAsync(fixture));
+        Assert.Equal(1, fixture.Riot.CreateCount("TO_PICKUP"));
+        Assert.Equal("PICKUP_ResultUnknown", (await fixture.RuntimeAsync()).BlockReasonCode);
+    }
+
+    /// <summary>
     /// 重建出来的新单又一次结果未知、又判没建成，落在 REQ-0361 的窗口里：第一条重建以 <c>REBUILT_ORDER_NEVER_APPEARED</c> 结束，
     /// 第二条直接停住（<c>REBUILT_ORDER_ENDED_AGAIN_WITHIN_WINDOW</c>），码 <c>OWN_ORDER_REBUILD_STOPPED</c>，不再建——一个 RIoT 一直拒绝的建单不会每几分钟循环一次。
     /// </summary>
@@ -339,6 +356,58 @@ public sealed class OwnOrderNeverAppearedTests
     }
 
     /// <summary>
+    /// 审查 H1（探针 P1）：重建出来的新单也结果未知、自动证据凑不齐，人对这张新单确认没建成——那条还在 Ordering 的重建在同一次保存里以
+    /// <c>REBUILT_ORDER_NEVER_APPEARED</c> 结束，新记一条停住的；之后引擎每轮正常推进（修之前停靠上同时有两条记录，<c>ForStopAsync</c> 每轮抛），
+    /// cs#345 的人工重建照常可用。
+    /// </summary>
+    [Fact]
+    public async Task APersonDeclaringARebuiltOrderNeverCreatedEndsTheRebuildItSupersedes()
+    {
+        await using RuntimeFixture fixture = await PickupCreateRefusedAsync();
+        await RunAfterAsync(fixture, TimeSpan.FromSeconds(130));
+        OwnOrderRebuildRow first = Assert.Single(await RebuildsAsync(fixture));
+        fixture.Riot.RefuseNextCreateOf = "TO_PICKUP";
+        await OwnOrderRebuildTests.PassTheDelayAsync(fixture);
+        fixture.Context.ChangeTracker.Clear();
+        OwnOrderRebuildRow ordering = Assert.Single(await RebuildsAsync(fixture));
+        Assert.Equal(OwnOrderRebuildStates.Ordering, ordering.State);
+        await StampTheCreateAnswerOnTheFixtureClockAsync(fixture, ordering.NewUpperId);
+        fixture.Riot.ListingComplete = false;
+        await RunAfterAsync(fixture, fixture.Options.OwnOrderRebuildRepeatWindow + TimeSpan.FromSeconds(1));
+        Assert.Equal("OWN_ORDER_REBUILD_ORDER_UNCONFIRMED", (await fixture.RuntimeAsync()).BlockReasonCode);
+        VehicleFaultRecoveryTests.SiteRiot site = new(fixture);
+
+        VehicleFaultRecoveryDecision decision = await VehicleFaultRecoveryTests.Service(fixture, site)
+            .RecoverAsync(Declare(fixture), Token);
+
+        Assert.Equal(VehicleFaultRecoveryOutcome.NeverAppearedDeclared, decision.Outcome);
+        OwnOrderRebuildRow[] records = await RebuildsAsync(fixture);
+        Assert.Equal(2, records.Length);
+        OwnOrderRebuildRow ended = records.Single(row => row.RebuildId == first.RebuildId);
+        Assert.Equal((OwnOrderRebuildStates.Ended, "REBUILT_ORDER_NEVER_APPEARED"), (ended.State, ended.StoppedReason));
+        OwnOrderRebuildRow declared = records.Single(row => row.RebuildId != first.RebuildId);
+        Assert.Equal(
+            (ordering.NewUpperId, OwnOrderRebuildStates.Stopped, OperatorId),
+            (declared.EndedUpperId, declared.State, declared.OperatorId));
+
+        await RunAfterAsync(fixture, TimeSpan.FromSeconds(1));
+        await RunAfterAsync(fixture, TimeSpan.FromSeconds(1));
+        Assert.Equal("OWN_ORDER_REBUILD_STOPPED", (await fixture.RuntimeAsync()).BlockReasonCode);
+        Assert.Equal(
+            VehicleFaultRecoveryOutcome.AlreadyDone,
+            (await VehicleFaultRecoveryTests.Service(fixture, site).RecoverAsync(Declare(fixture), Token)).Outcome);
+
+        fixture.Riot.ListingComplete = true;
+        Assert.Equal(
+            VehicleFaultRecoveryOutcome.RebuildRequested,
+            (await VehicleFaultRecoveryTests.Service(fixture, site)
+                .RecoverAsync(StoppedRebuildExitTests.Rebuild(fixture) with { OperatorId = OperatorId }, Token)).Outcome);
+        await RunAfterAsync(fixture, TimeSpan.FromSeconds(1));
+        Assert.Equal(3, fixture.Riot.CreateCount("TO_PICKUP"));
+        Assert.Null((await fixture.RuntimeAsync()).BlockReasonCode);
+    }
+
+    /// <summary>
     /// 确认没建成之后，车上没货的这一趟可以放弃（control-server#345 的乙）：需求终结、旅程收尾，返回列出被终结的需求给 MES 收尾。
     /// </summary>
     [Fact]
@@ -371,6 +440,7 @@ public sealed class OwnOrderNeverAppearedTests
     [InlineData("order-present", "ORDER_NEVER_APPEARED_EXIT_ORDER_NOT_ABSENT")]
     [InlineData("order-unreadable", "ORDER_NEVER_APPEARED_EXIT_ORDER_UNREADABLE")]
     [InlineData("intent-has-order-id", "ORDER_NEVER_APPEARED_EXIT_ORDER_ID_KNOWN")]
+    [InlineData("create-answered-with-order-id", "ORDER_NEVER_APPEARED_EXIT_ORDER_ID_KNOWN")]
     [InlineData("under-way", "ORDER_NEVER_APPEARED_EXIT_NOT_UNKNOWN")]
     [InlineData("no-person", "FAULT_RECOVERY_OPERATOR_UNIDENTIFIED")]
     public async Task EachUnmetPremiseRefusesTheDeclarationAndChangesNothing(string premise, string refusal)
@@ -397,6 +467,9 @@ public sealed class OwnOrderNeverAppearedTests
                 break;
             case "intent-has-order-id":
                 await GiveTheIntentAnOrderIdAsync(fixture, upperId);
+                break;
+            case "create-answered-with-order-id":
+                await AuditAReturnedOrderIdAsync(fixture, upperId);
                 break;
         }
         string? codeBefore = (await fixture.RuntimeAsync()).BlockReasonCode;
@@ -484,6 +557,15 @@ public sealed class OwnOrderNeverAppearedTests
         Assert.Equal("RESULT_UNKNOWN", intent.Status);
         intent.OrderId = "ORDER-SEEN-ONCE";
         await writing.SaveChangesAsync(Token);
+    }
+
+    /// <summary>The create answer of this leg carried an orderId, which only the dispatch audit keeps (review S1).</summary>
+    private static async Task AuditAReturnedOrderIdAsync(RuntimeFixture fixture, string upperId)
+    {
+        await using ControlServerDbContext writing = new(fixture.DbOptionsForTests);
+        string leg = (await writing.OrderIntents.SingleAsync(row => row.UpperId == upperId, Token)).MovementLegId;
+        Assert.True(await writing.RiotDispatchAuditEvents.Where(row => row.MovementLegId == leg)
+            .ExecuteUpdateAsync(set => set.SetProperty(row => row.ReturnedOrderId, "ORDER-ANSWERED"), Token) > 0);
     }
 
     private static async Task<OwnOrderRebuildRow[]> RebuildsAsync(RuntimeFixture fixture)

@@ -38,7 +38,10 @@ public sealed partial class VehicleFaultRecoveryService
     /// <summary>The vehicle's journey is not waiting on a demand leg whose create result is unknown, or that leg already has a rebuild record.</summary>
     public const string NeverAppearedNotUnknownReason = "ORDER_NEVER_APPEARED_EXIT_NOT_UNKNOWN";
 
-    /// <summary>The leg's intent was given an orderId: RIoT had that order, whatever it answers now.</summary>
+    /// <summary>
+    /// The leg's intent was given an orderId, or RIoT's create answer was accepted or carried one: RIoT had that order, whatever it
+    /// answers now.
+    /// </summary>
     public const string NeverAppearedOrderIdKnownReason = "ORDER_NEVER_APPEARED_EXIT_ORDER_ID_KNOWN";
 
     /// <summary>The last create answer is not yet older than <c>JourneyRuntime:OwnOrderRebuildRepeatWindow</c>.</summary>
@@ -109,6 +112,17 @@ public sealed partial class VehicleFaultRecoveryService
 
         DateTimeOffset now = timeProvider.GetUtcNow();
         JourneyRuntimeRow runtime = standing.Runtime;
+        if (standing.Superseded is { } ordering)
+        {
+            // The leg is a rebuild's own new order (review H1): that rebuild ends here, in the same save, as the engine ends it
+            // when its own evidence completes -- left Ordering beside the record staged below, ForStopAsync would find two.
+            ordering.State = OwnOrderRebuildStates.Ended;
+            ordering.StoppedReason = OwnOrderRebuilds.NeverAppearedBeforeConfirmation;
+            ordering.StoppedAt = now;
+            ordering.WaitingReason = null;
+            ordering.WaitingSince = null;
+        }
+
         OwnOrderRebuildRow record = await OwnOrderRebuilds.StageAsync(
                 dbContext, runtime, standing.Stop!, upperId, endedOrderId: null, endedOrderState: null,
                 OwnOrderRebuildSources.OrderNeverAppeared, incidentAt: now, now, request.OperatorId, runtimeOptions.Value,
@@ -140,13 +154,16 @@ public sealed partial class VehicleFaultRecoveryService
             .ConfigureAwait(false);
         if (runtime is null || runtime.CarriesNoDemand() || !WaitsOnAnOrder(runtime))
         {
-            return new UnknownLeg(runtime, null, null, NeverAppearedNotUnknownReason, AlreadyDeclared: false);
+            return new UnknownLeg(runtime, null, null, null, NeverAppearedNotUnknownReason, AlreadyDeclared: false);
         }
 
         JourneyStopRow stop = (await JourneyStopCursor.LoadAsync(dbContext, runtime, cancellationToken).ConfigureAwait(false))
             .Current;
         OrderIntentRow? intent = await dbContext.OrderIntents.AsNoTracking()
             .SingleOrDefaultAsync(row => row.UpperId == stop.UpperId, cancellationToken).ConfigureAwait(false);
+        // The record of this very order's ending, if any: this leg is already governed by it. A person's declaration made it
+        // when the record is stopped, names a person and came from this source -- whichever reason it stopped under, the window's
+        // own included (review L1).
         OwnOrderRebuildRow? record = await dbContext.OwnOrderRebuilds.AsNoTracking()
             .SingleOrDefaultAsync(row => row.RebuildId == OwnOrderRebuilds.RebuildIdFor(stop.UpperId), cancellationToken)
             .ConfigureAwait(false);
@@ -154,20 +171,32 @@ public sealed partial class VehicleFaultRecoveryService
         {
             bool declared = record is
             {
-                State: OwnOrderRebuildStates.Stopped, StoppedReason: OwnOrderRebuilds.NeverAppearedDeclaredByOperator,
+                State: OwnOrderRebuildStates.Stopped, Source: OwnOrderRebuildSources.OrderNeverAppeared, OperatorId: not null,
             };
-            return new UnknownLeg(runtime, stop, intent, NeverAppearedNotUnknownReason, declared);
+            return new UnknownLeg(runtime, stop, intent, null, NeverAppearedNotUnknownReason, declared);
+        }
+
+        // The rebuild the stop waits on otherwise (review H1). Only one is accepted: the rebuild whose own new order this is, still
+        // Ordering -- it is superseded by the declaration. Any other (waiting for its delay, failed, stopped) governs the leg itself.
+        OwnOrderRebuildRow? governing = await OwnOrderRebuilds.ForStopAsync(dbContext, stop, cancellationToken).ConfigureAwait(false);
+        if (governing is not null &&
+            !(governing.State == OwnOrderRebuildStates.Ordering && governing.NewUpperId == stop.UpperId))
+        {
+            return new UnknownLeg(runtime, stop, intent, null, NeverAppearedNotUnknownReason, AlreadyDeclared: false);
         }
 
         string? refusal = intent switch
         {
             not { Status: "RESULT_UNKNOWN", CreateAttemptCount: > 0 } => NeverAppearedNotUnknownReason,
             { OrderId: not null } => NeverAppearedOrderIdKnownReason,
+            // Review S1: a create answer that carried an orderId, or was accepted, says RIoT had the order.
+            _ when await AbandonedDemandLegOrders.RiotEverAnsweredWithAnOrderAsync(dbContext, intent, cancellationToken)
+                .ConfigureAwait(false) => NeverAppearedOrderIdKnownReason,
             _ when timeProvider.GetUtcNow() - (intent.LastCreateOutcomeAt ?? intent.CreatedAt) <=
                    runtimeOptions.Value.OwnOrderRebuildRepeatWindow => NeverAppearedTooEarlyReason,
             _ => null,
         };
-        return new UnknownLeg(runtime, stop, intent, refusal, AlreadyDeclared: false);
+        return new UnknownLeg(runtime, stop, intent, governing, refusal, AlreadyDeclared: false);
     }
 
     /// <summary>What <see cref="ReadUnknownLegAsync"/> found; the journey is tracked in this context.</summary>
@@ -175,6 +204,7 @@ public sealed partial class VehicleFaultRecoveryService
         JourneyRuntimeRow? Runtime,
         JourneyStopRow? Stop,
         OrderIntentRow? Intent,
+        OwnOrderRebuildRow? Superseded,
         string? Refusal,
         bool AlreadyDeclared);
 }

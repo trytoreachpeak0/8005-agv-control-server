@@ -81,7 +81,8 @@ public sealed partial class JourneyRuntimeEngine
         // have changed the row. An intent that ever got an orderId had an order in RIoT, whatever RIoT says now.
         OrderIntentRow? intent = await dbContext.OrderIntents.AsNoTracking()
             .SingleOrDefaultAsync(row => row.UpperId == upperId, cancellationToken).ConfigureAwait(false);
-        if (intent is not { Status: "RESULT_UNKNOWN", OrderId: null, CreateAttemptCount: > 0 })
+        if (intent is not { Status: "RESULT_UNKNOWN", OrderId: null, CreateAttemptCount: > 0 } ||
+            await AbandonedDemandLegOrders.RiotEverAnsweredWithAnOrderAsync(dbContext, intent, cancellationToken).ConfigureAwait(false))
         {
             return false;
         }

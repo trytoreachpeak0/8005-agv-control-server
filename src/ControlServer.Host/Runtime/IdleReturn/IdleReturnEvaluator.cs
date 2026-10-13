@@ -257,10 +257,15 @@ public sealed class IdleReturnEvaluator(
                            dbContext.JourneyRuntimes.Any(journey =>
                                journey.JourneyId == stop.JourneyId && journey.Stage == JourneyRuntimeStage.Completed))
             .Select(stop => stop.MovementLegId);
+        // A demand leg's order taken as never created (control-server#673, review M1) is settled the same way: the leg went to the
+        // rebuild under a new upperId, and its old intent stays RESULT_UNKNOWN for good. Should the old order turn up running after
+        // all, the foreign-order supervisor holds the vehicle, which the check above then reads.
+        IQueryable<string> neverCreated = AbandonedDemandLegOrders.NeverCreatedUpperIds(dbContext);
         if (await dbContext.OrderIntents.AsNoTracking()
                 .AnyAsync(
                     row => row.VehicleKey == vehicle.VehicleKey && UnknownOutcomeIntentStatuses.Contains(row.Status) &&
-                           !settledIdleReturnLegs.Contains(row.MovementLegId),
+                           !settledIdleReturnLegs.Contains(row.MovementLegId) &&
+                           !(row.OrderId == null && neverCreated.Contains(row.UpperId)),
                     cancellationToken)
                 .ConfigureAwait(false))
         {
