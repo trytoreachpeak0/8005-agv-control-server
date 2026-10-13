@@ -1,0 +1,18 @@
+mutation M2 on 5873125d7: scripts/parallel/ParallelInstance.psm1
+sed: 3279s/if (-not \$named.Contains(\[string\] \$zone)) {/if ($false) {/
+files changed: 1
+-        if (-not $named.Contains([string] $zone)) {
++        if ($false) {
+--- self-test exit 1
+  FAIL  cutover area tables: the old zone WIRE in the N table
+        expected 2: 'dispatch zone 'WIRE', which journeyRuntime.allowedDispatchZones [WIRE_BONDING, DIE_ATTACH] omits', 'names 'WIRE_BONDING', but no table routes an AREA into it'; got 1: C:\Users\szy\AppData\Local\Temp\cs669-e11fc972f31c4b268be65a60b8815882.csv routes AREAs into dispatch zone 'WIRE', which journeyRuntime.allowedDispatchZones [WIRE_BONDING, DIE_ATTACH] omits: the import refuses it (DISPATCH_ZONE_NOT_FOUND), or a dispatching Host refuses to start (AreaAssignmentDispatchZoneStartupCheck).
+  FAIL  cutover area tables: no T table: DIE_ATTACH served by agv03 and routed nothing
+        expected 1: 'names 'DIE_ATTACH', but no table routes an AREA into it'; got 0: 
+  FAIL  cutover area tables: a zone differing only in case
+        expected 2: 'dispatch zone 'wire_bonding'', 'names 'WIRE_BONDING', but no table routes'; got 1: C:\Users\szy\AppData\Local\Temp\cs669-06129aeeb4b646b781ae77d67979a4d5.csv routes AREAs into dispatch zone 'wire_bonding', which journeyRuntime.allowedDispatchZones [WIRE_BONDING, DIE_ATTACH] omits: the import refuses it (DISPATCH_ZONE_NOT_FOUND), or a dispatching Host refuses to start (AreaAssignmentDispatchZoneStartupCheck).
+  FAIL  cutover area tables: a header that is not the importer's
+        expected 2: 'does not start with the importer's header', 'names 'WIRE_BONDING', but no table routes'; got 1: C:\Users\szy\AppData\Local\Temp\cs669-d22c3225299345afb1d01037be313ded.csv does not start with the importer's header 'area,dispatch_zone,slot_position' (line 1 is 'area,zone,slot_position'); its zones are not counted.
+  FAIL  cutover area tables: a row of four fields
+        expected 2: 'has rows that are not three fields (lines 2)', 'names 'WIRE_BONDING', but no table routes'; got 1: C:\Users\szy\AppData\Local\Temp\cs669-c5c7b233295d4b32bfa2558196164cc7.csv has rows that are not three fields (lines 2); its zones are not counted.
+842 passed, 5 failed
+--- restored; status: ''

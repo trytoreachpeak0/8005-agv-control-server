@@ -1,0 +1,16 @@
+mutation M5 on 5873125d7: scripts/parallel/instance-factory01-v2.cutover-two-zones.json
+sed: 5s/ControlServer\.V2"/ControlServer.V3"/
+files changed: 1
+-  "dataRoot": "C:\\ProgramData\\8005\\ControlServer.V2",
++  "dataRoot": "C:\\ProgramData\\8005\\ControlServer.V3",
+--- self-test exit 1
+  FAIL  catalog: the cutover definition carries the same approved pair, and is refused for exactly the two guards control-server#564 opens
+        wrong: instance-factory01-v2.cutover-two-zones.json
+--
+  FAIL  cutover: everything but the roster, the zones and the work types equals the production-mes definition
+        cutover-derived: {"instanceId":"factory01-v2-parallel","serviceName":"8005 AGV ControlServer V2","installRoot":"C:\\Program Files\\8005 AGV\\ControlServer.V2","dataRoot":"C:\\ProgramData\\8005\\ControlServer.V3","backupRoot":"C:\\ProgramData\\8005\\ControlServer.V2-backups","packageRoot":"D:\\zhengyushao\\ControlServer.V2","opsRoot":"D:\\zhengyushao\\control-server-v2-ops","stagingRoot":"D:\\zhengyushao\\control-server-v2-staging","listenAddress":"172.19.205.222","healthBindAddress":"172.19.205.222","onboardPort":58105,"healthPort":58107,"dashboardPort":58109,"mesIngest":{"source":"production","baseUrl":"http://127.0.0.1:5088"},"routeGraph":{"enabled":false,"mapId":26,"runtimeRefreshPeriod":"00:00:10","runtimeStateMaxAge":"00:00:45","designStateTtl":"00:10:00"},"riotCreateDispatch":{"enabled":false},"riotForeignOrderCancel":{"enabled":false},"vehicleFaultRecovery":{"enabled":false},"fieldOperatorRoles":{"path":"D:\\zhengyushao\\control-server-v2-ops\\field-operator-roles.json","onboardClearanceEntryDeclared":false},"taskTypeStations":{"settingsFile":"task-type-stations.map-26.settings.json"},"mapStationCatalog":{"approvedSyncPeriod":"00:00:30","approvedMaxUnconfirmed":"00:05:00","approvalRecord":"REQ-0302，用户 2026-10-09 批准（8005-workspace-v2 ds-tasks/board.md 10-09 条目；control-server#531）"},"journeyRuntime":{"enabled":false,"pollInterval":"00:00:02","maximumEvidenceAge":"00:00:30","checkpointWaitBudget":"00:05:00","stationDepartureWaitTimeout":"00:05:00","cargoHoldingTimeout":"00:30:00","areaEndAdmissionRevokedTimeout":"00:10:00","agvId":"老厂前线新多仓位2","vehicleKey":"BROKERX-f38975561adf46ccb1d2f23833c7d0e4","agvLifecycleGeneration":1,"mapId":26,"mapIdentity":"老厂前线new_wk","dispatchZone":"WIRE","dispatchGeneration":1,"sublotBoxCountPath":"/api/v2/sublot-box-count","allowedWorkTypes":["STAGING_TO_WIRE"],"allowedDispatchZones":["WIRE"],"admissionPolicyVersion":6,"admissionPolicyDeploymentId":"MAP-26-WIRE_TO_GATE-20261007"}}
+845 passed, 2 failed
+--- dotnet exit 1
+  Failed ControlServer.Tests.AdmissionPolicyVersionGuardTests.EveryInstanceDefinitionInstallsTheInstanceTheHistoryDescribes [13 ms]
+Failed!  - Failed:     1, Passed:    54, Skipped:     0, Total:    55, Duration: 54 s - ControlServer.Tests.dll (net8.0)
+--- restored; status: ''

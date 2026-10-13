@@ -1,0 +1,30 @@
+mutation P4a on ad2d9ba88: scripts/parallel/instance-factory01-v2.cutover-two-zones.json
+sed: 56,64d
+files changed: 1
+-      {
+-        "agvId": "鑰佸巶鍓嶇嚎鏂板浠撲綅1",
+-        "vehicleKey": "BROKERX-0c20ff0600d644869a6a80c186065d85",
+-        "deviceKey": "BROKERX-0c20ff0600d644869a6a80c186065d85",
+-        "riotId": 58,
+-        "agvLifecycleGeneration": 1,
+-        "allowedTaskTypes": ["WIRE_TO_GATE", "WIRE_TO_OPTICAL", "WIRE_TO_NITROGEN"],
+-        "zones": ["WIRE_BONDING"]
+-      },
+--- self-test exit 1
+  FAIL  catalog: the cutover definition carries the same approved pair, and is refused for exactly the two guards control-server#564 opens
+        wrong: instance-factory01-v2.cutover-two-zones.json
+--
+  FAIL  cutover: the roster is exactly agv01, agv02, agv03 with the registry identities, in that order
+        got: 老厂前线新多仓位2|BROKERX-f38975561adf46ccb1d2f23833c7d0e4|BROKERX-f38975561adf46ccb1d2f23833c7d0e4|59|1 ; 老厂前线新多仓位3|BROKERX-7daca4ee91da498d8026c68b7b941127|BROKERX-7daca4ee91da498d8026c68b7b941127|60|1
+  FAIL  cutover: each car carries exactly the task types and zones the user assigned it
+        differs from the decision: agv01: no row
+  FAIL  cutover: dedicated -- every allowed work type is served by exactly one car, and no car takes a type outside allowedWorkTypes
+        types: 6; not exactly one car: WIRE_TO_GATE served by 0, WIRE_TO_OPTICAL served by 0, WIRE_TO_NITROGEN served by 0; outside: 
+--
+  FAIL  cutover runtime-on: differs from the cutover definition only in journeyRuntime.enabled and routeGraph.enabled, both true; the gate and the other switches stay off
+        switches as asserted: True
+847 passed, 5 failed
+--- dotnet exit 1
+  Failed ControlServer.Tests.ParallelInstanceEffectiveConfigurationTests.CutoverDefinitionBindsTwoZonesAndThreeDedicatedCarsTheHostAccepts(definitionFile: "instance-factory01-v2.cutover-two-zones.json", runtimeEnabled: False) [776 ms]
+Failed!  - Failed:     1, Passed:    55, Skipped:     0, Total:    56, Duration: 58 s - ControlServer.Tests.dll (net8.0)
+--- restored; status: ''
