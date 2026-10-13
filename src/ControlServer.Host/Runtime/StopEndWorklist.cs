@@ -17,6 +17,10 @@ namespace ControlServer.Host.Runtime;
 /// 被终结的那条、亮着录入入口与「取消装货」按钮。车只认更高修订号的清单，所以要发一张：<c>items</c> 为空、作业会话与离站期限为 null。
 /// </para>
 /// <para>
+/// <b>期限之后可能补上。</b>本站结束而车还要在离站等待里等（扫码前取消、装货途中被终结，期限还没到），引擎随后补发一版：原因与空会话照留，
+/// 只带上车真正离站的那一刻（<c>JourneyRuntimeEngine.RefreshDeadlineOfALoadedStopAsync</c>，control-server#668）。被期限结束的那一种期限已过，不补。
+/// </para>
+/// <para>
 /// <b>号数。</b>一站 N 条需求发 N 版清单，按 <see cref="JourneyStopCursor.WorklistRevisionAt"/> 做完最后一条恰好等于<b>下一站的首号</b>
 /// ——那个号本来就不发（「做完最后一条车直接离站」）。空清单用这个号，同时让本停靠多占一版（<see cref="JourneyStopRow.WorklistRefills"/>
 /// 加一），后面每一站的首号跟着顺延一号。于是空清单在这一站的号区间之内，下一站首号在它之上，同号不同内容
