@@ -28,7 +28,10 @@
 #>
 [CmdletBinding()]
 param(
-    [string] $DefinitionPath = (Join-Path $PSScriptRoot 'instance-factory01-v2.json')
+    [string] $DefinitionPath = (Join-Path $PSScriptRoot 'instance-factory01-v2.json'),
+    # control-server#669. Area assignment tables to compare with the cutover definition's zones, e.g. the two under the
+    # workspace's field-prep/. Left out, only the built-in cases run.
+    [string[]] $AreaAssignmentPath
 )
 
 $ErrorActionPreference = 'Stop'
@@ -4979,6 +4982,13 @@ $shippedDefinitionNames = @('instance-factory01-v2.json', 'instance-factory01-v2
     'instance-factory01-v2.req0178-field-off.json', 'instance-factory01-v2.req0178-field-on.json',
     # control-server#665 (merged before this ticket): the batch 8/9 field definitions. PR #666 review S1.
     'instance-factory01-v2.batch89-auto.json', 'instance-factory01-v2.batch89-manual.json')
+# control-server#669: the cutover definition. Shipped, but not deployable until the cutover switch (control-server#564)
+# opens the two guards it is written against -- agv01 and WIRE_TO_GATE from the production MesIngest. It is held to its
+# own exact refusal below, not exempted: any other failure, or one of the two missing, goes red.
+$cutoverDefinitionNames = @('instance-factory01-v2.cutover-two-zones.json')
+$cutoverHeldRefusals = @(
+    'journeyRuntime.allowedWorkTypes ["DIE_TO_WIRE_STAGING","DIE_TO_OVEN","WIRE_TO_GATE","WIRE_TO_OPTICAL","STAGING_TO_WIRE","WIRE_TO_NITROGEN"] includes WIRE_TO_GATE, which the MVP takes from the same catalog'
+    'journeyRuntime.fleet[0] names agv01 (agvId, vehicleKey, deviceKey, riotId), the vehicle the MVP service is driving in production.')
 function Set-CatalogSection($Definition, $Section, [switch] $Remove) {
     $d = Copy-Definition $Definition
     if ($Remove) { $d.Remove('mapStationCatalog') } else { $d['mapStationCatalog'] = $Section }
@@ -4999,8 +5009,16 @@ Invoke-SourceCase 'catalog: every shipped definition carries 00:00:30 / 00:05:00
             -not ($c -is [System.Collections.IDictionary] -and $c['approvedSyncPeriod'] -ceq '00:00:30' -and $c['approvedMaxUnconfirmed'] -ceq '00:05:00' -and
                 ([string] $c['approvalRecord']).Contains('2026-10-09') -and @(Test-ParallelInstanceDefinition -Definition $d).Count -eq 0) })
     $all = @(Get-ChildItem -LiteralPath $PSScriptRoot -Filter 'instance-*.json' | ForEach-Object Name)
-    $unlisted = @($all | Where-Object { $_ -cnotin $shippedDefinitionNames })
+    $unlisted = @($all | Where-Object { $_ -cnotin $shippedDefinitionNames -and $_ -cnotin $cutoverDefinitionNames })
     @{ Ok = ($wrong.Count -eq 0 -and $unlisted.Count -eq 0); Detail = "wrong: $($wrong -join ', '); shipped but not checked here: $($unlisted -join ', ')" }
+}
+Invoke-SourceCase 'catalog: the cutover definition carries the same approved pair, and is refused for exactly the two guards control-server#564 opens' {
+    $wrong = @($cutoverDefinitionNames | Where-Object {
+            $d = Read-ParallelInstanceDefinition -Path (Join-Path $PSScriptRoot $_)
+            $c = $d.Contains('mapStationCatalog') ? $d['mapStationCatalog'] : $null
+            -not ($c -is [System.Collections.IDictionary] -and $c['approvedSyncPeriod'] -ceq '00:00:30' -and $c['approvedMaxUnconfirmed'] -ceq '00:05:00' -and
+                ([string] $c['approvalRecord']).Contains('2026-10-09') -and (Test-ExactFailure $d $cutoverHeldRefusals).Ok) })
+    @{ Ok = ($wrong.Count -eq 0); Detail = "wrong: $($wrong -join ', ')" }
 }
 
 # --- Whitelist against MapStationCatalogOptions ------------------------------------------------------------------
@@ -5234,6 +5252,137 @@ foreach ($case in @(
         $d = Copy-Definition $baseline
         $null = & $case.Edit $d['journeyRuntime']
         Test-ExactFailure $d $case.Expect
+    }
+}
+
+# ------------------------------------------------------------------------------------------------
+# control-server#669. The cutover definition: two dispatch zones, WIRE_BONDING (N areas, wire bonding) and DIE_ATTACH
+# (T areas, die attach), user 2026-10-12; three cars dedicated by task type, user 2026-10-10 (program#171). It takes
+# effect only on the cutover's new database -- installed over the database the instance runs today, the stored policy
+# and the area table there still say WIRE. The ticket's failure: any car's zones outside allowedDispatchZones.
+# The definition check refuses agv01 before it reaches the rows' zones (Test-FleetIdentity returns on agv01), so the
+# zones, the assignment and the identities are checked here on their own, against the decisions written out.
+# ------------------------------------------------------------------------------------------------
+Write-Host ''
+Write-Host 'Cutover definition: two dispatch zones, three dedicated cars (control-server#669)' -ForegroundColor Cyan
+
+$cutoverPath = Join-Path $PSScriptRoot 'instance-factory01-v2.cutover-two-zones.json'
+$cutover = Read-ParallelInstanceDefinition -Path $cutoverPath
+$cutoverJourney = $cutover['journeyRuntime']
+$cutoverRows = @($cutoverJourney['fleet'])
+# The decisions, written out (remote-ops/fleet.md for the identities): a change to any of them is a change to this table.
+$cutoverDecision = @(
+    [pscustomobject]@{ Alias = 'agv01'; AgvId = '老厂前线新多仓位1'; Key = 'BROKERX-0c20ff0600d644869a6a80c186065d85'; RiotId = 58
+        Types = @('WIRE_TO_GATE', 'WIRE_TO_OPTICAL', 'WIRE_TO_NITROGEN'); Zones = @('WIRE_BONDING') }
+    [pscustomobject]@{ Alias = 'agv02'; AgvId = '老厂前线新多仓位2'; Key = 'BROKERX-f38975561adf46ccb1d2f23833c7d0e4'; RiotId = 59
+        Types = @('STAGING_TO_WIRE'); Zones = @('WIRE_BONDING') }
+    [pscustomobject]@{ Alias = 'agv03'; AgvId = '老厂前线新多仓位3'; Key = 'BROKERX-7daca4ee91da498d8026c68b7b941127'; RiotId = 60
+        Types = @('DIE_TO_OVEN', 'DIE_TO_WIRE_STAGING'); Zones = @('DIE_ATTACH') }
+)
+
+Invoke-SourceCase 'cutover: allowedDispatchZones is exactly [WIRE_BONDING, DIE_ATTACH], dispatchZone is one of them, WIRE is gone' {
+    $allowed = @($cutoverJourney['allowedDispatchZones'])
+    $raw = Get-Content -Raw -LiteralPath $cutoverPath
+    @{ Ok = (($allowed -join ',') -ceq 'WIRE_BONDING,DIE_ATTACH' -and $allowed -ccontains $cutoverJourney['dispatchZone'] -and
+            -not [regex]::IsMatch($raw, '"WIRE"'))
+        Detail = "allowed: $($allowed -join ','); dispatchZone: $($cutoverJourney['dispatchZone']); a quoted WIRE left: $([regex]::IsMatch($raw, '"WIRE"'))" }
+}
+Invoke-SourceCase 'cutover: every car serves at least one zone, every zone it serves is allowed, and every allowed zone is served' {
+    $allowed = @($cutoverJourney['allowedDispatchZones'])
+    $outside = @(foreach ($row in $cutoverRows) { foreach ($z in @($row['zones'])) { if (-not ($allowed -ccontains $z)) { "$($row['agvId'])->$z" } } })
+    $empty = @($cutoverRows | Where-Object { @($_['zones']).Count -eq 0 } | ForEach-Object { $_['agvId'] })
+    $served = @($cutoverRows | ForEach-Object { @($_['zones']) } | Sort-Object -Unique -CaseSensitive)
+    $unserved = @($allowed | Where-Object { $served -cnotcontains $_ })
+    @{ Ok = ($outside.Count -eq 0 -and $empty.Count -eq 0 -and $unserved.Count -eq 0)
+        Detail = "outside allowed: $($outside -join ', '); no zone: $($empty -join ', '); allowed but served by no car: $($unserved -join ', ')" }
+}
+Invoke-SourceCase 'cutover: the roster is exactly agv01, agv02, agv03 with the registry identities, in that order' {
+    $got = @($cutoverRows | ForEach-Object { "$($_['agvId'])|$($_['vehicleKey'])|$($_['deviceKey'])|$($_['riotId'])|$($_['agvLifecycleGeneration'])" })
+    $expected = @($cutoverDecision | ForEach-Object { "$($_.AgvId)|$($_.Key)|$($_.Key)|$($_.RiotId)|1" })
+    # agv02 and agv03 also against the module's own whitelist, so the two tables cannot drift apart.
+    $whitelist = @(Get-ParallelInstanceAllowedVehicle | ForEach-Object { "$($_.AgvId)|$($_.VehicleKey)|$($_.VehicleKey)|$($_.RiotId)|1" })
+    @{ Ok = (($got -join "`n") -ceq ($expected -join "`n") -and ($whitelist -join "`n") -ceq ($expected[1..2] -join "`n"))
+        Detail = "got: $($got -join ' ; ')" }
+}
+Invoke-SourceCase 'cutover: each car carries exactly the task types and zones the user assigned it' {
+    $wrong = @(foreach ($decision in $cutoverDecision) {
+            $row = $cutoverRows | Where-Object { [string]::Equals($_['vehicleKey'], $decision.Key, [StringComparison]::Ordinal) } | Select-Object -First 1
+            if ($null -eq $row) { "$($decision.Alias): no row"; continue }
+            if ((@($row['allowedTaskTypes']) -join ',') -cne ($decision.Types -join ',')) { "$($decision.Alias) types [$(@($row['allowedTaskTypes']) -join ',')]" }
+            if ((@($row['zones']) -join ',') -cne ($decision.Zones -join ',')) { "$($decision.Alias) zones [$(@($row['zones']) -join ',')]" }
+        })
+    @{ Ok = ($wrong.Count -eq 0); Detail = "differs from the decision: $($wrong -join '; ')" }
+}
+Invoke-SourceCase 'cutover: dedicated -- every allowed work type is served by exactly one car, and no car takes a type outside allowedWorkTypes' {
+    $types = @($cutoverJourney['allowedWorkTypes'])
+    $byType = @(foreach ($t in $types) { $n = @($cutoverRows | Where-Object { @($_['allowedTaskTypes']) -ccontains $t }).Count; if ($n -ne 1) { "$t served by $n" } })
+    $extra = @(foreach ($row in $cutoverRows) { foreach ($t in @($row['allowedTaskTypes'])) { if (-not ($types -ccontains $t)) { "$($row['agvId'])->$t" } } })
+    @{ Ok = ($types.Count -eq 6 -and $byType.Count -eq 0 -and $extra.Count -eq 0); Detail = "types: $($types.Count); not exactly one car: $($byType -join ', '); outside: $($extra -join ', ')" }
+}
+Invoke-SourceCase 'cutover: everything but the roster, the zones and the work types equals the production-mes definition' {
+    # Ports, paths, service name, gates off, runtime off, the approved catalog pair, admission version and identity: what
+    # the cutover changes is the roster and the zones, and only what the cutover switch (control-server#564) decides
+    # beyond them is to change the rest.
+    $p = Read-ParallelInstanceDefinition -Path $productionFile
+    $c = Copy-Definition $cutover
+    foreach ($key in @('agvId', 'vehicleKey', 'agvLifecycleGeneration')) { $c['journeyRuntime'][$key] = $p['journeyRuntime'][$key] }
+    $c['journeyRuntime'].Remove('fleet')
+    foreach ($key in @('dispatchZone', 'allowedDispatchZones', 'allowedWorkTypes')) { $c['journeyRuntime'][$key] = $p['journeyRuntime'][$key] }
+    $order = @($p['journeyRuntime'].Keys)
+    $reordered = [ordered]@{}
+    foreach ($key in $order) { if ($c['journeyRuntime'].Contains($key)) { $reordered[$key] = $c['journeyRuntime'][$key] } }
+    foreach ($key in @($c['journeyRuntime'].Keys)) { if (-not $reordered.Contains($key)) { $reordered[$key] = $c['journeyRuntime'][$key] } }
+    $c['journeyRuntime'] = $reordered
+    $a = ConvertTo-Json -InputObject $c -Depth 12 -Compress
+    $b = ConvertTo-Json -InputObject (Copy-Definition $p) -Depth 12 -Compress
+    @{ Ok = [string]::Equals($a, $b, [StringComparison]::Ordinal); Detail = "cutover-derived: $a`n        production-mes: $b" }
+}
+Invoke-SourceCase 'cutover: the definitions the instance runs today still say WIRE (the zones change only with the new database)' {
+    $moved = @($shippedDefinitionNames | Where-Object {
+            $j = (Read-ParallelInstanceDefinition -Path (Join-Path $PSScriptRoot $_))['journeyRuntime']
+            (@($j['allowedDispatchZones']) -join ',') -cne 'WIRE' -or $j['dispatchZone'] -cne 'WIRE' })
+    @{ Ok = ($moved.Count -eq 0); Detail = "no longer WIRE: $($moved -join ', ')" }
+}
+
+# The area assignment tables against the zones, offline (Test-ParallelAreaAssignmentZone): the import can only be dry-run
+# against a database that already holds the zones, which is the cutover's new one.
+function New-AreaTable([string[]] $Lines) {
+    $file = Join-Path ([IO.Path]::GetTempPath()) "cs669-$([guid]::NewGuid().ToString('N')).csv"
+    [IO.File]::WriteAllText($file, (($Lines -join "`n") + "`n"), [Text.UTF8Encoding]::new($false))
+    return $file
+}
+$areaHeader = 'area,dispatch_zone,slot_position'
+foreach ($case in @(
+        @{ Name = 'an N table and a T table, one zone each -- agree'; Tables = @(@($areaHeader, 'N1-1,WIRE_BONDING,FRONT', 'N1-2,WIRE_BONDING,REAR'), @($areaHeader, 'T1-1,DIE_ATTACH,FRONT')); Expect = @() }
+        @{ Name = 'one table naming both zones (CRLF) -- agree'; Tables = @(, @("$areaHeader`r", "N1-1,WIRE_BONDING,FRONT`r", 'T1-1,DIE_ATTACH,REAR')); Expect = @() }
+        @{ Name = 'the old zone WIRE in the N table'; Tables = @(@($areaHeader, 'N1-1,WIRE,FRONT'), @($areaHeader, 'T1-1,DIE_ATTACH,FRONT'))
+            Expect = @("dispatch zone 'WIRE', which journeyRuntime.allowedDispatchZones [WIRE_BONDING, DIE_ATTACH] omits", "names 'WIRE_BONDING', but no table routes an AREA into it") }
+        @{ Name = 'no T table: DIE_ATTACH served by agv03 and routed nothing'; Tables = @(, @($areaHeader, 'N1-1,WIRE_BONDING,FRONT'))
+            Expect = @("names 'DIE_ATTACH', but no table routes an AREA into it") }
+        @{ Name = 'a zone differing only in case'; Tables = @(@($areaHeader, 'N1-1,wire_bonding,FRONT'), @($areaHeader, 'T1-1,DIE_ATTACH,FRONT'))
+            Expect = @("dispatch zone 'wire_bonding'", "names 'WIRE_BONDING', but no table routes") }
+        @{ Name = 'a header that is not the importer''s'; Tables = @(@('area,zone,slot_position', 'N1-1,WIRE_BONDING,FRONT'), @($areaHeader, 'T1-1,DIE_ATTACH,FRONT'))
+            Expect = @("does not start with the importer's header", "names 'WIRE_BONDING', but no table routes") }
+        @{ Name = 'a row of four fields'; Tables = @(@($areaHeader, 'N1-1,WIRE_BONDING,FRONT,x'), @($areaHeader, 'T1-1,DIE_ATTACH,FRONT'))
+            Expect = @('has rows that are not three fields (lines 2)', "names 'WIRE_BONDING', but no table routes") })) {
+    Invoke-SourceCase "cutover area tables: $($case.Name)" {
+        $files = @(foreach ($t in $case.Tables) { New-AreaTable $t })
+        try {
+            [string[]] $got = @(Test-ParallelAreaAssignmentZone -Definition (Copy-Definition $cutover) -Path $files)
+        } finally {
+            $files | ForEach-Object { Remove-Item -LiteralPath $_ -Force -ErrorAction SilentlyContinue }
+        }
+        $unmatched = @($case.Expect | Where-Object { $fragment = $_; -not ($got | Where-Object { $_.Contains($fragment) }) })
+        @{ Ok = ($got.Count -eq $case.Expect.Count -and $unmatched.Count -eq 0); Detail = "expected $($case.Expect.Count): '$($case.Expect -join "', '")'; got $($got.Count): $($got -join ' | ')" }
+    }
+}
+if ($AreaAssignmentPath) {
+    # The field tables themselves, when given (field-prep/ in the workspace; not in this repository). pwsh -File passes
+    # 'a.csv,b.csv' as one string, so a comma separates paths here too.
+    $AreaAssignmentPath = @($AreaAssignmentPath | ForEach-Object { $_.Split(',') } | Where-Object { $_ })
+    Invoke-SourceCase "cutover area tables, the given files: $($AreaAssignmentPath -join ', ')" {
+        [string[]] $got = @(Test-ParallelAreaAssignmentZone -Definition (Copy-Definition $cutover) -Path $AreaAssignmentPath)
+        @{ Ok = ($got.Count -eq 0); Detail = "got $($got.Count): $($got -join ' | ')" }
     }
 }
 

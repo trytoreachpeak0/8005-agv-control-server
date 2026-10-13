@@ -3222,6 +3222,67 @@ function Get-ParallelClearanceExitReadiness {
     }
 }
 
+function Test-ParallelAreaAssignmentZone {
+    <#
+        .SYNOPSIS
+            control-server#669. The dispatch zones a set of area assignment tables names, against the
+            definition's journeyRuntime.allowedDispatchZones. Returns failure strings; none means the sets agree.
+
+        .DESCRIPTION
+            Offline, before a table is imported: the import itself can only be dry-run against a database whose
+            stored dispatch policy already holds the zones (AreaAssignmentImport, DISPATCH_ZONE_NOT_FOUND), and a
+            table routing an AREA into a zone the definition does not allow keeps a dispatching Host from starting
+            (AreaAssignmentDispatchZoneStartupCheck). The two directions are both refused here:
+
+              1. a zone a table names that allowedDispatchZones omits (the import refuses it, or the Host does);
+              2. an allowed zone no table names: no AREA routes into it, so the car that serves only it is never
+                 given work -- silently, since an unmapped AREA is OUT_OF_SCOPE_AREA by design.
+
+            Each file must carry the importer's controlled header exactly (AreaAssignmentImport.Header) and three
+            fields per row; anything else is said and the file's zones are not counted. This reads the zone column
+            and nothing more -- AREA format, slot position groups and duplicates are the importer's dry-run.
+    #>
+    [CmdletBinding()]
+    param(
+        [Parameter(Mandatory = $true)][hashtable] $Definition,
+        [Parameter(Mandatory = $true)][string[]] $Path
+    )
+
+    $allowed = @($Definition['journeyRuntime']['allowedDispatchZones'])
+    $failures = @()
+    $named = [System.Collections.Generic.SortedSet[string]]::new([StringComparer]::Ordinal)
+    foreach ($file in $Path) {
+        $lines = @(([IO.File]::ReadAllText($file, [Text.UTF8Encoding]::new($false)) -replace "`r`n", "`n").TrimEnd("`n").Split("`n"))
+        if ($lines[0] -cne 'area,dispatch_zone,slot_position') {
+            $failures += "$file does not start with the importer's header 'area,dispatch_zone,slot_position' (line 1 is '$($lines[0])'); its zones are not counted."
+            continue
+        }
+        $fileZones = [System.Collections.Generic.SortedSet[string]]::new([StringComparer]::Ordinal)
+        $malformed = @()
+        for ($i = 1; $i -lt $lines.Count; $i++) {
+            $fields = $lines[$i].Split(',')
+            if ($fields.Count -ne 3) { $malformed += $i + 1; continue }
+            $null = $fileZones.Add($fields[1])
+        }
+        if ($malformed.Count -gt 0) {
+            $failures += "$file has rows that are not three fields (lines $($malformed -join ', ')); its zones are not counted."
+            continue
+        }
+        foreach ($zone in $fileZones) {
+            $null = $named.Add($zone)
+            if (-not ($allowed -ccontains $zone)) {
+                $failures += "$file routes AREAs into dispatch zone '$zone', which journeyRuntime.allowedDispatchZones [$($allowed -join ', ')] omits: the import refuses it (DISPATCH_ZONE_NOT_FOUND), or a dispatching Host refuses to start (AreaAssignmentDispatchZoneStartupCheck)."
+            }
+        }
+    }
+    foreach ($zone in $allowed) {
+        if (-not $named.Contains([string] $zone)) {
+            $failures += "journeyRuntime.allowedDispatchZones names '$zone', but no table routes an AREA into it: the vehicles that serve only that zone would never be given work."
+        }
+    }
+    return $failures
+}
+
 function Merge-ConfigurationTree {
     <#
         .SYNOPSIS
@@ -3298,6 +3359,7 @@ Export-ModuleMember -Function @(
     'Get-ParallelLogFilesSince'
     'Read-ParallelLogLines'
     'Merge-ConfigurationTree'
+    'Test-ParallelAreaAssignmentZone'
     'Get-ParallelServiceEnvironmentEntry'
     'Set-ParallelServiceEnvironmentEntry'
     'Resolve-ParallelFaultRecoveryCredential'
