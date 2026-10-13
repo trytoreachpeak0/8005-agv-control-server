@@ -695,16 +695,13 @@ jobs:
           # ran real-onboard-expected-action-overdue and real-onboard-durable-ack-lost three times and the
           # rest once; that is what `consecutive` reproduces. Adding a real-onboard scenario: one line.
           #
-          # real-onboard-recovery-entry-missing is absent on purpose, and no longer for the reason it was taken out
-          # (scripts/l2/README.md). The missing recovery entry it was red on was fixed on 2026-09-04, and it passed on
-          # 2026-09-13 (evidence/l2/20260913-b2close-real-onboard-recovery-entry-missing-001). Since onboard-hmi#72
-          # (b85b97a, 2026-09-16) and onboard-hmi#78 (96dffa0, 2026-09-18), per ADR-cross-0058's 2026-09-18 rewrite, the
-          # onboard reopens a slot door closed empty instead of timing out to UNKNOWN, so the way this scenario makes a
-          # failed load no longer produces one: CI run 38107859209 (control-server#250) timed out before its first
-          # criterion. Listing it as it stands would add a round that is red for a reason of its own. Follow-up (a separate
-          # ticket): check whether real-onboard-restart-with-open-recovery-session and
-          # real-onboard-compensate-then-reconnect, which make an UNKNOWN load through Invoke-G3UnknownLoad, cover its
-          # assertion -- retire it if they do, rebuild its fault injection otherwise. That coverage is not yet checked.
+          # real-onboard-recovery-entry-missing was retired by control-server#622 (2026-10-13). Its fault injection -- close a
+          # slot empty and wait out the onboard's operator timeout -- stopped producing a result once onboard-hmi#72
+          # (b85b97a) and onboard-hmi#78 (96dffa0) made the onboard reopen a door closed empty (CI run 38107859209,
+          # control-server#250). Its criteria are covered by real-onboard-restart-with-open-recovery-session (an UNKNOWN load
+          # made through Invoke-G3UnknownLoad), real-onboard-compensate-then-reconnect (the same stop-close-restart injection
+          # written inline; it does not call Invoke-G3UnknownLoad) and real-onboard-slot-fault-declaration (L2-RSFD-04
+          # judges the block reason). The coverage table and the two gaps it leaves are in control-server#622.
           $scenarios = @(
               @{ Name = 'real-onboard-normal-load';                           Runs = 1 }
               @{ Name = 'real-onboard-clock-skew';                            Runs = 1 }
