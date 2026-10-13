@@ -531,6 +531,166 @@ public sealed class Batch7EnRouteAppendPlannerTests
         Assert.Equal(0, decision.Placement!.MarginalCostMm);
     }
 
+    // ---- 同站先卸后装（FR-031 AC-8、ADR-cross-0055；control-server#647） ------------------------------
+
+    /// <summary>
+    /// 追加需求在既有卸货停靠那一站取货、两种排法代价打平时，取货排在卸货<b>之后</b>：先卸后装。
+    /// </summary>
+    /// <remarks>
+    /// <para>
+    /// 场景（cs#637 审查探针原样）：车在 0，计划 10 装、20 卸；新需求 20 装、30 卸。「新取货在 20 卸之前」与「之后」
+    /// 经过的站点序列都是 0→10→20→20→30，代价都是增量 10000，打平。修前留下的是先试到的那一格，即先装后卸：
+    /// 车在 20 装完进入取货停靠的离站等待，等满整段期限才到同站的卸货停靠卸货，违反 FR-031 AC-8
+    /// 「混合站完成全部卸货……后才启动」。
+    /// </para>
+    /// <para>断言整条顺序而不只是两者先后，好让「新卸货被挤到别处」也红。</para>
+    /// </remarks>
+    [Fact]
+    public void ATiedPickupAtAStationWithAnUnloadStopIsPlacedAfterTheUnload()
+    {
+        EnRouteAppendDecision decision = EnRouteAppendPlanner.Plan(
+            PlanOf(vehicleAt: 0, Pickup("s-p", 10, ZoneA), Unload("s-u", 20, ZoneA)),
+            CandidateOf(Pickup("new-p", 20, ZoneA), Unload("new-u", 30, ZoneA), ZoneA),
+            Zones((ZoneA, 500_000)),
+            Distance);
+
+        Assert.Null(decision.RefusalReasonCode);
+        Assert.Equal(10_000, decision.Placement!.MarginalCostMm);
+        Assert.Equal(["s-p", "s-u", "new-p", "new-u"], OrderOf(decision.Placement));
+    }
+
+    /// <summary>
+    /// 新取货与同站卸货之间隔着别的站也算：车已经带着这一站的货，就先卸再装，不在装完之后绕回来卸。
+    /// </summary>
+    /// <remarks>
+    /// 车在 0，计划 10 装、20 卸、40 卸（全程 40000）；新需求 20 装、15 卸。三种排法增量都是 10000：
+    /// 0→10→<b>20 装</b>→15→<b>20 卸</b>→40、0→10→<b>20 装</b>→<b>20 卸</b>→15→40、0→10→<b>20 卸</b>→<b>20 装</b>→15→40。
+    /// 前两种都在 20 先装后卸，修前选的是第一种（先试到）。只看「紧挨着」的判法会放过第一种，所以这条单列。
+    /// </remarks>
+    [Fact]
+    public void ATiedPickupIsPlacedAfterASameStationUnloadEvenWhenAnotherStopWouldSitBetween()
+    {
+        EnRouteAppendDecision decision = EnRouteAppendPlanner.Plan(
+            PlanOf(vehicleAt: 0, Pickup("s-p", 10, ZoneA), Unload("s-u1", 20, ZoneA), Unload("s-u2", 40, ZoneA)),
+            CandidateOf(Pickup("new-p", 20, ZoneA), Unload("new-u", 15, ZoneA), ZoneA),
+            Zones((ZoneA, 500_000)),
+            Distance);
+
+        Assert.Null(decision.RefusalReasonCode);
+        Assert.Equal(10_000, decision.Placement!.MarginalCostMm);
+        Assert.Equal(["s-p", "s-u1", "new-p", "new-u", "s-u2"], OrderOf(decision.Placement));
+    }
+
+    /// <summary>
+    /// 同站同角色仍然并入，而且并进的是卸货<b>之后</b>的那个取货停靠，不在卸货之前另开一个。
+    /// </summary>
+    /// <remarks>
+    /// 车在 0，计划 10 装、20 卸、20 装、40 卸；新需求 20 装、40 卸。「在 20 卸之前新开取货、卸货并进 40」与
+    /// 「取货并进 20 装、卸货并进 40」增量都是 0。修前先试到前者，于是新开了一个停靠、还排成先装后卸；
+    /// 并入的那个本来就在卸货之后。
+    /// </remarks>
+    [Fact]
+    public void ATiedPickupMergesIntoTheSameStationPickupBehindTheUnloadInsteadOfOpeningOneBeforeIt()
+    {
+        EnRouteAppendDecision decision = EnRouteAppendPlanner.Plan(
+            PlanOf(
+                vehicleAt: 0,
+                Pickup("s-p1", 10, ZoneA),
+                Unload("s-u1", 20, ZoneA),
+                Pickup("s-p2", 20, ZoneA),
+                Unload("s-u2", 40, ZoneA)),
+            CandidateOf(Pickup("new-p", 20, ZoneA), Unload("new-u", 40, ZoneA), ZoneA),
+            Zones((ZoneA, 500_000)),
+            Distance);
+
+        Assert.Null(decision.RefusalReasonCode);
+        EnRouteAppendPlacement placement = decision.Placement!;
+        Assert.Equal(0, placement.MarginalCostMm);
+        Assert.Equal("s-p2", placement.MergeIntoPickupStopId);
+        Assert.Equal("s-u2", placement.MergeIntoUnloadStopId);
+        Assert.Equal(["s-p1", "s-u1", "s-p2", "s-u2"], OrderOf(placement));
+    }
+
+    /// <summary>
+    /// 跨站打平时选择不变：仍是先试到的那一格（最早的插入位）。同站先卸后装只在打平的两格里同站顺序不同时才起作用。
+    /// </summary>
+    /// <remarks>
+    /// 车在 0，计划 10 装、30 卸、20 卸（往返，全程 40000）；新需求 25 装、卸货并进 20。新取货插在 10 与 30 之间
+    /// 或 30 与 20 之间，都在直线上，增量都是 0。25 号站没有任何既有停靠，两格的同站顺序一样，所以留下最早的那格。
+    /// </remarks>
+    [Fact]
+    public void ACrossStationTieStillKeepsTheEarliestPlacement()
+    {
+        EnRouteAppendDecision decision = EnRouteAppendPlanner.Plan(
+            PlanOf(vehicleAt: 0, Pickup("s-p", 10, ZoneA), Unload("s-u1", 30, ZoneA), Unload("s-u2", 20, ZoneA)),
+            CandidateOf(Pickup("new-p", 25, ZoneA), Unload("new-u", 20, ZoneA), ZoneA),
+            Zones((ZoneA, 500_000)),
+            Distance);
+
+        Assert.Null(decision.RefusalReasonCode);
+        EnRouteAppendPlacement placement = decision.Placement!;
+        Assert.Equal(0, placement.MarginalCostMm);
+        Assert.Equal("s-u2", placement.MergeIntoUnloadStopId);
+        Assert.Equal(["s-p", "new-p", "s-u1", "s-u2"], OrderOf(placement));
+    }
+
+    /// <summary>
+    /// 当前下一站不因同站先卸后装而改动：车正驶向的 20 装是升级前就排成先装后卸的停靠，它仍然第一个、序位不变；
+    /// 新取货不并进它（REQ-0196），而是排在同站卸货之后。
+    /// </summary>
+    /// <remarks>
+    /// 车在 0，计划 20 装（当前下一站）、20 卸、30 卸；新需求 20 装、30 卸。新取货在两个 20 之间或 20 卸之后，
+    /// 增量都是 0。已入库的先装后卸（当前下一站 20 装在 20 卸之前）原样保留：本票不改已入库的顺序。
+    /// </remarks>
+    [Fact]
+    public void TheCurrentNextStopStaysFirstWhenATiedPickupGoesAfterASameStationUnload()
+    {
+        EnRouteAppendDecision decision = EnRouteAppendPlanner.Plan(
+            PlanOf(vehicleAt: 0, Pickup("s-p", 20, ZoneA), Unload("s-u1", 20, ZoneA), Unload("s-u2", 30, ZoneA)),
+            CandidateOf(Pickup("new-p", 20, ZoneA), Unload("new-u", 30, ZoneA), ZoneA),
+            Zones((ZoneA, 500_000)),
+            Distance);
+
+        Assert.Null(decision.RefusalReasonCode);
+        EnRouteAppendPlacement placement = decision.Placement!;
+        Assert.Null(placement.MergeIntoPickupStopId);
+        Assert.Equal(["s-p", "s-u1", "new-p", "s-u2"], OrderOf(placement));
+        Assert.Equal(1, placement.Resequenced.Single(stop => stop.StopId == "s-p").Sequence);
+    }
+
+    /// <summary>
+    /// 代价不打平时仍按代价选，哪怕更便宜的那格是同站先装后卸：先卸后装是打平时的偏好，不是一道门。
+    /// </summary>
+    /// <remarks>
+    /// <para>
+    /// 打平是结构性的：新取货紧挨在同站卸货前或后，经过的站点序列一模一样。所以要让「先装后卸」<b>严格</b>更便宜，
+    /// 得让新取货与同站卸货之间隔着别的站、而且路网是有向的。这里把 15→30 设成 100000（单行道绕远），其余同直线：
+    /// 车在 0，计划 10 装、20 卸、30 卸；新需求 20 装、15 卸。
+    /// </para>
+    /// <list type="bullet">
+    /// <item>0→10→20 装→15 卸→20 卸→30：增量 10000（在 20 先装后卸，最便宜）；</item>
+    /// <item>0→10→20 卸→20 装→15 卸→30：要走 15→30，增量 95000；</item>
+    /// <item>0→10→20 卸→30 卸→20 装→15 卸：增量 15000。</item>
+    /// </list>
+    /// <para>
+    /// 选中的是 10000 那一格。这种局面下车仍会在 20 装完进入离站等待再绕回来卸，这是票面「只在打平时调整」的直接结果，
+    /// 列为剩余风险，不在本票改。
+    /// </para>
+    /// </remarks>
+    [Fact]
+    public void AStrictlyCheaperPlacementStillWinsEvenWhenItLoadsBeforeASameStationUnload()
+    {
+        EnRouteAppendDecision decision = EnRouteAppendPlanner.Plan(
+            PlanOf(vehicleAt: 0, Pickup("s-p", 10, ZoneA), Unload("s-u1", 20, ZoneA), Unload("s-u2", 30, ZoneA)),
+            CandidateOf(Pickup("new-p", 20, ZoneA), Unload("new-u", 15, ZoneA), ZoneA),
+            Zones((ZoneA, 500_000)),
+            (from, to) => (from, to) == (15, 30) ? 100_000L : Distance(from, to));
+
+        Assert.Null(decision.RefusalReasonCode);
+        Assert.Equal(10_000, decision.Placement!.MarginalCostMm);
+        Assert.Equal(["s-p", "new-p", "new-u", "s-u1", "s-u2"], OrderOf(decision.Placement));
+    }
+
     /// <summary>
     /// 当前下一站之后已删的停靠不算腿、只在重排最后占号（批次7-10，control-server#215，审查 M3）。
     /// </summary>
@@ -562,6 +722,10 @@ public sealed class Batch7EnRouteAppendPlannerTests
     }
 
     // ---- helpers ---------------------------------------------------------------------------------
+
+    /// <summary>插入之后的停靠按新序位排出的 StopId 列表。</summary>
+    private static string[] OrderOf(EnRouteAppendPlacement placement) =>
+        [.. placement.Resequenced.OrderBy(stop => stop.Sequence).Select(stop => stop.StopId)];
 
     private static EnRouteStop Pickup(string stopId, int station, string zone) =>
         new(stopId, $"ST-{station}", station, zone, JourneyStopRoles.Pickup);
