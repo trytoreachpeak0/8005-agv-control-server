@@ -1,0 +1,8 @@
+diff --git a/src/ControlServer.Host/Runtime/Dispatch/EnRouteAppendPlanner.cs b/src/ControlServer.Host/Runtime/Dispatch/EnRouteAppendPlanner.cs
+index d0daf09ef..9ceee146e 100644
+--- a/src/ControlServer.Host/Runtime/Dispatch/EnRouteAppendPlanner.cs
++++ b/src/ControlServer.Host/Runtime/Dispatch/EnRouteAppendPlanner.cs
+@@ -427,2 +427 @@ public sealed class EnRouteAppendPlanner
+-                if (stops[unload].Role == JourneyStopRoles.Unload &&
+-                    stops[unload].StationRiotId == stops[pickup].StationRiotId)
++                if (stops[unload].Role == JourneyStopRoles.Unload)

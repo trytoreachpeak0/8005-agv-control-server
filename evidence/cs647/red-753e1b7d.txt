@@ -1,0 +1,17 @@
+  Failed ControlServer.Tests.Batch7EnRouteAppendPlannerTests.ATiedPickupIsPlacedAfterASameStationUnloadEvenWhenAnotherStopWouldSitBetween [43 ms]
+   Assert.Equal() Failure: Collections differ at index 1
+Expected: "s-u1"
+Actual:   "new-p"
+  Failed ControlServer.Tests.Batch7EnRouteAppendPlannerTests.TheCurrentNextStopStaysFirstWhenATiedPickupGoesAfterASameStationUnload [1 ms]
+   Assert.Equal() Failure: Collections differ at index 1
+Expected: "s-u1"
+Actual:   "new-p"
+  Failed ControlServer.Tests.Batch7EnRouteAppendPlannerTests.ATiedPickupAtAStationWithAnUnloadStopIsPlacedAfterTheUnload [< 1 ms]
+   Assert.Equal() Failure: Collections differ at index 1
+Expected: "s-u"
+Actual:   "new-p"
+  Failed ControlServer.Tests.Batch7EnRouteAppendPlannerTests.ATiedPickupMergesIntoTheSameStationPickupBehindTheUnloadInsteadOfOpeningOneBeforeIt [1 ms]
+   Assert.Equal() Failure: Strings differ
+Expected: "s-p2"
+Actual:   null
+Failed!  - Failed:     4, Passed:    26, Skipped:     0, Total:    30, Duration: 284 ms - ControlServer.Tests.dll (net8.0)

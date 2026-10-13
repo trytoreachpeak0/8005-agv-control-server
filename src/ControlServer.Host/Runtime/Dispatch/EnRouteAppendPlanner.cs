@@ -85,6 +85,7 @@ public sealed class EnRouteAppendPlanner
         }
 
         EnRouteAppendPlacement? best = null;
+        int bestLoadsBeforeUnload = 0;
         // 每一个插入位被拒的理由都收着，最后挑一个报出去——不是碰上的第一个（批次7-06，control-server#211）。
         // 为什么不能是第一个，见 MostActionableRefusal。
         HashSet<string> refusals = new(StringComparer.Ordinal);
@@ -180,8 +181,16 @@ public sealed class EnRouteAppendPlanner
                     continue;
                 }
 
-                if (best is null || marginal < best.MarginalCostMm)
+                // 代价打平时先卸后装（FR-031 AC-8、ADR-cross-0055；control-server#647）：新取货紧挨在同站卸货之前或之后，
+                // 经过的站点序列一模一样，所以这两格必然打平。只按代价比，留下的是先试到的那格——在卸货之前，车装完就进入
+                // 取货停靠的离站等待，等满整段期限才卸同站的货。打平时改选同站先装后卸更少的那格；跨站打平两格的这个计数相同，
+                // 仍是先试到的留下。这只是偏好不是门禁：严格更便宜的那格照样胜出。
+                int loadsBeforeUnload = SameStationLoadsBeforeUnload(inserted);
+                if (best is null ||
+                    marginal < best.MarginalCostMm ||
+                    (marginal == best.MarginalCostMm && loadsBeforeUnload < bestLoadsBeforeUnload))
                 {
+                    bestLoadsBeforeUnload = loadsBeforeUnload;
                     // 对外的序位一律是整条旅程的序位：已完成的前缀原样占住 1..n，插入之后的那一段接着数。
                     // 插入位下标同样加上前缀长度，它说的是「这条需求落在整条计划的第几格」。
                     best = new EnRouteAppendPlacement(
@@ -394,6 +403,36 @@ public sealed class EnRouteAppendPlanner
         }
 
         return -1;
+    }
+
+    /// <summary>
+    /// 停靠序列里「同一站先有取货停靠、后有卸货停靠」的对数（control-server#647）。
+    /// </summary>
+    /// <remarks>
+    /// 不要求两者紧挨着：车已经带着这一站的货，先装再绕回来卸与先装再紧接着卸一样违反「混合站先完成全部卸货」。
+    /// 既有停靠彼此的先后插入时不变，它们贡献的对数在每一格里相同，所以比较的只是新停靠带来的差别。
+    /// </remarks>
+    private static int SameStationLoadsBeforeUnload(IReadOnlyList<EnRouteStop> stops)
+    {
+        int count = 0;
+        for (int pickup = 0; pickup < stops.Count; pickup++)
+        {
+            if (stops[pickup].Role != JourneyStopRoles.Pickup)
+            {
+                continue;
+            }
+
+            for (int unload = pickup + 1; unload < stops.Count; unload++)
+            {
+                if (stops[unload].Role == JourneyStopRoles.Unload &&
+                    stops[unload].StationRiotId == stops[pickup].StationRiotId)
+                {
+                    count++;
+                }
+            }
+        }
+
+        return count;
     }
 
     /// <summary>各分区在停靠序列上是否形成连续区段：一个分区出现过、断开过、又出现，就不是。</summary>
