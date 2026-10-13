@@ -12,7 +12,8 @@ namespace ControlServer.Tests;
 
 /// <summary>
 /// control-server#358：真车载端会话因本服务端在途单未就绪（<c>DEPARTURE_SAFETY_NOT_READY</c>）时，订单 FAILED 照样在同一轮记故障、
-/// Hold、急停；已经急停的车，会话随后未就绪，急停确认与 REQ-0248 重触发照样推进。闸门后仍然不给车载端发任何东西。
+/// 试 Hold。闸门后仍然不给车载端发任何东西。CP-0011（control-server#539）起订单 FAILED 不再急停：修订前这里同一轮还要急停，已经急停的车
+/// 在会话随后未就绪时，急停确认与 REQ-0248 重触发照样推进。
 /// </summary>
 /// <remarks>
 /// <para>
@@ -52,7 +53,7 @@ public sealed class FailedOrderBehindSessionGateTests
     [Trait("Requirement", "REQ-0232")]
     [Trait("Requirement", "REQ-0234")]
     [Trait("Requirement", "REQ-0246")]
-    public async Task AFailedPickupOrderBehindTheGateIsRecordedHeldAndStoppedInTheSameRound()
+    public async Task AFailedPickupOrderBehindTheGateIsRecordedHeldButNotStoppedInTheSameRound()
     {
         await using RuntimeFixture fixture = await DispatchedToPickupAsync();
         JourneyRuntimeRow dispatched = await fixture.RuntimeAsync();
@@ -64,7 +65,7 @@ public sealed class FailedOrderBehindSessionGateTests
         await TickAndHearAsync(fixture);
 
         await AssertSessionStillNotReadyAsync(fixture);
-        await AssertRecordedHeldAndStoppedAsync(fixture, dispatched.PickupUpperId);
+        await AssertRecordedHeldButNotStoppedAsync(fixture, dispatched.PickupUpperId);
         Assert.Equal(before, await OutboundAsync(fixture));
     }
 
@@ -87,7 +88,7 @@ public sealed class FailedOrderBehindSessionGateTests
         await TickAndHearAsync(fixture);
 
         await AssertSessionStillNotReadyAsync(fixture);
-        await AssertRecordedHeldAndStoppedAsync(fixture, underWay.GateUpperId!);
+        await AssertRecordedHeldButNotStoppedAsync(fixture, underWay.GateUpperId!);
         await using (ControlServerDbContext reading = new(fixture.DbOptionsForTests))
         {
             FaultedVehicleCargoRow cargo = await reading.FaultedVehicleCargo.AsNoTracking().SingleAsync(Token);
@@ -98,25 +99,23 @@ public sealed class FailedOrderBehindSessionGateTests
     }
 
     /// <summary>
-    /// 会话就绪时单 FAILED、急停已发出（触发 Pending），随后会话因在途单未就绪：RIoT 锁上的下一轮把触发确认成 Confirmed；
-    /// 闩锁在故障未清、也没有人工解除的情况下掉了，下一轮按 REQ-0248 重触发。两轮都在闸门后，车载端一条都没收到，
-    /// 旅程码仍是 <c>VEHICLE_ORDER_FAILED</c>，不被闸门自己的码盖掉。
+    /// 会话就绪时单 FAILED、车还在动：不急停（CP-0011）。随后会话因在途单未就绪：别人锁上闩锁的那一轮不在上面记本服务端的一类，
+    /// 闩锁掉了也不触发。两轮都在闸门后，停车证明照常采样，车载端一条都没收到，旅程码仍是 <c>VEHICLE_ORDER_FAILED</c>，不被闸门自己的码盖掉。
     /// </summary>
     /// <remarks>
-    /// 修前这两件事都要等会话就绪：触发停在 Pending，闩锁掉了也没有第二次触发，码被写成 <c>ONBOARD_SESSION_NOT_READY</c>。
+    /// 修订前这里先触发，闸门后确认，闩锁掉了再按 REQ-0248 重触发。
     /// </remarks>
     [Fact]
     [Trait("Requirement", "REQ-0246")]
     [Trait("Requirement", "REQ-0248")]
-    public async Task AStopAlreadyTriggeredIsConfirmedAndRetriggeredWhileTheSessionIsNotReady()
+    public async Task AFailedOrderIsNeverStoppedWhileTheSessionIsNotReady()
     {
         await using RuntimeFixture fixture = await DispatchedToPickupAsync();
         JourneyRuntimeRow dispatched = await fixture.RuntimeAsync();
         fixture.Riot.MovementState = "MT_RUNNING";
         fixture.Riot.FailOrder(dispatched.PickupUpperId);
         await TickAndHearAsync(fixture);
-        Assert.Equal(RiotOrderCommandOutcome.Pending, await LatestTriggerOutcomeAsync(fixture));
-        Assert.Equal(1, await TriggerCountAsync(fixture));
+        Assert.Equal(0, await TriggerCountAsync(fixture));
 
         await OwnOrderRebuildTests.DropSessionOnOwnOrderAsync(fixture);
         Outbound before = await OutboundAsync(fixture);
@@ -126,7 +125,7 @@ public sealed class FailedOrderBehindSessionGateTests
         fixture.Riot.MovementState = "MT_FINISHED";
         await TickAndHearAsync(fixture);
         await AssertSessionStillNotReadyAsync(fixture);
-        Assert.Equal(RiotOrderCommandOutcome.Confirmed, await LatestTriggerOutcomeAsync(fixture));
+        Assert.Equal(0, await TriggerCountAsync(fixture));
         Assert.Equal(VehicleFaultEvidence.OrderFailed, (await fixture.RuntimeAsync()).BlockReasonCode);
         await AssertStopProofSampledThisRoundAsync(fixture);
 
@@ -134,7 +133,7 @@ public sealed class FailedOrderBehindSessionGateTests
         Unlatch(fixture);
         await TickAndHearAsync(fixture);
         await AssertSessionStillNotReadyAsync(fixture);
-        Assert.Equal(2, await TriggerCountAsync(fixture));
+        Assert.Equal(0, await TriggerCountAsync(fixture));
         Assert.Equal(VehicleFaultEvidence.OrderFailed, (await fixture.RuntimeAsync()).BlockReasonCode);
         await AssertStopProofSampledThisRoundAsync(fixture);
 
@@ -166,7 +165,7 @@ public sealed class FailedOrderBehindSessionGateTests
     [Trait("Requirement", "REQ-0232")]
     [Trait("Requirement", "REQ-0246")]
     [Trait("Requirement", "REQ-0248")]
-    public async Task AFailedOrderIsRecordedAndStoppedWhileTheReadySessionHasGoneSilent()
+    public async Task AFailedOrderIsRecordedButNotStoppedWhileTheReadySessionHasGoneSilent()
     {
         await using RuntimeFixture fixture = await DispatchedToPickupAsync();
         JourneyRuntimeRow dispatched = await fixture.RuntimeAsync();
@@ -182,16 +181,16 @@ public sealed class FailedOrderBehindSessionGateTests
         await TickSilentAsync(fixture);
 
         await AssertSessionStillReadyAsync(fixture);
-        await AssertRecordedHeldAndStoppedAsync(fixture, dispatched.PickupUpperId);
+        await AssertRecordedHeldButNotStoppedAsync(fixture, dispatched.PickupUpperId);
 
         Latch(fixture);
         fixture.Riot.MovementState = "MT_FINISHED";
         await TickSilentAsync(fixture);
-        Assert.Equal(RiotOrderCommandOutcome.Confirmed, await LatestTriggerOutcomeAsync(fixture));
+        Assert.Equal(0, await TriggerCountAsync(fixture));
 
         Unlatch(fixture);
         await TickSilentAsync(fixture);
-        Assert.Equal(2, await TriggerCountAsync(fixture));
+        Assert.Equal(0, await TriggerCountAsync(fixture));
         Assert.Equal(VehicleFaultEvidence.OrderFailed, (await fixture.RuntimeAsync()).BlockReasonCode);
         await AssertSessionStillReadyAsync(fixture);
 
@@ -291,7 +290,7 @@ public sealed class FailedOrderBehindSessionGateTests
         Assert.Equal(
             SessionReadiness.Ready,
             (await fixture.Context.SessionRecoveries.AsNoTracking().SingleAsync(Token)).Readiness);
-        await AssertRecordedHeldAndStoppedAsync(fixture, dispatched.PickupUpperId);
+        await AssertRecordedHeldButNotStoppedAsync(fixture, dispatched.PickupUpperId);
     }
 
     // ---- 夹具 ----------------------------------------------------------------------------------------------
@@ -315,20 +314,20 @@ public sealed class FailedOrderBehindSessionGateTests
     /// 这一轮之后：一条 <c>SuspectedBlocked</c> 故障（第 1 代、证据是订单 FAILED、已升级）；审计里对这张单发过一次 Hold，
     /// 急停触发一次、还在等闩锁（Pending）；旅程写 <c>VEHICLE_ORDER_FAILED</c>。
     /// </summary>
-    private static async Task AssertRecordedHeldAndStoppedAsync(RuntimeFixture fixture, string upperId)
+    private static async Task AssertRecordedHeldButNotStoppedAsync(RuntimeFixture fixture, string upperId)
     {
         await using ControlServerDbContext reading = new(fixture.DbOptionsForTests);
         VehicleFaultStateRow fault = Assert.Single(await reading.VehicleFaultStates.AsNoTracking().ToArrayAsync(Token));
         Assert.Equal(
-            (VehicleFaultLevel.SuspectedBlocked, 1L, VehicleFaultEvidence.OrderFailed, true),
+            (VehicleFaultLevel.SuspectedBlocked, 1L, VehicleFaultEvidence.OrderFailed, false),
             (fault.Level, fault.FaultGeneration, fault.EvidenceCode, fault.EscalatedAt is not null));
 
         RiotOrderCommandAuditRow[] audit = await reading.RiotOrderCommandAudit.AsNoTracking().ToArrayAsync(Token);
         RiotOrderCommandAuditRow hold = Assert.Single(audit, row => row.CommandType == RiotCommandTypeNames.OrderHold);
         Assert.Equal((upperId, RiotOrderCommandOutcome.Failed, (long?)1), (hold.TargetUpperId, hold.Outcome, hold.FaultGeneration));
-        RiotOrderCommandAuditRow trigger = Assert.Single(
-            audit, row => row.CommandType == RiotCommandTypeNames.TriggerEmergency);
-        Assert.Equal(RiotOrderCommandOutcome.Pending, trigger.Outcome);
+        // 订单 FAILED 不急停（REQ-0246 按 CP-0011 修订）：既不触发，也不在别人的闩锁上记本服务端的一类。
+        Assert.DoesNotContain(audit, row => row.CommandType is RiotCommandTypeNames.TriggerEmergency or
+            EmergencyStopSupervisor.LatchAdoptedCommandType);
 
         Assert.Equal(VehicleFaultEvidence.OrderFailed, (await reading.JourneyRuntimes.AsNoTracking().SingleAsync(Token)).BlockReasonCode);
     }
@@ -398,20 +397,15 @@ public sealed class FailedOrderBehindSessionGateTests
         fixture.Context.ChangeTracker.Clear();
     }
 
+    /// <summary>本服务端要过的急停：发出的触发，加上记在别人闩锁上的一类（CP-0011）。</summary>
     private static async Task<int> TriggerCountAsync(RuntimeFixture fixture)
     {
         await using ControlServerDbContext reading = new(fixture.DbOptionsForTests);
         return await reading.RiotOrderCommandAudit.AsNoTracking()
-            .CountAsync(row => row.CommandType == RiotCommandTypeNames.TriggerEmergency, Token);
-    }
-
-    private static async Task<RiotOrderCommandOutcome?> LatestTriggerOutcomeAsync(RuntimeFixture fixture)
-    {
-        await using ControlServerDbContext reading = new(fixture.DbOptionsForTests);
-        RiotOrderCommandAuditRow[] triggers = await reading.RiotOrderCommandAudit.AsNoTracking()
-            .Where(row => row.CommandType == RiotCommandTypeNames.TriggerEmergency)
-            .ToArrayAsync(Token);
-        return triggers.OrderBy(row => row.AttemptNumber).LastOrDefault()?.Outcome;
+            .CountAsync(
+                row => row.CommandType == RiotCommandTypeNames.TriggerEmergency ||
+                       row.CommandType == EmergencyStopSupervisor.LatchAdoptedCommandType,
+                Token);
     }
 
     private static async Task<RuntimeFixture> DispatchedToPickupAsync()

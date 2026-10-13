@@ -25,6 +25,13 @@ public sealed class EmergencyStopReleaseOptions
     public bool Enabled { get; set; }
 
     public string CredentialEnvironmentVariable { get; set; } = "CONTROL_SERVER_EMERGENCY_RELEASE_CREDENTIAL";
+
+    /// <summary>
+    /// The credential of the loaded-vehicle entry (<see cref="LoadedEmergencyStopReleaseEndpoints"/>, CP-0011). A separate
+    /// variable, so that the empty-vehicle credential does not release a loaded vehicle. Not checked at start-up: unset, that
+    /// entry answers 503 and the empty-vehicle entry works as before.
+    /// </summary>
+    public string LoadedCredentialEnvironmentVariable { get; set; } = "CONTROL_SERVER_EMERGENCY_LOADED_RELEASE_CREDENTIAL";
 }
 
 public sealed class EmergencyStopReleaseOptionsValidator : IValidateOptions<EmergencyStopReleaseOptions>

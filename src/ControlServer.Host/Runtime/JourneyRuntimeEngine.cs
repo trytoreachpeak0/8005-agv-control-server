@@ -503,9 +503,39 @@ public sealed partial class JourneyRuntimeEngine(
             {
                 await new WaitingJourneyWatch(dbContext, vehicleFacts, chargingPolicy, runtimeOptions, timeProvider, logger)
                     .ObserveAsync(cancellationToken).ConfigureAwait(false);
+                await WatchOpenStopsAsync(cancellationToken).ConfigureAwait(false);
             }
         }
     }
+
+    /// <summary>
+    /// control-server#539 review H-1: every vehicle on which this server has an emergency stop open has that stop watched every
+    /// round -- settled, re-triggered when a latch comes off while the stop stands (REQ-0248 as revised by CP-0011) -- whether
+    /// or not this round saw a symptom on it (<see cref="VehicleFaultCoordinator.WatchOpenStopAsync"/>). At the end of the
+    /// round, however it ended, beside the waiting-journey watch and for the same reason: an engine that is stuck is exactly
+    /// when a stop must not be forgotten. One vehicle's failed read does not keep the next one from being watched.
+    /// </summary>
+    private async Task WatchOpenStopsAsync(CancellationToken cancellationToken)
+    {
+        foreach (FleetVehicle vehicle in roster.Vehicles)
+        {
+            try
+            {
+                await faults.WatchOpenStopAsync(new EmergencyStopSubject(vehicle.AgvId, vehicle.VehicleKey), cancellationToken)
+                    .ConfigureAwait(false);
+            }
+            catch (Exception error) when (error is not OperationCanceledException || !cancellationToken.IsCancellationRequested)
+            {
+                LogOpenStopWatchFailed(logger, vehicle.AgvId, error);
+            }
+        }
+    }
+
+    private static readonly Action<ILogger, string, Exception?> LogOpenStopWatchFailed =
+        LoggerMessage.Define<string>(
+            LogLevel.Error,
+            new EventId(2308, nameof(LogOpenStopWatchFailed)),
+            "The open emergency stop on {AgvId} could not be watched this round; it is watched again next round.");
 
     private async Task ExecuteRoundAsync(CancellationToken cancellationToken)
     {

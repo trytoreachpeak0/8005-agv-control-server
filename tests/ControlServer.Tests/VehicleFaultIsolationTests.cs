@@ -498,9 +498,12 @@ public sealed class VehicleFaultIsolationTests
             VehicleFaultEvidence.NavigationFailed, WithOrder());
 
         Assert.True(decision.StopProof.Proven);
-        Assert.False(decision.Escalated);
         Assert.True((await fixture.ReadFaultAsync()).StopProven);
+        // The latch is somebody else's, so the stop this server wants is recorded on it without a call (CP-0011): no call goes
+        // out, which is what this case has always guarded.
+        Assert.True(decision.Escalated);
         Assert.Empty(fixture.Riot.EmergencyCalls);
+        Assert.Single(await fixture.ReadRecordedClassesAsync());
     }
 
     [Theory]
@@ -783,13 +786,13 @@ public sealed class VehicleFaultIsolationTests
         await using Fixture fixture = await Fixture.CreateAsync();
         fixture.Motion.Script = [Moving(Now)];
         fixture.Riot.LatchAfterTrigger = RiotVehicleEmergencyObservation.Ok;
-        await fixture.ObserveAsync(VehicleFaultEvidence.OrderFailed, WithOrder());
+        await fixture.ObserveAsync(VehicleFaultEvidence.NavigationFailed, WithOrder());
 
         fixture.Clock.Advance(TimeSpan.FromSeconds(1));
-        await fixture.ObserveAsync(VehicleFaultEvidence.OrderFailed, WithOrder());
+        await fixture.ObserveAsync(VehicleFaultEvidence.NavigationFailed, WithOrder());
         fixture.Riot.Latch = RiotVehicleEmergencyObservation.CanRecover;
         fixture.Clock.Advance(TimeSpan.FromSeconds(1));
-        VehicleFaultDecision third = await fixture.ObserveAsync(VehicleFaultEvidence.OrderFailed, WithOrder());
+        VehicleFaultDecision third = await fixture.ObserveAsync(VehicleFaultEvidence.NavigationFailed, WithOrder());
 
         // Not escalated once the latch has engaged: the latch is the stop proof (CP-0003), so the
         // third evaluation watches the latch instead of asking for the stop again.
@@ -811,12 +814,12 @@ public sealed class VehicleFaultIsolationTests
         await using Fixture fixture = await Fixture.CreateAsync();
         fixture.Motion.Script = [Moving(Now)];
         fixture.Riot.LatchAfterTrigger = RiotVehicleEmergencyObservation.Ok;
-        await fixture.ObserveAsync(VehicleFaultEvidence.OrderFailed, WithOrder());
+        await fixture.ObserveAsync(VehicleFaultEvidence.NavigationFailed, WithOrder());
 
         fixture.Riot.Latch = RiotVehicleEmergencyObservation.CanRecover;
         fixture.Clock.Advance(TimeSpan.FromSeconds(1));
         fixture.Motion.Script = [Stopped(fixture.Clock.GetUtcNow(), 4)];
-        VehicleFaultDecision stopped = await fixture.ObserveAsync(VehicleFaultEvidence.OrderFailed, WithOrder());
+        VehicleFaultDecision stopped = await fixture.ObserveAsync(VehicleFaultEvidence.NavigationFailed, WithOrder());
 
         Assert.False(stopped.Escalated);
         Assert.Single(fixture.Riot.EmergencyCalls);
@@ -840,11 +843,11 @@ public sealed class VehicleFaultIsolationTests
     {
         await using Fixture fixture = await Fixture.CreateAsync();
         fixture.Motion.Script = [Moving(Now)];
-        await fixture.ObserveAsync(VehicleFaultEvidence.OrderFailed, WithOrder());
+        await fixture.ObserveAsync(VehicleFaultEvidence.NavigationFailed, WithOrder());
 
         fixture.Clock.Advance(TimeSpan.FromSeconds(1));
         fixture.Motion.Script = [LatchedStillRunning(fixture.Clock.GetUtcNow())];
-        VehicleFaultDecision latched = await fixture.ObserveAsync(VehicleFaultEvidence.OrderFailed, WithOrder());
+        VehicleFaultDecision latched = await fixture.ObserveAsync(VehicleFaultEvidence.NavigationFailed, WithOrder());
 
         Assert.True(latched.StopProof.Proven);
         Assert.Empty(latched.StopProof.MissingFacts);
@@ -868,9 +871,9 @@ public sealed class VehicleFaultIsolationTests
 
         fixture.Clock.Advance(TimeSpan.FromSeconds(1));
         fixture.Motion.Script = [StandingBetweenStations(fixture.Clock.GetUtcNow())];
-        VehicleFaultDecision next = await fixture.ObserveAsync(VehicleFaultEvidence.OrderFailed, WithOrder());
+        VehicleFaultDecision next = await fixture.ObserveAsync(VehicleFaultEvidence.NavigationFailed, WithOrder());
         fixture.Clock.Advance(TimeSpan.FromSeconds(1));
-        VehicleFaultDecision later = await fixture.ObserveAsync(VehicleFaultEvidence.OrderFailed, WithOrder());
+        VehicleFaultDecision later = await fixture.ObserveAsync(VehicleFaultEvidence.NavigationFailed, WithOrder());
 
         Assert.Equal(EmergencyStopAction.Recovered, released.Action);
         Assert.False(next.Escalated);
@@ -890,7 +893,7 @@ public sealed class VehicleFaultIsolationTests
     {
         await using Fixture fixture = await Fixture.CreateAsync();
         fixture.Motion.Script = [Moving(Now)];
-        await fixture.ObserveAsync(VehicleFaultEvidence.OrderFailed, WithOrder());
+        await fixture.ObserveAsync(VehicleFaultEvidence.NavigationFailed, WithOrder());
         fixture.Clock.Advance(TimeSpan.FromSeconds(1));
         EmergencyStopDecision issued = await fixture.Supervisor.ReleaseOnConfirmationAsync(
             new EmergencyStopReleaseConfirmation(
@@ -900,7 +903,7 @@ public sealed class VehicleFaultIsolationTests
         fixture.Riot.Latch = RiotVehicleEmergencyObservation.Ok;
         fixture.Clock.Advance(TimeSpan.FromMilliseconds(3600));
         fixture.Motion.Script = [StandingBetweenStations(fixture.Clock.GetUtcNow())];
-        VehicleFaultDecision next = await fixture.ObserveAsync(VehicleFaultEvidence.OrderFailed, WithOrder());
+        VehicleFaultDecision next = await fixture.ObserveAsync(VehicleFaultEvidence.NavigationFailed, WithOrder());
 
         Assert.Equal(EmergencyStopAction.RecoveryUnconfirmed, issued.Action);
         Assert.False(next.Escalated);
@@ -924,7 +927,7 @@ public sealed class VehicleFaultIsolationTests
         fixture.Clock.Advance(TimeSpan.FromSeconds(1));
         DateTimeOffset at = fixture.Clock.GetUtcNow();
         fixture.Motion.Script = [moving ? Moving(at) : Unreadable(at)];
-        VehicleFaultDecision next = await fixture.ObserveAsync(VehicleFaultEvidence.OrderFailed, WithOrder());
+        VehicleFaultDecision next = await fixture.ObserveAsync(VehicleFaultEvidence.NavigationFailed, WithOrder());
 
         Assert.True(next.Escalated);
         Assert.Equal(2, (await fixture.ReadTriggersAsync()).Count);
@@ -940,10 +943,145 @@ public sealed class VehicleFaultIsolationTests
         await using Fixture fixture = await Fixture.CreateAsync();
         fixture.Motion.Script = [StandingBetweenStations(Now)];
 
-        VehicleFaultDecision decision = await fixture.ObserveAsync(VehicleFaultEvidence.OrderFailed, WithOrder());
+        VehicleFaultDecision decision = await fixture.ObserveAsync(VehicleFaultEvidence.NavigationFailed, WithOrder());
 
         Assert.True(decision.Escalated);
         Assert.Contains(StopProof.PositionUnknown, decision.StopProof.MissingFacts);
+    }
+
+    /// <summary>
+    /// A vehicle a person released stands between stations, and its doors are not proven locked again: that is REQ-0246's own
+    /// trigger, so the exemption the release gave does not cover it and the vehicle is stopped again (CP-0011 kept the bound the
+    /// doors-locked release used to have). The same reading with the doors locked stays exempt.
+    /// </summary>
+    [Theory]
+    [InlineData(true)]
+    [InlineData(false)]
+    [Trait("Requirement", "REQ-0246")]
+    [Trait("Requirement", "REQ-0247")]
+    public async Task AReleaseOnConfirmationDoesNotCoverDoorsNotProvenLockedAgain(bool doorsNotProvenLocked)
+    {
+        await using Fixture fixture = await Fixture.CreateAsync();
+        await fixture.LatchThenReleaseOnConfirmationAsync();
+
+        fixture.Clock.Advance(TimeSpan.FromSeconds(1));
+        fixture.Motion.Script = [StandingBetweenStations(fixture.Clock.GetUtcNow())];
+        VehicleFaultDecision next = await fixture.ObserveAsync(
+            VehicleFaultEvidence.DoorNotProvenLocked, WithOrder() with { DoorsNotProvenLocked = doorsNotProvenLocked });
+
+        Assert.Equal(doorsNotProvenLocked, next.Escalated);
+        Assert.Equal(doorsNotProvenLocked ? 2 : 1, (await fixture.ReadTriggersAsync()).Count);
+    }
+
+    // ---- CP-0011: an order FAILED is not stopped; a stop on a latch somebody else raised is recorded ---------------
+
+    /// <summary>
+    /// REQ-0246 as revised by CP-0011: an order FAILED on a vehicle that reads as moving between stations -- the reading that
+    /// escalated it before -- is recorded and blocks dispatch, and nothing asks for a stop, then or on later evaluations.
+    /// </summary>
+    [Fact]
+    [Trait("Requirement", "REQ-0246")]
+    [Trait("Requirement", "REQ-0232")]
+    public async Task AnOrderFailedIsRecordedButNeverStopped()
+    {
+        await using Fixture fixture = await Fixture.CreateAsync();
+        fixture.Motion.Script = [Moving(Now)];
+
+        VehicleFaultDecision first = await fixture.ObserveAsync(VehicleFaultEvidence.OrderFailed, WithOrder());
+        fixture.Clock.Advance(TimeSpan.FromSeconds(1));
+        fixture.Motion.Script = [Unreadable(fixture.Clock.GetUtcNow())];
+        VehicleFaultDecision second = await fixture.ObserveAsync(VehicleFaultEvidence.OrderFailed, WithOrder());
+
+        Assert.False(first.Escalated);
+        Assert.False(second.Escalated);
+        Assert.Empty(fixture.Riot.EmergencyCalls);
+        VehicleFaultFact fault = await fixture.ReadFaultAsync();
+        Assert.Equal((VehicleFaultLevel.SuspectedBlocked, (DateTimeOffset?)null), (fault.Level, fault.EscalatedAt));
+    }
+
+    /// <summary>
+    /// The same on a vehicle somebody else has latched: an order FAILED records no class of this server's on that latch, so
+    /// when the latch comes off nothing is re-triggered either.
+    /// </summary>
+    [Fact]
+    [Trait("Requirement", "REQ-0246")]
+    [Trait("Requirement", "REQ-0248")]
+    public async Task AnOrderFailedOnALatchSomebodyElseRaisedRecordsNoClass()
+    {
+        await using Fixture fixture = await Fixture.CreateAsync();
+        fixture.Riot.Latch = RiotVehicleEmergencyObservation.CanRecover;
+        fixture.Motion.Script = [Moving(Now)];
+        await fixture.ObserveAsync(VehicleFaultEvidence.OrderFailed, WithOrder());
+
+        fixture.Riot.Latch = RiotVehicleEmergencyObservation.Ok;
+        fixture.Clock.Advance(TimeSpan.FromSeconds(1));
+        fixture.Motion.Script = [StandingBetweenStations(fixture.Clock.GetUtcNow())];
+        await fixture.ObserveAsync(VehicleFaultEvidence.OrderFailed, WithOrder());
+
+        Assert.Empty(fixture.Riot.EmergencyCalls);
+        Assert.Empty(await fixture.ReadRecordedClassesAsync());
+    }
+
+    /// <summary>
+    /// The same under a held button (CP-0011 decision table, row 4; review L-6): an order FAILED while RIoT reports
+    /// <c>CAN_NOT_RECOVER</c> is recorded as a confirmed isolation, and still records no class of this server's -- so once the
+    /// button is released and the latch cleared at its own entry, nothing is triggered.
+    /// </summary>
+    [Fact]
+    [Trait("Requirement", "REQ-0246")]
+    [Trait("Requirement", "REQ-0233")]
+    public async Task AnOrderFailedUnderAHeldButtonRecordsNoClassEither()
+    {
+        await using Fixture fixture = await Fixture.CreateAsync();
+        fixture.Riot.Latch = RiotVehicleEmergencyObservation.CanNotRecover;
+        fixture.Motion.Script = [Moving(Now)];
+        VehicleFaultDecision held = await fixture.ObserveAsync(VehicleFaultEvidence.OrderFailed, WithOrder());
+
+        fixture.Riot.Latch = RiotVehicleEmergencyObservation.Ok;
+        fixture.Clock.Advance(TimeSpan.FromSeconds(1));
+        fixture.Motion.Script = [StandingBetweenStations(fixture.Clock.GetUtcNow())];
+        await fixture.ObserveAsync(VehicleFaultEvidence.OrderFailed, WithOrder());
+
+        Assert.Equal((VehicleFaultLevel.ConfirmedIsolated, false), (held.Level, held.Escalated));
+        Assert.Empty(fixture.Riot.EmergencyCalls);
+        Assert.Empty(await fixture.ReadRecordedClassesAsync());
+    }
+
+    /// <summary>
+    /// REQ-0248 as revised by CP-0011: a symptom that asks for a stop on a vehicle somebody else has already latched -- a
+    /// button, a bumper, RIoT, Matrix -- gets this server's class recorded on that latch without a call, once per generation.
+    /// When anything other than this server clears the latch while the fault stands, the next evaluation triggers it.
+    /// </summary>
+    /// <remarks>
+    /// Before CP-0011 a latched vehicle was never escalated: the stop this server wanted left no trace, and the release at RIoT
+    /// released this server's reason with it.
+    /// </remarks>
+    [Fact]
+    [Trait("Requirement", "REQ-0248")]
+    public async Task AStopAskedForOnALatchSomebodyElseRaisedIsRecordedThenReTriggeredWhenThatLatchClears()
+    {
+        await using Fixture fixture = await Fixture.CreateAsync();
+        fixture.Riot.Latch = RiotVehicleEmergencyObservation.CanRecover;
+        fixture.Motion.Script = [Moving(Now)];
+
+        VehicleFaultDecision first = await fixture.ObserveAsync(VehicleFaultEvidence.NavigationFailed, WithOrder());
+        fixture.Clock.Advance(TimeSpan.FromSeconds(1));
+        VehicleFaultDecision second = await fixture.ObserveAsync(VehicleFaultEvidence.NavigationFailed, WithOrder());
+
+        Assert.True(first.Escalated);
+        Assert.False(second.Escalated);
+        Assert.Empty(fixture.Riot.EmergencyCalls);
+        RiotOrderCommandAttempt recorded = Assert.Single(await fixture.ReadRecordedClassesAsync());
+        Assert.Equal(RiotOrderCommandOutcome.Confirmed, recorded.Outcome);
+
+        // Somebody releases at RIoT or Matrix; the fault still stands.
+        fixture.Riot.Latch = RiotVehicleEmergencyObservation.Ok;
+        fixture.Clock.Advance(TimeSpan.FromSeconds(1));
+        fixture.Motion.Script = [Stopped(fixture.Clock.GetUtcNow(), 4)];
+        await fixture.ObserveAsync(VehicleFaultEvidence.NavigationFailed, WithOrder());
+
+        Assert.Single(fixture.Riot.EmergencyCalls, call => call.CommandType == RiotCommandTypeNames.TriggerEmergency);
+        Assert.Single(await fixture.ReadRecordedClassesAsync());
     }
 
     /// <summary>
@@ -1468,7 +1606,7 @@ public sealed class VehicleFaultIsolationTests
         public async Task<EmergencyStopDecision> LatchThenReleaseOnConfirmationAsync()
         {
             Motion.Script = [Moving(Clock.GetUtcNow())];
-            await ObserveAsync(VehicleFaultEvidence.OrderFailed, WithOrder());
+            await ObserveAsync(VehicleFaultEvidence.NavigationFailed, WithOrder());
 
             Clock.Advance(TimeSpan.FromSeconds(1));
             Riot.LatchAfterRelease = RiotVehicleEmergencyObservation.Ok;
@@ -1520,6 +1658,13 @@ public sealed class VehicleFaultIsolationTests
         public Task<IReadOnlyList<RiotOrderCommandAttempt>> ReadTriggersAsync() =>
             Audit.ReadAttemptsAsync(
                 RiotCommandTypeNames.TriggerEmergency,
+                $"vehicle:{Subject.DeviceKey}",
+                TestContext.Current.CancellationToken);
+
+        /// <summary>This server's classes recorded on a latch somebody else raised, without a call (CP-0011).</summary>
+        public Task<IReadOnlyList<RiotOrderCommandAttempt>> ReadRecordedClassesAsync() =>
+            Audit.ReadAttemptsAsync(
+                EmergencyStopSupervisor.LatchAdoptedCommandType,
                 $"vehicle:{Subject.DeviceKey}",
                 TestContext.Current.CancellationToken);
 

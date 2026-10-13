@@ -44,7 +44,7 @@ public sealed class FaultedCargoBindingLifecycleTests
     // ---- 一、货离开车时释放，货还在车上时保留 ----------------------------------------------------------------------------
 
     /// <summary>
-    /// cs#335 的入口：有货去卸货站，门锁故障、急停锁住，按住的单在 RIoT 被取消，门锁恢复后人工清除，引擎按「单在 RIoT 被取消」重建并确认。
+    /// cs#335 的入口：有货去卸货站，门锁故障、急停锁住，按住的单在 RIoT 被取消，门锁恢复、人解除急停（CP-0011）后人工清除，引擎按「单在 RIoT 被取消」重建并确认。
     /// 货还在车上，绑定一直在效；到站卸完、车上什么都不剩的那一刻，绑定以 <c>UNLOADED_WITH_NOTHING_LEFT_ON_BOARD</c> 释放。
     /// </summary>
     /// <remarks>
@@ -337,7 +337,7 @@ public sealed class FaultedCargoBindingLifecycleTests
     // ---- 二、新故障只认本趟旅程的货 --------------------------------------------------------------------------------------
 
     /// <summary>
-    /// 探针 P2：库里留着上一趟的在效绑定，这一趟装着自己的货在路上因门锁被按住、锁住，门锁恢复后自动解除。人按「继续原单」：修之前被
+    /// 探针 P2：库里留着上一趟的在效绑定，这一趟装着自己的货在路上因门锁被按住、锁住，门锁恢复后人经三类入口解除（CP-0011；修订前是自动解除）。人按「继续原单」：修之前被
     /// <c>RESUME_CARGO_BINDING_MISMATCH</c> 拒绝——这次故障沿用了上一趟那条绑定，没给这一趟的货建绑定。现在上一趟那条以
     /// <c>NOT_CARGO_OF_THE_VEHICLES_CURRENT_JOURNEY</c> 释放，这一趟的货自己绑上，继续原单成功，这条绑定随之释放。
     /// </summary>
@@ -360,6 +360,8 @@ public sealed class FaultedCargoBindingLifecycleTests
         await LatchForTheDoorsAsync(fixture, upperId);
         await ReportLockedAsync(fixture);
         await DriveOneRoundAsync(fixture);
+        // The doors reading locked release nothing (CP-0011): a person who repaired the lock releases the stop.
+        await fixture.ReleaseByAPersonAsync();
         fixture.EmergencyLatched = false;
         await DriveOneRoundAsync(fixture);
         await DriveOneRoundAsync(fixture);
@@ -464,6 +466,8 @@ public sealed class FaultedCargoBindingLifecycleTests
         await LatchForTheDoorsAsync(fixture, upperId);
         await ReportLockedAsync(fixture);
         await DriveOneRoundAsync(fixture);
+        // The doors reading locked release nothing (CP-0011): a person who repaired the lock releases the stop.
+        await fixture.ReleaseByAPersonAsync();
         fixture.EmergencyLatched = false;
         await DriveOneRoundAsync(fixture);
         await DriveOneRoundAsync(fixture);
@@ -856,6 +860,8 @@ public sealed class FaultedCargoBindingLifecycleTests
         fixture.UnfinishedOrderIds = [];
         await ReportLockedAsync(fixture);
         await DriveOneRoundAsync(fixture);
+        // The doors reading locked release nothing (CP-0011): a person who repaired the lock releases the stop.
+        await fixture.ReleaseByAPersonAsync();
         fixture.EmergencyLatched = false;
         for (int round = 0; round < 4; round++)
         {

@@ -1028,6 +1028,244 @@ public sealed class EmergencyStopSupervisorTests
             orders: Orders(hasUnfinishedOrder: false)));
     }
 
+    // ---- CP-0011 (requirements baseline v1.10.0): three classes of emergency stop -----------
+
+    /// <summary>
+    /// A vehicle somebody else has latched -- a button (<c>CAN_NOT_RECOVER</c>), a bumper, RIoT or Matrix
+    /// (<c>CAN_RECOVER</c>) -- gets this server's class recorded on that latch: one settled row of its own type, no
+    /// <c>triggerEmergency</c> call, no trigger row (REQ-0248 as revised).
+    /// </summary>
+    [Theory]
+    [InlineData(RiotVehicleEmergencyObservation.CanRecover)]
+    [InlineData(RiotVehicleEmergencyObservation.CanNotRecover)]
+    [Trait("Requirement", "REQ-0248")]
+    public async Task ALatchSomebodyElseRaisedGetsThisServersClassRecordedWithoutACall(string latch)
+    {
+        await using Fixture fixture = await Fixture.CreateAsync();
+        fixture.Riot.Latch = latch;
+
+        EmergencyStopDecision decision = await fixture.Supervisor.RequestStopAsync(
+            Request(EmergencyStopRequestSource.Automatic, null, faultGeneration: 1), TestContext.Current.CancellationToken);
+        fixture.Clock.Advance(TimeSpan.FromSeconds(1));
+        EmergencyStopDecision again = await fixture.Supervisor.RequestStopAsync(
+            Request(EmergencyStopRequestSource.Automatic, null, faultGeneration: 1), TestContext.Current.CancellationToken);
+
+        Assert.Equal(EmergencyStopAction.LatchConfirmed, decision.Action);
+        Assert.Contains(EmergencyStopSupervisor.LatchAdoptedReason, decision.Reasons);
+        Assert.Empty(fixture.Gateway.EmergencyCalls);
+        Assert.Empty(await fixture.ReadTriggersAsync());
+        RiotOrderCommandAttempt recorded = Assert.Single(await fixture.ReadRecordedClassesAsync());
+        Assert.Equal((RiotOrderCommandOutcome.Confirmed, (long?)1), (recorded.Outcome, recorded.FaultGeneration));
+        Assert.Contains($"\"emergencyState\":\"{latch}\"", recorded.ReceiptJson, StringComparison.Ordinal);
+        Assert.DoesNotContain(EmergencyStopSupervisor.LatchAdoptedReason, again.Reasons);
+        Assert.Empty(fixture.Gateway.EmergencyCalls);
+    }
+
+    /// <summary>
+    /// The class recorded on somebody else's latch is this server's like a triggered one: whoever clears the latch at
+    /// RIoT, Matrix or the vehicle's panel, the next evaluation re-triggers it at once and alarms.
+    /// </summary>
+    [Fact]
+    [Trait("Requirement", "REQ-0248")]
+    public async Task ARecordedClassIsReTriggeredWhenAnotherEntryClearsTheLatch()
+    {
+        await using Fixture fixture = await Fixture.CreateAsync();
+        fixture.Riot.Latch = RiotVehicleEmergencyObservation.CanRecover;
+        await fixture.Supervisor.RequestStopAsync(
+            Request(EmergencyStopRequestSource.Automatic, null, faultGeneration: 1), TestContext.Current.CancellationToken);
+
+        fixture.Riot.Latch = RiotVehicleEmergencyObservation.Ok;
+        fixture.Clock.Advance(TimeSpan.FromSeconds(1));
+        EmergencyStopDecision decision = await fixture.Supervisor.EvaluateAsync(Subject, TestContext.Current.CancellationToken);
+
+        Assert.Equal(EmergencyStopAction.ReTriggeredAfterUnexpectedRelease, decision.Action);
+        Assert.Equal(EmergencyStopSupervisor.UnexpectedReleaseAlarm, decision.AlarmCode);
+        Assert.Equal([RiotCommandTypeNames.TriggerEmergency], fixture.Gateway.EmergencyCalls.Select(call => call.CommandType));
+        Assert.Equal((long?)1, Assert.Single(await fixture.ReadTriggersAsync()).FaultGeneration);
+    }
+
+    /// <summary>
+    /// A latch with no class of this server's on it is somebody else's alone: cleared wherever it was raised, this server
+    /// neither objects nor re-triggers.
+    /// </summary>
+    [Fact]
+    [Trait("Requirement", "REQ-0248")]
+    public async Task ALatchWithNoClassOfThisServersIsLeftAloneWhenCleared()
+    {
+        await using Fixture fixture = await Fixture.CreateAsync();
+        fixture.Riot.Latch = RiotVehicleEmergencyObservation.CanRecover;
+        EmergencyStopDecision latched = await fixture.Supervisor.EvaluateAsync(Subject, TestContext.Current.CancellationToken);
+        fixture.Riot.Latch = RiotVehicleEmergencyObservation.Ok;
+        fixture.Clock.Advance(TimeSpan.FromSeconds(1));
+        EmergencyStopDecision cleared = await fixture.Supervisor.EvaluateAsync(Subject, TestContext.Current.CancellationToken);
+
+        Assert.Equal((EmergencyStopAction.None, EmergencyStopAction.None), (latched.Action, cleared.Action));
+        Assert.Empty(fixture.Gateway.EmergencyCalls);
+        Assert.Empty(await fixture.ReadRecordedClassesAsync());
+    }
+
+    /// <summary>
+    /// A newer fault generation on a vehicle still latched records a class of its own: the release rules compare the
+    /// episode's generation with the fault's, and joined to the old one it could never be released.
+    /// </summary>
+    [Fact]
+    [Trait("Requirement", "REQ-0248")]
+    public async Task ANewerGenerationOnALatchedVehicleRecordsItsOwnClass()
+    {
+        await using Fixture fixture = await Fixture.CreateAsync();
+        fixture.Riot.Latch = RiotVehicleEmergencyObservation.CanRecover;
+        await fixture.Supervisor.RequestStopAsync(
+            Request(EmergencyStopRequestSource.Automatic, null, faultGeneration: 1), TestContext.Current.CancellationToken);
+        fixture.Clock.Advance(TimeSpan.FromSeconds(1));
+        await fixture.Supervisor.RequestStopAsync(
+            Request(EmergencyStopRequestSource.Automatic, null, faultGeneration: 2), TestContext.Current.CancellationToken);
+
+        Assert.Equal(
+            [(long?)1, 2],
+            (await fixture.ReadRecordedClassesAsync()).Select(row => row.FaultGeneration));
+        Assert.Empty(fixture.Gateway.EmergencyCalls);
+    }
+
+    /// <summary>
+    /// The class-three entry for an empty vehicle (REQ-0356) releases a recorded class as it does a triggered one -- it is
+    /// "raised by 8005" -- and once released, the latch reading OK is not an unexpected release.
+    /// </summary>
+    [Fact]
+    [Trait("Requirement", "REQ-0356")]
+    public async Task ARecordedClassIsReleasedThroughTheClassThreeEntry()
+    {
+        await using Fixture fixture = await Fixture.CreateAsync();
+        fixture.Riot.Latch = RiotVehicleEmergencyObservation.CanRecover;
+        fixture.Gateway.LatchAfterRelease = RiotVehicleEmergencyObservation.Ok;
+        await fixture.Supervisor.RequestStopAsync(
+            Request(EmergencyStopRequestSource.Automatic, null, faultGeneration: 1), TestContext.Current.CancellationToken);
+
+        EmergencyStopDecision released = await fixture.Supervisor.ReleaseOnConfirmationAsync(
+            Confirmation(), TestContext.Current.CancellationToken);
+        fixture.Clock.Advance(TimeSpan.FromSeconds(1));
+        EmergencyStopDecision after = await fixture.Supervisor.EvaluateAsync(Subject, TestContext.Current.CancellationToken);
+
+        Assert.Equal(EmergencyStopAction.Recovered, released.Action);
+        Assert.Equal(EmergencyStopAction.None, after.Action);
+        Assert.Equal([RiotCommandTypeNames.CancelEmergency], fixture.Gateway.EmergencyCalls.Select(call => call.CommandType));
+    }
+
+    /// <summary>
+    /// The loaded release (REQ-0356 as revised by CP-0011): no "empty" confirmation, and the one unfinished order this
+    /// server owns and RIoT lists PAUSED stays. The release is read back as one on confirmation, so the fault coordinator
+    /// does not stop the vehicle again for want of a station alone.
+    /// </summary>
+    [Fact]
+    [Trait("Requirement", "REQ-0356")]
+    public async Task TheLoadedReleaseLetsThisServersPausedOrderStay()
+    {
+        await using Fixture fixture = await Fixture.CreateAsync();
+        fixture.Gateway.LatchAfterRelease = RiotVehicleEmergencyObservation.Ok;
+        await fixture.Supervisor.RequestStopAsync(
+            Request(EmergencyStopRequestSource.Automatic, null, faultGeneration: 4), TestContext.Current.CancellationToken);
+        fixture.Riot.UnfinishedOrders = new Dictionary<string, int?> { ["ORDER-OWN"] = RiotOrderState.Paused };
+
+        EmergencyStopDecision released = await fixture.Supervisor.ReleaseLoadedOnGovernedConfirmationAsync(
+            LoadedConfirmation(), doorCause: false, OwnOrders, TestContext.Current.CancellationToken);
+
+        Assert.Equal(EmergencyStopAction.Recovered, released.Action);
+        RiotOrderCommandAttempt release = Assert.Single(await fixture.ReadReleasesAsync());
+        Assert.True(EmergencyStopSupervisor.IsReleaseOnConfirmation(release));
+        Assert.Equal(EmergencyStopSupervisor.GovernedLoadedReleaseReason, EmergencyStopSupervisor.ReceiptReason(release));
+        Assert.Contains("\"requesterIdentity\":\"admin-13\"", release.ReceiptJson, StringComparison.Ordinal);
+        Assert.Contains("\"vehicleEmpty\":false", release.ReceiptJson, StringComparison.Ordinal);
+        Assert.True(await fixture.Supervisor.WasReleasedOnConfirmationAsync(Subject, 4, TestContext.Current.CancellationToken));
+    }
+
+    /// <summary>
+    /// A loaded release of a latch this server did not raise, or of one held <c>CAN_NOT_RECOVER</c>, is refused and issues
+    /// nothing: somebody else's stop is released where it was raised, and a button still held cannot be released at all.
+    /// </summary>
+    [Theory]
+    [InlineData(RiotVehicleEmergencyObservation.CanRecover, "EMERGENCY_NOT_RAISED_BY_8005")]
+    [InlineData(RiotVehicleEmergencyObservation.CanNotRecover, "EMERGENCY_NOT_CAN_RECOVER")]
+    [Trait("Requirement", "REQ-0356")]
+    public async Task ALoadedReleaseOfALatchItMayNotTouchIsRefused(string latch, string expected)
+    {
+        await using Fixture fixture = await Fixture.CreateAsync();
+        fixture.Riot.Latch = latch;
+        if (latch == RiotVehicleEmergencyObservation.CanNotRecover)
+        {
+            await fixture.Supervisor.RequestStopAsync(
+                Request(EmergencyStopRequestSource.Automatic, null, faultGeneration: 1), TestContext.Current.CancellationToken);
+        }
+
+        EmergencyStopDecision decision = await fixture.Supervisor.ReleaseLoadedOnGovernedConfirmationAsync(
+            LoadedConfirmation(), doorCause: false, OwnOrders, TestContext.Current.CancellationToken);
+
+        Assert.Equal(EmergencyStopAction.RecoveryRefused, decision.Action);
+        Assert.Equal([expected], decision.Reasons);
+        Assert.Empty(fixture.Gateway.EmergencyCalls);
+    }
+
+    /// <summary>Every fact the loaded release requires, each refused by its own name (LoadedReleaseObstacles).</summary>
+    [Theory]
+    [InlineData("all-hold", "")]
+    [InlineData("no-identity", "EMERGENCY_CONFIRMER_UNIDENTIFIED")]
+    [InlineData("no-reason", "EMERGENCY_RELEASE_REASON_REQUIRED")]
+    [InlineData("cause-not-confirmed", "EMERGENCY_CAUSE_CLEARED_NOT_CONFIRMED")]
+    [InlineData("doors-not-confirmed", "EMERGENCY_DOORS_CLOSED_NOT_CONFIRMED")]
+    [InlineData("door-cause-lock-not-repaired", "EMERGENCY_DOOR_LOCK_REPAIR_NOT_CONFIRMED")]
+    [InlineData("door-cause-lock-repaired", "")]
+    [InlineData("not-latched", "EMERGENCY_NOT_CAN_RECOVER")]
+    [InlineData("no-episode", "EMERGENCY_NOT_RAISED_BY_8005")]
+    [InlineData("orders-unknown", "EMERGENCY_VEHICLE_ORDERS_UNKNOWN")]
+    [InlineData("no-orders", "")]
+    [InlineData("foreign-order", "EMERGENCY_VEHICLE_ORDER_NOT_FINISHED")]
+    [InlineData("own-and-foreign", "EMERGENCY_VEHICLE_ORDER_NOT_FINISHED")]
+    [InlineData("own-executing", EmergencyStopSupervisor.HeldOrderNotPausedReason)]
+    [InlineData("own-state-unknown", EmergencyStopSupervisor.HeldOrderNotPausedReason)]
+    [Trait("Requirement", "REQ-0356")]
+    public void LoadedReleaseObstaclesNamesEveryMissingFact(string variant, string expected)
+    {
+        LoadedEmergencyStopReleaseConfirmation confirmation = variant switch
+        {
+            "no-identity" => LoadedConfirmation() with { ConfirmerIdentity = " " },
+            "no-reason" => LoadedConfirmation() with { Reason = null },
+            "cause-not-confirmed" => LoadedConfirmation() with { CauseCleared = false },
+            "doors-not-confirmed" => LoadedConfirmation() with { AllDoorsClosed = false },
+            "door-cause-lock-not-repaired" => LoadedConfirmation() with { DoorLockRepaired = false },
+            _ => LoadedConfirmation(),
+        };
+        bool doorCause = variant.StartsWith("door-cause", StringComparison.Ordinal);
+        RiotVehicleEmergencyObservation emergency = new(
+            Subject.DeviceKey,
+            variant == "not-latched" ? RiotVehicleEmergencyObservation.Ok : RiotVehicleEmergencyObservation.CanRecover,
+            Now);
+        IReadOnlyDictionary<string, int?>? orders = variant switch
+        {
+            "orders-unknown" => null,
+            "no-orders" => new Dictionary<string, int?>(),
+            "foreign-order" => new Dictionary<string, int?> { ["ORDER-FOREIGN"] = RiotOrderState.Paused },
+            "own-and-foreign" => new Dictionary<string, int?>
+            {
+                ["ORDER-OWN"] = RiotOrderState.Paused,
+                ["ORDER-FOREIGN"] = RiotOrderState.Paused,
+            },
+            "own-executing" => new Dictionary<string, int?> { ["ORDER-OWN"] = RiotOrderState.Executing },
+            "own-state-unknown" => new Dictionary<string, int?> { ["ORDER-OWN"] = null },
+            _ => new Dictionary<string, int?> { ["ORDER-OWN"] = RiotOrderState.Paused },
+        };
+        RiotVehicleOrderObservation observation = orders is null
+            ? new RiotVehicleOrderObservation(Subject.DeviceKey, null, [], Now)
+            : new RiotVehicleOrderObservation(Subject.DeviceKey, orders.Count > 0, [.. orders.Keys], Now, orders);
+
+        IReadOnlyList<string> obstacles = EmergencyStopSupervisor.LoadedReleaseObstacles(
+            confirmation, doorCause, emergency, episodeOpen: variant != "no-episode", observation, OwnOrders);
+
+        Assert.Equal(expected.Length == 0 ? [] : [expected], obstacles);
+    }
+
+    private static readonly IReadOnlySet<string> OwnOrders = new HashSet<string>(StringComparer.Ordinal) { "ORDER-OWN" };
+
+    private static LoadedEmergencyStopReleaseConfirmation LoadedConfirmation() =>
+        new(Subject, "admin-13", "门锁已换，车上两箱货确认在仓内", CauseCleared: true, AllDoorsClosed: true, DoorLockRepaired: true);
+
     private static RiotVehicleOrderObservation Orders(bool? hasUnfinishedOrder) =>
         new(Subject.DeviceKey, hasUnfinishedOrder, hasUnfinishedOrder == true ? ["ORDER-UNFINISHED-1"] : [], Now);
 
@@ -1085,14 +1323,22 @@ public sealed class EmergencyStopSupervisorTests
         /// <summary>What RIoT says about unfinished orders on the vehicle; null is "could not be read".</summary>
         public bool? HasUnfinishedOrder { get; set; } = false;
 
+        /// <summary>
+        /// The unfinished orders by id with their listed state, when a test needs them named (CP-0011's loaded release);
+        /// null keeps the one anonymous order <see cref="HasUnfinishedOrder"/> implies.
+        /// </summary>
+        public IReadOnlyDictionary<string, int?>? UnfinishedOrders { get; set; }
+
         public Task<RiotVehicleOrderObservation> ReadUnfinishedOrdersAsync(
             string deviceKey,
             CancellationToken cancellationToken) =>
-            Task.FromResult(new RiotVehicleOrderObservation(
-                deviceKey,
-                HasUnfinishedOrder,
-                HasUnfinishedOrder == true ? ["ORDER-UNFINISHED-1"] : [],
-                clock.GetUtcNow()));
+            Task.FromResult(UnfinishedOrders is { } named
+                ? new RiotVehicleOrderObservation(deviceKey, named.Count > 0, [.. named.Keys], clock.GetUtcNow(), named)
+                : new RiotVehicleOrderObservation(
+                    deviceKey,
+                    HasUnfinishedOrder,
+                    HasUnfinishedOrder == true ? ["ORDER-UNFINISHED-1"] : [],
+                    clock.GetUtcNow()));
 
         public Task<RiotVehicleEmergencyObservation> ReadEmergencyStateAsync(
             string deviceKey,
@@ -1148,63 +1394,6 @@ public sealed class EmergencyStopSupervisorTests
         public void Advance(TimeSpan by) => _now += by;
     }
 
-    /// <summary>
-    /// control-server#527: what <see cref="EmergencyStopSupervisor.DoorReleaseHistoryAsync"/> reads off the audit trail, one
-    /// script per case, oldest first. <c>D</c> is a door-cause release that took effect, <c>d</c> one that did not (Failed),
-    /// <c>C</c> a confirmed release on another reason; <c>M</c> is a stop that gave motion as a reason, <c>S</c> one that did
-    /// not, and <c>m</c> a motion stop of another fault generation.
-    /// </summary>
-    /// <remarks>
-    /// <c>DSDS</c> and <c>DMDS</c> are review M-1 and N3: a second door release with no motion after it moves nothing, however
-    /// many door releases there have been. <c>dM</c> is review M5: a door release that never took effect is not one.
-    /// <c>DMMD</c> is the re-review's M6: motion before the later release is not motion after it.
-    /// </remarks>
-    [Theory]
-    [InlineData("M", false, false)]
-    [InlineData("MD", false, false)]
-    [InlineData("DS", false, false)]
-    [InlineData("DM", true, false)]
-    [InlineData("dM", false, false)]
-    [InlineData("CM", false, false)]
-    [InlineData("Dm", false, false)]
-    [InlineData("DSDS", false, false)]
-    [InlineData("DMDS", true, false)]
-    [InlineData("DMMD", true, false)]
-    [InlineData("DMS", true, false)]
-    [InlineData("DMDM", true, true)]
-    [InlineData("DMDSM", true, true)]
-    public async Task TheDoorReleaseHistoryCountsOnlyMotionAfterAReleaseThatTookEffect(
-        string script,
-        bool movedAfterDoorRelease,
-        bool movedAgainAfterLaterRelease)
-    {
-        await using Fixture fixture = await Fixture.CreateAsync();
-        foreach (char step in script)
-        {
-            fixture.Clock.Advance(TimeSpan.FromSeconds(1));
-            await (step switch
-            {
-                'D' => fixture.RecordAsync(
-                    RiotCommandTypeNames.CancelEmergency, 1, EmergencyStopSupervisor.DoorCauseRemovedReason, RiotOrderCommandOutcome.Confirmed),
-                'd' => fixture.RecordAsync(
-                    RiotCommandTypeNames.CancelEmergency, 1, EmergencyStopSupervisor.DoorCauseRemovedReason, RiotOrderCommandOutcome.Failed),
-                'C' => fixture.RecordAsync(
-                    RiotCommandTypeNames.CancelEmergency, 1, "EMERGENCY_CAUSE_CLEARED", RiotOrderCommandOutcome.Confirmed),
-                'M' => fixture.RecordAsync(
-                    RiotCommandTypeNames.TriggerEmergency, 1, "POSITION_UNKNOWN,MOTION", RiotOrderCommandOutcome.Confirmed),
-                'm' => fixture.RecordAsync(
-                    RiotCommandTypeNames.TriggerEmergency, 2, "MOTION", RiotOrderCommandOutcome.Confirmed),
-                _ => fixture.RecordAsync(
-                    RiotCommandTypeNames.TriggerEmergency, 1, "POSITION_UNKNOWN", RiotOrderCommandOutcome.Confirmed),
-            });
-        }
-
-        DoorReleaseHistory history = await fixture.Supervisor.DoorReleaseHistoryAsync(
-            Subject, 1, reason => reason == "MOTION", TestContext.Current.CancellationToken);
-
-        Assert.Equal(new DoorReleaseHistory(movedAfterDoorRelease, movedAgainAfterLaterRelease), history);
-    }
-
     private sealed class Fixture : IAsyncDisposable
     {
         private readonly SqliteConnection _connection;
@@ -1253,6 +1442,12 @@ public sealed class EmergencyStopSupervisorTests
         public Task<IReadOnlyList<RiotOrderCommandAttempt>> ReadTriggersAsync() =>
             _audit.ReadAttemptsAsync(
                 RiotCommandTypeNames.TriggerEmergency,
+                $"vehicle:{Subject.DeviceKey}",
+                TestContext.Current.CancellationToken);
+
+        public Task<IReadOnlyList<RiotOrderCommandAttempt>> ReadRecordedClassesAsync() =>
+            _audit.ReadAttemptsAsync(
+                EmergencyStopSupervisor.LatchAdoptedCommandType,
                 $"vehicle:{Subject.DeviceKey}",
                 TestContext.Current.CancellationToken);
 

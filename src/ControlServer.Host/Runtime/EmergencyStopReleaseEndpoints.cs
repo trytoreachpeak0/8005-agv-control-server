@@ -1,8 +1,11 @@
 using System.Net.Http.Headers;
 using System.Security.Cryptography;
 using System.Text;
+using ControlServer.Application;
 using ControlServer.Host.Runtime.Commands;
+using ControlServer.Host.Runtime.Faults;
 using ControlServer.Host.Runtime.Fleet;
+using ControlServer.Infrastructure.Persistence;
 using Microsoft.AspNetCore.Http.HttpResults;
 using Microsoft.Extensions.Options;
 
@@ -65,11 +68,15 @@ public static class EmergencyStopReleaseEndpoints
         EmergencyStopReleaseRequest request,
         EmergencyStopSupervisor supervisor,
         VehicleRoster roster,
+        ControlServerDbContext dbContext,
+        IVehicleFaultStore faults,
         IOptions<EmergencyStopReleaseOptions> releaseOptions,
         CancellationToken cancellationToken)
     {
         ArgumentNullException.ThrowIfNull(context);
         ArgumentNullException.ThrowIfNull(supervisor);
+        ArgumentNullException.ThrowIfNull(dbContext);
+        ArgumentNullException.ThrowIfNull(faults);
         ArgumentNullException.ThrowIfNull(roster);
         ArgumentNullException.ThrowIfNull(releaseOptions);
 
@@ -109,14 +116,19 @@ public static class EmergencyStopReleaseEndpoints
                 detail: $"'{request.AgvId}' is not a vehicle this server drives.");
         }
 
+        EmergencyStopSubject subject = new(vehicle.AgvId, vehicle.VehicleKey);
+        bool doorCause = await EmergencyStopDoorCause.ReadAsync(dbContext, faults, supervisor, subject, cancellationToken)
+            .ConfigureAwait(false);
         EmergencyStopDecision decision = await supervisor.ReleaseOnConfirmationAsync(
             new EmergencyStopReleaseConfirmation(
-                new EmergencyStopSubject(vehicle.AgvId, vehicle.VehicleKey),
+                subject,
                 request.OperatorId,
                 request.CauseCleared,
                 request.VehicleEmpty,
                 request.AllDoorsClosed,
                 request.Note),
+            doorCause,
+            request.DoorLockRepaired,
             cancellationToken).ConfigureAwait(false);
 
         EmergencyStopReleaseResponse body = new(
@@ -158,13 +170,18 @@ public static class EmergencyStopReleaseEndpoints
 /// What a person submits to release a latched vehicle. The three confirmations default to false, so
 /// a request that leaves one out is refused for it rather than read as confirming it.
 /// </summary>
+/// <param name="DoorLockRepaired">
+/// The person confirms the door lock was repaired. Required only when the vehicle was stopped for the doors of a driving
+/// vehicle (CP-0011); left out, it is false like the other confirmations.
+/// </param>
 public sealed record EmergencyStopReleaseRequest(
     string AgvId,
     string OperatorId,
     bool CauseCleared,
     bool VehicleEmpty,
     bool AllDoorsClosed,
-    string? Note);
+    string? Note,
+    bool DoorLockRepaired = false);
 
 /// <summary>What the release did, with the audit row to look it up by.</summary>
 public sealed record EmergencyStopReleaseResponse(

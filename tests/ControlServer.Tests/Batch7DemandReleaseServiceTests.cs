@@ -891,8 +891,8 @@ public sealed class Batch7DemandReleaseServiceTests
     /// </summary>
     /// <remarks>
     /// <para>
-    /// 按真 worker 的顺序跑（<c>JourneyRuntimeWorker</c>：引擎一轮，接着释放一轮）。第一轮引擎看到取货单 FAILED、车在动：
-    /// 记疑似故障、升级急停；RIoT 还没上锁，触发记 Pending。释放服务随后看到「车有故障」这条判据成立——旧实现在这里释放需求、
+    /// 按真 worker 的顺序跑（<c>JourneyRuntimeWorker</c>：引擎一轮，接着释放一轮）。第一轮引擎看到车在开往取货站的路上、车载端报门没锁、
+    /// 车在动：记疑似故障、按住（按不住）、升级急停；RIoT 还没上锁，触发记 Pending。释放服务随后看到「车有故障」这条判据成立——旧实现在这里释放需求、
     /// 终结旅程，引擎之后再不评估它，触发永远 Pending（CI l2 的 emergency-stop-single-trigger 就是这样红的）。
     /// 然后 RIoT 上锁、钟走一秒，第二轮引擎：只有监看还在，才会读到锁、把触发对账成 Confirmed，并把故障的
     /// <c>LastEvaluatedAt</c> 推到此刻。
@@ -901,6 +901,9 @@ public sealed class Batch7DemandReleaseServiceTests
     /// 断的是「监看没断」，不只是「码写上了」：码可以写对而旅程照样被终结。上锁放在释放之后才打开，是为了让第一轮的触发必然停在
     /// Pending——若触发当场就被确认，这条用例分不出监看有没有断。
     /// </para>
+    /// <para>
+    /// 原因原来是取货单 FAILED；CP-0011（control-server#539）起订单 FAILED 不急停，换成同样会急停的行驶中门锁未证明锁闭（REQ-0246）。
+    /// </para>
     /// </remarks>
     [Fact]
     public async Task AFaultedVehicleStaysUnderSupervisionWhileItsReleaseCriteriaHold()
@@ -908,10 +911,13 @@ public sealed class Batch7DemandReleaseServiceTests
         await using RuntimeFixture fixture = await DispatchedToPickupAsync();
         JourneyRuntimeRow before = await fixture.RuntimeAsync(FirstDemandId);
         fixture.Riot.MovementState = "MT_RUNNING";
-        fixture.Riot.FailOrder(before.PickupUpperId);
+        fixture.Riot.Vehicle = fixture.Riot.Vehicle with { CurrentStationId = 0 };
+        await fixture.ReportSafetySummaryAsync(
+            allTargetSlotsLocked: false, unknownPresent: false, ["LOCK_NOT_CLOSED", "ACTION_NOT_ALLOWED_IN_STATE"]);
         CancellingGateway gateway = new(fixture.Clock, _ => fixture.Riot.CancelOrder(before.PickupUpperId));
 
         fixture.Context.ChangeTracker.Clear();
+        await fixture.HearFromPeerAsync();
         await fixture.Engine.ExecuteOnceAsync(Token);
         fixture.Context.ChangeTracker.Clear();
         Assert.Equal(RiotOrderCommandOutcome.Pending, await EmergencyTriggerOutcomeAsync(fixture));
@@ -922,6 +928,7 @@ public sealed class Batch7DemandReleaseServiceTests
         fixture.Clock.Advance(TimeSpan.FromSeconds(1));
         DateTimeOffset secondRound = fixture.Clock.GetUtcNow();
         fixture.Context.ChangeTracker.Clear();
+        await fixture.HearFromPeerAsync();
         await fixture.Engine.ExecuteOnceAsync(Token);
         fixture.Context.ChangeTracker.Clear();
 

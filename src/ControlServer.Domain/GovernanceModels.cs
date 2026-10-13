@@ -56,7 +56,13 @@ public enum GovernedObjectKind
     /// 车上的一张外来订单（按 RIoT <c>orderId</c>）。不是受治理配置、没有版本：审计的是现场人员在它离开运行列表却读不出结束时人工放车这一次操作
     /// （control-server#617）。
     /// </summary>
-    ForeignRiotOrder
+    ForeignRiotOrder,
+
+    /// <summary>
+    /// 一台车上 8005 的三类急停（按 <c>agvId</c>）。不是受治理配置、没有版本：审计的是车上有货时管理员经受治理入口解除它这一次操作
+    /// （REQ-0356 按 CP-0011 修订，control-server#539）。
+    /// </summary>
+    EmergencyStop
 }
 
 /// <summary>

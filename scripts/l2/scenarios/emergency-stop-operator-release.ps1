@@ -10,16 +10,22 @@ REQ-0356（人工确认解除），变更提案 CP-0003，实现见 control-serv
 停在两站之间的车站点号为 0，服务端的组合停稳证明永远不成立，自动解除走不通；现场在 RIoT 里手动解锁，服务端又会当成
 意外恢复立即重触发。车回不来。本场景按现场的顺序把这条路走一遍：
 
-1. 车在两站之间行驶，在途单被报 FAILED，服务端发急停；锁住后车仍报 MT_RUNNING 加车速 0。
+1. 车在两站之间行驶，车载端报门没锁，服务端按住、按不住再发急停；锁住后车仍报 MT_RUNNING 加车速 0。
 2. 锁住即停稳：故障事实记为已停稳，服务端不再请求停车。
-3. 确认不全、车上还有未结束订单：服务端拒绝，一次 cancelEmergency 都不发。
-4. 确认齐全：服务端自己发一次 cancelEmergency。假 RIoT 不替服务端解锁，所以回读仍是 CAN_RECOVER，入口回 202——
+3. 确认不全、车上还有未结束订单：服务端拒绝，一次 cancelEmergency 都不发。随后这张单在 RIoT 被取消，门锁修好、报锁闭。
+4. 确认齐全（含「门锁已检修」）：服务端自己发一次 cancelEmergency。假 RIoT 不替服务端解锁，所以回读仍是 CAN_RECOVER，入口回 202——
    这正是现场的样子（真 RIoT 解锁用了 3.6 秒）。
 5. 场景把急停状态摆成 OK（RIoT 解锁了），车停在两站之间：那次解除被结算为已确认，服务端不重触发，也不因为
    位置读不到再急停（2026-09-15 用户裁定）；车辆故障阻断还在。
 6. 车又动起来：服务端按新的一次急停再发 triggerEmergency。
 
 **假 RIoT 不替服务端锁、解急停**，它一贯如此：命令只记录，后果由场景照真实 RIoT 的样子摆出来。
+
+**急停的原因换成了门锁**（CP-0011，control-server#539）。原来是在途单被报 FAILED；用户 2026-10-13 定订单 FAILED 不急停，
+那条路从此没有急停可解。门锁这一类在 CP-0011 里也不自动解除，要人确认门锁已检修，所以每一次解除请求都带
+doorLockRepaired（`Invoke-Release` 默认填 true）；L2-ESR-02 因此只缺「车上无货」这一项，拒绝理由里不会出现门锁检修。
+没确认门锁检修被拒那一格在 vehicle-fault-operator-clearance-door（L2-VFCD-02）与 L1 里证。车上没货、单在 RIoT 被取消，
+走的正是空车这个入口。
 #>
 [CmdletBinding()]
 param([Parameter(Mandatory)][object]$Context)
@@ -33,6 +39,7 @@ $journal = $Context.Journal
 $assertions = $Context.Assertions
 $riot = $Context.Riot
 $mes = $Context.MesIngest
+$onboard = $Context.Onboard
 $connection = $Context.Connection
 $agvId = [string]$Context.AgvId
 $vehicleKey = [string]$Context.VehicleKey
@@ -64,14 +71,30 @@ function Set-Vehicle([hashtable]$fields) {
     $null = $riot.Command('Put', 'vehicle', $body)
 }
 
+function Set-Doors([bool]$locked) {
+    # Typed on purpose: an `if` expression unrolls a one-element array to its string, the control plane then gets
+    # "reasonCodes":"..." and refuses the binding with an empty 400 (in-transit-door-not-locked's first local run).
+    [string[]]$reasons = if ($locked) { @('ACTION_NOT_ALLOWED_IN_STATE') } else { @('LOCK_NOT_CLOSED', 'ACTION_NOT_ALLOWED_IN_STATE') }
+    $null = Set-L2OnboardSafety -Onboard $onboard -Connection $connection -AgvId $agvId -Journal $journal -Safety @{
+        departureSafe         = $false
+        vehicleStopped        = $false
+        allTargetSlotsLocked  = $locked
+        allUnlockOutputsReset = $true
+        unknownPresent        = $false
+        reasonCodes           = $reasons
+        affectedSlots         = @(1, 2, 3, 4, 5, 6, 7, 8)
+    }
+}
+
 function Invoke-Release([hashtable]$overrides) {
     $body = @{
-        agvId          = $agvId
-        operatorId     = 'L2-OPERATOR-07'
-        causeCleared   = $true
-        vehicleEmpty   = $true
-        allDoorsClosed = $true
-        note           = "L2 $($Context.RunId)"
+        agvId            = $agvId
+        operatorId       = 'L2-OPERATOR-07'
+        causeCleared     = $true
+        vehicleEmpty     = $true
+        allDoorsClosed   = $true
+        doorLockRepaired = $true
+        note             = "L2 $($Context.RunId)"
     }
     foreach ($key in $overrides.Keys) { $body[$key] = $overrides[$key] }
     $response = Invoke-WebRequest -Method Post -Uri $releaseUri -SkipHttpErrorCheck -TimeoutSec 30 `
@@ -121,9 +144,10 @@ $intent = Wait-L2Condition -Description 'the TO_PICKUP intent was confirmed' `
     } `
     -Until { param($v) $null -ne $v }
 
-$journal.Note("$agvId drives between stations; RIoT reports $($intent.UpperId) FAILED.")
-Set-Vehicle @{ movementState = 'MT_RUNNING'; speed = 0.6; currentPosition = 0 }
-$null = $riot.Command('Put', "orders/$($intent.UpperId)", @{ orderState = 4 })
+$journal.Note("$agvId drives between stations on $($intent.UpperId); the onboard reports a door not locked.")
+$null = $riot.Command('Put', "orders/$($intent.UpperId)", @{ orderState = 3; executeVehicleKey = $vehicleKey })
+Set-Vehicle @{ movementState = 'MT_RUNNING'; speed = 0.6; currentPosition = 0; processingOrder = $true }
+Set-Doors -locked $false
 
 $null = Wait-L2Condition -Description 'the server escalated to an emergency stop' `
     -Journal $journal -Criterion 'trigger-issued' -TimeoutSeconds 90 `
@@ -161,10 +185,12 @@ $assertions.Add(
     '409 / EMERGENCY_VEHICLE_EMPTY_NOT_CONFIRMED / 0 次',
     "$($incomplete.Status) / $(@($incomplete.Body.reasons) -join ',') / $((Get-RiotInvocations 'cancelEmergency').Count) 次")
 
-# 在途单暂时摆回「暂停」（未结束），入口必须看 RIoT 里这台车的订单，而不是只看确认框。
+# 在途单停成「暂停」（未结束），入口必须看 RIoT 里这台车的订单，而不是只看确认框。
 $null = $riot.Command('Put', "orders/$($intent.UpperId)", @{ orderState = 7 })
 $unfinished = Invoke-Release @{}
-$null = $riot.Command('Put', "orders/$($intent.UpperId)", @{ orderState = 4 })
+# 有人在 RIoT 里取消了这张单（终态），门锁修好、车载端报锁闭。
+$null = $riot.Command('Put', "orders/$($intent.UpperId)", @{ orderState = 2 })
+Set-Doors -locked $true
 $assertions.Add(
     'L2-ESR-03',
     '这台车在 RIoT 里还有未结束的订单：入口回 409，原因 EMERGENCY_VEHICLE_ORDER_NOT_FINISHED，没有发 cancelEmergency（REQ-0356）',
@@ -197,7 +223,7 @@ $assertions.Add(
 
 # --- 5. RIoT 解锁，车停在两站之间：结算为已解除，不重触发，也不因位置读不到再急停 ----------------------------------
 
-$journal.Note('RIoT clears the latch a few seconds later; the vehicle stands between stations, its order FAILED.')
+$journal.Note('RIoT clears the latch a few seconds later; the vehicle stands between stations, its order cancelled.')
 Set-Vehicle @{ emergencyState = 'OK'; movementState = 'MT_FINISHED'; speed = 0; currentPosition = 0 }
 $settled = Wait-L2Condition -Description 'the release was settled as confirmed' `
     -Journal $journal -Criterion 'release-confirmed' -TimeoutSeconds 30 `

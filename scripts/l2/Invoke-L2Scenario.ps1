@@ -208,6 +208,11 @@ $emergencyStopRelease = ($setup.ContainsKey('EmergencyStopRelease') -and $setup.
 $emergencyReleaseCredentialVariable = 'CONTROL_SERVER_EMERGENCY_RELEASE_CREDENTIAL'
 # Not a secret either.
 $emergencyReleaseCredential = 'l2-emergency-release-credential-not-a-production-secret'
+# The class-three entry for a loaded vehicle (CP-0011, control-server#539) is mounted on the same switch, with its own
+# credential, as in the product: whoever holds the empty-vehicle one cannot release a loaded vehicle.
+$emergencyLoadedReleaseCredentialVariable = 'CONTROL_SERVER_EMERGENCY_LOADED_RELEASE_CREDENTIAL'
+# Not a secret either.
+$emergencyLoadedReleaseCredential = 'l2-emergency-loaded-release-credential-not-a-production-secret'
 # control-server#299's fault recovery entry point. Off in the product for the same reason: it clears a vehicle's fault
 # and hands its demands back for redispatch. Its own credential, as in the product.
 $vehicleFaultRecovery = ($setup.ContainsKey('VehicleFaultRecovery') -and $setup.VehicleFaultRecovery)
@@ -798,6 +803,8 @@ try {
         $serverEnvironment['EmergencyStopRelease__enabled'] = 'true'
         $serverEnvironment['EmergencyStopRelease__credentialEnvironmentVariable'] = $emergencyReleaseCredentialVariable
         $serverEnvironment[$emergencyReleaseCredentialVariable] = $emergencyReleaseCredential
+        $serverEnvironment['EmergencyStopRelease__loadedCredentialEnvironmentVariable'] = $emergencyLoadedReleaseCredentialVariable
+        $serverEnvironment[$emergencyLoadedReleaseCredentialVariable] = $emergencyLoadedReleaseCredential
     }
     if ($vehicleFaultRecovery) {
         $serverEnvironment['VehicleFaultRecovery__enabled'] = 'true'
@@ -1379,6 +1386,7 @@ try {
         GovernanceCredential = if ($slotConfigurationActivation) { $governanceCredential } else { $null }
         # Null unless the setup file turned the release-on-confirmation entry point on.
         EmergencyReleaseCredential = if ($emergencyStopRelease) { $emergencyReleaseCredential } else { $null }
+        EmergencyLoadedReleaseCredential = if ($emergencyStopRelease) { $emergencyLoadedReleaseCredential } else { $null }
         FaultRecoveryCredential = if ($vehicleFaultRecovery) { $faultRecoveryCredential } else { $null }
         SlotFaultDeclarationCredential = if ($slotFaultDeclaration) { $slotFaultDeclarationCredential } else { $null }
         # Null unless the setup file asked for the dashboard.
