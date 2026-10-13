@@ -493,7 +493,7 @@ $null = Set-L2OnboardSafety -Onboard $onboard -Connection $connection -AgvId $Co
 
 | 键 | 取值 | 编排器做什么 |
 | --- | --- | --- |
-| `CargoHoldingTimeout` | `'hh:mm:ss'`，必须为正，例如 `'00:00:40'` | 映射成服务端环境变量 `JourneyRuntime__cargoHoldingTimeout`（与 `StationDepartureWaitTimeout` 同一种做法）。不给就不传，服务端取自己的默认 30 分钟 |
+| `CargoHoldingTimeout` | `'hh:mm:ss'`，必须为正，例如 `'00:00:40'` | 映射成服务端环境变量 `JourneyRuntime__cargoHoldingTimeout`（与 `StationDepartureWaitTimeout` 同一种做法）。不给就不传，服务端取自己的默认 5 分钟（control-server#609 起；此前 30 分钟，允许途中追加的场景已写明原值） |
 | `DispatchZoneParameters` | 分区 → `@{ EnRouteAdditionMaxPathCostIncrease = <非负整数或 $null>; StarvationThresholdSeconds = <非负整数或 $null> }` | 服务端就绪之后、场景发布第一条需求之前，把这张表写成每区参数的一个版本 |
 
 ```powershell
@@ -743,7 +743,7 @@ DispatchZoneParameters = @{
 
 下面两个键是批次 7 的（control-server#206），默认前置与写法见上面「批次 7 的默认前置：每区派车参数「未配置」」一节：
 
-- `CargoHoldingTimeout` —— 服务端 `JourneyRuntime:cargoHoldingTimeout`，持货超时（ADR-cross-0057，产品默认 30 分钟），
+- `CargoHoldingTimeout` —— 服务端 `JourneyRuntime:cargoHoldingTimeout`，持货超时（ADR-cross-0057，产品默认 5 分钟，control-server#609 之前是 30 分钟），
   写成正的 `'hh:mm:ss'`。与 `StationDepartureWaitTimeout` 是两只不同的钟，不共用字段。不给就不传。
 - `DispatchZoneParameters` —— 每区派车参数，分区 → 途中追加最大允许增量（计划路径代价，今天是毫米）与防饥饿阈值（秒），
   两者都是非负整数或 `$null`。不给就一版都不写，即「每区参数未配置」。L2 直写库，`Source = 'L2_PRESET'`，不经治理快照与审计。

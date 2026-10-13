@@ -676,7 +676,9 @@ function Test-ParallelInstanceDefinition {
         .PARAMETER ForStopDirection
             For the two ways out only: uninstalling, and closing the RIoT dispatch gate. Tolerates a
             definition with no taskTypeStations at all -- one installed before control-server#518 --
-            and nothing else: a taskTypeStations that is written is checked as always. Never for
+            and any journeyRuntime.cargoHoldingTimeout, absent or above five minutes (every definition
+            installed before control-server#609 says 00:30:00), and nothing else: a taskTypeStations
+            that is written is checked as always. Never for
             installing, rolling back or opening the gate (PR #523 review, item 1): those start
             something, and a definition without the preset must not.
     #>
@@ -974,6 +976,23 @@ function Test-ParallelInstanceDefinition {
             $failures += 'journeyRuntime.admissionPolicyVersion must be set explicitly; left out, the package default applies, which is below the version this instance has bound.'
         } elseif ($null -eq (ConvertTo-IntegerOrNull $journey['admissionPolicyVersion']) -or (ConvertTo-IntegerOrNull $journey['admissionPolicyVersion']) -le 0) {
             $failures += "journeyRuntime.admissionPolicyVersion must be a positive JSON integer, got '$($journey['admissionPolicyVersion'])'."
+        }
+
+        # control-server#609. Left out, the overlay writes nothing and the Host falls back to the package's appsettings.json:
+        # five minutes from #609 on, but thirty in every older package, so a rollback would quietly restore the value the user
+        # ruled out on 2026-10-11. hh:mm:ss for the reason ConvertTo-ParallelCatalogSpan gives ("30" binds as thirty days).
+        # The ceiling is five minutes for every deployment, field drills included (they may run shorter); the coordinator chose
+        # 2026-10-13 to hold it here rather than in the Host, so synthetic tests that never deploy keep their own values.
+        # Not checked at all for -ForStopDirection: every definition installed before #609 says 00:30:00, and closing the
+        # gate or uninstalling that instance must not be the step that refuses (the taskTypeStations precedent below).
+        if ($ForStopDirection) {
+            # Tolerated: see above. Installing, rolling back and opening the gate are checked in full.
+        } elseif (-not (Test-KeyPresent -Node $journey -Key 'cargoHoldingTimeout')) {
+            $failures += 'journeyRuntime.cargoHoldingTimeout must be set explicitly; left out, the package default applies, which is thirty minutes in any package older than control-server#609.'
+        } elseif ($null -eq ($holdingSpan = ConvertTo-ParallelCatalogSpan $journey['cargoHoldingTimeout']) -or $holdingSpan -le [timespan]::Zero) {
+            $failures += "journeyRuntime.cargoHoldingTimeout must be a positive string hh:mm:ss, got '$($journey['cargoHoldingTimeout'])'."
+        } elseif ($holdingSpan -gt [timespan]::FromMinutes(5)) {
+            $failures += "journeyRuntime.cargoHoldingTimeout is $($journey['cargoHoldingTimeout']); it must be at most 00:05:00 (user decision 2026-10-11: cargo holding lasts at most five minutes, production included)."
         }
 
         # @() for the same reason as in Assert-: a function returning an empty array returns
@@ -3245,6 +3264,76 @@ function Get-ParallelClearanceExitReadiness {
     }
 }
 
+function Test-ParallelAreaAssignmentZone {
+    <#
+        .SYNOPSIS
+            control-server#669. The dispatch zones an area assignment table names, against the definition's
+            journeyRuntime.allowedDispatchZones. Returns failure strings; none means the sets agree.
+
+        .DESCRIPTION
+            Offline, before a table is imported: the import itself can only be dry-run against a database whose
+            stored dispatch policy already holds the zones (AreaAssignmentImport, DISPATCH_ZONE_NOT_FOUND), and a
+            table routing an AREA into a zone the definition does not allow keeps a dispatching Host from starting
+            (AreaAssignmentDispatchZoneStartupCheck). The two directions are both refused here:
+
+              1. a zone a table names that allowedDispatchZones omits (the import refuses it, or the Host does);
+              2. an allowed zone no table names: no AREA routes into it, so the car that serves only it is never
+                 given work -- silently, since an unmapped AREA is OUT_OF_SCOPE_AREA by design.
+
+            ONE file, the one that will be imported (PR #676 review M1). An import is a whole table: each one
+            writes a new version, the current version is the highest, and import-area-assignments takes one
+            --input (AreaAssignmentStore.WriteVersionAsync, FieldOps). Importing an N table and then a T table
+            leaves only the T areas in scope, and every N demand is OUT_OF_SCOPE_AREA, silently. Comparing the
+            union of two files would pass exactly that, so more than one file is refused: merge them first.
+
+            The file must carry the importer's controlled header exactly (AreaAssignmentImport.Header) and three
+            fields per row; anything else is said and its zones are not counted. This reads the zone column
+            and nothing more -- AREA format, slot position groups and duplicates are the importer's dry-run.
+    #>
+    [CmdletBinding()]
+    param(
+        [Parameter(Mandatory = $true)][hashtable] $Definition,
+        [Parameter(Mandatory = $true)][string[]] $Path
+    )
+
+    $allowed = @($Definition['journeyRuntime']['allowedDispatchZones'])
+    if (@($Path).Count -ne 1) {
+        return @("$(@($Path).Count) area assignment tables given ($(@($Path) -join ', ')). An import replaces the whole table -- the last one imported is the only one in force -- so merge them into one file under one header, compare that file, dry-run it, and import it once.")
+    }
+    $failures = @()
+    $named = [System.Collections.Generic.SortedSet[string]]::new([StringComparer]::Ordinal)
+    foreach ($file in $Path) {
+        $lines = @(([IO.File]::ReadAllText($file, [Text.UTF8Encoding]::new($false)) -replace "`r`n", "`n").TrimEnd("`n").Split("`n"))
+        if ($lines[0] -cne 'area,dispatch_zone,slot_position') {
+            $failures += "$file does not start with the importer's header 'area,dispatch_zone,slot_position' (line 1 is '$($lines[0])'); its zones are not counted."
+            continue
+        }
+        $fileZones = [System.Collections.Generic.SortedSet[string]]::new([StringComparer]::Ordinal)
+        $malformed = @()
+        for ($i = 1; $i -lt $lines.Count; $i++) {
+            $fields = $lines[$i].Split(',')
+            if ($fields.Count -ne 3) { $malformed += $i + 1; continue }
+            $null = $fileZones.Add($fields[1])
+        }
+        if ($malformed.Count -gt 0) {
+            $failures += "$file has rows that are not three fields (lines $($malformed -join ', ')); its zones are not counted."
+            continue
+        }
+        foreach ($zone in $fileZones) {
+            $null = $named.Add($zone)
+            if (-not ($allowed -ccontains $zone)) {
+                $failures += "$file routes AREAs into dispatch zone '$zone', which journeyRuntime.allowedDispatchZones [$($allowed -join ', ')] omits: the import refuses it (DISPATCH_ZONE_NOT_FOUND), or a dispatching Host refuses to start (AreaAssignmentDispatchZoneStartupCheck)."
+            }
+        }
+    }
+    foreach ($zone in $allowed) {
+        if (-not $named.Contains([string] $zone)) {
+            $failures += "journeyRuntime.allowedDispatchZones names '$zone', but no table routes an AREA into it: the vehicles that serve only that zone would never be given work."
+        }
+    }
+    return $failures
+}
+
 function Merge-ConfigurationTree {
     <#
         .SYNOPSIS
@@ -3321,6 +3410,7 @@ Export-ModuleMember -Function @(
     'Get-ParallelLogFilesSince'
     'Read-ParallelLogLines'
     'Merge-ConfigurationTree'
+    'Test-ParallelAreaAssignmentZone'
     'Get-ParallelServiceEnvironmentEntry'
     'Set-ParallelServiceEnvironmentEntry'
     'Resolve-ParallelFaultRecoveryCredential'
