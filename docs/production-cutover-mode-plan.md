@@ -189,7 +189,7 @@ FieldOps 没有作废需求或重置状态的动词，手改约 50 张表风险�
 | 6b | 现场 | **安置不在 S1 车队表里的车**（审查第二轮 S1）：`agv03` 由用户在 RIoT 上挪到 **26 号图站 222**（用户 2026-10-13 定，program#170 第 3.4 节），`agv01` 停在第 6 步定位的 210「关卡」；两车车载端栈保持停止。它们物理上在通道里但 v2 不管：停在 v2 管的点位（211、212、214～216、217～221）上，v2 会把 `agv02` 派过去堵住；车载端开着，换库前的日志簿连到新库会报 `SNAPSHOT_REVISION_CONTENT_CONFLICT` | RIoT 读回两车停在确认的点位；车载端进程不在 | 挪车会让车动【逐次授权·现场有人】；动 `agv01`【执行前问用户】 |
 | 7 | 现场 | **v2 换新库 A**：停 V2（闸门已关、无在途），`C:\ProgramData\8005\ControlServer.V2` 改名留存，建空目录。**不要按换库快路线在空目录上先起服**：起服会自动建库，第 8 步就会被 `CUTOVER_REQUIRES_NEW_DATABASE` 拒 | 空目录；旧目录名记录 | — |
 | 7a | 调度 | **准备切换用的定义并出包**（审查 S1）：19 号要求定义是克隆里被跟踪的文件、包的提交等于克隆 HEAD。所以执行前提交一次，内容是本次要用的全部阶段定义（见第 8 节：S1 运行时关、S1 运行时开、S2、S3），每份都写入 `productionCutover.approvalRecord`（用户对这一次切换的授权原话出处）与 `phase: "trial"`；control-server#679（cs#617）合入后，阶段定义里的 `foreignRunningOrderRelease.enabled` 与 `production-mes` 定义取同值（生产定义里是打开的），它用的 `V2FaultRecoveryCredential` 已在 DPAPI 里（调度 10-13 只读核过键名）；然后为这个提交跑一次 release。出厂的切换定义不带记录，原样装会被 `CUTOVER_SWITCH_WITHOUT_RECORD` 拒 | 提交与 release run id 记进本票 | 授权原话由调度向用户要 |
-| 8 | 现场 | **以切换模式首装 S1 定义**（只有 `agv02`，运行时与建单闸门都关）：19 号脚本带 `-ProductionCutover -InstanceDefinitionPath <S1 运行时关的定义>` | 回读 `EFFECTIVE_CONFIGURATION`：车队只有 `agv02`、区只有 `WIRE_BONDING`、六类、生产来源；`installed-instance.json` 是这份定义（带 `productionCutover`）；MVP 指纹前后一致（停着、Disabled） | 读生产 MesIngest 全部六类属于切换本身，本步之前向用户确认 |
+| 8 | 现场 | **以切换模式首装 S1 定义**（只有 `agv02`，运行时与建单闸门都关）：19 号脚本带 `-ProductionCutover -InstanceDefinitionPath <S1 运行时关的定义>` | 回读 `EFFECTIVE_CONFIGURATION`：车队只有 `agv02`、且它的 `allowedTaskTypes` 只有 `STAGING_TO_WIRE`（第 8 节的表）；区只有 `WIRE_BONDING`；实例级六类、生产来源；`installed-instance.json` 是这份定义（带 `productionCutover`）；MVP 指纹前后一致（停着、Disabled） | 读生产 MesIngest 全部六类属于切换本身，本步之前向用户确认 |
 | 9 | 现场 | 车载端按 cs#565 部署 v3（`-OnboardPort 58105 -HealthPort 58107`），IO 指向模拟器。日志簿此前已交还原主人并改名（`agv02`、`agv03` 第 6a 步，`agv01` 第 5 步），这一步不再核发件箱。S1 只需要 `agv02`；`agv01`、`agv03` 留到它们所在阶段（第 16a 步）。`agv01` 那次要先把 `site-agv01.json` 的 `controlServerLine` 由 `"mvp"` 改为 `"v2"`（`8005-workspace` 提交） | 该车握手 `Ready`，不动车 | `agv01` 每一步【执行前问用户】 |
 | 10 | 现场 | 导入受治理事实（program#170 第 2 节：已批准硬件事实、`bind-io`、站点绑定、等待点、充电名册与策略）。分区归属表这时还不能导 | 每项导入回读 | — |
 | 11 | 现场 | **让本阶段的区进库**（PR #676 README 第 4 步）：建单闸门保持关，用 19 号带 `-ProductionCutover` 换装本阶段运行时开的定义，至少一台车连上并空闲，等一轮，`DispatchZoneVehicles` 出现本阶段各区 | 库表读回本阶段各区（S1、S2 只有 `WIRE_BONDING`） | 运行时打开读真实 MES：本步向用户确认 |
@@ -276,11 +276,16 @@ S1 定义，`agv01`、`agv03` 在各自阶段换装定义之后才进车队表�
   一台在车队表里但车载端没起的车照样会被派单。所以每个阶段一份定义，都按第 4 节同一套规则校验，阶段之间用 19 号脚本带 `-ProductionCutover` 换定义重装
   （同库，已装记录已是切换定义）。换定义前关闸、无在途。各阶段定义从 PR #676 的切换定义复制，只改下表几项：
 
-  | 阶段 | `journeyRuntime.fleet` | `allowedDispatchZones` | 归属表（整表替换） |
-  | --- | --- | --- | --- |
-  | S1 | `agv02` 一行 | `["WIRE_BONDING"]` | N 区表 |
-  | S2 | `agv02`、`agv01` 两行 | `["WIRE_BONDING"]` | N 区表（不变） |
-  | S3、S4 | 三行（即 PR #676 的切换定义） | `["WIRE_BONDING", "DIE_ATTACH"]` | N+T 合并表 |
+  | 阶段 | `journeyRuntime.fleet` | 每车 `allowedTaskTypes`（逐字照 PR #676 的行，专车专用） | `allowedDispatchZones` | 归属表（整表替换） |
+  | --- | --- | --- | --- | --- |
+  | S1 | `agv02` 一行 | `agv02`：`["STAGING_TO_WIRE"]` | `["WIRE_BONDING"]` | N 区表 |
+  | S2 | `agv02`、`agv01` 两行 | 加 `agv01`：`["WIRE_TO_GATE", "WIRE_TO_OPTICAL", "WIRE_TO_NITROGEN"]` | `["WIRE_BONDING"]` | N 区表（不变） |
+  | S3、S4 | 三行（即 PR #676 的切换定义） | 加 `agv03`：`["DIE_TO_OVEN", "DIE_TO_WIRE_STAGING"]` | `["WIRE_BONDING", "DIE_ATTACH"]` | N+T 合并表 |
+
+  **车行要原样复制，不能把六类写进某一行**（cs#565 审查）：实例级的 `allowedWorkTypes` 是六类（切换开关要求全集），但派车按每车自己的
+  `allowedTaskTypes` 判（`VehicleTaskTypeAdmissionCriterion`）。S1 的 `agv02` 只有 `STAGING_TO_WIRE`，所以 `WIRE_TO_GATE` 需求不会派给它、它不会开去 210；
+  第 6b 步让 `agv01` 停在 210 正是靠这一点。今天的定义校验只拦「同一类任务在两辆车上」，**不拦「一辆车多写了别人的类型」**：S1 文件里 `agv02` 若被写成六类，
+  校验照样通过，`agv02` 就会去 210 撞上停着的 `agv01`。所以第 7a 步提交阶段定义时，逐行与上表核对，第 8、16a 步回读 `EFFECTIVE_CONFIGURATION` 的车队时再核一次。
 
   `dispatchZone` 都是 `WIRE_BONDING`；`allowedWorkTypes` 都是六类（切换开关要求全集）。S1、S2 不写 `DIE_ATTACH`：那时没有车服务这个区，它进不了
   `DispatchZoneVehicles`，写进允许列表只会让区名比对报「这个区没有表」。S1 时其余五类需求读得到但没有车能接：`WIRE_TO_GATE` 等 N 区需求按任务类型
@@ -399,7 +404,9 @@ S1 定义，`agv01`、`agv03` 在各自阶段换装定义之后才进车队表�
 用户定在 26 号图站 222（原话「停在站号222」，经调度 Coordinator 10；program#170 第 3.4 节同样记录）。时机是第 6 节第 6b 步：`agv03` 的日志簿交还旧库、
 改名之后，第 7 步换库之前，由用户在 RIoT 上挪过去定位。
 
-- 读到的：222 不在 v2 管的任何登记里——不是等待点（214～216）、不是充电桩与进桩路径（211、212）、不是六类任务的固定站（210、217～221）——所以 v2 不会把别的车派到 222。
+- 读到的：222 不在 v2 管的任何登记里——不是等待点（214～216）、不是充电桩与进桩路径（211、212）、不是六类任务的固定站：26 号图的任务类型站点绑定
+  （`task-type-stations.map-26.settings.json`）只有 210、217～221 六个站，S1、S2 都用这一份——所以 v2 不会把别的车派到 222。归属表里的站是按 AREA 名解析的机台站，
+  222 若不是 N／T 开头的机台名就不会被归属表用到；导出目录核名字时一并确认。
 - 要现场核的两点（推的）：10-11 读回的 26 号图站点目录（`evidence/field/20261011-B10-05-map26-task-type-stations/catalog-26.json`，216 个站，最大到 221）里**没有 222**，
   推测是之后新建的站，program#170 第 2.2 节第 1 条导出目录时确认它在、名字对得上；222 停车会不会挡 `agv02` 去 217 与 N 区、`agv01` 去 210 与 N 区的通道，由用户在 RIoT 地图上确认。
 - S3 换装三车定义前，`agv03` 按第 16a 步的顺序（凭据已有，19 号换装后 06 号部署）起栈、握手 `Ready`，从 222 出发由 v2 调度。生产段若再走 S1、S2，同样停在 222。
