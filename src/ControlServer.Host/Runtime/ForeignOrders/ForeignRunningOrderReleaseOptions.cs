@@ -26,3 +26,42 @@ public sealed class ForeignRunningOrderReleaseOptions
 
     public bool Enabled { get; set; }
 }
+
+/// <summary>What the release entry is at start: on or off, and whether its credential variable holds a value.</summary>
+public sealed record ForeignRunningOrderReleaseState(bool Enabled, bool CredentialPresent);
+
+/// <summary>
+/// The start-up check of the release entry (control-server#617 incremental review S-1): on, with its credential variable empty,
+/// it answers every request 503. That is said at start, as a warning (event 2235), and in <c>EFFECTIVE_CONFIGURATION</c>; the
+/// server still starts.
+/// </summary>
+public static class ForeignRunningOrderReleaseStartup
+{
+    private static readonly Action<ILogger, string, Exception?> LogCredentialMissing =
+        LoggerMessage.Define<string>(
+            LogLevel.Warning,
+            new EventId(2235, nameof(LogCredentialMissing)),
+            "The foreign running order release entry is on (ForeignRunningOrderRelease:enabled), but its credential variable " +
+            "{CredentialVariable} holds no value: every request to it is answered 503, and a vehicle held by a foreign order that " +
+            "left RIoT's running listing unread as ended has no way out but the database until it is set (control-server#617).");
+
+    /// <summary>Reads the state, warns when the entry is on without a credential, and answers the state.</summary>
+    public static ForeignRunningOrderReleaseState Check(
+        ILogger logger,
+        ForeignRunningOrderReleaseOptions release,
+        VehicleFaultRecoveryOptions recovery,
+        Func<string, string?> environment)
+    {
+        ArgumentNullException.ThrowIfNull(logger);
+        ArgumentNullException.ThrowIfNull(release);
+        ArgumentNullException.ThrowIfNull(recovery);
+        ArgumentNullException.ThrowIfNull(environment);
+        string variable = recovery.CredentialEnvironmentVariable;
+        bool present = !string.IsNullOrWhiteSpace(variable) && !string.IsNullOrWhiteSpace(environment(variable));
+        if (release.Enabled && !present)
+        {
+            LogCredentialMissing(logger, variable ?? string.Empty, null);
+        }
+        return new ForeignRunningOrderReleaseState(release.Enabled, present);
+    }
+}

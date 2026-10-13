@@ -74,3 +74,13 @@ RIoT 回 HTTP 200、code 0、result 完整，`orderState=2`（已取消，明确
 | 审查第二阶段要的格 | P1 回读 1、7、9、10、11 拒绝；P2 列表有 Executing、回读为 null 拒绝（`ORDER_STILL_UNFINISHED`） | 拒绝矩阵新增 6 格 |
 
 监看里对放开状态的处理现在有三处（行号是本分支当前的）：`ForeignRunningOrderSupervisor.cs:206` 查询条件不每轮读放开的行；`:318` 放开的行重新跑在我们车上时重新挡车；`:353` 放开的行不在场时直接返回（`:342` 是 S1 新加的挂起退回）。审查说的「两处」是 `:206` 与 `:353`；单独去掉、同时去掉各会怎样，变异时照实验证后补在这里。
+
+## 增量审查跟改（C10 定）
+
+| 项 | 改法 | 用例 |
+| --- | --- | --- |
+| S-1 Host 启动时不查这个入口的凭据 | 不拒绝启动。入口开着而凭据变量为空时，启动时告警一次（事件 2235）；`EFFECTIVE_CONFIGURATION` 末尾加 `foreignRunningOrderRelease={Enabled, CredentialPresent}`，交给部署回读去核。七个占位符超过 `LoggerMessage.Define` 的上限，事件改为像 `Define` 一样直接把带 `{OriginalFormat}` 的状态交给日志器；试过日志源生成器，它把集合格式化成字符串，名册与目录批准值在 JSON 里变成字符串，`ParallelInstanceEffectiveConfigurationTests` 当场变红，所以没用它 | `TheStartupCheckWarnsOnlyWhenTheEntryIsOnWithoutItsCredential`（4 格）、`TheEffectiveConfigurationEventCarriesTheReleaseEntryAsExactlyTwoBooleans`；原有事件测试全过（其中一条「目录批准值是最后一项」改为「包含」） |
+| L-1 回读为空时记 Failed | 改记 Unknown，与监看的 `Outcome()` 一致 | `AReleaseSettlesTheCancelAttemptOfARowThatHadSentOne` 的空回读格改为 Unknown |
+| L-4 停止方向写错一节没有用例 | 照 `stopWritten` 先例补：缺节被拒（非停止方向）；停止方向下 `enabled` 未写、写成字符串、整节写成字符串都被拒 | `Test-ParallelInstance.ps1` 840 passed |
+
+`Program.cs` 里先算放车入口的状态，再读目录批准值、紧接着记事件：部署自检有一条按源码文本核「Host 记的是它自己绑定的目录批准值」，要求这两行相邻。

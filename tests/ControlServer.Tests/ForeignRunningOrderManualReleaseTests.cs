@@ -244,11 +244,12 @@ public sealed class ForeignRunningOrderManualReleaseTests
 
     /// <summary>
     /// 审查 L1：从「发过取消」走到 <c>UNSETTLED</c> 的行带着那一次取消的审计；人工放开像监看自己的终结一样把它收尾——回读读到 CANCELLED 为
-    /// CONFIRMED，否则（查无此单）为 FAILED；行上的取消结果在读到终结时一并改写。
+    /// CONFIRMED，读到别的终结为 FAILED，读不到状态（查无此单）为 UNKNOWN（增量审查 L-1：与监看的 <c>Outcome</c> 一致）；行上的取消结果在读到终结时
+    /// 一并改写。
     /// </summary>
     [Theory]
     [InlineData(RiotOrderState.Cancelled, "Confirmed", "CANCELLED")]
-    [InlineData(null, "Failed", "STILL_RUNNING")]
+    [InlineData(null, "Unknown", "STILL_RUNNING")]
     [Trait("Requirement", "REQ-0164")]
     public async Task AReleaseSettlesTheCancelAttemptOfARowThatHadSentOne(int? readBack, string outcome, string cancelResult)
     {
@@ -328,6 +329,83 @@ public sealed class ForeignRunningOrderManualReleaseTests
         Assert.Equal(mapped, said);
         Assert.Equal(mapped, routes.Contains(ForeignRunningOrderManualReleaseEndpoints.Route));
         Assert.Equal(recovery == "true", routes.Contains(WaitingPointArrivalSettlementEndpoints.Route));
+    }
+
+    /// <summary>
+    /// 增量审查 S-1：入口开着而凭据变量没有值时，启动时告警一次（事件 2235），服务端照样起来；入口关着、或凭据在，都不告警。答出的状态进
+    /// <c>EFFECTIVE_CONFIGURATION</c>。
+    /// </summary>
+    [Theory]
+    [InlineData(true, null, true, false)]
+    [InlineData(true, "  ", true, false)]
+    [InlineData(true, "release-credential", false, true)]
+    [InlineData(false, null, false, false)]
+    public void TheStartupCheckWarnsOnlyWhenTheEntryIsOnWithoutItsCredential(
+        bool enabled, string? credential, bool warns, bool present)
+    {
+        RecordingLogger<ForeignRunningOrderManualReleaseTests> log = new();
+        VehicleFaultRecoveryOptions recovery = new() { CredentialEnvironmentVariable = "CS617_TEST_CREDENTIAL" };
+
+        ForeignRunningOrderReleaseState state = ForeignRunningOrderReleaseStartup.Check(
+            log,
+            new ForeignRunningOrderReleaseOptions { Enabled = enabled },
+            recovery,
+            name => name == "CS617_TEST_CREDENTIAL" ? credential : throw new InvalidOperationException($"asked for {name}"));
+
+        Assert.Equal(new ForeignRunningOrderReleaseState(enabled, present), state);
+        if (warns)
+        {
+            (LogLevel level, string message) = Assert.Single(log.Entries);
+            Assert.Equal(LogLevel.Warning, level);
+            Assert.Contains("CS617_TEST_CREDENTIAL", message, StringComparison.Ordinal);
+        }
+        else
+        {
+            Assert.Empty(log.Entries);
+        }
+    }
+
+    /// <summary>
+    /// 增量审查 S-1：<c>EFFECTIVE_CONFIGURATION</c> 末尾带上这个入口，恰好两个布尔（开没开、凭据在不在），经宿主同一个格式化器写出；之前那几项的属性名
+    /// 不变（事件改用源生成的写法，因为七个占位符超出 <c>LoggerMessage.Define</c> 的上限）。
+    /// </summary>
+    [Fact]
+    public void TheEffectiveConfigurationEventCarriesTheReleaseEntryAsExactlyTwoBooleans()
+    {
+        using StringWriter writer = new();
+        using (Serilog.Core.Logger serilog = new Serilog.LoggerConfiguration().WriteTo.Sink(new CompactJsonSink(writer)).CreateLogger())
+        using (Serilog.Extensions.Logging.SerilogLoggerFactory factory = new(serilog))
+        {
+            EffectiveConfigurationEvent.Log(
+                factory.CreateLogger("ControlServer.Host"),
+                new JourneyRuntimeOptions { AllowedWorkTypes = ["STAGING_TO_WIRE"], AllowedDispatchZones = ["WIRE"] },
+                new ControlServer.Host.Runtime.CreateGate.MapStationCatalogOptions(),
+                "http://127.0.0.1:58188",
+                new ForeignRunningOrderReleaseState(Enabled: true, CredentialPresent: false));
+        }
+
+        using JsonDocument logged = JsonDocument.Parse(writer.ToString().Trim());
+        JsonElement root = logged.RootElement;
+        Assert.StartsWith("EFFECTIVE_CONFIGURATION ", root.GetProperty("@mt").GetString(), StringComparison.Ordinal);
+        Assert.EndsWith(" foreignRunningOrderRelease={ForeignRunningOrderRelease}", root.GetProperty("@mt").GetString(), StringComparison.Ordinal);
+        JsonElement release = root.GetProperty("ForeignRunningOrderRelease");
+        Assert.Equal(
+            [("CredentialPresent", JsonValueKind.False), ("Enabled", JsonValueKind.True)],
+            release.EnumerateObject().Select(item => (item.Name, item.Value.ValueKind)).OrderBy(item => item.Name, StringComparer.Ordinal));
+        Assert.Equal("STAGING_TO_WIRE", Assert.Single(root.GetProperty("AllowedWorkTypes").EnumerateArray().ToArray()).GetString());
+        Assert.Equal("http://127.0.0.1:58188", root.GetProperty("MesIngestBaseUrl").GetString());
+        Assert.Equal(JsonValueKind.False, root.GetProperty("ClearanceToWaitingPointEnabled").ValueKind);
+        Assert.Equal(JsonValueKind.Object, root.GetProperty("MapStationCatalog").ValueKind);
+        Assert.Equal(JsonValueKind.Array, root.GetProperty("Fleet").ValueKind);
+        Assert.Equal(5350, root.GetProperty("EventId").GetProperty("Id").GetInt32());
+    }
+
+    /// <summary>宿主的格式化器（CompactJsonFormatter），写进一个字符串。</summary>
+    private sealed class CompactJsonSink(TextWriter writer) : Serilog.Core.ILogEventSink
+    {
+        private readonly Serilog.Formatting.Compact.CompactJsonFormatter _formatter = new();
+
+        public void Emit(Serilog.Events.LogEvent logEvent) => _formatter.Format(logEvent, writer);
     }
 
     // ---- 人工出口：拒绝 -------------------------------------------------------------------------------------------------------

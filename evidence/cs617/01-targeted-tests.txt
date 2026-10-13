@@ -25,3 +25,11 @@ pwsh -NoProfile -File scripts/parallel/Test-ParallelInstance.ps1
 dotnet build ControlServer.sln
 Build succeeded.
     0 Warning(s)
+
+# 增量审查跟改之后（S-1 启动告警与 EFFECTIVE_CONFIGURATION、L-1 回读为空记 Unknown、L-4 停止方向写错一节的用例）
+dotnet test tests/ControlServer.Tests --filter "...上一组...|FullyQualifiedName~ParallelInstanceEffectiveConfigurationTests"
+Passed!  - Failed:     0, Passed:   560, Skipped:     0, Total:   560, Duration: 1 m 30 s - ControlServer.Tests.dll (net8.0)
+（之后启动告警事件号由 2234 改为 2235：cs#673 的工作树已占 2234；ForeignRunningOrderManualReleaseTests 重跑 50 passed）
+pwsh -NoProfile -File scripts/parallel/Test-ParallelInstance.ps1
+840 passed, 0 failed
+dotnet build ControlServer.sln：0 警告

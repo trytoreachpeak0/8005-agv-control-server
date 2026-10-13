@@ -202,8 +202,14 @@ app.UseSerilogRequestLogging();
 app.Lifetime.ApplicationStarted.Register(() =>
 {
     JourneyRuntimeOptions effective = app.Services.GetRequiredService<IOptions<JourneyRuntimeOptions>>().Value;
+    // control-server#617 incremental review S-1: an entry on without its credential is warned about here, never refused.
+    ForeignRunningOrderReleaseState release = ForeignRunningOrderReleaseStartup.Check(
+        app.Logger,
+        app.Services.GetRequiredService<IOptions<ForeignRunningOrderReleaseOptions>>().Value,
+        app.Services.GetRequiredService<IOptions<VehicleFaultRecoveryOptions>>().Value,
+        Environment.GetEnvironmentVariable);
     MapStationCatalogOptions catalog = app.Services.GetRequiredService<IOptions<MapStationCatalogOptions>>().Value;
-    EffectiveConfigurationEvent.Log(app.Logger, effective, catalog, app.Configuration["MesIngest:baseUrl"] ?? "http://127.0.0.1:5088");
+    EffectiveConfigurationEvent.Log(app.Logger, effective, catalog, app.Configuration["MesIngest:baseUrl"] ?? "http://127.0.0.1:5088", release);
 });
 
 // control-server#473：数据库一碰之前先拿与库文件绑定的锁，进程活着就一直不放；另一个进程（另一个服务端实例、正在直接写库的

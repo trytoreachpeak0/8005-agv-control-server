@@ -2794,6 +2794,23 @@ foreach ($written in @(
         -Name "stop direction: a taskTypeStations that is written is still checked -- $($written.Name) is refused" -Detail "got: $refusal"
 }
 
+# control-server#617 incremental review L-4, after stopWritten above: the stop direction tolerates the release entry's section
+# only when it is absent; one that is written is checked as on the way in.
+$refusal = Get-AssertRefusal (Copy-Definition $oldInstalled)
+Write-Result -Ok ($null -ne $refusal -and $refusal.Contains('foreignRunningOrderRelease must be an object')) `
+    -Name 'stop direction: without the switch the 10-07 definition is refused for foreignRunningOrderRelease too' -Detail "got: $refusal"
+foreach ($written in @(
+        @{ Name = 'enabled not stated'; Value = @{}; Expect = 'foreignRunningOrderRelease.enabled must be stated explicitly' }
+        @{ Name = 'enabled as a string'; Value = @{ enabled = 'true' }; Expect = 'foreignRunningOrderRelease.enabled must be a JSON boolean' }
+        @{ Name = 'a string instead of an object'; Value = 'true'; Expect = 'foreignRunningOrderRelease must be an object' }
+    )) {
+    $stopWritten = Copy-Definition $oldInstalled
+    $stopWritten['foreignRunningOrderRelease'] = $written.Value
+    $refusal = Get-AssertRefusal $stopWritten -ForStopDirection
+    Write-Result -Ok ($null -ne $refusal -and $refusal.Contains($written.Expect)) `
+        -Name "stop direction: a foreignRunningOrderRelease that is written is still checked -- $($written.Name) is refused" -Detail "got: $refusal"
+}
+
 # The call sites, by AST: only the uninstaller and the gate script pass the switch, and the gate passes it only for Close.
 function Get-StopDirectionArgument([string] $FileName) {
     $ast = [System.Management.Automation.Language.Parser]::ParseFile((Join-Path $PSScriptRoot $FileName), [ref]$null, [ref]$null)

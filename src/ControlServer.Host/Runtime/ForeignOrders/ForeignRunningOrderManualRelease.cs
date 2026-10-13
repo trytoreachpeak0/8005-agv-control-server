@@ -266,9 +266,10 @@ public sealed class ForeignRunningOrderManualRelease(
 
     /// <summary>
     /// A cancel this server sent to the order (a row that came to <c>UNSETTLED</c> from <c>CANCEL_SENT</c>) is settled in its audit
-    /// attempt as the supervision's own ending settles it (review L1): CONFIRMED when RIoT reads the order CANCELLED, FAILED
-    /// otherwise -- it ended some other way, or it is gone and the cancel can no longer be shown to have done anything. An attempt
-    /// already settled is left alone. Staged; the caller saves. Answers what the attempt was settled as, or null.
+    /// attempt as the supervision's own ending settles it (review L1, incremental review L-1): CONFIRMED when RIoT reads the order
+    /// CANCELLED, FAILED when it reads another ending, UNKNOWN when it reads none -- the order is gone or unreadable, and the
+    /// supervision's <c>Outcome</c> says UNKNOWN for a missing state too. An attempt already settled is left alone. Staged; the
+    /// caller saves. Answers what the attempt was settled as, or null.
     /// </summary>
     private async Task<string?> SettleCancelAsync(ForeignRiotOrderRow row, DateTimeOffset now, CancellationToken cancellationToken)
     {
@@ -289,9 +290,12 @@ public sealed class ForeignRunningOrderManualRelease(
         {
             return null;
         }
-        attempt.Outcome = row.EndedOrderState == RiotOrderState.Cancelled
-            ? RiotOrderCommandOutcome.Confirmed
-            : RiotOrderCommandOutcome.Failed;
+        attempt.Outcome = row.EndedOrderState switch
+        {
+            RiotOrderState.Cancelled => RiotOrderCommandOutcome.Confirmed,
+            null => RiotOrderCommandOutcome.Unknown,
+            _ => RiotOrderCommandOutcome.Failed,
+        };
         attempt.ReconciledAt = now;
         return attempt.Outcome.ToString();
     }
