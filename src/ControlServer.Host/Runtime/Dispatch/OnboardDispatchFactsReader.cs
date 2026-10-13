@@ -208,24 +208,31 @@ public sealed class OnboardDispatchFactsReader(
     /// newest one without trusting either peer clock or receive order. No match means the session
     /// row and the inbox disagree, which proves nothing and fails closed.
     /// </summary>
+    /// <remarks>
+    /// Read newest first and stopped at the first match (control-server#597): it used to load and parse every safety message
+    /// of every vehicle and generation, once per round per vehicle. Which row is taken does not change, ties on one tick included
+    /// (<see cref="SafetyMessagesNewestFirst"/>); with no match it still reads them all, as before.
+    /// </remarks>
     private async Task<ProtocolInboxRow?> LatestSafetySummaryForSessionAsync(
         string agvId,
         long generation,
         long safetyRevision,
         CancellationToken cancellationToken)
     {
-        ProtocolInboxRow[] rows = await dbContext.ProtocolInbox.AsNoTracking()
-            .Where(row => row.MessageType == "SafetyStateSnapshot" || row.MessageType == "SafetyStateChanged")
-            .ToArrayAsync(cancellationToken).ConfigureAwait(false);
-        rows = rows.OrderByDescending(row => row.ReceivedAt).ToArray();
-        return rows.FirstOrDefault(row =>
+        await foreach (ProtocolInboxRow row in SafetyMessagesNewestFirst.Read(dbContext)
+                           .WithCancellation(cancellationToken)
+                           .ConfigureAwait(false))
         {
             using JsonDocument document = JsonDocument.Parse(row.RequestJson);
             JsonElement root = document.RootElement;
-            return RequiredString(root, "agvId") == agvId &&
-                   root.GetProperty("sessionGeneration").GetInt64() == generation &&
-                   root.GetProperty("payload").GetProperty("safetyStateVersion").GetInt64() == safetyRevision;
-        });
+            if (RequiredString(root, "agvId") == agvId &&
+                root.GetProperty("sessionGeneration").GetInt64() == generation &&
+                root.GetProperty("payload").GetProperty("safetyStateVersion").GetInt64() == safetyRevision)
+            {
+                return row;
+            }
+        }
+        return null;
     }
 
     /// <summary>

@@ -89,8 +89,9 @@ public sealed class ProtocolInboxReadWindowTests
     /// （<see cref="JourneyRuntimeOptions.MaximumEvidenceAge"/>）里的行：窗口之前那四十条心跳不读回来，车照样算活、事实照样读出。
     /// </summary>
     /// <remarks>
-    /// 读回次数逐条数得出来：能力快照、基线安全快照、当前安全摘要三处按类型读，各一行加一次「没有了」；判存活只读窗口里那一条心跳，
-    /// 读到它就停。合计 2 + 2 + 2 + 1 = 7。今天判存活整表读回 43 行再加一次「没有了」，合计 50。
+    /// 读回次数逐条数得出来：能力快照、基线安全快照两处按类型读，各一行加一次「没有了」；当前安全摘要从新到旧读、读到那一行就停
+    /// （control-server#597），记 1；判存活只读窗口里那一条心跳，读到它就停。合计 2 + 2 + 1 + 1 = 6。#563 之前判存活整表读回
+    /// 43 行再加一次「没有了」，合计 50；#597 之前当前安全摘要也是一行加一次「没有了」，合计 7。
     /// </remarks>
     [Fact]
     public async Task DispatchFactsReadOnlyTheEvidenceWindowToJudgeLiveness()
@@ -107,7 +108,7 @@ public sealed class ProtocolInboxReadWindowTests
         database.Reads.Reset();
         OnboardDispatchFacts? facts = await Reader(database.Context).ReadOnboardFactsAsync(AgvId, Token);
 
-        Assert.Equal((Generation, 7), (facts?.SessionGeneration, database.Reads.Rows));
+        Assert.Equal((Generation, 6), (facts?.SessionGeneration, database.Reads.Rows));
     }
 
     /// <summary>
@@ -116,8 +117,8 @@ public sealed class ProtocolInboxReadWindowTests
     /// 车静默时没有下界，就要从此刻一路往回扫到它最后那一条，断线一天每轮约 8.6 万行。
     /// </summary>
     /// <remarks>
-    /// 读回次数逐条数得出来：三处按类型读各 2；判存活只读证据窗口里另一台车的 15 条心跳（此刻之前 1、3、……、29 秒）加一次「没有了」。
-    /// 合计 6 + 16 = 22，另一台车在窗口之前多发多少条都一样。
+    /// 读回次数逐条数得出来：能力快照、基线安全快照各 2，当前安全摘要读到即停记 1（control-server#597，此前也是 2）；判存活只读证据窗口里
+    /// 另一台车的 15 条心跳（此刻之前 1、3、……、29 秒）加一次「没有了」。合计 5 + 16 = 21，另一台车在窗口之前多发多少条都一样。
     /// </remarks>
     [Theory]
     [InlineData(50)]
@@ -136,7 +137,7 @@ public sealed class ProtocolInboxReadWindowTests
         database.Reads.Reset();
         OnboardDispatchFacts? facts = await Reader(database.Context).ReadOnboardFactsAsync(AgvId, Token);
 
-        Assert.Equal((null, 22), (facts, database.Reads.Rows));
+        Assert.Equal((null, 21), (facts, database.Reads.Rows));
     }
 
     /// <summary>
@@ -328,7 +329,8 @@ public sealed class ProtocolInboxReadWindowTests
         Assert.Equal(storedText, textDown);
         Assert.Equal(expected.OrderBy(pair => pair.Key), backfilled.OrderBy(pair => pair.Key));
         Assert.Equal(
-            ["IX_ProtocolInbox_MessageType", "IX_ProtocolInbox_ReceivedAtUtcTicks"],
+            // control-server#597 adds the composite one in a later migration, so it is back too after migrating all the way up.
+            ["IX_ProtocolInbox_MessageType", "IX_ProtocolInbox_MessageType_ReceivedAtUtcTicks", "IX_ProtocolInbox_ReceivedAtUtcTicks"],
             (await IndexNamesAsync(fixture)).Where(name => name.StartsWith("IX_ProtocolInbox_", StringComparison.Ordinal)));
     }
 

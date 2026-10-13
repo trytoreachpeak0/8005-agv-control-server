@@ -94,6 +94,19 @@
 
 .PARAMETER Rollback
     Reinstall the previous generation from <packageRoot>.previous. Downloads nothing.
+
+.PARAMETER ProductionCutover
+    control-server#564 (docs/production-cutover-mode-plan.md). Deploy a production cutover definition: one carrying
+    productionCutover.approvalRecord, agv01 in its roster and all six task types from the production MesIngest. The
+    definition check lifts those two guards only with this switch and that record together. The first cutover install
+    must find no database under the data root and must not be a -Rollback; once installed, every later install and
+    rollback of this instance must carry the switch (Get-ParallelCutoverInstallRefusal). The MVP service must be absent,
+    or Stopped and Disabled (Get-ParallelCutoverMvpRefusal).
+
+.PARAMETER LeaveProductionCutover
+    control-server#564 review S4. The governed way out of an installed production cutover: installs a parallel (non-cutover)
+    definition over it, onto an empty data root -- the cutover database renamed aside first, as evidence. The last step of
+    the rollback in docs/production-cutover-mode-plan.md section 7. Not with -ProductionCutover, not with -Rollback.
 #>
 [CmdletBinding(DefaultParameterSetName = 'Install')]
 param(
@@ -120,7 +133,11 @@ param(
 
     [switch] $AllowRiotCreateDispatch,
 
-    [switch] $AllowRiotForeignOrderCancel
+    [switch] $AllowRiotForeignOrderCancel,
+
+    [switch] $ProductionCutover,
+
+    [switch] $LeaveProductionCutover
 )
 
 $ErrorActionPreference = 'Stop'
@@ -214,7 +231,7 @@ try {
 
     $definition = Read-ParallelInstanceDefinition -Path $InstanceDefinitionPath
     $null = Assert-ParallelInstanceDefinition -Definition $definition -AllowRiotCreateDispatch:$AllowRiotCreateDispatch `
-        -AllowRiotForeignOrderCancel:$AllowRiotForeignOrderCancel
+        -AllowRiotForeignOrderCancel:$AllowRiotForeignOrderCancel -ProductionCutover:$ProductionCutover
     Write-Step "Instance definition accepted: $($definition['instanceId'])"
 
     # Every path and name below comes from Get-ParallelInstanceLayout -- the same source the
@@ -222,6 +239,18 @@ try {
     # removes are one list by construction (control-server#262 re-review, M4). Do not read a path
     # or a service/task name out of $definition here: Test-ParallelInstance.ps1 fails on it.
     $layout = Get-ParallelInstanceLayout -Definition $definition
+
+    # control-server#564. The production cutover's history rules, before anything changes: an installed cutover is never
+    # reinstalled without the switch, and the first cutover install is an install onto an empty data root.
+    $cutoverState = Get-ParallelCutoverInstallState -Layout $layout
+    $cutoverRefusal = Get-ParallelCutoverInstallRefusal -Definition $definition -Previous $cutoverState.Previous `
+        -ProductionCutover:$ProductionCutover -LeaveProductionCutover:$LeaveProductionCutover -Rollback:$Rollback `
+        -DatabaseFiles $cutoverState.DatabaseFiles -DataRoot $layout.DataRoot
+    if ($cutoverRefusal) { throw $cutoverRefusal }
+    if ($ProductionCutover) {
+        Write-Warning ("PRODUCTION CUTOVER: agv01 and all six task types from the production MesIngest. Approval: " +
+            $definition['productionCutover']['approvalRecord'])
+    }
 
     # control-server#535. Where this instance's demand comes from, said before anything changes and
     # again in the result lines (19-deploy-control-server-parallel.ps1 asserts it there, per mode).
@@ -270,6 +299,13 @@ try {
 
     $mvpBefore = Get-MvpFingerprint
     Write-Step ("MVP service before: " + (Format-MvpFingerprint $mvpBefore))
+    # control-server#564 review M3: a cutover is installed only while the MVP is stopped and disabled. Still before anything changes.
+    if ($ProductionCutover) {
+        $mvpEvidence = Get-ParallelMvpRuntimeEvidence
+        $mvpRefusal = Get-ParallelCutoverMvpRefusal -Fingerprint $mvpBefore -Action 'Installing' `
+            -ListeningPorts $mvpEvidence.ListeningPorts -ProcessPaths $mvpEvidence.ProcessPaths
+        if ($mvpRefusal) { throw $mvpRefusal }
+    }
 
     function Get-ServiceEnvironment {
         # This service's registry Environment (REG_MULTI_SZ); empty when the service does not exist.

@@ -388,7 +388,13 @@ public sealed partial class JourneyRuntimeEngine
     /// 这辆车此刻证明停稳、没有活动订单：RIoT 车辆读数在线、空闲、速度为零、无任务号、新鲜，并且运动安全读数为停止。成立答读数的时刻，
     /// 任一不满足或读不到答空。
     /// </summary>
-    private async Task<DateTimeOffset?> ProvenStoppedWithoutOrderAsync(string vehicleKey, CancellationToken cancellationToken)
+    private async Task<DateTimeOffset?> ProvenStoppedWithoutOrderAsync(string vehicleKey, CancellationToken cancellationToken) =>
+        (await ProvenStoppedVehicleAsync(vehicleKey, cancellationToken).ConfigureAwait(false))?.ReadAt;
+
+    /// <summary><see cref="ProvenStoppedWithoutOrderAsync"/>，连同那一份读数（调用方要车此刻在哪个站，control-server#611）。</summary>
+    private async Task<(DateTimeOffset ReadAt, RiotVehicleObservation Vehicle)?> ProvenStoppedVehicleAsync(
+        string vehicleKey,
+        CancellationToken cancellationToken)
     {
         RiotVehicleObservation vehicle;
         RiotVehicleSafetyObservation safety;
@@ -408,7 +414,7 @@ public sealed partial class JourneyRuntimeEngine
                string.IsNullOrWhiteSpace(vehicle.OrderTaskId) &&
                vehicle.ObservedAt <= readAt && readAt - vehicle.ObservedAt <= runtimeOptions.MaximumEvidenceAge &&
                safety.MotionState == RiotVehicleMotionState.Stopped
-            ? readAt
+            ? (readAt, vehicle)
             : null;
     }
 
@@ -538,63 +544,23 @@ public sealed partial class JourneyRuntimeEngine
         JourneyStopRow stop,
         CancellationToken cancellationToken)
     {
-        ChargingAllocationBoard board = dispatchRound.Charging.Board;
-        RiotOrderObservation observed;
-        try
-        {
-            observed = await vehicleFacts.ReconcileByUpperIdAsync(stop.UpperId, cancellationToken).ConfigureAwait(false);
-        }
-        catch (Exception error) when (error is HttpRequestException or InvalidDataException or TaskCanceledException &&
-                                      !cancellationToken.IsCancellationRequested)
-        {
-            board.SeenOrUnread(stop.UpperId);
-            return;
-        }
-
         // Only a "no such order" counts: HTTP 404, or the exact absent-at-observation read -- HTTP 200 / code 0 with no result,
         // which is what real RIoT answers (review M-A; the create path reads it the same way). An answer that could not be
         // classified, one with a failure category or a code, or an order that is there, breaks the run and the count starts again.
-        if (observed.Kind != RiotOrderObservationKind.NotFound && !observed.IsExactAbsentAtObservation(stop.UpperId))
-        {
-            board.SeenOrUnread(stop.UpperId);
-            return;
-        }
-
-        DateTimeOffset now = timeProvider.GetUtcNow();
-        TimeSpan absent = now - board.AbsentSince(stop.UpperId, now);
-        if (absent < runtimeOptions.ChargingOrderAbsentAbandonAfter)
-        {
-            return;
-        }
-
-        if (await ProvenStoppedWithoutOrderAsync(runtime.VehicleKey, cancellationToken).ConfigureAwait(false) is not { } readAt)
-        {
-            return;
-        }
-
-        bool noUnfinishedOrder;
-        try
-        {
-            noUnfinishedOrder = await dispatchRound.Charging.Occupancy
-                .VehicleHasNoUnfinishedOrderAsync(runtime.VehicleKey, cancellationToken).ConfigureAwait(false);
-        }
-        catch (Exception error) when (error is HttpRequestException or InvalidDataException or TaskCanceledException &&
-                                      !cancellationToken.IsCancellationRequested)
-        {
-            return;
-        }
-        if (!noUnfinishedOrder)
+        if (await OrderNeverAppearedAsync(stop.UpperId, runtime.VehicleKey, cancellationToken).ConfigureAwait(false)
+            is not { } evidence)
         {
             return;
         }
 
         checkpointWaits.Clear(runtime.VehicleKey);
         await ChargingEnding
-            .StageAsync(dbContext, runtime, stop, ChargingExecutionReasons.OrderNeverAppeared, readAt, cancellationToken)
+            .StageAsync(dbContext, runtime, stop, ChargingExecutionReasons.OrderNeverAppeared, evidence.ReadAt, cancellationToken)
             .ConfigureAwait(false);
         await dbContext.SaveChangesAsync(cancellationToken).ConfigureAwait(false);
-        board.SeenOrUnread(stop.UpperId);
-        LogChargingOrderAbandoned(logger, stop.UpperId, runtime.JourneyId, runtime.VehicleKey, absent, stop.StationRiotId, null);
+        dispatchRound.Charging.Board.SeenOrUnread(stop.UpperId);
+        LogChargingOrderAbandoned(
+            logger, stop.UpperId, runtime.JourneyId, runtime.VehicleKey, evidence.Absent, stop.StationRiotId, null);
         await JourneyClosure.SendAsync(publisher, dbContext, runtime.AgvId, cancellationToken).ConfigureAwait(false);
     }
 

@@ -37,6 +37,9 @@
   "vehicleFaultRecovery": {
     "enabled": false
   },
+  "foreignRunningOrderRelease": {
+    "enabled": true
+  },
   "fieldOperatorRoles": {
     "path": "D:\\zhengyushao\\control-server-v2-ops\\field-operator-roles.json",
     "onboardClearanceEntryDeclared": false
@@ -55,7 +58,7 @@
     "maximumEvidenceAge": "00:00:30",
     "checkpointWaitBudget": "00:05:00",
     "stationDepartureWaitTimeout": "00:05:00",
-    "cargoHoldingTimeout": "00:30:00",
+    "cargoHoldingTimeout": "00:05:00",
     "areaEndAdmissionRevokedTimeout": "00:10:00",
     "agvId": "老厂前线新多仓位2",
     "vehicleKey": "BROKERX-f38975561adf46ccb1d2f23833c7d0e4",
@@ -67,7 +70,7 @@
     "sublotBoxCountPath": "/api/v2/sublot-box-count",
     "allowedWorkTypes": ["DIE_TO_WIRE_STAGING", "DIE_TO_OVEN", "WIRE_TO_GATE", "WIRE_TO_OPTICAL", "STAGING_TO_WIRE", "WIRE_TO_NITROGEN"],
     "allowedDispatchZones": ["WIRE"],
-    "admissionPolicyVersion": 3,
+    "admissionPolicyVersion": 6,
     "admissionPolicyDeploymentId": "MAP-26-WIRE_TO_GATE-20261007"
   }
 }

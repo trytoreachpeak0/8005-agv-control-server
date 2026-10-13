@@ -56,10 +56,13 @@ public sealed class JourneyRuntimeOptions
     /// <see cref="StationDepartureWaitTimeout"/> on purpose: the two clocks must never share a field.
     /// </summary>
     /// <remarks>
-    /// Thirty minutes by default and always positive. Batch 7's schema ticket (control-server#206) adds the setting; its
-    /// reader is control-server#212.
+    /// Five minutes by default and always positive. Five minutes is the production ceiling the user set on 2026-10-11, down
+    /// from thirty (control-server#609, ADR-cross-0057 revision): no deployment runs longer -- the parallel instance's
+    /// definition check refuses more, the Host itself does not -- and field drills may run shorter. Every parallel instance
+    /// definition states the value explicitly, so a rollback to an older package does not fall back to that package's
+    /// thirty. Batch 7's schema ticket (control-server#206) adds the setting; its reader is control-server#212.
     /// </remarks>
-    public TimeSpan CargoHoldingTimeout { get; set; } = TimeSpan.FromMinutes(30);
+    public TimeSpan CargoHoldingTimeout { get; set; } = TimeSpan.FromMinutes(5);
     public string SublotBoxCountPath { get; set; } = string.Empty;
     public string[] AllowedWorkTypes { get; set; } = [];
     public string[] AllowedDispatchZones { get; set; } = [];
@@ -367,6 +370,16 @@ public sealed class JourneyRuntimeOptionsValidator(IConfiguration configuration)
             options.ChargingOrderAbsentAbandonAfter > TimeSpan.FromHours(1))
         {
             failures.Add("ChargingOrderAbsentAbandonAfter must be positive and at most 1 h.");
+        }
+        // control-server#611 review S1: two orders given up as never having appeared are at least the abandon window plus the
+        // cooldown apart. Unless that is shorter than the repeat window, "stop after the second within the window" can never
+        // fire, and a create that always fails (control-server#616) loops for ever, one give-up per window.
+        else if (options.OwnOrderRebuildRepeatWindow > TimeSpan.Zero &&
+                 options.ChargingOrderAbsentAbandonAfter + options.OwnOrderRebuildDelay >= options.OwnOrderRebuildRepeatWindow)
+        {
+            failures.Add(
+                "ChargingOrderAbsentAbandonAfter plus OwnOrderRebuildDelay must be shorter than OwnOrderRebuildRepeatWindow, " +
+                "or a repeatedly failing create is never stopped.");
         }
         if (options.AdmissionPolicyVersion <= 0) failures.Add("AdmissionPolicyVersion must be positive.");
         RequireText(options.AdmissionPolicyDeploymentId, nameof(options.AdmissionPolicyDeploymentId), failures);

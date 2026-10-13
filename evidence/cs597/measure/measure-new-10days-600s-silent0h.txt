@@ -1,0 +1,11 @@
+inbox rows=1301825 safetyRows=4322 days=10 changeSeconds=600 agv01SilentHours=0 vehicles=3 seed=95.5s db=397MiB
+migrate up on the seeded inbox (file cache warm: the seed just wrote it): pending=[20261013041134_ProtocolInboxTypeNewestFirstIndex] took=1.54s
+uncached sequential read of the database file: 431MiB in 0.37s (1176MiB/s)
+plan CapabilitySnapshot by type: SEARCH p USING INDEX IX_ProtocolInbox_MessageType (MessageType=?)
+plan SafetyStateSnapshot by type: SEARCH p USING INDEX IX_ProtocolInbox_MessageType (MessageType=?)
+plan SublotSubmitted by type and text: SEARCH p USING INDEX IX_ProtocolInbox_MessageType (MessageType=?)
+plan both safety types, no order (the read before this ticket): SEARCH p USING INDEX IX_ProtocolInbox_MessageType (MessageType=?)
+OnboardDispatchFactsReader.ReadOnboardFactsAsync(AGV-01): inboxReadCalls=15 medianMs=13.0 minMs=11.8 maxMs=15.8 answer=OnboardDispatchFacts { SessionGeneration = 3, AvailableSlots = System.Int32[], DepartureSafe = True, VehicleStopped = True, AllTargetSlotsLocked = True, AllUnlockOutputsReset = True, UnknownPresent = False } slots=1,2,3,4,5,6,7,8
+OnboardDispatchFactsReader.ReadDepartureSafetyGapsAsync(AGV-01): inboxReadCalls=8 medianMs=5.4 minMs=3.9 maxMs=8.6 answer=[]
+InTransitDoorFacts.ReadAsync(AGV-01): inboxReadCalls=15 medianMs=7.4 minMs=6.0 maxMs=8.4 answer=InTransitDoorVerdict { State = ProvenLocked, Generation = 3, SafetyStateVersion = 1440, NotProvenLocked = False, ReportedNotLocked = False }
+ExpectedActionOverdueQueryEndpoint.ReadAsync: inboxReadCalls=15 medianMs=28.0 minMs=25.2 maxMs=31.3 answer={"thresholdSeconds":360,"unavailableVehicles":[{"agvId":"AGV-02","reason":"\u5C1A\u672A\u6536\u5230\u8BE5\u8F66\u5FEB\u7167"},{"agvId":"AGV-03","reason":"\u5C1A\u672A\u6536\u5230\u8BE5\u8F66\u5FEB\u7167"}],"slots":[{"agvId":"AGV-01","slotNo":3,"stationId":null,"operationType":null,"expectedAction":"\u5173\u597D3\u53F7\u4ED3\u95E8","raisedAt":"2026-10-13T07:49:59+08:00","waitedSeconds":961,"stationTimeoutDoorNotClosed":false,"readings":{"observedAt":"2026-10-13T07:50:00+08:00","safetyStateVersion":1440,"lockState":"LOCKED","physicalState":"EMPTY","unlockOutputState":"RESET","changedSinceObserved":false},"declaration":null}]}

@@ -2754,6 +2754,8 @@ namespace ControlServer.Infrastructure.Persistence.Migrations
 
                     b.HasIndex("ReceivedAtUtcTicks");
 
+                    b.HasIndex("MessageType", "ReceivedAtUtcTicks");
+
                     b.ToTable("ProtocolInbox");
                 });
 

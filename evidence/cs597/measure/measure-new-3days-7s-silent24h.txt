@@ -1,0 +1,11 @@
+inbox rows=444797 safetyRows=98744 days=3 changeSeconds=7 agv01SilentHours=24 vehicles=3 seed=33.8s db=170MiB
+migrate up on the seeded inbox (file cache warm: the seed just wrote it): pending=[20261013041134_ProtocolInboxTypeNewestFirstIndex] took=0.56s
+uncached sequential read of the database file: 183MiB in 0.11s (1727MiB/s)
+plan CapabilitySnapshot by type: SEARCH p USING INDEX IX_ProtocolInbox_MessageType (MessageType=?)
+plan SafetyStateSnapshot by type: SEARCH p USING INDEX IX_ProtocolInbox_MessageType (MessageType=?)
+plan SublotSubmitted by type and text: SEARCH p USING INDEX IX_ProtocolInbox_MessageType (MessageType=?)
+plan both safety types, no order (the read before this ticket): SEARCH p USING INDEX IX_ProtocolInbox_MessageType (MessageType=?)
+OnboardDispatchFactsReader.ReadOnboardFactsAsync(AGV-01): inboxReadCalls=24734 medianMs=237.3 minMs=230.4 maxMs=303.5 answer=null
+OnboardDispatchFactsReader.ReadDepartureSafetyGapsAsync(AGV-01): inboxReadCalls=24691 medianMs=228.3 minMs=222.1 maxMs=441.8 answer=[]
+InTransitDoorFacts.ReadAsync(AGV-01): inboxReadCalls=24696 medianMs=228.6 minMs=218.8 maxMs=234.2 answer=InTransitDoorVerdict { State = Stale, Generation = 3, SafetyStateVersion = 24686, NotProvenLocked = True, ReportedNotLocked = False }
+ExpectedActionOverdueQueryEndpoint.ReadAsync: inboxReadCalls=9 medianMs=9.2 minMs=7.6 maxMs=10.1 answer={"thresholdSeconds":360,"unavailableVehicles":[{"agvId":"AGV-01","reason":"\u8F66\u8F86\u5931\u8054"},{"agvId":"AGV-02","reason":"\u5C1A\u672A\u6536\u5230\u8BE5\u8F66\u5FEB\u7167"},{"agvId":"AGV-03","reason":"\u5C1A\u672A\u6536\u5230\u8BE5\u8F66\u5FEB\u7167"}],"slots":[]}

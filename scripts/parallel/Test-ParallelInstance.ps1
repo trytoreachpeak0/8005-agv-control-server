@@ -28,7 +28,10 @@
 #>
 [CmdletBinding()]
 param(
-    [string] $DefinitionPath = (Join-Path $PSScriptRoot 'instance-factory01-v2.json')
+    [string] $DefinitionPath = (Join-Path $PSScriptRoot 'instance-factory01-v2.json'),
+    # control-server#669. The merged area assignment table to compare with the cutover definition's zones -- one file, as
+    # an import replaces the whole table. Left out, only the built-in cases run.
+    [string[]] $AreaAssignmentPath
 )
 
 $ErrorActionPreference = 'Stop'
@@ -696,6 +699,21 @@ $cases = @(
         Name = 'vehicleFaultRecovery.enabled as a string'
         Expect = "vehicleFaultRecovery.enabled must be a JSON boolean, got 'true'"
         Mutate = { param($d) $d['vehicleFaultRecovery']['enabled'] = 'true'; $d }
+    }
+    @{
+        Name = 'foreignRunningOrderRelease absent'
+        Expect = 'foreignRunningOrderRelease must be an object'
+        Mutate = { param($d) $d.Remove('foreignRunningOrderRelease'); $d }
+    }
+    @{
+        Name = 'foreignRunningOrderRelease.enabled absent'
+        Expect = 'foreignRunningOrderRelease.enabled must be stated explicitly'
+        Mutate = { param($d) $d['foreignRunningOrderRelease'].Remove('enabled'); $d }
+    }
+    @{
+        Name = 'foreignRunningOrderRelease.enabled as a string'
+        Expect = "foreignRunningOrderRelease.enabled must be a JSON boolean, got 'true'"
+        Mutate = { param($d) $d['foreignRunningOrderRelease']['enabled'] = 'true'; $d }
     }
     @{
         # The overlay writes this instance's own variable name; a definition that names one could
@@ -1682,6 +1700,8 @@ $optionSources = @(
     # instance's own name, so a definition cannot point the parallel service at the MVP's variable.
     @{ Section = 'vehicleFaultRecovery'; Path = 'src/ControlServer.Host/Runtime/VehicleFaultRecoveryOptions.cs'; Class = 'VehicleFaultRecoveryOptions'; Excluded = @('CredentialEnvironmentVariable') }
     @{ Section = 'fieldOperatorRoles'; Path = 'src/ControlServer.Host/Runtime/Charging/FieldOperatorRoleRoster.cs'; Class = 'FieldOperatorRoleOptions'; Excluded = @() }
+    # control-server#617.
+    @{ Section = 'foreignRunningOrderRelease'; Path = 'src/ControlServer.Host/Runtime/ForeignOrders/ForeignRunningOrderReleaseOptions.cs'; Class = 'ForeignRunningOrderReleaseOptions'; Excluded = @() }
 )
 foreach ($source in $optionSources) {
     $properties = Get-OptionProperty -RelativePath $source.Path -ClassName $source.Class
@@ -2017,10 +2037,31 @@ foreach ($case in $credentialCases) {
     }
     Write-Result -Ok $ok -Name $case.Name -Detail $detail
 }
+# control-server#617 (review M1): the foreign running order release entry on its own, fault recovery off, needs the same credential.
+$releaseOnly = Copy-Definition $clearanceDefinition
+$releaseOnly['vehicleFaultRecovery']['enabled'] = $false
+$releaseOnly['foreignRunningOrderRelease'] = [ordered]@{ enabled = $true }
+foreach ($case in @(
+        @{ Name = 'release entry on, recovery off, no credential: refused naming the variable'; Supplied = ''; Throws = $true }
+        @{ Name = 'release entry on, recovery off, credential supplied: accepted'; Supplied = 'selftest-release'; Throws = $false }
+    )) {
+    $ok = $false; $detail = ''
+    try {
+        $got = Resolve-ParallelFaultRecoveryCredential -Definition $releaseOnly -Supplied $case.Supplied -Carried $null
+        if ($case.Throws) { $detail = "returned '$got' instead of refusing" } else { $ok = $got -ceq $case.Supplied; $detail = "got '$got'" }
+    } catch {
+        $message = $_.Exception.Message
+        if ($case.Throws) { $ok = $message.Contains($credentialName) -and $message.Contains('foreignRunningOrderRelease'); $detail = "refused, but: $message" }
+        else { $detail = "threw: $message" }
+    }
+    Write-Result -Ok $ok -Name $case.Name -Detail $detail
+}
 # Entry off: no credential is fine, and nothing is added to the Environment.
 Invoke-PathCase 'entry off, no credential' {
     $off = Copy-Definition $clearanceDefinition
     $off['vehicleFaultRecovery']['enabled'] = $false
+    # control-server#617: the foreign running order release entry uses the same credential; off too, or it still needs one.
+    $off['foreignRunningOrderRelease']['enabled'] = $false
     $r = Invoke-ClearancePath -Definition $off -BaseConfiguration (Copy-Definition $productConfiguration) -ProductRebuildsEnvironment
     Write-Result -Ok (@($r.Environment | Where-Object { $_ -like "$credentialName=*" }).Count -eq 0 -and
         $r.Configuration['VehicleFaultRecovery']['enabled'] -eq $false -and
@@ -2756,6 +2797,23 @@ foreach ($written in @(
         -Name "stop direction: a taskTypeStations that is written is still checked -- $($written.Name) is refused" -Detail "got: $refusal"
 }
 
+# control-server#617 incremental review L-4, after stopWritten above: the stop direction tolerates the release entry's section
+# only when it is absent; one that is written is checked as on the way in.
+$refusal = Get-AssertRefusal (Copy-Definition $oldInstalled)
+Write-Result -Ok ($null -ne $refusal -and $refusal.Contains('foreignRunningOrderRelease must be an object')) `
+    -Name 'stop direction: without the switch the 10-07 definition is refused for foreignRunningOrderRelease too' -Detail "got: $refusal"
+foreach ($written in @(
+        @{ Name = 'enabled not stated'; Value = @{}; Expect = 'foreignRunningOrderRelease.enabled must be stated explicitly' }
+        @{ Name = 'enabled as a string'; Value = @{ enabled = 'true' }; Expect = 'foreignRunningOrderRelease.enabled must be a JSON boolean' }
+        @{ Name = 'a string instead of an object'; Value = 'true'; Expect = 'foreignRunningOrderRelease must be an object' }
+    )) {
+    $stopWritten = Copy-Definition $oldInstalled
+    $stopWritten['foreignRunningOrderRelease'] = $written.Value
+    $refusal = Get-AssertRefusal $stopWritten -ForStopDirection
+    Write-Result -Ok ($null -ne $refusal -and $refusal.Contains($written.Expect)) `
+        -Name "stop direction: a foreignRunningOrderRelease that is written is still checked -- $($written.Name) is refused" -Detail "got: $refusal"
+}
+
 # The call sites, by AST: only the uninstaller and the gate script pass the switch, and the gate passes it only for Close.
 function Get-StopDirectionArgument([string] $FileName) {
     $ast = [System.Management.Automation.Language.Parser]::ParseFile((Join-Path $PSScriptRoot $FileName), [ref]$null, [ref]$null)
@@ -2799,7 +2857,10 @@ try {
         )) {
         $out = @(& pwsh -NoProfile -File (Join-Path $PSScriptRoot 'Set-ParallelDispatchGateLocal.ps1') `
                 -State $gate.State -InstanceDefinitionPath $oldPath -WhatIf 2>&1 | ForEach-Object { "$_" })
-        $refused = [bool]($out -match 'taskTypeStations must be an object')
+        # pwsh wraps a long error at the window width and colours each piece; one more refusal reason (control-server#617)
+        # moved the break into this sentence. Matched on the text with the colour codes and the breaks taken out.
+        $flat = (($out -join ' ') -replace "\e\[[0-9;]*m", '') -replace '\s+', ' '
+        $refused = $flat.Contains('taskTypeStations must be an object')
         $reachedConfiguration = [bool]($out -match 'No installed configuration at')
         Write-Result -Ok ($gate.Pass ? ($reachedConfiguration -and -not $refused) : ($refused -and -not $reachedConfiguration)) `
             -Name ("stop direction: Set-ParallelDispatchGateLocal.ps1 -State $($gate.State) with the 10-07 definition " +
@@ -4979,6 +5040,17 @@ $shippedDefinitionNames = @('instance-factory01-v2.json', 'instance-factory01-v2
     'instance-factory01-v2.req0178-field-off.json', 'instance-factory01-v2.req0178-field-on.json',
     # control-server#665 (merged before this ticket): the batch 8/9 field definitions. PR #666 review S1.
     'instance-factory01-v2.batch89-auto.json', 'instance-factory01-v2.batch89-manual.json')
+# control-server#669: the cutover definition. Shipped, but not deployable until the cutover switch (control-server#564)
+# opens the two guards it is written against -- agv01 and WIRE_TO_GATE from the production MesIngest. It is held to its
+# own exact refusal below, not exempted: any other failure, or one of the two missing, goes red. control-server#564: with
+# the switch and an approval record written in on the day, the same file is accepted; with the switch and no record (as
+# shipped) the missing record is said and the two guards still fire, since only both halves together lift them.
+# The runtime-on twin (PR #676 review M2) is the one the cutover runs on: the two zones reach the database only through a
+# dispatch round, which needs the runtime.
+$cutoverDefinitionNames = @('instance-factory01-v2.cutover-two-zones.json', 'instance-factory01-v2.cutover-two-zones.runtime-on.json')
+$cutoverHeldRefusals = @(
+    'journeyRuntime.allowedWorkTypes ["DIE_TO_WIRE_STAGING","DIE_TO_OVEN","WIRE_TO_GATE","WIRE_TO_OPTICAL","STAGING_TO_WIRE","WIRE_TO_NITROGEN"] includes WIRE_TO_GATE, which the MVP takes from the same catalog'
+    'journeyRuntime.fleet[0] names agv01 (agvId, vehicleKey, deviceKey, riotId), the vehicle the MVP service is driving in production.')
 function Set-CatalogSection($Definition, $Section, [switch] $Remove) {
     $d = Copy-Definition $Definition
     if ($Remove) { $d.Remove('mapStationCatalog') } else { $d['mapStationCatalog'] = $Section }
@@ -4999,8 +5071,31 @@ Invoke-SourceCase 'catalog: every shipped definition carries 00:00:30 / 00:05:00
             -not ($c -is [System.Collections.IDictionary] -and $c['approvedSyncPeriod'] -ceq '00:00:30' -and $c['approvedMaxUnconfirmed'] -ceq '00:05:00' -and
                 ([string] $c['approvalRecord']).Contains('2026-10-09') -and @(Test-ParallelInstanceDefinition -Definition $d).Count -eq 0) })
     $all = @(Get-ChildItem -LiteralPath $PSScriptRoot -Filter 'instance-*.json' | ForEach-Object Name)
-    $unlisted = @($all | Where-Object { $_ -cnotin $shippedDefinitionNames })
+    $unlisted = @($all | Where-Object { $_ -cnotin $shippedDefinitionNames -and $_ -cnotin $cutoverDefinitionNames })
     @{ Ok = ($wrong.Count -eq 0 -and $unlisted.Count -eq 0); Detail = "wrong: $($wrong -join ', '); shipped but not checked here: $($unlisted -join ', ')" }
+}
+Invoke-SourceCase 'catalog: the cutover definition carries the same approved pair, and is refused for exactly the two guards control-server#564 opens' {
+    $wrong = @($cutoverDefinitionNames | Where-Object {
+            $d = Read-ParallelInstanceDefinition -Path (Join-Path $PSScriptRoot $_)
+            $c = $d.Contains('mapStationCatalog') ? $d['mapStationCatalog'] : $null
+            -not ($c -is [System.Collections.IDictionary] -and $c['approvedSyncPeriod'] -ceq '00:00:30' -and $c['approvedMaxUnconfirmed'] -ceq '00:05:00' -and
+                ([string] $c['approvalRecord']).Contains('2026-10-09') -and (Test-ExactFailure $d $cutoverHeldRefusals).Ok) })
+    @{ Ok = ($wrong.Count -eq 0); Detail = "wrong: $($wrong -join ', ')" }
+}
+Invoke-SourceCase 'cutover switch: each shipped cutover definition is accepted with -ProductionCutover once an approval record is written in, and with the switch but no record the two guards still fire beside CUTOVER_SWITCH_WITHOUT_RECORD (control-server#564)' {
+    $wrong = @($cutoverDefinitionNames | Where-Object {
+            $d = Read-ParallelInstanceDefinition -Path (Join-Path $PSScriptRoot $_)
+            [string[]] $asShipped = @(Test-ParallelInstanceDefinition -Definition (Copy-Definition $d) -ProductionCutover)
+            $approved = Copy-Definition $d
+            $approved['productionCutover'] = @{ approvalRecord = 'selftest: approval written in on the cutover day'; phase = 'trial' }
+            [string[]] $withRecord = @(Test-ParallelInstanceDefinition -Definition $approved -ProductionCutover)
+            [string[]] $recordNoSwitch = @(Test-ParallelInstanceDefinition -Definition (Copy-Definition $approved))
+            -not ($d.Contains('productionCutover') -eq $false -and
+                $asShipped.Count -eq 3 -and @($asShipped | Where-Object { $_.StartsWith('CUTOVER_SWITCH_WITHOUT_RECORD:') }).Count -eq 1 -and
+                @($cutoverHeldRefusals | Where-Object { $h = $_; -not ($asShipped | Where-Object { $_.Contains($h) }) }).Count -eq 0 -and
+                $withRecord.Count -eq 0 -and
+                $recordNoSwitch.Count -eq 3 -and @($recordNoSwitch | Where-Object { $_.StartsWith('CUTOVER_RECORD_WITHOUT_SWITCH:') }).Count -eq 1) })
+    @{ Ok = ($wrong.Count -eq 0); Detail = "wrong: $($wrong -join ', ')" }
 }
 
 # --- Whitelist against MapStationCatalogOptions ------------------------------------------------------------------
@@ -5179,6 +5274,766 @@ Invoke-SourceCase 'catalog read-back: Program.cs logs the MapStationCatalogOptio
     $program = Get-Content -Raw -LiteralPath (Join-Path $repoRoot 'src/ControlServer.Host/Program.cs')
     $ok = [regex]::IsMatch($program, 'MapStationCatalogOptions catalog = app\.Services\.GetRequiredService<IOptions<MapStationCatalogOptions>>\(\)\.Value;\s+EffectiveConfigurationEvent\.Log\(app\.Logger, effective, catalog, ')
     @{ Ok = $ok; Detail = 'Program.cs does not log IOptions<MapStationCatalogOptions>.Value in its EFFECTIVE_CONFIGURATION event' }
+}
+
+# ------------------------------------------------------------------------------------------------
+# control-server#609. The user ruled on 2026-10-11 that cargo holding lasts at most five minutes, production included;
+# the definitions said 00:30:00. On 10-12 the field read 30 minutes in effect: a hand edit of the installed file had been
+# overwritten by a reinstall from the definition (evidence/field/20261012-req0178/52-closeout-server.txt). So the ceiling
+# is pinned on what every install writes -- each instance-*.json, by pattern, so a definition added later is covered
+# without being listed -- and on the file the Host reads after the configuration step, whatever it held before.
+# ------------------------------------------------------------------------------------------------
+Write-Host ''
+Write-Host 'Cargo holding timeout at most five minutes (control-server#609)' -ForegroundColor Cyan
+
+$holdingCeiling = [timespan]::FromMinutes(5)
+$holdingDefinitionFiles = @(Get-ChildItem -LiteralPath $PSScriptRoot -Filter 'instance-*.json' | ForEach-Object Name | Sort-Object)
+Write-Result -Ok ($holdingDefinitionFiles.Count -ge 2) -Name 'cargo holding: instance definitions found by pattern' `
+    -Detail "found: $($holdingDefinitionFiles -join ', ')"
+function Get-HoldingOnDisk($Configuration) {
+    $sections = @($Configuration.Keys | Where-Object { $_ -ieq 'JourneyRuntime' })
+    if ($sections.Count -ne 1) { return "sections: $($sections -join ',')" }
+    $j = $Configuration[$sections[0]]
+    $values = @($j.Keys | Where-Object { $_ -ieq 'cargoHoldingTimeout' } | ForEach-Object { $j[$_] })
+    return "holding=$($values -join '|') twins=$(@(Find-CaseTwin -Node $Configuration -Path '').Count)"
+}
+foreach ($definitionFile in $holdingDefinitionFiles) {
+    $holdingDefinition = Read-ParallelInstanceDefinition -Path (Join-Path $PSScriptRoot $definitionFile)
+    $holdingJourney = $holdingDefinition['journeyRuntime']
+    $holdingValue = ($holdingJourney -is [System.Collections.IDictionary] -and $holdingJourney.Contains('cargoHoldingTimeout')) ?
+        $holdingJourney['cargoHoldingTimeout'] : $null
+    [timespan] $holdingSpan = [timespan]::Zero
+    $parsed = $holdingValue -is [string] -and $holdingValue -match '^\d{2}:\d{2}:\d{2}$' -and
+        [timespan]::TryParseExact($holdingValue, 'hh\:mm\:ss', [cultureinfo]::InvariantCulture, [ref] $holdingSpan)
+    Write-Result -Ok ($parsed -and $holdingSpan -gt [timespan]::Zero -and $holdingSpan -le $holdingCeiling) `
+        -Name "cargo holding: $definitionFile states journeyRuntime.cargoHoldingTimeout, positive and at most 00:05:00" `
+        -Detail "got '$holdingValue'"
+    if (-not $parsed) { continue }
+    # PascalCase, as a field session hand-edits the file; 00:30:00 is the value the field read back on 10-12.
+    $thirty = Copy-Definition $productConfiguration
+    $thirty['JourneyRuntime'] = [ordered]@{ enabled = $false; CargoHoldingTimeout = '00:30:00' }
+    $short = Copy-Definition $productConfiguration
+    $short['JourneyRuntime'] = [ordered]@{ enabled = $false; cargoHoldingTimeout = '00:00:40' }
+    foreach ($base in @(@{ Name = 'first install'; Value = $productConfiguration },
+            @{ Name = 'over a file hand-edited to 00:30:00'; Value = $thirty }, @{ Name = 'over a file at 00:00:40'; Value = $short })) {
+        Invoke-SourceCase "cargo holding: $definitionFile, $($base.Name), reads back the definition's $holdingValue" {
+            $got = Get-HoldingOnDisk (Invoke-CatalogFileStep (Copy-Definition $holdingDefinition) (Copy-Definition $base.Value))
+            @{ Ok = ($got -ceq "holding=$holdingValue twins=0"); Detail = "expected 'holding=$holdingValue twins=0', got '$got'" }
+        }
+    }
+}
+
+# Left out, the Host would take the package default -- thirty in every package older than #609, so a rollback would
+# bring it back. The definition check refuses that, and a value .NET would bind as something else.
+foreach ($case in @(
+        @{ Name = 'left out'; Edit = { param($j) $j.Remove('cargoHoldingTimeout') }; Expect = @('journeyRuntime.cargoHoldingTimeout must be set explicitly') }
+        @{ Name = 'zero'; Edit = { param($j) $j['cargoHoldingTimeout'] = '00:00:00' }; Expect = @('journeyRuntime.cargoHoldingTimeout must be a positive string hh:mm:ss') }
+        @{ Name = '"5" (which .NET reads as five days)'; Edit = { param($j) $j['cargoHoldingTimeout'] = '5' }; Expect = @('journeyRuntime.cargoHoldingTimeout must be a positive string hh:mm:ss') }
+        @{ Name = 'a JSON number'; Edit = { param($j) $j['cargoHoldingTimeout'] = 300 }; Expect = @('journeyRuntime.cargoHoldingTimeout must be a positive string hh:mm:ss') }
+        @{ Name = '00:05:01, one second above the ceiling'; Edit = { param($j) $j['cargoHoldingTimeout'] = '00:05:01' }; Expect = @('it must be at most 00:05:00') }
+        @{ Name = '00:30:00, the value the definitions carried before #609'; Edit = { param($j) $j['cargoHoldingTimeout'] = '00:30:00' }; Expect = @('journeyRuntime.cargoHoldingTimeout is 00:30:00; it must be at most 00:05:00') })) {
+    Invoke-SourceCase "cargo holding refused: $($case.Name)" {
+        $d = Copy-Definition $baseline
+        $null = & $case.Edit $d['journeyRuntime']
+        Test-ExactFailure $d $case.Expect
+    }
+}
+
+# The two ways out accept what was installed before #609 -- 00:30:00, or (older still) nothing -- as for taskTypeStations.
+foreach ($case in @(
+        @{ Name = '00:30:00'; Edit = { param($j) $j['cargoHoldingTimeout'] = '00:30:00' } }
+        @{ Name = 'left out'; Edit = { param($j) $j.Remove('cargoHoldingTimeout') } })) {
+    Invoke-SourceCase "cargo holding: with -ForStopDirection a definition with $($case.Name) is accepted" {
+        $d = Copy-Definition $baseline
+        $null = & $case.Edit $d['journeyRuntime']
+        Test-ExactFailure $d @() -ForStopDirection
+    }
+}
+
+# Review 1.4: the exemption reaches cargo holding only. admissionPolicyVersion left out is still refused on the way out.
+Invoke-SourceCase 'cargo holding: -ForStopDirection does not relax the admissionPolicyVersion rule' {
+    $d = Copy-Definition $baseline
+    $d['journeyRuntime'].Remove('admissionPolicyVersion')
+    Test-ExactFailure $d @('journeyRuntime.admissionPolicyVersion must be set explicitly') -ForStopDirection
+}
+
+# ------------------------------------------------------------------------------------------------
+# control-server#614. Map 26's machine stations were renamed on 10-11 and the map re-uploaded on 10-12, and the instance
+# went through new databases under overrides; the factory01 v2 instance ran under 4, 5 and 6 while the definitions said 3.
+# AdmissionPolicyVersionGuardTests pins the definitions' value to the history; this pins that each definition's value
+# reaches the file the Host reads, whatever that file said before. The file before holds the definition's value minus
+# one and plus one: an overlay that left the key out would read back the old value and go red either way (review L1).
+# Every instance-*.json, by pattern, so a definition added later is covered without being listed.
+# ------------------------------------------------------------------------------------------------
+Write-Host ''
+Write-Host 'Admission policy version on disk after the configuration step (control-server#614)' -ForegroundColor Cyan
+
+function Get-AdmissionVersionOnDisk($Configuration) {
+    $sections = @($Configuration.Keys | Where-Object { $_ -ieq 'JourneyRuntime' })
+    if ($sections.Count -ne 1) { return "sections: $($sections -join ',')" }
+    $j = $Configuration[$sections[0]]
+    $values = @($j.Keys | Where-Object { $_ -ieq 'admissionPolicyVersion' } | ForEach-Object { $j[$_] })
+    return "version=$($values -join '|') twins=$(@(Find-CaseTwin -Node $Configuration -Path '').Count)"
+}
+$admissionDefinitionFiles = @(Get-ChildItem -LiteralPath $PSScriptRoot -Filter 'instance-*.json' | ForEach-Object Name | Sort-Object)
+Write-Result -Ok ($admissionDefinitionFiles.Count -ge 2) -Name 'admission version: instance definitions found by pattern' `
+    -Detail "found: $($admissionDefinitionFiles -join ', ')"
+foreach ($definitionFile in $admissionDefinitionFiles) {
+    $admissionDefinition = Read-ParallelInstanceDefinition -Path (Join-Path $PSScriptRoot $definitionFile)
+    # Review L1: a missing key would cast to 0 and pass only because 0 matches nothing read back. Fail it by name.
+    $admissionJourney = $admissionDefinition['journeyRuntime']
+    if ($admissionJourney -isnot [System.Collections.IDictionary] -or -not $admissionJourney.Contains('admissionPolicyVersion')) {
+        Write-Result -Ok $false -Name "admission version: $definitionFile carries journeyRuntime.admissionPolicyVersion" -Detail 'the definition has no journeyRuntime.admissionPolicyVersion'
+        continue
+    }
+    $admissionVersion = [long] $admissionJourney['admissionPolicyVersion']
+    # PascalCase, as a field session hand-edits the file.
+    $below = Copy-Definition $productConfiguration
+    $below['JourneyRuntime'] = [ordered]@{ enabled = $false; AdmissionPolicyVersion = $admissionVersion - 1 }
+    $above = Copy-Definition $productConfiguration
+    $above['JourneyRuntime'] = [ordered]@{ enabled = $false; admissionPolicyVersion = $admissionVersion + 1 }
+    foreach ($base in @(@{ Name = 'first install'; Value = $productConfiguration },
+            @{ Name = "over a file at $($admissionVersion - 1)"; Value = $below }, @{ Name = "over a file at $($admissionVersion + 1)"; Value = $above })) {
+        Invoke-SourceCase "admission version: $definitionFile, $($base.Name), reads back the definition's $admissionVersion" {
+            $got = Get-AdmissionVersionOnDisk (Invoke-CatalogFileStep (Copy-Definition $admissionDefinition) (Copy-Definition $base.Value))
+            @{ Ok = ($got -ceq "version=$admissionVersion twins=0"); Detail = "expected 'version=$admissionVersion twins=0', got '$got'" }
+        }
+    }
+}
+
+# Review L2: the definition check refuses a definition without the key, or with one that is not a positive integer.
+foreach ($case in @(
+        @{ Name = 'left out'; Edit = { param($j) $j.Remove('admissionPolicyVersion') }; Expect = @('journeyRuntime.admissionPolicyVersion must be set explicitly') }
+        @{ Name = 'zero'; Edit = { param($j) $j['admissionPolicyVersion'] = 0 }; Expect = @('journeyRuntime.admissionPolicyVersion must be a positive JSON integer') }
+        @{ Name = 'a JSON string'; Edit = { param($j) $j['admissionPolicyVersion'] = '6' }; Expect = @('journeyRuntime.admissionPolicyVersion must be a positive JSON integer') })) {
+    Invoke-SourceCase "admission version refused: $($case.Name)" {
+        $d = Copy-Definition $baseline
+        $null = & $case.Edit $d['journeyRuntime']
+        Test-ExactFailure $d $case.Expect
+    }
+}
+
+# ------------------------------------------------------------------------------------------------
+# control-server#564. The production cutover switch (docs/production-cutover-mode-plan.md; user decision 2026-10-13, D1/D6).
+# Three things are pinned: with the switch off every guard refuses as before (the whole suite above runs with it off, and the
+# cases below add the cutover-shaped definitions); with it on exactly two guards are lifted -- agv01 in the roster, and the
+# production source taking the six types -- and nothing else; and the instance's history rules (never leave a cutover by a
+# reinstall without the switch, first cutover install on a new database) that keep the way back to the MVP the plan's.
+# ------------------------------------------------------------------------------------------------
+Write-Host ''
+Write-Host 'Production cutover switch (control-server#564)' -ForegroundColor Cyan
+
+$cutoverSix = @('DIE_TO_WIRE_STAGING', 'DIE_TO_OVEN', 'WIRE_TO_GATE', 'WIRE_TO_OPTICAL', 'STAGING_TO_WIRE', 'WIRE_TO_NITROGEN')
+$cutoverRowMakers = [ordered]@{
+    agv01 = { New-FleetRow '老厂前线新多仓位1' $agv01Key 58 @('WIRE_TO_GATE', 'WIRE_TO_OPTICAL', 'WIRE_TO_NITROGEN') @('WIRE_BONDING') }
+    agv02 = { New-FleetRow '老厂前线新多仓位2' $agv02Key 59 @('STAGING_TO_WIRE') @('WIRE_BONDING') }
+    agv03 = { New-FleetRow '老厂前线新多仓位3' $agv03Key 60 @('DIE_TO_OVEN', 'DIE_TO_WIRE_STAGING') @('DIE_ATTACH') }
+}
+# The shape of PR #676's cutover definition (control-server#669) on top of the production-source definition: three dedicated
+# cars, two zones, the six types, the production MesIngest. -Cars picks a stage (S1: agv02; S2: agv02 and agv01).
+function New-CutoverDefinition([string[]] $Cars = @('agv01', 'agv02', 'agv03'), [switch] $NoRecord, [string] $Phase = 'trial') {
+    $d = Copy-Definition $productionSource
+    foreach ($key in @('agvId', 'vehicleKey', 'agvLifecycleGeneration')) { $d['journeyRuntime'].Remove($key) }
+    $d['journeyRuntime']['allowedWorkTypes'] = @($cutoverSix)
+    $d['journeyRuntime']['allowedDispatchZones'] = @('WIRE_BONDING', 'DIE_ATTACH')
+    $d['journeyRuntime']['dispatchZone'] = 'WIRE_BONDING'
+    $d['journeyRuntime']['fleet'] = @($Cars | ForEach-Object { & $cutoverRowMakers[$_] })
+    if (-not $NoRecord) { $d['productionCutover'] = @{ approvalRecord = '用户 2026-10-13 批准生产切换（control-server#564 评论，Coordinator 10 转达）'; phase = $Phase } }
+    return Copy-Definition $d
+}
+function Test-CutoverFailure($Definition, [string[]] $Expect, [switch] $Cutover, [switch] $ForStopDirection) {
+    [string[]] $got = @(Test-ParallelInstanceDefinition -Definition $Definition -ProductionCutover:$Cutover -ForStopDirection:$ForStopDirection)
+    $unmatched = @($Expect | Where-Object { $fragment = $_; -not ($got | Where-Object { $_.Contains($fragment) }) })
+    return @{ Ok = ($got.Count -eq $Expect.Count -and $unmatched.Count -eq 0)
+        Detail = "expected exactly '$($Expect -join "', '")'; got $($got.Count): $($got -join ' | ')" }
+}
+$cutoverDefinition = New-CutoverDefinition
+
+# --- The six types are the package's, and the module's constant is them --------------------------
+Invoke-SourceCase 'cutover: the six types equal the package appsettings.json allowedWorkTypes, in order' {
+    $package = Get-Content -LiteralPath (Join-Path $PSScriptRoot '..\..\src\ControlServer.Host\appsettings.json') -Raw | ConvertFrom-Json -AsHashtable
+    $packaged = @($package['JourneyRuntime']['allowedWorkTypes'])
+    $module = @(Get-ParallelCutoverWorkType)
+    @{ Ok = (($packaged -join ',') -ceq ($module -join ',') -and ($module -join ',') -ceq ($cutoverSix -join ','))
+        Detail = "package [$($packaged -join ',')], module [$($module -join ',')]" }
+}
+
+# --- Switch off: the cutover-shaped definition is refused by the two guards, as today -------------
+Invoke-SourceCase 'cutover off: the cutover shape without record or switch is refused for exactly agv01 and WIRE_TO_GATE' {
+    Test-CutoverFailure (New-CutoverDefinition -NoRecord) @('journeyRuntime.fleet[0] names agv01', 'WIRE_TO_GATE, which the MVP takes from the same catalog')
+}
+Invoke-SourceCase 'cutover off: both refusals name the way to the cutover (plan document, switch and record)' {
+    [string[]] $got = @(Test-ParallelInstanceDefinition -Definition (New-CutoverDefinition -NoRecord))
+    $named = @($got | Where-Object { $_.Contains('docs/production-cutover-mode-plan.md') -and $_.Contains('-ProductionCutover') -and $_.Contains('productionCutover.approvalRecord') })
+    @{ Ok = ($got.Count -eq 2 -and $named.Count -eq 2); Detail = "got: $($got -join ' | ')" }
+}
+Invoke-SourceCase 'cutover off: the record without the switch is refused, and the two guards still fire' {
+    Test-CutoverFailure $cutoverDefinition @('CUTOVER_RECORD_WITHOUT_SWITCH', 'journeyRuntime.fleet[0] names agv01', 'WIRE_TO_GATE, which the MVP takes from the same catalog')
+}
+Invoke-SourceCase 'cutover off: the gate switches do not stand in for the cutover switch' {
+    [string[]] $got = @(Test-ParallelInstanceDefinition -Definition (New-CutoverDefinition -NoRecord) -AllowRiotCreateDispatch -AllowRiotForeignOrderCancel)
+    @{ Ok = ($got.Count -eq 2); Detail = "got: $($got -join ' | ')" }
+}
+Invoke-SourceCase 'cutover off: Assert- throws on the record without the switch' {
+    $threw = $false
+    try { $null = Assert-ParallelInstanceDefinition -Definition (Copy-Definition $cutoverDefinition) } catch { $threw = $_.Exception.Message.Contains('CUTOVER_RECORD_WITHOUT_SWITCH') }
+    @{ Ok = $threw; Detail = 'expected a throw naming CUTOVER_RECORD_WITHOUT_SWITCH' }
+}
+
+# --- Switch on: accepted, at each stage --------------------------------------------------------------
+Invoke-SourceCase 'cutover on: three dedicated cars, two zones, the six types, production source, with record -- accepted' {
+    Test-CutoverFailure $cutoverDefinition @() -Cutover
+}
+Invoke-SourceCase 'cutover on: Assert- accepts it and returns it' {
+    $returned = Assert-ParallelInstanceDefinition -Definition (Copy-Definition $cutoverDefinition) -ProductionCutover
+    @{ Ok = ($null -ne $returned); Detail = 'returned $null' }
+}
+Invoke-SourceCase 'cutover on: stage S1 (agv02 alone) -- accepted' {
+    Test-CutoverFailure (New-CutoverDefinition -Cars @('agv02')) @() -Cutover
+}
+Invoke-SourceCase 'cutover on: stage S2 (agv02 and agv01) -- accepted' {
+    Test-CutoverFailure (New-CutoverDefinition -Cars @('agv02', 'agv01')) @() -Cutover
+}
+Invoke-SourceCase 'cutover on: the six types in another order -- accepted (a set; the read-back compares the definition''s own order)' {
+    $d = Copy-Definition $cutoverDefinition
+    $d['journeyRuntime']['allowedWorkTypes'] = @($cutoverSix | Sort-Object -Descending)
+    Test-CutoverFailure $d @() -Cutover
+}
+
+# --- Switch on: only the two guards are lifted. Every MVP guard refuses exactly as with the switch off -
+# Each mutation is applied to the cutover definition (switch on) and to the production-source definition (switch off); the
+# failures must be the same strings. A guard the switch quietly loosened would show up as a missing failure on the left.
+foreach ($case in @(
+        @{ Name = 'onboardPort 58005 (the MVP transport)'; Edit = { param($d) $d['onboardPort'] = 58005 } }
+        @{ Name = 'healthPort 58007 (the MVP health binding)'; Edit = { param($d) $d['healthPort'] = 58007 } }
+        @{ Name = 'dashboardPort 58009 (the MVP dashboard)'; Edit = { param($d) $d['dashboardPort'] = 58009 } }
+        @{ Name = 'serviceName of the MVP'; Edit = { param($d) $d['serviceName'] = '8005 AGV ControlServer' } }
+        @{ Name = 'installRoot of the MVP'; Edit = { param($d) $d['installRoot'] = 'C:\Program Files\8005 AGV\ControlServer' } }
+        @{ Name = 'dataRoot of the MVP'; Edit = { param($d) $d['dataRoot'] = 'C:\ProgramData\8005\ControlServer' } }
+        @{ Name = 'packageRoot of the MVP'; Edit = { param($d) $d['packageRoot'] = 'D:\zhengyushao\ControlServer' } }
+        @{ Name = 'journeyRuntime.mapId 25 (the MVP map)'; Edit = { param($d) $d['journeyRuntime']['mapId'] = 25 } }
+        @{ Name = 'journeyRuntime.mapIdentity of the MVP map'; Edit = { param($d) $d['journeyRuntime']['mapIdentity'] = '老厂前线new' } }
+        @{ Name = 'a MAP-25 deployment label'; Edit = { param($d) $d['journeyRuntime']['admissionPolicyDeploymentId'] = 'MAP-25-WIRE_TO_GATE-20260827' } }
+        @{ Name = 'riotCreateDispatch open without -AllowRiotCreateDispatch'; Edit = { param($d) $d['riotCreateDispatch']['enabled'] = $true } }
+        @{ Name = 'mesIngest.baseUrl not the production MesIngest'; Edit = { param($d) $d['mesIngest']['baseUrl'] = 'http://127.0.0.1:5089' } }
+        @{ Name = 'a fakeMesIngest beside the production source'; Edit = { param($d) $d['fakeMesIngest'] = @{ installRoot = 'D:\zhengyushao\fake-v2'; port = 58188; taskName = 'FakeMesIngest V2'; seedPath = 'D:\zhengyushao\fake-v2\seed.json' } } })) {
+    Invoke-SourceCase "cutover on: $($case.Name) is refused exactly as with the switch off" {
+        $on = Copy-Definition $cutoverDefinition
+        $null = & $case.Edit $on
+        $off = Copy-Definition $productionSource
+        $null = & $case.Edit $off
+        [string[]] $gotOn = @(Test-ParallelInstanceDefinition -Definition $on -ProductionCutover)
+        [string[]] $gotOff = @(Test-ParallelInstanceDefinition -Definition $off)
+        @{ Ok = ($gotOff.Count -gt 0 -and ($gotOn -join "`n") -ceq ($gotOff -join "`n"))
+            Detail = "switch on: $($gotOn -join ' | ') /// switch off: $($gotOff -join ' | ')" }
+    }
+}
+Invoke-SourceCase 'cutover on: a car outside the registry is refused, listing the three registry cars' {
+    $d = Copy-Definition $cutoverDefinition
+    $d['journeyRuntime']['fleet'][1]['vehicleKey'] = 'BROKERX-00000000000000000000000000000000'
+    $d['journeyRuntime']['fleet'][1]['deviceKey'] = 'BROKERX-00000000000000000000000000000000'
+    Test-CutoverFailure $d @("journeyRuntime.fleet[1].vehicleKey 'BROKERX-00000000000000000000000000000000' is not one of the three registry cars. Allowed: agv02=$agv02Key, agv03=$agv03Key, agv01=$agv01Key.") -Cutover
+}
+Invoke-SourceCase 'cutover on: agv01 is checked on all four coordinates -- its riotId as 59 is refused' {
+    $d = Copy-Definition $cutoverDefinition
+    $d['journeyRuntime']['fleet'][0]['riotId'] = 59
+    Test-CutoverFailure $d @('journeyRuntime.fleet[0].riotId 59 does not match the RIoT id of agv01, which is 58') -Cutover
+}
+Invoke-SourceCase 'cutover on: agv01''s key with agv02''s name is refused' {
+    $d = Copy-Definition $cutoverDefinition
+    $d['journeyRuntime']['fleet'][0]['agvId'] = '老厂前线新多仓位2'
+    Test-CutoverFailure $d @("journeyRuntime.fleet[0].agvId '老厂前线新多仓位2' does not match the RIoT deviceName of agv01") -Cutover
+}
+Invoke-SourceCase 'cutover on: agv01''s key in lower case is refused (Ordinal, as the spare cars)' {
+    $d = Copy-Definition $cutoverDefinition
+    $d['journeyRuntime']['fleet'][0]['vehicleKey'] = $agv01Key.ToLowerInvariant()
+    Test-CutoverFailure $d @('is not one of the three registry cars') -Cutover
+}
+Invoke-SourceCase 'cutover on: agv01 twice is refused' {
+    $d = Copy-Definition $cutoverDefinition
+    $d['journeyRuntime']['fleet'][1] = Copy-Definition $d['journeyRuntime']['fleet'][0]
+    $d['journeyRuntime']['fleet'][1]['allowedTaskTypes'] = @()
+    Test-CutoverFailure $d @('journeyRuntime.fleet names agv01 twice', 'CUTOVER_VEHICLE_TASK_TYPES_MISMATCH: journeyRuntime.fleet[1] is agv01') -Cutover
+}
+
+# --- Switch on: the shape of the lifted guards is fixed -----------------------------------------------
+foreach ($case in @(
+        @{ Name = 'five types (WIRE_TO_NITROGEN left out)'; Types = @('DIE_TO_WIRE_STAGING', 'DIE_TO_OVEN', 'WIRE_TO_GATE', 'WIRE_TO_OPTICAL', 'STAGING_TO_WIRE') }
+        @{ Name = 'only STAGING_TO_WIRE (today''s parallel instance)'; Types = @('STAGING_TO_WIRE') }
+        @{ Name = 'six entries with one twice'; Types = @('DIE_TO_WIRE_STAGING', 'DIE_TO_OVEN', 'WIRE_TO_GATE', 'WIRE_TO_OPTICAL', 'STAGING_TO_WIRE', 'STAGING_TO_WIRE') }
+        @{ Name = 'the six plus a seventh'; Types = @($cutoverSix) + @('WIRE_TO_MOON') }
+        @{ Name = 'one type in lower case'; Types = @('DIE_TO_WIRE_STAGING', 'DIE_TO_OVEN', 'wire_to_gate', 'WIRE_TO_OPTICAL', 'STAGING_TO_WIRE', 'WIRE_TO_NITROGEN') })) {
+    Invoke-SourceCase "cutover on: allowedWorkTypes $($case.Name) is refused as not the full set" {
+        # On the S1 shape (agv02 alone, STAGING_TO_WIRE): every variant keeps that type, so only the full-set rule fires.
+        $d = New-CutoverDefinition -Cars @('agv02')
+        $d['journeyRuntime']['allowedWorkTypes'] = @($case.Types)
+        Test-CutoverFailure $d @('CUTOVER_WORK_TYPES_NOT_FULL_SET') -Cutover
+    }
+}
+Invoke-SourceCase 'cutover on: allowedWorkTypes left out is refused as not the full set' {
+    $d = Copy-Definition $cutoverDefinition
+    $d['journeyRuntime'].Remove('allowedWorkTypes')
+    Test-CutoverFailure $d @('CUTOVER_WORK_TYPES_NOT_FULL_SET') -Cutover
+}
+Invoke-SourceCase 'cutover on: two cars sharing a task type is refused (one car per type)' {
+    $d = Copy-Definition $cutoverDefinition
+    $d['journeyRuntime']['fleet'][1]['allowedTaskTypes'] = @('STAGING_TO_WIRE', 'WIRE_TO_GATE')
+    Test-CutoverFailure $d @('CUTOVER_TASK_TYPE_SHARED: WIRE_TO_GATE is in journeyRuntime.fleet[0].allowedTaskTypes and journeyRuntime.fleet[1].allowedTaskTypes',
+        'CUTOVER_VEHICLE_TASK_TYPES_MISMATCH: journeyRuntime.fleet[1] is agv02') -Cutover
+}
+# --- Each car exactly its dedicated types (coordinator 10, 2026-10-13, after cs#565's review) -------------------------
+foreach ($case in @(
+        @{ Name = 'S1: agv02 with all six types'; Cars = @('agv02'); Row = 0; Types = @('DIE_TO_WIRE_STAGING', 'DIE_TO_OVEN', 'WIRE_TO_GATE', 'WIRE_TO_OPTICAL', 'STAGING_TO_WIRE', 'WIRE_TO_NITROGEN'); Car = 'agv02' }
+        @{ Name = 'S1: agv02 with one more type (WIRE_TO_GATE, agv01''s)'; Cars = @('agv02'); Row = 0; Types = @('STAGING_TO_WIRE', 'WIRE_TO_GATE'); Car = 'agv02' }
+        @{ Name = 'S1: agv02 with no type'; Cars = @('agv02'); Row = 0; Types = @(); Car = 'agv02' }
+        @{ Name = 'S2: agv01 with one type fewer (WIRE_TO_NITROGEN left out)'; Cars = @('agv02', 'agv01'); Row = 1; Types = @('WIRE_TO_GATE', 'WIRE_TO_OPTICAL'); Car = 'agv01' }
+        @{ Name = 'S3: agv03 with its two types and one twice'; Cars = @('agv01', 'agv02', 'agv03'); Row = 2; Types = @('DIE_TO_OVEN', 'DIE_TO_WIRE_STAGING', 'DIE_TO_OVEN'); Car = 'agv03' }
+        @{ Name = 'S3: agv03 with one type in lower case'; Cars = @('agv01', 'agv02', 'agv03'); Row = 2; Types = @('die_to_oven', 'DIE_TO_WIRE_STAGING'); Car = 'agv03' })) {
+    Invoke-SourceCase "cutover dedicated split: $($case.Name) -> CUTOVER_VEHICLE_TASK_TYPES_MISMATCH" {
+        $d = New-CutoverDefinition -Cars $case.Cars
+        $d['journeyRuntime']['fleet'][$case.Row]['allowedTaskTypes'] = @($case.Types)
+        [string[]] $got = @(Test-ParallelInstanceDefinition -Definition $d -ProductionCutover)
+        $mismatch = @($got | Where-Object { $_.StartsWith("CUTOVER_VEHICLE_TASK_TYPES_MISMATCH: journeyRuntime.fleet[$($case.Row)] is $($case.Car), whose allowedTaskTypes is $(ConvertTo-Json -InputObject @($case.Types) -Compress)") })
+        @{ Ok = ($mismatch.Count -eq 1 -and $mismatch[0].Contains('must be exactly')); Detail = "got: $($got -join ' | ')" }
+    }
+}
+Invoke-SourceCase 'cutover dedicated split: each car with exactly its types, in another order -- accepted' {
+    $d = Copy-Definition $cutoverDefinition
+    foreach ($row in $d['journeyRuntime']['fleet']) { $row['allowedTaskTypes'] = @($row['allowedTaskTypes'] | Sort-Object -Descending) }
+    Test-CutoverFailure $d @() -Cutover
+}
+Invoke-SourceCase 'cutover dedicated split: a car the stage leaves out is not checked (S1 has agv02 alone and passes)' {
+    Test-CutoverFailure (New-CutoverDefinition -Cars @('agv02')) @() -Cutover
+}
+Invoke-SourceCase 'cutover dedicated split: not applied with the switch off (the parallel two-car roster keeps its own types)' {
+    [string[]] $got = @(Test-ParallelInstanceDefinition -Definition $fleetBaseline)
+    @{ Ok = (@($got | Where-Object { $_.StartsWith('CUTOVER_VEHICLE_TASK_TYPES_MISMATCH') }).Count -eq 0); Detail = "got: $($got -join ' | ')" }
+}
+Invoke-SourceCase 'cutover on: the single-vehicle keys instead of a roster are refused' {
+    $d = Copy-Definition $cutoverDefinition
+    $d['journeyRuntime'].Remove('fleet')
+    $d['journeyRuntime']['agvId'] = '老厂前线新多仓位2'; $d['journeyRuntime']['vehicleKey'] = $agv02Key; $d['journeyRuntime']['agvLifecycleGeneration'] = 1
+    Test-CutoverFailure $d @('CUTOVER_REQUIRES_FLEET') -Cutover
+}
+Invoke-SourceCase 'cutover on: a fake MesIngest source is refused (no cutover without the production catalog)' {
+    $d = Copy-Definition $cutoverDefinition
+    $d['mesIngest'] = Copy-Definition $baseline['mesIngest']
+    $d['fakeMesIngest'] = Copy-Definition $baseline['fakeMesIngest']
+    Test-CutoverFailure $d @('CUTOVER_REQUIRES_PRODUCTION_SOURCE') -Cutover
+}
+
+# --- Misuse of the switch -----------------------------------------------------------------------------
+Invoke-SourceCase 'cutover misuse: the switch without a record, on today''s production-source definition, is refused for that alone' {
+    Test-CutoverFailure (Copy-Definition $productionSource) @('CUTOVER_SWITCH_WITHOUT_RECORD') -Cutover
+}
+Invoke-SourceCase 'cutover misuse: the switch without a record on the cutover shape -- refused, and the two guards still fire' {
+    Test-CutoverFailure (New-CutoverDefinition -NoRecord) @('CUTOVER_SWITCH_WITHOUT_RECORD', 'journeyRuntime.fleet[0] names agv01', 'WIRE_TO_GATE, which the MVP takes from the same catalog') -Cutover
+}
+foreach ($case in @(
+        @{ Name = 'an empty approvalRecord'; Value = @{ approvalRecord = '  '; phase = 'trial' }; Expect = @('productionCutover.approvalRecord must say who approved') }
+        @{ Name = 'approvalRecord left out'; Value = @{ phase = 'trial' }; Expect = @('productionCutover.approvalRecord must say who approved') }
+        @{ Name = 'approvalRecord as a JSON boolean'; Value = @{ approvalRecord = $true; phase = 'trial' }; Expect = @('productionCutover.approvalRecord must say who approved') }
+        @{ Name = 'productionCutover as a JSON boolean'; Value = $true; Expect = @('productionCutover.approvalRecord must say who approved') }
+        @{ Name = 'an unknown key beside the record'; Value = @{ approvalRecord = 'x'; phase = 'trial'; enabled = $true }; Expect = @('productionCutover.enabled') }
+        @{ Name = 'phase left out (review S3)'; Value = @{ approvalRecord = 'x' }; Expect = @("productionCutover.phase must be 'trial'") }
+        @{ Name = 'phase "Trial" (not exactly lower case)'; Value = @{ approvalRecord = 'x'; phase = 'Trial' }; Expect = @("productionCutover.phase must be 'trial'") }
+        @{ Name = 'phase "pilot"'; Value = @{ approvalRecord = 'x'; phase = 'pilot' }; Expect = @("productionCutover.phase must be 'trial'") })) {
+    Invoke-SourceCase "cutover misuse: $($case.Name) is refused" {
+        $d = Copy-Definition $cutoverDefinition
+        $d['productionCutover'] = $case.Value
+        Test-CutoverFailure (Copy-Definition $d) $case.Expect -Cutover
+    }
+}
+
+# --- Already installed: the ways out read the switch from the installed record ---------------------
+Invoke-SourceCase 'cutover installed: uninstall and closing the gate accept the installed cutover definition (switch from its record)' {
+    $d = Copy-Definition $cutoverDefinition
+    [string[]] $got = @(Test-ParallelInstanceDefinition -Definition $d -AllowRiotCreateDispatch -AllowRiotForeignOrderCancel -ForStopDirection `
+            -ProductionCutover:(Test-ParallelProductionCutoverDefinition -Definition $d))
+    @{ Ok = ($got.Count -eq 0 -and (Test-ParallelProductionCutoverDefinition -Definition $d) -and -not (Test-ParallelProductionCutoverDefinition -Definition $productionSource))
+        Detail = "got: $($got -join ' | ')" }
+}
+Invoke-SourceCase 'cutover installed: Get-ParallelRetiredFakeMesIngest with a cutover as the previous install does not throw and retires nothing' {
+    $r = Get-ParallelRetiredFakeMesIngest -Previous (Copy-Definition $cutoverDefinition) -Current (Copy-Definition $cutoverDefinition)
+    @{ Ok = ($null -eq $r); Detail = "got: $(ConvertTo-Json $r -Compress)" }
+}
+foreach ($file in @('Uninstall-ParallelInstanceLocal.ps1', 'Set-ParallelDispatchGateLocal.ps1')) {
+    Invoke-SourceCase "cutover installed: $file asserts with -ProductionCutover taken from the installed record" {
+        $text = Get-Content -LiteralPath (Join-Path $PSScriptRoot $file) -Raw
+        $calls = [regex]::Matches($text, '(?m)^\$null = Assert-ParallelInstanceDefinition [^\r\n]*`\r?\n\s*-ProductionCutover:\(Test-ParallelProductionCutoverDefinition -Definition \$definition\)')
+        $all = [regex]::Matches($text, '\$null = Assert-ParallelInstanceDefinition ')
+        @{ Ok = ($calls.Count -eq 1 -and $all.Count -eq 1); Detail = "pinned calls $($calls.Count), all calls $($all.Count)" }
+    }
+}
+Invoke-SourceCase 'cutover installed: the installer passes its own -ProductionCutover to the assertion and the history check, before recording' {
+    $text = Get-Content -LiteralPath (Join-Path $PSScriptRoot 'Install-ParallelInstanceLocal.ps1') -Raw
+    $refusal = $text.IndexOf('if ($cutoverRefusal) { throw $cutoverRefusal }')
+    $ok = $text.Contains('-AllowRiotForeignOrderCancel:$AllowRiotForeignOrderCancel -ProductionCutover:$ProductionCutover') -and
+        $text.Contains('$cutoverState = Get-ParallelCutoverInstallState -Layout $layout') -and
+        $text.Contains('-Previous $cutoverState.Previous') -and $text.Contains('-DatabaseFiles $cutoverState.DatabaseFiles -DataRoot $layout.DataRoot') -and
+        $text.Contains('-ProductionCutover:$ProductionCutover -LeaveProductionCutover:$LeaveProductionCutover -Rollback:$Rollback') -and
+        $refusal -gt 0 -and $refusal -lt $text.IndexOf('Copy-Item -LiteralPath $InstanceDefinitionPath -Destination $layout.InstalledDefinitionPath')
+    @{ Ok = $ok; Detail = 'expected both calls, and the refusal before the definition is recorded' }
+}
+
+# --- History: never leave a cutover by a reinstall; the first cutover install is on a new database --------------
+$cutoverDataRoot = 'C:\ProgramData\8005\ControlServer.V2'
+$cutoverProduction = New-CutoverDefinition -Phase 'production'
+$cutoverNoPhase = Copy-Definition $cutoverDefinition
+$cutoverNoPhase['productionCutover'].Remove('phase')
+$someDatabase = @("$cutoverDataRoot\data\controlserver.db")
+foreach ($case in @(
+        @{ Name = 'today: no switch, parallel installed, database present -> no refusal (unchanged)'; Definition = $productionSource; Previous = $productionSource; Switch = $false; Rollback = $false; Db = $someDatabase; Expect = $null }
+        @{ Name = 'today: no switch, -Rollback, parallel installed -> no refusal (unchanged)'; Definition = $productionSource; Previous = $productionSource; Switch = $false; Rollback = $true; Db = $someDatabase; Expect = $null }
+        @{ Name = 'first cutover install on an empty data root -> no refusal'; Definition = $cutoverDefinition; Previous = $productionSource; Switch = $true; Rollback = $false; Db = @(); Expect = $null }
+        @{ Name = 'first cutover install, nothing installed before, empty data root -> no refusal'; Definition = $cutoverDefinition; Previous = $null; Switch = $true; Rollback = $false; Db = @(); Expect = $null }
+        @{ Name = 'first cutover install over the parallel database -> CUTOVER_REQUIRES_NEW_DATABASE'; Definition = $cutoverDefinition; Previous = $productionSource; Switch = $true; Rollback = $false; Db = $someDatabase; Expect = 'CUTOVER_REQUIRES_NEW_DATABASE' }
+        @{ Name = 'first cutover install with only a -wal left behind -> CUTOVER_REQUIRES_NEW_DATABASE'; Definition = $cutoverDefinition; Previous = $productionSource; Switch = $true; Rollback = $false; Db = @("$cutoverDataRoot\data\controlserver.db-wal"); Expect = 'CUTOVER_REQUIRES_NEW_DATABASE' }
+        @{ Name = 'first cutover as a -Rollback -> CUTOVER_FIRST_INSTALL_NOT_ROLLBACK'; Definition = $cutoverDefinition; Previous = $productionSource; Switch = $true; Rollback = $true; Db = @(); Expect = 'CUTOVER_FIRST_INSTALL_NOT_ROLLBACK' }
+        @{ Name = 'later cutover install on its own database -> no refusal'; Definition = $cutoverDefinition; Previous = $cutoverDefinition; Switch = $true; Rollback = $false; Db = $someDatabase; Expect = $null }
+        @{ Name = 'stage change (S1 -> S2) on the cutover database -> no refusal'; Definition = (New-CutoverDefinition -Cars @('agv02', 'agv01')); Previous = (New-CutoverDefinition -Cars @('agv02')); Switch = $true; Rollback = $false; Db = $someDatabase; Expect = $null }
+        @{ Name = 'v2 package -Rollback of a cutover instance, with the switch -> no refusal'; Definition = $cutoverDefinition; Previous = $cutoverDefinition; Switch = $true; Rollback = $true; Db = $someDatabase; Expect = $null }
+        @{ Name = 'parallel definition reinstalled over a cutover without the switch -> CUTOVER_SWITCH_MISSING'; Definition = $productionSource; Previous = $cutoverDefinition; Switch = $false; Rollback = $false; Db = $someDatabase; Expect = 'CUTOVER_SWITCH_MISSING' }
+        @{ Name = '-Rollback of a cutover instance without the switch -> CUTOVER_SWITCH_MISSING'; Definition = $productionSource; Previous = $cutoverDefinition; Switch = $false; Rollback = $true; Db = $someDatabase; Expect = 'CUTOVER_SWITCH_MISSING' }
+        # Review S3: trial -> production on a new database only; production -> trial never.
+        @{ Name = 'trial -> production over the trial database -> CUTOVER_PRODUCTION_REQUIRES_NEW_DATABASE'; Definition = $cutoverProduction; Previous = $cutoverDefinition; Switch = $true; Rollback = $false; Db = $someDatabase; Expect = 'CUTOVER_PRODUCTION_REQUIRES_NEW_DATABASE' }
+        @{ Name = 'trial -> production with only a -shm left -> CUTOVER_PRODUCTION_REQUIRES_NEW_DATABASE'; Definition = $cutoverProduction; Previous = $cutoverDefinition; Switch = $true; Rollback = $false; Db = @("$cutoverDataRoot\data\controlserver.db-shm"); Expect = 'CUTOVER_PRODUCTION_REQUIRES_NEW_DATABASE' }
+        @{ Name = 'trial -> production on an empty data root -> no refusal'; Definition = $cutoverProduction; Previous = $cutoverDefinition; Switch = $true; Rollback = $false; Db = @(); Expect = $null }
+        @{ Name = 'trial -> production as a -Rollback -> CUTOVER_PRODUCTION_NOT_ROLLBACK'; Definition = $cutoverProduction; Previous = $cutoverDefinition; Switch = $true; Rollback = $true; Db = @(); Expect = 'CUTOVER_PRODUCTION_NOT_ROLLBACK' }
+        @{ Name = 'production -> production on its own database (a stage change) -> no refusal'; Definition = $cutoverProduction; Previous = $cutoverProduction; Switch = $true; Rollback = $false; Db = $someDatabase; Expect = $null }
+        @{ Name = 'installed cutover without phase (#677 revision 1) -> production over its database -> CUTOVER_PRODUCTION_REQUIRES_NEW_DATABASE'; Definition = $cutoverProduction; Previous = $cutoverNoPhase; Switch = $true; Rollback = $false; Db = $someDatabase; Expect = 'CUTOVER_PRODUCTION_REQUIRES_NEW_DATABASE' }
+        @{ Name = 'installed cutover without phase -> trial on its own database -> no refusal'; Definition = $cutoverDefinition; Previous = $cutoverNoPhase; Switch = $true; Rollback = $false; Db = $someDatabase; Expect = $null }
+        @{ Name = 'production -> trial -> CUTOVER_PHASE_BACKWARDS'; Definition = $cutoverDefinition; Previous = $cutoverProduction; Switch = $true; Rollback = $false; Db = @(); Expect = 'CUTOVER_PHASE_BACKWARDS' }
+        @{ Name = 'first cutover install straight into production on an empty data root -> no refusal'; Definition = $cutoverProduction; Previous = $productionSource; Switch = $true; Rollback = $false; Db = @(); Expect = $null }
+        # Review S4: the governed exit.
+        @{ Name = 'leave: parallel definition over a cutover, empty data root -> no refusal'; Definition = $productionSource; Previous = $cutoverDefinition; Leave = $true; Db = @(); Expect = $null }
+        @{ Name = 'leave: over the cutover database -> CUTOVER_LEAVE_REQUIRES_NEW_DATABASE'; Definition = $productionSource; Previous = $cutoverDefinition; Leave = $true; Db = $someDatabase; Expect = 'CUTOVER_LEAVE_REQUIRES_NEW_DATABASE' }
+        @{ Name = 'leave: from a production cutover too, empty data root -> no refusal'; Definition = $productionSource; Previous = $cutoverProduction; Leave = $true; Db = @(); Expect = $null }
+        @{ Name = 'leave: as a -Rollback -> CUTOVER_LEAVE_NOT_ROLLBACK'; Definition = $productionSource; Previous = $cutoverDefinition; Leave = $true; Rollback = $true; Db = @(); Expect = 'CUTOVER_LEAVE_NOT_ROLLBACK' }
+        @{ Name = 'leave: with a cutover definition -> CUTOVER_LEAVE_WITH_CUTOVER_DEFINITION'; Definition = $cutoverDefinition; Previous = $cutoverDefinition; Leave = $true; Db = @(); Expect = 'CUTOVER_LEAVE_WITH_CUTOVER_DEFINITION' }
+        @{ Name = 'leave: nothing installed is a cutover -> CUTOVER_LEAVE_NOTHING_TO_LEAVE'; Definition = $productionSource; Previous = $productionSource; Leave = $true; Db = @(); Expect = 'CUTOVER_LEAVE_NOTHING_TO_LEAVE' }
+        @{ Name = 'leave and cutover switches together -> CUTOVER_SWITCHES_EXCLUSIVE'; Definition = $cutoverDefinition; Previous = $cutoverDefinition; Switch = $true; Leave = $true; Db = @(); Expect = 'CUTOVER_SWITCHES_EXCLUSIVE' })) {
+    Invoke-SourceCase "cutover history: $($case.Name)" {
+        $r = Get-ParallelCutoverInstallRefusal -Definition (Copy-Definition $case.Definition) -Previous ($null -eq $case.Previous ? $null : (Copy-Definition $case.Previous)) `
+            -ProductionCutover:([bool] $case['Switch']) -LeaveProductionCutover:([bool] $case['Leave']) -Rollback:([bool] $case['Rollback']) -DatabaseFiles $case.Db -DataRoot $cutoverDataRoot
+        $ok = ($null -eq $case.Expect) ? ($null -eq $r) : ($r -is [string] -and $r.StartsWith("$($case.Expect):") -and $r.EndsWith('Nothing was stopped or changed.'))
+        @{ Ok = $ok; Detail = "expected $($case.Expect ?? 'null'), got: $r" }
+    }
+}
+
+# --- Review M3: a cutover is installed, and its gate opened, only with the MVP stopped and disabled ------------
+foreach ($case in @(
+        @{ Name = 'MVP service absent'; F = [ordered]@{ present = $false }; Ok = $true }
+        @{ Name = 'MVP Stopped and Disabled'; F = [ordered]@{ present = $true; status = 'Stopped'; startType = 'Disabled'; pathName = 'x'; processId = 0 }; Ok = $true }
+        @{ Name = 'MVP Running (after a rollback)'; F = [ordered]@{ present = $true; status = 'Running'; startType = 'Automatic'; pathName = 'x'; processId = 42 }; Ok = $false }
+        @{ Name = 'MVP Stopped but Automatic (it would come back on a reboot)'; F = [ordered]@{ present = $true; status = 'Stopped'; startType = 'Automatic'; pathName = 'x'; processId = 0 }; Ok = $false }
+        @{ Name = 'MVP Stopped but Manual'; F = [ordered]@{ present = $true; status = 'Stopped'; startType = 'Manual'; pathName = 'x'; processId = 0 }; Ok = $false }
+        @{ Name = 'MVP StopPending and Disabled'; F = [ordered]@{ present = $true; status = 'StopPending'; startType = 'Disabled'; pathName = 'x'; processId = 42 }; Ok = $false })) {
+    Invoke-SourceCase "cutover MVP check: $($case.Name) -> $($case.Ok ? 'accepted' : 'CUTOVER_MVP_NOT_STOPPED')" {
+        $r = Get-ParallelCutoverMvpRefusal -Fingerprint $case.F -Action 'Installing'
+        @{ Ok = ($case.Ok ? ($null -eq $r) : ($r -is [string] -and $r.StartsWith('CUTOVER_MVP_NOT_STOPPED: Installing') -and $r.EndsWith('Nothing was stopped or changed.'))); Detail = "got: $r" }
+    }
+}
+$mvpAbsent = [ordered]@{ present = $false }
+$mvpStopped = [ordered]@{ present = $true; status = 'Stopped'; startType = 'Disabled'; pathName = 'x'; processId = 0 }
+foreach ($case in @(
+        @{ Name = 'service absent, a listener on 58005'; F = $mvpAbsent; Ports = @(58005); Paths = @(); Expect = 'a listener on 58005' }
+        @{ Name = 'service absent, a listener on 58007'; F = $mvpAbsent; Ports = @(58007); Paths = @(); Expect = 'a listener on 58007' }
+        @{ Name = 'service absent, a process from the MVP directory'; F = $mvpAbsent; Ports = @(); Paths = @('C:\Program Files\8005 AGV\ControlServer\ControlServer.Host.exe'); Expect = 'a process running C:\Program Files\8005 AGV\ControlServer\ControlServer.Host.exe' }
+        @{ Name = 'service Stopped and Disabled, but a listener on 58005 (another registration)'; F = $mvpStopped; Ports = @(58005); Paths = @(); Expect = 'a listener on 58005' })) {
+    Invoke-SourceCase "cutover MVP check (review S2): $($case.Name) -> CUTOVER_MVP_STILL_RUNNING" {
+        $r = Get-ParallelCutoverMvpRefusal -Fingerprint $case.F -Action 'Installing' -ListeningPorts $case.Ports -ProcessPaths $case.Paths
+        @{ Ok = ($r -is [string] -and $r.StartsWith('CUTOVER_MVP_STILL_RUNNING: Installing') -and $r.Contains($case.Expect) -and $r.EndsWith('Nothing was stopped or changed.')); Detail = "got: $r" }
+    }
+}
+Invoke-SourceCase 'cutover MVP check (review S2): service absent, no listener, no process -> accepted' {
+    $r = Get-ParallelCutoverMvpRefusal -Fingerprint $mvpAbsent -Action 'Installing' -ListeningPorts @() -ProcessPaths @()
+    @{ Ok = ($null -eq $r); Detail = "got: $r" }
+}
+Invoke-SourceCase 'cutover MVP check (review S2): only the MVP directory counts, not ControlServer.V2 or a look-alike' {
+    $got = @(Select-ParallelMvpProcessPath -Paths @('C:\Program Files\8005 AGV\ControlServer\ControlServer.Host.exe',
+            'C:\Program Files\8005 AGV\ControlServer.V2\ControlServer.Host.exe', 'C:\Program Files\8005 AGV\ControlServerX\a.exe',
+            'c:\program files\8005 agv\controlserver\tools\b.exe', $null, ''))
+    @{ Ok = ($got.Count -eq 2 -and $got -contains 'C:\Program Files\8005 AGV\ControlServer\ControlServer.Host.exe' -and
+            $got -contains 'c:\program files\8005 agv\controlserver\tools\b.exe'); Detail = "got: $($got -join ' | ')" }
+}
+Invoke-SourceCase 'cutover MVP check (review S2): the installer and the gate script pass the port and process evidence' {
+    $both = @('Install-ParallelInstanceLocal.ps1', 'Set-ParallelDispatchGateLocal.ps1' | Where-Object {
+            $t = Get-Content -LiteralPath (Join-Path $PSScriptRoot $_) -Raw
+            $t.Contains('$mvpEvidence = Get-ParallelMvpRuntimeEvidence') -and $t.Contains('-ListeningPorts $mvpEvidence.ListeningPorts -ProcessPaths $mvpEvidence.ProcessPaths') })
+    @{ Ok = ($both.Count -eq 2); Detail = "passing: $($both -join ', ')" }
+}
+Invoke-SourceCase 'cutover contract version (review round 2, L3) is 2' {
+    @{ Ok = ((Get-ParallelCutoverContractVersion) -eq 2); Detail = "got: $(Get-ParallelCutoverContractVersion)" }
+}
+Invoke-SourceCase 'gate close refusal (review round 2, S3): names the production-source way to stop intake, not only the FakeMesIngest' {
+    $state = [ordered]@{ Journeys = @([ordered]@{ JourneyId = 'journey:1'; AgvId = 'agv'; Stage = 'Travelling' }); OrderIntents = @(); AuditEvents = @() }
+    $r = Get-ParallelDispatchGateRefusal -Direction 'Close' -State $state -ServiceName '8005 AGV ControlServer V2' -DatabasePath 'C:\ProgramData\8005\ControlServer.V2\data\controlserver.db'
+    @{ Ok = ($r -is [string] -and $r.StartsWith('GATE_CLOSE_REFUSED_IN_FLIGHT:') -and $r.Contains('header-only area assignment table') -and
+            $r.Contains('section 6, step 16a') -and -not $r.Contains('agv02 and agv03')); Detail = "got: $r" }
+}
+Invoke-SourceCase 'cutover MVP check: the installer refuses with the switch, before anything changes; the gate script on Open of a cutover only' {
+    $install = Get-Content -LiteralPath (Join-Path $PSScriptRoot 'Install-ParallelInstanceLocal.ps1') -Raw
+    $gate = Get-Content -LiteralPath (Join-Path $PSScriptRoot 'Set-ParallelDispatchGateLocal.ps1') -Raw
+    $iCheck = $install.IndexOf("`$mvpRefusal = Get-ParallelCutoverMvpRefusal -Fingerprint `$mvpBefore -Action 'Installing'")
+    $gCheck = $gate.IndexOf("`$mvpRefusal = Get-ParallelCutoverMvpRefusal -Fingerprint `$mvpBefore -Action 'Opening the gate'")
+    $ok = $iCheck -gt 0 -and $install.Substring([Math]::Max(0, $iCheck - 200), 200).Contains('if ($ProductionCutover) {') -and
+        $iCheck -lt $install.IndexOf('Copy-Item -LiteralPath $InstanceDefinitionPath -Destination $layout.InstalledDefinitionPath') -and
+        $gCheck -gt 0 -and $gate.Contains("if (`$direction -ceq 'Open' -and (Test-ParallelProductionCutoverDefinition -Definition `$definition)) {") -and
+        $gCheck -lt $gate.IndexOf('$result = Invoke-ParallelDispatchGateChange')
+    @{ Ok = $ok; Detail = "installer at $iCheck, gate at $gCheck" }
+}
+
+# --- What the installer reads for the history check: the installed record and every database file ----------
+# Real files in a scratch directory. Pins: -wal and -shm count (MU1), nested and behind a junction count (MU2, review L),
+# the previous definition is installed-instance.json and never the definition being installed (MU3), and the database the
+# installed configuration names counts even when it is no *.db, while one outside the data root is refused.
+$stateRoot = Join-Path ([IO.Path]::GetTempPath()) "cs564-state-$([guid]::NewGuid().ToString('N'))"
+try {
+    $stateLayout = [pscustomobject]@{
+        DataRoot = Join-Path $stateRoot 'data-root'; InstallRoot = Join-Path $stateRoot 'install'
+        InstalledDefinitionPath = Join-Path $stateRoot 'ops\installed-instance.json'
+    }
+    New-Item -ItemType Directory -Force -Path $stateLayout.DataRoot, $stateLayout.InstallRoot, (Split-Path -Parent $stateLayout.InstalledDefinitionPath) | Out-Null
+    Invoke-SourceCase 'cutover state: an empty data root, nothing installed -> no previous, no database' {
+        $st = Get-ParallelCutoverInstallState -Layout $stateLayout
+        @{ Ok = ($null -eq $st.Previous -and @($st.DatabaseFiles).Count -eq 0); Detail = "previous $($null -ne $st.Previous), files $(@($st.DatabaseFiles) -join ', ')" }
+    }
+    Invoke-SourceCase 'cutover state: the previous definition is installed-instance.json (a cutover there is seen as one)' {
+        ConvertTo-Json -InputObject $cutoverDefinition -Depth 12 | Set-Content -LiteralPath $stateLayout.InstalledDefinitionPath -Encoding utf8
+        $st = Get-ParallelCutoverInstallState -Layout $stateLayout
+        @{ Ok = (Test-ParallelProductionCutoverDefinition -Definition $st.Previous); Detail = 'previous not read as a cutover' }
+    }
+    foreach ($leaf in @('data\controlserver.db-wal', 'data\controlserver.db-shm', 'data\deep\er\x.DB')) {
+        Invoke-SourceCase "cutover state: $leaf under the data root is found" {
+            Get-ChildItem -LiteralPath $stateLayout.DataRoot -Force | Remove-Item -Recurse -Force
+            $file = Join-Path $stateLayout.DataRoot $leaf
+            New-Item -ItemType Directory -Force -Path (Split-Path -Parent $file) | Out-Null
+            Set-Content -LiteralPath $file -Value 'x'
+            $st = Get-ParallelCutoverInstallState -Layout $stateLayout
+            @{ Ok = (@($st.DatabaseFiles) -contains $file); Detail = "files: $(@($st.DatabaseFiles) -join ', ')" }
+        }
+    }
+    Invoke-SourceCase 'cutover state: a database behind a junction inside the data root is found' {
+        Get-ChildItem -LiteralPath $stateLayout.DataRoot -Force | Remove-Item -Recurse -Force
+        $elsewhere = Join-Path $stateRoot 'elsewhere'
+        New-Item -ItemType Directory -Force -Path $elsewhere | Out-Null
+        Set-Content -LiteralPath (Join-Path $elsewhere 'controlserver.db') -Value 'x'
+        New-Item -ItemType Junction -Path (Join-Path $stateLayout.DataRoot 'data') -Target $elsewhere | Out-Null
+        $st = Get-ParallelCutoverInstallState -Layout $stateLayout
+        @{ Ok = (@($st.DatabaseFiles | Where-Object { $_ -like '*controlserver.db' }).Count -eq 1); Detail = "files: $(@($st.DatabaseFiles) -join ', ')" }
+    }
+    Invoke-SourceCase 'cutover state: the database the installed configuration names counts even without a .db name' {
+        Get-ChildItem -LiteralPath $stateLayout.DataRoot -Force | ForEach-Object { if ($_.LinkType) { $_.Delete() } else { Remove-Item -LiteralPath $_.FullName -Recurse -Force } }
+        $named = Join-Path $stateLayout.DataRoot 'store\state.sqlite'
+        New-Item -ItemType Directory -Force -Path (Split-Path -Parent $named) | Out-Null
+        Set-Content -LiteralPath $named -Value 'x'
+        ConvertTo-Json -Depth 4 -InputObject @{ ConnectionStrings = @{ ControlServer = "Data Source=$named" } } | Set-Content -LiteralPath (Join-Path $stateLayout.InstallRoot 'appsettings.Production.json') -Encoding utf8
+        $st = Get-ParallelCutoverInstallState -Layout $stateLayout
+        @{ Ok = (@($st.DatabaseFiles) -contains $named); Detail = "files: $(@($st.DatabaseFiles) -join ', ')" }
+    }
+    Invoke-SourceCase 'cutover state: an installed configuration whose database is outside the data root is refused' {
+        $outside = Join-Path $stateRoot 'outside.db'
+        ConvertTo-Json -Depth 4 -InputObject @{ ConnectionStrings = @{ ControlServer = "Data Source=$outside" } } | Set-Content -LiteralPath (Join-Path $stateLayout.InstallRoot 'appsettings.Production.json') -Encoding utf8
+        $thrown = $null
+        try { $null = Get-ParallelCutoverInstallState -Layout $stateLayout } catch { $thrown = $_.Exception.Message }
+        @{ Ok = ($null -ne $thrown -and $thrown.Contains('is not inside this instance''s data root')); Detail = "thrown: $thrown" }
+    }
+} finally {
+    Get-ChildItem -LiteralPath $stateRoot -Recurse -Force -ErrorAction SilentlyContinue | Where-Object { $_.LinkType } | ForEach-Object { $_.Delete() }
+    Remove-Item -LiteralPath $stateRoot -Recurse -Force -ErrorAction SilentlyContinue
+}
+
+# --- The audit line says what the cutover is (review M1, the server half) ---------------------------------------------
+Invoke-SourceCase 'cutover audit line: six types, PRODUCTION CUTOVER and the phase; never the STAGING_TO_WIRE-only sentence' {
+    $line = Format-ParallelMesIngestAudit -Definition $cutoverDefinition
+    $parallel = Format-ParallelMesIngestAudit -Definition $productionSource
+    @{ Ok = ($line.StartsWith("MES_INGEST_SOURCE=production baseUrl=http://127.0.0.1:5088 allowedWorkTypes=$($cutoverSix -join ',') -- PRODUCTION CUTOVER (trial)") -and
+            -not $line.Contains('STAGING_TO_WIRE only') -and $parallel.Contains('it may take STAGING_TO_WIRE only'))
+        Detail = "cutover: $line /// parallel: $parallel" }
+}
+
+# --- Read-back: a cutover is held to the six types, as a set ----------------------------------------
+function New-CutoverEffective([string[]] $Types, $Fleet = @($cutoverDefinition['journeyRuntime']['fleet'])) {
+    return [pscustomobject]@{
+        AllowedWorkTypes = @($Types); AllowedDispatchZones = @('WIRE_BONDING', 'DIE_ATTACH'); MesIngestBaseUrl = 'http://127.0.0.1:5088'
+        Fleet = @($Fleet | ForEach-Object { [pscustomobject](New-BoundVehicle $_['agvId'] $_['vehicleKey'] @($_['allowedTaskTypes']) @($_['zones'])) })
+    }
+}
+Invoke-SourceCase 'cutover read-back: bound exactly as defined (three cars, the six types) is accepted' {
+    $r = Get-ParallelEffectiveConfigurationRefusal -Definition $cutoverDefinition -Effective (New-CutoverEffective $cutoverSix)
+    @{ Ok = ($null -eq $r); Detail = "got: $r" }
+}
+Invoke-SourceCase 'cutover read-back: bound STAGING_TO_WIRE alone (the parallel binding) is refused' {
+    $r = Get-ParallelEffectiveConfigurationRefusal -Definition $cutoverDefinition -Effective (New-CutoverEffective @('STAGING_TO_WIRE'))
+    @{ Ok = ($r -is [string] -and $r.Contains('EFFECTIVE_CONFIGURATION_MISMATCH') -and $r.Contains('production cutover, but allowedWorkTypes bound [STAGING_TO_WIRE], not the six types')); Detail = "got: $r" }
+}
+Invoke-SourceCase 'cutover read-back: a bound roster without agv01 is refused' {
+    $r = Get-ParallelEffectiveConfigurationRefusal -Definition $cutoverDefinition -Effective (New-CutoverEffective $cutoverSix -Fleet @($cutoverDefinition['journeyRuntime']['fleet'] | Select-Object -Skip 1))
+    @{ Ok = ($r -is [string] -and $r.Contains('EFFECTIVE_CONFIGURATION_MISMATCH') -and $r.Contains($agv01Key)); Detail = "got: $r" }
+}
+Invoke-SourceCase 'cutover read-back: the parallel production definition bound with the six types is still refused (unchanged)' {
+    $e = [pscustomobject]@{ AllowedWorkTypes = @($cutoverSix); AllowedDispatchZones = @($productionSource['journeyRuntime']['allowedDispatchZones']); MesIngestBaseUrl = 'http://127.0.0.1:5088' }
+    $r = Get-ParallelEffectiveConfigurationRefusal -Definition $productionSource -Effective $e
+    @{ Ok = ($r -is [string] -and $r.Contains('WIRE_TO_GATE is the MVP''s')); Detail = "got: $r" }
+}
+
+# ------------------------------------------------------------------------------------------------
+# control-server#669. The cutover definition: two dispatch zones, WIRE_BONDING (N areas, wire bonding) and DIE_ATTACH
+# (T areas, die attach), user 2026-10-12; three cars dedicated by task type, user 2026-10-10 (program#171). It takes
+# effect only on the cutover's new database -- installed over the database the instance runs today, the stored policy
+# and the area table there still say WIRE. The ticket's failure: any car's zones outside allowedDispatchZones.
+# The definition check refuses agv01 before it reaches the rows' zones (Test-FleetIdentity returns on agv01), so the
+# zones, the assignment and the identities are checked here on their own, against the decisions written out.
+# ------------------------------------------------------------------------------------------------
+Write-Host ''
+Write-Host 'Cutover definition: two dispatch zones, three dedicated cars (control-server#669)' -ForegroundColor Cyan
+
+$cutoverPath = Join-Path $PSScriptRoot 'instance-factory01-v2.cutover-two-zones.json'
+$cutover = Read-ParallelInstanceDefinition -Path $cutoverPath
+$cutoverJourney = $cutover['journeyRuntime']
+$cutoverRows = @($cutoverJourney['fleet'])
+# The decisions, written out (remote-ops/fleet.md for the identities): a change to any of them is a change to this table.
+$cutoverDecision = @(
+    [pscustomobject]@{ Alias = 'agv01'; AgvId = '老厂前线新多仓位1'; Key = 'BROKERX-0c20ff0600d644869a6a80c186065d85'; RiotId = 58
+        Types = @('WIRE_TO_GATE', 'WIRE_TO_OPTICAL', 'WIRE_TO_NITROGEN'); Zones = @('WIRE_BONDING') }
+    [pscustomobject]@{ Alias = 'agv02'; AgvId = '老厂前线新多仓位2'; Key = 'BROKERX-f38975561adf46ccb1d2f23833c7d0e4'; RiotId = 59
+        Types = @('STAGING_TO_WIRE'); Zones = @('WIRE_BONDING') }
+    [pscustomobject]@{ Alias = 'agv03'; AgvId = '老厂前线新多仓位3'; Key = 'BROKERX-7daca4ee91da498d8026c68b7b941127'; RiotId = 60
+        Types = @('DIE_TO_OVEN', 'DIE_TO_WIRE_STAGING'); Zones = @('DIE_ATTACH') }
+)
+
+Invoke-SourceCase 'cutover: allowedDispatchZones is exactly [WIRE_BONDING, DIE_ATTACH], dispatchZone is one of them, WIRE is gone' {
+    $allowed = @($cutoverJourney['allowedDispatchZones'])
+    $raw = Get-Content -Raw -LiteralPath $cutoverPath
+    @{ Ok = (($allowed -join ',') -ceq 'WIRE_BONDING,DIE_ATTACH' -and $allowed -ccontains $cutoverJourney['dispatchZone'] -and
+            -not [regex]::IsMatch($raw, '"WIRE"'))
+        Detail = "allowed: $($allowed -join ','); dispatchZone: $($cutoverJourney['dispatchZone']); a quoted WIRE left: $([regex]::IsMatch($raw, '"WIRE"'))" }
+}
+Invoke-SourceCase 'cutover: every car serves at least one zone, every zone it serves is allowed, and every allowed zone is served' {
+    $allowed = @($cutoverJourney['allowedDispatchZones'])
+    $outside = @(foreach ($row in $cutoverRows) { foreach ($z in @($row['zones'])) { if (-not ($allowed -ccontains $z)) { "$($row['agvId'])->$z" } } })
+    $empty = @($cutoverRows | Where-Object { @($_['zones']).Count -eq 0 } | ForEach-Object { $_['agvId'] })
+    $served = @($cutoverRows | ForEach-Object { @($_['zones']) } | Sort-Object -Unique -CaseSensitive)
+    $unserved = @($allowed | Where-Object { $served -cnotcontains $_ })
+    @{ Ok = ($outside.Count -eq 0 -and $empty.Count -eq 0 -and $unserved.Count -eq 0)
+        Detail = "outside allowed: $($outside -join ', '); no zone: $($empty -join ', '); allowed but served by no car: $($unserved -join ', ')" }
+}
+Invoke-SourceCase 'cutover: the roster is exactly agv01, agv02, agv03 with the registry identities, in that order' {
+    $got = @($cutoverRows | ForEach-Object { "$($_['agvId'])|$($_['vehicleKey'])|$($_['deviceKey'])|$($_['riotId'])|$($_['agvLifecycleGeneration'])" })
+    $expected = @($cutoverDecision | ForEach-Object { "$($_.AgvId)|$($_.Key)|$($_.Key)|$($_.RiotId)|1" })
+    # agv02 and agv03 also against the module's own whitelist, so the two tables cannot drift apart.
+    $whitelist = @(Get-ParallelInstanceAllowedVehicle | ForEach-Object { "$($_.AgvId)|$($_.VehicleKey)|$($_.VehicleKey)|$($_.RiotId)|1" })
+    @{ Ok = (($got -join "`n") -ceq ($expected -join "`n") -and ($whitelist -join "`n") -ceq ($expected[1..2] -join "`n"))
+        Detail = "got: $($got -join ' ; ')" }
+}
+Invoke-SourceCase 'cutover: each car carries exactly the task types and zones the user assigned it' {
+    $wrong = @(foreach ($decision in $cutoverDecision) {
+            $row = $cutoverRows | Where-Object { [string]::Equals($_['vehicleKey'], $decision.Key, [StringComparison]::Ordinal) } | Select-Object -First 1
+            if ($null -eq $row) { "$($decision.Alias): no row"; continue }
+            if ((@($row['allowedTaskTypes']) -join ',') -cne ($decision.Types -join ',')) { "$($decision.Alias) types [$(@($row['allowedTaskTypes']) -join ',')]" }
+            if ((@($row['zones']) -join ',') -cne ($decision.Zones -join ',')) { "$($decision.Alias) zones [$(@($row['zones']) -join ',')]" }
+        })
+    @{ Ok = ($wrong.Count -eq 0); Detail = "differs from the decision: $($wrong -join '; ')" }
+}
+Invoke-SourceCase 'cutover: dedicated -- every allowed work type is served by exactly one car, and no car takes a type outside allowedWorkTypes' {
+    $types = @($cutoverJourney['allowedWorkTypes'])
+    $byType = @(foreach ($t in $types) { $n = @($cutoverRows | Where-Object { @($_['allowedTaskTypes']) -ccontains $t }).Count; if ($n -ne 1) { "$t served by $n" } })
+    $extra = @(foreach ($row in $cutoverRows) { foreach ($t in @($row['allowedTaskTypes'])) { if (-not ($types -ccontains $t)) { "$($row['agvId'])->$t" } } })
+    @{ Ok = ($types.Count -eq 6 -and $byType.Count -eq 0 -and $extra.Count -eq 0); Detail = "types: $($types.Count); not exactly one car: $($byType -join ', '); outside: $($extra -join ', ')" }
+}
+Invoke-SourceCase 'cutover: everything but the roster, the zones, the work types and the cargo holding wait equals the production-mes definition' {
+    # Ports, paths, service name, gates off, runtime off, the approved catalog pair, admission version and identity: what
+    # the cutover changes is the roster and the zones, and only what the cutover switch (control-server#564) decides
+    # beyond them is to change the rest. One such decision is already in: the production waits, departure 5 min and
+    # cargo holding 5 min (user 2026-10-13, D9 in control-server#564's comment); production-mes still carries 30 min
+    # for cargo holding, and whether it changes is control-server#564's.
+    $p = Read-ParallelInstanceDefinition -Path $productionFile
+    $c = Copy-Definition $cutover
+    if ($c['journeyRuntime']['cargoHoldingTimeout'] -cne '00:05:00' -or $c['journeyRuntime']['stationDepartureWaitTimeout'] -cne '00:05:00') {
+        return @{ Ok = $false; Detail = "waits: departure $($c['journeyRuntime']['stationDepartureWaitTimeout']), cargo holding $($c['journeyRuntime']['cargoHoldingTimeout']); the user's production values are 00:05:00 and 00:05:00" }
+    }
+    $c['journeyRuntime']['cargoHoldingTimeout'] = $p['journeyRuntime']['cargoHoldingTimeout']
+    foreach ($key in @('agvId', 'vehicleKey', 'agvLifecycleGeneration')) { $c['journeyRuntime'][$key] = $p['journeyRuntime'][$key] }
+    $c['journeyRuntime'].Remove('fleet')
+    foreach ($key in @('dispatchZone', 'allowedDispatchZones', 'allowedWorkTypes')) { $c['journeyRuntime'][$key] = $p['journeyRuntime'][$key] }
+    $order = @($p['journeyRuntime'].Keys)
+    $reordered = [ordered]@{}
+    foreach ($key in $order) { if ($c['journeyRuntime'].Contains($key)) { $reordered[$key] = $c['journeyRuntime'][$key] } }
+    foreach ($key in @($c['journeyRuntime'].Keys)) { if (-not $reordered.Contains($key)) { $reordered[$key] = $c['journeyRuntime'][$key] } }
+    $c['journeyRuntime'] = $reordered
+    $a = ConvertTo-Json -InputObject $c -Depth 12 -Compress
+    $b = ConvertTo-Json -InputObject (Copy-Definition $p) -Depth 12 -Compress
+    @{ Ok = [string]::Equals($a, $b, [StringComparison]::Ordinal); Detail = "cutover-derived: $a`n        production-mes: $b" }
+}
+Invoke-SourceCase 'cutover runtime-on: differs from the cutover definition only in journeyRuntime.enabled and routeGraph.enabled, both true; the gate and the other switches stay off' {
+    # PR #676 review M2. The two switches go together (README: the runtime without the route graph engine is refused, and
+    # the reverse). The RIoT create gate stays closed until its own authorized step, and the switches that need a
+    # credential or move a car on their own (fault recovery, the onboard clearance entry, clearance to a waiting point)
+    # keep the production-mes values; turning any of them on is a decision of its own, not part of the cutover's zones.
+    $r = Read-ParallelInstanceDefinition -Path (Join-Path $PSScriptRoot 'instance-factory01-v2.cutover-two-zones.runtime-on.json')
+    $ok = $r['journeyRuntime']['enabled'] -eq $true -and $r['routeGraph']['enabled'] -eq $true -and $r['riotCreateDispatch']['enabled'] -eq $false -and
+        $r['riotForeignOrderCancel']['enabled'] -eq $false -and $r['vehicleFaultRecovery']['enabled'] -eq $false -and
+        $r['fieldOperatorRoles']['onboardClearanceEntryDeclared'] -eq $false -and -not $r['journeyRuntime'].Contains('clearanceToWaitingPointEnabled')
+    $c = Copy-Definition $r
+    $c['journeyRuntime']['enabled'] = $false
+    $c['routeGraph']['enabled'] = $false
+    $a = ConvertTo-Json -InputObject $c -Depth 12 -Compress
+    $b = ConvertTo-Json -InputObject (Copy-Definition $cutover) -Depth 12 -Compress
+    @{ Ok = ($ok -and [string]::Equals($a, $b, [StringComparison]::Ordinal)); Detail = "switches as asserted: $ok`n        runtime-on with both off: $a`n        cutover: $b" }
+}
+Invoke-SourceCase 'cutover: the definitions the instance runs today still say WIRE (the zones change only with the new database)' {
+    $moved = @($shippedDefinitionNames | Where-Object {
+            $j = (Read-ParallelInstanceDefinition -Path (Join-Path $PSScriptRoot $_))['journeyRuntime']
+            (@($j['allowedDispatchZones']) -join ',') -cne 'WIRE' -or $j['dispatchZone'] -cne 'WIRE' })
+    @{ Ok = ($moved.Count -eq 0); Detail = "no longer WIRE: $($moved -join ', ')" }
+}
+
+# The area assignment tables against the zones, offline (Test-ParallelAreaAssignmentZone): the import can only be dry-run
+# against a database that already holds the zones, which is the cutover's new one.
+function New-AreaTable([string[]] $Lines) {
+    $file = Join-Path ([IO.Path]::GetTempPath()) "cs669-$([guid]::NewGuid().ToString('N')).csv"
+    [IO.File]::WriteAllText($file, (($Lines -join "`n") + "`n"), [Text.UTF8Encoding]::new($false))
+    return $file
+}
+$areaHeader = 'area,dispatch_zone,slot_position'
+foreach ($case in @(
+        @{ Name = 'one merged table naming both zones -- agree'; Tables = @(, @($areaHeader, 'N1-1,WIRE_BONDING,FRONT', 'N1-2,WIRE_BONDING,REAR', 'T1-1,DIE_ATTACH,FRONT')); Expect = @() }
+        @{ Name = 'one merged table, CRLF -- agree'; Tables = @(, @("$areaHeader`r", "N1-1,WIRE_BONDING,FRONT`r", 'T1-1,DIE_ATTACH,REAR')); Expect = @() }
+        # PR #676 review M1: each import replaces the whole table, so an N file and a T file imported one after the other
+        # leave only the second in force. Two files are refused, whatever they say -- even two that agree in union.
+        @{ Name = 'an N file and a T file, agreeing in union -- refused, merge first'; Tables = @(@($areaHeader, 'N1-1,WIRE_BONDING,FRONT'), @($areaHeader, 'T1-1,DIE_ATTACH,FRONT'))
+            Expect = @('the last one imported is the only one in force -- so merge them into one file under one header') }
+        @{ Name = 'the old zone WIRE for the N areas'; Tables = @(, @($areaHeader, 'N1-1,WIRE,FRONT', 'T1-1,DIE_ATTACH,FRONT'))
+            Expect = @("dispatch zone 'WIRE', which journeyRuntime.allowedDispatchZones [WIRE_BONDING, DIE_ATTACH] omits", "names 'WIRE_BONDING', but no table routes an AREA into it") }
+        @{ Name = 'only the N areas (what importing N after T would leave, reversed): DIE_ATTACH served by agv03 and routed nothing'; Tables = @(, @($areaHeader, 'N1-1,WIRE_BONDING,FRONT'))
+            Expect = @("names 'DIE_ATTACH', but no table routes an AREA into it") }
+        @{ Name = 'a zone differing only in case'; Tables = @(, @($areaHeader, 'N1-1,wire_bonding,FRONT', 'T1-1,DIE_ATTACH,FRONT'))
+            Expect = @("dispatch zone 'wire_bonding'", "names 'WIRE_BONDING', but no table routes") }
+        @{ Name = 'a header that is not the importer''s'; Tables = @(, @('area,zone,slot_position', 'N1-1,WIRE_BONDING,FRONT', 'T1-1,DIE_ATTACH,FRONT'))
+            Expect = @("does not start with the importer's header", "names 'WIRE_BONDING', but no table routes", "names 'DIE_ATTACH', but no table routes") }
+        @{ Name = 'a row of four fields'; Tables = @(, @($areaHeader, 'N1-1,WIRE_BONDING,FRONT,x', 'T1-1,DIE_ATTACH,FRONT'))
+            Expect = @('has rows that are not three fields (lines 2)', "names 'WIRE_BONDING', but no table routes", "names 'DIE_ATTACH', but no table routes") })) {
+    Invoke-SourceCase "cutover area tables: $($case.Name)" {
+        $files = @(foreach ($t in $case.Tables) { New-AreaTable $t })
+        try {
+            [string[]] $got = @(Test-ParallelAreaAssignmentZone -Definition (Copy-Definition $cutover) -Path $files)
+        } finally {
+            $files | ForEach-Object { Remove-Item -LiteralPath $_ -Force -ErrorAction SilentlyContinue }
+        }
+        $unmatched = @($case.Expect | Where-Object { $fragment = $_; -not ($got | Where-Object { $_.Contains($fragment) }) })
+        @{ Ok = ($got.Count -eq $case.Expect.Count -and $unmatched.Count -eq 0); Detail = "expected $($case.Expect.Count): '$($case.Expect -join "', '")'; got $($got.Count): $($got -join ' | ')" }
+    }
+}
+if ($AreaAssignmentPath) {
+    # The field table itself, when given: the ONE merged file that will be imported (field-prep/ in the workspace; not in
+    # this repository). pwsh -File passes 'a.csv,b.csv' as one string, so a comma separates paths here too -- and more
+    # than one is refused by Test-ParallelAreaAssignmentZone, since the import would leave only the last in force.
+    $AreaAssignmentPath = @($AreaAssignmentPath | ForEach-Object { $_.Split(',') } | Where-Object { $_ })
+    Invoke-SourceCase "cutover area tables, the given files: $($AreaAssignmentPath -join ', ')" {
+        [string[]] $got = @(Test-ParallelAreaAssignmentZone -Definition (Copy-Definition $cutover) -Path $AreaAssignmentPath)
+        @{ Ok = ($got.Count -eq 0); Detail = "got $($got.Count): $($got -join ' | ')" }
+    }
 }
 
 Write-Host ''

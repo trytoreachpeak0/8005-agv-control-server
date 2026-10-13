@@ -1,0 +1,70 @@
+diff --git a/src/ControlServer.Host/Dashboard/ExpectedActionOverdueQueryEndpoint.cs b/src/ControlServer.Host/Dashboard/ExpectedActionOverdueQueryEndpoint.cs
+index a6a292570..da626a0cc 100644
+--- a/src/ControlServer.Host/Dashboard/ExpectedActionOverdueQueryEndpoint.cs
++++ b/src/ControlServer.Host/Dashboard/ExpectedActionOverdueQueryEndpoint.cs
+@@ -275,7 +275,7 @@ internal sealed class ExpectedActionOverdueQueryEndpoint : IDashboardQueryEndpoi
+                     .Select(item => item.GetInt32())]));
+             }
+             coverage.Saw(version);
+-            if (latestSnapshot is not null && coverage.CompleteAfter(latestVersion))
++            if (latestSnapshot is not null && (coverage.CompleteAfter(latestVersion) || latestVersion > long.MinValue))
+             {
+                 break;
+             }
+  Determining projects to restore...
+  All projects are up-to-date for restore.
+  ControlServer.Domain -> F:\8005-wt\cs597-8005-agv-control-server\src\ControlServer.Domain\bin\Debug\net8.0\win-x64\ControlServer.Domain.dll
+  ControlServer.TestDoubles -> F:\8005-wt\cs597-8005-agv-control-server\tools\ControlServer.TestDoubles\bin\Debug\net8.0\win-x64\ControlServer.TestDoubles.dll
+  ControlServer.Dashboard -> F:\8005-wt\cs597-8005-agv-control-server\src\ControlServer.Dashboard\bin\Debug\net8.0\win-x64\ControlServer.Dashboard.dll
+  ControlServer.Application -> F:\8005-wt\cs597-8005-agv-control-server\src\ControlServer.Application\bin\Debug\net8.0\win-x64\ControlServer.Application.dll
+  ControlServer.FakeOnboard -> F:\8005-wt\cs597-8005-agv-control-server\tools\ControlServer.FakeOnboard\bin\Debug\net8.0\win-x64\ControlServer.FakeOnboard.dll
+  ControlServer.ClockSkewProxy -> F:\8005-wt\cs597-8005-agv-control-server\tools\ControlServer.ClockSkewProxy\bin\Debug\net8.0\win-x64\ControlServer.ClockSkewProxy.dll
+  ControlServer.ProtocolFaultProxy -> F:\8005-wt\cs597-8005-agv-control-server\tools\ControlServer.ProtocolFaultProxy\bin\Debug\net8.0\win-x64\ControlServer.ProtocolFaultProxy.dll
+  ControlServer.FakeRiot -> F:\8005-wt\cs597-8005-agv-control-server\tools\ControlServer.FakeRiot\bin\Debug\net8.0\win-x64\ControlServer.FakeRiot.dll
+  ControlServer.Infrastructure -> F:\8005-wt\cs597-8005-agv-control-server\src\ControlServer.Infrastructure\bin\Debug\net8.0\win-x64\ControlServer.Infrastructure.dll
+  ControlServer.FieldOps -> F:\8005-wt\cs597-8005-agv-control-server\tools\ControlServer.FieldOps\bin\Debug\net8.0\win-x64\ControlServer.FieldOps.dll
+  ControlServer.Host -> F:\8005-wt\cs597-8005-agv-control-server\src\ControlServer.Host\bin\Debug\net8.0\win-x64\ControlServer.Host.dll
+  ControlServer.SchemaConformance -> F:\8005-wt\cs597-8005-agv-control-server\tools\ControlServer.SchemaConformance\bin\Debug\net8.0\win-x64\ControlServer.SchemaConformance.dll
+  ControlServer.Tests -> F:\8005-wt\cs597-8005-agv-control-server\tests\ControlServer.Tests\bin\Debug\net8.0\win-x64\ControlServer.Tests.dll
+Test run for F:\8005-wt\cs597-8005-agv-control-server\tests\ControlServer.Tests\bin\Debug\net8.0\win-x64\ControlServer.Tests.dll (.NETCoreApp,Version=v8.0)
+VSTest version 17.11.1 (x64)
+
+Starting test execution, please wait...
+A total of 1 test files matched the specified pattern.
+  Skipped ControlServer.Tests.ProtocolInboxReadWindowTests.MeasureHotPathInboxReads [1 ms]
+[xUnit.net 00:00:08.18]     ControlServer.Tests.ExpectedActionOverdueTests.TheEndpointListsTheOverdueSlotWithVehicleStationActionWaitAndTheReadingsTheVehicleSent [FAIL]
+[xUnit.net 00:00:08.36]     ControlServer.Tests.ExpectedActionOverdueTests.TheReadingsIgnoreNewerSafetyMessagesOfAnotherGenerationOrAnotherVehicle [FAIL]
+  Failed ControlServer.Tests.ExpectedActionOverdueTests.TheEndpointListsTheOverdueSlotWithVehicleStationActionWaitAndTheReadingsTheVehicleSent [230 ms]
+  Error Message:
+   Assert.Equal() Failure: Strings differ
+                                       鈫?(pos 318)
+Expected: 路路路"observedAt":"2026-09-18T07:59:55+00:00","safetySta"路路路
+Actual:   路路路"observedAt":"2026-09-18T08:00:00+00:00","safetySta"路路路
+                                       鈫?(pos 318)
+  Stack Trace:
+     at ControlServer.Tests.ZeroChangePin.AssertTextMatches(String actual, String pinName, String sourceFile) in F:\8005-wt\cs597-8005-agv-control-server\tests\ControlServer.Tests\ZeroChangePin.cs:line 166
+   at ControlServer.Tests.ExpectedActionOverdueTests.TheEndpointListsTheOverdueSlotWithVehicleStationActionWaitAndTheReadingsTheVehicleSent() in F:\8005-wt\cs597-8005-agv-control-server\tests\ControlServer.Tests\ExpectedActionOverdueTests.cs:line 318
+   at ControlServer.Tests.ExpectedActionOverdueTests.TheEndpointListsTheOverdueSlotWithVehicleStationActionWaitAndTheReadingsTheVehicleSent() in F:\8005-wt\cs597-8005-agv-control-server\tests\ControlServer.Tests\ExpectedActionOverdueTests.cs:line 337
+--- End of stack trace from previous location ---
+  Failed ControlServer.Tests.ExpectedActionOverdueTests.TheReadingsIgnoreNewerSafetyMessagesOfAnotherGenerationOrAnotherVehicle [179 ms]
+  Error Message:
+   Assert.Equal() Failure: Values differ
+Expected: Tuple (2, "LOCKED", "OCCUPIED", False)
+Actual:   Tuple (1, "LOCKED", "EMPTY", False)
+  Stack Trace:
+     at ControlServer.Tests.ExpectedActionOverdueTests.TheReadingsIgnoreNewerSafetyMessagesOfAnotherGenerationOrAnotherVehicle() in F:\8005-wt\cs597-8005-agv-control-server\tests\ControlServer.Tests\ExpectedActionOverdueTests.cs:line 478
+   at ControlServer.Tests.ExpectedActionOverdueTests.TheReadingsIgnoreNewerSafetyMessagesOfAnotherGenerationOrAnotherVehicle() in F:\8005-wt\cs597-8005-agv-control-server\tests\ControlServer.Tests\ExpectedActionOverdueTests.cs:line 478
+--- End of stack trace from previous location ---
+[xUnit.net 00:00:08.92]     ControlServer.Tests.ExpectedActionOverdueTests.TheReadingsAreTheHighestVersionSnapshotEvenWhenTheServerClockSteppedBackBeforeIt [FAIL]
+  Failed ControlServer.Tests.ExpectedActionOverdueTests.TheReadingsAreTheHighestVersionSnapshotEvenWhenTheServerClockSteppedBackBeforeIt [204 ms]
+  Error Message:
+   Assert.Equal() Failure: Values differ
+Expected: Tuple (3, "LOCKED", "OCCUPIED", 2026-09-18T07:50:00.0000000+00:00, True)
+Actual:   Tuple (2, "UNLOCKED", "EMPTY", 2026-09-18T08:10:00.0000000+00:00, False)
+  Stack Trace:
+     at ControlServer.Tests.ExpectedActionOverdueTests.TheReadingsAreTheHighestVersionSnapshotEvenWhenTheServerClockSteppedBackBeforeIt() in F:\8005-wt\cs597-8005-agv-control-server\tests\ControlServer.Tests\ExpectedActionOverdueTests.cs:line 443
+   at ControlServer.Tests.ExpectedActionOverdueTests.TheReadingsAreTheHighestVersionSnapshotEvenWhenTheServerClockSteppedBackBeforeIt() in F:\8005-wt\cs597-8005-agv-control-server\tests\ControlServer.Tests\ExpectedActionOverdueTests.cs:line 443
+--- End of stack trace from previous location ---
+  Skipped ControlServer.Tests.SafetyStateLatestFirstReadTests.MeasureSafetyStateReads [1 ms]
+
+Failed!  - Failed:     3, Passed:   136, Skipped:     0, Total:   139, Duration: 14 s - ControlServer.Tests.dll (net8.0)

@@ -122,7 +122,7 @@ control-server#262。约 2026-10-08 起 `factory01` 上同时跑两套 ControlSe
 | `journeyRuntime.mapIdentity` | `老厂前线new_wk` | `evidence/field/2026-09-19-B6-map-name-baseline-check/real-riot/fields.json` |
 | `journeyRuntime.dispatchZone`、`allowedDispatchZones` | `WIRE` | 用户 2026-09-18 定：`evidence/field/2026-09-18-B4-site-prerequisites/03-area-assignment-table.md` 第 58、122 行（区域分配表的 `dispatch_zone` 全部是 `WIRE`，实例必须配成同一个值，否则那张表导入会报 `DISPATCH_ZONE_NOT_FOUND`） |
 | `journeyRuntime.admissionPolicyDeploymentId` | `MAP-26-WIRE_TO_GATE-20261007` | 调度 2026-10-07 定，格式沿用 map 25 的 `MAP-25-WIRE_TO_GATE-20260827`（control-server#411）。它是部署标签，不是业务参数。**实例第一次带着运行时启动之后，它就和 `admissionPolicyVersion` 一起固定在库里**：只改标签、不升版本，服务端会报 `Admission policy version is already bound to different content or deployment identity.`，判为准入策略漂移（`WireToGateStore.cs` 的 `ApplyAdmissionPolicyAsync`）。要换标签，就同时升 `admissionPolicyVersion` |
-| `journeyRuntime.admissionPolicyVersion` | `3` | 批次 10（control-server#545）放开同向四类时由 2 升到 3，与 `appsettings.json` 一致。**今后用批次 10 之后的包重装时，两份定义都必须是这个值或更高**，见下文「准入策略版本」 |
+| `journeyRuntime.admissionPolicyVersion` | `6` | 批次 10（control-server#545）放开同向四类时由 2 升到 3；之后 26 号图机台站两次改名、一次重传，factory01 v2 库依次绑了 4、5、6，control-server#614 把七份定义一起升到 6。包里的 `appsettings.json` 仍是 3（它绑的是 25 号图，不随 26 号图站名走）。**今后重装时，定义都必须是这个值或更高**，见下文「准入策略版本」 |
 | `taskTypeStations.settingsFile` | `task-type-stations.map-26.settings.json` | control-server#518。包里随 Host 带一份 26 号图站点清单，定义点名它，覆盖层写成 `TaskTypeStations:settingsFile`（Host 按安装目录解析相对路径）。包内默认的 `task-type-stations.settings.json` 仍绑 25，给 MVP 线用，不动。见下文 |
 
 这三个值都是服务端自己的配置：调度区存在本实例的库里，准入策略部署号是服务端写库时带的标签。**RIoT 里没有它们，也就无从「从 RIoT 取回」**——此前这里和工作区文档都这么写过，那是错的（control-server#411）。
@@ -145,6 +145,109 @@ control-server#518 时它只绑 `WIRE_TO_GATE` → 210「关卡」，核对号�
 - 取货端（例如 N1-3）是 AREA 端，不进这份清单，靠站点目录与区域分配表导入解析。
 
 **所以出厂定义里 `journeyRuntime.enabled` 与 `routeGraph.enabled` 都是 `false`**（control-server#411 审查 S2）。当时包里的站点清单只有绑 map 25 的那份（control-server#518 之后定义改为点名 26 版，见上文）；运行时开着时，站点清单的图号与 `JourneyRuntime:mapId`（26）对不上，Host 会以 `BindingMapMismatch` 拒绝启动（`TaskTypeStationConfigurationValidator.cs`），照原样装会再次半装。两个开关必须一起改：只开路网引擎、不开运行时会被校验拒绝。**打开运行时是以后单独授权的一步，前提是 26 版站点清单已经进包。**10-07 的首装用的就是这两项为 `false` 的定义。
+
+## 切换用定义：两个派车区、三车专车专用（control-server#669）
+
+生产切换（program#171）换新库时要装的两份定义，只差两个开关，它们只在**新库**上生效，今天在用的几份定义一字不动、仍是 `WIRE`：
+
+| 定义 | 运行时与路网引擎 | 用在哪一步 |
+| --- | --- | --- |
+| `instance-factory01-v2.cutover-two-zones.json` | 关 | 下面第 2 步：新库首次部署，导入受治理事实 |
+| `instance-factory01-v2.cutover-two-zones.runtime-on.json` | 开（`journeyRuntime.enabled`、`routeGraph.enabled` 一起开，见上文「两个开关必须一起改」） | 第 4 步起：让两个区进库、导入、开闸 |
+
+两份的建单闸门（`riotCreateDispatch`）都关，开闸是第 8 步单独授权的动作。其余开关——`vehicleFaultRecovery`、
+`fieldOperatorRoles.onboardClearanceEntryDeclared`、`journeyRuntime.clearanceToWaitingPointEnabled`（不写即关）、
+`riotForeignOrderCancel`——两份都取 `production-mes` 的值，全关。依据：它们要么要另配凭据（故障恢复、清桩入口），要么自己会让车动
+（清桩开往等待点，每次都要授权），batch89 那两份打开它们是现场测试期的决定，不是切换的决定；切换要不要开、什么时候开，归
+control-server#564 与用户，不随区名一起定。等待时长取用户 2026-10-13 定的生产值：离站 5 分钟、持货 5 分钟
+（`stationDepartureWaitTimeout`、`cargoHoldingTimeout` 都是 `00:05:00`；control-server#564 评论里的 D9），不是测试期的缩短值。
+`production-mes` 里的持货仍是 30 分钟，它改不改由 #564 定，所以这是两份切换定义与它唯一不在车队、派车区、任务类型上的差别。
+
+**用户的两个决定。**派车区（2026-10-12，经调度 C11，program#171 10-12 评论）：「N开头的都是WIre Bonding的，T开头的都是Die
+attaching里的」，弃用 `WIRE`，代号 `WIRE_BONDING`、`DIE_ATTACH`。三车专车专用（2026-10-10，program#171「已定」）：每类任务只有一辆车，
+充电或故障时该类排队、不改派，用户确认「能接受」。
+
+| 车 | `riotId` | 任务类型 | 派车区 |
+| --- | --- | --- | --- |
+| `agv01`（老厂前线新多仓位1） | 58 | `WIRE_TO_GATE`、`WIRE_TO_OPTICAL`、`WIRE_TO_NITROGEN` | `WIRE_BONDING` |
+| `agv02`（老厂前线新多仓位2） | 59 | `STAGING_TO_WIRE` | `WIRE_BONDING` |
+| `agv03`（老厂前线新多仓位3） | 60 | `DIE_TO_OVEN`、`DIE_TO_WIRE_STAGING` | `DIE_ATTACH` |
+
+`allowedDispatchZones` 是 `["WIRE_BONDING", "DIE_ATTACH"]`，`dispatchZone` 是 `WIRE_BONDING`（Host 要求它在允许列表里；有车队表时
+派车按每车的 `zones` 判）。`allowedWorkTypes` 是全部六类。除车队表、这三个键和持货等待之外，其余与 `production-mes` 逐字相同：MES 来源、端口、
+目录、服务名、运行时与建单闸门都关（`runtime-on` 那份只开运行时与路网引擎）、`REQ-0302` 两个批准值、准入版本 6 与部署标签。
+
+**今天装不上，这是有意的。**定义校验拒收两份，理由都恰好两条：车队表第 0 行是 agv01；生产 MesIngest 来源下 `allowedWorkTypes` 含
+`WIRE_TO_GATE`。自测把拒收理由钉成「恰好这两条」——少一条、多一条都红；切换开关合入时由那张票把这条用例改成「开关关时拒、开时收」，
+不要整条删掉。19 号部署脚本照样先过这道校验，所以在 #564 之前不可能把它误装到今天的库上。
+
+**切换开关要放开的不止这两道。**安装器起服务后还有一道回读：`Get-ParallelEffectiveConfigurationRefusal`
+（`ParallelInstance.psm1` 里「production MesIngest source, but allowedWorkTypes bound」那一支）在生产来源下要求 Host 实际绑定的
+`allowedWorkTypes` 恰好是 `STAGING_TO_WIRE`。只放开定义校验那两道就去装，会装到一半在回读时被拒（服务被停下）。#564 要连这道回读
+一起放开。
+
+**实例、数据目录、准入版本、部署标签都不变，理由：**
+
+- 换新库沿用 10-11 newdb5 的做法：同一个 `dataRoot`，旧库目录改名留存，空目录启动时自动迁移（program#170）。所以仍是
+  `factory01-v2-parallel`、`C:\ProgramData\8005\ControlServer.V2`，`AdmissionPolicyVersionGuardTests` 的历史表照样描述它。
+  若 #564 选「新装正式实例」（另起服务名与数据目录），那是另一个实例、另一个库：那张票要给它新的 `instanceId`／`dataRoot`，
+  并按护栏测试的说明另立历史，不能沿用这张表。
+- 调度区不进准入种子（种子 = 机台站名 × 可执行任务类型，见下文「准入策略版本」），改区不改种子，不用升版本。新库还没绑过任何
+  版本，6 在新库上首绑；19 的版本下限读 `installed-instance.json`，换库不重置，送 6 不低于它。部署标签不改：改它就要七份定义一起改，
+  或补一行历史升到 7，而它与区名无关。
+
+**为什么只在新库上生效。**旧库里当前的分区归属表 217 行都是 `WIRE`，在途与已冻结的需求也按 `WIRE` 冻结。把这份定义装到旧库上、
+运行时一开，`AreaAssignmentDispatchZoneStartupCheck` 就以「归属表把 AREA 归到不允许的区」拒绝启动；运行时关着它不查，但那只是把
+错留到下一次开运行时。另一个理由与区名无关：试跑转生产本来就要换新库（`AcceptedDemands` 与业务键抑制是永久的，program#170 10-12 评论）。
+
+### 切换时区名相关的步骤（供 control-server#564、#565 与 program#170 引用）
+
+前提（缺一条都不往下做）：
+
+- #564 的切换开关已合入，放开定义校验两道和上面那道回读（否则 19 拒收本定义，或装到一半被回读拒）；
+- **MVP 已停派新单、在途为零**（#564 第 4 项、program#170 第 1 节）。这条必须在第 4 步之前成立：从第 4 步起本实例读生产需求目录、
+  接全部六类（含 MVP 做的 `WIRE_TO_GATE`），MesIngest 没有认领语义，两个实例会从同一份目录受理同一条需求；
+- 三车车载端已按 #565 改连新实例并清空发件箱与日志簿。
+
+凡动 `agv01`、MVP、生产 MesIngest 的步骤，照工作区「Ask first」第 1、2 类逐次问用户。
+
+1. **换新库**：停 V2 服务，旧数据目录改名留存，按 program#170 的换库流程起一个空库。
+2. **用运行时关的那份首次部署**：19 号脚本带 `-InstanceDefinitionPath scripts/parallel/instance-factory01-v2.cutover-two-zones.json`。
+   安装器从 Host 日志回读 `EFFECTIVE_CONFIGURATION`，逐车比对 `zones` 与 `allowedDispatchZones`。
+3. **导入其余受治理事实**（已批准硬件事实、`bind-io`、站点绑定、等待点、充电名册与策略，program#170 第 2 节）。分区归属表与每区参数
+   这时还**不能**导：库里还没有这两个区。
+4. **让两个区进库。**归属表导入工具（`import-area-assignments`）与每区参数导入工具（`import-dispatch-zone-parameters`）认的区都取自库表
+   `DispatchZoneVehicles`（`AreaAssignmentImportFacts.cs:35-42`）。这张表**不是**启动时写的，也没有 FieldOps 动词写它：它由
+   `VehicleDispatchPolicyAccess.EnsureCurrentAsync` 按配置写入，在新库上走到它的只有派车轮（`DispatchRoundRunner.cs:233`、`:447`；
+   另两个调用点 `JourneyRuntimeEngine.OwnOrderRebuild.cs:684`、`DemandReleaseService.cs:100` 要有在途旅程或已受理需求，新库上不可达），
+   而派车轮只在运行时开着、且至少一台车空闲或可追加时才跑（`JourneyRuntimeEngine.cs:788`）。所以这一步是：用 19 重装
+   **`instance-factory01-v2.cutover-two-zones.runtime-on.json`**（同一个包、同一个库；安装器先关着运行时回读一次，再打开），建单闸门仍关，
+   至少一台车连上新实例并空闲，等一轮。**不要手改服务器上的 `appsettings.Production.json` 开运行时**：那绕过了 19 与回读。
+   - 这一轮会读生产需求目录，但一版归属表都没有时任何 AREA 都不执行（`AreaScopeCriterion.cs:14`，积压原因 `OUT_OF_SCOPE_AREA`），
+     不会受理任何真实需求。读生产 MesIngest 全部任务类型属于切换本身，按 #564 的授权执行。
+   - 同一轮在任务循环之前还做充电分配（第 3 步已导入充电名册与策略）：电量低于线的车会得到一段充电旅程，停在关着的闸门前（建单
+     闸门在唯一的建单调用之前判断，不会动车），第 8 步一开闸它就去充电桩。
+   - 判断这一步成了：第 5、6 步的 `--dry-run` 不再报 `DISPATCH_ZONE_NOT_FOUND`。
+5. **每区参数**（`REQ-0198` 途中追加最大增量、`REQ-0203` 防饥饿阈值，control-server#219）：**需要用户批准，本票不填值。**
+   `DIE_ATTACH` 要用户批一套；`WIRE_BONDING` 若沿用旧 `WIRE` 的值，也要用户确认那套值（#219 仍未结，没有已批准的 `WIRE` 值可抄）。
+   **两个区写在同一张表里，一次导入**：每区参数导入也是整表替换，表里没列的区即未配置（`DispatchZoneParameterImport.cs:71`）；分两次导，
+   后导的会把先导的那个区清成未配置。以后改任何一个区，也要带着另一个区整表重导。不导入时是安全方向：本区禁止途中追加、防饥饿只计龄
+   不升级（`DispatchZoneParameterImport.cs:207`），不挡派车，但行为与配了参数不同。放在第 6 步之前，因为第 6 步一导入就开始受理。
+6. **分区归属表：合并成一个文件，只导入一次。**每次导入都把整张表写成一个新版本，当前版本取最大的那一版
+   （`AreaAssignmentStore.WriteVersionAsync`、`ReadCurrentAsync`），`import-area-assignments` 也只收一个 `--input`。先导 N 表、再导 T 表，
+   当前版本就只剩 99 个 T 区：217 个 N 区全判 `OUT_OF_SCOPE_AREA`（只记积压、不告警），agv01、agv02 静默地永远接不到单；两次 `--dry-run`
+   各自都会通过，挡不住。所以：
+   1. 把调度 C11 备好的两份表（v2 工作区 `field-prep/area-assignments-N-WIRE_BONDING.csv` 217 行、`area-assignments-T-DIE_ATTACH.csv` 99 行）
+      合并成一个文件、一个表头：
+      `$n = Get-Content <N 表>; $t = Get-Content <T 表> | Select-Object -Skip 1; @($n) + @($t) | Set-Content <合并表> -Encoding utf8NoBOM`
+      （316 行数据加 1 行表头）；
+   2. 离线比区名：`pwsh -File scripts/parallel/Test-ParallelInstance.ps1 -AreaAssignmentPath <合并表>`。表的区名集合必须恰好等于
+      `allowedDispatchZones`（多一个区导入会拒，少一个区那辆车永远接不到单）；传两个文件直接报错，理由同上；
+   3. 对合并表 `--dry-run`；
+   4. 正式导入一次。**导入之后表里的 AREA 立刻可被受理**：运行时开着，闸门关着也会受理，旅程等闸门。
+7. 读回核对：`area-assignments` 读当前版本，确认 316 个 AREA、两个区都在；`dispatch-zone-parameters` 读回第 5 步的值。
+8. **开建单闸门**：工作区「Ask first」第 1 类，逐次授权、现场有人。授权说明里写上：开闸后积压在闸门前的旅程立即建单，其中可能有
+   第 4 步以来排上的充电旅程，所以车可能先去充电桩。
 
 ## 26 号图的六类站点绑定：激活候选与操作步骤（control-server#548）
 
@@ -300,6 +403,7 @@ REQ-0302 要求地图与站点目录的两个参数先批准再投产：同步�
 - 实例定义里必须显式写 `vehicleFaultRecovery.enabled` 与 `fieldOperatorRoles.{path, onboardClearanceEntryDeclared}`，缺了就拒绝。
   `path` 必须在 `opsRoot` 里（装包会替换安装目录）。凭据变量名**不由定义给**，覆盖层固定写 `CONTROL_SERVER_V2_FAULT_RECOVERY_CREDENTIAL`，
   定义里写 `credentialEnvironmentVariable` 会被拒——免得并行实例指到 MVP 的变量。出厂定义是第一阶段：入口关、未声明车载端入口。
+- 外来订单人工放车入口（control-server#617）有自己的开关：实例定义里必须显式写 `foreignRunningOrderRelease.enabled`，覆盖层写 `ForeignRunningOrderRelease:enabled`。它和恢复入口共用上面那把凭据，所以两个开关**任一个**打开、又拿不到凭据时，装之前就拒绝。出厂定义都打开它（生产定义里故障恢复仍然关着）：没有它，被 RIoT 里查不到的外来单按住的车只能改库。早于 #617 装的定义没有这一节，关闸与卸载照样放行（`-ForStopDirection`），装、回滚与开闸则拒绝。
 - 首装、升级、回滚三条路径都跑同一个 `Set-InstanceConfiguration`：合并覆盖层并回读核对覆盖层写的**每一个**值；把凭据写进服务的
   `Environment`；名单文件不存在就建一个空名单（`{"operators":[]}`，服务端读作「没人有权限」，安全方向），已有的绝不覆盖。
 - 凭据的值：安装与升级取 `deploy-config.json` 的 `faultRecoveryCredential`（控制端从 DPAPI 秘密存储填），没有就沿用服务里已有的那一条；
@@ -382,12 +486,14 @@ TCP 会话仍然是全车共用一个凭据、车靠握手自报身份，本票�
 **恢复办法是重新部署当前在跑的那个 commit（或修好的新包），不要用 `-Rollback` 来恢复开关。**安装模式失败时代际对调还没发生，
 这时再跑 `-Rollback`，装上的是 `.previous`，也就是更早一代，车载端版本可能对不上。
 
-## 准入策略版本：批次 10 起是 3（control-server#545）
+## 准入策略版本：包是 3，实例定义是 6（control-server#545、#614）
 
-**先说要做什么：带批次 10（control-server#545）及之后代码的包，装到 factory01 上已有的 v2 实例时，用的实例定义里
-`journeyRuntime.admissionPolicyVersion` 必须是 3。今后 factory01 上的 v2 实例用批次 10 之后的包重装时，两份实例定义
-（`instance-factory01-v2.json` 与 `instance-factory01-v2.production-mes.json`）的 `admissionPolicyVersion` 都必须跟着升到
-本票的值 3（以后的票再升，就是那时的值），不能沿用控制端手上那份旧定义。**本仓两份定义与 `appsettings.json` 已经一起改成 3。
+**先说要做什么：装 factory01 上的 v2 实例，用的实例定义里 `journeyRuntime.admissionPolicyVersion` 必须等于这个实例装过、绑过的
+最高版本（control-server#614 起是 6），而且定义必须与安装包同一提交（19 自己核对）。**包里的 `appsettings.json` 是 3，只跟着可执行集合走；
+定义高于它，是因为 26 号图站名变化和换新库时的 override 也把实例的版本推高了，见下面「不只可执行集合会推高版本」。
+
+下面到「护栏」一段为止讲的是批次 10（control-server#545）由 2 升到 3 的那一次，当时包与定义都是 3。其中的道理今天照样成立，
+数字以当前定义为准。
 
 反过来同样不行，而且更隐蔽：**批次 10 之前的包（例如 `e03d8e8b`）不得配版本 3 的定义。**旧包配 3 装上去当时不报错——3 比库里的
 2 高，库就把 3 绑到旧包的两类种子上；之后再装批次 10 的包、配 3，同一个版本号下内容不同，判漂移、停接单（L1
@@ -413,10 +519,48 @@ TCP 会话仍然是全车共用一个凭据、车靠握手自报身份，本票�
 
 `AdmissionPolicyVersionGuardTests` 守着这件事：版本表逐个写出每一代的可执行集合，版本必须严格递增，本构建的集合必须等于最后
 一行；协议里每个任务类型都必须明确表态可执行或不可执行；`appsettings.json` 与 `scripts/parallel/instance-*.json` 的每一份定义
-都不得低于最后一行的版本，且彼此一致。它守的是仓库里同一个提交的文件，**守不住控制端拿别的提交的定义或别的包去装**——那一步
+的版本都要按历史表来：control-server#614 起版本表是一张按时间排的历史表，见下一小节。它守的是仓库里同一个提交的文件，**守不住控制端拿别的提交的定义或别的包去装**——那一步
 只能靠这一节。
 
 部署标签 `admissionPolicyDeploymentId` 不换：本票没有改任何站点绑定，标签照旧是 `MAP-26-WIRE_TO_GATE-20261007`。
+
+### 不只可执行集合会推高版本：站名变化与换新库（control-server#614）
+
+**先说要做什么：用户在 RIoT 上改了 26 号图的 AREA 机台站名（改名、增删），factory01 v2 实例下一轮就判漂移、停接单，处置与上面
+一样——把版本设为库里已绑的版本 + 1 重启；之后开票，在 `AdmissionPolicyVersionGuardTests.History` 末尾加一行，并把
+`scripts/parallel/` 下全部实例定义一起改成这个值。**不用出新包。换新库时用 override 装了更高的版本，也一样要补行、改定义。
+
+为什么站名会改种子：准入种子 = 实时地图上每个 AREA 命名的机台站 × 种子任务类型，站名每轮现读（`JourneyRuntimeEngine` 里的
+`liveStationNames`）。种子任务类型取自库里该图生效绑定集所基于的那一版任务类型规则（没有生效绑定集时取最新规则版本），与本构建
+`ExecutableTaskTypes` 取交集（`AdmissionSeedTaskTypesAsync`）。库按「版本号 + 内容哈希 + 部署标签」绑定。由此：
+
+- 包只经 `ExecutableTaskTypes` 影响种子；同一可执行集合的新包不改种子。
+- 站名变了会改种子。
+- 在 FieldOps 激活一份「规则 ∩ 可执行集合」不同的绑定集，也会改种子；还没有生效绑定集时，写一版新规则同样会改。
+- 只换 `admissionPolicyDeploymentId` 也判漂移。调度区不进种子。
+
+为什么换新库也要记：19 的版本下限读的是服务器上 `<opsRoot>\installed-instance.json`，换库不会重置它；新库本身什么版本都能绑，
+但下一次装就不能低于这个文件里的值。
+
+历史表 `AdmissionPolicyVersionGuardTests.History` 按时间记着每一次，带类别：
+
+| 版本 | 类别 | 时间 | 变化 |
+| --- | --- | --- | --- |
+| 1～3 | 可执行集合 | 批次 10 及之前 | 见上文 |
+| 4 | 站名变化 | 2026-10-11 | `T04-01…08`、`T05-01…08` 改名 `T4-1…8`、`T5-1…8`，新建临时停车站 222（control-server#566 现场升到 4） |
+| 5 | 换新库时的 override | 2026-10-11 18:45 | 用 19 带 `-AdmissionPolicyVersionOverride 5` 装进全新库 newdb5（`evidence/field/20261011-W2-prep6-two-car/08-install-newdb5.txt`），10-12 的各次重装也都带 5 |
+| 6 | 站名变化 | 2026-10-12 | 26 号图重传，21:12 定稿：203 站，机台站 78 个，`T08-11` 改 `T8-11` 等；绑定六站 210、217～221 不变。库里是否已绑 6、绑的是不是定稿图的内容，重装前现场只读核对 |
+
+护栏怎么约束：历史表整体严格递增；本构建的可执行集合等于最后一个「可执行集合」行；包的 `appsettings.json` **等于**最后一个
+「可执行集合」行的版本；每份实例定义**等于**历史表最后一行的版本（相等而不是不低于，这样改了定义却没补行也会红）；定义都装同一个
+实例（`instanceId`、`dataRoot`），部署标签彼此一致。定义按通配 `instance-*.json` 找，新增的定义自动受约束。**下次可执行集合
+再变，新行的版本要高于历史表最后一行**（今天就是 7 以上），不是高于上一个可执行集合行。
+
+**19 的版本下限看不见手设的值。**19（`8005-workspace` 仓）比对的是 `installed-instance.json` 里记下的定义版本，不读
+`appsettings.Production.json`。在 `appsettings.Production.json` 里手升版本之后，`installed-instance.json` 仍是上次装的值，
+用更低版本的定义重装照样能过 19，装完开运行时就判版本倒退、停接单。**任何一次手升都要紧跟一张补行、改定义的票**，在它合入前
+重装须给 19 带 `-AdmissionPolicyVersionOverride`。`Test-ParallelInstance.ps1` 钉着「每份定义经配置步骤写到磁盘上的
+`JourneyRuntime.admissionPolicyVersion` 等于定义里的值」，原文件里的值比它低或比它高都一样被改写。
 
 ### 装错了是什么样、怎么判
 
@@ -493,12 +637,12 @@ L1 `SameDirectionTaskTypeJourneyRuntimeTests.AfterVersionThreeIsBoundTheRolledBa
 
 所以回滚时：
 
-1. 回滚用的 `admissionPolicyVersion` 设为**这个实例装过的最高版本 + 1**（第一次从 3 回滚就是 4）。最高版本以
+1. 回滚用的 `admissionPolicyVersion` 设为**这个实例装过的最高版本 + 1**（上例里第一次从 3 回滚就是 4；今天是库里的最高版本 + 1，至少 7）。最高版本以
    库里为准（上面「读库里已绑的版本」），部署记录只作对照。**control-server#552 之后用 19 的参数给，不再手改定义副本**：
    `19-deploy-control-server-parallel.ps1 -Rollback -AdmissionPolicyVersionOverride <n>`。19 只改发往服务器的那份副本，本仓的
    定义不动；`-Rollback` 不带这个参数会被拒绝，克隆外的定义副本也会被拒绝。
-2. 之后再装回批次 10 及之后的包，又要**再高一个**（上例是 5）。这时仓库里的三处出厂值低于实例实际用过的值，护栏不会替你发现；
-   要么部署时给 19 带 `-AdmissionPolicyVersionOverride`（首装与升级也接受，同提交检查照做），要么开票把三处一起升上去。
+2. 之后再装回批次 10 及之后的包，又要**再高一个**（上例是 5）。这时仓库里的实例定义低于实例实际用过的值，护栏不会替你发现；
+   要么部署时给 19 带 `-AdmissionPolicyVersionOverride`（首装与升级也接受，同提交检查照做），要么开票在历史表补行、把全部实例定义一起升上去。
 3. 每次部署都在部署记录里写下用的版本号，回滚时才知道「装过的最高版本」是多少。
 
 control-server#552 之后，19 在碰服务器之前会先用一次只读 ssh 读服务器上的 `<opsRoot>\installed-instance.json`（安装器每次安装、
@@ -585,6 +729,8 @@ VB 的 `DeleteDirectory`、FSO 的 `DeleteFolder`、CIM，以及挪走、清空�
 | `instance-factory01-v2.json` | 实例定义：端口、目录、服务名、车、RouteGraph、建单闸门（`fake` 模式，出厂默认） |
 | `instance-factory01-v2.production-mes.json` | 同一实例的 `production` 模式定义：读生产 MesIngest，只做 `STAGING_TO_WIRE`（control-server#535） |
 | `instance-factory01-v2.two-car-example.json` | 两车（agv02、agv03）车队表的示例定义，其余与出厂单车定义相同（control-server#571） |
+| `instance-factory01-v2.cutover-two-zones.json` | 切换用定义：两个派车区 `WIRE_BONDING`／`DIE_ATTACH`，三车专车专用，其余与 `production-mes` 相同；切换开关（control-server#564）合入前装不上（control-server#669） |
+| `instance-factory01-v2.cutover-two-zones.runtime-on.json` | 同上，只多开运行时与路网引擎，建单闸门仍关：切换第 4 步起用它让两个区进库（control-server#669） |
 | `ParallelInstance.psm1` | 定义的校验、布局（所有路径与名字的唯一来源）、部署足迹、卸载的删除顺序、唯一的删目录函数。检查全是纯函数，例外只有读路径属性的 `Test-ParallelInstanceReparsePoint` 和删目录的 `Remove-ParallelInstanceDirectory` |
 | `ParallelHost.psm1` | 读写机器的辅助函数（MVP 服务指纹、调用产品卸载脚本并确认成功、把覆盖层合并进 `appsettings.Production.json` 并回读核对、只读读取旅程状态、关开派车闸门），安装、卸载与闸门脚本共用 |
 | `Install-ParallelInstanceLocal.ps1` | 在 factory01 上安装／升级／回滚 |
