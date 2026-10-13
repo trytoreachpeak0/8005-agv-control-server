@@ -3,7 +3,7 @@
 Immutable local feed for ControlServer，完整产品线（v2，`fp/v2-impl`）。
 
 - Source repository: `https://github.com/trytoreachpeak0/riot-sdk`
-- Source branch: `fix/cs617-detail-by-order-id-without-upper-id`（PR 进 `fp/v2-facade`）
+- Source branch: `fix/cs617-detail-by-order-id-without-upper-id`（riot-sdk#7，进 `fp/v2-facade`）
 - Exact source commit: `62a827d3907a3f06365a3106c5422bffca52a0fe`（control-server#617）
 - Package version: `0.2.0-fp.7`
 - 上一版：`0.2.0-fp.6`（`fp/v2-facade` 的 `cf58c11`）
