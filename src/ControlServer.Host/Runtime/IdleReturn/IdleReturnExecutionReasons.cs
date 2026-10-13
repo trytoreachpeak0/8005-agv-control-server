@@ -82,12 +82,34 @@ public static class IdleReturnExecutionReasons
     /// </summary>
     public const string NotAtWaitingPointByOperator = "IDLE_RETURN_NOT_AT_WAITING_POINT_BY_OPERATOR";
 
+    /// <summary>
+    /// 建单发出过、结果未知（例如 RIoT 回 HTTP 200 加业务失败码 <c>00002</c>，或应答丢了），之后 RIoT 对这个 <c>upperId</c> 连续
+    /// <c>JourneyRuntime:ChargingOrderAbsentAbandonAfter</c> 答查无此单、车证明停稳、名下没有未完成的单（control-server#611）：放弃这张单，
+    /// 按已确认失败收尾——用途释放，等待点预占留给离点清扫，下一次承诺排除这个点，冷却与停止两道护栏照算。那张单事后若在这辆车上跑起来，
+    /// 外来单监督器认作「归属证明不了」：挡车、告警交人，不取消（<see cref="AbandonedIdleReturnOrders"/>）。
+    /// </summary>
+    public const string OrderNeverAppeared = "IDLE_RETURN_ORDER_NEVER_APPEARED";
+
+    /// <summary>
+    /// 建单结果未知、RIoT 查无此单，由人经等待点到点人工收尾入口确认车就停在这个等待点上（control-server#611，例如人在 RIoT 上把车手动开了过去）：
+    /// 与 <see cref="ArrivalConfirmedByOperator"/> 同一套记账——预占转占用、用途释放；不是失败。
+    /// </summary>
+    public const string NeverAppearedAtWaitingPointByOperator = "IDLE_RETURN_NEVER_APPEARED_AT_WAITING_POINT_BY_OPERATOR";
+
+    /// <summary>
+    /// 建单结果未知、RIoT 查无此单，由人经等待点到点人工收尾入口确认车不在这个等待点上（control-server#611）：与 <see cref="OrderNeverAppeared"/>
+    /// 同样按已确认失败收尾。
+    /// </summary>
+    public const string NeverAppearedByOperator = "IDLE_RETURN_NEVER_APPEARED_BY_OPERATOR";
+
     /// <summary>用途占有的释放原因：到点证据全满足、预占已转占用，车回到可选择（<c>REQ-0293</c>）。等待点占用继续保持。</summary>
     public const string ConvergedAtWaitingPoint = "IDLE_RETURN_CONVERGED_AT_WAITING_POINT";
 
     /// <summary>已确认失败的收尾码：下一次承诺要排除原失败点的那几种。</summary>
     public static IReadOnlySet<string> ConfirmedFailures { get; } =
-        new HashSet<string>(StringComparer.Ordinal) { OrderEnded, OrderFailed, NotAtWaitingPointByOperator };
+        new HashSet<string>(StringComparer.Ordinal) {
+            OrderEnded, OrderFailed, NotAtWaitingPointByOperator, OrderNeverAppeared, NeverAppearedByOperator,
+        };
 
     /// <summary>
     /// 建单没有确认时写在旅程上的码：<c>WAITING_POINT_{Outcome}</c>（与搬运腿的 <c>PICKUP_…</c>／<c>GATE_…</c> 同一种拼法）。引擎与看板说明
@@ -121,5 +143,8 @@ public static class IdleReturnExecutionReasons
         OrderFailed,
         ArrivalConfirmedByOperator,
         NotAtWaitingPointByOperator,
+        OrderNeverAppeared,
+        NeverAppearedAtWaitingPointByOperator,
+        NeverAppearedByOperator,
     ];
 }
