@@ -5234,11 +5234,24 @@ foreach ($case in @(
         @{ Name = 'left out'; Edit = { param($j) $j.Remove('cargoHoldingTimeout') }; Expect = @('journeyRuntime.cargoHoldingTimeout must be set explicitly') }
         @{ Name = 'zero'; Edit = { param($j) $j['cargoHoldingTimeout'] = '00:00:00' }; Expect = @('journeyRuntime.cargoHoldingTimeout must be a positive string hh:mm:ss') }
         @{ Name = '"5" (which .NET reads as five days)'; Edit = { param($j) $j['cargoHoldingTimeout'] = '5' }; Expect = @('journeyRuntime.cargoHoldingTimeout must be a positive string hh:mm:ss') }
-        @{ Name = 'a JSON number'; Edit = { param($j) $j['cargoHoldingTimeout'] = 300 }; Expect = @('journeyRuntime.cargoHoldingTimeout must be a positive string hh:mm:ss') })) {
+        @{ Name = 'a JSON number'; Edit = { param($j) $j['cargoHoldingTimeout'] = 300 }; Expect = @('journeyRuntime.cargoHoldingTimeout must be a positive string hh:mm:ss') }
+        @{ Name = '00:05:01, one second above the ceiling'; Edit = { param($j) $j['cargoHoldingTimeout'] = '00:05:01' }; Expect = @('it must be at most 00:05:00') }
+        @{ Name = '00:30:00, the value the definitions carried before #609'; Edit = { param($j) $j['cargoHoldingTimeout'] = '00:30:00' }; Expect = @('journeyRuntime.cargoHoldingTimeout is 00:30:00; it must be at most 00:05:00') })) {
     Invoke-SourceCase "cargo holding refused: $($case.Name)" {
         $d = Copy-Definition $baseline
         $null = & $case.Edit $d['journeyRuntime']
         Test-ExactFailure $d $case.Expect
+    }
+}
+
+# The two ways out accept what was installed before #609 -- 00:30:00, or (older still) nothing -- as for taskTypeStations.
+foreach ($case in @(
+        @{ Name = '00:30:00'; Edit = { param($j) $j['cargoHoldingTimeout'] = '00:30:00' } }
+        @{ Name = 'left out'; Edit = { param($j) $j.Remove('cargoHoldingTimeout') } })) {
+    Invoke-SourceCase "cargo holding: with -ForStopDirection a definition with $($case.Name) is accepted" {
+        $d = Copy-Definition $baseline
+        $null = & $case.Edit $d['journeyRuntime']
+        Test-ExactFailure $d @() -ForStopDirection
     }
 }
 

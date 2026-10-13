@@ -238,8 +238,9 @@ public sealed class JourneyRuntimeOptionsTests
         JourneyRuntimeOptionsValidator validator = new(new ConfigurationBuilder().Build());
         JourneyRuntimeOptions options = ValidEnabledOptions();
 
-        // Thirty minutes is still accepted: the product has no upper bound (control-server#609 proposes one for the
-        // coordinator to decide); the five-minute ceiling is held by the instance definitions and Test-ParallelInstance.ps1.
+        // Thirty minutes is still accepted here: the Host has no upper bound. The five-minute ceiling is held at deployment
+        // (Test-ParallelInstanceDefinition refuses more, coordinator's choice of 2026-10-13, control-server#609), so
+        // synthetic tests that never deploy keep their own values.
         foreach (TimeSpan accepted in new[] { TimeSpan.FromSeconds(1), TimeSpan.FromSeconds(40), TimeSpan.FromMinutes(5), TimeSpan.FromMinutes(30) })
         {
             options.CargoHoldingTimeout = accepted;

@@ -57,9 +57,10 @@ public sealed class JourneyRuntimeOptions
     /// </summary>
     /// <remarks>
     /// Five minutes by default and always positive. Five minutes is the production ceiling the user set on 2026-10-11, down
-    /// from thirty (control-server#609, ADR-cross-0057 revision): no deployment runs longer, field drills may run shorter. Every parallel
-    /// instance definition states the value explicitly, so a rollback to an older package does not fall back to that
-    /// package's thirty. Batch 7's schema ticket (control-server#206) adds the setting; its reader is control-server#212.
+    /// from thirty (control-server#609, ADR-cross-0057 revision): no deployment runs longer -- the parallel instance's
+    /// definition check refuses more, the Host itself does not -- and field drills may run shorter. Every parallel instance
+    /// definition states the value explicitly, so a rollback to an older package does not fall back to that package's
+    /// thirty. Batch 7's schema ticket (control-server#206) adds the setting; its reader is control-server#212.
     /// </remarks>
     public TimeSpan CargoHoldingTimeout { get; set; } = TimeSpan.FromMinutes(5);
     public string SublotBoxCountPath { get; set; } = string.Empty;
