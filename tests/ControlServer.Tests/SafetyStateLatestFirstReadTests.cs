@@ -241,6 +241,10 @@ public sealed class SafetyStateLatestFirstReadTests
     /// 从新到旧的读法在迁移建出的库上真能边读边停：两类各一臂合并（<c>MERGE (UNION ALL)</c>），每臂走复合索引，只在同 tick 的行之间排序，
     /// 不在吐第一行之前把整类排一遍（<c>USE TEMP B-TREE FOR ORDER BY</c>）。删了复合索引，这一条就红——那时读法仍然对，只是又随条数线性了。
     /// </summary>
+    /// <remarks>
+    /// 断的是计划文本，计划文本由 SQLite 版本决定（随 <c>SQLitePCLRaw</c> 包钉住）。升级那个包时这一条可能因措辞变化而红：先看新计划
+    /// 还是不是两臂各走复合索引、合并输出，再改断言（审查 L1）。
+    /// </remarks>
     [Fact]
     public async Task TheNewestFirstReadWalksTheCompositeIndexWithoutSortingAWholeType()
     {
