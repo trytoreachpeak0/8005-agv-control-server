@@ -1,0 +1,33 @@
+SQL: SELECT * FROM (SELECT rowid AS r, * FROM ProtocolInbox WHERE MessageType = 'SafetyStateChanged' UNION ALL SELECT rowid AS r, * FROM ProtocolInbox WHERE MessageType = 'SafetyStateSnapshot') ORDER BY ReceivedAtUtcTicks DESC, MessageType, r
+  PLAN: MERGE (UNION ALL)
+  PLAN: LEFT
+  PLAN: SEARCH ProtocolInbox USING INDEX IX_ProtocolInbox_MessageType (MessageType=?)
+  PLAN: USE TEMP B-TREE FOR ORDER BY
+  PLAN: RIGHT
+  PLAN: SEARCH ProtocolInbox USING INDEX IX_ProtocolInbox_MessageType (MessageType=?)
+  PLAN: USE TEMP B-TREE FOR ORDER BY
+SQL: SELECT rowid AS r, * FROM ProtocolInbox WHERE MessageType = 'SafetyStateChanged' UNION ALL SELECT rowid AS r, * FROM ProtocolInbox WHERE MessageType = 'SafetyStateSnapshot' ORDER BY ReceivedAtUtcTicks DESC, MessageType, r
+  PLAN: MERGE (UNION ALL)
+  PLAN: LEFT
+  PLAN: SEARCH ProtocolInbox USING INDEX IX_ProtocolInbox_MessageType (MessageType=?)
+  PLAN: USE TEMP B-TREE FOR ORDER BY
+  PLAN: RIGHT
+  PLAN: SEARCH ProtocolInbox USING INDEX IX_ProtocolInbox_MessageType (MessageType=?)
+  PLAN: USE TEMP B-TREE FOR ORDER BY
+SQL: SELECT rowid AS r, * FROM ProtocolInbox WHERE MessageType = 'SafetyStateChanged' ORDER BY ReceivedAtUtcTicks DESC, r
+  PLAN: SEARCH ProtocolInbox USING INDEX IX_ProtocolInbox_MessageType (MessageType=?)
+  PLAN: USE TEMP B-TREE FOR ORDER BY
+SQL: SELECT "p"."MessageId", "p"."ContentHash", "p"."FirstResponseJson", "p"."MessageType", "p"."ReceivedAt", "p"."ReceivedAtUtcTicks", "p"."RequestJson" FROM "ProtocolInbox" AS "p" WHERE "p"."MessageType" IN ('SafetyStateSnapshot', 'SafetyStateChanged')
+  PLAN: SEARCH p USING INDEX IX_ProtocolInbox_MessageType (MessageType=?)
+SQL: SELECT "p"."MessageId", "p"."ContentHash", "p"."FirstResponseJson", "p"."MessageType", "p"."ReceivedAt", "p"."ReceivedAtUtcTicks", "p"."RequestJson" FROM "ProtocolInbox" AS "p" WHERE "p"."MessageType" IN ('SafetyStateSnapshot', 'SafetyStateChanged') ORDER BY "p"."ReceivedAtUtcTicks" DESC
+  PLAN: SEARCH p USING INDEX IX_ProtocolInbox_MessageType (MessageType=?)
+  PLAN: USE TEMP B-TREE FOR ORDER BY
+SQL: SELECT "p"."MessageId", "p"."ContentHash", "p"."FirstResponseJson", "p"."MessageType", "p"."ReceivedAt", "p"."ReceivedAtUtcTicks", "p"."RequestJson" FROM "ProtocolInbox" AS "p" WHERE "p"."MessageType" IN ('SafetyStateSnapshot', 'SafetyStateChanged') ORDER BY "p"."ReceivedAtUtcTicks" DESC, "p"."MessageType"
+  PLAN: SEARCH p USING INDEX IX_ProtocolInbox_MessageType (MessageType=?)
+  PLAN: USE TEMP B-TREE FOR ORDER BY
+SQL: SELECT * FROM ProtocolInbox WHERE MessageType IN ('SafetyStateSnapshot','SafetyStateChanged') ORDER BY ReceivedAtUtcTicks DESC, MessageType, rowid
+  PLAN: SEARCH ProtocolInbox USING INDEX IX_ProtocolInbox_MessageType (MessageType=?)
+  PLAN: USE TEMP B-TREE FOR ORDER BY
+SQL: SELECT * FROM ProtocolInbox WHERE +MessageType IN ('SafetyStateSnapshot','SafetyStateChanged') ORDER BY ReceivedAtUtcTicks DESC, MessageType, rowid
+  PLAN: SCAN ProtocolInbox USING INDEX IX_ProtocolInbox_ReceivedAtUtcTicks
+  PLAN: USE TEMP B-TREE FOR LAST 2 TERMS OF ORDER BY

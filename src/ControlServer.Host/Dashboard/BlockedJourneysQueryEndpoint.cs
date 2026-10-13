@@ -135,9 +135,27 @@ internal sealed class BlockedJourneysQueryEndpoint : IDashboardQueryEndpoint
             ["GATE_" + JourneyRuntimeEngine.NeverSentLegWaitingVehicleSuffix] =
                 "开往卸货站的单还没建出去（建单前向 RIoT 的读没读到，或还没到建单那一步），而车此刻不允许出发"
                 + "（急停、手动、故障、仓门没锁好、开锁输出没复位或读不到车况）：车况恢复后下一轮自动建单，只建一张",
+            // control-server#673：需求腿的建单结果未知。服务端每一轮按同一个单号对账；证据齐了自动判没建成、交给同车重建，凑不齐时有人工入口。
+            ["PICKUP_" + nameof(MovementDispatchOutcome.ResultUnknown)] =
+                "开往取货站的单发给 RIoT 之后结果未知（应答丢了，或 RIoT 回了业务失败码，例如 00002）：服务端每一轮按同一个单号对账，不会再发同一张单，"
+                + "车与需求都保持不动。RIoT 连续 2 分钟（JourneyRuntime:ChargingOrderAbsentAbandonAfter）答查无此单、车停稳且名下没有单时，"
+                + "服务端判这张单没建成（事件 2234），延迟一段时间后为同一辆车、同一条需求重建一张新单号的单，车会再动。"
+                + "车离线、RIoT 读不全时不会自动判：过了配置项 JourneyRuntime:OwnOrderRebuildRepeatWindow 规定的时长，现场人员可经故障处置入口"
+                + "发 DECLARE_ORDER_NEVER_APPEARED 确认它没建成（RIoT 按单号查得到单就拒绝），之后再选出口。RIoT 为什么回失败，看事件 2166",
+            ["GATE_" + nameof(MovementDispatchOutcome.ResultUnknown)] =
+                "开往卸货站的单发给 RIoT 之后结果未知（应答丢了，或 RIoT 回了业务失败码，例如 00002）：服务端每一轮按同一个单号对账，不会再发同一张单，"
+                + "车、货与需求都保持不动。RIoT 连续 2 分钟（JourneyRuntime:ChargingOrderAbsentAbandonAfter）答查无此单、车停稳且名下没有单时，"
+                + "服务端判这张单没建成（事件 2234），为同一辆车、同一条需求重建一张新单号的单；车上有货时要先等车报一份新的仓位读数证明货还在原仓、"
+                + "门锁着，才重建去卸货站。车离线、RIoT 读不全时不会自动判：过了配置项 JourneyRuntime:OwnOrderRebuildRepeatWindow 规定的时长，"
+                + "现场人员可经故障处置入口发 DECLARE_ORDER_NEVER_APPEARED 确认它没建成（RIoT 按单号查得到单就拒绝），之后再选出口。RIoT 为什么回失败，看事件 2166",
+            [JourneyRuntimeEngine.OwnOrderNeverAppearedReason] =
+                "这一段的单建单结果未知，RIoT 连续 2 分钟答查无此单、车停稳且名下没有单：服务端判它没建成，不改派，延迟一段时间（默认 30 秒）后"
+                + "为同一辆车、同一条需求重建一张新单号的单，不需要人确认，车会再动；车上有货时先等车报仓位读数证明货还在。"
+                + "旧单若事后在 RIoT 上冒出来并开动这辆车，服务端挡住这辆车并告警（事件 2201），不取消它。这辆车在那之前不接新单和途中追加",
             // control-server#345：停住之后人的三个出口，都经故障清除同一个入口（/api/safety/v1/vehicle-fault-recoveries）。
             [JourneyRuntimeEngine.OwnOrderRebuildStoppedReason] =
-                "这条需求第一次出问题之后不久又出问题了（又被取消、删除，或又失败）：服务端不再自动重建，挡住并报警，等人处理。"
+                "这条需求第一次出问题之后不久又出问题了（又被取消、删除，或又失败，或建单结果未知后又判作没建成），"
+                + "或者现场人员已经确认那张建单结果未知的单没建成（DECLARE_ORDER_NEVER_APPEARED）：服务端不再自动重建，挡住并报警，等人处理。"
                 + "请到现场与 RIoT 查明为什么反复停下，然后由现场人员经故障清除入口选一个出口（见现场说明）："
                 + "REBUILD_STOPPED_ORDER 人工重建一次（照样过车况与安全检查，之后在重复出问题的窗口内——默认 10 分钟，"
                 + "配置项 JourneyRuntime:OwnOrderRebuildRepeatWindow——再出问题仍会停住）；"

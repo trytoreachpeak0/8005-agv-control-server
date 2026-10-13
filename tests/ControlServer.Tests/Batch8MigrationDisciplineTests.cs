@@ -53,6 +53,8 @@ public sealed class Batch8MigrationDisciplineTests
         "20261008052643_UnreleasableNotReconciledBlocksBeforeUpgrade",
         // control-server#563：收件箱读法提速——ProtocolInbox 加列 ReceivedAtUtcTicks（存量行在迁移里按 ReceivedAt 原文精确回填）与 MessageType、ReceivedAtUtcTicks 两个普通索引；纯 ADD COLUMN 与 CREATE INDEX，既有行只多一列。调度 Coordinator 10 于 2026-10-11 给了迁移通道。自己的断言在 ProtocolInboxReadWindowTests。
         "20261011005905_ProtocolInboxReadIndexes",
+        // control-server#597：安全状态消息按收件时间从新到旧读、遇到即停——ProtocolInbox 加 (MessageType, ReceivedAtUtcTicks) 一个普通复合索引；纯 CREATE INDEX，不动列、不动行，#563 的两个单列索引不删；Down 只删这一个索引。调度 Coordinator 10 于 2026-10-13 给了迁移通道。自己的断言在 SafetyStateLatestFirstReadTests。
+        "20261013041134_ProtocolInboxTypeNewestFirstIndex",
     ];
 
     private static readonly string[] NewTables =

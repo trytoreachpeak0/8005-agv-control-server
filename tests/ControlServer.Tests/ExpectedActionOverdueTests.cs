@@ -410,6 +410,134 @@ public sealed class ExpectedActionOverdueTests
         Assert.Equal(JsonValueKind.Null, bySlot[3].GetProperty("operationType").ValueKind);
     }
 
+    /// <summary>
+    /// 「最近」按版本号，不按收件时间（control-server#597 钉住）：服务端时钟在两份快照之间回拨过，版本 2 那份收件时间最晚，
+    /// 版本 3 那份与它之后说 3 号又变了的版本 4 反而收得早。读数取版本 3，并标出之后变过。另一台车一条同为版本 3 的变化收在中间，
+    /// 不算这台车读到了版本 3（审查 S1）。
+    /// </summary>
+    [Fact]
+    [Trait("IntegrationSlice", "FP-IS-15")]
+    public async Task TheReadingsAreTheHighestVersionSnapshotEvenWhenTheServerClockSteppedBackBeforeIt()
+    {
+        await using Fixture fixture = await Fixture.CreateAsync();
+        await fixture.ReachReadyAsync();
+        await fixture.SendAlarmsAsync(1, Overdue(3, "关好3号仓门"));
+        fixture.Clock.Advance(TimeSpan.FromMinutes(10));
+        await fixture.SafetySnapshotAsync(2, Slots(slot3Lock: "UNLOCKED"));
+        fixture.Clock.Advance(TimeSpan.FromMinutes(-20));
+        await fixture.SafetySnapshotAsync(3, Slots(slot3Physical: "OCCUPIED"));
+        fixture.Clock.Advance(TimeSpan.FromMinutes(5));
+        await fixture.SafetyChangedAsync(4, affectedSlots: [3]);
+        // Another vehicle's message carrying version 3, received between version 2 and version 4 (review S1): counted as this
+        // vehicle's, it would let the read stop at version 2 before it reaches version 3.
+        fixture.Context.ProtocolInbox.Add(ForeignSafety(
+            "SafetyStateChanged", "AGV-002", fixture.State.SessionGeneration!.Value, 3, Now.AddMinutes(5), null));
+        await fixture.Context.SaveChangesAsync(TestContext.Current.CancellationToken);
+        fixture.Context.ChangeTracker.Clear();
+        fixture.Clock.Advance(TimeSpan.FromMinutes(20));
+        await fixture.HeartbeatAsync();
+
+        using JsonDocument fact = await fixture.ReadEndpointAsync();
+
+        JsonElement readings = Assert.Single(fact.RootElement.GetProperty("slots").EnumerateArray()).GetProperty("readings");
+        Assert.Equal(
+            (3L, "LOCKED", "OCCUPIED", Now.AddMinutes(-10), true),
+            (readings.GetProperty("safetyStateVersion").GetInt64(),
+                readings.GetProperty("lockState").GetString(),
+                readings.GetProperty("physicalState").GetString(),
+                readings.GetProperty("observedAt").GetDateTimeOffset(),
+                readings.GetProperty("changedSinceObserved").GetBoolean()));
+    }
+
+    /// <summary>
+    /// 只认会话行那一代、只认这台车（control-server#597 钉住）：比本车本代读数收得更晚的，上一代版本更高的快照与变化、另一台车的
+    /// 快照与变化，都不替这一代说话，也不让读数标成「之后变过」。
+    /// </summary>
+    [Fact]
+    [Trait("IntegrationSlice", "FP-IS-15")]
+    public async Task TheReadingsIgnoreNewerSafetyMessagesOfAnotherGenerationOrAnotherVehicle()
+    {
+        await using Fixture fixture = await Fixture.CreateAsync();
+        await fixture.ReachReadyAsync();
+        await fixture.SendAlarmsAsync(1, Overdue(3, "关好3号仓门"));
+        await fixture.SafetySnapshotAsync(2, Slots(slot3Physical: "OCCUPIED"), observedAt: Now.AddSeconds(-5));
+        long generation = fixture.State.SessionGeneration!.Value;
+        fixture.Clock.Advance(TimeSpan.FromSeconds(1));
+        DateTimeOffset later = fixture.Clock.GetUtcNow();
+        fixture.Context.ProtocolInbox.AddRange(
+            ForeignSafety("SafetyStateSnapshot", AgvId, generation - 1, 90, later, Slots(slot3Lock: "UNLOCKED")),
+            ForeignSafety("SafetyStateChanged", AgvId, generation - 1, 91, later, null),
+            ForeignSafety("SafetyStateSnapshot", "AGV-002", generation, 95, later, Slots(slot3Lock: "UNLOCKED")),
+            ForeignSafety("SafetyStateChanged", "AGV-002", generation, 96, later, null));
+        await fixture.Context.SaveChangesAsync(TestContext.Current.CancellationToken);
+        fixture.Context.ChangeTracker.Clear();
+
+        using JsonDocument fact = await fixture.ReadEndpointAsync();
+
+        JsonElement readings = Assert.Single(fact.RootElement.GetProperty("slots").EnumerateArray()).GetProperty("readings");
+        Assert.Equal(
+            (2L, "LOCKED", "OCCUPIED", false),
+            (readings.GetProperty("safetyStateVersion").GetInt64(),
+                readings.GetProperty("lockState").GetString(),
+                readings.GetProperty("physicalState").GetString(),
+                readings.GetProperty("changedSinceObserved").GetBoolean()));
+    }
+
+    private static readonly int[] ForeignAffectedSlots = [3];
+
+    /// <summary>
+    /// 会话因本服务端自己的在途单而未就绪（真车载端挂着本服务端在途单时的样子：<c>RecoveryRequired</c> /
+    /// <c>DEPARTURE_SAFETY_NOT_READY</c>，安全原因 <c>VEHICLE_NOT_READY</c>，证据有未知）。这张卡片只列 Ready 且听得到的车，
+    /// 所以这台车进 <c>unavailableVehicles</c>、超时仓不成行，读数一处不读——control-server#597 不改这一点，这里钉住它（审查 S2）。
+    /// </summary>
+    [Fact]
+    [Trait("IntegrationSlice", "FP-IS-15")]
+    public async Task WhileTheSessionIsNotReadyBehindTheServersOwnOrderTheVehicleIsListedUnavailableAndNoReadingsAreRead()
+    {
+        await using Fixture fixture = await Fixture.CreateAsync();
+        await fixture.ReachReadyAsync();
+        await fixture.SendAlarmsAsync(1, Overdue(3, "关好3号仓门"));
+        await fixture.SafetySnapshotAsync(2, Slots(slot3Lock: "UNLOCKED"));
+        SessionRecoveryRow session = await fixture.Context.SessionRecoveries.SingleAsync(TestContext.Current.CancellationToken);
+        session.Readiness = SessionReadiness.RecoveryRequired;
+        session.ReasonCode = "DEPARTURE_SAFETY_NOT_READY";
+        session.DepartureSafe = false;
+        session.SafetyReasonCodesJson = """["VEHICLE_NOT_READY"]""";
+        session.SafetyUnknownPresent = true;
+        session.UpdatedAt = fixture.Clock.GetUtcNow();
+        await fixture.Context.SaveChangesAsync(TestContext.Current.CancellationToken);
+        fixture.Context.ChangeTracker.Clear();
+        await fixture.HeartbeatAsync();
+
+        using JsonDocument fact = await fixture.ReadEndpointAsync();
+
+        Assert.Empty(fact.RootElement.GetProperty("slots").EnumerateArray());
+        JsonElement vehicle = Assert.Single(fact.RootElement.GetProperty("unavailableVehicles").EnumerateArray());
+        Assert.Equal(
+            (AgvId, VehicleAlarmProjection.LinkDownReason),
+            (vehicle.GetProperty("agvId").GetString(), vehicle.GetProperty("reason").GetString()));
+    }
+
+    /// <summary>另一代或另一台车的一条安全状态消息，直接写进收件箱；变化（<paramref name="slotStates"/> 为空）说 3 号变了。</summary>
+    private static ProtocolInboxRow ForeignSafety(
+        string messageType, string agvId, long generation, long version, DateTimeOffset at, object[]? slotStates) => new()
+    {
+        MessageId = Guid.NewGuid().ToString("D"),
+        MessageType = messageType,
+        RequestJson = JsonSerializer.Serialize(new
+        {
+            messageType,
+            agvId,
+            sessionGeneration = generation,
+            payload = slotStates is null
+                ? (object)new { safetyStateVersion = version, observedAt = at, safety = Safety(true), affectedSlots = ForeignAffectedSlots }
+                : new { safetyStateVersion = version, observedAt = at, safety = Safety(true), slotStates }
+        }),
+        ContentHash = new string('0', 64),
+        FirstResponseJson = "{}",
+        ReceivedAt = at
+    };
+
     [Fact]
     [Trait("IntegrationSlice", "FP-IS-15")]
     public async Task AVehicleThatIsNotLinkedIsListedAsUnknownRatherThanShowingItsLastOverdueSlots()

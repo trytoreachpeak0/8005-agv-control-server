@@ -1,0 +1,36 @@
+[PASS] off: no plan, and a pause point without the switch is refused
+       plan=; refused=-ScreenStatePauseAt needs -ScreenState: without the snapshot there is nothing to pause for.
+[PASS] off: the staged onboard settings come out byte for byte unchanged
+       identical
+[PASS] off: the journal writes the same lines as with no hook and calls nothing; the dialog checkpoint is inert
+       {"criterion":"c","value":"a"} | {"criterion":"c","value":"b"} | {"note":"n"}
+[PASS] on: needs a real-onboard scenario, a sane window and well-formed points
+       -ScreenState needs a scenario with Onboard = 'Real'; 'x' runs the synthetic peer, which has no screen. / -ScreenStatePauseSeconds must be 1-600, not 0. / Screen-state pause point 'no-equals-sign' is not '<criterion>=<value>' or '@dialog=<title>'. / Screen-state pause point 'a=b' is listed twice.
+[PASS] on: points come from the parameter, else the plan file, else none
+       parameter/1 plan/3 none/0
+[PASS] on: the staged settings turn the snapshot on into the evidence; an onboard without the section is refused
+       enabled=True directory=C:\Users\szy\AppData\Local\Temp\l2-screen-state-selftest-85b471dd4e294a29bb18585aaf03e885\15c850c2ea73439e8bacc20ad3dd9083\screen-state refused=-ScreenState, but the onboard appsettings.json has no screenState section: that onboard commit predates onboard-hmi#315.
+[PASS] a pause holds until its release file, writes its marker and record, and fires once
+       held 1.6152104s, 1 pause(s), ending released
+[PASS] a pause nobody releases ends with its window, as a record and not a failure
+       1 pause(s) window-elapsed; identity pauses=1 (0 released) currentFile=absent
+[PASS] a wait whose accepting value is a pause point returns it even when the pause outlasts the wait
+       returned True after a 3s pause on a 1s wait
+[PASS] a point never reached is listed as such, and the run identity says so
+       unreached=never=True; stage=Blocked currentFile=present timelineFiles=1 pauses=0 (0 released) error=
+[FAIL] the plan's scenarios are real-onboard ones and every point is a value a wait in that scenario accepts
+       real-onboard-compensate-then-reconnect point 'onboard-compensation-entry=true': the journal renders a boolean as 'True', so 'true' is never reached
+[PASS] the point check itself goes red on a wrong value, a bare button caption and a non-accepting value
+       good flagged 0 (), bad flagged 4 of 4
+[PASS] the orchestrator only reaches the snapshot through the plan, and only the switch makes a plan
+       5 guarded writes, calls as expected
+[PASS] semicolons separate points given on the command line
+       a=1 | @dialog=补偿清空 | b=x
+[PASS] IO-offline lines in the onboard's log are counted per pause and for the run
+       ioOffline=2 in pauses, 4 in the run pause=2 total=60 
+[PASS] the watcher runs its rounds, releases the pause and stops when the run writes assertions.json
+       ending released, 3 round(s), incomplete False
+[PASS] a window too short for every round is released before it runs out and marked incomplete (review S2, S4)
+       ending released after 4.2s, 2 round(s), incomplete True
+
+16 of 17 cases as expected.

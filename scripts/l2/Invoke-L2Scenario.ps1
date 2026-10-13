@@ -92,7 +92,17 @@ param(
     # that CI states it explicitly and a later batch changes one argument. Left out, the evidence
     # says so: the default is 'unspecified', never a batch that looks real (control-server#201 --
     # the old default 'batch-2' labelled every local run of every later batch as batch 2's).
-    [string]$BatchId = 'unspecified'
+    [string]$BatchId = 'unspecified',
+
+    # The onboard screen-state snapshot (onboard-hmi#315) written into this run's evidence, for onboard-hmi#316's T3
+    # cross-check (control-server#653). Real-onboard scenarios only; off by default, and off changes nothing -- not the
+    # staged onboard settings, not the evidence, not the timeline. See L2ScreenState.psm1.
+    [switch]$ScreenState,
+    # Where the run pauses for the cross-check: '<criterion>=<value>' or '@dialog=<title>'. Left out, the scenario's
+    # entry in screen-state-crosscheck.psd1 applies, or no pause at all. Needs -ScreenState.
+    [string[]]$ScreenStatePauseAt,
+    # The longest one pause holds the run when nothing releases it. A pause that runs out is a note, never a red.
+    [int]$ScreenStatePauseSeconds = 120
 )
 
 $ErrorActionPreference = 'Stop'
@@ -121,6 +131,8 @@ Import-Module (Join-Path (Split-Path -Parent $PSScriptRoot) 'DesktopLock.psm1') 
 # wrapper script because this is the one thing every real-rig run goes through however it was
 # started -- and a wrapper that forgets to append cannot exist if no wrapper appends.
 Import-Module (Join-Path $PSScriptRoot 'L2RunLedger.psm1') -Force
+# The opt-in screen-state snapshot and its pause points (control-server#653).
+Import-Module (Join-Path $PSScriptRoot 'L2ScreenState.psm1') -Force
 
 # The slot's ports, for every port parameter the caller left at its default. Slot 0 changes nothing:
 # its block is these parameters' own defaults, which Test-L2PortLockQueueing.ps1 holds together.
@@ -361,6 +373,12 @@ if (-not $SimulatorRepository) {
 if (Test-Path -LiteralPath $EvidenceRoot) {
     throw "EvidenceRoot must not exist: $EvidenceRoot"
 }
+# $null unless -ScreenState; checked here, before anything starts. Its paths are made absolute below, once the evidence
+# root exists.
+$screenStatePlan = Resolve-L2ScreenStatePlan -Enabled $ScreenState.IsPresent -PauseAt $ScreenStatePauseAt `
+    -PauseSeconds $ScreenStatePauseSeconds -Scenario $Scenario -RealOnboard $realOnboard `
+    -PlanPath (Join-Path $PSScriptRoot 'screen-state-crosscheck.psd1') -EvidenceRoot $EvidenceRoot
+$screenStateCheckpoint = $null
 
 $runStartedAt = [DateTimeOffset]::UtcNow
 $runId = $runStartedAt.ToString('yyyyMMddTHHmmssfffZ')
@@ -380,6 +398,15 @@ $null = New-Item -ItemType Directory -Path $stageRoot -Force
 $databasePath = Join-Path $stageRoot 'controlserver.db'
 
 $journal = New-L2Journal -Path (Join-Path $EvidenceRoot 'timeline.jsonl')
+if ($screenStatePlan) {
+    $screenStatePlan.SnapshotDirectory = Join-Path $EvidenceRoot 'screen-state'
+    $screenStatePlan.PauseDirectory = Join-Path $EvidenceRoot 'screen-state-pauses'
+    $screenStateCheckpoint = New-L2ScreenStateCheckpoint -Plan $screenStatePlan -Journal $journal
+    $journal.OnCheckpoint = $screenStateCheckpoint.Checkpoint
+    $journal.Note("Screen-state snapshot on (-ScreenState): onboard writes to screen-state/; pause points from " +
+        "$($screenStatePlan.Source): $(if (@($screenStatePlan.Points).Count -eq 0) { '(none)' } else { ($screenStatePlan.Points.Point) -join ' | ' }); " +
+        "up to $($screenStatePlan.PauseSeconds)s each.")
+}
 $assertions = New-L2Assertions
 $handles = @()
 # Processes a scenario starts again (Context.RestartOnboard). A list rather than more entries in
@@ -480,7 +507,7 @@ try {
         # all, and the file control-server#164 worked from was appended to by that session's wrapper
         # scripts. Two batches appended at once and it silently lost two lines.
         $ledgerStarted = [DateTimeOffset]::UtcNow
-        $null = Write-L2RunLedgerEvent -Event 'start' -RunId $runId -Fields @{
+        $ledgerFields = @{
             scenario        = $Scenario
             rig             = 'RealOnboard'
             controlServer   = (& git -C $Repository rev-parse HEAD 2>$null)
@@ -490,6 +517,9 @@ try {
             batchId         = $BatchId
             portSlot        = $PortSlot
         }
+        # Only with -ScreenState: a run that pauses is not a timing sample, and the ledger must say so (control-server#653).
+        if ($screenStatePlan) { $ledgerFields['screenState'] = $true }
+        $null = Write-L2RunLedgerEvent -Event 'start' -RunId $runId -Fields $ledgerFields
     }
 
     $configuration = 'Release'
@@ -1047,6 +1077,8 @@ try {
                 # The same threshold the server environment got above, in milliseconds; nothing when the scenario
                 # did not ask, so the shipped 3 x operationTimeoutMs applies.
                 Set-L2ExpectedActionOverdueOnboardSetting -Settings $settings -Threshold $expectedActionOverdueThreshold
+                # Nothing without -ScreenState; with it, the snapshot on and written into the evidence (control-server#653).
+                Set-L2ScreenStateOnboardSetting -Settings $settings -Plan $screenStatePlan
             }
         $onboardEnvironment = @{
             'CONTROL_SERVER_ONBOARD_CREDENTIAL' = $credential
@@ -1570,6 +1602,11 @@ try {
     if ($null -ne $expectedActionOverdueThreshold) { $identity['expectedActionOverdueThreshold'] = $expectedActionOverdueThreshold.ToString('c') }
     if ($onboardPublish) { $identity['onboardHmiCommit'] = $onboardPublish.Commit }
     if ($simulatorPublish) { $identity['slotsSimulatorCommit'] = $simulatorPublish.Commit }
+    # Only with -ScreenState, so a run without it carries the identity it always did. Never decides the outcome.
+    if ($screenStatePlan) {
+        $identity['screenState'] = Complete-L2ScreenState -Plan $screenStatePlan -Checkpoint $screenStateCheckpoint `
+            -OnboardLogDirectory (Join-Path $logRoot 'onboard-app')
+    }
     Write-L2Evidence -EvidenceRoot $EvidenceRoot -Scenario $Scenario -RunId $runId `
         -Assertions $assertions -Outcome $outcome -FailureReason $failureReason `
         -Rig $identity.rig -Identity $identity
@@ -1593,13 +1630,19 @@ try {
     # desktop never appeared in the ledger, and a lone exit line would read as a run whose entry was
     # lost, which is the very thing this ledger exists to rule out.
     if ($null -ne $ledgerStarted) {
-        $null = Write-L2RunLedgerEvent -Event 'end' -RunId $runId -Fields @{
+        $ledgerFields = @{
             scenario        = $Scenario
             outcome         = $outcome
             durationSeconds = [math]::Round(([DateTimeOffset]::UtcNow - $ledgerStarted).TotalSeconds, 1)
             evidenceRoot    = $EvidenceRoot
             failureReason   = $failureReason
         }
+        # durationSeconds includes every screen-state pause; how much of it was paused goes beside it.
+        if ($screenStatePlan) {
+            $ledgerFields['screenState'] = $true
+            $ledgerFields['pauseSecondsTotal'] = $identity['screenState']['pauseSecondsTotal']
+        }
+        $null = Write-L2RunLedgerEvent -Event 'end' -RunId $runId -Fields $ledgerFields
     }
 
     # Last, after the peers are stopped. Releasing earlier would hand the desktop to another

@@ -13,7 +13,9 @@ namespace ControlServer.Host.Runtime;
 /// <para>
 /// <b>Three sources, one record.</b> The engine stages it when it reads the order a journey waits on as CANCELLED or DELETED
 /// in RIoT; the fault recovery service stages it, in the clearance's own transaction, when a person clears the fault a
-/// FAILED order raised. From there the engine alone drives it (<c>JourneyRuntimeEngine.AdvanceOwnOrderRebuildAsync</c>):
+/// FAILED order raised. Since control-server#673 the engine also stages it when an order of its own whose create result was
+/// unknown is shown never to have appeared (<see cref="OwnOrderRebuildSources.OrderNeverAppeared"/>), and the fault recovery
+/// service when a person declares that, already stopped. From there the engine alone drives it (<c>JourneyRuntimeEngine.AdvanceOwnOrderRebuildAsync</c>):
 /// the delay, the vehicle's condition, the create gate, the new order, its confirmation.
 /// </para>
 /// <para>
@@ -76,6 +78,20 @@ internal static class OwnOrderRebuilds
     /// clearance by a person records the next rebuild (review S2).
     /// </summary>
     public const string FailedBeforeConfirmation = "REBUILT_ORDER_FAILED_BEFORE_CONFIRMATION";
+
+    /// <summary>
+    /// How a rebuild ended when its own new order's create went out with its result unknown and RIoT then never showed it
+    /// (control-server#673): that is recorded as a problem of its own, under the new order, and REQ-0361's window judges it --
+    /// a second "never appeared" within the window stops for a person, so a create RIoT keeps refusing does not loop.
+    /// </summary>
+    public const string NeverAppearedBeforeConfirmation = "REBUILT_ORDER_NEVER_APPEARED";
+
+    /// <summary>
+    /// Why a rebuild was not made: a person declared, through the fault recovery entry, that the order whose create result was
+    /// unknown was never created (control-server#673). Stopped at once, so that the person then chooses one of
+    /// control-server#345's ways out -- rebuild, give up, or hand the cargo over -- rather than the engine choosing for them.
+    /// </summary>
+    public const string NeverAppearedDeclaredByOperator = "ORDER_NEVER_APPEARED_DECLARED_BY_OPERATOR";
 
     /// <summary>The stable key of the rebuild of the order under <paramref name="endedUpperId"/>.</summary>
     public static string RebuildIdFor(string endedUpperId) =>
@@ -312,7 +328,8 @@ internal static class OwnOrderRebuilds
                             // The same reading as JourneyRuntimeEngine.CarriesCargoAsync (control-server#376 review, suggestion 2): a
                             // rebuild with no demand of its journey on board has no cargo a snapshot could show.
                             (row.Source == OwnOrderRebuildSources.FaultClearedCargoOnBoard ||
-                             row.Source == OwnOrderRebuildSources.CancelledInRiot) &&
+                             row.Source == OwnOrderRebuildSources.CancelledInRiot ||
+                             row.Source == OwnOrderRebuildSources.OrderNeverAppeared) &&
                             dbContext.Set<JourneyDemandRow>().Any(
                                 demand => demand.JourneyId == row.JourneyId && demand.RemovedAt == null &&
                                           demand.Status != JourneyDemandStatuses.PendingLoad &&
@@ -371,6 +388,12 @@ internal static class OwnOrderRebuilds
     /// cancellation only another cancellation or deletion does; after a cleared fault, anything does -- another FAILED, which
     /// is recorded once it is cleared, or a cancellation.
     /// </summary>
+    /// <remarks>
+    /// An order that never appeared (control-server#673) is judged like a cleared fault: after it, anything counts as again --
+    /// above all a second one, which is what a create RIoT keeps refusing (control-server#616's 00002) looks like, so the
+    /// second stops for a person instead of the vehicle cycling every few minutes. After a cancellation it does not count,
+    /// the rule for a cancellation being unchanged.
+    /// </remarks>
     private static bool CountsAsAgain(string first, string again) =>
         first != OwnOrderRebuildSources.CancelledInRiot || again == OwnOrderRebuildSources.CancelledInRiot;
 

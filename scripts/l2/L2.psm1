@@ -22,6 +22,11 @@ $script:L2ServerWriteHold = $null
 class L2Journal {
     [string]$Path
     [hashtable]$Last = @{}
+    # Null on every run unless the orchestrator was asked for the onboard screen-state snapshot with pause points
+    # (-ScreenState, control-server#653, L2ScreenState.psm1). Called as (point, value) on every criterion flip and at
+    # every dialog a dialog helper is about to answer; it may hold the run there. Null, nothing below changes: no line,
+    # no wait, no call.
+    [scriptblock]$OnCheckpoint = $null
 
     L2Journal([string]$path) {
         $this.Path = $path
@@ -44,6 +49,12 @@ class L2Journal {
         }
         if ($detail) { $line['detail'] = $detail }
         Add-Content -LiteralPath $this.Path -Value ($line | ConvertTo-Json -Compress -Depth 8) -Encoding utf8NoBOM
+        # After the line, so the timeline shows the value the run paused on before the pause's own notes.
+        $this.Checkpoint($criterion, $rendered)
+    }
+
+    [void] Checkpoint([string]$point, [string]$value) {
+        if ($null -ne $this.OnCheckpoint) { & $this.OnCheckpoint $point $value }
     }
 
     [void] Note([string]$message) {
@@ -58,6 +69,16 @@ class L2Journal {
 function New-L2Journal {
     param([Parameter(Mandatory)][string]$Path)
     return [L2Journal]::new($Path)
+}
+
+<#
+The checkpoint a dialog helper calls just before it answers a modal dialog: point '@dialog', value the dialog's title
+(control-server#653). The journal it is handed may be a stand-in without a Checkpoint method -- the self-checks build
+those -- and then this does nothing, as it does on every L2Journal whose OnCheckpoint is null.
+#>
+function Invoke-L2JournalCheckpoint {
+    param([AllowNull()][object]$Journal, [Parameter(Mandatory)][string]$Point, [AllowEmptyString()][string]$Value)
+    if ($null -ne $Journal -and $null -ne $Journal.PSObject.Methods['Checkpoint']) { $Journal.Checkpoint($Point, $Value) }
 }
 
 <#
@@ -1112,7 +1133,7 @@ function Write-L2Evidence {
         [Text.UTF8Encoding]::new($false))
 }
 
-Export-ModuleMember -Function New-L2Journal, Wait-L2Condition, Assert-L2ComponentAlive,
+Export-ModuleMember -Function New-L2Journal, Invoke-L2JournalCheckpoint, Wait-L2Condition, Assert-L2ComponentAlive,
     Assert-L2PortOwner, Get-L2ListeningProcess, Wait-L2Iterations, Set-L2OnboardSafety, New-L2Double,
     Start-L2Process, Stop-L2Process, Open-L2Database, Invoke-L2Query, New-L2Assertions,
     Write-L2Evidence, Format-L2IdentityRows, Get-L2PeerPublish, New-L2PeerStage, New-L2OnboardDriver

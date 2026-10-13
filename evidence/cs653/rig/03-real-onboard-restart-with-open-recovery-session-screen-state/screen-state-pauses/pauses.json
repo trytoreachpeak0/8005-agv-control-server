@@ -1,0 +1,57 @@
+{
+  "pauseSeconds": 300,
+  "pointSource": "plan",
+  "points": [
+    "onboard-resume-entry-before-restart=True",
+    "@dialog=申请恢复原操作",
+    "onboard-compensation-entry-after-restart=True",
+    "@dialog=补偿清空"
+  ],
+  "pauses": [
+    {
+      "sequence": 1,
+      "point": "onboard-resume-entry-before-restart=True",
+      "reachedAt": "2026-10-13T07:13:51.0723045+00:00",
+      "endedAt": "2026-10-13T07:15:21.7021864+00:00",
+      "seconds": 90.6,
+      "ending": "released",
+      "ioOfflineLines": 0
+    },
+    {
+      "sequence": 2,
+      "point": "@dialog=申请恢复原操作",
+      "reachedAt": "2026-10-13T07:15:23.1996568+00:00",
+      "endedAt": "2026-10-13T07:16:33.4375150+00:00",
+      "seconds": 70.2,
+      "ending": "released",
+      "ioOfflineLines": 0
+    },
+    {
+      "sequence": 3,
+      "point": "onboard-compensation-entry-after-restart=True",
+      "reachedAt": "2026-10-13T07:16:39.8467486+00:00",
+      "endedAt": "2026-10-13T07:17:43.5940287+00:00",
+      "seconds": 63.7,
+      "ending": "released",
+      "ioOfflineLines": 0
+    },
+    {
+      "sequence": 4,
+      "point": "@dialog=补偿清空",
+      "reachedAt": "2026-10-13T07:17:44.9387316+00:00",
+      "endedAt": "2026-10-13T07:19:08.9452316+00:00",
+      "seconds": 84.0,
+      "ending": "released",
+      "ioOfflineLines": 0
+    }
+  ],
+  "unreached": [],
+  "pauseSecondsTotal": 308.5,
+  "ioOfflineLinesInPauses": 0,
+  "ioOfflineLinesInRun": 0,
+  "onboardLogDirectory": "F:\\8005-scratch\\cs653-rig\\03-real-onboard-restart-with-open-recovery-session-screen-state\\logs\\onboard-app",
+  "currentFile": true,
+  "timelineFiles": [
+    "hmi-state-20261013.ndjson"
+  ]
+}
