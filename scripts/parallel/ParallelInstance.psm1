@@ -2647,6 +2647,9 @@ function Format-ParallelJourneyBindingLine {
             EFFECTIVE_JOURNEY_BINDING=admissionPolicyVersion=6 admissionPolicyDeploymentId=... cargoHoldingTimeout=00:05:00 stationDepartureWaitTimeout=00:05:00
             -- and exactly EFFECTIVE_JOURNEY_BINDING=not-logged when the event carries none of them (a package older than #672).
             A separate line, not more fields on EFFECTIVE_CONFIGURATION=: a 19 older than #672 compares that one whole.
+            Values are not escaped: a value must not contain a space. 19 splits the line on spaces into name=value pairs and
+            refuses a piece without '=' (EFFECTIVE_JOURNEY_BINDING_MISMATCH ... not name=value pairs), so a field added to
+            $script:JourneyBindingFields whose value can hold a space would fail 19 after a good install (cs#672 review S2).
     #>
     [CmdletBinding()]
     [OutputType([string])]
