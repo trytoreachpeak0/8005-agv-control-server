@@ -60,7 +60,7 @@ RIoT 回 HTTP 200、code 0、result 完整，`orderState=2`（已取消，明确
 
 ## 运行结果
 
-见 `01-targeted-tests.txt`。变异待调度给时段后补在这里。
+见 `01-targeted-tests.txt`；变异见文末。
 
 ## 审查第一阶段跟改（C10 定）
 
@@ -73,7 +73,7 @@ RIoT 回 HTTP 200、code 0、result 完整，`orderState=2`（已取消，明确
 | L3 端口抛别的异常时 500 且无审计 | 读 RIoT 的两处改为除调用方取消外一律当「读不到」 | 拒绝矩阵 `listing-throws-other`；放车用例 `read-throws` |
 | 审查第二阶段要的格 | P1 回读 1、7、9、10、11 拒绝；P2 列表有 Executing、回读为 null 拒绝（`ORDER_STILL_UNFINISHED`） | 拒绝矩阵新增 6 格 |
 
-监看里对放开状态的处理现在有三处（行号是本分支当前的）：`ForeignRunningOrderSupervisor.cs:206` 查询条件不每轮读放开的行；`:318` 放开的行重新跑在我们车上时重新挡车；`:353` 放开的行不在场时直接返回（`:342` 是 S1 新加的挂起退回）。审查说的「两处」是 `:206` 与 `:353`；单独去掉、同时去掉各会怎样，变异时照实验证后补在这里。
+监看里对放开状态的处理现在有三处（行号是本分支当前的）：`ForeignRunningOrderSupervisor.cs:206` 查询条件不每轮读放开的行；`:318` 放开的行重新跑在我们车上时重新挡车；`:353` 放开的行不在场时直接返回（`:342` 是 S1 新加的挂起退回）。审查说的「两处」是 `:206` 与 `:353`；单独去掉、同时去掉各会怎样，变异结果见下面「变异」。
 
 ## 增量审查跟改（C10 定）
 
@@ -84,3 +84,37 @@ RIoT 回 HTTP 200、code 0、result 完整，`orderState=2`（已取消，明确
 | L-4 停止方向写错一节没有用例 | 照 `stopWritten` 先例补：缺节被拒（非停止方向）；停止方向下 `enabled` 未写、写成字符串、整节写成字符串都被拒 | `Test-ParallelInstance.ps1` 840 passed |
 
 `Program.cs` 里先算放车入口的状态，再读目录批准值、紧接着记事件：部署自检有一条按源码文本核「Host 记的是它自己绑定的目录批准值」，要求这两行相邻。
+
+## 变异（调度放行的本机时段，头 `5f30c0c0`；SDK 侧 `62a827d`）
+
+每项只改一个文件，并核对确实恰好改了那一个文件；跑完只还原那个文件，核对工作区干净。原始记录在 `02-mutations.jsonl`（一行一项，带退出码、失败用例、耗时、还原后是否干净）。
+
+| 项 | 变异 | 结果 | 退出码 | 变红的用例 |
+| --- | --- | --- | --- | --- |
+| a | `Directory.Packages.props` 换回 fp.6 | 红 | 1 | 真网关链路复现、网关回读里网页单那几格、`TheCheckedVersionIsTheVersionTheBuildConsumes`，共 6 |
+| b1 | SDK C# 的 `detailByOrderId` 恢复 `requireUpperId` | 红 | 1 | 4 |
+| b2 | SDK Python 恢复 `require_upper_id`（审查 P5，`python -I`） | 红 | 1 | 3 |
+| c1 | 监看 `:206` 查询条件去掉放开状态 | **存活** | 0 | — |
+| c2 | 监看 `:353` 直接返回去掉放开状态 | 红 | 1 | S1 用例 `on-another-vehicle` 格 |
+| c3 | `:206` 与 `:353` 同时去掉 | 红 | 1 | 4 |
+| d1 | 入口去掉列表检查 | 红 | 1 | 拒绝矩阵 4 格 |
+| d2 | 入口回读检查改窄成只拒挂起（审查 P1） | 红 | 1 | 拒绝矩阵 6 格 |
+| d3 | 入口去掉事务复核 | 红 | 1 | `ARowChangedWhileRiotIsReadIsRefusedAndNothingIsWritten` |
+| d4 | 入口不再只解 `UNSETTLED` | 红 | 1 | 2 |
+| e1 | 映射改读 `VehicleFaultRecovery:enabled` | 红 | 1 | 独立开关用例 4 格 |
+| e2 | S1 去掉 `!ExecutedByAVehicleNotOurs` | 红 | 1 | S1 用例 `on-another-vehicle` 格 |
+| e3 | `Resolve-ParallelFaultRecoveryCredential` 只看 `vehicleFaultRecovery` | 红 | 1 | `release entry on, recovery off, no credential` |
+| e4 | 停止方向容忍缺节那处改成只看 `$ForStopDirection`（按内容定位，审查说的 `:1074`） | 红 | 1 | 照 `stopWritten` 补的 3 格 |
+
+过程中的一处差错：a 那一项的驱动在 Windows 下用 bash 语法还原 restore 改写的 lock 文件，没有生效；驱动发现工作区不干净就停了。核对那 4 个 lock 文件只是 RIoT.Sdk 退回 fp.6，`git checkout` 还原、工作区干净后修好驱动，从 b1 接着跑。
+
+**c1 为什么存活（读代码得到的）。** `:206` 只决定放开的行每轮读不读出来；读出来之后 `FollowAsync` 里放开的行不在场时由 `:353` 直接返回（挂起重现那一种先由 `:342` 接住），既不回读 RIoT 也不改行。所以去掉 `:206` 只是每轮多读几行、什么都不改，行为上等价——它是效率上的过滤，不是判据，测不出来是对的，不补用例。
+
+**c2 变红，和审查的推测不同。** 审查推测 `:206`、`:353` 各自单独去掉都会存活。实测 `:353` 单独去掉就红：S1 用例的 `on-another-vehicle` 格里，那张单在列表里（所以 `:206` 照样把行读出来），执行车辆是别人的车（所以 `:342` 不接），落到回读路径，读到 8 不是终结，转回 `UNSETTLED`，与「别人的车执行就不碰」相反。只有放开的行既在列表里、又不在我们车上跑、又不是挂起在我们车上时，`:353` 才是唯一的一道。
+
+## 一条既有断言被改弱（增量审查要求写明）
+
+`ParallelInstanceEffectiveConfigurationTests.EffectiveConfigurationEventCarriesTheCatalogApprovalAsExactlyTwoStrings` 原来断言模板以 ` mapStationCatalog={MapStationCatalog}` **结尾**，本票改成**包含**。
+
+- **它原本防的是什么（推的，依据是 #531 引入它时的事件说明）**：`EffectiveConfigurationEvent` 的说明写着每一项都是「追加」——#571 的名册、#638 的清桩开关、#531 的目录批准值依次接在后面，「三个字段保住名字、位置与事件号」。结尾断言钉的是「目录批准值追加在最后，前面各项的位置没被挪动」。部署回读本身按属性名取值（`Find-ParallelEffectiveConfiguration` 读 `$event['MapStationCatalog']` 等，`ParallelInstance.psm1` 约 `:2080`～`:2110`），不按位置。
+- **改弱之后由什么接替**：`Test-ParallelInstance.ps1` 的源码文本检查 `catalog read-back: the Host source logs the pair under the template the module reads` 要求 Host 源码里含有完整前缀 `$catalogTemplate`（从 `EFFECTIVE_CONFIGURATION allowedWorkTypes=...` 一直到 ` mapStationCatalog={MapStationCatalog}`，连续一段），所以前面各项的顺序与相邻关系仍被钉住；本票新用例 `TheEffectiveConfigurationEventCarriesTheReleaseEntryAsExactlyTwoBooleans` 钉住新项以 ` foreignRunningOrderRelease={ForeignRunningOrderRelease}` 结尾，即仍是「只在末尾追加」。原断言里对目录批准值内容（恰好两个键、`hh:mm:ss` 或 null）的检查一字未动。
