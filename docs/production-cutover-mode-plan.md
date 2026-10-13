@@ -3,6 +3,9 @@
 本文是 control-server#564 的第一步交付物：**只写方案，不改脚本、不在 factory01 上执行任何操作**。用户选定后，第二步按选定的那一条改
 `scripts/parallel/` 的定义校验、19 号部署脚本与 `8005-workspace` 的运维文档。
 
+> **2026-10-13 更新**：用户已定 D1～D9（原话记在 control-server#564 评论，Coordinator 10 转达）：D1、D2、D4～D8 按本文推荐；D3 由用户本人在 RIoT 上把
+> `agv01` 搬到 map 26，初始站点建议见第 11 节；D9 生产等待值是离站 5 分钟、持货 5 分钟。第二步已实现，做了什么、还剩什么见第 10 节。
+
 文中「读到的」指在 `fp/v2-impl@33cc27d4`、`8005-workspace@84ba0b4`（`origin/main`）、PR #676 head `5873125d` 上实读的代码与文档；
 「推的」指由读到的事实推出、没有实测的结论。凡是动 `agv01`、factory01 上 MVP 服务（进程、安装目录、配置、库，含只读查询）、生产 MesIngest
 的步骤，都标 **【执行前问用户】**（工作区「Ask first」第 2 类）；凡是会让车动或发急停的步骤，标 **【逐次授权·现场有人】**（第 1 类）。
@@ -94,8 +97,9 @@
    - `remote-ops/onboard-hmi/scripts/06-deploy-onboard-hmi.ps1:364`、`:380`（`$v2OnlyAliases = @('agv02', 'agv03')`）；`:139` 的 `-SshAlias` 默认值是 `agv01`；
    - `remote-ops/onboard-hmi/scripts/16-enter-sublot-uia.ps1:38`（`ValidateSet('agv02', 'agv03')`——试跑要靠它给 `agv01` 自动录条码）；
    - `remote-ops/factory-server/scripts/status/Get-WireToGateStatus.ps1:119`：**在 `8005-workspace@84ba0b4` 上没有这个文件**，可能在未合入的分支，第二步实施时重核。
-   
-   改法建议：不在四处各加一个开关，而是把「这台车现在属于哪条线」收成 `site-agv0N.json` 里的单一字段（例如 `controlServerLine: "mvp" | "v2"`），四处都读它。
+
+   改法（D7，已实现）：把「这台车现在属于哪条线」收成 `site-agv0N.json` 里的单一字段 `"controlServerLine": "mvp" | "v2"`，由
+   `remote-ops/onboard-hmi/scripts/VehicleControlServerLine.psm1` 读，三处脚本都读它；没有这个字段、或不是这两个值之一，一律拒绝（`VEHICLE_LINE_UNSET`），不按别名猜。
    切换那天只改 `site-agv01.json` 一处；回滚改回去也只一处。**改错的后果**（cs#565 评论，推的）：只改一部分时，正确的 v2 调用会被拒（安全方向），但
    「全按默认走 MVP＋`agv01`」反而能通过配对，可能去结算已停的 MVP 库、清掉 `agv01` 上属于 v2 的日志簿。单一字段消掉的正是这种半改状态。
 5. **端口改错的后果**：车载端连到一个不认识它的服务端，表现是连接被拒或握手失败，车载端不就绪、不会动车（明文期没有协商，见 `wire-to-gate-cd.md`）。
@@ -111,11 +115,13 @@
    - 部署命令带 `-ProductionCutover`（19 号脚本传给服务器端安装器；`Test-ParallelInstanceDefinition` 增加同名参数，默认关）；
    - 定义里有 `productionCutover.approvalRecord`：一句写明「谁、哪天、在哪里批准了切换」的文字（形状照 `mapStationCatalog.approvalRecord`，cs#531），
      不写进覆盖层，只进部署记录。
-   
+
    只有参数没有记录、只有记录没有参数，都拒绝，拒绝信息写明缺哪一半。
 2. **放开的只有两道，且放开后的形状是钉死的**：
-   - 车队表恰好是登记册里的三台车，三坐标逐一比对，`agv01` 只能以登记册里的 `deviceKey`／`riotId=58` 出现；登记册之外的车照旧拒绝；
-   - 生产来源下 `allowedWorkTypes` 恰好是六类全集；车队表里每类任务恰好一辆车（PR #676 自检已有这一条，提为校验）。
+   - 车队表每一行都是登记册里的三台车之一，四个坐标逐一比对，`agv01` 只能以登记册里的 `deviceKey`／`riotId=58` 出现；登记册之外的车照旧拒绝；
+     少于三台是分阶段（S1、S2）的定义，接受；
+   - 生产来源下 `allowedWorkTypes` 恰好是六类全集；同一类任务不能出现在两辆车上（`CUTOVER_TASK_TYPE_SHARED`）；必须用车队表写车
+     （`CUTOVER_REQUIRES_FLEET`）；必须是生产来源（`CUTOVER_REQUIRES_PRODUCTION_SOURCE`）。
    其余全部照旧：MVP 端口、服务名、路径、map 25、`v2` 实例标记、凭据变量名。开关开着时，把定义指向 MVP 的任何一种写法仍然被拒。
 3. **首次以切换模式安装必须是新库**：安装器在 `-ProductionCutover` 且 `installed-instance.json` 记的上一次不是切换模式时，要求 `dataRoot` 下没有库文件；
    有库就拒绝（`CUTOVER_REQUIRES_NEW_DATABASE`），提示先按第 6 节换库。这把 PR #676 的失败定义「在旧库实例上就改了区名」变成机器检查。
@@ -164,16 +170,16 @@ FieldOps 没有作废需求或重置状态的动词，手改约 50 张表风险�
 
 | # | 谁 | 做什么 | 进下一步的判据 | 标记 |
 | --- | --- | --- | --- | --- |
-| 0 | 用户（RIoT 网页）或经授权的现场会话 | 确认 `agv01` 改到 RIoT map 26 的做法与时点（重新定位、map 26 上它的初始站点与充电桩名称），**本步只定方案，不执行** | 用户给出做法 | 【执行前问用户】 |
+| 0 | 调度通知用户 | 确认 `agv01` 改到 RIoT map 26 的时点与初始站点（用户 10-13 定：用户本人在 RIoT 上操作；站点建议见第 11 节，搬之前再与用户确认），**本步只定方案，不执行** | 用户确认站点 | 【执行前问用户】 |
 | 1 | 调度 | 前置核对：cs#564 第二步、cs#669、cs#565 步骤表、program#170 方案都已合入或定稿；19 号部署的包是 v3 发布身份、含光幕极性（cs#44／hmi#294）；v2 并行实例闸门关、无在途旅程 | 逐项有出处 | — |
 | 2 | 现场 | **停 MVP 派新单**：等 `agv01` 当前这趟 `Completed`，用 `13-close-gates-when-idle.ps1`（服务器上 250 ms 盯着，完成即停服务再写 `-Off`）关 MVP 的两道闸门。不在装货后、卸货前关 | MVP 两个开关回读为 false；服务日志不再有受理；`agv01` 停在站上、无 RIoT 在途单 | 【执行前问用户】 |
 | 3 | 现场 | **确认 MVP 在途为零**：MVP 库里受理未完成的需求、未终结的旅程、未结的 RIoT 订单都为 0；RIoT 上 `agv01` 无未结单；`agv01` 车载端发件箱无欠送（三处，program#170 第 1 节写具体表与状态） | 三处都为 0；任何一处非 0 就停在这一步 | 【执行前问用户】（读 MVP 库也是第 2 类） |
 | 4 | 现场 | **停 MVP 服务并设为 Disabled**；备份 MVP（第 7 节清单）：安装目录、`D:\zhengyushao\ControlServer`（含 `.previous`）、库目录整份复制、`appsettings.Production.json`、服务注册信息（`sc qc`）、机器级环境变量名单。记录 SHA-256 | 服务 Stopped／Disabled；备份哈希写进证据目录 | 【执行前问用户】 |
 | 5 | 现场 | **备份 `agv01` 车载端**：`C:\8005\OnboardHmi` 整份（含日志簿、发件箱、本地仓位配置、日志）另存为 `C:\8005\OnboardHmi.mvp-field-<日期>`；记录版本串（`appsettings.json` 的 `wireToGate.onboardBuildCommit`） | 备份目录存在、哈希记录 | 【执行前问用户】 |
-| 6 | 用户或经授权的现场会话 | 执行第 0 步定下的做法，把 `agv01` 改到 map 26 | RIoT 读回 `agv01` 在 map 26、已定位 | 【执行前问用户】 |
+| 6 | 用户本人（RIoT） | 按第 0 步确认的站点把 `agv01` 改到 map 26 | RIoT 读回 `agv01` 在 map 26、已定位在确认的站点 | 【执行前问用户】 |
 | 7 | 现场 | **v2 换新库 A**：停 V2（闸门已关、无在途），`C:\ProgramData\8005\ControlServer.V2` 改名留存，建空目录 | 空目录；旧目录名记录 | — |
 | 8 | 现场 | **以切换模式首装**：19 号脚本带 `-ProductionCutover -InstanceDefinitionPath scripts/parallel/instance-factory01-v2.cutover-two-zones.json`，运行时与建单闸门都关 | 安装器回读 `EFFECTIVE_CONFIGURATION`：三车、两区、六类、生产来源；`installed-instance.json` 记 `productionCutover=true`；MVP 指纹前后一致（停着、Disabled） | 读生产 MesIngest 全部六类属于切换本身，本步之前向用户确认 |
-| 9 | 现场 | 三车车载端按 cs#565：先确认发件箱无欠送再清日志簿与发件箱，部署 v3 车载端（`-OnboardPort 58105 -HealthPort 58107`），IO 指向模拟器；`site-agv01.json` 改为 v2 线（第 3 节第 4 点） | 三车握手 `Ready`，不动车 | `agv01` 每一步【执行前问用户】 |
+| 9 | 现场 | 三车车载端按 cs#565：先确认发件箱无欠送再清日志簿与发件箱；`site-agv01.json` 的 `controlServerLine` 由 `"mvp"` 改为 `"v2"`（第 3 节第 4 点，`8005-workspace` 提交）；部署 v3 车载端（`-OnboardPort 58105 -HealthPort 58107`），IO 指向模拟器 | 三车握手 `Ready`，不动车 | `agv01` 每一步【执行前问用户】 |
 | 10 | 现场 | 导入受治理事实（program#170 第 2 节：已批准硬件事实、`bind-io`、站点绑定、等待点、充电名册与策略）。分区归属表这时还不能导 | 每项导入回读 | — |
 | 11 | 现场 | **让两个区进库**（PR #676 README 第 4 步）：建单闸门保持关，打开运行时，至少一台车连上并空闲，等一轮，`DispatchZoneVehicles` 出现该车的区 | 库表读回该区 | 运行时打开读真实 MES：本步向用户确认 |
 | 12 | 调度 C11 | 两份归属表离线比区名（`Test-ParallelInstance.ps1 -AreaAssignmentPath`），再各 `--dry-run` | 不报 `DISPATCH_ZONE_NOT_FOUND` | — |
@@ -191,7 +197,7 @@ FieldOps 没有作废需求或重置状态的动词，手改约 50 张表风险�
 | --- | --- | --- | --- | --- |
 | 17 | 现场 | 关 v2 闸门（`20-set-control-server-parallel-dispatch-gate.ps1 -State Closed`，任何旅程不是 `Completed` 就拒绝）、关运行时；无在途 | 闸门脚本成功；库里无非终态旅程 | — |
 | 18 | 现场 | **换新库 B**：同第 7 步，库 A 改名留存（它是试跑证据） | 空目录 | — |
-| 19 | 现场 | 19 号脚本带 `-ProductionCutover` 重装同一定义（定义里的等待参数是原值，重装即写回原值） | `EFFECTIVE_CONFIGURATION` 回读：`stationDepartureWaitTimeout`、`cargoHoldingTimeout` 等于定义原值（`00:05:00`、`00:30:00`）；**与 cs#566 收工记录的「改回 5 分钟／5 分钟」核对一次，两处若不一致先问清哪个是生产值** | — |
+| 19 | 现场 | 19 号脚本带 `-ProductionCutover` 重装同一定义（定义里的等待参数是生产值，重装即写回） | 回读 `stationDepartureWaitTimeout=00:05:00`、`cargoHoldingTimeout=00:05:00`（用户 10-13 定，D9）。**今天的定义与产品默认值里持货仍是 `00:30:00`**，改值归 cs#609（切换-10，ADR 与默认值及全部定义一起改），切换定义随 cs#669／cs#609 跟上；本步之前确认已改 | — |
 | 20 | 现场 | 三车 IO 从模拟器切回真模块（`09-switch-io-module.ps1`），清日志簿与发件箱 | 握手 `Ready` | `agv01`【执行前问用户】 |
 | 21 | 现场 | 重导受治理事实；**逐仓重核**（`REQ-0263`，cs#565 第 5 步） | 核对证据目录 | 动车部分【逐次授权·现场有人】 |
 | 22 | 现场 | 重做第 11～14 步（区进库、归属表、每区参数） | 同上 | — |
@@ -266,16 +272,68 @@ FieldOps 没有作废需求或重置状态的动词，手改约 50 张表风险�
 | D8 | 每区参数 | 归属表正式导入前批完（cs#219）；或接受先按未配置跑 | 用户批。`DIE_ATTACH` 必须新批；`WIRE_BONDING` 也没有已批准的旧值可抄 |
 | D9 | 生产等待值 | 定义里的 `00:05:00`／`00:30:00`；cs#566 收工记录写的「5 分钟／5 分钟」 | 用户确认哪个是生产值（两处不一致，至少一处记错） |
 
+**用户 2026-10-13 的决定**（control-server#564 评论）：D1、D2、D4、D5、D6、D7、D8 按上表推荐。D3：搬到 map 26，由用户本人在 RIoT 上操作，做到那一步时由调度
+通知用户，初始站点按第 11 节的建议、搬之前再确认。D9：离站 5 分钟、持货 5 分钟。只读核对（仓库与证据，未碰 factory01）：持货 `00:30:00` 出现在
+五份在用定义、PR #676 的切换定义与产品 `appsettings.json:53`；现场最后一次实读（`evidence/field/20261012-req0178/52-closeout-server.txt`）也是
+`00:30:00`——前一天手改的 5 分钟被那次 19 号重装按定义写回了。改值归 cs#609。
+
 另外两件不是决定、但要用户知道：试跑期间真实需求在物理上没人送（用户 10-12 已确认）；切换窗口里每一次碰 MVP、`agv01`、生产 MesIngest 与每一次开闸，仍逐次问。
 
-## 10. 第二步要做的（用户定了之后）
+## 10. 第二步：做了什么、还剩什么
 
-- `scripts/parallel/ParallelInstance.psm1`：开关参数、批准记录键、两道护栏在开关下的放开形状、切换模式的新库检查与 `installed-instance.json` 记录；
-- `scripts/parallel/Test-ParallelInstance.ps1`：开关关时既有拒绝逐条保持（逐条列出现有拒绝用例）；开关开时只放开这两道；PR #676 那条改成「关时拒、开时收」；
-  误用的四种拒绝信息；分阶段定义的校验；
-- `scripts/parallel/Install-ParallelInstanceLocal.ps1`：接收开关、新库检查；
-- 若 D4 选 a 或 c：分阶段定义文件；
-- `8005-workspace`（另开 PR，合回 `main`）：19 号脚本 `-ProductionCutover`；四处车与线的对应（D7）；`wire-to-gate-parallel-cd.md` 加「生产切换」一节，
-  把第 6、7 节写成操作单。
+**本仓（control-server）**
+
+- `scripts/parallel/ParallelInstance.psm1`：`Test-ParallelInstanceDefinition`／`Assert-` 加 `-ProductionCutover`；定义加顶层 `productionCutover.approvalRecord`
+  （进白名单，覆盖层不写）；两半缺一即拒（`CUTOVER_SWITCH_WITHOUT_RECORD`、`CUTOVER_RECORD_WITHOUT_SWITCH`）；两半都在时只放开 `agv01` 白名单
+  （按登记册四坐标比对）与生产来源六类（`CUTOVER_WORK_TYPES_NOT_FULL_SET`），另加 `CUTOVER_REQUIRES_FLEET`、`CUTOVER_TASK_TYPE_SHARED`、
+  `CUTOVER_REQUIRES_PRODUCTION_SOURCE`；开关关着时 `agv01` 与 `WIRE_TO_GATE` 的拒绝信息末尾指向本文。新函数 `Get-ParallelCutoverInstallRefusal`
+  管安装历史：首次切换安装要求数据目录里没有 `*.db`／`-wal`／`-shm`（`CUTOVER_REQUIRES_NEW_DATABASE`）、不能是 `-Rollback`
+  （`CUTOVER_FIRST_INSTALL_NOT_ROLLBACK`）；已是切换模式后不带开关的安装或回滚一律拒（`CUTOVER_SWITCH_MISSING`）。读回
+  `EFFECTIVE_CONFIGURATION` 时切换定义按六类集合比对。
+- `Install-ParallelInstanceLocal.ps1` 接开关，在记录定义、停任何东西之前做上面的历史检查；`Uninstall-`、`Set-ParallelDispatchGateLocal.ps1` 与退役替身
+  从已装定义里的批准记录取开关（记录只能经带开关的安装进 `installed-instance.json`），出口方向不会被新校验挡住。
+- `Test-ParallelInstance.ps1` 新增 66 条：开关关时切换形状的定义恰好被那两道拒；开关开时三车、S1、S2 都收；MVP 端口、服务名、路径、map 25、闸门、
+  MesIngest 地址等 13 种改法在开关开、关两种情况下拒绝信息逐字相同；误用；安装历史 12 种组合（含 v2 包回滚与离开切换）；读回。
+
+**`8005-workspace`**（另一个 PR，合回 `main`）
+
+- 19 号脚本加 `-ProductionCutover`，传给服务器端安装器；只在打开时才把参数传给模块，旧的 control-server 检出照常部署今天的定义。
+- 车与线的单一字段（D7）：`site-agv0N.json` 的 `controlServerLine`，新模块 `VehicleControlServerLine.psm1`；`ControlServerTarget.psm1`、
+  `06-deploy-onboard-hmi.ps1`、`16-enter-sublot-uia.ps1` 改为读它（06 新增 `V2_PORTS_FOR_MVP_VEHICLE`：MVP 线的车拿到 v2 端口也拒）。
+  cs#565 评论点名的第 4 处 `status/Get-WireToGateStatus.ps1` 在 `origin/main` 上没有这个文件，未改。
+- `server-v2-recovery-window.ps1` 同样从已装定义的记录取开关。
+
+**还没做、由谁做**
+
+- PR #676 的切换定义与它的「恰好拒两条」用例：两票后合的一方按本票的规则改成「开关关时恰好拒这两条；开关开、且定义带批准记录时收」。
+  出厂的切换定义**不带**批准记录，这是有意的：记录写的是「谁在哪天批准了这一次切换」，执行当天才填，没填就装不上。
+- 分阶段定义（D4 选 a）：执行时从切换定义复制、只留该阶段的车（S1 只有 `agv02`，S2 加 `agv01`），本票自测已证明这两种形状被接受。
+- 持货 5 分钟：cs#609。
+- `wire-to-gate-parallel-cd.md` 的「生产切换」操作单：随 `8005-workspace` 的 PR 补。
 
 **本方案怎么算失败**（票面）：没写回滚，或回滚写成了改 MVP 代码。本方案的回滚是第 7 节，只换回 MVP 的部署与数据、`agv01` 的车载端与地图，不改任何 MVP 代码。
+
+## 11. `agv01` 在 26 号图上的初始站点：建议 210「关卡」
+
+用户 10-13 要求给一个具体建议，写清：车实际停在哪、离它习惯的位置近不近、是不是 v2 的等待点或充电桩、会不会和 `agv02`／`agv03` 抢。
+以下「读到的」出自仓库与证据，没有碰 RIoT 或 `agv01`；「推的」要在搬之前由用户现场确认。
+
+**建议：210「关卡」。**理由：
+
+1. **车实际会停在那里（推的，执行时读 RIoT 核对）。**第 6 节第 2 步要等 `agv01` 当前这趟 `WIRE_TO_GATE` 完成才关 MVP 的闸门，而 MVP 的这类任务终点就是
+   关卡（MVP 配置 `gateStationRiotId 210`，见 `8005-workspace` 的 `Set-JourneyRuntime.ps1` 说明）。所以排空时车大概率就停在关卡，在原地改图、
+   原地定位，不需要先手动挪车。若那时车不在关卡（例如 MVP 让它去充电了），就请用户先在 RIoT 上把它挪到关卡再改图。
+2. **两张图上是同一个点（推的，要用户确认）。**26 号图的 210 名为「关卡」（读到的，`evidence/field/20261011-B10-05-map26-task-type-stations/catalog-26.json`）；
+   25 号图的 210 也是关卡。旁证：MVP 在 25 号图上给 `agv01` 下的充电单用的是 212→211、终点名「充电点1」（读到的，
+   `evidence/field/20261011-W3-cannot-charge/05-agv01-precheck.txt`），与 26 号图 211「充电点1」、212「充电准备点1」编号一致，说明两张图的站点编号是对应的。
+   回滚时搬回 25 号图，同样在 210 原地定位，前后对称。
+3. **它不是 v2 管的公共资源（读到的）。**26 号图上 v2 自己管独占的点是 211「充电点1」（充电名册）、212「充电准备点1」（进桩路径）、214～216「等待点1～3」
+   （等待点登记，空闲返回与清桩都往那里开）。把 `agv01` 放在这几个点上，v2 并不知道那里已经有车，可能再派别的车过去。210 不在其中。
+4. **不和另两台车抢（读到的）。**26 号图六类任务的固定站（`task-type-stations.map-26.settings.json`）：`WIRE_TO_GATE`→210、`STAGING_TO_WIRE`→217、
+   `DIE_TO_OVEN`→218、`WIRE_TO_OPTICAL`→219、`DIE_TO_WIRE_STAGING`→220、`WIRE_TO_NITROGEN`→221。专车专用之后，以 210 为固定端的任务只有
+   `agv01` 自己的 `WIRE_TO_GATE`，`agv02`、`agv03` 的任务都不以 210 为终点。**没有核对的一点**：别的车的路线会不会从 210 旁边经过——这要在 RIoT 地图上看，
+   请用户确认 210 停一台车不挡 `agv02` 去 217、N 区，`agv03` 去 218、220 与 T 区的通道。
+5. 运行时与闸门打开后，v2 看到 `agv01` 空闲，可能按空闲返回把它开到等待点；那是 v2 管着的移动，属于 S2 那次开闸的授权范围。
+
+**不建议的点**：211、212（充电桩与进桩路径）、214～216（等待点）、217～221（其余五类任务的固定站，217 是 `agv02` 的取货站）、N／T 开头的机台站
+（归属表里的站，别的车会来）。
