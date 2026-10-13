@@ -1,4 +1,5 @@
 using ControlServer.Application;
+using ControlServer.Domain;
 using ControlServer.Infrastructure.Persistence;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging;
@@ -42,7 +43,9 @@ public static class DispatchAdmissionCriteria
         CatalogAvailabilityAccess? catalog = null,
         PreCreateGate? createGate = null,
         IVehicleSlotLedger? slotLedger = null,
-        ChargingPolicyCommissioningLog? commissioningLog = null)
+        ChargingPolicyCommissioningLog? commissioningLog = null,
+        SlotConfigurationGateSwitch? slotConfigurationGate = null,
+        SlotConfigurationReadinessGate? slotConfigurationReadiness = null)
     {
         List<IDispatchAdmissionCriterion> criteria =
         [
@@ -63,6 +66,12 @@ public static class DispatchAdmissionCriteria
             // 批次9-02（control-server#400）：没有已批准策略版本的车不承接新用途。必填，理由同故障阻断：逐车硬阻断（规格 8.6）
             // 一个调用方可以漏传，就会被最需要它的那个调用方漏掉。
             new ChargingPolicyCommissioningCriterion(chargingPolicy, options, commissioningLog ?? new ChargingPolicyCommissioningLog()),
+            // control-server#686（REQ-0259、REQ-0263）：仓位配置在当前库里未确认的车不接搬运。总是在链上；不传档位就是产品缺省 Off，
+            // 与宿主未配置时相同，所以不涉及这道门禁的测试拿到的准入集合与今天一样。
+            new SlotConfigurationReadinessCriterion(
+                slotConfigurationGate ?? new SlotConfigurationGateSwitch(SlotConfigurationGateMode.Off),
+                slotConfigurationReadiness,
+                new SlotConfigurationReadinessLog()),
             new WorkTypeScopeCriterion(options),
             // Required rather than optional for the same reason as the fault block: B2's two
             // vehicle filters are fail-closed, and a fail-closed rule a caller may omit is one
@@ -156,6 +165,8 @@ public static class DispatchAdmissionCriteria
         services.AddScoped<IDispatchAdmissionCriterion, ChargingStandingCriterion>();
         services.AddScoped<IChargingPolicyResolver, ChargingPolicyResolver>();
         services.AddScoped<IDispatchAdmissionCriterion, ChargingPolicyCommissioningCriterion>();
+        // control-server#686. The gate switch and SlotConfigurationReadinessGate come from AddGovernance.
+        services.AddScoped<IDispatchAdmissionCriterion, SlotConfigurationReadinessCriterion>();
         services.AddScoped<IDispatchAdmissionCriterion, WorkTypeScopeCriterion>();
         services.AddScoped<IDispatchAdmissionCriterion, VehicleTaskTypeAdmissionCriterion>();
         services.AddScoped<IDispatchAdmissionCriterion, DispatchZoneVehicleCriterion>();
@@ -205,6 +216,7 @@ public static class DispatchAdmissionCriteria
         // control-server#403 review S3: which vehicle was already logged as not commissioned outlives the per-round criterion.
         // A required constructor argument, so a host that forgets this line fails to build the chain instead of logging every round.
         services.AddSingleton<ChargingPolicyCommissioningLog>();
+        services.AddSingleton<SlotConfigurationReadinessLog>();
         // The round itself and the Onboard facts it shares with the advance side (control-server#209). Scoped, like
         // the engine: both must be handed the engine's own DbContext -- see DispatchRoundRunner.
         services.AddScoped<OnboardDispatchFactsReader>();

@@ -209,6 +209,7 @@ public sealed class IntegrationSliceTraitArchitectureTests
             ["SlotConfigurationAuthorityTests"] = "batch 3 FP-C7 slot configuration authority; two-layer versioning inside the server, no wire message",
             ["SlotConfigurationGateModeTests"] = "readiness gate mode validation; no wire message",
             ["SlotConfigurationReadinessGateTests"] = "batch 3 per-vehicle IO integrity gate; a server-side readiness predicate, no wire message",
+            ["SlotConfigurationReadinessDispatchTests"] = "REQ-0259/REQ-0263 the per-vehicle slot configuration readiness gate in the dispatch chain (control-server#686); server-internal, no wire message",
             ["SlotConfigurationVersionLineArchitectureTests"] = "cross-cutting guard that every writer on the shared ActiveSlotConfiguration line allocates through SlotConfigurationVersionLine; hanging it off a slice would defer the guard with the slice",
             ["SlotConfigurationVersionLineCrossProcessTests"] = "batch 4 FP-C7/FP-C9b version allocation across two processes on one SQLite file; a server-internal write-ordering rule, no wire message",
             ["SlotConfigurationVersionLineTests"] = "batch 4 FP-C7/FP-C9b version allocation on the shared ActiveSlotConfiguration line; a server-internal write-ordering rule between two processes, no wire message",
