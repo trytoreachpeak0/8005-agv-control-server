@@ -52,7 +52,7 @@ public sealed partial class JourneyRuntimeEngine
     private static readonly Action<ILogger, string, string, string, double, Exception?> LogOwnOrderNeverAppeared =
         LoggerMessage.Define<string, string, string, double>(
             LogLevel.Warning,
-            new EventId(2233, nameof(LogOwnOrderNeverAppeared)),
+            new EventId(2234, nameof(LogOwnOrderNeverAppeared)),
             "Order {UpperId} of journey {JourneyId} on {AgvId} was sent with its result unknown and RIoT answered no such order for " +
             "{AbsentSeconds:0} s with the vehicle proven idle: taken as never created, and recorded to be rebuilt (control-server#673).");
 

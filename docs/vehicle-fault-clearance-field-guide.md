@@ -165,7 +165,7 @@ continue，另一个回 409 `FAULT_RECOVERY_RESUME_IN_PROGRESS`，过一会儿�
 
 1. **自动**：RIoT 按这个单号**精确**答查无此单（真实 RIoT 回 HTTP 200、业务码 0、不带 result），连续满 2 分钟
    （`JourneyRuntime:ChargingOrderAbsentAbandonAfter`，与充电单、空闲返回共用），车证明停稳、没有任务号，RIoT 的未完成订单清单读全了
-   且没有这辆车的单——全部成立，服务端判这张单**没建成**（告警事件 2233），旅程码 `OWN_ORDER_NEVER_APPEARED`，然后按上一节
+   且没有这辆车的单——全部成立，服务端判这张单**没建成**（告警事件 2234），旅程码 `OWN_ORDER_NEVER_APPEARED`，然后按上一节
    **同车重建**：新单换新单号，三道防护照旧；**车上有货时同样先等车报一份新的仓位读数证明货在原仓**。中途读到单在、读不到、
    或答得含糊，计时清零。重建出来的新单又一次结果未知并判作没建成，算「又出问题」，窗口内停住（`OWN_ORDER_REBUILD_STOPPED`），
    不会每几分钟循环一次。

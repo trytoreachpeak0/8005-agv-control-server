@@ -139,13 +139,13 @@ internal sealed class BlockedJourneysQueryEndpoint : IDashboardQueryEndpoint
             ["PICKUP_" + nameof(MovementDispatchOutcome.ResultUnknown)] =
                 "开往取货站的单发给 RIoT 之后结果未知（应答丢了，或 RIoT 回了业务失败码，例如 00002）：服务端每一轮按同一个单号对账，不会再发同一张单，"
                 + "车与需求都保持不动。RIoT 连续 2 分钟（JourneyRuntime:ChargingOrderAbsentAbandonAfter）答查无此单、车停稳且名下没有单时，"
-                + "服务端判这张单没建成（事件 2233），延迟一段时间后为同一辆车、同一条需求重建一张新单号的单，车会再动。"
+                + "服务端判这张单没建成（事件 2234），延迟一段时间后为同一辆车、同一条需求重建一张新单号的单，车会再动。"
                 + "车离线、RIoT 读不全时不会自动判：过了配置项 JourneyRuntime:OwnOrderRebuildRepeatWindow 规定的时长，现场人员可经故障处置入口"
                 + "发 DECLARE_ORDER_NEVER_APPEARED 确认它没建成（RIoT 按单号查得到单就拒绝），之后再选出口。RIoT 为什么回失败，看事件 2166",
             ["GATE_" + nameof(MovementDispatchOutcome.ResultUnknown)] =
                 "开往卸货站的单发给 RIoT 之后结果未知（应答丢了，或 RIoT 回了业务失败码，例如 00002）：服务端每一轮按同一个单号对账，不会再发同一张单，"
                 + "车、货与需求都保持不动。RIoT 连续 2 分钟（JourneyRuntime:ChargingOrderAbsentAbandonAfter）答查无此单、车停稳且名下没有单时，"
-                + "服务端判这张单没建成（事件 2233），为同一辆车、同一条需求重建一张新单号的单；车上有货时要先等车报一份新的仓位读数证明货还在原仓、"
+                + "服务端判这张单没建成（事件 2234），为同一辆车、同一条需求重建一张新单号的单；车上有货时要先等车报一份新的仓位读数证明货还在原仓、"
                 + "门锁着，才重建去卸货站。车离线、RIoT 读不全时不会自动判：过了配置项 JourneyRuntime:OwnOrderRebuildRepeatWindow 规定的时长，"
                 + "现场人员可经故障处置入口发 DECLARE_ORDER_NEVER_APPEARED 确认它没建成（RIoT 按单号查得到单就拒绝），之后再选出口。RIoT 为什么回失败，看事件 2166",
             [JourneyRuntimeEngine.OwnOrderNeverAppearedReason] =

@@ -26,14 +26,14 @@ public sealed class OwnOrderNeverAppearedTests
 {
     private const string OperatorId = "L1-OPERATOR-673";
 
-    /// <summary>What event 2233 says; the recording logger keeps the level and the message.</summary>
+    /// <summary>What event 2234 says; the recording logger keeps the level and the message.</summary>
     private const string NeverCreated = "taken as never created";
 
     private static CancellationToken Token => TestContext.Current.CancellationToken;
 
     /// <summary>
     /// 开往取货站（车上没货）：不到 120 秒保持 <c>PICKUP_ResultUnknown</c>、不记重建；满了判没建成，码 <c>OWN_ORDER_NEVER_APPEARED</c>，记一条
-    /// 「从没出现过」来源的重建，告警事件 2233；延迟过后同车同需求重建一张新单号的单，旧单号再没发过建单；车照常到站、进等录入。
+    /// 「从没出现过」来源的重建，告警事件 2234；延迟过后同车同需求重建一张新单号的单，旧单号再没发过建单；车照常到站、进等录入。
     /// </summary>
     [Fact]
     [Trait("Requirement", "REQ-0360")]
