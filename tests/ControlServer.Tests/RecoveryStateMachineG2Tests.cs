@@ -793,6 +793,11 @@ public sealed partial class RecoveryStateMachineG2Tests
         StationOperationRow operation = await context.StationOperations.SingleAsync(
             TestContext.Current.CancellationToken);
         operation.Status = StationOperationStatus.Committed;
+        // As the resume that commits it leaves the demand (OnboardRecoveryCoordinator.ObserveOperationResultAsync): its mark
+        // cleared. Since control-server#697 a RecoveryRequired demand on a Blocked journey holds the session by itself, so the
+        // seed's mark left in place would be a different case -- a recovery result that did not reconcile.
+        (await context.AcceptedDemands.SingleAsync(TestContext.Current.CancellationToken)).Status =
+            DemandExecutionStatus.Accepted;
         await context.SaveChangesAsync(TestContext.Current.CancellationToken);
         WireToGateStore store = new(context);
 
