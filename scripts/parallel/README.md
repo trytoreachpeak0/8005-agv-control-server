@@ -148,8 +148,18 @@ control-server#518 时它只绑 `WIRE_TO_GATE` → 210「关卡」，核对号�
 
 ## 切换用定义：两个派车区、三车专车专用（control-server#669）
 
-`instance-factory01-v2.cutover-two-zones.json` 是生产切换（program#171）换新库那一步要装的定义。它只在**新库**上生效，
-今天在用的几份定义一字不动、仍是 `WIRE`。
+生产切换（program#171）换新库时要装的两份定义，只差两个开关，它们只在**新库**上生效，今天在用的几份定义一字不动、仍是 `WIRE`：
+
+| 定义 | 运行时与路网引擎 | 用在哪一步 |
+| --- | --- | --- |
+| `instance-factory01-v2.cutover-two-zones.json` | 关 | 下面第 2 步：新库首次部署，导入受治理事实 |
+| `instance-factory01-v2.cutover-two-zones.runtime-on.json` | 开（`journeyRuntime.enabled`、`routeGraph.enabled` 一起开，见上文「两个开关必须一起改」） | 第 4 步起：让两个区进库、导入、开闸 |
+
+两份的建单闸门（`riotCreateDispatch`）都关，开闸是第 8 步单独授权的动作。其余开关——`vehicleFaultRecovery`、
+`fieldOperatorRoles.onboardClearanceEntryDeclared`、`journeyRuntime.clearanceToWaitingPointEnabled`（不写即关）、
+`riotForeignOrderCancel`——两份都取 `production-mes` 的值，全关。依据：它们要么要另配凭据（故障恢复、清桩入口），要么自己会让车动
+（清桩开往等待点，每次都要授权），batch89 那两份打开它们是现场测试期的决定，不是切换的决定；切换要不要开、什么时候开，归
+control-server#564 与用户，不随区名一起定。等待时长同理取生产值（离站 5 分钟、持货 30 分钟），不是测试期的缩短值。
 
 **用户的两个决定。**派车区（2026-10-12，经调度 C11，program#171 10-12 评论）：「N开头的都是WIre Bonding的，T开头的都是Die
 attaching里的」，弃用 `WIRE`，代号 `WIRE_BONDING`、`DIE_ATTACH`。三车专车专用（2026-10-10，program#171「已定」）：每类任务只有一辆车，
@@ -163,12 +173,16 @@ attaching里的」，弃用 `WIRE`，代号 `WIRE_BONDING`、`DIE_ATTACH`。三�
 
 `allowedDispatchZones` 是 `["WIRE_BONDING", "DIE_ATTACH"]`，`dispatchZone` 是 `WIRE_BONDING`（Host 要求它在允许列表里；有车队表时
 派车按每车的 `zones` 判）。`allowedWorkTypes` 是全部六类。除车队表、这三个键和 MES 来源之外，其余与 `production-mes` 逐字相同：端口、
-目录、服务名、运行时与建单闸门都关、`REQ-0302` 两个批准值、准入版本 6 与部署标签。
+目录、服务名、运行时与建单闸门都关（`runtime-on` 那份只开运行时与路网引擎）、`REQ-0302` 两个批准值、准入版本 6 与部署标签。
 
-**今天装不上，这是有意的。**定义校验拒收它，理由恰好两条：车队表第 0 行是 agv01；生产 MesIngest 来源下 `allowedWorkTypes` 含
-`WIRE_TO_GATE`。这两道正是切换开关（control-server#564）要在显式开关下放开的护栏。自测把拒收理由钉成「恰好这两条」——少一条、多一条
-都红；切换开关合入时由那张票把这条用例改成「开关打开时接受」。19 号部署脚本照样先过这道校验，所以在 #564 之前不可能把它误装到
-今天的库上。
+**今天装不上，这是有意的。**定义校验拒收两份，理由都恰好两条：车队表第 0 行是 agv01；生产 MesIngest 来源下 `allowedWorkTypes` 含
+`WIRE_TO_GATE`。自测把拒收理由钉成「恰好这两条」——少一条、多一条都红；切换开关合入时由那张票把这条用例改成「开关关时拒、开时收」，
+不要整条删掉。19 号部署脚本照样先过这道校验，所以在 #564 之前不可能把它误装到今天的库上。
+
+**切换开关要放开的不止这两道。**安装器起服务后还有一道回读：`Get-ParallelEffectiveConfigurationRefusal`
+（`ParallelInstance.psm1` 里「production MesIngest source, but allowedWorkTypes bound」那一支）在生产来源下要求 Host 实际绑定的
+`allowedWorkTypes` 恰好是 `STAGING_TO_WIRE`。只放开定义校验那两道就去装，会装到一半在回读时被拒（服务被停下）。#564 要连这道回读
+一起放开。
 
 **实例、数据目录、准入版本、部署标签都不变，理由：**
 
@@ -186,30 +200,52 @@ attaching里的」，弃用 `WIRE`，代号 `WIRE_BONDING`、`DIE_ATTACH`。三�
 
 ### 切换时区名相关的步骤（供 control-server#564、#565 与 program#170 引用）
 
-前提：#564 的切换开关已合入（否则 19 拒收本定义）；三车车载端已按 #565 改连新实例并清空发件箱与日志簿。凡动 `agv01`、MVP、
-生产 MesIngest 的步骤，照工作区「Ask first」第 1、2 类逐次问用户。
+前提（缺一条都不往下做）：
+
+- #564 的切换开关已合入，放开定义校验两道和上面那道回读（否则 19 拒收本定义，或装到一半被回读拒）；
+- **MVP 已停派新单、在途为零**（#564 第 4 项、program#170 第 1 节）。这条必须在第 4 步之前成立：从第 4 步起本实例读生产需求目录、
+  接全部六类（含 MVP 做的 `WIRE_TO_GATE`），MesIngest 没有认领语义，两个实例会从同一份目录受理同一条需求；
+- 三车车载端已按 #565 改连新实例并清空发件箱与日志簿。
+
+凡动 `agv01`、MVP、生产 MesIngest 的步骤，照工作区「Ask first」第 1、2 类逐次问用户。
 
 1. **换新库**：停 V2 服务，旧数据目录改名留存，按 program#170 的换库流程起一个空库。
-2. **用本定义首次部署**：19 号脚本带 `-InstanceDefinitionPath scripts/parallel/instance-factory01-v2.cutover-two-zones.json`。
-   运行时与建单闸门都关着装；安装器从 Host 日志回读 `EFFECTIVE_CONFIGURATION`，逐车比对 `zones` 与 `allowedDispatchZones`。
-3. **导入其余受治理事实**（已批准硬件事实、`bind-io`、站点绑定、等待点、充电名册与策略，program#170 第 2 节）。分区归属表这时还
-   **不能**导：库里还没有这两个区。
+2. **用运行时关的那份首次部署**：19 号脚本带 `-InstanceDefinitionPath scripts/parallel/instance-factory01-v2.cutover-two-zones.json`。
+   安装器从 Host 日志回读 `EFFECTIVE_CONFIGURATION`，逐车比对 `zones` 与 `allowedDispatchZones`。
+3. **导入其余受治理事实**（已批准硬件事实、`bind-io`、站点绑定、等待点、充电名册与策略，program#170 第 2 节）。分区归属表与每区参数
+   这时还**不能**导：库里还没有这两个区。
 4. **让两个区进库。**归属表导入工具（`import-area-assignments`）与每区参数导入工具（`import-dispatch-zone-parameters`）认的区都取自库表
-   `DispatchZoneVehicles`（`AreaAssignmentImportFacts.cs:35-42`）。这张表**不是**启动时写的，也没有 FieldOps 动词写它：它由派车轮按配置写入
-   （`VehicleDispatchPolicyAccess.EnsureCurrentAsync`，`DispatchRoundRunner.cs:233`、`:447`），而派车轮只在运行时开着、且至少一台车空闲或
-   可追加时才跑（`JourneyRuntimeEngine.cs:788`）。所以这一步是：**建单闸门保持关**，打开运行时，至少一台车连上新实例并空闲，等一轮。
-   这一轮会读生产需求目录，但一版归属表都没有时任何 AREA 都不执行（`AreaScopeCriterion.cs:14`，积压原因 `OUT_OF_SCOPE_AREA`），
-   不会受理任何真实需求。读生产 MesIngest 全部任务类型属于切换本身，按 #564 的授权执行。
-5. **两份归属表**（调度 C11 备好，v2 工作区 `field-prep/area-assignments-N-WIRE_BONDING.csv` 217 行、`area-assignments-T-DIE_ATTACH.csv`
-   99 行）：先离线比区名——
-   `pwsh -File scripts/parallel/Test-ParallelInstance.ps1 -AreaAssignmentPath <N 表>,<T 表>`，两份表的区名集合必须恰好等于
-   `allowedDispatchZones`（多一个区导入会拒、少一个区那辆车永远接不到单）；再各 `--dry-run`，不报 `DISPATCH_ZONE_NOT_FOUND` 才说明第 4 步
-   成了；然后正式导入。**正式导入之后，表里的 AREA 立刻可被受理**：运行时开着时，闸门关着也会受理、旅程等闸门。所以第 6 步要在这之前
-   做完，或明确接受「先按未配置跑」。
-6. **每区参数**（`REQ-0198` 途中追加最大增量、`REQ-0203` 防饥饿阈值，control-server#219）：**需要用户批准，本票不填值。**
+   `DispatchZoneVehicles`（`AreaAssignmentImportFacts.cs:35-42`）。这张表**不是**启动时写的，也没有 FieldOps 动词写它：它由
+   `VehicleDispatchPolicyAccess.EnsureCurrentAsync` 按配置写入，在新库上走到它的只有派车轮（`DispatchRoundRunner.cs:233`、`:447`；
+   另两个调用点 `JourneyRuntimeEngine.OwnOrderRebuild.cs:684`、`DemandReleaseService.cs:100` 要有在途旅程或已受理需求，新库上不可达），
+   而派车轮只在运行时开着、且至少一台车空闲或可追加时才跑（`JourneyRuntimeEngine.cs:788`）。所以这一步是：用 19 重装
+   **`instance-factory01-v2.cutover-two-zones.runtime-on.json`**（同一个包、同一个库；安装器先关着运行时回读一次，再打开），建单闸门仍关，
+   至少一台车连上新实例并空闲，等一轮。**不要手改服务器上的 `appsettings.Production.json` 开运行时**：那绕过了 19 与回读。
+   - 这一轮会读生产需求目录，但一版归属表都没有时任何 AREA 都不执行（`AreaScopeCriterion.cs:14`，积压原因 `OUT_OF_SCOPE_AREA`），
+     不会受理任何真实需求。读生产 MesIngest 全部任务类型属于切换本身，按 #564 的授权执行。
+   - 同一轮在任务循环之前还做充电分配（第 3 步已导入充电名册与策略）：电量低于线的车会得到一段充电旅程，停在关着的闸门前（建单
+     闸门在唯一的建单调用之前判断，不会动车），第 8 步一开闸它就去充电桩。
+   - 判断这一步成了：第 5、6 步的 `--dry-run` 不再报 `DISPATCH_ZONE_NOT_FOUND`。
+5. **每区参数**（`REQ-0198` 途中追加最大增量、`REQ-0203` 防饥饿阈值，control-server#219）：**需要用户批准，本票不填值。**
    `DIE_ATTACH` 要用户批一套；`WIRE_BONDING` 若沿用旧 `WIRE` 的值，也要用户确认那套值（#219 仍未结，没有已批准的 `WIRE` 值可抄）。
-   不导入时是安全方向：本区禁止途中追加、防饥饿只计龄不升级（`DispatchZoneParameterImport.cs:207`），不挡派车，但行为与配了参数不同。
-7. **开建单闸门**：工作区「Ask first」第 1 类，逐次授权、现场有人。
+   **两个区写在同一张表里，一次导入**：每区参数导入也是整表替换，表里没列的区即未配置（`DispatchZoneParameterImport.cs:71`）；分两次导，
+   后导的会把先导的那个区清成未配置。以后改任何一个区，也要带着另一个区整表重导。不导入时是安全方向：本区禁止途中追加、防饥饿只计龄
+   不升级（`DispatchZoneParameterImport.cs:207`），不挡派车，但行为与配了参数不同。放在第 6 步之前，因为第 6 步一导入就开始受理。
+6. **分区归属表：合并成一个文件，只导入一次。**每次导入都把整张表写成一个新版本，当前版本取最大的那一版
+   （`AreaAssignmentStore.WriteVersionAsync`、`ReadCurrentAsync`），`import-area-assignments` 也只收一个 `--input`。先导 N 表、再导 T 表，
+   当前版本就只剩 99 个 T 区：217 个 N 区全判 `OUT_OF_SCOPE_AREA`（只记积压、不告警），agv01、agv02 静默地永远接不到单；两次 `--dry-run`
+   各自都会通过，挡不住。所以：
+   1. 把调度 C11 备好的两份表（v2 工作区 `field-prep/area-assignments-N-WIRE_BONDING.csv` 217 行、`area-assignments-T-DIE_ATTACH.csv` 99 行）
+      合并成一个文件、一个表头：
+      `$n = Get-Content <N 表>; $t = Get-Content <T 表> | Select-Object -Skip 1; @($n) + @($t) | Set-Content <合并表> -Encoding utf8NoBOM`
+      （316 行数据加 1 行表头）；
+   2. 离线比区名：`pwsh -File scripts/parallel/Test-ParallelInstance.ps1 -AreaAssignmentPath <合并表>`。表的区名集合必须恰好等于
+      `allowedDispatchZones`（多一个区导入会拒，少一个区那辆车永远接不到单）；传两个文件直接报错，理由同上；
+   3. 对合并表 `--dry-run`；
+   4. 正式导入一次。**导入之后表里的 AREA 立刻可被受理**：运行时开着，闸门关着也会受理，旅程等闸门。
+7. 读回核对：`area-assignments` 读当前版本，确认 316 个 AREA、两个区都在；`dispatch-zone-parameters` 读回第 5 步的值。
+8. **开建单闸门**：工作区「Ask first」第 1 类，逐次授权、现场有人。授权说明里写上：开闸后积压在闸门前的旅程立即建单，其中可能有
+   第 4 步以来排上的充电旅程，所以车可能先去充电桩。
 
 ## 26 号图的六类站点绑定：激活候选与操作步骤（control-server#548）
 
@@ -691,6 +727,7 @@ VB 的 `DeleteDirectory`、FSO 的 `DeleteFolder`、CIM，以及挪走、清空�
 | `instance-factory01-v2.production-mes.json` | 同一实例的 `production` 模式定义：读生产 MesIngest，只做 `STAGING_TO_WIRE`（control-server#535） |
 | `instance-factory01-v2.two-car-example.json` | 两车（agv02、agv03）车队表的示例定义，其余与出厂单车定义相同（control-server#571） |
 | `instance-factory01-v2.cutover-two-zones.json` | 切换用定义：两个派车区 `WIRE_BONDING`／`DIE_ATTACH`，三车专车专用，其余与 `production-mes` 相同；切换开关（control-server#564）合入前装不上（control-server#669） |
+| `instance-factory01-v2.cutover-two-zones.runtime-on.json` | 同上，只多开运行时与路网引擎，建单闸门仍关：切换第 4 步起用它让两个区进库（control-server#669） |
 | `ParallelInstance.psm1` | 定义的校验、布局（所有路径与名字的唯一来源）、部署足迹、卸载的删除顺序、唯一的删目录函数。检查全是纯函数，例外只有读路径属性的 `Test-ParallelInstanceReparsePoint` 和删目录的 `Remove-ParallelInstanceDirectory` |
 | `ParallelHost.psm1` | 读写机器的辅助函数（MVP 服务指纹、调用产品卸载脚本并确认成功、把覆盖层合并进 `appsettings.Production.json` 并回读核对、只读读取旅程状态、关开派车闸门），安装、卸载与闸门脚本共用 |
 | `Install-ParallelInstanceLocal.ps1` | 在 factory01 上安装／升级／回滚 |

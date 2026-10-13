@@ -1,21 +1,25 @@
-commit: 45c0f7125367b60dcdc70afac1b82b57331e5d32
 field-prep tables (read only, not committed):
 daa295578721dc466dd829fc8e1c1997c856c2c9b155bf3ea48f9a93774f777e *C:/Users/szy/Desktop/8005-workspace-v2/field-prep/area-assignments-N-WIRE_BONDING.csv
 11f607e5227ae9ccebced8ef0b8591e8962bfc96f7e445412d97b2498bafa44a *C:/Users/szy/Desktop/8005-workspace-v2/field-prep/area-assignments-T-DIE_ATTACH.csv
- 218 C:/Users/szy/Desktop/8005-workspace-v2/field-prep/area-assignments-N-WIRE_BONDING.csv
- 100 C:/Users/szy/Desktop/8005-workspace-v2/field-prep/area-assignments-T-DIE_ATTACH.csv
- 318 total
-zones in N-WIRE_BONDING:
-    217 WIRE_BONDING
-zones in T-DIE_ATTACH:
+merged (README step 6.1 command; scratch, not committed):
+d0414e282ab41357e0a680cfc984ff8183b03d1aef87d3e822cff17137c91395 merged.csv
+lines incl. header: 317
      99 DIE_ATTACH
---- Test-ParallelAreaAssignmentZone, definition instance-factory01-v2.cutover-two-zones.json
+    217 WIRE_BONDING
+--- merged table vs instance-factory01-v2.cutover-two-zones.json
 failures: 0
---- Test-ParallelAreaAssignmentZone, definition instance-factory01-v2.production-mes.json
+--- merged table vs instance-factory01-v2.cutover-two-zones.runtime-on.json
+failures: 0
+--- merged table vs instance-factory01-v2.production-mes.json
 failures: 3
-C:/Users/szy/Desktop/8005-workspace-v2/field-prep/area-assignments-N-WIRE_BONDING.csv routes AREAs into dispatch zone 'WIRE_BONDING', which journeyRuntime.allowedDispatchZones [WIRE] omits: the import refuses it (DISPATCH_ZONE_NOT_FOUND), or a dispatching Host refuses to start (AreaAssignmentDispatchZoneStartupCheck).
-C:/Users/szy/Desktop/8005-workspace-v2/field-prep/area-assignments-T-DIE_ATTACH.csv routes AREAs into dispatch zone 'DIE_ATTACH', which journeyRuntime.allowedDispatchZones [WIRE] omits: the import refuses it (DISPATCH_ZONE_NOT_FOUND), or a dispatching Host refuses to start (AreaAssignmentDispatchZoneStartupCheck).
+area-assignments-merged.csv routes AREAs into dispatch zone 'DIE_ATTACH', which journeyRuntime.allowedDispatchZones [WIRE] omits: the import refuses it (DISPATCH_ZONE_NOT_FOUND), or a dispatching Host refuses to start (AreaAssignmentDispatchZoneStartupCheck).
+area-assignments-merged.csv routes AREAs into dispatch zone 'WIRE_BONDING', which journeyRuntime.allowedDispatchZones [WIRE] omits: the import refuses it (DISPATCH_ZONE_NOT_FOUND), or a dispatching Host refuses to start (AreaAssignmentDispatchZoneStartupCheck).
 journeyRuntime.allowedDispatchZones names 'WIRE', but no table routes an AREA into it: the vehicles that serve only that zone would never be given work.
---- Test-ParallelInstanceDefinition on the cutover definition (expected: exactly the two #564 guards)
+--- the two field files given separately vs the cutover definition (expected: refused, merge first)
+2 area assignment tables given (C:/Users/szy/Desktop/8005-workspace-v2/field-prep/area-assignments-N-WIRE_BONDING.csv, C:/Users/szy/Desktop/8005-workspace-v2/field-prep/area-assignments-T-DIE_ATTACH.csv). An import replaces the whole table -- the last one imported is the only one in force -- so merge them into one file under one header, compare that file, dry-run it, and import it once.
+--- Test-ParallelInstanceDefinition on cutover-two-zones (expected: exactly the two #564 guards)
+- journeyRuntime.allowedWorkTypes ["DIE_TO_WIRE_STAGING","DIE_TO_OVEN","WIRE_TO_GATE","WIRE_TO_OPTICAL","STAGING_TO_WIRE","WIRE_TO_NITROGEN"] includes WIRE_TO_GATE, which the MVP takes from the same catalog: with mesIngest.source 'production' both instances read one MesIngest with no claim, so this instance would compete with the MVP for the same material. It must be exactly ["STAGING_TO_WIRE"] (user decision 2026-10-09).
+- journeyRuntime.fleet[0] names agv01 (agvId, vehicleKey, deviceKey, riotId), the vehicle the MVP service is driving in production. The parallel instance may only drive agv02 or agv03; the whole definition is refused.
+--- Test-ParallelInstanceDefinition on cutover-two-zones.runtime-on (expected: exactly the two #564 guards)
 - journeyRuntime.allowedWorkTypes ["DIE_TO_WIRE_STAGING","DIE_TO_OVEN","WIRE_TO_GATE","WIRE_TO_OPTICAL","STAGING_TO_WIRE","WIRE_TO_NITROGEN"] includes WIRE_TO_GATE, which the MVP takes from the same catalog: with mesIngest.source 'production' both instances read one MesIngest with no claim, so this instance would compete with the MVP for the same material. It must be exactly ["STAGING_TO_WIRE"] (user decision 2026-10-09).
 - journeyRuntime.fleet[0] names agv01 (agvId, vehicleKey, deviceKey, riotId), the vehicle the MVP service is driving in production. The parallel instance may only drive agv02 or agv03; the whole definition is refused.

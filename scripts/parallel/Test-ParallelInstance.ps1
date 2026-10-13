@@ -29,8 +29,8 @@
 [CmdletBinding()]
 param(
     [string] $DefinitionPath = (Join-Path $PSScriptRoot 'instance-factory01-v2.json'),
-    # control-server#669. Area assignment tables to compare with the cutover definition's zones, e.g. the two under the
-    # workspace's field-prep/. Left out, only the built-in cases run.
+    # control-server#669. The merged area assignment table to compare with the cutover definition's zones -- one file, as
+    # an import replaces the whole table. Left out, only the built-in cases run.
     [string[]] $AreaAssignmentPath
 )
 
@@ -4985,7 +4985,9 @@ $shippedDefinitionNames = @('instance-factory01-v2.json', 'instance-factory01-v2
 # control-server#669: the cutover definition. Shipped, but not deployable until the cutover switch (control-server#564)
 # opens the two guards it is written against -- agv01 and WIRE_TO_GATE from the production MesIngest. It is held to its
 # own exact refusal below, not exempted: any other failure, or one of the two missing, goes red.
-$cutoverDefinitionNames = @('instance-factory01-v2.cutover-two-zones.json')
+# The runtime-on twin (PR #676 review M2) is the one the cutover runs on: the two zones reach the database only through a
+# dispatch round, which needs the runtime.
+$cutoverDefinitionNames = @('instance-factory01-v2.cutover-two-zones.json', 'instance-factory01-v2.cutover-two-zones.runtime-on.json')
 $cutoverHeldRefusals = @(
     'journeyRuntime.allowedWorkTypes ["DIE_TO_WIRE_STAGING","DIE_TO_OVEN","WIRE_TO_GATE","WIRE_TO_OPTICAL","STAGING_TO_WIRE","WIRE_TO_NITROGEN"] includes WIRE_TO_GATE, which the MVP takes from the same catalog'
     'journeyRuntime.fleet[0] names agv01 (agvId, vehicleKey, deviceKey, riotId), the vehicle the MVP service is driving in production.')
@@ -5337,6 +5339,22 @@ Invoke-SourceCase 'cutover: everything but the roster, the zones and the work ty
     $b = ConvertTo-Json -InputObject (Copy-Definition $p) -Depth 12 -Compress
     @{ Ok = [string]::Equals($a, $b, [StringComparison]::Ordinal); Detail = "cutover-derived: $a`n        production-mes: $b" }
 }
+Invoke-SourceCase 'cutover runtime-on: differs from the cutover definition only in journeyRuntime.enabled and routeGraph.enabled, both true; the gate and the other switches stay off' {
+    # PR #676 review M2. The two switches go together (README: the runtime without the route graph engine is refused, and
+    # the reverse). The RIoT create gate stays closed until its own authorized step, and the switches that need a
+    # credential or move a car on their own (fault recovery, the onboard clearance entry, clearance to a waiting point)
+    # keep the production-mes values; turning any of them on is a decision of its own, not part of the cutover's zones.
+    $r = Read-ParallelInstanceDefinition -Path (Join-Path $PSScriptRoot 'instance-factory01-v2.cutover-two-zones.runtime-on.json')
+    $ok = $r['journeyRuntime']['enabled'] -eq $true -and $r['routeGraph']['enabled'] -eq $true -and $r['riotCreateDispatch']['enabled'] -eq $false -and
+        $r['riotForeignOrderCancel']['enabled'] -eq $false -and $r['vehicleFaultRecovery']['enabled'] -eq $false -and
+        $r['fieldOperatorRoles']['onboardClearanceEntryDeclared'] -eq $false -and -not $r['journeyRuntime'].Contains('clearanceToWaitingPointEnabled')
+    $c = Copy-Definition $r
+    $c['journeyRuntime']['enabled'] = $false
+    $c['routeGraph']['enabled'] = $false
+    $a = ConvertTo-Json -InputObject $c -Depth 12 -Compress
+    $b = ConvertTo-Json -InputObject (Copy-Definition $cutover) -Depth 12 -Compress
+    @{ Ok = ($ok -and [string]::Equals($a, $b, [StringComparison]::Ordinal)); Detail = "switches as asserted: $ok`n        runtime-on with both off: $a`n        cutover: $b" }
+}
 Invoke-SourceCase 'cutover: the definitions the instance runs today still say WIRE (the zones change only with the new database)' {
     $moved = @($shippedDefinitionNames | Where-Object {
             $j = (Read-ParallelInstanceDefinition -Path (Join-Path $PSScriptRoot $_))['journeyRuntime']
@@ -5353,18 +5371,22 @@ function New-AreaTable([string[]] $Lines) {
 }
 $areaHeader = 'area,dispatch_zone,slot_position'
 foreach ($case in @(
-        @{ Name = 'an N table and a T table, one zone each -- agree'; Tables = @(@($areaHeader, 'N1-1,WIRE_BONDING,FRONT', 'N1-2,WIRE_BONDING,REAR'), @($areaHeader, 'T1-1,DIE_ATTACH,FRONT')); Expect = @() }
-        @{ Name = 'one table naming both zones (CRLF) -- agree'; Tables = @(, @("$areaHeader`r", "N1-1,WIRE_BONDING,FRONT`r", 'T1-1,DIE_ATTACH,REAR')); Expect = @() }
-        @{ Name = 'the old zone WIRE in the N table'; Tables = @(@($areaHeader, 'N1-1,WIRE,FRONT'), @($areaHeader, 'T1-1,DIE_ATTACH,FRONT'))
+        @{ Name = 'one merged table naming both zones -- agree'; Tables = @(, @($areaHeader, 'N1-1,WIRE_BONDING,FRONT', 'N1-2,WIRE_BONDING,REAR', 'T1-1,DIE_ATTACH,FRONT')); Expect = @() }
+        @{ Name = 'one merged table, CRLF -- agree'; Tables = @(, @("$areaHeader`r", "N1-1,WIRE_BONDING,FRONT`r", 'T1-1,DIE_ATTACH,REAR')); Expect = @() }
+        # PR #676 review M1: each import replaces the whole table, so an N file and a T file imported one after the other
+        # leave only the second in force. Two files are refused, whatever they say -- even two that agree in union.
+        @{ Name = 'an N file and a T file, agreeing in union -- refused, merge first'; Tables = @(@($areaHeader, 'N1-1,WIRE_BONDING,FRONT'), @($areaHeader, 'T1-1,DIE_ATTACH,FRONT'))
+            Expect = @('the last one imported is the only one in force -- so merge them into one file under one header') }
+        @{ Name = 'the old zone WIRE for the N areas'; Tables = @(, @($areaHeader, 'N1-1,WIRE,FRONT', 'T1-1,DIE_ATTACH,FRONT'))
             Expect = @("dispatch zone 'WIRE', which journeyRuntime.allowedDispatchZones [WIRE_BONDING, DIE_ATTACH] omits", "names 'WIRE_BONDING', but no table routes an AREA into it") }
-        @{ Name = 'no T table: DIE_ATTACH served by agv03 and routed nothing'; Tables = @(, @($areaHeader, 'N1-1,WIRE_BONDING,FRONT'))
+        @{ Name = 'only the N areas (what importing N after T would leave, reversed): DIE_ATTACH served by agv03 and routed nothing'; Tables = @(, @($areaHeader, 'N1-1,WIRE_BONDING,FRONT'))
             Expect = @("names 'DIE_ATTACH', but no table routes an AREA into it") }
-        @{ Name = 'a zone differing only in case'; Tables = @(@($areaHeader, 'N1-1,wire_bonding,FRONT'), @($areaHeader, 'T1-1,DIE_ATTACH,FRONT'))
+        @{ Name = 'a zone differing only in case'; Tables = @(, @($areaHeader, 'N1-1,wire_bonding,FRONT', 'T1-1,DIE_ATTACH,FRONT'))
             Expect = @("dispatch zone 'wire_bonding'", "names 'WIRE_BONDING', but no table routes") }
-        @{ Name = 'a header that is not the importer''s'; Tables = @(@('area,zone,slot_position', 'N1-1,WIRE_BONDING,FRONT'), @($areaHeader, 'T1-1,DIE_ATTACH,FRONT'))
-            Expect = @("does not start with the importer's header", "names 'WIRE_BONDING', but no table routes") }
-        @{ Name = 'a row of four fields'; Tables = @(@($areaHeader, 'N1-1,WIRE_BONDING,FRONT,x'), @($areaHeader, 'T1-1,DIE_ATTACH,FRONT'))
-            Expect = @('has rows that are not three fields (lines 2)', "names 'WIRE_BONDING', but no table routes") })) {
+        @{ Name = 'a header that is not the importer''s'; Tables = @(, @('area,zone,slot_position', 'N1-1,WIRE_BONDING,FRONT', 'T1-1,DIE_ATTACH,FRONT'))
+            Expect = @("does not start with the importer's header", "names 'WIRE_BONDING', but no table routes", "names 'DIE_ATTACH', but no table routes") }
+        @{ Name = 'a row of four fields'; Tables = @(, @($areaHeader, 'N1-1,WIRE_BONDING,FRONT,x', 'T1-1,DIE_ATTACH,FRONT'))
+            Expect = @('has rows that are not three fields (lines 2)', "names 'WIRE_BONDING', but no table routes", "names 'DIE_ATTACH', but no table routes") })) {
     Invoke-SourceCase "cutover area tables: $($case.Name)" {
         $files = @(foreach ($t in $case.Tables) { New-AreaTable $t })
         try {
@@ -5377,8 +5399,9 @@ foreach ($case in @(
     }
 }
 if ($AreaAssignmentPath) {
-    # The field tables themselves, when given (field-prep/ in the workspace; not in this repository). pwsh -File passes
-    # 'a.csv,b.csv' as one string, so a comma separates paths here too.
+    # The field table itself, when given: the ONE merged file that will be imported (field-prep/ in the workspace; not in
+    # this repository). pwsh -File passes 'a.csv,b.csv' as one string, so a comma separates paths here too -- and more
+    # than one is refused by Test-ParallelAreaAssignmentZone, since the import would leave only the last in force.
     $AreaAssignmentPath = @($AreaAssignmentPath | ForEach-Object { $_.Split(',') } | Where-Object { $_ })
     Invoke-SourceCase "cutover area tables, the given files: $($AreaAssignmentPath -join ', ')" {
         [string[]] $got = @(Test-ParallelAreaAssignmentZone -Definition (Copy-Definition $cutover) -Path $AreaAssignmentPath)

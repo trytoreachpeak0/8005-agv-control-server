@@ -385,11 +385,10 @@ public sealed class ParallelInstanceEffectiveConfigurationTests
     // control-server#669. The cutover definition: two dispatch zones, three cars dedicated by task type.
     // ------------------------------------------------------------------------------------------------
 
-    private const string CutoverTwoZones = "instance-factory01-v2.cutover-two-zones.json";
-
     /// <summary>
-    /// What the Host binds from the cutover definition over the package's appsettings.json, judged by the Host's own options
-    /// validator with the runtime on, and the zone-to-car table the Host would write into the new database from it
+    /// What the Host binds from each cutover definition (the gated one and its runtime-on twin) over the package's
+    /// appsettings.json, judged by the Host's own options validator with the runtime on, and the zone-to-car table the
+    /// Host would write into the new database from it
     /// (<c>DispatchZoneVehicles</c>, which the area assignment import reads its zones from).
     /// </summary>
     /// <remarks>
@@ -398,13 +397,15 @@ public sealed class ParallelInstanceEffectiveConfigurationTests
     /// refusal. The validator runs with <c>Enabled</c> set, because it checks zones only for a server that dispatches; the
     /// two secrets it requires come from the machine's environment and are left out of the judgement.
     /// </remarks>
-    [Fact]
-    public void CutoverDefinitionBindsTwoZonesAndThreeDedicatedCarsTheHostAccepts()
+    [Theory]
+    [InlineData("instance-factory01-v2.cutover-two-zones.json", false)]
+    [InlineData("instance-factory01-v2.cutover-two-zones.runtime-on.json", true)]
+    public void CutoverDefinitionBindsTwoZonesAndThreeDedicatedCarsTheHostAccepts(string definitionFile, bool runtimeEnabled)
     {
         string root = FindRepositoryRoot();
         JourneyRuntimeOptions options = Bind(
             File.ReadAllText(Path.Combine(root, "src", "ControlServer.Host", "appsettings.json")),
-            GenerateOverlay(root, CutoverTwoZones, checkDefinition: false), out IConfiguration configuration);
+            GenerateOverlay(root, definitionFile, checkDefinition: false), out IConfiguration configuration);
 
         Assert.Equal(["WIRE_BONDING", "DIE_ATTACH"], options.AllowedDispatchZones);
         Assert.Equal("WIRE_BONDING", options.DispatchZone);
@@ -414,6 +415,7 @@ public sealed class ParallelInstanceEffectiveConfigurationTests
         Assert.Equal(["DIE_TO_OVEN", "DIE_TO_WIRE_STAGING"], options.Fleet[2].AllowedTaskTypes);
         Assert.Equal(["WIRE_BONDING", "WIRE_BONDING", "DIE_ATTACH"], options.Fleet.Select(vehicle => string.Join(",", vehicle.Zones)));
 
+        Assert.Equal(runtimeEnabled, options.Enabled);
         options.Enabled = true;
         ValidateOptionsResult result = new JourneyRuntimeOptionsValidator(configuration).Validate(null, options);
         string[] failures =
