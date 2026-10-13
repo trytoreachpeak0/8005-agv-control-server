@@ -475,7 +475,7 @@ public sealed class ParallelInstanceEffectiveConfigurationTests
     public void EveryShippedDefinitionBindsTheApprovedPairOverThePackageAppSettings(string definitionFile)
     {
         string root = FindRepositoryRoot();
-        Bind(File.ReadAllText(Path.Combine(root, "src", "ControlServer.Host", "appsettings.json")),
+        JourneyRuntimeOptions options = Bind(File.ReadAllText(Path.Combine(root, "src", "ControlServer.Host", "appsettings.json")),
             GenerateOverlay(root, definitionFile), out IConfiguration configuration);
 
         MapStationCatalogOptions catalog = BindCatalog(configuration);
@@ -483,6 +483,10 @@ public sealed class ParallelInstanceEffectiveConfigurationTests
         Assert.True(catalog.IsApproved);
         Assert.Equal(TimeSpan.FromSeconds(30), catalog.ApprovedSyncPeriod);
         Assert.Equal(TimeSpan.FromMinutes(5), catalog.ApprovedMaxUnconfirmed);
+
+        // control-server#609: what the Host binds from the definition through the overlay, not what the definition says --
+        // the user's 2026-10-11 ceiling for every deployment (the batch 8/9 drills run shorter).
+        Assert.InRange(options.CargoHoldingTimeout, TimeSpan.FromSeconds(1), TimeSpan.FromMinutes(5));
     }
 
     [Theory]

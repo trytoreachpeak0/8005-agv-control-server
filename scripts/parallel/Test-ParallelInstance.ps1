@@ -5255,6 +5255,13 @@ foreach ($case in @(
     }
 }
 
+# Review 1.4: the exemption reaches cargo holding only. admissionPolicyVersion left out is still refused on the way out.
+Invoke-SourceCase 'cargo holding: -ForStopDirection does not relax the admissionPolicyVersion rule' {
+    $d = Copy-Definition $baseline
+    $d['journeyRuntime'].Remove('admissionPolicyVersion')
+    Test-ExactFailure $d @('journeyRuntime.admissionPolicyVersion must be set explicitly') -ForStopDirection
+}
+
 # ------------------------------------------------------------------------------------------------
 # control-server#614. Map 26's machine stations were renamed on 10-11 and the map re-uploaded on 10-12, and the instance
 # went through new databases under overrides; the factory01 v2 instance ran under 4, 5 and 6 while the definitions said 3.
