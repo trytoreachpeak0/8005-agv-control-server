@@ -724,7 +724,7 @@ try {
     }
 
     # ADR-cross-0057's cargo holding timeout (control-server#206), mapped the way StationDepartureWaitTimeout is. Passed
-    # only when the setup file names it; otherwise the server keeps its own thirty-minute default.
+    # only when the setup file names it; otherwise the server keeps its own default, five minutes since control-server#609.
     if ($null -ne $cargoHoldingTimeout) {
         $serverEnvironment['JourneyRuntime__cargoHoldingTimeout'] = $cargoHoldingTimeout
     }

@@ -5219,6 +5219,87 @@ Invoke-SourceCase 'catalog read-back: Program.cs logs the MapStationCatalogOptio
 }
 
 # ------------------------------------------------------------------------------------------------
+# control-server#609. The user ruled on 2026-10-11 that cargo holding lasts at most five minutes, production included;
+# the definitions said 00:30:00. On 10-12 the field read 30 minutes in effect: a hand edit of the installed file had been
+# overwritten by a reinstall from the definition (evidence/field/20261012-req0178/52-closeout-server.txt). So the ceiling
+# is pinned on what every install writes -- each instance-*.json, by pattern, so a definition added later is covered
+# without being listed -- and on the file the Host reads after the configuration step, whatever it held before.
+# ------------------------------------------------------------------------------------------------
+Write-Host ''
+Write-Host 'Cargo holding timeout at most five minutes (control-server#609)' -ForegroundColor Cyan
+
+$holdingCeiling = [timespan]::FromMinutes(5)
+$holdingDefinitionFiles = @(Get-ChildItem -LiteralPath $PSScriptRoot -Filter 'instance-*.json' | ForEach-Object Name | Sort-Object)
+Write-Result -Ok ($holdingDefinitionFiles.Count -ge 2) -Name 'cargo holding: instance definitions found by pattern' `
+    -Detail "found: $($holdingDefinitionFiles -join ', ')"
+function Get-HoldingOnDisk($Configuration) {
+    $sections = @($Configuration.Keys | Where-Object { $_ -ieq 'JourneyRuntime' })
+    if ($sections.Count -ne 1) { return "sections: $($sections -join ',')" }
+    $j = $Configuration[$sections[0]]
+    $values = @($j.Keys | Where-Object { $_ -ieq 'cargoHoldingTimeout' } | ForEach-Object { $j[$_] })
+    return "holding=$($values -join '|') twins=$(@(Find-CaseTwin -Node $Configuration -Path '').Count)"
+}
+foreach ($definitionFile in $holdingDefinitionFiles) {
+    $holdingDefinition = Read-ParallelInstanceDefinition -Path (Join-Path $PSScriptRoot $definitionFile)
+    $holdingJourney = $holdingDefinition['journeyRuntime']
+    $holdingValue = ($holdingJourney -is [System.Collections.IDictionary] -and $holdingJourney.Contains('cargoHoldingTimeout')) ?
+        $holdingJourney['cargoHoldingTimeout'] : $null
+    [timespan] $holdingSpan = [timespan]::Zero
+    $parsed = $holdingValue -is [string] -and $holdingValue -match '^\d{2}:\d{2}:\d{2}$' -and
+        [timespan]::TryParseExact($holdingValue, 'hh\:mm\:ss', [cultureinfo]::InvariantCulture, [ref] $holdingSpan)
+    Write-Result -Ok ($parsed -and $holdingSpan -gt [timespan]::Zero -and $holdingSpan -le $holdingCeiling) `
+        -Name "cargo holding: $definitionFile states journeyRuntime.cargoHoldingTimeout, positive and at most 00:05:00" `
+        -Detail "got '$holdingValue'"
+    if (-not $parsed) { continue }
+    # PascalCase, as a field session hand-edits the file; 00:30:00 is the value the field read back on 10-12.
+    $thirty = Copy-Definition $productConfiguration
+    $thirty['JourneyRuntime'] = [ordered]@{ enabled = $false; CargoHoldingTimeout = '00:30:00' }
+    $short = Copy-Definition $productConfiguration
+    $short['JourneyRuntime'] = [ordered]@{ enabled = $false; cargoHoldingTimeout = '00:00:40' }
+    foreach ($base in @(@{ Name = 'first install'; Value = $productConfiguration },
+            @{ Name = 'over a file hand-edited to 00:30:00'; Value = $thirty }, @{ Name = 'over a file at 00:00:40'; Value = $short })) {
+        Invoke-SourceCase "cargo holding: $definitionFile, $($base.Name), reads back the definition's $holdingValue" {
+            $got = Get-HoldingOnDisk (Invoke-CatalogFileStep (Copy-Definition $holdingDefinition) (Copy-Definition $base.Value))
+            @{ Ok = ($got -ceq "holding=$holdingValue twins=0"); Detail = "expected 'holding=$holdingValue twins=0', got '$got'" }
+        }
+    }
+}
+
+# Left out, the Host would take the package default -- thirty in every package older than #609, so a rollback would
+# bring it back. The definition check refuses that, and a value .NET would bind as something else.
+foreach ($case in @(
+        @{ Name = 'left out'; Edit = { param($j) $j.Remove('cargoHoldingTimeout') }; Expect = @('journeyRuntime.cargoHoldingTimeout must be set explicitly') }
+        @{ Name = 'zero'; Edit = { param($j) $j['cargoHoldingTimeout'] = '00:00:00' }; Expect = @('journeyRuntime.cargoHoldingTimeout must be a positive string hh:mm:ss') }
+        @{ Name = '"5" (which .NET reads as five days)'; Edit = { param($j) $j['cargoHoldingTimeout'] = '5' }; Expect = @('journeyRuntime.cargoHoldingTimeout must be a positive string hh:mm:ss') }
+        @{ Name = 'a JSON number'; Edit = { param($j) $j['cargoHoldingTimeout'] = 300 }; Expect = @('journeyRuntime.cargoHoldingTimeout must be a positive string hh:mm:ss') }
+        @{ Name = '00:05:01, one second above the ceiling'; Edit = { param($j) $j['cargoHoldingTimeout'] = '00:05:01' }; Expect = @('it must be at most 00:05:00') }
+        @{ Name = '00:30:00, the value the definitions carried before #609'; Edit = { param($j) $j['cargoHoldingTimeout'] = '00:30:00' }; Expect = @('journeyRuntime.cargoHoldingTimeout is 00:30:00; it must be at most 00:05:00') })) {
+    Invoke-SourceCase "cargo holding refused: $($case.Name)" {
+        $d = Copy-Definition $baseline
+        $null = & $case.Edit $d['journeyRuntime']
+        Test-ExactFailure $d $case.Expect
+    }
+}
+
+# The two ways out accept what was installed before #609 -- 00:30:00, or (older still) nothing -- as for taskTypeStations.
+foreach ($case in @(
+        @{ Name = '00:30:00'; Edit = { param($j) $j['cargoHoldingTimeout'] = '00:30:00' } }
+        @{ Name = 'left out'; Edit = { param($j) $j.Remove('cargoHoldingTimeout') } })) {
+    Invoke-SourceCase "cargo holding: with -ForStopDirection a definition with $($case.Name) is accepted" {
+        $d = Copy-Definition $baseline
+        $null = & $case.Edit $d['journeyRuntime']
+        Test-ExactFailure $d @() -ForStopDirection
+    }
+}
+
+# Review 1.4: the exemption reaches cargo holding only. admissionPolicyVersion left out is still refused on the way out.
+Invoke-SourceCase 'cargo holding: -ForStopDirection does not relax the admissionPolicyVersion rule' {
+    $d = Copy-Definition $baseline
+    $d['journeyRuntime'].Remove('admissionPolicyVersion')
+    Test-ExactFailure $d @('journeyRuntime.admissionPolicyVersion must be set explicitly') -ForStopDirection
+}
+
+# ------------------------------------------------------------------------------------------------
 # control-server#614. Map 26's machine stations were renamed on 10-11 and the map re-uploaded on 10-12, and the instance
 # went through new databases under overrides; the factory01 v2 instance ran under 4, 5 and 6 while the definitions said 3.
 # AdmissionPolicyVersionGuardTests pins the definitions' value to the history; this pins that each definition's value

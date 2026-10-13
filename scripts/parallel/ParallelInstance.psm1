@@ -859,7 +859,9 @@ function Test-ParallelInstanceDefinition {
         .PARAMETER ForStopDirection
             For the two ways out only: uninstalling, and closing the RIoT dispatch gate. Tolerates a
             definition with no taskTypeStations at all -- one installed before control-server#518 --
-            and nothing else: a taskTypeStations that is written is checked as always. Never for
+            and any journeyRuntime.cargoHoldingTimeout, absent or above five minutes (every definition
+            installed before control-server#609 says 00:30:00), and nothing else: a taskTypeStations
+            that is written is checked as always. Never for
             installing, rolling back or opening the gate (PR #523 review, item 1): those start
             something, and a definition without the preset must not.
 
@@ -1197,6 +1199,23 @@ function Test-ParallelInstanceDefinition {
             $failures += 'journeyRuntime.admissionPolicyVersion must be set explicitly; left out, the package default applies, which is below the version this instance has bound.'
         } elseif ($null -eq (ConvertTo-IntegerOrNull $journey['admissionPolicyVersion']) -or (ConvertTo-IntegerOrNull $journey['admissionPolicyVersion']) -le 0) {
             $failures += "journeyRuntime.admissionPolicyVersion must be a positive JSON integer, got '$($journey['admissionPolicyVersion'])'."
+        }
+
+        # control-server#609. Left out, the overlay writes nothing and the Host falls back to the package's appsettings.json:
+        # five minutes from #609 on, but thirty in every older package, so a rollback would quietly restore the value the user
+        # ruled out on 2026-10-11. hh:mm:ss for the reason ConvertTo-ParallelCatalogSpan gives ("30" binds as thirty days).
+        # The ceiling is five minutes for every deployment, field drills included (they may run shorter); the coordinator chose
+        # 2026-10-13 to hold it here rather than in the Host, so synthetic tests that never deploy keep their own values.
+        # Not checked at all for -ForStopDirection: every definition installed before #609 says 00:30:00, and closing the
+        # gate or uninstalling that instance must not be the step that refuses (the taskTypeStations precedent below).
+        if ($ForStopDirection) {
+            # Tolerated: see above. Installing, rolling back and opening the gate are checked in full.
+        } elseif (-not (Test-KeyPresent -Node $journey -Key 'cargoHoldingTimeout')) {
+            $failures += 'journeyRuntime.cargoHoldingTimeout must be set explicitly; left out, the package default applies, which is thirty minutes in any package older than control-server#609.'
+        } elseif ($null -eq ($holdingSpan = ConvertTo-ParallelCatalogSpan $journey['cargoHoldingTimeout']) -or $holdingSpan -le [timespan]::Zero) {
+            $failures += "journeyRuntime.cargoHoldingTimeout must be a positive string hh:mm:ss, got '$($journey['cargoHoldingTimeout'])'."
+        } elseif ($holdingSpan -gt [timespan]::FromMinutes(5)) {
+            $failures += "journeyRuntime.cargoHoldingTimeout is $($journey['cargoHoldingTimeout']); it must be at most 00:05:00 (user decision 2026-10-11: cargo holding lasts at most five minutes, production included)."
         }
 
         # @() for the same reason as in Assert-: a function returning an empty array returns
