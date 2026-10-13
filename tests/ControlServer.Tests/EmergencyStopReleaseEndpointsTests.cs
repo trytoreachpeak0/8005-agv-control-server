@@ -2,6 +2,7 @@ using ControlServer.Application;
 using ControlServer.Domain;
 using ControlServer.Host.Runtime;
 using ControlServer.Host.Runtime.Commands;
+using ControlServer.Host.Runtime.Faults;
 using ControlServer.Host.Runtime.Fleet;
 using ControlServer.Infrastructure.Persistence;
 using Microsoft.AspNetCore.Http;
@@ -152,6 +153,42 @@ public sealed class EmergencyStopReleaseEndpointsTests
             fixture.Riot.Calls);
     }
 
+    /// <summary>
+    /// CP-0011: a vehicle stopped for the doors of a driving vehicle is released only when the person also confirms the lock
+    /// was repaired. The doors reading locked prove nothing about the lock, so this entry asks, as the loaded one does.
+    /// </summary>
+    [Theory]
+    [InlineData(false)]
+    [InlineData(true)]
+    public async Task AVehicleStoppedForItsDoorsNeedsTheLockRepairConfirmed(bool doorLockRepaired)
+    {
+        await using EndpointFixture fixture = await EndpointFixture.CreateAsync();
+        await fixture.LatchAsync();
+        await fixture.Faults.RecordLevelAsync(
+            AgvId, VehicleFaultLevel.SuspectedBlocked, VehicleFaultEvidence.DoorNotProvenLocked,
+            evidenceOnAutoConfirmWhitelist: false, Now, TestContext.Current.CancellationToken);
+        string variable = "CONTROL_SERVER_TEST_" + Guid.NewGuid().ToString("N");
+        using EnvironmentVariableScope credential = new(variable, "release-credential");
+
+        var result = await fixture.PostAsync(
+            variable, "Bearer release-credential", ValidRequest() with { DoorLockRepaired = doorLockRepaired });
+
+        if (doorLockRepaired)
+        {
+            Assert.IsType<Accepted<EmergencyStopReleaseResponse>>(result.Result);
+            Assert.Contains(fixture.Riot.Calls, call => call == RiotCommandTypeNames.CancelEmergency);
+        }
+        else
+        {
+            ProblemHttpResult problem = Assert.IsType<ProblemHttpResult>(result.Result);
+            Assert.Equal(StatusCodes.Status409Conflict, problem.StatusCode);
+            Assert.Equal(
+                ["EMERGENCY_DOOR_LOCK_REPAIR_NOT_CONFIRMED"],
+                Assert.IsAssignableFrom<IReadOnlyList<string>>(problem.ProblemDetails.Extensions["reasons"]));
+            Assert.DoesNotContain(fixture.Riot.Calls, call => call == RiotCommandTypeNames.CancelEmergency);
+        }
+    }
+
     private static EmergencyStopReleaseRequest ValidRequest() =>
         new(AgvId, "operator-7", CauseCleared: true, VehicleEmpty: true, AllDoorsClosed: true, Note: null);
 
@@ -224,12 +261,13 @@ public sealed class EmergencyStopReleaseEndpointsTests
             this.context = context;
             TimeProvider clock = new FixedClock();
             Riot = new FakeRiot(clock);
+            Faults = new VehicleFaultStore(context);
             Supervisor = new EmergencyStopSupervisor(
                 Riot,
                 Riot,
                 Riot,
                 new RiotOrderCommandAuditStore(context),
-                new VehicleFaultStore(context),
+                Faults,
                 Options.Create(new RiotCommandOptions()),
                 clock,
                 NullLogger<EmergencyStopSupervisor>.Instance);
@@ -242,6 +280,8 @@ public sealed class EmergencyStopReleaseEndpointsTests
         }
 
         public FakeRiot Riot { get; }
+
+        public VehicleFaultStore Faults { get; }
 
         public EmergencyStopSupervisor Supervisor { get; }
 
@@ -284,6 +324,8 @@ public sealed class EmergencyStopReleaseEndpointsTests
                 request,
                 Supervisor,
                 Roster,
+                context,
+                Faults,
                 Options.Create(new EmergencyStopReleaseOptions
                 {
                     Enabled = true,

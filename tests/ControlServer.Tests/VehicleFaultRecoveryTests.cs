@@ -353,12 +353,26 @@ public sealed class VehicleFaultRecoveryTests
 
     /// <summary>
     /// 急停已触发、闩锁还没锁上（或锁上后被 RIoT 以外的东西解了、服务端还没重触发）：本服务端的急停这一轮还开着。
-    /// 清除会让它没人收尾，所以拒绝，先让急停走完（锁上后按 REQ-0356 人工解除）。
+    /// 清除会让它没人收尾，所以拒绝，先让急停走完（锁上后人经三类入口解除）。
     /// </summary>
+    /// <remarks>
+    /// 起点原来是开往取货站的单 FAILED、运动读不到：服务端急停。CP-0011 起订单 FAILED 不急停，换成清除入口同样受理的另一种：
+    /// 行驶中门锁没锁，服务端按住、急停，随后这张单在 RIoT 被取消（门锁故障下清除放行 CANCELLED／DELETED）。
+    /// </remarks>
     [Fact]
     public async Task AnEmergencyStopStillOpenRefusesTheClearance()
     {
-        await using RuntimeFixture fixture = await FaultedOnTheWayToPickupAsync(movementState: null);
+        await using RuntimeFixture fixture = await DispatchedToPickupAsync();
+        string upperId = (await fixture.RuntimeAsync()).PickupUpperId;
+        fixture.Riot.MovementState = "MT_RUNNING";
+        fixture.Riot.Vehicle = fixture.Riot.Vehicle with { CurrentStationId = 0 };
+        await fixture.ReportSafetySummaryAsync(
+            allTargetSlotsLocked: false, unknownPresent: false, ["LOCK_NOT_CLOSED", "ACTION_NOT_ALLOWED_IN_STATE"]);
+        await TickAndRunAsync(fixture);
+        Assert.Equal(VehicleFaultEvidence.DoorNotProvenLocked, (await FaultAsync(fixture)).EvidenceCode);
+        fixture.Riot.SetOrderState(upperId, RiotOrderState.Cancelled, terminal: true);
+        fixture.UnfinishedOrderIds = [];
+        fixture.Context.ChangeTracker.Clear();
         SiteRiot site = new(fixture);
         await using (ControlServerDbContext reading = new(fixture.DbOptionsForTests))
         {
@@ -966,13 +980,12 @@ public sealed class VehicleFaultRecoveryTests
     }
 
     /// <summary>
-    /// 确认前 FAILED 的新单每一轮都还在喂故障模型，与确认过的单 FAILED 时一样：车还在动，第一轮升级急停、触发停在 Pending；RIoT 上锁、
-    /// 钟走一秒后的第二轮，触发对账成 Confirmed，故障的 <c>LastEvaluatedAt</c> 推到那一刻。
+    /// 确认前 FAILED 的新单每一轮都还在喂故障模型，与确认过的单 FAILED 时一样：车还在动，第一轮记故障（不急停，CP-0011）；
+    /// 钟走一秒后的第二轮，故障的 <c>LastEvaluatedAt</c> 推到那一刻。
     /// </summary>
     /// <remarks>
-    /// 变异 M43（只喂一次）在第四轮全绿：那时没有用例断言第一轮之后还在喂。形状照
-    /// <c>Batch7DemandReleaseServiceTests.AFaultedVehicleStaysUnderSupervisionWhileItsReleaseCriteriaHold</c>：上锁放在第一轮之后，
-    /// 触发才必然停在 Pending，第二轮有没有喂才分得出来。
+    /// 变异 M43（只喂一次）在第四轮全绿：那时没有用例断言第一轮之后还在喂。修订前这里还看急停触发从 Pending 走到 Confirmed；
+    /// 订单 FAILED 不再急停之后，分得出「第二轮有没有喂」的只剩 <c>LastEvaluatedAt</c>，只喂一次它就停在第一轮。
     /// </remarks>
     [Fact]
     [Trait("Requirement", "REQ-0361")]
@@ -992,9 +1005,8 @@ public sealed class VehicleFaultRecoveryTests
         fixture.Context.ChangeTracker.Clear();
         await fixture.Engine.ExecuteOnceAsync(Token);
         fixture.Context.ChangeTracker.Clear();
-        Assert.Equal(RiotOrderCommandOutcome.Pending, await EmergencyTriggerOutcomeAsync(fixture));
+        Assert.Null(await EmergencyTriggerOutcomeAsync(fixture));
 
-        fixture.EmergencyLatched = true;
         fixture.Clock.Advance(TimeSpan.FromSeconds(1));
         DateTimeOffset secondRound = fixture.Clock.GetUtcNow();
         await fixture.HearFromPeerAsync();
@@ -1002,7 +1014,7 @@ public sealed class VehicleFaultRecoveryTests
         await fixture.Engine.ExecuteOnceAsync(Token);
         fixture.Context.ChangeTracker.Clear();
 
-        Assert.Equal(RiotOrderCommandOutcome.Confirmed, await EmergencyTriggerOutcomeAsync(fixture));
+        Assert.Null(await EmergencyTriggerOutcomeAsync(fixture));
         await using ControlServerDbContext reading = new(fixture.DbOptionsForTests);
         Assert.Equal(secondRound, (await reading.VehicleFaultStates.AsNoTracking().SingleAsync(Token)).LastEvaluatedAt);
         Assert.Equal("VEHICLE_ORDER_FAILED", (await reading.JourneyRuntimes.AsNoTracking().SingleAsync(Token)).BlockReasonCode);

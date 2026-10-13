@@ -225,13 +225,14 @@ $assertions.Add(
     1,
     $holdCallsAfter.Count)
 
-# 停着的车不该被急停。这一条与上面三条一起看才完整：一台在第一轮就被急停的车同样满足「只调
-# 一次 OrderHold」，但那是完全不同的一件事。
+# 这台车不该被急停。这一条与上面三条一起看才完整：一台在第一轮就被急停的车同样满足「只调
+# 一次 OrderHold」，但那是完全不同的一件事。CP-0011（control-server#539）起订单 FAILED 本身就不急停，
+# 车停没停都一样；修订前这一条守的是「停在站上，REQ-0246 的第三个条件不成立」。
 $emergencyCalls = @(@($riot.Snapshot().body.commandInvocations) |
     Where-Object { [string]$_.commandType -in @('triggerEmergency', 'cancelEmergency') })
 $assertions.Add(
     'L2-CS-12',
-    '停在站上的车没有被升级成急停（REQ-0246 的第三个条件不成立）',
+    '订单 FAILED 的车没有被升级成急停（REQ-0246 按 CP-0011 修订：FAILED 不急停）',
     ($emergencyCalls.Count -eq 0),
     0,
     $emergencyCalls.Count)

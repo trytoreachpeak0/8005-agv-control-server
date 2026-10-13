@@ -45,35 +45,6 @@ public sealed record EmergencyStopRequest(
     long? FaultGeneration);
 
 /// <summary>
-/// The one release REQ-0167 allows while a fault still stands (control-server#335, the user's option A of 2026-09-28): the
-/// fault is the doors of a driving vehicle, they read fresh, known and locked again, and the one unfinished order RIoT may
-/// hold for the vehicle is <paramref name="HeldOrderId"/> -- this server's own <c>OrderHold</c> of that fault generation,
-/// read back PAUSED (7), and read PAUSED again in the list the release is decided on.
-/// </summary>
-/// <remarks>
-/// <para>
-/// Built only by <c>VehicleFaultCoordinator</c>, which alone knows the symptom and reads the hold back; this class trusts it for
-/// the generation it names and for nothing else. Every other cause, and every other unfinished order, still refuses.
-/// </para>
-/// <para>
-/// <paramref name="HeldOrderId"/> is null when the held order has since been cancelled or deleted in RIoT (control-server#335
-/// review P1): the allowance then lets no order through, and the release needs the vehicle to hold none at all -- with no
-/// order nothing can drive it.
-/// </para>
-/// </remarks>
-public sealed record EmergencyReleaseAllowance(long FaultGeneration, string? HeldOrderId);
-
-/// <summary>
-/// What followed a fault generation's door-cause release (control-server#527); see
-/// <see cref="EmergencyStopSupervisor.DoorReleaseHistoryAsync"/>.
-/// </summary>
-/// <param name="MovedAfterDoorRelease">A stop asked for after the first door-cause release gave motion as a reason.</param>
-/// <param name="MovedAgainAfterLaterRelease">
-/// A door-cause release took effect after the first such stop, and a stop after that release gave motion as a reason too.
-/// </param>
-public sealed record DoorReleaseHistory(bool MovedAfterDoorRelease, bool MovedAgainAfterLaterRelease);
-
-/// <summary>
 /// A person's confirmation that a latched vehicle may be released, with everything REQ-0356 requires
 /// recorded.
 /// </summary>
@@ -95,6 +66,27 @@ public sealed record EmergencyStopReleaseConfirmation(
     bool VehicleEmpty,
     bool AllDoorsClosed,
     string? Note);
+
+/// <summary>
+/// The governed release of a loaded vehicle (REQ-0356 as revised by CP-0011, requirements baseline v1.10.0): a person with
+/// the exception-recovery permission releases this server's class-three stop on a vehicle that is, or may be, carrying
+/// something, with no confirmation that it is empty.
+/// </summary>
+/// <param name="ConfirmerIdentity">Who releases. Required; the entry has already checked the role.</param>
+/// <param name="Reason">Why, in the person's words. Required: REQ-0356 asks for the reason to be recorded.</param>
+/// <param name="CauseCleared">The person confirms the cause of the stop has been removed.</param>
+/// <param name="AllDoorsClosed">The person confirms every slot door is closed. Not the lock proof a departure needs (REQ-0244).</param>
+/// <param name="DoorLockRepaired">
+/// The person confirms the door lock was inspected and repaired. Required only when the stop is for the doors of a driving
+/// vehicle: REQ-0167 as revised says a lock feedback that came back is not the cause removed -- "锁可能坏了".
+/// </param>
+public sealed record LoadedEmergencyStopReleaseConfirmation(
+    EmergencyStopSubject Subject,
+    string? ConfirmerIdentity,
+    string? Reason,
+    bool CauseCleared,
+    bool AllDoorsClosed,
+    bool DoorLockRepaired);
 
 /// <summary>What one evaluation did, or refused to do.</summary>
 public enum EmergencyStopAction
@@ -221,15 +213,39 @@ public sealed class EmergencyStopSupervisor(
     /// </remarks>
     public const string ReleaseUnconfirmedAlarm = "EMERGENCY_RELEASE_UNCONFIRMED";
 
+    /// <summary>
+    /// The audit command type of a class-three stop recorded on a vehicle that was already latched (CP-0011, REQ-0248 as
+    /// revised in requirements baseline v1.10.0): no <c>triggerEmergency</c> went out, so the row is not one of that type.
+    /// </summary>
+    /// <remarks>
+    /// <para>
+    /// <b>Why a row at all.</b> RIoT has one emergency latch and no field that says who set it (cs#539 step one: the
+    /// emergency state is three values, the thing model four, none carries a source). Which of this server's stops are in
+    /// effect is therefore read off this server's own audit trail and nothing else, and a stop on a vehicle someone else had
+    /// already latched would otherwise leave no trace there -- the next person to clear the latch at RIoT, Matrix or the
+    /// vehicle's own panel would clear this server's reason with it, and nothing would put it back.
+    /// </para>
+    /// <para>
+    /// <b>Why not a <c>triggerEmergency</c> row.</b> That table counts calls, and a call that never happened must not appear
+    /// in it as one. <b>Why no call.</b> The user ruled on 2026-10-13 that on a latched vehicle "三类急停也已经下了" -- this
+    /// server's class rides on the class-two latch already engaged -- and what a trigger does to a latch held
+    /// <c>CAN_NOT_RECOVER</c> has never been measured. The row is written settled (<c>Confirmed</c>): the latch it rides on
+    /// was read engaged, which is all a trigger's confirmation ever establishes.
+    /// </para>
+    /// </remarks>
+    public const string LatchAdoptedCommandType = "emergencyLatchRecorded";
+
+    /// <summary>The reason a stop request answers with when it recorded this server's class on a latch already engaged.</summary>
+    public const string LatchAdoptedReason = "EMERGENCY_LATCH_RECORDED_WITHOUT_CALL";
+
     /// <summary>The reason recorded on a release issued on a person's confirmation (REQ-0356).</summary>
     public const string ConfirmedReleaseReason = "EMERGENCY_RELEASE_CONFIRMED_BY_OPERATOR";
 
-    /// <summary>
-    /// The reason recorded on an automatic release earned by <see cref="EmergencyReleaseAllowance"/>: the doors of a driving
-    /// vehicle are proven locked again while its fault stands (control-server#335). Read back by
-    /// <see cref="WasReleasedOnDoorCauseAsync"/>.
-    /// </summary>
-    public const string DoorCauseRemovedReason = "EMERGENCY_DOOR_CAUSE_REMOVED";
+    /// <summary>The reason recorded on the governed release of a loaded vehicle (REQ-0356 as revised by CP-0011).</summary>
+    public const string GovernedLoadedReleaseReason = "EMERGENCY_RELEASE_GOVERNED_LOADED";
+
+    /// <summary>RIoT lists the one unfinished order this server owns on the vehicle, and it is not PAUSED (7).</summary>
+    public const string HeldOrderNotPausedReason = "EMERGENCY_HELD_ORDER_NOT_PAUSED";
 
     /// <summary>
     /// The receipt property that carries a person's confirmation, and that marks a release as one
@@ -306,15 +322,24 @@ public sealed class EmergencyStopSupervisor(
         if (emergency.IsLatched)
         {
             // Already stopped. REQ-0248 forbids re-triggering a confirmed latch, so this request
-            // issues nothing and therefore writes no attempt row -- the audit table counts calls,
-            // and a call that never happened must not appear in it as one. The trigger that
-            // engaged the latch is settled, so a stop that worked is not left recorded as Pending.
+            // issues nothing. The trigger that engaged the latch is settled, so a stop that worked
+            // is not left recorded as Pending.
             if (episode is (RiotOrderCommandAttempt engaged, _, _))
             {
                 await SettleAsync(engaged, cancellationToken).ConfigureAwait(false);
+                return Record(request, Latched(emergency, request.Subject));
             }
 
-            return Record(request, Latched(emergency, request.Subject));
+            // Latched by someone else -- a button, a bumper, RIoT, Matrix -- or by an episode of
+            // another fault generation: this server's class is recorded on it, with no call
+            // (CP-0011; LatchAdoptedCommandType). From here it is an episode like a triggered one,
+            // re-triggered at once if anything other than this server clears the latch.
+            RiotOrderCommandAttempt recorded = await RecordLatchAsync(request, emergency, cancellationToken)
+                .ConfigureAwait(false);
+            EmergencyStopDecision latched = Latched(emergency, request.Subject);
+            return Record(
+                request,
+                latched with { Reasons = [.. latched.Reasons, LatchAdoptedReason], Attempt = recorded });
         }
 
         if (episode is (RiotOrderCommandAttempt trigger, int attempts, IReadOnlyList<RiotOrderCommandAttempt> releases) &&
@@ -346,10 +371,8 @@ public sealed class EmergencyStopSupervisor(
         EmergencyStopRequest request,
         CancellationToken cancellationToken)
     {
-        IReadOnlyList<RiotOrderCommandAttempt> triggers = await audit.ReadAttemptsAsync(
-            RiotCommandTypeNames.TriggerEmergency,
-            VehicleTarget(request.Subject.DeviceKey),
-            cancellationToken).ConfigureAwait(false);
+        IReadOnlyList<RiotOrderCommandAttempt> triggers = await ReadStopsAsync(request.Subject.DeviceKey, cancellationToken)
+            .ConfigureAwait(false);
         IReadOnlyList<RiotOrderCommandAttempt> releases = await audit.ReadAttemptsAsync(
             RiotCommandTypeNames.CancelEmergency,
             VehicleTarget(request.Subject.DeviceKey),
@@ -388,26 +411,14 @@ public sealed class EmergencyStopSupervisor(
     /// unexpectedly released latch, settles a release that has taken effect, and releases the latch
     /// automatically only once release is earned.
     /// </summary>
-    public Task<EmergencyStopDecision> EvaluateAsync(
-        EmergencyStopSubject subject,
-        CancellationToken cancellationToken) =>
-        EvaluateAsync(subject, allowance: null, cancellationToken);
-
-    /// <summary>
-    /// <see cref="EvaluateAsync(EmergencyStopSubject, CancellationToken)"/>, with the one release REQ-0167 allows while the
-    /// fault stands when <paramref name="allowance"/> is given (control-server#335).
-    /// </summary>
     public async Task<EmergencyStopDecision> EvaluateAsync(
         EmergencyStopSubject subject,
-        EmergencyReleaseAllowance? allowance,
         CancellationToken cancellationToken)
     {
         ArgumentNullException.ThrowIfNull(subject);
 
-        IReadOnlyList<RiotOrderCommandAttempt> triggers = await audit.ReadAttemptsAsync(
-            RiotCommandTypeNames.TriggerEmergency,
-            VehicleTarget(subject.DeviceKey),
-            cancellationToken).ConfigureAwait(false);
+        IReadOnlyList<RiotOrderCommandAttempt> triggers = await ReadStopsAsync(subject.DeviceKey, cancellationToken)
+            .ConfigureAwait(false);
         IReadOnlyList<RiotOrderCommandAttempt> releases = await audit.ReadAttemptsAsync(
             RiotCommandTypeNames.CancelEmergency,
             VehicleTarget(subject.DeviceKey),
@@ -425,7 +436,7 @@ public sealed class EmergencyStopSupervisor(
         {
             await SettleAsync(trigger, cancellationToken).ConfigureAwait(false);
             return await ConsiderReleaseAsync(
-                subject, trigger, releasesSinceTrigger, emergency, allowance, cancellationToken)
+                subject, trigger, releasesSinceTrigger, emergency, cancellationToken)
                 .ConfigureAwait(false);
         }
 
@@ -466,18 +477,31 @@ public sealed class EmergencyStopSupervisor(
     /// person presses.
     /// </para>
     /// </remarks>
+    public Task<EmergencyStopDecision> ReleaseOnConfirmationAsync(
+        EmergencyStopReleaseConfirmation confirmation,
+        CancellationToken cancellationToken) =>
+        ReleaseOnConfirmationAsync(confirmation, doorCause: false, doorLockRepaired: false, cancellationToken);
+
+    /// <summary>
+    /// <see cref="ReleaseOnConfirmationAsync(EmergencyStopReleaseConfirmation, CancellationToken)"/> for a vehicle that may have
+    /// been stopped for the doors of a driving vehicle (CP-0011, requirements baseline v1.10.0): when
+    /// <paramref name="doorCause"/>, the person must also confirm the lock was repaired, or the release is refused with
+    /// <c>EMERGENCY_DOOR_LOCK_REPAIR_NOT_CONFIRMED</c> -- the same rule as the loaded entry
+    /// (<see cref="ReleaseLoadedOnGovernedConfirmationAsync"/>). The entry decides <paramref name="doorCause"/> from the fault
+    /// fact and the journey (<c>EmergencyStopDoorCause</c>).
+    /// </summary>
     public async Task<EmergencyStopDecision> ReleaseOnConfirmationAsync(
         EmergencyStopReleaseConfirmation confirmation,
+        bool doorCause,
+        bool doorLockRepaired,
         CancellationToken cancellationToken)
     {
         ArgumentNullException.ThrowIfNull(confirmation);
         EmergencyStopSubject subject = confirmation.Subject;
         ArgumentNullException.ThrowIfNull(subject);
 
-        IReadOnlyList<RiotOrderCommandAttempt> triggers = await audit.ReadAttemptsAsync(
-            RiotCommandTypeNames.TriggerEmergency,
-            VehicleTarget(subject.DeviceKey),
-            cancellationToken).ConfigureAwait(false);
+        IReadOnlyList<RiotOrderCommandAttempt> triggers = await ReadStopsAsync(subject.DeviceKey, cancellationToken)
+            .ConfigureAwait(false);
         IReadOnlyList<RiotOrderCommandAttempt> releases = await audit.ReadAttemptsAsync(
             RiotCommandTypeNames.CancelEmergency,
             VehicleTarget(subject.DeviceKey),
@@ -489,7 +513,7 @@ public sealed class EmergencyStopSupervisor(
         (RiotOrderCommandAttempt Trigger, int AttemptsInEpisode)? episode = OpenEpisode(triggers, releases);
 
         IReadOnlyList<string> obstacles = ConfirmedReleaseObstacles(
-            confirmation, emergency, episode is not null, orders);
+            confirmation, emergency, episode is not null, orders, doorCause, doorLockRepaired);
         if (obstacles.Count > 0 || episode is not (RiotOrderCommandAttempt trigger, _))
         {
             string? alarm = string.Equals(
@@ -530,6 +554,102 @@ public sealed class EmergencyStopSupervisor(
     }
 
     /// <summary>
+    /// REQ-0356 as revised by CP-0011: the governed release of this server's stop on a loaded vehicle.
+    /// </summary>
+    /// <remarks>
+    /// <para>
+    /// <b>What differs from <see cref="ReleaseOnConfirmationAsync"/>, and nothing else does.</b> No confirmation that the
+    /// vehicle is empty; a reason the person writes; a confirmation that the door lock was repaired when the stop is for the
+    /// doors (<paramref name="doorCause"/>, decided by the entry from the fault fact); and the one unfinished order RIoT may
+    /// hold for the vehicle is let through when this server created it (<paramref name="ownOrderIds"/>) and it reads PAUSED
+    /// (7) in the list read right before the release. Everything else -- a <c>CAN_RECOVER</c> latch, a stop of this server's
+    /// open (triggered or recorded), the backoff, the receipt that marks it a release on confirmation -- is the same.
+    /// </para>
+    /// <para>
+    /// <b>Why a held order may stay.</b> A loaded vehicle stopped by this server nearly always has its order held
+    /// (REQ-0234), and REQ-0238/REQ-0239 keep that order bound to the cargo for the repair-and-continue path; cancelling it
+    /// would push the cargo off that path. A held order does not move until a <c>CONTINUE_FROM_HELD</c>
+    /// (riot-behavior-lab BC-ORDER-006), and on agv02 on 2026-10-11 the order stayed <c>MT_PAUSED</c> after the latch was
+    /// released (control-server <c>evidence/field/20261011-W2-product-estop</c>, 00:38:08). A state RIoT did not give, or any
+    /// second order, refuses.
+    /// </para>
+    /// <para>
+    /// The fault coordinator reads the release off its receipt as one on confirmation, so a vehicle released here between
+    /// stations is not stopped again for want of a station alone (REQ-0247; <see cref="WasReleasedOnConfirmationAsync"/>).
+    /// </para>
+    /// </remarks>
+    public async Task<EmergencyStopDecision> ReleaseLoadedOnGovernedConfirmationAsync(
+        LoadedEmergencyStopReleaseConfirmation confirmation,
+        bool doorCause,
+        IReadOnlySet<string> ownOrderIds,
+        CancellationToken cancellationToken)
+    {
+        ArgumentNullException.ThrowIfNull(confirmation);
+        ArgumentNullException.ThrowIfNull(ownOrderIds);
+        EmergencyStopSubject subject = confirmation.Subject;
+        ArgumentNullException.ThrowIfNull(subject);
+
+        IReadOnlyList<RiotOrderCommandAttempt> triggers = await ReadStopsAsync(subject.DeviceKey, cancellationToken)
+            .ConfigureAwait(false);
+        IReadOnlyList<RiotOrderCommandAttempt> releases = await audit.ReadAttemptsAsync(
+            RiotCommandTypeNames.CancelEmergency,
+            VehicleTarget(subject.DeviceKey),
+            cancellationToken).ConfigureAwait(false);
+        RiotVehicleEmergencyObservation emergency = await emergencyFacts
+            .ReadEmergencyStateAsync(subject.DeviceKey, cancellationToken).ConfigureAwait(false);
+        RiotVehicleOrderObservation orders = await orderFacts
+            .ReadUnfinishedOrdersAsync(subject.DeviceKey, cancellationToken).ConfigureAwait(false);
+        (RiotOrderCommandAttempt Trigger, int AttemptsInEpisode)? episode = OpenEpisode(triggers, releases);
+
+        EmergencyStopReleaseConfirmation recorded = new(
+            subject,
+            confirmation.ConfirmerIdentity,
+            confirmation.CauseCleared,
+            VehicleEmpty: false,
+            confirmation.AllDoorsClosed,
+            confirmation.Reason);
+        IReadOnlyList<string> obstacles = LoadedReleaseObstacles(
+            confirmation, doorCause, emergency, episode is not null, orders, ownOrderIds);
+        if (obstacles.Count > 0 || episode is not (RiotOrderCommandAttempt trigger, _))
+        {
+            string? alarm = string.Equals(
+                emergency.EmergencyState,
+                RiotVehicleEmergencyObservation.CanNotRecover,
+                StringComparison.Ordinal)
+                ? NotRecoverableAlarm
+                : null;
+            Alarm(alarm, subject.AgvId);
+            return RecordConfirmation(
+                recorded,
+                new EmergencyStopDecision(EmergencyStopAction.RecoveryRefused, emergency, obstacles, alarm));
+        }
+
+        IReadOnlyList<RiotOrderCommandAttempt> releasesSoFar = ReleasesSince(releases, trigger);
+        if (ReleaseRetryNotDue(releasesSoFar))
+        {
+            Alarm(ReleaseUnconfirmedAlarm, subject.AgvId);
+            return RecordConfirmation(
+                recorded,
+                new EmergencyStopDecision(
+                    EmergencyStopAction.AwaitingRetry,
+                    emergency,
+                    ["EMERGENCY_RELEASE_NOT_CONFIRMED"],
+                    ReleaseUnconfirmedAlarm,
+                    releasesSoFar[^1]));
+        }
+
+        EmergencyStopRequest release = new(
+            subject,
+            EmergencyStopRequestSource.ServerOperator,
+            confirmation.ConfirmerIdentity,
+            GovernedLoadedReleaseReason,
+            trigger.FaultGeneration);
+        return RecordConfirmation(
+            recorded,
+            await IssueReleaseAsync(release, recorded, cancellationToken).ConfigureAwait(false));
+    }
+
+    /// <summary>
     /// Settles a release of the vehicle's open episode that RIoT has carried out since its
     /// read-back, given a latch read that says <c>OK</c>. Does nothing otherwise.
     /// </summary>
@@ -552,10 +672,8 @@ public sealed class EmergencyStopSupervisor(
             return;
         }
 
-        IReadOnlyList<RiotOrderCommandAttempt> triggers = await audit.ReadAttemptsAsync(
-            RiotCommandTypeNames.TriggerEmergency,
-            VehicleTarget(subject.DeviceKey),
-            cancellationToken).ConfigureAwait(false);
+        IReadOnlyList<RiotOrderCommandAttempt> triggers = await ReadStopsAsync(subject.DeviceKey, cancellationToken)
+            .ConfigureAwait(false);
         IReadOnlyList<RiotOrderCommandAttempt> releases = await audit.ReadAttemptsAsync(
             RiotCommandTypeNames.CancelEmergency,
             VehicleTarget(subject.DeviceKey),
@@ -604,101 +722,13 @@ public sealed class EmergencyStopSupervisor(
     {
         ArgumentNullException.ThrowIfNull(subject);
 
-        IReadOnlyList<RiotOrderCommandAttempt> triggers = await audit.ReadAttemptsAsync(
-            RiotCommandTypeNames.TriggerEmergency,
-            VehicleTarget(subject.DeviceKey),
-            cancellationToken).ConfigureAwait(false);
+        IReadOnlyList<RiotOrderCommandAttempt> triggers = await ReadStopsAsync(subject.DeviceKey, cancellationToken)
+            .ConfigureAwait(false);
         IReadOnlyList<RiotOrderCommandAttempt> releases = await audit.ReadAttemptsAsync(
             RiotCommandTypeNames.CancelEmergency,
             VehicleTarget(subject.DeviceKey),
             cancellationToken).ConfigureAwait(false);
         return OpenEpisode(triggers, releases) is not null;
-    }
-
-    /// <summary>
-    /// Whether this fault generation has had the automatic release an <see cref="EmergencyReleaseAllowance"/> earned take
-    /// effect (control-server#335).
-    /// </summary>
-    /// <remarks>
-    /// Scoped to the generation like <see cref="WasReleasedOnConfirmationAsync"/>: a fault a person clears ends it, and a new
-    /// fault starts without it. The fault coordinator exempts such a vehicle from being stopped again for want of a station
-    /// alone -- and only while the doors still read fresh, known and locked; that half is the coordinator's, which reads them.
-    /// </remarks>
-    public async Task<bool> WasReleasedOnDoorCauseAsync(
-        EmergencyStopSubject subject,
-        long faultGeneration,
-        CancellationToken cancellationToken)
-    {
-        ArgumentNullException.ThrowIfNull(subject);
-
-        IReadOnlyList<RiotOrderCommandAttempt> releases = await audit.ReadAttemptsAsync(
-            RiotCommandTypeNames.CancelEmergency,
-            VehicleTarget(subject.DeviceKey),
-            cancellationToken).ConfigureAwait(false);
-        return releases.Any(release =>
-            release.FaultGeneration == faultGeneration &&
-            release.Outcome == RiotOrderCommandOutcome.Confirmed &&
-            IsReleaseOnDoorCause(release));
-    }
-
-    /// <summary>
-    /// What happened in this fault generation after its first door-cause release (<see cref="WasReleasedOnDoorCauseAsync"/>)
-    /// took effect: whether a stop this server asked for since then gave a reason <paramref name="isMotion"/> accepts, and
-    /// whether, after a door-cause release that followed the first such stop, another stop gave one (control-server#527).
-    /// </summary>
-    /// <remarks>
-    /// For the fault coordinator, which withdraws the door allowance on the first and its last way out on the second. A stop
-    /// after that later release for any other reason -- the doors open again -- withdraws nothing (review M-1): only motion
-    /// says the doors were not the whole of it. Read off
-    /// the receipts, like the release reasons, so it survives a restart without a column of its own. Only a stop that issued a
-    /// trigger counts: a request that joined an open episode recorded nothing, and after a confirmed release the episode is
-    /// closed, so every stop asked for after it does issue one. Which reasons are motion is the coordinator's to say.
-    /// </remarks>
-    public async Task<DoorReleaseHistory> DoorReleaseHistoryAsync(
-        EmergencyStopSubject subject,
-        long faultGeneration,
-        Func<string, bool> isMotion,
-        CancellationToken cancellationToken)
-    {
-        ArgumentNullException.ThrowIfNull(subject);
-        ArgumentNullException.ThrowIfNull(isMotion);
-
-        IReadOnlyList<RiotOrderCommandAttempt> releases = await audit.ReadAttemptsAsync(
-            RiotCommandTypeNames.CancelEmergency,
-            VehicleTarget(subject.DeviceKey),
-            cancellationToken).ConfigureAwait(false);
-        RiotOrderCommandAttempt[] doorReleases =
-        [
-            .. releases.Where(release =>
-                release.FaultGeneration == faultGeneration &&
-                release.Outcome == RiotOrderCommandOutcome.Confirmed &&
-                IsReleaseOnDoorCause(release)),
-        ];
-        if (doorReleases.Length == 0)
-        {
-            return new DoorReleaseHistory(MovedAfterDoorRelease: false, MovedAgainAfterLaterRelease: false);
-        }
-
-        IReadOnlyList<RiotOrderCommandAttempt> triggers = await audit.ReadAttemptsAsync(
-            RiotCommandTypeNames.TriggerEmergency,
-            VehicleTarget(subject.DeviceKey),
-            cancellationToken).ConfigureAwait(false);
-        RiotOrderCommandAttempt? firstMotionStop = triggers.FirstOrDefault(trigger =>
-            trigger.FaultGeneration == faultGeneration &&
-            trigger.IssuedAt > doorReleases[0].IssuedAt &&
-            StopReasons(trigger).Any(isMotion));
-        if (firstMotionStop is null)
-        {
-            return new DoorReleaseHistory(MovedAfterDoorRelease: false, MovedAgainAfterLaterRelease: false);
-        }
-
-        RiotOrderCommandAttempt? laterRelease = doorReleases.FirstOrDefault(release => release.IssuedAt > firstMotionStop.IssuedAt);
-        return new DoorReleaseHistory(
-            MovedAfterDoorRelease: true,
-            MovedAgainAfterLaterRelease: laterRelease is not null && triggers.Any(trigger =>
-                trigger.FaultGeneration == faultGeneration &&
-                trigger.IssuedAt > laterRelease.IssuedAt &&
-                StopReasons(trigger).Any(isMotion)));
     }
 
     /// <summary>
@@ -871,8 +901,16 @@ public sealed class EmergencyStopSupervisor(
     /// be in its way. An answer RIoT could not give refuses the same way.
     /// </para>
     /// <para>
-    /// <b>One exception, and only through <see cref="EmergencyReleaseAllowance"/></b> (control-server#335, the user's option A
-    /// of 2026-09-28). A driving vehicle stopped for its doors keeps its fault -- a person's continue needs it standing
+    /// <b>No exception for the doors any more</b> (CP-0011, requirements baseline v1.10.0, control-server#539). From
+    /// control-server#335 to #539 the doors of a driving vehicle proven locked again released the latch while the fault
+    /// stood. The user ruled on 2026-10-13 that a lock feedback that came back proves nothing about the lock -- "锁可能坏了，
+    /// 识别不到车门的实际状态" -- so a door-cause stop is released only by a person, through the class-three entry
+    /// (<see cref="ReleaseOnConfirmationAsync"/>, <see cref="ReleaseLoadedOnGovernedConfirmationAsync"/>). The fault still
+    /// stands while the latch does, so the cleared-fault condition below holds it by itself.
+    /// </para>
+    /// <para>
+    /// <b>Formerly one exception</b> (control-server#335, the user's option A
+    /// of 2026-09-28, withdrawn by CP-0011). A driving vehicle stopped for its doors keeps its fault -- a person's continue needs it standing
     /// (<c>VehicleFaultCoordinator.ResumeRefusals</c>) -- and RIoT lists the order this server held as unfinished, so
     /// without it such a vehicle, loaded, had no way out on this server at all. With an allowance for the trigger's own
     /// generation, the doors proven locked again stand for "原原因消除" (REQ-0167) and the held order is the one unfinished
@@ -886,12 +924,10 @@ public sealed class EmergencyStopSupervisor(
         RiotVehicleEmergencyObservation emergency,
         long? triggerFaultGeneration,
         VehicleFaultFact? fault,
-        RiotVehicleOrderObservation orders,
-        EmergencyReleaseAllowance? allowance = null)
+        RiotVehicleOrderObservation orders)
     {
         ArgumentNullException.ThrowIfNull(emergency);
         ArgumentNullException.ThrowIfNull(orders);
-        bool allowed = AllowanceApplies(allowance, triggerFaultGeneration, fault);
 
         List<string> obstacles = [];
 
@@ -909,14 +945,8 @@ public sealed class EmergencyStopSupervisor(
         {
             obstacles.Add("EMERGENCY_VEHICLE_ORDERS_UNKNOWN");
         }
-        else if (orders.HasUnfinishedOrder == true &&
-                 !(allowed && allowance!.HeldOrderId is string held &&
-                   orders.UnfinishedOrderIds.All(id => string.Equals(id, held, StringComparison.Ordinal)) &&
-                   orders.StateOf(held) == RiotOrderState.Paused))
+        else if (orders.HasUnfinishedOrder == true)
         {
-            // The held order must still read PAUSED (7) in this list, the last read before the release goes out, not only in
-            // the coordinator's read earlier in the round (control-server#335 review P2): a 3 here is an order that runs the
-            // moment the latch comes off. A state RIoT did not give counts against it.
             obstacles.Add("EMERGENCY_VEHICLE_ORDER_NOT_FINISHED");
         }
 
@@ -931,7 +961,7 @@ public sealed class EmergencyStopSupervisor(
             obstacles.Add("EMERGENCY_FAULT_GENERATION_MOVED");
         }
 
-        if (!allowed && (fault.Level != VehicleFaultLevel.None || fault.ClearedAt is null))
+        if (fault.Level != VehicleFaultLevel.None || fault.ClearedAt is null)
         {
             obstacles.Add("EMERGENCY_CAUSE_NOT_CLEARED");
         }
@@ -943,20 +973,6 @@ public sealed class EmergencyStopSupervisor(
 
         return obstacles;
     }
-
-    /// <summary>
-    /// Whether <paramref name="allowance"/> speaks for this episode: it names the trigger's own fault generation, and that
-    /// fault still stands. A fault a person has cleared needs no allowance, and one for another generation is not this one.
-    /// </summary>
-    internal static bool AllowanceApplies(
-        EmergencyReleaseAllowance? allowance,
-        long? triggerFaultGeneration,
-        VehicleFaultFact? fault) =>
-        allowance is not null &&
-        fault is not null &&
-        fault.Level != VehicleFaultLevel.None &&
-        fault.FaultGeneration == allowance.FaultGeneration &&
-        triggerFaultGeneration == allowance.FaultGeneration;
 
     /// <summary>
     /// The facts REQ-0356 requires before a latch may be released on a person's confirmation, each
@@ -972,7 +988,9 @@ public sealed class EmergencyStopSupervisor(
         EmergencyStopReleaseConfirmation confirmation,
         RiotVehicleEmergencyObservation emergency,
         bool episodeOpen,
-        RiotVehicleOrderObservation orders)
+        RiotVehicleOrderObservation orders,
+        bool doorCause = false,
+        bool doorLockRepaired = false)
     {
         ArgumentNullException.ThrowIfNull(confirmation);
         ArgumentNullException.ThrowIfNull(emergency);
@@ -997,6 +1015,12 @@ public sealed class EmergencyStopSupervisor(
         if (!confirmation.AllDoorsClosed)
         {
             obstacles.Add("EMERGENCY_DOORS_CLOSED_NOT_CONFIRMED");
+        }
+
+        if (doorCause && !doorLockRepaired)
+        {
+            // CP-0011: a lock feedback that came back proves nothing about the lock; a person confirms it was repaired.
+            obstacles.Add("EMERGENCY_DOOR_LOCK_REPAIR_NOT_CONFIRMED");
         }
 
         if (!string.Equals(
@@ -1028,6 +1052,84 @@ public sealed class EmergencyStopSupervisor(
     }
 
     /// <summary>
+    /// The facts the governed release of a loaded vehicle requires (REQ-0356 as revised by CP-0011), each named so that a
+    /// refusal says which one is missing. Every obstacle is reported, not the first, as in
+    /// <see cref="ConfirmedReleaseObstacles"/>.
+    /// </summary>
+    internal static IReadOnlyList<string> LoadedReleaseObstacles(
+        LoadedEmergencyStopReleaseConfirmation confirmation,
+        bool doorCause,
+        RiotVehicleEmergencyObservation emergency,
+        bool episodeOpen,
+        RiotVehicleOrderObservation orders,
+        IReadOnlySet<string> ownOrderIds)
+    {
+        ArgumentNullException.ThrowIfNull(confirmation);
+        ArgumentNullException.ThrowIfNull(emergency);
+        ArgumentNullException.ThrowIfNull(orders);
+        ArgumentNullException.ThrowIfNull(ownOrderIds);
+
+        List<string> obstacles = [];
+        if (string.IsNullOrWhiteSpace(confirmation.ConfirmerIdentity))
+        {
+            obstacles.Add("EMERGENCY_CONFIRMER_UNIDENTIFIED");
+        }
+
+        if (string.IsNullOrWhiteSpace(confirmation.Reason))
+        {
+            obstacles.Add("EMERGENCY_RELEASE_REASON_REQUIRED");
+        }
+
+        if (!confirmation.CauseCleared)
+        {
+            obstacles.Add("EMERGENCY_CAUSE_CLEARED_NOT_CONFIRMED");
+        }
+
+        if (!confirmation.AllDoorsClosed)
+        {
+            obstacles.Add("EMERGENCY_DOORS_CLOSED_NOT_CONFIRMED");
+        }
+
+        if (doorCause && !confirmation.DoorLockRepaired)
+        {
+            obstacles.Add("EMERGENCY_DOOR_LOCK_REPAIR_NOT_CONFIRMED");
+        }
+
+        if (!string.Equals(
+                emergency.EmergencyState,
+                RiotVehicleEmergencyObservation.CanRecover,
+                StringComparison.Ordinal))
+        {
+            obstacles.Add("EMERGENCY_NOT_CAN_RECOVER");
+        }
+
+        if (!episodeOpen)
+        {
+            // The entry releases this server's class only. A latch with no stop of this server's open behind it is
+            // somebody else's -- a button, a bumper, RIoT, Matrix -- and is released where it was raised (REQ-0248 as revised).
+            obstacles.Add("EMERGENCY_NOT_RAISED_BY_8005");
+        }
+
+        if (!orders.IsKnown)
+        {
+            obstacles.Add("EMERGENCY_VEHICLE_ORDERS_UNKNOWN");
+        }
+        else if (orders.HasUnfinishedOrder == true)
+        {
+            if (orders.UnfinishedOrderIds.Count != 1 || !ownOrderIds.Contains(orders.UnfinishedOrderIds[0]))
+            {
+                obstacles.Add("EMERGENCY_VEHICLE_ORDER_NOT_FINISHED");
+            }
+            else if (orders.StateOf(orders.UnfinishedOrderIds[0]) != RiotOrderState.Paused)
+            {
+                obstacles.Add(HeldOrderNotPausedReason);
+            }
+        }
+
+        return obstacles;
+    }
+
+    /// <summary>
     /// The audit target for a vehicle-scoped command.
     /// </summary>
     /// <remarks>
@@ -1039,26 +1141,71 @@ public sealed class EmergencyStopSupervisor(
     internal static string VehicleTarget(string deviceKey) => $"vehicle:{deviceKey}";
 
     /// <summary>
-    /// Whether a release attempt was issued on a person's confirmation, read off its receipt.
+    /// This server's stops on the vehicle, oldest first: the <c>triggerEmergency</c> calls and the classes recorded without
+    /// one on a latch already engaged (<see cref="LatchAdoptedCommandType"/>). Every episode question reads this, never the
+    /// triggers alone, or a recorded class would be invisible to the very rules -- REQ-0248's re-trigger, REQ-0356's
+    /// "raised by 8005" -- it exists for.
     /// </summary>
-    /// <remarks>
-    /// A release that never had its receipt written — the process stopped between arming and
-    /// recording — reads as not confirmed. The direction is deliberate: the fault coordinator then
-    /// escalates on the stricter rule it applies to a vehicle nobody has confirmed.
-    /// </remarks>
-    /// <summary>
-    /// Whether a release attempt was the automatic one an <see cref="EmergencyReleaseAllowance"/> earned, read off the reason
-    /// on its receipt (control-server#335). Same direction as <see cref="IsReleaseOnConfirmation"/>: no receipt reads as not.
-    /// </summary>
-    internal static bool IsReleaseOnDoorCause(RiotOrderCommandAttempt release)
+    private async Task<IReadOnlyList<RiotOrderCommandAttempt>> ReadStopsAsync(
+        string deviceKey,
+        CancellationToken cancellationToken)
     {
-        ArgumentNullException.ThrowIfNull(release);
-        return string.Equals(ReceiptReason(release), DoorCauseRemovedReason, StringComparison.Ordinal);
+        IReadOnlyList<RiotOrderCommandAttempt> triggers = await audit.ReadAttemptsAsync(
+            RiotCommandTypeNames.TriggerEmergency,
+            VehicleTarget(deviceKey),
+            cancellationToken).ConfigureAwait(false);
+        IReadOnlyList<RiotOrderCommandAttempt> recorded = await audit.ReadAttemptsAsync(
+            LatchAdoptedCommandType,
+            VehicleTarget(deviceKey),
+            cancellationToken).ConfigureAwait(false);
+        return recorded.Count == 0
+            ? triggers
+            : [.. triggers.Concat(recorded).OrderBy(stop => stop.IssuedAt).ThenBy(stop => stop.CommandAuditId, StringComparer.Ordinal)];
     }
 
-    /// <summary>The comma-separated codes of a trigger's receipt reason, one per entry.</summary>
-    private static string[] StopReasons(RiotOrderCommandAttempt trigger) =>
-        (ReceiptReason(trigger) ?? string.Empty).Split(',', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries);
+    /// <summary>
+    /// Records this server's class on a latch already engaged: one settled row, no call (<see cref="LatchAdoptedCommandType"/>).
+    /// </summary>
+    private async Task<RiotOrderCommandAttempt> RecordLatchAsync(
+        EmergencyStopRequest request,
+        RiotVehicleEmergencyObservation emergency,
+        CancellationToken cancellationToken)
+    {
+        string semantic = Convert.ToHexString(SHA256.HashData(Encoding.UTF8.GetBytes(string.Join(
+            '\u001f',
+            LatchAdoptedCommandType,
+            request.Subject.AgvId,
+            request.Subject.DeviceKey,
+            request.Source.ToString(),
+            request.Reason,
+            request.FaultGeneration?.ToString(CultureInfo.InvariantCulture) ?? string.Empty)))).ToLowerInvariant();
+        RiotOrderCommandAttempt attempt = await audit.ArmAttemptAsync(
+            LatchAdoptedCommandType,
+            request.Subject.AgvId,
+            VehicleTarget(request.Subject.DeviceKey),
+            targetOrderId: null,
+            semantic,
+            request.FaultGeneration,
+            timeProvider.GetUtcNow(),
+            cancellationToken).ConfigureAwait(false);
+        string receipt = JsonSerializer.SerializeToNode(new
+        {
+            source = request.Source.ToString(),
+            requesterIdentity = request.RequesterIdentity,
+            agvId = request.Subject.AgvId,
+            deviceKey = request.Subject.DeviceKey,
+            request.Reason,
+            call = (object?)null,
+            emergencyState = emergency.EmergencyState,
+        })!.ToJsonString();
+        await audit.RecordOutcomeAsync(
+            attempt.CommandAuditId,
+            RiotOrderCommandOutcome.Confirmed,
+            receipt,
+            timeProvider.GetUtcNow(),
+            cancellationToken).ConfigureAwait(false);
+        return attempt with { Outcome = RiotOrderCommandOutcome.Confirmed, ReceiptJson = receipt };
+    }
 
     /// <summary>The request reason written on an emergency command's receipt, or null when there is no readable one.</summary>
     internal static string? ReceiptReason(RiotOrderCommandAttempt attempt)
@@ -1084,6 +1231,14 @@ public sealed class EmergencyStopSupervisor(
         }
     }
 
+    /// <summary>
+    /// Whether a release attempt was issued on a person's confirmation, read off its receipt.
+    /// </summary>
+    /// <remarks>
+    /// A release that never had its receipt written — the process stopped between arming and
+    /// recording — reads as not confirmed. The direction is deliberate: the fault coordinator then
+    /// escalates on the stricter rule it applies to a vehicle nobody has confirmed.
+    /// </remarks>
     internal static bool IsReleaseOnConfirmation(RiotOrderCommandAttempt release)
     {
         ArgumentNullException.ThrowIfNull(release);
@@ -1176,7 +1331,6 @@ public sealed class EmergencyStopSupervisor(
         RiotOrderCommandAttempt trigger,
         IReadOnlyList<RiotOrderCommandAttempt> releasesSoFar,
         RiotVehicleEmergencyObservation emergency,
-        EmergencyReleaseAllowance? allowance,
         CancellationToken cancellationToken)
     {
         VehicleFaultFact? fault = await faults.ReadAsync(subject.AgvId, cancellationToken)
@@ -1184,7 +1338,7 @@ public sealed class EmergencyStopSupervisor(
         RiotVehicleOrderObservation orders = await orderFacts
             .ReadUnfinishedOrdersAsync(subject.DeviceKey, cancellationToken).ConfigureAwait(false);
         IReadOnlyList<string> obstacles = ReleaseObstacles(
-            emergency, trigger.FaultGeneration, fault, orders, allowance);
+            emergency, trigger.FaultGeneration, fault, orders);
         if (obstacles.Count > 0)
         {
             string? alarm = string.Equals(
@@ -1217,9 +1371,7 @@ public sealed class EmergencyStopSupervisor(
             subject,
             EmergencyStopRequestSource.Automatic,
             RequesterIdentity: null,
-            Reason: AllowanceApplies(allowance, trigger.FaultGeneration, fault)
-                ? DoorCauseRemovedReason
-                : fault?.ClearedReason ?? "EMERGENCY_CAUSE_CLEARED",
+            Reason: fault?.ClearedReason ?? "EMERGENCY_CAUSE_CLEARED",
             trigger.FaultGeneration);
         return await IssueReleaseAsync(release, confirmation: null, cancellationToken).ConfigureAwait(false);
     }

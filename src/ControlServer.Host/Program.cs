@@ -51,6 +51,8 @@ builder.Services.AddSingleton<FixedStationSweepWarnings>();
 builder.Services.AddScoped<ForeignRunningOrderSupervisor>();
 // control-server#617: the governed way out of a foreign order that left RIoT's running listing unread as ended.
 builder.Services.AddScoped<ForeignRunningOrderManualRelease>();
+// control-server#539 (CP-0011): the governed release of this server's emergency stop on a loaded vehicle.
+builder.Services.AddScoped<LoadedEmergencyStopRelease>();
 builder.Services.AddDispatchAdmission();
 builder.Services.AddOptions<RouteGraphOptions>()
     .Bind(builder.Configuration.GetSection(RouteGraphOptions.SectionName))
@@ -327,9 +329,11 @@ if (app.Configuration.GetValue<bool>("SlotConfigurationActivation:enabled"))
 }
 app.MapTaskTypeHolds();
 // 默认不挂。REQ-0356 的人工确认解除：这个入口会把一台车的急停解开，要现场明确打开才提供。
+// 有货车的受治理解除（CP-0011，control-server#539）同一个开关、另一把凭据；凭据没配时它答 503。
 if (app.Configuration.GetValue<bool>("EmergencyStopRelease:enabled"))
 {
     app.MapEmergencyStopRelease();
+    app.MapLoadedEmergencyStopRelease();
 }
 // 默认不挂。control-server#383 的人工判故障（REQ-0359）：这个入口会让车停下一次仓位操作，要现场明确打开才提供；
 // 车载端认识 SlotFaultDeclarationCommand 之前（onboard-hmi#215）也不能打开，否则那台车会反复断开重连。判断在方法里，有 L1 护着。

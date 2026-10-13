@@ -3,7 +3,11 @@
 <#
 control-server#335（REQ-0246）：车在路上，车载端报门没锁。服务端对这辆车、这一张单发 `OrderHold`；按不住、车还在动，
 升级发 `triggerEmergency`，而且只发一次；从不 Cancel。之后 RIoT 把单停成 PAUSED、闩锁锁上，车载端报门锁恢复：
-服务端自动 `cancelEmergency`（用户 2026-09-28 选的 A），单仍停着，没有任何 CONTINUE。
+服务端不解除（CP-0011，control-server#539：门锁反馈回来证明不了锁是好的）。人确认门锁已检修，经三类入口的有货解除
+（`POST /api/safety/v1/emergency-stop-releases/loaded`）解除急停，单仍停着，没有任何 CONTINUE。
+
+修订前（control-server#335 到 #539）门锁恢复那一轮服务端自动 `cancelEmergency`（用户 2026-09-28 选的 A），原因记
+`EMERGENCY_DOOR_CAUSE_REMOVED`；用户 2026-10-13 改判。
 
 **判据断「发给了正确的那一个」**，不只断「发过一次」：Hold 的审计行与假 RIoT 收到的 CMD_ORDER_HELD 都要打在本车本单上，
 急停打在本车上。
@@ -35,6 +39,10 @@ $agvId = [string]$Context.AgvId
 $vehicleKey = [string]$Context.VehicleKey
 $vehicleTarget = "vehicle:$vehicleKey"
 $doorSymptom = 'VEHICLE_DOOR_NOT_PROVEN_LOCKED'
+$loadedReleaseUri = "http://127.0.0.1:$($Context.HealthPort)/api/safety/v1/emergency-stop-releases/loaded"
+if (-not $Context.EmergencyLoadedReleaseCredential) {
+    throw 'The setup file must turn EmergencyStopRelease on; without it nobody can release the stop and this scenario proves nothing.'
+}
 
 function Get-Attempts([string]$commandType) {
     # 调用方先赋值再用，不要把这个函数直接送进管道：`Invoke-L2Query` 的 `return , $rows` 包装穿得过一层 return。
@@ -66,6 +74,32 @@ function Set-Doors([bool]$locked) {
         unknownPresent        = $false
         reasonCodes           = $reasons
         affectedSlots         = @(1, 2, 3, 4, 5, 6, 7, 8)
+    }
+}
+
+function Invoke-LoadedRelease([hashtable]$overrides) {
+    $body = @{
+        agvId            = $agvId
+        operatorId       = 'L2-ADMIN-13'
+        reason           = "L2 $($Context.RunId): door lock repaired on site"
+        causeCleared     = $true
+        allDoorsClosed   = $true
+        doorLockRepaired = $true
+    }
+    foreach ($key in $overrides.Keys) { $body[$key] = $overrides[$key] }
+    $response = Invoke-WebRequest -Method Post -Uri $loadedReleaseUri -SkipHttpErrorCheck -TimeoutSec 30 `
+        -Headers @{ Authorization = "Bearer $($Context.EmergencyLoadedReleaseCredential)" } `
+        -ContentType 'application/json' -Body ($body | ConvertTo-Json)
+    # A refusal is application/problem+json, which Invoke-WebRequest does not treat as text: Content arrives as bytes.
+    $text = if ($response.Content -is [byte[]]) {
+        [System.Text.Encoding]::UTF8.GetString($response.Content)
+    } else {
+        [string]$response.Content
+    }
+    $journal.Note("Loaded release request ($(($overrides.Keys | Sort-Object) -join ',')) -> $([int]$response.StatusCode): $text")
+    return [pscustomobject]@{
+        Status = [int]$response.StatusCode
+        Body   = if ($text) { $text | ConvertFrom-Json } else { $null }
     }
 }
 
@@ -186,10 +220,29 @@ $assertions.Add(
     'L2-DL-07', '门还报没锁时，急停不解除',
     ($releasesEarly.Count -eq 0), 0, $releasesEarly.Count)
 
-# --- 5. 车载端报门锁恢复：自动解除，单仍停着，没有 CONTINUE ------------------------------------------------
+# --- 5. 车载端报门锁恢复：不解除；人确认门锁已检修，经有货解除入口解除，单仍停着，没有 CONTINUE ----------------------
 
 $journal.Note('The onboard reports the doors locked again.')
 Set-Doors -locked $true
+$null = Wait-L2Iterations -Riot $riot -Count 5 -TimeoutSeconds 60 -Journal $journal
+$releasesOnLocked = Get-Attempts 'cancelEmergency'
+$assertions.Add(
+    'L2-DL-08', '门锁恢复为锁闭之后，服务端自己不解除急停（CP-0011）：再跑 5 轮，审计表与 RIoT 侧都没有 cancelEmergency',
+    ($releasesOnLocked.Count -eq 0 -and (Get-RiotInvocations 'cancelEmergency').Count -eq 0),
+    '0 / 0', "$($releasesOnLocked.Count) / $((Get-RiotInvocations 'cancelEmergency').Count)")
+
+# 这辆车是因为门锁被停下的：没确认门锁已检修，入口拒绝，一条 cancelEmergency 都不发。
+$unrepaired = Invoke-LoadedRelease @{ doorLockRepaired = $false }
+$unrepairedReasons = if ($unrepaired.Body -and $unrepaired.Body.PSObject.Properties['reasons']) { @($unrepaired.Body.reasons) } else { @() }
+$assertions.Add(
+    'L2-DL-12', '没确认门锁已检修：有货解除入口拒绝（409，EMERGENCY_DOOR_LOCK_REPAIR_NOT_CONFIRMED），不发 cancelEmergency',
+    ($unrepaired.Status -eq 409 -and $unrepairedReasons -contains 'EMERGENCY_DOOR_LOCK_REPAIR_NOT_CONFIRMED' -and
+        (Get-Attempts 'cancelEmergency').Count -eq 0),
+    '409 / EMERGENCY_DOOR_LOCK_REPAIR_NOT_CONFIRMED / 0',
+    "$($unrepaired.Status) / $($unrepairedReasons -join ',') / $((Get-Attempts 'cancelEmergency').Count)")
+
+$journal.Note('A person confirms the door lock was repaired and releases the stop through the loaded entry.')
+$released = Invoke-LoadedRelease @{}
 $null = Wait-L2Condition -Description 'the server released the emergency stop' `
     -Journal $journal -Criterion 'release-issued' -TimeoutSeconds 60 `
     -Probe { (Get-Attempts 'cancelEmergency').Count } -Until { param($v) $v -ge 1 }
@@ -200,11 +253,12 @@ $release = Wait-L2ConditionOrLast -Description 'the release attempt was settled'
 $releaseReason = ([string]$release.ReceiptJson | ConvertFrom-Json).Reason
 $holdsNow = Get-Attempts 'OrderHold'
 $assertions.Add(
-    'L2-DL-08', '门锁恢复后自动解除一次，原因记的是门锁原因消除，本单的 Hold 已回查确认',
-    ((Get-Attempts 'cancelEmergency').Count -eq 1 -and $releaseReason -eq 'EMERGENCY_DOOR_CAUSE_REMOVED' -and
+    'L2-DL-13', '人确认门锁已检修后解除一次（200 或 202），原因记的是受治理的有货解除，本单的 Hold 已回查确认、单留着',
+    ($released.Status -in 200, 202 -and (Get-Attempts 'cancelEmergency').Count -eq 1 -and
+        $releaseReason -eq 'EMERGENCY_RELEASE_GOVERNED_LOADED' -and
         $holdsNow.Count -eq 1 -and [string]$holdsNow[0].Outcome -eq 'Confirmed'),
-    '1 / EMERGENCY_DOOR_CAUSE_REMOVED / Confirmed',
-    "$((Get-Attempts 'cancelEmergency').Count) / $releaseReason / $(if ($holdsNow.Count -gt 0) { [string]$holdsNow[0].Outcome } else { '-' })")
+    '200|202 / 1 / EMERGENCY_RELEASE_GOVERNED_LOADED / Confirmed',
+    "$($released.Status) / $((Get-Attempts 'cancelEmergency').Count) / $releaseReason / $(if ($holdsNow.Count -gt 0) { [string]$holdsNow[0].Outcome } else { '-' })")
 
 $journal.Note('RIoT clears the latch.')
 Set-Vehicle @{ emergencyState = 'OK' }

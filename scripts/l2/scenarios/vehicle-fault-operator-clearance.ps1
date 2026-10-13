@@ -1,8 +1,8 @@
 #Requires -Version 7
 
 <#
-车辆故障的人工清除：在途单 FAILED 的车被判为疑似故障、被急停锁住；人工解除急停、确认故障已排除之后，服务端自己核对判据、
-清除故障；需求留在本车，延迟之后为同一辆车、同一条需求重建运单，车接着走。
+车辆故障的人工清除：在途单 FAILED 的车被判为疑似故障（不急停，CP-0011）；有人在 RIoT 上按了急停、又在那里解开；确认故障已排除
+之后，服务端自己核对判据、清除故障；需求留在本车，延迟之后为同一辆车、同一条需求重建运单，车接着走。
 
 载体是 control-server#299（#299 阶段一方案 T2，用户 2026-09-22 定 F-a 与 HTTP 入口）；清除之后的处置由 control-server#318 改写：
 原来是「没取货的需求释放改派、车重新接单」，用户 2026-09-23 推翻（issuecomment-5787511271：「不改派啊，留在本车上」），
@@ -11,9 +11,13 @@
 **为什么要有这条场景。**修之前，订单 FAILED 引起的故障没有任何办法清掉：唯一的清除路径 `ResumeAsync` 要求订单被 Hold 成
 PAUSED，FAILED 永远不是。车一直不接单、需求一直不改派，唯一的出口是改库。这条场景按现场的顺序走一遍新出口：
 
-1. 车在两站之间行驶，在途单被报 FAILED，服务端判疑似故障并急停；锁住。
-2. 锁着的车清不了故障：入口回 409，理由点名 FAULT_RECOVERY_EMERGENCY_LATCHED。清除不解除急停。
-3. 按 REQ-0356 人工解除急停，RIoT 解锁。
+1. 车在两站之间行驶，在途单被报 FAILED，服务端判疑似故障，不急停（REQ-0246 按 CP-0011 修订）。
+2. 有人在 RIoT 上按了急停，锁住。锁着的车清不了故障：入口回 409，理由点名 FAULT_RECOVERY_EMERGENCY_LATCHED。清除不解除急停。
+   服务端也不在这个闩锁上记自己的一类（FAILED 不要求停车）。
+3. 那个人在 RIoT 上解开；服务端不重触发（那不是它的急停）。
+
+**修订前**（CP-0011 之前）第 1 步是服务端自己急停、第 3 步是按 REQ-0356 人工解除，所以 setup 打开过人工确认解除入口；
+用户 2026-10-13 定订单 FAILED 不急停之后，这两步换成上面的样子，清除与重建那一半的判据一字未改。
 4. 没确认「故障已排除」：409；RIoT 里这台车还有未结束的订单：409，理由把两项都列出来。什么都不改。
 5. 条件齐全：200，故障清除，操作员记进 ClearedReason；处置 REBUILD_SCHEDULED：需求不释放，旅程不关闭、停在原阶段，
    码 VEHICLE_FAULT_CLEARED_NOTHING_ON_BOARD。
@@ -39,10 +43,9 @@ $mes = $Context.MesIngest
 $connection = $Context.Connection
 $agvId = [string]$Context.AgvId
 $vehicleKey = [string]$Context.VehicleKey
-$releaseUri = "http://127.0.0.1:$($Context.HealthPort)/api/safety/v1/emergency-stop-releases"
 $recoveryUri = "http://127.0.0.1:$($Context.HealthPort)/api/safety/v1/vehicle-fault-recoveries"
-if (-not $Context.FaultRecoveryCredential -or -not $Context.EmergencyReleaseCredential) {
-    throw 'The setup file must turn VehicleFaultRecovery and EmergencyStopRelease on; without them this scenario proves nothing.'
+if (-not $Context.FaultRecoveryCredential) {
+    throw 'The setup file must turn VehicleFaultRecovery on; without it this scenario proves nothing.'
 }
 
 function Get-EmergencyAttempts([string]$commandType) {
@@ -111,7 +114,7 @@ function Get-Reasons([object]$response) {
     return , @($response.Body.reasons | ForEach-Object { [string]$_ })
 }
 
-# --- 1. 一台车上路，在两站之间订单 FAILED，被急停锁住 ------------------------------------------------------
+# --- 1. 一台车上路，在两站之间订单 FAILED：记故障，不急停 ------------------------------------------------------
 
 $demandId = [guid]::NewGuid().ToString('N')
 $journal.Note("Publishing demand $demandId.")
@@ -144,16 +147,22 @@ $journal.Note("$agvId drives between stations; RIoT reports $($intent.UpperId) F
 Set-Vehicle @{ movementState = 'MT_RUNNING'; speed = 0.6; currentPosition = 0 }
 $null = $riot.Command('Put', "orders/$($intent.UpperId)", @{ orderState = 4 })
 
-$null = Wait-L2Condition -Description 'the server escalated to an emergency stop' `
-    -Journal $journal -Criterion 'trigger-issued' -TimeoutSeconds 90 `
-    -Probe { (Get-EmergencyAttempts 'triggerEmergency').Count } -Until { param($v) $v -ge 1 }
+$recorded = Wait-L2ConditionOrLast -Description 'the server recorded the fault' `
+    -Journal $journal -Criterion 'fault-recorded' -TimeoutSeconds 90 `
+    -Probe { $rows = Get-Fault; if ($rows.Count -gt 0) { $rows[0] } else { $null } } `
+    -Until { param($row) $null -ne $row -and [string]$row.Level -eq 'SuspectedBlocked' }
+$null = Wait-L2Iterations -Riot $riot -Count 4 -TimeoutSeconds 60 -Journal $journal
+$assertions.Add(
+    'L2-VFC-00',
+    '订单 FAILED、车还在动：故障记为 SuspectedBlocked，一次急停都不发（REQ-0246 按 CP-0011 修订）',
+    ($null -ne $recorded -and [string]$recorded.Level -eq 'SuspectedBlocked' -and
+        (Get-EmergencyAttempts 'triggerEmergency').Count -eq 0 -and (Get-RiotInvocations 'triggerEmergency').Count -eq 0),
+    'SuspectedBlocked / 0 行 / 0 次',
+    "$(if ($recorded) { [string]$recorded.Level } else { '(无故障行)' }) / $((Get-EmergencyAttempts 'triggerEmergency').Count) 行 / $((Get-RiotInvocations 'triggerEmergency').Count) 次")
 
-$journal.Note('The latch engages; the vehicle keeps reporting MT_RUNNING at speed 0 between stations.')
+$journal.Note('Somebody presses an emergency stop at RIoT; the vehicle keeps reporting MT_RUNNING at speed 0 between stations.')
 Set-Vehicle @{ emergencyState = 'CAN_RECOVER'; movementState = 'MT_RUNNING'; speed = 0; currentPosition = 0 }
-$null = Wait-L2Condition -Description 'the trigger was settled as confirmed' `
-    -Journal $journal -Criterion 'trigger-confirmed' -TimeoutSeconds 30 `
-    -Probe { [string](Get-EmergencyAttempts 'triggerEmergency')[0].Outcome } `
-    -Until { param($v) $v -eq 'Confirmed' }
+$null = Wait-L2Iterations -Riot $riot -Count 3 -TimeoutSeconds 60 -Journal $journal
 
 # --- 2. 锁着的车清不了故障 --------------------------------------------------------------------------------
 
@@ -168,36 +177,25 @@ $assertions.Add(
     '409 / FAULT_RECOVERY_EMERGENCY_LATCHED / SuspectedBlocked / 0 次',
     "$($latched.Status) / $((Get-Reasons $latched) -join ',') / $(if ($fault.Count) { [string]$fault[0].Level } else { '(无故障行)' }) / $((Get-RiotInvocations 'cancelEmergency').Count) 次")
 
-# --- 3. 按 REQ-0356 人工解除急停，RIoT 解锁 ---------------------------------------------------------------
+# --- 3. 按急停的人在 RIoT 上解开 ----------------------------------------------------------------------------
 
-$released = Invoke-Json $releaseUri $Context.EmergencyReleaseCredential @{
-    agvId = $agvId; operatorId = 'L2-OPERATOR-07'; causeCleared = $true; vehicleEmpty = $true; allDoorsClosed = $true
-    note = "L2 $($Context.RunId)"
-} 'Emergency release'
-if ($released.Status -ne 202 -and $released.Status -ne 200) {
-    throw "The REQ-0356 release this scenario builds on was refused ($($released.Status)); see the journal."
-}
-
-# RIoT clears the latch a few seconds later. The vehicle is put back where the fleet leaves it idle -- at its station,
+# Whoever pressed it releases it there. The vehicle is put back where the fleet leaves it idle -- at its station,
 # not running an order -- so that once the fault is cleared the dispatch round can take it again.
 $journal.Note('RIoT clears the latch; the vehicle stands idle at its station, its order FAILED.')
 Set-Vehicle @{
     emergencyState = 'OK'; movementState = 'MT_FINISHED'; speed = 0
     currentPosition = $Context.GateStationRiotId; processingOrder = $false; clearOrderTaskId = $true
 }
-$null = Wait-L2Condition -Description 'the release was settled as confirmed' `
-    -Journal $journal -Criterion 'release-confirmed' -TimeoutSeconds 30 `
-    -Probe { [string](Get-EmergencyAttempts 'cancelEmergency')[0].Outcome } `
-    -Until { param($v) $v -eq 'Confirmed' }
 $null = Wait-L2Iterations -Riot $riot -Count 3 -TimeoutSeconds 60 -Journal $journal
 $fault = Get-Fault
 $journeysBefore = Get-Journeys
 $assertions.Add(
     'L2-VFC-02',
-    '急停解除之后故障仍在（解除只结束急停）：SuspectedBlocked、未清除；车一直挂在原旅程上，没有新旅程',
-    ($fault.Count -eq 1 -and [string]$fault[0].Level -eq 'SuspectedBlocked' -and $journeysBefore.Count -eq 1),
-    'SuspectedBlocked / 1 趟旅程',
-    "$(if ($fault.Count) { [string]$fault[0].Level } else { '(无故障行)' }) / $($journeysBefore.Count) 趟旅程")
+    '急停在 RIoT 上解开之后故障仍在：SuspectedBlocked、未清除；车一直挂在原旅程上，没有新旅程；服务端没有重触发、也没有发解除（那不是它的急停）',
+    ($fault.Count -eq 1 -and [string]$fault[0].Level -eq 'SuspectedBlocked' -and $journeysBefore.Count -eq 1 -and
+        (Get-RiotInvocations 'triggerEmergency').Count -eq 0 -and (Get-RiotInvocations 'cancelEmergency').Count -eq 0),
+    'SuspectedBlocked / 1 趟旅程 / 0 次 / 0 次',
+    "$(if ($fault.Count) { [string]$fault[0].Level } else { '(无故障行)' }) / $($journeysBefore.Count) 趟旅程 / $((Get-RiotInvocations 'triggerEmergency').Count) 次 / $((Get-RiotInvocations 'cancelEmergency').Count) 次")
 
 # --- 4. 条件不全：拒绝，理由全列，什么都不改 ----------------------------------------------------------------
 
@@ -266,10 +264,10 @@ $null = Wait-L2Iterations -Riot $riot -Count 4 -TimeoutSeconds 60 -Journal $jour
 $fault = Get-Fault
 $assertions.Add(
     'L2-VFC-06',
-    '清除之后又评估了 4 轮：故障没有再记（Level None、代次仍是 1），没有新的急停（仍只 1 次 triggerEmergency）',
+    '清除之后又评估了 4 轮：故障没有再记（Level None、代次仍是 1），全程没有急停（0 次 triggerEmergency）',
     ([string]$fault[0].Level -eq 'None' -and [long]$fault[0].FaultGeneration -eq 1 -and
-        (Get-RiotInvocations 'triggerEmergency').Count -eq 1),
-    'None / 代次 1 / 1 次',
+        (Get-RiotInvocations 'triggerEmergency').Count -eq 0),
+    'None / 代次 1 / 0 次',
     "$([string]$fault[0].Level) / 代次 $([long]$fault[0].FaultGeneration) / $((Get-RiotInvocations 'triggerEmergency').Count) 次")
 
 # --- 7. 同一请求再来一次 --------------------------------------------------------------------------------------

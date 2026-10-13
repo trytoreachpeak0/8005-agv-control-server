@@ -21,8 +21,8 @@ public sealed partial class MultiVehicleExecutionTests
 {
     /// <summary>
     /// The first vehicle's advance throws every round (its order read); the second vehicle's leg order goes FAILED while it is still moving.
-    /// The second vehicle's fault is still recorded, held and escalated to an emergency stop, the dispatch round still runs,
-    /// and the failing vehicle is not offered to it.
+    /// The second vehicle's fault is still recorded (and, an order FAILED, not escalated to an emergency stop: CP-0011), the
+    /// dispatch round still runs, and the failing vehicle is not offered to it.
     /// </summary>
     [Fact]
     [Trait("Requirement", "REQ-0246")]
@@ -50,12 +50,11 @@ public sealed partial class MultiVehicleExecutionTests
         VehicleFaultStateRow fault = Assert.Single(
             await fixture.Context.VehicleFaultStates.AsNoTracking().ToArrayAsync(TestContext.Current.CancellationToken));
         Assert.Equal(
-            (FleetFixture.AgvIds[1], VehicleFaultEvidence.OrderFailed, true),
+            (FleetFixture.AgvIds[1], VehicleFaultEvidence.OrderFailed, false),
             (fault.AgvId, fault.EvidenceCode, fault.EscalatedAt is not null));
-        Assert.Contains(
+        Assert.DoesNotContain(
             fixture.Riot.EmergencyCommands,
-            command => command.CommandType == RiotCommandTypeNames.TriggerEmergency &&
-                       command.DeviceKey == FleetFixture.VehicleKeys[1]);
+            command => command.CommandType == RiotCommandTypeNames.TriggerEmergency);
 
         Assert.Equal(outcomesBefore + 2, fixture.RoundOutcomes.Outcomes.Count);
         Assert.All(
@@ -358,7 +357,7 @@ public sealed partial class MultiVehicleExecutionTests
     /// <summary>
     /// The withdrawal cannot read the journey rows again: they are let go, so the vehicles after the failing one sit out this
     /// round on the loop's "no longer tracked" check rather than advance on values nobody vouches for, and the next round
-    /// serves them as usual -- the second vehicle's failed order is recorded and stopped then.
+    /// serves them as usual -- the second vehicle's failed order is recorded then (not stopped: an order FAILED is not, CP-0011).
     /// </summary>
     [Fact]
     public async Task WhenTheWithdrawalCannotReadARowAgainItsVehicleSitsOutThisRoundOnly()
@@ -396,7 +395,7 @@ public sealed partial class MultiVehicleExecutionTests
 
         VehicleFaultStateRow fault = Assert.Single(
             await fixture.Context.VehicleFaultStates.AsNoTracking().ToArrayAsync(TestContext.Current.CancellationToken));
-        Assert.Equal((FleetFixture.AgvIds[1], true), (fault.AgvId, fault.EscalatedAt is not null));
+        Assert.Equal((FleetFixture.AgvIds[1], VehicleFaultEvidence.OrderFailed), (fault.AgvId, fault.EvidenceCode));
     }
 
     /// <summary>

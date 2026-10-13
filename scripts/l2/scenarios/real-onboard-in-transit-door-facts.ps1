@@ -3,7 +3,10 @@
 <#
 control-server#335（REQ-0246）的真装置场景：真车载端在本服务端在途单上正常行驶、途中重连，服务端不按住、不急停；
 有货的仓锁反馈在行驶中变成 0（没锁），服务端对本车本单 OrderHold、按不住就急停；RIoT 把单停住、闩锁锁上之后，
-锁反馈恢复，服务端自动解除急停（用户 2026-09-28 选的 A），单仍停着，没有 CONTINUE。
+锁反馈恢复，服务端不解除（CP-0011，control-server#539）；人确认门锁已检修，经有货解除入口解除急停，单仍停着，没有 CONTINUE。
+
+修订前（control-server#335 到 #539）锁反馈恢复那一轮服务端自动解除（用户 2026-09-28 选的 A），原因记
+`EMERGENCY_DOOR_CAUSE_REMOVED`；用户 2026-10-13 改判：锁反馈回来了证明不了锁是好的。
 
 **为什么要真车载端。**真车载端在本服务端的在途单上会从服务端的车辆安全接口读到本车有未终结的单（cs#138），会话整段
 RecoveryRequired / DEPARTURE_SAFETY_NOT_READY，到站才回来；门锁摘要照发。合成车载端永远报安全、会话永远就绪，看不到这一段，
@@ -33,8 +36,12 @@ $simulator = $Context.Simulator
 $proxy = $Context.ProtocolProxy
 $onboard = $Context.Onboard
 $agvId = $Context.AgvId
+$loadedReleaseUri = "http://127.0.0.1:$($Context.HealthPort)/api/safety/v1/emergency-stop-releases/loaded"
 
 if ($null -eq $proxy) { throw 'This scenario needs ProtocolFaultProxy = $true in its setup file.' }
+if (-not $Context.EmergencyLoadedReleaseCredential) {
+    throw 'This scenario needs EmergencyStopRelease = $true in its setup file; without it nobody can release the stop.'
+}
 
 $demandGuid = [guid]::NewGuid()
 $demandId = $demandGuid.ToString('D')
@@ -309,7 +316,7 @@ $assertions.Add(
     ($faults.Count -eq 1 -and [string]$faults[0].EvidenceCode -eq 'VEHICLE_DOOR_NOT_PROVEN_LOCKED'),
     'VEHICLE_DOOR_NOT_PROVEN_LOCKED', $(if ($faults.Count -gt 0) { [string]$faults[0].EvidenceCode } else { '-' }))
 
-# --- 5. RIoT 停住单、锁上闩锁；锁反馈恢复：自动解除，单仍停着，没有 CONTINUE ----------------------------------------
+# --- 5. RIoT 停住单、锁上闩锁；锁反馈恢复不解除；人确认门锁已检修、经有货解除入口解除，单仍停着，没有 CONTINUE ------------
 
 $journal.Note('RIoT parks the order (PAUSED 7) and latches the emergency stop.')
 $null = $riot.Command('Put', "orders/$gateUpperId", @{ orderState = 7 })
@@ -323,6 +330,24 @@ $assertions.Add(
 
 $null = $simulator.Command('Put', "slots/$loadSlot/lock-feedback-override", @{ mode = 'AUTO' })
 $journal.Note("Lock feedback of slot $loadSlot back to AUTO.")
+$null = Wait-L2Iterations -Riot $riot -Count 5 -TimeoutSeconds 60 -Journal $journal
+$assertions.Add(
+    'L2-DF-09', '锁反馈恢复为 1 之后服务端自己也不解除（CP-0011）：再跑 5 轮仍没有 cancelEmergency',
+    ((Get-Attempts 'cancelEmergency').Count -eq 0), 0, (Get-Attempts 'cancelEmergency').Count)
+
+$journal.Note('A person confirms the door lock was repaired and releases the stop through the loaded entry.')
+$releaseResponse = Invoke-WebRequest -Method Post -Uri $loadedReleaseUri -SkipHttpErrorCheck -TimeoutSec 30 `
+    -Headers @{ Authorization = "Bearer $($Context.EmergencyLoadedReleaseCredential)" } `
+    -ContentType 'application/json' -Body (@{
+        agvId = $agvId; operatorId = 'L2-ADMIN-13'; reason = "L2 $($Context.RunId): door lock repaired on site"
+        causeCleared = $true; allDoorsClosed = $true; doorLockRepaired = $true
+    } | ConvertTo-Json)
+$releaseText = if ($releaseResponse.Content -is [byte[]]) {
+    [System.Text.Encoding]::UTF8.GetString($releaseResponse.Content)
+} else {
+    [string]$releaseResponse.Content
+}
+$journal.Note("Loaded release -> $([int]$releaseResponse.StatusCode): $releaseText")
 $null = Wait-L2Condition -Description 'the server released the emergency stop' `
     -Journal $journal -Criterion 'release-issued' -TimeoutSeconds 60 `
     -Probe { (Get-Attempts 'cancelEmergency').Count } -Until { param($v) $v -ge 1 }
@@ -332,9 +357,11 @@ $release = Wait-L2ConditionOrLast -Description 'the release attempt was settled'
     -Until { param($row) -not [string]::IsNullOrEmpty([string]$row.ReceiptJson) }
 $releaseReason = ([string]$release.ReceiptJson | ConvertFrom-Json).Reason
 $assertions.Add(
-    'L2-DF-07', '锁反馈恢复后自动解除一次，原因记门锁原因消除',
-    ((Get-Attempts 'cancelEmergency').Count -eq 1 -and $releaseReason -eq 'EMERGENCY_DOOR_CAUSE_REMOVED'),
-    '1 / EMERGENCY_DOOR_CAUSE_REMOVED', "$((Get-Attempts 'cancelEmergency').Count) / $releaseReason")
+    'L2-DF-07', '人确认门锁已检修后解除一次（200 或 202），原因记受治理的有货解除',
+    ([int]$releaseResponse.StatusCode -in 200, 202 -and (Get-Attempts 'cancelEmergency').Count -eq 1 -and
+        $releaseReason -eq 'EMERGENCY_RELEASE_GOVERNED_LOADED'),
+    '200|202 / 1 / EMERGENCY_RELEASE_GOVERNED_LOADED',
+    "$([int]$releaseResponse.StatusCode) / $((Get-Attempts 'cancelEmergency').Count) / $releaseReason")
 
 $null = $riot.Command('Put', 'vehicle', @{ vehicleKey = $Context.VehicleKey; emergencyState = 'OK' })
 $afterRelease = Invoke-Sampling 'L-after-release' 5

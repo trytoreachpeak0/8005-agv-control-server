@@ -20,7 +20,11 @@ namespace ControlServer.Tests;
 /// </summary>
 /// <remarks>
 /// <para>
-/// <b>两条链要分开看。</b>今天服务端只在旅程当前那张单 FAILED 时记故障、才可能升级急停
+/// <b>CP-0011（control-server#539）之后，订单 FAILED 不再急停</b>：前三条用例原来走「单 FAILED → 急停锁住 → 人工解除 → 人工清除」，
+/// 现在没有急停也就没有解除那一步，走的是「单 FAILED → 记故障 → 人工清除」，重建那一半的判据一字未改。第四、第五条照旧。
+/// </para>
+/// <para>
+/// <b>两条链要分开看。</b>CP-0011 之前服务端只在旅程当前那张单 FAILED 时记故障、才可能升级急停
 /// （<c>JourneyRuntimeEngine.ObserveOrderFailureAsync</c> 是 <c>VehicleFaultCoordinator.ObserveAsync</c> 在产品代码里唯一的调用方），
 /// FAILED 是终态，所以「本服务端的急停锁着、它自己的单还没结束」这个起点服务端自己造不出来——清除入口的类注释也这么写
 /// （<c>FAULT_RECOVERY_CURRENT_ORDER_CANCELLED_IN_RIOT</c> "is not reachable in the product"）。前三条用例走的是今天走得到的链；
@@ -47,24 +51,24 @@ public sealed class EmergencyReleaseVersusOwnOrderRebuildTests
     // ---- 今天走得到的链：单 FAILED → 急停锁住 → 人工解除 → 人工清除 --------------------------------------------
 
     /// <summary>
-    /// 开往取货站（车上没货）的单 FAILED、车证不出停稳，服务端急停并锁住。RIoT 里这张单已经 FAILED，没有要取消的；人工解除急停被接受，
-    /// 解除本身不建单，过了多久都不建；人经 #299 清除故障之后，延迟一到才给同一辆车、同一条需求建一张开往同一个取货站的单。
+    /// 开往取货站（车上没货）的单 FAILED、车证不出停稳：服务端记故障，不急停（CP-0011）。RIoT 里这张单已经 FAILED，没有要取消的；
+    /// 故障在效期间过了多久都不建单；人经 #299 清除故障之后，延迟一到才给同一辆车、同一条需求建一张开往同一个取货站的单。
     /// 只有一次出问题，护栏三不介入。
     /// </summary>
     /// <remarks>
     /// <para>
-    /// 「解除之后过五分钟仍不建」守的是票面担心的第一件事：人刚在车旁确认解除，车不能因此开走。车动的那一刻是清除之后的延迟到点，
+    /// 「清除之前过五分钟仍不建」守的是票面担心的第一件事：车不能在没人说「可以走了」时开走。车动的那一刻是清除之后的延迟到点，
     /// 那是人经清除入口说「可以走了」（用户 2026-09-23，vehicle-fault-clearance-field-guide.md 第 4 步写明「清除之后……车会再动」）。
     /// </para>
     /// <para>
     /// <b>挡住它的不是车况护栏里的「故障在效」</b>：FAILED 这一来源的重建只由清除入口记下，清除之前根本没有重建记录，所以这里断的是
-    /// 「没有重建记录」而不只是「没建单」。反向验证 M2 拿掉「故障在效」，这一格照绿；把「解除之后记重建」加进解除入口，它会红。
+    /// 「没有重建记录」而不只是「没建单」。反向验证 M2 拿掉「故障在效」，这一格照绿。修订前这里还夹着人工解除急停那一步（解除本身不记重建）。
     /// </para>
     /// </remarks>
     [Fact]
-    [Trait("Requirement", "REQ-0356")]
+    [Trait("Requirement", "REQ-0246")]
     [Trait("Requirement", "REQ-0360")]
-    public async Task OnTheWayToPickupTheReleaseAloneBuildsNothingAndOnlyTheClearanceRebuildsAfterTheDelay()
+    public async Task OnTheWayToPickupAFailedOrderBuildsNothingUntilTheClearanceRebuildsAfterTheDelay()
     {
         await using RuntimeFixture fixture = await DispatchedToPickupAsync();
         SiteRiot site = new(fixture);
@@ -72,8 +76,8 @@ public sealed class EmergencyReleaseVersusOwnOrderRebuildTests
         JourneyStopRow[] stopsBefore = await OwnOrderRebuildTests.StopsAsync(fixture, dispatched.JourneyId);
         JourneyStopRow pickup = stopsBefore.Single(stop => stop.StopRole == JourneyStopRoles.Pickup);
 
-        // 第一步：单 FAILED，车还在动 -> 记故障、急停；RIoT 锁上，下一轮确认锁住。
-        await FailWhileMovingThenLatchAsync(fixture, pickup.UpperId);
+        // 第一步：单 FAILED，车还在动 -> 记故障，不急停。
+        await FailWhileMovingAsync(fixture, pickup.UpperId);
         await AssertNothingRebuiltAsync(fixture, "TO_PICKUP", creates: 1);
         Assert.Equal("VEHICLE_ORDER_FAILED", (await fixture.RuntimeAsync()).BlockReasonCode);
 
@@ -83,28 +87,20 @@ public sealed class EmergencyReleaseVersusOwnOrderRebuildTests
             await OrderStateAsync(fixture, pickup.UpperId));
         site.HasUnfinishedOrder = false;
 
-        // 第三步：人工解除急停（确认原因已消除、车上无货、仓门已关）。
-        EmergencyStopDecision released = await ReleaseAsync(fixture, site);
-        AssertReleaseIssued(released);
-        Assert.Equal([RiotEmergencyCommandKind.Cancel], site.EmergencyCommands);
-        Assert.Empty(site.OrderCommands);
-        Unlatch(fixture);
-        int triggersAfterRelease = await TriggerCountAsync(fixture);
-        await TickAndHearAsync(fixture);
-
-        // 解除只结束急停：清除之前没有任何东西记重建，所以不建单；故障还在，急停也不重触发。拨过十个延迟也一样。
-        DateTimeOffset releasedAt = fixture.Clock.GetUtcNow();
+        // 清除之前没有任何东西记重建，所以不建单；故障还在，也一次急停都不发。拨过十个延迟也一样。
+        DateTimeOffset recordedAt = fixture.Clock.GetUtcNow();
         for (int round = 0; round < 10; round++)
         {
             await OwnOrderRebuildTests.PassTheDelayAsync(fixture);
         }
 
-        Assert.Equal(TimeSpan.FromSeconds(300), fixture.Clock.GetUtcNow() - releasedAt);
+        Assert.Equal(TimeSpan.FromSeconds(300), fixture.Clock.GetUtcNow() - recordedAt);
         await AssertNothingRebuiltAsync(fixture, "TO_PICKUP", creates: 1);
         Assert.Equal(VehicleFaultLevel.SuspectedBlocked, (await VehicleFaultRecoveryTests.FaultAsync(fixture)).Level);
-        Assert.Equal(triggersAfterRelease, await TriggerCountAsync(fixture));
+        Assert.Equal(0, await TriggerCountAsync(fixture));
+        Assert.Empty(site.EmergencyCommands);
 
-        // 第四步：人经 #299 清除故障。记下重建，延迟从这一刻算。
+        // 第三步：人经 #299 清除故障。记下重建，延迟从这一刻算。
         fixture.Context.ChangeTracker.Clear();
         VehicleFaultRecoveryDecision cleared = await VehicleFaultRecoveryTests.Service(fixture, site)
             .RecoverAsync(VehicleFaultRecoveryTests.Clear(fixture), Token);
@@ -137,19 +133,19 @@ public sealed class EmergencyReleaseVersusOwnOrderRebuildTests
     }
 
     /// <summary>
-    /// 装着货开往卸货站的单 FAILED、急停锁住；人把货取出，按 REQ-0356 确认「车上无货」解除急停——服务端接受，它不拿自己记的「已装货」去核这句确认。
+    /// 装着货开往卸货站的单 FAILED：记故障，不急停（CP-0011）；人把货取出。
     /// 清除故障之后重建来源是「车上可能有货」：延迟过了先等车报一份清除之后的仓位读数；读数显示放货的仓是空的，重建停住，永远不建开往卸货站的单。
     /// 需求仍记在本车上、仍是已装货，等人经 #345 的出口处置。
     /// </summary>
     /// <remarks>
-    /// 票面担心的第二件事——「重建单承载一条车上有货才成立的送货需求，而解除时已确认车上无货」——在这条链上由 REQ-0362 的仓位读数挡住。
+    /// 票面担心的第二件事——「重建单承载一条车上有货才成立的送货需求，而货已经被人取出」——在这条链上由 REQ-0362 的仓位读数挡住。
     /// 挡住它的是清除入口按「旅程里有没有已装需求或货物绑定」选的重建来源（<c>VehicleFaultRecoveryService.DisposeOfTheJourneyAsync</c> 的
-    /// <c>mayCarry</c>），不是解除时那句确认：解除入口不看服务端自己的货物事实。
+    /// <c>mayCarry</c>）。修订前这里还有人按 REQ-0356 确认「车上无货」解除急停那一步，解除入口不看服务端自己的货物事实。
     /// </remarks>
     [Fact]
-    [Trait("Requirement", "REQ-0356")]
+    [Trait("Requirement", "REQ-0246")]
     [Trait("Requirement", "REQ-0362")]
-    public async Task OnTheWayToTheGateAnEmptiedVehicleIsReleasedButItsDeliveryIsNeverRebuilt()
+    public async Task OnTheWayToTheGateAnEmptiedVehicleWhoseOrderFailedHasItsDeliveryNeverRebuilt()
     {
         await using RuntimeFixture fixture = await GateArrivalWaitAsync();
         SiteRiot site = new(fixture);
@@ -158,18 +154,15 @@ public sealed class EmergencyReleaseVersusOwnOrderRebuildTests
             .Single(stop => stop.StopRole == JourneyStopRoles.Unload);
         int gateCreates = fixture.Riot.CreateCount("TO_GATE");
 
-        await FailWhileMovingThenLatchAsync(fixture, unload.UpperId);
+        await FailWhileMovingAsync(fixture, unload.UpperId);
         await AssertNothingRebuiltAsync(fixture, "TO_GATE", gateCreates);
         Assert.Equal(JourneyDemandStatuses.Loaded, (await MembershipAsync(fixture)).Status);
 
-        // 人把货取出，确认车上无货、仓门已关，解除急停：服务端接受。
+        // 人把货取出；没有急停要解除。
         site.HasUnfinishedOrder = false;
-        EmergencyStopDecision released = await ReleaseAsync(fixture, site);
-        AssertReleaseIssued(released);
-        Assert.Empty(site.OrderCommands);
-        Unlatch(fixture);
         await TickAndHearAsync(fixture);
         await AssertNothingRebuiltAsync(fixture, "TO_GATE", gateCreates);
+        Assert.Equal(0, await TriggerCountAsync(fixture));
 
         fixture.Context.ChangeTracker.Clear();
         VehicleFaultRecoveryDecision cleared = await VehicleFaultRecoveryTests.Service(fixture, site)
@@ -203,8 +196,8 @@ public sealed class EmergencyReleaseVersusOwnOrderRebuildTests
 
     /// <summary>
     /// 同一条链带上真车载端的会话，分两段看。前半段是本服务端在途单造成的未就绪（<c>DEPARTURE_SAFETY_NOT_READY</c>）：单 FAILED 时车还在动，
-    /// 未就绪的第一轮就记故障、发急停（cs#358 之前要等到会话就绪那一轮），三轮下来仍是同一代故障。急停触发没有断「不重复」：触发未确认时急停监督按 2 秒退避重试，第二次触发是可能的（审查低项）。
-    /// 后半段是锁住之后会话又未就绪，一直到清除之后：解除与清除都照样成立（都不看会话），重建过了延迟也不建，等到会话就绪的那一轮才建——
+    /// 未就绪的第一轮就记故障（cs#358 之前要等到会话就绪那一轮；CP-0011 起不急停），三轮下来仍是同一代故障。
+    /// 后半段是会话就绪一轮之后又未就绪，一直到清除之后：清除照样成立（不看会话），重建过了延迟也不建，等到会话就绪的那一轮才建——
     /// 重建时机从「清除后延迟到点」变成「延迟到点且会话就绪」，两者取晚。
     /// </summary>
     /// <remarks>
@@ -223,7 +216,7 @@ public sealed class EmergencyReleaseVersusOwnOrderRebuildTests
     /// </para>
     /// </remarks>
     [Fact]
-    [Trait("Requirement", "REQ-0356")]
+    [Trait("Requirement", "REQ-0246")]
     [Trait("Requirement", "REQ-0360")]
     public async Task WithTheRealOnboardsSessionNotReadyTheRebuildWaitsForTheSessionAsWellAsTheDelay()
     {
@@ -234,11 +227,11 @@ public sealed class EmergencyReleaseVersusOwnOrderRebuildTests
         JourneyStopRow pickup = stopsBefore.Single(stop => stop.StopRole == JourneyStopRoles.Pickup);
         await OwnOrderRebuildTests.DropSessionOnOwnOrderAsync(fixture);
 
-        // 单 FAILED、车还在动，会话未就绪：第一轮就记故障、急停（cs#358）；三轮下来仍是同一代故障。
+        // 单 FAILED、车还在动，会话未就绪：第一轮就记故障（cs#358），不急停（CP-0011）；三轮下来仍是同一代故障。
         fixture.Riot.MovementState = "MT_RUNNING";
         fixture.Riot.FailOrder(pickup.UpperId);
         await TickAndHearAsync(fixture);
-        Assert.Equal(RiotOrderCommandOutcome.Pending, await LatestTriggerOutcomeAsync(fixture));
+        Assert.Equal(0, await TriggerCountAsync(fixture));
         for (int round = 1; round < 3; round++)
         {
             await TickAndHearAsync(fixture);
@@ -249,26 +242,20 @@ public sealed class EmergencyReleaseVersusOwnOrderRebuildTests
         Assert.Equal((VehicleFaultLevel.SuspectedBlocked, 1L), (recorded.Level, recorded.FaultGeneration));
         Assert.Equal(SessionReadiness.RecoveryRequired, (await fixture.Context.SessionRecoveries.AsNoTracking().SingleAsync(Token)).Readiness);
 
-        // 会话就绪、RIoT 锁上；锁住之后会话又未就绪。
+        // 会话就绪一轮，车停下；之后会话又未就绪。
         await fixture.RestoreSessionReadyAsync();
         fixture.Context.ChangeTracker.Clear();
         await TickAndHearAsync(fixture);
         Assert.Equal(VehicleFaultLevel.SuspectedBlocked, (await VehicleFaultRecoveryTests.FaultAsync(fixture)).Level);
-        Assert.Equal(RiotOrderCommandOutcome.Pending, await LatestTriggerOutcomeAsync(fixture));
-        Latch(fixture);
         fixture.Riot.MovementState = "MT_FINISHED";
         await TickAndHearAsync(fixture);
-        Assert.Equal(RiotOrderCommandOutcome.Confirmed, await LatestTriggerOutcomeAsync(fixture));
         await OwnOrderRebuildTests.DropSessionOnOwnOrderAsync(fixture);
         await TickAndHearAsync(fixture);
         await AssertNothingRebuiltAsync(fixture, "TO_PICKUP", creates: 1);
+        Assert.Equal(0, await TriggerCountAsync(fixture));
 
-        // 解除与清除都不看会话。
+        // 清除不看会话。
         site.HasUnfinishedOrder = false;
-        AssertReleaseIssued(await ReleaseAsync(fixture, site));
-        Unlatch(fixture);
-        await TickAndHearAsync(fixture);
-        await AssertNothingRebuiltAsync(fixture, "TO_PICKUP", creates: 1);
         fixture.Context.ChangeTracker.Clear();
         VehicleFaultRecoveryDecision cleared = await VehicleFaultRecoveryTests.Service(fixture, site)
             .RecoverAsync(VehicleFaultRecoveryTests.Clear(fixture), Token);
@@ -495,21 +482,20 @@ public sealed class EmergencyReleaseVersusOwnOrderRebuildTests
     // ---- 夹具 ----------------------------------------------------------------------------------------------
 
     /// <summary>
-    /// 在途单 FAILED 时车还在动（<c>MT_RUNNING</c>）：引擎记故障、证不出停稳、升级急停，触发停在 Pending；然后 RIoT 锁上，
-    /// 钟走一秒后的下一轮把触发对账成 Confirmed。锁住之后车读作停止。
+    /// 在途单 FAILED 时车还在动（<c>MT_RUNNING</c>）：引擎记故障，不急停（CP-0011：修订前这里升级急停、RIoT 锁上、触发对账成 Confirmed）。
+    /// 下一轮车读作停止。
     /// </summary>
-    private static async Task FailWhileMovingThenLatchAsync(RuntimeFixture fixture, string upperId)
+    private static async Task FailWhileMovingAsync(RuntimeFixture fixture, string upperId)
     {
         fixture.Riot.MovementState = "MT_RUNNING";
         fixture.Riot.FailOrder(upperId);
         await TickAndHearAsync(fixture);
         Assert.Equal(VehicleFaultLevel.SuspectedBlocked, (await VehicleFaultRecoveryTests.FaultAsync(fixture)).Level);
-        Assert.Equal(RiotOrderCommandOutcome.Pending, await LatestTriggerOutcomeAsync(fixture));
+        Assert.Equal(0, await TriggerCountAsync(fixture));
 
-        Latch(fixture);
         fixture.Riot.MovementState = "MT_FINISHED";
         await TickAndHearAsync(fixture);
-        Assert.Equal(RiotOrderCommandOutcome.Confirmed, await LatestTriggerOutcomeAsync(fixture));
+        Assert.Equal(0, await TriggerCountAsync(fixture));
     }
 
     /// <summary>RIoT 报这辆车急停锁住：故障协调器读的闩锁与重建车况护栏读的安全原因码一起拨。</summary>

@@ -1,7 +1,11 @@
 #Requires -Version 7
 
 <#
-急停只发一次：车在动、在途单被 RIoT 报成 FAILED、证不出停住，服务端升级发 `triggerEmergency`，而且只发一次。
+急停只发一次：车在动、车载端报门没锁、按不住也证不出停住，服务端升级发 `triggerEmergency`，而且只发一次。
+
+**触发换成了门锁**（CP-0011，control-server#539）。这条场景原来用在途单被 RIoT 报成 FAILED 来触发；用户 2026-10-13 定
+订单 FAILED 不急停（「FAILED的话，订单也不会执行的」），那条路从此一次急停都不发，场景要证的机制就得换一个还会急停的原因。
+行驶中门锁未证明锁闭（REQ-0246）是最近的一个：同样先 Hold、按不住再急停，故障在效期间同样监看闩锁、被外部解除就重触发。
 
 这是批次 2 票 19（W1 空载急停演练）上现场之前要先在 L2 上证的机制。现场的出口判据是「RIoT 侧确实停车，
 且 8005 侧只发一次调用」，数的是 `RiotOrderCommandAudit` 的 attempt 行，不是 RIoT 侧收到的请求数。
@@ -32,6 +36,7 @@ $journal = $Context.Journal
 $assertions = $Context.Assertions
 $riot = $Context.Riot
 $mes = $Context.MesIngest
+$onboard = $Context.Onboard
 $connection = $Context.Connection
 $agvId = [string]$Context.AgvId
 $vehicleKey = [string]$Context.VehicleKey
@@ -59,6 +64,21 @@ function Get-RiotInvocations([string]$commandType) {
 function Set-Vehicle([hashtable]$fields) {
     $body = @{ vehicleKey = $vehicleKey } + $fields
     $null = $riot.Command('Put', 'vehicle', $body)
+}
+
+function Set-DoorsNotLocked {
+    # Typed on purpose: an `if` expression or a one-element array literal unrolls to its string, the control plane then gets
+    # "reasonCodes":"..." and refuses the binding with an empty 400 (in-transit-door-not-locked's first local run).
+    [string[]]$reasons = @('LOCK_NOT_CLOSED', 'ACTION_NOT_ALLOWED_IN_STATE')
+    $null = Set-L2OnboardSafety -Onboard $onboard -Connection $connection -AgvId $agvId -Journal $journal -Safety @{
+        departureSafe         = $false
+        vehicleStopped        = $false
+        allTargetSlotsLocked  = $false
+        allUnlockOutputsReset = $true
+        unknownPresent        = $false
+        reasonCodes           = $reasons
+        affectedSlots         = @(1, 2, 3, 4, 5, 6, 7, 8)
+    }
 }
 
 function Assert-StillOneTrigger([string]$id, [string]$phase) {
@@ -115,10 +135,13 @@ $assertions.Add(
     '0 行 / 0 次',
     "$($before.Count) 行 / $((Get-RiotInvocations 'triggerEmergency').Count) 次")
 
-# --- 3. 在途单被报 FAILED，车还在动：升级，发出一次 --------------------------------------------------
+# --- 3. 车载端报门没锁，车还在动、按不住：升级，发出一次 --------------------------------------------------
 
-$journal.Note("RIoT reports $($intent.UpperId) FAILED while $agvId is still moving.")
-$null = $riot.Command('Put', "orders/$($intent.UpperId)", @{ orderState = 4 })
+# 单在 RIoT 上读作执行中、车在两站之间（RIoT 在那里报站点 0，ADR-cross-0060），与 in-transit-door-not-locked 摆法相同。
+$null = $riot.Command('Put', "orders/$($intent.UpperId)", @{ orderState = 3; executeVehicleKey = $vehicleKey })
+Set-Vehicle @{ processingOrder = $true; currentPosition = 0 }
+$journal.Note("The onboard reports a door not locked while $agvId drives on $($intent.UpperId).")
+Set-DoorsNotLocked
 
 $null = Wait-L2Condition -Description 'the server escalated to an emergency stop' `
     -Journal $journal -Criterion 'trigger-issued' -TimeoutSeconds 90 `
@@ -134,7 +157,7 @@ $first = Wait-L2ConditionOrLast -Description 'the first trigger attempt was sett
     -Until { param($row) -not [string]::IsNullOrEmpty([string]$row.ReceiptJson) }
 $assertions.Add(
     'L2-ES-02',
-    '该发时发了：单被报 FAILED 且车证不出停住，服务端发出 triggerEmergency，记在这台车名下',
+    '该发时发了：门没锁、按不住且车证不出停住，服务端发出 triggerEmergency，记在这台车名下',
     ([string]$first.AgvId -eq $agvId -and [string]$first.TargetUpperId -eq $vehicleTarget),
     "$agvId / $vehicleTarget",
     "$([string]$first.AgvId) / $([string]$first.TargetUpperId)")
@@ -189,18 +212,18 @@ $faults = Invoke-L2Query -Connection $connection `
     -Sql "SELECT Level, EvidenceCode, EscalatedAt FROM VehicleFaultStates WHERE AgvId = '$agvId'"
 $assertions.Add(
     'L2-ES-09',
-    '故障事实停在 SuspectedBlocked，证据码 VEHICLE_ORDER_FAILED，并记下了升级时刻',
+    '故障事实停在 SuspectedBlocked，证据码 VEHICLE_DOOR_NOT_PROVEN_LOCKED，并记下了升级时刻',
     ($faults.Count -eq 1 -and [string]$faults[0].Level -eq 'SuspectedBlocked' -and
-        [string]$faults[0].EvidenceCode -eq 'VEHICLE_ORDER_FAILED' -and $null -ne $faults[0].EscalatedAt -and
+        [string]$faults[0].EvidenceCode -eq 'VEHICLE_DOOR_NOT_PROVEN_LOCKED' -and $null -ne $faults[0].EscalatedAt -and
         [string]$faults[0].EscalatedAt -ne ''),
-    'SuspectedBlocked / VEHICLE_ORDER_FAILED / 有升级时刻',
+    'SuspectedBlocked / VEHICLE_DOOR_NOT_PROVEN_LOCKED / 有升级时刻',
     $(if ($faults.Count -eq 0) { '(无行)' }
       else { "$([string]$faults[0].Level) / $([string]$faults[0].EvidenceCode) / $([string]$faults[0].EscalatedAt)" }))
 
 $holds = Get-HoldAttempts
 $assertions.Add(
     'L2-ES-10',
-    'OrderHold 也只发了一次：单已经是 FAILED，重发改变不了什么',
+    'OrderHold 也只发了一次：同一代故障只按一次，按不住就交给急停',
     ($holds.Count -eq 1),
     1,
     $holds.Count)
@@ -215,7 +238,7 @@ Assert-StillOneTrigger 'L2-ES-11' '车停下来不再升级，又评估了 5 轮
 $releases = Get-EmergencyAttempts 'cancelEmergency'
 $assertions.Add(
     'L2-ES-12',
-    '恢复严：故障原因（单 FAILED）还在，服务端一次 cancelEmergency 都没发',
+    '恢复严：故障原因（门没锁）还在，服务端一次 cancelEmergency 都没发',
     ($releases.Count -eq 0 -and (Get-RiotInvocations 'cancelEmergency').Count -eq 0),
     '0 行 / 0 次',
     "$($releases.Count) 行 / $((Get-RiotInvocations 'cancelEmergency').Count) 次")

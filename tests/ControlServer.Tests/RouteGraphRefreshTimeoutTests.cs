@@ -125,7 +125,7 @@ public sealed class RouteGraphRefreshTimeoutTests
     // ---- the worker ---------------------------------------------------------------------------------------------
 
     /// <summary>
-    /// 地图接口超时的那一轮，真 worker 照常跑引擎：FAILED、车还在动的取货单同一轮记下故障、发 Hold、升级急停；路网标为
+    /// 地图接口超时的那一轮，真 worker 照常跑引擎：FAILED、车还在动的取货单同一轮记下故障、试 Hold（订单 FAILED 不急停，CP-0011）；路网标为
     /// <c>ROUTE_GRAPH_REFRESH_FAILED</c>；没有 2002（整轮失败），也没有 2156（刷新器自己接住了）。
     /// </summary>
     [Fact]
@@ -137,13 +137,13 @@ public sealed class RouteGraphRefreshTimeoutTests
 
         await fixture.RunOneRoundAsync();
 
-        await AssertStoppedThisRoundAsync(fixture.Runtime);
+        await AssertFaultModelRanThisRoundAsync(fixture.Runtime);
         Assert.Equal(RouteGraphStaleReasons.RefreshFailed, await fixture.StaleReasonAsync());
         Assert.DoesNotContain(fixture.WorkerLog.Entries, entry => entry.EventId.Id is 2002 or 2156);
     }
 
     /// <summary>
-    /// 刷新在刷新器自己的处理之外出事（这里是读快照头时数据库不可用）：worker 记 2156，引擎照常跑，同一轮照样急停；不记 2002。
+    /// 刷新在刷新器自己的处理之外出事（这里是读快照头时数据库不可用）：worker 记 2156，引擎照常跑，同一轮照样记故障；不记 2002。
     /// </summary>
     /// <remarks>
     /// 这条守的是 worker 把刷新拆出引擎的 try：刷新器的 catch 管不到的失败，也不再连累整轮引擎。
@@ -157,13 +157,13 @@ public sealed class RouteGraphRefreshTimeoutTests
 
         await fixture.RunOneRoundAsync();
 
-        await AssertStoppedThisRoundAsync(fixture.Runtime);
+        await AssertFaultModelRanThisRoundAsync(fixture.Runtime);
         Assert.Contains(fixture.WorkerLog.Entries, entry => entry.EventId.Id == 2156);
         Assert.DoesNotContain(fixture.WorkerLog.Entries, entry => entry.EventId.Id == 2002);
     }
 
     /// <summary>
-    /// 刷新器的 try 之外抛出一个调用方没要求的取消（读快照头时超时）：worker 不把它当停机，记 2156、照常跑引擎、同一轮照样急停。
+    /// 刷新器的 try 之外抛出一个调用方没要求的取消（读快照头时超时）：worker 不把它当停机，记 2156、照常跑引擎、同一轮照样记故障。
     /// </summary>
     /// <remarks>
     /// 守的是 worker 放行停机的那道 catch 只认已取消的 <c>stoppingToken</c>（审查 L1）。它若接住任何
@@ -178,13 +178,13 @@ public sealed class RouteGraphRefreshTimeoutTests
 
         await fixture.RunOneRoundAsync();
 
-        await AssertStoppedThisRoundAsync(fixture.Runtime);
+        await AssertFaultModelRanThisRoundAsync(fixture.Runtime);
         Assert.Single(fixture.WorkerLog.Entries, entry => entry.EventId.Id == 2156);
         Assert.DoesNotContain(fixture.WorkerLog.Entries, entry => entry.EventId.Id == 2002);
     }
 
     /// <summary>
-    /// 刷新进行中停机：worker 正常退出，这一轮不跑引擎（没有急停），不记 2156，刷新器不记「刷新失败」，路网不标 stale。
+    /// 刷新进行中停机：worker 正常退出，这一轮不跑引擎（没有故障、没有 Hold），不记 2156，刷新器不记「刷新失败」，路网不标 stale。
     /// </summary>
     [Fact]
     public async Task AShutdownDuringTheRefreshStopsTheWorker()
@@ -195,30 +195,35 @@ public sealed class RouteGraphRefreshTimeoutTests
         await fixture.StopDuringRefreshAsync();
 
         Assert.True(fixture.Worker.ExecuteTask!.IsCompletedSuccessfully, $"worker ended {fixture.Worker.ExecuteTask.Status}");
-        Assert.Equal(0, await TriggerCountAsync(fixture.Runtime));
+        Assert.Equal((0, 0), await FaultsAndHoldsAsync(fixture.Runtime));
         Assert.DoesNotContain(fixture.WorkerLog.Entries, entry => entry.EventId.Id is 2002 or 2156);
         Assert.DoesNotContain(fixture.RefresherLog.Entries, entry => entry.EventId.Id == 1);
         Assert.Null(await fixture.StaleReasonAsync());
     }
 
     /// <summary>
-    /// 这一轮跑过故障模型：一条第 1 代、证据是订单 FAILED、已升级的故障；审计里急停触发了一次。
+    /// 这一轮跑过故障模型：一条第 1 代、证据是订单 FAILED 的故障，审计里对这张单试过一次 Hold。订单 FAILED 不急停（CP-0011），
+    /// 故障不升级、没有急停触发；修订前这里断的是「已升级、触发一次」。
     /// </summary>
-    private static async Task AssertStoppedThisRoundAsync(RuntimeFixture fixture)
+    private static async Task AssertFaultModelRanThisRoundAsync(RuntimeFixture fixture)
     {
         await using ControlServerDbContext reading = new(fixture.DbOptionsForTests);
         VehicleFaultStateRow fault = Assert.Single(await reading.VehicleFaultStates.AsNoTracking().ToArrayAsync(Token));
         Assert.Equal(
-            (1L, VehicleFaultEvidence.OrderFailed, true),
+            (1L, VehicleFaultEvidence.OrderFailed, false),
             (fault.FaultGeneration, fault.EvidenceCode, fault.EscalatedAt is not null));
-        Assert.Equal(1, await TriggerCountAsync(fixture));
+        Assert.Equal((1, 1), await FaultsAndHoldsAsync(fixture));
+        Assert.Equal(0, await reading.RiotOrderCommandAudit.AsNoTracking()
+            .CountAsync(row => row.CommandType == RiotCommandTypeNames.TriggerEmergency, Token));
     }
 
-    private static async Task<int> TriggerCountAsync(RuntimeFixture fixture)
+    private static async Task<(int Faults, int Holds)> FaultsAndHoldsAsync(RuntimeFixture fixture)
     {
         await using ControlServerDbContext reading = new(fixture.DbOptionsForTests);
-        return await reading.RiotOrderCommandAudit.AsNoTracking()
-            .CountAsync(row => row.CommandType == RiotCommandTypeNames.TriggerEmergency, Token);
+        return (
+            await reading.VehicleFaultStates.AsNoTracking().CountAsync(Token),
+            await reading.RiotOrderCommandAudit.AsNoTracking()
+                .CountAsync(row => row.CommandType == RiotCommandTypeNames.OrderHold, Token));
     }
 
     // ---- fixtures -----------------------------------------------------------------------------------------------

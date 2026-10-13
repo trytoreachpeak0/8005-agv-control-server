@@ -4,9 +4,27 @@
 
 载体是 `REQ-0247`（停稳必须依靠正面证据）、`REQ-0248`（急停调用按状态重试并保留现场兜底）、
 `REQ-0249`（发起急停遵循「停车宽、恢复严」）与 `REQ-0356`（急停锁住后经服务端人员确认由服务端解除）。
-`REQ-0247`、`REQ-0248` 在需求基线 `v1.3.0` 由变更提案 `CP-0003` 修订，`REQ-0356` 由它新增（2026-09-15 批准）。
+`REQ-0247`、`REQ-0248` 在需求基线 `v1.3.0` 由变更提案 `CP-0003` 修订，`REQ-0356` 由它新增（2026-09-15 批准）；
+`REQ-0248`、`REQ-0356`、`REQ-0167`、`REQ-0246` 又在需求基线 `v1.10.0` 由 `CP-0011` 修订（2026-10-13 批准，急停分三类，见下一节）。
 实现在 `src/ControlServer.Host/Runtime/Commands/EmergencyStopSupervisor.cs`，人工确认入口在
-`src/ControlServer.Host/Runtime/EmergencyStopReleaseEndpoints.cs`。
+`src/ControlServer.Host/Runtime/EmergencyStopReleaseEndpoints.cs`（车上无货）与
+`src/ControlServer.Host/Runtime/LoadedEmergencyStopReleaseEndpoints.cs`（车上有货或不确定）。
+
+## 急停分三类（`CP-0011`）
+
+RIoT 上一台车只有一个急停状态（`OK`／`CAN_RECOVER`／`CAN_NOT_RECOVER`），不说是谁按的。现场的急停其实有三类：
+
+| 类 | 是什么 | 谁来解 |
+| --- | --- | --- |
+| 一类：不可恢复 | 车上的急停按钮按着，或不可恢复的硬件故障。RIoT 报 `CAN_NOT_RECOVER`，同时总带着一层二类 | 先在车上处理（松开按钮、修好硬件），之后按二类解 |
+| 二类：可恢复 | 触边、软件急停、可恢复的硬件故障；在 Matrix、RIoT 或车尾触屏上按的也是这一类 | 在原来的地方解：Matrix、RIoT 或车尾触屏 |
+| 三类：8005 自己的 | 服务端因为自己的原因（例如行驶中门锁没锁）要车停下。借二类的 `triggerEmergency` 实现，只记在服务端自己的审计里 | 原因消除后服务端自动解除；**门锁原因例外**，要人确认门锁已检修后经本文的人工确认入口解除 |
+
+由此来的三条规矩：
+
+- **车已经被别人锁住时，服务端只记不发。**它想停这台车，但车已经锁着，就在自己的审计里记下「这台车上有 8005 的三类」，不再调用 RIoT。
+- **三类还在、闩锁却被别处解开了，服务端立即重新急停。**别人在 RIoT、Matrix 或车尾触屏上解开的是他自己那一层，8005 那一层原因还在。
+- **订单 FAILED 不急停。**用户 2026-10-13 裁定：FAILED 的单 RIoT 不会再执行。服务端仍然记故障、不再给这台车派活，只是不下急停。
 
 ## 服务端在自动做什么
 
@@ -23,7 +41,7 @@ RIoT 会一直报 `MT_RUNNING` 加车速 0；停在两站之间的车，站点�
 
 确认之后服务端**停止重复触发**，只继续监控急停状态。**如果急停在原因消除前自己变回 `OK`**——例如有人在 RIoT
 里手动解锁——服务端**立即重触发并告警**，不等下一个退避时隙。服务端自己解除的（自动解除，或下面的人工确认解除）
-不算这种情况。
+不算这种情况。车被别人先锁住、服务端只记了自己那一类的，闩锁一被别处解开，同样立即重触发。
 
 ## 告警意味着什么
 
@@ -61,62 +79,41 @@ RIoT 会一直报 `MT_RUNNING` 加车速 0；停在两站之间的车，站点�
 
 ### 路径一：自动解除（`REQ-0167`）
 
-只针对 8005 自己触发的急停，要同时满足：
+只针对 8005 自己的三类急停，要同时满足：
 
 | 条件 | 服务端怎么读到 |
 | --- | --- |
 | RIoT 报 `CAN_RECOVER` | 回查 `emergencyState`；`CAN_NOT_RECOVER` 一律禁止调用 |
-| 这次急停是 8005 自己触发的 | 命令审计里有本次急停的 `triggerEmergency`；人工、外部或来源不明的急停不在自动解除范围内 |
+| 这次急停是 8005 自己的 | 命令审计里有本次的 `triggerEmergency`，或车被别人先锁住时服务端记下的那一行；人工、外部或来源不明的急停不在自动解除范围内 |
 | 原因已经消除 | 故障事实被清除（`VehicleFaultStates` 的 `Level=None` 且 `ClearedAt` 有值） |
 | 停稳 | 急停锁住即视为停稳，上一条已经读到锁住（`REQ-0247`） |
-| RIoT 里这台车没有未结束的订单 | 与人工确认解除同一个读法（2026-09-22 起，control-server#299）：原因消除不等于 RIoT 手里没有能开走这台车的单 |
+| RIoT 里这台车没有未结束的订单 | 与人工确认解除同一个读法：原因消除不等于 RIoT 手里没有能开走这台车的单 |
 
 任何一条不满足，服务端会拒绝自动解除并给出具体的原因码（`EMERGENCY_NOT_CAN_RECOVER`、
 `EMERGENCY_FAULT_FACT_ABSENT`、`EMERGENCY_CAUSE_NOT_CLEARED`、`EMERGENCY_FAULT_GENERATION_MOVED`、
 `EMERGENCY_VEHICLE_ORDER_NOT_FINISHED`、`EMERGENCY_VEHICLE_ORDERS_UNKNOWN`；`EMERGENCY_STOP_NOT_PROVEN` 只会出现在没读到锁住的时候）。
 
-清除故障事实有两个入口：修复续行（原订单确认为 HELD），和人工清除（control-server#299，
-[`vehicle-fault-clearance-field-guide.md`](vehicle-fault-clearance-field-guide.md)）。**人工清除要求急停已经解除**，
-所以被 RIoT 报成 FAILED 的单引起的急停仍然走路径二：先人工确认解除急停，再人工清除故障。
+清除故障事实有两个入口：修复续行（原订单确认为 HELD），和人工清除
+（[`vehicle-fault-clearance-field-guide.md`](vehicle-fault-clearance-field-guide.md)）。**两个入口都要求急停已经解除**，
+所以现在实际上没有哪一种原因会走到自动解除：故障在效时急停由人解，人解了之后才清故障。这一条留着，是给将来原因能自己消除的那一类。
 
-**行驶中因门锁急停的例外（control-server#335）**：故障不必清除，门锁恢复为新鲜、锁闭、仓位已知，且车上唯一的未完成单是
-服务端自己按住并回查确认的暂停单（7），就自动解除；单仍停着，要人「继续原单」。这张单若已在 RIoT 被取消或删除，则要求
-车上一张未完成单都没有。
+**行驶中因门锁急停：不自动解除（`CP-0011`）。**门锁读回锁闭也不解除——锁可能坏了，读到的锁闭证明不了车门真的锁着，
+车开起来门一开就会撞坏。车退出服务、故障在效，单停着。出路是：
 
-**解除之后车又动了，这条例外就收回（control-server#527，10-09 agv02 现场）**：同一次故障里门锁自动解除生效之后，
-若服务端因为排除不了车在动而再次急停——读到在动（`STOP_PROOF_MOTION_OBSERVED`）、位置变了（`STOP_PROOF_POSITION_CHANGED`）、
-读不到车动没动（`STOP_PROOF_MOTION_UNKNOWN`）或运动读数过期（`STOP_PROOF_EVIDENCE_STALE`）——门锁恢复不再让它越过按住的单解除，
-否则会像现场那样一分钟里反复急停、解除。只是门又没锁引起的再急停不算，门锁再次锁好照样解除。这时的出路：
+1. 现场检修门锁，确认修好。
+2. 走下面的人工确认解除，确认项里勾上「门锁已检修」：车上无货走路径二，车上有货或不确定走路径三。
+   服务端按住的那张单（暂停，7）在路径三里可以留着。
+3. 急停解开之后，经故障处置入口「继续原单」或清除故障
+   （[`vehicle-fault-clearance-field-guide.md`](vehicle-fault-clearance-field-guide.md)）。
 
-1. **车上无货**：值班工程师在 RIoT 上结束服务端那张单（`W2G-` 开头，现场人员不要自己取消），再走路径二人工确认解除，
-   之后经故障清除入口清除故障。
-2. **车上有货**（路径二要求无货，走不了）：值班工程师在 RIoT 上结束那张单；车上一张未完成单都没有、门锁新鲜锁闭时，
-   服务端自动解除，之后经故障清除入口清除故障，货物按清除之后的重建或异常处置走。这次解除之后若只是门又没锁、再次急停，
-   门锁锁好后照样解除。
-3. **这次解除之后车又被判为排除不了在动、再次急停**：本次故障里不再有任何门锁自动解除，服务端也没有别的入口能解。
-   走已有的现场兜底（用户 2026-10-08 认可）：
-   1. 现场确认车已停、人员撤离危险区域，在 RIoT 里看这台车的急停状态。
-   2. 关掉 v2 实例的派车闸（`scripts/parallel/README.md`）。关闸被 `GATE_CLOSE_REFUSED_IN_FLIGHT` 拒（旅程没完成时本来就会这样），
-      就**直接停掉 v2 实例的服务**——只停 v2，不碰生产 MVP 服务。停服务算改在线服务，每次都要单独授权。服务停了就没有监看，
-      不会再重新急停。
-   3. v2 停着时，由 RIoT 人员在 RIoT 里解锁这台车。**v2 在跑时不要在 RIoT 里手动解锁**：服务端会判成
-      `EMERGENCY_LATCH_RELEASED_EXTERNALLY` 并立即重新急停（见下文「不要在 RIoT 里手动解锁」）。
-   4. 车上若还挂着单：服务端建的（`upperId` 以 `W2G-` 开头）不取消，找值班工程师；不是服务端建的，按
-      [`vehicle-fault-clearance-field-guide.md`](vehicle-fault-clearance-field-guide.md)「急停锁着、车上还挂着一张 HANG 的单」一节，
-      核实它在我们的车上（RIoT `deviceKey`／`id`）后只取消这一张。
-   5. 库里的故障事实会留着，这台车在 v2 里不再接活，直到经故障清除入口处理。**不改库，不靠重启清故障。**
-      **重启 v2 之前先把货卸掉**：重启后这次急停在服务端仍然开着，而闩锁读到 `OK`，服务端会判成
-      `EMERGENCY_LATCH_RELEASED_EXTERNALLY`，立即再急停一次。之后走路径二（`REQ-0356`）人工确认解除——它要求车上无货——
-      再经故障清除入口清除故障。
-
-   **这条兜底能把车放出来、让人处理车上的货，但车在 v2 里仍然是带着故障的**：服务端目前没有入口能在这种状态下替人解除，
-   这个缺口另开票处理。
+修订之前（2026-09-28 到 2026-10-13）门锁恢复为新鲜、锁闭、仓位已知时服务端会自动解除，那一套连同它的振荡兜底一起撤掉了。
 
 ### 路径二：人工确认解除（`REQ-0356`）
 
 服务端人员确认三件事并留下身份，服务端据此解除。
 
 **要确认的三件事**：急停原因已经消除、车上没有货、全部仓门已经关好。**不需要确认停稳**，锁住就算停稳。
+这台车若是因为行驶中门锁没锁被停下的，还要确认第四件：**门锁已经检修**（`doorLockRepaired`）。
 「仓门已经关好」只用来解除急停，不是车再出发所需的锁闭证明，车再动仍要通过出发前安全检查（`REQ-0244`）。
 
 **服务端自己再核对的事**，任何一条不满足都会拒绝：
@@ -125,8 +122,9 @@ RIoT 会一直报 `MT_RUNNING` 加车速 0；停在两站之间的车，站点�
 | --- | --- | --- |
 | `EMERGENCY_CONFIRMER_UNIDENTIFIED` | 没填确认人工号 | 填上。确认人身份必须记下 |
 | `EMERGENCY_CAUSE_CLEARED_NOT_CONFIRMED` | 没确认「原因已消除」 | 查清并排除原因后再确认 |
-| `EMERGENCY_VEHICLE_EMPTY_NOT_CONFIRMED` | 没确认「车上无货」 | **车上有货不能走这条路**，货物先按异常处置条目处理 |
+| `EMERGENCY_VEHICLE_EMPTY_NOT_CONFIRMED` | 没确认「车上无货」 | **车上有货走路径三** |
 | `EMERGENCY_DOORS_CLOSED_NOT_CONFIRMED` | 没确认「仓门已关」 | 关好仓门后再确认 |
+| `EMERGENCY_DOOR_LOCK_REPAIR_NOT_CONFIRMED` | 这台车是因为行驶中门锁没锁停下的，没确认「门锁已检修」 | 先检修门锁，再确认 |
 | `EMERGENCY_NOT_CAN_RECOVER` | RIoT 不是报 `CAN_RECOVER` | `CAN_NOT_RECOVER` 转 RIoT 人员；`OK` 说明已经没锁 |
 | `EMERGENCY_NOT_RAISED_BY_8005` | 这个急停不是 8005 触发的，或服务端已经解除过、又被别人锁上 | 不归 8005 解，转 RIoT 人员 |
 | `EMERGENCY_VEHICLE_ORDER_NOT_FINISHED` | RIoT 里这台车还有没结束的订单（排队、执行、暂停或 HANG） | **先让这张单结束，再确认。**订单还在执行时一解锁，车可能接着开走，而确认的人可能就在车旁。先看是谁建的：服务端建的（`upperId` 以 `W2G-` 开头）不要取消，找值班工程师；不是服务端建的，按 [`vehicle-fault-clearance-field-guide.md`](vehicle-fault-clearance-field-guide.md) 「急停锁着、车上还挂着一张 HANG 的单」一节，核实它在我们的车上（RIoT `deviceKey`／`id`）后只取消这一张（2026-09-22 用户定） |
@@ -150,6 +148,8 @@ $body = @{
     causeCleared   = $true
     vehicleEmpty   = $true
     allDoorsClosed = $true
+    # 只有因为行驶中门锁没锁停下的车才需要；其他情况不填即可
+    doorLockRepaired = $true
     note           = '现场说明，可不填'
 } | ConvertTo-Json
 Invoke-RestMethod -Method Post -Uri 'http://127.0.0.1:58007/api/safety/v1/emergency-stop-releases' `
@@ -166,14 +166,62 @@ Invoke-RestMethod -Method Post -Uri 'http://127.0.0.1:58007/api/safety/v1/emerge
 | 409 | 拒绝，响应里的 `reasons` 列出全部原因码（见上表） |
 | 401 / 404 / 422 / 503 | 凭据不对 / 不是本服务端管的车 / 请求缺 `agvId` 或 `operatorId` / 入口没配凭据 |
 
+### 路径三：有货时的人工确认解除（`REQ-0356`，`CP-0011` 修订）
+
+车上有货或说不清有没有货时，由持异常处置权限的人解除 8005 自己那一层急停，不要求车上无货。
+
+**要确认的事**：写明办理人（`operatorId`）和解除原因（`reason`），确认急停原因已经消除、全部仓门已经关好；
+因为行驶中门锁没锁停下的车，还要确认门锁已经检修。
+
+**服务端自己再核对的事**与路径二相同（`CAN_RECOVER`、是 8005 的急停、读得到 RIoT 订单），只有订单这一条放宽：
+RIoT 上这台车唯一的未结束订单，若是服务端自己建的、此刻读作暂停（7），可以留着，解除后它仍然停着，要人「继续原单」。
+多出来的拒绝码：
+
+| 原因码 | 意思 | 怎么办 |
+| --- | --- | --- |
+| `EMERGENCY_CONFIRMER_NOT_AUTHORIZED` | 办理人不在现场人员角色名单里，或没有 R-13（AGV 运维/调度管理员）角色 | 找有这个角色的人来办 |
+| `EMERGENCY_RELEASE_REASON_REQUIRED` | 没写解除原因 | 写上 |
+| `EMERGENCY_HELD_ORDER_NOT_PAUSED` | 服务端自己那张单此刻不是暂停 | 解除后车可能直接开走，不能解；找值班工程师 |
+| `EMERGENCY_RELEASE_FIELD_TOO_LONG` | 原因超过 500 字或办理人超过 128 字 | 写短一些 |
+
+**每一次请求都会写一条不能改的管理员审计**（动作 `EMERGENCY_STOP_GOVERNED_LOADED_RELEASE`），被拒的也写。
+
+**入口**：`POST /api/safety/v1/emergency-stop-releases/loaded`，和路径二挂在同一个开关上（`EmergencyStopRelease:enabled`），
+但**凭据单独一把**：环境变量 `CONTROL_SERVER_EMERGENCY_LOADED_RELEASE_CREDENTIAL`（变量名由
+`EmergencyStopRelease:loadedCredentialEnvironmentVariable` 决定），拿着路径二凭据的人解不了有货的车。没放这把凭据时入口回 503，
+不影响路径二。
+
+**和需求的差距，如实写在这里。**需求说异常处置权限归维护管理员和系统管理员、要本人凭据。服务端还没有按人登录，也没有这两个角色：
+现在认的是「拿着这把凭据、自报的工号在现场人员角色名单里有 R-13」。等有了登录体系再改。
+
+示例（PowerShell 7）：
+
+```powershell
+$body = @{
+    agvId            = 'agv02'
+    operatorId       = '工号'
+    reason           = '门锁已更换，现场复核锁闭'
+    causeCleared     = $true
+    allDoorsClosed   = $true
+    doorLockRepaired = $true
+} | ConvertTo-Json
+Invoke-RestMethod -Method Post -Uri 'http://127.0.0.1:58007/api/safety/v1/emergency-stop-releases/loaded' `
+    -Headers @{ Authorization = "Bearer $env:CONTROL_SERVER_EMERGENCY_LOADED_RELEASE_CREDENTIAL" } `
+    -ContentType 'application/json' -Body $body
+```
+
+返回码与路径二相同；409 时响应里除了 `reasons`，还有逐条的中文说明 `descriptions` 和这次请求的审计记录号 `auditRecordId`。
+
 ### 解除之后
 
 - **解除只结束这一次急停。**车辆故障阻断还在，这台车照样不派新单；清除故障有自己的规则，见
   [`vehicle-fault-clearance-field-guide.md`](vehicle-fault-clearance-field-guide.md)。
 - **服务端不会因为车停在两站之间就再急停它。**对同一次故障，解除后只有读到车在动、读不到车的状态、读数过期，
-  或者车出现在另一个站点时，服务端才会再次急停，这算新的一次（2026-09-15 用户裁定）。
-- **不要在 RIoT 里手动解锁。**服务端没有解除过的急停变回 `OK`，会被当成意外恢复，立即重新急停并报
-  `EMERGENCY_LATCH_RELEASED_EXTERNALLY`（`REQ-0248`）。要解除，走上面的人工确认。
+  或者车出现在另一个站点时，服务端才会再次急停，这算新的一次（2026-09-15 用户裁定）。门锁原因停下的车，
+  解除后门锁又读不到锁闭，也会再次急停。
+- **不要在 RIoT 里手动解锁 8005 的急停。**服务端没有解除过的急停变回 `OK`，会被当成意外恢复，立即重新急停并报
+  `EMERGENCY_LATCH_RELEASED_EXTERNALLY`（`REQ-0248`）。要解除，走上面的人工确认。别人按的急停（触边、Matrix、
+  RIoT、车尾触屏）在原来的地方解；若服务端在那上面记了自己的一类，解开后它会立即再停一次，这时同样走人工确认。
 
 ## 谁可以要求停车
 

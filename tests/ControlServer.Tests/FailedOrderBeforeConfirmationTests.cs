@@ -12,7 +12,8 @@ namespace ControlServer.Tests;
 
 /// <summary>
 /// control-server#367：普通腿（不是重建出来的单）建单应答丢了、单还没确认，RIoT 就报 FAILED。会话闸门前、闸门后都要在同一轮记故障、
-/// Hold、急停，并照常推进急停确认与 REQ-0248 重触发；这个故障要能经受控的清除入口清掉，清掉之后按 REQ-0362 同车重建。
+/// 试 Hold；这个故障要能经受控的清除入口清掉，清掉之后按 REQ-0362 同车重建。CP-0011（control-server#539）起订单 FAILED 不再急停：
+/// 修订前这里同一轮还要急停，并推进急停确认与 REQ-0248 重触发。
 /// </summary>
 /// <remarks>
 /// <para>
@@ -44,7 +45,7 @@ public sealed class FailedOrderBeforeConfirmationTests
     [Trait("Requirement", "REQ-0232")]
     [Trait("Requirement", "REQ-0234")]
     [Trait("Requirement", "REQ-0246")]
-    public async Task APickupOrderThatFailedBeforeConfirmationIsRecordedHeldAndStoppedInFrontOfTheGate()
+    public async Task APickupOrderThatFailedBeforeConfirmationIsRecordedHeldButNotStoppedInFrontOfTheGate()
     {
         await using RuntimeFixture fixture = await PickupCreateAnswerLostAsync();
         JourneyRuntimeRow dispatched = await fixture.RuntimeAsync();
@@ -54,7 +55,7 @@ public sealed class FailedOrderBeforeConfirmationTests
         await TickAndHearAsync(fixture);
 
         await AssertSessionReadyAsync(fixture);
-        await AssertRecordedHeldAndStoppedAsync(fixture, dispatched.PickupUpperId);
+        await AssertRecordedHeldButNotStoppedAsync(fixture, dispatched.PickupUpperId);
         Assert.Equal("TERMINAL_RECONCILIATION_REQUIRED", (await IntentAsync(fixture, dispatched.PickupUpperId)).Status);
         Assert.Equal(1, fixture.Riot.CreateCount("TO_PICKUP"));
     }
@@ -76,7 +77,7 @@ public sealed class FailedOrderBeforeConfirmationTests
         await TickAndHearAsync(fixture);
 
         await AssertSessionReadyAsync(fixture);
-        await AssertRecordedHeldAndStoppedAsync(fixture, underWay.GateUpperId!);
+        await AssertRecordedHeldButNotStoppedAsync(fixture, underWay.GateUpperId!);
         await AssertCargoBoundAsync(fixture, underWay.DemandId!);
     }
 
@@ -90,7 +91,7 @@ public sealed class FailedOrderBeforeConfirmationTests
     [Trait("Requirement", "REQ-0232")]
     [Trait("Requirement", "REQ-0246")]
     [Trait("Requirement", "REQ-0287")]
-    public async Task AnUnreconciledPickupOrderThatFailedIsRecordedHeldAndStoppedBehindTheGate()
+    public async Task AnUnreconciledPickupOrderThatFailedIsRecordedHeldButNotStoppedBehindTheGate()
     {
         await using RuntimeFixture fixture = await PickupCreateAnswerLostAsync();
         JourneyRuntimeRow dispatched = await fixture.RuntimeAsync();
@@ -102,7 +103,7 @@ public sealed class FailedOrderBeforeConfirmationTests
         await TickAndHearAsync(fixture);
 
         await AssertSessionStillNotReadyAsync(fixture);
-        await AssertRecordedHeldAndStoppedAsync(fixture, dispatched.PickupUpperId);
+        await AssertRecordedHeldButNotStoppedAsync(fixture, dispatched.PickupUpperId);
         Assert.Equal(1, fixture.Riot.CreateCount("TO_PICKUP"));
         Assert.Equal(before, await OutboundAsync(fixture));
     }
@@ -126,7 +127,7 @@ public sealed class FailedOrderBeforeConfirmationTests
         await TickAndHearAsync(fixture);
 
         await AssertSessionStillNotReadyAsync(fixture);
-        await AssertRecordedHeldAndStoppedAsync(fixture, underWay.GateUpperId!);
+        await AssertRecordedHeldButNotStoppedAsync(fixture, underWay.GateUpperId!);
         await AssertCargoBoundAsync(fixture, underWay.DemandId!);
         Assert.Equal(before, await OutboundAsync(fixture));
     }
@@ -141,7 +142,7 @@ public sealed class FailedOrderBeforeConfirmationTests
     [Fact]
     [Trait("Requirement", "REQ-0232")]
     [Trait("Requirement", "REQ-0246")]
-    public async Task AnUnconfirmedOrderThatFailedIsRecordedHeldAndStoppedWhileTheReadySessionIsSilent()
+    public async Task AnUnconfirmedOrderThatFailedIsRecordedHeldButNotStoppedWhileTheReadySessionIsSilent()
     {
         await using RuntimeFixture fixture = await PickupCreateAnswerLostAsync();
         JourneyRuntimeRow dispatched = await fixture.RuntimeAsync();
@@ -157,7 +158,7 @@ public sealed class FailedOrderBeforeConfirmationTests
         await TickSilentAsync(fixture);
 
         await AssertSessionReadyAsync(fixture);
-        await AssertRecordedHeldAndStoppedAsync(fixture, dispatched.PickupUpperId);
+        await AssertRecordedHeldButNotStoppedAsync(fixture, dispatched.PickupUpperId);
         Assert.Equal(1, fixture.Riot.CreateCount("TO_PICKUP"));
         Assert.Equal(before, await OutboundAsync(fixture));
     }
@@ -185,18 +186,18 @@ public sealed class FailedOrderBeforeConfirmationTests
         await TickAndHearAsync(fixture);
 
         await AssertSessionStillNotReadyAsync(fixture);
-        await AssertRecordedHeldAndStoppedAsync(fixture, dispatched.PickupUpperId);
+        await AssertRecordedHeldButNotStoppedAsync(fixture, dispatched.PickupUpperId);
         Assert.Equal(before, await OutboundAsync(fixture));
     }
 
     /// <summary>
-    /// 闸门后记下故障、急停触发 Pending 之后，会话一直未就绪：RIoT 锁上的那一轮把触发确认成 Confirmed、停车证明照常采样；闩锁在故障未清、
-    /// 也没有人工解除时掉了，下一轮按 REQ-0248 重触发。旅程码一直是 <c>VEHICLE_ORDER_FAILED</c>，车载端一条都没收到。
+    /// 闸门后记下故障之后，会话一直未就绪：订单 FAILED 不急停（CP-0011），别人锁上闩锁的那一轮不在上面记本服务端的一类，停车证明照常采样；
+    /// 闩锁掉了也不触发。旅程码一直是 <c>VEHICLE_ORDER_FAILED</c>，车载端一条都没收到。修订前这里先触发、确认、闩锁掉了再按 REQ-0248 重触发。
     /// </summary>
     [Fact]
     [Trait("Requirement", "REQ-0246")]
     [Trait("Requirement", "REQ-0248")]
-    public async Task BehindTheGateTheStopIsConfirmedAndRetriggeredForAnOrderThatFailedBeforeConfirmation()
+    public async Task BehindTheGateAnOrderThatFailedBeforeConfirmationIsNeverStopped()
     {
         await using RuntimeFixture fixture = await PickupCreateAnswerLostAsync();
         JourneyRuntimeRow dispatched = await fixture.RuntimeAsync();
@@ -205,20 +206,20 @@ public sealed class FailedOrderBeforeConfirmationTests
         fixture.Riot.FailOrder(dispatched.PickupUpperId);
         Outbound before = await OutboundAsync(fixture);
         await TickAndHearAsync(fixture);
-        Assert.Equal(RiotOrderCommandOutcome.Pending, await LatestTriggerOutcomeAsync(fixture));
+        Assert.Equal(0, await TriggerCountAsync(fixture));
 
         Latch(fixture);
         fixture.Riot.MovementState = "MT_FINISHED";
         await TickAndHearAsync(fixture);
         await AssertSessionStillNotReadyAsync(fixture);
-        Assert.Equal(RiotOrderCommandOutcome.Confirmed, await LatestTriggerOutcomeAsync(fixture));
+        Assert.Equal(0, await TriggerCountAsync(fixture));
         Assert.Equal(VehicleFaultEvidence.OrderFailed, (await fixture.RuntimeAsync()).BlockReasonCode);
         await AssertStopProofSampledThisRoundAsync(fixture);
 
         Unlatch(fixture);
         await TickAndHearAsync(fixture);
         await AssertSessionStillNotReadyAsync(fixture);
-        Assert.Equal(2, await TriggerCountAsync(fixture));
+        Assert.Equal(0, await TriggerCountAsync(fixture));
         Assert.Equal(VehicleFaultEvidence.OrderFailed, (await fixture.RuntimeAsync()).BlockReasonCode);
         await AssertStopProofSampledThisRoundAsync(fixture);
 
@@ -692,12 +693,12 @@ public sealed class FailedOrderBeforeConfirmationTests
     /// 一条 <c>SuspectedBlocked</c> 故障（第 1 代、证据是订单 FAILED、已升级）；审计里对这张单发过一次 Hold，带 RIoT 的 orderId；
     /// 急停触发一次、Pending；旅程写 <c>VEHICLE_ORDER_FAILED</c>。
     /// </summary>
-    private static async Task AssertRecordedHeldAndStoppedAsync(RuntimeFixture fixture, string upperId)
+    private static async Task AssertRecordedHeldButNotStoppedAsync(RuntimeFixture fixture, string upperId)
     {
         await using ControlServerDbContext reading = new(fixture.DbOptionsForTests);
         VehicleFaultStateRow fault = Assert.Single(await reading.VehicleFaultStates.AsNoTracking().ToArrayAsync(Token));
         Assert.Equal(
-            (VehicleFaultLevel.SuspectedBlocked, 1L, VehicleFaultEvidence.OrderFailed, true),
+            (VehicleFaultLevel.SuspectedBlocked, 1L, VehicleFaultEvidence.OrderFailed, false),
             (fault.Level, fault.FaultGeneration, fault.EvidenceCode, fault.EscalatedAt is not null));
 
         RiotOrderCommandAuditRow[] audit = await reading.RiotOrderCommandAudit.AsNoTracking().ToArrayAsync(Token);
@@ -705,9 +706,9 @@ public sealed class FailedOrderBeforeConfirmationTests
         Assert.Equal(
             (upperId, fixture.Riot.OrderIdOf(upperId), (long?)1),
             (hold.TargetUpperId, hold.TargetOrderId, hold.FaultGeneration));
-        RiotOrderCommandAuditRow trigger = Assert.Single(
-            audit, row => row.CommandType == RiotCommandTypeNames.TriggerEmergency);
-        Assert.Equal(RiotOrderCommandOutcome.Pending, trigger.Outcome);
+        // 订单 FAILED 不急停（REQ-0246 按 CP-0011 修订）：既不触发，也不在别人的闩锁上记本服务端的一类。
+        Assert.DoesNotContain(audit, row => row.CommandType is RiotCommandTypeNames.TriggerEmergency or
+            EmergencyStopSupervisor.LatchAdoptedCommandType);
 
         Assert.Equal(VehicleFaultEvidence.OrderFailed, (await reading.JourneyRuntimes.AsNoTracking().SingleAsync(Token)).BlockReasonCode);
     }
@@ -775,19 +776,14 @@ public sealed class FailedOrderBeforeConfirmationTests
         fixture.Context.ChangeTracker.Clear();
     }
 
+    /// <summary>本服务端要过的急停：发出的触发，加上记在别人闩锁上的一类（CP-0011）。</summary>
     private static async Task<int> TriggerCountAsync(RuntimeFixture fixture)
     {
         await using ControlServerDbContext reading = new(fixture.DbOptionsForTests);
         return await reading.RiotOrderCommandAudit.AsNoTracking()
-            .CountAsync(row => row.CommandType == RiotCommandTypeNames.TriggerEmergency, Token);
-    }
-
-    private static async Task<RiotOrderCommandOutcome?> LatestTriggerOutcomeAsync(RuntimeFixture fixture)
-    {
-        await using ControlServerDbContext reading = new(fixture.DbOptionsForTests);
-        RiotOrderCommandAuditRow[] triggers = await reading.RiotOrderCommandAudit.AsNoTracking()
-            .Where(row => row.CommandType == RiotCommandTypeNames.TriggerEmergency)
-            .ToArrayAsync(Token);
-        return triggers.OrderBy(row => row.AttemptNumber).LastOrDefault()?.Outcome;
+            .CountAsync(
+                row => row.CommandType == RiotCommandTypeNames.TriggerEmergency ||
+                       row.CommandType == EmergencyStopSupervisor.LatchAdoptedCommandType,
+                Token);
     }
 }

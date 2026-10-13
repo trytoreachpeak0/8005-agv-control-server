@@ -88,15 +88,22 @@ public static class VehicleFaultEvidence
 /// <c>orderId</c> is what the RIoT endpoint addresses, and they are not interchangeable.
 /// </param>
 /// <param name="Cargo">What the vehicle is carrying, or null when it is carrying nothing.</param>
-/// <param name="DoorCauseRemoved">
-/// The caller has just read this vehicle's doors fresh, known and locked (control-server#335). Meaningful only for a
-/// <see cref="VehicleFaultEvidence.DoorNotProvenLocked"/> fault, where it is REQ-0167's "原原因消除"; see
-/// <see cref="VehicleFaultCoordinator.DoorReleaseAllowance"/>. False unless the caller says otherwise.
+/// <param name="DoorsNotProvenLocked">
+/// The caller has just read this vehicle's doors and they are not fresh, known and locked: reported open or unknown, or the
+/// onboard has gone silent. It only ever takes an exemption away: a vehicle a person released between stations is not
+/// stopped again for want of a station alone (REQ-0247), but doors not proven locked again are REQ-0246's own trigger, and
+/// the vehicle is stopped again. False unless the caller says otherwise.
 /// </param>
+/// <remarks>
+/// Until CP-0011 it carried the opposite fact, whether the doors read locked again, which released a door-cause stop on its
+/// own (control-server#335). The user ruled on 2026-10-13 that a lock feedback that came back proves nothing about the lock,
+/// so the doors reading locked release nothing any more; the bound that exemption had -- only while the doors still read
+/// locked -- is kept for the person's release that replaced it.
+/// </remarks>
 public sealed record FaultedVehicleContext(
     RiotOrderCommandTarget? CurrentOrder,
     FaultedVehicleCargoFacts? Cargo,
-    bool DoorCauseRemoved = false);
+    bool DoorsNotProvenLocked = false);
 
 /// <summary>The cargo facts REQ-0238 decides the two paths from.</summary>
 /// <param name="LoadingWitnessed">Whether loading was actually observed.</param>
@@ -123,7 +130,7 @@ public sealed record VehicleFaultDecision(
     bool Escalated,
     IReadOnlyList<string> Reasons,
     string? AlarmCode = null,
-    bool ReleasedOnDoorCause = false)
+    bool ReleasedOnConfirmation = false)
 {
     /// <summary>
     /// True whenever a fault fact is held. New dispatch is blocked at either level — REQ-0234 does
@@ -285,10 +292,34 @@ public sealed class VehicleFaultCoordinator(
             subject,
             hardEvidence ? VehicleFaultLevel.ConfirmedIsolated : VehicleFaultLevel.SuspectedBlocked,
             evidenceCode,
+            StopRequired(symptomCode),
             context,
             emergency,
             cancellationToken).ConfigureAwait(false);
     }
+
+    /// <summary>
+    /// Whether a fault entered on this symptom asks for the vehicle to be stopped (REQ-0246 as revised by CP-0011,
+    /// requirements baseline v1.10.0).
+    /// </summary>
+    /// <remarks>
+    /// <para>
+    /// <b>An order FAILED does not.</b> The user ruled on 2026-10-13: "这个不用下急停，FAILED的话，订单也不会执行的". FAILED is
+    /// terminal in RIoT; the order will not run again, and this server gives the vehicle nothing new while the fault stands
+    /// (REQ-0232, REQ-0164's one-order gate, REQ-0362's rebuild only after a person clears it). The fault is still recorded,
+    /// dispatch still blocked, the cargo still bound and the hold still attempted -- only the escalation goes. Until CP-0011
+    /// every such vehicle between stations was stopped, because a FAILED order can never be held and RIoT reports no station
+    /// there.
+    /// </para>
+    /// <para>
+    /// Decided on the symptom the caller observed, never on the fault fact's evidence code: a symptom seen while a button is
+    /// held is recorded as <see cref="VehicleFaultEvidence.EmergencyCanNotRecover"/>, which says nothing about why this server
+    /// wanted the vehicle stopped. The riot-behavior-lab has never observed FAILED (state-model.md, Q-024), so "the vehicle
+    /// stays put after it" rests on the user's field judgement; CP-0011 records it as the residual risk.
+    /// </para>
+    /// </remarks>
+    internal static bool StopRequired(string symptomCode) =>
+        !string.Equals(symptomCode, VehicleFaultEvidence.OrderFailed, StringComparison.Ordinal);
 
     /// <summary>
     /// REQ-0233's second route to isolation: a person with the exception-recovery permission,
@@ -326,6 +357,7 @@ public sealed class VehicleFaultCoordinator(
             subject,
             VehicleFaultLevel.ConfirmedIsolated,
             VehicleFaultEvidence.OperatorConfirmed,
+            stopRequired: true,
             context,
             emergency,
             cancellationToken).ConfigureAwait(false);
@@ -559,6 +591,7 @@ public sealed class VehicleFaultCoordinator(
         EmergencyStopSubject subject,
         VehicleFaultLevel level,
         string evidenceCode,
+        bool stopRequired,
         FaultedVehicleContext context,
         RiotVehicleEmergencyObservation emergency,
         CancellationToken cancellationToken)
@@ -615,25 +648,30 @@ public sealed class VehicleFaultCoordinator(
         (StopProofVerdict proof, VehicleMotionSample latest) = await ProveStopAsync(
             subject, fault, emergency, cancellationToken).ConfigureAwait(false);
 
-        // Asked only when it can change the answer: a latched vehicle is not escalated either way.
+        // Asked only when it can change the answer: a latched vehicle is not escalated for motion either way.
         bool releasedOnConfirmation = false;
-        bool releasedOnDoorCause = false;
         if (!emergency.IsLatched)
         {
             releasedOnConfirmation = await emergencyStop
                 .WasReleasedOnConfirmationAsync(subject, fault.FaultGeneration, cancellationToken)
                 .ConfigureAwait(false);
-            releasedOnDoorCause = IsDoorFault(fault) && await emergencyStop
-                .WasReleasedOnDoorCauseAsync(subject, fault.FaultGeneration, cancellationToken)
-                .ConfigureAwait(false);
         }
-        // A release on the doors proven locked again exempts the vehicle as a person's confirmation does -- it stands held
-        // wherever it stopped, and a missing station alone is no reason to stop it again -- but only while the doors still
-        // read that way (control-server#335, Coordinator 8 2026-09-28). Doors reported open or unknown again are REQ-0246's
-        // own trigger, and the vehicle is stopped again. Moving, unreadable or stale motion stops it either way.
-        bool escalated = RequiresEscalation(
-            hold == RiotOrderCommandOutcome.Confirmed, proof, latest, emergency.IsLatched,
-            releasedOnConfirmation || (releasedOnDoorCause && context.DoorCauseRemoved));
+
+        // Two ways to ask for the stop (REQ-0246, REQ-0248 as revised by CP-0011), and neither for an order FAILED
+        // (StopRequired). An unlatched vehicle that cannot be proven stopped is escalated as before. A vehicle somebody else
+        // has already latched -- a button, a bumper, RIoT, Matrix -- gets this server's class recorded on that latch the
+        // first time this generation asks for a stop at all: the supervisor writes it without a call
+        // (EmergencyStopSupervisor.LatchAdoptedCommandType), and from then on the watch below re-triggers it the moment
+        // anything other than this server clears the latch. Before CP-0011 a latched vehicle was never escalated, so a stop
+        // this server wanted on a vehicle someone else had stopped first left no trace, and the next release at RIoT
+        // released this server's reason with it. Once escalated in this generation the stop is not asked for again; a
+        // person's release through the class-three entry ends this server's class for the generation, and a later latch by
+        // someone else is theirs.
+        bool escalated = stopRequired &&
+            (RequiresEscalation(
+                hold == RiotOrderCommandOutcome.Confirmed, proof, latest, emergency.IsLatched,
+                releasedOnConfirmation && !context.DoorsNotProvenLocked) ||
+             (emergency.IsLatched && fault.EscalatedAt is null));
         if (escalated)
         {
             await EscalateAsync(subject, fault, proof, cancellationToken).ConfigureAwait(false);
@@ -643,14 +681,11 @@ public sealed class VehicleFaultCoordinator(
             // Escalated earlier in this episode, and nothing this evaluation saw says the vehicle
             // is moving, so the stop is not asked for again. The episode still needs watching: the
             // trigger that engaged the latch has to be settled, and a latch that comes off while
-            // the cause stands has to be re-triggered (REQ-0248). The supervisor's evaluation does
-            // both. It releases here only on the one allowance a standing fault can earn: the
-            // doors of a driving vehicle proven locked again past this server's own confirmed hold
-            // (control-server#335); every other fault was just recorded, so its cause is not cleared.
-            EmergencyReleaseAllowance? allowance = emergency.IsLatched
-                ? await DoorReleaseAllowanceAsync(subject, fault, context, cancellationToken).ConfigureAwait(false)
-                : null;
-            await emergencyStop.EvaluateAsync(subject, allowance, cancellationToken).ConfigureAwait(false);
+            // this server's class stands has to be re-triggered (REQ-0248). The supervisor's
+            // evaluation does both. It releases automatically only on a cleared fault (REQ-0167);
+            // a fault this evaluation just recorded is not cleared, so it never releases here --
+            // and since CP-0011 the doors read locked again are no exception.
+            await emergencyStop.EvaluateAsync(subject, cancellationToken).ConfigureAwait(false);
         }
 
         List<string> reasons = [.. proof.MissingFacts];
@@ -665,7 +700,7 @@ public sealed class VehicleFaultCoordinator(
         Alarm(alarm, subject.AgvId, reasons);
 
         return new VehicleFaultDecision(
-            fault.Level, fault.FaultGeneration, evidenceCode, hold, cargo, proof, escalated, reasons, alarm, releasedOnDoorCause);
+            fault.Level, fault.FaultGeneration, evidenceCode, hold, cargo, proof, escalated, reasons, alarm, releasedOnConfirmation);
     }
 
     /// <summary>
@@ -794,141 +829,6 @@ public sealed class VehicleFaultCoordinator(
             fault.FaultGeneration,
             cancellationToken).ConfigureAwait(false);
         return record.Outcome;
-    }
-
-    /// <summary>
-    /// Reads back the hold a door fault of this generation issued, and builds the release allowance when it is due
-    /// (control-server#335).
-    /// </summary>
-    /// <remarks>
-    /// The hold is reconciled here as well as in <see cref="HoldCurrentOrderAsync"/>, which since control-server#527 reads it
-    /// back on every evaluation after an escalation: this is the last read before the release, and does not lean on that
-    /// one having happened in the same round. <see cref="RiotOrderCommandService.ReconcileAsync"/> settles it Confirmed once the order reads PAUSED --
-    /// that read-back is what "自己发出并回查确认过的" means -- and never re-decides an attempt already settled.
-    /// <para>
-    /// <b>The order is re-read here, in the round that releases, and must still be 7.</b> A latch is the only thing that keeps
-    /// a vehicle whose order is 3 from moving: RIoT accepts CONTINUE_FROM_HELD while latched CAN_RECOVER and turns the order
-    /// 7 -> 3 (rcs/riot-behavior-lab/evidence/rounds/2026-09-28-round-44, BC-ORDER-020, OBSERVED, one run). Whether a
-    /// vehicle in that state drives off the moment the latch is released has never been observed (BC-ORDER-020 item 5,
-    /// INFERRED); releasing only over this server's own confirmed 7, read now, treats it as if it does. The supervisor reads
-    /// the vehicle's unfinished orders once more immediately before the cancelEmergency and lets through only this order.
-    /// </para>
-    /// </remarks>
-    private async Task<EmergencyReleaseAllowance?> DoorReleaseAllowanceAsync(
-        EmergencyStopSubject subject,
-        VehicleFaultFact fault,
-        FaultedVehicleContext context,
-        CancellationToken cancellationToken)
-    {
-        if (!context.DoorCauseRemoved ||
-            !string.Equals(fault.EvidenceCode, VehicleFaultEvidence.DoorNotProvenLocked, StringComparison.Ordinal) ||
-            context.CurrentOrder is not RiotOrderCommandTarget target)
-        {
-            return null;
-        }
-
-        DoorReleaseHistory history = await emergencyStop
-            .DoorReleaseHistoryAsync(subject, fault.FaultGeneration, CannotExcludeMotion, cancellationToken).ConfigureAwait(false);
-
-        IReadOnlyList<RiotOrderCommandAttempt> attempts = await audit.ReadAttemptsAsync(
-            RiotCommandTypeNames.OrderHold, target.UpperId, cancellationToken).ConfigureAwait(false);
-        RiotOrderCommandAttempt? hold = attempts.LastOrDefault(attempt => attempt.FaultGeneration == fault.FaultGeneration);
-        RiotOrderCommandOutcome? holdOutcome = hold is null
-            ? null
-            : await commands.ReconcileAsync(hold, cancellationToken).ConfigureAwait(false);
-        RiotOrderObservation order = await movement
-            .ReconcileByUpperIdAsync(target.UpperId, cancellationToken).ConfigureAwait(false);
-        return DoorReleaseAllowance(fault, context, holdOutcome, order, history);
-    }
-
-    /// <summary>
-    /// The stop-proof codes that cannot rule out that the vehicle moved: it read as moving, its position changed, its motion
-    /// could not be read, or the reading was stale (control-server#527 review S-1). Not a missing station, too few samples or
-    /// badly spaced ones -- those withhold the proof without saying anything about motion, and a stop for the doors opening
-    /// again between stations gives exactly those.
-    /// </summary>
-    /// <remarks>
-    /// The unreadable and stale ones count because the release this withdraws is automatic: a vehicle nobody can see standing
-    /// still is not released on the doors alone. Counting only <see cref="StopProof.MotionObserved"/> left the same oscillation
-    /// open for them (review probe D: four triggers and four releases in three cycles).
-    /// </remarks>
-    internal static bool CannotExcludeMotion(string stopReason) =>
-        string.Equals(stopReason, StopProof.MotionObserved, StringComparison.Ordinal) ||
-        string.Equals(stopReason, StopProof.PositionChanged, StringComparison.Ordinal) ||
-        string.Equals(stopReason, StopProof.MotionUnknown, StringComparison.Ordinal) ||
-        string.Equals(stopReason, StopProof.EvidenceStale, StringComparison.Ordinal);
-
-    private static bool IsDoorFault(VehicleFaultFact fault) =>
-        string.Equals(fault.EvidenceCode, VehicleFaultEvidence.DoorNotProvenLocked, StringComparison.Ordinal);
-
-    /// <summary>The release allowance a door fault earns, or null. Pure, so every refusal is a case a test can name.</summary>
-    /// <remarks>
-    /// All of these, or nothing: the caller read the doors fresh, known and locked; the fault is the doors' and still stands;
-    /// this generation issued an <c>OrderHold</c> on this order and it reads back Confirmed; and RIoT reports this very order
-    /// -- same orderId -- PAUSED (7) now. A 7 this server did not put there, a 1, 3 or 9, another order, or any other symptom
-    /// earns nothing; <see cref="VehicleFaultEvidence.OrderFailed"/> in particular stays with a person, as it always has.
-    /// The one exception is this very order cancelled or deleted in RIoT since (control-server#335 review P1): the allowance
-    /// then names no order, and the supervisor releases only while RIoT lists none at all for the vehicle.
-    /// <para>
-    /// <b>Not past the held order once the vehicle was stopped for motion after this generation's door release</b>
-    /// (<see cref="DoorReleaseHistory.MovedAfterDoorRelease"/>, control-server#527) -- motion here meaning any reason that
-    /// cannot rule it out (<see cref="CannotExcludeMotion"/>). The release rests on the doors being the cause; a vehicle that
-    /// read as moving after it, with its order held, has shown that they were not the whole of it, and released again on the
-    /// doors it was stopped again on the next reading -- nine triggers and fourteen releases in a minute on agv02 on
-    /// 2026-10-09. Motion in the stop that started the episode does not count: a vehicle stopped for its doors while driving is
-    /// moving then by definition, and counting it would take this release from exactly the vehicles it was written for.
-    /// </para>
-    /// <para>
-    /// <b>The branch for an order ended in RIoT stays open</b>, because for a loaded vehicle it is the only way out that is not
-    /// the database: REQ-0356 needs the vehicle empty, and a clearance or a resume refuses while it is latched. Ending this
-    /// server's own order is a person's act (the duty engineer, <c>docs/emergency-stop-field-fallback.md</c>), and with no
-    /// unfinished order RIoT has nothing left to drive the vehicle with. It closes only when the vehicle moves again after a
-    /// release it earned (<see cref="DoorReleaseHistory.MovedAgainAfterLaterRelease"/>), so it cannot oscillate either; a
-    /// stop after that release for the doors opening again leaves it open, as for any door release (review M-1).
-    /// </para>
-    /// </remarks>
-    internal static EmergencyReleaseAllowance? DoorReleaseAllowance(
-        VehicleFaultFact fault,
-        FaultedVehicleContext context,
-        RiotOrderCommandOutcome? holdOutcome,
-        RiotOrderObservation order,
-        DoorReleaseHistory history)
-    {
-        ArgumentNullException.ThrowIfNull(fault);
-        ArgumentNullException.ThrowIfNull(context);
-        ArgumentNullException.ThrowIfNull(order);
-        ArgumentNullException.ThrowIfNull(history);
-
-        if (history.MovedAgainAfterLaterRelease ||
-            !context.DoorCauseRemoved ||
-            fault.Level == VehicleFaultLevel.None ||
-            !string.Equals(fault.EvidenceCode, VehicleFaultEvidence.DoorNotProvenLocked, StringComparison.Ordinal) ||
-            context.CurrentOrder is not RiotOrderCommandTarget target)
-        {
-            return null;
-        }
-
-        // The held order was cancelled or deleted in RIoT while the fault stood (control-server#335 review P1). Nothing is left
-        // that could drive the vehicle, so the doors proven locked again earn a release that lets no order through: the
-        // supervisor then needs RIoT to list none at all for the vehicle. Without this, a latched vehicle with cargo had no way
-        // out but the database -- REQ-0356 needs it empty, and the clearance refuses while latched.
-        if (order.Kind == RiotOrderObservationKind.Terminal &&
-            order.OrderState is RiotOrderState.Cancelled or RiotOrderState.Deleted &&
-            string.Equals(order.OrderId, target.OrderId, StringComparison.Ordinal))
-        {
-            return new EmergencyReleaseAllowance(fault.FaultGeneration, HeldOrderId: null);
-        }
-
-        if (history.MovedAfterDoorRelease ||
-            holdOutcome != RiotOrderCommandOutcome.Confirmed ||
-            order.Kind != RiotOrderObservationKind.Active ||
-            order.OrderState != RiotOrderState.Paused ||
-            !string.Equals(order.OrderId, target.OrderId, StringComparison.Ordinal))
-        {
-            return null;
-        }
-
-        return new EmergencyReleaseAllowance(fault.FaultGeneration, target.OrderId);
     }
 
     /// <summary>

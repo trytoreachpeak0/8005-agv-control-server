@@ -32,11 +32,13 @@ namespace ControlServer.Host.Runtime;
 /// would leave a latched vehicle unwatched. Nothing here clears the fault: that is a person's, through the existing entry.
 /// </para>
 /// <para>
-/// <b>The way out</b> (the user's option A of 2026-09-28): once the doors read fresh, known and locked again, the latch this
-/// fault raised is released automatically -- only past this server's own confirmed hold of that generation, see
-/// <c>VehicleFaultCoordinator.DoorReleaseAllowance</c> -- and the order stays HELD until a person resumes it
-/// (<c>VehicleFaultRecoveryAction.ResumeHeldOrder</c>), which clears the fault. Before this, a loaded vehicle stopped here had
-/// no way out on this server: the fault stood, and every release refused the held order as unfinished.
+/// <b>The way out is a person's</b> (CP-0011, requirements baseline v1.10.0, control-server#539). From control-server#335 to
+/// #539 the doors reading fresh, known and locked again released the latch on their own. The user ruled on 2026-10-13 that
+/// a lock feedback that came back proves nothing about the lock -- "锁可能坏了，识别不到车门的实际状态，车子移动时车门打开
+/// 可能把车门撞坏" -- so the vehicle stays out of service with its fault: a person confirms the lock was repaired and
+/// releases the stop through the class-three entry (empty: <c>EmergencyStopSupervisor.ReleaseOnConfirmationAsync</c>; loaded:
+/// <c>ReleaseLoadedOnGovernedConfirmationAsync</c>, which lets this server's held order stay), then resumes or clears the
+/// fault through the existing entry (<c>VehicleFaultRecoveryAction.ResumeHeldOrder</c>).
 /// </para>
 /// <para>
 /// <b>In transit means the arrival stages with an order not seen to have ended</b>: that is where
@@ -51,10 +53,10 @@ namespace ControlServer.Host.Runtime;
 public sealed partial class JourneyRuntimeEngine
 {
     /// <summary>
-    /// A latch this server released on the doors proven locked again (control-server#335), and RIoT now runs the order this
-    /// server held -- with nobody having pressed continue. riot-behavior-lab round-44 (agv03, 2026-09-28, one observation) saw a
-    /// HELD order stay 7 for 60 s after such a release; this names the day RIoT behaves otherwise, for a person to look. A
-    /// vehicle that actually moves is stopped again by the fault model on the motion it reads.
+    /// A latch released on a person's confirmation while this server's held order stayed (the loaded release of CP-0011), and
+    /// RIoT now runs that order -- with nobody having pressed continue. riot-behavior-lab round-44 (agv03, 2026-09-28) and agv02
+    /// on 2026-10-11 both saw a HELD order stay 7 after a release; this names the day RIoT behaves otherwise, for a person to
+    /// look. A vehicle that actually moves is stopped again by the fault model on the motion it reads.
     /// </summary>
     public const string HeldOrderResumedWithoutContinueReason = "HELD_ORDER_RESUMED_WITHOUT_CONTINUE";
 
@@ -108,21 +110,21 @@ public sealed partial class JourneyRuntimeEngine
                 logger, runtime.AgvId, intent.UpperId, doors.State.ToString(), doors.Generation, doors.SafetyStateVersion, null);
         }
 
-        // The doors read fresh, known and locked again is REQ-0167's "原原因消除" for a latch this fault raised; the coordinator
-        // releases on it only past this server's own confirmed hold (user's option A, 2026-09-28).
+        // Doors not proven locked again take away the exemption a person's release gave (REQ-0246; see
+        // FaultedVehicleContext.DoorsNotProvenLocked). Reading locked again releases nothing (CP-0011).
         FaultedVehicleContext inFlight = await InFlightFaultContextAsync(runtime, intent, orderId, cancellationToken)
             .ConfigureAwait(false);
-        FaultedVehicleContext context = inFlight with { DoorCauseRemoved = doors.State == InTransitDoorState.ProvenLocked };
+        FaultedVehicleContext context = inFlight with { DoorsNotProvenLocked = doors.State != InTransitDoorState.ProvenLocked };
         VehicleFaultDecision decision = await faults.ObserveAsync(
             new EmergencyStopSubject(runtime.AgvId, runtime.VehicleKey),
             VehicleFaultEvidence.DoorNotProvenLocked,
             context,
             cancellationToken).ConfigureAwait(false);
 
-        // The held order running again after the automatic release is named over the door code: the doors are the reason the
-        // vehicle stopped, but what a person has to know now is that it may be moving without anyone having let it.
+        // The held order running again after a release on confirmation is named over the door code: the doors are the reason
+        // the vehicle stopped, but what a person has to know now is that it may be moving without anyone having let it.
         string code = VehicleFaultEvidence.DoorNotProvenLocked;
-        if (decision.ReleasedOnDoorCause &&
+        if (decision.ReleasedOnConfirmation &&
             order.Kind == RiotOrderObservationKind.Active &&
             order.OrderState == RiotOrderState.Executing)
         {
@@ -156,10 +158,9 @@ public sealed partial class JourneyRuntimeEngine
     /// latch, went unasked for good -- a latched vehicle was never released, and the rebuild waited on the fault forever.
     /// </para>
     /// <para>
-    /// It supervises only: no journey code is written, the rebuild keeps its own. With the doors proven locked again the
-    /// coordinator earns a release that lets no order through (<c>VehicleFaultCoordinator.DoorReleaseAllowance</c>), and a person
-    /// then clears the fault; the rebuild the engine recorded goes on from there. Doors reported open again between stations
-    /// stop the vehicle again, as anywhere else.
+    /// It supervises only: no journey code is written, the rebuild keeps its own. A person releases the stop through the
+    /// class-three entry and clears the fault (CP-0011: the doors reading locked again release nothing); the rebuild the engine
+    /// recorded goes on from there. Doors reported open again between stations stop the vehicle again, as anywhere else.
     /// </para>
     /// </remarks>
     private async Task SuperviseDoorFaultOnEndedOrderAsync(
@@ -193,11 +194,8 @@ public sealed partial class JourneyRuntimeEngine
             return;
         }
 
-        InTransitDoorVerdict doors = await InTransitDoorFacts.ReadAsync(
-            dbContext, runtime.AgvId, timeProvider.GetUtcNow(), cancellationToken).ConfigureAwait(false);
-        FaultedVehicleContext ended = await InFlightFaultContextAsync(runtime, intent, orderId, cancellationToken)
+        FaultedVehicleContext context = await InFlightFaultContextAsync(runtime, intent, orderId, cancellationToken)
             .ConfigureAwait(false);
-        FaultedVehicleContext context = ended with { DoorCauseRemoved = doors.State == InTransitDoorState.ProvenLocked };
         await faults.ObserveAsync(
             new EmergencyStopSubject(runtime.AgvId, runtime.VehicleKey),
             VehicleFaultEvidence.DoorNotProvenLocked,
