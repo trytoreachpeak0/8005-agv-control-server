@@ -381,6 +381,59 @@ public sealed partial class RecoveryStateMachineG2Tests
         Assert.Equal("OPERATION_RECOVERY_REQUIRED", (await context.SessionRecoveries.AsNoTracking().SingleAsync(token)).ReasonCode);
     }
 
+    /// <summary>
+    /// The demand half of <see cref="WireToGateStore.OperationNeedsRecoveryAsync"/> (control-server#697) holds a vehicle only
+    /// for a RecoveryRequired demand of its own Blocked journey. Seeded with the load Committed, so the operation half says no
+    /// and each case is the demand half's alone: the held one, then one condition broken at a time.
+    /// </summary>
+    [Theory]
+    [Trait("IntegrationSlice", "FP-IS-07")]
+    [InlineData("held", true)]
+    [InlineData("demand-not-in-recovery", false)]
+    [InlineData("journey-not-blocked", false)]
+    [InlineData("another-vehicle", false)]
+    [InlineData("membership-removed", false)]
+    public async Task ADemandAwaitingRecoveryHoldsOnlyItsOwnVehicleOnABlockedJourney(string variant, bool held)
+    {
+        CancellationToken token = TestContext.Current.CancellationToken;
+        await using SqliteConnection connection = new("Data Source=:memory:");
+        await connection.OpenAsync(token);
+        await using ControlServerDbContext context = await CreateContextAsync(connection);
+        await SeedBlockedJourneyAsync(context, productionShapedSession: true);
+        StationOperationRow load = await context.StationOperations.SingleAsync(token);
+        load.Status = StationOperationStatus.Committed;
+        load.CommittedAt = Now.AddMinutes(-1);
+        JourneyRuntimeRow runtime = await context.JourneyRuntimes.SingleAsync(token);
+        runtime.SetBlockReason("LoadCorrectionResult_NOT_RECONCILED", Now);
+        switch (variant)
+        {
+            case "held":
+                break;
+            case "demand-not-in-recovery":
+                (await context.AcceptedDemands.SingleAsync(token)).Status = DemandExecutionStatus.Accepted;
+                break;
+            case "journey-not-blocked":
+                runtime.Stage = JourneyRuntimeStage.AwaitingStationDeparture;
+                runtime.SetBlockReason(null, Now);
+                break;
+            case "another-vehicle":
+                runtime.AgvId = "AGV-8005-02";
+                break;
+            case "membership-removed":
+                (await context.Set<JourneyDemandRow>().SingleAsync(token)).RemovedAt = Now;
+                break;
+            default:
+                throw new ArgumentOutOfRangeException(nameof(variant), variant, null);
+        }
+        await context.SaveChangesAsync(token);
+        WireToGateStore store = new(context);
+
+        Assert.Equal(held, await store.OperationNeedsRecoveryAsync(AgvId, token));
+        SessionReadinessDecision decision = await store.DecideReadinessAsync(AgvId, 3, token);
+        Assert.Equal(held ? SessionReadiness.RecoveryRequired : SessionReadiness.Ready, decision.Readiness);
+        Assert.Equal(held ? "OPERATION_RECOVERY_REQUIRED" : "READY", decision.ReasonCode);
+    }
+
     /// <summary>The session READY again, and the given answer carrying that change to the vehicle.</summary>
     private static async Task AssertReadyAgainAsync(ControlServerDbContext context, string answer)
     {

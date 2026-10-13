@@ -3836,21 +3836,48 @@ public sealed class WireToGateStore(ControlServerDbContext dbContext)
     }
 
     /// <summary>
-    /// Whether an operation of any demand this vehicle carries is held for recovery -- one of the readiness inputs
-    /// <see cref="DecideReadinessAsync"/> combines.
+    /// Whether an operation of any demand this vehicle carries is held for recovery, or a demand of a Blocked journey of this
+    /// vehicle is -- one of the readiness inputs <see cref="DecideReadinessAsync"/> combines.
     /// </summary>
     /// <remarks>
+    /// <para>
     /// Public because the session reason code cannot answer it: <c>GetRecoveryReason</c> ranks
     /// <c>DEPARTURE_SAFETY_NOT_READY</c> ahead of <c>OPERATION_RECOVERY_REQUIRED</c>, so while the vehicle is also unsafe to
     /// depart the reason code names departure safety alone. The journey runtime asks this directly before it lets the
     /// pickup dispatch plan past a closed readiness gate (control-server#314).
+    /// </para>
+    /// <para>
+    /// <b>The demand half (control-server#697, C11's choice A).</b> A recovery result that does not reconcile -- a cancellation,
+    /// a correction, a handoff (<c>OnboardRecoveryCoordinator.KeepDemandAndJourneyBlockedAsync</c>) -- marks the demand
+    /// RecoveryRequired and blocks its journey, and touches no operation: one the vehicle reported Committed stays Committed.
+    /// Judged on operations alone, that vehicle read READY mid-session, and the onboard, which offers its recovery entries only
+    /// on RECOVERY_REQUIRED, offered none until a reconnect. The demand is where "the facts did not reconcile" is recorded, so
+    /// it is judged here, under the same reason code. Only on a Blocked journey, the way the release reads that mark
+    /// (<c>BlockedJourneyRelease</c>, criterion 4), and only for this vehicle's: a journey moving or waiting for its own order
+    /// has nothing for this to hold. It lets go when the demand ends -- compensation, handoff, forced recovery -- or its mark
+    /// is cleared, or the journey leaves Blocked.
+    /// </para>
     /// </remarks>
-    public Task<bool> OperationNeedsRecoveryAsync(string agvId, CancellationToken cancellationToken) =>
-        OperationsOnJourneys()
+    public async Task<bool> OperationNeedsRecoveryAsync(string agvId, CancellationToken cancellationToken) =>
+        await OperationsOnJourneys()
             .AnyAsync(
                 pair => pair.Runtime.AgvId == agvId &&
                         pair.Operation.Status == StationOperationStatus.RecoveryRequired,
-                cancellationToken);
+                cancellationToken).ConfigureAwait(false) ||
+        await DemandJourneyLookup.Memberships(dbContext)
+            .Join(dbContext.AcceptedDemands,
+                membership => membership.DemandId,
+                demand => demand.DemandId,
+                (membership, demand) => new { membership.JourneyId, demand.Status })
+            .Join(dbContext.JourneyRuntimes,
+                pair => pair.JourneyId,
+                runtime => runtime.JourneyId,
+                (pair, runtime) => new { pair.Status, runtime.AgvId, runtime.Stage })
+            .AnyAsync(
+                row => row.AgvId == agvId &&
+                       row.Stage == JourneyRuntimeStage.Blocked &&
+                       row.Status == DemandExecutionStatus.RecoveryRequired,
+                cancellationToken).ConfigureAwait(false);
 
     /// <summary>
     /// Whether a forced mechanical recovery of this vehicle still waits for its hardware recovery record -- the other
