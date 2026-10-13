@@ -338,6 +338,27 @@ public sealed class ForeignRunningOrderManualReleaseTests
         Assert.All(ForeignRunningOrderManualRelease.Descriptions.Values, text => Assert.False(string.IsNullOrWhiteSpace(text)));
     }
 
+    /// <summary>
+    /// 看板上每一句 <c>FOREIGN_RUNNING_ORDER_UNSETTLED</c> 的说明——通用的、本服务端自己放弃的三种单的——都指向这个入口，没有一句还说
+    /// 「没有人工解除入口」。
+    /// </summary>
+    [Fact]
+    public void EveryUnsettledDashboardDescriptionPointsAtTheManualRelease()
+    {
+        IReadOnlyDictionary<string, string>[] sets =
+        [
+            ControlServer.Host.Dashboard.ForeignRunningOrdersQueryEndpoint.Descriptions,
+            .. ControlServer.Host.Dashboard.ForeignRunningOrdersQueryEndpoint.OwnAbandonedOrderDescriptions.Values,
+        ];
+        Assert.Equal(4, sets.Length);
+        Assert.All(sets, set =>
+        {
+            string text = set[ForeignRunningOrders.UnsettledReason];
+            Assert.EndsWith(ControlServer.Host.Dashboard.ForeignRunningOrdersQueryEndpoint.ManualReleaseHint, text, StringComparison.Ordinal);
+            Assert.DoesNotContain("没有人工解除入口", text, StringComparison.Ordinal);
+        });
+    }
+
     // ---- Host 入口 ------------------------------------------------------------------------------------------------------------
 
     /// <summary>
