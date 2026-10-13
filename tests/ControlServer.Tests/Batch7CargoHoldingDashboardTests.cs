@@ -636,6 +636,10 @@ public sealed class Batch7CargoHoldingDashboardTests
     // control-server#375：从没发出过的腿补建前车况不允许。
     [InlineData("PICKUP_CREATE_WAITING_VEHICLE")]
     [InlineData("GATE_CREATE_WAITING_VEHICLE")]
+    // control-server#673：需求腿建单结果未知，与判作没建成之后等同车重建的过渡码。
+    [InlineData("PICKUP_ResultUnknown")]
+    [InlineData("GATE_ResultUnknown")]
+    [InlineData("OWN_ORDER_NEVER_APPEARED")]
     public async Task AStalledInTransitOrderIsShownWithAChineseDescription(string code)
     {
         Assert.True(BlockedJourneysQueryEndpoint.Descriptions.ContainsKey(code), $"{code} has no description");

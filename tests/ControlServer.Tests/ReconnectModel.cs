@@ -84,6 +84,8 @@ internal static class ReconnectModel
         "OWN_ORDER_REBUILD_CARGO_NOT_IN_PLACE",
         "OWN_ORDER_REBUILD_CARGO_UNPROVEN",
         "OWN_ORDER_REBUILD_VEHICLE_INELIGIBLE",
+        // cs#673：建单结果未知、判作没建成，等同车重建的过渡码（与 ORDER_ENDED_WITHOUT_ARRIVAL 同族）。模型没有建单失败，走不到，理由同上。
+        "OWN_ORDER_NEVER_APPEARED",
         // cs#335：在途门锁未能证明锁闭而按住、急停，以及自动解除后单被跑起来而没人按继续。模型没有门锁读数，走不到，理由同上。
         "VEHICLE_DOOR_NOT_PROVEN_LOCKED",
         "HELD_ORDER_RESUMED_WITHOUT_CONTINUE",
