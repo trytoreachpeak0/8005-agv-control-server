@@ -81,7 +81,10 @@ $direction = ConvertTo-ParallelGateDirection -State $State
 $definition = Read-ParallelInstanceDefinition -Path $InstanceDefinitionPath
 # -ForStopDirection for Close only: closing must work on an instance installed before taskTypeStations existed,
 # with the module 20 copies today; opening such an instance is refused like an install (control-server#518).
-$null = Assert-ParallelInstanceDefinition -Definition $definition -AllowRiotCreateDispatch -AllowRiotForeignOrderCancel -ForStopDirection:($direction -ceq 'Close')
+# -ProductionCutover from the installed record itself (control-server#564): it got there only through an install that carried
+# the switch. Opening the gate on a cutover instance is authorized per run like any other opening.
+$null = Assert-ParallelInstanceDefinition -Definition $definition -AllowRiotCreateDispatch -AllowRiotForeignOrderCancel -ForStopDirection:($direction -ceq 'Close') `
+    -ProductionCutover:(Test-ParallelProductionCutoverDefinition -Definition $definition)
 $layout = Get-ParallelInstanceLayout -Definition $definition
 $serviceName = $layout.ServiceName
 $configurationPath = "$($layout.InstallRoot)\appsettings.Production.json"

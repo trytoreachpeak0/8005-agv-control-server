@@ -5237,6 +5237,285 @@ foreach ($case in @(
     }
 }
 
+# ------------------------------------------------------------------------------------------------
+# control-server#564. The production cutover switch (docs/production-cutover-mode-plan.md; user decision 2026-10-13, D1/D6).
+# Three things are pinned: with the switch off every guard refuses as before (the whole suite above runs with it off, and the
+# cases below add the cutover-shaped definitions); with it on exactly two guards are lifted -- agv01 in the roster, and the
+# production source taking the six types -- and nothing else; and the instance's history rules (never leave a cutover by a
+# reinstall without the switch, first cutover install on a new database) that keep the way back to the MVP the plan's.
+# ------------------------------------------------------------------------------------------------
+Write-Host ''
+Write-Host 'Production cutover switch (control-server#564)' -ForegroundColor Cyan
+
+$cutoverSix = @('DIE_TO_WIRE_STAGING', 'DIE_TO_OVEN', 'WIRE_TO_GATE', 'WIRE_TO_OPTICAL', 'STAGING_TO_WIRE', 'WIRE_TO_NITROGEN')
+$cutoverRows = [ordered]@{
+    agv01 = { New-FleetRow '老厂前线新多仓位1' $agv01Key 58 @('WIRE_TO_GATE', 'WIRE_TO_OPTICAL', 'WIRE_TO_NITROGEN') @('WIRE_BONDING') }
+    agv02 = { New-FleetRow '老厂前线新多仓位2' $agv02Key 59 @('STAGING_TO_WIRE') @('WIRE_BONDING') }
+    agv03 = { New-FleetRow '老厂前线新多仓位3' $agv03Key 60 @('DIE_TO_OVEN', 'DIE_TO_WIRE_STAGING') @('DIE_ATTACH') }
+}
+# The shape of PR #676's cutover definition (control-server#669) on top of the production-source definition: three dedicated
+# cars, two zones, the six types, the production MesIngest. -Cars picks a stage (S1: agv02; S2: agv02 and agv01).
+function New-CutoverDefinition([string[]] $Cars = @('agv01', 'agv02', 'agv03'), [switch] $NoRecord) {
+    $d = Copy-Definition $productionSource
+    foreach ($key in @('agvId', 'vehicleKey', 'agvLifecycleGeneration')) { $d['journeyRuntime'].Remove($key) }
+    $d['journeyRuntime']['allowedWorkTypes'] = @($cutoverSix)
+    $d['journeyRuntime']['allowedDispatchZones'] = @('WIRE_BONDING', 'DIE_ATTACH')
+    $d['journeyRuntime']['dispatchZone'] = 'WIRE_BONDING'
+    $d['journeyRuntime']['fleet'] = @($Cars | ForEach-Object { & $cutoverRows[$_] })
+    if (-not $NoRecord) { $d['productionCutover'] = @{ approvalRecord = '用户 2026-10-13 批准生产切换（control-server#564 评论，Coordinator 10 转达）' } }
+    return Copy-Definition $d
+}
+function Test-CutoverFailure($Definition, [string[]] $Expect, [switch] $Cutover, [switch] $ForStopDirection) {
+    [string[]] $got = @(Test-ParallelInstanceDefinition -Definition $Definition -ProductionCutover:$Cutover -ForStopDirection:$ForStopDirection)
+    $unmatched = @($Expect | Where-Object { $fragment = $_; -not ($got | Where-Object { $_.Contains($fragment) }) })
+    return @{ Ok = ($got.Count -eq $Expect.Count -and $unmatched.Count -eq 0)
+        Detail = "expected exactly '$($Expect -join "', '")'; got $($got.Count): $($got -join ' | ')" }
+}
+$cutoverDefinition = New-CutoverDefinition
+
+# --- The six types are the package's, and the module's constant is them --------------------------
+Invoke-SourceCase 'cutover: the six types equal the package appsettings.json allowedWorkTypes, in order' {
+    $package = Get-Content -LiteralPath (Join-Path $PSScriptRoot '..\..\src\ControlServer.Host\appsettings.json') -Raw | ConvertFrom-Json -AsHashtable
+    $packaged = @($package['JourneyRuntime']['allowedWorkTypes'])
+    $module = @(Get-ParallelCutoverWorkType)
+    @{ Ok = (($packaged -join ',') -ceq ($module -join ',') -and ($module -join ',') -ceq ($cutoverSix -join ','))
+        Detail = "package [$($packaged -join ',')], module [$($module -join ',')]" }
+}
+
+# --- Switch off: the cutover-shaped definition is refused by the two guards, as today -------------
+Invoke-SourceCase 'cutover off: the cutover shape without record or switch is refused for exactly agv01 and WIRE_TO_GATE' {
+    Test-CutoverFailure (New-CutoverDefinition -NoRecord) @('journeyRuntime.fleet[0] names agv01', 'WIRE_TO_GATE, which the MVP takes from the same catalog')
+}
+Invoke-SourceCase 'cutover off: both refusals name the way to the cutover (plan document, switch and record)' {
+    [string[]] $got = @(Test-ParallelInstanceDefinition -Definition (New-CutoverDefinition -NoRecord))
+    $named = @($got | Where-Object { $_.Contains('docs/production-cutover-mode-plan.md') -and $_.Contains('-ProductionCutover') -and $_.Contains('productionCutover.approvalRecord') })
+    @{ Ok = ($got.Count -eq 2 -and $named.Count -eq 2); Detail = "got: $($got -join ' | ')" }
+}
+Invoke-SourceCase 'cutover off: the record without the switch is refused, and the two guards still fire' {
+    Test-CutoverFailure $cutoverDefinition @('CUTOVER_RECORD_WITHOUT_SWITCH', 'journeyRuntime.fleet[0] names agv01', 'WIRE_TO_GATE, which the MVP takes from the same catalog')
+}
+Invoke-SourceCase 'cutover off: the gate switches do not stand in for the cutover switch' {
+    [string[]] $got = @(Test-ParallelInstanceDefinition -Definition (New-CutoverDefinition -NoRecord) -AllowRiotCreateDispatch -AllowRiotForeignOrderCancel)
+    @{ Ok = ($got.Count -eq 2); Detail = "got: $($got -join ' | ')" }
+}
+Invoke-SourceCase 'cutover off: Assert- throws on the record without the switch' {
+    $threw = $false
+    try { $null = Assert-ParallelInstanceDefinition -Definition (Copy-Definition $cutoverDefinition) } catch { $threw = $_.Exception.Message.Contains('CUTOVER_RECORD_WITHOUT_SWITCH') }
+    @{ Ok = $threw; Detail = 'expected a throw naming CUTOVER_RECORD_WITHOUT_SWITCH' }
+}
+
+# --- Switch on: accepted, at each stage --------------------------------------------------------------
+Invoke-SourceCase 'cutover on: three dedicated cars, two zones, the six types, production source, with record -- accepted' {
+    Test-CutoverFailure $cutoverDefinition @() -Cutover
+}
+Invoke-SourceCase 'cutover on: Assert- accepts it and returns it' {
+    $returned = Assert-ParallelInstanceDefinition -Definition (Copy-Definition $cutoverDefinition) -ProductionCutover
+    @{ Ok = ($null -ne $returned); Detail = 'returned $null' }
+}
+Invoke-SourceCase 'cutover on: stage S1 (agv02 alone) -- accepted' {
+    Test-CutoverFailure (New-CutoverDefinition -Cars @('agv02')) @() -Cutover
+}
+Invoke-SourceCase 'cutover on: stage S2 (agv02 and agv01) -- accepted' {
+    Test-CutoverFailure (New-CutoverDefinition -Cars @('agv02', 'agv01')) @() -Cutover
+}
+Invoke-SourceCase 'cutover on: the six types in another order -- accepted (a set; the read-back compares the definition''s own order)' {
+    $d = Copy-Definition $cutoverDefinition
+    $d['journeyRuntime']['allowedWorkTypes'] = @($cutoverSix | Sort-Object -Descending)
+    Test-CutoverFailure $d @() -Cutover
+}
+
+# --- Switch on: only the two guards are lifted. Every MVP guard refuses exactly as with the switch off -
+# Each mutation is applied to the cutover definition (switch on) and to the production-source definition (switch off); the
+# failures must be the same strings. A guard the switch quietly loosened would show up as a missing failure on the left.
+foreach ($case in @(
+        @{ Name = 'onboardPort 58005 (the MVP transport)'; Edit = { param($d) $d['onboardPort'] = 58005 } }
+        @{ Name = 'healthPort 58007 (the MVP health binding)'; Edit = { param($d) $d['healthPort'] = 58007 } }
+        @{ Name = 'dashboardPort 58009 (the MVP dashboard)'; Edit = { param($d) $d['dashboardPort'] = 58009 } }
+        @{ Name = 'serviceName of the MVP'; Edit = { param($d) $d['serviceName'] = '8005 AGV ControlServer' } }
+        @{ Name = 'installRoot of the MVP'; Edit = { param($d) $d['installRoot'] = 'C:\Program Files\8005 AGV\ControlServer' } }
+        @{ Name = 'dataRoot of the MVP'; Edit = { param($d) $d['dataRoot'] = 'C:\ProgramData\8005\ControlServer' } }
+        @{ Name = 'packageRoot of the MVP'; Edit = { param($d) $d['packageRoot'] = 'D:\zhengyushao\ControlServer' } }
+        @{ Name = 'journeyRuntime.mapId 25 (the MVP map)'; Edit = { param($d) $d['journeyRuntime']['mapId'] = 25 } }
+        @{ Name = 'journeyRuntime.mapIdentity of the MVP map'; Edit = { param($d) $d['journeyRuntime']['mapIdentity'] = '老厂前线new' } }
+        @{ Name = 'a MAP-25 deployment label'; Edit = { param($d) $d['journeyRuntime']['admissionPolicyDeploymentId'] = 'MAP-25-WIRE_TO_GATE-20260827' } }
+        @{ Name = 'riotCreateDispatch open without -AllowRiotCreateDispatch'; Edit = { param($d) $d['riotCreateDispatch']['enabled'] = $true } }
+        @{ Name = 'mesIngest.baseUrl not the production MesIngest'; Edit = { param($d) $d['mesIngest']['baseUrl'] = 'http://127.0.0.1:5089' } }
+        @{ Name = 'a fakeMesIngest beside the production source'; Edit = { param($d) $d['fakeMesIngest'] = @{ installRoot = 'D:\zhengyushao\fake-v2'; port = 58188; taskName = 'FakeMesIngest V2'; seedPath = 'D:\zhengyushao\fake-v2\seed.json' } } })) {
+    Invoke-SourceCase "cutover on: $($case.Name) is refused exactly as with the switch off" {
+        $on = Copy-Definition $cutoverDefinition
+        $null = & $case.Edit $on
+        $off = Copy-Definition $productionSource
+        $null = & $case.Edit $off
+        [string[]] $gotOn = @(Test-ParallelInstanceDefinition -Definition $on -ProductionCutover)
+        [string[]] $gotOff = @(Test-ParallelInstanceDefinition -Definition $off)
+        @{ Ok = ($gotOff.Count -gt 0 -and ($gotOn -join "`n") -ceq ($gotOff -join "`n"))
+            Detail = "switch on: $($gotOn -join ' | ') /// switch off: $($gotOff -join ' | ')" }
+    }
+}
+Invoke-SourceCase 'cutover on: a car outside the registry is refused, listing the three registry cars' {
+    $d = Copy-Definition $cutoverDefinition
+    $d['journeyRuntime']['fleet'][1]['vehicleKey'] = 'BROKERX-00000000000000000000000000000000'
+    $d['journeyRuntime']['fleet'][1]['deviceKey'] = 'BROKERX-00000000000000000000000000000000'
+    Test-CutoverFailure $d @("journeyRuntime.fleet[1].vehicleKey 'BROKERX-00000000000000000000000000000000' is not one of the three registry cars. Allowed: agv02=$agv02Key, agv03=$agv03Key, agv01=$agv01Key.") -Cutover
+}
+Invoke-SourceCase 'cutover on: agv01 is checked on all four coordinates -- its riotId as 59 is refused' {
+    $d = Copy-Definition $cutoverDefinition
+    $d['journeyRuntime']['fleet'][0]['riotId'] = 59
+    Test-CutoverFailure $d @('journeyRuntime.fleet[0].riotId 59 does not match the RIoT id of agv01, which is 58') -Cutover
+}
+Invoke-SourceCase 'cutover on: agv01''s key with agv02''s name is refused' {
+    $d = Copy-Definition $cutoverDefinition
+    $d['journeyRuntime']['fleet'][0]['agvId'] = '老厂前线新多仓位2'
+    Test-CutoverFailure $d @("journeyRuntime.fleet[0].agvId '老厂前线新多仓位2' does not match the RIoT deviceName of agv01") -Cutover
+}
+Invoke-SourceCase 'cutover on: agv01''s key in lower case is refused (Ordinal, as the spare cars)' {
+    $d = Copy-Definition $cutoverDefinition
+    $d['journeyRuntime']['fleet'][0]['vehicleKey'] = $agv01Key.ToLowerInvariant()
+    Test-CutoverFailure $d @('is not one of the three registry cars') -Cutover
+}
+Invoke-SourceCase 'cutover on: agv01 twice is refused' {
+    $d = Copy-Definition $cutoverDefinition
+    $d['journeyRuntime']['fleet'][1] = Copy-Definition $d['journeyRuntime']['fleet'][0]
+    $d['journeyRuntime']['fleet'][1]['allowedTaskTypes'] = @()
+    Test-CutoverFailure $d @('journeyRuntime.fleet names agv01 twice') -Cutover
+}
+
+# --- Switch on: the shape of the lifted guards is fixed -----------------------------------------------
+foreach ($case in @(
+        @{ Name = 'five types (WIRE_TO_NITROGEN left out)'; Types = @('DIE_TO_WIRE_STAGING', 'DIE_TO_OVEN', 'WIRE_TO_GATE', 'WIRE_TO_OPTICAL', 'STAGING_TO_WIRE') }
+        @{ Name = 'only STAGING_TO_WIRE (today''s parallel instance)'; Types = @('STAGING_TO_WIRE') }
+        @{ Name = 'six entries with one twice'; Types = @('DIE_TO_WIRE_STAGING', 'DIE_TO_OVEN', 'WIRE_TO_GATE', 'WIRE_TO_OPTICAL', 'STAGING_TO_WIRE', 'STAGING_TO_WIRE') }
+        @{ Name = 'the six plus a seventh'; Types = @($cutoverSix) + @('WIRE_TO_MOON') }
+        @{ Name = 'one type in lower case'; Types = @('DIE_TO_WIRE_STAGING', 'DIE_TO_OVEN', 'wire_to_gate', 'WIRE_TO_OPTICAL', 'STAGING_TO_WIRE', 'WIRE_TO_NITROGEN') })) {
+    Invoke-SourceCase "cutover on: allowedWorkTypes $($case.Name) is refused as not the full set" {
+        $d = Copy-Definition $cutoverDefinition
+        $d['journeyRuntime']['allowedWorkTypes'] = @($case.Types)
+        # A row naming a type outside allowedWorkTypes is said too; drop those rows' types to keep the assertion exact.
+        foreach ($row in $d['journeyRuntime']['fleet']) { $row['allowedTaskTypes'] = @($row['allowedTaskTypes'] | Where-Object { $case.Types -ccontains $_ }) }
+        Test-CutoverFailure $d @('CUTOVER_WORK_TYPES_NOT_FULL_SET') -Cutover
+    }
+}
+Invoke-SourceCase 'cutover on: allowedWorkTypes left out is refused as not the full set' {
+    $d = Copy-Definition $cutoverDefinition
+    $d['journeyRuntime'].Remove('allowedWorkTypes')
+    Test-CutoverFailure $d @('CUTOVER_WORK_TYPES_NOT_FULL_SET') -Cutover
+}
+Invoke-SourceCase 'cutover on: two cars sharing a task type is refused (one car per type)' {
+    $d = Copy-Definition $cutoverDefinition
+    $d['journeyRuntime']['fleet'][1]['allowedTaskTypes'] = @('STAGING_TO_WIRE', 'WIRE_TO_GATE')
+    Test-CutoverFailure $d @('CUTOVER_TASK_TYPE_SHARED: WIRE_TO_GATE is in journeyRuntime.fleet[0].allowedTaskTypes and journeyRuntime.fleet[1].allowedTaskTypes') -Cutover
+}
+Invoke-SourceCase 'cutover on: the single-vehicle keys instead of a roster are refused' {
+    $d = Copy-Definition $cutoverDefinition
+    $d['journeyRuntime'].Remove('fleet')
+    $d['journeyRuntime']['agvId'] = '老厂前线新多仓位2'; $d['journeyRuntime']['vehicleKey'] = $agv02Key; $d['journeyRuntime']['agvLifecycleGeneration'] = 1
+    Test-CutoverFailure $d @('CUTOVER_REQUIRES_FLEET') -Cutover
+}
+Invoke-SourceCase 'cutover on: a fake MesIngest source is refused (no cutover without the production catalog)' {
+    $d = Copy-Definition $cutoverDefinition
+    $d['mesIngest'] = Copy-Definition $baseline['mesIngest']
+    $d['fakeMesIngest'] = Copy-Definition $baseline['fakeMesIngest']
+    Test-CutoverFailure $d @('CUTOVER_REQUIRES_PRODUCTION_SOURCE') -Cutover
+}
+
+# --- Misuse of the switch -----------------------------------------------------------------------------
+Invoke-SourceCase 'cutover misuse: the switch without a record, on today''s production-source definition, is refused for that alone' {
+    Test-CutoverFailure (Copy-Definition $productionSource) @('CUTOVER_SWITCH_WITHOUT_RECORD') -Cutover
+}
+Invoke-SourceCase 'cutover misuse: the switch without a record on the cutover shape -- refused, and the two guards still fire' {
+    Test-CutoverFailure (New-CutoverDefinition -NoRecord) @('CUTOVER_SWITCH_WITHOUT_RECORD', 'journeyRuntime.fleet[0] names agv01', 'WIRE_TO_GATE, which the MVP takes from the same catalog') -Cutover
+}
+foreach ($case in @(
+        @{ Name = 'an empty approvalRecord'; Value = @{ approvalRecord = '  ' }; Expect = @('productionCutover.approvalRecord must say who approved') }
+        @{ Name = 'approvalRecord left out'; Value = @{}; Expect = @('productionCutover.approvalRecord must say who approved') }
+        @{ Name = 'approvalRecord as a JSON boolean'; Value = @{ approvalRecord = $true }; Expect = @('productionCutover.approvalRecord must say who approved') }
+        @{ Name = 'productionCutover as a JSON boolean'; Value = $true; Expect = @('productionCutover.approvalRecord must say who approved') }
+        @{ Name = 'an unknown key beside the record'; Value = @{ approvalRecord = 'x'; enabled = $true }; Expect = @('productionCutover.enabled') })) {
+    Invoke-SourceCase "cutover misuse: $($case.Name) is refused" {
+        $d = Copy-Definition $cutoverDefinition
+        $d['productionCutover'] = $case.Value
+        Test-CutoverFailure (Copy-Definition $d) $case.Expect -Cutover
+    }
+}
+
+# --- Already installed: the ways out read the switch from the installed record ---------------------
+Invoke-SourceCase 'cutover installed: uninstall and closing the gate accept the installed cutover definition (switch from its record)' {
+    $d = Copy-Definition $cutoverDefinition
+    [string[]] $got = @(Test-ParallelInstanceDefinition -Definition $d -AllowRiotCreateDispatch -AllowRiotForeignOrderCancel -ForStopDirection `
+            -ProductionCutover:(Test-ParallelProductionCutoverDefinition -Definition $d))
+    @{ Ok = ($got.Count -eq 0 -and (Test-ParallelProductionCutoverDefinition -Definition $d) -and -not (Test-ParallelProductionCutoverDefinition -Definition $productionSource))
+        Detail = "got: $($got -join ' | ')" }
+}
+Invoke-SourceCase 'cutover installed: Get-ParallelRetiredFakeMesIngest with a cutover as the previous install does not throw and retires nothing' {
+    $r = Get-ParallelRetiredFakeMesIngest -Previous (Copy-Definition $cutoverDefinition) -Current (Copy-Definition $cutoverDefinition)
+    @{ Ok = ($null -eq $r); Detail = "got: $(ConvertTo-Json $r -Compress)" }
+}
+foreach ($file in @('Uninstall-ParallelInstanceLocal.ps1', 'Set-ParallelDispatchGateLocal.ps1')) {
+    Invoke-SourceCase "cutover installed: $file asserts with -ProductionCutover taken from the installed record" {
+        $text = Get-Content -LiteralPath (Join-Path $PSScriptRoot $file) -Raw
+        $calls = [regex]::Matches($text, '(?m)^\$null = Assert-ParallelInstanceDefinition [^\r\n]*`\r?\n\s*-ProductionCutover:\(Test-ParallelProductionCutoverDefinition -Definition \$definition\)')
+        $all = [regex]::Matches($text, '\$null = Assert-ParallelInstanceDefinition ')
+        @{ Ok = ($calls.Count -eq 1 -and $all.Count -eq 1); Detail = "pinned calls $($calls.Count), all calls $($all.Count)" }
+    }
+}
+Invoke-SourceCase 'cutover installed: the installer passes its own -ProductionCutover to the assertion and the history check, before recording' {
+    $text = Get-Content -LiteralPath (Join-Path $PSScriptRoot 'Install-ParallelInstanceLocal.ps1') -Raw
+    $refusal = $text.IndexOf('if ($cutoverRefusal) { throw $cutoverRefusal }')
+    $ok = $text.Contains('-AllowRiotForeignOrderCancel:$AllowRiotForeignOrderCancel -ProductionCutover:$ProductionCutover') -and
+        $text.Contains('-ProductionCutover:$ProductionCutover -Rollback:$Rollback -DatabaseFiles $cutoverDatabaseFiles') -and
+        $refusal -gt 0 -and $refusal -lt $text.IndexOf('Copy-Item -LiteralPath $InstanceDefinitionPath -Destination $layout.InstalledDefinitionPath')
+    @{ Ok = $ok; Detail = 'expected both calls, and the refusal before the definition is recorded' }
+}
+
+# --- History: never leave a cutover by a reinstall; the first cutover install is on a new database --------------
+$cutoverDataRoot = 'C:\ProgramData\8005\ControlServer.V2'
+$someDatabase = @("$cutoverDataRoot\data\controlserver.db")
+foreach ($case in @(
+        @{ Name = 'today: no switch, parallel installed, database present -> no refusal (unchanged)'; Definition = $productionSource; Previous = $productionSource; Switch = $false; Rollback = $false; Db = $someDatabase; Expect = $null }
+        @{ Name = 'today: no switch, -Rollback, parallel installed -> no refusal (unchanged)'; Definition = $productionSource; Previous = $productionSource; Switch = $false; Rollback = $true; Db = $someDatabase; Expect = $null }
+        @{ Name = 'first cutover install on an empty data root -> no refusal'; Definition = $cutoverDefinition; Previous = $productionSource; Switch = $true; Rollback = $false; Db = @(); Expect = $null }
+        @{ Name = 'first cutover install, nothing installed before, empty data root -> no refusal'; Definition = $cutoverDefinition; Previous = $null; Switch = $true; Rollback = $false; Db = @(); Expect = $null }
+        @{ Name = 'first cutover install over the parallel database -> CUTOVER_REQUIRES_NEW_DATABASE'; Definition = $cutoverDefinition; Previous = $productionSource; Switch = $true; Rollback = $false; Db = $someDatabase; Expect = 'CUTOVER_REQUIRES_NEW_DATABASE' }
+        @{ Name = 'first cutover install with only a -wal left behind -> CUTOVER_REQUIRES_NEW_DATABASE'; Definition = $cutoverDefinition; Previous = $productionSource; Switch = $true; Rollback = $false; Db = @("$cutoverDataRoot\data\controlserver.db-wal"); Expect = 'CUTOVER_REQUIRES_NEW_DATABASE' }
+        @{ Name = 'first cutover as a -Rollback -> CUTOVER_FIRST_INSTALL_NOT_ROLLBACK'; Definition = $cutoverDefinition; Previous = $productionSource; Switch = $true; Rollback = $true; Db = @(); Expect = 'CUTOVER_FIRST_INSTALL_NOT_ROLLBACK' }
+        @{ Name = 'later cutover install on its own database -> no refusal'; Definition = $cutoverDefinition; Previous = $cutoverDefinition; Switch = $true; Rollback = $false; Db = $someDatabase; Expect = $null }
+        @{ Name = 'stage change (S1 -> S2) on the cutover database -> no refusal'; Definition = (New-CutoverDefinition -Cars @('agv02', 'agv01')); Previous = (New-CutoverDefinition -Cars @('agv02')); Switch = $true; Rollback = $false; Db = $someDatabase; Expect = $null }
+        @{ Name = 'v2 package -Rollback of a cutover instance, with the switch -> no refusal'; Definition = $cutoverDefinition; Previous = $cutoverDefinition; Switch = $true; Rollback = $true; Db = $someDatabase; Expect = $null }
+        @{ Name = 'parallel definition reinstalled over a cutover without the switch -> CUTOVER_SWITCH_MISSING'; Definition = $productionSource; Previous = $cutoverDefinition; Switch = $false; Rollback = $false; Db = $someDatabase; Expect = 'CUTOVER_SWITCH_MISSING' }
+        @{ Name = '-Rollback of a cutover instance without the switch -> CUTOVER_SWITCH_MISSING'; Definition = $productionSource; Previous = $cutoverDefinition; Switch = $false; Rollback = $true; Db = $someDatabase; Expect = 'CUTOVER_SWITCH_MISSING' })) {
+    Invoke-SourceCase "cutover history: $($case.Name)" {
+        $r = Get-ParallelCutoverInstallRefusal -Definition (Copy-Definition $case.Definition) -Previous ($null -eq $case.Previous ? $null : (Copy-Definition $case.Previous)) `
+            -ProductionCutover:$case.Switch -Rollback:$case.Rollback -DatabaseFiles $case.Db -DataRoot $cutoverDataRoot
+        $ok = ($null -eq $case.Expect) ? ($null -eq $r) : ($r -is [string] -and $r.StartsWith("$($case.Expect):") -and $r.EndsWith('Nothing was stopped or changed.'))
+        @{ Ok = $ok; Detail = "expected $($case.Expect ?? 'null'), got: $r" }
+    }
+}
+
+# --- Read-back: a cutover is held to the six types, as a set ----------------------------------------
+function New-CutoverEffective([string[]] $Types, $Fleet = @($cutoverDefinition['journeyRuntime']['fleet'])) {
+    return [pscustomobject]@{
+        AllowedWorkTypes = @($Types); AllowedDispatchZones = @('WIRE_BONDING', 'DIE_ATTACH'); MesIngestBaseUrl = 'http://127.0.0.1:5088'
+        Fleet = @($Fleet | ForEach-Object { [pscustomobject](New-BoundVehicle $_['agvId'] $_['vehicleKey'] @($_['allowedTaskTypes']) @($_['zones'])) })
+    }
+}
+Invoke-SourceCase 'cutover read-back: bound exactly as defined (three cars, the six types) is accepted' {
+    $r = Get-ParallelEffectiveConfigurationRefusal -Definition $cutoverDefinition -Effective (New-CutoverEffective $cutoverSix)
+    @{ Ok = ($null -eq $r); Detail = "got: $r" }
+}
+Invoke-SourceCase 'cutover read-back: bound STAGING_TO_WIRE alone (the parallel binding) is refused' {
+    $r = Get-ParallelEffectiveConfigurationRefusal -Definition $cutoverDefinition -Effective (New-CutoverEffective @('STAGING_TO_WIRE'))
+    @{ Ok = ($r -is [string] -and $r.Contains('EFFECTIVE_CONFIGURATION_MISMATCH') -and $r.Contains('production cutover, but allowedWorkTypes bound [STAGING_TO_WIRE], not the six types')); Detail = "got: $r" }
+}
+Invoke-SourceCase 'cutover read-back: a bound roster without agv01 is refused' {
+    $r = Get-ParallelEffectiveConfigurationRefusal -Definition $cutoverDefinition -Effective (New-CutoverEffective $cutoverSix -Fleet @($cutoverDefinition['journeyRuntime']['fleet'] | Select-Object -Skip 1))
+    @{ Ok = ($r -is [string] -and $r.Contains('EFFECTIVE_CONFIGURATION_MISMATCH') -and $r.Contains($agv01Key)); Detail = "got: $r" }
+}
+Invoke-SourceCase 'cutover read-back: the parallel production definition bound with the six types is still refused (unchanged)' {
+    $e = [pscustomobject]@{ AllowedWorkTypes = @($cutoverSix); AllowedDispatchZones = @($productionSource['journeyRuntime']['allowedDispatchZones']); MesIngestBaseUrl = 'http://127.0.0.1:5088' }
+    $r = Get-ParallelEffectiveConfigurationRefusal -Definition $productionSource -Effective $e
+    @{ Ok = ($r -is [string] -and $r.Contains('WIRE_TO_GATE is the MVP''s')); Detail = "got: $r" }
+}
+
 Write-Host ''
 Write-Host ("{0} passed, {1} failed" -f $script:Passed, $script:Failed) `
     -ForegroundColor ($script:Failed -eq 0 ? 'Green' : 'Red')

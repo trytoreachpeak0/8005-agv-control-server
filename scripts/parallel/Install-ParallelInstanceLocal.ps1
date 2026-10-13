@@ -94,6 +94,13 @@
 
 .PARAMETER Rollback
     Reinstall the previous generation from <packageRoot>.previous. Downloads nothing.
+
+.PARAMETER ProductionCutover
+    control-server#564 (docs/production-cutover-mode-plan.md). Deploy a production cutover definition: one carrying
+    productionCutover.approvalRecord, agv01 in its roster and all six task types from the production MesIngest. The
+    definition check lifts those two guards only with this switch and that record together. The first cutover install
+    must find no database under the data root and must not be a -Rollback; once installed, every later install and
+    rollback of this instance must carry the switch (Get-ParallelCutoverInstallRefusal).
 #>
 [CmdletBinding(DefaultParameterSetName = 'Install')]
 param(
@@ -120,7 +127,9 @@ param(
 
     [switch] $AllowRiotCreateDispatch,
 
-    [switch] $AllowRiotForeignOrderCancel
+    [switch] $AllowRiotForeignOrderCancel,
+
+    [switch] $ProductionCutover
 )
 
 $ErrorActionPreference = 'Stop'
@@ -214,7 +223,7 @@ try {
 
     $definition = Read-ParallelInstanceDefinition -Path $InstanceDefinitionPath
     $null = Assert-ParallelInstanceDefinition -Definition $definition -AllowRiotCreateDispatch:$AllowRiotCreateDispatch `
-        -AllowRiotForeignOrderCancel:$AllowRiotForeignOrderCancel
+        -AllowRiotForeignOrderCancel:$AllowRiotForeignOrderCancel -ProductionCutover:$ProductionCutover
     Write-Step "Instance definition accepted: $($definition['instanceId'])"
 
     # Every path and name below comes from Get-ParallelInstanceLayout -- the same source the
@@ -222,6 +231,21 @@ try {
     # removes are one list by construction (control-server#262 re-review, M4). Do not read a path
     # or a service/task name out of $definition here: Test-ParallelInstance.ps1 fails on it.
     $layout = Get-ParallelInstanceLayout -Definition $definition
+
+    # control-server#564. The production cutover's history rules, before anything changes: an installed cutover is never
+    # reinstalled without the switch, and the first cutover install is an install onto an empty data root.
+    $cutoverPrevious = (Test-Path -LiteralPath $layout.InstalledDefinitionPath -PathType Leaf) ?
+        (Read-ParallelInstanceDefinition -Path $layout.InstalledDefinitionPath) : $null
+    $cutoverDatabaseFiles = (Test-Path -LiteralPath $layout.DataRoot -PathType Container) ?
+        @(Get-ChildItem -LiteralPath $layout.DataRoot -Recurse -File -Force -ErrorAction Stop |
+                Where-Object { $_.Name -match '(?i)\.db(-wal|-shm)?\z' } | ForEach-Object { $_.FullName }) : @()
+    $cutoverRefusal = Get-ParallelCutoverInstallRefusal -Definition $definition -Previous $cutoverPrevious `
+        -ProductionCutover:$ProductionCutover -Rollback:$Rollback -DatabaseFiles $cutoverDatabaseFiles -DataRoot $layout.DataRoot
+    if ($cutoverRefusal) { throw $cutoverRefusal }
+    if ($ProductionCutover) {
+        Write-Warning ("PRODUCTION CUTOVER: agv01 and all six task types from the production MesIngest. Approval: " +
+            $definition['productionCutover']['approvalRecord'])
+    }
 
     # control-server#535. Where this instance's demand comes from, said before anything changes and
     # again in the result lines (19-deploy-control-server-parallel.ps1 asserts it there, per mode).
