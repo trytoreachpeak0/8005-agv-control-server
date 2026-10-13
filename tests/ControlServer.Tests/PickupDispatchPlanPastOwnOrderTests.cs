@@ -262,6 +262,34 @@ public sealed class PickupDispatchPlanPastOwnOrderTests
     }
 
     /// <summary>
+    /// control-server#697 的新判据（被挡的旅程里有需求待恢复，会话不就绪）与这里不冲突：车因本服务端自己的在途单未就绪时，
+    /// 旅程在去取货站、需求是已受理，新判据没有东西可挡——<see cref="WireToGateStore.OperationNeedsRecoveryAsync"/> 仍答否，
+    /// 会话重判后原因码仍是 <c>DEPARTURE_SAFETY_NOT_READY</c>，不会被说成 <c>OPERATION_RECOVERY_REQUIRED</c>，计划照样恰好放行一次。
+    /// </summary>
+    [Fact]
+    [Trait("IntegrationSlice", "FP-IS-01")]
+    [Trait("IntegrationSlice", "FP-IS-07")]
+    [Trait("ProtocolVector", "CV-DEMAND-ACCEPT-TO-PICKUP")]
+    public async Task TheDemandRecoveryJudgementHoldsNothingWhileTheSessionIsDownOnTheOwnOrder()
+    {
+        await using RuntimeFixture fixture = await AcceptedWithOrderConfirmedAsync();
+        await DropSessionOnOwnOrderAsync(fixture);
+        WireToGateStore store = new(fixture.Context);
+        SessionRecoveryRow session = await fixture.Context.SessionRecoveries.AsNoTracking().SingleAsync(Token);
+
+        Assert.False(await store.OperationNeedsRecoveryAsync(fixture.Options.AgvId, Token));
+        SessionReadinessDecision decision = await store.DecideReadinessAsync(
+            fixture.Options.AgvId, session.SessionGeneration, Token);
+        Assert.Equal(SessionReadiness.RecoveryRequired, decision.Readiness);
+        Assert.Equal("DEPARTURE_SAFETY_NOT_READY", decision.ReasonCode);
+
+        await fixture.Engine.ExecuteOnceAsync(Token);
+
+        Assert.Single(PlanLinesSent(fixture));
+        Assert.Single(await PlanRowsAsync(fixture));
+    }
+
+    /// <summary>
     /// 受理那一轮：建单、确认，但不推进——这正是窗口的起点。前置条件断言在这里，免得后面的红其实是没走到窗口。
     /// </summary>
     private static async Task<RuntimeFixture> AcceptedWithOrderConfirmedAsync()

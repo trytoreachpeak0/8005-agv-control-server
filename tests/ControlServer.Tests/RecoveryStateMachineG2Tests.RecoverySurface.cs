@@ -1275,8 +1275,11 @@ public sealed partial class RecoveryStateMachineG2Tests
             await connection.OpenAsync(token);
             await using ControlServerDbContext context = await CreateContextAsync(connection);
             await SeedBlockedJourneyAsync(context, productionShapedSession: true);
-            // The seeded load is settled, so that nothing but the holds keeps the vehicle out of work.
+            // The seeded load is settled, so that nothing but the holds keeps the vehicle out of work. Its demand ended with it, as
+            // an empty ending leaves it: since control-server#697 a demand still marked RecoveryRequired on the Blocked journey
+            // would hold the vehicle as well.
             (await context.StationOperations.SingleAsync(token)).Status = StationOperationStatus.Cancelled;
+            (await context.AcceptedDemands.SingleAsync(token)).Status = DemandExecutionStatus.Cancelled;
             context.SlotDoorHolds.Add(Hold("f3850000-0000-4000-8000-000000000401", "[1]", Now.AddMinutes(-3)));
             await context.SaveChangesAsync(token);
             RecordingPeer peer = new(context);

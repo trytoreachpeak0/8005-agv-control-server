@@ -1761,16 +1761,20 @@ public sealed class OnboardRecoveryCoordinator(
             return await RepairReleaseOfferedAsync(session, cancellationToken).ConfigureAwait(false)
                 ? ["FORCED_MECHANICAL_RECOVERY", RepairReleaseAction]
                 : ["FORCED_MECHANICAL_RECOVERY"];
-        if (operation?.OperationType == SlotOperationType.Load &&
-            operation.Status == StationOperationStatus.RecoveryRequired)
-            return
-            [
-                "RESUME_AFTER_REPAIR",
-                "COMPENSATE_LOAD_ALL_EMPTY",
-                "FAULT_CARGO_HANDOFF",
-                "FORCED_MECHANICAL_RECOVERY"
-            ];
-        return ["RESUME_AFTER_REPAIR", "FAULT_CARGO_HANDOFF", "FORCED_MECHANICAL_RECOVERY"];
+        // A resume is offered only where its submission would be taken (control-server#697): before, it was offered on every
+        // session with a demand, and refused on a load not RecoveryRequired or without the vehicle's proven checkpoint.
+        SessionRecoveryRow? connection = await dbContext.SessionRecoveries.AsNoTracking()
+            .SingleOrDefaultAsync(row => row.AgvId == session.AgvId, cancellationToken).ConfigureAwait(false);
+        bool resumeOffered = connection is not null && ResumeRefusal(operation, connection) is null;
+        bool compensationOffered = operation?.OperationType == SlotOperationType.Load &&
+                                   operation.Status == StationOperationStatus.RecoveryRequired;
+        return
+        [
+            .. resumeOffered ? ["RESUME_AFTER_REPAIR"] : Array.Empty<string>(),
+            .. compensationOffered ? ["COMPENSATE_LOAD_ALL_EMPTY"] : Array.Empty<string>(),
+            "FAULT_CARGO_HANDOFF",
+            "FORCED_MECHANICAL_RECOVERY"
+        ];
     }
 
     private async Task ApplyCurrentResultAsync(
@@ -1833,6 +1837,10 @@ public sealed class OnboardRecoveryCoordinator(
         if (!success)
         {
             workflow.State = RecoveryWorkflowState.RecoveryRequired;
+            if (messageType == "LoadCancellationResult")
+            {
+                await HoldCancelledLoadForRecoveryAsync(workflow, cancellationToken).ConfigureAwait(false);
+            }
             await KeepDemandAndJourneyBlockedAsync(workflow, messageType, cancellationToken).ConfigureAwait(false);
             return;
         }
@@ -2602,6 +2610,46 @@ public sealed class OnboardRecoveryCoordinator(
         }
     }
 
+    /// <summary>
+    /// An in-flight load cancellation whose result does not reconcile judges the load it cancelled RecoveryRequired, the way
+    /// a non-COMPLETED OperationResult judges it (<c>WireToGateStore.ApplyOperationResultAsync</c>) -- control-server#697.
+    /// </summary>
+    /// <remarks>
+    /// <para>
+    /// <b>Why.</b> The onboard aborts a cancelled load without writing its OperationResult (review H1 of onboard-hmi#346), so
+    /// the cancellation's result is often the only conclusion the attempt will ever get. Left <see cref="StationOperationStatus.Prepared"/>,
+    /// the load reads as merely awaiting its result: the compensation is refused (<see cref="ValidateActionPreconditions"/>)
+    /// and not offered, and <c>WireToGateStore.DecideReadinessAsync</c>, whose operation verdict is RecoveryRequired alone,
+    /// keeps the session READY -- every recovery entry on the onboard, gated on RECOVERY_REQUIRED, stays grey until a
+    /// reconnect. Judged here, the result's own answer carries the change of readiness (<c>OnboardMessageProcessor</c>), and
+    /// the fact that the doors may have opened is kept where both read it.
+    /// </para>
+    /// <para>
+    /// <b>Only a load still Prepared.</b> One the load's own result settled first has its verdict already: RecoveryRequired
+    /// stays as it is, with that result as its live one; Committed or Failed is what the vehicle reported about the load, and
+    /// rewriting it would erase that. A late OperationResult on the load judged here is still applied by the store as a
+    /// first result -- the same as before #697, when the load was Prepared.
+    /// </para>
+    /// <para>
+    /// Admission line 1 holds: a RecoveryRequired load is unresolved to <c>BlockedJourneyRelease</c> and to the departure
+    /// path, and it is settled only by a recovery that proves its slots (compensation, handoff, forced recovery).
+    /// </para>
+    /// </remarks>
+    private async Task HoldCancelledLoadForRecoveryAsync(
+        RecoveryWorkflowRow workflow,
+        CancellationToken cancellationToken)
+    {
+        if (workflow.SlotOperationAttemptId is null) return;
+        StationOperationRow? load = await dbContext.StationOperations.SingleOrDefaultAsync(
+            row => row.SlotOperationAttemptId == workflow.SlotOperationAttemptId,
+            cancellationToken).ConfigureAwait(false);
+        if (load is { OperationType: SlotOperationType.Load, Status: StationOperationStatus.Prepared } &&
+            load.DemandId == workflow.DemandId)
+        {
+            load.Status = StationOperationStatus.RecoveryRequired;
+        }
+    }
+
     private async Task<RecoveryWorkflowRow> UpsertSimpleWorkflowAsync(
         string workflowId,
         string type,
@@ -2756,22 +2804,30 @@ public sealed class OnboardRecoveryCoordinator(
             return ServerReasonCodes.RecoveryOperationNotFound;
         return action switch
         {
-            "RESUME_AFTER_REPAIR" when operation?.Status != StationOperationStatus.RecoveryRequired =>
-                ServerReasonCodes.ActionNotAllowedInState,
-            "RESUME_AFTER_REPAIR" when connection.UnsettledSlotOperationAttemptId != operation.SlotOperationAttemptId ||
-                                       connection.ProvenRecoveryCheckpoint is not
-                                           ("PREPARED" or "ACTIVE_UNLOCK_SET" or "SAFE_FINISH_REACHED") =>
-                ServerReasonCodes.ProvenRecoveryCheckpointRequired,
+            "RESUME_AFTER_REPAIR" => ResumeRefusal(operation, connection),
             "COMPENSATE_LOAD_ALL_EMPTY" when operation?.OperationType != SlotOperationType.Load ||
                                               operation.Status != StationOperationStatus.RecoveryRequired =>
                 ServerReasonCodes.ActionNotAllowedInState,
             "FAULT_CARGO_HANDOFF" when session.DemandId is null =>
                 ServerReasonCodes.ActionNotAllowedInState,
             "FORCED_MECHANICAL_RECOVERY" => null,
-            "RESUME_AFTER_REPAIR" or "COMPENSATE_LOAD_ALL_EMPTY" or "FAULT_CARGO_HANDOFF" => null,
+            "COMPENSATE_LOAD_ALL_EMPTY" or "FAULT_CARGO_HANDOFF" => null,
             _ => ServerReasonCodes.ActionNotAllowedInState
         };
     }
+
+    /// <summary>
+    /// Why a resume of <paramref name="operation"/> would be refused, or null when it would be taken: the one judgement the
+    /// submission (<see cref="ValidateActionPreconditions"/>) and the offer in the snapshot (<see cref="AllowedActionsAsync"/>)
+    /// both use, so the onboard is never shown a resume its press can only have refused (control-server#697).
+    /// </summary>
+    private static string? ResumeRefusal(StationOperationRow? operation, SessionRecoveryRow connection) =>
+        operation?.Status != StationOperationStatus.RecoveryRequired
+            ? ServerReasonCodes.ActionNotAllowedInState
+            : connection.UnsettledSlotOperationAttemptId != operation.SlotOperationAttemptId ||
+              connection.ProvenRecoveryCheckpoint is not ("PREPARED" or "ACTIVE_UNLOCK_SET" or "SAFE_FINISH_REACHED")
+                ? ServerReasonCodes.ProvenRecoveryCheckpointRequired
+                : null;
 
     /// <summary>
     /// The slot operation a recovery session is about: the one whose attempt the three recovery messages
