@@ -301,7 +301,9 @@ try {
     Write-Step ("MVP service before: " + (Format-MvpFingerprint $mvpBefore))
     # control-server#564 review M3: a cutover is installed only while the MVP is stopped and disabled. Still before anything changes.
     if ($ProductionCutover) {
-        $mvpRefusal = Get-ParallelCutoverMvpRefusal -Fingerprint $mvpBefore -Action 'Installing'
+        $mvpEvidence = Get-ParallelMvpRuntimeEvidence
+        $mvpRefusal = Get-ParallelCutoverMvpRefusal -Fingerprint $mvpBefore -Action 'Installing' `
+            -ListeningPorts $mvpEvidence.ListeningPorts -ProcessPaths $mvpEvidence.ProcessPaths
         if ($mvpRefusal) { throw $mvpRefusal }
     }
 

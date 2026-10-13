@@ -5593,6 +5593,8 @@ Invoke-SourceCase 'cutover installed: the installer passes its own -ProductionCu
 # --- History: never leave a cutover by a reinstall; the first cutover install is on a new database --------------
 $cutoverDataRoot = 'C:\ProgramData\8005\ControlServer.V2'
 $cutoverProduction = New-CutoverDefinition -Phase 'production'
+$cutoverNoPhase = Copy-Definition $cutoverDefinition
+$cutoverNoPhase['productionCutover'].Remove('phase')
 $someDatabase = @("$cutoverDataRoot\data\controlserver.db")
 foreach ($case in @(
         @{ Name = 'today: no switch, parallel installed, database present -> no refusal (unchanged)'; Definition = $productionSource; Previous = $productionSource; Switch = $false; Rollback = $false; Db = $someDatabase; Expect = $null }
@@ -5613,6 +5615,8 @@ foreach ($case in @(
         @{ Name = 'trial -> production on an empty data root -> no refusal'; Definition = $cutoverProduction; Previous = $cutoverDefinition; Switch = $true; Rollback = $false; Db = @(); Expect = $null }
         @{ Name = 'trial -> production as a -Rollback -> CUTOVER_PRODUCTION_NOT_ROLLBACK'; Definition = $cutoverProduction; Previous = $cutoverDefinition; Switch = $true; Rollback = $true; Db = @(); Expect = 'CUTOVER_PRODUCTION_NOT_ROLLBACK' }
         @{ Name = 'production -> production on its own database (a stage change) -> no refusal'; Definition = $cutoverProduction; Previous = $cutoverProduction; Switch = $true; Rollback = $false; Db = $someDatabase; Expect = $null }
+        @{ Name = 'installed cutover without phase (#677 revision 1) -> production over its database -> CUTOVER_PRODUCTION_REQUIRES_NEW_DATABASE'; Definition = $cutoverProduction; Previous = $cutoverNoPhase; Switch = $true; Rollback = $false; Db = $someDatabase; Expect = 'CUTOVER_PRODUCTION_REQUIRES_NEW_DATABASE' }
+        @{ Name = 'installed cutover without phase -> trial on its own database -> no refusal'; Definition = $cutoverDefinition; Previous = $cutoverNoPhase; Switch = $true; Rollback = $false; Db = $someDatabase; Expect = $null }
         @{ Name = 'production -> trial -> CUTOVER_PHASE_BACKWARDS'; Definition = $cutoverDefinition; Previous = $cutoverProduction; Switch = $true; Rollback = $false; Db = @(); Expect = 'CUTOVER_PHASE_BACKWARDS' }
         @{ Name = 'first cutover install straight into production on an empty data root -> no refusal'; Definition = $cutoverProduction; Previous = $productionSource; Switch = $true; Rollback = $false; Db = @(); Expect = $null }
         # Review S4: the governed exit.
@@ -5643,6 +5647,44 @@ foreach ($case in @(
         $r = Get-ParallelCutoverMvpRefusal -Fingerprint $case.F -Action 'Installing'
         @{ Ok = ($case.Ok ? ($null -eq $r) : ($r -is [string] -and $r.StartsWith('CUTOVER_MVP_NOT_STOPPED: Installing') -and $r.EndsWith('Nothing was stopped or changed.'))); Detail = "got: $r" }
     }
+}
+$mvpAbsent = [ordered]@{ present = $false }
+$mvpStopped = [ordered]@{ present = $true; status = 'Stopped'; startType = 'Disabled'; pathName = 'x'; processId = 0 }
+foreach ($case in @(
+        @{ Name = 'service absent, a listener on 58005'; F = $mvpAbsent; Ports = @(58005); Paths = @(); Expect = 'a listener on 58005' }
+        @{ Name = 'service absent, a listener on 58007'; F = $mvpAbsent; Ports = @(58007); Paths = @(); Expect = 'a listener on 58007' }
+        @{ Name = 'service absent, a process from the MVP directory'; F = $mvpAbsent; Ports = @(); Paths = @('C:\Program Files\8005 AGV\ControlServer\ControlServer.Host.exe'); Expect = 'a process running C:\Program Files\8005 AGV\ControlServer\ControlServer.Host.exe' }
+        @{ Name = 'service Stopped and Disabled, but a listener on 58005 (another registration)'; F = $mvpStopped; Ports = @(58005); Paths = @(); Expect = 'a listener on 58005' })) {
+    Invoke-SourceCase "cutover MVP check (review S2): $($case.Name) -> CUTOVER_MVP_STILL_RUNNING" {
+        $r = Get-ParallelCutoverMvpRefusal -Fingerprint $case.F -Action 'Installing' -ListeningPorts $case.Ports -ProcessPaths $case.Paths
+        @{ Ok = ($r -is [string] -and $r.StartsWith('CUTOVER_MVP_STILL_RUNNING: Installing') -and $r.Contains($case.Expect) -and $r.EndsWith('Nothing was stopped or changed.')); Detail = "got: $r" }
+    }
+}
+Invoke-SourceCase 'cutover MVP check (review S2): service absent, no listener, no process -> accepted' {
+    $r = Get-ParallelCutoverMvpRefusal -Fingerprint $mvpAbsent -Action 'Installing' -ListeningPorts @() -ProcessPaths @()
+    @{ Ok = ($null -eq $r); Detail = "got: $r" }
+}
+Invoke-SourceCase 'cutover MVP check (review S2): only the MVP directory counts, not ControlServer.V2 or a look-alike' {
+    $got = @(Select-ParallelMvpProcessPath -Paths @('C:\Program Files\8005 AGV\ControlServer\ControlServer.Host.exe',
+            'C:\Program Files\8005 AGV\ControlServer.V2\ControlServer.Host.exe', 'C:\Program Files\8005 AGV\ControlServerX\a.exe',
+            'c:\program files\8005 agv\controlserver\tools\b.exe', $null, ''))
+    @{ Ok = ($got.Count -eq 2 -and $got -contains 'C:\Program Files\8005 AGV\ControlServer\ControlServer.Host.exe' -and
+            $got -contains 'c:\program files\8005 agv\controlserver\tools\b.exe'); Detail = "got: $($got -join ' | ')" }
+}
+Invoke-SourceCase 'cutover MVP check (review S2): the installer and the gate script pass the port and process evidence' {
+    $both = @('Install-ParallelInstanceLocal.ps1', 'Set-ParallelDispatchGateLocal.ps1' | Where-Object {
+            $t = Get-Content -LiteralPath (Join-Path $PSScriptRoot $_) -Raw
+            $t.Contains('$mvpEvidence = Get-ParallelMvpRuntimeEvidence') -and $t.Contains('-ListeningPorts $mvpEvidence.ListeningPorts -ProcessPaths $mvpEvidence.ProcessPaths') })
+    @{ Ok = ($both.Count -eq 2); Detail = "passing: $($both -join ', ')" }
+}
+Invoke-SourceCase 'cutover contract version (review round 2, L3) is 2' {
+    @{ Ok = ((Get-ParallelCutoverContractVersion) -eq 2); Detail = "got: $(Get-ParallelCutoverContractVersion)" }
+}
+Invoke-SourceCase 'gate close refusal (review round 2, S3): names the production-source way to stop intake, not only the FakeMesIngest' {
+    $state = [ordered]@{ Journeys = @([ordered]@{ JourneyId = 'journey:1'; AgvId = 'agv'; Stage = 'Travelling' }); OrderIntents = @(); AuditEvents = @() }
+    $r = Get-ParallelDispatchGateRefusal -Direction 'Close' -State $state -ServiceName '8005 AGV ControlServer V2' -DatabasePath 'C:\ProgramData\8005\ControlServer.V2\data\controlserver.db'
+    @{ Ok = ($r -is [string] -and $r.StartsWith('GATE_CLOSE_REFUSED_IN_FLIGHT:') -and $r.Contains('header-only area assignment table') -and
+            $r.Contains('section 6, step 16a') -and -not $r.Contains('agv02 and agv03')); Detail = "got: $r" }
 }
 Invoke-SourceCase 'cutover MVP check: the installer refuses with the switch, before anything changes; the gate script on Open of a cutover only' {
     $install = Get-Content -LiteralPath (Join-Path $PSScriptRoot 'Install-ParallelInstanceLocal.ps1') -Raw

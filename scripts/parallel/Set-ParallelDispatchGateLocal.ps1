@@ -133,7 +133,9 @@ Write-Step ("MVP service before: " + (Format-MvpFingerprint $mvpBefore))
 # control-server#564 review M3: opening the gate of a production cutover needs the MVP stopped and disabled -- after a
 # rollback the MVP drives agv01 again. Closing is never refused.
 if ($direction -ceq 'Open' -and (Test-ParallelProductionCutoverDefinition -Definition $definition)) {
-    $mvpRefusal = Get-ParallelCutoverMvpRefusal -Fingerprint $mvpBefore -Action 'Opening the gate'
+    $mvpEvidence = Get-ParallelMvpRuntimeEvidence
+    $mvpRefusal = Get-ParallelCutoverMvpRefusal -Fingerprint $mvpBefore -Action 'Opening the gate' `
+        -ListeningPorts $mvpEvidence.ListeningPorts -ProcessPaths $mvpEvidence.ProcessPaths
     if ($mvpRefusal) { throw $mvpRefusal }
 }
 try {

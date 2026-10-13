@@ -637,6 +637,20 @@ function Test-ParallelProductionCutoverDefinition {
     return ($Definition -is [System.Collections.IDictionary]) -and $Definition.Contains('productionCutover')
 }
 
+function Get-ParallelCutoverContractVersion {
+    <#
+        .SYNOPSIS
+            control-server#564 review round 2, L3. Which revision of the cutover rules this module carries; raised whenever a
+            rule a script relies on is added. 2: phase, the governed exit, the MVP checks with port and process evidence.
+            A script that acts on an installed cutover requires at least the version it was written for, instead of the
+            existence of a function an earlier revision of #677 already had.
+    #>
+    [CmdletBinding()]
+    [OutputType([int])]
+    param()
+    return 2
+}
+
 function Get-ParallelCutoverWorkType {
     <#
         .SYNOPSIS
@@ -758,10 +772,27 @@ function Get-ParallelCutoverMvpRefusal {
             definition: opening its gate then could place orders for agv01, and a foreign-order cancel could stop the MVP's.
             So installing a cutover and opening its gate both require the MVP to be stopped and disabled. Closing the gate
             does not: the way out is never refused.
+
+            Review round 2, S2: the service is not the only way the MVP can run -- registered under another name, or started
+            as a plain process. So, whatever the service says, a listener on 58005 or 58007 (-ListeningPorts) or a process
+            running from the MVP's install directory (-ProcessPaths) is refused too (CUTOVER_MVP_STILL_RUNNING). The host
+            half collects both (Get-ParallelMvpRuntimeEvidence in ParallelHost.psm1).
     #>
     [CmdletBinding()]
     [OutputType([string])]
-    param([Parameter(Mandatory = $true)][System.Collections.IDictionary] $Fingerprint, [Parameter(Mandatory = $true)][string] $Action)
+    param(
+        [Parameter(Mandatory = $true)][System.Collections.IDictionary] $Fingerprint,
+        [Parameter(Mandatory = $true)][string] $Action,
+        [AllowEmptyCollection()][int[]] $ListeningPorts = @(),
+        [AllowEmptyCollection()][string[]] $ProcessPaths = @()
+    )
+    $nothing = ' Nothing was stopped or changed.'
+    if ($ListeningPorts.Count -gt 0 -or $ProcessPaths.Count -gt 0) {
+        $what = @(@($ListeningPorts | Sort-Object -Unique | ForEach-Object { "a listener on $_" }) + @($ProcessPaths | Sort-Object -Unique | ForEach-Object { "a process running $_" })) -join ', '
+        return ("CUTOVER_MVP_STILL_RUNNING: $Action with a production cutover definition needs the MVP not running at all, and " +
+            "there is $what -- the MVP's ports or install directory, whatever its service says. Stop it (docs/production-cutover-mode-plan.md " +
+            'section 6, step 4).' + $nothing)
+    }
     if (-not $Fingerprint['present']) { return $null }
     if ([string] $Fingerprint['status'] -ceq 'Stopped' -and [string] $Fingerprint['startType'] -ceq 'Disabled') { return $null }
     return ("CUTOVER_MVP_NOT_STOPPED: $Action with a production cutover definition needs the MVP service '$script:ProductionServiceName' " +
@@ -3366,7 +3397,9 @@ function Get-ParallelDispatchGateRefusal {
         if ($journeys.Count -eq 0) { return $null }
         $listed = ($journeys | ForEach-Object { "$($_['JourneyId']) ($($_['AgvId']), $($_['Stage']))" }) -join '; '
         return ("GATE_CLOSE_REFUSED_IN_FLIGHT: $DatabasePath has $($journeys.Count) journey(s) of '$ServiceName' not Completed: " +
-            "$listed. Stop injecting demand into its FakeMesIngest, wait until agv02 and agv03 have finished, and run this again." + $nothing)
+            "$listed. Stop new intake first -- fake source: stop injecting demand into its FakeMesIngest; production source (the " +
+            'cutover): import a header-only area assignment table, so that no AREA is in scope (docs/production-cutover-mode-plan.md ' +
+            'section 6, step 16a) -- then wait until every journey has finished, and run this again.' + $nothing)
     }
 
     $intents = @($State['OrderIntents'])
@@ -3630,6 +3663,7 @@ Export-ModuleMember -Function @(
     'Get-ParallelCutoverWorkType'
     'Get-ParallelCutoverInstallRefusal'
     'Get-ParallelCutoverMvpRefusal'
+    'Get-ParallelCutoverContractVersion'
     'Get-ParallelInstanceAllowedKey'
     'Get-ParallelInstanceFleetRowKey'
     'Get-ParallelInstanceFootprint'

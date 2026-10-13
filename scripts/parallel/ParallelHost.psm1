@@ -9,6 +9,10 @@
 Set-StrictMode -Version 3.0
 
 $script:ProductionServiceName = '8005 AGV ControlServer'
+# control-server#564 review round 2, S2: the MVP's two ports and its install directory (the V2 one is ControlServer.V2, which
+# the trailing backslash keeps apart).
+$script:MvpPorts = @(58005, 58007)
+$script:MvpInstallRoot = 'C:\Program Files\8005 AGV\ControlServer'
 
 function Get-MvpFingerprint {
     <#
@@ -59,6 +63,32 @@ function Assert-MvpUntouched {
     if ($diff.Count -gt 0) {
         throw ("The MVP service changed during this operation, which must never happen: " + ($diff -join '; '))
     }
+}
+
+function Get-ParallelMvpRuntimeEvidence {
+    <#
+        .SYNOPSIS
+            control-server#564 review round 2, S2. What shows the MVP running besides its service: listeners on its two
+            ports, and processes whose executable sits in its install directory. For Get-ParallelCutoverMvpRefusal.
+    #>
+    [CmdletBinding()]
+    param()
+    $ports = @(Get-NetTCPConnection -State Listen -ErrorAction SilentlyContinue |
+            Where-Object { $_.LocalPort -in $script:MvpPorts } | ForEach-Object { [int] $_.LocalPort } | Sort-Object -Unique)
+    $paths = @(Select-ParallelMvpProcessPath -Paths @(Get-Process -ErrorAction SilentlyContinue | ForEach-Object { try { $_.Path } catch { $null } }))
+    return [pscustomobject]@{ ListeningPorts = [int[]] $ports; ProcessPaths = [string[]] $paths }
+}
+
+function Select-ParallelMvpProcessPath {
+    <#
+        .SYNOPSIS
+            The executable paths that sit in the MVP's install directory. Pure. The V2 directory, ControlServer.V2, is a
+            sibling with the same leading text, which the trailing backslash keeps out.
+    #>
+    [CmdletBinding()]
+    param([AllowEmptyCollection()][AllowNull()][string[]] $Paths)
+    $prefix = $script:MvpInstallRoot.TrimEnd('\') + '\'
+    return @($Paths | Where-Object { $_ -and $_.StartsWith($prefix, [StringComparison]::OrdinalIgnoreCase) } | Sort-Object -Unique)
 }
 
 function Get-ParallelCutoverInstallState {
@@ -1428,7 +1458,7 @@ function Invoke-ParallelFakeMesIngestSeed {
     return $readBack
 }
 
-Export-ModuleMember -Function @('Get-MvpFingerprint', 'Get-ParallelCutoverInstallState', 'Assert-MvpUntouched', 'Format-MvpFingerprint', 'Get-ParallelServiceProcessStartTimeUtc', 'Get-ParallelProcessStartTimeUtc',
+Export-ModuleMember -Function @('Get-MvpFingerprint', 'Get-ParallelCutoverInstallState', 'Get-ParallelMvpRuntimeEvidence', 'Select-ParallelMvpProcessPath', 'Assert-MvpUntouched', 'Format-MvpFingerprint', 'Get-ParallelServiceProcessStartTimeUtc', 'Get-ParallelProcessStartTimeUtc',
     'Get-ParallelProductUninstallerPath', 'Test-ParallelProductUninstallerPremise', 'Invoke-ParallelProductUninstaller',
     'Update-ParallelInstanceConfigurationFile', 'Set-ParallelInstanceJourneyRuntimeDisabled', 'Set-ParallelInstanceConfigurationFlag',
     'Get-ParallelJourneyDispatchState', 'Invoke-ParallelDispatchGateChange',

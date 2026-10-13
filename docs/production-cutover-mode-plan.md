@@ -186,7 +186,8 @@ FieldOps 没有作废需求或重置状态的动词，手改约 50 张表风险�
 | 5 | 现场 | **备份 `agv01` 车载端**：`C:\8005\OnboardHmi` 整份（含日志簿、发件箱、本地仓位配置、日志）另存为 `C:\8005\OnboardHmi.mvp-field-<日期>`；记录版本串（`appsettings.json` 的 `wireToGate.onboardBuildCommit`） | 备份目录存在、哈希记录 | 【执行前问用户】 |
 | 6 | 用户本人（RIoT） | 按第 0 步确认的站点把 `agv01` 改到 map 26 | RIoT 读回 `agv01` 在 map 26、已定位在确认的站点 | 【执行前问用户】 |
 | 7 | 现场 | **v2 换新库 A**：停 V2（闸门已关、无在途），`C:\ProgramData\8005\ControlServer.V2` 改名留存，建空目录。**不要按换库快路线在空目录上先起服**：起服会自动建库，第 8 步就会被 `CUTOVER_REQUIRES_NEW_DATABASE` 拒 | 空目录；旧目录名记录 | — |
-| 7a | 调度 | **准备切换用的定义并出包**（审查 S1）：19 号要求定义是克隆里被跟踪的文件、包的提交等于克隆 HEAD。所以执行前提交一次，内容是本次要用的全部阶段定义（见第 8 节：S1 运行时关、S1 运行时开、S2、S3），每份都写入 `productionCutover.approvalRecord`（用户对这一次切换的授权原话出处）与 `phase: "trial"`；然后为这个提交跑一次 release。出厂的切换定义不带记录，原样装会被 `CUTOVER_SWITCH_WITHOUT_RECORD` 拒 | 提交与 release run id 记进本票 | 授权原话由调度向用户要 |
+| 7a | 调度 | **准备切换用的定义并出包**（审查 S1）：19 号要求定义是克隆里被跟踪的文件、包的提交等于克隆 HEAD。所以执行前提交一次，内容是本次要用的全部阶段定义（见第 8 节：S1 运行时关、S1 运行时开、S2、S3），每份都写入 `productionCutover.approvalRecord`（用户对这一次切换的授权原话出处）与 `phase: "trial"`；control-server#679（cs#617）合入后，阶段定义里的 `foreignRunningOrderRelease.enabled` 与 `production-mes` 定义取同值（生产定义里是打开的），它用的 `V2FaultRecoveryCredential` 已在 DPAPI 里（调度 10-13 只读核过键名）；然后为这个提交跑一次 release。出厂的切换定义不带记录，原样装会被 `CUTOVER_SWITCH_WITHOUT_RECORD` 拒 | 提交与 release run id 记进本票 | 授权原话由调度向用户要 |
+| 7b | 现场 | **安置不在本阶段车队表里的车**（审查第二轮 S1）：S1 时 `agv01`、`agv03`，S2 时 `agv03`。它们物理上就在 26 号图的通道里，但 v2 不管它们：停在 v2 管的点位上（211、212、214～216、217～221），v2 会把 `agv02` 派过去堵住；车载端还开着的话，换库前的日志簿连到新库会报 `SNAPSHOT_REVISION_CONTENT_CONFLICT`。所以：用户在 RIoT 上把车停到 v2 不管的点位（`agv01` 按第 11 节停 210「关卡」；`agv03` 见第 11 节末尾）；用 `10-start-onboard-stack.ps1 -SshAlias <车> -Stop` 停掉它的车载端栈 | RIoT 读回车停在确认的点位；车载端进程不在 | 挪车由用户本人在 RIoT 上做；动 `agv01`【执行前问用户】 |
 | 8 | 现场 | **以切换模式首装 S1 定义**（只有 `agv02`，运行时与建单闸门都关）：19 号脚本带 `-ProductionCutover -InstanceDefinitionPath <S1 运行时关的定义>` | 回读 `EFFECTIVE_CONFIGURATION`：车队只有 `agv02`、区只有 `WIRE_BONDING`、六类、生产来源；`installed-instance.json` 是这份定义（带 `productionCutover`）；MVP 指纹前后一致（停着、Disabled） | 读生产 MesIngest 全部六类属于切换本身，本步之前向用户确认 |
 | 9 | 现场 | 车载端按 cs#565：先确认发件箱无欠送再清日志簿与发件箱，部署 v3 车载端（`-OnboardPort 58105 -HealthPort 58107`），IO 指向模拟器。S1 只需要 `agv02`；`agv01`、`agv03` 留到它们所在阶段之前做（第 8 节）。`agv01` 那次要先把 `site-agv01.json` 的 `controlServerLine` 由 `"mvp"` 改为 `"v2"`（`8005-workspace` 提交） | 该车握手 `Ready`，不动车 | `agv01` 每一步【执行前问用户】 |
 | 10 | 现场 | 导入受治理事实（program#170 第 2 节：已批准硬件事实、`bind-io`、站点绑定、等待点、充电名册与策略）。分区归属表这时还不能导 | 每项导入回读 | — |
@@ -196,7 +197,8 @@ FieldOps 没有作废需求或重置状态的动词，手改约 50 张表风险�
 | 14 | 现场 | 正式导入本阶段的归属表。**导入之后表里的 AREA 立刻可被受理**（运行时开着时闸门关着也受理、旅程等闸门） | 导入回读 | — |
 | 15 | 现场 | 试跑等待参数调短（离站、持货），记调短前后的值与位置；生产段一律以 D9 的 5 分钟／5 分钟为准，不以这里记的「调短前」为准 | 实读安装目录 `appsettings.Production.json` | — |
 | 16 | 现场 | **开闸放本阶段的车**：只有本阶段定义里的车会被派单 | 本阶段判据（第 8 节） | 【逐次授权·现场有人】 |
-| 16a | 现场 | **换下一阶段**（S1→S2→S3）：关闸（20 号 `-State Closed`）、确认无在途；下一阶段新加的车先做第 9 步（`agv01` 加入前还要先跑 `Set-ControlServerSecret.ps1 -NewVehicleSafetyCredential agv01`，否则 19 号会以缺投影凭据拒绝，审查 S2）；19 号带 `-ProductionCutover` 换装该阶段运行时开的定义；新区进库后重做第 12～14 步；再按第 16 步开闸 | 每次换装的 `EFFECTIVE_CONFIGURATION` 车队与区等于该阶段定义 | 动 `agv01`【执行前问用户】；开闸【逐次授权·现场有人】 |
+| 16b | 现场 | **停止受理**（审查第二轮 S3，下一行与第 17 步之前都先做）：关闸要求所有旅程都 `Completed`，而真实 MES 下运行时开着就会一直受理新需求，关不上。今天就能用、不需要新代码的办法是**导入一张只有表头的归属表**（文件内容只有一行 `area,dispatch_zone,slot_position`）：导入是整表替换，之后每个 AREA 都没有映射，判据链一律报 `OUT_OF_SCOPE_AREA`、不受理（与 L2 场景 `area-assignment-unmapped-silent` 同一条路径）；已经在途的需求冻结在受理时的表版本上（`AreaAssignmentImport.cs` 按 `IDemandAreaAssignmentFreeze` 列在途冻结），照常跑完。先 `--dry-run`，结果应是接受、0 行。之后等在途旅程全部 `Completed`（空闲返回、充电旅程也算在内）。这是读码得出的做法，切换前在合成装置上没有单独跑过 | `--dry-run` 接受 0 行；导入回读当前版本 0 行；之后库里不再出现新的受理 | — |
+| 16a | 现场 | **换下一阶段**（S1→S2→S3）：先做第 16b 步停止受理，再关闸（20 号 `-State Closed`）、确认无在途；下一阶段新加的车先做第 9 步（`agv01` 加入前还要先跑 `Set-ControlServerSecret.ps1 -NewVehicleSafetyCredential agv01`，否则 19 号会以缺投影凭据拒绝，审查 S2）；19 号带 `-ProductionCutover` 换装该阶段运行时开的定义；新区进库后重做第 12～14 步；再按第 16 步开闸 | 每次换装的 `EFFECTIVE_CONFIGURATION` 车队与区等于该阶段定义 | 动 `agv01`【执行前问用户】；开闸【逐次授权·现场有人】 |
 
 开闸之前，车队表里有哪几台车就只有哪几台会被派单：派车轮判空闲车看的是旅程占用，不看车载端连没连（第 8 节）。所以第 8 步装的是只有 `agv02` 的
 S1 定义，`agv01`、`agv03` 在各自阶段换装定义之后才进车队表（审查 H1）。
@@ -210,13 +212,13 @@ S1 定义，`agv01`、`agv03` 在各自阶段换装定义之后才进车队表�
 
 | # | 谁 | 做什么 | 判据 | 标记 |
 | --- | --- | --- | --- | --- |
-| 17 | 现场 | 关 v2 闸门（`20-set-control-server-parallel-dispatch-gate.ps1 -State Closed`，任何旅程不是 `Completed` 就拒绝）、关运行时；无在途 | 闸门脚本成功；库里无非终态旅程 | — |
+| 17 | 现场 | 先按第 16b 步停止受理，再关 v2 闸门（`20-set-control-server-parallel-dispatch-gate.ps1 -State Closed`，任何旅程不是 `Completed` 就拒绝）、关运行时；无在途 | 闸门脚本成功；库里无非终态旅程 | — |
 | 18 | 现场 | **换新库 B**：同第 7 步，库 A 改名留存（它是试跑证据）；同样不要先起服 | 空目录 | — |
-| 18a | 调度 | 同第 7a 步，提交生产段的阶段定义（`phase: "production"`，批准记录写生产段的授权）并出包 | 提交与 release run id | 授权原话由调度向用户要 |
-| 19 | 现场 | 19 号脚本带 `-ProductionCutover` 装生产段 S1 定义。安装器按已装记录的 `phase` 从 `trial` 到 `production`，要求数据目录为空（`CUTOVER_PRODUCTION_REQUIRES_NEW_DATABASE`），所以漏了第 18 步会被拒。前提 cs#609 已于 2026-10-13 合入（PR #678）：定义与产品默认值里的持货已是 `00:05:00` | **实读**安装目录 `C:\Program Files\8005 AGV\ControlServer.V2\appsettings.Production.json`：`stationDepartureWaitTimeout=00:05:00`、`cargoHoldingTimeout=00:05:00`（D9）。`EFFECTIVE_CONFIGURATION` 事件今天不带这两个值（`src/ControlServer.Host/Runtime/EffectiveConfigurationEvent.cs:40`），等 cs#672 加进事件后再改为按事件回读。不要手改已装文件代替重装：手改不经过部署校验，cs#609 的上限挡不住 | — |
+| 18a | 调度 | 同第 7a 步，提交生产段的全套阶段定义（S1 运行时关、S1 运行时开、S2、S3，`phase: "production"`，批准记录写生产段的授权）并出包 | 提交与 release run id | 授权原话由调度向用户要 |
+| 19 | 现场 | 19 号脚本带 `-ProductionCutover` 装生产段 **S1 运行时关**的定义（同第 8 步）。安装器按已装记录的 `phase` 从 `trial` 到 `production`，要求数据目录为空（`CUTOVER_PRODUCTION_REQUIRES_NEW_DATABASE`），所以漏了第 18 步会被拒。前提 cs#609 已于 2026-10-13 合入（PR #678）：定义与产品默认值里的持货已是 `00:05:00` | **实读**安装目录 `C:\Program Files\8005 AGV\ControlServer.V2\appsettings.Production.json`：`stationDepartureWaitTimeout=00:05:00`、`cargoHoldingTimeout=00:05:00`（D9）。`EFFECTIVE_CONFIGURATION` 事件今天不带这两个值（`src/ControlServer.Host/Runtime/EffectiveConfigurationEvent.cs:40`），等 cs#672 加进事件后再改为按事件回读。不要手改已装文件代替重装：手改不经过部署校验，cs#609 的上限挡不住 | — |
 | 20 | 现场 | 本阶段的车 IO 从模拟器切回真模块（`09-switch-io-module.ps1`），清日志簿与发件箱 | 握手 `Ready` | `agv01`【执行前问用户】 |
 | 21 | 现场 | 重导受治理事实；**逐仓重核**（`REQ-0263`，cs#565 第 5 步） | 核对证据目录 | 动车部分【逐次授权·现场有人】 |
-| 22 | 现场 | 按第 11～16a 步逐阶段走 S1→S4（第 8 节） | 每阶段判据 | 【逐次授权·现场有人】 |
+| 22 | 现场 | 按第 7b、11～16b 步逐阶段走 S1→S4（第 8 节） | 每阶段判据 | 【逐次授权·现场有人】 |
 
 ## 7. 第 5 问：回滚
 
@@ -249,6 +251,7 @@ S1 定义，`agv01`、`agv03` 在各自阶段换装定义之后才进车队表�
    - 若哈希不一致（有人动过），用备份整份覆盖。
 6. MVP 服务启动类型改回原值、启动；闸门照切换前的做法用 `Set-JourneyRuntime.ps1` 开（`-Intake`／`-Dispatch`，后者【逐次授权·现场有人】）。
 7. 回读：MVP 健康、`agv01` 握手、MVP 指纹与切换前一致（路径、启动类型）。
+   第 1 步的关闸同样要先按第 6 节第 16b 步停止受理。
 8. **离开切换**（要让 v2 回到并行期时才做）：v2 数据目录改名留存、建空目录、不起服；19 号带 `-LeaveProductionCutover` 装并行定义
    （例如 `instance-factory01-v2.production-mes.json`）。不带这个开关、或数据目录里还有库，安装器都会拒绝。卸载不带 `-RemoveData` 会留着
    `installed-instance.json`，之后不带开关的重装照样被拒，所以离开切换要走这一步，不要手改服务器上的记录。
@@ -342,6 +345,16 @@ S1 定义，`agv01`、`agv03` 在各自阶段换装定义之后才进车队表�
   并加上已装配置点名的那个库（审查 L）。
 - 审计行在切换时写「PRODUCTION CUTOVER」与阶段，不再说「只接 STAGING_TO_WIRE」（审查 M1 的服务端一半；19 号那一半在 `8005-workspace`）。
 
+**审查第二轮（2026-10-13）之后加的**
+
+- MVP 已停的检查再加两项证据：58005／58007 上有监听，或有进程从 `C:\Program Files\8005 AGV\ControlServer\` 运行，不论服务怎么说都拒（`CUTOVER_MVP_STILL_RUNNING`，S2）。
+- 关闸拒绝文案改为同时给出生产来源下的停止受理办法（第 6 节第 16b 步，S3）。
+- `Get-ParallelCutoverContractVersion`（现为 2）：18、20 号用它判断检出新旧，而不是看某个函数在不在（L3）。
+- C# 历史守卫加一条：所有 `instance-*.json` 的 `opsRoot` 都是 `D:\zhengyushao\control-server-v2-ops`（L1）。
+
+**剩余风险（审查第二轮 L6）**：MVP 已停的检查只在安装与开闸那一刻做。开闸之后如果有人重新启动 MVP，没有任何东西持续盯着发现它；
+那时两边都会驱动 `agv01`。切换期间 MVP 服务保持 Disabled，任何启动它的操作都属于「碰 MVP 先问用户」。
+
 **还没做、由谁做**
 
 - PR #676（已合入）的两份切换定义：原用例「开关关时恰好拒这两条」保留；本票新增一条：开关开、且执行当天写入批准记录时收；开关开而没有记录时，
@@ -377,3 +390,14 @@ S1 定义，`agv01`、`agv03` 在各自阶段换装定义之后才进车队表�
 
 **不建议的点**：211、212（充电桩与进桩路径）、214～216（等待点）、217～221（其余五类任务的固定站，217 是 `agv02` 的取货站）、N／T 开头的机台站
 （归属表里的站，别的车会来）。
+
+### `agv03` 在 S1、S2 期间停在哪里
+
+`agv03` 要到 S3 才进车队表。在那之前它停在一个 v2 不会派车过去的点位，车载端栈停掉（第 6 节第 7b 步）。建议**T 区的一个机台站**（26 号图上 T 开头、编号 200～209 一带的站），
+由用户按车当时的位置在 RIoT 上选最近的一个。理由：
+
+- S1、S2 的阶段定义只写 `WIRE_BONDING` 一个区，T 区的归属表还没导入，T 区的 AREA 一律 `OUT_OF_SCOPE_AREA`（第 8 节），所以 `agv02`、`agv01` 不会被派往 T 区的站。
+- 它们不是 v2 管独占的点（211、212、214～216），也不是六类任务的固定站（210、217～221）。
+- `agv03` 本来就跑 `DIE_ATTACH`（T 区），S3 时从那里出发最顺。
+
+没有核对的一点：选中的站会不会挡住 `agv02` 去 217 与 N 区的通道。这要用户在 RIoT 地图上确认，和 `agv01` 停 210 那一条一样。
