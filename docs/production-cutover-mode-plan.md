@@ -284,8 +284,7 @@ S1 定义，`agv01`、`agv03` 在各自阶段换装定义之后才进车队表�
 
   **车行要原样复制，不能把六类写进某一行**（cs#565 审查）：实例级的 `allowedWorkTypes` 是六类（切换开关要求全集），但派车按每车自己的
   `allowedTaskTypes` 判（`VehicleTaskTypeAdmissionCriterion`）。S1 的 `agv02` 只有 `STAGING_TO_WIRE`，所以 `WIRE_TO_GATE` 需求不会派给它、它不会开去 210；
-  第 6b 步让 `agv01` 停在 210 正是靠这一点。今天的定义校验只拦「同一类任务在两辆车上」，**不拦「一辆车多写了别人的类型」**：S1 文件里 `agv02` 若被写成六类，
-  校验照样通过，`agv02` 就会去 210 撞上停着的 `agv01`。所以第 7a 步提交阶段定义时，逐行与上表核对，第 8、16a 步回读 `EFFECTIVE_CONFIGURATION` 的车队时再核一次。
+  第 6b 步让 `agv01` 停在 210 正是靠这一点。定义校验在开关打开时逐车核对：每辆车的 `allowedTaskTypes` 必须恰好等于用户 10-10 定的专车专用分配（写死在模块里，和车辆白名单一样；本阶段没列的车不核），多一类、少一类、重复都拒（`CUTOVER_VEHICLE_TASK_TYPES_MISMATCH`，调度 C10 10-13 定）。第 7a 步提交时与上表核对、第 8 与 16a 步回读车队，作为第二道。
 
   `dispatchZone` 都是 `WIRE_BONDING`；`allowedWorkTypes` 都是六类（切换开关要求全集）。S1、S2 不写 `DIE_ATTACH`：那时没有车服务这个区，它进不了
   `DispatchZoneVehicles`，写进允许列表只会让区名比对报「这个区没有表」。S1 时其余五类需求读得到但没有车能接：`WIRE_TO_GATE` 等 N 区需求按任务类型

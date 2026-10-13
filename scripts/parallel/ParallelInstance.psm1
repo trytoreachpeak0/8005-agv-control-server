@@ -159,6 +159,18 @@ $script:ProductionVehicle = [pscustomobject]@{
     RiotId = 58
 }
 
+<#
+    control-server#564 (coordinator 10, 2026-10-13, after cs#565's review). The user's dedicated split (2026-10-10, program#171):
+    each car takes exactly these task types. Hard-coded like the vehicle whitelist: a stage definition that wrote one more type
+    into a row would pass every other check and send that car to a station another car is parked on (plan section 8). Keyed by
+    the registry vehicleKey; a stage that leaves a car out of its roster is not checked for it.
+#>
+$script:CutoverDedicatedTaskTypes = @{
+    'BROKERX-0c20ff0600d644869a6a80c186065d85' = @('WIRE_TO_GATE', 'WIRE_TO_OPTICAL', 'WIRE_TO_NITROGEN')
+    'BROKERX-f38975561adf46ccb1d2f23833c7d0e4' = @('STAGING_TO_WIRE')
+    'BROKERX-7daca4ee91da498d8026c68b7b941127' = @('DIE_TO_OVEN', 'DIE_TO_WIRE_STAGING')
+}
+
 # control-server#564. With the cutover switch on, agv01 joins the whitelist -- as its registry row, checked on all four
 # coordinates like the spare cars, never by name alone.
 $script:CutoverVehicles = @($script:AllowedVehicles) + @([pscustomobject]@{
@@ -1762,8 +1774,26 @@ function Test-FleetIdentity {
         }
     }
 
-    # ---- 5. control-server#564: one car per task type under the cutover ----
+    # ---- 5. control-server#564: one car per task type under the cutover, and each car exactly its dedicated types ----
     if ($Cutover) {
+        for ($i = 0; $i -lt $rows.Count; $i++) {
+            $row = $rows[$i]
+            if ($row -isnot [System.Collections.IDictionary] -or $row['vehicleKey'] -isnot [string]) { continue }
+            $vehicle = $script:CutoverVehicles | Where-Object { [string]::Equals($_.VehicleKey, $row['vehicleKey'], [StringComparison]::Ordinal) } | Select-Object -First 1
+            if ($null -eq $vehicle -or -not $script:CutoverDedicatedTaskTypes.ContainsKey($vehicle.VehicleKey)) { continue }
+            $expected = @($script:CutoverDedicatedTaskTypes[$vehicle.VehicleKey])
+            $actual = ($row['allowedTaskTypes'] -is [System.Collections.IList]) ? @($row['allowedTaskTypes']) : @()
+            $strings = @($actual | Where-Object { $_ -is [string] })
+            $distinct = [System.Collections.Generic.HashSet[string]]::new([string[]] $strings, [StringComparer]::Ordinal)
+            $same = $strings.Count -eq $actual.Count -and $distinct.Count -eq $strings.Count -and $strings.Count -eq $expected.Count -and
+                @($expected | Where-Object { $distinct.Contains($_) }).Count -eq $expected.Count
+            if (-not $same) {
+                $failures += ("CUTOVER_VEHICLE_TASK_TYPES_MISMATCH: journeyRuntime.fleet[$i] is $($vehicle.Alias), whose allowedTaskTypes is " +
+                    "$(ConvertTo-Json -InputObject @($actual) -Compress); under the production cutover it must be exactly " +
+                    "$(ConvertTo-Json -InputObject $expected -Compress) (the user's dedicated split, 2026-10-10, program#171). One more type " +
+                    'would send this car to a station another car may be parked on (docs/production-cutover-mode-plan.md section 8).')
+            }
+        }
         $owner = [System.Collections.Generic.Dictionary[string, int]]::new([StringComparer]::Ordinal)
         for ($i = 0; $i -lt $rows.Count; $i++) {
             $row = $rows[$i]

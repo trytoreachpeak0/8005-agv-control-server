@@ -5553,7 +5553,7 @@ Invoke-SourceCase 'cutover on: agv01 twice is refused' {
     $d = Copy-Definition $cutoverDefinition
     $d['journeyRuntime']['fleet'][1] = Copy-Definition $d['journeyRuntime']['fleet'][0]
     $d['journeyRuntime']['fleet'][1]['allowedTaskTypes'] = @()
-    Test-CutoverFailure $d @('journeyRuntime.fleet names agv01 twice') -Cutover
+    Test-CutoverFailure $d @('journeyRuntime.fleet names agv01 twice', 'CUTOVER_VEHICLE_TASK_TYPES_MISMATCH: journeyRuntime.fleet[1] is agv01') -Cutover
 }
 
 # --- Switch on: the shape of the lifted guards is fixed -----------------------------------------------
@@ -5564,10 +5564,9 @@ foreach ($case in @(
         @{ Name = 'the six plus a seventh'; Types = @($cutoverSix) + @('WIRE_TO_MOON') }
         @{ Name = 'one type in lower case'; Types = @('DIE_TO_WIRE_STAGING', 'DIE_TO_OVEN', 'wire_to_gate', 'WIRE_TO_OPTICAL', 'STAGING_TO_WIRE', 'WIRE_TO_NITROGEN') })) {
     Invoke-SourceCase "cutover on: allowedWorkTypes $($case.Name) is refused as not the full set" {
-        $d = Copy-Definition $cutoverDefinition
+        # On the S1 shape (agv02 alone, STAGING_TO_WIRE): every variant keeps that type, so only the full-set rule fires.
+        $d = New-CutoverDefinition -Cars @('agv02')
         $d['journeyRuntime']['allowedWorkTypes'] = @($case.Types)
-        # A row naming a type outside allowedWorkTypes is said too; drop those rows' types to keep the assertion exact.
-        foreach ($row in $d['journeyRuntime']['fleet']) { $row['allowedTaskTypes'] = @($row['allowedTaskTypes'] | Where-Object { $case.Types -ccontains $_ }) }
         Test-CutoverFailure $d @('CUTOVER_WORK_TYPES_NOT_FULL_SET') -Cutover
     }
 }
@@ -5579,7 +5578,36 @@ Invoke-SourceCase 'cutover on: allowedWorkTypes left out is refused as not the f
 Invoke-SourceCase 'cutover on: two cars sharing a task type is refused (one car per type)' {
     $d = Copy-Definition $cutoverDefinition
     $d['journeyRuntime']['fleet'][1]['allowedTaskTypes'] = @('STAGING_TO_WIRE', 'WIRE_TO_GATE')
-    Test-CutoverFailure $d @('CUTOVER_TASK_TYPE_SHARED: WIRE_TO_GATE is in journeyRuntime.fleet[0].allowedTaskTypes and journeyRuntime.fleet[1].allowedTaskTypes') -Cutover
+    Test-CutoverFailure $d @('CUTOVER_TASK_TYPE_SHARED: WIRE_TO_GATE is in journeyRuntime.fleet[0].allowedTaskTypes and journeyRuntime.fleet[1].allowedTaskTypes',
+        'CUTOVER_VEHICLE_TASK_TYPES_MISMATCH: journeyRuntime.fleet[1] is agv02') -Cutover
+}
+# --- Each car exactly its dedicated types (coordinator 10, 2026-10-13, after cs#565's review) -------------------------
+foreach ($case in @(
+        @{ Name = 'S1: agv02 with all six types'; Cars = @('agv02'); Row = 0; Types = @('DIE_TO_WIRE_STAGING', 'DIE_TO_OVEN', 'WIRE_TO_GATE', 'WIRE_TO_OPTICAL', 'STAGING_TO_WIRE', 'WIRE_TO_NITROGEN'); Car = 'agv02' }
+        @{ Name = 'S1: agv02 with one more type (WIRE_TO_GATE, agv01''s)'; Cars = @('agv02'); Row = 0; Types = @('STAGING_TO_WIRE', 'WIRE_TO_GATE'); Car = 'agv02' }
+        @{ Name = 'S1: agv02 with no type'; Cars = @('agv02'); Row = 0; Types = @(); Car = 'agv02' }
+        @{ Name = 'S2: agv01 with one type fewer (WIRE_TO_NITROGEN left out)'; Cars = @('agv02', 'agv01'); Row = 1; Types = @('WIRE_TO_GATE', 'WIRE_TO_OPTICAL'); Car = 'agv01' }
+        @{ Name = 'S3: agv03 with its two types and one twice'; Cars = @('agv01', 'agv02', 'agv03'); Row = 2; Types = @('DIE_TO_OVEN', 'DIE_TO_WIRE_STAGING', 'DIE_TO_OVEN'); Car = 'agv03' }
+        @{ Name = 'S3: agv03 with one type in lower case'; Cars = @('agv01', 'agv02', 'agv03'); Row = 2; Types = @('die_to_oven', 'DIE_TO_WIRE_STAGING'); Car = 'agv03' })) {
+    Invoke-SourceCase "cutover dedicated split: $($case.Name) -> CUTOVER_VEHICLE_TASK_TYPES_MISMATCH" {
+        $d = New-CutoverDefinition -Cars $case.Cars
+        $d['journeyRuntime']['fleet'][$case.Row]['allowedTaskTypes'] = @($case.Types)
+        [string[]] $got = @(Test-ParallelInstanceDefinition -Definition $d -ProductionCutover)
+        $mismatch = @($got | Where-Object { $_.StartsWith("CUTOVER_VEHICLE_TASK_TYPES_MISMATCH: journeyRuntime.fleet[$($case.Row)] is $($case.Car), whose allowedTaskTypes is $(ConvertTo-Json -InputObject @($case.Types) -Compress)") })
+        @{ Ok = ($mismatch.Count -eq 1 -and $mismatch[0].Contains('must be exactly')); Detail = "got: $($got -join ' | ')" }
+    }
+}
+Invoke-SourceCase 'cutover dedicated split: each car with exactly its types, in another order -- accepted' {
+    $d = Copy-Definition $cutoverDefinition
+    foreach ($row in $d['journeyRuntime']['fleet']) { $row['allowedTaskTypes'] = @($row['allowedTaskTypes'] | Sort-Object -Descending) }
+    Test-CutoverFailure $d @() -Cutover
+}
+Invoke-SourceCase 'cutover dedicated split: a car the stage leaves out is not checked (S1 has agv02 alone and passes)' {
+    Test-CutoverFailure (New-CutoverDefinition -Cars @('agv02')) @() -Cutover
+}
+Invoke-SourceCase 'cutover dedicated split: not applied with the switch off (the parallel two-car roster keeps its own types)' {
+    [string[]] $got = @(Test-ParallelInstanceDefinition -Definition $fleetBaseline)
+    @{ Ok = (@($got | Where-Object { $_.StartsWith('CUTOVER_VEHICLE_TASK_TYPES_MISMATCH') }).Count -eq 0); Detail = "got: $($got -join ' | ')" }
 }
 Invoke-SourceCase 'cutover on: the single-vehicle keys instead of a roster are refused' {
     $d = Copy-Definition $cutoverDefinition
