@@ -1,4 +1,4 @@
-working tree on top of 5873125d7 (PR #676 review fixes, committed with this file)
+working tree on top of cfc786a0d (production waits 5/5, committed with this file)
 cmd: pwsh -File scripts/parallel/Test-ParallelInstance.ps1 -AreaAssignmentPath <merged>
   PASS  catalog: the cutover definition carries the same approved pair, and is refused for exactly the two guards control-server#564 opens
   PASS  admission version: instance-factory01-v2.cutover-two-zones.json, first install, reads back the definition's 6
@@ -13,7 +13,7 @@ Cutover definition: two dispatch zones, three dedicated cars (control-server#669
   PASS  cutover: the roster is exactly agv01, agv02, agv03 with the registry identities, in that order
   PASS  cutover: each car carries exactly the task types and zones the user assigned it
   PASS  cutover: dedicated -- every allowed work type is served by exactly one car, and no car takes a type outside allowedWorkTypes
-  PASS  cutover: everything but the roster, the zones and the work types equals the production-mes definition
+  PASS  cutover: everything but the roster, the zones, the work types and the cargo holding wait equals the production-mes definition
   PASS  cutover runtime-on: differs from the cutover definition only in journeyRuntime.enabled and routeGraph.enabled, both true; the gate and the other switches stay off
   PASS  cutover: the definitions the instance runs today still say WIRE (the zones change only with the new database)
   PASS  cutover area tables: one merged table naming both zones -- agree

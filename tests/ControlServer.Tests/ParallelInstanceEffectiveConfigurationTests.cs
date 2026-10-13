@@ -415,6 +415,9 @@ public sealed class ParallelInstanceEffectiveConfigurationTests
         Assert.Equal(["DIE_TO_OVEN", "DIE_TO_WIRE_STAGING"], options.Fleet[2].AllowedTaskTypes);
         Assert.Equal(["WIRE_BONDING", "WIRE_BONDING", "DIE_ATTACH"], options.Fleet.Select(vehicle => string.Join(",", vehicle.Zones)));
 
+        // The production waits the user set on 2026-10-13 (D9 in control-server#564's comment), not the package's or a test period's.
+        Assert.Equal(TimeSpan.FromMinutes(5), options.StationDepartureWaitTimeout);
+        Assert.Equal(TimeSpan.FromMinutes(5), options.CargoHoldingTimeout);
         Assert.Equal(runtimeEnabled, options.Enabled);
         options.Enabled = true;
         ValidateOptionsResult result = new JourneyRuntimeOptionsValidator(configuration).Validate(null, options);

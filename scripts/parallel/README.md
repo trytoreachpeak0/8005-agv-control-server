@@ -159,7 +159,9 @@ control-server#518 时它只绑 `WIRE_TO_GATE` → 210「关卡」，核对号�
 `fieldOperatorRoles.onboardClearanceEntryDeclared`、`journeyRuntime.clearanceToWaitingPointEnabled`（不写即关）、
 `riotForeignOrderCancel`——两份都取 `production-mes` 的值，全关。依据：它们要么要另配凭据（故障恢复、清桩入口），要么自己会让车动
 （清桩开往等待点，每次都要授权），batch89 那两份打开它们是现场测试期的决定，不是切换的决定；切换要不要开、什么时候开，归
-control-server#564 与用户，不随区名一起定。等待时长同理取生产值（离站 5 分钟、持货 30 分钟），不是测试期的缩短值。
+control-server#564 与用户，不随区名一起定。等待时长取用户 2026-10-13 定的生产值：离站 5 分钟、持货 5 分钟
+（`stationDepartureWaitTimeout`、`cargoHoldingTimeout` 都是 `00:05:00`；control-server#564 评论里的 D9），不是测试期的缩短值。
+`production-mes` 里的持货仍是 30 分钟，它改不改由 #564 定，所以这是两份切换定义与它唯一不在车队、派车区、任务类型上的差别。
 
 **用户的两个决定。**派车区（2026-10-12，经调度 C11，program#171 10-12 评论）：「N开头的都是WIre Bonding的，T开头的都是Die
 attaching里的」，弃用 `WIRE`，代号 `WIRE_BONDING`、`DIE_ATTACH`。三车专车专用（2026-10-10，program#171「已定」）：每类任务只有一辆车，
@@ -172,7 +174,7 @@ attaching里的」，弃用 `WIRE`，代号 `WIRE_BONDING`、`DIE_ATTACH`。三�
 | `agv03`（老厂前线新多仓位3） | 60 | `DIE_TO_OVEN`、`DIE_TO_WIRE_STAGING` | `DIE_ATTACH` |
 
 `allowedDispatchZones` 是 `["WIRE_BONDING", "DIE_ATTACH"]`，`dispatchZone` 是 `WIRE_BONDING`（Host 要求它在允许列表里；有车队表时
-派车按每车的 `zones` 判）。`allowedWorkTypes` 是全部六类。除车队表、这三个键和 MES 来源之外，其余与 `production-mes` 逐字相同：端口、
+派车按每车的 `zones` 判）。`allowedWorkTypes` 是全部六类。除车队表、这三个键和持货等待之外，其余与 `production-mes` 逐字相同：MES 来源、端口、
 目录、服务名、运行时与建单闸门都关（`runtime-on` 那份只开运行时与路网引擎）、`REQ-0302` 两个批准值、准入版本 6 与部署标签。
 
 **今天装不上，这是有意的。**定义校验拒收两份，理由都恰好两条：车队表第 0 行是 agv01；生产 MesIngest 来源下 `allowedWorkTypes` 含

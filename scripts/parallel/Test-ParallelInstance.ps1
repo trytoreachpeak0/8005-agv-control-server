@@ -5321,12 +5321,18 @@ Invoke-SourceCase 'cutover: dedicated -- every allowed work type is served by ex
     $extra = @(foreach ($row in $cutoverRows) { foreach ($t in @($row['allowedTaskTypes'])) { if (-not ($types -ccontains $t)) { "$($row['agvId'])->$t" } } })
     @{ Ok = ($types.Count -eq 6 -and $byType.Count -eq 0 -and $extra.Count -eq 0); Detail = "types: $($types.Count); not exactly one car: $($byType -join ', '); outside: $($extra -join ', ')" }
 }
-Invoke-SourceCase 'cutover: everything but the roster, the zones and the work types equals the production-mes definition' {
+Invoke-SourceCase 'cutover: everything but the roster, the zones, the work types and the cargo holding wait equals the production-mes definition' {
     # Ports, paths, service name, gates off, runtime off, the approved catalog pair, admission version and identity: what
     # the cutover changes is the roster and the zones, and only what the cutover switch (control-server#564) decides
-    # beyond them is to change the rest.
+    # beyond them is to change the rest. One such decision is already in: the production waits, departure 5 min and
+    # cargo holding 5 min (user 2026-10-13, D9 in control-server#564's comment); production-mes still carries 30 min
+    # for cargo holding, and whether it changes is control-server#564's.
     $p = Read-ParallelInstanceDefinition -Path $productionFile
     $c = Copy-Definition $cutover
+    if ($c['journeyRuntime']['cargoHoldingTimeout'] -cne '00:05:00' -or $c['journeyRuntime']['stationDepartureWaitTimeout'] -cne '00:05:00') {
+        return @{ Ok = $false; Detail = "waits: departure $($c['journeyRuntime']['stationDepartureWaitTimeout']), cargo holding $($c['journeyRuntime']['cargoHoldingTimeout']); the user's production values are 00:05:00 and 00:05:00" }
+    }
+    $c['journeyRuntime']['cargoHoldingTimeout'] = $p['journeyRuntime']['cargoHoldingTimeout']
     foreach ($key in @('agvId', 'vehicleKey', 'agvLifecycleGeneration')) { $c['journeyRuntime'][$key] = $p['journeyRuntime'][$key] }
     $c['journeyRuntime'].Remove('fleet')
     foreach ($key in @('dispatchZone', 'allowedDispatchZones', 'allowedWorkTypes')) { $c['journeyRuntime'][$key] = $p['journeyRuntime'][$key] }
