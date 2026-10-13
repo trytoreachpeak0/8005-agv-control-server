@@ -157,6 +157,30 @@ continue，另一个回 409 `FAULT_RECOVERY_RESUME_IN_PROGRESS`，过一会儿�
 **服务端自己取消的单不重建**：释放改派时服务端会经订单命令面取消开往取货站的那张单，那是有意的决定，旅程随即关闭；
 万一关闭没落库，旅程停在 `ORDER_ENDED_WITHOUT_ARRIVAL` 等人，事件 2174。
 
+## 建单结果未知、RIoT 一直查无此单（#673）
+
+搬运的单（开往取货站或卸货站）发给 RIoT 之后结果未知——应答丢了，或者 RIoT 回了业务失败码（例如 2026-10-11 现场见过的
+`00002`）——旅程码是 `PICKUP_ResultUnknown` 或 `GATE_ResultUnknown`。服务端每一轮按同一个单号对账，**同一个单号绝不再发第二次**。
+#673 之前这个状态没有出口，只能改库。现在两条路：
+
+1. **自动**：RIoT 按这个单号**精确**答查无此单（真实 RIoT 回 HTTP 200、业务码 0、不带 result），连续满 2 分钟
+   （`JourneyRuntime:ChargingOrderAbsentAbandonAfter`，与充电单、空闲返回共用），车证明停稳、没有任务号，RIoT 的未完成订单清单读全了
+   且没有这辆车的单——全部成立，服务端判这张单**没建成**（告警事件 2234），旅程码 `OWN_ORDER_NEVER_APPEARED`，然后按上一节
+   **同车重建**：新单换新单号，三道防护照旧；**车上有货时同样先等车报一份新的仓位读数证明货在原仓**。中途读到单在、读不到、
+   或答得含糊，计时清零。重建出来的新单又一次结果未知并判作没建成，算「又出问题」，窗口内停住（`OWN_ORDER_REBUILD_STOPPED`），
+   不会每几分钟循环一次。
+2. **人工**：车离线、清单读不全、对账时断时续，自动那条凑不齐证据时，过了 `JourneyRuntime:OwnOrderRebuildRepeatWindow`
+   （默认 10 分钟，从最后一次建单应答算起），经本入口发 `DECLARE_ORDER_NEVER_APPEARED`（要 `faultRemedied = true`，意思是
+   「已到 RIoT 核对过这张单没建成」）。服务端当场按单号再读一次 RIoT：**查得到单、答得含糊或读不到，一律拒绝**
+   （`ORDER_NEVER_APPEARED_EXIT_ORDER_NOT_ABSENT`、`ORDER_NEVER_APPEARED_EXIT_ORDER_UNREADABLE`）；这一段曾经拿到过 RIoT 单号的，
+   也拒绝（`ORDER_NEVER_APPEARED_EXIT_ORDER_ID_KNOWN`）——拿到过单号就是建成过。通过之后这一段记成「没建成」并**直接停住**，
+   旅程码 `OWN_ORDER_REBUILD_STOPPED`，返回 `outcome = NeverAppearedDeclared`、`disposition = REBUILD_STOPPED`。**这一步不动车、
+   不终结需求**，接着按下一节「重建停住之后」选出口：人工重建、车上没货时放弃、车上有货时转交接。
+
+**那张旧单若事后在 RIoT 上冒出来并开动这辆车**：外来单监督器把它认作「归属证明不了」（依据 `OWN_DEMAND_LEG_ORDER_ABANDONED`），
+挡住这辆车不接新活、告警（事件 2201），**不取消**（需求只授权服务端取消放弃的充电单）；重建在车上挂着单时也不会建新单。
+请到 RIoT 按订单号结束那张旧单，再到车前核对车停在哪里、货在不在。
+
 ## 重建停住之后（#345）
 
 自动重建停住有两种：护栏三停住（旅程码 `OWN_ORDER_REBUILD_STOPPED`）与货不在原仓（`OWN_ORDER_REBUILD_CARGO_NOT_IN_PLACE`）。
@@ -370,7 +394,7 @@ Invoke-RestMethod -Method Post -Uri "$v2Health/api/field-ops/v1/foreign-running-
 $body = @{
     agvId         = 'agv02'
     operatorId    = '工号'
-    action        = 'CLEAR_FAULT'      # 或 RESUME_HELD_ORDER；重建停住之后：REBUILD_STOPPED_ORDER、TERMINATE_STOPPED_TRIP、PREPARE_CARGO_HANDOFF
+    action        = 'CLEAR_FAULT'      # 或 RESUME_HELD_ORDER；重建停住之后：REBUILD_STOPPED_ORDER、TERMINATE_STOPPED_TRIP、PREPARE_CARGO_HANDOFF；建单结果未知：DECLARE_ORDER_NEVER_APPEARED
     faultRemedied = $true
     note          = '现场说明，可不填'
 } | ConvertTo-Json

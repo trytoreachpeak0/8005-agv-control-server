@@ -269,6 +269,14 @@ public sealed partial class JourneyRuntimeEngine
             return await EndedBeforeConfirmationAsync(runtime, rebuild, now, cancellationToken).ConfigureAwait(false);
         }
 
+        // control-server#673: the new order's own create can be lost the same way; shown never to have appeared, it is recorded as a
+        // problem of its own under the new order, and REQ-0361's window judges it.
+        if (result.Outcome == MovementDispatchOutcome.ResultUnknown &&
+            await RecordOwnOrderNeverAppearedAsync(runtime, rebuild.NewUpperId, rebuild, cancellationToken).ConfigureAwait(false))
+        {
+            return true;
+        }
+
         if (result.Outcome != MovementDispatchOutcome.Confirmed)
         {
             await WaitForRebuildAsync(
@@ -496,7 +504,8 @@ public sealed partial class JourneyRuntimeEngine
     /// Whether the rebuild carries cargo on, so that it waits for a snapshot showing it in place (REQ-0360 as CP-0007 revised
     /// it, REQ-0362): a cleared fault the clearance judged loaded, or a cancellation, while a demand of the journey is loaded and
     /// not yet unloaded -- the same reading <see cref="CargoEvidenceAsync"/> takes its slots from. A cancellation on the way to
-    /// the pickup, nothing loaded yet, is rebuilt without one.
+    /// the pickup, nothing loaded yet, is rebuilt without one. An order that never appeared (control-server#673) is read like a
+    /// cancellation: the vehicle did not move for it, but people may have been at it while it stood, so the cargo is shown again.
     /// </summary>
     /// <remarks>
     /// <b>The cleared-fault source asks the journey too</b> (control-server#376). The clearance judged it loaded from its demands or
@@ -510,7 +519,8 @@ public sealed partial class JourneyRuntimeEngine
         JourneyRuntimeRow runtime,
         OwnOrderRebuildRow rebuild,
         CancellationToken cancellationToken) =>
-        rebuild.Source is OwnOrderRebuildSources.FaultClearedCargoOnBoard or OwnOrderRebuildSources.CancelledInRiot &&
+        rebuild.Source is OwnOrderRebuildSources.FaultClearedCargoOnBoard or OwnOrderRebuildSources.CancelledInRiot
+            or OwnOrderRebuildSources.OrderNeverAppeared &&
         await dbContext.Set<JourneyDemandRow>().AsNoTracking()
             .AnyAsync(row => row.JourneyId == runtime.JourneyId && row.RemovedAt == null &&
                              row.Status != JourneyDemandStatuses.PendingLoad &&

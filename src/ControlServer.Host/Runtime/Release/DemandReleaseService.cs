@@ -270,6 +270,31 @@ public sealed class DemandReleaseService(
     {
         OrderIntentRow? intent = await dbContext.OrderIntents.AsNoTracking()
             .SingleOrDefaultAsync(row => row.UpperId == currentStop.UpperId, cancellationToken).ConfigureAwait(false);
+        if (intent is not null &&
+            await AbandonedDemandLegOrders.TakenAsNeverCreatedAsync(dbContext, intent, cancellationToken).ConfigureAwait(false))
+        {
+            // control-server#673 incremental review S1: taken as never created on evidence that may be minutes old, so RIoT is asked
+            // once more, precisely by the upperId, before the demand goes to another vehicle. Only "no such order" -- 404, or real
+            // RIoT's HTTP 200 with no result -- lets it go: an order there means the old one landed late and would drive this vehicle
+            // to the same pickup; an answer that says nothing settles nothing.
+            RiotOrderObservation late;
+            try
+            {
+                late = await vehicleFacts.ReconcileByUpperIdAsync(currentStop.UpperId, cancellationToken).ConfigureAwait(false);
+            }
+            catch (Exception error) when (error is HttpRequestException or InvalidDataException or TaskCanceledException &&
+                                          !cancellationToken.IsCancellationRequested)
+            {
+                return (PickupOrderSettlement.None, DemandReleaseReasons.OrderStateUnknown);
+            }
+
+            return late.Kind == RiotOrderObservationKind.NotFound || late.IsExactAbsentAtObservation(currentStop.UpperId)
+                ? (PickupOrderSettlement.NoOrder, null)
+                : late.Kind is RiotOrderObservationKind.Active or RiotOrderObservationKind.Terminal
+                    ? (PickupOrderSettlement.None, DemandReleaseReasons.PickupOrderAppeared)
+                    : (PickupOrderSettlement.None, DemandReleaseReasons.OrderStateUnknown);
+        }
+
         if (await NeverDispatchedAsync(intent, cancellationToken).ConfigureAwait(false))
         {
             return (PickupOrderSettlement.NoOrder, null);
@@ -386,8 +411,15 @@ public sealed class DemandReleaseService(
     /// 第二种在 control-server#375 之前不算：RIoT 长时间读不到时，那样的取货单既不会建、也不能释放，只能改库。现在释放是它
     /// 不改库的放弃出口。与引擎并发时仍由事务里那次复读把关：引擎若已 arm，意图不再「从没发出过」，释放照旧拒绝。
     /// </remarks>
+    /// <remarks>
+    /// control-server#673 审查 H2：判作没建成的那一张（<see cref="AbandonedDemandLegOrders.TakenAsNeverCreatedAsync"/>）也算没有订单。
+    /// 引擎把这一段交给同车重建之后，重建若因车对待装需求不再合格而停（<c>VEHICLE_NO_LONGER_ELIGIBLE</c>），释放服务要把需求放掉；
+    /// 停靠仍指着旧单号，旧意图永远是 <c>RESULT_UNKNOWN</c>、没有单号，不算进来就每轮以 <c>ORDER_STATE_UNKNOWN</c> 拒绝，需求永远挂在这辆车上。
+    /// 那张单若事后在 RIoT 上冒出来，外来单监督器挡车交人。
+    /// </remarks>
     private async Task<bool> NeverDispatchedAsync(OrderIntentRow? intent, CancellationToken cancellationToken) =>
-        intent is null || await new WireToGateStore(dbContext).IsNeverSentAsync(intent, cancellationToken).ConfigureAwait(false);
+        intent is null || await new WireToGateStore(dbContext).IsNeverSentAsync(intent, cancellationToken).ConfigureAwait(false) ||
+        await AbandonedDemandLegOrders.TakenAsNeverCreatedAsync(dbContext, intent, cancellationToken).ConfigureAwait(false);
 
     private async Task<DemandReleaseOutcome> ReleaseAsync(
         JourneyRuntimeRow journey,

@@ -1,0 +1,53 @@
+# cs#673 变异原始输出（mutate673.py 写的结果文件，两次时段按时间顺序连在一起）
+# 第一次：head 5d8092429，19 项；第二次：head 069cec452，只跑 P8（P8 的过滤加了新用例）
+
+HEAD 5d8092429bceac874b057c8e21b718f263db3a15
+M01 front-of-gate call off: KILLED exit=1 Failed!  - Failed:     8, Passed:    13, Skipped:     0, Total:    21, Duration: 12 s - ControlServer.Tests.dll (net8.0)
+    Failed ControlServer.Tests.OwnOrderNeverAppearedTests.APersonDeclaringARebuiltOrderNeverCreatedEndsTheRebuildItSupersedes [304 ms]
+    Failed ControlServer.Tests.OwnOrderNeverAppearedTests.WithoutTheWholeEvidenceTheLegIsHeldAsBefore(missing: "vehicle-moving") [311 ms]
+    Failed ControlServer.Tests.OwnOrderNeverAppearedTests.WithoutTheWholeEvidenceTheLegIsHeldAsBefore(missing: "listing-incomplete") [308 ms]
+    Failed ControlServer.Tests.OwnOrderNeverAppearedTests.WithoutTheWholeEvidenceTheLegIsHeldAsBefore(missing: "vehicle-offline") [361 ms]
+    Failed ControlServer.Tests.OwnOrderNeverAppearedTests.AGateLegWithCargoOnBoardWhoseCreateNeverAppearedWaitsForTheCargoProofBeforeTheRebuild [2 s]
+    Failed ControlServer.Tests.OwnOrderNeverAppearedTests.ARebuiltOrderThatNeverAppearsEitherStopsForAPerson [134 ms]
+P6 behind-gate call off only: KILLED exit=1 Failed!  - Failed:     1, Passed:    20, Skipped:     0, Total:    21, Duration: 14 s - ControlServer.Tests.dll (net8.0)
+    Failed ControlServer.Tests.OwnOrderNeverAppearedTests.BehindTheSessionGateTheLegIsRecordedAndRebuiltOnlyOnceTheSessionIsReady [287 ms]
+M03 rebuilt-order branch off: KILLED exit=1 Failed!  - Failed:     1, Passed:    20, Skipped:     0, Total:    21, Duration: 13 s - ControlServer.Tests.dll (net8.0)
+    Failed ControlServer.Tests.OwnOrderNeverAppearedTests.ARebuiltOrderThatNeverAppearsEitherStopsForAPerson [291 ms]
+M04 engine drops OrderId precondition: KILLED exit=1 Failed!  - Failed:     1, Passed:    20, Skipped:     0, Total:    21, Duration: 35 s - ControlServer.Tests.dll (net8.0)
+    Failed ControlServer.Tests.OwnOrderNeverAppearedTests.AnIntentThatEverGotAnOrderIdIsNeverTakenAsNeverCreated [318 ms]
+M05 engine drops audit (S1) precondition: KILLED exit=1 Failed!  - Failed:     1, Passed:    20, Skipped:     0, Total:    21, Duration: 22 s - ControlServer.Tests.dll (net8.0)
+    Failed ControlServer.Tests.OwnOrderNeverAppearedTests.ACreateAnswerThatCarriedAnOrderIdIsNeverTakenAsNeverCreated [493 ms]
+M06 new source not in CarriesCargoAsync: KILLED exit=1 Failed!  - Failed:     1, Passed:    20, Skipped:     0, Total:    21, Duration: 19 s - ControlServer.Tests.dll (net8.0)
+    Failed ControlServer.Tests.OwnOrderNeverAppearedTests.AGateLegWithCargoOnBoardWhoseCreateNeverAppearedWaitsForTheCargoProofBeforeTheRebuild [4 s]
+P7 new source not in ClaimCargoEvidenceRequestAsync only: KILLED exit=1 Failed!  - Failed:     1, Passed:    20, Skipped:     0, Total:    21, Duration: 14 s - ControlServer.Tests.dll (net8.0)
+    Failed ControlServer.Tests.OwnOrderNeverAppearedTests.AGateLegWithCargoOnBoardWhoseCreateNeverAppearedWaitsForTheCargoProofBeforeTheRebuild [3 s]
+P5 CountsAsAgain: never-appeared first only repeats on cancel: KILLED exit=1 Failed!  - Failed:     1, Passed:    20, Skipped:     0, Total:    21, Duration: 12 s - ControlServer.Tests.dll (net8.0)
+    Failed ControlServer.Tests.OwnOrderNeverAppearedTests.ARebuiltOrderThatNeverAppearsEitherStopsForAPerson [261 ms]
+P8 new code not in IsStalledOrderReason: SURVIVED exit=0 Passed!  - Failed:     0, Passed:   416, Skipped:     0, Total:   416, Duration: 27 s - ControlServer.Tests.dll (net8.0)
+M10 supervisor does not recognise the new basis: KILLED exit=1 Failed!  - Failed:     1, Passed:    20, Skipped:     0, Total:    21, Duration: 14 s - ControlServer.Tests.dll (net8.0)
+    Failed ControlServer.Tests.OwnOrderNeverAppearedTests.TheOldOrderTurningUpRunningIsHeldNotCancelledAndTheRebuildWaits [146 ms]
+M11 manual exit ignores intent OrderId: KILLED exit=1 Failed!  - Failed:     1, Passed:    20, Skipped:     0, Total:    21, Duration: 12 s - ControlServer.Tests.dll (net8.0)
+    Failed ControlServer.Tests.OwnOrderNeverAppearedTests.EachUnmetPremiseRefusesTheDeclarationAndChangesNothing(premise: "intent-has-order-id", refusal: "ORDER_NEVER_APPEARED_EXIT_ORDER_ID_KNOWN") [305 ms]
+M12 manual exit ignores the exact-absent read: KILLED exit=1 Failed!  - Failed:     1, Passed:    20, Skipped:     0, Total:    21, Duration: 17 s - ControlServer.Tests.dll (net8.0)
+    Failed ControlServer.Tests.OwnOrderNeverAppearedTests.EachUnmetPremiseRefusesTheDeclarationAndChangesNothing(premise: "order-present", refusal: "ORDER_NEVER_APPEARED_EXIT_ORDER_NOT_ABSENT") [296 ms]
+M13 manual exit not too early: KILLED exit=1 Failed!  - Failed:     1, Passed:    20, Skipped:     0, Total:    21, Duration: 17 s - ControlServer.Tests.dll (net8.0)
+    Failed ControlServer.Tests.OwnOrderNeverAppearedTests.EachUnmetPremiseRefusesTheDeclarationAndChangesNothing(premise: "too-early", refusal: "ORDER_NEVER_APPEARED_EXIT_TOO_EARLY") [427 ms]
+M14 H1 superseded rebuild not ended: KILLED exit=1 Failed!  - Failed:     1, Passed:    20, Skipped:     0, Total:    21, Duration: 20 s - ControlServer.Tests.dll (net8.0)
+    Failed ControlServer.Tests.OwnOrderNeverAppearedTests.APersonDeclaringARebuiltOrderNeverCreatedEndsTheRebuildItSupersedes [731 ms]
+M15 H2 shared predicate always false: KILLED exit=1 Failed!  - Failed:     2, Passed:    57, Skipped:     0, Total:    59, Duration: 21 s - ControlServer.Tests.dll (net8.0)
+    Failed ControlServer.Tests.Batch7DemandReleaseServiceTests.AVehicleNoLongerEligibleWhileANeverCreatedPickupWaitsToBeRebuiltHasTheDemandReleased [514 ms]
+    Failed ControlServer.Tests.Batch7DemandReleaseServiceTests.ANeverCreatedPickupIsNotReleasedUnlessRiotSaysNoSuchOrderOnceMore(riot: "late-order", refusal: "RELEASE_PICKUP_ORDER_APPEARED") [317 ms]
+M16 M1 idle-return exclusion always false: KILLED exit=1 Failed!  - Failed:     1, Passed:   113, Skipped:     0, Total:   114, Duration: 22 s - ControlServer.Tests.dll (net8.0)
+    Failed ControlServer.Tests.IdleReturnExecutionTests.ADemandLegTakenAsNeverCreatedDoesNotKeepTheVehicleFromIdleReturn(orderId: null, expected: "Committed") [79 ms]
+V-a idle-return exclusion drops OrderId: KILLED exit=1 Failed!  - Failed:     1, Passed:   113, Skipped:     0, Total:   114, Duration: 22 s - ControlServer.Tests.dll (net8.0)
+    Failed ControlServer.Tests.IdleReturnExecutionTests.ADemandLegTakenAsNeverCreatedDoesNotKeepTheVehicleFromIdleReturn(orderId: "ORDER-KNOWN", expected: "OwnOrderResultUnknown") [175 ms]
+V-b TakenAsNeverCreated drops OrderId: KILLED exit=1 Failed!  - Failed:     1, Passed:    79, Skipped:     0, Total:    80, Duration: 20 s - ControlServer.Tests.dll (net8.0)
+    Failed ControlServer.Tests.Batch7DemandReleaseServiceTests.ANeverCreatedRecordDoesNotCountWhenTheIntentHasAnOrderId [221 ms]
+M17 release precise read always passes: KILLED exit=1 Failed!  - Failed:     2, Passed:    57, Skipped:     0, Total:    59, Duration: 18 s - ControlServer.Tests.dll (net8.0)
+    Failed ControlServer.Tests.Batch7DemandReleaseServiceTests.ANeverCreatedPickupIsNotReleasedUnlessRiotSaysNoSuchOrderOnceMore(riot: "unreadable", refusal: "RELEASE_ORDER_STATE_UNKNOWN") [323 ms]
+    Failed ControlServer.Tests.Batch7DemandReleaseServiceTests.ANeverCreatedPickupIsNotReleasedUnlessRiotSaysNoSuchOrderOnceMore(riot: "late-order", refusal: "RELEASE_PICKUP_ORDER_APPEARED") [331 ms]
+final unmutated build exit=0; tree clean=True
+HEAD 069cec452780765bee262480f2b9a0d53481b8e2
+P8 new code not in IsStalledOrderReason: KILLED exit=1 Failed!  - Failed:     1, Passed:   417, Skipped:     0, Total:   418, Duration: 21 s - ControlServer.Tests.dll (net8.0)
+    Failed ControlServer.Tests.MultiVehicleExecutionTests.AVehicleWhoseLegWasTakenAsNeverCreatedTakesNoAppendedDemandBeforeTheRebuild [6 s]
+final unmutated build exit=0; tree clean=True

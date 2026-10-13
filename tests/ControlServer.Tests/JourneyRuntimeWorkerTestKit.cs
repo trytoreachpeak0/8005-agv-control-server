@@ -1980,6 +1980,28 @@ internal static class JourneyRuntimeWorkerTestKit
         /// </summary>
         public bool AbsentOrdersReadAsTimeout { get; set; }
 
+        /// <summary>
+        /// While set, a read of an order RIoT does not have answers what real RIoT answers, through the gateway: HTTP 200, business
+        /// code 0, no result -- an exact absent-at-observation Unknown, not the 404 only the doubles ever gave (control-server#673).
+        /// </summary>
+        public bool AbsentOrdersReadAsRealRiot { get; set; }
+
+        /// <summary>
+        /// The next create of this purpose is answered the way the gateway reads RIoT's HTTP 200 with business code 00002 (seen on
+        /// site on 2026-10-11): result unknown, and RIoT holds no order -- the order is withheld, so it can be made to turn up later
+        /// with <see cref="ReleaseWithheldOrder"/> (control-server#673). Cleared once used.
+        /// </summary>
+        public string? RefuseNextCreateOf { get; set; }
+
+        private readonly Dictionary<string, RiotOrderObservation> _withheld = new(StringComparer.Ordinal);
+
+        /// <summary>The order a refused create withheld turns up in RIoT after all, in the state its create would have left.</summary>
+        public void ReleaseWithheldOrder(string upperId)
+        {
+            _orders[upperId] = _withheld[upperId];
+            _withheld.Remove(upperId);
+        }
+
         public Task<RiotOrderObservation> ReconcileByUpperIdAsync(string upperId, CancellationToken cancellationToken)
         {
             _ = cancellationToken;
@@ -1996,7 +2018,13 @@ internal static class JourneyRuntimeWorkerTestKit
                         RiotOrderObservationKind.Unknown,
                         null,
                         Receipt: new RiotOrderCallReceipt("RECONCILE", "SdkFailure", _clock.GetUtcNow(), FailureCategory: "TIMEOUT"))
-                    : new RiotOrderObservation(upperId, RiotOrderObservationKind.NotFound, null);
+                    : AbsentOrdersReadAsRealRiot
+                        ? new RiotOrderObservation(
+                            upperId,
+                            RiotOrderObservationKind.Unknown,
+                            null,
+                            Receipt: new RiotOrderCallReceipt("RECONCILE", "AbsentAtObservation", _clock.GetUtcNow(), ResultPresent: false))
+                        : new RiotOrderObservation(upperId, RiotOrderObservationKind.NotFound, null);
             AfterReconcile?.Invoke(upperId);
             return Task.FromResult(answer);
         }
@@ -2013,6 +2041,18 @@ internal static class JourneyRuntimeWorkerTestKit
                 VehicleKey: intent.VehicleKey,
                 MapId: intent.MapId,
                 DestinationStationId: intent.DestinationStationId);
+            if (string.Equals(RefuseNextCreateOf, intent.Purpose, StringComparison.Ordinal))
+            {
+                RefuseNextCreateOf = null;
+                _withheld[intent.UpperId] = active;
+                return Task.FromResult(new RiotOrderObservation(
+                    intent.UpperId,
+                    RiotOrderObservationKind.Unknown,
+                    null,
+                    Receipt: new RiotOrderCallReceipt(
+                        "CREATE", "SdkFailure", _clock.GetUtcNow(), HttpStatusCode: 200, BusinessCode: "00002",
+                        FailureCategory: "RIOT_API_FAILURE")));
+            }
             _orders[intent.UpperId] = active;
             if (CrashAfterNextCreate)
             {

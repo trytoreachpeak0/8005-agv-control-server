@@ -120,6 +120,12 @@ public static class OwnOrderRebuildSources
 
     /// <summary>人工清除「FAILED 且车上没货」的故障。</summary>
     public const string FaultClearedNothingOnBoard = "FAULT_CLEARED_NOTHING_ON_BOARD";
+
+    /// <summary>
+    /// 本服务端自己的单建单发出过、结果未知，RIoT 一直查无此单（control-server#673）：引擎凭共用判定自动记下（连续精确查无此单满窗口、车证明停稳、
+    /// 未完成订单清单读全且没有本车的单），或现场人员经故障处置入口确认它没建成（记下即停住，等人选出口）。
+    /// </summary>
+    public const string OrderNeverAppeared = "ORDER_NEVER_APPEARED";
 }
 
 /// <summary>一次重建走到了哪一步。</summary>

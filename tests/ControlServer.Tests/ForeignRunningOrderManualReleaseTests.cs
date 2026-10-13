@@ -18,6 +18,7 @@ using Microsoft.Extensions.Logging.Abstractions;
 using Microsoft.Extensions.Options;
 using RIoT.Sdk.Core;
 using RIoT.Sdk.Facade;
+using static ControlServer.Tests.Batch7StopDrivenAdvanceDriver;
 using static ControlServer.Tests.JourneyRuntimeWorkerTestKit;
 
 namespace ControlServer.Tests;
@@ -198,6 +199,75 @@ public sealed class ForeignRunningOrderManualReleaseTests
         ForeignRiotOrderRow row = await RowAsync(fixture);
         Assert.Equal((ForeignRiotOrderStates.HeldCancelNotAuthorized, (int?)null, (DateTimeOffset?)null), (row.State, row.EndedOrderState, row.EndedAt));
         Assert.Equal([fixture.Options.AgvId], await HeldAsync(fixture));
+    }
+
+    /// <summary>
+    /// control-server#673：被判作没建成的需求腿旧单冒出来、在本车上跑（依据 <c>OWN_DEMAND_LEG_ORDER_ABANDONED</c>，挡车），之后离开运行列表、读不出结束
+    /// （<c>UNSETTLED</c>）。具名的人经同一个人工放车入口放开之后，这一行不再挡车，之后几轮监看也不把它重新判成「归属证明不了」——归属只在第一次记这一行时判。
+    /// </summary>
+    [Fact]
+    [Trait("Requirement", "REQ-0164")]
+    public async Task AnAbandonedDemandLegOrderReleasedByHandNoLongerHoldsTheVehicle()
+    {
+        await using RuntimeFixture fixture = await RuntimeFixture.CreateAsync();
+        fixture.ForeignOrderCancel.Enabled = false;
+        // The rebuild is kept out of this: only the old order's row is under test.
+        fixture.Options.OwnOrderRebuildDelay = TimeSpan.FromHours(1);
+        fixture.Catalog.Set(fixture.Demand(FirstDemandId, FirstSublot, Now.AddMinutes(-10)));
+        fixture.BoxCounts.Set(FirstSublot, 7);
+        fixture.Riot.AbsentOrdersReadAsRealRiot = true;
+        fixture.Riot.RefuseNextCreateOf = "TO_PICKUP";
+        await TickAndRunAsync(fixture);
+        string oldUpperId = (await CurrentStopAsync(fixture, FirstDemandId)).UpperId;
+        foreach (TimeSpan elapsed in new[] { TimeSpan.FromSeconds(1), TimeSpan.FromSeconds(130) })
+        {
+            fixture.Clock.Advance(elapsed);
+            await fixture.HearFromPeerAsync();
+            fixture.Context.ChangeTracker.Clear();
+            await fixture.Engine.ExecuteOnceAsync(Token);
+        }
+        fixture.Context.ChangeTracker.Clear();
+        Assert.Equal("OWN_ORDER_NEVER_APPEARED", (await fixture.RuntimeAsync()).BlockReasonCode);
+
+        fixture.Riot.ReleaseWithheldOrder(oldUpperId);
+        string orderId = fixture.Riot.OrderIdOf(oldUpperId)!;
+        fixture.Clock.Advance(TimeSpan.FromSeconds(1));
+        await fixture.HearFromPeerAsync();
+        await fixture.Engine.ExecuteOnceAsync(Token);
+        ForeignRiotOrderRow held = await OrderRowAsync(fixture, orderId);
+        Assert.Equal((ForeignRiotOrderOwnership.Unproven, "OWN_DEMAND_LEG_ORDER_ABANDONED"), (held.Ownership, held.OwnershipBasis));
+        Assert.Equal([fixture.Options.AgvId], await HeldAsync(fixture));
+
+        fixture.Riot.ForgetOrder(oldUpperId);
+        fixture.Clock.Advance(ForeignRunningOrderSupervisor.CancelSettleTime);
+        await fixture.HearFromPeerAsync();
+        await fixture.Engine.ExecuteOnceAsync(Token);
+        Assert.Equal(ForeignRiotOrderStates.Unsettled, (await OrderRowAsync(fixture, orderId)).State);
+        Assert.Equal([fixture.Options.AgvId], await HeldAsync(fixture));
+
+        using Roster roster = new();
+        ForeignRunningOrderManualReleaseResult result = await ReleaseAsync(
+            fixture, roster, Request(fixture) with { RiotOrderId = orderId });
+
+        Assert.True(result.Released, string.Join(',', result.Codes));
+        for (int round = 0; round < 3; round++)
+        {
+            fixture.Clock.Advance(ForeignRunningOrderSupervisor.CancelSettleTime);
+            await fixture.HearFromPeerAsync();
+            await fixture.Engine.ExecuteOnceAsync(Token);
+        }
+        ForeignRiotOrderRow released = await OrderRowAsync(fixture, orderId);
+        Assert.Equal(
+            (ForeignRiotOrderStates.ReleasedByOperator, ForeignRiotOrderOwnership.Unproven, "OWN_DEMAND_LEG_ORDER_ABANDONED"),
+            (released.State, released.Ownership, released.OwnershipBasis));
+        Assert.Empty(await HeldAsync(fixture));
+        Assert.Empty(fixture.Riot.OrderCommands);
+    }
+
+    private static async Task<ForeignRiotOrderRow> OrderRowAsync(RuntimeFixture fixture, string orderId)
+    {
+        await using ControlServerDbContext reading = new(fixture.DbOptionsForTests);
+        return await reading.ForeignRiotOrders.AsNoTracking().SingleAsync(row => row.RiotOrderId == orderId, Token);
     }
 
     /// <summary>
@@ -586,7 +656,8 @@ public sealed class ForeignRunningOrderManualReleaseTests
             ControlServer.Host.Dashboard.ForeignRunningOrdersQueryEndpoint.Descriptions,
             .. ControlServer.Host.Dashboard.ForeignRunningOrdersQueryEndpoint.OwnAbandonedOrderDescriptions.Values,
         ];
-        Assert.Equal(4, sets.Length);
+        // control-server#673 added the fifth: a demand leg's order taken as never created.
+        Assert.Equal(5, sets.Length);
         Assert.All(sets, set =>
         {
             string text = set[ForeignRunningOrders.UnsettledReason];

@@ -36,6 +36,12 @@ public enum VehicleFaultRecoveryAction
     /// session, where the cargo is taken out, handed over and its demand ended (REQ-0238, control-server#345).
     /// </summary>
     PrepareCargoHandoff,
+
+    /// <summary>
+    /// A demand leg's create result is unknown and RIoT shows no such order, and the engine's own evidence never completed; the
+    /// order was never created: record the leg as ended and stopped, for one of the three ways out above (control-server#673).
+    /// </summary>
+    DeclareOrderNeverAppeared,
 }
 
 /// <summary>A person's request about one explicitly named vehicle.</summary>
@@ -78,6 +84,12 @@ public enum VehicleFaultRecoveryOutcome
 
     /// <summary>A stopped trip with cargo on board now waits for its exception recovery session (control-server#345).</summary>
     HandoffPrepared,
+
+    /// <summary>
+    /// A demand leg whose create result was unknown was recorded as never created and stopped, for a person's next choice
+    /// (control-server#673).
+    /// </summary>
+    NeverAppearedDeclared,
 }
 
 /// <summary>What was done with the vehicle's journey when its fault was cleared.</summary>
@@ -301,6 +313,8 @@ public sealed partial class VehicleFaultRecoveryService(
                     await TerminateStoppedAsync(request, cancellationToken).ConfigureAwait(false),
                 VehicleFaultRecoveryAction.PrepareCargoHandoff =>
                     await PrepareCargoHandoffAsync(request, cancellationToken).ConfigureAwait(false),
+                VehicleFaultRecoveryAction.DeclareOrderNeverAppeared =>
+                    await DeclareOrderNeverAppearedAsync(request, cancellationToken).ConfigureAwait(false),
                 _ => Refused(["FAULT_RECOVERY_ACTION_UNKNOWN"], null),
             };
         }

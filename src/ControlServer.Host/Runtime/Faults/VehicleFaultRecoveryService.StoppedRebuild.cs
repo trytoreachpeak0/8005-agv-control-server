@@ -461,6 +461,7 @@ public sealed partial class VehicleFaultRecoveryService
     {
         OwnOrderRebuildSources.FaultClearedCargoOnBoard => CargoOnBoardReason,
         OwnOrderRebuildSources.FaultClearedNothingOnBoard => NothingOnBoardReason,
+        OwnOrderRebuildSources.OrderNeverAppeared => JourneyRuntimeEngine.OwnOrderNeverAppearedReason,
         _ => JourneyRuntimeEngine.OrderEndedWithoutArrivalReason,
     };
 }

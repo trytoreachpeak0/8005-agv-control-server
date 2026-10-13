@@ -305,7 +305,7 @@ public sealed partial class JourneyRuntimeEngine(
         OwnOrderRebuildOrderUnconfirmedReason or OwnOrderRebuildStoppedReason or
         OwnOrderRebuildWaitingCargoEvidenceReason or OwnOrderRebuildCargoNotInPlaceReason or
         OwnOrderRebuildCargoUnprovenReason or
-        OwnOrderRebuildVehicleIneligibleReason;
+        OwnOrderRebuildVehicleIneligibleReason or OwnOrderNeverAppearedReason;
 
     /// <summary>
     /// The journey is waiting on a fact only the vehicle can supply, and the vehicle has gone quiet: no legal inbound
@@ -2347,6 +2347,8 @@ public sealed partial class JourneyRuntimeEngine(
             catch (Exception error) when (error is HttpRequestException or InvalidDataException or TaskCanceledException &&
                                           !cancellationToken.IsCancellationRequested)
             {
+                // control-server#673 review S2: an unread round breaks the run of "no such order".
+                dispatchRound.Charging.Board.SeenOrUnread(intent.UpperId);
                 return false;
             }
 
@@ -2372,7 +2374,11 @@ public sealed partial class JourneyRuntimeEngine(
 
             if (result.Outcome != MovementDispatchOutcome.TerminalReconciliationRequired)
             {
-                return false;
+                // control-server#673: behind the gate too -- the record is kept and named here, and the rebuild creates nothing
+                // until the session is ready, as for a cancellation read here.
+                return result.Outcome == MovementDispatchOutcome.ResultUnknown &&
+                       await RecordOwnOrderNeverAppearedAsync(runtime, intent.UpperId, endedRebuild: null, cancellationToken)
+                           .ConfigureAwait(false);
             }
         }
 
@@ -2681,8 +2687,19 @@ public sealed partial class JourneyRuntimeEngine(
                 return false;
             }
         }
-        MovementDispatchResult result = await movementDispatch.ReconcileOrCreateAsync(
-            upperId, cancellationToken).ConfigureAwait(false);
+        MovementDispatchResult result;
+        try
+        {
+            result = await movementDispatch.ReconcileOrCreateAsync(upperId, cancellationToken).ConfigureAwait(false);
+        }
+        catch
+        {
+            // control-server#673 review S2: a round that could not read RIoT breaks "no such order without a break" as much as an
+            // unread answer inside the shared judgement does. The exception goes on as before.
+            dispatchRound.Charging.Board.SeenOrUnread(upperId);
+            throw;
+        }
+
         if (result.Outcome == MovementDispatchOutcome.Confirmed)
         {
             runtime.SetBlockReason(null, timeProvider.GetUtcNow());
@@ -2694,6 +2711,13 @@ public sealed partial class JourneyRuntimeEngine(
         if (result.Outcome == MovementDispatchOutcome.TerminalReconciliationRequired &&
             await NameOrderEndedBeforeConfirmationAsync(runtime, upperId, reasonOnceMovedOn: null, cancellationToken)
                 .ConfigureAwait(false))
+        {
+            return false;
+        }
+        // control-server#673: a create sent with its result unknown that RIoT never shows is recorded to be rebuilt, once
+        // control-server#611's evidence is complete; until then the leg keeps {leg}_ResultUnknown, as before.
+        if (result.Outcome == MovementDispatchOutcome.ResultUnknown &&
+            await RecordOwnOrderNeverAppearedAsync(runtime, upperId, endedRebuild: null, cancellationToken).ConfigureAwait(false))
         {
             return false;
         }
