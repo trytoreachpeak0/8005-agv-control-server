@@ -99,13 +99,25 @@ public sealed partial class RecoveryStateMachineG2Tests
                 "FAULT_CARGO_HANDOFF" => HandedOffResult(),
                 _ => MechanicallyIsolatedResult(generation: 1)
             };
-            Assert.Equal("DurableAck", MessageType(await processor.ProcessAsync(result, state, token)));
+            string ended = await processor.ProcessAsync(result, state, token);
+            Assert.Equal("DurableAck", MessageType(ended));
 
             Assert.Equal(StationOperationStatus.Cancelled, (await context.StationOperations.AsNoTracking().SingleAsync(token)).Status);
             Assert.Equal(DemandExecutionStatus.Cancelled, (await context.AcceptedDemands.AsNoTracking().SingleAsync(token)).Status);
             JourneyRuntimeRow runtime = await context.JourneyRuntimes.AsNoTracking().SingleAsync(token);
             Assert.Equal(JourneyRuntimeStage.Completed, runtime.Stage);
             Assert.Equal(endingCode, runtime.BlockReasonCode);
+            // The ended demand no longer holds the session. A forced recovery still holds it, for its hardware record
+            // (REQ-0242) -- that hold, not the demand's, is what the session names.
+            if (action == "FORCED_MECHANICAL_RECOVERY")
+            {
+                Assert.Equal("FORCED_RECOVERY_HARDWARE_RECOVERY_REQUIRED",
+                    (await context.SessionRecoveries.AsNoTracking().SingleAsync(token)).ReasonCode);
+            }
+            else
+            {
+                await AssertReadyAgainAsync(context, ended);
+            }
         }
         finally
         {
@@ -263,6 +275,122 @@ public sealed partial class RecoveryStateMachineG2Tests
         Assert.Equal(StationOperationStatus.Committed, (await context.StationOperations.AsNoTracking().SingleAsync(token)).Status);
         Assert.Equal(DemandExecutionStatus.RecoveryRequired, (await context.AcceptedDemands.AsNoTracking().SingleAsync(token)).Status);
         Assert.Equal(JourneyRuntimeStage.Blocked, (await context.JourneyRuntimes.AsNoTracking().SingleAsync(token)).Stage);
+    }
+
+    /// <summary>
+    /// C11's addition: in the shape the guard above leaves alone -- the load Committed, the cancellation's result not
+    /// reconciled -- the vehicle still has a way out mid-session: the session goes RECOVERY_REQUIRED on the result's answer
+    /// (the onboard's entries are not grey), and a fault cargo handoff ends the demand and the journey.
+    /// </summary>
+    [Fact]
+    [Trait("IntegrationSlice", "FP-IS-02")]
+    [Trait("IntegrationSlice", "FP-IS-07")]
+    public async Task AfterAnUnreconciledCancellationOfACommittedLoadTheVehicleStillHasAWayOutMidSession()
+    {
+        const string proofVariable = "CONTROL_SERVER_TEST_RECOVERY_PROOF_CS697_COMMITTED_WAY_OUT";
+        const string proof = "cs697-committed-way-out-proof-not-a-production-secret";
+        Environment.SetEnvironmentVariable(proofVariable, proof);
+        try
+        {
+            CancellationToken token = TestContext.Current.CancellationToken;
+            await using SqliteConnection connection = new("Data Source=:memory:");
+            await connection.OpenAsync(token);
+            await using ControlServerDbContext context = await CreateContextAsync(connection);
+            (OnboardMessageProcessor processor, OnboardConnectionState state) =
+                await AuthorizeInFlightCancellationAsync(context, proofVariable);
+            await processor.ProcessAsync(
+                Envelope("b6970000-0000-4000-8000-000000000012", "OperationResult", OperationResultPayload()), state, token);
+
+            string answer = await processor.ProcessAsync(UnreconciledCancellationResult("FAILED"), state, token);
+
+            Assert.Equal(["DurableAck", "SessionReadiness"],
+                answer.Split('\n', StringSplitOptions.RemoveEmptyEntries).Select(MessageType).ToArray());
+            Assert.Equal(SessionReadiness.RecoveryRequired,
+                (await context.SessionRecoveries.AsNoTracking().SingleAsync(token)).Readiness);
+            Assert.Equal("ExceptionRecoverySessionOpened",
+                MessageType(await processor.ProcessAsync(RecoverySessionRequest(proof), state, token)));
+            string accepted = await processor.ProcessAsync(RecoveryAction("FAULT_CARGO_HANDOFF"), state, token);
+            Assert.True(MessageType(accepted) == "RecoveryActionAccepted", accepted);
+            string ended = await processor.ProcessAsync(HandedOffResult(), state, token);
+            Assert.Equal("DurableAck", MessageType(ended));
+            Assert.Equal(JourneyRuntimeStage.Completed, (await context.JourneyRuntimes.AsNoTracking().SingleAsync(token)).Stage);
+            // The demand ended, nothing holds the vehicle any more: READY again, on the handoff's own answer.
+            await AssertReadyAgainAsync(context, ended);
+        }
+        finally
+        {
+            Environment.SetEnvironmentVariable(proofVariable, null);
+        }
+    }
+
+    /// <summary>
+    /// The same kind of shape on another workflow (C11's choice A for #697): a correction of a committed load whose result
+    /// does not reconcile leaves the demand RecoveryRequired and the load Committed. The session goes RECOVERY_REQUIRED on
+    /// the result's answer, without a reconnect; before #697 it stayed READY and the onboard's entries stayed grey.
+    /// </summary>
+    [Fact]
+    [Trait("IntegrationSlice", "FP-IS-02")]
+    [Trait("IntegrationSlice", "FP-IS-07")]
+    [Trait("ProtocolVector", "CV-LOAD-CORRECTION")]
+    public async Task AnUnreconciledCorrectionOfACommittedLoadPutsTheSessionIntoRecoveryWithoutAReconnect()
+    {
+        const string correctionId = "b6970000-0000-4000-8000-000000000030";
+        CancellationToken token = TestContext.Current.CancellationToken;
+        await using SqliteConnection connection = new("Data Source=:memory:");
+        await connection.OpenAsync(token);
+        await using ControlServerDbContext context = await CreateContextAsync(connection);
+        await SeedCorrectableLoadAsync(context, JourneyRuntimeStage.AwaitingStationDeparture);
+        OnboardMessageProcessor processor = Processor(context, new RecordingPeer(context), CancellationProofVariable);
+        OnboardConnectionState state = CurrentState();
+        state.Readiness = SessionReadiness.Ready;
+        await processor.ProcessAsync(CorrectionRequest(correctionId), state, token);
+        Assert.Equal("LOAD_CORRECTION", (await context.RecoveryWorkflows.AsNoTracking().SingleAsync(token)).WorkflowType);
+
+        string answer = await processor.ProcessAsync(
+            Envelope(
+                "b6970000-0000-4000-8000-000000000031",
+                "LoadCorrectionResult",
+                new
+                {
+                    correctionId,
+                    demandId = DemandId,
+                    slotOperationAttemptId = AttemptId,
+                    overallOutcome = "FAILED",
+                    slotResults = RecoverySlots.Select(slot => new
+                    {
+                        slotNo = slot,
+                        outcome = "FAILED",
+                        finalPhysicalState = "UNKNOWN",
+                        lockState = "UNKNOWN",
+                        unlockOutputState = "UNKNOWN",
+                        reasonCodes = UnknownReasonCodes
+                    }).ToArray(),
+                    observedAt = Now.AddSeconds(4)
+                }),
+            state,
+            token);
+
+        string[] lines = answer.Split('\n', StringSplitOptions.RemoveEmptyEntries);
+        Assert.Equal(["DurableAck", "SessionReadiness"], lines.Select(MessageType).ToArray());
+        Assert.Equal("RECOVERY_REQUIRED", FirstPayload(lines[1]).GetProperty("readiness").GetString());
+        Assert.Equal(StationOperationStatus.Committed, (await context.StationOperations.AsNoTracking().SingleAsync(token)).Status);
+        Assert.Equal(DemandExecutionStatus.RecoveryRequired, (await context.AcceptedDemands.AsNoTracking().SingleAsync(token)).Status);
+        JourneyRuntimeRow runtime = await context.JourneyRuntimes.AsNoTracking().SingleAsync(token);
+        Assert.Equal(JourneyRuntimeStage.Blocked, runtime.Stage);
+        Assert.Equal("LoadCorrectionResult_NOT_RECONCILED", runtime.BlockReasonCode);
+        Assert.Equal("OPERATION_RECOVERY_REQUIRED", (await context.SessionRecoveries.AsNoTracking().SingleAsync(token)).ReasonCode);
+    }
+
+    /// <summary>The session READY again, and the given answer carrying that change to the vehicle.</summary>
+    private static async Task AssertReadyAgainAsync(ControlServerDbContext context, string answer)
+    {
+        SessionRecoveryRow session = await context.SessionRecoveries.AsNoTracking()
+            .SingleAsync(TestContext.Current.CancellationToken);
+        Assert.Equal(SessionReadiness.Ready, session.Readiness);
+        Assert.Equal("READY", session.ReasonCode);
+        string readiness = Assert.Single(
+            answer.Split('\n', StringSplitOptions.RemoveEmptyEntries), line => MessageType(line) == "SessionReadiness");
+        Assert.Equal("READY", FirstPayload(readiness).GetProperty("readiness").GetString());
     }
 
     /// <summary>
