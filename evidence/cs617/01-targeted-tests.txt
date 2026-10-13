@@ -1,0 +1,14 @@
+# control-server，提交 28319b441 的工作树（合入 fp/v2-impl e53a94e5 之后），SDK 8.0.425，VSTest --filter
+dotnet test tests/ControlServer.Tests --filter "FullyQualifiedName~ForeignRunningOrder|FullyQualifiedName~StationExclusivityReleaseEndpointsTests|FullyQualifiedName~ArchitectureTests|FullyQualifiedName~HttpRiotMovementGatewayTests|FullyQualifiedName~RiotSdkPackageProvenanceTests|FullyQualifiedName~IdleReturnExecutionTests|FullyQualifiedName~HttpRiotFailureDetailTests|FullyQualifiedName~AbandonedLateOrder"
+Passed!  - Failed:     0, Passed:   410, Skipped:     0, Total:   410, Duration: 56 s - ControlServer.Tests.dll (net8.0)
+
+dotnet build ControlServer.sln
+Build succeeded.
+    0 Warning(s)
+
+# riot-sdk，提交 62a827d（fix/cs617-detail-by-order-id-without-upper-id），全量
+dotnet test csharp/RIoT.Sdk.Tests
+Passed!  - Failed:     0, Passed:   256, Skipped:     0, Total:   256, Duration: 18 s - RIoT.Sdk.Tests.dll (net8.0)
+python -m pytest -q   (python/，临时 venv，pip install -e ".[dev]")
+162 passed, 1 skipped, 175 warnings in 17.49s
+# 计数核对：C# 原 246 + 新 10 = 256；Python 原 153 + 新 9 = 162（1 skipped 是要 RIOT_SMOKE=1 的冒烟用例）
