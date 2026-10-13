@@ -1,0 +1,20 @@
+mutation W1 on ad2d9ba88: scripts/parallel/instance-factory01-v2.cutover-two-zones.json
+sed: 53s/"cargoHoldingTimeout": "00:05:00"/"cargoHoldingTimeout": "00:30:00"/
+files changed: 1
+-    "cargoHoldingTimeout": "00:05:00",
++    "cargoHoldingTimeout": "00:30:00",
+--- self-test exit 1
+  FAIL  cutover: everything but the roster, the zones, the work types and the cargo holding wait equals the production-mes definition
+        waits: departure 00:05:00, cargo holding 00:30:00; the user's production values are 00:05:00 and 00:05:00
+  FAIL  cutover runtime-on: differs from the cutover definition only in journeyRuntime.enabled and routeGraph.enabled, both true; the gate and the other switches stay off
+        switches as asserted: True
+850 passed, 2 failed
+--- dotnet exit 1
+  Failed ControlServer.Tests.ParallelInstanceEffectiveConfigurationTests.CutoverDefinitionBindsTwoZonesAndThreeDedicatedCarsTheHostAccepts(definitionFile: "instance-factory01-v2.cutover-two-zones.json", runtimeEnabled: False) [800 ms]
+Failed!  - Failed:     1, Passed:    55, Skipped:     0, Total:    56, Duration: 41 s - ControlServer.Tests.dll (net8.0)
+--- restored; status: ''
+W1 dotnet failure detail (last run of round 2):
+  Error Message:
+   Assert.Equal() Failure: Values differ
+Expected: 00:05:00
+Actual:   00:30:00

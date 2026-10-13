@@ -6,6 +6,7 @@ using ControlServer.Application;
 using ControlServer.Domain;
 using ControlServer.Infrastructure.Security;
 using Microsoft.Extensions.DependencyInjection;
+using Microsoft.Extensions.Logging;
 using Microsoft.Kiota.Abstractions;
 using RIoT.Sdk.Core;
 using RIoT.Sdk.Facade;
@@ -105,19 +106,50 @@ public sealed class HttpRiotMovementGateway : IRiotMovementGateway, IRiotVehicle
 
     /// <summary>Placeholder RIoT reports in executeVehicleKey before a vehicle is bound.</summary>
     private const string UnassignedVehicleKeyPlaceholder = "--";
+    private static readonly Action<ILogger, string, string, int?, string?, string, string, Exception?> LogCreateFailed =
+        LoggerMessage.Define<string, string, int?, string?, string, string>(
+            LogLevel.Warning,
+            new EventId(2166, nameof(LogCreateFailed)),
+            "RIoT {Operation} for upperId {UpperId} failed: HTTP {HttpStatusCode}, business code {BusinessCode}, category " +
+            "{FailureCategory}. RIoT said: {Detail}");
+
+    private static readonly Action<ILogger, string, string, int?, string?, string, string, Exception?> LogReadFailed =
+        LoggerMessage.Define<string, string, int?, string?, string, string>(
+            LogLevel.Information,
+            new EventId(2167, nameof(LogReadFailed)),
+            "RIoT {Operation} for upperId {UpperId} failed: HTTP {HttpStatusCode}, business code {BusinessCode}, category " +
+            "{FailureCategory}. RIoT said: {Detail}");
+
+    private static readonly Action<ILogger, string, string, int?, string, string, Exception?> LogReadUnanswered =
+        LoggerMessage.Define<string, string, int?, string, string>(
+            LogLevel.Debug,
+            new EventId(2168, nameof(LogReadUnanswered)),
+            "RIoT {Operation} for upperId {UpperId} got no business answer: HTTP {HttpStatusCode}, category {FailureCategory}. " +
+            "{Detail}");
+
     private readonly RiotSession riotSession;
     private readonly TimeProvider timeProvider;
+    private readonly ILogger logger;
 
     public HttpRiotMovementGateway(RiotSession riotSession)
         : this(riotSession, TimeProvider.System)
     {
     }
 
-    [ActivatorUtilitiesConstructor]
     public HttpRiotMovementGateway(RiotSession riotSession, TimeProvider timeProvider)
+        : this(riotSession, timeProvider, null)
+    {
+    }
+
+    [ActivatorUtilitiesConstructor]
+    public HttpRiotMovementGateway(
+        RiotSession riotSession,
+        TimeProvider timeProvider,
+        ILogger<HttpRiotMovementGateway>? logger)
     {
         this.riotSession = riotSession;
         this.timeProvider = timeProvider;
+        this.logger = (ILogger?)logger ?? Microsoft.Extensions.Logging.Abstractions.NullLogger.Instance;
     }
 
     /// <summary>The act a charging order carries after its move to the charger (allowlist 1.2, shape two).</summary>
@@ -166,7 +198,7 @@ public sealed class HttpRiotMovementGateway : IRiotMovementGateway, IRiotVehicle
         }
         catch (Exception error) when (RiotCallFailureClassification.IsSdkFailure(error))
         {
-            return Unknown(upperId, FailureReceipt("RECONCILE", error));
+            return Unknown(upperId, FailureReceipt("RECONCILE", upperId, error));
         }
     }
 
@@ -249,7 +281,7 @@ public sealed class HttpRiotMovementGateway : IRiotMovementGateway, IRiotVehicle
         }
         catch (Exception error) when (RiotCallFailureClassification.IsSdkFailure(error))
         {
-            return Unknown(intent.UpperId, FailureReceipt("CREATE", error));
+            return Unknown(intent.UpperId, FailureReceipt("CREATE", intent.UpperId, error));
         }
     }
 
@@ -980,7 +1012,12 @@ public sealed class HttpRiotMovementGateway : IRiotMovementGateway, IRiotVehicle
             resultPresent,
             failureCategory);
 
-    private RiotOrderCallReceipt FailureReceipt(string operation, Exception error)
+    /// <summary>
+    /// The receipt of a failed call, and a log line carrying what RIoT said (control-server#611). The receipt keeps only the
+    /// codes; until 2026-10-11 nothing kept RIoT's own words, so a create answered HTTP 200 with business code 00002 could not
+    /// be followed up. The words are <see cref="RiotFailureDetail.Of"/>: truncated, line breaks flattened, credentials masked.
+    /// </summary>
+    private RiotOrderCallReceipt FailureReceipt(string operation, string upperId, Exception error)
     {
         int? httpStatusCode = RiotCallFailureClassification.HttpStatusCode(error);
         string? rawBusinessCode = RiotCallFailureClassification.RawBusinessCode(error);
@@ -992,6 +1029,24 @@ public sealed class HttpRiotMovementGateway : IRiotMovementGateway, IRiotVehicle
             ? "PROTOCOL_FAILURE"
             : RiotCallFailureClassification.FailureCategory(error);
         bool? resultPresent = rawBusinessCode == "order-ref-missing" ? false : null;
+        // Review S5: a create failure, and a read RIoT answered with a business code, are what a person follows up, so their
+        // words go to the log at Warning and Information. A read that got no business answer -- a timeout, a dropped connection --
+        // is every vehicle's reconciliation, twice a round, for as long as RIoT is unreachable: Debug, or an outage writes
+        // tens of thousands of lines an hour.
+        if (operation == "CREATE")
+        {
+            LogCreateFailed(logger, operation, upperId, httpStatusCode, businessCode, failureCategory, RiotFailureDetail.Of(error), null);
+        }
+        // RIoT's own codes are digits (00002, 0610008); the SDK's read path names its own failures in words (riot-read-timeout,
+        // riot-read-failed), which are no answer from RIoT.
+        else if (!string.IsNullOrEmpty(rawBusinessCode) && rawBusinessCode.All(char.IsAsciiDigit))
+        {
+            LogReadFailed(logger, operation, upperId, httpStatusCode, businessCode, failureCategory, RiotFailureDetail.Of(error), null);
+        }
+        else if (logger.IsEnabled(LogLevel.Debug))
+        {
+            LogReadUnanswered(logger, operation, upperId, httpStatusCode, failureCategory, RiotFailureDetail.Of(error), null);
+        }
         return Receipt(
             operation,
             "SdkFailure",

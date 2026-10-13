@@ -1,0 +1,12 @@
+mutation R1 on ad2d9ba88: scripts/parallel/instance-factory01-v2.cutover-two-zones.runtime-on.json
+sed: 20s/"enabled": true/"enabled": false/
+files changed: 1
+-    "enabled": true,
++    "enabled": false,
+--- self-test exit 1
+  FAIL  cutover runtime-on: differs from the cutover definition only in journeyRuntime.enabled and routeGraph.enabled, both true; the gate and the other switches stay off
+        switches as asserted: False
+851 passed, 1 failed
+--- dotnet exit 0
+Passed!  - Failed:     0, Passed:    56, Skipped:     0, Total:    56, Duration: 1 m 29 s - ControlServer.Tests.dll (net8.0)
+--- restored; status: ''

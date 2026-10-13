@@ -587,42 +587,7 @@ public sealed partial class JourneyRuntimeEngine
         JourneyStopRow move,
         CancellationToken cancellationToken)
     {
-        ChargingAllocationBoard board = dispatchRound.Charging.Board;
-        RiotOrderObservation observed;
-        try
-        {
-            observed = await vehicleFacts.ReconcileByUpperIdAsync(move.UpperId, cancellationToken).ConfigureAwait(false);
-        }
-        catch (Exception error) when (error is HttpRequestException or InvalidDataException or TaskCanceledException &&
-                                      !cancellationToken.IsCancellationRequested)
-        {
-            board.SeenOrUnread(move.UpperId);
-            return;
-        }
-        if (observed.Kind != RiotOrderObservationKind.NotFound && !observed.IsExactAbsentAtObservation(move.UpperId))
-        {
-            board.SeenOrUnread(move.UpperId);
-            return;
-        }
-
-        DateTimeOffset now = timeProvider.GetUtcNow();
-        if (now - board.AbsentSince(move.UpperId, now) < runtimeOptions.ChargingOrderAbsentAbandonAfter ||
-            await ProvenStoppedWithoutOrderAsync(runtime.VehicleKey, cancellationToken).ConfigureAwait(false) is null)
-        {
-            return;
-        }
-        bool noUnfinishedOrder;
-        try
-        {
-            noUnfinishedOrder = await dispatchRound.Charging.Occupancy
-                .VehicleHasNoUnfinishedOrderAsync(runtime.VehicleKey, cancellationToken).ConfigureAwait(false);
-        }
-        catch (Exception error) when (error is HttpRequestException or InvalidDataException or TaskCanceledException &&
-                                      !cancellationToken.IsCancellationRequested)
-        {
-            return;
-        }
-        if (!noUnfinishedOrder)
+        if (await OrderNeverAppearedAsync(move.UpperId, runtime.VehicleKey, cancellationToken).ConfigureAwait(false) is null)
         {
             return;
         }
@@ -635,7 +600,7 @@ public sealed partial class JourneyRuntimeEngine
                 clearing ? ChargingExecutionReasons.UnableToChargeClearing : ChargingExecutionReasons.UnableToChargeCleared,
                 cancellationToken)
             .ConfigureAwait(false);
-        board.SeenOrUnread(move.UpperId);
+        dispatchRound.Charging.Board.SeenOrUnread(move.UpperId);
         LogClearanceMoveHeld(logger, move.UpperId, runtime.VehicleKey, runtime.JourneyId, "ORDER_NEVER_APPEARED_ABANDONED", null);
     }
 

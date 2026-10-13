@@ -1,0 +1,18 @@
+mutation P3 on ad2d9ba88: scripts/parallel/instance-factory01-v2.cutover-two-zones.json
+sed: 80s/"allowedTaskTypes": \["DIE_TO_OVEN", "DIE_TO_WIRE_STAGING"\]/"allowedTaskTypes": ["DIE_TO_OVEN", "DIE_TO_WIRE_STAGING", "STAGING_TO_WIRE"]/
+files changed: 1
+-        "allowedTaskTypes": ["DIE_TO_OVEN", "DIE_TO_WIRE_STAGING"],
++        "allowedTaskTypes": ["DIE_TO_OVEN", "DIE_TO_WIRE_STAGING", "STAGING_TO_WIRE"],
+--- self-test exit 1
+  FAIL  cutover: each car carries exactly the task types and zones the user assigned it
+        differs from the decision: agv03 types [DIE_TO_OVEN,DIE_TO_WIRE_STAGING,STAGING_TO_WIRE]
+  FAIL  cutover: dedicated -- every allowed work type is served by exactly one car, and no car takes a type outside allowedWorkTypes
+        types: 6; not exactly one car: STAGING_TO_WIRE served by 2; outside: 
+--
+  FAIL  cutover runtime-on: differs from the cutover definition only in journeyRuntime.enabled and routeGraph.enabled, both true; the gate and the other switches stay off
+        switches as asserted: True
+849 passed, 3 failed
+--- dotnet exit 1
+  Failed ControlServer.Tests.ParallelInstanceEffectiveConfigurationTests.CutoverDefinitionBindsTwoZonesAndThreeDedicatedCarsTheHostAccepts(definitionFile: "instance-factory01-v2.cutover-two-zones.json", runtimeEnabled: False) [3 s]
+Failed!  - Failed:     1, Passed:    55, Skipped:     0, Total:    56, Duration: 1 m 31 s - ControlServer.Tests.dll (net8.0)
+--- restored; status: ''

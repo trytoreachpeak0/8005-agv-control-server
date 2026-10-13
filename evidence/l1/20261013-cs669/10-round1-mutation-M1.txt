@@ -1,0 +1,18 @@
+mutation M1 on 5873125d7: scripts/parallel/instance-factory01-v2.cutover-two-zones.json
+sed: 81s/"zones": \["DIE_ATTACH"\]/"zones": ["WIRE"]/
+files changed: 1
+-        "zones": ["DIE_ATTACH"]
++        "zones": ["WIRE"]
+--- self-test exit 1
+  FAIL  cutover: allowedDispatchZones is exactly [WIRE_BONDING, DIE_ATTACH], dispatchZone is one of them, WIRE is gone
+        allowed: WIRE_BONDING,DIE_ATTACH; dispatchZone: WIRE_BONDING; a quoted WIRE left: True
+  FAIL  cutover: every car serves at least one zone, every zone it serves is allowed, and every allowed zone is served
+        outside allowed: 老厂前线新多仓位3->WIRE; no zone: ; allowed but served by no car: DIE_ATTACH
+--
+  FAIL  cutover: each car carries exactly the task types and zones the user assigned it
+        differs from the decision: agv03 zones [WIRE]
+844 passed, 3 failed
+--- dotnet exit 1
+  Failed ControlServer.Tests.ParallelInstanceEffectiveConfigurationTests.CutoverDefinitionBindsTwoZonesAndThreeDedicatedCarsTheHostAccepts [810 ms]
+Failed!  - Failed:     1, Passed:    54, Skipped:     0, Total:    55, Duration: 46 s - ControlServer.Tests.dll (net8.0)
+--- restored; status: ''

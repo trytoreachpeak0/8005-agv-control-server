@@ -63,6 +63,57 @@ internal sealed class ForeignRunningOrdersQueryEndpoint : IDashboardQueryEndpoin
                 + "这辆车一直不接新单、不接途中追加。请到 RIoT 按订单号核对这张充电单的状态；在 RIoT 里把它结束后这一行自动消失",
         };
 
+    /// <summary>
+    /// 本服务端自己建了又放弃的空闲返回单（依据 <c>OWN_IDLE_RETURN_ORDER_ABANDONED</c>，control-server#611）的说明：服务端不取消它（<c>REQ-0148</c>
+    /// 只授权取消放弃的充电单），按「归属证明不了」挡车。通用那一句会叫现场去找外部建单人，而这张单是自己的。只列会走到的两种状态。
+    /// </summary>
+    internal static IReadOnlyDictionary<string, string> AbandonedIdleReturnOrderDescriptions { get; } =
+        new Dictionary<string, string>(StringComparer.Ordinal)
+        {
+            [ForeignRunningOrders.OwnershipUnprovenReason] =
+                "这是本服务端自己给这辆车建的空闲返回单（开往等待点）：建单后 RIoT 一直查不到它，服务端已放弃那趟空闲返回，它却事后在这辆车上跑了起来。"
+                + "没有旅程在管它，等待点也可能已经给了别的车。服务端不取消它（需求只授权服务端取消放弃的充电单），这辆车不接新单、不接途中追加。"
+                + "请到 RIoT 按订单号把这张单结束；不用去找外部建单人。它终结后这一行自动消失",
+            [ForeignRunningOrders.UnsettledReason] =
+                "这是本服务端自己建了又放弃的空闲返回单。它已不在 RIoT 的运行列表里，但按订单号回查读不到它已终结：服务端只认明确终结才放车，"
+                + "这辆车一直不接新单、不接途中追加。请到 RIoT 按订单号核对这张单的状态；在 RIoT 里把它结束后这一行自动消失",
+        };
+
+    /// <summary>
+    /// 本服务端自己建了又放弃的清桩移动单（依据 <c>OWN_CLEARANCE_MOVE_ABANDONED</c>，control-server#611，缺口自 control-server#409 起）的说明，
+    /// 理由同上。
+    /// </summary>
+    internal static IReadOnlyDictionary<string, string> AbandonedClearanceMoveDescriptions { get; } =
+        new Dictionary<string, string>(StringComparer.Ordinal)
+        {
+            [ForeignRunningOrders.OwnershipUnprovenReason] =
+                "这是本服务端自己给这辆车建的清桩移动单（充不上电后从桩开往等待点）：建单后 RIoT 一直查不到它，服务端已放弃那次移动，它却事后在这辆车上跑了起来。"
+                + "没有旅程在管它，等待点也可能已经给了别的车。服务端不取消它（需求只授权服务端取消放弃的充电单），这辆车不接新单、不接途中追加。"
+                + "请到 RIoT 按订单号把这张单结束；不用去找外部建单人。它终结后这一行自动消失",
+            [ForeignRunningOrders.UnsettledReason] =
+                "这是本服务端自己建了又放弃的清桩移动单。它已不在 RIoT 的运行列表里，但按订单号回查读不到它已终结：服务端只认明确终结才放车，"
+                + "这辆车一直不接新单、不接途中追加。请到 RIoT 按订单号核对这张单的状态；在 RIoT 里把它结束后这一行自动消失",
+        };
+
+    /// <summary>
+    /// 每一种「本服务端自己建了又放弃的单」的依据，对应它自己的那组说明（control-server#611 审查 M1）。依据不在这里的走通用的
+    /// <see cref="Descriptions"/>。新加一种 <c>OWN_*_ABANDONED</c> 依据而忘了这里，<c>IdleReturnExecutionTests</c> 的守卫就红。
+    /// </summary>
+    internal static IReadOnlyDictionary<string, IReadOnlyDictionary<string, string>> OwnAbandonedOrderDescriptions { get; } =
+        new Dictionary<string, IReadOnlyDictionary<string, string>>(StringComparer.Ordinal)
+        {
+            [Runtime.Charging.AbandonedChargeOrders.OwnershipBasis] = AbandonedChargeOrderDescriptions,
+            [Runtime.IdleReturn.AbandonedIdleReturnOrders.OwnershipBasis] = AbandonedIdleReturnOrderDescriptions,
+            [Runtime.Charging.AbandonedClearanceMoves.OwnershipBasis] = AbandonedClearanceMoveDescriptions,
+        };
+
+    /// <summary>一行外来订单的说明：自己放弃的单按它的依据取专门说明，其余取通用说明。</summary>
+    internal static string? DescriptionFor(string? ownershipBasis, string reasonCode) =>
+        ownershipBasis is not null &&
+        OwnAbandonedOrderDescriptions.TryGetValue(ownershipBasis, out IReadOnlyDictionary<string, string>? own)
+            ? own.GetValueOrDefault(reasonCode)
+            : Descriptions.GetValueOrDefault(reasonCode);
+
     public string Path => DashboardQueryEndpointCatalog.QueryPrefix + "foreign-running-orders";
 
     public async Task<object> ReadAsync(ControlServerDbContext dbContext, CancellationToken cancellationToken)
@@ -92,11 +143,7 @@ internal sealed class ForeignRunningOrdersQueryEndpoint : IDashboardQueryEndpoin
                     ownershipBasis = row.OwnershipBasis,
                     state = row.State,
                     reasonCode,
-                    reasonDescription = reasonCode is null
-                        ? null
-                        : string.Equals(row.OwnershipBasis, Runtime.Charging.AbandonedChargeOrders.OwnershipBasis, StringComparison.Ordinal)
-                            ? AbandonedChargeOrderDescriptions.GetValueOrDefault(reasonCode)
-                            : Descriptions.GetValueOrDefault(reasonCode),
+                    reasonDescription = reasonCode is null ? null : DescriptionFor(row.OwnershipBasis, reasonCode),
                     orderStateAtDetection = row.OrderStateAtDetection,
                     detectedAt = row.DetectedAt,
                     cancelSentAt = row.CancelSentAt,
