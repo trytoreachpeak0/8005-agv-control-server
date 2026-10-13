@@ -13,6 +13,9 @@
 # 算不出就不能放行。**这意味着现场不开路网引擎，途中追加就完全不工作**，PR 与出口报告如实写。
 # 周期与预算照 route-graph-engine 那条：合成 RIoT 在回环上，10 秒一次不会漏，45 秒容得下一次抖动。
 @{
+    # 持货超时照原值写明 30 分钟（control-server#609）：本场景允许途中追加，所以车会持货等单；场景写的时候吃的是产品默认
+    # 30 分钟，整场都不会到期。#609 把产品默认改成 5 分钟，这里写明原值，场景的判据与时序都不变。
+    CargoHoldingTimeout = '00:30:00'
     DispatchZoneParameters = @{
         'MAP-25-WIRE_TO_GATE' = @{ EnRouteAdditionMaxPathCostIncrease = 100000 }
     }

@@ -1,0 +1,113 @@
+===== M1
+diff --git a/tests/ControlServer.Tests/JourneyRuntimeWorkerTestKit.cs b/tests/ControlServer.Tests/JourneyRuntimeWorkerTestKit.cs
+index 656c635b2..1f2aedf94 100644
+--- a/tests/ControlServer.Tests/JourneyRuntimeWorkerTestKit.cs
++++ b/tests/ControlServer.Tests/JourneyRuntimeWorkerTestKit.cs
+@@ -1554,10 +1554,6 @@ internal static class JourneyRuntimeWorkerTestKit
+             // Off, so a journey leaves the pickup in the iteration its load commits, as every test
+             // here was written against. The tests about the wait turn it on for themselves.
+             StationDepartureWaitTimeout = TimeSpan.Zero,
+-            // Thirty minutes, stated: the cargo-holding tests here (Batch7CargoHoldingTests, Batch7StationYieldTests and the
+-            // wire and zero-change pins) were written against the old product default, and control-server#609 moved that
+-            // default to five. Stating it keeps their deadlines and judgements exactly as they were.
+-            CargoHoldingTimeout = TimeSpan.FromMinutes(30)
+         };
+ 
+         public async ValueTask DisposeAsync()
+===== M2
+diff --git a/scripts/parallel/instance-factory01-v2.json b/scripts/parallel/instance-factory01-v2.json
+index 872d3a7e6..311870a08 100644
+--- a/scripts/parallel/instance-factory01-v2.json
++++ b/scripts/parallel/instance-factory01-v2.json
+@@ -55,7 +55,7 @@
+     "maximumEvidenceAge": "00:00:30",
+     "checkpointWaitBudget": "00:05:00",
+     "stationDepartureWaitTimeout": "00:05:00",
+-    "cargoHoldingTimeout": "00:05:00",
++    "cargoHoldingTimeout": "00:30:00",
+     "areaEndAdmissionRevokedTimeout": "00:10:00",
+     "agvId": "老厂前线新多仓位2",
+     "vehicleKey": "BROKERX-f38975561adf46ccb1d2f23833c7d0e4",
+===== M3
+diff --git a/scripts/parallel/ParallelInstance.psm1 b/scripts/parallel/ParallelInstance.psm1
+index 083207b76..3f72a2493 100644
+--- a/scripts/parallel/ParallelInstance.psm1
++++ b/scripts/parallel/ParallelInstance.psm1
+@@ -985,7 +985,6 @@ function Test-ParallelInstanceDefinition {
+         if ($ForStopDirection) {
+             # Tolerated: see above. Installing, rolling back and opening the gate are checked in full.
+         } elseif (-not (Test-KeyPresent -Node $journey -Key 'cargoHoldingTimeout')) {
+-            $failures += 'journeyRuntime.cargoHoldingTimeout must be set explicitly; left out, the package default applies, which is thirty minutes in any package older than control-server#609.'
+         } elseif ($null -eq ($holdingSpan = ConvertTo-ParallelCatalogSpan $journey['cargoHoldingTimeout']) -or $holdingSpan -le [timespan]::Zero) {
+             $failures += "journeyRuntime.cargoHoldingTimeout must be a positive string hh:mm:ss, got '$($journey['cargoHoldingTimeout'])'."
+         } elseif ($holdingSpan -gt [timespan]::FromMinutes(5)) {
+===== M4
+diff --git a/scripts/parallel/ParallelInstance.psm1 b/scripts/parallel/ParallelInstance.psm1
+index 083207b76..e9543f719 100644
+--- a/scripts/parallel/ParallelInstance.psm1
++++ b/scripts/parallel/ParallelInstance.psm1
+@@ -988,7 +988,7 @@ function Test-ParallelInstanceDefinition {
+             $failures += 'journeyRuntime.cargoHoldingTimeout must be set explicitly; left out, the package default applies, which is thirty minutes in any package older than control-server#609.'
+         } elseif ($null -eq ($holdingSpan = ConvertTo-ParallelCatalogSpan $journey['cargoHoldingTimeout']) -or $holdingSpan -le [timespan]::Zero) {
+             $failures += "journeyRuntime.cargoHoldingTimeout must be a positive string hh:mm:ss, got '$($journey['cargoHoldingTimeout'])'."
+-        } elseif ($holdingSpan -gt [timespan]::FromMinutes(5)) {
++        } elseif ($false) {
+             $failures += "journeyRuntime.cargoHoldingTimeout is $($journey['cargoHoldingTimeout']); it must be at most 00:05:00 (user decision 2026-10-11: cargo holding lasts at most five minutes, production included)."
+         }
+ 
+===== P1
+diff --git a/scripts/parallel/ParallelInstance.psm1 b/scripts/parallel/ParallelInstance.psm1
+index 083207b76..a601a08f7 100644
+--- a/scripts/parallel/ParallelInstance.psm1
++++ b/scripts/parallel/ParallelInstance.psm1
+@@ -982,7 +982,7 @@ function Test-ParallelInstanceDefinition {
+         # 2026-10-13 to hold it here rather than in the Host, so synthetic tests that never deploy keep their own values.
+         # Not checked at all for -ForStopDirection: every definition installed before #609 says 00:30:00, and closing the
+         # gate or uninstalling that instance must not be the step that refuses (the taskTypeStations precedent below).
+-        if ($ForStopDirection) {
++        if ($false) {
+             # Tolerated: see above. Installing, rolling back and opening the gate are checked in full.
+         } elseif (-not (Test-KeyPresent -Node $journey -Key 'cargoHoldingTimeout')) {
+             $failures += 'journeyRuntime.cargoHoldingTimeout must be set explicitly; left out, the package default applies, which is thirty minutes in any package older than control-server#609.'
+===== P2
+diff --git a/scripts/parallel/Install-ParallelInstanceLocal.ps1 b/scripts/parallel/Install-ParallelInstanceLocal.ps1
+index 2bebfc2ff..fdc807980 100644
+--- a/scripts/parallel/Install-ParallelInstanceLocal.ps1
++++ b/scripts/parallel/Install-ParallelInstanceLocal.ps1
+@@ -214,7 +214,7 @@ try {
+ 
+     $definition = Read-ParallelInstanceDefinition -Path $InstanceDefinitionPath
+     $null = Assert-ParallelInstanceDefinition -Definition $definition -AllowRiotCreateDispatch:$AllowRiotCreateDispatch `
+-        -AllowRiotForeignOrderCancel:$AllowRiotForeignOrderCancel
++        -AllowRiotForeignOrderCancel:$AllowRiotForeignOrderCancel -ForStopDirection
+     Write-Step "Instance definition accepted: $($definition['instanceId'])"
+ 
+     # Every path and name below comes from Get-ParallelInstanceLayout -- the same source the
+===== P3a
+diff --git a/scripts/parallel/ParallelInstance.psm1 b/scripts/parallel/ParallelInstance.psm1
+index 083207b76..511a828cd 100644
+--- a/scripts/parallel/ParallelInstance.psm1
++++ b/scripts/parallel/ParallelInstance.psm1
+@@ -988,7 +988,7 @@ function Test-ParallelInstanceDefinition {
+             $failures += 'journeyRuntime.cargoHoldingTimeout must be set explicitly; left out, the package default applies, which is thirty minutes in any package older than control-server#609.'
+         } elseif ($null -eq ($holdingSpan = ConvertTo-ParallelCatalogSpan $journey['cargoHoldingTimeout']) -or $holdingSpan -le [timespan]::Zero) {
+             $failures += "journeyRuntime.cargoHoldingTimeout must be a positive string hh:mm:ss, got '$($journey['cargoHoldingTimeout'])'."
+-        } elseif ($holdingSpan -gt [timespan]::FromMinutes(5)) {
++        } elseif ($holdingSpan -ge [timespan]::FromMinutes(5)) {
+             $failures += "journeyRuntime.cargoHoldingTimeout is $($journey['cargoHoldingTimeout']); it must be at most 00:05:00 (user decision 2026-10-11: cargo holding lasts at most five minutes, production included)."
+         }
+ 
+===== P3b
+diff --git a/scripts/parallel/ParallelInstance.psm1 b/scripts/parallel/ParallelInstance.psm1
+index 083207b76..c7858c535 100644
+--- a/scripts/parallel/ParallelInstance.psm1
++++ b/scripts/parallel/ParallelInstance.psm1
+@@ -988,7 +988,7 @@ function Test-ParallelInstanceDefinition {
+             $failures += 'journeyRuntime.cargoHoldingTimeout must be set explicitly; left out, the package default applies, which is thirty minutes in any package older than control-server#609.'
+         } elseif ($null -eq ($holdingSpan = ConvertTo-ParallelCatalogSpan $journey['cargoHoldingTimeout']) -or $holdingSpan -le [timespan]::Zero) {
+             $failures += "journeyRuntime.cargoHoldingTimeout must be a positive string hh:mm:ss, got '$($journey['cargoHoldingTimeout'])'."
+-        } elseif ($holdingSpan -gt [timespan]::FromMinutes(5)) {
++        } elseif ($holdingSpan -gt [timespan]::FromMinutes(6)) {
+             $failures += "journeyRuntime.cargoHoldingTimeout is $($journey['cargoHoldingTimeout']); it must be at most 00:05:00 (user decision 2026-10-11: cargo holding lasts at most five minutes, production included)."
+         }
+ 

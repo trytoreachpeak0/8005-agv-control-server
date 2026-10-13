@@ -1,0 +1,72 @@
+[10:18:28] start HEAD=79674669cf041ecc6b23e0fc2b1dc6689afdbf69
+[10:18:57] build HEAD exit=0
+[10:18:58] M2 applied to scripts/parallel/instance-factory01-v2.json (2 changed lines)
+[10:19:45] M2 selftest exit=1 680 passed, 187 failed
+    M2   FAIL  the shipped definition is accepted as it stands, no placeholder left
+    M2   FAIL  the shipped definition is accepted
+    M2   FAIL  Assert- accepts the shipped definition and returns it
+    M2   FAIL  serviceName is the production service
+    M2   FAIL  installRoot is the production install root
+    M2   FAIL  dataRoot is a V2-named directory nested inside the production data root
+    M2   FAIL  installRoot written with forward slashes
+    M2   FAIL  installRoot under a lookalike of an allowed root (zero-width space)
+    M2   FAIL  cargo holding: instance-factory01-v2.json states journeyRuntime.cargoHoldingTimeout, positive and at most 00:05:00
+[10:20:16] M2 dotnet exit=1 Failed!  - Failed:     1, Passed:     6, Skipped:     0, Total:     7, Duration: 13 s - ControlServer.Tests.dll (net8.0)
+    M2   Failed ControlServer.Tests.ParallelInstanceEffectiveConfigurationTests.EveryShippedDefinitionBindsTheApprovedPairOverThePackageAppSettings(definitionFile: "instance-factory01-v2.json") [1 s]
+[10:20:17] M2 restored, tree clean
+[10:20:19] M3 applied to scripts/parallel/ParallelInstance.psm1 (1 changed lines)
+[10:21:00] M3 selftest exit=1 866 passed, 1 failed
+    M3   FAIL  cargo holding refused: left out
+[10:21:01] M3 restored, tree clean
+[10:21:02] M4 applied to scripts/parallel/ParallelInstance.psm1 (2 changed lines)
+[10:21:46] M4 selftest exit=1 865 passed, 2 failed
+    M4   FAIL  cargo holding refused: 00:05:01, one second above the ceiling
+    M4   FAIL  cargo holding refused: 00:30:00, the value the definitions carried before #609
+[10:21:47] M4 restored, tree clean
+[10:21:48] P1 applied to scripts/parallel/ParallelInstance.psm1 (2 changed lines)
+[10:22:30] P1 selftest exit=1 862 passed, 5 failed
+    P1   FAIL  stop direction: with -ForStopDirection the 10-07 definition is accepted
+    P1   FAIL  stop direction: Uninstall-ParallelInstanceLocal.ps1 -WhatIf with the 10-07 definition passes the assertion and prints its plan
+    P1   FAIL  stop direction: Set-ParallelDispatchGateLocal.ps1 -State Closed with the 10-07 definition passes the assertion
+    P1   FAIL  cargo holding: with -ForStopDirection a definition with 00:30:00 is accepted
+    P1   FAIL  cargo holding: with -ForStopDirection a definition with left out is accepted
+[10:22:30] P1 restored, tree clean
+[10:22:31] P2 applied to scripts/parallel/Install-ParallelInstanceLocal.ps1 (2 changed lines)
+[10:23:17] P2 selftest exit=1 866 passed, 1 failed
+    P2   FAIL  stop direction: Install-ParallelInstanceLocal.ps1 asserts once, -ForStopDirection (absent)
+[10:23:19] P2 restored, tree clean
+[10:23:23] P3a applied to scripts/parallel/ParallelInstance.psm1 (2 changed lines)
+[10:24:23] P3a selftest exit=1 680 passed, 187 failed
+    P3a   FAIL  the shipped definition is accepted as it stands, no placeholder left
+    P3a   FAIL  the shipped definition is accepted
+    P3a   FAIL  Assert- accepts the shipped definition and returns it
+    P3a   FAIL  serviceName is the production service
+    P3a   FAIL  installRoot is the production install root
+    P3a   FAIL  dataRoot is a V2-named directory nested inside the production data root
+    P3a   FAIL  installRoot written with forward slashes
+    P3a   FAIL  installRoot under a lookalike of an allowed root (zero-width space)
+[10:24:24] P3a restored, tree clean
+[10:24:26] P3b applied to scripts/parallel/ParallelInstance.psm1 (2 changed lines)
+[10:25:42] P3b selftest exit=1 866 passed, 1 failed
+    P3b   FAIL  cargo holding refused: 00:05:01, one second above the ceiling
+[10:25:44] P3b restored, tree clean
+[10:25:45] M1 applied to tests/ControlServer.Tests/JourneyRuntimeWorkerTestKit.cs (4 changed lines)
+[10:26:07] M1 build exit=0
+[10:28:06] M1 dotnet exit=1 Failed!  - Failed:     4, Passed:    34, Skipped:     0, Total:    38, Duration: 1 m 1 s - ControlServer.Tests.dll (net8.0)
+    M1   Failed ControlServer.Tests.Batch7CargoHoldingTests.AVehicleWithRoomLeftHoldsAtItsLastPickupInsteadOfLeaving [13 s]
+    M1   Failed ControlServer.Tests.Batch7CargoHoldingTests.TheHoldingClockSurvivesADisconnectAndARestartWhileTheStationWaitIsVoided [760 ms]
+    M1   Failed ControlServer.Tests.Batch7StationYieldTests.WhicheverOfTheDeadlineAndTheYieldCameFirstIsWhyTheLoadingPhaseClosed(triggerAfterMinutes: 29, reason: "WAITING_STATION_YIELD") [4 s]
+    M1   Failed ControlServer.Tests.Batch7StationYieldTests.AVehicleCommittedToTheStationMakesTheHolderYieldAndLeave [3 s]
+[10:28:08] M1 restored, tree clean
+[10:28:09] P6 on tmp/cs609-p6
+[10:28:18] P6 merge clean: a8e742c7e (22 files from #676 side vs ours)
+[10:29:27] P6 selftest exit=0 898 passed, 0 failed
+    P6 per-definition holding cases: 9
+[10:30:33] P6 build exit=0
+[10:32:37] P6 dotnet exit=0 Passed!  - Failed:     0, Passed:    48, Skipped:     0, Total:    48, Duration: 1 m 37 s - ControlServer.Tests.dll (net8.0)
+[10:32:41] P6 back on branch, tmp deleted, tree clean, HEAD=79674669c
+[10:33:18] rebuild HEAD exit=0
+[10:33:18] done
+
+    M2 其余 178 条 FAIL 略去：自检的 $baseline 取自 instance-factory01-v2.json，这份定义被上限拒绝后，以它为基准的用例连带变红。
+    P3a 其余 179 条 FAIL 略去：-ge 让 00:05:00 本身被拒，所有写 00:05:00 的定义（含 $baseline）连带变红。
