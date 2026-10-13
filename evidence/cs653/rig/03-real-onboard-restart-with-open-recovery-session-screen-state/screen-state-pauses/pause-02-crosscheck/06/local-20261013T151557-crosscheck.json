@@ -1,0 +1,501 @@
+{
+  "tool": "18-read-hmi-screen-state",
+  "mode": "crosscheck",
+  "target": "local:F:\\8005-scratch\\cs653-rig\\03-real-onboard-restart-with-open-recovery-session-screen-state\\screen-state",
+  "name": "local-20261013T151557",
+  "startedAt": "2026-10-13T15:15:57.0507856+08:00",
+  "staleAfterSeconds": 15,
+  "outcome": "MATCH",
+  "detail": "56 compared field(s), no difference",
+  "error": null,
+  "read": {
+    "outcome": "ACTIVE",
+    "detail": "written 3.2 s ago by process 8548",
+    "vehicleNow": "2026-10-13T15:15:57.4055912+08:00",
+    "ageSeconds": 3.2,
+    "processStartId": "41e5cdcc622a48048786ae07011ba921",
+    "contentRevision": 5,
+    "processId": 8548,
+    "writerAlive": true,
+    "hmiProcesses": [
+      {
+        "id": 8548,
+        "sessionId": 1,
+        "startTime": "2026-10-13T15:13:48.0343350+08:00"
+      }
+    ]
+  },
+  "capture": {
+    "outcome": "CAPTURED",
+    "uiaFile": "F:\\8005-scratch\\cs653-rig\\03-real-onboard-restart-with-open-recovery-session-screen-state\\screen-state-pauses\\pause-02-crosscheck\\06\\local-20261013T151557-uia-uia.json",
+    "seconds": 2.8
+  },
+  "secondRead": {
+    "outcome": "ACTIVE",
+    "detail": "written 3.2 s ago by process 8548",
+    "vehicleNow": "2026-10-13T15:16:02.3528914+08:00",
+    "ageSeconds": 3.2,
+    "processStartId": "41e5cdcc622a48048786ae07011ba921",
+    "contentRevision": 5,
+    "processId": 8548,
+    "writerAlive": true,
+    "hmiProcesses": [
+      {
+        "id": 8548,
+        "sessionId": 1,
+        "startTime": "2026-10-13T15:13:48.0343350+08:00"
+      }
+    ]
+  },
+  "rows": [
+    {
+      "category": "banner",
+      "key": "StateText",
+      "field": "text",
+      "snapshot": "需要恢复",
+      "uia": "需要恢复",
+      "match": true
+    },
+    {
+      "category": "button",
+      "key": "ManualSubmitCommand",
+      "field": "visible",
+      "snapshot": true,
+      "uia": true,
+      "match": true
+    },
+    {
+      "category": "button",
+      "key": "ManualSubmitCommand",
+      "field": "enabled",
+      "snapshot": false,
+      "uia": false,
+      "match": true
+    },
+    {
+      "category": "button",
+      "key": "OnWireToGateRecoveryClick",
+      "field": "visible",
+      "snapshot": true,
+      "uia": true,
+      "match": true
+    },
+    {
+      "category": "button",
+      "key": "OnWireToGateRecoveryClick",
+      "field": "enabled",
+      "snapshot": true,
+      "uia": true,
+      "match": true
+    },
+    {
+      "category": "button",
+      "key": "OnLoadCancellationClick",
+      "field": "visible",
+      "snapshot": true,
+      "uia": true,
+      "match": true
+    },
+    {
+      "category": "button",
+      "key": "OnLoadCancellationClick",
+      "field": "enabled",
+      "snapshot": true,
+      "uia": true,
+      "match": true
+    },
+    {
+      "category": "button",
+      "key": "OnLoadCompensationClick",
+      "field": "visible",
+      "snapshot": true,
+      "uia": true,
+      "match": true
+    },
+    {
+      "category": "button",
+      "key": "OnLoadCompensationClick",
+      "field": "enabled",
+      "snapshot": true,
+      "uia": true,
+      "match": true
+    },
+    {
+      "category": "button",
+      "key": "OnLoadCorrectionClick",
+      "field": "visible",
+      "snapshot": false,
+      "uia": false,
+      "match": true
+    },
+    {
+      "category": "button",
+      "key": "OnFaultCargoHandoffClick",
+      "field": "visible",
+      "snapshot": true,
+      "uia": true,
+      "match": true
+    },
+    {
+      "category": "button",
+      "key": "OnFaultCargoHandoffClick",
+      "field": "enabled",
+      "snapshot": true,
+      "uia": true,
+      "match": true
+    },
+    {
+      "category": "button",
+      "key": "OnForcedMechanicalRecoveryClick",
+      "field": "visible",
+      "snapshot": true,
+      "uia": true,
+      "match": true
+    },
+    {
+      "category": "button",
+      "key": "OnForcedMechanicalRecoveryClick",
+      "field": "enabled",
+      "snapshot": true,
+      "uia": true,
+      "match": true
+    },
+    {
+      "category": "button",
+      "key": "OnConfirmForcedMechanicalRecoveryClick",
+      "field": "visible",
+      "snapshot": false,
+      "uia": false,
+      "match": true
+    },
+    {
+      "category": "button",
+      "key": "OnSubmitHardwareRecoveryRecordClick",
+      "field": "visible",
+      "snapshot": false,
+      "uia": false,
+      "match": true
+    },
+    {
+      "category": "button",
+      "key": "OnHardwareRepairReleaseClick",
+      "field": "visible",
+      "snapshot": false,
+      "uia": false,
+      "match": true
+    },
+    {
+      "category": "button",
+      "key": "OnCloseConflictedRecoveryClick",
+      "field": "visible",
+      "snapshot": false,
+      "uia": false,
+      "match": true
+    },
+    {
+      "category": "button",
+      "key": "OnManualChargingReturnClick",
+      "field": "visible",
+      "snapshot": true,
+      "uia": true,
+      "match": true
+    },
+    {
+      "category": "button",
+      "key": "OnManualChargingReturnClick",
+      "field": "enabled",
+      "snapshot": true,
+      "uia": true,
+      "match": true
+    },
+    {
+      "category": "button",
+      "key": "OnConfirmStationClearanceClick",
+      "field": "visible",
+      "snapshot": false,
+      "uia": false,
+      "match": true
+    },
+    {
+      "category": "button",
+      "key": "OnConfirmHeldRecoveryCommandClick",
+      "field": "visible",
+      "snapshot": false,
+      "uia": false,
+      "match": true
+    },
+    {
+      "category": "button",
+      "key": "OnDeclineHeldRecoveryCommandClick",
+      "field": "visible",
+      "snapshot": false,
+      "uia": false,
+      "match": true
+    },
+    {
+      "category": "button",
+      "key": "OnRetryPendingResultClick",
+      "field": "visible",
+      "snapshot": false,
+      "uia": false,
+      "match": true
+    },
+    {
+      "category": "button",
+      "key": "OnReopenOperationClick",
+      "field": "visible",
+      "snapshot": false,
+      "uia": false,
+      "match": true
+    },
+    {
+      "category": "button",
+      "key": "OnCancelOperationClick",
+      "field": "visible",
+      "snapshot": false,
+      "uia": false,
+      "match": true
+    },
+    {
+      "category": "button",
+      "key": "OnSafetyReviewClick",
+      "field": "visible",
+      "snapshot": false,
+      "uia": false,
+      "match": true
+    },
+    {
+      "category": "button",
+      "key": "OnClearFatalFaultClick",
+      "field": "visible",
+      "snapshot": false,
+      "uia": false,
+      "match": true
+    },
+    {
+      "category": "button",
+      "key": "OnConfirmUnableToChargeClick",
+      "field": "options",
+      "snapshot": "",
+      "uia": "",
+      "match": true
+    },
+    {
+      "category": "button",
+      "key": "ClearLogsCommand",
+      "field": "visible",
+      "snapshot": true,
+      "uia": true,
+      "match": true
+    },
+    {
+      "category": "button",
+      "key": "ClearLogsCommand",
+      "field": "enabled",
+      "snapshot": true,
+      "uia": true,
+      "match": true
+    },
+    {
+      "category": "input",
+      "key": "ScanTextBox",
+      "field": "visible",
+      "snapshot": true,
+      "uia": true,
+      "match": true
+    },
+    {
+      "category": "input",
+      "key": "ScanTextBox",
+      "field": "enabled",
+      "snapshot": false,
+      "uia": false,
+      "match": true
+    },
+    {
+      "category": "input",
+      "key": "ScanTextBox",
+      "field": "hasText",
+      "snapshot": false,
+      "uia": false,
+      "match": true
+    },
+    {
+      "category": "input",
+      "key": "RecoveryReason",
+      "field": "visible",
+      "snapshot": true,
+      "uia": true,
+      "match": true
+    },
+    {
+      "category": "input",
+      "key": "RecoveryReason",
+      "field": "enabled",
+      "snapshot": true,
+      "uia": true,
+      "match": true
+    },
+    {
+      "category": "input",
+      "key": "RecoveryReason",
+      "field": "hasText",
+      "snapshot": false,
+      "uia": false,
+      "match": true
+    },
+    {
+      "category": "input",
+      "key": "ForcedHandoffSublot",
+      "field": "visible",
+      "snapshot": false,
+      "uia": false,
+      "match": true
+    },
+    {
+      "category": "input",
+      "key": "ForcedHandoffReceiverName",
+      "field": "visible",
+      "snapshot": false,
+      "uia": false,
+      "match": true
+    },
+    {
+      "category": "input",
+      "key": "HardwareRecoveryObservations",
+      "field": "visible",
+      "snapshot": false,
+      "uia": false,
+      "match": true
+    },
+    {
+      "category": "modal",
+      "key": "dialogs",
+      "field": "depth",
+      "snapshot": 1,
+      "uia": 1,
+      "match": true
+    },
+    {
+      "category": "modal",
+      "key": "dialogs",
+      "field": "titles",
+      "snapshot": "申请恢复原操作",
+      "uia": "申请恢复原操作",
+      "match": true
+    },
+    {
+      "category": "rawCode",
+      "key": "BatteryStatus",
+      "field": "visible",
+      "snapshot": true,
+      "uia": true,
+      "match": true
+    },
+    {
+      "category": "rawCode",
+      "key": "BatteryStatus",
+      "field": "value",
+      "snapshot": "SUFFICIENT",
+      "uia": "SUFFICIENT",
+      "match": true
+    },
+    {
+      "category": "rawCode",
+      "key": "ChargingStatus",
+      "field": "visible",
+      "snapshot": true,
+      "uia": true,
+      "match": true
+    },
+    {
+      "category": "rawCode",
+      "key": "ChargingStatus",
+      "field": "value",
+      "snapshot": "NOT_CHARGING",
+      "uia": "NOT_CHARGING",
+      "match": true
+    },
+    {
+      "category": "rawCode",
+      "key": "IdleReturnStatus",
+      "field": "visible",
+      "snapshot": true,
+      "uia": true,
+      "match": true
+    },
+    {
+      "category": "rawCode",
+      "key": "IdleReturnStatus",
+      "field": "value",
+      "snapshot": "",
+      "uia": "",
+      "match": true
+    },
+    {
+      "category": "rawCode",
+      "key": "StationDepartureCountdown",
+      "field": "visible",
+      "snapshot": true,
+      "uia": true,
+      "match": true
+    },
+    {
+      "category": "rawCode",
+      "key": "StationDepartureCountdown",
+      "field": "value",
+      "snapshot": "Expired",
+      "uia": "Expired",
+      "match": true
+    },
+    {
+      "category": "rawCode",
+      "key": "SublotRejectionReason",
+      "field": "visible",
+      "snapshot": false,
+      "uia": false,
+      "match": true
+    },
+    {
+      "category": "rawCode",
+      "key": "DoorHoldNotice",
+      "field": "visible",
+      "snapshot": false,
+      "uia": false,
+      "match": true
+    },
+    {
+      "category": "rawCode",
+      "key": "StationClearanceStatus",
+      "field": "visible",
+      "snapshot": false,
+      "uia": false,
+      "match": true
+    },
+    {
+      "category": "rawCode",
+      "key": "UnableToChargeStatus",
+      "field": "visible",
+      "snapshot": false,
+      "uia": false,
+      "match": true
+    },
+    {
+      "category": "rawCode",
+      "key": "CargoHoldingCountdown",
+      "field": "visible",
+      "snapshot": false,
+      "uia": false,
+      "match": true
+    },
+    {
+      "category": "rawCode",
+      "key": "LoadingClosedReason",
+      "field": "visible",
+      "snapshot": false,
+      "uia": false,
+      "match": true
+    }
+  ],
+  "finishedAt": "2026-10-13T15:16:02.8912169+08:00"
+}
