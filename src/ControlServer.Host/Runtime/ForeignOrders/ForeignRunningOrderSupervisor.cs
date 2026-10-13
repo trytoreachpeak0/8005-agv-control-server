@@ -336,6 +336,20 @@ public sealed class ForeignRunningOrderSupervisor(
             return;
         }
 
+        // control-server#617 review S1: a hand release rests on "RIoT could not be read to have it", and an order coming back
+        // SUSPENDED -- which REQ-0164 counts as occupying the vehicle -- is the likeliest shape of that having been wrong. Unless
+        // a vehicle that is not ours executes it, it holds again, as UNSETTLED: neither running nor ended, a person's to look at.
+        if (row.State == ForeignRiotOrderStates.ReleasedByOperator && order is { OrderState: RiotOrderState.Suspended } &&
+            !ExecutedByAVehicleNotOurs(order, ours))
+        {
+            row.State = ForeignRiotOrderStates.Unsettled;
+            row.EndedAt = null;
+            row.EndedOrderState = null;
+            row.UpdatedAt = now;
+            LogForeignOrderUnsettled(logger, row.RiotOrderId, row.AgvId, "SUSPENDED, listed again after a hand release", row.LastSeenRunningAt, null);
+            return;
+        }
+
         if (row.State is ForeignRiotOrderStates.Ended or ForeignRiotOrderStates.LeftVehicle or ForeignRiotOrderStates.ReleasedByOperator)
         {
             return;

@@ -12,3 +12,16 @@ Passed!  - Failed:     0, Passed:   256, Skipped:     0, Total:   256, Duration:
 python -m pytest -q   (python/，临时 venv，pip install -e ".[dev]")
 162 passed, 1 skipped, 175 warnings in 17.49s
 # 计数核对：C# 原 246 + 新 10 = 256；Python 原 153 + 新 9 = 162（1 skipped 是要 RIOT_SMOKE=1 的冒烟用例）
+
+# 审查第一阶段跟改之后（M1 独立开关、S1、S2、L1、L3），同一工作树，提交前
+dotnet test tests/ControlServer.Tests --filter "FullyQualifiedName~ForeignRunningOrder|FullyQualifiedName~StationExclusivityReleaseEndpointsTests|FullyQualifiedName~ArchitectureTests|FullyQualifiedName~HttpRiotMovementGatewayTests|FullyQualifiedName~RiotSdkPackageProvenanceTests|FullyQualifiedName~IdleReturnExecutionTests|FullyQualifiedName~HttpRiotFailureDetailTests|FullyQualifiedName~AbandonedLateOrder|FullyQualifiedName~VehicleFaultRecovery|FullyQualifiedName~WaitingPointArrival"
+Passed!  - Failed:     0, Passed:   509, Skipped:     0, Total:   509, Duration: 1 m 22 s - ControlServer.Tests.dll (net8.0)
+
+pwsh -NoProfile -File scripts/parallel/Test-ParallelInstance.ps1
+836 passed, 0 failed
+# 第一次跑 832 passed、4 failed：都是 10-07 实装定义（没有新节）在停止方向被拒；照 taskTypeStations 的先例在 -ForStopDirection 下容忍缺节后，
+# 剩 1 条是控制台换行把拒绝句折断、子串匹配落空（多了一条拒绝原因，折行位置移进了那句话），改为去掉颜色码与换行后再匹配。
+
+dotnet build ControlServer.sln
+Build succeeded.
+    0 Warning(s)

@@ -129,6 +129,8 @@ builder.Services.AddHostedService<JourneyRuntimeWorker>();
 builder.Services.AddSingleton(TimeProvider.System);
 builder.Services.AddRiotCreateDispatchGate(builder.Configuration);
 builder.Services.AddRiotForeignOrderCancelGate(builder.Configuration);
+builder.Services.AddOptions<ForeignRunningOrderReleaseOptions>()
+    .Bind(builder.Configuration.GetSection(ForeignRunningOrderReleaseOptions.SectionName));
 builder.Services.AddRiotAbsentAtObservationCreateExperiment(builder.Configuration);
 // Read and checked here, at startup, rather than on the first request that creates a client.
 TimeSpan mesIngestTimeout = MesIngestReads.Timeout(builder.Configuration);
@@ -329,6 +331,8 @@ app.MapSlotFaultDeclarationWhenEnabled();
 // 默认不挂。control-server#299 的故障人工清除：这个入口会清掉一台车的故障、把它的需求交回改派，要现场明确打开才提供；
 // control-server#419 的站点独占人工释放同一把凭据、同一个开关。
 app.MapVehicleFaultRecoveryEntriesWhenEnabled();
+// control-server#617 (review M1): on its own switch, not fault recovery's.
+app.MapForeignRunningOrderManualReleaseWhenEnabled();
 // 批次9-08（control-server#406）：充电桩的维修暂停（总是挂）、恢复确认与人工清桩（与上面同一个开关、同一把凭据）。
 app.MapChargingStationEntries();
 app.MapDashboardQueries();

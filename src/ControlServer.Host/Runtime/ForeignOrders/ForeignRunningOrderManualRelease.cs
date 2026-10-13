@@ -128,6 +128,7 @@ public sealed class ForeignRunningOrderManualRelease(
         string? siteVerification = Trimmed(request.SiteVerification);
 
         List<string> codes = [];
+        string? cancelSettledAs = null;
         if (operatorId is null) codes.Add(OperatorRequired);
         if (reason is null) codes.Add(ReasonRequired);
         if (siteVerification is null) codes.Add(SiteVerificationRequired);
@@ -195,6 +196,7 @@ public sealed class ForeignRunningOrderManualRelease(
             row.EndedOrderState = ForeignRunningOrders.IsExplicitlyEnded(facts.ReadState) ? facts.ReadState : null;
             row.EndedAt = now;
             row.UpdatedAt = now;
+            cancelSettledAs = await SettleCancelAsync(row, now, cancellationToken).ConfigureAwait(false);
             await dbContext.SaveChangesAsync(cancellationToken).ConfigureAwait(false);
             auditRecordId = await WriteAuditAsync(GovernanceActionOutcome.Succeeded, "RELEASED", facts).ConfigureAwait(false);
             await transaction.CommitAsync(cancellationToken).ConfigureAwait(false);
@@ -252,6 +254,7 @@ public sealed class ForeignRunningOrderManualRelease(
                                     read.UpdatedAt,
                                 },
                             riot,
+                            cancelSettledAs,
                             codes,
                             result,
                         },
@@ -259,6 +262,38 @@ public sealed class ForeignRunningOrderManualRelease(
                     ClaimedAdministratorRole: role),
                 now,
                 cancellationToken);
+    }
+
+    /// <summary>
+    /// A cancel this server sent to the order (a row that came to <c>UNSETTLED</c> from <c>CANCEL_SENT</c>) is settled in its audit
+    /// attempt as the supervision's own ending settles it (review L1): CONFIRMED when RIoT reads the order CANCELLED, FAILED
+    /// otherwise -- it ended some other way, or it is gone and the cancel can no longer be shown to have done anything. An attempt
+    /// already settled is left alone. Staged; the caller saves. Answers what the attempt was settled as, or null.
+    /// </summary>
+    private async Task<string?> SettleCancelAsync(ForeignRiotOrderRow row, DateTimeOffset now, CancellationToken cancellationToken)
+    {
+        if (row.CancelCommandAuditId is not { } auditId)
+        {
+            return null;
+        }
+        if (row.EndedOrderState is int ended)
+        {
+            row.CancelResult = ended == RiotOrderState.Cancelled
+                ? ForeignRiotOrderCancelResults.Cancelled
+                : ForeignRiotOrderCancelResults.EndedOtherwise;
+            row.CancelResultAt = now;
+        }
+        RiotOrderCommandAuditRow? attempt = await dbContext.RiotOrderCommandAudit
+            .SingleOrDefaultAsync(item => item.CommandAuditId == auditId, cancellationToken).ConfigureAwait(false);
+        if (attempt is null or { Outcome: RiotOrderCommandOutcome.Confirmed or RiotOrderCommandOutcome.Failed })
+        {
+            return null;
+        }
+        attempt.Outcome = row.EndedOrderState == RiotOrderState.Cancelled
+            ? RiotOrderCommandOutcome.Confirmed
+            : RiotOrderCommandOutcome.Failed;
+        attempt.ReconciledAt = now;
+        return attempt.Outcome.ToString();
     }
 
     private async Task<RiotFacts> ReadRiotAsync(string orderId, CancellationToken cancellationToken)
@@ -269,9 +304,9 @@ public sealed class ForeignRunningOrderManualRelease(
         {
             listing = await orders.ListUnfinishedOrdersAsync(cancellationToken).ConfigureAwait(false);
         }
-        catch (Exception error) when (error is HttpRequestException or InvalidDataException or TaskCanceledException &&
-                                      !cancellationToken.IsCancellationRequested)
+        catch (Exception error) when (!(error is OperationCanceledException && cancellationToken.IsCancellationRequested))
         {
+            // Any failure of the read is "could not read" (review L3): refused and audited, never a 500 without a record.
             listing = null;
         }
         RiotListedOrder? listed = listing?.Orders.FirstOrDefault(
@@ -282,8 +317,7 @@ public sealed class ForeignRunningOrderManualRelease(
         {
             reading = await orders.ReadOrderStateAsync(orderId, cancellationToken).ConfigureAwait(false);
         }
-        catch (Exception error) when (error is HttpRequestException or InvalidDataException or TaskCanceledException &&
-                                      !cancellationToken.IsCancellationRequested)
+        catch (Exception error) when (!(error is OperationCanceledException && cancellationToken.IsCancellationRequested))
         {
             reading = null;
         }

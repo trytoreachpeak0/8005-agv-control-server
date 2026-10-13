@@ -323,10 +323,14 @@ RIoT 上还有别的区域的车和它们的订单，绝不能随手取消）：
 2. RIoT 的未完成订单列表读全了，里面没有这张单（排队、执行、暂停、挂起、HANG 都不在）。列表读不全就拒绝，稍后再办。
 3. 按订单号回读，RIoT 报的不是未完成状态。读到已结束、查不到或读不到都可以；读到未完成状态就拒绝。
 
-只有 R-11／R-13 名单里的人能办（与人工清桩同一份名单，`FieldOperatorRoles:path`）。入口与故障人工恢复同一把凭据、同一个开关
-（`VehicleFaultRecovery:enabled`），在服务端的健康端口上：
+只有 R-11／R-13 名单里的人能办（与人工清桩同一份名单，`FieldOperatorRoles:path`）。入口用故障人工恢复那把凭据，但开关是它自己的：
+`ForeignRunningOrderRelease:enabled`（实例定义里的 `foreignRunningOrderRelease.enabled`），故障恢复关着时它照样可用。开关关着时这个入口不存在，
+请求返回 404。入口在 **v2 实例**的健康端口上：
 
 ```powershell
+# v2 实例定义里的 healthPort 与 healthBindAddress：factory01 上是 172.19.205.222:58107。
+# 58007 是 MVP 的健康端口，照抄成 58007 会把 v2 的恢复凭据发给 MVP。
+$v2Health = 'http://172.19.205.222:58107'
 $body = @{
     agvId            = 'agv02'
     riotOrderId      = '<看板「车上的外来订单」那一行的订单号>'
@@ -334,8 +338,8 @@ $body = @{
     reason           = '网页手动单在 RIoT 里已结束，服务端读不出'
     siteVerification = '<RIoT 截图编号或巡检单号>'
 } | ConvertTo-Json
-Invoke-RestMethod -Method Post -Uri 'http://127.0.0.1:58007/api/field-ops/v1/foreign-running-order-releases' `
-    -Headers @{ Authorization = "Bearer $env:CONTROL_SERVER_FAULT_RECOVERY_CREDENTIAL" } `
+Invoke-RestMethod -Method Post -Uri "$v2Health/api/field-ops/v1/foreign-running-order-releases" `
+    -Headers @{ Authorization = "Bearer $env:CONTROL_SERVER_V2_FAULT_RECOVERY_CREDENTIAL" } `
     -ContentType 'application/json' -Body $body
 ```
 

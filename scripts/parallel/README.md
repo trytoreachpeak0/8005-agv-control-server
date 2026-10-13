@@ -300,6 +300,7 @@ REQ-0302 要求地图与站点目录的两个参数先批准再投产：同步�
 - 实例定义里必须显式写 `vehicleFaultRecovery.enabled` 与 `fieldOperatorRoles.{path, onboardClearanceEntryDeclared}`，缺了就拒绝。
   `path` 必须在 `opsRoot` 里（装包会替换安装目录）。凭据变量名**不由定义给**，覆盖层固定写 `CONTROL_SERVER_V2_FAULT_RECOVERY_CREDENTIAL`，
   定义里写 `credentialEnvironmentVariable` 会被拒——免得并行实例指到 MVP 的变量。出厂定义是第一阶段：入口关、未声明车载端入口。
+- 外来订单人工放车入口（control-server#617）有自己的开关：实例定义里必须显式写 `foreignRunningOrderRelease.enabled`，覆盖层写 `ForeignRunningOrderRelease:enabled`。它和恢复入口共用上面那把凭据，所以两个开关**任一个**打开、又拿不到凭据时，装之前就拒绝。出厂定义都打开它（生产定义里故障恢复仍然关着）：没有它，被 RIoT 里查不到的外来单按住的车只能改库。早于 #617 装的定义没有这一节，关闸与卸载照样放行（`-ForStopDirection`），装、回滚与开闸则拒绝。
 - 首装、升级、回滚三条路径都跑同一个 `Set-InstanceConfiguration`：合并覆盖层并回读核对覆盖层写的**每一个**值；把凭据写进服务的
   `Environment`；名单文件不存在就建一个空名单（`{"operators":[]}`，服务端读作「没人有权限」，安全方向），已有的绝不覆盖。
 - 凭据的值：安装与升级取 `deploy-config.json` 的 `faultRecoveryCredential`（控制端从 DPAPI 秘密存储填），没有就沿用服务里已有的那一条；

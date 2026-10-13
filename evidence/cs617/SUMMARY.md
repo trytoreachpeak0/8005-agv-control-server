@@ -61,3 +61,16 @@ RIoT 回 HTTP 200、code 0、result 完整，`orderState=2`（已取消，明确
 ## 运行结果
 
 见 `01-targeted-tests.txt`。变异待调度给时段后补在这里。
+
+## 审查第一阶段跟改（C10 定）
+
+| 项 | 改法 | 用例 |
+| --- | --- | --- |
+| M1 生产定义里入口不挂路由 | 入口不再挂在 `VehicleFaultRecovery:enabled` 下，改看自己的开关 `ForeignRunningOrderRelease:enabled`（`ForeignRunningOrderReleaseOptions`）；凭据仍是故障恢复那把（`VehicleFaultRecovery:credentialEnvironmentVariable`，部署脚本无论开关都写这个名字）。部署脚本：实例定义必须显式写 `foreignRunningOrderRelease.enabled`，覆盖层写 `ForeignRunningOrderRelease`，两个开关任一打开而拿不到凭据时装之前就拒绝；早于本票装的定义在停止方向容忍缺节。七份出厂定义都打开它，生产定义里故障恢复仍然关着 | `TheEntryIsMappedOnItsOwnSwitchWhateverFaultRecoverySays`（5 格）；`StationExclusivityReleaseEndpointsTests` 改为断言故障恢复开关不再挂它；`Test-ParallelInstance.ps1` 新增 3 个定义拒绝格、选项类镜像、2 个凭据格 |
+| S1 放开后以挂起重现不再挡车 | 监看里放开的行在列表里重新出现、状态 8、执行车辆不是别人的车时，退回 `UNSETTLED` | `AReleasedOrderListedAgainSuspendedHoldsAgainUnlessAnotherVehicleRunsIt`（3 格） |
+| S2 现场说明打到 MVP 端口 | 示例改成 v2 实例的 `172.19.205.222:58107`，变量 `CONTROL_SERVER_V2_FAULT_RECOVERY_CREDENTIAL`，注明 58007 是 MVP 的 | — |
+| L1 放开不收尾取消审计 | 放开时像 `EndAsync` 一样收尾：读到 CANCELLED 记 Confirmed，否则记 Failed；读到终结时行上的取消结果一并改写；审计 detail 记 `cancelSettledAs` | `AReleaseSettlesTheCancelAttemptOfARowThatHadSentOne`（2 格） |
+| L3 端口抛别的异常时 500 且无审计 | 读 RIoT 的两处改为除调用方取消外一律当「读不到」 | 拒绝矩阵 `listing-throws-other`；放车用例 `read-throws` |
+| 审查第二阶段要的格 | P1 回读 1、7、9、10、11 拒绝；P2 列表有 Executing、回读为 null 拒绝（`ORDER_STILL_UNFINISHED`） | 拒绝矩阵新增 6 格 |
+
+监看里对放开状态的处理现在有三处（行号是本分支当前的）：`ForeignRunningOrderSupervisor.cs:206` 查询条件不每轮读放开的行；`:318` 放开的行重新跑在我们车上时重新挡车；`:353` 放开的行不在场时直接返回（`:342` 是 S1 新加的挂起退回）。审查说的「两处」是 `:206` 与 `:353`；单独去掉、同时去掉各会怎样，变异时照实验证后补在这里。

@@ -31,9 +31,10 @@ public sealed record ForeignRunningOrderManualReleaseResponse(
 /// <remarks>
 /// <para>
 /// <b>Everything is decided by <see cref="ForeignRunningOrderManualRelease"/></b>; this authenticates the call, resolves the named
-/// vehicle and maps the decision onto HTTP. Same credential and same switch as <see cref="VehicleFaultRecoveryEndpoints"/>: it is the
-/// same kind of act, a named person deciding about a stuck vehicle, and it loosens. Mapped only when
-/// <c>VehicleFaultRecovery:enabled</c>.
+/// vehicle and maps the decision onto HTTP. Same credential as <see cref="VehicleFaultRecoveryEndpoints"/>: it is the same kind of
+/// act, a named person deciding about a stuck vehicle, and it loosens. Its switch is its own,
+/// <see cref="ForeignRunningOrderReleaseOptions.EnabledKey"/> (review M1): the production definitions keep fault recovery off,
+/// and the exit has to be there all the same.
 /// </para>
 /// <para>
 /// 200 when released; 409 with every code (and its Chinese description) when refused; 401 without the credential; 404 for a vehicle
@@ -44,6 +45,21 @@ public sealed record ForeignRunningOrderManualReleaseResponse(
 public static class ForeignRunningOrderManualReleaseEndpoints
 {
     public const string Route = "/api/field-ops/v1/foreign-running-order-releases";
+
+    /// <summary>
+    /// Maps the entry when <see cref="ForeignRunningOrderReleaseOptions.EnabledKey"/> is on, whatever fault recovery's switch says
+    /// (review M1), and says whether it did.
+    /// </summary>
+    public static bool MapForeignRunningOrderManualReleaseWhenEnabled(this WebApplication app)
+    {
+        ArgumentNullException.ThrowIfNull(app);
+        if (!app.Configuration.GetValue<bool>(ForeignRunningOrderReleaseOptions.EnabledKey))
+        {
+            return false;
+        }
+        app.MapForeignRunningOrderManualRelease();
+        return true;
+    }
 
     public static void MapForeignRunningOrderManualRelease(this WebApplication app)
     {

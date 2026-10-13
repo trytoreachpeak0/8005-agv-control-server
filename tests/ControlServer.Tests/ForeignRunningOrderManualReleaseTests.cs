@@ -12,6 +12,7 @@ using ControlServer.Infrastructure.Persistence;
 using Microsoft.AspNetCore.Http;
 using Microsoft.AspNetCore.Http.HttpResults;
 using Microsoft.EntityFrameworkCore;
+using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Logging.Abstractions;
 using Microsoft.Extensions.Options;
@@ -123,6 +124,7 @@ public sealed class ForeignRunningOrderManualReleaseTests
     [Theory]
     [InlineData("not-found", null)]
     [InlineData("read-ended", RiotOrderState.Deleted)]
+    [InlineData("read-throws", null)]
     [Trait("Requirement", "REQ-0164")]
     public async Task AnUnsettledOrderIsReleasedByANamedOperatorOnceRiotNoLongerListsIt(string readBack, int? endedState)
     {
@@ -135,8 +137,13 @@ public sealed class ForeignRunningOrderManualReleaseTests
         fixture.Riot.BeforeListing = _ => inTransaction.Add(fixture.Context.Database.CurrentTransaction is not null);
         RecordingLogger<ForeignRunningOrderManualRelease> log = new();
         using Roster roster = new();
+        // Review L3: a by-orderId read that throws (not the gateway's way -- it answers null) is "could not read"; the listing
+        // still proves the order is not unfinished.
+        IRiotOrderListingFacts? listing = readBack == "read-throws"
+            ? new ReadAnswers(fixture.Riot, _ => throw new InvalidOperationException("a defect in the port"))
+            : null;
 
-        ForeignRunningOrderManualReleaseResult result = await ReleaseAsync(fixture, roster, Request(fixture), log);
+        ForeignRunningOrderManualReleaseResult result = await ReleaseAsync(fixture, roster, Request(fixture), log, listing);
         fixture.Riot.BeforeListing = null;
 
         Assert.True(result.Released, string.Join(',', result.Codes));
@@ -193,6 +200,136 @@ public sealed class ForeignRunningOrderManualReleaseTests
         Assert.Equal([fixture.Options.AgvId], await HeldAsync(fixture));
     }
 
+    /// <summary>
+    /// 审查 S1：放开靠的是「这一次读不到」；放开之后这张单以挂起（8，REQ-0164 算占车）重新出现在列表里、执行车辆不是别人的车时，退回
+    /// <c>UNSETTLED</c> 重新挡车。执行车辆是不归本服务端管的车时不碰，仍是放开。
+    /// </summary>
+    [Theory]
+    [InlineData("on-our-vehicle", true)]
+    [InlineData("without-a-vehicle", true)]
+    [InlineData("on-another-vehicle", false)]
+    [Trait("Requirement", "REQ-0164")]
+    public async Task AReleasedOrderListedAgainSuspendedHoldsAgainUnlessAnotherVehicleRunsIt(string where, bool heldAgain)
+    {
+        await using RuntimeFixture fixture = await UnsettledAsync();
+        using Roster roster = new();
+        Assert.True((await ReleaseAsync(fixture, roster, Request(fixture))).Released);
+
+        fixture.Riot.PlaceOrder(
+            WebPageOrderId,
+            "",
+            RiotOrderState.Suspended,
+            where switch
+            {
+                "on-our-vehicle" => fixture.Options.VehicleKey,
+                "on-another-vehicle" => "BROKERX-0000000000000000000000000000ffff",
+                _ => null,
+            });
+        fixture.Clock.Advance(TimeSpan.FromSeconds(2));
+        await fixture.Engine.ExecuteOnceAsync(Token);
+
+        ForeignRiotOrderRow row = await RowAsync(fixture);
+        if (heldAgain)
+        {
+            Assert.Equal((ForeignRiotOrderStates.Unsettled, (DateTimeOffset?)null), (row.State, row.EndedAt));
+            Assert.Equal([fixture.Options.AgvId], await HeldAsync(fixture));
+        }
+        else
+        {
+            Assert.Equal(ForeignRiotOrderStates.ReleasedByOperator, row.State);
+            Assert.Empty(await HeldAsync(fixture));
+        }
+        Assert.Empty(fixture.Riot.OrderCommands);
+    }
+
+    /// <summary>
+    /// 审查 L1：从「发过取消」走到 <c>UNSETTLED</c> 的行带着那一次取消的审计；人工放开像监看自己的终结一样把它收尾——回读读到 CANCELLED 为
+    /// CONFIRMED，否则（查无此单）为 FAILED；行上的取消结果在读到终结时一并改写。
+    /// </summary>
+    [Theory]
+    [InlineData(RiotOrderState.Cancelled, "Confirmed", "CANCELLED")]
+    [InlineData(null, "Failed", "STILL_RUNNING")]
+    [Trait("Requirement", "REQ-0164")]
+    public async Task AReleaseSettlesTheCancelAttemptOfARowThatHadSentOne(int? readBack, string outcome, string cancelResult)
+    {
+        await using RuntimeFixture fixture = await RuntimeFixture.CreateAsync();
+        fixture.Riot.CancelTakesEffect = false;
+        fixture.Riot.PlaceOrder(WebPageOrderId, "", RiotOrderState.Executing, fixture.Options.VehicleKey);
+        await fixture.Engine.ExecuteOnceAsync(Token);
+        fixture.Clock.Advance(ForeignRunningOrderSupervisor.CancelSettleTime);
+        await fixture.Engine.ExecuteOnceAsync(Token);
+        Assert.Equal(ForeignRiotOrderStates.StillRunningAfterCancel, (await RowAsync(fixture)).State);
+        fixture.Riot.ForgetPlacedOrder(WebPageOrderId);
+        fixture.Clock.Advance(ForeignRunningOrderSupervisor.CancelSettleTime);
+        await fixture.Engine.ExecuteOnceAsync(Token);
+        ForeignRiotOrderRow unsettled = await RowAsync(fixture);
+        Assert.Equal(ForeignRiotOrderStates.Unsettled, unsettled.State);
+        string auditId = Assert.IsType<string>(unsettled.CancelCommandAuditId);
+        Assert.DoesNotContain(
+            await CancelOutcomeAsync(fixture, auditId),
+            new[] { RiotOrderCommandOutcome.Confirmed, RiotOrderCommandOutcome.Failed });
+        if (readBack is { } ended)
+        {
+            fixture.Riot.EndPlacedOrder(WebPageOrderId, ended);
+        }
+        using Roster roster = new();
+
+        ForeignRunningOrderManualReleaseResult result = await ReleaseAsync(fixture, roster, Request(fixture));
+
+        Assert.True(result.Released, string.Join(',', result.Codes));
+        Assert.Equal(outcome, (await CancelOutcomeAsync(fixture, auditId)).ToString());
+        Assert.Equal(cancelResult, (await RowAsync(fixture)).CancelResult);
+        using JsonDocument detail = JsonDocument.Parse(Assert.Single(await AuditsAsync(fixture)).DetailJson!);
+        Assert.Equal(outcome, detail.RootElement.GetProperty("cancelSettledAs").GetString());
+        Assert.Single(fixture.Riot.OrderCommands);
+    }
+
+    /// <summary>
+    /// 审查 M1：入口挂在自己的开关 <c>ForeignRunningOrderRelease:enabled</c> 上——故障恢复关着、它开着时有路由；它关着时没有路由（请求 404），
+    /// 哪怕故障恢复开着。
+    /// </summary>
+    [Theory]
+    [InlineData(null, null, false)]
+    [InlineData("false", "true", true)]
+    [InlineData("true", "false", false)]
+    [InlineData("true", null, false)]
+    [InlineData(null, "true", true)]
+    public async Task TheEntryIsMappedOnItsOwnSwitchWhateverFaultRecoverySays(string? recovery, string? release, bool mapped)
+    {
+        Microsoft.AspNetCore.Builder.WebApplicationBuilder builder = Microsoft.AspNetCore.Builder.WebApplication.CreateBuilder();
+        if (recovery is not null)
+        {
+            builder.Configuration[VehicleFaultRecoveryEndpoints.EnabledKey] = recovery;
+        }
+        if (release is not null)
+        {
+            builder.Configuration[ForeignRunningOrderReleaseOptions.EnabledKey] = release;
+        }
+        // Registered so that the handlers' parameters read as services, never resolved: routing is all this looks at.
+        builder.Services.AddScoped<ControlServer.Host.Runtime.Faults.VehicleFaultRecoveryService>(_ => throw new InvalidOperationException("not resolved"));
+        builder.Services.AddScoped<WaitingPointArrivalSettlement>(_ => throw new InvalidOperationException("not resolved"));
+        builder.Services.AddScoped<ControlServer.Host.Runtime.Recovery.RecoverySessionAdministratorClose>(_ => throw new InvalidOperationException("not resolved"));
+        builder.Services.AddScoped<ForeignRunningOrderManualRelease>(_ => throw new InvalidOperationException("not resolved"));
+        builder.Services.AddScoped<VehicleRoster>(_ => throw new InvalidOperationException("not resolved"));
+        builder.Services.AddScoped<ControlServerDbContext>(_ => throw new InvalidOperationException("not resolved"));
+        builder.Services.AddScoped<IGovernanceAuditWriter>(_ => throw new InvalidOperationException("not resolved"));
+        builder.Services.AddSingleton(TimeProvider.System);
+        await using Microsoft.AspNetCore.Builder.WebApplication app = builder.Build();
+
+        app.MapVehicleFaultRecoveryEntriesWhenEnabled();
+        bool said = app.MapForeignRunningOrderManualReleaseWhenEnabled();
+
+        string[] routes =
+        [
+            .. ((Microsoft.AspNetCore.Routing.IEndpointRouteBuilder)app).DataSources.SelectMany(source => source.Endpoints)
+                .OfType<Microsoft.AspNetCore.Routing.RouteEndpoint>()
+                .Select(endpoint => endpoint.RoutePattern.RawText!)
+        ];
+        Assert.Equal(mapped, said);
+        Assert.Equal(mapped, routes.Contains(ForeignRunningOrderManualReleaseEndpoints.Route));
+        Assert.Equal(recovery == "true", routes.Contains(WaitingPointArrivalSettlementEndpoints.Route));
+    }
+
     // ---- 人工出口：拒绝 -------------------------------------------------------------------------------------------------------
 
     /// <summary>
@@ -206,6 +343,7 @@ public sealed class ForeignRunningOrderManualReleaseTests
         await using RuntimeFixture fixture = await UnsettledAsync();
         using Roster roster = new();
         ForeignRunningOrderManualReleaseRequest request = Request(fixture);
+        IRiotOrderListingFacts? listing = null;
         switch (premise)
         {
             case "operator-missing": request = request with { OperatorId = " " }; break;
@@ -232,11 +370,24 @@ public sealed class ForeignRunningOrderManualReleaseTests
                 break;
             case "read-suspended": fixture.Riot.EndPlacedOrder(WebPageOrderId, RiotOrderState.Suspended); break;
             case "read-running": fixture.Riot.EndPlacedOrder(WebPageOrderId, RiotOrderState.Executing); break;
+            // Review P1: every unfinished state, and a value RIoT has never been seen to send, is "not ended".
+            case "read-queueing": fixture.Riot.EndPlacedOrder(WebPageOrderId, RiotOrderState.Queueing); break;
+            case "read-paused": fixture.Riot.EndPlacedOrder(WebPageOrderId, RiotOrderState.Paused); break;
+            case "read-hang": fixture.Riot.EndPlacedOrder(WebPageOrderId, RiotOrderState.Hang); break;
+            case "read-queue-priority": fixture.Riot.EndPlacedOrder(WebPageOrderId, RiotOrderState.QueuePriority); break;
+            case "read-unknown-state": fixture.Riot.EndPlacedOrder(WebPageOrderId, 11); break;
+            // Review P2: listed running, its own read failing (the gateway's null) -- the listing alone refuses.
+            case "still-listed-running-read-fails":
+                fixture.Riot.PlaceOrder(WebPageOrderId, "", RiotOrderState.Executing, fixture.Options.VehicleKey);
+                listing = new ReadAnswers(fixture.Riot, _ => null);
+                break;
+            // Review L3: a port that throws something other than the transport exceptions is "could not read", audited.
+            case "listing-throws-other": fixture.Riot.ListingThrows = new InvalidOperationException("a defect in the port"); break;
             default: throw new ArgumentOutOfRangeException(nameof(premise), premise, null);
         }
         ForeignRiotOrderRow before = await RowAsync(fixture);
 
-        ForeignRunningOrderManualReleaseResult result = await ReleaseAsync(fixture, roster, request);
+        ForeignRunningOrderManualReleaseResult result = await ReleaseAsync(fixture, roster, request, listing: listing);
         fixture.Riot.ListingComplete = true;
         fixture.Riot.ListingThrows = null;
 
@@ -271,6 +422,13 @@ public sealed class ForeignRunningOrderManualReleaseTests
         { "still-listed-queueing", ForeignRunningOrderManualRelease.OrderStillUnfinished },
         { "read-suspended", ForeignRunningOrderManualRelease.OrderReadNotEnded },
         { "read-running", ForeignRunningOrderManualRelease.OrderReadNotEnded },
+        { "read-queueing", ForeignRunningOrderManualRelease.OrderReadNotEnded },
+        { "read-paused", ForeignRunningOrderManualRelease.OrderReadNotEnded },
+        { "read-hang", ForeignRunningOrderManualRelease.OrderReadNotEnded },
+        { "read-queue-priority", ForeignRunningOrderManualRelease.OrderReadNotEnded },
+        { "read-unknown-state", ForeignRunningOrderManualRelease.OrderReadNotEnded },
+        { "still-listed-running-read-fails", ForeignRunningOrderManualRelease.OrderStillUnfinished },
+        { "listing-throws-other", ForeignRunningOrderManualRelease.ListingUnreadable },
     };
 
     /// <summary>
@@ -436,10 +594,13 @@ public sealed class ForeignRunningOrderManualReleaseTests
         new(fixture.Options.AgvId, fixture.Options.VehicleKey, WebPageOrderId, Operator, "网页手动单在 RIoT 里查不到，已与现场核对", "SITE-617-01");
 
     private static ForeignRunningOrderManualRelease Release(
-        RuntimeFixture fixture, Roster roster, ILogger<ForeignRunningOrderManualRelease>? log = null) =>
+        RuntimeFixture fixture,
+        Roster roster,
+        ILogger<ForeignRunningOrderManualRelease>? log = null,
+        IRiotOrderListingFacts? listing = null) =>
         new(
             fixture.Context,
-            fixture.Riot,
+            listing ?? fixture.Riot,
             new FieldOperatorRoleRoster(Options.Create(new FieldOperatorRoleOptions { Path = roster.Path })),
             new GovernanceStore(fixture.Context, new GovernanceDeploymentIdentity("deployment:8005-controlserver@test"), AuditRetentionPolicy.Default),
             fixture.Clock,
@@ -449,10 +610,11 @@ public sealed class ForeignRunningOrderManualReleaseTests
         RuntimeFixture fixture,
         Roster roster,
         ForeignRunningOrderManualReleaseRequest request,
-        ILogger<ForeignRunningOrderManualRelease>? log = null)
+        ILogger<ForeignRunningOrderManualRelease>? log = null,
+        IRiotOrderListingFacts? listing = null)
     {
         fixture.Context.ChangeTracker.Clear();
-        ForeignRunningOrderManualReleaseResult result = await Release(fixture, roster, log).DecideAsync(request, Token);
+        ForeignRunningOrderManualReleaseResult result = await Release(fixture, roster, log, listing).DecideAsync(request, Token);
         fixture.Context.ChangeTracker.Clear();
         return result;
     }
@@ -510,6 +672,12 @@ public sealed class ForeignRunningOrderManualReleaseTests
         await other.SaveChangesAsync(Token);
     }
 
+    private static async Task<RiotOrderCommandOutcome> CancelOutcomeAsync(RuntimeFixture fixture, string auditId)
+    {
+        await using ControlServerDbContext reading = new(fixture.DbOptionsForTests);
+        return (await reading.RiotOrderCommandAudit.AsNoTracking().SingleAsync(row => row.CommandAuditId == auditId, Token)).Outcome;
+    }
+
     private static async Task<AdministratorAuditRecordRow[]> AuditsAsync(RuntimeFixture fixture)
     {
         await using ControlServerDbContext reading = new(fixture.DbOptionsForTests);
@@ -517,6 +685,16 @@ public sealed class ForeignRunningOrderManualReleaseTests
             .Where(row => row.Action == ForeignRunningOrderManualRelease.AuditAction)
             .ToArrayAsync(Token);
         return [.. rows.OrderBy(row => row.RecordedAtUtcTicks)];
+    }
+
+    /// <summary><see cref="RecordingRiot"/> 的列表照旧，按单号回读由 <paramref name="read"/> 回答（审查 P2、L3）。</summary>
+    private sealed class ReadAnswers(RecordingRiot inner, Func<string, int?> read) : IRiotOrderListingFacts
+    {
+        public Task<RiotUnfinishedOrderListing> ListUnfinishedOrdersAsync(CancellationToken cancellationToken) =>
+            inner.ListUnfinishedOrdersAsync(cancellationToken);
+
+        public Task<RiotOrderStateReading> ReadOrderStateAsync(string orderId, CancellationToken cancellationToken) =>
+            Task.FromResult(new RiotOrderStateReading(orderId, read(orderId), DateTimeOffset.UnixEpoch));
     }
 
     /// <summary>R-11／R-13 名单文件，只有 <see cref="Operator"/> 一人（R-11）。</summary>
