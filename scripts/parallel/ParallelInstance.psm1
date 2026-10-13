@@ -166,7 +166,8 @@ $script:AllowedKeys = [ordered]@{
     '' = @('instanceId', 'serviceName', 'installRoot', 'dataRoot', 'backupRoot', 'packageRoot',
         'opsRoot', 'stagingRoot', 'listenAddress', 'healthBindAddress', 'onboardPort', 'healthPort',
         'dashboardPort', 'mesIngest', 'fakeMesIngest', 'routeGraph', 'riotCreateDispatch', 'riotForeignOrderCancel',
-        'journeyRuntime', 'vehicleFaultRecovery', 'fieldOperatorRoles', 'taskTypeStations', 'mapStationCatalog')
+        'journeyRuntime', 'vehicleFaultRecovery', 'foreignRunningOrderRelease', 'fieldOperatorRoles', 'taskTypeStations',
+        'mapStationCatalog')
     # control-server#535. source is this deployment's, not a product option: the overlay does not write it.
     'mesIngest' = @('baseUrl', 'source')
     'fakeMesIngest' = @('installRoot', 'port', 'taskName', 'seedPath')
@@ -182,6 +183,8 @@ $script:AllowedKeys = [ordered]@{
     # control-server#454. credentialEnvironmentVariable is deliberately absent: the overlay writes
     # this instance's own variable name, so no definition can point the service at the MVP's.
     'vehicleFaultRecovery' = @('enabled')
+    # control-server#617 (review M1). The foreign running order release entry's own switch; it shares the credential above.
+    'foreignRunningOrderRelease' = @('enabled')
     'fieldOperatorRoles' = @('path', 'onboardClearanceEntryDeclared')
     # control-server#518. TaskTypeStationPreset.SettingsFileKey; there is no options class to mirror.
     'taskTypeStations' = @('settingsFile')
@@ -1081,6 +1084,20 @@ function Test-ParallelInstanceDefinition {
         $failures += 'vehicleFaultRecovery.enabled must be stated explicitly.'
     } elseif ($recovery['enabled'] -isnot [bool]) {
         $failures += "vehicleFaultRecovery.enabled must be a JSON boolean, got '$($recovery['enabled'])'."
+    }
+    # control-server#617 (review M1). Stated, never inherited, for the same reason: off, a vehicle held by a foreign order RIoT
+    # can no longer show has no way out but the database.
+    # An installed definition older than #617 has no such section; closing the gate and uninstalling must not refuse it
+    # (-ForStopDirection; the same reasoning as taskTypeStations below). An absent section only.
+    $foreignRelease = Get-Node -Root $Definition -Key 'foreignRunningOrderRelease'
+    if ($ForStopDirection -and -not (Test-KeyPresent -Node $Definition -Key 'foreignRunningOrderRelease')) {
+        # Tolerated: see above.
+    } elseif ($null -eq $foreignRelease) {
+        $failures += 'foreignRunningOrderRelease must be an object; whether this instance offers the foreign running order release entry is not something to inherit.'
+    } elseif (-not (Test-KeyPresent -Node $foreignRelease -Key 'enabled')) {
+        $failures += 'foreignRunningOrderRelease.enabled must be stated explicitly.'
+    } elseif ($foreignRelease['enabled'] -isnot [bool]) {
+        $failures += "foreignRunningOrderRelease.enabled must be a JSON boolean, got '$($foreignRelease['enabled'])'."
     }
     $roles = Get-Node -Root $Definition -Key 'fieldOperatorRoles'
     if ($null -eq $roles) {
@@ -2472,6 +2489,8 @@ function New-ParallelInstanceConfigurationOverlay {
             enabled = $Definition['vehicleFaultRecovery']['enabled']
             credentialEnvironmentVariable = $script:FaultRecoveryCredentialVariable
         }
+        # control-server#617. Its own switch; the Host reads the credential through VehicleFaultRecovery's variable name above.
+        ForeignRunningOrderRelease = [ordered]@{ enabled = $Definition['foreignRunningOrderRelease']['enabled'] }
         FieldOperatorRoles = [ordered]@{
             path = $Definition['fieldOperatorRoles']['path']
             onboardClearanceEntryDeclared = $Definition['fieldOperatorRoles']['onboardClearanceEntryDeclared']
@@ -2807,9 +2826,13 @@ function Resolve-ParallelFaultRecoveryCredential {
     # Not Get-Node: it only answers for [hashtable], and a section built with [ordered] is not one.
     # Here a section it failed to see would mean "entry off", the direction that lets a broken
     # deployment through.
-    $recovery = $Definition.Contains('vehicleFaultRecovery') ? $Definition['vehicleFaultRecovery'] : $null
-    if ($recovery -is [System.Collections.IDictionary] -and $recovery['enabled'] -eq $true) {
-        throw ("vehicleFaultRecovery.enabled is true, but there is no value for $($script:FaultRecoveryCredentialVariable): " +
+    # control-server#617: the foreign running order release entry uses the same credential, so either switch on needs it.
+    $entries = @(foreach ($section in 'vehicleFaultRecovery', 'foreignRunningOrderRelease') {
+        $node = $Definition.Contains($section) ? $Definition[$section] : $null
+        if ($node -is [System.Collections.IDictionary] -and $node['enabled'] -eq $true) { $section }
+    })
+    if ($entries.Count -gt 0) {
+        throw ("$($entries[0]).enabled is true, but there is no value for $($script:FaultRecoveryCredentialVariable): " +
             "deploy-config.json carries no faultRecoveryCredential and the service's Environment holds none. " +
             'The service would refuse to start without it. Nothing was stopped or changed.')
     }

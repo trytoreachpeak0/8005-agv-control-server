@@ -701,6 +701,21 @@ $cases = @(
         Mutate = { param($d) $d['vehicleFaultRecovery']['enabled'] = 'true'; $d }
     }
     @{
+        Name = 'foreignRunningOrderRelease absent'
+        Expect = 'foreignRunningOrderRelease must be an object'
+        Mutate = { param($d) $d.Remove('foreignRunningOrderRelease'); $d }
+    }
+    @{
+        Name = 'foreignRunningOrderRelease.enabled absent'
+        Expect = 'foreignRunningOrderRelease.enabled must be stated explicitly'
+        Mutate = { param($d) $d['foreignRunningOrderRelease'].Remove('enabled'); $d }
+    }
+    @{
+        Name = 'foreignRunningOrderRelease.enabled as a string'
+        Expect = "foreignRunningOrderRelease.enabled must be a JSON boolean, got 'true'"
+        Mutate = { param($d) $d['foreignRunningOrderRelease']['enabled'] = 'true'; $d }
+    }
+    @{
         # The overlay writes this instance's own variable name; a definition that names one could
         # point the parallel service at the MVP's credential.
         Name = 'vehicleFaultRecovery names its own credential variable'
@@ -1685,6 +1700,8 @@ $optionSources = @(
     # instance's own name, so a definition cannot point the parallel service at the MVP's variable.
     @{ Section = 'vehicleFaultRecovery'; Path = 'src/ControlServer.Host/Runtime/VehicleFaultRecoveryOptions.cs'; Class = 'VehicleFaultRecoveryOptions'; Excluded = @('CredentialEnvironmentVariable') }
     @{ Section = 'fieldOperatorRoles'; Path = 'src/ControlServer.Host/Runtime/Charging/FieldOperatorRoleRoster.cs'; Class = 'FieldOperatorRoleOptions'; Excluded = @() }
+    # control-server#617.
+    @{ Section = 'foreignRunningOrderRelease'; Path = 'src/ControlServer.Host/Runtime/ForeignOrders/ForeignRunningOrderReleaseOptions.cs'; Class = 'ForeignRunningOrderReleaseOptions'; Excluded = @() }
 )
 foreach ($source in $optionSources) {
     $properties = Get-OptionProperty -RelativePath $source.Path -ClassName $source.Class
@@ -2020,10 +2037,31 @@ foreach ($case in $credentialCases) {
     }
     Write-Result -Ok $ok -Name $case.Name -Detail $detail
 }
+# control-server#617 (review M1): the foreign running order release entry on its own, fault recovery off, needs the same credential.
+$releaseOnly = Copy-Definition $clearanceDefinition
+$releaseOnly['vehicleFaultRecovery']['enabled'] = $false
+$releaseOnly['foreignRunningOrderRelease'] = [ordered]@{ enabled = $true }
+foreach ($case in @(
+        @{ Name = 'release entry on, recovery off, no credential: refused naming the variable'; Supplied = ''; Throws = $true }
+        @{ Name = 'release entry on, recovery off, credential supplied: accepted'; Supplied = 'selftest-release'; Throws = $false }
+    )) {
+    $ok = $false; $detail = ''
+    try {
+        $got = Resolve-ParallelFaultRecoveryCredential -Definition $releaseOnly -Supplied $case.Supplied -Carried $null
+        if ($case.Throws) { $detail = "returned '$got' instead of refusing" } else { $ok = $got -ceq $case.Supplied; $detail = "got '$got'" }
+    } catch {
+        $message = $_.Exception.Message
+        if ($case.Throws) { $ok = $message.Contains($credentialName) -and $message.Contains('foreignRunningOrderRelease'); $detail = "refused, but: $message" }
+        else { $detail = "threw: $message" }
+    }
+    Write-Result -Ok $ok -Name $case.Name -Detail $detail
+}
 # Entry off: no credential is fine, and nothing is added to the Environment.
 Invoke-PathCase 'entry off, no credential' {
     $off = Copy-Definition $clearanceDefinition
     $off['vehicleFaultRecovery']['enabled'] = $false
+    # control-server#617: the foreign running order release entry uses the same credential; off too, or it still needs one.
+    $off['foreignRunningOrderRelease']['enabled'] = $false
     $r = Invoke-ClearancePath -Definition $off -BaseConfiguration (Copy-Definition $productConfiguration) -ProductRebuildsEnvironment
     Write-Result -Ok (@($r.Environment | Where-Object { $_ -like "$credentialName=*" }).Count -eq 0 -and
         $r.Configuration['VehicleFaultRecovery']['enabled'] -eq $false -and
@@ -2759,6 +2797,23 @@ foreach ($written in @(
         -Name "stop direction: a taskTypeStations that is written is still checked -- $($written.Name) is refused" -Detail "got: $refusal"
 }
 
+# control-server#617 incremental review L-4, after stopWritten above: the stop direction tolerates the release entry's section
+# only when it is absent; one that is written is checked as on the way in.
+$refusal = Get-AssertRefusal (Copy-Definition $oldInstalled)
+Write-Result -Ok ($null -ne $refusal -and $refusal.Contains('foreignRunningOrderRelease must be an object')) `
+    -Name 'stop direction: without the switch the 10-07 definition is refused for foreignRunningOrderRelease too' -Detail "got: $refusal"
+foreach ($written in @(
+        @{ Name = 'enabled not stated'; Value = @{}; Expect = 'foreignRunningOrderRelease.enabled must be stated explicitly' }
+        @{ Name = 'enabled as a string'; Value = @{ enabled = 'true' }; Expect = 'foreignRunningOrderRelease.enabled must be a JSON boolean' }
+        @{ Name = 'a string instead of an object'; Value = 'true'; Expect = 'foreignRunningOrderRelease must be an object' }
+    )) {
+    $stopWritten = Copy-Definition $oldInstalled
+    $stopWritten['foreignRunningOrderRelease'] = $written.Value
+    $refusal = Get-AssertRefusal $stopWritten -ForStopDirection
+    Write-Result -Ok ($null -ne $refusal -and $refusal.Contains($written.Expect)) `
+        -Name "stop direction: a foreignRunningOrderRelease that is written is still checked -- $($written.Name) is refused" -Detail "got: $refusal"
+}
+
 # The call sites, by AST: only the uninstaller and the gate script pass the switch, and the gate passes it only for Close.
 function Get-StopDirectionArgument([string] $FileName) {
     $ast = [System.Management.Automation.Language.Parser]::ParseFile((Join-Path $PSScriptRoot $FileName), [ref]$null, [ref]$null)
@@ -2802,7 +2857,10 @@ try {
         )) {
         $out = @(& pwsh -NoProfile -File (Join-Path $PSScriptRoot 'Set-ParallelDispatchGateLocal.ps1') `
                 -State $gate.State -InstanceDefinitionPath $oldPath -WhatIf 2>&1 | ForEach-Object { "$_" })
-        $refused = [bool]($out -match 'taskTypeStations must be an object')
+        # pwsh wraps a long error at the window width and colours each piece; one more refusal reason (control-server#617)
+        # moved the break into this sentence. Matched on the text with the colour codes and the breaks taken out.
+        $flat = (($out -join ' ') -replace "\e\[[0-9;]*m", '') -replace '\s+', ' '
+        $refused = $flat.Contains('taskTypeStations must be an object')
         $reachedConfiguration = [bool]($out -match 'No installed configuration at')
         Write-Result -Ok ($gate.Pass ? ($reachedConfiguration -and -not $refused) : ($refused -and -not $reachedConfiguration)) `
             -Name ("stop direction: Set-ParallelDispatchGateLocal.ps1 -State $($gate.State) with the 10-07 definition " +

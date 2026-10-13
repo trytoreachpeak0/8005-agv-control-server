@@ -746,6 +746,12 @@ public sealed class HttpRiotMovementGateway : IRiotMovementGateway, IRiotVehicle
     /// One order's state by its RIoT <c>orderId</c>, through <c>detailByOrderId</c> (control-server#330). Null state on every
     /// failure: a read that did not answer says nothing about whether the order ended.
     /// </summary>
+    /// <remarks>
+    /// The orders read here are mostly not this server's, and one dispatched by hand on the RIoT web page carries <c>upperId</c>
+    /// as an empty string. Until <c>RIoT.Sdk.Facade 0.2.0-fp.7</c> the SDK refused that answer as incomplete
+    /// (<c>order-ref-missing</c>), so such an order never read back ended and its vehicle stayed held (control-server#617);
+    /// the read by orderId no longer requires an <c>upperId</c>, and this read never looks at it.
+    /// </remarks>
     public async Task<RiotOrderStateReading> ReadOrderStateAsync(string orderId, CancellationToken cancellationToken)
     {
         ArgumentException.ThrowIfNullOrWhiteSpace(orderId);
