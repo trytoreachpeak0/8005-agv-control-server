@@ -140,9 +140,21 @@ $null = Wait-L2Condition -Description 'the trigger was settled as confirmed' `
 
 # --- 2. 值班工程师在 RIoT 上结束那张单；门锁修好读回锁闭：不自动解除 ---------------------------------------------
 
-$journal.Note('The duty engineer ends the order in RIoT; the door lock is repaired and reads locked.')
+$journal.Note('The duty engineer ends the order in RIoT; the door lock is repaired and the onboard reports the vehicle safe.')
 $null = $riot.Command('Put', "orders/$upperId", @{ orderState = 2 })
-Set-Doors -locked $true
+# Repaired and standing still, the onboard reports what a safe vehicle reports: departure safe, stopped, every slot locked.
+# Left at the in-transit summary (departure not safe), the session stays RecoveryRequired / DEPARTURE_SAFETY_NOT_READY and the
+# rebuild below waits on it for good -- the first local run (c44ab881) went red on exactly that, with ONBOARD_SESSION_NOT_READY.
+[string[]]$noReasons = @()
+$null = Set-L2OnboardSafety -Onboard $onboard -Connection $connection -AgvId $agvId -Journal $journal -Safety @{
+    departureSafe         = $true
+    vehicleStopped        = $true
+    allTargetSlotsLocked  = $true
+    allUnlockOutputsReset = $true
+    unknownPresent        = $false
+    reasonCodes           = $noReasons
+    affectedSlots         = @(1, 2, 3, 4, 5, 6, 7, 8)
+}
 $null = Wait-L2Iterations -Riot $riot -Count 5 -TimeoutSeconds 60 -Journal $journal
 $assertions.Add(
     'L2-VFCD-01', '门锁读回锁闭、车上没有未结束的单，服务端也不自动解除（CP-0011）',
