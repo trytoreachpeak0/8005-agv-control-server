@@ -100,7 +100,13 @@
     productionCutover.approvalRecord, agv01 in its roster and all six task types from the production MesIngest. The
     definition check lifts those two guards only with this switch and that record together. The first cutover install
     must find no database under the data root and must not be a -Rollback; once installed, every later install and
-    rollback of this instance must carry the switch (Get-ParallelCutoverInstallRefusal).
+    rollback of this instance must carry the switch (Get-ParallelCutoverInstallRefusal). The MVP service must be absent,
+    or Stopped and Disabled (Get-ParallelCutoverMvpRefusal).
+
+.PARAMETER LeaveProductionCutover
+    control-server#564 review S4. The governed way out of an installed production cutover: installs a parallel (non-cutover)
+    definition over it, onto an empty data root -- the cutover database renamed aside first, as evidence. The last step of
+    the rollback in docs/production-cutover-mode-plan.md section 7. Not with -ProductionCutover, not with -Rollback.
 #>
 [CmdletBinding(DefaultParameterSetName = 'Install')]
 param(
@@ -129,7 +135,9 @@ param(
 
     [switch] $AllowRiotForeignOrderCancel,
 
-    [switch] $ProductionCutover
+    [switch] $ProductionCutover,
+
+    [switch] $LeaveProductionCutover
 )
 
 $ErrorActionPreference = 'Stop'
@@ -234,13 +242,10 @@ try {
 
     # control-server#564. The production cutover's history rules, before anything changes: an installed cutover is never
     # reinstalled without the switch, and the first cutover install is an install onto an empty data root.
-    $cutoverPrevious = (Test-Path -LiteralPath $layout.InstalledDefinitionPath -PathType Leaf) ?
-        (Read-ParallelInstanceDefinition -Path $layout.InstalledDefinitionPath) : $null
-    $cutoverDatabaseFiles = (Test-Path -LiteralPath $layout.DataRoot -PathType Container) ?
-        @(Get-ChildItem -LiteralPath $layout.DataRoot -Recurse -File -Force -ErrorAction Stop |
-                Where-Object { $_.Name -match '(?i)\.db(-wal|-shm)?\z' } | ForEach-Object { $_.FullName }) : @()
-    $cutoverRefusal = Get-ParallelCutoverInstallRefusal -Definition $definition -Previous $cutoverPrevious `
-        -ProductionCutover:$ProductionCutover -Rollback:$Rollback -DatabaseFiles $cutoverDatabaseFiles -DataRoot $layout.DataRoot
+    $cutoverState = Get-ParallelCutoverInstallState -Layout $layout
+    $cutoverRefusal = Get-ParallelCutoverInstallRefusal -Definition $definition -Previous $cutoverState.Previous `
+        -ProductionCutover:$ProductionCutover -LeaveProductionCutover:$LeaveProductionCutover -Rollback:$Rollback `
+        -DatabaseFiles $cutoverState.DatabaseFiles -DataRoot $layout.DataRoot
     if ($cutoverRefusal) { throw $cutoverRefusal }
     if ($ProductionCutover) {
         Write-Warning ("PRODUCTION CUTOVER: agv01 and all six task types from the production MesIngest. Approval: " +
@@ -294,6 +299,11 @@ try {
 
     $mvpBefore = Get-MvpFingerprint
     Write-Step ("MVP service before: " + (Format-MvpFingerprint $mvpBefore))
+    # control-server#564 review M3: a cutover is installed only while the MVP is stopped and disabled. Still before anything changes.
+    if ($ProductionCutover) {
+        $mvpRefusal = Get-ParallelCutoverMvpRefusal -Fingerprint $mvpBefore -Action 'Installing'
+        if ($mvpRefusal) { throw $mvpRefusal }
+    }
 
     function Get-ServiceEnvironment {
         # This service's registry Environment (REG_MULTI_SZ); empty when the service does not exist.

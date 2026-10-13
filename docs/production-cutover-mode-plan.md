@@ -123,12 +123,20 @@
    - 生产来源下 `allowedWorkTypes` 恰好是六类全集；同一类任务不能出现在两辆车上（`CUTOVER_TASK_TYPE_SHARED`）；必须用车队表写车
      （`CUTOVER_REQUIRES_FLEET`）；必须是生产来源（`CUTOVER_REQUIRES_PRODUCTION_SOURCE`）。
    其余全部照旧：MVP 端口、服务名、路径、map 25、`v2` 实例标记、凭据变量名。开关开着时，把定义指向 MVP 的任何一种写法仍然被拒。
-3. **首次以切换模式安装必须是新库**：安装器在 `-ProductionCutover` 且 `installed-instance.json` 记的上一次不是切换模式时，要求 `dataRoot` 下没有库文件；
-   有库就拒绝（`CUTOVER_REQUIRES_NEW_DATABASE`），提示先按第 6 节换库。这把 PR #676 的失败定义「在旧库实例上就改了区名」变成机器检查。
-4. **记下这一次是切换模式**：安装器把 `productionCutover=true` 与批准记录写进 `installed-instance.json`。之后：
-   - 已是切换模式、这次没带 `-ProductionCutover` → 拒绝（`CUTOVER_SWITCH_MISSING`）。防的是有人照旧习惯用并行定义重装，把 `agv01` 从车队表里拿掉、
-     而它可能正挂着在途旅程。真要退出切换模式，走第 7 节回滚，不走「不带开关重装」。
-   - 不是切换模式、这次带了开关 → 只在第 3 条（新库）成立时接受。
+3. **首次以切换模式安装必须是新库**：安装器在 `-ProductionCutover` 且 `installed-instance.json` 记的上一次不是切换定义时，要求数据目录下（含子目录、
+   跟随目录联接）没有 `*.db`／`-wal`／`-shm`，已装配置点名的库也不能存在；有就拒绝（`CUTOVER_REQUIRES_NEW_DATABASE`），也不能是 `-Rollback`。
+   这把 PR #676 的失败定义「在旧库实例上就改了区名」变成机器检查。
+4. **已装记录就是那份定义**：安装器把这次装的整份定义复制成 `installed-instance.json`，切换定义里带着 `productionCutover` 一节
+   （`approvalRecord` 与 `phase`）。之后按这份记录判断：
+   - 已是切换定义、这次没带 `-ProductionCutover` → 拒绝（`CUTOVER_SWITCH_MISSING`）。防的是有人照旧习惯用并行定义重装，把 `agv01` 从车队表里拿掉、
+     而它可能正挂着在途旅程。
+   - `phase` 从 `trial` 到 `production`：数据目录必须重新为空（`CUTOVER_PRODUCTION_REQUIRES_NEW_DATABASE`），也不能是 `-Rollback`；
+     从 `production` 回到 `trial` 一律拒绝（`CUTOVER_PHASE_BACKWARDS`）。理由见第 5 节「为什么试跑转生产必须换新库」。
+   - **离开切换**只有一条受治理的路：带 `-LeaveProductionCutover` 装一份并行定义，数据目录必须为空（切换期间的库改名留存作证据），
+     不能同时带 `-ProductionCutover`，不能是 `-Rollback`。这是第 7 节回滚的最后一步。
+   - 不是切换定义、这次带了开关 → 只在第 3 条（新库）成立时接受。
+   - **MVP 必须已停**：带开关安装、以及给切换实例开闸，都要求 MVP 服务不存在，或者是 Stopped 且启动类型 Disabled（`CUTOVER_MVP_NOT_STOPPED`）。
+     关闸不加这条。防的是回滚后 MVP 重新驱动 `agv01`，而 v2 仍装着切换定义，开闸就会给 `agv01` 建单。
 5. **并发**：开关只在部署时生效，运行中的服务不读它；19 号脚本与安装器现有的「闸门开着拒绝升级」「配置改了没重启拒绝」等预检照旧（README「升级与回滚前先把旅程运行时关掉」）。
    两个控制端会话同时部署同一实例的问题与今天相同，不因开关变化。
 6. **默认值**：所有出厂定义、19 号脚本的默认都是关。CI 与自测在开关关的条件下跑全部既有拒绝用例（第二步的离线测试第一条）。
@@ -177,33 +185,38 @@ FieldOps 没有作废需求或重置状态的动词，手改约 50 张表风险�
 | 4 | 现场 | **停 MVP 服务并设为 Disabled**；备份 MVP（第 7 节清单）：安装目录、`D:\zhengyushao\ControlServer`（含 `.previous`）、库目录整份复制、`appsettings.Production.json`、服务注册信息（`sc qc`）、机器级环境变量名单。记录 SHA-256 | 服务 Stopped／Disabled；备份哈希写进证据目录 | 【执行前问用户】 |
 | 5 | 现场 | **备份 `agv01` 车载端**：`C:\8005\OnboardHmi` 整份（含日志簿、发件箱、本地仓位配置、日志）另存为 `C:\8005\OnboardHmi.mvp-field-<日期>`；记录版本串（`appsettings.json` 的 `wireToGate.onboardBuildCommit`） | 备份目录存在、哈希记录 | 【执行前问用户】 |
 | 6 | 用户本人（RIoT） | 按第 0 步确认的站点把 `agv01` 改到 map 26 | RIoT 读回 `agv01` 在 map 26、已定位在确认的站点 | 【执行前问用户】 |
-| 7 | 现场 | **v2 换新库 A**：停 V2（闸门已关、无在途），`C:\ProgramData\8005\ControlServer.V2` 改名留存，建空目录 | 空目录；旧目录名记录 | — |
-| 8 | 现场 | **以切换模式首装**：19 号脚本带 `-ProductionCutover -InstanceDefinitionPath scripts/parallel/instance-factory01-v2.cutover-two-zones.json`，运行时与建单闸门都关 | 安装器回读 `EFFECTIVE_CONFIGURATION`：三车、两区、六类、生产来源；`installed-instance.json` 记 `productionCutover=true`；MVP 指纹前后一致（停着、Disabled） | 读生产 MesIngest 全部六类属于切换本身，本步之前向用户确认 |
-| 9 | 现场 | 三车车载端按 cs#565：先确认发件箱无欠送再清日志簿与发件箱；`site-agv01.json` 的 `controlServerLine` 由 `"mvp"` 改为 `"v2"`（第 3 节第 4 点，`8005-workspace` 提交）；部署 v3 车载端（`-OnboardPort 58105 -HealthPort 58107`），IO 指向模拟器 | 三车握手 `Ready`，不动车 | `agv01` 每一步【执行前问用户】 |
+| 7 | 现场 | **v2 换新库 A**：停 V2（闸门已关、无在途），`C:\ProgramData\8005\ControlServer.V2` 改名留存，建空目录。**不要按换库快路线在空目录上先起服**：起服会自动建库，第 8 步就会被 `CUTOVER_REQUIRES_NEW_DATABASE` 拒 | 空目录；旧目录名记录 | — |
+| 7a | 调度 | **准备切换用的定义并出包**（审查 S1）：19 号要求定义是克隆里被跟踪的文件、包的提交等于克隆 HEAD。所以执行前提交一次，内容是本次要用的全部阶段定义（见第 8 节：S1 运行时关、S1 运行时开、S2、S3），每份都写入 `productionCutover.approvalRecord`（用户对这一次切换的授权原话出处）与 `phase: "trial"`；然后为这个提交跑一次 release。出厂的切换定义不带记录，原样装会被 `CUTOVER_SWITCH_WITHOUT_RECORD` 拒 | 提交与 release run id 记进本票 | 授权原话由调度向用户要 |
+| 8 | 现场 | **以切换模式首装 S1 定义**（只有 `agv02`，运行时与建单闸门都关）：19 号脚本带 `-ProductionCutover -InstanceDefinitionPath <S1 运行时关的定义>` | 回读 `EFFECTIVE_CONFIGURATION`：车队只有 `agv02`、区只有 `WIRE_BONDING`、六类、生产来源；`installed-instance.json` 是这份定义（带 `productionCutover`）；MVP 指纹前后一致（停着、Disabled） | 读生产 MesIngest 全部六类属于切换本身，本步之前向用户确认 |
+| 9 | 现场 | 车载端按 cs#565：先确认发件箱无欠送再清日志簿与发件箱，部署 v3 车载端（`-OnboardPort 58105 -HealthPort 58107`），IO 指向模拟器。S1 只需要 `agv02`；`agv01`、`agv03` 留到它们所在阶段之前做（第 8 节）。`agv01` 那次要先把 `site-agv01.json` 的 `controlServerLine` 由 `"mvp"` 改为 `"v2"`（`8005-workspace` 提交） | 该车握手 `Ready`，不动车 | `agv01` 每一步【执行前问用户】 |
 | 10 | 现场 | 导入受治理事实（program#170 第 2 节：已批准硬件事实、`bind-io`、站点绑定、等待点、充电名册与策略）。分区归属表这时还不能导 | 每项导入回读 | — |
-| 11 | 现场 | **让两个区进库**（PR #676 README 第 4 步）：建单闸门保持关，打开运行时，至少一台车连上并空闲，等一轮，`DispatchZoneVehicles` 出现该车的区 | 库表读回该区 | 运行时打开读真实 MES：本步向用户确认 |
-| 12 | 调度 C11 | 两份归属表离线比区名（`Test-ParallelInstance.ps1 -AreaAssignmentPath`），再各 `--dry-run` | 不报 `DISPATCH_ZONE_NOT_FOUND` | — |
-| 13 | 用户批准 → 现场导入 | **每区参数**（cs#219：`REQ-0198`、`REQ-0203`）。`DIE_ATTACH` 要用户批一套；`WIRE_BONDING` 也没有已批准的 `WIRE` 值可抄。必须在第 14 步之前，或用户明确接受「先按未配置跑」 | 导入回读；或用户原话 | 【执行前问用户】（批准） |
-| 14 | 现场 | 正式导入归属表。**导入之后表里的 AREA 立刻可被受理**（运行时开着时闸门关着也受理、旅程等闸门） | 导入回读 | — |
+| 11 | 现场 | **让本阶段的区进库**（PR #676 README 第 4 步）：建单闸门保持关，用 19 号带 `-ProductionCutover` 换装本阶段运行时开的定义，至少一台车连上并空闲，等一轮，`DispatchZoneVehicles` 出现本阶段各区 | 库表读回本阶段各区（S1、S2 只有 `WIRE_BONDING`） | 运行时打开读真实 MES：本步向用户确认 |
+| 12 | 调度 C11 | **本阶段的归属表**：导入是整表替换（PR #676 审查 M1），所以每次导入的都是「当前已进库各区」的一份合并表。S1、S2 只导 N 区表 `field-prep/area-assignments-N-WIRE_BONDING.csv`；S3 加入 `DIE_ATTACH` 后导合并表 `field-prep/area-assignments-merged-N-T.csv`，替换掉 N 区那份。先离线比区名（`Test-ParallelInstance.ps1 -AreaAssignmentPath <本阶段的表>`，区名集合必须恰好等于本阶段定义的 `allowedDispatchZones`），再 `--dry-run` | 不报 `DISPATCH_ZONE_NOT_FOUND`；区名比对 0 条不一致 | — |
+| 13 | 用户批准 → 现场导入 | **每区参数**（cs#219）：`REQ-0203`（防饥饿阈值）按区批准后导入；`REQ-0198`（途中追加上限）在 S1～S3 期间**为 0 或不导入**（规格第 22.2 节第 3 条：这样一趟只带一条需求），S4 才导入批准值。`DIE_ATTACH` 的一套在 S3 之前批；`WIRE_BONDING` 也没有已批准的旧 `WIRE` 值可抄。必须在第 14 步之前，或用户明确接受「先按未配置跑」 | 导入回读；或用户原话 | 【执行前问用户】（批准） |
+| 14 | 现场 | 正式导入本阶段的归属表。**导入之后表里的 AREA 立刻可被受理**（运行时开着时闸门关着也受理、旅程等闸门） | 导入回读 | — |
 | 15 | 现场 | 试跑等待参数调短（离站、持货），记调短前后的值与位置；生产段一律以 D9 的 5 分钟／5 分钟为准，不以这里记的「调短前」为准 | 实读安装目录 `appsettings.Production.json` | — |
-| 16 | 现场 | 按 S1→S3 开闸放车（第 8 节） | 每阶段判据 | 【逐次授权·现场有人】 |
+| 16 | 现场 | **开闸放本阶段的车**：只有本阶段定义里的车会被派单 | 本阶段判据（第 8 节） | 【逐次授权·现场有人】 |
+| 16a | 现场 | **换下一阶段**（S1→S2→S3）：关闸（20 号 `-State Closed`）、确认无在途；下一阶段新加的车先做第 9 步（`agv01` 加入前还要先跑 `Set-ControlServerSecret.ps1 -NewVehicleSafetyCredential agv01`，否则 19 号会以缺投影凭据拒绝，审查 S2）；19 号带 `-ProductionCutover` 换装该阶段运行时开的定义；新区进库后重做第 12～14 步；再按第 16 步开闸 | 每次换装的 `EFFECTIVE_CONFIGURATION` 车队与区等于该阶段定义 | 动 `agv01`【执行前问用户】；开闸【逐次授权·现场有人】 |
 
-第 11 步有一个两区相关的细节：`DispatchZoneVehicles` 只写车队表里车的区。若试跑按第 8 节从一台车起步、那一阶段的定义里只有一台车，另一区的表要等它的车加入时
-再做第 11～14 步。这不改顺序，只是每个区各走一遍。
+开闸之前，车队表里有哪几台车就只有哪几台会被派单：派车轮判空闲车看的是旅程占用，不看车载端连没连（第 8 节）。所以第 8 步装的是只有 `agv02` 的
+S1 定义，`agv01`、`agv03` 在各自阶段换装定义之后才进车队表（审查 H1）。
+
+试跑段要靠脚本代替人操作 `agv01` 的屏幕（条码录入、读屏）。`16-enter-sublot-uia.ps1` 已改为看站点文件的单一字段；`17-capture-hmi-screen.ps1`、
+`18-read-hmi-screen-state.ps1` 今天仍然拒绝 `agv01`，它们属于「碰 `agv01` 先问用户」那一类护栏，试跑前要单独决定怎么处理（审查 M2）。
 
 ### 第二段：试跑转生产
 
-**顺序（cs#609 审查 M1）**：cs#609 合入之后，现场 v2 实例必须先用 19 号脚本重装（把持货 5 分钟写进已装定义与配置），然后才能开闸。原因是 20 号开闸会检查服务器上的 `installed-instance.json`，而现场现在装的是持货 30 分钟的定义，不重装就开闸会被拒。这一条对第一段第 8 步同样适用：切换首装用的定义必须已经带着 5 分钟。
+**顺序（cs#609 审查 M1）**：cs#609 合入之后，现场 v2 实例必须先用 19 号脚本重装（把持货 5 分钟写进已装定义与配置），然后才能开闸。原因是 20 号开闸会检查服务器上的 `installed-instance.json`，而现场现在装的是持货 30 分钟的定义，不重装就开闸会被拒。这一条对第一段第 8 步同样适用：切换首装用的定义必须已经带着 5 分钟。「不重装就开闸会被拒」的前提是 20 号所用的 control-server 检出已含 cs#609。
 
 | # | 谁 | 做什么 | 判据 | 标记 |
 | --- | --- | --- | --- | --- |
 | 17 | 现场 | 关 v2 闸门（`20-set-control-server-parallel-dispatch-gate.ps1 -State Closed`，任何旅程不是 `Completed` 就拒绝）、关运行时；无在途 | 闸门脚本成功；库里无非终态旅程 | — |
-| 18 | 现场 | **换新库 B**：同第 7 步，库 A 改名留存（它是试跑证据） | 空目录 | — |
-| 19 | 现场 | 19 号脚本带 `-ProductionCutover` 重装同一定义（定义里的等待参数是 D9 的生产值，重装即写回）。**前提：cs#609 已合入**，定义与产品默认值里的持货已从 `00:30:00` 改为 `00:05:00` | **实读**安装目录 `C:\Program Files\8005 AGV\ControlServer.V2\appsettings.Production.json`：`stationDepartureWaitTimeout=00:05:00`、`cargoHoldingTimeout=00:05:00`（D9）。`EFFECTIVE_CONFIGURATION` 事件今天不带这两个值（`src/ControlServer.Host/Runtime/EffectiveConfigurationEvent.cs:40` 的模板只有任务类型、区、MES 地址、车队、清桩开关、目录参数），等 cs#672 把它们加进事件后，再改为按事件回读。不要手改已装文件代替重装：手改不经过部署校验，cs#609 的上限挡不住 | — |
-| 20 | 现场 | 三车 IO 从模拟器切回真模块（`09-switch-io-module.ps1`），清日志簿与发件箱 | 握手 `Ready` | `agv01`【执行前问用户】 |
+| 18 | 现场 | **换新库 B**：同第 7 步，库 A 改名留存（它是试跑证据）；同样不要先起服 | 空目录 | — |
+| 18a | 调度 | 同第 7a 步，提交生产段的阶段定义（`phase: "production"`，批准记录写生产段的授权）并出包 | 提交与 release run id | 授权原话由调度向用户要 |
+| 19 | 现场 | 19 号脚本带 `-ProductionCutover` 装生产段 S1 定义。安装器按已装记录的 `phase` 从 `trial` 到 `production`，要求数据目录为空（`CUTOVER_PRODUCTION_REQUIRES_NEW_DATABASE`），所以漏了第 18 步会被拒。**前提：cs#609 已合入**，定义与产品默认值里的持货已从 `00:30:00` 改为 `00:05:00` | **实读**安装目录 `C:\Program Files\8005 AGV\ControlServer.V2\appsettings.Production.json`：`stationDepartureWaitTimeout=00:05:00`、`cargoHoldingTimeout=00:05:00`（D9）。`EFFECTIVE_CONFIGURATION` 事件今天不带这两个值（`src/ControlServer.Host/Runtime/EffectiveConfigurationEvent.cs:40`），等 cs#672 加进事件后再改为按事件回读。不要手改已装文件代替重装：手改不经过部署校验，cs#609 的上限挡不住 | — |
+| 20 | 现场 | 本阶段的车 IO 从模拟器切回真模块（`09-switch-io-module.ps1`），清日志簿与发件箱 | 握手 `Ready` | `agv01`【执行前问用户】 |
 | 21 | 现场 | 重导受治理事实；**逐仓重核**（`REQ-0263`，cs#565 第 5 步） | 核对证据目录 | 动车部分【逐次授权·现场有人】 |
-| 22 | 现场 | 重做第 11～14 步（区进库、归属表、每区参数） | 同上 | — |
-| 23 | 现场 | 按 S1→S4 放开（第 8 节） | 每阶段判据 | 【逐次授权·现场有人】 |
+| 22 | 现场 | 按第 11～16a 步逐阶段走 S1→S4（第 8 节） | 每阶段判据 | 【逐次授权·现场有人】 |
 
 ## 7. 第 5 问：回滚
 
@@ -224,8 +237,9 @@ FieldOps 没有作废需求或重置状态的动词，手改约 50 张表风险�
 
 ### 回滚步骤（每一步都碰 MVP 或 `agv01`，全部【执行前问用户】）
 
-1. **关 v2**：v2 闸门关（第 17 步同法），等在途收尾。v2 在途的单怎么收尾、已完成的单对 MES 怎么交代，以 program#170 第 4 节为准。v2 服务停、设 Manual，
-   **不卸载、不删库**（库是切换期间的证据，也是 program#170 第 4 节要回答的数据）。
+1. **关 v2**：v2 闸门关（第 17 步同法），等在途收尾，再关运行时（审查 S4）。v2 在途的单怎么收尾、已完成的单对 MES 怎么交代，以 program#170 第 4 节为准。
+   v2 服务停、设 Manual，**不卸载、不删库**（库是切换期间的证据，也是 program#170 第 4 节要回答的数据）。v2 停着的这段时间，MVP 已停的检查
+   保证没人能给切换实例开闸。
 2. **`agv01` 车载端换回**：停车载端栈；把 `C:\8005\OnboardHmi` 改名留存，`C:\8005\OnboardHmi.mvp-field-<日期>` 改回 `C:\8005\OnboardHmi`。核对版本串等于备份时记录的那个。
    这一份里的配置本来就连 58005／58007，不需要重新渲染。
 3. `site-agv01.json` 改回 MVP 线（第 3 节第 4 点的单一字段）。
@@ -235,6 +249,9 @@ FieldOps 没有作废需求或重置状态的动词，手改约 50 张表风险�
    - 若哈希不一致（有人动过），用备份整份覆盖。
 6. MVP 服务启动类型改回原值、启动；闸门照切换前的做法用 `Set-JourneyRuntime.ps1` 开（`-Intake`／`-Dispatch`，后者【逐次授权·现场有人】）。
 7. 回读：MVP 健康、`agv01` 握手、MVP 指纹与切换前一致（路径、启动类型）。
+8. **离开切换**（要让 v2 回到并行期时才做）：v2 数据目录改名留存、建空目录、不起服；19 号带 `-LeaveProductionCutover` 装并行定义
+   （例如 `instance-factory01-v2.production-mes.json`）。不带这个开关、或数据目录里还有库，安装器都会拒绝。卸载不带 `-RemoveData` 会留着
+   `installed-instance.json`，之后不带开关的重装照样被拒，所以离开切换要走这一步，不要手改服务器上的记录。
 
 两点要知道：
 
@@ -250,11 +267,21 @@ FieldOps 没有作废需求或重置状态的动词，手改约 50 张表风险�
 怎么表达（读到的）：
 
 - **车辆数**只能用车队表的行数表达，不能用「另外两台车不连」表达：派车轮判空闲车看的是旅程占用，不看车载端连没连（`JourneyRuntimeEngine.cs:779-789`），
-  一台在车队表里但车载端没起的车照样会被派单。所以每个阶段一份定义（`cutover-s1-*.json`、`cutover-s2-*.json`、完整三车那份），都按第 4 节同一套规则校验，
-  阶段之间用 19 号脚本带 `-ProductionCutover` 换定义重装（同库，`installed-instance.json` 已是切换模式）。换定义前闸门关、无在途。
+  一台在车队表里但车载端没起的车照样会被派单。所以每个阶段一份定义，都按第 4 节同一套规则校验，阶段之间用 19 号脚本带 `-ProductionCutover` 换定义重装
+  （同库，已装记录已是切换定义）。换定义前关闸、无在途。各阶段定义从 PR #676 的切换定义复制，只改下表几项：
+
+  | 阶段 | `journeyRuntime.fleet` | `allowedDispatchZones` | 归属表（整表替换） |
+  | --- | --- | --- | --- |
+  | S1 | `agv02` 一行 | `["WIRE_BONDING"]` | N 区表 |
+  | S2 | `agv02`、`agv01` 两行 | `["WIRE_BONDING"]` | N 区表（不变） |
+  | S3、S4 | 三行（即 PR #676 的切换定义） | `["WIRE_BONDING", "DIE_ATTACH"]` | N+T 合并表 |
+
+  `dispatchZone` 都是 `WIRE_BONDING`；`allowedWorkTypes` 都是六类（切换开关要求全集）。S1、S2 不写 `DIE_ATTACH`：那时没有车服务这个区，它进不了
+  `DispatchZoneVehicles`，写进允许列表只会让区名比对报「这个区没有表」。S1 时其余五类需求读得到但没有车能接：`WIRE_TO_GATE` 等 N 区需求按任务类型
+  只能给 `agv01`，T 区需求没有归属表、一律 `OUT_OF_SCOPE_AREA`（推的，依据同 PR #676 的读码，未实测）。每个阶段都要一份运行时开的定义；S1 另要一份运行时关的
+  首装用。本票的自测证明了 S1、S2 两种车队形状被接受。
 - **一趟一条需求**：规格第 22.2 节第 3 条——每区参数批准前初始派车只取一条需求，受理后加入的都算途中追加、受 `REQ-0198` 约束；未配置即本区禁止途中追加。
-  所以 S1～S3 不导入 `REQ-0198`（或导入 0），S4 才导入批准值。注意这与第 6 节第 13 步「归属表导入前定每区参数」有张力：S1～S3 期间每区参数里 `REQ-0198`
-  应是 0 或不导，`REQ-0203` 可以先导。第二步实现时把这一点写进操作步骤。
+  所以 S1～S3 不导入 `REQ-0198`（或导入 0），S4 才导入批准值；`REQ-0203` 可以先导。第 6 节第 13 步已按此写。
 - **专车专用使 S1 只能覆盖一类车的任务**：规格 S1 列的首次能力里同时有 `WIRE_TO_GATE` 与 `STAGING_TO_WIRE`，三车专车专用后一台车做不了两类。
   所以 S1 的「每项能力走通」只能按那台车的任务类型算，另一类在 S2 补齐。哪台车先上见第 9 节决定 D5。
 
@@ -305,14 +332,24 @@ FieldOps 没有作废需求或重置状态的动词，手改约 50 张表风险�
   cs#565 评论点名的第 4 处 `status/Get-WireToGateStatus.ps1` 在 `origin/main` 上没有这个文件，未改。
 - `server-v2-recovery-window.ps1` 同样从已装定义的记录取开关。
 
+**审查第一轮（2026-10-13）之后加的**
+
+- `productionCutover.phase`（`trial`／`production`，必填）；安装历史加 `CUTOVER_PRODUCTION_REQUIRES_NEW_DATABASE`、`CUTOVER_PRODUCTION_NOT_ROLLBACK`、
+  `CUTOVER_PHASE_BACKWARDS`（审查 S3）。
+- 受治理的离开切换：安装器与 19 号加 `-LeaveProductionCutover`，配套 `CUTOVER_LEAVE_REQUIRES_NEW_DATABASE` 等拒绝码（审查 S4）。
+- MVP 必须已停：`Get-ParallelCutoverMvpRefusal`，带开关安装与切换实例开闸时要求 MVP 不存在或 Stopped＋Disabled（审查 M3）。
+- 安装历史读什么收进 `ParallelHost.psm1` 的 `Get-ParallelCutoverInstallState`：只读 `installed-instance.json`；库文件扫描含子目录、跟随联接，
+  并加上已装配置点名的那个库（审查 L）。
+- 审计行在切换时写「PRODUCTION CUTOVER」与阶段，不再说「只接 STAGING_TO_WIRE」（审查 M1 的服务端一半；19 号那一半在 `8005-workspace`）。
+
 **还没做、由谁做**
 
 - PR #676（已合入）的两份切换定义：原用例「开关关时恰好拒这两条」保留；本票新增一条：开关开、且执行当天写入批准记录时收；开关开而没有记录时，
   报 `CUTOVER_SWITCH_WITHOUT_RECORD`，两道护栏照拒。出厂的切换定义**不带**批准记录，这是有意的：记录写的是「谁在哪天批准了这一次切换」，
   执行当天才填，没填就装不上。
-- 分阶段定义（D4 选 a）：执行时从切换定义复制、只留该阶段的车（S1 只有 `agv02`，S2 加 `agv01`），本票自测已证明这两种形状被接受。
+- 分阶段定义（D4 选 a）：执行前由第 6 节第 7a 步提交并出包，形状见第 8 节的表；本票自测已证明 S1、S2 两种车队形状被接受。
 - 持货 5 分钟：cs#609。
-- `wire-to-gate-parallel-cd.md` 的「生产切换」操作单：随 `8005-workspace` 的 PR 补。
+- `wire-to-gate-parallel-cd.md` 第 14 节（`8005-workspace` PR #41）记部署脚本一侧；逐步操作单以本文第 6、7 节为准。
 
 **本方案怎么算失败**（票面）：没写回滚，或回滚写成了改 MVP 代码。本方案的回滚是第 7 节，只换回 MVP 的部署与数据、`agv01` 的车载端与地图，不改任何 MVP 代码。
 

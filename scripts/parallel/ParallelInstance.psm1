@@ -128,6 +128,7 @@ $script:MvpWorkType = 'WIRE_TO_GATE'
     a cutover definition must name all of them: "the cutover" is v2 taking over the MVP's work, not some of it.
 #>
 $script:CutoverWorkTypes = @('DIE_TO_WIRE_STAGING', 'DIE_TO_OVEN', 'WIRE_TO_GATE', 'WIRE_TO_OPTICAL', 'STAGING_TO_WIRE', 'WIRE_TO_NITROGEN')
+$script:CutoverPhases = @('trial', 'production')
 $script:CutoverPlanReference = 'Production cutover: docs/production-cutover-mode-plan.md -- it takes -ProductionCutover on the command and productionCutover.approvalRecord in the definition.'
 
 <#
@@ -188,9 +189,10 @@ $script:AllowedKeys = [ordered]@{
         'dashboardPort', 'mesIngest', 'fakeMesIngest', 'routeGraph', 'riotCreateDispatch', 'riotForeignOrderCancel',
         'journeyRuntime', 'vehicleFaultRecovery', 'fieldOperatorRoles', 'taskTypeStations', 'mapStationCatalog',
         'productionCutover')
-    # control-server#564. Who approved the production cutover, when, and where that is recorded. This deployment's, like
-    # mesIngest.source -- the overlay does not write it; installed-instance.json keeps it.
-    'productionCutover' = @('approvalRecord')
+    # control-server#564. Who approved the production cutover, when, and where that is recorded; and which phase it is --
+    # 'trial' (real MES, simulated slots) or 'production' (cs#564 review S3: the step between them needs a new database).
+    # This deployment's, like mesIngest.source -- the overlay does not write it; installed-instance.json keeps it.
+    'productionCutover' = @('approvalRecord', 'phase')
     # control-server#535. source is this deployment's, not a product option: the overlay does not write it.
     'mesIngest' = @('baseUrl', 'source')
     'fakeMesIngest' = @('installRoot', 'port', 'taskName', 'seedPath')
@@ -664,6 +666,16 @@ function Get-ParallelCutoverInstallRefusal {
                 The parallel instance's database holds STAGING_TO_WIRE demands accepted for good, the old WIRE zone and
                 agv02/agv03 state; the cutover definition is meant for an empty data root (PR #676, program#170). DatabaseFiles
                 is every SQLite file (*.db, *.db-wal, *.db-shm) found anywhere under the data root.
+
+            Review S3 and S4 (2026-10-13) add two more, by productionCutover.phase:
+
+              * CUTOVER_PRODUCTION_REQUIRES_NEW_DATABASE / CUTOVER_PHASE_BACKWARDS. From an installed 'trial' to 'production' the
+                data root must be empty again: trial demands are accepted for good and stay in MES (plan section 5). Back from
+                'production' to 'trial' is refused.
+              * The governed exit (-LeaveProductionCutover): a parallel (non-cutover) definition over an installed cutover, onto
+                an empty data root -- the cutover database renamed aside as evidence, as at the first cutover install. Without
+                the switch that is CUTOVER_SWITCH_MISSING; with a database there, CUTOVER_LEAVE_REQUIRES_NEW_DATABASE; with
+                -ProductionCutover as well, CUTOVER_SWITCHES_EXCLUSIVE.
     #>
     [CmdletBinding()]
     [OutputType([string])]
@@ -671,29 +683,91 @@ function Get-ParallelCutoverInstallRefusal {
         [Parameter(Mandatory = $true)][System.Collections.IDictionary] $Definition,
         [AllowNull()] $Previous,
         [switch] $ProductionCutover,
+        [switch] $LeaveProductionCutover,
         [switch] $Rollback,
         [Parameter(Mandatory = $true)][AllowEmptyCollection()][string[]] $DatabaseFiles,
         [Parameter(Mandatory = $true)][string] $DataRoot
     )
     $previousIsCutover = Test-ParallelProductionCutoverDefinition -Definition $Previous
     $nothing = ' Nothing was stopped or changed.'
+    $databaseNamed = ($DatabaseFiles.Count -gt 0) ? "$DataRoot already holds a database ($($DatabaseFiles -join ', ')). Stop the service, rename the data root aside, create it empty, then run this again" : $null
+    if ($ProductionCutover -and $LeaveProductionCutover) {
+        return ('CUTOVER_SWITCHES_EXCLUSIVE: -ProductionCutover installs a cutover and -LeaveProductionCutover leaves one; pass one.' + $nothing)
+    }
+    if ($LeaveProductionCutover) {
+        if (-not $previousIsCutover) {
+            return ('CUTOVER_LEAVE_NOTHING_TO_LEAVE: -LeaveProductionCutover was passed, but the installed definition is not a production cutover.' + $nothing)
+        }
+        if (Test-ParallelProductionCutoverDefinition -Definition $Definition) {
+            return ('CUTOVER_LEAVE_WITH_CUTOVER_DEFINITION: -LeaveProductionCutover installs a parallel definition, and this one carries productionCutover.' + $nothing)
+        }
+        if ($Rollback) {
+            return ('CUTOVER_LEAVE_NOT_ROLLBACK: leaving the cutover is an install of a parallel definition on a new database, not a -Rollback.' + $nothing)
+        }
+        if ($databaseNamed) {
+            return ("CUTOVER_LEAVE_REQUIRES_NEW_DATABASE: leaving the production cutover and $databaseNamed (docs/production-cutover-mode-plan.md section 7)." + $nothing)
+        }
+        return $null
+    }
     if ($previousIsCutover -and -not $ProductionCutover) {
         return ('CUTOVER_SWITCH_MISSING: the installed definition is a production cutover, and this command does not pass ' +
-            '-ProductionCutover. Leaving the cutover is the rollback in docs/production-cutover-mode-plan.md section 7, not a ' +
-            'reinstall without the switch.' + $nothing)
+            '-ProductionCutover. Leaving the cutover is the rollback in docs/production-cutover-mode-plan.md section 7 -- ' +
+            'its last step reinstalls a parallel definition on a new database with -LeaveProductionCutover -- not a reinstall ' +
+            'without the switch.' + $nothing)
     }
     $cutover = $ProductionCutover -and (Test-ParallelProductionCutoverDefinition -Definition $Definition)
-    if (-not $cutover -or $previousIsCutover) { return $null }
+    if (-not $cutover) { return $null }
+    if ($previousIsCutover) {
+        $from = ($Previous['productionCutover'] -is [System.Collections.IDictionary]) ? $Previous['productionCutover']['phase'] : $null
+        $to = ($Definition['productionCutover'] -is [System.Collections.IDictionary]) ? $Definition['productionCutover']['phase'] : $null
+        if ($from -ceq 'production' -and $to -ceq 'trial') {
+            return ('CUTOVER_PHASE_BACKWARDS: the installed cutover is in production and this definition says trial. A trial runs ' +
+                'on its own database; going back is the rollback, not a reinstall.' + $nothing)
+        }
+        if ($from -cne 'production' -and $to -ceq 'production') {
+            if ($Rollback) {
+                return ('CUTOVER_PRODUCTION_NOT_ROLLBACK: going from the trial to production is an install on a new database, not a -Rollback.' + $nothing)
+            }
+            if ($databaseNamed) {
+                return ("CUTOVER_PRODUCTION_REQUIRES_NEW_DATABASE: the installed cutover is the trial ('$from'), this definition is production, and " +
+                    "$databaseNamed. Demands the trial accepted stay accepted for good (docs/production-cutover-mode-plan.md section 5)." + $nothing)
+            }
+        }
+        return $null
+    }
     if ($Rollback) {
         return ('CUTOVER_FIRST_INSTALL_NOT_ROLLBACK: the first production cutover install is an install of the current package ' +
             'on a new database, not a -Rollback to the previous generation.' + $nothing)
     }
-    if ($DatabaseFiles.Count -gt 0) {
-        return ("CUTOVER_REQUIRES_NEW_DATABASE: this is the first production cutover install and $DataRoot already holds a " +
-            "database ($($DatabaseFiles -join ', ')). Stop the service, rename the data root aside, create it empty, then run " +
-            'this again (docs/production-cutover-mode-plan.md section 6, step 7).' + $nothing)
+    if ($databaseNamed) {
+        return ("CUTOVER_REQUIRES_NEW_DATABASE: this is the first production cutover install and $databaseNamed " +
+            '(docs/production-cutover-mode-plan.md section 6, step 7).' + $nothing)
     }
     return $null
+}
+
+function Get-ParallelCutoverMvpRefusal {
+    <#
+        .SYNOPSIS
+            control-server#564 review M3. $null when the MVP service is out of the way for a production cutover install or
+            gate opening: absent, or Stopped with start type Disabled. Otherwise why not. Pure: takes Get-MvpFingerprint.
+
+        .DESCRIPTION
+            The cutover definition drives agv01 and takes every task type, which is only safe while the MVP is stopped. After
+            a rollback the MVP runs again and agv01 is back on it, while the v2 instance may still carry the cutover
+            definition: opening its gate then could place orders for agv01, and a foreign-order cancel could stop the MVP's.
+            So installing a cutover and opening its gate both require the MVP to be stopped and disabled. Closing the gate
+            does not: the way out is never refused.
+    #>
+    [CmdletBinding()]
+    [OutputType([string])]
+    param([Parameter(Mandatory = $true)][System.Collections.IDictionary] $Fingerprint, [Parameter(Mandatory = $true)][string] $Action)
+    if (-not $Fingerprint['present']) { return $null }
+    if ([string] $Fingerprint['status'] -ceq 'Stopped' -and [string] $Fingerprint['startType'] -ceq 'Disabled') { return $null }
+    return ("CUTOVER_MVP_NOT_STOPPED: $Action with a production cutover definition needs the MVP service '$script:ProductionServiceName' " +
+        "Stopped and Disabled; it is status '$($Fingerprint['status'])', start type '$($Fingerprint['startType'])'. The cutover " +
+        'drives agv01 and every task type, which the MVP must not be doing at the same time (docs/production-cutover-mode-plan.md ' +
+        'section 6, step 4). Nothing was stopped or changed.')
 }
 
 function Test-ProductionMesIngestSource {
@@ -826,6 +900,10 @@ function Test-ParallelInstanceDefinition {
         if ($cutoverNode -isnot [System.Collections.IDictionary] -or -not $cutoverNode.Contains('approvalRecord') -or
             $cutoverNode['approvalRecord'] -isnot [string] -or [string]::IsNullOrWhiteSpace($cutoverNode['approvalRecord'])) {
             $failures += 'productionCutover.approvalRecord must say who approved the production cutover, when, and where that is recorded; a cutover without its approval is not an approval.'
+        }
+        if ($cutoverNode -is [System.Collections.IDictionary] -and
+            ($cutoverNode['phase'] -isnot [string] -or $script:CutoverPhases -cnotcontains $cutoverNode['phase'])) {
+            $failures += "productionCutover.phase must be 'trial' (real MES, simulated slots) or 'production', exactly, got '$($cutoverNode['phase'])'. Going from trial to production takes a new database, and the installer checks it by this field (docs/production-cutover-mode-plan.md section 5)."
         }
     }
     if ($ProductionCutover -and -not $hasCutoverRecord) {
@@ -2126,6 +2204,9 @@ function Format-ParallelMesIngestAudit {
     $source = Get-MesIngestSource -Definition $Definition
     $types = @($Definition['journeyRuntime']['allowedWorkTypes']) -join ','
     $line = "MES_INGEST_SOURCE=$source baseUrl=$($Definition['mesIngest']['baseUrl']) allowedWorkTypes=$types"
+    if ($source -ceq 'production' -and (Test-ParallelProductionCutoverDefinition -Definition $Definition)) {
+        return "$line -- PRODUCTION CUTOVER ($($Definition['productionCutover']['phase'])): this instance reads the PRODUCTION MesIngest for all six task types and drives agv01; the MVP must be stopped (control-server#564)"
+    }
     if ($source -ceq 'production') {
         return "$line -- this instance reads the PRODUCTION MesIngest the MVP also reads; it may take STAGING_TO_WIRE only, the MVP keeps WIRE_TO_GATE (user decision 2026-10-09, control-server#535)"
     }
@@ -3529,6 +3610,7 @@ Export-ModuleMember -Function @(
     'Test-ParallelProductionCutoverDefinition'
     'Get-ParallelCutoverWorkType'
     'Get-ParallelCutoverInstallRefusal'
+    'Get-ParallelCutoverMvpRefusal'
     'Get-ParallelInstanceAllowedKey'
     'Get-ParallelInstanceFleetRowKey'
     'Get-ParallelInstanceFootprint'

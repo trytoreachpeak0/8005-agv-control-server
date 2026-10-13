@@ -5029,7 +5029,7 @@ Invoke-SourceCase 'cutover switch: each shipped cutover definition is accepted w
             $d = Read-ParallelInstanceDefinition -Path (Join-Path $PSScriptRoot $_)
             [string[]] $asShipped = @(Test-ParallelInstanceDefinition -Definition (Copy-Definition $d) -ProductionCutover)
             $approved = Copy-Definition $d
-            $approved['productionCutover'] = @{ approvalRecord = 'selftest: approval written in on the cutover day' }
+            $approved['productionCutover'] = @{ approvalRecord = 'selftest: approval written in on the cutover day'; phase = 'trial' }
             [string[]] $withRecord = @(Test-ParallelInstanceDefinition -Definition $approved -ProductionCutover)
             [string[]] $recordNoSwitch = @(Test-ParallelInstanceDefinition -Definition (Copy-Definition $approved))
             -not ($d.Contains('productionCutover') -eq $false -and
@@ -5292,14 +5292,14 @@ $cutoverRowMakers = [ordered]@{
 }
 # The shape of PR #676's cutover definition (control-server#669) on top of the production-source definition: three dedicated
 # cars, two zones, the six types, the production MesIngest. -Cars picks a stage (S1: agv02; S2: agv02 and agv01).
-function New-CutoverDefinition([string[]] $Cars = @('agv01', 'agv02', 'agv03'), [switch] $NoRecord) {
+function New-CutoverDefinition([string[]] $Cars = @('agv01', 'agv02', 'agv03'), [switch] $NoRecord, [string] $Phase = 'trial') {
     $d = Copy-Definition $productionSource
     foreach ($key in @('agvId', 'vehicleKey', 'agvLifecycleGeneration')) { $d['journeyRuntime'].Remove($key) }
     $d['journeyRuntime']['allowedWorkTypes'] = @($cutoverSix)
     $d['journeyRuntime']['allowedDispatchZones'] = @('WIRE_BONDING', 'DIE_ATTACH')
     $d['journeyRuntime']['dispatchZone'] = 'WIRE_BONDING'
     $d['journeyRuntime']['fleet'] = @($Cars | ForEach-Object { & $cutoverRowMakers[$_] })
-    if (-not $NoRecord) { $d['productionCutover'] = @{ approvalRecord = '用户 2026-10-13 批准生产切换（control-server#564 评论，Coordinator 10 转达）' } }
+    if (-not $NoRecord) { $d['productionCutover'] = @{ approvalRecord = '用户 2026-10-13 批准生产切换（control-server#564 评论，Coordinator 10 转达）'; phase = $Phase } }
     return Copy-Definition $d
 }
 function Test-CutoverFailure($Definition, [string[]] $Expect, [switch] $Cutover, [switch] $ForStopDirection) {
@@ -5463,11 +5463,14 @@ Invoke-SourceCase 'cutover misuse: the switch without a record on the cutover sh
     Test-CutoverFailure (New-CutoverDefinition -NoRecord) @('CUTOVER_SWITCH_WITHOUT_RECORD', 'journeyRuntime.fleet[0] names agv01', 'WIRE_TO_GATE, which the MVP takes from the same catalog') -Cutover
 }
 foreach ($case in @(
-        @{ Name = 'an empty approvalRecord'; Value = @{ approvalRecord = '  ' }; Expect = @('productionCutover.approvalRecord must say who approved') }
-        @{ Name = 'approvalRecord left out'; Value = @{}; Expect = @('productionCutover.approvalRecord must say who approved') }
-        @{ Name = 'approvalRecord as a JSON boolean'; Value = @{ approvalRecord = $true }; Expect = @('productionCutover.approvalRecord must say who approved') }
+        @{ Name = 'an empty approvalRecord'; Value = @{ approvalRecord = '  '; phase = 'trial' }; Expect = @('productionCutover.approvalRecord must say who approved') }
+        @{ Name = 'approvalRecord left out'; Value = @{ phase = 'trial' }; Expect = @('productionCutover.approvalRecord must say who approved') }
+        @{ Name = 'approvalRecord as a JSON boolean'; Value = @{ approvalRecord = $true; phase = 'trial' }; Expect = @('productionCutover.approvalRecord must say who approved') }
         @{ Name = 'productionCutover as a JSON boolean'; Value = $true; Expect = @('productionCutover.approvalRecord must say who approved') }
-        @{ Name = 'an unknown key beside the record'; Value = @{ approvalRecord = 'x'; enabled = $true }; Expect = @('productionCutover.enabled') })) {
+        @{ Name = 'an unknown key beside the record'; Value = @{ approvalRecord = 'x'; phase = 'trial'; enabled = $true }; Expect = @('productionCutover.enabled') }
+        @{ Name = 'phase left out (review S3)'; Value = @{ approvalRecord = 'x' }; Expect = @("productionCutover.phase must be 'trial'") }
+        @{ Name = 'phase "Trial" (not exactly lower case)'; Value = @{ approvalRecord = 'x'; phase = 'Trial' }; Expect = @("productionCutover.phase must be 'trial'") }
+        @{ Name = 'phase "pilot"'; Value = @{ approvalRecord = 'x'; phase = 'pilot' }; Expect = @("productionCutover.phase must be 'trial'") })) {
     Invoke-SourceCase "cutover misuse: $($case.Name) is refused" {
         $d = Copy-Definition $cutoverDefinition
         $d['productionCutover'] = $case.Value
@@ -5499,13 +5502,16 @@ Invoke-SourceCase 'cutover installed: the installer passes its own -ProductionCu
     $text = Get-Content -LiteralPath (Join-Path $PSScriptRoot 'Install-ParallelInstanceLocal.ps1') -Raw
     $refusal = $text.IndexOf('if ($cutoverRefusal) { throw $cutoverRefusal }')
     $ok = $text.Contains('-AllowRiotForeignOrderCancel:$AllowRiotForeignOrderCancel -ProductionCutover:$ProductionCutover') -and
-        $text.Contains('-ProductionCutover:$ProductionCutover -Rollback:$Rollback -DatabaseFiles $cutoverDatabaseFiles') -and
+        $text.Contains('$cutoverState = Get-ParallelCutoverInstallState -Layout $layout') -and
+        $text.Contains('-Previous $cutoverState.Previous') -and $text.Contains('-DatabaseFiles $cutoverState.DatabaseFiles -DataRoot $layout.DataRoot') -and
+        $text.Contains('-ProductionCutover:$ProductionCutover -LeaveProductionCutover:$LeaveProductionCutover -Rollback:$Rollback') -and
         $refusal -gt 0 -and $refusal -lt $text.IndexOf('Copy-Item -LiteralPath $InstanceDefinitionPath -Destination $layout.InstalledDefinitionPath')
     @{ Ok = $ok; Detail = 'expected both calls, and the refusal before the definition is recorded' }
 }
 
 # --- History: never leave a cutover by a reinstall; the first cutover install is on a new database --------------
 $cutoverDataRoot = 'C:\ProgramData\8005\ControlServer.V2'
+$cutoverProduction = New-CutoverDefinition -Phase 'production'
 $someDatabase = @("$cutoverDataRoot\data\controlserver.db")
 foreach ($case in @(
         @{ Name = 'today: no switch, parallel installed, database present -> no refusal (unchanged)'; Definition = $productionSource; Previous = $productionSource; Switch = $false; Rollback = $false; Db = $someDatabase; Expect = $null }
@@ -5519,13 +5525,123 @@ foreach ($case in @(
         @{ Name = 'stage change (S1 -> S2) on the cutover database -> no refusal'; Definition = (New-CutoverDefinition -Cars @('agv02', 'agv01')); Previous = (New-CutoverDefinition -Cars @('agv02')); Switch = $true; Rollback = $false; Db = $someDatabase; Expect = $null }
         @{ Name = 'v2 package -Rollback of a cutover instance, with the switch -> no refusal'; Definition = $cutoverDefinition; Previous = $cutoverDefinition; Switch = $true; Rollback = $true; Db = $someDatabase; Expect = $null }
         @{ Name = 'parallel definition reinstalled over a cutover without the switch -> CUTOVER_SWITCH_MISSING'; Definition = $productionSource; Previous = $cutoverDefinition; Switch = $false; Rollback = $false; Db = $someDatabase; Expect = 'CUTOVER_SWITCH_MISSING' }
-        @{ Name = '-Rollback of a cutover instance without the switch -> CUTOVER_SWITCH_MISSING'; Definition = $productionSource; Previous = $cutoverDefinition; Switch = $false; Rollback = $true; Db = $someDatabase; Expect = 'CUTOVER_SWITCH_MISSING' })) {
+        @{ Name = '-Rollback of a cutover instance without the switch -> CUTOVER_SWITCH_MISSING'; Definition = $productionSource; Previous = $cutoverDefinition; Switch = $false; Rollback = $true; Db = $someDatabase; Expect = 'CUTOVER_SWITCH_MISSING' }
+        # Review S3: trial -> production on a new database only; production -> trial never.
+        @{ Name = 'trial -> production over the trial database -> CUTOVER_PRODUCTION_REQUIRES_NEW_DATABASE'; Definition = $cutoverProduction; Previous = $cutoverDefinition; Switch = $true; Rollback = $false; Db = $someDatabase; Expect = 'CUTOVER_PRODUCTION_REQUIRES_NEW_DATABASE' }
+        @{ Name = 'trial -> production with only a -shm left -> CUTOVER_PRODUCTION_REQUIRES_NEW_DATABASE'; Definition = $cutoverProduction; Previous = $cutoverDefinition; Switch = $true; Rollback = $false; Db = @("$cutoverDataRoot\data\controlserver.db-shm"); Expect = 'CUTOVER_PRODUCTION_REQUIRES_NEW_DATABASE' }
+        @{ Name = 'trial -> production on an empty data root -> no refusal'; Definition = $cutoverProduction; Previous = $cutoverDefinition; Switch = $true; Rollback = $false; Db = @(); Expect = $null }
+        @{ Name = 'trial -> production as a -Rollback -> CUTOVER_PRODUCTION_NOT_ROLLBACK'; Definition = $cutoverProduction; Previous = $cutoverDefinition; Switch = $true; Rollback = $true; Db = @(); Expect = 'CUTOVER_PRODUCTION_NOT_ROLLBACK' }
+        @{ Name = 'production -> production on its own database (a stage change) -> no refusal'; Definition = $cutoverProduction; Previous = $cutoverProduction; Switch = $true; Rollback = $false; Db = $someDatabase; Expect = $null }
+        @{ Name = 'production -> trial -> CUTOVER_PHASE_BACKWARDS'; Definition = $cutoverDefinition; Previous = $cutoverProduction; Switch = $true; Rollback = $false; Db = @(); Expect = 'CUTOVER_PHASE_BACKWARDS' }
+        @{ Name = 'first cutover install straight into production on an empty data root -> no refusal'; Definition = $cutoverProduction; Previous = $productionSource; Switch = $true; Rollback = $false; Db = @(); Expect = $null }
+        # Review S4: the governed exit.
+        @{ Name = 'leave: parallel definition over a cutover, empty data root -> no refusal'; Definition = $productionSource; Previous = $cutoverDefinition; Leave = $true; Db = @(); Expect = $null }
+        @{ Name = 'leave: over the cutover database -> CUTOVER_LEAVE_REQUIRES_NEW_DATABASE'; Definition = $productionSource; Previous = $cutoverDefinition; Leave = $true; Db = $someDatabase; Expect = 'CUTOVER_LEAVE_REQUIRES_NEW_DATABASE' }
+        @{ Name = 'leave: from a production cutover too, empty data root -> no refusal'; Definition = $productionSource; Previous = $cutoverProduction; Leave = $true; Db = @(); Expect = $null }
+        @{ Name = 'leave: as a -Rollback -> CUTOVER_LEAVE_NOT_ROLLBACK'; Definition = $productionSource; Previous = $cutoverDefinition; Leave = $true; Rollback = $true; Db = @(); Expect = 'CUTOVER_LEAVE_NOT_ROLLBACK' }
+        @{ Name = 'leave: with a cutover definition -> CUTOVER_LEAVE_WITH_CUTOVER_DEFINITION'; Definition = $cutoverDefinition; Previous = $cutoverDefinition; Leave = $true; Db = @(); Expect = 'CUTOVER_LEAVE_WITH_CUTOVER_DEFINITION' }
+        @{ Name = 'leave: nothing installed is a cutover -> CUTOVER_LEAVE_NOTHING_TO_LEAVE'; Definition = $productionSource; Previous = $productionSource; Leave = $true; Db = @(); Expect = 'CUTOVER_LEAVE_NOTHING_TO_LEAVE' }
+        @{ Name = 'leave and cutover switches together -> CUTOVER_SWITCHES_EXCLUSIVE'; Definition = $cutoverDefinition; Previous = $cutoverDefinition; Switch = $true; Leave = $true; Db = @(); Expect = 'CUTOVER_SWITCHES_EXCLUSIVE' })) {
     Invoke-SourceCase "cutover history: $($case.Name)" {
         $r = Get-ParallelCutoverInstallRefusal -Definition (Copy-Definition $case.Definition) -Previous ($null -eq $case.Previous ? $null : (Copy-Definition $case.Previous)) `
-            -ProductionCutover:$case.Switch -Rollback:$case.Rollback -DatabaseFiles $case.Db -DataRoot $cutoverDataRoot
+            -ProductionCutover:([bool] $case['Switch']) -LeaveProductionCutover:([bool] $case['Leave']) -Rollback:([bool] $case['Rollback']) -DatabaseFiles $case.Db -DataRoot $cutoverDataRoot
         $ok = ($null -eq $case.Expect) ? ($null -eq $r) : ($r -is [string] -and $r.StartsWith("$($case.Expect):") -and $r.EndsWith('Nothing was stopped or changed.'))
         @{ Ok = $ok; Detail = "expected $($case.Expect ?? 'null'), got: $r" }
     }
+}
+
+# --- Review M3: a cutover is installed, and its gate opened, only with the MVP stopped and disabled ------------
+foreach ($case in @(
+        @{ Name = 'MVP service absent'; F = [ordered]@{ present = $false }; Ok = $true }
+        @{ Name = 'MVP Stopped and Disabled'; F = [ordered]@{ present = $true; status = 'Stopped'; startType = 'Disabled'; pathName = 'x'; processId = 0 }; Ok = $true }
+        @{ Name = 'MVP Running (after a rollback)'; F = [ordered]@{ present = $true; status = 'Running'; startType = 'Automatic'; pathName = 'x'; processId = 42 }; Ok = $false }
+        @{ Name = 'MVP Stopped but Automatic (it would come back on a reboot)'; F = [ordered]@{ present = $true; status = 'Stopped'; startType = 'Automatic'; pathName = 'x'; processId = 0 }; Ok = $false }
+        @{ Name = 'MVP Stopped but Manual'; F = [ordered]@{ present = $true; status = 'Stopped'; startType = 'Manual'; pathName = 'x'; processId = 0 }; Ok = $false }
+        @{ Name = 'MVP StopPending and Disabled'; F = [ordered]@{ present = $true; status = 'StopPending'; startType = 'Disabled'; pathName = 'x'; processId = 42 }; Ok = $false })) {
+    Invoke-SourceCase "cutover MVP check: $($case.Name) -> $($case.Ok ? 'accepted' : 'CUTOVER_MVP_NOT_STOPPED')" {
+        $r = Get-ParallelCutoverMvpRefusal -Fingerprint $case.F -Action 'Installing'
+        @{ Ok = ($case.Ok ? ($null -eq $r) : ($r -is [string] -and $r.StartsWith('CUTOVER_MVP_NOT_STOPPED: Installing') -and $r.EndsWith('Nothing was stopped or changed.'))); Detail = "got: $r" }
+    }
+}
+Invoke-SourceCase 'cutover MVP check: the installer refuses with the switch, before anything changes; the gate script on Open of a cutover only' {
+    $install = Get-Content -LiteralPath (Join-Path $PSScriptRoot 'Install-ParallelInstanceLocal.ps1') -Raw
+    $gate = Get-Content -LiteralPath (Join-Path $PSScriptRoot 'Set-ParallelDispatchGateLocal.ps1') -Raw
+    $iCheck = $install.IndexOf("`$mvpRefusal = Get-ParallelCutoverMvpRefusal -Fingerprint `$mvpBefore -Action 'Installing'")
+    $gCheck = $gate.IndexOf("`$mvpRefusal = Get-ParallelCutoverMvpRefusal -Fingerprint `$mvpBefore -Action 'Opening the gate'")
+    $ok = $iCheck -gt 0 -and $install.Substring([Math]::Max(0, $iCheck - 200), 200).Contains('if ($ProductionCutover) {') -and
+        $iCheck -lt $install.IndexOf('Copy-Item -LiteralPath $InstanceDefinitionPath -Destination $layout.InstalledDefinitionPath') -and
+        $gCheck -gt 0 -and $gate.Contains("if (`$direction -ceq 'Open' -and (Test-ParallelProductionCutoverDefinition -Definition `$definition)) {") -and
+        $gCheck -lt $gate.IndexOf('$result = Invoke-ParallelDispatchGateChange')
+    @{ Ok = $ok; Detail = "installer at $iCheck, gate at $gCheck" }
+}
+
+# --- What the installer reads for the history check: the installed record and every database file ----------
+# Real files in a scratch directory. Pins: -wal and -shm count (MU1), nested and behind a junction count (MU2, review L),
+# the previous definition is installed-instance.json and never the definition being installed (MU3), and the database the
+# installed configuration names counts even when it is no *.db, while one outside the data root is refused.
+$stateRoot = Join-Path ([IO.Path]::GetTempPath()) "cs564-state-$([guid]::NewGuid().ToString('N'))"
+try {
+    $stateLayout = [pscustomobject]@{
+        DataRoot = Join-Path $stateRoot 'data-root'; InstallRoot = Join-Path $stateRoot 'install'
+        InstalledDefinitionPath = Join-Path $stateRoot 'ops\installed-instance.json'
+    }
+    New-Item -ItemType Directory -Force -Path $stateLayout.DataRoot, $stateLayout.InstallRoot, (Split-Path -Parent $stateLayout.InstalledDefinitionPath) | Out-Null
+    Invoke-SourceCase 'cutover state: an empty data root, nothing installed -> no previous, no database' {
+        $st = Get-ParallelCutoverInstallState -Layout $stateLayout
+        @{ Ok = ($null -eq $st.Previous -and @($st.DatabaseFiles).Count -eq 0); Detail = "previous $($null -ne $st.Previous), files $(@($st.DatabaseFiles) -join ', ')" }
+    }
+    Invoke-SourceCase 'cutover state: the previous definition is installed-instance.json (a cutover there is seen as one)' {
+        ConvertTo-Json -InputObject $cutoverDefinition -Depth 12 | Set-Content -LiteralPath $stateLayout.InstalledDefinitionPath -Encoding utf8
+        $st = Get-ParallelCutoverInstallState -Layout $stateLayout
+        @{ Ok = (Test-ParallelProductionCutoverDefinition -Definition $st.Previous); Detail = 'previous not read as a cutover' }
+    }
+    foreach ($leaf in @('data\controlserver.db-wal', 'data\controlserver.db-shm', 'data\deep\er\x.DB')) {
+        Invoke-SourceCase "cutover state: $leaf under the data root is found" {
+            Get-ChildItem -LiteralPath $stateLayout.DataRoot -Force | Remove-Item -Recurse -Force
+            $file = Join-Path $stateLayout.DataRoot $leaf
+            New-Item -ItemType Directory -Force -Path (Split-Path -Parent $file) | Out-Null
+            Set-Content -LiteralPath $file -Value 'x'
+            $st = Get-ParallelCutoverInstallState -Layout $stateLayout
+            @{ Ok = (@($st.DatabaseFiles) -contains $file); Detail = "files: $(@($st.DatabaseFiles) -join ', ')" }
+        }
+    }
+    Invoke-SourceCase 'cutover state: a database behind a junction inside the data root is found' {
+        Get-ChildItem -LiteralPath $stateLayout.DataRoot -Force | Remove-Item -Recurse -Force
+        $elsewhere = Join-Path $stateRoot 'elsewhere'
+        New-Item -ItemType Directory -Force -Path $elsewhere | Out-Null
+        Set-Content -LiteralPath (Join-Path $elsewhere 'controlserver.db') -Value 'x'
+        New-Item -ItemType Junction -Path (Join-Path $stateLayout.DataRoot 'data') -Target $elsewhere | Out-Null
+        $st = Get-ParallelCutoverInstallState -Layout $stateLayout
+        @{ Ok = (@($st.DatabaseFiles | Where-Object { $_ -like '*controlserver.db' }).Count -eq 1); Detail = "files: $(@($st.DatabaseFiles) -join ', ')" }
+    }
+    Invoke-SourceCase 'cutover state: the database the installed configuration names counts even without a .db name' {
+        Get-ChildItem -LiteralPath $stateLayout.DataRoot -Force | ForEach-Object { if ($_.LinkType) { $_.Delete() } else { Remove-Item -LiteralPath $_.FullName -Recurse -Force } }
+        $named = Join-Path $stateLayout.DataRoot 'store\state.sqlite'
+        New-Item -ItemType Directory -Force -Path (Split-Path -Parent $named) | Out-Null
+        Set-Content -LiteralPath $named -Value 'x'
+        ConvertTo-Json -Depth 4 -InputObject @{ ConnectionStrings = @{ ControlServer = "Data Source=$named" } } | Set-Content -LiteralPath (Join-Path $stateLayout.InstallRoot 'appsettings.Production.json') -Encoding utf8
+        $st = Get-ParallelCutoverInstallState -Layout $stateLayout
+        @{ Ok = (@($st.DatabaseFiles) -contains $named); Detail = "files: $(@($st.DatabaseFiles) -join ', ')" }
+    }
+    Invoke-SourceCase 'cutover state: an installed configuration whose database is outside the data root is refused' {
+        $outside = Join-Path $stateRoot 'outside.db'
+        ConvertTo-Json -Depth 4 -InputObject @{ ConnectionStrings = @{ ControlServer = "Data Source=$outside" } } | Set-Content -LiteralPath (Join-Path $stateLayout.InstallRoot 'appsettings.Production.json') -Encoding utf8
+        $thrown = $null
+        try { $null = Get-ParallelCutoverInstallState -Layout $stateLayout } catch { $thrown = $_.Exception.Message }
+        @{ Ok = ($null -ne $thrown -and $thrown.Contains('is not inside this instance''s data root')); Detail = "thrown: $thrown" }
+    }
+} finally {
+    Get-ChildItem -LiteralPath $stateRoot -Recurse -Force -ErrorAction SilentlyContinue | Where-Object { $_.LinkType } | ForEach-Object { $_.Delete() }
+    Remove-Item -LiteralPath $stateRoot -Recurse -Force -ErrorAction SilentlyContinue
+}
+
+# --- The audit line says what the cutover is (review M1, the server half) ---------------------------------------------
+Invoke-SourceCase 'cutover audit line: six types, PRODUCTION CUTOVER and the phase; never the STAGING_TO_WIRE-only sentence' {
+    $line = Format-ParallelMesIngestAudit -Definition $cutoverDefinition
+    $parallel = Format-ParallelMesIngestAudit -Definition $productionSource
+    @{ Ok = ($line.StartsWith("MES_INGEST_SOURCE=production baseUrl=http://127.0.0.1:5088 allowedWorkTypes=$($cutoverSix -join ',') -- PRODUCTION CUTOVER (trial)") -and
+            -not $line.Contains('STAGING_TO_WIRE only') -and $parallel.Contains('it may take STAGING_TO_WIRE only'))
+        Detail = "cutover: $line /// parallel: $parallel" }
 }
 
 # --- Read-back: a cutover is held to the six types, as a set ----------------------------------------

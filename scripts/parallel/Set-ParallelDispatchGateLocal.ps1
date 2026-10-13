@@ -130,6 +130,12 @@ if (-not $principal.IsInRole([Security.Principal.WindowsBuiltInRole]::Administra
 
 $mvpBefore = Get-MvpFingerprint
 Write-Step ("MVP service before: " + (Format-MvpFingerprint $mvpBefore))
+# control-server#564 review M3: opening the gate of a production cutover needs the MVP stopped and disabled -- after a
+# rollback the MVP drives agv01 again. Closing is never refused.
+if ($direction -ceq 'Open' -and (Test-ParallelProductionCutoverDefinition -Definition $definition)) {
+    $mvpRefusal = Get-ParallelCutoverMvpRefusal -Fingerprint $mvpBefore -Action 'Opening the gate'
+    if ($mvpRefusal) { throw $mvpRefusal }
+}
 try {
     $result = Invoke-ParallelDispatchGateChange -Direction $direction -ConfigurationPath $configurationPath `
         -ServiceName $serviceName -DatabasePath $databasePath -Actions $actions

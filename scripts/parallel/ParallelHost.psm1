@@ -61,6 +61,39 @@ function Assert-MvpUntouched {
     }
 }
 
+function Get-ParallelCutoverInstallState {
+    <#
+        .SYNOPSIS
+            control-server#564. What the installer's cutover history check reads from the machine: the installed record
+            (installed-instance.json, never the definition being installed) and every SQLite file of this instance.
+
+        .DESCRIPTION
+            DatabaseFiles: every *.db, *.db-wal and *.db-shm anywhere under the data root, following junctions and symbolic
+            links (review L), plus the database the installed configuration names, with its -wal and -shm, when it exists --
+            the configuration survives an upgrade as it was installed, so a Data Source edited by hand is looked at where it
+            points (Resolve-ParallelInstanceDatabasePath refuses one outside the data root, and that refusal is thrown).
+    #>
+    [CmdletBinding()]
+    param([Parameter(Mandatory = $true)] $Layout)
+    $previous = (Test-Path -LiteralPath $Layout.InstalledDefinitionPath -PathType Leaf) ?
+        (Read-ParallelInstanceDefinition -Path $Layout.InstalledDefinitionPath) : $null
+    $files = [System.Collections.Generic.List[string]]::new()
+    if (Test-Path -LiteralPath $Layout.DataRoot -PathType Container) {
+        foreach ($item in @(Get-ChildItem -LiteralPath $Layout.DataRoot -Recurse -FollowSymlink -File -Force -ErrorAction Stop)) {
+            if ($item.Name -match '(?i)\.db(-wal|-shm)?\z' -and -not $files.Contains($item.FullName)) { $files.Add($item.FullName) }
+        }
+    }
+    $configuration = Join-Path $Layout.InstallRoot 'appsettings.Production.json'
+    if (Test-Path -LiteralPath $configuration -PathType Leaf) {
+        $parsed = Get-Content -LiteralPath $configuration -Raw -Encoding utf8 | ConvertFrom-Json -AsHashtable
+        $named = Resolve-ParallelInstanceDatabasePath -Configuration $parsed -DataRoot $Layout.DataRoot -ConfigurationPath $configuration
+        foreach ($candidate in @($named, "$named-wal", "$named-shm")) {
+            if ((Test-Path -LiteralPath $candidate -PathType Leaf) -and -not $files.Contains($candidate)) { $files.Add($candidate) }
+        }
+    }
+    return [pscustomobject]@{ Previous = $previous; DatabaseFiles = [string[]] $files.ToArray() }
+}
+
 function Format-MvpFingerprint {
     [CmdletBinding()]
     param([Parameter(Mandatory = $true)] $Fingerprint)
@@ -1395,7 +1428,7 @@ function Invoke-ParallelFakeMesIngestSeed {
     return $readBack
 }
 
-Export-ModuleMember -Function @('Get-MvpFingerprint', 'Assert-MvpUntouched', 'Format-MvpFingerprint', 'Get-ParallelServiceProcessStartTimeUtc', 'Get-ParallelProcessStartTimeUtc',
+Export-ModuleMember -Function @('Get-MvpFingerprint', 'Get-ParallelCutoverInstallState', 'Assert-MvpUntouched', 'Format-MvpFingerprint', 'Get-ParallelServiceProcessStartTimeUtc', 'Get-ParallelProcessStartTimeUtc',
     'Get-ParallelProductUninstallerPath', 'Test-ParallelProductUninstallerPremise', 'Invoke-ParallelProductUninstaller',
     'Update-ParallelInstanceConfigurationFile', 'Set-ParallelInstanceJourneyRuntimeDisabled', 'Set-ParallelInstanceConfigurationFlag',
     'Get-ParallelJourneyDispatchState', 'Invoke-ParallelDispatchGateChange',
