@@ -118,6 +118,20 @@ $script:ProductionSourceWorkTypes = @('STAGING_TO_WIRE')
 $script:MvpWorkType = 'WIRE_TO_GATE'
 
 <#
+    control-server#564. The production cutover switch (docs/production-cutover-mode-plan.md, user decision 2026-10-13: D1, D6).
+    The MVP is stopped and v2 takes every task type and all three cars, so two of the guards above stop being true and are
+    lifted -- only while the deployment says so twice: the command carries -ProductionCutover AND the definition carries
+    productionCutover.approvalRecord. Either half alone is refused. Everything else that keeps this instance off the MVP
+    (its service name, paths, ports, map 25) is refused exactly as before: the MVP stays on disk as the rollback.
+
+    The six types are the full set the package ships (Test-ParallelInstance.ps1 asserts them against appsettings.json), and
+    a cutover definition must name all of them: "the cutover" is v2 taking over the MVP's work, not some of it.
+#>
+$script:CutoverWorkTypes = @('DIE_TO_WIRE_STAGING', 'DIE_TO_OVEN', 'WIRE_TO_GATE', 'WIRE_TO_OPTICAL', 'STAGING_TO_WIRE', 'WIRE_TO_NITROGEN')
+$script:CutoverPhases = @('trial', 'production')
+$script:CutoverPlanReference = 'Production cutover: docs/production-cutover-mode-plan.md -- it takes -ProductionCutover on the command and productionCutover.approvalRecord in the definition.'
+
+<#
     The two spare vehicles, as pairs. Hard-coded on purpose: a whitelist read out of the file
     being checked is not a whitelist, because whoever edits the vehicle edits the list in the
     same keystroke.
@@ -146,6 +160,25 @@ $script:ProductionVehicle = [pscustomobject]@{
 }
 
 <#
+    control-server#564 (coordinator 10, 2026-10-13, after cs#565's review). The user's dedicated split (2026-10-10, program#171):
+    each car takes exactly these task types. Hard-coded like the vehicle whitelist: a stage definition that wrote one more type
+    into a row would pass every other check and send that car to a station another car is parked on (plan section 8). Keyed by
+    the registry vehicleKey; a stage that leaves a car out of its roster is not checked for it.
+#>
+$script:CutoverDedicatedTaskTypes = @{
+    'BROKERX-0c20ff0600d644869a6a80c186065d85' = @('WIRE_TO_GATE', 'WIRE_TO_OPTICAL', 'WIRE_TO_NITROGEN')
+    'BROKERX-f38975561adf46ccb1d2f23833c7d0e4' = @('STAGING_TO_WIRE')
+    'BROKERX-7daca4ee91da498d8026c68b7b941127' = @('DIE_TO_OVEN', 'DIE_TO_WIRE_STAGING')
+}
+
+# control-server#564. With the cutover switch on, agv01 joins the whitelist -- as its registry row, checked on all four
+# coordinates like the spare cars, never by name alone.
+$script:CutoverVehicles = @($script:AllowedVehicles) + @([pscustomobject]@{
+        Alias = $script:ProductionVehicle.Alias; AgvId = $script:ProductionVehicle.AgvId
+        VehicleKey = $script:ProductionVehicle.VehicleKey; RiotId = $script:ProductionVehicle.RiotId
+    })
+
+<#
     The keys each section may carry, spelled exactly. Anything else is refused.
 
     Why a whitelist rather than reading the keys this module knows about: ConvertFrom-Json
@@ -167,7 +200,11 @@ $script:AllowedKeys = [ordered]@{
         'opsRoot', 'stagingRoot', 'listenAddress', 'healthBindAddress', 'onboardPort', 'healthPort',
         'dashboardPort', 'mesIngest', 'fakeMesIngest', 'routeGraph', 'riotCreateDispatch', 'riotForeignOrderCancel',
         'journeyRuntime', 'vehicleFaultRecovery', 'foreignRunningOrderRelease', 'fieldOperatorRoles', 'taskTypeStations',
-        'mapStationCatalog')
+        'mapStationCatalog', 'productionCutover')
+    # control-server#564. Who approved the production cutover, when, and where that is recorded; and which phase it is --
+    # 'trial' (real MES, simulated slots) or 'production' (cs#564 review S3: the step between them needs a new database).
+    # This deployment's, like mesIngest.source -- the overlay does not write it; installed-instance.json keeps it.
+    'productionCutover' = @('approvalRecord', 'phase')
     # control-server#535. source is this deployment's, not a product option: the overlay does not write it.
     'mesIngest' = @('baseUrl', 'source')
     'fakeMesIngest' = @('installRoot', 'port', 'taskName', 'seedPath')
@@ -602,6 +639,182 @@ function Test-BindableAddress {
     return $null
 }
 
+function Test-ParallelProductionCutoverDefinition {
+    <#
+        .SYNOPSIS
+            control-server#564. Whether the definition carries the productionCutover section -- the definition's half of the
+            cutover switch. Says nothing about whether it is well formed; Test-ParallelInstanceDefinition does that.
+    #>
+    [CmdletBinding()]
+    [OutputType([bool])]
+    param([Parameter(Mandatory = $true)][AllowNull()] $Definition)
+    return ($Definition -is [System.Collections.IDictionary]) -and $Definition.Contains('productionCutover')
+}
+
+function Get-ParallelCutoverContractVersion {
+    <#
+        .SYNOPSIS
+            control-server#564 review round 2, L3. Which revision of the cutover rules this module carries; raised whenever a
+            rule a script relies on is added. 2: phase, the governed exit, the MVP checks with port and process evidence.
+            A script that acts on an installed cutover requires at least the version it was written for, instead of the
+            existence of a function an earlier revision of #677 already had.
+    #>
+    [CmdletBinding()]
+    [OutputType([int])]
+    param()
+    return 2
+}
+
+function Get-ParallelCutoverWorkType {
+    <#
+        .SYNOPSIS
+            control-server#564. The six task types a production cutover definition must name.
+    #>
+    [CmdletBinding()]
+    param()
+    return @($script:CutoverWorkTypes)
+}
+
+function Get-ParallelCutoverInstallRefusal {
+    <#
+        .SYNOPSIS
+            control-server#564. $null when this install or rollback may go ahead as far as the production cutover is concerned;
+            otherwise why not. Pure: the installer passes in what it read.
+
+        .DESCRIPTION
+            Two rules, both about the instance's history rather than the definition alone (Test-ParallelInstanceDefinition has
+            already checked that the switch and the record agree):
+
+              * CUTOVER_SWITCH_MISSING. The installed record (installed-instance.json) is a cutover and this command is not.
+                Reinstalling a parallel definition over a cutover would drop agv01 and five task types from an instance that
+                may be carrying them; leaving the cutover is the rollback in docs/production-cutover-mode-plan.md section 7,
+                not an install without the switch.
+              * CUTOVER_REQUIRES_NEW_DATABASE / CUTOVER_FIRST_INSTALL_NOT_ROLLBACK. The first cutover install -- the installed
+                record is absent or not a cutover -- happens on a new database, and as an install of the current package.
+                The parallel instance's database holds STAGING_TO_WIRE demands accepted for good, the old WIRE zone and
+                agv02/agv03 state; the cutover definition is meant for an empty data root (PR #676, program#170). DatabaseFiles
+                is every SQLite file (*.db, *.db-wal, *.db-shm) found anywhere under the data root.
+
+            Review S3 and S4 (2026-10-13) add two more, by productionCutover.phase:
+
+              * CUTOVER_PRODUCTION_REQUIRES_NEW_DATABASE / CUTOVER_PHASE_BACKWARDS. From an installed 'trial' to 'production' the
+                data root must be empty again: trial demands are accepted for good and stay in MES (plan section 5). Back from
+                'production' to 'trial' is refused.
+              * The governed exit (-LeaveProductionCutover): a parallel (non-cutover) definition over an installed cutover, onto
+                an empty data root -- the cutover database renamed aside as evidence, as at the first cutover install. Without
+                the switch that is CUTOVER_SWITCH_MISSING; with a database there, CUTOVER_LEAVE_REQUIRES_NEW_DATABASE; with
+                -ProductionCutover as well, CUTOVER_SWITCHES_EXCLUSIVE.
+    #>
+    [CmdletBinding()]
+    [OutputType([string])]
+    param(
+        [Parameter(Mandatory = $true)][System.Collections.IDictionary] $Definition,
+        [AllowNull()] $Previous,
+        [switch] $ProductionCutover,
+        [switch] $LeaveProductionCutover,
+        [switch] $Rollback,
+        [Parameter(Mandatory = $true)][AllowEmptyCollection()][string[]] $DatabaseFiles,
+        [Parameter(Mandatory = $true)][string] $DataRoot
+    )
+    $previousIsCutover = Test-ParallelProductionCutoverDefinition -Definition $Previous
+    $nothing = ' Nothing was stopped or changed.'
+    $databaseNamed = ($DatabaseFiles.Count -gt 0) ? "$DataRoot already holds a database ($($DatabaseFiles -join ', ')). Stop the service, rename the data root aside, create it empty, then run this again" : $null
+    if ($ProductionCutover -and $LeaveProductionCutover) {
+        return ('CUTOVER_SWITCHES_EXCLUSIVE: -ProductionCutover installs a cutover and -LeaveProductionCutover leaves one; pass one.' + $nothing)
+    }
+    if ($LeaveProductionCutover) {
+        if (-not $previousIsCutover) {
+            return ('CUTOVER_LEAVE_NOTHING_TO_LEAVE: -LeaveProductionCutover was passed, but the installed definition is not a production cutover.' + $nothing)
+        }
+        if (Test-ParallelProductionCutoverDefinition -Definition $Definition) {
+            return ('CUTOVER_LEAVE_WITH_CUTOVER_DEFINITION: -LeaveProductionCutover installs a parallel definition, and this one carries productionCutover.' + $nothing)
+        }
+        if ($Rollback) {
+            return ('CUTOVER_LEAVE_NOT_ROLLBACK: leaving the cutover is an install of a parallel definition on a new database, not a -Rollback.' + $nothing)
+        }
+        if ($databaseNamed) {
+            return ("CUTOVER_LEAVE_REQUIRES_NEW_DATABASE: leaving the production cutover and $databaseNamed (docs/production-cutover-mode-plan.md section 7)." + $nothing)
+        }
+        return $null
+    }
+    if ($previousIsCutover -and -not $ProductionCutover) {
+        return ('CUTOVER_SWITCH_MISSING: the installed definition is a production cutover, and this command does not pass ' +
+            '-ProductionCutover. Leaving the cutover is the rollback in docs/production-cutover-mode-plan.md section 7 -- ' +
+            'its last step reinstalls a parallel definition on a new database with -LeaveProductionCutover -- not a reinstall ' +
+            'without the switch.' + $nothing)
+    }
+    $cutover = $ProductionCutover -and (Test-ParallelProductionCutoverDefinition -Definition $Definition)
+    if (-not $cutover) { return $null }
+    if ($previousIsCutover) {
+        $from = ($Previous['productionCutover'] -is [System.Collections.IDictionary]) ? $Previous['productionCutover']['phase'] : $null
+        $to = ($Definition['productionCutover'] -is [System.Collections.IDictionary]) ? $Definition['productionCutover']['phase'] : $null
+        if ($from -ceq 'production' -and $to -ceq 'trial') {
+            return ('CUTOVER_PHASE_BACKWARDS: the installed cutover is in production and this definition says trial. A trial runs ' +
+                'on its own database; going back is the rollback, not a reinstall.' + $nothing)
+        }
+        if ($from -cne 'production' -and $to -ceq 'production') {
+            if ($Rollback) {
+                return ('CUTOVER_PRODUCTION_NOT_ROLLBACK: going from the trial to production is an install on a new database, not a -Rollback.' + $nothing)
+            }
+            if ($databaseNamed) {
+                return ("CUTOVER_PRODUCTION_REQUIRES_NEW_DATABASE: the installed cutover is the trial ('$from'), this definition is production, and " +
+                    "$databaseNamed. Demands the trial accepted stay accepted for good (docs/production-cutover-mode-plan.md section 5)." + $nothing)
+            }
+        }
+        return $null
+    }
+    if ($Rollback) {
+        return ('CUTOVER_FIRST_INSTALL_NOT_ROLLBACK: the first production cutover install is an install of the current package ' +
+            'on a new database, not a -Rollback to the previous generation.' + $nothing)
+    }
+    if ($databaseNamed) {
+        return ("CUTOVER_REQUIRES_NEW_DATABASE: this is the first production cutover install and $databaseNamed " +
+            '(docs/production-cutover-mode-plan.md section 6, step 7).' + $nothing)
+    }
+    return $null
+}
+
+function Get-ParallelCutoverMvpRefusal {
+    <#
+        .SYNOPSIS
+            control-server#564 review M3. $null when the MVP service is out of the way for a production cutover install or
+            gate opening: absent, or Stopped with start type Disabled. Otherwise why not. Pure: takes Get-MvpFingerprint.
+
+        .DESCRIPTION
+            The cutover definition drives agv01 and takes every task type, which is only safe while the MVP is stopped. After
+            a rollback the MVP runs again and agv01 is back on it, while the v2 instance may still carry the cutover
+            definition: opening its gate then could place orders for agv01, and a foreign-order cancel could stop the MVP's.
+            So installing a cutover and opening its gate both require the MVP to be stopped and disabled. Closing the gate
+            does not: the way out is never refused.
+
+            Review round 2, S2: the service is not the only way the MVP can run -- registered under another name, or started
+            as a plain process. So, whatever the service says, a listener on 58005 or 58007 (-ListeningPorts) or a process
+            running from the MVP's install directory (-ProcessPaths) is refused too (CUTOVER_MVP_STILL_RUNNING). The host
+            half collects both (Get-ParallelMvpRuntimeEvidence in ParallelHost.psm1).
+    #>
+    [CmdletBinding()]
+    [OutputType([string])]
+    param(
+        [Parameter(Mandatory = $true)][System.Collections.IDictionary] $Fingerprint,
+        [Parameter(Mandatory = $true)][string] $Action,
+        [AllowEmptyCollection()][int[]] $ListeningPorts = @(),
+        [AllowEmptyCollection()][string[]] $ProcessPaths = @()
+    )
+    $nothing = ' Nothing was stopped or changed.'
+    if ($ListeningPorts.Count -gt 0 -or $ProcessPaths.Count -gt 0) {
+        $what = @(@($ListeningPorts | Sort-Object -Unique | ForEach-Object { "a listener on $_" }) + @($ProcessPaths | Sort-Object -Unique | ForEach-Object { "a process running $_" })) -join ', '
+        return ("CUTOVER_MVP_STILL_RUNNING: $Action with a production cutover definition needs the MVP not running at all, and " +
+            "there is $what -- the MVP's ports or install directory, whatever its service says. Stop it (docs/production-cutover-mode-plan.md " +
+            'section 6, step 4).' + $nothing)
+    }
+    if (-not $Fingerprint['present']) { return $null }
+    if ([string] $Fingerprint['status'] -ceq 'Stopped' -and [string] $Fingerprint['startType'] -ceq 'Disabled') { return $null }
+    return ("CUTOVER_MVP_NOT_STOPPED: $Action with a production cutover definition needs the MVP service '$script:ProductionServiceName' " +
+        "Stopped and Disabled; it is status '$($Fingerprint['status'])', start type '$($Fingerprint['startType'])'. The cutover " +
+        'drives agv01 and every task type, which the MVP must not be doing at the same time (docs/production-cutover-mode-plan.md ' +
+        'section 6, step 4). Nothing was stopped or changed.')
+}
+
 function Test-ProductionMesIngestSource {
     <#
         control-server#535. The rules of mesIngest.source = 'production', each with its own reason:
@@ -617,8 +830,12 @@ function Test-ProductionMesIngestSource {
             named in its own message, because that is the type the MVP takes from the same catalog.
 
         Not relaxed by -ForStopDirection: no definition that breaks these could have been installed.
+
+        control-server#564. -Cutover (the production cutover switch, both halves present) replaces the third rule: the MVP is
+        stopped, so allowedWorkTypes must be exactly the full set $script:CutoverWorkTypes -- every one of the six, once
+        each, that spelling, in any order. The first two rules are unchanged.
     #>
-    param([hashtable] $Definition)
+    param([hashtable] $Definition, [switch] $Cutover)
 
     [string[]] $failures = @()
     $mesIngest = Get-Node -Root $Definition -Key 'mesIngest'
@@ -638,8 +855,19 @@ function Test-ProductionMesIngestSource {
         $exact = $types -is [System.Collections.IList] -and $listed.Count -eq $script:ProductionSourceWorkTypes.Count -and
             @($listed | Where-Object { $_ -is [string] -and $script:ProductionSourceWorkTypes -ccontains $_ }).Count -eq $listed.Count
         $shown = ($null -eq $types) ? '(absent)' : (ConvertTo-Json -InputObject $types -Compress)
+        if ($Cutover) {
+            $strings = @($listed | Where-Object { $_ -is [string] })
+            $distinct = [System.Collections.Generic.HashSet[string]]::new([string[]] $strings, [StringComparer]::Ordinal)
+            $fullSet = $types -is [System.Collections.IList] -and $strings.Count -eq $listed.Count -and
+                $distinct.Count -eq $strings.Count -and $strings.Count -eq $script:CutoverWorkTypes.Count -and
+                @($strings | Where-Object { $script:CutoverWorkTypes -ccontains $_ }).Count -eq $strings.Count
+            if (-not $fullSet) {
+                $failures += "CUTOVER_WORK_TYPES_NOT_FULL_SET: journeyRuntime.allowedWorkTypes is $shown; under the production cutover it must be exactly the six types $(ConvertTo-Json -InputObject $script:CutoverWorkTypes -Compress), once each -- the MVP is stopped and v2 takes all of its work (control-server#564)."
+            }
+            return $failures
+        }
         if (@($listed | Where-Object { $_ -is [string] -and $_.Trim() -ieq $script:MvpWorkType }).Count -gt 0) {
-            $failures += "journeyRuntime.allowedWorkTypes $shown includes $script:MvpWorkType, which the MVP takes from the same catalog: with mesIngest.source 'production' both instances read one MesIngest with no claim, so this instance would compete with the MVP for the same material. It must be exactly [""STAGING_TO_WIRE""] (user decision 2026-10-09)."
+            $failures += "journeyRuntime.allowedWorkTypes $shown includes $script:MvpWorkType, which the MVP takes from the same catalog: with mesIngest.source 'production' both instances read one MesIngest with no claim, so this instance would compete with the MVP for the same material. It must be exactly [""STAGING_TO_WIRE""] (user decision 2026-10-09). $script:CutoverPlanReference"
         } elseif (-not $exact) {
             $failures += "journeyRuntime.allowedWorkTypes is $shown; with mesIngest.source 'production' it must be exactly [""STAGING_TO_WIRE""] (user decision 2026-10-09: v2 does STAGING_TO_WIRE only, the MVP WIRE_TO_GATE only)."
         }
@@ -681,6 +909,18 @@ function Test-ParallelInstanceDefinition {
             that is written is checked as always. Never for
             installing, rolling back or opening the gate (PR #523 review, item 1): those start
             something, and a definition without the preset must not.
+
+        .PARAMETER ProductionCutover
+            control-server#564 (docs/production-cutover-mode-plan.md). The production cutover switch. With it, and with
+            productionCutover.approvalRecord in the definition, exactly two guards are lifted: agv01 may be a roster row
+            (checked against its registry row like the spare cars), and the production MesIngest source must take the full
+            six task types instead of STAGING_TO_WIRE alone. A cutover names its cars in journeyRuntime.fleet, gives no task
+            type to two cars, and reads the production MesIngest. Either half without the other is refused
+            (CUTOVER_SWITCH_WITHOUT_RECORD, CUTOVER_RECORD_WITHOUT_SWITCH). Every other refusal is unchanged.
+
+            Scripts that act on an already installed definition (uninstall, the gate, retiring a double) pass
+            -ProductionCutover:(Test-ParallelProductionCutoverDefinition $definition): the record got into installed-instance.json
+            only through an install that carried the switch, and stopping or closing must never be the step that refuses.
     #>
     [CmdletBinding()]
     [OutputType([string[]])]
@@ -688,13 +928,37 @@ function Test-ParallelInstanceDefinition {
         [Parameter(Mandatory = $true)] $Definition,
         [switch] $AllowRiotCreateDispatch,
         [switch] $AllowRiotForeignOrderCancel,
-        [switch] $ForStopDirection
+        [switch] $ForStopDirection,
+        [switch] $ProductionCutover
     )
 
     [string[]] $failures = @()
     if ($Definition -isnot [System.Collections.IDictionary]) {
         return @('The instance definition is not a JSON object.')
     }
+
+    # ------------------------------------------------------ production cutover ---
+
+    # control-server#564. Both halves or neither. The record is checked for shape even when the switch is missing, so a
+    # malformed record says so instead of only "the switch is missing".
+    $hasCutoverRecord = Test-ParallelProductionCutoverDefinition -Definition $Definition
+    if ($hasCutoverRecord) {
+        $cutoverNode = $Definition['productionCutover']
+        if ($cutoverNode -isnot [System.Collections.IDictionary] -or -not $cutoverNode.Contains('approvalRecord') -or
+            $cutoverNode['approvalRecord'] -isnot [string] -or [string]::IsNullOrWhiteSpace($cutoverNode['approvalRecord'])) {
+            $failures += 'productionCutover.approvalRecord must say who approved the production cutover, when, and where that is recorded; a cutover without its approval is not an approval.'
+        }
+        if ($cutoverNode -is [System.Collections.IDictionary] -and
+            ($cutoverNode['phase'] -isnot [string] -or $script:CutoverPhases -cnotcontains $cutoverNode['phase'])) {
+            $failures += "productionCutover.phase must be 'trial' (real MES, simulated slots) or 'production', exactly, got '$($cutoverNode['phase'])'. Going from trial to production takes a new database, and the installer checks it by this field (docs/production-cutover-mode-plan.md section 5)."
+        }
+    }
+    if ($ProductionCutover -and -not $hasCutoverRecord) {
+        $failures += 'CUTOVER_SWITCH_WITHOUT_RECORD: -ProductionCutover was passed, but the definition has no productionCutover.approvalRecord. The switch lifts the agv01 and work-type guards only for a definition that records who approved the cutover (control-server#564).'
+    } elseif ($hasCutoverRecord -and -not $ProductionCutover) {
+        $failures += 'CUTOVER_RECORD_WITHOUT_SWITCH: the definition carries productionCutover, but -ProductionCutover was not passed. A cutover definition is deployed only by a command that says so (control-server#564).'
+    }
+    $cutover = $ProductionCutover -and $hasCutoverRecord
 
     # ------------------------------------------------------------ key whitelist ---
 
@@ -776,10 +1040,14 @@ function Test-ParallelInstanceDefinition {
     # decision) is a separate branch with its own, narrower rules; see $script:MesIngestSources.
     $mesIngest = Get-Node -Root $Definition -Key 'mesIngest'
     $mesSource = Get-MesIngestSource -Definition $Definition
+    # control-server#564. Said on its own, beside whatever the branches below say about the source.
+    if ($cutover -and ($null -eq $mesIngest -or $mesSource -cne 'production')) {
+        $failures += "CUTOVER_REQUIRES_PRODUCTION_SOURCE: mesIngest.source is '$($mesSource ?? '(absent)')'; the production cutover reads the production MesIngest (mesIngest.source 'production'). A fake catalog under the cutover switch would lift the agv01 guard for no cutover at all."
+    }
     if ($null -ne $mesIngest -and $null -eq $mesSource) {
         $failures += "mesIngest.source must be 'fake' or 'production' (exactly, lower case), got '$($mesIngest['source'])'; leave it out for 'fake'."
     } elseif ($null -ne $mesIngest -and $mesSource -ceq 'production') {
-        $failures += @(Test-ProductionMesIngestSource -Definition $Definition)
+        $failures += @(Test-ProductionMesIngestSource -Definition $Definition -Cutover:$cutover)
     } elseif ($null -eq $mesIngest) {
         $failures += 'mesIngest must be an object naming the fake catalog this instance reads.'
     } elseif (-not (Test-KeyPresent -Node $mesIngest -Key 'baseUrl')) {
@@ -997,7 +1265,7 @@ function Test-ParallelInstanceDefinition {
 
         # @() for the same reason as in Assert-: a function returning an empty array returns
         # nothing, and += against an unwrapped result is where a stray $null element comes from.
-        $failures += @(Test-VehicleIdentity -Journey $journey)
+        $failures += @(Test-VehicleIdentity -Journey $journey -Cutover:$cutover)
     }
 
     # ------------------------------------------------ the MVP's map; placeholders ---
@@ -1265,12 +1533,17 @@ function Test-VehicleIdentity {
     #>
     [CmdletBinding()]
     [OutputType([string[]])]
-    param([Parameter(Mandatory = $true)][hashtable] $Journey)
+    param([Parameter(Mandatory = $true)][hashtable] $Journey, [switch] $Cutover)
 
     # control-server#571: a roster stands instead of the single-vehicle keys. Ordinal 'fleet' only: a case
     # variant ('Fleet') is refused by the key whitelist, and so is the whole definition.
     if ($Journey.ContainsKey('fleet')) {
-        return @(Test-FleetIdentity -Journey $Journey)
+        return @(Test-FleetIdentity -Journey $Journey -Cutover:$Cutover)
+    }
+    # control-server#564. A cutover names its cars, each with its own task types: the single-vehicle keys would give one
+    # car every type, which is not the dedicated split the user decided (2026-10-10).
+    if ($Cutover) {
+        return @('CUTOVER_REQUIRES_FLEET: under the production cutover the cars are named in journeyRuntime.fleet, one row per car with its own allowedTaskTypes and zones; the single-vehicle keys (agvId, vehicleKey) are refused.')
     }
 
     [string[]] $failures = @()
@@ -1297,7 +1570,7 @@ function Test-VehicleIdentity {
     # The production vehicle gets its own message. It is the value the shipped appsettings.json
     # carries, so "nobody changed it" and "somebody chose agv01" produce the same file.
     if ($vehicleKey -eq $script:ProductionVehicle.VehicleKey -or $agvId -eq $script:ProductionVehicle.AgvId) {
-        return @("journeyRuntime names agv01 ('$agvId' / '$vehicleKey'), the vehicle the MVP service is driving in production. The parallel instance may only drive agv02 or agv03.")
+        return @("journeyRuntime names agv01 ('$agvId' / '$vehicleKey'), the vehicle the MVP service is driving in production. The parallel instance may only drive agv02 or agv03. $script:CutoverPlanReference")
     }
 
     # Both halves of the pair compare Ordinal -- exact, character for character. -eq here was a
@@ -1344,38 +1617,47 @@ function Test-FleetIdentity {
                  row (Ordinal, as the single-vehicle pair is), and its policy slice must be one the Host and
                  this instance can honour: task types within allowedWorkTypes, zones within
                  allowedDispatchZones (the Host refuses to start otherwise), no car twice.
+
+            control-server#564. -Cutover (the production cutover switch, both halves present) skips step 1 and checks
+            step 4 against $script:CutoverVehicles -- the two spare cars plus agv01's registry row, all four coordinates
+            -- and adds one rule: no task type in two rows (the user's dedicated split, 2026-10-10: one car per type,
+            queueing rather than reassigning). A roster of fewer than three cars is a stage (S1, S2), and accepted.
     #>
     [CmdletBinding()]
     [OutputType([string[]])]
-    param([Parameter(Mandatory = $true)][hashtable] $Journey)
+    param([Parameter(Mandatory = $true)][hashtable] $Journey, [switch] $Cutover)
 
     $fleet = $Journey['fleet']
+    $vehicles = $Cutover ? $script:CutoverVehicles : $script:AllowedVehicles
 
     # ---- 1. agv01 ----
     $hits = [ordered]@{}
-    foreach ($leaf in @(Get-StringLeaf -Node $fleet -Path 'journeyRuntime.fleet')) {
-        if ($leaf.Value -eq $script:ProductionVehicle.AgvId -or $leaf.Value -eq $script:ProductionVehicle.VehicleKey) {
-            $row = Get-RowIndexLabel $leaf.Path
-            if (-not $hits.Contains($row)) { $hits[$row] = [System.Collections.Generic.List[string]]::new() }
-            $hits[$row].Add($leaf.Path.Substring([Math]::Min($row.Length + 1, $leaf.Path.Length)))
+    # control-server#564: under the cutover switch agv01 is not refused here; step 4 checks it like the other cars.
+    if (-not $Cutover) {
+        foreach ($leaf in @(Get-StringLeaf -Node $fleet -Path 'journeyRuntime.fleet')) {
+            if ($leaf.Value -eq $script:ProductionVehicle.AgvId -or $leaf.Value -eq $script:ProductionVehicle.VehicleKey) {
+                $row = Get-RowIndexLabel $leaf.Path
+                if (-not $hits.Contains($row)) { $hits[$row] = [System.Collections.Generic.List[string]]::new() }
+                $hits[$row].Add($leaf.Path.Substring([Math]::Min($row.Length + 1, $leaf.Path.Length)))
+            }
         }
-    }
-    $rowsToScan = ($fleet -is [System.Collections.IList]) ? @($fleet) : @()
-    for ($i = 0; $i -lt $rowsToScan.Count; $i++) {
-        $row = $rowsToScan[$i]
-        if ($row -isnot [System.Collections.IDictionary]) { continue }
-        foreach ($key in @($row.Keys | Where-Object { $_ -ieq 'riotId' })) {
-            # Lenient, like the strings above: 58 written as a string is refused as agv01 too, not only as malformed.
-            if ((ConvertTo-IntegerOrNull $row[$key]) -eq $script:ProductionVehicle.RiotId -or "$($row[$key])".Trim() -eq "$($script:ProductionVehicle.RiotId)") {
-                $label = "journeyRuntime.fleet[$i]"
-                if (-not $hits.Contains($label)) { $hits[$label] = [System.Collections.Generic.List[string]]::new() }
-                $hits[$label].Add($key)
+        $rowsToScan = ($fleet -is [System.Collections.IList]) ? @($fleet) : @()
+        for ($i = 0; $i -lt $rowsToScan.Count; $i++) {
+            $row = $rowsToScan[$i]
+            if ($row -isnot [System.Collections.IDictionary]) { continue }
+            foreach ($key in @($row.Keys | Where-Object { $_ -ieq 'riotId' })) {
+                # Lenient, like the strings above: 58 written as a string is refused as agv01 too, not only as malformed.
+                if ((ConvertTo-IntegerOrNull $row[$key]) -eq $script:ProductionVehicle.RiotId -or "$($row[$key])".Trim() -eq "$($script:ProductionVehicle.RiotId)") {
+                    $label = "journeyRuntime.fleet[$i]"
+                    if (-not $hits.Contains($label)) { $hits[$label] = [System.Collections.Generic.List[string]]::new() }
+                    $hits[$label].Add($key)
+                }
             }
         }
     }
     if ($hits.Count -gt 0) {
         return @($hits.Keys | ForEach-Object {
-                "$_ names agv01 ($($hits[$_] -join ', ')), the vehicle the MVP service is driving in production. The parallel instance may only drive agv02 or agv03; the whole definition is refused."
+                "$_ names agv01 ($($hits[$_] -join ', ')), the vehicle the MVP service is driving in production. The parallel instance may only drive agv02 or agv03; the whole definition is refused. $script:CutoverPlanReference"
             })
     }
 
@@ -1468,10 +1750,11 @@ function Test-FleetIdentity {
         # ---- 4. the identity quadruple ----
         $vehicleKey = [string] $row['vehicleKey']
         $deviceKey = [string] $row['deviceKey']
-        $match = $script:AllowedVehicles | Where-Object { [string]::Equals($_.VehicleKey, $vehicleKey, [StringComparison]::Ordinal) } | Select-Object -First 1
+        $match = $vehicles | Where-Object { [string]::Equals($_.VehicleKey, $vehicleKey, [StringComparison]::Ordinal) } | Select-Object -First 1
         if ($null -eq $match) {
-            $allowed = ($script:AllowedVehicles | ForEach-Object { "$($_.Alias)=$($_.VehicleKey)" }) -join ', '
-            $failures += "$prefix.vehicleKey '$vehicleKey' is not a spare vehicle. Allowed: $allowed."
+            $allowed = ($vehicles | ForEach-Object { "$($_.Alias)=$($_.VehicleKey)" }) -join ', '
+            $failures += $Cutover ? "$prefix.vehicleKey '$vehicleKey' is not one of the three registry cars. Allowed: $allowed." `
+                : "$prefix.vehicleKey '$vehicleKey' is not a spare vehicle. Allowed: $allowed."
             continue
         }
         if (-not [string]::Equals($deviceKey, $vehicleKey, [StringComparison]::Ordinal)) {
@@ -1488,6 +1771,40 @@ function Test-FleetIdentity {
             $failures += "journeyRuntime.fleet names $($match.Alias) twice (rows $($seen[$match.Alias]) and $i)."
         } else {
             $seen[$match.Alias] = $i
+        }
+    }
+
+    # ---- 5. control-server#564: one car per task type under the cutover, and each car exactly its dedicated types ----
+    if ($Cutover) {
+        for ($i = 0; $i -lt $rows.Count; $i++) {
+            $row = $rows[$i]
+            if ($row -isnot [System.Collections.IDictionary] -or $row['vehicleKey'] -isnot [string]) { continue }
+            $vehicle = $script:CutoverVehicles | Where-Object { [string]::Equals($_.VehicleKey, $row['vehicleKey'], [StringComparison]::Ordinal) } | Select-Object -First 1
+            if ($null -eq $vehicle -or -not $script:CutoverDedicatedTaskTypes.ContainsKey($vehicle.VehicleKey)) { continue }
+            $expected = @($script:CutoverDedicatedTaskTypes[$vehicle.VehicleKey])
+            $actual = ($row['allowedTaskTypes'] -is [System.Collections.IList]) ? @($row['allowedTaskTypes']) : @()
+            $strings = @($actual | Where-Object { $_ -is [string] })
+            $distinct = [System.Collections.Generic.HashSet[string]]::new([string[]] $strings, [StringComparer]::Ordinal)
+            $same = $strings.Count -eq $actual.Count -and $distinct.Count -eq $strings.Count -and $strings.Count -eq $expected.Count -and
+                @($expected | Where-Object { $distinct.Contains($_) }).Count -eq $expected.Count
+            if (-not $same) {
+                $failures += ("CUTOVER_VEHICLE_TASK_TYPES_MISMATCH: journeyRuntime.fleet[$i] is $($vehicle.Alias), whose allowedTaskTypes is " +
+                    "$(ConvertTo-Json -InputObject @($actual) -Compress); under the production cutover it must be exactly " +
+                    "$(ConvertTo-Json -InputObject $expected -Compress) (the user's dedicated split, 2026-10-10, program#171). One more type " +
+                    'would send this car to a station another car may be parked on (docs/production-cutover-mode-plan.md section 8).')
+            }
+        }
+        $owner = [System.Collections.Generic.Dictionary[string, int]]::new([StringComparer]::Ordinal)
+        for ($i = 0; $i -lt $rows.Count; $i++) {
+            $row = $rows[$i]
+            if ($row -isnot [System.Collections.IDictionary] -or $row['allowedTaskTypes'] -isnot [System.Collections.IList]) { continue }
+            foreach ($type in @($row['allowedTaskTypes'] | Where-Object { $_ -is [string] })) {
+                if ($owner.ContainsKey($type)) {
+                    $failures += "CUTOVER_TASK_TYPE_SHARED: $type is in journeyRuntime.fleet[$($owner[$type])].allowedTaskTypes and journeyRuntime.fleet[$i].allowedTaskTypes. Under the production cutover each task type has one car (user decision 2026-10-10)."
+                } else {
+                    $owner[$type] = $i
+                }
+            }
         }
     }
     return $failures
@@ -1945,7 +2262,9 @@ function Assert-ParallelInstanceDefinition {
         [switch] $AllowRiotCreateDispatch,
         [switch] $AllowRiotForeignOrderCancel,
         # See Test-ParallelInstanceDefinition: uninstalling and closing the gate only.
-        [switch] $ForStopDirection
+        [switch] $ForStopDirection,
+        # See Test-ParallelInstanceDefinition (control-server#564).
+        [switch] $ProductionCutover
     )
 
     # @() around the call, not just the [string[]] cast: PowerShell unwraps an empty array to
@@ -1953,7 +2272,7 @@ function Assert-ParallelInstanceDefinition {
     # StrictMode the .Count below threw on exactly the input this function is supposed to
     # accept. The self-test only exercised Test-, which its own callers already wrapped.
     [string[]] $failures = @(Test-ParallelInstanceDefinition -Definition $Definition -AllowRiotCreateDispatch:$AllowRiotCreateDispatch `
-            -AllowRiotForeignOrderCancel:$AllowRiotForeignOrderCancel -ForStopDirection:$ForStopDirection)
+            -AllowRiotForeignOrderCancel:$AllowRiotForeignOrderCancel -ForStopDirection:$ForStopDirection -ProductionCutover:$ProductionCutover)
     if ($failures.Count -gt 0) {
         $listed = ($failures | ForEach-Object { "  - $_" }) -join [Environment]::NewLine
         throw ("The parallel instance definition was refused ($($failures.Count) reason(s)):" +
@@ -1981,6 +2300,9 @@ function Format-ParallelMesIngestAudit {
     $source = Get-MesIngestSource -Definition $Definition
     $types = @($Definition['journeyRuntime']['allowedWorkTypes']) -join ','
     $line = "MES_INGEST_SOURCE=$source baseUrl=$($Definition['mesIngest']['baseUrl']) allowedWorkTypes=$types"
+    if ($source -ceq 'production' -and (Test-ParallelProductionCutoverDefinition -Definition $Definition)) {
+        return "$line -- PRODUCTION CUTOVER ($($Definition['productionCutover']['phase'])): this instance reads the PRODUCTION MesIngest for all six task types and drives agv01; the MVP must be stopped (control-server#564)"
+    }
     if ($source -ceq 'production') {
         return "$line -- this instance reads the PRODUCTION MesIngest the MVP also reads; it may take STAGING_TO_WIRE only, the MVP keeps WIRE_TO_GATE (user decision 2026-10-09, control-server#535)"
     }
@@ -2040,7 +2362,9 @@ function Get-ParallelRetiredFakeMesIngest {
     if ($null -eq $Previous) { return $null }
     if ((Get-MesIngestSource -Definition $Current) -cne 'production') { return $null }
     if ($Previous -isnot [hashtable]) { throw 'The previously installed definition is not a JSON object; its FakeMesIngest cannot be retired.' }
-    [string[]] $failures = @(Test-ParallelInstanceDefinition -Definition $Previous -AllowRiotCreateDispatch -AllowRiotForeignOrderCancel -ForStopDirection)
+    # control-server#564: an installed cutover definition carries its record; it got there only through an install with the switch.
+    [string[]] $failures = @(Test-ParallelInstanceDefinition -Definition $Previous -AllowRiotCreateDispatch -AllowRiotForeignOrderCancel -ForStopDirection `
+            -ProductionCutover:(Test-ParallelProductionCutoverDefinition -Definition $Previous))
     if ($failures.Count -gt 0) {
         throw ("The previously installed definition was refused, so its FakeMesIngest is not retired and nothing was changed:" +
             [Environment]::NewLine + (($failures | ForEach-Object { "  - $_" }) -join [Environment]::NewLine))
@@ -2175,7 +2499,15 @@ function Get-ParallelEffectiveConfigurationRefusal {
             $problems += "$($pair.Name) bound [$(@($pair.Actual) -join ',')], the definition says [$(@($pair.Expected) -join ',')]"
         }
     }
-    if ((Get-MesIngestSource -Definition $Definition) -ceq 'production' -and
+    # control-server#564: a cutover definition (it passed the checks with the switch) is held to the full six instead, as a
+    # set -- the definition's own order is compared above.
+    $cutoverDefinition = Test-ParallelProductionCutoverDefinition -Definition $Definition
+    if ((Get-MesIngestSource -Definition $Definition) -ceq 'production' -and $cutoverDefinition) {
+        $boundTypes = @($Effective.AllowedWorkTypes | Sort-Object -CaseSensitive) -join "`n"
+        if ($boundTypes -cne (@($script:CutoverWorkTypes | Sort-Object -CaseSensitive) -join "`n")) {
+            $problems += "production cutover, but allowedWorkTypes bound [$(@($Effective.AllowedWorkTypes) -join ',')], not the six types"
+        }
+    } elseif ((Get-MesIngestSource -Definition $Definition) -ceq 'production' -and
         (@($Effective.AllowedWorkTypes) -join "`n") -cne ($script:ProductionSourceWorkTypes -join "`n")) {
         $mvpNote = (@($Effective.AllowedWorkTypes) -ccontains $script:MvpWorkType) ? " -- $script:MvpWorkType is the MVP's" : ''
         $problems += "production MesIngest source, but allowedWorkTypes bound [$(@($Effective.AllowedWorkTypes) -join ',')]$mvpNote"
@@ -3117,7 +3449,9 @@ function Get-ParallelDispatchGateRefusal {
         if ($journeys.Count -eq 0) { return $null }
         $listed = ($journeys | ForEach-Object { "$($_['JourneyId']) ($($_['AgvId']), $($_['Stage']))" }) -join '; '
         return ("GATE_CLOSE_REFUSED_IN_FLIGHT: $DatabasePath has $($journeys.Count) journey(s) of '$ServiceName' not Completed: " +
-            "$listed. Stop injecting demand into its FakeMesIngest, wait until agv02 and agv03 have finished, and run this again." + $nothing)
+            "$listed. Stop new intake first -- fake source: stop injecting demand into its FakeMesIngest; production source (the " +
+            'cutover): import a header-only area assignment table, so that no AREA is in scope (docs/production-cutover-mode-plan.md ' +
+            'section 6, step 16a) -- then wait until every journey has finished, and run this again.' + $nothing)
     }
 
     $intents = @($State['OrderIntents'])
@@ -3377,6 +3711,11 @@ function Merge-ConfigurationTree {
 }
 
 Export-ModuleMember -Function @(
+    'Test-ParallelProductionCutoverDefinition'
+    'Get-ParallelCutoverWorkType'
+    'Get-ParallelCutoverInstallRefusal'
+    'Get-ParallelCutoverMvpRefusal'
+    'Get-ParallelCutoverContractVersion'
     'Get-ParallelInstanceAllowedKey'
     'Get-ParallelInstanceFleetRowKey'
     'Get-ParallelInstanceFootprint'
