@@ -104,7 +104,7 @@ pwsh .\scripts\l2\Invoke-L2Scenario.ps1 -Scenario normal-load -EvidenceRoot .\ev
 - 「车载端不重启、会话中途转 `RecoveryRequired` 后放出恢复入口」没有真装置端到端覆盖。服务端那一半有 L1
   `RecoveryStateMachineG2Tests.ASessionIsNotReadyWhileTheServerHoldsAnOperationNeedingRecovery`，车载端中途刷新入口有
   `real-onboard-rebuild-stopped-cargo-handoff` 的 L2-RH-08（「故障交接」入口），两半拼起来是推断。可行的造法是 RSFD 的
-  仓位故障判定（活车载端上造出 `UNKNOWN`），另票跟进。
+  仓位故障判定（活车载端上造出 `UNKNOWN`），另票跟进（control-server#690）。
 
 **这条场景 2026-09-04 改过向量，原来测的是 `RESUME_AFTER_REPAIR`，那是错的。**它制造的状态是「装载
 跑完、门关着锁上了、仓位仍是空的」，对应 `COMPENSATE_LOAD_ALL_EMPTY`；而 `RESUME_AFTER_REPAIR` 要的

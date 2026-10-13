@@ -698,10 +698,13 @@ jobs:
           # real-onboard-recovery-entry-missing was retired by control-server#622 (2026-10-13). Its fault injection -- close a
           # slot empty and wait out the onboard's operator timeout -- stopped producing a result once onboard-hmi#72
           # (b85b97a) and onboard-hmi#78 (96dffa0) made the onboard reopen a door closed empty (CI run 38107859209,
-          # control-server#250). Its criteria are covered by real-onboard-restart-with-open-recovery-session (an UNKNOWN load
-          # made through Invoke-G3UnknownLoad), real-onboard-compensate-then-reconnect (the same stop-close-restart injection
-          # written inline; it does not call Invoke-G3UnknownLoad) and real-onboard-slot-fault-declaration (L2-RSFD-04
-          # judges the block reason). The coverage table and the two gaps it leaves are in control-server#622.
+          # control-server#250). Most of its criteria are covered by real-onboard-restart-with-open-recovery-session (an
+          # UNKNOWN load made through Invoke-G3UnknownLoad), real-onboard-compensate-then-reconnect (the same
+          # stop-close-restart injection written inline; it does not call Invoke-G3UnknownLoad) and
+          # real-onboard-slot-fault-declaration (L2-RSFD-04 judges the block reason). Two gaps are left: exactly one result
+          # for the attempt and none superseded; and the recovery entry offered after a live session, with no onboard
+          # restart, turns RecoveryRequired mid-session -- the latter followed up in control-server#690. The coverage
+          # table is in control-server#622.
           $scenarios = @(
               @{ Name = 'real-onboard-normal-load';                           Runs = 1 }
               @{ Name = 'real-onboard-clock-skew';                            Runs = 1 }
