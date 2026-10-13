@@ -288,7 +288,76 @@ public sealed class Batch7DemandReleaseServiceTests
     [Trait("Requirement", "REQ-0328")]
     public async Task AVehicleNoLongerEligibleWhileANeverCreatedPickupWaitsToBeRebuiltHasTheDemandReleased()
     {
-        await using RuntimeFixture fixture = await RuntimeFixture.CreateAsync();
+        await using RuntimeFixture fixture = await NeverCreatedPickupNoLongerEligibleAsync();
+
+        CancellingGateway gateway = new(fixture.Clock, _ => { });
+        IReadOnlyList<DemandReleaseOutcome> outcomes = await Service(fixture, gateway).RunOnceAsync(Token);
+
+        Assert.Equal("RELEASED", Assert.Single(outcomes).Result);
+        Assert.Equal(0, gateway.Cancels);
+        Assert.Equal(1, fixture.Riot.CreateCount("TO_PICKUP"));
+        await using ControlServerDbContext reading = new ControlServerDbContext(fixture.DbOptionsForTests);
+        JourneyRuntimeRow after = await reading.JourneyRuntimes.AsNoTracking().SingleAsync(Token);
+        Assert.Equal((JourneyRuntimeStage.Completed, DemandReleaseReasons.Released), (after.Stage, after.BlockReasonCode));
+        Assert.True(await DemandJourneyLookup.ReleasedForRedispatch(reading).AnyAsync(row => row.DemandId == FirstDemandId, Token));
+    }
+
+    /// <summary>
+    /// control-server#673 增量审查 S1：判作没建成之后、释放之前，RIoT 按单号再精确读一次——旧单这时落地了（读到单），或者读不到，都不释放，
+    /// 什么都不发；只有真实 RIoT 的「查无此单」（HTTP 200、不带 result）才放。
+    /// </summary>
+    [Theory]
+    [InlineData("late-order", "RELEASE_PICKUP_ORDER_APPEARED")]
+    [InlineData("unreadable", "RELEASE_ORDER_STATE_UNKNOWN")]
+    public async Task ANeverCreatedPickupIsNotReleasedUnlessRiotSaysNoSuchOrderOnceMore(string riot, string refusal)
+    {
+        await using RuntimeFixture fixture = await NeverCreatedPickupNoLongerEligibleAsync();
+        string upperId = (await CurrentStopAsync(fixture, FirstDemandId)).UpperId;
+        if (riot == "late-order")
+        {
+            fixture.Riot.ReleaseWithheldOrder(upperId);
+        }
+        else
+        {
+            fixture.Riot.AbsentOrdersReadAsRealRiot = false;
+            fixture.Riot.AbsentOrdersReadAsTimeout = true;
+        }
+        CancellingGateway gateway = new(fixture.Clock, _ => { });
+
+        IReadOnlyList<DemandReleaseOutcome> outcomes = await Service(fixture, gateway).RunOnceAsync(Token);
+
+        Assert.Equal(refusal, Assert.Single(outcomes).Result);
+        Assert.Equal(0, gateway.Cancels);
+        await using ControlServerDbContext reading = new ControlServerDbContext(fixture.DbOptionsForTests);
+        Assert.Null((await reading.Set<JourneyDemandRow>().AsNoTracking().SingleAsync(Token)).RemovedAt);
+        Assert.Equal(JourneyRuntimeStage.AwaitingPickupArrival, (await reading.JourneyRuntimes.AsNoTracking().SingleAsync(Token)).Stage);
+    }
+
+    /// <summary>
+    /// 增量审查 S2：有「从没出现过」的记录，但意图带着单号（RIoT 确实有过这张单），就不算没有订单：释放照常先取消那张单再放，不跳过取消。
+    /// </summary>
+    [Fact]
+    public async Task ANeverCreatedRecordDoesNotCountWhenTheIntentHasAnOrderId()
+    {
+        await using RuntimeFixture fixture = await NeverCreatedPickupNoLongerEligibleAsync();
+        string upperId = (await CurrentStopAsync(fixture, FirstDemandId)).UpperId;
+        await using (ControlServerDbContext writing = new ControlServerDbContext(fixture.DbOptionsForTests))
+        {
+            OrderIntentRow intent = await writing.OrderIntents.SingleAsync(row => row.UpperId == upperId, Token);
+            intent.OrderId = "ORDER-TO_PICKUP";
+            await writing.SaveChangesAsync(Token);
+        }
+        CancellingGateway gateway = new(fixture.Clock, _ => { });
+
+        await Service(fixture, gateway).RunOnceAsync(Token);
+
+        Assert.Equal(1, gateway.Cancels);
+    }
+
+    /// <summary>取货腿建单回 00002、判作没建成、等着重建；车对需求不再合格，重建停在 <c>VEHICLE_NO_LONGER_ELIGIBLE</c>。</summary>
+    private static async Task<RuntimeFixture> NeverCreatedPickupNoLongerEligibleAsync()
+    {
+        RuntimeFixture fixture = await RuntimeFixture.CreateAsync();
         fixture.Catalog.Set(fixture.Demand(FirstDemandId, FirstSublot, Now.AddMinutes(-10)));
         fixture.BoxCounts.Set(FirstSublot, 7);
         fixture.Riot.AbsentOrdersReadAsRealRiot = true;
@@ -311,16 +380,7 @@ public sealed class Batch7DemandReleaseServiceTests
         fixture.Context.ChangeTracker.Clear();
         Assert.Equal("OWN_ORDER_REBUILD_VEHICLE_INELIGIBLE", (await fixture.RuntimeAsync(FirstDemandId)).BlockReasonCode);
 
-        CancellingGateway gateway = new(fixture.Clock, _ => { });
-        IReadOnlyList<DemandReleaseOutcome> outcomes = await Service(fixture, gateway).RunOnceAsync(Token);
-
-        Assert.Equal("RELEASED", Assert.Single(outcomes).Result);
-        Assert.Equal(0, gateway.Cancels);
-        Assert.Equal(1, fixture.Riot.CreateCount("TO_PICKUP"));
-        await using ControlServerDbContext reading = new ControlServerDbContext(fixture.DbOptionsForTests);
-        JourneyRuntimeRow after = await reading.JourneyRuntimes.AsNoTracking().SingleAsync(Token);
-        Assert.Equal((JourneyRuntimeStage.Completed, DemandReleaseReasons.Released), (after.Stage, after.BlockReasonCode));
-        Assert.True(await DemandJourneyLookup.ReleasedForRedispatch(reading).AnyAsync(row => row.DemandId == FirstDemandId, Token));
+        return fixture;
     }
 
     /// <summary>

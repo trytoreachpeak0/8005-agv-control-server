@@ -270,6 +270,31 @@ public sealed class DemandReleaseService(
     {
         OrderIntentRow? intent = await dbContext.OrderIntents.AsNoTracking()
             .SingleOrDefaultAsync(row => row.UpperId == currentStop.UpperId, cancellationToken).ConfigureAwait(false);
+        if (intent is not null &&
+            await AbandonedDemandLegOrders.TakenAsNeverCreatedAsync(dbContext, intent, cancellationToken).ConfigureAwait(false))
+        {
+            // control-server#673 incremental review S1: taken as never created on evidence that may be minutes old, so RIoT is asked
+            // once more, precisely by the upperId, before the demand goes to another vehicle. Only "no such order" -- 404, or real
+            // RIoT's HTTP 200 with no result -- lets it go: an order there means the old one landed late and would drive this vehicle
+            // to the same pickup; an answer that says nothing settles nothing.
+            RiotOrderObservation late;
+            try
+            {
+                late = await vehicleFacts.ReconcileByUpperIdAsync(currentStop.UpperId, cancellationToken).ConfigureAwait(false);
+            }
+            catch (Exception error) when (error is HttpRequestException or InvalidDataException or TaskCanceledException &&
+                                          !cancellationToken.IsCancellationRequested)
+            {
+                return (PickupOrderSettlement.None, DemandReleaseReasons.OrderStateUnknown);
+            }
+
+            return late.Kind == RiotOrderObservationKind.NotFound || late.IsExactAbsentAtObservation(currentStop.UpperId)
+                ? (PickupOrderSettlement.NoOrder, null)
+                : late.Kind is RiotOrderObservationKind.Active or RiotOrderObservationKind.Terminal
+                    ? (PickupOrderSettlement.None, DemandReleaseReasons.PickupOrderAppeared)
+                    : (PickupOrderSettlement.None, DemandReleaseReasons.OrderStateUnknown);
+        }
+
         if (await NeverDispatchedAsync(intent, cancellationToken).ConfigureAwait(false))
         {
             return (PickupOrderSettlement.NoOrder, null);

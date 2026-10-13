@@ -14,8 +14,13 @@ public sealed partial class IdleReturnExecutionTests
     /// 空闲返回——修之前这辆车走完那趟搬运之后再也不空闲返回，只能删意图行解开。没有那条记录的同样一条意图照旧挡（既有用例
     /// <see cref="OnlyTheSettledIdleReturnLegIsLetThroughTheUnknownOrderCheck"/>）。
     /// </summary>
-    [Fact]
-    public async Task ADemandLegTakenAsNeverCreatedDoesNotKeepTheVehicleFromIdleReturn()
+    /// <remarks>
+    /// 增量审查 S2：同一条记录、但意图带着单号（RIoT 确实有过那张单）时照旧挡——排除只给「从没拿到过单号」的那一种（第二个数据行）。
+    /// </remarks>
+    [Theory]
+    [InlineData(null, "Committed")]
+    [InlineData("ORDER-KNOWN", "OwnOrderResultUnknown")]
+    public async Task ADemandLegTakenAsNeverCreatedDoesNotKeepTheVehicleFromIdleReturn(string? orderId, string expected)
     {
         await using FleetFixture fleet = await FleetAsync(points: [Near, Far]);
         JourneyRuntimeRow journey = await CommittedAndSentAsync(fleet);
@@ -35,6 +40,7 @@ public sealed partial class IdleReturnExecutionTests
             CreatedAt = fleet.Clock.GetUtcNowWithoutTick(),
             Status = "RESULT_UNKNOWN",
             CreateAttemptCount = 1,
+            OrderId = orderId,
         });
         fleet.Context.OwnOrderRebuilds.Add(new OwnOrderRebuildRow
         {
@@ -60,7 +66,9 @@ public sealed partial class IdleReturnExecutionTests
         await fleet.RunRoundAsync(fleet.Options.OwnOrderRebuildDelay);
         await RoundAsync(fleet);
 
-        Assert.Equal(IdleReturnReasons.Committed, fleet.IdleReturnBoard.Reasons[AgvA]);
-        Assert.NotNull(await ClaimOfAsync(fleet, KeyA));
+        Assert.Equal(
+            expected == "Committed" ? IdleReturnReasons.Committed : IdleReturnReasons.OwnOrderResultUnknown,
+            fleet.IdleReturnBoard.Reasons[AgvA]);
+        Assert.Equal(expected == "Committed", await ClaimOfAsync(fleet, KeyA) is not null);
     }
 }
