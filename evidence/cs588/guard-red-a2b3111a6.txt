@@ -1,0 +1,13 @@
+# a2b3111a6 上 ArchitectureTests（护栏提交、三处既有错位未修，红）
+
+  Error Message:
+   arguments handed to another placeholder's name:
+src/ControlServer.Host/Runtime/ForeignOrders/ForeignRunningOrderSupervisor.cs:560 LogOwnAbandonedOrderHeld: {Basis} <- orderState (named like {OrderState})
+src/ControlServer.Host/Runtime/JourneyRuntimeEngine.Charging.cs:372 LogChargingEndNotProven: {StationId} <- since (named like {Since})
+src/ControlServer.Host/Runtime/JourneyRuntimeEngine.cs:5829 LogStationDeadlineEndedStop: {Deadline} <- runtime.DemandId ?? runtime.JourneyId (named like {DemandId})
+src/ControlServer.Host/Runtime/JourneyRuntimeEngine.cs:5829 LogStationDeadlineEndedStop: {DemandId} <- deadline (named like {Deadline})
+  Stack Trace:
+     at ControlServer.Tests.LoggerMessageArgumentOrderArchitectureTests.EveryCallSiteHandsItsArgumentsOverInTheTemplatesOrder() in F:\8005-wt\cs588-8005-agv-control-server\tests\ControlServer.Tests\LoggerMessageArgumentOrderArchitectureTests.cs:line 87
+ round 1: 206 definitions, 225 call sites, 748 arguments, 636 named, 112 unnamed, 3 swaps
+ round 2: 206 definitions, 228 call sites, 761 arguments, 712 named, 49 unnamed, 4 swaps
+Failed!  - Failed:     1, Passed:    80, Skipped:     0, Total:    81, Duration: 5 s - ControlServer.Tests.dll (net8.0)
