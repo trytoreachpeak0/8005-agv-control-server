@@ -20,7 +20,8 @@ namespace ControlServer.Host.Runtime;
 /// <c>UNION ALL</c> because SQLite merges two arms that each come out in order (<c>MERGE (UNION ALL)</c>) and starts answering at
 /// once, where <c>MessageType IN (...) ORDER BY ...</c> sorts every safety message before the first row comes back. Each arm
 /// comes out in order straight from the <c>(MessageType, ReceivedAtUtcTicks)</c> index, sorting only rows that share a tick.
-/// Plans for both index sets are in <c>evidence/cs597/</c>.
+/// Keep it a bare compound select: wrapped in a subquery with its own column list it is no longer flattened, and the plan goes
+/// back to sorting both types whole (measured; <c>SafetyStateLatestFirstReadTests</c> asserts the plan).
 /// </para>
 /// <para>
 /// The inbox has no vehicle or generation column -- both are in the envelope -- so the reader still parses what it reads and
@@ -29,14 +30,15 @@ namespace ControlServer.Host.Runtime;
 /// </remarks>
 internal static class SafetyMessagesNewestFirst
 {
-    private const string Sql =
+    internal const string Sql =
         """
-        SELECT "MessageId", "ContentHash", "FirstResponseJson", "MessageType", "ReceivedAt", "ReceivedAtUtcTicks", "RequestJson"
-        FROM (
-            SELECT rowid AS "InsertionOrder", * FROM "ProtocolInbox" WHERE "MessageType" = 'SafetyStateChanged'
-            UNION ALL
-            SELECT rowid AS "InsertionOrder", * FROM "ProtocolInbox" WHERE "MessageType" = 'SafetyStateSnapshot'
-        )
+        SELECT "MessageId", "ContentHash", "FirstResponseJson", "MessageType", "ReceivedAt", "ReceivedAtUtcTicks", "RequestJson",
+               rowid AS "InsertionOrder"
+        FROM "ProtocolInbox" WHERE "MessageType" = 'SafetyStateChanged'
+        UNION ALL
+        SELECT "MessageId", "ContentHash", "FirstResponseJson", "MessageType", "ReceivedAt", "ReceivedAtUtcTicks", "RequestJson",
+               rowid AS "InsertionOrder"
+        FROM "ProtocolInbox" WHERE "MessageType" = 'SafetyStateSnapshot'
         ORDER BY "ReceivedAtUtcTicks" DESC, "MessageType", "InsertionOrder"
         """;
 

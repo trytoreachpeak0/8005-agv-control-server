@@ -6,6 +6,8 @@ using ControlServer.Host.Runtime.Faults;
 using ControlServer.Infrastructure.Persistence;
 using Microsoft.Data.Sqlite;
 using Microsoft.EntityFrameworkCore;
+using Microsoft.EntityFrameworkCore.Infrastructure;
+using Microsoft.EntityFrameworkCore.Migrations;
 using Microsoft.Extensions.Options;
 
 namespace ControlServer.Tests;
@@ -233,6 +235,82 @@ public sealed class SafetyStateLatestFirstReadTests
         Assert.Equal(new InTransitDoorVerdict(InTransitDoorState.ProvenLocked, Generation - 1, 9), verdict);
     }
 
+    // ---- 索引与迁移 -------------------------------------------------------------------------------------------
+
+    /// <summary>
+    /// 从新到旧的读法在迁移建出的库上真能边读边停：两类各一臂合并（<c>MERGE (UNION ALL)</c>），每臂走复合索引，只在同 tick 的行之间排序，
+    /// 不在吐第一行之前把整类排一遍（<c>USE TEMP B-TREE FOR ORDER BY</c>）。删了复合索引，这一条就红——那时读法仍然对，只是又随条数线性了。
+    /// </summary>
+    [Fact]
+    public async Task TheNewestFirstReadWalksTheCompositeIndexWithoutSortingAWholeType()
+    {
+        await using Batch7JourneyFixture fixture = await Batch7JourneyFixture.CreateMigratedForRealAsync();
+        await using SqliteCommand command = fixture.Connection.CreateCommand();
+        command.CommandText = "EXPLAIN QUERY PLAN " + SafetyMessagesNewestFirst.Sql;
+        List<string> plan = [];
+        await using (SqliteDataReader reader = await command.ExecuteReaderAsync(Token))
+        {
+            while (await reader.ReadAsync(Token))
+            {
+                plan.Add(reader.GetString(3));
+            }
+        }
+
+        Assert.Contains("MERGE (UNION ALL)", plan);
+        Assert.Equal(2, plan.Count(step => step.Contains("USING INDEX IX_ProtocolInbox_MessageType_ReceivedAtUtcTicks", StringComparison.Ordinal)));
+        Assert.DoesNotContain(plan, step => step.Contains("TEMP B-TREE FOR ORDER BY", StringComparison.Ordinal));
+    }
+
+    /// <summary>
+    /// 迁移走一个来回：退回上一个迁移只删复合索引，#563 的两个单列索引与每一行原样都在；再升上来复合索引回来，读法挑中的行不变。
+    /// </summary>
+    [Fact]
+    public async Task MigratingDownDropsOnlyTheCompositeIndexAndMigratingUpBringsItBack()
+    {
+        await using Batch7JourneyFixture fixture = await Batch7JourneyFixture.CreateMigratedForRealAsync();
+        SessionRecoveryRow session = ProtocolInboxReadWindowTests.Session(AgvId, Generation);
+        session.SafetyRevision = Revision;
+        fixture.Context.SessionRecoveries.Add(session);
+        fixture.Context.ProtocolInbox.AddRange(
+            HeardFrom(AgvId, Generation, Now - TimeSpan.FromSeconds(1)),
+            Safety("SafetyStateChanged", AgvId, Generation, Revision, Now - TimeSpan.FromMinutes(1), stopped: true, locked: true),
+            Safety("SafetyStateChanged", AgvId, Generation, Revision - 1, Now - TimeSpan.FromMinutes(2), stopped: true, locked: false));
+        await fixture.Context.SaveChangesAsync(Token);
+        string[] rowsBefore = await QueryAsync(fixture, """SELECT "MessageId" || '|' || "ReceivedAtUtcTicks" FROM "ProtocolInbox" ORDER BY "MessageId" """);
+
+        await fixture.Context.GetService<IMigrator>().MigrateAsync("20261011005905_ProtocolInboxReadIndexes", Token);
+        string[] indexesDown = await ProtocolInboxIndexesAsync(fixture);
+        string[] rowsDown = await QueryAsync(fixture, """SELECT "MessageId" || '|' || "ReceivedAtUtcTicks" FROM "ProtocolInbox" ORDER BY "MessageId" """);
+        await fixture.Context.Database.MigrateAsync(Token);
+        await fixture.RenewContextAsync();
+        string[] indexesUp = await ProtocolInboxIndexesAsync(fixture);
+        InTransitDoorVerdict verdict = await InTransitDoorFacts.ReadAsync(fixture.Context, AgvId, Now, Token);
+
+        Assert.Equal(["IX_ProtocolInbox_MessageType", "IX_ProtocolInbox_ReceivedAtUtcTicks"], indexesDown);
+        Assert.Equal(rowsBefore, rowsDown);
+        Assert.Equal(
+            ["IX_ProtocolInbox_MessageType", "IX_ProtocolInbox_MessageType_ReceivedAtUtcTicks", "IX_ProtocolInbox_ReceivedAtUtcTicks"],
+            indexesUp);
+        Assert.Equal(new InTransitDoorVerdict(InTransitDoorState.ProvenLocked, Generation, Revision), verdict);
+    }
+
+    private static async Task<string[]> ProtocolInboxIndexesAsync(Batch7JourneyFixture fixture) =>
+        [.. (await QueryAsync(fixture, """SELECT name FROM pragma_index_list('ProtocolInbox') ORDER BY name"""))
+            .Where(name => name.StartsWith("IX_ProtocolInbox_", StringComparison.Ordinal))];
+
+    private static async Task<string[]> QueryAsync(Batch7JourneyFixture fixture, string sql)
+    {
+        await using SqliteCommand command = fixture.Connection.CreateCommand();
+        command.CommandText = sql;
+        List<string> values = [];
+        await using SqliteDataReader reader = await command.ExecuteReaderAsync(Token);
+        while (await reader.ReadAsync(Token))
+        {
+            values.Add(reader.GetString(0));
+        }
+        return [.. values];
+    }
+
     // ---- 量测 -------------------------------------------------------------------------------------------------
 
     /// <summary>
@@ -275,6 +353,17 @@ public sealed class SafetyStateLatestFirstReadTests
             seeding.Stop();
             lines.Add(FormattableString.Invariant(
                 $"inbox rows={rows} safetyRows={safetyRows} days={days} changeSeconds={changeSeconds} vehicles=3 seed={seeding.Elapsed.TotalSeconds:F1}s db={new FileInfo(databasePath).Length / 1024 / 1024}MiB"));
+            // The inbox was seeded on the schema #563 left; what the build under test adds on top is migrated now, on the full
+            // inbox, the way the Host does it as it starts (control-server#597 adds an index there; before it nothing is pending).
+            await using (ControlServerDbContext migrating = new(options))
+            {
+                string[] pending = [.. await migrating.Database.GetPendingMigrationsAsync(Token)];
+                System.Diagnostics.Stopwatch migration = System.Diagnostics.Stopwatch.StartNew();
+                await migrating.Database.MigrateAsync(Token);
+                migration.Stop();
+                lines.Add(FormattableString.Invariant(
+                    $"migrate up on the seeded inbox: pending=[{string.Join(",", pending)}] took={migration.Elapsed.TotalSeconds:F2}s"));
+            }
 
             await using ControlServerDbContext context = new(options);
             OnboardDispatchFactsReader reader = new(context, Options.Create(new JourneyRuntimeOptions()), new FixedClock(Now));
@@ -326,7 +415,7 @@ public sealed class SafetyStateLatestFirstReadTests
         DbContextOptions<ControlServerDbContext> options, int days, int changeSeconds)
     {
         await using ControlServerDbContext context = new(options);
-        await context.Database.MigrateAsync(Token);
+        await context.GetService<IMigrator>().MigrateAsync("20261011005905_ProtocolInboxReadIndexes", Token);
         string[] vehicles = [AgvId, OtherAgvId, "AGV-03"];
         DateTimeOffset start = Now - TimeSpan.FromDays(days);
         DateTimeOffset overdueAnswerAt = Now - TimeSpan.FromMinutes(10);

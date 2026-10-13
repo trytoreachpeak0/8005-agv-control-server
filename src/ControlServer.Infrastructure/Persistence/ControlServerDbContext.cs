@@ -133,6 +133,10 @@ public sealed class ControlServerDbContext(DbContextOptions<ControlServerDbConte
         // of it (control-server#563, after the MVP's ef5dad8e).
         modelBuilder.Entity<ProtocolInboxRow>().HasIndex(row => row.MessageType);
         modelBuilder.Entity<ProtocolInboxRow>().HasIndex(row => row.ReceivedAtUtcTicks);
+        // One message type newest first, stopping at the row wanted (control-server#597): on MessageType alone SQLite sorts every
+        // row of the type before it answers with the first. The single-column MessageType index stays, so the queries that read a
+        // type whole without an order keep the plan and the row order they have.
+        modelBuilder.Entity<ProtocolInboxRow>().HasIndex(row => new { row.MessageType, row.ReceivedAtUtcTicks });
         modelBuilder.Entity<ProtocolOutboxRow>().HasKey(row => row.MessageId);
         modelBuilder.Entity<StationOperationRow>().HasKey(row => row.SlotOperationAttemptId);
         modelBuilder.Entity<StationOperationRow>().Property(row => row.Status).HasConversion<string>();

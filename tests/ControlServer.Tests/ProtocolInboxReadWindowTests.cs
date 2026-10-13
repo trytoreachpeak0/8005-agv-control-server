@@ -329,7 +329,8 @@ public sealed class ProtocolInboxReadWindowTests
         Assert.Equal(storedText, textDown);
         Assert.Equal(expected.OrderBy(pair => pair.Key), backfilled.OrderBy(pair => pair.Key));
         Assert.Equal(
-            ["IX_ProtocolInbox_MessageType", "IX_ProtocolInbox_ReceivedAtUtcTicks"],
+            // control-server#597 adds the composite one in a later migration, so it is back too after migrating all the way up.
+            ["IX_ProtocolInbox_MessageType", "IX_ProtocolInbox_MessageType_ReceivedAtUtcTicks", "IX_ProtocolInbox_ReceivedAtUtcTicks"],
             (await IndexNamesAsync(fixture)).Where(name => name.StartsWith("IX_ProtocolInbox_", StringComparison.Ordinal)));
     }
 
