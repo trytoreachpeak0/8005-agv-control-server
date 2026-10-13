@@ -68,7 +68,9 @@ public sealed record InTransitDoorVerdict(
 /// <b>Which summary.</b> The one carrying the session row's own generation and <c>SafetyRevision</c>, the rule
 /// <c>OnboardDispatchFactsReader</c> uses and for its reason: the revision orders the vehicle's facts, receive order does not.
 /// Old generations' messages are never deleted from the inbox, so a reader that took "the newest" by receive time alone would
-/// hand a reconnected vehicle's previous doors in as current.
+/// hand a reconnected vehicle's previous doors in as current. Two rows carrying the same generation and revision cannot both be
+/// stored (a second one differs in its line hash and is refused as <c>SNAPSHOT_REVISION_CONTENT_CONFLICT</c>); were there two,
+/// the later received is taken, the dispatch reader's tie rule, and on one tick the one taken before control-server#597.
 /// </para>
 /// <para>
 /// <b>Between a reconnect and its first snapshot, the previous generation's last summary stands</b> -- until it is stale. The
@@ -112,20 +114,33 @@ public static class InTransitDoorFacts
             return new InTransitDoorVerdict(InTransitDoorState.Unobserved, null, null);
         }
 
-        ProtocolInboxRow[] rows = await dbContext.ProtocolInbox.AsNoTracking()
-            .Where(row => row.MessageType == "SafetyStateSnapshot" || row.MessageType == "SafetyStateChanged")
-            .ToArrayAsync(cancellationToken).ConfigureAwait(false);
-        Summary[] summaries = [.. rows.Select(row => Parse(row, agvId)).OfType<Summary>()];
         Summary? fact = null;
         if (session.SafetyRevision is long revision)
         {
-            // The session's own summary. None matching means the row and the inbox disagree, which proves nothing.
-            fact = summaries.FirstOrDefault(summary =>
-                summary.Generation == session.SessionGeneration && summary.Version == revision);
+            // The session's own summary, read newest first and stopped at (control-server#597): this runs every round of every
+            // leg, and used to load and parse every safety message ever received. None matching means the row and the inbox
+            // disagree, which proves nothing.
+            await foreach (ProtocolInboxRow row in SafetyMessagesNewestFirst.Read(dbContext)
+                               .WithCancellation(cancellationToken)
+                               .ConfigureAwait(false))
+            {
+                if (Parse(row, agvId) is { } summary &&
+                    summary.Generation == session.SessionGeneration && summary.Version == revision)
+                {
+                    fact = summary;
+                    break;
+                }
+            }
         }
         else
         {
             // A handshake whose snapshot has not landed: the previous generation's newest summary, judged by its age below.
+            // Still a whole read: "newest" here is by generation and version, which receive order does not bound, and the
+            // window lasts about 100 ms per reconnect.
+            ProtocolInboxRow[] rows = await dbContext.ProtocolInbox.AsNoTracking()
+                .Where(row => row.MessageType == "SafetyStateSnapshot" || row.MessageType == "SafetyStateChanged")
+                .ToArrayAsync(cancellationToken).ConfigureAwait(false);
+            Summary[] summaries = [.. rows.Select(row => Parse(row, agvId)).OfType<Summary>()];
             foreach (Summary summary in summaries.Where(summary => summary.Generation < session.SessionGeneration))
             {
                 if (Newer(summary, fact))

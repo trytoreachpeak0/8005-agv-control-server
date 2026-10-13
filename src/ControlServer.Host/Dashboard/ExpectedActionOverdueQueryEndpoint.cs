@@ -222,29 +222,34 @@ internal sealed class ExpectedActionOverdueQueryEndpoint : IDashboardQueryEndpoi
     /// <remarks>
     /// 「最近」按 <c>safetyStateVersion</c> 比：同一会话里它单调前进（中途快照取下一个版本，hmi#109），不依赖任何一端的时钟。
     /// 只认会话行上那一代；上一代的读数再新也不替这一代说话。
+    /// <para>
+    /// 从新到旧读，能证明后面不会再改变结果时就停（control-server#597）：此前每两秒把所有车、所有代的安全状态消息整类读回逐行解析。
+    /// 停的条件不靠收件次序：同一会话里每个版本号至多一行（版本号相同而整行哈希不同按 <c>SNAPSHOT_REVISION_CONTENT_CONFLICT</c> 拒收，
+    /// 拒收的不入库），所以已读到的最高版本快照是 S、而 S 之后到会话行版本 R 的每个版本号都已读到时，还没读的行版本号要么不大于 S
+    /// （不是更新的快照，也不算 S 之后的变化），要么大于 R——那只能是读完会话行之后才到的，今天整类读回时也看不看得到全凭先后。
+    /// 版本号有缺口、或会话行没有版本号时停不下来，就读到底，结果与此前一样。
+    /// </para>
     /// </remarks>
     private static async Task<SafetyReadings> SafetyReadingsAsync(
         ControlServerDbContext dbContext, string agvId, CancellationToken cancellationToken)
     {
-        long? generation = await dbContext.SessionRecoveries.AsNoTracking()
+        var sessionRow = await dbContext.SessionRecoveries.AsNoTracking()
             .Where(row => row.AgvId == agvId)
-            .Select(row => (long?)row.SessionGeneration)
+            .Select(row => new { row.SessionGeneration, row.SafetyRevision })
             .FirstOrDefaultAsync(cancellationToken);
-        if (generation is null)
+        if (sessionRow is null)
         {
             return SafetyReadings.None;
         }
-        string[] rows = await dbContext.ProtocolInbox.AsNoTracking()
-            .Where(row => row.MessageType == "SafetyStateSnapshot" || row.MessageType == "SafetyStateChanged")
-            .Select(row => row.RequestJson)
-            .ToArrayAsync(cancellationToken);
+        long generation = sessionRow.SessionGeneration;
 
         JsonElement? latestSnapshot = null;
         long latestVersion = long.MinValue;
         List<(long Version, int[] Slots)> changes = [];
-        foreach (string json in rows)
+        VersionCoverage coverage = new(sessionRow.SafetyRevision);
+        await foreach (ProtocolInboxRow row in SafetyMessagesNewestFirst.Read(dbContext).WithCancellation(cancellationToken))
         {
-            using JsonDocument document = JsonDocument.Parse(json);
+            using JsonDocument document = JsonDocument.Parse(row.RequestJson);
             JsonElement root = document.RootElement;
             if (!root.TryGetProperty("agvId", out JsonElement agv) || agv.GetString() != agvId
                 || !root.TryGetProperty("sessionGeneration", out JsonElement session)
@@ -269,10 +274,46 @@ internal sealed class ExpectedActionOverdueQueryEndpoint : IDashboardQueryEndpoi
                     .Where(item => item.ValueKind == JsonValueKind.Number)
                     .Select(item => item.GetInt32())]));
             }
+            coverage.Saw(version);
+            if (latestSnapshot is not null && coverage.CompleteAfter(latestVersion))
+            {
+                break;
+            }
         }
         return latestSnapshot is JsonElement snapshot
             ? new SafetyReadings(snapshot, latestVersion, changes)
             : SafetyReadings.None;
+    }
+
+    /// <summary>
+    /// 这一代会话里读到过哪些版本号，用来判「最高版本快照之后到会话行版本之间的每一个版本号都读到了」（control-server#597）。
+    /// </summary>
+    private sealed class VersionCoverage(long? sessionRevision)
+    {
+        private readonly HashSet<long> seen = [];
+
+        // Every version from the snapshot's next one up to just below this has been seen. The snapshot version only rises, and
+        // a version once seen stays seen, so the check resumes here instead of walking the range again for every row.
+        private long firstUnseen = long.MinValue;
+
+        public void Saw(long version) => seen.Add(version);
+
+        /// <summary>
+        /// <paramref name="snapshotVersion"/> 之后、直到会话行版本号的每一个版本号都已读到。会话行没有版本号时答否，读到底。
+        /// </summary>
+        public bool CompleteAfter(long snapshotVersion)
+        {
+            if (sessionRevision is not long revision)
+            {
+                return false;
+            }
+            firstUnseen = Math.Max(firstUnseen, snapshotVersion + 1);
+            while (firstUnseen <= revision && seen.Contains(firstUnseen))
+            {
+                firstUnseen++;
+            }
+            return firstUnseen > revision;
+        }
     }
 
     private sealed class SafetyReadings(JsonElement? snapshot, long version, IReadOnlyList<(long Version, int[] Slots)> changes)
