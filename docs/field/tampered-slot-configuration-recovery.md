@@ -19,9 +19,21 @@
 车是在线的——会话照建，只是拿不到业务就绪、不会被派活。这是 2026-09-10 定的形状：指纹不符不再把车挡在会话之外，
 否则连下面这些远程步骤都做不了。
 
-## 二、动手之前确认两件事
+## 二、动手之前确认三件事
 
-**1. 服务端没有这台车待补报的激活。**
+**1. 服务端的库不是 #44 之前的旧库。**
+
+```sql
+SELECT Fingerprint FROM ActiveSlotConfigurations WHERE AgvId = '<agvId>';
+```
+
+应当是 `3710b98b136300884ef292af951a25a6e2021b87ab53d140880970dc32873314`（已批准八仓事实按票据 35 逐信号极性算出的指纹）。
+如果是 `de93ca3d9eda7b619dd3ea2e8824f8592a3471b11ff723eba3dbc12ea6f69da9`，说明库里的已批准事实还是 #44 之前笼统的
+`ACTIVE_HIGH`——这个库是在新包部署时本该换掉、却没换的旧库。已发布的已批准事实不可改写，车这边怎么改都对不上：
+**不要动车**，按 [program#170](https://github.com/trytoreachpeak0/8005-agv-program/issues/170) 的流程换库
+（换库时连车载端日志簿一起清，车改连新库前先清发件箱），换完再回到本节。
+
+**2. 服务端没有这台车待补报的激活。**
 
 ```sql
 SELECT ActivationId, State, IssuedAt FROM SlotConfigurationActivations
@@ -32,7 +44,7 @@ WHERE AgvId = '<agvId>' AND State = 'PENDING_RESULT';
 `SLOT_CONFIGURATION` 重发一条还没结的命令时，车正是靠那份历史认出「这一次已经有结论」、原样补报而不重新激活。
 有待补报的激活就先让它收敛（车在线时它会自己收敛），不要在它中间移文件。
 
-**2. 车上 `appsettings.json` 的 `ioModule.slots` 仍是已批准的那一份。**
+**3. 车上 `appsettings.json` 的 `ioModule.slots` 仍是已批准的那一份。**
 
 文档不存在时，车就从这里生成初值。已批准的八仓硬件事实（REQ-0267）是：`doChannel` 0～7、`lockFeedbackDiChannel`
 0～7、`lightCurtainDiChannel` 8～15（渲染成 `DO1～DO8`／`DI1～DI8`／`DI9～DI16`），`signalPolarity` 为
@@ -72,7 +84,7 @@ JSON 很容易改出一个与已批准事实差一位的版本；而「文档不
 生效配置版本号会和服务端对不上（车上是 `appsettings.json` 里的 `activeSlotConfigurationVersion`，服务端是上一次
 激活记下的版本）。**就绪判定只比指纹，不比版本号**，所以这不影响恢复；下一次正常激活之后两边的版本号自然重新一致。
 
-如果恢复之后仍是 `SLOT_CONFIGURATION_FINGERPRINT_MISMATCH`：车生成出来的仍不是已批准那一版，回到第二节第 2 条。
+如果恢复之后仍是 `SLOT_CONFIGURATION_FINGERPRINT_MISMATCH`：先回到第二节第 1 条，确认服务端的库不是旧库；库没问题，就是车生成出来的仍不是已批准那一版，回到第二节第 3 条。
 
 ## 五、这条路径还欠一份证据
 
