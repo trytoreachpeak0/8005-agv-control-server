@@ -973,6 +973,16 @@ function Test-ParallelInstanceDefinition {
             $failures += "journeyRuntime.admissionPolicyVersion must be a positive JSON integer, got '$($journey['admissionPolicyVersion'])'."
         }
 
+        # control-server#609. Left out, the overlay writes nothing and the Host falls back to the package's appsettings.json:
+        # five minutes from #609 on, but thirty in every older package, so a rollback would quietly restore the value the user
+        # ruled out on 2026-10-11. hh:mm:ss for the reason ConvertTo-ParallelCatalogSpan gives ("30" binds as thirty days).
+        # No upper bound here: whether to refuse more than five minutes is the coordinator's decision (#609 proposal).
+        if (-not (Test-KeyPresent -Node $journey -Key 'cargoHoldingTimeout')) {
+            $failures += 'journeyRuntime.cargoHoldingTimeout must be set explicitly; left out, the package default applies, which is thirty minutes in any package older than control-server#609.'
+        } elseif ($null -eq ($holdingSpan = ConvertTo-ParallelCatalogSpan $journey['cargoHoldingTimeout']) -or $holdingSpan -le [timespan]::Zero) {
+            $failures += "journeyRuntime.cargoHoldingTimeout must be a positive string hh:mm:ss, got '$($journey['cargoHoldingTimeout'])'."
+        }
+
         # @() for the same reason as in Assert-: a function returning an empty array returns
         # nothing, and += against an unwrapped result is where a stray $null element comes from.
         $failures += @(Test-VehicleIdentity -Journey $journey)

@@ -227,18 +227,20 @@ public sealed class JourneyRuntimeOptionsTests
     }
 
     /// <summary>
-    /// 持货超时（ADR-cross-0057，批次 7 建表票 control-server#206）：默认 30 分钟、必须为正，出厂配置写明这一项。
+    /// 持货超时（ADR-cross-0057，批次 7 建表票 control-server#206）：默认 5 分钟（用户 2026-10-11 定的生产上限，原为 30 分钟，control-server#609）、必须为正，出厂配置写明这一项。
     /// 读它的是装货阶段（批次7-07，control-server#212，<c>JourneyRuntimeEngine.ReconcileLoadingPhaseAsync</c>）。
     /// </summary>
     [Fact]
-    public void CargoHoldingTimeoutDefaultsToThirtyMinutesMustBePositiveAndIsShippedInAppSettings()
+    public void CargoHoldingTimeoutDefaultsToFiveMinutesMustBePositiveAndIsShippedInAppSettings()
     {
         const string failure = "CargoHoldingTimeout must be positive.";
-        Assert.Equal(TimeSpan.FromMinutes(30), new JourneyRuntimeOptions().CargoHoldingTimeout);
+        Assert.Equal(TimeSpan.FromMinutes(5), new JourneyRuntimeOptions().CargoHoldingTimeout);
         JourneyRuntimeOptionsValidator validator = new(new ConfigurationBuilder().Build());
         JourneyRuntimeOptions options = ValidEnabledOptions();
 
-        foreach (TimeSpan accepted in new[] { TimeSpan.FromSeconds(1), TimeSpan.FromSeconds(40), TimeSpan.FromMinutes(30) })
+        // Thirty minutes is still accepted: the product has no upper bound (control-server#609 proposes one for the
+        // coordinator to decide); the five-minute ceiling is held by the instance definitions and Test-ParallelInstance.ps1.
+        foreach (TimeSpan accepted in new[] { TimeSpan.FromSeconds(1), TimeSpan.FromSeconds(40), TimeSpan.FromMinutes(5), TimeSpan.FromMinutes(30) })
         {
             options.CargoHoldingTimeout = accepted;
             Assert.DoesNotContain(failure, validator.Validate(null, options).Failures ?? [], StringComparer.Ordinal);
@@ -252,8 +254,8 @@ public sealed class JourneyRuntimeOptionsTests
         IConfiguration shipped = new ConfigurationBuilder()
             .AddJsonFile(Path.Combine(RepositoryRoot(), "src", "ControlServer.Host", "appsettings.json"), optional: false)
             .Build();
-        Assert.Equal("00:30:00", shipped["JourneyRuntime:cargoHoldingTimeout"]);
-        Assert.Equal(TimeSpan.FromMinutes(30), shipped.GetSection("JourneyRuntime").Get<JourneyRuntimeOptions>()!.CargoHoldingTimeout);
+        Assert.Equal("00:05:00", shipped["JourneyRuntime:cargoHoldingTimeout"]);
+        Assert.Equal(TimeSpan.FromMinutes(5), shipped.GetSection("JourneyRuntime").Get<JourneyRuntimeOptions>()!.CargoHoldingTimeout);
     }
 
     [Fact]
