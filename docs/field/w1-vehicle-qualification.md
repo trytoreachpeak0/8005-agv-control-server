@@ -30,8 +30,12 @@ tools\ControlServer.FieldOps\bin\Release\net8.0\win-x64\ControlServer.FieldOps.e
 ```
 
 三台车各跑一次 `bind-io`。录进去的是 REQ-0267 的**已批准**八仓事实（DO1–DO8 开锁、DI1–DI8 锁反馈、
-DI9–DI16 仓内光幕、500 ms、ACTIVE_HIGH），不是现场手抄的一份——车上报的声明只被核验、永远不被采信
-为权威（REQ-0258），所以没有「从车上读回来填进去」这条路。
+DI9–DI16 仓内光幕、500 ms，极性按票据 35 逐个信号写明：开锁写 1、锁闭为 1、光幕有物为 0），不是现场手抄的
+一份——车上报的声明只被核验、永远不被采信为权威（REQ-0258），所以没有「从车上读回来填进去」这条路。
+
+极性这一项曾是笼统的 `ACTIVE_HIGH`，对光幕是错的。生产库按 W1 工具分支 `feat/w1-unattended` 的 `240352e5`
+之后构建的 FieldOps seed，已经是逐信号值；v2 线在 [#44](https://github.com/trytoreachpeak0/8005-agv-control-server/issues/44)
+对齐到同一串。**在任何库上 seed 都必须用含这次改动的 FieldOps**，已 seed 成 `ACTIVE_HIGH` 的库改不动，只能换新库。
 
 先看一眼三台车此刻的判定：
 
