@@ -158,6 +158,14 @@ jobs:
         shell: pwsh
         run: pwsh -NoProfile -File ./scripts/l2/Test-G3ForcedRecoveryEntry.ps1
 
+      # About ten seconds, most of them deliberate pauses, no window. The screen-state switch is off on every run CI makes,
+      # so no real-rig round, green or red, would notice it starting to change the staged onboard settings or the
+      # timeline when off -- or a pause point that no longer names a criterion of its scenario, which on the rig reads as
+      # a run that simply had no pause (control-server#653).
+      - name: L2 scenario self-check (screen-state snapshot and pauses)
+        shell: pwsh
+        run: pwsh -NoProfile -File ./scripts/l2/Test-L2ScreenState.ps1
+
       # A few seconds (about 5 on the control host), no rig, no window, no database: the journey G3 rig's UI Automation reads
       # against a stand-in onboard and the scenarios' own AST -- sublot entry and the onboard refusals it must recognise,
       # the held readings of g3-waiting-point-idle-return (G3-12-03, G3-12-07) and g3-automatic-charging-cycle's charger
