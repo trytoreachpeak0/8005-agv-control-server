@@ -333,6 +333,11 @@ public sealed class SafetyStateLatestFirstReadTests
     /// 真车频率的依据：agv01 真车、真 RIoT 的端到端闭环（<c>evidence/g3/20260829-closed-loop-gen3/SUMMARY.md</c>）全程 1 分 58 秒，
     /// 车发了 17 条 <c>SafetyStateChanged</c>，约 7 秒一条。拿 7 秒当全天的频率是上界：车不会全天在作业。
     /// </para>
+    /// <para>
+    /// <c>CS597_MEASURE_SILENT_HOURS</c>（缺省 0）让 AGV-01 最后这么多小时不再发任何消息、会话行仍 Ready：派车摘要这时要从此刻一路读回到它
+    /// 最后那一条，是新读法最坏的形状。造数先停在 #563 的迁移，造完再 <c>MigrateAsync</c>，记建索引耗时；另记绕过文件缓存顺序读一遍库文件的
+    /// 耗时，供估算冷缓存下的建索引时间；再记几条未改动的单类型读法在这一版索引下的计划。
+    /// </para>
     /// </remarks>
     [Fact(Explicit = true)]
     public async Task MeasureSafetyStateReads()
@@ -341,6 +346,9 @@ public sealed class SafetyStateLatestFirstReadTests
         int changeSeconds = int.TryParse(Environment.GetEnvironmentVariable("CS597_MEASURE_CHANGE_SECONDS"), out int parsedSeconds)
             ? parsedSeconds
             : 600;
+        int silentHours = int.TryParse(Environment.GetEnvironmentVariable("CS597_MEASURE_SILENT_HOURS"), out int parsedSilent)
+            ? parsedSilent
+            : 0;
         string output = Environment.GetEnvironmentVariable("CS597_MEASURE_OUT") ?? Path.Combine(Path.GetTempPath(), "cs597-measure.txt");
         string databasePath = Path.Combine(
             Environment.GetEnvironmentVariable("CS597_MEASURE_DIR") ?? Path.GetTempPath(), $"cs597-measure-{Guid.NewGuid():N}.db");
@@ -353,10 +361,10 @@ public sealed class SafetyStateLatestFirstReadTests
         try
         {
             System.Diagnostics.Stopwatch seeding = System.Diagnostics.Stopwatch.StartNew();
-            (long rows, long safetyRows, Dictionary<string, long> revisions) = await SeedMeasurementInboxAsync(options, days, changeSeconds);
+            (long rows, long safetyRows, Dictionary<string, long> revisions) = await SeedMeasurementInboxAsync(options, days, changeSeconds, silentHours);
             seeding.Stop();
             lines.Add(FormattableString.Invariant(
-                $"inbox rows={rows} safetyRows={safetyRows} days={days} changeSeconds={changeSeconds} vehicles=3 seed={seeding.Elapsed.TotalSeconds:F1}s db={new FileInfo(databasePath).Length / 1024 / 1024}MiB"));
+                $"inbox rows={rows} safetyRows={safetyRows} days={days} changeSeconds={changeSeconds} agv01SilentHours={silentHours} vehicles=3 seed={seeding.Elapsed.TotalSeconds:F1}s db={new FileInfo(databasePath).Length / 1024 / 1024}MiB"));
             // The inbox was seeded on the schema #563 left; what the build under test adds on top is migrated now, on the full
             // inbox, the way the Host does it as it starts (control-server#597 adds an index there; before it nothing is pending).
             await using (ControlServerDbContext migrating = new(options))
@@ -366,7 +374,45 @@ public sealed class SafetyStateLatestFirstReadTests
                 await migrating.Database.MigrateAsync(Token);
                 migration.Stop();
                 lines.Add(FormattableString.Invariant(
-                    $"migrate up on the seeded inbox: pending=[{string.Join(",", pending)}] took={migration.Elapsed.TotalSeconds:F2}s"));
+                    $"migrate up on the seeded inbox (file cache warm: the seed just wrote it): pending=[{string.Join(",", pending)}] took={migration.Elapsed.TotalSeconds:F2}s"));
+            }
+            SqliteConnection.ClearAllPools();
+            // Building the index reads the whole table once. What a cold cache adds on top of the warm build is about reading the
+            // file from disk, so read it once bypassing the file cache and report the rate (review M1).
+            (long bytes, double seconds) = ReadBypassingFileCache(databasePath);
+            lines.Add(FormattableString.Invariant(
+                $"uncached sequential read of the database file: {bytes / 1024 / 1024}MiB in {seconds:F2}s ({bytes / 1024d / 1024d / seconds:F0}MiB/s)"));
+            await using (ControlServerDbContext probing = new(options))
+            {
+                // Plans of reads by one type that this ticket does not touch, on this build's indexes (review L4).
+                (string Label, string Sql)[] probes =
+                [
+                    ("CapabilitySnapshot by type",
+                        probing.ProtocolInbox.Where(row => row.MessageType == "CapabilitySnapshot").ToQueryString()),
+                    ("SafetyStateSnapshot by type",
+                        probing.ProtocolInbox.Where(row => row.MessageType == "SafetyStateSnapshot").ToQueryString()),
+                    ("SublotSubmitted by type and text", probing.ProtocolInbox
+                        .Where(row => row.MessageType == "SublotSubmitted" && row.RequestJson.Contains("op-AGV-01-0")).ToQueryString()),
+                    ("both safety types, no order (the read before this ticket)", probing.ProtocolInbox
+                        .Where(row => row.MessageType == "SafetyStateSnapshot" || row.MessageType == "SafetyStateChanged").ToQueryString()),
+                ];
+                await probing.Database.OpenConnectionAsync(Token);
+                foreach ((string label, string sql) in probes)
+                {
+                    await using System.Data.Common.DbCommand explain = probing.Database.GetDbConnection().CreateCommand();
+                    // ToQueryString prefixes parameter declarations (".param set ..."); the plan wants the statement alone.
+                    explain.CommandText = "EXPLAIN QUERY PLAN " + string.Join(
+                        "\n", sql.Split('\n').Where(line => !line.StartsWith(".param", StringComparison.Ordinal)));
+                    List<string> plan = [];
+                    await using (System.Data.Common.DbDataReader planReader = await explain.ExecuteReaderAsync(Token))
+                    {
+                        while (await planReader.ReadAsync(Token))
+                        {
+                            plan.Add(planReader.GetString(3));
+                        }
+                    }
+                    lines.Add($"plan {label}: {string.Join(" | ", plan)}");
+                }
             }
 
             await using ControlServerDbContext context = new(options);
@@ -415,14 +461,43 @@ public sealed class SafetyStateLatestFirstReadTests
 
     private const long MeasurementGeneration = 3;
 
+    /// <summary>Reads the whole file once with <c>FILE_FLAG_NO_BUFFERING</c>, so from disk rather than from the file cache.</summary>
+    private static (long Bytes, double Seconds) ReadBypassingFileCache(string path)
+    {
+        const FileOptions noBuffering = (FileOptions)0x20000000;
+        const int chunk = 4 * 1024 * 1024;
+        byte[] buffer = GC.AllocateUninitializedArray<byte>(chunk + 4096, pinned: true);
+        long address = System.Runtime.InteropServices.Marshal.UnsafeAddrOfPinnedArrayElement(buffer, 0).ToInt64();
+        int offset = (int)((4096 - (address % 4096)) % 4096);
+        using Microsoft.Win32.SafeHandles.SafeFileHandle handle =
+            File.OpenHandle(path, FileMode.Open, FileAccess.Read, FileShare.ReadWrite, noBuffering);
+        long total = 0;
+        System.Diagnostics.Stopwatch watch = System.Diagnostics.Stopwatch.StartNew();
+        while (true)
+        {
+            int read = RandomAccess.Read(handle, buffer.AsSpan(offset, chunk), total);
+            if (read == 0)
+            {
+                break;
+            }
+            total += read;
+        }
+        watch.Stop();
+        return (total, watch.Elapsed.TotalSeconds);
+    }
+
     private static async Task<(long Rows, long SafetyRows, Dictionary<string, long> Revisions)> SeedMeasurementInboxAsync(
-        DbContextOptions<ControlServerDbContext> options, int days, int changeSeconds)
+        DbContextOptions<ControlServerDbContext> options, int days, int changeSeconds, int silentHours)
     {
         await using ControlServerDbContext context = new(options);
         await context.GetService<IMigrator>().MigrateAsync("20261011005905_ProtocolInboxReadIndexes", Token);
         string[] vehicles = [AgvId, OtherAgvId, "AGV-03"];
         DateTimeOffset start = Now - TimeSpan.FromDays(days);
         DateTimeOffset overdueAnswerAt = Now - TimeSpan.FromMinutes(10);
+        // A silent AGV-01 sends nothing after the cutoff and its session row stays Ready on the last version it sent, as a
+        // dropped link leaves it: the dispatch summary then reads back through every other vehicle's safety messages since.
+        DateTimeOffset silentFrom = Now - TimeSpan.FromHours(silentHours);
+        bool Sends(string vehicle, DateTimeOffset at) => vehicle != AgvId || silentHours == 0 || at <= silentFrom;
         long count = 0;
         long safetyCount = 0;
         Dictionary<string, long> revisions = [];
@@ -459,6 +534,10 @@ public sealed class SafetyStateLatestFirstReadTests
             bool answered = vehicle != AgvId;
             for (DateTimeOffset at = start + TimeSpan.FromSeconds(changeSeconds - index); at < Now; at += TimeSpan.FromSeconds(changeSeconds))
             {
+                if (!Sends(vehicle, at))
+                {
+                    break;
+                }
                 version++;
                 string type = "SafetyStateChanged";
                 if (!answered && at >= overdueAnswerAt)
@@ -489,7 +568,7 @@ public sealed class SafetyStateLatestFirstReadTests
         }
         for (DateTimeOffset at = start + TimeSpan.FromSeconds(1); at < Now; at += TimeSpan.FromSeconds(2))
         {
-            foreach (string vehicle in vehicles)
+            foreach (string vehicle in vehicles.Where(vehicle => Sends(vehicle, at)))
             {
                 batch.Add(ProtocolInboxReadWindowTests.HeardFrom(vehicle, MeasurementGeneration, at));
             }
