@@ -1,0 +1,23 @@
+commit: 45c0f7125367b60dcdc70afac1b82b57331e5d32
+cmd: pwsh -File scripts/parallel/Test-ParallelInstance.ps1 -AreaAssignmentPath <N>,<T>
+  PASS  catalog: the cutover definition carries the same approved pair, and is refused for exactly the two guards control-server#564 opens
+  PASS  admission version: instance-factory01-v2.cutover-two-zones.json, first install, reads back the definition's 6
+  PASS  admission version: instance-factory01-v2.cutover-two-zones.json, over a file at 5, reads back the definition's 6
+  PASS  admission version: instance-factory01-v2.cutover-two-zones.json, over a file at 7, reads back the definition's 6
+Cutover definition: two dispatch zones, three dedicated cars (control-server#669)
+  PASS  cutover: allowedDispatchZones is exactly [WIRE_BONDING, DIE_ATTACH], dispatchZone is one of them, WIRE is gone
+  PASS  cutover: every car serves at least one zone, every zone it serves is allowed, and every allowed zone is served
+  PASS  cutover: the roster is exactly agv01, agv02, agv03 with the registry identities, in that order
+  PASS  cutover: each car carries exactly the task types and zones the user assigned it
+  PASS  cutover: dedicated -- every allowed work type is served by exactly one car, and no car takes a type outside allowedWorkTypes
+  PASS  cutover: everything but the roster, the zones and the work types equals the production-mes definition
+  PASS  cutover: the definitions the instance runs today still say WIRE (the zones change only with the new database)
+  PASS  cutover area tables: an N table and a T table, one zone each -- agree
+  PASS  cutover area tables: one table naming both zones (CRLF) -- agree
+  PASS  cutover area tables: the old zone WIRE in the N table
+  PASS  cutover area tables: no T table: DIE_ATTACH served by agv03 and routed nothing
+  PASS  cutover area tables: a zone differing only in case
+  PASS  cutover area tables: a header that is not the importer's
+  PASS  cutover area tables: a row of four fields
+  PASS  cutover area tables, the given files: C:/Users/szy/Desktop/8005-workspace-v2/field-prep/area-assignments-N-WIRE_BONDING.csv, C:/Users/szy/Desktop/8005-workspace-v2/field-prep/area-assignments-T-DIE_ATTACH.csv
+844 passed, 0 failed
