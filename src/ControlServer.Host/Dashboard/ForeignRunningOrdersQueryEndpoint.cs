@@ -115,7 +115,7 @@ internal sealed class ForeignRunningOrdersQueryEndpoint : IDashboardQueryEndpoin
                 + "请到 RIoT 按订单号把这张旧单结束，再到车前核对车停在哪里、货在不在；不用去找外部建单人。它终结后这一行自动消失",
             [ForeignRunningOrders.UnsettledReason] =
                 "这是本服务端自己建了、判作没建成的搬运单。它已不在 RIoT 的运行列表里，但按订单号回查读不到它已终结：服务端只认明确终结才放车，"
-                + "这辆车一直不接新单、不接途中追加。请到 RIoT 按订单号核对这张单的状态；在 RIoT 里把它结束后这一行自动消失",
+                + "这辆车一直不接新单、不接途中追加。请到 RIoT 按订单号核对这张单的状态；在 RIoT 里把它结束后这一行自动消失。" + ManualReleaseHint,
         };
 
     /// <summary>
