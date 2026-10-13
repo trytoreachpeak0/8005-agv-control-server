@@ -138,6 +138,13 @@ public static class ForeignRiotOrderStates
     public const string Ended = "ENDED";
 
     /// <summary>
+    /// Released by a named R-11/R-13 person through the governed entry (control-server#617), from <see cref="Unsettled"/> only, once
+    /// RIoT read again no longer lists it unfinished and its own read is no unfinished state. The vehicle is no longer held for
+    /// it. Kept like <see cref="Ended"/>: found running on ours again, it is taken up again.
+    /// </summary>
+    public const string ReleasedByOperator = "RELEASED_BY_OPERATOR";
+
+    /// <summary>
     /// No longer running on this vehicle and not explicitly ended: nothing is sent to an order that is not on a vehicle of
     /// ours, and the vehicle is no longer held for it. Found running on ours again, it is taken up again -- without a second
     /// cancel if one already went out.

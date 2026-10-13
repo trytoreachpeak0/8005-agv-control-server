@@ -1,0 +1,35 @@
+# control-server，提交 28319b441 的工作树（合入 fp/v2-impl e53a94e5 之后），SDK 8.0.425，VSTest --filter
+dotnet test tests/ControlServer.Tests --filter "FullyQualifiedName~ForeignRunningOrder|FullyQualifiedName~StationExclusivityReleaseEndpointsTests|FullyQualifiedName~ArchitectureTests|FullyQualifiedName~HttpRiotMovementGatewayTests|FullyQualifiedName~RiotSdkPackageProvenanceTests|FullyQualifiedName~IdleReturnExecutionTests|FullyQualifiedName~HttpRiotFailureDetailTests|FullyQualifiedName~AbandonedLateOrder"
+Passed!  - Failed:     0, Passed:   410, Skipped:     0, Total:   410, Duration: 56 s - ControlServer.Tests.dll (net8.0)
+
+dotnet build ControlServer.sln
+Build succeeded.
+    0 Warning(s)
+
+# riot-sdk，提交 62a827d（fix/cs617-detail-by-order-id-without-upper-id），全量
+dotnet test csharp/RIoT.Sdk.Tests
+Passed!  - Failed:     0, Passed:   256, Skipped:     0, Total:   256, Duration: 18 s - RIoT.Sdk.Tests.dll (net8.0)
+python -m pytest -q   (python/，临时 venv，pip install -e ".[dev]")
+162 passed, 1 skipped, 175 warnings in 17.49s
+# 计数核对：C# 原 246 + 新 10 = 256；Python 原 153 + 新 9 = 162（1 skipped 是要 RIOT_SMOKE=1 的冒烟用例）
+
+# 审查第一阶段跟改之后（M1 独立开关、S1、S2、L1、L3），同一工作树，提交前
+dotnet test tests/ControlServer.Tests --filter "FullyQualifiedName~ForeignRunningOrder|FullyQualifiedName~StationExclusivityReleaseEndpointsTests|FullyQualifiedName~ArchitectureTests|FullyQualifiedName~HttpRiotMovementGatewayTests|FullyQualifiedName~RiotSdkPackageProvenanceTests|FullyQualifiedName~IdleReturnExecutionTests|FullyQualifiedName~HttpRiotFailureDetailTests|FullyQualifiedName~AbandonedLateOrder|FullyQualifiedName~VehicleFaultRecovery|FullyQualifiedName~WaitingPointArrival"
+Passed!  - Failed:     0, Passed:   509, Skipped:     0, Total:   509, Duration: 1 m 22 s - ControlServer.Tests.dll (net8.0)
+
+pwsh -NoProfile -File scripts/parallel/Test-ParallelInstance.ps1
+836 passed, 0 failed
+# 第一次跑 832 passed、4 failed：都是 10-07 实装定义（没有新节）在停止方向被拒；照 taskTypeStations 的先例在 -ForStopDirection 下容忍缺节后，
+# 剩 1 条是控制台换行把拒绝句折断、子串匹配落空（多了一条拒绝原因，折行位置移进了那句话），改为去掉颜色码与换行后再匹配。
+
+dotnet build ControlServer.sln
+Build succeeded.
+    0 Warning(s)
+
+# 增量审查跟改之后（S-1 启动告警与 EFFECTIVE_CONFIGURATION、L-1 回读为空记 Unknown、L-4 停止方向写错一节的用例）
+dotnet test tests/ControlServer.Tests --filter "...上一组...|FullyQualifiedName~ParallelInstanceEffectiveConfigurationTests"
+Passed!  - Failed:     0, Passed:   560, Skipped:     0, Total:   560, Duration: 1 m 30 s - ControlServer.Tests.dll (net8.0)
+（之后启动告警事件号由 2234 改为 2235：cs#673 的工作树已占 2234；ForeignRunningOrderManualReleaseTests 重跑 50 passed）
+pwsh -NoProfile -File scripts/parallel/Test-ParallelInstance.ps1
+840 passed, 0 failed
+dotnet build ControlServer.sln：0 警告

@@ -49,6 +49,8 @@ builder.Services.AddScoped<JourneyRuntimeEngine>();
 // control-server#391: the fixed task station sweep's warnings are raised once and cleared once across rounds.
 builder.Services.AddSingleton<FixedStationSweepWarnings>();
 builder.Services.AddScoped<ForeignRunningOrderSupervisor>();
+// control-server#617: the governed way out of a foreign order that left RIoT's running listing unread as ended.
+builder.Services.AddScoped<ForeignRunningOrderManualRelease>();
 builder.Services.AddDispatchAdmission();
 builder.Services.AddOptions<RouteGraphOptions>()
     .Bind(builder.Configuration.GetSection(RouteGraphOptions.SectionName))
@@ -127,6 +129,8 @@ builder.Services.AddHostedService<JourneyRuntimeWorker>();
 builder.Services.AddSingleton(TimeProvider.System);
 builder.Services.AddRiotCreateDispatchGate(builder.Configuration);
 builder.Services.AddRiotForeignOrderCancelGate(builder.Configuration);
+builder.Services.AddOptions<ForeignRunningOrderReleaseOptions>()
+    .Bind(builder.Configuration.GetSection(ForeignRunningOrderReleaseOptions.SectionName));
 builder.Services.AddRiotAbsentAtObservationCreateExperiment(builder.Configuration);
 // Read and checked here, at startup, rather than on the first request that creates a client.
 TimeSpan mesIngestTimeout = MesIngestReads.Timeout(builder.Configuration);
@@ -198,8 +202,14 @@ app.UseSerilogRequestLogging();
 app.Lifetime.ApplicationStarted.Register(() =>
 {
     JourneyRuntimeOptions effective = app.Services.GetRequiredService<IOptions<JourneyRuntimeOptions>>().Value;
+    // control-server#617 incremental review S-1: an entry on without its credential is warned about here, never refused.
+    ForeignRunningOrderReleaseState release = ForeignRunningOrderReleaseStartup.Check(
+        app.Logger,
+        app.Services.GetRequiredService<IOptions<ForeignRunningOrderReleaseOptions>>().Value,
+        app.Services.GetRequiredService<IOptions<VehicleFaultRecoveryOptions>>().Value,
+        Environment.GetEnvironmentVariable);
     MapStationCatalogOptions catalog = app.Services.GetRequiredService<IOptions<MapStationCatalogOptions>>().Value;
-    EffectiveConfigurationEvent.Log(app.Logger, effective, catalog, app.Configuration["MesIngest:baseUrl"] ?? "http://127.0.0.1:5088");
+    EffectiveConfigurationEvent.Log(app.Logger, effective, catalog, app.Configuration["MesIngest:baseUrl"] ?? "http://127.0.0.1:5088", release);
 });
 
 // control-server#473：数据库一碰之前先拿与库文件绑定的锁，进程活着就一直不放；另一个进程（另一个服务端实例、正在直接写库的
@@ -327,6 +337,8 @@ app.MapSlotFaultDeclarationWhenEnabled();
 // 默认不挂。control-server#299 的故障人工清除：这个入口会清掉一台车的故障、把它的需求交回改派，要现场明确打开才提供；
 // control-server#419 的站点独占人工释放同一把凭据、同一个开关。
 app.MapVehicleFaultRecoveryEntriesWhenEnabled();
+// control-server#617 (review M1): on its own switch, not fault recovery's.
+app.MapForeignRunningOrderManualReleaseWhenEnabled();
 // 批次9-08（control-server#406）：充电桩的维修暂停（总是挂）、恢复确认与人工清桩（与上面同一个开关、同一把凭据）。
 app.MapChargingStationEntries();
 app.MapDashboardQueries();

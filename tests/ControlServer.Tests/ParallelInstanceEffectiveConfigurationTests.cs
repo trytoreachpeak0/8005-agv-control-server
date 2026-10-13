@@ -572,7 +572,8 @@ public sealed class ParallelInstanceEffectiveConfigurationTests
             new MapStationCatalogOptions { ApprovedSyncPeriod = TimeSpan.FromSeconds(30), ApprovedMaxUnconfirmed = TimeSpan.FromMinutes(5) }));
         using JsonDocument unset = JsonDocument.Parse(RenderEvent(options, "http://127.0.0.1:58188", new MapStationCatalogOptions()));
 
-        Assert.EndsWith(" mapStationCatalog={MapStationCatalog}", approved.RootElement.GetProperty("@mt").GetString(), StringComparison.Ordinal);
+        // No longer the last field since control-server#617 appended the release entry.
+        Assert.Contains(" mapStationCatalog={MapStationCatalog}", approved.RootElement.GetProperty("@mt").GetString(), StringComparison.Ordinal);
         JsonElement logged = approved.RootElement.GetProperty("MapStationCatalog");
         Assert.Equal(["ApprovedSyncPeriod", "ApprovedMaxUnconfirmed"], logged.EnumerateObject().Select(property => property.Name));
         Assert.Equal("00:00:30", logged.GetProperty("ApprovedSyncPeriod").GetString());

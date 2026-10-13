@@ -4,6 +4,7 @@ using ControlServer.Host.Runtime;
 using ControlServer.Infrastructure.Persistence;
 using ControlServer.Host.Runtime.Faults;
 using ControlServer.Host.Runtime.Fleet;
+using ControlServer.Host.Runtime.ForeignOrders;
 using ControlServer.Host.Runtime.Recovery;
 using ControlServer.Host.Runtime.RouteGraph;
 using Microsoft.AspNetCore.Builder;
@@ -166,6 +167,8 @@ public sealed class StationExclusivityReleaseEndpointsTests
         Assert.Equal(on, routes.Contains(RecoverySessionAdministratorCloseEndpoints.Route));
         // control-server#659: and the route graph's sticky stale release.
         Assert.Equal(on, routes.Contains(RouteGraphStickyStaleReleaseEndpoints.Route));
+        // control-server#617 review M1: not the foreign running order release, which hangs on a switch of its own.
+        Assert.DoesNotContain(ForeignRunningOrderManualReleaseEndpoints.Route, routes);
     }
 
     // ---- helpers ------------------------------------------------------------------------------------------------

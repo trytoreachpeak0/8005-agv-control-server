@@ -78,8 +78,9 @@ namespace ControlServer.Host.Runtime.ForeignOrders;
 /// on the vehicle itself goes to HANG (BC-ORDER-015), which is not an ending. What an API cancel does to a HANG order the lab
 /// has not recorded, so nothing here assumes it works: it is read back like any other. An order that leaves the running
 /// listing without being read back ended -- SUSPENDED, or not found at all -- goes to a person after
-/// <see cref="CancelSettleTime"/> (<see cref="ForeignRiotOrderStates.Unsettled"/>) and keeps holding: there is no release but a
-/// confirmed ending, and no manual one in this server.
+/// <see cref="CancelSettleTime"/> (<see cref="ForeignRiotOrderStates.Unsettled"/>) and keeps holding: this supervisor releases only on
+/// a confirmed ending. The one other way out is a named person's, through the governed entry (control-server#617,
+/// <see cref="ForeignRunningOrderManualRelease"/>), and only once RIoT read again no longer lists the order unfinished.
 /// </para>
 /// <para>
 /// <b>An ending here is never this server's own order ending.</b> Nothing a foreign order does reaches a journey: the journey
@@ -199,10 +200,11 @@ public sealed class ForeignRunningOrderSupervisor(
         Dictionary<string, FleetVehicle> ours = await OurVehiclesAsync(cancellationToken).ConfigureAwait(false);
         RiotUnfinishedOrderListing listing = await orders.ListUnfinishedOrdersAsync(cancellationToken).ConfigureAwait(false);
         string[] listedIds = [.. listing.Orders.Select(order => order.OrderId)];
-        // Every row still in play, and any ended one whose order RIoT lists again. An ended row is otherwise history: it is
-        // not read back every round.
+        // Every row still in play, and any ended -- or released by hand (control-server#617) -- one whose order RIoT lists
+        // again. Such a row is otherwise history: it is not read back every round.
         List<ForeignRiotOrderRow> rows = await dbContext.ForeignRiotOrders
-            .Where(row => row.State != ForeignRiotOrderStates.Ended || listedIds.Contains(row.RiotOrderId))
+            .Where(row => (row.State != ForeignRiotOrderStates.Ended && row.State != ForeignRiotOrderStates.ReleasedByOperator) ||
+                          listedIds.Contains(row.RiotOrderId))
             .ToListAsync(cancellationToken).ConfigureAwait(false);
 
         // An incomplete listing concludes nothing: no row is ended or released on what it leaves out, and nothing new is
@@ -312,7 +314,8 @@ public sealed class ForeignRunningOrderSupervisor(
                 row.AgvId = vehicle.AgvId;
                 row.DeviceKey = vehicle.VehicleKey;
             }
-            if (row.State is ForeignRiotOrderStates.LeftVehicle or ForeignRiotOrderStates.Ended or ForeignRiotOrderStates.Unsettled)
+            if (row.State is ForeignRiotOrderStates.LeftVehicle or ForeignRiotOrderStates.Ended or ForeignRiotOrderStates.Unsettled
+                or ForeignRiotOrderStates.ReleasedByOperator)
             {
                 // Back on a vehicle of ours, or back in the running listing. A cancel that already went out is not sent again.
                 row.State = row.CancelCommandAuditId is not null
@@ -333,7 +336,21 @@ public sealed class ForeignRunningOrderSupervisor(
             return;
         }
 
-        if (row.State is ForeignRiotOrderStates.Ended or ForeignRiotOrderStates.LeftVehicle)
+        // control-server#617 review S1: a hand release rests on "RIoT could not be read to have it", and an order coming back
+        // SUSPENDED -- which REQ-0164 counts as occupying the vehicle -- is the likeliest shape of that having been wrong. Unless
+        // a vehicle that is not ours executes it, it holds again, as UNSETTLED: neither running nor ended, a person's to look at.
+        if (row.State == ForeignRiotOrderStates.ReleasedByOperator && order is { OrderState: RiotOrderState.Suspended } &&
+            !ExecutedByAVehicleNotOurs(order, ours))
+        {
+            row.State = ForeignRiotOrderStates.Unsettled;
+            row.EndedAt = null;
+            row.EndedOrderState = null;
+            row.UpdatedAt = now;
+            LogForeignOrderUnsettled(logger, row.RiotOrderId, row.AgvId, "SUSPENDED, listed again after a hand release", row.LastSeenRunningAt, null);
+            return;
+        }
+
+        if (row.State is ForeignRiotOrderStates.Ended or ForeignRiotOrderStates.LeftVehicle or ForeignRiotOrderStates.ReleasedByOperator)
         {
             return;
         }
