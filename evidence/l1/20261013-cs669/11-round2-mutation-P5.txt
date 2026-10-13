@@ -1,0 +1,10 @@
+mutation P5 on ad2d9ba88: scripts/parallel/ParallelInstance.psm1
+sed: 3258s/if (@(\$Path).Count -ne 1) {/if ($false) {/
+files changed: 1
+-    if (@($Path).Count -ne 1) {
++    if ($false) {
+--- self-test exit 1
+  FAIL  cutover area tables: an N file and a T file, agreeing in union -- refused, merge first
+        expected 1: 'the last one imported is the only one in force -- so merge them into one file under one header'; got 0: 
+851 passed, 1 failed
+--- restored; status: ''

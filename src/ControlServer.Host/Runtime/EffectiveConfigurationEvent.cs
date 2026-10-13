@@ -33,20 +33,82 @@ namespace ControlServer.Host.Runtime;
 /// bound rather than trusting the overlay file -- the .NET layers merge per key, and a value from an earlier layer or an
 /// environment variable would otherwise go unseen. An event without it is from a package older than #531.
 /// </para>
+/// <para>
+/// <b>The foreign running order release entry</b> (#617 incremental review S-1) is appended after that, as one object with exactly
+/// Enabled and CredentialPresent: an entry that is on while its credential variable is empty answers every request 503, and
+/// nothing else says so until someone on site needs it. Logged, not refused at start -- one exit is not worth a server that
+/// will not start. For a person reading the log: the installer's read-back does not read this key; what guards a deployment
+/// is the credential check before install and warning 2235. An event without it is from a package older than #617.
+/// Seven placeholders are one more than <c>LoggerMessage.Define</c> takes, so the event hands the logger its state the way
+/// <c>Define</c> does -- the template under <c>{OriginalFormat}</c> and each value as it is. Not the logging source generator: its
+/// state formats a collection into a string, and the installer reads the roster and the catalog back as JSON structure.
+/// </para>
 /// </remarks>
 public static class EffectiveConfigurationEvent
 {
     public const string Template =
-        "EFFECTIVE_CONFIGURATION allowedWorkTypes={AllowedWorkTypes} allowedDispatchZones={AllowedDispatchZones} mesIngestBaseUrl={MesIngestBaseUrl} fleet={Fleet} clearanceToWaitingPointEnabled={ClearanceToWaitingPointEnabled} mapStationCatalog={MapStationCatalog}";
+        "EFFECTIVE_CONFIGURATION allowedWorkTypes={AllowedWorkTypes} allowedDispatchZones={AllowedDispatchZones} mesIngestBaseUrl={MesIngestBaseUrl} fleet={Fleet} clearanceToWaitingPointEnabled={ClearanceToWaitingPointEnabled} mapStationCatalog={MapStationCatalog} foreignRunningOrderRelease={ForeignRunningOrderRelease}";
 
     public static readonly EventId Id = new(5350, "EffectiveConfiguration");
 
-    private static readonly Action<ILogger, string[], string[], string, IReadOnlyList<IReadOnlyDictionary<string, object>>, bool, IReadOnlyDictionary<string, string?>, Exception?> Write =
-        LoggerMessage.Define<string[], string[], string, IReadOnlyList<IReadOnlyDictionary<string, object>>, bool, IReadOnlyDictionary<string, string?>>(LogLevel.Information, Id, Template);
+    public static void Log(
+        ILogger logger,
+        JourneyRuntimeOptions effective,
+        MapStationCatalogOptions catalog,
+        string mesIngestBaseUrl,
+        ForeignOrders.ForeignRunningOrderReleaseState? foreignRunningOrderRelease = null)
+    {
+        ArgumentNullException.ThrowIfNull(logger);
+        ArgumentNullException.ThrowIfNull(effective);
+        if (!logger.IsEnabled(LogLevel.Information))
+        {
+            return;
+        }
+        KeyValuePair<string, object?>[] state =
+        [
+            new("AllowedWorkTypes", effective.AllowedWorkTypes),
+            new("AllowedDispatchZones", effective.AllowedDispatchZones),
+            new("MesIngestBaseUrl", mesIngestBaseUrl),
+            new("Fleet", Fleet(effective)),
+            new("ClearanceToWaitingPointEnabled", effective.ClearanceToWaitingPointEnabled),
+            new("MapStationCatalog", MapStationCatalog(catalog)),
+            new("ForeignRunningOrderRelease",
+                ForeignRunningOrderRelease(foreignRunningOrderRelease ?? new ForeignOrders.ForeignRunningOrderReleaseState(false, false))),
+            new("{OriginalFormat}", Template),
+        ];
+        logger.Log(LogLevel.Information, Id, state, null, static (values, _) => Render(values));
+    }
 
-    public static void Log(ILogger logger, JourneyRuntimeOptions effective, MapStationCatalogOptions catalog, string mesIngestBaseUrl) =>
-        Write(logger, effective.AllowedWorkTypes, effective.AllowedDispatchZones, mesIngestBaseUrl, Fleet(effective),
-            effective.ClearanceToWaitingPointEnabled, MapStationCatalog(catalog), null);
+    /// <summary>The message as text, for a provider that wants one: the template with each value in place.</summary>
+    private static string Render(KeyValuePair<string, object?>[] values)
+    {
+        string text = Template;
+        foreach ((string key, object? value) in values)
+        {
+            text = text.Replace("{" + key + "}", Shown(value), StringComparison.Ordinal);
+        }
+        return text;
+    }
+
+    private static string Shown(object? value) => value switch
+    {
+        null => "null",
+        string text => text,
+        bool flag => flag ? "True" : "False",
+        System.Collections.IEnumerable items => "[" + string.Join(", ", items.Cast<object?>().Select(Shown)) + "]",
+        _ => Convert.ToString(value, CultureInfo.InvariantCulture) ?? string.Empty,
+    };
+
+    /// <summary>The release entry as logged: these two keys only.</summary>
+    public static IReadOnlyDictionary<string, bool> ForeignRunningOrderRelease(ForeignOrders.ForeignRunningOrderReleaseState state)
+    {
+        ArgumentNullException.ThrowIfNull(state);
+        return new Dictionary<string, bool>(StringComparer.Ordinal)
+        {
+            ["Enabled"] = state.Enabled,
+            ["CredentialPresent"] = state.CredentialPresent,
+        };
+    }
 
     /// <summary>The two approved values as logged: these two keys only, each <c>hh:mm:ss</c> or null when unset.</summary>
     public static IReadOnlyDictionary<string, string?> MapStationCatalog(MapStationCatalogOptions catalog)

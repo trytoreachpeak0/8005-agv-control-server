@@ -315,8 +315,10 @@ RIoT 上还有别的区域的车和它们的订单，绝不能随手取消）：
   由现场人员手工做。
 - 服务端证明不了是不是自己建的（看板 `FOREIGN_RUNNING_ORDER_OWNERSHIP_UNPROVEN`）：永远不取消，第 1～3 步由人做。
 - 那张单离开了 RIoT 的运行列表，按订单号回查却读不到它已终结，超过 10 秒（看板 `FOREIGN_RUNNING_ORDER_UNSETTLED`）：
-  常见的是回查接口调用失败，或单子处在 SUSPENDED(8)；RIoT 一般不删单，删了查不到是少见情况。服务端只认明确终结才放车，
-  而本服务端目前没有人工解除入口，所以要到 RIoT 按订单号核对并把它结束；RIoT 里查不到这张单时找值班工程师。
+  常见的是回查接口调用失败，或单子处在 SUSPENDED(8)；RIoT 一般不删单，删了查不到是少见情况。服务端只认明确终结才放车。
+  先到 RIoT 按订单号核对：单还在（例如 SUSPENDED），就在 RIoT 里把它结束，服务端下一轮读到终结自己放车；RIoT 里查不到这张单，
+  或已经结束而服务端仍然读不出来，用下面「外来订单的人工放车」入口（control-server#617）。
+  control-server#617 之前，RIoT 网页上手动派的单（没有 upperId）一结束就必然落到这里，因为 SDK 把 RIoT 的答复当成了失败；那个缺陷已修。
 
 无论哪种，那张单明确终结之前，这台车都不接新单、不接途中追加。
 
@@ -331,6 +333,47 @@ RIoT 上还有别的区域的车和它们的订单，绝不能随手取消）：
 
 不要改数据库，不要在 RIoT 里手动解锁（会被当成意外恢复立即重触发）。急停不是服务端发的（`EMERGENCY_NOT_RAISED_BY_8005`），
 仍然转 RIoT 人员。把 HANG 纳入故障模型、给服务端加闩锁下的续行顺序，是 #319。
+
+### 外来订单的人工放车（control-server#617）
+
+只用于看板上原因码是 `FOREIGN_RUNNING_ORDER_UNSETTLED` 的那一行：单已离开 RIoT 的运行列表，服务端却一直读不出它已终结。
+其余几种外来订单原因码都表示单还在我们车上运行（或取消还在进行），这个入口一律拒绝，要先在 RIoT 把单结束。
+
+办之前，在 RIoT 上按订单号查这张单，确认它不在运行：已经结束，或者查不到。截图或记巡检单号，填进 `siteVerification`。
+
+服务端不信人的一句话，自己再读一次 RIoT，三条都满足才放车，不满足的每一条都列在拒绝原因里：
+
+1. 这辆车有这张单的外来订单记录，此刻正是 `FOREIGN_RUNNING_ORDER_UNSETTLED`。
+2. RIoT 的未完成订单列表读全了，里面没有这张单（排队、执行、暂停、挂起、HANG 都不在）。列表读不全就拒绝，稍后再办。
+3. 按订单号回读，RIoT 报的不是未完成状态。读到已结束、查不到或读不到都可以；读到未完成状态就拒绝。
+
+只有 R-11／R-13 名单里的人能办（与人工清桩同一份名单，`FieldOperatorRoles:path`）。入口用故障人工恢复那把凭据，但开关是它自己的：
+`ForeignRunningOrderRelease:enabled`（实例定义里的 `foreignRunningOrderRelease.enabled`），故障恢复关着时它照样可用。开关关着时这个入口不存在，
+请求返回 404。入口在 **v2 实例**的健康端口上：
+
+```powershell
+# v2 实例定义里的 healthPort 与 healthBindAddress：factory01 上是 172.19.205.222:58107。
+# 58007 是 MVP 的健康端口，照抄成 58007 会把 v2 的恢复凭据发给 MVP。
+$v2Health = 'http://172.19.205.222:58107'
+$body = @{
+    agvId            = 'agv02'
+    riotOrderId      = '<看板「车上的外来订单」那一行的订单号>'
+    operatorId       = '<名单里的工号>'
+    reason           = '网页手动单在 RIoT 里已结束，服务端读不出'
+    siteVerification = '<RIoT 截图编号或巡检单号>'
+} | ConvertTo-Json
+Invoke-RestMethod -Method Post -Uri "$v2Health/api/field-ops/v1/foreign-running-order-releases" `
+    -Headers @{ Authorization = "Bearer $env:CONTROL_SERVER_V2_FAULT_RECOVERY_CREDENTIAL" } `
+    -ContentType 'application/json' -Body $body
+```
+
+办成之后，那一行从看板上消失，这辆车回到可派，下一轮就可能被派去搬运，请现场人员离车。如果之后 RIoT 又把这张单列出来、跑在我们车上，
+服务端会照常重新认出它、重新按住车，放车不是永久豁免。
+
+每一次请求，办成的和被拒的，都写一条管理员审计（动作 `FOREIGN_RUNNING_ORDER_MANUAL_RELEASE`，对象是这张单），记下办理人、角色、理由、
+核实记录和这一刻读到的 RIoT。被拒时返回 409，`codes` 列出全部原因，`descriptions` 是每个原因的中文说明，照着处理之后再提交一次。
+返回 `FOREIGN_ORDER_RELEASE_STATE_CHANGED`，说明核对期间服务端刚看见这张单又在跑、刚读到它已结束，或别人刚办过：什么也没写，
+看一眼看板再提交。
 
 ## 入口
 

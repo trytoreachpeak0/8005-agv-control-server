@@ -379,7 +379,7 @@ public sealed class Batch7CargoHoldingDashboardTests
     /// 持货期限的长度是服务端配置（<c>JourneyRuntime:CargoHoldingTimeout</c>），库里只有起算点。看板端点挂在宿主上时，
     /// 用的是宿主的同一份 <see cref="IOptions{TOptions}"/>——与引擎判超时用的那一份是同一个对象，不另读一遍配置文件：
     /// 另读一遍，命令行或别的配置源一覆盖，看板上的期限就与车上、引擎里的悄悄差开。这里把期限配成 10 分钟，经真实的
-    /// <c>MapDashboardQueries</c> 与 HTTP GET 读回来，期限必须是起算点加 10 分钟，不是默认的 30 分钟。
+    /// <c>MapDashboardQueries</c> 与 HTTP GET 读回来，期限必须是起算点加 10 分钟，不是产品默认值（control-server#609 起 5 分钟，此前 30 分钟）。
     /// </summary>
     [Fact]
     public async Task OnTheHostTheDeadlineUsesTheHostsConfiguredCargoHoldingTimeout()

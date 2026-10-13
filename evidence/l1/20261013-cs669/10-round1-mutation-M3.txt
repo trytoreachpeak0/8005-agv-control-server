@@ -1,0 +1,10 @@
+mutation M3 on 5873125d7: scripts/parallel/ParallelInstance.psm1
+sed: 3273s/-ccontains \$zone/-contains $zone/
+files changed: 1
+-            if (-not ($allowed -ccontains $zone)) {
++            if (-not ($allowed -contains $zone)) {
+--- self-test exit 1
+  FAIL  cutover area tables: a zone differing only in case
+        expected 2: 'dispatch zone 'wire_bonding'', 'names 'WIRE_BONDING', but no table routes'; got 1: journeyRuntime.allowedDispatchZones names 'WIRE_BONDING', but no table routes an AREA into it: the vehicles that serve only that zone would never be given work.
+846 passed, 1 failed
+--- restored; status: ''

@@ -7,6 +7,9 @@
 #
 # 路网引擎要开着：门禁按计划路径代价的增量判，而代价只有引擎给得出。
 @{
+    # 持货超时照原值写明 30 分钟（control-server#609）：本场景允许途中追加，所以车会持货等单；场景写的时候吃的是产品默认
+    # 30 分钟，整场都不会到期。#609 把产品默认改成 5 分钟，这里写明原值，场景的判据与时序都不变。
+    CargoHoldingTimeout = '00:30:00'
     DispatchZoneParameters = @{
         'MAP-25-WIRE_TO_GATE' = @{ EnRouteAdditionMaxPathCostIncrease = 1 }
     }

@@ -20,6 +20,13 @@ namespace ControlServer.Host.Dashboard;
 /// </remarks>
 internal sealed class ForeignRunningOrdersQueryEndpoint : IDashboardQueryEndpoint
 {
+    /// <summary>
+    /// 每一句 <c>UNSETTLED</c> 说明的结尾：RIoT 里查不到、或已结束而服务端仍读不出时的那条受治理出口（control-server#617）。
+    /// </summary>
+    internal const string ManualReleaseHint =
+        "RIoT 里查不到这张单，或它已结束而这一行仍在时，由 R-11／R-13 名单里的人用「外来订单人工放车」入口办理"
+        + "（服务端会再读一次 RIoT，确认它已不在运行才放车）";
+
     /// <summary>每个原因码给现场人员的说明。键取常量，改名时编译期就断在这里。</summary>
     internal static IReadOnlyDictionary<string, string> Descriptions { get; } =
         new Dictionary<string, string>(StringComparer.Ordinal)
@@ -40,8 +47,8 @@ internal sealed class ForeignRunningOrdersQueryEndpoint : IDashboardQueryEndpoin
                 + "它终结后这一行自动消失",
             [ForeignRunningOrders.UnsettledReason] =
                 "这张外来订单已不在 RIoT 的运行列表里，但按订单号回查读不到它已终结（常见的是回查调用失败或单子处在 SUSPENDED，"
-                + "少数是 RIoT 里查不到这张单）：服务端只认明确终结才放车，这辆车一直不接新单、不接途中追加，本服务端没有人工解除入口。"
-                + "请到 RIoT 按订单号核对这张单的状态；在 RIoT 里把它结束后这一行自动消失。RIoT 里查不到这张单时找值班工程师",
+                + "少数是 RIoT 里查不到这张单）：服务端只认明确终结才放车，这辆车一直不接新单、不接途中追加。"
+                + "请到 RIoT 按订单号核对这张单的状态；在 RIoT 里把它结束后这一行自动消失。" + ManualReleaseHint,
         };
 
     /// <summary>
@@ -60,7 +67,7 @@ internal sealed class ForeignRunningOrdersQueryEndpoint : IDashboardQueryEndpoin
                 + "这辆车不接新单、不接途中追加。请到 RIoT 按订单号把这张充电单结束，必要时到车前处理；不用去找外部建单人。它终结后这一行自动消失",
             [ForeignRunningOrders.UnsettledReason] =
                 "这是本服务端自己建了又放弃的充电单。它已不在 RIoT 的未完成列表里，但按订单号回查读不到它已终结：服务端只认明确终结才放车，"
-                + "这辆车一直不接新单、不接途中追加。请到 RIoT 按订单号核对这张充电单的状态；在 RIoT 里把它结束后这一行自动消失",
+                + "这辆车一直不接新单、不接途中追加。请到 RIoT 按订单号核对这张充电单的状态；在 RIoT 里把它结束后这一行自动消失。" + ManualReleaseHint,
         };
 
     /// <summary>
@@ -76,7 +83,7 @@ internal sealed class ForeignRunningOrdersQueryEndpoint : IDashboardQueryEndpoin
                 + "请到 RIoT 按订单号把这张单结束；不用去找外部建单人。它终结后这一行自动消失",
             [ForeignRunningOrders.UnsettledReason] =
                 "这是本服务端自己建了又放弃的空闲返回单。它已不在 RIoT 的运行列表里，但按订单号回查读不到它已终结：服务端只认明确终结才放车，"
-                + "这辆车一直不接新单、不接途中追加。请到 RIoT 按订单号核对这张单的状态；在 RIoT 里把它结束后这一行自动消失",
+                + "这辆车一直不接新单、不接途中追加。请到 RIoT 按订单号核对这张单的状态；在 RIoT 里把它结束后这一行自动消失。" + ManualReleaseHint,
         };
 
     /// <summary>
@@ -92,7 +99,7 @@ internal sealed class ForeignRunningOrdersQueryEndpoint : IDashboardQueryEndpoin
                 + "请到 RIoT 按订单号把这张单结束；不用去找外部建单人。它终结后这一行自动消失",
             [ForeignRunningOrders.UnsettledReason] =
                 "这是本服务端自己建了又放弃的清桩移动单。它已不在 RIoT 的运行列表里，但按订单号回查读不到它已终结：服务端只认明确终结才放车，"
-                + "这辆车一直不接新单、不接途中追加。请到 RIoT 按订单号核对这张单的状态；在 RIoT 里把它结束后这一行自动消失",
+                + "这辆车一直不接新单、不接途中追加。请到 RIoT 按订单号核对这张单的状态；在 RIoT 里把它结束后这一行自动消失。" + ManualReleaseHint,
         };
 
     /// <summary>

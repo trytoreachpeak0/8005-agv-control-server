@@ -1,0 +1,28 @@
+working tree on top of cfc786a0d (production waits 5/5, committed with this file)
+cmd: pwsh -File scripts/parallel/Test-ParallelInstance.ps1 -AreaAssignmentPath <merged>
+  PASS  catalog: the cutover definition carries the same approved pair, and is refused for exactly the two guards control-server#564 opens
+  PASS  admission version: instance-factory01-v2.cutover-two-zones.json, first install, reads back the definition's 6
+  PASS  admission version: instance-factory01-v2.cutover-two-zones.json, over a file at 5, reads back the definition's 6
+  PASS  admission version: instance-factory01-v2.cutover-two-zones.json, over a file at 7, reads back the definition's 6
+  PASS  admission version: instance-factory01-v2.cutover-two-zones.runtime-on.json, first install, reads back the definition's 6
+  PASS  admission version: instance-factory01-v2.cutover-two-zones.runtime-on.json, over a file at 5, reads back the definition's 6
+  PASS  admission version: instance-factory01-v2.cutover-two-zones.runtime-on.json, over a file at 7, reads back the definition's 6
+Cutover definition: two dispatch zones, three dedicated cars (control-server#669)
+  PASS  cutover: allowedDispatchZones is exactly [WIRE_BONDING, DIE_ATTACH], dispatchZone is one of them, WIRE is gone
+  PASS  cutover: every car serves at least one zone, every zone it serves is allowed, and every allowed zone is served
+  PASS  cutover: the roster is exactly agv01, agv02, agv03 with the registry identities, in that order
+  PASS  cutover: each car carries exactly the task types and zones the user assigned it
+  PASS  cutover: dedicated -- every allowed work type is served by exactly one car, and no car takes a type outside allowedWorkTypes
+  PASS  cutover: everything but the roster, the zones, the work types and the cargo holding wait equals the production-mes definition
+  PASS  cutover runtime-on: differs from the cutover definition only in journeyRuntime.enabled and routeGraph.enabled, both true; the gate and the other switches stay off
+  PASS  cutover: the definitions the instance runs today still say WIRE (the zones change only with the new database)
+  PASS  cutover area tables: one merged table naming both zones -- agree
+  PASS  cutover area tables: one merged table, CRLF -- agree
+  PASS  cutover area tables: an N file and a T file, agreeing in union -- refused, merge first
+  PASS  cutover area tables: the old zone WIRE for the N areas
+  PASS  cutover area tables: only the N areas (what importing N after T would leave, reversed): DIE_ATTACH served by agv03 and routed nothing
+  PASS  cutover area tables: a zone differing only in case
+  PASS  cutover area tables: a header that is not the importer's
+  PASS  cutover area tables: a row of four fields
+  PASS  cutover area tables, the given files: C:/Users/szy/AppData/Local/Temp/claude/C--Users-szy-Desktop-8005-workspace-v2/addf8995-9a78-469d-a595-bfbdf8723933/scratchpad/area-assignments-merged.csv
+853 passed, 0 failed

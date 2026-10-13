@@ -1553,7 +1553,11 @@ internal static class JourneyRuntimeWorkerTestKit
             AdmissionPolicyDeploymentId = "TEST-DEPLOYMENT-1",
             // Off, so a journey leaves the pickup in the iteration its load commits, as every test
             // here was written against. The tests about the wait turn it on for themselves.
-            StationDepartureWaitTimeout = TimeSpan.Zero
+            StationDepartureWaitTimeout = TimeSpan.Zero,
+            // Thirty minutes, stated: the cargo-holding tests here (Batch7CargoHoldingTests, Batch7StationYieldTests and the
+            // wire and zero-change pins) were written against the old product default, and control-server#609 moved that
+            // default to five. Stating it keeps their deadlines and judgements exactly as they were.
+            CargoHoldingTimeout = TimeSpan.FromMinutes(30)
         };
 
         public async ValueTask DisposeAsync()

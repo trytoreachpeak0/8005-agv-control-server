@@ -1201,12 +1201,19 @@ public sealed class HttpRiotMovementGatewayTests
 
     /// <summary>
     /// control-server#330: one order's state by its RIoT orderId through <c>detailByOrderId</c>; a failed read, or an answer
-    /// about another order, is no state at all.
+    /// about another order, is no state at all. control-server#617: an order without an <c>upperId</c> -- one dispatched by
+    /// hand on the RIoT web page, which RIoT answers with <c>upperId</c> an empty string -- is read like any other, ended or
+    /// running; real RIoT's answer for no such order (HTTP 200, code 0, no result) is no state.
     /// </summary>
     [Theory]
     [InlineData("found", 2)]
     [InlineData("another-order", null)]
     [InlineData("read-failed", null)]
+    [InlineData("web-page-order-ended", 2)]
+    [InlineData("web-page-order-running", 3)]
+    [InlineData("upper-id-null", 2)]
+    [InlineData("upper-id-absent", 5)]
+    [InlineData("absent-as-real-riot", null)]
     public async Task AnOrderStateIsReadByItsRiotOrderId(string answer, int? expected)
     {
         RecordingHandler handler = new((request, _) =>
@@ -1216,6 +1223,11 @@ public sealed class HttpRiotMovementGatewayTests
             {
                 "found" => JsonResponse(FoundOrderJson(orderState: 2)),
                 "another-order" => JsonResponse(FoundOrderJson(orderState: 2).Replace("\"ORDER-001\"", "\"ORDER-999\"", StringComparison.Ordinal)),
+                "web-page-order-ended" => JsonResponse(WithoutUpperId(FoundOrderJson(orderState: 2), "\"upperId\":\"\"")),
+                "web-page-order-running" => JsonResponse(WithoutUpperId(FoundOrderJson(orderState: 3), "\"upperId\":\"\"")),
+                "upper-id-null" => JsonResponse(WithoutUpperId(FoundOrderJson(orderState: 2), "\"upperId\":null")),
+                "upper-id-absent" => JsonResponse(WithoutUpperId(FoundOrderJson(orderState: 5), "\"upperIdIsMissing\":true")),
+                "absent-as-real-riot" => JsonResponse("""{"code":"0","message":"成功","msgDetail":"","tid":""}"""),
                 _ => new HttpResponseMessage(HttpStatusCode.ServiceUnavailable)
                 {
                     Content = new StringContent("{}", Encoding.UTF8, "application/json")
@@ -1254,6 +1266,14 @@ public sealed class HttpRiotMovementGatewayTests
         if (afterOrders.HasValue) clock!.Set(afterOrders.Value);
         return JsonResponse(ordersBody);
     });
+
+    /// <summary><paramref name="json"/> with its <c>"upperId":"UPPER-001"</c> replaced by <paramref name="replacement"/>.</summary>
+    private static string WithoutUpperId(string json, string replacement)
+    {
+        string replaced = json.Replace("\"upperId\":\"UPPER-001\"", replacement, StringComparison.Ordinal);
+        Assert.NotEqual(json, replaced);
+        return replaced;
+    }
 
     private static string FoundOrderJson(
         int orderState,

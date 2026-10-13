@@ -37,6 +37,9 @@
   "vehicleFaultRecovery": {
     "enabled": false
   },
+  "foreignRunningOrderRelease": {
+    "enabled": true
+  },
   "fieldOperatorRoles": {
     "path": "D:\\zhengyushao\\control-server-v2-ops\\field-operator-roles.json",
     "onboardClearanceEntryDeclared": false
@@ -55,7 +58,7 @@
     "maximumEvidenceAge": "00:00:30",
     "checkpointWaitBudget": "00:05:00",
     "stationDepartureWaitTimeout": "00:05:00",
-    "cargoHoldingTimeout": "00:30:00",
+    "cargoHoldingTimeout": "00:05:00",
     "areaEndAdmissionRevokedTimeout": "00:10:00",
     "fleet": [
       {

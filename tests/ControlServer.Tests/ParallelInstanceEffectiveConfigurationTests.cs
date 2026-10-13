@@ -382,6 +382,61 @@ public sealed class ParallelInstanceEffectiveConfigurationTests
     }
 
     // ------------------------------------------------------------------------------------------------
+    // control-server#669. The cutover definition: two dispatch zones, three cars dedicated by task type.
+    // ------------------------------------------------------------------------------------------------
+
+    /// <summary>
+    /// What the Host binds from each cutover definition (the gated one and its runtime-on twin) over the package's
+    /// appsettings.json, judged by the Host's own options validator with the runtime on, and the zone-to-car table the
+    /// Host would write into the new database from it
+    /// (<c>DispatchZoneVehicles</c>, which the area assignment import reads its zones from).
+    /// </summary>
+    /// <remarks>
+    /// The overlay is generated without the definition check: that check refuses agv01 and WIRE_TO_GATE from the production
+    /// MesIngest until the cutover switch (control-server#564) opens them, and Test-ParallelInstance.ps1 pins that exact
+    /// refusal. The validator runs with <c>Enabled</c> set, because it checks zones only for a server that dispatches; the
+    /// two secrets it requires come from the machine's environment and are left out of the judgement.
+    /// </remarks>
+    [Theory]
+    [InlineData("instance-factory01-v2.cutover-two-zones.json", false)]
+    [InlineData("instance-factory01-v2.cutover-two-zones.runtime-on.json", true)]
+    public void CutoverDefinitionBindsTwoZonesAndThreeDedicatedCarsTheHostAccepts(string definitionFile, bool runtimeEnabled)
+    {
+        string root = FindRepositoryRoot();
+        JourneyRuntimeOptions options = Bind(
+            File.ReadAllText(Path.Combine(root, "src", "ControlServer.Host", "appsettings.json")),
+            GenerateOverlay(root, definitionFile, checkDefinition: false), out IConfiguration configuration);
+
+        Assert.Equal(["WIRE_BONDING", "DIE_ATTACH"], options.AllowedDispatchZones);
+        Assert.Equal("WIRE_BONDING", options.DispatchZone);
+        Assert.Equal([Agv01Key, Agv02Key, Agv03Key], options.Fleet.Select(vehicle => vehicle.VehicleKey));
+        Assert.Equal(["WIRE_TO_GATE", "WIRE_TO_OPTICAL", "WIRE_TO_NITROGEN"], options.Fleet[0].AllowedTaskTypes);
+        Assert.Equal(["STAGING_TO_WIRE"], options.Fleet[1].AllowedTaskTypes);
+        Assert.Equal(["DIE_TO_OVEN", "DIE_TO_WIRE_STAGING"], options.Fleet[2].AllowedTaskTypes);
+        Assert.Equal(["WIRE_BONDING", "WIRE_BONDING", "DIE_ATTACH"], options.Fleet.Select(vehicle => string.Join(",", vehicle.Zones)));
+
+        // The production waits the user set on 2026-10-13 (D9 in control-server#564's comment), not the package's or a test period's.
+        Assert.Equal(TimeSpan.FromMinutes(5), options.StationDepartureWaitTimeout);
+        Assert.Equal(TimeSpan.FromMinutes(5), options.CargoHoldingTimeout);
+        Assert.Equal(runtimeEnabled, options.Enabled);
+        options.Enabled = true;
+        ValidateOptionsResult result = new JourneyRuntimeOptionsValidator(configuration).Validate(null, options);
+        string[] failures =
+        [
+            .. (result.Failures ?? []).Where(failure =>
+                !failure.EndsWith("must name a populated external environment variable.", StringComparison.Ordinal)),
+        ];
+        Assert.True(failures.Length == 0, string.Join(Environment.NewLine, failures));
+
+        ControlServer.Application.VehicleDispatchPolicy policy =
+            new ControlServer.Host.Runtime.Fleet.VehicleDispatchPolicyAccess(null!, Options.Create(options), TimeProvider.System)
+                .FromConfiguration();
+        Assert.Equal(["DIE_ATTACH", "WIRE_BONDING"], policy.ZoneVehicles.Keys.Order(StringComparer.Ordinal));
+        Assert.Equal(["老厂前线新多仓位1", "老厂前线新多仓位2"], policy.ZoneVehicles["WIRE_BONDING"].Order(StringComparer.Ordinal));
+        Assert.Equal(["老厂前线新多仓位3"], policy.ZoneVehicles["DIE_ATTACH"]);
+    }
+
+    // ------------------------------------------------------------------------------------------------
     // control-server#638. JourneyRuntime:ClearanceToWaitingPointEnabled (REQ-0178) on the parallel instance: the definition's
     // journeyRuntime.clearanceToWaitingPointEnabled through the overlay, bound by the Host, logged in its event, judged.
     // ------------------------------------------------------------------------------------------------
@@ -475,7 +530,7 @@ public sealed class ParallelInstanceEffectiveConfigurationTests
     public void EveryShippedDefinitionBindsTheApprovedPairOverThePackageAppSettings(string definitionFile)
     {
         string root = FindRepositoryRoot();
-        Bind(File.ReadAllText(Path.Combine(root, "src", "ControlServer.Host", "appsettings.json")),
+        JourneyRuntimeOptions options = Bind(File.ReadAllText(Path.Combine(root, "src", "ControlServer.Host", "appsettings.json")),
             GenerateOverlay(root, definitionFile), out IConfiguration configuration);
 
         MapStationCatalogOptions catalog = BindCatalog(configuration);
@@ -483,6 +538,10 @@ public sealed class ParallelInstanceEffectiveConfigurationTests
         Assert.True(catalog.IsApproved);
         Assert.Equal(TimeSpan.FromSeconds(30), catalog.ApprovedSyncPeriod);
         Assert.Equal(TimeSpan.FromMinutes(5), catalog.ApprovedMaxUnconfirmed);
+
+        // control-server#609: what the Host binds from the definition through the overlay, not what the definition says --
+        // the user's 2026-10-11 ceiling for every deployment (the batch 8/9 drills run shorter).
+        Assert.InRange(options.CargoHoldingTimeout, TimeSpan.FromSeconds(1), TimeSpan.FromMinutes(5));
     }
 
     [Theory]
@@ -513,7 +572,8 @@ public sealed class ParallelInstanceEffectiveConfigurationTests
             new MapStationCatalogOptions { ApprovedSyncPeriod = TimeSpan.FromSeconds(30), ApprovedMaxUnconfirmed = TimeSpan.FromMinutes(5) }));
         using JsonDocument unset = JsonDocument.Parse(RenderEvent(options, "http://127.0.0.1:58188", new MapStationCatalogOptions()));
 
-        Assert.EndsWith(" mapStationCatalog={MapStationCatalog}", approved.RootElement.GetProperty("@mt").GetString(), StringComparison.Ordinal);
+        // No longer the last field since control-server#617 appended the release entry.
+        Assert.Contains(" mapStationCatalog={MapStationCatalog}", approved.RootElement.GetProperty("@mt").GetString(), StringComparison.Ordinal);
         JsonElement logged = approved.RootElement.GetProperty("MapStationCatalog");
         Assert.Equal(["ApprovedSyncPeriod", "ApprovedMaxUnconfirmed"], logged.EnumerateObject().Select(property => property.Name));
         Assert.Equal("00:00:30", logged.GetProperty("ApprovedSyncPeriod").GetString());
@@ -736,16 +796,17 @@ public sealed class ParallelInstanceEffectiveConfigurationTests
 
     /// <summary>
     /// The overlay exactly as the installer writes it: New-ParallelInstanceConfigurationOverlay on the
-    /// shipped definition, through pwsh, saved as UTF-8 without a BOM.
+    /// shipped definition, through pwsh, saved as UTF-8 without a BOM. <paramref name="checkDefinition"/> false skips the
+    /// definition check, for a definition the installer does not take yet (control-server#669).
     /// </summary>
-    private static string GenerateOverlay(string root, string definitionFile, string definitionEdit = "")
+    private static string GenerateOverlay(string root, string definitionFile, string definitionEdit = "", bool checkDefinition = true)
     {
         string parallel = Path.Combine(root, "scripts", "parallel");
         string output = Path.Combine(Path.GetTempPath(), $"cs535-overlay-{Guid.NewGuid():N}.json");
         string command =
             $"$ErrorActionPreference = 'Stop'; Import-Module '{Path.Combine(parallel, "ParallelInstance.psm1")}' -Force; " +
             $"$d = Read-ParallelInstanceDefinition -Path '{Path.Combine(parallel, definitionFile)}'; {definitionEdit}" +
-            $"$null = Assert-ParallelInstanceDefinition -Definition $d; " +
+            (checkDefinition ? "$null = Assert-ParallelInstanceDefinition -Definition $d; " : "") +
             $"New-ParallelInstanceConfigurationOverlay -Definition $d | ConvertTo-Json -Depth 12 | Set-Content -LiteralPath '{output}' -Encoding utf8NoBOM";
         ProcessStartInfo start = new("pwsh")
         {

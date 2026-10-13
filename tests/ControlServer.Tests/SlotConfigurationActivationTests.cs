@@ -82,13 +82,19 @@ public sealed class SlotConfigurationActivationTests
                 FormattableString.Invariant($"DO{number}"),
                 FormattableString.Invariant($"DI{number}"),
                 FormattableString.Invariant($"DI{number + 8}"),
-                "ACTIVE_HIGH",
+                "UNLOCK_OUTPUT_ACTIVE_HIGH;LOCK_FEEDBACK_LOCKED_HIGH;LIGHT_CURTAIN_OBJECT_LOW",
                 500))
         ];
 
+        // 极性按票据 35 逐信号写明之前（#44），同一样例的值是 de93ca3d…，输入是笼统的 ACTIVE_HIGH。
         Assert.Equal(
-            "de93ca3d9eda7b619dd3ea2e8824f8592a3471b11ff723eba3dbc12ea6f69da9",
+            "3710b98b136300884ef292af951a25a6e2021b87ab53d140880970dc32873314",
             SlotConfigurationFingerprint.Compute(bindings));
+
+        // 这个样例就是已批准的八仓事实：服务端激活时下发的正是它的指纹，常量一改这里当场变红。
+        Assert.Equal(
+            "3710b98b136300884ef292af951a25a6e2021b87ab53d140880970dc32873314",
+            SlotConfigurationFingerprint.Compute(ApprovedSlotHardwareFacts.IoBindings));
 
         // 顺序无关：摘要按仓号升序规范化，输入顺序不该影响结果。
         Assert.Equal(
