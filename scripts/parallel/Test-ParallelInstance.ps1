@@ -5378,16 +5378,36 @@ Invoke-SourceCase 'binding read-back: the baseline says 6, MAP-26-WIRE_TO_GATE-S
 }
 $bindingWithoutDeparture = Copy-Definition $baseline
 $bindingWithoutDeparture['journeyRuntime'].Remove('stationDepartureWaitTimeout')
+# One row per row of the module's $script:JourneyBindingFields (the case below holds the two lists equal): a value the Host
+# might bind instead, and the problem text naming the field. A field added to the table is added here too.
+$bindingFieldCases = @(
+    @{ Logged = 'AdmissionPolicyVersion'; Wrong = 5; Says = "admissionPolicyVersion bound '5', the definition says '6'" }
+    @{ Logged = 'AdmissionPolicyDeploymentId'; Wrong = 'MAP-26-WIRE_TO_GATE-20261007'; Says = "admissionPolicyDeploymentId bound 'MAP-26-WIRE_TO_GATE-20261007', the definition says 'MAP-26-WIRE_TO_GATE-SELFTEST'" }
+    @{ Logged = 'CargoHoldingTimeout'; Wrong = '00:30:00'; Says = "cargoHoldingTimeout bound '00:30:00', the definition says '00:05:00'" }
+    @{ Logged = 'StationDepartureWaitTimeout'; Wrong = '00:30:00'; Says = "stationDepartureWaitTimeout bound '00:30:00', the definition says '00:05:00'" }
+)
+Invoke-SourceCase 'binding read-back: every row of the module''s JourneyBindingFields has a field case here, in table order' {
+    $table = @(& (Get-Module ParallelInstance) { $script:JourneyBindingFields } | ForEach-Object Logged)
+    $cased = @($bindingFieldCases | ForEach-Object { $_.Logged })
+    @{ Ok = (($table -join ',') -ceq ($cased -join ',')); Detail = "table: $($table -join ','); cases: $($cased -join ',')" }
+}
+foreach ($fieldCase in $bindingFieldCases) {
+    Invoke-SourceCase "binding read-back, per field: $($fieldCase.Logged) bound '$($fieldCase.Wrong)' -- stop and refuse, naming it" {
+        $a = (Get-BindingReadBack $baseline (New-BoundBinding @{ $fieldCase.Logged = $fieldCase.Wrong })).Action
+        @{ Ok = ($a.Action -ceq 'StopServiceAndRefuse' -and ([string] $a.Message).StartsWith('EFFECTIVE_CONFIGURATION_MISMATCH: ') -and ([string] $a.Message).Contains($fieldCase.Says)); Detail = "got: $(ConvertTo-Json $a -Compress)" }
+    }
+    Invoke-SourceCase "binding read-back, per field: $($fieldCase.Logged) missing from an event carrying the others -- stop and refuse" {
+        $a = (Get-BindingReadBack $baseline (New-BoundBinding @{ $fieldCase.Logged = $null })).Action
+        $name = $fieldCase.Says.Substring(0, $fieldCase.Says.IndexOf(' '))
+        @{ Ok = ($a.Action -ceq 'StopServiceAndRefuse' -and ([string] $a.Message).Contains("$name bound 'not logged'")); Detail = "got: $(ConvertTo-Json $a -Compress)" }
+    }
+}
 foreach ($case in @(
         @{ Name = 'bound as defined -- pass'; Definition = $baseline; Bound = (New-BoundBinding); Action = 'Pass'; Says = $null }
-        @{ Name = 'version 5 bound (below the definition) -- stop and refuse'; Definition = $baseline; Bound = (New-BoundBinding @{ AdmissionPolicyVersion = 5 }); Action = 'StopServiceAndRefuse'; Says = "admissionPolicyVersion bound '5', the definition says '6'" }
         @{ Name = 'version 7 bound (above the definition) -- stop and refuse'; Definition = $baseline; Bound = (New-BoundBinding @{ AdmissionPolicyVersion = 7 }); Action = 'StopServiceAndRefuse'; Says = "admissionPolicyVersion bound '7', the definition says '6'" }
         @{ Name = 'version logged as the string "6" -- stop and refuse, not cast'; Definition = $baseline; Bound = (New-BoundBinding @{ AdmissionPolicyVersion = '6' }); Action = 'StopServiceAndRefuse'; Says = "admissionPolicyVersion bound '6', the definition says '6'" }
-        @{ Name = 'another deployment label bound -- stop and refuse'; Definition = $baseline; Bound = (New-BoundBinding @{ AdmissionPolicyDeploymentId = 'MAP-26-WIRE_TO_GATE-20261007' }); Action = 'StopServiceAndRefuse'; Says = "admissionPolicyDeploymentId bound 'MAP-26-WIRE_TO_GATE-20261007', the definition says 'MAP-26-WIRE_TO_GATE-SELFTEST'" }
         @{ Name = 'the label differing in case alone -- stop and refuse (ordinal)'; Definition = $baseline; Bound = (New-BoundBinding @{ AdmissionPolicyDeploymentId = 'map-26-wire_to_gate-selftest' }); Action = 'StopServiceAndRefuse'; Says = 'admissionPolicyDeploymentId bound' }
-        @{ Name = 'cargo holding 00:30:00 bound (the 2026-10-12 field case) -- stop and refuse'; Definition = $baseline; Bound = (New-BoundBinding @{ CargoHoldingTimeout = '00:30:00' }); Action = 'StopServiceAndRefuse'; Says = "cargoHoldingTimeout bound '00:30:00', the definition says '00:05:00'" }
-        @{ Name = 'station departure 00:30:00 bound -- stop and refuse'; Definition = $baseline; Bound = (New-BoundBinding @{ StationDepartureWaitTimeout = '00:30:00' }); Action = 'StopServiceAndRefuse'; Says = "stationDepartureWaitTimeout bound '00:30:00', the definition says '00:05:00'" }
-        @{ Name = 'one of the four missing from an event carrying the others -- stop and refuse'; Definition = $baseline; Bound = (New-BoundBinding @{ CargoHoldingTimeout = $null }); Action = 'StopServiceAndRefuse'; Says = "cargoHoldingTimeout bound 'not logged', the definition says '00:05:00'" }
+        @{ Name = 'a wait logged as 300 seconds rather than hh:mm:ss -- stop and refuse'; Definition = $baseline; Bound = (New-BoundBinding @{ CargoHoldingTimeout = 300 }); Action = 'StopServiceAndRefuse'; Says = "cargoHoldingTimeout bound '300'" }
         @{ Name = 'a key the definition leaves out is not compared (the package default is what the Host binds)'; Definition = $bindingWithoutDeparture; Bound = (New-BoundBinding @{ StationDepartureWaitTimeout = '00:30:00' }); Action = 'Pass'; Says = $null }
         @{ Name = 'event older than #672 (none of the four) -- pass, so a rollback to such a package is not blocked'; Definition = $baseline; Bound = '<absent>'; Action = 'Pass'; Says = $null })) {
     Invoke-SourceCase "binding read-back: $($case.Name)" {
