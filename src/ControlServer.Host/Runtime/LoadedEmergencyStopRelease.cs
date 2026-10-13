@@ -115,7 +115,7 @@ public sealed class LoadedEmergencyStopRelease(
             return new LoadedEmergencyStopReleaseResult(null, [.. codes], refused);
         }
 
-        bool doorCause = await EmergencyStopDoorCause.ReadAsync(dbContext, faults, subject.AgvId, cancellationToken)
+        bool doorCause = await EmergencyStopDoorCause.ReadAsync(dbContext, faults, supervisor, subject, cancellationToken)
             .ConfigureAwait(false);
         HashSet<string> ownOrderIds = (await dbContext.OrderIntents.AsNoTracking()
                 .Where(row => row.VehicleKey == subject.DeviceKey && row.OrderId != null)
@@ -179,6 +179,37 @@ public sealed class LoadedEmergencyStopRelease(
                 cancellationToken);
     }
 
+    /// <summary>
+    /// Writes the administrator audit for a request the entry turned away before deciding it -- no credential configured, the
+    /// wrong credential, an incomplete request, a vehicle this server does not drive -- or that failed while being decided
+    /// (control-server#539 review L-4). Every request leaves a record, not only the ones that reached the decision.
+    /// </summary>
+    /// <remarks>
+    /// Nothing the caller sent is written but the vehicle it named, cut to <see cref="MaxIdentifierLength"/>: a request that was
+    /// not authenticated says nothing that may be stored as a person's statement.
+    /// </remarks>
+    public Task<string> RecordTurnedAwayAsync(string? agvId, string result, CancellationToken cancellationToken)
+    {
+        ArgumentException.ThrowIfNullOrWhiteSpace(result);
+        string? named = Trimmed(agvId);
+        if (named is { Length: > MaxIdentifierLength })
+        {
+            named = named[..MaxIdentifierLength];
+        }
+
+        return audit.WriteAdministratorAsync(
+            new GovernanceAuditEntry(
+                AuditAction,
+                GovernedObjectKind.EmergencyStop,
+                named ?? "-",
+                null,
+                GovernanceActionOutcome.Failed,
+                JsonSerializer.Serialize(new { agvId = named, result }, DetailOptions),
+                ClaimedAdministratorRole: null),
+            timeProvider.GetUtcNow(),
+            cancellationToken);
+    }
+
     private static string? Trimmed(string? value) =>
         string.IsNullOrWhiteSpace(value) ? null : value.Trim();
 }
@@ -188,20 +219,33 @@ public sealed class LoadedEmergencyStopRelease(
 /// person to confirm the lock was repaired (CP-0011, requirements baseline v1.10.0: "锁可能坏了").
 /// </summary>
 /// <remarks>
-/// Its standing fault says so, or its journey does. The journey is asked as well because a symptom seen while a button is held
-/// is recorded on the fault as <see cref="VehicleFaultEvidence.EmergencyCanNotRecover"/>, which hides the door symptom; the
-/// journey's block code keeps it.
+/// The stop's own record says so first: every stop of the open episode carries the symptom it was raised for
+/// (<see cref="EmergencyStopSupervisor.OpenEpisodeCausesAsync"/>). That is what the person is releasing, and nothing later
+/// overwrites it (control-server#539 review M-2: the fault's evidence code becomes <c>VEHICLE_ORDER_FAILED</c> when the held
+/// order fails afterwards, and <see cref="VehicleFaultEvidence.EmergencyCanNotRecover"/> while a button is held). The standing
+/// fault and the journey's block code are asked as well, for a stop raised before causes were recorded; any one of the three
+/// makes the confirmation required, never fewer.
 /// </remarks>
 public static class EmergencyStopDoorCause
 {
     public static async Task<bool> ReadAsync(
         ControlServerDbContext dbContext,
         IVehicleFaultStore faults,
-        string agvId,
+        EmergencyStopSupervisor supervisor,
+        EmergencyStopSubject subject,
         CancellationToken cancellationToken)
     {
         ArgumentNullException.ThrowIfNull(dbContext);
         ArgumentNullException.ThrowIfNull(faults);
+        ArgumentNullException.ThrowIfNull(supervisor);
+        ArgumentNullException.ThrowIfNull(subject);
+        if ((await supervisor.OpenEpisodeCausesAsync(subject, cancellationToken).ConfigureAwait(false))
+            .Contains(VehicleFaultEvidence.DoorNotProvenLocked))
+        {
+            return true;
+        }
+
+        string agvId = subject.AgvId;
         VehicleFaultFact? fault = await faults.ReadAsync(agvId, cancellationToken).ConfigureAwait(false);
         if (fault is { Level: not VehicleFaultLevel.None } &&
             string.Equals(fault.EvidenceCode, VehicleFaultEvidence.DoorNotProvenLocked, StringComparison.Ordinal))

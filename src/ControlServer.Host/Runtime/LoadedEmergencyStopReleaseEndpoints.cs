@@ -20,6 +20,10 @@ namespace ControlServer.Host.Runtime;
 /// call, resolves the named vehicle and maps the result onto HTTP, in the shape of <see cref="EmergencyStopReleaseEndpoints"/>.
 /// </para>
 /// <para>
+/// <b>Every request is audited</b>, the ones turned away before the decision included
+/// (<see cref="LoadedEmergencyStopRelease.RecordTurnedAwayAsync"/>).
+/// </para>
+/// <para>
 /// <b>Its own credential.</b> Mounted on the same switch as the empty-vehicle entry (<c>EmergencyStopRelease:enabled</c>), but
 /// authenticated by <see cref="EmergencyStopReleaseOptions.LoadedCredentialEnvironmentVariable"/>, so that whoever holds the
 /// empty-vehicle credential cannot release a loaded one. Unset, it answers 503: a site turns it on deliberately. It is not a
@@ -66,23 +70,29 @@ public static class LoadedEmergencyStopReleaseEndpoints
         ArgumentNullException.ThrowIfNull(releaseOptions);
 
         context.Response.Headers.CacheControl = "no-store";
+        string? named = request?.AgvId;
         string? expected = Environment.GetEnvironmentVariable(releaseOptions.Value.LoadedCredentialEnvironmentVariable);
         if (string.IsNullOrWhiteSpace(expected))
+        {
+            await release.RecordTurnedAwayAsync(named, "UNAVAILABLE", cancellationToken).ConfigureAwait(false);
             return TypedResults.Problem(
                 statusCode: StatusCodes.Status503ServiceUnavailable,
                 title: "Loaded vehicle emergency stop release unavailable");
+        }
 
         if (!AuthenticationHeaderValue.TryParse(context.Request.Headers.Authorization, out AuthenticationHeaderValue? header) ||
             !string.Equals(header.Scheme, "Bearer", StringComparison.OrdinalIgnoreCase) ||
             string.IsNullOrWhiteSpace(header.Parameter) ||
             !CryptographicOperations.FixedTimeEquals(Encoding.UTF8.GetBytes(expected), Encoding.UTF8.GetBytes(header.Parameter)))
         {
+            await release.RecordTurnedAwayAsync(named, "UNAUTHORIZED", cancellationToken).ConfigureAwait(false);
             context.Response.Headers.WWWAuthenticate = "Bearer";
             return TypedResults.Unauthorized();
         }
 
         if (request is null || string.IsNullOrWhiteSpace(request.AgvId))
         {
+            await release.RecordTurnedAwayAsync(named, "INCOMPLETE", cancellationToken).ConfigureAwait(false);
             return TypedResults.Problem(
                 statusCode: StatusCodes.Status422UnprocessableEntity,
                 title: "Incomplete release request",
@@ -91,14 +101,33 @@ public static class LoadedEmergencyStopReleaseEndpoints
 
         if (roster.ByAgvId(request.AgvId) is not FleetVehicle vehicle)
         {
+            await release.RecordTurnedAwayAsync(named, "UNKNOWN_VEHICLE", cancellationToken).ConfigureAwait(false);
             return TypedResults.Problem(
                 statusCode: StatusCodes.Status404NotFound,
                 title: "Unknown vehicle",
                 detail: $"'{request.AgvId}' is not a vehicle this server drives.");
         }
 
-        LoadedEmergencyStopReleaseResult result = await release.DecideAsync(
-            new EmergencyStopSubject(vehicle.AgvId, vehicle.VehicleKey), request, cancellationToken).ConfigureAwait(false);
+        LoadedEmergencyStopReleaseResult result;
+        try
+        {
+            result = await release.DecideAsync(
+                new EmergencyStopSubject(vehicle.AgvId, vehicle.VehicleKey), request, cancellationToken).ConfigureAwait(false);
+        }
+        catch (Exception error) when (error is not OperationCanceledException)
+        {
+            // Best effort: the failure may be the database the audit is written to. The original error is what goes out.
+            try
+            {
+                await release.RecordTurnedAwayAsync(vehicle.AgvId, "FAILED", cancellationToken).ConfigureAwait(false);
+            }
+            catch (Exception auditError) when (auditError is not OperationCanceledException)
+            {
+                throw new AggregateException(error, auditError);
+            }
+
+            throw;
+        }
 
         EmergencyStopDecision? decision = result.Decision;
         LoadedEmergencyStopReleaseResponse body = new(

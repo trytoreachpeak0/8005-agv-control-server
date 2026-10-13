@@ -234,8 +234,11 @@ jobs:
               # read-back, a timing that one pass cannot tell from luck.
               @{ Name = 'emergency-stop-operator-release'; Runs = 3 }
               # control-server#335 (REQ-0246): a door reported not locked while driving holds this order, stops once, never cancels;
-              # locked again, the latch is released and the held order waits for a person.
+              # locked again, nothing is released (CP-0011, control-server#539): a person who repaired the lock releases it.
               @{ Name = 'in-transit-door-not-locked'; Runs = 1 }
+              # control-server#539 review H-1: the same with the emergency-stop button held -- recorded without a call,
+              # re-triggered once a class-two entry clears the latch, then released by a person.
+              @{ Name = 'in-transit-door-button-held'; Runs = 1 }
               # The batch-3 exit (FP-IS-14 and FP-IS-15), three consecutive runs each.
               @{ Name = 'slot-configuration-activation-replay'; Runs = 3; BatchId = 'batch-3' }
               @{ Name = 'onboard-alarm-snapshot-dashboard';     Runs = 3; BatchId = 'batch-3' }
@@ -364,6 +367,8 @@ jobs:
               # demand on the vehicle and rebuilds its order after the delay; the same request twice does nothing, and an
               # unsigned one is still refused.
               @{ Name = 'vehicle-fault-operator-clearance'; Runs = 1 }
+              # control-server#539 review S-4: the door half of the clearance, beside the FAILED half above.
+              @{ Name = 'vehicle-fault-operator-clearance-door'; Runs = 1 }
               # control-server#345 (before the v2 vehicle trial): an own order rebuilt after a cancellation is cancelled again
               # within REQ-0361's window and the rebuilding stops; an unconfirmed request through #299's entry point is refused,
               # a confirmed REBUILD_STOPPED_ORDER rebuilds it once for the same vehicle and demand, and the same request again

@@ -37,12 +37,22 @@ public enum EmergencyStopRequestSource
 }
 
 /// <summary>One request to stop a vehicle, with everything REQ-0249 requires recorded.</summary>
+/// <param name="Cause">
+/// The symptom this server stopped the vehicle for (CP-0011 section 6, item 1: "三类记录的停车原因取症状码"), written on the
+/// receipt as <c>cause</c>. <see cref="Reason"/> says why the stop was asked for now (the stop proof's missing facts, an
+/// external release); this says what the stop is about, and survives the fault fact's evidence code being overwritten -- a
+/// button held at the same time, or the order going FAILED afterwards (control-server#539 review M-2). Null on a request
+/// that is not about a symptom of its own, such as a re-trigger; <see cref="EmergencyStopSupervisor.OpenEpisodeCausesAsync"/>
+/// reads every stop of the open episode, not one. Not part of the semantic hash, so an attempt armed before this field existed
+/// still matches its retry.
+/// </param>
 public sealed record EmergencyStopRequest(
     EmergencyStopSubject Subject,
     EmergencyStopRequestSource Source,
     string? RequesterIdentity,
     string Reason,
-    long? FaultGeneration);
+    long? FaultGeneration,
+    string? Cause = null);
 
 /// <summary>
 /// A person's confirmation that a latched vehicle may be released, with everything REQ-0356 requires
@@ -59,13 +69,18 @@ public sealed record EmergencyStopRequest(
 /// the lock proof a departure needs (REQ-0244).
 /// </param>
 /// <param name="Note">Free text from the person, recorded verbatim. Optional.</param>
+/// <param name="DoorLockRepaired">
+/// The person confirms the door lock was repaired (CP-0011). Asked for only when the vehicle was stopped for its doors; recorded
+/// on the release's receipt either way, so the audit says what was confirmed (control-server#539 review L-4).
+/// </param>
 public sealed record EmergencyStopReleaseConfirmation(
     EmergencyStopSubject Subject,
     string? ConfirmerIdentity,
     bool CauseCleared,
     bool VehicleEmpty,
     bool AllDoorsClosed,
-    string? Note);
+    string? Note,
+    bool DoorLockRepaired = false);
 
 /// <summary>
 /// The governed release of a loaded vehicle (REQ-0356 as revised by CP-0011, requirements baseline v1.10.0): a person with
@@ -497,6 +512,7 @@ public sealed class EmergencyStopSupervisor(
         CancellationToken cancellationToken)
     {
         ArgumentNullException.ThrowIfNull(confirmation);
+        confirmation = confirmation with { DoorLockRepaired = doorLockRepaired };
         EmergencyStopSubject subject = confirmation.Subject;
         ArgumentNullException.ThrowIfNull(subject);
 
@@ -607,7 +623,8 @@ public sealed class EmergencyStopSupervisor(
             confirmation.CauseCleared,
             VehicleEmpty: false,
             confirmation.AllDoorsClosed,
-            confirmation.Reason);
+            confirmation.Reason,
+            confirmation.DoorLockRepaired);
         IReadOnlyList<string> obstacles = LoadedReleaseObstacles(
             confirmation, doorCause, emergency, episode is not null, orders, ownOrderIds);
         if (obstacles.Count > 0 || episode is not (RiotOrderCommandAttempt trigger, _))
@@ -705,6 +722,34 @@ public sealed class EmergencyStopSupervisor(
             VehicleTarget(subject.DeviceKey),
             cancellationToken).ConfigureAwait(false);
         return releases.LastOrDefault(release => release.Outcome == RiotOrderCommandOutcome.Confirmed)?.CommandAuditId;
+    }
+
+    /// <summary>
+    /// The symptoms this server's open stop on the vehicle was raised for (<see cref="EmergencyStopRequest.Cause"/>), read off
+    /// every stop of the open episode; empty when there is no open stop or none recorded a cause.
+    /// </summary>
+    /// <remarks>
+    /// For the class-three entries, which must know whether this stop is about a driving vehicle's doors -- then the person
+    /// confirms the lock was repaired (CP-0011). The fault fact's evidence code cannot say: it becomes
+    /// <c>RIOT_EMERGENCY_CAN_NOT_RECOVER</c> while a button is held and <c>VEHICLE_ORDER_FAILED</c> when the held order fails
+    /// afterwards (control-server#539 review M-2). A stop armed but not yet recorded has no receipt and no cause yet.
+    /// </remarks>
+    public async Task<IReadOnlySet<string>> OpenEpisodeCausesAsync(
+        EmergencyStopSubject subject,
+        CancellationToken cancellationToken)
+    {
+        ArgumentNullException.ThrowIfNull(subject);
+
+        IReadOnlyList<RiotOrderCommandAttempt> triggers = await ReadStopsAsync(subject.DeviceKey, cancellationToken)
+            .ConfigureAwait(false);
+        IReadOnlyList<RiotOrderCommandAttempt> releases = await audit.ReadAttemptsAsync(
+            RiotCommandTypeNames.CancelEmergency,
+            VehicleTarget(subject.DeviceKey),
+            cancellationToken).ConfigureAwait(false);
+        return EpisodeStops(triggers, releases)
+            .Select(ReceiptCause)
+            .OfType<string>()
+            .ToHashSet(StringComparer.Ordinal);
     }
 
     /// <summary>
@@ -1195,6 +1240,7 @@ public sealed class EmergencyStopSupervisor(
             agvId = request.Subject.AgvId,
             deviceKey = request.Subject.DeviceKey,
             request.Reason,
+            cause = request.Cause,
             call = (object?)null,
             emergencyState = emergency.EmergencyState,
         })!.ToJsonString();
@@ -1522,6 +1568,15 @@ public sealed class EmergencyStopSupervisor(
         IReadOnlyList<RiotOrderCommandAttempt> triggers,
         IReadOnlyList<RiotOrderCommandAttempt> releases)
     {
+        List<RiotOrderCommandAttempt> episode = EpisodeStops(triggers, releases);
+        return episode.Count == 0 ? null : (episode[^1], episode.Count);
+    }
+
+    /// <summary>Every stop of the open episode, oldest first: those after the last confirmed release.</summary>
+    private static List<RiotOrderCommandAttempt> EpisodeStops(
+        IReadOnlyList<RiotOrderCommandAttempt> triggers,
+        IReadOnlyList<RiotOrderCommandAttempt> releases)
+    {
         ArgumentNullException.ThrowIfNull(triggers);
         ArgumentNullException.ThrowIfNull(releases);
 
@@ -1529,10 +1584,33 @@ public sealed class EmergencyStopSupervisor(
             .Where(release => release.Outcome == RiotOrderCommandOutcome.Confirmed)
             .Select(release => (DateTimeOffset?)release.IssuedAt)
             .Max();
-        List<RiotOrderCommandAttempt> episode = triggers
+        return triggers
             .Where(trigger => closedAt is null || trigger.IssuedAt > closedAt)
             .ToList();
-        return episode.Count == 0 ? null : (episode[^1], episode.Count);
+    }
+
+    /// <summary>The <c>cause</c> written on a stop's receipt (<see cref="EmergencyStopRequest.Cause"/>), or null.</summary>
+    internal static string? ReceiptCause(RiotOrderCommandAttempt attempt)
+    {
+        ArgumentNullException.ThrowIfNull(attempt);
+        if (string.IsNullOrWhiteSpace(attempt.ReceiptJson))
+        {
+            return null;
+        }
+
+        try
+        {
+            using JsonDocument receipt = JsonDocument.Parse(attempt.ReceiptJson);
+            return receipt.RootElement.ValueKind == JsonValueKind.Object &&
+                receipt.RootElement.TryGetProperty("cause", out JsonElement cause) &&
+                cause.ValueKind == JsonValueKind.String
+                ? cause.GetString()
+                : null;
+        }
+        catch (JsonException)
+        {
+            return null;
+        }
     }
 
     /// <summary>
@@ -1609,6 +1687,7 @@ public sealed class EmergencyStopSupervisor(
             agvId = request.Subject.AgvId,
             deviceKey = request.Subject.DeviceKey,
             request.Reason,
+            cause = request.Cause,
             call = new
             {
                 disposition = call.Disposition.ToString(),
@@ -1629,6 +1708,7 @@ public sealed class EmergencyStopSupervisor(
                 causeCleared = confirmation.CauseCleared,
                 vehicleEmpty = confirmation.VehicleEmpty,
                 allDoorsClosed = confirmation.AllDoorsClosed,
+                doorLockRepaired = confirmation.DoorLockRepaired,
                 note = confirmation.Note,
             });
         }

@@ -160,7 +160,16 @@ public sealed partial class JourneyRuntimeEngine
     /// <para>
     /// It supervises only: no journey code is written, the rebuild keeps its own. A person releases the stop through the
     /// class-three entry and clears the fault (CP-0011: the doors reading locked again release nothing); the rebuild the engine
-    /// recorded goes on from there. Doors reported open again between stations stop the vehicle again, as anywhere else.
+    /// recorded goes on from there.
+    /// </para>
+    /// <para>
+    /// <b>Doors not proven locked do not take the released vehicle's exemption away here</b>, unlike on a live order
+    /// (<see cref="FaultedVehicleContext.DoorsNotProvenLocked"/> is left false). With the order ended in RIoT nothing can drive the
+    /// vehicle, so a door that will not read locked is no reason to stop it again; motion read, unreadable or stale still stops
+    /// it. This is the governed way out for a lock sensor that is really broken (control-server#539 review S-2, probe P2): end
+    /// the held order in RIoT, release through the class-three entry, clear the fault. Were the doors to take the exemption away
+    /// here too, a vehicle whose sensor never reads locked would be stopped again the round after every release, with no way out
+    /// but the database.
     /// </para>
     /// </remarks>
     private async Task SuperviseDoorFaultOnEndedOrderAsync(

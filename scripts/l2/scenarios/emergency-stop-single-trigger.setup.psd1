@@ -3,7 +3,13 @@
 # 单车、合成车载端。唯一改动环境的是急停重试的退避：本装置每秒评估一次，默认 2 秒的退避会让「退避内
 # 又请求了一次、正确地没发」与「退避到期、按 REQ-0248 重试」挤在一起，场景分不清服务端做对的是哪一件。
 # 20 秒比场景里要看的几个阶段加起来都长。退避本身是现场参数（RiotCommandOptions），不是开关。
+#
+# 收尾那一步人经三类入口（有货解除）解除（CP-0011）：打开人工确认解除的开关，名单里放一个 R-13。
 @{
+    EmergencyStopRelease = $true
+    FieldOperatorRoles   = @(
+        @{ OperatorId = 'L2-ADMIN-13'; Roles = @('R-13') }
+    )
     RiotCommands = @{
         EmergencyRetryInitialDelay = '00:00:20'
     }

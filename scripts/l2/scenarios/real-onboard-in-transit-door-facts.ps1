@@ -332,8 +332,9 @@ $null = $simulator.Command('Put', "slots/$loadSlot/lock-feedback-override", @{ m
 $journal.Note("Lock feedback of slot $loadSlot back to AUTO.")
 $null = Wait-L2Iterations -Riot $riot -Count 5 -TimeoutSeconds 60 -Journal $journal
 $assertions.Add(
-    'L2-DF-09', '锁反馈恢复为 1 之后服务端自己也不解除（CP-0011）：再跑 5 轮仍没有 cancelEmergency',
-    ((Get-Attempts 'cancelEmergency').Count -eq 0), 0, (Get-Attempts 'cancelEmergency').Count)
+    'L2-DF-09', '锁反馈恢复为 1 之后服务端自己也不解除（CP-0011）：再跑 5 轮，审计表与 RIoT 侧都没有 cancelEmergency',
+    ((Get-Attempts 'cancelEmergency').Count -eq 0 -and (Get-RiotInvocations 'cancelEmergency').Count -eq 0),
+    '0 / 0', "$((Get-Attempts 'cancelEmergency').Count) / $((Get-RiotInvocations 'cancelEmergency').Count)")
 
 $journal.Note('A person confirms the door lock was repaired and releases the stop through the loaded entry.')
 $releaseResponse = Invoke-WebRequest -Method Post -Uri $loadedReleaseUri -SkipHttpErrorCheck -TimeoutSec 30 `

@@ -145,6 +145,17 @@ internal static class JourneyRuntimeWorkerTestKit
         public bool EmergencyLatched { get; set; }
 
         /// <summary>
+        /// Somebody holds the vehicle's emergency-stop button: RIoT reports <c>CAN_NOT_RECOVER</c>, whatever
+        /// <see cref="EmergencyLatched"/> says (riot-behavior-lab Round 27-29). Released, the latch reads as
+        /// <see cref="EmergencyLatched"/> again (control-server#539 review H-1).
+        /// </summary>
+        public bool ButtonHeld { get; set; }
+
+        private string EmergencyState => ButtonHeld
+            ? RiotVehicleEmergencyObservation.CanNotRecover
+            : EmergencyLatched ? RiotVehicleEmergencyObservation.CanRecover : RiotVehicleEmergencyObservation.Ok;
+
+        /// <summary>
         /// The orderIds RIoT lists as unfinished (states 1, 3, 7, 8, 9, 10) for this vehicle. Empty by default, so every existing
         /// test keeps reading "no unfinished order" as before; control-server#335 sets it to exercise the release rule.
         /// </summary>
@@ -1337,7 +1348,7 @@ internal static class JourneyRuntimeWorkerTestKit
             Context.ChangeTracker.Clear();
         }
 
-        private SilentCommandGateway CommandGateway() => new(Clock, () => EmergencyLatched, () =>
+        private SilentCommandGateway CommandGateway() => new(Clock, () => EmergencyState, () =>
         {
             BeforeUnfinishedOrdersRead?.Invoke();
             return UnfinishedOrderIds;
@@ -1357,7 +1368,7 @@ internal static class JourneyRuntimeWorkerTestKit
         /// </summary>
         private sealed class SilentCommandGateway(
             TimeProvider clock,
-            Func<bool> latched,
+            Func<string> emergencyState,
             Func<string[]> unfinished,
             Func<string, int?> stateOf,
             Action<string> sent)
@@ -1411,7 +1422,7 @@ internal static class JourneyRuntimeWorkerTestKit
                 _ = cancellationToken;
                 return Task.FromResult(new RiotVehicleEmergencyObservation(
                     deviceKey,
-                    latched() ? RiotVehicleEmergencyObservation.CanRecover : RiotVehicleEmergencyObservation.Ok,
+                    emergencyState(),
                     clock.GetUtcNow()));
             }
         }

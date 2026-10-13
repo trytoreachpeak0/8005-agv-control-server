@@ -595,6 +595,102 @@ public sealed class InTransitDoorEmergencyReleaseTests
         Assert.Null(fault.EscalatedAt);
     }
 
+    /// <summary>
+    /// CP-0011 判定表第 4 行（审查 H-1，探针 P1 的序列）：车在路上门报没锁时，有人按着急停按钮（<c>CAN_NOT_RECOVER</c>）。
+    /// 服务端在那个闩锁上只记本服务端的一类、不发调用。门锁修好读回锁闭、按钮松开（<c>CAN_RECOVER</c>）、有人用二类入口解开（<c>OK</c>）：
+    /// 本服务端这一类还在，立即重下一次。之后人经三类入口解除（这次急停记着门锁原因，所以要确认门锁已检修），人按续行，故障清除。
+    /// </summary>
+    /// <remarks>
+    /// 修前这条路卡死：按钮按着时故障的证据码变成 <c>RIOT_EMERGENCY_CAN_NOT_RECOVER</c>，门锁读回锁闭后门锁那一路认不出这是门锁故障、
+    /// 不再调故障模型；急停监看只挂在那一路上，于是二类入口解开之后没有重下，开着的急停又挡住续行和清除
+    /// （<c>FAULT_RECOVERY_EMERGENCY_STOP_OPEN</c>），三类入口要 <c>CAN_RECOVER</c> 而闩锁已是 <c>OK</c>。现在引擎每一轮对有未结束急停的车都驱动监看。
+    /// </remarks>
+    [Fact]
+    [Trait("Requirement", "REQ-0248")]
+    [Trait("Requirement", "REQ-0356")]
+    [Trait("Requirement", "REQ-0239")]
+    public async Task AStopRecordedUnderAHeldButtonIsReTriggeredWhenAClassTwoEntryClearsTheLatchAndAPersonCanThenRelease()
+    {
+        await using RuntimeFixture fixture = await GateArrivalWaitAsync();
+        string upperId = (await fixture.RuntimeAsync()).GateUpperId!;
+        fixture.Riot.MovementState = "MT_RUNNING";
+        fixture.Riot.Vehicle = fixture.Riot.Vehicle with { CurrentStationId = 0 };
+        fixture.ButtonHeld = true;
+        await fixture.ReportSafetySummaryAsync(
+            allTargetSlotsLocked: false, unknownPresent: false, ["LOCK_NOT_CLOSED", "ACTION_NOT_ALLOWED_IN_STATE"]);
+        await DriveOneRoundAsync(fixture);
+
+        // 只记不发；故障证据码被按钮盖成 CAN_NOT_RECOVER，这次急停自己记着门锁原因。
+        Assert.Equal(0, await CountAsync(fixture, RiotCommandTypeNames.TriggerEmergency));
+        Assert.Equal(1, await CountAsync(fixture, EmergencyStopSupervisor.LatchAdoptedCommandType));
+        await using (ControlServerDbContext reading = new(fixture.DbOptionsForTests))
+        {
+            VehicleFaultStateRow fault = await reading.VehicleFaultStates.AsNoTracking().SingleAsync(Token);
+            Assert.Equal(VehicleFaultEvidence.EmergencyCanNotRecover, fault.EvidenceCode);
+            Assert.Contains(
+                VehicleFaultEvidence.DoorNotProvenLocked,
+                await fixture.CreateEmergencyStopSupervisor(reading).OpenEpisodeCausesAsync(
+                    new EmergencyStopSubject(fixture.Options.AgvId, fixture.Options.VehicleKey), Token));
+        }
+
+        // RIoT 停住单；门锁修好、读回锁闭；按钮松开。
+        string orderId = await OrderIdAsync(fixture, upperId);
+        fixture.Riot.SetOrderState(upperId, RiotOrderState.Paused, terminal: false);
+        fixture.Riot.MovementState = "MT_PAUSED";
+        fixture.UnfinishedOrderIds = [orderId];
+        await ReportLockedAsync(fixture);
+        await DriveOneRoundAsync(fixture);
+        fixture.ButtonHeld = false;
+        fixture.EmergencyLatched = true;
+        await DriveOneRoundAsync(fixture);
+        Assert.Equal(0, await CountAsync(fixture, RiotCommandTypeNames.TriggerEmergency));
+
+        // 有人用二类入口解开：本服务端这一类还在，下一轮重下一次。
+        fixture.EmergencyLatched = false;
+        await DriveOneRoundAsync(fixture);
+        Assert.Equal(1, await CountAsync(fixture, RiotCommandTypeNames.TriggerEmergency));
+        fixture.EmergencyLatched = true;
+        await AssertNoReleaseOverRoundsAsync(fixture);
+        Assert.Equal(1, await CountAsync(fixture, RiotCommandTypeNames.TriggerEmergency));
+
+        // 人经三类入口解除（确认门锁已检修），之后不再重下；人按续行，故障清除。
+        await fixture.ReleaseByAPersonAsync();
+        fixture.EmergencyLatched = false;
+        for (int round = 0; round < 5; round++)
+        {
+            await DriveOneRoundAsync(fixture);
+        }
+        Assert.Equal(1, await CountAsync(fixture, RiotCommandTypeNames.TriggerEmergency));
+        Assert.Equal(1, await CountAsync(fixture, RiotCommandTypeNames.CancelEmergency));
+
+        await ResumeByAPersonAsync(fixture, upperId);
+        await using (ControlServerDbContext reading = new(fixture.DbOptionsForTests))
+        {
+            Assert.Equal(VehicleFaultLevel.None, (await reading.VehicleFaultStates.AsNoTracking().SingleAsync(Token)).Level);
+        }
+    }
+
+    /// <summary>
+    /// 审查 H-1 的同根问题：开着的急停不靠「这一轮看到症状」来监看。门锁急停锁住之后那张单在 RIoT 被报 SUCCESS（车到站了），
+    /// 门锁那一路不再走；有人在 RIoT 上解开，下一轮照样重下。
+    /// </summary>
+    [Fact]
+    [Trait("Requirement", "REQ-0248")]
+    public async Task AnOpenStopIsWatchedEvenWhenNoSymptomPathRunsThisRound()
+    {
+        await using RuntimeFixture fixture = await LatchedForTheDoorsAsync();
+        Latched latched = await LatchedFactsAsync(fixture);
+        fixture.Riot.SetOrderState(latched.UpperId, RiotOrderState.Success, terminal: true);
+        fixture.UnfinishedOrderIds = [];
+        await DriveOneRoundAsync(fixture);
+
+        fixture.EmergencyLatched = false;
+        await DriveOneRoundAsync(fixture);
+
+        Assert.Equal(2, await CountAsync(fixture, RiotCommandTypeNames.TriggerEmergency));
+        Assert.Equal(0, await CountAsync(fixture, RiotCommandTypeNames.CancelEmergency));
+    }
+
     // ---- helpers -------------------------------------------------------------------------------------------------
 
     private sealed record Latched(string UpperId, string OrderId);

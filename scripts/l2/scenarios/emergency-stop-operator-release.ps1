@@ -22,8 +22,10 @@ REQ-0356（人工确认解除），变更提案 CP-0003，实现见 control-serv
 **假 RIoT 不替服务端锁、解急停**，它一贯如此：命令只记录，后果由场景照真实 RIoT 的样子摆出来。
 
 **急停的原因换成了门锁**（CP-0011，control-server#539）。原来是在途单被报 FAILED；用户 2026-10-13 定订单 FAILED 不急停，
-那条路从此没有急停可解。门锁这一类在 CP-0011 里也不自动解除，要人确认门锁已检修，所以第 4 步的确认多了 doorLockRepaired，
-L2-ESR-02 也会顺带点名它。车上没货、单在 RIoT 被取消，走的正是空车这个入口。
+那条路从此没有急停可解。门锁这一类在 CP-0011 里也不自动解除，要人确认门锁已检修，所以每一次解除请求都带
+doorLockRepaired（`Invoke-Release` 默认填 true）；L2-ESR-02 因此只缺「车上无货」这一项，拒绝理由里不会出现门锁检修。
+没确认门锁检修被拒那一格在 vehicle-fault-operator-clearance-door（L2-VFCD-02）与 L1 里证。车上没货、单在 RIoT 被取消，
+走的正是空车这个入口。
 #>
 [CmdletBinding()]
 param([Parameter(Mandatory)][object]$Context)

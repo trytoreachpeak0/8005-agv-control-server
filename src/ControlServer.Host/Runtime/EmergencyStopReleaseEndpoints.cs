@@ -116,11 +116,12 @@ public static class EmergencyStopReleaseEndpoints
                 detail: $"'{request.AgvId}' is not a vehicle this server drives.");
         }
 
-        bool doorCause = await EmergencyStopDoorCause.ReadAsync(dbContext, faults, vehicle.AgvId, cancellationToken)
+        EmergencyStopSubject subject = new(vehicle.AgvId, vehicle.VehicleKey);
+        bool doorCause = await EmergencyStopDoorCause.ReadAsync(dbContext, faults, supervisor, subject, cancellationToken)
             .ConfigureAwait(false);
         EmergencyStopDecision decision = await supervisor.ReleaseOnConfirmationAsync(
             new EmergencyStopReleaseConfirmation(
-                new EmergencyStopSubject(vehicle.AgvId, vehicle.VehicleKey),
+                subject,
                 request.OperatorId,
                 request.CauseCleared,
                 request.VehicleEmpty,

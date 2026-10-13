@@ -1023,6 +1023,31 @@ public sealed class VehicleFaultIsolationTests
     }
 
     /// <summary>
+    /// The same under a held button (CP-0011 decision table, row 4; review L-6): an order FAILED while RIoT reports
+    /// <c>CAN_NOT_RECOVER</c> is recorded as a confirmed isolation, and still records no class of this server's -- so once the
+    /// button is released and the latch cleared at its own entry, nothing is triggered.
+    /// </summary>
+    [Fact]
+    [Trait("Requirement", "REQ-0246")]
+    [Trait("Requirement", "REQ-0233")]
+    public async Task AnOrderFailedUnderAHeldButtonRecordsNoClassEither()
+    {
+        await using Fixture fixture = await Fixture.CreateAsync();
+        fixture.Riot.Latch = RiotVehicleEmergencyObservation.CanNotRecover;
+        fixture.Motion.Script = [Moving(Now)];
+        VehicleFaultDecision held = await fixture.ObserveAsync(VehicleFaultEvidence.OrderFailed, WithOrder());
+
+        fixture.Riot.Latch = RiotVehicleEmergencyObservation.Ok;
+        fixture.Clock.Advance(TimeSpan.FromSeconds(1));
+        fixture.Motion.Script = [StandingBetweenStations(fixture.Clock.GetUtcNow())];
+        await fixture.ObserveAsync(VehicleFaultEvidence.OrderFailed, WithOrder());
+
+        Assert.Equal((VehicleFaultLevel.ConfirmedIsolated, false), (held.Level, held.Escalated));
+        Assert.Empty(fixture.Riot.EmergencyCalls);
+        Assert.Empty(await fixture.ReadRecordedClassesAsync());
+    }
+
+    /// <summary>
     /// REQ-0248 as revised by CP-0011: a symptom that asks for a stop on a vehicle somebody else has already latched -- a
     /// button, a bumper, RIoT, Matrix -- gets this server's class recorded on that latch without a call, once per generation.
     /// When anything other than this server clears the latch while the fault stands, the next evaluation triggers it.

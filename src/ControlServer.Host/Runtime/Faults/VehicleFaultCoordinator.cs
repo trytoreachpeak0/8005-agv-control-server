@@ -292,6 +292,7 @@ public sealed class VehicleFaultCoordinator(
             subject,
             hardEvidence ? VehicleFaultLevel.ConfirmedIsolated : VehicleFaultLevel.SuspectedBlocked,
             evidenceCode,
+            symptomCode,
             StopRequired(symptomCode),
             context,
             emergency,
@@ -356,6 +357,7 @@ public sealed class VehicleFaultCoordinator(
         return await ApplyAsync(
             subject,
             VehicleFaultLevel.ConfirmedIsolated,
+            VehicleFaultEvidence.OperatorConfirmed,
             VehicleFaultEvidence.OperatorConfirmed,
             stopRequired: true,
             context,
@@ -591,6 +593,7 @@ public sealed class VehicleFaultCoordinator(
         EmergencyStopSubject subject,
         VehicleFaultLevel level,
         string evidenceCode,
+        string cause,
         bool stopRequired,
         FaultedVehicleContext context,
         RiotVehicleEmergencyObservation emergency,
@@ -674,7 +677,7 @@ public sealed class VehicleFaultCoordinator(
              (emergency.IsLatched && fault.EscalatedAt is null));
         if (escalated)
         {
-            await EscalateAsync(subject, fault, proof, cancellationToken).ConfigureAwait(false);
+            await EscalateAsync(subject, fault, proof, cause, cancellationToken).ConfigureAwait(false);
         }
         else if (fault.EscalatedAt is not null)
         {
@@ -878,6 +881,7 @@ public sealed class VehicleFaultCoordinator(
         EmergencyStopSubject subject,
         VehicleFaultFact fault,
         StopProofVerdict proof,
+        string cause,
         CancellationToken cancellationToken)
     {
         await faults.RecordEscalationAsync(
@@ -891,8 +895,37 @@ public sealed class VehicleFaultCoordinator(
                 Reason: proof.MissingFacts.Count > 0
                     ? string.Join(',', proof.MissingFacts)
                     : "STOP_NOT_PROVEN",
-                fault.FaultGeneration),
+                fault.FaultGeneration,
+                cause),
             cancellationToken).ConfigureAwait(false);
+    }
+
+    /// <summary>
+    /// Drives the emergency supervisor's evaluation for a vehicle on which this server has a stop open, whatever this round
+    /// saw on it (control-server#539 review H-1).
+    /// </summary>
+    /// <remarks>
+    /// <para>
+    /// Until then the evaluation was driven only from <see cref="ObserveAsync"/>, which runs when a round sees a symptom on a
+    /// journey's order. A stop can stay open after the symptom is gone from view: a door fault whose evidence became
+    /// <c>RIOT_EMERGENCY_CAN_NOT_RECOVER</c> while a button was held is no longer recognised as a door fault once the doors
+    /// read locked, and an order that went HANG, SUCCESS or out of the journey takes no symptom path at all. Nobody then
+    /// re-triggered a latch released at RIoT (REQ-0248 as revised), and the open stop kept the fault's own exits shut
+    /// (<c>FAULT_RECOVERY_EMERGENCY_STOP_OPEN</c>) while the class-three entries wanted <c>CAN_RECOVER</c>: the vehicle was
+    /// stuck.
+    /// </para>
+    /// <para>
+    /// Evaluating twice in a round -- here and from <see cref="ObserveAsync"/> -- issues nothing twice: the supervisor
+    /// settles from the audit trail and retries only past its backoff.
+    /// </para>
+    /// </remarks>
+    public async Task WatchOpenStopAsync(EmergencyStopSubject subject, CancellationToken cancellationToken)
+    {
+        ArgumentNullException.ThrowIfNull(subject);
+        if (await emergencyStop.HasOpenEpisodeAsync(subject, cancellationToken).ConfigureAwait(false))
+        {
+            await emergencyStop.EvaluateAsync(subject, cancellationToken).ConfigureAwait(false);
+        }
     }
 
     private void Alarm(string? alarmCode, string agvId, IReadOnlyList<string> reasons)
