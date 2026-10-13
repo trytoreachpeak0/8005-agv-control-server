@@ -36,8 +36,11 @@ WHERE AgvId = '<agvId>' AND State = 'PENDING_RESULT';
 
 文档不存在时，车就从这里生成初值。已批准的八仓硬件事实（REQ-0267）是：`doChannel` 0～7、`lockFeedbackDiChannel`
 0～7、`lightCurtainDiChannel` 8～15（渲染成 `DO1～DO8`／`DI1～DI8`／`DI9～DI16`），`signalPolarity` 为
-`ACTIVE_HIGH`，`pulseResetMilliseconds` 为 500。如果改动的人连 `appsettings.json` 也改了，先把它改回来，
-否则下面生成出来的仍是被改过的那一版。
+`UNLOCK_OUTPUT_ACTIVE_HIGH;LOCK_FEEDBACK_LOCKED_HIGH;LIGHT_CURTAIN_OBJECT_LOW`（按票据 35 逐个信号写明：开锁写 1、
+锁闭为 1、光幕有物为 0；与 W1 工具分支的 `240352e5` 和生产库逐字相同，v2 线由
+[#44](https://github.com/trytoreachpeak0/8005-agv-control-server/issues/44) 对齐），`pulseResetMilliseconds` 为 500。
+**不要写成旧的 `ACTIVE_HIGH`**：它进仓位配置指纹，写错车就会因 `SLOT_CONFIGURATION_FINGERPRINT_MISMATCH` 被拒、不能就绪。
+如果改动的人连 `appsettings.json` 也改了，先把它改回来，否则下面生成出来的仍是被改过的那一版。
 
 ## 三、步骤
 
