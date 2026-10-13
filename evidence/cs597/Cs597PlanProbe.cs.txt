@@ -1,0 +1,51 @@
+using ControlServer.Infrastructure.Persistence;
+using Microsoft.Data.Sqlite;
+using Microsoft.EntityFrameworkCore;
+
+namespace ControlServer.Tests;
+
+public sealed class Cs597PlanProbe
+{
+    [Fact(Explicit = true)]
+    public async Task Probe()
+    {
+        SqliteConnection connection = new("Data Source=:memory:");
+        await connection.OpenAsync(TestContext.Current.CancellationToken);
+        await using ControlServerDbContext context = new(
+            new DbContextOptionsBuilder<ControlServerDbContext>().UseSqlite(connection).Options);
+        await context.Database.EnsureCreatedAsync(TestContext.Current.CancellationToken);
+        bool composite = Environment.GetEnvironmentVariable("CS597_COMPOSITE") == "1";
+        if (composite)
+        {
+            await using SqliteCommand create = connection.CreateCommand();
+            create.CommandText = "CREATE INDEX IX_Probe ON ProtocolInbox (MessageType, ReceivedAtUtcTicks)";
+            await create.ExecuteNonQueryAsync(TestContext.Current.CancellationToken);
+        }
+        string[] sqls =
+        [
+            "SELECT * FROM (SELECT rowid AS r, * FROM ProtocolInbox WHERE MessageType = 'SafetyStateChanged' UNION ALL SELECT rowid AS r, * FROM ProtocolInbox WHERE MessageType = 'SafetyStateSnapshot') ORDER BY ReceivedAtUtcTicks DESC, MessageType, r",
+            "SELECT rowid AS r, * FROM ProtocolInbox WHERE MessageType = 'SafetyStateChanged' UNION ALL SELECT rowid AS r, * FROM ProtocolInbox WHERE MessageType = 'SafetyStateSnapshot' ORDER BY ReceivedAtUtcTicks DESC, MessageType, r",
+            "SELECT rowid AS r, * FROM ProtocolInbox WHERE MessageType = 'SafetyStateChanged' ORDER BY ReceivedAtUtcTicks DESC, r",
+            context.ProtocolInbox.Where(row => row.MessageType == "SafetyStateSnapshot" || row.MessageType == "SafetyStateChanged").ToQueryString(),
+            context.ProtocolInbox.Where(row => row.MessageType == "SafetyStateSnapshot" || row.MessageType == "SafetyStateChanged")
+                .OrderByDescending(row => row.ReceivedAtUtcTicks).ToQueryString(),
+            context.ProtocolInbox.Where(row => row.MessageType == "SafetyStateSnapshot" || row.MessageType == "SafetyStateChanged")
+                .OrderByDescending(row => row.ReceivedAtUtcTicks).ThenBy(row => row.MessageType).ToQueryString(),
+            "SELECT * FROM ProtocolInbox WHERE MessageType IN ('SafetyStateSnapshot','SafetyStateChanged') ORDER BY ReceivedAtUtcTicks DESC, MessageType, rowid",
+            "SELECT * FROM ProtocolInbox WHERE +MessageType IN ('SafetyStateSnapshot','SafetyStateChanged') ORDER BY ReceivedAtUtcTicks DESC, MessageType, rowid",
+        ];
+        List<string> lines = [];
+        foreach (string sql in sqls)
+        {
+            lines.Add("SQL: " + sql.Replace("\n", " "));
+            await using SqliteCommand command = connection.CreateCommand();
+            command.CommandText = "EXPLAIN QUERY PLAN " + sql;
+            await using SqliteDataReader reader = await command.ExecuteReaderAsync(TestContext.Current.CancellationToken);
+            while (await reader.ReadAsync(TestContext.Current.CancellationToken))
+            {
+                lines.Add("  PLAN: " + reader.GetString(3));
+            }
+        }
+        await File.WriteAllLinesAsync(composite ? "F:/8005-scratch/cs597-plan-composite.txt" : "F:/8005-scratch/cs597-plan.txt", lines, TestContext.Current.CancellationToken);
+    }
+}
