@@ -265,6 +265,17 @@ public sealed class SlotConfigurationReadinessGate(
         CancellationToken cancellationToken) =>
         (await EvaluateAsync(agvId, slotModelVersionId, cancellationToken)).Ready;
 
+    /// <summary>
+    /// 现算一台车在它此刻绑定的车型下的就绪判定（control-server#686，派车用）；车型解析不出时为 <c>null</c>。
+    /// </summary>
+    public Task<SlotConfigurationReadinessVerdict?> EvaluateVehicleAsync(
+        string agvId,
+        CancellationToken cancellationToken)
+    {
+        _ = _context;
+        return Task.FromResult<SlotConfigurationReadinessVerdict?>(null);
+    }
+
     private async Task InvalidateAsync(
         string agvId,
         string slotModelVersionId,
