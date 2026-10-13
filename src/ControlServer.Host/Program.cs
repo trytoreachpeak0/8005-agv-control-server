@@ -49,6 +49,8 @@ builder.Services.AddScoped<JourneyRuntimeEngine>();
 // control-server#391: the fixed task station sweep's warnings are raised once and cleared once across rounds.
 builder.Services.AddSingleton<FixedStationSweepWarnings>();
 builder.Services.AddScoped<ForeignRunningOrderSupervisor>();
+// control-server#617: the governed way out of a foreign order that left RIoT's running listing unread as ended.
+builder.Services.AddScoped<ForeignRunningOrderManualRelease>();
 builder.Services.AddDispatchAdmission();
 builder.Services.AddOptions<RouteGraphOptions>()
     .Bind(builder.Configuration.GetSection(RouteGraphOptions.SectionName))

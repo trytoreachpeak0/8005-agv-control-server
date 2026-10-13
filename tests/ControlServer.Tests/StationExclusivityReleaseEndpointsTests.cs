@@ -4,6 +4,7 @@ using ControlServer.Host.Runtime;
 using ControlServer.Infrastructure.Persistence;
 using ControlServer.Host.Runtime.Faults;
 using ControlServer.Host.Runtime.Fleet;
+using ControlServer.Host.Runtime.ForeignOrders;
 using ControlServer.Host.Runtime.Recovery;
 using ControlServer.Host.Runtime.RouteGraph;
 using Microsoft.AspNetCore.Builder;
@@ -143,6 +144,7 @@ public sealed class StationExclusivityReleaseEndpointsTests
         builder.Services.AddScoped<VehicleFaultRecoveryService>(_ => throw new InvalidOperationException("not resolved"));
         builder.Services.AddScoped<WaitingPointArrivalSettlement>(_ => throw new InvalidOperationException("not resolved"));
         builder.Services.AddScoped<RecoverySessionAdministratorClose>(_ => throw new InvalidOperationException("not resolved"));
+        builder.Services.AddScoped<ForeignRunningOrderManualRelease>(_ => throw new InvalidOperationException("not resolved"));
         builder.Services.AddScoped<VehicleRoster>(_ => throw new InvalidOperationException("not resolved"));
         builder.Services.AddScoped<ControlServerDbContext>(_ => throw new InvalidOperationException("not resolved"));
         builder.Services.AddScoped<IGovernanceAuditWriter>(_ => throw new InvalidOperationException("not resolved"));
@@ -166,6 +168,8 @@ public sealed class StationExclusivityReleaseEndpointsTests
         Assert.Equal(on, routes.Contains(RecoverySessionAdministratorCloseEndpoints.Route));
         // control-server#659: and the route graph's sticky stale release.
         Assert.Equal(on, routes.Contains(RouteGraphStickyStaleReleaseEndpoints.Route));
+        // control-server#617: and the foreign running order release.
+        Assert.Equal(on, routes.Contains(ForeignRunningOrderManualReleaseEndpoints.Route));
     }
 
     // ---- helpers ------------------------------------------------------------------------------------------------
