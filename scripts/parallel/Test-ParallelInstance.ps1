@@ -5058,6 +5058,9 @@ $trialStageDefinitions = [ordered]@{
     'instance-factory01-v2.cutover-trial-s2.runtime-on.json' = @{ RiotIds = @(58, 59); Zones = @('WIRE_BONDING'); Runtime = $true }
     'instance-factory01-v2.cutover-trial-s3.runtime-on.json' = @{ RiotIds = @(58, 59, 60); Zones = @('WIRE_BONDING', 'DIE_ATTACH'); Runtime = $true }
 }
+# The approval, exactly as the user gave it on 2026-10-13 (v2 workspace ds-tasks/board.md), with its pointer. PR #683
+# review S1: a date check alone would pass an edited approval.
+$trialApprovalRecord = 'Zhengyu Shao 于 2026-10-13 在 Claude 对话中批准 v2 生产切换试跑：停 MVP，agv01 转 v2（map 26），v2 读生产 MesIngest 六类需求，三车按 S1→S3 逐台加入，仓位模拟、脚本自动扫码与上下货；每次动车与碰 MVP/agv01 仍逐次授权。（用户原话，8005-workspace-v2 ds-tasks/board.md 10-13 条目；control-server#564 第 7a 步）'
 $cutoverHeldRefusals = @(
     'journeyRuntime.allowedWorkTypes ["DIE_TO_WIRE_STAGING","DIE_TO_OVEN","WIRE_TO_GATE","WIRE_TO_OPTICAL","STAGING_TO_WIRE","WIRE_TO_NITROGEN"] includes WIRE_TO_GATE, which the MVP takes from the same catalog'
     'journeyRuntime.fleet[0] names agv01 (agvId, vehicleKey, deviceKey, riotId), the vehicle the MVP service is driving in production.')
@@ -5120,12 +5123,34 @@ Invoke-SourceCase 'cutover trial stages: each stage definition carries the 2026-
             [string[]] $noSwitch = @(Test-ParallelInstanceDefinition -Definition (Copy-Definition $d))
             $ids = @($j['fleet'] | ForEach-Object { [int] $_['riotId'] } | Sort-Object)
             -not ($cut -is [System.Collections.IDictionary] -and $cut['phase'] -ceq 'trial' -and
-                ([string] $cut['approvalRecord']).Contains('2026-10-13') -and
+                ([string] $cut['approvalRecord']) -ceq $trialApprovalRecord -and
                 $withSwitch.Count -eq 0 -and
                 @($noSwitch | Where-Object { $_.StartsWith('CUTOVER_RECORD_WITHOUT_SWITCH:') }).Count -eq 1 -and
                 (($ids -join ',') -ceq (($want.RiotIds | Sort-Object) -join ',')) -and
                 ((@($j['allowedDispatchZones']) -join ',') -ceq ($want.Zones -join ',')) -and
                 ([bool] $j['enabled'] -eq $want.Runtime) -and ([bool] $d['routeGraph']['enabled'] -eq $want.Runtime)) })
+    @{ Ok = ($wrong.Count -eq 0); Detail = "wrong: $($wrong -join ', ')" }
+}
+# PR #683 review S2: nothing else may drift from the cutover definition the stages are copied from -- the departure wait
+# has no other check (a simulator-test 00:01:30 would stay green), and the holding wait only a ceiling. Each fleet row
+# must be one of the mother's rows verbatim; with productionCutover removed and the four stage keys put back to the
+# mother's values, the whole definition must serialise to exactly the mother.
+Invoke-SourceCase 'cutover trial stages: apart from productionCutover, fleet, allowedDispatchZones and the two runtime switches, each stage definition is the runtime-on cutover definition key for key, and every fleet row is one of its rows verbatim (PR #683 review)' {
+    $mother = Read-ParallelInstanceDefinition -Path (Join-Path $PSScriptRoot 'instance-factory01-v2.cutover-two-zones.runtime-on.json')
+    $motherRows = @($mother['journeyRuntime']['fleet'] | ForEach-Object { $_ | ConvertTo-Json -Depth 20 -Compress })
+    $motherJson = $mother | ConvertTo-Json -Depth 20 -Compress
+    $wrong = @($trialStageDefinitions.Keys | Where-Object {
+            $path = Join-Path $PSScriptRoot $_
+            if (-not (Test-Path -LiteralPath $path)) { return $true }
+            $d = Read-ParallelInstanceDefinition -Path $path
+            $rowsOk = @($d['journeyRuntime']['fleet'] | Where-Object { ($_ | ConvertTo-Json -Depth 20 -Compress) -cnotin $motherRows }).Count -eq 0
+            $n = Copy-Definition $d
+            $n.Remove('productionCutover')
+            $n['journeyRuntime']['fleet'] = $mother['journeyRuntime']['fleet']
+            $n['journeyRuntime']['allowedDispatchZones'] = $mother['journeyRuntime']['allowedDispatchZones']
+            $n['journeyRuntime']['enabled'] = $mother['journeyRuntime']['enabled']
+            $n['routeGraph']['enabled'] = $mother['routeGraph']['enabled']
+            -not ($rowsOk -and ($n | ConvertTo-Json -Depth 20 -Compress) -ceq $motherJson) })
     @{ Ok = ($wrong.Count -eq 0); Detail = "wrong: $($wrong -join ', ')" }
 }
 
