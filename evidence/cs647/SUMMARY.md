@@ -8,6 +8,7 @@
 | --- | --- | --- |
 | `red-753e1b7d.txt` | `753e1b7d`（只有测试，实现之前） | 4 红 26 绿 |
 | `green-fe52025d.txt` | `fe52025d`（实现） | 30/30 绿 |
+| `green-e371c895.txt` | `e371c895`（补审查 S1、S2 两条用例） | 32/32 绿 |
 
 ## 变异（`mutations/`）
 
@@ -23,5 +24,9 @@
 | M6 | 不看角色（同站任意两个停靠都算） | 3 红 | `ATiedPickupAtAStationWithAnUnloadStopIsPlacedAfterTheUnload` 等 |
 
 存活 0。
+
+### 审查补的 M7
+
+独立审查（审 `43123d82`）发现 M7 在当时 30 条用例下存活：`EnRouteAppendPlanner.cs:193` 改成只在「首个或打平」时更新 `bestLoadsBeforeUnload`，严格更便宜那一支不更新（审查 S2）。补了 `AStrictlyCheaperWinnerSetsTheCountLaterTiesAreComparedAgainst` 后，在 `e371c895` 上 19:43:13～19:43:52 重跑 M7（只改 :193 一处、只还原那一个文件）：1 红，见 `mutations/M7-count-only-on-first-or-tie.*`。修复批调度认可这一处只跑单个测试类、不用申请时段。
 
 M6 第一次用常量 `if (false)`，被 `CS0162`（不可达代码，警告当错误）挡在编译期，没跑到测试；19:22:58～19:23:23 改用运行期假条件 `stops.Count < 0` 重跑，`mutate.sh` 里留的是重跑的版本。
