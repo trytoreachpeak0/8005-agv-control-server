@@ -3980,7 +3980,9 @@ public sealed partial class RecoveryStateMachineG2Tests
                 TestContext.Current.CancellationToken)).Status);
             Assert.Null((await context.Set<VehiclePurposeClaimRecordRow>().SingleAsync(
                 TestContext.Current.CancellationToken)).ReleasedAt);
-            Assert.Equal(StationOperationStatus.Prepared, (await context.StationOperations.SingleAsync(
+            // control-server#697: the cancelled load, still Prepared, is judged RecoveryRequired with the result -- never
+            // settled by it. Until #697 it stayed Prepared, and the compensation that would settle it was refused.
+            Assert.Equal(StationOperationStatus.RecoveryRequired, (await context.StationOperations.SingleAsync(
                 TestContext.Current.CancellationToken)).Status);
             JourneyRuntimeRow runtime = await context.JourneyRuntimes.SingleAsync(
                 TestContext.Current.CancellationToken);

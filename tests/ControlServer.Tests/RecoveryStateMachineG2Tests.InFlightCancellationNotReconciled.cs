@@ -236,6 +236,36 @@ public sealed partial class RecoveryStateMachineG2Tests
     }
 
     /// <summary>
+    /// The guard on the load's own verdict: a load the vehicle reported COMPLETED before the cancellation's result arrived is
+    /// what the vehicle said about it, and an unreconciled cancellation does not rewrite it -- only a load still Prepared is
+    /// judged by the cancellation's result.
+    /// </summary>
+    [Fact]
+    [Trait("IntegrationSlice", "FP-IS-02")]
+    [Trait("IntegrationSlice", "FP-IS-07")]
+    public async Task AnUnreconciledInFlightCancellationLeavesALoadAlreadyCommittedAsTheVehicleReportedIt()
+    {
+        CancellationToken token = TestContext.Current.CancellationToken;
+        await using SqliteConnection connection = new("Data Source=:memory:");
+        await connection.OpenAsync(token);
+        await using ControlServerDbContext context = await CreateContextAsync(connection);
+        (OnboardMessageProcessor processor, OnboardConnectionState state) =
+            await AuthorizeInFlightCancellationAsync(context, CancellationProofVariable);
+        Assert.Equal("DurableAck", MessageType(await processor.ProcessAsync(
+            Envelope("b6970000-0000-4000-8000-000000000011", "OperationResult", OperationResultPayload()),
+            state,
+            token)));
+        Assert.Equal(StationOperationStatus.Committed, (await context.StationOperations.AsNoTracking().SingleAsync(token)).Status);
+
+        Assert.Equal("DurableAck", MessageType(await processor.ProcessAsync(
+            UnreconciledCancellationResult("FAILED"), state, token)));
+
+        Assert.Equal(StationOperationStatus.Committed, (await context.StationOperations.AsNoTracking().SingleAsync(token)).Status);
+        Assert.Equal(DemandExecutionStatus.RecoveryRequired, (await context.AcceptedDemands.AsNoTracking().SingleAsync(token)).Status);
+        Assert.Equal(JourneyRuntimeStage.Blocked, (await context.JourneyRuntimes.AsNoTracking().SingleAsync(token)).Stage);
+    }
+
+    /// <summary>
     /// A load commanded and awaiting its result on a ready session, as production leaves it (<see cref="SeedLoadAwaitingResultAsync"/>),
     /// and the operator's in-flight cancellation of it authorized.
     /// </summary>
