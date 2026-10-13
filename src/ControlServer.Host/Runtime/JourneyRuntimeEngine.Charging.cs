@@ -45,8 +45,8 @@ public sealed partial class JourneyRuntimeEngine
             "{StationId} ends as a confirmed failure. Should RIoT show that order running on the vehicle after all, it is " +
             "cancelled and alarmed (event 2180, basis OWN_CHARGE_ORDER_ABANDONED).");
 
-    private static readonly Action<ILogger, string, string, int, DateTimeOffset, Exception?> LogChargingEndNotProven =
-        LoggerMessage.Define<string, string, int, DateTimeOffset>(
+    private static readonly Action<ILogger, string, string, DateTimeOffset, int, Exception?> LogChargingEndNotProven =
+        LoggerMessage.Define<string, string, DateTimeOffset, int>(
             LogLevel.Warning,
             new EventId(2256, nameof(LogChargingEndNotProven)),
             "Charging journey {JourneyId}: its order was cancelled or deleted in RIoT, and vehicle {VehicleKey} has not been " +
@@ -369,7 +369,7 @@ public sealed partial class JourneyRuntimeEngine
                 timeProvider.GetUtcNow() - since > runtimeOptions.OwnOrderRebuildRepeatWindow &&
                 dispatchRound.Charging.Board.FirstTime(notProvenKey))
             {
-                LogChargingEndNotProven(logger, runtime.JourneyId, runtime.VehicleKey, stop.StationRiotId, since, null);
+                LogChargingEndNotProven(logger, runtime.JourneyId, runtime.VehicleKey, since, stop.StationRiotId, null);
             }
             return;
         }

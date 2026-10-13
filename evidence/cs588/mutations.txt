@@ -1,0 +1,23 @@
+# 变异 M1：PreCreateGate.cs 整个文件换回 198e15a34（2112 错位原样），跑护栏与 CreateGateTests；跑完 git checkout 还原，git status 干净
+
+  Error Message:
+   arguments handed to another placeholder's name:
+src/ControlServer.Host/Runtime/CreateGate/PreCreateGate.cs:156 LogConflict: {TargetStationId} <- request.AgvId (named like {AgvId})
+src/ControlServer.Host/Runtime/CreateGate/PreCreateGate.cs:156 LogConflict: {AgvId} <- request.TargetStationId (named like {TargetStationId})
+  Stack Trace:
+     at ControlServer.Tests.LoggerMessageArgumentOrderArchitectureTests.EveryCallSiteHandsItsArgumentsOverInTheTemplatesOrder() in F:\8005-wt\cs588-8005-agv-control-server\tests\ControlServer.Tests\LoggerMessageArgumentOrderArchitectureTests.cs:line 87
+--
+  Error Message:
+   Assert.Equal() Failure: Values differ
+Expected: AGV-01
+Actual:   12
+  Stack Trace:
+Failed!  - Failed:     2, Passed:    49, Skipped:     0, Total:    51, Duration: 7 s - ControlServer.Tests.dll (net8.0)
+
+# 变异 M2：ForeignRunningOrderSupervisor.cs 的 2180 调用处对调 row.AgvId 与 row.DeviceKey（同为 string，编译器不提示），跑护栏；跑完还原，git status 干净
+
+  Error Message:
+   arguments handed to another placeholder's name:
+src/ControlServer.Host/Runtime/ForeignOrders/ForeignRunningOrderSupervisor.cs:565 LogForeignOrderFound: {AgvId} <- row.DeviceKey (named like {DeviceKey})
+src/ControlServer.Host/Runtime/ForeignOrders/ForeignRunningOrderSupervisor.cs:565 LogForeignOrderFound: {DeviceKey} <- row.AgvId (named like {AgvId})
+Failed!  - Failed:     1, Passed:     1, Skipped:     0, Total:     2, Duration: 1 s - ControlServer.Tests.dll (net8.0)

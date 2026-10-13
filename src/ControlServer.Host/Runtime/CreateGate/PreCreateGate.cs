@@ -97,8 +97,8 @@ public sealed class PreCreateGate(
     TimeProvider timeProvider,
     ILogger<PreCreateGate> logger)
 {
-    private static readonly Action<ILogger, string, string, int, long?, Exception?> LogConflict =
-        LoggerMessage.Define<string, string, int, long?>(
+    private static readonly Action<ILogger, string, int, string, long?, Exception?> LogConflict =
+        LoggerMessage.Define<string, int, string, long?>(
             LogLevel.Error,
             new EventId(2112, nameof(LogConflict)),
             "Create gate blocked demand {DemandId}: the route graph reached station {TargetStationId} " +
@@ -154,7 +154,7 @@ public sealed class PreCreateGate(
         if (!riot.IsReachable && graphSaidReachable)
         {
             LogConflict(
-                logger, request.DemandId, request.AgvId, request.TargetStationId,
+                logger, request.DemandId, request.TargetStationId, request.AgvId,
                 request.GraphTraversalCostMm, null);
             return await RecordAsync(
                 request,

@@ -8,6 +8,7 @@ using ControlServer.Host.Runtime.Dispatch.Criteria;
 using ControlServer.Infrastructure.Persistence;
 using Microsoft.Data.Sqlite;
 using Microsoft.EntityFrameworkCore;
+using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Logging.Abstractions;
 using Microsoft.Extensions.Options;
 
@@ -273,6 +274,26 @@ public sealed class CreateGateTests
     }
 
     [Fact]
+    public async Task TheConflictLogNamesTheVehicleAndTheStationUnderTheirOwnProperties()
+    {
+        // Event 2112 is what the plant searches by. A log that files the vehicle under
+        // TargetStationId and the station under AgvId hides every conflict from a search for one
+        // vehicle, so the structured properties are pinned, not just the rendered sentence.
+        StructuredLogCapture capture = new();
+        await using Fixture fixture = await Fixture.CreateAsync(approved: true, capture);
+        fixture.RouteCosts.Set(12, -1);
+
+        await fixture.Gate.EvaluateAsync(Request(graphCostMm: 20000), TestContext.Current.CancellationToken);
+
+        StructuredLogCapture.Entry conflict = Assert.Single(capture.Entries, entry => entry.EventId.Id == 2112);
+        Assert.Equal("LogConflict", conflict.EventId.Name);
+        Assert.Equal("10000000-0000-4000-8000-000000000001", conflict.Properties["DemandId"]);
+        Assert.Equal("AGV-01", conflict.Properties["AgvId"]);
+        Assert.Equal(12, conflict.Properties["TargetStationId"]);
+        Assert.Equal(20000L, conflict.Properties["GraphTraversalCostMm"]);
+    }
+
+    [Fact]
     public async Task TwoCostsOfVeryDifferentSizeAreNotADisagreement()
     {
         // Only reachability is compared. That MapEdge.cost and getRouteCostsBy's costs are the
@@ -484,6 +505,43 @@ public sealed class CreateGateTests
         public void Advance(TimeSpan by) => _now += by;
     }
 
+    /// <summary>
+    /// Keeps each entry's structured state — the name-to-value pairs the template bound — rather
+    /// than only the rendered message, which is all the string capturers elsewhere in this project
+    /// see. Two arguments swapped against their placeholder names render as a plausible sentence;
+    /// only the properties show which value went under which name.
+    /// </summary>
+    private sealed class StructuredLogCapture : ILogger<PreCreateGate>
+    {
+        public sealed record Entry(EventId EventId, IReadOnlyDictionary<string, object?> Properties);
+
+        public List<Entry> Entries { get; } = [];
+
+        public IDisposable? BeginScope<TState>(TState state)
+            where TState : notnull => null;
+
+        public bool IsEnabled(LogLevel logLevel) => true;
+
+        public void Log<TState>(
+            LogLevel logLevel,
+            EventId eventId,
+            TState state,
+            Exception? exception,
+            Func<TState, Exception?, string> formatter)
+        {
+            Dictionary<string, object?> properties = new(StringComparer.Ordinal);
+            if (state is IReadOnlyList<KeyValuePair<string, object?>> pairs)
+            {
+                foreach (KeyValuePair<string, object?> pair in pairs)
+                {
+                    properties[pair.Key] = pair.Value;
+                }
+            }
+
+            Entries.Add(new Entry(eventId, properties));
+        }
+    }
+
     private sealed class StubRouteCostProbe : IRiotRouteCostProbe
     {
         private readonly Dictionary<int, long?> _byStation = [];
@@ -534,7 +592,7 @@ public sealed class CreateGateTests
         public StubRouteCostProbe RouteCosts { get; }
         public MovableClock Clock { get; }
 
-        public static async Task<Fixture> CreateAsync(bool approved)
+        public static async Task<Fixture> CreateAsync(bool approved, ILogger<PreCreateGate>? gateLogger = null)
         {
             SqliteConnection connection = new("Data Source=:memory:");
             await connection.OpenAsync(TestContext.Current.CancellationToken);
@@ -560,7 +618,8 @@ public sealed class CreateGateTests
                 clock,
                 NullLogger<CatalogAvailabilityAccess>.Instance);
             StubRouteCostProbe routeCosts = new();
-            PreCreateGate gate = new(routeCosts, store, clock, NullLogger<PreCreateGate>.Instance);
+            PreCreateGate gate = new(
+                routeCosts, store, clock, gateLogger ?? NullLogger<PreCreateGate>.Instance);
 
             return new Fixture(connection, context, catalog, gate, routeCosts, clock);
         }
