@@ -233,6 +233,193 @@ public sealed class SafetyStateLatestFirstReadTests
         Assert.Equal(new InTransitDoorVerdict(InTransitDoorState.ProvenLocked, Generation - 1, 9), verdict);
     }
 
+    // ---- 量测 -------------------------------------------------------------------------------------------------
+
+    /// <summary>
+    /// 量测（不进默认运行，<c>Explicit</c>）：三台车各连续在线 <c>CS597_MEASURE_DAYS</c> 天（缺省 3），每台每
+    /// <c>CS597_MEASURE_CHANGE_SECONDS</c> 秒（缺省 600，#563 的造数）一条 <c>SafetyStateChanged</c> 的收件箱上，四处读安全状态的
+    /// 热路径每次从收件箱读回几行、用多久。结果写进 <c>CS597_MEASURE_OUT</c>；库放在 <c>CS597_MEASURE_DIR</c>（缺省临时目录）。
+    /// 改动前后在同一台机器上各跑一次，答案逐条相同才算行为不变。
+    /// </summary>
+    /// <remarks>
+    /// <para>
+    /// 造数同 #563（<see cref="ProtocolInboxReadWindowTests.MeasureHotPathInboxReads"/>）：心跳每两秒一条，每车每天 50 条
+    /// <c>SublotSubmitted</c>，会话开头一条能力快照、一条安全快照，此后按间隔发安全变化；三台车错开几秒。另加 AGV-01 十分钟前一条
+    /// 期待动作超时告警（3 号仓），以及它为此回的一份会话中途安全快照（占那一刻的版本号），看板那一处才有东西可读。
+    /// </para>
+    /// <para>
+    /// 真车频率的依据：agv01 真车、真 RIoT 的端到端闭环（<c>evidence/g3/20260829-closed-loop-gen3/SUMMARY.md</c>）全程 1 分 58 秒，
+    /// 车发了 17 条 <c>SafetyStateChanged</c>，约 7 秒一条。拿 7 秒当全天的频率是上界：车不会全天在作业。
+    /// </para>
+    /// </remarks>
+    [Fact(Explicit = true)]
+    public async Task MeasureSafetyStateReads()
+    {
+        int days = int.TryParse(Environment.GetEnvironmentVariable("CS597_MEASURE_DAYS"), out int parsedDays) ? parsedDays : 3;
+        int changeSeconds = int.TryParse(Environment.GetEnvironmentVariable("CS597_MEASURE_CHANGE_SECONDS"), out int parsedSeconds)
+            ? parsedSeconds
+            : 600;
+        string output = Environment.GetEnvironmentVariable("CS597_MEASURE_OUT") ?? Path.Combine(Path.GetTempPath(), "cs597-measure.txt");
+        string databasePath = Path.Combine(
+            Environment.GetEnvironmentVariable("CS597_MEASURE_DIR") ?? Path.GetTempPath(), $"cs597-measure-{Guid.NewGuid():N}.db");
+        ProtocolInboxReadWindowTests.InboxRowsRead reads = new();
+        DbContextOptions<ControlServerDbContext> options = new DbContextOptionsBuilder<ControlServerDbContext>()
+            .UseSqlite($"Data Source={databasePath};Pooling=False")
+            .AddInterceptors(reads)
+            .Options;
+        List<string> lines = [];
+        try
+        {
+            System.Diagnostics.Stopwatch seeding = System.Diagnostics.Stopwatch.StartNew();
+            (long rows, long safetyRows, Dictionary<string, long> revisions) = await SeedMeasurementInboxAsync(options, days, changeSeconds);
+            seeding.Stop();
+            lines.Add(FormattableString.Invariant(
+                $"inbox rows={rows} safetyRows={safetyRows} days={days} changeSeconds={changeSeconds} vehicles=3 seed={seeding.Elapsed.TotalSeconds:F1}s db={new FileInfo(databasePath).Length / 1024 / 1024}MiB"));
+
+            await using ControlServerDbContext context = new(options);
+            OnboardDispatchFactsReader reader = new(context, Options.Create(new JourneyRuntimeOptions()), new FixedClock(Now));
+            (string Name, Func<Task<string>> Read)[] paths =
+            [
+                ("OnboardDispatchFactsReader.ReadOnboardFactsAsync(AGV-01)", async () =>
+                    (await reader.ReadOnboardFactsAsync(AgvId, Token)) is { } facts
+                        ? $"{facts with { AvailableSlots = [] }} slots={string.Join(",", facts.AvailableSlots)}"
+                        : "null"),
+                ("OnboardDispatchFactsReader.ReadDepartureSafetyGapsAsync(AGV-01)", async () =>
+                    "[" + string.Join(",", await reader.ReadDepartureSafetyGapsAsync(
+                        AgvId, MeasurementGeneration, revisions[AgvId], Token)) + "]"),
+                ("InTransitDoorFacts.ReadAsync(AGV-01)", async () =>
+                    (await InTransitDoorFacts.ReadAsync(context, AgvId, Now, Token)).ToString()),
+                ("ExpectedActionOverdueQueryEndpoint.ReadAsync", async () =>
+                    JsonSerializer.Serialize(await new ControlServer.Host.Dashboard.ExpectedActionOverdueQueryEndpoint(
+                        ControlServer.Host.Dashboard.ExpectedActionOverdueOptions.Default, new FixedClock(Now)).ReadAsync(context, Token))),
+            ];
+            foreach ((string name, Func<Task<string>> read) in paths)
+            {
+                string answer = await read(); // warm-up; its answer is the one every timed round must repeat
+                List<double> elapsed = [];
+                int readCalls = 0;
+                for (int round = 0; round < 7; round++)
+                {
+                    reads.Reset();
+                    System.Diagnostics.Stopwatch watch = System.Diagnostics.Stopwatch.StartNew();
+                    Assert.Equal(answer, await read());
+                    watch.Stop();
+                    elapsed.Add(watch.Elapsed.TotalMilliseconds);
+                    readCalls = reads.Rows;
+                }
+                elapsed.Sort();
+                lines.Add(FormattableString.Invariant(
+                    $"{name}: inboxReadCalls={readCalls} medianMs={elapsed[elapsed.Count / 2]:F1} minMs={elapsed[0]:F1} maxMs={elapsed[^1]:F1} answer={answer}"));
+            }
+        }
+        finally
+        {
+            SqliteConnection.ClearAllPools();
+            File.Delete(databasePath);
+            await File.WriteAllLinesAsync(output, lines, CancellationToken.None);
+        }
+    }
+
+    private const long MeasurementGeneration = 3;
+
+    private static async Task<(long Rows, long SafetyRows, Dictionary<string, long> Revisions)> SeedMeasurementInboxAsync(
+        DbContextOptions<ControlServerDbContext> options, int days, int changeSeconds)
+    {
+        await using ControlServerDbContext context = new(options);
+        await context.Database.MigrateAsync(Token);
+        string[] vehicles = [AgvId, OtherAgvId, "AGV-03"];
+        DateTimeOffset start = Now - TimeSpan.FromDays(days);
+        DateTimeOffset overdueAnswerAt = Now - TimeSpan.FromMinutes(10);
+        long count = 0;
+        long safetyCount = 0;
+        Dictionary<string, long> revisions = [];
+        List<ProtocolInboxRow> batch = [];
+        async Task FlushAsync()
+        {
+            context.ProtocolInbox.AddRange(batch);
+            await context.SaveChangesAsync(Token);
+            context.ChangeTracker.Clear();
+            count += batch.Count;
+            batch.Clear();
+        }
+
+        for (int index = 0; index < vehicles.Length; index++)
+        {
+            string vehicle = vehicles[index];
+            batch.Add(Envelope("CapabilitySnapshot", vehicle, MeasurementGeneration, start, new
+            {
+                capabilityVersion = 1,
+                activeSlotConfigurationFingerprint = new string('0', 64),
+                observedAt = start,
+                slotStates = Enumerable.Range(1, 8).Select(slot => new
+                {
+                    slotNo = slot,
+                    operability = "OPERABLE",
+                    administrativeAvailability = "ENABLED",
+                    physicalState = "EMPTY",
+                    lockState = "LOCKED",
+                    unlockOutputState = "RESET",
+                }).ToArray(),
+            }));
+            batch.Add(Safety("SafetyStateSnapshot", vehicle, MeasurementGeneration, 1, start, stopped: true, locked: true));
+            long version = 1;
+            bool answered = vehicle != AgvId;
+            for (DateTimeOffset at = start + TimeSpan.FromSeconds(changeSeconds - index); at < Now; at += TimeSpan.FromSeconds(changeSeconds))
+            {
+                version++;
+                string type = "SafetyStateChanged";
+                if (!answered && at >= overdueAnswerAt)
+                {
+                    type = "SafetyStateSnapshot";
+                    answered = true;
+                }
+                batch.Add(Safety(type, vehicle, MeasurementGeneration, version, at, stopped: true, locked: true));
+                if (batch.Count >= 30_000)
+                {
+                    safetyCount += batch.Count(row => row.MessageType.StartsWith("SafetyState", StringComparison.Ordinal));
+                    await FlushAsync();
+                }
+            }
+            revisions[vehicle] = version;
+            for (int sublot = 0; sublot < days * 50; sublot++)
+            {
+                DateTimeOffset at = start + TimeSpan.FromMinutes(sublot * 28.8);
+                batch.Add(Envelope("SublotSubmitted", vehicle, MeasurementGeneration, at,
+                    new { operationSessionId = FormattableString.Invariant($"op-{vehicle}-{sublot}"), sublotNo = $"S-{sublot}" }));
+            }
+            safetyCount += batch.Count(row => row.MessageType.StartsWith("SafetyState", StringComparison.Ordinal));
+            await FlushAsync();
+            SessionRecoveryRow session = ProtocolInboxReadWindowTests.Session(vehicle, MeasurementGeneration);
+            session.SafetyRevision = version;
+            context.SessionRecoveries.Add(session);
+            await context.SaveChangesAsync(Token);
+        }
+        for (DateTimeOffset at = start + TimeSpan.FromSeconds(1); at < Now; at += TimeSpan.FromSeconds(2))
+        {
+            foreach (string vehicle in vehicles)
+            {
+                batch.Add(ProtocolInboxReadWindowTests.HeardFrom(vehicle, MeasurementGeneration, at));
+            }
+            if (batch.Count >= 30_000)
+            {
+                await FlushAsync();
+            }
+        }
+        await FlushAsync();
+        await new OnboardAlarmProjectionStore(context, new FixedClock(Now)).RecordSnapshotAsync(
+            new OnboardAlarmSnapshotView(AgvId, 1, overdueAnswerAt,
+            [
+                new OnboardAlarmEntry(
+                    OnboardAlarmCodes.SlotExpectedActionOverdue, "WARNING", overdueAnswerAt - TimeSpan.FromSeconds(1),
+                    OnboardAlarmScope.CurrentOperation, "关好3号仓门", PhysicalSlotNumber: 3,
+                    AlarmId: "00000000-0000-4000-8000-00000000a003"),
+            ]),
+            MeasurementGeneration,
+            overdueAnswerAt - TimeSpan.FromSeconds(1),
+            Token);
+        return (count, safetyCount, revisions);
+    }
+
     // ---- 造数 -------------------------------------------------------------------------------------------------
 
     private static OnboardDispatchFactsReader Reader(ControlServerDbContext context) =>
