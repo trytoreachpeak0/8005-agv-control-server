@@ -139,6 +139,43 @@ public sealed class LoadedEmergencyStopReleaseTests
         Assert.Equal(0, await CountAsync(fixture, RiotCommandTypeNames.CancelEmergency));
     }
 
+    /// <summary>
+    /// 升级前就开着的门锁急停：回执里还没有 <c>cause</c>（这一版之前不记），按钮按过一次、故障证据码已被盖成
+    /// <c>RIOT_EMERGENCY_CAN_NOT_RECOVER</c>。剩下认得出门锁原因的只有旅程码，入口照样要求确认门锁已检修。
+    /// </summary>
+    /// <remarks>审查变异 V7（去掉读旅程码那一路）在补这一条之前存活：急停自己记的原因总是先认出来。</remarks>
+    [Fact]
+    [Trait("Requirement", "REQ-0167")]
+    public async Task AStopRaisedBeforeCausesWereRecordedIsStillKnownByItsJourney()
+    {
+        await using RuntimeFixture fixture = await InTransitDoorEmergencyReleaseTests.LatchedForTheDoorsAsync();
+        await using (ControlServerDbContext writing = new(fixture.DbOptionsForTests))
+        {
+            foreach (RiotOrderCommandAuditRow row in await writing.RiotOrderCommandAudit
+                         .Where(row => row.ReceiptJson != null).ToListAsync(Token))
+            {
+                row.ReceiptJson = row.ReceiptJson!.Replace(
+                    $"\"cause\":\"{VehicleFaultEvidence.DoorNotProvenLocked}\"", "\"cause\":null", StringComparison.Ordinal);
+            }
+            VehicleFaultStateRow fault = await writing.VehicleFaultStates.SingleAsync(Token);
+            fault.EvidenceCode = VehicleFaultEvidence.EmergencyCanNotRecover;
+            await writing.SaveChangesAsync(Token);
+            // 前提：这次急停自己已经说不出原因，只剩旅程码。
+            Assert.Empty(await fixture.CreateEmergencyStopSupervisor(writing).OpenEpisodeCausesAsync(
+                new EmergencyStopSubject(fixture.Options.AgvId, fixture.Options.VehicleKey), Token));
+            Assert.Equal(
+                VehicleFaultEvidence.DoorNotProvenLocked,
+                (await writing.JourneyRuntimes.AsNoTracking().SingleAsync(Token)).BlockReasonCode);
+        }
+        using Roster roster = new();
+
+        LoadedEmergencyStopReleaseResult result = await DecideAsync(
+            fixture, roster, Request(fixture) with { DoorLockRepaired = false });
+
+        Assert.Equal(["EMERGENCY_DOOR_LOCK_REPAIR_NOT_CONFIRMED"], result.Codes);
+        Assert.Equal(0, await CountAsync(fixture, RiotCommandTypeNames.CancelEmergency));
+    }
+
     /// <summary>原因或工号太长：拒绝，审计只记长度不记原文。</summary>
     [Fact]
     public async Task AFieldTooLongIsRefusedAndOnlyItsLengthIsAudited()
