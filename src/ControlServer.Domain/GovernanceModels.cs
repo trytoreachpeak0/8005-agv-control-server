@@ -50,7 +50,13 @@ public enum GovernedObjectKind
     /// <summary>
     /// 一张图的路网快照头（按 <c>MapId</c>）。不是受治理配置、没有版本：审计的是现场人员解除它黏住的陈旧原因这一次操作（control-server#659）。
     /// </summary>
-    RouteGraphSnapshot
+    RouteGraphSnapshot,
+
+    /// <summary>
+    /// 车上的一张外来订单（按 RIoT <c>orderId</c>）。不是受治理配置、没有版本：审计的是现场人员在它离开运行列表却读不出结束时人工放车这一次操作
+    /// （control-server#617）。
+    /// </summary>
+    ForeignRiotOrder
 }
 
 /// <summary>

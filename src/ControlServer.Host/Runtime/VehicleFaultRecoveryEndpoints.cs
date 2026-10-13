@@ -58,7 +58,8 @@ public static class VehicleFaultRecoveryEndpoints
 
     /// <summary>
     /// Maps this entry, the station exclusivity release (control-server#419) and the waiting point arrival settlement
-    /// (control-server#447) and the exception recovery session closing (control-server#483) when <see cref="EnabledKey"/> is on, and
+    /// (control-server#447) and the exception recovery session closing (control-server#483) -- and the route graph sticky stale release
+    /// (control-server#659) -- when <see cref="EnabledKey"/> is on, and
     /// neither otherwise; says which. One place decides it, so the release cannot be left open while recovery is switched off.
     /// </summary>
     public static bool MapVehicleFaultRecoveryEntriesWhenEnabled(this WebApplication app)
