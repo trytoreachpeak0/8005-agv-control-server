@@ -367,7 +367,7 @@ public sealed class ForeignRunningOrderManualReleaseTests
 
     /// <summary>
     /// 增量审查 S-1：<c>EFFECTIVE_CONFIGURATION</c> 末尾带上这个入口，恰好两个布尔（开没开、凭据在不在），经宿主同一个格式化器写出；之前那几项的属性名
-    /// 不变（事件改用源生成的写法，因为七个占位符超出 <c>LoggerMessage.Define</c> 的上限）。
+    /// 不变（七个占位符超出 <c>LoggerMessage.Define</c> 的上限，事件改为直接交带 <c>{OriginalFormat}</c> 的状态；不用日志源生成器，它把集合格式化成字符串）。
     /// </summary>
     [Fact]
     public void TheEffectiveConfigurationEventCarriesTheReleaseEntryAsExactlyTwoBooleans()

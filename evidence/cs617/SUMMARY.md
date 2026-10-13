@@ -66,7 +66,7 @@ RIoT 回 HTTP 200、code 0、result 完整，`orderState=2`（已取消，明确
 
 | 项 | 改法 | 用例 |
 | --- | --- | --- |
-| M1 生产定义里入口不挂路由 | 入口不再挂在 `VehicleFaultRecovery:enabled` 下，改看自己的开关 `ForeignRunningOrderRelease:enabled`（`ForeignRunningOrderReleaseOptions`）；凭据仍是故障恢复那把（`VehicleFaultRecovery:credentialEnvironmentVariable`，部署脚本无论开关都写这个名字）。部署脚本：实例定义必须显式写 `foreignRunningOrderRelease.enabled`，覆盖层写 `ForeignRunningOrderRelease`，两个开关任一打开而拿不到凭据时装之前就拒绝；早于本票装的定义在停止方向容忍缺节。七份出厂定义都打开它，生产定义里故障恢复仍然关着 | `TheEntryIsMappedOnItsOwnSwitchWhateverFaultRecoverySays`（5 格）；`StationExclusivityReleaseEndpointsTests` 改为断言故障恢复开关不再挂它；`Test-ParallelInstance.ps1` 新增 3 个定义拒绝格、选项类镜像、2 个凭据格 |
+| M1 生产定义里入口不挂路由 | 入口不再挂在 `VehicleFaultRecovery:enabled` 下，改看自己的开关 `ForeignRunningOrderRelease:enabled`（`ForeignRunningOrderReleaseOptions`）；凭据仍是故障恢复那把（`VehicleFaultRecovery:credentialEnvironmentVariable`，部署脚本无论开关都写这个名字）。部署脚本：实例定义必须显式写 `foreignRunningOrderRelease.enabled`，覆盖层写 `ForeignRunningOrderRelease`，两个开关任一打开而拿不到凭据时装之前就拒绝；早于本票装的定义在停止方向容忍缺节。出厂定义都打开它（当时七份；合入 `fdbb1987` 后 #676 新增的两份切换定义同样补上，共九份），生产定义里故障恢复仍然关着 | `TheEntryIsMappedOnItsOwnSwitchWhateverFaultRecoverySays`（5 格）；`StationExclusivityReleaseEndpointsTests` 改为断言故障恢复开关不再挂它；`Test-ParallelInstance.ps1` 新增 3 个定义拒绝格、选项类镜像、2 个凭据格 |
 | S1 放开后以挂起重现不再挡车 | 监看里放开的行在列表里重新出现、状态 8、执行车辆不是别人的车时，退回 `UNSETTLED` | `AReleasedOrderListedAgainSuspendedHoldsAgainUnlessAnotherVehicleRunsIt`（3 格） |
 | S2 现场说明打到 MVP 端口 | 示例改成 v2 实例的 `172.19.205.222:58107`，变量 `CONTROL_SERVER_V2_FAULT_RECOVERY_CREDENTIAL`，注明 58007 是 MVP 的 | — |
 | L1 放开不收尾取消审计 | 放开时像 `EndAsync` 一样收尾：读到 CANCELLED 记 Confirmed，否则记 Failed；读到终结时行上的取消结果一并改写；审计 detail 记 `cancelSettledAs` | `AReleaseSettlesTheCancelAttemptOfARowThatHadSentOne`（2 格） |
@@ -79,7 +79,7 @@ RIoT 回 HTTP 200、code 0、result 完整，`orderState=2`（已取消，明确
 
 | 项 | 改法 | 用例 |
 | --- | --- | --- |
-| S-1 Host 启动时不查这个入口的凭据 | 不拒绝启动。入口开着而凭据变量为空时，启动时告警一次（事件 2235）；`EFFECTIVE_CONFIGURATION` 末尾加 `foreignRunningOrderRelease={Enabled, CredentialPresent}`，交给部署回读去核。七个占位符超过 `LoggerMessage.Define` 的上限，事件改为像 `Define` 一样直接把带 `{OriginalFormat}` 的状态交给日志器；试过日志源生成器，它把集合格式化成字符串，名册与目录批准值在 JSON 里变成字符串，`ParallelInstanceEffectiveConfigurationTests` 当场变红，所以没用它 | `TheStartupCheckWarnsOnlyWhenTheEntryIsOnWithoutItsCredential`（4 格）、`TheEffectiveConfigurationEventCarriesTheReleaseEntryAsExactlyTwoBooleans`；原有事件测试全过（其中一条「目录批准值是最后一项」改为「包含」） |
+| S-1 Host 启动时不查这个入口的凭据 | 不拒绝启动。入口开着而凭据变量为空时，启动时告警一次（事件 2235）；`EFFECTIVE_CONFIGURATION` 末尾加 `foreignRunningOrderRelease={Enabled, CredentialPresent}`，供人读日志时看（第三轮增量审查 L-a：`Find-ParallelEffectiveConfiguration` 不读这个键，安装器也不核 `CredentialPresent`；真正兜底的是安装前那道凭据预检加 2235 告警）。七个占位符超过 `LoggerMessage.Define` 的上限，事件改为像 `Define` 一样直接把带 `{OriginalFormat}` 的状态交给日志器；试过日志源生成器，它把集合格式化成字符串，名册与目录批准值在 JSON 里变成字符串，`ParallelInstanceEffectiveConfigurationTests` 当场变红，所以没用它 | `TheStartupCheckWarnsOnlyWhenTheEntryIsOnWithoutItsCredential`（4 格）、`TheEffectiveConfigurationEventCarriesTheReleaseEntryAsExactlyTwoBooleans`；原有事件测试全过（其中一条「目录批准值是最后一项」改为「包含」） |
 | L-1 回读为空时记 Failed | 改记 Unknown，与监看的 `Outcome()` 一致 | `AReleaseSettlesTheCancelAttemptOfARowThatHadSentOne` 的空回读格改为 Unknown |
 | L-4 停止方向写错一节没有用例 | 照 `stopWritten` 先例补：缺节被拒（非停止方向）；停止方向下 `enabled` 未写、写成字符串、整节写成字符串都被拒 | `Test-ParallelInstance.ps1` 840 passed |
 
@@ -113,11 +113,11 @@ RIoT 回 HTTP 200、code 0、result 完整，`orderState=2`（已取消，明确
 | 处境 | `:206`（查询条件）管不管 | `:353`（不在场直接返回）管不管 | 只去掉 `:206` | 只去掉 `:353` | 两处都去掉 |
 | --- | --- | --- | --- | --- | --- |
 | 单不在列表里（被删、已结束） | 管：行根本不读出来 | 管：读出来也直接返回，不回读 | 不变（`:353` 兜住） | 不变（`:206` 兜住） | 每轮回读，读不出终结，10 秒后翻回 `UNSETTLED`、重新挡车 |
-| 单在列表里，但不在我们车上跑、也不是挂起在我们车上 | 不管：列表里有它，行照样读出来 | 管 | 不变 | 落到回读路径被翻回 `UNSETTLED` | 同左 |
+| 单在列表里，但不在我们车上跑、也不是挂起在我们车上 | 不管：列表里有它，行照样读出来 | 管 | 不变 | 状态 8（别人的车在执行）落到回读路径被翻回 `UNSETTLED`；状态 1、3、7、9、10 而在别人车上或没有执行车辆时，走「列表里有、但不在我们车上」那一支变成 `LEFT_VEHICLE`，不挡车（第三轮增量审查补的半句） | 同左 |
 
 （单在列表里、跑在我们车上，由 `:318` 重新挡车；以挂起出现在我们车上，由 `:342` 退回 `UNSETTLED`；这两种与这两处无关。）`rows` 的其余用处——`RecogniseAsync`、`ChaseAbandonedChargeOrdersAsync` 的「已知」集合、取消循环——只看列表里的单或只挑 `DETECTED`／`CANCEL_DECIDED`／`HELD_CANCEL_NOT_AUTHORIZED` 的行，放开的行多读出来也不改它们的结果。
 
-所以 `:206` 没有独占的场景：第一种处境它与 `:353` 互为备份，第二种处境只有 `:353` 管。实测对得上：c1 存活；c2 只红「在列表里、别人的车在执行」那一格（第二种处境）；c3 多红了放车用例 `AnUnsettledOrderIsReleasedByANamedOperatorOnceRiotNoLongerListsIt` 里「放车后再跑三轮仍是放开」那一段（第一种处境，单不在列表里），这正是第一种处境的用例，只在两道都拆掉时才红。不补用例。
+所以 `:206` 没有独占的场景：第一种处境它与 `:353` 互为备份，第二种处境只有 `:353` 管。实测对得上：c1 存活；c2 只红「在列表里、别人的车在执行」那一格（第二种处境；那格用的正好是状态 8，所以是翻回 `UNSETTLED`）；c3 多红了放车用例 `AnUnsettledOrderIsReleasedByANamedOperatorOnceRiotNoLongerListsIt` 里「放车后再跑三轮仍是放开」那一段（第一种处境，单不在列表里），这正是第一种处境的用例，只在两道都拆掉时才红。不补用例。
 
 **c2 变红，和审查的推测不同。** 审查推测 `:206`、`:353` 各自单独去掉都会存活。实测 `:353` 单独去掉就红：S1 用例的 `on-another-vehicle` 格里，那张单在列表里（所以 `:206` 照样把行读出来），执行车辆是别人的车（所以 `:342` 不接），落到回读路径，读到 8 不是终结，转回 `UNSETTLED`，与「别人的车执行就不碰」相反。只有放开的行既在列表里、又不在我们车上跑、又不是挂起在我们车上时，`:353` 才是唯一的一道。
 

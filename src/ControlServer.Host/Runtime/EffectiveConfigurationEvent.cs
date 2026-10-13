@@ -37,7 +37,8 @@ namespace ControlServer.Host.Runtime;
 /// <b>The foreign running order release entry</b> (#617 incremental review S-1) is appended after that, as one object with exactly
 /// Enabled and CredentialPresent: an entry that is on while its credential variable is empty answers every request 503, and
 /// nothing else says so until someone on site needs it. Logged, not refused at start -- one exit is not worth a server that
-/// will not start -- so a deployment's read-back can check it. An event without it is from a package older than #617.
+/// will not start. For a person reading the log: the installer's read-back does not read this key; what guards a deployment
+/// is the credential check before install and warning 2235. An event without it is from a package older than #617.
 /// Seven placeholders are one more than <c>LoggerMessage.Define</c> takes, so the event hands the logger its state the way
 /// <c>Define</c> does -- the template under <c>{OriginalFormat}</c> and each value as it is. Not the logging source generator: its
 /// state formats a collection into a string, and the installer reads the roster and the catalog back as JSON structure.
