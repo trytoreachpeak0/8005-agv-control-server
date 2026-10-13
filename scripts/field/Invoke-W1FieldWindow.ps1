@@ -354,10 +354,9 @@ $photoRows
 **证明了**：三台车各自的八个仓位都被人逐仓确认过开、关、到位三个信号；每台车的 readiness 是在它自己
 核对通过之后才取得的；门禁启用的时刻晚于第一台车核对通过；每一步都有不可改写审计。
 
-**没有证明**：门禁在拦车。当前 ``src/`` 里没有任何生产调用点读
-``SlotConfigurationReadinessGate.IsSlotConfigurationConfirmedAsync``——把 readiness 接进投运判定属于
-投运流程，不属于这张现场票。``enable-gate`` 记的是**时点与审计**，配置项
-``Governance:slotConfigurationReadinessGate`` 需要运维改成 ``Enforcing`` 并重启服务才生效。
+**没有证明**：门禁在拦车。``enable-gate`` 记的是**时点与审计**；拦车由派车判据
+``SlotConfigurationReadinessCriterion`` 在配置项 ``Governance:slotConfigurationReadinessGate`` 为
+``Enforcing`` 时执行（control-server#686），本窗口没有观测派车结果。
 
 **零停产这一条用 readiness 代理业务就绪**：判据 W1-04 一半看 ready 序列，一半看现场逐台记下的
 「车队仍在接单」观察。前者是服务端自己的事实，后者是人看到的事实，两者都不是「业务就绪判定被跑过
