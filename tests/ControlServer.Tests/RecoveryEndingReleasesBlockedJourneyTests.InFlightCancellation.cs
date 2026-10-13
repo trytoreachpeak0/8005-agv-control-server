@@ -2,6 +2,7 @@ using ControlServer.Application;
 using ControlServer.Domain;
 using ControlServer.Host.Transport;
 using ControlServer.Infrastructure.Persistence;
+using Microsoft.EntityFrameworkCore;
 using static ControlServer.Tests.Batch7StopDrivenAdvanceDriver;
 using static ControlServer.Tests.JourneyRuntimeWorkerTestKit;
 using static ControlServer.Tests.StopEndedJourneyContinuesTests;
@@ -84,10 +85,20 @@ public sealed partial class RecoveryEndingReleasesBlockedJourneyTests
             Assert.Equal(StationOperationStatus.RecoveryRequired,
                 (await OperationOfAsync(fixture, SecondDemandId, SlotOperationType.Load)).Status);
 
+            int checksBefore = await CountAsync(fixture, "PreDepartureSafetyCheck");
+
             await CompensateAsync(fixture, SecondDemandId);
 
             await AssertReleasedAsync(fixture, JourneyRuntimeStage.AwaitingLoadResult);
             Assert.Equal(JourneyDemandStatuses.Loaded, (await MembershipAsync(fixture, FirstDemandId)).Status);
+            // Nothing holds the vehicle any more: the compensation's own answer put the session back to READY, with no
+            // readiness restored by hand, and the engine sends it on with the first demand.
+            Assert.False(await new WireToGateStore(fixture.Context).OperationNeedsRecoveryAsync(fixture.Options.AgvId, token));
+            Assert.Equal(SessionReadiness.Ready,
+                (await fixture.Context.SessionRecoveries.AsNoTracking().SingleAsync(token)).Readiness);
+            Exception? first = await RunRoundAsync(fixture);
+            Exception? second = await RunRoundAsync(fixture);
+            await AssertAskedToLeaveAsync(fixture, checksBefore, first, second);
         });
     }
 }
