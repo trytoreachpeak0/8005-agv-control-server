@@ -213,7 +213,7 @@ S1 定义，`agv01`、`agv03` 在各自阶段换装定义之后才进车队表�
 | 17 | 现场 | 关 v2 闸门（`20-set-control-server-parallel-dispatch-gate.ps1 -State Closed`，任何旅程不是 `Completed` 就拒绝）、关运行时；无在途 | 闸门脚本成功；库里无非终态旅程 | — |
 | 18 | 现场 | **换新库 B**：同第 7 步，库 A 改名留存（它是试跑证据）；同样不要先起服 | 空目录 | — |
 | 18a | 调度 | 同第 7a 步，提交生产段的阶段定义（`phase: "production"`，批准记录写生产段的授权）并出包 | 提交与 release run id | 授权原话由调度向用户要 |
-| 19 | 现场 | 19 号脚本带 `-ProductionCutover` 装生产段 S1 定义。安装器按已装记录的 `phase` 从 `trial` 到 `production`，要求数据目录为空（`CUTOVER_PRODUCTION_REQUIRES_NEW_DATABASE`），所以漏了第 18 步会被拒。**前提：cs#609 已合入**，定义与产品默认值里的持货已从 `00:30:00` 改为 `00:05:00` | **实读**安装目录 `C:\Program Files\8005 AGV\ControlServer.V2\appsettings.Production.json`：`stationDepartureWaitTimeout=00:05:00`、`cargoHoldingTimeout=00:05:00`（D9）。`EFFECTIVE_CONFIGURATION` 事件今天不带这两个值（`src/ControlServer.Host/Runtime/EffectiveConfigurationEvent.cs:40`），等 cs#672 加进事件后再改为按事件回读。不要手改已装文件代替重装：手改不经过部署校验，cs#609 的上限挡不住 | — |
+| 19 | 现场 | 19 号脚本带 `-ProductionCutover` 装生产段 S1 定义。安装器按已装记录的 `phase` 从 `trial` 到 `production`，要求数据目录为空（`CUTOVER_PRODUCTION_REQUIRES_NEW_DATABASE`），所以漏了第 18 步会被拒。前提 cs#609 已于 2026-10-13 合入（PR #678）：定义与产品默认值里的持货已是 `00:05:00` | **实读**安装目录 `C:\Program Files\8005 AGV\ControlServer.V2\appsettings.Production.json`：`stationDepartureWaitTimeout=00:05:00`、`cargoHoldingTimeout=00:05:00`（D9）。`EFFECTIVE_CONFIGURATION` 事件今天不带这两个值（`src/ControlServer.Host/Runtime/EffectiveConfigurationEvent.cs:40`），等 cs#672 加进事件后再改为按事件回读。不要手改已装文件代替重装：手改不经过部署校验，cs#609 的上限挡不住 | — |
 | 20 | 现场 | 本阶段的车 IO 从模拟器切回真模块（`09-switch-io-module.ps1`），清日志簿与发件箱 | 握手 `Ready` | `agv01`【执行前问用户】 |
 | 21 | 现场 | 重导受治理事实；**逐仓重核**（`REQ-0263`，cs#565 第 5 步） | 核对证据目录 | 动车部分【逐次授权·现场有人】 |
 | 22 | 现场 | 按第 11～16a 步逐阶段走 S1→S4（第 8 节） | 每阶段判据 | 【逐次授权·现场有人】 |
