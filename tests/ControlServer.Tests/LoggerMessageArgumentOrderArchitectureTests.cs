@@ -25,8 +25,9 @@ namespace ControlServer.Tests;
 /// </para>
 /// <para>
 /// <b>What it cannot see</b>, by construction (guard, not proof): two swapped arguments whose names match neither
-/// placeholder; an argument expression it cannot name (a method call, arithmetic, a conditional, a literal) -- the
-/// count is printed and floored below; a delegate called from a file outside its own partial-class group (same
+/// placeholder (how many arguments are named unlike any placeholder is printed); an argument expression it cannot
+/// name (a method call, arithmetic, a conditional, a literal), whose count is printed and the named count floored
+/// below; a delegate called from a file outside its own partial-class group (same
 /// directory, same file name up to the first dot), or passed on and called under another name; a template that is not
 /// a plain string literal or a <c>+</c> concatenation of them.
 /// </para>
@@ -117,16 +118,22 @@ public sealed class LoggerMessageArgumentOrderArchitectureTests
     }
 
     private sealed record ScanResult(
-        int Definitions, int CallSites, int Arguments, int NamedArguments, IReadOnlyList<string> Unnamed, IReadOnlyList<string> Swaps)
+        int Definitions,
+        int CallSites,
+        int Arguments,
+        int NamedArguments,
+        int Unrelated,
+        IReadOnlyList<string> Unnamed,
+        IReadOnlyList<string> Swaps)
     {
         public string Summary =>
             $"{Definitions} definitions, {CallSites} call sites, {Arguments} arguments, {NamedArguments} named, " +
-            $"{Arguments - NamedArguments} unnamed, {Swaps.Count} swaps";
+            $"{Arguments - NamedArguments} unnamed, {Unrelated} named unlike any placeholder, {Swaps.Count} swaps";
     }
 
     private static ScanResult Scan(IReadOnlyDictionary<string, string> sources, int round)
     {
-        int definitions = 0, callSites = 0, arguments = 0, named = 0;
+        int definitions = 0, callSites = 0, arguments = 0, named = 0, unrelated = 0;
         List<string> unnamed = [], swaps = [];
 
         foreach ((string file, string text) in sources.OrderBy(pair => pair.Key, StringComparer.Ordinal))
@@ -191,13 +198,17 @@ public sealed class LoggerMessageArgumentOrderArchitectureTests
                             {
                                 swaps.Add($"{where}: {{{placeholders[position]}}} <- {argument} (named like {{{placeholders[other]}}})");
                             }
+                            else
+                            {
+                                unrelated++;
+                            }
                         }
                     }
                 }
             }
         }
 
-        return new ScanResult(definitions, callSites, arguments, named, unnamed, swaps);
+        return new ScanResult(definitions, callSites, arguments, named, unrelated, unnamed, swaps);
     }
 
     /// <summary>The normalized segments of the member chain an argument names, or null when it names none.</summary>
