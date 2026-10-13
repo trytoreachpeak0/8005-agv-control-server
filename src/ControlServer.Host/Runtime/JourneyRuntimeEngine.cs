@@ -139,6 +139,13 @@ public sealed partial class JourneyRuntimeEngine(
                 "Vehicle {AgvId} has loaded everything at pickup {StationId} and still waits there; its worklist carried " +
                 "the station departure deadline {SentDeadline}, the server now judges by {Deadline}, so worklist revision " +
                 "{Revision} was sent with no items and the server's deadline.");
+    private static readonly Action<ILogger, string, string, bool, DateTimeOffset?, Exception?> LogEmptiedStopEntersDepartureWait =
+        LoggerMessage.Define<string, string, bool, DateTimeOffset?>(
+            LogLevel.Information,
+            new EventId(2292, nameof(LogEmptiedStopEntersDepartureWait)),
+            "Vehicle {AgvId}'s pickup {StationId} has nothing left to enter (its last outstanding demand was ended before " +
+            "a sublot) while the journey goes on; it now waits for departure. Loaded at this stop: {LoadedHere}; station " +
+            "departure deadline {Deadline} (none means the wait is off and the vehicle is sent on in this round).");
     private static readonly Action<ILogger, string, string, string, Exception?> LogLoadYieldedToEndedDemand =
         LoggerMessage.Define<string, string, string>(
             LogLevel.Information,
@@ -1280,6 +1287,25 @@ public sealed partial class JourneyRuntimeEngine(
                 }
                 if (sublot is null)
                 {
+                    // 本站的待做项已经没了，旅程却还在（车上有货）：扫码前取消结束了本站最后一条待录入的（control-server#668）。
+                    // 取消那一路（PickupStopTermination → StopEndWorklist）只终结需求、发空清单，不改阶段；留在这里，唯一的出口是下面的
+                    // 到期结束，它按原期限判、期限为空时永不结束——等待配为 0 时车载着货永久停在站上，非零时同站追加的提前结束与纠错窗口
+                    // 都不生效。所以这里接上离站等待那一段，与装货途中被终结之后的续跑（AwaitingLoadResult 的 resumingAfterEnding）
+                    // 同一个规则：本站装上过货，就从此刻起算，给已装的那几条留出纠错时间（服务端只在离站等待里授权纠错）；一条都没装上，
+                    // 起点不动。纠错闸、同站追加的提前结束、持货等单、仓门扣车、车上那一版期限，都由离站等待那一段照常处理。
+                    if (stops.OutstandingAtCurrentStop.Count == 0)
+                    {
+                        bool loadedAtThisStop = stops.CurrentStopDemands
+                            .Any(item => item.Membership.Status == JourneyDemandStatuses.Loaded);
+                        runtime.StationDepartureWaitStartedAt = loadedAtThisStop
+                            ? now
+                            : runtime.StationDepartureWaitStartedAt ?? now;
+                        SetStage(runtime, JourneyRuntimeStage.AwaitingStationDeparture, now);
+                        LogEmptiedStopEntersDepartureWait(
+                            logger, runtime.AgvId, stops.Current.StationId, loadedAtThisStop,
+                            StationDepartureDeadline(runtime, runtimeOptions.StationDepartureWaitTimeout), null);
+                        goto case JourneyRuntimeStage.AwaitingStationDeparture;
+                    }
                     if (await TryEndStopAtStationDeadlineAsync(runtime, stops, session, now, cancellationToken)
                             .ConfigureAwait(false))
                     {
@@ -3019,8 +3045,9 @@ public sealed partial class JourneyRuntimeEngine(
     /// </para>
     /// <para>
     /// <b>判据与 <see cref="AdvanceWorklistPastAStaleDeadlineAsync"/> 同一个：排给车的那一版与服务端此刻的期限是否一致。</b>期限开关关着时
-    /// 两边都是空，永远一致，一版也不多发。车上那一版的作业会话为空——本站被期限、取消或补偿结束（<see cref="StopEndWorklist"/>）——时不发：
-    /// 那张空清单说的是本站为什么结束，不能拿 COMPLETED 盖掉它。卸货停靠没有离站期限，不在此列。
+    /// 两边都是空，永远一致，一版也不多发。车上那一版的作业会话为空——本站被期限、取消或补偿结束（<see cref="StopEndWorklist"/>）——时，
+    /// 那张空清单说的是本站为什么结束，不能拿 COMPLETED 盖掉它：补发的这一版照留它的原因与空会话，只补期限，而且只在期限还没到时补
+    /// （control-server#668：扫码前取消、装货途中被终结之后车仍在离站等待，车上原本一直是「无倒计时」）。卸货停靠没有离站期限，不在此列。
     /// </para>
     /// </remarks>
     private async Task RefreshDeadlineOfALoadedStopAsync(
@@ -3058,6 +3085,7 @@ public sealed partial class JourneyRuntimeEngine(
         }
 
         string? sentSession = null;
+        string? sentReason = null;
         DateTimeOffset? sent = null;
         using (JsonDocument document = JsonDocument.Parse(queued))
         {
@@ -3068,6 +3096,11 @@ public sealed partial class JourneyRuntimeEngine(
                 {
                     sentSession = session0.GetString();
                 }
+                if (payload.TryGetProperty("stopEndedReason", out JsonElement reason0) &&
+                    reason0.ValueKind == JsonValueKind.String)
+                {
+                    sentReason = reason0.GetString();
+                }
                 if (payload.TryGetProperty("stationDepartureDeadlineAt", out JsonElement deadline0) &&
                     deadline0.ValueKind != JsonValueKind.Null)
                 {
@@ -3077,7 +3110,16 @@ public sealed partial class JourneyRuntimeEngine(
         }
         // 与离站判定读同一个时刻：同站追加提前结束时，车上倒计时就是车真正要走的那一刻（control-server#646）。
         DateTimeOffset? deadline = EffectiveStationDepartureDeadline(runtime, stops);
-        if (sentSession is null || sent == deadline)
+        if (sent == deadline)
+        {
+            return;
+        }
+        // 车上那一版是本站被期限、取消或补偿结束时的空清单（StopEndWorklist，作业会话为空）：它说的是本站为什么结束，原因与空会话照留，
+        // 只补上期限（control-server#668）。扫码前取消、装货途中被终结之后车仍在离站等待里，不补，车上一直是「无倒计时」，车却要等到期限才走。
+        // 车上那一版本来就没有期限、而此刻的期限也已过时不补：被期限结束的那一种车当轮就走，补一个已到期的时刻只多一版、什么也不告诉操作员。
+        // 车上已经有期限（上面补过一版）而期限被提前到过去时照补——同站追加让离站提前到已过的时刻，车当轮就走，屏上不能还剩着倒计时
+        // （PR #674 审查 M1）；与会话不为空那一支同一个结果，屏上显示「已到期，等待本站结束」。
+        if (sentSession is null && sent is null && (deadline is not { } ahead || now >= ahead))
         {
             return;
         }
@@ -3104,8 +3146,11 @@ public sealed partial class JourneyRuntimeEngine(
             stops.WorklistMessageIdAt(runtime.WorklistRevision, stop, revision),
             runtime.AgvId,
             session.SessionGeneration,
-            new CurrentStopWorklistProjection(
-                stop.StationId, revision, stop.OperationSessionId, deadline, [], StopEndedReasons.ForEnding(null)),
+            sentSession is null
+                ? new CurrentStopWorklistProjection(
+                    stop.StationId, revision, null, deadline, [], sentReason ?? StopEndedReasons.ForEnding(null))
+                : new CurrentStopWorklistProjection(
+                    stop.StationId, revision, stop.OperationSessionId, deadline, [], StopEndedReasons.ForEnding(null)),
             cancellationToken).ConfigureAwait(false);
         LogLoadedStopDeadlineRefreshed(logger, runtime.AgvId, stop.StationId, sent, deadline, revision, null);
     }
@@ -5552,13 +5597,12 @@ public sealed partial class JourneyRuntimeEngine(
     /// </para>
     /// <para>
     /// <b>判定与下发读这同一个值</b>（PR #660 增量审查 S1）：离站等待那一段的判定、以及送到车上的期限（<see cref="RefreshDeadlineOfALoadedStopAsync"/>），
-    /// 车载屏上的倒计时就是车真正要走的那一刻。其余读 <see cref="StationDepartureDeadline"/> 的地方——到站发清单、等录入时发清单、等装货结果、
-    /// 断联重填之后的升版、仓门未闭告警、装货结果的回执——都在当前停靠还有待做项时，那时提前结束的条件不成立，两个值恒等，所以不改。
+    /// 车载屏上的倒计时就是车真正要走的那一刻。其余读 <see cref="StationDepartureDeadline"/> 的地方——到站发清单、等录入时发清单与到期结束本站、
+    /// 等装货结果、断联重填之后的升版、仓门未闭告警、装货结果的回执——都在当前停靠还有待做项时，那时提前结束的条件不成立，两个值恒等，所以不改。
     /// </para>
     /// <para>
-    /// <b>例外是 <see cref="TryEndStopAtStationDeadlineAsync"/></b>（PR #660 第三轮审查 S1）：等录入阶段扫码前取消了本站最后一条待录入的需求时，
-    /// 取消那一路不改阶段，旅程留在 AwaitingSublot、本站待做项为零，提前结束的条件此时成立，而那里仍按原期限判；车上那张空清单期限为空，
-    /// 屏上显示「无倒计时」，同站追加的新需求要等到原期限才录得进去。车只是等得久，不会意外开动，这条行为在本票之前就有，本票不改。
+    /// 等录入阶段待做项归零（扫码前取消了本站最后一条待录入的）曾是这句话的例外：取消那一路不改阶段，旅程留在 AwaitingSublot，到期结束本站
+    /// 按原期限判（PR #660 第三轮审查 S1）。control-server#668 起，等录入阶段一读到本站待做项为零就转入离站等待，不再走到那里。
     /// </para>
     /// <para>
     /// 只截短不延长：宽限比期限长，或等待关着（期限为空）时，就是 <see cref="StationDepartureDeadline"/>。只认下一个是同站取货：只有那时才有一条
@@ -5606,6 +5650,15 @@ public sealed partial class JourneyRuntimeEngine(
     /// The demand stays out of dispatch because its DemandId is already accepted
     /// (AlreadyAcceptedCriterion). Suppressing the business key permanently, so that a new DemandId
     /// for the same sublot is not dispatched either, is REQ-0155/0156/0211 in batch 7.
+    /// </para>
+    /// <para>
+    /// <b>A null deadline returns false on purpose, and is not a stop with no exit.</b> It means the wait is off
+    /// (<see cref="JourneyRuntimeOptions.StationDepartureWaitTimeout"/> is zero): the deadline is what lets the runtime end
+    /// a stop nobody scanned, and with it off nothing but the operator ends one -- an entry, or a cancellation before the
+    /// sublot (ADR-cross-0046). Both are governed exits. What had none was a stop whose last outstanding demand that
+    /// cancellation ended while the journey went on: it stayed in AwaitingSublot with nothing to scan or cancel, and this
+    /// was its only way out (control-server#668). The caller now moves such a stop to the departure wait before it gets
+    /// here, so this method only ever sees a stop that still has work outstanding.
     /// </para>
     /// </remarks>
     private async Task<bool> TryEndStopAtStationDeadlineAsync(

@@ -1,0 +1,70 @@
+== M1 no transition to departure wait
+   diff: 1	1	src/ControlServer.Host/Runtime/JourneyRuntimeEngine.cs
+   exit=1 Failed!  - Failed:     6, Passed:    93, Skipped:     0, Total:    99, Duration: 1 m 32 s - ControlServer.Tests.dll (net8.0)
+   Failed ControlServer.Tests.CancelledLastEntryEndsIntoDepartureWaitTests.AStopEmptiedInTheStoreEndsTheWaitEarlyForASameStationAppend [7 s]
+   Failed ControlServer.Tests.CancelledLastEntryEndsIntoDepartureWaitTests.ACancelBeforeScanThatEmptiesTheStopEndsTheWaitEarlyForASameStationAppend [1 s]
+   Failed ControlServer.Tests.CancelledLastEntryEndsIntoDepartureWaitTests.ACancelBeforeScanThatEmptiesTheStopShowsTheDeadlineTheVehicleLeavesBy [619 ms]
+   Failed ControlServer.Tests.CancelledLastEntryEndsIntoDepartureWaitTests.WithTheWaitOffACancelBeforeScanThatEmptiesTheStopSendsTheVehicleOn [885 ms]
+   Failed ControlServer.Tests.CancelledLastEntryEndsIntoDepartureWaitTests.ASameStationAppendThatMovesTheDepartureIntoThePastLeavesNoCountdownOnTheVehicle [801 ms]
+   Failed ControlServer.Tests.CancelledLastEntryEndsIntoDepartureWaitTests.ACancelThatEndsAStopWithNothingLoadedThereKeepsTheOriginalDeadline [2 s]
+== M2 start never moves
+   diff: 1	1	src/ControlServer.Host/Runtime/JourneyRuntimeEngine.cs
+   exit=1 Failed!  - Failed:     3, Passed:    96, Skipped:     0, Total:    99, Duration: 1 m 25 s - ControlServer.Tests.dll (net8.0)
+   Failed ControlServer.Tests.CancelledLastEntryEndsIntoDepartureWaitTests.AStopEmptiedInTheStoreEndsTheWaitEarlyForASameStationAppend [6 s]
+   Failed ControlServer.Tests.CancelledLastEntryEndsIntoDepartureWaitTests.ACancelBeforeScanThatEmptiesTheStopEndsTheWaitEarlyForASameStationAppend [2 s]
+   Failed ControlServer.Tests.CancelledLastEntryEndsIntoDepartureWaitTests.ACancelBeforeScanThatEmptiesTheStopShowsTheDeadlineTheVehicleLeavesBy [237 ms]
+== M3 start always now
+   diff: 1	1	src/ControlServer.Host/Runtime/JourneyRuntimeEngine.cs
+   exit=1 Failed!  - Failed:     1, Passed:    98, Skipped:     0, Total:    99, Duration: 1 m 24 s - ControlServer.Tests.dll (net8.0)
+   Failed ControlServer.Tests.CancelledLastEntryEndsIntoDepartureWaitTests.ACancelThatEndsAStopWithNothingLoadedThereKeepsTheOriginalDeadline [2 s]
+== M4 refresh skips stop-ended worklists again
+   diff: 1	1	src/ControlServer.Host/Runtime/JourneyRuntimeEngine.cs
+   exit=1 Failed!  - Failed:     5, Passed:    94, Skipped:     0, Total:    99, Duration: 1 m 23 s - ControlServer.Tests.dll (net8.0)
+   Failed ControlServer.Tests.CancelledLastEntryEndsIntoDepartureWaitTests.ACancelBeforeScanThatEmptiesTheStopEndsTheWaitEarlyForASameStationAppend [672 ms]
+   Failed ControlServer.Tests.CancelledLastEntryEndsIntoDepartureWaitTests.ACancelBeforeScanThatEmptiesTheStopShowsTheDeadlineTheVehicleLeavesBy [192 ms]
+   Failed ControlServer.Tests.CancelledLastEntryEndsIntoDepartureWaitTests.ASameStationAppendThatMovesTheDepartureIntoThePastLeavesNoCountdownOnTheVehicle [185 ms]
+   Failed ControlServer.Tests.CancelledLastEntryEndsIntoDepartureWaitTests.ACancelThatEndsAStopWithNothingLoadedThereKeepsTheOriginalDeadline [2 s]
+   Failed ControlServer.Tests.RecoveryEndingReleasesBlockedJourneyTests.ACompensationThatEndsTheStopWithOneLoadedShowsTheDeadlineTheVehicleLeavesBy [200 ms]
+== M5 refresh also sends an expired deadline to a stop that never had one
+   diff: 1	1	src/ControlServer.Host/Runtime/JourneyRuntimeEngine.cs
+   exit=1 Failed!  - Failed:     3, Passed:    96, Skipped:     0, Total:    99, Duration: 1 m 23 s - ControlServer.Tests.dll (net8.0)
+   Failed ControlServer.Tests.StopEndedJourneyContinuesTests.TheNextStopsWorklistStartsAboveTheEmptyOne [8 s]
+   Failed ControlServer.Tests.CancelledLastEntryEndsIntoDepartureWaitTests.AStopEndedByItsDeadlineGetsNoExtraWorklistBeforeTheVehicleLeaves [4 s]
+   Failed ControlServer.Tests.StopEndedJourneyContinuesTests.WhenTheNextStopCarriesNoneOfTheEndedDemandsItStillStartsAboveTheEmptyWorklist [4 s]
+== M8 refresh skips a deadline moved into the past (review M1 reverted)
+   diff: 1	1	src/ControlServer.Host/Runtime/JourneyRuntimeEngine.cs
+   exit=1 Failed!  - Failed:     1, Passed:    98, Skipped:     0, Total:    99, Duration: 1 m 27 s - ControlServer.Tests.dll (net8.0)
+   Failed ControlServer.Tests.CancelledLastEntryEndsIntoDepartureWaitTests.ASameStationAppendThatMovesTheDepartureIntoThePastLeavesNoCountdownOnTheVehicle [2 s]
+== M6 refreshed stop-ended worklist says COMPLETED
+   diff: 1	1	src/ControlServer.Host/Runtime/JourneyRuntimeEngine.cs
+   exit=1 Failed!  - Failed:     4, Passed:    95, Skipped:     0, Total:    99, Duration: 1 m 28 s - ControlServer.Tests.dll (net8.0)
+   Failed ControlServer.Tests.CancelledLastEntryEndsIntoDepartureWaitTests.ACancelBeforeScanThatEmptiesTheStopEndsTheWaitEarlyForASameStationAppend [876 ms]
+   Failed ControlServer.Tests.CancelledLastEntryEndsIntoDepartureWaitTests.ACancelBeforeScanThatEmptiesTheStopShowsTheDeadlineTheVehicleLeavesBy [532 ms]
+   Failed ControlServer.Tests.CancelledLastEntryEndsIntoDepartureWaitTests.ASameStationAppendThatMovesTheDepartureIntoThePastLeavesNoCountdownOnTheVehicle [2 s]
+   Failed ControlServer.Tests.RecoveryEndingReleasesBlockedJourneyTests.ACompensationThatEndsTheStopWithOneLoadedShowsTheDeadlineTheVehicleLeavesBy [222 ms]
+== M7 refreshed stop-ended worklist carries the session
+   diff: 1	1	src/ControlServer.Host/Runtime/JourneyRuntimeEngine.cs
+   exit=1 Failed!  - Failed:     3, Passed:    96, Skipped:     0, Total:    99, Duration: 1 m 24 s - ControlServer.Tests.dll (net8.0)
+   Failed ControlServer.Tests.CancelledLastEntryEndsIntoDepartureWaitTests.ACancelBeforeScanThatEmptiesTheStopEndsTheWaitEarlyForASameStationAppend [791 ms]
+   Failed ControlServer.Tests.CancelledLastEntryEndsIntoDepartureWaitTests.ASameStationAppendThatMovesTheDepartureIntoThePastLeavesNoCountdownOnTheVehicle [2 s]
+   Failed ControlServer.Tests.RecoveryEndingReleasesBlockedJourneyTests.ACompensationThatEndsTheStopWithOneLoadedShowsTheDeadlineTheVehicleLeavesBy [200 ms]
+== M9 loaded-here read over every demand of the journey
+   diff: 1	1	src/ControlServer.Host/Runtime/JourneyRuntimeEngine.cs
+   exit=1 Failed!  - Failed:     1, Passed:    98, Skipped:     0, Total:    99, Duration: 1 m 25 s - ControlServer.Tests.dll (net8.0)
+   Failed ControlServer.Tests.CancelledLastEntryEndsIntoDepartureWaitTests.ACancelThatEndsAStopWithNothingLoadedThereKeepsTheOriginalDeadline [2 s]
+== M10 refresh reads the full deadline, not the effective one
+   diff: 1	1	src/ControlServer.Host/Runtime/JourneyRuntimeEngine.cs
+   exit=1 Failed!  - Failed:     4, Passed:    95, Skipped:     0, Total:    99, Duration: 1 m 37 s - ControlServer.Tests.dll (net8.0)
+   Failed ControlServer.Tests.SameStationAppendEndsDepartureWaitTests.ACorrectionClosedInTheGraceEarnsAnotherGraceBeforeTheVehicleIsSentOn [5 s]
+   Failed ControlServer.Tests.CancelledLastEntryEndsIntoDepartureWaitTests.ACancelBeforeScanThatEmptiesTheStopEndsTheWaitEarlyForASameStationAppend [546 ms]
+   Failed ControlServer.Tests.SameStationAppendEndsDepartureWaitTests.TheDeadlineOnTheVehicleIsTheMomentTheServerSendsItOn [219 ms]
+   Failed ControlServer.Tests.CancelledLastEntryEndsIntoDepartureWaitTests.ASameStationAppendThatMovesTheDepartureIntoThePastLeavesNoCountdownOnTheVehicle [2 s]
+== M11 transition saved but not handled in the same round
+   diff: 2	1	src/ControlServer.Host/Runtime/JourneyRuntimeEngine.cs
+   exit=1 Failed!  - Failed:     5, Passed:    94, Skipped:     0, Total:    99, Duration: 1 m 41 s - ControlServer.Tests.dll (net8.0)
+   Failed ControlServer.Tests.CancelledLastEntryEndsIntoDepartureWaitTests.ACancelBeforeScanThatEmptiesTheStopEndsTheWaitEarlyForASameStationAppend [804 ms]
+   Failed ControlServer.Tests.CancelledLastEntryEndsIntoDepartureWaitTests.ACancelBeforeScanThatEmptiesTheStopShowsTheDeadlineTheVehicleLeavesBy [866 ms]
+   Failed ControlServer.Tests.CancelledLastEntryEndsIntoDepartureWaitTests.WithTheWaitOffACancelBeforeScanThatEmptiesTheStopSendsTheVehicleOn [672 ms]
+   Failed ControlServer.Tests.CancelledLastEntryEndsIntoDepartureWaitTests.ASameStationAppendThatMovesTheDepartureIntoThePastLeavesNoCountdownOnTheVehicle [624 ms]
+   Failed ControlServer.Tests.CancelledLastEntryEndsIntoDepartureWaitTests.ACancelThatEndsAStopWithNothingLoadedThereKeepsTheOriginalDeadline [2 s]
+restored; git status of engine: ""
