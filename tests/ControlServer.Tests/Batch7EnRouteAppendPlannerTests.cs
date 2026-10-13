@@ -664,7 +664,8 @@ public sealed class Batch7EnRouteAppendPlannerTests
     /// <remarks>
     /// <para>
     /// 打平是结构性的：新取货紧挨在同站卸货前或后，经过的站点序列一模一样。所以要让「先装后卸」<b>严格</b>更便宜，
-    /// 得让新取货与同站卸货之间隔着别的站、而且路网是有向的。这里把 15→30 设成 100000（单行道绕远），其余同直线：
+    /// 新取货与同站卸货之间得隔着别的站。对称路网上，计划往返、去程先经过该站时就会这样（见下一条用例）；
+    /// 这一条用的是有向路网：把 15→30 设成 100000（单行道绕远），其余同直线。
     /// 车在 0，计划 10 装、20 卸、30 卸；新需求 20 装、15 卸。
     /// </para>
     /// <list type="bullet">
@@ -689,6 +690,66 @@ public sealed class Batch7EnRouteAppendPlannerTests
         Assert.Null(decision.RefusalReasonCode);
         Assert.Equal(10_000, decision.Placement!.MarginalCostMm);
         Assert.Equal(["s-p", "new-p", "new-u", "s-u1", "s-u2"], OrderOf(decision.Placement));
+    }
+
+    /// <summary>
+    /// 对称路网上同样会严格更便宜：计划往返、去程先经过该站时，先装后卸省掉一段回头路，仍按代价选它（cs#647 审查 S1）。
+    /// </summary>
+    /// <remarks>
+    /// <para>
+    /// 直线路网，满足三角不等式。车在 0，计划 10 装、30 卸、20 卸（去 30 再折回 20，全程 40000）；新需求 20 装、25 卸。
+    /// </para>
+    /// <list type="bullet">
+    /// <item>0→10→<b>20 装</b>→25 卸→30 卸→<b>20 卸</b>：去程顺路，增量 0（在 20 先装后卸）；</item>
+    /// <item>0→10→30 卸→<b>20 卸</b>→<b>20 装</b>→25 卸：先卸后装，要再往回走 5，增量 5000。</item>
+    /// </list>
+    /// <para>选中的是增量 0 那一格。这条钉的是现状：要不要改成一律先卸后装，留给业务逻辑重做去定，本票不处理。</para>
+    /// </remarks>
+    [Fact]
+    public void ARoundTripPlanOnASymmetricNetworkStillLoadsFirstWhenThatIsStrictlyCheaper()
+    {
+        EnRouteAppendDecision decision = EnRouteAppendPlanner.Plan(
+            PlanOf(vehicleAt: 0, Pickup("s-p", 10, ZoneA), Unload("s-u1", 30, ZoneA), Unload("s-u2", 20, ZoneA)),
+            CandidateOf(Pickup("new-p", 20, ZoneA), Unload("new-u", 25, ZoneA), ZoneA),
+            Zones((ZoneA, 500_000)),
+            Distance);
+
+        Assert.Null(decision.RefusalReasonCode);
+        Assert.Equal(0, decision.Placement!.MarginalCostMm);
+        Assert.Equal(["s-p", "new-p", "new-u", "s-u1", "s-u2"], OrderOf(decision.Placement));
+    }
+
+    /// <summary>
+    /// 严格更便宜的一格胜出时，它的同站先装后卸对数也要成为后面打平比较的基准，不能沿用被它替下的那一格的（cs#647 审查 S2）。
+    /// </summary>
+    /// <remarks>
+    /// <para>
+    /// 车在 36，计划 40 装、20 卸、40 卸（全程 44000）；新需求 10 装、40 卸。插入位按顺序试到：
+    /// </para>
+    /// <list type="number">
+    /// <item>40 装→<b>10 装</b>→40 卸（新开）→20 卸→40 卸：增量 60000，对数 2；</item>
+    /// <item>40 装→<b>10 装</b>→20 卸→40 卸（并入）：增量 20000，严格更便宜，对数 1；</item>
+    /// <item>40 装→20 卸→<b>10 装</b>→40 卸（并入）：增量 20000，打平，对数 1。</item>
+    /// </list>
+    /// <para>
+    /// 第 2 格以严格更便宜胜出时若不更新基准，基准仍是第 1 格的 2，第 3 格就会以 1 &lt; 2 把它替下。
+    /// 两格对数相同，按「跨站打平留最早」应留第 2 格。
+    /// </para>
+    /// </remarks>
+    [Fact]
+    public void AStrictlyCheaperWinnerSetsTheCountLaterTiesAreComparedAgainst()
+    {
+        EnRouteAppendDecision decision = EnRouteAppendPlanner.Plan(
+            PlanOf(vehicleAt: 36, Pickup("s-p", 40, ZoneA), Unload("s-u1", 20, ZoneA), Unload("s-u2", 40, ZoneA)),
+            CandidateOf(Pickup("new-p", 10, ZoneA), Unload("new-u", 40, ZoneA), ZoneA),
+            Zones((ZoneA, 500_000)),
+            Distance);
+
+        Assert.Null(decision.RefusalReasonCode);
+        EnRouteAppendPlacement placement = decision.Placement!;
+        Assert.Equal(20_000, placement.MarginalCostMm);
+        Assert.Equal("s-u2", placement.MergeIntoUnloadStopId);
+        Assert.Equal(["s-p", "new-p", "s-u1", "s-u2"], OrderOf(placement));
     }
 
     /// <summary>
