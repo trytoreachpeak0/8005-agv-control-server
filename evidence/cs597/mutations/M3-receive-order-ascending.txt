@@ -1,0 +1,47 @@
+diff --git a/src/ControlServer.Host/Runtime/SafetyMessagesNewestFirst.cs b/src/ControlServer.Host/Runtime/SafetyMessagesNewestFirst.cs
+index 00cc25726..0f3f88c44 100644
+--- a/src/ControlServer.Host/Runtime/SafetyMessagesNewestFirst.cs
++++ b/src/ControlServer.Host/Runtime/SafetyMessagesNewestFirst.cs
+@@ -39,7 +39,7 @@ internal static class SafetyMessagesNewestFirst
+         SELECT "MessageId", "ContentHash", "FirstResponseJson", "MessageType", "ReceivedAt", "ReceivedAtUtcTicks", "RequestJson",
+                rowid AS "InsertionOrder"
+         FROM "ProtocolInbox" WHERE "MessageType" = 'SafetyStateSnapshot'
+-        ORDER BY "ReceivedAtUtcTicks" DESC, "MessageType", "InsertionOrder"
++        ORDER BY "ReceivedAtUtcTicks", "MessageType", "InsertionOrder"
+         """;
+ 
+     public static IAsyncEnumerable<ProtocolInboxRow> Read(ControlServerDbContext dbContext) =>
+  Determining projects to restore...
+  All projects are up-to-date for restore.
+  ControlServer.Domain -> F:\8005-wt\cs597-8005-agv-control-server\src\ControlServer.Domain\bin\Debug\net8.0\win-x64\ControlServer.Domain.dll
+  ControlServer.TestDoubles -> F:\8005-wt\cs597-8005-agv-control-server\tools\ControlServer.TestDoubles\bin\Debug\net8.0\win-x64\ControlServer.TestDoubles.dll
+  ControlServer.Dashboard -> F:\8005-wt\cs597-8005-agv-control-server\src\ControlServer.Dashboard\bin\Debug\net8.0\win-x64\ControlServer.Dashboard.dll
+  ControlServer.Application -> F:\8005-wt\cs597-8005-agv-control-server\src\ControlServer.Application\bin\Debug\net8.0\win-x64\ControlServer.Application.dll
+  ControlServer.ClockSkewProxy -> F:\8005-wt\cs597-8005-agv-control-server\tools\ControlServer.ClockSkewProxy\bin\Debug\net8.0\win-x64\ControlServer.ClockSkewProxy.dll
+  ControlServer.FakeRiot -> F:\8005-wt\cs597-8005-agv-control-server\tools\ControlServer.FakeRiot\bin\Debug\net8.0\win-x64\ControlServer.FakeRiot.dll
+  ControlServer.ProtocolFaultProxy -> F:\8005-wt\cs597-8005-agv-control-server\tools\ControlServer.ProtocolFaultProxy\bin\Debug\net8.0\win-x64\ControlServer.ProtocolFaultProxy.dll
+  ControlServer.FakeOnboard -> F:\8005-wt\cs597-8005-agv-control-server\tools\ControlServer.FakeOnboard\bin\Debug\net8.0\win-x64\ControlServer.FakeOnboard.dll
+  ControlServer.Infrastructure -> F:\8005-wt\cs597-8005-agv-control-server\src\ControlServer.Infrastructure\bin\Debug\net8.0\win-x64\ControlServer.Infrastructure.dll
+  ControlServer.FieldOps -> F:\8005-wt\cs597-8005-agv-control-server\tools\ControlServer.FieldOps\bin\Debug\net8.0\win-x64\ControlServer.FieldOps.dll
+  ControlServer.Host -> F:\8005-wt\cs597-8005-agv-control-server\src\ControlServer.Host\bin\Debug\net8.0\win-x64\ControlServer.Host.dll
+  ControlServer.SchemaConformance -> F:\8005-wt\cs597-8005-agv-control-server\tools\ControlServer.SchemaConformance\bin\Debug\net8.0\win-x64\ControlServer.SchemaConformance.dll
+  ControlServer.Tests -> F:\8005-wt\cs597-8005-agv-control-server\tests\ControlServer.Tests\bin\Debug\net8.0\win-x64\ControlServer.Tests.dll
+Test run for F:\8005-wt\cs597-8005-agv-control-server\tests\ControlServer.Tests\bin\Debug\net8.0\win-x64\ControlServer.Tests.dll (.NETCoreApp,Version=v8.0)
+VSTest version 17.11.1 (x64)
+
+Starting test execution, please wait...
+A total of 1 test files matched the specified pattern.
+  Skipped ControlServer.Tests.ProtocolInboxReadWindowTests.MeasureHotPathInboxReads [1 ms]
+[xUnit.net 00:00:09.46]     ControlServer.Tests.SafetyStateLatestFirstReadTests.TheDispatchSummaryTakesTheLaterReceivedOfTwoMatchingRowsWhicheverWasWrittenFirst [FAIL]
+  Failed ControlServer.Tests.SafetyStateLatestFirstReadTests.TheDispatchSummaryTakesTheLaterReceivedOfTwoMatchingRowsWhicheverWasWrittenFirst [157 ms]
+  Error Message:
+   Assert.Equal() Failure: Values differ
+Expected: Tuple (True, True)
+Actual:   Tuple (False, False)
+  Stack Trace:
+     at ControlServer.Tests.SafetyStateLatestFirstReadTests.TheDispatchSummaryTakesTheLaterReceivedOfTwoMatchingRowsWhicheverWasWrittenFirst() in F:\8005-wt\cs597-8005-agv-control-server\tests\ControlServer.Tests\SafetyStateLatestFirstReadTests.cs:line 92
+   at ControlServer.Tests.SafetyStateLatestFirstReadTests.TheDispatchSummaryTakesTheLaterReceivedOfTwoMatchingRowsWhicheverWasWrittenFirst() in F:\8005-wt\cs597-8005-agv-control-server\tests\ControlServer.Tests\SafetyStateLatestFirstReadTests.cs:line 92
+--- End of stack trace from previous location ---
+  Skipped ControlServer.Tests.SafetyStateLatestFirstReadTests.MeasureSafetyStateReads [1 ms]
+
+Failed!  - Failed:     1, Passed:   138, Skipped:     0, Total:   139, Duration: 16 s - ControlServer.Tests.dll (net8.0)

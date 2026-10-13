@@ -1,0 +1,47 @@
+diff --git a/src/ControlServer.Host/Runtime/Dispatch/OnboardDispatchFactsReader.cs b/src/ControlServer.Host/Runtime/Dispatch/OnboardDispatchFactsReader.cs
+index ec3c290af..4edbfd8b7 100644
+--- a/src/ControlServer.Host/Runtime/Dispatch/OnboardDispatchFactsReader.cs
++++ b/src/ControlServer.Host/Runtime/Dispatch/OnboardDispatchFactsReader.cs
+@@ -226,7 +226,7 @@ public sealed class OnboardDispatchFactsReader(
+             using JsonDocument document = JsonDocument.Parse(row.RequestJson);
+             JsonElement root = document.RootElement;
+             if (RequiredString(root, "agvId") == agvId &&
+-                root.GetProperty("sessionGeneration").GetInt64() == generation &&
++                (root.GetProperty("sessionGeneration").GetInt64() == generation || generation > 0) &&
+                 root.GetProperty("payload").GetProperty("safetyStateVersion").GetInt64() == safetyRevision)
+             {
+                 return row;
+  Determining projects to restore...
+  All projects are up-to-date for restore.
+  ControlServer.Domain -> F:\8005-wt\cs597-8005-agv-control-server\src\ControlServer.Domain\bin\Debug\net8.0\win-x64\ControlServer.Domain.dll
+  ControlServer.TestDoubles -> F:\8005-wt\cs597-8005-agv-control-server\tools\ControlServer.TestDoubles\bin\Debug\net8.0\win-x64\ControlServer.TestDoubles.dll
+  ControlServer.Dashboard -> F:\8005-wt\cs597-8005-agv-control-server\src\ControlServer.Dashboard\bin\Debug\net8.0\win-x64\ControlServer.Dashboard.dll
+  ControlServer.Application -> F:\8005-wt\cs597-8005-agv-control-server\src\ControlServer.Application\bin\Debug\net8.0\win-x64\ControlServer.Application.dll
+  ControlServer.ProtocolFaultProxy -> F:\8005-wt\cs597-8005-agv-control-server\tools\ControlServer.ProtocolFaultProxy\bin\Debug\net8.0\win-x64\ControlServer.ProtocolFaultProxy.dll
+  ControlServer.ClockSkewProxy -> F:\8005-wt\cs597-8005-agv-control-server\tools\ControlServer.ClockSkewProxy\bin\Debug\net8.0\win-x64\ControlServer.ClockSkewProxy.dll
+  ControlServer.FakeOnboard -> F:\8005-wt\cs597-8005-agv-control-server\tools\ControlServer.FakeOnboard\bin\Debug\net8.0\win-x64\ControlServer.FakeOnboard.dll
+  ControlServer.FakeRiot -> F:\8005-wt\cs597-8005-agv-control-server\tools\ControlServer.FakeRiot\bin\Debug\net8.0\win-x64\ControlServer.FakeRiot.dll
+  ControlServer.Infrastructure -> F:\8005-wt\cs597-8005-agv-control-server\src\ControlServer.Infrastructure\bin\Debug\net8.0\win-x64\ControlServer.Infrastructure.dll
+  ControlServer.FieldOps -> F:\8005-wt\cs597-8005-agv-control-server\tools\ControlServer.FieldOps\bin\Debug\net8.0\win-x64\ControlServer.FieldOps.dll
+  ControlServer.Host -> F:\8005-wt\cs597-8005-agv-control-server\src\ControlServer.Host\bin\Debug\net8.0\win-x64\ControlServer.Host.dll
+  ControlServer.SchemaConformance -> F:\8005-wt\cs597-8005-agv-control-server\tools\ControlServer.SchemaConformance\bin\Debug\net8.0\win-x64\ControlServer.SchemaConformance.dll
+  ControlServer.Tests -> F:\8005-wt\cs597-8005-agv-control-server\tests\ControlServer.Tests\bin\Debug\net8.0\win-x64\ControlServer.Tests.dll
+Test run for F:\8005-wt\cs597-8005-agv-control-server\tests\ControlServer.Tests\bin\Debug\net8.0\win-x64\ControlServer.Tests.dll (.NETCoreApp,Version=v8.0)
+VSTest version 17.11.1 (x64)
+
+Starting test execution, please wait...
+A total of 1 test files matched the specified pattern.
+[xUnit.net 00:00:10.57]     ControlServer.Tests.SafetyStateLatestFirstReadTests.TheDispatchSummaryIgnoresNewerRowsOfAnotherGenerationAnotherVehicleOrAnotherVersion [FAIL]
+  Failed ControlServer.Tests.SafetyStateLatestFirstReadTests.TheDispatchSummaryIgnoresNewerRowsOfAnotherGenerationAnotherVehicleOrAnotherVersion [4 s]
+  Error Message:
+   Assert.Equal() Failure: Values differ
+Expected: Tuple (7, True, True)
+Actual:   Tuple (7, False, False)
+  Stack Trace:
+     at ControlServer.Tests.SafetyStateLatestFirstReadTests.TheDispatchSummaryIgnoresNewerRowsOfAnotherGenerationAnotherVehicleOrAnotherVersion() in F:\8005-wt\cs597-8005-agv-control-server\tests\ControlServer.Tests\SafetyStateLatestFirstReadTests.cs:line 114
+   at ControlServer.Tests.SafetyStateLatestFirstReadTests.TheDispatchSummaryIgnoresNewerRowsOfAnotherGenerationAnotherVehicleOrAnotherVersion() in F:\8005-wt\cs597-8005-agv-control-server\tests\ControlServer.Tests\SafetyStateLatestFirstReadTests.cs:line 114
+--- End of stack trace from previous location ---
+  Skipped ControlServer.Tests.ProtocolInboxReadWindowTests.MeasureHotPathInboxReads [1 ms]
+  Skipped ControlServer.Tests.SafetyStateLatestFirstReadTests.MeasureSafetyStateReads [1 ms]
+
+Failed!  - Failed:     1, Passed:   138, Skipped:     0, Total:   139, Duration: 21 s - ControlServer.Tests.dll (net8.0)

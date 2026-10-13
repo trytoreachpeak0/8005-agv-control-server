@@ -1,0 +1,24 @@
+M1-type-tiebreak-flipped: Failed!  - Failed:     4, Passed:   135, Skipped:     0, Total:   139, Duration: 15 s - ControlServer.Tests.dll (net8.0)
+    Failed ControlServer.Tests.SafetyStateLatestFirstReadTests.OnTheSameTickTheDispatchSummaryTakesTheChangeOverTheSnapshot(snapshotWrittenFirst: False) [164 ms]
+    Failed ControlServer.Tests.SafetyStateLatestFirstReadTests.OnTheSameTickTheDispatchSummaryTakesTheChangeOverTheSnapshot(snapshotWrittenFirst: True) [168 ms]
+    Failed ControlServer.Tests.SafetyStateLatestFirstReadTests.OnTheSameTickTheDoorFactTakesTheChangeOverTheSnapshot(snapshotWrittenFirst: True) [176 ms]
+    Failed ControlServer.Tests.SafetyStateLatestFirstReadTests.OnTheSameTickTheDoorFactTakesTheChangeOverTheSnapshot(snapshotWrittenFirst: False) [161 ms]
+M2-insertion-tiebreak-flipped: Failed!  - Failed:     4, Passed:   135, Skipped:     0, Total:   139, Duration: 13 s - ControlServer.Tests.dll (net8.0)
+    Failed ControlServer.Tests.SafetyStateLatestFirstReadTests.OnTheSameTickTheDoorFactTakesTheRowOfTheSameTypeWrittenFirst(messageType: "SafetyStateSnapshot") [123 ms]
+    Failed ControlServer.Tests.SafetyStateLatestFirstReadTests.OnTheSameTickTheDoorFactTakesTheRowOfTheSameTypeWrittenFirst(messageType: "SafetyStateChanged") [115 ms]
+    Failed ControlServer.Tests.SafetyStateLatestFirstReadTests.OnTheSameTickTheDispatchSummaryTakesTheRowOfTheSameTypeWrittenFirst(messageType: "SafetyStateSnapshot") [123 ms]
+    Failed ControlServer.Tests.SafetyStateLatestFirstReadTests.OnTheSameTickTheDispatchSummaryTakesTheRowOfTheSameTypeWrittenFirst(messageType: "SafetyStateChanged") [130 ms]
+M3-receive-order-ascending: Failed!  - Failed:     1, Passed:   138, Skipped:     0, Total:   139, Duration: 16 s - ControlServer.Tests.dll (net8.0)
+    Failed ControlServer.Tests.SafetyStateLatestFirstReadTests.TheDispatchSummaryTakesTheLaterReceivedOfTwoMatchingRowsWhicheverWasWrittenFirst [157 ms]
+M4-dashboard-stops-without-coverage: Failed!  - Failed:     3, Passed:   136, Skipped:     0, Total:   139, Duration: 14 s - ControlServer.Tests.dll (net8.0)
+    Failed ControlServer.Tests.ExpectedActionOverdueTests.TheEndpointListsTheOverdueSlotWithVehicleStationActionWaitAndTheReadingsTheVehicleSent [230 ms]
+    Failed ControlServer.Tests.ExpectedActionOverdueTests.TheReadingsIgnoreNewerSafetyMessagesOfAnotherGenerationOrAnotherVehicle [179 ms]
+    Failed ControlServer.Tests.ExpectedActionOverdueTests.TheReadingsAreTheHighestVersionSnapshotEvenWhenTheServerClockSteppedBackBeforeIt [204 ms]
+M5-summary-ignores-generation: Failed!  - Failed:     1, Passed:   138, Skipped:     0, Total:   139, Duration: 21 s - ControlServer.Tests.dll (net8.0)
+    Failed ControlServer.Tests.SafetyStateLatestFirstReadTests.TheDispatchSummaryIgnoresNewerRowsOfAnotherGenerationAnotherVehicleOrAnotherVersion [4 s]
+M6-migration-builds-no-index: Failed!  - Failed:     1, Passed:   138, Skipped:     0, Total:   139, Duration: 14 s - ControlServer.Tests.dll (net8.0)
+    Failed ControlServer.Tests.SafetyStateLatestFirstReadTests.TheNewestFirstReadWalksTheCompositeIndexWithoutSortingAWholeType [3 s]
+M7-coverage-counts-every-vehicle: Failed!  - Failed:     1, Passed:   138, Skipped:     0, Total:   139, Duration: 13 s - ControlServer.Tests.dll (net8.0)
+    Failed ControlServer.Tests.ExpectedActionOverdueTests.TheReadingsAreTheHighestVersionSnapshotEvenWhenTheServerClockSteppedBackBeforeIt [205 ms]
+M8-coverage-checks-only-the-revision: Failed!  - Failed:     1, Passed:   138, Skipped:     0, Total:   139, Duration: 14 s - ControlServer.Tests.dll (net8.0)
+    Failed ControlServer.Tests.ExpectedActionOverdueTests.TheReadingsAreTheHighestVersionSnapshotEvenWhenTheServerClockSteppedBackBeforeIt [206 ms]
