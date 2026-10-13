@@ -166,8 +166,8 @@ public sealed class ForeignRunningOrderSupervisor(
             "not one of this server's. Nothing is sent to it and no vehicle of ours is held for it. A person has to look at it " +
             "in RIoT and decide whether that vehicle should go on with it.");
 
-    private static readonly Action<ILogger, string, string?, string, string, int?, string, Exception?> LogOwnAbandonedOrderHeld =
-        LoggerMessage.Define<string, string?, string, string, int?, string>(
+    private static readonly Action<ILogger, string, string?, string, string, string, int?, Exception?> LogOwnAbandonedOrderHeld =
+        LoggerMessage.Define<string, string?, string, string, string, int?>(
             LogLevel.Error,
             new EventId(2201, nameof(LogOwnAbandonedOrderHeld)),
             "RIoT order {OrderId} (upperId {UpperId}) is an order this server created for vehicle {AgvId} ({DeviceKey}) and then " +
@@ -558,7 +558,7 @@ public sealed class ForeignRunningOrderSupervisor(
         {
             // Not event 2181 either: that one says whose order it is cannot be proven, and this one is provably ours.
             LogOwnAbandonedOrderHeld(
-                logger, row.RiotOrderId, row.UpperId, row.AgvId, row.DeviceKey, orderState, row.OwnershipBasis, null);
+                logger, row.RiotOrderId, row.UpperId, row.AgvId, row.DeviceKey, row.OwnershipBasis, orderState, null);
         }
         else if (row.Ownership == ForeignRiotOrderOwnership.Foreign)
         {
