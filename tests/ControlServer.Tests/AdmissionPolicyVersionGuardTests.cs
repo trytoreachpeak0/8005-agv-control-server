@@ -77,6 +77,11 @@ public sealed class AdmissionPolicyVersionGuardTests
 
     private const string InstanceDataRoot = @"C:\ProgramData\8005\ControlServer.V2";
 
+    // control-server#564 review round 2, L1: where installed-instance.json lives (Get-ParallelInstanceLayout). The cutover's
+    // history rules read the installed record there, so a definition with another opsRoot would find no record -- and be
+    // taken for a first install that is not one.
+    private const string InstanceOpsRoot = @"D:\zhengyushao\control-server-v2-ops";
+
     /// <summary>
     /// The protocol's task types this build deliberately does not execute. Empty since batch 10; a task type that is
     /// in neither this list nor <see cref="ExecutableTaskTypes"/> is one nobody has decided about.
@@ -184,6 +189,19 @@ public sealed class AdmissionPolicyVersionGuardTests
 
     [Fact]
     [Trait("IntegrationSlice", "FP-IS-10")]
+    public void EveryInstanceDefinitionKeepsTheInstalledRecordWhereTheHistoryLooksForIt()
+    {
+        Assert.All(
+            Definitions(),
+            definition => Assert.True(
+                definition.Values.OpsRoot == InstanceOpsRoot,
+                $"{definition.File} has opsRoot '{definition.Values.OpsRoot}'; every definition of {InstanceId} keeps " +
+                $"installed-instance.json in {InstanceOpsRoot}. With another opsRoot the installer finds no installed record, " +
+                "and the production cutover's history checks (control-server#564) would read a cutover instance as a first install."));
+    }
+
+    [Fact]
+    [Trait("IntegrationSlice", "FP-IS-10")]
     public void TheInstanceDefinitionsAgreeOnTheDeploymentIdentity()
     {
         // The store binds the version together with admissionPolicyDeploymentId; changing the identity alone is drift.
@@ -196,7 +214,7 @@ public sealed class AdmissionPolicyVersionGuardTests
             ". They install the same database under the same version, so a different identity there is drift.");
     }
 
-    private sealed record JourneyRuntimeValues(long Version, string DeploymentId, string? InstanceId, string? DataRoot);
+    private sealed record JourneyRuntimeValues(long Version, string DeploymentId, string? InstanceId, string? DataRoot, string? OpsRoot);
 
     private static (string File, JourneyRuntimeValues Values) Package() =>
         Read(FindRepositoryRoot(), "src/ControlServer.Host/appsettings.json", "JourneyRuntime");
@@ -230,7 +248,8 @@ public sealed class AdmissionPolicyVersionGuardTests
             journeyRuntime.GetProperty("admissionPolicyVersion").GetInt64(),
             journeyRuntime.GetProperty("admissionPolicyDeploymentId").GetString() ?? "",
             top.TryGetProperty("instanceId", out JsonElement instanceId) ? instanceId.GetString() : null,
-            top.TryGetProperty("dataRoot", out JsonElement dataRoot) ? dataRoot.GetString() : null));
+            top.TryGetProperty("dataRoot", out JsonElement dataRoot) ? dataRoot.GetString() : null,
+            top.TryGetProperty("opsRoot", out JsonElement opsRoot) ? opsRoot.GetString() : null));
     }
 
     private static string Describe(IEnumerable<string> taskTypes) =>

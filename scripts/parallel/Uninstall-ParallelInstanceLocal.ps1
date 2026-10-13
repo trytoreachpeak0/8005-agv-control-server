@@ -94,7 +94,10 @@ Write-Step "Definition: $InstanceDefinitionPath"
 $definition = Read-ParallelInstanceDefinition -Path $InstanceDefinitionPath
 # -ForStopDirection (control-server#518): an instance installed before taskTypeStations existed must still be
 # removable by a newer module -- the one a failed reinstall leaves in opsRoot.
-$null = Assert-ParallelInstanceDefinition -Definition $definition -AllowRiotCreateDispatch -AllowRiotForeignOrderCancel -ForStopDirection
+# -ProductionCutover from the record itself (control-server#564): an installed cutover definition got its record only
+# through an install that carried the switch, and uninstalling must never be the step that refuses.
+$null = Assert-ParallelInstanceDefinition -Definition $definition -AllowRiotCreateDispatch -AllowRiotForeignOrderCancel -ForStopDirection `
+    -ProductionCutover:(Test-ParallelProductionCutoverDefinition -Definition $definition)
 $layout = Get-ParallelInstanceLayout -Definition $definition
 $footprint = @(Get-ParallelInstanceFootprint -Definition $definition)
 
