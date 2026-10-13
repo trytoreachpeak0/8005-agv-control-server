@@ -141,7 +141,7 @@ function Wait-WaitingOperator([string]$attemptId, [int]$ordinal, [DateTimeOffset
 }
 
 # 不用 Wait-L2Condition：超时它只在证据里留一句 failureReason，而「车载端有没有给操作员这个入口」值得一条
-# 具名判据（同 real-onboard-recovery-entry-missing）。
+# 具名判据（写法同 G3RecoveryCommon.ps1 的 Wait-G3ButtonOffered）。
 function Wait-Offered([string]$buttonName, [string]$criterion, [int]$timeoutSeconds) {
     $deadline = [DateTimeOffset]::UtcNow.AddSeconds($timeoutSeconds)
     while ($true) {
