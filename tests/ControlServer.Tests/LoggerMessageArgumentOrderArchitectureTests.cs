@@ -27,15 +27,21 @@ namespace ControlServer.Tests;
 /// <b>What it cannot see</b>, by construction (guard, not proof): two swapped arguments whose names match neither
 /// placeholder (how many arguments are named unlike any placeholder is printed); an argument expression it cannot
 /// name (a method call, arithmetic, a conditional, a literal), whose count is printed and the named count floored
-/// below; a delegate called from a file outside its own partial-class group (same
-/// directory, same file name up to the first dot), or passed on and called under another name; a template that is not
-/// a plain string literal or a <c>+</c> concatenation of them.
+/// below; a delegate called from a file outside its own partial-class group (same directory, same file name up to the
+/// first dot), or passed on and called under another name; a template that is not a plain string literal or a
+/// <c>+</c> concatenation of them; a <c>Define</c> whose generic arguments are themselves generic
+/// (<c>Define&lt;string, IReadOnlyList&lt;int&gt;&gt;</c>), which the definition pattern does not match and so skips
+/// without a word; and a swap between two placeholders of one template that end in the same word -- "its own" is any
+/// argument segment its placeholder ends with, so <c>reason.Code</c> handed to <c>{StopCode}</c> and <c>stop.Code</c> to
+/// <c>{ReasonCode}</c> both count as matching their own places.
 /// </para>
 /// <para>
 /// <b>Two rounds, then stop</b> (control-server#588). Round one names an argument only when it is an identifier or a
 /// member chain, and looks for calls in the defining file. Round two also drops a <c>!</c> inside the chain, strips a
 /// leading cast, a <c>?? fallback</c>, a trailing <c>.ToString(...)</c>-style call or <c>.Value</c>-style member, and
-/// looks for calls in the other files of a partial class. What is still unnamed after that is counted, not chased.
+/// looks for calls in the other files of a partial class. Those strippings apply only to an argument that is not
+/// already a plain member chain: <c>deadline.Value</c> is one, so it is named <c>Value</c>, not <c>deadline</c>, and two
+/// such arguments swapped go unreported. What is still unnamed after that is counted, not chased.
 /// </para>
 /// <para>
 /// <b>No <c>IntegrationSlice</c> trait</b>: a cross-cutting guard hung off a slice would be deferred with it.
@@ -82,9 +88,10 @@ public sealed class LoggerMessageArgumentOrderArchitectureTests
 
         // The floors are what keep a broken parser from passing by scanning nothing. They sit under the 2026-10-13
         // counts (206 definitions, 228 call sites, 712 named arguments, 49 unnamed); lower them only on purpose.
-        Assert.True(second.Definitions >= 200, $"only {second.Definitions} LoggerMessage.Define definitions found");
-        Assert.True(second.CallSites >= 220, $"only {second.CallSites} call sites found");
-        Assert.True(second.NamedArguments >= 700, $"only {second.NamedArguments} arguments named");
+        const string Hint = "; if log messages were removed on purpose, lower this floor in the same change";
+        Assert.True(second.Definitions >= 200, $"only {second.Definitions} LoggerMessage.Define definitions found{Hint}");
+        Assert.True(second.CallSites >= 220, $"only {second.CallSites} call sites found{Hint}");
+        Assert.True(second.NamedArguments >= 700, $"only {second.NamedArguments} arguments named{Hint}");
         Assert.True(
             second.Swaps.Count == 0,
             $"arguments handed to another placeholder's name:{Environment.NewLine}{string.Join(Environment.NewLine, second.Swaps)}");
