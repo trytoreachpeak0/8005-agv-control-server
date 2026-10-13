@@ -160,12 +160,17 @@ public sealed partial class IdleReturnExecutionTests
                 .Where(value => value.StartsWith("OWN_", StringComparison.Ordinal) && value.EndsWith("_ABANDONED", StringComparison.Ordinal))
                 .Distinct(StringComparer.Ordinal),
         ];
-        Assert.Equal(3, bases.Length);
+        // control-server#673 added the fourth: a demand leg's order taken as never created.
+        Assert.Equal(4, bases.Length);
         foreach (string basis in bases)
         {
             Assert.True(ForeignRunningOrdersQueryEndpoint.OwnAbandonedOrderDescriptions.ContainsKey(basis), basis);
         }
-        foreach (string basis in new[] { AbandonedIdleReturnOrders.OwnershipBasis, ControlServer.Host.Runtime.Charging.AbandonedClearanceMoves.OwnershipBasis })
+        foreach (string basis in new[]
+                 {
+                     AbandonedIdleReturnOrders.OwnershipBasis, ControlServer.Host.Runtime.Charging.AbandonedClearanceMoves.OwnershipBasis,
+                     AbandonedDemandLegOrders.OwnershipBasis,
+                 })
         {
             foreach (string reason in new[] { ForeignRunningOrders.OwnershipUnprovenReason, ForeignRunningOrders.UnsettledReason })
             {

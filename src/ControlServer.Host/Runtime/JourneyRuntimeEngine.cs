@@ -305,7 +305,7 @@ public sealed partial class JourneyRuntimeEngine(
         OwnOrderRebuildOrderUnconfirmedReason or OwnOrderRebuildStoppedReason or
         OwnOrderRebuildWaitingCargoEvidenceReason or OwnOrderRebuildCargoNotInPlaceReason or
         OwnOrderRebuildCargoUnprovenReason or
-        OwnOrderRebuildVehicleIneligibleReason;
+        OwnOrderRebuildVehicleIneligibleReason or OwnOrderNeverAppearedReason;
 
     /// <summary>
     /// The journey is waiting on a fact only the vehicle can supply, and the vehicle has gone quiet: no legal inbound
@@ -2372,7 +2372,11 @@ public sealed partial class JourneyRuntimeEngine(
 
             if (result.Outcome != MovementDispatchOutcome.TerminalReconciliationRequired)
             {
-                return false;
+                // control-server#673: behind the gate too -- the record is kept and named here, and the rebuild creates nothing
+                // until the session is ready, as for a cancellation read here.
+                return result.Outcome == MovementDispatchOutcome.ResultUnknown &&
+                       await RecordOwnOrderNeverAppearedAsync(runtime, intent.UpperId, endedRebuild: null, cancellationToken)
+                           .ConfigureAwait(false);
             }
         }
 
@@ -2694,6 +2698,13 @@ public sealed partial class JourneyRuntimeEngine(
         if (result.Outcome == MovementDispatchOutcome.TerminalReconciliationRequired &&
             await NameOrderEndedBeforeConfirmationAsync(runtime, upperId, reasonOnceMovedOn: null, cancellationToken)
                 .ConfigureAwait(false))
+        {
+            return false;
+        }
+        // control-server#673: a create sent with its result unknown that RIoT never shows is recorded to be rebuilt, once
+        // control-server#611's evidence is complete; until then the leg keeps {leg}_ResultUnknown, as before.
+        if (result.Outcome == MovementDispatchOutcome.ResultUnknown &&
+            await RecordOwnOrderNeverAppearedAsync(runtime, upperId, endedRebuild: null, cancellationToken).ConfigureAwait(false))
         {
             return false;
         }

@@ -51,6 +51,7 @@ public static class VehicleFaultRecoveryEndpoints
             ["REBUILD_STOPPED_ORDER"] = VehicleFaultRecoveryAction.RebuildStoppedOrder,
             ["TERMINATE_STOPPED_TRIP"] = VehicleFaultRecoveryAction.TerminateStoppedTrip,
             ["PREPARE_CARGO_HANDOFF"] = VehicleFaultRecoveryAction.PrepareCargoHandoff,
+            ["DECLARE_ORDER_NEVER_APPEARED"] = VehicleFaultRecoveryAction.DeclareOrderNeverAppeared,
         };
 
     /// <summary>The configuration switch both entries below hang on.</summary>
@@ -90,7 +91,8 @@ public static class VehicleFaultRecoveryEndpoints
                 + "or open. Clearing never releases a latch. REBUILD_STOPPED_ORDER, TERMINATE_STOPPED_TRIP and "
                 + "PREPARE_CARGO_HANDOFF (control-server#345) apply only to a journey whose automatic rebuild stopped: rebuild "
                 + "once more, give a trip with nothing on board up, or hand a loaded one to the vehicle's exception recovery "
-                + "session.")
+                + "session. DECLARE_ORDER_NEVER_APPEARED (control-server#673) records a demand leg whose create result is unknown, "
+                + "and which RIoT reads precisely as no such order, as never created, and stops it for those three.")
             .Produces<VehicleFaultRecoveryResponse>(StatusCodes.Status200OK)
             .Produces(StatusCodes.Status401Unauthorized)
             .ProducesProblem(StatusCodes.Status404NotFound)
@@ -175,7 +177,8 @@ public static class VehicleFaultRecoveryEndpoints
         {
             VehicleFaultRecoveryOutcome.Cleared or VehicleFaultRecoveryOutcome.Resumed or VehicleFaultRecoveryOutcome.AlreadyCleared or
                 VehicleFaultRecoveryOutcome.RebuildRequested or VehicleFaultRecoveryOutcome.TripTerminated or
-                VehicleFaultRecoveryOutcome.HandoffPrepared or VehicleFaultRecoveryOutcome.AlreadyDone =>
+                VehicleFaultRecoveryOutcome.HandoffPrepared or VehicleFaultRecoveryOutcome.AlreadyDone or
+                VehicleFaultRecoveryOutcome.NeverAppearedDeclared =>
                 TypedResults.Ok(body),
             _ when decision.Reasons.Contains("FAULT_RECOVERY_RUNTIME_BUSY") =>
                 Problem(StatusCodes.Status503ServiceUnavailable, "Runtime busy, try again", body),
@@ -208,8 +211,8 @@ public static class VehicleFaultRecoveryEndpoints
 /// than read as confirming it.
 /// </summary>
 /// <param name="Action">
-/// <c>CLEAR_FAULT</c>, <c>RESUME_HELD_ORDER</c>, <c>REBUILD_STOPPED_ORDER</c>, <c>TERMINATE_STOPPED_TRIP</c> or
-/// <c>PREPARE_CARGO_HANDOFF</c>.
+/// <c>CLEAR_FAULT</c>, <c>RESUME_HELD_ORDER</c>, <c>REBUILD_STOPPED_ORDER</c>, <c>TERMINATE_STOPPED_TRIP</c>,
+/// <c>PREPARE_CARGO_HANDOFF</c> or <c>DECLARE_ORDER_NEVER_APPEARED</c>.
 /// </param>
 /// <param name="FaultRemedied">
 /// The person confirms the cause has been removed on site: of the fault, or of what stopped the rebuild again and again.

@@ -241,9 +241,13 @@ public sealed class ForeignRunningOrderSupervisor(
     private static bool IsAbandonedChargeOrder(ForeignRiotOrderRow row) =>
         string.Equals(row.OwnershipBasis, Charging.AbandonedChargeOrders.OwnershipBasis, StringComparison.Ordinal);
 
-    /// <summary>An idle return or clearance move order this server gave up (control-server#611): held and alarmed, never cancelled.</summary>
+    /// <summary>
+    /// An idle return or clearance move order this server gave up (control-server#611), or a demand leg's order taken as never
+    /// created (control-server#673): held and alarmed, never cancelled.
+    /// </summary>
     private static bool IsOwnAbandonedHeldOrder(ForeignRiotOrderRow row) =>
         string.Equals(row.OwnershipBasis, IdleReturn.AbandonedIdleReturnOrders.OwnershipBasis, StringComparison.Ordinal) ||
+        string.Equals(row.OwnershipBasis, AbandonedDemandLegOrders.OwnershipBasis, StringComparison.Ordinal) ||
         string.Equals(row.OwnershipBasis, Charging.AbandonedClearanceMoves.OwnershipBasis, StringComparison.Ordinal);
 
     /// <summary>
@@ -580,6 +584,12 @@ public sealed class ForeignRunningOrderSupervisor(
                     .ConfigureAwait(false))
             {
                 return (ForeignRiotOrderOwnership.Unproven, IdleReturn.AbandonedIdleReturnOrders.OwnershipBasis);
+            }
+            // control-server#673: and a demand leg's order taken as never created and handed to the rebuild (or to a person).
+            if (await AbandonedDemandLegOrders.IsAbandonedAsync(dbContext, orderId, upperId, cancellationToken)
+                    .ConfigureAwait(false))
+            {
+                return (ForeignRiotOrderOwnership.Unproven, AbandonedDemandLegOrders.OwnershipBasis);
             }
             return await Charging.AbandonedClearanceMoves.IsAbandonedAsync(dbContext, orderId, upperId, cancellationToken)
                 .ConfigureAwait(false)

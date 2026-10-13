@@ -96,6 +96,22 @@ internal sealed class ForeignRunningOrdersQueryEndpoint : IDashboardQueryEndpoin
         };
 
     /// <summary>
+    /// 本服务端自己建了、判作没建成的需求腿单（依据 <c>OWN_DEMAND_LEG_ORDER_ABANDONED</c>，control-server#673）的说明，理由同上。
+    /// </summary>
+    internal static IReadOnlyDictionary<string, string> AbandonedDemandLegOrderDescriptions { get; } =
+        new Dictionary<string, string>(StringComparer.Ordinal)
+        {
+            [ForeignRunningOrders.OwnershipUnprovenReason] =
+                "这是本服务端自己给这辆车建的搬运单（开往取货站或卸货站）：建单结果未知、RIoT 一直查不到它，服务端已判它没建成，"
+                + "这一段改由同车重建的新单（或现场人员选的出口）负责，它却事后在这辆车上跑了起来，车上可能有货。没有旅程在管这张旧单。"
+                + "服务端不取消它（需求只授权服务端取消放弃的充电单），这辆车不接新单、不接途中追加，重建也不会再建新单。"
+                + "请到 RIoT 按订单号把这张旧单结束，再到车前核对车停在哪里、货在不在；不用去找外部建单人。它终结后这一行自动消失",
+            [ForeignRunningOrders.UnsettledReason] =
+                "这是本服务端自己建了、判作没建成的搬运单。它已不在 RIoT 的运行列表里，但按订单号回查读不到它已终结：服务端只认明确终结才放车，"
+                + "这辆车一直不接新单、不接途中追加。请到 RIoT 按订单号核对这张单的状态；在 RIoT 里把它结束后这一行自动消失",
+        };
+
+    /// <summary>
     /// 每一种「本服务端自己建了又放弃的单」的依据，对应它自己的那组说明（control-server#611 审查 M1）。依据不在这里的走通用的
     /// <see cref="Descriptions"/>。新加一种 <c>OWN_*_ABANDONED</c> 依据而忘了这里，<c>IdleReturnExecutionTests</c> 的守卫就红。
     /// </summary>
@@ -105,6 +121,7 @@ internal sealed class ForeignRunningOrdersQueryEndpoint : IDashboardQueryEndpoin
             [Runtime.Charging.AbandonedChargeOrders.OwnershipBasis] = AbandonedChargeOrderDescriptions,
             [Runtime.IdleReturn.AbandonedIdleReturnOrders.OwnershipBasis] = AbandonedIdleReturnOrderDescriptions,
             [Runtime.Charging.AbandonedClearanceMoves.OwnershipBasis] = AbandonedClearanceMoveDescriptions,
+            [Runtime.AbandonedDemandLegOrders.OwnershipBasis] = AbandonedDemandLegOrderDescriptions,
         };
 
     /// <summary>一行外来订单的说明：自己放弃的单按它的依据取专门说明，其余取通用说明。</summary>
