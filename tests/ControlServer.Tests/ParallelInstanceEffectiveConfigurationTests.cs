@@ -616,6 +616,81 @@ public sealed class ParallelInstanceEffectiveConfigurationTests
     }
 
     // ------------------------------------------------------------------------------------------------
+    // control-server#672 (PR #670 review L3, extended from cs#609). After an install nothing said which admission policy
+    // version and deployment label the Host bound -- only the overlay file on disk, or AdmissionPolicyState in the database
+    // -- nor which cargo holding and station departure waits: on 2026-10-12 a hand edit to five minutes was quietly
+    // reinstalled back to thirty (evidence/field/20261012-req0178/52-closeout-server.txt). The event now carries all four.
+    // ------------------------------------------------------------------------------------------------
+
+    [Fact]
+    public void EffectiveConfigurationEventCarriesTheAdmissionPolicyAndTheTwoWaitsAsBound()
+    {
+        JourneyRuntimeOptions options = new()
+        {
+            AgvId = "老厂前线新多仓位2",
+            VehicleKey = Agv02Key,
+            AllowedWorkTypes = ["WIRE_TO_GATE"],
+            AllowedDispatchZones = ["WIRE"],
+            AdmissionPolicyVersion = 6,
+            AdmissionPolicyDeploymentId = "MAP-26-WIRE_TO_GATE-20261007",
+            CargoHoldingTimeout = TimeSpan.FromMinutes(5),
+            StationDepartureWaitTimeout = TimeSpan.FromSeconds(270),
+        };
+
+        using JsonDocument logged = JsonDocument.Parse(RenderEvent(options, "http://127.0.0.1:58188"));
+        JsonElement root = logged.RootElement;
+        string template = root.GetProperty("@mt").GetString()!;
+
+        // Appended: the fields #535, #571, #638, #531 and #617 read keep their names and their place.
+        Assert.StartsWith(
+            "EFFECTIVE_CONFIGURATION allowedWorkTypes={AllowedWorkTypes} allowedDispatchZones={AllowedDispatchZones} mesIngestBaseUrl={MesIngestBaseUrl} fleet={Fleet} clearanceToWaitingPointEnabled={ClearanceToWaitingPointEnabled} mapStationCatalog={MapStationCatalog} foreignRunningOrderRelease={ForeignRunningOrderRelease}",
+            template, StringComparison.Ordinal);
+        Assert.EndsWith(
+            " admissionPolicyVersion={AdmissionPolicyVersion} admissionPolicyDeploymentId={AdmissionPolicyDeploymentId} cargoHoldingTimeout={CargoHoldingTimeout} stationDepartureWaitTimeout={StationDepartureWaitTimeout}",
+            template, StringComparison.Ordinal);
+        Assert.Equal(JsonValueKind.Number, root.GetProperty("AdmissionPolicyVersion").ValueKind);
+        Assert.Equal(6, root.GetProperty("AdmissionPolicyVersion").GetInt64());
+        Assert.Equal("MAP-26-WIRE_TO_GATE-20261007", root.GetProperty("AdmissionPolicyDeploymentId").GetString());
+        Assert.Equal("00:05:00", root.GetProperty("CargoHoldingTimeout").GetString());
+        Assert.Equal("00:04:30", root.GetProperty("StationDepartureWaitTimeout").GetString());
+    }
+
+    [Theory]
+    [InlineData("as-bound", "Pass", null)]
+    [InlineData("version-5", "StopServiceAndRefuse", "admissionPolicyVersion bound '5'")]
+    [InlineData("other-label", "StopServiceAndRefuse", "admissionPolicyDeploymentId bound 'MAP-26-WIRE_TO_GATE-OTHER'")]
+    [InlineData("cargo-30", "StopServiceAndRefuse", "cargoHoldingTimeout bound '00:30:00'")]
+    [InlineData("departure-30", "StopServiceAndRefuse", "stationDepartureWaitTimeout bound '00:30:00'")]
+    public void InstallerReadBackJudgesTheAdmissionPolicyAndTheTwoWaitsTheHostReallyLogs(string host, string expectedAction, string? says)
+    {
+        // as-bound: the shipped definition's overlay over the package's appsettings.json, bound as the Host binds it. The
+        // others stand for a Host that bound something else: an environment variable added after the install, a stale
+        // layer, or -- cargo-30 -- the value the field found in effect on 2026-10-12.
+        string root = FindRepositoryRoot();
+        const string definitionFile = "instance-factory01-v2.json";
+        JourneyRuntimeOptions options = Bind(
+            File.ReadAllText(Path.Combine(root, "src", "ControlServer.Host", "appsettings.json")),
+            GenerateOverlay(root, definitionFile), out IConfiguration configuration);
+        switch (host)
+        {
+            case "version-5": options.AdmissionPolicyVersion = 5; break;
+            case "other-label": options.AdmissionPolicyDeploymentId = "MAP-26-WIRE_TO_GATE-OTHER"; break;
+            case "cargo-30": options.CargoHoldingTimeout = TimeSpan.FromMinutes(30); break;
+            case "departure-30": options.StationDepartureWaitTimeout = TimeSpan.FromMinutes(30); break;
+        }
+        string line = RenderEvent(options, configuration["MesIngest:baseUrl"]!, BindCatalog(configuration));
+
+        string verdict = JudgeReadBack(root, definitionFile, line);
+
+        Assert.StartsWith(expectedAction + "|", verdict, StringComparison.Ordinal);
+        if (says is not null)
+        {
+            Assert.Contains("EFFECTIVE_CONFIGURATION_MISMATCH", verdict, StringComparison.Ordinal);
+            Assert.Contains(says, verdict, StringComparison.Ordinal);
+        }
+    }
+
+    // ------------------------------------------------------------------------------------------------
     // control-server#587. The Host's log now rolls at its size limit. The installer's read-back looks for
     // EFFECTIVE_CONFIGURATION and 2001, logged as the process starts, and used to read only the two newest files:
     // once the log rolled more than once after the start, both events were in a file it did not read.

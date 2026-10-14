@@ -62,6 +62,16 @@ control-server#262。约 2026-10-08 起 `factory01` 上同时跑两套 ControlSe
 `EFFECTIVE_CONFIGURATION_CLEARANCE_UNREAD` 并停掉 v2 服务——旧包不记这个字段，没法确认它到底开没开。这是往安全方向的失败：
 把定义里的开关去掉（或改成 `false`）后再回滚一次即可。
 
+**准入版本、部署标签与两个等待时长**（control-server#672）：Host 在 `EFFECTIVE_CONFIGURATION` 事件末尾记下实际绑定的
+`AdmissionPolicyVersion`（数字）、`AdmissionPolicyDeploymentId`、`CargoHoldingTimeout`、`StationDepartureWaitTimeout`（`hh:mm:ss`）。
+回读把定义里写了的那几项逐个比对，不一致按 `EFFECTIVE_CONFIGURATION_MISMATCH` 停服务；定义没写的那项由包里的 `appsettings.json`
+决定，只打印不比。在此之前装完只能看磁盘上的覆盖层或库里的 `AdmissionPolicyState`，2026-10-12 现场手改成 5 分钟的持货时长被重装
+悄悄写回 30 分钟也没人看见（`evidence/field/20261012-req0178/52-closeout-server.txt`）。安装器另打一行结果
+`EFFECTIVE_JOURNEY_BINDING=admissionPolicyVersion=… admissionPolicyDeploymentId=… cargoHoldingTimeout=… stationDepartureWaitTimeout=…`，
+给 `19-deploy-control-server-parallel.ps1` 装完后与它发出的定义比对；原来的 `EFFECTIVE_CONFIGURATION=` 行不变，因为旧版 19 整行比它。
+事件里没有这四项（control-server#672 之前的包）时安装器放行、结果行写 `EFFECTIVE_JOURNEY_BINDING=not-logged`，回滚到旧包因此不被挡；
+是否接受由 19 决定：`-Rollback` 只警告，非回滚安装直接失败。
+
 已知限制：一层写空数组 `"fleet": []` 读作「没写」，清不掉更早一层的车队表。今天包内 `appsettings.json` 没有车队表，回读也会拒绝定义里
 没写、却绑出来的车队表；包内一旦加车队表，必须先改这条语义（`PackageAppSettingsRosterArchitectureTests` 会在那天变红）。
 

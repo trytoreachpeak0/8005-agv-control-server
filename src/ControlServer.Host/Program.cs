@@ -200,7 +200,8 @@ app.UseSerilogRequestLogging();
 // control-server#535 review M2: what this process really bound, once it has started (options validated).
 // The v2 parallel installer reads this event back from the log and compares it with the instance
 // definition; reading the definition instead is how M1 (six work types bound where one was written) passed.
-// control-server#571 added the vehicle roster, control-server#531 REQ-0302's two approved values (EffectiveConfigurationEvent).
+// control-server#571 added the vehicle roster, control-server#531 REQ-0302's two approved values, control-server#672 the
+// admission policy version and label and the two waits (EffectiveConfigurationEvent).
 app.Lifetime.ApplicationStarted.Register(() =>
 {
     JourneyRuntimeOptions effective = app.Services.GetRequiredService<IOptions<JourneyRuntimeOptions>>().Value;

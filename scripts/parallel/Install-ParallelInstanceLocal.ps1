@@ -603,6 +603,8 @@ try {
             service when it differs, is not logged, or nothing is read back at all.
             Prints EFFECTIVE_CONFIGURATION=... as a result line for 19-deploy-control-server-parallel.ps1; that line
             keeps its three fields exactly, because 19 compares it as a string. The roster is printed as a step.
+            control-server#672: also returns EFFECTIVE_JOURNEY_BINDING=... (Format-ParallelJourneyBindingLine), the admission
+            policy version and label and the two waits as the Host bound them, a second result line for 19.
 
             control-server#578: runs twice, both times from Invoke-ParallelJourneyRuntimeRelease. -Phase Held reads
             the Host restarted with JourneyRuntime.enabled=false and also judges that its runtime was held (event 2001
@@ -665,7 +667,11 @@ try {
         $catalog = Format-ParallelMapStationCatalogReadBack -Effective $effective
         Write-Step "  $($catalog.Line)"
         if ($catalog.Warning) { Write-Warning $catalog.Warning }
-        return $line
+        # control-server#672. Already compared above. A result line of its own, beside the unchanged one, for 19 to compare with
+        # the definition it sent; EFFECTIVE_JOURNEY_BINDING=not-logged for a package older than #672.
+        $binding = Format-ParallelJourneyBindingLine -Effective $effective
+        Write-Step "  $binding"
+        return @($line, $binding)
     }
 
     function Invoke-JourneyRuntimeRelease {
@@ -687,7 +693,7 @@ try {
                 StartService = { Start-Service -Name $serviceName }
             }
         Write-Step $release.Message
-        if ($readBack.Line) { Write-Output $readBack.Line }
+        if ($readBack.Line) { $readBack.Line | ForEach-Object { Write-Output $_ } }
     }
 
     function Install-FakeMesIngest {
