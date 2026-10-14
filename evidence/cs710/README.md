@@ -93,7 +93,7 @@ Passed!  - Failed:     0, Passed:   360, Skipped:     0, Total:   360, Duration:
 | M3 | 非容量算作容量 | 7 | 验收 5 |
 | M4 | 待送点判别恒真 | 7 | 验收 10（机台行）、混装旅程、cs#709 五条机台行 |
 | M5 | 去掉锁 | 2 | 验收 9、判满后追加 |
-| M6 | `everyGroupFull = noneFree` → 按记满的侧数判（审查第二阶段第 2 项） | 1 | `OwnCargoOnBothSidesWithASmallDemandThatStillFitsHoldsTheVehicle`（本轮新补，没有它这个变异存活） |
+| M6 | `everyGroupFull = noneFree` → 按记满的侧数判（审查第二阶段第 2 项） | 1 | `OwnCargoOnBothSidesWithASmallDemandThatStillFitsHoldsTheVehicle`（本轮新补。审查推断没有它这个变异会存活，没有实跑验证） |
 | M7 | `StandsAtStaging` 改回按整趟判（审查 M1 修复） | 1 | `AMachinePickupAfterTheStagingStationKeepsItsOwnHoldingDeadline` |
 | M8 | 离开待送点不清持货起算点 | 1 | 同上 |
 | M9 | 去掉「到站之后才判」（审查 L5） | 1 | `NothingIsJudgedBeforeTheVehicleReachesTheStagingStation` |
