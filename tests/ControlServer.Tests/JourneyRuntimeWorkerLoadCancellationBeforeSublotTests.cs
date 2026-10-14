@@ -633,6 +633,43 @@ public sealed class JourneyRuntimeWorkerLoadCancellationBeforeSublotTests
     }
 
     /// <summary>
+    /// 同上，但用默认上限（control-server#703 审查 M4）：期限把需求放回待派、旅程收尾，需求仍开着、只是已不在这辆车的旅程上。
+    /// 这时按的「取消装货（扫码前）」同样答 <c>WORKLIST_REVISION_STALE</c>——车手里那一版清单过时了，不是「状态不允许」。
+    /// </summary>
+    /// <remarks>
+    /// 取消在期限那一轮之后、下一轮派车之前到：下一轮可能把这条需求重新派回这辆车，那时它又在这辆车的新旅程上，答的就是新旅程的状态。
+    /// </remarks>
+    [Fact]
+    [Trait("IntegrationSlice", "FP-IS-02")]
+    public async Task ACancellationAfterTheDeadlineReleasedTheDemandIsRejectedAsStale()
+    {
+        CancellationToken token = TestContext.Current.CancellationToken;
+        await using RuntimeFixture fixture = await RuntimeFixture.CreateAsync();
+        fixture.Options.StationDepartureWaitTimeout = TimeSpan.FromSeconds(10);
+        fixture.Catalog.Set(fixture.Demand(BeforeSublotDemandId, "SUBLOT-001", createdAt: Now.AddMinutes(-10)));
+        fixture.BoxCounts.Set("SUBLOT-001", 7);
+        await using ControlServerDbContext connection = fixture.OpenConnectionContext();
+        OnboardMessageProcessor processor = BeforeSublotProcessor(fixture, connection);
+        OnboardConnectionState state = BeforeSublotConnection(fixture, generation: 1);
+
+        await fixture.AdvanceToSublotWaitAsync();
+        await fixture.ProveSlotDoorsClosedAsync();
+        fixture.Clock.Advance(TimeSpan.FromSeconds(30));
+        await fixture.HearFromPeerAsync();
+        await fixture.Engine.ExecuteOnceAsync(token);
+        JourneyRuntimeRow closed = await fixture.RuntimeAsync();
+        Assert.Equal(
+            (JourneyRuntimeStage.Completed, DemandJourneyLookup.ReleasedAtStationDeadlineReason), (closed.Stage, closed.BlockReasonCode));
+        Assert.Equal(DemandExecutionStatus.Accepted, (await fixture.DemandRowAsync()).Status);
+
+        string late = await processor.ProcessAsync(
+            CancellationBeforeSublotRequest(fixture, "c1000000-0000-4000-8000-000000000012", generation: 1), state, token);
+        JsonElement payload = FirstLinePayload(late, out _);
+        Assert.Equal("REJECTED", payload.GetProperty("decision").GetString());
+        Assert.Equal("WORKLIST_REVISION_STALE", payload.GetProperty("problem").GetProperty("reasonCode").GetString());
+    }
+
+    /// <summary>
     /// The station deadline and the cancellation interleaved (control-server#116 review, item 1). Each side
     /// decides under the write lock, so in the store one of them commits first and the other then refuses:
     /// a cancellation arriving after the deadline ended the stop is REJECTED. Should both still have been

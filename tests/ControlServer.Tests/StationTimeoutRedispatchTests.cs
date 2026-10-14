@@ -236,6 +236,104 @@ public sealed class StationTimeoutRedispatchTests
     }
 
     /// <summary>
+    /// 锚需求与一条同站追加挂在同一个停靠上，操作员只扫了追加的那条、装上了；锚需求没录入，期限到：锚需求放不回（旅程行按它取需求号），
+    /// 终结并挂 <c>STATION_TIMEOUT_ANCHOR_NOT_RELEASABLE</c>；已装的那条照常送，旅程转离站等待（control-server#703 审查 M4）。
+    /// </summary>
+    [Fact]
+    [Trait("IntegrationSlice", "FP-IS-08")]
+    public async Task AnUnscannedAnchorBesideALoadedSameStopAppendEndsWithTheAnchorAlarm()
+    {
+        await using RuntimeFixture fixture = await RuntimeFixture.CreateAsync();
+        fixture.Options.StationDepartureWaitTimeout = TimeSpan.FromSeconds(10);
+        JourneyRuntimeRow runtime = await Batch7MultiDemandAdvanceTests.TwoDemandsAtThePickupAsync(fixture);
+        Assert.Equal(JourneyRuntimeStage.AwaitingSublot, runtime.Stage);
+        await EnterSublotAsync(fixture, SecondDemandId, SecondSublot, SecondSubmissionId);
+        await SettleLoadAsync(fixture, SecondDemandId);
+        Assert.Equal(JourneyDemandStatuses.Loaded, (await MembershipOfAsync(fixture, SecondDemandId)).Status);
+
+        await fixture.ProveSlotDoorsClosedAsync();
+        DateTimeOffset deadline = default;
+        for (int round = 0; round < 15 && (await AlarmsAsync(fixture)).Length == 0; round++)
+        {
+            fixture.Clock.Advance(TimeSpan.FromSeconds(1));
+            await fixture.HearFromPeerAsync();
+            deadline = fixture.Clock.GetUtcNow();
+            await fixture.Engine.ExecuteOnceAsync(Token);
+        }
+
+        StructuralDispatchBlockRow alarm = Assert.Single(await AlarmsAsync(fixture));
+        Assert.Equal((FirstDemandId, ManualCarryAlarms.StationTimeoutAnchorNotReleasable), (alarm.DemandId, alarm.ReasonCode));
+        Assert.Equal(deadline, alarm.FirstRaisedAt);
+        Assert.Equal(
+            DemandExecutionStatus.Cancelled,
+            (await fixture.Context.AcceptedDemands.AsNoTracking().SingleAsync(row => row.DemandId == FirstDemandId, Token)).Status);
+        Assert.Equal(JourneyDemandStatuses.Loaded, (await MembershipOfAsync(fixture, SecondDemandId)).Status);
+        Assert.Equal(JourneyRuntimeStage.AwaitingStationDeparture, (await fixture.RuntimeAsync(FirstDemandId)).Stage);
+        Assert.False(await DemandJourneyLookup.ReleasedForRedispatch(fixture.Context).AnyAsync(Token));
+    }
+
+    /// <summary>
+    /// 同一站两条都没录入：一条已放回到上限、一条还能放回（control-server#703 审查 M4）。前者终结并告警，后者放回；旅程因此收尾，收尾原因按
+    /// 「有告警」说 <c>CANCELLED_BY_STATION_TIMEOUT</c>（审查 L2）。这一站补的版数是放回的那一条（1），整条清单流的号互不相同。
+    /// </summary>
+    [Fact]
+    [Trait("IntegrationSlice", "FP-IS-08")]
+    public async Task OneDemandAtItsLimitAndOneStillReleasableAtOneStopEndAndReleaseWithoutARevisionClash()
+    {
+        await using RuntimeFixture fixture = await RuntimeFixture.CreateAsync();
+        fixture.Options.StationDepartureWaitTimeout = TimeSpan.FromSeconds(10);
+        fixture.Options.StationTimeoutRedispatchLimit = 1;
+        JourneyRuntimeRow runtime = await Batch7MultiDemandAdvanceTests.TwoDemandsAtThePickupAsync(fixture);
+        // 乙此前已因站点超时放回过一次：一条更早一代、已移除的归属。
+        JourneyDemandRow current = await MembershipOfAsync(fixture, SecondDemandId);
+        fixture.Context.Set<JourneyDemandRow>().Add(new JourneyDemandRow
+        {
+            JourneyId = "journey:earlier-visit",
+            DemandId = SecondDemandId,
+            PickupStopId = "journey:earlier-visit|PICKUP",
+            UnloadStopId = "journey:earlier-visit|UNLOAD",
+            ExpectedBasketCount = current.ExpectedBasketCount,
+            TargetSlotsJson = current.TargetSlotsJson,
+            LoadSlotOperationAttemptId = Guid.NewGuid().ToString("D"),
+            LoadCommandMessageId = Guid.NewGuid().ToString("D"),
+            UnloadSlotOperationAttemptId = Guid.NewGuid().ToString("D"),
+            UnloadCommandMessageId = Guid.NewGuid().ToString("D"),
+            DispatchZone = current.DispatchZone,
+            DispatchGeneration = current.DispatchGeneration - 1,
+            Status = JourneyDemandStatuses.PendingLoad,
+            AddedAt = current.AddedAt.AddMinutes(-10),
+            RemovedAt = current.AddedAt.AddMinutes(-5),
+            RemovalReason = DemandJourneyLookup.ReleasedAtStationDeadlineReason
+        });
+        await fixture.Context.SaveChangesAsync(Token);
+
+        await RunOutTheStationDeadlineAsync(fixture);
+
+        JourneyRuntimeRow closed = await fixture.RuntimeAsync(FirstDemandId);
+        Assert.Equal((JourneyRuntimeStage.Completed, "CANCELLED_BY_STATION_TIMEOUT"), (closed.Stage, closed.BlockReasonCode));
+        Assert.Equal(
+            DemandJourneyLookup.ReleasedAtStationDeadlineReason,
+            (await MembershipOnAsync(fixture, runtime.JourneyId, FirstDemandId)).RemovalReason);
+        Assert.Equal(
+            DemandExecutionStatus.Accepted,
+            (await fixture.Context.AcceptedDemands.AsNoTracking().SingleAsync(row => row.DemandId == FirstDemandId, Token)).Status);
+        Assert.Equal(
+            DemandExecutionStatus.Cancelled,
+            (await fixture.Context.AcceptedDemands.AsNoTracking().SingleAsync(row => row.DemandId == SecondDemandId, Token)).Status);
+        StructuralDispatchBlockRow alarm = Assert.Single(await AlarmsAsync(fixture));
+        Assert.Equal((SecondDemandId, ManualCarryAlarms.StationTimeoutRedispatchLimitReached), (alarm.DemandId, alarm.ReasonCode));
+
+        JourneyStopRow pickup = await fixture.Context.Set<JourneyStopRow>().AsNoTracking()
+            .SingleAsync(row => row.StopId == current.PickupStopId, Token);
+        Assert.Equal(1, pickup.WorklistRefills);
+        long[] revisions = [.. (await ClosureSnapshotAssertions.SnapshotsAsync(fixture.Context, fixture.Options.AgvId))
+            .Where(item => item.MessageType == "CurrentStopWorklistSnapshot")
+            .Select(item => item.Revision)];
+        Assert.True(revisions.Length >= 2, $"Expected the arrival and the closure worklists, got {revisions.Length}.");
+        Assert.Equal(revisions.Length, revisions.Distinct().Count());
+    }
+
+    /// <summary>
     /// 真车载端的形状：放回之后重新派出的那一趟，车载端因为挂着本服务端的在途单整段未就绪。未就绪期间期限不跑、什么也不放回；车到站、会话回到
     /// 就绪，新的一趟从这次到站起算自己的期限，不继承上一趟早已过去的那一个。
     /// </summary>
@@ -378,6 +476,14 @@ public sealed class StationTimeoutRedispatchTests
         Assert.Null(alarm.ClearedAt);
         Assert.Contains(fixture.EngineLog.Entries, entry => entry.Message.Contains(alarmCode, StringComparison.Ordinal));
     }
+
+    private static Task<JourneyDemandRow> MembershipOfAsync(RuntimeFixture fixture, string demandId) =>
+        fixture.Context.Set<JourneyDemandRow>().AsNoTracking()
+            .SingleAsync(row => row.DemandId == demandId && row.RemovedAt == null, Token);
+
+    private static Task<JourneyDemandRow> MembershipOnAsync(RuntimeFixture fixture, string journeyId, string demandId) =>
+        fixture.Context.Set<JourneyDemandRow>().AsNoTracking()
+            .SingleAsync(row => row.JourneyId == journeyId && row.DemandId == demandId, Token);
 
     private static Task<JourneyRuntimeRow> JourneyAsync(RuntimeFixture fixture, string journeyId) =>
         fixture.Context.JourneyRuntimes.AsNoTracking().SingleAsync(row => row.JourneyId == journeyId, Token);
