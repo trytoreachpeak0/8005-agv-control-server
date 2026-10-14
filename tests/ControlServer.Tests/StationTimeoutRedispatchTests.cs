@@ -177,11 +177,21 @@ public sealed class StationTimeoutRedispatchTests
         await StopEndedJourneyContinuesTests.ArriveAtTheSecondPickupAsync(fixture);
         string journeyId = (await JourneyOfAsync(fixture, FirstDemandId)).JourneyId;
         fixture.Options.StationDepartureWaitTimeout = TimeSpan.FromSeconds(10);
+        int departureChecksBefore = await Batch7CargoHoldingTests.DepartureChecksSentAsync(fixture);
 
         await RunOutTheStationDeadlineAsync(fixture);
 
         JourneyRuntimeRow runtime = await JourneyAsync(fixture, journeyId);
         Assert.Equal(JourneyRuntimeStage.AwaitingStationDeparture, runtime.Stage);
+        // 本站被放空后不再白等一个离站期限：期限本来就是因为它已经过了才到这里，再跑两轮（两秒）车就被要求离站。
+        for (int round = 0; round < 2; round++)
+        {
+            await fixture.HearFromPeerAsync();
+            await TickAndRunAsync(fixture);
+        }
+        Assert.True(
+            await Batch7CargoHoldingTests.DepartureChecksSentAsync(fixture) > departureChecksBefore,
+            "The vehicle waited at the emptied stop instead of being sent on.");
         JourneyDemandRow second = await fixture.Context.Set<JourneyDemandRow>().AsNoTracking()
             .SingleAsync(row => row.DemandId == SecondDemandId, Token);
         Assert.Equal(DemandJourneyLookup.ReleasedAtStationDeadlineReason, second.RemovalReason);

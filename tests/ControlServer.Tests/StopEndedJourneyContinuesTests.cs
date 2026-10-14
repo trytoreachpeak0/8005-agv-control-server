@@ -632,11 +632,29 @@ public sealed class StopEndedJourneyContinuesTests
     public async Task AStopEndedByItsDeadlineTellsTheVehicleTheDeadlineExpired()
     {
         await using RuntimeFixture fixture = await RuntimeFixture.CreateAsync();
+        // control-server#703：「本站因超时结束」只留给放回次数用完、真的不再派的终结，上限 0 让第一次期限就走它。
+        fixture.Options.StationTimeoutRedispatchLimit = 0;
         await EndTheSecondPickupByItsDeadlineAsync(fixture);
 
         Snapshot empty = Assert.Single(
             await WorklistsAsync(fixture), item => item.Payload.GetProperty("items").GetArrayLength() == 0);
         Assert.Equal("STATION_DEADLINE_EXPIRED", SentStopEndedReason(fixture, empty.MessageId));
+    }
+
+    /// <summary>
+    /// 同上，但需求被放回待派（默认上限，control-server#703）：空清单说 <c>DEMAND_RELEASED</c>——这单会重新派车，说「本站因超时结束」
+    /// 会让操作员以为丢了单。
+    /// </summary>
+    [Fact]
+    [Trait("IntegrationSlice", "FP-IS-08")]
+    public async Task AStopWhoseDemandWentBackToTheBacklogTellsTheVehicleItWasReleased()
+    {
+        await using RuntimeFixture fixture = await RuntimeFixture.CreateAsync();
+        await EndTheSecondPickupByItsDeadlineAsync(fixture);
+
+        Snapshot empty = Assert.Single(
+            await WorklistsAsync(fixture), item => item.Payload.GetProperty("items").GetArrayLength() == 0);
+        Assert.Equal("DEMAND_RELEASED", SentStopEndedReason(fixture, empty.MessageId));
     }
 
     /// <summary>
@@ -1047,9 +1065,16 @@ public sealed class StopEndedJourneyContinuesTests
         }
         await TickAndRunAsync(fixture);
         // control-server#703 起站点期限不终结，把没录入的那条放回待派：归属标移除，清单号的守恒由补版数承担，这里各条断言照旧成立。
-        Assert.Equal(
-            DemandJourneyLookup.ReleasedAtStationDeadlineReason,
-            (await MembershipAsync(fixture, SecondDemandId)).RemovalReason);
+        // 上限设 0 的用例走终结那一支（放回次数用完），乙照旧 TERMINATED。
+        JourneyDemandRow second = await MembershipAsync(fixture, SecondDemandId);
+        if (fixture.Options.StationTimeoutRedispatchLimit == 0)
+        {
+            Assert.Equal(JourneyDemandStatuses.Terminated, second.Status);
+        }
+        else
+        {
+            Assert.Equal(DemandJourneyLookup.ReleasedAtStationDeadlineReason, second.RemovalReason);
+        }
         return secondPickup;
     }
 

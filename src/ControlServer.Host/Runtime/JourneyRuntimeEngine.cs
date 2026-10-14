@@ -6051,9 +6051,11 @@ public sealed partial class JourneyRuntimeEngine(
     /// （<c>DemandReleaseReasons.AnchorWithOtherDemands</c>）。只有同站追加才走得到，终结并告警。
     /// </para>
     /// <para>
-    /// <b>车已到站的那一格</b>与持货截断（control-server#290）同一个做法：释放让这个停靠的归属少了，按版数算的清单号会往回缩，所以放回几条就给
-    /// 这个停靠补几版（<see cref="JourneyStopRow.WorklistRefills"/>），再发那张空清单（<see cref="StopEndWorklist.StageAfterReleaseAsync"/>）。
-    /// 放回之后旅程上一条都不剩时与释放服务释放最后一条同一个做法：计划收尾、旅程关闭、三套占用一起放，原因码就是放回的那个。
+    /// <b>车已到站的那一格</b>与持货截断（control-server#290）同一个做法：旅程继续时发那张空清单（<see cref="StopEndWorklist.StageAfterReleaseAsync"/>），
+    /// 它的号取「算式」与「已发最高号 + 1」的大者，不会发出车已收到过的号；但退役这一站较早几版清单按本停靠的版数范围算，所以放回几条仍给这个
+    /// 停靠补几版（<see cref="JourneyStopRow.WorklistRefills"/>），否则较早那一版不退役、重连后被补发。
+    /// 放回之后旅程上一条都不剩时按终结收尾的做法关闭旅程、三套占用一起放，原因码就是放回的那个；不修订计划（见那一支的注释）。
+    /// 车上 <c>stopEndedReason</c> 是 <c>DEMAND_RELEASED</c>（<see cref="StopEndedReasons"/>）：这单会重新派车，不是丢了。
     /// </para>
     /// <para>
     /// 终结的先暂存：它判「是不是最后一条」时，放回的那几条在库里还开着，所以它不收尾；收尾归后面放回那一段，它看得见两边。
@@ -6131,8 +6133,9 @@ public sealed partial class JourneyRuntimeEngine(
                     dbContext, membership, now, cancellationToken, DemandJourneyLookup.ReleasedAtStationDeadlineReason)
                     .ConfigureAwait(false);
             }
-            // 版数守恒：这个停靠的归属少了几条，就补上几版（见注释「车已到站的那一格」）。收尾那一支也要补：收尾快照与迟到录入的应答
-            // 都按这个停靠的版数算地址。
+            // 版数守恒：这个停靠的归属少了几条，就补上几版。StopEndWorklist 取号时自己会取「已发最高号 + 1」，但退役这一站较早那几版清单
+            // 按的是本停靠的版数范围：不补，范围缩掉放回的那几条，较早那一版不退役，重连后被补发、号比空清单低，车判回退断会话
+            // （StopEndedJourneyContinuesTests 的三条用例在去掉这一行时红在这里）。收尾那一支同样按这个范围算迟到录入的地址。
             (await TrackedStopAsync(stops.Current.StopId, cancellationToken).ConfigureAwait(false)).WorklistRefills +=
                 leaving.Length;
             if (last)
