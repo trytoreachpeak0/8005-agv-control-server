@@ -123,7 +123,7 @@ internal sealed class CargoHoldingQueryEndpoint : IDashboardQueryEndpoint
         JourneyRuntimeRow journey,
         JourneyStopRow? current,
         JourneyDemandList demands,
-        IReadOnlySet<string> loadingAtStaging,
+        HashSet<string> loadingAtStaging,
         DateTimeOffset now)
     {
         string state = journey.LoadingPhaseState ?? LoadingPhaseStates.Loading;

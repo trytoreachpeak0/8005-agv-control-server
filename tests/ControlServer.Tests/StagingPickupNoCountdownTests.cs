@@ -186,9 +186,13 @@ public sealed class StagingPickupNoCountdownTests
     }
 
     /// <summary>
-    /// 验收 4：开门（装货命令发出）之后迟迟没有结果、仓门没证明关着。待送点：命令发出满 N 分钟（这里 2 分钟）挂仓门未闭告警，停靠不结束；
-    /// 落定后告警撤销。另两种照旧按离站期限（5 分钟）挂。
+    /// 验收 4：开门（装货命令发出）之后迟迟没有结果、仓门没证明关着。待送点：命令发出满 N（这里 5 秒）挂仓门未闭告警，停靠不结束；
+    /// 落定后告警撤销。另两种照旧按离站期限（这里 10 秒）挂。
     /// </summary>
+    /// <remarks>
+    /// 钟只拨几秒、不另发心跳，与 <c>JourneyRuntimeWorkerLoadDeadlineTests.ADoorLeftOpenPastTheDeadlineRaisesTheAlarmWithoutEndingTheStop</c>
+    /// 同一个量级：拨过车载端证据的有效期，推进段会先因证据过期停在别处，量到的就不是这条告警了。
+    /// </remarks>
     [Theory]
     [MemberData(nameof(Kinds))]
     [Trait("IntegrationSlice", "FP-IS-02")]
@@ -196,13 +200,13 @@ public sealed class StagingPickupNoCountdownTests
     public async Task ADoorLeftOpenAtTheStagingStationIsReportedByTheTimeSinceTheLoadCommand(StopKind kind)
     {
         await using RuntimeFixture fixture = await ArrangeAsync(kind);
-        fixture.Options.StagingDepartureRules.LoadNotSettledAlarmAfter = TimeSpan.FromMinutes(2);
+        fixture.Options.StationDepartureWaitTimeout = TimeSpan.FromSeconds(10);
+        fixture.Options.StagingDepartureRules.LoadNotSettledAlarmAfter = TimeSpan.FromSeconds(5);
         JourneyRuntimeRow loading = await fixture.AdvanceToLoadResultAsync();
         Assert.Equal(JourneyRuntimeStage.AwaitingLoadResult, loading.Stage);
-        await fixture.SetSafetyEvidenceAsync(unknownPresent: false, reasonCodes: ["SLOT_DOOR_NOT_CLOSED"]);
+        await fixture.SetSafetyEvidenceAsync(unknownPresent: false, reasonCodes: ["LOCK_NOT_CLOSED"]);
 
-        fixture.Clock.Advance(TimeSpan.FromMinutes(3));
-        await fixture.HearFromPeerAsync();
+        fixture.Clock.Advance(TimeSpan.FromSeconds(6));
         await fixture.Engine.ExecuteOnceAsync(Token);
         JourneyRuntimeRow atThree = await fixture.RuntimeAsync();
         Assert.Equal(JourneyRuntimeStage.AwaitingLoadResult, atThree.Stage);
@@ -210,8 +214,7 @@ public sealed class StagingPickupNoCountdownTests
             kind == StopKind.StagingRulesOn ? JourneyRuntimeEngine.StationTimeoutDoorNotClosedReason : null,
             atThree.BlockReasonCode);
 
-        fixture.Clock.Advance(TimeSpan.FromMinutes(3));
-        await fixture.HearFromPeerAsync();
+        fixture.Clock.Advance(TimeSpan.FromSeconds(5));
         await fixture.Engine.ExecuteOnceAsync(Token);
         JourneyRuntimeRow atSix = await fixture.RuntimeAsync();
         Assert.Equal(JourneyRuntimeStage.AwaitingLoadResult, atSix.Stage);
@@ -221,7 +224,7 @@ public sealed class StagingPickupNoCountdownTests
         await fixture.ApplySafeResultAsync(
             await fixture.OperationAsync(SlotOperationType.Load), SlotOperationType.Load, SlotBusinessState.Occupied);
         await fixture.ProveSlotDoorsClosedAsync();
-        await fixture.HearFromPeerAsync();
+        fixture.Clock.Advance(TimeSpan.FromSeconds(1));
         await fixture.Engine.ExecuteOnceAsync(Token);
         JourneyRuntimeRow settled = await fixture.RuntimeAsync();
         Assert.NotEqual(JourneyRuntimeEngine.StationTimeoutDoorNotClosedReason, settled.BlockReasonCode);

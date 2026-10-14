@@ -909,6 +909,12 @@ try {
         $journal.Observe('server-environment:JourneyRuntime__cargoHoldingTimeout',
             $serverEnvironment['JourneyRuntime__cargoHoldingTimeout'], $null)
     }
+    # control-server#709's staging rules switch, recorded the same way: a machine regression run with it on proves nothing
+    # unless the evidence shows it was on.
+    if ($serverEnvironment.ContainsKey('JourneyRuntime__StagingDepartureRules__Enabled')) {
+        $journal.Observe('server-environment:JourneyRuntime__StagingDepartureRules__Enabled',
+            $serverEnvironment['JourneyRuntime__StagingDepartureRules__Enabled'], $null)
+    }
     # ControlServer.FieldOps, the same executable a site's W1 window runs, against the SQLite file the server is
     # using. Returns the one JSON object the tool prints; a non-zero exit is a thrown error carrying its stderr,
     # because a governance act that silently did nothing would leave the rest of the scenario proving something

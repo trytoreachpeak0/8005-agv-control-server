@@ -1,4 +1,5 @@
 using ControlServer.Application;
+using ControlServer.Domain;
 using ControlServer.Infrastructure.Persistence;
 using Microsoft.EntityFrameworkCore;
 

@@ -149,7 +149,7 @@ internal sealed class WaitingJourneysQueryEndpoint : IDashboardQueryEndpoint
     private sealed record StagingStopFacts(int LoadedBaskets, Dictionary<string, int>? FreeSlotsByGroup, int PendingDemands);
 
     /// <summary>与 <see cref="Fact"/> 同一行，多一项 <c>stagingStop</c>。另写一个形状，是为了不在待送点的行与之前逐字相同。</summary>
-    private static object WithStagingStop(object fact, StagingStopFacts staging)
+    private static System.Text.Json.Nodes.JsonObject WithStagingStop(object fact, StagingStopFacts staging)
     {
         System.Text.Json.Nodes.JsonObject row = System.Text.Json.JsonSerializer.SerializeToNode(fact)!.AsObject();
         row["stagingStop"] = System.Text.Json.JsonSerializer.SerializeToNode(new
