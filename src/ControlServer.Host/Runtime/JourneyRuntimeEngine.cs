@@ -1628,15 +1628,6 @@ public sealed partial class JourneyRuntimeEngine(
                 await ReconcileLoadingPhaseAsync(
                     runtime, stops, session, holdingApplicable, departingFrom: null, now, cancellationToken)
                     .ConfigureAwait(false);
-                // 这一次判定也可能刚因持货期限关闭（control-server#290）：截断要在下面算「下一站」之前，否则车会被发往一个马上被删的取货停靠。
-                if (await TruncateAtCargoHoldingDeadlineAsync(runtime, now, cancellationToken).ConfigureAwait(false) is { } truncatedHere)
-                {
-                    if (runtime.Stage == JourneyRuntimeStage.Completed)
-                    {
-                        return;
-                    }
-                    stops = truncatedHere;
-                }
                 bool stationWaitOver =
                     await StationDepartureWaitIsOverAsync(runtime, stops, now, cancellationToken).ConfigureAwait(false);
                 // 期限此刻定了，再对一次车上的那一个（control-server#633）：最后一批落定重置了起点、纠错闭环把起点往后挪，
@@ -4725,9 +4716,11 @@ public sealed partial class JourneyRuntimeEngine(
     /// </para>
     /// <para>
     /// <b>释放服务的拒绝规则（<see cref="DemandReleaseRules.Decide"/>）在这里逐条判过</b>：
-    /// 「当前下一站、车已到站」不释放，理由是清单号——释放让这个停靠的归属少了，停靠的版数跟着少，下一站算出车已收到的号、发不同内容。
-    /// 持货期限是硬期限，这一格不能拒，改为按释放的条数给这个停靠补上同样多的版数（<see cref="JourneyStopRow.WorklistRefills"/>），版数不变、
-    /// 号只往前走，再发那张空清单（<see cref="StopEndWorklist.StageAfterReleaseAsync"/>）。「当前下一站、车在路上、旅程还有别的需求」
+    /// 「当前下一站、车已到站」不释放，理由是清单号：删掉当前下一站会让下一个停靠算出车已收到的号、发不同内容。截断不删当前停靠
+    /// （<c>currentStopMayGo: false</c>），而释放的都是没做完的，本停靠「已做完」的条数不降，当前号的算式不会低于车已收到的那一版；
+    /// 空清单（<see cref="StopEndWorklist.StageAfterReleaseAsync"/>）自己取「算式」与「已发最高号 + 1」中大的那个，并让本停靠多占到那一版，
+    /// 下一站首号在它之上。所以这一格的理由在这里不成立，持货期限是硬期限，照截。（变异自检：另给本停靠补版数的写法删掉后用例全绿，
+    /// 证明它是多余的，已删。）「当前下一站、车在路上、旅程还有别的需求」
     /// 不释放，理由是取消那张单之后没人把车派往下一站；这里不取消那张单——当前下一站在路上不可删（REQ-0197），车照样开到那里、到了没有作业、
     /// 按离站等待离开，所以这一格不适用。「锚需求」见上一段。取货停靠不是当前下一站的，按构造还没有 RIoT 订单（追加的停靠到车离开上一站才建单）。
     /// </para>
@@ -4809,12 +4802,6 @@ public sealed partial class JourneyRuntimeEngine(
             await JourneyPlanRevisionStage.StageAsync(
                     dbContext, runtime.JourneyId, leaving, currentStopMayGo: false, routing: null, cancellationToken)
                 .ConfigureAwait(false);
-            if (releasedFromCurrentStop > 0)
-            {
-                // 版数守恒：这个停靠的归属少了几条，就补上几版（见注释「车已到站」那一格）。
-                (await TrackedStopAsync(currentStopId, cancellationToken).ConfigureAwait(false)).WorklistRefills +=
-                    releasedFromCurrentStop;
-            }
             await StopEndWorklist.StageAfterReleaseAsync(
                 dbContext, runtime, releasedFromCurrentStop > 0, sublotRequestMessageId, CargoHoldingTruncationReason, now,
                 cancellationToken).ConfigureAwait(false);
