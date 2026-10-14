@@ -347,7 +347,262 @@ public sealed class StagingDepartureFullOrNoFitTests
         Assert.All(opened, slot => Assert.InRange(slot, firstSlot, lastSlot));
     }
 
+    /// <summary>
+    /// 审查第二阶段第 2 项：两侧都有一条候选只因本车货占侧而装不下（两侧都记成满），但还有一条小需求合格、装得下：不走。账本上两侧都有空仓，
+    /// 「每一侧都满」只按账本判，不按记满的侧数判。
+    /// </summary>
+    [Fact]
+    [Trait("IntegrationSlice", "FP-IS-08")]
+    [Trait("IntegrationSlice", "FP-IS-11")]
+    public async Task OwnCargoOnBothSidesWithASmallDemandThatStillFitsHoldsTheVehicle()
+    {
+        await using RuntimeFixture fixture = await LoadedAsync(StopKind.StagingRulesOn);
+
+        for (int round = 0; round < 3; round++)
+        {
+            RecordRound(
+                fixture,
+                Waiting(StopKind.StagingRulesOn, "W-1", "FRONT", DispatchReasonCodes.SlotGroupOccupiedByOwnCargo),
+                Waiting(StopKind.StagingRulesOn, "W-2", "REAR", DispatchReasonCodes.SlotGroupOccupiedByOwnCargo),
+                Waiting(StopKind.StagingRulesOn, "W-3", "REAR", DispatchAdmissionChain.Eligible));
+            await TickAsync(fixture);
+        }
+
+        JourneyRuntimeRow journey = await fixture.RuntimeAsync();
+        Assert.Equal("[\"FRONT\",\"REAR\"]", journey.FullSlotPositionsJson);
+        Assert.Equal(LoadingPhaseStates.CargoHoldingWait, journey.LoadingPhaseState);
+        Assert.False(await Batch7CargoHoldingTests.DepartureCheckSentAsync(fixture), "A demand that still fits did not hold the vehicle.");
+    }
+
+    /// <summary>
+    /// 审查 L5：车还在开往待送点的路上（<c>AwaitingPickupArrival</c>），前仓按预留已满、等着的需求全要前仓：不判，不锁 <c>VEHICLE_FULL</c>。
+    /// 到站之后的那一轮才判。
+    /// </summary>
+    [Fact]
+    [Trait("IntegrationSlice", "FP-IS-08")]
+    [Trait("IntegrationSlice", "FP-IS-11")]
+    public async Task NothingIsJudgedBeforeTheVehicleReachesTheStagingStation()
+    {
+        await using RuntimeFixture fixture = await ArrangeAsync(StopKind.StagingRulesOn);
+        await AllowEnRouteAppendAsync(fixture);
+        await fixture.Engine.ExecuteOnceAsync(Token);
+        Assert.Equal(JourneyRuntimeStage.AwaitingPickupArrival, (await fixture.RuntimeAsync()).Stage);
+        await FillFrontAsync(fixture);
+
+        for (int round = 0; round < 2; round++)
+        {
+            RecordRound(fixture, Waiting(StopKind.StagingRulesOn, "W-1", "FRONT", DispatchReasonCodes.SlotGroupOccupiedByOwnCargo));
+            await TickAsync(fixture);
+        }
+        JourneyRuntimeRow driving = await fixture.RuntimeAsync();
+        Assert.Equal(JourneyRuntimeStage.AwaitingPickupArrival, driving.Stage);
+        Assert.NotEqual(LoadingPhaseStates.VehicleFull, driving.LoadingPhaseState);
+
+        fixture.Riot.SetSuccessfulArrival("TO_PICKUP", driving.PickupStationRiotId);
+        fixture.Riot.Vehicle = fixture.Riot.Vehicle with { CurrentStationId = driving.PickupStationRiotId };
+        RecordRound(fixture, Waiting(StopKind.StagingRulesOn, "W-1", "FRONT", DispatchReasonCodes.SlotGroupOccupiedByOwnCargo));
+        await TickAsync(fixture);
+        RecordRound(fixture, Waiting(StopKind.StagingRulesOn, "W-1", "FRONT", DispatchReasonCodes.SlotGroupOccupiedByOwnCargo));
+        await TickAsync(fixture);
+        JourneyRuntimeRow arrived = await fixture.RuntimeAsync();
+        Assert.Equal(JourneyRuntimeStage.AwaitingSublot, arrived.Stage);
+        Assert.Equal(LoadingPhaseStates.VehicleFull, arrived.LoadingPhaseState);
+    }
+
+    /// <summary>
+    /// 审查 M1（第二阶段第 3 项）：一趟同时有待送点与机台取货的旅程。待送点上等了十分钟（那里没有期限），因 9 段上限判走、一侧还空着；到了后面的
+    /// 机台取货停靠，按机台规则持货等单，持货期限从机台那一批装货闭环算起，到期照常关闭、离站。
+    /// </summary>
+    /// <remarks>
+    /// 两个变异各红一处：持货期限的豁免改回按整趟旅程判，机台停靠永远不到期，最后一段红；离开待送点不清空起算点，期限从待送点第一批装货算起、
+    /// 早已过了，车还没到机台，机台那条需求就被持货截断放回，到站那一段红。
+    /// </remarks>
+    [Fact]
+    [Trait("IntegrationSlice", "FP-IS-08")]
+    [Trait("IntegrationSlice", "FP-IS-11")]
+    public async Task AMachinePickupAfterTheStagingStationKeepsItsOwnHoldingDeadline()
+    {
+        const string machineDemand = "10000000-0000-4000-8000-000000000710";
+        const string machineSublot = "SUBLOT-710";
+        await using RuntimeFixture fixture = await LoadedAsync(StopKind.StagingRulesOn);
+        JsonElement atStagingRow = Assert.Single(await CargoHoldingRowsAsync(fixture));
+        Assert.True(atStagingRow.GetProperty("atStaging").GetBoolean());
+        Assert.Equal(JsonValueKind.Null, atStagingRow.GetProperty("cargoHoldingDeadlineAt").ValueKind);
+
+        for (int step = 0; step < 2; step++)
+        {
+            fixture.Clock.Advance(TimeSpan.FromMinutes(5));
+            await TickAsync(fixture);
+        }
+        Assert.Equal(LoadingPhaseStates.CargoHoldingWait, (await fixture.RuntimeAsync()).LoadingPhaseState);
+
+        fixture.BoxCounts.Set(machineSublot, 8);
+        await Batch7ThreeStopJourneyTests.AppendDemandAsync(fixture, machineDemand, machineSublot, "N1-2", 13);
+        RecordRound(fixture, Waiting(StopKind.StagingRulesOn, "W-1", side: null, DispatchReasonCodes.EnRouteAppendPlanLimitReached));
+        await TickAsync(fixture);
+        JourneyRuntimeRow leaving = await fixture.RuntimeAsync();
+        Assert.Equal(LoadingPhaseStates.VehicleFull, leaving.LoadingPhaseState);
+        Assert.Equal(JourneyRuntimeStage.AwaitingDepartureSafety, leaving.Stage);
+        Assert.Equal(["N1-2"], await DepartureTargetsAsync(fixture));
+
+        await Batch7StopDrivenAdvanceDriver.AnswerDepartureSafetyAsync(fixture, Demand, Batch7StopDrivenAdvanceDriver.FirstSafetyResultId);
+        Assert.Null((await fixture.RuntimeAsync()).CargoHoldingStartedAt);
+        await Batch7StopDrivenAdvanceDriver.ArriveAtCurrentStopAsync(fixture, Demand, "TO_PICKUP");
+        await Batch7StopDrivenAdvanceDriver.EnterSublotAsync(
+            fixture, Demand, machineSublot, Batch7StopDrivenAdvanceDriver.SecondSubmissionId);
+        await Batch7StopDrivenAdvanceDriver.SettleLoadAsync(fixture, machineDemand);
+
+        JourneyRuntimeRow holding = await fixture.RuntimeAsync();
+        Assert.Equal(JourneyDemandStatuses.Loaded, (await fixture.Context.Set<JourneyDemandRow>().AsNoTracking()
+            .SingleAsync(row => row.DemandId == machineDemand, Token)).Status);
+        Assert.Equal(LoadingPhaseStates.CargoHoldingWait, holding.LoadingPhaseState);
+        Assert.NotNull(holding.CargoHoldingStartedAt);
+        Assert.Single(await DepartureTargetsAsync(fixture));
+        JsonElement atMachineRow = Assert.Single(await CargoHoldingRowsAsync(fixture));
+        Assert.False(atMachineRow.GetProperty("atStaging").GetBoolean());
+        Assert.Equal(
+            holding.CargoHoldingStartedAt + fixture.Options.CargoHoldingTimeout,
+            atMachineRow.GetProperty("cargoHoldingDeadlineAt").GetDateTimeOffset());
+
+        fixture.Clock.Advance(fixture.Options.CargoHoldingTimeout);
+        await TickAsync(fixture);
+        JourneyRuntimeRow left = await fixture.RuntimeAsync();
+        Assert.Equal(LoadingPhaseStates.Closed, left.LoadingPhaseState);
+        Assert.Equal(LoadingClosedReasons.CargoHoldingTimeout, left.LoadingClosedReason);
+        Assert.Equal(JourneyRuntimeStage.AwaitingDepartureSafety, left.Stage);
+        Assert.Equal(2, (await DepartureTargetsAsync(fixture)).Length);
+    }
+
+    /// <summary>
+    /// 审查 M2（第二阶段第 1 项）：前仓满、纠错开着时判 <c>VEHICLE_FULL</c>；判走之后又追加进一条后仓装得下的待送需求（与派车轮同一条写入路径，
+    /// <c>WireToGateStore.AppendToJourneyAsync</c>）；纠错关闭。离站核验先发往同站新开的停靠，车原地走过去装上它，装上之后立即开往卸货站。
+    /// 全程不抛异常、不进 <c>Blocked</c>。
+    /// </summary>
+    /// <remarks>
+    /// 单测夹具没有路网，派车轮的在途链上没有途中追加那道门，合格的候选在这里追加不进来，所以追加直接调写入路径；读口照旧手写。
+    /// </remarks>
+    [Fact]
+    [Trait("IntegrationSlice", "FP-IS-08")]
+    [Trait("IntegrationSlice", "FP-IS-11")]
+    public async Task ADemandAppendedAfterTheVehicleWasJudgedFullIsLoadedInPlaceAndThenTheVehicleLeaves()
+    {
+        await using RuntimeFixture fixture = await LoadedAsync(StopKind.StagingRulesOn);
+        await FillFrontAsync(fixture);
+        const string correctionId = "70000000-0000-4000-8000-000000000720";
+        await OpenCorrectionAsync(fixture, correctionId);
+
+        RecordRound(fixture, Waiting(StopKind.StagingRulesOn, "W-1", "FRONT", DispatchReasonCodes.SlotGroupOccupiedByOwnCargo));
+        await TickAsync(fixture);
+        Assert.Equal(LoadingPhaseStates.VehicleFull, (await fixture.RuntimeAsync()).LoadingPhaseState);
+        Assert.Empty(await DepartureTargetsAsync(fixture));
+
+        await AppendStagingDemandAsync(fixture, SecondDemand, SecondSublot);
+        await CloseCorrectionAsync(fixture, correctionId);
+        RecordRound(fixture, Waiting(StopKind.StagingRulesOn, "W-1", "FRONT", DispatchReasonCodes.SlotGroupOccupiedByOwnCargo));
+        await TickAsync(fixture);
+        AssertNeverBlocked(await fixture.RuntimeAsync());
+        Assert.Equal([StagingStationName], await DepartureTargetsAsync(fixture));
+
+        await Batch7StopDrivenAdvanceDriver.AnswerDepartureSafetyAsync(fixture, Demand, Batch7StopDrivenAdvanceDriver.FirstSafetyResultId);
+        AssertNeverBlocked(await fixture.RuntimeAsync());
+        await Batch7StopDrivenAdvanceDriver.ArriveAtCurrentStopAsync(fixture, Demand, "TO_PICKUP");
+        AssertNeverBlocked(await fixture.RuntimeAsync());
+        await Batch7StopDrivenAdvanceDriver.EnterSublotAsync(
+            fixture, Demand, SecondSublot, Batch7StopDrivenAdvanceDriver.SecondSubmissionId);
+        AssertNeverBlocked(await fixture.RuntimeAsync());
+        await Batch7StopDrivenAdvanceDriver.SettleLoadAsync(fixture, SecondDemand);
+
+        JourneyRuntimeRow left = await fixture.RuntimeAsync();
+        AssertNeverBlocked(left);
+        Assert.Equal(JourneyDemandStatuses.Loaded, (await fixture.Context.Set<JourneyDemandRow>().AsNoTracking()
+            .SingleAsync(row => row.DemandId == SecondDemand, Token)).Status);
+        Assert.Equal(LoadingPhaseStates.VehicleFull, left.LoadingPhaseState);
+        Assert.Equal(JourneyRuntimeStage.AwaitingDepartureSafety, left.Stage);
+        string[] targets = await DepartureTargetsAsync(fixture);
+        Assert.Equal(2, targets.Length);
+        Assert.NotEqual(StagingStationName, targets[1]);
+    }
+
+    /// <summary>
+    /// 审查 L3：持货看板上，待送点的 <c>VEHICLE_FULL</c> 与在待送点装过货的旅程以 <c>VEHICLE_FULL</c> 结束，都写「已满或装不下」；机台照旧。
+    /// </summary>
+    [Theory]
+    [Trait("IntegrationSlice", "FP-IS-08")]
+    [InlineData("VEHICLE_FULL", null, true, false, "<td>已满或装不下</td>")]
+    [InlineData("VEHICLE_FULL", null, false, false, "<td>已装满</td>")]
+    [InlineData("CLOSED", "VEHICLE_FULL", false, true, "<td>已满或装不下</td>")]
+    [InlineData("CLOSED", "VEHICLE_FULL", false, false, "<td>两侧装满</td>")]
+    public void TheCargoHoldingCardSaysFullOrNothingFitsForTheStagingStation(
+        string state, string? closedReason, bool atStaging, bool loadedAtStaging, string expected)
+    {
+        using JsonDocument fact = JsonDocument.Parse(JsonSerializer.Serialize(new
+        {
+            journeys = new[]
+            {
+                new
+                {
+                    agvId = "agv02", stationId = StagingStationName, loadingPhaseState = state, closedReason,
+                    frontFull = true, rearFull = false, atStaging, loadedAtStaging,
+                },
+            },
+        }));
+
+        string html = new ControlServer.Dashboard.CargoHoldingCard().RenderFact(fact.RootElement);
+
+        Assert.Contains(expected, html, StringComparison.Ordinal);
+    }
+
     // ---- helpers ---------------------------------------------------------------------------------------------------
+
+    private static void AssertNeverBlocked(JourneyRuntimeRow journey) =>
+        Assert.NotEqual(JourneyRuntimeStage.Blocked, journey.Stage);
+
+    /// <summary>发给车的每一张离站核验开往哪一站，按入队先后。</summary>
+    private static async Task<string[]> DepartureTargetsAsync(RuntimeFixture fixture) =>
+    [
+        .. (await fixture.Context.ProtocolOutbox.AsNoTracking()
+                .Where(row => row.MessageType == "PreDepartureSafetyCheck")
+                .ToArrayAsync(Token))
+            .OrderBy(row => row.CreatedAt)
+            .ThenBy(row => row.MessageId, StringComparer.Ordinal)
+            .Select(row =>
+            {
+                using JsonDocument document = JsonDocument.Parse(row.PayloadJson);
+                return document.RootElement.GetProperty("payload").GetProperty("targetStationId").GetString()!;
+            })
+    ];
+
+    private static async Task OpenCorrectionAsync(RuntimeFixture fixture, string workflowId)
+    {
+        JourneyDemandRow membership = await fixture.Context.Set<JourneyDemandRow>().AsNoTracking()
+            .SingleAsync(row => row.DemandId == Demand, Token);
+        fixture.Context.RecoveryWorkflows.Add(new RecoveryWorkflowRow
+        {
+            WorkflowId = workflowId,
+            WorkflowType = "LOAD_CORRECTION",
+            AgvId = fixture.Options.AgvId,
+            DemandId = Demand,
+            SlotOperationAttemptId = membership.LoadSlotOperationAttemptId,
+            SlotsJson = membership.TargetSlotsJson,
+            State = RecoveryWorkflowState.CommandPending,
+            RequestMessageId = JourneyPlanBuilder.StableGuid(workflowId, "request"),
+            RequestContentHash = new string('f', 64),
+            CreatedAt = fixture.Clock.GetUtcNow(),
+            UpdatedAt = fixture.Clock.GetUtcNow()
+        });
+        await fixture.Context.SaveChangesAsync(Token);
+        fixture.Context.ChangeTracker.Clear();
+    }
+
+    private static async Task CloseCorrectionAsync(RuntimeFixture fixture, string workflowId)
+    {
+        RecoveryWorkflowRow correction = await fixture.Context.RecoveryWorkflows
+            .SingleAsync(row => row.WorkflowId == workflowId, Token);
+        correction.State = RecoveryWorkflowState.Reconciled;
+        correction.UpdatedAt = fixture.Clock.GetUtcNow();
+        await fixture.Context.SaveChangesAsync(Token);
+        fixture.Context.ChangeTracker.Clear();
+    }
 
     /// <summary>本区允许途中追加（持货等单适用），这条需求到站、录入、装货落定，停在离站等待。</summary>
     private static async Task<RuntimeFixture> LoadedAsync(StopKind kind)

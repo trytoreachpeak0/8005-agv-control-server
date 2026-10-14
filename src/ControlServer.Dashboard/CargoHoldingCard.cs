@@ -45,7 +45,7 @@ public sealed class CargoHoldingCard : IDashboardCard
             html.Append("<tr>")
                 .Append(DashboardPageRenderer.Cell(DashboardPageRenderer.Text(journey, "agvId")))
                 .Append(DashboardPageRenderer.Cell(DashboardPageRenderer.Text(journey, "stationId")))
-                .Append(DashboardPageRenderer.Cell(Phase(DashboardPageRenderer.Text(journey, "loadingPhaseState"))))
+                .Append(DashboardPageRenderer.Cell(Phase(DashboardPageRenderer.Text(journey, "loadingPhaseState"), Flag(journey, "atStaging"))))
                 .Append(DashboardPageRenderer.Cell(Time(journey, "cargoHoldingDeadlineAt")))
                 .Append(DashboardPageRenderer.Cell(Remaining(journey)))
                 .Append(DashboardPageRenderer.Cell($"{Side(journey, "frontFull", "前侧")}；{Side(journey, "rearFull", "后侧")}"))
@@ -71,11 +71,15 @@ public sealed class CargoHoldingCard : IDashboardCard
     }
 
     /// <summary>装货阶段的四个状态（program#94）。服务端给了一个这里不认识的值时原样写出，不猜。</summary>
-    private static string Phase(string state) => state switch
+    /// <remarks>
+    /// 待送点上的 <c>VEHICLE_FULL</c> 写「已满或装不下」（control-server#710 审查 L3）：那里判出它的也可能是「等着的需求全部装不下」，
+    /// 一侧还空着（哪一侧满看同一行的前后侧两格）。机台上照旧是「已装满」。
+    /// </remarks>
+    private static string Phase(string state, bool atStaging) => state switch
     {
         "LOADING" => "装货中",
         "CARGO_HOLDING_WAIT" => "持货等单",
-        "VEHICLE_FULL" => "已装满",
+        "VEHICLE_FULL" => atStaging ? "已满或装不下" : "已装满",
         "CLOSED" => "已结束",
         _ => state
     };
@@ -90,7 +94,8 @@ public sealed class CargoHoldingCard : IDashboardCard
         return reason switch
         {
             "" => string.Empty,
-            "VEHICLE_FULL" => "两侧装满",
+            // 在待送点装过货的旅程，结束原因 VEHICLE_FULL 也可能是「等着的都装不下」（control-server#710 审查 L3）。
+            "VEHICLE_FULL" => Flag(journey, "loadedAtStaging") ? "已满或装不下" : "两侧装满",
             "CARGO_HOLDING_TIMEOUT" => "持货超时",
             "WAITING_STATION_YIELD" => YieldedTo(journey) is { } vehicle
                 ? $"另一辆车以本站为下一停靠，本车结束等单（{vehicle}）"

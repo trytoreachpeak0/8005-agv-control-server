@@ -37,6 +37,11 @@ namespace ControlServer.Host.Runtime.Dispatch;
 /// 走不到仓位判据，也就不会出现在上面那张按侧的表里。看板积压行上的原因码不能代替它：那一行被这一轮最后判它的那辆车覆盖
 /// （<c>DispatchRoundRunner.UpsertBacklog</c>），说的未必是这辆车。与按侧那张表同一次整张替换、同一个「这一轮没有这辆车就说不出来」。
 /// </para>
+/// <para>
+/// <b>一轮整个没跑到车辆那一段时，两张表都不换</b>（control-server#710 审查 L1）：<see cref="Record"/> 只在派车轮走到车辆循环之后调用，
+/// 读不到 MES 目录的那一轮在那之前就停了。所以那时读出来的是更早那一轮的结论，不是「说不出来」；推进段照它判，判出该走就走、
+/// 判出该等就继续等。重启之后第一轮之前才是真的空。
+/// </para>
 /// </remarks>
 public sealed class SlotGroupFullnessBoard
 {

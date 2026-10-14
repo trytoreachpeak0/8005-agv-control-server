@@ -1813,6 +1813,8 @@ public sealed partial class JourneyRuntimeEngine(
                     now);
                 // 「离开」就是这一刻：服务端刚为离站向 RIoT 请求了移动（REQ-0354）。离开的是计划里最后一个装货停靠时，
                 // 装货阶段在这里结束，与停靠完成、阶段前移落在同一次保存里——之后的追加由在途链与追加事务各拒一次。
+                // 离开待送点去别的停靠，持货起算点清空（control-server#710 审查 M1）：后面机台取货停靠的持货期限从它自己第一批装货闭环算起。
+                ClearHoldingStartLeavingStaging(runtime, departedFrom, nextStop);
                 await ReconcileLoadingPhaseAsync(
                     runtime, stops, session, holdingApplicable, departingFrom: departedFrom, now, cancellationToken)
                     .ConfigureAwait(false);
@@ -4526,14 +4528,14 @@ public sealed partial class JourneyRuntimeEngine(
     /// （规格第 3.3 节第 12 项）——那几张只出现在分区允许途中追加的旅程上，参数批准之前一张都不会有。
     /// </para>
     /// </remarks>
-    // 在待送点装货的旅程没有持货期限（control-server#709）：cargoHoldingDeadlineAt 为空，与「不适用持货等单」那半句同一个下发。
+    // 车停在（或开往）待送点取货停靠时没有持货期限（control-server#709；按当前停靠判，control-server#710 审查 M1）：cargoHoldingDeadlineAt 为空，与「不适用持货等单」那半句同一个下发。
     private LoadingPhaseProjection CurrentLoadingPhase(JourneyRuntimeRow runtime, bool holdingApplicable, JourneyStopCursor stops) =>
         LoadingPhaseMachine.Project(
             runtime.LoadingPhaseState,
             runtime.LoadingClosedReason,
             runtime.CargoHoldingStartedAt,
             runtimeOptions.CargoHoldingTimeout,
-            holdingApplicable && !LoadsAtStaging(stops));
+            holdingApplicable && !StandsAtStaging(stops));
 
     /// <summary>
     /// 这辆车适不适用持货等单：它能服务的分区里，至少有一个允许途中追加（REQ-0354「车辆能够服务的 DispatchZone 均禁止途中
@@ -4607,7 +4609,12 @@ public sealed partial class JourneyRuntimeEngine(
             // 待送点取货停靠按「全满或等着的需求全部装不下」判（control-server#710），别的停靠照旧按两侧都满判。
             JourneyStopRow standing = departingFrom ?? stops.Current;
             vehicleFull = IsStagingPickup(standing)
-                ? await JudgeStagingDepartureAsync(runtime, standing, cancellationToken).ConfigureAwait(false)
+                ? await JudgeStagingDepartureAsync(
+                        runtime,
+                        standing,
+                        arrived: departingFrom is not null || runtime.Stage != JourneyRuntimeStage.AwaitingPickupArrival,
+                        cancellationToken)
+                    .ConfigureAwait(false)
                 : await JudgeVehicleFullAsync(runtime, cancellationToken).ConfigureAwait(false);
         }
 
@@ -4746,15 +4753,24 @@ public sealed partial class JourneyRuntimeEngine(
     /// （<see cref="SlotGroupFullnessBoard.CandidateVerdictsOf"/>）。<c>FullSlotPositionsJson</c> 照旧写哪几侧满（无空仓，或有候选只因本车货占着它），
     /// 与机台取货同一个含义。
     /// </para>
+    /// <para>
+    /// <b>车到站之后才判</b>（<paramref name="arrived"/>，审查 L5）：开往待送点的那一段（<c>AwaitingPickupArrival</c>）答说不出来。
+    /// </para>
     /// </remarks>
     private async Task<bool?> JudgeStagingDepartureAsync(
         JourneyRuntimeRow runtime,
         JourneyStopRow standing,
+        bool arrived,
         CancellationToken cancellationToken)
     {
         if (runtime.LoadingPhaseState == LoadingPhaseStates.VehicleFull)
         {
             return StagingDepartureRule.Decide(new StagingDepartureRule.Facts(AlreadyDue: true, null, null));
+        }
+        // 车还在开往待送点的路上不判（control-server#710 审查 L5）：判出来就锁住，而路上那几轮等着的需求与到站时未必一样。说不出来，不改判。
+        if (!arrived)
+        {
+            return null;
         }
         IReadOnlyList<DispatchCandidateVerdict>? verdicts = slotGroupFullness.CandidateVerdictsOf(runtime.AgvId);
         if (verdicts is null)
@@ -4804,15 +4820,16 @@ public sealed partial class JourneyRuntimeEngine(
     private bool YieldTriggeredBeforeHoldingDeadline(JourneyRuntimeRow runtime, JourneyStopCursor stops) =>
         runtime.YieldTriggeredAt is { } triggeredAt &&
         (runtime.CargoHoldingStartedAt is not { } startedAt ||
-         LoadsAtStaging(stops) ||
+         StandsAtStaging(stops) ||
          triggeredAt < startedAt + runtimeOptions.CargoHoldingTimeout);
 
     /// <summary>
-    /// 持货期限已过：第一个 <c>LoadBatch</c> 闭环那一刻起算，服务端此刻的钟（ADR-cross-0057）。闭环之前恒为假；在待送点装货的旅程恒为假
-    /// （control-server#709，program#184 R3：待送点装了货也不因持货超时被截断、被赶走，离站由车满或客户出发决定）。
+    /// 持货期限已过：第一个 <c>LoadBatch</c> 闭环那一刻起算，服务端此刻的钟（ADR-cross-0057）。闭环之前恒为假；车停在待送点取货停靠时恒为假
+    /// （control-server#709，program#184 R3：待送点装了货也不因持货超时被截断、被赶走，离站由车满或客户出发决定）。按当前停靠判，
+    /// 不按整趟旅程（control-server#710 审查 M1，见 <see cref="StandsAtStaging"/>）：离开待送点之后的机台取货停靠照旧有持货期限。
     /// </summary>
     private bool HoldingDeadlinePassed(JourneyRuntimeRow runtime, JourneyStopCursor stops, DateTimeOffset now) =>
-        !LoadsAtStaging(stops) &&
+        !StandsAtStaging(stops) &&
         runtime.CargoHoldingStartedAt is { } startedAt && now >= startedAt + runtimeOptions.CargoHoldingTimeout;
 
     /// <summary>
@@ -6020,15 +6037,43 @@ public sealed partial class JourneyRuntimeEngine(
         runtimeOptions.StagingDepartureRules.Enabled && stagingPickupStops.Contains(stop.StopId);
 
     /// <summary>
-    /// Whether this journey loads at a staging pickup, at any of its stops: the cargo holding clock (ADR-cross-0057) is not
-    /// this journey's (control-server#709).
+    /// Whether the stop this journey stands at, or is heading for, is a staging pickup: there the cargo holding clock
+    /// (ADR-cross-0057) does not run (control-server#709).
     /// </summary>
     /// <remarks>
-    /// Judged for the journey, not for the stop the vehicle stands at. The clock starts at the first load and runs for the
-    /// journey; were it only skipped at the staging station, the vehicle would carry a deadline that started at the staging
-    /// station's first load on to its drop-offs, and the snapshot it is sent there would show one it was never held to.
+    /// <para>
+    /// Judged for the current stop, not for the journey (control-server#710 review M1). cs#709 judged it for the journey, which
+    /// was safe while a vehicle left the staging station only with both sides full. Since #710 it also leaves with one side
+    /// free, and a demand appended for a machine pickup after it then waits at that pickup under the machine rules: holding
+    /// with room left, until the holding deadline. Judged for the journey, that deadline never came, and nothing but a station
+    /// yield ever sent the vehicle on.
+    /// </para>
+    /// <para>
+    /// The clock that runs there is the machine pickup's own: leaving the staging station clears the start
+    /// (<see cref="ClearHoldingStartLeavingStaging"/>), so the next load batch to close starts it again. Without that the
+    /// deadline would count from the staging station's first load -- long past after a wait with no deadline -- and the
+    /// machine pickup's demand would be truncated before the vehicle reached it; and the drop-offs of a journey that loaded
+    /// only at the staging station would be sent a deadline the vehicle was never held to, which is what cs#709 judged for the
+    /// journey to avoid.
+    /// </para>
+    /// <para>
+    /// The low-battery exit at the staging station (<see cref="TryReleaseLowBatteryStagingStopAsync"/>) still asks about
+    /// the whole journey -- whether anything is loaded anywhere on it (cs#709 review L1). That is a different question.
+    /// </para>
     /// </remarks>
-    private bool LoadsAtStaging(JourneyStopCursor stops) => stops.Stops.Any(IsStagingPickup);
+    private bool StandsAtStaging(JourneyStopCursor stops) => stops.OpenStops.Any() && IsStagingPickup(stops.Current);
+
+    /// <summary>
+    /// Leaving a staging pickup for a stop that is not one clears the cargo holding start (control-server#710 review M1, see
+    /// <see cref="StandsAtStaging"/>). Staged in the departure's own save. Does nothing while the staging rules are off.
+    /// </summary>
+    private void ClearHoldingStartLeavingStaging(JourneyRuntimeRow runtime, JourneyStopRow departedFrom, JourneyStopRow nextStop)
+    {
+        if (IsStagingPickup(departedFrom) && !IsStagingPickup(nextStop))
+        {
+            runtime.CargoHoldingStartedAt = null;
+        }
+    }
 
     /// <summary>
     /// The moment this journey's current stop really ends its departure wait: <see cref="StationDepartureDeadline"/>, or,
