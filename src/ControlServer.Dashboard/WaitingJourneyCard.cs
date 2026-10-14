@@ -16,6 +16,10 @@ namespace ControlServer.Dashboard;
 /// 已等多久、电量等级、过没过门槛都由服务端算好随行下发（从落库的等人起点与监看落库的读数算），这里只把它们写成字；读不到电量写「未知」，
 /// 一行不省略。服务端给了一个这里不认识的阶段或等级时原样写出，不猜。
 /// </para>
+/// <para>
+/// 停在待送点的车（行里带 <c>stagingStop</c>，control-server#709）在「在等什么」一格写「在待送点等客户出发」，并写出已装篮数、
+/// 各侧剩余空仓与待装条数：待送点没有倒计时，车不会自己走，人要从这里看出它在等谁、车上有多少。
+/// </para>
 /// </remarks>
 public sealed class WaitingJourneyCard : IDashboardCard
 {
@@ -45,7 +49,7 @@ public sealed class WaitingJourneyCard : IDashboardCard
             string level = DashboardPageRenderer.Text(journey, "batteryLevel");
             html.Append("<tr>")
                 .Append(DashboardPageRenderer.Cell(DashboardPageRenderer.Text(journey, "agvId")))
-                .Append(DashboardPageRenderer.Cell(Stage(DashboardPageRenderer.Text(journey, "stage"))))
+                .Append(DashboardPageRenderer.Cell(Waiting(journey)))
                 .Append(DashboardPageRenderer.Cell(DashboardPageRenderer.Text(journey, "blockReasonCode")))
                 .Append(DashboardPageRenderer.Cell(Waited(journey)))
                 .Append(DashboardPageRenderer.Cell(Battery(journey)))
@@ -56,6 +60,44 @@ public sealed class WaitingJourneyCard : IDashboardCard
         html.Append("</table>");
         return html.ToString();
     }
+
+    /// <summary>「在等什么」一格：停在待送点的写待送点的那几项，其余按阶段写。</summary>
+    private static string Waiting(JsonElement journey) =>
+        journey.TryGetProperty("stagingStop", out JsonElement staging) && staging.ValueKind == JsonValueKind.Object
+            ? AtStaging(staging)
+            : Stage(DashboardPageRenderer.Text(journey, "stage"));
+
+    private static string AtStaging(JsonElement staging)
+    {
+        StringBuilder text = new("在待送点等客户出发：已装 ");
+        text.Append(Number(staging, "loadedBaskets")).Append(" 篮；");
+        if (staging.TryGetProperty("freeSlotsByGroup", out JsonElement free) && free.ValueKind == JsonValueKind.Object)
+        {
+            foreach (JsonProperty group in free.EnumerateObject())
+            {
+                text.Append(Side(group.Name)).Append("剩 ")
+                    .Append(group.Value.ValueKind == JsonValueKind.Number ? group.Value.GetRawText() : "未知")
+                    .Append(" 个空仓；");
+            }
+        }
+        else
+        {
+            text.Append("剩余空仓未知；");
+        }
+        return text.Append("待装 ").Append(Number(staging, "pendingDemands")).Append(" 条").ToString();
+    }
+
+    private static string Side(string group) => group switch
+    {
+        "FRONT" => "前仓",
+        "REAR" => "后仓",
+        _ => group
+    };
+
+    private static string Number(JsonElement row, string propertyName) =>
+        row.TryGetProperty(propertyName, out JsonElement value) && value.ValueKind == JsonValueKind.Number
+            ? value.GetRawText()
+            : "未知";
 
     /// <summary>每个阶段车在等什么（等人阶段的判法在服务端 <c>JourneyWaitClassification</c>，这里只管写成字）。</summary>
     private static string Stage(string stage) => stage switch

@@ -71,6 +71,19 @@ public sealed class JourneyRuntimeOptions
     /// straight to the alarm.
     /// </summary>
     public int StationTimeoutRedispatchLimit { get; set; } = 2;
+
+    /// <summary>
+    /// The departure rules of a STAGING_TO_WIRE pickup at its dispatch staging station (control-server#709, program#184): no
+    /// station departure deadline, no cargo holding deadline, no station timeout release, and a vehicle that falls below the
+    /// mandatory charge line there with nothing loaded is released to charge.
+    /// </summary>
+    /// <remarks>
+    /// Off by default, and off means every stop behaves exactly as before: the rules are read nowhere and cost not one query.
+    /// The tickets of the same wave (control-server#710, #713, #711) hang their rules on the same switch, so each can be merged
+    /// on its own while a package built from the integration branch never runs half of them; the switch is turned on at the
+    /// first wave's changeover.
+    /// </remarks>
+    public StagingDepartureRulesOptions StagingDepartureRules { get; set; } = new();
     public string SublotBoxCountPath { get; set; } = string.Empty;
     public string[] AllowedWorkTypes { get; set; } = [];
     public string[] AllowedDispatchZones { get; set; } = [];
@@ -280,6 +293,23 @@ public sealed class FleetVehicleOptions
     public int RoundTimeoutMilliseconds { get; set; } = 30_000;
 }
 
+/// <summary>
+/// <c>JourneyRuntime:StagingDepartureRules</c>: the switch for the staging station's departure rules, and the one number they
+/// need (control-server#709).
+/// </summary>
+public sealed class StagingDepartureRulesOptions
+{
+    /// <summary>Whether a STAGING_TO_WIRE pickup at its staging station follows the staging rules. Off by default.</summary>
+    public bool Enabled { get; set; }
+
+    /// <summary>
+    /// How long after a load command at the staging station the load may stay unsettled, with a slot door not proven closed,
+    /// before the door-not-closed alarm is raised. The alarm only tells a person; it never ends the stop. Five minutes by
+    /// default, the station departure wait the machine pickups raise the same alarm by; must be positive.
+    /// </summary>
+    public TimeSpan LoadNotSettledAlarmAfter { get; set; } = TimeSpan.FromMinutes(5);
+}
+
 public sealed class JourneyRuntimeOptionsValidator(IConfiguration configuration) : IValidateOptions<JourneyRuntimeOptions>
 {
     /// <summary>The configuration key batch 9-05 retired (control-server#403). Configuration keys are case-insensitive.</summary>
@@ -349,6 +379,14 @@ public sealed class JourneyRuntimeOptionsValidator(IConfiguration configuration)
         }
         if (options.CargoHoldingTimeout <= TimeSpan.Zero) failures.Add("CargoHoldingTimeout must be positive.");
         if (options.StationTimeoutRedispatchLimit < 0) failures.Add("StationTimeoutRedispatchLimit must not be negative.");
+        if (options.StagingDepartureRules is null)
+        {
+            failures.Add("StagingDepartureRules must be present.");
+        }
+        else if (options.StagingDepartureRules.LoadNotSettledAlarmAfter <= TimeSpan.Zero)
+        {
+            failures.Add("StagingDepartureRules:LoadNotSettledAlarmAfter must be positive.");
+        }
         if (options.AgvLifecycleGeneration <= 0) failures.Add("AgvLifecycleGeneration must be positive.");
         if (options.MapId <= 0) failures.Add("MapId must be positive.");
         if (options.DispatchGeneration <= 0) failures.Add("DispatchGeneration must be positive.");

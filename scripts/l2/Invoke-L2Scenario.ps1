@@ -780,6 +780,10 @@ try {
             $serverEnvironment["JourneyRuntime__$key"] = [string]$setup[$key]
         }
     }
+    # control-server#709's staging station departure rules, off by default like the server's own switch.
+    if ($setup.ContainsKey('StagingDepartureRulesEnabled')) {
+        $serverEnvironment['JourneyRuntime__StagingDepartureRules__Enabled'] = [string]$setup.StagingDepartureRulesEnabled
+    }
 
     # FP-C13: the two REQ-0302 values, approved. A commissioned server has them, so every scenario
     # faces one. `CatalogApproved = $false` in a setup file takes them away, which is the negative

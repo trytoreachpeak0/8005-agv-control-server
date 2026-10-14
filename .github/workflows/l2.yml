@@ -248,6 +248,10 @@ jobs:
               # control-server#703: at the default limit a demand nobody scans goes back to the backlog twice, is
               # dispatched again each time, and ends with a manual-carry alarm on the third deadline.
               @{ Name = 'station-timeout-redispatch-to-alarm'; Runs = 1 }
+              # control-server#709: a STAGING_TO_WIRE pickup at its staging station has no station deadline -- nobody scans,
+              # three deadlines pass, and the stop neither ends nor releases its demand. The line above, run with the same
+              # switch on, is the machine pickup's regression.
+              @{ Name = 'staging-pickup-no-station-timeout'; Runs = 1 }
               # Batch 5 (control-server#83): the cancellation before a sublot entry, waiting for the ALL_EMPTY
               # result before ending the stop. Same reason as the line above; the batch-5 exit makes it three runs.
               @{ Name = 'load-cancelled-before-sublot'; Runs = 1; BatchId = 'batch-5' }

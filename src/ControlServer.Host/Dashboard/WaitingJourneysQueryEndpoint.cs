@@ -1,6 +1,7 @@
 using ControlServer.Application;
 using ControlServer.Domain;
 using ControlServer.Host.Runtime;
+using ControlServer.Host.Runtime.Dispatch;
 using ControlServer.Infrastructure.Persistence;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Options;
@@ -25,6 +26,12 @@ namespace ControlServer.Host.Dashboard;
 /// 救命线与门槛取宿主上与引擎同一份 <see cref="JourneyRuntimeOptions"/>，随数据一并下发，卡片只把它们写成字。另一道线是这辆车当前充电策略的
 /// <c>MandatoryChargeEntryThreshold</c>（批次9-05，control-server#403；此前是 <c>MinimumBatteryPercent</c>），逐行给出，没有已批准策略时为 null、
 /// 等级为 <c>Unknown</c>。
+/// </para>
+/// <para>
+/// <b>停在待送点取货停靠上的旅程多一项 <c>stagingStop</c></b>（control-server#709）：那里没有倒计时，车等的是客户点出发，看板要让人看出它在等什么、
+/// 车上已经有多少、还能装多少——已装篮数（已装上的需求的花篮数之和）、各侧还空着的物理仓位（与派车、判满同一个账本
+/// <see cref="JourneyAwareSlotLedger"/>；车载端事实或仓位模型读不到时为 null）、这趟旅程还待装几条。其余旅程、以及待送点规则关着时，
+/// 这一行与之前逐字相同，不多这个字段。
 /// </para>
 /// </remarks>
 internal sealed class WaitingJourneysQueryEndpoint : IDashboardQueryEndpoint
@@ -82,7 +89,9 @@ internal sealed class WaitingJourneysQueryEndpoint : IDashboardQueryEndpoint
             int? entry = resolver is null
                 ? null
                 : await WaitingJourneyBattery.MandatoryChargeEntryPercentAsync(resolver, row.VehicleKey, cancellationToken);
-            facts.Add(Fact(row, entry, now));
+            facts.Add(await StagingStopAsync(dbContext, row, cancellationToken) is { } staging
+                ? WithStagingStop(Fact(row, entry, now), staging)
+                : Fact(row, entry, now));
         }
 
         return new
@@ -91,6 +100,65 @@ internal sealed class WaitingJourneysQueryEndpoint : IDashboardQueryEndpoint
             rescueBatteryPercent = _options.WaitingJourneyRescueBatteryPercent,
             journeys = facts.ToArray()
         };
+    }
+
+    /// <summary>
+    /// 这趟旅程此刻停在待送点取货停靠上时，卡片要的那几样；规则关着、不在待送点、不在待送点上那三个阶段时为空。
+    /// </summary>
+    private async Task<StagingStopFacts?> StagingStopAsync(
+        ControlServerDbContext dbContext,
+        JourneyRuntimeRow journey,
+        CancellationToken cancellationToken)
+    {
+        if (!_options.StagingDepartureRules.Enabled ||
+            journey.Stage is not (JourneyRuntimeStage.AwaitingSublot or
+                JourneyRuntimeStage.AwaitingLoadResult or
+                JourneyRuntimeStage.AwaitingStationDeparture) ||
+            !await StagingPickupStops.CurrentStopIsStagingAsync(
+                dbContext, journey, _options.StagingDepartureRules, cancellationToken))
+        {
+            return null;
+        }
+
+        JourneyStopCursor stops = await JourneyStopCursor.LoadAsync(dbContext, journey, cancellationToken);
+        int loadedBaskets = stops.Demands
+            .Where(item => item.Membership.Status == JourneyDemandStatuses.Loaded)
+            .Sum(item => item.Membership.ExpectedBasketCount);
+        int pendingDemands = stops.Demands.Count(item =>
+            item.Membership.Status is JourneyDemandStatuses.PendingLoad or JourneyDemandStatuses.Loading);
+
+        Dictionary<string, int>? freeSlots = null;
+        VehicleSlotPositions? positions = await new VehicleSlotPositionReader(dbContext)
+            .ReadAsync(journey.AgvId, cancellationToken);
+        OnboardDispatchFacts? onboard = await new OnboardDispatchFactsReader(dbContext, Options.Create(_options), _clock)
+            .ReadOnboardFactsAsync(journey.AgvId, cancellationToken);
+        if (positions is not null && onboard is not null && positions.PhysicalSlotCountByGroup.Count > 0)
+        {
+            JourneyAwareSlotLedger ledger = new(dbContext);
+            freeSlots = new Dictionary<string, int>(StringComparer.Ordinal);
+            foreach (string group in positions.PhysicalSlotCountByGroup.Keys.Order(StringComparer.Ordinal))
+            {
+                freeSlots[group] = (await ledger.ReadAvailableSlotsAsync(
+                    journey.AgvId, onboard, positions, group, cancellationToken)).Count;
+            }
+        }
+
+        return new StagingStopFacts(loadedBaskets, freeSlots, pendingDemands);
+    }
+
+    private sealed record StagingStopFacts(int LoadedBaskets, Dictionary<string, int>? FreeSlotsByGroup, int PendingDemands);
+
+    /// <summary>与 <see cref="Fact"/> 同一行，多一项 <c>stagingStop</c>。另写一个形状，是为了不在待送点的行与之前逐字相同。</summary>
+    private static object WithStagingStop(object fact, StagingStopFacts staging)
+    {
+        System.Text.Json.Nodes.JsonObject row = System.Text.Json.JsonSerializer.SerializeToNode(fact)!.AsObject();
+        row["stagingStop"] = System.Text.Json.JsonSerializer.SerializeToNode(new
+        {
+            loadedBaskets = staging.LoadedBaskets,
+            freeSlotsByGroup = staging.FreeSlotsByGroup,
+            pendingDemands = staging.PendingDemands
+        });
+        return row;
     }
 
     private object Fact(JourneyRuntimeRow journey, int? mandatoryChargeEntryPercent, DateTimeOffset now)

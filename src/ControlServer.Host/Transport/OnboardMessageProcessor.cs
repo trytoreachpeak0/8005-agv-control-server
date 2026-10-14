@@ -1470,9 +1470,13 @@ public sealed partial class OnboardMessageProcessor(
     {
         JourneyRuntimeRow? journey = await DemandJourneyLookup.JourneyOf(dbContext, demandId).AsNoTracking()
             .SingleOrDefaultAsync(cancellationToken).ConfigureAwait(false);
+        // 待送点取货停靠没有期限（control-server#709），与推进段下发给车的那一个一致：不读开关关着时的任何东西。
         return new OperationResultReceipt(
             timeProvider.GetUtcNow(),
-            journey is null
+            journey is null ||
+            await StagingPickupStops.CurrentStopIsStagingAsync(
+                    dbContext, journey, runtimeOptions.Value.StagingDepartureRules, cancellationToken)
+                .ConfigureAwait(false)
                 ? null
                 : JourneyRuntimeEngine.StationDepartureDeadline(
                     journey, runtimeOptions.Value.StationDepartureWaitTimeout));
