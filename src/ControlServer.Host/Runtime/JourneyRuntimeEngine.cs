@@ -5807,6 +5807,16 @@ public sealed partial class JourneyRuntimeEngine(
         // two stops of one role each; when the planner lays them out unload first, the wait is seeded when the pickup
         // stop is reached. (It can also lay them out load first; that order is control-server#647.) The correction gate
         // above and the door hold after this still apply; only the clock is skipped, and no start is seeded.
+        if (stops.Current.StopRole == JourneyStopRoles.Unload)
+        {
+            if (runtime.BlockReasonCode is not null)
+            {
+                runtime.SetBlockReason(null, now);
+                runtime.UpdatedAt = now;
+            }
+            return true;
+        }
+
         // 同一个理由，取货停靠上的一种（control-server#290 审查 M1）：装货阶段已经关了、这个停靠上一条生效的归属都没有——持货期限把它上面
         // 没开始装的全释放走了，车多半是到站那一轮才截的。这里不会再有人录入、也没有装上的货要纠错，离站等待只会让一辆已经过了持货硬期限
         // 的车在一台空机台前多停一整段。被终结（而不是释放）的需求归属还在，那种停靠照旧走离站等待（control-server#668）。
