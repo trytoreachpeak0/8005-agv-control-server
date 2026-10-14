@@ -107,8 +107,9 @@ public sealed class SampledVerificationRejectedException : InvalidOperationExcep
 /// <see cref="Enforcing"/>。
 /// </para>
 /// <para>
-/// **这个枚举现在只表达档位，它自己不拦车。**把 readiness 接进投运判定属于投运流程；在那条接线
-/// 存在之前，说「门禁已经在拦车」是不成立的。W1 的证据记录的是这一刻的时点与审计，不是拦车效果。
+/// **拦车的是派车判据 <c>SlotConfigurationReadinessCriterion</c>**（control-server#686）：<see cref="Enforcing"/>
+/// 时按车现算 readiness，未确认的车不接搬运。W1 窗口（2026-09-13）做在那条接线之前，它的证据记录的是
+/// 时点与审计，不是拦车效果。
 /// </para>
 /// </remarks>
 public enum SlotConfigurationGateMode

@@ -136,6 +136,8 @@ public sealed class StructuralDispatchBlockTests
     [InlineData("MANDATORY_CHARGE_REQUIRED", DispatchReasonClass.Backlog)]
     // 批次9-05（control-server#403）：生效策略的强制充电线不高于救命线，整版不可用；车辆侧，激活一版合格的即解除，归普通积压。
     [InlineData("CHARGING_POLICY_ENTRY_NOT_ABOVE_RESCUE_LINE", DispatchReasonClass.Backlog)]
+    // control-server#686（REQ-0259、REQ-0263）：仓位配置未确认的车不接搬运。车辆侧，别的车照接，逐仓核验通过即解除，归普通积压。
+    [InlineData("SLOT_CONFIGURATION_NOT_CONFIRMED", DispatchReasonClass.Backlog)]
     public void EveryReasonCodeHasItsClassAndARationale(string reasonCode, DispatchReasonClass expected)
     {
         DispatchReasonClassification row = Assert.Contains(reasonCode, StructuralDispatchClassification.ByCode);

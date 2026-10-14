@@ -211,8 +211,10 @@ app.Lifetime.ApplicationStarted.Register(() =>
         app.Services.GetRequiredService<IOptions<ForeignRunningOrderReleaseOptions>>().Value,
         app.Services.GetRequiredService<IOptions<VehicleFaultRecoveryOptions>>().Value,
         Environment.GetEnvironmentVariable);
+    // control-server#686: the slot configuration gate mode as resolved at startup, the one the dispatch criterion reads.
+    SlotConfigurationGateMode gate = app.Services.GetRequiredService<SlotConfigurationGateSwitch>().Mode;
     MapStationCatalogOptions catalog = app.Services.GetRequiredService<IOptions<MapStationCatalogOptions>>().Value;
-    EffectiveConfigurationEvent.Log(app.Logger, effective, catalog, app.Configuration["MesIngest:baseUrl"] ?? "http://127.0.0.1:5088", release);
+    EffectiveConfigurationEvent.Log(app.Logger, effective, catalog, app.Configuration["MesIngest:baseUrl"] ?? "http://127.0.0.1:5088", release, gate);
 });
 
 // control-server#473：数据库一碰之前先拿与库文件绑定的锁，进程活着就一直不放；另一个进程（另一个服务端实例、正在直接写库的
