@@ -4873,7 +4873,7 @@ Invoke-SourceCase 'clearance switch: a string "true" is refused, not bound as on
 # control-server#703: the station timeout redispatch limit, optional, a non-negative JSON integer when written.
 foreach ($case in @(
         @{ Value = 0; Ok = $true }, @{ Value = 3; Ok = $true }, @{ Value = -1; Ok = $false },
-        @{ Value = '2'; Ok = $false }, @{ Value = 1.5; Ok = $false })) {
+        @{ Value = '2'; Ok = $false }, @{ Value = 1.5; Ok = $false }, @{ Value = 2147483648L; Ok = $false })) {
     Invoke-SourceCase "station timeout redispatch limit: $($case.Value) ($($case.Value.GetType().Name)) is $(if ($case.Ok) { 'accepted' } else { 'refused' })" {
         $d = Copy-Definition $baseline
         $d['journeyRuntime']['stationTimeoutRedispatchLimit'] = $case.Value
@@ -4881,6 +4881,16 @@ foreach ($case in @(
         $refused = @($f | Where-Object { $_.Contains('stationTimeoutRedispatchLimit must be a non-negative JSON integer') }).Count
         @{ Ok = ($case.Ok ? ($f.Count -eq 0) : ($f.Count -eq 1 -and $refused -eq 1)); Detail = "failures: $($f -join ' | ')" }
     }.GetNewClosure()
+}
+Invoke-SourceCase 'station timeout redispatch limit: the overlay writes the package default 2 when the definition leaves it out' {
+    $overlay = New-ParallelInstanceConfigurationOverlay -Definition (Copy-Definition $baseline)
+    @{ Ok = ($overlay['JourneyRuntime']['stationTimeoutRedispatchLimit'] -eq 2); Detail = "written: $($overlay['JourneyRuntime']['stationTimeoutRedispatchLimit'])" }
+}
+Invoke-SourceCase 'station timeout redispatch limit: the overlay writes the definition''s value' {
+    $d = Copy-Definition $baseline
+    $d['journeyRuntime']['stationTimeoutRedispatchLimit'] = 0
+    $overlay = New-ParallelInstanceConfigurationOverlay -Definition $d
+    @{ Ok = ($overlay['JourneyRuntime']['stationTimeoutRedispatchLimit'] -eq 0); Detail = "written: $($overlay['JourneyRuntime']['stationTimeoutRedispatchLimit'])" }
 }
 Invoke-SourceCase 'clearance switch: a case twin (ClearanceToWaitingPointEnabled) is refused' {
     $d = Copy-Definition $baseline

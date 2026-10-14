@@ -69,6 +69,13 @@ public sealed class OnboardRecoveryCoordinator(
             "Load cancellation {CancellationId} for demand {DemandId} reported ALL_EMPTY after the demand had already " +
             "ended ({DemandStatus}; journey stage {Stage}); nothing was commanded for it, so the result is recorded and " +
             "the journey is left as it was (control-server#505).");
+    private static readonly Action<ILogger, string, string, string, string?, Exception?> LogCancellationFoundDemandLeftVehicle =
+        LoggerMessage.Define<string, string, string, string?>(
+            LogLevel.Warning,
+            new EventId(2312, nameof(LogCancellationFoundDemandLeftVehicle)),
+            "Load cancellation {CancellationId} for demand {DemandId} reported ALL_EMPTY from vehicle {AgvId} after the demand " +
+            "had left that vehicle's journey (now on {OtherAgvId}, or on none: released for redispatch, control-server#703); " +
+            "nothing was commanded for it, so the result is recorded and no journey is touched.");
     private static readonly Action<ILogger, string, string, string, string, string, Exception?> LogResultOnEndedDemandBlocked =
         LoggerMessage.Define<string, string, string, string, string>(
             LogLevel.Error,
@@ -1902,8 +1909,17 @@ public sealed class OnboardRecoveryCoordinator(
             // deadline ends it -- demand, lease, vehicle occupancy, the unanswered entry request and the
             // journey in one staged change -- and differs only in why (control-server#83). Stamped with the
             // server's receipt time, like the deadline: every fact it writes is the server's own.
-            JourneyRuntimeRow stop = await DemandJourneyLookup.JourneyOf(dbContext, workflow.DemandId)
-                .SingleAsync(cancellationToken).ConfigureAwait(false);
+            JourneyRuntimeRow? stop = await DemandJourneyLookup.JourneyOf(dbContext, workflow.DemandId)
+                .SingleOrDefaultAsync(cancellationToken).ConfigureAwait(false);
+            // 需求已不在报结果的这辆车的旅程上（control-server#703 审查 L1）：被放回待派、还没再派（没有旅程），或已改派给别的车。扫码前的
+            // 取消什么都没下发，车已证明仓空，没有要替它收的尾；按别的车的旅程判下去会结束一个与这个结果无关的停靠。
+            if (stop is null || !string.Equals(stop.AgvId, workflow.AgvId, StringComparison.Ordinal))
+            {
+                LogCancellationFoundDemandLeftVehicle(
+                    logger ?? (ILogger)NullLogger.Instance,
+                    workflow.WorkflowId, workflow.DemandId, workflow.AgvId, stop?.AgvId, null);
+                return;
+            }
             // Checked again here, inside the inbox's write transaction, because authorization and settlement
             // are two messages and the stop may have moved on between them. A stop already ended -- by its
             // station deadline, say -- keeps the reason it ended with: the vehicle has only proved what that

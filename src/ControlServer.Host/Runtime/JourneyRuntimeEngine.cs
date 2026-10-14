@@ -6165,12 +6165,17 @@ public sealed partial class JourneyRuntimeEngine(
             // （StopEndedJourneyContinuesTests 的三条用例在去掉这一行时红在这里）。收尾那一支同样按这个范围算迟到录入的地址。
             (await TrackedStopAsync(stops.Current.StopId, cancellationToken).ConfigureAwait(false)).WorklistRefills +=
                 leaving.Length;
+            // 这一站同时有终结并告警的（放回到上限、或放不回的锚需求）时，车上那张空清单或收尾快照说「本站因超时结束」：这一站上确有一条
+            // 不会再来，说「任务释放」会让人以为都会回来（审查 L2）。只有放回的才说 DEMAND_RELEASED。
+            string endedReason = alarmed.Count > 0
+                ? StationTimeoutCancellationReason
+                : DemandJourneyLookup.ReleasedAtStationDeadlineReason;
             if (last)
             {
                 // 与终结收尾同一个做法，不修订计划：车就停在这一站，停靠不删——删了它，收尾之后「这一站结束时答过时的扫码」就找不到这一站，
                 // 那几条应答留在发件箱里不发（与释放服务不同：那里车还没到站，删掉的是一个车没去过的停靠）。
                 await new PickupStopTermination(dbContext).StageJourneyClosureAsync(
-                    runtime, sublotRequestMessageId, DemandJourneyLookup.ReleasedAtStationDeadlineReason, now, cancellationToken)
+                    runtime, sublotRequestMessageId, endedReason, now, cancellationToken)
                     .ConfigureAwait(false);
             }
             else
@@ -6180,7 +6185,7 @@ public sealed partial class JourneyRuntimeEngine(
                     .ConfigureAwait(false);
                 await StopEndWorklist.StageAfterReleaseAsync(
                     dbContext, runtime, releasedFromCurrentStop: true, sublotRequestMessageId,
-                    DemandJourneyLookup.ReleasedAtStationDeadlineReason, now, cancellationToken).ConfigureAwait(false);
+                    endedReason, now, cancellationToken).ConfigureAwait(false);
             }
         }
 

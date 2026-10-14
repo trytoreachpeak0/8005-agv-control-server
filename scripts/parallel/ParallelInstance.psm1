@@ -1218,10 +1218,11 @@ function Test-ParallelInstanceDefinition {
 
         # control-server#703. How often one demand goes back to the backlog at a station deadline before it ends with a
         # manual-carry alarm (JourneyRuntimeOptions.StationTimeoutRedispatchLimit). Optional -- absent keeps the package default,
-        # 2 -- but when written it is a non-negative JSON integer: a string or a fraction would stop the Host at startup.
+        # 2 -- but when written it is a non-negative JSON integer that fits an Int32 (the option's type): a string, a fraction or
+        # a larger number would stop the Host at startup.
         if (Test-KeyPresent -Node $journey -Key 'stationTimeoutRedispatchLimit') {
             $limit = $journey['stationTimeoutRedispatchLimit']
-            if (-not (($limit -is [int] -or $limit -is [long]) -and $limit -ge 0)) {
+            if (-not (($limit -is [int] -or $limit -is [long]) -and $limit -ge 0 -and $limit -le [int]::MaxValue)) {
                 $failures += "journeyRuntime.stationTimeoutRedispatchLimit must be a non-negative JSON integer, got '$limit'."
             }
         }
@@ -2942,6 +2943,9 @@ function New-ParallelInstanceConfigurationOverlay {
     # control-server#638. Always written, false when the definition leaves it out, so a true from an earlier install does not
     # survive a reinstall in appsettings.Production.json; the read-back compares what the Host bound with this same value.
     $journeyOverlay['clearanceToWaitingPointEnabled'] = Get-ParallelClearanceToWaitingPoint -Definition $Definition
+    # control-server#703 review L4. Always written too, the package default 2 when the definition leaves it out, for the same reason:
+    # a value from an earlier install (or a hand edit) must not survive a reinstall in appsettings.Production.json unseen.
+    $journeyOverlay['stationTimeoutRedispatchLimit'] = $journey.Contains('stationTimeoutRedispatchLimit') ? $journey['stationTimeoutRedispatchLimit'] : 2
 
     $routeGraphOverlay = [ordered]@{}
     foreach ($key in $routeGraph.Keys) { $routeGraphOverlay[$key] = $routeGraph[$key] }
