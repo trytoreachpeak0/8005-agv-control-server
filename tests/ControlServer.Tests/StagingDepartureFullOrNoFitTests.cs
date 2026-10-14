@@ -437,6 +437,8 @@ public sealed class StagingDepartureFullOrNoFitTests
         Assert.Equal(LoadingPhaseStates.CargoHoldingWait, (await fixture.RuntimeAsync()).LoadingPhaseState);
 
         fixture.BoxCounts.Set(machineSublot, 8);
+        // 追加进来的需求也要在 MES 目录里：录入之后服务端按目录重校验，目录里没有它，录入不会落成装货命令。
+        fixture.Catalog.Set(StagingDemand(fixture), fixture.Demand(machineDemand, machineSublot, Now.AddMinutes(-9), area: "N1-2"));
         await Batch7ThreeStopJourneyTests.AppendDemandAsync(fixture, machineDemand, machineSublot, "N1-2", 13);
         RecordRound(fixture, Waiting(StopKind.StagingRulesOn, "W-1", side: null, DispatchReasonCodes.EnRouteAppendPlanLimitReached));
         await TickAsync(fixture);
@@ -496,6 +498,7 @@ public sealed class StagingDepartureFullOrNoFitTests
         Assert.Equal(LoadingPhaseStates.VehicleFull, (await fixture.RuntimeAsync()).LoadingPhaseState);
         Assert.Empty(await DepartureTargetsAsync(fixture));
 
+        fixture.Catalog.Set(StagingDemand(fixture), StagingDemand(fixture, SecondDemand, SecondSublot, Now.AddMinutes(-9)));
         await AppendStagingDemandAsync(fixture, SecondDemand, SecondSublot);
         await CloseCorrectionAsync(fixture, correctionId);
         RecordRound(fixture, Waiting(StopKind.StagingRulesOn, "W-1", "FRONT", DispatchReasonCodes.SlotGroupOccupiedByOwnCargo));
@@ -553,6 +556,15 @@ public sealed class StagingDepartureFullOrNoFitTests
     }
 
     // ---- helpers ---------------------------------------------------------------------------------------------------
+
+    /// <summary>一条 STAGING_TO_WIRE 需求，与 <see cref="StagingPickupNoCountdownTests.ArrangeAsync"/> 放进目录的那一条同一个写法；不给参数就是那一条。</summary>
+    private static AcceptedDemandSnapshot StagingDemand(
+        RuntimeFixture fixture, string demandId = Demand, string sublot = "SUBLOT-001", DateTimeOffset? createdAt = null) =>
+        fixture.Demand(demandId, sublot, createdAt ?? Now.AddMinutes(-10)) with
+        {
+            WorkType = TransportTaskTypes.StagingToWire,
+            TransportDemandKey = $"{sublot}|{TransportTaskTypes.StagingToWire}",
+        };
 
     private static void AssertNeverBlocked(JourneyRuntimeRow journey) =>
         Assert.NotEqual(JourneyRuntimeStage.Blocked, journey.Stage);
