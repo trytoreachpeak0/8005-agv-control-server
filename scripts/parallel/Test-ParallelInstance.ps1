@@ -5387,7 +5387,9 @@ $bindingFieldCases = @(
     @{ Logged = 'AdmissionPolicyDeploymentId'; Wrong = 'MAP-26-WIRE_TO_GATE-20261007'; Says = "admissionPolicyDeploymentId bound 'MAP-26-WIRE_TO_GATE-20261007', the definition says 'MAP-26-WIRE_TO_GATE-SELFTEST'" }
     @{ Logged = 'CargoHoldingTimeout'; Wrong = '00:30:00'; Says = "cargoHoldingTimeout bound '00:30:00', the definition says '00:05:00'" }
     @{ Logged = 'StationDepartureWaitTimeout'; Wrong = '00:30:00'; Says = "stationDepartureWaitTimeout bound '00:30:00', the definition says '00:05:00'" }
-    @{ Logged = 'SlotConfigurationReadinessGate'; Wrong = 'Enforcing'; Says = "slotConfigurationReadinessGate bound 'Enforcing', the definition says 'Off'" }
+    # MissingPasses: the row has an AbsentMeans equal to what the baseline expects (control-server#686 review M1: a package that
+    # logs #672's four and not the gate has no gate, which is Off), so leaving it out of the event passes.
+    @{ Logged = 'SlotConfigurationReadinessGate'; Wrong = 'Enforcing'; Says = "slotConfigurationReadinessGate bound 'Enforcing', the definition says 'Off'"; MissingPasses = $true }
 )
 Invoke-SourceCase 'binding read-back: every row of the module''s JourneyBindingFields has a field case here, in table order' {
     $table = @(& (Get-Module ParallelInstance) { $script:JourneyBindingFields } | ForEach-Object Logged)
@@ -5399,10 +5401,12 @@ foreach ($fieldCase in $bindingFieldCases) {
         $a = (Get-BindingReadBack $baseline (New-BoundBinding @{ $fieldCase.Logged = $fieldCase.Wrong })).Action
         @{ Ok = ($a.Action -ceq 'StopServiceAndRefuse' -and ([string] $a.Message).StartsWith('EFFECTIVE_CONFIGURATION_MISMATCH: ') -and ([string] $a.Message).Contains($fieldCase.Says)); Detail = "got: $(ConvertTo-Json $a -Compress)" }
     }
-    Invoke-SourceCase "binding read-back, per field: $($fieldCase.Logged) missing from an event carrying the others -- stop and refuse" {
+    $missingPasses = $fieldCase.Contains('MissingPasses') -and $fieldCase['MissingPasses']
+    Invoke-SourceCase "binding read-back, per field: $($fieldCase.Logged) missing from an event carrying the others -- $($missingPasses ? 'pass (its AbsentMeans is what the baseline expects)' : 'stop and refuse')" {
         $a = (Get-BindingReadBack $baseline (New-BoundBinding @{ $fieldCase.Logged = $null })).Action
         $name = $fieldCase.Says.Substring(0, $fieldCase.Says.IndexOf(' '))
-        @{ Ok = ($a.Action -ceq 'StopServiceAndRefuse' -and ([string] $a.Message).Contains("$name bound 'not logged'")); Detail = "got: $(ConvertTo-Json $a -Compress)" }
+        $ok = $missingPasses ? ($a.Action -ceq 'Pass') : ($a.Action -ceq 'StopServiceAndRefuse' -and ([string] $a.Message).Contains("$name bound 'not logged'"))
+        @{ Ok = $ok; Detail = "got: $(ConvertTo-Json $a -Compress)" }
     }
 }
 foreach ($case in @(
@@ -6234,13 +6238,25 @@ Invoke-SourceCase 'gate: an environment layer setting it is an override, with or
     $expected = 'service Governance__slotConfigurationReadinessGate|machine DOTNET_GOVERNANCE:SLOTCONFIGURATIONREADINESSGATE'
     @{ Ok = (($found -join '|') -ceq $expected); Detail = "got: $($found -join '|')" }
 }
+Invoke-SourceCase 'gate read-back: Program.cs logs the gate mode the Host resolved at startup, not the event''s default Off' {
+    # control-server#686 review M2. The unit tests render the event with a mode they choose; without this, dropping the
+    # argument would log Off on every Host and a production read-back would refuse a Host that enforces the gate.
+    $program = Get-Content -Raw -LiteralPath (Join-Path $repoRoot 'src/ControlServer.Host/Program.cs')
+    $ok = [regex]::IsMatch($program, 'SlotConfigurationGateMode gate = app\.Services\.GetRequiredService<SlotConfigurationGateSwitch>\(\)\.Mode;\s+' +
+        'MapStationCatalogOptions catalog = app\.Services\.GetRequiredService<IOptions<MapStationCatalogOptions>>\(\)\.Value;\s+' +
+        'EffectiveConfigurationEvent\.Log\(app\.Logger, effective, catalog, app\.Configuration\["MesIngest:baseUrl"\] \?\? "http://127\.0\.0\.1:5088", release, gate\);')
+    @{ Ok = $ok; Detail = 'Program.cs does not pass GetRequiredService<SlotConfigurationGateSwitch>().Mode to EffectiveConfigurationEvent.Log' }
+}
 foreach ($case in @(
         @{ Name = 'production, bound Enforcing -- pass'; Definition = $gateReadProduction; Bound = (New-BoundBinding @{ SlotConfigurationReadinessGate = 'Enforcing' }); Action = 'Pass'; Says = $null }
         @{ Name = 'production, bound Off -- stop and refuse'; Definition = $gateReadProduction; Bound = (New-BoundBinding @{ SlotConfigurationReadinessGate = 'Off' }); Action = 'StopServiceAndRefuse'; Says = "slotConfigurationReadinessGate bound 'Off', the definition says 'Enforcing'" }
         @{ Name = 'production, a package older than #672 (logs none of the binding) -- stop and refuse: it does not enforce the gate'; Definition = $gateReadProduction; Bound = '<absent>'; Action = 'StopServiceAndRefuse'; Says = "slotConfigurationReadinessGate bound 'not logged', the definition says 'Enforcing'" }
         @{ Name = 'trial, bound Off -- pass'; Definition = $gateReadTrial; Bound = (New-BoundBinding @{ SlotConfigurationReadinessGate = 'Off' }); Action = 'Pass'; Says = $null }
         @{ Name = 'trial, bound Enforcing -- stop and refuse (every car would stop taking work)'; Definition = $gateReadTrial; Bound = (New-BoundBinding @{ SlotConfigurationReadinessGate = 'Enforcing' }); Action = 'StopServiceAndRefuse'; Says = "slotConfigurationReadinessGate bound 'Enforcing', the definition says 'Off'" }
-        @{ Name = 'trial, a package older than #672 -- pass, so the trial''s shipped package and a rollback to it stay deployable'; Definition = $gateReadTrial; Bound = '<absent>'; Action = 'Pass'; Says = $null })) {
+        @{ Name = 'trial, a package older than #672 -- pass, so the trial''s shipped package and a rollback to it stay deployable'; Definition = $gateReadTrial; Bound = '<absent>'; Action = 'Pass'; Says = $null }
+        # control-server#686 review M1: a package after #672 and before #686 logs the four and not the gate. It has no gate (Off).
+        @{ Name = 'trial, a package between #672 and #686 (the four logged, the gate not) -- pass'; Definition = $gateReadTrial; Bound = (New-BoundBinding @{ SlotConfigurationReadinessGate = $null }); Action = 'Pass'; Says = $null }
+        @{ Name = 'production, a package between #672 and #686 (the four logged, the gate not) -- stop and refuse'; Definition = $gateReadProduction; Bound = (New-BoundBinding @{ SlotConfigurationReadinessGate = $null }); Action = 'StopServiceAndRefuse'; Says = "slotConfigurationReadinessGate bound 'not logged', the definition says 'Enforcing'" })) {
     Invoke-SourceCase "gate read-back: $($case.Name)" {
         $a = (Get-BindingReadBack $case.Definition $case.Bound).Action
         @{ Ok = ($a.Action -ceq $case.Action -and ($null -eq $case.Says -or (([string] $a.Message).Contains('EFFECTIVE_CONFIGURATION_MISMATCH') -and ([string] $a.Message).Contains($case.Says)))); Detail = "got: $(ConvertTo-Json $a -Compress)" }
