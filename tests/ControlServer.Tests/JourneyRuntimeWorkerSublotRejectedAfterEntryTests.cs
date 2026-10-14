@@ -477,6 +477,8 @@ public sealed class JourneyRuntimeWorkerSublotRejectedAfterEntryTests
     {
         CancellationToken token = TestContext.Current.CancellationToken;
         await using RuntimeFixture fixture = await ReachEntryWaitAsync();
+        // control-server#703：这条测的是站点期限的终结尾巴，那条路今天只在放回次数用完时走（终结并告警）。上限设 0，让第一次期限就走它；放回那一支在 StationTimeoutRedispatchTests。
+        fixture.Options.StationTimeoutRedispatchLimit = 0;
         JourneyRuntimeRow runtime = await fixture.RuntimeAsync();
         await AddEntryAsync(fixture, payload: EntryPayload(runtime, "SUBLOT-NOT-IN-SCOPE"));
         await fixture.Engine.ExecuteOnceAsync(token);

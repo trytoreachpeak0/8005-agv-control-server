@@ -955,6 +955,9 @@ public sealed class Batch7CargoHoldingDashboardTests
                 .Select(field => (string)field.GetRawConstantValue()!)
                 .Where(code => !DispatchReasonCodes.IsSilent(code) && code != DispatchReasonCodes.DemandLeftCatalog),
             ControlServer.Host.Runtime.Release.DemandReleaseReasons.Released,
+            // control-server#703：站点超时放回的积压行，与看板结构性阻断里那几行人工搬运告警。
+            DemandJourneyLookup.ReleasedAtStationDeadlineReason,
+            .. ControlServer.Host.Runtime.ManualCarryAlarms.All,
         ];
 
         string[] undescribed = [.. codes.Where(code => !DispatchBacklogQueryEndpoint.Descriptions.ContainsKey(code))];

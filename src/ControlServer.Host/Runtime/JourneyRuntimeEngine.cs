@@ -138,6 +138,18 @@ public sealed partial class JourneyRuntimeEngine(
             new EventId(2108, nameof(LogStationDeadlineEndedStop)),
             "Nobody entered a sublot at vehicle {AgvId}'s pickup before the station departure deadline " +
             "{Deadline}; demand {DemandId} ended as CANCELLED_BY_STATION_TIMEOUT and the vehicle was released.");
+    private static readonly Action<ILogger, string, DateTimeOffset, string, int, Exception?> LogStationDeadlineReleasedDemand =
+        LoggerMessage.Define<string, DateTimeOffset, string, int>(
+            LogLevel.Warning,
+            new EventId(2310, nameof(LogStationDeadlineReleasedDemand)),
+            "Nobody entered a sublot at vehicle {AgvId}'s pickup before the station departure deadline {Deadline}; demand " +
+            "{DemandId} went back to the backlog for redispatch (release {Release} at a station deadline).");
+    private static readonly Action<ILogger, string, string, string, string, Exception?> LogManualCarryAlarmRaised =
+        LoggerMessage.Define<string, string, string, string>(
+            LogLevel.Warning,
+            new EventId(2311, nameof(LogManualCarryAlarmRaised)),
+            "Demand {DemandId} ({TransportDemandKey}) on vehicle {AgvId} ended and will not be dispatched again: {AlarmCode}. " +
+            "Its cargo is still at the machine or partly on the vehicle; a person must deal with it.");
     private static readonly Action<ILogger, string, string, DateTimeOffset?, DateTimeOffset?, long, Exception?>
         LogLoadedStopDeadlineRefreshed =
             LoggerMessage.Define<string, string, DateTimeOffset?, DateTimeOffset?, long>(
@@ -6025,17 +6037,11 @@ public sealed partial class JourneyRuntimeEngine(
         //
         // 逐条终结时「是不是最后一条」要看得见前几条刚暂存的终结（control-server#327）：只读库时每一条都判「另一条还开着」，
         // 谁也不收尾，旅程停在离站等待，下一轮在一个没有下一段的停靠上抛。那个判断在 DemandJourneyLookup.IsLastOpenDemandAsync。
+        //
+        // control-server#703 起「终结」只是兜底：能放回待派的放回（StageStationDeadlineEndingAsync），放不回、或已放回到上限的才终结并告警。
         string sublotRequestMessageId = stops.CurrentSublotRequestMessageId(runtime.WorklistRevision);
-        foreach (JourneyStopDemand outstanding in stops.OutstandingAtCurrentStop)
-        {
-            await new PickupStopTermination(dbContext).StageAsync(
-                runtime,
-                sublotRequestMessageId,
-                outstanding.Demand.DemandId,
-                StationTimeoutCancellationReason,
-                now,
-                cancellationToken).ConfigureAwait(false);
-        }
+        StationDeadlineEnding ending = await StageStationDeadlineEndingAsync(
+            runtime, stops, sublotRequestMessageId, now, cancellationToken).ConfigureAwait(false);
         // 本站结束了，车上却还有更早装上的货（批次7-07，control-server#212）：交给离站那一段，由它决定持货等单还是离站。
         // ADR-cross-0055 与 REQ-0354 的同一句话：站点离站等待期限到期只结束本站作业，不等于车辆离开。
         //
@@ -6062,8 +6068,159 @@ public sealed partial class JourneyRuntimeEngine(
             await StopEndWorklist.SendAsync(publisher, dbContext, runtime.AgvId, cancellationToken).ConfigureAwait(false);
         }
         checkpointWaits.Clear(runtime.VehicleKey);
-        LogStationDeadlineEndedStop(logger, runtime.AgvId, deadline, runtime.DemandId ?? runtime.JourneyId, null);
+        foreach ((string demandId, int release) in ending.Released)
+        {
+            LogStationDeadlineReleasedDemand(logger, runtime.AgvId, deadline, demandId, release, null);
+        }
+        foreach ((string demandId, string transportDemandKey, string alarmCode) in ending.Alarmed)
+        {
+            LogStationDeadlineEndedStop(logger, runtime.AgvId, deadline, demandId, null);
+            LogManualCarryAlarmRaised(logger, demandId, transportDemandKey, runtime.AgvId, alarmCode, null);
+        }
         return true;
+    }
+
+    /// <summary>站点期限结束一站时，每条待做项的去向：放回待派的（第几次），与终结并告警的（告警码）。</summary>
+    private sealed record StationDeadlineEnding(
+        IReadOnlyList<(string DemandId, int Release)> Released,
+        IReadOnlyList<(string DemandId, string TransportDemandKey, string AlarmCode)> Alarmed);
+
+    /// <summary>
+    /// 站点期限结束当前停靠：本站每条待做项能放回待派的放回，放不回的终结并挂人工搬运告警（control-server#703）。暂存，不保存。
+    /// </summary>
+    /// <remarks>
+    /// <para>
+    /// <b>为什么放回。</b>先前一律以 <c>CANCELLED_BY_STATION_TIMEOUT</c> 终结。那个码按业务键永久抑制
+    /// （<see cref="PickupStopTermination.KeySuppressingReasonCodes"/>），受理行又不删，v2 对 MesIngest 只读不回写——操作员只是没在时限内扫码，
+    /// 这批料就被 v2 永久丢掉，货留在机台上没有任何告警。放回走的是释放改派那一步
+    /// （<see cref="DemandReleaseService.StageReleasedMembershipAsync"/>）：归属移除、积压行清掉受理标记，需求仍是 <c>Accepted</c>、
+    /// 不写抑制、等待年龄不重置，下一轮派车按「已释放待改派」以新的一代重新受理，不追加回这一趟。
+    /// </para>
+    /// <para>
+    /// <b>放回的次数有上限</b>（<see cref="JourneyRuntimeOptions.StationTimeoutRedispatchLimit"/>）：一台没人管的机台，车会被反复派去、反复超时。
+    /// 次数数的是这条需求移除原因为 <see cref="DemandJourneyLookup.ReleasedAtStationDeadlineReason"/> 的归属行，在库里，重启不丢；持货截断与
+    /// 人工释放写的是另一个原因，不算。到了上限就终结（照旧抑制：人去搬之前 v2 不能再派这条），并在同一次保存里挂告警
+    /// （<see cref="ManualCarryAlarms"/>）。
+    /// </para>
+    /// <para>
+    /// <b>锚需求、旅程上还有别的需求时放不回</b>：旅程行上的离站核验、计划与收尾都按锚需求取需求号，释放规则也拒这一格
+    /// （<c>DemandReleaseReasons.AnchorWithOtherDemands</c>）。只有同站追加才走得到，终结并告警。
+    /// </para>
+    /// <para>
+    /// <b>车已到站的那一格</b>与持货截断（control-server#290）同一个做法：旅程继续时发那张空清单（<see cref="StopEndWorklist.StageAfterReleaseAsync"/>），
+    /// 它的号取「算式」与「已发最高号 + 1」的大者，不会发出车已收到过的号；但退役这一站较早几版清单按本停靠的版数范围算，所以放回几条仍给这个
+    /// 停靠补几版（<see cref="JourneyStopRow.WorklistRefills"/>），否则较早那一版不退役、重连后被补发。
+    /// 放回之后旅程上一条都不剩时按终结收尾的做法关闭旅程、三套占用一起放，原因码就是放回的那个；不修订计划（见那一支的注释）。
+    /// 车上 <c>stopEndedReason</c> 是 <c>DEMAND_RELEASED</c>（<see cref="StopEndedReasons"/>）：这单会重新派车，不是丢了。
+    /// </para>
+    /// <para>
+    /// 终结的先暂存：它判「是不是最后一条」时，放回的那几条在库里还开着，所以它不收尾；收尾归后面放回那一段，它看得见两边。
+    /// </para>
+    /// </remarks>
+    private async Task<StationDeadlineEnding> StageStationDeadlineEndingAsync(
+        JourneyRuntimeRow runtime,
+        JourneyStopCursor stops,
+        string sublotRequestMessageId,
+        DateTimeOffset now,
+        CancellationToken cancellationToken)
+    {
+        JourneyStopDemand[] outstanding = [.. stops.OutstandingAtCurrentStop];
+        HashSet<string> outstandingIds = outstanding.Select(item => item.Demand.DemandId).ToHashSet(StringComparer.Ordinal);
+        bool othersRemain = stops.Demands.Any(item => !outstandingIds.Contains(item.Demand.DemandId));
+
+        List<(JourneyStopDemand Item, int Release)> releasing = [];
+        List<(JourneyStopDemand Item, string AlarmCode, int Releases)> alarmed = [];
+        foreach (JourneyStopDemand item in outstanding)
+        {
+            string demandId = item.Demand.DemandId;
+            int releases = await dbContext.Set<JourneyDemandRow>().AsNoTracking()
+                .CountAsync(
+                    row => row.DemandId == demandId && row.RemovalReason == DemandJourneyLookup.ReleasedAtStationDeadlineReason,
+                    cancellationToken)
+                .ConfigureAwait(false);
+            if (releases >= runtimeOptions.StationTimeoutRedispatchLimit)
+            {
+                alarmed.Add((item, ManualCarryAlarms.StationTimeoutRedispatchLimitReached, releases));
+            }
+            else if (string.Equals(demandId, runtime.DemandId, StringComparison.Ordinal) && othersRemain)
+            {
+                alarmed.Add((item, ManualCarryAlarms.StationTimeoutAnchorNotReleasable, releases));
+            }
+            else
+            {
+                releasing.Add((item, releases + 1));
+            }
+        }
+
+        foreach ((JourneyStopDemand item, string alarmCode, int releases) in alarmed)
+        {
+            await new PickupStopTermination(dbContext).StageAsync(
+                runtime, sublotRequestMessageId, item.Demand.DemandId, StationTimeoutCancellationReason, now, cancellationToken)
+                .ConfigureAwait(false);
+            await ManualCarryAlarms.StageAsync(
+                dbContext,
+                item.Demand.DemandId,
+                item.Demand.TransportDemandKey,
+                alarmCode,
+                new
+                {
+                    journeyId = runtime.JourneyId,
+                    agvId = runtime.AgvId,
+                    stationId = stops.Current.StationId,
+                    stationTimeoutReleases = releases,
+                    redispatchLimit = runtimeOptions.StationTimeoutRedispatchLimit
+                },
+                now,
+                cancellationToken).ConfigureAwait(false);
+        }
+
+        if (releasing.Count > 0)
+        {
+            string[] leaving = [.. releasing.Select(entry => entry.Item.Demand.DemandId)];
+            bool last = stops.Demands.All(item => outstandingIds.Contains(item.Demand.DemandId));
+            foreach (string demandId in leaving)
+            {
+                JourneyDemandRow membership = await dbContext.Set<JourneyDemandRow>()
+                    .SingleAsync(
+                        row => row.JourneyId == runtime.JourneyId && row.DemandId == demandId && row.RemovedAt == null,
+                        cancellationToken)
+                    .ConfigureAwait(false);
+                await DemandReleaseService.StageReleasedMembershipAsync(
+                    dbContext, membership, now, cancellationToken, DemandJourneyLookup.ReleasedAtStationDeadlineReason)
+                    .ConfigureAwait(false);
+            }
+            // 版数守恒：这个停靠的归属少了几条，就补上几版。StopEndWorklist 取号时自己会取「已发最高号 + 1」，但退役这一站较早那几版清单
+            // 按的是本停靠的版数范围：不补，范围缩掉放回的那几条，较早那一版不退役，重连后被补发、号比空清单低，车判回退断会话
+            // （StopEndedJourneyContinuesTests 的三条用例在去掉这一行时红在这里）。收尾那一支同样按这个范围算迟到录入的地址。
+            (await TrackedStopAsync(stops.Current.StopId, cancellationToken).ConfigureAwait(false)).WorklistRefills +=
+                leaving.Length;
+            // 这一站同时有终结并告警的（放回到上限、或放不回的锚需求）时，车上那张空清单或收尾快照说「本站因超时结束」：这一站上确有一条
+            // 不会再来，说「任务释放」会让人以为都会回来（审查 L2）。只有放回的才说 DEMAND_RELEASED。
+            string endedReason = alarmed.Count > 0
+                ? StationTimeoutCancellationReason
+                : DemandJourneyLookup.ReleasedAtStationDeadlineReason;
+            if (last)
+            {
+                // 与终结收尾同一个做法，不修订计划：车就停在这一站，停靠不删——删了它，收尾之后「这一站结束时答过时的扫码」就找不到这一站，
+                // 那几条应答留在发件箱里不发（与释放服务不同：那里车还没到站，删掉的是一个车没去过的停靠）。
+                await new PickupStopTermination(dbContext).StageJourneyClosureAsync(
+                    runtime, sublotRequestMessageId, endedReason, now, cancellationToken)
+                    .ConfigureAwait(false);
+            }
+            else
+            {
+                await JourneyPlanRevisionStage.StageAsync(
+                        dbContext, runtime.JourneyId, leaving, currentStopMayGo: false, routing: null, cancellationToken)
+                    .ConfigureAwait(false);
+                await StopEndWorklist.StageAfterReleaseAsync(
+                    dbContext, runtime, releasedFromCurrentStop: true, sublotRequestMessageId,
+                    endedReason, now, cancellationToken).ConfigureAwait(false);
+            }
+        }
+
+        return new StationDeadlineEnding(
+            [.. releasing.Select(entry => (entry.Item.Demand.DemandId, entry.Release))],
+            [.. alarmed.Select(entry => (entry.Item.Demand.DemandId, entry.Item.Demand.TransportDemandKey, entry.AlarmCode))]);
     }
 
     /// <summary>
@@ -6207,6 +6364,23 @@ public sealed partial class JourneyRuntimeEngine(
             await new PickupStopTermination(dbContext).StageAsync(
                 runtime, stops.CurrentSublotRequestMessageId(runtime.WorklistRevision), loading.Demand.DemandId, terminalReason, now,
                 cancellationToken).ConfigureAwait(false);
+            // 不放回待派（control-server#703）：确定的失败里可以有 COMPLETED 的仓位，这条需求的货可能一部分已在车上，改派会让别的车去搬
+            // 同一批货；归属也已是 LOADING、装货命令已结算，释放只收没开始装的。所以终结照旧，同一次保存挂人工告警，让人去看货在哪。
+            await ManualCarryAlarms.StageAsync(
+                dbContext,
+                loading.Demand.DemandId,
+                loading.Demand.TransportDemandKey,
+                ManualCarryAlarms.DeterminateLoadFailureNeedsManual,
+                new
+                {
+                    journeyId = runtime.JourneyId,
+                    agvId = runtime.AgvId,
+                    stationId = stops.Current.StationId,
+                    slotOperationAttemptId = loading.Membership.LoadSlotOperationAttemptId,
+                    terminalReason
+                },
+                now,
+                cancellationToken).ConfigureAwait(false);
             // 旅程还带着别的需求、没有收尾时，阶段要离开等装货结果（control-server#291 的 S2）：这一条已经终结，这一站再没有在装的，
             // 留在这里下一轮每轮抛 "no demand loading at its stop"，车带着更早装上的货永远不走。与站点期限结束停靠
             // （TryEndStopAtStationDeadlineAsync）同一个出口：本站没有待装的就交给离站那一段，由它决定持货等单还是离站；
@@ -6240,6 +6414,9 @@ public sealed partial class JourneyRuntimeEngine(
         checkpointWaits.Clear(runtime.VehicleKey);
         LogDeterminateLoadFailureSettled(
             logger, runtime.AgvId, loading.Demand.DemandId, terminalReason, null);
+        LogManualCarryAlarmRaised(
+            logger, loading.Demand.DemandId, loading.Demand.TransportDemandKey, runtime.AgvId,
+            ManualCarryAlarms.DeterminateLoadFailureNeedsManual, null);
         return true;
     }
 

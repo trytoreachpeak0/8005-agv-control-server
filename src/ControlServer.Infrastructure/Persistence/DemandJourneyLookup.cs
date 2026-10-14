@@ -43,8 +43,14 @@ public static class DemandJourneyLookup
     public const string ReleasedForRedispatchReason = "RELEASED_FOR_REDISPATCH";
 
     /// <summary>
+    /// 离站期限到期、本站一条也没录入，需求被放回积压等改派时写在归属行上的移除原因（control-server#703）。与
+    /// <see cref="ReleasedForRedispatchReason"/> 同样算「已释放待改派」，单列一个值只为数得出一条需求因为站点超时被放回过几次。
+    /// </summary>
+    public const string ReleasedAtStationDeadlineReason = "RELEASED_AT_STATION_DEADLINE";
+
+    /// <summary>
     /// 已释放、等着改派的需求：没终结、没有生效的归属、而且<b>最近一次</b>移除的原因是 <see cref="ReleasedForRedispatchReason"/>
-    /// （批次7-10，control-server#215）。
+    /// 或 <see cref="ReleasedAtStationDeadlineReason"/>（批次7-10，control-server#215；control-server#703）。
     /// </summary>
     /// <remarks>
     /// <para>
@@ -69,7 +75,8 @@ public static class DemandJourneyLookup
             memberships.Any(released =>
                 released.DemandId == demand.DemandId &&
                 released.RemovedAt != null &&
-                released.RemovalReason == ReleasedForRedispatchReason &&
+                (released.RemovalReason == ReleasedForRedispatchReason ||
+                 released.RemovalReason == ReleasedAtStationDeadlineReason) &&
                 !memberships.Any(later =>
                     later.DemandId == demand.DemandId && later.DispatchGeneration > released.DispatchGeneration)));
     }

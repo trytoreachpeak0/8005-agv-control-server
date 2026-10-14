@@ -1152,6 +1152,8 @@ public sealed class Batch7DemandReleaseServiceTests
     public async Task AReleasedAnchorIsDispatchedAgainAsANewJourneyAndItsStationDeadlineStillEndsTheStop()
     {
         await using RuntimeFixture fixture = await DispatchedToPickupAsync();
+        // control-server#703：这条测的是站点期限的终结尾巴，那条路今天只在放回次数用完时走（终结并告警）。上限设 0，让第一次期限就走它；放回那一支在 StationTimeoutRedispatchTests。
+        fixture.Options.StationTimeoutRedispatchLimit = 0;
         JourneyRuntimeRow first = await fixture.RuntimeAsync(FirstDemandId);
         // 再推一轮，让第一趟把它派往取货站的计划发出去：发件箱里有了那一行，改派那一趟若沿用同一个 messageId
         // 就会被它挡住。少了这一轮，第一趟一张计划都没发过，那一处按构造走不到。

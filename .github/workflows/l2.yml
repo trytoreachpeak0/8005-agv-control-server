@@ -245,6 +245,9 @@ jobs:
               # Batch 5 (control-server#79): the station departure deadline. In CI from its own ticket so
               # a batch-4 PR catches a regression before it merges; the batch-5 exit makes it three runs.
               @{ Name = 'station-deadline-sublot-timeout'; Runs = 1; BatchId = 'batch-5' }
+              # control-server#703: at the default limit a demand nobody scans goes back to the backlog twice, is
+              # dispatched again each time, and ends with a manual-carry alarm on the third deadline.
+              @{ Name = 'station-timeout-redispatch-to-alarm'; Runs = 1 }
               # Batch 5 (control-server#83): the cancellation before a sublot entry, waiting for the ALL_EMPTY
               # result before ending the stop. Same reason as the line above; the batch-5 exit makes it three runs.
               @{ Name = 'load-cancelled-before-sublot'; Runs = 1; BatchId = 'batch-5' }
@@ -737,6 +740,9 @@ jobs:
               # control-server#325 (program#86 v2): once the station deadline ends a stop, the real onboard shows none of it,
               # and a late cancellation and a late scan made before the closing worklist arrives are both refused as STALE.
               @{ Name = 'real-onboard-stale-stop-after-station-timeout';     Runs = 1 }
+              # control-server#703 review M3: at the default limit the demand released at the deadline is dispatched again to the
+              # same vehicle and stop; the real onboard takes the new visit's entry without a reconnect.
+              @{ Name = 'real-onboard-station-timeout-redispatch';            Runs = 1 }
               # control-server#335 (REQ-0246): the real onboard, not Ready for the whole leg on this server's order, drives and
               # reconnects without a hold; a lock feedback forced to 0 holds this order and stops once; locked again, the
               # latch is released and the held order waits for a person.

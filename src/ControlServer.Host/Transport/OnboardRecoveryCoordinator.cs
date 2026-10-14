@@ -69,6 +69,13 @@ public sealed class OnboardRecoveryCoordinator(
             "Load cancellation {CancellationId} for demand {DemandId} reported ALL_EMPTY after the demand had already " +
             "ended ({DemandStatus}; journey stage {Stage}); nothing was commanded for it, so the result is recorded and " +
             "the journey is left as it was (control-server#505).");
+    private static readonly Action<ILogger, string, string, string, string?, Exception?> LogCancellationFoundDemandLeftVehicle =
+        LoggerMessage.Define<string, string, string, string?>(
+            LogLevel.Warning,
+            new EventId(2312, nameof(LogCancellationFoundDemandLeftVehicle)),
+            "Load cancellation {CancellationId} for demand {DemandId} reported ALL_EMPTY from vehicle {AgvId} after the demand " +
+            "had left that vehicle's journey (now on {OtherAgvId}, or on none: released for redispatch, control-server#703); " +
+            "nothing was commanded for it, so the result is recorded and no journey is touched.");
     private static readonly Action<ILogger, string, string, string, string, string, Exception?> LogResultOnEndedDemandBlocked =
         LoggerMessage.Define<string, string, string, string, string>(
             LogLevel.Error,
@@ -1202,6 +1209,13 @@ public sealed class OnboardRecoveryCoordinator(
             : await CancellationBeforeSublotAllowedAsync(demandId, agvId, cancellationToken).ConfigureAwait(false);
         AcceptedDemandRow? demand = authorized ? null : await dbContext.AcceptedDemands.AsNoTracking()
             .SingleOrDefaultAsync(row => row.DemandId == demandId, cancellationToken).ConfigureAwait(false);
+        // 需求还开着、却已不在这辆车的旅程上：被放回待派了（站点超时 control-server#703、持货截断 control-server#290）。车手里那一版清单
+        // 同样过时，与需求已终结一样答 WORKLIST_REVISION_STALE。
+        bool leftThisVehicle = demand is { Status: not (DemandExecutionStatus.Cancelled or DemandExecutionStatus.Succeeded) } &&
+                               await dbContext.Set<JourneyDemandRow>().AsNoTracking().AnyAsync(
+                                   row => row.DemandId == demandId && row.RemovedAt != null, cancellationToken).ConfigureAwait(false) &&
+                               !await DemandJourneyLookup.JourneyOf(dbContext, demandId).AsNoTracking()
+                                   .AnyAsync(row => row.AgvId == agvId, cancellationToken).ConfigureAwait(false);
         if (authorized)
         {
             await UpsertSimpleWorkflowAsync(
@@ -1217,7 +1231,7 @@ public sealed class OnboardRecoveryCoordinator(
             slots = Array.Empty<int>(),
             problem = authorized ? null : RefusedCancellationProblem(
                 demand, "payload.slotOperationAttemptId",
-                "Load cancellation before a sublot entry is not allowed in the current state.")
+                "Load cancellation before a sublot entry is not allowed in the current state.", leftThisVehicle)
         });
     }
 
@@ -1232,15 +1246,16 @@ public sealed class OnboardRecoveryCoordinator(
     /// 服务端状态」，把操作员引去查三样都没问题的东西。
     /// </para>
     /// <para>
-    /// <b>判据是「需求已终结」，不是「期限到了」或阶段。</b>车还在路上时这一站还没开始，谈不上过时，仍是
+    /// <b>判据是「需求已终结」（或已被放回待派、不在这辆车上了，control-server#703），不是「期限到了」或阶段。</b>车还在路上时这一站还没开始，谈不上过时，仍是
     /// <c>ACTION_NOT_ALLOWED_IN_STATE</c>；需求还开着而这一刻不能取消（已下装货命令、已有一条取消开着）同样如此。
     /// </para>
     /// </remarks>
-    private static object RefusedCancellationProblem(AcceptedDemandRow? demand, string fieldPath, string displayMessage) =>
-        demand?.Status is DemandExecutionStatus.Cancelled or DemandExecutionStatus.Succeeded
+    private static object RefusedCancellationProblem(
+        AcceptedDemandRow? demand, string fieldPath, string displayMessage, bool leftThisVehicle = false) =>
+        leftThisVehicle || demand?.Status is DemandExecutionStatus.Cancelled or DemandExecutionStatus.Succeeded
             ? Problem(
                 ServerReasonCodes.WorklistRevisionStale, fieldPath,
-                "The worklist this cancellation was made from is no longer current: the demand has already ended.")
+                "The worklist this cancellation was made from is no longer current: the demand has already ended or left this vehicle.")
             : Problem(ServerReasonCodes.ActionNotAllowedInState, fieldPath, displayMessage);
 
     /// <summary>
@@ -1894,8 +1909,17 @@ public sealed class OnboardRecoveryCoordinator(
             // deadline ends it -- demand, lease, vehicle occupancy, the unanswered entry request and the
             // journey in one staged change -- and differs only in why (control-server#83). Stamped with the
             // server's receipt time, like the deadline: every fact it writes is the server's own.
-            JourneyRuntimeRow stop = await DemandJourneyLookup.JourneyOf(dbContext, workflow.DemandId)
-                .SingleAsync(cancellationToken).ConfigureAwait(false);
+            JourneyRuntimeRow? stop = await DemandJourneyLookup.JourneyOf(dbContext, workflow.DemandId)
+                .SingleOrDefaultAsync(cancellationToken).ConfigureAwait(false);
+            // 需求已不在报结果的这辆车的旅程上（control-server#703 审查 L1）：被放回待派、还没再派（没有旅程），或已改派给别的车。扫码前的
+            // 取消什么都没下发，车已证明仓空，没有要替它收的尾；按别的车的旅程判下去会结束一个与这个结果无关的停靠。
+            if (stop is null || !string.Equals(stop.AgvId, workflow.AgvId, StringComparison.Ordinal))
+            {
+                LogCancellationFoundDemandLeftVehicle(
+                    logger ?? (ILogger)NullLogger.Instance,
+                    workflow.WorkflowId, workflow.DemandId, workflow.AgvId, stop?.AgvId, null);
+                return;
+            }
             // Checked again here, inside the inbox's write transaction, because authorization and settlement
             // are two messages and the stop may have moved on between them. A stop already ended -- by its
             // station deadline, say -- keeps the reason it ended with: the vehicle has only proved what that

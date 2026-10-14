@@ -63,6 +63,14 @@ public sealed class JourneyRuntimeOptions
     /// thirty. Batch 7's schema ticket (control-server#206) adds the setting; its reader is control-server#212.
     /// </remarks>
     public TimeSpan CargoHoldingTimeout { get; set; } = TimeSpan.FromMinutes(5);
+
+    /// <summary>
+    /// How many times one demand may go back to the backlog because its pickup ran out the station departure deadline with
+    /// nothing entered (control-server#703). The next such deadline ends it as <c>CANCELLED_BY_STATION_TIMEOUT</c> and raises
+    /// a manual-carry alarm instead, so a machine nobody serves is not visited for ever. Zero sends every such deadline
+    /// straight to the alarm.
+    /// </summary>
+    public int StationTimeoutRedispatchLimit { get; set; } = 2;
     public string SublotBoxCountPath { get; set; } = string.Empty;
     public string[] AllowedWorkTypes { get; set; } = [];
     public string[] AllowedDispatchZones { get; set; } = [];
@@ -340,6 +348,7 @@ public sealed class JourneyRuntimeOptionsValidator(IConfiguration configuration)
             failures.Add("SameStationAppendCorrectionGrace must not be negative.");
         }
         if (options.CargoHoldingTimeout <= TimeSpan.Zero) failures.Add("CargoHoldingTimeout must be positive.");
+        if (options.StationTimeoutRedispatchLimit < 0) failures.Add("StationTimeoutRedispatchLimit must not be negative.");
         if (options.AgvLifecycleGeneration <= 0) failures.Add("AgvLifecycleGeneration must be positive.");
         if (options.MapId <= 0) failures.Add("MapId must be positive.");
         if (options.DispatchGeneration <= 0) failures.Add("DispatchGeneration must be positive.");

@@ -7,7 +7,10 @@
 # 原来是 20 秒。control-server#290 起持货期限一到就截断没开始装的需求，而这条场景要的是站点期限结束第二站：
 # CI 37953826544 里甲落定后 20 秒车才到第二站（恰在旧期限上）、42 秒站点期限结束乙。持货期限必须晚于后者，75 秒留出 30 秒余量，
 # 否则乙在录入请求发出之前就被持货期限截掉，L2-SEJ-02 之后的判据全都无从谈起。
+# control-server#703 起站点期限先把没录入的乙放回待派，放回次数用完才终结。这条场景断言乙 TERMINATED、证的是本站结束而旅程继续，
+# 上限设 0 保持终结；放回那一支的清单号守恒在 L1（StopEndedJourneyContinuesTests 默认上限）。
 @{
+    StationTimeoutRedispatchLimit = 0
     DispatchZoneParameters = @{
         'MAP-25-WIRE_TO_GATE' = @{ EnRouteAdditionMaxPathCostIncrease = 100000 }
     }
