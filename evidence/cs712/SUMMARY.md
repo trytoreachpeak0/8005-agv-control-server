@@ -39,6 +39,9 @@
   V 在 305 收尾后下一轮就被承诺空闲返回到 214（日志 21:25:45）。之后第二条需求 180 秒没被受理：305 仍被 V 占着，V 已有空闲返回用途接不了单，
   另一台车被单占挡住（`FIXED_TASK_STATION_OCCUPIED_BY_OTHER_VEHICLE`），场景到此结束。红是规则失效本身，不是超时预算。
 
+- **`green-3-dashboard-verdict` PASS（审查 L2 补判据后，本机时段第 2 轮 21:44～21:46，被测 `f4a7a2994`）**：新加的 L2-SIS-06 从
+  `/api/dashboard/idle-returns` 读 V 那一行的 `verdict.reasonCode`，读到 `IDLE_RETURN_HELD_AT_STAGING_ORIGIN`；其余五条照旧全过。
+
 **这个场景证明不了的**：假 RIoT 照场景指令把单置为完成，所以真 RIoT 对「目的站就是当前站」的单怎么处理不在这里证明（RIoT 行为实验室样本数为 0），
 写在票面「上线前实测」。
 
