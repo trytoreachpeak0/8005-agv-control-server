@@ -84,6 +84,9 @@ internal static class IdleReturnCodeDescriptions
             [IdleReturnReasons.BelowMandatoryChargeLine] = "电量低于这辆车充电策略的强制充电线：先去充电，不空闲返回",
             [IdleReturnReasons.VehiclePositionUnknown] = "读不到车在哪个站：没有起点，算不出去等待点的路线，不空闲返回",
             [IdleReturnReasons.RouteGraphUnavailable] = "路网没开或这张图的路网不可用：到不到得了等待点核不了，不猜，不空闲返回",
+            [IdleReturnReasons.HeldAtStagingOrigin] =
+                "车停在派工待送点上，而它只做待送任务（STAGING_TO_WIRE）：留在原地等下一条待送需求，不去等待点。"
+                + "这是正常状态，不需要人处理；电量低于强制充电线时照常会被派去充电",
             [IdleReturnReasons.NoWaitingPointAvailable] =
                 "没有可去的等待点：逐个核过之后一个都不剩（被别的车占着、到不了、不接这辆车、停用等），逐点原因见服务端日志事件 2199",
             [IdleReturnReasons.CommitmentRefused] = "选中的等待点在保存那一刻被别的车先拿到了：这一轮不换点，下一轮重新挑",
