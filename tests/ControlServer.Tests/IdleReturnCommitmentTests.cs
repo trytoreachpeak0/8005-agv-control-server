@@ -1049,7 +1049,8 @@ public sealed class IdleReturnCommitmentTests
             DbContextOptions<ControlServerDbContext> options = new DbContextOptionsBuilder<ControlServerDbContext>()
                 .UseSqlite(Db.Connection).Options;
             await TaskTypeStationRuntimeSeed.ActivateAsync(
-                options, Now, bindings: [new TaskTypeStationBinding(TransportTaskTypes.StagingToWire, stationId, stationName, "MAP-25-TEST")],
+                options, Now, requiredTaskTypes: [TransportTaskTypes.StagingToWire],
+                bindings: [new TaskTypeStationBinding(TransportTaskTypes.StagingToWire, stationId, stationName, "MAP-25-TEST")],
                 mapId: Map);
         }
 
