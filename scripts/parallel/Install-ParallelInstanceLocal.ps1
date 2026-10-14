@@ -357,7 +357,7 @@ try {
     $environmentOverrides = @(Get-ParallelJourneyRuntimeEnvironmentOverride -ServiceEnvironment @() `
             -MachineEnvironment @([Environment]::GetEnvironmentVariables('Machine').GetEnumerator() | ForEach-Object { "$($_.Key)=$($_.Value)" }))
     if ($environmentOverrides.Count -gt 0) {
-        throw ("JOURNEY_RUNTIME_ENVIRONMENT_OVERRIDE (nothing was stopped or changed): $($environmentOverrides -join ', ') set JourneyRuntime " +
+        throw ("JOURNEY_RUNTIME_ENVIRONMENT_OVERRIDE (nothing was stopped or changed): $($environmentOverrides -join ', ') set JourneyRuntime, EmergencyStopRelease (workspace#49) " +
             'or MapStationCatalog (control-server#531) above appsettings.Production.json. Remove the variable(s), then install again.')
     }
 
@@ -578,7 +578,9 @@ try {
         $populatedNames = @(@(Get-ServiceEnvironment) | Where-Object { $null -ne $_ } | ForEach-Object {
                 $parts = $_ -split '=', 2
                 if ($parts.Count -eq 2 -and -not [string]::IsNullOrWhiteSpace($parts[1])) { $parts[0] } })
-        $releaseLine = Format-ParallelEmergencyReleaseLine -Definition $definition -EnvironmentNames $populatedNames
+        # Review M2: and how many named people the roster gives R-13, the only role the loaded entry accepts.
+        $rosterText = (Test-Path -LiteralPath $rosterPath -PathType Leaf) ? (Get-Content -LiteralPath $rosterPath -Raw -Encoding utf8) : $null
+        $releaseLine = Format-ParallelEmergencyReleaseLine -Definition $definition -EnvironmentNames $populatedNames -RosterText $rosterText
         Write-Step $releaseLine
         Write-Output $releaseLine
         if (@($readiness.Reasons).Count -gt 0) {

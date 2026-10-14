@@ -3136,6 +3136,10 @@ function Get-ParallelJourneyRuntimeEnvironmentOverride {
             control-server#531 review L1: MapStationCatalog too, the same way. REQ-0302's two approved values come from the
             instance definition alone; MapStationCatalog__ApprovedMaxUnconfirmed in an environment layer (the L2 rig injects
             them so, Invoke-L2Scenario.ps1) would bind over the file, and the read-back would see it only after a restart.
+
+            workspace#49 review L5: EmergencyStopRelease too. EmergencyStopRelease__LoadedCredentialEnvironmentVariable in an
+            environment layer could point the loaded entry at the MVP's variable, and __Enabled could turn the entries off
+            under a production definition; neither would show in the overlay.
     #>
     [CmdletBinding()]
     [OutputType([string])]
@@ -3143,7 +3147,7 @@ function Get-ParallelJourneyRuntimeEnvironmentOverride {
         [AllowEmptyCollection()][AllowNull()][string[]] $ServiceEnvironment,
         [AllowEmptyCollection()][AllowNull()][string[]] $MachineEnvironment
     )
-    $pattern = '^(?i:(?:DOTNET_|ASPNETCORE_)?(?:JourneyRuntime|MapStationCatalog)(?:__|:))'
+    $pattern = '^(?i:(?:DOTNET_|ASPNETCORE_)?(?:JourneyRuntime|MapStationCatalog|EmergencyStopRelease)(?:__|:))'
     foreach ($pair in @(@{ Where = 'service'; Entries = $ServiceEnvironment }, @{ Where = 'machine'; Entries = $MachineEnvironment })) {
         foreach ($entry in @($pair.Entries | Where-Object { -not [string]::IsNullOrEmpty($_) })) {
             $name = ($entry -split '=', 2)[0]
@@ -3391,19 +3395,48 @@ function Format-ParallelEmergencyReleaseLine {
             workspace#49. The installer's EMERGENCY_STOP_RELEASE= result line, for 19-deploy-control-server-parallel.ps1:
             what the overlay turned on, and which of the two credential variables the service's Environment holds non-blank
             (-EnvironmentNames, read back after the write). Names only, never a value:
-            EMERGENCY_STOP_RELEASE=enabled=true credential=set loadedCredential=set
+            EMERGENCY_STOP_RELEASE=enabled=true credential=set loadedCredential=set loadedConfirmers=2
+            loadedConfirmers (review M2) is how many named people in the roster hold R-13, the only role the loaded entry
+            accepts (LoadedEmergencyStopRelease.AllowedRoles); a number, never a name. -RosterText is the roster file's text,
+            $null when it does not exist (0).
     #>
     [CmdletBinding()]
     [OutputType([string])]
     param(
         [Parameter(Mandatory = $true)][System.Collections.IDictionary] $Definition,
-        [AllowNull()][AllowEmptyCollection()][string[]] $EnvironmentNames
+        [AllowNull()][AllowEmptyCollection()][string[]] $EnvironmentNames,
+        [AllowNull()][AllowEmptyString()][string] $RosterText
     )
     $names = @($EnvironmentNames)
-    return ('EMERGENCY_STOP_RELEASE=enabled={0} credential={1} loadedCredential={2}' -f
+    return ('EMERGENCY_STOP_RELEASE=enabled={0} credential={1} loadedCredential={2} loadedConfirmers={3}' -f
         ((Test-ParallelEmergencyReleaseEnabled -Definition $Definition) ? 'true' : 'false'),
         (($names -contains $script:EmergencyReleaseCredentialVariable) ? 'set' : 'unset'),
-        (($names -contains $script:EmergencyLoadedReleaseCredentialVariable) ? 'set' : 'unset'))
+        (($names -contains $script:EmergencyLoadedReleaseCredentialVariable) ? 'set' : 'unset'),
+        (Get-ParallelRosterRoleHolderCount -RosterText $RosterText -Role 'R-13'))
+}
+
+function Get-ParallelRosterRoleHolderCount {
+    <#
+        .SYNOPSIS
+            workspace#49 review M2. How many entries of the field operator roster have a non-blank operatorId and hold -Role,
+            read the way FieldOperatorRoleRoster does (keys in any case, role codes ordinal). 0 for a missing, unreadable or
+            empty roster: the server reads all three as "nobody holds it".
+    #>
+    [CmdletBinding()]
+    [OutputType([int])]
+    param(
+        [AllowNull()][AllowEmptyString()][string] $RosterText,
+        [Parameter(Mandatory = $true)][string] $Role
+    )
+    if ([string]::IsNullOrWhiteSpace($RosterText)) { return 0 }
+    try { $document = ConvertFrom-Json -InputObject $RosterText -AsHashtable -Depth 12 -ErrorAction Stop } catch { return 0 }
+    $count = 0
+    foreach ($entry in @(Get-ConfigurationValue $document 'operators')) {
+        $operatorId = Get-ConfigurationValue $entry 'operatorId'
+        if ($operatorId -isnot [string] -or [string]::IsNullOrWhiteSpace($operatorId)) { continue }
+        if (@(@(Get-ConfigurationValue $entry 'roles') | Where-Object { $_ -is [string] -and $_ -ceq $Role }).Count -gt 0) { $count++ }
+    }
+    return $count
 }
 
 function Get-ParallelGateClosingSteps {
@@ -3992,6 +4025,7 @@ Export-ModuleMember -Function @(
     'Test-ParallelEmergencyReleaseEnabled'
     'Resolve-ParallelEmergencyReleaseCredential'
     'Format-ParallelEmergencyReleaseLine'
+    'Get-ParallelRosterRoleHolderCount'
     'Get-ParallelOnboardSafetyCredentialSlot'
     'Get-ParallelRollbackTargetRefusal'
     'Resolve-ParallelOnboardSafetyCredential'

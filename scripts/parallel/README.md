@@ -418,7 +418,7 @@ REQ-0302 要求地图与站点目录的两个参数先批准再投产：同步�
   `EmergencyStopRelease:enabled` 和两个固定变量名 `CONTROL_SERVER_V2_EMERGENCY_RELEASE_CREDENTIAL`（无货）、`CONTROL_SERVER_V2_EMERGENCY_LOADED_RELEASE_CREDENTIAL`（有货）。
   这一节可以不写（等于关，旧定义照旧能装），但 `productionCutover.phase` 为 `production` 的定义必须打开（`EMERGENCY_STOP_RELEASE_REQUIRED_IN_PRODUCTION`）。
   打开时两把凭据都要有（`deploy-config.json` 的 `emergencyReleaseCredential`／`emergencyLoadedReleaseCredential`，没有就沿用服务里的），且不能同值，
-  否则装之前就拒绝；装完打印 `EMERGENCY_STOP_RELEASE=enabled=... credential=... loadedCredential=...` 给 19 号核对。凭据由控制端
+  否则装之前就拒绝；装完打印 `EMERGENCY_STOP_RELEASE=enabled=... credential=... loadedCredential=... loadedConfirmers=<名单里持 R-13 的人数>` 给 19 号核对（生产段打开而人数为 0，19 号报红）；环境变量层的 `EmergencyStopRelease__...` 同 `JourneyRuntime__...` 一样在改动之前拒绝。凭据由控制端
   `Set-ControlServerSecret.ps1 -NewEmergencyReleaseCredential` 生成，谁用、怎么用见 8005-workspace `remote-ops/factory-server/docs/wire-to-gate-parallel-cd.md` 第 7.3 节。
 - 首装、升级、回滚三条路径都跑同一个 `Set-InstanceConfiguration`：合并覆盖层并回读核对覆盖层写的**每一个**值；把凭据写进服务的
   `Environment`；名单文件不存在就建一个空名单（`{"operators":[]}`，服务端读作「没人有权限」，安全方向），已有的绝不覆盖。

@@ -6372,15 +6372,39 @@ Invoke-SourceCase 'release: the configuration step writes both credentials into 
             $section['enabled'] -eq $true -and $section['loadedCredentialEnvironmentVariable'] -ceq $loadedVariable)
         Detail = "emergency entries: $($e -join ' | '); lost: $($lost -join ', '); on disk: $(ConvertTo-Json -InputObject $section -Compress)" }
 }
+$twoAdmins = '{"operators":[{"operatorId":"OP-1","roles":["R-13"]},{"operatorId":"OP-2","roles":["R-11","R-13"]},{"operatorId":"OP-3","roles":["R-11"]}]}'
 foreach ($case in @(
-        @{ Definition = $releaseOn; Names = @($releaseVariable, $loadedVariable); Expect = 'EMERGENCY_STOP_RELEASE=enabled=true credential=set loadedCredential=set' }
-        @{ Definition = $releaseOn; Names = @($releaseVariable); Expect = 'EMERGENCY_STOP_RELEASE=enabled=true credential=set loadedCredential=unset' }
-        @{ Definition = $releaseOff; Names = @(); Expect = 'EMERGENCY_STOP_RELEASE=enabled=false credential=unset loadedCredential=unset' }
-        @{ Definition = (Set-ReleaseSection $baseline $null -Remove); Names = @($releaseVariable, $loadedVariable); Expect = 'EMERGENCY_STOP_RELEASE=enabled=false credential=set loadedCredential=set' })) {
+        @{ Definition = $releaseOn; Names = @($releaseVariable, $loadedVariable); Roster = $twoAdmins; Expect = 'EMERGENCY_STOP_RELEASE=enabled=true credential=set loadedCredential=set loadedConfirmers=2' }
+        @{ Definition = $releaseOn; Names = @($releaseVariable); Roster = $twoAdmins; Expect = 'EMERGENCY_STOP_RELEASE=enabled=true credential=set loadedCredential=unset loadedConfirmers=2' }
+        @{ Definition = $releaseOn; Names = @($releaseVariable, $loadedVariable); Roster = '{"operators":[]}'; Expect = 'EMERGENCY_STOP_RELEASE=enabled=true credential=set loadedCredential=set loadedConfirmers=0' }
+        @{ Definition = $releaseOff; Names = @(); Roster = $null; Expect = 'EMERGENCY_STOP_RELEASE=enabled=false credential=unset loadedCredential=unset loadedConfirmers=0' }
+        @{ Definition = (Set-ReleaseSection $baseline $null -Remove); Names = @($releaseVariable, $loadedVariable); Roster = $twoAdmins; Expect = 'EMERGENCY_STOP_RELEASE=enabled=false credential=set loadedCredential=set loadedConfirmers=2' })) {
     Invoke-SourceCase "release result line: $($case.Expect)" {
-        $got = Format-ParallelEmergencyReleaseLine -Definition $case.Definition -EnvironmentNames $case.Names
+        $got = Format-ParallelEmergencyReleaseLine -Definition $case.Definition -EnvironmentNames $case.Names -RosterText $case.Roster
         @{ Ok = ($got -ceq $case.Expect); Detail = "got '$got'" }
     }
+}
+# Review M2: the loaded entry accepts R-13 alone (LoadedEmergencyStopRelease.AllowedRoles), read as FieldOperatorRoleRoster reads it.
+foreach ($case in @(
+        @{ Name = 'two R-13 holders among three'; Roster = $twoAdmins; Expect = 2 }
+        @{ Name = 'PascalCase keys (the server reads them case-insensitively)'; Roster = '{"Operators":[{"OperatorId":"OP-1","Roles":["R-13"]}]}'; Expect = 1 }
+        @{ Name = 'a lower-case role code (the server compares ordinally)'; Roster = '{"operators":[{"operatorId":"OP-1","roles":["r-13"]}]}'; Expect = 0 }
+        @{ Name = 'R-13 without an operatorId'; Roster = '{"operators":[{"operatorId":" ","roles":["R-13"]},{"roles":["R-13"]}]}'; Expect = 0 }
+        @{ Name = 'only R-11'; Roster = '{"operators":[{"operatorId":"OP-1","roles":["R-11"]}]}'; Expect = 0 }
+        @{ Name = 'the empty roster the installer creates'; Roster = '{"operators":[]}'; Expect = 0 }
+        @{ Name = 'unreadable JSON'; Roster = '{"operators":[{'; Expect = 0 }
+        @{ Name = 'no roster file'; Roster = $null; Expect = 0 })) {
+    Invoke-SourceCase "release R-13 count: $($case.Name) -> $($case.Expect)" {
+        $got = Get-ParallelRosterRoleHolderCount -RosterText $case.Roster -Role 'R-13'
+        @{ Ok = ($got -eq $case.Expect); Detail = "got $got" }
+    }
+}
+# Review L5: an environment layer above the file could point the loaded entry at the MVP's variable or turn the entries off.
+Invoke-SourceCase 'release environment override: EmergencyStopRelease keys count like JourneyRuntime ones, ignoring case, prefixes included' {
+    $found = @(Get-ParallelJourneyRuntimeEnvironmentOverride -ServiceEnvironment @('EmergencyStopRelease__LoadedCredentialEnvironmentVariable=CONTROL_SERVER_EMERGENCY_LOADED_RELEASE_CREDENTIAL', 'EmergencyStopReleaseX=1') `
+            -MachineEnvironment @('DOTNET_emergencystoprelease:Enabled=false', 'CONTROL_SERVER_V2_EMERGENCY_RELEASE_CREDENTIAL=x'))
+    $expected = 'service EmergencyStopRelease__LoadedCredentialEnvironmentVariable|machine DOTNET_emergencystoprelease:Enabled'
+    @{ Ok = (($found -join '|') -ceq $expected); Detail = "got: $($found -join '|')" }
 }
 Invoke-SourceCase 'release: the installer resolves the two credentials before anything changes, hands them to every Set-InstanceConfiguration call, and prints the line' {
     $installer = Get-Content -Raw -LiteralPath (Join-Path $PSScriptRoot 'Install-ParallelInstanceLocal.ps1')
@@ -6389,7 +6413,7 @@ Invoke-SourceCase 'release: the installer resolves the two credentials before an
     $calls = [regex]::Matches($installer, 'Set-InstanceConfiguration -FaultRecoveryCredential [^\r\n]*').Value
     $withRelease = @($calls | Where-Object { $_.Contains('-EmergencyReleaseCredentials $emergencyReleaseCredentials') })
     @{ Ok = ($resolveAt -gt 0 -and $resolveAt -lt $firstChange -and $calls.Count -ge 2 -and $withRelease.Count -eq $calls.Count -and
-            $installer.Contains('Format-ParallelEmergencyReleaseLine'))
+            $installer.Contains('Format-ParallelEmergencyReleaseLine -Definition $definition -EnvironmentNames $populatedNames -RosterText $rosterText'))
         Detail = "resolved at $resolveAt, first change at $firstChange; calls $($calls.Count), with the credentials $($withRelease.Count)" }
 }
 

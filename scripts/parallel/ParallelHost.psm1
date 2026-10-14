@@ -991,8 +991,8 @@ function Invoke-ParallelInstanceConfigurationStep {
     $overrides = @(Get-ParallelJourneyRuntimeEnvironmentOverride -ServiceEnvironment @(& $Actions.GetEnvironment) -MachineEnvironment @(& $Actions.GetMachineEnvironment))
     if ($overrides.Count -gt 0) {
         throw ("JOURNEY_RUNTIME_ENVIRONMENT_OVERRIDE (nothing was changed, the service was not restarted): $($overrides -join ', ') " +
-            'set JourneyRuntime or MapStationCatalog above appsettings.Production.json: the journey runtime could not be held off for ' +
-            'the read-back, and the approved catalog values would not be the definition''s (control-server#531). ' +
+            'set JourneyRuntime, EmergencyStopRelease or MapStationCatalog above appsettings.Production.json: the journey runtime could not be held off for ' +
+            'the read-back, and the approved catalog values or the release entries would not be the definition''s (control-server#531, workspace#49). ' +
             'Remove the variable(s), then install again.')
     }
 
