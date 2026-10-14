@@ -1,3 +1,7 @@
+using System.Text.Json;
+using ControlServer.Infrastructure.Persistence;
+using Microsoft.EntityFrameworkCore;
+
 namespace ControlServer.Host.Runtime;
 
 /// <summary>
@@ -32,4 +36,52 @@ public static class ManualCarryAlarms
         StationTimeoutAnchorNotReleasable,
         DeterminateLoadFailureNeedsManual,
     };
+
+    /// <summary>
+    /// 暂存这一行告警，不保存：它与终结同一次保存落库，崩在中间不会留下「需求终结了、却没人知道」。同一需求同一个码已有一行时重开它。
+    /// </summary>
+    public static async Task StageAsync(
+        ControlServerDbContext dbContext,
+        string demandId,
+        string transportDemandKey,
+        string reasonCode,
+        object detail,
+        DateTimeOffset raisedAt,
+        CancellationToken cancellationToken)
+    {
+        ArgumentNullException.ThrowIfNull(dbContext);
+        ArgumentException.ThrowIfNullOrWhiteSpace(demandId);
+        ArgumentException.ThrowIfNullOrWhiteSpace(transportDemandKey);
+        if (!All.Contains(reasonCode))
+        {
+            throw new ArgumentOutOfRangeException(nameof(reasonCode), reasonCode, "Not a manual-carry alarm code.");
+        }
+        string detailJson = JsonSerializer.Serialize(detail, DetailSerializerOptions);
+        StructuralDispatchBlockRow? row = await dbContext.Set<StructuralDispatchBlockRow>()
+            .SingleOrDefaultAsync(candidate => candidate.DemandId == demandId && candidate.ReasonCode == reasonCode, cancellationToken)
+            .ConfigureAwait(false);
+        if (row is null)
+        {
+            dbContext.Set<StructuralDispatchBlockRow>().Add(new StructuralDispatchBlockRow
+            {
+                DemandId = demandId,
+                ReasonCode = reasonCode,
+                TransportDemandKey = transportDemandKey,
+                FirstRaisedAt = raisedAt,
+                LastSeenAt = raisedAt,
+                DetailJson = detailJson
+            });
+            return;
+        }
+        row.TransportDemandKey = transportDemandKey;
+        row.LastSeenAt = raisedAt;
+        row.DetailJson = detailJson;
+        if (row.ClearedAt is not null)
+        {
+            row.FirstRaisedAt = raisedAt;
+            row.ClearedAt = null;
+        }
+    }
+
+    private static readonly JsonSerializerOptions DetailSerializerOptions = new(JsonSerializerDefaults.Web);
 }

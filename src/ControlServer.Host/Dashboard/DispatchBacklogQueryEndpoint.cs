@@ -1,4 +1,5 @@
 using ControlServer.Application;
+using ControlServer.Host.Runtime;
 using ControlServer.Host.Runtime.Dispatch;
 using ControlServer.Host.Runtime.Release;
 using ControlServer.Infrastructure.Persistence;
@@ -115,6 +116,15 @@ internal sealed class DispatchBacklogQueryEndpoint : IDashboardQueryEndpoint
                 "同一份 MES 快照里这个批次同时命中了不止一种任务类型，这个批次的需求都先不派，请到 MES 核对数据",
             [DemandReleaseReasons.Released] =
                 "这条需求已从原来的车上释放，正在等改派给别的车",
+            // control-server#703：站点超时不再静默丢单。放回的是正常调度结论；下面三条是人工搬运告警，挂在结构性阻断里，MES 关单后自动清除。
+            [DemandJourneyLookup.ReleasedAtStationDeadlineReason] =
+                "车到了取货站，但离站期限内没人录入条码，这条需求已放回待派，会重新派车（同一条需求放回次数有上限）",
+            [ManualCarryAlarms.StationTimeoutRedispatchLimitReached] =
+                "这条需求车已去过几次、每次都超时没人录入，已达放回次数上限，系统不再派车；货还在机台上，请人工搬运或在 MES 处理，MES 关单后告警自动消失",
+            [ManualCarryAlarms.StationTimeoutAnchorNotReleasable] =
+                "这条需求在取货站超时没人录入，但它与同车其他需求绑在同一趟里无法单独放回，系统不再派车；货还在机台上，请人工搬运或在 MES 处理",
+            [ManualCarryAlarms.DeterminateLoadFailureNeedsManual] =
+                "这条需求装货失败（期限到时仓位已锁好），部分花篮可能已在车上，系统不再派车；请到车上和机台核对货物去向并人工处理，MES 关单后告警自动消失",
             // 批次8-20（control-server#391，REQ-0204）：公共站点同时只由一台车占用或预占。都是正常调度的结论，那辆车离开后再派。
             [DispatchReasonCodes.FixedTaskStationReservedByOtherVehicle] =
                 "这条需求的公共站点（如派工待送站）已被另一台车预占、正在前往，等它到站并离开后再派",

@@ -517,21 +517,26 @@ public sealed class DemandReleaseService(
     /// 派车轮次与孤儿检查按这个原因码认它（<see cref="DemandJourneyLookup.ReleasedForRedispatch"/>）。control-server#299 的故障人工清除
     /// 曾经也用它释放无货的需求；control-server#318 起清除不再释放（留在本车重建），这里只剩释放服务一个调用方。
     /// </remarks>
+    /// <param name="reason">
+    /// 写在归属行与积压行上的原因。默认是释放服务自己的 <see cref="DemandReleaseReasons.Released"/>；站点超时放回写
+    /// <see cref="DemandJourneyLookup.ReleasedAtStationDeadlineReason"/>（control-server#703），派车读口两个都认，单列只为计数。
+    /// </param>
     internal static async Task StageReleasedMembershipAsync(
         ControlServerDbContext dbContext,
         JourneyDemandRow membership,
         DateTimeOffset now,
-        CancellationToken cancellationToken)
+        CancellationToken cancellationToken,
+        string reason = DemandReleaseReasons.Released)
     {
         membership.RemovedAt = now;
-        membership.RemovalReason = DemandReleaseReasons.Released;
+        membership.RemovalReason = reason;
         JourneyBacklogRow? backlog = await dbContext.JourneyBacklog
             .SingleOrDefaultAsync(row => row.DemandId == membership.DemandId, cancellationToken).ConfigureAwait(false);
         if (backlog is not null)
         {
             // CreatedAt 不动：等待年龄从它算（7-09），释放不让一条需求重新排到队尾。
             backlog.AcceptedAt = null;
-            backlog.ReasonCode = DemandReleaseReasons.Released;
+            backlog.ReasonCode = reason;
             backlog.LastSeenAt = now;
         }
     }

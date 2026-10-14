@@ -90,8 +90,19 @@ public sealed class StructuralDispatchBlockSink(
         // round. The loop below leaves it alone too -- it is still in AcceptedDemandIds, which is what stops the
         // round drawing any conclusion about a demand one of its vehicles was busy with.
         HashSet<string> settled = new(StringComparer.Ordinal);
+        //
+        // 人工搬运告警（control-server#703，ManualCarryAlarms）不是任何判据的结论，它挂的需求恒已受理：只在需求离开目录时清——离开目录说明
+        // MES 那边已经关了这件活。按受理清掉它，告警挂上的下一轮就没了，等于没告警。
         foreach (StructuralDispatchBlock block in uncleared)
         {
+            if (ManualCarryAlarms.All.Contains(block.ReasonCode))
+            {
+                if (!candidates.ContainsKey(block.DemandId))
+                {
+                    await ClearAsync(block, now, cancellationToken).ConfigureAwait(false);
+                }
+                continue;
+            }
             if (!candidates.ContainsKey(block.DemandId) ||
                 (round.AcceptedDemandIds.Contains(block.DemandId) &&
                  !round.ClaimsIntakeRefused.Contains(block.DemandId)))
@@ -131,7 +142,9 @@ public sealed class StructuralDispatchBlockSink(
             }
 
             StructuralDispatchBlock[] existing =
-                settled.Contains(demandId) ? [] : [.. uncleared.Where(block => block.DemandId == demandId)];
+                settled.Contains(demandId)
+                    ? []
+                    : [.. uncleared.Where(block => block.DemandId == demandId && !ManualCarryAlarms.All.Contains(block.ReasonCode))];
             DemandJudgement judgement = await JudgeAsync(
                 verdicts, everyVehicleFinished, rosterAgvIds, capacityByGroup, cancellationToken).ConfigureAwait(false);
 

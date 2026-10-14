@@ -242,6 +242,7 @@ public sealed class StationTimeoutRedispatchTests
     /// 操作员主动取消的三个码不受本票影响：照旧终结、按业务键抑制，需求不进「已释放待改派」。
     /// </summary>
     [Theory]
+    [Trait("IntegrationSlice", "FP-IS-02")]
     [InlineData("CANCELLED_BY_OPERATOR")]
     [InlineData("CANCELLED_BY_LOAD_COMPENSATION")]
     [InlineData("TERMINATED_BY_FAULT_CARGO_HANDOFF")]

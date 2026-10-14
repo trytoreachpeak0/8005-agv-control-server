@@ -1202,6 +1202,13 @@ public sealed class OnboardRecoveryCoordinator(
             : await CancellationBeforeSublotAllowedAsync(demandId, agvId, cancellationToken).ConfigureAwait(false);
         AcceptedDemandRow? demand = authorized ? null : await dbContext.AcceptedDemands.AsNoTracking()
             .SingleOrDefaultAsync(row => row.DemandId == demandId, cancellationToken).ConfigureAwait(false);
+        // 需求还开着、却已不在这辆车的旅程上：被放回待派了（站点超时 control-server#703、持货截断 control-server#290）。车手里那一版清单
+        // 同样过时，与需求已终结一样答 WORKLIST_REVISION_STALE。
+        bool leftThisVehicle = demand is { Status: not (DemandExecutionStatus.Cancelled or DemandExecutionStatus.Succeeded) } &&
+                               await dbContext.Set<JourneyDemandRow>().AsNoTracking().AnyAsync(
+                                   row => row.DemandId == demandId && row.RemovedAt != null, cancellationToken).ConfigureAwait(false) &&
+                               !await DemandJourneyLookup.JourneyOf(dbContext, demandId).AsNoTracking()
+                                   .AnyAsync(row => row.AgvId == agvId, cancellationToken).ConfigureAwait(false);
         if (authorized)
         {
             await UpsertSimpleWorkflowAsync(
@@ -1217,7 +1224,7 @@ public sealed class OnboardRecoveryCoordinator(
             slots = Array.Empty<int>(),
             problem = authorized ? null : RefusedCancellationProblem(
                 demand, "payload.slotOperationAttemptId",
-                "Load cancellation before a sublot entry is not allowed in the current state.")
+                "Load cancellation before a sublot entry is not allowed in the current state.", leftThisVehicle)
         });
     }
 
@@ -1232,15 +1239,16 @@ public sealed class OnboardRecoveryCoordinator(
     /// 服务端状态」，把操作员引去查三样都没问题的东西。
     /// </para>
     /// <para>
-    /// <b>判据是「需求已终结」，不是「期限到了」或阶段。</b>车还在路上时这一站还没开始，谈不上过时，仍是
+    /// <b>判据是「需求已终结」（或已被放回待派、不在这辆车上了，control-server#703），不是「期限到了」或阶段。</b>车还在路上时这一站还没开始，谈不上过时，仍是
     /// <c>ACTION_NOT_ALLOWED_IN_STATE</c>；需求还开着而这一刻不能取消（已下装货命令、已有一条取消开着）同样如此。
     /// </para>
     /// </remarks>
-    private static object RefusedCancellationProblem(AcceptedDemandRow? demand, string fieldPath, string displayMessage) =>
-        demand?.Status is DemandExecutionStatus.Cancelled or DemandExecutionStatus.Succeeded
+    private static object RefusedCancellationProblem(
+        AcceptedDemandRow? demand, string fieldPath, string displayMessage, bool leftThisVehicle = false) =>
+        leftThisVehicle || demand?.Status is DemandExecutionStatus.Cancelled or DemandExecutionStatus.Succeeded
             ? Problem(
                 ServerReasonCodes.WorklistRevisionStale, fieldPath,
-                "The worklist this cancellation was made from is no longer current: the demand has already ended.")
+                "The worklist this cancellation was made from is no longer current: the demand has already ended or left this vehicle.")
             : Problem(ServerReasonCodes.ActionNotAllowedInState, fieldPath, displayMessage);
 
     /// <summary>

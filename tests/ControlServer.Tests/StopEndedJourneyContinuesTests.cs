@@ -208,10 +208,11 @@ public sealed class StopEndedJourneyContinuesTests
         long[] revisions = [.. (await WorklistsAsync(fixture)).Select(item => item.Revision)];
         Assert.Equal(revisions.Distinct().Count(), revisions.Length);
 
-        // 两种多占的版都记在同一列上：重填一次、空清单一次。放在最后，是为了让上面那条行为判据先说话。
+        // 多占的版都记在同一列上：重填一次、空清单一次，再加放回一条补的一版（control-server#703：释放让这个停靠少了一条归属，
+        // 补上它，号才不往回缩）。放在最后，是为了让上面那条行为判据先说话。
         JourneyStopRow afterEnd = await fixture.Context.Set<JourneyStopRow>().AsNoTracking()
             .SingleAsync(row => row.StopId == secondPickup.StopId, token);
-        Assert.Equal(2, afterEnd.WorklistRefills);
+        Assert.Equal(3, afterEnd.WorklistRefills);
     }
 
     /// <summary>
@@ -576,7 +577,9 @@ public sealed class StopEndedJourneyContinuesTests
 
         Assert.Equal(1, interleaver.Fired);
         JourneyRuntimeRow closed = await JourneyOfAsync(fixture, FirstDemandId);
-        Assert.Equal((JourneyRuntimeStage.Completed, "CANCELLED_BY_STATION_TIMEOUT"), (closed.Stage, closed.BlockReasonCode));
+        // control-server#703：需求放回待派，收尾原因是放回的那个码。
+        Assert.Equal(
+            (JourneyRuntimeStage.Completed, DemandJourneyLookup.ReleasedAtStationDeadlineReason), (closed.Stage, closed.BlockReasonCode));
         Assert.Equal(0, await fixture.Context.StationOperations.CountAsync(token));
 
         JsonElement rejection = await RejectionOfAsync(fixture, InterleavedSubmissionId);
@@ -601,10 +604,10 @@ public sealed class StopEndedJourneyContinuesTests
         await using RuntimeFixture fixture = await RuntimeFixture.CreateAsync();
         JourneyStopRow secondPickup = await EndTheSecondPickupByItsDeadlineAsync(fixture, thirdAtTheSecondPickup: true);
 
-        // 前提：丙与乙挂在同一个停靠上，两条都被这一次期限终结。
+        // 前提：丙与乙挂在同一个停靠上，两条都被这一次期限放回待派（control-server#703 之前是终结）。
         JourneyDemandRow third = await MembershipAsync(fixture, ThirdDemandId);
         Assert.Equal(secondPickup.StopId, third.PickupStopId);
-        Assert.Equal(JourneyDemandStatuses.Terminated, third.Status);
+        Assert.Equal(DemandJourneyLookup.ReleasedAtStationDeadlineReason, third.RemovalReason);
 
         Snapshot[] atStop = [.. (await WorklistsAsync(fixture))
             .Where(item => item.Payload.GetProperty("stationId").GetString() == secondPickup.StationId)
@@ -1043,9 +1046,10 @@ public sealed class StopEndedJourneyContinuesTests
             interleaver.Arm(fixture, InterleavedSubmissionId, entry);
         }
         await TickAndRunAsync(fixture);
+        // control-server#703 起站点期限不终结，把没录入的那条放回待派：归属标移除，清单号的守恒由补版数承担，这里各条断言照旧成立。
         Assert.Equal(
-            JourneyDemandStatuses.Terminated,
-            (await MembershipAsync(fixture, SecondDemandId)).Status);
+            DemandJourneyLookup.ReleasedAtStationDeadlineReason,
+            (await MembershipAsync(fixture, SecondDemandId)).RemovalReason);
         return secondPickup;
     }
 

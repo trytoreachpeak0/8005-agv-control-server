@@ -400,6 +400,8 @@ public sealed class JourneyRuntimeWorkerTests
     public async Task AnUnscannedPickupEndsAtTheStationDeadlineInOneSaveAndReleasesTheVehicle()
     {
         await using RuntimeFixture fixture = await RuntimeFixture.CreateAsync();
+        // control-server#703：这条测的是站点期限的终结尾巴，那条路今天只在放回次数用完时走（终结并告警）。上限设 0，让第一次期限就走它；放回那一支在 StationTimeoutRedispatchTests。
+        fixture.Options.StationTimeoutRedispatchLimit = 0;
         fixture.Options.StationDepartureWaitTimeout = TimeSpan.FromSeconds(10);
         fixture.Catalog.Set(fixture.Demand(
             "10000000-0000-4000-8000-000000000001", "SUBLOT-001", createdAt: Now.AddMinutes(-10)));
@@ -456,6 +458,8 @@ public sealed class JourneyRuntimeWorkerTests
         string? reasonCode)
     {
         await using RuntimeFixture fixture = await RuntimeFixture.CreateAsync();
+        // control-server#703：这条测的是站点期限的终结尾巴，那条路今天只在放回次数用完时走（终结并告警）。上限设 0，让第一次期限就走它；放回那一支在 StationTimeoutRedispatchTests。
+        fixture.Options.StationTimeoutRedispatchLimit = 0;
         fixture.Options.StationDepartureWaitTimeout = TimeSpan.FromSeconds(10);
         fixture.Catalog.Set(fixture.Demand(
             "10000000-0000-4000-8000-000000000001", "SUBLOT-001", createdAt: Now.AddMinutes(-10)));
@@ -522,6 +526,8 @@ public sealed class JourneyRuntimeWorkerTests
     public async Task AnEntryPersistedAfterTheStationTimeoutCommittedStartsNoLoad()
     {
         await using RuntimeFixture fixture = await RuntimeFixture.CreateAsync();
+        // control-server#703：这条测的是站点期限的终结尾巴，那条路今天只在放回次数用完时走（终结并告警）。上限设 0，让第一次期限就走它；放回那一支在 StationTimeoutRedispatchTests。
+        fixture.Options.StationTimeoutRedispatchLimit = 0;
         fixture.Options.StationDepartureWaitTimeout = TimeSpan.FromSeconds(10);
         fixture.Catalog.Set(fixture.Demand(
             "10000000-0000-4000-8000-000000000001", "SUBLOT-001", createdAt: Now.AddMinutes(-10)));
@@ -556,6 +562,8 @@ public sealed class JourneyRuntimeWorkerTests
     public async Task AfterAStationTimeoutTheVehicleTakesTheNextDemandAndTheCancelledOneIsNotDispatchedAgain()
     {
         await using RuntimeFixture fixture = await RuntimeFixture.CreateAsync();
+        // control-server#703：这条测的是站点期限的终结尾巴，那条路今天只在放回次数用完时走（终结并告警）。上限设 0，让第一次期限就走它；放回那一支在 StationTimeoutRedispatchTests。
+        fixture.Options.StationTimeoutRedispatchLimit = 0;
         fixture.Options.StationDepartureWaitTimeout = TimeSpan.FromSeconds(10);
         AcceptedDemandSnapshot timedOut = fixture.Demand(
             "10000000-0000-4000-8000-000000000001", "SUBLOT-001", createdAt: Now.AddMinutes(-10));
@@ -597,6 +605,8 @@ public sealed class JourneyRuntimeWorkerTests
     public async Task TheStationDeadlineDoesNotEndTheStopWhileTheVehicleIsOffAir()
     {
         await using RuntimeFixture fixture = await RuntimeFixture.CreateAsync();
+        // control-server#703：这条测的是站点期限的终结尾巴，那条路今天只在放回次数用完时走（终结并告警）。上限设 0，让第一次期限就走它；放回那一支在 StationTimeoutRedispatchTests。
+        fixture.Options.StationTimeoutRedispatchLimit = 0;
         fixture.Options.StationDepartureWaitTimeout = TimeSpan.FromSeconds(10);
         fixture.Options.MaximumEvidenceAge = TimeSpan.FromSeconds(5);
         fixture.Catalog.Set(fixture.Demand(
@@ -683,6 +693,8 @@ public sealed class JourneyRuntimeWorkerTests
     public async Task ADisconnectVoidsTheSublotWaitAndItRefillsInFullOnceTheSessionIsReadyAgain()
     {
         await using RuntimeFixture fixture = await RuntimeFixture.CreateAsync();
+        // control-server#703：这条测的是站点期限的终结尾巴，那条路今天只在放回次数用完时走（终结并告警）。上限设 0，让第一次期限就走它；放回那一支在 StationTimeoutRedispatchTests。
+        fixture.Options.StationTimeoutRedispatchLimit = 0;
         fixture.Options.StationDepartureWaitTimeout = TimeSpan.FromSeconds(10);
         fixture.Catalog.Set(fixture.Demand(
             "10000000-0000-4000-8000-000000000001", "SUBLOT-001", createdAt: Now.AddMinutes(-10)));

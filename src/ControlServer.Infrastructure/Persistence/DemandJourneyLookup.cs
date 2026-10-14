@@ -50,7 +50,7 @@ public static class DemandJourneyLookup
 
     /// <summary>
     /// 已释放、等着改派的需求：没终结、没有生效的归属、而且<b>最近一次</b>移除的原因是 <see cref="ReleasedForRedispatchReason"/>
-    /// （批次7-10，control-server#215）。
+    /// 或 <see cref="ReleasedAtStationDeadlineReason"/>（批次7-10，control-server#215；control-server#703）。
     /// </summary>
     /// <remarks>
     /// <para>
@@ -75,7 +75,8 @@ public static class DemandJourneyLookup
             memberships.Any(released =>
                 released.DemandId == demand.DemandId &&
                 released.RemovedAt != null &&
-                released.RemovalReason == ReleasedForRedispatchReason &&
+                (released.RemovalReason == ReleasedForRedispatchReason ||
+                 released.RemovalReason == ReleasedAtStationDeadlineReason) &&
                 !memberships.Any(later =>
                     later.DemandId == demand.DemandId && later.DispatchGeneration > released.DispatchGeneration)));
     }
