@@ -6200,6 +6200,12 @@ Write-Host 'Slot configuration readiness gate derived from the cutover phase (co
 
 $gateProduction = New-CutoverDefinition -Phase 'production'
 $gateTrial = New-CutoverDefinition -Phase 'trial'
+# For the read-back cases: the baseline with a productionCutover section, so the event Get-BindingReadBack fakes (no roster)
+# differs from the definition in the gate alone -- the cutover definitions above carry a three-car roster it does not log.
+$gateReadProduction = Copy-Definition $baseline
+$gateReadProduction['productionCutover'] = @{ approvalRecord = 'selftest'; phase = 'production' }
+$gateReadTrial = Copy-Definition $baseline
+$gateReadTrial['productionCutover'] = @{ approvalRecord = 'selftest'; phase = 'trial' }
 foreach ($case in @(
         @{ Name = 'production'; Definition = $gateProduction; Mode = 'Enforcing' }
         @{ Name = 'trial'; Definition = $gateTrial; Mode = 'Off' }
@@ -6229,12 +6235,12 @@ Invoke-SourceCase 'gate: an environment layer setting it is an override, with or
     @{ Ok = (($found -join '|') -ceq $expected); Detail = "got: $($found -join '|')" }
 }
 foreach ($case in @(
-        @{ Name = 'production, bound Enforcing -- pass'; Definition = $gateProduction; Bound = (New-BoundBinding @{ SlotConfigurationReadinessGate = 'Enforcing' }); Action = 'Pass'; Says = $null }
-        @{ Name = 'production, bound Off -- stop and refuse'; Definition = $gateProduction; Bound = (New-BoundBinding @{ SlotConfigurationReadinessGate = 'Off' }); Action = 'StopServiceAndRefuse'; Says = "slotConfigurationReadinessGate bound 'Off', the definition says 'Enforcing'" }
-        @{ Name = 'production, a package older than #672 (logs none of the binding) -- stop and refuse: it does not enforce the gate'; Definition = $gateProduction; Bound = '<absent>'; Action = 'StopServiceAndRefuse'; Says = "slotConfigurationReadinessGate bound 'not logged', the definition says 'Enforcing'" }
-        @{ Name = 'trial, bound Off -- pass'; Definition = $gateTrial; Bound = (New-BoundBinding @{ SlotConfigurationReadinessGate = 'Off' }); Action = 'Pass'; Says = $null }
-        @{ Name = 'trial, bound Enforcing -- stop and refuse (every car would stop taking work)'; Definition = $gateTrial; Bound = (New-BoundBinding @{ SlotConfigurationReadinessGate = 'Enforcing' }); Action = 'StopServiceAndRefuse'; Says = "slotConfigurationReadinessGate bound 'Enforcing', the definition says 'Off'" }
-        @{ Name = 'trial, a package older than #672 -- pass, so the trial''s shipped package and a rollback to it stay deployable'; Definition = $gateTrial; Bound = '<absent>'; Action = 'Pass'; Says = $null })) {
+        @{ Name = 'production, bound Enforcing -- pass'; Definition = $gateReadProduction; Bound = (New-BoundBinding @{ SlotConfigurationReadinessGate = 'Enforcing' }); Action = 'Pass'; Says = $null }
+        @{ Name = 'production, bound Off -- stop and refuse'; Definition = $gateReadProduction; Bound = (New-BoundBinding @{ SlotConfigurationReadinessGate = 'Off' }); Action = 'StopServiceAndRefuse'; Says = "slotConfigurationReadinessGate bound 'Off', the definition says 'Enforcing'" }
+        @{ Name = 'production, a package older than #672 (logs none of the binding) -- stop and refuse: it does not enforce the gate'; Definition = $gateReadProduction; Bound = '<absent>'; Action = 'StopServiceAndRefuse'; Says = "slotConfigurationReadinessGate bound 'not logged', the definition says 'Enforcing'" }
+        @{ Name = 'trial, bound Off -- pass'; Definition = $gateReadTrial; Bound = (New-BoundBinding @{ SlotConfigurationReadinessGate = 'Off' }); Action = 'Pass'; Says = $null }
+        @{ Name = 'trial, bound Enforcing -- stop and refuse (every car would stop taking work)'; Definition = $gateReadTrial; Bound = (New-BoundBinding @{ SlotConfigurationReadinessGate = 'Enforcing' }); Action = 'StopServiceAndRefuse'; Says = "slotConfigurationReadinessGate bound 'Enforcing', the definition says 'Off'" }
+        @{ Name = 'trial, a package older than #672 -- pass, so the trial''s shipped package and a rollback to it stay deployable'; Definition = $gateReadTrial; Bound = '<absent>'; Action = 'Pass'; Says = $null })) {
     Invoke-SourceCase "gate read-back: $($case.Name)" {
         $a = (Get-BindingReadBack $case.Definition $case.Bound).Action
         @{ Ok = ($a.Action -ceq $case.Action -and ($null -eq $case.Says -or (([string] $a.Message).Contains('EFFECTIVE_CONFIGURATION_MISMATCH') -and ([string] $a.Message).Contains($case.Says)))); Detail = "got: $(ConvertTo-Json $a -Compress)" }

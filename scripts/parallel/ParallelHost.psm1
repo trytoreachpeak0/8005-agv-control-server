@@ -989,7 +989,7 @@ function Invoke-ParallelInstanceConfigurationStep {
     $overrides = @(Get-ParallelJourneyRuntimeEnvironmentOverride -ServiceEnvironment @(& $Actions.GetEnvironment) -MachineEnvironment @(& $Actions.GetMachineEnvironment))
     if ($overrides.Count -gt 0) {
         throw ("JOURNEY_RUNTIME_ENVIRONMENT_OVERRIDE (nothing was changed, the service was not restarted): $($overrides -join ', ') " +
-            'set JourneyRuntime, MapStationCatalog or Governance:slotConfigurationReadinessGate above appsettings.Production.json: the ' +
+            'set JourneyRuntime, Governance:slotConfigurationReadinessGate or MapStationCatalog above appsettings.Production.json: the ' +
             'journey runtime could not be held off for the read-back, the approved catalog values would not be the definition''s ' +
             '(control-server#531), and the slot configuration gate would not be the phase''s (control-server#686). ' +
             'Remove the variable(s), then install again.')
