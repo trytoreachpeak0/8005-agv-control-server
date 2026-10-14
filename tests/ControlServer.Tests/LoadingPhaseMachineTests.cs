@@ -80,7 +80,7 @@ public sealed class LoadingPhaseMachineTests
         // ---- 第 5 条：持货期限 -------------------------------------------------------------------------
         { "deadline passed while waiting: timeout",
             Holding(Wait) with { PendingLoadsRemain = false, HoldingDeadlinePassed = true }, Closed, LoadingClosedReasons.CargoHoldingTimeout },
-        // 「到期时别的停靠上还有待装」不在这张表里，见 ADeadlinePassedWithLoadsPendingElsewhereClosesTodayPendingCs290。
+        // 「到期时别的停靠上还有待装」不在这张表里，见 ADeadlinePassedWithLoadsPendingElsewhereClosesAndTheEngineTruncatesThem。
         { "deadline passed with a load batch executing: not yet (ADR-cross-0057)",
             Holding(Loading) with { HoldingDeadlinePassed = true, LoadBatchInProgress = true }, Loading, null },
         { "deadline passed, batch executing, vehicle full: stays full until the batch closes",
@@ -124,21 +124,17 @@ public sealed class LoadingPhaseMachineTests
     }
 
     /// <summary>
-    /// <b>现行为，不是期望</b>：到期时别的停靠上还有待装，今天关为 <c>CLOSED</c>／<c>CARGO_HOLDING_TIMEOUT</c>。
+    /// 到期时别处还有没开始装的需求，照样关为 <c>CLOSED</c>／<c>CARGO_HOLDING_TIMEOUT</c>：那几条随后被截断（control-server#290）。
     /// </summary>
     /// <remarks>
     /// <para>
-    /// 审查 S1：到期之后车照样开往那个停靠去装（本票不截断停靠），车上收到的却是「已结束」，与 program#94 语义表对 CLOSED 的
-    /// 定义对不上。正确的形状取决于 cs#290 怎么实现 ADR-cross-0057 实施决定（三）的截断：截断了待装，这一格就对了；不截断，
-    /// 这一格该是 LOADING 直到装完。那张票定，不在本票。
-    /// </para>
-    /// <para>
-    /// 所以这一格单列、名字里写着 cs#290，而不放进上面那张「每条规则说什么」的表：放在表里，它就把现状钉成了规则，cs#290 的
-    /// 正确修法会被当成回归。cs#290 改它时，改这一条就够了。
+    /// 批次7-07 审查 S1 把这一格单列为「现行为」：那时到期之后车照样开往那个停靠去装，车上收到的却是「已结束」。cs#290 按
+    /// ADR-cross-0057 实施决定（三）截断了待装——引擎在关闭之后把没开始装的以 <c>CANCELLED_BY_STOP_COMPLETE</c> 终结、留空的停靠删掉
+    /// （<c>CargoHoldingTruncationTests</c>），这一格于是就是规则：不能改成 LOADING 直到装完，那等于持货不受期限约束。
     /// </para>
     /// </remarks>
     [Fact]
-    public void ADeadlinePassedWithLoadsPendingElsewhereClosesTodayPendingCs290()
+    public void ADeadlinePassedWithLoadsPendingElsewhereClosesAndTheEngineTruncatesThem()
     {
         LoadingPhaseMachine.Decision decision = LoadingPhaseMachine.Decide(
             Holding(Loading) with { HoldingDeadlinePassed = true });

@@ -25,9 +25,10 @@ namespace ControlServer.Host.Runtime;
 /// 这件事只会在车上显出来。
 /// </para>
 /// <para>
-/// <c>CANCELLED_BY_STOP_COMPLETE</c> 不在表里：它今天在 <c>src/</c> 里没有生产者（见
-/// <see cref="PickupStopTermination.KeySuppressingReasonCodes"/> 的注释），协议的七个取值里也没有与它对应的一项。谁产生它，谁回到这里
-/// 与协议一起定它说什么。
+/// <c>CANCELLED_BY_STOP_COMPLETE</c> 的唯一生产者是持货期限截断（control-server#290，ADR-cross-0057 实施决定（三））：期限到了，
+/// 本站还没开始装的需求被终结。协议的七个取值里没有「持货超时」，最近的是 <c>STATION_DEADLINE_EXPIRED</c>（车上写「本站因超时结束」），
+/// 说的正是车看到的事实——一个期限到了，本站就此结束。为它加一个取值是 breaking 的协议变更，不值得。<b>将来若操作员「本站装货完成」
+/// （UC-002）也产出这个码</b>，那一站是人结束的、不是超时，要回到这里与协议一起重定，不要沿用这一行。
 /// </para>
 /// </remarks>
 internal static class StopEndedReasons
@@ -40,6 +41,7 @@ internal static class StopEndedReasons
     {
         null => "COMPLETED",
         "CANCELLED_BY_STATION_TIMEOUT" => "STATION_DEADLINE_EXPIRED",
+        "CANCELLED_BY_STOP_COMPLETE" => "STATION_DEADLINE_EXPIRED",
         "CANCELLED_BY_OPERATOR" => "LOAD_CANCELLED",
         "CANCELLED_BY_LOAD_COMPENSATION" => "LOAD_COMPENSATED",
         "TERMINATED_BY_FAULT_CARGO_HANDOFF" => "CARGO_HANDED_OFF",

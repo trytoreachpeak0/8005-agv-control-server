@@ -153,7 +153,8 @@ internal sealed class CargoHoldingQueryEndpoint : IDashboardQueryEndpoint
     /// </summary>
     /// <remarks>
     /// 已结束的行车一离站就不列（审查 L3）：结束原因在车离站之前操作员已经看得到，车去卸货的路上一直挂着「已结束」只会把卡片占满。
-    /// 限度：持货超时关闭时还有别的装货停靠没装（cs#290 之前不截断），车开到下一个取货站时这一行会再出现，写的仍是持货超时。
+    /// 限度：cs#290 起持货超时截断没开始装的停靠，但车正开往的那一站在路上不可删（REQ-0197），车开到那里时这一行会再出现，写的仍是
+    /// 持货超时——那一站已经没有作业，车按离站等待离开。
     /// </remarks>
     private static bool InLoadingPhase(JourneyRuntimeRow journey, JourneyStopRow? current) =>
         journey.LoadingPhaseState is not (null or LoadingPhaseStates.Closed) || StandsAtPickupStop(journey, current);

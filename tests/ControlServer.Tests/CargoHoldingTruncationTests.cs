@@ -133,6 +133,8 @@ public sealed class CargoHoldingTruncationTests
         Assert.Equal(JourneyRuntimeStage.AwaitingPickupArrival, (await JourneyOfAsync(fixture, SecondDemandId)).Stage);
 
         fixture.Clock.Advance(TimeSpan.FromMinutes(30));
+        // 车在路上一直在报（真车载端每几秒一次心跳）：钟跳过去的这半小时不能被读成车失联。
+        await fixture.HearFromPeerAsync();
         await ArriveAtCurrentStopAsync(fixture, SecondDemandId, "TO_GATE");
 
         await AssertEndedAsStopCompleteAsync(fixture, SecondDemandId);
@@ -205,6 +207,7 @@ public sealed class CargoHoldingTruncationTests
         Assert.Equal("ONBOARD_SESSION_NOT_READY", (await JourneyOfAsync(fixture, SecondDemandId)).BlockReasonCode);
 
         await fixture.RestoreSessionReadyAsync();
+        await fixture.HearFromPeerAsync();
         await ArriveAtCurrentStopAsync(fixture, SecondDemandId, "TO_GATE");
 
         await AssertEndedAsStopCompleteAsync(fixture, SecondDemandId);
