@@ -6218,9 +6218,12 @@ public sealed partial class JourneyRuntimeEngine(
         {
             return false;
         }
+        // 读完之后另取一次时钟再比（独立审查 M1）：生产的 RIoT 网关在 HTTP 调用返回之后才给读数盖时间戳，读数恒比进门时取的 now 晚，
+        // 拿 now 比「读数在将来」就恒为真、车永远放不出去。与 ChargerOccupancy、充电周期复查同一个做法：先读车，读完再取时钟。
+        DateTimeOffset readAt = timeProvider.GetUtcNow();
         if (vehicle.BatteryPercent is not int battery ||
-            vehicle.ObservedAt > now ||
-            now - vehicle.ObservedAt > runtimeOptions.MaximumEvidenceAge)
+            vehicle.ObservedAt > readAt ||
+            readAt - vehicle.ObservedAt > runtimeOptions.MaximumEvidenceAge)
         {
             return false;
         }
