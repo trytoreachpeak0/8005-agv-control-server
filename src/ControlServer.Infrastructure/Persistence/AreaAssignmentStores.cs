@@ -380,6 +380,19 @@ public sealed class StructuralDispatchBlockStore(ControlServerDbContext context)
         ];
     }
 
+    public async Task<IReadOnlyList<StructuralDispatchBlock>> ListClearedAsync(
+        IReadOnlyCollection<string> reasonCodes,
+        CancellationToken cancellationToken)
+    {
+        ArgumentNullException.ThrowIfNull(reasonCodes);
+        string[] codes = [.. reasonCodes];
+        StructuralDispatchBlockRow[] rows = await _context.Set<StructuralDispatchBlockRow>()
+            .AsNoTracking()
+            .Where(row => row.ClearedAt != null && codes.Contains(row.ReasonCode))
+            .ToArrayAsync(cancellationToken);
+        return [.. rows.Select(Project)];
+    }
+
     private static StructuralDispatchBlock Project(StructuralDispatchBlockRow row) =>
         new(row.DemandId, row.ReasonCode, row.TransportDemandKey, row.FirstRaisedAt, row.LastSeenAt, row.ClearedAt,
             row.DetailJson);

@@ -112,6 +112,21 @@ public sealed class StructuralDispatchBlockSink(
             }
         }
 
+        // 反过来，人工搬运告警清掉之后需求又回到了目录（control-server#703 审查 M1）：MesIngest 只放合格的需求进目录，一条 MES 里仍开着的
+        // 需求可能因重复观测、告警条件码或字段问题掉出目录一轮，那一轮上面把告警清了；它回来时已受理、已终结，下面的逐条判断按受理跳过它，
+        // 不在这里重开就再也不会挂回来，货还在机台上而告警没了。重开用原来的明细，FirstRaisedAt 取这一次（RaiseOrRefreshAsync 的语义）。
+        foreach (StructuralDispatchBlock cleared in await blocks.ListClearedAsync(ManualCarryAlarms.All, cancellationToken)
+                     .ConfigureAwait(false))
+        {
+            if (candidates.ContainsKey(cleared.DemandId))
+            {
+                await blocks.RaiseOrRefreshAsync(
+                    cleared.DemandId, cleared.ReasonCode, cleared.TransportDemandKey, cleared.DetailJson, now, cancellationToken)
+                    .ConfigureAwait(false);
+                LogBlockRaised(logger, cleared.DemandId, cleared.TransportDemandKey, cleared.ReasonCode, null);
+            }
+        }
+
         Dictionary<string, List<RoundVerdict>> verdictsByDemand = new(StringComparer.Ordinal);
         foreach (DispatchVehicleOutcome vehicle in outcome.CompletedVehicles)
         {
