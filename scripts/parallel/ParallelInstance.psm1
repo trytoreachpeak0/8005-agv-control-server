@@ -2575,14 +2575,19 @@ function Get-ParallelEffectiveConfigurationRefusal {
 #            that key as the definition writes it, $null (printed, not compared) when it leaves it to the package's
 #            appsettings.json, which this cannot know. A value derived from something else (from a phase, say) is a named
 #            Source with its own case in that function -- not a scriptblock here: this module allows no dynamic command
-#            (the delete guard in Test-ParallelInstance.ps1).
+#            (the delete guard in Test-ParallelInstance.ps1);
+#   AbsentMeans  $null, or what a package that logs none of the table (older than #672) did bind: such an event is otherwise
+#            accepted whole, and a row with AbsentMeans is compared as if it had logged that value. control-server#686: a
+#            package that does not log the gate does not have it, which is Off -- so a production install of it is refused.
 # A new field is one row here, the event field in EffectiveConfigurationEvent.cs, and its cases in Test-ParallelInstance.ps1
 # ($bindingFieldCases) and ParallelInstanceEffectiveConfigurationTests; 19 compares the result line field by field, by name.
 $script:JourneyBindingFields = @(
-    [pscustomobject]@{ Name = 'admissionPolicyVersion'; Logged = 'AdmissionPolicyVersion'; Compare = 'Integer'; Source = 'journeyRuntime.admissionPolicyVersion' }
-    [pscustomobject]@{ Name = 'admissionPolicyDeploymentId'; Logged = 'AdmissionPolicyDeploymentId'; Compare = 'Ordinal'; Source = 'journeyRuntime.admissionPolicyDeploymentId' }
-    [pscustomobject]@{ Name = 'cargoHoldingTimeout'; Logged = 'CargoHoldingTimeout'; Compare = 'Duration'; Source = 'journeyRuntime.cargoHoldingTimeout' }
-    [pscustomobject]@{ Name = 'stationDepartureWaitTimeout'; Logged = 'StationDepartureWaitTimeout'; Compare = 'Duration'; Source = 'journeyRuntime.stationDepartureWaitTimeout' }
+    [pscustomobject]@{ Name = 'admissionPolicyVersion'; Logged = 'AdmissionPolicyVersion'; Compare = 'Integer'; Source = 'journeyRuntime.admissionPolicyVersion'; AbsentMeans = $null }
+    [pscustomobject]@{ Name = 'admissionPolicyDeploymentId'; Logged = 'AdmissionPolicyDeploymentId'; Compare = 'Ordinal'; Source = 'journeyRuntime.admissionPolicyDeploymentId'; AbsentMeans = $null }
+    [pscustomobject]@{ Name = 'cargoHoldingTimeout'; Logged = 'CargoHoldingTimeout'; Compare = 'Duration'; Source = 'journeyRuntime.cargoHoldingTimeout'; AbsentMeans = $null }
+    [pscustomobject]@{ Name = 'stationDepartureWaitTimeout'; Logged = 'StationDepartureWaitTimeout'; Compare = 'Duration'; Source = 'journeyRuntime.stationDepartureWaitTimeout'; AbsentMeans = $null }
+    # control-server#686. 'Off' or 'Enforcing', never a space.
+    [pscustomobject]@{ Name = 'slotConfigurationReadinessGate'; Logged = 'SlotConfigurationReadinessGate'; Compare = 'Ordinal'; Source = 'productionCutover.phase'; AbsentMeans = 'Off' }
 )
 
 function Get-ParallelJourneyBindingExpected {
@@ -2592,6 +2597,8 @@ function Get-ParallelJourneyBindingExpected {
         $journey = $Definition['journeyRuntime']
         return ($journey -is [System.Collections.IDictionary] -and $journey.Contains($Matches['key'])) ? $journey[$Matches['key']] : $null
     }
+    # control-server#686. Derived, so always compared: Enforcing for a production phase, Off for every other definition.
+    if ($Field.Source -ceq 'productionCutover.phase') { return Get-ParallelSlotConfigurationGateMode -Definition $Definition }
     throw "JourneyBindingFields: $($Field.Name) has an unknown Source '$($Field.Source)'."
 }
 
@@ -2607,11 +2614,21 @@ function Read-ParallelJourneyBinding {
 function Compare-ParallelJourneyBinding {
     <#
         control-server#672. One problem per row of $script:JourneyBindingFields whose bound value differs from what the definition
-        means, naming the row; nothing when the event carries none of them (a package older than #672) or they all agree.
+        means, naming the row; nothing when they all agree. An event that carries none of them (a package older than #672) is
+        compared only on the rows with an AbsentMeans (control-server#686), each as if it had logged that value.
     #>
     param([Parameter(Mandatory = $true)][System.Collections.IDictionary] $Definition, [AllowNull()] $Effective)
     $bound = ($null -ne $Effective -and $null -ne $Effective.PSObject.Properties['JourneyBinding']) ? $Effective.JourneyBinding : $null
-    if ($null -eq $bound) { return }
+    if ($null -eq $bound) {
+        if ($null -eq $Effective) { return }
+        foreach ($field in @($script:JourneyBindingFields | Where-Object { $null -ne $_.AbsentMeans })) {
+            $expected = Get-ParallelJourneyBindingExpected -Field $field -Definition $Definition
+            if ($null -ne $expected -and -not ([string] $expected -ceq [string] $field.AbsentMeans)) {
+                "$($field.Name) bound 'not logged', the definition says '$expected'"
+            }
+        }
+        return
+    }
     foreach ($field in $script:JourneyBindingFields) {
         $expected = Get-ParallelJourneyBindingExpected -Field $field -Definition $Definition
         if ($null -eq $expected) { continue }
@@ -2951,7 +2968,32 @@ function New-ParallelInstanceConfigurationOverlay {
             vehicleCredentials = @(Get-ParallelOnboardSafetyCredentialSlot -Definition $Definition | ForEach-Object {
                     [ordered]@{ vehicleKey = $_.VehicleKey; credentialEnvironmentVariable = $_.Variable } })
         }
+        # control-server#686. Always written, derived from productionCutover.phase (Get-ParallelSlotConfigurationGateMode), so an
+        # Enforcing from an earlier install does not survive a trial reinstall and no definition key can set it. The other
+        # Governance keys are the product's and stay as the package and the product installer left them.
+        Governance = [ordered]@{ slotConfigurationReadinessGate = (Get-ParallelSlotConfigurationGateMode -Definition $Definition) }
     }
+}
+
+function Get-ParallelSlotConfigurationGateMode {
+    <#
+        .SYNOPSIS
+            control-server#686. The slot configuration readiness gate mode a definition deploys: Enforcing for
+            productionCutover.phase 'production', Off for everything else. Pure.
+
+        .DESCRIPTION
+            REQ-0263 requires every slot of every vehicle verified one by one before it carries cargo in production; the trial
+            runs on the slot simulator, where that verification means nothing and is not done by design (production-cutover-mode-plan.md
+            section 5), so the gate there would stop every car. Derived rather than written: a key in the definition could be
+            written Off for production, and a rule that requires it true is this function with one more thing to get wrong. The
+            overlay writes it, the read-back compares the Host to it ($script:JourneyBindingFields), and an environment layer that
+            sets it is refused (Get-ParallelJourneyRuntimeEnvironmentOverride).
+    #>
+    [CmdletBinding()]
+    [OutputType([string])]
+    param([Parameter(Mandatory = $true)][System.Collections.IDictionary] $Definition)
+    $cutover = $Definition['productionCutover']
+    return ($cutover -is [System.Collections.IDictionary] -and $cutover['phase'] -ceq 'production') ? 'Enforcing' : 'Off'
 }
 
 function Get-ParallelOnboardSafetyCredentialSlot {
@@ -3105,7 +3147,9 @@ function Get-ParallelJourneyRuntimeEnvironmentOverride {
         [AllowEmptyCollection()][AllowNull()][string[]] $ServiceEnvironment,
         [AllowEmptyCollection()][AllowNull()][string[]] $MachineEnvironment
     )
-    $pattern = '^(?i:(?:DOTNET_|ASPNETCORE_)?(?:JourneyRuntime|MapStationCatalog)(?:__|:))'
+    # control-server#686: Governance:slotConfigurationReadinessGate too -- that key alone, the other Governance keys are the
+    # product's. The gate comes from the definition's phase, and an environment layer would bind over it.
+    $pattern = '^(?i:(?:DOTNET_|ASPNETCORE_)?(?:(?:JourneyRuntime|MapStationCatalog)(?:__|:)|Governance(?:__|:)slotConfigurationReadinessGate$))'
     foreach ($pair in @(@{ Where = 'service'; Entries = $ServiceEnvironment }, @{ Where = 'machine'; Entries = $MachineEnvironment })) {
         foreach ($entry in @($pair.Entries | Where-Object { -not [string]::IsNullOrEmpty($_) })) {
             $name = ($entry -split '=', 2)[0]

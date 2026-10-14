@@ -72,6 +72,12 @@ control-server#262。约 2026-10-08 起 `factory01` 上同时跑两套 ControlSe
 事件里没有这四项（control-server#672 之前的包）时安装器放行、结果行写 `EFFECTIVE_JOURNEY_BINDING=not-logged`，回滚到旧包因此不被挡；
 是否接受由 19 决定：`-Rollback` 只警告，非回滚安装直接失败。
 
+**仓位就绪门禁档位**（control-server#686）：`Governance:slotConfigurationReadinessGate` 不由定义或人手写，覆盖层每次按已装定义的
+`productionCutover.phase` 写：`production` 写 `Enforcing`（逐仓核对未通过的车不接搬运，REQ-0263），试跑段与非切换定义写 `Off`
+（试跑段仓位是模拟器，按设计不做逐仓核对）。定义里没有这个键可写；环境变量里出现这个键按 `JOURNEY_RUNTIME_ENVIRONMENT_OVERRIDE`
+拒绝；Host 在事件末尾记下实际档位，回读与推导值比对，结果行多一项 `slotConfigurationReadinessGate=Off|Enforcing`。事件里一项都
+没有的旧包（control-server#672 之前）不带门禁，按 `Off` 比：试跑段照常放行，生产段拒绝——生产段必须装带门禁的包。
+
 已知限制：一层写空数组 `"fleet": []` 读作「没写」，清不掉更早一层的车队表。今天包内 `appsettings.json` 没有车队表，回读也会拒绝定义里
 没写、却绑出来的车队表；包内一旦加车队表，必须先改这条语义（`PackageAppSettingsRosterArchitectureTests` 会在那天变红）。
 

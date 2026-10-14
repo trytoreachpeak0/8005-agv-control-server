@@ -18,7 +18,9 @@ internal static class GovernanceModule
     /// </summary>
     /// <remarks>
     /// W1 现场窗口先核对后启用，所以缺省必须是关的——一个默认打开的门禁会在第一台车核对完之前就把
-    /// 三台车一起挡住，那是 3.5 明确排除的排法。切档由现场在第一台车通过之后做，并留下审计。
+    /// 三台车一起挡住，那是 3.5 明确排除的排法。v2 并行实例的档位不由人切：部署脚本按已装定义的
+    /// <c>productionCutover.phase</c> 写（生产段 <c>Enforcing</c>，其余 <c>Off</c>），并读回比对（control-server#686）。
+    /// 读它的是派车判据 <c>SlotConfigurationReadinessCriterion</c>。
     /// </remarks>
     internal const string GateModeKey = "Governance:slotConfigurationReadinessGate";
 
