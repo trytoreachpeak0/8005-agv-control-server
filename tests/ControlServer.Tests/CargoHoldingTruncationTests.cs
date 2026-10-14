@@ -482,6 +482,69 @@ public sealed class CargoHoldingTruncationTests
     }
 
     /// <summary>
+    /// 车已到第二个取货站、清单已发、这一站一条都还没装，期限到了：截掉之后这一站较早各版清单都退役，断线重连只补发那张空清单
+    /// （C11 转 cs#703 实测）。
+    /// </summary>
+    /// <remarks>
+    /// <para>
+    /// 空清单的号取「算式」与「已发最高号 + 1」的大者，不会撞号；但它退役本站较早各版，是按本停靠的版数范围从首号数到算式那一号。
+    /// 释放让本停靠的归属少了、而「已做完」的一条没多，算式不动，较早那一版落在范围外、不退役，重连后被补发——号比空清单低，车判回退、断会话。
+    /// 所以释放几条就给本停靠补几版。
+    /// </para>
+    /// <para>
+    /// 这个形状只在「本站一条都还没做完」时出现：本站已装过一条（<see cref="ABatchUnderWayAtTheDeadlineLoadsAndOnlyTheUnstartedDemandBesideItIsReleased"/>）
+    /// 时算式已经往前走了一格，较早那一版碰巧落在范围里，所以那条用例看不出补版数的作用（变异自检里删掉补版数它照绿）。
+    /// </para>
+    /// </remarks>
+    [Fact]
+    [Trait("IntegrationSlice", "FP-IS-08")]
+    public async Task TruncatingTheStopTheVehicleStandsAtRetiresEveryEarlierWorklistAndAReconnectReplaysOnlyTheEmptyOne()
+    {
+        await using RuntimeFixture fixture = await HoldingFixtureAsync();
+        JourneyStopRow secondPickup = await StopEndedJourneyContinuesTests.ArriveAtTheSecondPickupAsync(fixture);
+        string journeyId = (await JourneyOfAsync(fixture, FirstDemandId)).JourneyId;
+        Assert.Contains(
+            await WorklistsAsync(fixture),
+            item => item.Payload.GetProperty("stationId").GetString() == secondPickup.StationId &&
+                    item.Payload.GetProperty("items").GetArrayLength() > 0);
+
+        fixture.Clock.Advance(TimeSpan.FromMinutes(30));
+        await fixture.HearFromPeerAsync();
+        await TickAndRunAsync(fixture);
+        await AssertReleasedForRedispatchAsync(fixture, journeyId, SecondDemandId);
+
+        Snapshot[] worklists = await WorklistsAsync(fixture);
+        Snapshot empty = worklists
+            .Where(item => item.Payload.GetProperty("stationId").GetString() == secondPickup.StationId &&
+                           item.Payload.GetProperty("items").GetArrayLength() == 0)
+            .OrderBy(item => item.Revision)
+            .Last();
+        string[] earlierAtThisStop =
+        [
+            .. worklists
+                .Where(item => item.MessageId != empty.MessageId &&
+                               item.Payload.GetProperty("stationId").GetString() == secondPickup.StationId)
+                .Select(item => item.MessageId)
+        ];
+        Assert.NotEmpty(earlierAtThisStop);
+        ProtocolOutboxRow[] earlierRows = await fixture.Context.ProtocolOutbox.AsNoTracking()
+            .Where(row => earlierAtThisStop.Contains(row.MessageId))
+            .ToArrayAsync(TestContext.Current.CancellationToken);
+        Assert.All(earlierRows, row => Assert.True(
+            row.FencedAt is not null || row.AcknowledgedAt is not null,
+            $"The earlier worklist {row.MessageId} at this stop would still be replayed."));
+
+        await fixture.ReconnectAsync(2);
+        await fixture.AdvanceSessionAsync(2);
+        await fixture.HearFromPeerAsync();
+        int before = fixture.Peer.Lines.Count;
+        await TickAndRunAsync(fixture);
+        string[] replayed = [.. fixture.Peer.Lines.Skip(before).Select(line => System.Text.Encoding.UTF8.GetString(line))];
+        Assert.Contains(replayed, line => line.Contains(empty.MessageId, StringComparison.Ordinal));
+        Assert.DoesNotContain(replayed, line => earlierAtThisStop.Any(id => line.Contains(id, StringComparison.Ordinal)));
+    }
+
+    /// <summary>
     /// 参数批准之前（不适用持货等单）一条都不截：与批次 6 相同，这一票对未配置分区参数的旅程零变化。
     /// </summary>
     [Fact]
