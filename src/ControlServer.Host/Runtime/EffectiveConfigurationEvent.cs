@@ -50,6 +50,12 @@ namespace ControlServer.Host.Runtime;
 /// older than #672.
 /// </para>
 /// <para>
+/// <b>The slot configuration readiness gate</b> (control-server#686) is appended after them, as the mode's name, <c>Off</c> or
+/// <c>Enforcing</c>: the installer derives the mode from the definition's <c>productionCutover.phase</c> and compares what the
+/// Host bound, so production cannot run without the gate and the trial, on simulated slots, cannot be stopped by it. An event
+/// without any of the #672 fields is from a package that has no gate either: the installer reads that as Off.
+/// </para>
+/// <para>
 /// More placeholders than the six <c>LoggerMessage.Define</c> takes, so the event hands the logger its state the way
 /// <c>Define</c> does -- the template under <c>{OriginalFormat}</c> and each value as it is. Not the logging source generator: its
 /// state formats a collection into a string, and the installer reads the roster and the catalog back as JSON structure.
@@ -58,7 +64,7 @@ namespace ControlServer.Host.Runtime;
 public static class EffectiveConfigurationEvent
 {
     public const string Template =
-        "EFFECTIVE_CONFIGURATION allowedWorkTypes={AllowedWorkTypes} allowedDispatchZones={AllowedDispatchZones} mesIngestBaseUrl={MesIngestBaseUrl} fleet={Fleet} clearanceToWaitingPointEnabled={ClearanceToWaitingPointEnabled} mapStationCatalog={MapStationCatalog} foreignRunningOrderRelease={ForeignRunningOrderRelease} admissionPolicyVersion={AdmissionPolicyVersion} admissionPolicyDeploymentId={AdmissionPolicyDeploymentId} cargoHoldingTimeout={CargoHoldingTimeout} stationDepartureWaitTimeout={StationDepartureWaitTimeout}";
+        "EFFECTIVE_CONFIGURATION allowedWorkTypes={AllowedWorkTypes} allowedDispatchZones={AllowedDispatchZones} mesIngestBaseUrl={MesIngestBaseUrl} fleet={Fleet} clearanceToWaitingPointEnabled={ClearanceToWaitingPointEnabled} mapStationCatalog={MapStationCatalog} foreignRunningOrderRelease={ForeignRunningOrderRelease} admissionPolicyVersion={AdmissionPolicyVersion} admissionPolicyDeploymentId={AdmissionPolicyDeploymentId} cargoHoldingTimeout={CargoHoldingTimeout} stationDepartureWaitTimeout={StationDepartureWaitTimeout} slotConfigurationReadinessGate={SlotConfigurationReadinessGate}";
 
     public static readonly EventId Id = new(5350, "EffectiveConfiguration");
 
@@ -67,7 +73,8 @@ public static class EffectiveConfigurationEvent
         JourneyRuntimeOptions effective,
         MapStationCatalogOptions catalog,
         string mesIngestBaseUrl,
-        ForeignOrders.ForeignRunningOrderReleaseState? foreignRunningOrderRelease = null)
+        ForeignOrders.ForeignRunningOrderReleaseState? foreignRunningOrderRelease = null,
+        ControlServer.Domain.SlotConfigurationGateMode slotConfigurationGate = ControlServer.Domain.SlotConfigurationGateMode.Off)
     {
         ArgumentNullException.ThrowIfNull(logger);
         ArgumentNullException.ThrowIfNull(effective);
@@ -89,6 +96,7 @@ public static class EffectiveConfigurationEvent
             new("AdmissionPolicyDeploymentId", effective.AdmissionPolicyDeploymentId),
             new("CargoHoldingTimeout", effective.CargoHoldingTimeout.ToString("c", CultureInfo.InvariantCulture)),
             new("StationDepartureWaitTimeout", effective.StationDepartureWaitTimeout.ToString("c", CultureInfo.InvariantCulture)),
+            new("SlotConfigurationReadinessGate", slotConfigurationGate.ToString()),
             new("{OriginalFormat}", Template),
         ];
         logger.Log(LogLevel.Information, Id, state, null, static (values, _) => Render(values));

@@ -38,13 +38,11 @@ public sealed class SlotConfigurationGateModeTests
     }
 
     [Fact]
-    public void TurningTheGateOnIsNotTheSameThingAsTheGateStoppingAVehicle()
+    public void TurningTheGateOnStopsAVehicleThroughTheDispatchChain()
     {
-        // 这条测试记录的是一个**边界**，不是一个能力：当前 src/ 里没有任何生产调用点读
-        // IsSlotConfigurationConfirmedAsync——把 readiness 接进投运判定属于投运流程，不属于批次 3 的
-        // 现场票。W1 的证据因此只能说「readiness 是怎么取得的」，不能说「门禁在拦车」。
-        //
-        // 这条会在接线真的落地那天变红，那时把它改掉，并同时改掉 W1 手册与 SUMMARY 模板里的那段话。
+        // 这条原来记录的是一个边界：src/ 里没有生产调用点读就绪判定，档位开了也不拦车。control-server#686 把它接进了派车，
+        // 按原注释的约定翻转成现在的边界：派车判据是唯一的生产调用点，经它拦车（行为见 SlotConfigurationReadinessDispatchTests）。
+        // 再多出一个调用点，就要想清楚它是不是另一条该被同一档位管着的路。
         string root = FindRepositoryRoot();
         string[] callSites =
         [
@@ -52,10 +50,11 @@ public sealed class SlotConfigurationGateModeTests
                 .Where(file => !file.Contains($"{Path.DirectorySeparatorChar}obj{Path.DirectorySeparatorChar}", StringComparison.Ordinal)
                     && !file.Contains($"{Path.DirectorySeparatorChar}bin{Path.DirectorySeparatorChar}", StringComparison.Ordinal))
                 .Where(file => !file.EndsWith("SlotConfigurationReadinessGate.cs", StringComparison.Ordinal))
-                .Where(file => File.ReadAllText(file)
-                    .Contains("IsSlotConfigurationConfirmedAsync", StringComparison.Ordinal))
+                .Where(file => File.ReadAllText(file).Contains("EvaluateVehicleAsync", StringComparison.Ordinal)
+                    || File.ReadAllText(file).Contains("IsSlotConfigurationConfirmedAsync", StringComparison.Ordinal))
+                .Select(Path.GetFileName)!
         ];
-        Assert.Empty(callSites);
+        Assert.Equal(["SlotConfigurationReadinessCriterion.cs"], callSites);
     }
 
     private static IConfiguration Configuration(string value) =>

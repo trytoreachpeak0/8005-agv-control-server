@@ -84,6 +84,7 @@ public static class StructuralDispatchClassification
     private const int IdleReturnCommitment = 16;
     private const int ChargingPolicyCommissioning = 17;
     private const int ChargingStanding = 18;
+    private const int SlotConfigurationReadiness = 19;
     private const int WorkTypeScope = 20;
     private const int VehicleTaskType = 25;
     private const int RequiredMesFacts = 30;
@@ -150,6 +151,11 @@ public static class StructuralDispatchClassification
             "control-server#404, REQ-0171: this vehicle is on the server's manual charging hold (no charger in the roster for " +
             "it, or its charging order kept being ended). The vehicle's side: another vehicle takes the demand, and an " +
             "administrator's return-to-service at the vehicle clears it."),
+
+        // ---- SlotConfigurationReadinessCriterion (19) --------------------------------------------------
+        Backlog(DispatchReasonCodes.SlotConfigurationNotConfirmed, SlotConfigurationReadiness,
+            "control-server#686, REQ-0259, REQ-0263: this vehicle's slot configuration is not confirmed in this database. The " +
+            "vehicle's side, not the demand's: another vehicle takes it, and verifying every slot of this one clears it."),
 
         // ---- WorkTypeScopeCriterion (20) ----------------------------------------------------------------
         Backlog(DispatchReasonCodes.OutOfScopeWorkType, WorkTypeScope,

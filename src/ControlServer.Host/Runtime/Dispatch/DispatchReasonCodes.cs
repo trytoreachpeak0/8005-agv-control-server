@@ -247,6 +247,17 @@ public static class DispatchReasonCodes
     public const string VehicleInManualChargingHold = "VEHICLE_IN_MANUAL_CHARGING_HOLD";
 
     /// <summary>
+    /// 这辆车的仓位配置在当前库里还没有确认（<c>REQ-0259</c>、<c>REQ-0263</c>；control-server#686）：IO 绑定不齐、从未逐仓核验、
+    /// 核验不完整或有一仓没通过、进过整车维护态或发生过硬件变化而还没重新核验，或者车型都解析不出来。门禁档位
+    /// <c>Governance:slotConfigurationReadinessGate</c> 是 <c>Enforcing</c> 时才会出现。
+    /// </summary>
+    /// <remarks>
+    /// 归普通积压（车辆侧）：别的车照常承接；这辆车用 FieldOps 逐仓核验（<c>verify</c>）通过后，下一轮就接。只挡搬运派单与途中追加，
+    /// 不挡空闲返回与充电——那两样不装货。
+    /// </remarks>
+    public const string SlotConfigurationNotConfirmed = "SLOT_CONFIGURATION_NOT_CONFIRMED";
+
+    /// <summary>
     /// 这条候选会让这辆车的下一站变成它的公共站点（<c>REQ-0204</c>，批次8-20，control-server#391），而那个站此刻被别的车预占着——
     /// 别的车已被承诺前往、还没到。
     /// </summary>
