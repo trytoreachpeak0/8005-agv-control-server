@@ -4526,13 +4526,13 @@ public sealed partial class JourneyRuntimeEngine(
     /// （规格第 3.3 节第 12 项）——那几张只出现在分区允许途中追加的旅程上，参数批准之前一张都不会有。
     /// </para>
     /// </remarks>
+    // 在待送点装货的旅程没有持货期限（control-server#709）：cargoHoldingDeadlineAt 为空，与「不适用持货等单」那半句同一个下发。
     private LoadingPhaseProjection CurrentLoadingPhase(JourneyRuntimeRow runtime, bool holdingApplicable, JourneyStopCursor stops) =>
         LoadingPhaseMachine.Project(
             runtime.LoadingPhaseState,
             runtime.LoadingClosedReason,
             runtime.CargoHoldingStartedAt,
             runtimeOptions.CargoHoldingTimeout,
-            // 在待送点装货的旅程没有持货期限（control-server#709）：cargoHoldingDeadlineAt 为空，与「不适用持货等单」那半句同一个下发。
             holdingApplicable && !LoadsAtStaging(stops));
 
     /// <summary>
@@ -5994,7 +5994,7 @@ public sealed partial class JourneyRuntimeEngine(
         DateTimeOffset? deadline = StationDepartureDeadlineAt(runtime, stops.Current);
         // 待送点没有期限（control-server#709），但同站追加的原地到站照旧：本停靠已装完、下一个是同站取货时，宽限一过就走到新停靠，
         // 否则新挂上来的需求在待送点上永远扫不了。所以待送点上期限为空不在这里返回，往下算宽限。
-        if ((deadline is null && !IsStagingPickup(stops.Current)) ||
+        if (deadline is null && !IsStagingPickup(stops.Current) ||
             runtime.StationDepartureWaitStartedAt is not { } startedAt ||
             stops.Current.StopRole != JourneyStopRoles.Pickup ||
             stops.OutstandingAtCurrentStop.Count > 0 ||
