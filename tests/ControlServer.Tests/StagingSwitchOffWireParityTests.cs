@@ -12,7 +12,7 @@ namespace ControlServer.Tests;
 /// <remarks>
 /// <para>
 /// C11 派工时的要求：02、03、09、04 四张都挂在 <c>JourneyRuntime:StagingDepartureRules:Enabled</c> 下，开关关着时行为与现在逐字节一致，
-/// 要有用例证明。机台那一半由既有的 <see cref="WirePin"/> 基线在开关打开时照样对得上来证（<c>StagingRulesOnMachineWireParityTests</c>）；
+/// 要有用例证明。机台那一半由既有的 <see cref="WirePin"/> 基线在开关打开时照样对得上来证（<c>Batch7StopDrivenAdvanceWireParityTests</c> 末尾两条）；
 /// 待送点这一半在改动之前没有基线，所以这里录了两份。
 /// </para>
 /// <para>
