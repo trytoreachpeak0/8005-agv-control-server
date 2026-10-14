@@ -1,0 +1,25 @@
+M1-any-instead-of-all: exit=1 ['Failed!  - Failed:     3, Passed:    59, Skipped:     0, Total:    62, Duration: 56 s - ControlServer.Tests.dll (net8.0)']
+    red: AWaitingDemandThatStillFitsTheOtherSideHoldsTheVehicle
+    red: TheVehicleLeavesOnlyWhenEverySideIsFullOrNothingWaitingFits(row:
+M2-both-sides-only: exit=1 ['Failed!  - Failed:    11, Passed:    51, Skipped:     0, Total:    62, Duration: 57 s - ControlServer.Tests.dll (net8.0)']
+    red: AnOpenCorrectionHoldsAFullVehicleThatLeavesOnceItCloses
+    red: BeforeTheFirstRoundAfterARestartNothingChangesAndNothingLeaves
+    red: CapacityAndAdmissionRefusalsTogetherDepart
+    red: OneSideFullAndEveryWaitingDemandNeedingItDepartsOnlyAtTheStagingStation(kind:
+    red: OnlyThePlanLimitRefusingTheWaitingDemandsDeparts
+    red: TheOnlyWaitingDemandNeedingMoreThanTheOneFreeRearSlotDeparts
+    red: TheVehicleLeavesOnlyWhenEverySideIsFullOrNothingWaitingFits(row:
+M3-non-capacity-counts: exit=1 ['Failed!  - Failed:     7, Passed:    55, Skipped:     0, Total:    62, Duration: 56 s - ControlServer.Tests.dll (net8.0)']
+    red: NothingButNonCapacityRefusalsHoldsTheVehicle(row:
+    red: CapacityIsOwnCargoShortOfFreeSlotsAndThePlanLimit
+    red: TheVehicleLeavesOnlyWhenEverySideIsFullOrNothingWaitingFits(row:
+M4-no-staging-discrimination: exit=1 ['Failed!  - Failed:     6, Passed:    56, Skipped:     0, Total:    62, Duration: 35 s - ControlServer.Tests.dll (net8.0)']
+    red: BothSidesFullDepartsAtOnceOnlyAtTheStagingStation(kind:
+    red: ADoorLeftOpenAtTheStagingStationIsReportedByTheTimeSinceTheLoadCommand(kind:
+    red: AFlatBatteryWithNothingLoadedReleasesOnlyAStagingStopToCharging(kind:
+    red: AnHourAfterTheFirstBasketClosesTheLoadingPhaseOnlyAwayFromTheStagingStation(kind:
+    red: AnHourWithNobodyScanningEndsOnlyAMachinePickup(kind:
+    red: OnlyAStagingPickupIsSentAWorklistWithoutAStationDeparatureDeadline(kind:
+M5-no-lock: exit=1 ['Failed!  - Failed:     1, Passed:    61, Skipped:     0, Total:    62, Duration: 56 s - ControlServer.Tests.dll (net8.0)']
+    red: AnOpenCorrectionHoldsAFullVehicleThatLeavesOnceItCloses
+clean

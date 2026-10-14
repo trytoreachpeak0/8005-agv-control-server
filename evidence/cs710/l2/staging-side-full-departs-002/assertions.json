@@ -1,0 +1,71 @@
+{
+  "schemaVersion": 1,
+  "scenario": "staging-side-full-departs",
+  "runId": "20261014T163044448Z",
+  "outcome": "PASS",
+  "failureReason": "",
+  "identity": {
+    "stageRoot": "C:\\Users\\szy\\AppData\\Local\\Temp\\l2-20261014T163044448Z",
+    "controlServerCommit": "73ca883c2ac869d5cd3424e2e018a7411da1e751",
+    "vehicleKey": "BROKERX-L2-0001",
+    "rig": "SyntheticOnboard",
+    "batchId": "unspecified",
+    "protocolReleaseIdentity": {
+      "repository": "8005-agv-protocol",
+      "releaseVersion": "3.0.0",
+      "tag": "protocol-v3.0.0",
+      "commit": "3f091cb2eae7c58cec54a95dd9389c9180bc7b4c",
+      "protocolVersion": 4,
+      "profileId": "AGV_FULL_PRODUCT",
+      "manifestSha256": "d5e1a53f1fd61f105a890dc0267e1b0a9ac5ea49f713d2cf730b0f554df9db9e",
+      "schemaBundleSha256": "e435b2b14d9ccd60c89f07df909da7626fef056a6b8a2241087557fd7dc3df43",
+      "vectorsSha256": "be849f9749b004296ebd9e7bffa98faf2f8ffa90b63308ca3b210c68e7b8656e",
+      "approvalStatus": "APPROVED_RELEASE"
+    },
+    "agvId": "AGV-L2-001"
+  },
+  "assertions": [
+    {
+      "id": "L2-SSF-01",
+      "description": "甲装完、FRONT 已无空仓、REAR 全空，没有等着的需求：CARGO_HOLDING_WAIT，满的一侧只有 FRONT",
+      "outcome": "PASS",
+      "expected": "CARGO_HOLDING_WAIT, [\"FRONT\"]",
+      "actual": "AwaitingStationDeparture CARGO_HOLDING_WAIT, [\"FRONT\"]"
+    },
+    {
+      "id": "L2-SSF-02",
+      "description": "又转了五轮，仍没有等着的需求：车不自己走（不发离站核验），装货阶段仍是 CARGO_HOLDING_WAIT",
+      "outcome": "PASS",
+      "expected": "CARGO_HOLDING_WAIT, 0 checks",
+      "actual": "AwaitingStationDeparture CARGO_HOLDING_WAIT, 0 checks"
+    },
+    {
+      "id": "L2-SSF-03",
+      "description": "派车轮判乙 SLOT_GROUP_OCCUPIED_BY_OWN_CARGO（FRONT 只因本车的货装不下）",
+      "outcome": "PASS",
+      "expected": "SLOT_GROUP_OCCUPIED_BY_OWN_CARGO",
+      "actual": "SLOT_GROUP_OCCUPIED_BY_OWN_CARGO"
+    },
+    {
+      "id": "L2-SSF-04",
+      "description": "等着的需求全要 FRONT 且装不下：装货阶段 VEHICLE_FULL（REAR 还空着）",
+      "outcome": "PASS",
+      "expected": "VEHICLE_FULL",
+      "actual": "AwaitingDepartureSafety VEHICLE_FULL, [\"FRONT\"]"
+    },
+    {
+      "id": "L2-SSF-05",
+      "description": "判满之后立即发出开往卸货站的离站核验：乙发布后一分钟之内，远早于十分钟的离站期限与持货期限",
+      "outcome": "PASS",
+      "expected": "check < 60 s after B",
+      "actual": "check to N1-3_N1-7 1.8 s after B"
+    },
+    {
+      "id": "L2-SSF-06",
+      "description": "乙没有进这趟旅程",
+      "outcome": "PASS",
+      "expected": "no journey",
+      "actual": "no journey"
+    }
+  ]
+}
