@@ -1,0 +1,4 @@
+--- a/src/ControlServer.Host/Runtime/IdleReturn/IdleReturnEvaluator.cs
++++ b/src/ControlServer.Host/Runtime/IdleReturn/IdleReturnEvaluator.cs
+-               configured.AllowedTaskTypes.All(taskType => taskType == TransportTaskTypes.StagingToWire);
++               configured.AllowedTaskTypes.Any(taskType => taskType == TransportTaskTypes.StagingToWire);

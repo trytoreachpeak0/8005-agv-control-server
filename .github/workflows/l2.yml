@@ -252,6 +252,9 @@ jobs:
               # three deadlines pass, and the stop neither ends nor releases its demand. The line above, run with the same
               # switch on, is the machine pickup's regression.
               @{ Name = 'staging-pickup-no-station-timeout'; Runs = 1 }
+              # control-server#712: a vehicle that takes only STAGING_TO_WIRE, its journey ended at the staging station, stays
+              # there instead of returning to a free waiting point, and takes the next staging demand where it stands.
+              @{ Name = 'staging-only-vehicle-stays-at-staging-origin'; Runs = 1 }
               # Batch 5 (control-server#83): the cancellation before a sublot entry, waiting for the ALL_EMPTY
               # result before ending the stop. Same reason as the line above; the batch-5 exit makes it three runs.
               @{ Name = 'load-cancelled-before-sublot'; Runs = 1; BatchId = 'batch-5' }

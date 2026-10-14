@@ -452,6 +452,92 @@ public sealed class IdleReturnCommitmentTests
         Assert.Equal((IdleReturnReasons.Committed, (int?)214), (verdict.Reason, verdict.StationId));
     }
 
+    // ---- 留在派工待送点（control-server#712）---------------------------------------------------------------------------
+
+    /// <summary>
+    /// 只做 <c>STAGING_TO_WIRE</c> 的车，旅程在待送点结束、停在那里（还占着它，离点证据之前不放）：不空闲返回，答它自己的码，
+    /// 什么也不写；一直留着也只记一次日志，不是每轮一条。
+    /// </summary>
+    [Fact]
+    public async Task AStagingOnlyVehicleStandingAtTheStagingOriginStaysThereAndLeavesNothingBehind()
+    {
+        await using Harness harness = await Harness.CreateAsync();
+        await harness.BindAsStagingOriginAsync(210, "关卡");
+        harness.Configure(VehicleA, TransportTaskTypes.StagingToWire);
+        await harness.HoldStationAsync(VehicleA, 210, StationExclusivityStates.Occupied, StationExclusivityKinds.FixedTaskStation);
+        Dictionary<string, string[]> before = await harness.DumpEveryTableAsync();
+
+        IdleReturnVerdict verdict = Assert.Single(await harness.EvaluateAsync(harness.Candidate(VehicleA)));
+        await harness.EvaluateAsync(harness.Candidate(VehicleA));
+        await harness.EvaluateAsync(harness.Candidate(VehicleA));
+
+        Assert.Equal((IdleReturnReasons.HeldAtStagingOrigin, (int?)null, (string?)null), (verdict.Reason, verdict.StationId, verdict.JourneyId));
+        Assert.Equivalent(before, await harness.DumpEveryTableAsync(), strict: true);
+        Assert.Single(harness.Log.Entries, entry => entry.EventId.Id == 2199);
+        Assert.DoesNotContain(harness.Log.Entries, entry => entry.Level >= Microsoft.Extensions.Logging.LogLevel.Warning);
+        Assert.Equal(IdleReturnReasons.HeldAtStagingOrigin, harness.VerdictBoard.Reasons["AGV-" + VehicleA]);
+    }
+
+    /// <summary>
+    /// 两个条件缺一条就照常空闲返回：兼做别的任务（含只做机台任务的 agv01、agv03 那种车）停在待送点上的车要让出这个单车位的公共站；
+    /// 只做待送的车停在别处（例如充满电的桩旁）照常回等待点；车队配置里没有这辆车、或它什么都不接，不当它是待送专车。
+    /// </summary>
+    [Theory]
+    [InlineData("staging-and-wire-at-origin")]
+    [InlineData("wire-only-at-origin")]
+    [InlineData("staging-only-elsewhere")]
+    [InlineData("not-configured-at-origin")]
+    [InlineData("nothing-allowed-at-origin")]
+    [InlineData("no-staging-binding")]
+    public async Task AVehicleMissingEitherConditionStillReturnsToAWaitingPoint(string variant)
+    {
+        await using Harness harness = await Harness.CreateAsync();
+        if (variant != "no-staging-binding")
+        {
+            // 待送固定起点：多数情形就是车所在的 210；「停在别处」时绑到 216（到不了的那个点，车不在那里）。
+            await harness.BindAsStagingOriginAsync(
+                variant == "staging-only-elsewhere" ? 216 : 210, variant == "staging-only-elsewhere" ? "等待点3" : "关卡");
+        }
+        switch (variant)
+        {
+            case "staging-and-wire-at-origin":
+                harness.Configure(VehicleA, TransportTaskTypes.StagingToWire, TransportTaskTypes.WireToGate);
+                break;
+            case "wire-only-at-origin":
+                harness.Configure(VehicleA, TransportTaskTypes.WireToGate, TransportTaskTypes.WireToOptical, TransportTaskTypes.WireToNitrogen);
+                break;
+            case "not-configured-at-origin":
+                harness.Configure(VehicleB, TransportTaskTypes.StagingToWire);
+                break;
+            case "nothing-allowed-at-origin":
+                harness.Configure(VehicleA);
+                break;
+            default:
+                harness.Configure(VehicleA, TransportTaskTypes.StagingToWire);
+                break;
+        }
+
+        IdleReturnVerdict verdict = Assert.Single(await harness.EvaluateAsync(harness.Candidate(VehicleA)));
+
+        Assert.Equal((IdleReturnReasons.Committed, (int?)214), (verdict.Reason, verdict.StationId));
+    }
+
+    /// <summary>
+    /// 留在待送点不挡充电：电量掉到强制充电线以下，评估器先答充电线（与别的空闲车一样），车交给充电分配
+    /// （<c>ChargingAllocationTests.AVehicleStillHoldingTheStagingStationAfterItsJourneyIsSentToChargeBelowItsLine</c>）。
+    /// </summary>
+    [Fact]
+    public async Task AStagingOnlyVehicleAtTheStagingOriginBelowTheChargeLineIsAnsweredForTheChargeLine()
+    {
+        await using Harness harness = await Harness.CreateAsync();
+        await harness.BindAsStagingOriginAsync(210, "关卡");
+        harness.Configure(VehicleA, TransportTaskTypes.StagingToWire);
+
+        IdleReturnVerdict verdict = Assert.Single(await harness.EvaluateAsync(harness.Candidate(VehicleA, battery: 10)));
+
+        Assert.Equal(IdleReturnReasons.BelowMandatoryChargeLine, verdict.Reason);
+    }
+
     /// <summary>
     /// 跨票（control-server#391）：旅程在关卡卸完、已经结束，车还占着关卡这个公共站（离点证据之前独占不放）、没有用途占有——
     /// 它正该离开关卡去等待点。开关打开时它被承诺空闲返回；关卡的独占不被这里动（放它是离点证据的事）。
@@ -956,6 +1042,28 @@ public sealed class IdleReturnCommitmentTests
                 options, Now, bindings: [new TaskTypeStationBinding(TransportTaskTypes.WireToGate, stationId, stationName, "MAP-25-TEST")],
                 mapId: Map);
         }
+
+        /// <summary>把 <paramref name="stationId"/> 绑成 <c>STAGING_TO_WIRE</c> 的固定起点（生效版本）。</summary>
+        public async Task BindAsStagingOriginAsync(int stationId, string stationName)
+        {
+            DbContextOptions<ControlServerDbContext> options = new DbContextOptionsBuilder<ControlServerDbContext>()
+                .UseSqlite(Db.Connection).Options;
+            await TaskTypeStationRuntimeSeed.ActivateAsync(
+                options, Now, requiredTaskTypes: [TransportTaskTypes.StagingToWire],
+                bindings: [new TaskTypeStationBinding(TransportTaskTypes.StagingToWire, stationId, stationName, "MAP-25-TEST")],
+                mapId: Map);
+        }
+
+        /// <summary>车队配置里这辆车可接的任务类型。</summary>
+        public void Configure(string vehicleKey, params string[] allowedTaskTypes) =>
+            Options.Fleet =
+            [
+                .. Options.Fleet.Where(entry => entry.VehicleKey != vehicleKey),
+                new FleetVehicleOptions
+                {
+                    AgvId = AgvIdOf(vehicleKey), VehicleKey = vehicleKey, AgvLifecycleGeneration = 1, AllowedTaskTypes = allowedTaskTypes,
+                },
+            ];
 
         public async Task ClaimForTransportAsync(string vehicleKey)
         {

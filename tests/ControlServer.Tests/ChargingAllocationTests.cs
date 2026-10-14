@@ -106,6 +106,32 @@ public sealed class ChargingAllocationTests
                 stored.DispatchGeneration, stored.OrderShape));
     }
 
+    /// <summary>
+    /// 留在派工待送点上的车（control-server#712）：上一趟旅程在待送点结束，它不空闲返回，待送点的单占因为没有离点证据一直挂着。
+    /// 电量掉到强制充电线以下时照常被派去充电——握着的是公共站，不是充电桩，不挡充电分配。单占不被这里动，车开走、RIoT 报它到了别的站才放。
+    /// </summary>
+    [Fact]
+    public async Task AVehicleStillHoldingTheStagingStationAfterItsJourneyIsSentToChargeBelowItsLine()
+    {
+        await using FleetFixture fleet = await FleetAsync(chargers: [Near]);
+        Assert.Equal(
+            StationExclusivityAcquisitionOutcome.Acquired,
+            await new StationExclusivityStore(fleet.Context).TryAcquireAsync(
+                new StationExclusivityRequest(
+                    Map, 300, StationExclusivityKinds.FixedTaskStation, StationExclusivityStates.Occupied, null),
+                KeyA, "journey:D-STAGING-ENDED", DateTimeOffset.UnixEpoch, Token));
+        fleet.Riot.BatteryByVehicle[KeyA] = 20;
+
+        await RoundAsync(fleet);
+
+        Assert.Equal(VehiclePurposes.Charging, (await ClaimOfAsync(fleet, KeyA))!.Value.Purpose);
+        Assert.Equal(KeyA, (await StationAsync(fleet, Near.StationId))!.VehicleKey);
+        StationExclusivityRow staging = (await StationAsync(fleet, 300))!;
+        Assert.Equal(
+            (StationExclusivityKinds.FixedTaskStation, StationExclusivityStates.Occupied, KeyA),
+            (staging.StationKind, staging.State, staging.VehicleKey));
+    }
+
     /// <summary>电量不低于线的车不进待充电集合：什么也不写、不问 RIoT 的订单清单，结论是「不需要充电」。</summary>
     [Fact]
     public async Task AVehicleAtOrAboveItsLineIsNotAllocated()

@@ -316,10 +316,35 @@ public sealed class IdleReturnEvaluator(
         // 批次8-17 的交接：固定站要用共用的读法取本轮的集合，不能传空集合占位——「站被绑成固定站」只在这里拦。
         IReadOnlySet<int> fixedTaskStations = WaitingPointFixedTaskStations.StationIds(
             await WaitingPointFixedTaskStations.ReadAsync(bindings, _runtime.MapId, cancellationToken).ConfigureAwait(false));
+        // The staging origin is read from the active binding only: that is the station dispatch routes a STAGING_TO_WIRE
+        // pickup to, so it is the one a vehicle can have been left standing at.
+        int? stagingOrigin = (await bindings.ReadActiveAsync(_runtime.MapId, cancellationToken).ConfigureAwait(false))?.Bindings
+            .FirstOrDefault(binding => binding.TaskType == TransportTaskTypes.StagingToWire)?.StationRiotId;
         RouteGraphAvailability graph = routeGraph.Enabled && routeGraph.MapId == _runtime.MapId
             ? await routeGraph.ReadAsync(cancellationToken).ConfigureAwait(false)
             : RouteGraphAvailability.Stale("ROUTE_GRAPH_DISABLED_OR_OTHER_MAP");
-        return new RoundReads(current, fixedTaskStations, graph);
+        return new RoundReads(current, fixedTaskStations, stagingOrigin, graph);
+    }
+
+    /// <summary>
+    /// 这辆车留在派工待送点等下一条需求，不做空闲返回（control-server#712）：它此刻就停在 <c>STAGING_TO_WIRE</c> 的固定起点上，
+    /// 而且车队配置里它只做 <c>STAGING_TO_WIRE</c>。两条缺一条都照常评估——兼做别的任务的车停在那里，仍要离开这个单车位的公共站。
+    /// </summary>
+    /// <remarks>
+    /// 不靠把它从等待点白名单里拿掉来做：多车部署启动时要求每辆车都分得到一个等待点（<see cref="WaitingPointStartupCheck"/>），
+    /// 拿掉它服务端下次重启就起不来；它在充电桩上充满之后也还要靠空闲返回把桩让出来。
+    /// </remarks>
+    private bool HeldAtStagingOrigin(FleetVehicle vehicle, int origin, int? stagingOrigin)
+    {
+        if (stagingOrigin != origin)
+        {
+            return false;
+        }
+        FleetVehicleOptions? configured = VehicleDispatchPolicyAccess.ConfiguredFleet(_runtime)
+            .FirstOrDefault(entry => string.Equals(entry.AgvId, vehicle.AgvId, StringComparison.Ordinal));
+        return configured is not null &&
+               configured.AllowedTaskTypes.Length > 0 &&
+               configured.AllowedTaskTypes.All(taskType => taskType == TransportTaskTypes.StagingToWire);
     }
 
     private async Task<IdleReturnVerdict> SelectAndCommitAsync(
@@ -329,6 +354,12 @@ public sealed class IdleReturnEvaluator(
         CancellationToken cancellationToken)
     {
         FleetVehicle vehicle = candidate.Vehicle;
+        int origin = candidate.Facts.Vehicle.CurrentStationId!.Value;
+        if (HeldAtStagingOrigin(vehicle, origin, reads.StagingOrigin))
+        {
+            return Refuse(vehicle, IdleReturnReasons.HeldAtStagingOrigin, FormattableString.Invariant($"Station {origin}."));
+        }
+
         if (!reads.Graph.IsUsable)
         {
             return Refuse(vehicle, IdleReturnReasons.RouteGraphUnavailable, reads.Graph.StaleReason ?? "");
@@ -336,7 +367,6 @@ public sealed class IdleReturnEvaluator(
 
         List<string> excluded = [];
         List<IdleReturnPointCandidate> eligible = [];
-        int origin = candidate.Facts.Vehicle.CurrentStationId!.Value;
         int? failedLastTime = await FailedLastTimeAsync(vehicle, cancellationToken).ConfigureAwait(false);
         foreach (WaitingPointEntry point in (reads.Registration?.Points ?? [])
                      .Where(point => point.MapId == _runtime.MapId)
@@ -577,6 +607,7 @@ public sealed class IdleReturnEvaluator(
     private sealed record RoundReads(
         WaitingPointRegistrationVersion? Registration,
         IReadOnlySet<int> FixedTaskStations,
+        int? StagingOrigin,
         RouteGraphAvailability Graph);
 }
 

@@ -60,19 +60,7 @@ public sealed class VehicleDispatchPolicyAccess(
     /// </remarks>
     public VehicleDispatchPolicy FromConfiguration()
     {
-        FleetVehicleOptions[] fleet = _options.Fleet.Length == 0
-            ?
-            [
-                new FleetVehicleOptions
-                {
-                    AgvId = _options.AgvId,
-                    VehicleKey = _options.VehicleKey,
-                    AgvLifecycleGeneration = _options.AgvLifecycleGeneration,
-                    AllowedTaskTypes = _options.AllowedWorkTypes,
-                    Zones = [_options.DispatchZone],
-                }
-            ]
-            : _options.Fleet;
+        FleetVehicleOptions[] fleet = ConfiguredFleet(_options);
 
         List<VehicleDispatchProfile> vehicles = [.. fleet
             .OrderBy(vehicle => vehicle.AgvId, StringComparer.Ordinal)
@@ -91,6 +79,29 @@ public sealed class VehicleDispatchPolicyAccess(
                 StringComparer.Ordinal);
 
         return new VehicleDispatchPolicy(vehicles, zoneVehicles, Fingerprint(vehicles, zoneVehicles));
+    }
+
+    /// <summary>
+    /// The configured fleet with its policy slices: <c>Fleet</c>, or for the single-vehicle deployment (an empty <c>Fleet</c>)
+    /// the one vehicle the top-level fields describe. Anything else that asks "what may this vehicle take" reads this, so it
+    /// cannot answer differently from dispatch.
+    /// </summary>
+    public static FleetVehicleOptions[] ConfiguredFleet(JourneyRuntimeOptions options)
+    {
+        ArgumentNullException.ThrowIfNull(options);
+        return options.Fleet.Length == 0
+            ?
+            [
+                new FleetVehicleOptions
+                {
+                    AgvId = options.AgvId,
+                    VehicleKey = options.VehicleKey,
+                    AgvLifecycleGeneration = options.AgvLifecycleGeneration,
+                    AllowedTaskTypes = options.AllowedWorkTypes,
+                    Zones = [options.DispatchZone],
+                }
+            ]
+            : options.Fleet;
     }
 
     /// <summary>
