@@ -1,8 +1,10 @@
 using ControlServer.Application;
 using ControlServer.Domain;
 using ControlServer.Host.Runtime;
+using ControlServer.Host.Transport;
 using ControlServer.Infrastructure.Persistence;
 using Microsoft.EntityFrameworkCore;
+using Microsoft.Extensions.Configuration;
 using static ControlServer.Tests.Batch7CargoHoldingTests;
 using static ControlServer.Tests.Batch7StopDrivenAdvanceDriver;
 using static ControlServer.Tests.ClosureSnapshotAssertions;
@@ -218,6 +220,67 @@ public sealed class CargoHoldingTruncationTests
         Assert.Equal(0, await LoadCommandsForAsync(fixture, SecondDemandId));
         JourneyRuntimeRow departed = await AnswerDepartureSafetyAsync(fixture, FirstDemandId, SecondSafetyResultId);
         Assert.Equal(JourneyRuntimeStage.AwaitingGateArrival, departed.Stage);
+    }
+
+    /// <summary>
+    /// 期限到时当前停靠上开着一次扫码前取消：这一轮不截，等车报结果；取消以 <c>ALL_EMPTY</c> 结清之后，同站剩下没开始装的那条才被截断。
+    /// </summary>
+    /// <remarks>
+    /// 取消要车证明那一排仓位是空的，证明进行中结束这一站，被取消的那条就会以别的码收场，它的结果到了只能对着一条已经终结的需求
+    /// （与站点期限那一处同一条规矩，control-server#83）。所以两条都要断：取消的那条是 <c>CANCELLED_BY_OPERATOR</c>，不是被期限抢走。
+    /// </remarks>
+    [Fact]
+    [Trait("IntegrationSlice", "FP-IS-08")]
+    public async Task AnOpenCancellationAtTheStopHoldsTheTruncationUntilTheVehicleReports()
+    {
+        CancellationToken token = TestContext.Current.CancellationToken;
+        await using RuntimeFixture fixture = await HoldingFixtureAsync();
+        await StopEndedJourneyContinuesTests.ArriveAtTheSecondPickupAsync(fixture, thirdAtTheSecondPickup: true);
+        await using ControlServerDbContext connection = fixture.OpenConnectionContext();
+        OnboardMessageProcessor processor = TestOnboardProcessorFactory.Create(
+            connection, new WireToGateStore(connection), fixture.Clock, new ConfigurationBuilder().Build(), fixture.Peer);
+        OnboardConnectionState state = StopEndedJourneyContinuesTests.Connection(fixture);
+        const string cancellationId = "d2900000-0000-4000-8000-000000000001";
+        await processor.ProcessAsync(
+            StopEndedJourneyContinuesTests.Envelope(fixture, "d2900000-0000-4000-8000-000000000002", "LoadCancellationStartRequested", new
+            {
+                cancellationId,
+                demandId = SecondDemandId,
+                slotOperationAttemptId = (string?)null,
+                @operator = new { operatorId = "OP-001", verificationMethod = "BADGE", verifiedAt = fixture.Clock.GetUtcNow() },
+                reason = "Nothing to load at this stop."
+            }),
+            state,
+            token);
+
+        fixture.Clock.Advance(TimeSpan.FromMinutes(30));
+        await fixture.HearFromPeerAsync();
+        await TickAndRunAsync(fixture);
+        Assert.Equal(LoadingPhaseStates.Closed, (await JourneyOfAsync(fixture, FirstDemandId)).LoadingPhaseState);
+        Assert.Equal(JourneyDemandStatuses.PendingLoad, (await MembershipAsync(fixture, SecondDemandId)).Status);
+        Assert.Equal(
+            JourneyDemandStatuses.PendingLoad,
+            (await MembershipAsync(fixture, StopEndedJourneyContinuesTests.ThirdDemandId)).Status);
+
+        await processor.ProcessAsync(
+            StopEndedJourneyContinuesTests.Envelope(fixture, "d2900000-0000-4000-8000-000000000003", "LoadCancellationResult", new
+            {
+                cancellationId,
+                demandId = SecondDemandId,
+                slotOperationAttemptId = (string?)null,
+                overallOutcome = "ALL_EMPTY",
+                slotResults = Array.Empty<object>(),
+                observedAt = fixture.Clock.GetUtcNow()
+            }),
+            state,
+            token);
+        await TickAndRunAsync(fixture);
+
+        Assert.Equal(
+            "CANCELLED_BY_OPERATOR",
+            (await fixture.Context.Set<TransportDemandSuppressionRow>().AsNoTracking()
+                .SingleAsync(row => row.DemandId == SecondDemandId, token)).ReasonCode);
+        await AssertEndedAsStopCompleteAsync(fixture, StopEndedJourneyContinuesTests.ThirdDemandId);
     }
 
     /// <summary>
