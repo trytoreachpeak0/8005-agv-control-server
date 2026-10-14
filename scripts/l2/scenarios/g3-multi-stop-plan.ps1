@@ -89,7 +89,7 @@ $journal.Note("Journey $journeyId is under way to station $firstStationRiotId.")
 # 追加只能在车停在站上时发生：真车载端在车有未结束的 RIoT 单时报「是否停车未知」（RIOT_NONFINAL_ORDER_PRESENT），
 # 会话 RecoveryRequired，在途判据以 ONBOARD_FACTS_NOT_READY 拒绝追加。这是预期行为：按用户 09-22 决定，途中追加只在停站时，
 # 不包括行驶中（control-server#286、program#133）。合成车载端恒报安全，所以合成场景能在车开往站点的路上追加，真车载端不能。
-# 甲装完之后车在 12 号站持货等单（setup 里 90 秒），乙在这段时间里追加：12 号站是当前下一站，乙的取货新开一个停靠排在它后面。
+# 甲装完之后车在 12 号站持货等单（setup 里 3 分钟），乙在这段时间里追加：12 号站是当前下一站，乙的取货新开一个停靠排在它后面。
 $null = Move-L2CargoVehicleToCurrentStop $Context $journeyId $firstStationRiotId
 $loadA = Invoke-L2RigLoad $Context $journeyId $a
 
@@ -146,7 +146,7 @@ $assertions.Add(
 
 $null = Move-L2CargoVehicleToCurrentStop $Context $journeyId $secondStationRiotId
 $loadB = Invoke-L2RigLoad $Context $journeyId $b
-# 11 号站是最后一个装货停靠：车在这里持货等单到期限才走（setup 里 90 秒），所以这一步的等待给足。
+# 11 号站是最后一个装货停靠：车在这里持货等单到期限才走（setup 里 3 分钟），所以这一步的等待给足。
 $null = Move-L2CargoVehicleToCurrentStop $Context $journeyId $gateRiotId
 $unloads = [System.Collections.Generic.List[object]]::new()
 foreach ($i in 1..2) {

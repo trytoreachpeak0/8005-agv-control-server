@@ -198,7 +198,8 @@ public sealed class PickupStopTermination(ControlServerDbContext dbContext, Plan
     /// </para>
     /// <para>
     /// <c>CANCELLED_BY_STOP_COMPLETE</c> 今天在 <c>src/</c> 里没有生产者，放在这里是为了以后谁产生它谁就自动抑制，
-    /// 不必再有人记得回到这里加一行。
+    /// 不必再有人记得回到这里加一行。持货期限截断（control-server#290）<b>不</b>产生它：用户 2026-10-14 定截掉的需求放回待派队列，
+    /// 走释放改派，不终结、不抑制（<c>JourneyRuntimeEngine.TruncateAtCargoHoldingDeadlineAsync</c>）。
     /// </para>
     /// </remarks>
     public static IReadOnlySet<string> KeySuppressingReasonCodes { get; } = new HashSet<string>(StringComparer.Ordinal)

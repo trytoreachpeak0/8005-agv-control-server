@@ -79,6 +79,49 @@ internal static class StopEndWorklist
         {
             return false;
         }
+        return await StageAtCurrentStopAsync(
+            dbContext, runtime, staged, currentSublotRequestMessageId, reasonCode, endedAt, cancellationToken).ConfigureAwait(false);
+    }
+
+    /// <summary>
+    /// 同 <see cref="StageAsync"/>，但离开这一站的需求是被<b>释放</b>的，不是被终结的（持货期限截断，control-server#290）：释放标了归属移除，
+    /// 游标从此看不见它，「终结的这一条挂在当前停靠上」按需求认不出来，由调用方说它们是不是从当前停靠离开的。
+    /// </summary>
+    /// <param name="releasedFromCurrentStop">被释放的需求里有挂在车此刻所在停靠上的。</param>
+    public static async Task<bool> StageAfterReleaseAsync(
+        ControlServerDbContext dbContext,
+        JourneyRuntimeRow runtime,
+        bool releasedFromCurrentStop,
+        string? currentSublotRequestMessageId,
+        string reasonCode,
+        DateTimeOffset endedAt,
+        CancellationToken cancellationToken)
+    {
+        ArgumentNullException.ThrowIfNull(dbContext);
+        ArgumentNullException.ThrowIfNull(runtime);
+        ArgumentException.ThrowIfNullOrWhiteSpace(reasonCode);
+
+        JourneyStopCursor staged = await JourneyStopCursor
+            .LoadIncludingUnsavedChangesAsync(dbContext, runtime, cancellationToken).ConfigureAwait(false);
+        if (!releasedFromCurrentStop || staged.OpenStops.Count == 0 || staged.OutstandingAtCurrentStop.Count > 0)
+        {
+            return false;
+        }
+        return await StageAtCurrentStopAsync(
+            dbContext, runtime, staged, currentSublotRequestMessageId, reasonCode, endedAt, cancellationToken).ConfigureAwait(false);
+    }
+
+    /// <summary>当前停靠已无待做项、旅程继续：暂存那张空清单。两个入口的共同后半段。</summary>
+    private static async Task<bool> StageAtCurrentStopAsync(
+        ControlServerDbContext dbContext,
+        JourneyRuntimeRow runtime,
+        JourneyStopCursor staged,
+        string? currentSublotRequestMessageId,
+        string reasonCode,
+        DateTimeOffset endedAt,
+        CancellationToken cancellationToken)
+    {
+        JourneyStopRow stop = staged.Current;
         SessionRecoveryRow? session = await dbContext.SessionRecoveries.AsNoTracking()
             .SingleOrDefaultAsync(row => row.AgvId == runtime.AgvId, cancellationToken).ConfigureAwait(false);
         if (session is null)

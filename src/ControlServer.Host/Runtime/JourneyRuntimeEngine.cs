@@ -16,6 +16,7 @@ using ControlServer.Host.Runtime.Commands;
 using ControlServer.Host.Runtime.CreateGate;
 using ControlServer.Host.Runtime.Faults;
 using ControlServer.Host.Runtime.Fleet;
+using ControlServer.Host.Runtime.Release;
 using ControlServer.Host.Runtime.TaskTypeStations;
 
 namespace ControlServer.Host.Runtime;
@@ -125,6 +126,12 @@ public sealed partial class JourneyRuntimeEngine(
             new EventId(2127, nameof(LogInTransitOrderStalled)),
             "RIoT reports order {UpperId} of journey {DemandId} on vehicle {AgvId} in state {OrderState}; the journey " +
             "names {ReasonCode} and waits for a person. No order command, emergency stop or fault is issued for it.");
+    private static readonly Action<ILogger, string, DateTimeOffset, string, Exception?> LogCargoHoldingDeadlineEndedDemand =
+        LoggerMessage.Define<string, DateTimeOffset, string>(
+            LogLevel.Warning,
+            new EventId(2309, nameof(LogCargoHoldingDeadlineEndedDemand)),
+            "Vehicle {AgvId}'s cargo holding deadline {Deadline} passed before demand {DemandId} started loading; " +
+            "it was released back to the backlog for redispatch and its stops left empty were removed from the plan.");
     private static readonly Action<ILogger, string, DateTimeOffset, string, Exception?> LogStationDeadlineEndedStop =
         LoggerMessage.Define<string, DateTimeOffset, string>(
             LogLevel.Warning,
@@ -223,6 +230,12 @@ public sealed partial class JourneyRuntimeEngine(
     /// (ADR-cross-0055).
     /// </summary>
     public const string StationTimeoutCancellationReason = "CANCELLED_BY_STATION_TIMEOUT";
+
+    /// <summary>
+    /// 持货期限截断时，车上那张空清单与（旅程因此收尾时）旅程的原因码（control-server#290）。需求本身不终结，按释放改派退回积压
+    /// （<see cref="DemandReleaseReasons.Released"/>），这个码只说这一站与这趟旅程为什么结束。
+    /// </summary>
+    public const string CargoHoldingTruncationReason = "RELEASED_AT_CARGO_HOLDING_DEADLINE";
 
     /// <summary>
     /// The load stop has run out its station departure deadline with a slot door still not closed
@@ -1231,6 +1244,22 @@ public sealed partial class JourneyRuntimeEngine(
             await ReconcileLoadingPhaseAsync(
                 runtime, stops, session, holdingApplicable, departingFrom: null, now, cancellationToken)
                 .ConfigureAwait(false);
+            // 持货超时截断（control-server#290）：紧跟判定之后、各阶段之前，这一轮下面读到的停靠与待做项已是截断之后的。
+            if (await TruncateAtCargoHoldingDeadlineAsync(runtime, now, cancellationToken).ConfigureAwait(false) is { } truncated)
+            {
+                if (runtime.Stage == JourneyRuntimeStage.Completed)
+                {
+                    return;
+                }
+                stops = truncated;
+                // 离站核验已经发出、而它问的下一站刚被截掉（审查 L2）：作废那一张，换一对新身份，下面等核验那一段把新的一张发出去，
+                // 问的是截断之后的下一站。做法与扣车那一处相同。
+                if (runtime.Stage == JourneyRuntimeStage.AwaitingDepartureSafety)
+                {
+                    await RetireDepartureCheckForDoorHoldAsync(runtime, stops, now, cancellationToken).ConfigureAwait(false);
+                    await dbContext.SaveChangesAsync(cancellationToken).ConfigureAwait(false);
+                }
+            }
         }
 
         // Set when this iteration has already asked a pre-departure check again, so the judgment that
@@ -1500,6 +1529,20 @@ public sealed partial class JourneyRuntimeEngine(
                         // 期限就提前或推后同样的量。代价是晚于真实闭环至多一轮轮询。
                         runtime.CargoHoldingStartedAt ??= now;
                         await dbContext.SaveChangesAsync(cancellationToken).ConfigureAwait(false);
+                    }
+                    // 持货期限在这一批执行期间到了（control-server#290）：闭环的这一轮就结束装货阶段并截断，ADR-cross-0057「等该批
+                    // 安全闭环后立即结束装货阶段，不再接受新的待装需求」。等到下一轮的轮首再判，这里会先给车发一版只剩未开始那几条的清单
+                    // 与录入请求，操作员在几秒里看到一条马上就被取消的需求。轮首那次判定读到的阶段还是「在装」，所以在这里按「这一批已闭环」再判。
+                    if (holdingApplicable && HoldingDeadlinePassed(runtime, now))
+                    {
+                        await ReconcileLoadingPhaseAsync(
+                            runtime, stops, session, holdingApplicable, departingFrom: null, now, cancellationToken,
+                            loadBatchJustClosed: true).ConfigureAwait(false);
+                        await TruncateAtCargoHoldingDeadlineAsync(runtime, now, cancellationToken).ConfigureAwait(false);
+                        if (runtime.Stage == JourneyRuntimeStage.Completed)
+                        {
+                            return;
+                        }
                     }
                     // 这个停靠上还有没装的需求，就回到等录入等下一条（同一站逐条串行，规格第 22 节补记）：重新加载
                     // 游标，因为刚写下的状态决定了清单该列谁、修订号该走到几。
@@ -4515,7 +4558,8 @@ public sealed partial class JourneyRuntimeEngine(
         bool holdingApplicable,
         JourneyStopRow? departingFrom,
         DateTimeOffset now,
-        CancellationToken cancellationToken)
+        CancellationToken cancellationToken,
+        bool loadBatchJustClosed = false)
     {
         bool pendingLoads = stops.AllDemands.Any(item =>
             item.Demand.Status != DemandExecutionStatus.Cancelled &&
@@ -4538,11 +4582,17 @@ public sealed partial class JourneyRuntimeEngine(
             pendingLoads,
             lastLoadingStopDeparted,
             vehicleFull,
-            HoldingDeadlinePassed: runtime.CargoHoldingStartedAt is { } startedAt &&
-                                   now >= startedAt + runtimeOptions.CargoHoldingTimeout,
+            HoldingDeadlinePassed: HoldingDeadlinePassed(runtime, now),
             LoadBatchInProgress: runtime.Stage == JourneyRuntimeStage.AwaitingLoadResult,
             DepartureUnderWay: departingFrom is null && runtime.Stage == JourneyRuntimeStage.AwaitingDepartureSafety,
             YieldTriggered: YieldTriggeredBeforeHoldingDeadline(runtime));
+        // 「有一批在执行」按落库的阶段判，看板认同一句（Batch7CargoHoldingDashboardTests.TheLoadBatchInProgressPremiseIsTheEnginesOwn 逐字核对上面那一行）。
+        // 唯一的例外只活在一轮之内：装货刚落定、阶段还没前移，调用方说这一批已经闭环（control-server#290）。这一轮里装货阶段随即关闭并落库，
+        // 看板读到的永远是关闭之后的样子，所以它那句前提照旧成立。
+        if (loadBatchJustClosed)
+        {
+            facts = facts with { LoadBatchInProgress = false };
+        }
         LoadingPhaseMachine.Decision decision = LoadingPhaseMachine.Decide(facts);
 
         // 让站的补判（批次7-08，control-server#213）。触发本来由承诺方在它的事务里写（受理、追加、离站三处，StationYield），
@@ -4653,6 +4703,177 @@ public sealed partial class JourneyRuntimeEngine(
         runtime.YieldTriggeredAt is { } triggeredAt &&
         (runtime.CargoHoldingStartedAt is not { } startedAt ||
          triggeredAt < startedAt + runtimeOptions.CargoHoldingTimeout);
+
+    /// <summary>持货期限已过：第一个 <c>LoadBatch</c> 闭环那一刻起算，服务端此刻的钟（ADR-cross-0057）。闭环之前恒为假。</summary>
+    private bool HoldingDeadlinePassed(JourneyRuntimeRow runtime, DateTimeOffset now) =>
+        runtime.CargoHoldingStartedAt is { } startedAt && now >= startedAt + runtimeOptions.CargoHoldingTimeout;
+
+    /// <summary>
+    /// 装货阶段已因持货超时关闭，而这趟旅程还带着没开始装的需求：逐条从这趟旅程上释放、退回积压等改派（ADR-cross-0057 实施决定（三），
+    /// 用户 2026-10-14 定「截掉，放回待派队列」，control-server#290）。释放了就返回之后重新加载的游标；没有要截的、或这一轮不能截时返回空。
+    /// </summary>
+    /// <remarks>
+    /// <para>
+    /// <b>为什么是释放而不是终结。</b>ADR 原文是以 <c>CANCELLED_BY_STOP_COMPLETE</c> 终结。那个码按业务键永久抑制
+    /// （<see cref="PickupStopTermination.KeySuppressingReasonCodes"/>），受理行又不删，同一条 MES 需求从此 v2 再也不派：货留在机台、
+    /// 没人来搬，等于静默丢单。释放改派（REQ-0328 那条路，<see cref="DemandReleaseService.StageReleasedMembershipAsync"/>）只把归属标移除、
+    /// 积压行清掉受理标记：需求仍是 <c>Accepted</c>、不写抑制、等待年龄不重置，下一轮派车按「已释放待改派」重新受理
+    /// （<c>DemandJourneyLookup.ReleasedForRedispatch</c>），不能追加回这一趟（<c>EnRouteAppendCriterion</c>），只能给别的车或新旅程。
+    /// </para>
+    /// <para>
+    /// <b>「没开始装」= 归属还是 <c>PENDING_LOAD</c>、需求还是 <c>Accepted</c></b>，不分在车此刻所在的停靠还是后面的取货停靠：期限结束的是
+    /// 整个装货阶段，不是某一站。已经下了装货命令的（<c>LOADING</c>）不在内——装货阶段本来就等那一批闭环才关（<see cref="LoadingPhaseMachine"/>），
+    /// 已经装上的照常送到。锚需求不释放：旅程行上的离站核验、计划与收尾都按它取需求号，它的归属一移除这些全取不到。按 REQ-0196
+    /// （途中追加不并入当前停靠），锚需求总在第一个取货停靠、而那一站从受理起就是当前停靠，所以「锚需求没开始装而持货期限已到」构造上不出现；
+    /// 保留这条例外是纵深防御（cs#290 再审 L2）。
+    /// </para>
+    /// <para>
+    /// <b>释放服务的拒绝规则（<see cref="DemandReleaseRules.Decide"/>）在这里逐条判过</b>：
+    /// 「当前下一站、车已到站」不释放，理由是清单号：释放让这个停靠的归属少了，按版数算的号与范围都会往回缩。持货期限是硬期限，这一格不能拒，
+    /// 改为放回几条就给这个停靠补几版（<see cref="JourneyStopRow.WorklistRefills"/>），再发那张空清单（<see cref="StopEndWorklist.StageAfterReleaseAsync"/>）。
+    /// 空清单自己取「算式」与「已发最高号 + 1」中大的那个，所以不补也不会撞号；补版数守的是另一件事：退役本站较早各版按本停靠的版数范围数，
+    /// 不补就漏掉车已收到的那一版（审查返工第 2 轮，C11 转 cs#703 实测；第 1 轮变异里删掉它没红，是因为那时没有「本站一条都没做完」的用例）。「当前下一站、车在路上、旅程还有别的需求」
+    /// 不释放，理由是取消那张单之后没人把车派往下一站；这里不取消那张单——当前下一站在路上不可删（REQ-0197），车照样开到那里、到了没有作业、
+    /// 按离站等待离开，所以这一格不适用。「锚需求」见上一段。取货停靠不是当前下一站的，按构造还没有 RIoT 订单（追加的停靠到车离开上一站才建单）。
+    /// </para>
+    /// <para>
+    /// <b>按状态判，不按「这一次刚关」判。</b>关闭与截断是两次保存（关闭随装货阶段快照一起存），崩在中间，下一轮读到的状态已是关闭、没有变化；
+    /// 按「刚关」判的实现从此再也不截。按状态判，每一轮都重来一遍，截完之后就没有可截的，它自然停下。
+    /// </para>
+    /// <para>
+    /// <b>在写锁里重读再截</b>，与站点期限那一处同一个理由：扫码前取消在别的连接上被授权，锁外读到的停靠可能已经过时。当前停靠上有扫码前取消
+    /// 开着时这一轮整个不截，等车报结果，<b>不论阶段</b>：同站另一条正在装（<c>AwaitingLoadResult</c>）时也能对待装的那条发起扫码前取消
+    /// （<c>OnboardRecoveryCoordinator</c> 只要求它是 <c>PENDING_LOAD</c>），而截断最常发生的正是那一批闭环的那一轮。带着开着的取消把它
+    /// 释放掉，车报来的取消结果按需求找旅程找不到（它已不在任何旅程上）就抛，连接断开、重连重放、反复断线（审查 H1）；
+    /// 它若已被改派，那条取消还会扣住新旅程。取消要车证明整排仓位是空的，所以同站其余的也一起等（与站点期限同一条规矩）。等录入那一段在这之后读到的录入，下命令前在写锁里还要再判一次（<see cref="EnteredDemandStillLoadableAsync"/>，
+    /// 它只认生效的归属），被释放的那条在那里让开；本站已结束时，那条录入由 <see cref="StopEndWorklist"/> 一并答过时。
+    /// </para>
+    /// <para>
+    /// 会话未就绪时推进段不跑，这里也不跑：真车载端带着本服务端的单行驶时整段未就绪，截断发生在到站、会话回到就绪的那一轮。那一站作为当前下一站
+    /// 在路上不可删（REQ-0197），车照样开到那里，没有作业，按离站等待离开。
+    /// </para>
+    /// </remarks>
+    private async Task<JourneyStopCursor?> TruncateAtCargoHoldingDeadlineAsync(
+        JourneyRuntimeRow runtime,
+        DateTimeOffset now,
+        CancellationToken cancellationToken)
+    {
+        if (runtime.LoadingPhaseState != LoadingPhaseStates.Closed ||
+            runtime.LoadingClosedReason != LoadingClosedReasons.CargoHoldingTimeout ||
+            runtime.Stage is JourneyRuntimeStage.Blocked or JourneyRuntimeStage.Completed)
+        {
+            return null;
+        }
+        if (!NotYetStarted(runtime, await JourneyStopCursor.LoadAsync(dbContext, runtime, cancellationToken).ConfigureAwait(false)).Any())
+        {
+            return null;
+        }
+
+        await using IDbContextTransaction? transaction = dbContext.Database.CurrentTransaction is null
+            ? await dbContext.Database.BeginTransactionAsync(cancellationToken).ConfigureAwait(false)
+            : null;
+        JourneyRuntimeStage? stageNow = await dbContext.JourneyRuntimes.AsNoTracking()
+            .Where(row => row.JourneyId == runtime.JourneyId)
+            .Select(row => (JourneyRuntimeStage?)row.Stage)
+            .SingleOrDefaultAsync(cancellationToken).ConfigureAwait(false);
+        // 锁里重新加载：默认那一份读库，看得见锁外那次读之后别的连接提交的终结与取消。
+        JourneyStopCursor stops = await JourneyStopCursor.LoadAsync(dbContext, runtime, cancellationToken).ConfigureAwait(false);
+        JourneyStopDemand[] unstarted = [.. NotYetStarted(runtime, stops)];
+        // 取货停靠不是当前停靠、却已经有订单意图：离站已授权、开往它的单已保存甚至已在 RIoT 建了，而阶段还没前移（保存冲突或重启，
+        // 窗口很窄）。这时截掉它，下一轮会按截断之后的下一站重新核验、再建一张单，同一辆车两张单（cs#290 再审 L3）。与释放服务的
+        // PickupOrderExistsAsync 同一个判据：这一站不截，它上面的需求留在原趟，车到了照常处理。当前停靠有订单是常态（车正开往它），
+        // 截它不删停靠、不建新单，所以只看后面的停靠。
+        string currentStopIdNow = stops.Current.StopId;
+        List<JourneyStopDemand> withoutOrder = [];
+        foreach (JourneyStopDemand item in unstarted)
+        {
+            JourneyStopRow pickup = stops.Stops.Single(row => row.StopId == item.Membership.PickupStopId);
+            if (!string.Equals(pickup.StopId, currentStopIdNow, StringComparison.Ordinal) &&
+                await dbContext.OrderIntents.AsNoTracking()
+                    .AnyAsync(row => row.UpperId == pickup.UpperId, cancellationToken).ConfigureAwait(false))
+            {
+                continue;
+            }
+            withoutOrder.Add(item);
+        }
+        unstarted = [.. withoutOrder];
+        if (stageNow is null or JourneyRuntimeStage.Blocked or JourneyRuntimeStage.Completed ||
+            unstarted.Length == 0 ||
+            await OpenCancellationAtCurrentStopAsync(stops, cancellationToken).ConfigureAwait(false))
+        {
+            return null;
+        }
+
+        // 释放之后本停靠此刻那一版录入请求按算式就算不回来了，先取好（同终结那一处）。
+        string? sublotRequestMessageId = stops.CurrentSublotRequestMessageIdOrNone(runtime.WorklistRevision);
+        string currentStopId = stops.Current.StopId;
+        string[] leaving = [.. unstarted.Select(item => item.Demand.DemandId)];
+        int releasedFromCurrentStop = unstarted.Count(item =>
+            string.Equals(item.Membership.PickupStopId, currentStopId, StringComparison.Ordinal));
+        bool last = !stops.Demands.Any(item => !leaving.Contains(item.Demand.DemandId, StringComparer.Ordinal));
+        foreach (string demandId in leaving)
+        {
+            JourneyDemandRow membership = await dbContext.Set<JourneyDemandRow>()
+                .SingleAsync(
+                    row => row.JourneyId == runtime.JourneyId && row.DemandId == demandId && row.RemovedAt == null,
+                    cancellationToken)
+                .ConfigureAwait(false);
+            await DemandReleaseService.StageReleasedMembershipAsync(dbContext, membership, now, cancellationToken).ConfigureAwait(false);
+        }
+        if (releasedFromCurrentStop > 0)
+        {
+            // 版数守恒：这个停靠的归属少了几条，就补上几版。空清单取号时自己会取「已发最高号 + 1」，但退役本站较早那几版清单按的是
+            // 本停靠的版数范围（首号到算式那一号）：不补，本站一条都还没做完时算式不动，车已收到的那一版落在范围外、不退役，重连后被补发、
+            // 号比空清单低，车判回退断会话（TruncatingTheStopTheVehicleStandsAtRetiresEveryEarlierWorklistAndAReconnectReplaysOnlyTheEmptyOne
+            // 去掉这一段时红在这里）。收尾那一支同样按这个范围算迟到录入的地址，所以两支都补。
+            (await TrackedStopAsync(currentStopId, cancellationToken).ConfigureAwait(false)).WorklistRefills +=
+                releasedFromCurrentStop;
+        }
+        if (last)
+        {
+            // 没开始装的之外一条都没有了（cs#647 同站先卸后装之后才可能）：与释放服务释放最后一条同一个做法，计划收尾、旅程关闭、三套占用一起放。
+            await JourneyPlanRevisionStage.StageAsync(
+                    dbContext, runtime.JourneyId, leaving, currentStopMayGo: true, routing: null, cancellationToken)
+                .ConfigureAwait(false);
+            await new PickupStopTermination(dbContext).StageJourneyClosureAsync(
+                runtime, sublotRequestMessageId, CargoHoldingTruncationReason, now, cancellationToken).ConfigureAwait(false);
+        }
+        else
+        {
+            await JourneyPlanRevisionStage.StageAsync(
+                    dbContext, runtime.JourneyId, leaving, currentStopMayGo: false, routing: null, cancellationToken)
+                .ConfigureAwait(false);
+            await StopEndWorklist.StageAfterReleaseAsync(
+                dbContext, runtime, releasedFromCurrentStop > 0, sublotRequestMessageId, CargoHoldingTruncationReason, now,
+                cancellationToken).ConfigureAwait(false);
+        }
+        await dbContext.SaveChangesAsync(cancellationToken).ConfigureAwait(false);
+        if (transaction is not null)
+        {
+            await transaction.CommitAsync(cancellationToken).ConfigureAwait(false);
+        }
+
+        DateTimeOffset deadline = runtime.CargoHoldingStartedAt!.Value + runtimeOptions.CargoHoldingTimeout;
+        foreach (string demandId in leaving)
+        {
+            LogCargoHoldingDeadlineEndedDemand(logger, runtime.AgvId, deadline, demandId, null);
+        }
+        if (runtime.Stage == JourneyRuntimeStage.Completed)
+        {
+            await JourneyClosure.SendAsync(publisher, dbContext, runtime.AgvId, cancellationToken).ConfigureAwait(false);
+            return stops;
+        }
+        // 车所在的这一站因此空了：那张空清单随上面那次保存落库，提交之后发（control-server#324）。没有暂存就什么也不发。
+        await StopEndWorklist.SendAsync(publisher, dbContext, runtime.AgvId, cancellationToken).ConfigureAwait(false);
+        return await JourneyStopCursor.LoadAsync(dbContext, runtime, cancellationToken).ConfigureAwait(false);
+    }
+
+    /// <summary>没开始装、可以释放的需求：归属待装、需求仍受理中，锚需求除外（见上）。</summary>
+    private static IEnumerable<JourneyStopDemand> NotYetStarted(JourneyRuntimeRow runtime, JourneyStopCursor stops) =>
+        stops.AllDemands.Where(item =>
+            item.Demand.Status == DemandExecutionStatus.Accepted &&
+            item.Membership.Status == JourneyDemandStatuses.PendingLoad &&
+            !string.Equals(item.Demand.DemandId, runtime.DemandId, StringComparison.Ordinal));
 
     private static HashSet<string> PersistedFullSlotPositions(JourneyRuntimeRow runtime) =>
         runtime.FullSlotPositionsJson is { } json
@@ -4968,7 +5189,7 @@ public sealed partial class JourneyRuntimeEngine(
             return false;
         }
         string? membershipNow = await dbContext.Set<JourneyDemandRow>().AsNoTracking()
-            .Where(row => row.JourneyId == runtime.JourneyId && row.DemandId == entered.Demand.DemandId)
+            .Where(row => row.JourneyId == runtime.JourneyId && row.DemandId == entered.Demand.DemandId && row.RemovedAt == null)
             .Select(row => row.Status)
             .SingleOrDefaultAsync(cancellationToken).ConfigureAwait(false);
         if (!string.Equals(membershipNow, entered.Membership.Status, StringComparison.Ordinal))
@@ -5587,6 +5808,21 @@ public sealed partial class JourneyRuntimeEngine(
         // stop is reached. (It can also lay them out load first; that order is control-server#647.) The correction gate
         // above and the door hold after this still apply; only the clock is skipped, and no start is seeded.
         if (stops.Current.StopRole == JourneyStopRoles.Unload)
+        {
+            if (runtime.BlockReasonCode is not null)
+            {
+                runtime.SetBlockReason(null, now);
+                runtime.UpdatedAt = now;
+            }
+            return true;
+        }
+
+        // 同一个理由，取货停靠上的一种（control-server#290 审查 M1）：装货阶段已经关了、这个停靠上一条生效的归属都没有——持货期限把它上面
+        // 没开始装的全释放走了，车多半是到站那一轮才截的。这里不会再有人录入、也没有装上的货要纠错，离站等待只会让一辆已经过了持货硬期限
+        // 的车在一台空机台前多停一整段。被终结（而不是释放）的需求归属还在，那种停靠照旧走离站等待（control-server#668）。
+        if (stops.Current.StopRole == JourneyStopRoles.Pickup &&
+            runtime.LoadingPhaseState == LoadingPhaseStates.Closed &&
+            stops.AllAtStop(stops.Current).Count == 0)
         {
             if (runtime.BlockReasonCode is not null)
             {

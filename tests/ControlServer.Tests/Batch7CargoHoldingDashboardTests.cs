@@ -473,6 +473,9 @@ public sealed class Batch7CargoHoldingDashboardTests
             Path.Combine(root, "src", "ControlServer.Host", "Dashboard", "CargoHoldingQueryEndpoint.cs"));
 
         Assert.Single(System.Text.RegularExpressions.Regex.Matches(engine, @"LoadBatchInProgress\s*:"));
+        // 唯一的覆盖是 cs#290 的「这一批刚闭环」（只活在一轮之内，同一轮里装货阶段随即关闭落库，看板看不到）。再多一处改写，
+        // 看板与引擎就可能不再是同一个判法，这里红，改的人回到 CargoHoldingQueryEndpoint.LoadBatchInProgress 一起看。
+        Assert.Single(System.Text.RegularExpressions.Regex.Matches(engine, @"LoadBatchInProgress\s*=(?!=)"));
         Assert.Contains(
             "LoadBatchInProgress: runtime.Stage == JourneyRuntimeStage.AwaitingLoadResult,", engine, StringComparison.Ordinal);
         Assert.Contains(

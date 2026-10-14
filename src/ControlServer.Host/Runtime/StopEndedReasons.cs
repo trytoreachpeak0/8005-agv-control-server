@@ -29,6 +29,13 @@ namespace ControlServer.Host.Runtime;
 /// <see cref="PickupStopTermination.KeySuppressingReasonCodes"/> 的注释），协议的七个取值里也没有与它对应的一项。谁产生它，谁回到这里
 /// 与协议一起定它说什么。
 /// </para>
+/// <para>
+/// 持货期限截断（control-server#290）用自己的码 <see cref="JourneyRuntimeEngine.CargoHoldingTruncationReason"/>：需求被释放回积压，
+/// 不终结，所以不借需求终态码。车上说 <c>DEMAND_RELEASED</c>（「本站因任务释放结束」），与释放改派
+/// （<see cref="DemandJourneyLookup.ReleasedForRedispatchReason"/>）同一个取值：这一站上的需求确实是被放回待派队列了，v2 会改派。
+/// 说成 <c>STATION_DEADLINE_EXPIRED</c>（「本站因超时结束」）会让现场把它当成站点期限丢单，去 MES 重提或手工处理物料，与改派重复
+/// （cs#290 审查 M2）。两个值都在协议七值里，换码不改协议。
+/// </para>
 /// </remarks>
 internal static class StopEndedReasons
 {
@@ -40,6 +47,7 @@ internal static class StopEndedReasons
     {
         null => "COMPLETED",
         "CANCELLED_BY_STATION_TIMEOUT" => "STATION_DEADLINE_EXPIRED",
+        JourneyRuntimeEngine.CargoHoldingTruncationReason => "DEMAND_RELEASED",
         "CANCELLED_BY_OPERATOR" => "LOAD_CANCELLED",
         "CANCELLED_BY_LOAD_COMPENSATION" => "LOAD_COMPENSATED",
         "TERMINATED_BY_FAULT_CARGO_HANDOFF" => "CARGO_HANDED_OFF",
