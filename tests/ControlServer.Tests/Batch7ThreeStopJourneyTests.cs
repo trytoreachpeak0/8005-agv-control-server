@@ -343,6 +343,8 @@ public sealed class Batch7ThreeStopJourneyTests
     public async Task TheStationDeadlineEndsTheDemandAtThisStopNotTheAnchor()
     {
         await using RuntimeFixture fixture = await RuntimeFixture.CreateAsync();
+        // control-server#703：这条测的是站点期限的终结尾巴，那条路今天只在放回次数用完时走（终结并告警）。上限设 0，让第一次期限就走它；放回那一支在 StationTimeoutRedispatchTests。
+        fixture.Options.StationTimeoutRedispatchLimit = 0;
         CancellationToken token = TestContext.Current.CancellationToken;
         fixture.Catalog.Set(
             fixture.Demand(FirstDemandId, FirstSublot, Now.AddMinutes(-10)),
