@@ -1,0 +1,43 @@
+0
+M1-any-instead-of-all: exit=1 ['Failed!  - Failed:     4, Passed:   163, Skipped:     0, Total:   167, Duration: 58 s - ControlServer.Tests.dll (net8.0)']
+    red: AWaitingDemandThatStillFitsTheOtherSideHoldsTheVehicle
+    red: OwnCargoOnBothSidesWithASmallDemandThatStillFitsHoldsTheVehicle
+    red: TheVehicleLeavesOnlyWhenEverySideIsFullOrNothingWaitingFits(row:
+M2-both-sides-only: exit=1 ['Failed!  - Failed:    14, Passed:   153, Skipped:     0, Total:   167, Duration: 57 s - ControlServer.Tests.dll (net8.0)']
+    red: ADemandAppendedAfterTheVehicleWasJudgedFullIsLoadedInPlaceAndThenTheVehicleLeaves
+    red: AMachinePickupAfterTheStagingStationKeepsItsOwnHoldingDeadline
+    red: AnOpenCorrectionHoldsAFullVehicleThatLeavesOnceItCloses
+    red: BeforeTheFirstRoundAfterARestartNothingChangesAndNothingLeaves
+    red: CapacityAndAdmissionRefusalsTogetherDepart
+    red: NothingIsJudgedBeforeTheVehicleReachesTheStagingStation
+    red: OneSideFullAndEveryWaitingDemandNeedingItDepartsOnlyAtTheStagingStation(kind:
+    red: OnlyThePlanLimitRefusingTheWaitingDemandsDeparts
+    red: TheOnlyWaitingDemandNeedingMoreThanTheOneFreeRearSlotDeparts
+    red: TheVehicleLeavesOnlyWhenEverySideIsFullOrNothingWaitingFits(row:
+M3-non-capacity-counts: exit=1 ['Failed!  - Failed:     7, Passed:   160, Skipped:     0, Total:   167, Duration: 57 s - ControlServer.Tests.dll (net8.0)']
+    red: NothingButNonCapacityRefusalsHoldsTheVehicle(row:
+    red: CapacityIsOwnCargoShortOfFreeSlotsAndThePlanLimit
+    red: TheVehicleLeavesOnlyWhenEverySideIsFullOrNothingWaitingFits(row:
+M4-no-staging-discrimination: exit=1 ['Failed!  - Failed:     7, Passed:   160, Skipped:     0, Total:   167, Duration: 38 s - ControlServer.Tests.dll (net8.0)']
+    red: AMachinePickupAfterTheStagingStationKeepsItsOwnHoldingDeadline
+    red: BothSidesFullDepartsAtOnceOnlyAtTheStagingStation(kind:
+    red: ADoorLeftOpenAtTheStagingStationIsReportedByTheTimeSinceTheLoadCommand(kind:
+    red: AFlatBatteryWithNothingLoadedReleasesOnlyAStagingStopToCharging(kind:
+    red: AnHourAfterTheFirstBasketClosesTheLoadingPhaseOnlyAwayFromTheStagingStation(kind:
+    red: AnHourWithNobodyScanningEndsOnlyAMachinePickup(kind:
+    red: OnlyAStagingPickupIsSentAWorklistWithoutAStationDeparatureDeadline(kind:
+M5-no-lock: exit=1 ['Failed!  - Failed:     2, Passed:   165, Skipped:     0, Total:   167, Duration: 57 s - ControlServer.Tests.dll (net8.0)']
+    red: ADemandAppendedAfterTheVehicleWasJudgedFullIsLoadedInPlaceAndThenTheVehicleLeaves
+    red: AnOpenCorrectionHoldsAFullVehicleThatLeavesOnceItCloses
+M6-every-side-full-by-recorded-sides: exit=1 ['Failed!  - Failed:     1, Passed:   166, Skipped:     0, Total:   167, Duration: 57 s - ControlServer.Tests.dll (net8.0)']
+    red: OwnCargoOnBothSidesWithASmallDemandThatStillFitsHoldsTheVehicle
+M7-holding-exemption-for-the-journey: exit=1 ['Failed!  - Failed:     1, Passed:   166, Skipped:     0, Total:   167, Duration: 57 s - ControlServer.Tests.dll (net8.0)']
+    red: AMachinePickupAfterTheStagingStationKeepsItsOwnHoldingDeadline
+M8-holding-start-kept-leaving-staging: exit=1 ['Failed!  - Failed:     1, Passed:   166, Skipped:     0, Total:   167, Duration: 58 s - ControlServer.Tests.dll (net8.0)']
+    red: AMachinePickupAfterTheStagingStationKeepsItsOwnHoldingDeadline
+M9-judged-before-arrival: exit=1 ['Failed!  - Failed:     1, Passed:   166, Skipped:     0, Total:   167, Duration: 57 s - ControlServer.Tests.dll (net8.0)']
+    red: NothingIsJudgedBeforeTheVehicleReachesTheStagingStation
+clean
+00:30:05
+
+[exited with code 0]

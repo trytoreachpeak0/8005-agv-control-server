@@ -28,18 +28,18 @@ namespace ControlServer.Tests;
 /// </remarks>
 public sealed class StagingPickupNoCountdownTests
 {
-    private const string Demand = "10000000-0000-4000-8000-000000000001";
+    internal const string Demand = "10000000-0000-4000-8000-000000000001";
 
     // 夹具的 AdvanceToLoadResultAsync 录的就是这一条。
     private const string Sublot = "SUBLOT-001";
 
-    private const int StagingStationRiotId = 305;
+    internal const int StagingStationRiotId = 305;
 
-    private const string SecondDemand = "10000000-0000-4000-8000-000000000709";
+    internal const string SecondDemand = "10000000-0000-4000-8000-000000000709";
 
-    private const string SecondSublot = "SUBLOT-709";
+    internal const string SecondSublot = "SUBLOT-709";
 
-    private const string StagingStationName = "派工待送取货";
+    internal const string StagingStationName = "派工待送取货";
 
     private static readonly TimeSpan StationDeadline = TimeSpan.FromMinutes(5);
 
@@ -429,7 +429,7 @@ public sealed class StagingPickupNoCountdownTests
 
     // ---- helpers ---------------------------------------------------------------------------------------------------
 
-    private static async Task<RuntimeFixture> ArrangeAsync(StopKind kind)
+    internal static async Task<RuntimeFixture> ArrangeAsync(StopKind kind)
     {
         RuntimeFixture fixture = await RuntimeFixture.CreateAsync();
         fixture.Options.AllowedWorkTypes = [TransportTaskTypes.WireToGate, TransportTaskTypes.StagingToWire];
@@ -460,7 +460,7 @@ public sealed class StagingPickupNoCountdownTests
     }
 
     /// <summary>本区允许途中追加：持货等单适用（与 <c>Batch7CargoHoldingTests.HoldingFixtureAsync</c> 同一版参数）。</summary>
-    private static async Task AllowEnRouteAppendAsync(RuntimeFixture fixture)
+    internal static async Task AllowEnRouteAppendAsync(RuntimeFixture fixture)
     {
         await new DispatchZoneParameterStore(fixture.Context, CreateGovernedPublisher(fixture.Context))
             .WriteVersionAsync(
@@ -471,7 +471,7 @@ public sealed class StagingPickupNoCountdownTests
     }
 
     /// <summary>到站、录入、装货落定，停在离站等待。</summary>
-    private static async Task LoadTheBasketAsync(RuntimeFixture fixture)
+    internal static async Task LoadTheBasketAsync(RuntimeFixture fixture)
     {
         await fixture.AdvanceToLoadResultAsync();
         await fixture.ApplySafeResultAsync(
@@ -484,7 +484,7 @@ public sealed class StagingPickupNoCountdownTests
     /// 第二条 STAGING_TO_WIRE 需求追加进这趟旅程，取货在同一个待送站：新开一个停靠排在当前停靠之后（REQ-0196），按受理同一个做法冻结
     /// 第一条需求的那一版规则与绑定（REQ-0344）。照 <c>Batch7ThreeStopJourneyTests.AppendDemandAsync</c>，那一份写死了 WIRE_TO_GATE。
     /// </summary>
-    private static async Task AppendStagingDemandAsync(RuntimeFixture fixture, string demandId, string sublot)
+    internal static async Task AppendStagingDemandAsync(RuntimeFixture fixture, string demandId, string sublot)
     {
         JourneyRuntimeRow runtime = await fixture.RuntimeAsync(Demand);
         DemandTaskTypeStationFreeze freeze = await new DemandTaskTypeStationFreezeStore(fixture.Context).ReadAsync(Demand, Token)
@@ -586,7 +586,7 @@ public sealed class StagingPickupNoCountdownTests
         ];
     }
 
-    private static async Task<JsonElement[]> CargoHoldingRowsAsync(RuntimeFixture fixture)
+    internal static async Task<JsonElement[]> CargoHoldingRowsAsync(RuntimeFixture fixture)
     {
         await using ControlServerDbContext reading = fixture.OpenConnectionContext();
         object fact = await new CargoHoldingQueryEndpoint(

@@ -93,16 +93,24 @@ internal sealed class CargoHoldingQueryEndpoint : IDashboardQueryEndpoint
                 .ToArrayAsync(cancellationToken))
             .ToLookup(row => row.JourneyId, StringComparer.Ordinal);
         JourneyDemandList demands = await JourneyDemandList.ReadAsync(dbContext, journeyIds, cancellationToken);
-        // 在待送点装货的旅程没有持货期限（control-server#709），与引擎发给车的一致：看板不给期限、不显示到期。开关关着时不读。
+        // 车停在（或开往）待送点取货停靠时没有持货期限（control-server#709），与引擎发给车的一致：看板不给期限、不显示到期。按当前停靠判，
+        // 离开待送点之后的机台取货停靠照旧有期限（control-server#710 审查 M1）。整趟旅程在待送点装过货的，另记一份给结束原因的文案用
+        // （审查 L3：待送点上的 VEHICLE_FULL 也可能是「等着的都装不下」，一侧还空着）。开关关着时不读。
+        HashSet<string> atStaging = new(StringComparer.Ordinal);
         HashSet<string> loadingAtStaging = new(StringComparer.Ordinal);
         if (_stagingRules.Enabled)
         {
             foreach (JourneyRuntimeRow journey in journeys)
             {
                 JourneyStopCursor cursor = await JourneyStopCursor.LoadAsync(dbContext, journey, cancellationToken);
-                if ((await StagingPickupStops.RecognizeAsync(dbContext, cursor, cancellationToken)).Count > 0)
+                IReadOnlySet<string> staging = await StagingPickupStops.RecognizeAsync(dbContext, cursor, cancellationToken);
+                if (staging.Count > 0)
                 {
                     loadingAtStaging.Add(journey.JourneyId);
+                }
+                if (cursor.OpenStops.Any() && staging.Contains(cursor.Current.StopId))
+                {
+                    atStaging.Add(journey.JourneyId);
                 }
             }
         }
@@ -114,7 +122,7 @@ internal sealed class CargoHoldingQueryEndpoint : IDashboardQueryEndpoint
                 .Where(item => InLoadingPhase(item.Journey, item.Current))
                 .OrderBy(item => item.Journey.AgvId, StringComparer.Ordinal)
                 .ThenBy(item => item.Journey.JourneyId, StringComparer.Ordinal)
-                .Select(item => Fact(item.Journey, item.Current, demands, loadingAtStaging, now))
+                .Select(item => Fact(item.Journey, item.Current, demands, atStaging, loadingAtStaging, now))
                 .ToArray()
         };
     }
@@ -123,6 +131,7 @@ internal sealed class CargoHoldingQueryEndpoint : IDashboardQueryEndpoint
         JourneyRuntimeRow journey,
         JourneyStopRow? current,
         JourneyDemandList demands,
+        HashSet<string> atStaging,
         HashSet<string> loadingAtStaging,
         DateTimeOffset now)
     {
@@ -133,7 +142,7 @@ internal sealed class CargoHoldingQueryEndpoint : IDashboardQueryEndpoint
             state,
             journey.CargoHoldingStartedAt,
             _cargoHoldingTimeout,
-            HoldingApplies(journey, state) && !loadingAtStaging.Contains(journey.JourneyId));
+            HoldingApplies(journey, state) && !atStaging.Contains(journey.JourneyId));
         bool deadlinePassed = deadline is { } at && now >= at;
         return new
         {
@@ -149,6 +158,8 @@ internal sealed class CargoHoldingQueryEndpoint : IDashboardQueryEndpoint
             awaitingLoadBatchClosure = deadlinePassed && !closed && LoadBatchInProgress(journey),
             frontFull = SideFull(journey.FullSlotPositionsJson, FrontSide),
             rearFull = SideFull(journey.FullSlotPositionsJson, RearSide),
+            atStaging = atStaging.Contains(journey.JourneyId),
+            loadedAtStaging = loadingAtStaging.Contains(journey.JourneyId),
             yieldedToVehicleKey = yielded ? journey.YieldTriggeredByVehicleKey : null,
             yieldTriggeredAt = yielded ? journey.YieldTriggeredAt : null,
             demands = demands.FactsOf(journey.JourneyId)
