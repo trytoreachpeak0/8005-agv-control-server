@@ -1,0 +1,60 @@
+{"at":"2026-10-14T15:31:01.3815371+00:00","note":"L2 run 20261014T153101352Z starting for scenario 'staging-other-side-fits-holds'."}
+{"at":"2026-10-14T15:31:01.4200393+00:00","note":"L2 port block lock acquired (slot 0, Global\\W2G-L2PortBlock)."}
+{"at":"2026-10-14T15:31:01.4223756+00:00","note":"Building ControlServer and the test doubles."}
+{"at":"2026-10-14T15:31:04.3252907+00:00","criterion":"fake-riot-live","value":"live"}
+{"at":"2026-10-14T15:31:04.5057424+00:00","criterion":"fake-mes-live","value":"live"}
+{"at":"2026-10-14T15:31:04.6460848+00:00","note":"Fake RIoT stations on map 25: 11=C15-13, 12=N1-3_N1-7, 210=关卡, 305=派工待送取货"}
+{"at":"2026-10-14T15:31:04.6597991+00:00","note":"Route graph engine enabled for map 25."}
+{"at":"2026-10-14T15:31:04.6939651+00:00","note":"Task type station preset: the scenario's own (2 binding(s))"}
+{"at":"2026-10-14T15:31:08.0642532+00:00","note":"Package capacity rules imported."}
+{"at":"2026-10-14T15:31:08.0681554+00:00","criterion":"server-environment:JourneyRuntime__cargoHoldingTimeout","value":"00:10:00"}
+{"at":"2026-10-14T15:31:08.0750949+00:00","criterion":"server-environment:JourneyRuntime__StagingDepartureRules__Enabled","value":"True"}
+{"at":"2026-10-14T15:31:08.0866647+00:00","note":"No waiting point registration: a single-vehicle rig, or WaitingPoints = $false."}
+{"at":"2026-10-14T15:31:10.2225592+00:00","criterion":"control-server-live","value":"live"}
+{"at":"2026-10-14T15:31:10.3636341+00:00","note":"Protocol release identity: protocol-v3.0.0 (profileId AGV_FULL_PRODUCT, protocolVersion 4, APPROVED_RELEASE)."}
+{"at":"2026-10-14T15:31:11.0065118+00:00","criterion":"onboard-readiness","value":"READY"}
+{"at":"2026-10-14T15:31:11.0692565+00:00","criterion":"control-server-ready","value":"ready"}
+{"at":"2026-10-14T15:31:11.1082324+00:00","note":"FieldOps: seed-approved-facts --database C:\\Users\\szy\\AppData\\Local\\Temp\\l2-20261014T153101352Z\\controlserver.db"}
+{"at":"2026-10-14T15:31:12.4344873+00:00","criterion":"slot-model-preseed:seed-approved-facts","value":"OK","detail":{"output":{"command":"seed-approved-facts","outcome":"OK","modelKey":"8005-eight-slot","slotModelVersionId":"ae718b1e3cdf447683387be8a2a3560f","version":1,"slotCount":8}}}
+{"at":"2026-10-14T15:31:12.4406131+00:00","note":"FieldOps: bind-io --database C:\\Users\\szy\\AppData\\Local\\Temp\\l2-20261014T153101352Z\\controlserver.db --agv AGV-L2-001"}
+{"at":"2026-10-14T15:31:13.7405440+00:00","criterion":"slot-model-preseed:bind-io:AGV-L2-001","value":"OK","detail":{"output":{"command":"bind-io","outcome":"OK","agvId":"AGV-L2-001","slotModelVersionId":"ae718b1e3cdf447683387be8a2a3560f","boundSlots":8,"version":1}}}
+{"at":"2026-10-14T15:31:13.7864635+00:00","criterion":"slot-model-preseed:dispatch-zones","value":"0"}
+{"at":"2026-10-14T15:31:13.7882559+00:00","note":"FieldOps: import-area-assignments --database C:\\Users\\szy\\AppData\\Local\\Temp\\l2-20261014T153101352Z\\controlserver.db --input F:\\8005-scratch\\cs710-l2\\r2-staging-other-side-fits-holds\\snapshots\\preseed-area-assignments.csv"}
+{"at":"2026-10-14T15:31:15.1624009+00:00","criterion":"slot-model-preseed:import-area-assignments","value":"OK","detail":{"output":{"command":"import-area-assignments","outcome":"OK","dryRun":false,"input":"F:\\8005-scratch\\cs710-l2\\r2-staging-other-side-fits-holds\\snapshots\\preseed-area-assignments.csv","entryCount":2,"version":1,"contentSha256":"63e29a9a43d8521252996d8ee0378a6bdf862e83c038de48ef528a3eda2d3af0","snapshotId":"4f4da7da20a04f5ebcf8317e16d9155a","importedAt":"2026-10-14T23:31:13.9647027+08:00","errorCount":0,"errors":[],"preview":[]}}}
+{"at":"2026-10-14T15:31:15.1718133+00:00","note":"FieldOps: import-charging-policy --database C:\\Users\\szy\\AppData\\Local\\Temp\\l2-20261014T153101352Z\\controlserver.db --input F:\\8005-scratch\\cs710-l2\\r2-staging-other-side-fits-holds\\snapshots\\preseed-charging-policy.json --fleet BROKERX-L2-0001"}
+{"at":"2026-10-14T15:31:16.4367373+00:00","note":"FieldOps: approve-charging-policy --database C:\\Users\\szy\\AppData\\Local\\Temp\\l2-20261014T153101352Z\\controlserver.db --version 1 --approved-by L2 orchestrator --role L2_PRESET --basis scripts/l2/L2ChargingPolicy.psm1 --source L2_PRESET"}
+{"at":"2026-10-14T15:31:17.6264017+00:00","note":"FieldOps: activate-charging-policy --database C:\\Users\\szy\\AppData\\Local\\Temp\\l2-20261014T153101352Z\\controlserver.db --version 1 --activated-by L2 orchestrator --fleet BROKERX-L2-0001 --allow-non-field-approval"}
+{"at":"2026-10-14T15:31:18.9000745+00:00","criterion":"preseed:charging-policy","value":"OK","detail":{"source":"L2_PRESET","withoutPolicy":[],"coveredAfter":["BROKERX-L2-0001"],"version":1}}
+{"at":"2026-10-14T15:31:18.9344578+00:00","criterion":"preseed:dispatch-zone-parameters","value":"OK","detail":{"zones":[{"DispatchZone":"MAP-25-WIRE_TO_GATE","EnRouteAdditionMaxPathCostIncrease":100000,"StarvationThresholdSeconds":null}],"source":"L2_PRESET","version":1,"contentSha256":"529298468af875cef190776b9690725d43994971e44cb06beb0b33da58694c97"}}
+{"at":"2026-10-14T15:31:18.9388234+00:00","note":"Environment is up; entering scenario 'staging-other-side-fits-holds'."}
+{"at":"2026-10-14T15:31:19.0385987+00:00","criterion":"route-graph-ready","value":"True"}
+{"at":"2026-10-14T15:31:19.0597732+00:00","note":"Publishing STAGING_TO_WIRE demand A cba9564f4642454e8e7edb741525954d (area N1-3, 4 baskets)."}
+{"at":"2026-10-14T15:31:19.0994181+00:00","criterion":"journey-a","value":"(null)"}
+{"at":"2026-10-14T15:31:20.4215817+00:00","criterion":"journey-a","value":"@{JourneyId=journey:cba9564f-4642-454e-8e7e-db741525954d; Stage=AwaitingPickupArrival; LoadingPhaseState=; LoadingClosedReason=; CargoHoldingStartedAt=; FullSlotPositionsJson=; BlockReasonCode=}"}
+{"at":"2026-10-14T15:31:20.4310710+00:00","criterion":"current-stop","value":"@{StopId=journey:cba9564f-4642-454e-8e7e-db741525954d|PICKUP; Sequence=1; StopRole=PICKUP; StationRiotId=305; UpperId=W2G-cba9564f-4642-454e-8e7e-db741525954d-PICKUP-1; Status=PENDING}"}
+{"at":"2026-10-14T15:31:20.4432985+00:00","criterion":"stop-intent","value":"(null)"}
+{"at":"2026-10-14T15:31:20.7140423+00:00","criterion":"stop-intent","value":"@{UpperId=W2G-cba9564f-4642-454e-8e7e-db741525954d-PICKUP-1; OrderId=ORDER-000001; Status=CONFIRMED}"}
+{"at":"2026-10-14T15:31:20.7171964+00:00","note":"Vehicle drives to stop 1 (PICKUP at station 305)."}
+{"at":"2026-10-14T15:31:20.7551951+00:00","criterion":"phase-after-a","value":"@{JourneyId=journey:cba9564f-4642-454e-8e7e-db741525954d; Stage=AwaitingPickupArrival; LoadingPhaseState=; LoadingClosedReason=; CargoHoldingStartedAt=; FullSlotPositionsJson=; BlockReasonCode=}"}
+{"at":"2026-10-14T15:31:21.0098923+00:00","criterion":"phase-after-a","value":"@{JourneyId=journey:cba9564f-4642-454e-8e7e-db741525954d; Stage=AwaitingPickupArrival; LoadingPhaseState=; LoadingClosedReason=; CargoHoldingStartedAt=; FullSlotPositionsJson=[\"FRONT\"]; BlockReasonCode=}"}
+{"at":"2026-10-14T15:31:21.2728396+00:00","criterion":"phase-after-a","value":"@{JourneyId=journey:cba9564f-4642-454e-8e7e-db741525954d; Stage=AwaitingSublot; LoadingPhaseState=; LoadingClosedReason=; CargoHoldingStartedAt=; FullSlotPositionsJson=[\"FRONT\"]; BlockReasonCode=}"}
+{"at":"2026-10-14T15:31:22.0617050+00:00","criterion":"phase-after-a","value":"@{JourneyId=journey:cba9564f-4642-454e-8e7e-db741525954d; Stage=AwaitingLoadResult; LoadingPhaseState=; LoadingClosedReason=; CargoHoldingStartedAt=; FullSlotPositionsJson=[\"FRONT\"]; BlockReasonCode=}"}
+{"at":"2026-10-14T15:31:22.8525302+00:00","criterion":"phase-after-a","value":"@{JourneyId=journey:cba9564f-4642-454e-8e7e-db741525954d; Stage=AwaitingStationDeparture; LoadingPhaseState=CARGO_HOLDING_WAIT; LoadingClosedReason=; CargoHoldingStartedAt=2026-10-14 15:31:22.8043882+00:00; FullSlotPositionsJson=[\"FRONT\"]; BlockReasonCode=}"}
+{"at":"2026-10-14T15:31:22.8618082+00:00","note":"Publishing STAGING_TO_WIRE demand C f992a3c6254c4e8c89ca95386e261b08 (area C15-13, 1 baskets)."}
+{"at":"2026-10-14T15:31:22.8766007+00:00","criterion":"c-joined","value":"(null)"}
+{"at":"2026-10-14T15:31:23.9177285+00:00","criterion":"c-joined","value":"@{JourneyId=journey:cba9564f-4642-454e-8e7e-db741525954d; PickupStopId=journey:f992a3c6-254c-4e8c-89ca-95386e261b08|PICKUP; Status=PENDING_LOAD; TargetSlotsJson=[5]}"}
+{"at":"2026-10-14T15:31:28.1120345+00:00","criterion":"current-stop","value":"@{StopId=journey:f992a3c6-254c-4e8c-89ca-95386e261b08|PICKUP; Sequence=2; StopRole=PICKUP; StationRiotId=305; UpperId=W2G-f992a3c6-254c-4e8c-89ca-95386e261b08-PICKUP-1; Status=PENDING}"}
+{"at":"2026-10-14T15:31:28.1127870+00:00","criterion":"stop-intent","value":"@{UpperId=W2G-f992a3c6-254c-4e8c-89ca-95386e261b08-PICKUP-1; OrderId=ORDER-000002; Status=CONFIRMED}"}
+{"at":"2026-10-14T15:31:28.1195833+00:00","note":"Vehicle drives to stop 2 (PICKUP at station 305)."}
+{"at":"2026-10-14T15:31:28.1447671+00:00","criterion":"c-loaded","value":"@{JourneyId=journey:cba9564f-4642-454e-8e7e-db741525954d; PickupStopId=journey:f992a3c6-254c-4e8c-89ca-95386e261b08|PICKUP; Status=PENDING_LOAD; TargetSlotsJson=[5]}"}
+{"at":"2026-10-14T15:31:29.9496997+00:00","criterion":"c-loaded","value":"@{JourneyId=journey:cba9564f-4642-454e-8e7e-db741525954d; PickupStopId=journey:f992a3c6-254c-4e8c-89ca-95386e261b08|PICKUP; Status=LOADING; TargetSlotsJson=[5]}"}
+{"at":"2026-10-14T15:31:30.9851311+00:00","criterion":"c-loaded","value":"@{JourneyId=journey:cba9564f-4642-454e-8e7e-db741525954d; PickupStopId=journey:f992a3c6-254c-4e8c-89ca-95386e261b08|PICKUP; Status=LOADED; TargetSlotsJson=[5]}"}
+{"at":"2026-10-14T15:31:31.0147905+00:00","criterion":"phase-after-c","value":"@{JourneyId=journey:cba9564f-4642-454e-8e7e-db741525954d; Stage=AwaitingStationDeparture; LoadingPhaseState=CARGO_HOLDING_WAIT; LoadingClosedReason=; CargoHoldingStartedAt=2026-10-14 15:31:22.8043882+00:00; FullSlotPositionsJson=[\"FRONT\"]; BlockReasonCode=}"}
+{"at":"2026-10-14T15:31:31.0263031+00:00","criterion":"runtime-iterations","value":"23"}
+{"at":"2026-10-14T15:31:31.8151529+00:00","criterion":"runtime-iterations","value":"24"}
+{"at":"2026-10-14T15:31:32.8784739+00:00","criterion":"runtime-iterations","value":"25"}
+{"at":"2026-10-14T15:31:33.9397724+00:00","criterion":"runtime-iterations","value":"26"}
+{"at":"2026-10-14T15:31:35.0037717+00:00","criterion":"runtime-iterations","value":"27"}
+{"at":"2026-10-14T15:31:36.0627801+00:00","criterion":"runtime-iterations","value":"28"}
+{"at":"2026-10-14T15:31:36.0654059+00:00","note":"待送点 FRONT 满、REAR 还能装：装得下的丙追加进来并装上，车不开往卸货站；之后没有等着的需求，车继续等。"}
+{"at":"2026-10-14T15:31:36.3701835+00:00","note":"L2 port block lock released."}
