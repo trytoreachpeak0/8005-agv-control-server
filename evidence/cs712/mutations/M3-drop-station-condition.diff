@@ -1,0 +1,4 @@
+--- a/src/ControlServer.Host/Runtime/IdleReturn/IdleReturnEvaluator.cs
++++ b/src/ControlServer.Host/Runtime/IdleReturn/IdleReturnEvaluator.cs
+-        if (stagingOrigin != origin)
++        if (stagingOrigin is null)

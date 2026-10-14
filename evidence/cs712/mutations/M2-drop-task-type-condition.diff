@@ -1,0 +1,4 @@
+--- a/src/ControlServer.Host/Runtime/IdleReturn/IdleReturnEvaluator.cs
++++ b/src/ControlServer.Host/Runtime/IdleReturn/IdleReturnEvaluator.cs
+-        return configured is not null &&
++        return configured is not null || true ||
