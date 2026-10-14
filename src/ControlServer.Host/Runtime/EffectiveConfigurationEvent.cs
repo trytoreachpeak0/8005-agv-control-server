@@ -56,6 +56,13 @@ namespace ControlServer.Host.Runtime;
 /// without any of the #672 fields is from a package that has no gate either: the installer reads that as Off.
 /// </para>
 /// <para>
+/// <b>The staging station's departure rules</b> (control-server#709) are appended after the gate: whether
+/// <see cref="StagingDepartureRulesOptions.Enabled"/> is on, as a boolean, and its
+/// <see cref="StagingDepartureRulesOptions.LoadNotSettledAlarmAfter"/> as <c>hh:mm:ss</c>. The switch is turned on at the first
+/// wave's changeover, and a person checking that it really took reads it here rather than in the overlay file. The installer's
+/// read-back does not compare them; an event without them is from a package older than #709.
+/// </para>
+/// <para>
 /// More placeholders than the six <c>LoggerMessage.Define</c> takes, so the event hands the logger its state the way
 /// <c>Define</c> does -- the template under <c>{OriginalFormat}</c> and each value as it is. Not the logging source generator: its
 /// state formats a collection into a string, and the installer reads the roster and the catalog back as JSON structure.
@@ -64,7 +71,7 @@ namespace ControlServer.Host.Runtime;
 public static class EffectiveConfigurationEvent
 {
     public const string Template =
-        "EFFECTIVE_CONFIGURATION allowedWorkTypes={AllowedWorkTypes} allowedDispatchZones={AllowedDispatchZones} mesIngestBaseUrl={MesIngestBaseUrl} fleet={Fleet} clearanceToWaitingPointEnabled={ClearanceToWaitingPointEnabled} mapStationCatalog={MapStationCatalog} foreignRunningOrderRelease={ForeignRunningOrderRelease} admissionPolicyVersion={AdmissionPolicyVersion} admissionPolicyDeploymentId={AdmissionPolicyDeploymentId} cargoHoldingTimeout={CargoHoldingTimeout} stationDepartureWaitTimeout={StationDepartureWaitTimeout} slotConfigurationReadinessGate={SlotConfigurationReadinessGate}";
+        "EFFECTIVE_CONFIGURATION allowedWorkTypes={AllowedWorkTypes} allowedDispatchZones={AllowedDispatchZones} mesIngestBaseUrl={MesIngestBaseUrl} fleet={Fleet} clearanceToWaitingPointEnabled={ClearanceToWaitingPointEnabled} mapStationCatalog={MapStationCatalog} foreignRunningOrderRelease={ForeignRunningOrderRelease} admissionPolicyVersion={AdmissionPolicyVersion} admissionPolicyDeploymentId={AdmissionPolicyDeploymentId} cargoHoldingTimeout={CargoHoldingTimeout} stationDepartureWaitTimeout={StationDepartureWaitTimeout} slotConfigurationReadinessGate={SlotConfigurationReadinessGate} stagingDepartureRulesEnabled={StagingDepartureRulesEnabled} stagingLoadNotSettledAlarmAfter={StagingLoadNotSettledAlarmAfter}";
 
     public static readonly EventId Id = new(5350, "EffectiveConfiguration");
 
@@ -97,6 +104,9 @@ public static class EffectiveConfigurationEvent
             new("CargoHoldingTimeout", effective.CargoHoldingTimeout.ToString("c", CultureInfo.InvariantCulture)),
             new("StationDepartureWaitTimeout", effective.StationDepartureWaitTimeout.ToString("c", CultureInfo.InvariantCulture)),
             new("SlotConfigurationReadinessGate", slotConfigurationGate.ToString()),
+            new("StagingDepartureRulesEnabled", effective.StagingDepartureRules.Enabled),
+            new("StagingLoadNotSettledAlarmAfter",
+                effective.StagingDepartureRules.LoadNotSettledAlarmAfter.ToString("c", CultureInfo.InvariantCulture)),
             new("{OriginalFormat}", Template),
         ];
         logger.Log(LogLevel.Information, Id, state, null, static (values, _) => Render(values));

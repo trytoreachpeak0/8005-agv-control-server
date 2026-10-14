@@ -48,6 +48,7 @@ internal sealed class CargoHoldingQueryEndpoint : IDashboardQueryEndpoint
 
     private readonly TimeSpan _cargoHoldingTimeout;
     private readonly TimeProvider _clock;
+    private readonly StagingDepartureRulesOptions _stagingRules;
 
     /// <summary>只供不带宿主的发现（列目录的测试）：持货期限取 <see cref="JourneyRuntimeOptions"/> 的默认值。</summary>
     public CargoHoldingQueryEndpoint()
@@ -58,15 +59,22 @@ internal sealed class CargoHoldingQueryEndpoint : IDashboardQueryEndpoint
     /// <summary>挂在宿主上时用这一个：与引擎判持货超时用的是同一份配置（<see cref="DashboardQueryEndpointCatalog.Discover"/>）。</summary>
     [ActivatorUtilitiesConstructor]
     public CargoHoldingQueryEndpoint(IOptions<JourneyRuntimeOptions> options)
-        : this((options ?? throw new ArgumentNullException(nameof(options))).Value.CargoHoldingTimeout, TimeProvider.System)
+        : this(
+            (options ?? throw new ArgumentNullException(nameof(options))).Value.CargoHoldingTimeout,
+            TimeProvider.System,
+            options.Value.StagingDepartureRules)
     {
     }
 
-    internal CargoHoldingQueryEndpoint(TimeSpan cargoHoldingTimeout, TimeProvider clock)
+    internal CargoHoldingQueryEndpoint(
+        TimeSpan cargoHoldingTimeout,
+        TimeProvider clock,
+        StagingDepartureRulesOptions? stagingRules = null)
     {
         ArgumentNullException.ThrowIfNull(clock);
         _cargoHoldingTimeout = cargoHoldingTimeout;
         _clock = clock;
+        _stagingRules = stagingRules ?? new StagingDepartureRulesOptions();
     }
 
     public string Path => DashboardQueryEndpointCatalog.QueryPrefix + "cargo-holding";
@@ -85,6 +93,19 @@ internal sealed class CargoHoldingQueryEndpoint : IDashboardQueryEndpoint
                 .ToArrayAsync(cancellationToken))
             .ToLookup(row => row.JourneyId, StringComparer.Ordinal);
         JourneyDemandList demands = await JourneyDemandList.ReadAsync(dbContext, journeyIds, cancellationToken);
+        // 在待送点装货的旅程没有持货期限（control-server#709），与引擎发给车的一致：看板不给期限、不显示到期。开关关着时不读。
+        HashSet<string> loadingAtStaging = new(StringComparer.Ordinal);
+        if (_stagingRules.Enabled)
+        {
+            foreach (JourneyRuntimeRow journey in journeys)
+            {
+                JourneyStopCursor cursor = await JourneyStopCursor.LoadAsync(dbContext, journey, cancellationToken);
+                if ((await StagingPickupStops.RecognizeAsync(dbContext, cursor, cancellationToken)).Count > 0)
+                {
+                    loadingAtStaging.Add(journey.JourneyId);
+                }
+            }
+        }
 
         return new
         {
@@ -93,7 +114,7 @@ internal sealed class CargoHoldingQueryEndpoint : IDashboardQueryEndpoint
                 .Where(item => InLoadingPhase(item.Journey, item.Current))
                 .OrderBy(item => item.Journey.AgvId, StringComparer.Ordinal)
                 .ThenBy(item => item.Journey.JourneyId, StringComparer.Ordinal)
-                .Select(item => Fact(item.Journey, item.Current, demands, now))
+                .Select(item => Fact(item.Journey, item.Current, demands, loadingAtStaging, now))
                 .ToArray()
         };
     }
@@ -102,13 +123,17 @@ internal sealed class CargoHoldingQueryEndpoint : IDashboardQueryEndpoint
         JourneyRuntimeRow journey,
         JourneyStopRow? current,
         JourneyDemandList demands,
+        HashSet<string> loadingAtStaging,
         DateTimeOffset now)
     {
         string state = journey.LoadingPhaseState ?? LoadingPhaseStates.Loading;
         bool closed = state == LoadingPhaseStates.Closed;
         bool yielded = closed && journey.LoadingClosedReason == LoadingClosedReasons.WaitingStationYield;
         DateTimeOffset? deadline = LoadingPhaseMachine.Deadline(
-            state, journey.CargoHoldingStartedAt, _cargoHoldingTimeout, HoldingApplies(journey, state));
+            state,
+            journey.CargoHoldingStartedAt,
+            _cargoHoldingTimeout,
+            HoldingApplies(journey, state) && !loadingAtStaging.Contains(journey.JourneyId));
         bool deadlinePassed = deadline is { } at && now >= at;
         return new
         {

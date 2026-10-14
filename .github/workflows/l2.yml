@@ -248,6 +248,10 @@ jobs:
               # control-server#703: at the default limit a demand nobody scans goes back to the backlog twice, is
               # dispatched again each time, and ends with a manual-carry alarm on the third deadline.
               @{ Name = 'station-timeout-redispatch-to-alarm'; Runs = 1 }
+              # control-server#709: a STAGING_TO_WIRE pickup at its staging station has no station deadline -- nobody scans,
+              # three deadlines pass, and the stop neither ends nor releases its demand. The line above, run with the same
+              # switch on, is the machine pickup's regression.
+              @{ Name = 'staging-pickup-no-station-timeout'; Runs = 1 }
               # control-server#712: a vehicle that takes only STAGING_TO_WIRE, its journey ended at the staging station, stays
               # there instead of returning to a free waiting point, and takes the next staging demand where it stands.
               @{ Name = 'staging-only-vehicle-stays-at-staging-origin'; Runs = 1 }

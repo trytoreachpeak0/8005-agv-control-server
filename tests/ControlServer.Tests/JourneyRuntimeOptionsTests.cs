@@ -171,6 +171,24 @@ public sealed class JourneyRuntimeOptionsTests
     }
 
     /// <summary>
+    /// 待送点规则（control-server#709）出厂关着；开着时用的仓门未闭告警时长必须为正。
+    /// </summary>
+    [Fact]
+    [Trait("IntegrationSlice", "FP-IS-02")]
+    public void TheStagingRulesShipOffAndTheirDoorAlarmMustBePositive()
+    {
+        Assert.False(new JourneyRuntimeOptions().StagingDepartureRules.Enabled, "The staging rules must ship switched off.");
+        JourneyRuntimeOptions options = ValidEnabledOptions();
+        JourneyRuntimeOptionsValidator validator = new(new ConfigurationBuilder().Build());
+        const string failure = "StagingDepartureRules:LoadNotSettledAlarmAfter must be positive.";
+        Assert.DoesNotContain(failure, validator.Validate(null, options).Failures ?? [], StringComparer.Ordinal);
+
+        options.StagingDepartureRules.LoadNotSettledAlarmAfter = TimeSpan.Zero;
+
+        Assert.Contains(failure, validator.Validate(null, options).Failures ?? [], StringComparer.Ordinal);
+    }
+
+    /// <summary>
     /// 终点改由绑定给出（control-server#160）：关卡两个标量从选项与出厂配置里删掉，「必须含 WIRE_TO_GATE」那条校验也删掉——
     /// 部署只放行别的任务类型不再被拒；#159 为防两份真相分叉加的过渡校验随标量一起删。
     /// </summary>

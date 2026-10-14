@@ -144,6 +144,13 @@ public sealed partial class JourneyRuntimeEngine(
             new EventId(2310, nameof(LogStationDeadlineReleasedDemand)),
             "Nobody entered a sublot at vehicle {AgvId}'s pickup before the station departure deadline {Deadline}; demand " +
             "{DemandId} went back to the backlog for redispatch (release {Release} at a station deadline).");
+    private static readonly Action<ILogger, string, int, int, string, Exception?> LogStagingLowBatteryReleasedDemand =
+        LoggerMessage.Define<string, int, int, string>(
+            LogLevel.Warning,
+            new EventId(2313, nameof(LogStagingLowBatteryReleasedDemand)),
+            "Vehicle {AgvId} waits at the staging station with nothing loaded and its battery at {BatteryPercent}% is below " +
+            "the mandatory charge line of {EntryThreshold}%; demand {DemandId} went back to the backlog and the journey ended, " +
+            "so charging allocation can send the vehicle to charge.");
     private static readonly Action<ILogger, string, string, string, string, Exception?> LogManualCarryAlarmRaised =
         LoggerMessage.Define<string, string, string, string>(
             LogLevel.Warning,
@@ -1230,6 +1237,9 @@ public sealed partial class JourneyRuntimeEngine(
         // 一条都在失联判定之后。
         JourneyStopCursor stops = await JourneyStopCursor.LoadAsync(dbContext, runtime, cancellationToken)
             .ConfigureAwait(false);
+        // 哪些停靠是待送点取货停靠（control-server#709）：本轮下面每一处读期限、持货与仓门告警的地方都按它分。开关关着时什么也不读。
+        // 停靠的角色与站点落库后不变，途中追加新开的停靠由它被推进到的那一轮认出，所以每轮认一次就够。
+        await RecognizeStagingPickupStopsAsync(stops, cancellationToken).ConfigureAwait(false);
         // The session row says Ready, but does the vehicle still answer? Judged here, before anything is
         // published, because everything below this line either sends to the peer or waits on a fact only the
         // peer can supply (control-server#234).
@@ -1374,8 +1384,15 @@ public sealed partial class JourneyRuntimeEngine(
                         SetStage(runtime, JourneyRuntimeStage.AwaitingStationDeparture, now);
                         LogEmptiedStopEntersDepartureWait(
                             logger, runtime.AgvId, stops.Current.StationId, loadedAtThisStop,
-                            StationDepartureDeadline(runtime, runtimeOptions.StationDepartureWaitTimeout), null);
+                            StationDepartureDeadlineAt(runtime, stops.Current), null);
                         goto case JourneyRuntimeStage.AwaitingStationDeparture;
+                    }
+                    // 待送点缺电（control-server#709，用户定「缺电直接去充电」）：一篮没装就放回需求、旅程收尾，车交给充电分配。
+                    if (IsStagingPickup(stops.Current) &&
+                        await TryReleaseLowBatteryStagingStopAsync(runtime, stops, session, now, cancellationToken)
+                            .ConfigureAwait(false))
+                    {
+                        return;
                     }
                     if (await TryEndStopAtStationDeadlineAsync(runtime, stops, session, now, cancellationToken)
                             .ConfigureAwait(false))
@@ -1394,7 +1411,7 @@ public sealed partial class JourneyRuntimeEngine(
                             runtime,
                             reissued,
                             session,
-                            StationDepartureDeadline(runtime, runtimeOptions.StationDepartureWaitTimeout),
+                            StationDepartureDeadlineAt(runtime, stops.Current),
                             cancellationToken).ConfigureAwait(false);
                         await PublishEntryRequestAsync(runtime, reissued, session, cancellationToken).ConfigureAwait(false);
                         return;
@@ -1545,7 +1562,7 @@ public sealed partial class JourneyRuntimeEngine(
                     // 持货期限在这一批执行期间到了（control-server#290）：闭环的这一轮就结束装货阶段并截断，ADR-cross-0057「等该批
                     // 安全闭环后立即结束装货阶段，不再接受新的待装需求」。等到下一轮的轮首再判，这里会先给车发一版只剩未开始那几条的清单
                     // 与录入请求，操作员在几秒里看到一条马上就被取消的需求。轮首那次判定读到的阶段还是「在装」，所以在这里按「这一批已闭环」再判。
-                    if (holdingApplicable && HoldingDeadlinePassed(runtime, now))
+                    if (holdingApplicable && HoldingDeadlinePassed(runtime, stops, now))
                     {
                         await ReconcileLoadingPhaseAsync(
                             runtime, stops, session, holdingApplicable, departingFrom: null, now, cancellationToken,
@@ -1588,7 +1605,7 @@ public sealed partial class JourneyRuntimeEngine(
                             runtime,
                             stops,
                             session,
-                            StationDepartureDeadline(runtime, runtimeOptions.StationDepartureWaitTimeout),
+                            StationDepartureDeadlineAt(runtime, stops.Current),
                             cancellationToken,
                             keepAcknowledgedIgnoring: NothingButTheEnvelope).ConfigureAwait(false);
                         await PublishEntryRequestAsync(
@@ -1617,8 +1634,10 @@ public sealed partial class JourneyRuntimeEngine(
                     // alarm by.
                     bool loadWaitRefilled = runtime.StationDepartureWaitStartedAt is null;
                     runtime.StationDepartureWaitStartedAt ??= now;
+                    DateTimeOffset? doorAlarmAt = await DoorAlarmDueAtAsync(runtime, stops, loading!, cancellationToken)
+                        .ConfigureAwait(false);
                     bool loadWaitChanged =
-                        ReconcileStationTimeoutDoorNotClosed(runtime, stops.Current.StationId, session, now) ||
+                        ReconcileStationTimeoutDoorNotClosed(runtime, stops.Current.StationId, session, doorAlarmAt, now) ||
                         loadWaitRefilled;
                     // 重填的期限同样送到车上（control-server#339），与等录入那一处同一个判据。录入请求不重发：这一站此刻在装，
                     // 没有开着的录入；下一条的录入请求在这一批落定之后随下一版清单发出，号接着这一版往上走。
@@ -1630,7 +1649,7 @@ public sealed partial class JourneyRuntimeEngine(
                             runtime,
                             reissued,
                             session,
-                            StationDepartureDeadline(runtime, runtimeOptions.StationDepartureWaitTimeout),
+                            StationDepartureDeadlineAt(runtime, stops.Current),
                             cancellationToken).ConfigureAwait(false);
                     }
                     else if (loadWaitChanged)
@@ -2920,7 +2939,7 @@ public sealed partial class JourneyRuntimeEngine(
                 session.SessionGeneration,
                 TransportBusinessState(
                     StopRevision(runtime.VehicleBusinessRevision, stop),
-                    CurrentLoadingPhase(runtime, holdingApplicable),
+                    CurrentLoadingPhase(runtime, holdingApplicable, stops),
                     PublishedBatteryState(runtime)),
                 cancellationToken,
                 keepAcknowledgedIgnoring: NothingButTheEnvelope).ConfigureAwait(false);
@@ -2937,7 +2956,7 @@ public sealed partial class JourneyRuntimeEngine(
             runtime,
             stops,
             session,
-            StationDepartureDeadline(runtime, runtimeOptions.StationDepartureWaitTimeout),
+            StationDepartureDeadlineAt(runtime, stop),
             cancellationToken,
             keepAcknowledgedIgnoring: NothingButTheEnvelope).ConfigureAwait(false);
         await RetireSupersededSnapshotAsync(PickupDispatchPlanMessageId(runtime), cancellationToken)
@@ -3121,7 +3140,7 @@ public sealed partial class JourneyRuntimeEngine(
                 sent = deadline.GetDateTimeOffset();
             }
         }
-        if (sent == StationDepartureDeadline(runtime, runtimeOptions.StationDepartureWaitTimeout))
+        if (sent == StationDepartureDeadlineAt(runtime, stops.Current))
         {
             return null;
         }
@@ -3733,7 +3752,7 @@ public sealed partial class JourneyRuntimeEngine(
             session.SessionGeneration,
             TransportBusinessState(
                 StopRevision(runtime.VehicleBusinessRevision, stop),
-                CurrentLoadingPhase(runtime, holdingApplicable),
+                CurrentLoadingPhase(runtime, holdingApplicable, stops),
                 PublishedBatteryState(runtime)),
             cancellationToken).ConfigureAwait(false);
         // The drop-off stop has no departure wait: ADR-cross-0055's wait is the pickup's.
@@ -4507,13 +4526,14 @@ public sealed partial class JourneyRuntimeEngine(
     /// （规格第 3.3 节第 12 项）——那几张只出现在分区允许途中追加的旅程上，参数批准之前一张都不会有。
     /// </para>
     /// </remarks>
-    private LoadingPhaseProjection CurrentLoadingPhase(JourneyRuntimeRow runtime, bool holdingApplicable) =>
+    // 在待送点装货的旅程没有持货期限（control-server#709）：cargoHoldingDeadlineAt 为空，与「不适用持货等单」那半句同一个下发。
+    private LoadingPhaseProjection CurrentLoadingPhase(JourneyRuntimeRow runtime, bool holdingApplicable, JourneyStopCursor stops) =>
         LoadingPhaseMachine.Project(
             runtime.LoadingPhaseState,
             runtime.LoadingClosedReason,
             runtime.CargoHoldingStartedAt,
             runtimeOptions.CargoHoldingTimeout,
-            holdingApplicable);
+            holdingApplicable && !LoadsAtStaging(stops));
 
     /// <summary>
     /// 这辆车适不适用持货等单：它能服务的分区里，至少有一个允许途中追加（REQ-0354「车辆能够服务的 DispatchZone 均禁止途中
@@ -4594,10 +4614,10 @@ public sealed partial class JourneyRuntimeEngine(
             pendingLoads,
             lastLoadingStopDeparted,
             vehicleFull,
-            HoldingDeadlinePassed: HoldingDeadlinePassed(runtime, now),
+            HoldingDeadlinePassed: HoldingDeadlinePassed(runtime, stops, now),
             LoadBatchInProgress: runtime.Stage == JourneyRuntimeStage.AwaitingLoadResult,
             DepartureUnderWay: departingFrom is null && runtime.Stage == JourneyRuntimeStage.AwaitingDepartureSafety,
-            YieldTriggered: YieldTriggeredBeforeHoldingDeadline(runtime));
+            YieldTriggered: YieldTriggeredBeforeHoldingDeadline(runtime, stops));
         // 「有一批在执行」按落库的阶段判，看板认同一句（Batch7CargoHoldingDashboardTests.TheLoadBatchInProgressPremiseIsTheEnginesOwn 逐字核对上面那一行）。
         // 唯一的例外只活在一轮之内：装货刚落定、阶段还没前移，调用方说这一批已经闭环（control-server#290）。这一轮里装货阶段随即关闭并落库，
         // 看板读到的永远是关闭之后的样子，所以它那句前提照旧成立。
@@ -4650,7 +4670,7 @@ public sealed partial class JourneyRuntimeEngine(
             bool arrived = departingFrom is not null ||
                            runtime.Stage is not (JourneyRuntimeStage.AwaitingPickupArrival or JourneyRuntimeStage.AwaitingGateArrival) ||
                            await ArrivalBusinessStateQueuedAsync(stop, cancellationToken).ConfigureAwait(false) is not null;
-            await PublishLoadingPhaseAsync(runtime, stop, arrived, session, holdingApplicable, cancellationToken)
+            await PublishLoadingPhaseAsync(runtime, stops, stop, arrived, session, holdingApplicable, cancellationToken)
                 .ConfigureAwait(false);
         }
         else if (dbContext.Entry(runtime).State == EntityState.Modified)
@@ -4711,13 +4731,18 @@ public sealed partial class JourneyRuntimeEngine(
     /// 让站已触发，而且早于持货期限（批次7-08，control-server#213）。晚于期限的触发不算：期限先到，结束原因是持货超时。
     /// 这种触发只会出现在期限已过、而这辆车还没来得及判的时候——断联期间推进段不判装货阶段。
     /// </summary>
-    private bool YieldTriggeredBeforeHoldingDeadline(JourneyRuntimeRow runtime) =>
+    private bool YieldTriggeredBeforeHoldingDeadline(JourneyRuntimeRow runtime, JourneyStopCursor stops) =>
         runtime.YieldTriggeredAt is { } triggeredAt &&
         (runtime.CargoHoldingStartedAt is not { } startedAt ||
+         LoadsAtStaging(stops) ||
          triggeredAt < startedAt + runtimeOptions.CargoHoldingTimeout);
 
-    /// <summary>持货期限已过：第一个 <c>LoadBatch</c> 闭环那一刻起算，服务端此刻的钟（ADR-cross-0057）。闭环之前恒为假。</summary>
-    private bool HoldingDeadlinePassed(JourneyRuntimeRow runtime, DateTimeOffset now) =>
+    /// <summary>
+    /// 持货期限已过：第一个 <c>LoadBatch</c> 闭环那一刻起算，服务端此刻的钟（ADR-cross-0057）。闭环之前恒为假；在待送点装货的旅程恒为假
+    /// （control-server#709，program#184 R3：待送点装了货也不因持货超时被截断、被赶走，离站由车满或客户出发决定）。
+    /// </summary>
+    private bool HoldingDeadlinePassed(JourneyRuntimeRow runtime, JourneyStopCursor stops, DateTimeOffset now) =>
+        !LoadsAtStaging(stops) &&
         runtime.CargoHoldingStartedAt is { } startedAt && now >= startedAt + runtimeOptions.CargoHoldingTimeout;
 
     /// <summary>
@@ -4914,6 +4939,7 @@ public sealed partial class JourneyRuntimeEngine(
     /// </remarks>
     private async Task PublishLoadingPhaseAsync(
         JourneyRuntimeRow runtime,
+        JourneyStopCursor stops,
         JourneyStopRow stop,
         bool arrived,
         SessionRecoveryRow session,
@@ -4932,7 +4958,7 @@ public sealed partial class JourneyRuntimeEngine(
             LoadingPhaseMessageId(stop, revision),
             runtime.AgvId,
             session.SessionGeneration,
-            TransportBusinessState(revision, CurrentLoadingPhase(runtime, holdingApplicable), PublishedBatteryState(runtime)),
+            TransportBusinessState(revision, CurrentLoadingPhase(runtime, holdingApplicable, stops), PublishedBatteryState(runtime)),
             cancellationToken).ConfigureAwait(false);
     }
 
@@ -5858,6 +5884,14 @@ public sealed partial class JourneyRuntimeEngine(
 
         // 同站追加提前结束（control-server#646）也在这个期限里：判定与下发读的是同一个时刻，见 EffectiveStationDepartureDeadline。
         // No deadline here means the wait is off: the vehicle leaves in the iteration its load commits.
+        //
+        // 待送点取货停靠例外（control-server#709，program#184 R3）：那里没有期限不是「等待关着」，是「等待没有尽头」——装完不走，
+        // 只有车满或装不下（control-server#710）、客户点出发（control-server#713）结束它；同站追加的原地到站仍按宽限结束。
+        // 所以那里期限为空答「没完」，而且与分区途中追加参数配没配无关（参数清空时也不退回装完即走）。
+        if (IsStagingPickup(stops.Current))
+        {
+            return EffectiveStationDepartureDeadline(runtime, stops) is { } early && now >= early;
+        }
         return EffectiveStationDepartureDeadline(runtime, stops) is not { } deadline || now >= deadline;
     }
 
@@ -5878,6 +5912,49 @@ public sealed partial class JourneyRuntimeEngine(
         stationDepartureWaitTimeout <= TimeSpan.Zero || runtime.StationDepartureWaitStartedAt is not { } startedAt
             ? null
             : startedAt + stationDepartureWaitTimeout;
+
+    /// <summary>
+    /// <see cref="StationDepartureDeadline"/> of <paramref name="stop"/>: none at a staging pickup (control-server#709), where
+    /// nothing but the vehicle being full, the customer's departure or a flat battery ends the wait (program#184 R3).
+    /// </summary>
+    /// <remarks>
+    /// Every reader in this engine that means the stop the vehicle stands at asks this, so the worklist, the deadline that
+    /// ends an unscanned stop and the door alarm cannot disagree about whether there is a deadline.
+    /// </remarks>
+    private DateTimeOffset? StationDepartureDeadlineAt(JourneyRuntimeRow runtime, JourneyStopRow stop) =>
+        IsStagingPickup(stop) ? null : StationDepartureDeadline(runtime, runtimeOptions.StationDepartureWaitTimeout);
+
+    /// <summary>
+    /// The staging pickups this engine has recognised (control-server#709), by stop id. Filled for each journey as its
+    /// iteration loads its stops; always empty while the staging rules are off, so no reader below changes then.
+    /// </summary>
+    private readonly HashSet<string> stagingPickupStops = new(StringComparer.Ordinal);
+
+    /// <summary>Recognises this journey's staging pickups (<see cref="StagingPickupStops"/>); does nothing, and reads nothing, while the rules are off.</summary>
+    private async Task RecognizeStagingPickupStopsAsync(JourneyStopCursor stops, CancellationToken cancellationToken)
+    {
+        if (!runtimeOptions.StagingDepartureRules.Enabled)
+        {
+            return;
+        }
+        stagingPickupStops.UnionWith(
+            await StagingPickupStops.RecognizeAsync(dbContext, stops, cancellationToken).ConfigureAwait(false));
+    }
+
+    /// <summary>Whether <paramref name="stop"/> is a staging pickup under the staging rules (control-server#709).</summary>
+    private bool IsStagingPickup(JourneyStopRow stop) =>
+        runtimeOptions.StagingDepartureRules.Enabled && stagingPickupStops.Contains(stop.StopId);
+
+    /// <summary>
+    /// Whether this journey loads at a staging pickup, at any of its stops: the cargo holding clock (ADR-cross-0057) is not
+    /// this journey's (control-server#709).
+    /// </summary>
+    /// <remarks>
+    /// Judged for the journey, not for the stop the vehicle stands at. The clock starts at the first load and runs for the
+    /// journey; were it only skipped at the staging station, the vehicle would carry a deadline that started at the staging
+    /// station's first load on to its drop-offs, and the snapshot it is sent there would show one it was never held to.
+    /// </remarks>
+    private bool LoadsAtStaging(JourneyStopCursor stops) => stops.Stops.Any(IsStagingPickup);
 
     /// <summary>
     /// The moment this journey's current stop really ends its departure wait: <see cref="StationDepartureDeadline"/>, or,
@@ -5914,8 +5991,10 @@ public sealed partial class JourneyRuntimeEngine(
     /// </remarks>
     private DateTimeOffset? EffectiveStationDepartureDeadline(JourneyRuntimeRow runtime, JourneyStopCursor stops)
     {
-        DateTimeOffset? deadline = StationDepartureDeadline(runtime, runtimeOptions.StationDepartureWaitTimeout);
-        if (deadline is not { } full ||
+        DateTimeOffset? deadline = StationDepartureDeadlineAt(runtime, stops.Current);
+        // 待送点没有期限（control-server#709），但同站追加的原地到站照旧：本停靠已装完、下一个是同站取货时，宽限一过就走到新停靠，
+        // 否则新挂上来的需求在待送点上永远扫不了。所以待送点上期限为空不在这里返回，往下算宽限。
+        if (deadline is null && !IsStagingPickup(stops.Current) ||
             runtime.StationDepartureWaitStartedAt is not { } startedAt ||
             stops.Current.StopRole != JourneyStopRoles.Pickup ||
             stops.OutstandingAtCurrentStop.Count > 0 ||
@@ -5926,7 +6005,7 @@ public sealed partial class JourneyRuntimeEngine(
             return deadline;
         }
         DateTimeOffset early = startedAt + runtimeOptions.SameStationAppendCorrectionGrace;
-        return early < full ? early : full;
+        return deadline is { } full && full < early ? full : early;
     }
 
     /// <summary>
@@ -5970,7 +6049,8 @@ public sealed partial class JourneyRuntimeEngine(
         DateTimeOffset now,
         CancellationToken cancellationToken)
     {
-        if (StationDepartureDeadline(runtime, runtimeOptions.StationDepartureWaitTimeout) is not { } deadline ||
+        // 待送点取货停靠没有期限（control-server#709），这里永远不结束它：不放回、不计 control-server#703 的次数、不挂人工搬运告警。
+        if (StationDepartureDeadlineAt(runtime, stops.Current) is not { } deadline ||
             now < deadline)
         {
             return false;
@@ -6076,6 +6156,152 @@ public sealed partial class JourneyRuntimeEngine(
         {
             LogStationDeadlineEndedStop(logger, runtime.AgvId, deadline, demandId, null);
             LogManualCarryAlarmRaised(logger, demandId, transportDemandKey, runtime.AgvId, alarmCode, null);
+        }
+        return true;
+    }
+
+    /// <summary>
+    /// 待送点取货停靠上缺电、一篮没装：本趟的需求全部放回待派，旅程收尾，车成为空闲车，交给现有的充电分配（control-server#709，
+    /// program#184 用户决定「缺电直接去充电」）。做了就返回真。
+    /// </summary>
+    /// <remarks>
+    /// <para>
+    /// <b>为什么要有这一条。</b>待送点没有期限之后，没人扫码的车会一直挂着这趟旅程；而挂着旅程的车不进充电分配（REQ-0290，
+    /// <c>ChargingAllocator</c> 的 <c>CHARGING_VEHICLE_HAS_PURPOSE</c>）。不放它走，它会在待送点上一直等到没电。
+    /// </para>
+    /// <para>
+    /// <b>只管一篮没装。</b>这趟旅程上只要有一条已装上或正在装，就什么也不做：结束旅程会让车上的货没有任何需求认领，那一支是
+    /// control-server#711（带货充电）的。所以「一篮没装」按整趟旅程判，不按本停靠：同站追加之后前一个停靠装上的货也是车上的货。
+    /// </para>
+    /// <para>
+    /// <b>放回与 control-server#713 的「出发、一篮没装」同一个做法</b>：释放改派（<see cref="DemandReleaseService.StageReleasedMembershipAsync"/>，
+    /// 默认原因 <see cref="DemandJourneyLookup.ReleasedForRedispatchReason"/>），需求仍是 <c>Accepted</c>、不写抑制、等待年龄不重置、
+    /// 不计站点超时放回的次数（control-server#703 只数 <see cref="DemandJourneyLookup.ReleasedAtStationDeadlineReason"/>），也不挂告警。
+    /// 收尾与站点期限放回最后一条那一支相同（<see cref="StageStationDeadlineEndingAsync"/>）：车就停在这一站，不修订计划；三套占用一起放，
+    /// 公共站点的占用也在其中，下一轮充电分配看到的是一辆空闲车。车上收尾快照的 <c>stopEndedReason</c> 是 <c>DEMAND_RELEASED</c>。
+    /// </para>
+    /// <para>
+    /// <b>电量按这趟旅程冻结的那一版充电策略判</b>（REQ-0282，<see cref="JourneyRuntimeRow.ChargingPolicyVersion"/>），与充电周期复查
+    /// 同一个读法；读不到电量、读数过期、没有冻结版本都不动——不知道就不放。线用 <see cref="Dispatch.Criteria.BatteryEligibility.IsMandatoryCharge"/>，
+    /// 派车、空闲返回、充电分配问的都是它。
+    /// </para>
+    /// <para>
+    /// <b>与站点期限结束一站同样的几道闸</b>（<see cref="TryEndStopAtStationDeadlineAsync"/>）：仓门没证明关着不放（放了车就会被派走）；车不在线不放；
+    /// 写锁里重读阶段、本停靠有扫码前取消开着就不放，等车报结果。
+    /// </para>
+    /// </remarks>
+    private async Task<bool> TryReleaseLowBatteryStagingStopAsync(
+        JourneyRuntimeRow runtime,
+        JourneyStopCursor stops,
+        SessionRecoveryRow session,
+        DateTimeOffset now,
+        CancellationToken cancellationToken)
+    {
+        if (stops.AllDemands.Any(item =>
+                item.Membership.Status is JourneyDemandStatuses.Loading or JourneyDemandStatuses.Loaded) ||
+            stops.Demands.Any(item =>
+                item.Demand.Status != DemandExecutionStatus.Accepted ||
+                item.Membership.Status != JourneyDemandStatuses.PendingLoad) ||
+            stops.Demands.Count == 0 ||
+            runtime.ChargingPolicyVersion is not long policyVersion)
+        {
+            return false;
+        }
+
+        RiotVehicleObservation vehicle;
+        try
+        {
+            vehicle = await vehicleFacts.ReadVehicleAsync(runtime.VehicleKey, cancellationToken).ConfigureAwait(false);
+        }
+        catch (Exception error) when (error is HttpRequestException or InvalidDataException or TaskCanceledException &&
+                                      !cancellationToken.IsCancellationRequested)
+        {
+            return false;
+        }
+        // 读完之后另取一次时钟再比（独立审查 M1）：生产的 RIoT 网关在 HTTP 调用返回之后才给读数盖时间戳，读数恒比进门时取的 now 晚，
+        // 拿 now 比「读数在将来」就恒为真、车永远放不出去。与 ChargerOccupancy、充电周期复查同一个做法：先读车，读完再取时钟。
+        DateTimeOffset readAt = timeProvider.GetUtcNow();
+        if (vehicle.BatteryPercent is not int battery ||
+            vehicle.ObservedAt > readAt ||
+            readAt - vehicle.ObservedAt > runtimeOptions.MaximumEvidenceAge)
+        {
+            return false;
+        }
+        ChargingPolicyContent policy = (await chargingPolicy.ReadFrozenAsync(policyVersion, cancellationToken)
+            .ConfigureAwait(false)).Content;
+        if (!Dispatch.Criteria.BatteryEligibility.IsMandatoryCharge(battery, policy))
+        {
+            return false;
+        }
+        if (SlotDoorsNotProvenClosed(session))
+        {
+            return false;
+        }
+        DateTimeOffset? lastInboundAt = await LatestInboundAtForSessionAsync(
+            runtime.AgvId, session.SessionGeneration, now - runtimeOptions.MaximumEvidenceAge, cancellationToken)
+            .ConfigureAwait(false);
+        if (lastInboundAt is null || now - lastInboundAt.Value > runtimeOptions.MaximumEvidenceAge)
+        {
+            return false;
+        }
+
+        await using IDbContextTransaction? transaction = dbContext.Database.CurrentTransaction is null
+            ? await dbContext.Database.BeginTransactionAsync(cancellationToken).ConfigureAwait(false)
+            : null;
+        JourneyRuntimeStage? stageNow = await dbContext.JourneyRuntimes.AsNoTracking()
+            .Where(row => row.JourneyId == runtime.JourneyId)
+            .Select(row => (JourneyRuntimeStage?)row.Stage)
+            .SingleOrDefaultAsync(cancellationToken).ConfigureAwait(false);
+        if (stageNow != JourneyRuntimeStage.AwaitingSublot ||
+            await OpenCancellationAtCurrentStopAsync(stops, cancellationToken).ConfigureAwait(false))
+        {
+            return false;
+        }
+        // 锁里重新加载：锁外那次读之后，别的连接可能刚终结或取消了其中一条。
+        JourneyStopCursor locked = await JourneyStopCursor.LoadAsync(dbContext, runtime, cancellationToken).ConfigureAwait(false);
+        if (locked.AllDemands.Any(item =>
+                item.Membership.Status is JourneyDemandStatuses.Loading or JourneyDemandStatuses.Loaded) ||
+            locked.Demands.Count == 0 ||
+            locked.Demands.Any(item =>
+                item.Demand.Status != DemandExecutionStatus.Accepted ||
+                item.Membership.Status != JourneyDemandStatuses.PendingLoad))
+        {
+            return false;
+        }
+
+        // 收尾之后本停靠此刻那一版录入请求按算式就算不回来了，先取好（同站点期限那一处）。
+        string sublotRequestMessageId = locked.CurrentSublotRequestMessageId(runtime.WorklistRevision);
+        string currentStopId = locked.Current.StopId;
+        string[] leaving = [.. locked.Demands.Select(item => item.Demand.DemandId)];
+        int releasedFromCurrentStop = locked.Demands.Count(item =>
+            string.Equals(item.Membership.PickupStopId, currentStopId, StringComparison.Ordinal));
+        foreach (string demandId in leaving)
+        {
+            JourneyDemandRow membership = await dbContext.Set<JourneyDemandRow>()
+                .SingleAsync(
+                    row => row.JourneyId == runtime.JourneyId && row.DemandId == demandId && row.RemovedAt == null,
+                    cancellationToken)
+                .ConfigureAwait(false);
+            await DemandReleaseService.StageReleasedMembershipAsync(dbContext, membership, now, cancellationToken)
+                .ConfigureAwait(false);
+        }
+        // 版数守恒，与站点期限放回同一个理由：这个停靠的归属少了几条，就补上几版，退役本站较早各版清单才数得全。
+        (await TrackedStopAsync(currentStopId, cancellationToken).ConfigureAwait(false)).WorklistRefills +=
+            releasedFromCurrentStop;
+        await new PickupStopTermination(dbContext).StageJourneyClosureAsync(
+            runtime, sublotRequestMessageId, DemandJourneyLookup.ReleasedForRedispatchReason, now, cancellationToken)
+            .ConfigureAwait(false);
+        await dbContext.SaveChangesAsync(cancellationToken).ConfigureAwait(false);
+        if (transaction is not null)
+        {
+            await transaction.CommitAsync(cancellationToken).ConfigureAwait(false);
+        }
+        await JourneyClosure.SendAsync(publisher, dbContext, runtime.AgvId, cancellationToken).ConfigureAwait(false);
+        checkpointWaits.Clear(runtime.VehicleKey);
+        foreach (string demandId in leaving)
+        {
+            LogStagingLowBatteryReleasedDemand(
+                logger, runtime.AgvId, battery, policy.MandatoryChargeEntryThresholdPercent, demandId, null);
         }
         return true;
     }
@@ -6242,14 +6468,21 @@ public sealed partial class JourneyRuntimeEngine(
     /// withdrawal clears only this code, so a reason written by anything else survives. Its start time is
     /// the block reason's own (control-server#80).
     /// </para>
+    /// <para>
+    /// <paramref name="alarmAt"/> is when the alarm becomes due: the station departure deadline at a machine pickup, and at
+    /// a staging pickup, which has none, the load command plus
+    /// <see cref="StagingDepartureRulesOptions.LoadNotSettledAlarmAfter"/> (<see cref="DoorAlarmDueAtAsync"/>,
+    /// control-server#709). Null means no alarm is due.
+    /// </para>
     /// </remarks>
     private bool ReconcileStationTimeoutDoorNotClosed(
         JourneyRuntimeRow runtime,
         string stationId,
         SessionRecoveryRow session,
+        DateTimeOffset? alarmAt,
         DateTimeOffset now)
     {
-        if (StationDepartureDeadline(runtime, runtimeOptions.StationDepartureWaitTimeout) is { } deadline &&
+        if (alarmAt is { } deadline &&
             now >= deadline &&
             SlotDoorsNotProvenClosed(session))
         {
@@ -6268,6 +6501,37 @@ public sealed partial class JourneyRuntimeEngine(
         }
         runtime.SetBlockReason(null, now);
         return true;
+    }
+
+    /// <summary>
+    /// When the door-not-closed alarm of the load in progress at the current stop becomes due
+    /// (<see cref="ReconcileStationTimeoutDoorNotClosed"/>).
+    /// </summary>
+    /// <remarks>
+    /// At a machine pickup that is the station departure deadline, as it always was. A staging pickup has no deadline
+    /// (control-server#709), and without another clock an open door there would never be reported: the alarm is due
+    /// <see cref="StagingDepartureRulesOptions.LoadNotSettledAlarmAfter"/> after the load command was queued. The command's
+    /// own outbox row says when, so the clock survives a restart and a reconnect. It only tells a person, as before; it ends
+    /// nothing.
+    /// </remarks>
+    private async Task<DateTimeOffset?> DoorAlarmDueAtAsync(
+        JourneyRuntimeRow runtime,
+        JourneyStopCursor stops,
+        JourneyStopDemand loading,
+        CancellationToken cancellationToken)
+    {
+        if (!IsStagingPickup(stops.Current))
+        {
+            return StationDepartureDeadline(runtime, runtimeOptions.StationDepartureWaitTimeout);
+        }
+        string? commandId = loading.Membership.LoadCommandMessageId;
+        DateTimeOffset? queuedAt = commandId is null
+            ? null
+            : await dbContext.ProtocolOutbox.AsNoTracking()
+                .Where(row => row.MessageId == commandId)
+                .Select(row => (DateTimeOffset?)row.CreatedAt)
+                .SingleOrDefaultAsync(cancellationToken).ConfigureAwait(false);
+        return queuedAt + runtimeOptions.StagingDepartureRules.LoadNotSettledAlarmAfter;
     }
 
     /// <summary>

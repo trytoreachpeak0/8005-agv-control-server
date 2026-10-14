@@ -136,4 +136,45 @@ public sealed class Batch7StopDrivenAdvanceWireParityTests
         Assert.Equal(JourneyRuntimeStage.AwaitingSublot, (await fixture.RuntimeAsync(FirstDemandId)).Stage);
         await WirePin.AssertMatchesAsync(fixture.Context, "reconnect-replay", fixture.Peer.Lines);
     }
+
+    // ---- control-server#709：待送点规则打开时，机台取货仍与这几份基线逐字相同 ----------------------------------------------
+    //
+    // 放在这个类里而不是另起一类：两边写同一份基线的 .actual，分在两个类里会被 xunit 并行跑、撞上文件占用（IOException）。
+    // 规则只认 STAGING_TO_WIRE 在派工待送站的取货，下面两条都是 WIRE_TO_GATE 在机台取货；判别改成恒真，这两条红。
+
+    [Fact]
+    public async Task ANormalMachineJourneySendsTheSameLinesWithTheStagingRulesOn()
+    {
+        await using RuntimeFixture fixture = await RuntimeFixture.CreateAsync();
+        fixture.Options.StagingDepartureRules.Enabled = true;
+        fixture.Catalog.Set(fixture.Demand(FirstDemandId, FirstSublot, Now.AddMinutes(-10)));
+        fixture.BoxCounts.Set(FirstSublot, 4);
+
+        JourneyRuntimeRow runtime = await RunJourneyToCompletionAsync(
+            fixture, FirstDemandId, FirstSublot, FirstSubmissionId, FirstSafetyResultId);
+
+        Assert.Equal(JourneyRuntimeStage.Completed, runtime.Stage);
+        await WirePin.AssertMatchesAsync(fixture.Context, "normal-journey", fixture.Peer.Lines);
+    }
+
+    [Fact]
+    public async Task AMachineStopEndedByItsStationDeadlineSendsTheSameLinesWithTheStagingRulesOn()
+    {
+        await using RuntimeFixture fixture = await RuntimeFixture.CreateAsync();
+        fixture.Options.StagingDepartureRules.Enabled = true;
+        fixture.Options.StationTimeoutRedispatchLimit = 0;
+        fixture.Options.StationDepartureWaitTimeout = TimeSpan.FromSeconds(10);
+        fixture.Catalog.Set(fixture.Demand(FirstDemandId, FirstSublot, Now.AddMinutes(-10)));
+        fixture.BoxCounts.Set(FirstSublot, 7);
+
+        await ArriveAtPickupAsync(fixture, FirstDemandId);
+        await fixture.ProveSlotDoorsClosedAsync();
+        fixture.Clock.Advance(TimeSpan.FromSeconds(10));
+        await TickAndRunAsync(fixture);
+
+        JourneyRuntimeRow runtime = await fixture.RuntimeAsync(FirstDemandId);
+        Assert.Equal(JourneyRuntimeStage.Completed, runtime.Stage);
+        Assert.Equal("CANCELLED_BY_STATION_TIMEOUT", runtime.BlockReasonCode);
+        await WirePin.AssertMatchesAsync(fixture.Context, "station-deadline", fixture.Peer.Lines);
+    }
 }

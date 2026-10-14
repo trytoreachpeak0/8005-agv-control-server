@@ -12,6 +12,9 @@
              它离开 MES 目录之后告警才清。
 
 在这之前第 1 趟就终结并永久抑制，没有任何告警，MES 里那条需求一直挂着、货留在机台上没人知道。
+
+control-server#709 起这条只断言机台取货，并在待送点规则打开的情况下跑：规则只对 STAGING_TO_WIRE 在待送点的取货生效，
+机台取货的期限、放回与告警一条都不能变。待送点没有期限那一半由 staging-pickup-no-station-timeout 证明。
 #>
 [CmdletBinding()]
 param([Parameter(Mandatory)][object]$Context)

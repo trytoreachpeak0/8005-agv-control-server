@@ -780,6 +780,10 @@ try {
             $serverEnvironment["JourneyRuntime__$key"] = [string]$setup[$key]
         }
     }
+    # control-server#709's staging station departure rules, off by default like the server's own switch.
+    if ($setup.ContainsKey('StagingDepartureRulesEnabled')) {
+        $serverEnvironment['JourneyRuntime__StagingDepartureRules__Enabled'] = [string]$setup.StagingDepartureRulesEnabled
+    }
 
     # FP-C13: the two REQ-0302 values, approved. A commissioned server has them, so every scenario
     # faces one. `CatalogApproved = $false` in a setup file takes them away, which is the negative
@@ -904,6 +908,12 @@ try {
     if ($serverEnvironment.ContainsKey('JourneyRuntime__cargoHoldingTimeout')) {
         $journal.Observe('server-environment:JourneyRuntime__cargoHoldingTimeout',
             $serverEnvironment['JourneyRuntime__cargoHoldingTimeout'], $null)
+    }
+    # control-server#709's staging rules switch, recorded the same way: a machine regression run with it on proves nothing
+    # unless the evidence shows it was on.
+    if ($serverEnvironment.ContainsKey('JourneyRuntime__StagingDepartureRules__Enabled')) {
+        $journal.Observe('server-environment:JourneyRuntime__StagingDepartureRules__Enabled',
+            $serverEnvironment['JourneyRuntime__StagingDepartureRules__Enabled'], $null)
     }
     # ControlServer.FieldOps, the same executable a site's W1 window runs, against the SQLite file the server is
     # using. Returns the one JSON object the tool prints; a non-zero exit is a thrown error carrying its stderr,
