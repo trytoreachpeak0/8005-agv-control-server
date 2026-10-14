@@ -265,6 +265,35 @@ public sealed class SlotConfigurationReadinessGate(
         CancellationToken cancellationToken) =>
         (await EvaluateAsync(agvId, slotModelVersionId, cancellationToken)).Ready;
 
+    /// <summary>
+    /// 现算一台车在它此刻绑定的车型下的就绪判定（control-server#686，派车用）；车型解析不出、或解析出的车型一个仓位都没有时为
+    /// <c>null</c>。只读，同 <see cref="EvaluateAsync"/>。
+    /// </summary>
+    /// <remarks>
+    /// 车型取 <see cref="VehicleSlotModelResolver.ResolveAsync"/>（生效配置优先，退到最新已发布绑定），与派车读仓位分组是同一处，
+    /// 所以「这台车核验的是哪一版车型」与「派车按哪一版车型装货」不会是两个答案。解析不出不猜：调用方按未确认处理。
+    /// </remarks>
+    public async Task<SlotConfigurationReadinessVerdict?> EvaluateVehicleAsync(
+        string agvId,
+        CancellationToken cancellationToken)
+    {
+        ArgumentException.ThrowIfNullOrWhiteSpace(agvId);
+
+        VehicleSlotModelResolution? resolution =
+            await VehicleSlotModelResolver.ResolveAsync(_context, agvId, cancellationToken);
+        if (resolution is null)
+        {
+            return null;
+        }
+        // EvaluateAsync throws on a model with no slots; for dispatch that is one more way of not being confirmed, and a
+        // throw here would cost the vehicle's whole round rather than this one verdict.
+        bool modelHasSlots = await _context.Set<SlotModelSlotRow>().AsNoTracking()
+            .AnyAsync(row => row.SlotModelVersionId == resolution.SlotModelVersionId, cancellationToken);
+        return modelHasSlots
+            ? await EvaluateAsync(agvId, resolution.SlotModelVersionId, cancellationToken)
+            : null;
+    }
+
     private async Task InvalidateAsync(
         string agvId,
         string slotModelVersionId,

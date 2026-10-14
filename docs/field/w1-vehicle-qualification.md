@@ -90,9 +90,12 @@ Governance:slotConfigurationReadinessGate = Enforcing
 
 缺省是 `Off`。写成别的值服务启动即抛——一个被拼错的档位名如果被静默当成关的，现场会以为门禁开着。
 
-还有一句必须说清：**当前 `src/` 里没有任何生产调用点读
-`SlotConfigurationReadinessGate.IsSlotConfigurationConfirmedAsync`。**把 readiness 接进投运判定属于
-投运流程，不属于本窗口。所以本窗口证明的是「三台车的 readiness 是怎么取得的」，不是「门禁在拦车」。
+**档位为 `Enforcing` 时门禁经派车拦车**（control-server#686 起）：派车判据
+`SlotConfigurationReadinessCriterion` 按车现算 readiness，未确认的车不接搬运，积压原因码
+`SLOT_CONFIGURATION_NOT_CONFIRMED`；空闲返回与充电不受影响。v2 并行实例的档位不由人改：部署脚本按已装
+定义的 `productionCutover.phase` 写（生产段 `Enforcing`，试跑段与其余定义 `Off`），手改配置会被下一次部署
+写回。2026-09-13 那次 W1 窗口做在 control-server#686 之前，它的证据证明的仍是「三台车的 readiness 是怎么
+取得的」，不是「门禁在拦车」。
 
 ## 五、出了问题怎么办
 

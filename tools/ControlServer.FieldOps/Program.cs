@@ -405,11 +405,10 @@ internal static partial class Program
     /// 记录门禁启用这一刻。
     /// </summary>
     /// <remarks>
-    /// **它记的是时刻，不是它自己在拦车。**当前 <c>src/</c> 里没有任何生产调用点读
-    /// <see cref="SlotConfigurationReadinessGate.IsSlotConfigurationConfirmedAsync"/>——把 readiness
-    /// 接进投运判定属于投运流程，不属于这张现场票。所以这条命令做的是：写一条不可改写审计，让
-    /// 「门禁上线晚于第一台车核对通过」这件事在证据里可复核，并提醒运维去改
-    /// <c>Governance:slotConfigurationReadinessGate</c> 并重启服务。
+    /// **它记的是时刻，不是它自己在拦车。**拦车的是派车判据 <c>SlotConfigurationReadinessCriterion</c>，
+    /// 只在 <c>Governance:slotConfigurationReadinessGate</c> 为 <c>Enforcing</c> 时（control-server#686）。
+    /// 所以这条命令做的是：写一条不可改写审计，让「门禁上线晚于第一台车核对通过」这件事在证据里可复核，
+    /// 并说明要的档位。v2 并行实例的档位由部署脚本按切换阶段写，不靠手改。
     /// </remarks>
     private static async Task<int> EnableGateAsync(
         GovernanceStore governance,
