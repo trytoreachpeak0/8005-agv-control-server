@@ -31,25 +31,44 @@ namespace ControlServer.Host.Runtime.Dispatch;
 /// <para>
 /// 进程内的，不落库。重启之后第一轮之前它是空的，那一段装货阶段按落库的判定走（<c>FullSlotPositionsJson</c>），不会翻状态。
 /// </para>
+/// <para>
+/// <b>它还原样留着每辆车上一轮的全部裁决</b>（<see cref="CandidateVerdictsOf"/>，control-server#710）：待送点「全部装不下就走」
+/// 要的不是哪几侧被占，而是这一轮判过的每一条待送候选各自被什么挡住——途中追加的 9 段、8 条上限在 Order 98 就拒了，那些候选
+/// 走不到仓位判据，也就不会出现在上面那张按侧的表里。看板积压行上的原因码不能代替它：那一行被这一轮最后判它的那辆车覆盖
+/// （<c>DispatchRoundRunner.UpsertBacklog</c>），说的未必是这辆车。与按侧那张表同一次整张替换、同一个「这一轮没有这辆车就说不出来」。
+/// </para>
 /// </remarks>
 public sealed class SlotGroupFullnessBoard
 {
     private readonly object _gate = new();
     private Dictionary<string, IReadOnlySet<string>> _ownCargoBlockedGroups = new(StringComparer.Ordinal);
+    private Dictionary<string, IReadOnlyList<DispatchCandidateVerdict>> _verdicts = new(StringComparer.Ordinal);
 
     /// <summary>用一轮的裁决替换整张表。</summary>
     public void Record(DispatchRoundOutcome outcome)
     {
         ArgumentNullException.ThrowIfNull(outcome);
         Dictionary<string, IReadOnlySet<string>> next = new(StringComparer.Ordinal);
+        Dictionary<string, IReadOnlyList<DispatchCandidateVerdict>> verdicts = new(StringComparer.Ordinal);
         foreach (DispatchVehicleOutcome vehicle in outcome.CompletedVehicles)
         {
             next[vehicle.AgvId] = OwnCargoBlockedGroups(vehicle.Verdicts);
+            verdicts[vehicle.AgvId] = [.. vehicle.Verdicts];
         }
 
         lock (_gate)
         {
             _ownCargoBlockedGroups = next;
+            _verdicts = verdicts;
+        }
+    }
+
+    /// <summary>这辆车上一轮判过的每一条候选与它的裁决（control-server#710）；这辆车上一轮没有结论时为空引用。</summary>
+    public IReadOnlyList<DispatchCandidateVerdict>? CandidateVerdictsOf(string agvId)
+    {
+        lock (_gate)
+        {
+            return _verdicts.TryGetValue(agvId, out IReadOnlyList<DispatchCandidateVerdict>? verdicts) ? verdicts : null;
         }
     }
 

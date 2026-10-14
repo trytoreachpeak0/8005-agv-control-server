@@ -4604,7 +4604,11 @@ public sealed partial class JourneyRuntimeEngine(
         bool? vehicleFull = null;
         if (holdingApplicable && !closed && !lastLoadingStopDeparted)
         {
-            vehicleFull = await JudgeVehicleFullAsync(runtime, cancellationToken).ConfigureAwait(false);
+            // 待送点取货停靠按「全满或等着的需求全部装不下」判（control-server#710），别的停靠照旧按两侧都满判。
+            JourneyStopRow standing = departingFrom ?? stops.Current;
+            vehicleFull = IsStagingPickup(standing)
+                ? await JudgeStagingDepartureAsync(runtime, standing, cancellationToken).ConfigureAwait(false)
+                : await JudgeVehicleFullAsync(runtime, cancellationToken).ConfigureAwait(false);
         }
 
         LoadingPhaseMachine.Facts facts = new(
@@ -4725,6 +4729,72 @@ public sealed partial class JourneyRuntimeEngine(
         }
 
         return full.Count == positions.PhysicalSlotCountByGroup.Count;
+    }
+
+    /// <summary>
+    /// 待送点取货停靠上车该不该自己走（control-server#710，<see cref="StagingDepartureRule"/>）：该走答真，交给 <see cref="LoadingPhaseMachine"/>
+    /// 当作「满」，判出 <c>VEHICLE_FULL</c>；说不出来为空。
+    /// </summary>
+    /// <remarks>
+    /// <para>
+    /// <b>已经判过该走就不再读</b>：落库的装货阶段是 <c>VEHICLE_FULL</c> 就答真（CP-0012 第五节②，判为该走后锁住）。在待送点上只有这里会判出
+    /// <c>VEHICLE_FULL</c>，所以它就是「判过该走」。锁按旅程而不按停靠：判满时清单上已承诺、还没扫码的需求（同站追加新开的停靠）先装完再走
+    /// （第五节①），车原地走到那个停靠，装完照样不再等。
+    /// </para>
+    /// <para>
+    /// 「每一侧都满」读账本，与 <see cref="JudgeVehicleFullAsync"/> 同一个账本；「等着的需求」读派车轮上一轮对这辆车的全部裁决
+    /// （<see cref="SlotGroupFullnessBoard.CandidateVerdictsOf"/>）。<c>FullSlotPositionsJson</c> 照旧写哪几侧满（无空仓，或有候选只因本车货占着它），
+    /// 与机台取货同一个含义。
+    /// </para>
+    /// </remarks>
+    private async Task<bool?> JudgeStagingDepartureAsync(
+        JourneyRuntimeRow runtime,
+        JourneyStopRow standing,
+        CancellationToken cancellationToken)
+    {
+        if (runtime.LoadingPhaseState == LoadingPhaseStates.VehicleFull)
+        {
+            return StagingDepartureRule.Decide(new StagingDepartureRule.Facts(AlreadyDue: true, null, null));
+        }
+        IReadOnlyList<DispatchCandidateVerdict>? verdicts = slotGroupFullness.CandidateVerdictsOf(runtime.AgvId);
+        if (verdicts is null)
+        {
+            return null;
+        }
+
+        VehicleSlotPositions? positions = await new VehicleSlotPositionReader(dbContext)
+            .ReadAsync(runtime.AgvId, cancellationToken).ConfigureAwait(false);
+        OnboardDispatchFacts? onboard = await ReadOnboardFactsAsync(runtime.AgvId, cancellationToken).ConfigureAwait(false);
+        bool? everyGroupFull = null;
+        if (positions is not null && onboard is not null && positions.PhysicalSlotCountByGroup.Count > 0)
+        {
+            IReadOnlySet<string> ownCargoBlocked = SlotGroupFullnessBoard.OwnCargoBlockedGroups(verdicts);
+            JourneyAwareSlotLedger ledger = new(dbContext);
+            List<string> full = [];
+            bool noneFree = true;
+            foreach (string group in positions.PhysicalSlotCountByGroup.Keys.Order(StringComparer.Ordinal))
+            {
+                IReadOnlyList<int> free = await ledger
+                    .ReadAvailableSlotsAsync(runtime.AgvId, onboard, positions, group, cancellationToken)
+                    .ConfigureAwait(false);
+                noneFree &= free.Count == 0;
+                if (free.Count == 0 || ownCargoBlocked.Contains(group))
+                {
+                    full.Add(group);
+                }
+            }
+            string fullJson = JsonSerializer.Serialize(full);
+            if (!string.Equals(runtime.FullSlotPositionsJson, fullJson, StringComparison.Ordinal))
+            {
+                runtime.FullSlotPositionsJson = fullJson;
+            }
+            everyGroupFull = noneFree;
+        }
+
+        return StagingDepartureRule.Decide(new StagingDepartureRule.Facts(
+            AlreadyDue: false,
+            everyGroupFull,
+            StagingDepartureRule.WaitingAt(verdicts, standing.StationRiotId)));
     }
 
     /// <summary>
@@ -5888,9 +5958,13 @@ public sealed partial class JourneyRuntimeEngine(
         // 待送点取货停靠例外（control-server#709，program#184 R3）：那里没有期限不是「等待关着」，是「等待没有尽头」——装完不走，
         // 只有车满或装不下（control-server#710）、客户点出发（control-server#713）结束它；同站追加的原地到站仍按宽限结束。
         // 所以那里期限为空答「没完」，而且与分区途中追加参数配没配无关（参数清空时也不退回装完即走）。
+        //
+        // 车满或等着的需求全部装不下（control-server#710）由装货阶段的 VEHICLE_FULL 表达，判出来的这一轮就结束等待、发离站核验，
+        // 不留纠错宽限（用户定，CP-0012 第五节②）。上面那道纠错闸照样在前：已经开着的纠错挡车，闭环之后这里再答，满足就立即走。
         if (IsStagingPickup(stops.Current))
         {
-            return EffectiveStationDepartureDeadline(runtime, stops) is { } early && now >= early;
+            return runtime.LoadingPhaseState == LoadingPhaseStates.VehicleFull ||
+                   EffectiveStationDepartureDeadline(runtime, stops) is { } early && now >= early;
         }
         return EffectiveStationDepartureDeadline(runtime, stops) is not { } deadline || now >= deadline;
     }

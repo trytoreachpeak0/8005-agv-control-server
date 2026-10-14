@@ -28,12 +28,12 @@ namespace ControlServer.Tests;
 /// </remarks>
 public sealed class StagingPickupNoCountdownTests
 {
-    private const string Demand = "10000000-0000-4000-8000-000000000001";
+    internal const string Demand = "10000000-0000-4000-8000-000000000001";
 
     // 夹具的 AdvanceToLoadResultAsync 录的就是这一条。
     private const string Sublot = "SUBLOT-001";
 
-    private const int StagingStationRiotId = 305;
+    internal const int StagingStationRiotId = 305;
 
     private const string SecondDemand = "10000000-0000-4000-8000-000000000709";
 
@@ -429,7 +429,7 @@ public sealed class StagingPickupNoCountdownTests
 
     // ---- helpers ---------------------------------------------------------------------------------------------------
 
-    private static async Task<RuntimeFixture> ArrangeAsync(StopKind kind)
+    internal static async Task<RuntimeFixture> ArrangeAsync(StopKind kind)
     {
         RuntimeFixture fixture = await RuntimeFixture.CreateAsync();
         fixture.Options.AllowedWorkTypes = [TransportTaskTypes.WireToGate, TransportTaskTypes.StagingToWire];
@@ -460,7 +460,7 @@ public sealed class StagingPickupNoCountdownTests
     }
 
     /// <summary>本区允许途中追加：持货等单适用（与 <c>Batch7CargoHoldingTests.HoldingFixtureAsync</c> 同一版参数）。</summary>
-    private static async Task AllowEnRouteAppendAsync(RuntimeFixture fixture)
+    internal static async Task AllowEnRouteAppendAsync(RuntimeFixture fixture)
     {
         await new DispatchZoneParameterStore(fixture.Context, CreateGovernedPublisher(fixture.Context))
             .WriteVersionAsync(
@@ -471,7 +471,7 @@ public sealed class StagingPickupNoCountdownTests
     }
 
     /// <summary>到站、录入、装货落定，停在离站等待。</summary>
-    private static async Task LoadTheBasketAsync(RuntimeFixture fixture)
+    internal static async Task LoadTheBasketAsync(RuntimeFixture fixture)
     {
         await fixture.AdvanceToLoadResultAsync();
         await fixture.ApplySafeResultAsync(
