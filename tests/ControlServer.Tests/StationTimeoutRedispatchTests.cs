@@ -108,6 +108,34 @@ public sealed class StationTimeoutRedispatchTests
     }
 
     /// <summary>
+    /// MesIngest 只把合格的需求放进目录：一条 MES 里仍开着的需求可能因重复观测、告警条件码或字段问题掉出目录一轮。那一轮告警按「离开目录」清掉，
+    /// 它回到目录时告警要重开（control-server#703 审查 M1）——否则货还在机台上，告警却没了，又回到静默丢单。
+    /// </summary>
+    [Fact]
+    [Trait("IntegrationSlice", "FP-IS-02")]
+    public async Task AManualCarryAlarmClearedWhileTheDemandDroppedOutOfTheCatalogIsRaisedAgainWhenItComesBack()
+    {
+        await using RuntimeFixture fixture = await SingleDemandAsync();
+        fixture.Options.StationTimeoutRedispatchLimit = 0;
+        await fixture.AdvanceToSublotWaitAsync();
+        await RunOutTheStationDeadlineAsync(fixture);
+        Assert.Null(Assert.Single(await AlarmsAsync(fixture)).ClearedAt);
+
+        fixture.Catalog.Set();
+        await fixture.HearFromPeerAsync();
+        await TickAndRunAsync(fixture);
+        Assert.NotNull(Assert.Single(await AlarmsAsync(fixture)).ClearedAt);
+
+        fixture.Catalog.Set(fixture.Demand(Demand, Sublot, createdAt: Now.AddMinutes(-10)));
+        await fixture.HearFromPeerAsync();
+        await TickAndRunAsync(fixture);
+        StructuralDispatchBlockRow alarm = Assert.Single(await AlarmsAsync(fixture));
+        Assert.Equal(ManualCarryAlarms.StationTimeoutRedispatchLimitReached, alarm.ReasonCode);
+        Assert.Null(alarm.ClearedAt);
+        Assert.Equal(1, await fixture.Context.JourneyRuntimes.CountAsync(Token));
+    }
+
+    /// <summary>
     /// 计数在库里，不在进程里：放回一次之后服务重启，上限 1 照样在第二次站点超时时生效。
     /// </summary>
     [Fact]
