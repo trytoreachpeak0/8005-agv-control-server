@@ -79,6 +79,10 @@ internal sealed class DispatchBacklogQueryEndpoint : IDashboardQueryEndpoint
             [DispatchReasonCodes.VehicleInManualChargingHold] =
                 "这辆车在人工充电等待中（充电桩名册里没有它可用的桩，或它的充电单反复被取消），不接任何任务、也不会自己移动；"
                 + "请人工给它充电，再由管理员在车上发起「充电后返回服务」。电量回升、名册重新启用都不会自动解除",
+            // control-server#686（REQ-0259、REQ-0263）：生产段的逐车门禁，档位由部署按切换阶段写，不靠人开。
+            [DispatchReasonCodes.SlotConfigurationNotConfirmed] =
+                "这辆车的仓位配置在当前库里还没确认（IO 绑定不齐、还没逐仓核对、核对有仓没通过，或维修换过硬件后还没重新核对），不接搬运；"
+                + "别的车照常。现场逐仓核对开、关、到位三个信号并录入通过后，下一轮即可派",
             // 批次9-02（control-server#400）：逐车硬阻断，看板展示归批次9-10，这里只有派车原因的一句说明。
             [DispatchReasonCodes.ChargingPolicyNotApproved] =
                 "这辆车没有已批准并激活、适用范围覆盖它的充电策略版本，不承接新任务；别的车照常，导入、批准并激活一版覆盖它的策略即解除",
