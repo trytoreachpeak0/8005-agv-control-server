@@ -545,6 +545,57 @@ public sealed class CargoHoldingTruncationTests
     }
 
     /// <summary>
+    /// 开往第二个取货站的订单意图已经保存（离站已授权），而阶段还没前移（保存冲突或重启），持货期限恰在这时过去：那一站和它上面的需求都不截，
+    /// 也不会按截断之后的下一站再建一张单（cs#290 再审 L3）。
+    /// </summary>
+    /// <remarks>
+    /// 「意图已存、阶段没前移」用落库状态构造：先正常答离站核验（意图、建单、阶段前移、停靠完成），再把旅程阶段与第一个停靠的状态改回离站之前。
+    /// 这正是崩在「意图保存」与「阶段前移」两次保存之间时库里的样子。截掉那一站的实现，下一轮会把卸货站当成下一站重新核验、建第二张单。
+    /// </remarks>
+    [Fact]
+    [Trait("IntegrationSlice", "FP-IS-08")]
+    public async Task APickupStopWhoseOrderIntentIsAlreadySavedIsNotTruncated()
+    {
+        CancellationToken token = TestContext.Current.CancellationToken;
+        await using RuntimeFixture fixture = await HoldingFixtureAsync();
+        await LoadTheFirstDemandAsync(fixture);
+        await AppendSecondAsync(fixture);
+        await TickAndRunAsync(fixture);
+        JourneyRuntimeRow beforeDeparture = await JourneyOfAsync(fixture, FirstDemandId);
+        string journeyId = beforeDeparture.JourneyId;
+        Assert.Equal(JourneyRuntimeStage.AwaitingDepartureSafety, beforeDeparture.Stage);
+        JourneyStopRow firstPickup = await CurrentStopAsync(fixture, FirstDemandId);
+        string firstPickupStatus = firstPickup.Status;
+        JourneyStopRow secondPickup = await PickupStopAtAsync(fixture, journeyId, SecondPickupStationRiotId);
+        string unloadUpperId = (await fixture.Context.Set<JourneyStopRow>().AsNoTracking()
+            .SingleAsync(row => row.JourneyId == journeyId && row.StopRole == JourneyStopRoles.Unload, token)).UpperId;
+
+        await AnswerDepartureSafetyAsync(fixture, FirstDemandId, FirstSafetyResultId);
+        Assert.True(
+            await fixture.Context.OrderIntents.AsNoTracking().AnyAsync(row => row.UpperId == secondPickup.UpperId, token),
+            "The departure did not save an order intent toward the second pickup.");
+        JourneyRuntimeRow runtime = await fixture.Context.JourneyRuntimes.SingleAsync(row => row.JourneyId == journeyId, token);
+        runtime.Stage = JourneyRuntimeStage.AwaitingDepartureSafety;
+        JourneyStopRow trackedFirst = await fixture.Context.Set<JourneyStopRow>()
+            .SingleAsync(row => row.StopId == firstPickup.StopId, token);
+        trackedFirst.Status = firstPickupStatus;
+        await fixture.Context.SaveChangesAsync(token);
+        fixture.Context.ChangeTracker.Clear();
+
+        fixture.Clock.Advance(TimeSpan.FromMinutes(30));
+        await fixture.HearFromPeerAsync();
+        await TickAndRunAsync(fixture);
+
+        Assert.Equal(LoadingPhaseStates.Closed, (await JourneyOfAsync(fixture, FirstDemandId)).LoadingPhaseState);
+        JourneyDemandRow second = await MembershipOnAsync(fixture, journeyId, SecondDemandId);
+        Assert.True(second.RemovedAt is null, "The demand whose pickup already has an order was released.");
+        Assert.NotEqual(JourneyStopStatuses.Removed, (await PickupStopAtAsync(fixture, journeyId, SecondPickupStationRiotId)).Status);
+        Assert.False(
+            await fixture.Context.OrderIntents.AsNoTracking().AnyAsync(row => row.UpperId == unloadUpperId, token),
+            "A second order was planned toward the unload stop.");
+    }
+
+    /// <summary>
     /// 参数批准之前（不适用持货等单）一条都不截：与批次 6 相同，这一票对未配置分区参数的旅程零变化。
     /// </summary>
     [Fact]
