@@ -226,6 +226,11 @@ Invoke-RestMethod -Method Post -Uri 'http://127.0.0.1:58007/api/safety/v1/emerge
 
 返回码与路径二相同；409 时响应里除了 `reasons`，还有逐条的中文说明 `descriptions` 和这次请求的审计记录号 `auditRecordId`。
 
+**v2 并行实例上**（workspace#49）：上面两个示例写的是产品默认的端口与变量名，那是 MVP 的。v2 实例的入口在它自己的健康端口（`58107`），
+两把凭据在它服务自己的 `Environment` 里，变量名是 `CONTROL_SERVER_V2_EMERGENCY_RELEASE_CREDENTIAL` 与
+`CONTROL_SERVER_V2_EMERGENCY_LOADED_RELEASE_CREDENTIAL`，值存在控制端的 DPAPI 秘密存储里。怎么部署出来、谁在哪台机器上调用、示例命令，
+见 8005-workspace `remote-ops/factory-server/docs/wire-to-gate-parallel-cd.md` 第 7.3 节。
+
 ### 解除之后
 
 - **解除只结束这一次急停。**车辆故障阻断还在，这台车照样不派新单；清除故障有自己的规则，见

@@ -1702,6 +1702,9 @@ $optionSources = @(
     @{ Section = 'fieldOperatorRoles'; Path = 'src/ControlServer.Host/Runtime/Charging/FieldOperatorRoleRoster.cs'; Class = 'FieldOperatorRoleOptions'; Excluded = @() }
     # control-server#617.
     @{ Section = 'foreignRunningOrderRelease'; Path = 'src/ControlServer.Host/Runtime/ForeignOrders/ForeignRunningOrderReleaseOptions.cs'; Class = 'ForeignRunningOrderReleaseOptions'; Excluded = @() }
+    # workspace#49. Both credential variable NAMES are excluded, as for vehicleFaultRecovery: the overlay writes this instance's
+    # own names, so a definition cannot point the parallel service at the MVP's variables.
+    @{ Section = 'emergencyStopRelease'; Path = 'src/ControlServer.Host/Runtime/EmergencyStopReleaseOptions.cs'; Class = 'EmergencyStopReleaseOptions'; Excluded = @('CredentialEnvironmentVariable', 'LoadedCredentialEnvironmentVariable') }
 )
 foreach ($source in $optionSources) {
     $properties = Get-OptionProperty -RelativePath $source.Path -ClassName $source.Class
@@ -6271,6 +6274,224 @@ if ($AreaAssignmentPath) {
         [string[]] $got = @(Test-ParallelAreaAssignmentZone -Definition (Copy-Definition $cutover) -Path $AreaAssignmentPath)
         @{ Ok = ($got.Count -eq 0); Detail = "got $($got.Count): $($got -join ' | ')" }
     }
+}
+
+# ------------------------------------------------------------------------------------------------
+# workspace#49. The emergency stop release entries (REQ-0356; the loaded one is CP-0011, control-server#539) hang off
+# EmergencyStopRelease:enabled, which no definition could set: the section was not in the whitelist, so production had no
+# governed release at all -- only an RIoT hand unlock, which the server reads as an external release and re-stops. The
+# section is optional (absent is off, so every older definition deploys as before) and REQUIRED ON in a production-phase
+# cutover definition (docs/production-cutover-mode-plan.md step 18a). Each entry has its own credential, in this instance's
+# own service-Environment variable; both are required when the entry is on, and they must differ, or the empty-vehicle
+# credential releases a loaded vehicle.
+# ------------------------------------------------------------------------------------------------
+Write-Host ''
+Write-Host 'Emergency stop release entries (workspace#49)' -ForegroundColor Cyan
+
+$names49 = Get-ParallelInstanceName
+$releaseVariable = 'CONTROL_SERVER_V2_EMERGENCY_RELEASE_CREDENTIAL'
+$loadedVariable = 'CONTROL_SERVER_V2_EMERGENCY_LOADED_RELEASE_CREDENTIAL'
+function Set-ReleaseSection($Definition, $Section, [switch] $Remove) {
+    $d = Copy-Definition $Definition
+    if ($Remove) { $d.Remove('emergencyStopRelease') } else { $d['emergencyStopRelease'] = $Section }
+    return $d
+}
+Invoke-SourceCase 'release: the instance''s own variable names, never the product''s (which the MVP would read)' {
+    $p = $names49.PSObject.Properties
+    @{ Ok = ($null -ne $p['EmergencyReleaseCredentialVariable'] -and $names49.EmergencyReleaseCredentialVariable -ceq $releaseVariable -and
+            $null -ne $p['EmergencyLoadedReleaseCredentialVariable'] -and $names49.EmergencyLoadedReleaseCredentialVariable -ceq $loadedVariable)
+        Detail = "got: $(ConvertTo-Json -InputObject $names49 -Compress)" }
+}
+
+# --- The definition check ------------------------------------------------------------------------
+Invoke-SourceCase 'release: a definition without the section is accepted (off, as every definition before workspace#49)' {
+    Test-ExactFailure (Set-ReleaseSection $baseline $null -Remove) @()
+}
+Invoke-SourceCase 'release: enabled true is accepted' { Test-ExactFailure (Set-ReleaseSection $baseline @{ enabled = $true }) @() }
+Invoke-SourceCase 'release: enabled false is accepted' { Test-ExactFailure (Set-ReleaseSection $baseline @{ enabled = $false }) @() }
+Invoke-SourceCase 'release: enabled as the string "true" is refused' {
+    Test-ExactFailure (Set-ReleaseSection $baseline @{ enabled = 'true' }) @("emergencyStopRelease.enabled must be a JSON boolean, got 'true'")
+}
+Invoke-SourceCase 'release: a section without enabled is refused' {
+    Test-ExactFailure (Set-ReleaseSection $baseline @{}) @('emergencyStopRelease.enabled must be stated explicitly')
+}
+Invoke-SourceCase 'release: a section that is not an object is refused' {
+    Test-ExactFailure (Set-ReleaseSection $baseline $true) @('emergencyStopRelease must be an object')
+}
+Invoke-SourceCase 'release: a credential variable name in the definition is refused (the overlay names this instance''s own)' {
+    Test-ExactFailure (Set-ReleaseSection $baseline @{ enabled = $true; credentialEnvironmentVariable = 'CONTROL_SERVER_EMERGENCY_RELEASE_CREDENTIAL' }) @(
+        'emergencyStopRelease.credentialEnvironmentVariable is not a key this deployment knows')
+}
+
+# A production-phase cutover definition, from the S3 trial stage (all three cars) with only the phase changed.
+$trialS3 = Read-ParallelInstanceDefinition -Path (Join-Path $PSScriptRoot 'instance-factory01-v2.cutover-trial-s3.runtime-on.json')
+function New-PhaseDefinition([string] $Phase, $Section, [switch] $NoSection) {
+    $d = Copy-Definition $trialS3
+    $d['productionCutover']['phase'] = $Phase
+    if ($NoSection) { $d.Remove('emergencyStopRelease') } else { $d['emergencyStopRelease'] = $Section }
+    return $d
+}
+function Get-CutoverFailures($Definition) { [string[]] @(Test-ParallelInstanceDefinition -Definition $Definition -ProductionCutover) }
+Invoke-SourceCase 'release: a production-phase cutover definition with the entry on is accepted' {
+    [string[]] $got = @(Get-CutoverFailures (New-PhaseDefinition 'production' @{ enabled = $true }))
+    @{ Ok = ($got.Count -eq 0); Detail = "got: $($got -join ' | ')" }
+}
+foreach ($case in @(
+        @{ Name = 'without the section'; NoSection = $true; Section = $null }
+        @{ Name = 'with the entry off'; NoSection = $false; Section = @{ enabled = $false } })) {
+    Invoke-SourceCase "release: a production-phase cutover definition $($case.Name) is refused, naming the plan step" {
+        [string[]] $got = @(Get-CutoverFailures (New-PhaseDefinition 'production' $case.Section -NoSection:$case.NoSection))
+        @{ Ok = ($got.Count -eq 1 -and $got[0].StartsWith('EMERGENCY_STOP_RELEASE_REQUIRED_IN_PRODUCTION:') -and $got[0].Contains('18a'))
+            Detail = "got: $($got -join ' | ')" }
+    }
+}
+Invoke-SourceCase 'release: a trial-phase cutover definition without the section is accepted (the trial stages ship without it)' {
+    [string[]] $got = @(Get-CutoverFailures (New-PhaseDefinition 'trial' $null -NoSection))
+    @{ Ok = ($got.Count -eq 0); Detail = "got: $($got -join ' | ')" }
+}
+Invoke-SourceCase 'release: every committed definition whose productionCutover.phase is production turns the entry on' {
+    $wrong = @(Get-ChildItem -LiteralPath $PSScriptRoot -Filter 'instance-*.json' | Where-Object {
+            $d = Read-ParallelInstanceDefinition -Path $_.FullName
+            $cut = $d.Contains('productionCutover') ? $d['productionCutover'] : $null
+            $cut -is [System.Collections.IDictionary] -and $cut['phase'] -ceq 'production' -and
+                -not ($d.Contains('emergencyStopRelease') -and $d['emergencyStopRelease'] -is [System.Collections.IDictionary] -and $d['emergencyStopRelease']['enabled'] -eq $true)
+        } | ForEach-Object Name)
+    @{ Ok = ($wrong.Count -eq 0); Detail = "phase production without emergencyStopRelease.enabled=true: $($wrong -join ', ')" }
+}
+
+# --- The overlay ---------------------------------------------------------------------------------
+foreach ($case in @(
+        @{ Name = 'absent'; Definition = (Set-ReleaseSection $baseline $null -Remove); Enabled = $false }
+        @{ Name = 'on'; Definition = (Set-ReleaseSection $baseline @{ enabled = $true }); Enabled = $true }
+        @{ Name = 'off'; Definition = (Set-ReleaseSection $baseline @{ enabled = $false }); Enabled = $false })) {
+    Invoke-SourceCase "release overlay, section $($case.Name): always written, enabled=$($case.Enabled), with this instance's two variable names" {
+        $o = New-ParallelInstanceConfigurationOverlay -Definition $case.Definition
+        $e = $o.Contains('EmergencyStopRelease') ? $o['EmergencyStopRelease'] : $null
+        @{ Ok = ($e -is [System.Collections.IDictionary] -and $e['enabled'] -is [bool] -and $e['enabled'] -eq $case.Enabled -and
+                $e['credentialEnvironmentVariable'] -ceq $releaseVariable -and $e['loadedCredentialEnvironmentVariable'] -ceq $loadedVariable -and @($e.Keys).Count -eq 3)
+            Detail = "got: $(ConvertTo-Json -InputObject $e -Compress)" }
+    }
+}
+
+# --- The two credentials -------------------------------------------------------------------------
+$releaseOn = Set-ReleaseSection $baseline @{ enabled = $true }
+$releaseOff = Set-ReleaseSection $baseline @{ enabled = $false }
+function Invoke-ReleaseResolve($Definition, $Supplied, [string[]] $Environment = @()) {
+    try {
+        $r = Resolve-ParallelEmergencyReleaseCredential -Definition $Definition -Supplied $Supplied -ServiceEnvironment $Environment
+        return [pscustomobject]@{ Result = $r; Error = $null }
+    } catch { return [pscustomobject]@{ Result = $null; Error = $_.Exception.Message } }
+}
+function Format-ReleaseMap($Map) { ($null -eq $Map) ? 'null' : ((@($Map.Keys) | ForEach-Object { "$_=$($Map[$_])" }) -join ';') }
+foreach ($case in @(
+        @{ Name = 'on, both supplied by the control host'; Definition = $releaseOn; Supplied = [pscustomobject]@{ emergencyReleaseCredential = 'sel-e'; emergencyLoadedReleaseCredential = 'sel-l' }; Env = @()
+            Expect = "$releaseVariable=sel-e;$loadedVariable=sel-l" }
+        @{ Name = 'on, none supplied, both carried from the service (a rollback)'; Definition = $releaseOn; Supplied = $null
+            Env = @('DOTNET_ENVIRONMENT=Production', "$releaseVariable=old-e", "$loadedVariable=old-l"); Expect = "$releaseVariable=old-e;$loadedVariable=old-l" }
+        @{ Name = 'on, the supplied value wins over the carried one'; Definition = $releaseOn; Supplied = [pscustomobject]@{ emergencyReleaseCredential = 'new-e'; emergencyLoadedReleaseCredential = 'new-l' }
+            Env = @("$releaseVariable=old-e", "$loadedVariable=old-l"); Expect = "$releaseVariable=new-e;$loadedVariable=new-l" }
+        @{ Name = 'off, nothing anywhere'; Definition = $releaseOff; Supplied = $null; Env = @(); Expect = '' }
+        @{ Name = 'section absent, nothing anywhere'; Definition = (Set-ReleaseSection $baseline $null -Remove); Supplied = $null; Env = @(); Expect = '' }
+        @{ Name = 'off, both supplied: written, so turning it on later needs no new secret on the server'; Definition = $releaseOff
+            Supplied = [pscustomobject]@{ emergencyReleaseCredential = 'sel-e'; emergencyLoadedReleaseCredential = 'sel-l' }; Env = @(); Expect = "$releaseVariable=sel-e;$loadedVariable=sel-l" })) {
+    Invoke-SourceCase "release credentials: $($case.Name)" {
+        $r = Invoke-ReleaseResolve $case.Definition $case.Supplied $case.Env
+        @{ Ok = ($null -eq $r.Error -and (Format-ReleaseMap $r.Result) -ceq $case.Expect); Detail = "error: $($r.Error); got: $(Format-ReleaseMap $r.Result)" }
+    }
+}
+foreach ($case in @(
+        @{ Name = 'on, the loaded one missing'; Supplied = [pscustomobject]@{ emergencyReleaseCredential = 'sel-e' }; Env = @(); Expect = 'EMERGENCY_RELEASE_CREDENTIAL_MISSING:'; Names = @($loadedVariable); NotNames = @($releaseVariable) }
+        @{ Name = 'on, the empty-vehicle one missing'; Supplied = [pscustomobject]@{ emergencyLoadedReleaseCredential = 'sel-l' }; Env = @(); Expect = 'EMERGENCY_RELEASE_CREDENTIAL_MISSING:'; Names = @($releaseVariable); NotNames = @($loadedVariable) }
+        @{ Name = 'on, nothing anywhere'; Supplied = $null; Env = @('DOTNET_ENVIRONMENT=Production'); Expect = 'EMERGENCY_RELEASE_CREDENTIAL_MISSING:'; Names = @($releaseVariable, $loadedVariable); NotNames = @() }
+        @{ Name = 'on, a blank supplied value and nothing carried'; Supplied = [pscustomobject]@{ emergencyReleaseCredential = ' '; emergencyLoadedReleaseCredential = 'sel-l' }; Env = @(); Expect = 'EMERGENCY_RELEASE_CREDENTIAL_MISSING:'; Names = @($releaseVariable); NotNames = @() }
+        @{ Name = 'on, both one value (the empty-vehicle credential would release a loaded vehicle)'; Supplied = [pscustomobject]@{ emergencyReleaseCredential = 'same-v'; emergencyLoadedReleaseCredential = 'same-v' }; Env = @()
+            Expect = 'EMERGENCY_RELEASE_CREDENTIAL_SHARED:'; Names = @(); NotNames = @() }
+        @{ Name = 'on, one supplied and the same value carried for the other'; Supplied = [pscustomobject]@{ emergencyReleaseCredential = 'same-v' }; Env = @("$loadedVariable=same-v")
+            Expect = 'EMERGENCY_RELEASE_CREDENTIAL_SHARED:'; Names = @(); NotNames = @() })) {
+    Invoke-SourceCase "release credentials: $($case.Name) -- refused before anything changes, naming no value" {
+        $r = Invoke-ReleaseResolve $releaseOn $case.Supplied $case.Env
+        $named = @($case.Names | Where-Object { -not $r.Error.Contains($_) })
+        $wronglyNamed = @($case.NotNames | Where-Object { $r.Error.Contains($_) })
+        @{ Ok = ($null -ne $r.Error -and $r.Error.StartsWith($case.Expect) -and $named.Count -eq 0 -and $wronglyNamed.Count -eq 0 -and
+                -not $r.Error.Contains('sel-') -and -not $r.Error.Contains('same-v') -and $r.Error.Contains('Nothing was stopped or changed.'))
+            Detail = "error: $($r.Error)" }
+    }
+}
+Invoke-SourceCase 'release credentials: off with both one value is refused too (turning it on later would be the shared case)' {
+    $r = Invoke-ReleaseResolve $releaseOff ([pscustomobject]@{ emergencyReleaseCredential = 'same-v'; emergencyLoadedReleaseCredential = 'same-v' })
+    @{ Ok = ($null -ne $r.Error -and $r.Error.StartsWith('EMERGENCY_RELEASE_CREDENTIAL_SHARED:')); Detail = "error: $($r.Error)" }
+}
+
+# --- The configuration step writes them, and the installer's result line ---------------------------
+Invoke-SourceCase 'release: the configuration step writes both credentials into the service Environment and keeps everything else' {
+    $directory = Join-Path ([IO.Path]::GetTempPath()) "ws49-$([guid]::NewGuid().ToString('N'))"
+    New-Item -ItemType Directory -Path $directory | Out-Null
+    try {
+        $file = Join-Path $directory 'appsettings.Production.json'
+        [IO.File]::WriteAllText($file, (ConvertTo-Json -InputObject $productConfiguration -Depth 12), [Text.UTF8Encoding]::new($false))
+        $service = @{ Environment = [string[]] @($productEnvironment + "$releaseVariable=stale-e") }
+        $credentials = [ordered]@{ $releaseVariable = 'new-e'; $loadedVariable = 'new-l' }
+        $null = Invoke-ParallelInstanceConfigurationStep -ConfigurationPath $file -Definition $releaseOn -Credential $null `
+            -CredentialVariable $credentialName -RosterPath (Join-Path $directory 'roster.json') -EmergencyReleaseCredentials $credentials -Actions @{
+                GetEnvironment = { $service.Environment }
+                SetEnvironment = { param([string[]] $Environment) $service.Environment = $Environment }
+                RestartService = { }
+                GetMachineEnvironment = { @() }
+            }
+        $onDisk = Get-Content -LiteralPath $file -Raw -Encoding utf8 | ConvertFrom-Json -AsHashtable -Depth 12
+    } finally {
+        Remove-Item -LiteralPath $directory -Recurse -Force -ErrorAction SilentlyContinue
+    }
+    $e = @($service.Environment | Where-Object { $_ -like 'CONTROL_SERVER_V2_EMERGENCY_*' })
+    $lost = @($productEnvironment | Where-Object { $service.Environment -notcontains $_ })
+    $section = $onDisk['EmergencyStopRelease']
+    @{ Ok = ($e.Count -eq 2 -and $e -ccontains "$releaseVariable=new-e" -and $e -ccontains "$loadedVariable=new-l" -and $lost.Count -eq 0 -and
+            $section['enabled'] -eq $true -and $section['loadedCredentialEnvironmentVariable'] -ceq $loadedVariable)
+        Detail = "emergency entries: $($e -join ' | '); lost: $($lost -join ', '); on disk: $(ConvertTo-Json -InputObject $section -Compress)" }
+}
+$twoAdmins = '{"operators":[{"operatorId":"OP-1","roles":["R-13"]},{"operatorId":"OP-2","roles":["R-11","R-13"]},{"operatorId":"OP-3","roles":["R-11"]}]}'
+foreach ($case in @(
+        @{ Definition = $releaseOn; Names = @($releaseVariable, $loadedVariable); Roster = $twoAdmins; Expect = 'EMERGENCY_STOP_RELEASE=enabled=true credential=set loadedCredential=set loadedConfirmers=2' }
+        @{ Definition = $releaseOn; Names = @($releaseVariable); Roster = $twoAdmins; Expect = 'EMERGENCY_STOP_RELEASE=enabled=true credential=set loadedCredential=unset loadedConfirmers=2' }
+        @{ Definition = $releaseOn; Names = @($releaseVariable, $loadedVariable); Roster = '{"operators":[]}'; Expect = 'EMERGENCY_STOP_RELEASE=enabled=true credential=set loadedCredential=set loadedConfirmers=0' }
+        @{ Definition = $releaseOff; Names = @(); Roster = $null; Expect = 'EMERGENCY_STOP_RELEASE=enabled=false credential=unset loadedCredential=unset loadedConfirmers=0' }
+        @{ Definition = (Set-ReleaseSection $baseline $null -Remove); Names = @($releaseVariable, $loadedVariable); Roster = $twoAdmins; Expect = 'EMERGENCY_STOP_RELEASE=enabled=false credential=set loadedCredential=set loadedConfirmers=2' })) {
+    Invoke-SourceCase "release result line: $($case.Expect)" {
+        $got = Format-ParallelEmergencyReleaseLine -Definition $case.Definition -EnvironmentNames $case.Names -RosterText $case.Roster
+        @{ Ok = ($got -ceq $case.Expect); Detail = "got '$got'" }
+    }
+}
+# Review M2: the loaded entry accepts R-13 alone (LoadedEmergencyStopRelease.AllowedRoles), read as FieldOperatorRoleRoster reads it.
+foreach ($case in @(
+        @{ Name = 'two R-13 holders among three'; Roster = $twoAdmins; Expect = 2 }
+        @{ Name = 'PascalCase keys (the server reads them case-insensitively)'; Roster = '{"Operators":[{"OperatorId":"OP-1","Roles":["R-13"]}]}'; Expect = 1 }
+        @{ Name = 'a lower-case role code (the server compares ordinally)'; Roster = '{"operators":[{"operatorId":"OP-1","roles":["r-13"]}]}'; Expect = 0 }
+        @{ Name = 'R-13 without an operatorId'; Roster = '{"operators":[{"operatorId":" ","roles":["R-13"]},{"roles":["R-13"]}]}'; Expect = 0 }
+        @{ Name = 'only R-11'; Roster = '{"operators":[{"operatorId":"OP-1","roles":["R-11"]}]}'; Expect = 0 }
+        @{ Name = 'the empty roster the installer creates'; Roster = '{"operators":[]}'; Expect = 0 }
+        @{ Name = 'unreadable JSON'; Roster = '{"operators":[{'; Expect = 0 }
+        @{ Name = 'no roster file'; Roster = $null; Expect = 0 })) {
+    Invoke-SourceCase "release R-13 count: $($case.Name) -> $($case.Expect)" {
+        $got = Get-ParallelRosterRoleHolderCount -RosterText $case.Roster -Role 'R-13'
+        @{ Ok = ($got -eq $case.Expect); Detail = "got $got" }
+    }
+}
+# Review L5: an environment layer above the file could point the loaded entry at the MVP's variable or turn the entries off.
+Invoke-SourceCase 'release environment override: EmergencyStopRelease keys count like JourneyRuntime ones, ignoring case, prefixes included' {
+    $found = @(Get-ParallelJourneyRuntimeEnvironmentOverride -ServiceEnvironment @('EmergencyStopRelease__LoadedCredentialEnvironmentVariable=CONTROL_SERVER_EMERGENCY_LOADED_RELEASE_CREDENTIAL', 'EmergencyStopReleaseX=1') `
+            -MachineEnvironment @('DOTNET_emergencystoprelease:Enabled=false', 'CONTROL_SERVER_V2_EMERGENCY_RELEASE_CREDENTIAL=x'))
+    $expected = 'service EmergencyStopRelease__LoadedCredentialEnvironmentVariable|machine DOTNET_emergencystoprelease:Enabled'
+    @{ Ok = (($found -join '|') -ceq $expected); Detail = "got: $($found -join '|')" }
+}
+Invoke-SourceCase 'release: the installer resolves the two credentials before anything changes, hands them to every Set-InstanceConfiguration call, and prints the line' {
+    $installer = Get-Content -Raw -LiteralPath (Join-Path $PSScriptRoot 'Install-ParallelInstanceLocal.ps1')
+    $resolveAt = $installer.IndexOf('$emergencyReleaseCredentials = Resolve-ParallelEmergencyReleaseCredential')
+    $firstChange = $installer.IndexOf('Set-InstanceConfiguration -FaultRecoveryCredential')
+    $calls = [regex]::Matches($installer, 'Set-InstanceConfiguration -FaultRecoveryCredential [^\r\n]*').Value
+    $withRelease = @($calls | Where-Object { $_.Contains('-EmergencyReleaseCredentials $emergencyReleaseCredentials') })
+    @{ Ok = ($resolveAt -gt 0 -and $resolveAt -lt $firstChange -and $calls.Count -ge 2 -and $withRelease.Count -eq $calls.Count -and
+            $installer.Contains('Format-ParallelEmergencyReleaseLine -Definition $definition -EnvironmentNames $populatedNames -RosterText $rosterText'))
+        Detail = "resolved at $resolveAt, first change at $firstChange; calls $($calls.Count), with the credentials $($withRelease.Count)" }
 }
 
 Write-Host ''
