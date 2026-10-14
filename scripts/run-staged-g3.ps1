@@ -142,8 +142,16 @@ param(
     #   $OnboardCommit -> 535c94fc, the w2g/fp-v2-impl tip. b9e67a53..535c94fc is the batch-8 G2 evidence
     #     (onboard-hmi#288, evidence/ only) and onboard-hmi#289 (PR #290, two test files); no product change.
     #   $SimulatorCommit and $ProtocolCommit unchanged: batch 10 changes no protocol and no simulator.
-    [string]$ControlServerCommit = '37a86cbc6bec866e32126f50c850c37a1a9cac40',
-    [string]$OnboardCommit = '535c94fce47a10879ba1f404d04f603ba1a65bbf',
+    #
+    # 2026-10-14, production cutover package (control-server#564, step 18a; 8005-agv-program#171): the G3 round on the
+    #   commits the production release is built from. No new slice. First real-rig run of cs#290 (cargo holding in
+    #   g3-multi-stop-plan 90 s -> 3 min).
+    #   $ControlServerCommit -> f12bc809, the fp/v2-impl tip: PR #707's merge commit (the four production stage
+    #     definitions), with cs#703, cs#704, cs#290, cs#686 and cs#672's fields.
+    #   $OnboardCommit -> d4957461, the w2g/fp-v2-impl tip, with hmi#343 and hmi#347.
+    #   $SimulatorCommit and $ProtocolCommit unchanged: origin/main is still fb5f7c59, protocol-v3.0.0 still 3f091cb2.
+    [string]$ControlServerCommit = 'f12bc8097b462d0c88ddd252f28b6d7e8bd856ca',
+    [string]$OnboardCommit = 'd495746117ae762cae96708edc9717f7f7d3e4f0',
     [string]$SimulatorCommit = 'fb5f7c593742bf98bc3957b8729a38aad5321f28',
     [string]$ProtocolCommit = '3f091cb2eae7c58cec54a95dd9389c9180bc7b4c',
     # The ref whose tip -OnboardCommit must equal. It is a parameter rather than a literal because the
