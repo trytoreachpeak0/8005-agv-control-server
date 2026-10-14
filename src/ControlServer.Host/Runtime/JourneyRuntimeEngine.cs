@@ -1264,6 +1264,13 @@ public sealed partial class JourneyRuntimeEngine(
                     return;
                 }
                 stops = truncated;
+                // 离站核验已经发出、而它问的下一站刚被截掉（审查 L2）：作废那一张，换一对新身份，下面等核验那一段把新的一张发出去，
+                // 问的是截断之后的下一站。做法与扣车那一处相同。
+                if (runtime.Stage == JourneyRuntimeStage.AwaitingDepartureSafety)
+                {
+                    await RetireDepartureCheckForDoorHoldAsync(runtime, stops, now, cancellationToken).ConfigureAwait(false);
+                    await dbContext.SaveChangesAsync(cancellationToken).ConfigureAwait(false);
+                }
             }
         }
 
@@ -4580,8 +4587,6 @@ public sealed partial class JourneyRuntimeEngine(
             vehicleFull = await JudgeVehicleFullAsync(runtime, cancellationToken).ConfigureAwait(false);
         }
 
-        // 「有一批在执行」看阶段；但阶段前移晚于「这一批已闭环」那次保存，刚落定那一轮阶段还停在 AwaitingLoadResult，由调用方说这一批
-        // 已经闭环（loadBatchJustClosed，control-server#290）。
         LoadingPhaseMachine.Facts facts = new(
             runtime.LoadingPhaseState,
             runtime.LoadingClosedReason,
@@ -4590,9 +4595,16 @@ public sealed partial class JourneyRuntimeEngine(
             lastLoadingStopDeparted,
             vehicleFull,
             HoldingDeadlinePassed: HoldingDeadlinePassed(runtime, now),
-            LoadBatchInProgress: !loadBatchJustClosed && runtime.Stage == JourneyRuntimeStage.AwaitingLoadResult,
+            LoadBatchInProgress: runtime.Stage == JourneyRuntimeStage.AwaitingLoadResult,
             DepartureUnderWay: departingFrom is null && runtime.Stage == JourneyRuntimeStage.AwaitingDepartureSafety,
             YieldTriggered: YieldTriggeredBeforeHoldingDeadline(runtime));
+        // 「有一批在执行」按落库的阶段判，看板认同一句（Batch7CargoHoldingDashboardTests.TheLoadBatchInProgressPremiseIsTheEnginesOwn 逐字核对上面那一行）。
+        // 唯一的例外只活在一轮之内：装货刚落定、阶段还没前移，调用方说这一批已经闭环（control-server#290）。这一轮里装货阶段随即关闭并落库，
+        // 看板读到的永远是关闭之后的样子，所以它那句前提照旧成立。
+        if (loadBatchJustClosed)
+        {
+            facts = facts with { LoadBatchInProgress = false };
+        }
         LoadingPhaseMachine.Decision decision = LoadingPhaseMachine.Decide(facts);
 
         // 让站的补判（批次7-08，control-server#213）。触发本来由承诺方在它的事务里写（受理、追加、离站三处，StationYield），
@@ -4728,11 +4740,10 @@ public sealed partial class JourneyRuntimeEngine(
     /// </para>
     /// <para>
     /// <b>释放服务的拒绝规则（<see cref="DemandReleaseRules.Decide"/>）在这里逐条判过</b>：
-    /// 「当前下一站、车已到站」不释放，理由是清单号：删掉当前下一站会让下一个停靠算出车已收到的号、发不同内容。截断不删当前停靠
-    /// （<c>currentStopMayGo: false</c>），而释放的都是没做完的，本停靠「已做完」的条数不降，当前号的算式不会低于车已收到的那一版；
-    /// 空清单（<see cref="StopEndWorklist.StageAfterReleaseAsync"/>）自己取「算式」与「已发最高号 + 1」中大的那个，并让本停靠多占到那一版，
-    /// 下一站首号在它之上。所以这一格的理由在这里不成立，持货期限是硬期限，照截。（变异自检：另给本停靠补版数的写法删掉后用例全绿，
-    /// 证明它是多余的，已删。）「当前下一站、车在路上、旅程还有别的需求」
+    /// 「当前下一站、车已到站」不释放，理由是清单号：释放让这个停靠的归属少了，按版数算的号与范围都会往回缩。持货期限是硬期限，这一格不能拒，
+    /// 改为放回几条就给这个停靠补几版（<see cref="JourneyStopRow.WorklistRefills"/>），再发那张空清单（<see cref="StopEndWorklist.StageAfterReleaseAsync"/>）。
+    /// 空清单自己取「算式」与「已发最高号 + 1」中大的那个，所以不补也不会撞号；补版数守的是另一件事：退役本站较早各版按本停靠的版数范围数，
+    /// 不补就漏掉车已收到的那一版（审查返工第 2 轮，C11 转 cs#703 实测；第 1 轮变异里删掉它没红，是因为那时没有「本站一条都没做完」的用例）。「当前下一站、车在路上、旅程还有别的需求」
     /// 不释放，理由是取消那张单之后没人把车派往下一站；这里不取消那张单——当前下一站在路上不可删（REQ-0197），车照样开到那里、到了没有作业、
     /// 按离站等待离开，所以这一格不适用。「锚需求」见上一段。取货停靠不是当前下一站的，按构造还没有 RIoT 订单（追加的停靠到车离开上一站才建单）。
     /// </para>
@@ -4742,7 +4753,10 @@ public sealed partial class JourneyRuntimeEngine(
     /// </para>
     /// <para>
     /// <b>在写锁里重读再截</b>，与站点期限那一处同一个理由：扫码前取消在别的连接上被授权，锁外读到的停靠可能已经过时。当前停靠上有扫码前取消
-    /// 开着时这一轮不截，等车报结果。等录入那一段在这之后读到的录入，下命令前在写锁里还要再判一次（<see cref="EnteredDemandStillLoadableAsync"/>，
+    /// 开着时这一轮整个不截，等车报结果，<b>不论阶段</b>：同站另一条正在装（<c>AwaitingLoadResult</c>）时也能对待装的那条发起扫码前取消
+    /// （<c>OnboardRecoveryCoordinator</c> 只要求它是 <c>PENDING_LOAD</c>），而截断最常发生的正是那一批闭环的那一轮。带着开着的取消把它
+    /// 释放掉，车报来的取消结果按需求找旅程找不到（它已不在任何旅程上）就抛，连接断开、重连重放、反复断线（审查 H1）；
+    /// 它若已被改派，那条取消还会扣住新旅程。取消要车证明整排仓位是空的，所以同站其余的也一起等（与站点期限同一条规矩）。等录入那一段在这之后读到的录入，下命令前在写锁里还要再判一次（<see cref="EnteredDemandStillLoadableAsync"/>，
     /// 它只认生效的归属），被释放的那条在那里让开；本站已结束时，那条录入由 <see cref="StopEndWorklist"/> 一并答过时。
     /// </para>
     /// <para>
@@ -4778,8 +4792,7 @@ public sealed partial class JourneyRuntimeEngine(
         JourneyStopDemand[] unstarted = [.. NotYetStarted(runtime, stops)];
         if (stageNow is null or JourneyRuntimeStage.Blocked or JourneyRuntimeStage.Completed ||
             unstarted.Length == 0 ||
-            (stageNow == JourneyRuntimeStage.AwaitingSublot &&
-             await OpenCancellationAtCurrentStopAsync(stops, cancellationToken).ConfigureAwait(false)))
+            await OpenCancellationAtCurrentStopAsync(stops, cancellationToken).ConfigureAwait(false))
         {
             return null;
         }
@@ -4799,6 +4812,15 @@ public sealed partial class JourneyRuntimeEngine(
                     cancellationToken)
                 .ConfigureAwait(false);
             await DemandReleaseService.StageReleasedMembershipAsync(dbContext, membership, now, cancellationToken).ConfigureAwait(false);
+        }
+        if (releasedFromCurrentStop > 0)
+        {
+            // 版数守恒：这个停靠的归属少了几条，就补上几版。空清单取号时自己会取「已发最高号 + 1」，但退役本站较早那几版清单按的是
+            // 本停靠的版数范围（首号到算式那一号）：不补，本站一条都还没做完时算式不动，车已收到的那一版落在范围外、不退役，重连后被补发、
+            // 号比空清单低，车判回退断会话（TruncatingTheStopTheVehicleStandsAtRetiresEveryEarlierWorklistAndAReconnectReplaysOnlyTheEmptyOne
+            // 去掉这一段时红在这里）。收尾那一支同样按这个范围算迟到录入的地址，所以两支都补。
+            (await TrackedStopAsync(currentStopId, cancellationToken).ConfigureAwait(false)).WorklistRefills +=
+                releasedFromCurrentStop;
         }
         if (last)
         {
@@ -5778,7 +5800,12 @@ public sealed partial class JourneyRuntimeEngine(
         // two stops of one role each; when the planner lays them out unload first, the wait is seeded when the pickup
         // stop is reached. (It can also lay them out load first; that order is control-server#647.) The correction gate
         // above and the door hold after this still apply; only the clock is skipped, and no start is seeded.
-        if (stops.Current.StopRole == JourneyStopRoles.Unload)
+        // 同一个理由，取货停靠上的一种（control-server#290 审查 M1）：装货阶段已经关了、这个停靠上一条生效的归属都没有——持货期限把它上面
+        // 没开始装的全释放走了，车多半是到站那一轮才截的。这里不会再有人录入、也没有装上的货要纠错，离站等待只会让一辆已经过了持货硬期限
+        // 的车在一台空机台前多停一整段。被终结（而不是释放）的需求归属还在，那种停靠照旧走离站等待（control-server#668）。
+        if (stops.Current.StopRole == JourneyStopRoles.Pickup &&
+            runtime.LoadingPhaseState == LoadingPhaseStates.Closed &&
+            stops.AllAtStop(stops.Current).Count == 0)
         {
             if (runtime.BlockReasonCode is not null)
             {
