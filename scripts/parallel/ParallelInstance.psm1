@@ -2576,9 +2576,10 @@ function Get-ParallelEffectiveConfigurationRefusal {
 #            appsettings.json, which this cannot know. A value derived from something else (from a phase, say) is a named
 #            Source with its own case in that function -- not a scriptblock here: this module allows no dynamic command
 #            (the delete guard in Test-ParallelInstance.ps1);
-#   AbsentMeans  $null, or what a package that logs none of the table (older than #672) did bind: such an event is otherwise
-#            accepted whole, and a row with AbsentMeans is compared as if it had logged that value. control-server#686: a
-#            package that does not log the gate does not have it, which is Off -- so a production install of it is refused.
+#   AbsentMeans  $null, or what a package that does not log this row did bind: the row is then compared as if it had logged
+#            that value -- in an event that logs none of the table (older than #672, otherwise accepted whole) and in one that
+#            logs the others (between #672 and the row's ticket; review M1). control-server#686: a package that does not log
+#            the gate does not have it, which is Off -- so a production install of it is refused and a trial one is not.
 # A new field is one row here, the event field in EffectiveConfigurationEvent.cs, and its cases in Test-ParallelInstance.ps1
 # ($bindingFieldCases) and ParallelInstanceEffectiveConfigurationTests; 19 compares the result line field by field, by name.
 $script:JourneyBindingFields = @(
@@ -2633,6 +2634,11 @@ function Compare-ParallelJourneyBinding {
         $expected = Get-ParallelJourneyBindingExpected -Field $field -Definition $Definition
         if ($null -eq $expected) { continue }
         $actual = $bound.($field.Logged)
+        # control-server#686 review M1: a row the event leaves out while it logs others (a package between #672 and that row's
+        # ticket) is read as its AbsentMeans too, not only when the event logs none of the table. The message still says
+        # 'not logged'.
+        $logged = $actual
+        if ($null -eq $actual -and $null -ne $field.AbsentMeans) { $actual = $field.AbsentMeans }
         $same = switch ($field.Compare) {
             'Integer' {
                 $wanted = ConvertTo-IntegerOrNull $expected
@@ -2648,7 +2654,7 @@ function Compare-ParallelJourneyBinding {
             default { throw "JourneyBindingFields: $($field.Name) has an unknown Compare '$($field.Compare)'." }
         }
         if (-not $same) {
-            "$($field.Name) bound '$($actual ?? 'not logged')', the definition says '$expected'"
+            "$($field.Name) bound '$($logged ?? 'not logged')', the definition says '$expected'"
         }
     }
 }
