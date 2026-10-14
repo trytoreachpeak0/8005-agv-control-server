@@ -4723,8 +4723,9 @@ public sealed partial class JourneyRuntimeEngine(
     /// <para>
     /// <b>「没开始装」= 归属还是 <c>PENDING_LOAD</c>、需求还是 <c>Accepted</c></b>，不分在车此刻所在的停靠还是后面的取货停靠：期限结束的是
     /// 整个装货阶段，不是某一站。已经下了装货命令的（<c>LOADING</c>）不在内——装货阶段本来就等那一批闭环才关（<see cref="LoadingPhaseMachine"/>），
-    /// 已经装上的照常送到。锚需求不释放：旅程行上的离站核验、计划与收尾都按它取需求号，它的归属一移除这些全取不到；它没开始装而期限到了，
-    /// 只可能是它与一条同站追加的需求挂在同一个停靠上、操作员先扫了后者，那一站照旧由录入或站点期限收场。
+    /// 已经装上的照常送到。锚需求不释放：旅程行上的离站核验、计划与收尾都按它取需求号，它的归属一移除这些全取不到。按 REQ-0196
+    /// （途中追加不并入当前停靠），锚需求总在第一个取货停靠、而那一站从受理起就是当前停靠，所以「锚需求没开始装而持货期限已到」构造上不出现；
+    /// 保留这条例外是纵深防御（cs#290 再审 L2）。
     /// </para>
     /// <para>
     /// <b>释放服务的拒绝规则（<see cref="DemandReleaseRules.Decide"/>）在这里逐条判过</b>：
@@ -4778,6 +4779,24 @@ public sealed partial class JourneyRuntimeEngine(
         // 锁里重新加载：默认那一份读库，看得见锁外那次读之后别的连接提交的终结与取消。
         JourneyStopCursor stops = await JourneyStopCursor.LoadAsync(dbContext, runtime, cancellationToken).ConfigureAwait(false);
         JourneyStopDemand[] unstarted = [.. NotYetStarted(runtime, stops)];
+        // 取货停靠不是当前停靠、却已经有订单意图：离站已授权、开往它的单已保存甚至已在 RIoT 建了，而阶段还没前移（保存冲突或重启，
+        // 窗口很窄）。这时截掉它，下一轮会按截断之后的下一站重新核验、再建一张单，同一辆车两张单（cs#290 再审 L3）。与释放服务的
+        // PickupOrderExistsAsync 同一个判据：这一站不截，它上面的需求留在原趟，车到了照常处理。当前停靠有订单是常态（车正开往它），
+        // 截它不删停靠、不建新单，所以只看后面的停靠。
+        string currentStopIdNow = stops.Current.StopId;
+        List<JourneyStopDemand> withoutOrder = [];
+        foreach (JourneyStopDemand item in unstarted)
+        {
+            JourneyStopRow pickup = stops.Stops.Single(row => row.StopId == item.Membership.PickupStopId);
+            if (!string.Equals(pickup.StopId, currentStopIdNow, StringComparison.Ordinal) &&
+                await dbContext.OrderIntents.AsNoTracking()
+                    .AnyAsync(row => row.UpperId == pickup.UpperId, cancellationToken).ConfigureAwait(false))
+            {
+                continue;
+            }
+            withoutOrder.Add(item);
+        }
+        unstarted = [.. withoutOrder];
         if (stageNow is null or JourneyRuntimeStage.Blocked or JourneyRuntimeStage.Completed ||
             unstarted.Length == 0 ||
             await OpenCancellationAtCurrentStopAsync(stops, cancellationToken).ConfigureAwait(false))
