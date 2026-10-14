@@ -48,6 +48,9 @@ internal static class StopEndedReasons
         null => "COMPLETED",
         "CANCELLED_BY_STATION_TIMEOUT" => "STATION_DEADLINE_EXPIRED",
         JourneyRuntimeEngine.CargoHoldingTruncationReason => "DEMAND_RELEASED",
+        // control-server#703：站点期限到期、本站没录入，需求放回待派、会重新派车，所以说 DEMAND_RELEASED（与释放改派同一项）。
+        // 说 STATION_DEADLINE_EXPIRED 会让操作员以为这单丢了；那一项留给放回次数用完、真的不再派的终结（CANCELLED_BY_STATION_TIMEOUT）。
+        DemandJourneyLookup.ReleasedAtStationDeadlineReason => "DEMAND_RELEASED",
         "CANCELLED_BY_OPERATOR" => "LOAD_CANCELLED",
         "CANCELLED_BY_LOAD_COMPENSATION" => "LOAD_COMPENSATED",
         "TERMINATED_BY_FAULT_CARGO_HANDOFF" => "CARGO_HANDED_OFF",

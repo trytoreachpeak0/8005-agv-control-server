@@ -165,6 +165,14 @@ public interface IStructuralDispatchBlockStore
 
     /// <summary>全部仍成立的阻断，按首次成立时间排序。</summary>
     Task<IReadOnlyList<StructuralDispatchBlock>> ListUnclearedAsync(CancellationToken cancellationToken);
+
+    /// <summary>
+    /// 已清除、原因码在 <paramref name="reasonCodes"/> 里的阻断。人工搬运告警（control-server#703）在需求掉出目录一轮时被清，
+    /// 需求回到目录时要重开，派车轮末按这里读出来的行判。
+    /// </summary>
+    Task<IReadOnlyList<StructuralDispatchBlock>> ListClearedAsync(
+        IReadOnlyCollection<string> reasonCodes,
+        CancellationToken cancellationToken);
 }
 
 /// <summary>车辆绑的是哪个整车模型，是从哪份服务端记录解析出来的。</summary>

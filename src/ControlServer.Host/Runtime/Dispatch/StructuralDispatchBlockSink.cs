@@ -90,14 +90,40 @@ public sealed class StructuralDispatchBlockSink(
         // round. The loop below leaves it alone too -- it is still in AcceptedDemandIds, which is what stops the
         // round drawing any conclusion about a demand one of its vehicles was busy with.
         HashSet<string> settled = new(StringComparer.Ordinal);
+        //
+        // 人工搬运告警（control-server#703，ManualCarryAlarms）不是任何判据的结论，它挂的需求恒已受理：只在需求离开目录时清——离开目录说明
+        // MES 那边已经关了这件活。按受理清掉它，告警挂上的下一轮就没了，等于没告警。
         foreach (StructuralDispatchBlock block in uncleared)
         {
+            if (ManualCarryAlarms.All.Contains(block.ReasonCode))
+            {
+                if (!candidates.ContainsKey(block.DemandId))
+                {
+                    await ClearAsync(block, now, cancellationToken).ConfigureAwait(false);
+                }
+                continue;
+            }
             if (!candidates.ContainsKey(block.DemandId) ||
                 (round.AcceptedDemandIds.Contains(block.DemandId) &&
                  !round.ClaimsIntakeRefused.Contains(block.DemandId)))
             {
                 await ClearAsync(block, now, cancellationToken).ConfigureAwait(false);
                 settled.Add(block.DemandId);
+            }
+        }
+
+        // 反过来，人工搬运告警清掉之后需求又回到了目录（control-server#703 审查 M1）：MesIngest 只放合格的需求进目录，一条 MES 里仍开着的
+        // 需求可能因重复观测、告警条件码或字段问题掉出目录一轮，那一轮上面把告警清了；它回来时已受理、已终结，下面的逐条判断按受理跳过它，
+        // 不在这里重开就再也不会挂回来，货还在机台上而告警没了。重开用原来的明细，FirstRaisedAt 取这一次（RaiseOrRefreshAsync 的语义）。
+        foreach (StructuralDispatchBlock cleared in await blocks.ListClearedAsync(ManualCarryAlarms.All, cancellationToken)
+                     .ConfigureAwait(false))
+        {
+            if (candidates.ContainsKey(cleared.DemandId))
+            {
+                await blocks.RaiseOrRefreshAsync(
+                    cleared.DemandId, cleared.ReasonCode, cleared.TransportDemandKey, cleared.DetailJson, now, cancellationToken)
+                    .ConfigureAwait(false);
+                LogBlockRaised(logger, cleared.DemandId, cleared.TransportDemandKey, cleared.ReasonCode, null);
             }
         }
 
@@ -131,7 +157,9 @@ public sealed class StructuralDispatchBlockSink(
             }
 
             StructuralDispatchBlock[] existing =
-                settled.Contains(demandId) ? [] : [.. uncleared.Where(block => block.DemandId == demandId)];
+                settled.Contains(demandId)
+                    ? []
+                    : [.. uncleared.Where(block => block.DemandId == demandId && !ManualCarryAlarms.All.Contains(block.ReasonCode))];
             DemandJudgement judgement = await JudgeAsync(
                 verdicts, everyVehicleFinished, rosterAgvIds, capacityByGroup, cancellationToken).ConfigureAwait(false);
 

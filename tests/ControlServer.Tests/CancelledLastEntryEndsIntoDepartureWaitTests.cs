@@ -220,6 +220,8 @@ public sealed class CancelledLastEntryEndsIntoDepartureWaitTests
     public async Task AStopEndedByItsDeadlineGetsNoExtraWorklistBeforeTheVehicleLeaves()
     {
         await using RuntimeFixture fixture = await RuntimeFixture.CreateAsync();
+        // control-server#703：这条测的是站点期限的终结尾巴，那条路今天只在放回次数用完时走（终结并告警）。上限设 0，让第一次期限就走它；放回那一支在 StationTimeoutRedispatchTests。
+        fixture.Options.StationTimeoutRedispatchLimit = 0;
         JourneyStopRow secondPickup = await StopEndedJourneyContinuesTests.ArriveAtTheSecondPickupAsync(fixture);
         fixture.Options.StationDepartureWaitTimeout = TimeSpan.FromSeconds(10);
         await fixture.ProveSlotDoorsClosedAsync();
