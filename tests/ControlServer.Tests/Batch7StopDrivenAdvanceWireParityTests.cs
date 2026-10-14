@@ -143,7 +143,6 @@ public sealed class Batch7StopDrivenAdvanceWireParityTests
     // 规则只认 STAGING_TO_WIRE 在派工待送站的取货，下面两条都是 WIRE_TO_GATE 在机台取货；判别改成恒真，这两条红。
 
     [Fact]
-    [Trait("IntegrationSlice", "FP-IS-02")]
     public async Task ANormalMachineJourneySendsTheSameLinesWithTheStagingRulesOn()
     {
         await using RuntimeFixture fixture = await RuntimeFixture.CreateAsync();
@@ -159,7 +158,6 @@ public sealed class Batch7StopDrivenAdvanceWireParityTests
     }
 
     [Fact]
-    [Trait("IntegrationSlice", "FP-IS-02")]
     public async Task AMachineStopEndedByItsStationDeadlineSendsTheSameLinesWithTheStagingRulesOn()
     {
         await using RuntimeFixture fixture = await RuntimeFixture.CreateAsync();
