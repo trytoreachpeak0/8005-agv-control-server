@@ -15,8 +15,8 @@ namespace ControlServer.Tests;
 /// <para>
 /// 对照表来自 <c>8005-agv-program</c> PR #163 正文第 3 项：九条来路、七个原因码（正常卸完为 null）、七个取值。两条来路共用
 /// <c>STATION_DEADLINE_EXPIRED</c>（期限到期与确定的装货失败都以 <c>CANCELLED_BY_STATION_TIMEOUT</c> 终结），两种取消共用
-/// <c>LOAD_CANCELLED</c>。control-server#290 加了第十条来路：持货期限截断（需求释放回积压，用自己的码），也说
-/// <c>STATION_DEADLINE_EXPIRED</c>（理由在 <see cref="StopEndedReasons"/> 的注释里）。
+/// <c>LOAD_CANCELLED</c>。control-server#290 加了第十条来路：持货期限截断（需求释放回积压，用自己的码），与释放改派共用
+/// <c>DEMAND_RELEASED</c>（理由在 <see cref="StopEndedReasons"/> 的注释里）。
 /// </para>
 /// <para>
 /// <b>为什么对未知码抛而不是给个兜底值。</b>空清单的原因是给操作员看的；兜底值会让一条新来路悄悄显示成别的原因。抛出来，那条
@@ -30,8 +30,8 @@ public sealed class StopEndedReasonsTests
     {
         { null, "COMPLETED" },
         { "CANCELLED_BY_STATION_TIMEOUT", "STATION_DEADLINE_EXPIRED" },
-        // 持货期限截断（control-server#290）：协议里没有「持货超时」，车看到的是一个期限到了、本站结束。
-        { JourneyRuntimeEngine.CargoHoldingTruncationReason, "STATION_DEADLINE_EXPIRED" },
+        // 持货期限截断（control-server#290）：需求放回待派队列，与释放改派说同一句「本站因任务释放结束」，不说「超时」（审查 M2）。
+        { JourneyRuntimeEngine.CargoHoldingTruncationReason, "DEMAND_RELEASED" },
         { "CANCELLED_BY_OPERATOR", "LOAD_CANCELLED" },
         { "CANCELLED_BY_LOAD_COMPENSATION", "LOAD_COMPENSATED" },
         { "TERMINATED_BY_FAULT_CARGO_HANDOFF", "CARGO_HANDED_OFF" },

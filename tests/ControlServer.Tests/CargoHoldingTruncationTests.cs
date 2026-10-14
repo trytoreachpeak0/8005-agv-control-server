@@ -36,6 +36,8 @@ public sealed class CargoHoldingTruncationTests
 {
     private const int SecondPickupStationRiotId = 13;
     private const string SecondPickupArea = "N1-2";
+    private const string FourthDemandId = "10000000-0000-4000-8000-000000000004";
+    private const string FourthSublot = "SUBLOT-004";
 
     /// <summary>
     /// 车还停在第一个取货站（离站等待没完），持货期限先到：另一个取货停靠上那条还没开始装的需求被释放回积压、它的停靠被删；车离站时直接去
@@ -102,7 +104,7 @@ public sealed class CargoHoldingTruncationTests
 
     /// <summary>
     /// 第二个取货站上两条：一条到期时正在装，一条还没录入。正在装的那一批闭环、照常装上；没录入的那条被释放回积压；车上那张空清单说
-    /// 「本站因超时结束」（<c>STATION_DEADLINE_EXPIRED</c>），清单号一个不重；车随即离站去卸货。
+    /// 「本站因任务释放结束」（<c>DEMAND_RELEASED</c>），清单号一个不重；车随即离站去卸货。
     /// </summary>
     /// <remarks>
     /// <para>
@@ -112,8 +114,8 @@ public sealed class CargoHoldingTruncationTests
     /// <b>闭环那一轮就截，不先给车发一版只剩第三条的清单。</b>先发再截，操作员会在几秒钟里看到一条马上被拿走的需求，还收得到它的录入请求。
     /// </para>
     /// <para>
-    /// <b>清单号</b>：车已到站，这一站的清单早已发出。释放让这个停靠少了一条归属，按版数算的号会往回缩——释放服务因此在「车已到站」时拒绝释放
-    /// （<c>DemandReleaseReasons.AfterArrival</c>）。截断补上同样多的版数，这里断整条清单流没有两版同号、空清单的号在此前每一版之上、
+    /// <b>清单号</b>：车已到站，这一站的清单早已发出，释放让这个停靠少了一条归属——释放服务在「车已到站」时拒绝释放
+    /// （<c>DemandReleaseReasons.AfterArrival</c>）就是怕号对不上。这里断整条清单流没有两版同号、空清单的号在此前每一版之上、
     /// 关卡那一版又在空清单之上。
     /// </para>
     /// </remarks>
@@ -146,7 +148,7 @@ public sealed class CargoHoldingTruncationTests
             .Where(item => item.Payload.GetProperty("items").GetArrayLength() == 0)
             .OrderBy(item => item.Revision)
             .Last();
-        Assert.Equal("STATION_DEADLINE_EXPIRED", empty.Payload.GetProperty("stopEndedReason").GetString());
+        Assert.Equal("DEMAND_RELEASED", empty.Payload.GetProperty("stopEndedReason").GetString());
         Assert.True(empty.Revision > highestBefore, $"The empty worklist {empty.Revision} is not above {highestBefore}.");
 
         for (int round = 0; round < 3 && !await DepartureCheckSentFromAsync(fixture, journeyId, SecondPickupStationRiotId); round++)
@@ -336,6 +338,150 @@ public sealed class CargoHoldingTruncationTests
     }
 
     /// <summary>
+    /// 同站一条正在装、另一条（丙）开着扫码前取消、还有一条（丁）没录入：期限在装货期间过去，那一批闭环的那一轮不截——丙带着开着的取消被释放，
+    /// 车报来的取消结果就找不到旅程（审查 H1）。取消以 <c>ALL_EMPTY</c> 结清后丙是 <c>CANCELLED_BY_OPERATOR</c>，同站其余没开始装的（丁）照截。
+    /// </summary>
+    /// <remarks>
+    /// 截断最常发生的正是装货闭环那一轮，那时阶段是 <c>AwaitingLoadResult</c>；<c>OnboardRecoveryCoordinator</c> 在这个阶段也允许对同站另一条
+    /// <c>PENDING_LOAD</c> 发起扫码前取消。守卫原先只在 <c>AwaitingSublot</c> 生效，这条用例就是审查探针的那个形状。
+    /// </remarks>
+    [Fact]
+    [Trait("IntegrationSlice", "FP-IS-08")]
+    public async Task ACancellationOpenedWhileAnotherDemandLoadsHoldsTheTruncationAtThatBatchesClosure()
+    {
+        CancellationToken token = TestContext.Current.CancellationToken;
+        await using RuntimeFixture fixture = await HoldingFixtureAsync();
+        await StopEndedJourneyContinuesTests.ArriveAtTheSecondPickupAsync(fixture, thirdAtTheSecondPickup: true);
+        string journeyId = (await JourneyOfAsync(fixture, FirstDemandId)).JourneyId;
+        fixture.BoxCounts.Set(FourthSublot, 7);
+        await Batch7ThreeStopJourneyTests.AppendDemandAsync(
+            fixture, FourthDemandId, FourthSublot, SecondPickupArea, SecondPickupStationRiotId);
+        await EnterSublotAsync(fixture, SecondDemandId, SecondSublot, SecondSubmissionId);
+        Assert.Equal(JourneyRuntimeStage.AwaitingLoadResult, (await JourneyOfAsync(fixture, FirstDemandId)).Stage);
+
+        await using ControlServerDbContext connection = fixture.OpenConnectionContext();
+        OnboardMessageProcessor processor = TestOnboardProcessorFactory.Create(
+            connection, new WireToGateStore(connection), fixture.Clock, new ConfigurationBuilder().Build(), fixture.Peer);
+        OnboardConnectionState state = StopEndedJourneyContinuesTests.Connection(fixture);
+        const string cancellationId = "d2900000-0000-4000-8000-0000000000a1";
+        await processor.ProcessAsync(
+            StopEndedJourneyContinuesTests.Envelope(fixture, "d2900000-0000-4000-8000-0000000000a2", "LoadCancellationStartRequested", new
+            {
+                cancellationId,
+                demandId = StopEndedJourneyContinuesTests.ThirdDemandId,
+                slotOperationAttemptId = (string?)null,
+                @operator = new { operatorId = "OP-001", verificationMethod = "BADGE", verifiedAt = fixture.Clock.GetUtcNow() },
+                reason = "Nothing to load at this stop."
+            }),
+            state,
+            token);
+        Assert.True(await LoadCancellationBeforeSublot.HasOpenCancellationAsync(
+            fixture.Context, StopEndedJourneyContinuesTests.ThirdDemandId, token), "The cancellation was not opened.");
+
+        fixture.Clock.Advance(TimeSpan.FromMinutes(30));
+        await fixture.HearFromPeerAsync();
+        await TickAndRunAsync(fixture);
+        await SettleLoadAsync(fixture, SecondDemandId);
+        Assert.Equal(LoadingPhaseStates.Closed, (await JourneyOfAsync(fixture, FirstDemandId)).LoadingPhaseState);
+        Assert.Equal(JourneyDemandStatuses.Loaded, (await MembershipOnAsync(fixture, journeyId, SecondDemandId)).Status);
+        foreach (string demandId in new[] { StopEndedJourneyContinuesTests.ThirdDemandId, FourthDemandId })
+        {
+            JourneyDemandRow held = await MembershipOnAsync(fixture, journeyId, demandId);
+            Assert.True(held.RemovedAt is null, $"{demandId} was released while a cancellation was open at its stop.");
+        }
+
+        await processor.ProcessAsync(
+            StopEndedJourneyContinuesTests.Envelope(fixture, "d2900000-0000-4000-8000-0000000000a3", "LoadCancellationResult", new
+            {
+                cancellationId,
+                demandId = StopEndedJourneyContinuesTests.ThirdDemandId,
+                slotOperationAttemptId = (string?)null,
+                overallOutcome = "ALL_EMPTY",
+                slotResults = Array.Empty<object>(),
+                observedAt = fixture.Clock.GetUtcNow()
+            }),
+            state,
+            token);
+        Assert.Equal(
+            "CANCELLED_BY_OPERATOR",
+            (await fixture.Context.Set<TransportDemandSuppressionRow>().AsNoTracking()
+                .SingleAsync(row => row.DemandId == StopEndedJourneyContinuesTests.ThirdDemandId, token)).ReasonCode);
+
+        await TickAndRunAsync(fixture);
+        await AssertReleasedForRedispatchAsync(fixture, journeyId, FourthDemandId);
+    }
+
+    /// <summary>
+    /// 离站等待开着（5 分钟）时，到站那一轮被截空的取货停靠立刻离站，不白等一整段（审查 M1）。
+    /// </summary>
+    /// <remarks>
+    /// 其余用例的夹具里离站等待是 0，看不到这件事：车已过了持货硬期限，还要在一台空机台前多停最多 5 分钟、占着那台机台。
+    /// </remarks>
+    [Fact]
+    [Trait("IntegrationSlice", "FP-IS-08")]
+    public async Task AStopEmptiedByTheTruncationIsLeftWithoutWaitingOutTheDepartureWait()
+    {
+        await using RuntimeFixture fixture = await HoldingFixtureAsync();
+        await LoadTheFirstDemandAsync(fixture);
+        await AppendSecondAsync(fixture);
+        await TickAndRunAsync(fixture);
+        string journeyId = (await JourneyOfAsync(fixture, FirstDemandId)).JourneyId;
+        await AnswerDepartureSafetyAsync(fixture, FirstDemandId, FirstSafetyResultId);
+
+        fixture.Options.StationDepartureWaitTimeout = TimeSpan.FromMinutes(5);
+        fixture.Clock.Advance(TimeSpan.FromMinutes(30));
+        await fixture.HearFromPeerAsync();
+        await ArriveAtCurrentStopAsync(fixture, FirstDemandId, "TO_GATE");
+        await AssertReleasedForRedispatchAsync(fixture, journeyId, SecondDemandId);
+
+        for (int round = 0; round < 3 && !await DepartureCheckSentFromAsync(fixture, journeyId, SecondPickupStationRiotId); round++)
+        {
+            await TickAndRunAsync(fixture);
+        }
+        Assert.True(
+            await DepartureCheckSentFromAsync(fixture, journeyId, SecondPickupStationRiotId),
+            "The emptied stop waited out the departure wait instead of leaving.");
+        JourneyRuntimeRow departed = await AnswerDepartureSafetyAsync(fixture, FirstDemandId, SecondSafetyResultId);
+        Assert.Equal(JourneyRuntimeStage.AwaitingGateArrival, departed.Stage);
+    }
+
+    /// <summary>
+    /// 离站核验已经发出（问的是开往第二个取货站）、车还没答，期限到了：截掉第二个取货停靠，作废那张核验、换新身份再问一次，新的一张问的是
+    /// 卸货站；车答了新的那张就开往卸货站（审查 L2）。
+    /// </summary>
+    [Fact]
+    [Trait("IntegrationSlice", "FP-IS-08")]
+    public async Task ADepartureCheckAskedTowardATruncatedStopIsRetiredAndAskedAgainTowardTheNextStop()
+    {
+        CancellationToken token = TestContext.Current.CancellationToken;
+        await using RuntimeFixture fixture = await HoldingFixtureAsync();
+        await LoadTheFirstDemandAsync(fixture);
+        await AppendSecondAsync(fixture);
+        await TickAndRunAsync(fixture);
+        string journeyId = (await JourneyOfAsync(fixture, FirstDemandId)).JourneyId;
+        Assert.Equal(JourneyRuntimeStage.AwaitingDepartureSafety, (await JourneyOfAsync(fixture, FirstDemandId)).Stage);
+        ProtocolOutboxRow first = Assert.Single(await DepartureChecksAsync(fixture));
+        JourneyStopRow secondPickup = await PickupStopAtAsync(fixture, journeyId, SecondPickupStationRiotId);
+        Assert.Equal(secondPickup.StationId, TargetStationOf(first));
+
+        fixture.Clock.Advance(TimeSpan.FromMinutes(30));
+        await fixture.HearFromPeerAsync();
+        await TickAndRunAsync(fixture);
+
+        await AssertReleasedForRedispatchAsync(fixture, journeyId, SecondDemandId);
+        ProtocolOutboxRow[] checks = await DepartureChecksAsync(fixture);
+        Assert.Equal(2, checks.Length);
+        Assert.NotNull(checks.Single(row => row.MessageId == first.MessageId).FencedAt);
+        ProtocolOutboxRow again = checks.Single(row => row.MessageId != first.MessageId);
+        string unloadStation = (await fixture.Context.Set<JourneyStopRow>().AsNoTracking()
+            .SingleAsync(row => row.JourneyId == journeyId && row.StopRole == JourneyStopRoles.Unload, token)).StationId;
+        Assert.Equal(unloadStation, TargetStationOf(again));
+
+        JourneyRuntimeRow departed = await AnswerDepartureSafetyAsync(fixture, FirstDemandId, FirstSafetyResultId);
+        Assert.Equal(JourneyRuntimeStage.AwaitingGateArrival, departed.Stage);
+    }
+
+    /// <summary>
     /// 参数批准之前（不适用持货等单）一条都不截：与批次 6 相同，这一票对未配置分区参数的旅程零变化。
     /// </summary>
     [Fact]
@@ -416,6 +562,17 @@ public sealed class CargoHoldingTruncationTests
         return stop.DepartureSafetyCheckMessageId is { } messageId &&
                await fixture.Context.ProtocolOutbox.AsNoTracking()
                    .AnyAsync(row => row.MessageId == messageId, TestContext.Current.CancellationToken);
+    }
+
+    private static Task<ProtocolOutboxRow[]> DepartureChecksAsync(RuntimeFixture fixture) =>
+        fixture.Context.ProtocolOutbox.AsNoTracking()
+            .Where(row => row.MessageType == "PreDepartureSafetyCheck")
+            .ToArrayAsync(TestContext.Current.CancellationToken);
+
+    private static string? TargetStationOf(ProtocolOutboxRow check)
+    {
+        using System.Text.Json.JsonDocument document = System.Text.Json.JsonDocument.Parse(check.PayloadJson);
+        return document.RootElement.GetProperty("payload").GetProperty("targetStationId").GetString();
     }
 
     private static async Task<Snapshot[]> WorklistsAsync(RuntimeFixture fixture) =>
