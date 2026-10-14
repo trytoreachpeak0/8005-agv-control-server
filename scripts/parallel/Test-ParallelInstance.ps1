@@ -6256,20 +6256,20 @@ function New-PhaseDefinition([string] $Phase, $Section, [switch] $NoSection) {
 }
 function Get-CutoverFailures($Definition) { [string[]] @(Test-ParallelInstanceDefinition -Definition $Definition -ProductionCutover) }
 Invoke-SourceCase 'release: a production-phase cutover definition with the entry on is accepted' {
-    [string[]] $got = Get-CutoverFailures (New-PhaseDefinition 'production' @{ enabled = $true })
+    [string[]] $got = @(Get-CutoverFailures (New-PhaseDefinition 'production' @{ enabled = $true }))
     @{ Ok = ($got.Count -eq 0); Detail = "got: $($got -join ' | ')" }
 }
 foreach ($case in @(
         @{ Name = 'without the section'; NoSection = $true; Section = $null }
         @{ Name = 'with the entry off'; NoSection = $false; Section = @{ enabled = $false } })) {
     Invoke-SourceCase "release: a production-phase cutover definition $($case.Name) is refused, naming the plan step" {
-        [string[]] $got = Get-CutoverFailures (New-PhaseDefinition 'production' $case.Section -NoSection:$case.NoSection)
+        [string[]] $got = @(Get-CutoverFailures (New-PhaseDefinition 'production' $case.Section -NoSection:$case.NoSection))
         @{ Ok = ($got.Count -eq 1 -and $got[0].StartsWith('EMERGENCY_STOP_RELEASE_REQUIRED_IN_PRODUCTION:') -and $got[0].Contains('18a'))
             Detail = "got: $($got -join ' | ')" }
     }
 }
 Invoke-SourceCase 'release: a trial-phase cutover definition without the section is accepted (the trial stages ship without it)' {
-    [string[]] $got = Get-CutoverFailures (New-PhaseDefinition 'trial' $null -NoSection)
+    [string[]] $got = @(Get-CutoverFailures (New-PhaseDefinition 'trial' $null -NoSection))
     @{ Ok = ($got.Count -eq 0); Detail = "got: $($got -join ' | ')" }
 }
 Invoke-SourceCase 'release: every committed definition whose productionCutover.phase is production turns the entry on' {

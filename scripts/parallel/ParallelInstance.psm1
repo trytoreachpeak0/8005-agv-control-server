@@ -3400,10 +3400,10 @@ function Format-ParallelEmergencyReleaseLine {
         [AllowNull()][AllowEmptyCollection()][string[]] $EnvironmentNames
     )
     $names = @($EnvironmentNames)
-    $state = { param([string] $Variable) ($names -contains $Variable) ? 'set' : 'unset' }
     return ('EMERGENCY_STOP_RELEASE=enabled={0} credential={1} loadedCredential={2}' -f
         ((Test-ParallelEmergencyReleaseEnabled -Definition $Definition) ? 'true' : 'false'),
-        (& $state $script:EmergencyReleaseCredentialVariable), (& $state $script:EmergencyLoadedReleaseCredentialVariable))
+        (($names -contains $script:EmergencyReleaseCredentialVariable) ? 'set' : 'unset'),
+        (($names -contains $script:EmergencyLoadedReleaseCredentialVariable) ? 'set' : 'unset'))
 }
 
 function Get-ParallelGateClosingSteps {
