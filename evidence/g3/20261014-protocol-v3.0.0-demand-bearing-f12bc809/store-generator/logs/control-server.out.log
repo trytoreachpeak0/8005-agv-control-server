@@ -1,0 +1,135 @@
+[17:34:58 INF] No migrations were applied. The database is already up to date.
+[17:34:58 INF] Task type station preset C:\Users\szy\AppData\Local\Temp\l2-20261014T093356062Z\task-type-stations.settings.json loaded: rule version 1 (new), Map 25 binding set version 1 (new) active.
+[17:34:58 WRN] The manual station clearance exit is not available (FIELD_OPERATOR_ROSTER_EMPTY,STATION_CLEARANCE_ENTRY_NOT_OFFERED). Until it is, a vehicle that cannot charge at its charger is left on ORDER_HANG instead of being paused for a manual clearance (control-server#406). Configure FieldOperatorRoles:Path with at least one R-11 or R-13, and VehicleFaultRecovery:enabled or FieldOperatorRoles:OnboardClearanceEntryDeclared.
+[17:34:59 INF] Onboard NDJSON listener started on 127.0.0.1:48405; transport=plaintext
+[17:35:00 INF] Now listening on: http://127.0.0.1:48407
+[17:35:00 INF] Application started. Press Ctrl+C to shut down.
+[17:35:00 INF] Hosting environment: Production
+[17:35:00 INF] Content root path: F:\8005-scratch\cs564-g3\db\sources\control-server\src\ControlServer.Host\bin\Release\net8.0\win-x64
+[17:35:00 INF] EFFECTIVE_CONFIGURATION allowedWorkTypes=["DIE_TO_WIRE_STAGING", "DIE_TO_OVEN", "WIRE_TO_GATE", "WIRE_TO_OPTICAL", "STAGING_TO_WIRE", "WIRE_TO_NITROGEN"] allowedDispatchZones=["MAP-25-WIRE_TO_GATE"] mesIngestBaseUrl=http://127.0.0.1:48409 fleet=[] clearanceToWaitingPointEnabled=False mapStationCatalog={"ApprovedSyncPeriod": "00:00:30", "ApprovedMaxUnconfirmed": "00:05:00"} foreignRunningOrderRelease={"Enabled": false, "CredentialPresent": false} admissionPolicyVersion=3 admissionPolicyDeploymentId=L2-20261014T093356062Z cargoHoldingTimeout=00:05:00 stationDepartureWaitTimeout=00:00:05 slotConfigurationReadinessGate=Off
+[17:35:00 INF] HTTP GET /health/live responded 200 in 4.9952 ms
+[17:35:00 INF] Start processing HTTP request GET http://127.0.0.1:48409/api/v2/contract
+[17:35:00 INF] End processing HTTP request after 15.98ms - 200
+[17:35:00 INF] Start processing HTTP request GET http://127.0.0.1:48409/api/v2/externally-readable-demand-catalog
+[17:35:00 INF] End processing HTTP request after 7.1027ms - 200
+[17:35:00 INF] HTTP GET /version responded 200 in 1.8866 ms
+[17:35:00 INF] Charging not allocated for vehicle AGV-L2-001: CHARGING_POLICY_NOT_APPROVED. 
+[17:35:00 INF] Idle return not committed for vehicle AGV-L2-001: IDLE_RETURN_DISABLED. 
+[17:35:00 INF] Start processing HTTP request GET http://127.0.0.1:48409/api/v2/contract
+[17:35:00 INF] End processing HTTP request after 1.3023ms - 200
+[17:35:00 INF] Start processing HTTP request GET http://127.0.0.1:48409/api/v2/externally-readable-demand-catalog
+[17:35:00 INF] End processing HTTP request after 0.8245ms - 200
+[17:35:01 INF] SessionReadiness 3c345d83-ecc4-404e-942d-7c3cd6c14062 to AGV-L2-001 generation 1: READY [null], after the answer to RecoveryStateReport 5d96047a-9a09-4118-ba72-01baac37ec49.
+[17:35:01 INF] Start processing HTTP request GET http://127.0.0.1:48409/api/v2/contract
+[17:35:01 INF] End processing HTTP request after 1.3525ms - 200
+[17:35:01 INF] Start processing HTTP request GET http://127.0.0.1:48409/api/v2/externally-readable-demand-catalog
+[17:35:01 INF] End processing HTTP request after 0.8219ms - 200
+[17:35:01 INF] HTTP GET /health/ready responded 200 in 5.3879 ms
+[17:35:02 INF] Start processing HTTP request GET http://127.0.0.1:48409/api/v2/contract
+[17:35:02 INF] End processing HTTP request after 1.4476ms - 200
+[17:35:02 INF] Start processing HTTP request GET http://127.0.0.1:48409/api/v2/externally-readable-demand-catalog
+[17:35:02 INF] End processing HTTP request after 0.8887ms - 200
+[17:35:03 INF] Start processing HTTP request GET http://127.0.0.1:48409/api/v2/contract
+[17:35:03 INF] End processing HTTP request after 1.1341ms - 200
+[17:35:03 INF] Start processing HTTP request GET http://127.0.0.1:48409/api/v2/externally-readable-demand-catalog
+[17:35:03 INF] End processing HTTP request after 0.6616ms - 200
+[17:35:04 INF] Start processing HTTP request GET http://127.0.0.1:48409/api/v2/contract
+[17:35:04 INF] End processing HTTP request after 1.3673ms - 200
+[17:35:04 INF] Start processing HTTP request GET http://127.0.0.1:48409/api/v2/externally-readable-demand-catalog
+[17:35:04 INF] End processing HTTP request after 1.0062ms - 200
+[17:35:05 INF] Start processing HTTP request GET http://127.0.0.1:48409/api/v2/contract
+[17:35:05 INF] End processing HTTP request after 26.4114ms - 200
+[17:35:05 INF] Start processing HTTP request GET http://127.0.0.1:48409/api/v2/externally-readable-demand-catalog
+[17:35:05 INF] End processing HTTP request after 64.7951ms - 200
+[17:35:06 INF] Start processing HTTP request GET http://127.0.0.1:48409/api/v2/contract
+[17:35:06 INF] End processing HTTP request after 1.2917ms - 200
+[17:35:06 INF] Start processing HTTP request GET http://127.0.0.1:48409/api/v2/externally-readable-demand-catalog
+[17:35:06 INF] End processing HTTP request after 1.1639ms - 200
+[17:35:07 INF] Start processing HTTP request GET http://127.0.0.1:48409/api/v2/contract
+[17:35:07 INF] End processing HTTP request after 1.0341ms - 200
+[17:35:07 INF] Start processing HTTP request GET http://127.0.0.1:48409/api/v2/externally-readable-demand-catalog
+[17:35:07 INF] End processing HTTP request after 0.4995ms - 200
+[17:35:08 INF] Start processing HTTP request GET http://127.0.0.1:48409/api/v2/contract
+[17:35:08 INF] End processing HTTP request after 0.944ms - 200
+[17:35:08 INF] Start processing HTTP request GET http://127.0.0.1:48409/api/v2/externally-readable-demand-catalog
+[17:35:08 INF] End processing HTTP request after 0.7217ms - 200
+[17:35:09 INF] Start processing HTTP request GET http://127.0.0.1:48409/api/v2/contract
+[17:35:09 INF] End processing HTTP request after 1.0248ms - 200
+[17:35:09 INF] Start processing HTTP request GET http://127.0.0.1:48409/api/v2/externally-readable-demand-catalog
+[17:35:09 INF] End processing HTTP request after 0.5464ms - 200
+[17:35:10 INF] Start processing HTTP request GET http://127.0.0.1:48409/api/v2/contract
+[17:35:10 INF] End processing HTTP request after 1.0241ms - 200
+[17:35:10 INF] Start processing HTTP request GET http://127.0.0.1:48409/api/v2/externally-readable-demand-catalog
+[17:35:10 INF] End processing HTTP request after 0.5674ms - 200
+[17:35:11 INF] Start processing HTTP request GET http://127.0.0.1:48409/api/v2/contract
+[17:35:11 INF] End processing HTTP request after 1.1468ms - 200
+[17:35:11 INF] Start processing HTTP request GET http://127.0.0.1:48409/api/v2/externally-readable-demand-catalog
+[17:35:11 INF] End processing HTTP request after 0.8365ms - 200
+[17:35:12 INF] Start processing HTTP request GET http://127.0.0.1:48409/api/v2/contract
+[17:35:12 INF] End processing HTTP request after 0.8146ms - 200
+[17:35:12 INF] Start processing HTTP request GET http://127.0.0.1:48409/api/v2/externally-readable-demand-catalog
+[17:35:12 INF] End processing HTTP request after 0.5296ms - 200
+[17:35:12 INF] Charging not allocated for vehicle AGV-L2-001: CHARGING_NOT_REQUIRED. 
+[17:35:13 INF] Start processing HTTP request GET http://127.0.0.1:48409/api/v2/contract
+[17:35:13 INF] End processing HTTP request after 1.042ms - 200
+[17:35:13 INF] Start processing HTTP request GET http://127.0.0.1:48409/api/v2/externally-readable-demand-catalog
+[17:35:13 INF] End processing HTTP request after 2.3455ms - 200
+[17:35:13 INF] RIoT command POST http://127.0.0.1:48408/api/task/v1/route/getRouteCostsBy sent
+[17:35:13 INF] RIoT command POST http://127.0.0.1:48408/api/task/v1/route/getRouteCostsBy answered 200 after 10.3303 ms
+[17:35:13 INF] Start processing HTTP request GET http://127.0.0.1:48409/api/v2/sublot-box-count?sublot=L2-SUBLOT-20261014T093356062Z
+[17:35:13 INF] Sending HTTP request GET http://127.0.0.1:48409/api/v2/sublot-box-count?sublot=L2-SUBLOT-20261014T093356062Z
+[17:35:13 INF] Received HTTP response headers after 5.4708ms - 200
+[17:35:13 INF] End processing HTTP request after 6.1968ms - 200
+[17:35:13 INF] Start processing HTTP request GET http://127.0.0.1:48409/api/v2/contract
+[17:35:13 INF] End processing HTTP request after 0.717ms - 200
+[17:35:13 INF] Start processing HTTP request GET http://127.0.0.1:48409/api/v2/externally-readable-demand-catalog
+[17:35:13 INF] End processing HTTP request after 0.7511ms - 200
+[17:35:13 INF] RIoT request GET http://127.0.0.1:48408/api/order/v1/orderRecord/detailByUpperId/W2G-0f95bb18-6377-4157-972e-ae2d06d1d410-PICKUP-1 answered 404 after 5.4627 ms, which is not a success status
+[17:35:13 INF] RIoT command POST http://127.0.0.1:48408/api/order/v1/add/byDefaultMissions sent
+[17:35:13 INF] RIoT command POST http://127.0.0.1:48408/api/order/v1/add/byDefaultMissions answered 200 after 6.0353 ms
+[17:35:14 INF] Start processing HTTP request GET http://127.0.0.1:48409/api/v2/contract
+[17:35:14 INF] End processing HTTP request after 0.8368ms - 200
+[17:35:14 INF] Start processing HTTP request GET http://127.0.0.1:48409/api/v2/externally-readable-demand-catalog
+[17:35:14 INF] End processing HTTP request after 0.6007ms - 200
+[17:35:15 INF] Start processing HTTP request GET http://127.0.0.1:48409/api/v2/sublot-box-count?sublot=L2-SUBLOT-20261014T093356062Z
+[17:35:15 INF] Sending HTTP request GET http://127.0.0.1:48409/api/v2/sublot-box-count?sublot=L2-SUBLOT-20261014T093356062Z
+[17:35:15 INF] Received HTTP response headers after 0.7215ms - 200
+[17:35:15 INF] End processing HTTP request after 1.3016ms - 200
+[17:35:15 INF] Start processing HTTP request GET http://127.0.0.1:48409/api/v2/contract
+[17:35:15 INF] End processing HTTP request after 0.7353ms - 200
+[17:35:15 INF] Start processing HTTP request GET http://127.0.0.1:48409/api/v2/externally-readable-demand-catalog
+[17:35:15 INF] End processing HTTP request after 0.426ms - 200
+[17:35:16 INF] Vehicle AGV-L2-001 has loaded everything at pickup N1-3_N1-7 and still waits there; its worklist carried the station departure deadline 10/14/2026 09:35:19 +00:00, the server now judges by 10/14/2026 09:35:21 +00:00, so worklist revision 2 was sent with no items and the server's deadline.
+[17:35:16 INF] Start processing HTTP request GET http://127.0.0.1:48409/api/v2/contract
+[17:35:16 INF] End processing HTTP request after 0.7457ms - 200
+[17:35:16 INF] Start processing HTTP request GET http://127.0.0.1:48409/api/v2/externally-readable-demand-catalog
+[17:35:16 INF] End processing HTTP request after 0.4715ms - 200
+[17:35:17 INF] Start processing HTTP request GET http://127.0.0.1:48409/api/v2/contract
+[17:35:17 INF] End processing HTTP request after 0.7127ms - 200
+[17:35:17 INF] Start processing HTTP request GET http://127.0.0.1:48409/api/v2/externally-readable-demand-catalog
+[17:35:17 INF] End processing HTTP request after 0.5292ms - 200
+[17:35:18 INF] Start processing HTTP request GET http://127.0.0.1:48409/api/v2/contract
+[17:35:18 INF] End processing HTTP request after 0.6801ms - 200
+[17:35:18 INF] Start processing HTTP request GET http://127.0.0.1:48409/api/v2/externally-readable-demand-catalog
+[17:35:18 INF] End processing HTTP request after 0.5374ms - 200
+[17:35:19 INF] Start processing HTTP request GET http://127.0.0.1:48409/api/v2/contract
+[17:35:19 INF] End processing HTTP request after 0.8146ms - 200
+[17:35:19 INF] Start processing HTTP request GET http://127.0.0.1:48409/api/v2/externally-readable-demand-catalog
+[17:35:19 INF] End processing HTTP request after 0.5236ms - 200
+[17:35:20 INF] Start processing HTTP request GET http://127.0.0.1:48409/api/v2/contract
+[17:35:20 INF] End processing HTTP request after 0.6658ms - 200
+[17:35:20 INF] Start processing HTTP request GET http://127.0.0.1:48409/api/v2/externally-readable-demand-catalog
+[17:35:20 INF] End processing HTTP request after 0.5565ms - 200
+[17:35:21 INF] RIoT command POST http://127.0.0.1:48408/api/task/v1/route/getRouteCostsBy sent
+[17:35:21 INF] RIoT command POST http://127.0.0.1:48408/api/task/v1/route/getRouteCostsBy answered 200 after 1.9856 ms
+[17:35:21 INF] RIoT request GET http://127.0.0.1:48408/api/order/v1/orderRecord/detailByUpperId/W2G-0f95bb18-6377-4157-972e-ae2d06d1d410-GATE-1 answered 404 after 0.5824 ms, which is not a success status
+[17:35:21 INF] RIoT command POST http://127.0.0.1:48408/api/order/v1/add/byDefaultMissions sent
+[17:35:21 INF] RIoT command POST http://127.0.0.1:48408/api/order/v1/add/byDefaultMissions answered 200 after 0.6504 ms
+[17:35:21 INF] Start processing HTTP request GET http://127.0.0.1:48409/api/v2/contract
+[17:35:21 INF] End processing HTTP request after 0.7755ms - 200
+[17:35:21 INF] Start processing HTTP request GET http://127.0.0.1:48409/api/v2/externally-readable-demand-catalog
+[17:35:21 INF] End processing HTTP request after 0.5035ms - 200
+[17:35:22 INF] Start processing HTTP request GET http://127.0.0.1:48409/api/v2/contract
+[17:35:22 INF] End processing HTTP request after 0.7127ms - 200
+[17:35:22 INF] Start processing HTTP request GET http://127.0.0.1:48409/api/v2/externally-readable-demand-catalog
+[17:35:22 INF] End processing HTTP request after 0.5425ms - 200
