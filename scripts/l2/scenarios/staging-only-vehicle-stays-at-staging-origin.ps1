@@ -36,10 +36,11 @@ $connection = $Context.Connection
 
 $staging = 305
 $waitingPoints = @(214, 215)
-# OnboardPeers 与车队同序：第一个是主车。
+# 每台车的合成对端，按 AgvId 认（OnboardPeers 的每一项是 Name／Port／AgvId／Double）。
+function Get-Peer([string]$AgvId) { return ($Context.OnboardPeers | Where-Object { $_.AgvId -eq $AgvId }).Double }
 $peerByKey = @{
-    [string]$Context.VehicleKey = $Context.OnboardPeers[0]
-    'BROKERX-L2-0002'           = $Context.OnboardPeers[1]
+    [string]$Context.VehicleKey = Get-Peer $Context.AgvId
+    'BROKERX-L2-0002'           = Get-Peer 'AGV-L2-002'
 }
 
 function Publish-Demand([string]$Suffix) {
