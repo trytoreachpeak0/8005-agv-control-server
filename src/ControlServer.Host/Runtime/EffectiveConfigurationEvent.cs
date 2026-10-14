@@ -67,10 +67,12 @@ public static class EffectiveConfigurationEvent
         JourneyRuntimeOptions effective,
         MapStationCatalogOptions catalog,
         string mesIngestBaseUrl,
-        ForeignOrders.ForeignRunningOrderReleaseState? foreignRunningOrderRelease = null)
+        ForeignOrders.ForeignRunningOrderReleaseState? foreignRunningOrderRelease = null,
+        ControlServer.Domain.SlotConfigurationGateMode slotConfigurationGate = ControlServer.Domain.SlotConfigurationGateMode.Off)
     {
         ArgumentNullException.ThrowIfNull(logger);
         ArgumentNullException.ThrowIfNull(effective);
+        _ = slotConfigurationGate;
         if (!logger.IsEnabled(LogLevel.Information))
         {
             return;

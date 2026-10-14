@@ -1,6 +1,8 @@
 using System.Diagnostics;
 using System.Text;
 using System.Text.Json;
+using ControlServer.Domain;
+using ControlServer.Host.Composition;
 using ControlServer.Host.Runtime;
 using ControlServer.Host.Runtime.CreateGate;
 using Microsoft.Extensions.Configuration;
@@ -645,8 +647,9 @@ public sealed class ParallelInstanceEffectiveConfigurationTests
         Assert.StartsWith(
             "EFFECTIVE_CONFIGURATION allowedWorkTypes={AllowedWorkTypes} allowedDispatchZones={AllowedDispatchZones} mesIngestBaseUrl={MesIngestBaseUrl} fleet={Fleet} clearanceToWaitingPointEnabled={ClearanceToWaitingPointEnabled} mapStationCatalog={MapStationCatalog} foreignRunningOrderRelease={ForeignRunningOrderRelease}",
             template, StringComparison.Ordinal);
-        Assert.EndsWith(
-            " admissionPolicyVersion={AdmissionPolicyVersion} admissionPolicyDeploymentId={AdmissionPolicyDeploymentId} cargoHoldingTimeout={CargoHoldingTimeout} stationDepartureWaitTimeout={StationDepartureWaitTimeout}",
+        // No longer the last fields since control-server#686 appended the slot configuration gate.
+        Assert.Contains(
+            " admissionPolicyVersion={AdmissionPolicyVersion} admissionPolicyDeploymentId={AdmissionPolicyDeploymentId} cargoHoldingTimeout={CargoHoldingTimeout} stationDepartureWaitTimeout={StationDepartureWaitTimeout} ",
             template, StringComparison.Ordinal);
         Assert.Equal(JsonValueKind.Number, root.GetProperty("AdmissionPolicyVersion").ValueKind);
         Assert.Equal(6, root.GetProperty("AdmissionPolicyVersion").GetInt64());
@@ -681,6 +684,73 @@ public sealed class ParallelInstanceEffectiveConfigurationTests
         string line = RenderEvent(options, configuration["MesIngest:baseUrl"]!, BindCatalog(configuration));
 
         string verdict = JudgeReadBack(root, definitionFile, line);
+
+        Assert.StartsWith(expectedAction + "|", verdict, StringComparison.Ordinal);
+        if (says is not null)
+        {
+            Assert.Contains("EFFECTIVE_CONFIGURATION_MISMATCH", verdict, StringComparison.Ordinal);
+            Assert.Contains(says, verdict, StringComparison.Ordinal);
+        }
+    }
+
+    // ------------------------------------------------------------------------------------------------
+    // control-server#686. The slot configuration readiness gate is derived from the installed definition's
+    // productionCutover.phase by the overlay, never written by hand: production Enforcing, the trial and every other
+    // definition Off. The Host logs the mode it really bound, and the installer compares it, so neither a stale layer nor an
+    // environment variable can leave production running without the gate or the trial stopped by it.
+    // ------------------------------------------------------------------------------------------------
+
+    [Fact]
+    public void EffectiveConfigurationEventCarriesTheSlotConfigurationGateAsBound()
+    {
+        JourneyRuntimeOptions options = new()
+        {
+            AgvId = "老厂前线新多仓位2",
+            VehicleKey = Agv02Key,
+            AllowedWorkTypes = ["WIRE_TO_GATE"],
+            AllowedDispatchZones = ["WIRE"],
+        };
+
+        using JsonDocument logged = JsonDocument.Parse(
+            RenderEvent(options, "http://127.0.0.1:58188", gate: SlotConfigurationGateMode.Enforcing));
+        JsonElement root = logged.RootElement;
+
+        Assert.EndsWith(
+            " stationDepartureWaitTimeout={StationDepartureWaitTimeout} slotConfigurationReadinessGate={SlotConfigurationReadinessGate}",
+            root.GetProperty("@mt").GetString()!, StringComparison.Ordinal);
+        Assert.Equal(JsonValueKind.String, root.GetProperty("SlotConfigurationReadinessGate").ValueKind);
+        Assert.Equal("Enforcing", root.GetProperty("SlotConfigurationReadinessGate").GetString());
+    }
+
+    [Theory]
+    [InlineData("production", "as-bound", "Enforcing", "Pass", null)]
+    [InlineData("production", "off", "Enforcing", "StopServiceAndRefuse", "slotConfigurationReadinessGate bound 'Off', the definition says 'Enforcing'")]
+    [InlineData("trial", "as-bound", "Off", "Pass", null)]
+    [InlineData("trial", "enforcing", "Off", "StopServiceAndRefuse", "slotConfigurationReadinessGate bound 'Enforcing', the definition says 'Off'")]
+    [InlineData("shipped", "as-bound", "Off", "Pass", null)]
+    public void TheGateTheOverlayWritesIsThePhasesAndTheReadBackHoldsTheHostToIt(
+        string phase, string host, string expectedBound, string expectedAction, string? says)
+    {
+        // as-bound: the overlay generated from the definition over the package's appsettings.json, the mode resolved as
+        // GovernanceModule resolves it at startup. The others stand for a Host that bound something else.
+        string root = FindRepositoryRoot();
+        string definitionFile = phase == "shipped" ? "instance-factory01-v2.json" : "instance-factory01-v2.cutover-trial-s1.json";
+        string definitionEdit = phase == "production" ? "$d['productionCutover']['phase'] = 'production'; " : "";
+        JourneyRuntimeOptions options = Bind(
+            File.ReadAllText(Path.Combine(root, "src", "ControlServer.Host", "appsettings.json")),
+            GenerateOverlay(root, definitionFile, definitionEdit, checkDefinition: phase == "shipped"),
+            out IConfiguration configuration);
+        SlotConfigurationGateMode bound = GovernanceModule.ResolveGateMode(configuration);
+        Assert.Equal(expectedBound, bound.ToString());
+        bound = host switch
+        {
+            "off" => SlotConfigurationGateMode.Off,
+            "enforcing" => SlotConfigurationGateMode.Enforcing,
+            _ => bound,
+        };
+        string line = RenderEvent(options, configuration["MesIngest:baseUrl"]!, BindCatalog(configuration), bound);
+
+        string verdict = JudgeReadBack(root, definitionFile, line, definitionEdit);
 
         Assert.StartsWith(expectedAction + "|", verdict, StringComparison.Ordinal);
         if (says is not null)
@@ -747,7 +817,11 @@ public sealed class ParallelInstanceEffectiveConfigurationTests
     private static readonly Action<Microsoft.Extensions.Logging.ILogger, int, string, Exception?> LogNoise =
         Microsoft.Extensions.Logging.LoggerMessage.Define<int, string>(Microsoft.Extensions.Logging.LogLevel.Information, new Microsoft.Extensions.Logging.EventId(1), "noise {Index} {Padding}");
 
-    private static string RenderEvent(JourneyRuntimeOptions options, string mesIngestBaseUrl, MapStationCatalogOptions? catalog = null)
+    private static string RenderEvent(
+        JourneyRuntimeOptions options,
+        string mesIngestBaseUrl,
+        MapStationCatalogOptions? catalog = null,
+        SlotConfigurationGateMode gate = SlotConfigurationGateMode.Off)
     {
         using StringWriter writer = new();
         using (Serilog.Core.Logger serilog = new Serilog.LoggerConfiguration()
@@ -755,7 +829,9 @@ public sealed class ParallelInstanceEffectiveConfigurationTests
                    .CreateLogger())
         using (Serilog.Extensions.Logging.SerilogLoggerFactory factory = new(serilog))
         {
-            EffectiveConfigurationEvent.Log(factory.CreateLogger("ControlServer.Host"), options, catalog ?? new MapStationCatalogOptions(), mesIngestBaseUrl);
+            EffectiveConfigurationEvent.Log(
+                factory.CreateLogger("ControlServer.Host"), options, catalog ?? new MapStationCatalogOptions(), mesIngestBaseUrl,
+                slotConfigurationGate: gate);
         }
         return writer.ToString().Trim();
     }

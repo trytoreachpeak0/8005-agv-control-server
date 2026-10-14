@@ -5337,7 +5337,7 @@ Invoke-SourceCase 'catalog read-back: Program.cs logs the MapStationCatalogOptio
 # the cargo holding and station departure waits, as the Host bound them, read back from its EFFECTIVE_CONFIGURATION event
 # and compared with the definition; and the result line 19-deploy-control-server-parallel.ps1 compares after the install.
 # ------------------------------------------------------------------------------------------------
-$bindingTemplate = "$catalogTemplate foreignRunningOrderRelease={ForeignRunningOrderRelease} admissionPolicyVersion={AdmissionPolicyVersion} admissionPolicyDeploymentId={AdmissionPolicyDeploymentId} cargoHoldingTimeout={CargoHoldingTimeout} stationDepartureWaitTimeout={StationDepartureWaitTimeout}"
+$bindingTemplate = "$catalogTemplate foreignRunningOrderRelease={ForeignRunningOrderRelease} admissionPolicyVersion={AdmissionPolicyVersion} admissionPolicyDeploymentId={AdmissionPolicyDeploymentId} cargoHoldingTimeout={CargoHoldingTimeout} stationDepartureWaitTimeout={StationDepartureWaitTimeout} slotConfigurationReadinessGate={SlotConfigurationReadinessGate}"
 # -Bound '<absent>' leaves all four out, as a package older than #672 logs the event; otherwise a hashtable of the four
 # values as the Host would log them, a key left out of it left out of the event.
 function Get-BindingReadBack($Definition, $Bound) {
@@ -5351,7 +5351,7 @@ function Get-BindingReadBack($Definition, $Bound) {
         ClearanceToWaitingPointEnabled = $false
     }
     if ($Bound -isnot [string] -or $Bound -cne '<absent>') {
-        foreach ($key in @('AdmissionPolicyVersion', 'AdmissionPolicyDeploymentId', 'CargoHoldingTimeout', 'StationDepartureWaitTimeout')) {
+        foreach ($key in @('AdmissionPolicyVersion', 'AdmissionPolicyDeploymentId', 'CargoHoldingTimeout', 'StationDepartureWaitTimeout', 'SlotConfigurationReadinessGate')) {
             if ($Bound.Contains($key)) { $event[$key] = $Bound[$key] }
         }
     }
@@ -5367,6 +5367,8 @@ function New-BoundBinding([hashtable] $Change = @{}) {
         AdmissionPolicyDeploymentId = 'MAP-26-WIRE_TO_GATE-SELFTEST'
         CargoHoldingTimeout = '00:05:00'
         StationDepartureWaitTimeout = '00:05:00'
+        # control-server#686. The baseline is not a cutover definition, so the gate it expects is Off.
+        SlotConfigurationReadinessGate = 'Off'
     }
     foreach ($key in @($Change.Keys)) { if ($null -eq $Change[$key]) { $bound.Remove($key) } else { $bound[$key] = $Change[$key] } }
     return $bound
@@ -5385,6 +5387,7 @@ $bindingFieldCases = @(
     @{ Logged = 'AdmissionPolicyDeploymentId'; Wrong = 'MAP-26-WIRE_TO_GATE-20261007'; Says = "admissionPolicyDeploymentId bound 'MAP-26-WIRE_TO_GATE-20261007', the definition says 'MAP-26-WIRE_TO_GATE-SELFTEST'" }
     @{ Logged = 'CargoHoldingTimeout'; Wrong = '00:30:00'; Says = "cargoHoldingTimeout bound '00:30:00', the definition says '00:05:00'" }
     @{ Logged = 'StationDepartureWaitTimeout'; Wrong = '00:30:00'; Says = "stationDepartureWaitTimeout bound '00:30:00', the definition says '00:05:00'" }
+    @{ Logged = 'SlotConfigurationReadinessGate'; Wrong = 'Enforcing'; Says = "slotConfigurationReadinessGate bound 'Enforcing', the definition says 'Off'" }
 )
 Invoke-SourceCase 'binding read-back: every row of the module''s JourneyBindingFields has a field case here, in table order' {
     $table = @(& (Get-Module ParallelInstance) { $script:JourneyBindingFields } | ForEach-Object Logged)
@@ -5417,7 +5420,7 @@ foreach ($case in @(
 }
 Invoke-SourceCase 'binding result line: the four values as bound, in a fixed order, for 19' {
     $line = Format-ParallelJourneyBindingLine -Effective (Get-BindingReadBack $baseline (New-BoundBinding)).Effective
-    @{ Ok = ($line -ceq 'EFFECTIVE_JOURNEY_BINDING=admissionPolicyVersion=6 admissionPolicyDeploymentId=MAP-26-WIRE_TO_GATE-SELFTEST cargoHoldingTimeout=00:05:00 stationDepartureWaitTimeout=00:05:00'); Detail = "got: $line" }
+    @{ Ok = ($line -ceq 'EFFECTIVE_JOURNEY_BINDING=admissionPolicyVersion=6 admissionPolicyDeploymentId=MAP-26-WIRE_TO_GATE-SELFTEST cargoHoldingTimeout=00:05:00 stationDepartureWaitTimeout=00:05:00 slotConfigurationReadinessGate=Off'); Detail = "got: $line" }
 }
 Invoke-SourceCase 'binding result line: an event older than #672 reads EFFECTIVE_JOURNEY_BINDING=not-logged, nothing else' {
     $line = Format-ParallelJourneyBindingLine -Effective (Get-BindingReadBack $baseline '<absent>').Effective
@@ -6183,6 +6186,58 @@ foreach ($case in @(
         }
         $unmatched = @($case.Expect | Where-Object { $fragment = $_; -not ($got | Where-Object { $_.Contains($fragment) }) })
         @{ Ok = ($got.Count -eq $case.Expect.Count -and $unmatched.Count -eq 0); Detail = "expected $($case.Expect.Count): '$($case.Expect -join "', '")'; got $($got.Count): $($got -join ' | ')" }
+    }
+}
+# ------------------------------------------------------------------------------------------------
+# control-server#686. The slot configuration readiness gate (Governance:slotConfigurationReadinessGate) is derived from the
+# installed definition's productionCutover.phase, never written by hand: production Enforcing; the trial (simulated slot IO,
+# no slot-by-slot verification by design) and every other definition Off. The overlay always writes it, the definition
+# cannot carry it, an environment layer setting it is refused, and the read-back compares what the Host bound. A package that
+# does not log it does not enforce it: read as Off, so a production install of such a package is refused and a trial one is not.
+# ------------------------------------------------------------------------------------------------
+Write-Host ''
+Write-Host 'Slot configuration readiness gate derived from the cutover phase (control-server#686)' -ForegroundColor Cyan
+
+$gateProduction = New-CutoverDefinition -Phase 'production'
+$gateTrial = New-CutoverDefinition -Phase 'trial'
+foreach ($case in @(
+        @{ Name = 'production'; Definition = $gateProduction; Mode = 'Enforcing' }
+        @{ Name = 'trial'; Definition = $gateTrial; Mode = 'Off' }
+        @{ Name = 'the shipped (not a cutover) definition'; Definition = $baseline; Mode = 'Off' })) {
+    Invoke-SourceCase "gate: the overlay of $($case.Name) writes Governance.slotConfigurationReadinessGate = $($case.Mode)" {
+        $o = New-ParallelInstanceConfigurationOverlay -Definition $case.Definition
+        $got = ($o.Contains('Governance') -and $o['Governance'] -is [System.Collections.IDictionary]) ? $o['Governance']['slotConfigurationReadinessGate'] : '<no Governance section>'
+        @{ Ok = ($got -ceq $case.Mode); Detail = "got: $got" }
+    }
+}
+Invoke-SourceCase 'gate: the overlay replaces an Enforcing an earlier install left in appsettings.Production.json, for a trial' {
+    $merged = Merge-ConfigurationTree -Base ([ordered]@{ Governance = [ordered]@{ slotConfigurationReadinessGate = 'Enforcing'; auditRetentionDays = 200 } }) `
+        -Overlay (New-ParallelInstanceConfigurationOverlay -Definition $gateTrial)
+    @{ Ok = ($merged['Governance']['slotConfigurationReadinessGate'] -ceq 'Off' -and $merged['Governance']['auditRetentionDays'] -eq 200)
+        Detail = "got: $(ConvertTo-Json $merged['Governance'] -Compress)" }
+}
+Invoke-SourceCase 'gate: a definition cannot carry the gate (no top-level governance section)' {
+    $hand = Copy-Definition $gateTrial
+    $hand['governance'] = @{ slotConfigurationReadinessGate = 'Off' }
+    [string[]] $got = @(Test-ParallelInstanceDefinition -Definition $hand -ProductionCutover)
+    @{ Ok = (@($got | Where-Object { $_.Contains('governance') }).Count -ge 1); Detail = "got: $($got -join ' | ')" }
+}
+Invoke-SourceCase 'gate: an environment layer setting it is an override, with or without a prefix; other Governance keys are not' {
+    $found = @(Get-ParallelJourneyRuntimeEnvironmentOverride -ServiceEnvironment @('Governance__slotConfigurationReadinessGate=Off', 'Governance__deploymentIdentity=x') `
+            -MachineEnvironment @('DOTNET_GOVERNANCE:SLOTCONFIGURATIONREADINESSGATE=Off', 'Governance__slotConfigurationReadinessGateX=1'))
+    $expected = 'service Governance__slotConfigurationReadinessGate|machine DOTNET_GOVERNANCE:SLOTCONFIGURATIONREADINESSGATE'
+    @{ Ok = (($found -join '|') -ceq $expected); Detail = "got: $($found -join '|')" }
+}
+foreach ($case in @(
+        @{ Name = 'production, bound Enforcing -- pass'; Definition = $gateProduction; Bound = (New-BoundBinding @{ SlotConfigurationReadinessGate = 'Enforcing' }); Action = 'Pass'; Says = $null }
+        @{ Name = 'production, bound Off -- stop and refuse'; Definition = $gateProduction; Bound = (New-BoundBinding @{ SlotConfigurationReadinessGate = 'Off' }); Action = 'StopServiceAndRefuse'; Says = "slotConfigurationReadinessGate bound 'Off', the definition says 'Enforcing'" }
+        @{ Name = 'production, a package older than #672 (logs none of the binding) -- stop and refuse: it does not enforce the gate'; Definition = $gateProduction; Bound = '<absent>'; Action = 'StopServiceAndRefuse'; Says = "slotConfigurationReadinessGate bound 'not logged', the definition says 'Enforcing'" }
+        @{ Name = 'trial, bound Off -- pass'; Definition = $gateTrial; Bound = (New-BoundBinding @{ SlotConfigurationReadinessGate = 'Off' }); Action = 'Pass'; Says = $null }
+        @{ Name = 'trial, bound Enforcing -- stop and refuse (every car would stop taking work)'; Definition = $gateTrial; Bound = (New-BoundBinding @{ SlotConfigurationReadinessGate = 'Enforcing' }); Action = 'StopServiceAndRefuse'; Says = "slotConfigurationReadinessGate bound 'Enforcing', the definition says 'Off'" }
+        @{ Name = 'trial, a package older than #672 -- pass, so the trial''s shipped package and a rollback to it stay deployable'; Definition = $gateTrial; Bound = '<absent>'; Action = 'Pass'; Says = $null })) {
+    Invoke-SourceCase "gate read-back: $($case.Name)" {
+        $a = (Get-BindingReadBack $case.Definition $case.Bound).Action
+        @{ Ok = ($a.Action -ceq $case.Action -and ($null -eq $case.Says -or (([string] $a.Message).Contains('EFFECTIVE_CONFIGURATION_MISMATCH') -and ([string] $a.Message).Contains($case.Says)))); Detail = "got: $(ConvertTo-Json $a -Compress)" }
     }
 }
 if ($AreaAssignmentPath) {
