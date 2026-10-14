@@ -715,11 +715,43 @@ public sealed class ParallelInstanceEffectiveConfigurationTests
             RenderEvent(options, "http://127.0.0.1:58188", gate: SlotConfigurationGateMode.Enforcing));
         JsonElement root = logged.RootElement;
 
-        Assert.EndsWith(
+        // control-server#709 appended its two keys after the gate; the gate still follows the waits.
+        Assert.Contains(
             " stationDepartureWaitTimeout={StationDepartureWaitTimeout} slotConfigurationReadinessGate={SlotConfigurationReadinessGate}",
             root.GetProperty("@mt").GetString()!, StringComparison.Ordinal);
         Assert.Equal(JsonValueKind.String, root.GetProperty("SlotConfigurationReadinessGate").ValueKind);
         Assert.Equal("Enforcing", root.GetProperty("SlotConfigurationReadinessGate").GetString());
+    }
+
+    /// <summary>
+    /// control-server#709 (independent review L5): the staging rules switch and its door alarm are logged as bound, so the
+    /// changeover can read back whether the switch really took. Off and five minutes when nothing configures them.
+    /// </summary>
+    [Fact]
+    public void EffectiveConfigurationEventCarriesTheStagingDepartureRulesAsBound()
+    {
+        JourneyRuntimeOptions options = new()
+        {
+            AgvId = "老厂前线新多仓位2",
+            VehicleKey = Agv02Key,
+            AllowedWorkTypes = ["STAGING_TO_WIRE"],
+            AllowedDispatchZones = ["WIRE"],
+        };
+
+        using (JsonDocument shipped = JsonDocument.Parse(RenderEvent(options, "http://127.0.0.1:58188")))
+        {
+            Assert.EndsWith(
+                " stagingDepartureRulesEnabled={StagingDepartureRulesEnabled} stagingLoadNotSettledAlarmAfter={StagingLoadNotSettledAlarmAfter}",
+                shipped.RootElement.GetProperty("@mt").GetString()!, StringComparison.Ordinal);
+            Assert.Equal(JsonValueKind.False, shipped.RootElement.GetProperty("StagingDepartureRulesEnabled").ValueKind);
+            Assert.Equal("00:05:00", shipped.RootElement.GetProperty("StagingLoadNotSettledAlarmAfter").GetString());
+        }
+
+        options.StagingDepartureRules.Enabled = true;
+        options.StagingDepartureRules.LoadNotSettledAlarmAfter = TimeSpan.FromMinutes(3);
+        using JsonDocument on = JsonDocument.Parse(RenderEvent(options, "http://127.0.0.1:58188"));
+        Assert.Equal(JsonValueKind.True, on.RootElement.GetProperty("StagingDepartureRulesEnabled").ValueKind);
+        Assert.Equal("00:03:00", on.RootElement.GetProperty("StagingLoadNotSettledAlarmAfter").GetString());
     }
 
     [Theory]
