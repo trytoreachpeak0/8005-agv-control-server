@@ -200,7 +200,7 @@ $script:AllowedKeys = [ordered]@{
         'opsRoot', 'stagingRoot', 'listenAddress', 'healthBindAddress', 'onboardPort', 'healthPort',
         'dashboardPort', 'mesIngest', 'fakeMesIngest', 'routeGraph', 'riotCreateDispatch', 'riotForeignOrderCancel',
         'journeyRuntime', 'vehicleFaultRecovery', 'foreignRunningOrderRelease', 'fieldOperatorRoles', 'taskTypeStations',
-        'mapStationCatalog', 'productionCutover')
+        'mapStationCatalog', 'productionCutover', 'emergencyStopRelease')
     # control-server#564. Who approved the production cutover, when, and where that is recorded; and which phase it is --
     # 'trial' (real MES, simulated slots) or 'production' (cs#564 review S3: the step between them needs a new database).
     # This deployment's, like mesIngest.source -- the overlay does not write it; installed-instance.json keeps it.
@@ -222,6 +222,9 @@ $script:AllowedKeys = [ordered]@{
     'vehicleFaultRecovery' = @('enabled')
     # control-server#617 (review M1). The foreign running order release entry's own switch; it shares the credential above.
     'foreignRunningOrderRelease' = @('enabled')
+    # workspace#49. REQ-0356's two release entries (EmergencyStopReleaseOptions). Both credential variable names are
+    # deliberately absent, as for vehicleFaultRecovery: the overlay writes this instance's own.
+    'emergencyStopRelease' = @('enabled')
     'fieldOperatorRoles' = @('path', 'onboardClearanceEntryDeclared')
     # control-server#518. TaskTypeStationPreset.SettingsFileKey; there is no options class to mirror.
     'taskTypeStations' = @('settingsFile')
@@ -254,6 +257,10 @@ $script:FaultRecoveryCredentialVariable = 'CONTROL_SERVER_V2_FAULT_RECOVERY_CRED
 # control-server#600. One vehicle-safety projection credential per roster row, named by the row's RIoT id (the durable
 # coordinate in remote-ops/fleet.md): RIOT59 is agv02, RIOT60 agv03. This instance's own names, like the one above.
 $script:OnboardSafetyCredentialVariablePrefix = 'CONTROL_SERVER_V2_ONBOARD_SAFETY_CREDENTIAL_RIOT'
+# workspace#49. The emergency stop release entries' two credentials (empty vehicle; loaded vehicle, CP-0011), under this
+# instance's own names: the product defaults CONTROL_SERVER_EMERGENCY_RELEASE_CREDENTIAL and ..._LOADED_... are the MVP's.
+$script:EmergencyReleaseCredentialVariable = 'CONTROL_SERVER_V2_EMERGENCY_RELEASE_CREDENTIAL'
+$script:EmergencyLoadedReleaseCredentialVariable = 'CONTROL_SERVER_V2_EMERGENCY_LOADED_RELEASE_CREDENTIAL'
 
 function Get-ParallelInstanceAllowedKey {
     <#
@@ -1378,6 +1385,28 @@ function Test-ParallelInstanceDefinition {
     } elseif ($foreignRelease['enabled'] -isnot [bool]) {
         $failures += "foreignRunningOrderRelease.enabled must be a JSON boolean, got '$($foreignRelease['enabled'])'."
     }
+    # workspace#49. The emergency stop release entries. Optional -- absent is off, the product default, so every definition
+    # written before this deploys as before -- but required on in a production-phase cutover definition: in production a
+    # vehicle this server stopped (door lock while driving, CP-0011) has no other governed way out, and an RIoT hand unlock
+    # is read as an external release and stopped again (docs/emergency-stop-field-fallback.md).
+    if (Test-KeyPresent -Node $Definition -Key 'emergencyStopRelease') {
+        $releaseNode = $Definition['emergencyStopRelease']
+        if ($releaseNode -isnot [System.Collections.IDictionary]) {
+            $failures += 'emergencyStopRelease must be an object with enabled; leave the section out to keep the entries off.'
+        } elseif (-not (Test-KeyPresent -Node $releaseNode -Key 'enabled')) {
+            $failures += 'emergencyStopRelease.enabled must be stated explicitly.'
+        } elseif ($releaseNode['enabled'] -isnot [bool]) {
+            $failures += "emergencyStopRelease.enabled must be a JSON boolean, got '$($releaseNode['enabled'])'."
+        }
+    }
+    $phaseNode = (Test-KeyPresent -Node $Definition -Key 'productionCutover') ? $Definition['productionCutover'] : $null
+    if ($phaseNode -is [System.Collections.IDictionary] -and $phaseNode['phase'] -ceq 'production' -and
+        -not (Test-ParallelEmergencyReleaseEnabled -Definition $Definition)) {
+        $failures += ('EMERGENCY_STOP_RELEASE_REQUIRED_IN_PRODUCTION: productionCutover.phase is production, so emergencyStopRelease.enabled ' +
+            'must be true. Without the release entries a vehicle this server stopped has no governed way out, and an RIoT hand unlock ' +
+            'is stopped again as an external release. Add "emergencyStopRelease": { "enabled": true } (docs/production-cutover-mode-plan.md ' +
+            'step 18a; workspace#49) and generate both credentials with Set-ControlServerSecret.ps1 -NewEmergencyReleaseCredential Empty, Loaded.')
+    }
     $roles = Get-Node -Root $Definition -Key 'fieldOperatorRoles'
     if ($null -eq $roles) {
         $failures += 'fieldOperatorRoles must be an object naming the roster file and whether the onboard clearance entry is declared.'
@@ -2138,6 +2167,8 @@ function Get-ParallelInstanceName {
         FirewallRuleFormat = $script:FirewallRuleFormat
         FaultRecoveryCredentialVariable = $script:FaultRecoveryCredentialVariable
         OnboardSafetyCredentialVariablePrefix = $script:OnboardSafetyCredentialVariablePrefix
+        EmergencyReleaseCredentialVariable = $script:EmergencyReleaseCredentialVariable
+        EmergencyLoadedReleaseCredentialVariable = $script:EmergencyLoadedReleaseCredentialVariable
     }
 }
 
@@ -2968,6 +2999,13 @@ function New-ParallelInstanceConfigurationOverlay {
         }
         # control-server#617. Its own switch; the Host reads the credential through VehicleFaultRecovery's variable name above.
         ForeignRunningOrderRelease = [ordered]@{ enabled = $Definition['foreignRunningOrderRelease']['enabled'] }
+        # workspace#49. Always written, false when the definition leaves the section out, so an earlier install's true does
+        # not survive a reinstall; the two variables are named here, never valued.
+        EmergencyStopRelease = [ordered]@{
+            enabled = Test-ParallelEmergencyReleaseEnabled -Definition $Definition
+            credentialEnvironmentVariable = $script:EmergencyReleaseCredentialVariable
+            loadedCredentialEnvironmentVariable = $script:EmergencyLoadedReleaseCredentialVariable
+        }
         FieldOperatorRoles = [ordered]@{
             path = $Definition['fieldOperatorRoles']['path']
             onboardClearanceEntryDeclared = $Definition['fieldOperatorRoles']['onboardClearanceEntryDeclared']
@@ -3160,6 +3198,10 @@ function Get-ParallelJourneyRuntimeEnvironmentOverride {
             control-server#531 review L1: MapStationCatalog too, the same way. REQ-0302's two approved values come from the
             instance definition alone; MapStationCatalog__ApprovedMaxUnconfirmed in an environment layer (the L2 rig injects
             them so, Invoke-L2Scenario.ps1) would bind over the file, and the read-back would see it only after a restart.
+
+            workspace#49 review L5: EmergencyStopRelease too. EmergencyStopRelease__LoadedCredentialEnvironmentVariable in an
+            environment layer could point the loaded entry at the MVP's variable, and __Enabled could turn the entries off
+            under a production definition; neither would show in the overlay.
     #>
     [CmdletBinding()]
     [OutputType([string])]
@@ -3169,7 +3211,7 @@ function Get-ParallelJourneyRuntimeEnvironmentOverride {
     )
     # control-server#686: Governance:slotConfigurationReadinessGate too -- that key alone, the other Governance keys are the
     # product's. The gate comes from the definition's phase, and an environment layer would bind over it.
-    $pattern = '^(?i:(?:DOTNET_|ASPNETCORE_)?(?:(?:JourneyRuntime|MapStationCatalog)(?:__|:)|Governance(?:__|:)slotConfigurationReadinessGate$))'
+    $pattern = '^(?i:(?:DOTNET_|ASPNETCORE_)?(?:(?:JourneyRuntime|MapStationCatalog|EmergencyStopRelease)(?:__|:)|Governance(?:__|:)slotConfigurationReadinessGate$))'
     foreach ($pair in @(@{ Where = 'service'; Entries = $ServiceEnvironment }, @{ Where = 'machine'; Entries = $MachineEnvironment })) {
         foreach ($entry in @($pair.Entries | Where-Object { -not [string]::IsNullOrEmpty($_) })) {
             $name = ($entry -split '=', 2)[0]
@@ -3341,6 +3383,124 @@ function Resolve-ParallelFaultRecoveryCredential {
             'The service would refuse to start without it. Nothing was stopped or changed.')
     }
     return $null
+}
+
+function Test-ParallelEmergencyReleaseEnabled {
+    <#
+        .SYNOPSIS
+            workspace#49. Whether the definition turns the emergency stop release entries on: only a JSON true counts, absent
+            is off (the product default). Not Get-Node: a section built with [ordered] is not a [hashtable].
+    #>
+    [CmdletBinding()]
+    [OutputType([bool])]
+    param([Parameter(Mandatory = $true)][System.Collections.IDictionary] $Definition)
+    $node = $Definition.Contains('emergencyStopRelease') ? $Definition['emergencyStopRelease'] : $null
+    return ($node -is [System.Collections.IDictionary] -and $node.Contains('enabled') -and $node['enabled'] -is [bool] -and $node['enabled'])
+}
+
+function Resolve-ParallelEmergencyReleaseCredential {
+    <#
+        .SYNOPSIS
+            workspace#49. The two emergency stop release credentials this install writes into the service's Environment, as
+            an ordered map from variable to value; empty when there are none and none are needed. Throws, naming variables and
+            never a value, when the entries are on and one is missing, or when the two are one value.
+
+        .DESCRIPTION
+            Per credential, in this order:
+              * -Supplied: deploy-config.json's emergencyReleaseCredential / emergencyLoadedReleaseCredential, which the
+                control host fills from its DPAPI store (an install or upgrade; a rollback has none);
+              * what the service's Environment already holds under that variable -- read before the product script,
+                because a first install rebuilds the Environment.
+            On, both are required: without the empty-vehicle one the Host refuses to start (EmergencyStopReleaseOptionsValidator),
+            and without the loaded one its entry answers 503 -- found only when a loaded vehicle is stuck. The two equal would
+            let the empty-vehicle credential release a loaded vehicle (CP-0011), so that is refused whether on or off. Off,
+            whatever there is is written, so turning the entries on later needs no new secret on the server.
+    #>
+    [CmdletBinding()]
+    param(
+        [Parameter(Mandatory = $true)][System.Collections.IDictionary] $Definition,
+        [AllowNull()] $Supplied,
+        [AllowNull()][AllowEmptyCollection()][string[]] $ServiceEnvironment
+    )
+    $result = [ordered]@{}
+    $missing = @()
+    foreach ($slot in @(
+            @{ Field = 'emergencyReleaseCredential'; Variable = $script:EmergencyReleaseCredentialVariable }
+            @{ Field = 'emergencyLoadedReleaseCredential'; Variable = $script:EmergencyLoadedReleaseCredentialVariable })) {
+        $value = $null
+        if ($Supplied -is [System.Collections.IDictionary]) {
+            if ($Supplied.Contains($slot.Field)) { $value = [string] $Supplied[$slot.Field] }
+        } elseif ($null -ne $Supplied -and $Supplied.PSObject.Properties.Name -ccontains $slot.Field) {
+            $value = [string] $Supplied.($slot.Field)
+        }
+        if ([string]::IsNullOrWhiteSpace($value)) {
+            $value = Get-ParallelServiceEnvironmentEntry -Environment $ServiceEnvironment -Name $slot.Variable
+        }
+        if ([string]::IsNullOrWhiteSpace($value)) { $missing += $slot.Variable; continue }
+        $result[$slot.Variable] = $value
+    }
+    if ((Test-ParallelEmergencyReleaseEnabled -Definition $Definition) -and $missing.Count -gt 0) {
+        throw ("EMERGENCY_RELEASE_CREDENTIAL_MISSING: emergencyStopRelease.enabled is true, but there is no value for $($missing -join ' or '): " +
+            'deploy-config.json carries none and the service''s Environment holds none. Without the empty-vehicle credential the ' +
+            'service refuses to start; without the loaded one its entry answers 503. On the control host: ' +
+            'control-server\Set-ControlServerSecret.ps1 -NewEmergencyReleaseCredential Empty, Loaded, then deploy again. Nothing was stopped or changed.')
+    }
+    if ($result.Count -eq 2 -and [string]::Equals($result[$script:EmergencyReleaseCredentialVariable], $result[$script:EmergencyLoadedReleaseCredentialVariable], [StringComparison]::Ordinal)) {
+        throw ("EMERGENCY_RELEASE_CREDENTIAL_SHARED: $($script:EmergencyReleaseCredentialVariable) and $($script:EmergencyLoadedReleaseCredentialVariable) " +
+            'would hold one value, so the empty-vehicle credential would release a loaded vehicle (CP-0011). Generate a new one with ' +
+            'control-server\Set-ControlServerSecret.ps1 -NewEmergencyReleaseCredential Loaded -Rotate. Nothing was stopped or changed.')
+    }
+    return $result
+}
+
+function Format-ParallelEmergencyReleaseLine {
+    <#
+        .SYNOPSIS
+            workspace#49. The installer's EMERGENCY_STOP_RELEASE= result line, for 19-deploy-control-server-parallel.ps1:
+            what the overlay turned on, and which of the two credential variables the service's Environment holds non-blank
+            (-EnvironmentNames, read back after the write). Names only, never a value:
+            EMERGENCY_STOP_RELEASE=enabled=true credential=set loadedCredential=set loadedConfirmers=2
+            loadedConfirmers (review M2) is how many named people in the roster hold R-13, the only role the loaded entry
+            accepts (LoadedEmergencyStopRelease.AllowedRoles); a number, never a name. -RosterText is the roster file's text,
+            $null when it does not exist (0).
+    #>
+    [CmdletBinding()]
+    [OutputType([string])]
+    param(
+        [Parameter(Mandatory = $true)][System.Collections.IDictionary] $Definition,
+        [AllowNull()][AllowEmptyCollection()][string[]] $EnvironmentNames,
+        [AllowNull()][AllowEmptyString()][string] $RosterText
+    )
+    $names = @($EnvironmentNames)
+    return ('EMERGENCY_STOP_RELEASE=enabled={0} credential={1} loadedCredential={2} loadedConfirmers={3}' -f
+        ((Test-ParallelEmergencyReleaseEnabled -Definition $Definition) ? 'true' : 'false'),
+        (($names -contains $script:EmergencyReleaseCredentialVariable) ? 'set' : 'unset'),
+        (($names -contains $script:EmergencyLoadedReleaseCredentialVariable) ? 'set' : 'unset'),
+        (Get-ParallelRosterRoleHolderCount -RosterText $RosterText -Role 'R-13'))
+}
+
+function Get-ParallelRosterRoleHolderCount {
+    <#
+        .SYNOPSIS
+            workspace#49 review M2. How many entries of the field operator roster have a non-blank operatorId and hold -Role,
+            read the way FieldOperatorRoleRoster does (keys in any case, role codes ordinal). 0 for a missing, unreadable or
+            empty roster: the server reads all three as "nobody holds it".
+    #>
+    [CmdletBinding()]
+    [OutputType([int])]
+    param(
+        [AllowNull()][AllowEmptyString()][string] $RosterText,
+        [Parameter(Mandatory = $true)][string] $Role
+    )
+    if ([string]::IsNullOrWhiteSpace($RosterText)) { return 0 }
+    try { $document = ConvertFrom-Json -InputObject $RosterText -AsHashtable -Depth 12 -ErrorAction Stop } catch { return 0 }
+    $count = 0
+    foreach ($entry in @(Get-ConfigurationValue $document 'operators')) {
+        $operatorId = Get-ConfigurationValue $entry 'operatorId'
+        if ($operatorId -isnot [string] -or [string]::IsNullOrWhiteSpace($operatorId)) { continue }
+        if (@(@(Get-ConfigurationValue $entry 'roles') | Where-Object { $_ -is [string] -and $_ -ceq $Role }).Count -gt 0) { $count++ }
+    }
+    return $count
 }
 
 function Get-ParallelGateClosingSteps {
@@ -3926,6 +4086,10 @@ Export-ModuleMember -Function @(
     'Get-ParallelServiceEnvironmentEntry'
     'Set-ParallelServiceEnvironmentEntry'
     'Resolve-ParallelFaultRecoveryCredential'
+    'Test-ParallelEmergencyReleaseEnabled'
+    'Resolve-ParallelEmergencyReleaseCredential'
+    'Format-ParallelEmergencyReleaseLine'
+    'Get-ParallelRosterRoleHolderCount'
     'Get-ParallelOnboardSafetyCredentialSlot'
     'Get-ParallelRollbackTargetRefusal'
     'Resolve-ParallelOnboardSafetyCredential'

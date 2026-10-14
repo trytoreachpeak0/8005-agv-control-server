@@ -979,7 +979,9 @@ function Invoke-ParallelInstanceConfigurationStep {
         [Parameter(Mandatory = $true)][string] $RosterPath,
         [Parameter(Mandatory = $true)][hashtable] $Actions,
         # control-server#600: variable -> value, from Resolve-ParallelOnboardSafetyCredential; empty for a single car.
-        [System.Collections.IDictionary] $OnboardSafetyCredentials = @{}
+        [System.Collections.IDictionary] $OnboardSafetyCredentials = @{},
+        # workspace#49: variable -> value, from Resolve-ParallelEmergencyReleaseCredential; empty when there are none.
+        [System.Collections.IDictionary] $EmergencyReleaseCredentials = @{}
     )
     $missing = @('GetEnvironment', 'SetEnvironment', 'RestartService', 'GetMachineEnvironment' | Where-Object { -not ($Actions.ContainsKey($_) -and $Actions[$_] -is [scriptblock]) })
     if ($missing.Count -gt 0) { throw "Invoke-ParallelInstanceConfigurationStep: missing action(s) $($missing -join ', '); nothing was run." }
@@ -989,9 +991,10 @@ function Invoke-ParallelInstanceConfigurationStep {
     $overrides = @(Get-ParallelJourneyRuntimeEnvironmentOverride -ServiceEnvironment @(& $Actions.GetEnvironment) -MachineEnvironment @(& $Actions.GetMachineEnvironment))
     if ($overrides.Count -gt 0) {
         throw ("JOURNEY_RUNTIME_ENVIRONMENT_OVERRIDE (nothing was changed, the service was not restarted): $($overrides -join ', ') " +
-            'set JourneyRuntime, Governance:slotConfigurationReadinessGate or MapStationCatalog above appsettings.Production.json: the ' +
+            'set JourneyRuntime, Governance:slotConfigurationReadinessGate, EmergencyStopRelease or MapStationCatalog above appsettings.Production.json: the ' +
             'journey runtime could not be held off for the read-back, the approved catalog values would not be the definition''s ' +
-            '(control-server#531), and the slot configuration gate would not be the phase''s (control-server#686). ' +
+            '(control-server#531), the slot configuration gate would not be the phase''s (control-server#686), and the release ' +
+            'entries would not be the definition''s (workspace#49). ' +
             'Remove the variable(s), then install again.')
     }
 
@@ -1011,6 +1014,10 @@ function Invoke-ParallelInstanceConfigurationStep {
     }
     foreach ($variable in @($OnboardSafetyCredentials.Keys)) {
         $environment = Set-ParallelServiceEnvironmentEntry -Environment $environment -Name $variable -Value ([string] $OnboardSafetyCredentials[$variable])
+    }
+    # workspace#49: the emergency stop release entries' two credentials, under this instance's own names.
+    foreach ($variable in @($EmergencyReleaseCredentials.Keys)) {
+        $environment = Set-ParallelServiceEnvironmentEntry -Environment $environment -Name $variable -Value ([string] $EmergencyReleaseCredentials[$variable])
     }
     if (-not [string]::IsNullOrWhiteSpace($Credential) -or
         (@($environment) -join "`0") -cne (@($before | Where-Object { $null -ne $_ }) -join "`0")) {

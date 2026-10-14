@@ -357,7 +357,7 @@ try {
     $environmentOverrides = @(Get-ParallelJourneyRuntimeEnvironmentOverride -ServiceEnvironment @() `
             -MachineEnvironment @([Environment]::GetEnvironmentVariables('Machine').GetEnumerator() | ForEach-Object { "$($_.Key)=$($_.Value)" }))
     if ($environmentOverrides.Count -gt 0) {
-        throw ("JOURNEY_RUNTIME_ENVIRONMENT_OVERRIDE (nothing was stopped or changed): $($environmentOverrides -join ', ') set JourneyRuntime, Governance:slotConfigurationReadinessGate (control-server#686) " +
+        throw ("JOURNEY_RUNTIME_ENVIRONMENT_OVERRIDE (nothing was stopped or changed): $($environmentOverrides -join ', ') set JourneyRuntime, Governance:slotConfigurationReadinessGate (control-server#686), EmergencyStopRelease (workspace#49) " +
             'or MapStationCatalog (control-server#531) above appsettings.Production.json. Remove the variable(s), then install again.')
     }
 
@@ -418,6 +418,12 @@ try {
         -Supplied (($null -ne $config -and $config.PSObject.Properties.Name -contains 'onboardSafetyCredentials') ? $config.onboardSafetyCredentials : $null) `
         -ServiceEnvironment @(Get-ServiceEnvironment) `
         -SharedCredential ([Environment]::GetEnvironmentVariable('CONTROL_SERVER_ONBOARD_CREDENTIAL', 'Machine'))
+
+    # workspace#49: the emergency stop release entries' two credentials -- deploy-config.json's, else what the service
+    # already holds, read now for the same reason. With the entries on and one missing, or the two equal, this refuses
+    # here, before anything changes.
+    $emergencyReleaseCredentials = Resolve-ParallelEmergencyReleaseCredential -Definition $definition -Supplied $config `
+        -ServiceEnvironment @(Get-ServiceEnvironment)
 
     # The MesIngest shared secret (control-server#535): deploy-config.json's on an install, what the service
     # already holds on a rollback. 'production' refuses here without one -- every read would be 401.
@@ -546,7 +552,9 @@ try {
             [AllowNull()][AllowEmptyString()][string] $FaultRecoveryCredential,
             # control-server#600 review S4: required, so a call that leaves it out fails instead of writing none -- with none,
             # the step deletes every per-vehicle variable the service holds as stale, and the new service refuses to start.
-            [Parameter(Mandatory = $true)][AllowEmptyCollection()][System.Collections.IDictionary] $OnboardSafetyCredentials
+            [Parameter(Mandatory = $true)][AllowEmptyCollection()][System.Collections.IDictionary] $OnboardSafetyCredentials,
+            # workspace#49: required for the same reason -- a call that leaves it out must fail, not write none.
+            [Parameter(Mandatory = $true)][AllowEmptyCollection()][System.Collections.IDictionary] $EmergencyReleaseCredentials
         )
 
         $configurationPath = Join-Path $installRoot 'appsettings.Production.json'
@@ -556,7 +564,7 @@ try {
         # before any restart -- and only then restart (ParallelHost.psm1).
         $readiness = Invoke-ParallelInstanceConfigurationStep -ConfigurationPath $configurationPath -Definition $definition `
             -Credential $FaultRecoveryCredential -CredentialVariable (Get-ParallelInstanceName).FaultRecoveryCredentialVariable `
-            -RosterPath $rosterPath -OnboardSafetyCredentials $OnboardSafetyCredentials -Actions @{
+            -RosterPath $rosterPath -OnboardSafetyCredentials $OnboardSafetyCredentials -EmergencyReleaseCredentials $EmergencyReleaseCredentials -Actions @{
                 GetEnvironment = { Get-ServiceEnvironment }
                 SetEnvironment = { param([string[]] $Environment) Set-ServiceEnvironment $Environment }
                 RestartService = { Restart-Service -Name $serviceName -Force }
@@ -565,6 +573,16 @@ try {
         Write-Step "Configuration overlay merged into $configurationPath and verified (vehicle identity, MesIngest origin, clearance exit sections); credential $([string]::IsNullOrWhiteSpace($FaultRecoveryCredential) ? 'not supplied' : 'written, value not shown'); projection credentials: $(@($OnboardSafetyCredentials.Keys).Count ? ((@($OnboardSafetyCredentials.Keys) -join ', ') + ' written, values not shown') : 'none (single car, shared credential)'); $serviceName restarted"
         Write-Step $readiness.Line
         Write-Output $readiness.Line
+        # workspace#49: the release entries' switch and which of their two credentials the service's Environment now holds,
+        # read back after the write. 19-deploy compares the line with the definition and then probes both entries.
+        $populatedNames = @(@(Get-ServiceEnvironment) | Where-Object { $null -ne $_ } | ForEach-Object {
+                $parts = $_ -split '=', 2
+                if ($parts.Count -eq 2 -and -not [string]::IsNullOrWhiteSpace($parts[1])) { $parts[0] } })
+        # Review M2: and how many named people the roster gives R-13, the only role the loaded entry accepts.
+        $rosterText = (Test-Path -LiteralPath $rosterPath -PathType Leaf) ? (Get-Content -LiteralPath $rosterPath -Raw -Encoding utf8) : $null
+        $releaseLine = Format-ParallelEmergencyReleaseLine -Definition $definition -EnvironmentNames $populatedNames -RosterText $rosterText
+        Write-Step $releaseLine
+        Write-Output $releaseLine
         if (@($readiness.Reasons).Count -gt 0) {
             Write-Warning ("CLEARANCE_EXIT_UNAVAILABLE ($(@($readiness.Reasons) -join ',')): a vehicle that cannot charge stays on " +
                 'ORDER_HANG and isolation is not written (server alarms 2271/2272). Intended in phase 1; otherwise fill in ' +
@@ -792,7 +810,7 @@ try {
         # The overlay is reapplied: an upgrade keeps the existing appsettings.Production.json, but a
         # rollback to a generation installed before some overlay key existed would otherwise come
         # back without it.
-        Set-InstanceConfiguration -FaultRecoveryCredential $faultRecoveryCredential -OnboardSafetyCredentials $onboardSafetyCredentials
+        Set-InstanceConfiguration -FaultRecoveryCredential $faultRecoveryCredential -OnboardSafetyCredentials $onboardSafetyCredentials -EmergencyReleaseCredentials $emergencyReleaseCredentials
         if ($productionSource) {
             # A rollback that lands in the product's first-install branch rebuilds the Environment; the
             # token the service held (checked above) is written back so the production reads keep working.
@@ -868,7 +886,7 @@ try {
         }
         Write-Step "Installer result written to $resultPath"
 
-        Set-InstanceConfiguration -FaultRecoveryCredential $faultRecoveryCredential -OnboardSafetyCredentials $onboardSafetyCredentials
+        Set-InstanceConfiguration -FaultRecoveryCredential $faultRecoveryCredential -OnboardSafetyCredentials $onboardSafetyCredentials -EmergencyReleaseCredentials $emergencyReleaseCredentials
 
         # ------------------------------------------------- MesIngest bearer token ---
 
