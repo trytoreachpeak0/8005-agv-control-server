@@ -2390,7 +2390,8 @@ function Find-ParallelEffectiveConfiguration {
             Fleet is $null when the event does not carry it -- a package older than #571 -- which is not
             the same as an empty roster. Since control-server#638 it also carries ClearanceToWaitingPointEnabled,
             $null when the event does not, and since control-server#531 MapStationCatalog (ApprovedSyncPeriod,
-            ApprovedMaxUnconfirmed), $null when the event does not. That -- not the definition, not the
+            ApprovedMaxUnconfirmed), $null when the event does not, and since control-server#672 JourneyBinding (the admission
+            policy version and deployment label, the cargo holding and station departure waits), $null when it carries none. That -- not the definition, not the
             overlay file -- is what the deployment's read-back compares, because M1 was a definition and
             an overlay that both said ["STAGING_TO_WIRE"] while the Host bound six types. -Since is the
             service process's start: a line from an earlier process proves nothing about this one.
@@ -2450,6 +2451,10 @@ function Find-ParallelEffectiveConfiguration {
                 } : ($event.ContainsKey('MapStationCatalog') ?
                     # Logged, but not as an object: matches nothing, rather than reading as "not approved".
                     [pscustomobject]@{ ApprovedSyncPeriod = '(not an object)'; ApprovedMaxUnconfirmed = '(not an object)' } : $null)
+            # control-server#672. One property per row of $script:JourneyBindingFields, keyed by its Logged name: $null as a whole
+            # when the event carries none of them (a package older than #672); otherwise each as logged, not cast, and $null for
+            # one missing from the event.
+            JourneyBinding = Read-ParallelJourneyBinding -LoggedEvent $event
         }
     }
     return $found
@@ -2480,6 +2485,10 @@ function Get-ParallelEffectiveConfigurationRefusal {
             control-server#531: mapStationCatalog's two approved values (absent in the definition is null, "not approved")
             are compared with what the Host bound; any other value is a mismatch. An event without them (a package older
             than #531) is accepted -- the overlay wrote them all the same, and a refusal there would block every rollback.
+
+            control-server#672: admissionPolicyVersion (a JSON integer), admissionPolicyDeploymentId (ordinal), cargoHoldingTimeout and
+            stationDepartureWaitTimeout (hh:mm:ss) are compared with what the Host bound, each when the definition names it. An
+            event without them (a package older than #672) is accepted here, as #531's pair is.
     #>
     [CmdletBinding()]
     [OutputType([string])]
@@ -2547,8 +2556,107 @@ function Get-ParallelEffectiveConfigurationRefusal {
             }
         }
     }
+    # control-server#672. Every row of $script:JourneyBindingFields, compared when the definition gives it a value. An event
+    # without any of them is a package older than #672: accepted, as #531's pair is, so a rollback to such a package is not
+    # blocked; 19-deploy-control-server-parallel.ps1 refuses that on an install that is not a rollback (EFFECTIVE_JOURNEY_BINDING=not-logged).
+    $problems += @(Compare-ParallelJourneyBinding -Definition $Definition -Effective $Effective)
     if ($problems.Count -eq 0) { return $null }
     return "EFFECTIVE_CONFIGURATION_MISMATCH: $($problems -join '; ')."
+}
+
+# control-server#672. The values the read-back compares beyond the lists and the roster, one row each, in the order
+# EFFECTIVE_JOURNEY_BINDING= prints them. Find-ParallelEffectiveConfiguration reads, Get-ParallelEffectiveConfigurationRefusal
+# compares and Format-ParallelJourneyBindingLine prints by walking this table, nothing else names a field:
+#   Name     what the problem message and the result line call it;
+#   Logged   the property of the EFFECTIVE_CONFIGURATION event (EffectiveConfigurationEvent.cs) it is read from, as logged;
+#   Compare  Integer (a JSON integer, equal; a string "6" does not count), Ordinal (a string, ordinal) or Duration (a string
+#            equal to the expected value as "hh:mm:ss", [timespan] 'c', which is how the Host logs a TimeSpan);
+#   Source   where the expected value comes from, resolved by Get-ParallelJourneyBindingExpected: 'journeyRuntime.<key>' is
+#            that key as the definition writes it, $null (printed, not compared) when it leaves it to the package's
+#            appsettings.json, which this cannot know. A value derived from something else (from a phase, say) is a named
+#            Source with its own case in that function -- not a scriptblock here: this module allows no dynamic command
+#            (the delete guard in Test-ParallelInstance.ps1).
+# A new field is one row here, the event field in EffectiveConfigurationEvent.cs, and its cases in Test-ParallelInstance.ps1
+# ($bindingFieldCases) and ParallelInstanceEffectiveConfigurationTests; 19 compares the result line field by field, by name.
+$script:JourneyBindingFields = @(
+    [pscustomobject]@{ Name = 'admissionPolicyVersion'; Logged = 'AdmissionPolicyVersion'; Compare = 'Integer'; Source = 'journeyRuntime.admissionPolicyVersion' }
+    [pscustomobject]@{ Name = 'admissionPolicyDeploymentId'; Logged = 'AdmissionPolicyDeploymentId'; Compare = 'Ordinal'; Source = 'journeyRuntime.admissionPolicyDeploymentId' }
+    [pscustomobject]@{ Name = 'cargoHoldingTimeout'; Logged = 'CargoHoldingTimeout'; Compare = 'Duration'; Source = 'journeyRuntime.cargoHoldingTimeout' }
+    [pscustomobject]@{ Name = 'stationDepartureWaitTimeout'; Logged = 'StationDepartureWaitTimeout'; Compare = 'Duration'; Source = 'journeyRuntime.stationDepartureWaitTimeout' }
+)
+
+function Get-ParallelJourneyBindingExpected {
+    <# control-server#672. The value a row of $script:JourneyBindingFields expects, from its Source; $null when not compared. #>
+    param([Parameter(Mandatory = $true)] $Field, [Parameter(Mandatory = $true)][System.Collections.IDictionary] $Definition)
+    if ($Field.Source -match '^journeyRuntime\.(?<key>[A-Za-z]+)$') {
+        $journey = $Definition['journeyRuntime']
+        return ($journey -is [System.Collections.IDictionary] -and $journey.Contains($Matches['key'])) ? $journey[$Matches['key']] : $null
+    }
+    throw "JourneyBindingFields: $($Field.Name) has an unknown Source '$($Field.Source)'."
+}
+
+function Read-ParallelJourneyBinding {
+    <# control-server#672. The event's values for every row of $script:JourneyBindingFields, or $null when it carries none. #>
+    param([Parameter(Mandatory = $true)][System.Collections.IDictionary] $LoggedEvent)
+    if (@($script:JourneyBindingFields | Where-Object { $LoggedEvent.Contains($_.Logged) }).Count -eq 0) { return $null }
+    $bound = [ordered]@{}
+    foreach ($field in $script:JourneyBindingFields) { $bound[$field.Logged] = $LoggedEvent.Contains($field.Logged) ? $LoggedEvent[$field.Logged] : $null }
+    return [pscustomobject] $bound
+}
+
+function Compare-ParallelJourneyBinding {
+    <#
+        control-server#672. One problem per row of $script:JourneyBindingFields whose bound value differs from what the definition
+        means, naming the row; nothing when the event carries none of them (a package older than #672) or they all agree.
+    #>
+    param([Parameter(Mandatory = $true)][System.Collections.IDictionary] $Definition, [AllowNull()] $Effective)
+    $bound = ($null -ne $Effective -and $null -ne $Effective.PSObject.Properties['JourneyBinding']) ? $Effective.JourneyBinding : $null
+    if ($null -eq $bound) { return }
+    foreach ($field in $script:JourneyBindingFields) {
+        $expected = Get-ParallelJourneyBindingExpected -Field $field -Definition $Definition
+        if ($null -eq $expected) { continue }
+        $actual = $bound.($field.Logged)
+        $same = switch ($field.Compare) {
+            'Integer' {
+                $wanted = ConvertTo-IntegerOrNull $expected
+                ($actual -is [long] -or $actual -is [int]) -and $null -ne $wanted -and [long] $actual -eq [long] $wanted
+            }
+            'Ordinal' { $actual -is [string] -and $actual -ceq [string] $expected }
+            'Duration' {
+                # Not hh:mm:ss in the definition: compared as written, so it matches nothing the Host logs.
+                $span = ConvertTo-ParallelCatalogSpan $expected
+                $expected = ($null -ne $span) ? $span.ToString('c', [cultureinfo]::InvariantCulture) : [string] $expected
+                $actual -is [string] -and $actual -ceq $expected
+            }
+            default { throw "JourneyBindingFields: $($field.Name) has an unknown Compare '$($field.Compare)'." }
+        }
+        if (-not $same) {
+            "$($field.Name) bound '$($actual ?? 'not logged')', the definition says '$expected'"
+        }
+    }
+}
+
+function Format-ParallelJourneyBindingLine {
+    <#
+        .SYNOPSIS
+            control-server#672. The EFFECTIVE_JOURNEY_BINDING= result line the installer prints after its read-back, for
+            19-deploy-control-server-parallel.ps1 to compare with the definition it sent.
+
+        .DESCRIPTION
+            One name=value per row of $script:JourneyBindingFields, as the Host logged it, in table order, separated by one space:
+            EFFECTIVE_JOURNEY_BINDING=admissionPolicyVersion=6 admissionPolicyDeploymentId=... cargoHoldingTimeout=00:05:00 stationDepartureWaitTimeout=00:05:00
+            -- and exactly EFFECTIVE_JOURNEY_BINDING=not-logged when the event carries none of them (a package older than #672).
+            A separate line, not more fields on EFFECTIVE_CONFIGURATION=: a 19 older than #672 compares that one whole.
+            Values are not escaped: a value must not contain a space. 19 splits the line on spaces into name=value pairs and
+            refuses a piece without '=' (EFFECTIVE_JOURNEY_BINDING_MISMATCH ... not name=value pairs), so a field added to
+            $script:JourneyBindingFields whose value can hold a space would fail 19 after a good install (cs#672 review S2).
+    #>
+    [CmdletBinding()]
+    [OutputType([string])]
+    param([Parameter(Mandatory = $true)] $Effective)
+    $bound = ($null -ne $Effective.PSObject.Properties['JourneyBinding']) ? $Effective.JourneyBinding : $null
+    if ($null -eq $bound) { return 'EFFECTIVE_JOURNEY_BINDING=not-logged' }
+    return 'EFFECTIVE_JOURNEY_BINDING=' + (@($script:JourneyBindingFields | ForEach-Object { "$($_.Name)=$($bound.($_.Logged) ?? 'not-logged')" }) -join ' ')
 }
 
 function Get-ParallelClearanceToWaitingPoint {
@@ -3742,6 +3850,7 @@ Export-ModuleMember -Function @(
     'Get-ParallelEffectiveConfigurationAction'
     'Get-ParallelMapStationCatalogApproval'
     'Format-ParallelMapStationCatalogReadBack'
+    'Format-ParallelJourneyBindingLine'
     'Get-ParallelHeldRuntimeRefusal'
     'Get-ParallelReadBackAction'
     'Get-ParallelJourneyRuntimeEnvironmentOverride'

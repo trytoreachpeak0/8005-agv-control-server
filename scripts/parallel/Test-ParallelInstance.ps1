@@ -5333,6 +5333,110 @@ Invoke-SourceCase 'catalog read-back: Program.cs logs the MapStationCatalogOptio
 }
 
 # ------------------------------------------------------------------------------------------------
+# control-server#672 (PR #670 review L3, extended from cs#609). The admission policy version and deployment label, and
+# the cargo holding and station departure waits, as the Host bound them, read back from its EFFECTIVE_CONFIGURATION event
+# and compared with the definition; and the result line 19-deploy-control-server-parallel.ps1 compares after the install.
+# ------------------------------------------------------------------------------------------------
+$bindingTemplate = "$catalogTemplate foreignRunningOrderRelease={ForeignRunningOrderRelease} admissionPolicyVersion={AdmissionPolicyVersion} admissionPolicyDeploymentId={AdmissionPolicyDeploymentId} cargoHoldingTimeout={CargoHoldingTimeout} stationDepartureWaitTimeout={StationDepartureWaitTimeout}"
+# -Bound '<absent>' leaves all four out, as a package older than #672 logs the event; otherwise a hashtable of the four
+# values as the Host would log them, a key left out of it left out of the event.
+function Get-BindingReadBack($Definition, $Bound) {
+    $event = [ordered]@{
+        '@t' = '2026-10-13T21:00:06Z'
+        '@mt' = $bindingTemplate
+        AllowedWorkTypes = @($Definition['journeyRuntime']['allowedWorkTypes'])
+        AllowedDispatchZones = @($Definition['journeyRuntime']['allowedDispatchZones'])
+        MesIngestBaseUrl = [string] $Definition['mesIngest']['baseUrl']
+        Fleet = @()
+        ClearanceToWaitingPointEnabled = $false
+    }
+    if ($Bound -isnot [string] -or $Bound -cne '<absent>') {
+        foreach ($key in @('AdmissionPolicyVersion', 'AdmissionPolicyDeploymentId', 'CargoHoldingTimeout', 'StationDepartureWaitTimeout')) {
+            if ($Bound.Contains($key)) { $event[$key] = $Bound[$key] }
+        }
+    }
+    $line = ConvertTo-Json -Compress -Depth 8 -InputObject $event
+    $e = Find-ParallelEffectiveConfiguration -Lines @($line) -Since ([datetimeoffset]::Parse('2026-10-13T21:00:00Z', [cultureinfo]::InvariantCulture))
+    return [pscustomobject]@{ Action = Get-ParallelEffectiveConfigurationAction -Definition $Definition -Effective $e; Effective = $e }
+}
+function New-BoundBinding([hashtable] $Change = @{}) {
+    # The baseline's own values, written here as literals rather than read from it: the baseline is the shipped definition
+    # (6, 00:05:00, 00:05:00) with the label Set-Map26TestValue gives it, and a case below pins that.
+    $bound = [ordered]@{
+        AdmissionPolicyVersion = 6
+        AdmissionPolicyDeploymentId = 'MAP-26-WIRE_TO_GATE-SELFTEST'
+        CargoHoldingTimeout = '00:05:00'
+        StationDepartureWaitTimeout = '00:05:00'
+    }
+    foreach ($key in @($Change.Keys)) { if ($null -eq $Change[$key]) { $bound.Remove($key) } else { $bound[$key] = $Change[$key] } }
+    return $bound
+}
+Invoke-SourceCase 'binding read-back: the baseline says 6, MAP-26-WIRE_TO_GATE-SELFTEST, 00:05:00, 00:05:00 (what the cases below bind)' {
+    $j = $baseline['journeyRuntime']
+    $got = "$($j['admissionPolicyVersion'])|$($j['admissionPolicyDeploymentId'])|$($j['cargoHoldingTimeout'])|$($j['stationDepartureWaitTimeout'])"
+    @{ Ok = ($got -ceq '6|MAP-26-WIRE_TO_GATE-SELFTEST|00:05:00|00:05:00'); Detail = "got: $got" }
+}
+$bindingWithoutDeparture = Copy-Definition $baseline
+$bindingWithoutDeparture['journeyRuntime'].Remove('stationDepartureWaitTimeout')
+# One row per row of the module's $script:JourneyBindingFields (the case below holds the two lists equal): a value the Host
+# might bind instead, and the problem text naming the field. A field added to the table is added here too.
+$bindingFieldCases = @(
+    @{ Logged = 'AdmissionPolicyVersion'; Wrong = 5; Says = "admissionPolicyVersion bound '5', the definition says '6'" }
+    @{ Logged = 'AdmissionPolicyDeploymentId'; Wrong = 'MAP-26-WIRE_TO_GATE-20261007'; Says = "admissionPolicyDeploymentId bound 'MAP-26-WIRE_TO_GATE-20261007', the definition says 'MAP-26-WIRE_TO_GATE-SELFTEST'" }
+    @{ Logged = 'CargoHoldingTimeout'; Wrong = '00:30:00'; Says = "cargoHoldingTimeout bound '00:30:00', the definition says '00:05:00'" }
+    @{ Logged = 'StationDepartureWaitTimeout'; Wrong = '00:30:00'; Says = "stationDepartureWaitTimeout bound '00:30:00', the definition says '00:05:00'" }
+)
+Invoke-SourceCase 'binding read-back: every row of the module''s JourneyBindingFields has a field case here, in table order' {
+    $table = @(& (Get-Module ParallelInstance) { $script:JourneyBindingFields } | ForEach-Object Logged)
+    $cased = @($bindingFieldCases | ForEach-Object { $_.Logged })
+    @{ Ok = (($table -join ',') -ceq ($cased -join ',')); Detail = "table: $($table -join ','); cases: $($cased -join ',')" }
+}
+foreach ($fieldCase in $bindingFieldCases) {
+    Invoke-SourceCase "binding read-back, per field: $($fieldCase.Logged) bound '$($fieldCase.Wrong)' -- stop and refuse, naming it" {
+        $a = (Get-BindingReadBack $baseline (New-BoundBinding @{ $fieldCase.Logged = $fieldCase.Wrong })).Action
+        @{ Ok = ($a.Action -ceq 'StopServiceAndRefuse' -and ([string] $a.Message).StartsWith('EFFECTIVE_CONFIGURATION_MISMATCH: ') -and ([string] $a.Message).Contains($fieldCase.Says)); Detail = "got: $(ConvertTo-Json $a -Compress)" }
+    }
+    Invoke-SourceCase "binding read-back, per field: $($fieldCase.Logged) missing from an event carrying the others -- stop and refuse" {
+        $a = (Get-BindingReadBack $baseline (New-BoundBinding @{ $fieldCase.Logged = $null })).Action
+        $name = $fieldCase.Says.Substring(0, $fieldCase.Says.IndexOf(' '))
+        @{ Ok = ($a.Action -ceq 'StopServiceAndRefuse' -and ([string] $a.Message).Contains("$name bound 'not logged'")); Detail = "got: $(ConvertTo-Json $a -Compress)" }
+    }
+}
+foreach ($case in @(
+        @{ Name = 'bound as defined -- pass'; Definition = $baseline; Bound = (New-BoundBinding); Action = 'Pass'; Says = $null }
+        @{ Name = 'version 7 bound (above the definition) -- stop and refuse'; Definition = $baseline; Bound = (New-BoundBinding @{ AdmissionPolicyVersion = 7 }); Action = 'StopServiceAndRefuse'; Says = "admissionPolicyVersion bound '7', the definition says '6'" }
+        @{ Name = 'version logged as the string "6" -- stop and refuse, not cast'; Definition = $baseline; Bound = (New-BoundBinding @{ AdmissionPolicyVersion = '6' }); Action = 'StopServiceAndRefuse'; Says = "admissionPolicyVersion bound '6', the definition says '6'" }
+        @{ Name = 'the label differing in case alone -- stop and refuse (ordinal)'; Definition = $baseline; Bound = (New-BoundBinding @{ AdmissionPolicyDeploymentId = 'map-26-wire_to_gate-selftest' }); Action = 'StopServiceAndRefuse'; Says = 'admissionPolicyDeploymentId bound' }
+        @{ Name = 'a wait logged as 300 seconds rather than hh:mm:ss -- stop and refuse'; Definition = $baseline; Bound = (New-BoundBinding @{ CargoHoldingTimeout = 300 }); Action = 'StopServiceAndRefuse'; Says = "cargoHoldingTimeout bound '300'" }
+        @{ Name = 'a key the definition leaves out is not compared (the package default is what the Host binds)'; Definition = $bindingWithoutDeparture; Bound = (New-BoundBinding @{ StationDepartureWaitTimeout = '00:30:00' }); Action = 'Pass'; Says = $null }
+        @{ Name = 'event older than #672 (none of the four) -- pass, so a rollback to such a package is not blocked'; Definition = $baseline; Bound = '<absent>'; Action = 'Pass'; Says = $null })) {
+    Invoke-SourceCase "binding read-back: $($case.Name)" {
+        $a = (Get-BindingReadBack $case.Definition $case.Bound).Action
+        @{ Ok = ($a.Action -ceq $case.Action -and ($null -eq $case.Says -or (([string] $a.Message).Contains('EFFECTIVE_CONFIGURATION_MISMATCH') -and ([string] $a.Message).Contains($case.Says)))); Detail = "got: $(ConvertTo-Json $a -Compress)" }
+    }
+}
+Invoke-SourceCase 'binding result line: the four values as bound, in a fixed order, for 19' {
+    $line = Format-ParallelJourneyBindingLine -Effective (Get-BindingReadBack $baseline (New-BoundBinding)).Effective
+    @{ Ok = ($line -ceq 'EFFECTIVE_JOURNEY_BINDING=admissionPolicyVersion=6 admissionPolicyDeploymentId=MAP-26-WIRE_TO_GATE-SELFTEST cargoHoldingTimeout=00:05:00 stationDepartureWaitTimeout=00:05:00'); Detail = "got: $line" }
+}
+Invoke-SourceCase 'binding result line: an event older than #672 reads EFFECTIVE_JOURNEY_BINDING=not-logged, nothing else' {
+    $line = Format-ParallelJourneyBindingLine -Effective (Get-BindingReadBack $baseline '<absent>').Effective
+    @{ Ok = ($line -ceq 'EFFECTIVE_JOURNEY_BINDING=not-logged'); Detail = "got: $line" }
+}
+Invoke-SourceCase 'binding result line: the installer returns it beside the unchanged EFFECTIVE_CONFIGURATION= line after every read-back' {
+    $installer = Get-Content -Raw -LiteralPath (Join-Path $PSScriptRoot 'Install-ParallelInstanceLocal.ps1')
+    $ok = [regex]::IsMatch($installer, '\$binding = Format-ParallelJourneyBindingLine -Effective \$effective\s+Write-Step "  \$binding"\s+return @\(\$line, \$binding\)') -and
+        $installer.Contains('if ($readBack.Line) { $readBack.Line | ForEach-Object { Write-Output $_ } }') -and
+        $installer.Contains('$line = "EFFECTIVE_CONFIGURATION=allowedWorkTypes=$(@($effective.AllowedWorkTypes) -join '','') " +')
+    @{ Ok = $ok; Detail = 'Install-ParallelInstanceLocal.ps1 does not print EFFECTIVE_JOURNEY_BINDING= beside EFFECTIVE_CONFIGURATION=' }
+}
+Invoke-SourceCase 'binding read-back: the Host source logs the four under the template the module reads' {
+    $eventSource = @(Get-ChildItem -LiteralPath (Join-Path $repoRoot 'src/ControlServer.Host') -Recurse -Filter '*.cs' |
+            Where-Object { (Get-Content -Raw -LiteralPath $_.FullName).Contains($bindingTemplate) })
+    @{ Ok = ($eventSource.Count -eq 1 -and $eventSource[0].Name -ceq 'EffectiveConfigurationEvent.cs'); Detail = "template found in: $(@($eventSource | ForEach-Object Name) -join ', ')" }
+}
+
+# ------------------------------------------------------------------------------------------------
 # control-server#609. The user ruled on 2026-10-11 that cargo holding lasts at most five minutes, production included;
 # the definitions said 00:30:00. On 10-12 the field read 30 minutes in effect: a hand edit of the installed file had been
 # overwritten by a reinstall from the definition (evidence/field/20261012-req0178/52-closeout-server.txt). So the ceiling

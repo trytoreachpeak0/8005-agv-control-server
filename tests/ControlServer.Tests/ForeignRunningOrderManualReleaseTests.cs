@@ -457,7 +457,8 @@ public sealed class ForeignRunningOrderManualReleaseTests
         using JsonDocument logged = JsonDocument.Parse(writer.ToString().Trim());
         JsonElement root = logged.RootElement;
         Assert.StartsWith("EFFECTIVE_CONFIGURATION ", root.GetProperty("@mt").GetString(), StringComparison.Ordinal);
-        Assert.EndsWith(" foreignRunningOrderRelease={ForeignRunningOrderRelease}", root.GetProperty("@mt").GetString(), StringComparison.Ordinal);
+        // No longer the last field since control-server#672 appended the admission policy and the two waits.
+        Assert.Contains(" foreignRunningOrderRelease={ForeignRunningOrderRelease} ", root.GetProperty("@mt").GetString(), StringComparison.Ordinal);
         JsonElement release = root.GetProperty("ForeignRunningOrderRelease");
         Assert.Equal(
             [("CredentialPresent", JsonValueKind.False), ("Enabled", JsonValueKind.True)],

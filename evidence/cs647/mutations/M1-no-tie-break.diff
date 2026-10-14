@@ -1,0 +1,7 @@
+diff --git a/src/ControlServer.Host/Runtime/Dispatch/EnRouteAppendPlanner.cs b/src/ControlServer.Host/Runtime/Dispatch/EnRouteAppendPlanner.cs
+index d0daf09ef..f71f2c109 100644
+--- a/src/ControlServer.Host/Runtime/Dispatch/EnRouteAppendPlanner.cs
++++ b/src/ControlServer.Host/Runtime/Dispatch/EnRouteAppendPlanner.cs
+@@ -191 +191 @@ public sealed class EnRouteAppendPlanner
+-                    (marginal == best.MarginalCostMm && loadsBeforeUnload < bestLoadsBeforeUnload))
++                    false)

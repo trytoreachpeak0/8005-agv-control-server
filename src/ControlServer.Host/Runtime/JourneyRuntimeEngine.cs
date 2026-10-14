@@ -125,8 +125,8 @@ public sealed partial class JourneyRuntimeEngine(
             new EventId(2127, nameof(LogInTransitOrderStalled)),
             "RIoT reports order {UpperId} of journey {DemandId} on vehicle {AgvId} in state {OrderState}; the journey " +
             "names {ReasonCode} and waits for a person. No order command, emergency stop or fault is issued for it.");
-    private static readonly Action<ILogger, string, string, DateTimeOffset, Exception?> LogStationDeadlineEndedStop =
-        LoggerMessage.Define<string, string, DateTimeOffset>(
+    private static readonly Action<ILogger, string, DateTimeOffset, string, Exception?> LogStationDeadlineEndedStop =
+        LoggerMessage.Define<string, DateTimeOffset, string>(
             LogLevel.Warning,
             new EventId(2108, nameof(LogStationDeadlineEndedStop)),
             "Nobody entered a sublot at vehicle {AgvId}'s pickup before the station departure deadline " +
@@ -5826,7 +5826,7 @@ public sealed partial class JourneyRuntimeEngine(
             await StopEndWorklist.SendAsync(publisher, dbContext, runtime.AgvId, cancellationToken).ConfigureAwait(false);
         }
         checkpointWaits.Clear(runtime.VehicleKey);
-        LogStationDeadlineEndedStop(logger, runtime.AgvId, runtime.DemandId ?? runtime.JourneyId, deadline, null);
+        LogStationDeadlineEndedStop(logger, runtime.AgvId, deadline, runtime.DemandId ?? runtime.JourneyId, null);
         return true;
     }
 

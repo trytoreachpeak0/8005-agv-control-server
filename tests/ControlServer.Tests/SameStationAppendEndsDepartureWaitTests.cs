@@ -178,7 +178,8 @@ public sealed class SameStationAppendEndsDepartureWaitTests
     }
 
     /// <summary>
-    /// 下一个停靠同站但是卸货（规划器落下的先装后卸）：不在本票的条件里，照旧等满期限。那个顺序归 control-server#647。
+    /// 下一个停靠同站但是卸货（先装后卸）：不在本票的条件里，照旧等满期限。代价打平时规划器自 control-server#647 起改排先卸后装；
+    /// 这个顺序仍可能来自严格更便宜的插入位或升级前已入库的旅程。
     /// </summary>
     /// <remarks>
     /// 计划形状 P1(N1-1，第一条装) → P2(N1-2，第二条装) → U1(N1-2，第一条卸) → U2(关卡，第二条卸)，直接在库里排出来；车停在 P2 装完时，

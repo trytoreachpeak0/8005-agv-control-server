@@ -39,7 +39,18 @@ namespace ControlServer.Host.Runtime;
 /// nothing else says so until someone on site needs it. Logged, not refused at start -- one exit is not worth a server that
 /// will not start. For a person reading the log: the installer's read-back does not read this key; what guards a deployment
 /// is the credential check before install and warning 2235. An event without it is from a package older than #617.
-/// Seven placeholders are one more than <c>LoggerMessage.Define</c> takes, so the event hands the logger its state the way
+/// </para>
+/// <para>
+/// <b>The admission policy and the two waits</b> (#672, PR #670 review L3 and cs#609) are appended last:
+/// <see cref="JourneyRuntimeOptions.AdmissionPolicyVersion"/> as a number, <see cref="JourneyRuntimeOptions.AdmissionPolicyDeploymentId"/>,
+/// and <see cref="JourneyRuntimeOptions.CargoHoldingTimeout"/> and <see cref="JourneyRuntimeOptions.StationDepartureWaitTimeout"/> as
+/// <c>hh:mm:ss</c> (invariant <c>c</c> format). Until then only the overlay file or the database said which version the Host bound,
+/// and a hand edit of the holding wait to five minutes was reinstalled back to thirty unseen (2026-10-12). The installer compares
+/// them with the definition and prints them for 19-deploy-control-server-parallel.ps1. An event without them is from a package
+/// older than #672.
+/// </para>
+/// <para>
+/// More placeholders than the six <c>LoggerMessage.Define</c> takes, so the event hands the logger its state the way
 /// <c>Define</c> does -- the template under <c>{OriginalFormat}</c> and each value as it is. Not the logging source generator: its
 /// state formats a collection into a string, and the installer reads the roster and the catalog back as JSON structure.
 /// </para>
@@ -47,7 +58,7 @@ namespace ControlServer.Host.Runtime;
 public static class EffectiveConfigurationEvent
 {
     public const string Template =
-        "EFFECTIVE_CONFIGURATION allowedWorkTypes={AllowedWorkTypes} allowedDispatchZones={AllowedDispatchZones} mesIngestBaseUrl={MesIngestBaseUrl} fleet={Fleet} clearanceToWaitingPointEnabled={ClearanceToWaitingPointEnabled} mapStationCatalog={MapStationCatalog} foreignRunningOrderRelease={ForeignRunningOrderRelease}";
+        "EFFECTIVE_CONFIGURATION allowedWorkTypes={AllowedWorkTypes} allowedDispatchZones={AllowedDispatchZones} mesIngestBaseUrl={MesIngestBaseUrl} fleet={Fleet} clearanceToWaitingPointEnabled={ClearanceToWaitingPointEnabled} mapStationCatalog={MapStationCatalog} foreignRunningOrderRelease={ForeignRunningOrderRelease} admissionPolicyVersion={AdmissionPolicyVersion} admissionPolicyDeploymentId={AdmissionPolicyDeploymentId} cargoHoldingTimeout={CargoHoldingTimeout} stationDepartureWaitTimeout={StationDepartureWaitTimeout}";
 
     public static readonly EventId Id = new(5350, "EffectiveConfiguration");
 
@@ -74,6 +85,10 @@ public static class EffectiveConfigurationEvent
             new("MapStationCatalog", MapStationCatalog(catalog)),
             new("ForeignRunningOrderRelease",
                 ForeignRunningOrderRelease(foreignRunningOrderRelease ?? new ForeignOrders.ForeignRunningOrderReleaseState(false, false))),
+            new("AdmissionPolicyVersion", effective.AdmissionPolicyVersion),
+            new("AdmissionPolicyDeploymentId", effective.AdmissionPolicyDeploymentId),
+            new("CargoHoldingTimeout", effective.CargoHoldingTimeout.ToString("c", CultureInfo.InvariantCulture)),
+            new("StationDepartureWaitTimeout", effective.StationDepartureWaitTimeout.ToString("c", CultureInfo.InvariantCulture)),
             new("{OriginalFormat}", Template),
         ];
         logger.Log(LogLevel.Information, Id, state, null, static (values, _) => Render(values));

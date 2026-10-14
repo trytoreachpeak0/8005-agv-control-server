@@ -1,0 +1,61 @@
+# 1295b8c07 上 ArchitectureTests + CreateGateTests（绿），护栏输出原样：两轮计数与第二轮仍认不出的实参
+
+ round 1: 206 definitions, 225 call sites, 748 arguments, 636 named, 112 unnamed, 104 named unlike any placeholder, 0 swaps
+ round 2: 206 definitions, 228 call sites, 761 arguments, 712 named, 49 unnamed, 129 named unlike any placeholder, 0 swaps
+ unnamed after round 2:
+   src/ControlServer.Host/Runtime/Commands/EmergencyStopSupervisor.cs:1628 LogReleaseConfirmation: {ConfirmerIdentity} <- string.IsNullOrWhiteSpace(confirmation.ConfirmerIdentity) ? "-" : confirmation.ConfirmerIdentity
+   src/ControlServer.Host/Runtime/Commands/EmergencyStopSupervisor.cs:1628 LogReleaseConfirmation: {Reasons} <- decision.Reasons.Count == 0 ? "-" : string.Join(',', decision.Reasons)
+   src/ControlServer.Host/Runtime/Dispatch/DispatchRoundRunner.cs:538 LogVehicleRoundFailed: {ExceptionType} <- error.GetType().Name
+   src/ControlServer.Host/Runtime/Dispatch/DispatchRoundRunner.cs:752 LogVehicleRoundFailed: {ExceptionType} <- error.GetType().Name
+   src/ControlServer.Host/Runtime/Dispatch/DispatchRoundRunner.cs:920 LogVehicleRoundFailed: {ExceptionType} <- error.GetType().Name
+   src/ControlServer.Host/Runtime/Dispatch/DispatchRoundRunner.cs:528 LogVehicleRoundFaulted: {ExceptionType} <- error.GetType().Name
+   src/ControlServer.Host/Runtime/Dispatch/DispatchRoundRunner.cs:742 LogVehicleRoundFaulted: {ExceptionType} <- error.GetType().Name
+   src/ControlServer.Host/Runtime/Dispatch/DispatchRoundRunner.cs:916 LogVehicleRoundFaulted: {ExceptionType} <- error.GetType().Name
+   src/ControlServer.Host/Runtime/Dispatch/DispatchRoundRunner.cs:534 LogInTransitQualificationFailed: {ExceptionType} <- error.GetType().Name
+   src/ControlServer.Host/Runtime/Dispatch/DispatchRoundRunner.cs:748 LogInTransitQualificationFailed: {ExceptionType} <- error.GetType().Name
+   src/ControlServer.Host/Runtime/Faults/VehicleFaultCoordinator.cs:935 LogAlarm: {Reasons} <- string.Join(',', reasons)
+   src/ControlServer.Host/Runtime/Faults/VehicleFaultRecoveryService.cs:886 LogRequest: {OperatorId} <- string.IsNullOrWhiteSpace(request.OperatorId) ? "-" : request.OperatorId
+   src/ControlServer.Host/Runtime/Faults/VehicleFaultRecoveryService.cs:886 LogRequest: {ReasonsAndNote} <- $"{(decision.Reasons.Count == 0 ? "-" : string.Join(',', decision.Reasons))}" +
+            $"{(decision.TerminatedDemandIds is { Count: > 0 } ended ? $"; terminated: {string.Join(',', ended)}" : "")}" +
+            $"; note: {(string.IsNullOrWhiteSpace(request.Note) ? "-" : request.Note)}"
+   src/ControlServer.Host/Runtime/Fleet/WaitingPointStartupCheck.cs:148 ExcludedFixedStations: {Stations} <- DescribeExcluded(coverage, fixedOrigins)
+   src/ControlServer.Host/Runtime/ForeignOrders/ForeignRunningOrderSupervisor.cs:394 LogForeignOrderLeftVehicle: {Where} <- Where(order, ours)
+   src/ControlServer.Host/Runtime/ForeignOrders/ForeignRunningOrderSupervisor.cs:714 LogForeignOrderLeftVehicle: {Where} <- Where(order, ours)
+   src/ControlServer.Host/Runtime/ForeignOrders/ForeignRunningOrderSupervisor.cs:534 LogAbandonedChargeOrderOnAnotherVehicle: {ExecuteVehicleKey} <- ExecutingVehicleKey(order)!
+   src/ControlServer.Host/Runtime/ForeignOrders/ForeignRunningOrderSupervisor.cs:353 LogForeignOrderUnsettled: {ReadBack} <- "SUSPENDED, listed again after a hand release"
+   src/ControlServer.Host/Runtime/IdleReturn/IdleReturnEvaluator.cs:377 LogCommitted: {ChargeLine} <- chargeLine.Describe(vehicle.VehicleKey)
+   src/ControlServer.Host/Runtime/IdleReturn/IdleReturnEvaluator.cs:571 LogStoppedAfterRepeatedEnds: {Detail} <- $"repeat window {_runtime.OwnOrderRebuildRepeatWindow}"
+   src/ControlServer.Host/Runtime/JourneyRuntimeEngine.Charging.cs:201 LogChargingDepartureNotProven: {Gaps} <- string.Join(", ", gaps)
+   src/ControlServer.Host/Runtime/JourneyRuntimeEngine.ChargingInterruption.cs:142 LogChargingStalled: {Battery} <- string.Create(CultureInfo.InvariantCulture, $"from {startPercent}% to {battery}%")
+   src/ControlServer.Host/Runtime/JourneyRuntimeEngine.ClearanceMove.cs:416 LogClearanceMoveHeld: {Why} <- "ARRIVAL_NOT_PROVEN"
+   src/ControlServer.Host/Runtime/JourneyRuntimeEngine.ClearanceMove.cs:604 LogClearanceMoveHeld: {Why} <- "ORDER_NEVER_APPEARED_ABANDONED"
+   src/ControlServer.Host/Runtime/JourneyRuntimeEngine.ClearanceMove.cs:857 LogClearanceMoveNotStarted: {Why} <- detail is null ? why : $"{why} ({detail})"
+   src/ControlServer.Host/Runtime/JourneyRuntimeEngine.IdleReturn.cs:276 LogIdleReturnDepartureNotProven: {Gaps} <- string.Join(", ", gaps)
+   src/ControlServer.Host/Runtime/JourneyRuntimeEngine.IdleReturn.cs:678 LogIdleReturnEnded: {ReasonCode} <- detail is null ? code : $"{code} ({detail})"
+   src/ControlServer.Host/Runtime/JourneyRuntimeEngine.OwnOrderRebuild.cs:448 LogOwnOrderRebuildStopped: {StoppedReason} <- $"{OwnOrderRebuilds.VehicleNoLongerEligible}: {trigger}"
+   src/ControlServer.Host/Runtime/JourneyRuntimeEngine.OwnOrderRebuild.cs:649 LogOwnOrderRebuildStopped: {StoppedReason} <- $"{OwnOrderRebuilds.CargoNotProvenInOriginalSlots}: {evidence.NotShown}"
+   src/ControlServer.Host/Runtime/JourneyRuntimeEngine.UnableToCharge.cs:354 LogOldOrderResumedWhileClearing: {Disposition} <- string.Create(CultureInfo.InvariantCulture, $"orderState {order.OrderState}")
+   src/ControlServer.Host/Runtime/JourneyRuntimeEngine.cs:3725 LogUnloadOrderFallback: {DemandIds} <- string.Join(',', choice.UnorderedDemandIds)
+   src/ControlServer.Host/Runtime/JourneyRuntimeEngine.cs:1334 LogEmptiedStopEntersDepartureWait: {Deadline} <- StationDepartureDeadline(runtime, runtimeOptions.StationDepartureWaitTimeout)
+   src/ControlServer.Host/Runtime/OnboardVehicleSafetyEndpoints.cs:105 LogCancelledByOnboard: {ElapsedMilliseconds} <- (long)(DateTimeOffset.UtcNow - requestStarted).TotalMilliseconds
+   src/ControlServer.Host/Runtime/RouteGraph/RouteGraphRefresher.cs:109 LogRefreshFailed: {Phase} <- "refresh"
+   src/ControlServer.Host/Runtime/TaskTypeStations/TaskTypeStationStartup.cs:165 Loaded: {RuleOutcome} <- ruleWrite.Created ? "new" : "unchanged"
+   src/ControlServer.Host/Runtime/TaskTypeStations/TaskTypeStationStartup.cs:165 Loaded: {BindingOutcome} <- "unchanged"
+   src/ControlServer.Host/Runtime/TaskTypeStations/TaskTypeStationStartup.cs:197 Loaded: {RuleOutcome} <- ruleWrite.Created ? "new" : "unchanged"
+   src/ControlServer.Host/Runtime/TaskTypeStations/TaskTypeStationStartup.cs:197 Loaded: {BindingOutcome} <- bindingWrite.Created ? "new" : "unchanged"
+   src/ControlServer.Host/Runtime/TaskTypeStations/TaskTypeStationStartup.cs:161 NotApplied: {Standing} <- Standing(existing)
+   src/ControlServer.Host/Runtime/UnreleasableBlockReport.cs:49 LogUnreleasableBlocks: {Total} <- onEndedDemand + beforeUpgrade
+   src/ControlServer.Host/Runtime/WaitingJourneyWatch.cs:101 LogWatchFailed: {JourneyId} <- "(all)"
+   src/ControlServer.Host/Transport/OnboardRecoveryCoordinator.cs:351 LogUnknownWorkflowResult: {PayloadSha256} <- WireContentHash.Sha256(payload.GetRawText())
+   src/ControlServer.Host/Transport/OnboardRecoveryCoordinator.cs:1481 LogCompensationRequestedAgain: {OperatorId} <- RequiredString(requestedBy, "operatorId")
+   src/ControlServer.Host/Transport/OnboardRecoveryCoordinator.cs:1481 LogCompensationRequestedAgain: {VerifiedAt} <- requestedBy.GetProperty("verifiedAt").GetRawText().Trim('"')
+   src/ControlServer.Host/Transport/OnboardRecoveryCoordinator.cs:1481 LogCompensationRequestedAgain: {MessageId} <- RequiredString(root, "messageId")
+   src/ControlServer.Host/Transport/SlotFaultDeclarationStartupCheck.cs:49 LogPendingWhileOff: {Vehicles} <- string.Join(", ", perVehicle.OrderBy(pair => pair.Key, StringComparer.Ordinal)
+                    .Select(pair => $"{pair.Key}: {pair.Value}"))
+   src/ControlServer.Infrastructure/Adapters/HttpRiotMovementGateway.cs:1044 LogCreateFailed: {Detail} <- RiotFailureDetail.Of(error)
+   src/ControlServer.Infrastructure/Adapters/HttpRiotMovementGateway.cs:1050 LogReadFailed: {Detail} <- RiotFailureDetail.Of(error)
+   src/ControlServer.Infrastructure/Adapters/HttpRiotMovementGateway.cs:1054 LogReadUnanswered: {Detail} <- RiotFailureDetail.Of(error)
+
+
+Total tests: 130
+     Passed: 130

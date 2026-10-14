@@ -490,7 +490,11 @@ public sealed class WireToGateStore(ControlServerDbContext dbContext)
         // This can only move a session from Ready to RecoveryRequired, never the other way.
         // The operation's demand is found in its journey through the demand memberships (control-server#207): an
         // operation of any demand the vehicle carries holds it, not only one of the journey row's anchor demand.
-        bool operationNeedsRecovery = await OperationNeedsRecoveryAsync(agvId, cancellationToken)
+        // The two halves of OperationNeedsRecoveryAsync, which the journey runtime asks whole (control-server#697): held on
+        // either, but named apart -- the demand's mark after the more specific holds below, see GetRecoveryReason.
+        bool operationNeedsRecovery = await OperationHeldForRecoveryAsync(agvId, cancellationToken)
+            .ConfigureAwait(false);
+        bool demandNeedsRecovery = await DemandHeldForRecoveryAsync(agvId, cancellationToken)
             .ConfigureAwait(false);
         // REQ-0241/0242 and ADR-cross-0036 (control-server#137). A forced mechanical recovery settles the
         // cargo's business and the operation it was about, and with that every input above can say "fine" --
@@ -552,6 +556,7 @@ public sealed class WireToGateStore(ControlServerDbContext dbContext)
                      row.CapabilityRevision is not null && row.SafetyRevision is not null &&
                      row.RecoveryReportId is not null && departureUsable && noPendingFacts &&
                      !operationNeedsRecovery &&
+                     !demandNeedsRecovery &&
                      !forcedRecoveryAwaitsHardwareRecord &&
                      !cargoHandoffAwaited &&
                      !slotDoorHeld &&
@@ -565,7 +570,7 @@ public sealed class WireToGateStore(ControlServerDbContext dbContext)
             : slotConfigurationAgrees
                 ? GetRecoveryReason(
                     row, noPendingFacts, departureUsable, operationNeedsRecovery, forcedRecoveryAwaitsHardwareRecord,
-                    cargoHandoffAwaited, slotDoorHeld)
+                    cargoHandoffAwaited, slotDoorHeld, demandNeedsRecovery)
                 : SlotConfigurationFingerprintVerdict.MismatchCode;
         row.UpdatedAt = DateTimeOffset.UtcNow;
         await dbContext.SaveChangesAsync(cancellationToken).ConfigureAwait(false);
@@ -3836,21 +3841,60 @@ public sealed class WireToGateStore(ControlServerDbContext dbContext)
     }
 
     /// <summary>
-    /// Whether an operation of any demand this vehicle carries is held for recovery -- one of the readiness inputs
-    /// <see cref="DecideReadinessAsync"/> combines.
+    /// Whether an operation of any demand this vehicle carries is held for recovery, or a demand of a Blocked journey of this
+    /// vehicle is -- one of the readiness inputs <see cref="DecideReadinessAsync"/> combines.
     /// </summary>
     /// <remarks>
+    /// <para>
     /// Public because the session reason code cannot answer it: <c>GetRecoveryReason</c> ranks
     /// <c>DEPARTURE_SAFETY_NOT_READY</c> ahead of <c>OPERATION_RECOVERY_REQUIRED</c>, so while the vehicle is also unsafe to
     /// depart the reason code names departure safety alone. The journey runtime asks this directly before it lets the
     /// pickup dispatch plan past a closed readiness gate (control-server#314).
+    /// </para>
+    /// <para>
+    /// <b>The demand half (control-server#697, C11's choice A).</b> A recovery result that does not reconcile -- a cancellation,
+    /// a correction, a handoff (<c>OnboardRecoveryCoordinator.KeepDemandAndJourneyBlockedAsync</c>) -- marks the demand
+    /// RecoveryRequired and blocks its journey, and touches no operation: one the vehicle reported Committed stays Committed.
+    /// Judged on operations alone, that vehicle read READY mid-session, and the onboard, which offers its recovery entries only
+    /// on RECOVERY_REQUIRED, offered none until a reconnect. The demand is where "the facts did not reconcile" is recorded, so
+    /// it is judged here, under the same reason code. Only on a Blocked journey, the way the release reads that mark
+    /// (<c>BlockedJourneyRelease</c>, criterion 4), and only for this vehicle's: a journey moving or waiting for its own order
+    /// has nothing for this to hold. It lets go when the demand ends -- compensation, handoff, forced recovery -- or its mark
+    /// is cleared, or the journey leaves Blocked.
+    /// </para>
     /// </remarks>
-    public Task<bool> OperationNeedsRecoveryAsync(string agvId, CancellationToken cancellationToken) =>
+    public async Task<bool> OperationNeedsRecoveryAsync(string agvId, CancellationToken cancellationToken) =>
+        await OperationHeldForRecoveryAsync(agvId, cancellationToken).ConfigureAwait(false) ||
+        await DemandHeldForRecoveryAsync(agvId, cancellationToken).ConfigureAwait(false);
+
+    /// <summary>The operation half of <see cref="OperationNeedsRecoveryAsync"/>.</summary>
+    private Task<bool> OperationHeldForRecoveryAsync(string agvId, CancellationToken cancellationToken) =>
         OperationsOnJourneys()
             .AnyAsync(
                 pair => pair.Runtime.AgvId == agvId &&
                         pair.Operation.Status == StationOperationStatus.RecoveryRequired,
                 cancellationToken);
+
+    /// <summary>
+    /// The demand half of <see cref="OperationNeedsRecoveryAsync"/> (control-server#697): a RecoveryRequired demand in force on
+    /// a Blocked journey of this vehicle, by the demand memberships (<see cref="DemandJourneyLookup.Memberships"/>), not the
+    /// journey row's anchor demand.
+    /// </summary>
+    private async Task<bool> DemandHeldForRecoveryAsync(string agvId, CancellationToken cancellationToken) =>
+        await DemandJourneyLookup.Memberships(dbContext)
+            .Join(dbContext.AcceptedDemands,
+                membership => membership.DemandId,
+                demand => demand.DemandId,
+                (membership, demand) => new { membership.JourneyId, demand.Status })
+            .Join(dbContext.JourneyRuntimes,
+                pair => pair.JourneyId,
+                runtime => runtime.JourneyId,
+                (pair, runtime) => new { pair.Status, runtime.AgvId, runtime.Stage })
+            .AnyAsync(
+                row => row.AgvId == agvId &&
+                       row.Stage == JourneyRuntimeStage.Blocked &&
+                       row.Status == DemandExecutionStatus.RecoveryRequired,
+                cancellationToken).ConfigureAwait(false);
 
     /// <summary>
     /// Whether a forced mechanical recovery of this vehicle still waits for its hardware recovery record -- the other
@@ -3969,7 +4013,8 @@ public sealed class WireToGateStore(ControlServerDbContext dbContext)
         bool operationNeedsRecovery,
         bool forcedRecoveryAwaitsHardwareRecord,
         bool cargoHandoffAwaited,
-        bool slotDoorHeld)
+        bool slotDoorHeld,
+        bool demandNeedsRecovery)
     {
         if (row.CapabilityRevision is null) return "CAPABILITY_SNAPSHOT_REQUIRED";
         if (row.SafetyRevision is null) return "SAFETY_SNAPSHOT_REQUIRED";
@@ -3985,6 +4030,9 @@ public sealed class WireToGateStore(ControlServerDbContext dbContext)
         if (forcedRecoveryAwaitsHardwareRecord) return ForcedRecoveryHardwareRecoveryRequired;
         if (cargoHandoffAwaited) return CargoHandoffRequired;
         if (slotDoorHeld) return SlotDoorRepairReleaseRequired;
+        // A demand's mark that a recovery result did not reconcile (control-server#697), named last: a stopped trip waiting for its
+        // handoff or a held door says more precisely what the person at the vehicle is to do, and either one already holds it.
+        if (demandNeedsRecovery) return "OPERATION_RECOVERY_REQUIRED";
         return "RECOVERY_REQUIRED";
     }
 

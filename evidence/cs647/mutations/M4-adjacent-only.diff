@@ -1,0 +1,7 @@
+diff --git a/src/ControlServer.Host/Runtime/Dispatch/EnRouteAppendPlanner.cs b/src/ControlServer.Host/Runtime/Dispatch/EnRouteAppendPlanner.cs
+index d0daf09ef..317fcd009 100644
+--- a/src/ControlServer.Host/Runtime/Dispatch/EnRouteAppendPlanner.cs
++++ b/src/ControlServer.Host/Runtime/Dispatch/EnRouteAppendPlanner.cs
+@@ -425 +425 @@ public sealed class EnRouteAppendPlanner
+-            for (int unload = pickup + 1; unload < stops.Count; unload++)
++            for (int unload = pickup + 1; unload < Math.Min(pickup + 2, stops.Count); unload++)
