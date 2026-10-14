@@ -24,7 +24,7 @@ Passed!  - Failed:     0, Passed:   340, Skipped:     0, Total:   340, Duration:
 - `tests/ControlServer.Tests/WirePins/staging-switch-off-station-deadline.txt`、`staging-switch-off-cargo-holding.txt`：在集成分支
   `fp/v2-impl@1f9e1b0ab` 的 detached worktree 里只放入 `StagingSwitchOffWireParityTests.cs`、产品代码一行未动跑出的 `.actual`，改名搬回本票分支；
   本票分支上两条都逐字节对上（2/2）。两份基线里离站期限与持货期限都照常下发（`stationDepartureDeadlineAt`、`cargoHoldingDeadlineAt` 有值）。
-- 开关打开时的机台：`StagingRulesOnMachineWireParityTests` 用集成分支上原有的 `normal-journey`、`station-deadline` 两份基线，一份未重录，逐字对上。
+- 开关打开时的机台：`Batch7StopDrivenAdvanceWireParityTests` 末尾两条用集成分支上原有的 `normal-journey`、`station-deadline` 两份基线，一份未重录，逐字对上。
 
 ## L2 合成场景
 
@@ -36,6 +36,28 @@ Passed!  - Failed:     0, Passed:   340, Skipped:     0, Total:   340, Duration:
 
 只保留 `SUMMARY.md`、`assertions.json`、`timeline.jsonl`；组件日志与快照未入库。
 
-## 变异
+## 第 2 轮（C11 放行，2026-10-14 21:51～22:01:08 CST）
 
-待第 2 轮时段，见后续补记。
+### 变异前的绿基线，以及这一轮查出的一个测试缺陷
+
+先编译、重跑第 1 轮那组定向测试（加上两条 WirePin，共 342 条）：红 1 条，
+`StagingRulesOnMachineWireParityTests.AMachineStopEndedByItsStationDeadlineSendsTheSameLinesWithTheStagingRulesOn`。单跑 WirePin 那几个类看到原文：
+
+```
+System.IO.IOException : The process cannot access the file '...\WirePins\station-deadline.txt.actual' because it is being used by another process.
+```
+
+原因在测试：本票新类与既有的 `Batch7StopDrivenAdvanceWireParityTests` 用同一份基线名，各写同一个 `.actual`，分在两个类里被 xunit 并行跑就撞上；
+第 1 轮碰巧没撞。改法：两条并入既有类（同一类里串行），并与该类一样不挂切片标签（该类整类登记在 `IntegrationSliceTraitArchitectureTests` 的账本里，
+混挂标签那条架构测试红过一次）。之后 `WireParityTests`、`StagingPickupNoCountdownTests`、全部 `ArchitectureTests` 共 109/0，退出码 0（本 README 所在提交之前的两次提交）。
+
+### 变异（只改 `src/ControlServer.Host/Runtime/StagingPickupStops.cs`，每轮跑完 `git checkout` 这一个文件，工作树 0 行改动）
+
+范围：`StagingPickupNoCountdownTests` 与全部 `*WireParityTests`，28 条。
+
+| 变异 | 改法 | 结果 | 红的用例 |
+| --- | --- | --- | --- |
+| 判别恒假 | 取货角色判断后 `|| true` 直接答否 | 6 红 / 22 绿 | `StagingPickupNoCountdownTests` 六条用例的 `StagingRulesOn` 一格：期限下发（验收 1）、一小时无人扫码（验收 2）、装一篮一小时（验收 3）、仓门告警（验收 4）、缺电放回（验收 5）、看板（验收 7） |
+| 判别恒真 | 任何取货停靠都答是 | 8 红 / 20 绿 | 两条开关打开时的机台 WirePin（`normal-journey`、`station-deadline`），以及 `StagingPickupNoCountdownTests` 六条用例的 `MachineRulesOn` 一格（验收 6 的机台回归） |
+
+`StagingRulesOff` 一格两次都绿：判别在开关之后，开关关着时变异碰不到行为——这正是「开关关着逐字节不变」要的。
