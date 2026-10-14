@@ -92,7 +92,7 @@ $assertions.Add(
 $null = Move-L2CargoVehicleToCurrentStop $Context $journeyId $stagingStationRiotId ([string]$joined.PickupStopId)
 $loadedC = Wait-L2ConditionOrLast -Description 'demand C was loaded' -Journal $journal -Criterion 'c-loaded' -TimeoutSeconds 120 `
     -Probe { Get-Membership $c.Id } -Until { param($v) $null -ne $v -and [string]$v.Status -eq 'LOADED' }
-$slotsC = if ($null -eq $loadedC) { @() } else { @([string]$loadedC.TargetSlotsJson | ConvertFrom-Json) }
+$slotsC = @(if ($null -ne $loadedC) { [string]$loadedC.TargetSlotsJson | ConvertFrom-Json })
 $targetsUntilC = @(Get-DepartureTargets)
 $assertions.Add(
     'L2-SOF-03', '丙装进 REAR 组（5～8）；到这时为止的离站核验只开往待送站本身（原地走到丙的停靠），没有一张开往卸货站',

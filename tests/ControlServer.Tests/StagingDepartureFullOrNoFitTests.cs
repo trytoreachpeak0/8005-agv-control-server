@@ -328,9 +328,9 @@ public sealed class StagingDepartureFullOrNoFitTests
     [Theory]
     [Trait("IntegrationSlice", "FP-IS-08")]
     [Trait("IntegrationSlice", "FP-IS-11")]
-    [InlineData("FRONT", new[] { 1, 2, 3, 4 })]
-    [InlineData("REAR", new[] { 5, 6, 7, 8 })]
-    public async Task AStagingSublotOpensOnlyTheSideItsAreaIsAssigned(string side, int[] sideSlots)
+    [InlineData("FRONT", 1, 4)]
+    [InlineData("REAR", 5, 8)]
+    public async Task AStagingSublotOpensOnlyTheSideItsAreaIsAssigned(string side, int firstSlot, int lastSlot)
     {
         await using RuntimeFixture fixture = await ArrangeAsync(StopKind.StagingRulesOn);
         await fixture.ImportAreaAssignmentsAsync(
@@ -344,7 +344,7 @@ public sealed class StagingDepartureFullOrNoFitTests
         int[] opened = [.. document.RootElement.GetProperty("payload").GetProperty("slots").EnumerateArray()
             .Select(slot => slot.GetInt32())];
         Assert.NotEmpty(opened);
-        Assert.All(opened, slot => Assert.Contains(slot, sideSlots));
+        Assert.All(opened, slot => Assert.InRange(slot, firstSlot, lastSlot));
     }
 
     // ---- helpers ---------------------------------------------------------------------------------------------------
