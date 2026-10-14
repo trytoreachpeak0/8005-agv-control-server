@@ -216,7 +216,7 @@ $script:AllowedKeys = [ordered]@{
         'maximumEvidenceAge', 'departureSafetyResultWait', 'stationDepartureWaitTimeout',
         'sameStationAppendCorrectionGrace', 'cargoHoldingTimeout', 'sublotBoxCountPath', 'allowedWorkTypes', 'allowedDispatchZones',
         'admissionPolicyVersion', 'admissionPolicyDeploymentId', 'checkpointWaitBudget',
-        'areaEndAdmissionRevokedTimeout', 'clearanceToWaitingPointEnabled')
+        'areaEndAdmissionRevokedTimeout', 'clearanceToWaitingPointEnabled', 'stationTimeoutRedispatchLimit')
     # control-server#454. credentialEnvironmentVariable is deliberately absent: the overlay writes
     # this instance's own variable name, so no definition can point the service at the MVP's.
     'vehicleFaultRecovery' = @('enabled')
@@ -1214,6 +1214,16 @@ function Test-ParallelInstanceDefinition {
         # written on, not in effect, and nobody told (PR #640 review L3).
         if ((Test-KeyPresent -Node $journey -Key 'clearanceToWaitingPointEnabled') -and $journey['clearanceToWaitingPointEnabled'] -isnot [bool]) {
             $failures += "journeyRuntime.clearanceToWaitingPointEnabled must be a JSON boolean, got '$($journey['clearanceToWaitingPointEnabled'])'."
+        }
+
+        # control-server#703. How often one demand goes back to the backlog at a station deadline before it ends with a
+        # manual-carry alarm (JourneyRuntimeOptions.StationTimeoutRedispatchLimit). Optional -- absent keeps the package default,
+        # 2 -- but when written it is a non-negative JSON integer: a string or a fraction would stop the Host at startup.
+        if (Test-KeyPresent -Node $journey -Key 'stationTimeoutRedispatchLimit') {
+            $limit = $journey['stationTimeoutRedispatchLimit']
+            if (-not (($limit -is [int] -or $limit -is [long]) -and $limit -ge 0)) {
+                $failures += "journeyRuntime.stationTimeoutRedispatchLimit must be a non-negative JSON integer, got '$limit'."
+            }
         }
 
         # The route graph only refreshes from inside a JourneyRuntimeWorker iteration

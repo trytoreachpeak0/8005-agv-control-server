@@ -4870,6 +4870,18 @@ Invoke-SourceCase 'clearance switch: a string "true" is refused, not bound as on
     $f = @(Test-ParallelInstanceDefinition -Definition (Set-ClearanceSwitch $baseline 'true'))
     @{ Ok = ($f.Count -eq 1 -and $f[0].Contains('clearanceToWaitingPointEnabled must be a JSON boolean')); Detail = "failures: $($f -join ' | ')" }
 }
+# control-server#703: the station timeout redispatch limit, optional, a non-negative JSON integer when written.
+foreach ($case in @(
+        @{ Value = 0; Ok = $true }, @{ Value = 3; Ok = $true }, @{ Value = -1; Ok = $false },
+        @{ Value = '2'; Ok = $false }, @{ Value = 1.5; Ok = $false })) {
+    Invoke-SourceCase "station timeout redispatch limit: $($case.Value) ($($case.Value.GetType().Name)) is $(if ($case.Ok) { 'accepted' } else { 'refused' })" {
+        $d = Copy-Definition $baseline
+        $d['journeyRuntime']['stationTimeoutRedispatchLimit'] = $case.Value
+        $f = @(Test-ParallelInstanceDefinition -Definition $d)
+        $refused = @($f | Where-Object { $_.Contains('stationTimeoutRedispatchLimit must be a non-negative JSON integer') }).Count
+        @{ Ok = ($case.Ok ? ($f.Count -eq 0) : ($f.Count -eq 1 -and $refused -eq 1)); Detail = "failures: $($f -join ' | ')" }
+    }.GetNewClosure()
+}
 Invoke-SourceCase 'clearance switch: a case twin (ClearanceToWaitingPointEnabled) is refused' {
     $d = Copy-Definition $baseline
     $d['journeyRuntime']['ClearanceToWaitingPointEnabled'] = $true
