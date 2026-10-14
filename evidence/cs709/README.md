@@ -61,3 +61,18 @@ System.IO.IOException : The process cannot access the file '...\WirePins\station
 | 判别恒真 | 任何取货停靠都答是 | 8 红 / 20 绿 | 两条开关打开时的机台 WirePin（`normal-journey`、`station-deadline`），以及 `StagingPickupNoCountdownTests` 六条用例的 `MachineRulesOn` 一格（验收 6 的机台回归） |
 
 `StagingRulesOff` 一格两次都绿：判别在开关之后，开关关着时变异碰不到行为——这正是「开关关着逐字节不变」要的。
+
+## 第 3 轮：独立审查返工（C11 放行，2026-10-14 22:19～22:25:00 CST）
+
+提交：`7e8b9380e`（只加用例：M1、L1、L2）→ `2dd42e8c9`（修 M1）→ `62eca60d1`（L5）。每一步改的是 `src/ControlServer.Host/Runtime/JourneyRuntimeEngine.cs` 这一个文件，跑完 `git checkout` 它，工作树 0 行改动。
+
+| 步 | 做法 | 结果 | 用例与原文 |
+| --- | --- | --- | --- |
+| 1 M1 取红 | 引擎文件退回 `7e8b9380e`（修复之前）的版本 | 红 1 / 绿 2 | `AFlatBatteryWithNothingLoadedReleasesOnlyAStagingStopToCharging(kind: StagingRulesOn)`：`Expected: Completed` / `Actual: AwaitingSublot`——读车时钟走了 1 毫秒，车放不出去 |
+| 2 head 全绿 | `62eca60d1` 编译，定向测试（第 1 轮那一组 + `ParallelInstanceEffectiveConfigurationTests` + 全部 `*WireParityTests`） | 404 / 0，退出码 0 | M1 的绿；L1、L2、L5 的新用例都在其中 |
+| 3 L1 变异 | 删掉 `TryReleaseLowBatteryStagingStopAsync` 里按整趟判「有已装或在装」的条件（锁外、锁内两处） | 红 1 / 绿 4 | `AFlatBatteryWaitingForTheSecondSameStationDemandDoesNotStrandTheFirstOnTheVehicle`：`Expected: AwaitingSublot` / `Actual: Completed`——车带着 A 被收尾 |
+| 4 L2 变异 | `DoorAlarmDueAtAsync` 的起点改成 `StationDepartureWaitStartedAt`（到站时刻） | 红 1 / 绿 2 | `ADoorLeftOpenAtTheStagingStationIsReportedByTheTimeSinceTheLoadCommand(kind: StagingRulesOn)` 第 7 秒那一判：`Expected: null` / `Actual: "STATION_TIMEOUT_DOOR_NOT_CLOSED"` |
+| 5 格式 | `dotnet format --verify-no-changes`，只含本票改动的 `.cs` | 只有集成分支原有的 7 处 | `JourneyRuntimeEngine.cs` 5678～5684、6002，与第 2 轮相同 |
+
+L5 的部署读回：`19-deploy-control-server-parallel.ps1` 整行比对的 `EFFECTIVE_CONFIGURATION=` 只含 `allowedWorkTypes`、`allowedDispatchZones`、`mesIngestBaseUrl`；
+`ParallelInstance.psm1` 读事件时只取它认识的键，新加的两个键不影响核对。
