@@ -47,6 +47,12 @@ public static class IdleReturnReasons
     /// <summary>路网引擎没开，或这张图的快照不可用：<c>RouteCost</c> 可达无从核验，不猜（<c>REQ-0293</c>）。</summary>
     public const string RouteGraphUnavailable = "IDLE_RETURN_ROUTE_GRAPH_UNAVAILABLE";
 
+    /// <summary>
+    /// 车停在 <c>STAGING_TO_WIRE</c> 生效绑定的固定起点（派工待送点）上，而它在车队配置里只做 <c>STAGING_TO_WIRE</c>：
+    /// 它就该在待送点等下一条待送需求，不去等待点（control-server#712）。电量低于强制充电线时照常进充电分配，与这一条无关。
+    /// </summary>
+    public const string HeldAtStagingOrigin = "IDLE_RETURN_HELD_AT_STAGING_ORIGIN";
+
     /// <summary>候选等待点逐个核验后一个都不剩：不接这辆车、被占、不可达……逐点原因写在日志里。</summary>
     public const string NoWaitingPointAvailable = "IDLE_RETURN_NO_WAITING_POINT_AVAILABLE";
 
