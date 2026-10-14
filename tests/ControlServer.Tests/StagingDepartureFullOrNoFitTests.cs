@@ -449,7 +449,7 @@ public sealed class StagingDepartureFullOrNoFitTests
 
         await Batch7StopDrivenAdvanceDriver.AnswerDepartureSafetyAsync(fixture, Demand, Batch7StopDrivenAdvanceDriver.FirstSafetyResultId);
         Assert.Null((await fixture.RuntimeAsync()).CargoHoldingStartedAt);
-        await Batch7StopDrivenAdvanceDriver.ArriveAtCurrentStopAsync(fixture, Demand, "TO_PICKUP");
+        await Batch7StopDrivenAdvanceDriver.ArriveAtCurrentStopAsync(fixture, Demand, "TO_GATE");
         await Batch7StopDrivenAdvanceDriver.EnterSublotAsync(
             fixture, Demand, machineSublot, Batch7StopDrivenAdvanceDriver.SecondSubmissionId);
         await Batch7StopDrivenAdvanceDriver.SettleLoadAsync(fixture, machineDemand);
@@ -500,6 +500,8 @@ public sealed class StagingDepartureFullOrNoFitTests
 
         fixture.Catalog.Set(StagingDemand(fixture), StagingDemand(fixture, SecondDemand, SecondSublot, Now.AddMinutes(-9)));
         await AppendStagingDemandAsync(fixture, SecondDemand, SecondSublot);
+        // 那个辅助方法为它预留了两个仓（5、6），箱数却给 2（每篮 4 箱，只算一篮）：录入时按箱数重算出 1 篮，与预留不符被拒。这里按两篮给。
+        fixture.BoxCounts.Set(SecondSublot, 8);
         await CloseCorrectionAsync(fixture, correctionId);
         RecordRound(fixture, Waiting(StopKind.StagingRulesOn, "W-1", "FRONT", DispatchReasonCodes.SlotGroupOccupiedByOwnCargo));
         await TickAsync(fixture);
@@ -508,7 +510,7 @@ public sealed class StagingDepartureFullOrNoFitTests
 
         await Batch7StopDrivenAdvanceDriver.AnswerDepartureSafetyAsync(fixture, Demand, Batch7StopDrivenAdvanceDriver.FirstSafetyResultId);
         AssertNeverBlocked(await fixture.RuntimeAsync());
-        await Batch7StopDrivenAdvanceDriver.ArriveAtCurrentStopAsync(fixture, Demand, "TO_PICKUP");
+        await Batch7StopDrivenAdvanceDriver.ArriveAtCurrentStopAsync(fixture, Demand, "TO_GATE");
         AssertNeverBlocked(await fixture.RuntimeAsync());
         await Batch7StopDrivenAdvanceDriver.EnterSublotAsync(
             fixture, Demand, SecondSublot, Batch7StopDrivenAdvanceDriver.SecondSubmissionId);
