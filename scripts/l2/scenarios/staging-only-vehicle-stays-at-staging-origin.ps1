@@ -12,7 +12,7 @@ Completed / CANCELLED_BY_OPERATOR，V 停在 305，305 的单占仍是 V 的（�
 
 **二、车留在原地（本票的判据）**：V 离开等待点之后，它原来那个点被离点证据放掉，空着、开得过去。V 在 305 上停十几轮：
 它没有取得 IDLE_RETURN 用途占有，没有新的开往等待点的单。「没有」是一个要持续成立的状态，用 Wait-L2ConditionOrLast 另等
-一段，最后断言仍然没有。
+一段，最后断言仍然没有；空闲返回看板上 V 的结论码就是本票的 IDLE_RETURN_HELD_AT_STAGING_ORIGIN（L2-SIS-06）。
 
 **三、新需求原地受理**：再来一条待送需求，派给已在待送点的 V（已在固定起点优先）；开往 305 的取货单在 V 停在 305 时建出，
 RIoT 报单完成后到站，录入请求发到 V 的车上——清单可扫。**假 RIoT 照场景的指令把单置为完成，所以这一段只证明本服务端这一侧
@@ -196,6 +196,20 @@ $assertions.Add('L2-SIS-03', 'V 在 305 停了十几轮：没有 IDLE_RETURN 用
         [string]$stillHeld.VehicleKey -eq $keyV),
     "no claim / $idleIntentsBefore intents / at $staging / held by $keyV",
     "claim $(${claimed}?.JourneyId) / $idleIntentsAfter intents / at $(Get-Position $keyV) / held by $(${stillHeld}?.VehicleKey)")
+
+# 看板上 V 这一轮的空闲返回结论就是本票的码（审查 L2）：上面三条只断言「没发生」，这一条直接读规则答了什么。
+$agvIdV = $keyV -eq [string]$Context.VehicleKey ? [string]$Context.AgvId : 'AGV-L2-002'
+$idleReturnsEndpoint = "http://127.0.0.1:$($Context.HealthPort)/api/dashboard/idle-returns"
+$verdictV = Wait-L2Condition -Description "the idle-return card shows V's verdict as held at the staging origin" -Journal $journal `
+    -Criterion 'dashboard-verdict-held-at-staging' -TimeoutSeconds 30 `
+    -Probe {
+        $fact = (Invoke-WebRequest -Uri $idleReturnsEndpoint -NoProxy -TimeoutSec 10).Content | ConvertFrom-Json -DateKind String
+        $row = @($fact.vehicles | Where-Object { [string]$_.agvId -eq $agvIdV }) | Select-Object -First 1
+        $row ? [string]$row.verdict.reasonCode : $null
+    } `
+    -Until { param($v) $v -eq 'IDLE_RETURN_HELD_AT_STAGING_ORIGIN' }
+$assertions.Add('L2-SIS-06', '空闲返回看板上 V 这一轮的结论码是 IDLE_RETURN_HELD_AT_STAGING_ORIGIN',
+    ($verdictV -eq 'IDLE_RETURN_HELD_AT_STAGING_ORIGIN'), 'IDLE_RETURN_HELD_AT_STAGING_ORIGIN', "$verdictV")
 
 # --- 三、新需求原地受理 ---------------------------------------------------------------------------------------------
 
