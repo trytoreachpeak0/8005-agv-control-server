@@ -4575,8 +4575,6 @@ public sealed partial class JourneyRuntimeEngine(
             vehicleFull = await JudgeVehicleFullAsync(runtime, cancellationToken).ConfigureAwait(false);
         }
 
-        // 「有一批在执行」看阶段；但阶段前移晚于「这一批已闭环」那次保存，刚落定那一轮阶段还停在 AwaitingLoadResult，由调用方说这一批
-        // 已经闭环（loadBatchJustClosed，control-server#290）。
         LoadingPhaseMachine.Facts facts = new(
             runtime.LoadingPhaseState,
             runtime.LoadingClosedReason,
@@ -4585,9 +4583,16 @@ public sealed partial class JourneyRuntimeEngine(
             lastLoadingStopDeparted,
             vehicleFull,
             HoldingDeadlinePassed: HoldingDeadlinePassed(runtime, now),
-            LoadBatchInProgress: !loadBatchJustClosed && runtime.Stage == JourneyRuntimeStage.AwaitingLoadResult,
+            LoadBatchInProgress: runtime.Stage == JourneyRuntimeStage.AwaitingLoadResult,
             DepartureUnderWay: departingFrom is null && runtime.Stage == JourneyRuntimeStage.AwaitingDepartureSafety,
             YieldTriggered: YieldTriggeredBeforeHoldingDeadline(runtime));
+        // 「有一批在执行」按落库的阶段判，看板认同一句（Batch7CargoHoldingDashboardTests.TheLoadBatchInProgressPremiseIsTheEnginesOwn 逐字核对上面那一行）。
+        // 唯一的例外只活在一轮之内：装货刚落定、阶段还没前移，调用方说这一批已经闭环（control-server#290）。这一轮里装货阶段随即关闭并落库，
+        // 看板读到的永远是关闭之后的样子，所以它那句前提照旧成立。
+        if (loadBatchJustClosed)
+        {
+            facts = facts with { LoadBatchInProgress = false };
+        }
         LoadingPhaseMachine.Decision decision = LoadingPhaseMachine.Decide(facts);
 
         // 让站的补判（批次7-08，control-server#213）。触发本来由承诺方在它的事务里写（受理、追加、离站三处，StationYield），
@@ -4723,11 +4728,10 @@ public sealed partial class JourneyRuntimeEngine(
     /// </para>
     /// <para>
     /// <b>释放服务的拒绝规则（<see cref="DemandReleaseRules.Decide"/>）在这里逐条判过</b>：
-    /// 「当前下一站、车已到站」不释放，理由是清单号：删掉当前下一站会让下一个停靠算出车已收到的号、发不同内容。截断不删当前停靠
-    /// （<c>currentStopMayGo: false</c>），而释放的都是没做完的，本停靠「已做完」的条数不降，当前号的算式不会低于车已收到的那一版；
-    /// 空清单（<see cref="StopEndWorklist.StageAfterReleaseAsync"/>）自己取「算式」与「已发最高号 + 1」中大的那个，并让本停靠多占到那一版，
-    /// 下一站首号在它之上。所以这一格的理由在这里不成立，持货期限是硬期限，照截。（变异自检：另给本停靠补版数的写法删掉后用例全绿，
-    /// 证明它是多余的，已删。）「当前下一站、车在路上、旅程还有别的需求」
+    /// 「当前下一站、车已到站」不释放，理由是清单号：释放让这个停靠的归属少了，按版数算的号与范围都会往回缩。持货期限是硬期限，这一格不能拒，
+    /// 改为放回几条就给这个停靠补几版（<see cref="JourneyStopRow.WorklistRefills"/>），再发那张空清单（<see cref="StopEndWorklist.StageAfterReleaseAsync"/>）。
+    /// 空清单自己取「算式」与「已发最高号 + 1」中大的那个，所以不补也不会撞号；补版数守的是另一件事：退役本站较早各版按本停靠的版数范围数，
+    /// 不补就漏掉车已收到的那一版（审查返工第 2 轮，C11 转 cs#703 实测；第 1 轮变异里删掉它没红，是因为那时没有「本站一条都没做完」的用例）。「当前下一站、车在路上、旅程还有别的需求」
     /// 不释放，理由是取消那张单之后没人把车派往下一站；这里不取消那张单——当前下一站在路上不可删（REQ-0197），车照样开到那里、到了没有作业、
     /// 按离站等待离开，所以这一格不适用。「锚需求」见上一段。取货停靠不是当前下一站的，按构造还没有 RIoT 订单（追加的停靠到车离开上一站才建单）。
     /// </para>
@@ -4796,6 +4800,15 @@ public sealed partial class JourneyRuntimeEngine(
                     cancellationToken)
                 .ConfigureAwait(false);
             await DemandReleaseService.StageReleasedMembershipAsync(dbContext, membership, now, cancellationToken).ConfigureAwait(false);
+        }
+        if (releasedFromCurrentStop > 0)
+        {
+            // 版数守恒：这个停靠的归属少了几条，就补上几版。空清单取号时自己会取「已发最高号 + 1」，但退役本站较早那几版清单按的是
+            // 本停靠的版数范围（首号到算式那一号）：不补，本站一条都还没做完时算式不动，车已收到的那一版落在范围外、不退役，重连后被补发、
+            // 号比空清单低，车判回退断会话（TruncatingTheStopTheVehicleStandsAtRetiresEveryEarlierWorklistAndAReconnectReplaysOnlyTheEmptyOne
+            // 去掉这一段时红在这里）。收尾那一支同样按这个范围算迟到录入的地址，所以两支都补。
+            (await TrackedStopAsync(currentStopId, cancellationToken).ConfigureAwait(false)).WorklistRefills +=
+                releasedFromCurrentStop;
         }
         if (last)
         {
