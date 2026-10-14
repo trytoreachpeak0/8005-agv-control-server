@@ -57,7 +57,7 @@ System.IO.IOException : The process cannot access the file '...\WirePins\station
 
 | 变异 | 改法 | 结果 | 红的用例 |
 | --- | --- | --- | --- |
-| 判别恒假 | 取货角色判断后 `|| true` 直接答否 | 6 红 / 22 绿 | `StagingPickupNoCountdownTests` 六条用例的 `StagingRulesOn` 一格：期限下发（验收 1）、一小时无人扫码（验收 2）、装一篮一小时（验收 3）、仓门告警（验收 4）、缺电放回（验收 5）、看板（验收 7） |
+| 判别恒假 | 取货角色判断后再或上恒真，一律答否 | 6 红 / 22 绿 | `StagingPickupNoCountdownTests` 六条用例的 `StagingRulesOn` 一格：期限下发（验收 1）、一小时无人扫码（验收 2）、装一篮一小时（验收 3）、仓门告警（验收 4）、缺电放回（验收 5）、看板（验收 7） |
 | 判别恒真 | 任何取货停靠都答是 | 8 红 / 20 绿 | 两条开关打开时的机台 WirePin（`normal-journey`、`station-deadline`），以及 `StagingPickupNoCountdownTests` 六条用例的 `MachineRulesOn` 一格（验收 6 的机台回归） |
 
 `StagingRulesOff` 一格两次都绿：判别在开关之后，开关关着时变异碰不到行为——这正是「开关关着逐字节不变」要的。
