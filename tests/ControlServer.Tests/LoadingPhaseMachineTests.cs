@@ -129,7 +129,7 @@ public sealed class LoadingPhaseMachineTests
     /// <remarks>
     /// <para>
     /// 批次7-07 审查 S1 把这一格单列为「现行为」：那时到期之后车照样开往那个停靠去装，车上收到的却是「已结束」。cs#290 按
-    /// ADR-cross-0057 实施决定（三）截断了待装——引擎在关闭之后把没开始装的以 <c>CANCELLED_BY_STOP_COMPLETE</c> 终结、留空的停靠删掉
+    /// ADR-cross-0057 实施决定（三）截断了待装——引擎在关闭之后把没开始装的从旅程上释放回积压、留空的停靠删掉
     /// （<c>CargoHoldingTruncationTests</c>），这一格于是就是规则：不能改成 LOADING 直到装完，那等于持货不受期限约束。
     /// </para>
     /// </remarks>

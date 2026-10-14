@@ -29,7 +29,7 @@ namespace ControlServer.Host.Runtime;
 /// <c>CLOSED</c>／<c>PLANNED_LOADING_COMPLETE</c>——与批次 7 之前完全相同，持货期限也不适用。</item>
 /// <item>持货期限已过、而且没有 <c>LoadBatch</c> 正在执行：<c>CLOSED</c>／<c>CARGO_HOLDING_TIMEOUT</c>。
 /// 有一批在执行就等它安全闭环（ADR-cross-0057「到期不打断正在进行的仓位操作」），下一轮再判。
-/// <b>到期时别处还有没开始装的需求，照样关闭</b>：它们随后由引擎以 <c>CANCELLED_BY_STOP_COMPLETE</c> 终结、留空的停靠从计划里删掉
+/// <b>到期时别处还有没开始装的需求，照样关闭</b>：它们随后由引擎从旅程上释放、退回积压等改派，留空的停靠从计划里删掉
 /// （ADR-cross-0057 实施决定（三），control-server#290），车上看到的「已结束」与它接下来做的事一致。截断不在这里——这里不做 I/O。</item>
 /// <item>离站安全核验已经发出而原来是 <c>VEHICLE_FULL</c>：保持 <c>VEHICLE_FULL</c>。核验发出之后车就要动了，
 /// 这时再判回等单，要么收回一个已经发出的核验，要么让车带着一个「等单」的状态开走——两样都不对。追加仍然接，

@@ -197,8 +197,9 @@ public sealed class PickupStopTermination(ControlServerDbContext dbContext, Plan
     /// 不写抑制。今天那条路径不经这里的 <c>StageAsync</c>，但不能靠这个：哪天它改走这里，这个集合就是唯一的闸。
     /// </para>
     /// <para>
-    /// <c>CANCELLED_BY_STOP_COMPLETE</c> 放在这里时还没有生产者，为的是以后谁产生它谁就自动抑制。control-server#290 起持货期限截断产生它
-    /// （<c>JourneyRuntimeEngine.TruncateAtCargoHoldingDeadlineAsync</c>）：被截的需求货留在原位，同一业务键以后不再派车。
+    /// <c>CANCELLED_BY_STOP_COMPLETE</c> 今天在 <c>src/</c> 里没有生产者，放在这里是为了以后谁产生它谁就自动抑制，
+    /// 不必再有人记得回到这里加一行。持货期限截断（control-server#290）<b>不</b>产生它：用户 2026-10-14 定截掉的需求放回待派队列，
+    /// 走释放改派，不终结、不抑制（<c>JourneyRuntimeEngine.TruncateAtCargoHoldingDeadlineAsync</c>）。
     /// </para>
     /// </remarks>
     public static IReadOnlySet<string> KeySuppressingReasonCodes { get; } = new HashSet<string>(StringComparer.Ordinal)

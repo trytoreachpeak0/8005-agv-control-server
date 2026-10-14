@@ -15,7 +15,7 @@ namespace ControlServer.Tests;
 /// <para>
 /// 对照表来自 <c>8005-agv-program</c> PR #163 正文第 3 项：九条来路、七个原因码（正常卸完为 null）、七个取值。两条来路共用
 /// <c>STATION_DEADLINE_EXPIRED</c>（期限到期与确定的装货失败都以 <c>CANCELLED_BY_STATION_TIMEOUT</c> 终结），两种取消共用
-/// <c>LOAD_CANCELLED</c>。control-server#290 加了第十条来路：持货期限截断，<c>CANCELLED_BY_STOP_COMPLETE</c>，也说
+/// <c>LOAD_CANCELLED</c>。control-server#290 加了第十条来路：持货期限截断（需求释放回积压，用自己的码），也说
 /// <c>STATION_DEADLINE_EXPIRED</c>（理由在 <see cref="StopEndedReasons"/> 的注释里）。
 /// </para>
 /// <para>
@@ -31,7 +31,7 @@ public sealed class StopEndedReasonsTests
         { null, "COMPLETED" },
         { "CANCELLED_BY_STATION_TIMEOUT", "STATION_DEADLINE_EXPIRED" },
         // 持货期限截断（control-server#290）：协议里没有「持货超时」，车看到的是一个期限到了、本站结束。
-        { JourneyRuntimeEngine.StopCompleteCancellationReason, "STATION_DEADLINE_EXPIRED" },
+        { JourneyRuntimeEngine.CargoHoldingTruncationReason, "STATION_DEADLINE_EXPIRED" },
         { "CANCELLED_BY_OPERATOR", "LOAD_CANCELLED" },
         { "CANCELLED_BY_LOAD_COMPENSATION", "LOAD_COMPENSATED" },
         { "TERMINATED_BY_FAULT_CARGO_HANDOFF", "CARGO_HANDED_OFF" },
