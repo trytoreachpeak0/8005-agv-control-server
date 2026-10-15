@@ -90,7 +90,7 @@ public sealed class OnboardMessageProcessorTests
             Assert.Equal(
                 "PROTOCOL_RELEASE_IDENTITY_MISMATCH",
                 payload.GetProperty("problem").GetProperty("reasonCode").GetString());
-            Assert.Equal(4, payload.GetProperty("expectedProtocolVersion").GetInt32());
+            Assert.Equal(ProtocolCandidateIdentity.ProtocolVersion, payload.GetProperty("expectedProtocolVersion").GetInt32());
             Assert.Equal(
                 ProtocolCandidateIdentity.ManifestSha256,
                 payload.GetProperty("expectedProtocolReleaseIdentity").GetProperty("manifestSha256").GetString());

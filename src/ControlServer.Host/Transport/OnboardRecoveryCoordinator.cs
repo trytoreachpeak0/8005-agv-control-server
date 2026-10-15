@@ -802,18 +802,35 @@ public sealed class OnboardRecoveryCoordinator(
         }
         bool last = await DemandJourneyLookup.IsLastOpenDemandAsync(dbContext, runtime.JourneyId, demandId, cancellationToken)
             .ConfigureAwait(false);
+        // 取消的是锚需求而旅程上还有别的：按一篮没装处理（C11 在 control-server#713 上的裁定），旅程原地收尾，别的需求与锚一起放回。
+        // 锚在第一个停靠、途中追加一律新开停靠，所以锚还在装时别处不会已装；真有已装或在装的（构造上到不了，cs#714 会改变这个前提），
+        // 不放回、照旧终结——放回锚会让旅程开着时锚被改派到别的车。
+        List<JourneyDemandRow> alongside = [];
         if (!last && string.Equals(runtime.DemandId, demandId, StringComparison.Ordinal))
         {
-            return false;
+            alongside = await dbContext.Set<JourneyDemandRow>()
+                .Where(row => row.JourneyId == runtime.JourneyId && row.RemovedAt == null && row.DemandId != demandId)
+                .ToListAsync(cancellationToken).ConfigureAwait(false);
+            if (alongside.Any(row => row.Status != JourneyDemandStatuses.PendingLoad))
+            {
+                return false;
+            }
+            last = true;
         }
 
         DateTimeOffset now = timeProvider.GetUtcNow();
         string? sublotRequestMessageId = stops.CurrentSublotRequestMessageIdOrNone(runtime.WorklistRevision);
         await Runtime.Release.DemandReleaseService.StageReleasedMembershipAsync(dbContext, membership, now, cancellationToken)
             .ConfigureAwait(false);
-        // 版数守恒，与出发、持货截断同一个理由：这个停靠的归属少了一条就补一版。
+        foreach (JourneyDemandRow other in alongside)
+        {
+            await Runtime.Release.DemandReleaseService.StageReleasedMembershipAsync(dbContext, other, now, cancellationToken)
+                .ConfigureAwait(false);
+        }
+        // 版数守恒，与出发、持货截断同一个理由：这个停靠的归属少了几条就补几版。
         (await dbContext.Set<JourneyStopRow>().SingleAsync(row => row.StopId == stops.Current.StopId, cancellationToken)
-            .ConfigureAwait(false)).WorklistRefills += 1;
+            .ConfigureAwait(false)).WorklistRefills +=
+            1 + alongside.Count(row => string.Equals(row.PickupStopId, stops.Current.StopId, StringComparison.Ordinal));
         if (last)
         {
             await new PickupStopTermination(dbContext).StageJourneyClosureAsync(

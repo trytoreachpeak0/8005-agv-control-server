@@ -111,6 +111,50 @@ public sealed class StagingLoadCancellationTests
     }
 
     /// <summary>
+    /// C11 的裁定（control-server#713 第 4 条）：待送点上锚需求装货中取消、旅程后面还有一条没开始装的，按一篮没装处理——旅程原地收尾，
+    /// 锚与那一条一起放回待派、不抑制。只放回锚不行：旅程开着时锚会被改派到别的车（<c>FaultedCargoBindings</c> 的前提）；裁定之前这一支
+    /// 照旧终结锚（取消并抑制），删掉收尾里对另一条的放回，这条红。
+    /// </summary>
+    [Fact]
+    [Trait("IntegrationSlice", "FP-IS-02")]
+    [Trait("IntegrationSlice", "FP-IS-11")]
+    public async Task CancellingTheAnchorDuringItsLoadClosesTheJourneyAndReleasesEverything()
+    {
+        await using RuntimeFixture fixture = await ArrangeAsync(StopKind.StagingRulesOn);
+        await AllowEnRouteAppendAsync(fixture);
+        await fixture.AdvanceToLoadResultAsync();
+        await AppendStagingDemandAsync(fixture, SecondDemand, SecondSublot);
+        fixture.Context.ChangeTracker.Clear();
+        string journeyId = (await fixture.RuntimeAsync()).JourneyId;
+        StationOperationRow load = await fixture.OperationAsync(SlotOperationType.Load);
+
+        await CancelDuringTheLoadAsync(fixture, Demand, load);
+        fixture.Context.ChangeTracker.Clear();
+        fixture.Clock.Advance(TimeSpan.FromSeconds(1));
+        await fixture.HearFromPeerAsync();
+        await fixture.Engine.ExecuteOnceAsync(Token);
+
+        // 放回之后那一轮派车可能把两条重新受理进新旅程，所以只看原来那一趟。
+        JourneyRuntimeRow journey = await fixture.Context.JourneyRuntimes.AsNoTracking()
+            .SingleAsync(row => row.JourneyId == journeyId, Token);
+        Assert.Equal(JourneyRuntimeStage.Completed, journey.Stage);
+        Assert.Equal(CurrentStopDepartures.LoadCancelledReleasedReason, journey.BlockReasonCode);
+        JourneyDemandRow[] memberships = await fixture.Context.Set<JourneyDemandRow>().AsNoTracking()
+            .Where(row => row.JourneyId == journeyId)
+            .ToArrayAsync(Token);
+        Assert.Equal(2, memberships.Length);
+        Assert.All(memberships, row => Assert.Equal(DemandJourneyLookup.ReleasedForRedispatchReason, row.RemovalReason));
+        Assert.Equal(
+            [DemandExecutionStatus.Accepted, DemandExecutionStatus.Accepted],
+            await fixture.Context.AcceptedDemands.AsNoTracking()
+                .Where(row => row.DemandId == Demand || row.DemandId == SecondDemand)
+                .Select(row => row.Status)
+                .ToArrayAsync(Token));
+        await SuppressionAssertions.AssertNothingSuppressedAsync(fixture.Context);
+        Assert.DoesNotContain(fixture.EngineLog.Entries, entry => entry.Level >= Microsoft.Extensions.Logging.LogLevel.Error);
+    }
+
+    /// <summary>
     /// 第 6 条（纵深防御，防旧版车载端）：待送点上扫码前取消一律拒绝，<c>ACTION_NOT_ALLOWED_IN_STATE</c>，什么都不变。机台与开关关着时照旧授权。
     /// </summary>
     [Theory]
