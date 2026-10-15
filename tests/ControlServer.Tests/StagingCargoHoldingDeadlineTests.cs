@@ -29,6 +29,10 @@ public sealed class StagingCargoHoldingDeadlineTests
 {
     private static readonly TimeSpan ShortHolding = TimeSpan.FromMinutes(2);
 
+    private const string ThirdDemand = "10000000-0000-4000-8000-000000000727";
+
+    private const string ThirdSublot = "SUBLOT-727";
+
     private static CancellationToken Token => TestContext.Current.CancellationToken;
 
     /// <summary>
@@ -127,6 +131,17 @@ public sealed class StagingCargoHoldingDeadlineTests
         DateTimeOffset appendedAt = fixture.Clock.GetUtcNow();
         await AppendStagingDemandAsync(fixture, SecondDemand, SecondSublot);
         await MoveToTheSecondStopAsync(fixture);
+        Assert.Equal(appendedAt, (await fixture.RuntimeAsync()).CargoHoldingStartedAt);
+
+        // 车已在第 2 停靠时再来一条：当前停靠不并，新开第 3 停靠（REQ-0196）。它同样以本站为取货站，期限再挪到它的追加时刻；到期时它也放回、
+        // 第 3 停靠删掉，计划因此变了——向量线序里那张计划就是这样来的。
+        fixture.Clock.Advance(TimeSpan.FromSeconds(30));
+        appendedAt = fixture.Clock.GetUtcNow();
+        await AppendStagingDemandAsync(fixture, ThirdDemand, ThirdSublot);
+        await TickAsync(fixture);
+        Assert.NotEqual(
+            (await MembershipAsync(fixture, SecondDemand)).PickupStopId,
+            (await MembershipAsync(fixture, ThirdDemand)).PickupStopId);
 
         DateTimeOffset moved = appendedAt + fixture.Options.CargoHoldingTimeout;
         Assert.Equal(appendedAt, (await fixture.RuntimeAsync()).CargoHoldingStartedAt);
@@ -139,22 +154,39 @@ public sealed class StagingCargoHoldingDeadlineTests
         Assert.NotEqual(LoadingPhaseStates.Closed, pastTheOldDeadline.LoadingPhaseState);
         Assert.Equal(JourneyRuntimeStage.AwaitingSublot, pastTheOldDeadline.Stage);
         Assert.Null((await MembershipAsync(fixture, SecondDemand)).RemovedAt);
+        Assert.Null((await MembershipAsync(fixture, ThirdDemand)).RemovedAt);
         int checksBefore = await Batch7CargoHoldingTests.DepartureChecksSentAsync(fixture);
+        await TickUntilAsync(fixture, moved - TimeSpan.FromSeconds(1));
+        int wireBefore = fixture.Peer.Lines.Count;
 
         await TickUntilAsync(fixture, moved + TimeSpan.FromSeconds(10));
+        // 线序（向量 CV-STAGING-CARGO-HOLDING-TIMEOUT）：关闭的业务快照、空清单、计划，最后才是离站核验——核验问的下一站要是截断之后的计划。
+        // 每一轮开头会补发车还没确认的旧行，所以只看每条报文第一次上线、且此前没发过的。
+        HashSet<string> seen = [.. fixture.Peer.Lines.Take(wireBefore).Select(line => Header(line).MessageId)];
+        string[] sent = [.. fixture.Peer.Lines.Skip(wireBefore).Select(Header)
+            .Where(header => seen.Add(header.MessageId))
+            .Select(header => header.MessageType)
+            .Where(type => type is "VehicleBusinessStateSnapshot" or "CurrentStopWorklistSnapshot" or "UpcomingStopPlanSnapshot" or "PreDepartureSafetyCheck")];
+        Assert.True(
+            sent.SequenceEqual(
+                ["VehicleBusinessStateSnapshot", "CurrentStopWorklistSnapshot", "UpcomingStopPlanSnapshot", "PreDepartureSafetyCheck"]),
+            string.Join(", ", sent));
         JourneyRuntimeRow expired = await fixture.RuntimeAsync();
         Assert.Equal(
             (LoadingPhaseStates.Closed, LoadingClosedReasons.CargoHoldingTimeout),
             (expired.LoadingPhaseState, expired.LoadingClosedReason));
-        JourneyDemandRow released = await MembershipAsync(fixture, SecondDemand);
-        Assert.NotNull(released.RemovedAt);
-        Assert.NotEqual(DemandJourneyLookup.ReleasedAtStationDeadlineReason, released.RemovalReason);
-        Assert.True(
-            await DemandJourneyLookup.ReleasedForRedispatch(fixture.Context).AnyAsync(row => row.DemandId == SecondDemand, Token),
-            "The unscanned demand is not waiting to be dispatched again.");
-        Assert.Equal(
-            DemandExecutionStatus.Accepted,
-            (await fixture.Context.AcceptedDemands.AsNoTracking().SingleAsync(row => row.DemandId == SecondDemand, Token)).Status);
+        foreach (string demandId in new[] { SecondDemand, ThirdDemand })
+        {
+            JourneyDemandRow released = await MembershipAsync(fixture, demandId);
+            Assert.NotNull(released.RemovedAt);
+            Assert.NotEqual(DemandJourneyLookup.ReleasedAtStationDeadlineReason, released.RemovalReason);
+            Assert.True(
+                await DemandJourneyLookup.ReleasedForRedispatch(fixture.Context).AnyAsync(row => row.DemandId == demandId, Token),
+                $"{demandId} is not waiting to be dispatched again.");
+            Assert.Equal(
+                DemandExecutionStatus.Accepted,
+                (await fixture.Context.AcceptedDemands.AsNoTracking().SingleAsync(row => row.DemandId == demandId, Token)).Status);
+        }
         await SuppressionAssertions.AssertNothingSuppressedAsync(fixture.Context);
         Assert.Equal(JourneyDemandStatuses.Loaded, (await MembershipAsync(fixture, Demand)).Status);
         Assert.Null((await MembershipAsync(fixture, Demand)).RemovedAt);
@@ -240,6 +272,13 @@ public sealed class StagingCargoHoldingDeadlineTests
             fixture.Context, membership.JourneyId, [demandId], currentStopMayGo: false, routing: null, Token);
         await fixture.Context.SaveChangesAsync(Token);
         fixture.Context.ChangeTracker.Clear();
+    }
+
+    private static (string MessageId, string MessageType) Header(byte[] line)
+    {
+        using JsonDocument document = JsonDocument.Parse(line);
+        return (document.RootElement.GetProperty("messageId").GetString()!,
+            document.RootElement.GetProperty("messageType").GetString()!);
     }
 
     private static Task<JourneyDemandRow> MembershipAsync(RuntimeFixture fixture, string demandId) =>
