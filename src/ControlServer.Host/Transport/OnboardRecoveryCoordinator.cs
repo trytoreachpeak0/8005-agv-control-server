@@ -803,7 +803,7 @@ public sealed class OnboardRecoveryCoordinator(
         bool last = await DemandJourneyLookup.IsLastOpenDemandAsync(dbContext, runtime.JourneyId, demandId, cancellationToken)
             .ConfigureAwait(false);
         // 取消的是锚需求而旅程上还有别的：按一篮没装处理（C11 在 control-server#713 上的裁定），旅程原地收尾，别的需求与锚一起放回。
-        // 锚在第一个停靠、途中追加一律新开停靠，所以锚还在装时别处不会已装；真有已装或在装的（构造上到不了，cs#714 会改变这个前提），
+        // 锚在第一个停靠、途中追加从不并入当前停靠（EnRouteAppendPlanner.MergeTargetAt），所以锚还在装时别处不会已装；真有已装或在装的（构造上到不了，cs#714 会改变这个前提），
         // 不放回、照旧终结——放回锚会让旅程开着时锚被改派到别的车。
         List<JourneyDemandRow> alongside = [];
         if (!last && string.Equals(runtime.DemandId, demandId, StringComparison.Ordinal))

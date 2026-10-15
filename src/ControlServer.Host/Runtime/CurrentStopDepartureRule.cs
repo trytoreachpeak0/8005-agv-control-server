@@ -20,7 +20,7 @@ namespace ControlServer.Host.Runtime;
 /// </list>
 /// <para>
 /// <b>锚需求没装、别处已装</b>也答 <c>ACTION_NOT_ALLOWED_IN_STATE</c>，纵深防御：今天在构造上到不了（初次派车只带锚一条、在第一个停靠；
-/// 途中追加一律新开停靠；待送点没有期限），而放回锚又让旅程开着时锚可以被改派到别的车（<c>FaultedCargoBindings</c> 的前提），换锚则会让
+/// 途中追加从不并入当前停靠（EnRouteAppendPlanner.MergeTargetAt）；待送点没有期限），而放回锚又让旅程开着时锚可以被改派到别的车（<c>FaultedCargoBindings</c> 的前提），换锚则会让
 /// 旅程派生的全部出站 messageId 换号。理由与 control-server#290 的持货截断跳过锚需求相同。
 /// </para>
 /// </remarks>
