@@ -1423,13 +1423,8 @@ public sealed class OnboardRecoveryCoordinator(
 
         JourneyStopCursor stops = await JourneyStopCursor.LoadAsync(dbContext, runtime, cancellationToken)
             .ConfigureAwait(false);
-        // 待送点取货停靠上不提供扫码前取消（control-server#713 票正文第 6 条，CP-0012；车载端 hmi#348 把按钮藏了，这里防旧版车载端）：
-        // 这条不装了由「出发」表达，没装的放回待派，不取消、不抑制。
-        if (await StagingPickupStops.CurrentStopIsStagingAsync(dbContext, runtime, _stagingRules, cancellationToken)
-                .ConfigureAwait(false))
-        {
-            return false;
-        }
+        // 待送点取货停靠与机台一样判（control-server#726，CP-0014 修订项二，取代 cs#713 第 6 条的拒绝）：落定时终结并抑制。
+        // 已装或在装（车上有它的货、或装货命令已发）的需求由下面的待装与装货命令两道挡下（hmi#353 审查 M2）。
         if (stops.Current.StopRole != JourneyStopRoles.Pickup ||
             stops.OutstandingAtCurrentStop.SingleOrDefault(
                 item => item.Demand.DemandId == demandId) is not { } member ||
@@ -2152,8 +2147,10 @@ public sealed class OnboardRecoveryCoordinator(
         }
         PlanRevisionRouting? provenEmptyRouting = await ReadPlanRevisionRoutingAsync(cancellationToken).ConfigureAwait(false);
         // 待送点上装货中取消（control-server#713 票正文第 5 条，CP-0012）：扫错门不该让这条需求从 v2 永远消失，放回待派、不抑制。
+        // 扫码前取消（没有 attempt）在待送点也终结并抑制（control-server#726，CP-0014 修订项二）。
         // 机台取货与开关关着时照旧终结为 CANCELLED_BY_OPERATOR 并抑制。
         bool releasedAtStaging = messageType == "LoadCancellationResult" &&
+                                 workflow.SlotOperationAttemptId is not null &&
                                  await TryStageStagingCancellationReleaseAsync(
                                          runtime, commandedStops, workflow.DemandId!, provenEmptyRouting, cancellationToken)
                                      .ConfigureAwait(false);
