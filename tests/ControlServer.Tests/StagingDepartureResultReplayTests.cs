@@ -85,6 +85,31 @@ public sealed class StagingDepartureResultReplayTests
         Assert.NotNull((await rig.ResultRowAsync()).AcknowledgedAt);
     }
 
+    /// <summary>
+    /// 独立审查 P3：握手途中（恢复报告之前）到了一条重复的出发请求，它那条答复不在握手中途重放——答复只在 SessionReadiness 之后发
+    /// （hmi#349 联调第 1 条）。握手做完、补发那一轮把它送到。把「握手已完成才重放」那个条件删掉，这条红。
+    /// </summary>
+    [Fact]
+    [Trait("IntegrationSlice", "FP-IS-02")]
+    [Trait("IntegrationSlice", "FP-IS-11")]
+    public async Task ARepeatedRequestMidHandshakeDoesNotReplayTheResultBeforeReadiness()
+    {
+        await using Rig rig = await Rig.StartAsync();
+        long first = rig.State.SessionGeneration ?? throw new InvalidOperationException("The handshake assigned no generation.");
+        object request = await rig.StageResultAsync(first);
+
+        List<string> wire = await rig.BeginReconnectAsync();
+        await rig.SendDeferredAsync(CurrentStopDepartures.RequestType, request, wire: wire);
+        string[] midHandshake = [.. wire.Select(MessageTypeOf)];
+        Assert.DoesNotContain(CurrentStopDepartures.ResultType, midHandshake);
+
+        await rig.FinishHandshakeAsync(wire);
+        string[] types = [.. wire.Select(MessageTypeOf)];
+        int readiness = Array.LastIndexOf(types, "SessionReadiness");
+        int result = Array.IndexOf(types, CurrentStopDepartures.ResultType);
+        Assert.True(readiness >= 0 && result > readiness, "The departure result must follow SessionReadiness: " + string.Join(",", types));
+    }
+
     private static string MessageTypeOf(string line)
     {
         using JsonDocument document = JsonDocument.Parse(line);
@@ -191,13 +216,27 @@ public sealed class StagingDepartureResultReplayTests
         /// <summary>新连接、新代次、完整握手；返回线上按先后的每一行（应答与补发交织，像 TCP 服务端那样先写应答、再冲延后的补发）。</summary>
         public async Task<List<string>> ReconnectAsync()
         {
+            List<string> wire = await BeginReconnectAsync();
+            await FinishHandshakeAsync(wire);
+            return wire;
+        }
+
+        /// <summary>新连接、新代次，握手做到恢复报告之前。</summary>
+        public async Task<List<string>> BeginReconnectAsync()
+        {
             State = new OnboardConnectionState { DeferOutboundUntilResponseWritten = true };
             List<string> wire = [];
-            await HandshakeAsync(wire);
+            await BeginHandshakeAsync(wire);
             return wire;
         }
 
         private async Task HandshakeAsync(List<string> wire)
+        {
+            await BeginHandshakeAsync(wire);
+            await FinishHandshakeAsync(wire);
+        }
+
+        private async Task BeginHandshakeAsync(List<string> wire)
         {
             await SendDeferredAsync(
                 "SessionHello", new { protocolReleaseIdentity = ReleaseIdentity(), credentialProof = SessionCredential }, wire: wire);
@@ -228,6 +267,11 @@ public sealed class StagingDepartureResultReplayTests
                     reasonCodes = Array.Empty<string>()
                 }).ToArray()
             }, wire: wire);
+        }
+
+        /// <summary>恢复报告：握手的最后一步，应答里带 SessionReadiness，之后是补发。</summary>
+        public async Task FinishHandshakeAsync(List<string> wire)
+        {
             await SendDeferredAsync("RecoveryStateReport", new
             {
                 reportId = Guid.NewGuid().ToString("D"),
