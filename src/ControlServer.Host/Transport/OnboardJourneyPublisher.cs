@@ -305,6 +305,46 @@ public sealed class OnboardJourneyPublisher(
         return store.StageOutboundEnvelopeAsync(messageId, "SublotRejected", wire, createdAt, cancellationToken);
     }
 
+    /// <summary>
+    /// <c>CurrentStopDepartureResult</c>（协议 4.0.0 候选，control-server#713）只暂存进调用方那一次还没保存的改动：判定、放回与这条答复
+    /// 同一次提交，提交之后再 <see cref="SendPersistedAsync"/>。<c>correlationId</c> 按 manifest 为 null，答的是哪一次按键由
+    /// <c>departureRequestId</c> 说。已有这一行（同一个 id）返回 false，不覆盖：存下的结果就是原样重放的那一份。
+    /// </summary>
+    public static Task<bool> StageCurrentStopDepartureResultAsync(
+        WireToGateStore store,
+        string messageId,
+        string agvId,
+        long sessionGeneration,
+        string departureRequestId,
+        WireProblem? problem,
+        long currentWorklistRevision,
+        DateTimeOffset createdAt,
+        CancellationToken cancellationToken)
+    {
+        ArgumentNullException.ThrowIfNull(store);
+        ValidateUuid(messageId, nameof(messageId));
+        ArgumentException.ThrowIfNullOrWhiteSpace(agvId);
+        ArgumentException.ThrowIfNullOrWhiteSpace(departureRequestId);
+        ArgumentOutOfRangeException.ThrowIfNegative(sessionGeneration);
+        ArgumentOutOfRangeException.ThrowIfNegative(currentWorklistRevision);
+
+        string wire = SerializeWire(
+            "CurrentStopDepartureResult",
+            messageId,
+            correlationId: null,
+            agvId,
+            sessionGeneration,
+            createdAt,
+            new
+            {
+                departureRequestId,
+                outcome = problem is null ? "ACCEPTED" : "REJECTED",
+                problem,
+                currentWorklistRevision
+            });
+        return store.StageOutboundEnvelopeAsync(messageId, "CurrentStopDepartureResult", wire, createdAt, cancellationToken);
+    }
+
     public Task PublishSlotOperationCommandAsync(
         string messageId,
         string agvId,
@@ -724,6 +764,15 @@ public sealed class OnboardJourneyPublisher(
             timeProvider.GetUtcNow(),
             new { requestedSafetyStateVersion = (long?)null, reason });
         return peer.SendAsync(Encoding.UTF8.GetBytes(wire + "\n"), cancellationToken);
+    }
+
+    /// <summary>
+    /// 原样发一行已落库的报文，不管它是否已被确认：给「同号同内容的请求由重放存下的结果作答」用（control-server#713），那时车可能早已确认过它。
+    /// </summary>
+    public Task SendStoredLineAsync(ProtocolOutboxRow row, CancellationToken cancellationToken)
+    {
+        ArgumentNullException.ThrowIfNull(row);
+        return peer.SendAsync(Encoding.UTF8.GetBytes(row.PayloadJson + "\n"), cancellationToken);
     }
 
     public async Task SendPersistedAsync(string messageId, CancellationToken cancellationToken)

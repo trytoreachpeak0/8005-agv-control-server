@@ -185,13 +185,18 @@ public static class LoadingPhaseStates
     public const string Closed = "CLOSED";
 }
 
-/// <summary><c>loadingPhase.closedReason</c> 的四个取值；只在 <see cref="LoadingPhaseStates.Closed"/> 时非空。</summary>
+/// <summary>
+/// <c>loadingPhase.closedReason</c> 的六个取值；只在 <see cref="LoadingPhaseStates.Closed"/> 时非空。后两个是协议 v4 候选加的（control-server#713）：
+/// 待送点取货停靠上客户点了出发、或车缺电带货先去送，装货阶段以它们关闭。
+/// </summary>
 public static class LoadingClosedReasons
 {
     public const string VehicleFull = "VEHICLE_FULL";
     public const string CargoHoldingTimeout = "CARGO_HOLDING_TIMEOUT";
     public const string WaitingStationYield = "WAITING_STATION_YIELD";
     public const string PlannedLoadingComplete = "PLANNED_LOADING_COMPLETE";
+    public const string OperatorDeparted = "OPERATOR_DEPARTED";
+    public const string ChargingRequired = "CHARGING_REQUIRED";
 }
 
 public sealed record CurrentStopWorklistItem(

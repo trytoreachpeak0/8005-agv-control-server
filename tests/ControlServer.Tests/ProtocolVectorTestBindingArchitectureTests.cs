@@ -140,7 +140,9 @@ public sealed class ProtocolVectorTestBindingArchitectureTests
     /// candidate added six more to built slices -- one to <c>FP-IS-02</c>, five to
     /// <c>FP-IS-07</c> -- vendored by <c>8005-agv-control-server#382</c> and claimed by the tickets
     /// that build their behaviour: the manual slot-fault declaration by <c>#383</c> and the recovery hand-off, close
-    /// reason and door-unproven hold by <c>#385</c>; both have named tests for all their vectors now and pin none.
+    /// reason and door-unproven hold by <c>#385</c>; both have named tests for all their vectors now and pin none. The <c>4.0.0</c>
+    /// candidate added five to <c>FP-IS-02</c> and one to <c>FP-IS-13</c>, vendored and built by <c>#713</c> in one ticket, so none was
+    /// ever pinned on the integration branch.
     /// Such a pin must name its slice and the claiming ticket in exactly the
     /// form <see cref="ClaimedPinLabel"/> gives, and
     /// <see cref="EveryPinnedVectorBelongsOnlyToSlicesThisBatchDoesNotImplement"/> refuses every other
@@ -161,12 +163,6 @@ public sealed class ProtocolVectorTestBindingArchitectureTests
     private static readonly IReadOnlyDictionary<string, string> VectorsAwaitingTheirSlice =
         new SortedDictionary<string, string>(StringComparer.Ordinal)
         {
-            ["CV-CURRENT-STOP-DEPARTURE-ACCEPTED"] = ClaimedPinLabel("FP-IS-02", 713),
-            ["CV-CURRENT-STOP-DEPARTURE-DUPLICATE-REQUEST"] = ClaimedPinLabel("FP-IS-02", 713),
-            ["CV-CURRENT-STOP-DEPARTURE-NOT-ALLOWED"] = ClaimedPinLabel("FP-IS-02", 713),
-            ["CV-CURRENT-STOP-DEPARTURE-STALE-REVISION"] = ClaimedPinLabel("FP-IS-02", 713),
-            ["CV-CURRENT-STOP-DEPARTURE-STATION-MISMATCH"] = ClaimedPinLabel("FP-IS-02", 713),
-            ["CV-STAGING-CHARGING-REQUIRED-DEPARTURE-WITH-CARGO"] = ClaimedPinLabel("FP-IS-13", 713),
             ["CV-WORKLIST-SELECTION-ACCEPTED"] = "FP-IS-09, batch 11",
             ["CV-WORKLIST-SELECTION-STALE-REVISION"] = "FP-IS-09, batch 11"
         };

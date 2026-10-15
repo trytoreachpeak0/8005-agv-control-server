@@ -86,8 +86,6 @@ public sealed class ProtocolMessageSurfaceArchitectureTests
         {
             ["CapabilitySnapshotRequested"] =
                 "predates v2; the server refuses readiness with CAPABILITY_VERSION_GAP instead of asking again",
-            ["CurrentStopDepartureRequested"] = "FP-IS-02, claimed by 8005-agv-control-server#713",
-            ["CurrentStopDepartureResult"] = "FP-IS-02, claimed by 8005-agv-control-server#713",
             ["DemandSelectionRequested"] = "FP-IS-09, batch 11",
             ["DemandSelectionResult"] = "FP-IS-09, batch 11"
         };

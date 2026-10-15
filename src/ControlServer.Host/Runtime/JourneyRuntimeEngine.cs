@@ -796,6 +796,9 @@ public sealed partial class JourneyRuntimeEngine(
             }
         }
 
+        // 没有在途旅程的车上还没答的出发请求（control-server#713）：在派车之前答，免得这一轮刚派的旅程把它当成自己的。
+        await AnswerDepartureRequestsWithoutJourneyAsync(active, cancellationToken).ConfigureAwait(false);
+
         await ServeFreeVehiclesAsync(
                 currentMap, fixedStations, admissionPolicyDrifted, active, yielded, cancellationToken)
             .ConfigureAwait(false);
@@ -1248,10 +1251,14 @@ public sealed partial class JourneyRuntimeEngine(
         {
             return;
         }
+        // 车还没确认的出发答复（control-server#713）跟着这一轮补发：会话就绪才走到这里，所以不夹在握手中间。
+        HashSet<string> replayable = RuntimeMessageIds(runtime, stops);
+        replayable.UnionWith(await CurrentStopDepartures.PendingResultIdsAsync(dbContext, runtime.AgvId, cancellationToken)
+            .ConfigureAwait(false));
         await publisher.ReplayPendingForSessionAsync(
             runtime.AgvId,
             session.SessionGeneration,
-            RuntimeMessageIds(runtime, stops),
+            replayable,
             cancellationToken).ConfigureAwait(false);
         // 计划整体替换下发（ADR-cross-0053）：途中追加会在序列中间插进新停靠，而车上手里那张计划是插入之前的。
         // 补发在重放之后：重放先把没确认的旧行发完，新的那一版才不会被它顶回去。
@@ -1261,6 +1268,20 @@ public sealed partial class JourneyRuntimeEngine(
         // 各阶段之前：持货期限、两侧满没满、分区参数都可能在两轮之间变，而它们与车停在哪个阶段无关。各阶段里还有两处
         // 就地再判——装完进离站等待那一刻、为离站请求移动那一刻——因为那两处的事实在本轮里才刚变。
         bool holdingApplicable = await HoldingApplicableAsync(runtime.AgvId, cancellationToken).ConfigureAwait(false);
+        // 车载屏上的「出发」（control-server#713）：在装货阶段重判之前答，接受了的那一次放回、关闭装货阶段与答复同一次提交。
+        // 待送点缺电而车上有货：按自动出发处理（CP-0013），同一个做法。两种都让旅程变了，重新加载再往下走（或已收尾）。
+        if (await AnswerDepartureRequestsAsync(runtime, session, holdingApplicable, now, cancellationToken).ConfigureAwait(false) ||
+            await TryDepartLowBatteryStagingStopWithCargoAsync(runtime, stops, session, holdingApplicable, now, cancellationToken)
+                .ConfigureAwait(false))
+        {
+            if (runtime.Stage == JourneyRuntimeStage.Completed)
+            {
+                return;
+            }
+            stops = await JourneyStopCursor.LoadAsync(dbContext, runtime, cancellationToken).ConfigureAwait(false);
+            // 放回改了计划：答复与业务快照之后紧跟新的一版计划（CV-CURRENT-STOP-DEPARTURE-ACCEPTED 的顺序）。
+            await RefreshUpcomingStopPlanAsync(runtime, stops, session, cancellationToken).ConfigureAwait(false);
+        }
         if (runtime.Stage is not (JourneyRuntimeStage.Blocked or JourneyRuntimeStage.Completed))
         {
             await ReconcileLoadingPhaseAsync(
@@ -5900,23 +5921,43 @@ public sealed partial class JourneyRuntimeEngine(
     /// 时刻比较在内存里做：SQLite 不能在库里比较 <c>DateTimeOffset</c>。判据是 <c>AnOpenCorrectionLeftByAnotherJourneyDoesNotHoldTheDeparture</c>。
     /// </para>
     /// </remarks>
-    private async Task<bool> StationDepartureWaitIsOverAsync(
+    /// <summary>
+    /// 这趟旅程开的、关于还在车上的需求的纠错（见 <see cref="StationDepartureWaitIsOverAsync"/> 的注释：本车开的、不早于需求加入本旅程）。
+    /// </summary>
+    private async Task<RecoveryWorkflowRow[]> CorrectionsOnBoardAsync(
         JourneyRuntimeRow runtime,
         JourneyStopCursor stops,
-        DateTimeOffset now,
         CancellationToken cancellationToken)
     {
         Dictionary<string, DateTimeOffset> joinedAt = stops.AllDemands
             .Where(item => item.Membership.Status is JourneyDemandStatuses.Loading or JourneyDemandStatuses.Loaded)
             .ToDictionary(item => item.Demand.DemandId, item => item.Membership.AddedAt, StringComparer.Ordinal);
         string[] demandIds = [.. joinedAt.Keys];
-        RecoveryWorkflowRow[] corrections = [.. (await dbContext.RecoveryWorkflows.AsNoTracking()
+        return [.. (await dbContext.RecoveryWorkflows.AsNoTracking()
                 .Where(row => row.DemandId != null && demandIds.Contains(row.DemandId) &&
                               row.WorkflowType == "LOAD_CORRECTION" && row.AgvId == runtime.AgvId)
                 .ToArrayAsync(cancellationToken).ConfigureAwait(false))
             .Where(row => row.CreatedAt >= joinedAt[row.DemandId!])];
-        if (corrections.Any(row => row.State is not
-                (RecoveryWorkflowState.Reconciled or RecoveryWorkflowState.HistoricalOnly)))
+    }
+
+    private static bool IsOpenCorrection(RecoveryWorkflowRow row) =>
+        row.State is not (RecoveryWorkflowState.Reconciled or RecoveryWorkflowState.HistoricalOnly);
+
+    /// <summary>这趟旅程有一条纠错开着：离站等待被它挡住，出发请求也被它拒（control-server#713）。</summary>
+    private async Task<bool> OpenCorrectionOnBoardAsync(
+        JourneyRuntimeRow runtime,
+        JourneyStopCursor stops,
+        CancellationToken cancellationToken) =>
+        (await CorrectionsOnBoardAsync(runtime, stops, cancellationToken).ConfigureAwait(false)).Any(IsOpenCorrection);
+
+    private async Task<bool> StationDepartureWaitIsOverAsync(
+        JourneyRuntimeRow runtime,
+        JourneyStopCursor stops,
+        DateTimeOffset now,
+        CancellationToken cancellationToken)
+    {
+        RecoveryWorkflowRow[] corrections = await CorrectionsOnBoardAsync(runtime, stops, cancellationToken).ConfigureAwait(false);
+        if (corrections.Any(IsOpenCorrection))
         {
             if (runtime.BlockReasonCode != LoadCorrectionInProgressReason)
             {
@@ -5980,7 +6021,10 @@ public sealed partial class JourneyRuntimeEngine(
         // 不留纠错宽限（用户定，CP-0012 第五节②）。上面那道纠错闸照样在前：已经开着的纠错挡车，闭环之后这里再答，满足就立即走。
         if (IsStagingPickup(stops.Current))
         {
+            // 客户点了出发、或车缺电带货先走（control-server#713）：装货阶段以这两个原因关闭，同样立即结束等待。
             return runtime.LoadingPhaseState == LoadingPhaseStates.VehicleFull ||
+                   runtime.LoadingPhaseState == LoadingPhaseStates.Closed &&
+                   runtime.LoadingClosedReason is LoadingClosedReasons.OperatorDeparted or LoadingClosedReasons.ChargingRequired ||
                    EffectiveStationDepartureDeadline(runtime, stops) is { } early && now >= early;
         }
         return EffectiveStationDepartureDeadline(runtime, stops) is not { } deadline || now >= deadline;
@@ -6297,7 +6341,8 @@ public sealed partial class JourneyRuntimeEngine(
     /// 默认原因 <see cref="DemandJourneyLookup.ReleasedForRedispatchReason"/>），需求仍是 <c>Accepted</c>、不写抑制、等待年龄不重置、
     /// 不计站点超时放回的次数（control-server#703 只数 <see cref="DemandJourneyLookup.ReleasedAtStationDeadlineReason"/>），也不挂告警。
     /// 收尾与站点期限放回最后一条那一支相同（<see cref="StageStationDeadlineEndingAsync"/>）：车就停在这一站，不修订计划；三套占用一起放，
-    /// 公共站点的占用也在其中，下一轮充电分配看到的是一辆空闲车。车上收尾快照的 <c>stopEndedReason</c> 是 <c>DEMAND_RELEASED</c>。
+    /// 公共站点的占用也在其中，下一轮充电分配看到的是一辆空闲车。车上收尾快照的 <c>stopEndedReason</c> 是 <c>CHARGING_REQUIRED</c>
+    /// （协议 4.0.0 候选，control-server#713；v3 时是 <c>DEMAND_RELEASED</c>）。
     /// </para>
     /// <para>
     /// <b>电量按这趟旅程冻结的那一版充电策略判</b>（REQ-0282，<see cref="JourneyRuntimeRow.ChargingPolicyVersion"/>），与充电周期复查
@@ -6321,37 +6366,17 @@ public sealed partial class JourneyRuntimeEngine(
             stops.Demands.Any(item =>
                 item.Demand.Status != DemandExecutionStatus.Accepted ||
                 item.Membership.Status != JourneyDemandStatuses.PendingLoad) ||
-            stops.Demands.Count == 0 ||
-            runtime.ChargingPolicyVersion is not long policyVersion)
+            stops.Demands.Count == 0)
         {
             return false;
         }
 
-        RiotVehicleObservation vehicle;
-        try
-        {
-            vehicle = await vehicleFacts.ReadVehicleAsync(runtime.VehicleKey, cancellationToken).ConfigureAwait(false);
-        }
-        catch (Exception error) when (error is HttpRequestException or InvalidDataException or TaskCanceledException &&
-                                      !cancellationToken.IsCancellationRequested)
+        // 读法（读完再取时钟、过期不动、按冻结的那一版策略）在 MandatoryChargeBatteryAsync，与车上有货那一支（control-server#713）共用。
+        if (await MandatoryChargeBatteryAsync(runtime, cancellationToken).ConfigureAwait(false) is not { } low)
         {
             return false;
         }
-        // 读完之后另取一次时钟再比（独立审查 M1）：生产的 RIoT 网关在 HTTP 调用返回之后才给读数盖时间戳，读数恒比进门时取的 now 晚，
-        // 拿 now 比「读数在将来」就恒为真、车永远放不出去。与 ChargerOccupancy、充电周期复查同一个做法：先读车，读完再取时钟。
-        DateTimeOffset readAt = timeProvider.GetUtcNow();
-        if (vehicle.BatteryPercent is not int battery ||
-            vehicle.ObservedAt > readAt ||
-            readAt - vehicle.ObservedAt > runtimeOptions.MaximumEvidenceAge)
-        {
-            return false;
-        }
-        ChargingPolicyContent policy = (await chargingPolicy.ReadFrozenAsync(policyVersion, cancellationToken)
-            .ConfigureAwait(false)).Content;
-        if (!Dispatch.Criteria.BatteryEligibility.IsMandatoryCharge(battery, policy))
-        {
-            return false;
-        }
+        int battery = low.Percent;
         if (SlotDoorsNotProvenClosed(session))
         {
             return false;
@@ -6407,8 +6432,10 @@ public sealed partial class JourneyRuntimeEngine(
         // 版数守恒，与站点期限放回同一个理由：这个停靠的归属少了几条，就补上几版，退役本站较早各版清单才数得全。
         (await TrackedStopAsync(currentStopId, cancellationToken).ConfigureAwait(false)).WorklistRefills +=
             releasedFromCurrentStop;
+        // 收尾原因说 CHARGING_REQUIRED（协议 4.0.0 候选 wire-notes「Staging pickup stops」第 4 条，control-server#713）：v3 时这里说的是
+        // DEMAND_RELEASED，v4 规定待送点因缺电结束、放回需求时空清单不说它。需求本身仍按释放改派放回（归属与积压行的原因不变）。
         await new PickupStopTermination(dbContext).StageJourneyClosureAsync(
-            runtime, sublotRequestMessageId, DemandJourneyLookup.ReleasedForRedispatchReason, now, cancellationToken)
+            runtime, sublotRequestMessageId, CurrentStopDepartures.ChargingRequiredReason, now, cancellationToken)
             .ConfigureAwait(false);
         await dbContext.SaveChangesAsync(cancellationToken).ConfigureAwait(false);
         if (transaction is not null)
@@ -6420,7 +6447,7 @@ public sealed partial class JourneyRuntimeEngine(
         foreach (string demandId in leaving)
         {
             LogStagingLowBatteryReleasedDemand(
-                logger, runtime.AgvId, battery, policy.MandatoryChargeEntryThresholdPercent, demandId, null);
+                logger, runtime.AgvId, battery, low.EntryThreshold, demandId, null);
         }
         return true;
     }

@@ -751,6 +751,42 @@ public sealed class OnboardRecoveryCoordinator(
     public Task SendLateSublotRejectionAsync(JsonElement root, CancellationToken cancellationToken) =>
         LateSublotSubmission.SendAsync(publisher, dbContext, RequiredString(root, "messageId"), cancellationToken);
 
+    /// <summary>
+    /// 一条出发请求（control-server#713）的重复到了：它那条答复若已判过，原样再发一遍——wire-notes「同号同内容由重放存下的结果作答」，
+    /// <c>CV-CURRENT-STOP-DEPARTURE-DUPLICATE-REQUEST</c> 里车已经确认过那条答复之后仍要再收到一次。没判过就什么也不做，引擎会答。
+    /// </summary>
+    /// <remarks>
+    /// 发的永远是发件箱里存的那一行：代次没变就原样发；车已确认过而代次变了，先把确认撤掉、由补发改写代次并落库再发，车回的 <c>DurableAck</c>
+    /// 按它收到的那一行算哈希，与存下的那一行对得上（hmi#349 联调第 3 条）。
+    /// </remarks>
+    public async Task ReplayDepartureResultAsync(JsonElement root, CancellationToken cancellationToken)
+    {
+        string agvId = RequiredString(root, "agvId");
+        long sessionGeneration = root.GetProperty("sessionGeneration").GetInt64();
+        string departureRequestId = RequiredString(root.GetProperty("payload"), "departureRequestId");
+        string resultId = CurrentStopDepartures.ResultMessageId(departureRequestId);
+        ProtocolOutboxRow? row = await dbContext.ProtocolOutbox
+            .SingleOrDefaultAsync(item => item.MessageId == resultId, cancellationToken).ConfigureAwait(false);
+        if (row is null || row.FencedAt is not null)
+        {
+            return;
+        }
+        if (row.AcknowledgedAt is not null)
+        {
+            using JsonDocument stored = JsonDocument.Parse(row.PayloadJson);
+            if (stored.RootElement.GetProperty("sessionGeneration").GetInt64() == sessionGeneration)
+            {
+                await publisher.SendStoredLineAsync(row, cancellationToken).ConfigureAwait(false);
+                return;
+            }
+            row.AcknowledgedAt = null;
+            await dbContext.SaveChangesAsync(cancellationToken).ConfigureAwait(false);
+        }
+        await publisher.ReplayPendingForSessionAsync(
+            agvId, sessionGeneration, new HashSet<string>(StringComparer.Ordinal) { resultId }, cancellationToken)
+            .ConfigureAwait(false);
+    }
+
     public async Task ReplayPendingCommandsAsync(
         string agvId,
         long sessionGeneration,
@@ -779,8 +815,12 @@ public sealed class OnboardRecoveryCoordinator(
             .PendingCommandMessageIdsAsync(dbContext, configuration, agvId, cancellationToken).ConfigureAwait(false);
         // 扣车与放行的业务状态（control-server#385）：只补这辆车这条流上号最大的那一张，已经被更高号取代的不补。
         IReadOnlyList<string> doorHoldIds = await DoorHoldSnapshotIdsAsync(agvId, cancellationToken).ConfigureAwait(false);
+        // 车还没确认的出发答复（control-server#713，PENDING_RESULT_REPLAY）：这一轮补发在恢复报告的应答之后，也就是 SessionReadiness 之后，
+        // 不夹在握手中间（hmi#349 联调第 1 条）。
+        IReadOnlyList<string> departureResultIds = await CurrentStopDepartures
+            .PendingResultIdsAsync(dbContext, agvId, cancellationToken).ConfigureAwait(false);
         string[] pendingIds =
-            [.. commandIds, .. snapshotIds, .. activationIds, .. closureIds, .. declarationIds, .. doorHoldIds];
+            [.. commandIds, .. snapshotIds, .. activationIds, .. closureIds, .. declarationIds, .. doorHoldIds, .. departureResultIds];
         if (pendingIds.Length > 0)
             await publisher.ReplayPendingForSessionAsync(
                 agvId, sessionGeneration, pendingIds.ToHashSet(StringComparer.Ordinal), cancellationToken)
