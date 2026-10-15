@@ -237,6 +237,69 @@ public sealed class MachinePickupDepartureTests
     }
 
     /// <summary>
+    /// 机台这一支的重放（wire-notes 出发一节末两条，向量 DUPLICATE-REQUEST 的口径）：持货中受理、追加停靠已放回之后，同一个 <c>departureRequestId</c>
+    /// 同内容换 messageId 再来，答的是存下的那一行 <c>ACCEPTED</c> 原样重放，不再放回、不再关一次装货阶段、不再发核验；同号不同内容在入站以
+    /// <c>BUSINESS_ID_CONTENT_CONFLICT</c> 拒收，不进收件箱、不多一条答复。
+    /// </summary>
+    [Fact]
+    [Trait("IntegrationSlice", "FP-IS-02")]
+    [Trait("ProtocolVector", "CV-CURRENT-STOP-DEPARTURE-DUPLICATE-REQUEST")]
+    public async Task AMachineDepartureRequestRepeatedIsReplayedAndOtherContentIsRefused()
+    {
+        await using RuntimeFixture fixture = await Batch7CargoHoldingTests.HoldingFixtureAsync();
+        fixture.Options.StationDepartureWaitTimeout = TimeSpan.FromMinutes(5);
+        await Batch7CargoHoldingTests.LoadTheFirstDemandAsync(fixture);
+        fixture.BoxCounts.Set(Batch7StopDrivenAdvanceDriver.SecondSublot, 7);
+        await Batch7ThreeStopJourneyTests.AppendDemandAsync(
+            fixture, SecondDemandId, Batch7StopDrivenAdvanceDriver.SecondSublot, SecondPickupArea, SecondPickupStationRiotId);
+        await TickAndRunAsync(fixture);
+        await AcknowledgeEverythingSentAsync(fixture);
+
+        object payload = await DeparturePayloadAsync(fixture, Guid.NewGuid().ToString("D"), operationSessionId: null);
+        string departureRequestId = (string)payload.GetType().GetProperty("departureRequestId")!.GetValue(payload)!;
+        await fixture.AddInboxAsync(Guid.NewGuid().ToString("D"), CurrentStopDepartures.RequestType, payload);
+        await RunAsync(fixture);
+        ProtocolOutboxRow first = await ResultRowAsync(fixture, departureRequestId);
+        Assert.Contains("\"ACCEPTED\"", first.PayloadJson, StringComparison.Ordinal);
+        JourneyRuntimeRow accepted = await JourneyOfAsync(fixture, FirstDemandId);
+        string releasedAt = (await MembershipAsync(fixture, SecondDemandId)).RemovedAt!.Value.ToString("O");
+        int business = await CountAsync(fixture, "VehicleBusinessStateSnapshot");
+        int plans = await CountAsync(fixture, "UpcomingStopPlanSnapshot");
+        Assert.Equal(1, await Batch7CargoHoldingTests.DepartureChecksSentAsync(fixture));
+        await AcknowledgeEverythingSentAsync(fixture);
+
+        RecordingPeer wire = new();
+        await using (ControlServerDbContext connection = fixture.OpenConnectionContext())
+        {
+            string answer = await ProcessAsync(fixture, connection, wire, payload);
+            Assert.Contains("\"DurableAck\"", answer, StringComparison.Ordinal);
+        }
+        await RunAsync(fixture);
+        byte[] replayed = Assert.Single(wire.Lines);
+        Assert.Equal(first.PayloadJson, System.Text.Encoding.UTF8.GetString(replayed).TrimEnd('\n'));
+        Assert.Equal(1, await CountAsync(fixture, CurrentStopDepartures.ResultType));
+        Assert.Equal(releasedAt, (await MembershipAsync(fixture, SecondDemandId)).RemovedAt!.Value.ToString("O"));
+        JourneyRuntimeRow after = await JourneyOfAsync(fixture, FirstDemandId);
+        Assert.Equal(
+            (accepted.LoadingPhaseState, accepted.LoadingClosedReason, accepted.VehicleBusinessRevision),
+            (after.LoadingPhaseState, after.LoadingClosedReason, after.VehicleBusinessRevision));
+        Assert.Equal(business, await CountAsync(fixture, "VehicleBusinessStateSnapshot"));
+        Assert.Equal(plans, await CountAsync(fixture, "UpcomingStopPlanSnapshot"));
+        Assert.Equal(1, await Batch7CargoHoldingTests.DepartureChecksSentAsync(fixture));
+
+        int inboxBefore = await fixture.Context.ProtocolInbox.CountAsync(Token);
+        object conflicting = await DeparturePayloadAsync(fixture, departureRequestId, operationSessionId: null, operatorId: "OP-OTHER");
+        await using (ControlServerDbContext connection = fixture.OpenConnectionContext())
+        {
+            string answer = await ProcessAsync(fixture, connection, new RecordingPeer(), conflicting);
+            Assert.Contains("\"ProtocolProblem\"", answer, StringComparison.Ordinal);
+            Assert.Contains(ServerReasonCodes.BusinessIdContentConflict, answer, StringComparison.Ordinal);
+        }
+        Assert.Equal(inboxBefore, await fixture.Context.ProtocolInbox.CountAsync(Token));
+        Assert.Equal(1, await CountAsync(fixture, CurrentStopDepartures.ResultType));
+    }
+
+    /// <summary>
     /// 受理之后被门未证明扣车挡住（REQ-0364）：这一轮不发核验；扣车解除之后照样立即离站，不回头去等站点离站期限的剩余部分。车在扣车期间再点一次出发，
     /// 答「已在出发」。去掉「本站已由操作员结束」的落库（只在受理那一轮内存里记着），解除之后车要等满 5 分钟，这一条红。
     /// </summary>

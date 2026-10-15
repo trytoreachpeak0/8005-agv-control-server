@@ -870,7 +870,7 @@ public sealed class StagingDepartureRequestTests
         await fixture.Engine.ExecuteOnceAsync(Token);
     }
 
-    private static async Task<string> ProcessAsync(
+    internal static async Task<string> ProcessAsync(
         RuntimeFixture fixture,
         ControlServerDbContext connection,
         RecordingPeer wire,
