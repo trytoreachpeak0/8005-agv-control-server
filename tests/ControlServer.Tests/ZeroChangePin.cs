@@ -112,6 +112,13 @@ namespace ControlServer.Tests;
 /// （<c>fp/v2-impl@abd29c23</c>，与 <c>batch-p3/v3@9497b75b</c> 上的逐字相同）逐字相同，两份都成立。先算出该是多少：两份旧基线
 /// 各一行，应各一处，实数各一处；比对脚本另改一个无关字符验过会报红（<c>evidence/cs384/pins/</c>）。十份终结状态基线不受影响。
 /// </para>
+/// <para>
+/// <b>control-server#725 给十份终结状态基线的 <c>JourneyStops</c> 行各加了一列 <c>OperatorDepartedAt=NULL</c>，其余逐字未动。</b>那一票让机台取货停靠上
+/// 操作员按出发被受理时按停靠落库；这十条路径没人按出发，所以全为空。列插在 <c>WorklistRefills</c> 之后、<c>Status</c> 之前（<c>EnsureCreated</c>
+/// 按属性声明顺序建表）。这一列在集成分支上还不存在，所以同 cs#357 只能在本票分支上录。判据与 cs#339 同一个形状：把新基线里的
+/// <c>|OperatorDepartedAt=NULL</c> 删掉，与<b>集成分支上的</b>旧基线（<c>fp/v2-impl@9a32f3fb</c>）逐字相同，十四份全部成立。先算出该是多少：
+/// 十份各两行停靠，应有 20 处、分布在 10 份文件，四份看板基线 0 处；实数 20 处、10 份；比对脚本另改一个无关字符验过会报红（#732 正文）。
+/// </para>
 /// </remarks>
 internal static class ZeroChangePin
 {
