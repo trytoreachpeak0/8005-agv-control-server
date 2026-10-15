@@ -16,9 +16,9 @@ namespace ControlServer.Domain;
 /// <para>
 /// **This list and the identity beside it name the same candidate.** The 62 values below are
 /// <c>$defs/ErrorCode</c> of <c>schemas/common/types.schema.json</c> at protocol candidate manifest
-/// <c>d5e1a53f1fd61f105a890dc0267e1b0a9ac5ea49f713d2cf730b0f554df9db9e</c>
-/// (<c>status: CONTENT_SNAPSHOT</c>, profile <c>AGV_FULL_PRODUCT</c>, release <c>3.0.0</c>,
-/// <c>protocolVersion: 4</c>, registry <c>1.2.0</c>), and <see cref="ProtocolCandidateIdentity"/>
+/// <c>38a5d2d53e1e235f7f844d991c7258ed51910d542f235ebae6768455c5511fc4</c>
+/// (<c>status: CONTENT_SNAPSHOT</c>, profile <c>AGV_FULL_PRODUCT</c>, release <c>4.0.0</c>,
+/// <c>protocolVersion: 5</c>), and <see cref="ProtocolCandidateIdentity"/>
 /// names that same commit. The <c>2.0.0</c> candidate appended four:
 /// <c>SUBLOT_NOT_IN_DISPATCH_SCOPE</c>, <c>SUBLOT_BOX_COUNT_UNAVAILABLE</c> and
 /// <c>PACKAGE_CAPACITY_UNRESOLVED</c> (<c>8005-agv-program#93</c>), and <c>OPERATOR_TIMEOUT</c>
@@ -28,6 +28,7 @@ namespace ControlServer.Domain;
 /// <c>SLOT_DOOR_LOCK_UNPROVEN_AFTER_EMPTY</c>. Being in this list only means the server recognises
 /// the code; none of the four is emitted yet, and <c>ONBOARD_FATAL_FAULT_LATCHED</c> in particular
 /// is one the vehicle reports and the server must never forgive as a departure-safety reason.
+/// The <c>4.0.0</c> candidate (<c>8005-agv-control-server#713</c>) appended none.
 /// </para>
 /// <para>
 /// **Re-sync this list whenever the protocol's error surface moves**, which from here means either a
