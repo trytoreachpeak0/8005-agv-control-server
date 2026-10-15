@@ -3000,7 +3000,7 @@ public sealed partial class JourneyRuntimeEngine(
             session.SessionGeneration,
             JourneyPlanBuilder.Plan(
                 runtime, stops.Stops, stop, arrivedAtCurrent: true,
-                PlanRevisionAt(runtime.PlanRevision, stop, arrivedAtStop: true)),
+                PlanRevisionAt(runtime.PlanRevision, stop, arrivedAtStop: true), IsStagingPickupLeg),
             cancellationToken,
             keepAcknowledgedIgnoring: NothingButTheEnvelope).ConfigureAwait(false);
         await PublishEntryRequestAsync(
@@ -3385,6 +3385,8 @@ public sealed partial class JourneyRuntimeEngine(
             return;
         }
 
+        // 未就绪那条路径（control-server#314）不经过本轮推进开头的认待送点，所以这里自己认一次；开关关着时什么也不读。
+        await RecognizeStagingPickupStopsAsync(stops, cancellationToken).ConfigureAwait(false);
         // 车还在路上，所以当前停靠这条腿是 ACTIVE 而不是 ARRIVED。
         await publisher.PublishUpcomingStopPlanAsync(
             messageId,
@@ -3392,7 +3394,7 @@ public sealed partial class JourneyRuntimeEngine(
             session.SessionGeneration,
             JourneyPlanBuilder.Plan(
                 runtime, stops.Stops, stops.Current, arrivedAtCurrent: false,
-                PlanRevisionAt(runtime.PlanRevision, stops.Current, arrivedAtStop: false)),
+                PlanRevisionAt(runtime.PlanRevision, stops.Current, arrivedAtStop: false), IsStagingPickupLeg),
             cancellationToken).ConfigureAwait(false);
     }
 
@@ -3579,7 +3581,7 @@ public sealed partial class JourneyRuntimeEngine(
         }
 
         UpcomingStopPlanProjection current = JourneyPlanBuilder.Plan(
-            runtime, stops.Stops, stop, arrived, last.Revision);
+            runtime, stops.Stops, stop, arrived, last.Revision, IsStagingPickupLeg);
         if (PlanOnTheWireMatches(last.PayloadJson, current))
         {
             return;
@@ -3603,7 +3605,7 @@ public sealed partial class JourneyRuntimeEngine(
             ReSentPlanMessageId(runtime, stop, arrived),
             runtime.AgvId,
             session.SessionGeneration,
-            JourneyPlanBuilder.Plan(runtime, stops.Stops, stop, arrived, revision),
+            JourneyPlanBuilder.Plan(runtime, stops.Stops, stop, arrived, revision, IsStagingPickupLeg),
             cancellationToken).ConfigureAwait(false);
         await dbContext.SaveChangesAsync(cancellationToken).ConfigureAwait(false);
     }
@@ -3797,7 +3799,7 @@ public sealed partial class JourneyRuntimeEngine(
             session.SessionGeneration,
             JourneyPlanBuilder.Plan(
                 runtime, stops.Stops, stop, arrivedAtCurrent: true,
-                PlanRevisionAt(runtime.PlanRevision, stop, arrivedAtStop: true)),
+                PlanRevisionAt(runtime.PlanRevision, stop, arrivedAtStop: true), IsStagingPickupLeg),
             cancellationToken).ConfigureAwait(false);
         await PublishUnloadCommandAsync(runtime, stops, session, cancellationToken).ConfigureAwait(false);
     }
@@ -6086,6 +6088,13 @@ public sealed partial class JourneyRuntimeEngine(
     /// <summary>Whether <paramref name="stop"/> is a staging pickup under the staging rules (control-server#709).</summary>
     private bool IsStagingPickup(JourneyStopRow stop) =>
         runtimeOptions.StagingDepartureRules.Enabled && stagingPickupStops.Contains(stop.StopId);
+
+    /// <summary>
+    /// What a plan leg reads to say <c>publicStationFunction = WIRE_STAGING</c> (control-server#713); null while the staging
+    /// rules are off, so the plan stream is byte-for-byte what it was (the WirePin baselines say so).
+    /// </summary>
+    private Func<JourneyStopRow, bool>? IsStagingPickupLeg =>
+        runtimeOptions.StagingDepartureRules.Enabled ? IsStagingPickup : null;
 
     /// <summary>
     /// Whether the stop this journey stands at, or is heading for, is a staging pickup: there the cargo holding clock

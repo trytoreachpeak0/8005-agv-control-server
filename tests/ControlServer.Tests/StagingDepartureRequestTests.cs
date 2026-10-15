@@ -504,6 +504,58 @@ public sealed class StagingDepartureRequestTests
         }
     }
 
+    /// <summary>
+    /// 补充第 1、6 条（C11 10-15 定在本票补）：待送点规则开着时，待送点取货那条腿带 <c>publicStationFunction = WIRE_STAGING</c>，车载端优先
+    /// 按它认出待送点（hmi#349）；机台取货的腿与卸货腿为空。开关关着时什么都不填——计划流逐字不变由 WirePin 基线钉住，这里再钉一次字段本身。
+    /// 派往取货站那一版（车在路上）与到站那一版都算。
+    /// </summary>
+    [Theory]
+    [MemberData(nameof(Kinds), MemberType = typeof(StagingPickupNoCountdownTests))]
+    [Trait("IntegrationSlice", "FP-IS-02")]
+    [Trait("IntegrationSlice", "FP-IS-11")]
+    public async Task OnlyAStagingPickupLegNamesItsPublicStationFunction(StopKind kind)
+    {
+        await using RuntimeFixture fixture = await ArrangeAsync(kind);
+        await fixture.AdvanceToSublotWaitAsync();
+
+        (string? LegType, string? Function)[] legs = await PlanLegsSentAsync(fixture);
+        string?[] pickups = [.. legs.Where(leg => leg.LegType == "TO_PICKUP").Select(leg => leg.Function)];
+        Assert.True(pickups.Length >= 2, "Expected the dispatch plan and the arrival plan to carry the pickup leg.");
+        Assert.All(pickups, function => Assert.Equal(kind == StopKind.StagingRulesOn ? "WIRE_STAGING" : null, function));
+        Assert.All(legs.Where(leg => leg.LegType != "TO_PICKUP"), leg => Assert.Null(leg.Function));
+    }
+
+    /// <summary>
+    /// 同站追加新开的第 2 个待送点停靠，它的取货腿同样带 <c>WIRE_STAGING</c>：认待送点按停靠认，追加的停靠在它被推进到的那一轮认出。
+    /// </summary>
+    [Fact]
+    [Trait("IntegrationSlice", "FP-IS-02")]
+    [Trait("IntegrationSlice", "FP-IS-08")]
+    public async Task AnAppendedStagingStopIsNamedAsWell()
+    {
+        await using RuntimeFixture fixture = await ArrangeAsync(StopKind.StagingRulesOn);
+        await AllowEnRouteAppendAsync(fixture);
+        await LoadTheBasketAsync(fixture);
+        await AppendStagingDemandAsync(fixture, SecondDemand, SecondSublot);
+        fixture.Clock.Advance(fixture.Options.SameStationAppendCorrectionGrace + TimeSpan.FromSeconds(1));
+        await fixture.ProveSlotDoorsClosedAsync();
+        await fixture.HearFromPeerAsync();
+        await fixture.Engine.ExecuteOnceAsync(Token);
+        await Batch7StopDrivenAdvanceDriver.AnswerDepartureSafetyAsync(
+            fixture, Demand, Batch7StopDrivenAdvanceDriver.FirstSafetyResultId);
+        await Batch7StopDrivenAdvanceDriver.ArriveAtCurrentStopAsync(fixture, SecondDemand, "TO_GATE");
+
+        string latest = await fixture.Context.ProtocolOutbox.AsNoTracking()
+            .Where(row => row.MessageType == "UpcomingStopPlanSnapshot")
+            .OrderByDescending(row => row.CreatedAt)
+            .Select(row => row.PayloadJson)
+            .FirstAsync(Token);
+        (string? LegType, string? Function)[] legs = LegsOf(latest);
+        Assert.Equal(2, legs.Count(leg => leg.LegType == "TO_PICKUP"));
+        Assert.All(legs.Where(leg => leg.LegType == "TO_PICKUP"), leg => Assert.Equal("WIRE_STAGING", leg.Function));
+        Assert.All(legs.Where(leg => leg.LegType != "TO_PICKUP"), leg => Assert.Null(leg.Function));
+    }
+
     // ---- helpers ---------------------------------------------------------------------------------------------------
 
     internal static async Task<object> DeparturePayloadAsync(
@@ -632,6 +684,31 @@ public sealed class StagingDepartureRequestTests
 
     private static Task<int> CountAsync(RuntimeFixture fixture, string messageType) =>
         fixture.Context.ProtocolOutbox.AsNoTracking().CountAsync(row => row.MessageType == messageType, Token);
+
+    private static async Task<(string? LegType, string? Function)[]> PlanLegsSentAsync(RuntimeFixture fixture)
+    {
+        string[] payloads = await fixture.Context.ProtocolOutbox.AsNoTracking()
+            .Where(row => row.MessageType == "UpcomingStopPlanSnapshot")
+            .Select(row => row.PayloadJson)
+            .ToArrayAsync(Token);
+        return [.. payloads.SelectMany(LegsOf)];
+    }
+
+    private static (string? LegType, string? Function)[] LegsOf(string json)
+    {
+        using JsonDocument document = JsonDocument.Parse(json);
+        return
+        [
+            .. document.RootElement.GetProperty("payload").GetProperty("legs").EnumerateArray().Select(leg =>
+            {
+                JsonElement type = leg.GetProperty("legType");
+                JsonElement function = leg.GetProperty("publicStationFunction");
+                return (
+                    type.ValueKind == JsonValueKind.Null ? null : type.GetString(),
+                    function.ValueKind == JsonValueKind.Null ? null : function.GetString());
+            })
+        ];
+    }
 
     internal static async Task<string?[]> StopEndedReasonsSentAsync(RuntimeFixture fixture)
     {
