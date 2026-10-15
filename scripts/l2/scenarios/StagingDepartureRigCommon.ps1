@@ -131,13 +131,40 @@ function Invoke-L2DeparturePress([object]$Context, [int]$OfferSeconds = 60) {
 }
 
 <#
-按下之后两端各自看到了什么：服务端收到真车载端发来的那一条请求（按下之后的第一条）、答了它，车载端确认了答复，屏上状态行读到
-$ExpectedStatus。返回 Request、Result、ScreenStatus，等不到的为 $null；不在这里断言，由场景按自己的判据号断言。
+按下之后两端各自看到了什么：服务端收到真车载端发来的那一条请求（按下之后的第一条）、答了它，车载端确认了答复，屏上读到了结果。
+返回 Request、Result、ScreenStatus，等不到的为 $null；不在这里断言，由场景按自己的判据号断言。
+
+屏上的结果先读、快读（每 200 ms 一次，至多 30 秒），因为它是转瞬即逝的：带货出发时状态行 CurrentStopDepartureStatus 留在屏上读到
+$ExpectedStatus；一篮没装时旅程立刻原地收尾，整块出发区域随停靠收起，状态行不在了，屏上留下的是「本站」那一行（VisitText，没有
+AutomationId，按文字找）的停靠结束原因「已按出发……」（WireToGateStopEndedReasonText），而放回的需求下一轮多半又派回这辆车，新清单
+很快把它盖掉（第一次真装置跑在这里读到空串，证据 r3/real-onboard-staging-depart-nothing-loaded-2）。两样见到其一即记下：
+'STATUS:<码>' 或 'ENDED:<那一行>'。
 #>
+function Read-L2DepartureOnScreen([object]$Onboard, [string]$ExpectedStatus) {
+    $status = Get-L2LoadingPhaseLine $Onboard 'CurrentStopDepartureStatus'
+    if ($status -eq $ExpectedStatus) { return "STATUS:$status" }
+    try {
+        $isText = [System.Windows.Automation.PropertyCondition]::new(
+            [System.Windows.Automation.AutomationElement]::ControlTypeProperty, [System.Windows.Automation.ControlType]::Text)
+        foreach ($text in $Onboard.Window.FindAll([System.Windows.Automation.TreeScope]::Descendants, $isText)) {
+            $name = [string]$text.Current.Name
+            if ($name -like "$($script:StagingStationName) / 已按出发*") { return "ENDED:$name" }
+        }
+    } catch [System.Windows.Automation.ElementNotAvailableException] { }
+    return $null
+}
+
 function Wait-L2DepartureRoundTrip([object]$Context, [DateTimeOffset]$PressedAt, [string]$ExpectedStatus = 'ACCEPTED') {
     $connection = $Context.Connection
     $journal = $Context.Journal
     $onboard = $Context.Onboard
+    $screen = $null
+    $deadline = [DateTimeOffset]::UtcNow.AddSeconds(30)
+    while ($null -eq $screen -and [DateTimeOffset]::UtcNow -lt $deadline) {
+        $screen = Read-L2DepartureOnScreen $onboard $ExpectedStatus
+        if ($null -eq $screen) { Start-Sleep -Milliseconds 200 }
+    }
+    $journal.Observe('departure-on-screen', "$screen", $null)
     # The inbox stamps the server's clock, the press the scenario's: one machine, one clock. $PressedAt is taken once the
     # dialog is seen closed, a moment after Yes sent the request, so the window opens well before it; no earlier request
     # exists in these scenarios, which press once.
@@ -154,9 +181,6 @@ function Wait-L2DepartureRoundTrip([object]$Context, [DateTimeOffset]$PressedAt,
             -Probe { Get-L2DepartureResult $connection $requestId } `
             -Until { param($v) $null -ne $v -and $v.Acknowledged }
     }
-    $screen = Wait-L2RealOrLast -Description "the HMI's departure status reads $ExpectedStatus" -Journal $journal `
-        -Criterion 'departure-status-on-screen' -TimeoutSeconds 30 `
-        -Probe { Get-L2LoadingPhaseLine $onboard 'CurrentStopDepartureStatus' } -Until { param($v) $v -eq $ExpectedStatus }
     return [pscustomobject]@{ Request = $request; Result = $result; ScreenStatus = $screen }
 }
 
@@ -168,11 +192,12 @@ function Format-L2DepartureRoundTrip([object]$RoundTrip) {
     return "$request / $result / screen '$($RoundTrip.ScreenStatus)'"
 }
 
-# 往返成立：请求是 L2-OPERATOR 从待送站发的，答复是 $Outcome 且已被车载端确认，屏上状态行与答复一致。
+# 往返成立：请求是 L2-OPERATOR 从待送站发的，答复是 $Outcome 且已被车载端确认，屏上读到了它（状态行，或接受之后原地收尾时的「已按出发」）。
 function Test-L2DepartureRoundTrip([object]$RoundTrip, [string]$Outcome = 'ACCEPTED') {
     return $null -ne $RoundTrip.Request -and $null -ne $RoundTrip.Result -and
         [string]$RoundTrip.Request.Payload.operator.operatorId -eq 'L2-OPERATOR' -and
         [string]$RoundTrip.Request.Payload.stationId -eq $script:StagingStationName -and
         [string]$RoundTrip.Result.Payload.outcome -eq $Outcome -and $RoundTrip.Result.Acknowledged -and
-        [string]$RoundTrip.ScreenStatus -eq $Outcome
+        ([string]$RoundTrip.ScreenStatus -eq "STATUS:$Outcome" -or
+            ($Outcome -eq 'ACCEPTED' -and [string]$RoundTrip.ScreenStatus -like 'ENDED:*'))
 }

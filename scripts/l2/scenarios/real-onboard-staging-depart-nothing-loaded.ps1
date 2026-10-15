@@ -79,7 +79,7 @@ $roundTrip = Wait-L2DepartureRoundTrip $Context $pressedAt 'ACCEPTED'
 $assertions.Add(
     'L2-RSN-02', '往返：真车载端发出 CurrentStopDepartureRequested（L2-OPERATOR，站 派工待送取货），服务端答 ACCEPTED，车载端确认答复、屏上状态 ACCEPTED',
     (Test-L2DepartureRoundTrip $roundTrip 'ACCEPTED'),
-    'request by L2-OPERATOR @派工待送取货 / ACCEPTED acked / screen ACCEPTED', (Format-L2DepartureRoundTrip $roundTrip))
+    'request by L2-OPERATOR @派工待送取货 / ACCEPTED acked / screen STATUS:ACCEPTED or ENDED:已按出发', (Format-L2DepartureRoundTrip $roundTrip))
 
 # --- 3. 旅程原地收尾、需求放回 ----------------------------------------------------------------------------------------
 
