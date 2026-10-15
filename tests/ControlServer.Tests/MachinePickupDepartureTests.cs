@@ -57,6 +57,7 @@ public sealed class MachinePickupDepartureTests
         Assert.Equal(JourneyRuntimeStage.AwaitingStationDeparture, before.Stage);
         Assert.NotEqual(LoadingPhaseStates.Closed, before.LoadingPhaseState);
         Assert.False(await Batch7CargoHoldingTests.DepartureCheckSentAsync(fixture));
+        await AcknowledgeEverythingSentAsync(fixture);
         int worklistsBefore = await CountAsync(fixture, "CurrentStopWorklistSnapshot");
         int wireBefore = fixture.Peer.Lines.Count;
 
@@ -129,13 +130,12 @@ public sealed class MachinePickupDepartureTests
 
     /// <summary>
     /// 向量 MACHINE-STATION-WAIT：装货阶段已经结束、只剩站点离站等待（5 分钟，才过了几秒）时点出发：<c>ACCEPTED</c>，装货阶段与 <c>closedReason</c>
-    /// 原样不动、不发业务快照，答复之后直接是离站核验。三种结束法各一格：分区禁止途中追加（不持货等单）、持货期限先于站点期限到了（一站多批时站点期限
-    /// 从最后一批起算，比持货期限晚）、两侧装满。
+    /// 原样不动、不发业务快照，答复之后直接是离站核验。两种结束法各一格：分区禁止途中追加（不持货等单）、持货期限先于站点期限到了（一站多批时站点期限
+    /// 从最后一批起算，比持货期限晚）。两侧装满（<c>VEHICLE_FULL</c>）当轮就离站、不在站点离站等待里停，没有这一格。
     /// </summary>
     [Theory]
     [InlineData(MachineShape.NoHolding)]
     [InlineData(MachineShape.HoldingDeadlinePassed)]
-    [InlineData(MachineShape.VehicleFull)]
     [Trait("IntegrationSlice", "FP-IS-02")]
     [Trait("ProtocolVector", "CV-CURRENT-STOP-DEPARTURE-MACHINE-STATION-WAIT")]
     public async Task DepartureWhileOnlyTheStationWaitRemainsLeavesAtOnceAndKeepsTheClosedReason(MachineShape shape)
@@ -321,10 +321,7 @@ public sealed class MachinePickupDepartureTests
         NoHolding,
 
         /// <summary>持货期限（2 分钟）先到，站点离站期限（5 分钟）还没到：<c>CLOSED</c>／<c>CARGO_HOLDING_TIMEOUT</c>。</summary>
-        HoldingDeadlinePassed,
-
-        /// <summary>两侧装满：<c>VEHICLE_FULL</c>，装货阶段对出发而言已经结束。</summary>
-        VehicleFull
+        HoldingDeadlinePassed
     }
 
     /// <summary>本停靠装货还没完成的两种样子。</summary>
@@ -355,13 +352,6 @@ public sealed class MachinePickupDepartureTests
             await RunAsync(fixture);
             await fixture.ProveSlotDoorsClosedAsync();
         }
-        else if (shape == MachineShape.VehicleFull)
-        {
-            Batch7CargoHoldingTests.RecordRound(
-                fixture,
-                (Host.Runtime.Dispatch.DispatchReasonCodes.SlotGroupOccupiedByOwnCargo, "FRONT"),
-                (Host.Runtime.Dispatch.DispatchReasonCodes.SlotGroupOccupiedByOwnCargo, "REAR"));
-        }
         await RunAsync(fixture);
 
         JourneyRuntimeRow journey = await fixture.RuntimeAsync();
@@ -371,11 +361,26 @@ public sealed class MachinePickupDepartureTests
         {
             MachineShape.CargoHoldingWait => (LoadingPhaseStates.CargoHoldingWait, null),
             MachineShape.NoHolding => (LoadingPhaseStates.Closed, LoadingClosedReasons.PlannedLoadingComplete),
-            MachineShape.HoldingDeadlinePassed => (LoadingPhaseStates.Closed, LoadingClosedReasons.CargoHoldingTimeout),
-            _ => (LoadingPhaseStates.VehicleFull, null)
+            _ => (LoadingPhaseStates.Closed, LoadingClosedReasons.CargoHoldingTimeout)
         };
         Assert.Equal(expected, (journey.LoadingPhaseState, journey.LoadingClosedReason));
+        await AcknowledgeEverythingSentAsync(fixture);
         return fixture;
+    }
+
+    /// <summary>
+    /// 车确认了此前收到的每一行（真车载端逐条回 <c>SnapshotAppliedAck</c>／<c>DurableAck</c>）。夹具的对端不回确认，不标这一下，每轮顶上的补发与
+    /// 空清单的补发会把旧行再发一遍，夹在答复之后的线序里。
+    /// </summary>
+    private static async Task AcknowledgeEverythingSentAsync(RuntimeFixture fixture)
+    {
+        DateTimeOffset now = fixture.Clock.GetUtcNow();
+        foreach (ProtocolOutboxRow row in await fixture.Context.ProtocolOutbox.Where(row => row.AcknowledgedAt == null).ToArrayAsync(Token))
+        {
+            row.AcknowledgedAt = now;
+        }
+        await fixture.Context.SaveChangesAsync(Token);
+        fixture.Context.ChangeTracker.Clear();
     }
 
     private static string[] SentSince(RuntimeFixture fixture, int lineIndex) =>
