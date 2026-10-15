@@ -1,0 +1,48 @@
+{"at":"2026-10-15T02:43:59.8812040+00:00","note":"L2 run 20261015T024359840Z starting for scenario 'staging-depart-with-nothing-loaded'."}
+{"at":"2026-10-15T02:43:59.9280354+00:00","note":"L2 port block lock acquired (slot 0, Global\\W2G-L2PortBlock)."}
+{"at":"2026-10-15T02:43:59.9300824+00:00","note":"Building ControlServer and the test doubles."}
+{"at":"2026-10-15T02:44:22.6556993+00:00","criterion":"fake-riot-live","value":"live"}
+{"at":"2026-10-15T02:44:22.8549407+00:00","criterion":"fake-mes-live","value":"live"}
+{"at":"2026-10-15T02:44:22.9916540+00:00","note":"Fake RIoT stations on map 25: 11=C15-13, 12=N1-3_N1-7, 210=关卡, 305=派工待送取货"}
+{"at":"2026-10-15T02:44:23.0305117+00:00","note":"Task type station preset: the scenario's own (2 binding(s))"}
+{"at":"2026-10-15T02:44:26.9185806+00:00","note":"Package capacity rules imported."}
+{"at":"2026-10-15T02:44:26.9217089+00:00","criterion":"server-environment:JourneyRuntime__StagingDepartureRules__Enabled","value":"True"}
+{"at":"2026-10-15T02:44:26.9310648+00:00","note":"No waiting point registration: a single-vehicle rig, or WaitingPoints = $false."}
+{"at":"2026-10-15T02:44:29.0807809+00:00","criterion":"control-server-live","value":"live"}
+{"at":"2026-10-15T02:44:29.1356560+00:00","note":"Protocol release identity: protocol-v4.0.0 (profileId AGV_FULL_PRODUCT, protocolVersion 5, SUPERSEDING_CANDIDATE)."}
+{"at":"2026-10-15T02:44:29.8556838+00:00","criterion":"onboard-readiness","value":"DISCONNECTED"}
+{"at":"2026-10-15T02:44:30.1381016+00:00","criterion":"onboard-readiness","value":"READY"}
+{"at":"2026-10-15T02:44:30.1769407+00:00","criterion":"control-server-ready","value":"ready"}
+{"at":"2026-10-15T02:44:30.2435283+00:00","note":"FieldOps: seed-approved-facts --database C:\\Users\\szy\\AppData\\Local\\Temp\\l2-20261015T024359840Z\\controlserver.db"}
+{"at":"2026-10-15T02:44:34.2956243+00:00","criterion":"slot-model-preseed:seed-approved-facts","value":"OK","detail":{"output":{"command":"seed-approved-facts","outcome":"OK","modelKey":"8005-eight-slot","slotModelVersionId":"2ff35d94f9c14eef810a21401fb5e091","version":1,"slotCount":8}}}
+{"at":"2026-10-15T02:44:34.3008829+00:00","note":"FieldOps: bind-io --database C:\\Users\\szy\\AppData\\Local\\Temp\\l2-20261015T024359840Z\\controlserver.db --agv AGV-L2-001"}
+{"at":"2026-10-15T02:44:35.5787717+00:00","criterion":"slot-model-preseed:bind-io:AGV-L2-001","value":"OK","detail":{"output":{"command":"bind-io","outcome":"OK","agvId":"AGV-L2-001","slotModelVersionId":"2ff35d94f9c14eef810a21401fb5e091","boundSlots":8,"version":1}}}
+{"at":"2026-10-15T02:44:35.7439865+00:00","criterion":"slot-model-preseed:dispatch-zones","value":"0"}
+{"at":"2026-10-15T02:44:35.7538867+00:00","note":"FieldOps: import-area-assignments --database C:\\Users\\szy\\AppData\\Local\\Temp\\l2-20261015T024359840Z\\controlserver.db --input F:\\8005-wt\\cs713-8005-agv-control-server\\evidence\\cs713\\l2\\nothing-loaded-1\\snapshots\\preseed-area-assignments.csv"}
+{"at":"2026-10-15T02:44:37.0914173+00:00","criterion":"slot-model-preseed:import-area-assignments","value":"OK","detail":{"output":{"command":"import-area-assignments","outcome":"OK","dryRun":false,"input":"F:\\8005-wt\\cs713-8005-agv-control-server\\evidence\\cs713\\l2\\nothing-loaded-1\\snapshots\\preseed-area-assignments.csv","entryCount":3,"version":1,"contentSha256":"4291a509c2c0b75ea4bde0ac4dcde04b6e8632b54a21a67eee2772a6f8d0ff8e","snapshotId":"7612f08e0a324520aa90f1241753ccd7","importedAt":"2026-10-15T10:44:35.9180749+08:00","errorCount":0,"errors":[],"preview":[]}}}
+{"at":"2026-10-15T02:44:37.1089015+00:00","note":"FieldOps: import-charging-policy --database C:\\Users\\szy\\AppData\\Local\\Temp\\l2-20261015T024359840Z\\controlserver.db --input F:\\8005-wt\\cs713-8005-agv-control-server\\evidence\\cs713\\l2\\nothing-loaded-1\\snapshots\\preseed-charging-policy.json --fleet BROKERX-L2-0001"}
+{"at":"2026-10-15T02:44:38.3305934+00:00","note":"FieldOps: approve-charging-policy --database C:\\Users\\szy\\AppData\\Local\\Temp\\l2-20261015T024359840Z\\controlserver.db --version 1 --approved-by L2 orchestrator --role L2_PRESET --basis scripts/l2/L2ChargingPolicy.psm1 --source L2_PRESET"}
+{"at":"2026-10-15T02:44:39.5009598+00:00","note":"FieldOps: activate-charging-policy --database C:\\Users\\szy\\AppData\\Local\\Temp\\l2-20261015T024359840Z\\controlserver.db --version 1 --activated-by L2 orchestrator --fleet BROKERX-L2-0001 --allow-non-field-approval"}
+{"at":"2026-10-15T02:44:40.7122380+00:00","criterion":"preseed:charging-policy","value":"OK","detail":{"coveredAfter":["BROKERX-L2-0001"],"version":1,"source":"L2_PRESET","withoutPolicy":[]}}
+{"at":"2026-10-15T02:44:40.7127707+00:00","note":"Per-zone dispatch parameters left unconfigured (the default precondition)."}
+{"at":"2026-10-15T02:44:40.7391316+00:00","note":"Environment is up; entering scenario 'staging-depart-with-nothing-loaded'."}
+{"at":"2026-10-15T02:44:40.8235261+00:00","note":"Synthetic peer stops answering sublot entry requests: nobody comes to scan."}
+{"at":"2026-10-15T02:44:40.8495960+00:00","note":"Publishing STAGING_TO_WIRE demand ed921b708a494d3a8af81bd5378f9e6a."}
+{"at":"2026-10-15T02:44:40.8892462+00:00","criterion":"dispatched","value":"(null)"}
+{"at":"2026-10-15T02:44:42.1989945+00:00","criterion":"dispatched","value":"@{JourneyId=journey:ed921b70-8a49-4d3a-8af8-1bd5378f9e6a; Stage=AwaitingPickupArrival; BlockReasonCode=; PickupUpperId=W2G-ed921b70-8a49-4d3a-8af8-1bd5378f9e6a-PICKUP-1; PickupStationRiotId=305}"}
+{"at":"2026-10-15T02:44:42.2248243+00:00","criterion":"pickup-intent","value":"@{UpperId=W2G-ed921b70-8a49-4d3a-8af8-1bd5378f9e6a-PICKUP-1; OrderId=; Status=CREATE_ATTEMPTED}"}
+{"at":"2026-10-15T02:44:42.4922528+00:00","criterion":"pickup-intent","value":"@{UpperId=W2G-ed921b70-8a49-4d3a-8af8-1bd5378f9e6a-PICKUP-1; OrderId=ORDER-000001; Status=CONFIRMED}"}
+{"at":"2026-10-15T02:44:42.4930089+00:00","note":"The vehicle drives to the staging station and comes to rest."}
+{"at":"2026-10-15T02:44:42.5401894+00:00","criterion":"waiting","value":"@{JourneyId=journey:ed921b70-8a49-4d3a-8af8-1bd5378f9e6a; Stage=AwaitingPickupArrival; BlockReasonCode=; PickupUpperId=W2G-ed921b70-8a49-4d3a-8af8-1bd5378f9e6a-PICKUP-1; PickupStationRiotId=305}"}
+{"at":"2026-10-15T02:44:43.0707078+00:00","criterion":"waiting","value":"@{JourneyId=journey:ed921b70-8a49-4d3a-8af8-1bd5378f9e6a; Stage=AwaitingSublot; BlockReasonCode=; PickupUpperId=W2G-ed921b70-8a49-4d3a-8af8-1bd5378f9e6a-PICKUP-1; PickupStationRiotId=305}"}
+{"at":"2026-10-15T02:44:43.0960900+00:00","criterion":"runtime-iterations","value":"15"}
+{"at":"2026-10-15T02:44:43.8911496+00:00","criterion":"runtime-iterations","value":"16"}
+{"at":"2026-10-15T02:44:44.6877729+00:00","criterion":"runtime-iterations","value":"17"}
+{"at":"2026-10-15T02:44:44.6910401+00:00","note":"The operator presses 出发 with nothing loaded (ee5c97ce-9450-4cd2-a495-df1eb6cd9645)."}
+{"at":"2026-10-15T02:44:44.7226023+00:00","criterion":"departure-request","value":"station 派工待送取货 revision 1","detail":{"answer":{"commandId":"62912f53f2c5462dabfcdc7193d45b51","departureRequestId":"ee5c97ce-9450-4cd2-a495-df1eb6cd9645","requestMessageId":"31a64c8c-7fb8-48ff-acfc-75f36efb5fbf","stationId":"派工待送取货","worklistRevision":1}}}
+{"at":"2026-10-15T02:44:44.7453106+00:00","criterion":"answered","value":"(null)"}
+{"at":"2026-10-15T02:44:45.7947392+00:00","criterion":"answered","value":"@{departureRequestId=ee5c97ce-9450-4cd2-a495-df1eb6cd9645; outcome=ACCEPTED; problem=; currentWorklistRevision=1}"}
+{"at":"2026-10-15T02:44:45.8134226+00:00","criterion":"closed","value":"@{JourneyId=journey:ed921b70-8a49-4d3a-8af8-1bd5378f9e6a; Stage=Completed; BlockReasonCode=STAGING_OPERATOR_DEPARTED; PickupUpperId=W2G-ed921b70-8a49-4d3a-8af8-1bd5378f9e6a-PICKUP-1; PickupStationRiotId=305}"}
+{"at":"2026-10-15T02:44:45.8521152+00:00","note":"Run failed: Conversion from JSON failed with error: Additional text encountered after finished reading JSON content: {. Path '', line 1, position 829."}
+{"at":"2026-10-15T02:44:45.8540614+00:00","note":"Failure at: at <ScriptBlock>, F:\\8005-wt\\cs713-8005-agv-control-server\\scripts\\l2\\scenarios\\staging-depart-with-nothing-loaded.ps1: line 117\r\nat Invoke-L2Query, F:\\8005-wt\\cs713-8005-agv-control-server\\scripts\\l2\\L2.psm1: line 993\r\nat <ScriptBlock>, F:\\8005-wt\\cs713-8005-agv-control-server\\scripts\\l2\\scenarios\\staging-depart-with-nothing-loaded.ps1: line 115\r\nat <ScriptBlock>, F:\\8005-wt\\cs713-8005-agv-control-server\\scripts\\l2\\Invoke-L2Scenario.ps1: line 1490"}
+{"at":"2026-10-15T02:44:46.1798422+00:00","note":"L2 port block lock released."}

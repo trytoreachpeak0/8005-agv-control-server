@@ -52,6 +52,7 @@ public static class FakeOnboardHost
         app.MapControlPlaneSublotScan();
         app.MapControlPlaneManualChargingReturn();
         app.MapControlPlaneManualStationClearance();
+        app.MapControlPlaneCurrentStopDeparture();
         return app;
     }
 

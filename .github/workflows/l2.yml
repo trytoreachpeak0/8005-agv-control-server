@@ -252,6 +252,10 @@ jobs:
               # three deadlines pass, and the stop neither ends nor releases its demand. The line above, run with the same
               # switch on, is the machine pickup's regression.
               @{ Name = 'staging-pickup-no-station-timeout'; Runs = 1 }
+              # control-server#713: the operator departs from the staging station -- with cargo, what was not loaded goes back
+              # to the backlog and the vehicle leaves through the departure check; with nothing loaded, the journey closes in place.
+              @{ Name = 'staging-depart-after-partial-load'; Runs = 1 }
+              @{ Name = 'staging-depart-with-nothing-loaded'; Runs = 1 }
               # control-server#710: at the staging station, one side full and every waiting demand needing that side -- the vehicle
               # leaves at once; with nothing waiting it does not leave by itself. The second line is the other half: a demand that
               # still fits the other side is taken, and the vehicle does not leave for the drop-off.
