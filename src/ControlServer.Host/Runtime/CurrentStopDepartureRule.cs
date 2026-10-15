@@ -47,7 +47,8 @@ internal static class CurrentStopDepartureRule
         bool CorrectionOrCancellationOpen,
         bool AlreadyDeparting,
         bool AnchorUnloadedWithCargo,
-        bool NothingLoadedAndDoorsNotProvenClosed);
+        bool NothingLoadedAndDoorsNotProvenClosed,
+        bool MachinePickupLoadsComplete = false);
 
     /// <summary>为空是 <c>ACCEPTED</c>；否则是 <c>REJECTED</c> 带的那个问题。</summary>
     public static WireProblem? Decide(CurrentStopDepartures.Request request, Facts facts)
