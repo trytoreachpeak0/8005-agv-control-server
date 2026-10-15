@@ -89,6 +89,8 @@ public sealed class Batch6MigrationDisciplineTests
         "20261011005905_ProtocolInboxReadIndexes",
         // control-server#597：安全状态消息按收件时间从新到旧读、遇到即停——ProtocolInbox 加 (MessageType, ReceivedAtUtcTicks) 一个普通复合索引；纯 CREATE INDEX，不动列、不动行，#563 的两个单列索引不删；Down 只删这一个索引。调度 Coordinator 10 于 2026-10-13 给了迁移通道。自己的断言在 SafetyStateLatestFirstReadTests。
         "20261013041134_ProtocolInboxTypeNewestFirstIndex",
+        // control-server#725：机台取货装完后的出发按停靠落库——JourneyStops 加可空列 OperatorDepartedAt；纯 ADD COLUMN，既有行只多一列空值，Down 只删这一列。调度 Coordinator 11 于 2026-10-15 给了迁移通道。自己的断言在 JourneyStopOperatorDepartedAtMigrationTests。
+        "20261015144738_JourneyStopOperatorDepartedAt",
     ];
 
     [Fact]

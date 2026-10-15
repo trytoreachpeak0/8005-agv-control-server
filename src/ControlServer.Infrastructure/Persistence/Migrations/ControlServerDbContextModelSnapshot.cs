@@ -1773,6 +1773,9 @@ namespace ControlServer.Infrastructure.Persistence.Migrations
                         .IsRequired()
                         .HasColumnType("TEXT");
 
+                    b.Property<DateTimeOffset?>("OperatorDepartedAt")
+                        .HasColumnType("TEXT");
+
                     b.Property<string>("PlanMessageId")
                         .IsRequired()
                         .HasColumnType("TEXT");
