@@ -37,6 +37,13 @@ if ([string]::IsNullOrEmpty([string]$Context.OnboardJournalPath)) {
     throw 'This scenario needs the real onboard rig: it presses 出发 on the shipped HMI through UI Automation.'
 }
 
+# 已发出的离站核验张数。Get-L2DepartureCheckTargets 以 `return , @(...)` 交回一个数组对象，直接 @(调用).Count 数到的是那一个对象（永远是 1）；
+# 先落进变量再数才是张数（CI run 38760088856 的 L2-RMD-01 就红在这里：按出发之前实际 0 张，读成了 1 张）。
+function Get-L2DepartureCheckCount([object]$Connection) {
+    $targets = Get-L2DepartureCheckTargets $Connection
+    return @($targets).Count
+}
+
 $all = @('L2-RMD-01', 'L2-RMD-02', 'L2-RMD-03', 'L2-RMD-04', 'L2-RMD-05')
 # setup 的 Stations：甲在 12 号站 `N1-3_N1-7` 取货，丙在 11 号站 `C15-13`，卸货都在关卡。
 $machineRiotId = 12
@@ -64,14 +71,14 @@ $joined = Wait-L2RealOrLast -Description 'demand C joined the journey' -Journal 
 $cJoined = $null -ne $joined -and [string]$joined.JourneyId -eq $journeyId -and -not (Test-L2RealPresent $joined.RemovedAt)
 $cStopId = if ($cJoined) { [string]$joined.PickupStopId } else { '' }
 $waiting = Get-L2StagingJourney $connection $journeyId
-$checksBefore = @(Get-L2DepartureCheckTargets $connection).Count
+$checksBefore = @(Get-L2DepartureCheckCount $connection)[0]
 $offered = $false
 if ($cJoined) {
     $offered = Wait-L2RealOrLast -Description 'the HMI offers 出发 at the machine pickup' -Journal $journal `
         -Criterion 'departure-offered-before-press' -TimeoutSeconds 60 -Probe { Test-L2DepartureButtonPressable $Context.Onboard } `
         -Until { param($v) $v }
     $waiting = Get-L2StagingJourney $connection $journeyId
-    $checksBefore = @(Get-L2DepartureCheckTargets $connection).Count
+    $checksBefore = @(Get-L2DepartureCheckCount $connection)[0]
 }
 $assertions.Add(
     'L2-RMD-01', '前提：甲已装上，丙进了这趟旅程、取货停靠在后面；装货阶段没关、离站核验没发；车载端屏上给出可按的「出发」',
