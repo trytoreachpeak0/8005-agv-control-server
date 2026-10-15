@@ -12,8 +12,8 @@ using static ControlServer.Tests.StagingPickupNoCountdownTests;
 namespace ControlServer.Tests;
 
 /// <summary>
-/// 待送点取货停靠上的两种取消（control-server#713 票正文第 5、6 条，CP-0012）：装货中取消改为放回待派、不抑制；扫码前取消一律拒绝。
-/// 机台取货与开关关着时两样都照旧（验收 7 的回归）。
+/// 待送点取货停靠上的两种取消：装货中取消放回待派、不抑制（control-server#713 票正文第 5 条，CP-0012）；扫码前取消照机台终结并抑制
+/// （control-server#726，CP-0014 修订项二，取代 cs#713 第 6 条的拒绝）。机台取货与开关关着时两样都照旧（验收 7 的回归）。
 /// </summary>
 public sealed class StagingLoadCancellationTests
 {
@@ -155,46 +155,230 @@ public sealed class StagingLoadCancellationTests
     }
 
     /// <summary>
-    /// 第 6 条（纵深防御，防旧版车载端）：待送点上扫码前取消一律拒绝，<c>ACTION_NOT_ALLOWED_IN_STATE</c>，什么都不变。机台与开关关着时照旧授权。
+    /// CP-0014 修订项二（control-server#726）：扫码前取消在待送点取货停靠上照机台的语义授权并落定——需求以 <c>CANCELLED_BY_OPERATOR</c> 终结、
+    /// 业务键永久抑制，不是放回待派。三种停靠结果相同；cs#713 时待送点这一格是拒绝（<c>ACTION_NOT_ALLOWED_IN_STATE</c>）。
     /// </summary>
     [Theory]
     [MemberData(nameof(Kinds), MemberType = typeof(StagingPickupNoCountdownTests))]
     [Trait("IntegrationSlice", "FP-IS-02")]
     [Trait("IntegrationSlice", "FP-IS-11")]
-    public async Task ACancellationBeforeAnyEntryIsRefusedOnlyAtTheStagingStation(StopKind kind)
+    public async Task ACancellationBeforeAnyEntryEndsAndSuppressesTheDemandAtEveryStop(StopKind kind)
     {
         await using RuntimeFixture fixture = await ArrangeAsync(kind);
         await fixture.AdvanceToSublotWaitAsync();
 
+        await CancelBeforeScanAsync(fixture, Demand);
+
+        fixture.Context.ChangeTracker.Clear();
+        Assert.Equal(DemandExecutionStatus.Cancelled, (await fixture.DemandRowAsync()).Status);
+        await SuppressionAssertions.AssertSuppressedAsync(fixture.Context, Demand, "CANCELLED_BY_OPERATOR");
+        Assert.False(
+            await DemandJourneyLookup.ReleasedForRedispatch(fixture.Context).AnyAsync(row => row.DemandId == Demand, Token),
+            "A cancellation before any entry put the demand back to be dispatched again instead of ending it.");
+        Assert.Equal(JourneyRuntimeStage.Completed, (await fixture.RuntimeAsync()).Stage);
+    }
+
+    /// <summary>
+    /// 待送点一站两条，扫码前取消乙（hmi#353 的 G2 按此写，C11 10-15 转来的约定）：乙终结并抑制；下一轮车收到去掉乙的新一版清单与<b>同号</b>的
+    /// 新录入请求（cs#723 的补发路径），甲照常录入、开始装。
+    /// </summary>
+    [Fact]
+    [Trait("IntegrationSlice", "FP-IS-02")]
+    [Trait("IntegrationSlice", "FP-IS-08")]
+    public async Task CancellingOneRowBeforeScanAtTheStagingStopRefreshesTheWorklistAndTheEntryRequest()
+    {
+        await using RuntimeFixture fixture = await TwoDemandsAtTheStagingStopAsync();
+        Sent before = await LatestAsync(fixture, "CurrentStopWorklistSnapshot");
+        Assert.Equal([Demand, SecondDemand], before.Demands);
+
+        await CancelBeforeScanAsync(fixture, SecondDemand);
+        await RoundAsync(fixture);
+
+        fixture.Context.ChangeTracker.Clear();
+        Assert.Equal(DemandExecutionStatus.Cancelled, await StatusOfAsync(fixture, SecondDemand));
+        await SuppressionAssertions.AssertSuppressedAsync(fixture.Context, SecondDemand, "CANCELLED_BY_OPERATOR");
+        Sent worklist = await LatestAsync(fixture, "CurrentStopWorklistSnapshot");
+        Assert.True(worklist.Revision > before.Revision, $"The vehicle still holds worklist revision {before.Revision}.");
+        Assert.Equal([Demand], worklist.Demands);
+        Sent entry = await LatestAsync(fixture, "SublotEntryRequested");
+        Assert.Equal(worklist.Revision, entry.Revision);
+        Assert.Equal([StagingSublot], entry.Sublots);
+
+        JourneyRuntimeRow loading = await Batch7StopDrivenAdvanceDriver.EnterSublotAsync(
+            fixture, Demand, StagingSublot, Batch7StopDrivenAdvanceDriver.FirstSubmissionId);
+        Assert.Equal(JourneyRuntimeStage.AwaitingLoadResult, loading.Stage);
+    }
+
+    /// <summary>
+    /// hmi#353 审查 M2 的服务端那一道：待送点一站两条，甲已装上（或正在装）、车上有它的货，服务端重启后车载端对甲发扫码前取消——拒绝，
+    /// <c>ACTION_NOT_ALLOWED_IN_STATE</c>，甲不变（仍已受理、归属仍是已装或在装、不抑制、不开取消流程）。
+    /// 同时钉住：甲装完之后排给车的清单只列乙（装完的项移出当前清单）。
+    /// </summary>
+    [Theory]
+    [InlineData(true)]
+    [InlineData(false)]
+    [Trait("IntegrationSlice", "FP-IS-02")]
+    [Trait("IntegrationSlice", "FP-IS-08")]
+    public async Task ACancellationBeforeScanOfADemandWithCargoOnBoardIsRefusedAfterARestart(bool loaded)
+    {
+        await using RuntimeFixture fixture = await TwoDemandsAtTheStagingStopAsync();
+        Assert.Equal(
+            JourneyRuntimeStage.AwaitingLoadResult,
+            (await Batch7StopDrivenAdvanceDriver.EnterSublotAsync(
+                fixture, Demand, StagingSublot, Batch7StopDrivenAdvanceDriver.FirstSubmissionId)).Stage);
+        string expected = JourneyDemandStatuses.Loading;
+        if (loaded)
+        {
+            await Batch7StopDrivenAdvanceDriver.SettleLoadAsync(fixture, Demand);
+            expected = JourneyDemandStatuses.Loaded;
+            Assert.Equal([SecondDemand], (await LatestAsync(fixture, "CurrentStopWorklistSnapshot")).Demands);
+        }
+        Assert.Equal(expected, (await Batch7MultiDemandAdvanceTests.MembershipAsync(fixture, Demand)).Status);
+        await fixture.RecreateEngineAsync();
+
         string answer;
         await using (ControlServerDbContext connection = fixture.OpenConnectionContext())
         {
-            answer = await ProcessAsync(fixture, connection, "LoadCancellationStartRequested", new
-            {
-                cancellationId = CancellationId,
-                demandId = Demand,
-                slotOperationAttemptId = (string?)null,
-                @operator = Operator(fixture),
-                reason = "Nothing to load here."
-            });
+            answer = await ProcessAsync(fixture, connection, "LoadCancellationStartRequested", BeforeScanRequest(fixture, Demand));
         }
 
         JsonElement payload = FirstPayload(answer);
-        if (kind == StopKind.StagingRulesOn)
-        {
-            Assert.Equal("REJECTED", payload.GetProperty("decision").GetString());
-            Assert.Equal(ServerReasonCodes.ActionNotAllowedInState,
-                payload.GetProperty("problem").GetProperty("reasonCode").GetString());
-            Assert.False(await fixture.Context.RecoveryWorkflows.AnyAsync(Token));
-        }
-        else
-        {
-            Assert.Equal("AUTHORIZED", payload.GetProperty("decision").GetString());
-        }
-        Assert.Equal(DemandExecutionStatus.Accepted, (await fixture.DemandRowAsync()).Status);
+        Assert.Equal("REJECTED", payload.GetProperty("decision").GetString());
+        Assert.Equal(
+            ServerReasonCodes.ActionNotAllowedInState, payload.GetProperty("problem").GetProperty("reasonCode").GetString());
+        fixture.Context.ChangeTracker.Clear();
+        Assert.False(await fixture.Context.RecoveryWorkflows.AnyAsync(Token));
+        Assert.Equal(DemandExecutionStatus.Accepted, await StatusOfAsync(fixture, Demand));
+        JourneyDemandRow membership = await Batch7MultiDemandAdvanceTests.MembershipAsync(fixture, Demand);
+        Assert.Equal((expected, (DateTimeOffset?)null), (membership.Status, membership.RemovedAt));
+        await SuppressionAssertions.AssertNothingSuppressedAsync(fixture.Context);
+    }
+
+    /// <summary>
+    /// 与 cs#727 持货期限的关系（CP-0014 第五节第 3 处）：甲已装、期限已起，乙追加进本站后期限挪到追加时刻；之后对乙扫码前取消——乙终结，
+    /// 期限不因取消重新起算（起算点仍是乙的追加时刻），车上仍有甲的货，期限也不撤。
+    /// </summary>
+    [Fact]
+    [Trait("IntegrationSlice", "FP-IS-08")]
+    [Trait("IntegrationSlice", "FP-IS-11")]
+    public async Task ACancellationBeforeScanDoesNotRestartTheStagingHoldingDeadline()
+    {
+        await using RuntimeFixture fixture = await ArrangeAsync(StopKind.StagingRulesOn);
+        await AllowEnRouteAppendAsync(fixture);
+        await LoadTheBasketAsync(fixture);
+        fixture.Clock.Advance(TimeSpan.FromSeconds(30));
+        DateTimeOffset appendedAt = fixture.Clock.GetUtcNow();
+        await AppendStagingDemandAsync(fixture, SecondDemand, SecondSublot);
+        fixture.Clock.Advance(fixture.Options.SameStationAppendCorrectionGrace + TimeSpan.FromSeconds(1));
+        await fixture.ProveSlotDoorsClosedAsync();
+        await fixture.HearFromPeerAsync();
+        await fixture.Engine.ExecuteOnceAsync(Token);
+        await Batch7StopDrivenAdvanceDriver.AnswerDepartureSafetyAsync(
+            fixture, Demand, Batch7StopDrivenAdvanceDriver.FirstSafetyResultId);
+        await Batch7StopDrivenAdvanceDriver.ArriveAtCurrentStopAsync(fixture, SecondDemand, "TO_GATE");
+        await fixture.ProveSlotDoorsClosedAsync();
+        Assert.Equal(JourneyRuntimeStage.AwaitingSublot, (await fixture.RuntimeAsync()).Stage);
+        Assert.Equal(appendedAt, (await fixture.RuntimeAsync()).CargoHoldingStartedAt);
+
+        fixture.Clock.Advance(TimeSpan.FromSeconds(20));
+        await CancelBeforeScanAsync(fixture, SecondDemand);
+        await RoundAsync(fixture);
+        await RoundAsync(fixture);
+
+        fixture.Context.ChangeTracker.Clear();
+        Assert.Equal(DemandExecutionStatus.Cancelled, await StatusOfAsync(fixture, SecondDemand));
+        Assert.Equal(appendedAt, (await fixture.RuntimeAsync()).CargoHoldingStartedAt);
+        Assert.Equal(JourneyDemandStatuses.Loaded, (await Batch7MultiDemandAdvanceTests.MembershipAsync(fixture, Demand)).Status);
     }
 
     // ---- helpers ---------------------------------------------------------------------------------------------------
+
+    // ArrangeAsync 给锚需求录的那一条子批。
+    private const string StagingSublot = "SUBLOT-001";
+
+    /// <summary>待送点（规则开）受理锚需求，到站之前往同一个取货停靠上再挂乙：一站两条，都还没装，停在等录入。</summary>
+    private static async Task<RuntimeFixture> TwoDemandsAtTheStagingStopAsync()
+    {
+        RuntimeFixture fixture = await ArrangeAsync(StopKind.StagingRulesOn);
+        fixture.BoxCounts.Set(SecondSublot, 4);
+        await Batch7StopDrivenAdvanceDriver.TickAndRunAsync(fixture);
+        JourneyRuntimeRow runtime = await fixture.RuntimeAsync(Demand);
+        await Batch7MultiDemandAdvanceTests.AddDemandToJourneyAsync(fixture, runtime, SecondDemand, SecondSublot, slotBlock: 1);
+        fixture.Riot.SetSuccessfulArrival("TO_PICKUP", runtime.PickupUpperId, runtime.PickupStationRiotId);
+        fixture.Riot.Vehicle = fixture.Riot.Vehicle with { CurrentStationId = runtime.PickupStationRiotId };
+        await Batch7StopDrivenAdvanceDriver.TickAndRunAsync(fixture);
+        JourneyRuntimeRow waiting = await fixture.RuntimeAsync(Demand);
+        Assert.Equal(JourneyRuntimeStage.AwaitingSublot, waiting.Stage);
+        Assert.True(await StagingPickupStops.CurrentStopIsStagingAsync(
+            fixture.Context, waiting, fixture.Options.StagingDepartureRules, Token));
+        return fixture;
+    }
+
+    private static object BeforeScanRequest(RuntimeFixture fixture, string demandId) => new
+    {
+        cancellationId = CancellationId,
+        demandId,
+        slotOperationAttemptId = (string?)null,
+        @operator = Operator(fixture),
+        reason = "Nothing to load here."
+    };
+
+    /// <summary>操作员对一条需求扫码前取消，走服务端真实的授权与结果受理；车报空范围 ALL_EMPTY。</summary>
+    private static async Task CancelBeforeScanAsync(RuntimeFixture fixture, string demandId)
+    {
+        await using ControlServerDbContext connection = fixture.OpenConnectionContext();
+        string authorization = await ProcessAsync(
+            fixture, connection, "LoadCancellationStartRequested", BeforeScanRequest(fixture, demandId));
+        Assert.Equal("AUTHORIZED", FirstPayload(authorization).GetProperty("decision").GetString());
+        string ack = await ProcessAsync(fixture, connection, "LoadCancellationResult", new
+        {
+            cancellationId = CancellationId,
+            demandId,
+            slotOperationAttemptId = (string?)null,
+            overallOutcome = "ALL_EMPTY",
+            slotResults = Array.Empty<object>(),
+            observedAt = fixture.Clock.GetUtcNow()
+        });
+        Assert.Contains("\"DurableAck\"", ack, StringComparison.Ordinal);
+    }
+
+    private static async Task<DemandExecutionStatus> StatusOfAsync(RuntimeFixture fixture, string demandId) =>
+        (await fixture.Context.AcceptedDemands.AsNoTracking().SingleAsync(row => row.DemandId == demandId, Token)).Status;
+
+    private static async Task RoundAsync(RuntimeFixture fixture)
+    {
+        fixture.Clock.Advance(TimeSpan.FromSeconds(1));
+        await fixture.ProveSlotDoorsClosedAsync();
+        await fixture.HearFromPeerAsync();
+        await fixture.Engine.ExecuteOnceAsync(Token);
+    }
+
+    private sealed record Sent(long Revision, string[] Demands, string[] Sublots);
+
+    /// <summary>某一类里修订号最高的那一行，也就是此刻排给车的那一版。</summary>
+    private static async Task<Sent> LatestAsync(RuntimeFixture fixture, string messageType)
+    {
+        string[] payloads = await fixture.Context.ProtocolOutbox.AsNoTracking()
+            .Where(row => row.MessageType == messageType)
+            .Select(row => row.PayloadJson)
+            .ToArrayAsync(Token);
+        Sent? latest = null;
+        foreach (string json in payloads)
+        {
+            using JsonDocument document = JsonDocument.Parse(json);
+            JsonElement payload = document.RootElement.GetProperty("payload");
+            long revision = payload.GetProperty("worklistRevision").GetInt64();
+            if (latest is not null && revision <= latest.Revision) continue;
+            string[] demands = payload.TryGetProperty("items", out JsonElement items)
+                ? [.. items.EnumerateArray().Select(item => item.GetProperty("demandId").GetString()!)]
+                : [];
+            string[] sublots = payload.TryGetProperty("expectedSublots", out JsonElement expected)
+                ? [.. expected.EnumerateArray().Select(item => item.GetString()!)]
+                : [];
+            latest = new Sent(revision, demands, sublots);
+        }
+        return Assert.IsType<Sent>(latest);
+    }
 
     private static async Task CancelDuringTheLoadAsync(RuntimeFixture fixture, string demandId, StationOperationRow load)
     {
