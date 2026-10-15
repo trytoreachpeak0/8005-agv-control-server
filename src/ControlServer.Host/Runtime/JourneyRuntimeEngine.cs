@@ -1442,6 +1442,20 @@ public sealed partial class JourneyRuntimeEngine(
                         await PublishEntryRequestAsync(runtime, reissued, session, cancellationToken).ConfigureAwait(false);
                         return;
                     }
+                    // 本站有一条被扫码前取消（或别的终结、放回）而本站还有待做项（control-server#723）：号已随终结前进，车上那一版还列着它、
+                    // 录入请求还期待它的子批。清单与录入请求按新号一起发，与装完一条回到等录入同一个做法。
+                    if (await WorklistBehindAnEndingAtTheStopAsync(runtime, stops, cancellationToken).ConfigureAwait(false))
+                    {
+                        runtime.UpdatedAt = now;
+                        await PublishStopWorklistAsync(
+                            runtime,
+                            stops,
+                            session,
+                            StationDepartureDeadlineAt(runtime, stops.Current),
+                            cancellationToken).ConfigureAwait(false);
+                        await PublishEntryRequestAsync(runtime, stops, session, cancellationToken).ConfigureAwait(false);
+                        return;
+                    }
                     // 上面两条报文是两次保存，崩在两次之间时清单已对上、录入请求还没有：补发录入请求。
                     if (await EntryRequestMissingBehindTheWorklistAsync(runtime, stops, cancellationToken).ConfigureAwait(false))
                     {
@@ -1681,6 +1695,17 @@ public sealed partial class JourneyRuntimeEngine(
                         await PublishStopWorklistAsync(
                             runtime,
                             reissued,
+                            session,
+                            StationDepartureDeadlineAt(runtime, stops.Current),
+                            cancellationToken).ConfigureAwait(false);
+                    }
+                    // 同站另一条在这期间被扫码前取消（control-server#723）：车上那一版还列着它。只发清单，理由同上。
+                    else if (await WorklistBehindAnEndingAtTheStopAsync(runtime, stops, cancellationToken).ConfigureAwait(false))
+                    {
+                        runtime.UpdatedAt = now;
+                        await PublishStopWorklistAsync(
+                            runtime,
+                            stops,
                             session,
                             StationDepartureDeadlineAt(runtime, stops.Current),
                             cancellationToken).ConfigureAwait(false);
@@ -3038,6 +3063,7 @@ public sealed partial class JourneyRuntimeEngine(
     /// 旅程收尾时的空清单就由 <see cref="JourneyClosure"/> 发；本站被期限、取消或补偿结束而旅程继续的那种（B 形态）由
     /// <see cref="StopEndWorklist"/> 发（control-server#324）。正常装完最后一条、车直接离站的那一刻仍然不发；离站等待开着、车还停在
     /// 取货停靠上而期限挪过时，由 <see cref="RefreshDeadlineOfALoadedStopAsync"/> 发一张带期限的空清单（control-server#633）。
+    /// 本站一条被终结或放回、本站还有待做项时，下一轮由 <see cref="WorklistBehindAnEndingAtTheStopAsync"/> 认出来、在这里发（control-server#723）。
     /// </para>
     /// </remarks>
     private async Task PublishStopWorklistAsync(
@@ -3351,6 +3377,59 @@ public sealed partial class JourneyRuntimeEngine(
             .Select(row => row.MessageId)
             .ToListAsync(cancellationToken).ConfigureAwait(false);
         return queued.Contains(worklistId) && !queued.Contains(entryId);
+    }
+
+    /// <summary>
+    /// 本停靠此刻这一版清单还没排给车，而本站已经发过更早的一版、也还有待做项：本站有一条在这期间被终结或放回了（control-server#723）。
+    /// 返回真时，本站较早各版清单与录入请求已在这个上下文里退役（只打标记），调用方按此刻的号发清单（等录入时连同录入请求），随那一次保存落库。
+    /// </summary>
+    /// <remarks>
+    /// <para>
+    /// <b>为什么会落后。</b>号按 <see cref="JourneyStopCursor.WorklistRevisionAt"/> 算，被终结（以及放回时补的版数）也算本站做完一条，号随终结
+    /// 那一次保存就前进了。但终结那一路（<c>OnboardRecoveryCoordinator</c> → <see cref="PickupStopTermination"/>）只在本站因此结束时
+    /// 由 <see cref="StopEndWorklist"/> 发一张空清单；本站还有别的待做项时，谁也不发。引擎这边，等录入只在期限变了时重发清单，在装时也一样。
+    /// 车上于是一直留着旧的那一版：屏上仍列着已取消的需求，录入请求仍期待它的子批（10-15 生产 agv02，操作员重按取消被判
+    /// <c>BUSINESS_ID_CONTENT_CONFLICT</c>）。07:12:54 那次按期限放回之所以刷新了，是因为它结束了整个停靠、车「到达」同站的下一个停靠，
+    /// 到站那一段发的是下一个停靠的首版——不是放回本身发的。
+    /// </para>
+    /// <para>
+    /// <b>判据是「此刻那一版在不在发件箱里」</b>，与 <see cref="AdvanceWorklistPastAStaleDeadlineAsync"/> 同一个思路：不认来路，取消、管理员终结、
+    /// 放回都一样；崩在终结之后、补发之前，下一轮照样认得出。正常推进里这一版总在：到站、装完一条、期限重填都是在升号的同一次保存里把它排上，
+    /// 本站第一版（<paramref name="stops"/> 首号）由到站发，不归这里。
+    /// </para>
+    /// <para>
+    /// <b>较早各版全部退役，不只上一号。</b>两次终结落在同一轮之间时号跳过一号，车上的是再早一版；只退上一号，车上那一版留着未确认，
+    /// 重连补发时排在新的一版之后送到，车判修订号回退而断会话（<see cref="StopEndWorklist"/> 同一个理由）。
+    /// </para>
+    /// </remarks>
+    private async Task<bool> WorklistBehindAnEndingAtTheStopAsync(
+        JourneyRuntimeRow runtime,
+        JourneyStopCursor stops,
+        CancellationToken cancellationToken)
+    {
+        JourneyStopRow stop = stops.Current;
+        if (stops.OutstandingAtCurrentStop.Count == 0)
+        {
+            return false;
+        }
+
+        long first = stops.FirstWorklistRevisionAt(runtime.WorklistRevision, stop);
+        long revision = stops.WorklistRevisionAt(runtime.WorklistRevision, stop);
+        string worklistId = stops.WorklistMessageIdAt(runtime.WorklistRevision, stop, revision);
+        if (await dbContext.ProtocolOutbox.AsNoTracking()
+                .AnyAsync(row => row.MessageId == worklistId, cancellationToken).ConfigureAwait(false))
+        {
+            return false;
+        }
+
+        for (long earlier = first; earlier < revision; earlier++)
+        {
+            await FenceSupersededSnapshotAsync(
+                stops.WorklistMessageIdAt(runtime.WorklistRevision, stop, earlier), cancellationToken).ConfigureAwait(false);
+            await FenceSupersededSnapshotAsync(
+                stops.SublotRequestMessageIdAt(runtime.WorklistRevision, stop, earlier), cancellationToken).ConfigureAwait(false);
+        }
+        return true;
     }
 
     /// <summary>
@@ -6817,10 +6896,11 @@ public sealed partial class JourneyRuntimeEngine(
             // （TryEndStopAtStationDeadlineAsync）同一个出口：本站没有待装的就交给离站那一段，由它决定持货等单还是离站；
             // 还有待装的就回到等录入——期限已过，那里的期限出口会照它自己的条件（门、在线、取消）结束本站。与终结同一次保存。
             //
-            // 回等录入时这里不发新一版清单与录入请求，与等装货结果那一段的续跑（resumingAfterEnding，会发）不对称。这个不对称成立的前提是
-            // 「确定的失败只在本站离站期限之后出现」：店里只把期限之后到的确定失败记成 Failed（DeterminateLoadFailure；期限之前的进恢复，
-            // JourneyRuntimeWorkerLoadDeadlineTests.AFailureReportedBeforeTheDeadlineIsNotSettledAsDeterminate），所以回到等录入的那一轮
-            // 期限已过，期限出口结束本站，不会有人对着车上那一版清单再录入。哪天期限之前的失败也走到这里，这一支就要改成与续跑一样发清单与录入请求。
+            // 回等录入时这里不发新一版清单与录入请求：终结让本站的号前进了，下一轮等录入那一段先走期限出口（确定的失败只在本站离站期限之后
+            // 出现——店里只把期限之后到的确定失败记成 Failed，DeterminateLoadFailure；期限之前的进恢复，
+            // JourneyRuntimeWorkerLoadDeadlineTests.AFailureReportedBeforeTheDeadlineIsNotSettledAsDeterminate），期限出口结束本站；
+            // 期限出口这一轮没结束它（门没证明关着、车不在线、取消开着）时，由 WorklistBehindAnEndingAtTheStopAsync 认出号已前进、
+            // 补发新一版清单与录入请求（control-server#723）。所以这里不必与续跑对称地自己发。
             if (runtime.Stage != JourneyRuntimeStage.Completed)
             {
                 bool othersToLoadHere = stops.OutstandingAtCurrentStop
