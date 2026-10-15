@@ -800,10 +800,13 @@ public sealed class OnboardRecoveryCoordinator(
         List<JourneyDemandRow> alongside = [];
         if (!last && string.Equals(runtime.DemandId, demandId, StringComparison.Ordinal))
         {
+            // 已终结的（扫码前取消、管理员终结）不写 RemovedAt，但它们不在车上、也不该被改写成放回：排除在外，与
+            // JourneyAwareSlotLedger、OwnOrderRebuild 的同类判断一致（#733 审查 M1）。挡下放回的只有车上有货、在装或已卸的（已卸今天到不了，纵深）。
             alongside = await dbContext.Set<JourneyDemandRow>()
-                .Where(row => row.JourneyId == runtime.JourneyId && row.RemovedAt == null && row.DemandId != demandId)
+                .Where(row => row.JourneyId == runtime.JourneyId && row.RemovedAt == null && row.DemandId != demandId &&
+                              row.Status != JourneyDemandStatuses.Terminated)
                 .ToListAsync(cancellationToken).ConfigureAwait(false);
-            if (alongside.Any(row => row.Status != JourneyDemandStatuses.PendingLoad))
+            if (alongside.Any(row => row.Status is JourneyDemandStatuses.Loaded or JourneyDemandStatuses.Loading or JourneyDemandStatuses.Unloaded))
             {
                 return false;
             }
