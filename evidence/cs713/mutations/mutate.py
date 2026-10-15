@@ -57,8 +57,7 @@ MUTATIONS = [
      'bool replaysDepartureResult = messageType == CurrentStopDepartures.RequestType;',
      'FullyQualifiedName~StagingDepartureRequestTests|FullyQualifiedName~StagingDepartureResultReplayTests'),
     ('M10-review-P4-no-sweep-without-journey', 'src/ControlServer.Host/Runtime/JourneyRuntimeEngine.cs',
-     '        await AnswerDepartureRequestsWithoutJourneyAsync(active, cancellationToken).ConfigureAwait(false);
-',
+     '        await AnswerDepartureRequestsWithoutJourneyAsync(active, cancellationToken).ConfigureAwait(false);' + chr(10),
      '',
      'FullyQualifiedName~StagingDepartureRequestTests|FullyQualifiedName~StagingDepartureResultReplayTests'),
     ('M11-review-L3-full-vehicle-reclosed', ENGINE,
