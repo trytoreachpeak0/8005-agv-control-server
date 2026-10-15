@@ -93,8 +93,8 @@ internal sealed class CargoHoldingQueryEndpoint : IDashboardQueryEndpoint
                 .ToArrayAsync(cancellationToken))
             .ToLookup(row => row.JourneyId, StringComparer.Ordinal);
         JourneyDemandList demands = await JourneyDemandList.ReadAsync(dbContext, journeyIds, cancellationToken);
-        // 车停在（或开往）待送点取货停靠时没有持货期限（control-server#709），与引擎发给车的一致：看板不给期限、不显示到期。按当前停靠判，
-        // 离开待送点之后的机台取货停靠照旧有期限（control-server#710 审查 M1）。整趟旅程在待送点装过货的，另记一份给结束原因的文案用
+        // 车停在（或开往）待送点取货停靠时，持货等单总是适用（control-server#727，CP-0014）：车上有货时有期限，一篮没有时起算点为空、期限也为空，
+        // 与引擎发给车的一致（control-server#709 时那里一律不给）。按当前停靠判，离开待送点之后的机台取货停靠照旧按下面的推法（control-server#710 审查 M1）。整趟旅程在待送点装过货的，另记一份给结束原因的文案用
         // （审查 L3：待送点上的 VEHICLE_FULL 也可能是「等着的都装不下」，一侧还空着）。开关关着时不读。
         HashSet<string> atStaging = new(StringComparer.Ordinal);
         HashSet<string> loadingAtStaging = new(StringComparer.Ordinal);
@@ -142,7 +142,7 @@ internal sealed class CargoHoldingQueryEndpoint : IDashboardQueryEndpoint
             state,
             journey.CargoHoldingStartedAt,
             _cargoHoldingTimeout,
-            HoldingApplies(journey, state) && !atStaging.Contains(journey.JourneyId));
+            atStaging.Contains(journey.JourneyId) || HoldingApplies(journey, state));
         bool deadlinePassed = deadline is { } at && now >= at;
         return new
         {
