@@ -27,7 +27,8 @@ internal static class TestOnboardProcessorFactory
         OnboardJourneyPublisher publisher = new(store, peer ?? new SilentPeer(), timeProvider);
         SlotConfigurationActivationDispatcher activationDispatcher = ActivationDispatcher(context, publisher);
         OnboardRecoveryCoordinator coordinator = new(
-            context, store, publisher, activationDispatcher, timeProvider, configuration, recoveryLogger);
+            context, store, publisher, activationDispatcher, timeProvider, configuration, recoveryLogger,
+            runtimeOptions: runtimeOptions is null ? null : Options.Create(runtimeOptions));
         return new OnboardMessageProcessor(
             context,
             store,

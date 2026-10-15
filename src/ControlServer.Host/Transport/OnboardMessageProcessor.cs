@@ -233,13 +233,20 @@ public sealed partial class OnboardMessageProcessor(
         bool replaysPendingRecovery = messageType == "RecoveryStateReport";
         // 迟到扫码的过时答复（control-server#324）走同一个时机：握手之外、本条应答之后。
         bool answersLateSublot = state.HandshakeCompleted && messageType == "SublotSubmitted";
-        if ((triggersRecoverySend || replaysPendingRecovery || answersLateSublot) && state.DeferOutboundUntilResponseWritten)
+        // 出发请求的重复（同号同内容，control-server#713）：已经判过的那条答复原样再发一遍，也是应答之后、握手之外。还没判的什么也不做，引擎会答。
+        bool replaysDepartureResult = state.HandshakeCompleted && messageType == CurrentStopDepartures.RequestType;
+        if ((triggersRecoverySend || replaysPendingRecovery || answersLateSublot || replaysDepartureResult) &&
+            state.DeferOutboundUntilResponseWritten)
         {
             state.DeferredRecoveryLine = line;
         }
         else if (answersLateSublot)
         {
             await recoveryCoordinator.SendLateSublotRejectionAsync(root, cancellationToken).ConfigureAwait(false);
+        }
+        else if (replaysDepartureResult)
+        {
+            await recoveryCoordinator.ReplayDepartureResultAsync(root, cancellationToken).ConfigureAwait(false);
         }
         else if (triggersRecoverySend)
         {
@@ -372,6 +379,10 @@ public sealed partial class OnboardMessageProcessor(
         else if (messageType == "SublotSubmitted")
         {
             await recoveryCoordinator.SendLateSublotRejectionAsync(root, cancellationToken).ConfigureAwait(false);
+        }
+        else if (messageType == CurrentStopDepartures.RequestType)
+        {
+            await recoveryCoordinator.ReplayDepartureResultAsync(root, cancellationToken).ConfigureAwait(false);
         }
         else if (messageType == "RecoveryStateReport")
         {
@@ -576,6 +587,18 @@ public sealed partial class OnboardMessageProcessor(
                 // 这一站仍在等录入时什么也不做，留给引擎——见 LateSublotSubmission。
                 await LateSublotSubmission.StageRejectionIfStopEndedAsync(
                     dbContext, root, timeProvider.GetUtcNow(), cancellationToken).ConfigureAwait(false);
+                return DurableAck(messageType, messageId, agvId, generation, contentHash);
+            case CurrentStopDepartures.RequestType:
+                // 车载屏上的「出发」（协议 4.0.0 候选，control-server#713）：这里只让它持久并回 DurableAck，判定、放回与答复由引擎下一轮在
+                // 同一次提交里做（CurrentStopDepartures 的类注释）。同一个 departureRequestId 以别的 messageId、不同的内容再来，是业务号内容冲突：
+                // 拒收、连接保持，不答 CurrentStopDepartureResult（wire-notes 末条）。同号同内容的那条答复，在应答之后原样重放（见下）。
+                if (await CurrentStopDepartures.ConflictsWithEarlierAsync(dbContext, messageId, agvId, payload, cancellationToken)
+                        .ConfigureAwait(false))
+                {
+                    throw new InboundMessageRejectedException(
+                        ServerReasonCodes.BusinessIdContentConflict,
+                        "departureRequestId was used before with different content.");
+                }
                 return DurableAck(messageType, messageId, agvId, generation, contentHash);
             case "SlotOperationCommandRejected":
                 // A refused resume command closes its recovery session (control-server#187); every other

@@ -56,6 +56,12 @@ internal static class StopEndedReasons
         "TERMINATED_BY_FAULT_CARGO_HANDOFF" => "CARGO_HANDED_OFF",
         DemandJourneyLookup.ReleasedForRedispatchReason => "DEMAND_RELEASED",
         VehicleFaultRecoveryService.TripTerminatedReason => "TRIP_TERMINATED",
+        // 协议 4.0.0 候选（control-server#713，wire-notes「Staging pickup stops」第 4 条）：待送点那一站因客户出发或车缺电而结束、
+        // 没装的放回待派时，空清单说的是这两个，不说 DEMAND_RELEASED。
+        CurrentStopDepartures.OperatorDepartedReason => "OPERATOR_DEPARTED",
+        CurrentStopDepartures.ChargingRequiredReason => "CHARGING_REQUIRED",
+        // 待送点上装货中取消（control-server#713）：需求放回待派、不终结，车上说的仍是操作员按的那件事。
+        CurrentStopDepartures.LoadCancelledReleasedReason => "LOAD_CANCELLED",
         _ => throw new ArgumentOutOfRangeException(
             nameof(reasonCode),
             reasonCode,

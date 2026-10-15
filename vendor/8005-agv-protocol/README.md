@@ -32,32 +32,28 @@ manifest 里的 `schemaBundleSha256`**——后者由协议仓自己的打包算
 
 ## 当前副本
 
-三份都取自同一个提交。**这一份只在批次分支 `batch-p3/v3` 上**；集成分支 `fp/v2-impl` 仍是
-`protocol-v2.0.0` 的副本。
+三份都取自同一个提交。
 
 | 项 | 值 |
 | --- | --- |
 | 来源仓库 | `8005-agv-protocol` |
-| 来源提交 | `3f091cb2eae7c58cec54a95dd9389c9180bc7b4c`（分支 `batch-p3/protocol-v3.0.0-candidate`，tag `protocol-v3.0.0` 尚未创建） |
-| 取用日期 | 2026-09-30 |
+| 来源提交 | `4d67655c4da5120d20cd06d99f67f14c4f2dfb08`（分支 `fp/v2-candidate`，tag `protocol-v4.0.0` 尚未创建） |
+| 取用日期 | 2026-10-15 |
 
 | 来源路径 | 内容 |
 | --- | --- |
-| `integration-slices/index.json` | `schemaVersion 2.0.0`、16 条切片（`FP-IS-00`～`15`）、`vectorIds` 条目 42、去重 39 |
-| `manifest/release.json` | `status CONTENT_SNAPSHOT`、`releaseVersion 3.0.0`、`protocolVersion 4`、`profileId AGV_FULL_PRODUCT`、65 条消息、11 条 denylist、1897 条文件表项 |
-| `schemas/`（整棵树） | 71 个文件，`$id` 段 `agv-full-product/v4` |
+| `integration-slices/index.json` | `schemaVersion 2.0.0`、16 条切片（`FP-IS-00`～`15`）、`vectorIds` 条目 48、去重 45 |
+| `manifest/release.json` | `status CONTENT_SNAPSHOT`、`releaseVersion 4.0.0`、`protocolVersion 5`、`profileId AGV_FULL_PRODUCT`、67 条消息、11 条 denylist |
+| `schemas/`（整棵树） | 73 个文件，`$id` 段 `agv-full-product/v5` |
 
-那个提交是协议 `3.0.0` 的**未发布候选**（`ApprovalStatus SUPERSEDING_CANDIDATE`）：`8005-agv-program#151` 于
-2026-09-29 由生成器一把产出并冻结在候选分支上，G1 通过（协议仓 PR #12 的 CI 与候选顶端的干净克隆各一次），
-身份表见该票关闭评论。它要挂到上真车验证之后，由 `8005-agv-program#152` 在同一个提交上打 tag 发布；
-服务端改绑发布身份是 `8005-agv-control-server#393`。在它上面跑出的 G2／L2 证据一律是 `UNRELEASED_CANDIDATE`，
-不计入批次出口。三份文件从该提交的对象里用 `git archive` 导出（不经协议仓工作树，避免行尾转换），逐个与
-manifest 自带的文件表 SHA-256 核对一致（71 个 schema 与 `index.json` 全部命中）后整份拷入
-（`8005-agv-control-server#382`）。
+那个提交是协议 `4.0.0` 的**未发布候选**（`ApprovalStatus SUPERSEDING_CANDIDATE`）：protocol#14 加了
+`CurrentStopDepartureRequested`／`CurrentStopDepartureResult` 与 `OPERATOR_DEPARTED`、`CHARGING_REQUIRED` 两个结束原因，
+protocol#15 把待送点缺电改成「先送货再充电」，G1 通过。服务端绑定它的是 `8005-agv-control-server#713`，与车载端
+`8005-agv-onboard-hmi#349` 背靠背合入。在它上面跑出的 G2／L2 证据一律是 `UNRELEASED_CANDIDATE`。三份文件从该提交的
+对象里用 `git archive` 导出（不经协议仓工作树，避免行尾转换），逐个与 manifest 自带的文件表 SHA-256 核对一致
+（73 个 schema 与 `index.json`，74 项全部命中）后整份拷入。
 
-候选若重发，以 `8005-agv-program#151` 上追加评论公布的新身份为准，按下面的步骤重新 vendor。
-
-上一份副本是 `protocol-v2.0.0`（`86575456c847041515b7b75e8851a00e0d939804`，2026-09-16 取用）。
+上一份副本是 `protocol-v3.0.0`（`3f091cb2eae7c58cec54a95dd9389c9180bc7b4c`，2026-09-30 取用，10-09 发布）。
 
 ## 上游改了以后怎么刷新
 

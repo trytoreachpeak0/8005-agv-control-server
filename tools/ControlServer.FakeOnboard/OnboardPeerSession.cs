@@ -293,6 +293,9 @@ public sealed class OnboardPeerSession(
             case "DurableAck" when loadCancellations is not null:
                 loadCancellations.ObserveDurableAck(root);
                 return;
+            case "CurrentStopDepartureResult":
+                await AcknowledgeDurablyAsync(root, messageType, messageId, generation, cancellationToken).ConfigureAwait(false);
+                return;
             case "PreDepartureSafetyCheck":
                 await OnRequestAsync(
                     SafetyCheckKey(root.GetProperty("payload")), messageType, messageId, root, generation,
@@ -799,6 +802,14 @@ public sealed class OnboardPeerSession(
         };
         JsonElement payload = root.GetProperty("payload");
         long revision = payload.GetProperty(revisionField).GetInt64();
+        if (messageType == "CurrentStopWorklistSnapshot" && (LastWorklist is null || revision >= LastWorklist.WorklistRevision))
+        {
+            JsonElement session = payload.GetProperty("operationSessionId");
+            LastWorklist = new ShownWorklist(
+                payload.GetProperty("stationId").GetString() ?? string.Empty,
+                revision,
+                session.ValueKind == JsonValueKind.Null ? null : session.GetString());
+        }
         await SendLineAsync(Envelope("SnapshotAppliedAck", NewId(), messageId, generation, new
         {
             snapshotMessageId = messageId,
@@ -807,6 +818,30 @@ public sealed class OnboardPeerSession(
             appliedContentSha256 = Sha256(root.GetRawText())
         }), cancellationToken).ConfigureAwait(false);
     }
+
+    /// <summary>
+    /// The worklist this peer shows: the highest <c>CurrentStopWorklistSnapshot</c> it acknowledged. A departure request echoes it
+    /// (control-server#713).
+    /// </summary>
+    public ShownWorklist? LastWorklist { get; private set; }
+
+    /// <summary>
+    /// <c>CurrentStopDepartureResult</c> is RELIABLE: acknowledged with a <c>DurableAck</c> whose hash is over the line as received,
+    /// the way the real onboard acknowledges it (hmi#349). Left unacknowledged the server would replay it every round.
+    /// </summary>
+    private Task AcknowledgeDurablyAsync(
+        JsonElement root,
+        string messageType,
+        string messageId,
+        long generation,
+        CancellationToken cancellationToken) =>
+        SendLineAsync(Envelope("DurableAck", NewId(), messageId, generation, new
+        {
+            acceptedMessageId = messageId,
+            acceptedMessageType = messageType,
+            acceptedContentSha256 = Sha256(root.GetRawText()),
+            durablyAcceptedAt = DateTimeOffset.UtcNow
+        }), cancellationToken);
 
     /// <summary>Sends one message this peer originates, in the current session generation.</summary>
     public Task SendEnvelopeAsync(

@@ -20,8 +20,13 @@ public sealed class OnboardRecoveryCoordinator(
     TimeProvider timeProvider,
     IConfiguration configuration,
     ILogger<OnboardRecoveryCoordinator>? logger = null,
-    PlanRevisionRoutingSource? planRevisionRouting = null)
+    PlanRevisionRoutingSource? planRevisionRouting = null,
+    Microsoft.Extensions.Options.IOptions<JourneyRuntimeOptions>? runtimeOptions = null)
 {
+    // 待送点规则（control-server#709 的开关）：本票让待送点上的两种取消改了做法（control-server#713），开关关着时一字不变。
+    private readonly StagingDepartureRulesOptions _stagingRules =
+        runtimeOptions?.Value.StagingDepartureRules ?? new StagingDepartureRulesOptions();
+
     /// <summary>
     /// What the onboard shows when a load cancellation is refused because the attempt has a slot fault declaration pending
     /// or applied (control-server#384). The wire code is <c>ACTION_NOT_ALLOWED_IN_STATE</c>: the protocol registry allows
@@ -751,6 +756,127 @@ public sealed class OnboardRecoveryCoordinator(
     public Task SendLateSublotRejectionAsync(JsonElement root, CancellationToken cancellationToken) =>
         LateSublotSubmission.SendAsync(publisher, dbContext, RequiredString(root, "messageId"), cancellationToken);
 
+    /// <summary>
+    /// 待送点取货停靠上一次装货中取消证明了仓位是空的：这条需求按释放改派放回待派（不抑制、不计站点超时次数），不终结（control-server#713）。
+    /// 做了返回真；不是待送点（或开关关着）、或它不挂在车所在的那个停靠上，返回假，调用方照旧终结。
+    /// </summary>
+    /// <remarks>
+    /// <para>
+    /// 旅程上没有别的未结需求时（一篮没装），旅程原地收尾，与「出发、一篮没装」同一个做法；否则本站因此结束就发那张空清单，计划删掉空停靠。
+    /// 空清单与收尾说的都是 <c>LOAD_CANCELLED</c>：车上操作员按的就是取消。
+    /// </para>
+    /// <para>
+    /// <b>锚需求、旅程上还有别的未结需求时不放回</b>，照旧终结：放回会让旅程开着时锚被改派到别的车（<c>FaultedCargoBindings</c> 的前提）。今天
+    /// 在构造上到不了——锚在第一个停靠，它在装时旅程上没有别的已装的货，而后面停靠上的需求是追加的；这一格只做纵深防御。
+    /// </para>
+    /// </remarks>
+    private async Task<bool> TryStageStagingCancellationReleaseAsync(
+        JourneyRuntimeRow runtime,
+        JourneyStopCursor stops,
+        string demandId,
+        PlanRevisionRouting? routing,
+        CancellationToken cancellationToken)
+    {
+        if (!_stagingRules.Enabled ||
+            stops.OpenStops.Count == 0 ||
+            !await StagingPickupStops.CurrentStopIsStagingAsync(dbContext, runtime, _stagingRules, cancellationToken)
+                .ConfigureAwait(false))
+        {
+            return false;
+        }
+        JourneyDemandRow? membership = await dbContext.Set<JourneyDemandRow>()
+            .SingleOrDefaultAsync(row => row.JourneyId == runtime.JourneyId && row.DemandId == demandId && row.RemovedAt == null,
+                cancellationToken)
+            .ConfigureAwait(false);
+        if (membership is null || !string.Equals(membership.PickupStopId, stops.Current.StopId, StringComparison.Ordinal))
+        {
+            return false;
+        }
+        bool last = await DemandJourneyLookup.IsLastOpenDemandAsync(dbContext, runtime.JourneyId, demandId, cancellationToken)
+            .ConfigureAwait(false);
+        // 取消的是锚需求而旅程上还有别的：按一篮没装处理（C11 在 control-server#713 上的裁定），旅程原地收尾，别的需求与锚一起放回。
+        // 锚在第一个停靠、途中追加从不并入当前停靠（EnRouteAppendPlanner.MergeTargetAt），所以锚还在装时别处不会已装；真有已装或在装的（构造上到不了，cs#714 会改变这个前提），
+        // 不放回、照旧终结——放回锚会让旅程开着时锚被改派到别的车。
+        List<JourneyDemandRow> alongside = [];
+        if (!last && string.Equals(runtime.DemandId, demandId, StringComparison.Ordinal))
+        {
+            alongside = await dbContext.Set<JourneyDemandRow>()
+                .Where(row => row.JourneyId == runtime.JourneyId && row.RemovedAt == null && row.DemandId != demandId)
+                .ToListAsync(cancellationToken).ConfigureAwait(false);
+            if (alongside.Any(row => row.Status != JourneyDemandStatuses.PendingLoad))
+            {
+                return false;
+            }
+            last = true;
+        }
+
+        DateTimeOffset now = timeProvider.GetUtcNow();
+        string? sublotRequestMessageId = stops.CurrentSublotRequestMessageIdOrNone(runtime.WorklistRevision);
+        await Runtime.Release.DemandReleaseService.StageReleasedMembershipAsync(dbContext, membership, now, cancellationToken)
+            .ConfigureAwait(false);
+        foreach (JourneyDemandRow other in alongside)
+        {
+            await Runtime.Release.DemandReleaseService.StageReleasedMembershipAsync(dbContext, other, now, cancellationToken)
+                .ConfigureAwait(false);
+        }
+        // 版数守恒，与出发、持货截断同一个理由：这个停靠的归属少了几条就补几版。
+        (await dbContext.Set<JourneyStopRow>().SingleAsync(row => row.StopId == stops.Current.StopId, cancellationToken)
+            .ConfigureAwait(false)).WorklistRefills +=
+            1 + alongside.Count(row => string.Equals(row.PickupStopId, stops.Current.StopId, StringComparison.Ordinal));
+        if (last)
+        {
+            await new PickupStopTermination(dbContext).StageJourneyClosureAsync(
+                runtime, sublotRequestMessageId, CurrentStopDepartures.LoadCancelledReleasedReason, now, cancellationToken)
+                .ConfigureAwait(false);
+        }
+        else
+        {
+            await JourneyPlanRevisionStage.StageAsync(
+                    dbContext, runtime.JourneyId, [demandId], currentStopMayGo: false, routing, cancellationToken)
+                .ConfigureAwait(false);
+            await StopEndWorklist.StageAfterReleaseAsync(
+                dbContext, runtime, releasedFromCurrentStop: true, sublotRequestMessageId,
+                CurrentStopDepartures.LoadCancelledReleasedReason, now, cancellationToken).ConfigureAwait(false);
+        }
+        return true;
+    }
+
+    /// <summary>
+    /// 一条出发请求（control-server#713）的重复到了：它那条答复若已判过，原样再发一遍——wire-notes「同号同内容由重放存下的结果作答」，
+    /// <c>CV-CURRENT-STOP-DEPARTURE-DUPLICATE-REQUEST</c> 里车已经确认过那条答复之后仍要再收到一次。没判过就什么也不做，引擎会答。
+    /// </summary>
+    /// <remarks>
+    /// 发的永远是发件箱里存的那一行：代次没变就原样发；车已确认过而代次变了，先把确认撤掉、由补发改写代次并落库再发，车回的 <c>DurableAck</c>
+    /// 按它收到的那一行算哈希，与存下的那一行对得上（hmi#349 联调第 3 条）。
+    /// </remarks>
+    public async Task ReplayDepartureResultAsync(JsonElement root, CancellationToken cancellationToken)
+    {
+        string agvId = RequiredString(root, "agvId");
+        long sessionGeneration = root.GetProperty("sessionGeneration").GetInt64();
+        string departureRequestId = RequiredString(root.GetProperty("payload"), "departureRequestId");
+        string resultId = CurrentStopDepartures.ResultMessageId(departureRequestId);
+        ProtocolOutboxRow? row = await dbContext.ProtocolOutbox
+            .SingleOrDefaultAsync(item => item.MessageId == resultId, cancellationToken).ConfigureAwait(false);
+        if (row is null || row.FencedAt is not null)
+        {
+            return;
+        }
+        if (row.AcknowledgedAt is not null)
+        {
+            using JsonDocument stored = JsonDocument.Parse(row.PayloadJson);
+            if (stored.RootElement.GetProperty("sessionGeneration").GetInt64() == sessionGeneration)
+            {
+                await publisher.SendStoredLineAsync(row, cancellationToken).ConfigureAwait(false);
+                return;
+            }
+            row.AcknowledgedAt = null;
+            await dbContext.SaveChangesAsync(cancellationToken).ConfigureAwait(false);
+        }
+        await publisher.ReplayPendingForSessionAsync(
+            agvId, sessionGeneration, new HashSet<string>(StringComparer.Ordinal) { resultId }, cancellationToken)
+            .ConfigureAwait(false);
+    }
+
     public async Task ReplayPendingCommandsAsync(
         string agvId,
         long sessionGeneration,
@@ -779,8 +905,12 @@ public sealed class OnboardRecoveryCoordinator(
             .PendingCommandMessageIdsAsync(dbContext, configuration, agvId, cancellationToken).ConfigureAwait(false);
         // 扣车与放行的业务状态（control-server#385）：只补这辆车这条流上号最大的那一张，已经被更高号取代的不补。
         IReadOnlyList<string> doorHoldIds = await DoorHoldSnapshotIdsAsync(agvId, cancellationToken).ConfigureAwait(false);
+        // 车还没确认的出发答复（control-server#713，PENDING_RESULT_REPLAY）：这一轮补发在恢复报告的应答之后，也就是 SessionReadiness 之后，
+        // 不夹在握手中间（hmi#349 联调第 1 条）。
+        IReadOnlyList<string> departureResultIds = await CurrentStopDepartures
+            .PendingResultIdsAsync(dbContext, agvId, cancellationToken).ConfigureAwait(false);
         string[] pendingIds =
-            [.. commandIds, .. snapshotIds, .. activationIds, .. closureIds, .. declarationIds, .. doorHoldIds];
+            [.. commandIds, .. snapshotIds, .. activationIds, .. closureIds, .. declarationIds, .. doorHoldIds, .. departureResultIds];
         if (pendingIds.Length > 0)
             await publisher.ReplayPendingForSessionAsync(
                 agvId, sessionGeneration, pendingIds.ToHashSet(StringComparer.Ordinal), cancellationToken)
@@ -1293,6 +1423,13 @@ public sealed class OnboardRecoveryCoordinator(
 
         JourneyStopCursor stops = await JourneyStopCursor.LoadAsync(dbContext, runtime, cancellationToken)
             .ConfigureAwait(false);
+        // 待送点取货停靠上不提供扫码前取消（control-server#713 票正文第 6 条，CP-0012；车载端 hmi#348 把按钮藏了，这里防旧版车载端）：
+        // 这条不装了由「出发」表达，没装的放回待派，不取消、不抑制。
+        if (await StagingPickupStops.CurrentStopIsStagingAsync(dbContext, runtime, _stagingRules, cancellationToken)
+                .ConfigureAwait(false))
+        {
+            return false;
+        }
         if (stops.Current.StopRole != JourneyStopRoles.Pickup ||
             stops.OutstandingAtCurrentStop.SingleOrDefault(
                 item => item.Demand.DemandId == demandId) is not { } member ||
@@ -2013,28 +2150,37 @@ public sealed class OnboardRecoveryCoordinator(
         {
             WriteDoorHold(workflow);
         }
-        PickupStopTermination provenEmptyTermination =
-            new(dbContext, await ReadPlanRevisionRoutingAsync(cancellationToken).ConfigureAwait(false));
-        await provenEmptyTermination
-            .StageAsync(
-                runtime,
-                // OrNone, unlike the cancellation above: that one runs only while the vehicle is loading at a
-                // pickup stop (its stage guard says so), while a handoff reaches here wherever the vehicle is
-                // standing -- at the gate as well as at the pickup, as PickupStopTermination's own remarks say.
-                // An unload stop has no entry request and therefore none to settle. Batch 7-06 (#211) moved
-                // this read from the journey row, whose id acceptance always writes, onto the current stop's,
-                // which only a pickup stop carries; without OrNone a handoff at the gate throws instead of
-                // ending the demand, and the manual recovery path it belongs to wedges.
-                commandedStops.CurrentSublotRequestMessageIdOrNone(runtime.WorklistRevision),
-                workflow.DemandId,
-                messageType switch
-                {
-                    "FaultCargoRecoveryResult" or "ForcedMechanicalRecoveryResult" => "TERMINATED_BY_FAULT_CARGO_HANDOFF",
-                    "LoadCompensationResult" => "CANCELLED_BY_LOAD_COMPENSATION",
-                    _ => "CANCELLED_BY_OPERATOR"
-                },
-                timeProvider.GetUtcNow(),
-                cancellationToken).ConfigureAwait(false);
+        PlanRevisionRouting? provenEmptyRouting = await ReadPlanRevisionRoutingAsync(cancellationToken).ConfigureAwait(false);
+        // 待送点上装货中取消（control-server#713 票正文第 5 条，CP-0012）：扫错门不该让这条需求从 v2 永远消失，放回待派、不抑制。
+        // 机台取货与开关关着时照旧终结为 CANCELLED_BY_OPERATOR 并抑制。
+        bool releasedAtStaging = messageType == "LoadCancellationResult" &&
+                                 await TryStageStagingCancellationReleaseAsync(
+                                         runtime, commandedStops, workflow.DemandId!, provenEmptyRouting, cancellationToken)
+                                     .ConfigureAwait(false);
+        PickupStopTermination provenEmptyTermination = new(dbContext, provenEmptyRouting);
+        if (!releasedAtStaging)
+        {
+            await provenEmptyTermination
+                .StageAsync(
+                    runtime,
+                    // OrNone, unlike the cancellation above: that one runs only while the vehicle is loading at a
+                    // pickup stop (its stage guard says so), while a handoff reaches here wherever the vehicle is
+                    // standing -- at the gate as well as at the pickup, as PickupStopTermination's own remarks say.
+                    // An unload stop has no entry request and therefore none to settle. Batch 7-06 (#211) moved
+                    // this read from the journey row, whose id acceptance always writes, onto the current stop's,
+                    // which only a pickup stop carries; without OrNone a handoff at the gate throws instead of
+                    // ending the demand, and the manual recovery path it belongs to wedges.
+                    commandedStops.CurrentSublotRequestMessageIdOrNone(runtime.WorklistRevision),
+                    workflow.DemandId,
+                    messageType switch
+                    {
+                        "FaultCargoRecoveryResult" or "ForcedMechanicalRecoveryResult" => "TERMINATED_BY_FAULT_CARGO_HANDOFF",
+                        "LoadCompensationResult" => "CANCELLED_BY_LOAD_COMPENSATION",
+                        _ => "CANCELLED_BY_OPERATOR"
+                    },
+                    timeProvider.GetUtcNow(),
+                    cancellationToken).ConfigureAwait(false);
+        }
         // 旅程还带着别的需求、因此没收尾，而它阻塞在的正是刚结清的这一次操作：放回等那一次结果的阶段，由引擎接着走
         // （control-server#499）。不是这一次的、或别的操作还没收敛的，留在 Blocked。条件与理由见 BlockedJourneyRelease。
         string? blockedFor = runtime.BlockReasonCode;

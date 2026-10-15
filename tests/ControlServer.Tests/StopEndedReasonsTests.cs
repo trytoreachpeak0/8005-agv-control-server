@@ -37,6 +37,9 @@ public sealed class StopEndedReasonsTests
         { "TERMINATED_BY_FAULT_CARGO_HANDOFF", "CARGO_HANDED_OFF" },
         { DemandJourneyLookup.ReleasedForRedispatchReason, "DEMAND_RELEASED" },
         { VehicleFaultRecoveryService.TripTerminatedReason, "TRIP_TERMINATED" },
+        // 协议 4.0.0 候选（control-server#713）：待送点因客户出发、或因缺电而结束一站，需求放回待派，空清单说这两个，不说 DEMAND_RELEASED。
+        { CurrentStopDepartures.OperatorDepartedReason, "OPERATOR_DEPARTED" },
+        { CurrentStopDepartures.ChargingRequiredReason, "CHARGING_REQUIRED" },
     };
 
     [Theory]
@@ -48,7 +51,7 @@ public sealed class StopEndedReasonsTests
     }
 
     /// <summary>
-    /// 有值的情形没有一种发 null，而且对照表的值域恰好是 schema 的七值枚举：一个不多（发出去会被拒）、一个不少（有取值没有来路，
+    /// 有值的情形没有一种发 null，而且对照表的值域恰好是 schema 的枚举（v4 候选起九个值）：一个不多（发出去会被拒）、一个不少（有取值没有来路，
     /// 说明哪条来路被错映射了）。
     /// </summary>
     [Fact]

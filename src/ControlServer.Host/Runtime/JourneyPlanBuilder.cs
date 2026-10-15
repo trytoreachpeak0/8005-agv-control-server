@@ -219,7 +219,8 @@ public sealed class JourneyPlanBuilder(JourneyRuntimeOptions options)
         IReadOnlyList<JourneyStopRow> stops,
         JourneyStopRow current,
         bool arrivedAtCurrent,
-        long revision)
+        long revision,
+        Func<JourneyStopRow, bool>? isStagingPickup = null)
     {
         ArgumentNullException.ThrowIfNull(stops);
         ArgumentNullException.ThrowIfNull(current);
@@ -231,7 +232,10 @@ public sealed class JourneyPlanBuilder(JourneyRuntimeOptions options)
                 stop.StopRole == JourneyStopRoles.Pickup ? "TO_PICKUP" : "TO_DROPOFF",
                 stop.Sequence,
                 stop.StationId,
-                LegState(stop, current, arrivedAtCurrent)))]);
+                LegState(stop, current, arrivedAtCurrent),
+                stop.StopRole == JourneyStopRoles.Pickup && isStagingPickup?.Invoke(stop) == true
+                    ? WireStagingStationFunction
+                    : null))]);
     }
 
     /// <summary>
@@ -346,20 +350,29 @@ public sealed class JourneyPlanBuilder(JourneyRuntimeOptions options)
         return new Guid(guidBytes).ToString("D");
     }
 
-    // publicStationFunction, the fifth argument, is always null: the product does not maintain a
-    // public station classification (scope specification 5.3), so the protocol field stays empty.
+    /// <summary>
+    /// 待送点取货腿的 <c>publicStationFunction</c>（协议 4.0.0 候选，control-server#713）：车载端优先按它认出「这一站是待送点」，
+    /// 没有才按站号推断（hmi#349）。
+    /// </summary>
+    internal const string WireStagingStationFunction = "WIRE_STAGING";
+
+    // publicStationFunction, the fifth argument, is null except on a staging pickup leg under the staging rules
+    // (control-server#713): the product does not maintain a public station classification (scope specification 5.3),
+    // and the staging pickup is the one stop the server already recognises by its frozen task type binding
+    // (StagingPickupStops). With the rules off no caller passes a recogniser, so every leg stays exactly as before.
     private static UpcomingMovementLeg PlanLeg(
         JourneyRuntimeRow runtime,
         string movementLegId,
         string legType,
         int sequence,
         string stationId,
-        string state) => new(
+        string state,
+        string? publicStationFunction) => new(
             movementLegId,
             legType,
             BusinessStopPurpose,
             runtime.DemandId,
-            null,
+            publicStationFunction,
             sequence,
             stationId,
             runtime.MapIdentity,

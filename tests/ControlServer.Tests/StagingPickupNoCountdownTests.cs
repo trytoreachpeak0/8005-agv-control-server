@@ -285,7 +285,8 @@ public sealed class StagingPickupNoCountdownTests
         }
 
         Assert.Equal(JourneyRuntimeStage.Completed, journey.Stage);
-        Assert.Equal(DemandJourneyLookup.ReleasedForRedispatchReason, journey.BlockReasonCode);
+        // 收尾原因说缺电（control-server#713，协议 4.0.0 候选）：车上收尾清单的 stopEndedReason 是 CHARGING_REQUIRED，不再是 DEMAND_RELEASED。
+        Assert.Equal(CurrentStopDepartures.ChargingRequiredReason, journey.BlockReasonCode);
         Assert.Equal(DemandExecutionStatus.Accepted, (await fixture.DemandRowAsync()).Status);
         JourneyDemandRow released = Assert.Single(await MembershipsAsync(fixture));
         Assert.Equal(DemandJourneyLookup.ReleasedForRedispatchReason, released.RemovalReason);
@@ -311,8 +312,9 @@ public sealed class StagingPickupNoCountdownTests
     }
 
     /// <summary>
-    /// 验收 5 的另一半：车上已经有货、电量跌到线下，本票什么也不做（带货充电是 control-server#711 的）——不走一篮没装那一支：不收尾、不放回、
-    /// 车上的货仍有需求认领。
+    /// 验收 5 的另一半，自 control-server#713 起改为「先送货再充电」（CP-0013，用户 10-14 改定）：车上已经有货、电量跌到线下，不走一篮没装那一支
+    /// （不收尾、货仍有需求认领），而是按自动出发离站去送——装货阶段以 <c>CHARGING_REQUIRED</c> 关闭、发离站核验。详细的断言在
+    /// <c>StagingChargingRequiredDepartureTests</c>。
     /// </summary>
     [Fact]
     [Trait("IntegrationSlice", "FP-IS-02")]
@@ -323,29 +325,31 @@ public sealed class StagingPickupNoCountdownTests
         await LoadTheBasketAsync(fixture);
         await fixture.ProveSlotDoorsClosedAsync();
         fixture.Riot.Vehicle = fixture.Riot.Vehicle with { BatteryPercent = 10 };
+        fixture.Riot.BeforeReadVehicle = () => fixture.Clock.Advance(TimeSpan.FromMilliseconds(1));
 
         for (int step = 0; step < 3; step++)
         {
-            fixture.Clock.Advance(TimeSpan.FromMinutes(1));
+            fixture.Clock.Advance(TimeSpan.FromSeconds(1));
             await fixture.HearFromPeerAsync();
             await fixture.Engine.ExecuteOnceAsync(Token);
         }
 
         JourneyRuntimeRow journey = await fixture.RuntimeAsync();
-        Assert.Equal(JourneyRuntimeStage.AwaitingStationDeparture, journey.Stage);
+        Assert.NotEqual(JourneyRuntimeStage.Completed, journey.Stage);
+        Assert.Equal((LoadingPhaseStates.Closed, LoadingClosedReasons.ChargingRequired), (journey.LoadingPhaseState, journey.LoadingClosedReason));
         JourneyDemandRow membership = Assert.Single(await MembershipsAsync(fixture));
         Assert.Null(membership.RemovedAt);
         Assert.Equal(JourneyDemandStatuses.Loaded, membership.Status);
         Assert.True(await fixture.Context.Set<VehiclePurposeClaimRow>().AnyAsync(Token));
+        Assert.True(await Batch7CargoHoldingTests.DepartureCheckSentAsync(fixture), "The loaded vehicle did not set off to deliver.");
     }
 
     /// <summary>
-    /// 验收 5 的守卫（独立审查 L1）：同站追加之后，第 1 个待送点停靠已装上 A，车「原地到站」第 2 个停靠、在等 B 录入；此时缺电，旅程不收尾、
-    /// 两条都不放回——A 已在车上，结束旅程会让它没有任何需求认领（那一支是 control-server#711 的）。
+    /// 验收 5 的守卫（独立审查 L1），自 control-server#713 起：同站追加之后，第 1 个待送点停靠已装上 A，车「原地到站」第 2 个停靠、在等 B 录入；
+    /// 此时缺电。旅程不收尾、A 不放回——A 在车上，结束旅程会让它没有任何需求认领；B 没开始装，按出发的放回语义放回待派，车带着 A 离站去送。
     /// </summary>
     /// <remarks>
-    /// 上一条用例里车装完就停在离站等待，缺电出口只在等录入时判，所以守卫删掉它也是绿的；这一条把车放在「等录入、车上已有货」那一格。
-    /// 删掉 <c>TryReleaseLowBatteryStagingStopAsync</c> 开头按整趟判「有没有已装或在装」的那两个条件，这一条红。
+    /// 删掉 <c>TryReleaseLowBatteryStagingStopAsync</c> 开头按整趟判「有没有已装或在装」的那两个条件，这一条红：A 被一起放回、旅程收尾。
     /// </remarks>
     [Fact]
     [Trait("IntegrationSlice", "FP-IS-08")]
@@ -384,15 +388,17 @@ public sealed class StagingPickupNoCountdownTests
         }
 
         JourneyRuntimeRow journey = await fixture.RuntimeAsync();
-        Assert.Equal(JourneyRuntimeStage.AwaitingSublot, journey.Stage);
+        Assert.NotEqual(JourneyRuntimeStage.Completed, journey.Stage);
+        Assert.Equal(LoadingClosedReasons.ChargingRequired, journey.LoadingClosedReason);
         JourneyDemandRow loaded = await fixture.Context.Set<JourneyDemandRow>().AsNoTracking()
             .SingleAsync(row => row.DemandId == Demand, Token);
-        JourneyDemandRow pending = await fixture.Context.Set<JourneyDemandRow>().AsNoTracking()
+        JourneyDemandRow released = await fixture.Context.Set<JourneyDemandRow>().AsNoTracking()
             .SingleAsync(row => row.DemandId == SecondDemand, Token);
         Assert.Equal((JourneyDemandStatuses.Loaded, (DateTimeOffset?)null), (loaded.Status, loaded.RemovedAt));
-        Assert.Equal((JourneyDemandStatuses.PendingLoad, (DateTimeOffset?)null), (pending.Status, pending.RemovedAt));
+        Assert.NotNull(released.RemovedAt);
+        Assert.Equal(DemandJourneyLookup.ReleasedForRedispatchReason, released.RemovalReason);
         Assert.True(await fixture.Context.Set<VehiclePurposeClaimRow>().AnyAsync(Token), "The loaded vehicle was let go.");
-        Assert.DoesNotContain(fixture.EngineLog.Entries, entry => entry.Message.Contains("mandatory charge line", StringComparison.Ordinal));
+        Assert.DoesNotContain(fixture.EngineLog.Entries, entry => entry.Message.Contains("went back to the backlog and the journey ended", StringComparison.Ordinal));
     }
 
     /// <summary>

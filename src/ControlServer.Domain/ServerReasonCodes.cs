@@ -98,6 +98,12 @@ public static class ServerReasonCodes
     public const string SnapshotRevisionContentConflict = "SNAPSHOT_REVISION_CONTENT_CONFLICT";
     public const string SlotSetInvalid = "SLOT_SET_INVALID";
     public const string SnapshotRevisionRegression = "SNAPSHOT_REVISION_REGRESSION";
+
+    /// <summary>
+    /// A <c>CurrentStopDepartureRequested</c> naming a station that is not the vehicle's current stop (protocol 4.0.0 candidate,
+    /// control-server#713). It is the first check of the departure request, ahead of the worklist revision.
+    /// </summary>
+    public const string StationMismatch = "STATION_MISMATCH";
     public const string SublotBoxCountUnavailable = "SUBLOT_BOX_COUNT_UNAVAILABLE";
     public const string SublotNotInDispatchScope = "SUBLOT_NOT_IN_DISPATCH_SCOPE";
     public const string WorklistRevisionStale = "WORKLIST_REVISION_STALE";
