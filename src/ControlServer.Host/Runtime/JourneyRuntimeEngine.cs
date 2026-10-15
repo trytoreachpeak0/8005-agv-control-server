@@ -1752,7 +1752,9 @@ public sealed partial class JourneyRuntimeEngine(
                 }
                 // 持货等单（REQ-0354）：站点离站等待到期只结束本站作业，不等于车辆离开——车停在最后装货的站点，
                 // 不发离站请求，直到装满、持货超时或让站。每一轮回到这里，由轮首那次判定决定还等不等。
-                if (runtime.LoadingPhaseState == LoadingPhaseStates.CargoHoldingWait)
+                // 操作员已在本站按过出发（control-server#725）不在此列：受理时是 VEHICLE_FULL、被扣车或纠错挡住期间派车轮判出不再满，装货阶段按事实
+                // 回到 CARGO_HOLDING_WAIT，这时再扣车，车就停到持货期限，而再按出发只会被答「已在出发」（#732 独立审查 M1）。
+                if (runtime.LoadingPhaseState == LoadingPhaseStates.CargoHoldingWait && stops.Current.OperatorDepartedAt is null)
                 {
                     await dbContext.SaveChangesAsync(cancellationToken).ConfigureAwait(false);
                     return;

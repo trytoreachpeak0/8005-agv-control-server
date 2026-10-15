@@ -133,7 +133,8 @@ public sealed class MachinePickupDepartureTests
     /// <summary>
     /// 向量 MACHINE-STATION-WAIT：装货阶段已经结束、只剩站点离站等待（5 分钟，才过了几秒）时点出发：<c>ACCEPTED</c>，装货阶段与 <c>closedReason</c>
     /// 原样不动、不发业务快照，答复之后直接是离站核验。两种结束法各一格：分区禁止途中追加（不持货等单）、持货期限先于站点期限到了（一站多批时站点期限
-    /// 从最后一批起算，比持货期限晚）。两侧装满（<c>VEHICLE_FULL</c>）当轮就离站、不在站点离站等待里停，没有这一格。
+    /// 从最后一批起算，比持货期限晚）。两侧装满（<c>VEHICLE_FULL</c>）那一格单列在 <see cref="DepartureOnAFullVehicleKeepsVehicleFullAndLeavesAtOnce"/>：
+    /// 站点离站等待开着时，装满的机台取货车同样要等站点期限。
     /// </summary>
     [Theory]
     [InlineData(MachineShape.NoHolding)]
@@ -162,6 +163,77 @@ public sealed class MachinePickupDepartureTests
         Assert.Equal(
             ["PreDepartureSafetyCheck"],
             sent.Skip(Array.IndexOf(sent, CurrentStopDepartures.ResultType) + 1));
+    }
+
+    /// <summary>
+    /// 向量 MACHINE-STATION-WAIT 的装满那一格：两侧装满（<c>VEHICLE_FULL</c>）、站点离站期限（5 分钟）还没到时点出发：<c>ACCEPTED</c>，装货阶段仍是
+    /// <c>VEHICLE_FULL</c>、不改判、不发业务快照，答复之后直接是离站核验。把 <c>VEHICLE_FULL</c> 算进持货那一支的实现在这里改判成 <c>OPERATOR_DEPARTED</c>。
+    /// </summary>
+    [Fact]
+    [Trait("IntegrationSlice", "FP-IS-02")]
+    [Trait("IntegrationSlice", "FP-IS-08")]
+    [Trait("ProtocolVector", "CV-CURRENT-STOP-DEPARTURE-MACHINE-STATION-WAIT")]
+    public async Task DepartureOnAFullVehicleKeepsVehicleFullAndLeavesAtOnce()
+    {
+        await using RuntimeFixture fixture = await FullMachineStopAsync();
+        int businessBefore = await CountAsync(fixture, "VehicleBusinessStateSnapshot");
+        int wireBefore = fixture.Peer.Lines.Count;
+
+        string departureRequestId = await RequestDepartureAsync(fixture, operationSessionId: null);
+        RecordBothSidesFull(fixture);
+        await RunAsync(fixture);
+
+        Assert.Equal("ACCEPTED", (await ResultAsync(fixture, departureRequestId)).GetProperty("outcome").GetString());
+        JourneyRuntimeRow journey = await fixture.RuntimeAsync();
+        Assert.Equal(((string?)LoadingPhaseStates.VehicleFull, (string?)null), (journey.LoadingPhaseState, journey.LoadingClosedReason));
+        Assert.Equal(JourneyRuntimeStage.AwaitingDepartureSafety, journey.Stage);
+        Assert.Equal(businessBefore, await CountAsync(fixture, "VehicleBusinessStateSnapshot"));
+        string[] sent = SentSince(fixture, wireBefore);
+        Assert.Equal(["PreDepartureSafetyCheck"], sent.Skip(Array.IndexOf(sent, CurrentStopDepartures.ResultType) + 1));
+    }
+
+    /// <summary>
+    /// 独立审查 M1 的探针：装满时受理了出发，但门未证明扣车先挡住了离站；扣车期间派车轮判出不再满，装货阶段按事实回到 <c>CARGO_HOLDING_WAIT</c>。
+    /// 扣车解除之后车照样立即离站，不回到持货等单里等持货期限——操作员已经按过出发，再按会被答「已在出发」，没有别的出口。
+    /// 去掉离站等待那一支里「本站已由操作员结束就不按持货扣车」的判断，这里车停着不走。
+    /// </summary>
+    [Fact]
+    [Trait("IntegrationSlice", "FP-IS-02")]
+    [Trait("IntegrationSlice", "FP-IS-08")]
+    public async Task AFullVehicleHeldAfterTheDepartureLeavesOnceReleasedEvenIfNoLongerFull()
+    {
+        await using RuntimeFixture fixture = await FullMachineStopAsync();
+        SlotDoorHoldRow hold = new()
+        {
+            HoldId = Guid.NewGuid().ToString("D"),
+            AgvId = fixture.Options.AgvId,
+            DemandId = FirstDemandId,
+            SlotsJson = "[1]",
+            HeldAt = fixture.Clock.GetUtcNow()
+        };
+        fixture.Context.SlotDoorHolds.Add(hold);
+        await fixture.Context.SaveChangesAsync(Token);
+        fixture.Context.ChangeTracker.Clear();
+        string departureRequestId = await RequestDepartureAsync(fixture, operationSessionId: null);
+        RecordBothSidesFull(fixture);
+        await RunAsync(fixture);
+        Assert.Equal("ACCEPTED", (await ResultAsync(fixture, departureRequestId)).GetProperty("outcome").GetString());
+        Assert.Equal(LoadingPhaseStates.VehicleFull, (await fixture.RuntimeAsync()).LoadingPhaseState);
+        Assert.False(await Batch7CargoHoldingTests.DepartureCheckSentAsync(fixture));
+
+        Batch7CargoHoldingTests.RecordRound(fixture);
+        await RunAsync(fixture);
+        Assert.Equal(LoadingPhaseStates.CargoHoldingWait, (await fixture.RuntimeAsync()).LoadingPhaseState);
+
+        SlotDoorHoldRow tracked = await fixture.Context.SlotDoorHolds.SingleAsync(row => row.HoldId == hold.HoldId, Token);
+        tracked.ReleasedAt = fixture.Clock.GetUtcNow();
+        tracked.ReleasedByActionId = "release";
+        await fixture.Context.SaveChangesAsync(Token);
+        fixture.Context.ChangeTracker.Clear();
+        await RunAsync(fixture);
+
+        Assert.True(await Batch7CargoHoldingTests.DepartureCheckSentAsync(fixture), "The vehicle fell back to holding cargo after the departure.");
+        Assert.Equal(JourneyRuntimeStage.AwaitingDepartureSafety, (await fixture.RuntimeAsync()).Stage);
     }
 
     /// <summary>
@@ -450,6 +522,35 @@ public sealed class MachinePickupDepartureTests
     }
 
     /// <summary>WIRE_TO_GATE 在机台 N1-1 装上一篮，停在离站等待里（站点期限 5 分钟还剩大半），门已证明关着。</summary>
+    /// <summary>
+    /// 机台取货装完第一条、派车轮判出两侧都满（<c>VEHICLE_FULL</c>）、站点离站期限（5 分钟）还没到：车停在离站等待里，没发离站核验。
+    /// 走持货夹具（<see cref="Batch7CargoHoldingTests.HoldingFixtureAsync"/>）：装满要派车轮那一份裁决，这一格只有它搭得出来。
+    /// </summary>
+    private static async Task<RuntimeFixture> FullMachineStopAsync()
+    {
+        RuntimeFixture fixture = await Batch7CargoHoldingTests.HoldingFixtureAsync();
+        fixture.Options.StationDepartureWaitTimeout = TimeSpan.FromMinutes(5);
+        await Batch7CargoHoldingTests.LoadTheFirstDemandAsync(fixture);
+        RecordBothSidesFull(fixture);
+        await TickAndRunAsync(fixture);
+        JourneyRuntimeRow full = await fixture.RuntimeAsync();
+        Assert.Equal(
+            (LoadingPhaseStates.VehicleFull, JourneyRuntimeStage.AwaitingStationDeparture),
+            (full.LoadingPhaseState, full.Stage));
+        Assert.False(await Batch7CargoHoldingTests.DepartureCheckSentAsync(fixture), "The station wait was already over.");
+        await AcknowledgeEverythingSentAsync(fixture);
+        return fixture;
+    }
+
+    /// <summary>
+    /// 派车轮这一轮判出两侧都被本车的货占满。那份裁决只管下一次判定：装满每轮按事实重判（<c>JudgeVehicleFullAsync</c>），要它保持就每轮记一次。
+    /// </summary>
+    private static void RecordBothSidesFull(RuntimeFixture fixture) =>
+        Batch7CargoHoldingTests.RecordRound(
+            fixture,
+            (Host.Runtime.Dispatch.DispatchReasonCodes.SlotGroupOccupiedByOwnCargo, "FRONT"),
+            (Host.Runtime.Dispatch.DispatchReasonCodes.SlotGroupOccupiedByOwnCargo, "REAR"));
+
     private static async Task<RuntimeFixture> LoadedMachineStopAsync(MachineShape shape, bool stagingRulesEnabled)
     {
         RuntimeFixture fixture = await ArrangeAsync(StopKind.MachineRulesOn);
