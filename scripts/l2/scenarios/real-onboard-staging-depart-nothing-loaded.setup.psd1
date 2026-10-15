@@ -1,0 +1,23 @@
+# program#184 第一波集成准备：真装置上「待送点一篮没装，客户在车载屏上点出发」：旅程原地收尾、需求放回，车不动
+# （control-server#713 服务端、onboard-hmi#349 车载端）。
+#
+# 地图与绑定照合成场景 staging-depart-with-nothing-loaded：派工待送取货站 305 绑 STAGING_TO_WIRE，待送点规则打开（服务端出厂是关的）。
+# 离站期限十分钟：待送点上本来就不计期限（cs#709），给大是双保险，收尾只能来自出发。
+@{
+    Onboard                      = 'Real'
+    StagingDepartureRulesEnabled = $true
+    StationDepartureWaitTimeout  = '00:10:00'
+    Stations = @{
+        '210' = '关卡'
+        '12'  = 'N1-3_N1-7'
+        '11'  = 'C15-13'
+        '305' = '派工待送取货'
+    }
+    TaskTypeStations = @{
+        RequiredTaskTypes = @('WIRE_TO_GATE', 'STAGING_TO_WIRE')
+        Bindings = @(
+            @{ TaskType = 'WIRE_TO_GATE'; StationRiotId = 210; StationName = '关卡'; SiteVerificationRef = 'L2-SYNTHETIC-SITE-CHECK' }
+            @{ TaskType = 'STAGING_TO_WIRE'; StationRiotId = 305; StationName = '派工待送取货'; SiteVerificationRef = 'L2-SYNTHETIC-SITE-CHECK' }
+        )
+    }
+}
