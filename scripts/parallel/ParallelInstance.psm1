@@ -216,7 +216,7 @@ $script:AllowedKeys = [ordered]@{
         'maximumEvidenceAge', 'departureSafetyResultWait', 'stationDepartureWaitTimeout',
         'sameStationAppendCorrectionGrace', 'cargoHoldingTimeout', 'sublotBoxCountPath', 'allowedWorkTypes', 'allowedDispatchZones',
         'admissionPolicyVersion', 'admissionPolicyDeploymentId', 'checkpointWaitBudget',
-        'areaEndAdmissionRevokedTimeout', 'clearanceToWaitingPointEnabled', 'stationTimeoutRedispatchLimit')
+        'areaEndAdmissionRevokedTimeout', 'clearanceToWaitingPointEnabled', 'stationTimeoutRedispatchLimit', 'stagingDepartureRules')
     # control-server#454. credentialEnvironmentVariable is deliberately absent: the overlay writes
     # this instance's own variable name, so no definition can point the service at the MVP's.
     'vehicleFaultRecovery' = @('enabled')
@@ -244,6 +244,13 @@ $script:FleetRowProductKeys = @('agvId', 'vehicleKey', 'agvLifecycleGeneration',
 $script:FleetRowKeys = @($script:FleetRowProductKeys) + @('deviceKey', 'riotId')
 # The single-vehicle keys a roster replaces. Writing one beside the roster is refused, not reconciled.
 $script:SingleVehicleKeys = @('agvId', 'vehicleKey', 'agvLifecycleGeneration')
+<#
+    program#184. The keys journeyRuntime.stagingDepartureRules may carry (StagingDepartureRulesOptions, control-server#709),
+    spelled exactly; Test-ParallelInstance.ps1 asserts them against the C# properties. Only the switch:
+    LoadNotSettledAlarmAfter keeps the package default, and a definition that names it is refused rather than passed
+    through unchecked -- whitelisting it takes a duration check and a read-back row, not one more name here.
+#>
+$script:StagingDepartureRulesKeys = @('enabled')
 
 # Names only this instance uses, shared by the installer and the uninstaller so the two cannot
 # drift apart. The certificate variable matters most: Update-ControlServerLocal.ps1 deletes the
@@ -1231,6 +1238,25 @@ function Test-ParallelInstanceDefinition {
             $limit = $journey['stationTimeoutRedispatchLimit']
             if (-not (($limit -is [int] -or $limit -is [long]) -and $limit -ge 0 -and $limit -le [int]::MaxValue)) {
                 $failures += "journeyRuntime.stationTimeoutRedispatchLimit must be a non-negative JSON integer, got '$limit'."
+            }
+        }
+
+        # program#184. The staging station's departure rules (JourneyRuntimeOptions.StagingDepartureRules, control-server#709):
+        # optional -- absent leaves the package default, off -- but when written it is an object carrying exactly the switch,
+        # and the switch is a JSON boolean. The overlay copies the object as written, so a string "true" would reach the Host's
+        # binder, which reads it as on, while the read-back row (stagingDepartureRulesEnabled) compares JSON booleans only and
+        # would refuse that install after the fact. Refusing it here says so before anything is installed.
+        if (Test-KeyPresent -Node $journey -Key 'stagingDepartureRules') {
+            $staging = $journey['stagingDepartureRules']
+            if ($staging -isnot [System.Collections.IDictionary]) {
+                $failures += "journeyRuntime.stagingDepartureRules must be an object, got '$staging'."
+            } else {
+                $failures += @(Test-SectionKey -Node $staging -Allowed $script:StagingDepartureRulesKeys -Prefix 'journeyRuntime.stagingDepartureRules.')
+                if (-not (Test-KeyPresent -Node $staging -Key 'enabled')) {
+                    $failures += 'journeyRuntime.stagingDepartureRules.enabled must be stated explicitly when the section is written.'
+                } elseif ($staging['enabled'] -isnot [bool]) {
+                    $failures += "journeyRuntime.stagingDepartureRules.enabled must be a JSON boolean, got '$($staging['enabled'])'."
+                }
             }
         }
 
@@ -2611,10 +2637,12 @@ function Get-ParallelEffectiveConfigurationRefusal {
 # compares and Format-ParallelJourneyBindingLine prints by walking this table, nothing else names a field:
 #   Name     what the problem message and the result line call it;
 #   Logged   the property of the EFFECTIVE_CONFIGURATION event (EffectiveConfigurationEvent.cs) it is read from, as logged;
-#   Compare  Integer (a JSON integer, equal; a string "6" does not count), Ordinal (a string, ordinal) or Duration (a string
-#            equal to the expected value as "hh:mm:ss", [timespan] 'c', which is how the Host logs a TimeSpan);
-#   Source   where the expected value comes from, resolved by Get-ParallelJourneyBindingExpected: 'journeyRuntime.<key>' is
-#            that key as the definition writes it, $null (printed, not compared) when it leaves it to the package's
+#   Compare  Integer (a JSON integer, equal; a string "6" does not count), Ordinal (a string, ordinal), Duration (a string
+#            equal to the expected value as "hh:mm:ss", [timespan] 'c', which is how the Host logs a TimeSpan) or Boolean (a
+#            JSON boolean, equal; a string "True" does not count);
+#   Source   where the expected value comes from, resolved by Get-ParallelJourneyBindingExpected: 'journeyRuntime.<key>' (or
+#            'journeyRuntime.<section>.<key>', one level down) is that key as the definition writes it, $null (printed, not
+#            compared) when it leaves it to the package's
 #            appsettings.json, which this cannot know. A value derived from something else (from a phase, say) is a named
 #            Source with its own case in that function -- not a scriptblock here: this module allows no dynamic command
 #            (the delete guard in Test-ParallelInstance.ps1);
@@ -2631,14 +2659,23 @@ $script:JourneyBindingFields = @(
     [pscustomobject]@{ Name = 'stationDepartureWaitTimeout'; Logged = 'StationDepartureWaitTimeout'; Compare = 'Duration'; Source = 'journeyRuntime.stationDepartureWaitTimeout'; AbsentMeans = $null }
     # control-server#686. 'Off' or 'Enforcing', never a space.
     [pscustomobject]@{ Name = 'slotConfigurationReadinessGate'; Logged = 'SlotConfigurationReadinessGate'; Compare = 'Ordinal'; Source = 'productionCutover.phase'; AbsentMeans = 'Off' }
+    # program#184. The staging station's departure rules switch (control-server#709, logged since its review L5). A package that
+    # does not log it does not have the rules, which is off: a definition that turns them on is refused over such a package,
+    # one that leaves the section out is not compared. Printed as True / False, never a space.
+    [pscustomobject]@{ Name = 'stagingDepartureRulesEnabled'; Logged = 'StagingDepartureRulesEnabled'; Compare = 'Boolean'; Source = 'journeyRuntime.stagingDepartureRules.enabled'; AbsentMeans = $false }
 )
 
 function Get-ParallelJourneyBindingExpected {
     <# control-server#672. The value a row of $script:JourneyBindingFields expects, from its Source; $null when not compared. #>
     param([Parameter(Mandatory = $true)] $Field, [Parameter(Mandatory = $true)][System.Collections.IDictionary] $Definition)
-    if ($Field.Source -match '^journeyRuntime\.(?<key>[A-Za-z]+)$') {
-        $journey = $Definition['journeyRuntime']
-        return ($journey -is [System.Collections.IDictionary] -and $journey.Contains($Matches['key'])) ? $journey[$Matches['key']] : $null
+    if ($Field.Source -match '^journeyRuntime\.(?:(?<section>[A-Za-z]+)\.)?(?<key>[A-Za-z]+)$') {
+        $node = $Definition['journeyRuntime']
+        # program#184: one level down, for journeyRuntime.stagingDepartureRules.enabled. A section that is not an object has no
+        # value to compare; Test-ParallelInstanceDefinition refuses such a definition before anything reads it here.
+        if ($Matches['section'] -and $node -is [System.Collections.IDictionary]) {
+            $node = $node.Contains($Matches['section']) ? $node[$Matches['section']] : $null
+        }
+        return ($node -is [System.Collections.IDictionary] -and $node.Contains($Matches['key'])) ? $node[$Matches['key']] : $null
     }
     # control-server#686. Derived, so always compared: Enforcing for a production phase, Off for every other definition.
     if ($Field.Source -ceq 'productionCutover.phase') { return Get-ParallelSlotConfigurationGateMode -Definition $Definition }
@@ -2693,6 +2730,8 @@ function Compare-ParallelJourneyBinding {
                 $expected = ($null -ne $span) ? $span.ToString('c', [cultureinfo]::InvariantCulture) : [string] $expected
                 $actual -is [string] -and $actual -ceq $expected
             }
+            # program#184. Both sides JSON booleans; the definition's is one by Test-ParallelInstanceDefinition.
+            'Boolean' { $actual -is [bool] -and $expected -is [bool] -and $actual -eq $expected }
             default { throw "JourneyBindingFields: $($field.Name) has an unknown Compare '$($field.Compare)'." }
         }
         if (-not $same) {

@@ -56,6 +56,9 @@
   },
   "journeyRuntime": {
     "enabled": true,
+    "stagingDepartureRules": {
+      "enabled": true
+    },
     "pollInterval": "00:00:02",
     "maximumEvidenceAge": "00:00:30",
     "checkpointWaitBudget": "00:05:00",
@@ -109,7 +112,7 @@
     "mapId": 26,
     "mapIdentity": "老厂前线new_wk",
     "dispatchZone": "WIRE_BONDING",
-    "dispatchGeneration": 1,
+    "dispatchGeneration": 100,
     "sublotBoxCountPath": "/api/v2/sublot-box-count",
     "allowedWorkTypes": [
       "DIE_TO_WIRE_STAGING",

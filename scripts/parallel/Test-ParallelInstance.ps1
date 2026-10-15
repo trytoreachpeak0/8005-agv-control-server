@@ -4070,6 +4070,38 @@ Invoke-SourceCase 'fleet: every product row key names a FleetVehicleOptions prop
     @{ Ok = ($properties.Count -gt 0 -and $orphans.Count -eq 0 -and $missing.Count -eq 0); Detail = "orphans: $($orphans -join ', '); not whitelisted: $($missing -join ', ')" }
 }
 
+# --- program#184: journeyRuntime.stagingDepartureRules ------------------------------------------
+Invoke-SourceCase 'staging rules: every whitelisted key names a StagingDepartureRulesOptions property, and Enabled is one of them' {
+    $properties = Get-OptionProperty -RelativePath 'src/ControlServer.Host/Runtime/JourneyRuntimeOptions.cs' -ClassName 'StagingDepartureRulesOptions'
+    $keys = @(& (Get-Module ParallelInstance) { $script:StagingDepartureRulesKeys })
+    $orphans = @($keys | Where-Object { $key = $_; -not ($properties | Where-Object { $_ -ieq $key }) })
+    @{ Ok = ($properties -ccontains 'Enabled' -and $keys -ccontains 'enabled' -and $orphans.Count -eq 0 -and
+            (Get-ParallelInstanceAllowedKey)['journeyRuntime'] -ccontains 'stagingDepartureRules'); Detail = "properties: $($properties -join ', '); keys: $($keys -join ', '); orphans: $($orphans -join ', ')" }
+}
+foreach ($case in @(
+        @{ Name = 'on, as a JSON boolean -- accepted'; Section = [ordered]@{ enabled = $true }; Says = $null }
+        @{ Name = 'off, as a JSON boolean -- accepted'; Section = [ordered]@{ enabled = $false }; Says = $null }
+        @{ Name = 'enabled as the string "true" -- refused'; Section = [ordered]@{ enabled = 'true' }; Says = 'journeyRuntime.stagingDepartureRules.enabled must be a JSON boolean' }
+        @{ Name = 'section without enabled -- refused'; Section = [ordered]@{}; Says = 'journeyRuntime.stagingDepartureRules.enabled must be stated explicitly' }
+        @{ Name = 'loadNotSettledAlarmAfter beside it -- refused (not whitelisted)'; Section = [ordered]@{ enabled = $true; loadNotSettledAlarmAfter = '00:02:00' }; Says = 'journeyRuntime.stagingDepartureRules.loadNotSettledAlarmAfter is not a key this deployment knows' }
+        @{ Name = 'Enabled differing in case -- refused'; Section = [ordered]@{ Enabled = $true }; Says = 'journeyRuntime.stagingDepartureRules.Enabled differs only in case' }
+        @{ Name = 'the section as a boolean -- refused'; Section = $true; Says = 'journeyRuntime.stagingDepartureRules must be an object' })) {
+    Invoke-SourceCase "staging rules definition: $($case.Name)" {
+        $d = Copy-Definition $baseline
+        $d['journeyRuntime']['stagingDepartureRules'] = $case.Section
+        [string[]] $f = @(Test-ParallelInstanceDefinition -Definition $d)
+        $ok = ($null -eq $case.Says) ? ($f.Count -eq 0) : (@($f | Where-Object { $_.Contains($case.Says) }).Count -ge 1)
+        @{ Ok = $ok; Detail = "failures: $($f -join ' | ')" }
+    }
+}
+Invoke-SourceCase 'staging rules overlay: the section is written as defined, under JourneyRuntime' {
+    $d = Copy-Definition $baseline
+    $d['journeyRuntime']['stagingDepartureRules'] = [ordered]@{ enabled = $true }
+    $o = New-ParallelInstanceConfigurationOverlay -Definition $d
+    $section = $o['JourneyRuntime']['stagingDepartureRules']
+    @{ Ok = ($section -is [System.Collections.IDictionary] -and $section.Count -eq 1 -and $section['enabled'] -is [bool] -and $section['enabled']); Detail = "got: $(ConvertTo-Json -InputObject $section -Compress)" }
+}
+
 # --- Overlay: the roster as the Host reads it, whole -------------------------------------------
 Invoke-SourceCase 'fleet overlay: product keys only (no deviceKey / riotId), values as defined' {
     $o = New-ParallelInstanceConfigurationOverlay -Definition (Copy-Definition $fleetBaseline)
@@ -5096,6 +5128,10 @@ $productionStageDefinitions = [ordered]@{
     'instance-factory01-v2.cutover-production-s3.runtime-on.json' = @{ RiotIds = @(58, 59, 60); Zones = @('WIRE_BONDING', 'DIE_ATTACH'); Runtime = $true }
 }
 # The approval, exactly as the user gave it on 2026-10-14 (v2 workspace ds-tasks/board.md), with its pointer.
+# program#184. The dispatch generation every production stage starts from: above the largest DispatchGeneration in any v2
+# database used before (read at the field on request, see the pull request), so a new database's upperIds cannot repeat an
+# older database's -- on 10-15 a new database and the trial one, both starting at 1, gave the same demand the same upperId.
+$productionDispatchGeneration = 100
 $productionApprovalRecord = 'Zhengyu Shao 于 2026-10-14 在 Claude 对话中批准 v2 生产切换：试跑 S1～S4 已通过，换新库、三车 IO 切回真模块、逐仓核对后，按 S1→S4 用真货进入生产，v2 读生产 MesIngest 六类需求、MVP 保持停用；每次动车与碰 agv01 仍逐次授权。（用户原话，8005-workspace-v2 ds-tasks/board.md 10-14 条目；control-server#564 第 18a 步）'
 $cutoverHeldRefusals = @(
     'journeyRuntime.allowedWorkTypes ["DIE_TO_WIRE_STAGING","DIE_TO_OVEN","WIRE_TO_GATE","WIRE_TO_OPTICAL","STAGING_TO_WIRE","WIRE_TO_NITROGEN"] includes WIRE_TO_GATE, which the MVP takes from the same catalog'
@@ -5216,9 +5252,21 @@ Invoke-SourceCase 'cutover production stages: each stage definition carries the 
                 ([bool] $j['enabled'] -eq $want.Runtime) -and ([bool] $d['routeGraph']['enabled'] -eq $want.Runtime)) })
     @{ Ok = ($wrong.Count -eq 0); Detail = "wrong: $($wrong -join ', ')" }
 }
+Invoke-SourceCase "cutover production stages: each stage definition turns the staging departure rules on (the section is exactly { enabled: true }), starts its dispatch generation at $productionDispatchGeneration, and its overlay writes both (program#184)" {
+    $wrong = @($productionStageDefinitions.Keys | Where-Object {
+            $path = Join-Path $PSScriptRoot $_
+            if (-not (Test-Path -LiteralPath $path)) { return $true }
+            $j = (Read-ParallelInstanceDefinition -Path $path)['journeyRuntime']
+            $staging = $j['stagingDepartureRules']
+            $overlay = (New-ParallelInstanceConfigurationOverlay -Definition (Read-ParallelInstanceDefinition -Path $path))['JourneyRuntime']
+            -not ($staging -is [System.Collections.IDictionary] -and $staging.Count -eq 1 -and $staging['enabled'] -is [bool] -and $staging['enabled'] -and
+                ($j['dispatchGeneration'] -is [long] -or $j['dispatchGeneration'] -is [int]) -and [long] $j['dispatchGeneration'] -eq $productionDispatchGeneration -and
+                $overlay['stagingDepartureRules']['enabled'] -eq $true -and [long] $overlay['dispatchGeneration'] -eq $productionDispatchGeneration) })
+    @{ Ok = ($wrong.Count -eq 0); Detail = "wrong: $($wrong -join ', ')" }
+}
 # As PR #683 review S2 for the trial: nothing else may drift. Each production stage is its trial stage with only
 # productionCutover replaced and emergencyStopRelease added, so it is held to the same mother, key for key, and to its trial twin.
-Invoke-SourceCase 'cutover production stages: apart from productionCutover, emergencyStopRelease, fleet, allowedDispatchZones and the two runtime switches, each stage definition is the runtime-on cutover definition key for key, every fleet row is one of its rows verbatim, and the trial stage of the same name differs from it in those two sections only (control-server#564 step 18a)' {
+Invoke-SourceCase 'cutover production stages: apart from productionCutover, emergencyStopRelease, fleet, allowedDispatchZones, the two runtime switches, the staging rules and the dispatch generation, each stage definition is the runtime-on cutover definition key for key, every fleet row is one of its rows verbatim, and the trial stage of the same name differs from it in those two sections only (control-server#564 step 18a)' {
     $mother = Read-ParallelInstanceDefinition -Path (Join-Path $PSScriptRoot 'instance-factory01-v2.cutover-two-zones.runtime-on.json')
     $motherRows = @($mother['journeyRuntime']['fleet'] | ForEach-Object { $_ | ConvertTo-Json -Depth 20 -Compress })
     $motherJson = $mother | ConvertTo-Json -Depth 20 -Compress
@@ -5233,7 +5281,11 @@ Invoke-SourceCase 'cutover production stages: apart from productionCutover, emer
             $twin.Remove('emergencyStopRelease')
             $trial = Read-ParallelInstanceDefinition -Path $trialPath
             $trial.Remove('productionCutover')
+            # program#184: the staging rules and the dispatch generation are production's alone (pinned by the case above); the
+            # mother and the trial stages leave the rules out and start at their own generation.
+            foreach ($other in @($twin, $trial)) { $other['journeyRuntime'].Remove('stagingDepartureRules'); $other['journeyRuntime'].Remove('dispatchGeneration') }
             $n = Copy-Definition $twin
+            $n['journeyRuntime']['dispatchGeneration'] = $mother['journeyRuntime']['dispatchGeneration']
             $n['journeyRuntime']['fleet'] = $mother['journeyRuntime']['fleet']
             $n['journeyRuntime']['allowedDispatchZones'] = $mother['journeyRuntime']['allowedDispatchZones']
             $n['journeyRuntime']['enabled'] = $mother['journeyRuntime']['enabled']
@@ -5426,7 +5478,7 @@ Invoke-SourceCase 'catalog read-back: Program.cs logs the MapStationCatalogOptio
 # the cargo holding and station departure waits, as the Host bound them, read back from its EFFECTIVE_CONFIGURATION event
 # and compared with the definition; and the result line 19-deploy-control-server-parallel.ps1 compares after the install.
 # ------------------------------------------------------------------------------------------------
-$bindingTemplate = "$catalogTemplate foreignRunningOrderRelease={ForeignRunningOrderRelease} admissionPolicyVersion={AdmissionPolicyVersion} admissionPolicyDeploymentId={AdmissionPolicyDeploymentId} cargoHoldingTimeout={CargoHoldingTimeout} stationDepartureWaitTimeout={StationDepartureWaitTimeout} slotConfigurationReadinessGate={SlotConfigurationReadinessGate}"
+$bindingTemplate = "$catalogTemplate foreignRunningOrderRelease={ForeignRunningOrderRelease} admissionPolicyVersion={AdmissionPolicyVersion} admissionPolicyDeploymentId={AdmissionPolicyDeploymentId} cargoHoldingTimeout={CargoHoldingTimeout} stationDepartureWaitTimeout={StationDepartureWaitTimeout} slotConfigurationReadinessGate={SlotConfigurationReadinessGate} stagingDepartureRulesEnabled={StagingDepartureRulesEnabled}"
 # -Bound '<absent>' leaves all four out, as a package older than #672 logs the event; otherwise a hashtable of the four
 # values as the Host would log them, a key left out of it left out of the event.
 function Get-BindingReadBack($Definition, $Bound) {
@@ -5440,7 +5492,7 @@ function Get-BindingReadBack($Definition, $Bound) {
         ClearanceToWaitingPointEnabled = $false
     }
     if ($Bound -isnot [string] -or $Bound -cne '<absent>') {
-        foreach ($key in @('AdmissionPolicyVersion', 'AdmissionPolicyDeploymentId', 'CargoHoldingTimeout', 'StationDepartureWaitTimeout', 'SlotConfigurationReadinessGate')) {
+        foreach ($key in @('AdmissionPolicyVersion', 'AdmissionPolicyDeploymentId', 'CargoHoldingTimeout', 'StationDepartureWaitTimeout', 'SlotConfigurationReadinessGate', 'StagingDepartureRulesEnabled')) {
             if ($Bound.Contains($key)) { $event[$key] = $Bound[$key] }
         }
     }
@@ -5458,6 +5510,8 @@ function New-BoundBinding([hashtable] $Change = @{}) {
         StationDepartureWaitTimeout = '00:05:00'
         # control-server#686. The baseline is not a cutover definition, so the gate it expects is Off.
         SlotConfigurationReadinessGate = 'Off'
+        # program#184. The package default; the baseline leaves the section out, so it is printed, not compared.
+        StagingDepartureRulesEnabled = $false
     }
     foreach ($key in @($Change.Keys)) { if ($null -eq $Change[$key]) { $bound.Remove($key) } else { $bound[$key] = $Change[$key] } }
     return $bound
@@ -5469,6 +5523,9 @@ Invoke-SourceCase 'binding read-back: the baseline says 6, MAP-26-WIRE_TO_GATE-S
 }
 $bindingWithoutDeparture = Copy-Definition $baseline
 $bindingWithoutDeparture['journeyRuntime'].Remove('stationDepartureWaitTimeout')
+# program#184. The baseline with the staging rules on: the only definition the stagingDepartureRulesEnabled row compares.
+$bindingStagingOn = Copy-Definition $baseline
+$bindingStagingOn['journeyRuntime']['stagingDepartureRules'] = [ordered]@{ enabled = $true }
 # One row per row of the module's $script:JourneyBindingFields (the case below holds the two lists equal): a value the Host
 # might bind instead, and the problem text naming the field. A field added to the table is added here too.
 $bindingFieldCases = @(
@@ -5479,6 +5536,9 @@ $bindingFieldCases = @(
     # MissingPasses: the row has an AbsentMeans equal to what the baseline expects (control-server#686 review M1: a package that
     # logs #672's four and not the gate has no gate, which is Off), so leaving it out of the event passes.
     @{ Logged = 'SlotConfigurationReadinessGate'; Wrong = 'Enforcing'; Says = "slotConfigurationReadinessGate bound 'Enforcing', the definition says 'Off'"; MissingPasses = $true }
+    # Definition: the baseline leaves the staging rules out, which the row does not compare; this one turns them on, and binds
+    # them on too (Right) apart from the field under test. Missing from the event reads as its AbsentMeans, off: refused.
+    @{ Logged = 'StagingDepartureRulesEnabled'; Wrong = $false; Right = $true; Definition = $bindingStagingOn; Says = "stagingDepartureRulesEnabled bound 'False', the definition says 'True'" }
 )
 Invoke-SourceCase 'binding read-back: every row of the module''s JourneyBindingFields has a field case here, in table order' {
     $table = @(& (Get-Module ParallelInstance) { $script:JourneyBindingFields } | ForEach-Object Logged)
@@ -5486,13 +5546,14 @@ Invoke-SourceCase 'binding read-back: every row of the module''s JourneyBindingF
     @{ Ok = (($table -join ',') -ceq ($cased -join ',')); Detail = "table: $($table -join ','); cases: $($cased -join ',')" }
 }
 foreach ($fieldCase in $bindingFieldCases) {
+    $caseDefinition = $fieldCase.Contains('Definition') ? $fieldCase['Definition'] : $baseline
     Invoke-SourceCase "binding read-back, per field: $($fieldCase.Logged) bound '$($fieldCase.Wrong)' -- stop and refuse, naming it" {
-        $a = (Get-BindingReadBack $baseline (New-BoundBinding @{ $fieldCase.Logged = $fieldCase.Wrong })).Action
+        $a = (Get-BindingReadBack $caseDefinition (New-BoundBinding @{ $fieldCase.Logged = $fieldCase.Wrong })).Action
         @{ Ok = ($a.Action -ceq 'StopServiceAndRefuse' -and ([string] $a.Message).StartsWith('EFFECTIVE_CONFIGURATION_MISMATCH: ') -and ([string] $a.Message).Contains($fieldCase.Says)); Detail = "got: $(ConvertTo-Json $a -Compress)" }
     }
     $missingPasses = $fieldCase.Contains('MissingPasses') -and $fieldCase['MissingPasses']
     Invoke-SourceCase "binding read-back, per field: $($fieldCase.Logged) missing from an event carrying the others -- $($missingPasses ? 'pass (its AbsentMeans is what the baseline expects)' : 'stop and refuse')" {
-        $a = (Get-BindingReadBack $baseline (New-BoundBinding @{ $fieldCase.Logged = $null })).Action
+        $a = (Get-BindingReadBack $caseDefinition (New-BoundBinding @{ $fieldCase.Logged = $null })).Action
         $name = $fieldCase.Says.Substring(0, $fieldCase.Says.IndexOf(' '))
         $ok = $missingPasses ? ($a.Action -ceq 'Pass') : ($a.Action -ceq 'StopServiceAndRefuse' -and ([string] $a.Message).Contains("$name bound 'not logged'"))
         @{ Ok = $ok; Detail = "got: $(ConvertTo-Json $a -Compress)" }
@@ -5505,7 +5566,12 @@ foreach ($case in @(
         @{ Name = 'the label differing in case alone -- stop and refuse (ordinal)'; Definition = $baseline; Bound = (New-BoundBinding @{ AdmissionPolicyDeploymentId = 'map-26-wire_to_gate-selftest' }); Action = 'StopServiceAndRefuse'; Says = 'admissionPolicyDeploymentId bound' }
         @{ Name = 'a wait logged as 300 seconds rather than hh:mm:ss -- stop and refuse'; Definition = $baseline; Bound = (New-BoundBinding @{ CargoHoldingTimeout = 300 }); Action = 'StopServiceAndRefuse'; Says = "cargoHoldingTimeout bound '300'" }
         @{ Name = 'a key the definition leaves out is not compared (the package default is what the Host binds)'; Definition = $bindingWithoutDeparture; Bound = (New-BoundBinding @{ StationDepartureWaitTimeout = '00:30:00' }); Action = 'Pass'; Says = $null }
-        @{ Name = 'event older than #672 (none of the four) -- pass, so a rollback to such a package is not blocked'; Definition = $baseline; Bound = '<absent>'; Action = 'Pass'; Says = $null })) {
+        @{ Name = 'event older than #672 (none of the four) -- pass, so a rollback to such a package is not blocked'; Definition = $baseline; Bound = '<absent>'; Action = 'Pass'; Says = $null }
+        # program#184.
+        @{ Name = 'staging rules defined on, bound on -- pass'; Definition = $bindingStagingOn; Bound = (New-BoundBinding @{ StagingDepartureRulesEnabled = $true }); Action = 'Pass'; Says = $null }
+        @{ Name = 'staging rules defined on, logged as the string "True" -- stop and refuse, not cast'; Definition = $bindingStagingOn; Bound = (New-BoundBinding @{ StagingDepartureRulesEnabled = 'True' }); Action = 'StopServiceAndRefuse'; Says = "stagingDepartureRulesEnabled bound 'True', the definition says 'True'" }
+        @{ Name = 'staging rules defined on, event older than #672 -- stop and refuse (that package has no staging rules)'; Definition = $bindingStagingOn; Bound = '<absent>'; Action = 'StopServiceAndRefuse'; Says = "stagingDepartureRulesEnabled bound 'not logged', the definition says 'True'" }
+        @{ Name = 'staging rules left out of the definition, bound on -- pass (not compared: the package default is what the Host binds)'; Definition = $baseline; Bound = (New-BoundBinding @{ StagingDepartureRulesEnabled = $true }); Action = 'Pass'; Says = $null })) {
     Invoke-SourceCase "binding read-back: $($case.Name)" {
         $a = (Get-BindingReadBack $case.Definition $case.Bound).Action
         @{ Ok = ($a.Action -ceq $case.Action -and ($null -eq $case.Says -or (([string] $a.Message).Contains('EFFECTIVE_CONFIGURATION_MISMATCH') -and ([string] $a.Message).Contains($case.Says)))); Detail = "got: $(ConvertTo-Json $a -Compress)" }
@@ -5513,7 +5579,7 @@ foreach ($case in @(
 }
 Invoke-SourceCase 'binding result line: the four values as bound, in a fixed order, for 19' {
     $line = Format-ParallelJourneyBindingLine -Effective (Get-BindingReadBack $baseline (New-BoundBinding)).Effective
-    @{ Ok = ($line -ceq 'EFFECTIVE_JOURNEY_BINDING=admissionPolicyVersion=6 admissionPolicyDeploymentId=MAP-26-WIRE_TO_GATE-SELFTEST cargoHoldingTimeout=00:05:00 stationDepartureWaitTimeout=00:05:00 slotConfigurationReadinessGate=Off'); Detail = "got: $line" }
+    @{ Ok = ($line -ceq 'EFFECTIVE_JOURNEY_BINDING=admissionPolicyVersion=6 admissionPolicyDeploymentId=MAP-26-WIRE_TO_GATE-SELFTEST cargoHoldingTimeout=00:05:00 stationDepartureWaitTimeout=00:05:00 slotConfigurationReadinessGate=Off stagingDepartureRulesEnabled=False'); Detail = "got: $line" }
 }
 Invoke-SourceCase 'binding result line: an event older than #672 reads EFFECTIVE_JOURNEY_BINDING=not-logged, nothing else' {
     $line = Format-ParallelJourneyBindingLine -Effective (Get-BindingReadBack $baseline '<absent>').Effective
