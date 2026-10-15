@@ -40,6 +40,10 @@ MUTATIONS = [
 ''',
      '',
      'FullyQualifiedName~StagingLoadCancellationTests.CancellingTheAnchorDuringItsLoadClosesTheJourneyAndReleasesEverything'),
+    ('M6-wire-staging-never-named', 'src/ControlServer.Host/Runtime/JourneyPlanBuilder.cs',
+     'isStagingPickup?.Invoke(stop) == true',
+     'false',
+     'FullyQualifiedName~StagingDepartureRequestTests.OnlyAStagingPickupLegNamesItsPublicStationFunction|FullyQualifiedName~StagingDepartureRequestTests.AnAppendedStagingStopIsNamedAsWell'),
 ]
 
 def run(cmd):
