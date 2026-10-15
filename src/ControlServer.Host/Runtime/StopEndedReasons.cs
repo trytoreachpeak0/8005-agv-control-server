@@ -60,6 +60,8 @@ internal static class StopEndedReasons
         // 没装的放回待派时，空清单说的是这两个，不说 DEMAND_RELEASED。
         CurrentStopDepartures.OperatorDepartedReason => "OPERATOR_DEPARTED",
         CurrentStopDepartures.ChargingRequiredReason => "CHARGING_REQUIRED",
+        // 待送点上装货中取消（control-server#713）：需求放回待派、不终结，车上说的仍是操作员按的那件事。
+        CurrentStopDepartures.LoadCancelledReleasedReason => "LOAD_CANCELLED",
         _ => throw new ArgumentOutOfRangeException(
             nameof(reasonCode),
             reasonCode,

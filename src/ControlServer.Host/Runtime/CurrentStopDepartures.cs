@@ -43,6 +43,12 @@ internal static class CurrentStopDepartures
     /// <summary>同上，车缺电而结束待送点那一站（<c>CHARGING_REQUIRED</c>）。</summary>
     public const string ChargingRequiredReason = "STAGING_CHARGING_REQUIRED";
 
+    /// <summary>
+    /// 待送点上装货中取消、需求放回待派而结束那一站（control-server#713 票正文第 5 条）：车上说 <c>LOAD_CANCELLED</c>，与机台上的取消同一句，
+    /// 只是需求不终结、不抑制。
+    /// </summary>
+    public const string LoadCancelledReleasedReason = "STAGING_LOAD_CANCELLED_RELEASED";
+
     /// <summary>对一次按键的答复的 messageId：只由 <c>departureRequestId</c> 派生，重放与重判都落在同一行上。</summary>
     public static string ResultMessageId(string departureRequestId) =>
         JourneyPlanBuilder.StableGuid(departureRequestId, "current-stop-departure-result");

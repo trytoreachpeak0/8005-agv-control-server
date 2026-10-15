@@ -329,6 +329,46 @@ public sealed class StagingDepartureRequestTests
     }
 
     /// <summary>
+    /// hmi#349 审查转来的第 5 点：同一站的不同停靠，<c>worklistRevision</c> 会不会重复。不会——清单号按车单调（按车计数器给每趟旅程的基准，
+    /// 同一趟里各停靠的号段首尾相接），所以第 1 个待送点停靠上的最后一版、到了第 2 个（同站追加新开的）停靠就是过时的：拿它点出发答
+    /// <c>WORKLIST_REVISION_STALE</c>，不会被认成第 2 个停靠的出发。
+    /// </summary>
+    [Fact]
+    [Trait("IntegrationSlice", "FP-IS-02")]
+    [Trait("IntegrationSlice", "FP-IS-08")]
+    public async Task ARevisionShownAtAnEarlierStopOfTheSameStationIsStaleAtTheNextOne()
+    {
+        await using RuntimeFixture fixture = await ArrangeAsync(StopKind.StagingRulesOn);
+        await AllowEnRouteAppendAsync(fixture);
+        await LoadTheBasketAsync(fixture);
+        await AppendStagingDemandAsync(fixture, SecondDemand, SecondSublot);
+        object atFirstStop = await DeparturePayloadAsync(fixture, Guid.NewGuid().ToString("D"));
+        long firstStopRevision = (long)atFirstStop.GetType().GetProperty("worklistRevision")!.GetValue(atFirstStop)!;
+        fixture.Clock.Advance(fixture.Options.SameStationAppendCorrectionGrace + TimeSpan.FromSeconds(1));
+        await fixture.ProveSlotDoorsClosedAsync();
+        await fixture.HearFromPeerAsync();
+        await fixture.Engine.ExecuteOnceAsync(Token);
+        await Batch7StopDrivenAdvanceDriver.AnswerDepartureSafetyAsync(
+            fixture, Demand, Batch7StopDrivenAdvanceDriver.FirstSafetyResultId);
+        await Batch7StopDrivenAdvanceDriver.ArriveAtCurrentStopAsync(fixture, SecondDemand, "TO_GATE");
+        await fixture.ProveSlotDoorsClosedAsync();
+        JourneyRuntimeRow runtime = await fixture.RuntimeAsync();
+        StopEntryAddress second = (await JourneyStopCursor.LoadAsync(fixture.Context, runtime, Token))
+            .EntryAddressOfCurrentStop(runtime.WorklistRevision);
+        Assert.Equal(StagingStationName, second.StationId);
+        Assert.True(second.FirstWorklistRevision > firstStopRevision, $"{second.FirstWorklistRevision} vs {firstStopRevision}");
+
+        // 同站、旧停靠的号：过时，不是第 2 个停靠的出发。
+        await fixture.AddInboxAsync(Guid.NewGuid().ToString("D"), CurrentStopDepartures.RequestType, atFirstStop);
+        await RunAsync(fixture);
+
+        string departureRequestId = (string)atFirstStop.GetType().GetProperty("departureRequestId")!.GetValue(atFirstStop)!;
+        JsonElement result = await ResultAsync(fixture, departureRequestId);
+        Assert.Equal(ServerReasonCodes.WorklistRevisionStale, result.GetProperty("problem").GetProperty("reasonCode").GetString());
+        Assert.Null((await MembershipAsync(fixture, SecondDemand)).RemovedAt);
+    }
+
+    /// <summary>
     /// 车没有在途旅程时到的出发请求（旅程刚收尾）也要答：<c>STATION_MISMATCH</c>，由派车轮之前的扫尾答，否则车载端会一直挂着（hmi#349 联调第 2 条）。
     /// </summary>
     [Fact]

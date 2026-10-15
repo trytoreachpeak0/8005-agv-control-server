@@ -1542,8 +1542,15 @@ public sealed partial class JourneyRuntimeEngine(
                 JourneyStopDemand? loading = stops.LoadingAtCurrentStop;
                 bool resumingAfterCommit = loading is null;
                 bool loadedHere = stops.CurrentStopDemands.Any(item => item.Membership.Status == JourneyDemandStatuses.Loaded);
+                // 待送点上装货中取消的那一条不终结，按释放改派放回（control-server#713）：归属被移除、游标看不见它，按库里那一行认。
+                bool releasedWhileLoadingHere = resumingAfterCommit && !loadedHere && IsStagingPickup(stops.Current) &&
+                    await dbContext.Set<JourneyDemandRow>().AsNoTracking().AnyAsync(
+                        row => row.JourneyId == runtime.JourneyId && row.PickupStopId == stops.Current.StopId &&
+                               row.RemovedAt != null && row.Status == JourneyDemandStatuses.Loading,
+                        cancellationToken).ConfigureAwait(false);
                 bool resumingAfterEnding = resumingAfterCommit && !loadedHere &&
-                    stops.AllAtStop(stops.Current).Any(item => item.Membership.Status == JourneyDemandStatuses.Terminated);
+                    (stops.AllAtStop(stops.Current).Any(item => item.Membership.Status == JourneyDemandStatuses.Terminated) ||
+                     releasedWhileLoadingHere);
                 if (resumingAfterCommit && !loadedHere && !resumingAfterEnding)
                 {
                     throw new InvalidDataException(
