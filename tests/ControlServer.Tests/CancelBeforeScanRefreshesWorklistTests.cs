@@ -23,7 +23,7 @@ namespace ControlServer.Tests;
 /// </para>
 /// <para>
 /// 待送点规则开关（<c>JourneyRuntime:StagingDepartureRules</c>）开、关两种都测：开着时这里是机台取货停靠，扫码前取消照旧授权。
-/// 待送点取货停靠那一格（开关开着时期限恒为空）由 control-server#726 补。
+/// 待送点取货停靠那一格（开关开着时期限恒为空）在 <c>StagingLoadCancellationTests.CancellingOneRowBeforeScanAtTheStagingStopRefreshesTheWorklistAndTheEntryRequest</c>（control-server#726）。
 /// </para>
 /// </remarks>
 public sealed class CancelBeforeScanRefreshesWorklistTests

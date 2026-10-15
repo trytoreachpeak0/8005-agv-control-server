@@ -800,6 +800,10 @@ jobs:
               # 出发 at a machine pickup once its loads are complete (control-server#725, CP-0014): needs an onboard_ref that
               # contains onboard-hmi#352, which offers the button there.
               @{ Name = 'real-onboard-machine-depart-cargo-holding';         Runs = 1 }
+              # A worklist row's 取消 at the staging pickup stop (control-server#726, CP-0014 revision two): the demand ends and is
+              # suppressed, the rest of the rows go on with a refreshed worklist and entry request, and cancelling the last row with
+              # cargo on board ends the stop and leaves 出发. Needs an onboard_ref that contains onboard-hmi#353 (the row's 取消).
+              @{ Name = 'real-onboard-staging-row-cancel';                   Runs = 1 }
           )
 
           # Registered before anything can fail, so the upload step always has a path.
