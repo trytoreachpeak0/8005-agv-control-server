@@ -561,7 +561,7 @@ public sealed class StagingDepartureRequestTests
 
     /// <summary>
     /// 独立审查 M1、向量 <c>CV-CURRENT-STOP-DEPARTURE-ACCEPTED</c>：车在第 2 个待送点停靠（同站追加并进来的三条：B、C、D）装了 B 之后点出发，
-    /// C、D 从当前停靠放回。线序依次是答复、业务状态快照、本站结束的空清单（<c>OPERATOR_DEPARTED</c>）、计划、离站核验；本站的录入请求结清，
+    /// C、D 从当前停靠放回，第 3 停靠上的 E 也放回、那个停靠删掉。线序依次是答复、业务状态快照、本站结束的空清单（<c>OPERATOR_DEPARTED</c>）、计划、离站核验；本站的录入请求结清，
     /// 车载屏离站后不再亮扫码入口。把放回之后补空清单的那一处（<c>StageAfterReleaseAsync</c> 的 <c>releasedFromCurrentStop</c>）改成恒假，这条红。
     /// </summary>
     [Fact]
@@ -578,7 +578,7 @@ public sealed class StagingDepartureRequestTests
         await RunAsync(fixture);
 
         Assert.Equal("ACCEPTED", (await ResultAsync(fixture, departureRequestId)).GetProperty("outcome").GetString());
-        foreach (string demandId in new[] { ThirdDemand, FourthDemand })
+        foreach (string demandId in new[] { ThirdDemand, FourthDemand, FifthDemand })
         {
             Assert.Equal(DemandJourneyLookup.ReleasedForRedispatchReason, (await MembershipAsync(fixture, demandId)).RemovalReason);
         }
@@ -745,9 +745,13 @@ public sealed class StagingDepartureRequestTests
 
     private const string FourthSublot = "SUBLOT-715";
 
+    private const string FifthDemand = "10000000-0000-4000-8000-000000000716";
+
+    private const string FifthSublot = "SUBLOT-716";
+
     /// <summary>
     /// 第 1 个停靠装上 A；车还在第 1 站时同站追加 B、C、D——B 新开第 2 个停靠，C、D 并进这个第 2 停靠（追加从不改当前下一站，但并得进后面的同站停靠）；
-    /// 车原地「到」第 2 停靠，装上 B，停在等 C、D 录入。返回第 2 停靠此刻那条录入请求的 messageId（此时它还没结清）。
+    /// 车原地「到」第 2 停靠后再追加 E（新开第 3 停靠）；装上 B，停在等 C、D 录入。返回第 2 停靠此刻那条录入请求的 messageId（此时它还没结清）。
     /// </summary>
     private static async Task<string> LoadAtTheSecondStagingStopAsync(RuntimeFixture fixture)
     {
@@ -768,6 +772,10 @@ public sealed class StagingDepartureRequestTests
             fixture, Demand, Batch7StopDrivenAdvanceDriver.FirstSafetyResultId);
         await Batch7StopDrivenAdvanceDriver.ArriveAtCurrentStopAsync(fixture, SecondDemand, "TO_GATE");
         Assert.Equal(secondStop, (await Batch7StopDrivenAdvanceDriver.CurrentStopAsync(fixture, SecondDemand)).StopId);
+        // 车已在第 2 停靠时再来一条 E：当前停靠不并，新开第 3 个停靠。出发时它也放回、第 3 停靠被删，计划因此变了、要重发——
+        // 向量的完整线序里那张计划正是这样来的。计划内容不变时服务端不重发计划（只在内容变了才发）。
+        await AppendStagingDemandAsync(fixture, FifthDemand, FifthSublot);
+        Assert.NotEqual(secondStop, (await MembershipAsync(fixture, FifthDemand)).PickupStopId);
 
         // 夹具追加时预留两篮；录入时按盒数重算篮数（每篮四盒），所以 B 要读出 8 盒。
         fixture.BoxCounts.Set(SecondSublot, 8);

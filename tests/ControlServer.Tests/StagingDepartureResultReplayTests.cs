@@ -1,6 +1,7 @@
 using System.Security.Cryptography;
 using System.Text;
 using System.Text.Json;
+using ControlServer.Application;
 using ControlServer.Domain;
 using ControlServer.Host.Runtime;
 using ControlServer.Host.Transport;
@@ -40,7 +41,7 @@ public sealed class StagingDepartureResultReplayTests
     public async Task AnUnacknowledgedDepartureResultIsReplayedAfterTheNextHandshakesReadiness()
     {
         await using Rig rig = await Rig.StartAsync();
-        long first = rig.State.SessionGeneration;
+        long first = rig.State.SessionGeneration ?? throw new InvalidOperationException("The handshake assigned no generation.");
         await rig.StageResultAsync(first);
 
         List<string> wire = await rig.ReconnectAsync();
@@ -65,7 +66,7 @@ public sealed class StagingDepartureResultReplayTests
     public async Task AnAcknowledgedResultReplayedAcrossGenerationsIsTheStoredLineAndItsAckMatches()
     {
         await using Rig rig = await Rig.StartAsync();
-        long first = rig.State.SessionGeneration;
+        long first = rig.State.SessionGeneration ?? throw new InvalidOperationException("The handshake assigned no generation.");
         object request = await rig.StageResultAsync(first);
         await rig.AcknowledgeAsync(rig.StoredLine());
         Assert.NotNull((await rig.ResultRowAsync()).AcknowledgedAt);
