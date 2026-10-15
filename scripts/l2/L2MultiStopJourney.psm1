@@ -143,6 +143,29 @@ function Get-L2WorklistRows([object]$Onboard) {
     }
 }
 
+<#
+The button with AutomationId $AutomationId inside the WorklistItems row whose sublot (first text, as Get-L2WorklistRows reads it)
+is $Sublot -- a row's own 「取消」 at the staging pickup stop is WorklistItemCancellation (onboard-hmi#353, control-server#726).
+$null when the list, the row or the button is not in the tree.
+#>
+function Find-L2WorklistRowButton([object]$Onboard, [string]$Sublot, [string]$AutomationId) {
+    try {
+        $list = $Onboard.Element('AutomationId', 'WorklistItems')
+        if (-not $list) { return $null }
+        $isButton = [System.Windows.Automation.PropertyCondition]::new(
+            [System.Windows.Automation.AutomationElement]::AutomationIdProperty, $AutomationId)
+        foreach ($item in (Get-L2UiaChildren $list)) {
+            $texts = Get-L2UiaTexts $item
+            if ($texts.Count -ge 1 -and $texts[0] -eq $Sublot) {
+                return $item.FindFirst([System.Windows.Automation.TreeScope]::Descendants, $isButton)
+            }
+        }
+        return $null
+    } catch [System.Windows.Automation.ElementNotAvailableException] {
+        return $null
+    }
+}
+
 function Format-L2WorklistRows([object]$Rows) {
     if ($null -eq $Rows) { return '(list absent)' }
     if (@($Rows).Count -eq 0) { return '(no rows)' }
@@ -286,4 +309,5 @@ function Stop-L2DoorSampler([object]$Job) {
 }
 
 Export-ModuleMember -Function ConvertFrom-L2PlanLegRowReading, Get-L2PlanLegRows, Format-L2PlanLegRows, Get-L2WorklistRows, Format-L2WorklistRows,
+    Find-L2WorklistRowButton,
     Get-L2LoadingPhaseLine, Read-L2UiaItemStatus, Format-L2UiaReading, Get-L2JourneyWireSnapshots, Format-L2WireSnapshot, Start-L2DoorSampler, Stop-L2DoorSampler
