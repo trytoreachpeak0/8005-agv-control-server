@@ -3267,7 +3267,9 @@ public sealed partial class JourneyRuntimeEngine(
             return;
         }
         JourneyStopRow stop = stops.Current;
-        if (stop.StopRole != JourneyStopRoles.Pickup || stops.OutstandingAtCurrentStop.Count > 0)
+        // 本站已由操作员按出发结束（control-server#725）：车马上走，不再为期限补一版清单。车载端把「已受理」绑在这一站的计划腿上，
+        // 腿离开 ARRIVED 之前再来一版清单只会让屏上那张清单在离站前多翻一次（hmi#352 审查转来）。
+        if (stop.StopRole != JourneyStopRoles.Pickup || stops.OutstandingAtCurrentStop.Count > 0 || stop.OperatorDepartedAt is not null)
         {
             return;
         }

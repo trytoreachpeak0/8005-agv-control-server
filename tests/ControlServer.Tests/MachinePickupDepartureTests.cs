@@ -263,37 +263,7 @@ public sealed class MachinePickupDepartureTests
         await using RuntimeFixture fixture = await RuntimeFixture.CreateAsync();
         JourneyStopRow secondPickup = await StopEndedJourneyContinuesTests.ArriveAtTheSecondPickupAsync(fixture);
         fixture.Options.StationDepartureWaitTimeout = TimeSpan.FromMinutes(5);
-        await using (ControlServerDbContext connection = fixture.OpenConnectionContext())
-        {
-            OnboardMessageProcessor processor = TestOnboardProcessorFactory.Create(
-                connection, new WireToGateStore(connection), fixture.Clock, new ConfigurationBuilder().Build(), fixture.Peer);
-            OnboardConnectionState state = StopEndedJourneyContinuesTests.Connection(fixture);
-            const string cancellationId = "d7250000-0000-4000-8000-000000000001";
-            var who = new { operatorId = "OP-001", verificationMethod = "BADGE", verifiedAt = fixture.Clock.GetUtcNow() };
-            await processor.ProcessAsync(
-                StopEndedJourneyContinuesTests.Envelope(fixture, "d7250000-0000-4000-8000-000000000002", "LoadCancellationStartRequested", new
-                {
-                    cancellationId,
-                    demandId = SecondDemandId,
-                    slotOperationAttemptId = (string?)null,
-                    @operator = who,
-                    reason = "Nothing to load at this stop."
-                }),
-                state,
-                Token);
-            await processor.ProcessAsync(
-                StopEndedJourneyContinuesTests.Envelope(fixture, "d7250000-0000-4000-8000-000000000003", "LoadCancellationResult", new
-                {
-                    cancellationId,
-                    demandId = SecondDemandId,
-                    slotOperationAttemptId = (string?)null,
-                    overallOutcome = "ALL_EMPTY",
-                    slotResults = Array.Empty<object>(),
-                    observedAt = fixture.Clock.GetUtcNow()
-                }),
-                state,
-                Token);
-        }
+        await CancelBeforeScanAsync(fixture, SecondDemandId, "d7250000-0000-4000-8000-000000000001");
         await fixture.HearFromPeerAsync();
         await TickAndRunAsync(fixture);
         JourneyRuntimeRow before = await JourneyOfAsync(fixture, FirstDemandId);
@@ -313,6 +283,52 @@ public sealed class MachinePickupDepartureTests
         Assert.Equal((before.LoadingPhaseState, before.LoadingClosedReason),
             ((await JourneyOfAsync(fixture, FirstDemandId)).LoadingPhaseState, (await JourneyOfAsync(fixture, FirstDemandId)).LoadingClosedReason));
         Assert.Null((await MembershipAsync(fixture, FirstDemandId)).RemovedAt);
+    }
+
+    /// <summary>
+    /// 同上，同一个站：第一次停靠在 N1-1 装上甲，乙同站追加、另开一个停靠（REQ-0196），车原地走过去之后乙在扫码前被取消。这一次停靠一篮没装，
+    /// 车上的货是同一个站上一次停靠装的——「装完」按停靠认，不按站号认（hmi#352 审查定的口径），拒。按站号认的实现在这里放行。
+    /// </summary>
+    [Fact]
+    [Trait("IntegrationSlice", "FP-IS-02")]
+    [Trait("IntegrationSlice", "FP-IS-08")]
+    [Trait("ProtocolVector", "CV-CURRENT-STOP-DEPARTURE-MACHINE-LOADING-INCOMPLETE")]
+    public async Task DepartureAtASecondStopOfTheSameStationWithNothingLoadedThereIsRefused()
+    {
+        await using RuntimeFixture fixture = await Batch7CargoHoldingTests.HoldingFixtureAsync();
+        fixture.Options.StationDepartureWaitTimeout = TimeSpan.FromMinutes(5);
+        await Batch7CargoHoldingTests.LoadTheFirstDemandAsync(fixture);
+        fixture.BoxCounts.Set(Batch7StopDrivenAdvanceDriver.SecondSublot, 7);
+        await Batch7ThreeStopJourneyTests.AppendDemandAsync(fixture, SecondDemandId, Batch7StopDrivenAdvanceDriver.SecondSublot, "N1-1", 12);
+        JourneyStopRow firstStop = await CurrentStopAsync(fixture, FirstDemandId);
+        string secondStopId = (await MembershipAsync(fixture, SecondDemandId)).PickupStopId;
+        Assert.NotEqual(firstStop.StopId, secondStopId);
+
+        fixture.Clock.Advance(fixture.Options.SameStationAppendCorrectionGrace + TimeSpan.FromSeconds(1));
+        await fixture.ProveSlotDoorsClosedAsync();
+        await fixture.HearFromPeerAsync();
+        await fixture.Engine.ExecuteOnceAsync(Token);
+        await AnswerDepartureSafetyAsync(fixture, FirstDemandId, FirstSafetyResultId);
+        await ArriveAtCurrentStopAsync(fixture, SecondDemandId, "TO_GATE");
+        JourneyStopRow secondStop = await CurrentStopAsync(fixture, FirstDemandId);
+        Assert.Equal((secondStopId, firstStop.StationId), (secondStop.StopId, secondStop.StationId));
+        await CancelBeforeScanAsync(fixture, SecondDemandId, "d7250000-0000-4000-8000-000000000011");
+        await fixture.HearFromPeerAsync();
+        await TickAndRunAsync(fixture);
+        Assert.Equal(JourneyRuntimeStage.AwaitingStationDeparture, (await JourneyOfAsync(fixture, FirstDemandId)).Stage);
+        Assert.Equal(secondStopId, (await CurrentStopAsync(fixture, FirstDemandId)).StopId);
+        Assert.Equal(JourneyDemandStatuses.Terminated, (await MembershipAsync(fixture, SecondDemandId)).Status);
+        int checksBefore = await Batch7CargoHoldingTests.DepartureChecksSentAsync(fixture);
+
+        string departureRequestId = await RequestDepartureAsync(fixture, operationSessionId: null);
+        await RunAsync(fixture);
+
+        JsonElement result = await ResultAsync(fixture, departureRequestId);
+        Assert.Equal("REJECTED", result.GetProperty("outcome").GetString());
+        Assert.Equal(ServerReasonCodes.ActionNotAllowedInState, result.GetProperty("problem").GetProperty("reasonCode").GetString());
+        Assert.Equal(checksBefore, await Batch7CargoHoldingTests.DepartureChecksSentAsync(fixture));
+        Assert.Null((await fixture.Context.Set<JourneyStopRow>().AsNoTracking()
+            .SingleAsync(row => row.StopId == secondStopId, Token)).OperatorDepartedAt);
     }
 
     /// <summary>
@@ -447,6 +463,39 @@ public sealed class MachinePickupDepartureTests
         }
         await fixture.Context.SaveChangesAsync(Token);
         fixture.Context.ChangeTracker.Clear();
+    }
+
+    /// <summary>扫码前取消一条需求（没有仓位操作），车报 ALL_EMPTY：需求终结，它的停靠以空清单结束。</summary>
+    private static async Task CancelBeforeScanAsync(RuntimeFixture fixture, string demandId, string cancellationId)
+    {
+        await using ControlServerDbContext connection = fixture.OpenConnectionContext();
+        OnboardMessageProcessor processor = TestOnboardProcessorFactory.Create(
+            connection, new WireToGateStore(connection), fixture.Clock, new ConfigurationBuilder().Build(), fixture.Peer);
+        OnboardConnectionState state = StopEndedJourneyContinuesTests.Connection(fixture);
+        var who = new { operatorId = "OP-001", verificationMethod = "BADGE", verifiedAt = fixture.Clock.GetUtcNow() };
+        await processor.ProcessAsync(
+            StopEndedJourneyContinuesTests.Envelope(fixture, Guid.NewGuid().ToString("D"), "LoadCancellationStartRequested", new
+            {
+                cancellationId,
+                demandId,
+                slotOperationAttemptId = (string?)null,
+                @operator = who,
+                reason = "Nothing to load at this stop."
+            }),
+            state,
+            Token);
+        await processor.ProcessAsync(
+            StopEndedJourneyContinuesTests.Envelope(fixture, Guid.NewGuid().ToString("D"), "LoadCancellationResult", new
+            {
+                cancellationId,
+                demandId,
+                slotOperationAttemptId = (string?)null,
+                overallOutcome = "ALL_EMPTY",
+                slotResults = Array.Empty<object>(),
+                observedAt = fixture.Clock.GetUtcNow()
+            }),
+            state,
+            Token);
     }
 
     private static string[] SentSince(RuntimeFixture fixture, int lineIndex) =>
