@@ -545,11 +545,13 @@ public sealed class StagingDepartureRequestTests
             fixture, Demand, Batch7StopDrivenAdvanceDriver.FirstSafetyResultId);
         await Batch7StopDrivenAdvanceDriver.ArriveAtCurrentStopAsync(fixture, SecondDemand, "TO_GATE");
 
-        string latest = await fixture.Context.ProtocolOutbox.AsNoTracking()
-            .Where(row => row.MessageType == "UpcomingStopPlanSnapshot")
+        // SQLite 不能按 DateTimeOffset 排序，取回来在本地排。
+        string latest = (await fixture.Context.ProtocolOutbox.AsNoTracking()
+                .Where(row => row.MessageType == "UpcomingStopPlanSnapshot")
+                .ToArrayAsync(Token))
             .OrderByDescending(row => row.CreatedAt)
-            .Select(row => row.PayloadJson)
-            .FirstAsync(Token);
+            .First()
+            .PayloadJson;
         (string? LegType, string? Function)[] legs = LegsOf(latest);
         Assert.Equal(2, legs.Count(leg => leg.LegType == "TO_PICKUP"));
         Assert.All(legs.Where(leg => leg.LegType == "TO_PICKUP"), leg => Assert.Equal("WIRE_STAGING", leg.Function));
