@@ -1,6 +1,7 @@
 using System.Text.Json;
 using ControlServer.Application;
 using ControlServer.Domain;
+using ControlServer.Host.Runtime;
 using ControlServer.Host.Transport;
 using ControlServer.Infrastructure.Persistence;
 using Microsoft.EntityFrameworkCore;
@@ -27,6 +28,8 @@ namespace ControlServer.Tests;
 public sealed class CancelBeforeScanRefreshesWorklistTests
 {
     private const string CancellationId = "c7230000-0000-4000-8000-000000000001";
+    private const string ThirdDemandId = "10000000-0000-4000-8000-000000000003";
+    private const string ThirdSublot = "SUBLOT-003";
 
     private static CancellationToken Token => TestContext.Current.CancellationToken;
 
@@ -67,7 +70,7 @@ public sealed class CancelBeforeScanRefreshesWorklistTests
         Assert.Equal(JourneyRuntimeStage.AwaitingLoadResult, loading.Stage);
     }
 
-    /// <summary>甲正在装时取消乙：下一轮车上最新那一版清单只列甲；甲在装，没有开着的录入，不发录入请求。甲装完，本站结束进离站等待。</summary>
+    /// <summary>甲正在装时取消乙：下一轮车上最新那一版清单只列甲；甲在装，没有开着的录入，不发录入请求。甲装完，本站结束、车照常往下走（夹具离站等待为 0，当轮就发离站核验）。</summary>
     [Theory]
     [InlineData(false)]
     [InlineData(true)]
@@ -95,7 +98,56 @@ public sealed class CancelBeforeScanRefreshesWorklistTests
         await AssertNothingOlderIsReplayedAsync(fixture, worklist.Revision, "CurrentStopWorklistSnapshot");
 
         JourneyRuntimeRow settled = await SettleLoadAsync(fixture, FirstDemandId);
-        Assert.Equal(JourneyRuntimeStage.AwaitingStationDeparture, settled.Stage);
+        Assert.Equal(JourneyRuntimeStage.AwaitingDepartureSafety, settled.Stage);
+    }
+
+    /// <summary>
+    /// 一站三条，引擎两轮之间乙被扫码前取消、丙又被终结：号跳过一号。车上那一版（到站那一版）也要退役——只退上一号的话，它留着未确认，
+    /// 重连补发时排在新的一版之后送到，车判修订号回退。
+    /// </summary>
+    [Theory]
+    [InlineData(false)]
+    [InlineData(true)]
+    [Trait("IntegrationSlice", "FP-IS-08")]
+    public async Task TwoEndingsBetweenRoundsRetireTheVersionStillOnTheVehicle(bool stagingRules)
+    {
+        await using RuntimeFixture fixture = await RuntimeFixture.CreateAsync();
+        fixture.Options.StagingDepartureRules.Enabled = stagingRules;
+        await ThreeDemandsAtThePickupAsync(fixture);
+        Sent before = await LatestAsync(fixture, "CurrentStopWorklistSnapshot");
+        Assert.Equal([FirstDemandId, SecondDemandId, ThirdDemandId], before.Demands);
+
+        await CancelTheSecondBeforeScanAsync(fixture);
+        string journeyId = (await JourneyOfAsync(fixture, FirstDemandId)).JourneyId;
+        JourneyRuntimeRow tracked = await fixture.Context.JourneyRuntimes.SingleAsync(row => row.JourneyId == journeyId, Token);
+        await new PickupStopTermination(fixture.Context).StageAsync(
+            tracked, ThirdDemandId, "CANCELLED_BY_OPERATOR", fixture.Clock.GetUtcNow(), Token);
+        await fixture.Context.SaveChangesAsync(Token);
+        fixture.Context.ChangeTracker.Clear();
+        await RoundAsync(fixture);
+
+        Sent worklist = await LatestAsync(fixture, "CurrentStopWorklistSnapshot");
+        Assert.Equal(before.Revision + 2, worklist.Revision);
+        Assert.Equal([FirstDemandId], worklist.Demands);
+        Assert.Equal([FirstSublot], (await LatestAsync(fixture, "SublotEntryRequested")).Sublots);
+        await AssertNothingOlderIsReplayedAsync(fixture, worklist.Revision);
+    }
+
+    /// <summary>同 <c>Batch7MultiDemandAdvanceTests.TwoDemandsAtThePickupAsync</c>，到站之前挂上三条。</summary>
+    private static async Task ThreeDemandsAtThePickupAsync(RuntimeFixture fixture)
+    {
+        fixture.Catalog.Set(fixture.Demand(FirstDemandId, FirstSublot, Now.AddMinutes(-10)));
+        fixture.BoxCounts.Set(FirstSublot, 4);
+        fixture.BoxCounts.Set(SecondSublot, 4);
+        fixture.BoxCounts.Set(ThirdSublot, 4);
+        await TickAndRunAsync(fixture);
+        JourneyRuntimeRow runtime = await fixture.RuntimeAsync(FirstDemandId);
+        await Batch7MultiDemandAdvanceTests.AddSecondDemandToJourneyAsync(fixture, runtime);
+        await Batch7MultiDemandAdvanceTests.AddDemandToJourneyAsync(fixture, runtime, ThirdDemandId, ThirdSublot, slotBlock: 2);
+        fixture.Riot.SetSuccessfulArrival("TO_PICKUP", runtime.PickupUpperId, runtime.PickupStationRiotId);
+        fixture.Riot.Vehicle = fixture.Riot.Vehicle with { CurrentStationId = runtime.PickupStationRiotId };
+        await TickAndRunAsync(fixture);
+        Assert.Equal(JourneyRuntimeStage.AwaitingSublot, (await fixture.RuntimeAsync(FirstDemandId)).Stage);
     }
 
     /// <summary>操作员对乙扫码前取消，走服务端真实的授权与结果受理；车报 ALL_EMPTY。乙终结，甲还在本站。</summary>
