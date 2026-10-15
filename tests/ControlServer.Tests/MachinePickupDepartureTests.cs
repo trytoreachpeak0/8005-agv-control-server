@@ -210,6 +210,42 @@ public sealed class MachinePickupDepartureTests
     }
 
     /// <summary>
+    /// 受理之后、车还停着（门未证明扣车）时站点离站期限变了（断联作废后重连从此刻重新起算，ADR-cross-0055，这里直接改起算点）：服务端不为它补一版清单。
+    /// 车载端把「已受理」绑在这一站的计划腿上，腿离开 ARRIVED 之前再来一版清单只会让屏上那张清单在离站前多翻一次（hmi#352 审查第③条）。
+    /// 去掉 <c>RefreshDeadlineOfALoadedStopAsync</c> 里那道「本站已由操作员结束」的判断，这里多出一张清单。
+    /// </summary>
+    [Fact]
+    [Trait("IntegrationSlice", "FP-IS-02")]
+    public async Task NoWorklistIsReissuedForAChangedDeadlineOnceTheOperatorHasEndedTheStop()
+    {
+        await using RuntimeFixture fixture = await LoadedMachineStopAsync(MachineShape.NoHolding, stagingRulesEnabled: false);
+        fixture.Context.SlotDoorHolds.Add(new SlotDoorHoldRow
+        {
+            HoldId = Guid.NewGuid().ToString("D"),
+            AgvId = fixture.Options.AgvId,
+            DemandId = Demand,
+            SlotsJson = "[1]",
+            HeldAt = fixture.Clock.GetUtcNow()
+        });
+        await fixture.Context.SaveChangesAsync(Token);
+        fixture.Context.ChangeTracker.Clear();
+        string departureRequestId = await RequestDepartureAsync(fixture, operationSessionId: null);
+        await RunAsync(fixture);
+        Assert.Equal("ACCEPTED", (await ResultAsync(fixture, departureRequestId)).GetProperty("outcome").GetString());
+        Assert.Equal(JourneyRuntimeStage.AwaitingStationDeparture, (await fixture.RuntimeAsync()).Stage);
+        int worklistsBefore = await CountAsync(fixture, "CurrentStopWorklistSnapshot");
+
+        JourneyRuntimeRow runtime = await fixture.Context.JourneyRuntimes.SingleAsync(Token);
+        runtime.StationDepartureWaitStartedAt = fixture.Clock.GetUtcNow();
+        await fixture.Context.SaveChangesAsync(Token);
+        fixture.Context.ChangeTracker.Clear();
+        await RunAsync(fixture);
+
+        Assert.Equal(worklistsBefore, await CountAsync(fixture, "CurrentStopWorklistSnapshot"));
+        Assert.Equal(JourneyRuntimeStage.AwaitingStationDeparture, (await fixture.RuntimeAsync()).Stage);
+    }
+
+    /// <summary>
     /// 向量 MACHINE-LOADING-INCOMPLETE：本停靠装货还没完成时一律 <c>ACTION_NOT_ALLOWED_IN_STATE</c>，什么都不变——等录入（一篮没装）、正在装
     /// （命令已下、结果未到）。开关开着、关着一样。
     /// </summary>
