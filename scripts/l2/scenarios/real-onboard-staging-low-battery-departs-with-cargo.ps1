@@ -90,21 +90,29 @@ $journeyId = [string]$journey.JourneyId
 $null = Move-L2CargoVehicleToCurrentStop $Context $journeyId $script:StagingStationRiotId
 $loadA = Invoke-L2RigLoad $Context $journeyId $a
 
-$holding = Wait-L2RealOrLast -Description 'the vehicle holds its cargo at the staging station' -Journal $journal -Criterion 'holding' `
-    -TimeoutSeconds 60 -Probe { [string](Get-L2StagingJourney $connection $journeyId).LoadingPhaseState } `
-    -Until { param($v) $v -eq 'CARGO_HOLDING_WAIT' }
+# 车在待送点上带货等客户的装货阶段有两种：分区许途中追加时 CARGO_HOLDING_WAIT；不许时（本 setup 没给追加上限）装完本站就是
+# CLOSED / PLANNED_LOADING_COMPLETE，车照样不走（control-server#709；缺电带货一支两种都管）。第一次真装置跑只认前一种，
+# 把后一种当成「没在等」（证据 r3/real-onboard-staging-low-battery-departs-with-cargo-1）。
+$waitingPhases = @('CARGO_HOLDING_WAIT', 'CLOSED/PLANNED_LOADING_COMPLETE')
+function Get-Phase {
+    $row = Get-L2StagingJourney $connection $journeyId
+    if ($null -eq $row) { return $null }
+    return ([string]$row.LoadingPhaseState -eq 'CLOSED') ? "CLOSED/$($row.LoadingClosedReason)" : [string]$row.LoadingPhaseState
+}
+$holding = Wait-L2RealOrLast -Description 'the vehicle waits with its cargo at the staging station' -Journal $journal -Criterion 'holding' `
+    -TimeoutSeconds 60 -Probe { Get-Phase } -Until { param($v) $v -in $waitingPhases }
 $null = Wait-L2Iterations -Riot $riot -Count 3 -Journal $journal
 # Whole array already (return , ...): wrapped in @() its Count would be 1 whatever it held (Test-L2WholeArrayReturn).
 $checksWhileHolding = Get-L2DepartureCheckTargets $connection
-$stillHolding = [string](Get-L2StagingJourney $connection $journeyId).LoadingPhaseState
+$stillHolding = Get-Phase
 $offered = Test-L2DepartureButtonPressable $onboard
 $assertions.Add(
-    'L2-RSC-01', '前提：甲 Committed，车在待送点持货等单（CARGO_HOLDING_WAIT），几轮之后仍没有离站核验，屏上「出发」仍可按',
-    ($loadA.Status -eq 'Committed' -and $holding -eq 'CARGO_HOLDING_WAIT' -and $stillHolding -eq 'CARGO_HOLDING_WAIT' -and
+    'L2-RSC-01', '前提：甲 Committed，车在待送点上带货等客户（CARGO_HOLDING_WAIT 或 CLOSED/PLANNED_LOADING_COMPLETE），几轮之后不变、没有离站核验，屏上「出发」仍可按',
+    ($loadA.Status -eq 'Committed' -and $holding -in $waitingPhases -and $stillHolding -eq $holding -and
         $checksWhileHolding.Count -eq 0 -and $offered),
-    'A Committed / CARGO_HOLDING_WAIT twice / 离站核验 0 / 出发 pressable',
+    'A Committed / the same waiting phase twice / 离站核验 0 / 出发 pressable',
     "A $($loadA.Status) / $holding then $stillHolding / 离站核验 $($checksWhileHolding.Count) / 出发 $(if ($offered) { 'pressable' } else { 'not offered' })")
-if ($stillHolding -ne 'CARGO_HOLDING_WAIT' -or $checksWhileHolding.Count -ne 0) {
+if ($stillHolding -notin $waitingPhases -or $checksWhileHolding.Count -ne 0) {
     Add-L2RealNotReached $assertions @($all | Where-Object { $_ -ne 'L2-RSC-01' }) '车没有在待送点上持货等单，缺电出发无从区分'
     return
 }
@@ -118,7 +126,7 @@ $null = $riot.Command('Put', 'vehicle', @{
 })
 $closed = Wait-L2RealOrLast -Description 'the loading phase closed for want of charge' -Journal $journal -Criterion 'closed-charging-required' `
     -TimeoutSeconds 60 -Probe { Get-L2StagingJourney $connection $journeyId } `
-    -Until { param($v) $null -ne $v -and [string]$v.LoadingPhaseState -eq 'CLOSED' }
+    -Until { param($v) $null -ne $v -and [string]$v.LoadingPhaseState -eq 'CLOSED' -and [string]$v.LoadingClosedReason -eq 'CHARGING_REQUIRED' }
 $leaving = Wait-L2RealOrLast -Description 'a departure check towards the drop-off was sent' -Journal $journal -Criterion 'leaving' `
     -TimeoutSeconds 60 -Probe { Get-L2DepartureCheckTargets $connection } `
     -Until { param($v) @($v | Where-Object { $_ -ne $script:StagingStationName }).Count -ge 1 }
