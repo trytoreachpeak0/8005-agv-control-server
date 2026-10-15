@@ -19,7 +19,9 @@
 
 每个第二事实都先等（README 第 14 条）：读屏上关闭原因前等离站核验发出；读放回前等归属行的 RemovedAt。
 
-**红证据：L2 层面目前一次都没有**（PR #724 独立审查 M3）。产品侧变异取红由审查第二阶段补，补上之后写进这里。
+**红证据**（PR #724 第二阶段，10-15 本机，基于 df1a654e）：把带货那一支的放回改成取消（StageStagingDepartureAsync 里改调
+PickupStopTermination.StageDemandTerminationAsync），L2-RSP-03 红（丙 Cancelled、仍在旅程上），05 跟着红（同一缺陷的后果：丙没离开旅程），
+01、02、04 仍绿。
 #>
 [CmdletBinding()]
 param([Parameter(Mandatory)][object]$Context)

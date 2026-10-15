@@ -18,7 +18,8 @@ slots-simulator + 充电桩 211。
 - 04 进充电分配：旅程收尾之后车被分到 211，周期 EN_ROUTE、充电单被 RIoT 确认、车持有 CHARGING 用途；单跑完，周期 CHARGING，屏上
   ChargingStatus 读到 CHARGING（real-onboard-charging-cycle 的读法）。
 
-**红证据：L2 层面目前一次都没有**（PR #724 独立审查 M3）。产品侧变异取红由审查第二阶段补，补上之后写进这里。
+**红证据**（PR #724 第二阶段，10-15 本机，基于 df1a654e）：TryDepartLowBatteryStagingStopWithCargoAsync 入口直接返回 false，
+L2-RSC-02 红（仍是 CLOSED/PLANNED_LOADING_COMPLETE、没有离站核验），03、04 记为未到达，01 仍绿。
 #>
 [CmdletBinding()]
 param([Parameter(Mandatory)][object]$Context)

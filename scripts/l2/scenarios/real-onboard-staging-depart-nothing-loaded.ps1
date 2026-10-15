@@ -18,7 +18,8 @@
 - 04 车不动：出发之后没有离站核验；之后新建的订单（放回的需求多半又派给这辆停在待送点上的车）只开往待送站本身；模拟器八个仓都关门、
   空、锁上——没有哪扇门因为出发被打开。
 
-**红证据：L2 层面目前一次都没有**（PR #724 独立审查 M3）。产品侧变异取红由审查第二阶段补，补上之后写进这里。
+**红证据**（PR #724 第二阶段，10-15 本机，基于 df1a654e）：把一篮没装出发那一支的收尾原因换成 CHARGING_REQUIRED（StageStagingDepartureAsync），
+只有 L2-RSN-03 红（Completed/STAGING_CHARGING_REQUIRED，没有 OPERATOR_DEPARTED 的收尾清单），01、02、04 仍绿。
 #>
 [CmdletBinding()]
 param([Parameter(Mandatory)][object]$Context)

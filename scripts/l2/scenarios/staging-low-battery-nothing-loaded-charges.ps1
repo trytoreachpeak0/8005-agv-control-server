@@ -24,7 +24,8 @@ control-server#712 没有判别力**（独立审查 L1）：低于强制充电�
 **三、进充电队、被派去充电**：V 被分到 211，充电周期 EN_ROUTE、充电单被 RIoT 确认、V 持有 CHARGING 用途（L2-SLC-03）；单跑完，
 V 在 211 上 CHARGING，211 是这一趟的占用（L2-SLC-04）。
 
-**红证据：L2 层面目前一次都没有**（PR #724 独立审查 M3）。产品侧变异取红由审查第二阶段补，补上之后写进这里。
+**红证据**（PR #724 第二阶段，10-15 本机，基于 df1a654e）：PickupStopTermination 在收尾原因为 STAGING_CHARGING_REQUIRED 时不释放用途
+占有（跳过 JourneyPurposeClaimRelease.StageAsync），L2-SLC-03 红（V 仍挂着 TRANSPORT 用途、没有充电周期），04 记为未到达，01、02 仍绿。
 
 **探针不取闭包**，理由见 CargoHoldingCommon.ps1 开头。
 #>
