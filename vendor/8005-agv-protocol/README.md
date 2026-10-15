@@ -37,12 +37,12 @@ manifest 里的 `schemaBundleSha256`**——后者由协议仓自己的打包算
 | 项 | 值 |
 | --- | --- |
 | 来源仓库 | `8005-agv-protocol` |
-| 来源提交 | `4d67655c4da5120d20cd06d99f67f14c4f2dfb08`（分支 `fp/v2-candidate`，tag `protocol-v4.0.0` 尚未创建） |
+| 来源提交 | `3fb214e57d861a909d872511940d26133eb32dca`（分支 `fp/v2-candidate`，tag `protocol-v4.0.0` 尚未创建） |
 | 取用日期 | 2026-10-15 |
 
 | 来源路径 | 内容 |
 | --- | --- |
-| `integration-slices/index.json` | `schemaVersion 2.0.0`、16 条切片（`FP-IS-00`～`15`）、`vectorIds` 条目 48、去重 45 |
+| `integration-slices/index.json` | `schemaVersion 2.0.0`、16 条切片（`FP-IS-00`～`15`）、`vectorIds` 条目 53、去重 50 |
 | `manifest/release.json` | `status CONTENT_SNAPSHOT`、`releaseVersion 4.0.0`、`protocolVersion 5`、`profileId AGV_FULL_PRODUCT`、67 条消息、11 条 denylist |
 | `schemas/`（整棵树） | 73 个文件，`$id` 段 `agv-full-product/v5` |
 
@@ -53,7 +53,9 @@ protocol#15 把待送点缺电改成「先送货再充电」，G1 通过。服�
 对象里用 `git archive` 导出（不经协议仓工作树，避免行尾转换），逐个与 manifest 自带的文件表 SHA-256 核对一致
 （73 个 schema 与 `index.json`，74 项全部命中）后整份拷入。
 
-上一份副本是 `protocol-v3.0.0`（`3f091cb2eae7c58cec54a95dd9389c9180bc7b4c`，2026-09-30 取用，10-09 发布）。
+2026-10-15 由 `8005-agv-control-server#727` 刷新到 `3fb214e5`：protocol#17、protocol#19 按 CP-0014 改了 4.0.0 候选——机台取货装完可出发、待送点装上一篮后有持货期限（`FP-IS-02` 加五条向量，`schemas/` 与错误码表未变，`index.json` 与 `manifest/release.json` 变了）。同样用 `git archive` 从提交对象导出，manifest SHA-256 为 `beca46a7…`，与调度转来的值一致。待送点两条向量由本票绑定；机台出发三条登记给 `#725`（`VectorsAwaitingTheirSlice`）。
+
+更早一份是 `4d67655c`（10-15 取用，`#713` 绑定）。再早一份是 `protocol-v3.0.0`（`3f091cb2eae7c58cec54a95dd9389c9180bc7b4c`，2026-09-30 取用，10-09 发布）。
 
 ## 上游改了以后怎么刷新
 

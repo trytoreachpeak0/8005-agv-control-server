@@ -120,6 +120,9 @@ public sealed class StagingCargoHoldingDeadlineTests
     [Fact]
     [Trait("IntegrationSlice", "FP-IS-08")]
     [Trait("IntegrationSlice", "FP-IS-11")]
+    [Trait("IntegrationSlice", "FP-IS-02")]
+    [Trait("ProtocolVector", "CV-STAGING-CARGO-HOLDING-DEADLINE-MOVED")]
+    [Trait("ProtocolVector", "CV-STAGING-CARGO-HOLDING-TIMEOUT")]
     public async Task AnAppendForTheStationRestartsTheDeadlineAndItsExpiryReleasesWhatWasNotScanned()
     {
         await using RuntimeFixture fixture = await ArrangeAsync(StopKind.StagingRulesOn);
@@ -145,9 +148,11 @@ public sealed class StagingCargoHoldingDeadlineTests
 
         DateTimeOffset moved = appendedAt + fixture.Options.CargoHoldingTimeout;
         Assert.Equal(appendedAt, (await fixture.RuntimeAsync()).CargoHoldingStartedAt);
+        // 本站还有没装的（刚追加的那两条）：快照是 LOADING，期限照样带着（向量 DEADLINE-MOVED 的 SEND_LOADING_WHILE_A_DEMAND_REMAINS_TO_LOAD_AT_THE_STATION、
+        // SEND_CARGO_HOLDING_DEADLINE_IN_LOADING_AND_CARGO_HOLDING_WAIT）。
         Assert.Contains(
             await Batch7CargoHoldingTests.LoadingPhaseSnapshotsAsync(fixture),
-            snapshot => snapshot.CargoHoldingDeadlineAt == moved);
+            snapshot => snapshot.State == LoadingPhaseStates.Loading && snapshot.CargoHoldingDeadlineAt == moved);
 
         await TickUntilAsync(fixture, firstStart + fixture.Options.CargoHoldingTimeout + TimeSpan.FromSeconds(30));
         JourneyRuntimeRow pastTheOldDeadline = await fixture.RuntimeAsync();

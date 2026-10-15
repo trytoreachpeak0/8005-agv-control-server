@@ -8,10 +8,12 @@ namespace ControlServer.Domain;
 /// <para>
 /// <b>This names the <c>4.0.0</c> candidate, and the candidate is not an approved release.</b> Every
 /// value below is read off <c>8005-agv-protocol</c> commit
-/// <c>4d67655c4da5120d20cd06d99f67f14c4f2dfb08</c> on branch <c>fp/v2-candidate</c> (protocol#14 added
+/// <c>3fb214e57d861a909d872511940d26133eb32dca</c> on branch <c>fp/v2-candidate</c> (protocol#14 added
 /// <c>CurrentStopDepartureRequested</c>/<c>CurrentStopDepartureResult</c> and the closed-reason values
 /// <c>OPERATOR_DEPARTED</c>/<c>CHARGING_REQUIRED</c>; protocol#15 changed staging charging to
-/// "deliver first, charge afterwards"). It supersedes the released <c>protocol-v3.0.0</c>
+/// "deliver first, charge afterwards"; protocol#17 and protocol#19 added CP-0014: a machine pickup may
+/// depart once loaded, and a staging pickup holds a cargo-holding deadline once cargo is on board, moved by
+/// each demand appended for the station). It supersedes the released <c>protocol-v3.0.0</c>
 /// (<c>3f091cb2</c>) for CP-0012 and CP-0013. <see cref="ApprovalStatus"/> says
 /// <c>SUPERSEDING_CANDIDATE</c> rather than <c>APPROVED_RELEASE</c> for exactly that reason, and it is
 /// the field to read before treating this identity as releasable. The manifest's own <c>status</c> is
@@ -20,7 +22,8 @@ namespace ControlServer.Domain;
 /// </para>
 /// <para>
 /// <b>Bound by <c>8005-agv-control-server#713</c>, merged back to back with
-/// <c>8005-agv-onboard-hmi#349</c>.</b> Neither end may reach the integration branch alone: there is no
+/// <c>8005-agv-onboard-hmi#349</c>; rebound to <c>3fb214e5</c> by <c>8005-agv-control-server#727</c> together
+/// with <c>8005-agv-onboard-hmi#352</c>.</b> Neither end may reach the integration branch alone: there is no
 /// negotiation, so a server on this identity and a vehicle on <c>protocol-v3.0.0</c> refuse each other.
 /// Evidence produced against this candidate is <c>UNRELEASED_CANDIDATE</c> and does not count towards a
 /// release; evidence bound to <c>protocol-v3.0.0</c> stops being current once this is merged.
@@ -58,9 +61,9 @@ public static class ProtocolCandidateIdentity
     public const string ProfileId = "AGV_FULL_PRODUCT";
     public const string ReleaseVersion = "4.0.0";
     public const string Tag = "protocol-v4.0.0";
-    public const string RepositoryCommit = "4d67655c4da5120d20cd06d99f67f14c4f2dfb08";
-    public const string ManifestSha256 = "38a5d2d53e1e235f7f844d991c7258ed51910d542f235ebae6768455c5511fc4";
+    public const string RepositoryCommit = "3fb214e57d861a909d872511940d26133eb32dca";
+    public const string ManifestSha256 = "beca46a7fe98003ce1f21efb88f2c1406f3040883d0b372a51505a843e306f3a";
     public const string SchemaBundleSha256 = "dad44a5e93203eb0b7ade50b23d12f2aaffc0e2abb3c8e5dcdd3de62d931d628";
-    public const string VectorsSha256 = "290b9260df46cd484f993a5a5022712fd54e043c9777da78caa0f9aabf5aa300";
+    public const string VectorsSha256 = "24cc3a5e5023bc7ead70f609456136208a40c04c1ecd0982a7182880d8eaa0c7";
     public const string ApprovalStatus = "SUPERSEDING_CANDIDATE";
 }
