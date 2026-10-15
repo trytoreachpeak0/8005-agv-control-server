@@ -115,6 +115,8 @@ $assertions.Add(
 $leaving = Wait-L2RealOrLast -Description 'a departure check towards the gate was sent' -Journal $journal -Criterion 'leaving' `
     -TimeoutSeconds 60 -Probe { Get-L2DepartureCheckTargets $connection } -Until { param($v) @($v).Count -ge 1 }
 $leftWithin = [int]([DateTimeOffset]::UtcNow - $pressedAt).TotalSeconds
+# 上限 60 秒：站点离站期限是十分钟，等完才走的实现过不了这一条；按下到核验发出实测在几秒以内，留足 vm01 慢时的余量。
+$leftLimitSeconds = 60
 $phase = Get-L2StagingJourney $connection $journeyId
 $screenReason = Wait-L2RealOrLast -Description 'the HMI shows the loading phase closed by the operator' -Journal $journal `
     -Criterion 'loading-closed-on-screen' -TimeoutSeconds 30 -Probe { Get-L2LoadingPhaseLine $Context.Onboard 'LoadingClosedReason' } `
@@ -123,8 +125,8 @@ $targets = @($leaving)
 $assertions.Add(
     'L2-RMD-04', '装货阶段以 OPERATOR_DEPARTED 关闭、屏上读到它；按下之后一分钟内发出开往关卡（不是 C15-13）的离站核验，没有等完十分钟的站点期限',
     ([string]$phase.LoadingPhaseState -eq 'CLOSED' -and [string]$phase.LoadingClosedReason -eq 'OPERATOR_DEPARTED' -and
-        $screenReason -eq 'OPERATOR_DEPARTED' -and $targets.Count -ge 1 -and $targets[0] -eq '关卡'),
-    'CLOSED/OPERATOR_DEPARTED, screen OPERATOR_DEPARTED, first check to 关卡 within 60s',
+        $screenReason -eq 'OPERATOR_DEPARTED' -and $targets.Count -ge 1 -and $targets[0] -eq '关卡' -and $leftWithin -le $leftLimitSeconds),
+    "CLOSED/OPERATOR_DEPARTED, screen OPERATOR_DEPARTED, first check to 关卡 within ${leftLimitSeconds}s",
     "$($phase.LoadingPhaseState)/$($phase.LoadingClosedReason), screen '$screenReason', checks to [$($targets -join ', ')] ${leftWithin}s after the press")
 
 # --- 6. 送达 -------------------------------------------------------------------------------------------------------
