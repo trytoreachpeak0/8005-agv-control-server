@@ -56,8 +56,13 @@ public sealed partial class JourneyRuntimeEngine(
     FixedStationSweepWarnings? fixedStationWarnings = null,
     RiotOrderCommandService? orderCommands = null,
     IdleReturn.IdleReturnMaterializationFailures? idleReturnMaterializationFailures = null,
-    Charging.StationClearanceExit? clearanceExit = null)
+    Charging.StationClearanceExit? clearanceExit = null,
+    StagingDepartureWarnings? stagingDepartureWarnings = null)
 {
+    // control-server#713 review L2: which journeys have already been warned about, outliving the per-round engine (a singleton
+    // in the host); an engine built without it keeps its own.
+    private readonly StagingDepartureWarnings _stagingDepartureWarnings = stagingDepartureWarnings ?? new StagingDepartureWarnings();
+
     // control-server#390 review L3: consecutive materialization failures outlive the per-round engine (a singleton in the
     // host); an engine built without them keeps its own.
     private readonly IdleReturn.IdleReturnMaterializationFailures _idleReturnMaterializationFailures =
@@ -5905,32 +5910,6 @@ public sealed partial class JourneyRuntimeEngine(
     }
 
     /// <summary>
-    /// Whether the station departure wait (ADR-cross-0055) has run out for this journey.
-    /// </summary>
-    /// <remarks>
-    /// An open load correction holds the vehicle whatever the clock says, and one that has closed
-    /// since the wait began starts the wait over from its full length (ADR-cross-0054) -- measured
-    /// from when this server recorded it closed, not from the peer's clock. Updates the runtime's
-    /// wait start and block reason; the caller saves.
-    /// <para>
-    /// 看的是这趟旅程的<b>每一条</b>需求的纠错，不只锚需求（批次7-08，control-server#213 实读发现）。纠错的授权按归属找旅程
-    /// （<c>OnboardRecoveryCoordinator.AuthorizeLoadCorrectionAsync</c> 经 <c>DemandJourneyLookup.JourneyOf</c>），追加进来的需求
-    /// 也能开纠错；这里原先只按旅程行上的 <c>DemandId</c> 查，那一条纠错开着，车照样离站——让站之后尤其如此，而票面第 3 条要求
-    /// 「进行中的纠错」挡住离站。判据是 <c>Batch7StationYieldTests.AnOpenCorrectionOnAnAppendedDemandHoldsTheDeparture</c>。
-    /// </para>
-    /// <para>
-    /// <b>只看还在车上的需求</b>（归属 <c>LOADING</c>、<c>LOADED</c>）。纠错的授权不看这条需求还在不在车上（那个口子归 cs#287），
-    /// 车停在后面某一站时能对一条早已卸掉的需求开出纠错；它要车载端对一排已经空了的仓位执行完才关，未必关得掉，算进来车就一直
-    /// 停在这里、没人解得开。已移除的归属本来就不在 <see cref="JourneyStopCursor.AllDemands"/> 里。判据是
-    /// <c>AnOpenCorrectionOnADemandAlreadyUnloadedDoesNotHoldTheDeparture</c>。
-    /// </para>
-    /// <para>
-    /// <b>而且只看这一趟旅程开的</b>（审查必修 3）。纠错行上没有旅程号，同一个需求号在 7-10 改派之后会先后属于两趟旅程，前一辆车上没结的
-    /// 纠错不该挡新车。所以按两样认：本车开的，而且不早于这条需求加入本旅程（归属的 <c>AddedAt</c>）。两样都是服务端自己的钟。
-    /// 时刻比较在内存里做：SQLite 不能在库里比较 <c>DateTimeOffset</c>。判据是 <c>AnOpenCorrectionLeftByAnotherJourneyDoesNotHoldTheDeparture</c>。
-    /// </para>
-    /// </remarks>
-    /// <summary>
     /// 这趟旅程开的、关于还在车上的需求的纠错（见 <see cref="StationDepartureWaitIsOverAsync"/> 的注释：本车开的、不早于需求加入本旅程）。
     /// </summary>
     private async Task<RecoveryWorkflowRow[]> CorrectionsOnBoardAsync(
@@ -5959,6 +5938,32 @@ public sealed partial class JourneyRuntimeEngine(
         CancellationToken cancellationToken) =>
         (await CorrectionsOnBoardAsync(runtime, stops, cancellationToken).ConfigureAwait(false)).Any(IsOpenCorrection);
 
+    /// <summary>
+    /// Whether the station departure wait (ADR-cross-0055) has run out for this journey.
+    /// </summary>
+    /// <remarks>
+    /// An open load correction holds the vehicle whatever the clock says, and one that has closed
+    /// since the wait began starts the wait over from its full length (ADR-cross-0054) -- measured
+    /// from when this server recorded it closed, not from the peer's clock. Updates the runtime's
+    /// wait start and block reason; the caller saves.
+    /// <para>
+    /// 看的是这趟旅程的<b>每一条</b>需求的纠错，不只锚需求（批次7-08，control-server#213 实读发现）。纠错的授权按归属找旅程
+    /// （<c>OnboardRecoveryCoordinator.AuthorizeLoadCorrectionAsync</c> 经 <c>DemandJourneyLookup.JourneyOf</c>），追加进来的需求
+    /// 也能开纠错；这里原先只按旅程行上的 <c>DemandId</c> 查，那一条纠错开着，车照样离站——让站之后尤其如此，而票面第 3 条要求
+    /// 「进行中的纠错」挡住离站。判据是 <c>Batch7StationYieldTests.AnOpenCorrectionOnAnAppendedDemandHoldsTheDeparture</c>。
+    /// </para>
+    /// <para>
+    /// <b>只看还在车上的需求</b>（归属 <c>LOADING</c>、<c>LOADED</c>）。纠错的授权不看这条需求还在不在车上（那个口子归 cs#287），
+    /// 车停在后面某一站时能对一条早已卸掉的需求开出纠错；它要车载端对一排已经空了的仓位执行完才关，未必关得掉，算进来车就一直
+    /// 停在这里、没人解得开。已移除的归属本来就不在 <see cref="JourneyStopCursor.AllDemands"/> 里。判据是
+    /// <c>AnOpenCorrectionOnADemandAlreadyUnloadedDoesNotHoldTheDeparture</c>。
+    /// </para>
+    /// <para>
+    /// <b>而且只看这一趟旅程开的</b>（审查必修 3）。纠错行上没有旅程号，同一个需求号在 7-10 改派之后会先后属于两趟旅程，前一辆车上没结的
+    /// 纠错不该挡新车。所以按两样认：本车开的，而且不早于这条需求加入本旅程（归属的 <c>AddedAt</c>）。两样都是服务端自己的钟。
+    /// 时刻比较在内存里做：SQLite 不能在库里比较 <c>DateTimeOffset</c>。判据是 <c>AnOpenCorrectionLeftByAnotherJourneyDoesNotHoldTheDeparture</c>。
+    /// </para>
+    /// </remarks>
     private async Task<bool> StationDepartureWaitIsOverAsync(
         JourneyRuntimeRow runtime,
         JourneyStopCursor stops,

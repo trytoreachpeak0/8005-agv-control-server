@@ -44,6 +44,27 @@ MUTATIONS = [
      'isStagingPickup?.Invoke(stop) == true',
      'false',
      'FullyQualifiedName~StagingDepartureRequestTests.OnlyAStagingPickupLegNamesItsPublicStationFunction|FullyQualifiedName~StagingDepartureRequestTests.AnAppendedStagingStopIsNamedAsWell'),
+    ('M7-review-M1-no-stop-end-worklist', ENGINE,
+     'dbContext, runtime, releasedFromCurrentStop > 0, sublotRequestMessageId, stopReason, at.AddMilliseconds(1),',
+     'dbContext, runtime, false, sublotRequestMessageId, stopReason, at.AddMilliseconds(1),',
+     'FullyQualifiedName~StagingDepartureRequestTests.DepartureAcceptedAtAStopWithItemsLeftEndsThatStopWithAnEmptyWorklist|FullyQualifiedName~StagingDepartureRequestTests.ChargingRequiredAtAStopWithItemsLeftEndsThatStopWithAnEmptyWorklist'),
+    ('M8-review-M2-handshake-skips-departure-results', COORD,
+     '.. declarationIds, .. doorHoldIds, .. departureResultIds];',
+     '.. declarationIds, .. doorHoldIds];',
+     'FullyQualifiedName~StagingDepartureResultReplayTests'),
+    ('M9-review-P3-replay-during-handshake', 'src/ControlServer.Host/Transport/OnboardMessageProcessor.cs',
+     'bool replaysDepartureResult = state.HandshakeCompleted && messageType == CurrentStopDepartures.RequestType;',
+     'bool replaysDepartureResult = messageType == CurrentStopDepartures.RequestType;',
+     'FullyQualifiedName~StagingDepartureRequestTests|FullyQualifiedName~StagingDepartureResultReplayTests'),
+    ('M10-review-P4-no-sweep-without-journey', 'src/ControlServer.Host/Runtime/JourneyRuntimeEngine.cs',
+     '        await AnswerDepartureRequestsWithoutJourneyAsync(active, cancellationToken).ConfigureAwait(false);
+',
+     '',
+     'FullyQualifiedName~StagingDepartureRequestTests|FullyQualifiedName~StagingDepartureResultReplayTests'),
+    ('M11-review-L3-full-vehicle-reclosed', ENGINE,
+     'if (runtime.LoadingPhaseState != LoadingPhaseStates.VehicleFull)',
+     'if (true)',
+     'FullyQualifiedName~StagingDepartureRequestTests.DepartureOnAVehicleAlreadyFullIsAcceptedWithoutChangingWhyItLeaves'),
 ]
 
 def run(cmd):

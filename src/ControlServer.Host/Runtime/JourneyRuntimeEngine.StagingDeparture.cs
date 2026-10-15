@@ -225,7 +225,11 @@ public sealed partial class JourneyRuntimeEngine
             }
             if (AnchorUnloaded(runtime, locked))
             {
-                LogStagingLowBatteryAnchorUnloaded(logger, runtime.AgvId, null);
+                // 每趟旅程只记一次（独立审查 L2）：这一支每轮都会走到，状态不变就不该每轮刷一条 Warning。
+                if (_stagingDepartureWarnings.AnchorUnloadedWarned.TryAdd(runtime.JourneyId, 0))
+                {
+                    LogStagingLowBatteryAnchorUnloaded(logger, runtime.AgvId, null);
+                }
                 return false;
             }
             (effect, _) = await StageStagingDepartureAsync(
@@ -310,22 +314,27 @@ public sealed partial class JourneyRuntimeEngine
                 .ConfigureAwait(false);
         }
 
-        // 装货阶段关闭，业务状态快照与它同一次改动（PublishLoadingPhaseAsync 的号与退役，只是暂存而不发）。车停在这个停靠上，按「已到站」算号。
-        runtime.LoadingPhaseState = LoadingPhaseStates.Closed;
-        runtime.LoadingClosedReason = closedReason;
-        runtime.UpdatedAt = at;
-        runtime.VehicleBusinessRevision += 1;
-        long revision = StopRevision(runtime.VehicleBusinessRevision, current);
-        await FenceSupersededSnapshotAsync(current.VehicleBusinessMessageId, cancellationToken).ConfigureAwait(false);
-        await FenceSupersededSnapshotAsync(LoadingPhaseMessageId(current, revision - 1), cancellationToken).ConfigureAwait(false);
-        await OnboardJourneyPublisher.StageVehicleBusinessStateAsync(
-            new WireToGateStore(dbContext),
-            LoadingPhaseMessageId(current, revision),
-            runtime.AgvId,
-            session.SessionGeneration,
-            TransportBusinessState(revision, CurrentLoadingPhase(runtime, holdingApplicable, locked), PublishedBatteryState(runtime)),
-            at,
-            cancellationToken).ConfigureAwait(false);
+        // 已经判为装满该走（VEHICLE_FULL，比如被门禁扣在离站等待里）：照样接受、照样放回没开始装的，但不改判关闭原因、不重发业务快照——
+        // 与缺电那一支「不改判」同一个口径（独立审查 L3）。车本来就要走，装满是更早、更具体的那个理由。
+        if (runtime.LoadingPhaseState != LoadingPhaseStates.VehicleFull)
+        {
+            // 装货阶段关闭，业务状态快照与它同一次改动（PublishLoadingPhaseAsync 的号与退役，只是暂存而不发）。车停在这个停靠上，按「已到站」算号。
+            runtime.LoadingPhaseState = LoadingPhaseStates.Closed;
+            runtime.LoadingClosedReason = closedReason;
+            runtime.UpdatedAt = at;
+            runtime.VehicleBusinessRevision += 1;
+            long revision = StopRevision(runtime.VehicleBusinessRevision, current);
+            await FenceSupersededSnapshotAsync(current.VehicleBusinessMessageId, cancellationToken).ConfigureAwait(false);
+            await FenceSupersededSnapshotAsync(LoadingPhaseMessageId(current, revision - 1), cancellationToken).ConfigureAwait(false);
+            await OnboardJourneyPublisher.StageVehicleBusinessStateAsync(
+                new WireToGateStore(dbContext),
+                LoadingPhaseMessageId(current, revision),
+                runtime.AgvId,
+                session.SessionGeneration,
+                TransportBusinessState(revision, CurrentLoadingPhase(runtime, holdingApplicable, locked), PublishedBatteryState(runtime)),
+                at,
+                cancellationToken).ConfigureAwait(false);
+        }
 
         // 本站因此没有待做项了：空清单说出发或缺电（wire-notes 第 4 条）。本站本来就装完了（持货等单）时不再补一张：车上手里那张清单照旧，
         // 离站由业务状态快照与离站核验表达（CP-0012 第三节第 5 条由本票定，见 PR）。

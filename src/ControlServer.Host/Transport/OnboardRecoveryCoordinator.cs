@@ -757,14 +757,6 @@ public sealed class OnboardRecoveryCoordinator(
         LateSublotSubmission.SendAsync(publisher, dbContext, RequiredString(root, "messageId"), cancellationToken);
 
     /// <summary>
-    /// 一条出发请求（control-server#713）的重复到了：它那条答复若已判过，原样再发一遍——wire-notes「同号同内容由重放存下的结果作答」，
-    /// <c>CV-CURRENT-STOP-DEPARTURE-DUPLICATE-REQUEST</c> 里车已经确认过那条答复之后仍要再收到一次。没判过就什么也不做，引擎会答。
-    /// </summary>
-    /// <remarks>
-    /// 发的永远是发件箱里存的那一行：代次没变就原样发；车已确认过而代次变了，先把确认撤掉、由补发改写代次并落库再发，车回的 <c>DurableAck</c>
-    /// 按它收到的那一行算哈希，与存下的那一行对得上（hmi#349 联调第 3 条）。
-    /// </remarks>
-    /// <summary>
     /// 待送点取货停靠上一次装货中取消证明了仓位是空的：这条需求按释放改派放回待派（不抑制、不计站点超时次数），不终结（control-server#713）。
     /// 做了返回真；不是待送点（或开关关着）、或它不挂在车所在的那个停靠上，返回假，调用方照旧终结。
     /// </summary>
@@ -849,6 +841,14 @@ public sealed class OnboardRecoveryCoordinator(
         return true;
     }
 
+    /// <summary>
+    /// 一条出发请求（control-server#713）的重复到了：它那条答复若已判过，原样再发一遍——wire-notes「同号同内容由重放存下的结果作答」，
+    /// <c>CV-CURRENT-STOP-DEPARTURE-DUPLICATE-REQUEST</c> 里车已经确认过那条答复之后仍要再收到一次。没判过就什么也不做，引擎会答。
+    /// </summary>
+    /// <remarks>
+    /// 发的永远是发件箱里存的那一行：代次没变就原样发；车已确认过而代次变了，先把确认撤掉、由补发改写代次并落库再发，车回的 <c>DurableAck</c>
+    /// 按它收到的那一行算哈希，与存下的那一行对得上（hmi#349 联调第 3 条）。
+    /// </remarks>
     public async Task ReplayDepartureResultAsync(JsonElement root, CancellationToken cancellationToken)
     {
         string agvId = RequiredString(root, "agvId");

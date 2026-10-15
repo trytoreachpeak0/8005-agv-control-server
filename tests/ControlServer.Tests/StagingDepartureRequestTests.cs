@@ -1,3 +1,4 @@
+using System.Text;
 using System.Text.Json;
 using ControlServer.Application;
 using ControlServer.Domain;
@@ -38,7 +39,6 @@ public sealed class StagingDepartureRequestTests
     [Fact]
     [Trait("IntegrationSlice", "FP-IS-02")]
     [Trait("IntegrationSlice", "FP-IS-11")]
-    [Trait("ProtocolVector", "CV-CURRENT-STOP-DEPARTURE-ACCEPTED")]
     public async Task DepartureAcceptedReleasesWhatIsNotLoadedAndLeavesWithWhatIs()
     {
         await using RuntimeFixture fixture = await ArrangeAsync(StopKind.StagingRulesOn);
@@ -79,8 +79,10 @@ public sealed class StagingDepartureRequestTests
         Assert.Equal(JourneyRuntimeStage.AwaitingDepartureSafety, journey.Stage);
         Assert.True(await Batch7CargoHoldingTests.DepartureCheckSentAsync(fixture), "The vehicle did not leave through the safety check.");
 
-        // 线上的先后：答复在前，装货阶段关闭的那张业务快照在后，离站核验最后（向量的 orderedExpectedMessages）。
-        // 这一轮开头的补发会先把车还没确认的旧行再发一遍，所以从答复那一行往后找。本站（第 1 个停靠）上没有放回的需求，不发空清单。
+        // 线上的先后：答复在前，装货阶段关闭的那张业务快照在后，离站核验最后。这一轮开头的补发会先把车还没确认的旧行再发一遍，所以从答复那一行往后找。
+        // 这里没有空清单，只因为这一格的放回全在后面的停靠：车所在的第 1 个停靠上 A 已装完、没有放回，本站清单不变（独立审查 M1 改准）。
+        // 当前停靠有放回时本站以一张空清单结束，那是向量 CV-CURRENT-STOP-DEPARTURE-ACCEPTED 的完整线序，
+        // 见 DepartureAcceptedAtAStopWithItemsLeftEndsThatStopWithAnEmptyWorklist。
         string[] sent = [.. fixture.Peer.Lines.Skip(wireBefore).Select(MessageTypeOf)];
         int resultAt = Array.IndexOf(sent, CurrentStopDepartures.ResultType);
         Assert.True(resultAt >= 0, string.Join(",", sent));
@@ -405,7 +407,6 @@ public sealed class StagingDepartureRequestTests
     [Fact]
     [Trait("IntegrationSlice", "FP-IS-13")]
     [Trait("IntegrationSlice", "FP-IS-11")]
-    [Trait("ProtocolVector", "CV-STAGING-CHARGING-REQUIRED-DEPARTURE-WITH-CARGO")]
     public async Task ChargingRequiredWithCargoDeliversFirstAndChargesAfterwards()
     {
         await using RuntimeFixture fixture = await ArrangeAsync(StopKind.StagingRulesOn);
@@ -558,7 +559,260 @@ public sealed class StagingDepartureRequestTests
         Assert.All(legs.Where(leg => leg.LegType != "TO_PICKUP"), leg => Assert.Null(leg.Function));
     }
 
+    /// <summary>
+    /// 独立审查 M1、向量 <c>CV-CURRENT-STOP-DEPARTURE-ACCEPTED</c>：车在第 2 个待送点停靠（同站追加并进来的三条：B、C、D）装了 B 之后点出发，
+    /// C、D 从当前停靠放回。线序依次是答复、业务状态快照、本站结束的空清单（<c>OPERATOR_DEPARTED</c>）、计划、离站核验；本站的录入请求结清，
+    /// 车载屏离站后不再亮扫码入口。把放回之后补空清单的那一处（<c>StageAfterReleaseAsync</c> 的 <c>releasedFromCurrentStop</c>）改成恒假，这条红。
+    /// </summary>
+    [Fact]
+    [Trait("IntegrationSlice", "FP-IS-02")]
+    [Trait("IntegrationSlice", "FP-IS-11")]
+    [Trait("ProtocolVector", "CV-CURRENT-STOP-DEPARTURE-ACCEPTED")]
+    public async Task DepartureAcceptedAtAStopWithItemsLeftEndsThatStopWithAnEmptyWorklist()
+    {
+        await using RuntimeFixture fixture = await ArrangeAsync(StopKind.StagingRulesOn);
+        string entryRequestId = await LoadAtTheSecondStagingStopAsync(fixture);
+        int wireBefore = fixture.Peer.Lines.Count;
+
+        string departureRequestId = await RequestDepartureAsync(fixture);
+        await RunAsync(fixture);
+
+        Assert.Equal("ACCEPTED", (await ResultAsync(fixture, departureRequestId)).GetProperty("outcome").GetString());
+        foreach (string demandId in new[] { ThirdDemand, FourthDemand })
+        {
+            Assert.Equal(DemandJourneyLookup.ReleasedForRedispatchReason, (await MembershipAsync(fixture, demandId)).RemovalReason);
+        }
+        string[] sent = [.. fixture.Peer.Lines.Skip(wireBefore).Select(line => Encoding.UTF8.GetString(line))];
+        string[] types = [.. fixture.Peer.Lines.Skip(wireBefore).Select(MessageTypeOf)];
+        int resultAt = Array.IndexOf(types, CurrentStopDepartures.ResultType);
+        Assert.True(resultAt >= 0, string.Join(",", types));
+        Assert.Equal(
+            ["VehicleBusinessStateSnapshot", "CurrentStopWorklistSnapshot", "UpcomingStopPlanSnapshot", "PreDepartureSafetyCheck"],
+            types.Skip(resultAt + 1));
+        Assert.Equal("OPERATOR_DEPARTED", StopEndedReasonOf(sent[resultAt + 2]));
+        await AssertEntryRequestSettledAsync(fixture, entryRequestId);
+    }
+
+    /// <summary>
+    /// 同一个第 2 停靠、同样装了 B，换成缺电（M1 的缺电版本，向量 <c>CV-STAGING-CHARGING-REQUIRED-DEPARTURE-WITH-CARGO</c>）：没有答复，其余线序相同，
+    /// 空清单说 <c>CHARGING_REQUIRED</c>，录入请求结清。
+    /// </summary>
+    [Fact]
+    [Trait("IntegrationSlice", "FP-IS-13")]
+    [Trait("IntegrationSlice", "FP-IS-11")]
+    [Trait("ProtocolVector", "CV-STAGING-CHARGING-REQUIRED-DEPARTURE-WITH-CARGO")]
+    public async Task ChargingRequiredAtAStopWithItemsLeftEndsThatStopWithAnEmptyWorklist()
+    {
+        await using RuntimeFixture fixture = await ArrangeAsync(StopKind.StagingRulesOn);
+        string entryRequestId = await LoadAtTheSecondStagingStopAsync(fixture);
+        int wireBefore = fixture.Peer.Lines.Count;
+        fixture.Riot.Vehicle = fixture.Riot.Vehicle with { BatteryPercent = 10 };
+        fixture.Riot.BeforeReadVehicle = () => fixture.Clock.Advance(TimeSpan.FromMilliseconds(1));
+
+        await RunAsync(fixture);
+
+        JourneyRuntimeRow journey = await fixture.RuntimeAsync();
+        Assert.Equal((LoadingPhaseStates.Closed, LoadingClosedReasons.ChargingRequired), (journey.LoadingPhaseState, journey.LoadingClosedReason));
+        string[] sent = [.. fixture.Peer.Lines.Skip(wireBefore).Select(line => Encoding.UTF8.GetString(line))];
+        string[] types = [.. fixture.Peer.Lines.Skip(wireBefore).Select(MessageTypeOf)];
+        Assert.DoesNotContain(CurrentStopDepartures.ResultType, types);
+        int worklistAt = Array.LastIndexOf(types, "CurrentStopWorklistSnapshot");
+        Assert.True(worklistAt > 0, string.Join(",", types));
+        Assert.Equal(
+            ["VehicleBusinessStateSnapshot", "CurrentStopWorklistSnapshot", "UpcomingStopPlanSnapshot", "PreDepartureSafetyCheck"],
+            types.Skip(worklistAt - 1));
+        Assert.Equal("CHARGING_REQUIRED", StopEndedReasonOf(sent[worklistAt]));
+        await AssertEntryRequestSettledAsync(fixture, entryRequestId);
+    }
+
+    /// <summary>
+    /// 独立审查 P5（向量断言 <c>CHARGE_THROUGH_CHARGING_ALLOCATION_AFTER_JOURNEY_ENDS</c>）：缺电带货出发之后送到卸货点、旅程收尾；下一轮派车不再给这辆车
+    /// 派搬运、不回待送点——新来的待送需求在积压上等着，原因是这辆车要充电（<c>MANDATORY_CHARGE_REQUIRED</c>），由充电分配接手。
+    /// </summary>
+    [Fact]
+    [Trait("IntegrationSlice", "FP-IS-13")]
+    public async Task AfterDeliveringOnAFlatBatteryTheVehicleGoesToChargingNotBackToTheStagingStation()
+    {
+        await using RuntimeFixture fixture = await ArrangeAsync(StopKind.StagingRulesOn);
+        await AllowEnRouteAppendAsync(fixture);
+        await LoadTheBasketAsync(fixture);
+        await fixture.ProveSlotDoorsClosedAsync();
+        fixture.Riot.Vehicle = fixture.Riot.Vehicle with { BatteryPercent = 10 };
+        fixture.Riot.BeforeReadVehicle = () => fixture.Clock.Advance(TimeSpan.FromMilliseconds(1));
+        await RunAsync(fixture);
+        Assert.Equal(LoadingClosedReasons.ChargingRequired, (await fixture.RuntimeAsync()).LoadingClosedReason);
+
+        await Batch7StopDrivenAdvanceDriver.AnswerDepartureSafetyAsync(fixture, Demand, Batch7StopDrivenAdvanceDriver.FirstSafetyResultId);
+        JourneyRuntimeRow delivered = await Batch7StopDrivenAdvanceDriver.ArriveAtGateAndUnloadAsync(fixture, Demand);
+        Assert.Equal(JourneyRuntimeStage.Completed, delivered.Stage);
+
+        // 新来一条待送需求；名册里有桩、此刻分不到（与 AFlatBatteryWithNothingLoadedReleasesOnlyAStagingStopToCharging 同一个做法）。
+        fixture.Riot.BeforeReadVehicle = null;
+        fixture.Catalog.Set(fixture.Demand(ThirdDemand, ThirdSublot, fixture.Clock.GetUtcNow().AddMinutes(-1)) with
+        {
+            WorkType = TransportTaskTypes.StagingToWire,
+            TransportDemandKey = $"{ThirdSublot}|{TransportTaskTypes.StagingToWire}",
+        });
+        fixture.BoxCounts.Set(ThirdSublot, 4);
+        await ChargingTestKit.WriteRosterWithAChargerNobodyIsSentToAsync(fixture.Context, 25, fixture.Clock.GetUtcNow());
+        await RunAsync(fixture);
+
+        Assert.Equal(1, await fixture.Context.JourneyRuntimes.CountAsync(Token));
+        Assert.Equal(
+            Host.Runtime.Dispatch.DispatchReasonCodes.MandatoryChargeRequired,
+            (await fixture.BacklogAsync(ThirdDemand)).ReasonCode);
+    }
+
+    /// <summary>
+    /// 独立审查 L3：车已经判为装满该走（<c>VEHICLE_FULL</c>）、还停在离站等待里时点出发：照样 <c>ACCEPTED</c>，但关闭原因不从 <c>VEHICLE_FULL</c> 改成
+    /// <c>OPERATOR_DEPARTED</c>，也不为它重发业务快照——与缺电那一支「不改判」同一个口径。
+    /// </summary>
+    [Fact]
+    [Trait("IntegrationSlice", "FP-IS-02")]
+    [Trait("IntegrationSlice", "FP-IS-11")]
+    public async Task DepartureOnAVehicleAlreadyFullIsAcceptedWithoutChangingWhyItLeaves()
+    {
+        await using RuntimeFixture fixture = await ArrangeAsync(StopKind.StagingRulesOn);
+        await AllowEnRouteAppendAsync(fixture);
+        await LoadTheBasketAsync(fixture);
+        await fixture.ProveSlotDoorsClosedAsync();
+        JourneyRuntimeRow full = await fixture.Context.JourneyRuntimes.SingleAsync(Token);
+        Assert.Equal(JourneyRuntimeStage.AwaitingStationDeparture, full.Stage);
+        full.LoadingPhaseState = LoadingPhaseStates.VehicleFull;
+        string? closedBefore = full.LoadingClosedReason;
+        await fixture.Context.SaveChangesAsync(Token);
+        fixture.Context.ChangeTracker.Clear();
+        int businessBefore = await CountAsync(fixture, "VehicleBusinessStateSnapshot");
+
+        string departureRequestId = await RequestDepartureAsync(fixture);
+        await RunAsync(fixture);
+
+        Assert.Equal("ACCEPTED", (await ResultAsync(fixture, departureRequestId)).GetProperty("outcome").GetString());
+        JourneyRuntimeRow journey = await fixture.RuntimeAsync();
+        Assert.Equal((LoadingPhaseStates.VehicleFull, closedBefore), (journey.LoadingPhaseState, journey.LoadingClosedReason));
+        Assert.Equal(businessBefore, await CountAsync(fixture, "VehicleBusinessStateSnapshot"));
+    }
+
+    /// <summary>
+    /// 独立审查 M3：答复读的是这辆车还没答的请求。别的车的请求、这辆车已经答过的请求都不读出来；新到的这辆车的那一条读得出来。
+    /// </summary>
+    [Fact]
+    [Trait("IntegrationSlice", "FP-IS-02")]
+    public async Task OnlyThisVehiclesUnansweredRequestsAreRead()
+    {
+        await using RuntimeFixture fixture = await ArrangeAsync(StopKind.StagingRulesOn);
+        await fixture.AdvanceToSublotWaitAsync();
+        await fixture.ProveSlotDoorsClosedAsync();
+        string answered = await RequestDepartureAsync(fixture, stationId: "N1-1");
+        await RunAsync(fixture);
+        Assert.Equal("REJECTED", (await ResultAsync(fixture, answered)).GetProperty("outcome").GetString());
+
+        // 另一辆车的请求：直接写进收件箱，信封上的车号不同（车号用中文，存下的那一行里它被转义）。
+        string otherRequestId = Guid.NewGuid().ToString("D");
+        string otherJson = JsonSerializer.Serialize(new
+        {
+            messageType = CurrentStopDepartures.RequestType,
+            messageId = Guid.NewGuid().ToString("D"),
+            agvId = "二号车",
+            sessionGeneration = 1L,
+            payload = await DeparturePayloadAsync(fixture, otherRequestId)
+        });
+        Assert.DoesNotContain("二号车", otherJson, StringComparison.Ordinal);
+        fixture.Context.ProtocolInbox.Add(new ProtocolInboxRow
+        {
+            MessageId = Guid.NewGuid().ToString("D"),
+            MessageType = CurrentStopDepartures.RequestType,
+            RequestJson = otherJson,
+            ContentHash = new string('0', 64),
+            FirstResponseJson = "{}",
+            ReceivedAt = fixture.Clock.GetUtcNow()
+        });
+        await fixture.Context.SaveChangesAsync(Token);
+        fixture.Context.ChangeTracker.Clear();
+        Assert.Empty(await CurrentStopDepartures.UnansweredAsync(fixture.Context, fixture.Options.AgvId, Token));
+
+        string fresh = await RequestDepartureAsync(fixture);
+        CurrentStopDepartures.Request read = Assert.Single(
+            await CurrentStopDepartures.UnansweredAsync(fixture.Context, fixture.Options.AgvId, Token));
+        Assert.Equal(fresh, read.DepartureRequestId);
+        Assert.Equal(otherRequestId, Assert.Single(await CurrentStopDepartures.UnansweredAsync(fixture.Context, "二号车", Token))
+            .DepartureRequestId);
+    }
+
     // ---- helpers ---------------------------------------------------------------------------------------------------
+
+    private const string FourthDemand = "10000000-0000-4000-8000-000000000715";
+
+    private const string FourthSublot = "SUBLOT-715";
+
+    /// <summary>
+    /// 第 1 个停靠装上 A；车还在第 1 站时同站追加 B、C、D——B 新开第 2 个停靠，C、D 并进这个第 2 停靠（追加从不改当前下一站，但并得进后面的同站停靠）；
+    /// 车原地「到」第 2 停靠，装上 B，停在等 C、D 录入。返回第 2 停靠此刻那条录入请求的 messageId（此时它还没结清）。
+    /// </summary>
+    private static async Task<string> LoadAtTheSecondStagingStopAsync(RuntimeFixture fixture)
+    {
+        await AllowEnRouteAppendAsync(fixture);
+        await LoadTheBasketAsync(fixture);
+        await AppendStagingDemandAsync(fixture, SecondDemand, SecondSublot);
+        await AppendStagingDemandAsync(fixture, ThirdDemand, ThirdSublot);
+        await AppendStagingDemandAsync(fixture, FourthDemand, FourthSublot);
+        string secondStop = (await MembershipAsync(fixture, SecondDemand)).PickupStopId;
+        Assert.Equal(secondStop, (await MembershipAsync(fixture, ThirdDemand)).PickupStopId);
+        Assert.Equal(secondStop, (await MembershipAsync(fixture, FourthDemand)).PickupStopId);
+
+        fixture.Clock.Advance(fixture.Options.SameStationAppendCorrectionGrace + TimeSpan.FromSeconds(1));
+        await fixture.ProveSlotDoorsClosedAsync();
+        await fixture.HearFromPeerAsync();
+        await fixture.Engine.ExecuteOnceAsync(Token);
+        await Batch7StopDrivenAdvanceDriver.AnswerDepartureSafetyAsync(
+            fixture, Demand, Batch7StopDrivenAdvanceDriver.FirstSafetyResultId);
+        await Batch7StopDrivenAdvanceDriver.ArriveAtCurrentStopAsync(fixture, SecondDemand, "TO_GATE");
+        Assert.Equal(secondStop, (await Batch7StopDrivenAdvanceDriver.CurrentStopAsync(fixture, SecondDemand)).StopId);
+
+        // 夹具追加时预留两篮；录入时按盒数重算篮数（每篮四盒），所以 B 要读出 8 盒。
+        fixture.BoxCounts.Set(SecondSublot, 8);
+        JourneyRuntimeRow runtime = await fixture.RuntimeAsync();
+        StopEntryAddress address = (await JourneyStopCursor.LoadAsync(fixture.Context, runtime, Token))
+            .EntryAddressOfCurrentStop(runtime.WorklistRevision);
+        await fixture.AddInboxAsync(
+            Guid.NewGuid().ToString("D"), "SublotSubmitted", Batch7StopDrivenAdvanceDriver.SublotSubmission(fixture, address, SecondSublot));
+        await fixture.ProveSlotDoorsClosedAsync();
+        await RunAsync(fixture);
+        Assert.Equal(JourneyRuntimeStage.AwaitingLoadResult, (await fixture.RuntimeAsync()).Stage);
+        StationOperationRow load = await fixture.Context.StationOperations.AsNoTracking()
+            .SingleAsync(row => row.DemandId == SecondDemand && row.OperationType == SlotOperationType.Load, Token);
+        await fixture.ApplySafeResultAsync(load, SlotOperationType.Load, SlotBusinessState.Occupied);
+        await fixture.ProveSlotDoorsClosedAsync();
+        await RunAsync(fixture);
+        Assert.Equal(JourneyDemandStatuses.Loaded, (await MembershipAsync(fixture, SecondDemand)).Status);
+        JourneyRuntimeRow waiting = await fixture.RuntimeAsync();
+        Assert.Equal(JourneyRuntimeStage.AwaitingSublot, waiting.Stage);
+        string entryRequestId = (await JourneyStopCursor.LoadAsync(fixture.Context, waiting, Token))
+            .CurrentSublotRequestMessageIdOrNone(waiting.WorklistRevision)!;
+        ProtocolOutboxRow entryRequest = await fixture.Context.ProtocolOutbox.AsNoTracking()
+            .SingleAsync(row => row.MessageId == entryRequestId, Token);
+        Assert.Equal(((DateTimeOffset?)null, (DateTimeOffset?)null), (entryRequest.AcknowledgedAt, entryRequest.FencedAt));
+        return entryRequestId;
+    }
+
+    private static string? StopEndedReasonOf(string line)
+    {
+        using JsonDocument document = JsonDocument.Parse(line);
+        JsonElement reason = document.RootElement.GetProperty("payload").GetProperty("stopEndedReason");
+        return reason.ValueKind == JsonValueKind.Null ? null : reason.GetString();
+    }
+
+    /// <summary>那条录入请求已结清（确认或退役）：不会再被补发进之后的会话、让车上再亮扫码入口。</summary>
+    private static async Task AssertEntryRequestSettledAsync(RuntimeFixture fixture, string entryRequestId)
+    {
+        fixture.Context.ChangeTracker.Clear();
+        ProtocolOutboxRow entryRequest = await fixture.Context.ProtocolOutbox.AsNoTracking()
+            .SingleAsync(row => row.MessageId == entryRequestId, Token);
+        Assert.True(
+            entryRequest.AcknowledgedAt is not null || entryRequest.FencedAt is not null,
+            "The stop's entry request is still open, so the vehicle would keep offering to scan.");
+    }
+
 
     internal static async Task<object> DeparturePayloadAsync(
         RuntimeFixture fixture,

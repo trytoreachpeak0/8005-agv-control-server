@@ -1,3 +1,4 @@
+using System.Collections.Concurrent;
 using System.Text.Json;
 using System.Text.Json.Nodes;
 using ControlServer.Domain;
@@ -67,32 +68,45 @@ internal static class CurrentStopDepartures
     /// <summary>
     /// 这辆车还没有答复的出发请求，按收件时刻；同一个 <c>departureRequestId</c> 只给最早那一条（之后的同号同内容由重放答，见类注释）。
     /// </summary>
+    /// <remarks>
+    /// <para>
+    /// <b>按车过滤与「还没答」都在库里做</b>（独立审查 M3）。引擎每轮、每辆车都问一次，而收件箱没有清理，出发请求只增不减；原先把所有车的历史
+    /// 请求读回来逐条解析、再逐条查一次发件箱，开销随按键次数线性增长、拖慢整轮推进。现在库里用 <c>json_extract</c> 取信封上的车号，并对发件箱里的
+    /// 答复做反连接，读回来的只有这辆车还没答的那几条，通常是零条。
+    /// </para>
+    /// <para>
+    /// <c>json_extract</c> 比的是解析后的值：车号常是中文，存下的那一行里可能被转义，在原文上 <c>Contains</c> 永远不中，这里不受影响。
+    /// 答复的 messageId 由 <c>departureRequestId</c> 哈希派生（<see cref="ResultMessageId"/>），库里算不出来，所以反连接比的是答复载荷里的
+    /// <c>departureRequestId</c>。
+    /// </para>
+    /// </remarks>
     public static async Task<IReadOnlyList<Request>> UnansweredAsync(
         ControlServerDbContext dbContext,
         string agvId,
         CancellationToken cancellationToken)
     {
         ArgumentNullException.ThrowIfNull(dbContext);
-        ProtocolInboxRow[] rows = await dbContext.ProtocolInbox.AsNoTracking()
-            // 不按车号在原文里预筛：车号常是中文，存下的那一行里它可能被转义成 \uXXXX，Contains 永远不中。按解析出来的字段比。
-            .Where(row => row.MessageType == RequestType)
+        ProtocolInboxRow[] rows = await dbContext.ProtocolInbox
+            .FromSqlInterpolated($"""
+                SELECT i."MessageId", i."MessageType", i."RequestJson", i."ContentHash", i."FirstResponseJson", i."ReceivedAt",
+                       i."ReceivedAtUtcTicks"
+                FROM "ProtocolInbox" AS i
+                WHERE i."MessageType" = {RequestType}
+                  AND json_extract(i."RequestJson", '$.agvId') = {agvId}
+                  AND NOT EXISTS (
+                      SELECT 1 FROM "ProtocolOutbox" AS o
+                      WHERE o."MessageType" = {ResultType}
+                        AND json_extract(o."PayloadJson", '$.payload.departureRequestId') =
+                            json_extract(i."RequestJson", '$.payload.departureRequestId'))
+                """)
+            .AsNoTracking()
             .ToArrayAsync(cancellationToken).ConfigureAwait(false);
-        if (rows.Length == 0)
-        {
-            return [];
-        }
         List<Request> unanswered = [];
         HashSet<string> seen = new(StringComparer.Ordinal);
         foreach (ProtocolInboxRow row in rows.OrderBy(row => row.ReceivedAt).ThenBy(row => row.MessageId, StringComparer.Ordinal))
         {
             Request request = Parse(row);
-            if (!string.Equals(request.AgvId, agvId, StringComparison.Ordinal) || !seen.Add(request.DepartureRequestId))
-            {
-                continue;
-            }
-            string resultId = ResultMessageId(request.DepartureRequestId);
-            if (!await dbContext.ProtocolOutbox.AsNoTracking()
-                    .AnyAsync(item => item.MessageId == resultId, cancellationToken).ConfigureAwait(false))
+            if (seen.Add(request.DepartureRequestId))
             {
                 unanswered.Add(request);
             }
@@ -182,4 +196,14 @@ internal static class CurrentStopDepartures
             payload.GetProperty("operator").GetProperty("operatorId").GetString()!,
             row.ReceivedAt);
     }
+}
+
+/// <summary>
+/// 待送点出发相关、要跨轮记住的告警（control-server#713 独立审查 L2）：缺电带货而锚没装时的 Warning 每趟旅程只记一次。宿主注册为单例；
+/// 引擎每轮新建，跨轮的状态放在这里而不是引擎里或静态字段里。
+/// </summary>
+public sealed class StagingDepartureWarnings
+{
+    /// <summary>已经记过「锚没装、不自动出发」的旅程。</summary>
+    internal ConcurrentDictionary<string, byte> AnchorUnloadedWarned { get; } = new(StringComparer.Ordinal);
 }
