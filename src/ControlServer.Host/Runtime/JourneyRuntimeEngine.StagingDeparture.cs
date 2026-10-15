@@ -192,8 +192,8 @@ public sealed partial class JourneyRuntimeEngine
             // 已经判为装满该走、或已经以出发／缺电关闭：车本来就要走了。分区不许途中追加时，装完本站的装货阶段是 CLOSED / PLANNED_LOADING_COMPLETE，
             // 而车在待送点上照样等客户（control-server#709），这一种要管。
             runtime.LoadingPhaseState == LoadingPhaseStates.VehicleFull ||
-            runtime.LoadingPhaseState == LoadingPhaseStates.Closed &&
-            runtime.LoadingClosedReason is LoadingClosedReasons.OperatorDeparted or LoadingClosedReasons.ChargingRequired ||
+            // 持货期限已到（control-server#727）同样是「车本来就要走了」，不改判成缺电。
+            runtime.LoadingPhaseState == LoadingPhaseStates.Closed && StagingDepartureUnderWay(runtime) ||
             !stops.AllDemands.Any(item => item.Membership.Status == JourneyDemandStatuses.Loaded) ||
             stops.AllDemands.Any(item => item.Membership.Status == JourneyDemandStatuses.Loading))
         {
@@ -406,8 +406,12 @@ public sealed partial class JourneyRuntimeEngine
             CorrectionOrCancellationOpen:
                 await OpenCancellationAtCurrentStopAsync(locked, cancellationToken).ConfigureAwait(false) ||
                 await OpenCorrectionOnBoardAsync(runtime, locked, cancellationToken).ConfigureAwait(false),
+            // 待送点持货到期（control-server#727）也算已在出发：再按一次出发不把 CARGO_HOLDING_TIMEOUT 改判成 OPERATOR_DEPARTED。只在待送点这么认：
+            // 机台取货持货到期之后还在等站点离站期限，CP-0014 要那时的出发照样受理、原因不变（control-server#725）。
             AlreadyDeparting: runtime.LoadingPhaseState == LoadingPhaseStates.Closed &&
-                              runtime.LoadingClosedReason is LoadingClosedReasons.OperatorDeparted or LoadingClosedReasons.ChargingRequired,
+                              (IsStagingPickup(current)
+                                  ? StagingDepartureUnderWay(runtime)
+                                  : runtime.LoadingClosedReason is LoadingClosedReasons.OperatorDeparted or LoadingClosedReasons.ChargingRequired),
             AnchorUnloadedWithCargo: loaded && AnchorUnloaded(runtime, locked),
             NothingLoadedAndDoorsNotProvenClosed: !loaded && SlotDoorsNotProvenClosed(session));
     }

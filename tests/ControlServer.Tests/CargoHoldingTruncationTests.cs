@@ -34,6 +34,10 @@ namespace ControlServer.Tests;
 /// </remarks>
 public sealed class CargoHoldingTruncationTests
 {
+    private static Task<int> PlansStagedAsync(RuntimeFixture fixture) =>
+        fixture.Context.ProtocolOutbox.AsNoTracking()
+            .CountAsync(row => row.MessageType == "UpcomingStopPlanSnapshot", TestContext.Current.CancellationToken);
+
     private const int SecondPickupStationRiotId = 13;
     private const string SecondPickupArea = "N1-2";
     private const string FourthDemandId = "10000000-0000-4000-8000-000000000004";
@@ -62,6 +66,7 @@ public sealed class CargoHoldingTruncationTests
         Assert.Equal(JourneyRuntimeStage.AwaitingStationDeparture, (await JourneyOfAsync(fixture, FirstDemandId)).Stage);
         Assert.Equal(JourneyDemandStatuses.PendingLoad, (await MembershipOnAsync(fixture, journeyId, SecondDemandId)).Status);
 
+        int plansBefore = await PlansStagedAsync(fixture);
         fixture.Clock.Advance(TimeSpan.FromMinutes(2));
         await TickAndRunAsync(fixture);
 
@@ -70,6 +75,11 @@ public sealed class CargoHoldingTruncationTests
         Assert.Equal(LoadingClosedReasons.CargoHoldingTimeout, runtime.LoadingClosedReason);
         await AssertReleasedForRedispatchAsync(fixture, journeyId, SecondDemandId);
         Assert.Equal(JourneyStopStatuses.Removed, (await PickupStopAtAsync(fixture, journeyId, SecondPickupStationRiotId)).Status);
+        // 机台截断的线序不动（#731 审查 M3）：截断那一轮不发计划，下一轮开头才发那一版删了停靠的计划。control-server#727 在截断之后先发计划，
+        // 只限待送点（那里到期当轮就发离站核验）。
+        Assert.Equal(plansBefore, await PlansStagedAsync(fixture));
+        await TickAndRunAsync(fixture);
+        Assert.Equal(plansBefore + 1, await PlansStagedAsync(fixture));
         Assert.Equal(JourneyDemandStatuses.Loaded, (await MembershipOnAsync(fixture, journeyId, FirstDemandId)).Status);
 
         // MES 那边这条需求一直挂着：派车轮次每一轮都看得到它。

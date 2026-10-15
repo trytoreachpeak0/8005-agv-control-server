@@ -138,18 +138,15 @@ public sealed class StagingPickupNoCountdownTests
     }
 
     /// <summary>
-    /// 验收 3：装了一篮，钟拨过 60 分钟，分区允许途中追加（持货等单适用）。待送点：装货阶段不关闭为 <c>CARGO_HOLDING_TIMEOUT</c>、
-    /// 不发离站核验、车不离站，车上与看板都没有持货期限。另两种：持货期限到，装货阶段以 <c>CARGO_HOLDING_TIMEOUT</c> 关闭、发离站核验。
+    /// 验收 3：装了一篮，钟拨过 60 分钟，分区允许途中追加（持货等单适用）。三种停靠都在持货期限到时以 <c>CARGO_HOLDING_TIMEOUT</c> 关闭装货阶段、
+    /// 发离站核验，车上看得到期限。control-server#709 时待送点在这里不关闭、没有期限；CP-0014（control-server#727）改为装上一篮后与机台同一个期限，
+    /// 细节（追加重新起算、到期即走）见 <see cref="StagingCargoHoldingDeadlineTests"/>。
     /// </summary>
-    /// <remarks>
-    /// 截断（control-server#290）只在装货阶段以持货超时关闭之后才发生（<c>TruncateAtCargoHoldingDeadlineAsync</c> 的头一道判断），
-    /// 所以「不关闭」就是「不截断」；这里一并断言归属一条都没被移除。
-    /// </remarks>
     [Theory]
     [MemberData(nameof(Kinds))]
     [Trait("IntegrationSlice", "FP-IS-08")]
     [Trait("IntegrationSlice", "FP-IS-11")]
-    public async Task AnHourAfterTheFirstBasketClosesTheLoadingPhaseOnlyAwayFromTheStagingStation(StopKind kind)
+    public async Task AnHourAfterTheFirstBasketClosesTheLoadingPhaseAtEveryKindOfStop(StopKind kind)
     {
         await using RuntimeFixture fixture = await ArrangeAsync(kind);
         await AllowEnRouteAppendAsync(fixture);
@@ -168,26 +165,11 @@ public sealed class StagingPickupNoCountdownTests
 
         JourneyRuntimeRow journey = await fixture.RuntimeAsync();
         Batch7CargoHoldingTests.LoadingPhaseSnapshot[] snapshots = await Batch7CargoHoldingTests.LoadingPhaseSnapshotsAsync(fixture);
-        JsonElement dashboard = Assert.Single(await CargoHoldingRowsAsync(fixture));
-        if (kind == StopKind.StagingRulesOn)
-        {
-            Assert.Equal(JourneyRuntimeStage.AwaitingStationDeparture, journey.Stage);
-            Assert.NotEqual(LoadingClosedReasons.CargoHoldingTimeout, journey.LoadingClosedReason);
-            Assert.NotEqual(LoadingPhaseStates.Closed, journey.LoadingPhaseState);
-            Assert.False(await Batch7CargoHoldingTests.DepartureCheckSentAsync(fixture), "The staging vehicle was sent on.");
-            Assert.Null(Assert.Single(await MembershipsAsync(fixture)).RemovedAt);
-            Assert.NotEmpty(snapshots);
-            Assert.All(snapshots, snapshot => Assert.Null(snapshot.CargoHoldingDeadlineAt));
-            Assert.Equal(JsonValueKind.Null, dashboard.GetProperty("cargoHoldingDeadlineAt").ValueKind);
-            Assert.False(dashboard.GetProperty("deadlinePassed").GetBoolean());
-        }
-        else
-        {
-            Assert.Equal(LoadingPhaseStates.Closed, journey.LoadingPhaseState);
-            Assert.Equal(LoadingClosedReasons.CargoHoldingTimeout, journey.LoadingClosedReason);
-            Assert.True(await Batch7CargoHoldingTests.DepartureCheckSentAsync(fixture), "The holding deadline sent nobody on.");
-            Assert.Contains(snapshots, snapshot => snapshot.CargoHoldingDeadlineAt == loaded.CargoHoldingStartedAt + StationDeadline);
-        }
+        Assert.Equal(LoadingPhaseStates.Closed, journey.LoadingPhaseState);
+        Assert.Equal(LoadingClosedReasons.CargoHoldingTimeout, journey.LoadingClosedReason);
+        Assert.True(await Batch7CargoHoldingTests.DepartureCheckSentAsync(fixture), "The holding deadline sent nobody on.");
+        Assert.Contains(snapshots, snapshot => snapshot.CargoHoldingDeadlineAt == loaded.CargoHoldingStartedAt + StationDeadline);
+        Assert.Null(Assert.Single(await MembershipsAsync(fixture)).RemovedAt);
     }
 
     /// <summary>

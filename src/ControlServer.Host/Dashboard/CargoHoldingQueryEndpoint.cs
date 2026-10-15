@@ -93,8 +93,8 @@ internal sealed class CargoHoldingQueryEndpoint : IDashboardQueryEndpoint
                 .ToArrayAsync(cancellationToken))
             .ToLookup(row => row.JourneyId, StringComparer.Ordinal);
         JourneyDemandList demands = await JourneyDemandList.ReadAsync(dbContext, journeyIds, cancellationToken);
-        // 车停在（或开往）待送点取货停靠时没有持货期限（control-server#709），与引擎发给车的一致：看板不给期限、不显示到期。按当前停靠判，
-        // 离开待送点之后的机台取货停靠照旧有期限（control-server#710 审查 M1）。整趟旅程在待送点装过货的，另记一份给结束原因的文案用
+        // 车停在（或开往）待送点取货停靠时，持货等单总是适用（control-server#727，CP-0014）：车上有货时有期限，一篮没有时起算点为空、期限也为空，
+        // 与引擎发给车的一致（control-server#709 时那里一律不给）。按当前停靠判，离开待送点之后的机台取货停靠照旧按下面的推法（control-server#710 审查 M1）。整趟旅程在待送点装过货的，另记一份给结束原因的文案用
         // （审查 L3：待送点上的 VEHICLE_FULL 也可能是「等着的都装不下」，一侧还空着）。开关关着时不读。
         HashSet<string> atStaging = new(StringComparer.Ordinal);
         HashSet<string> loadingAtStaging = new(StringComparer.Ordinal);
@@ -142,7 +142,7 @@ internal sealed class CargoHoldingQueryEndpoint : IDashboardQueryEndpoint
             state,
             journey.CargoHoldingStartedAt,
             _cargoHoldingTimeout,
-            HoldingApplies(journey, state) && !atStaging.Contains(journey.JourneyId));
+            atStaging.Contains(journey.JourneyId) || HoldingApplies(journey, state));
         bool deadlinePassed = deadline is { } at && now >= at;
         return new
         {
@@ -205,7 +205,7 @@ internal sealed class CargoHoldingQueryEndpoint : IDashboardQueryEndpoint
     /// <summary>
     /// 看板给不给这趟旅程持货期限：交给 <see cref="LoadingPhaseMachine.Deadline"/> 的那个「适用持货等单」，从落库的状态推。
     /// 引擎的判法（<c>JourneyRuntimeEngine.HoldingApplicableAsync</c>：车能服务的分区里至少有一个允许途中追加）每轮按宿主的车队分区配置与
-    /// 当前每区参数现算，看板不重算。
+    /// 当前每区参数现算，看板不重算。车停在（或开往）待送点时不问这里：那里持货等单总是适用，调用方按 <c>atStaging</c> 直接给（control-server#727）。
     /// </summary>
     /// <remarks>
     /// <para>
@@ -217,7 +217,9 @@ internal sealed class CargoHoldingQueryEndpoint : IDashboardQueryEndpoint
     /// 而结束，只有适用时才会被判出来。</item>
     /// <item>适用的旅程只从「已装满」离开最后一个装货停靠（等单不发离站请求），所以「计划装货完成」只出现在不适用的旅程上
     /// （以及列落地之前就在途的旅程）。</item>
-    /// <item>起算点 <c>CargoHoldingStartedAt</c> 在第一批装货落定时写一次，不论适用与否，之后从不清零——所以「起算点有值」说明不了适用。</item>
+    /// <item>起算点 <c>CargoHoldingStartedAt</c> 在第一批装货落定时写一次，不论适用与否——所以「起算点有值」说明不了适用。之后只在待送点上变：
+    /// 离开待送点时清零（control-server#710），在待送点上随本站追加后移、车上没货时清零（control-server#727）；待送点那一格这里另按
+    /// <c>atStaging</c> 给，不靠这一条推。</item>
     /// </list>
     /// <para>
     /// <b>装货中一律不给</b>（审查 M3）。装货中适用与否只能靠引擎现算：有过途中追加之后分区参数又改成禁止追加，引擎就不给期限、

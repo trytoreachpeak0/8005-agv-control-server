@@ -52,7 +52,9 @@ public sealed class JourneyRuntimeOptions
 
     /// <summary>
     /// How long a vehicle may hold cargo waiting for more before it must leave (ADR-cross-0057), counted from the first
-    /// LoadBatch's safety closure and never reset by a new stop, a disconnect or a restart. Kept apart from
+    /// LoadBatch's safety closure and never reset by a new stop, a disconnect or a restart. A staging pickup uses the same
+    /// duration with its own start (control-server#727, CP-0014): the load batch that put cargo on board, moved to each demand
+    /// appended for the station, cleared when no cargo remains. Kept apart from
     /// <see cref="StationDepartureWaitTimeout"/> on purpose: the two clocks must never share a field.
     /// </summary>
     /// <remarks>
@@ -74,7 +76,8 @@ public sealed class JourneyRuntimeOptions
 
     /// <summary>
     /// The departure rules of a STAGING_TO_WIRE pickup at its dispatch staging station (control-server#709, program#184): no
-    /// station departure deadline, no cargo holding deadline, no station timeout release, and a vehicle that falls below the
+    /// station departure deadline, no station timeout release, a cargo holding deadline only once cargo is on board and
+    /// restarted by each demand appended for the station (control-server#727, CP-0014), and a vehicle that falls below the
     /// mandatory charge line there with nothing loaded is released to charge.
     /// </summary>
     /// <remarks>
