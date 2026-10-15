@@ -223,6 +223,34 @@ public sealed class StagingCargoHoldingDeadlineTests
         Assert.NotEqual(LoadingPhaseStates.Closed, journey.LoadingPhaseState);
     }
 
+    /// <summary>
+    /// 审查 M4：车上的货被撤到一篮不剩，期限撤掉（起算点为空、发给车的期限为空），原来的期限过了也不关闭；再装上一篮，从那一篮重新起算
+    /// （CP-0014 第五节第 2 处）。今天能把已装的货撤回零篮的只有异常处置那几条终结（故障货物交接、补偿清空），这里直接把归属改成终结来造。
+    /// </summary>
+    [Fact]
+    [Trait("IntegrationSlice", "FP-IS-08")]
+    [Trait("IntegrationSlice", "FP-IS-11")]
+    public async Task CargoUndoneToNoBasketDropsTheDeadline()
+    {
+        await using RuntimeFixture fixture = await ArrangeAsync(StopKind.StagingRulesOn);
+        fixture.Options.CargoHoldingTimeout = ShortHolding;
+        await AllowEnRouteAppendAsync(fixture);
+        await LoadTheBasketAsync(fixture);
+        DateTimeOffset firstDeadline = (await fixture.RuntimeAsync()).CargoHoldingStartedAt!.Value + ShortHolding;
+        await AppendStagingDemandAsync(fixture, SecondDemand, SecondSublot);
+
+        await fixture.Context.Set<JourneyDemandRow>()
+            .Where(row => row.DemandId == Demand && row.RemovedAt == null)
+            .ExecuteUpdateAsync(set => set.SetProperty(row => row.Status, JourneyDemandStatuses.Terminated), Token);
+        await TickAsync(fixture);
+
+        Assert.Null((await fixture.RuntimeAsync()).CargoHoldingStartedAt);
+        Assert.Null((await Batch7CargoHoldingTests.LoadingPhaseSnapshotsAsync(fixture))[^1].CargoHoldingDeadlineAt);
+        await TickUntilAsync(fixture, firstDeadline + TimeSpan.FromSeconds(30));
+        Assert.NotEqual(LoadingClosedReasons.CargoHoldingTimeout, (await fixture.RuntimeAsync()).LoadingClosedReason);
+        Assert.Null((await MembershipAsync(fixture, SecondDemand)).RemovedAt);
+    }
+
     // ---- helpers ---------------------------------------------------------------------------------------------------
 
     private static async Task TickAsync(RuntimeFixture fixture)
