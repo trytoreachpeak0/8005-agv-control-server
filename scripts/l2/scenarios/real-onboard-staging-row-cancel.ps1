@@ -354,11 +354,15 @@ $assertions.Add(
     'request by L2-OPERATOR @派工待送取货 / ACCEPTED acked / check to a drop-off',
     "$(Format-L2DepartureRoundTrip $roundTrip) / checks to [$(@($leaving) -join ', ')]")
 
+# 卸完一站，那个停靠要等车离站才标成完成：卸完立刻读「当前停靠」读到的还是它（38782877051 第一次跑就卡在这里，原地等一条不会来的卸货命令）。
+# 所以等当前停靠换成一个还没卸过的卸货停靠，再开过去。
 $unloads = [System.Collections.Generic.List[object]]::new()
+$unloadedStops = [System.Collections.Generic.List[string]]::new()
 for ($i = 0; $i -lt 2; $i++) {
-    $next = Wait-L2Condition -Description 'the journey has an unload stop ahead' -Journal $journal -Criterion "unload-stop-$i" `
-        -TimeoutSeconds 120 -Probe { Get-L2CargoCurrentStop $connection $journeyId } `
-        -Until { param($v) $null -ne $v -and [string]$v.StopRole -eq 'UNLOAD' }
+    $next = Wait-L2Condition -Description 'the journey moved on to an unload stop not yet unloaded' -Journal $journal `
+        -Criterion "unload-stop-$i" -TimeoutSeconds 180 -Probe { Get-L2CargoCurrentStop $connection $journeyId } `
+        -Until { param($v) $null -ne $v -and [string]$v.StopRole -eq 'UNLOAD' -and [string]$v.StopId -notin $unloadedStops }
+    $unloadedStops.Add([string]$next.StopId)
     $null = Move-L2CargoVehicleToCurrentStop $Context $journeyId ([int]$next.StationRiotId) ([string]$next.StopId)
     $unloads.Add((Invoke-L2RigUnloadNext $Context $journeyId @($unloads | ForEach-Object { $_.AttemptId })))
 }
