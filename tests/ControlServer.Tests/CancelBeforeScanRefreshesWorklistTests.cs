@@ -23,6 +23,7 @@ namespace ControlServer.Tests;
 /// </para>
 /// <para>
 /// 待送点规则开关（<c>JourneyRuntime:StagingDepartureRules</c>）开、关两种都测：开着时这里是机台取货停靠，扫码前取消照旧授权。
+/// 待送点取货停靠那一格（开关开着时期限恒为空）由 control-server#726 补。
 /// </para>
 /// </remarks>
 public sealed class CancelBeforeScanRefreshesWorklistTests
@@ -99,6 +100,108 @@ public sealed class CancelBeforeScanRefreshesWorklistTests
 
         JourneyRuntimeRow settled = await SettleLoadAsync(fixture, FirstDemandId);
         Assert.Equal(JourneyRuntimeStage.AwaitingDepartureSafety, settled.Stage);
+    }
+
+    /// <summary>
+    /// 审查 M1 的 P1：「此刻那一版已在发件箱里就不发」是承重的。车确认了到站那一版清单与录入请求，换一代重连、服务端重启，期限不变（等待为 0），
+    /// 然后一轮没有录入：不能按同一个 id 再排一次——那一行已确认、候选报文换了代，重放校验抛 <c>ProtocolContentConflictException</c>。
+    /// </summary>
+    [Theory]
+    [InlineData(false)]
+    [InlineData(true)]
+    [Trait("IntegrationSlice", "FP-IS-08")]
+    public async Task AnAcknowledgedWorklistIsNotQueuedAgainAfterAReconnect(bool stagingRules)
+    {
+        await using RuntimeFixture fixture = await RuntimeFixture.CreateAsync();
+        fixture.Options.StagingDepartureRules.Enabled = stagingRules;
+        fixture.Options.StationDepartureWaitTimeout = TimeSpan.Zero;
+        await Batch7MultiDemandAdvanceTests.TwoDemandsAtThePickupAsync(fixture);
+        await AcknowledgeEverythingPendingAsync(fixture, "CurrentStopWorklistSnapshot", "SublotEntryRequested");
+        await ArrivalPublishInterruptedThenReconnectedTests.ReconnectAtGenerationAsync(fixture, generation: 2);
+        await fixture.RecreateEngineAsync();
+        int rowsBefore = await fixture.Context.ProtocolOutbox.CountAsync(Token);
+
+        await RoundAsync(fixture);
+
+        Assert.Equal(rowsBefore, await fixture.Context.ProtocolOutbox.CountAsync(Token));
+        Assert.Equal(JourneyRuntimeStage.AwaitingSublot, (await JourneyOfAsync(fixture, FirstDemandId)).Stage);
+    }
+
+    /// <summary>
+    /// 审查 M1 的 P2：带期限（离站等待 10 秒）。等录入时取消乙：新一版只列甲，期限就是服务端此刻判定用的那一个；再跑一轮不多升号。
+    /// </summary>
+    [Theory]
+    [InlineData(false)]
+    [InlineData(true)]
+    [Trait("IntegrationSlice", "FP-IS-08")]
+    public async Task TheRefreshedWorklistCarriesTheServersDeadline(bool stagingRules)
+    {
+        await using RuntimeFixture fixture = await RuntimeFixture.CreateAsync();
+        fixture.Options.StagingDepartureRules.Enabled = stagingRules;
+        fixture.Options.StationDepartureWaitTimeout = TimeSpan.FromSeconds(10);
+        await Batch7MultiDemandAdvanceTests.TwoDemandsAtThePickupAsync(fixture);
+        Sent before = await LatestAsync(fixture, "CurrentStopWorklistSnapshot");
+        Assert.NotNull(before.Deadline);
+
+        await CancelTheSecondBeforeScanAsync(fixture);
+        await RoundAsync(fixture);
+
+        Sent worklist = await LatestAsync(fixture, "CurrentStopWorklistSnapshot");
+        Assert.Equal(before.Revision + 1, worklist.Revision);
+        Assert.Equal([FirstDemandId], worklist.Demands);
+        JourneyRuntimeRow runtime = await JourneyOfAsync(fixture, FirstDemandId);
+        Assert.Equal(runtime.StationDepartureWaitStartedAt + fixture.Options.StationDepartureWaitTimeout, worklist.Deadline);
+
+        await RoundAsync(fixture);
+        Assert.Equal(worklist.Revision, (await LatestAsync(fixture, "CurrentStopWorklistSnapshot")).Revision);
+    }
+
+    /// <summary>
+    /// 审查 M1 的 P3：取消落定之后、引擎补发之前，车断线并以第 2 代重连（服务端重启）。下一轮在第 2 代上发新一号清单与同号录入请求，
+    /// 到站那一版退役，补发里没有比新一号低的。
+    /// </summary>
+    [Theory]
+    [InlineData(false)]
+    [InlineData(true)]
+    [Trait("IntegrationSlice", "FP-IS-08")]
+    public async Task AReconnectBetweenTheCancelAndTheRefreshStillRefreshesOnTheNewGeneration(bool stagingRules)
+    {
+        await using RuntimeFixture fixture = await RuntimeFixture.CreateAsync();
+        fixture.Options.StagingDepartureRules.Enabled = stagingRules;
+        await Batch7MultiDemandAdvanceTests.TwoDemandsAtThePickupAsync(fixture);
+        Sent before = await LatestAsync(fixture, "CurrentStopWorklistSnapshot");
+
+        await CancelTheSecondBeforeScanAsync(fixture);
+        await ArrivalPublishInterruptedThenReconnectedTests.ReconnectAtGenerationAsync(fixture, generation: 2);
+        await fixture.RecreateEngineAsync();
+        await RoundAsync(fixture);
+
+        Sent worklist = await LatestAsync(fixture, "CurrentStopWorklistSnapshot");
+        Assert.Equal(before.Revision + 1, worklist.Revision);
+        Assert.Equal([FirstDemandId], worklist.Demands);
+        Assert.Equal(2, worklist.Generation);
+        Sent entry = await LatestAsync(fixture, "SublotEntryRequested");
+        Assert.Equal((worklist.Revision, 2L), (entry.Revision, entry.Generation));
+        Assert.Equal([FirstSublot], entry.Sublots);
+        await AssertNothingOlderIsReplayedAsync(fixture, worklist.Revision);
+    }
+
+    /// <summary>车确认了发件箱里这几类还在等确认的每一行。</summary>
+    private static async Task AcknowledgeEverythingPendingAsync(RuntimeFixture fixture, params string[] messageTypes)
+    {
+        await using (ControlServerDbContext context = fixture.OpenConnectionContext())
+        {
+            ProtocolOutboxRow[] pending = await context.ProtocolOutbox
+                .Where(row => messageTypes.Contains(row.MessageType) && row.AcknowledgedAt == null && row.FencedAt == null)
+                .ToArrayAsync(Token);
+            Assert.NotEmpty(pending);
+            foreach (ProtocolOutboxRow row in pending)
+            {
+                row.AcknowledgedAt = fixture.Clock.GetUtcNow();
+            }
+            await context.SaveChangesAsync(Token);
+        }
+        fixture.Context.ChangeTracker.Clear();
     }
 
     /// <summary>
@@ -198,7 +301,8 @@ public sealed class CancelBeforeScanRefreshesWorklistTests
         }
     }
 
-    private sealed record Sent(long Revision, string[] Demands, string[] Sublots, string? OperationSessionId);
+    private sealed record Sent(
+        long Revision, string[] Demands, string[] Sublots, string? OperationSessionId, DateTimeOffset? Deadline, long Generation);
 
     /// <summary>某一类里修订号最高的那一行，也就是此刻排给车的那一版。</summary>
     private static async Task<Sent> LatestAsync(RuntimeFixture fixture, string messageType)
@@ -214,6 +318,11 @@ public sealed class CancelBeforeScanRefreshesWorklistTests
             JsonElement payload = document.RootElement.GetProperty("payload");
             long revision = payload.GetProperty("worklistRevision").GetInt64();
             if (latest is not null && revision <= latest.Revision) continue;
+            DateTimeOffset? deadline = payload.TryGetProperty("stationDepartureDeadlineAt", out JsonElement at) &&
+                                       at.ValueKind != JsonValueKind.Null
+                ? at.GetDateTimeOffset()
+                : null;
+            long generation = document.RootElement.GetProperty("sessionGeneration").GetInt64();
             string[] demands = payload.TryGetProperty("items", out JsonElement items)
                 ? [.. items.EnumerateArray().Select(item => item.GetProperty("demandId").GetString()!)]
                 : [];
@@ -224,7 +333,7 @@ public sealed class CancelBeforeScanRefreshesWorklistTests
                               value.ValueKind == JsonValueKind.String
                 ? value.GetString()
                 : null;
-            latest = new Sent(revision, demands, sublots, session);
+            latest = new Sent(revision, demands, sublots, session, deadline, generation);
         }
         return Assert.IsType<Sent>(latest);
     }

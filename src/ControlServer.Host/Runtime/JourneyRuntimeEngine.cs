@@ -6896,10 +6896,11 @@ public sealed partial class JourneyRuntimeEngine(
             // （TryEndStopAtStationDeadlineAsync）同一个出口：本站没有待装的就交给离站那一段，由它决定持货等单还是离站；
             // 还有待装的就回到等录入——期限已过，那里的期限出口会照它自己的条件（门、在线、取消）结束本站。与终结同一次保存。
             //
-            // 回等录入时这里不发新一版清单与录入请求，与等装货结果那一段的续跑（resumingAfterEnding，会发）不对称。这个不对称成立的前提是
-            // 「确定的失败只在本站离站期限之后出现」：店里只把期限之后到的确定失败记成 Failed（DeterminateLoadFailure；期限之前的进恢复，
-            // JourneyRuntimeWorkerLoadDeadlineTests.AFailureReportedBeforeTheDeadlineIsNotSettledAsDeterminate），所以回到等录入的那一轮
-            // 期限已过，期限出口结束本站，不会有人对着车上那一版清单再录入。哪天期限之前的失败也走到这里，这一支就要改成与续跑一样发清单与录入请求。
+            // 回等录入时这里不发新一版清单与录入请求：终结让本站的号前进了，下一轮等录入那一段先走期限出口（确定的失败只在本站离站期限之后
+            // 出现——店里只把期限之后到的确定失败记成 Failed，DeterminateLoadFailure；期限之前的进恢复，
+            // JourneyRuntimeWorkerLoadDeadlineTests.AFailureReportedBeforeTheDeadlineIsNotSettledAsDeterminate），期限出口结束本站；
+            // 期限出口这一轮没结束它（门没证明关着、车不在线、取消开着）时，由 WorklistBehindAnEndingAtTheStopAsync 认出号已前进、
+            // 补发新一版清单与录入请求（control-server#723）。所以这里不必与续跑对称地自己发。
             if (runtime.Stage != JourneyRuntimeStage.Completed)
             {
                 bool othersToLoadHere = stops.OutstandingAtCurrentStop
