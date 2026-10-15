@@ -31,6 +31,15 @@ MUTATIONS = [
      '        if (!_stagingRules.Enabled ||\n            stops.OpenStops.Count == 0 ||',
      '        if (true ||\n            stops.OpenStops.Count == 0 ||',
      'FullyQualifiedName~StagingLoadCancellationTests.ACancellationDuringTheLoadReleasesTheDemandOnlyAtTheStagingStation'),
+    ('M4-anchor-cancel-keeps-others', COORD,
+     '''        foreach (JourneyDemandRow other in alongside)
+        {
+            await Runtime.Release.DemandReleaseService.StageReleasedMembershipAsync(dbContext, other, now, cancellationToken)
+                .ConfigureAwait(false);
+        }
+''',
+     '',
+     'FullyQualifiedName~StagingLoadCancellationTests.CancellingTheAnchorDuringItsLoadClosesTheJourneyAndReleasesEverything'),
 ]
 
 def run(cmd):
