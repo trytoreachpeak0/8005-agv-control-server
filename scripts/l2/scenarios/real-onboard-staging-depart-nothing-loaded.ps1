@@ -44,7 +44,11 @@ $a = New-L2StagingDemand 'A' 'N1-3' 'L2-RSN' $Context.RunId
 
 # --- 1. 车开到待送点，没人扫码 ----------------------------------------------------------------------------------------
 
-Initialize-L2CargoRig $Context
+# Not Initialize-L2CargoRig: it also waits for the route graph engine, which this setup leaves off (no append here).
+$null = $Context.Riot.Command('Put', 'vehicle', @{
+    vehicleKey = $Context.VehicleKey; procState = 'IDLE'; movementState = 'MT_FINISHED'; speed = 0
+    currentPosition = $Context.GateStationRiotId
+})
 Assert-L2RigBaselineSlots $Context 1
 Publish-L2StagingDemand $Context $a 'EQP-L2-RSN-01'
 $journey = Wait-L2Condition -Description 'demand A was accepted' -Journal $journal -Criterion 'journey-a' -TimeoutSeconds 120 `
