@@ -2,8 +2,10 @@ using System.Text.Json;
 using ControlServer.Application;
 using ControlServer.Domain;
 using ControlServer.Host.Runtime;
+using ControlServer.Host.Transport;
 using ControlServer.Infrastructure.Persistence;
 using Microsoft.EntityFrameworkCore;
+using Microsoft.Extensions.Configuration;
 using static ControlServer.Tests.Batch7StopDrivenAdvanceDriver;
 using static ControlServer.Tests.JourneyRuntimeWorkerTestKit;
 using static ControlServer.Tests.StagingDepartureRequestTests;
@@ -247,6 +249,70 @@ public sealed class MachinePickupDepartureTests
         Assert.Null((await MembershipAsync(fixture, Demand)).RemovedAt);
         await SuppressionAssertions.AssertNothingSuppressedAsync(fixture.Context);
         Assert.False(await Batch7CargoHoldingTests.DepartureCheckSentAsync(fixture));
+    }
+
+    /// <summary>
+    /// 向量 MACHINE-LOADING-INCOMPLETE 的「一篮没装」：第二个机台取货站上唯一那条需求在扫码前被取消（本站以空清单结束、车停在离站等待里），
+    /// 车上只有第一站装的货。本站一篮没装不算装完（CP-0014 起草时定第 7 项），拒，什么都不变。只看「车上有货」的实现在这里放行。
+    /// </summary>
+    [Fact]
+    [Trait("IntegrationSlice", "FP-IS-02")]
+    [Trait("ProtocolVector", "CV-CURRENT-STOP-DEPARTURE-MACHINE-LOADING-INCOMPLETE")]
+    public async Task DepartureAtAStopWhoseOnlyDemandWasCancelledBeforeLoadingIsRefused()
+    {
+        await using RuntimeFixture fixture = await RuntimeFixture.CreateAsync();
+        JourneyStopRow secondPickup = await StopEndedJourneyContinuesTests.ArriveAtTheSecondPickupAsync(fixture);
+        fixture.Options.StationDepartureWaitTimeout = TimeSpan.FromMinutes(5);
+        await using (ControlServerDbContext connection = fixture.OpenConnectionContext())
+        {
+            OnboardMessageProcessor processor = TestOnboardProcessorFactory.Create(
+                connection, new WireToGateStore(connection), fixture.Clock, new ConfigurationBuilder().Build(), fixture.Peer);
+            OnboardConnectionState state = StopEndedJourneyContinuesTests.Connection(fixture);
+            const string cancellationId = "d7250000-0000-4000-8000-000000000001";
+            var who = new { operatorId = "OP-001", verificationMethod = "BADGE", verifiedAt = fixture.Clock.GetUtcNow() };
+            await processor.ProcessAsync(
+                StopEndedJourneyContinuesTests.Envelope(fixture, "d7250000-0000-4000-8000-000000000002", "LoadCancellationStartRequested", new
+                {
+                    cancellationId,
+                    demandId = SecondDemandId,
+                    slotOperationAttemptId = (string?)null,
+                    @operator = who,
+                    reason = "Nothing to load at this stop."
+                }),
+                state,
+                Token);
+            await processor.ProcessAsync(
+                StopEndedJourneyContinuesTests.Envelope(fixture, "d7250000-0000-4000-8000-000000000003", "LoadCancellationResult", new
+                {
+                    cancellationId,
+                    demandId = SecondDemandId,
+                    slotOperationAttemptId = (string?)null,
+                    overallOutcome = "ALL_EMPTY",
+                    slotResults = Array.Empty<object>(),
+                    observedAt = fixture.Clock.GetUtcNow()
+                }),
+                state,
+                Token);
+        }
+        await fixture.HearFromPeerAsync();
+        await TickAndRunAsync(fixture);
+        JourneyRuntimeRow before = await JourneyOfAsync(fixture, FirstDemandId);
+        Assert.Equal(JourneyRuntimeStage.AwaitingStationDeparture, before.Stage);
+        Assert.Equal(secondPickup.StopId, (await CurrentStopAsync(fixture, FirstDemandId)).StopId);
+        Assert.Equal(JourneyDemandStatuses.Terminated, (await MembershipAsync(fixture, SecondDemandId)).Status);
+        Assert.Equal(JourneyDemandStatuses.Loaded, (await MembershipAsync(fixture, FirstDemandId)).Status);
+        int checksBefore = await Batch7CargoHoldingTests.DepartureChecksSentAsync(fixture);
+
+        string departureRequestId = await RequestDepartureAsync(fixture, operationSessionId: null);
+        await RunAsync(fixture);
+
+        JsonElement result = await ResultAsync(fixture, departureRequestId);
+        Assert.Equal("REJECTED", result.GetProperty("outcome").GetString());
+        Assert.Equal(ServerReasonCodes.ActionNotAllowedInState, result.GetProperty("problem").GetProperty("reasonCode").GetString());
+        Assert.Equal(checksBefore, await Batch7CargoHoldingTests.DepartureChecksSentAsync(fixture));
+        Assert.Equal((before.LoadingPhaseState, before.LoadingClosedReason),
+            ((await JourneyOfAsync(fixture, FirstDemandId)).LoadingPhaseState, (await JourneyOfAsync(fixture, FirstDemandId)).LoadingClosedReason));
+        Assert.Null((await MembershipAsync(fixture, FirstDemandId)).RemovedAt);
     }
 
     /// <summary>
