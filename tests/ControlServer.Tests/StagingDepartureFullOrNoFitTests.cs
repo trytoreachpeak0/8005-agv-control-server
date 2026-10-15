@@ -410,8 +410,8 @@ public sealed class StagingDepartureFullOrNoFitTests
     }
 
     /// <summary>
-    /// 审查 M1（第二阶段第 3 项）：一趟同时有待送点与机台取货的旅程。待送点上等了十分钟（那里没有期限），因 9 段上限判走、一侧还空着；到了后面的
-    /// 机台取货停靠，按机台规则持货等单，持货期限从机台那一批装货闭环算起，到期照常关闭、离站。
+    /// 审查 M1（第二阶段第 3 项）：一趟同时有待送点与机台取货的旅程。待送点上等了四分钟（期限之内；CP-0014 起那里装上一篮就有持货期限，
+    /// control-server#727），因 9 段上限判走、一侧还空着；到了后面的机台取货停靠，按机台规则持货等单，持货期限从机台那一批装货闭环算起，到期照常关闭、离站。
     /// </summary>
     /// <remarks>
     /// 两个变异各红一处：持货期限的豁免改回按整趟旅程判，机台停靠永远不到期，最后一段红；离开待送点不清空起算点，期限从待送点第一批装货算起、
@@ -427,11 +427,13 @@ public sealed class StagingDepartureFullOrNoFitTests
         await using RuntimeFixture fixture = await LoadedAsync(StopKind.StagingRulesOn);
         JsonElement atStagingRow = Assert.Single(await CargoHoldingRowsAsync(fixture));
         Assert.True(atStagingRow.GetProperty("atStaging").GetBoolean());
-        Assert.Equal(JsonValueKind.Null, atStagingRow.GetProperty("cargoHoldingDeadlineAt").ValueKind);
+        Assert.Equal(
+            (await fixture.RuntimeAsync()).CargoHoldingStartedAt + fixture.Options.CargoHoldingTimeout,
+            atStagingRow.GetProperty("cargoHoldingDeadlineAt").GetDateTimeOffset());
 
         for (int step = 0; step < 2; step++)
         {
-            fixture.Clock.Advance(TimeSpan.FromMinutes(5));
+            fixture.Clock.Advance(TimeSpan.FromMinutes(2));
             await TickAsync(fixture);
         }
         Assert.Equal(LoadingPhaseStates.CargoHoldingWait, (await fixture.RuntimeAsync()).LoadingPhaseState);
