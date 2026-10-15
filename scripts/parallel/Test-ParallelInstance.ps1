@@ -5282,8 +5282,10 @@ Invoke-SourceCase 'cutover production stages: apart from productionCutover, emer
             $trial = Read-ParallelInstanceDefinition -Path $trialPath
             $trial.Remove('productionCutover')
             # program#184: the staging rules and the dispatch generation are production's alone (pinned by the case above); the
-            # mother and the trial stages leave the rules out and start at their own generation.
-            foreach ($other in @($twin, $trial)) { $other['journeyRuntime'].Remove('stagingDepartureRules'); $other['journeyRuntime'].Remove('dispatchGeneration') }
+            # mother and the trial stages leave the rules out and start at their own generation. The generation is overwritten in
+            # place, not removed: the comparison is of serialised JSON, and a key added back would move to the end.
+            $twin['journeyRuntime'].Remove('stagingDepartureRules')
+            $twin['journeyRuntime']['dispatchGeneration'] = $trial['journeyRuntime']['dispatchGeneration']
             $n = Copy-Definition $twin
             $n['journeyRuntime']['dispatchGeneration'] = $mother['journeyRuntime']['dispatchGeneration']
             $n['journeyRuntime']['fleet'] = $mother['journeyRuntime']['fleet']
