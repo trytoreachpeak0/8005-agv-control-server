@@ -18,7 +18,7 @@ slots-simulator + 充电桩 211。
 - 04 进充电分配：旅程收尾之后车被分到 211，周期 EN_ROUTE、充电单被 RIoT 确认、车持有 CHARGING 用途；单跑完，周期 CHARGING，屏上
   ChargingStatus 读到 CHARGING（real-onboard-charging-cycle 的读法）。
 
-**红证据**：本条是真装置场景，红证据在 control-server#713 的单测与合成装置上取（去掉缺电带货一支，车在待送点上一直等，02 等不到关闭）。
+**红证据：L2 层面目前一次都没有**（PR #724 独立审查 M3）。产品侧变异取红由审查第二阶段补，补上之后写进这里。
 #>
 [CmdletBinding()]
 param([Parameter(Mandatory)][object]$Context)
@@ -137,13 +137,20 @@ $screenReason = Wait-L2RealOrLast -Description 'the HMI shows the loading phase 
 $stopRows = Get-L2JourneyStops $connection $journeyId
 $stopRoles = @(foreach ($stop in $stopRows) { "$($stop.StopRole)@$($stop.StationRiotId)" })
 $cycleBeforeDelivery = Get-Cycle
+$departedForCharge = $null -ne $closed -and [string]$closed.LoadingClosedReason -eq 'CHARGING_REQUIRED' -and
+    @($leaving | Where-Object { $_ -ne $script:StagingStationName }).Count -ge 1
 $assertions.Add(
     'L2-RSC-02', '缺电带货：装货阶段 CLOSED/CHARGING_REQUIRED、屏上读到 CHARGING_REQUIRED，发出开往卸货站的离站核验；不插充电停靠、此刻没有充电周期',
-    ($null -ne $closed -and [string]$closed.LoadingClosedReason -eq 'CHARGING_REQUIRED' -and $screenReason -eq 'CHARGING_REQUIRED' -and
-        @($leaving | Where-Object { $_ -ne $script:StagingStationName }).Count -ge 1 -and
+    ($departedForCharge -and $screenReason -eq 'CHARGING_REQUIRED' -and
         @($stopRoles | Where-Object { $_ -like "*@$charger" }).Count -eq 0 -and $null -eq $cycleBeforeDelivery),
     "CLOSED/CHARGING_REQUIRED / screen CHARGING_REQUIRED / check to the drop-off / no stop @$charger / no cycle",
     "$(${closed}?.LoadingPhaseState)/$(${closed}?.LoadingClosedReason) / screen '$screenReason' / checks to [$(@($leaving) -join ', ')] / stops [$($stopRoles -join ' ')] / cycle $(if ($null -eq $cycleBeforeDelivery) { '(none)' } else { $cycleBeforeDelivery.WireState })")
+
+# 没有缺电出发就没有开往卸货站的单：再往下开车、卸货只会在等待里超时或抛异常（独立审查 L3）。
+if (-not $departedForCharge) {
+    Add-L2RealNotReached $assertions @('L2-RSC-03', 'L2-RSC-04') '缺电没有让车带货出发，送达与进充电分配的前提不成立'
+    return
+}
 
 # --- 3. 送达 -------------------------------------------------------------------------------------------------------
 

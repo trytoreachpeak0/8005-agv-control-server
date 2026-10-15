@@ -11,13 +11,14 @@
 判据（`L2-RSN-*`）：
 - 01 前提：车停在 305 等录入、屏上能录入（CanSubmit），屏上给出可按的「出发」。
 - 02 往返：服务端收到真车载端发来的 CurrentStopDepartureRequested（L2-OPERATOR，站 派工待送取货），答 ACCEPTED，车载端确认了答复，
-  屏上状态行读到 ACCEPTED。
+  确认之前车载端先把结果记进日志簿。屏上那一读（状态行或「本站」行的「已按出发」）只记进 journal、不作判据：一篮没装时它只有一秒左右
+  的窗口，而且读到的「已按出发」来自服务端的收尾清单，不证明车载端处理了答复（StagingDepartureRigCommon.ps1）。
 - 03 原地收尾：旅程 Completed / STAGING_OPERATOR_DEPARTED；一张 stopEndedReason 为 OPERATOR_DEPARTED 的清单发出并被真车载端确认；
   需求放回（RELEASED_FOR_REDISPATCH）、仍 Accepted、不抑制。
 - 04 车不动：出发之后没有离站核验；之后新建的订单（放回的需求多半又派给这辆停在待送点上的车）只开往待送站本身；模拟器八个仓都关门、
   空、锁上——没有哪扇门因为出发被打开。
 
-**红证据**：本条是真装置场景，红证据在合成场景 staging-depart-with-nothing-loaded 与两端 L1/G2 上取。
+**红证据：L2 层面目前一次都没有**（PR #724 独立审查 M3）。产品侧变异取红由审查第二阶段补，补上之后写进这里。
 #>
 [CmdletBinding()]
 param([Parameter(Mandatory)][object]$Context)
@@ -77,9 +78,9 @@ $intentsBefore = Get-L2RealCount $connection 'SELECT COUNT(*) AS Total FROM Orde
 $pressedAt = Invoke-L2DeparturePress $Context
 $roundTrip = Wait-L2DepartureRoundTrip $Context $pressedAt 'ACCEPTED'
 $assertions.Add(
-    'L2-RSN-02', '往返：真车载端发出 CurrentStopDepartureRequested（L2-OPERATOR，站 派工待送取货），服务端答 ACCEPTED，车载端确认答复、屏上状态 ACCEPTED',
+    'L2-RSN-02', '往返：真车载端发出 CurrentStopDepartureRequested（L2-OPERATOR，站 派工待送取货），服务端答 ACCEPTED，车载端确认了答复（记进日志簿后才确认）；屏上那一读只记录、不判',
     (Test-L2DepartureRoundTrip $roundTrip 'ACCEPTED'),
-    'request by L2-OPERATOR @派工待送取货 / ACCEPTED acked / screen STATUS:ACCEPTED or ENDED:已按出发', (Format-L2DepartureRoundTrip $roundTrip))
+    'request by L2-OPERATOR @派工待送取货 / ACCEPTED acked', (Format-L2DepartureRoundTrip $roundTrip))
 
 # --- 3. 旅程原地收尾、需求放回 ----------------------------------------------------------------------------------------
 

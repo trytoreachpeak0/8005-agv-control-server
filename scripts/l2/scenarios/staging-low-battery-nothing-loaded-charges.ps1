@@ -16,14 +16,15 @@ control-server#709 的缺电收尾、#712 的待送点不空闲返回、#713 的
 服务端在待送点上结束这一站：旅程 Completed / STAGING_CHARGING_REQUIRED，空清单的 stopEndedReason 是 CHARGING_REQUIRED；需求放回待派
 （RELEASED_FOR_REDISPATCH），仍 Accepted、不抑制（L2-SLC-01）。
 
-**二、空闲、不空闲返回、不再接这条需求**：收尾之后 V 没有 IDLE_RETURN 用途占有、没有开往等待点的单（control-server#712）；放回的需求
-不派给 V（缺电的车不接运输，mandatory-charge-vehicle-takes-no-transport 的规则），另一台车可以接（L2-SLC-02）。
+**二、空闲、不空闲返回、不再接这条需求**：从压电量之前到收尾之后几轮，V 没有新的开往等待点的单、没有 IDLE_RETURN 用途；放回的需求
+不派给 V（缺电的车不接运输，mandatory-charge-vehicle-takes-no-transport 的规则），另一台车可以接（L2-SLC-02）。**这一条对
+control-server#712 没有判别力**（独立审查 L1）：低于强制充电线的车本来就不空闲返回（IdleReturnOptions），有没有 #712 都一样。本场景
+对 #712 那一处风险有判别力的是 03：#712 让车留在待送点之后，充电队会不会把它当成有用途而排除。
 
 **三、进充电队、被派去充电**：V 被分到 211，充电周期 EN_ROUTE、充电单被 RIoT 确认、V 持有 CHARGING 用途（L2-SLC-03）；单跑完，
 V 在 211 上 CHARGING，211 是这一趟的占用（L2-SLC-04）。
 
-**红证据**（缺陷版本）：去掉 #709 的缺电收尾，V 一直挂在待送点的旅程上，L2-SLC-01 等不到收尾、L2-SLC-03 等不到周期；让充电队把
-「停在待送点、只接待送」的车当作有用途，L2-SLC-03 变红。
+**红证据：L2 层面目前一次都没有**（PR #724 独立审查 M3）。产品侧变异取红由审查第二阶段补，补上之后写进这里。
 
 **探针不取闭包**，理由见 CargoHoldingCommon.ps1 开头。
 #>
@@ -184,6 +185,8 @@ $null = Wait-L2Condition -Description 'V waits for a sublot at the staging stati
     -TimeoutSeconds 120 -Probe { [string](Get-Runtime $demand).Stage } -Until { param($v) $v -eq 'AwaitingSublot' }
 $null = Wait-L2Iterations -Riot $riot -Count 2 -Journal $journal
 
+# 基线在压电量之前取（独立审查 L1）：收尾之后才取，就看不见缺电那一刻到收尾之间建出的开往等待点的单。
+$idleIntents = Get-Count "SELECT COUNT(*) AS Total FROM OrderIntents WHERE VehicleKey = '$keyV' AND Purpose = 'TO_WAITING_POINT'"
 $journal.Note("V's battery drops to $lowBattery, below the default test policy's mandatory charge line of 30.")
 $null = $riot.Command('Put', 'vehicle', @{
     vehicleKey = $keyV; procState = 'IDLE'; movementState = 'MT_FINISHED'; speed = 0; currentPosition = $staging; battery = $lowBattery
@@ -214,7 +217,6 @@ if (-not $closedOk) {
 
 # --- 二、空闲、不空闲返回、缺电的车不再接这条需求 ----------------------------------------------------------------
 
-$idleIntents = Get-Count "SELECT COUNT(*) AS Total FROM OrderIntents WHERE VehicleKey = '$keyV' AND Purpose = 'TO_WAITING_POINT'"
 $null = Wait-L2Iterations -Riot $riot -Count 4 -Journal $journal
 $idleIntentsAfter = Get-Count "SELECT COUNT(*) AS Total FROM OrderIntents WHERE VehicleKey = '$keyV' AND Purpose = 'TO_WAITING_POINT'"
 $redispatchedToV = Get-Count ("SELECT COUNT(*) AS Total FROM JourneyRuntimes WHERE DemandId = '$demand' AND VehicleKey = '$keyV' " +
@@ -223,7 +225,7 @@ $redispatchedToV += Get-Count ("SELECT COUNT(*) AS Total FROM JourneyDemands d J
     "WHERE d.DemandId = '$demand' AND d.JourneyId <> '$journeyId' AND r.VehicleKey = '$keyV'")
 $claimV = Get-Claim $keyV
 $assertions.Add(
-    'L2-SLC-02', '收尾之后 V 不空闲返回（没有新的开往等待点的单、没有 IDLE_RETURN 用途），放回的需求不派给缺电的 V',
+    'L2-SLC-02', '从压电量之前到收尾之后几轮，V 不空闲返回（没有新的开往等待点的单、没有 IDLE_RETURN 用途），放回的需求不派给缺电的 V（对 cs#712 无判别力，见开头）',
     ($idleIntentsAfter -eq $idleIntents -and -not $claimV.StartsWith('IDLE_RETURN') -and $redispatchedToV -eq 0),
     "开往等待点的单 $idleIntents 张不变 / 无 IDLE_RETURN / 没再派给 V",
     "开往等待点的单 $idleIntents → $idleIntentsAfter / 用途 $claimV / 再派给 V $redispatchedToV 次")

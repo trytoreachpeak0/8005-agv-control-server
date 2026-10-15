@@ -11,16 +11,15 @@
 判据（`L2-RSP-*`）：
 - 01 前提：甲已装上（Committed），丙进了这趟旅程、车停在丙的停靠上等录入；车载端屏上给出可按的「出发」。
 - 02 往返：服务端收到真车载端发来的 CurrentStopDepartureRequested（操作员 L2-OPERATOR，站 派工待送取货），答 CurrentStopDepartureResult /
-  ACCEPTED，车载端确认了答复，屏上状态行 CurrentStopDepartureStatus 读到 ACCEPTED。
+  ACCEPTED，车载端确认了答复（记进日志簿后才确认）。屏上那一读只记录、不作判据（StagingDepartureRigCommon.ps1）。
 - 03 放回：丙离开这趟旅程（RELEASED_FOR_REDISPATCH），需求仍 Accepted、不抑制、不计站点超时放回；甲仍是 LOADED。
 - 04 离站：装货阶段以 OPERATOR_DEPARTED 关闭，车载端屏上 LoadingClosedReason 读到 OPERATOR_DEPARTED；服务端发出开往卸货站
   （不是待送站）的离站核验。
 - 05 送达：车开到 12 号站，甲卸货 Committed、需求 Succeeded，旅程 Completed。丙没有回到这趟旅程上（装货阶段关闭之后不再追加）。
 
-每个第二事实都先等（README 第 14 条）：读屏上状态前等答复被确认；读放回前等归属行的 RemovedAt。
+每个第二事实都先等（README 第 14 条）：读屏上关闭原因前等离站核验发出；读放回前等归属行的 RemovedAt。
 
-**红证据**：本条是真装置场景，红证据在合成场景 staging-depart-after-partial-load 与两端 L1/G2 上取（不接出发请求，02 等不到答复；
-把放回改成取消，03 变红）。
+**红证据：L2 层面目前一次都没有**（PR #724 独立审查 M3）。产品侧变异取红由审查第二阶段补，补上之后写进这里。
 #>
 [CmdletBinding()]
 param([Parameter(Mandatory)][object]$Context)
@@ -92,9 +91,9 @@ if (-not ($cJoined -and $offered)) {
 $pressedAt = Invoke-L2DeparturePress $Context
 $roundTrip = Wait-L2DepartureRoundTrip $Context $pressedAt 'ACCEPTED'
 $assertions.Add(
-    'L2-RSP-02', '往返：真车载端发出 CurrentStopDepartureRequested（L2-OPERATOR，站 派工待送取货），服务端答 ACCEPTED，车载端确认答复、屏上状态 ACCEPTED',
+    'L2-RSP-02', '往返：真车载端发出 CurrentStopDepartureRequested（L2-OPERATOR，站 派工待送取货），服务端答 ACCEPTED，车载端确认了答复（记进日志簿后才确认）；屏上那一读只记录、不判',
     (Test-L2DepartureRoundTrip $roundTrip 'ACCEPTED'),
-    'request by L2-OPERATOR @派工待送取货 / ACCEPTED acked / screen STATUS:ACCEPTED or ENDED:已按出发', (Format-L2DepartureRoundTrip $roundTrip))
+    'request by L2-OPERATOR @派工待送取货 / ACCEPTED acked', (Format-L2DepartureRoundTrip $roundTrip))
 
 # --- 4. 丙放回 ----------------------------------------------------------------------------------------------------
 
