@@ -31,6 +31,11 @@
     whole of what git diff 8d0a644e 5f3adc42 -- scripts/run-staged-g3.ps1 changes in the harness; each replacement must
     match exactly once, or the script stops.
 
+    A server on the protocol-v4.0.0 candidate (control-server#713) is a release ahead of the harness until a batch exit
+    moves the runner's G3 binding. v4 changes none of the payloads the harness sends (it adds messages and enum values),
+    so the harness is ported forward with the identity alone: the constants, the tag and protocolVersion, no field
+    removed. Any other identity at protocolVersion 4 or later stops the script.
+
     Exits 0 when every judgment came out as expected, 1 otherwise. -Expect Pass wants all four PASS. -Expect Fail
     wants the judgments named in -FailingJudgment FAIL (all four when it is not given) and every other one PASS: a
     mutation reaches only the path it changes, and a judgment it does not reach turning red would be a judgment that
@@ -131,7 +136,7 @@ $identity = (Get-Content -Raw -LiteralPath (Join-Path $controlSource 'src\Contro
         ConvertFrom-Json).ProtocolCandidate
 if ($null -eq $identity) { throw 'The commit under test carries no ProtocolCandidate identity.' }
 
-# --- the harness, ported back when the commit speaks an older release ------------------------------------------
+# --- the harness, ported to the release the commit speaks --------------------------------------------------------
 function Set-Once {
     param([string]$Text, [string]$Old, [string]$New)
     $count = ([regex]::Matches($Text, [regex]::Escape($Old))).Count
@@ -139,8 +144,15 @@ function Set-Once {
     return $Text.Replace($Old, $New)
 }
 $harnessPorted = $false
+# The harness is the runner's, and the runner's identity moves only at a batch exit (its G3 binding), so it can be a
+# release behind the commit under test. Two directions are known: back to a release older than v3, and forward to the
+# protocol-v4.0.0 candidate (control-server#713). v4 changes none of the payloads the harness sends -- it adds messages
+# and enum values -- so going forward only the identity moves; going back also drops the three v3-only fields.
+$knownForward = $identity.releaseVersion -eq '4.0.0' -and $identity.protocolVersion -eq 5
 if ($identity.releaseVersion -ne '3.0.0') {
-    if ($identity.protocolVersion -ge 4) { throw "Unexpected identity $($identity.tag) at protocolVersion $($identity.protocolVersion)." }
+    if ($identity.protocolVersion -ge 4 -and -not $knownForward) {
+        throw "Unexpected identity $($identity.tag) at protocolVersion $($identity.protocolVersion)."
+    }
     $constants = [ordered]@{
         Release = $identity.releaseVersion
         Commit = $identity.repositoryCommit
@@ -157,8 +169,10 @@ if ($identity.releaseVersion -ne '3.0.0') {
     $versionCount = ([regex]::Matches($harnessSource, [regex]::Escape('["protocolVersion"] = 4,'))).Count
     if ($versionCount -ne 2) { throw "Porting the harness: expected two protocolVersion literals, found $versionCount." }
     $harnessSource = $harnessSource.Replace('["protocolVersion"] = 4,', "[""protocolVersion""] = $($identity.protocolVersion),")
-    foreach ($line in @('["checkPurpose"] = "DEPARTURE",', '["demandId"] = null,', '["cargoHandoff"] = null')) {
-        $harnessSource = Set-Once $harnessSource $line ''
+    if (-not $knownForward) {
+        foreach ($line in @('["checkPurpose"] = "DEPARTURE",', '["demandId"] = null,', '["cargoHandoff"] = null')) {
+            $harnessSource = Set-Once $harnessSource $line ''
+        }
     }
     $harnessPorted = $true
 }
