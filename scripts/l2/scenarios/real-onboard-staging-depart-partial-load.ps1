@@ -114,7 +114,7 @@ $assertions.Add(
 # --- 5. 带着甲离站 --------------------------------------------------------------------------------------------------
 
 $leaving = Wait-L2RealOrLast -Description 'a departure check towards the drop-off was sent' -Journal $journal -Criterion 'leaving' `
-    -TimeoutSeconds 60 -Probe { @(Get-L2DepartureCheckTargets $connection) } `
+    -TimeoutSeconds 60 -Probe { Get-L2DepartureCheckTargets $connection } `
     -Until { param($v) @($v | Where-Object { $_ -ne $script:StagingStationName }).Count -ge 1 }
 $phase = Get-L2StagingJourney $connection $journeyId
 $screenReason = Wait-L2RealOrLast -Description 'the HMI shows the loading phase closed by the operator' -Journal $journal `

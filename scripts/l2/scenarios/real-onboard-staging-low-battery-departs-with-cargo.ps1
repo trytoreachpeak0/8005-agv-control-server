@@ -94,7 +94,8 @@ $holding = Wait-L2RealOrLast -Description 'the vehicle holds its cargo at the st
     -TimeoutSeconds 60 -Probe { [string](Get-L2StagingJourney $connection $journeyId).LoadingPhaseState } `
     -Until { param($v) $v -eq 'CARGO_HOLDING_WAIT' }
 $null = Wait-L2Iterations -Riot $riot -Count 3 -Journal $journal
-$checksWhileHolding = @(Get-L2DepartureCheckTargets $connection)
+# Whole array already (return , ...): wrapped in @() its Count would be 1 whatever it held (Test-L2WholeArrayReturn).
+$checksWhileHolding = Get-L2DepartureCheckTargets $connection
 $stillHolding = [string](Get-L2StagingJourney $connection $journeyId).LoadingPhaseState
 $offered = Test-L2DepartureButtonPressable $onboard
 $assertions.Add(
@@ -119,7 +120,7 @@ $closed = Wait-L2RealOrLast -Description 'the loading phase closed for want of c
     -TimeoutSeconds 60 -Probe { Get-L2StagingJourney $connection $journeyId } `
     -Until { param($v) $null -ne $v -and [string]$v.LoadingPhaseState -eq 'CLOSED' }
 $leaving = Wait-L2RealOrLast -Description 'a departure check towards the drop-off was sent' -Journal $journal -Criterion 'leaving' `
-    -TimeoutSeconds 60 -Probe { @(Get-L2DepartureCheckTargets $connection) } `
+    -TimeoutSeconds 60 -Probe { Get-L2DepartureCheckTargets $connection } `
     -Until { param($v) @($v | Where-Object { $_ -ne $script:StagingStationName }).Count -ge 1 }
 $screenReason = Wait-L2RealOrLast -Description 'the HMI shows the loading phase closed for charging' -Journal $journal `
     -Criterion 'loading-closed-on-screen' -TimeoutSeconds 30 -Probe { Get-L2LoadingPhaseLine $onboard 'LoadingClosedReason' } `

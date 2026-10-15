@@ -66,7 +66,8 @@ function Get-L2StagingJourney([object]$Connection, [string]$JourneyId) {
 
 # 真车载端发来的出发请求（服务端收件箱），按收到的先后。
 function Get-L2DepartureRequests([object]$Connection) {
-    return , @(Get-L2RealInbound $Connection 'CurrentStopDepartureRequested')
+    $requests = Get-L2RealInbound $Connection 'CurrentStopDepartureRequested'
+    return , $requests
 }
 
 # 服务端对某一条出发请求的答复：payload、是否已被车载端确认。

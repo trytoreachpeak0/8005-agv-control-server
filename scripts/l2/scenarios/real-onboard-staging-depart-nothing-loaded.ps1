@@ -106,7 +106,8 @@ $assertions.Add(
 # 放回的需求还在 MES 目录里，下一轮派车多半又派给这辆停在待送点上的车（新旅程、开往待送站本身的新单）。那不是「车动了」：判据只看
 # 出发之后有没有离站核验、新订单开往哪里、有没有哪扇门被打开。几轮之后再读（不读一次就断言）。
 $null = Wait-L2Iterations -Riot $Context.Riot -Count 3 -Journal $journal
-$checks = @(Get-L2DepartureCheckTargets $connection)
+# Whole array already (return , ...): wrapped in @() its Count would be 1 whatever it held (Test-L2WholeArrayReturn).
+$checks = Get-L2DepartureCheckTargets $connection
 $orderRows = Invoke-L2Query -Connection $connection -Sql 'SELECT TargetStationId FROM OrderIntents ORDER BY CreatedAt, UpperId'
 $newTargets = @(foreach ($row in $orderRows) { [string]$row.TargetStationId }) | Select-Object -Skip $intentsBefore
 $slots = @($simulator.Snapshot().slots | ForEach-Object { "$($_.doorState)/$($_.cargoState)/$($_.lockFeedbackRaw)/$($_.unlockOutputRaw)" })
