@@ -223,6 +223,8 @@ internal sealed class Batch7JourneyFixture : IAsyncDisposable
         ("JourneyRuntimes", "PublishedBatteryState", "TEXT NULL"),
         ("StationExclusivities", "ChargerRosterVersion", "INTEGER NULL"),
         ("StationExclusivityRecords", "ChargerRosterVersion", "INTEGER NULL"),
+        // control-server#725：机台取货出发按停靠落库。
+        ("JourneyStops", "OperatorDepartedAt", "TEXT NULL"),
     ];
 
     /// <summary>

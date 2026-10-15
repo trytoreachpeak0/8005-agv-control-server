@@ -67,6 +67,16 @@ public sealed class JourneyStopRow
     /// </remarks>
     public long WorklistRefills { get; set; }
 
+    /// <summary>
+    /// 机台取货停靠上操作员的出发被受理的时刻（control-server#725，CP-0014 <c>REQ-0354</c>）；没人按过为空。
+    /// </summary>
+    /// <remarks>
+    /// 有值即本站作业会话已由操作员结束：车不再等站点离站期限的剩余部分，经纠错闸与离站核验立即走。<b>落库而不是在受理那一轮里记着</b>：受理之后
+    /// 门未证明扣车、已开的纠错或一次重启都会让离站拖到下一轮，那时只剩这一列说得出「已经按过」。装货阶段已结束、只剩站点离站等待时受理的出发
+    /// 不改 <c>closedReason</c>，旅程行上没有别的痕迹；按停靠而不按旅程记，是因为同一趟旅程后面的取货停靠仍有自己的离站等待。
+    /// </remarks>
+    public DateTimeOffset? OperatorDepartedAt { get; set; }
+
     public required string Status { get; set; }
     public DateTimeOffset CreatedAt { get; set; }
 }

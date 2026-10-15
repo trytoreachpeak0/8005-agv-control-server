@@ -166,9 +166,6 @@ public sealed class ProtocolVectorTestBindingArchitectureTests
     private static readonly IReadOnlyDictionary<string, string> VectorsAwaitingTheirSlice =
         new SortedDictionary<string, string>(StringComparer.Ordinal)
         {
-            ["CV-CURRENT-STOP-DEPARTURE-MACHINE-CARGO-HOLDING"] = ClaimedPinLabel("FP-IS-02", 725),
-            ["CV-CURRENT-STOP-DEPARTURE-MACHINE-LOADING-INCOMPLETE"] = ClaimedPinLabel("FP-IS-02", 725),
-            ["CV-CURRENT-STOP-DEPARTURE-MACHINE-STATION-WAIT"] = ClaimedPinLabel("FP-IS-02", 725),
             ["CV-WORKLIST-SELECTION-ACCEPTED"] = "FP-IS-09, batch 11",
             ["CV-WORKLIST-SELECTION-STALE-REVISION"] = "FP-IS-09, batch 11"
         };

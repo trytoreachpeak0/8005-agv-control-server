@@ -59,11 +59,15 @@ public sealed partial class JourneyRuntimeEngine
             "Vehicle {AgvId} is below the mandatory charge line at the staging station with cargo on board, but the journey's " +
             "first demand is not loaded; it does not depart on its own.");
 
-    /// <summary>出发或缺电的放回落下了什么：旅程原地收尾，或带着已装的货进离站。</summary>
+    /// <summary>
+    /// 出发或缺电的放回落下了什么：旅程原地收尾，或带着已装的货进离站；机台取货停靠上装货阶段已结束时受理的出发（control-server#725）只结束站点离站等待，
+    /// 没有要补发的业务快照。
+    /// </summary>
     private enum StagingDepartureEffect
     {
         JourneyClosed,
-        Departing
+        Departing,
+        StationWaitEnded
     }
 
     /// <summary>
@@ -140,15 +144,18 @@ public sealed partial class JourneyRuntimeEngine
                 cancellationToken).ConfigureAwait(false);
             if (problem is null)
             {
-                (effect, released) = await StageStagingDepartureAsync(
-                    runtime,
-                    locked,
-                    session,
-                    holdingApplicable,
-                    CurrentStopDepartures.OperatorDepartedReason,
-                    LoadingClosedReasons.OperatorDeparted,
-                    now.AddMilliseconds(1),
-                    cancellationToken).ConfigureAwait(false);
+                (effect, released) = IsStagingPickup(locked.Current)
+                    ? await StageStagingDepartureAsync(
+                        runtime,
+                        locked,
+                        session,
+                        holdingApplicable,
+                        CurrentStopDepartures.OperatorDepartedReason,
+                        LoadingClosedReasons.OperatorDeparted,
+                        now.AddMilliseconds(1),
+                        cancellationToken).ConfigureAwait(false)
+                    : await StageMachineDepartureAsync(
+                        runtime, locked, session, holdingApplicable, now.AddMilliseconds(1), cancellationToken).ConfigureAwait(false);
             }
             await dbContext.SaveChangesAsync(cancellationToken).ConfigureAwait(false);
             if (transaction is not null)
@@ -318,22 +325,8 @@ public sealed partial class JourneyRuntimeEngine
         // 与缺电那一支「不改判」同一个口径（独立审查 L3）。车本来就要走，装满是更早、更具体的那个理由。
         if (runtime.LoadingPhaseState != LoadingPhaseStates.VehicleFull)
         {
-            // 装货阶段关闭，业务状态快照与它同一次改动（PublishLoadingPhaseAsync 的号与退役，只是暂存而不发）。车停在这个停靠上，按「已到站」算号。
-            runtime.LoadingPhaseState = LoadingPhaseStates.Closed;
-            runtime.LoadingClosedReason = closedReason;
-            runtime.UpdatedAt = at;
-            runtime.VehicleBusinessRevision += 1;
-            long revision = StopRevision(runtime.VehicleBusinessRevision, current);
-            await FenceSupersededSnapshotAsync(current.VehicleBusinessMessageId, cancellationToken).ConfigureAwait(false);
-            await FenceSupersededSnapshotAsync(LoadingPhaseMessageId(current, revision - 1), cancellationToken).ConfigureAwait(false);
-            await OnboardJourneyPublisher.StageVehicleBusinessStateAsync(
-                new WireToGateStore(dbContext),
-                LoadingPhaseMessageId(current, revision),
-                runtime.AgvId,
-                session.SessionGeneration,
-                TransportBusinessState(revision, CurrentLoadingPhase(runtime, holdingApplicable, locked), PublishedBatteryState(runtime)),
-                at,
-                cancellationToken).ConfigureAwait(false);
+            await StageLoadingPhaseClosedAsync(runtime, locked, session, holdingApplicable, closedReason, at, cancellationToken)
+                .ConfigureAwait(false);
         }
 
         // 本站因此没有待做项了：空清单说出发或缺电（wire-notes 第 4 条）。本站本来就装完了（持货等单）时不再补一张：车上手里那张清单照旧，
@@ -342,6 +335,82 @@ public sealed partial class JourneyRuntimeEngine
             dbContext, runtime, releasedFromCurrentStop > 0, sublotRequestMessageId, stopReason, at.AddMilliseconds(1),
             cancellationToken).ConfigureAwait(false);
         return (StagingDepartureEffect.Departing, leavingIds.Length);
+    }
+
+    /// <summary>
+    /// 装货阶段以 <paramref name="closedReason"/> 关闭，业务状态快照与它同一次改动（<c>PublishLoadingPhaseAsync</c> 的号与退役，只是暂存而不发）。
+    /// 车停在这个停靠上，按「已到站」算号。待送点的出发与缺电、机台取货装货阶段还开着时的出发（control-server#725）共用。
+    /// </summary>
+    private async Task StageLoadingPhaseClosedAsync(
+        JourneyRuntimeRow runtime,
+        JourneyStopCursor locked,
+        SessionRecoveryRow session,
+        bool holdingApplicable,
+        string closedReason,
+        DateTimeOffset at,
+        CancellationToken cancellationToken)
+    {
+        JourneyStopRow current = locked.Current;
+        runtime.LoadingPhaseState = LoadingPhaseStates.Closed;
+        runtime.LoadingClosedReason = closedReason;
+        runtime.UpdatedAt = at;
+        runtime.VehicleBusinessRevision += 1;
+        long revision = StopRevision(runtime.VehicleBusinessRevision, current);
+        await FenceSupersededSnapshotAsync(current.VehicleBusinessMessageId, cancellationToken).ConfigureAwait(false);
+        await FenceSupersededSnapshotAsync(LoadingPhaseMessageId(current, revision - 1), cancellationToken).ConfigureAwait(false);
+        await OnboardJourneyPublisher.StageVehicleBusinessStateAsync(
+            new WireToGateStore(dbContext),
+            LoadingPhaseMessageId(current, revision),
+            runtime.AgvId,
+            session.SessionGeneration,
+            TransportBusinessState(revision, CurrentLoadingPhase(runtime, holdingApplicable, locked), PublishedBatteryState(runtime)),
+            at,
+            cancellationToken).ConfigureAwait(false);
+    }
+
+    /// <summary>
+    /// 机台取货停靠上受理了一次出发（control-server#725，CP-0014 <c>REQ-0354</c>；wire-notes 出发一节第 6 条）：记下本站已由操作员结束
+    /// （<see cref="JourneyStopRow.OperatorDepartedAt"/>，离站等待据此立即结束），装货阶段还开着时再按持货期限此刻到期处理。只暂存，调用方保存。
+    /// </summary>
+    /// <remarks>
+    /// <para>
+    /// <b>装货阶段还开着</b>（适用持货等单，<c>LOADING</c> 或 <c>CARGO_HOLDING_WAIT</c>）：等同持货期限此刻到期——装货阶段以 <c>OPERATOR_DEPARTED</c>
+    /// 关闭（不是 <c>CARGO_HOLDING_TIMEOUT</c>，车载端要分得清人按的和到期的），没开始装的走持货到期的同一条截断
+    /// （<see cref="StageCargoHoldingTruncationAsync"/>），只把车上空清单的结束原因换成 <c>OPERATOR_DEPARTED</c>。不另写一套释放逻辑：两条路以后不会分叉。
+    /// 本站此刻没有待做项（受理的前提），所以截掉的都在后面的停靠上，本站不补空清单；计划因此变了，由调用方在答复与业务快照之后重发。
+    /// </para>
+    /// <para>
+    /// <b>装货阶段已经结束</b>（<c>CLOSED</c>，或 <c>VEHICLE_FULL</c>，或不适用持货等单）：只剩站点离站等待，装货阶段与 <c>closedReason</c> 一样不动、
+    /// 不发业务快照（向量 <c>CV-CURRENT-STOP-DEPARTURE-MACHINE-STATION-WAIT</c> 的 <c>closed-reason-rewritten-by-departure</c>）。
+    /// <c>VEHICLE_FULL</c> 算在这里，与待送点那一支「装满是更早、更具体的理由，不改判」同一个口径。不适用持货的旅程落库的是 <c>CLOSED</c>／
+    /// <c>PLANNED_LOADING_COMPLETE</c>，车上看到的还是最后那张 <c>LOADING</c>（wire-notes 出发一节第 1 条），同样不碰。
+    /// </para>
+    /// </remarks>
+    private async Task<(StagingDepartureEffect Effect, int Released)> StageMachineDepartureAsync(
+        JourneyRuntimeRow runtime,
+        JourneyStopCursor locked,
+        SessionRecoveryRow session,
+        bool holdingApplicable,
+        DateTimeOffset at,
+        CancellationToken cancellationToken)
+    {
+        (await TrackedStopAsync(locked.Current.StopId, cancellationToken).ConfigureAwait(false)).OperatorDepartedAt = at;
+        if (!holdingApplicable ||
+            runtime.LoadingPhaseState is not (null or LoadingPhaseStates.Loading or LoadingPhaseStates.CargoHoldingWait))
+        {
+            return (StagingDepartureEffect.StationWaitEnded, 0);
+        }
+
+        await StageLoadingPhaseClosedAsync(
+            runtime, locked, session, holdingApplicable, LoadingClosedReasons.OperatorDeparted, at, cancellationToken).ConfigureAwait(false);
+        string[] released = await StageCargoHoldingTruncationAsync(
+            runtime, CurrentStopDepartures.OperatorDepartedReason, at, cancellationToken).ConfigureAwait(false) ?? [];
+        foreach (string demandId in released)
+        {
+            LogDepartureReleasedDemand(logger, demandId, runtime.AgvId, CurrentStopDepartures.OperatorDepartedReason, null);
+        }
+        return (runtime.Stage == JourneyRuntimeStage.Completed ? StagingDepartureEffect.JourneyClosed : StagingDepartureEffect.Departing,
+            released.Length);
     }
 
     /// <summary>
@@ -396,6 +465,7 @@ public sealed partial class JourneyRuntimeEngine
         JourneyStopRow current = locked.Current;
         bool loaded = locked.AllDemands.Any(item =>
             item.Membership.Status is JourneyDemandStatuses.Loaded or JourneyDemandStatuses.Loading);
+        bool atMachinePickup = current.StopRole == JourneyStopRoles.Pickup && !IsStagingPickup(current);
         return new CurrentStopDepartureRule.Facts(
             current.StationId,
             current.OperationSessionId,
@@ -407,13 +477,19 @@ public sealed partial class JourneyRuntimeEngine
                 await OpenCancellationAtCurrentStopAsync(locked, cancellationToken).ConfigureAwait(false) ||
                 await OpenCorrectionOnBoardAsync(runtime, locked, cancellationToken).ConfigureAwait(false),
             // 待送点持货到期（control-server#727）也算已在出发：再按一次出发不把 CARGO_HOLDING_TIMEOUT 改判成 OPERATOR_DEPARTED。只在待送点这么认：
-            // 机台取货持货到期之后还在等站点离站期限，CP-0014 要那时的出发照样受理、原因不变（control-server#725）。
-            AlreadyDeparting: runtime.LoadingPhaseState == LoadingPhaseStates.Closed &&
-                              (IsStagingPickup(current)
-                                  ? StagingDepartureUnderWay(runtime)
-                                  : runtime.LoadingClosedReason is LoadingClosedReasons.OperatorDeparted or LoadingClosedReasons.ChargingRequired),
+            // 机台取货持货到期之后还在等站点离站期限，CP-0014 要那时的出发照样受理、原因不变。机台上「已在出发」是本停靠已受理过一次（control-server#725），
+            // 按停靠认而不按关闭原因认：同一趟旅程后面的机台取货停靠仍可以出发。
+            AlreadyDeparting: IsStagingPickup(current)
+                ? runtime.LoadingPhaseState == LoadingPhaseStates.Closed && StagingDepartureUnderWay(runtime)
+                : current.OperatorDepartedAt is not null,
             AnchorUnloadedWithCargo: loaded && AnchorUnloaded(runtime, locked),
-            NothingLoadedAndDoorsNotProvenClosed: !loaded && SlotDoorsNotProvenClosed(session));
+            NothingLoadedAndDoorsNotProvenClosed: !loaded && SlotDoorsNotProvenClosed(session),
+            // 本站装完（CP-0014）：本停靠已承诺的都已装上或已结束、本站至少装上一篮、车停在离站等待里（还没发离站核验）。只看本站的归属——
+            // 车上别处装的货不算「这一站装完」，本站需求全被取消、一篮没装的停靠按现有规则收尾，不出发（CP-0014 起草时定第 7 项）。
+            MachinePickupLoadsComplete: atMachinePickup &&
+                                        stageNow == JourneyRuntimeStage.AwaitingStationDeparture &&
+                                        locked.OutstandingAtCurrentStop.Count == 0 &&
+                                        locked.AllAtStop(current).Any(item => item.Membership.Status == JourneyDemandStatuses.Loaded));
     }
 
     /// <summary>锚需求还在这趟旅程上、没开始装。</summary>
@@ -440,6 +516,9 @@ public sealed partial class JourneyRuntimeEngine
             case StagingDepartureEffect.JourneyClosed:
                 await JourneyClosure.SendAsync(publisher, dbContext, runtime.AgvId, cancellationToken).ConfigureAwait(false);
                 checkpointWaits.Clear(runtime.VehicleKey);
+                break;
+            case StagingDepartureEffect.StationWaitEnded:
+                // 只结束站点离站等待：没有暂存的快照，离站核验由本轮下面的离站等待那一支发。
                 break;
             case StagingDepartureEffect.Departing:
                 JourneyStopCursor stops = await JourneyStopCursor.LoadAsync(dbContext, runtime, cancellationToken).ConfigureAwait(false);

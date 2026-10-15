@@ -15,7 +15,8 @@ namespace ControlServer.Host.Runtime;
 /// <item><c>WORKLIST_REVISION_STALE</c>：<c>worklistRevision</c> 不是此刻的清单号；或请求带了 <c>operationSessionId</c> 而它不是当前停靠的。
 /// 后者协议没有单列，归到这里：车回显的是它屏上那张清单，作业会话对不上就是那张清单已经不是当前的。为空不比（空清单都不带会话，
 /// 持货等单时也要能出发）。</item>
-/// <item><c>ACTION_NOT_ALLOWED_IN_STATE</c>：停靠不是待送点取货停靠（开关关着时没有待送点，机台取货永远是这一条），旅程不在等录入或离站等待，
+/// <item><c>ACTION_NOT_ALLOWED_IN_STATE</c>：停靠既不是待送点取货停靠（开关关着时没有待送点），也不是本站装货已完成的机台取货停靠（control-server#725，
+/// CP-0014：本停靠已承诺的装货都已完成、本站至少装上一篮、车停在离站等待里；不论装货阶段还开着还是已结束），旅程不在等录入或离站等待，
 /// 有仓位操作在跑，有纠错或扫码前取消开着，已经在出发，或一篮没装而仓门没有证明关着（放了车就会被派走）。</item>
 /// </list>
 /// <para>
@@ -37,6 +38,9 @@ internal static class CurrentStopDepartureRule
     /// <param name="AlreadyDeparting">装货阶段已经以出发或缺电关闭。</param>
     /// <param name="AnchorUnloadedWithCargo">锚需求还没装，而这趟旅程别处已装了货。</param>
     /// <param name="NothingLoadedAndDoorsNotProvenClosed">一篮没装，而仓门没有证明关着。</param>
+    /// <param name="MachinePickupLoadsComplete">
+    /// 当前停靠是机台取货停靠（不是待送点）、车停在离站等待里、本停靠没有待做项、本停靠至少有一条已装上（CP-0014：一篮没装、需求全被取消不算装完）。
+    /// </param>
     public sealed record Facts(
         string? CurrentStationId,
         string? CurrentOperationSessionId,
@@ -47,7 +51,8 @@ internal static class CurrentStopDepartureRule
         bool CorrectionOrCancellationOpen,
         bool AlreadyDeparting,
         bool AnchorUnloadedWithCargo,
-        bool NothingLoadedAndDoorsNotProvenClosed);
+        bool NothingLoadedAndDoorsNotProvenClosed,
+        bool MachinePickupLoadsComplete = false);
 
     /// <summary>为空是 <c>ACCEPTED</c>；否则是 <c>REJECTED</c> 带的那个问题。</summary>
     public static WireProblem? Decide(CurrentStopDepartures.Request request, Facts facts)
@@ -75,7 +80,8 @@ internal static class CurrentStopDepartureRule
         }
 
         string? notAllowed =
-            !facts.AtStagingPickup ? "Departure on request is only offered at a staging pickup stop." :
+            !facts.AtStagingPickup && !facts.MachinePickupLoadsComplete
+                ? "Departure on request is offered at a staging pickup stop, or at a machine pickup stop once its loads are complete." :
             !facts.AtStopAwaitingDeparture || facts.SlotOperationRunning ? "A slot operation is running or the vehicle is not waiting at the stop." :
             facts.CorrectionOrCancellationOpen ? "A load correction or a cancellation is open at this stop." :
             facts.AlreadyDeparting ? "The vehicle is already departing from this stop." :

@@ -198,10 +198,11 @@ function Format-L2DepartureRoundTrip([object]$RoundTrip) {
     return "$request / $result (screen observed, not judged: '$($RoundTrip.ScreenObserved)')"
 }
 
-# 往返成立：请求是 L2-OPERATOR 从待送站发的，答复是 $Outcome，且车载端确认了它（记进日志簿之后才确认）。屏上那一读不在其中（见上）。
-function Test-L2DepartureRoundTrip([object]$RoundTrip, [string]$Outcome = 'ACCEPTED') {
+# 往返成立：请求是 L2-OPERATOR 从 $StationName（缺省待送站；机台取货出发的场景传机台站名，control-server#725）发的，答复是 $Outcome，
+# 且车载端确认了它（记进日志簿之后才确认）。屏上那一读不在其中（见上）。
+function Test-L2DepartureRoundTrip([object]$RoundTrip, [string]$Outcome = 'ACCEPTED', [string]$StationName = $script:StagingStationName) {
     return $null -ne $RoundTrip.Request -and $null -ne $RoundTrip.Result -and
         [string]$RoundTrip.Request.Payload.operator.operatorId -eq 'L2-OPERATOR' -and
-        [string]$RoundTrip.Request.Payload.stationId -eq $script:StagingStationName -and
+        [string]$RoundTrip.Request.Payload.stationId -eq $StationName -and
         [string]$RoundTrip.Result.Payload.outcome -eq $Outcome -and $RoundTrip.Result.Acknowledged
 }
