@@ -1299,11 +1299,16 @@ public sealed partial class JourneyRuntimeEngine(
                 {
                     return;
                 }
+                // 截在待送点上：按截断之前的游标认，截断可能刚把当前停靠结束掉。
+                bool truncatedAtStaging = StandsAtStaging(stops);
                 stops = truncated;
-                // 截断改了计划：空清单之后紧跟新的一版计划，再往下才可能发离站核验（向量 CV-STAGING-CARGO-HOLDING-TIMEOUT 的线序，protocol#17 审查
-                // 转 C11）。待送点到期在这一轮里就发核验（control-server#727），不在这里补，车先收到核验、后收到计划；机台取货要等站点期限，下一轮
-                // 开头的重发本来赶得上，这里提前发不改它收到的内容。计划没变时不发（同出发那一处）。
-                await RefreshUpcomingStopPlanAsync(runtime, stops, session, cancellationToken).ConfigureAwait(false);
+                // 待送点上截断改了计划：空清单之后紧跟新的一版计划，再往下才可能发离站核验（向量 CV-STAGING-CARGO-HOLDING-TIMEOUT 的线序，
+                // protocol#17 审查转 C11）。待送点到期在这一轮里就发核验（control-server#727），不在这里补，车先收到核验、后收到计划。
+                // 只限待送点（#731 审查 M3）：机台取货要等站点期限，计划照旧在下一轮开头发，cs#290 以来的线序一点不动。计划没变时不发（同出发那一处）。
+                if (truncatedAtStaging)
+                {
+                    await RefreshUpcomingStopPlanAsync(runtime, stops, session, cancellationToken).ConfigureAwait(false);
+                }
                 // 离站核验已经发出、而它问的下一站刚被截掉（审查 L2）：作废那一张，换一对新身份，下面等核验那一段把新的一张发出去，
                 // 问的是截断之后的下一站。做法与扣车那一处相同。
                 if (runtime.Stage == JourneyRuntimeStage.AwaitingDepartureSafety)
@@ -1624,8 +1629,11 @@ public sealed partial class JourneyRuntimeEngine(
                             {
                                 return;
                             }
-                            // 同轮首那一处：截断改了计划，先发计划，下面才可能发离站核验（control-server#727）。
-                            await RefreshUpcomingStopPlanAsync(runtime, truncatedHere, session, cancellationToken).ConfigureAwait(false);
+                            // 同轮首那一处：待送点上截断改了计划，先发计划，下面才可能发离站核验（control-server#727）；机台照旧（#731 审查 M3）。
+                            if (IsStagingPickup(stops.Current))
+                            {
+                                await RefreshUpcomingStopPlanAsync(runtime, truncatedHere, session, cancellationToken).ConfigureAwait(false);
+                            }
                         }
                     }
                     // 这个停靠上还有没装的需求，就回到等录入等下一条（同一站逐条串行，规格第 22 节补记）：重新加载
