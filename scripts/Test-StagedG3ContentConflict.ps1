@@ -24,17 +24,18 @@
     simulator, no desktop lock, and ports the system hands out rather than the runner's fixed block, so this never
     meets a G3 run that holds those. It is not G3 evidence and grades no slice.
 
-    A server older than the protocol-v3.0.0 identity speaks another release, and the harness is compiled with v3's.
-    For such a commit the harness is ported back to the identity the commit's appsettings.json declares: the six
-    identity constants, the tag and protocolVersion, and the three v3-only payload fields (checkPurpose on
-    PreDepartureSafetyCheckResult, demandId and cargoHandoff on ForcedMechanicalRecoveryResult) removed. That is the
-    whole of what git diff 8d0a644e 5f3adc42 -- scripts/run-staged-g3.ps1 changes in the harness; each replacement must
-    match exactly once, or the script stops.
+    The harness carries the identity of the runner's G3 binding, which moves only at an exit, so it can name another
+    release than the commit under test. It is ported to the identity the commit's appsettings.json declares; the
+    harness's own release, tag and protocolVersion are read from its source, not assumed. Two releases share the
+    harness's payloads: protocol-v3.0.0 (protocolVersion 4) and protocol-v4.0.0 (protocolVersion 5, which only adds
+    messages and enum values). Between them only the identity moves: the six identity constants, the tag and
+    protocolVersion. A server older than v3 also has the three v3-only payload fields (checkPurpose on
+    PreDepartureSafetyCheckResult, demandId and cargoHandoff on ForcedMechanicalRecoveryResult) removed -- the whole of
+    what git diff 8d0a644e 5f3adc42 -- scripts/run-staged-g3.ps1 changes in the harness. Each replacement must match
+    exactly once, and any other identity at protocolVersion 4 or later stops the script.
 
-    A server on the protocol-v4.0.0 candidate (control-server#713) is a release ahead of the harness until a batch exit
-    moves the runner's G3 binding. v4 changes none of the payloads the harness sends (it adds messages and enum values),
-    so the harness is ported forward with the identity alone: the constants, the tag and protocolVersion, no field
-    removed. Any other identity at protocolVersion 4 or later stops the script.
+    The harness was compiled with v3's identity until the v4 exit (8005-agv-program#184) moved it to v4's: before
+    that a v4 commit was ported forward, since then a v3 one is ported back.
 
     Exits 0 when every judgment came out as expected, 1 otherwise. -Expect Pass wants all four PASS. -Expect Fail
     wants the judgments named in -FailingJudgment FAIL (all four when it is not given) and every other one PASS: a
@@ -144,15 +145,25 @@ function Set-Once {
     return $Text.Replace($Old, $New)
 }
 $harnessPorted = $false
-# The harness is the runner's, and the runner's identity moves only at a batch exit (its G3 binding), so it can be a
-# release behind the commit under test. Two directions are known: back to a release older than v3, and forward to the
-# protocol-v4.0.0 candidate (control-server#713). v4 changes none of the payloads the harness sends -- it adds messages
-# and enum values -- so going forward only the identity moves; going back also drops the three v3-only fields.
-$knownForward = $identity.releaseVersion -eq '4.0.0' -and $identity.protocolVersion -eq 5
-if ($identity.releaseVersion -ne '3.0.0') {
-    if ($identity.protocolVersion -ge 4 -and -not $knownForward) {
-        throw "Unexpected identity $($identity.tag) at protocolVersion $($identity.protocolVersion)."
+# The harness's own identity, read from its source: the runner's G3 binding moves it at an exit, and this must not need
+# editing then (8005-agv-program#184 found it hard-wired to v3).
+$harnessRelease = [regex]::Matches($harnessSource, 'public const string Release = "([^"]*)";')
+$harnessTag = [regex]::Matches($harnessSource, '\["tag"\] = "([^"]*)",')
+$harnessVersion = [regex]::Matches($harnessSource, '\["protocolVersion"\] = (\d+),')
+if ($harnessRelease.Count -ne 1 -or $harnessTag.Count -ne 1 -or $harnessVersion.Count -ne 2 -or
+    $harnessVersion[0].Value -ne $harnessVersion[1].Value) {
+    throw ("Reading the harness identity: expected one Release constant, one tag and two equal protocolVersion " +
+           "literals, found $($harnessRelease.Count), $($harnessTag.Count) and $($harnessVersion.Count).")
+}
+# The releases whose payloads the harness sends unchanged. Any other identity at protocolVersion 4 or later is unknown.
+$sharedPayloadReleases = @{ '3.0.0' = 4; '4.0.0' = 5 }
+foreach ($pair in @(@($harnessRelease[0].Groups[1].Value, [int]$harnessVersion[0].Groups[1].Value),
+                    @([string]$identity.releaseVersion, [int]$identity.protocolVersion))) {
+    if ($pair[1] -ge 4 -and $sharedPayloadReleases[$pair[0]] -ne $pair[1]) {
+        throw "Unexpected identity $($pair[0]) at protocolVersion $($pair[1])."
     }
+}
+if ($identity.releaseVersion -ne $harnessRelease[0].Groups[1].Value) {
     $constants = [ordered]@{
         Release = $identity.releaseVersion
         Commit = $identity.repositoryCommit
@@ -165,11 +176,9 @@ if ($identity.releaseVersion -ne '3.0.0') {
         if ($match.Count -ne 1) { throw "Porting the harness: expected one constant $name, found $($match.Count)." }
         $harnessSource = $harnessSource.Replace($match[0].Value, "public const string $name = ""$($constants[$name])"";")
     }
-    $harnessSource = Set-Once $harnessSource '["tag"] = "protocol-v3.0.0",' "[""tag""] = ""$($identity.tag)"","
-    $versionCount = ([regex]::Matches($harnessSource, [regex]::Escape('["protocolVersion"] = 4,'))).Count
-    if ($versionCount -ne 2) { throw "Porting the harness: expected two protocolVersion literals, found $versionCount." }
-    $harnessSource = $harnessSource.Replace('["protocolVersion"] = 4,', "[""protocolVersion""] = $($identity.protocolVersion),")
-    if (-not $knownForward) {
+    $harnessSource = Set-Once $harnessSource $harnessTag[0].Value "[""tag""] = ""$($identity.tag)"","
+    $harnessSource = $harnessSource.Replace($harnessVersion[0].Value, "[""protocolVersion""] = $($identity.protocolVersion),")
+    if ($identity.protocolVersion -lt 4) {
         foreach ($line in @('["checkPurpose"] = "DEPARTURE",', '["demandId"] = null,', '["cargoHandoff"] = null')) {
             $harnessSource = Set-Once $harnessSource $line ''
         }

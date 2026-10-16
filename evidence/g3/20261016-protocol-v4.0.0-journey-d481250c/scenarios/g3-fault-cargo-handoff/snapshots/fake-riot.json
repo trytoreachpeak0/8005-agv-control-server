@@ -1,0 +1,148 @@
+{
+  "schemaVersion": "1",
+  "instanceId": "l2-riot",
+  "runId": "run-cb1a67e6",
+  "revision": 7,
+  "observedAt": "2026-10-16T16:10:29.9740163+08:00",
+  "body": {
+    "faultMode": "Normal",
+    "delayMs": 0,
+    "mapStationReads": 27,
+    "absentOrderReadFaults": {
+      "remaining": 0,
+      "failedUpperIds": []
+    },
+    "nonFinalListingChurn": {
+      "padding": 0,
+      "period": 0,
+      "burst": 0,
+      "reads": 51,
+      "churnedReads": 0
+    },
+    "vehicles": [
+      {
+        "deviceKey": "BROKERX-L2-0001",
+        "enable": true,
+        "status": 1,
+        "procState": "IDLE",
+        "currentMap": "MAP-L2",
+        "currentPosition": 12,
+        "battery": 80,
+        "batteryState": "NO_CHARGE",
+        "speed": 0,
+        "lockStatus": 0,
+        "orderTaskId": null,
+        "movementState": "MT_FINISHED",
+        "controlState": "CONTROL_STATE_OK",
+        "emergencyState": "OK",
+        "breakSwitchState": "MOVABLE",
+        "mode": "MODE_AUTO",
+        "locationState": "LOCATION_STATE_RUNNING",
+        "processingOrder": false,
+        "integrationLevel": "ON_LINE"
+      }
+    ],
+    "orders": [
+      {
+        "id": 488001,
+        "orderId": "ORDER-000001",
+        "upperId": "W2G-fe47b569-79bd-4d33-b810-4dcc288bbcac-PICKUP-1",
+        "orderState": 5,
+        "appointVehicleKey": "BROKERX-L2-0001",
+        "executeVehicleKey": "BROKERX-L2-0001",
+        "endStationNo": 12,
+        "missions": [
+          {
+            "type": "move",
+            "mapId": 25,
+            "destination": 12
+          }
+        ]
+      },
+      {
+        "id": 488002,
+        "orderId": "ORDER-000002",
+        "upperId": "W2G-48de1ba1-81fb-4877-827d-504850f583e8-PICKUP-1",
+        "orderState": 1,
+        "appointVehicleKey": "BROKERX-L2-0001",
+        "executeVehicleKey": "--",
+        "endStationNo": 12,
+        "missions": [
+          {
+            "type": "move",
+            "mapId": 25,
+            "destination": 12
+          }
+        ]
+      }
+    ],
+    "maps": [
+      {
+        "mapId": 25,
+        "stations": [
+          {
+            "id": 11,
+            "name": "C15-13",
+            "edgeId": 6,
+            "posX": 0,
+            "posY": 0,
+            "posYaw": 0,
+            "stationOffset": 0,
+            "type": 1
+          },
+          {
+            "id": 12,
+            "name": "N1-3_N1-7",
+            "edgeId": 2,
+            "posX": 0,
+            "posY": 20000,
+            "posYaw": 0,
+            "stationOffset": 0,
+            "type": 1
+          },
+          {
+            "id": 210,
+            "name": "关卡",
+            "edgeId": 4,
+            "posX": 20000,
+            "posY": 20000,
+            "posYaw": 0,
+            "stationOffset": 0,
+            "type": 1
+          }
+        ]
+      }
+    ],
+    "commandInvocations": [],
+    "edgeGroups": [],
+    "dynamicRouteCosts": {},
+    "removedEdges": [
+      {
+        "mapId": 25,
+        "edgeIds": []
+      }
+    ],
+    "removedStations": [
+      {
+        "mapId": 25,
+        "stationIds": []
+      }
+    ],
+    "mapNames": [
+      {
+        "mapId": 25,
+        "name": "老厂前线new_wk"
+      }
+    ],
+    "mapListServerError": false,
+    "mapListReads": 27,
+    "mapListServerErrors": 0,
+    "charging": {
+      "chargers": [],
+      "dischargeIntervalSeconds": 0,
+      "dischargePercentPerInterval": 0,
+      "vehicles": [],
+      "startOutcomeByUpperId": []
+    }
+  }
+}

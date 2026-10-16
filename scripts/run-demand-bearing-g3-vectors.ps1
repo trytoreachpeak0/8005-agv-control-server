@@ -589,6 +589,7 @@ $fieldDatabaseSha256 = $null
 $probeResult = $null
 $handshakeResult = $null
 $version = $null
+$boundProtocol = $null
 $versionAfterRestart = $null
 $baseline = $null
 $claimRecordExpectation = $null
@@ -732,6 +733,16 @@ try {
     $control = Start-ControlServer -Ordinal 1
     $restart.firstHostProcessId = $control.Id
     $version = Wait-HttpJson -Uri "http://127.0.0.1:$healthPort/version"
+    # The tag the server must report is the one the bound commit declares, not a literal here: this line said
+    # 'protocol-v3.0.0' through the v4 release and would have failed every run on it (8005-agv-program#184).
+    # Read once the server it was published from is up, and tied to the binding: a clone that declares another
+    # protocol commit stops here rather than passing.
+    $boundProtocol = (Get-Content -Raw -LiteralPath (Join-Path $controlSource 'src\ControlServer.Host\appsettings.json') |
+            ConvertFrom-Json).ProtocolCandidate
+    if ($null -eq $boundProtocol -or $boundProtocol.repositoryCommit -ne $ProtocolCommit -or
+            [string]::IsNullOrEmpty($boundProtocol.tag)) {
+        throw "The bound ControlServer $ControlServerCommit does not declare protocol $ProtocolCommit with a tag."
+    }
 
     Add-Type -TypeDefinition (Get-HarnessSource -Path $SharedRunnerSource) -Language CSharp
     $probeJson = [StagedG3TlsHarness]::RunDemandBearingResultProbeAsync(
@@ -1045,7 +1056,7 @@ $protocolCommitConjunct = if ($storeSource -eq 'FIELD_RUN') {
 }
 $protocolBindingPass = $null -ne $version -and
     $version.protocolCommit -eq $ProtocolCommit -and
-    $version.protocolTag -eq 'protocol-v3.0.0' -and
+    $version.protocolTag -eq $boundProtocol.tag -and
     $null -ne $probeResult -and
     [string]$probeResult.serverBuildCommit -eq $ControlServerCommit -and
     $null -ne $baseline -and

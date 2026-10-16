@@ -150,10 +150,20 @@ param(
     #     definitions), with cs#703, cs#704, cs#290, cs#686 and cs#672's fields.
     #   $OnboardCommit -> d4957461, the w2g/fp-v2-impl tip, with hmi#343 and hmi#347.
     #   $SimulatorCommit and $ProtocolCommit unchanged: origin/main is still fb5f7c59, protocol-v3.0.0 still 3f091cb2.
-    [string]$ControlServerCommit = 'f12bc8097b462d0c88ddd252f28b6d7e8bd856ca',
-    [string]$OnboardCommit = 'd495746117ae762cae96708edc9717f7f7d3e4f0',
+    #
+    # 2026-10-16, protocol v4 exit, step 1 (8005-agv-program#184): protocol-v4.0.0 was released (annotated tag object
+    #   daeebc5c), and both halves were turned to APPROVED_RELEASE on it (control-server PR #735, onboard-hmi PR #358).
+    #   All three G3 bindings and the harness identity below move; the harness payloads do not (v4 only adds messages
+    #   and enum values).
+    #   $ControlServerCommit -> d481250c, the fp/v2-impl tip before this ticket's own branch: PR #735's merge commit.
+    #   $OnboardCommit -> c9d24dfd, the w2g/fp-v2-impl tip: onboard-hmi PR #358's merge commit.
+    #   $SimulatorCommit unchanged: origin/main is still fb5f7c59.
+    #   $ProtocolCommit -> 3fb214e5, what the protocol-v4.0.0 tag dereferences to. The harness's tag literal moves to
+    #     protocol-v4.0.0, its protocolVersion to 5 and its Protocol constants to the v4 identity in the same change.
+    [string]$ControlServerCommit = 'd481250c08d65b9b03ba854f22f563fb33bfa5aa',
+    [string]$OnboardCommit = 'c9d24dfd6e96dc43781735cac209dc3976fe3a83',
     [string]$SimulatorCommit = 'fb5f7c593742bf98bc3957b8729a38aad5321f28',
-    [string]$ProtocolCommit = '3f091cb2eae7c58cec54a95dd9389c9180bc7b4c',
+    [string]$ProtocolCommit = '3fb214e57d861a909d872511940d26133eb32dca',
     # The ref whose tip -OnboardCommit must equal. It is a parameter rather than a literal because the
     # branch carrying a line's onboard half moves with the line: batch 3 on the v2 line lives on
     # w2g/b3-on-v2, not on w2g/fp-v2-impl. The assertion is not weakened -- the clone source must
@@ -2856,9 +2866,9 @@ public static class StagedG3TlsHarness
         {
             ["repository"] = "8005-agv-protocol",
             ["releaseVersion"] = release,
-            ["tag"] = "protocol-v3.0.0",
+            ["tag"] = "protocol-v4.0.0",
             ["commit"] = Protocol.Commit,
-            ["protocolVersion"] = 4,
+            ["protocolVersion"] = 5,
             ["profileId"] = Protocol.Profile,
             ["manifestSha256"] = manifest,
             ["schemaBundleSha256"] = Protocol.Schema,
@@ -2905,7 +2915,7 @@ public static class StagedG3TlsHarness
         long? generation,
         object payload) => JsonSerializer.Serialize(new Dictionary<string, object?>
         {
-            ["protocolVersion"] = 4,
+            ["protocolVersion"] = 5,
             ["profileId"] = Protocol.Profile,
             ["protocolReleaseVersion"] = release,
             ["protocolReleaseManifestSha256"] = manifest,
@@ -2963,12 +2973,12 @@ public static class StagedG3TlsHarness
 
     private static class Protocol
     {
-        public const string Release = "3.0.0";
+        public const string Release = "4.0.0";
         public const string Profile = "AGV_FULL_PRODUCT";
-        public const string Commit = "3f091cb2eae7c58cec54a95dd9389c9180bc7b4c";
-        public const string Manifest = "d5e1a53f1fd61f105a890dc0267e1b0a9ac5ea49f713d2cf730b0f554df9db9e";
-        public const string Schema = "e435b2b14d9ccd60c89f07df909da7626fef056a6b8a2241087557fd7dc3df43";
-        public const string Vectors = "be849f9749b004296ebd9e7bffa98faf2f8ffa90b63308ca3b210c68e7b8656e";
+        public const string Commit = "3fb214e57d861a909d872511940d26133eb32dca";
+        public const string Manifest = "beca46a7fe98003ce1f21efb88f2c1406f3040883d0b372a51505a843e306f3a";
+        public const string Schema = "dad44a5e93203eb0b7ade50b23d12f2aaffc0e2abb3c8e5dcdd3de62d931d628";
+        public const string Vectors = "24cc3a5e5023bc7ead70f609456136208a40c04c1ecd0982a7182880d8eaa0c7";
     }
 
     private sealed class Connection : IAsyncDisposable
