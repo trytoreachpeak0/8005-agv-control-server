@@ -1,0 +1,18 @@
+{
+  "schemaVersion": "1.0.0",
+  "candidateVersion": "4.0.0",
+  "status": "APPROVED",
+  "protocolCommit": "3fb214e57d861a909d872511940d26133eb32dca",
+  "contentManifestSha256": "beca46a7fe98003ce1f21efb88f2c1406f3040883d0b372a51505a843e306f3a",
+  "approvals": [
+    {
+      "ownerId": "claude-opus-5-5 (Claude Code agent)",
+      "approverKind": "AI_AGENT",
+      "authorizedBy": "Zhengyu Shao",
+      "decidedAt": "2026-10-16T01:27:46Z",
+      "decision": "APPROVED",
+      "statement": "Zhengyu Shao, the product owner, authorized the Claude Code agent executing this release (dispatched by coordinator session Coordinator11) to approve protocol-v4.0.0 on the product owner's behalf, in the Coordinator11 session on 2026-10-16 at 09:15:41 CST (2026-10-16T01:15:41Z), in the words \"你先通知原本你的会话，想让agv01，02，03跑起来吧，然后就发布协议\" (\"first notify your original session, get agv01, 02 and 03 running, then release the protocol\"), after the coordinator had explained what the release contains and costs: candidate fp/v2-candidate 3fb214e57d861a909d872511940d26133eb32dca with content manifest beca46a7fe98003ce1f21efb88f2c1406f3040883d0b372a51505a843e306f3a; G1, G2 and G3 evidence bound to protocol-v3.0.0 stops being current; the three vehicles and the control server must switch to it together. The authorization covers this release only. Before approving, this agent confirmed that the remote fp/v2-candidate head was that commit, that manifest/release.json there hashed to that value, that no protocol-v4* tag existed, that the g1 check on that commit had succeeded (8005-agv-protocol run 38740400944), and that candidate G1 passed on a clean clone. Gate evidence (G2, G3, L2) bound to this released identity does not exist yet."
+    }
+  ],
+  "statement": "Approval of protocol-v4.0.0 at commit 3fb214e57d861a909d872511940d26133eb32dca and content manifest beca46a7fe98003ce1f21efb88f2c1406f3040883d0b372a51505a843e306f3a. Kept outside Git and published as a GitHub Release Asset, so it changes neither the manifest hash nor the commit it approves."
+}
