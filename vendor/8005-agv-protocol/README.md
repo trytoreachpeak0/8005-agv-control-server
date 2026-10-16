@@ -37,7 +37,7 @@ manifest 里的 `schemaBundleSha256`**——后者由协议仓自己的打包算
 | 项 | 值 |
 | --- | --- |
 | 来源仓库 | `8005-agv-protocol` |
-| 来源提交 | `4ea9ac5dc19716d81ac832fa319100706592df50`（protocol#22 的 5.0.0 候选，`fp/v2-candidate` 上未合入，无 tag） |
+| 来源提交 | `9d7915786b736a6fa8d0c8737bfb115ac08a30b3`（protocol#22 的 5.0.0 候选，`fp/v2-candidate` 上未合入，无 tag） |
 | 取用日期 | 2026-10-16 |
 
 | 来源路径 | 内容 |
@@ -46,11 +46,11 @@ manifest 里的 `schemaBundleSha256`**——后者由协议仓自己的打包算
 | `manifest/release.json` | `status CONTENT_SNAPSHOT`、`releaseVersion 5.0.0`、`protocolVersion 6`、`profileId AGV_FULL_PRODUCT`、67 条消息、11 条 denylist |
 | `schemas/`（整棵树） | 73 个文件，`$id` 段 `agv-full-product/v6` |
 
-2026-10-16 由 `8005-agv-control-server#737` 刷新到 `4ea9ac5d`（`ApprovalStatus SUPERSEDING_CANDIDATE`，tag `protocol-v5.0.0` 尚不存在）：protocol#21 在闭合枚举
+2026-10-16 由 `8005-agv-control-server#737` 刷新到 `9d791578`（`ApprovalStatus SUPERSEDING_CANDIDATE`，tag `protocol-v5.0.0` 尚不存在）：protocol#21 在闭合枚举
 `TransportTaskType` 末尾追加 `WIRE_TO_FULL_INSPECTION`（焊线/键合机台送全检区），其余只换身份；闭合枚举追加值是破坏性改动，所以升大版本，
 两端必须与车载端 `8005-agv-onboard-hmi#360` 同包换装。错误码表、向量（`vectorsSha256 24cc3a5e…`）与 `index.json` 不变。三份文件从该提交的
 对象里用 `git archive` 导出（不经协议仓工作树，避免行尾转换），逐个与 manifest 自带的文件表 SHA-256 核对一致
-（73 个 schema 与 `index.json`，74 项全部命中）后整份拷入，manifest SHA-256 为 `90ebffdb…`，与调度转来的值一致。在它上面跑出的 G2／L2 证据一律是 `UNRELEASED_CANDIDATE`。
+（73 个 schema 与 `index.json`，74 项全部命中）后整份拷入，manifest SHA-256 为 `743b886d…`，与调度转来的值一致。在它上面跑出的 G2／L2 证据一律是 `UNRELEASED_CANDIDATE`。
 
 再早一份是 `3fb214e5`（tag `protocol-v4.0.0`，10-15 取用）：2026-10-16 用注释 tag
 `protocol-v4.0.0`（tag 对象 `daeebc5c`，解引用到 `3fb214e5`）发布**同一个提交**——manifest 与候选逐字节相同，批准只以

@@ -7,7 +7,7 @@ namespace ControlServer.Domain;
 /// <remarks>
 /// <para>
 /// <b>This names the unreleased <c>5.0.0</c> candidate.</b> Every value below is read off
-/// <c>8005-agv-protocol</c> commit <c>4ea9ac5dc19716d81ac832fa319100706592df50</c> (protocol#22 for
+/// <c>8005-agv-protocol</c> commit <c>9d7915786b736a6fa8d0c8737bfb115ac08a30b3</c> (protocol#22 for
 /// protocol#21, branch <c>fp/v2-candidate</c>), which appends <c>WIRE_TO_FULL_INSPECTION</c> to the closed
 /// enum <c>TransportTaskType</c> and otherwise changes nothing but the identity: release <c>5.0.0</c>,
 /// protocol version 6, schema <c>$id</c> segment <c>agv-full-product/v6</c>, base release
@@ -55,8 +55,8 @@ public static class ProtocolCandidateIdentity
     public const string ProfileId = "AGV_FULL_PRODUCT";
     public const string ReleaseVersion = "5.0.0";
     public const string Tag = "protocol-v5.0.0";
-    public const string RepositoryCommit = "4ea9ac5dc19716d81ac832fa319100706592df50";
-    public const string ManifestSha256 = "90ebffdbb273f60bbbf9a3bddfe5edcbee5eb32d8f05370f9c2e6d77d8386598";
+    public const string RepositoryCommit = "9d7915786b736a6fa8d0c8737bfb115ac08a30b3";
+    public const string ManifestSha256 = "743b886d99194038b893e98aed2a1dd01409cd7f80d39c734e02d860e0e5827c";
     public const string SchemaBundleSha256 = "d51abe44036f32b5b2c28fd1bea6ec7a89cf3b4dea0f0b1d6c9daaf52f350933";
     public const string VectorsSha256 = "24cc3a5e5023bc7ead70f609456136208a40c04c1ecd0982a7182880d8eaa0c7";
     public const string ApprovalStatus = "SUPERSEDING_CANDIDATE";
