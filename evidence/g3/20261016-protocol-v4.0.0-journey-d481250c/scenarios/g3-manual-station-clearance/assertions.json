@@ -1,0 +1,59 @@
+{
+  "schemaVersion": 1,
+  "scenario": "g3-manual-station-clearance",
+  "runId": "20261016T082500410Z",
+  "outcome": "PASS",
+  "failureReason": "",
+  "identity": {
+    "agvId": "AGV-L2-001",
+    "vehicleKey": "BROKERX-L2-0001",
+    "rig": "RealOnboard",
+    "controlServerCommit": "d481250c08d65b9b03ba854f22f563fb33bfa5aa",
+    "onboardHmiCommit": "c9d24dfd6e96dc43781735cac209dc3976fe3a83",
+    "slotsSimulatorCommit": "fb5f7c593742bf98bc3957b8729a38aad5321f28",
+    "batchId": "unspecified",
+    "protocolReleaseIdentity": {
+      "repository": "8005-agv-protocol",
+      "releaseVersion": "4.0.0",
+      "tag": "protocol-v4.0.0",
+      "commit": "3fb214e57d861a909d872511940d26133eb32dca",
+      "protocolVersion": 5,
+      "profileId": "AGV_FULL_PRODUCT",
+      "manifestSha256": "beca46a7fe98003ce1f21efb88f2c1406f3040883d0b372a51505a843e306f3a",
+      "schemaBundleSha256": "dad44a5e93203eb0b7ade50b23d12f2aaffc0e2abb3c8e5dcdd3de62d931d628",
+      "vectorsSha256": "24cc3a5e5023bc7ead70f609456136208a40c04c1ecd0982a7182880d8eaa0c7",
+      "approvalStatus": "APPROVED_RELEASE"
+    },
+    "stageRoot": "C:\\Users\\szy\\AppData\\Local\\Temp\\l2-20261016T082500410Z"
+  },
+  "assertions": [
+    {
+      "id": "G3-13-11",
+      "description": "到桩开始充电失败（407802、HANG）：一条 UNABLE_TO_CHARGE_CONFIRMED 的暂停；清桩中的计划（恰好一条 CHARGER 腿）与业务状态（UNABLE_TO_CHARGE、CLEARING_MAINTENANCE）都被真车载端确认",
+      "outcome": "PASS",
+      "expected": "UNABLE_TO_CHARGE_CONFIRMED recovered=0 / plan [CHARGER@充电点1] acked / state acked",
+      "actual": "UNABLE_TO_CHARGE_CONFIRMED recovered=0 / plan True / state True"
+    },
+    {
+      "id": "G3-13-12",
+      "description": "车载端：界面 ChargingStatus 报 UNABLE_TO_CHARGE，「确认清桩」入口出现（从计划里那条 CHARGER 腿取到了原充电桩）",
+      "outcome": "PASS",
+      "expected": "UNABLE_TO_CHARGE | offered=True",
+      "actual": "UNABLE_TO_CHARGE | offered=True"
+    },
+    {
+      "id": "G3-13-13",
+      "description": "车载端发 ManualStationClearanceConfirmationRequested（操作员 L2-OPERATOR、publicStationFunction 为空、STATION_EMPTY、站点是那条 CHARGER 腿的站点），服务端回 Result：CONFIRMED、problem 为空、stationReleased=true；操作员被告知：操作记录里出现「服务端已确认清桩…站点已释放」、车载端日志记下本次确认 Confirmed／stationReleased=True、「确认清桩」入口收起（不读结果那一行：清桩一结束它就清空，control-server#412）",
+      "outcome": "PASS",
+      "expected": "L2-OPERATOR / null / STATION_EMPTY / 充电点1 -> CONFIRMED / null / true | record shown | outcome=Confirmed stationReleased=True | entry gone",
+      "actual": "L2-OPERATOR /  / STATION_EMPTY / 充电点1 -> CONFIRMED /  / True | record shown | outcome=Confirmed stationReleased=True | entry gone"
+    },
+    {
+      "id": "G3-13-14",
+      "description": "211 的独占以 CHARGER_RELEASED_ON_MANUAL_CLEARANCE 释放，暂停没有恢复行，旅程以 CHARGING_UNABLE_TO_CHARGE_CLEARED 收尾；RIoT 上恰好一张充电单（RELEASE_STATION_ONLY_ON_CONFIRMED_CLEARANCE）",
+      "outcome": "PASS",
+      "expected": "(none) | CHARGER_RELEASED_ON_MANUAL_CLEARANCE | UNABLE_TO_CHARGE_CONFIRMED recovered=0 | Completed CHARGING_UNABLE_TO_CHARGE_CLEARED | 1 orders",
+      "actual": "(none) | CHARGER_RELEASED_ON_MANUAL_CLEARANCE | UNABLE_TO_CHARGE_CONFIRMED recovered=0 | Completed CHARGING_UNABLE_TO_CHARGE_CLEARED | 1 orders"
+    }
+  ]
+}

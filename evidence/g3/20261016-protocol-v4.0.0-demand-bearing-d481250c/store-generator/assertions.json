@@ -1,0 +1,50 @@
+{
+  "schemaVersion": 1,
+  "scenario": "demand-bearing-store-at-unload",
+  "runId": "20261016T072012300Z",
+  "outcome": "PASS",
+  "failureReason": "",
+  "identity": {
+    "stageRoot": "C:\\Users\\szy\\AppData\\Local\\Temp\\l2-20261016T072012300Z",
+    "protocolReleaseIdentity": {
+      "repository": "8005-agv-protocol",
+      "releaseVersion": "4.0.0",
+      "tag": "protocol-v4.0.0",
+      "commit": "3fb214e57d861a909d872511940d26133eb32dca",
+      "protocolVersion": 5,
+      "profileId": "AGV_FULL_PRODUCT",
+      "manifestSha256": "beca46a7fe98003ce1f21efb88f2c1406f3040883d0b372a51505a843e306f3a",
+      "schemaBundleSha256": "dad44a5e93203eb0b7ade50b23d12f2aaffc0e2abb3c8e5dcdd3de62d931d628",
+      "vectorsSha256": "24cc3a5e5023bc7ead70f609456136208a40c04c1ecd0982a7182880d8eaa0c7",
+      "approvalStatus": "APPROVED_RELEASE"
+    },
+    "controlServerCommit": "d481250c08d65b9b03ba854f22f563fb33bfa5aa",
+    "rig": "SyntheticOnboard",
+    "agvId": "AGV-L2-001",
+    "vehicleKey": "BROKERX-L2-0001",
+    "batchId": "unspecified"
+  },
+  "assertions": [
+    {
+      "id": "L2-DBS-01",
+      "description": "导出的库里恰好一条 Prepared 的卸货操作、至少一条 Committed 的装货操作",
+      "outcome": "PASS",
+      "expected": "Prepared Unload ×1 / Committed Load ≥1",
+      "actual": "Load:Committed, Unload:Prepared"
+    },
+    {
+      "id": "L2-DBS-02",
+      "description": "卸货结果没回（结果只有装货那一条），一辆车一行会话恢复",
+      "outcome": "PASS",
+      "expected": "1 result / 1 session row (AGV-L2-001)",
+      "actual": "1 results / 1 session rows (AGV-L2-001)"
+    },
+    {
+      "id": "L2-DBS-03",
+      "description": "需求已受理未收尾，三张收尾表都是空的",
+      "outcome": "PASS",
+      "expected": "Accepted / UnloadBatches=0,StopClosures=0,TransportDemandCompletions=0",
+      "actual": "Accepted / UnloadBatches=0,StopClosures=0,TransportDemandCompletions=0"
+    }
+  ]
+}
