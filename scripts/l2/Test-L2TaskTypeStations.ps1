@@ -99,7 +99,7 @@ try {
         $path = New-L2TaskTypeStationPreset -Setting $setting -MapId 25 -GateStationId '关卡' -GateStationRiotId 210 `
             -Path (Join-Path $directory 'own.json')
         $preset = (Get-Content -LiteralPath $path -Raw -Encoding utf8 | ConvertFrom-Json).TaskTypeStations
-        if (@($preset.rules).Count -ne 6 -or @($preset.bindings).Count -ne 2 -or @($preset.requiredTaskTypes).Count -ne 0) {
+        if (@($preset.rules).Count -ne 7 -or @($preset.bindings).Count -ne 2 -or @($preset.requiredTaskTypes).Count -ne 0) {
             throw ($preset | ConvertTo-Json -Compress -Depth 4)
         }
     }

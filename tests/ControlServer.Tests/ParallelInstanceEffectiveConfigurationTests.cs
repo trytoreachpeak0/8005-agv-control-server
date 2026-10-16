@@ -18,7 +18,7 @@ namespace ControlServer.Tests;
 /// </summary>
 /// <remarks>
 /// .NET configuration merges an array by index: an overlay of <c>["STAGING_TO_WIRE"]</c> over the
-/// package's six work types replaces index 0 and leaves the other five -- WIRE_TO_GATE among them --
+/// package's seven work types replaces index 0 and leaves the other six -- WIRE_TO_GATE among them --
 /// in force. The production MesIngest mode exists to keep WIRE_TO_GATE out, so the only test that
 /// counts is the one that binds through the real files and the real registration.
 /// </remarks>

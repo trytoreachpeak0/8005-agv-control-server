@@ -1,8 +1,8 @@
 # 批次10-02（control-server#546）：一车混装 WIRE_TO_GATE、WIRE_TO_OPTICAL、WIRE_TO_NITROGEN，停站时途中追加，依次到三个终点卸货
 # （用户 2026-10-10 要求，经 Coordinator 10 转达）。
 #
-# 单车：编排器不写车队名册，服务端按 JourneyRuntime.allowedWorkTypes 推出这辆车允许的类型，出厂是六类全开
-# （VehicleDispatchPolicyAccess.cs:63-75、appsettings.json:67）。六类是三类的超集，不影响「三类混装、多终点卸货」这件事。
+# 单车：编排器不写车队名册，服务端按 JourneyRuntime.allowedWorkTypes 推出这辆车允许的类型，出厂是七类全开
+# （VehicleDispatchPolicyAccess.cs:63-75、appsettings.json:67）。七类是三类的超集，不影响「三类混装、多终点卸货」这件事。
 #
 # 站表整张替换，五个站都放在假 RIoT 路网的节点上：追加的延迟门按路网引擎给的计划路径代价判（EnRouteAppendCriterion.cs:71），
 # 不在路网上的站算不出代价，追加以 EN_ROUTE_APPEND_DELAY_UNCOMPUTABLE 被拒。假 RIoT 的节点表（FakeRiotSeed.StationNodes）只给

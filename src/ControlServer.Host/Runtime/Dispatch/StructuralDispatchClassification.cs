@@ -175,7 +175,8 @@ public static class StructuralDispatchClassification
             "unknown outcome). A configured outcome, not a fault; releasing the hold clears it."),
         Backlog(DispatchReasonCodes.TaskTypeNotYetExecutable, WorkTypeScope,
             "control-server#160: bound, but this build cannot execute the task type. Unreachable since batch 10 " +
-            "(control-server#545) made all six executable; kept for a build that narrows the set. A configured " +
+            "(control-server#545) made all six executable, and control-server#737 the seventh; kept for a build that narrows " +
+            "the set. A configured " +
             "outcome, not a fault, so never a structural alarm."),
 
         // ---- VehicleTaskTypeAdmissionCriterion (25) -----------------------------------------------------

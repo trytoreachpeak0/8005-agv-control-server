@@ -2,7 +2,7 @@
 #
 # Stations 整张替换假 RIoT 的站点表：关卡 210、机台站 12（N1-3_N1-7）、11 号站原样留着，多一个本类的固定站 401「派工待送卸货」，
 # 站名不是 AREA 格式。四条同向场景各用一个站号（401～404），REQ-0334：一站不被两类绑定。
-# TaskTypeStations 整份替换编排器默认的预置配置：规则沿用默认六类，本图要求 WIRE_TO_GATE 与 DIE_TO_WIRE_STAGING，两者都绑定。
+# TaskTypeStations 整份替换编排器默认的预置配置：规则沿用默认七类，本图要求 WIRE_TO_GATE 与 DIE_TO_WIRE_STAGING，两者都绑定。
 # AreaAssignments：同挂机台站 12 的两个 AREA 分到两侧，N1-3 指 REAR、N1-7 指 FRONT——分组只能来自需求的 AREA。
 @{
     Stations         = @{

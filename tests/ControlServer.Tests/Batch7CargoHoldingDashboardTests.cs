@@ -745,7 +745,7 @@ public sealed class Batch7CargoHoldingDashboardTests
     /// <summary>
     /// 优先级带与派车排序是同一个判断（调度 2026-09-22：不维护第二份）。积压行没有任务类型列，看板从业务键取任务类型，
     /// 取法是业务键拼法的逆（<see cref="TransportDemandKeys"/>，<c>HttpMesIngestCatalog</c> 用同一处拼）；带由
-    /// <see cref="TaskStarvation.IsTopBandWorkType"/> 判，派车的 <see cref="TaskStarvation.InTopBand"/> 也是它。六类任务逐个对一遍，
+    /// <see cref="TaskStarvation.IsTopBandWorkType"/> 判，派车的 <see cref="TaskStarvation.InTopBand"/> 也是它。七类任务逐个对一遍，
     /// 批次号里带竖线也拆得对。
     /// </summary>
     [Theory]
