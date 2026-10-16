@@ -182,17 +182,18 @@ control-server#564 与用户，不随区名一起定。等待时长取用户 202
 
 **用户的两个决定。**派车区（2026-10-12，经调度 C11，program#171 10-12 评论）：「N开头的都是WIre Bonding的，T开头的都是Die
 attaching里的」，弃用 `WIRE`，代号 `WIRE_BONDING`、`DIE_ATTACH`。三车专车专用（2026-10-10，program#171「已定」）：每类任务只有一辆车，
-充电或故障时该类排队、不改派，用户确认「能接受」。
+充电或故障时该类排队、不改派，用户确认「能接受」。2026-10-16 用户定（program#195 决定 1、9）：第七类 `WIRE_TO_FULL_INSPECTION`
+（焊线/键合送全检）也归 `agv01`，`agv01` 由三类改为四类，一趟可以混装；另两车不变（control-server#737）。
 
 | 车 | `riotId` | 任务类型 | 派车区 |
 | --- | --- | --- | --- |
-| `agv01`（老厂前线新多仓位1） | 58 | `WIRE_TO_GATE`、`WIRE_TO_OPTICAL`、`WIRE_TO_NITROGEN` | `WIRE_BONDING` |
+| `agv01`（老厂前线新多仓位1） | 58 | `WIRE_TO_GATE`、`WIRE_TO_OPTICAL`、`WIRE_TO_NITROGEN`、`WIRE_TO_FULL_INSPECTION` | `WIRE_BONDING` |
 | `agv02`（老厂前线新多仓位2） | 59 | `STAGING_TO_WIRE` | `WIRE_BONDING` |
 | `agv03`（老厂前线新多仓位3） | 60 | `DIE_TO_OVEN`、`DIE_TO_WIRE_STAGING` | `DIE_ATTACH` |
 
 `allowedDispatchZones` 是 `["WIRE_BONDING", "DIE_ATTACH"]`，`dispatchZone` 是 `WIRE_BONDING`（Host 要求它在允许列表里；有车队表时
-派车按每车的 `zones` 判）。`allowedWorkTypes` 是全部六类。除车队表、这三个键和持货等待之外，其余与 `production-mes` 逐字相同：MES 来源、端口、
-目录、服务名、运行时与建单闸门都关（`runtime-on` 那份只开运行时与路网引擎）、`REQ-0302` 两个批准值、准入版本 6 与部署标签。
+派车按每车的 `zones` 判）。`allowedWorkTypes` 是全部七类。除车队表、这三个键和持货等待之外，其余与 `production-mes` 逐字相同：MES 来源、端口、
+目录、服务名、运行时与建单闸门都关（`runtime-on` 那份只开运行时与路网引擎）、`REQ-0302` 两个批准值、准入版本 7 与部署标签。
 
 **今天装不上，这是有意的。**定义校验拒收两份，理由都恰好两条：车队表第 0 行是 agv01；生产 MesIngest 来源下 `allowedWorkTypes` 含
 `WIRE_TO_GATE`。自测把拒收理由钉成「恰好这两条」——少一条、多一条都红；切换开关合入时由那张票把这条用例改成「开关关时拒、开时收」，
@@ -223,7 +224,7 @@ attaching里的」，弃用 `WIRE`，代号 `WIRE_BONDING`、`DIE_ATTACH`。三�
 
 - #564 的切换开关已合入，放开定义校验两道和上面那道回读（否则 19 拒收本定义，或装到一半被回读拒）；
 - **MVP 已停派新单、在途为零**（#564 第 4 项、program#170 第 1 节）。这条必须在第 4 步之前成立：从第 4 步起本实例读生产需求目录、
-  接全部六类（含 MVP 做的 `WIRE_TO_GATE`），MesIngest 没有认领语义，两个实例会从同一份目录受理同一条需求；
+  接全部七类（含 MVP 做的 `WIRE_TO_GATE`），MesIngest 没有认领语义，两个实例会从同一份目录受理同一条需求；
 - 三车车载端已按 #565 改连新实例并清空发件箱与日志簿。
 
 凡动 `agv01`、MVP、生产 MesIngest 的步骤，照工作区「Ask first」第 1、2 类逐次问用户。
@@ -280,6 +281,10 @@ attaching里的」，弃用 `WIRE`，代号 `WIRE_BONDING`、`DIE_ATTACH`。三�
 | `DIE_TO_WIRE_STAGING` | 装片氮气柜 | 220 | `MAP-26-DIE_TO_WIRE_STAGING-SITE-20261010` |
 | `WIRE_TO_NITROGEN` | 焊线氮气柜 | 221 | `MAP-26-WIRE_TO_NITROGEN-SITE-20261010` |
 
+第七类 `WIRE_TO_FULL_INSPECTION` 不在表里：全检站还没加到 26 号图上（program#195 决定 4）。预置与本候选里它只有规则（`DESTINATION`），
+不进 `requiredTaskTypes`、也没有绑定，所以派车只把它判为 `TASK_TYPE_BINDING_MISSING`，其余六类照常；若把它放进需求集又不绑，
+整个实例拒绝启动（control-server#737）。等用户给出站号与站名、现场核对之后，由 control-server#738 把它加进候选与预置。
+
 站号与站名是用户 2026-10-10 回填的（control-server#547），2026-10-11 只读读 RIoT 核对过：六个站都在、站名逐字一致、在图上各自唯一、
 都不是 AREA 格式；每站的坐标与所在边见 `evidence/field/20261011-B10-05-map26-task-type-stations/`。六条核对都是用户本人 2026-10-10
 在现场做的。220 与 221 是**同一个氮气柜的两个停靠位**，各是一个站、各绑一类；站点独占按站号算（`StationExclusivities` 的主键是
@@ -332,7 +337,7 @@ attaching里的」，弃用 `WIRE`，代号 `WIRE_BONDING`、`DIE_ATTACH`。三�
    **再确认派车闸门**：读 `C:\Program Files\8005 AGV\ControlServer.V2\appsettings.Production.json` 的 `RiotCreateDispatch.enabled`。
    是 `false`（关着），或实例是生产来源模式（`allowedWorkTypes` 只有 `STAGING_TO_WIRE`，见上文「需求来源」），才往下做。闸门开着而
    `JourneyRuntime.allowedWorkTypes` 含 `DIE_TO_OVEN`、`WIRE_TO_OPTICAL`、`DIE_TO_WIRE_STAGING`、`WIRE_TO_NITROGEN` 之一——出厂
-   `instance-factory01-v2.json` 与两车示例都含全部六类——**激活就等于放车去新站，先停下问用户**，或先按「关、开派车闸门」把闸门关上。
+   `instance-factory01-v2.json` 与两车示例都含全部七类——**激活就等于放车去新站，先停下问用户**，或先按「关、开派车闸门」把闸门关上。
 
 3. **dry-run**（只校验、出预览，除一条审计外什么都不写）：
 
@@ -539,6 +544,8 @@ TCP 会话仍然是全车共用一个凭据、车靠握手自报身份，本票�
 `STAGING_TO_WIRE` 也一样停接单（缺陷记录 `docs/defects/20260915-admission-policy-drift-halts-runtime.md`）。批次 10 让
 `DIE_TO_WIRE_STAGING`、`DIE_TO_OVEN`、`WIRE_TO_OPTICAL`、`WIRE_TO_NITROGEN` 可执行（`ExecutableTaskTypes`），种子由两类变成六类，
 所以版本由 2 升到 3。这与 `allowedWorkTypes` 无关：生产来源模式只允许 `STAGING_TO_WIRE`，种子照样是六类。
+control-server#737 让第七类 `WIRE_TO_FULL_INSPECTION` 可执行，种子由六类变成七类，实例定义的版本由 6 升到 7；包里 `appsettings.json`
+的默认值只跟可执行集合走，由 3 直接升到 7（4～6 是这个实例的库改站名、换库时升的，见下一小节的历史表）。
 
 `AdmissionPolicyVersionGuardTests` 守着这件事：版本表逐个写出每一代的可执行集合，版本必须严格递增，本构建的集合必须等于最后
 一行；协议里每个任务类型都必须明确表态可执行或不可执行；`appsettings.json` 与 `scripts/parallel/instance-*.json` 的每一份定义

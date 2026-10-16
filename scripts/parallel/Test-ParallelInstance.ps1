@@ -3477,7 +3477,7 @@ Invoke-SourceCase 'source: production with WIRE_TO_GATE beside STAGING_TO_WIRE i
     $d['journeyRuntime']['allowedWorkTypes'] = @('STAGING_TO_WIRE', 'WIRE_TO_GATE')
     Test-ExactFailure $d @('WIRE_TO_GATE, which the MVP takes from the same catalog')
 }
-Invoke-SourceCase 'source: production with the shipped six work types is refused, naming the MVP' {
+Invoke-SourceCase 'source: production with the shipped seven work types is refused, naming the MVP' {
     $d = Copy-Definition $productionSource
     $d['journeyRuntime']['allowedWorkTypes'] = @($baseline['journeyRuntime']['allowedWorkTypes'])
     Test-ExactFailure $d @('WIRE_TO_GATE, which the MVP takes from the same catalog')
@@ -3683,8 +3683,8 @@ Invoke-SourceCase 'shipped production-mes definition: everything except the MES 
     $b = ConvertTo-Json -InputObject (Copy-Definition $p) -Depth 12 -Compress
     @{ Ok = [string]::Equals($a, $b, [StringComparison]::Ordinal); Detail = "fake-derived: $a`n        shipped: $b" }
 }
-Invoke-SourceCase 'shipped fake definition: unchanged default -- no source key, all six work types' {
-    @{ Ok = (-not $shipped['mesIngest'].Contains('source') -and @($shipped['journeyRuntime']['allowedWorkTypes']).Count -eq 6)
+Invoke-SourceCase 'shipped fake definition: unchanged default -- no source key, all seven work types' {
+    @{ Ok = (-not $shipped['mesIngest'].Contains('source') -and @($shipped['journeyRuntime']['allowedWorkTypes']).Count -eq 7)
         Detail = "mesIngest keys: $($shipped['mesIngest'].Keys -join ',')" }
 }
 
@@ -3738,9 +3738,10 @@ Invoke-SourceCase 'effective: a line from before the start is not evidence of th
     $e = Find-ParallelEffectiveConfiguration -Lines @((New-EffectiveLine '2026-10-10T00:59:59Z' @('STAGING_TO_WIRE')), $noise) -Since $effectiveSince
     @{ Ok = $null -eq $e; Detail = "got: $(ConvertTo-Json $e -Compress)" }
 }
-Invoke-SourceCase 'effective: production with the M1 binding (STAGING_TO_WIRE plus five more) is refused, naming WIRE_TO_GATE' {
+Invoke-SourceCase 'effective: production with the M1 binding (STAGING_TO_WIRE plus six more) is refused, naming WIRE_TO_GATE' {
     $e = Find-ParallelEffectiveConfiguration -Lines @(New-EffectiveLine '2026-10-10T01:00:06Z' @(
-            'STAGING_TO_WIRE', 'DIE_TO_OVEN', 'WIRE_TO_GATE', 'WIRE_TO_OPTICAL', 'STAGING_TO_WIRE', 'WIRE_TO_NITROGEN')) -Since $effectiveSince
+            'STAGING_TO_WIRE', 'DIE_TO_OVEN', 'WIRE_TO_GATE', 'WIRE_TO_OPTICAL', 'STAGING_TO_WIRE', 'WIRE_TO_NITROGEN',
+            'WIRE_TO_FULL_INSPECTION')) -Since $effectiveSince
     $r = Get-ParallelEffectiveConfigurationRefusal -Definition $productionSource -Effective $e
     @{ Ok = ($r -is [string] -and $r.Contains('EFFECTIVE_CONFIGURATION_MISMATCH') -and $r.Contains('WIRE_TO_GATE')); Detail = "got: $r" }
 }
@@ -3760,7 +3761,7 @@ Invoke-SourceCase 'effective: no line at all is a refusal, not a pass' {
     $r = Get-ParallelEffectiveConfigurationRefusal -Definition $productionSource -Effective $null
     @{ Ok = ($r -is [string] -and $r.Contains('EFFECTIVE_CONFIGURATION_UNREAD')); Detail = "got: $r" }
 }
-Invoke-SourceCase 'effective: fake bound as defined (six types, the double) is accepted' {
+Invoke-SourceCase 'effective: fake bound as defined (seven types, the double) is accepted' {
     $e = Find-ParallelEffectiveConfiguration -Lines @(New-EffectiveLine '2026-10-10T01:00:06Z' @($baseline['journeyRuntime']['allowedWorkTypes']) `
             -Zones @($baseline['journeyRuntime']['allowedDispatchZones']) -BaseUrl $baseline['mesIngest']['baseUrl']) -Since $effectiveSince
     $r = Get-ParallelEffectiveConfigurationRefusal -Definition $baseline -Effective $e
@@ -3832,7 +3833,7 @@ Invoke-SourceCase 'S1: the installer binds the arguments 19 passes in production
     }
 }
 
-$m1Lines = @(New-EffectiveLine '2026-10-10T01:00:06Z' @('STAGING_TO_WIRE', 'DIE_TO_OVEN', 'WIRE_TO_GATE', 'WIRE_TO_OPTICAL', 'STAGING_TO_WIRE', 'WIRE_TO_NITROGEN'))
+$m1Lines = @(New-EffectiveLine '2026-10-10T01:00:06Z' @('STAGING_TO_WIRE', 'DIE_TO_OVEN', 'WIRE_TO_GATE', 'WIRE_TO_OPTICAL', 'STAGING_TO_WIRE', 'WIRE_TO_NITROGEN', 'WIRE_TO_FULL_INSPECTION'))
 Invoke-SourceCase 'S2: production, read-back mismatch -> stop the service, then refuse' {
     $a = Get-ParallelEffectiveConfigurationAction -Definition $productionSource -Effective (Find-ParallelEffectiveConfiguration -Lines $m1Lines -Since $effectiveSince)
     @{ Ok = ($a.Action -ceq 'StopServiceAndRefuse' -and $a.Message.Contains('EFFECTIVE_CONFIGURATION_MISMATCH')); Detail = "got: $(ConvertTo-Json $a -Compress)" }
@@ -5134,7 +5135,7 @@ $productionStageDefinitions = [ordered]@{
 $productionDispatchGeneration = 100
 $productionApprovalRecord = 'Zhengyu Shao 于 2026-10-14 在 Claude 对话中批准 v2 生产切换：试跑 S1～S4 已通过，换新库、三车 IO 切回真模块、逐仓核对后，按 S1→S4 用真货进入生产，v2 读生产 MesIngest 六类需求、MVP 保持停用；每次动车与碰 agv01 仍逐次授权。（用户原话，8005-workspace-v2 ds-tasks/board.md 10-14 条目；control-server#564 第 18a 步）'
 $cutoverHeldRefusals = @(
-    'journeyRuntime.allowedWorkTypes ["DIE_TO_WIRE_STAGING","DIE_TO_OVEN","WIRE_TO_GATE","WIRE_TO_OPTICAL","STAGING_TO_WIRE","WIRE_TO_NITROGEN"] includes WIRE_TO_GATE, which the MVP takes from the same catalog'
+    'journeyRuntime.allowedWorkTypes ["DIE_TO_WIRE_STAGING","DIE_TO_OVEN","WIRE_TO_GATE","WIRE_TO_OPTICAL","STAGING_TO_WIRE","WIRE_TO_NITROGEN","WIRE_TO_FULL_INSPECTION"] includes WIRE_TO_GATE, which the MVP takes from the same catalog'
     'journeyRuntime.fleet[0] names agv01 (agvId, vehicleKey, deviceKey, riotId), the vehicle the MVP service is driving in production.')
 function Set-CatalogSection($Definition, $Section, [switch] $Remove) {
     $d = Copy-Definition $Definition
@@ -5504,9 +5505,9 @@ function Get-BindingReadBack($Definition, $Bound) {
 }
 function New-BoundBinding([hashtable] $Change = @{}) {
     # The baseline's own values, written here as literals rather than read from it: the baseline is the shipped definition
-    # (6, 00:05:00, 00:05:00) with the label Set-Map26TestValue gives it, and a case below pins that.
+    # (7, 00:05:00, 00:05:00) with the label Set-Map26TestValue gives it, and a case below pins that.
     $bound = [ordered]@{
-        AdmissionPolicyVersion = 6
+        AdmissionPolicyVersion = 7
         AdmissionPolicyDeploymentId = 'MAP-26-WIRE_TO_GATE-SELFTEST'
         CargoHoldingTimeout = '00:05:00'
         StationDepartureWaitTimeout = '00:05:00'
@@ -5518,10 +5519,10 @@ function New-BoundBinding([hashtable] $Change = @{}) {
     foreach ($key in @($Change.Keys)) { if ($null -eq $Change[$key]) { $bound.Remove($key) } else { $bound[$key] = $Change[$key] } }
     return $bound
 }
-Invoke-SourceCase 'binding read-back: the baseline says 6, MAP-26-WIRE_TO_GATE-SELFTEST, 00:05:00, 00:05:00 (what the cases below bind)' {
+Invoke-SourceCase 'binding read-back: the baseline says 7, MAP-26-WIRE_TO_GATE-SELFTEST, 00:05:00, 00:05:00 (what the cases below bind)' {
     $j = $baseline['journeyRuntime']
     $got = "$($j['admissionPolicyVersion'])|$($j['admissionPolicyDeploymentId'])|$($j['cargoHoldingTimeout'])|$($j['stationDepartureWaitTimeout'])"
-    @{ Ok = ($got -ceq '6|MAP-26-WIRE_TO_GATE-SELFTEST|00:05:00|00:05:00'); Detail = "got: $got" }
+    @{ Ok = ($got -ceq '7|MAP-26-WIRE_TO_GATE-SELFTEST|00:05:00|00:05:00'); Detail = "got: $got" }
 }
 $bindingWithoutDeparture = Copy-Definition $baseline
 $bindingWithoutDeparture['journeyRuntime'].Remove('stationDepartureWaitTimeout')
@@ -5531,7 +5532,7 @@ $bindingStagingOn['journeyRuntime']['stagingDepartureRules'] = [ordered]@{ enabl
 # One row per row of the module's $script:JourneyBindingFields (the case below holds the two lists equal): a value the Host
 # might bind instead, and the problem text naming the field. A field added to the table is added here too.
 $bindingFieldCases = @(
-    @{ Logged = 'AdmissionPolicyVersion'; Wrong = 5; Says = "admissionPolicyVersion bound '5', the definition says '6'" }
+    @{ Logged = 'AdmissionPolicyVersion'; Wrong = 5; Says = "admissionPolicyVersion bound '5', the definition says '7'" }
     @{ Logged = 'AdmissionPolicyDeploymentId'; Wrong = 'MAP-26-WIRE_TO_GATE-20261007'; Says = "admissionPolicyDeploymentId bound 'MAP-26-WIRE_TO_GATE-20261007', the definition says 'MAP-26-WIRE_TO_GATE-SELFTEST'" }
     @{ Logged = 'CargoHoldingTimeout'; Wrong = '00:30:00'; Says = "cargoHoldingTimeout bound '00:30:00', the definition says '00:05:00'" }
     @{ Logged = 'StationDepartureWaitTimeout'; Wrong = '00:30:00'; Says = "stationDepartureWaitTimeout bound '00:30:00', the definition says '00:05:00'" }
@@ -5563,8 +5564,8 @@ foreach ($fieldCase in $bindingFieldCases) {
 }
 foreach ($case in @(
         @{ Name = 'bound as defined -- pass'; Definition = $baseline; Bound = (New-BoundBinding); Action = 'Pass'; Says = $null }
-        @{ Name = 'version 7 bound (above the definition) -- stop and refuse'; Definition = $baseline; Bound = (New-BoundBinding @{ AdmissionPolicyVersion = 7 }); Action = 'StopServiceAndRefuse'; Says = "admissionPolicyVersion bound '7', the definition says '6'" }
-        @{ Name = 'version logged as the string "6" -- stop and refuse, not cast'; Definition = $baseline; Bound = (New-BoundBinding @{ AdmissionPolicyVersion = '6' }); Action = 'StopServiceAndRefuse'; Says = "admissionPolicyVersion bound '6', the definition says '6'" }
+        @{ Name = 'version 8 bound (above the definition) -- stop and refuse'; Definition = $baseline; Bound = (New-BoundBinding @{ AdmissionPolicyVersion = 8 }); Action = 'StopServiceAndRefuse'; Says = "admissionPolicyVersion bound '8', the definition says '7'" }
+        @{ Name = 'version logged as the string "7" -- stop and refuse, not cast'; Definition = $baseline; Bound = (New-BoundBinding @{ AdmissionPolicyVersion = '7' }); Action = 'StopServiceAndRefuse'; Says = "admissionPolicyVersion bound '7', the definition says '7'" }
         @{ Name = 'the label differing in case alone -- stop and refuse (ordinal)'; Definition = $baseline; Bound = (New-BoundBinding @{ AdmissionPolicyDeploymentId = 'map-26-wire_to_gate-selftest' }); Action = 'StopServiceAndRefuse'; Says = 'admissionPolicyDeploymentId bound' }
         @{ Name = 'a wait logged as 300 seconds rather than hh:mm:ss -- stop and refuse'; Definition = $baseline; Bound = (New-BoundBinding @{ CargoHoldingTimeout = 300 }); Action = 'StopServiceAndRefuse'; Says = "cargoHoldingTimeout bound '300'" }
         @{ Name = 'a key the definition leaves out is not compared (the package default is what the Host binds)'; Definition = $bindingWithoutDeparture; Bound = (New-BoundBinding @{ StationDepartureWaitTimeout = '00:30:00' }); Action = 'Pass'; Says = $null }
@@ -5581,7 +5582,7 @@ foreach ($case in @(
 }
 Invoke-SourceCase 'binding result line: the four values as bound, in a fixed order, for 19' {
     $line = Format-ParallelJourneyBindingLine -Effective (Get-BindingReadBack $baseline (New-BoundBinding)).Effective
-    @{ Ok = ($line -ceq 'EFFECTIVE_JOURNEY_BINDING=admissionPolicyVersion=6 admissionPolicyDeploymentId=MAP-26-WIRE_TO_GATE-SELFTEST cargoHoldingTimeout=00:05:00 stationDepartureWaitTimeout=00:05:00 slotConfigurationReadinessGate=Off stagingDepartureRulesEnabled=False'); Detail = "got: $line" }
+    @{ Ok = ($line -ceq 'EFFECTIVE_JOURNEY_BINDING=admissionPolicyVersion=7 admissionPolicyDeploymentId=MAP-26-WIRE_TO_GATE-SELFTEST cargoHoldingTimeout=00:05:00 stationDepartureWaitTimeout=00:05:00 slotConfigurationReadinessGate=Off stagingDepartureRulesEnabled=False'); Detail = "got: $line" }
 }
 Invoke-SourceCase 'binding result line: an event older than #672 reads EFFECTIVE_JOURNEY_BINDING=not-logged, nothing else' {
     $line = Format-ParallelJourneyBindingLine -Effective (Get-BindingReadBack $baseline '<absent>').Effective
@@ -5741,24 +5742,25 @@ foreach ($case in @(
 # control-server#564. The production cutover switch (docs/production-cutover-mode-plan.md; user decision 2026-10-13, D1/D6).
 # Three things are pinned: with the switch off every guard refuses as before (the whole suite above runs with it off, and the
 # cases below add the cutover-shaped definitions); with it on exactly two guards are lifted -- agv01 in the roster, and the
-# production source taking the six types -- and nothing else; and the instance's history rules (never leave a cutover by a
+# production source taking the seven types -- and nothing else; and the instance's history rules (never leave a cutover by a
 # reinstall without the switch, first cutover install on a new database) that keep the way back to the MVP the plan's.
 # ------------------------------------------------------------------------------------------------
 Write-Host ''
 Write-Host 'Production cutover switch (control-server#564)' -ForegroundColor Cyan
 
-$cutoverSix = @('DIE_TO_WIRE_STAGING', 'DIE_TO_OVEN', 'WIRE_TO_GATE', 'WIRE_TO_OPTICAL', 'STAGING_TO_WIRE', 'WIRE_TO_NITROGEN')
+# control-server#737: seven since WIRE_TO_FULL_INSPECTION, and agv01 takes it (four types).
+$cutoverSeven = @('DIE_TO_WIRE_STAGING', 'DIE_TO_OVEN', 'WIRE_TO_GATE', 'WIRE_TO_OPTICAL', 'STAGING_TO_WIRE', 'WIRE_TO_NITROGEN', 'WIRE_TO_FULL_INSPECTION')
 $cutoverRowMakers = [ordered]@{
-    agv01 = { New-FleetRow '老厂前线新多仓位1' $agv01Key 58 @('WIRE_TO_GATE', 'WIRE_TO_OPTICAL', 'WIRE_TO_NITROGEN') @('WIRE_BONDING') }
+    agv01 = { New-FleetRow '老厂前线新多仓位1' $agv01Key 58 @('WIRE_TO_GATE', 'WIRE_TO_OPTICAL', 'WIRE_TO_NITROGEN', 'WIRE_TO_FULL_INSPECTION') @('WIRE_BONDING') }
     agv02 = { New-FleetRow '老厂前线新多仓位2' $agv02Key 59 @('STAGING_TO_WIRE') @('WIRE_BONDING') }
     agv03 = { New-FleetRow '老厂前线新多仓位3' $agv03Key 60 @('DIE_TO_OVEN', 'DIE_TO_WIRE_STAGING') @('DIE_ATTACH') }
 }
 # The shape of PR #676's cutover definition (control-server#669) on top of the production-source definition: three dedicated
-# cars, two zones, the six types, the production MesIngest. -Cars picks a stage (S1: agv02; S2: agv02 and agv01).
+# cars, two zones, the seven types, the production MesIngest. -Cars picks a stage (S1: agv02; S2: agv02 and agv01).
 function New-CutoverDefinition([string[]] $Cars = @('agv01', 'agv02', 'agv03'), [switch] $NoRecord, [string] $Phase = 'trial') {
     $d = Copy-Definition $productionSource
     foreach ($key in @('agvId', 'vehicleKey', 'agvLifecycleGeneration')) { $d['journeyRuntime'].Remove($key) }
-    $d['journeyRuntime']['allowedWorkTypes'] = @($cutoverSix)
+    $d['journeyRuntime']['allowedWorkTypes'] = @($cutoverSeven)
     $d['journeyRuntime']['allowedDispatchZones'] = @('WIRE_BONDING', 'DIE_ATTACH')
     $d['journeyRuntime']['dispatchZone'] = 'WIRE_BONDING'
     $d['journeyRuntime']['fleet'] = @($Cars | ForEach-Object { & $cutoverRowMakers[$_] })
@@ -5773,12 +5775,12 @@ function Test-CutoverFailure($Definition, [string[]] $Expect, [switch] $Cutover,
 }
 $cutoverDefinition = New-CutoverDefinition
 
-# --- The six types are the package's, and the module's constant is them --------------------------
-Invoke-SourceCase 'cutover: the six types equal the package appsettings.json allowedWorkTypes, in order' {
+# --- The seven types are the package's, and the module's constant is them --------------------------
+Invoke-SourceCase 'cutover: the seven types equal the package appsettings.json allowedWorkTypes, in order' {
     $package = Get-Content -LiteralPath (Join-Path $PSScriptRoot '..\..\src\ControlServer.Host\appsettings.json') -Raw | ConvertFrom-Json -AsHashtable
     $packaged = @($package['JourneyRuntime']['allowedWorkTypes'])
     $module = @(Get-ParallelCutoverWorkType)
-    @{ Ok = (($packaged -join ',') -ceq ($module -join ',') -and ($module -join ',') -ceq ($cutoverSix -join ','))
+    @{ Ok = (($packaged -join ',') -ceq ($module -join ',') -and ($module -join ',') -ceq ($cutoverSeven -join ','))
         Detail = "package [$($packaged -join ',')], module [$($module -join ',')]" }
 }
 
@@ -5805,7 +5807,7 @@ Invoke-SourceCase 'cutover off: Assert- throws on the record without the switch'
 }
 
 # --- Switch on: accepted, at each stage --------------------------------------------------------------
-Invoke-SourceCase 'cutover on: three dedicated cars, two zones, the six types, production source, with record -- accepted' {
+Invoke-SourceCase 'cutover on: three dedicated cars, two zones, the seven types, production source, with record -- accepted' {
     Test-CutoverFailure $cutoverDefinition @() -Cutover
 }
 Invoke-SourceCase 'cutover on: Assert- accepts it and returns it' {
@@ -5818,9 +5820,9 @@ Invoke-SourceCase 'cutover on: stage S1 (agv02 alone) -- accepted' {
 Invoke-SourceCase 'cutover on: stage S2 (agv02 and agv01) -- accepted' {
     Test-CutoverFailure (New-CutoverDefinition -Cars @('agv02', 'agv01')) @() -Cutover
 }
-Invoke-SourceCase 'cutover on: the six types in another order -- accepted (a set; the read-back compares the definition''s own order)' {
+Invoke-SourceCase 'cutover on: the seven types in another order -- accepted (a set; the read-back compares the definition''s own order)' {
     $d = Copy-Definition $cutoverDefinition
-    $d['journeyRuntime']['allowedWorkTypes'] = @($cutoverSix | Sort-Object -Descending)
+    $d['journeyRuntime']['allowedWorkTypes'] = @($cutoverSeven | Sort-Object -Descending)
     Test-CutoverFailure $d @() -Cutover
 }
 
@@ -5882,11 +5884,12 @@ Invoke-SourceCase 'cutover on: agv01 twice is refused' {
 
 # --- Switch on: the shape of the lifted guards is fixed -----------------------------------------------
 foreach ($case in @(
-        @{ Name = 'five types (WIRE_TO_NITROGEN left out)'; Types = @('DIE_TO_WIRE_STAGING', 'DIE_TO_OVEN', 'WIRE_TO_GATE', 'WIRE_TO_OPTICAL', 'STAGING_TO_WIRE') }
+        @{ Name = 'the six before control-server#737 (WIRE_TO_FULL_INSPECTION left out)'; Types = @('DIE_TO_WIRE_STAGING', 'DIE_TO_OVEN', 'WIRE_TO_GATE', 'WIRE_TO_OPTICAL', 'STAGING_TO_WIRE', 'WIRE_TO_NITROGEN') }
+        @{ Name = 'five types (WIRE_TO_NITROGEN and WIRE_TO_FULL_INSPECTION left out)'; Types = @('DIE_TO_WIRE_STAGING', 'DIE_TO_OVEN', 'WIRE_TO_GATE', 'WIRE_TO_OPTICAL', 'STAGING_TO_WIRE') }
         @{ Name = 'only STAGING_TO_WIRE (today''s parallel instance)'; Types = @('STAGING_TO_WIRE') }
-        @{ Name = 'six entries with one twice'; Types = @('DIE_TO_WIRE_STAGING', 'DIE_TO_OVEN', 'WIRE_TO_GATE', 'WIRE_TO_OPTICAL', 'STAGING_TO_WIRE', 'STAGING_TO_WIRE') }
-        @{ Name = 'the six plus a seventh'; Types = @($cutoverSix) + @('WIRE_TO_MOON') }
-        @{ Name = 'one type in lower case'; Types = @('DIE_TO_WIRE_STAGING', 'DIE_TO_OVEN', 'wire_to_gate', 'WIRE_TO_OPTICAL', 'STAGING_TO_WIRE', 'WIRE_TO_NITROGEN') })) {
+        @{ Name = 'seven entries with one twice'; Types = @('DIE_TO_WIRE_STAGING', 'DIE_TO_OVEN', 'WIRE_TO_GATE', 'WIRE_TO_OPTICAL', 'STAGING_TO_WIRE', 'STAGING_TO_WIRE', 'WIRE_TO_NITROGEN') }
+        @{ Name = 'the seven plus an eighth'; Types = @($cutoverSeven) + @('WIRE_TO_MOON') }
+        @{ Name = 'one type in lower case'; Types = @('DIE_TO_WIRE_STAGING', 'DIE_TO_OVEN', 'wire_to_gate', 'WIRE_TO_OPTICAL', 'STAGING_TO_WIRE', 'WIRE_TO_NITROGEN', 'WIRE_TO_FULL_INSPECTION') })) {
     Invoke-SourceCase "cutover on: allowedWorkTypes $($case.Name) is refused as not the full set" {
         # On the S1 shape (agv02 alone, STAGING_TO_WIRE): every variant keeps that type, so only the full-set rule fires.
         $d = New-CutoverDefinition -Cars @('agv02')
@@ -5907,10 +5910,12 @@ Invoke-SourceCase 'cutover on: two cars sharing a task type is refused (one car 
 }
 # --- Each car exactly its dedicated types (coordinator 10, 2026-10-13, after cs#565's review) -------------------------
 foreach ($case in @(
-        @{ Name = 'S1: agv02 with all six types'; Cars = @('agv02'); Row = 0; Types = @('DIE_TO_WIRE_STAGING', 'DIE_TO_OVEN', 'WIRE_TO_GATE', 'WIRE_TO_OPTICAL', 'STAGING_TO_WIRE', 'WIRE_TO_NITROGEN'); Car = 'agv02' }
+        @{ Name = 'S1: agv02 with all seven types'; Cars = @('agv02'); Row = 0; Types = @($cutoverSeven); Car = 'agv02' }
+        @{ Name = 'S1: agv02 with WIRE_TO_FULL_INSPECTION too (agv01''s alone)'; Cars = @('agv02'); Row = 0; Types = @('STAGING_TO_WIRE', 'WIRE_TO_FULL_INSPECTION'); Car = 'agv02' }
         @{ Name = 'S1: agv02 with one more type (WIRE_TO_GATE, agv01''s)'; Cars = @('agv02'); Row = 0; Types = @('STAGING_TO_WIRE', 'WIRE_TO_GATE'); Car = 'agv02' }
         @{ Name = 'S1: agv02 with no type'; Cars = @('agv02'); Row = 0; Types = @(); Car = 'agv02' }
-        @{ Name = 'S2: agv01 with one type fewer (WIRE_TO_NITROGEN left out)'; Cars = @('agv02', 'agv01'); Row = 1; Types = @('WIRE_TO_GATE', 'WIRE_TO_OPTICAL'); Car = 'agv01' }
+        @{ Name = 'S2: agv01 with one type fewer (WIRE_TO_NITROGEN left out)'; Cars = @('agv02', 'agv01'); Row = 1; Types = @('WIRE_TO_GATE', 'WIRE_TO_OPTICAL', 'WIRE_TO_FULL_INSPECTION'); Car = 'agv01' }
+        @{ Name = 'S2: agv01 with its three types before control-server#737 (WIRE_TO_FULL_INSPECTION left out)'; Cars = @('agv02', 'agv01'); Row = 1; Types = @('WIRE_TO_GATE', 'WIRE_TO_OPTICAL', 'WIRE_TO_NITROGEN'); Car = 'agv01' }
         @{ Name = 'S3: agv03 with its two types and one twice'; Cars = @('agv01', 'agv02', 'agv03'); Row = 2; Types = @('DIE_TO_OVEN', 'DIE_TO_WIRE_STAGING', 'DIE_TO_OVEN'); Car = 'agv03' }
         @{ Name = 'S3: agv03 with one type in lower case'; Cars = @('agv01', 'agv02', 'agv03'); Row = 2; Types = @('die_to_oven', 'DIE_TO_WIRE_STAGING'); Car = 'agv03' })) {
     Invoke-SourceCase "cutover dedicated split: $($case.Name) -> CUTOVER_VEHICLE_TASK_TYPES_MISMATCH" {
@@ -6169,35 +6174,35 @@ try {
 }
 
 # --- The audit line says what the cutover is (review M1, the server half) ---------------------------------------------
-Invoke-SourceCase 'cutover audit line: six types, PRODUCTION CUTOVER and the phase; never the STAGING_TO_WIRE-only sentence' {
+Invoke-SourceCase 'cutover audit line: seven types, PRODUCTION CUTOVER and the phase; never the STAGING_TO_WIRE-only sentence' {
     $line = Format-ParallelMesIngestAudit -Definition $cutoverDefinition
     $parallel = Format-ParallelMesIngestAudit -Definition $productionSource
-    @{ Ok = ($line.StartsWith("MES_INGEST_SOURCE=production baseUrl=http://127.0.0.1:5088 allowedWorkTypes=$($cutoverSix -join ',') -- PRODUCTION CUTOVER (trial)") -and
+    @{ Ok = ($line.StartsWith("MES_INGEST_SOURCE=production baseUrl=http://127.0.0.1:5088 allowedWorkTypes=$($cutoverSeven -join ',') -- PRODUCTION CUTOVER (trial)") -and
             -not $line.Contains('STAGING_TO_WIRE only') -and $parallel.Contains('it may take STAGING_TO_WIRE only'))
         Detail = "cutover: $line /// parallel: $parallel" }
 }
 
-# --- Read-back: a cutover is held to the six types, as a set ----------------------------------------
+# --- Read-back: a cutover is held to the seven types, as a set ----------------------------------------
 function New-CutoverEffective([string[]] $Types, $Fleet = @($cutoverDefinition['journeyRuntime']['fleet'])) {
     return [pscustomobject]@{
         AllowedWorkTypes = @($Types); AllowedDispatchZones = @('WIRE_BONDING', 'DIE_ATTACH'); MesIngestBaseUrl = 'http://127.0.0.1:5088'
         Fleet = @($Fleet | ForEach-Object { [pscustomobject](New-BoundVehicle $_['agvId'] $_['vehicleKey'] @($_['allowedTaskTypes']) @($_['zones'])) })
     }
 }
-Invoke-SourceCase 'cutover read-back: bound exactly as defined (three cars, the six types) is accepted' {
-    $r = Get-ParallelEffectiveConfigurationRefusal -Definition $cutoverDefinition -Effective (New-CutoverEffective $cutoverSix)
+Invoke-SourceCase 'cutover read-back: bound exactly as defined (three cars, the seven types) is accepted' {
+    $r = Get-ParallelEffectiveConfigurationRefusal -Definition $cutoverDefinition -Effective (New-CutoverEffective $cutoverSeven)
     @{ Ok = ($null -eq $r); Detail = "got: $r" }
 }
 Invoke-SourceCase 'cutover read-back: bound STAGING_TO_WIRE alone (the parallel binding) is refused' {
     $r = Get-ParallelEffectiveConfigurationRefusal -Definition $cutoverDefinition -Effective (New-CutoverEffective @('STAGING_TO_WIRE'))
-    @{ Ok = ($r -is [string] -and $r.Contains('EFFECTIVE_CONFIGURATION_MISMATCH') -and $r.Contains('production cutover, but allowedWorkTypes bound [STAGING_TO_WIRE], not the six types')); Detail = "got: $r" }
+    @{ Ok = ($r -is [string] -and $r.Contains('EFFECTIVE_CONFIGURATION_MISMATCH') -and $r.Contains('production cutover, but allowedWorkTypes bound [STAGING_TO_WIRE], not the seven types')); Detail = "got: $r" }
 }
 Invoke-SourceCase 'cutover read-back: a bound roster without agv01 is refused' {
-    $r = Get-ParallelEffectiveConfigurationRefusal -Definition $cutoverDefinition -Effective (New-CutoverEffective $cutoverSix -Fleet @($cutoverDefinition['journeyRuntime']['fleet'] | Select-Object -Skip 1))
+    $r = Get-ParallelEffectiveConfigurationRefusal -Definition $cutoverDefinition -Effective (New-CutoverEffective $cutoverSeven -Fleet @($cutoverDefinition['journeyRuntime']['fleet'] | Select-Object -Skip 1))
     @{ Ok = ($r -is [string] -and $r.Contains('EFFECTIVE_CONFIGURATION_MISMATCH') -and $r.Contains($agv01Key)); Detail = "got: $r" }
 }
-Invoke-SourceCase 'cutover read-back: the parallel production definition bound with the six types is still refused (unchanged)' {
-    $e = [pscustomobject]@{ AllowedWorkTypes = @($cutoverSix); AllowedDispatchZones = @($productionSource['journeyRuntime']['allowedDispatchZones']); MesIngestBaseUrl = 'http://127.0.0.1:5088' }
+Invoke-SourceCase 'cutover read-back: the parallel production definition bound with the seven types is still refused (unchanged)' {
+    $e = [pscustomobject]@{ AllowedWorkTypes = @($cutoverSeven); AllowedDispatchZones = @($productionSource['journeyRuntime']['allowedDispatchZones']); MesIngestBaseUrl = 'http://127.0.0.1:5088' }
     $r = Get-ParallelEffectiveConfigurationRefusal -Definition $productionSource -Effective $e
     @{ Ok = ($r -is [string] -and $r.Contains('WIRE_TO_GATE is the MVP''s')); Detail = "got: $r" }
 }
@@ -6220,7 +6225,7 @@ $cutoverRows = @($cutoverJourney['fleet'])
 # The decisions, written out (remote-ops/fleet.md for the identities): a change to any of them is a change to this table.
 $cutoverDecision = @(
     [pscustomobject]@{ Alias = 'agv01'; AgvId = '老厂前线新多仓位1'; Key = 'BROKERX-0c20ff0600d644869a6a80c186065d85'; RiotId = 58
-        Types = @('WIRE_TO_GATE', 'WIRE_TO_OPTICAL', 'WIRE_TO_NITROGEN'); Zones = @('WIRE_BONDING') }
+        Types = @('WIRE_TO_GATE', 'WIRE_TO_OPTICAL', 'WIRE_TO_NITROGEN', 'WIRE_TO_FULL_INSPECTION'); Zones = @('WIRE_BONDING') }
     [pscustomobject]@{ Alias = 'agv02'; AgvId = '老厂前线新多仓位2'; Key = 'BROKERX-f38975561adf46ccb1d2f23833c7d0e4'; RiotId = 59
         Types = @('STAGING_TO_WIRE'); Zones = @('WIRE_BONDING') }
     [pscustomobject]@{ Alias = 'agv03'; AgvId = '老厂前线新多仓位3'; Key = 'BROKERX-7daca4ee91da498d8026c68b7b941127'; RiotId = 60
@@ -6264,7 +6269,7 @@ Invoke-SourceCase 'cutover: dedicated -- every allowed work type is served by ex
     $types = @($cutoverJourney['allowedWorkTypes'])
     $byType = @(foreach ($t in $types) { $n = @($cutoverRows | Where-Object { @($_['allowedTaskTypes']) -ccontains $t }).Count; if ($n -ne 1) { "$t served by $n" } })
     $extra = @(foreach ($row in $cutoverRows) { foreach ($t in @($row['allowedTaskTypes'])) { if (-not ($types -ccontains $t)) { "$($row['agvId'])->$t" } } })
-    @{ Ok = ($types.Count -eq 6 -and $byType.Count -eq 0 -and $extra.Count -eq 0); Detail = "types: $($types.Count); not exactly one car: $($byType -join ', '); outside: $($extra -join ', ')" }
+    @{ Ok = ($types.Count -eq 7 -and $byType.Count -eq 0 -and $extra.Count -eq 0); Detail = "types: $($types.Count); not exactly one car: $($byType -join ', '); outside: $($extra -join ', ')" }
 }
 Invoke-SourceCase 'cutover: everything but the roster, the zones, the work types and the cargo holding wait equals the production-mes definition' {
     # Ports, paths, service name, gates off, runtime off, the approved catalog pair, admission version and identity: what

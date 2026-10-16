@@ -71,7 +71,7 @@ public sealed class ParallelInstanceEffectiveConfigurationTests
     {
         JourneyRuntimeOptions options = Bind(Base, """{ "JourneyRuntime": { "enabled": false } }""", out _);
 
-        Assert.Equal(6, options.AllowedWorkTypes.Length);
+        Assert.Equal(7, options.AllowedWorkTypes.Length);
         Assert.Equal(["MAP-25-WIRE_TO_GATE"], options.AllowedDispatchZones);
     }
 

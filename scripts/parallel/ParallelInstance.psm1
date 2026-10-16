@@ -108,7 +108,7 @@ $script:ProductionPorts = @{
     instances from acting on the same material except each refusing the other's type. The MVP
     (and agv01's field line) only ever accepts WIRE_TO_GATE (JourneyRuntimeEngine); v2 refuses
     anything outside allowedWorkTypes before admission (WorkTypeScopeCriterion). So 'production'
-    pins allowedWorkTypes to exactly the one type, and the shipped six -- WIRE_TO_GATE among them --
+    pins allowedWorkTypes to exactly the one type, and the shipped seven -- WIRE_TO_GATE among them --
     are refused by name. Hard-coded on purpose, like the vehicle whitelist: a rule read out of the
     file being checked is edited in the same keystroke as the file.
 #>
@@ -124,10 +124,11 @@ $script:MvpWorkType = 'WIRE_TO_GATE'
     productionCutover.approvalRecord. Either half alone is refused. Everything else that keeps this instance off the MVP
     (its service name, paths, ports, map 25) is refused exactly as before: the MVP stays on disk as the rollback.
 
-    The six types are the full set the package ships (Test-ParallelInstance.ps1 asserts them against appsettings.json), and
-    a cutover definition must name all of them: "the cutover" is v2 taking over the MVP's work, not some of it.
+    The seven types are the full set the package ships (Test-ParallelInstance.ps1 asserts them against appsettings.json), and
+    a cutover definition must name all of them: "the cutover" is v2 taking over the MVP's work, not some of it. The seventh,
+    WIRE_TO_FULL_INSPECTION, since control-server#737 (program#195).
 #>
-$script:CutoverWorkTypes = @('DIE_TO_WIRE_STAGING', 'DIE_TO_OVEN', 'WIRE_TO_GATE', 'WIRE_TO_OPTICAL', 'STAGING_TO_WIRE', 'WIRE_TO_NITROGEN')
+$script:CutoverWorkTypes = @('DIE_TO_WIRE_STAGING', 'DIE_TO_OVEN', 'WIRE_TO_GATE', 'WIRE_TO_OPTICAL', 'STAGING_TO_WIRE', 'WIRE_TO_NITROGEN', 'WIRE_TO_FULL_INSPECTION')
 $script:CutoverPhases = @('trial', 'production')
 $script:CutoverPlanReference = 'Production cutover: docs/production-cutover-mode-plan.md -- it takes -ProductionCutover on the command and productionCutover.approvalRecord in the definition.'
 
@@ -163,10 +164,11 @@ $script:ProductionVehicle = [pscustomobject]@{
     control-server#564 (coordinator 10, 2026-10-13, after cs#565's review). The user's dedicated split (2026-10-10, program#171):
     each car takes exactly these task types. Hard-coded like the vehicle whitelist: a stage definition that wrote one more type
     into a row would pass every other check and send that car to a station another car is parked on (plan section 8). Keyed by
-    the registry vehicleKey; a stage that leaves a car out of its roster is not checked for it.
+    the registry vehicleKey; a stage that leaves a car out of its roster is not checked for it. control-server#737 (program#195
+    decisions 1 and 9, 2026-10-16): agv01 takes WIRE_TO_FULL_INSPECTION too, four types; the other two cars are unchanged.
 #>
 $script:CutoverDedicatedTaskTypes = @{
-    'BROKERX-0c20ff0600d644869a6a80c186065d85' = @('WIRE_TO_GATE', 'WIRE_TO_OPTICAL', 'WIRE_TO_NITROGEN')
+    'BROKERX-0c20ff0600d644869a6a80c186065d85' = @('WIRE_TO_GATE', 'WIRE_TO_OPTICAL', 'WIRE_TO_NITROGEN', 'WIRE_TO_FULL_INSPECTION')
     'BROKERX-f38975561adf46ccb1d2f23833c7d0e4' = @('STAGING_TO_WIRE')
     'BROKERX-7daca4ee91da498d8026c68b7b941127' = @('DIE_TO_OVEN', 'DIE_TO_WIRE_STAGING')
 }
@@ -682,7 +684,7 @@ function Get-ParallelCutoverContractVersion {
 function Get-ParallelCutoverWorkType {
     <#
         .SYNOPSIS
-            control-server#564. The six task types a production cutover definition must name.
+            control-server#564. The seven task types a production cutover definition must name (control-server#737 added the seventh).
     #>
     [CmdletBinding()]
     param()
@@ -846,7 +848,7 @@ function Test-ProductionMesIngestSource {
         Not relaxed by -ForStopDirection: no definition that breaks these could have been installed.
 
         control-server#564. -Cutover (the production cutover switch, both halves present) replaces the third rule: the MVP is
-        stopped, so allowedWorkTypes must be exactly the full set $script:CutoverWorkTypes -- every one of the six, once
+        stopped, so allowedWorkTypes must be exactly the full set $script:CutoverWorkTypes -- every one of the seven, once
         each, that spelling, in any order. The first two rules are unchanged.
     #>
     param([hashtable] $Definition, [switch] $Cutover)
@@ -876,7 +878,7 @@ function Test-ProductionMesIngestSource {
                 $distinct.Count -eq $strings.Count -and $strings.Count -eq $script:CutoverWorkTypes.Count -and
                 @($strings | Where-Object { $script:CutoverWorkTypes -ccontains $_ }).Count -eq $strings.Count
             if (-not $fullSet) {
-                $failures += "CUTOVER_WORK_TYPES_NOT_FULL_SET: journeyRuntime.allowedWorkTypes is $shown; under the production cutover it must be exactly the six types $(ConvertTo-Json -InputObject $script:CutoverWorkTypes -Compress), once each -- the MVP is stopped and v2 takes all of its work (control-server#564)."
+                $failures += "CUTOVER_WORK_TYPES_NOT_FULL_SET: journeyRuntime.allowedWorkTypes is $shown; under the production cutover it must be exactly the seven types $(ConvertTo-Json -InputObject $script:CutoverWorkTypes -Compress), once each -- the MVP is stopped and v2 takes all of its work (control-server#564)."
             }
             return $failures
         }
@@ -928,7 +930,7 @@ function Test-ParallelInstanceDefinition {
             control-server#564 (docs/production-cutover-mode-plan.md). The production cutover switch. With it, and with
             productionCutover.approvalRecord in the definition, exactly two guards are lifted: agv01 may be a roster row
             (checked against its registry row like the spare cars), and the production MesIngest source must take the full
-            six task types instead of STAGING_TO_WIRE alone. A cutover names its cars in journeyRuntime.fleet, gives no task
+            seven task types instead of STAGING_TO_WIRE alone. A cutover names its cars in journeyRuntime.fleet, gives no task
             type to two cars, and reads the production MesIngest. Either half without the other is refused
             (CUTOVER_SWITCH_WITHOUT_RECORD, CUTOVER_RECORD_WITHOUT_SWITCH). Every other refusal is unchanged.
 
@@ -2369,7 +2371,7 @@ function Format-ParallelMesIngestAudit {
     $types = @($Definition['journeyRuntime']['allowedWorkTypes']) -join ','
     $line = "MES_INGEST_SOURCE=$source baseUrl=$($Definition['mesIngest']['baseUrl']) allowedWorkTypes=$types"
     if ($source -ceq 'production' -and (Test-ParallelProductionCutoverDefinition -Definition $Definition)) {
-        return "$line -- PRODUCTION CUTOVER ($($Definition['productionCutover']['phase'])): this instance reads the PRODUCTION MesIngest for all six task types and drives agv01; the MVP must be stopped (control-server#564)"
+        return "$line -- PRODUCTION CUTOVER ($($Definition['productionCutover']['phase'])): this instance reads the PRODUCTION MesIngest for all seven task types and drives agv01; the MVP must be stopped (control-server#564)"
     }
     if ($source -ceq 'production') {
         return "$line -- this instance reads the PRODUCTION MesIngest the MVP also reads; it may take STAGING_TO_WIRE only, the MVP keeps WIRE_TO_GATE (user decision 2026-10-09, control-server#535)"
@@ -2576,13 +2578,13 @@ function Get-ParallelEffectiveConfigurationRefusal {
             $problems += "$($pair.Name) bound [$(@($pair.Actual) -join ',')], the definition says [$(@($pair.Expected) -join ',')]"
         }
     }
-    # control-server#564: a cutover definition (it passed the checks with the switch) is held to the full six instead, as a
+    # control-server#564: a cutover definition (it passed the checks with the switch) is held to the full seven instead, as a
     # set -- the definition's own order is compared above.
     $cutoverDefinition = Test-ParallelProductionCutoverDefinition -Definition $Definition
     if ((Get-MesIngestSource -Definition $Definition) -ceq 'production' -and $cutoverDefinition) {
         $boundTypes = @($Effective.AllowedWorkTypes | Sort-Object -CaseSensitive) -join "`n"
         if ($boundTypes -cne (@($script:CutoverWorkTypes | Sort-Object -CaseSensitive) -join "`n")) {
-            $problems += "production cutover, but allowedWorkTypes bound [$(@($Effective.AllowedWorkTypes) -join ',')], not the six types"
+            $problems += "production cutover, but allowedWorkTypes bound [$(@($Effective.AllowedWorkTypes) -join ',')], not the seven types"
         }
     } elseif ((Get-MesIngestSource -Definition $Definition) -ceq 'production' -and
         (@($Effective.AllowedWorkTypes) -join "`n") -cne ($script:ProductionSourceWorkTypes -join "`n")) {
