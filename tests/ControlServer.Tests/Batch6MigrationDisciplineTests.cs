@@ -309,7 +309,7 @@ public sealed class Batch6MigrationDisciplineTests
         TaskTypeStationBindingStore bindings = new(fixture.Context, publisher);
 
         TaskTypeStationVersionWrite<TaskTypeStationRuleVersion> rule = await rules.WriteVersionAsync(
-            TaskTypeStationTestData.SixRules, TaskTypeStationTestData.Source, Now, cancellationToken);
+            TaskTypeStationTestData.SevenRules, TaskTypeStationTestData.Source, Now, cancellationToken);
         TaskTypeStationVersionWrite<TaskTypeStationBindingSetVersion> set = await bindings.WriteVersionAsync(
             25,
             rule.Version.Version,

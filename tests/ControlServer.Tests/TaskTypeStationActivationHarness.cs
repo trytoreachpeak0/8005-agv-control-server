@@ -67,7 +67,7 @@ internal sealed class TaskTypeStationActivationHarness : IAsyncDisposable
         await MigratedDatabaseTemplate.ApplyAsync(context.Database, cancellationToken);
         Stack stack = StackOver(context);
         TaskTypeStationVersionWrite<TaskTypeStationRuleVersion> rules = await stack.Rules.WriteVersionAsync(
-            TaskTypeStationTestData.SixRules, TaskTypeStationTestData.Source, Now.AddHours(-1), cancellationToken);
+            TaskTypeStationTestData.SevenRules, TaskTypeStationTestData.Source, Now.AddHours(-1), cancellationToken);
         TaskTypeStationVersionWrite<TaskTypeStationBindingSetVersion> first = await stack.Bindings.WriteVersionAsync(
             MapId, rules.Version.Version, [TransportTaskTypes.WireToGate], [Gate], null,
             TaskTypeStationTestData.Source, Now.AddHours(-1), cancellationToken);

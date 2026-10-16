@@ -121,7 +121,7 @@ public sealed class TaskTypeAdmissionRuntimeTests
         await using (ControlServerDbContext writer = new(fixture.DbOptionsForTests))
         {
             TaskTypeStationRuleVersion newer = (await TaskTypeStationRuntimeSeed.Access(writer).Rules.WriteVersionAsync(
-                [.. TaskTypeStationTestData.SixRules.Where(rule => rule.TaskType != TransportTaskTypes.DieToOven)],
+                [.. TaskTypeStationTestData.SevenRules.Where(rule => rule.TaskType != TransportTaskTypes.DieToOven)],
                 "preset:test-newer",
                 Now,
                 Token)).Version;
@@ -242,7 +242,7 @@ public sealed class TaskTypeAdmissionRuntimeTests
         await using (ControlServerDbContext writer = new(fixture.DbOptionsForTests))
         {
             await TaskTypeStationRuntimeSeed.Access(writer).Rules.WriteVersionAsync(
-                [.. TaskTypeStationTestData.SixRules.Where(rule => rule.TaskType != TransportTaskTypes.StagingToWire)],
+                [.. TaskTypeStationTestData.SevenRules.Where(rule => rule.TaskType != TransportTaskTypes.StagingToWire)],
                 "preset:test-newer",
                 Now,
                 Token);
@@ -287,12 +287,14 @@ public sealed class TaskTypeAdmissionRuntimeTests
                 ("N1-1", TransportTaskTypes.DieToOven),
                 ("N1-1", TransportTaskTypes.DieToWireStaging),
                 ("N1-1", TransportTaskTypes.StagingToWire),
+                ("N1-1", "WIRE_TO_FULL_INSPECTION"),
                 ("N1-1", TransportTaskTypes.WireToGate),
                 ("N1-1", TransportTaskTypes.WireToNitrogen),
                 ("N1-1", TransportTaskTypes.WireToOptical),
                 ("N1-2_N1-3", TransportTaskTypes.DieToOven),
                 ("N1-2_N1-3", TransportTaskTypes.DieToWireStaging),
                 ("N1-2_N1-3", TransportTaskTypes.StagingToWire),
+                ("N1-2_N1-3", "WIRE_TO_FULL_INSPECTION"),
                 ("N1-2_N1-3", TransportTaskTypes.WireToGate),
                 ("N1-2_N1-3", TransportTaskTypes.WireToNitrogen),
                 ("N1-2_N1-3", TransportTaskTypes.WireToOptical),

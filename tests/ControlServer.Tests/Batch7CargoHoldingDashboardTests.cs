@@ -755,6 +755,7 @@ public sealed class Batch7CargoHoldingDashboardTests
     [InlineData(TransportTaskTypes.WireToOptical)]
     [InlineData(TransportTaskTypes.StagingToWire)]
     [InlineData(TransportTaskTypes.WireToNitrogen)]
+    [InlineData("WIRE_TO_FULL_INSPECTION")]
     public void TheBacklogBandIsTheDispatchBandReadBackFromTheBusinessKey(string workType)
     {
         string key = TransportDemandKeys.Compose("SUB|LOT-7", workType);

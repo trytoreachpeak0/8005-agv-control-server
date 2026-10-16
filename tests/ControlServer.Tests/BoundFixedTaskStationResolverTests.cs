@@ -61,7 +61,7 @@ public sealed class BoundFixedTaskStationResolverTests
         switch (shape)
         {
             case "no-active-set":
-                await fixture.Rules.WriteVersionAsync(SixRules, Source, Now, Token);
+                await fixture.Rules.WriteVersionAsync(SevenRules, Source, Now, Token);
                 fixture.Context.ChangeTracker.Clear();
                 break;
             case "not-required":
@@ -224,7 +224,7 @@ public sealed class BoundFixedTaskStationResolverTests
         IReadOnlyList<TaskTypeStationBinding> bindings,
         int mapId = 25)
     {
-        TaskTypeStationRuleVersion rules = (await fixture.Rules.WriteVersionAsync(SixRules, Source, Now, Token)).Version;
+        TaskTypeStationRuleVersion rules = (await fixture.Rules.WriteVersionAsync(SevenRules, Source, Now, Token)).Version;
         TaskTypeStationBindingSetVersion set = (await fixture.Bindings.WriteVersionAsync(
             mapId, rules.Version, required, bindings, null, Source, Now, Token)).Version;
         await fixture.Bindings.SetActiveAsync(mapId, set.Version, Now, Token);

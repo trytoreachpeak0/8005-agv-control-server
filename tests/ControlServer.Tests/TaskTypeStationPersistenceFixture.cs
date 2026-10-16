@@ -92,7 +92,7 @@ internal static class TaskTypeStationTestData
 
     public const string Source = "preset:test";
 
-    public static readonly TaskTypeStationRule[] SixRules =
+    public static readonly TaskTypeStationRule[] SevenRules =
     [
         new(TransportTaskTypes.DieToWireStaging, TaskTypeFixedEnd.Destination),
         new(TransportTaskTypes.DieToOven, TaskTypeFixedEnd.Destination),
@@ -100,6 +100,8 @@ internal static class TaskTypeStationTestData
         new(TransportTaskTypes.WireToOptical, TaskTypeFixedEnd.Destination),
         new(TransportTaskTypes.StagingToWire, TaskTypeFixedEnd.Origin),
         new(TransportTaskTypes.WireToNitrogen, TaskTypeFixedEnd.Destination),
+        // control-server#737: the seventh, written as its literal so the test data does not follow TransportTaskTypes.
+        new("WIRE_TO_FULL_INSPECTION", TaskTypeFixedEnd.Destination),
     ];
 
     public static readonly TaskTypeStationBinding GateBinding =

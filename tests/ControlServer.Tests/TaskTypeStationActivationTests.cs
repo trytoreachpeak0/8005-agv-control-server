@@ -309,7 +309,7 @@ public sealed class TaskTypeStationActivationTests
                 break;
             case "rule-not-current":
                 await harness.Default().Rules.WriteVersionAsync(
-                    [.. TaskTypeStationTestData.SixRules.Where(rule => rule.TaskType != TransportTaskTypes.WireToNitrogen)],
+                    [.. TaskTypeStationTestData.SevenRules.Where(rule => rule.TaskType != TransportTaskTypes.WireToNitrogen)],
                     "preset:newer", TaskTypeStationActivationHarness.Now.AddMinutes(-5), Token);
                 break;
             case "no-site-verification":
@@ -1005,11 +1005,11 @@ public sealed class TaskTypeStationActivationTests
         IReadOnlyDictionary<string, long> before = await harness.CountRowsAsync();
 
         await Assert.ThrowsAsync<TaskTypeStationConfigurationException>(() => stack.Rules.WriteVersionAsync(
-            [.. TaskTypeStationTestData.SixRules.Where(rule => rule.TaskType != TransportTaskTypes.WireToGate),
+            [.. TaskTypeStationTestData.SevenRules.Where(rule => rule.TaskType != TransportTaskTypes.WireToGate),
                 new TaskTypeStationRule(TransportTaskTypes.WireToGate, "SIDEWAYS")],
             "direct", TaskTypeStationActivationHarness.Now, Token));
         await Assert.ThrowsAsync<TaskTypeStationConfigurationException>(() => stack.Rules.WriteVersionAsync(
-            [.. TaskTypeStationTestData.SixRules, new TaskTypeStationRule("WIRE_TO_MOON", TaskTypeFixedEnd.Destination)],
+            [.. TaskTypeStationTestData.SevenRules, new TaskTypeStationRule("WIRE_TO_MOON", TaskTypeFixedEnd.Destination)],
             "direct", TaskTypeStationActivationHarness.Now, Token));
         await Assert.ThrowsAsync<TaskTypeStationConfigurationException>(() => stack.Bindings.WriteVersionAsync(
             25, 1, [TransportTaskTypes.WireToGate], [TaskTypeStationActivationHarness.Gate with { SiteVerificationRef = " " }],
@@ -1311,7 +1311,7 @@ public sealed class TaskTypeStationActivationTests
         {
             TaskTypeStations = new
             {
-                rules = TaskTypeStationTestData.SixRules.Select(rule => new { taskType = rule.TaskType, fixedEnd = rule.FixedEnd }),
+                rules = TaskTypeStationTestData.SevenRules.Select(rule => new { taskType = rule.TaskType, fixedEnd = rule.FixedEnd }),
                 mapId,
                 requiredTaskTypes = new[] { TransportTaskTypes.WireToGate },
                 bindings = new[]

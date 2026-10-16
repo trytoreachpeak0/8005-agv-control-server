@@ -71,11 +71,15 @@ Test-Case 'a refusal beside a dashboard is refused' {
 
 $directory = (New-Item -ItemType Directory -Path (Join-Path ([IO.Path]::GetTempPath()) "l2-tts-$([guid]::NewGuid().ToString('N'))")).FullName
 try {
-    Test-Case 'the default preset is six rules, the rig map, and WIRE_TO_GATE bound to the gate only' {
+    Test-Case 'the default preset is seven rules, the rig map, and WIRE_TO_GATE bound to the gate only' {
         $path = New-L2TaskTypeStationPreset -Setting $null -MapId 25 -GateStationId '关卡' -GateStationRiotId 210 `
             -Path (Join-Path $directory 'default.json')
         $preset = (Get-Content -LiteralPath $path -Raw -Encoding utf8 | ConvertFrom-Json).TaskTypeStations
-        if (@($preset.rules).Count -ne 6) { throw "rules: $(@($preset.rules).Count)" }
+        if (@($preset.rules).Count -ne 7) { throw "rules: $(@($preset.rules).Count)" }
+        # control-server#737: the seventh type ends at a public area, like WIRE_TO_OPTICAL.
+        if (@($preset.rules | Where-Object taskType -CEQ 'WIRE_TO_FULL_INSPECTION').fixedEnd -cne 'DESTINATION') {
+            throw 'WIRE_TO_FULL_INSPECTION is not ruled DESTINATION'
+        }
         if ((@($preset.rules | Where-Object fixedEnd -EQ 'ORIGIN').taskType) -ne 'STAGING_TO_WIRE') { throw 'ORIGIN is not STAGING_TO_WIRE alone' }
         if ($preset.mapId -ne 25) { throw "mapId: $($preset.mapId)" }
         if ((@($preset.requiredTaskTypes) -join ',') -ne 'WIRE_TO_GATE') { throw "required: $($preset.requiredTaskTypes)" }

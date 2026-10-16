@@ -21,13 +21,13 @@ public sealed class TaskTypeStationStoreTests
         Assert.Null(await fixture.Rules.ReadCurrentAsync(Token));
 
         TaskTypeStationVersionWrite<TaskTypeStationRuleVersion> first =
-            await fixture.Rules.WriteVersionAsync(SixRules, Source, Now, Token);
+            await fixture.Rules.WriteVersionAsync(SevenRules, Source, Now, Token);
         // The same table in another order is the same content.
         TaskTypeStationVersionWrite<TaskTypeStationRuleVersion> again =
-            await fixture.Rules.WriteVersionAsync([.. SixRules.Reverse()], Source, Now.AddHours(1), Token);
+            await fixture.Rules.WriteVersionAsync([.. SevenRules.Reverse()], Source, Now.AddHours(1), Token);
         TaskTypeStationRule[] changed =
         [
-            .. SixRules.Select(rule => rule.TaskType == TransportTaskTypes.DieToOven
+            .. SevenRules.Select(rule => rule.TaskType == TransportTaskTypes.DieToOven
                 ? rule with { FixedEnd = TaskTypeFixedEnd.Origin }
                 : rule)
         ];
@@ -54,7 +54,7 @@ public sealed class TaskTypeStationStoreTests
         Assert.Equal(Now, readFirst.LoadedAt);
         Assert.Equal(Source, readFirst.Source);
         Assert.Equal(
-            SixRules.OrderBy(rule => rule.TaskType, StringComparer.Ordinal),
+            SevenRules.OrderBy(rule => rule.TaskType, StringComparer.Ordinal),
             readFirst.Rules);
         Assert.Null(await fixture.Rules.ReadVersionAsync(3, Token));
     }
@@ -63,7 +63,7 @@ public sealed class TaskTypeStationStoreTests
     public async Task EachMapHasItsOwnBindingSetVersionLineAndSameContentMakesNoNewVersion()
     {
         await using TaskTypeStationPersistenceFixture fixture = await TaskTypeStationPersistenceFixture.CreateAsync();
-        long rules = (await fixture.Rules.WriteVersionAsync(SixRules, Source, Now, Token)).Version.Version;
+        long rules = (await fixture.Rules.WriteVersionAsync(SevenRules, Source, Now, Token)).Version.Version;
 
         TaskTypeStationVersionWrite<TaskTypeStationBindingSetVersion> map25 = await fixture.Bindings.WriteVersionAsync(
             25, rules, [TransportTaskTypes.WireToGate], [GateBinding], null, Source, Now, Token);
@@ -105,10 +105,10 @@ public sealed class TaskTypeStationStoreTests
         // The binding set names the rule version it was validated against; pointing old bindings at new rules is a
         // different version, not the same one.
         await using TaskTypeStationPersistenceFixture fixture = await TaskTypeStationPersistenceFixture.CreateAsync();
-        await fixture.Rules.WriteVersionAsync(SixRules, Source, Now, Token);
+        await fixture.Rules.WriteVersionAsync(SevenRules, Source, Now, Token);
         await fixture.Bindings.WriteVersionAsync(25, 1, [TransportTaskTypes.WireToGate], [GateBinding], null, Source, Now, Token);
         await fixture.Rules.WriteVersionAsync(
-            [.. SixRules.Where(rule => rule.TaskType != TransportTaskTypes.DieToOven)], Source, Now, Token);
+            [.. SevenRules.Where(rule => rule.TaskType != TransportTaskTypes.DieToOven)], Source, Now, Token);
 
         TaskTypeStationVersionWrite<TaskTypeStationBindingSetVersion> next = await fixture.Bindings.WriteVersionAsync(
             25, 2, [TransportTaskTypes.WireToGate], [GateBinding], null, Source, Now, Token);
@@ -122,8 +122,8 @@ public sealed class TaskTypeStationStoreTests
     public async Task EveryRuleAndBindingSetVersionHasASnapshotAndExactlyOneBusinessAuditRecord()
     {
         await using TaskTypeStationPersistenceFixture fixture = await TaskTypeStationPersistenceFixture.CreateAsync();
-        TaskTypeStationRuleVersion rules = (await fixture.Rules.WriteVersionAsync(SixRules, Source, Now, Token)).Version;
-        await fixture.Rules.WriteVersionAsync(SixRules, Source, Now, Token);
+        TaskTypeStationRuleVersion rules = (await fixture.Rules.WriteVersionAsync(SevenRules, Source, Now, Token)).Version;
+        await fixture.Rules.WriteVersionAsync(SevenRules, Source, Now, Token);
         TaskTypeStationBindingSetVersion bindings = (await fixture.Bindings.WriteVersionAsync(
             25, rules.Version, [TransportTaskTypes.WireToGate], [GateBinding], null, Source, Now, Token)).Version;
         await fixture.Bindings.WriteVersionAsync(
@@ -158,7 +158,7 @@ public sealed class TaskTypeStationStoreTests
     public async Task VersionRowsAndTheirChildRowsRefuseToBeRewrittenOrDeleted()
     {
         await using TaskTypeStationPersistenceFixture fixture = await TaskTypeStationPersistenceFixture.CreateAsync();
-        await fixture.Rules.WriteVersionAsync(SixRules, Source, Now, Token);
+        await fixture.Rules.WriteVersionAsync(SevenRules, Source, Now, Token);
         await fixture.Bindings.WriteVersionAsync(25, 1, [TransportTaskTypes.WireToGate], [GateBinding], null, Source, Now, Token);
         fixture.Context.ChangeTracker.Clear();
 
@@ -193,7 +193,7 @@ public sealed class TaskTypeStationStoreTests
         // station written; underneath, the unique index (MapId, Version, StationRiotId) is the database's own line, shown
         // here by going around the store.
         await using TaskTypeStationPersistenceFixture fixture = await TaskTypeStationPersistenceFixture.CreateAsync();
-        await fixture.Rules.WriteVersionAsync(SixRules, Source, Now, Token);
+        await fixture.Rules.WriteVersionAsync(SevenRules, Source, Now, Token);
 
         TaskTypeStationConfigurationException refused = await Assert.ThrowsAsync<TaskTypeStationConfigurationException>(
             () => fixture.Bindings.WriteVersionAsync(
@@ -225,7 +225,7 @@ public sealed class TaskTypeStationStoreTests
         // A binding set validated against rules nobody can read back is a version with no rules behind it. The startup
         // load always writes the rules first; this is the line for every other writer (batch 6-05's activation among them).
         await using TaskTypeStationPersistenceFixture fixture = await TaskTypeStationPersistenceFixture.CreateAsync();
-        await fixture.Rules.WriteVersionAsync(SixRules, Source, Now, Token);
+        await fixture.Rules.WriteVersionAsync(SevenRules, Source, Now, Token);
 
         InvalidOperationException refused = await Assert.ThrowsAsync<InvalidOperationException>(() =>
             fixture.Bindings.WriteVersionAsync(25, ruleVersion, [TransportTaskTypes.WireToGate], [GateBinding], null, Source, Now, Token));
@@ -242,7 +242,7 @@ public sealed class TaskTypeStationStoreTests
     public async Task TheActivePointerNamesOneExistingVersionPerMap()
     {
         await using TaskTypeStationPersistenceFixture fixture = await TaskTypeStationPersistenceFixture.CreateAsync();
-        await fixture.Rules.WriteVersionAsync(SixRules, Source, Now, Token);
+        await fixture.Rules.WriteVersionAsync(SevenRules, Source, Now, Token);
         await fixture.Bindings.WriteVersionAsync(25, 1, [TransportTaskTypes.WireToGate], [GateBinding], null, Source, Now, Token);
         await fixture.Bindings.WriteVersionAsync(
             25, 1, [TransportTaskTypes.WireToGate, TransportTaskTypes.StagingToWire], [GateBinding, StagingBinding],

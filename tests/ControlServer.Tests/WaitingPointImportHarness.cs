@@ -167,7 +167,7 @@ internal sealed class WaitingPointImportHarness : IAsyncDisposable
         TaskTypeStationRuleStore rules = new(context, publisher);
         TaskTypeStationBindingStore bindings = new(context, publisher);
         TaskTypeStationVersionWrite<TaskTypeStationRuleVersion> rule = await rules.WriteVersionAsync(
-            TaskTypeStationTestData.SixRules, TaskTypeStationTestData.Source, Imported, TestContext.Current.CancellationToken);
+            TaskTypeStationTestData.SevenRules, TaskTypeStationTestData.Source, Imported, TestContext.Current.CancellationToken);
         TaskTypeStationVersionWrite<TaskTypeStationBindingSetVersion> set = await bindings.WriteVersionAsync(
             Map,
             rule.Version.Version,

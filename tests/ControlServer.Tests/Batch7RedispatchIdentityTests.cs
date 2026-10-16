@@ -224,7 +224,7 @@ public sealed class Batch7RedispatchIdentityTests
         TaskTypeStationRuleStore rules = new(fixture.Context, publisher);
         TaskTypeStationBindingStore bindings = new(fixture.Context, publisher);
         long ruleVersion = (await rules.WriteVersionAsync(
-            TaskTypeStationTestData.SixRules, TaskTypeStationTestData.Source, Now, token)).Version.Version;
+            TaskTypeStationTestData.SevenRules, TaskTypeStationTestData.Source, Now, token)).Version.Version;
         long firstBindings = (await bindings.WriteVersionAsync(
             25, ruleVersion, [TransportTaskTypes.WireToGate], [TaskTypeStationTestData.GateBinding], null,
             TaskTypeStationTestData.Source, Now, token)).Version.Version;

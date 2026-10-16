@@ -313,7 +313,7 @@ internal static class TaskTypeHoldTestKit
         params TaskTypeStationBinding[] bindings)
     {
         CancellationToken token = TestContext.Current.CancellationToken;
-        TaskTypeStationRuleVersion rules = (await fixture.Rules.WriteVersionAsync(SixRules, Source, Now.AddDays(-1), token)).Version;
+        TaskTypeStationRuleVersion rules = (await fixture.Rules.WriteVersionAsync(SevenRules, Source, Now.AddDays(-1), token)).Version;
         TaskTypeStationBindingSetVersion written = (await fixture.Bindings.WriteVersionAsync(
             mapId,
             rules.Version,
