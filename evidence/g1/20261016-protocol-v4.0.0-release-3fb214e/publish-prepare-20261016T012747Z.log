@@ -1,0 +1,38 @@
+[01:27:47] 1/4 核对远端：fp/v2-candidate 的顶是 3fb214e57d861a909d872511940d26133eb32dca，protocol-v4.0.0 还不存在
+3fb214e57d861a909d872511940d26133eb32dca	refs/heads/fp/v2-candidate
+[01:27:50] 2/4 干净克隆并检出 3fb214e57d861a909d872511940d26133eb32dca，核 manifest 哈希
+✓ Lockfile passes supply-chain policies (verified 36d ago)
+Lockfile is up to date, resolution step is skipped
+Progress: resolved 1, reused 0, downloaded 0, added 0
+Packages: +6
+++++++
+Packages are copied from the content-addressable store to the virtual store.
+  Content-addressable store is at: C:\Users\szy\AppData\Local\pnpm-store\v11
+  Virtual store is at:             node_modules/.pnpm
+Progress: resolved 6, reused 6, downloaded 0, added 6, done
+
+devDependencies:
++ ajv 8.20.0
++ ajv-formats 3.0.1
+
+Done in 1.5s using pnpm v11.25.0
+[01:27:56] 3/4 写入外置 attestation（不进 git），批准人 claude-opus-5-5 (Claude Code agent)（AI_AGENT）
+[01:27:56] 4/4 带 PROTOCOL_APPROVAL_ATTESTATION 跑发布 G1
+$ node tools/g1-validate.mjs
+{
+  "gate": "G1",
+  "status": "PASS",
+  "candidateManifestSha256": "beca46a7fe98003ce1f21efb88f2c1406f3040883d0b372a51505a843e306f3a",
+  "approvalAttestationStatus": "APPROVED",
+  "approvalAttestationSha256": "68f3516eaeb12d54cf5319e57a325362915f34ac47494712920f007cf25ad9e0",
+  "approvalAttestationSource": "EXTERNAL_RELEASE_ASSET",
+  "schemaCount": 73,
+  "messageTypeCount": 67,
+  "validExampleCount": 67,
+  "invalidExampleCount": 1711,
+  "trajectoryCount": 50,
+  "integrationSliceCount": 16,
+  "checkedAt": "2026-10-14T00:00:00Z",
+  "failures": []
+}
+[01:28:04] 准备完成：attestation 68f3516eaeb12d54cf5319e57a325362915f34ac47494712920f007cf25ad9e0；tag 消息 F:\8005-wt\protocol-v4-release-8005-agv-control-server\evidence\g1\20261016-protocol-v4.0.0-release-3fb214e\tag-message.txt；Release 说明 F:\8005-wt\protocol-v4-release-8005-agv-control-server\evidence\g1\20261016-protocol-v4.0.0-release-3fb214e\release-notes.md。核过之后用 -Phase Publish 发布。
