@@ -4916,21 +4916,24 @@ Invoke-SourceCase 'clearance switch: a string "true" is refused, not bound as on
     $f = @(Test-ParallelInstanceDefinition -Definition (Set-ClearanceSwitch $baseline 'true'))
     @{ Ok = ($f.Count -eq 1 -and $f[0].Contains('clearanceToWaitingPointEnabled must be a JSON boolean')); Detail = "failures: $($f -join ' | ')" }
 }
-# control-server#703: the station timeout redispatch limit, optional, a non-negative JSON integer when written.
+# control-server#703, narrowed by control-server#751: the station timeout redispatch limit is optional, and when written it is
+# the JSON integer 0. REQ-0365 (CP-0016) states that a non-zero value does not conform, so 1, 2 (v4 production's value) and 3
+# are refused like a malformed value.
 foreach ($case in @(
-        @{ Value = 0; Ok = $true }, @{ Value = 3; Ok = $true }, @{ Value = -1; Ok = $false },
-        @{ Value = '2'; Ok = $false }, @{ Value = 1.5; Ok = $false }, @{ Value = 2147483648L; Ok = $false })) {
+        @{ Value = 0; Ok = $true }, @{ Value = 1; Ok = $false }, @{ Value = 2; Ok = $false }, @{ Value = 3; Ok = $false },
+        @{ Value = -1; Ok = $false }, @{ Value = '0'; Ok = $false }, @{ Value = 1.5; Ok = $false }, @{ Value = 2147483648L; Ok = $false })) {
     Invoke-SourceCase "station timeout redispatch limit: $($case.Value) ($($case.Value.GetType().Name)) is $(if ($case.Ok) { 'accepted' } else { 'refused' })" {
         $d = Copy-Definition $baseline
         $d['journeyRuntime']['stationTimeoutRedispatchLimit'] = $case.Value
         $f = @(Test-ParallelInstanceDefinition -Definition $d)
-        $refused = @($f | Where-Object { $_.Contains('stationTimeoutRedispatchLimit must be a non-negative JSON integer') }).Count
+        $refused = @($f | Where-Object { $_.Contains('stationTimeoutRedispatchLimit must be the JSON integer 0') }).Count
         @{ Ok = ($case.Ok ? ($f.Count -eq 0) : ($f.Count -eq 1 -and $refused -eq 1)); Detail = "failures: $($f -join ' | ')" }
     }.GetNewClosure()
 }
-Invoke-SourceCase 'station timeout redispatch limit: the overlay writes the package default 2 when the definition leaves it out' {
+Invoke-SourceCase 'station timeout redispatch limit: the overlay writes 0 when the definition leaves it out (control-server#751)' {
     $overlay = New-ParallelInstanceConfigurationOverlay -Definition (Copy-Definition $baseline)
-    @{ Ok = ($overlay['JourneyRuntime']['stationTimeoutRedispatchLimit'] -eq 2); Detail = "written: $($overlay['JourneyRuntime']['stationTimeoutRedispatchLimit'])" }
+    $written = $overlay['JourneyRuntime']['stationTimeoutRedispatchLimit']
+    @{ Ok = ($written -is [int] -and $written -eq 0); Detail = "written: $written" }
 }
 Invoke-SourceCase 'station timeout redispatch limit: the overlay writes the definition''s value' {
     $d = Copy-Definition $baseline
