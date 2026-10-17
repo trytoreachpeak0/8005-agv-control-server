@@ -1,0 +1,27 @@
+now 2026-10-14T20:14:09.5213228+08:00 bytes=76783
+SLOT_CONFIGURATION_NOT_CONFIRMED occurrences=0
+reason codes: NORMAL_BANDx86 STAGING_TO_WIREx77 TOP_BANDx77 VEHICLE_TASK_TYPE_NOT_ADMITTEDx163 WIRE_TO_GATEx15 WIRE_TO_NITROGENx52 WIRE_TO_OPTICALx19
+{"starvationThresholdsApproved":false,"starvationThresholds":[],"backlog":[{"demandId":"4aec4ad5-cef4-499b-b2a0-75975d722b04","transportDemandKey":"Q26101211-2|STAGING_TO_WIRE","reasonCode":"VEHICLE_TASK_TYPE_NOT_ADMITTED","reasonDescription":null,"firstSeenAt":"2026-10-14T11:50:12.1222031+00:00","lastEvaluatedAt":"2026-10-14T12:14:07.0218155+00:00","waitingSeconds":91672,"demandCreatedAt":"2026-10-13T10:46:17.0777859+00:00","waitingAgeKnown":true,"tier":"TOP_BAND","starvationEscalatedAt":null,"starvationEscalationParameterVersion":null},{"demandId":"de0993e7-28bb-4a57-9509-84301e0bf24e","transportDemandKey":"Q26097134-2|STAGING_TO_WIRE","reasonCode":"VEHICLE_TASK_TYPE_NOT_ADMITTED","reasonDescription":null,"firstSeenAt":"2026-10-14T11:50:12.1222031+00:00","lastEvaluatedAt":"2026-10-14T12:14:07.0218155+00:00","waitingSeconds":56869,"demandCreatedAt":"2026-10-13T20:26:20.3307507+00:00","waitingAgeKnown":true,"tier":"TOP_BAND","starvationEscalatedAt":null,"starvationEscalationParameterVersion":null},{"demandId":"b1ad2872-c3f9-48aa-afab-f62f96e1d571","transportDemandKey":"Q26094774-9|STAGING_TO_WIRE","reasonCode":"VEHICLE_TASK_TYPE_NOT_ADMITTED","reasonDescription":null,"firstSeenAt":"2026-10-14T11:50:12.1222031+00:00","lastEvaluatedAt":"2026-10-14T12:14:07.0218155+00:00","waitingSeconds":50869,"demandCreatedAt":"2026-10-13T22:06:19.496236+00:00","waitingAgeKnown":true,"tier":"TOP_BAND","starvationEscalatedAt":null,"starvationEscalationParameterVersion":null},{"demandId":"8d5a20
+### now 2026-10-14T20:14:10.1172891+08:00
+### services
+  8005 AGV ControlServer Stopped/Disabled
+  8005 AGV ControlServer V2 Running/Manual
+### gate RiotCreateDispatch.enabled=False
+### area-assignments (read verb)
+{"command":"area-assignments","outcome":"NOT_FOUND","requestedVersion":null,"detail":"No area assignment table has been imported into this database."}
+### dispatch-zone-parameters (read verb)
+{"command":"dispatch-zone-parameters","outcome":"OK","version":null,"contentSha256":null,"snapshotId":null,"loadedAt":null,"source":null,"zones":[{"dispatchZone":"DIE_ATTACH","inTable":false,"inDispatchPolicy":true,"enRouteAddition":{"state":"UNCONFIGURED","maxPathCostIncreaseMm":null},"starvation":{"state":"UNCONFIGURED","thresholdSeconds":null}},{"dispatchZone":"WIRE_BONDING","inTable":false,"inDispatchPolicy":true,"enRouteAddition":{"state":"UNCONFIGURED","maxPathCostIncreaseMm":null},"starvation":{"state":"UNCONFIGURED","thresholdSeconds":null}}]}
+### journeys not Completed
+### journey count by stage
+### accepted not Succeeded
+### accepted total
+  n=0 | last=
+### journey demands (open journeys)
+### stops of open journeys
+### intents created since 2026-10-14 11:49 or not CONFIRMED
+### charging/purpose/holds
+### riot
+  agv01 st=214 proc=IDLE move=MT_FINISHED emerg=OK bat=67 batState=NO_CHARGE map=老厂前线new_wk status=1
+  agv02 st=215 proc=IDLE move=MT_FINISHED emerg=OK bat=57 batState=NO_CHARGE map=老厂前线new_wk status=1
+  agv03 st=211 proc=IDLE move=MT_FINISHED emerg=OK bat=42 batState=CHARGING map=老厂前线new_wk status=1
+### warn/err since 2026-10-14 11:49 (UTC), last 40

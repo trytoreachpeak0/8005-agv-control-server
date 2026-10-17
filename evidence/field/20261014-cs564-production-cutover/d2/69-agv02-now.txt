@@ -1,0 +1,11 @@
+== zone params
+Version=1 | DispatchZone=DIE_ATTACH | EnRouteAdditionMaxPathCostIncrease=65000 | StarvationThresholdSeconds=
+Version=1 | DispatchZone=WIRE_BONDING | EnRouteAdditionMaxPathCostIncrease=65000 | StarvationThresholdSeconds=
+== e9bd5f2c demands
+DemandId=e9bd5f2c-b868-4697-b9e5-f68ef0cfb0eb | Status=TERMINATED | UnloadStopId=journey:e9bd5f2c-b868-4697-b9e5-f68ef0cfb0eb|g2|UNLOAD | TargetSlotsJson=[1] | RemovedAt= | RemovalReason=
+DemandId=67e7c463-528b-4888-b166-97e5a16268c5 | Status=TERMINATED | UnloadStopId=journey:67e7c463-528b-4888-b166-97e5a16268c5|g2|UNLOAD | TargetSlotsJson=[5,6] | RemovedAt= | RemovalReason=
+DemandId=68797314-853d-41b8-96fd-d0144e4618e9 | Status=PENDING_LOAD | UnloadStopId=journey:68797314-853d-41b8-96fd-d0144e4618e9|g2|UNLOAD | TargetSlotsJson=[7,8] | RemovedAt=2026-10-15 07:43:49.4553024+00:00 | RemovalReason=RELEASED_AT_STATION_DEADLINE
+DemandId=7bd4ba48-e4d3-467f-ad2c-73eb535559ed | Status=PENDING_LOAD | UnloadStopId=journey:7bd4ba48-e4d3-467f-ad2c-73eb535559ed|g2|UNLOAD | TargetSlotsJson=[1,2] | RemovedAt=2026-10-15 07:50:27.4420987+00:00 | RemovalReason=RELEASED_FOR_REDISPATCH
+DemandId=e80362ae-2e8b-4d1a-a1eb-68a2c6beecc6 | Status=LOADED | UnloadStopId=journey:e80362ae-2e8b-4d1a-a1eb-68a2c6beecc6|UNLOAD | TargetSlotsJson=[3] | RemovedAt= | RemovalReason=
+== e9bd runtime
+Stage=AwaitingUnloadResult | UnloadCommandMessageId=52538cc5-012d-1a56-8daa-706a674916f5 | UnloadSlotOperationAttemptId=92ef588c-25f7-6752-bb49-6e6b65608211 | UpdatedAt=2026-10-15 07:59:38.98163+00:00 | BlockReasonCode=

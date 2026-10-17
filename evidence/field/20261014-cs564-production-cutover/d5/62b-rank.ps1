@@ -1,0 +1,3 @@
+$R = 'D:/zhengyushao/control-server-v2-ops/prod-20261014/ro-sql.ps1'
+"### accepted on agv03 journey: created/accepted/area/slots"; & $R -Sql "SELECT ad.Sublot, ad.CreatedAt, ad.AcceptedAt, ad.LiveMesFieldsJson, jd.TargetSlotsJson, jd.Status, jd.RemovedAt FROM JourneyDemands jd JOIN AcceptedDemands ad ON ad.DemandId=jd.DemandId WHERE jd.JourneyId='journey:dadde6f1-9e2b-4ef1-9141-ca7f7b5ef328' ORDER BY ad.AcceptedAt"
+"### backlog DIE_TO_WIRE_STAGING unaccepted at 15:28 (created before 15:28:26)"; & $R -Sql "SELECT TransportDemandKey, DemandCreatedAt, ReasonCode FROM JourneyBacklog WHERE TransportDemandKey LIKE '%DIE_TO_WIRE_STAGING' AND AcceptedAt IS NULL AND DemandCreatedAt < '2026-10-17 07:28:26' ORDER BY DemandCreatedAt"

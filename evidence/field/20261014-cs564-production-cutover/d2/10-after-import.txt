@@ -1,0 +1,34 @@
+### now 2026-10-15T10:10:35.5509591+08:00
+### services
+  8005 AGV ControlServer Stopped/Disabled
+  8005 AGV ControlServer V2 Running/Manual
+### gate RiotCreateDispatch.enabled=False
+### area-assignments (read verb)
+{"command":"area-assignments","outcome":"OK","version":3,"contentSha256":"619f5cadbe0e7cc937f1d98b0cc90a64e44a00abb5df63f25048d9fdfc7ebc18","snapshotId":"b0020a3be2644a49b3969008fd3948cb","importedAt":"2026-10-15T10:10:27.9232754+08:00","entryCount":316,"entries":[{"area":"N1-1","dispatchZone":"WIRE_BONDING","slotPosition":"FRONT"},{"area":"N1-10","dispatchZone":"WIRE_BONDING","slotPosition":"FRON...
+### dispatch-zone-parameters (read verb)
+{"command":"dispatch-zone-parameters","outcome":"OK","version":1,"contentSha256":"fc98bae1b982dba7d04771e5ee24fb343baa852d47163d6f2c5c9ba145deb609","snapshotId":"6e47a01112684cec8d72e41b63d89b9a","loadedAt":"2026-10-14T20:21:25.3155939+08:00","source":"GOVERNED_IMPORT","zones":[{"dispatchZone":"DIE_ATTACH","inTable":true,"inDispatchPolicy":true,"enRouteAddition":{"state":"ALLOWED","maxPathCostIncreaseMm":65000},"starvation":{"state":"UNCONFIGURED","thresholdSeconds":null}},{"dispatchZone":"WIRE_BONDING","inTable":true,"inDispatchPolicy":true,"enRouteAddition":{"state":"ALLOWED","maxPathCostIncreaseMm":65000},"starvation":{"state":"UNCONFIGURED","thresholdSeconds":null}}]}
+### journeys not Completed
+  j=journey:30dbba5f-21b1-42da-b710-b5401d85 | AgvId=老厂前线新多仓位3 | Stage=AwaitingPickupArrival | DispatchZone=DIE_ATTACH | LoadingPhaseState= | LoadingClosedReason= | CargoHoldingStartedAt= | ExpectedBasketCount=1 | BlockReasonCode=
+### journey count by stage
+  Stage=AwaitingPickupArrival | n=1
+  Stage=Completed | n=2
+### accepted not Succeeded
+  d=88d18582 | Sublot=Q26096572-7 | WorkType=STAGING_TO_WIRE | Status=Accepted | AcceptedAt=2026-10-14 12:21:47.6926126+00:00 | area=
+  d=63cc9da5 | Sublot=Q26097573-2 | WorkType=WIRE_TO_GATE | Status=Accepted | AcceptedAt=2026-10-14 12:21:49.5035357+00:00 | area=
+  d=30dbba5f | Sublot=Q26069Y01-1 | WorkType=DIE_TO_WIRE_STAGING | Status=Accepted | AcceptedAt=2026-10-15 02:10:34.7409183+00:00 | area=
+### accepted total
+  n=3 | last=2026-10-15 02:10:34.7409183+00:00
+### journey demands (open journeys)
+  JourneyId=journey:30dbba5f-21b1-42da-b710-b5401d85c0ac | DemandId=30dbba5f-21b1-42da-b710-b5401d85c0ac | PickupStopId=journey:30dbba5f-21b1-42da-b710-b5401d85c0ac|PICKUP | UnloadStopId=journey:30dbba5f-21b1-42da-b710-b5401d85c0ac|UNLOAD | ExpectedBasketCount=1 | TargetSlotsJson=[1] | LoadedSlotsJson= | LoadSlotOperationAttemptId=6fe81054-da4e-bf5c-a619-5d6ea65b168a | LoadCommandMessageId=9f4c6eae-f682-d256-9ae6-3dec78262a07 | UnloadSlotOperationAttemptId=ab36fbf7-600f-a25b-8c4c-9dc0593465b9 | UnloadCommandMessageId=b51f58b9-4828-2b50-a255-a5adc90b787a | DispatchZone=DIE_ATTACH | DispatchGeneration=1 | Status=PENDING_LOAD | AddedAt=2026-10-15 02:10:34.726132+00:00 | RemovedAt= | RemovalReason= | DispatchZoneParameterVersion=
+### stops of open journeys
+  j=journey: | Sequence=1 | StopRole=PICKUP | StationId=T8-8 | StationRiotId=167 | UpperId=W2G-30dbba5f-21b1-42da-b710-b5401d85c0ac-PICKUP-1 | Status=PENDING
+  j=journey: | Sequence=2 | StopRole=UNLOAD | StationId=装片氮气柜 | StationRiotId=220 | UpperId=W2G-30dbba5f-21b1-42da-b710-b5401d85c0ac-GATE-1 | Status=PENDING
+### intents created since 2026-10-15 02:00 or not CONFIRMED
+  UpperId=W2G-30dbba5f-21b1-42da-b710-b5401d85c0ac-PICKUP-1 | Purpose=TO_PICKUP | TargetStationId=T8-8 | Status=CONFIRMED | OrderId=order-2109981807503081472 | CreateAttemptCount=0 | CreatedAt=2026-10-15 02:10:34.726132+00:00
+### charging/purpose/holds
+  VehicleKey=BROKERX-7daca4ee91da498d8026c68b7b941127 | Purpose=TRANSPORT | JourneyId=journey:30dbba5f-21b1-42da-b710-b5401d85c0ac | ClaimedAt=2026-10-15 02:10:34.7409183+00:00
+### riot
+  agv01 st=214 proc=IDLE move=MT_NA emerg=OK bat=55 batState=NO_CHARGE map=老厂前线new_wk status=1
+  agv02 st=211 proc=IDLE move=MT_NA emerg=OK bat=69 batState=CHARGING map=老厂前线new_wk status=1
+  agv03 st=216 proc=IDLE move=MT_NA emerg=OK bat=93 batState=NO_CHARGE map=老厂前线new_wk status=1
+### warn/err since 2026-10-15 02:00 (UTC), last 40

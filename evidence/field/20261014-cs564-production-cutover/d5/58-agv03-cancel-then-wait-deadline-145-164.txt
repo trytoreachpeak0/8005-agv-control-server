@@ -1,0 +1,53 @@
+# agv03（老厂前线新多仓位3）旅程 dadde6f1：145、164 两站取消装货后空站、等满离站期限才离站
+# 来源：v2 日志 controlserver-20261017.ndjson（ro-log-window.ps1）、v2 库只读 Mode=ReadOnly（ro-sql.ps1）。读取时刻 2026-10-17T15:46:59+08:00。
+# 时刻一律 CST（UTC+8）。日志与库里的原始 UTC 值在下面「原文」部分保留未改。
+
+## 145 站（T2-1_T3-1_T3-2）
+- LoadCancellationStartRequested 收到 15:28:10.889，MessageId 0e0fefbc-0385-48af-a93d-6465bdd250b0
+- LoadCancellationResult 收到 15:28:11.045，MessageId 950c1fe5-13f5-ab53-b46f-ef4f64c52d31
+- 2292 于 15:28:13.422：离站期限 15:32:55，Loaded at this stop: False
+- 2139 于 15:28:13.448：车载工作单原来没有期限（空），服务端改为按 15:32:55 判；期间没有别的 2139 改动期限
+- 离站 15:32:55.833：PreDepartureSafetyCheckResult 收到，MessageId 5233ad06-…；同一刻建了下一腿意图 W2G-f9d6ac57-…-PICKUP-100（目的地 164），CreatedAt 15:32:55.858
+- 下一个开着的停靠：取消那一刻（15:28:10）164 站还不存在（它的 Stop CreatedAt 是 15:28:20.649）。按 Stop CreatedAt 推断，当时开着的是 140（15:27:56 加入）和 150（15:28:08 加入），都不是同站。离站那一刻实际派的下一站是 164。注意：Sequence 会随追加重排，下面列的是当前顺序，不是当时的顺序，所以「当时的下一站」是推断。
+
+## 164 站（T6-8_T7-7）
+- LoadCancellationStartRequested 收到 15:33:49.466，MessageId 597f6aef-9fd0-44d3-82b2-8e910f9825e8
+- LoadCancellationResult 收到 15:33:49.572，MessageId de3118a1-af06-845a-ace3-80bee9dd0ed3
+- 2292 于 15:33:50.755：离站期限 15:38:27，Loaded at this stop: False
+- 2139 于 15:33:50.765：工作单期限由空改为 15:38:27；期间没有别的 2139 改动期限
+- 离站 15:38:29.546：PreDepartureSafetyCheckResult 收到，MessageId 1416e80c-…；同一刻建了下一腿意图 W2G-8879ce04-…-PICKUP-100（目的地 160），CreatedAt 15:38:29.573
+- 下一个开着的停靠：取消那一刻（15:33:49），160 站（8879ce04）的 Stop 还不存在（CreatedAt 15:33:52.073）。按 CreatedAt 推断，当时开着的是 154、150、140，都不是同站。离站那一刻实际派的下一站是 160。
+
+## 对照（不在本次样本内）：160 站 15:41:00 的同站截短（见 d5/57），当时下一个开着的停靠也是 160 站。
+
+## 原文：日志（UTC 时刻）
+07:28:13.422 Info 2292/LogEmptiedStopEntersDepartureWait Vehicle 老厂前线新多仓位3's pickup T2-1_T3-1_T3-2 has nothing left to enter (its last outstanding demand was ended before a sublot) while the journey goes on; it now waits for departure. Loaded at this stop: False; station departure deadline 10/17/2026 15:32:55 (none means the wait is off and the vehicle is sent on in this round).
+07:28:13.448 Info 2139/LogLoadedStopDeadlineRefreshed Vehicle 老厂前线新多仓位3 has loaded everything at pickup T2-1_T3-1_T3-2 and still waits there; its worklist carried the station departure deadline , the server now judges by 10/17/2026 15:32:55, so worklist revision 5 was sent with no items and the server's deadline.
+07:33:50.755 Info 2292/LogEmptiedStopEntersDepartureWait Vehicle 老厂前线新多仓位3's pickup T6-8_T7-7 has nothing left to enter (its last outstanding demand was ended before a sublot) while the journey goes on; it now waits for departure. Loaded at this stop: False; station departure deadline 10/17/2026 15:38:27 (none means the wait is off and the vehicle is sent on in this round).
+07:33:50.765 Info 2139/LogLoadedStopDeadlineRefreshed Vehicle 老厂前线新多仓位3 has loaded everything at pickup T6-8_T7-7 and still waits there; its worklist carried the station departure deadline , the server now judges by 10/17/2026 15:38:27, so worklist revision 8 was sent with no items and the server's deadline.
+
+## 原文：ProtocolInbox，07:26:30～07:39:30 UTC，已排除 Heartbeat/SafetyStateChanged/SnapshotAppliedAck/OnboardAlarmSnapshot
+MessageType=LoadCancellationStartRequested | ReceivedAt=2026-10-17 07:28:10.8894097+00:00 | MessageId=0e0fefbc-0385-48af-a93d-6465bdd250b0
+MessageType=LoadCancellationResult | ReceivedAt=2026-10-17 07:28:11.0445765+00:00 | MessageId=950c1fe5-13f5-ab53-b46f-ef4f64c52d31
+MessageType=PreDepartureSafetyCheckResult | ReceivedAt=2026-10-17 07:32:55.8332922+00:00 | MessageId=5233ad06-f4a7-0d54-bc72-f7ab4a74ac2d
+MessageType=LoadCancellationStartRequested | ReceivedAt=2026-10-17 07:33:49.4658209+00:00 | MessageId=597f6aef-9fd0-44d3-82b2-8e910f9825e8
+MessageType=LoadCancellationResult | ReceivedAt=2026-10-17 07:33:49.5716466+00:00 | MessageId=de3118a1-af06-845a-ace3-80bee9dd0ed3
+MessageType=PreDepartureSafetyCheckResult | ReceivedAt=2026-10-17 07:38:29.5457693+00:00 | MessageId=1416e80c-edd4-0e5a-8ac4-3ee1b77df18d
+
+## 原文：JourneyStops WHERE JourneyId LIKE '%dadde6f1%'（当前读数，Sequence 为当前顺序）
+StopId=journey:dadde6f1-9e2b-4ef1-9141-ca7f7b5ef328|PICKUP | Sequence=1 | StopRole=PICKUP | StationId=T2-1_T3-1_T3-2 | StationRiotId=145 | Status=COMPLETED | CreatedAt=2026-10-17 07:21:00.7946034+00:00 | OperatorDepartedAt= | DepartureSafetyCheckId=df1c2124-d129-4953-9c41-55fe4c6f2b36 | UpperId=W2G-dadde6f1-9e2b-4ef1-9141-ca7f7b5ef328-PICKUP-100
+StopId=journey:f9d6ac57-c7db-46e1-a8c9-d6f1e92cfb37|PICKUP | Sequence=2 | StopRole=PICKUP | StationId=T6-8_T7-7 | StationRiotId=164 | Status=COMPLETED | CreatedAt=2026-10-17 07:28:20.6488586+00:00 | OperatorDepartedAt= | DepartureSafetyCheckId=e068cf76-5e55-c25b-9b64-8ff67db1ecf7 | UpperId=W2G-f9d6ac57-c7db-46e1-a8c9-d6f1e92cfb37-PICKUP-100
+StopId=journey:8879ce04-bb9c-4e08-9e5c-c609db1070a1|PICKUP | Sequence=3 | StopRole=PICKUP | StationId=T6-7_T7-6 | StationRiotId=160 | Status=COMPLETED | CreatedAt=2026-10-17 07:33:52.073207+00:00 | OperatorDepartedAt= | DepartureSafetyCheckId=bcbdbc0e-e7ae-d958-8b69-b6a21a2f2272 | UpperId=W2G-8879ce04-bb9c-4e08-9e5c-c609db1070a1-PICKUP-100
+StopId=journey:d945ff2e-af08-482c-bbe2-6e34daeeac24|PICKUP | Sequence=4 | StopRole=PICKUP | StationId=T6-7_T7-6 | StationRiotId=160 | Status=COMPLETED | CreatedAt=2026-10-17 07:40:54.8133175+00:00 | OperatorDepartedAt= | DepartureSafetyCheckId=5d0525a7-ba1e-f355-b2ad-85a09f80464e | UpperId=W2G-d945ff2e-af08-482c-bbe2-6e34daeeac24-PICKUP-100
+StopId=journey:6b3d368e-9739-48fb-8274-be50fac5859c|PICKUP | Sequence=5 | StopRole=PICKUP | StationId=T6-7_T7-6 | StationRiotId=160 | Status=PENDING | CreatedAt=2026-10-17 07:46:12.9955474+00:00 | OperatorDepartedAt= | DepartureSafetyCheckId=82f550fd-e2e6-8f52-88c7-744c670987a6 | UpperId=W2G-6b3d368e-9739-48fb-8274-be50fac5859c-PICKUP-100
+StopId=journey:85042647-ed2c-46fd-a2c9-0e2eb056c1bd|PICKUP | Sequence=6 | StopRole=PICKUP | StationId=T6-1_T6-2_T7-1 | StationRiotId=154 | Status=PENDING | CreatedAt=2026-10-17 07:28:26.3435771+00:00 | OperatorDepartedAt= | DepartureSafetyCheckId=faa7718d-1e09-275d-af42-aef495ee4dde | UpperId=W2G-85042647-ed2c-46fd-a2c9-0e2eb056c1bd-PICKUP-100
+StopId=journey:3283fc0b-e4b0-4b73-a672-8929af4dea3d|PICKUP | Sequence=7 | StopRole=PICKUP | StationId=T5-5 | StationRiotId=150 | Status=PENDING | CreatedAt=2026-10-17 07:28:08.1167045+00:00 | OperatorDepartedAt= | DepartureSafetyCheckId=8ed3323a-953f-e852-b77f-7a7cc5fa8be5 | UpperId=W2G-3283fc0b-e4b0-4b73-a672-8929af4dea3d-PICKUP-100
+StopId=journey:dd3de04f-7f01-4c10-9976-dc79784af49b|PICKUP | Sequence=8 | StopRole=PICKUP | StationId=T2-5_T3-5 | StationRiotId=140 | Status=PENDING | CreatedAt=2026-10-17 07:27:56.3852781+00:00 | OperatorDepartedAt= | DepartureSafetyCheckId=ea433fa2-38e4-6156-a0a8-264079168537 | UpperId=W2G-dd3de04f-7f01-4c10-9976-dc79784af49b-PICKUP-100
+StopId=journey:dadde6f1-9e2b-4ef1-9141-ca7f7b5ef328|UNLOAD | Sequence=9 | StopRole=UNLOAD | StationId=装片氮气柜 | StationRiotId=220 | Status=PENDING | CreatedAt=2026-10-17 07:21:00.7946034+00:00 | OperatorDepartedAt= | DepartureSafetyCheckId= | UpperId=W2G-dadde6f1-9e2b-4ef1-9141-ca7f7b5ef328-GATE-100
+
+## 原文：OrderIntents，agv03，CreatedAt > 07:20 UTC
+UpperId=W2G-dadde6f1-9e2b-4ef1-9141-ca7f7b5ef328-PICKUP-100 | DestinationStationId=145 | Status=CONFIRMED | CreatedAt=2026-10-17 07:21:00.7946034+00:00 | CreateDispatchArmedAt=2026-10-17 07:21:00.9565947+00:00
+UpperId=W2G-f9d6ac57-c7db-46e1-a8c9-d6f1e92cfb37-PICKUP-100 | DestinationStationId=164 | Status=CONFIRMED | CreatedAt=2026-10-17 07:32:55.8583505+00:00 | CreateDispatchArmedAt=2026-10-17 07:32:56.0041266+00:00
+UpperId=W2G-8879ce04-bb9c-4e08-9e5c-c609db1070a1-PICKUP-100 | DestinationStationId=160 | Status=CONFIRMED | CreatedAt=2026-10-17 07:38:29.5734315+00:00 | CreateDispatchArmedAt=2026-10-17 07:38:29.710652+00:00
+UpperId=W2G-d945ff2e-af08-482c-bbe2-6e34daeeac24-PICKUP-100 | DestinationStationId=160 | Status=CONFIRMED | CreatedAt=2026-10-17 07:41:00.2382749+00:00 | CreateDispatchArmedAt=2026-10-17 07:41:00.3807501+00:00
+UpperId=W2G-6b3d368e-9739-48fb-8274-be50fac5859c-PICKUP-100 | DestinationStationId=160 | Status=CONFIRMED | CreatedAt=2026-10-17 07:46:17.6084281+00:00 | CreateDispatchArmedAt=2026-10-17 07:46:17.7255507+00:00

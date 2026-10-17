@@ -1,0 +1,28 @@
+[19:47:50] Clone F:\8005-wt\prod-cutover-f12bc809-8005-agv-control-server is clean at f12bc8097b462d0c88ddd252f28b6d7e8bd856ca; definition scripts/parallel/instance-factory01-v2.cutover-production-s3.runtime-on.json is tracked there; the files sent match HEAD
+[19:47:50] ADMISSION_POLICY_VERSION=6 -- write it into the deployment record; a rollback needs the highest one ever installed + 1
+[19:47:51] Instance definition accepted: factory01-v2-parallel (from F:/8005-wt/prod-cutover-f12bc809-8005-agv-control-server/scripts/parallel/instance-factory01-v2.cutover-production-s3.runtime-on.json)
+[19:47:51] MES_INGEST_SOURCE=production baseUrl=http://127.0.0.1:5088 allowedWorkTypes=DIE_TO_WIRE_STAGING,DIE_TO_OVEN,WIRE_TO_GATE,WIRE_TO_OPTICAL,STAGING_TO_WIRE,WIRE_TO_NITROGEN -- PRODUCTION CUTOVER (production): this instance reads the PRODUCTION MesIngest for all six task types and drives agv01; the MVP must be stopped (control-server#564)
+[33;1mWARNING: MES_INGEST_SOURCE=production baseUrl=http://127.0.0.1:5088 allowedWorkTypes=DIE_TO_WIRE_STAGING,DIE_TO_OVEN,WIRE_TO_GATE,WIRE_TO_OPTICAL,STAGING_TO_WIRE,WIRE_TO_NITROGEN -- PRODUCTION CUTOVER (production): this instance reads the PRODUCTION MesIngest for all six task types and drives agv01; the MVP must be stopped (control-server#564)[0m
+[19:47:51] Target: factory01  service '8005 AGV ControlServer V2'
+[19:47:51] Vehicle 1/3: ÀÏ³§Ç°ÏßÐÂ¶à²ÖÎ»1 (BROKERX-0c20ff0600d644869a6a80c186065d85)
+[19:47:51] Vehicle 2/3: ÀÏ³§Ç°ÏßÐÂ¶à²ÖÎ»2 (BROKERX-f38975561adf46ccb1d2f23833c7d0e4)
+[19:47:51] Vehicle 3/3: ÀÏ³§Ç°ÏßÐÂ¶à²ÖÎ»3 (BROKERX-7daca4ee91da498d8026c68b7b941127)
+[19:47:51] RouteGraph: enabled=True mapId=26   RiotCreateDispatch: enabled=False
+[19:47:51] Clearance exit: VehicleFaultRecovery enabled=False   FieldOperatorRoles roster=D:\zhengyushao\control-server-v2-ops\field-operator-roles.json onboardEntryDeclared=False
+[19:47:51] Clearance to a waiting point (REQ-0178): journeyRuntime.clearanceToWaitingPointEnabled=False
+[19:47:52] INSTALLED_ADMISSION_POLICY_VERSION=6 (from D:\zhengyushao\control-server-v2-ops\installed-instance.json on factory01); sending 6
+[19:47:52] EMERGENCY_STOP_RELEASE_REQUESTED=enabled=true credential=present loadedCredential=present (both sent; values not shown)
+[19:47:52] Secrets loaded from the DPAPI store (V2FaultRecoveryCredential present, will be sent)
+[19:47:52] Vehicle-safety projection credentials loaded for BROKERX-0c20ff0600d644869a6a80c186065d85, BROKERX-f38975561adf46ccb1d2f23833c7d0e4, BROKERX-7daca4ee91da498d8026c68b7b941127 (values not shown)
+[19:47:52] Downloading artifact from run 38542183893
+[19:48:14] Package hash verified (f17f333135e4eaf0172e86b753593ade5d576b91c34c57816330f09f043d04a6)
+[19:48:14] PACKAGE_COMMIT_MATCHES_CLONE=f12bc8097b462d0c88ddd252f28b6d7e8bd856ca (release-manifest.json components.controlServer.commit)
+[19:48:14] Package onboard commit: d495746117ae762cae96708edc9717f7f7d3e4f0 (components.onboardHmi.commit)
+[19:48:14] No FakeMesIngest: mesIngest.source is production
+What if: Performing the operation "Deploy WireToGate-20261014-092825-f12bc80.zip as the v2 parallel instance" on target "factory01".
+[19:48:14] WhatIf: stopping before the server is touched.
+[19:48:14] Would copy: C:\Users\szy\AppData\Local\Temp\control-server-v2-deploy-20261014-194752-a9e15414\WireToGate-20261014-092825-f12bc80\WireToGate-20261014-092825-f12bc80.zip -> factory01:D:\zhengyushao\control-server-v2-staging
+[19:48:14] Would install service '8005 AGV ControlServer V2' into C:\Program Files\8005 AGV\ControlServer.V2
+[19:48:14] Would bind: tcp://172.19.205.222:58105 and http://172.19.205.222:58107
+[19:48:14] Would keep the MVP at 58005/58007 untouched.
+[19:48:14] NOTE: on an upgrade the installed bindings are kept; the ports above apply only to a first install.
