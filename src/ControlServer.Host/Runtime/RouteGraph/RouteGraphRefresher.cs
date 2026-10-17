@@ -188,11 +188,18 @@ public sealed class RouteGraphRefresher(
         return null;
     }
 
+    /// <remarks>
+    /// Due one <see cref="RouteGraphOptions.RuntimeRefreshPeriod"/> before the TTL, not at it (control-server#744). The
+    /// verdict ages the snapshot by the clock between ticks, so a refresh due only at the TTL left every TTL period with a
+    /// window -- from the TTL to the next tick -- in which every reader saw <see cref="RouteGraphStaleReasons.DesignStateExpired"/>
+    /// although nothing was wrong; when the TTL fell inside a tick's own reads, the tick even wrote that verdict down. The
+    /// validator keeps the TTL above the period, so the lead never makes the design cycle run every tick.
+    /// </remarks>
     private bool IsDesignStateDue(RouteGraphSnapshotHeader? header, DateTimeOffset now) =>
         header is null ||
         header.DesignRefreshedAt is null ||
         header.DesignRevision <= 0 ||
-        now - header.DesignRefreshedAt.Value >= _options.DesignStateTtl;
+        now - header.DesignRefreshedAt.Value >= _options.DesignStateTtl - _options.RuntimeRefreshPeriod;
 
     private async Task RefreshDesignStateAsync(int mapId, DateTimeOffset now, CancellationToken cancellationToken)
     {

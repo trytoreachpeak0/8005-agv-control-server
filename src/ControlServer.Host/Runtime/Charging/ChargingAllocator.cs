@@ -35,9 +35,14 @@ public sealed record ChargingBoardVerdict(string Reason, string Detail);
 /// </summary>
 /// <param name="Detail">
 /// 给撤回日志（事件 2254）的细节：码本身；码是 <c>CHARGER_OCCUPANCY_UNKNOWN</c> 时再带上哪一样事实没读到
-/// （control-server#645）。只是诊断，判定只看 <see cref="Reason"/>。
+/// （control-server#645）；码是 <c>CHARGING_ROUTE_GRAPH_UNAVAILABLE</c> 时再带上路网的不可用原因（control-server#744）。只是诊断，
+/// 判定只看 <see cref="Reason"/>。
 /// </param>
-public sealed record CommittedChargerCheck(string? Reason, string? Detail);
+/// <param name="RouteGraphStaleReason">
+/// 码是 <c>CHARGING_ROUTE_GRAPH_UNAVAILABLE</c> 时路网快照的不可用原因（<c>ROUTE_GRAPH_*</c>），否则为空（control-server#744）：
+/// 出发前复核据它区分「此刻核不了」（保持）与 sticky 的「路网与世界对不上了」（撤回）。
+/// </param>
+public sealed record CommittedChargerCheck(string? Reason, string? Detail, string? RouteGraphStaleReason = null);
 
 /// <summary>一辆车在一轮分配里读到的电量观测：RIoT 的电量与电池状态、按冻结策略投影的 batteryState、观测时刻。</summary>
 public sealed record ChargingBoardObservation(int? BatteryPercent, string? RiotBatteryState, string BatteryState, DateTimeOffset ObservedAt);
@@ -600,7 +605,8 @@ public sealed class ChargingAllocator(
         // Whether it needs charging at all, from the facts this round already read: nothing else is read for a vehicle that
         // does not. The policy is the one this round fixed for it -- the resolver is not asked again (REQ-0282).
         string battery = BatteryEligibility.Judge(
-            candidate.Facts.Vehicle, candidate.Facts.BatteryPolicy, tasksToCover: 1, _runtime.WaitingJourneyRescueBatteryPercent);
+            candidate.Facts.Vehicle, candidate.Facts.BatteryPolicy, tasksToCover: 1, _runtime.WaitingJourneyRescueBatteryPercent,
+            candidate.Facts.ChargingCycle);
         if (battery != DispatchReasonCodes.MandatoryChargeRequired)
         {
             // Above the line (with or without the margin for another task), or being charged already: not this queue's.
@@ -864,11 +870,15 @@ public sealed class ChargingAllocator(
         RoundReads reads = new();
         string? reason = await JudgeCommittedChargerAsync(vehicleKey, mapId, stationId, currentMap, reads, cancellationToken)
             .ConfigureAwait(false);
+        string? graphStale = reason == ChargingAllocationReasons.RouteGraphUnavailable ? reads.Graph?.StaleReason : null;
         return new CommittedChargerCheck(
             reason,
             reason == ChargingAllocationReasons.ChargerOccupancyUnknown && reads.Occupancy is { } facts
                 ? $"{reason}; unknown: {DescribeUnknown(facts, vehicleKey)}"
-                : reason);
+                : graphStale is not null
+                    ? $"{reason}; {graphStale}"
+                    : reason,
+            graphStale);
     }
 
     /// <summary>

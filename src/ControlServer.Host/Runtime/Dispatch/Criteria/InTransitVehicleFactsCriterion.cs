@@ -83,6 +83,6 @@ public sealed class InTransitVehicleFactsCriterion(IOptions<JourneyRuntimeOption
         // 充满后接了活、还没离桩（仍报 CHARGING）的车同样不因 CHARGING 被拒（批次9-07）。
         return BatteryEligibility.Judge(
             facts.Vehicle, facts.BatteryPolicy, BatteryEligibility.TasksToCoverAfterAppend(facts.Plan),
-            options.WaitingJourneyRescueBatteryPercent, facts.ChargingCycleComplete);
+            options.WaitingJourneyRescueBatteryPercent, facts.ChargingCycle);
     }
 }

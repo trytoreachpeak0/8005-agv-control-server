@@ -272,6 +272,28 @@ public sealed class RouteGraphEngineTests
         Assert.Equal(3, fixture.Source.RemovedEdgeReads);
     }
 
+    /// <summary>
+    /// 刷新每 7 秒一次、与 10 分钟 TTL 不对齐时，两次刷新之间任何时刻去读，设计态都不会过期（control-server#744）。红证据：设计态到 TTL
+    /// 才刷新时，TTL 落在两次刷新之间的那一段读者读到 <c>ROUTE_GRAPH_DESIGN_STATE_EXPIRED</c>——2026-10-17 生产上就在这一两秒里撤掉了一个充电承诺。
+    /// </summary>
+    [Fact]
+    public async Task TheDesignStateIsRefreshedBeforeItsTtlSoNoReaderBetweenTwoTicksSeesItExpired()
+    {
+        await using Fixture fixture = await Fixture.CreateAsync();
+
+        for (int tick = 0; tick < 300; tick++)
+        {
+            await fixture.Refresher.RefreshOnceAsync(TestContext.Current.CancellationToken);
+            fixture.Clock.Advance(TimeSpan.FromSeconds(6));
+            RouteGraphAvailability between = await fixture.Access.ReadAsync(TestContext.Current.CancellationToken);
+            Assert.True(between.IsUsable, $"tick {tick}: {between.StaleReason}");
+            fixture.Clock.Advance(TimeSpan.FromSeconds(1));
+        }
+
+        // 35 minutes of ticks: the design cycle still ran on its TTL, not on every tick.
+        Assert.InRange(fixture.Source.EdgeReads, 4, 5);
+    }
+
     [Fact]
     public async Task AFreshlyRefreshedSnapshotIsUsableAndCarriesTheGraph()
     {

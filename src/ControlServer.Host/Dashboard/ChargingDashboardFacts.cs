@@ -163,7 +163,8 @@ internal static class ChargingDashboardDescriptions
         new Dictionary<string, string>(StringComparer.Ordinal)
         {
             [ChargingAllocationReasons.Committed] = "已安排充电：桩已为它预占，充电用途与开往桩的单在同一次保存里形成",
-            [ChargingAllocationReasons.NotRequired] = "不需要充电：电量不低于它所用策略版本的强制充电线",
+            [ChargingAllocationReasons.NotRequired] =
+                "不需要自动充电：电量不低于它所用策略版本的强制充电线，或车此刻正在被充电（在 v2 充电安排之外被人充上桩的车，充到充满线才接活）",
             [ChargingAllocationReasons.ManualChargingHoldActive] = "在人工充电等待中：不分桩，要先由管理员在车上点「充电后返回服务」",
             [ChargingAllocationReasons.VehicleHasPurpose] = "车已有用途（搬运、空闲返回或一次没结束的充电）：已开始的用途保持，不改去充电",
             [ChargingAllocationReasons.VehicleEligibilityHeld] = "这辆车的充电资格暂停着：恢复之前不分桩",
@@ -389,6 +390,8 @@ internal static class ChargingDashboardDescriptions
             [ChargingExecutionReasons.ArrivalNotProven] = "到现场看车停在哪里",
             [ChargingExecutionReasons.OrderNotFound] = "在 RIoT 上查这张充电单去了哪里、车在哪里",
             [ChargingExecutionReasons.DepartureNotProven] = "检查车载端连接与仓门",
+            [ChargingExecutionReasons.DepartureRouteGraphUnavailable] =
+                "通常几秒内自行恢复，不用处理；持续不恢复时查路网页面的不可用原因与服务端到 RIoT 的连接",
             [ChargingExecutionReasons.CycleMissing] = "联系开发：这是不该出现的状态",
             [ChargingExecutionReasons.LegOutcomeCode(MovementDispatchOutcome.ResultUnknown)] = "到 RIoT 核对这张充电单与车的状态",
             [ChargingExecutionReasons.LegOutcomeCode(MovementDispatchOutcome.CreateDispatchDisabled)] = "确认建单开关是否应该打开",
