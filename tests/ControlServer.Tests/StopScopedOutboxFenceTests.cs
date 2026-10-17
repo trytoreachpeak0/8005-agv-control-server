@@ -6,6 +6,7 @@ using ControlServer.Infrastructure.Persistence;
 using ControlServer.Application;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Configuration;
+using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging.Abstractions;
 using static ControlServer.Tests.Batch7StopDrivenAdvanceDriver;
 using static ControlServer.Tests.JourneyRuntimeWorkerTestKit;
@@ -32,6 +33,8 @@ public sealed class StopScopedOutboxFenceTests
     private const string StrayEntryId = "c7400000-0000-4000-8000-000000000001";
     private const string StrayRejectionId = "c7400000-0000-4000-8000-000000000002";
     private const string StrayStagedRejectionId = "c7400000-0000-4000-8000-000000000003";
+    private const string OtherSessionEntryId = "c7400000-0000-4000-8000-000000000004";
+    private const string OtherSessionId = "c7400000-0000-4000-8000-0000000000ff";
 
     private static readonly string[] StopScopedTypes = ["SublotEntryRequested", "SublotRejected"];
     private static readonly string[] EntryMethods = ["SCAN"];
@@ -77,6 +80,7 @@ public sealed class StopScopedOutboxFenceTests
         Assert.Equal(JourneyRuntimeStage.Completed, (await ArriveAtGateAndUnloadAsync(fixture, FirstDemandId)).Stage);
 
         Assert.Empty(await PendingStopScopedAsync(fixture));
+        await AssertOtherStopScopedTypesSettledAsync(fixture);
     }
 
     /// <summary>
@@ -92,12 +96,26 @@ public sealed class StopScopedOutboxFenceTests
         await EnterSublotAsync(fixture, FirstDemandId, FirstSublot, FirstSubmissionId);
         Assert.Equal(JourneyRuntimeStage.AwaitingSublot, (await SettleLoadAsync(fixture, FirstDemandId)).Stage);
         await AddStraysAsync(fixture, pickup, current: true);
+        // 别的作业会话的一行（审查 F2）：按停靠退，不是这一类全退。
+        fixture.Context.ProtocolOutbox.Add(Stray(
+            fixture, OtherSessionEntryId, "SublotEntryRequested", current: true,
+            new
+            {
+                operationSessionId = OtherSessionId,
+                stationId = pickup.StationId,
+                worklistRevision = 0,
+                expectedSublots = new[] { FirstSublot },
+                entryMethods = EntryMethods,
+                expiresOnRevisionChange = true
+            }));
+        await fixture.Context.SaveChangesAsync(Token);
+        fixture.Context.ChangeTracker.Clear();
 
         await CancelBeforeScanAsync(fixture, SecondDemandId, "c7400000-0000-4000-8000-000000000011");
 
         Assert.NotEqual(JourneyRuntimeStage.Completed, (await JourneyOfAsync(fixture, FirstDemandId)).Stage);
         await AssertFencedAsync(fixture, StrayEntryId, StrayRejectionId);
-        Assert.Empty(await PendingStopScopedAsync(fixture));
+        await AssertPendingAsync(fixture, OtherSessionEntryId);
     }
 
     /// <summary>一站两条都没装，扫码前先后取消：旅程被终结（<c>PickupStopTermination</c> → <c>JourneyClosure</c>），遗留的两行退役。</summary>
@@ -116,6 +134,7 @@ public sealed class StopScopedOutboxFenceTests
         Assert.Equal(JourneyRuntimeStage.Completed, (await JourneyOfAsync(fixture, FirstDemandId)).Stage);
         await AssertFencedAsync(fixture, StrayEntryId, StrayRejectionId);
         Assert.Empty(await PendingStopScopedAsync(fixture));
+        await AssertOtherStopScopedTypesSettledAsync(fixture);
     }
 
     /// <summary>
@@ -161,11 +180,15 @@ public sealed class StopScopedOutboxFenceTests
         await Assert.ThrowsAsync<InvalidOperationException>(() =>
             ProtocolOutboxIdentityStartupCheck.EnsureAsync(fixture.Context, NullLogger.Instance, null, Token));
 
-        await StopScopedOutbox.FenceEndedAsync(fixture.Context, agvId: null, fixture.Clock.GetUtcNow(), Token);
-        await fixture.Context.SaveChangesAsync(Token);
+        await using ServiceProvider services = HostServices(fixture);
+
+        await StopScopedOutbox.FenceEndedAtStartupAsync(services, Token);
 
         await AssertFencedAsync(fixture, StrayEntryId, StrayRejectionId);
-        await ProtocolOutboxIdentityStartupCheck.EnsureAsync(fixture.Context, NullLogger.Instance, null, Token);
+        await ProtocolOutboxIdentityStartupCheck.EnsureAsync(services, Token);
+        // 幂等：再跑一次不动任何行，身份检查照旧放行。
+        await StopScopedOutbox.FenceEndedAtStartupAsync(services, Token);
+        await ProtocolOutboxIdentityStartupCheck.EnsureAsync(services, Token);
     }
 
     /// <summary>启动修复不碰还开着的停靠：那一站的车可能还在等它们。启动检查不因此放宽，照旧拒绝。</summary>
@@ -179,12 +202,38 @@ public sealed class StopScopedOutboxFenceTests
         await ArriveAtPickupAsync(fixture, FirstDemandId);
         await AddStraysAsync(fixture, await CurrentStopAsync(fixture, FirstDemandId), current: false);
 
-        await StopScopedOutbox.FenceEndedAsync(fixture.Context, agvId: null, fixture.Clock.GetUtcNow(), Token);
-        await fixture.Context.SaveChangesAsync(Token);
+        await using ServiceProvider services = HostServices(fixture);
+
+        await StopScopedOutbox.FenceEndedAtStartupAsync(services, Token);
 
         await AssertPendingAsync(fixture, StrayEntryId, StrayRejectionId);
-        await Assert.ThrowsAsync<InvalidOperationException>(() =>
-            ProtocolOutboxIdentityStartupCheck.EnsureAsync(fixture.Context, NullLogger.Instance, null, Token));
+        await Assert.ThrowsAsync<InvalidOperationException>(() => ProtocolOutboxIdentityStartupCheck.EnsureAsync(services, Token));
+    }
+
+    /// <summary>
+    /// 主机的启动顺序（审查 F1）：库迁移之后、发件箱身份检查之前跑启动修复。这一行回退，修之前留下遗留行的库换协议身份时照旧起不来，
+    /// 而上面两条测试直接调入口、看不见 <c>Program.cs</c>。同 <c>SlotFaultDeclarationTests.TheHostSettlesAnsweredDeclarationsAfterMigratingAndBeforeTheOutboxIdentityCheck</c>。
+    /// </summary>
+    [Fact]
+    [Trait("IntegrationSlice", "FP-IS-08")]
+    public void TheHostFencesEndedStopLinesAfterMigratingAndBeforeTheOutboxIdentityCheck()
+    {
+        string[] lines = File.ReadAllLines(Path.Combine(RepositoryRoot(), "src", "ControlServer.Host", "Program.cs"));
+        int Line(string call)
+        {
+            int[] found = [.. lines.Select((line, index) => (line.Trim(), index))
+                .Where(item => !item.Item1.StartsWith("//", StringComparison.Ordinal)
+                               && item.Item1.StartsWith("await " + call + "(app.Services", StringComparison.Ordinal))
+                .Select(item => item.index)];
+            return Assert.Single(found);
+        }
+
+        int migrate = Line("EnsureDatabaseAsync");
+        int repair = Line("StopScopedOutbox.FenceEndedAtStartupAsync");
+        int identity = Line("ProtocolOutboxIdentityStartupCheck.EnsureAsync");
+
+        Assert.True(migrate < repair, $"the repair at line {repair + 1} runs before the migration at line {migrate + 1}");
+        Assert.True(repair < identity, $"the repair at line {repair + 1} runs after the identity check at line {identity + 1}");
     }
 
     /// <summary>本停靠较早一版的录入请求与一条拒收，未确认、未退役。</summary>
@@ -269,6 +318,43 @@ public sealed class StopScopedOutboxFenceTests
         }),
         CreatedAt = fixture.Clock.GetUtcNow()
     };
+
+    /// <summary>主机启动时那几步拿到的服务：同一个库、夹具的钟。</summary>
+    private static ServiceProvider HostServices(RuntimeFixture fixture)
+    {
+        ServiceCollection services = new();
+        services.AddLogging();
+        services.AddSingleton<TimeProvider>(fixture.Clock);
+        services.AddScoped(_ => new ControlServerDbContext(fixture.DbOptionsForTests));
+        return services.BuildServiceProvider(new ServiceProviderOptions { ValidateScopes = true });
+    }
+
+    private static string RepositoryRoot()
+    {
+        DirectoryInfo? directory = new(AppContext.BaseDirectory);
+        while (directory is not null && !File.Exists(Path.Combine(directory.FullName, "ControlServer.sln")))
+        {
+            directory = directory.Parent;
+        }
+        return directory?.FullName ?? throw new InvalidOperationException("ControlServer.sln not found above the test output.");
+    }
+
+    /// <summary>
+    /// 另外四类以站为生命周期的出站行（审查说明 2）：旅程终态后，仓位命令、离站核验、离站结果都没有待补发的；清单只剩收尾那一张
+    /// （车要收它，夹具里没有车来确认）。这四类本票不改，这里守的是盘点时「已各有退役或结清路径」的结论。
+    /// </summary>
+    private static async Task AssertOtherStopScopedTypesSettledAsync(RuntimeFixture fixture)
+    {
+        string[] commands = ["SlotOperationCommand", "PreDepartureSafetyCheck", "CurrentStopDepartureResult"];
+        ProtocolOutboxRow[] pending = await fixture.Context.ProtocolOutbox.AsNoTracking()
+            .Where(row => (commands.Contains(row.MessageType) || row.MessageType == "CurrentStopWorklistSnapshot") &&
+                          row.AcknowledgedAt == null && row.FencedAt == null)
+            .ToArrayAsync(Token);
+        string closingWorklist = JourneyClosure.SnapshotMessageIds((await JourneyOfAsync(fixture, FirstDemandId)).JourneyId)[0];
+        Assert.All(pending, row => Assert.True(
+            row.MessageType == "CurrentStopWorklistSnapshot" && row.MessageId == closingWorklist,
+            $"{row.MessageType} {row.MessageId} is still pending replay after the journey ended."));
+    }
 
     private static async Task<ProtocolOutboxRow[]> PendingStopScopedAsync(RuntimeFixture fixture) =>
         await fixture.Context.ProtocolOutbox.AsNoTracking()
