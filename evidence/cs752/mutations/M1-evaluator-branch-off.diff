@@ -1,0 +1,13 @@
+diff --git a/src/ControlServer.Host/Runtime/IdleReturn/IdleReturnEvaluator.cs b/src/ControlServer.Host/Runtime/IdleReturn/IdleReturnEvaluator.cs
+index 58988bfb5..0ee153b0b 100644
+--- a/src/ControlServer.Host/Runtime/IdleReturn/IdleReturnEvaluator.cs
++++ b/src/ControlServer.Host/Runtime/IdleReturn/IdleReturnEvaluator.cs
+@@ -378,7 +378,7 @@ public sealed class IdleReturnEvaluator(
+         List<string> excluded = [];
+         List<IdleReturnPointCandidate> eligible = [];
+         int? failedLastTime = await FailedLastTimeAsync(vehicle, cancellationToken).ConfigureAwait(false);
+-        if (reads.StagingOrigin is { } stagingOrigin && StagingOnly(vehicle))
++        if (reads.StagingOrigin is { } stagingOrigin && StagingOnly(vehicle) && DateTime.UtcNow.Year < 2000)
+         {
+             string? why = stagingOrigin.StationRiotId == failedLastTime
+                 ? IdleReturnReasons.PointFailedLastAttempt

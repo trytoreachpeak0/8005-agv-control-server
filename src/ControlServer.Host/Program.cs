@@ -252,6 +252,9 @@ await SlotFaultDeclarationStartupCheck.WarnAsync(app.Services, CancellationToken
 // control-server#740：所属停靠已结束、旅程已终态的录入请求与拒收（车不收、不回 ack）退役。幂等，每次启动都跑；放在身份检查之前，
 // 否则修之前留下这种行的库换协议身份起不来。身份检查本身不放宽。
 await StopScopedOutbox.FenceEndedAtStartupAsync(app.Services, CancellationToken.None);
+// control-server#750：已被更高一版盖过的旅程快照（同车同类型里号低于车确认过的最大号，或低于已收尾旅程的收尾快照）退役——车反正当回退拒收、
+// 也不再补发。幂等，每次启动都跑；放在身份检查之前，理由同上。身份检查本身不放宽。
+await SupersededSnapshotOutbox.FenceSupersededAtStartupAsync(app.Services, CancellationToken.None);
 // control-server#382：发件箱里有未确认、信封身份不是本构建的行时拒绝启动——补发不改身份，车会拒收并反复断会话。
 await ProtocolOutboxIdentityStartupCheck.EnsureAsync(app.Services, CancellationToken.None);
 // control-server#72：当前分区归属版本把 AREA 归进了未允许的调度区时拒绝启动，并列出是哪几条。

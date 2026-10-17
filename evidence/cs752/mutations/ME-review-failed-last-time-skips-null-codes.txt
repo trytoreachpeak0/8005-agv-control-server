@@ -1,0 +1,9 @@
+本机时段 2026-10-17 23:04:05～23:05:00，变异只改 IdleReturnEvaluator.cs 一处（FailedLastTimeAsync 的 Where 加 && row.BlockReasonCode != null），只跑一条用例，跑完 git checkout 还原。
+exit=1
+  Failed ControlServer.Tests.IdleReturnExecutionTests.AfterTheFallbackTheNextIdleReturnAimsAtTheStagingOriginAgain [7 s]
+  Error Message:
+   System.NullReferenceException : Object reference not set to an instance of an object.
+     at ControlServer.Tests.IdleReturnExecutionTests.AfterTheFallbackTheNextIdleReturnAimsAtTheStagingOriginAgain() in F:\8005-wt\fti-752-8005-agv-control-server\tests\ControlServer.Tests\IdleReturnExecutionTests.StagingOrigin.cs:line 141
+   at ControlServer.Tests.IdleReturnExecutionTests.AfterTheFallbackTheNextIdleReturnAimsAtTheStagingOriginAgain() in F:\8005-wt\fti-752-8005-agv-control-server\tests\ControlServer.Tests\IdleReturnExecutionTests.StagingOrigin.cs:line 144
+Failed!  - Failed:     1, Passed:     0, Skipped:     0, Total:     1, Duration: 7 s - ControlServer.Tests.dll (net8.0)
+第 141 行是读 215（待送点）的站点独占：变异下下一次承诺没有落到待送点，读到空。

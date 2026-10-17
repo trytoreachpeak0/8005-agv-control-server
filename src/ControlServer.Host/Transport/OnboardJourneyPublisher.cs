@@ -874,7 +874,7 @@ public sealed class OnboardJourneyPublisher(
     /// </para>
     /// <para>
     /// 超过协议上限 9 条腿时当场抛出，不截断、不发：截断会静默丢腿，发出去车载端按 schema 拒收、断会话。正常路径到不了这里——
-    /// 追加门禁按整条旅程数腿（<see cref="EnRouteAppendPlanner.MaximumLegs"/>），清桩与充电计划最多两条。
+    /// 业务计划只含剩余停靠、追加门禁按剩余停靠数腿（<see cref="EnRouteAppendPlanner.MaximumLegs"/>，control-server#749），清桩与充电计划最多两条。
     /// </para>
     /// <para>
     /// 追加后的重发判定（<c>JourneyRuntimeEngine.PlanOnTheWireMatches</c>）拿线上那一版与这里的结果比，不与投影原样比。

@@ -1,0 +1,99 @@
+{
+  "schemaVersion": 1,
+  "scenario": "session-established-while-moving",
+  "runId": "20261017T144308791Z",
+  "outcome": "PASS",
+  "failureReason": "",
+  "identity": {
+    "protocolReleaseIdentity": {
+      "repository": "8005-agv-protocol",
+      "releaseVersion": "5.0.0",
+      "tag": "protocol-v5.0.0",
+      "commit": "13eca82ac199bd97c1ad49d036c70cb5b012250f",
+      "protocolVersion": 6,
+      "profileId": "AGV_FULL_PRODUCT",
+      "manifestSha256": "128daae52758749d4d6f346231fdb336ca5d1079773bcab5430c20c53ce6b10b",
+      "schemaBundleSha256": "d51abe44036f32b5b2c28fd1bea6ec7a89cf3b4dea0f0b1d6c9daaf52f350933",
+      "vectorsSha256": "291311b24bfcac75818ca9e4a888d436523e6ee14db661f6ba792ab8cc383e4a",
+      "approvalStatus": "SUPERSEDING_CANDIDATE"
+    },
+    "stageRoot": "C:\\Users\\szy\\AppData\\Local\\Temp\\l2-20261017T144308791Z",
+    "agvId": "AGV-L2-001",
+    "vehicleKey": "BROKERX-L2-0001",
+    "controlServerCommit": "79aa158dca41f494de1f20485a5f59ebd1e562d4",
+    "rig": "SyntheticOnboard",
+    "batchId": "unspecified"
+  },
+  "assertions": [
+    {
+      "id": "L2-MV-01",
+      "description": "会话建立时车载端报告车辆仍在运动",
+      "outcome": "PASS",
+      "expected": "vehicleStopped=False @ safetyStateVersion=1",
+      "actual": "vehicleStopped=False @ safetyStateVersion=1"
+    },
+    {
+      "id": "L2-MV-02",
+      "description": "车在动不影响会话就绪（就绪只看 departureSafe）",
+      "outcome": "PASS",
+      "expected": "Ready",
+      "actual": "Ready"
+    },
+    {
+      "id": "L2-MV-03",
+      "description": "车在动时需求判 ONBOARD_DEPARTURE_UNSAFE",
+      "outcome": "PASS",
+      "expected": "ONBOARD_DEPARTURE_UNSAFE",
+      "actual": "ONBOARD_DEPARTURE_UNSAFE"
+    },
+    {
+      "id": "L2-MV-04",
+      "description": "被拒的需求没有 journey，也没有建单",
+      "outcome": "PASS",
+      "expected": "(no runtime, no intent)",
+      "actual": "runtime=(none) intent=(none)"
+    },
+    {
+      "id": "L2-MV-05",
+      "description": "车停稳后同一条需求被受理并派车",
+      "outcome": "PASS",
+      "expected": "AwaitingPickupArrival",
+      "actual": "AwaitingPickupArrival"
+    },
+    {
+      "id": "L2-MV-06",
+      "description": "同一条 backlog 记录翻成受理：记着这一次受理的 AcceptedAt，原因码是受理或其后一轮写的「已受理」",
+      "outcome": "PASS",
+      "expected": "ACCEPTED (or DEMAND_ALREADY_ACCEPTED written after AcceptedAt) / AcceptedAt set and = AcceptedDemands.AcceptedAt",
+      "actual": "ReasonCode=ACCEPTED / AcceptedAt=2026-10-17 14:44:15.8758433+00:00 / LastSeenAt=2026-10-17 14:44:15.8758433+00:00 / AcceptedDemands.AcceptedAt=2026-10-17 14:44:15.8758433+00:00"
+    },
+    {
+      "id": "L2-MV-07",
+      "description": "推进是被车载端发出的 SafetyStateChanged 推动的",
+      "outcome": "PASS",
+      "expected": ">= 1",
+      "actual": 1
+    },
+    {
+      "id": "L2-MV-08",
+      "description": "车载端仍报运动时，服务端不采信 RIoT 的到站",
+      "outcome": "PASS",
+      "expected": "AwaitingPickupArrival",
+      "actual": "AwaitingPickupArrival"
+    },
+    {
+      "id": "L2-MV-09",
+      "description": "车载端报停稳后到站被采信，进入 AwaitingSublot",
+      "outcome": "PASS",
+      "expected": "AwaitingSublot",
+      "actual": "AwaitingSublot"
+    },
+    {
+      "id": "L2-MV-10",
+      "description": "全程只建了一条 RIoT 单（被拒期间没有派过车）",
+      "outcome": "PASS",
+      "expected": 1,
+      "actual": 1
+    }
+  ]
+}

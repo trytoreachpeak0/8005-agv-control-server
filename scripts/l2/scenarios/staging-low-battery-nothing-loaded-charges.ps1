@@ -10,7 +10,7 @@ control-server#709 的缺电收尾、#712 的待送点不空闲返回、#713 的
 待送点上一直停到没电。本场景就看这一处。
 
 **装置**：同 staging-only-vehicle-stays-at-staging-origin 两台只接待送的合成车、空闲返回打开、两个等待点；外加充电桩 211（setup 文件写了
-为什么）。开局两台车各被空闲返回送到一个等待点，场景把这两趟开完。
+为什么）。开局两台车各承诺一趟空闲返回（control-server#752 起一台开往待送点 305、另一台回落到一个等待点），场景把这两趟开完。
 
 **一、缺电收尾**：一条待送需求派给其中一台车（记为 V），V 开到待送点 305，没人扫码。电量压到 25（编排器的默认测试策略：强制充电线 30）。
 服务端在待送点上结束这一站：旅程 Completed / STAGING_CHARGING_REQUIRED，空清单的 stopEndedReason 是 CHARGING_REQUIRED；需求放回待派
@@ -168,7 +168,7 @@ foreach ($key in $peerByKey.Keys) {
     $intent = Wait-Confirmed "VehicleKey = '$key' AND Purpose = 'TO_WAITING_POINT'" "idle-return-$key"
     Move-Vehicle $key $intent ([int]$intent.DestinationStationId)
 }
-$null = Wait-L2Condition -Description 'both opening idle returns converged at their waiting points' -Journal $journal `
+$null = Wait-L2Condition -Description 'both opening idle returns converged' -Journal $journal `
     -Criterion 'opening-idle-returns-converged' -TimeoutSeconds 60 `
     -Probe { Get-Count "SELECT COUNT(*) AS Total FROM JourneyRuntimes WHERE JourneyId LIKE 'idle-return:%' AND Stage = 'Completed'" } `
     -Until { param($v) $v -ge 2 }

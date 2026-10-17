@@ -160,17 +160,25 @@ public sealed partial class JourneyRuntimeEngine
             item => string.Equals(item.VehicleKey, claim.VehicleKey, StringComparison.Ordinal));
         StationExclusivityRow? station = await dbContext.Set<StationExclusivityRow>()
             .SingleOrDefaultAsync(
-                row => row.JourneyId == claim.JourneyId && row.StationKind == StationExclusivityKinds.WaitingPoint,
+                row => row.JourneyId == claim.JourneyId &&
+                       (row.StationKind == StationExclusivityKinds.WaitingPoint ||
+                        row.StationKind == StationExclusivityKinds.FixedTaskStation),
                 cancellationToken).ConfigureAwait(false);
-        WaitingPointRegistrationVersion? registration =
-            await WaitingPointRegistry.ReadCurrentFromAsync(dbContext, cancellationToken).ConfigureAwait(false);
-        WaitingPointEntry? point = station is null
+        // A STAGING_TO_WIRE-only vehicle's idle return holds its staging origin, a fixed task station (control-server#752): it
+        // is named by the active binding, not by the waiting point registration.
+        string? stationName = station is null
             ? null
-            : registration?.Points.SingleOrDefault(item => item.MapId == station.MapId && item.StationId == station.StationId);
+            : station.StationKind == StationExclusivityKinds.FixedTaskStation
+                ? await StagingOriginBindingAsync(station.MapId, cancellationToken).ConfigureAwait(false) is { } binding &&
+                  binding.StationRiotId == station.StationId
+                    ? binding.StationName
+                    : null
+                : (await WaitingPointRegistry.ReadCurrentFromAsync(dbContext, cancellationToken).ConfigureAwait(false))?.Points
+                    .SingleOrDefault(item => item.MapId == station.MapId && item.StationId == station.StationId)?.StationName;
         string? orphaned = vehicle is null ? "VEHICLE_NOT_IN_ROSTER"
             : station is null ? "WAITING_POINT_RESERVATION_GONE"
             : station.MapId != runtimeOptions.MapId ? "WAITING_POINT_ON_ANOTHER_MAP"
-            : point is null ? WaitingPointEligibilityReasons.NotRegistered
+            : stationName is null ? WaitingPointEligibilityReasons.NotRegistered
             : null;
         if (orphaned is not null)
         {
@@ -189,7 +197,7 @@ public sealed partial class JourneyRuntimeEngine
         }
 
         (JourneyRuntimeRow runtime, JourneyStopRow stop, OrderIntent intent) = IdleReturnJourneyShape.Build(
-            claim.JourneyId, vehicle!, station!.StationId, point!.StationName, runtimeOptions, now);
+            claim.JourneyId, vehicle!, station!.StationId, stationName!, runtimeOptions, now);
         dbContext.Entry(station).State = EntityState.Detached;
         if (await store.MaterializeIdleReturnAsync(runtime, stop, intent, cancellationToken).ConfigureAwait(false))
         {
@@ -258,7 +266,7 @@ public sealed partial class JourneyRuntimeEngine
         {
             // REQ-0296, first branch: the point is judged again before the first create. No longer eligible, and nothing was
             // ever sent: the purpose claim and the reservation go in one save, and the vehicle is judged afresh.
-            if (await IdleReturnPointIneligibleAsync(runtime, stop, currentMap, cancellationToken).ConfigureAwait(false)
+            if (await IdleReturnPointIneligibleAsync(runtime, stop, held, currentMap, cancellationToken).ConfigureAwait(false)
                 is { } ineligible)
             {
                 await EndIdleReturnAsync(
@@ -692,12 +700,31 @@ public sealed partial class JourneyRuntimeEngine
     /// 建单前重新核验等待点（<c>REQ-0293</c> 前半句、<c>REQ-0296</c> 第一支）：登记、停用、白名单、专用角色与实时目录，与承诺时同一个判定函数。
     /// 合格答空，否则答那一条的码。
     /// </summary>
+    /// <remarks>
+    /// 开回待送固定起点的那一趟（<c>FIXED_TASK_STATION</c> 预占，control-server#752）不按等待点核验——那个判定正好拒绝被绑成固定站的站——
+    /// 核的是它仍是当前生效绑定里 <c>STAGING_TO_WIRE</c> 的固定起点，并且以同一个站名在实时目录里。
+    /// </remarks>
     private async Task<string?> IdleReturnPointIneligibleAsync(
         JourneyRuntimeRow runtime,
         JourneyStopRow stop,
+        StationExclusivityRow held,
         RiotMapStationCatalogSnapshot currentMap,
         CancellationToken cancellationToken)
     {
+        if (held.StationKind == StationExclusivityKinds.FixedTaskStation)
+        {
+            TaskTypeStationBinding? origin = await StagingOriginBindingAsync(runtime.MapId, cancellationToken).ConfigureAwait(false);
+            if (origin is null || origin.StationRiotId != stop.StationRiotId)
+            {
+                return WaitingPointEligibilityReasons.NotRegistered;
+            }
+            return currentMap.MapId == runtime.MapId &&
+                   currentMap.Stations.Any(station => station.StationId == origin.StationRiotId &&
+                                                      string.Equals(station.StationName, origin.StationName, StringComparison.Ordinal))
+                ? null
+                : WaitingPointEligibilityReasons.NotInLiveCatalog;
+        }
+
         WaitingPointRegistrationVersion? registration =
             await WaitingPointRegistry.ReadCurrentFromAsync(dbContext, cancellationToken).ConfigureAwait(false);
         IReadOnlySet<int> fixedTaskStations = WaitingPointFixedTaskStations.StationIds(
@@ -707,6 +734,11 @@ public sealed partial class JourneyRuntimeEngine
             registration, fixedTaskStations, currentMap, runtime.MapId, stop.StationRiotId, runtime.VehicleKey);
         return decision.Accepts ? null : decision.Reason;
     }
+
+    /// <summary>当前生效绑定里 <c>STAGING_TO_WIRE</c> 的固定起点；没有生效绑定或没绑这个任务类型时为空。</summary>
+    private async Task<TaskTypeStationBinding?> StagingOriginBindingAsync(int mapId, CancellationToken cancellationToken) =>
+        (await _taskTypeStations.Bindings.ReadActiveAsync(mapId, cancellationToken).ConfigureAwait(false))?.Bindings
+        .FirstOrDefault(binding => binding.TaskType == TransportTaskTypes.StagingToWire);
 
     /// <summary>
     /// 非业务移动的出发前安全门（调度 2026-09-29，program#150 审查）：v2 的 <c>PreDepartureSafetyCheck</c> 必须带需求与移动段，空闲返回发不出，

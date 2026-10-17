@@ -36,6 +36,12 @@ namespace ControlServer.Tests;
 /// <c>STATION_DEADLINE_EXPIRED</c>、两种取消 <c>LOAD_CANCELLED</c>，有项的清单为 null；出发检查全为 <c>DEPARTURE</c>。
 /// </para>
 /// <para>
+/// <b>control-server#749（只下发剩余停靠，REQ-0196 经 CP-0015 修订）改了两份基线里车到卸货站那一版计划，其余逐字未动。</b>
+/// <c>normal-journey</c> 的 rev 3（<c>b3a68bab</c>）与 <c>two-journeys-one-vehicle</c> 的 rev 3、rev 7（<c>a8c759f4</c>）原先带着
+/// 走过的取货腿（<c>COMPLETED</c>），现在只剩卸货腿、<c>sequence</c> 为 1；messageId、修订号、发件箱与线上顺序不变，线上一节只有
+/// 这几条的摘要随之变。逐行差异在 <c>evidence/cs749/wirepin-diff-*.txt</c>。同 cs#382 那段，行为本身变了，只能在本票分支上录。
+/// </para>
+/// <para>
 /// <b>每条消息存的是规范化后的载荷全文，不只是摘要。</b>摘要能判等，判不出差在哪；审查要能独立复核「哪一个 id、哪一个修订号
 /// 变了」，就得看得见。规范化只做一件事：递归按键名排序，让 JSON 属性顺序的变动不算差异。
 /// </para>

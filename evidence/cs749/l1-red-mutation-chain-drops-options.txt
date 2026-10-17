@@ -1,0 +1,17 @@
+Test run for F:\8005-wt\fti-749-8005-agv-control-server\tests\ControlServer.Tests\bin\Debug\net8.0\win-x64\ControlServer.Tests.dll (.NETCoreApp,Version=v8.0)
+VSTest version 17.11.1 (x64)
+
+Starting test execution, please wait...
+A total of 1 test files matched the specified pattern.
+[xUnit.net 00:00:06.76]     ControlServer.Tests.RemainingJourneyPlanTests.TheInTransitChainHandsTheConfiguredJourneyStopLimitToTheAppendGate [FAIL]
+  Failed ControlServer.Tests.RemainingJourneyPlanTests.TheInTransitChainHandsTheConfiguredJourneyStopLimitToTheAppendGate [10 ms]
+  Error Message:
+   Assert.Equal() Failure: Values differ
+Expected: 12
+Actual:   20
+  Stack Trace:
+     at ControlServer.Tests.RemainingJourneyPlanTests.TheInTransitChainHandsTheConfiguredJourneyStopLimitToTheAppendGate() in F:\8005-wt\fti-749-8005-agv-control-server\tests\ControlServer.Tests\RemainingJourneyPlanTests.cs:line 131
+   at System.RuntimeMethodHandle.InvokeMethod(Object target, Void** arguments, Signature sig, Boolean isConstructor)
+   at System.Reflection.MethodBaseInvoker.InvokeWithNoArgs(Object obj, BindingFlags invokeAttr)
+
+Failed!  - Failed:     1, Passed:    14, Skipped:     0, Total:    15, Duration: 2 s - ControlServer.Tests.dll (net8.0)

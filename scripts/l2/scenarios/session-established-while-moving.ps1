@@ -28,6 +28,8 @@ param([Parameter(Mandatory)][object]$Context)
 Set-StrictMode -Version Latest
 $ErrorActionPreference = 'Stop'
 
+Import-Module (Join-Path (Split-Path -Parent $PSScriptRoot) 'L2BacklogAcceptance.psm1') -Force
+
 $journal = $Context.Journal
 $assertions = $Context.Assertions
 $riot = $Context.Riot
@@ -126,10 +128,12 @@ $stage = Wait-L2Condition -Description 'the demand was accepted once the vehicle
 $assertions.Add(
     'L2-MV-05', '车停稳后同一条需求被受理并派车',
     ($stage -eq 'AwaitingPickupArrival'), 'AwaitingPickupArrival', $stage)
-$acceptedReason = Get-BacklogReason
+# 受理之后的派车轮会把原因码改写成 DEMAND_ALREADY_ACCEPTED，读一次会和下一轮赛跑
+# （control-server#730，规则在 L2BacklogAcceptance.psm1）。判的是后续轮不改的受理证据。
+$acceptance = Read-L2BacklogAcceptance -Connection $connection -DemandId $demandId
 $assertions.Add(
-    'L2-MV-06', '同一条 backlog 记录翻成 ACCEPTED',
-    ($acceptedReason -eq 'ACCEPTED'), 'ACCEPTED', $acceptedReason)
+    'L2-MV-06', '同一条 backlog 记录翻成受理：记着这一次受理的 AcceptedAt，原因码是受理或其后一轮写的「已受理」',
+    $acceptance.Passed, $acceptance.Expected, $acceptance.Actual)
 
 # 服务端的推进必须真的是被一条 SafetyStateChanged 推动的。少了这一条，上面两句只说明「等久了就好了」。
 $changes = Get-OutboundSafetyChanges

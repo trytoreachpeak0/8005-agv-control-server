@@ -1,0 +1,13 @@
+diff --git a/src/ControlServer.Host/Runtime/IdleReturn/IdleReturnEvaluator.cs b/src/ControlServer.Host/Runtime/IdleReturn/IdleReturnEvaluator.cs
+index 58988bfb5..beb45b5fc 100644
+--- a/src/ControlServer.Host/Runtime/IdleReturn/IdleReturnEvaluator.cs
++++ b/src/ControlServer.Host/Runtime/IdleReturn/IdleReturnEvaluator.cs
+@@ -553,7 +553,7 @@ public sealed class IdleReturnEvaluator(
+     private async Task<int?> FailedLastTimeAsync(FleetVehicle vehicle, CancellationToken cancellationToken)
+     {
+         var journeys = await dbContext.JourneyRuntimes.AsNoTracking()
+-            .Where(row => row.AgvId == vehicle.AgvId)
++            .Where(row => row.AgvId == vehicle.AgvId && row.BlockReasonCode != null)
+             .Select(row => new { row.JourneyId, row.CreatedAt, row.BlockReasonCode, row.PickupStationRiotId })
+             .ToArrayAsync(cancellationToken).ConfigureAwait(false);
+         var latest = journeys

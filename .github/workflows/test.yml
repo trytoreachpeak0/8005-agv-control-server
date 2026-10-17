@@ -331,6 +331,14 @@ jobs:
         shell: pwsh
         run: pwsh -NoProfile -File ./scripts/l2/Test-L2SingleRow.ps1
 
+      # control-server#730. Under a second, no rig and no SQLite. Read-L2BacklogAcceptance judges "the dispatch round
+      # accepted this demand" on AcceptedAt, which later rounds leave alone, instead of on a ReasonCode they overwrite
+      # with DEMAND_ALREADY_ACCEPTED. A green run on any rig almost never reaches its red branches (not accepted,
+      # AcceptedAt missing or not this acceptance's, another code), so they are pinned here.
+      - name: L2 scenario self-check (backlog acceptance)
+        shell: pwsh
+        run: pwsh -NoProfile -File ./scripts/l2/Test-L2BacklogAcceptance.ps1
+
       # control-server#583. Three static checks over every script under scripts/, pure parsing, no rig: every file
       # parses with ParseFile (an AST check built on ParseInput keeps passing on a file that does not parse at all,
       # control-server#472); a property read off a listed helper's [pscustomobject] literal that the literal lacks; and
