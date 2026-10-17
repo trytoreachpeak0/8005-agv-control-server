@@ -687,9 +687,14 @@ DispatchZoneParameters = @{
 - `Get-L2AvailableSlots -Connection -AgvId` —— 服务端就这台车当前会话算出的可用仓：读该会话代次的
   `CapabilitySnapshot` 与 `SafetyStateSnapshot`，规则同 `JourneyRuntimeEngine.SlotAvailable`。
 - `Assert-L2SlotGroupTargets -Assertions -Id -Connection -DemandId -SlotPosition [-AvailableSlots] [-Description]` —— 断言需求
-  旅程的 `TargetSlotsJson` 全部属于指定分组、严格升序，且恰好是该组内编号最小的 N 个可用仓。判定本体是不碰库的
+  扫码之后分到的仓位（归属行 `JourneyDemands.TargetSlotsJson`）全部属于指定分组、严格升序，且恰好是该组内编号最小的
+  N 个可用仓。control-server#754（REQ-0352）起受理只预留数量、不定仓号，仓号在扫码通过、装货命令落库的同一个写事务里
+  写到归属行上，旅程行的 `TargetSlotsJson` 一直是 `[]`。所以要在装货命令发出之后（`AwaitingLoadResult` 或更后）调它，
+  并用 `-AvailableSlots` 传扫码之前读的可用仓：分配之后那几个仓在会话快照里可能已不再是空的。判定本体是不碰库的
   `Test-L2SlotGroupTargets`；`scripts/l2/Test-L2SlotGroups.ps1` 用一份刻意不是 1～4／5～8 的构造模型给出两个通过、
   七个各因一种原因失败的例子，并在模块内替换掉两处读库，核对不传与传 `-Description` 时证据行的判据文本（几秒钟，不起装置）。
+- `Assert-L2SlotsUnassignedAtAcceptance -Assertions -Id -Connection -DemandId -BasketCount` —— 断言受理只预留了这么多花篮的
+  数量、没有定仓号：归属行与旅程行的 `TargetSlotsJson` 都是 `[]`（control-server#754）。
 - `Get-L2StructuralDispatchBlock -Connection -DemandId [-IncludeCleared]`、`Get-L2JourneyBacklogRow -Connection -DemandId`
   —— 读某需求在 `StructuralDispatchBlocks` 的当前行（默认只要未清除的）与 `JourneyBacklog` 的那一行。
 - `L2SessionContinuity.psm1` 的 `Test-L2SessionKeptThroughDeparture` —— `g3-predeparture-check-expires` 的
@@ -1231,7 +1236,8 @@ pwsh -NoProfile -File .\scripts\l2\Test-L2PortLockQueueing.ps1
     - **到站那一轮**：车辆业务状态、工作清单、计划、录入请求四条出站报文各自在发布时落库
       （`WireToGateStore.QueueOutboundEnvelopeAsync` 每条一次保存），之后引擎才保存 `AwaitingSublot`；期限起点随工作清单那次
       保存一起落库。等到 `AwaitingSublot` 再读这几样是安全的，反过来不是。
-    - **下发装货指令那一轮**（`AwaitingSublot` 分支里的 `StageLoadAsync`）：一个写事务里先复核需求，再落发件箱那一行、
+    - **下发装货指令那一轮**（`AwaitingSublot` 分支里的 `StageLoadAsync`）：一个写事务里先复核需求，再给被录入的那条需求分仓位
+      （写归属行的 `TargetSlotsJson`，control-server#754），再落发件箱那一行、
       `Prepared` 的仓位操作、归属 `LOADING`、录入请求的结算与 `AwaitingLoadResult`，提交之后才上线（control-server#362；
       此前是先落库上线、阶段在迭代末尾另存，control-server#193 记的就是那个窗口）。所以「对端收到了装货指令」时这几样都已
       可读，等到 `AwaitingLoadResult` 再读也是安全的。L1 `JourneyRuntimeWorkerLoadCommandCommitOrderTests` 钉住这个顺序。

@@ -5,9 +5,10 @@
 
 边车把 N1-3 指 REAR。放一条要 3 个花篮的 N1-3 需求，断言：
   - 库内整车模型的分组只有 FRONT／REAR；
-  - 旅程的目标仓是这台车 REAR 组内编号最小的 3 个可用仓（按库内模型判，默认模型下即 [5,6,7]）；
+  - 受理只预留 3 个花篮的数量，不定仓号（control-server#754，REQ-0352）；
+  - 扫码之后分到的目标仓是这台车 REAR 组内编号最小的 3 个可用仓（按库内模型判，默认模型下即 [5,6,7]）；
   - 下发给车的装货命令与卸货命令的 slots 都与目标仓相同——装卸读同一份，关卡卸货不另开一组。
-走完这一趟后导入一版把 N1-3 改指 FRONT 的归属表，放第二条同样的需求，断言取的是 FRONT 组最小的 3 个。
+走完这一趟后导入一版把 N1-3 改指 FRONT 的归属表，放第二条同样的需求，开到取货站扫码，断言分到的是 FRONT 组最小的 3 个。
 
 分组从 SlotModelSlots 经该车的记录读（L2SlotGroups.psm1），脚本里不写 1～4／5～8：那是今天这一版已批准模型的性质，
 不是车的性质。
@@ -105,17 +106,10 @@ $null = Wait-L2Condition -Description 'the REAR demand was accepted and dispatch
     -Probe { $r = Get-Runtime $rearDemand; if ($r) { [string]$r.Stage } else { $null } } `
     -Until { param($v) $v -eq 'AwaitingPickupArrival' }
 
-$rearRuntime = Get-Runtime $rearDemand
-$rearTargets = @([string]$rearRuntime.TargetSlotsJson | ConvertFrom-Json | ForEach-Object { [int]$_ })
-$assertions.Add(
-    'L2-SGS-02', "需求要 $basketCount 个花篮，旅程恰好占 $basketCount 个目标仓",
-    ([int]$rearRuntime.ExpectedBasketCount -eq $basketCount -and $rearTargets.Count -eq $basketCount),
-    "ExpectedBasketCount $basketCount, $basketCount target slots",
-    "ExpectedBasketCount $($rearRuntime.ExpectedBasketCount), $($rearTargets.Count) target slots [$($rearTargets -join ',')]")
-# A description of its own rather than the module default: it names the AREA and the group this step is about.
-$null = Assert-L2SlotGroupTargets -Assertions $assertions -Id 'L2-SGS-03' -Connection $connection `
-    -DemandId $rearDemand -SlotPosition 'REAR' `
-    -Description "N1-3 指 REAR：目标仓全部属于本车 REAR 组、升序，且恰好是该组编号最小的 $basketCount 个可用仓"
+# control-server#754：受理只占数量，扫码之后才分仓号。扫码前的空仓表留到分配之后判「是不是最小的那几个」。
+$null = Assert-L2SlotsUnassignedAtAcceptance -Assertions $assertions -Id 'L2-SGS-02' -Connection $connection `
+    -DemandId $rearDemand -BasketCount $basketCount
+$rearAvailable = Get-L2AvailableSlots -Connection $connection -AgvId $Context.AgvId
 
 # --- 2. 走完这一趟：装货、卸货命令的 slots 与目标仓相同 -----------------------------------------------
 
@@ -128,6 +122,12 @@ Move-Vehicle $pickupIntent $Context.PickupStationRiotId
 $null = Wait-L2Condition -Description 'the load committed and the journey reached the gate leg' `
     -Journal $journal -Criterion 'journey-stage' -TimeoutSeconds 120 `
     -Probe { [string](Get-Runtime $rearDemand).Stage } -Until { param($v) $v -eq 'AwaitingGateArrival' }
+
+# A description of its own rather than the module default: it names the AREA and the group this step is about.
+$rearAssigned = Assert-L2SlotGroupTargets -Assertions $assertions -Id 'L2-SGS-03' -Connection $connection `
+    -DemandId $rearDemand -SlotPosition 'REAR' -AvailableSlots $rearAvailable `
+    -Description "N1-3 指 REAR：扫码后分到的目标仓全部属于本车 REAR 组、升序，且恰好是该组编号最小的 $basketCount 个可用仓"
+$rearTargets = @($rearAssigned.Actual)
 
 $gateIntent = Wait-L2Condition -Description 'the TO_GATE intent was confirmed' `
     -Journal $journal -Criterion 'to-gate-intent' -TimeoutSeconds 60 `
@@ -172,13 +172,21 @@ $null = Wait-L2Condition -Description 'the FRONT demand was accepted and dispatc
     -Journal $journal -Criterion 'journey-stage' -TimeoutSeconds 90 `
     -Probe { $r = Get-Runtime $frontDemand; if ($r) { [string]$r.Stage } else { $null } } `
     -Until { param($v) $v -eq 'AwaitingPickupArrival' }
-$frontRuntime = Get-Runtime $frontDemand
-$assertions.Add(
-    'L2-SGS-08', "第二条需求同样要 $basketCount 个花篮",
-    ([int]$frontRuntime.ExpectedBasketCount -eq $basketCount),
-    $basketCount, [int]$frontRuntime.ExpectedBasketCount)
+$null = Assert-L2SlotsUnassignedAtAcceptance -Assertions $assertions -Id 'L2-SGS-08' -Connection $connection `
+    -DemandId $frontDemand -BasketCount $basketCount
+$frontAvailable = Get-L2AvailableSlots -Connection $connection -AgvId $Context.AgvId
+
+# 仓号要扫码之后才有（control-server#754），所以第二条也开到取货站，等装货命令发出去再判。
+$frontIntent = Wait-L2Condition -Description 'the second TO_PICKUP intent was confirmed' `
+    -Journal $journal -Criterion 'to-pickup-intent' -TimeoutSeconds 60 `
+    -Probe { Get-Intent $frontDemand 'TO_PICKUP' } -Until { param($v) [string]$v.Status -eq 'CONFIRMED' }
+$journal.Note('Vehicle drives to the pickup station for the second demand and comes to rest.')
+Move-Vehicle $frontIntent $Context.PickupStationRiotId
+$null = Wait-L2Condition -Description 'the second demand''s load was commanded' `
+    -Journal $journal -Criterion 'load-commanded' -TimeoutSeconds 120 `
+    -Probe { @(Get-CommandSlots $frontDemand 'LOAD').Count } -Until { param($v) $v -ge 1 }
 $null = Assert-L2SlotGroupTargets -Assertions $assertions -Id 'L2-SGS-09' -Connection $connection `
-    -DemandId $frontDemand -SlotPosition 'FRONT' `
-    -Description "N1-3 改指 FRONT 之后：目标仓全部属于本车 FRONT 组、升序，且恰好是该组编号最小的 $basketCount 个可用仓"
+    -DemandId $frontDemand -SlotPosition 'FRONT' -AvailableSlots $frontAvailable `
+    -Description "N1-3 改指 FRONT 之后：扫码后分到的目标仓全部属于本车 FRONT 组、升序，且恰好是该组编号最小的 $basketCount 个可用仓"
 
 $journal.Note('Scenario finished.')

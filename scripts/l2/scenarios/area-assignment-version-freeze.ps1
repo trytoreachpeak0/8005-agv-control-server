@@ -59,12 +59,6 @@ function Get-Runtime([string]$DemandId) {
     return $rows[0]
 }
 
-function Get-TargetSlots([string]$DemandId) {
-    $runtime = Get-Runtime $DemandId
-    if ($null -eq $runtime) { return , @() }
-    return , @([string]$runtime.TargetSlotsJson | ConvertFrom-Json | ForEach-Object { [int]$_ })
-}
-
 function Get-Intent([string]$DemandId, [string]$Purpose) {
     $rows = Invoke-L2Query -Connection $connection `
         -Sql "SELECT UpperId, OrderId, Status FROM OrderIntents WHERE DemandId = '$DemandId' AND Purpose = '$Purpose'"
@@ -177,10 +171,8 @@ $null = Wait-L2Condition -Description 'demand A froze an area assignment version
     -Journal $journal -Criterion 'freeze-row' -TimeoutSeconds 30 `
     -Probe { Get-FrozenVersion $demandA } -Until { param($v) $null -ne $v }
 
-$targetsA = Get-TargetSlots $demandA
-$null = Assert-L2SlotGroupTargets -Assertions $assertions -Id 'L2-AVF-02' -Connection $connection `
-    -DemandId $demandA -SlotPosition 'FRONT' `
-    -Description "需求甲（$basketCount 花篮）在版本 1 下受理：目标仓全部属于 FRONT 组、升序，且恰好是该组编号最小的 $basketCount 个可用仓"
+# control-server#754（REQ-0352）：受理只占数量，仓号在扫码之后按冻结那一版的分组分。扫码前的空仓表留到分配之后判。
+$availableA = Get-L2AvailableSlots -Connection $connection -AgvId $Context.AgvId
 $frozenA = Get-FrozenVersion $demandA
 $assertions.Add('L2-AVF-03', '需求甲的冻结行是版本 1', ($frozenA -eq 1), '1', "$frozenA")
 
@@ -191,6 +183,10 @@ $journal.Note('Vehicle drives to the pickup station and comes to rest.')
 Start-Leg $pickupIntent
 Complete-Leg $pickupIntent $Context.PickupStationRiotId
 $null = Wait-Stage $demandA 'AwaitingGateArrival' 'demand A loaded and its journey reached the gate leg'
+$assignedA = Assert-L2SlotGroupTargets -Assertions $assertions -Id 'L2-AVF-02' -Connection $connection `
+    -DemandId $demandA -SlotPosition 'FRONT' -AvailableSlots $availableA `
+    -Description "需求甲（$basketCount 花篮）在版本 1 下受理、扫码后分仓：目标仓全部属于 FRONT 组、升序，且恰好是该组编号最小的 $basketCount 个可用仓"
+$targetsA = @($assignedA.Actual)
 $gateIntent = Wait-Intent $demandA 'TO_GATE'
 
 $journal.Note('Vehicle sets off for the gate; the new table is imported while it is on the way.')
@@ -264,9 +260,18 @@ $null = Wait-Stage $demandB 'AwaitingPickupArrival' 'demand B was accepted and d
 $null = Wait-L2Condition -Description 'demand B froze an area assignment version' `
     -Journal $journal -Criterion 'freeze-row' -TimeoutSeconds 30 `
     -Probe { Get-FrozenVersion $demandB } -Until { param($v) $null -ne $v }
+# 仓号在扫码之后才分（control-server#754）：需求乙开到取货站，等装货命令发出去再判。它装上货之后仍在途，下面的回滚预览照样列它。
+$availableB = Get-L2AvailableSlots -Connection $connection -AgvId $Context.AgvId
+$pickupIntentB = Wait-Intent $demandB 'TO_PICKUP'
+$journal.Note('Vehicle drives to the pickup station for demand B and comes to rest.')
+Start-Leg $pickupIntentB
+Complete-Leg $pickupIntentB $Context.PickupStationRiotId
+$null = Wait-L2Condition -Description 'the LOAD command for demand B was sent to the vehicle' `
+    -Journal $journal -Criterion 'load-command' -TimeoutSeconds 120 `
+    -Probe { (Get-CommandSlots $demandB 'LOAD').Count } -Until { param($v) $v -ge 1 }
 $null = Assert-L2SlotGroupTargets -Assertions $assertions -Id 'L2-AVF-11' -Connection $connection `
-    -DemandId $demandB -SlotPosition 'REAR' `
-    -Description "需求乙（$basketCount 花篮）在版本 2 下受理：目标仓全部属于 REAR 组、升序，且恰好是该组编号最小的 $basketCount 个可用仓"
+    -DemandId $demandB -SlotPosition 'REAR' -AvailableSlots $availableB `
+    -Description "需求乙（$basketCount 花篮）在版本 2 下受理、扫码后分仓：目标仓全部属于 REAR 组、升序，且恰好是该组编号最小的 $basketCount 个可用仓"
 $frozenB = Get-FrozenVersion $demandB
 $assertions.Add('L2-AVF-12', '需求乙的冻结行是版本 2', ($frozenB -eq 2), '2', "$frozenB")
 

@@ -301,7 +301,7 @@ $commandsAfterRefusal = Get-Count "SELECT COUNT(*) AS Total FROM ProtocolOutbox 
 $slotsAfterRefusal = Get-AllSlotStates
 $assertions.Add(
     'G3-02-43',
-    '拒收的录入不开仓：0 笔仓位操作、0 条 SlotOperationCommand，模拟器上每个仓与到站时逐仓相同；旅程仍在等录入，预留的仓位与冻结的花篮数一点没动，没有阻断原因（NEVER_UNLOCK_ON_REJECTED_ENTRY；forbidden: duplicate-slot-unlock、expanded-active-unlock-set）',
+    '拒收的录入不开仓：0 笔仓位操作、0 条 SlotOperationCommand，模拟器上每个仓与到站时逐仓相同；旅程仍在等录入，仓位仍未分配（control-server#754 起扫码通过之后才分）、冻结的花篮数一点没动，没有阻断原因（NEVER_UNLOCK_ON_REJECTED_ENTRY；forbidden: duplicate-slot-unlock、expanded-active-unlock-set）',
     ($operationsAfterRefusal -eq 0 -and $commandsAfterRefusal -eq 0 -and $slotsAfterRefusal -eq $slotsBefore -and
         [string]$refusedRuntime.Stage -eq 'AwaitingSublot' -and
         [string]$refusedRuntime.TargetSlotsJson -eq [string]$dispatched.TargetSlotsJson -and

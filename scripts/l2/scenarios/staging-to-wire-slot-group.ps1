@@ -81,7 +81,7 @@ function Move-Vehicle([object]$Intent, [int]$StationRiotId) {
     $null = $riot.Command('Put', "orders/$($Intent.UpperId)", @{ orderState = 5 })
 }
 
-# 一条需求：受理、按 AREA 的组断言目标仓、走完、断言装卸命令的 slots。
+# 一条需求：受理（只占数量）、扫码装货后按 AREA 的组断言分到的目标仓、走完、断言装卸命令的 slots。
 function Test-Demand([string]$Area, [string]$SlotPosition, [string]$IdPrefix) {
     $demandId = Publish-Demand $Area
     $null = Wait-L2Condition -Description "the $Area demand was accepted and dispatched to the staging station" `
@@ -89,16 +89,14 @@ function Test-Demand([string]$Area, [string]$SlotPosition, [string]$IdPrefix) {
         -Probe { $r = Get-Runtime $demandId; if ($r) { [string]$r.Stage } else { $null } } `
         -Until { param($v) $v -eq 'AwaitingPickupArrival' }
     $runtime = Get-Runtime $demandId
-    $targets = @([string]$runtime.TargetSlotsJson | ConvertFrom-Json | ForEach-Object { [int]$_ })
+    # control-server#754（REQ-0352）：受理只占 $basketCount 个花篮的数量，不定仓号；扫码之后才分。
     $assertions.Add(
-        "$IdPrefix-01", "$Area 需求在派工待送站取货、到机台站卸货，恰好占 $basketCount 个目标仓",
+        "$IdPrefix-01", "$Area 需求在派工待送站取货、到机台站卸货，受理只预留 $basketCount 个花篮的数量、不定仓号",
         ([int]$runtime.PickupStationRiotId -eq $stagingStationRiotId -and [int]$runtime.GateStationRiotId -eq $machineStationRiotId -and
-            [int]$runtime.ExpectedBasketCount -eq $basketCount -and $targets.Count -eq $basketCount),
-        "pickup $stagingStationRiotId, drop-off $machineStationRiotId, $basketCount target slots",
-        "pickup $($runtime.PickupStationRiotId), drop-off $($runtime.GateStationRiotId), ExpectedBasketCount $($runtime.ExpectedBasketCount), [$($targets -join ',')]")
-    $null = Assert-L2SlotGroupTargets -Assertions $assertions -Id "$IdPrefix-02" -Connection $connection `
-        -DemandId $demandId -SlotPosition $SlotPosition `
-        -Description "$Area 指 ${SlotPosition}：目标仓全部属于本车 $SlotPosition 组、升序，且恰好是该组编号最小的 $basketCount 个可用仓"
+            [int]$runtime.ExpectedBasketCount -eq $basketCount -and [string]$runtime.TargetSlotsJson -ceq '[]'),
+        "pickup $stagingStationRiotId, drop-off $machineStationRiotId, $basketCount baskets, no slots",
+        "pickup $($runtime.PickupStationRiotId), drop-off $($runtime.GateStationRiotId), ExpectedBasketCount $($runtime.ExpectedBasketCount), $($runtime.TargetSlotsJson)")
+    $available = Get-L2AvailableSlots -Connection $connection -AgvId $Context.AgvId
 
     $pickupIntent = Wait-L2Condition -Description "the $Area TO_PICKUP intent was confirmed" `
         -Journal $journal -Criterion 'to-pickup-intent' -TimeoutSeconds 60 `
@@ -107,6 +105,10 @@ function Test-Demand([string]$Area, [string]$SlotPosition, [string]$IdPrefix) {
     $null = Wait-L2Condition -Description "the $Area load committed and the journey reached the machine leg" `
         -Journal $journal -Criterion 'journey-stage' -TimeoutSeconds 120 `
         -Probe { [string](Get-Runtime $demandId).Stage } -Until { param($v) $v -eq 'AwaitingGateArrival' }
+    $assigned = Assert-L2SlotGroupTargets -Assertions $assertions -Id "$IdPrefix-02" -Connection $connection `
+        -DemandId $demandId -SlotPosition $SlotPosition -AvailableSlots $available `
+        -Description "$Area 指 ${SlotPosition}：扫码后分到的目标仓全部属于本车 $SlotPosition 组、升序，且恰好是该组编号最小的 $basketCount 个可用仓"
+    $targets = @($assigned.Actual)
     $machineIntent = Wait-L2Condition -Description "the $Area machine-leg intent was confirmed" `
         -Journal $journal -Criterion 'to-gate-intent' -TimeoutSeconds 60 `
         -Probe { Get-Intent $demandId 'TO_GATE' } -Until { param($v) [string]$v.Status -eq 'CONFIRMED' }
