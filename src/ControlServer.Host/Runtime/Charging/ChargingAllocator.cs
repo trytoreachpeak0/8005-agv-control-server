@@ -282,6 +282,9 @@ public sealed class ChargingAllocationBoard
     /// <summary>「到桩之后失联」已升级告警过的键（事件 2261、2262）：一种失联一次，恢复时 <see cref="Unsay"/>。</summary>
     public static string ChargingLossKey(string journeyId, string code) => $"charging-loss:{code}:{journeyId}";
 
+    /// <summary>「出发前路网一直不可用、承诺一直挂着」已告警过的那趟充电旅程的键（事件 2283，control-server#744 审查 L2）。</summary>
+    public static string DepartureRouteGraphHoldKey(string journeyId) => $"departure-route-graph-hold:{journeyId}";
+
     /// <summary>「取消后一直证明不了停稳」已告警过的那趟充电旅程的键（事件 2256）。</summary>
     public static string EndNotProvenKey(string journeyId) => EndNotProvenPrefix + journeyId;
 

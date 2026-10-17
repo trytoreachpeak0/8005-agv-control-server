@@ -29,6 +29,16 @@ public sealed partial class JourneyRuntimeEngine
             "the commitment, the charger reservation and the cycle stay, and the charger is checked again next round " +
             "(control-server#744).");
 
+    private static readonly Action<ILogger, string, string, int, DateTimeOffset, string, Exception?>
+        LogChargingDepartureRouteGraphStillUnavailable =
+            LoggerMessage.Define<string, string, int, DateTimeOffset, string>(
+                LogLevel.Warning,
+                new EventId(2283, nameof(LogChargingDepartureRouteGraphStillUnavailable)),
+                "Charging journey {JourneyId} of vehicle {VehicleKey} has been held before its departure to charger {StationId} " +
+                "since {Since} because the route graph cannot be read ({StaleReason}). The commitment and the charger " +
+                "reservation stay and nothing withdraws them by time; check the route graph's stale reason and the server's " +
+                "connection to RIoT (control-server#744).");
+
     private static readonly Action<ILogger, string, string, string, Exception?> LogChargingHeld =
         LoggerMessage.Define<string, string, string>(
             LogLevel.Warning,
@@ -494,8 +504,19 @@ public sealed partial class JourneyRuntimeEngine
                 runtime.UpdatedAt = now;
                 await dbContext.SaveChangesAsync(cancellationToken).ConfigureAwait(false);
             }
+            else if (runtime.BlockReasonSince is { } since &&
+                     now - since > runtimeOptions.OwnOrderRebuildRepeatWindow &&
+                     dispatchRound.Charging.Board.FirstTime(ChargingAllocationBoard.DepartureRouteGraphHoldKey(runtime.JourneyId)))
+            {
+                // Review L2: the hold has no time limit by design (nothing is withdrawn by time), so a hold that lasts is said
+                // once, loudly, past the same window the other charging waits use.
+                LogChargingDepartureRouteGraphStillUnavailable(
+                    logger, runtime.JourneyId, runtime.VehicleKey, stop.StationRiotId, since, graphStale ?? "unknown", null);
+            }
             return true;
         }
+
+        dispatchRound.Charging.Board.Unsay(ChargingAllocationBoard.DepartureRouteGraphHoldKey(runtime.JourneyId));
 
         if (charger is not null)
         {

@@ -83,6 +83,7 @@ public static class BatteryEligibility
     /// 没有未结束的周期（在 v2 周期之外被充上的，例如低电断电后人工推上桩）：电量不低于这一轮所用策略的 <c>ChargingCompletionThreshold</c> 才能——
     /// 与 v2 自己安排的充电同一条线（用户 2026-10-17 选定）。不到充满线就留在桩上继续充；读不到电量或没有策略时不能。
     /// </item>
+    /// <item>没读过（<see cref="ChargingCycleStanding.NotRead"/>）：不能。</item>
     /// </list>
     /// </summary>
     /// <param name="chargingCycle">这一轮为这辆车读定的 <see cref="DispatchVehicleFacts.ChargingCycle"/>。</param>

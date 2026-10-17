@@ -1,5 +1,6 @@
 using ControlServer.Application;
 using ControlServer.Host.Runtime;
+using ControlServer.Host.Runtime.Charging;
 using ControlServer.Host.Runtime.Dispatch;
 using ControlServer.Host.Runtime.Dispatch.Criteria;
 
@@ -27,6 +28,9 @@ public sealed class BatteryThresholdEligibilityTests
         EstimatedTaskConsumptionPercent = 10,
     };
 
+    /// <summary>每趟耗电估计 70：85% 做完一趟只剩 15，低于余量 20（control-server#744 审查 S2：默认测试策略在 80% 以上永远过得了余量）。</summary>
+    private static readonly ChargingPolicyContent HeavyConsumption = EntryBoundary with { EstimatedTaskConsumptionPercent = 70 };
+
     private static readonly ChargingPolicyContent MarginBoundary = TestChargingPolicies.Content with
     {
         MandatoryChargeEntryThresholdPercent = 20,
@@ -48,6 +52,8 @@ public sealed class BatteryThresholdEligibilityTests
     // Charging with no open cycle (control-server#744): refused below the policy's completion line (80), admitted from it.
     [InlineData("entry", 79, "CHARGING", VehicleDynamicFactsCriterion.BatteryPolicyNotSatisfiedReason)]
     [InlineData("entry", 80, "CHARGING", DispatchAdmissionChain.Eligible)]
+    // Let go at the completion line is not let go past the margin: the rest of the battery segment still judges it (review S2).
+    [InlineData("heavy", 85, "CHARGING", VehicleDynamicFactsCriterion.BatteryPolicyNotSatisfiedReason)]
     [InlineData("none", 80, "NO_CHARGE", DispatchReasonCodes.ChargingPolicyNotApproved)]
     public void EachBatteryBoundaryAnswersItsOwnReason(string policy, int? battery, string? batteryState, string expected)
     {
@@ -55,6 +61,7 @@ public sealed class BatteryThresholdEligibilityTests
         {
             "entry" => new DispatchBatteryPolicy(1, EntryBoundary),
             "margin" => new DispatchBatteryPolicy(1, MarginBoundary),
+            "heavy" => new DispatchBatteryPolicy(1, HeavyConsumption),
             _ => null,
         });
 
@@ -63,6 +70,28 @@ public sealed class BatteryThresholdEligibilityTests
         {
             Assert.Equal(expected, InTransitVehicleFactsCriterion.Evaluate(facts with { Vehicle = UnderWay(facts.Vehicle) }, Options()));
         }
+    }
+
+    /// <summary>
+    /// 构造事实时没给充电周期（缺省 <see cref="ChargingCycleStanding.NotRead"/>）的车，报 <c>CHARGING</c> 电量再高也不放，空闲链与在途链一样
+    /// （control-server#744 审查 L3：缺省值落在放行一侧时，漏给参数的调用方会让充着电的车被派走）。
+    /// </summary>
+    [Fact]
+    public void AChargingVehicleWhoseCycleWasNeverReadIsRefusedHoweverFullItIs()
+    {
+        DispatchVehicleFacts facts = new(
+            VehicleKey,
+            "agv02",
+            new OnboardDispatchFacts(7, [3, 4], true, true, true, true, false),
+            new RiotVehicleObservation(VehicleKey, true, true, "IDLE", Map, 12, 100, "CHARGING", 0, Now, 0, null),
+            Now,
+            BatteryPolicy: new DispatchBatteryPolicy(1, EntryBoundary));
+
+        Assert.Equal(ChargingCycleStanding.NotRead, facts.ChargingCycle);
+        Assert.Equal(VehicleDynamicFactsCriterion.BatteryPolicyNotSatisfiedReason, VehicleDynamicFactsCriterion.Evaluate(facts, Options()));
+        Assert.Equal(
+            VehicleDynamicFactsCriterion.BatteryPolicyNotSatisfiedReason,
+            InTransitVehicleFactsCriterion.Evaluate(facts with { Vehicle = UnderWay(facts.Vehicle) }, Options()));
     }
 
     /// <summary>
@@ -249,14 +278,20 @@ public sealed class BatteryThresholdEligibilityTests
     private static JourneyRuntimeOptions Options() =>
         new() { MapIdentity = Map, MaximumEvidenceAge = TimeSpan.FromSeconds(30) };
 
-    private static DispatchVehicleFacts Facts(int? battery, string? batteryState, DispatchBatteryPolicy? policy) =>
+    /// <summary>没有未结束充电周期的一辆车（派车轮为它读出的是 <see cref="ChargingCycleStanding.None"/>）。</summary>
+    private static DispatchVehicleFacts Facts(
+        int? battery,
+        string? batteryState,
+        DispatchBatteryPolicy? policy,
+        ChargingCycleStanding chargingCycle = ChargingCycleStanding.None) =>
         new(
             VehicleKey,
             "agv02",
             new OnboardDispatchFacts(7, [3, 4], true, true, true, true, false),
             new RiotVehicleObservation(VehicleKey, true, true, "IDLE", Map, 12, battery, batteryState, 0, Now, 0, null),
             Now,
-            BatteryPolicy: policy);
+            BatteryPolicy: policy,
+            ChargingCycle: chargingCycle);
 
     private static RiotVehicleObservation UnderWay(RiotVehicleObservation vehicle) =>
         vehicle with { ProcState = "RUNNING", Speed = 0.8, LockStatus = 1, OrderTaskId = "RIOT-TASK-1" };

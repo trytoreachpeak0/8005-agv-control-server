@@ -141,8 +141,9 @@ public sealed record DispatchRoundFacts(
 /// <param name="ChargingCycle">
 /// 这辆车此刻与 v2 充电周期的关系，这一轮读一次（批次9-07，control-server#405；control-server#744 由「本周期已充满」一个布尔扩成三态）。
 /// 电量判据里「报 <c>CHARGING</c> 的车能不能接活」按它判（<see cref="Criteria.BatteryEligibility.ChargingVehicleMayTakeWork"/>）：本周期已充满的能，
-/// 周期没充满的不能，周期外被充上的到充满线才能。只为报 <c>CHARGING</c> 的车读；不报的车留缺省 <see cref="Charging.ChargingCycleStanding.None"/>，
-/// 判据也不问它。
+/// 周期没充满的不能，周期外被充上的到充满线才能。派车轮只为报 <c>CHARGING</c> 的车读，不报的车明写 <see cref="Charging.ChargingCycleStanding.None"/>，
+/// 判据也不问它。缺省是 <see cref="Charging.ChargingCycleStanding.NotRead"/>，判据按拒绝处理（审查 L3：缺省落在放行一侧时，漏给这个参数的
+/// 调用方会让 80% 以上报 <c>CHARGING</c> 的车被放走）。
 /// </param>
 public sealed record DispatchVehicleFacts(
     string VehicleKey,
@@ -153,7 +154,7 @@ public sealed record DispatchVehicleFacts(
     VehicleSlotPositions? SlotPositions = null,
     EnRouteVehiclePlan? Plan = null,
     DispatchBatteryPolicy? BatteryPolicy = null,
-    Charging.ChargingCycleStanding ChargingCycle = Charging.ChargingCycleStanding.None);
+    Charging.ChargingCycleStanding ChargingCycle = Charging.ChargingCycleStanding.NotRead);
 
 /// <summary>Onboard-side facts a dispatch decision reads.</summary>
 public sealed record OnboardDispatchFacts(

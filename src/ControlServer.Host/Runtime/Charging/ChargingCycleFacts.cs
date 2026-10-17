@@ -9,6 +9,12 @@ namespace ControlServer.Host.Runtime.Charging;
 /// </summary>
 public enum ChargingCycleStanding
 {
+    /// <summary>
+    /// 没读过（control-server#744 审查 L3）：缺省值，判据按拒绝的一侧处理，与改动前「没给就当没充满」相同。派车轮对报 <c>CHARGING</c> 的车
+    /// 一定读出下面三种之一，不报的车写 <see cref="None"/>；只有自己构造事实的调用方（测试）会落在这里，忘了给就拒，不会意外放行。
+    /// </summary>
+    NotRead,
+
     /// <summary>没有未结束的周期：车若报 <c>CHARGING</c>，是在 v2 周期之外被充上的（例如低电断电后人工推上桩）。</summary>
     None,
 
