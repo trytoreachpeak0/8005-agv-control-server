@@ -88,7 +88,7 @@ public sealed class ProtocolVectorTestBindingArchitectureTests
     /// the smallest form it takes.
     /// <see cref="EveryPinnedVectorBelongsOnlyToSlicesThisBatchDoesNotImplement"/> is what makes
     /// the set load-bearing instead of decorative, and
-    /// <see cref="TheIndexParsesIntoSixteenSlicesAndFortyFiveDistinctVectors"/> is what lets it be
+    /// <see cref="TheIndexParsesIntoSixteenSlicesAndFiftyOneDistinctVectors"/> is what lets it be
     /// stated as slice ids at all: it pins each slice's id to its own sequence, so the ids named
     /// here and the sequences the index carries cannot drift apart.
     /// </para>
@@ -147,6 +147,9 @@ public sealed class ProtocolVectorTestBindingArchitectureTests
     /// ever pinned on the integration branch. Its CP-0014 revision (protocol#17, protocol#19) added five more to <c>FP-IS-02</c>,
     /// vendored by <c>#727</c>: the two staging cargo-holding vectors are built and bound there; the three machine-departure
     /// vectors are claimed by <c>#725</c>, which builds that departure, and stay pinned until it binds them.
+    /// The <c>5.0.0</c> candidate's second revision (protocol#23) added one more to <c>FP-IS-02</c>,
+    /// <c>CV-CURRENT-STOP-DEPARTURE-STALE-REVISION-ACCEPTED</c>, whose behaviour <c>#742</c> had already built; <c>#748</c>
+    /// vendored it and bound it in the same ticket, so it was never pinned.
     /// Such a pin must name its slice and the claiming ticket in exactly the
     /// form <see cref="ClaimedPinLabel"/> gives, and
     /// <see cref="EveryPinnedVectorBelongsOnlyToSlicesThisBatchDoesNotImplement"/> refuses every other

@@ -185,8 +185,9 @@ public sealed class StagingDepartureRequestTests
     }
 
     /// <summary>
-    /// 验收 5：待送点上版本不是此刻的那一版，答复带上此刻的号；什么都不变。待送点不适用「过期但无实质差别照样受理」的例外（protocol#23
-    /// <c>NEVER_APPLY_STALE_REVISION_EXCEPTION_AT_STAGING_PICKUP_STOP</c>），所以这里拒的理由是停靠种类，不是实质差别；
+    /// 验收 5：待送点上版本不是此刻的那一版，答复带上此刻的号；什么都不变。等录入时清单本就列着待做项，所以这条就算把例外放开到待送点也照样被拒，
+    /// 它不守「待送点不适用过期但无实质差别照样受理的例外」（protocol#23 <c>NEVER_APPLY_STALE_REVISION_EXCEPTION_AT_STAGING_PICKUP_STOP</c>）；
+    /// 守那一面的是 <see cref="StagingLoadCancellationTests.AStaleDepartureAtAStagingStopIsRefusedEvenWithoutASubstantiveChange"/>。
     /// 向量 <c>CV-CURRENT-STOP-DEPARTURE-STALE-REVISION</c> 自 protocol#23 起限定为有实质差别，绑在机台停靠的
     /// <see cref="StaleWorklistDepartureTests.AStaleRequestFromAWorklistThatStillListedAnItemIsRefused"/> 上（cs#748）。
     /// </summary>
