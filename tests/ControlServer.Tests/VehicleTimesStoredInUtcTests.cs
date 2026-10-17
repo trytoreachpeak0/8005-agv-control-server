@@ -61,13 +61,7 @@ public sealed class VehicleTimesStoredInUtcTests
         await using Batch7JourneyFixture fixture = await Batch7JourneyFixture.CreateAsync();
         await Batch7JourneyFixture.AcceptAsync(fixture.Context, Demand, "agv-01", "VK-01", At);
         await AddUnloadOperationAsync(fixture);
-        string written = At.ToOffset(VehicleOffset).ToString("yyyy-MM-dd HH:mm:ss.FFFFFFFzzz", CultureInfo.InvariantCulture);
-        await using (SqliteCommand command = fixture.Connection.CreateCommand())
-        {
-            command.CommandText = "UPDATE StationOperations SET CreatedAt = $at";
-            command.Parameters.AddWithValue("$at", written);
-            Assert.Equal(1, await command.ExecuteNonQueryAsync(cancellationToken));
-        }
+        string written = await WriteLocalOffsetCreatedAtAsync(fixture);
 
         await using (ControlServerDbContext writing = fixture.NewContext())
         {
@@ -77,6 +71,44 @@ public sealed class VehicleTimesStoredInUtcTests
         }
 
         Assert.Equal(written, await ReadSingleTextAsync(fixture.Connection, "StationOperations", "CreatedAt"));
+    }
+
+    /// <summary>
+    /// The same when the row's state is set to Modified wholesale, as the runtime's restore and revert of a tracked row do:
+    /// EF then marks every property modified, the old time among them, and only its value says it did not change.
+    /// </summary>
+    [Fact]
+    public async Task ARowSetModifiedWholesaleKeepsAnEarlierLocalOffsetItDidNotChange()
+    {
+        CancellationToken cancellationToken = TestContext.Current.CancellationToken;
+        await using Batch7JourneyFixture fixture = await Batch7JourneyFixture.CreateAsync();
+        await Batch7JourneyFixture.AcceptAsync(fixture.Context, Demand, "agv-01", "VK-01", At);
+        await AddUnloadOperationAsync(fixture);
+        string written = await WriteLocalOffsetCreatedAtAsync(fixture);
+
+        await using (ControlServerDbContext writing = fixture.NewContext())
+        {
+            StationOperationRow operation = await writing.StationOperations.SingleAsync(cancellationToken);
+            operation.Status = StationOperationStatus.RecoveryRequired;
+            writing.Entry(operation).State = EntityState.Modified;
+            Assert.True(writing.Entry(operation).Property(row => row.CreatedAt).IsModified);
+            await writing.SaveChangesAsync(cancellationToken);
+        }
+
+        Assert.Equal(written, await ReadSingleTextAsync(fixture.Connection, "StationOperations", "CreatedAt"));
+        Assert.Equal(
+            nameof(StationOperationStatus.RecoveryRequired),
+            await ReadSingleTextAsync(fixture.Connection, "StationOperations", "Status"));
+    }
+
+    private static async Task<string> WriteLocalOffsetCreatedAtAsync(Batch7JourneyFixture fixture)
+    {
+        string written = At.ToOffset(VehicleOffset).ToString("yyyy-MM-dd HH:mm:ss.FFFFFFFzzz", CultureInfo.InvariantCulture);
+        await using SqliteCommand command = fixture.Connection.CreateCommand();
+        command.CommandText = "UPDATE StationOperations SET CreatedAt = $at";
+        command.Parameters.AddWithValue("$at", written);
+        Assert.Equal(1, await command.ExecuteNonQueryAsync(TestContext.Current.CancellationToken));
+        return written;
     }
 
     private static async Task AddUnloadOperationAsync(Batch7JourneyFixture fixture)

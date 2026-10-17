@@ -102,7 +102,8 @@ internal static partial class Program
         GovernanceStore governance = new(
             context, GovernanceDeploymentIdentity.ForCurrentHost(), AuditRetentionPolicy.Default);
         SlotConfigurationReadinessGate gate = new(context, governance);
-        DateTimeOffset now = DateTimeOffset.Now;
+        // UTC, as the service writes (control-server#728): two commands write it through ExecuteUpdate, which no save sees.
+        DateTimeOffset now = DateTimeOffset.UtcNow;
 
         return args[0] switch
         {
