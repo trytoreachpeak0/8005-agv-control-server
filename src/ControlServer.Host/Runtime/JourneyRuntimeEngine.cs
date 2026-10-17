@@ -288,9 +288,9 @@ public sealed partial class JourneyRuntimeEngine(
     public const string AreaEndAdmissionRevokedTimeoutReason = "TASK_TYPE_NOT_ALLOWED_AT_STATION_TIMEOUT";
 
     /// <summary>
-    /// 扫码之后给这条需求分仓位，这一侧能分的空仓比它预留的花篮数少（REQ-0352，control-server#754）。受理保证了数量，
-    /// 只有受理之后这一侧有仓位被禁用才会走到这里。这次录入按 <c>SLOT_INOPERABLE</c> 拒收，不装货、不开门，旅程停在等录入，
-    /// 等操作员在那一行取消这条需求。
+    /// 扫码之后给这条需求分仓位，分不出够数的仓位（REQ-0352，control-server#754）：这一侧能分的空仓比它预留的花篮数少——受理保证了数量，
+    /// 所以多半是受理之后这一侧有仓位被禁用——或者分配要读的东西读不到（这条需求没有分区归属冻结、车的仓位模型或车载端事实读不到）。
+    /// 这次录入按 <c>SLOT_INOPERABLE</c> 拒收，不装货、不开门，旅程停在等录入，等操作员在那一行取消这条需求。
     /// </summary>
     public const string LoadSlotAssignmentShortReason = "LOAD_SLOT_ASSIGNMENT_SHORT";
 
@@ -1561,8 +1561,8 @@ public sealed partial class JourneyRuntimeEngine(
                             entered.Demand.DemandId,
                             entered.Demand.Sublot,
                             ServerReasonCodes.SlotInoperable,
-                            $"子批 {entered.Demand.Sublot} 所需的这一侧可用仓位不足 {entered.Membership.ExpectedBasketCount} 个"
-                            + "（有仓位在派车之后被禁用），不予开仓。请取消这条需求并联系系统维护人员。",
+                            $"子批 {entered.Demand.Sublot} 所需的这一侧可分配的空仓不足 {entered.Membership.ExpectedBasketCount} 个，"
+                            + "或读不到这一侧的仓位信息，不予开仓。请取消这条需求并联系系统维护人员。",
                             now,
                             cancellationToken).ConfigureAwait(false);
                         return;
@@ -6072,6 +6072,11 @@ public sealed partial class JourneyRuntimeEngine(
     /// 等的是车载端不是人。<see cref="CheckpointWaitExceededReason"/> 也不在里面：检查点等待本身随等随清，超时码被推进失败换掉的代价
     /// 小，记在 control-server#331 的 PR 剩余风险里。
     /// </para>
+    /// <para>
+    /// <see cref="LoadSlotAssignmentShortReason"/> 是 control-server#754 加的：扫码后这一侧分不出够数的仓位，录入已被拒收，车停在站上等操作员
+    /// 取消这条需求。它只在拒收那一刻写一次，之后没有录入就不再写；被推进失败换掉之后，下一轮走通时 <c>ClearFailedAdvanceAsync</c> 把码清空，
+    /// 仓位仍然不够而看板上没了原因。
+    /// </para>
     /// </remarks>
     private static bool CarriesACodeThatNamesAWaitOnAPerson(JourneyRuntimeRow runtime) =>
         runtime.Stage == JourneyRuntimeStage.Blocked ||
@@ -6084,6 +6089,8 @@ public sealed partial class JourneyRuntimeEngine(
         string.Equals(runtime.BlockReasonCode, StationTimeoutDoorNotClosedReason, StringComparison.Ordinal) ||
         string.Equals(runtime.BlockReasonCode, LoadCorrectionInProgressReason, StringComparison.Ordinal) ||
         string.Equals(runtime.BlockReasonCode, PreDepartureSafetyNotValidReason, StringComparison.Ordinal) ||
+        // control-server#754: the entry was refused for want of slots on the demand's side; the stop waits for a cancellation.
+        string.Equals(runtime.BlockReasonCode, LoadSlotAssignmentShortReason, StringComparison.Ordinal) ||
         // control-server#390: an idle return held because its order may still exist or its vehicle may still move.
         string.Equals(runtime.BlockReasonCode, IdleReturn.IdleReturnExecutionReasons.WaitingPointLostOrderInFlight, StringComparison.Ordinal) ||
         string.Equals(runtime.BlockReasonCode, IdleReturn.IdleReturnExecutionReasons.OrderEndedStopNotProven, StringComparison.Ordinal) ||

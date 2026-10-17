@@ -169,6 +169,34 @@ public sealed class SlotAssignmentAtScanTests
         Assert.Equal([3, 4], first);
     }
 
+    /// <summary>
+    /// 已经带着仓号的归属行，扫码时读回原值，不按此刻的空仓重分：部署 v5 时还在途、受理时就写了 [3,4] 的需求，扫码之后仍开 3、4，
+    /// 哪怕 1、2 此刻是空的。重放与恢复都按第一次写下的仓位判冲突，重分出另一组就是冲突。
+    /// </summary>
+    [Fact]
+    public async Task SlotsAlreadyOnTheMembershipAreKeptAtTheScanRatherThanAssignedAgain()
+    {
+        await using RuntimeFixture fixture = await RuntimeFixture.CreateAsync();
+        fixture.Catalog.Set(fixture.Demand(FirstDemandId, FirstSublot, Now.AddMinutes(-10)));
+        fixture.BoxCounts.Set(FirstSublot, 8);
+        await ArriveAtPickupAsync(fixture, FirstDemandId);
+        JourneyDemandRow carried = await fixture.Context.Set<JourneyDemandRow>()
+            .SingleAsync(row => row.DemandId == FirstDemandId, TestContext.Current.CancellationToken);
+        carried.TargetSlotsJson = "[3,4]";
+        await fixture.Context.SaveChangesAsync(TestContext.Current.CancellationToken);
+        fixture.Context.ChangeTracker.Clear();
+        JourneyRuntimeRow runtime = await JourneyOfAsync(fixture, FirstDemandId);
+
+        await AddInboxAsync(
+            fixture, FirstSubmissionId, "SublotSubmitted", await SublotSubmissionAsync(fixture, runtime, FirstSublot));
+        await TickAndRunAsync(fixture);
+
+        int[] opened = await LoadCommandSlotsAsync(fixture, FirstDemandId);
+        Assert.Equal(
+            ("[3,4]", "3,4"),
+            ((await MembershipAsync(fixture, FirstDemandId)).TargetSlotsJson, string.Join(',', opened)));
+    }
+
     /// <summary>禁用的仓位不分：前侧 1 号被禁用，两个花篮分到 2、3。</summary>
     [Fact]
     public async Task ADisabledSlotIsNotAssigned()

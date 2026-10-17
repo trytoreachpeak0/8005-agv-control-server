@@ -90,9 +90,10 @@ public static class ServerReasonCodes
     public const string SlotFaultDeclared = "SLOT_FAULT_DECLARED";
 
     /// <summary>
-    /// A sublot entry refused because its side has fewer free, unassigned slots than the demand reserved (control-server#754):
-    /// a slot was disabled after acceptance, so the slots assigned after the scan cannot be found. Nothing is loaded and no
-    /// door opens; the stop waits for the operator to cancel the demand.
+    /// A sublot entry refused because the slots assigned after the scan cannot be found (control-server#754): the demand's side
+    /// has fewer free, unassigned slots than it reserved -- most often a slot disabled after acceptance -- or what the assignment
+    /// reads (the demand's area assignment freeze, the vehicle's slot model, its onboard facts) cannot be read. Nothing is loaded
+    /// and no door opens; the stop waits for the operator to cancel the demand.
     /// </summary>
     public const string SlotInoperable = "SLOT_INOPERABLE";
 
