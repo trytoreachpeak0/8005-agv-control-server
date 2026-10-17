@@ -1,0 +1,22 @@
+[13:22:28] Target: factory01  v2 parallel instance, server-side script D:\zhengyushao\control-server-v2-ops\dispatch-gate\f12bc8097b462d0c88ddd252f28b6d7e8bd856ca\Set-ParallelDispatchGateLocal.ps1 (control-server f12bc8097b462d0c88ddd252f28b6d7e8bd856ca)
+[13:22:28] Requested: RiotCreateDispatch.enabled=false (the server resolves the V2 service and file from installed-instance.json)
+[13:22:32] Server-side script and modules staged in D:\zhengyushao\control-server-v2-ops\dispatch-gate\f12bc8097b462d0c88ddd252f28b6d7e8bd856ca (what 19 deployed in D:\zhengyushao\control-server-v2-ops is untouched)
+  [13:22:39] Definition: D:\zhengyushao\control-server-v2-ops\installed-instance.json (factory01-v2-parallel)
+  [13:22:39] Service: '8005 AGV ControlServer V2'  configuration: C:\Program Files\8005 AGV\ControlServer.V2\appsettings.Production.json
+  [13:22:39] Journey state (read-only): C:\ProgramData\8005\ControlServer.V2\data\controlserver.db
+  [13:22:39] Requested: RiotCreateDispatch.enabled=false
+  [13:22:39] MVP service before: present=True status=Stopped startType=Disabled pathName="C:\Program Files\8005 AGV\ControlServer\ControlServer.Host.exe" --contentRoot "C:\Program Files\8005 AGV\ControlServer" --environment Production processId=0
+  [13:22:45] RiotCreateDispatch.enabled set false in C:\Program Files\8005 AGV\ControlServer.V2\appsettings.Production.json at 2026-10-17T05:22:41.2185117Z; '8005 AGV ControlServer V2' restarted, its process started at 2026-10-17T05:22:41.2583731Z.
+  [13:22:45] MVP service after:  present=True status=Stopped startType=Disabled pathName="C:\Program Files\8005 AGV\ControlServer\ControlServer.Host.exe" --contentRoot "C:\Program Files\8005 AGV\ControlServer" --environment Production processId=0
+  [13:22:45] PASS: RiotCreateDispatch.enabled on '8005 AGV ControlServer V2' was True, is now False, changed by this run. The MVP service was not involved.
+[13:22:39] Definition: D:\zhengyushao\control-server-v2-ops\installed-instance.json (factory01-v2-parallel)
+[13:22:39] Service: '8005 AGV ControlServer V2'  configuration: C:\Program Files\8005 AGV\ControlServer.V2\appsettings.Production.json
+[13:22:39] Journey state (read-only): C:\ProgramData\8005\ControlServer.V2\data\controlserver.db
+[13:22:39] Requested: RiotCreateDispatch.enabled=false
+[13:22:39] MVP service before: present=True status=Stopped startType=Disabled pathName="C:\Program Files\8005 AGV\ControlServer\ControlServer.Host.exe" --contentRoot "C:\Program Files\8005 AGV\ControlServer" --environment Production processId=0
+[13:22:45] RiotCreateDispatch.enabled set false in C:\Program Files\8005 AGV\ControlServer.V2\appsettings.Production.json at 2026-10-17T05:22:41.2185117Z; '8005 AGV ControlServer V2' restarted, its process started at 2026-10-17T05:22:41.2583731Z.
+[13:22:45] MVP service after:  present=True status=Stopped startType=Disabled pathName="C:\Program Files\8005 AGV\ControlServer\ControlServer.Host.exe" --contentRoot "C:\Program Files\8005 AGV\ControlServer" --environment Production processId=0
+[13:22:45] PASS: RiotCreateDispatch.enabled on '8005 AGV ControlServer V2' was True, is now False, changed by this run. The MVP service was not involved.
+[13:22:41] Done. The MVP service was not involved.
+Running
+False

@@ -1,0 +1,159 @@
+[19:51:33] OnboardHmi deployment to agv03
+[19:51:33] ControlServer ports: NDJSON 58105, HTTP 58107 (not the MVP service)
+[19:51:34] Server phase: production (the IO must be the site file's real module)
+[19:51:34] Site values from site-agv03.json
+[19:51:34] Secrets loaded from the DPAPI store
+[19:51:35] Onboard client state on agv03: STOPPED
+[19:51:37] Installed IO on agv03: present 127.0.0.1:1502
+[19:51:37] Downloading artifact from run 38542183893
+[19:52:03] Package hash verified (f17f333135e4eaf0172e86b753593ade5d576b91c34c57816330f09f043d04a6)
+[19:52:10] OnboardHmi commit:    d495746117ae762cae96708edc9717f7f7d3e4f0
+[19:52:10] ControlServer commit: f12bc8097b462d0c88ddd252f28b6d7e8bd856ca
+[19:52:10] wireToGate endpoint: 172.19.205.222:58105
+[19:52:11] IO target: REAL MODULE 192.168.71.150:502, from the site file; before: simulator 127.0.0.1:1502 -- -UseSiteIo: this connects the vehicle to REAL IO; deploy only with the user's authorisation and someone on site
+WARNING: This deployment switches the vehicle's IO from simulator 127.0.0.1:1502 to REAL MODULE 192.168.71.150:502 (-UseSiteIo). The vehicle will drive real slot IO the next time the client starts.
+[19:52:11] vehicle-safety endpoint: http://172.19.205.222:58107/api/onboard/v1/vehicle-safety?vehicleKey=BROKERX-7daca4ee91da498d8026c68b7b941127
+[19:52:11] Vehicle-safety credential: CONTROL_SERVER_ONBOARD_SAFETY_CREDENTIAL from OnboardSafetyCredential:BROKERX-7daca4ee91da498d8026c68b7b941127 (this vehicle's own projection credential); value not shown
+[19:52:11] Configuration rendered and validated
+What if: Performing the operation "Deploy onboard d495746 to C:\8005\OnboardHmi" on target "agv03".
+[19:52:11] WhatIf: stopping before the vehicle is touched.
+{
+  "environment": "Production",
+  "agvId": "老厂前线新多仓位3",
+  "onboardInstanceId": "OBU-LAOCHANG-XDCW-03",
+  "ruleGateway": {
+    "host": "127.0.0.1",
+    "port": 18080,
+    "connectTimeoutMs": 3000,
+    "requestTimeoutMs": 3000,
+    "heartbeatIntervalMs": 5000,
+    "resultRetryCount": 3,
+    "reconnectDelaysMs": [
+      1000,
+      2000,
+      5000,
+      10000
+    ]
+  },
+  "wireToGate": {
+    "enabled": true,
+    "host": "172.19.205.222",
+    "port": 58105,
+    "onboardInstanceId": "dce47db2-b531-4f27-9737-af60bec96beb",
+    "onboardBuildCommit": "d495746117ae762cae96708edc9717f7f7d3e4f0",
+    "credentialEnvironmentVariable": "CONTROL_SERVER_ONBOARD_CREDENTIAL",
+    "connectTimeoutMs": 3000,
+    "messageTimeoutMs": 2500,
+    "sessionHeartbeatIntervalMs": 2000,
+    "capabilityVersion": 1,
+    "safetyStateVersion": 1,
+    "slotModelVersion": "eight-slot-v1",
+    "activeSlotConfigurationVersion": "eight-slot-modbus-v1",
+    "journeySnapshotMaxAgeMs": 5000,
+    "operatorIdEnvironmentVariable": "CONTROL_SERVER_OPERATOR_ID",
+    "recoveryResumeEnabled": false,
+    "unableToChargeEntryEnabled": false,
+    "recoveryAuthenticationProofEnvironmentVariable": "CONTROL_SERVER_RECOVERY_PROOF",
+    "recoveryAdministratorRole": "MAINTENANCE_ADMINISTRATOR",
+    "recoveryVerificationMethod": "CONFIGURED_PROOF",
+    "journalPath": "%LOCALAPPDATA%\\SQCD\\8005AGV\\onboard-journal.db"
+  },
+  "automation": {
+    "enabled": false,
+    "listenAddress": "127.0.0.1",
+    "port": 58007
+  },
+  "screenState": {
+    "enabled": false,
+    "flushIntervalMs": 500,
+    "heartbeatIntervalMs": 5000,
+    "timelineMaxFileBytes": 20971520,
+    "timelineRetentionDays": 30
+  },
+  "vehicleSafety": {
+    "enabled": true,
+    "endpoint": "http://172.19.205.222:58107/api/onboard/v1/vehicle-safety?vehicleKey=BROKERX-7daca4ee91da498d8026c68b7b941127",
+    "credentialEnvironmentVariable": "CONTROL_SERVER_ONBOARD_SAFETY_CREDENTIAL",
+    "expectedVehicleKey": "BROKERX-7daca4ee91da498d8026c68b7b941127",
+    "maximumEvidenceAgeMs": 5000,
+    "clockSkewToleranceMs": 500,
+    "pollIntervalMs": 1000,
+    "requestTimeoutMs": 3000
+  },
+  "ioModule": {
+    "host": "192.168.71.150",
+    "port": 502,
+    "unitId": 255,
+    "doStartAddress": 100,
+    "diStartAddress": 200,
+    "channelCount": 16,
+    "pollIntervalMs": 100,
+    "requestTimeoutMs": 1000,
+    "reconnectDelayMs": 1000,
+    "slots": [
+      {
+        "slotIndex": 0,
+        "doChannel": 0,
+        "lockFeedbackDiChannel": 0,
+        "lightCurtainDiChannel": 8
+      },
+      {
+        "slotIndex": 1,
+        "doChannel": 1,
+        "lockFeedbackDiChannel": 1,
+        "lightCurtainDiChannel": 9
+      },
+      {
+        "slotIndex": 2,
+        "doChannel": 2,
+        "lockFeedbackDiChannel": 2,
+        "lightCurtainDiChannel": 10
+      },
+      {
+        "slotIndex": 3,
+        "doChannel": 3,
+        "lockFeedbackDiChannel": 3,
+        "lightCurtainDiChannel": 11
+      },
+      {
+        "slotIndex": 4,
+        "doChannel": 4,
+        "lockFeedbackDiChannel": 4,
+        "lightCurtainDiChannel": 12
+      },
+      {
+        "slotIndex": 5,
+        "doChannel": 5,
+        "lockFeedbackDiChannel": 5,
+        "lightCurtainDiChannel": 13
+      },
+      {
+        "slotIndex": 6,
+        "doChannel": 6,
+        "lockFeedbackDiChannel": 6,
+        "lightCurtainDiChannel": 14
+      },
+      {
+        "slotIndex": 7,
+        "doChannel": 7,
+        "lockFeedbackDiChannel": 7,
+        "lightCurtainDiChannel": 15
+      }
+    ]
+  },
+  "workflow": {
+    "unlockFeedbackTimeoutMs": 3000,
+    "unlockOutputResetTimeoutMs": 3000,
+    "operationTimeoutMs": 120000,
+    "feedbackStableMs": 300,
+    "ioSnapshotMaxAgeMs": 1000,
+    "maxSublotLength": 128,
+    "maxReopenAttempts": 2
+  },
+  "logging": {
+    "directory": "%LOCALAPPDATA%\\SQCD\\8005AGV\\logs",
+    "writeToConsole": false,
+    "operatorRecords": false
+  }
+}
+

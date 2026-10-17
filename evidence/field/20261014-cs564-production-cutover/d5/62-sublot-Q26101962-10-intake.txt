@@ -1,0 +1,450 @@
+# 62 只读调查：sublot Q26101962-10 是否被 v2 生产实例接收（2026-10-17 16:15～16:20 CST）
+# 全部只读：一次 GET 生产 MesIngest 目录、Mode=ReadOnly 读 v2 库、FieldOps area-assignments、GET dispatch-backlog 与 runtime/sessions、读日志。
+
+## A. MesIngest 目录（q62-cat.ps1，一次 GET）
+### now 2026-10-17T16:15:55.4411000+08:00 catalogRevision=50412 count=323 items=323 committed=10/17/2026 16:15:38
+### top-level keys: contractVersion,historyEpoch,catalogRevision,projectionCommitId,projectionSequence,projectionCommittedAt,count,items
+### match exact Q26101962-10:
+{
+  "demandId": "1fdeba456b284ef69620bd90e087a7f3",
+  "seriesId": "6a76d215886140fa83494db3360af64f",
+  "transportDemandKey": {
+    "workType": "DIE_TO_WIRE_STAGING",
+    "sublot": "Q26101962-10"
+  },
+  "generation": 1,
+  "demandRevision": 1,
+  "createdAt": "2026-10-17T15:24:38.7517105+08:00",
+  "valueObservedAt": "2026-10-17T15:24:38.7517105+08:00",
+  "valuePollTraceId": "16ac0c5afe6b41f08673b20a2d62e691",
+  "valueProjectionCommitId": "2b9778e1af1d49ec8147c8b35a7bed61",
+  "liveMesFields": {
+    "area": "T4-2",
+    "eqp": "2ZPB70",
+    "step": "焊线",
+    "mesSourceDate": "2026-10-17T15:23:36+08:00",
+    "package": "TO-247-2L-A"
+  }
+}
+### match prefix Q26101962:
+DIE_TO_WIRE_STAGING	T4-2	Q26101962-10	2ZPB70	焊线	10/17/2026 15:24:38
+DIE_TO_WIRE_STAGING	T4-2	Q26101962-8	2ZPB70	焊线	10/17/2026 12:58:38
+DIE_TO_WIRE_STAGING	T4-2	Q26101962-6	2ZPB70	焊线	10/17/2026 10:29:37
+DIE_TO_WIRE_STAGING	T4-2	Q26101962-9	2ZPB70	焊线	10/17/2026 13:47:38
+### workType counts:
+DIE_TO_OVEN	39
+DIE_TO_WIRE_STAGING	93
+STAGING_TO_WIRE	73
+WIRE_TO_GATE	17
+WIRE_TO_NITROGEN	79
+WIRE_TO_OPTICAL	22
+
+## B. 区表（FieldOps area-assignments）表头与 T4 行
+{"command":"area-assignments","outcome":"OK","version":1,"contentSha256":"aa1e990db62195bd615c930a7d4685c00cbee297387ce2995f56bf2e613bba8a","snapshotId":"2e0729246af84da196f8cd2f44cf3347","importedAt":"2026-10-17T14:09:45.4713228+08:00","entryCount":315,"entries":[{"area":"N1-1","dispatchZone":"WIRE_BONDING","slotPosition":"FRON
+{"area":"T4-1","dispatchZone":"DIE_ATTACH","slotPosition":"FRONT"}
+{"area":"T4-2","dispatchZone":"DIE_ATTACH","slotPosition":"FRONT"}
+{"area":"T4-3","dispatchZone":"DIE_ATTACH","slotPosition":"FRONT"}
+{"area":"T4-4","dispatchZone":"DIE_ATTACH","slotPosition":"FRONT"}
+{"area":"T4-5","dispatchZone":"DIE_ATTACH","slotPosition":"FRONT"}
+{"area":"T4-6","dispatchZone":"DIE_ATTACH","slotPosition":"FRONT"}
+{"area":"T4-7","dispatchZone":"DIE_ATTACH","slotPosition":"FRONT"}
+{"area":"T4-8","dispatchZone":"DIE_ATTACH","slotPosition":"FRONT"}
+
+## C. v2 库按 demandId / sublot 查
+### counts by demandId
+t=AcceptedDemands | n=0
+t=JourneyBacklog | n=0
+t=JourneyDemands | n=0
+t=JourneyRuntimes | n=0
+t=OrderIntents | n=0
+t=CreateGateAudit | n=0
+t=StructuralDispatchBlocks | n=0
+t=TransportDemandSuppressions | n=0
+t=TransportDemandCompletions | n=0
+t=FrozenDemandStations | n=0
+t=RiotDispatchAuditEvents | n=0
+t=StationOperations | n=0
+### by sublot text
+t=AcceptedDemands | n=0
+t=JourneyBacklog | n=6
+t=StructuralDispatchBlocks | n=0
+t=CreateGateAudit | n=5
+t=TransportDemandSuppressions | n=0
+### AcceptedDemands rows for Q26101962*
+### JourneyBacklog rows
+DemandId=528cf4e7-1b7c-47e2-99df-b76357681a33 | TransportDemandKey=Q26101962-8|DIE_TO_WIRE_STAGING | FirstSeenAt=2026-10-17 05:58:18.8326958+00:00 | DemandCreatedAt=2026-10-17 04:58:38.2406135+00:00 | DecisionFingerprint=cbe756e66ffe8e923cdc3995a9786e83b50d052d4242279942b5f33571847b6d | ReasonCode=ONBOARD_FACTS_NOT_READY | LastSeenAt=2026-10-17 08:16:35.2724779+00:00 | AcceptedAt= | StarvationEscalatedAt= | StarvationEscalationParameterVersion=
+DemandId=6a1a6c7b-9888-4440-9200-74260b520a91 | TransportDemandKey=Q26101962-7|DIE_TO_WIRE_STAGING | FirstSeenAt=2026-10-17 05:58:18.8326958+00:00 | DemandCreatedAt=2026-10-17 03:13:37.7366402+00:00 | DecisionFingerprint=6c5eac92be0e719272a86dbfd17cbd5365ec04027454292e56b962e2320eb100 | ReasonCode=DEMAND_LEFT_CATALOG | LastSeenAt=2026-10-17 06:20:37.0264749+00:00 | AcceptedAt= | StarvationEscalatedAt= | StarvationEscalationParameterVersion=
+DemandId=8a52373e-efa4-43ea-bef5-85b51537c484 | TransportDemandKey=Q26101962-6|DIE_TO_WIRE_STAGING | FirstSeenAt=2026-10-17 05:58:18.8326958+00:00 | DemandCreatedAt=2026-10-17 02:29:37.558439+00:00 | DecisionFingerprint=618fdb329fc0f8377059deb9ae6d5b599f24be94c8e8342b90c81a7d07f44256 | ReasonCode=ONBOARD_FACTS_NOT_READY | LastSeenAt=2026-10-17 08:16:35.2724779+00:00 | AcceptedAt= | StarvationEscalatedAt= | StarvationEscalationParameterVersion=
+DemandId=ca6ee26c-e3b8-42d9-af10-70c0f37c1bf5 | TransportDemandKey=Q26101962-9|DIE_TO_WIRE_STAGING | FirstSeenAt=2026-10-17 05:58:18.8326958+00:00 | DemandCreatedAt=2026-10-17 05:47:38.6452383+00:00 | DecisionFingerprint=5b6405dd0429c2f4cb396e1ea93e9086eb38af672b4821baa7b42561c5313baf | ReasonCode=ONBOARD_FACTS_NOT_READY | LastSeenAt=2026-10-17 08:16:35.2724779+00:00 | AcceptedAt= | StarvationEscalatedAt= | StarvationEscalationParameterVersion=
+DemandId=f7f2daca-77ae-48f3-bb4e-5ae23ad7c4a4 | TransportDemandKey=Q26101962-5|WIRE_TO_GATE | FirstSeenAt=2026-10-17 06:19:39.3153287+00:00 | DemandCreatedAt=2026-10-17 06:19:38.3110268+00:00 | DecisionFingerprint=2af63ee68852d3f149ffe266aafec45375d020b835cd6cd43dc0ef24269160ac | ReasonCode=DEMAND_LEFT_CATALOG | LastSeenAt=2026-10-17 07:45:38.04953+00:00 | AcceptedAt= | StarvationEscalatedAt= | StarvationEscalationParameterVersion=
+DemandId=1fdeba45-6b28-4ef6-9620-bd90e087a7f3 | TransportDemandKey=Q26101962-10|DIE_TO_WIRE_STAGING | FirstSeenAt=2026-10-17 07:24:39.8622341+00:00 | DemandCreatedAt=2026-10-17 07:24:38.7517105+00:00 | DecisionFingerprint=33023c983f1087810804e191bda12a75bd96250e09ec7212edcde6d7f7e70b32 | ReasonCode=ONBOARD_FACTS_NOT_READY | LastSeenAt=2026-10-17 08:16:35.2724779+00:00 | AcceptedAt= | StarvationEscalatedAt= | StarvationEscalationParameterVersion=
+### StructuralDispatchBlocks rows
+### AcceptedDemands overall
+n=21 | lo=1 | hi=21
+### AcceptedDemands columns
+n=DemandId
+n=TransportDemandKey
+n=DemandRevision
+n=HistoryEpoch
+n=CatalogRevision
+n=AcceptedAt
+n=Status
+n=CreatedAt
+n=Generation
+n=LiveMesFieldsJson
+n=SeriesId
+n=Sublot
+n=ValueObservedAt
+n=ValuePollTraceId
+n=ValueProjectionCommitId
+n=WorkType
+### JourneyBacklog columns
+n=DemandId
+n=TransportDemandKey
+n=FirstSeenAt
+n=DemandCreatedAt
+n=DecisionFingerprint
+n=ReasonCode
+n=LastSeenAt
+n=AcceptedAt
+n=StarvationEscalatedAt
+n=StarvationEscalationParameterVersion
+
+## D. 积压原因分布、建单闸审计、分区车辆、准入任务类型
+### backlog reason distribution (unaccepted, seen in last 10 min)
+ReasonCode=ONBOARD_FACTS_NOT_READY | wt=DIE_TO_OVEN | n=5 | last=2026-10-17 08:16:50.5347991+00:00
+ReasonCode=ONBOARD_FACTS_NOT_READY | wt=DIE_TO_WIRE_STAGING | n=72 | last=2026-10-17 08:16:50.5347991+00:00
+ReasonCode=OUT_OF_SCOPE_AREA | wt=DIE_TO_OVEN | n=34 | last=2026-10-17 08:16:50.5347991+00:00
+ReasonCode=OUT_OF_SCOPE_AREA | wt=DIE_TO_WIRE_STAGING | n=1 | last=2026-10-17 08:16:50.5347991+00:00
+ReasonCode=PACKAGE_CAPACITY_NOT_UNIQUE | wt=DIE_TO_WIRE_STAGING | n=13 | last=2026-10-17 08:16:50.5347991+00:00
+ReasonCode=VEHICLE_TASK_TYPE_NOT_ADMITTED | wt=STAGING_TO_WIRE | n=72 | last=2026-10-17 08:16:50.5347991+00:00
+ReasonCode=VEHICLE_TASK_TYPE_NOT_ADMITTED | wt=WIRE_TO_GATE | n=19 | last=2026-10-17 08:16:50.5347991+00:00
+ReasonCode=VEHICLE_TASK_TYPE_NOT_ADMITTED | wt=WIRE_TO_NITROGEN | n=72 | last=2026-10-17 08:16:50.5347991+00:00
+ReasonCode=VEHICLE_TASK_TYPE_NOT_ADMITTED | wt=WIRE_TO_OPTICAL | n=22 | last=2026-10-17 08:16:50.5347991+00:00
+ReasonCode=DEMAND_LEFT_CATALOG | wt=STAGING_TO_WIRE | n=63 | last=2026-10-17 08:16:35.2724779+00:00
+ReasonCode=DEMAND_LEFT_CATALOG | wt=WIRE_TO_GATE | n=47 | last=2026-10-17 08:14:38.5530593+00:00
+ReasonCode=DEMAND_LEFT_CATALOG | wt=DIE_TO_OVEN | n=41 | last=2026-10-17 08:13:37.414023+00:00
+ReasonCode=DEMAND_LEFT_CATALOG | wt=DIE_TO_WIRE_STAGING | n=15 | last=2026-10-17 07:54:36.8073715+00:00
+ReasonCode=DEMAND_LEFT_CATALOG | wt=WIRE_TO_OPTICAL | n=8 | last=2026-10-17 07:53:37.2192112+00:00
+ReasonCode=DEMAND_LEFT_CATALOG | wt=WIRE_TO_NITROGEN | n=13 | last=2026-10-17 07:21:37.9380165+00:00
+### CreateGateAudit columns
+c=GateAuditId,DemandId,TransportDemandKey,AgvId,MapId,TargetStationId,Verdict,RiotRouteCostMm,GraphTraversalCostMm,GraphReachable,ConflictDetail,EvaluatedAt
+### CreateGateAudit rows Q26101962
+GateAuditId=068ba647-503f-4181-a4b9-e378f61848db | DemandId=f7f2daca-77ae-48f3-bb4e-5ae23ad7c4a4 | TransportDemandKey=Q26101962-5|WIRE_TO_GATE | AgvId=老厂前线新多仓位1 | MapId=26 | TargetStationId=92 | Verdict=Allowed | RiotRouteCostMm=27490 | GraphTraversalCostMm=26491 | GraphReachable=1 | ConflictDetail= | EvaluatedAt=2026-10-17 06:24:48.1845084+00:00
+GateAuditId=82d653ec-646f-444b-af35-b7f225480ae3 | DemandId=8a52373e-efa4-43ea-bef5-85b51537c484 | TransportDemandKey=Q26101962-6|DIE_TO_WIRE_STAGING | AgvId=老厂前线新多仓位1 | MapId=26 | TargetStationId=126 | Verdict=Allowed | RiotRouteCostMm=128711 | GraphTraversalCostMm=125465 | GraphReachable=1 | ConflictDetail= | EvaluatedAt=2026-10-17 07:21:06.1242142+00:00
+GateAuditId=c0100bab-983b-43aa-b8be-13d6ae3d18a9 | DemandId=528cf4e7-1b7c-47e2-99df-b76357681a33 | TransportDemandKey=Q26101962-8|DIE_TO_WIRE_STAGING | AgvId=老厂前线新多仓位1 | MapId=26 | TargetStationId=126 | Verdict=Allowed | RiotRouteCostMm=128711 | GraphTraversalCostMm=125465 | GraphReachable=1 | ConflictDetail= | EvaluatedAt=2026-10-17 07:21:06.637917+00:00
+GateAuditId=2c0f5020-e4a3-44b2-a186-eedd10df7605 | DemandId=ca6ee26c-e3b8-42d9-af10-70c0f37c1bf5 | TransportDemandKey=Q26101962-9|DIE_TO_WIRE_STAGING | AgvId=老厂前线新多仓位1 | MapId=26 | TargetStationId=126 | Verdict=Allowed | RiotRouteCostMm=128711 | GraphTraversalCostMm=125465 | GraphReachable=1 | ConflictDetail= | EvaluatedAt=2026-10-17 07:21:07.1380465+00:00
+GateAuditId=22564621-a013-4221-8a47-2af7e2667321 | DemandId=1fdeba45-6b28-4ef6-9620-bd90e087a7f3 | TransportDemandKey=Q26101962-10|DIE_TO_WIRE_STAGING | AgvId=老厂前线新多仓位1 | MapId=26 | TargetStationId=126 | Verdict=Allowed | RiotRouteCostMm=10321 | GraphTraversalCostMm=9573 | GraphReachable=1 | ConflictDetail= | EvaluatedAt=2026-10-17 07:28:00.8975121+00:00
+### DispatchZoneVehicles
+Zone=DIE_ATTACH | AgvId=老厂前线新多仓位3 | ConfigurationVersion=4231ec895ea669bc07cd73ad020cd04227c9bc5a6a503f5f8ed2991228e1b3ad | UpdatedAt=2026-10-17 05:58:18.9478835+00:00
+Zone=WIRE_BONDING | AgvId=老厂前线新多仓位1 | ConfigurationVersion=4231ec895ea669bc07cd73ad020cd04227c9bc5a6a503f5f8ed2991228e1b3ad | UpdatedAt=2026-10-17 05:58:18.9478835+00:00
+Zone=WIRE_BONDING | AgvId=老厂前线新多仓位2 | ConfigurationVersion=4231ec895ea669bc07cd73ad020cd04227c9bc5a6a503f5f8ed2991228e1b3ad | UpdatedAt=2026-10-17 05:58:18.9478835+00:00
+### AcceptedDemands DIE_TO_WIRE_STAGING
+Sublot=Q26101743-1-2 | WorkType=WIRE_TO_NITROGEN | Status=Cancelled | AcceptedAt=2026-10-17 06:09:49.7019902+00:00 | area=
+Sublot=Q26102070-2 | WorkType=WIRE_TO_NITROGEN | Status=Cancelled | AcceptedAt=2026-10-17 06:29:06.197209+00:00 | area=
+Sublot=Q26098035-1 | WorkType=WIRE_TO_NITROGEN | Status=Cancelled | AcceptedAt=2026-10-17 06:46:22.9173969+00:00 | area=
+Sublot=Q26097763-9 | WorkType=WIRE_TO_NITROGEN | Status=Cancelled | AcceptedAt=2026-10-17 06:47:18.5502072+00:00 | area=
+Sublot=Q26089Y01-1 | WorkType=DIE_TO_WIRE_STAGING | Status=Cancelled | AcceptedAt=2026-10-17 07:21:00.8091431+00:00 | area=
+Sublot=Q26099652-1 | WorkType=DIE_TO_WIRE_STAGING | Status=Cancelled | AcceptedAt=2026-10-17 07:27:56.4100007+00:00 | area=
+Sublot=Q26099653-1 | WorkType=DIE_TO_WIRE_STAGING | Status=Cancelled | AcceptedAt=2026-10-17 07:28:01.8339585+00:00 | area=
+Sublot=Q26099E78-1 | WorkType=DIE_TO_WIRE_STAGING | Status=Accepted | AcceptedAt=2026-10-17 07:28:08.1253654+00:00 | area=
+Sublot=Q26099E92-1 | WorkType=DIE_TO_WIRE_STAGING | Status=Accepted | AcceptedAt=2026-10-17 07:28:14.334373+00:00 | area=
+Sublot=Q26099Y02-1 | WorkType=DIE_TO_WIRE_STAGING | Status=Cancelled | AcceptedAt=2026-10-17 07:28:20.6624787+00:00 | area=
+Sublot=Q26099F29-1 | WorkType=DIE_TO_WIRE_STAGING | Status=Accepted | AcceptedAt=2026-10-17 07:28:26.3510229+00:00 | area=
+Sublot=Q26099732-1 | WorkType=DIE_TO_WIRE_STAGING | Status=Cancelled | AcceptedAt=2026-10-17 07:33:52.0881188+00:00 | area=
+Sublot=Q26099733-1 | WorkType=DIE_TO_WIRE_STAGING | Status=Accepted | AcceptedAt=2026-10-17 07:40:54.8278992+00:00 | area=
+Sublot=Q26099F53-1 | WorkType=DIE_TO_WIRE_STAGING | Status=Cancelled | AcceptedAt=2026-10-17 07:46:13.0100347+00:00 | area=
+Sublot=Q26101619-2-1 | WorkType=DIE_TO_WIRE_STAGING | Status=Accepted | AcceptedAt=2026-10-17 07:46:39.619245+00:00 | area=
+Sublot=Q26097770-9 | WorkType=WIRE_TO_NITROGEN | Status=Accepted | AcceptedAt=2026-10-17 08:01:23.9087494+00:00 | area=
+Sublot=Q26099166-1 | WorkType=WIRE_TO_NITROGEN | Status=Accepted | AcceptedAt=2026-10-17 08:01:32.8293554+00:00 | area=
+Sublot=Q26101631-1 | WorkType=WIRE_TO_NITROGEN | Status=Accepted | AcceptedAt=2026-10-17 08:01:43.3728028+00:00 | area=
+Sublot=Q26102082-1 | WorkType=DIE_TO_WIRE_STAGING | Status=Accepted | AcceptedAt=2026-10-17 08:03:53.8168119+00:00 | area=
+Sublot=Q26098034-2 | WorkType=WIRE_TO_NITROGEN | Status=Accepted | AcceptedAt=2026-10-17 08:06:28.9365128+00:00 | area=
+Sublot=Q26101751-2-4 | WorkType=WIRE_TO_NITROGEN | Status=Accepted | AcceptedAt=2026-10-17 08:14:16.439714+00:00 | area=
+### AdmissionDecisionSnapshots columns
+c=SlotOperationAttemptId,StationId,TaskType,AdmissionPolicyVersion,AdmittedAt,Allowed
+### VehicleTaskTypeAdmissions
+AgvId=老厂前线新多仓位1 | TaskType=WIRE_TO_GATE | Allowed=1 | ConfigurationVersion=4231ec895ea669bc07cd73ad020cd04227c9bc5a6a503f5f8ed2991228e1b3ad | UpdatedAt=2026-10-17 05:58:18.9478835+00:00
+AgvId=老厂前线新多仓位1 | TaskType=WIRE_TO_NITROGEN | Allowed=1 | ConfigurationVersion=4231ec895ea669bc07cd73ad020cd04227c9bc5a6a503f5f8ed2991228e1b3ad | UpdatedAt=2026-10-17 05:58:18.9478835+00:00
+AgvId=老厂前线新多仓位1 | TaskType=WIRE_TO_OPTICAL | Allowed=1 | ConfigurationVersion=4231ec895ea669bc07cd73ad020cd04227c9bc5a6a503f5f8ed2991228e1b3ad | UpdatedAt=2026-10-17 05:58:18.9478835+00:00
+AgvId=老厂前线新多仓位2 | TaskType=STAGING_TO_WIRE | Allowed=1 | ConfigurationVersion=4231ec895ea669bc07cd73ad020cd04227c9bc5a6a503f5f8ed2991228e1b3ad | UpdatedAt=2026-10-17 05:58:18.9478835+00:00
+AgvId=老厂前线新多仓位3 | TaskType=DIE_TO_OVEN | Allowed=1 | ConfigurationVersion=4231ec895ea669bc07cd73ad020cd04227c9bc5a6a503f5f8ed2991228e1b3ad | UpdatedAt=2026-10-17 05:58:18.9478835+00:00
+AgvId=老厂前线新多仓位3 | TaskType=DIE_TO_WIRE_STAGING | Allowed=1 | ConfigurationVersion=4231ec895ea669bc07cd73ad020cd04227c9bc5a6a503f5f8ed2991228e1b3ad | UpdatedAt=2026-10-17 05:58:18.9478835+00:00
+
+## E. dispatch-backlog 接口里这一条
+3389-      "demandId": "1fdeba45-6b28-4ef6-9620-bd90e087a7f3",
+3390:      "transportDemandKey": "Q26101962-10|DIE_TO_WIRE_STAGING",
+3391-      "reasonCode": "ONBOARD_FACTS_NOT_READY",
+3392-      "reasonDescription": null,
+3393-      "firstSeenAt": "2026-10-17T15:24:39.8622341+08:00",
+3394-      "lastEvaluatedAt": "2026-10-17T16:17:12.0866371+08:00",
+3395-      "waitingSeconds": 3159,
+3396-      "demandCreatedAt": "2026-10-17T15:24:38.7517105+08:00",
+3397-      "waitingAgeKnown": true,
+3398-      "tier": "NORMAL_BAND",
+3399-      "starvationEscalatedAt": null,
+3400-      "starvationEscalationParameterVersion": null
+3401-    },
+3402-    {
+
+## F. agv03 旅程与会话
+### now 2026-10-17T16:17:56.7680785+08:00
+### JourneyRuntimes for 多仓位3 (latest 5)
+JourneyId=journey:dadde6f1-9e2b-4ef1-9141-ca7f7b5ef328 | Stage=AwaitingGateArrival | BlockReasonCode=ONBOARD_SESSION_NOT_READY | BlockReasonSince=2026-10-17 08:13:23.4451275+00:00 | DispatchZone=DIE_ATTACH | CreatedAt=2026-10-17 07:21:00.7946034+00:00 | UpdatedAt=2026-10-17 08:17:50.3957484+00:00
+JourneyId=charging:BROKERX-7daca4ee91da498d8026c68b7b941127:20261017T060820134Z | Stage=Completed | BlockReasonCode=CHARGING_COMPLETE | BlockReasonSince=2026-10-17 07:18:29.686803+00:00 | DispatchZone=CHARGING | CreatedAt=2026-10-17 06:08:20.1349527+00:00 | UpdatedAt=2026-10-17 07:18:29.686803+00:00
+### ProtocolInbox last 3 per vehicle (by RequestJson match)
+-- agv01
+-- agv02
+-- agv03
+-- 多仓位1
+-- 多仓位2
+-- 多仓位3
+### sessions API
+[
+  {
+    "agvId": "老厂前线新多仓位1",
+    "sessionGeneration": 2,
+    "readiness": "Ready",
+    "reasonCode": "READY",
+    "updatedAt": "2026-10-17T16:16:32.8631112+08:00"
+  },
+  {
+    "agvId": "老厂前线新多仓位2",
+    "sessionGeneration": 2,
+    "readiness": "RecoveryRequired",
+    "reasonCode": "DEPARTURE_SAFETY_NOT_READY",
+    "updatedAt": "2026-10-17T15:01:43.1657721+08:00"
+  },
+  {
+    "agvId": "老厂前线新多仓位3",
+    "sessionGeneration": 6,
+    "readiness": "RecoveryRequired",
+    "reasonCode": "DEPARTURE_SAFETY_NOT_READY",
+    "updatedAt": "2026-10-17T16:15:08.0963895+08:00"
+  }
+]
+
+## G. agv03 旅程的需求与各站
+### JourneyDemands cols
+c=JourneyId,DemandId,PickupStopId,UnloadStopId,ExpectedBasketCount,TargetSlotsJson,LoadedSlotsJson,LoadSlotOperationAttemptId,LoadCommandMessageId,UnloadSlotOperationAttemptId,UnloadCommandMessageId,DispatchZone,DispatchGeneration,Status,AddedAt,RemovedAt,RemovalReason,DispatchZoneParameterVersion
+### JourneyDemands of agv03 journey
+JourneyId=journey:dadde6f1-9e2b-4ef1-9141-ca7f7b5ef328 | DemandId=3283fc0b-e4b0-4b73-a672-8929af4dea3d | PickupStopId=journey:3283fc0b-e4b0-4b73-a672-8929af4dea3d|PICKUP | UnloadStopId=journey:dadde6f1-9e2b-4ef1-9141-ca7f7b5ef328|UNLOAD | ExpectedBasketCount=1 | TargetSlotsJson=[2] | LoadedSlotsJson= | LoadSlotOperationAttemptId=4a2ca74a-3620-875e-9145-e30bdff5386e | LoadCommandMessageId=ced5c5f7-4d9e-295b-b29c-177dfd55cd86 | UnloadSlotOperationAttemptId=21a7a643-f725-0a52-aa5e-b03c6a2e7972 | UnloadCommandMessageId=3e393527-5667-aa5c-b4f2-35fc5f2f5989 | DispatchZone=DIE_ATTACH | DispatchGeneration=100 | Status=PENDING_LOAD | AddedAt=2026-10-17 07:28:08.1167045+00:00 | RemovedAt=2026-10-17 08:04:08.2185121+00:00 | RemovalReason=RELEASED_AT_STATION_DEADLINE | DispatchZoneParameterVersion=1 | Sublot=Q26099E78-1 | Status=Accepted | area= | pkg=
+JourneyId=journey:dadde6f1-9e2b-4ef1-9141-ca7f7b5ef328 | DemandId=4bf6ea11-43b9-4b8c-a973-7352e9ac1c21 | PickupStopId=journey:3283fc0b-e4b0-4b73-a672-8929af4dea3d|PICKUP | UnloadStopId=journey:dadde6f1-9e2b-4ef1-9141-ca7f7b5ef328|UNLOAD | ExpectedBasketCount=1 | TargetSlotsJson=[1] | LoadedSlotsJson= | LoadSlotOperationAttemptId=2ea7dbb5-83b0-2757-b4dc-308b9a3d226a | LoadCommandMessageId=df10fa18-726f-7659-b9e3-ae8bf7b85bee | UnloadSlotOperationAttemptId=fcd6f73d-4264-4254-988a-20023a3cf41d | UnloadCommandMessageId=e70357a5-5b7a-ad54-90e9-4ddad347793c | DispatchZone=DIE_ATTACH | DispatchGeneration=100 | Status=PENDING_LOAD | AddedAt=2026-10-17 07:28:14.3231682+00:00 | RemovedAt=2026-10-17 08:04:08.2185121+00:00 | RemovalReason=RELEASED_AT_STATION_DEADLINE | DispatchZoneParameterVersion=1 | Sublot=Q26099E92-1 | Status=Accepted | area= | pkg=
+JourneyId=journey:dadde6f1-9e2b-4ef1-9141-ca7f7b5ef328 | DemandId=4f4ccb18-a969-4769-b67b-d4b135d95416 | PickupStopId=journey:dd3de04f-7f01-4c10-9976-dc79784af49b|PICKUP | UnloadStopId=journey:dadde6f1-9e2b-4ef1-9141-ca7f7b5ef328|UNLOAD | ExpectedBasketCount=1 | TargetSlotsJson=[6] | LoadedSlotsJson= | LoadSlotOperationAttemptId=2491d83f-3a16-705b-9108-48392451de4a | LoadCommandMessageId=b40c2092-17d9-7656-bf4c-74f8b815dc0c | UnloadSlotOperationAttemptId=0a538756-c373-8f55-b011-4895d2a3b6dd | UnloadCommandMessageId=7987e7f7-5618-265c-ad8b-f119323364b5 | DispatchZone=DIE_ATTACH | DispatchGeneration=100 | Status=TERMINATED | AddedAt=2026-10-17 07:28:01.8253229+00:00 | RemovedAt= | RemovalReason= | DispatchZoneParameterVersion=1 | Sublot=Q26099653-1 | Status=Cancelled | area= | pkg=
+JourneyId=journey:dadde6f1-9e2b-4ef1-9141-ca7f7b5ef328 | DemandId=6b3d368e-9739-48fb-8274-be50fac5859c | PickupStopId=journey:6b3d368e-9739-48fb-8274-be50fac5859c|PICKUP | UnloadStopId=journey:dadde6f1-9e2b-4ef1-9141-ca7f7b5ef328|UNLOAD | ExpectedBasketCount=1 | TargetSlotsJson=[7] | LoadedSlotsJson= | LoadSlotOperationAttemptId=29cae0a2-7716-2459-ad86-60e9f8ae9a5b | LoadCommandMessageId=f37e050d-a78e-355a-a046-e8ae891e5a26 | UnloadSlotOperationAttemptId=c355ce8b-94b7-095c-98a7-73787eab2f96 | UnloadCommandMessageId=7a58a62e-e8c0-9755-b6ec-8c6654798e7c | DispatchZone=DIE_ATTACH | DispatchGeneration=100 | Status=TERMINATED | AddedAt=2026-10-17 07:46:12.9955474+00:00 | RemovedAt= | RemovalReason= | DispatchZoneParameterVersion=1 | Sublot=Q26099F53-1 | Status=Cancelled | area= | pkg=
+JourneyId=journey:dadde6f1-9e2b-4ef1-9141-ca7f7b5ef328 | DemandId=7291049b-6fee-4062-9218-8192bc937900 | PickupStopId=journey:dd3de04f-7f01-4c10-9976-dc79784af49b|PICKUP | UnloadStopId=journey:dadde6f1-9e2b-4ef1-9141-ca7f7b5ef328|UNLOAD | ExpectedBasketCount=1 | TargetSlotsJson=[7] | LoadedSlotsJson= | LoadSlotOperationAttemptId=c6335a96-afa1-0050-832b-75a8f0b14abd | LoadCommandMessageId=2b4fbbb8-10cc-685e-9fe9-fa270a512b20 | UnloadSlotOperationAttemptId=1da2b110-5ab1-9357-92d9-606d7dadef9a | UnloadCommandMessageId=64eb6ed3-a8d2-0854-b18c-732b13cc0c7a | DispatchZone=DIE_ATTACH | DispatchGeneration=100 | Status=LOADED | AddedAt=2026-10-17 08:03:53.8023995+00:00 | RemovedAt= | RemovalReason= | DispatchZoneParameterVersion=1 | Sublot=Q26102082-1 | Status=Accepted | area= | pkg=
+JourneyId=journey:dadde6f1-9e2b-4ef1-9141-ca7f7b5ef328 | DemandId=85042647-ed2c-46fd-a2c9-0e2eb056c1bd | PickupStopId=journey:85042647-ed2c-46fd-a2c9-0e2eb056c1bd|PICKUP | UnloadStopId=journey:dadde6f1-9e2b-4ef1-9141-ca7f7b5ef328|UNLOAD | ExpectedBasketCount=2 | TargetSlotsJson=[3,4] | LoadedSlotsJson= | LoadSlotOperationAttemptId=6e44fe0e-e1eb-8157-9b57-c5cc1587ae13 | LoadCommandMessageId=5eb81281-ccbd-0651-b458-4fc6c8a102ae | UnloadSlotOperationAttemptId=843caddf-95e4-c75d-aa37-8a37f562d832 | UnloadCommandMessageId=c0f93a95-2cb4-615e-9e8b-b698d39e0ef4 | DispatchZone=DIE_ATTACH | DispatchGeneration=100 | Status=PENDING_LOAD | AddedAt=2026-10-17 07:28:26.3435771+00:00 | RemovedAt=2026-10-17 07:57:14.53206+00:00 | RemovalReason=RELEASED_AT_STATION_DEADLINE | DispatchZoneParameterVersion=1 | Sublot=Q26099F29-1 | Status=Accepted | area= | pkg=
+JourneyId=journey:dadde6f1-9e2b-4ef1-9141-ca7f7b5ef328 | DemandId=8879ce04-bb9c-4e08-9e5c-c609db1070a1 | PickupStopId=journey:8879ce04-bb9c-4e08-9e5c-c609db1070a1|PICKUP | UnloadStopId=journey:dadde6f1-9e2b-4ef1-9141-ca7f7b5ef328|UNLOAD | ExpectedBasketCount=1 | TargetSlotsJson=[7] | LoadedSlotsJson= | LoadSlotOperationAttemptId=f08e8991-bc9b-5a58-91ca-559bcffb7c27 | LoadCommandMessageId=c99a617d-137a-bf5b-8418-3429c5ec9ca5 | UnloadSlotOperationAttemptId=dc5fdb4d-03b3-4957-8cc6-e8adc01ce4e1 | UnloadCommandMessageId=7be502e9-39c7-8552-80ac-ce5ba23cf825 | DispatchZone=DIE_ATTACH | DispatchGeneration=100 | Status=TERMINATED | AddedAt=2026-10-17 07:33:52.073207+00:00 | RemovedAt= | RemovalReason= | DispatchZoneParameterVersion=1 | Sublot=Q26099732-1 | Status=Cancelled | area= | pkg=
+JourneyId=journey:dadde6f1-9e2b-4ef1-9141-ca7f7b5ef328 | DemandId=959ec27f-a8a0-4c23-9390-647589e361dc | PickupStopId=journey:85042647-ed2c-46fd-a2c9-0e2eb056c1bd|PICKUP | UnloadStopId=journey:dadde6f1-9e2b-4ef1-9141-ca7f7b5ef328|UNLOAD | ExpectedBasketCount=1 | TargetSlotsJson=[7] | LoadedSlotsJson= | LoadSlotOperationAttemptId=7942946e-16ab-8f55-8a22-624e7fc71106 | LoadCommandMessageId=53f80cb9-a4b4-f956-86a7-24e80823631c | UnloadSlotOperationAttemptId=09c84847-ed81-0850-8c06-d9154593215c | UnloadCommandMessageId=907322c1-bcd7-9e54-87b0-4f2fef543c9f | DispatchZone=DIE_ATTACH | DispatchGeneration=100 | Status=PENDING_LOAD | AddedAt=2026-10-17 07:46:39.6061234+00:00 | RemovedAt=2026-10-17 07:57:14.53206+00:00 | RemovalReason=RELEASED_AT_STATION_DEADLINE | DispatchZoneParameterVersion=1 | Sublot=Q26101619-2-1 | Status=Accepted | area= | pkg=
+JourneyId=journey:dadde6f1-9e2b-4ef1-9141-ca7f7b5ef328 | DemandId=d945ff2e-af08-482c-bbe2-6e34daeeac24 | PickupStopId=journey:d945ff2e-af08-482c-bbe2-6e34daeeac24|PICKUP | UnloadStopId=journey:dadde6f1-9e2b-4ef1-9141-ca7f7b5ef328|UNLOAD | ExpectedBasketCount=1 | TargetSlotsJson=[7] | LoadedSlotsJson= | LoadSlotOperationAttemptId=9047a45d-107d-aa5c-9e74-89f1c8a11ec7 | LoadCommandMessageId=203cf240-3ecb-045f-84b8-fd48de1c3df6 | UnloadSlotOperationAttemptId=e37049f6-243a-0358-9cf1-828f5c7c5cb5 | UnloadCommandMessageId=f7e9825e-06b6-465d-9da0-1c5ecf1836ec | DispatchZone=DIE_ATTACH | DispatchGeneration=100 | Status=PENDING_LOAD | AddedAt=2026-10-17 07:40:54.8133175+00:00 | RemovedAt=2026-10-17 07:46:11.5704753+00:00 | RemovalReason=RELEASED_AT_STATION_DEADLINE | DispatchZoneParameterVersion=1 | Sublot=Q26099733-1 | Status=Accepted | area= | pkg=
+JourneyId=journey:dadde6f1-9e2b-4ef1-9141-ca7f7b5ef328 | DemandId=dadde6f1-9e2b-4ef1-9141-ca7f7b5ef328 | PickupStopId=journey:dadde6f1-9e2b-4ef1-9141-ca7f7b5ef328|PICKUP | UnloadStopId=journey:dadde6f1-9e2b-4ef1-9141-ca7f7b5ef328|UNLOAD | ExpectedBasketCount=1 | TargetSlotsJson=[1] | LoadedSlotsJson= | LoadSlotOperationAttemptId=deb0ca32-2e3f-f250-8cc7-a5f3dfe9028d | LoadCommandMessageId=d6c6e282-59af-2b5d-a656-f2ce23a1198c | UnloadSlotOperationAttemptId=d2fae560-57c1-de5d-8ce0-bc5d63277d58 | UnloadCommandMessageId=07d68cb2-df0e-3e53-aea1-213ac6b70366 | DispatchZone=DIE_ATTACH | DispatchGeneration=100 | Status=TERMINATED | AddedAt=2026-10-17 07:21:00.7946034+00:00 | RemovedAt= | RemovalReason= | DispatchZoneParameterVersion= | Sublot=Q26089Y01-1 | Status=Cancelled | area= | pkg=
+JourneyId=journey:dadde6f1-9e2b-4ef1-9141-ca7f7b5ef328 | DemandId=dd3de04f-7f01-4c10-9976-dc79784af49b | PickupStopId=journey:dd3de04f-7f01-4c10-9976-dc79784af49b|PICKUP | UnloadStopId=journey:dadde6f1-9e2b-4ef1-9141-ca7f7b5ef328|UNLOAD | ExpectedBasketCount=1 | TargetSlotsJson=[5] | LoadedSlotsJson= | LoadSlotOperationAttemptId=6823f48c-5bfd-4951-b455-e1dc7da4693f | LoadCommandMessageId=833c05fd-76ef-bc58-8c27-39e77106f186 | UnloadSlotOperationAttemptId=99d5f351-101e-fd5a-bb36-6cb0e4523994 | UnloadCommandMessageId=92f72e5d-05a9-b35c-a1f0-1da34517ce08 | DispatchZone=DIE_ATTACH | DispatchGeneration=100 | Status=TERMINATED | AddedAt=2026-10-17 07:27:56.3852781+00:00 | RemovedAt= | RemovalReason= | DispatchZoneParameterVersion=1 | Sublot=Q26099652-1 | Status=Cancelled | area= | pkg=
+JourneyId=journey:dadde6f1-9e2b-4ef1-9141-ca7f7b5ef328 | DemandId=f9d6ac57-c7db-46e1-a8c9-d6f1e92cfb37 | PickupStopId=journey:f9d6ac57-c7db-46e1-a8c9-d6f1e92cfb37|PICKUP | UnloadStopId=journey:dadde6f1-9e2b-4ef1-9141-ca7f7b5ef328|UNLOAD | ExpectedBasketCount=1 | TargetSlotsJson=[7] | LoadedSlotsJson= | LoadSlotOperationAttemptId=892ce6ae-ef21-9950-8ef5-94f490e694bd | LoadCommandMessageId=554508ad-4a86-3957-b782-223a4e437335 | UnloadSlotOperationAttemptId=423646af-645d-005b-a548-f2bf36de28e6 | UnloadCommandMessageId=edf77d8e-faf7-795f-acbf-4f447ba24df5 | DispatchZone=DIE_ATTACH | DispatchGeneration=100 | Status=TERMINATED | AddedAt=2026-10-17 07:28:20.6488586+00:00 | RemovedAt= | RemovalReason= | DispatchZoneParameterVersion=1 | Sublot=Q26099Y02-1 | Status=Cancelled | area= | pkg=
+### agv03 journey slots
+ExpectedBasketCount=1 | TargetSlotsJson=[1] | FullSlotPositionsJson=[] | LoadingPhaseState=CLOSED | LoadingClosedReason=OPERATOR_DEPARTED | Stage=AwaitingGateArrival
+### JourneyStops
+c=StopId,JourneyId,Sequence,StopRole,StationId,StationRiotId,DispatchZone,OperationSessionId,MovementLegId,UpperId,VehicleBusinessMessageId,WorklistMessageId,PlanMessageId,SublotRequestMessageId,DepartureSafetyCheckMessageId,DepartureSafetyCheckId,Status,CreatedAt,WorklistRefills,OperatorDepartedAt
+### JourneyStops of agv03 journey
+Sequence=1 | StopRole=PICKUP | StationId=T2-1_T3-1_T3-2 | StationRiotId=145 | Status=COMPLETED | CreatedAt=2026-10-17 07:21:00.7946034+00:00 | OperatorDepartedAt=
+Sequence=2 | StopRole=PICKUP | StationId=T6-8_T7-7 | StationRiotId=164 | Status=COMPLETED | CreatedAt=2026-10-17 07:28:20.6488586+00:00 | OperatorDepartedAt=
+Sequence=3 | StopRole=PICKUP | StationId=T6-7_T7-6 | StationRiotId=160 | Status=COMPLETED | CreatedAt=2026-10-17 07:33:52.073207+00:00 | OperatorDepartedAt=
+Sequence=4 | StopRole=PICKUP | StationId=T6-7_T7-6 | StationRiotId=160 | Status=COMPLETED | CreatedAt=2026-10-17 07:40:54.8133175+00:00 | OperatorDepartedAt=
+Sequence=5 | StopRole=PICKUP | StationId=T6-7_T7-6 | StationRiotId=160 | Status=COMPLETED | CreatedAt=2026-10-17 07:46:12.9955474+00:00 | OperatorDepartedAt=
+Sequence=6 | StopRole=PICKUP | StationId=T6-1_T6-2_T7-1 | StationRiotId=154 | Status=COMPLETED | CreatedAt=2026-10-17 07:28:26.3435771+00:00 | OperatorDepartedAt=
+Sequence=7 | StopRole=PICKUP | StationId=T5-5 | StationRiotId=150 | Status=COMPLETED | CreatedAt=2026-10-17 07:28:08.1167045+00:00 | OperatorDepartedAt=
+Sequence=8 | StopRole=PICKUP | StationId=T2-5_T3-5 | StationRiotId=140 | Status=COMPLETED | CreatedAt=2026-10-17 07:27:56.3852781+00:00 | OperatorDepartedAt=2026-10-17 08:13:13.8838273+00:00
+Sequence=9 | StopRole=UNLOAD | StationId=装片氮气柜 | StationRiotId=220 | Status=PENDING | CreatedAt=2026-10-17 07:21:00.7946034+00:00 | OperatorDepartedAt=
+### JourneyDemands status/removal
+DemandId=dadde6f1-9e2b-4ef1-9141-ca7f7b5ef328 | Sublot=Q26089Y01-1 | Status=TERMINATED | AddedAt=2026-10-17 07:21:00.7946034+00:00 | RemovedAt= | RemovalReason=
+DemandId=dd3de04f-7f01-4c10-9976-dc79784af49b | Sublot=Q26099652-1 | Status=TERMINATED | AddedAt=2026-10-17 07:27:56.3852781+00:00 | RemovedAt= | RemovalReason=
+DemandId=4f4ccb18-a969-4769-b67b-d4b135d95416 | Sublot=Q26099653-1 | Status=TERMINATED | AddedAt=2026-10-17 07:28:01.8253229+00:00 | RemovedAt= | RemovalReason=
+DemandId=3283fc0b-e4b0-4b73-a672-8929af4dea3d | Sublot=Q26099E78-1 | Status=PENDING_LOAD | AddedAt=2026-10-17 07:28:08.1167045+00:00 | RemovedAt=2026-10-17 08:04:08.2185121+00:00 | RemovalReason=RELEASED_AT_STATION_DEADLINE
+DemandId=4bf6ea11-43b9-4b8c-a973-7352e9ac1c21 | Sublot=Q26099E92-1 | Status=PENDING_LOAD | AddedAt=2026-10-17 07:28:14.3231682+00:00 | RemovedAt=2026-10-17 08:04:08.2185121+00:00 | RemovalReason=RELEASED_AT_STATION_DEADLINE
+DemandId=f9d6ac57-c7db-46e1-a8c9-d6f1e92cfb37 | Sublot=Q26099Y02-1 | Status=TERMINATED | AddedAt=2026-10-17 07:28:20.6488586+00:00 | RemovedAt= | RemovalReason=
+DemandId=85042647-ed2c-46fd-a2c9-0e2eb056c1bd | Sublot=Q26099F29-1 | Status=PENDING_LOAD | AddedAt=2026-10-17 07:28:26.3435771+00:00 | RemovedAt=2026-10-17 07:57:14.53206+00:00 | RemovalReason=RELEASED_AT_STATION_DEADLINE
+DemandId=8879ce04-bb9c-4e08-9e5c-c609db1070a1 | Sublot=Q26099732-1 | Status=TERMINATED | AddedAt=2026-10-17 07:33:52.073207+00:00 | RemovedAt= | RemovalReason=
+DemandId=d945ff2e-af08-482c-bbe2-6e34daeeac24 | Sublot=Q26099733-1 | Status=PENDING_LOAD | AddedAt=2026-10-17 07:40:54.8133175+00:00 | RemovedAt=2026-10-17 07:46:11.5704753+00:00 | RemovalReason=RELEASED_AT_STATION_DEADLINE
+DemandId=6b3d368e-9739-48fb-8274-be50fac5859c | Sublot=Q26099F53-1 | Status=TERMINATED | AddedAt=2026-10-17 07:46:12.9955474+00:00 | RemovedAt= | RemovalReason=
+DemandId=959ec27f-a8a0-4c23-9390-647589e361dc | Sublot=Q26101619-2-1 | Status=PENDING_LOAD | AddedAt=2026-10-17 07:46:39.6061234+00:00 | RemovedAt=2026-10-17 07:57:14.53206+00:00 | RemovalReason=RELEASED_AT_STATION_DEADLINE
+DemandId=7291049b-6fee-4062-9218-8192bc937900 | Sublot=Q26102082-1 | Status=LOADED | AddedAt=2026-10-17 08:03:53.8023995+00:00 | RemovedAt= | RemovalReason=
+### OrderIntents cols
+c=MovementLegId,DemandId,UpperId,Purpose,TargetStationId,VehicleKey,MapId,DestinationStationId,AgvLifecycleGeneration,DispatchGeneration,CreatedAt,Status,OrderId,CreateAttemptCount,CreateAttemptId,CreateDispatchArmedAt,DispatchAuditVersion,LastCreateOutcome,LastCreateOutcomeAt,LastCreateReceiptJson,LastReconciliationOutcome,LastReconciliationOutcomeAt,LastReconciliationReceiptJson,DispatchAuditSequence,ExperimentalCreateAuthorizationId,OrderShape
+
+## H. agv03 订单意图与 15:20-16:20 建单闸审计
+### CreateGateAudit 07:20-08:20Z
+EvaluatedAt=2026-10-17 07:21:00.7592151+00:00 | TransportDemandKey=Q26089Y01-1|DIE_TO_WIRE_STAGING | AgvId=老厂前线新多仓位1 | TargetStationId=145 | Verdict=Allowed | ConflictDetail=
+EvaluatedAt=2026-10-17 07:21:01.2502874+00:00 | TransportDemandKey=Q26099652-1|DIE_TO_WIRE_STAGING | AgvId=老厂前线新多仓位1 | TargetStationId=140 | Verdict=Allowed | ConflictDetail=
+EvaluatedAt=2026-10-17 07:21:01.3046491+00:00 | TransportDemandKey=Q26099653-1|DIE_TO_WIRE_STAGING | AgvId=老厂前线新多仓位1 | TargetStationId=140 | Verdict=Allowed | ConflictDetail=
+EvaluatedAt=2026-10-17 07:21:01.467591+00:00 | TransportDemandKey=Q26099E78-1|DIE_TO_WIRE_STAGING | AgvId=老厂前线新多仓位1 | TargetStationId=150 | Verdict=Allowed | ConflictDetail=
+EvaluatedAt=2026-10-17 07:21:01.5272802+00:00 | TransportDemandKey=Q26099E92-1|DIE_TO_WIRE_STAGING | AgvId=老厂前线新多仓位1 | TargetStationId=150 | Verdict=Allowed | ConflictDetail=
+EvaluatedAt=2026-10-17 07:21:01.7284455+00:00 | TransportDemandKey=Q26099Y02-1|DIE_TO_WIRE_STAGING | AgvId=老厂前线新多仓位1 | TargetStationId=164 | Verdict=Allowed | ConflictDetail=
+EvaluatedAt=2026-10-17 07:21:01.7841898+00:00 | TransportDemandKey=Q26099F29-1|DIE_TO_WIRE_STAGING | AgvId=老厂前线新多仓位1 | TargetStationId=154 | Verdict=Allowed | ConflictDetail=
+EvaluatedAt=2026-10-17 07:21:01.8338806+00:00 | TransportDemandKey=Q26099F26-1|DIE_TO_WIRE_STAGING | AgvId=老厂前线新多仓位1 | TargetStationId=154 | Verdict=Allowed | ConflictDetail=
+EvaluatedAt=2026-10-17 07:21:01.8864722+00:00 | TransportDemandKey=Q26099F28-1|DIE_TO_WIRE_STAGING | AgvId=老厂前线新多仓位1 | TargetStationId=154 | Verdict=Allowed | ConflictDetail=
+EvaluatedAt=2026-10-17 07:21:01.9330803+00:00 | TransportDemandKey=Q26099F19-1|DIE_TO_WIRE_STAGING | AgvId=老厂前线新多仓位1 | TargetStationId=154 | Verdict=Allowed | ConflictDetail=
+EvaluatedAt=2026-10-17 07:21:01.98699+00:00 | TransportDemandKey=Q26099F20-1|DIE_TO_WIRE_STAGING | AgvId=老厂前线新多仓位1 | TargetStationId=154 | Verdict=Allowed | ConflictDetail=
+EvaluatedAt=2026-10-17 07:21:02.04018+00:00 | TransportDemandKey=Q26099F21-1|DIE_TO_WIRE_STAGING | AgvId=老厂前线新多仓位1 | TargetStationId=154 | Verdict=Allowed | ConflictDetail=
+EvaluatedAt=2026-10-17 07:21:02.0921771+00:00 | TransportDemandKey=Q26099F22-1|DIE_TO_WIRE_STAGING | AgvId=老厂前线新多仓位1 | TargetStationId=154 | Verdict=Allowed | ConflictDetail=
+EvaluatedAt=2026-10-17 07:21:02.1446586+00:00 | TransportDemandKey=Q26109013-1|DIE_TO_WIRE_STAGING | AgvId=老厂前线新多仓位1 | TargetStationId=154 | Verdict=Allowed | ConflictDetail=
+EvaluatedAt=2026-10-17 07:21:02.1948712+00:00 | TransportDemandKey=Q26109014-1|DIE_TO_WIRE_STAGING | AgvId=老厂前线新多仓位1 | TargetStationId=154 | Verdict=Allowed | ConflictDetail=
+EvaluatedAt=2026-10-17 07:21:02.2415791+00:00 | TransportDemandKey=Q26109015-1|DIE_TO_WIRE_STAGING | AgvId=老厂前线新多仓位1 | TargetStationId=154 | Verdict=Allowed | ConflictDetail=
+EvaluatedAt=2026-10-17 07:21:02.2950464+00:00 | TransportDemandKey=Q26109017-1|DIE_TO_WIRE_STAGING | AgvId=老厂前线新多仓位1 | TargetStationId=154 | Verdict=Allowed | ConflictDetail=
+EvaluatedAt=2026-10-17 07:21:02.3514411+00:00 | TransportDemandKey=Q26099732-1|DIE_TO_WIRE_STAGING | AgvId=老厂前线新多仓位1 | TargetStationId=160 | Verdict=Allowed | ConflictDetail=
+EvaluatedAt=2026-10-17 07:21:02.4071265+00:00 | TransportDemandKey=Q26109016-1|DIE_TO_WIRE_STAGING | AgvId=老厂前线新多仓位1 | TargetStationId=154 | Verdict=Allowed | ConflictDetail=
+EvaluatedAt=2026-10-17 07:21:02.454352+00:00 | TransportDemandKey=Q26099733-1|DIE_TO_WIRE_STAGING | AgvId=老厂前线新多仓位1 | TargetStationId=160 | Verdict=Allowed | ConflictDetail=
+EvaluatedAt=2026-10-17 07:21:02.5082661+00:00 | TransportDemandKey=Q26109018-1|DIE_TO_WIRE_STAGING | AgvId=老厂前线新多仓位1 | TargetStationId=154 | Verdict=Allowed | ConflictDetail=
+EvaluatedAt=2026-10-17 07:21:02.5766812+00:00 | TransportDemandKey=Q26099F53-1|DIE_TO_WIRE_STAGING | AgvId=老厂前线新多仓位1 | TargetStationId=160 | Verdict=Allowed | ConflictDetail=
+EvaluatedAt=2026-10-17 07:21:02.6221141+00:00 | TransportDemandKey=Q26109011-1|DIE_TO_WIRE_STAGING | AgvId=老厂前线新多仓位1 | TargetStationId=149 | Verdict=Allowed | ConflictDetail=
+EvaluatedAt=2026-10-17 07:21:02.6765129+00:00 | TransportDemandKey=Q26109010-1|DIE_TO_WIRE_STAGING | AgvId=老厂前线新多仓位1 | TargetStationId=149 | Verdict=Allowed | ConflictDetail=
+EvaluatedAt=2026-10-17 07:21:02.730708+00:00 | TransportDemandKey=Q26099656-1|DIE_TO_WIRE_STAGING | AgvId=老厂前线新多仓位1 | TargetStationId=160 | Verdict=Allowed | ConflictDetail=
+EvaluatedAt=2026-10-17 07:21:02.7860018+00:00 | TransportDemandKey=Q26099F50-1|DIE_TO_WIRE_STAGING | AgvId=老厂前线新多仓位1 | TargetStationId=160 | Verdict=Allowed | ConflictDetail=
+EvaluatedAt=2026-10-17 07:21:02.850665+00:00 | TransportDemandKey=Q26099F51-1|DIE_TO_WIRE_STAGING | AgvId=老厂前线新多仓位1 | TargetStationId=160 | Verdict=Allowed | ConflictDetail=
+EvaluatedAt=2026-10-17 07:21:02.910518+00:00 | TransportDemandKey=Q26099F52-1|DIE_TO_WIRE_STAGING | AgvId=老厂前线新多仓位1 | TargetStationId=160 | Verdict=Allowed | ConflictDetail=
+EvaluatedAt=2026-10-17 07:21:03.235602+00:00 | TransportDemandKey=Q26093419-9|DIE_TO_WIRE_STAGING | AgvId=老厂前线新多仓位1 | TargetStationId=158 | Verdict=Allowed | ConflictDetail=
+EvaluatedAt=2026-10-17 07:21:03.2976637+00:00 | TransportDemandKey=Q26098088-3|DIE_TO_WIRE_STAGING | AgvId=老厂前线新多仓位1 | TargetStationId=157 | Verdict=Allowed | ConflictDetail=
+EvaluatedAt=2026-10-17 07:21:03.3531773+00:00 | TransportDemandKey=Q26099F27-1|DIE_TO_WIRE_STAGING | AgvId=老厂前线新多仓位1 | TargetStationId=155 | Verdict=Allowed | ConflictDetail=
+EvaluatedAt=2026-10-17 07:21:03.4039253+00:00 | TransportDemandKey=Q26101739-1-3|DIE_TO_WIRE_STAGING | AgvId=老厂前线新多仓位1 | TargetStationId=142 | Verdict=Allowed | ConflictDetail=
+EvaluatedAt=2026-10-17 07:21:03.4785675+00:00 | TransportDemandKey=Q26099779-1|DIE_TO_WIRE_STAGING | AgvId=老厂前线新多仓位1 | TargetStationId=155 | Verdict=Allowed | ConflictDetail=
+EvaluatedAt=2026-10-17 07:21:03.5298651+00:00 | TransportDemandKey=Q26109145-1|DIE_TO_WIRE_STAGING | AgvId=老厂前线新多仓位1 | TargetStationId=155 | Verdict=Allowed | ConflictDetail=
+EvaluatedAt=2026-10-17 07:21:03.6015327+00:00 | TransportDemandKey=Q26109146-1|DIE_TO_WIRE_STAGING | AgvId=老厂前线新多仓位1 | TargetStationId=155 | Verdict=Allowed | ConflictDetail=
+EvaluatedAt=2026-10-17 07:21:03.6701504+00:00 | TransportDemandKey=Q26109152-1|DIE_TO_WIRE_STAGING | AgvId=老厂前线新多仓位1 | TargetStationId=155 | Verdict=Allowed | ConflictDetail=
+EvaluatedAt=2026-10-17 07:21:03.7673268+00:00 | TransportDemandKey=Q26109147-1|DIE_TO_WIRE_STAGING | AgvId=老厂前线新多仓位1 | TargetStationId=155 | Verdict=Allowed | ConflictDetail=
+EvaluatedAt=2026-10-17 07:21:03.8879245+00:00 | TransportDemandKey=Q26109150-1|DIE_TO_WIRE_STAGING | AgvId=老厂前线新多仓位1 | TargetStationId=155 | Verdict=Allowed | ConflictDetail=
+EvaluatedAt=2026-10-17 07:21:03.9337554+00:00 | TransportDemandKey=Q26101894-4|DIE_TO_WIRE_STAGING | AgvId=老厂前线新多仓位1 | TargetStationId=125 | Verdict=Allowed | ConflictDetail=
+EvaluatedAt=2026-10-17 07:21:03.9836676+00:00 | TransportDemandKey=Q26102055-1|DIE_TO_WIRE_STAGING | AgvId=老厂前线新多仓位1 | TargetStationId=127 | Verdict=Allowed | ConflictDetail=
+EvaluatedAt=2026-10-17 07:21:04.0386326+00:00 | TransportDemandKey=Q26102054-2|DIE_TO_WIRE_STAGING | AgvId=老厂前线新多仓位1 | TargetStationId=148 | Verdict=Allowed | ConflictDetail=
+EvaluatedAt=2026-10-17 07:21:04.0860139+00:00 | TransportDemandKey=Q26109153-1|DIE_TO_WIRE_STAGING | AgvId=老厂前线新多仓位1 | TargetStationId=155 | Verdict=Allowed | ConflictDetail=
+EvaluatedAt=2026-10-17 07:21:04.1463016+00:00 | TransportDemandKey=Q26101965-5|DIE_TO_WIRE_STAGING | AgvId=老厂前线新多仓位1 | TargetStationId=126 | Verdict=Allowed | ConflictDetail=
+EvaluatedAt=2026-10-17 07:21:04.248338+00:00 | TransportDemandKey=Q26109143-1|DIE_TO_WIRE_STAGING | AgvId=老厂前线新多仓位1 | TargetStationId=155 | Verdict=Allowed | ConflictDetail=
+EvaluatedAt=2026-10-17 07:21:04.309427+00:00 | TransportDemandKey=Q26101965-7|DIE_TO_WIRE_STAGING | AgvId=老厂前线新多仓位1 | TargetStationId=126 | Verdict=Allowed | ConflictDetail=
+EvaluatedAt=2026-10-17 07:21:04.3716332+00:00 | TransportDemandKey=Q26109148-1|DIE_TO_WIRE_STAGING | AgvId=老厂前线新多仓位1 | TargetStationId=155 | Verdict=Allowed | ConflictDetail=
+EvaluatedAt=2026-10-17 07:21:04.4404388+00:00 | TransportDemandKey=Q26101965-8|DIE_TO_WIRE_STAGING | AgvId=老厂前线新多仓位1 | TargetStationId=126 | Verdict=Allowed | ConflictDetail=
+EvaluatedAt=2026-10-17 07:21:04.5035553+00:00 | TransportDemandKey=Q26101965-10|DIE_TO_WIRE_STAGING | AgvId=老厂前线新多仓位1 | TargetStationId=126 | Verdict=Allowed | ConflictDetail=
+EvaluatedAt=2026-10-17 07:21:04.5986368+00:00 | TransportDemandKey=Q26092402-4|DIE_TO_WIRE_STAGING | AgvId=老厂前线新多仓位1 | TargetStationId=133 | Verdict=Allowed | ConflictDetail=
+EvaluatedAt=2026-10-17 07:21:04.8257887+00:00 | TransportDemandKey=Q26092400-1|DIE_TO_WIRE_STAGING | AgvId=老厂前线新多仓位1 | TargetStationId=164 | Verdict=Allowed | ConflictDetail=
+EvaluatedAt=2026-10-17 07:21:04.9251805+00:00 | TransportDemandKey=Q26101690-3|DIE_TO_WIRE_STAGING | AgvId=老厂前线新多仓位1 | TargetStationId=157 | Verdict=Allowed | ConflictDetail=
+EvaluatedAt=2026-10-17 07:21:05.0154248+00:00 | TransportDemandKey=Q26102588-2|DIE_TO_WIRE_STAGING | AgvId=老厂前线新多仓位1 | TargetStationId=159 | Verdict=Allowed | ConflictDetail=
+EvaluatedAt=2026-10-17 07:21:05.0901358+00:00 | TransportDemandKey=Q26109149-1|DIE_TO_WIRE_STAGING | AgvId=老厂前线新多仓位1 | TargetStationId=155 | Verdict=Allowed | ConflictDetail=
+EvaluatedAt=2026-10-17 07:21:05.2266971+00:00 | TransportDemandKey=Q26109162-1|DIE_TO_WIRE_STAGING | AgvId=老厂前线新多仓位1 | TargetStationId=155 | Verdict=Allowed | ConflictDetail=
+EvaluatedAt=2026-10-17 07:21:05.2781976+00:00 | TransportDemandKey=Q26101960-3|DIE_TO_WIRE_STAGING | AgvId=老厂前线新多仓位1 | TargetStationId=123 | Verdict=Allowed | ConflictDetail=
+EvaluatedAt=2026-10-17 07:21:05.4228209+00:00 | TransportDemandKey=Q26101901-3|DIE_TO_WIRE_STAGING | AgvId=老厂前线新多仓位1 | TargetStationId=125 | Verdict=Allowed | ConflictDetail=
+EvaluatedAt=2026-10-17 07:21:05.8239826+00:00 | TransportDemandKey=Q26092402-5|DIE_TO_WIRE_STAGING | AgvId=老厂前线新多仓位1 | TargetStationId=133 | Verdict=Allowed | ConflictDetail=
+EvaluatedAt=2026-10-17 07:21:05.8732707+00:00 | TransportDemandKey=Q26101947-4|DIE_TO_WIRE_STAGING | AgvId=老厂前线新多仓位1 | TargetStationId=171 | Verdict=Allowed | ConflictDetail=
+EvaluatedAt=2026-10-17 07:21:05.9747494+00:00 | TransportDemandKey=Q26092403-2|DIE_TO_WIRE_STAGING | AgvId=老厂前线新多仓位1 | TargetStationId=224 | Verdict=Allowed | ConflictDetail=
+EvaluatedAt=2026-10-17 07:21:06.0475409+00:00 | TransportDemandKey=Q26101503-5|DIE_TO_WIRE_STAGING | AgvId=老厂前线新多仓位1 | TargetStationId=128 | Verdict=Allowed | ConflictDetail=
+EvaluatedAt=2026-10-17 07:21:06.1242142+00:00 | TransportDemandKey=Q26101962-6|DIE_TO_WIRE_STAGING | AgvId=老厂前线新多仓位1 | TargetStationId=126 | Verdict=Allowed | ConflictDetail=
+EvaluatedAt=2026-10-17 07:21:06.3047146+00:00 | TransportDemandKey=Q26101619-2-1|DIE_TO_WIRE_STAGING | AgvId=老厂前线新多仓位1 | TargetStationId=154 | Verdict=Allowed | ConflictDetail=
+EvaluatedAt=2026-10-17 07:21:06.4256768+00:00 | TransportDemandKey=Q26109141-1|DIE_TO_WIRE_STAGING | AgvId=老厂前线新多仓位1 | TargetStationId=155 | Verdict=Allowed | ConflictDetail=
+EvaluatedAt=2026-10-17 07:21:06.5588471+00:00 | TransportDemandKey=Q26101901-4|DIE_TO_WIRE_STAGING | AgvId=老厂前线新多仓位1 | TargetStationId=125 | Verdict=Allowed | ConflictDetail=
+EvaluatedAt=2026-10-17 07:21:06.637917+00:00 | TransportDemandKey=Q26101962-8|DIE_TO_WIRE_STAGING | AgvId=老厂前线新多仓位1 | TargetStationId=126 | Verdict=Allowed | ConflictDetail=
+EvaluatedAt=2026-10-17 07:21:06.6998678+00:00 | TransportDemandKey=Q26102055-7|DIE_TO_WIRE_STAGING | AgvId=老厂前线新多仓位1 | TargetStationId=127 | Verdict=Allowed | ConflictDetail=
+EvaluatedAt=2026-10-17 07:21:06.7621632+00:00 | TransportDemandKey=Q26097806-2|DIE_TO_OVEN | AgvId=老厂前线新多仓位1 | TargetStationId=225 | Verdict=Allowed | ConflictDetail=
+EvaluatedAt=2026-10-17 07:21:06.9735307+00:00 | TransportDemandKey=Q26102656-28|DIE_TO_WIRE_STAGING | AgvId=老厂前线新多仓位1 | TargetStationId=173 | Verdict=Allowed | ConflictDetail=
+EvaluatedAt=2026-10-17 07:21:07.0550743+00:00 | TransportDemandKey=Q26092400-2|DIE_TO_WIRE_STAGING | AgvId=老厂前线新多仓位1 | TargetStationId=164 | Verdict=Allowed | ConflictDetail=
+EvaluatedAt=2026-10-17 07:21:07.1380465+00:00 | TransportDemandKey=Q26101962-9|DIE_TO_WIRE_STAGING | AgvId=老厂前线新多仓位1 | TargetStationId=126 | Verdict=Allowed | ConflictDetail=
+EvaluatedAt=2026-10-17 07:21:07.2811074+00:00 | TransportDemandKey=Q26102656-29|DIE_TO_WIRE_STAGING | AgvId=老厂前线新多仓位1 | TargetStationId=172 | Verdict=Allowed | ConflictDetail=
+EvaluatedAt=2026-10-17 07:21:07.3759985+00:00 | TransportDemandKey=Q26102458-5|DIE_TO_WIRE_STAGING | AgvId=老厂前线新多仓位1 | TargetStationId=154 | Verdict=Allowed | ConflictDetail=
+EvaluatedAt=2026-10-17 07:21:07.4379892+00:00 | TransportDemandKey=Q26102307-2|DIE_TO_WIRE_STAGING | AgvId=老厂前线新多仓位1 | TargetStationId=123 | Verdict=Allowed | ConflictDetail=
+EvaluatedAt=2026-10-17 07:21:07.6070615+00:00 | TransportDemandKey=Q26101898-1|DIE_TO_WIRE_STAGING | AgvId=老厂前线新多仓位1 | TargetStationId=125 | Verdict=Allowed | ConflictDetail=
+EvaluatedAt=2026-10-17 07:21:07.6796537+00:00 | TransportDemandKey=Q26102587-1|DIE_TO_WIRE_STAGING | AgvId=老厂前线新多仓位1 | TargetStationId=159 | Verdict=Allowed | ConflictDetail=
+EvaluatedAt=2026-10-17 07:21:07.9583049+00:00 | TransportDemandKey=Q26097815-4|DIE_TO_WIRE_STAGING | AgvId=老厂前线新多仓位1 | TargetStationId=152 | Verdict=Allowed | ConflictDetail=
+EvaluatedAt=2026-10-17 07:21:08.3139518+00:00 | TransportDemandKey=Q26102054-8|DIE_TO_WIRE_STAGING | AgvId=老厂前线新多仓位1 | TargetStationId=148 | Verdict=Allowed | ConflictDetail=
+EvaluatedAt=2026-10-17 07:21:08.3844427+00:00 | TransportDemandKey=Q26098006-1|DIE_TO_WIRE_STAGING | AgvId=老厂前线新多仓位1 | TargetStationId=146 | Verdict=Allowed | ConflictDetail=
+EvaluatedAt=2026-10-17 07:21:08.5215339+00:00 | TransportDemandKey=Q26109142-1|DIE_TO_WIRE_STAGING | AgvId=老厂前线新多仓位1 | TargetStationId=155 | Verdict=Allowed | ConflictDetail=
+EvaluatedAt=2026-10-17 07:21:08.6130051+00:00 | TransportDemandKey=Q26093420-6|DIE_TO_WIRE_STAGING | AgvId=老厂前线新多仓位1 | TargetStationId=158 | Verdict=Allowed | ConflictDetail=
+EvaluatedAt=2026-10-17 07:21:08.6867604+00:00 | TransportDemandKey=Q26101619-3-1|DIE_TO_WIRE_STAGING | AgvId=老厂前线新多仓位1 | TargetStationId=139 | Verdict=Allowed | ConflictDetail=
+EvaluatedAt=2026-10-17 07:28:00.8975121+00:00 | TransportDemandKey=Q26101962-10|DIE_TO_WIRE_STAGING | AgvId=老厂前线新多仓位1 | TargetStationId=126 | Verdict=Allowed | ConflictDetail=
+EvaluatedAt=2026-10-17 07:33:57.0912395+00:00 | TransportDemandKey=Q26101255-7|DIE_TO_OVEN | AgvId=老厂前线新多仓位1 | TargetStationId=186 | Verdict=Allowed | ConflictDetail=
+EvaluatedAt=2026-10-17 07:33:57.1551756+00:00 | TransportDemandKey=Q26098084-5|DIE_TO_WIRE_STAGING | AgvId=老厂前线新多仓位1 | TargetStationId=157 | Verdict=Allowed | ConflictDetail=
+EvaluatedAt=2026-10-17 07:46:17.2905181+00:00 | TransportDemandKey=Q26102656-30|DIE_TO_WIRE_STAGING | AgvId=老厂前线新多仓位1 | TargetStationId=173 | Verdict=Allowed | ConflictDetail=
+EvaluatedAt=2026-10-17 07:57:19.2750175+00:00 | TransportDemandKey=Q26101256-4|DIE_TO_OVEN | AgvId=老厂前线新多仓位1 | TargetStationId=226 | Verdict=Allowed | ConflictDetail=
+EvaluatedAt=2026-10-17 07:59:04.2885712+00:00 | TransportDemandKey=Q26098005-4|WIRE_TO_GATE | AgvId=老厂前线新多仓位1 | TargetStationId=112 | Verdict=Allowed | ConflictDetail=
+EvaluatedAt=2026-10-17 07:59:04.3402581+00:00 | TransportDemandKey=Q26101042-3|WIRE_TO_NITROGEN | AgvId=老厂前线新多仓位1 | TargetStationId=75 | Verdict=Allowed | ConflictDetail=
+EvaluatedAt=2026-10-17 07:59:04.3941945+00:00 | TransportDemandKey=Q26098005-5|WIRE_TO_GATE | AgvId=老厂前线新多仓位1 | TargetStationId=98 | Verdict=Allowed | ConflictDetail=
+EvaluatedAt=2026-10-17 07:59:04.4928908+00:00 | TransportDemandKey=Q26101748-2-1|WIRE_TO_NITROGEN | AgvId=老厂前线新多仓位1 | TargetStationId=97 | Verdict=Allowed | ConflictDetail=
+EvaluatedAt=2026-10-17 07:59:04.6005221+00:00 | TransportDemandKey=Q26098128-4|WIRE_TO_NITROGEN | AgvId=老厂前线新多仓位1 | TargetStationId=93 | Verdict=Allowed | ConflictDetail=
+EvaluatedAt=2026-10-17 07:59:04.6694652+00:00 | TransportDemandKey=Q26101673-6|WIRE_TO_NITROGEN | AgvId=老厂前线新多仓位1 | TargetStationId=118 | Verdict=Allowed | ConflictDetail=
+EvaluatedAt=2026-10-17 07:59:04.8084523+00:00 | TransportDemandKey=Q26101254-3|WIRE_TO_GATE | AgvId=老厂前线新多仓位1 | TargetStationId=38 | Verdict=Allowed | ConflictDetail=
+EvaluatedAt=2026-10-17 07:59:04.9140524+00:00 | TransportDemandKey=Q26102656-25|WIRE_TO_GATE | AgvId=老厂前线新多仓位1 | TargetStationId=42 | Verdict=Allowed | ConflictDetail=
+EvaluatedAt=2026-10-17 07:59:04.9672179+00:00 | TransportDemandKey=Q26091200-4|WIRE_TO_NITROGEN | AgvId=老厂前线新多仓位1 | TargetStationId=101 | Verdict=Allowed | ConflictDetail=
+EvaluatedAt=2026-10-17 07:59:05.0107496+00:00 | TransportDemandKey=Q26102656-17|WIRE_TO_GATE | AgvId=老厂前线新多仓位1 | TargetStationId=41 | Verdict=Allowed | ConflictDetail=
+EvaluatedAt=2026-10-17 07:59:05.0991389+00:00 | TransportDemandKey=Q26102308-4|WIRE_TO_GATE | AgvId=老厂前线新多仓位1 | TargetStationId=91 | Verdict=Allowed | ConflictDetail=
+EvaluatedAt=2026-10-17 07:59:11.6185555+00:00 | TransportDemandKey=Q26101898-2|DIE_TO_WIRE_STAGING | AgvId=老厂前线新多仓位1 | TargetStationId=125 | Verdict=Allowed | ConflictDetail=
+EvaluatedAt=2026-10-17 08:01:30.1268476+00:00 | TransportDemandKey=Q26091200-6|WIRE_TO_GATE | AgvId=老厂前线新多仓位1 | TargetStationId=40 | Verdict=Allowed | ConflictDetail=
+EvaluatedAt=2026-10-17 08:01:30.173875+00:00 | TransportDemandKey=Q26098076-3|WIRE_TO_NITROGEN | AgvId=老厂前线新多仓位1 | TargetStationId=109 | Verdict=Allowed | ConflictDetail=
+EvaluatedAt=2026-10-17 08:01:55.9481355+00:00 | TransportDemandKey=Q26101670-5|WIRE_TO_GATE | AgvId=老厂前线新多仓位1 | TargetStationId=32 | Verdict=Allowed | ConflictDetail=
+EvaluatedAt=2026-10-17 08:02:51.4113113+00:00 | TransportDemandKey=Q26097818-2|WIRE_TO_OPTICAL | AgvId=老厂前线新多仓位1 | TargetStationId=100 | Verdict=Allowed | ConflictDetail=
+EvaluatedAt=2026-10-17 08:03:53.7578862+00:00 | TransportDemandKey=Q26102082-1|DIE_TO_WIRE_STAGING | AgvId=老厂前线新多仓位1 | TargetStationId=140 | Verdict=Allowed | ConflictDetail=
+EvaluatedAt=2026-10-17 08:04:49.5701204+00:00 | TransportDemandKey=Q26101255-5|WIRE_TO_GATE | AgvId=老厂前线新多仓位1 | TargetStationId=50 | Verdict=Allowed | ConflictDetail=
+EvaluatedAt=2026-10-17 08:07:58.3924955+00:00 | TransportDemandKey=Q26101942-1|DIE_TO_OVEN | AgvId=老厂前线新多仓位1 | TargetStationId=179 | Verdict=Allowed | ConflictDetail=
+EvaluatedAt=2026-10-17 08:07:58.469418+00:00 | TransportDemandKey=Q26094945-10|DIE_TO_OVEN | AgvId=老厂前线新多仓位1 | TargetStationId=209 | Verdict=Allowed | ConflictDetail=
+EvaluatedAt=2026-10-17 08:09:18.6087439+00:00 | TransportDemandKey=Q26098078-7|WIRE_TO_NITROGEN | AgvId=老厂前线新多仓位1 | TargetStationId=111 | Verdict=Allowed | ConflictDetail=
+EvaluatedAt=2026-10-17 08:10:53.2756862+00:00 | TransportDemandKey=Q26102075-4|WIRE_TO_GATE | AgvId=老厂前线新多仓位1 | TargetStationId=33 | Verdict=Allowed | ConflictDetail=
+EvaluatedAt=2026-10-17 08:10:53.3469256+00:00 | TransportDemandKey=Q26102055-8|DIE_TO_WIRE_STAGING | AgvId=老厂前线新多仓位1 | TargetStationId=127 | Verdict=Allowed | ConflictDetail=
+EvaluatedAt=2026-10-17 08:13:51.4576105+00:00 | TransportDemandKey=Q26102140-9|WIRE_TO_GATE | AgvId=老厂前线新多仓位1 | TargetStationId=21 | Verdict=Allowed | ConflictDetail=
+EvaluatedAt=2026-10-17 08:16:42.2273034+00:00 | TransportDemandKey=Q26096391-4|WIRE_TO_GATE | AgvId=老厂前线新多仓位1 | TargetStationId=96 | Verdict=Allowed | ConflictDetail=
+EvaluatedAt=2026-10-17 08:16:50.210036+00:00 | TransportDemandKey=Q26101669-3|WIRE_TO_GATE | AgvId=老厂前线新多仓位1 | TargetStationId=19 | Verdict=Allowed | ConflictDetail=
+EvaluatedAt=2026-10-17 08:19:14.6834491+00:00 | TransportDemandKey=Q26094885-6|DIE_TO_WIRE_STAGING | AgvId=老厂前线新多仓位1 | TargetStationId=159 | Verdict=Allowed | ConflictDetail=
+### OrderIntents agv03 07:20-08:20Z
+CreatedAt=2026-10-17 07:21:00.7946034+00:00 | Purpose=TO_PICKUP | DemandId=dadde6f1-9e2b-4ef1-9141-ca7f7b5ef328 | TargetStationId=T2-1_T3-1_T3-2 | Status=CONFIRMED
+CreatedAt=2026-10-17 07:32:55.8583505+00:00 | Purpose=TO_GATE | DemandId=dadde6f1-9e2b-4ef1-9141-ca7f7b5ef328 | TargetStationId=T6-8_T7-7 | Status=CONFIRMED
+CreatedAt=2026-10-17 07:38:29.5734315+00:00 | Purpose=TO_GATE | DemandId=dadde6f1-9e2b-4ef1-9141-ca7f7b5ef328 | TargetStationId=T6-7_T7-6 | Status=CONFIRMED
+CreatedAt=2026-10-17 07:41:00.2382749+00:00 | Purpose=TO_GATE | DemandId=dadde6f1-9e2b-4ef1-9141-ca7f7b5ef328 | TargetStationId=T6-7_T7-6 | Status=CONFIRMED
+CreatedAt=2026-10-17 07:46:17.6084281+00:00 | Purpose=TO_GATE | DemandId=dadde6f1-9e2b-4ef1-9141-ca7f7b5ef328 | TargetStationId=T6-7_T7-6 | Status=CONFIRMED
+CreatedAt=2026-10-17 07:51:26.8310522+00:00 | Purpose=TO_GATE | DemandId=dadde6f1-9e2b-4ef1-9141-ca7f7b5ef328 | TargetStationId=T6-1_T6-2_T7-1 | Status=CONFIRMED
+CreatedAt=2026-10-17 07:57:19.5279197+00:00 | Purpose=TO_GATE | DemandId=dadde6f1-9e2b-4ef1-9141-ca7f7b5ef328 | TargetStationId=T5-5 | Status=CONFIRMED
+CreatedAt=2026-10-17 08:04:17.9370686+00:00 | Purpose=TO_GATE | DemandId=dadde6f1-9e2b-4ef1-9141-ca7f7b5ef328 | TargetStationId=T2-5_T3-5 | Status=CONFIRMED
+CreatedAt=2026-10-17 08:13:14.0222836+00:00 | Purpose=TO_GATE | DemandId=dadde6f1-9e2b-4ef1-9141-ca7f7b5ef328 | TargetStationId=装片氮气柜 | Status=CONFIRMED
+
+## I. 日志：agv03 会话就绪变化 15:15-16:20 CST
+07:20:59.590 Info 1103/LogSessionReadinessAppended SessionReadiness 7e02012c-cc9c-417d-9156-1c14b68232d9 to 老厂前线新多仓位3 generation 3: READY [], after the answer to RecoveryStateReport 609134b1-fdd5-410b-b56c-556291eb6c08.
+07:20:59.734 Info 1103/LogSessionReadinessAppended SessionReadiness 3fc780de-21d7-4299-b750-5f1d8c59e428 to 老厂前线新多仓位3 generation 3: READY [], after the answer to SafetyStateChanged 5a97bb72-3af8-5d57-b3ff-a570ad3f70f3.
+07:21:01.560 Info 1103/LogSessionReadinessAppended SessionReadiness 473cf87e-aa12-402c-8703-708910302425 to 老厂前线新多仓位3 generation 3: RECOVERY_REQUIRED [DEPARTURE_UNSAFE], after the answer to SafetyStateChanged 8d17c477-3e76-de53-8b08-094a55a7d1c1.
+07:21:11.912 Info 1103/LogSessionReadinessAppended SessionReadiness b3c6bffd-4ffb-4af6-9492-4e8ba4894e1a to 老厂前线新多仓位3 generation 3: RECOVERY_REQUIRED [DEPARTURE_UNSAFE], after the answer to SafetyStateChanged 89748023-d4d6-9751-bf2e-bdba011a50e8.
+07:25:38.220 Info 1103/LogSessionReadinessAppended SessionReadiness af512b7c-ff34-4d61-88df-5ef3736722bb to 老厂前线新多仓位3 generation 3: RECOVERY_REQUIRED [DEPARTURE_UNSAFE], after the answer to SafetyStateChanged 2bc279c6-2e43-1952-87cc-bda27af87aa7.
+07:25:38.454 Info 1103/LogSessionReadinessAppended SessionReadiness 9ca9392a-fb4c-4ad3-a212-f4948f0549f4 to 老厂前线新多仓位3 generation 4: RECOVERY_REQUIRED [DEPARTURE_UNSAFE], after the answer to RecoveryStateReport 3e036fef-bd78-45f4-be38-ef9578b40b8c.
+07:25:38.520 Info 1103/LogSessionReadinessAppended SessionReadiness dcd90cee-1360-43b2-a8b4-008564d0b887 to 老厂前线新多仓位3 generation 4: RECOVERY_REQUIRED [DEPARTURE_UNSAFE], after the answer to SafetyStateChanged d37bd3d7-22a8-365e-861f-2d54cdf724a7.
+07:25:40.724 Info 1103/LogSessionReadinessAppended SessionReadiness d2e20534-81f3-42e7-91be-8d54a3980da3 to 老厂前线新多仓位3 generation 4: RECOVERY_REQUIRED [DEPARTURE_UNSAFE], after the answer to SafetyStateChanged db5ee311-a847-7c50-ac0e-465176a9cc26.
+07:25:47.557 Info 1103/LogSessionReadinessAppended SessionReadiness eb71d014-228a-4492-b877-56ef99811994 to 老厂前线新多仓位3 generation 5: RECOVERY_REQUIRED [DEPARTURE_UNSAFE], after the answer to RecoveryStateReport 6e756bdf-4d1d-423e-a708-c5716fc11142.
+07:25:47.628 Info 1103/LogSessionReadinessAppended SessionReadiness 386fcbf0-86c9-4143-a31c-9d645aa79ad1 to 老厂前线新多仓位3 generation 5: RECOVERY_REQUIRED [DEPARTURE_UNSAFE], after the answer to SafetyStateChanged 52dbcae1-bf59-9450-98d2-4e358180635d.
+07:25:49.827 Info 1103/LogSessionReadinessAppended SessionReadiness 10df2275-2e26-4c51-9b87-95e20092d86d to 老厂前线新多仓位3 generation 5: RECOVERY_REQUIRED [DEPARTURE_UNSAFE], after the answer to SafetyStateChanged 3877dde5-b909-ea53-9f39-60ecb04da702.
+07:27:54.206 Info 1103/LogSessionReadinessAppended SessionReadiness 223db529-90ec-4ff8-b6d4-daacf1469e35 to 老厂前线新多仓位3 generation 5: RECOVERY_REQUIRED [DEPARTURE_UNSAFE], after the answer to SafetyStateChanged ce35f199-e284-fa53-bbbc-0d86fce5d403.
+07:27:55.384 Info 1103/LogSessionReadinessAppended SessionReadiness 4a399e07-4394-40c0-8629-84cfd8bde84d to 老厂前线新多仓位3 generation 5: READY [], after the answer to SafetyStateChanged fea59eed-7410-765f-aab0-70d79436432b.
+07:32:56.879 Info 1103/LogSessionReadinessAppended SessionReadiness 639b7949-b7e9-4843-933d-2f6668d9e85c to 老厂前线新多仓位3 generation 5: RECOVERY_REQUIRED [DEPARTURE_UNSAFE], after the answer to SafetyStateChanged 2994509f-eb5e-425f-a33f-c4b2ecbae4e9.
+07:32:58.962 Info 1103/LogSessionReadinessAppended SessionReadiness 29557a25-79e6-43d7-905e-1551f4f5f009 to 老厂前线新多仓位3 generation 5: RECOVERY_REQUIRED [DEPARTURE_UNSAFE], after the answer to SafetyStateChanged 63d3fca6-3c41-0054-85ad-135095bbe8c5.
+07:33:25.793 Info 1103/LogSessionReadinessAppended SessionReadiness 8a7e8ada-9a4b-4274-ba0d-ff4d6cd036e8 to 老厂前线新多仓位3 generation 5: READY [], after the answer to SafetyStateChanged 33d47110-f71d-7d51-a05a-8e2bdf237a91.
+07:38:30.602 Info 1103/LogSessionReadinessAppended SessionReadiness e1177c68-bfef-4b13-b916-df39f5df057e to 老厂前线新多仓位3 generation 5: RECOVERY_REQUIRED [DEPARTURE_UNSAFE], after the answer to SafetyStateChanged 611b6805-2215-7150-956b-7fc6822cb405.
+07:38:34.730 Info 1103/LogSessionReadinessAppended SessionReadiness 6b12a09f-4009-454d-89f0-ae44af531a51 to 老厂前线新多仓位3 generation 5: RECOVERY_REQUIRED [DEPARTURE_UNSAFE], after the answer to SafetyStateChanged 304430c2-c1e7-d953-b1f8-e82594c4a57c.
+07:40:26.813 Info 1103/LogSessionReadinessAppended SessionReadiness 4b8c39ee-70b1-4a51-b33e-6c6913018bc2 to 老厂前线新多仓位3 generation 5: RECOVERY_REQUIRED [DEPARTURE_UNSAFE], after the answer to SafetyStateChanged 1d5ded0a-8e93-c757-81a3-060e58c7ceeb.
+07:40:27.869 Info 1103/LogSessionReadinessAppended SessionReadiness e67e177d-3dd0-4349-a82a-3a39d9846f24 to 老厂前线新多仓位3 generation 5: READY [], after the answer to SafetyStateChanged fd4225a0-b8e4-ef57-b8a5-45e04634b240.
+07:41:00.846 Info 1103/LogSessionReadinessAppended SessionReadiness c9e37cee-7a7f-480b-be10-acbf4898d440 to 老厂前线新多仓位3 generation 5: RECOVERY_REQUIRED [DEPARTURE_UNSAFE], after the answer to SafetyStateChanged 914d5c6f-fde9-bc53-9dde-106a1ce2e2c2.
+07:41:07.016 Info 1103/LogSessionReadinessAppended SessionReadiness 6706e356-b41e-4f53-88fb-3824e1efbec8 to 老厂前线新多仓位3 generation 5: READY [], after the answer to SafetyStateChanged c83012af-9853-495d-ab61-c074ac406fc0.
+07:46:17.948 Info 1103/LogSessionReadinessAppended SessionReadiness 9ca0b32b-a7fb-4e8a-956d-e9d9005a7c29 to 老厂前线新多仓位3 generation 5: RECOVERY_REQUIRED [DEPARTURE_UNSAFE], after the answer to SafetyStateChanged f4d51a2b-c799-cd55-aeeb-3efb0d177aba.
+07:46:24.136 Info 1103/LogSessionReadinessAppended SessionReadiness 063c53cf-5187-4c51-ab55-44f51149f506 to 老厂前线新多仓位3 generation 5: READY [], after the answer to SafetyStateChanged d51f0d6e-610a-0951-94f6-941a420592a3.
+07:51:27.956 Info 1103/LogSessionReadinessAppended SessionReadiness a70cc7fa-5552-4d1d-94b7-ce3e389a6a38 to 老厂前线新多仓位3 generation 5: RECOVERY_REQUIRED [DEPARTURE_UNSAFE], after the answer to SafetyStateChanged 4f29118d-e82b-3d57-a9ef-bd94409fd880.
+07:51:29.003 Info 1103/LogSessionReadinessAppended SessionReadiness be082f3f-2552-403d-bd94-0857e1c317a6 to 老厂前线新多仓位3 generation 5: RECOVERY_REQUIRED [DEPARTURE_UNSAFE], after the answer to SafetyStateChanged c426d3f9-3885-9f5d-9c2f-d4b5cd4d9c47.
+07:52:11.131 Info 1103/LogSessionReadinessAppended SessionReadiness 8b72c0a6-2213-4bbd-b1d8-8bcd5222385c to 老厂前线新多仓位3 generation 5: RECOVERY_REQUIRED [DEPARTURE_UNSAFE], after the answer to SafetyStateChanged 0ce92f61-b72c-a15e-994b-47e2c1216487.
+07:52:12.205 Info 1103/LogSessionReadinessAppended SessionReadiness b4832edd-b899-4ae7-896a-a4874c64588f to 老厂前线新多仓位3 generation 5: READY [], after the answer to SafetyStateChanged ad292cf7-9274-1b57-805c-94887bf894f7.
+07:57:20.699 Info 1103/LogSessionReadinessAppended SessionReadiness fe41be74-71e5-423a-82f6-6d9f0e03cb7a to 老厂前线新多仓位3 generation 5: RECOVERY_REQUIRED [DEPARTURE_UNSAFE], after the answer to SafetyStateChanged 9fb7b9c1-fd02-ae59-9642-1c1d01d74e77.
+07:57:24.877 Info 1103/LogSessionReadinessAppended SessionReadiness 030a452b-da82-4e7c-a262-06058519afb0 to 老厂前线新多仓位3 generation 5: RECOVERY_REQUIRED [DEPARTURE_UNSAFE], after the answer to SafetyStateChanged e71f9304-411a-3a58-9b0d-8cf0dbb1716e.
+07:59:02.570 Info 1103/LogSessionReadinessAppended SessionReadiness 5ea4a0d0-0346-4afa-b964-4b1c8efc8bcc to 老厂前线新多仓位3 generation 5: RECOVERY_REQUIRED [DEPARTURE_UNSAFE], after the answer to SafetyStateChanged 0e6287c4-06da-0751-b8d2-cef9356477bd.
+07:59:03.629 Info 1103/LogSessionReadinessAppended SessionReadiness 426cc7e8-957f-4027-b271-2cef8ea853cb to 老厂前线新多仓位3 generation 5: READY [], after the answer to SafetyStateChanged 41f442e6-ccaa-4e5e-874c-248052d5984b.
+08:04:18.737 Info 1103/LogSessionReadinessAppended SessionReadiness eb8818f9-1fd2-4a95-a94d-6c042821fd93 to 老厂前线新多仓位3 generation 5: RECOVERY_REQUIRED [DEPARTURE_UNSAFE], after the answer to SafetyStateChanged 37ca4ade-92a5-d95a-892a-dbffc2c214c8.
+08:04:20.810 Info 1103/LogSessionReadinessAppended SessionReadiness 49d88336-f142-4ab7-a37a-08e85fe0fff0 to 老厂前线新多仓位3 generation 5: RECOVERY_REQUIRED [DEPARTURE_UNSAFE], after the answer to SafetyStateChanged 15b1c40a-172d-4758-b56b-d3ca6dbf3149.
+08:07:47.137 Info 1103/LogSessionReadinessAppended SessionReadiness 4b8eb826-70e8-4c03-afd4-7560a92e32bd to 老厂前线新多仓位3 generation 5: RECOVERY_REQUIRED [DEPARTURE_UNSAFE], after the answer to SafetyStateChanged 4ee25489-be7a-3955-82dc-c5c98c227ff4.
+08:07:48.193 Info 1103/LogSessionReadinessAppended SessionReadiness 567d6479-5bba-4c21-9431-cfd39bcc1a0d to 老厂前线新多仓位3 generation 5: READY [], after the answer to SafetyStateChanged 4a3cf58c-c141-5453-80bf-5c61536089df.
+08:08:25.843 Info 1103/LogSessionReadinessAppended SessionReadiness c6330d96-5a50-48ac-9662-0bc472535a8e to 老厂前线新多仓位3 generation 5: READY [], after the answer to SafetyStateChanged 9714e15c-cde1-f755-b635-a841b0ac9e59.
+08:08:25.961 Info 1103/LogSessionReadinessAppended SessionReadiness 8773f2a7-ea16-4247-b693-2cdd87b1e805 to 老厂前线新多仓位3 generation 5: READY [], after the answer to SafetyStateChanged d15e9f13-e928-505e-9640-8435407ea560.
+08:08:26.412 Info 1103/LogSessionReadinessAppended SessionReadiness 1ce7a74c-d2d4-4699-8308-e72c41c931ef to 老厂前线新多仓位3 generation 5: READY [], after the answer to SafetyStateChanged 3d526eb6-7f7d-605f-af1b-0cac12d12af2.
+08:08:35.944 Info 1103/LogSessionReadinessAppended SessionReadiness 75bc7213-fa2a-42b8-aceb-a781218e57d0 to 老厂前线新多仓位3 generation 5: READY [], after the answer to SafetyStateChanged 32b53418-9ce3-5256-8ca8-be7dcc88ba72.
+08:08:40.113 Info 1103/LogSessionReadinessAppended SessionReadiness 945e2f8c-777f-42c1-8622-555f055805a9 to 老厂前线新多仓位3 generation 5: READY [], after the answer to SafetyStateChanged 3e947d00-5414-1255-8406-f3a32fb246ef.
+08:13:14.829 Info 1103/LogSessionReadinessAppended SessionReadiness e455e932-d43c-43ed-a30d-396b3ddf32b8 to 老厂前线新多仓位3 generation 5: RECOVERY_REQUIRED [DEPARTURE_UNSAFE], after the answer to SafetyStateChanged ef354182-0d1a-4558-87f7-dac07ac328e0.
+08:13:19.968 Info 1103/LogSessionReadinessAppended SessionReadiness def26c9e-878c-4b8c-9fe6-bc001968a8da to 老厂前线新多仓位3 generation 5: RECOVERY_REQUIRED [DEPARTURE_UNSAFE], after the answer to SafetyStateChanged c1921863-a084-5757-9baf-176ad272a9c4.
+08:15:08.031 Info 1103/LogSessionReadinessAppended SessionReadiness 625624a2-cb8a-4ff7-aae9-6d91da80e8e5 to 老厂前线新多仓位3 generation 6: RECOVERY_REQUIRED [DEPARTURE_UNSAFE], after the answer to RecoveryStateReport 8f57d03b-3bd9-4141-bd3e-4d967371986f.
+08:15:08.097 Info 1103/LogSessionReadinessAppended SessionReadiness c69285d0-e240-4771-bc9b-2bbdc0520e4f to 老厂前线新多仓位3 generation 6: RECOVERY_REQUIRED [DEPARTURE_UNSAFE], after the answer to SafetyStateChanged 5f942bbb-8016-0f55-8e19-23995db0ad19.
+
+## J. 日志：按 sublot / demandId 搜索 15:20-16:30 CST（0 行）
+
+## K. 源码（a799c998）
+VehicleDynamicFactsCriterion.cs / InTransitVehicleFactsCriterion.cs: if (facts.Onboard is null) return "ONBOARD_FACTS_NOT_READY";
+EnRouteAppendPlanner.cs:28 MaximumLegs = 9; :31 MaximumWorklistItems = 8

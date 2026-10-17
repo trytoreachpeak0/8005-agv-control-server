@@ -1,0 +1,113 @@
+{
+  "vehicle": "agv01",
+  "startedAt": "2026-10-17T14:05:04.6457804+08:00",
+  "journalPath": "C:\\Users\\HT\\AppData\\Local\\SQCD\\8005AGV\\onboard-journal.db",
+  "journalPathConfigured": "%LOCALAPPDATA%\\SQCD\\8005AGV\\onboard-journal.db",
+  "archiveTo": "C:\\Users\\HT\\AppData\\Local\\SQCD\\8005AGV.pre-v4-20261017",
+  "checkOnly": false,
+  "copiedFiles": {
+    "onboard-journal.db": "25DDC4776D70BE99B96AD2CA93D10B3407CBD4AE8231F410F9C9B53F1E46FC2F"
+  },
+  "confirmNoCargo": "",
+  "archivePendingPerU6": false,
+  "pendingCutoff": null,
+  "fakeDemandIdPattern": "",
+  "reading": {
+    "tables": [
+      "WireToGateAppliedJourneySnapshots",
+      "WireToGateDurableOutbox",
+      "WireToGateJournalMetadata",
+      "WireToGateRecoveryState"
+    ],
+    "outboxHasAbandonedReasonCode": true,
+    "pending": 0,
+    "outboxByState": [
+      [
+        1,
+        null,
+        "LoadCancellationResult",
+        40,
+        "2026-10-17T02:42:01.4600062+00:00"
+      ],
+      [
+        1,
+        null,
+        "OperationProgress",
+        149,
+        "2026-10-17T05:09:59.4133362+00:00"
+      ],
+      [
+        1,
+        null,
+        "OperationResult",
+        12,
+        "2026-10-17T05:09:59.4635374+00:00"
+      ],
+      [
+        1,
+        null,
+        "PreDepartureSafetyCheckResult",
+        138,
+        "2026-10-17T03:22:34.8356794+00:00"
+      ],
+      [
+        1,
+        null,
+        "RecoveryStateReport",
+        11,
+        "2026-10-17T05:32:18.7547371+00:00"
+      ],
+      [
+        1,
+        null,
+        "SafetyStateChanged",
+        811,
+        "2026-10-17T05:32:18.9622635+00:00"
+      ],
+      [
+        1,
+        null,
+        "SublotSubmitted",
+        6,
+        "2026-10-17T03:17:13.1759550+00:00"
+      ]
+    ],
+    "pendingRows": [],
+    "recoveryStateUpdatedAt": "2026-10-17T05:10:00.3514890+00:00",
+    "recoveryStatePresent": true,
+    "loadsOnBoardPresent": true,
+    "loadsOnBoard": [],
+    "lastCompletedLoadOperationContext": null,
+    "unsettledSlotOperationAttemptId": null,
+    "activeUnlockSlots": [],
+    "recoveryVector": null,
+    "pendingLoadCancellation": null,
+    "pendingResultsCount": 0,
+    "journalEpoch": "d434c889-29a9-431b-8c54-88b24e91d99c",
+    "appliedSnapshots": [
+      [
+        "CurrentStopWorklistSnapshot",
+        500,
+        "2026-10-17T05:10:00.3017904+00:00"
+      ],
+      [
+        "UpcomingStopPlanSnapshot",
+        592,
+        "2026-10-17T05:10:00.3273560+00:00"
+      ],
+      [
+        "VehicleBusinessStateSnapshot",
+        384,
+        "2026-10-17T05:10:00.3783630+00:00"
+      ]
+    ]
+  },
+  "refusal": [],
+  "renamed": true,
+  "afterListing": [
+    "8005AGV.pre-collision-20261015 2026-10-15T10:11:41.7436270+08:00",
+    "8005AGV.pre-cutover-production-20261014 2026-10-13T22:27:52.9350953+08:00",
+    "8005AGV.pre-cutover-trial-20261013 2026-10-13T17:05:58.0935015+08:00",
+    "8005AGV.pre-v4-20261017 2026-10-17T14:05:04.2787879+08:00"
+  ]
+}

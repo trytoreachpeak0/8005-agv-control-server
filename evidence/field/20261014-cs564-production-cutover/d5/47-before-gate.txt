@@ -1,0 +1,11 @@
+### 2026-10-17T14:10:05+08:00
+now 2026-10-17T14:10:11.3545206+08:00
+== agv01 battery=37 batteryState=NO_CHARGE currentMap=老厂前线new_wk currentPosition=214 enableTime=1970-01-01 08:00:00 lockStatus=0 powerMode=POWER_MODE_FULLER status=1
+== agv02 battery=24 batteryState=NO_CHARGE currentMap=老厂前线new_wk currentPosition=215 enableTime=1970-01-01 08:00:00 lockStatus=0 powerMode=POWER_MODE_FULLER status=1
+== agv03 battery=12 batteryState=NO_CHARGE currentMap=老厂前线new_wk currentPosition=216 enableTime=2026-10-15 16:32:40 lockStatus=0 powerMode=POWER_MODE_FULLER status=1
+14:10:13 svc=Running | agv01@214/IDLE/MT_FINISHED/OK/b37 agv02@215/IDLE/MT_FINISHED/OK/b24 agv03@216/IDLE/MT_FINISHED/OK/b12 | ready: 1=READY[]@14:07:13 2=READY[]@14:06:38 3=READY[]@14:06:55 | warnErrTail3000=5
+   J j=:BROKERX | AgvId=老厂前线新多仓位3 | Stage=AwaitingPickupArrival | LoadingPhaseState= | BlockReasonCode=CHARGER_CreateDispatchDisabled
+   J j=f256d83f | AgvId=老厂前线新多仓位1 | Stage=AwaitingPickupArrival | LoadingPhaseState= | BlockReasonCode=PICKUP_CreateDispatchDisabled
+   S j=:BROKERX | Sequence=1 | StationRiotId=211 | Status=PENDING
+   S j=f256d83f | Sequence=1 | StationRiotId=99 | Status=PENDING
+   S j=f256d83f | Sequence=2 | StationRiotId=221 | Status=PENDING

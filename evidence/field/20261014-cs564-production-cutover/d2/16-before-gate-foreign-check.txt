@@ -1,0 +1,36 @@
+### now 2026-10-15T10:14:14.3604736+08:00
+### ForeignRiotOrders
+### ManualChargingHolds
+### VehiclePurposeClaims
+VehicleKey=BROKERX-7daca4ee91da498d8026c68b7b941127 | Purpose=TRANSPORT | JourneyId=journey:30dbba5f-21b1-42da-b710-b5401d85c0ac | ClaimedAt=2026-10-15 02:10:34.7409183+00:00
+VehicleKey=BROKERX-0c20ff0600d644869a6a80c186065d85 | Purpose=TRANSPORT | JourneyId=journey:6cf1c78a-3128-4496-925b-6ca955b8f187 | ClaimedAt=2026-10-15 02:10:48.4891879+00:00
+### ChargingCycles
+### VehicleFaultStates
+### StationExclusivities
+### OrderIntents not CONFIRMED or since 12:30Z
+UpperId=W2G-30dbba5f-21b1-42da-b710-b5401d85c0ac-PICKUP-1 | Purpose=TO_PICKUP | Status=CONFIRMED | OrderId=order-2109981807503081472 | CreatedAt=2026-10-15 02:10:34.726132+00:00
+UpperId=W2G-6cf1c78a-3128-4496-925b-6ca955b8f187-PICKUP-1 | Purpose=TO_PICKUP | Status=PENDING_RECONCILIATION | OrderId= | CreatedAt=2026-10-15 02:10:48.4793248+00:00
+### StructuralDispatchBlocks open
+### log: foreign / hold / external-order lines since 12:38Z
+{"@t":"2026-10-14T22:58:57.1410897Z","@mt":"Vehicle {VehicleKey} is below its mandatory charge entry threshold: battery {Battery}% < {Threshold}% (charging policy version {Version}). It takes no new transport, no en-route append and no idle return until it has charged (REQ-0290, {Reason}); a journey it is carrying finishes as planned (REQ-0281).","@l":"Warning","VehicleKey":"BROKERX-f38975561adf46ccb1d2f23833c7d0e4","Battery":29,"Threshold":30,"V
+{"@t":"2026-10-15T01:47:21.1846029Z","@mt":"Vehicle {VehicleKey} is no longer below its mandatory charge entry threshold (or its battery or policy can no longer be read, which blocks it for that reason instead).","VehicleKey":"BROKERX-f38975561adf46ccb1d2f23833c7d0e4","EventId":{"Id":2206,"Name":"LogLeftMandatoryCharge"},"SourceContext":"ControlServer.Host.Runtime.JourneyRuntimeEngine"}
+### warn/err since 12:38Z
+{"@t":"2026-10-14T22:00:20.9932585Z","@mt":"Route graph for map {MapId} is stale: {Reason}.","@l":"Warning","MapId":26,"Reason":"ROUTE_GRAPH_DESIGN_STATE_EXPIRED","EventId":{"Id":2,"Name":"LogStale"},"SourceContext":"ControlServer.Host.Runtime.RouteGraph.RouteGraphRefresher"}
+{"@t":"2026-10-14T22:30:22.9895311Z","@mt":"Route graph for map {MapId} is stale: {Reason}.","@l":"Warning","MapId":26,"Reason":"ROUTE_GRAPH_DESIGN_STATE_EXPIRED","EventId":{"Id":2,"Name":"LogStale"},"SourceContext":"ControlServer.Host.Runtime.RouteGraph.RouteGraphRefresher"}
+{"@t":"2026-10-14T22:58:57.1410897Z","@mt":"Vehicle {VehicleKey} is below its mandatory charge entry threshold: battery {Battery}% < {Threshold}% (charging policy version {Version}). It takes no new transport, no en-route append and no idle return until it has charged (REQ-0290, {Reason}); a journey it is carrying finishes as planned (REQ-0281).","@l":"Warning","VehicleKey":"BROKERX-f38975561adf46ccb1d2f23833c7d0e4","Battery":29,"Threshold":30,"V
+{"@t":"2026-10-14T23:20:25.0085697Z","@mt":"Route graph for map {MapId} is stale: {Reason}.","@l":"Warning","MapId":26,"Reason":"ROUTE_GRAPH_DESIGN_STATE_EXPIRED","EventId":{"Id":2,"Name":"LogStale"},"SourceContext":"ControlServer.Host.Runtime.RouteGraph.RouteGraphRefresher"}
+{"@t":"2026-10-15T00:50:27.0326972Z","@mt":"Route graph for map {MapId} is stale: {Reason}.","@l":"Warning","MapId":26,"Reason":"ROUTE_GRAPH_DESIGN_STATE_EXPIRED","EventId":{"Id":2,"Name":"LogStale"},"SourceContext":"ControlServer.Host.Runtime.RouteGraph.RouteGraphRefresher"}
+10:14:18 svc=Running | agv01@214/IDLE/MT_NA/OK/b55 agv02@211/IDLE/MT_NA/OK/b75 agv03@216/IDLE/MT_NA/OK/b93 | ready:  | warnErrTail3000=0
+   J j=30dbba5f | AgvId=老厂前线新多仓位3 | Stage=AwaitingPickupArrival | LoadingPhaseState=LOADING | BlockReasonCode=
+   J j=6cf1c78a | AgvId=老厂前线新多仓位1 | Stage=AwaitingPickupArrival | LoadingPhaseState=LOADING | BlockReasonCode=PICKUP_CreateDispatchDisabled
+   S j=30dbba5f | Sequence=1 | StationRiotId=167 | Status=PENDING
+   S j=30dbba5f | Sequence=2 | StationRiotId=128 | Status=PENDING
+   S j=30dbba5f | Sequence=3 | StationRiotId=140 | Status=PENDING
+   S j=30dbba5f | Sequence=4 | StationRiotId=145 | Status=PENDING
+   S j=30dbba5f | Sequence=5 | StationRiotId=164 | Status=PENDING
+   S j=30dbba5f | Sequence=6 | StationRiotId=150 | Status=PENDING
+   S j=30dbba5f | Sequence=7 | StationRiotId=220 | Status=PENDING
+   S j=6cf1c78a | Sequence=1 | StationRiotId=76 | Status=PENDING
+   S j=6cf1c78a | Sequence=2 | StationRiotId=99 | Status=PENDING
+   S j=6cf1c78a | Sequence=3 | StationRiotId=111 | Status=PENDING
+   S j=6cf1c78a | Sequence=4 | StationRiotId=221 | Status=PENDING

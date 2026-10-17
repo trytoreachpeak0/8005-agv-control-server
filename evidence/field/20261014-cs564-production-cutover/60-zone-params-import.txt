@@ -1,0 +1,12 @@
+### now 2026-10-14T20:21:23.5940977+08:00 sha256 5ADCAA49188BEB6BFDC80A04C4ECBFD1127167BF2A245168349BD1B89B20194A
+dispatch_zone,en_route_addition_max_path_cost_increase_mm,starvation_threshold_seconds
+WIRE_BONDING,65000,
+DIE_ATTACH,65000,
+### dry-run
+{"command":"import-dispatch-zone-parameters","outcome":"OK","dryRun":true,"input":"D:\\zhengyushao\\control-server-v2-ops\\prod-20261014\\inputs\\zone-parameters-production.csv","entryCount":2,"previousVersion":null,"version":null,"contentSha256":null,"snapshotId":null,"loadedAt":null,"errorCount":0,"errors":[],"changes":[{"dispatchZone":"DIE_ATTACH","before":null,"after":{"enRouteAdditionMaxPathCostIncreaseMm":65000,"starvationThresholdSeconds":null}},{"dispatchZone":"WIRE_BONDING","before":null,"after":{"enRouteAdditionMaxPathCostIncreaseMm":65000,"starvationThresholdSeconds":null}}]}
+dry exit=0
+### import at 2026-10-14T20:21:25.0978646+08:00
+{"command":"import-dispatch-zone-parameters","outcome":"OK","dryRun":false,"input":"D:\\zhengyushao\\control-server-v2-ops\\prod-20261014\\inputs\\zone-parameters-production.csv","entryCount":2,"previousVersion":null,"version":1,"contentSha256":"fc98bae1b982dba7d04771e5ee24fb343baa852d47163d6f2c5c9ba145deb609","snapshotId":"6e47a01112684cec8d72e41b63d89b9a","loadedAt":"2026-10-14T20:21:25.3155939+08:00","errorCount":0,"errors":[],"changes":[{"dispatchZone":"DIE_ATTACH","before":null,"after":{"enRouteAdditionMaxPathCostIncreaseMm":65000,"starvationThresholdSeconds":null}},{"dispatchZone":"WIRE_BONDING","before":null,"after":{"enRouteAdditionMaxPathCostIncreaseMm":65000,"starvationThresholdSeconds":null}}]}
+import exit=0
+### read back
+{"command":"dispatch-zone-parameters","outcome":"OK","version":1,"contentSha256":"fc98bae1b982dba7d04771e5ee24fb343baa852d47163d6f2c5c9ba145deb609","snapshotId":"6e47a01112684cec8d72e41b63d89b9a","loadedAt":"2026-10-14T20:21:25.3155939+08:00","source":"GOVERNED_IMPORT","zones":[{"dispatchZone":"DIE_ATTACH","inTable":true,"inDispatchPolicy":true,"enRouteAddition":{"state":"ALLOWED","maxPathCostIncreaseMm":65000},"starvation":{"state":"UNCONFIGURED","thresholdSeconds":null}},{"dispatchZone":"WIRE_BONDING","inTable":true,"inDispatchPolicy":true,"enRouteAddition":{"state":"ALLOWED","maxPathCostIncreaseMm":65000},"starvation":{"state":"UNCONFIGURED","thresholdSeconds":null}}]}

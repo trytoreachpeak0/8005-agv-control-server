@@ -1,0 +1,1 @@
+Get-ChildItem 'C:\ProgramData\8005\ControlServer.V2\logs' -Filter 'controlserver-*.ndjson' | Sort-Object Name | Select-Object -Last 4 | ForEach-Object { "$($_.Name) $($_.Length) $($_.LastWriteTime)" }

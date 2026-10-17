@@ -1,0 +1,18 @@
+### now 2026-10-14T18:11:23.5209455+08:00 fleet=BROKERX-f38975561adf46ccb1d2f23833c7d0e4 commit=False
+=== catalog
+Map 26: 203 stations read at 2026-10-14T18:11:26.2904658+08:00 via em4; wrote D:\zhengyushao\control-server-v2-ops\prod-20261014\inputs\catalog-26.json and D:\zhengyushao\control-server-v2-ops\prod-20261014\inputs\catalog-26.raw.json.
+=== task-type-stations (read)
+{"command":"task-type-stations","outcome":"OK","mapId":26,"activeVersion":null,"state":null,"pendingVersion":null,"active":null,"versions":[],"unreleasedHolds":[],"openAttempt":null}
+exit=0
+=== status before
+{"command":"status","outcome":"OK","vehicles":[]}
+exit=0
+=== waiting points dry-run
+{"command":"import-waiting-points","outcome":"OK","dryRun":true,"input":"D:\\zhengyushao\\control-server-v2-ops\\prod-20261014\\inputs\\waiting-points-map26.csv","catalog":"D:\\zhengyushao\\control-server-v2-ops\\prod-20261014\\inputs\\catalog-26.json","mapId":26,"fleet":["BROKERX-f38975561adf46ccb1d2f23833c7d0e4"],"catalogMatchesServerConfirmation":null,"entryCount":3,"previousVersion":null,"vers
+exit=0
+=== charger roster dry-run
+{"command":"import-charger-roster","outcome":"OK","dryRun":true,"input":"D:\\zhengyushao\\control-server-v2-ops\\prod-20261014\\inputs\\charger-roster-map26-station211.production.json","catalog":"D:\\zhengyushao\\control-server-v2-ops\\prod-20261014\\inputs\\catalog-26.json","mapId":26,"fleet":["BROKERX-f38975561adf46ccb1d2f23833c7d0e4"],"entryCount":1,"emptyRoster":false,"previousVersion":null,"v
+exit=0
+=== charging policy dry-run
+{"command":"import-charging-policy","outcome":"OK","dryRun":true,"input":"D:\\zhengyushao\\control-server-v2-ops\\prod-20261014\\inputs\\charging-policy-map26.json","fleet":["BROKERX-f38975561adf46ccb1d2f23833c7d0e4"],"previousVersion":null,"version":null,"contentSha256":null,"snapshotId":null,"content":{"minimumPostTaskBatteryMarginPercent":20,"mandatoryChargeEntryThresholdPercent":30,"chargingCo
+exit=0

@@ -1,0 +1,11 @@
+MaxPosPhaseCorrection kind=DWord clrType=System.Int32 raw=-1 hex=0xFFFFFFFF
+MaxNegPhaseCorrection kind=DWord clrType=System.Int32 raw=-1 hex=0xFFFFFFFF
+reg query:
+
+HKEY_LOCAL_MACHINE\SYSTEM\CurrentControlSet\Services\W32Time\Config
+    MaxPosPhaseCorrection    REG_DWORD    0xffffffff
+
+
+HKEY_LOCAL_MACHINE\SYSTEM\CurrentControlSet\Services\W32Time\Config
+    MaxNegPhaseCorrection    REG_DWORD    0xffffffff
+

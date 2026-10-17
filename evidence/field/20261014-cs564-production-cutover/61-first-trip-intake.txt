@@ -1,0 +1,28 @@
+### now 2026-10-14T20:21:42.9148482+08:00 sha256 ED5234A349E53CFD0B7A1A1E5026BC06563D067C24620DECDF629B3C4550E536
+area,dispatch_zone,slot_position
+N2-4,WIRE_BONDING,REAR
+N4-1,WIRE_BONDING,FRONT
+### dry-run
+{"command":"import-area-assignments","outcome":"OK","dryRun":true,"input":"D:\\zhengyushao\\control-server-v2-ops\\prod-20261014\\inputs\\area-first-trip-N2-4-N4-1.csv","entryCount":2,"version":null,"contentSha256":null,"snapshotId":null,"importedAt":null,"errorCount":0,"errors":[],"preview":[]}
+dry exit=0
+### import at 2026-10-14T20:21:44.8160255+08:00
+{"command":"import-area-assignments","outcome":"OK","dryRun":false,"input":"D:\\zhengyushao\\control-server-v2-ops\\prod-20261014\\inputs\\area-first-trip-N2-4-N4-1.csv","entryCount":2,"version":1,"contentSha256":"7c5a22b746fc430ac34117afe4ce49721e541205ae68bed2fcef7b39362a3947","snapshotId":"dd1e039901b24a678a62879598a3e511","importedAt":"2026-10-14T20:21:45.030792+08:00","errorCount":0,"errors":[],"preview":[]}
+import exit=0
+### read back
+{"command":"area-assignments","outcome":"OK","version":1,"contentSha256":"7c5a22b746fc430ac34117afe4ce49721e541205ae68bed2fcef7b39362a3947","snapshotId":"dd1e039901b24a678a62879598a3e511","importedAt":"2026-10-14T20:21:45.030792+08:00","entryCount":2,"entries":[{"area":"N2-4","dispatchZone":"WIRE_BONDING","slotPosition":"REAR"},{"area":"N4-1","dispatchZone":"WIRE_BONDING","slotPosition":"FRONT"}]}
+### accepted at 2026-10-14T20:21:50.2924308+08:00 (2/2)
+Sublot=Q26096572-7 | WorkType=STAGING_TO_WIRE | Status=Accepted | AcceptedAt=2026-10-14 12:21:47.6926126+00:00
+Sublot=Q26097573-2 | WorkType=WIRE_TO_GATE | Status=Accepted | AcceptedAt=2026-10-14 12:21:49.5035357+00:00
+### now 2026-10-14T20:21:50.2963845+08:00 sha256 4181C5F2173592D2AEB559ECD63D9846103F6061FFA0188835050DA8CF6810D0
+area,dispatch_zone,slot_position
+### dry-run
+{"command":"import-area-assignments","outcome":"OK","dryRun":true,"input":"D:\\zhengyushao\\control-server-v2-ops\\prod-20261014\\inputs\\area-header-only.csv","entryCount":0,"version":null,"contentSha256":null,"snapshotId":null,"importedAt":null,"errorCount":0,"errors":[],"preview":[{"demandId":"63cc9da5-d228-44e3-8b3d-efdd4589a0bd","area":"N4-1","frozenVersion":1,"frozenSlotPosition":"FRONT","newSlotPosition":null},{"demandId":"88d18582-365b-48e2-921b-60cd1aba82db","area":"N2-4","frozenVersion":1,"frozenSlotPosition":"REAR","newSlotPosition":null}]}
+dry exit=0
+### import at 2026-10-14T20:21:51.8672712+08:00
+{"command":"import-area-assignments","outcome":"OK","dryRun":false,"input":"D:\\zhengyushao\\control-server-v2-ops\\prod-20261014\\inputs\\area-header-only.csv","entryCount":0,"version":2,"contentSha256":"d801aa1fb7ddcc330a5e3173372ea6af4a3d08ec58074478e85aa5603e926658","snapshotId":"e6f43d5adbb048c7a8053f9036fef5e8","importedAt":"2026-10-14T20:21:52.0898179+08:00","errorCount":0,"errors":[],"preview":[{"demandId":"63cc9da5-d228-44e3-8b3d-efdd4589a0bd","area":"N4-1","frozenVersion":1,"frozenSlotPosition":"FRONT","newSlotPosition":null},{"demandId":"88d18582-365b-48e2-921b-60cd1aba82db","area":"N2-4","frozenVersion":1,"frozenSlotPosition":"REAR","newSlotPosition":null}]}
+import exit=0
+### read back
+{"command":"area-assignments","outcome":"OK","version":2,"contentSha256":"d801aa1fb7ddcc330a5e3173372ea6af4a3d08ec58074478e85aa5603e926658","snapshotId":"e6f43d5adbb048c7a8053f9036fef5e8","importedAt":"2026-10-14T20:21:52.0898179+08:00","entryCount":0,"entries":[]}
+### accepted after stop 2026-10-14T20:21:55.1010555+08:00
+Sublot=Q26096572-7 | WorkType=STAGING_TO_WIRE | Status=Accepted | AcceptedAt=2026-10-14 12:21:47.6926126+00:00
+Sublot=Q26097573-2 | WorkType=WIRE_TO_GATE | Status=Accepted | AcceptedAt=2026-10-14 12:21:49.5035357+00:00

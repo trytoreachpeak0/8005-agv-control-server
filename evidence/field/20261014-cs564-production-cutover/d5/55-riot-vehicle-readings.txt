@@ -1,0 +1,31 @@
+### 本次只读读取（ro-riot-battery.ps1，RIoT 车辆读数 GET），读取时刻 2026-10-17T14:45:53+08:00
+now 2026-10-17T14:45:59.5860483+08:00
+== agv01 battery=31 batteryState=NO_CHARGE currentMap=老厂前线new_wk currentPosition=106 enableTime=1970-01-01 08:00:00 lockStatus=0 powerMode=POWER_MODE_FULLER status=1
+== agv02 battery=19 batteryState=NO_CHARGE currentMap=老厂前线new_wk currentPosition=215 enableTime=1970-01-01 08:00:00 lockStatus=0 powerMode=POWER_MODE_FULLER status=1
+== agv03 battery=25 batteryState=CHARGING currentMap=老厂前线new_wk currentPosition=211 enableTime=2026-10-15 16:32:40 lockStatus=0 powerMode=POWER_MODE_FULLER status=1
+
+### 以下转录自对话（同一脚本的输出，当时未落盘，逐字照抄）
+
+# 转录自对话，原读数时刻 2026-10-17T14:10:11+08:00（开闸前）
+now 2026-10-17T14:10:11.3545206+08:00
+== agv01 battery=37 batteryState=NO_CHARGE currentMap=老厂前线new_wk currentPosition=214 enableTime=1970-01-01 08:00:00 lockStatus=0 powerMode=POWER_MODE_FULLER status=1
+== agv02 battery=24 batteryState=NO_CHARGE currentMap=老厂前线new_wk currentPosition=215 enableTime=1970-01-01 08:00:00 lockStatus=0 powerMode=POWER_MODE_FULLER status=1
+== agv03 battery=12 batteryState=NO_CHARGE currentMap=老厂前线new_wk currentPosition=216 enableTime=2026-10-15 16:32:40 lockStatus=0 powerMode=POWER_MODE_FULLER status=1
+
+# 转录自对话，原读数时刻约 2026-10-17T14:22+08:00（之前口头写成「14:20 前后」；脚本自带的 now 行当时没有截下来）
+== agv03 battery=8 batteryState=NO_CHARGE currentMap=老厂前线new_wk currentPosition=216 enableTime=2026-10-15 16:32:40 lockStatus=0 powerMode=POWER_MODE_NA status=2
+
+# 转录自对话，原读数时刻约 2026-10-17T14:37+08:00（trip-watch 同一时段为 14:37:17；now 行没有截下来）
+== agv01 battery=32 batteryState=NO_CHARGE currentMap=老厂前线new_wk currentPosition=106 enableTime=1970-01-01 08:00:00 lockStatus=0 powerMode=POWER_MODE_FULLER status=1
+== agv02 battery=20 batteryState=NO_CHARGE currentMap=老厂前线new_wk currentPosition=215 enableTime=1970-01-01 08:00:00 lockStatus=0 powerMode=POWER_MODE_FULLER status=1
+== agv03 battery=11 batteryState=CHARGING currentMap=老厂前线new_wk currentPosition=0 enableTime=2026-10-15 16:32:40 lockStatus=0 powerMode=POWER_MODE_FULLER status=1
+
+# 转录自对话，原读数时刻约 2026-10-17T14:38:50+08:00（用户说「定位好了」之后约 30 秒）
+== agv03 battery=13 batteryState=CHARGING currentMap=老厂前线new_wk currentPosition=211 enableTime=2026-10-15 16:32:40 lockStatus=0 powerMode=POWER_MODE_FULLER status=1
+
+# 转录自对话，原读数时刻 2026-10-17T14:43:18+08:00（RIoT 派单 14:42:15、SUCCESS 14:43:02 之后）
+== agv02 battery=19 batteryState=NO_CHARGE currentMap=老厂前线new_wk currentPosition=215 enableTime=1970-01-01 08:00:00 lockStatus=0 powerMode=POWER_MODE_FULLER status=1
+== agv03 battery=20 batteryState=CHARGING currentMap=老厂前线new_wk currentPosition=211 enableTime=2026-10-15 16:32:40 lockStatus=0 powerMode=POWER_MODE_FULLER status=1
+
+# 订单读数，转录自对话，原读数时刻 2026-10-17T14:40:34+08:00（只截取了下列字段）
+order-2111339400939044864: "executeVehicleKey":"--" "executingIndex":-1 "executingIndex":0 "updateTime":"2026-10-17 14:11:54"

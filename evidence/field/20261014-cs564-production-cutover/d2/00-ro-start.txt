@@ -1,0 +1,31 @@
+### now 2026-10-15T09:45:24.9727945+08:00
+### services
+  8005 AGV ControlServer Stopped/Disabled
+  8005 AGV ControlServer V2 Running/Manual
+### gate RiotCreateDispatch.enabled=False
+### area-assignments (read verb)
+{"command":"area-assignments","outcome":"OK","version":2,"contentSha256":"d801aa1fb7ddcc330a5e3173372ea6af4a3d08ec58074478e85aa5603e926658","snapshotId":"e6f43d5adbb048c7a8053f9036fef5e8","importedAt":"2026-10-14T20:21:52.0898179+08:00","entryCount":0,"entries":[]}
+### dispatch-zone-parameters (read verb)
+{"command":"dispatch-zone-parameters","outcome":"OK","version":1,"contentSha256":"fc98bae1b982dba7d04771e5ee24fb343baa852d47163d6f2c5c9ba145deb609","snapshotId":"6e47a01112684cec8d72e41b63d89b9a","loadedAt":"2026-10-14T20:21:25.3155939+08:00","source":"GOVERNED_IMPORT","zones":[{"dispatchZone":"DIE_ATTACH","inTable":true,"inDispatchPolicy":true,"enRouteAddition":{"state":"ALLOWED","maxPathCostIncreaseMm":65000},"starvation":{"state":"UNCONFIGURED","thresholdSeconds":null}},{"dispatchZone":"WIRE_BONDING","inTable":true,"inDispatchPolicy":true,"enRouteAddition":{"state":"ALLOWED","maxPathCostIncreaseMm":65000},"starvation":{"state":"UNCONFIGURED","thresholdSeconds":null}}]}
+### journeys not Completed
+### journey count by stage
+  Stage=Completed | n=2
+### accepted not Succeeded
+  d=88d18582 | Sublot=Q26096572-7 | WorkType=STAGING_TO_WIRE | Status=Accepted | AcceptedAt=2026-10-14 12:21:47.6926126+00:00 | area=
+  d=63cc9da5 | Sublot=Q26097573-2 | WorkType=WIRE_TO_GATE | Status=Accepted | AcceptedAt=2026-10-14 12:21:49.5035357+00:00 | area=
+### accepted total
+  n=2 | last=2026-10-14 12:21:49.5035357+00:00
+### journey demands (open journeys)
+### stops of open journeys
+### intents created since 2026-10-14 12:50 or not CONFIRMED
+### charging/purpose/holds
+### riot
+  agv01 st=214 proc=IDLE move=MT_NA emerg=OK bat=59 batState=NO_CHARGE map=老厂前线new_wk status=1
+  agv02 st=211 proc=IDLE move=MT_NA emerg=OK bat=26 batState=CHARGING map=老厂前线new_wk status=1
+  agv03 st=216 proc=IDLE move=MT_NA emerg=OK bat=97 batState=NO_CHARGE map=老厂前线new_wk status=1
+### warn/err since 2026-10-14 12:50 (UTC), last 40
+{"@t":"2026-10-14T22:00:20.9932585Z","@mt":"Route graph for map {MapId} is stale: {Reason}.","@l":"Warning","MapId":26,"Reason":"ROUTE_GRAPH_DESIGN_STATE_EXPIRED","EventId":{"Id":2,"Name":"LogStale"},"SourceContext":"ControlServer.Host.Runtime.RouteGraph.RouteGraphRefresher"}
+{"@t":"2026-10-14T22:30:22.9895311Z","@mt":"Route graph for map {MapId} is stale: {Reason}.","@l":"Warning","MapId":26,"Reason":"ROUTE_GRAPH_DESIGN_STATE_EXPIRED","EventId":{"Id":2,"Name":"LogStale"},"SourceContext":"ControlServer.Host.Runtime.RouteGraph.RouteGraphRefresher"}
+{"@t":"2026-10-14T22:58:57.1410897Z","@mt":"Vehicle {VehicleKey} is below its mandatory charge entry threshold: battery {Battery}% < {Threshold}% (charging policy version {Version}). It takes no new transport, no en-route append and no idle return until it has charged (REQ-0290, {Reason}); a journey it is carrying finishes as planned (REQ-0281).","@l":"Warning","VehicleKey":"BROKERX-f38975561adf46ccb1d2f23833c7d0e4","Battery":29,"Threshold":30,"Version":1,"Reason":"MANDATORY_CHARGE_REQUIRED","Ev
+{"@t":"2026-10-14T23:20:25.0085697Z","@mt":"Route graph for map {MapId} is stale: {Reason}.","@l":"Warning","MapId":26,"Reason":"ROUTE_GRAPH_DESIGN_STATE_EXPIRED","EventId":{"Id":2,"Name":"LogStale"},"SourceContext":"ControlServer.Host.Runtime.RouteGraph.RouteGraphRefresher"}
+{"@t":"2026-10-15T00:50:27.0326972Z","@mt":"Route graph for map {MapId} is stale: {Reason}.","@l":"Warning","MapId":26,"Reason":"ROUTE_GRAPH_DESIGN_STATE_EXPIRED","EventId":{"Id":2,"Name":"LogStale"},"SourceContext":"ControlServer.Host.Runtime.RouteGraph.RouteGraphRefresher"}

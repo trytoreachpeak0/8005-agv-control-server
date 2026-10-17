@@ -423,9 +423,18 @@ public sealed class MachinePickupDepartureTests
     }
 
     /// <summary>
-    /// 向量 MACHINE-LOADING-INCOMPLETE 的「一篮没装」：第二个机台取货站上唯一那条需求在扫码前被取消（本站以空清单结束、车停在离站等待里），
-    /// 车上只有第一站装的货。本站一篮没装不算装完（CP-0014 起草时定第 7 项），拒，什么都不变。只看「车上有货」的实现在这里放行。
+    /// 向量 MACHINE-LOADING-INCOMPLETE 的「一篮没装」：第二个机台取货站上唯一那条需求在扫码前被取消（本站以空清单结束），车上只有第一站装的货。
+    /// 本站一篮没装不算装完（CP-0014 起草时定第 7 项），出发按键照旧拒、不多发核验。只看「车上有货」的实现在这里放行。
     /// </summary>
+    /// <remarks>
+    /// control-server#742（CP-0015）起，这种停靠不再停在离站等待里等期限：取消之后的那一轮服务端自己就发离站核验，所以这里改为先断言车已经自己在走，
+    /// 再断言出发按键仍被拒、核验数不变。按键要拒的理由没变（本站不算装完），变的只是它到达时车已经不在离站等待里。
+    /// <para>
+    /// 因此这里的拒绝现在来自「车不在等录入或离站等待里」那道阶段闸（<c>AtStopAwaitingDeparture</c> 为假），不再来自「本站一篮没装」
+    /// （<c>MachinePickupLoadsComplete</c> 为假）——两者答的是同一个原因码。「本站一篮没装就拒」这个区分仍由同文件的
+    /// <see cref="DepartureAtASecondStopOfTheSameStationWithNothingLoadedThereIsRefused"/> 守着：那里持货等单把车留在离站等待里，拒绝只能来自装完那一条（PR #743 审查备注 4）。
+    /// </para>
+    /// </remarks>
     [Fact]
     [Trait("IntegrationSlice", "FP-IS-02")]
     [Trait("ProtocolVector", "CV-CURRENT-STOP-DEPARTURE-MACHINE-LOADING-INCOMPLETE")]
@@ -438,11 +447,17 @@ public sealed class MachinePickupDepartureTests
         await fixture.HearFromPeerAsync();
         await TickAndRunAsync(fixture);
         JourneyRuntimeRow before = await JourneyOfAsync(fixture, FirstDemandId);
-        Assert.Equal(JourneyRuntimeStage.AwaitingStationDeparture, before.Stage);
+        Assert.Equal(JourneyRuntimeStage.AwaitingDepartureSafety, before.Stage);
         Assert.Equal(secondPickup.StopId, (await CurrentStopAsync(fixture, FirstDemandId)).StopId);
         Assert.Equal(JourneyDemandStatuses.Terminated, (await MembershipAsync(fixture, SecondDemandId)).Status);
         Assert.Equal(JourneyDemandStatuses.Loaded, (await MembershipAsync(fixture, FirstDemandId)).Status);
         int checksBefore = await Batch7CargoHoldingTests.DepartureChecksSentAsync(fixture);
+        JourneyStopRow sentOn = await fixture.Context.Set<JourneyStopRow>().AsNoTracking()
+            .SingleAsync(row => row.StopId == secondPickup.StopId, Token);
+        Assert.True(
+            sentOn.DepartureSafetyCheckMessageId is { } checkId &&
+            await fixture.Context.ProtocolOutbox.AsNoTracking().AnyAsync(row => row.MessageId == checkId, Token),
+            "The emptied stop did not send the vehicle on by itself (control-server#742).");
 
         string departureRequestId = await RequestDepartureAsync(fixture, operationSessionId: null);
         await RunAsync(fixture);

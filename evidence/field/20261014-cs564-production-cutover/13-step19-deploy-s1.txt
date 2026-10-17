@@ -1,0 +1,79 @@
+[18:03:52] Clone F:\8005-wt\prod-cutover-f12bc809-8005-agv-control-server is clean at f12bc8097b462d0c88ddd252f28b6d7e8bd856ca; definition scripts/parallel/instance-factory01-v2.cutover-production-s1.json is tracked there; the files sent match HEAD
+[18:03:52] ADMISSION_POLICY_VERSION=6 -- write it into the deployment record; a rollback needs the highest one ever installed + 1
+[18:03:52] Instance definition accepted: factory01-v2-parallel (from F:/8005-wt/prod-cutover-f12bc809-8005-agv-control-server/scripts/parallel/instance-factory01-v2.cutover-production-s1.json)
+[18:03:52] MES_INGEST_SOURCE=production baseUrl=http://127.0.0.1:5088 allowedWorkTypes=DIE_TO_WIRE_STAGING,DIE_TO_OVEN,WIRE_TO_GATE,WIRE_TO_OPTICAL,STAGING_TO_WIRE,WIRE_TO_NITROGEN -- PRODUCTION CUTOVER (production): this instance reads the PRODUCTION MesIngest for all six task types and drives agv01; the MVP must be stopped (control-server#564)
+[33;1mWARNING: MES_INGEST_SOURCE=production baseUrl=http://127.0.0.1:5088 allowedWorkTypes=DIE_TO_WIRE_STAGING,DIE_TO_OVEN,WIRE_TO_GATE,WIRE_TO_OPTICAL,STAGING_TO_WIRE,WIRE_TO_NITROGEN -- PRODUCTION CUTOVER (production): this instance reads the PRODUCTION MesIngest for all six task types and drives agv01; the MVP must be stopped (control-server#564)[0m
+[18:03:52] Target: factory01  service '8005 AGV ControlServer V2'
+[18:03:52] Vehicle 1/1: �ϳ�ǰ���¶��λ2 (BROKERX-f38975561adf46ccb1d2f23833c7d0e4)
+[18:03:52] RouteGraph: enabled=False mapId=26   RiotCreateDispatch: enabled=False
+[18:03:52] Clearance exit: VehicleFaultRecovery enabled=False   FieldOperatorRoles roster=D:\zhengyushao\control-server-v2-ops\field-operator-roles.json onboardEntryDeclared=False
+[18:03:52] Clearance to a waiting point (REQ-0178): journeyRuntime.clearanceToWaitingPointEnabled=False
+[18:03:54] INSTALLED_ADMISSION_POLICY_VERSION=6 (from D:\zhengyushao\control-server-v2-ops\installed-instance.json on factory01); sending 6
+[18:03:54] EMERGENCY_STOP_RELEASE_REQUESTED=enabled=true credential=present loadedCredential=present (both sent; values not shown)
+[18:03:54] Secrets loaded from the DPAPI store (V2FaultRecoveryCredential present, will be sent)
+[18:03:54] Vehicle-safety projection credentials loaded for BROKERX-f38975561adf46ccb1d2f23833c7d0e4 (values not shown)
+[18:03:54] Downloading artifact from run 38542183893
+[18:04:16] Package hash verified (f17f333135e4eaf0172e86b753593ade5d576b91c34c57816330f09f043d04a6)
+[18:04:16] PACKAGE_COMMIT_MATCHES_CLONE=f12bc8097b462d0c88ddd252f28b6d7e8bd856ca (release-manifest.json components.controlServer.commit)
+[18:04:16] Package onboard commit: d495746117ae762cae96708edc9717f7f7d3e4f0 (components.onboardHmi.commit)
+[18:04:16] No FakeMesIngest: mesIngest.source is production
+[18:04:24] Parallel scripts and instance definition staged in D:\zhengyushao\control-server-v2-ops
+  ready: D:\zhengyushao\control-server-v2-ops
+  ready: D:\zhengyushao\control-server-v2-staging
+ready: D:\zhengyushao\control-server-v2-ops
+ready: D:\zhengyushao\control-server-v2-staging
+[18:04:28] Copying package (176.6 MB)
+[18:04:40] Running the parallel installer on the server
+  [18:04:45] Instance definition accepted: factory01-v2-parallel
+  [33;1mWARNING: PRODUCTION CUTOVER: agv01 and all six task types from the production MesIngest. Approval: Zhengyu Shao �?2026-10-14 �?Claude 对话中批�?v2 生产切换：试�?S1～S4 已通过，换新库、三�?IO 切回真模块、逐仓核对后，�?S1→S4 用真货进入生产，v2 读生�?MesIngest 六类需求、MVP 保持停用；每次动车与�?agv01 仍逐次授权。（用户原话�?005-workspace-v2 ds-tasks/board.md 10-14 条目；control-server#564 �?18a 步）[0m
+  [18:04:45] MES_INGEST_SOURCE=production baseUrl=http://127.0.0.1:5088 allowedWorkTypes=DIE_TO_WIRE_STAGING,DIE_TO_OVEN,WIRE_TO_GATE,WIRE_TO_OPTICAL,STAGING_TO_WIRE,WIRE_TO_NITROGEN -- PRODUCTION CUTOVER (production): this instance reads the PRODUCTION MesIngest for all six task types and drives agv01; the MVP must be stopped (control-server#564)
+  [33;1mWARNING: MES_INGEST_SOURCE=production baseUrl=http://127.0.0.1:5088 allowedWorkTypes=DIE_TO_WIRE_STAGING,DIE_TO_OVEN,WIRE_TO_GATE,WIRE_TO_OPTICAL,STAGING_TO_WIRE,WIRE_TO_NITROGEN -- PRODUCTION CUTOVER (production): this instance reads the PRODUCTION MesIngest for all six task types and drives agv01; the MVP must be stopped (control-server#564)[0m
+  [18:04:45] MVP service before: present=True status=Stopped startType=Disabled pathName="C:\Program Files\8005 AGV\ControlServer\ControlServer.Host.exe" --contentRoot "C:\Program Files\8005 AGV\ControlServer" --environment Production processId=0
+  [18:04:50] Package hash verified (f17f333135e4eaf0172e86b753593ade5d576b91c34c57816330f09f043d04a6)
+  [18:04:51] Installed definition recorded at D:\zhengyushao\control-server-v2-ops\installed-instance.json
+  [18:04:56] Unpacked to D:\zhengyushao\ControlServer.V2.incoming-20261014-180445
+  [18:04:56] Release: controlserver f12bc80  onboard d495746
+  [18:04:56] RIoT key written to the user scope (shared with the MVP deployment, same value today); machine scope read, not written
+  [18:04:56] Upgrading 8005 AGV ControlServer V2 with Update-ControlServerLocal.ps1
+  Vehicle-safety projection credentials put into the service's Environment before the upgrade: CONTROL_SERVER_V2_ONBOARD_SAFETY_CREDENTIAL_RIOT59 (values not shown).
+  JourneyRuntime.enabled set false for the upgrade, with the service stopped (was 'True')
+  [18:05:14] Installer result written to D:\zhengyushao\control-server-v2-ops\results\install-20261014-180445.json
+  [18:05:17] Configuration overlay merged into C:\Program Files\8005 AGV\ControlServer.V2\appsettings.Production.json and verified (vehicle identity, MesIngest origin, clearance exit sections); credential written, value not shown; projection credentials: CONTROL_SERVER_V2_ONBOARD_SAFETY_CREDENTIAL_RIOT59 written, values not shown; 8005 AGV ControlServer V2 restarted
+  [18:05:17] CLEARANCE_EXIT_READINESS vehicleFaultRecovery=disabled credential=CONTROL_SERVER_V2_FAULT_RECOVERY_CREDENTIAL:present fieldOperatorRoles=present roster=D:\zhengyushao\control-server-v2-ops\field-operator-roles.json:named onboardEntryDeclared=false exit=unavailable(STATION_CLEARANCE_ENTRY_NOT_OFFERED,CHARGING_RECOVERY_ENTRY_NOT_OFFERED)
+  CLEARANCE_EXIT_READINESS vehicleFaultRecovery=disabled credential=CONTROL_SERVER_V2_FAULT_RECOVERY_CREDENTIAL:present fieldOperatorRoles=present roster=D:\zhengyushao\control-server-v2-ops\field-operator-roles.json:named onboardEntryDeclared=false exit=unavailable(STATION_CLEARANCE_ENTRY_NOT_OFFERED,CHARGING_RECOVERY_ENTRY_NOT_OFFERED)
+  [18:05:17] EMERGENCY_STOP_RELEASE=enabled=true credential=set loadedCredential=set loadedConfirmers=1
+  EMERGENCY_STOP_RELEASE=enabled=true credential=set loadedCredential=set loadedConfirmers=1
+  [33;1mWARNING: CLEARANCE_EXIT_UNAVAILABLE (STATION_CLEARANCE_ENTRY_NOT_OFFERED,CHARGING_RECOVERY_ENTRY_NOT_OFFERED): a vehicle that cannot charge stays on ORDER_HANG and isolation is not written (server alarms 2271/2272). Intended in phase 1; otherwise fill in the roster at D:\zhengyushao\control-server-v2-ops\field-operator-roles.json and set vehicleFaultRecovery / fieldOperatorRoles in the instance definition.[0m
+  [18:05:19] MesIngest bearer token added to this service's environment and read back; service restarted
+  [18:05:19] No FakeMesIngest: mesIngest.source is production
+  [18:05:25] Firewall open for TCP 58105 and 58107 (V2 rules only)
+  [18:05:25] health/live 200: {"status":"live"}
+  [18:05:26] [Held] What the Host bound, read back from its log at 2026-10-14T10:05:19.5989500+00:00: EFFECTIVE_CONFIGURATION=allowedWorkTypes=DIE_TO_WIRE_STAGING,DIE_TO_OVEN,WIRE_TO_GATE,WIRE_TO_OPTICAL,STAGING_TO_WIRE,WIRE_TO_NITROGEN allowedDispatchZones=WIRE_BONDING mesIngestBaseUrl=http://127.0.0.1:5088
+  [18:05:26]   fleet: 老厂前线新多仓位2 (BROKERX-f38975561adf46ccb1d2f23833c7d0e4) allowedTaskTypes=STAGING_TO_WIRE zones=WIRE_BONDING
+  [18:05:26]   clearanceToWaitingPointEnabled=False
+  [18:05:26]   mapStationCatalog approvedSyncPeriod=00:00:30 approvedMaxUnconfirmed=00:05:00
+  [18:05:26]   EFFECTIVE_JOURNEY_BINDING=admissionPolicyVersion=6 admissionPolicyDeploymentId=MAP-26-WIRE_TO_GATE-20261007 cargoHoldingTimeout=00:05:00 stationDepartureWaitTimeout=00:05:00 slotConfigurationReadinessGate=Enforcing
+  [18:05:26] JourneyRuntime stays disabled in C:\Program Files\8005 AGV\ControlServer.V2\appsettings.Production.json: the definition does not enable it. '8005 AGV ControlServer V2' read back as defined with the runtime off.
+  EFFECTIVE_CONFIGURATION=allowedWorkTypes=DIE_TO_WIRE_STAGING,DIE_TO_OVEN,WIRE_TO_GATE,WIRE_TO_OPTICAL,STAGING_TO_WIRE,WIRE_TO_NITROGEN allowedDispatchZones=WIRE_BONDING mesIngestBaseUrl=http://127.0.0.1:5088
+  EFFECTIVE_JOURNEY_BINDING=admissionPolicyVersion=6 admissionPolicyDeploymentId=MAP-26-WIRE_TO_GATE-20261007 cargoHoldingTimeout=00:05:00 stationDepartureWaitTimeout=00:05:00 slotConfigurationReadinessGate=Enforcing
+  [18:05:28] Package at D:\zhengyushao\ControlServer.V2; previous generation kept at D:\zhengyushao\ControlServer.V2.previous
+  [18:05:28] MVP service unchanged (status, start type, binary path and pid all identical)
+  [18:05:28] Parallel deployment complete.
+  RESULT_PATH=D:\zhengyushao\control-server-v2-ops\results\install-20261014-180445.json
+  ONBOARD_ENDPOINT=tcp://172.19.205.222:58105
+  HEALTH_ENDPOINT=http://172.19.205.222:58107
+  MES_INGEST_SOURCE=production baseUrl=http://127.0.0.1:5088 allowedWorkTypes=DIE_TO_WIRE_STAGING,DIE_TO_OVEN,WIRE_TO_GATE,WIRE_TO_OPTICAL,STAGING_TO_WIRE,WIRE_TO_NITROGEN -- PRODUCTION CUTOVER (production): this instance reads the PRODUCTION MesIngest for all six task types and drives agv01; the MVP must be stopped (control-server#564)
+[18:05:26] MesIngest source confirmed by the server: MES_INGEST_SOURCE=production baseUrl=http://127.0.0.1:5088 allowedWorkTypes=DIE_TO_WIRE_STAGING,DIE_TO_OVEN,WIRE_TO_GATE,WIRE_TO_OPTICAL,STAGING_TO_WIRE,WIRE_TO_NITROGEN -- PRODUCTION CUTOVER (production): this instance reads the PRODUCTION MesIngest for all six task types and drives agv01; the MVP must be stopped (control-server#564)
+[18:05:26] What the Host bound, confirmed by the server: EFFECTIVE_CONFIGURATION=allowedWorkTypes=DIE_TO_WIRE_STAGING,DIE_TO_OVEN,WIRE_TO_GATE,WIRE_TO_OPTICAL,STAGING_TO_WIRE,WIRE_TO_NITROGEN allowedDispatchZones=WIRE_BONDING mesIngestBaseUrl=http://127.0.0.1:5088
+[18:05:26] Admission policy and waits the Host bound, confirmed by the server: EFFECTIVE_JOURNEY_BINDING=admissionPolicyVersion=6 admissionPolicyDeploymentId=MAP-26-WIRE_TO_GATE-20261007 cargoHoldingTimeout=00:05:00 stationDepartureWaitTimeout=00:05:00 slotConfigurationReadinessGate=Enforcing
+[18:05:26] Emergency stop release confirmed by the server: EMERGENCY_STOP_RELEASE=enabled=true credential=set loadedCredential=set loadedConfirmers=1
+[18:05:26] Verifying http://172.19.205.222:58107/health/live from this machine
+[18:05:27] health/live 200: {"status":"live"}
+[18:05:27] Emergency stop release probe (no credential sent): empty-vehicle 401, loaded-vehicle 401; expected 401, 401
+[18:05:27] Deployed. Onboard NDJSON: tcp://172.19.205.222:58105
+[18:05:27] Vehicle safety: http://172.19.205.222:58107/api/onboard/v1/vehicle-safety
+[18:05:27] Package root on the server: D:\zhengyushao\ControlServer.V2
+[18:05:27] Next: deploy the matching onboard commit to every car in the roster (agv01 too: its site file must say controlServerLine "v2"; asked of the user first) with
+[18:05:27]   remote-ops/onboard-hmi/scripts/06-deploy-onboard-hmi.ps1 -SshAlias agv02 -OnboardPort 58105 -HealthPort 58107
+[18:05:27]   Each vehicle reads its projection with its own credential now: redeploy its onboard half with 06-deploy.
+  deploy-config.json: not on the server
