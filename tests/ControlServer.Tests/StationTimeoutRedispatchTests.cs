@@ -225,6 +225,35 @@ public sealed class StationTimeoutRedispatchTests
     }
 
     /// <summary>
+    /// 终结时刻是终结那一刻，告警重开不改它（control-server#751 审查 M1）：需求掉出目录一轮、告警被清，过一阵回到目录、告警重开，
+    /// 告警的形成时刻变成重开那一刻，清单上的终结时刻仍是站点期限到点那一刻（取自按业务键只写一次的抑制行）。
+    /// </summary>
+    [Fact]
+    [Trait("IntegrationSlice", "FP-IS-02")]
+    public async Task TheEndingTimeOnTheSuppressionListSurvivesTheAlarmBeingRaisedAgain()
+    {
+        await using RuntimeFixture fixture = await SingleDemandAsync();
+        await fixture.AdvanceToSublotWaitAsync();
+        DateTimeOffset deadline = await RunOutTheStationDeadlineAsync(fixture);
+        fixture.Catalog.Set();
+        await fixture.HearFromPeerAsync();
+        await TickAndRunAsync(fixture);
+        Assert.NotNull(Assert.Single(await AlarmsAsync(fixture)).ClearedAt);
+
+        fixture.Clock.Advance(TimeSpan.FromMinutes(7));
+        fixture.Catalog.Set(fixture.Demand(Demand, Sublot, createdAt: Now.AddMinutes(-10)));
+        await fixture.HearFromPeerAsync();
+        await TickAndRunAsync(fixture);
+        StructuralDispatchBlockRow reopened = Assert.Single(await AlarmsAsync(fixture));
+        Assert.Null(reopened.ClearedAt);
+        Assert.True(reopened.FirstRaisedAt > deadline, "The alarm was not raised again later than the deadline.");
+
+        using JsonDocument fact = await ReadSuppressionsAsync(fixture);
+        JsonElement row = Assert.Single(fact.RootElement.GetProperty("suppressions").EnumerateArray());
+        Assert.Equal(deadline, row.GetProperty("endedAt").GetDateTimeOffset());
+    }
+
+    /// <summary>
     /// 确定的装货失败记同一个 <c>CANCELLED_BY_STATION_TIMEOUT</c>，但不是站点期限终结的，不进抑制清单（REQ-0365 只收站点期限到期终结的）；
     /// 它的人工告警照旧在积压页的结构性阻断里。
     /// </summary>
@@ -365,6 +394,12 @@ public sealed class StationTimeoutRedispatchTests
         Assert.Equal(JourneyDemandStatuses.Loaded, (await MembershipOfAsync(fixture, SecondDemandId)).Status);
         Assert.Equal(JourneyRuntimeStage.AwaitingStationDeparture, (await fixture.RuntimeAsync(FirstDemandId)).Stage);
         Assert.False(await DemandJourneyLookup.ReleasedForRedispatch(fixture.Context).AnyAsync(Token));
+        // 锚需求放不回而终结的，也是站点期限终结的，列在站点超时抑制清单上（control-server#751 审查 L1）。
+        using JsonDocument fact = await ReadSuppressionsAsync(fixture);
+        JsonElement listed = Assert.Single(fact.RootElement.GetProperty("suppressions").EnumerateArray());
+        Assert.Equal(
+            (FirstDemandId, ManualCarryAlarms.StationTimeoutAnchorNotReleasable),
+            (listed.GetProperty("demandId").GetString(), listed.GetProperty("reasonCode").GetString()));
     }
 
     /// <summary>
