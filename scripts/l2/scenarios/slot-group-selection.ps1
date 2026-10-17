@@ -184,7 +184,7 @@ $journal.Note('Vehicle drives to the pickup station for the second demand and co
 Move-Vehicle $frontIntent $Context.PickupStationRiotId
 $null = Wait-L2Condition -Description 'the second demand''s load was commanded' `
     -Journal $journal -Criterion 'load-commanded' -TimeoutSeconds 120 `
-    -Probe { @(Get-CommandSlots $frontDemand 'LOAD').Count } -Until { param($v) $v -ge 1 }
+    -Probe { (Get-CommandSlots $frontDemand 'LOAD').Count } -Until { param($v) $v -ge 1 }
 $null = Assert-L2SlotGroupTargets -Assertions $assertions -Id 'L2-SGS-09' -Connection $connection `
     -DemandId $frontDemand -SlotPosition 'FRONT' -AvailableSlots $frontAvailable `
     -Description "N1-3 改指 FRONT 之后：扫码后分到的目标仓全部属于本车 FRONT 组、升序，且恰好是该组编号最小的 $basketCount 个可用仓"
