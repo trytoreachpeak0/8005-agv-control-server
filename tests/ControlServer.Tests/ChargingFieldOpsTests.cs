@@ -128,7 +128,7 @@ public sealed class ChargingFieldOpsTests
         Assert.Equal((0, 0, 1, 0, 0, 0), (importExit, beforeExit, unapprovedExit, approveExit, activateExit, afterExit));
         Assert.Equal(("OK", 1L), (imported.GetProperty("outcome").GetString(), imported.GetProperty("version").GetInt64()));
         Assert.Equal(
-            (20, 30, 80, 10),
+            (20, 40, 80, 10),
             (imported.GetProperty("content").GetProperty("minimumPostTaskBatteryMarginPercent").GetInt32(),
              imported.GetProperty("content").GetProperty("mandatoryChargeEntryThresholdPercent").GetInt32(),
              imported.GetProperty("content").GetProperty("chargingCompletionThresholdPercent").GetInt32(),
