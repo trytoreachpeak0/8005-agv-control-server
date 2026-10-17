@@ -36,6 +36,7 @@ public sealed class CancelledLastEntryEndsIntoDepartureWaitTests
 
     private const string AppendedDemandId = "10000000-0000-4000-8000-000000000668";
     private const string AppendedSublot = "SUBLOT-668";
+    private const string ThirdSubmissionId = "20000000-0000-4000-8000-000000000742";
 
     private static CancellationToken Token => TestContext.Current.CancellationToken;
 
@@ -155,12 +156,17 @@ public sealed class CancelledLastEntryEndsIntoDepartureWaitTests
     }
 
     /// <summary>
-    /// 本站一条都没装上就被取消结束（车上的货是更早一站装的）：起点不动，按原期限离站——没有可纠正的放置，不延长等待。
-    /// 与装货途中被终结、本站没装上过货的那一路（<c>resumingAfterEnding</c>）同一个规则。
+    /// 本站一条都没装上就被取消结束（车上的货是更早一站装的），旅程还要继续：取消之后的那一轮就发离站核验，不等站点离站期限
+    /// （control-server#742，CP-0015 方案 A）。本站没有已装的货，就没有要留纠错窗口的放置（#668 那道护栏的理由在这里不成立）。
     /// </summary>
+    /// <remarks>
+    /// 这条在 #742 之前叫 <c>ACancelThatEndsAStopWithNothingLoadedThereKeepsTheOriginalDeadline</c>，断言的是「起点不动、等到原期限才走」。
+    /// 改的是断言，不是认法：形状（第二个取货站、本站一条没装、扫码前取消、走服务端真实的授权与结果受理）一字不改，变的是用户 10-17 定的行为
+    /// ——现场 agv03 145、164 站取消后各白等了约 5 分钟。再跑一轮核验身份不变：只放行一次，不重发。
+    /// </remarks>
     [Fact]
     [Trait("IntegrationSlice", "FP-IS-08")]
-    public async Task ACancelThatEndsAStopWithNothingLoadedThereKeepsTheOriginalDeadline()
+    public async Task ACancelThatEndsAStopWithNothingLoadedThereSendsTheVehicleOnAtOnce()
     {
         await using RuntimeFixture fixture = await RuntimeFixture.CreateAsync();
         JourneyStopRow secondPickup = await StopEndedJourneyContinuesTests.ArriveAtTheSecondPickupAsync(fixture);
@@ -171,14 +177,295 @@ public sealed class CancelledLastEntryEndsIntoDepartureWaitTests
 
         await RoundAsync(fixture);
 
-        JourneyRuntimeRow waiting = await JourneyOfAsync(fixture, FirstDemandId);
-        Assert.Equal(JourneyRuntimeStage.AwaitingStationDeparture, waiting.Stage);
-        Assert.Equal(arrivedAt, waiting.StationDepartureWaitStartedAt);
-        Assert.Equal(arrivedAt + Wait, (await LatestWorklistAsync(fixture)).Deadline);
-        await AssertHeldUntilAsync(fixture, secondPickup.StopId, arrivedAt + Wait);
-        await RunAtAsync(fixture, arrivedAt + Wait);
+        JourneyRuntimeRow leaving = await JourneyOfAsync(fixture, FirstDemandId);
         Assert.True(
-            await DepartureCheckOfStopSentAsync(fixture, secondPickup.StopId), "The deadline passed and the vehicle was not sent on.");
+            await DepartureCheckOfStopSentAsync(fixture, secondPickup.StopId),
+            $"Nothing was loaded at this stop and nothing is left to do, yet the vehicle waits for {arrivedAt + Wait:O}. stage={leaving.Stage}");
+        Assert.True(fixture.Clock.GetUtcNow() < arrivedAt + Wait);
+        Assert.Equal(JourneyRuntimeStage.AwaitingDepartureSafety, leaving.Stage);
+        string checkId = (await CurrentStopAsync(fixture, FirstDemandId)).DepartureSafetyCheckId!;
+
+        await RoundAsync(fixture);
+
+        Assert.Equal(JourneyRuntimeStage.AwaitingDepartureSafety, (await JourneyOfAsync(fixture, FirstDemandId)).Stage);
+        Assert.Equal(checkId, (await CurrentStopAsync(fixture, FirstDemandId)).DepartureSafetyCheckId);
+    }
+
+    /// <summary>
+    /// 旅程继续的多需求（control-server#742）：第二个取货站取消、本站空了之后车立即开往下一站，下一站（甲的卸货）照常做完，旅程完成。
+    /// </summary>
+    [Fact]
+    [Trait("IntegrationSlice", "FP-IS-08")]
+    public async Task AfterACancelEmptiesAStopTheJourneyGoesOnToTheNextStopAndCompletes()
+    {
+        await using RuntimeFixture fixture = await RuntimeFixture.CreateAsync();
+        await StopEndedJourneyContinuesTests.ArriveAtTheSecondPickupAsync(fixture);
+        fixture.Options.StationDepartureWaitTimeout = Wait;
+        DateTimeOffset arrivedAt = (await JourneyOfAsync(fixture, FirstDemandId)).StationDepartureWaitStartedAt!.Value;
+        fixture.Clock.Advance(BeforeCancel);
+        await CancelTheSecondBeforeScanAsync(fixture);
+        await RoundAsync(fixture);
+
+        JourneyRuntimeRow departing = await AnswerDepartureSafetyAsync(fixture, FirstDemandId, SecondSafetyResultId);
+        Assert.True(
+            fixture.Clock.GetUtcNow() < arrivedAt + Wait,
+            $"The vehicle only left at {fixture.Clock.GetUtcNow():O}, not before the deadline {arrivedAt + Wait:O}.");
+        Assert.Equal(JourneyStopRoles.Unload, (await CurrentStopAsync(fixture, FirstDemandId)).StopRole);
+        Assert.NotEqual(JourneyRuntimeStage.AwaitingDepartureSafety, departing.Stage);
+
+        JourneyRuntimeRow done = await ArriveAtGateAndUnloadAsync(fixture, FirstDemandId);
+        Assert.Equal(JourneyRuntimeStage.Completed, done.Stage);
+    }
+
+    /// <summary>
+    /// 下发与判定读同一个期限（control-server#742，PR #660 增量审查 S1 的约束）：取消让本站空了、车当轮就走，车上那一版清单不带一个还在将来的期限，
+    /// 发件箱里也没有一版带着原来那段倒计时（到站起点 + 完整时长）——否则车已经走了，屏上还剩约 5 分钟。
+    /// </summary>
+    [Fact]
+    [Trait("IntegrationSlice", "FP-IS-08")]
+    public async Task ACancelThatSendsTheVehicleOnLeavesNoCountdownOnTheVehicle()
+    {
+        await using RuntimeFixture fixture = await RuntimeFixture.CreateAsync();
+        await StopEndedJourneyContinuesTests.ArriveAtTheSecondPickupAsync(fixture);
+        fixture.Options.StationDepartureWaitTimeout = Wait;
+        DateTimeOffset arrivedAt = (await JourneyOfAsync(fixture, FirstDemandId)).StationDepartureWaitStartedAt!.Value;
+        fixture.Clock.Advance(BeforeCancel);
+        await CancelTheSecondBeforeScanAsync(fixture);
+
+        await RoundAsync(fixture);
+
+        DateTimeOffset now = fixture.Clock.GetUtcNow();
+        Worklist latest = await LatestWorklistAsync(fixture);
+        Assert.True(
+            latest.Deadline is not { } shown || shown <= now,
+            $"The vehicle is leaving at {now:O} while its screen counts down to {latest.Deadline:O}.");
+        Assert.Equal("LOAD_CANCELLED", latest.StopEndedReason);
+        Assert.Null(latest.OperationSessionId);
+        Assert.DoesNotContain(await WorklistDeadlinesAsync(fixture), deadline => deadline == arrivedAt + Wait);
+    }
+
+    /// <summary>
+    /// 会话就绪闸在新条件之前（control-server#742）：取消之后车载端断线重连、会话还没就绪，离站等待的起点作废、不发离站核验；就绪之后起点重填，
+    /// 新条件才放行，仍远早于原期限。新条件只读旅程与停靠，不读会话，所以绕不过上游那道闸（<c>AdvanceAsync</c> 的 <c>session is null</c> 一支）。
+    /// </summary>
+    [Fact]
+    [Trait("IntegrationSlice", "FP-IS-08")]
+    public async Task ACancelThatEmptiesTheStopWaitsForTheSessionToBeReadyBeforeSendingTheVehicleOn()
+    {
+        await using RuntimeFixture fixture = await RuntimeFixture.CreateAsync();
+        JourneyStopRow secondPickup = await StopEndedJourneyContinuesTests.ArriveAtTheSecondPickupAsync(fixture);
+        fixture.Options.StationDepartureWaitTimeout = Wait;
+        DateTimeOffset arrivedAt = (await JourneyOfAsync(fixture, FirstDemandId)).StationDepartureWaitStartedAt!.Value;
+        fixture.Clock.Advance(BeforeCancel);
+        await CancelTheSecondBeforeScanAsync(fixture);
+        await fixture.ReconnectAsync(2);
+
+        await TickAndRunAsync(fixture);
+        await TickAndRunAsync(fixture);
+
+        JourneyRuntimeRow gated = await JourneyOfAsync(fixture, FirstDemandId);
+        Assert.False(
+            await DepartureCheckOfStopSentAsync(fixture, secondPickup.StopId),
+            $"The vehicle was sent on while its session was not ready. stage={gated.Stage} block={gated.BlockReasonCode}");
+        Assert.Null(gated.StationDepartureWaitStartedAt);
+
+        await fixture.AdvanceSessionAsync(2);
+        await RoundAsync(fixture);
+        await RoundAsync(fixture);
+
+        Assert.True(
+            await DepartureCheckOfStopSentAsync(fixture, secondPickup.StopId),
+            $"The session is ready again and the stop is empty, yet the vehicle waits. stage={(await JourneyOfAsync(fixture, FirstDemandId)).Stage}");
+        Assert.True(fixture.Clock.GetUtcNow() < arrivedAt + Wait);
+    }
+
+    /// <summary>
+    /// #668 的护栏（control-server#742 不放行的一侧）：第二个取货站乙、丙两条，先扫码前取消乙，再录入并装上丙。本站有了一条 Loaded，
+    /// 取消留下的终结归属不让车提前走，照旧从丙落定起等满完整时长，给丙留纠错窗口。
+    /// </summary>
+    [Fact]
+    [Trait("IntegrationSlice", "FP-IS-08")]
+    public async Task ACancelAtAStopThatThenLoadsAnotherStillWaitsTheFullDeadline()
+    {
+        await using RuntimeFixture fixture = await RuntimeFixture.CreateAsync();
+        JourneyStopRow secondPickup = await StopEndedJourneyContinuesTests.ArriveAtTheSecondPickupAsync(
+            fixture, thirdAtTheSecondPickup: true);
+        fixture.Options.StationDepartureWaitTimeout = Wait;
+        await CancelTheSecondBeforeScanAsync(fixture);
+        await RoundAsync(fixture);
+        Assert.False(await DepartureCheckOfStopSentAsync(fixture, secondPickup.StopId), "The third demand was still to load.");
+
+        await EnterSublotAsync(fixture, StopEndedJourneyContinuesTests.ThirdDemandId, StopEndedJourneyContinuesTests.ThirdSublot, ThirdSubmissionId);
+        JourneyRuntimeRow settled = await SettleLoadAsync(fixture, StopEndedJourneyContinuesTests.ThirdDemandId);
+
+        Assert.Equal(JourneyRuntimeStage.AwaitingStationDeparture, settled.Stage);
+        DateTimeOffset loadedAt = settled.StationDepartureWaitStartedAt!.Value;
+        Assert.Equal(loadedAt + Wait, (await LatestWorklistAsync(fixture)).Deadline);
+        await AssertHeldUntilAsync(fixture, secondPickup.StopId, loadedAt + Wait);
+        await RunAtAsync(fixture, loadedAt + Wait);
+        Assert.True(await DepartureCheckOfStopSentAsync(fixture, secondPickup.StopId), "The deadline passed and the vehicle was not sent on.");
+    }
+
+    /// <summary>
+    /// 同站另有一条还在装（control-server#742 不放行的一侧）：取消乙之后录入丙、装货命令已下、结果没到。本站有一条 Loading，不放行，离站核验不发。
+    /// </summary>
+    [Fact]
+    [Trait("IntegrationSlice", "FP-IS-08")]
+    public async Task ACancelAtAStopWhereAnotherIsStillLoadingDoesNotSendTheVehicleOn()
+    {
+        await using RuntimeFixture fixture = await RuntimeFixture.CreateAsync();
+        JourneyStopRow secondPickup = await StopEndedJourneyContinuesTests.ArriveAtTheSecondPickupAsync(
+            fixture, thirdAtTheSecondPickup: true);
+        fixture.Options.StationDepartureWaitTimeout = Wait;
+        await CancelTheSecondBeforeScanAsync(fixture);
+        await RoundAsync(fixture);
+
+        JourneyRuntimeRow loading = await EnterSublotAsync(
+            fixture, StopEndedJourneyContinuesTests.ThirdDemandId, StopEndedJourneyContinuesTests.ThirdSublot, ThirdSubmissionId);
+        await RoundAsync(fixture);
+        await RoundAsync(fixture);
+
+        Assert.Equal(JourneyRuntimeStage.AwaitingLoadResult, loading.Stage);
+        Assert.Equal(
+            JourneyDemandStatuses.Loading,
+            (await Batch7MultiDemandAdvanceTests.MembershipAsync(fixture, StopEndedJourneyContinuesTests.ThirdDemandId)).Status);
+        Assert.False(
+            await DepartureCheckOfStopSentAsync(fixture, secondPickup.StopId), "The vehicle was sent on while a slot was still loading.");
+    }
+
+    /// <summary>
+    /// 门未证明关闭时扣车（REQ-0364，control-server#742 不改）：取消让本站空了、离站等待当轮结束，但扣车开着，离站核验不发；维修放行之后才发。
+    /// </summary>
+    [Fact]
+    [Trait("IntegrationSlice", "FP-IS-08")]
+    public async Task ACancelThatEmptiesTheStopIsStillHeldWhileTheDoorsAreNotProvenClosed()
+    {
+        await using RuntimeFixture fixture = await RuntimeFixture.CreateAsync();
+        JourneyStopRow secondPickup = await StopEndedJourneyContinuesTests.ArriveAtTheSecondPickupAsync(fixture);
+        fixture.Options.StationDepartureWaitTimeout = Wait;
+        DateTimeOffset arrivedAt = (await JourneyOfAsync(fixture, FirstDemandId)).StationDepartureWaitStartedAt!.Value;
+        fixture.Clock.Advance(BeforeCancel);
+        await CancelTheSecondBeforeScanAsync(fixture);
+        // 取消受理之后才扣：受理那一刻会按扣车重算会话就绪，这里要看的是离站等待那一段之后的扣车闸，不是就绪闸。
+        SlotDoorHoldRow hold = new()
+        {
+            HoldId = Guid.NewGuid().ToString("D"),
+            AgvId = fixture.Options.AgvId,
+            DemandId = SecondDemandId,
+            SlotsJson = "[1]",
+            HeldAt = fixture.Clock.GetUtcNow()
+        };
+        fixture.Context.SlotDoorHolds.Add(hold);
+        await fixture.Context.SaveChangesAsync(Token);
+        fixture.Context.ChangeTracker.Clear();
+
+        await RoundAsync(fixture);
+        await RoundAsync(fixture);
+
+        JourneyRuntimeRow held = await JourneyOfAsync(fixture, FirstDemandId);
+        Assert.False(
+            await DepartureCheckOfStopSentAsync(fixture, secondPickup.StopId),
+            $"The doors were not proven closed and the vehicle was sent on. stage={held.Stage}");
+        Assert.Equal(JourneyRuntimeStage.AwaitingStationDeparture, held.Stage);
+
+        SlotDoorHoldRow tracked = await fixture.Context.SlotDoorHolds.SingleAsync(row => row.HoldId == hold.HoldId, Token);
+        tracked.ReleasedAt = fixture.Clock.GetUtcNow();
+        tracked.ReleasedByActionId = "release";
+        await fixture.Context.SaveChangesAsync(Token);
+        fixture.Context.ChangeTracker.Clear();
+        await RoundAsync(fixture);
+
+        JourneyRuntimeRow released = await JourneyOfAsync(fixture, FirstDemandId);
+        SessionRecoveryRow session = await fixture.Context.SessionRecoveries.AsNoTracking().SingleAsync(Token);
+        Assert.True(
+            await DepartureCheckOfStopSentAsync(fixture, secondPickup.StopId),
+            $"The hold was released and the vehicle was not sent on. stage={released.Stage} block={released.BlockReasonCode} " +
+            $"start={released.StationDepartureWaitStartedAt:O} readiness={session.Readiness} reason={session.ReasonCode}");
+        Assert.True(fixture.Clock.GetUtcNow() < arrivedAt + Wait);
+    }
+
+    /// <summary>
+    /// 持货等单照旧（用户 10-17 选甲，control-server#742 不改 CARGO_HOLDING_WAIT 那道闸）：车上有前站的货、装货阶段在持货等单时，取消让本站空了，
+    /// 本站的离站等待结束，但车照旧停着等，不发离站核验；持货期限到了才走。
+    /// </summary>
+    [Fact]
+    [Trait("IntegrationSlice", "FP-IS-08")]
+    public async Task ACancelThatEmptiesTheStopKeepsAHoldingVehicleWaitingForCargo()
+    {
+        await using RuntimeFixture fixture = await Batch7CargoHoldingTests.HoldingFixtureAsync();
+        JourneyStopRow secondPickup = await StopEndedJourneyContinuesTests.ArriveAtTheSecondPickupAsync(fixture);
+        fixture.Options.StationDepartureWaitTimeout = Wait;
+        DateTimeOffset arrivedAt = (await JourneyOfAsync(fixture, FirstDemandId)).StationDepartureWaitStartedAt!.Value;
+        fixture.Clock.Advance(BeforeCancel);
+        await CancelTheSecondBeforeScanAsync(fixture);
+
+        await RoundAsync(fixture);
+        await RunAtAsync(fixture, arrivedAt + Wait + TimeSpan.FromSeconds(5));
+
+        JourneyRuntimeRow holding = await JourneyOfAsync(fixture, FirstDemandId);
+        Assert.Equal(LoadingPhaseStates.CargoHoldingWait, holding.LoadingPhaseState);
+        Assert.Equal(JourneyRuntimeStage.AwaitingStationDeparture, holding.Stage);
+        Assert.False(
+            await DepartureCheckOfStopSentAsync(fixture, secondPickup.StopId), "A vehicle holding cargo was sent on by the cancel.");
+
+        await RunAtAsync(fixture, holding.CargoHoldingStartedAt!.Value + TimeSpan.FromMinutes(30));
+        await RoundAsync(fixture);
+        Assert.Equal(LoadingClosedReasons.CargoHoldingTimeout, (await JourneyOfAsync(fixture, FirstDemandId)).LoadingClosedReason);
+        Assert.True(await DepartureCheckOfStopSentAsync(fixture, secondPickup.StopId), "The holding deadline passed and the vehicle was not sent on.");
+    }
+
+    /// <summary>
+    /// 下一站同站（control-server#646 那条路不变）：本站一条没装、同站追加了丙（排成下一个停靠），取消乙。照旧按同站宽限结束，不按 #742 立即走，
+    /// 车上的期限也照旧是「起点 + 宽限」。
+    /// </summary>
+    [Fact]
+    [Trait("IntegrationSlice", "FP-IS-08")]
+    public async Task ACancelThatEmptiesTheStopBeforeASameStationAppendStillWaitsTheGrace()
+    {
+        await using RuntimeFixture fixture = await RuntimeFixture.CreateAsync();
+        JourneyStopRow secondPickup = await StopEndedJourneyContinuesTests.ArriveAtTheSecondPickupAsync(fixture);
+        Configure(fixture, Wait);
+        DateTimeOffset arrivedAt = (await JourneyOfAsync(fixture, FirstDemandId)).StationDepartureWaitStartedAt!.Value;
+        await AppendAtTheSameStationAsync(fixture, secondPickup);
+        await CancelTheSecondBeforeScanAsync(fixture);
+
+        await RoundAsync(fixture);
+
+        Assert.True(fixture.Clock.GetUtcNow() < arrivedAt + Grace - TimeSpan.FromSeconds(2));
+        Assert.Equal(arrivedAt, (await JourneyOfAsync(fixture, FirstDemandId)).StationDepartureWaitStartedAt);
+        Assert.Equal(arrivedAt + Grace, (await LatestWorklistAsync(fixture)).Deadline);
+        await RunAtAsync(fixture, arrivedAt + Grace - TimeSpan.FromSeconds(1));
+        Assert.False(await DepartureCheckOfStopSentAsync(fixture, secondPickup.StopId), "The vehicle left before the same-station grace.");
+        await RunAtAsync(fixture, arrivedAt + Grace);
+        Assert.True(await DepartureCheckOfStopSentAsync(fixture, secondPickup.StopId), "The grace passed and the vehicle was not sent on.");
+    }
+
+    /// <summary>
+    /// 重放（control-server#742）：本站的终结直接写在库里、旅程停在离站等待（重启之后读到的就是这个状态，不经过取消那一路、也不靠内存里的任何东西），
+    /// 第一轮就放行。
+    /// </summary>
+    [Fact]
+    [Trait("IntegrationSlice", "FP-IS-08")]
+    public async Task AStopFoundEmptiedInTheStoreSendsTheVehicleOnInTheFirstRound()
+    {
+        await using RuntimeFixture fixture = await RuntimeFixture.CreateAsync();
+        JourneyStopRow secondPickup = await StopEndedJourneyContinuesTests.ArriveAtTheSecondPickupAsync(fixture);
+        fixture.Options.StationDepartureWaitTimeout = Wait;
+        DateTimeOffset arrivedAt = (await JourneyOfAsync(fixture, FirstDemandId)).StationDepartureWaitStartedAt!.Value;
+        JourneyDemandRow second = await fixture.Context.Set<JourneyDemandRow>()
+            .SingleAsync(row => row.DemandId == SecondDemandId, Token);
+        second.Status = JourneyDemandStatuses.Terminated;
+        JourneyRuntimeRow runtime = await fixture.Context.JourneyRuntimes.SingleAsync(Token);
+        runtime.Stage = JourneyRuntimeStage.AwaitingStationDeparture;
+        await fixture.Context.SaveChangesAsync(Token);
+        fixture.Context.ChangeTracker.Clear();
+
+        await RoundAsync(fixture);
+
+        Assert.True(
+            await DepartureCheckOfStopSentAsync(fixture, secondPickup.StopId),
+            $"stage={(await JourneyOfAsync(fixture, FirstDemandId)).Stage}");
+        Assert.True(fixture.Clock.GetUtcNow() < arrivedAt + Wait);
     }
 
     /// <summary>
@@ -332,6 +619,23 @@ public sealed class CancelledLastEntryEndsIntoDepartureWaitTests
 
     internal sealed record Worklist(
         string[] Demands, DateTimeOffset? Deadline, string? StopEndedReason, string? OperationSessionId);
+
+    /// <summary>发件箱里每一版清单带的离站期限（空的不算）。</summary>
+    private static async Task<DateTimeOffset[]> WorklistDeadlinesAsync(RuntimeFixture fixture)
+    {
+        string[] payloads = await fixture.Context.ProtocolOutbox.AsNoTracking()
+            .Where(row => row.MessageType == "CurrentStopWorklistSnapshot")
+            .Select(row => row.PayloadJson)
+            .ToArrayAsync(Token);
+        List<DateTimeOffset> deadlines = [];
+        foreach (string json in payloads)
+        {
+            using JsonDocument document = JsonDocument.Parse(json);
+            JsonElement at = document.RootElement.GetProperty("payload").GetProperty("stationDepartureDeadlineAt");
+            if (at.ValueKind != JsonValueKind.Null) deadlines.Add(at.GetDateTimeOffset());
+        }
+        return [.. deadlines];
+    }
 
     /// <summary>修订号最高的那一版清单，也就是此刻排给车的那一版。</summary>
     internal static async Task<Worklist> LatestWorklistAsync(RuntimeFixture fixture)

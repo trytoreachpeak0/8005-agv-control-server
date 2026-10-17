@@ -1,0 +1,40 @@
+  Determining projects to restore...
+  All projects are up-to-date for restore.
+  ControlServer.Domain -> F:\8005-wt\fti-742-8005-agv-control-server\src\ControlServer.Domain\bin\Debug\net8.0\win-x64\ControlServer.Domain.dll
+  ControlServer.TestDoubles -> F:\8005-wt\fti-742-8005-agv-control-server\tools\ControlServer.TestDoubles\bin\Debug\net8.0\win-x64\ControlServer.TestDoubles.dll
+  ControlServer.Dashboard -> F:\8005-wt\fti-742-8005-agv-control-server\src\ControlServer.Dashboard\bin\Debug\net8.0\win-x64\ControlServer.Dashboard.dll
+  ControlServer.Application -> F:\8005-wt\fti-742-8005-agv-control-server\src\ControlServer.Application\bin\Debug\net8.0\win-x64\ControlServer.Application.dll
+  ControlServer.ClockSkewProxy -> F:\8005-wt\fti-742-8005-agv-control-server\tools\ControlServer.ClockSkewProxy\bin\Debug\net8.0\win-x64\ControlServer.ClockSkewProxy.dll
+  ControlServer.ProtocolFaultProxy -> F:\8005-wt\fti-742-8005-agv-control-server\tools\ControlServer.ProtocolFaultProxy\bin\Debug\net8.0\win-x64\ControlServer.ProtocolFaultProxy.dll
+  ControlServer.FakeRiot -> F:\8005-wt\fti-742-8005-agv-control-server\tools\ControlServer.FakeRiot\bin\Debug\net8.0\win-x64\ControlServer.FakeRiot.dll
+  ControlServer.FakeOnboard -> F:\8005-wt\fti-742-8005-agv-control-server\tools\ControlServer.FakeOnboard\bin\Debug\net8.0\win-x64\ControlServer.FakeOnboard.dll
+  ControlServer.Infrastructure -> F:\8005-wt\fti-742-8005-agv-control-server\src\ControlServer.Infrastructure\bin\Debug\net8.0\win-x64\ControlServer.Infrastructure.dll
+  ControlServer.FieldOps -> F:\8005-wt\fti-742-8005-agv-control-server\tools\ControlServer.FieldOps\bin\Debug\net8.0\win-x64\ControlServer.FieldOps.dll
+  ControlServer.Host -> F:\8005-wt\fti-742-8005-agv-control-server\src\ControlServer.Host\bin\Debug\net8.0\win-x64\ControlServer.Host.dll
+  ControlServer.SchemaConformance -> F:\8005-wt\fti-742-8005-agv-control-server\tools\ControlServer.SchemaConformance\bin\Debug\net8.0\win-x64\ControlServer.SchemaConformance.dll
+  ControlServer.Tests -> F:\8005-wt\fti-742-8005-agv-control-server\tests\ControlServer.Tests\bin\Debug\net8.0\win-x64\ControlServer.Tests.dll
+Test run for F:\8005-wt\fti-742-8005-agv-control-server\tests\ControlServer.Tests\bin\Debug\net8.0\win-x64\ControlServer.Tests.dll (.NETCoreApp,Version=v8.0)
+VSTest version 17.11.1 (x64)
+
+Starting test execution, please wait...
+A total of 1 test files matched the specified pattern.
+[xUnit.net 00:00:23.90]     ControlServer.Tests.StaleWorklistDepartureTests.AStaleRequestIsRefusedWhenALaterWorklistListsAnItem [FAIL]
+  Failed ControlServer.Tests.StaleWorklistDepartureTests.AStaleRequestIsRefusedWhenALaterWorklistListsAnItem [3 s]
+  Error Message:
+   Expected a refusal, got: {"departureRequestId":"e6eee1fa-d0f6-47df-a52c-9526fe753015","outcome":"ACCEPTED","problem":null,"currentWorklistRevision":5}
+  Stack Trace:
+     at ControlServer.Tests.StaleWorklistDepartureTests.AssertStale(JsonElement result) in F:\8005-wt\fti-742-8005-agv-control-server\tests\ControlServer.Tests\StaleWorklistDepartureTests.cs:line 204
+   at ControlServer.Tests.StaleWorklistDepartureTests.AStaleRequestIsRefusedWhenALaterWorklistListsAnItem() in F:\8005-wt\fti-742-8005-agv-control-server\tests\ControlServer.Tests\StaleWorklistDepartureTests.cs:line 167
+   at ControlServer.Tests.StaleWorklistDepartureTests.AStaleRequestIsRefusedWhenALaterWorklistListsAnItem() in F:\8005-wt\fti-742-8005-agv-control-server\tests\ControlServer.Tests\StaleWorklistDepartureTests.cs:line 167
+--- End of stack trace from previous location ---
+[xUnit.net 00:00:34.09]     ControlServer.Tests.StaleWorklistDepartureTests.AStaleRequestFromAWorklistThatStillListedAnItemIsRefused [FAIL]
+  Failed ControlServer.Tests.StaleWorklistDepartureTests.AStaleRequestFromAWorklistThatStillListedAnItemIsRefused [4 s]
+  Error Message:
+   Expected a refusal, got: {"departureRequestId":"afe4d209-7850-42ba-9957-473017fdce2d","outcome":"ACCEPTED","problem":null,"currentWorklistRevision":5}
+  Stack Trace:
+     at ControlServer.Tests.StaleWorklistDepartureTests.AssertRefusedAsStaleAsync(RuntimeFixture fixture, String departureRequestId, Shape shape) in F:\8005-wt\fti-742-8005-agv-control-server\tests\ControlServer.Tests\StaleWorklistDepartureTests.cs:line 275
+   at ControlServer.Tests.StaleWorklistDepartureTests.AStaleRequestFromAWorklistThatStillListedAnItemIsRefused() in F:\8005-wt\fti-742-8005-agv-control-server\tests\ControlServer.Tests\StaleWorklistDepartureTests.cs:line 71
+   at ControlServer.Tests.StaleWorklistDepartureTests.AStaleRequestFromAWorklistThatStillListedAnItemIsRefused() in F:\8005-wt\fti-742-8005-agv-control-server\tests\ControlServer.Tests\StaleWorklistDepartureTests.cs:line 71
+--- End of stack trace from previous location ---
+
+Failed!  - Failed:     2, Passed:     8, Skipped:     0, Total:    10, Duration: 40 s - ControlServer.Tests.dll (net8.0)
