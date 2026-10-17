@@ -3,6 +3,7 @@ using ControlServer.Application;
 using ControlServer.Domain;
 using ControlServer.Host.Composition;
 using ControlServer.Host.Runtime;
+using ControlServer.Host.Runtime.Dispatch;
 using ControlServer.Host.Runtime.TaskTypeStations;
 using ControlServer.Infrastructure.Persistence;
 using Microsoft.Data.Sqlite;
@@ -37,7 +38,7 @@ public sealed class TaskTypeStationStartupTests
         {
             TaskTypeStations = new
             {
-                rules = (rules ?? SixRules).Select(rule => new { taskType = rule.TaskType, fixedEnd = rule.FixedEnd }),
+                rules = (rules ?? SevenRules).Select(rule => new { taskType = rule.TaskType, fixedEnd = rule.FixedEnd }),
                 mapId,
                 requiredTaskTypes = required ?? [TransportTaskTypes.WireToGate],
                 bindings = (bindings ?? [GateBinding]).Select(binding => new
@@ -70,7 +71,7 @@ public sealed class TaskTypeStationStartupTests
         Assert.Equal(25, shipped.MapId);
         Assert.Equal(shipped.MapId, configuration.Map.MapId);
         Assert.Equal(
-            SixRules.OrderBy(rule => rule.TaskType, StringComparer.Ordinal),
+            SevenRules.OrderBy(rule => rule.TaskType, StringComparer.Ordinal),
             configuration.Rules.OrderBy(rule => rule.TaskType, StringComparer.Ordinal));
         Assert.Equal([TransportTaskTypes.WireToGate], configuration.Map.RequiredTaskTypes);
         Assert.Equal([GateBinding], configuration.Map.Bindings);
@@ -99,6 +100,10 @@ public sealed class TaskTypeStationStartupTests
         new(TransportTaskTypes.WireToNitrogen, 221, "焊线氮气柜", "MAP-26-WIRE_TO_NITROGEN-SITE-20261010"),
     ];
 
+    /// <summary>
+    /// Six, not seven: <c>WIRE_TO_FULL_INSPECTION</c> has a rule and no station yet, and required-but-unbound refuses the
+    /// start (control-server#737; see <see cref="RequiringTheUnboundFullInspectionTypeOnMap26RefusesTheWholeStart"/>).
+    /// </summary>
     private static readonly string[] Map26RequiredTaskTypes =
     [
         TransportTaskTypes.WireToGate,
@@ -129,7 +134,7 @@ public sealed class TaskTypeStationStartupTests
         Assert.Equal(Path.Combine(AppContext.BaseDirectory, Map26PresetFile), preset.Path);
         Assert.Equal(26, preset.Configuration.Map.MapId);
         Assert.Equal(
-            SixRules.OrderBy(rule => rule.TaskType, StringComparer.Ordinal),
+            SevenRules.OrderBy(rule => rule.TaskType, StringComparer.Ordinal),
             preset.Configuration.Rules.OrderBy(rule => rule.TaskType, StringComparer.Ordinal));
         Assert.Equal(Map26RequiredTaskTypes, preset.Configuration.Map.RequiredTaskTypes);
         Assert.Equal(Map26Bindings, preset.Configuration.Map.Bindings);
@@ -149,6 +154,71 @@ public sealed class TaskTypeStationStartupTests
         // The stored version keeps its bindings ordered by task type, not in the file's order.
         Assert.Equal(Map26Bindings.OrderBy(binding => binding.TaskType, StringComparer.Ordinal), active.Bindings);
         Assert.Null(await bindings.ReadActivePointerAsync(25, Token));
+    }
+
+    /// <summary>
+    /// control-server#737: the full-inspection station is not on Map 26 yet (program#195 decision 4), so the shipped preset
+    /// rules <c>WIRE_TO_FULL_INSPECTION</c> but neither requires nor binds it. That stops it alone: a round on the
+    /// committed Map 26 catalog refuses it as <c>TASK_TYPE_BINDING_MISSING</c> and resolves the other six to their bound
+    /// stations. Binding it is control-server#738's, once the user names the station and it is checked on site.
+    /// </summary>
+    [Fact]
+    public async Task TheMap26PresetRefusesOnlyTheUnboundFullInspectionTypeAndResolvesTheOtherSix()
+    {
+        await using Harness harness = await Harness.CreateAsync(
+            Map26Runtime(26), settingsFile: null, extraSettings: NamingTheMap26Preset());
+        Assert.IsType<TaskTypeStationStartupResult>(await TaskTypeStationStartup.EnsureAsync(harness.Services, Token));
+
+        using JsonDocument catalog = JsonDocument.Parse(File.ReadAllText(Map26CatalogPath()));
+        RiotMapStationCatalogSnapshot map = new(
+            26,
+            Now,
+            new string('c', 64),
+            [
+                .. catalog.RootElement.GetProperty("stations").EnumerateArray().Select(station => new RiotMapStation(
+                    station.GetProperty("stationId").GetInt32(), station.GetProperty("stationName").GetString()!))
+            ]);
+        await using AsyncServiceScope scope = harness.Services.CreateAsyncScope();
+        IServiceProvider provider = scope.ServiceProvider;
+        IFixedTaskStationView view = await new BoundFixedTaskStationResolver(
+                new TaskTypeStationAccess(
+                    provider.GetRequiredService<ITaskTypeStationRuleStore>(),
+                    provider.GetRequiredService<ITaskTypeStationBindingStore>(),
+                    provider.GetRequiredService<ITaskTypeStationHoldStore>(),
+                    provider.GetRequiredService<IDemandTaskTypeStationFreeze>()),
+                Options.Create(Map26Runtime(26)))
+            .ReadForRoundAsync(map, Token);
+
+        FixedTaskStationResolution fullInspection = view.Resolve("WIRE_TO_FULL_INSPECTION");
+        Assert.Equal(DispatchReasonCodes.TaskTypeBindingMissing, fullInspection.RefusalReasonCode);
+        Assert.Equal(FixedStationEnd.Destination, fullInspection.FixedEnd);
+        Assert.Null(fullInspection.Station);
+        Assert.All(Map26Bindings, binding =>
+        {
+            FixedTaskStationResolution resolution = view.Resolve(binding.TaskType);
+            Assert.Null(resolution.RefusalReasonCode);
+            Assert.Equal(new RiotMapStation(binding.StationRiotId, binding.StationName), resolution.Station);
+        });
+    }
+
+    /// <summary>
+    /// The control for the test above, and why the new type stays out of <c>requiredTaskTypes</c>: required but unbound is
+    /// a static violation, so the same preset with the type required refuses the whole instance's start -- every task type
+    /// stops, not only the new one.
+    /// </summary>
+    [Fact]
+    public void RequiringTheUnboundFullInspectionTypeOnMap26RefusesTheWholeStart()
+    {
+        TaskTypeStationConfiguration shipped =
+            TaskTypeStationPreset.Load(AppContext.BaseDirectory, Map26PresetFile)!.Configuration;
+        TaskTypeStationConfiguration requiringIt = shipped with
+        {
+            Map = shipped.Map with { RequiredTaskTypes = [.. shipped.Map.RequiredTaskTypes, "WIRE_TO_FULL_INSPECTION"] },
+        };
+
+        TaskTypeStationViolation violation = Assert.Single(TaskTypeStationConfigurationValidator.ValidateStatic(requiringIt, 26));
+        Assert.Equal(TaskTypeStationReasonCodes.BindingRequiredMissing, violation.ReasonCode);
+        Assert.Equal("WIRE_TO_FULL_INSPECTION", violation.TaskType);
     }
 
     [Fact]
@@ -251,7 +321,7 @@ public sealed class TaskTypeStationStartupTests
         await TaskTypeStationStartup.EnsureAsync(harness.Services, Token);
 
         // The same content written again, in another order: a restart, not a change.
-        harness.WritePreset(Preset(rules: [.. SixRules.Reverse()]));
+        harness.WritePreset(Preset(rules: [.. SevenRules.Reverse()]));
         TaskTypeStationStartupResult again = Assert.IsType<TaskTypeStationStartupResult>(
             await TaskTypeStationStartup.EnsureAsync(harness.Services, Token));
 

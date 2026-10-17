@@ -1,0 +1,8 @@
+  Failed ControlServer.Tests.AdmissionPolicyVersionGuardTests.ThePackageShipsTheLastExecutableSetVersion [29 ms]
+  Error Message:
+   src/ControlServer.Host/appsettings.json ships admissionPolicyVersion 3; the history's last executable set is version 7. The package's default moves with the executable set, and only with it: station-name and new-database bumps belong to one instance's database, not to the package.
+--
+  Failed ControlServer.Tests.AdmissionPolicyVersionGuardTests.EveryInstanceDefinitionShipsTheLastVersionOfTheHistory [8 ms]
+  Error Message:
+   Assert.All() Failure: 17 out of 17 items in the collection did not pass.
+Failed!  - Failed:     2, Passed:     8, Skipped:     0, Total:    10, Duration: 132 ms - ControlServer.Tests.dll (net8.0)

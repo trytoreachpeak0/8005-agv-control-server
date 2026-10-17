@@ -1,0 +1,115 @@
+  Failed ControlServer.Tests.JourneyRuntimeOptionsTests.TheShippedAllowListNamesAllSevenTaskTypesSoTheBindingsDecide [68 ms]
+  Error Message:
+   Assert.Contains() Failure: Item not found in collection
+  Failed ControlServer.Tests.AdmissionPolicyVersionGuardTests.ThePackageShipsTheLastExecutableSetVersion [37 ms]
+  Error Message:
+   src/ControlServer.Host/appsettings.json ships admissionPolicyVersion 3; the history's last executable set is version 7. The package's default moves with the executable set, and only with it: station-name and new-database bumps belong to one instance's database, not to the package.
+  Failed ControlServer.Tests.TaskTypeStationConfigurationValidatorTests.ARuleForATaskTypeThatIsNotOneOfTheSevenMesLiteralsRefusesStart [119 ms]
+  Error Message:
+   Assert.Single() Failure: The collection contained 2 items
+  Failed ControlServer.Tests.TaskTypeStationStartupTests.RequiringTheUnboundFullInspectionTypeOnMap26RefusesTheWholeStart [119 ms]
+  Error Message:
+   Assert.Single() Failure: The collection contained 2 items
+  Failed ControlServer.Tests.AdmissionPolicyVersionGuardTests.TheExecutableSetThisBuildShipsIsTheLastExecutableSetRow [2 ms]
+  Error Message:
+   The executable task types are now {DIE_TO_OVEN, DIE_TO_WIRE_STAGING, STAGING_TO_WIRE, WIRE_TO_GATE, WIRE_TO_NITROGEN, WIRE_TO_OPTICAL}, but the history's last executable set is {DIE_TO_OVEN, DIE_TO_WIRE_STAGING, STAGING_TO_WIRE, WIRE_TO_FULL_INSPECTION, WIRE_TO_GATE, WIRE_TO_NITROGEN, WIRE_TO_OPTICAL}. Changing them changes the admission seed: add a new last ExecutableSet row with a version above 7 (the last version of any kind), and set admissionPolicyVersion to it in appsettings.json and every instance definition. Going back to an earlier set is a change too -- an instance that bound the later one would read the earlier one as drift.
+  Failed ControlServer.Tests.AdmissionPolicyVersionGuardTests.TheTaskTypeLiteralsAreTheVendoredTransportTaskTypeEnumeration [7 ms]
+  Error Message:
+   Assert.Equal() Failure: Collections differ
+  Failed ControlServer.Tests.AdmissionPolicyVersionGuardTests.EveryInstanceDefinitionShipsTheLastVersionOfTheHistory [6 ms]
+  Error Message:
+   Assert.All() Failure: 17 out of 17 items in the collection did not pass.
+  Failed ControlServer.Tests.ParallelInstanceEffectiveConfigurationTests.CutoverDefinitionBindsTwoZonesAndThreeDedicatedCarsTheHostAccepts(definitionFile: "instance-factory01-v2.cutover-two-zones.runtime-on"···, runtimeEnabled: True) [1 s]
+  Error Message:
+   Assert.Equal() Failure: Collections differ
+  Failed ControlServer.Tests.ParallelInstanceEffectiveConfigurationTests.CutoverDefinitionBindsTwoZonesAndThreeDedicatedCarsTheHostAccepts(definitionFile: "instance-factory01-v2.cutover-two-zones.json", runtimeEnabled: False) [1 s]
+  Error Message:
+   Assert.Equal() Failure: Collections differ
+  Failed ControlServer.Tests.TaskTypeAdmissionChainTests.AMissingBindingIsNamedAsSuchForEveryTaskTypeTheDeploymentAllows(taskType: "WIRE_TO_FULL_INSPECTION", end: Destination) [289 ms]
+  Error Message:
+   Assert.Equal() Failure: Strings differ
+  Failed ControlServer.Tests.SameDirectionTaskTypeJourneyRuntimeTests.AnUnboundSameDirectionTaskTypeStopsOnlyItselfAndWireToGateIsAcceptedInTheSameRound(taskType: "WIRE_TO_OPTICAL") [3 s]
+  Error Message:
+   ControlServer.Application.TaskTypeStationConfigurationException : The task type station preset configuration has 1 violation(s); refusing to start: TASK_TYPE_RULE_UNKNOWN_TASK_TYPE: Rule task type 'WIRE_TO_FULL_INSPECTION' is not one of the six MES literals (DIE_TO_WIRE_STAGING, DIE_TO_OVEN, WIRE_TO_GATE, WIRE_TO_OPTICAL, STAGING_TO_WIRE, WIRE_TO_NITROGEN).
+  Failed ControlServer.Tests.TaskTypeAdmissionRuntimeTests.TheAdmissionSeedPairsEveryAreaStationWithEveryExecutableTaskType [3 s]
+  Error Message:
+   ControlServer.Application.TaskTypeStationConfigurationException : The task type station preset configuration has 1 violation(s); refusing to start: TASK_TYPE_RULE_UNKNOWN_TASK_TYPE: Rule task type 'WIRE_TO_FULL_INSPECTION' is not one of the six MES literals (DIE_TO_WIRE_STAGING, DIE_TO_OVEN, WIRE_TO_GATE, WIRE_TO_OPTICAL, STAGING_TO_WIRE, WIRE_TO_NITROGEN).
+  Failed ControlServer.Tests.JourneyRuntimeWorkerAdmissionTests.ADriftInTheExecutableTaskTypesAloneIsLoggedAsATaskTypeDriftWithBothSets [3 s]
+  Error Message:
+   ControlServer.Application.TaskTypeStationConfigurationException : The task type station preset configuration has 1 violation(s); refusing to start: TASK_TYPE_RULE_UNKNOWN_TASK_TYPE: Rule task type 'WIRE_TO_FULL_INSPECTION' is not one of the six MES literals (DIE_TO_WIRE_STAGING, DIE_TO_OVEN, WIRE_TO_GATE, WIRE_TO_OPTICAL, STAGING_TO_WIRE, WIRE_TO_NITROGEN).
+  Failed ControlServer.Tests.SameDirectionTaskTypeJourneyRuntimeTests.AnUnboundSameDirectionTaskTypeStopsOnlyItselfAndWireToGateIsAcceptedInTheSameRound(taskType: "DIE_TO_OVEN") [353 ms]
+  Error Message:
+   ControlServer.Application.TaskTypeStationConfigurationException : The task type station preset configuration has 1 violation(s); refusing to start: TASK_TYPE_RULE_UNKNOWN_TASK_TYPE: Rule task type 'WIRE_TO_FULL_INSPECTION' is not one of the six MES literals (DIE_TO_WIRE_STAGING, DIE_TO_OVEN, WIRE_TO_GATE, WIRE_TO_OPTICAL, STAGING_TO_WIRE, WIRE_TO_NITROGEN).
+  Failed ControlServer.Tests.JourneyRuntimeWorkerAdmissionTests.ADriftTheDatabaseCannotExplainSaysSoInsteadOfNone [350 ms]
+  Error Message:
+   ControlServer.Application.TaskTypeStationConfigurationException : The task type station preset configuration has 1 violation(s); refusing to start: TASK_TYPE_RULE_UNKNOWN_TASK_TYPE: Rule task type 'WIRE_TO_FULL_INSPECTION' is not one of the six MES literals (DIE_TO_WIRE_STAGING, DIE_TO_OVEN, WIRE_TO_GATE, WIRE_TO_OPTICAL, STAGING_TO_WIRE, WIRE_TO_NITROGEN).
+  Failed ControlServer.Tests.ParallelInstanceEffectiveConfigurationTests.FakeDefinitionOverPackageAppSettingsBindsItsOwnSevenWorkTypes [1 s]
+  Error Message:
+   Assert.Equal() Failure: Collections differ
+  Failed ControlServer.Tests.SameDirectionTaskTypeJourneyRuntimeTests.AnUnboundSameDirectionTaskTypeStopsOnlyItselfAndWireToGateIsAcceptedInTheSameRound(taskType: "DIE_TO_WIRE_STAGING") [236 ms]
+  Error Message:
+   ControlServer.Application.TaskTypeStationConfigurationException : The task type station preset configuration has 1 violation(s); refusing to start: TASK_TYPE_RULE_UNKNOWN_TASK_TYPE: Rule task type 'WIRE_TO_FULL_INSPECTION' is not one of the six MES literals (DIE_TO_WIRE_STAGING, DIE_TO_OVEN, WIRE_TO_GATE, WIRE_TO_OPTICAL, STAGING_TO_WIRE, WIRE_TO_NITROGEN).
+  Failed ControlServer.Tests.SameDirectionTaskTypeJourneyRuntimeTests.AnUnboundSameDirectionTaskTypeStopsOnlyItselfAndWireToGateIsAcceptedInTheSameRound(taskType: "WIRE_TO_FULL_INSPECTION") [252 ms]
+  Error Message:
+   ControlServer.Application.TaskTypeStationConfigurationException : The task type station preset configuration has 1 violation(s); refusing to start: TASK_TYPE_RULE_UNKNOWN_TASK_TYPE: Rule task type 'WIRE_TO_FULL_INSPECTION' is not one of the six MES literals (DIE_TO_WIRE_STAGING, DIE_TO_OVEN, WIRE_TO_GATE, WIRE_TO_OPTICAL, STAGING_TO_WIRE, WIRE_TO_NITROGEN).
+  Failed ControlServer.Tests.SameDirectionTaskTypeJourneyRuntimeTests.AnUnboundSameDirectionTaskTypeStopsOnlyItselfAndWireToGateIsAcceptedInTheSameRound(taskType: "WIRE_TO_NITROGEN") [178 ms]
+  Error Message:
+   ControlServer.Application.TaskTypeStationConfigurationException : The task type station preset configuration has 1 violation(s); refusing to start: TASK_TYPE_RULE_UNKNOWN_TASK_TYPE: Rule task type 'WIRE_TO_FULL_INSPECTION' is not one of the six MES literals (DIE_TO_WIRE_STAGING, DIE_TO_OVEN, WIRE_TO_GATE, WIRE_TO_OPTICAL, STAGING_TO_WIRE, WIRE_TO_NITROGEN).
+  Failed ControlServer.Tests.SameDirectionTaskTypeJourneyRuntimeTests.TheSixTypeSeedAppliedAgainAfterARestartUnderVersionThreeIsTheSameBinding [237 ms]
+  Error Message:
+   ControlServer.Application.TaskTypeStationConfigurationException : The task type station preset configuration has 1 violation(s); refusing to start: TASK_TYPE_RULE_UNKNOWN_TASK_TYPE: Rule task type 'WIRE_TO_FULL_INSPECTION' is not one of the six MES literals (DIE_TO_WIRE_STAGING, DIE_TO_OVEN, WIRE_TO_GATE, WIRE_TO_OPTICAL, STAGING_TO_WIRE, WIRE_TO_NITROGEN).
+  Failed ControlServer.Tests.SameDirectionTaskTypeJourneyRuntimeTests.ThePreviousBuildsSeedUnderTheSameVersionIsDriftAndTheRaisedVersionIsNot [225 ms]
+  Error Message:
+   ControlServer.Application.TaskTypeStationConfigurationException : The task type station preset configuration has 1 violation(s); refusing to start: TASK_TYPE_RULE_UNKNOWN_TASK_TYPE: Rule task type 'WIRE_TO_FULL_INSPECTION' is not one of the six MES literals (DIE_TO_WIRE_STAGING, DIE_TO_OVEN, WIRE_TO_GATE, WIRE_TO_OPTICAL, STAGING_TO_WIRE, WIRE_TO_NITROGEN).
+  Failed ControlServer.Tests.SameDirectionTaskTypeJourneyRuntimeTests.ABoundSameDirectionTaskTypeLoadsAtTheAreaMachineIntoItsGroupAndUnloadsAtTheBoundStation(taskType: "DIE_TO_OVEN") [232 ms]
+  Error Message:
+   ControlServer.Application.TaskTypeStationConfigurationException : The task type station preset configuration has 1 violation(s); refusing to start: TASK_TYPE_RULE_UNKNOWN_TASK_TYPE: Rule task type 'WIRE_TO_FULL_INSPECTION' is not one of the six MES literals (DIE_TO_WIRE_STAGING, DIE_TO_OVEN, WIRE_TO_GATE, WIRE_TO_OPTICAL, STAGING_TO_WIRE, WIRE_TO_NITROGEN).
+  Failed ControlServer.Tests.SameDirectionTaskTypeJourneyRuntimeTests.ABoundSameDirectionTaskTypeLoadsAtTheAreaMachineIntoItsGroupAndUnloadsAtTheBoundStation(taskType: "WIRE_TO_NITROGEN") [175 ms]
+  Error Message:
+   ControlServer.Application.TaskTypeStationConfigurationException : The task type station preset configuration has 1 violation(s); refusing to start: TASK_TYPE_RULE_UNKNOWN_TASK_TYPE: Rule task type 'WIRE_TO_FULL_INSPECTION' is not one of the six MES literals (DIE_TO_WIRE_STAGING, DIE_TO_OVEN, WIRE_TO_GATE, WIRE_TO_OPTICAL, STAGING_TO_WIRE, WIRE_TO_NITROGEN).
+  Failed ControlServer.Tests.SameDirectionTaskTypeJourneyRuntimeTests.ABoundSameDirectionTaskTypeLoadsAtTheAreaMachineIntoItsGroupAndUnloadsAtTheBoundStation(taskType: "DIE_TO_WIRE_STAGING") [226 ms]
+  Error Message:
+   ControlServer.Application.TaskTypeStationConfigurationException : The task type station preset configuration has 1 violation(s); refusing to start: TASK_TYPE_RULE_UNKNOWN_TASK_TYPE: Rule task type 'WIRE_TO_FULL_INSPECTION' is not one of the six MES literals (DIE_TO_WIRE_STAGING, DIE_TO_OVEN, WIRE_TO_GATE, WIRE_TO_OPTICAL, STAGING_TO_WIRE, WIRE_TO_NITROGEN).
+  Failed ControlServer.Tests.SameDirectionTaskTypeJourneyRuntimeTests.ABoundSameDirectionTaskTypeLoadsAtTheAreaMachineIntoItsGroupAndUnloadsAtTheBoundStation(taskType: "WIRE_TO_OPTICAL") [240 ms]
+  Error Message:
+   ControlServer.Application.TaskTypeStationConfigurationException : The task type station preset configuration has 1 violation(s); refusing to start: TASK_TYPE_RULE_UNKNOWN_TASK_TYPE: Rule task type 'WIRE_TO_FULL_INSPECTION' is not one of the six MES literals (DIE_TO_WIRE_STAGING, DIE_TO_OVEN, WIRE_TO_GATE, WIRE_TO_OPTICAL, STAGING_TO_WIRE, WIRE_TO_NITROGEN).
+  Failed ControlServer.Tests.SameDirectionTaskTypeJourneyRuntimeTests.ABoundSameDirectionTaskTypeLoadsAtTheAreaMachineIntoItsGroupAndUnloadsAtTheBoundStation(taskType: "WIRE_TO_FULL_INSPECTION") [307 ms]
+  Error Message:
+   ControlServer.Application.TaskTypeStationConfigurationException : The task type station preset configuration has 1 violation(s); refusing to start: TASK_TYPE_RULE_UNKNOWN_TASK_TYPE: Rule task type 'WIRE_TO_FULL_INSPECTION' is not one of the six MES literals (DIE_TO_WIRE_STAGING, DIE_TO_OVEN, WIRE_TO_GATE, WIRE_TO_OPTICAL, STAGING_TO_WIRE, WIRE_TO_NITROGEN).
+  Failed ControlServer.Tests.SameDirectionTaskTypeJourneyRuntimeTests.AnOldPackageInstalledUnderVersionThreeTakesTheVersionAndThisBuildThenDrifts [266 ms]
+  Error Message:
+   ControlServer.Application.TaskTypeStationConfigurationException : The task type station preset configuration has 1 violation(s); refusing to start: TASK_TYPE_RULE_UNKNOWN_TASK_TYPE: Rule task type 'WIRE_TO_FULL_INSPECTION' is not one of the six MES literals (DIE_TO_WIRE_STAGING, DIE_TO_OVEN, WIRE_TO_GATE, WIRE_TO_OPTICAL, STAGING_TO_WIRE, WIRE_TO_NITROGEN).
+  Failed ControlServer.Tests.TaskTypeBindingDashboardTests.TheQueryListsEveryRuleTaskTypeWithItsBindingAndStatusAndEveryHoldWithItsSource [6 s]
+  Error Message:
+   ControlServer.Application.TaskTypeStationConfigurationException : The task type station preset configuration has 1 violation(s); refusing to start: TASK_TYPE_RULE_UNKNOWN_TASK_TYPE: Rule task type 'WIRE_TO_FULL_INSPECTION' is not one of the six MES literals (DIE_TO_WIRE_STAGING, DIE_TO_OVEN, WIRE_TO_GATE, WIRE_TO_OPTICAL, STAGING_TO_WIRE, WIRE_TO_NITROGEN).
+  Failed ControlServer.Tests.TaskTypeBindingDashboardTests.AMapLeftWithoutAnActiveBindingSetByAManualCloseShowsThatInsteadOfPretendingEachTaskTypeIsUnused [7 ms]
+  Error Message:
+   ControlServer.Application.TaskTypeStationConfigurationException : The task type station preset configuration has 1 violation(s); refusing to start: TASK_TYPE_RULE_UNKNOWN_TASK_TYPE: Rule task type 'WIRE_TO_FULL_INSPECTION' is not one of the six MES literals (DIE_TO_WIRE_STAGING, DIE_TO_OVEN, WIRE_TO_GATE, WIRE_TO_OPTICAL, STAGING_TO_WIRE, WIRE_TO_NITROGEN).
+  Failed ControlServer.Tests.SameDirectionTaskTypeJourneyRuntimeTests.AfterVersionThreeIsBoundTheRolledBackBuildBindsOnlyUnderAHigherVersion [225 ms]
+  Error Message:
+   ControlServer.Application.TaskTypeStationConfigurationException : The task type station preset configuration has 1 violation(s); refusing to start: TASK_TYPE_RULE_UNKNOWN_TASK_TYPE: Rule task type 'WIRE_TO_FULL_INSPECTION' is not one of the six MES literals (DIE_TO_WIRE_STAGING, DIE_TO_OVEN, WIRE_TO_GATE, WIRE_TO_OPTICAL, STAGING_TO_WIRE, WIRE_TO_NITROGEN).
+  Failed ControlServer.Tests.IdleReturnCommitmentTests.AVehicleMissingEitherConditionStillReturnsToAWaitingPoint(variant: "nothing-allowed-at-origin") [6 s]
+  Error Message:
+   ControlServer.Application.TaskTypeStationConfigurationException : The task type station preset configuration has 1 violation(s); refusing to start: TASK_TYPE_RULE_UNKNOWN_TASK_TYPE: Rule task type 'WIRE_TO_FULL_INSPECTION' is not one of the six MES literals (DIE_TO_WIRE_STAGING, DIE_TO_OVEN, WIRE_TO_GATE, WIRE_TO_OPTICAL, STAGING_TO_WIRE, WIRE_TO_NITROGEN).
+  Failed ControlServer.Tests.IdleReturnCommitmentTests.AVehicleMissingEitherConditionStillReturnsToAWaitingPoint(variant: "not-configured-at-origin") [16 ms]
+  Error Message:
+   ControlServer.Application.TaskTypeStationConfigurationException : The task type station preset configuration has 1 violation(s); refusing to start: TASK_TYPE_RULE_UNKNOWN_TASK_TYPE: Rule task type 'WIRE_TO_FULL_INSPECTION' is not one of the six MES literals (DIE_TO_WIRE_STAGING, DIE_TO_OVEN, WIRE_TO_GATE, WIRE_TO_OPTICAL, STAGING_TO_WIRE, WIRE_TO_NITROGEN).
+  Failed ControlServer.Tests.IdleReturnCommitmentTests.AVehicleMissingEitherConditionStillReturnsToAWaitingPoint(variant: "staging-and-wire-at-origin") [15 ms]
+  Error Message:
+   ControlServer.Application.TaskTypeStationConfigurationException : The task type station preset configuration has 1 violation(s); refusing to start: TASK_TYPE_RULE_UNKNOWN_TASK_TYPE: Rule task type 'WIRE_TO_FULL_INSPECTION' is not one of the six MES literals (DIE_TO_WIRE_STAGING, DIE_TO_OVEN, WIRE_TO_GATE, WIRE_TO_OPTICAL, STAGING_TO_WIRE, WIRE_TO_NITROGEN).
+  Failed ControlServer.Tests.IdleReturnCommitmentTests.AVehicleMissingEitherConditionStillReturnsToAWaitingPoint(variant: "staging-only-elsewhere") [15 ms]
+  Error Message:
+   ControlServer.Application.TaskTypeStationConfigurationException : The task type station preset configuration has 1 violation(s); refusing to start: TASK_TYPE_RULE_UNKNOWN_TASK_TYPE: Rule task type 'WIRE_TO_FULL_INSPECTION' is not one of the six MES literals (DIE_TO_WIRE_STAGING, DIE_TO_OVEN, WIRE_TO_GATE, WIRE_TO_OPTICAL, STAGING_TO_WIRE, WIRE_TO_NITROGEN).
+  Failed ControlServer.Tests.IdleReturnCommitmentTests.AVehicleMissingEitherConditionStillReturnsToAWaitingPoint(variant: "wire-only-at-origin") [16 ms]
+  Error Message:
+   ControlServer.Application.TaskTypeStationConfigurationException : The task type station preset configuration has 1 violation(s); refusing to start: TASK_TYPE_RULE_UNKNOWN_TASK_TYPE: Rule task type 'WIRE_TO_FULL_INSPECTION' is not one of the six MES literals (DIE_TO_WIRE_STAGING, DIE_TO_OVEN, WIRE_TO_GATE, WIRE_TO_OPTICAL, STAGING_TO_WIRE, WIRE_TO_NITROGEN).
+  Failed ControlServer.Tests.TaskTypeStationStartupTests.TheFactoryPresetShippedNextToTheHostPassesAgainstTheShippedJourneyRuntimeAndSaysExactlyTheGate [30 ms]
+  Error Message:
+   Assert.Equal() Failure: Collections differ
+  Failed ControlServer.Tests.TaskTypeStationStartupTests.TheMap26PresetShippedNextToTheHostStartsARuntimeOnMap26WithoutABindingMapMismatch [2 ms]
+  Error Message:
+   Assert.Equal() Failure: Collections differ
+  Failed ControlServer.Tests.TaskTypeStationStartupTests.TheMap26PresetRefusesOnlyTheUnboundFullInspectionTypeAndResolvesTheOtherSix [445 ms]
+  Error Message:
+   Assert.Equal() Failure: Strings differ
+Failed!  - Failed:    38, Passed:    42, Skipped:     0, Total:    80, Duration: 7 s - ControlServer.Tests.dll (net8.0)

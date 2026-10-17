@@ -97,7 +97,7 @@
 
 .PARAMETER ProductionCutover
     control-server#564 (docs/production-cutover-mode-plan.md). Deploy a production cutover definition: one carrying
-    productionCutover.approvalRecord, agv01 in its roster and all six task types from the production MesIngest. The
+    productionCutover.approvalRecord, agv01 in its roster and all seven task types from the production MesIngest. The
     definition check lifts those two guards only with this switch and that record together. The first cutover install
     must find no database under the data root and must not be a -Rollback; once installed, every later install and
     rollback of this instance must carry the switch (Get-ParallelCutoverInstallRefusal). The MVP service must be absent,
@@ -248,7 +248,7 @@ try {
         -DatabaseFiles $cutoverState.DatabaseFiles -DataRoot $layout.DataRoot
     if ($cutoverRefusal) { throw $cutoverRefusal }
     if ($ProductionCutover) {
-        Write-Warning ("PRODUCTION CUTOVER: agv01 and all six task types from the production MesIngest. Approval: " +
+        Write-Warning ("PRODUCTION CUTOVER: agv01 and all seven task types from the production MesIngest. Approval: " +
             $definition['productionCutover']['approvalRecord'])
     }
 

@@ -18,14 +18,14 @@ namespace ControlServer.Tests;
 /// </summary>
 /// <remarks>
 /// .NET configuration merges an array by index: an overlay of <c>["STAGING_TO_WIRE"]</c> over the
-/// package's six work types replaces index 0 and leaves the other five -- WIRE_TO_GATE among them --
+/// package's seven work types replaces index 0 and leaves the other six -- WIRE_TO_GATE among them --
 /// in force. The production MesIngest mode exists to keep WIRE_TO_GATE out, so the only test that
 /// counts is the one that binds through the real files and the real registration.
 /// </remarks>
 public sealed class ParallelInstanceEffectiveConfigurationTests
 {
     private const string Base = """
-        { "JourneyRuntime": { "allowedWorkTypes": ["DIE_TO_WIRE_STAGING", "DIE_TO_OVEN", "WIRE_TO_GATE", "WIRE_TO_OPTICAL", "STAGING_TO_WIRE", "WIRE_TO_NITROGEN"],
+        { "JourneyRuntime": { "allowedWorkTypes": ["DIE_TO_WIRE_STAGING", "DIE_TO_OVEN", "WIRE_TO_GATE", "WIRE_TO_OPTICAL", "STAGING_TO_WIRE", "WIRE_TO_NITROGEN", "WIRE_TO_FULL_INSPECTION"],
                               "allowedDispatchZones": ["MAP-25-WIRE_TO_GATE"] } }
         """;
 
@@ -43,7 +43,7 @@ public sealed class ParallelInstanceEffectiveConfigurationTests
     }
 
     [Fact]
-    public void FakeDefinitionOverPackageAppSettingsBindsItsOwnSixWorkTypes()
+    public void FakeDefinitionOverPackageAppSettingsBindsItsOwnSevenWorkTypes()
     {
         string root = FindRepositoryRoot();
         string overlay = GenerateOverlay(root, "instance-factory01-v2.json");
@@ -51,7 +51,7 @@ public sealed class ParallelInstanceEffectiveConfigurationTests
             File.ReadAllText(Path.Combine(root, "src", "ControlServer.Host", "appsettings.json")), overlay, out IConfiguration configuration);
 
         Assert.Equal(
-            ["DIE_TO_WIRE_STAGING", "DIE_TO_OVEN", "WIRE_TO_GATE", "WIRE_TO_OPTICAL", "STAGING_TO_WIRE", "WIRE_TO_NITROGEN"],
+            ["DIE_TO_WIRE_STAGING", "DIE_TO_OVEN", "WIRE_TO_GATE", "WIRE_TO_OPTICAL", "STAGING_TO_WIRE", "WIRE_TO_NITROGEN", "WIRE_TO_FULL_INSPECTION"],
             options.AllowedWorkTypes);
         Assert.Equal(["WIRE"], options.AllowedDispatchZones);
         Assert.Equal("http://127.0.0.1:58188", configuration["MesIngest:baseUrl"]);
@@ -71,7 +71,7 @@ public sealed class ParallelInstanceEffectiveConfigurationTests
     {
         JourneyRuntimeOptions options = Bind(Base, """{ "JourneyRuntime": { "enabled": false } }""", out _);
 
-        Assert.Equal(6, options.AllowedWorkTypes.Length);
+        Assert.Equal(7, options.AllowedWorkTypes.Length);
         Assert.Equal(["MAP-25-WIRE_TO_GATE"], options.AllowedDispatchZones);
     }
 
@@ -275,6 +275,7 @@ public sealed class ParallelInstanceEffectiveConfigurationTests
 
         Assert.Equal([Agv02Key, Agv03Key], options.Fleet.Select(vehicle => vehicle.VehicleKey));
         Assert.Equal(["老厂前线新多仓位2", "老厂前线新多仓位3"], options.Fleet.Select(vehicle => vehicle.AgvId));
+        // The two spare cars keep the six: WIRE_TO_FULL_INSPECTION is agv01's alone (control-server#737, program#195 decision 9).
         string[] six = ["DIE_TO_WIRE_STAGING", "DIE_TO_OVEN", "WIRE_TO_GATE", "WIRE_TO_OPTICAL", "STAGING_TO_WIRE", "WIRE_TO_NITROGEN"];
         Assert.All(options.Fleet, vehicle => Assert.Equal(six, vehicle.AllowedTaskTypes));
         Assert.All(options.Fleet, vehicle => Assert.Equal(["WIRE"], vehicle.Zones));
@@ -412,7 +413,8 @@ public sealed class ParallelInstanceEffectiveConfigurationTests
         Assert.Equal(["WIRE_BONDING", "DIE_ATTACH"], options.AllowedDispatchZones);
         Assert.Equal("WIRE_BONDING", options.DispatchZone);
         Assert.Equal([Agv01Key, Agv02Key, Agv03Key], options.Fleet.Select(vehicle => vehicle.VehicleKey));
-        Assert.Equal(["WIRE_TO_GATE", "WIRE_TO_OPTICAL", "WIRE_TO_NITROGEN"], options.Fleet[0].AllowedTaskTypes);
+        // control-server#737: agv01 takes four, the other two cars are unchanged.
+        Assert.Equal(["WIRE_TO_GATE", "WIRE_TO_OPTICAL", "WIRE_TO_NITROGEN", "WIRE_TO_FULL_INSPECTION"], options.Fleet[0].AllowedTaskTypes);
         Assert.Equal(["STAGING_TO_WIRE"], options.Fleet[1].AllowedTaskTypes);
         Assert.Equal(["DIE_TO_OVEN", "DIE_TO_WIRE_STAGING"], options.Fleet[2].AllowedTaskTypes);
         Assert.Equal(["WIRE_BONDING", "WIRE_BONDING", "DIE_ATTACH"], options.Fleet.Select(vehicle => string.Join(",", vehicle.Zones)));

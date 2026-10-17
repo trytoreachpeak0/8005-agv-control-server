@@ -62,7 +62,7 @@
         "deviceKey": "BROKERX-0c20ff0600d644869a6a80c186065d85",
         "riotId": 58,
         "agvLifecycleGeneration": 1,
-        "allowedTaskTypes": ["WIRE_TO_GATE", "WIRE_TO_OPTICAL", "WIRE_TO_NITROGEN"],
+        "allowedTaskTypes": ["WIRE_TO_GATE", "WIRE_TO_OPTICAL", "WIRE_TO_NITROGEN", "WIRE_TO_FULL_INSPECTION"],
         "zones": ["WIRE_BONDING"]
       },
       {
@@ -89,9 +89,9 @@
     "dispatchZone": "WIRE_BONDING",
     "dispatchGeneration": 1,
     "sublotBoxCountPath": "/api/v2/sublot-box-count",
-    "allowedWorkTypes": ["DIE_TO_WIRE_STAGING", "DIE_TO_OVEN", "WIRE_TO_GATE", "WIRE_TO_OPTICAL", "STAGING_TO_WIRE", "WIRE_TO_NITROGEN"],
+    "allowedWorkTypes": ["DIE_TO_WIRE_STAGING", "DIE_TO_OVEN", "WIRE_TO_GATE", "WIRE_TO_OPTICAL", "STAGING_TO_WIRE", "WIRE_TO_NITROGEN", "WIRE_TO_FULL_INSPECTION"],
     "allowedDispatchZones": ["WIRE_BONDING", "DIE_ATTACH"],
-    "admissionPolicyVersion": 6,
+    "admissionPolicyVersion": 7,
     "admissionPolicyDeploymentId": "MAP-26-WIRE_TO_GATE-20261007"
   }
 }

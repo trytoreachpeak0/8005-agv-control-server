@@ -7,7 +7,8 @@ namespace ControlServer.Host.Runtime.TaskTypeStations;
 /// <summary>
 /// The task types this build can execute end to end. Everything else that clears its binding is refused as
 /// <see cref="DispatchReasonCodes.TaskTypeNotYetExecutable"/> (control-server#160). STAGING_TO_WIRE since control-server#163;
-/// the four same-direction task types since batch 10 (control-server#545), so today it is all six.
+/// the four same-direction task types since batch 10 (control-server#545); WIRE_TO_FULL_INSPECTION since control-server#737,
+/// so today it is all seven.
 /// </summary>
 /// <remarks>
 /// The set is also the station admission seed's task types (<c>JourneyRuntimeEngine.AdmissionSeedTaskTypesAsync</c>):
@@ -31,6 +32,7 @@ public static class ExecutableTaskTypes
         TransportTaskTypes.DieToOven,
         TransportTaskTypes.WireToOptical,
         TransportTaskTypes.WireToNitrogen,
+        TransportTaskTypes.WireToFullInspection,
     };
 
     public static bool Contains(string taskType) => All.Contains(taskType);

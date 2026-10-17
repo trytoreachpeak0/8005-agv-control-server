@@ -1,7 +1,8 @@
 namespace ControlServer.Application;
 
 /// <summary>
-/// 六类 MES 运输任务的原始字面值（协议 <c>TransportTaskType</c>），规则表里的 <c>TASK_TYPE</c> 只能取这几个。
+/// 七类 MES 运输任务的原始字面值（协议 <c>TransportTaskType</c>，顺序同协议枚举），规则表里的 <c>TASK_TYPE</c> 只能取这几个。
+/// 第七类 <c>WIRE_TO_FULL_INSPECTION</c>（焊线/键合机台送全检区）随协议 5.0.0 候选加入（control-server#737）。
 /// </summary>
 public static class TransportTaskTypes
 {
@@ -11,9 +12,10 @@ public static class TransportTaskTypes
     public const string WireToOptical = "WIRE_TO_OPTICAL";
     public const string StagingToWire = "STAGING_TO_WIRE";
     public const string WireToNitrogen = "WIRE_TO_NITROGEN";
+    public const string WireToFullInspection = "WIRE_TO_FULL_INSPECTION";
 
     public static IReadOnlyList<string> All { get; } =
-        [DieToWireStaging, DieToOven, WireToGate, WireToOptical, StagingToWire, WireToNitrogen];
+        [DieToWireStaging, DieToOven, WireToGate, WireToOptical, StagingToWire, WireToNitrogen, WireToFullInspection];
 }
 
 /// <summary>

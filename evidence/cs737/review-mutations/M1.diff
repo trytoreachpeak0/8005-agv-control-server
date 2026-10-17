@@ -1,0 +1,13 @@
+diff --git a/src/ControlServer.Host/Runtime/TaskTypeStations/BoundFixedTaskStationResolver.cs b/src/ControlServer.Host/Runtime/TaskTypeStations/BoundFixedTaskStationResolver.cs
+index 0dcc54b9c..0678214ae 100644
+--- a/src/ControlServer.Host/Runtime/TaskTypeStations/BoundFixedTaskStationResolver.cs
++++ b/src/ControlServer.Host/Runtime/TaskTypeStations/BoundFixedTaskStationResolver.cs
+@@ -100,7 +100,7 @@ public sealed class BoundFixedTaskStationView(
+ 
+         FixedStationEnd end = rule.FixedEnd == TaskTypeFixedEnd.Origin ? FixedStationEnd.Origin : FixedStationEnd.Destination;
+         TaskTypeStationBinding? binding = bindingSet is not null &&
+-            bindingSet.RequiredTaskTypes.Contains(taskType, StringComparer.Ordinal)
++            true
+                 ? bindingSet.Bindings.SingleOrDefault(item => item.TaskType == taskType)
+                 : null;
+         if (binding is null)

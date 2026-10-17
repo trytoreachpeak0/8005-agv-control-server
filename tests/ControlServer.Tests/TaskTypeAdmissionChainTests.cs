@@ -103,6 +103,7 @@ public sealed class TaskTypeAdmissionChainTests : IAsyncDisposable
     [InlineData(TransportTaskTypes.DieToOven, FixedStationEnd.Destination)]
     [InlineData(TransportTaskTypes.WireToOptical, FixedStationEnd.Destination)]
     [InlineData(TransportTaskTypes.WireToNitrogen, FixedStationEnd.Destination)]
+    [InlineData("WIRE_TO_FULL_INSPECTION", FixedStationEnd.Destination)]
     public async Task AMissingBindingIsNamedAsSuchForEveryTaskTypeTheDeploymentAllows(string taskType, FixedStationEnd end)
     {
         DispatchAdmissionChain chain = await ChainAsync(Configured);
