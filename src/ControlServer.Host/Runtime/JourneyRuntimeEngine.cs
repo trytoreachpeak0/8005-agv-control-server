@@ -1419,7 +1419,7 @@ public sealed partial class JourneyRuntimeEngine(
                         SetStage(runtime, JourneyRuntimeStage.AwaitingStationDeparture, now);
                         LogEmptiedStopEntersDepartureWait(
                             logger, runtime.AgvId, stops.Current.StationId, loadedAtThisStop,
-                            StationDepartureDeadlineAt(runtime, stops.Current), null);
+                            EffectiveStationDepartureDeadline(runtime, stops), null);
                         goto case JourneyRuntimeStage.AwaitingStationDeparture;
                     }
                     // 待送点缺电（control-server#709，用户定「缺电直接去充电」）：一篮没装就放回需求、旅程收尾，车交给充电分配。
@@ -6207,7 +6207,10 @@ public sealed partial class JourneyRuntimeEngine(
 
         // 同一个理由，取货停靠上的一种（control-server#290 审查 M1）：装货阶段已经关了、这个停靠上一条生效的归属都没有——持货期限把它上面
         // 没开始装的全释放走了，车多半是到站那一轮才截的。这里不会再有人录入、也没有装上的货要纠错，离站等待只会让一辆已经过了持货硬期限
-        // 的车在一台空机台前多停一整段。被终结（而不是释放）的需求归属还在，那种停靠照旧走离站等待（control-server#668）。
+        // 的车在一台空机台前多停一整段。被终结（而不是释放）的需求归属还在，那种停靠走下面的离站等待（control-server#668）——但本站的归属全被
+        // 终结、一条没装上时，期限就是等待起点，车同样当轮就走（control-server#742，CP-0015，见 EffectiveStationDepartureDeadline）。#668 要的
+        // 「按正常离站等待处理」是为了给本站已装的需求留纠错窗口；本站一条 Loaded 都没有，就没有要纠正的放置，那个理由不成立。本站有一条 Loaded
+        // 时照旧等原期限。这里不另写一支，是为了让车上的期限与这里的判定是同一个值；纠错闸照样在前，门未证明扣车与持货等单照样在后。
         if (stops.Current.StopRole == JourneyStopRoles.Pickup &&
             runtime.LoadingPhaseState == LoadingPhaseStates.Closed &&
             stops.AllAtStop(stops.Current).Count == 0)
@@ -6359,7 +6362,8 @@ public sealed partial class JourneyRuntimeEngine(
     /// <summary>
     /// The moment this journey's current stop really ends its departure wait: <see cref="StationDepartureDeadline"/>, or,
     /// when a same-station append ends the wait early (control-server#646), the start plus
-    /// <see cref="JourneyRuntimeOptions.SameStationAppendCorrectionGrace"/> if that comes first.
+    /// <see cref="JourneyRuntimeOptions.SameStationAppendCorrectionGrace"/> if that comes first; or the start itself when every
+    /// demand at a machine pickup was ended with nothing loaded there (control-server#742, CP-0015).
     /// </summary>
     /// <remarks>
     /// <para>
@@ -6397,15 +6401,36 @@ public sealed partial class JourneyRuntimeEngine(
         if (deadline is null && !IsStagingPickup(stops.Current) ||
             runtime.StationDepartureWaitStartedAt is not { } startedAt ||
             stops.Current.StopRole != JourneyStopRoles.Pickup ||
-            stops.OutstandingAtCurrentStop.Count > 0 ||
-            stops.OpenStops.FirstOrDefault(stop => stop.Sequence > stops.Current.Sequence) is not
-                { StopRole: JourneyStopRoles.Pickup } next ||
-            !string.Equals(next.StationId, stops.Current.StationId, StringComparison.Ordinal))
+            stops.OutstandingAtCurrentStop.Count > 0)
         {
             return deadline;
         }
-        DateTimeOffset early = startedAt + runtimeOptions.SameStationAppendCorrectionGrace;
-        return deadline is { } full && full < early ? full : early;
+        if (stops.OpenStops.FirstOrDefault(stop => stop.Sequence > stops.Current.Sequence) is
+                { StopRole: JourneyStopRoles.Pickup } next &&
+            string.Equals(next.StationId, stops.Current.StationId, StringComparison.Ordinal))
+        {
+            DateTimeOffset early = startedAt + runtimeOptions.SameStationAppendCorrectionGrace;
+            return deadline is { } full && full < early ? full : early;
+        }
+        // 机台取货停靠上本站的归属全被终结、一条没装上（control-server#742，CP-0015 方案 A）：取消让这一站空了而旅程继续，期限就是等待起点，
+        // 车当轮就走，不再白等一整段（现场 agv03 145、164 站各等了约 5 分钟）。没有已装的需求就没有要留的纠错窗口，所以不加宽限；本站有一条
+        // Loaded 就不在此列，照旧等原期限（control-server#668 那道护栏）。放在同站宽限之后：下一站同站时照旧走那条路（control-server#646）。
+        // 写在这里而不是只写在离站判定里，是为了让送到车上的期限跟着变（本方法注释的「判定与下发读这同一个值」）。
+        if (deadline is not null && !IsStagingPickup(stops.Current) && EveryDemandAtCurrentStopEnded(stops))
+        {
+            return startedAt;
+        }
+        return deadline;
+    }
+
+    /// <summary>
+    /// 当前停靠挂着归属，而且每一条都已终结：没有待做、没有在装、也没有装上的（control-server#742）。一条归属都没有的停靠不算——那是
+    /// 持货期限把它全释放走的形状，由 <see cref="StationDepartureWaitIsOverAsync"/> 里 control-server#290 那一支管。
+    /// </summary>
+    private static bool EveryDemandAtCurrentStopEnded(JourneyStopCursor stops)
+    {
+        IReadOnlyList<JourneyStopDemand> atStop = stops.AllAtStop(stops.Current);
+        return atStop.Count > 0 && atStop.All(item => item.Membership.Status == JourneyDemandStatuses.Terminated);
     }
 
     /// <summary>
