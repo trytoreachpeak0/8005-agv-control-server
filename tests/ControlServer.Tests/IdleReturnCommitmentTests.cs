@@ -169,7 +169,8 @@ public sealed class IdleReturnCommitmentTests
                 expected = IdleReturnReasons.BatteryUnknownOrCharging;
                 break;
             case "charging":
-                candidate = harness.Candidate(VehicleA, batteryState: "CHARGING");
+                // Below the completion line: a vehicle charging outside a cycle from 80 on is let go (control-server#744).
+                candidate = harness.Candidate(VehicleA, battery: 79, batteryState: "CHARGING");
                 expected = IdleReturnReasons.BatteryUnknownOrCharging;
                 break;
             case "facts-stale":

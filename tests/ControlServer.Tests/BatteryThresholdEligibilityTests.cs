@@ -45,7 +45,9 @@ public sealed class BatteryThresholdEligibilityTests
     [InlineData("margin", 34, "NO_CHARGE", VehicleDynamicFactsCriterion.BatteryPolicyNotSatisfiedReason)]
     [InlineData("entry", null, "NO_CHARGE", VehicleDynamicFactsCriterion.BatteryFactUnknownReason)]
     [InlineData("entry", 80, null, VehicleDynamicFactsCriterion.BatteryFactUnknownReason)]
-    [InlineData("entry", 80, "CHARGING", VehicleDynamicFactsCriterion.BatteryPolicyNotSatisfiedReason)]
+    // Charging with no open cycle (control-server#744): refused below the policy's completion line (80), admitted from it.
+    [InlineData("entry", 79, "CHARGING", VehicleDynamicFactsCriterion.BatteryPolicyNotSatisfiedReason)]
+    [InlineData("entry", 80, "CHARGING", DispatchAdmissionChain.Eligible)]
     [InlineData("none", 80, "NO_CHARGE", DispatchReasonCodes.ChargingPolicyNotApproved)]
     public void EachBatteryBoundaryAnswersItsOwnReason(string policy, int? battery, string? batteryState, string expected)
     {
@@ -165,6 +167,7 @@ public sealed class BatteryThresholdEligibilityTests
     /// <summary>
     /// 默认测试策略下与此前等价（票面「默认测试策略下与今天等价」）：入口线 30、余量 30、估计 0，0～100 每一个电量的合格与否都与
     /// 「充电中或低于 30 即拒」相同。原因码只在「低于线」那一侧从 <c>BATTERY_POLICY_NOT_SATISFIED</c> 换成了新码——这是票面要的分开。
+    /// 唯一的变化是 control-server#744：没有未结束周期、报充电中的车到充满线（80）起放行，所以「充电中即拒」只到 79。
     /// </summary>
     [Fact]
     public void UnderTheDefaultTestPolicyEveryBatteryIsAdmittedExactlyAsUnderTheOldThirtyPercentThreshold()
@@ -174,7 +177,8 @@ public sealed class BatteryThresholdEligibilityTests
         {
             foreach (string state in new[] { "NO_CHARGE", "CHARGING" })
             {
-                bool before = !(state == "CHARGING" || battery < 30);
+                bool before = !((state == "CHARGING" && battery < TestChargingPolicies.Content.ChargingCompletionThresholdPercent) ||
+                                battery < 30);
                 string now = VehicleDynamicFactsCriterion.Evaluate(Facts(battery, state, policy), Options());
                 Assert.True(before == (now == DispatchAdmissionChain.Eligible), $"{battery}% {state}: {now}");
                 if (!before)

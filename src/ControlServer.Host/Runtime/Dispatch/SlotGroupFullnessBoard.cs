@@ -66,7 +66,8 @@ public sealed class SlotGroupFullnessBoard
         {
             _ownCargoBlockedGroups = next;
             _verdicts = verdicts;
-            _recordedRoundAt = outcome.Round.Now;
+            // A round outcome built without its facts (tests of the per-side table) has no time to report.
+            _recordedRoundAt = outcome.Round?.Now;
         }
     }
 
