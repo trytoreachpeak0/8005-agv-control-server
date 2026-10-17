@@ -402,6 +402,14 @@ jobs:
               # entry and a late cancellation are both answered WORKLIST_REVISION_STALE, and the next stop's worklist starts
               # above the empty one, the session never dropping on a revision conflict.
               @{ Name = 'stop-ended-journey-continues'; Runs = 1 }
+              # control-server#742 (CP-0015 plan A): a cancel before scan that leaves a machine pickup with nothing loaded
+              # while the journey goes on sends the vehicle on before the station departure deadline, and the screen keeps
+              # no countdown; the first pickup, where something was loaded, still waits its full deadline (#668).
+              @{ Name = 'load-cancelled-journey-continues-departs-early'; Runs = 1 }
+              # control-server#742 extension (CP-0015): at a machine pickup with one basket loaded and the other demand cancelled,
+              # a departure carrying the cancellation worklist's revision, already replaced by a deadline-only refresh, is
+              # accepted (no substantive change) and the vehicle leaves before the station departure deadline.
+              @{ Name = 'machine-departure-stale-worklist-after-cancel'; Runs = 1 }
               # control-server#214: the task-side ranking. A new STAGING_TO_WIRE demand is taken before an older normal-band
               # one (REQ-0202); with no anti-starvation threshold configured nothing escalates, and once one is imported
               # the overdue normal-band demand is escalated exactly once and goes ahead of a STAGING_TO_WIRE that is not

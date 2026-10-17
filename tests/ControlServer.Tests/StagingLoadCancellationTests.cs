@@ -398,6 +398,143 @@ public sealed class StagingLoadCancellationTests
 
     private const string ThirdSublot = "SUBLOT-726";
 
+    /// <summary>
+    /// control-server#742 不碰待送点（守卫 a）：同一个待送点停靠上甲装上一篮、乙扫码前取消，本停靠的待做项归零。机台取货上这种停靠（本站有 Loaded）
+    /// 照旧等离站期限，待送点上则没有站点期限：车既不当轮离站，也不在任何站点期限上离站，持货等单照旧，直到持货期限到了才走（cs#709、CP-0014 R3）。
+    /// </summary>
+    [Fact]
+    [Trait("IntegrationSlice", "FP-IS-08")]
+    [Trait("IntegrationSlice", "FP-IS-11")]
+    public async Task ACancellationBesideALoadedBasketAtAStagingStopKeepsTheVehicleHoldingCargo()
+    {
+        await using RuntimeFixture fixture = await TwoDemandsAtTheStagingStopAsync();
+        await SubmitAtCurrentStopAsync(fixture, "SUBLOT-001");
+        await RoundAsync(fixture);
+        await fixture.ApplySafeResultAsync(
+            await fixture.OperationAsync(SlotOperationType.Load), SlotOperationType.Load, SlotBusinessState.Occupied);
+        await RoundAsync(fixture);
+        Assert.Equal(JourneyDemandStatuses.Loaded, (await Batch7MultiDemandAdvanceTests.MembershipAsync(fixture, Demand)).Status);
+
+        await CancelBeforeScanAsync(fixture, SecondDemand);
+        await RoundAsync(fixture);
+
+        await AssertHoldsUntilTheHoldingDeadlineAsync(fixture);
+    }
+
+    /// <summary>
+    /// control-server#742 不碰待送点（守卫 b，现场 agv02 217 站 10-17 的形状）：待送点停靠 1 上甲装上一篮，乙同站追加、另开停靠 2（REQ-0196），同站宽限到点
+    /// 车原地走到停靠 2，乙在那里扫码前取消，停靠 2 一篮没装。#742 的新条件只认机台取货、待送点排除：车不离站，持货等单照旧，持货期限到了才走。
+    /// </summary>
+    [Fact]
+    [Trait("IntegrationSlice", "FP-IS-08")]
+    [Trait("IntegrationSlice", "FP-IS-11")]
+    public async Task ACancellationEmptyingASameStationStagingStopKeepsTheVehicleHoldingCargo()
+    {
+        await using RuntimeFixture fixture = await ArrangeAsync(StopKind.StagingRulesOn);
+        await AllowEnRouteAppendAsync(fixture);
+        await LoadTheBasketAsync(fixture);
+        await AppendStagingDemandAsync(fixture, SecondDemand, SecondSublot);
+        fixture.Clock.Advance(fixture.Options.SameStationAppendCorrectionGrace + TimeSpan.FromSeconds(1));
+        await fixture.ProveSlotDoorsClosedAsync();
+        await fixture.HearFromPeerAsync();
+        await fixture.Engine.ExecuteOnceAsync(Token);
+        await Batch7StopDrivenAdvanceDriver.AnswerDepartureSafetyAsync(
+            fixture, Demand, Batch7StopDrivenAdvanceDriver.FirstSafetyResultId);
+        await Batch7StopDrivenAdvanceDriver.ArriveAtCurrentStopAsync(fixture, SecondDemand, "TO_GATE");
+        await fixture.ProveSlotDoorsClosedAsync();
+        JourneyRuntimeRow atSecondStop = await fixture.RuntimeAsync();
+        Assert.Equal(JourneyRuntimeStage.AwaitingSublot, atSecondStop.Stage);
+        string secondStopId = (await Batch7MultiDemandAdvanceTests.MembershipAsync(fixture, SecondDemand)).PickupStopId;
+        Assert.NotEqual((await Batch7MultiDemandAdvanceTests.MembershipAsync(fixture, Demand)).PickupStopId, secondStopId);
+        Assert.Equal(secondStopId, (await Batch7StopDrivenAdvanceDriver.CurrentStopAsync(fixture, Demand)).StopId);
+
+        await CancelBeforeScanAsync(fixture, SecondDemand);
+        await RoundAsync(fixture);
+
+        Assert.Equal(JourneyRuntimeStage.AwaitingStationDeparture, (await fixture.RuntimeAsync()).Stage);
+        await AssertHoldsUntilTheHoldingDeadlineAsync(fixture);
+    }
+
+    /// <summary>
+    /// control-server#742 扩项只对机台取货（审查建议 2，CP-0015 修订项一）：待送点上出发请求带的清单号过期，即使新旧两版都没有待做项、已装没变，也照旧答
+    /// <c>WORKLIST_REVISION_STALE</c>，不出发（待送点另议）。待送点没有站点期限，不会有「只补期限」的那一版顶掉旧号，这里在库里补一版内容相同、号加一的空清单来造。
+    /// </summary>
+    [Fact]
+    [Trait("IntegrationSlice", "FP-IS-02")]
+    [Trait("IntegrationSlice", "FP-IS-11")]
+    public async Task AStaleDepartureAtAStagingStopIsRefusedEvenWithoutASubstantiveChange()
+    {
+        await using RuntimeFixture fixture = await TwoDemandsAtTheStagingStopAsync();
+        await SubmitAtCurrentStopAsync(fixture, "SUBLOT-001");
+        await RoundAsync(fixture);
+        await StaleWorklistDepartureTests.SettleLoadThroughTheInboxAsync(fixture, Demand);
+        await RoundAsync(fixture);
+        await CancelBeforeScanAsync(fixture, SecondDemand);
+        await RoundAsync(fixture);
+        Assert.Equal(JourneyRuntimeStage.AwaitingStationDeparture, (await fixture.RuntimeAsync()).Stage);
+
+        long shown = await CurrentStopDepartures.CurrentWorklistRevisionAsync(fixture.Context, fixture.Options.AgvId, Token);
+        JourneyRuntimeRow runtime = await fixture.RuntimeAsync();
+        JourneyStopCursor stops = await JourneyStopCursor.LoadAsync(fixture.Context, runtime, Token);
+        ProtocolOutboxRow last = await fixture.Context.ProtocolOutbox.AsNoTracking()
+            .SingleAsync(row => row.MessageId == stops.WorklistMessageIdAt(runtime.WorklistRevision, stops.Current, shown), Token);
+        System.Text.Json.Nodes.JsonNode next = System.Text.Json.Nodes.JsonNode.Parse(last.PayloadJson)!;
+        next["payload"]!["worklistRevision"] = shown + 1;
+        Assert.Empty(next["payload"]!["items"]!.AsArray());
+        fixture.Context.ProtocolOutbox.Add(new ProtocolOutboxRow
+        {
+            MessageId = stops.WorklistMessageIdAt(runtime.WorklistRevision, stops.Current, shown + 1),
+            MessageType = last.MessageType,
+            PayloadJson = next.ToJsonString(),
+            CreatedAt = fixture.Clock.GetUtcNow()
+        });
+        await fixture.Context.SaveChangesAsync(Token);
+        fixture.Context.ChangeTracker.Clear();
+
+        string departureRequestId = await StagingDepartureRequestTests.RequestDepartureAsync(
+            fixture, worklistRevision: shown, operationSessionId: null);
+        await RoundAsync(fixture);
+
+        JsonElement result = await StagingDepartureRequestTests.ResultAsync(fixture, departureRequestId);
+        Assert.True(result.GetProperty("outcome").GetString() == "REJECTED", $"A stale departure at a staging stop was taken: {result}");
+        Assert.Equal(ServerReasonCodes.WorklistRevisionStale, result.GetProperty("problem").GetProperty("reasonCode").GetString());
+    }
+
+    /// <summary>
+    /// 车停在待送点上带着货等单：一路跑到持货期限前两秒，装货阶段一直是 CARGO_HOLDING_WAIT、离站核验一次都没发；过了持货期限，装货阶段以持货到期关闭
+    /// （或车已在离站核验上）。
+    /// </summary>
+    private static async Task AssertHoldsUntilTheHoldingDeadlineAsync(RuntimeFixture fixture)
+    {
+        DateTimeOffset holdingSince = (await fixture.RuntimeAsync()).CargoHoldingStartedAt
+            ?? throw new InvalidOperationException("Cargo holding never started at the staging stop.");
+        DateTimeOffset holdingDeadline = holdingSince + fixture.Options.CargoHoldingTimeout;
+        int checksBefore = await Batch7CargoHoldingTests.DepartureChecksSentAsync(fixture);
+        while (fixture.Clock.GetUtcNow() + TimeSpan.FromSeconds(20) < holdingDeadline - TimeSpan.FromSeconds(2))
+        {
+            fixture.Clock.Advance(TimeSpan.FromSeconds(20));
+            await fixture.ProveSlotDoorsClosedAsync();
+            await fixture.HearFromPeerAsync();
+            await fixture.Engine.ExecuteOnceAsync(Token);
+            JourneyRuntimeRow holding = await fixture.RuntimeAsync();
+            Assert.True(
+                holding.LoadingPhaseState == LoadingPhaseStates.CargoHoldingWait &&
+                await Batch7CargoHoldingTests.DepartureChecksSentAsync(fixture) == checksBefore,
+                $"At {fixture.Clock.GetUtcNow():O}, before the holding deadline {holdingDeadline:O}, the vehicle stopped holding: " +
+                $"{holding.Stage}, loading phase {holding.LoadingPhaseState}/{holding.LoadingClosedReason}.");
+        }
+
+        fixture.Clock.Advance(holdingDeadline + TimeSpan.FromSeconds(1) - fixture.Clock.GetUtcNow());
+        await fixture.ProveSlotDoorsClosedAsync();
+        await fixture.HearFromPeerAsync();
+        await fixture.Engine.ExecuteOnceAsync(Token);
+        JourneyRuntimeRow expired = await fixture.RuntimeAsync();
+        Assert.True(
+            expired.LoadingClosedReason == LoadingClosedReasons.CargoHoldingTimeout ||
+            expired.Stage == JourneyRuntimeStage.AwaitingDepartureSafety,
+            $"The holding deadline passed and the vehicle is still at {expired.Stage}, loading phase {expired.LoadingPhaseState}/{expired.LoadingClosedReason}.");
+    }
+
     private const string UndoCancellationId = "71300000-0000-4000-8000-000000000726";
 
     /// <summary>待送点（规则开）受理锚需求，到站之前往同一个取货停靠上再挂乙：一站两条，都还没装，停在等录入。</summary>
