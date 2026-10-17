@@ -1,0 +1,64 @@
+{
+  "schemaVersion": 1,
+  "scenario": "remaining-plan-after-passed-stop",
+  "runId": "20261017T141624027Z",
+  "outcome": "PASS",
+  "failureReason": "",
+  "identity": {
+    "protocolReleaseIdentity": {
+      "repository": "8005-agv-protocol",
+      "releaseVersion": "5.0.0",
+      "tag": "protocol-v5.0.0",
+      "commit": "13eca82ac199bd97c1ad49d036c70cb5b012250f",
+      "protocolVersion": 6,
+      "profileId": "AGV_FULL_PRODUCT",
+      "manifestSha256": "128daae52758749d4d6f346231fdb336ca5d1079773bcab5430c20c53ce6b10b",
+      "schemaBundleSha256": "d51abe44036f32b5b2c28fd1bea6ec7a89cf3b4dea0f0b1d6c9daaf52f350933",
+      "vectorsSha256": "291311b24bfcac75818ca9e4a888d436523e6ee14db661f6ba792ab8cc383e4a",
+      "approvalStatus": "SUPERSEDING_CANDIDATE"
+    },
+    "controlServerCommit": "caca67f302fe83ffee2473f646576245054487f1",
+    "stageRoot": "C:\\Users\\szy\\AppData\\Local\\Temp\\l2-20261017T141624027Z",
+    "agvId": "AGV-L2-001",
+    "batchId": "unspecified",
+    "rig": "SyntheticOnboard",
+    "vehicleKey": "BROKERX-L2-0001"
+  },
+  "assertions": [
+    {
+      "id": "L2-RPP-01",
+      "description": "乙途中追加进甲那一趟：停靠是 12 取、11 取、关卡卸（乙的卸货并进既有的关卡停靠）",
+      "outcome": "PASS",
+      "expected": "PICKUP@12 PICKUP@11 UNLOAD@210",
+      "actual": "PICKUP@12 PICKUP@11 UNLOAD@210"
+    },
+    {
+      "id": "L2-RPP-02",
+      "description": "车离开 12 号站之后车载端确认的计划只有剩余停靠：11 取（ACTIVE，序号 1）、关卡卸（PLANNED，序号 2），没有 12 号站那条、没有 COMPLETED（DISPLAY_REMAINING_JOURNEY_PLAN）",
+      "outcome": "PASS",
+      "expected": "acked [1:C15-13:ACTIVE 2:关卡:PLANNED]",
+      "actual": "r4 acked [1:C15-13:ACTIVE 2:关卡:PLANNED]"
+    },
+    {
+      "id": "L2-RPP-03",
+      "description": "库里 12 号站那个停靠已 COMPLETED、序位仍是 1：走过的站只是不下发，整趟的序位不变",
+      "outcome": "PASS",
+      "expected": "COMPLETED / sequence 1",
+      "actual": "COMPLETED / sequence 1"
+    },
+    {
+      "id": "L2-RPP-04",
+      "description": "走过一站之后追加的丙被受理进同一趟：归属三条，积压行有受理时刻，没有被任何 EN_ROUTE_APPEND_* 挡住",
+      "outcome": "PASS",
+      "expected": "3 memberships / accepted",
+      "actual": "3 memberships / ACCEPTED accepted=yes"
+    },
+    {
+      "id": "L2-RPP-05",
+      "description": "追加丙之后重发、车载端确认的计划只数剩余：11 取（当前，序号 1）、12 取（丙，新停靠）、关卡卸——三条，走过的 12 号站那个已完成停靠不在里面",
+      "outcome": "PASS",
+      "expected": "acked [1:C15-13:ACTIVE 2:N1-3_N1-7:PLANNED 3:关卡:PLANNED]",
+      "actual": "r5 acked [1:C15-13:ACTIVE 2:N1-3_N1-7:PLANNED 3:关卡:PLANNED]"
+    }
+  ]
+}
