@@ -1,0 +1,23 @@
+[xUnit.net 00:00:17.62]     ControlServer.Tests.SlotAssignmentAtScanTests.TheDemandScannedFirstGetsTheLowestFreeSlotsOfItsSideWhateverItsAcceptanceOrder [FAIL]
+Expected: [1, 2]
+Actual:   [3, 4]
+[xUnit.net 00:00:18.32]     ControlServer.Tests.SlotAssignmentAtScanTests.AcceptanceReservesTheBasketCountButNoSlotNumbers [FAIL]
+Expected: Tuple (2, "[]")
+Actual:   Tuple (2, "[1,2]")
+[xUnit.net 00:00:19.46]     ControlServer.Tests.SlotAssignmentAtScanTests.TwoEntriesWaitingInTheSameRoundAreAssignedOneAfterTheOtherWithoutOverlap [FAIL]
+[xUnit.net 00:00:20.33]     ControlServer.Tests.SlotAssignmentAtScanTests.ADisabledSlotIsNotAssigned [FAIL]
+Expected: "[]"
+Actual:   "[1,2]"
+Expected: [2, 3]
+Actual:   [1, 2]
+[xUnit.net 00:00:21.73]     ControlServer.Tests.SlotAssignmentAtScanTests.TwoDemandsScannedOneAfterTheOtherOnOneSideGetDisjointLowestSlots [FAIL]
+Expected: Tuple ([1, 2], [3, 4])
+Actual:   Tuple ([3, 4], [1, 2])
+[xUnit.net 00:00:22.94]     ControlServer.Tests.SlotAssignmentAtScanTests.ACrashBeforeTheLoadCommandIsWrittenLeavesNothingAssignedAndTheNextRoundAssignsOnce [FAIL]
+Expected: "[]"
+Actual:   "[1,2]"
+[xUnit.net 00:00:24.00]     ControlServer.Tests.SlotAssignmentAtScanTests.AShortSideRefusesTheEntryAsSlotInoperableAndLeavesTheStopCancellable [FAIL]
+[xUnit.net 00:00:25.63]     ControlServer.Tests.SlotAssignmentAtScanTests.AnAssignmentStaysAsWrittenWhenALowerSlotFreesUpAndTheServerRestarts [FAIL]
+Expected: Tuple ("[3,4]", "[3,4]")
+Actual:   Tuple ("[1,2]", "[1,2]")
+Failed!  - Failed:     8, Passed:     0, Skipped:     0, Total:     8, Duration: 16 s - ControlServer.Tests.dll (net8.0)
