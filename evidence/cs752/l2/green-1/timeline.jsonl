@@ -1,0 +1,55 @@
+{"at":"2026-10-17T13:58:23.5190514+00:00","note":"L2 run 20261017T135823476Z starting for scenario 'staging-only-vehicle-returns-to-staging-origin'."}
+{"at":"2026-10-17T13:58:23.5714504+00:00","note":"L2 port block lock acquired (slot 0, Global\\W2G-L2PortBlock)."}
+{"at":"2026-10-17T13:58:23.5751142+00:00","note":"Building ControlServer and the test doubles."}
+{"at":"2026-10-17T13:58:51.1917931+00:00","criterion":"fake-riot-live","value":"live"}
+{"at":"2026-10-17T13:58:51.4822166+00:00","criterion":"fake-mes-live","value":"live"}
+{"at":"2026-10-17T13:58:51.6970746+00:00","note":"Fake RIoT stations on map 25: 11=C15-13, 12=N1-3_N1-7, 210=关卡, 214=等待点1, 215=等待点2, 305=派工待送取货"}
+{"at":"2026-10-17T13:58:51.7264987+00:00","note":"Fleet of 2: AGV-L2-001/BROKERX-L2-0001, AGV-L2-002/BROKERX-L2-0002"}
+{"at":"2026-10-17T13:58:51.7366211+00:00","note":"Route graph engine enabled for map 25."}
+{"at":"2026-10-17T13:58:51.7377022+00:00","note":"Idle return enabled."}
+{"at":"2026-10-17T13:58:51.7903343+00:00","note":"Task type station preset: the scenario's own (2 binding(s))"}
+{"at":"2026-10-17T13:58:59.0938102+00:00","note":"Package capacity rules imported."}
+{"at":"2026-10-17T13:59:00.5614333+00:00","note":"FieldOps: import-waiting-points --database C:\\Users\\szy\\AppData\\Local\\Temp\\l2-20261017T135823476Z\\controlserver.db --input C:\\Users\\szy\\AppData\\Local\\Temp\\l2-20261017T135823476Z\\waiting-points.csv --catalog C:\\Users\\szy\\AppData\\Local\\Temp\\l2-20261017T135823476Z\\waiting-points-catalog-25.json --map 25 --fleet BROKERX-L2-0001;BROKERX-L2-0002"}
+{"at":"2026-10-17T13:59:04.0894878+00:00","criterion":"waiting-points-imported","value":"1","detail":{"stations":[214,215],"coverage":{"mapId":25,"vehicleCount":2,"enabledOnMap":2,"assignable":2,"sufficient":true,"shortfall":0,"unassigned":[],"onOtherMaps":{},"warning":null}}}
+{"at":"2026-10-17T13:59:04.1082028+00:00","note":"Waiting points registered on map 25 as version 1: 214=等待点1, 215=等待点2"}
+{"at":"2026-10-17T13:59:06.2257379+00:00","criterion":"control-server-live","value":"(null)"}
+{"at":"2026-10-17T13:59:07.0924409+00:00","criterion":"control-server-live","value":"live"}
+{"at":"2026-10-17T13:59:07.1822362+00:00","note":"Protocol release identity: protocol-v5.0.0 (profileId AGV_FULL_PRODUCT, protocolVersion 6, SUPERSEDING_CANDIDATE)."}
+{"at":"2026-10-17T13:59:07.9413606+00:00","criterion":"onboard-readiness","value":"DISCONNECTED"}
+{"at":"2026-10-17T13:59:08.2268901+00:00","criterion":"onboard-readiness","value":"READY"}
+{"at":"2026-10-17T13:59:08.9917896+00:00","criterion":"control-server-ready","value":"ready"}
+{"at":"2026-10-17T13:59:09.0776243+00:00","note":"FieldOps: seed-approved-facts --database C:\\Users\\szy\\AppData\\Local\\Temp\\l2-20261017T135823476Z\\controlserver.db"}
+{"at":"2026-10-17T13:59:10.4745972+00:00","criterion":"slot-model-preseed:seed-approved-facts","value":"OK","detail":{"output":{"command":"seed-approved-facts","outcome":"OK","modelKey":"8005-eight-slot","slotModelVersionId":"387a25c9ef2842f7b6a1f950e7b35bba","version":1,"slotCount":8}}}
+{"at":"2026-10-17T13:59:10.4785371+00:00","note":"FieldOps: bind-io --database C:\\Users\\szy\\AppData\\Local\\Temp\\l2-20261017T135823476Z\\controlserver.db --agv AGV-L2-001"}
+{"at":"2026-10-17T13:59:11.7907202+00:00","criterion":"slot-model-preseed:bind-io:AGV-L2-001","value":"OK","detail":{"output":{"command":"bind-io","outcome":"OK","agvId":"AGV-L2-001","slotModelVersionId":"387a25c9ef2842f7b6a1f950e7b35bba","boundSlots":8,"version":1}}}
+{"at":"2026-10-17T13:59:11.7934070+00:00","note":"FieldOps: bind-io --database C:\\Users\\szy\\AppData\\Local\\Temp\\l2-20261017T135823476Z\\controlserver.db --agv AGV-L2-002"}
+{"at":"2026-10-17T13:59:13.2274089+00:00","criterion":"slot-model-preseed:bind-io:AGV-L2-002","value":"OK","detail":{"output":{"command":"bind-io","outcome":"OK","agvId":"AGV-L2-002","slotModelVersionId":"387a25c9ef2842f7b6a1f950e7b35bba","boundSlots":8,"version":1}}}
+{"at":"2026-10-17T13:59:13.4309672+00:00","criterion":"slot-model-preseed:dispatch-zones","value":"0"}
+{"at":"2026-10-17T13:59:13.4425303+00:00","note":"FieldOps: import-area-assignments --database C:\\Users\\szy\\AppData\\Local\\Temp\\l2-20261017T135823476Z\\controlserver.db --input F:\\8005-scratch\\cs752-l2\\green-1\\snapshots\\preseed-area-assignments.csv"}
+{"at":"2026-10-17T13:59:14.7882160+00:00","criterion":"slot-model-preseed:import-area-assignments","value":"OK","detail":{"output":{"command":"import-area-assignments","outcome":"OK","dryRun":false,"input":"F:\\8005-scratch\\cs752-l2\\green-1\\snapshots\\preseed-area-assignments.csv","entryCount":3,"version":1,"contentSha256":"4291a509c2c0b75ea4bde0ac4dcde04b6e8632b54a21a67eee2772a6f8d0ff8e","snapshotId":"2d67843943984f31ab836e34c95291da","importedAt":"2026-10-17T21:59:13.6210822+08:00","errorCount":0,"errors":[],"preview":[]}}}
+{"at":"2026-10-17T13:59:14.7970859+00:00","note":"FieldOps: import-charging-policy --database C:\\Users\\szy\\AppData\\Local\\Temp\\l2-20261017T135823476Z\\controlserver.db --input F:\\8005-scratch\\cs752-l2\\green-1\\snapshots\\preseed-charging-policy.json --fleet BROKERX-L2-0001;BROKERX-L2-0002"}
+{"at":"2026-10-17T13:59:16.0725740+00:00","note":"FieldOps: approve-charging-policy --database C:\\Users\\szy\\AppData\\Local\\Temp\\l2-20261017T135823476Z\\controlserver.db --version 1 --approved-by L2 orchestrator --role L2_PRESET --basis scripts/l2/L2ChargingPolicy.psm1 --source L2_PRESET"}
+{"at":"2026-10-17T13:59:17.2713861+00:00","note":"FieldOps: activate-charging-policy --database C:\\Users\\szy\\AppData\\Local\\Temp\\l2-20261017T135823476Z\\controlserver.db --version 1 --activated-by L2 orchestrator --fleet BROKERX-L2-0001;BROKERX-L2-0002 --allow-non-field-approval"}
+{"at":"2026-10-17T13:59:18.4828149+00:00","criterion":"preseed:charging-policy","value":"OK","detail":{"version":1,"withoutPolicy":[],"source":"L2_PRESET","coveredAfter":["BROKERX-L2-0001","BROKERX-L2-0002"]}}
+{"at":"2026-10-17T13:59:18.4833443+00:00","note":"Per-zone dispatch parameters left unconfigured (the default precondition)."}
+{"at":"2026-10-17T13:59:18.5106827+00:00","note":"Environment is up; entering scenario 'staging-only-vehicle-returns-to-staging-origin'."}
+{"at":"2026-10-17T13:59:18.6120526+00:00","criterion":"route-graph-ready","value":"True"}
+{"at":"2026-10-17T13:59:18.6288391+00:00","criterion":"idle-return-confirmed-BROKERX-L2-0001","value":"(null)"}
+{"at":"2026-10-17T13:59:20.4619237+00:00","criterion":"idle-return-confirmed-BROKERX-L2-0001","value":"@{UpperId=W2G-IDLE-09c3783f-20261017T135919174Z; OrderId=; Status=PENDING_RECONCILIATION; VehicleKey=BROKERX-L2-0001; DestinationStationId=305}"}
+{"at":"2026-10-17T13:59:20.7409723+00:00","criterion":"idle-return-confirmed-BROKERX-L2-0001","value":"@{UpperId=W2G-IDLE-09c3783f-20261017T135919174Z; OrderId=ORDER-000001; Status=CONFIRMED; VehicleKey=BROKERX-L2-0001; DestinationStationId=305}"}
+{"at":"2026-10-17T13:59:20.7430315+00:00","criterion":"idle-return-confirmed-BROKERX-L2-0002","value":"@{UpperId=W2G-IDLE-ed5089c3-20261017T135919232Z; OrderId=ORDER-000002; Status=CONFIRMED; VehicleKey=BROKERX-L2-0002; DestinationStationId=214}"}
+{"at":"2026-10-17T13:59:20.7828600+00:00","note":"A = BROKERX-L2-0001 heading for 305; B = BROKERX-L2-0002 heading for 214."}
+{"at":"2026-10-17T13:59:20.8788295+00:00","criterion":"staging-idle-return-converged","value":"AwaitingPickupArrival"}
+{"at":"2026-10-17T13:59:21.1583722+00:00","criterion":"staging-idle-return-converged","value":"Completed"}
+{"at":"2026-10-17T13:59:21.2176404+00:00","criterion":"runtime-iterations","value":"17"}
+{"at":"2026-10-17T13:59:22.2920999+00:00","criterion":"runtime-iterations","value":"18"}
+{"at":"2026-10-17T13:59:23.3424828+00:00","criterion":"runtime-iterations","value":"19"}
+{"at":"2026-10-17T13:59:24.3984565+00:00","criterion":"runtime-iterations","value":"20"}
+{"at":"2026-10-17T13:59:25.1822779+00:00","criterion":"runtime-iterations","value":"21"}
+{"at":"2026-10-17T13:59:26.2253720+00:00","criterion":"runtime-iterations","value":"22"}
+{"at":"2026-10-17T13:59:27.2810266+00:00","criterion":"runtime-iterations","value":"23"}
+{"at":"2026-10-17T13:59:27.2984979+00:00","criterion":"no-idle-return-at-staging","value":"(null)"}
+{"at":"2026-10-17T13:59:47.5397052+00:00","note":"Not reached: Timed out after 20s waiting for: A committed to another idle return while standing at the staging origin. Last observed: (nothing)"}
+{"at":"2026-10-17T13:59:47.6205359+00:00","criterion":"dashboard-verdict-held-at-staging","value":"IDLE_RETURN_HELD_AT_STAGING_ORIGIN"}
+{"at":"2026-10-17T13:59:47.6394673+00:00","note":"Scenario finished."}
+{"at":"2026-10-17T13:59:48.0571978+00:00","note":"L2 port block lock released."}

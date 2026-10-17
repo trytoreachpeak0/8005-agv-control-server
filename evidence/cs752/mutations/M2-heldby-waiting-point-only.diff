@@ -1,0 +1,13 @@
+diff --git a/src/ControlServer.Infrastructure/Persistence/WaitingPointExclusivity.cs b/src/ControlServer.Infrastructure/Persistence/WaitingPointExclusivity.cs
+index fc4e8fff4..868a3a074 100644
+--- a/src/ControlServer.Infrastructure/Persistence/WaitingPointExclusivity.cs
++++ b/src/ControlServer.Infrastructure/Persistence/WaitingPointExclusivity.cs
+@@ -39,7 +39,7 @@ public static class WaitingPointExclusivity
+         StationExclusivityRow? row = await dbContext.Set<StationExclusivityRow>()
+             .SingleOrDefaultAsync(item => item.MapId == mapId && item.StationId == stationId, cancellationToken)
+             .ConfigureAwait(false);
+-        return row is { StationKind: StationExclusivityKinds.WaitingPoint or StationExclusivityKinds.FixedTaskStation } &&
++        return row is { StationKind: StationExclusivityKinds.WaitingPoint } &&
+                row.JourneyId == journeyId
+             ? row
+             : null;
