@@ -1,5 +1,6 @@
 using ControlServer.Application;
 using ControlServer.Domain;
+using ControlServer.Host.Runtime.TaskTypeStations;
 using ControlServer.Infrastructure.Persistence;
 using Microsoft.EntityFrameworkCore;
 using static ControlServer.Tests.JourneyRuntimeWorkerTestKit;
@@ -252,6 +253,66 @@ public sealed class TaskTypeAdmissionRuntimeTests
 
         AdmissionPolicyStateRow state = await fixture.Context.AdmissionPolicyState.AsNoTracking().SingleAsync(Token);
         Assert.Equal(baseline, state.ContentHash);
+    }
+
+    /// <summary>
+    /// control-server#737 审查第 2 项：已有库升级到七类的包时，种子要到<b>激活依据七条规则的绑定集</b>那一刻才变。
+    /// 包启动时预置把七条规则写成新的规则版本，但生效绑定集仍依据旧的六条规则，所以在新的准入版本下绑定的种子仍是六类；
+    /// 之后激活全检站绑定（control-server#738）而准入版本不升，种子在同一版本下变成七类，库判准入策略漂移，全车队停止受理。
+    /// 激活时同时把版本升一级，种子按新版本绑定，照常受理。
+    /// </summary>
+    [Fact]
+    [Trait("IntegrationSlice", "FP-IS-10")]
+    public async Task OnAnExistingDatabaseTheSeventhTypeEntersTheSeedOnlyWithTheActivationWhichMustRaiseTheVersion()
+    {
+        TaskTypeStationRule[] sixRules = [.. TaskTypeStationTestData.SevenRules.Where(rule => rule.TaskType != "WIRE_TO_FULL_INSPECTION")];
+        await using RuntimeFixture fixture = await RuntimeFixture.CreateAsync();
+        // The database the previous package left: the active binding set is built on the six rules.
+        await ActivateBuiltOnAsync(fixture, sixRules);
+        await fixture.Engine.ExecuteOnceAsync(Token);
+        string sixTypeSeed = (await fixture.Context.AdmissionPolicyState.AsNoTracking().SingleAsync(Token)).ContentHash;
+        Assert.DoesNotContain(
+            "WIRE_TO_FULL_INSPECTION",
+            await fixture.Context.StationTaskTypeAdmissions.AsNoTracking().Select(row => row.TaskType).Distinct().ToArrayAsync(Token));
+
+        // This package starts: the preset writes the seven rules as a new rule version and leaves the binding set alone.
+        await using (ControlServerDbContext writer = new(fixture.DbOptionsForTests))
+        {
+            Assert.True((await TaskTypeStationRuntimeSeed.Access(writer).Rules.WriteVersionAsync(
+                TaskTypeStationTestData.SevenRules, "preset:test-seven", Now, Token)).Created);
+        }
+        await fixture.Engine.ExecuteOnceAsync(Token);
+        Assert.Equal(sixTypeSeed, (await fixture.Context.AdmissionPolicyState.AsNoTracking().SingleAsync(Token)).ContentHash);
+
+        // control-server#738 activates a binding set built on the seven rules, and the version is not raised: drift.
+        await ActivateBuiltOnAsync(fixture, TaskTypeStationTestData.SevenRules);
+        fixture.Catalog.Set(fixture.Demand(DemandA, "SUBLOT-001", Now.AddMinutes(-10)));
+        fixture.BoxCounts.Set("SUBLOT-001", 4);
+        await fixture.Engine.ExecuteOnceAsync(Token);
+        Assert.Equal(
+            ControlServer.Host.Runtime.Dispatch.Criteria.AdmissionPolicyDriftCriterion.Reason,
+            (await fixture.BacklogAsync(DemandA)).ReasonCode);
+        Assert.Empty(await fixture.Context.JourneyRuntimes.AsNoTracking().ToArrayAsync(Token));
+
+        // Raised together with the activation, the seven-type seed binds under the new version and the demand is accepted.
+        fixture.Options.AdmissionPolicyVersion += 1;
+        await fixture.Engine.ExecuteOnceAsync(Token);
+        Assert.Equal("ACCEPTED", (await fixture.BacklogAsync(DemandA)).ReasonCode);
+        Assert.Contains(
+            "WIRE_TO_FULL_INSPECTION",
+            await fixture.Context.StationTaskTypeAdmissions.AsNoTracking().Select(row => row.TaskType).Distinct().ToArrayAsync(Token));
+    }
+
+    /// <summary>Writes these rules as the current version and makes a map 25 binding set built on them active.</summary>
+    private static async Task ActivateBuiltOnAsync(RuntimeFixture fixture, IReadOnlyList<TaskTypeStationRule> rules)
+    {
+        await using ControlServerDbContext writer = new(fixture.DbOptionsForTests);
+        TaskTypeStationAccess access = TaskTypeStationRuntimeSeed.Access(writer);
+        TaskTypeStationRuleVersion ruleVersion = (await access.Rules.WriteVersionAsync(rules, "preset:test-activate", Now, Token)).Version;
+        TaskTypeStationBindingSetVersion set = (await access.Bindings.WriteVersionAsync(
+            25, ruleVersion.Version, [TransportTaskTypes.WireToGate], [TaskTypeStationRuntimeSeed.GateBinding], null,
+            "activation:test", Now, Token)).Version;
+        await access.Bindings.SetActiveAsync(25, set.Version, Now, Token);
     }
 
     private static async Task<TaskTypeStationBindingSetVersion?> ActiveBindingsAsync(RuntimeFixture fixture) =>

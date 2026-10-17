@@ -26,9 +26,10 @@
 
     The harness carries the identity of the runner's G3 binding, which moves only at an exit, so it can name another
     release than the commit under test. It is ported to the identity the commit's appsettings.json declares; the
-    harness's own release, tag and protocolVersion are read from its source, not assumed. Two releases share the
-    harness's payloads: protocol-v3.0.0 (protocolVersion 4) and protocol-v4.0.0 (protocolVersion 5, which only adds
-    messages and enum values). Between them only the identity moves: the six identity constants, the tag and
+    harness's own release, tag and protocolVersion are read from its source, not assumed. Three releases share the
+    harness's payloads: protocol-v3.0.0 (protocolVersion 4), protocol-v4.0.0 (protocolVersion 5, which only adds
+    messages and enum values) and the 5.0.0 candidate (protocolVersion 6, which only appends WIRE_TO_FULL_INSPECTION to
+    TransportTaskType; control-server#737). Between them only the identity moves: the six identity constants, the tag and
     protocolVersion. A server older than v3 also has the three v3-only payload fields (checkPurpose on
     PreDepartureSafetyCheckResult, demandId and cargoHandoff on ForcedMechanicalRecoveryResult) removed -- the whole of
     what git diff 8d0a644e 5f3adc42 -- scripts/run-staged-g3.ps1 changes in the harness. Each replacement must match
@@ -156,7 +157,7 @@ if ($harnessRelease.Count -ne 1 -or $harnessTag.Count -ne 1 -or $harnessVersion.
            "literals, found $($harnessRelease.Count), $($harnessTag.Count) and $($harnessVersion.Count).")
 }
 # The releases whose payloads the harness sends unchanged. Any other identity at protocolVersion 4 or later is unknown.
-$sharedPayloadReleases = @{ '3.0.0' = 4; '4.0.0' = 5 }
+$sharedPayloadReleases = @{ '3.0.0' = 4; '4.0.0' = 5; '5.0.0' = 6 }
 foreach ($pair in @(@($harnessRelease[0].Groups[1].Value, [int]$harnessVersion[0].Groups[1].Value),
                     @([string]$identity.releaseVersion, [int]$identity.protocolVersion))) {
     if ($pair[1] -ge 4 -and $sharedPayloadReleases[$pair[0]] -ne $pair[1]) {

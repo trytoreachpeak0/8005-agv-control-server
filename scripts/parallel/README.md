@@ -544,8 +544,22 @@ TCP 会话仍然是全车共用一个凭据、车靠握手自报身份，本票�
 `STAGING_TO_WIRE` 也一样停接单（缺陷记录 `docs/defects/20260915-admission-policy-drift-halts-runtime.md`）。批次 10 让
 `DIE_TO_WIRE_STAGING`、`DIE_TO_OVEN`、`WIRE_TO_OPTICAL`、`WIRE_TO_NITROGEN` 可执行（`ExecutableTaskTypes`），种子由两类变成六类，
 所以版本由 2 升到 3。这与 `allowedWorkTypes` 无关：生产来源模式只允许 `STAGING_TO_WIRE`，种子照样是六类。
-control-server#737 让第七类 `WIRE_TO_FULL_INSPECTION` 可执行，种子由六类变成七类，实例定义的版本由 6 升到 7；包里 `appsettings.json`
-的默认值只跟可执行集合走，由 3 直接升到 7（4～6 是这个实例的库改站名、换库时升的，见下一小节的历史表）。
+control-server#737 让第七类 `WIRE_TO_FULL_INSPECTION` 可执行，实例定义的版本由 6 升到 7；包里 `appsettings.json` 的默认值只跟
+可执行集合走，由 3 直接升到 7（4～6 是这个实例的库改站名、换库时升的，见下一小节的历史表）。种子变不变要分两种情况，因为种子
+只取**生效绑定集所依据的那一版规则**里可执行的类型（`JourneyRuntimeEngine.AdmissionSeedTaskTypesAsync`）：
+
+- **新库**（或删了数据目录）：预置的七条规则作为规则版本 1 装进去，绑定集依据它，种子是七类，按版本 7 绑定。
+- **已有库**（factory01 这种）：启动时预置把七条规则写成新的规则版本（例如 2），但生效绑定集仍依据旧的规则版本 1（六条），
+  所以版本 7 下绑定的种子**仍是六类**，第七类在派车里判 `OUT_OF_SCOPE_WORK_TYPE`，只挡它自己。
+
+**已有库要注意两件事（交给 control-server#738）：**
+
+1. 激活带全检站绑定的候选时，绑定集改为依据新的规则版本，种子在同一版本下变成七类。**激活的同时必须把
+   `admissionPolicyVersion` 升到 8**（`appsettings.json` 不动，只改实例定义），并在 `AdmissionPolicyVersionGuardTests` 的 `History`
+   加一行 `RuleVersionActivated`；否则库判 `ADMISSION_POLICY_DRIFT`，**全车队停止受理新需求**
+   （`TaskTypeAdmissionRuntimeTests.OnAnExistingDatabaseTheSeventhTypeEntersTheSeedOnlyWithTheActivationWhichMustRaiseTheVersion` 钉住）。
+2. 部署本包之后、上面那次激活之前，**不要重新激活** `task-type-stations.map-26.candidate.json`：部署后当前规则版本变成 2，候选写死的
+   `ruleVersion: 1` 会被 `TASK_TYPE_BINDING_RULE_VERSION_NOT_CURRENT` 拒绝。cs#738 改候选时要把 `ruleVersion` 换成激活时的当前版本。
 
 `AdmissionPolicyVersionGuardTests` 守着这件事：版本表逐个写出每一代的可执行集合，版本必须严格递增，本构建的集合必须等于最后
 一行；协议里每个任务类型都必须明确表态可执行或不可执行；`appsettings.json` 与 `scripts/parallel/instance-*.json` 的每一份定义

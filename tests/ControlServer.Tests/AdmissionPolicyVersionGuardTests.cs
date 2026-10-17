@@ -43,6 +43,17 @@ public sealed class AdmissionPolicyVersionGuardTests
 
         /// <summary>The instance was installed into a new database under an override; nothing in the seed changed.</summary>
         NewDatabaseOverride,
+
+        /// <summary>
+        /// A binding set built on a newer rule version was activated on the instance: the seed is read from the rules the
+        /// active binding set was built on, so it changed although the build's executable set did not
+        /// (control-server#737 review item 2). On a database that existed before control-server#737 the seventh type has
+        /// a rule only in a version written at startup and no active binding set built on it, so the version 7 seed is
+        /// still six types; the activation that binds the full-inspection station (control-server#738) brings the seventh
+        /// in and must add the row of this kind -- otherwise the store refuses the seed and the fleet takes on no demand
+        /// (<c>TaskTypeAdmissionRuntimeTests.OnAnExistingDatabaseTheSeventhTypeEntersTheSeedOnlyWithTheActivationWhichMustRaiseTheVersion</c>).
+        /// </summary>
+        RuleVersionActivated,
     }
 
     /// <summary>
