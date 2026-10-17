@@ -1,0 +1,47 @@
+ControlServer.FieldOps: --database is required.
+usage: ControlServer.FieldOps <status|verify|release|enable-gate|audit|seed-approved-facts|bind-io|export-audit|check-binding-snapshots|import-area-assignments|area-assignments|activate-task-type-stations|rollback-task-type-stations|reconcile-task-type-stations|release-task-type-station-hold|accept-map-name|close-task-type-station-activation|task-type-stations|import-dispatch-zone-parameters|dispatch-zone-parameters|release-station-exclusivity|import-waiting-points|read-waiting-points|import-charger-roster|charger-roster|import-charging-policy|approve-charging-policy|activate-charging-policy|charging-policy> --database <path> [options]
+  verify      --record <field-record.json>
+  release     --agv <agvId> --model <slotModelVersionId>
+  enable-gate [--note <text>]
+  audit       [--since <iso-8601>]
+  seed-approved-facts
+  bind-io     --agv <agvId>
+  export-audit --stream <business|administrator> --format <csv|json> --output <file> [--since <iso-8601>] [--until <iso-8601>]
+  check-binding-snapshots   read-only; exit 1 means findings, not a tool failure
+  import-area-assignments --input <assignments.csv> [--dry-run]
+  area-assignments        [--version <n>]   read-only
+  activate-task-type-stations --input <candidate.json> --catalog <stations.json> --reason <text> [--role <text>] [--dry-run]
+  rollback-task-type-stations --map <id> --version <n> --catalog <stations.json> --reason <text> [--role <text>] [--dry-run]
+  reconcile-task-type-stations --map <id> --reason <text> [--role <text>]
+  release-task-type-station-hold --map <id> --task-type <TASK_TYPE> --site-verification <ref> --catalog <stations.json> --reason <text> [--role <text>]
+  accept-map-name --map <id> --map-name <name> --reason <text> [--role <text>]
+  close-task-type-station-activation --map <id> --reason <text> [--role <text>]
+  task-type-stations      --map <id>   read-only
+  import-dispatch-zone-parameters --input <zone-parameters.csv> [--dry-run]
+  dispatch-zone-parameters        [--version <n>]   read-only
+  import-waiting-points --input <waiting-points.csv> --catalog <stations.json> --map <id> --fleet <keys> [--dry-run]
+  read-waiting-points             [--version <n>] [--map <id> --fleet <keys>]   read-only
+  release-station-exclusivity --map <id> --station <id> --vehicle-key <VehicleKey> --operator <id> --reason <text> --site-verification <ref> [--role <text>]
+      server running: --server <base url> [--credential-env <variable>]   (no --database; goes through the server)
+      server stopped: --database <path> --probe-server <base url>   (writes only if the connection is refused; an answer, a timeout or any other error writes nothing; then takes the lock the running server holds on the database file, DATABASE_IN_USE if another process has it)
+      give --probe-server as the server's literal IP (e.g. http://127.0.0.1:58007/), not localhost: each resolved address costs about 2 s to be refused, which runs into the 5 s probe timeout
+  import-charger-roster --input <charger-roster.json> --catalog <stations.json> --map <id> --fleet <keys> [--dry-run]
+  charger-roster                  [--version <n>]   read-only
+  import-charging-policy --input <charging-policy.json> --fleet <keys> [--dry-run]
+  approve-charging-policy --version <n> --approved-by <person> --role <role> --basis <ref> --source <FIELD|TEST_FIXTURE|L2_PRESET>
+  activate-charging-policy --version <n> --activated-by <person> --fleet <keys> [--allow-non-field-approval] [--dry-run]
+  charging-policy                 [--version <n>] [--fleet <keys>]   read-only
+
+import-area-assignments takes a UTF-8 CSV whose header is exactly 'area,dispatch_zone,slot_position' and whose fields carry no outer whitespace. The whole table is imported atomically: if any row is bad the whole file is rejected, every bad row is reported, and nothing is written.
+  A blank line at the end of the file is ignored; a blank line between rows is a malformed row and rejects the file.
+  Slot position groups come from the published whole-vehicle slot models in this database, never from a value hard-coded here; run seed-approved-facts first on a fresh database.
+  Dispatch zones come from the dispatch policy stored in this database, which the server writes at startup from its configuration. Two consequences:
+    - the server must have been started once with the intended configuration before importing;
+    - a zone that is configured but has no vehicle serving it counts as not existing.
+
+The task type station verbs change which whole binding set version a map uses, and release holds. candidate.json is {mapId, ruleVersion, requiredTaskTypes[], bindings[{taskType, stationRiotId, stationName, siteVerificationRef}]}; stations.json is {mapId, stations[{stationId, stationName}]}, the map's complete RIoT station list. It must be exactly the list the server last confirmed, and that confirmation must still be fresh; otherwise nothing is activated or released.
+  Activation commits in two steps. If the second one cannot be confirmed the map stays held and the outcome is RESULT_UNKNOWN; run reconcile-task-type-stations, which reads what is really in force. Only when it reads back a contradiction does close-task-type-station-activation give up the attempt: the map is left with no active version until the next activation or rollback.
+import-dispatch-zone-parameters takes a UTF-8 CSV whose header is exactly 'dispatch_zone,en_route_addition_max_path_cost_increase_mm,starvation_threshold_seconds'. The increase is in planned path cost (millimetres, 0 to 1000000), not time; the threshold is in seconds (1 to 86400). An empty value, or a zone not in the table, is unconfigured; an increase of 0 forbids en-route addition in that zone. The same whole-table rules as import-area-assignments apply, except that a table whose values equal the current version writes no new version (UNCHANGED).
+import-charger-roster replaces the whole charger roster. Emptying the roster (closing a charging window) is the same verb with a file whose chargers array is empty; it is a valid version, not an error. Charging under way is listed and continues under its snapshot; nothing is cancelled or released.
+import-charging-policy writes a version only; approve-charging-policy and activate-charging-policy are separate, recorded steps. Only an approved version can be activated, and a version approved only as TEST_FIXTURE or L2_PRESET needs --allow-non-field-approval. There are no default values: a vehicle no active policy covers takes no new work.
+  --role is recorded as given and is not verified: there is no personnel authentication, and every audit record names this deployment, not a person.

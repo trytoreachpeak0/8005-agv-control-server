@@ -1,0 +1,14 @@
+# agv02 车载端 17:00:20～17:01:10 CST 原文（摘自 d5/65），两次 SUBLOT_NOT_IN_WORKLIST。车载端没有记录被拒绝的 sublot 值（logging.operatorRecords=false），服务端也没收到，因为是车载端本地拒绝的。
+# 当时车载端工作单：revision=3，expectedSublots 只有 Q26096466-1（锚定需求 d6366a85，09:01:20Z 才被取消）。后来实际装上的 Q26102447-7（需求 e6989792）是 09:03:21Z 才加入的。
+2026-10-17T17:00:23.5483547+08:00	Information	ExecutionPhase	App	服务端请求录入Sublot：station=派工待送取货，revision=3，expectedSublots=Q26096466-1。 
+2026-10-17T17:00:29.5627034+08:00	Information	ExecutionPhase	App	服务端请求录入Sublot：station=派工待送取货，revision=3，expectedSublots=Q26096466-1。 
+2026-10-17T17:00:35.1102168+08:00	Information	ExecutionPhase	App	服务端请求录入Sublot：station=派工待送取货，revision=3，expectedSublots=Q26096466-1。 
+2026-10-17T17:00:39.3723564+08:00	Information	ExecutionPhase	App	服务端请求录入Sublot：station=派工待送取货，revision=3，expectedSublots=Q26096466-1。 
+2026-10-17T17:00:47.1699365+08:00	Information	ExecutionPhase	App	服务端请求录入Sublot：station=派工待送取货，revision=3，expectedSublots=Q26096466-1。 
+2026-10-17T17:00:49.5433989+08:00	Warning	ExecutionPhase	MainViewModel	界面命令被业务规则拒绝：SUBLOT_NOT_IN_WORKLIST。 
+2026-10-17T17:00:50.9993610+08:00	Information	ExecutionPhase	App	服务端请求录入Sublot：station=派工待送取货，revision=3，expectedSublots=Q26096466-1。 
+2026-10-17T17:00:52.3391829+08:00	Warning	ExecutionPhase	MainViewModel	界面命令被业务规则拒绝：SUBLOT_NOT_IN_WORKLIST。 
+2026-10-17T17:00:54.5175157+08:00	Information	ExecutionPhase	App	服务端请求录入Sublot：station=派工待送取货，revision=3，expectedSublots=Q26096466-1。 
+2026-10-17T17:00:58.1681456+08:00	Information	ExecutionPhase	App	服务端请求录入Sublot：station=派工待送取货，revision=3，expectedSublots=Q26096466-1。 
+2026-10-17T17:01:03.8337284+08:00	Information	ExecutionPhase	App	服务端请求录入Sublot：station=派工待送取货，revision=3，expectedSublots=Q26096466-1。 
+2026-10-17T17:01:08.9613003+08:00	Information	ExecutionPhase	App	服务端请求录入Sublot：station=派工待送取货，revision=3，expectedSublots=Q26096466-1。 

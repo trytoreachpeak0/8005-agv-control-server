@@ -1,0 +1,97 @@
+svc state=Running path="C:\Program Files\8005 AGV\ControlServer.V2\ControlServer.Host.exe" --contentRoot "C:\Program Files\8005 AGV\ControlServer.V2" --environment Production
+--- 10/17/2026 13:32:17 8005 AGV ControlServer 0
+Service started successfully.
+--- 10/17/2026 13:32:00 Windows Error Reporting 1001
+错误存储段 2197368660810370564，类型 4
+事件名称: APPCRASH
+响应: 不可用
+Cab Id: 0
+
+问题签名:
+P1: ControlServer.Host.exe
+P2: 1.0.0.0
+P3: 6a5a0000
+P4: KERNELBASE.dll
+P5: 10.0.14393.9339
+P6: 6a51beb0
+P7: e0434352
+P8: 0000000000026ea8
+P9: 
+P10: 
+
+附加文件:
+\\?\C:\Windows\Temp\WER25E8.tmp.appcompat.txt
+\\?\C:\ProgramData\Microsoft\Windows\WER\Temp\WER2647.tmp.WERInternalMetadata.xml
+C:\ProgramData\Microsoft\Windows\WER\ReportQueue\AppCrash_ControlServer.Ho_57502ed4ddeaba3444d7654c291c9ee35b4771e2_c4a2dbc4_cab_36302645\memory.hdmp
+C:\ProgramData\Microsoft\Windows\WER\ReportQueue\AppCrash_ControlServer.Ho_57502ed4ddeaba3444d7654c291c9ee35b4771e2_c4a2dbc4_cab_36302645\triagedump.dmp
+
+可在此处获取这些文件:
+C:\ProgramData\Microsoft\Windows\WER\ReportArchive\AppCrash_ControlServer.Ho_57502ed4ddeaba3444d7654c291c9ee35b4771e2_c4a2dbc4_24643901
+--- 10/17/2026 13:31:58 Windows Error Reporting 1001
+错误存储段 ，类型 0
+事件名称: APPCRASH
+响应: 不可用
+Cab Id: 0
+
+问题签名:
+P1: ControlServer.Host.exe
+P2: 1.0.0.0
+P3: 6a5a0000
+P4: KERNELBASE.dll
+P5: 10.0.14393.9339
+P6: 6a51beb0
+P7: e0434352
+P8: 0000000000026ea8
+P9: 
+P10: 
+
+附加文件:
+\\?\C:\Windows\Temp\WER25E8.tmp.appcompat.txt
+\\?\C:\ProgramData\Microsoft\Windows\WER\Temp\WER2647.tmp.WERInternalMetadata.xml
+C:\ProgramData\Microsoft\Windows\WER\ReportQueue\AppCrash_ControlServer.Ho_57502ed4ddeaba3444d7654c291c9ee35b4771e2_c4a2dbc4_cab_36302645\memory.hdmp
+C:\ProgramData\Microsoft\Windows\WER\ReportQueue\AppCrash_ControlServer.Ho_57502ed4ddeaba3444d7654c291c9ee35b4771e2_c4a2dbc4_cab_36302645\triagedump.dmp
+
+可在此处获取这些文件:
+C:\ProgramData\Microsoft\Windows\WER\ReportQueue\AppCrash_ControlServer.Ho_57502ed4ddeaba3444d7654c291c9ee35b4771e2_c4a2dbc4_cab_36302645
+--- 10/17/2026 13:31:55 Application Error 1000
+错误应用程序名称: ControlServer.Host.exe，版本: 1.0.0.0，时间戳: 0x6a5a0000
+错误模块名称: KERNELBASE.dll，版本: 10.0.14393.9339，时间戳: 0x6a51beb0
+异常代码: 0xe0434352
+错误偏移量: 0x0000000000026ea8
+错误进程 ID: 0x34f0
+错误应用程序启动时间: 0x01dd5df8cdeb23d5
+错误应用程序路径: C:\Program Files\8005 AGV\ControlServer.V2\ControlServer.Host.exe
+错误模块路径: C:\Windows\System32\KERNELBASE.dll
+报告 ID: 71197150-cb13-4909-954e-ce43c4e13875
+错误程序包全名: 
+错误程序包相对应用程序 ID: 
+--- 10/17/2026 13:31:54 .NET Runtime 1026
+Application: ControlServer.Host.exe
+CoreCLR Version: 8.0.3026.36720
+.NET Version: 8.0.30
+Description: The process was terminated due to an unhandled exception.
+Exception Info: System.InvalidOperationException: OUTBOX_PROTOCOL_IDENTITY_MISMATCH: The protocol outbox holds unacknowledged lines written under another protocol identity; this build would replay them unchanged into every session, the vehicle would reject them and drop the session on every reconnect. 老厂前线新多仓位1: 1 line(s) under AGV_FULL_PRODUCT protocolVersion 4 release 3.0.0 (manifest d5e1a53f1fd61f105a890dc0267e1b0a9ac5ea49f713d2cf730b0f554df9db9e); 老厂前线新多仓位2: 7 line(s) under AGV_FULL_PRODUCT protocolVersion 4 release 3.0.0 (manifest d5e1a53f1fd61f105a890dc0267e1b0a9ac5ea49f713d2cf730b0f554df9db9e); 老厂前线新多仓位3: 1 line(s) under AGV_FULL_PRODUCT protocolVersion 4 release 3.0.0 (manifest d5e1a53f1fd61f105a890dc0267e1b0a9ac5ea49f713d2cf730b0f554df9db9e). This build speaks AGV_FULL_PRODUCT protocolVersion 5 release 4.0.0 (manifest beca46a7fe98003ce1f21efb88f2c1406f3040883d0b372a51505a843e306f3a). Either start the build that wrote them, let every vehicle finish or clear its journeys and acknowledge its outbox, then upgrade; or start this build on a new database directory instead of C:\ProgramData\8005\ControlServer.V2\data\controlserver.db. Do not edit the outbox by hand.
+   at ControlServer.Host.Transport.ProtocolOutboxIdentityStartupCheck.EnsureAsync(ControlServerDbContext dbContext, ILogger logger, String databasePath, CancellationToken cancellationToken) in C:\actions-runner\win11-01-control-server\_work\8005-agv-control-server\8005-agv-control-server\control-server\src\ControlServer.Host\Transport\ProtocolOutboxIdentityStartupCheck.cs:line 78
+   at ControlServer.Host.Transport.ProtocolOutboxIdentityStartupCheck.EnsureAsync(IServiceProvider services, CancellationToken cancellationToken) in C:\actions-runner\win11-01-control-server\_work\8005-agv-control-server\8005-agv-control-server\control-server\src\ControlServer.Host\Transport\ProtocolOutboxIdentityStartupCheck.cs:line 90
+   at ControlServer.Host.Transport.ProtocolOutboxIdentityStartupCheck.EnsureAsync(IServiceProvider services, CancellationToken cancellationToken) in C:\actions-runner\win11-01-control-server\_work\8005-agv-control-server\8005-agv-control-server\control-server\src\ControlServer.Host\Transport\ProtocolOutboxIdentityStartupCheck.cs:line 90
+   at Program.<Main>$(String[] args) in C:\actions-runner\win11-01-control-server\_work\8005-agv-control-server\8005-agv-control-server\control-server\src\ControlServer.Host\Program.cs:line 253
+   at Program.<Main>(String[] args)
+
+--- 10/17/2026 13:30:36 8005 AGV ControlServer 0
+Service stopped successfully.
+--- 10/17/2026 13:22:44 8005 AGV ControlServer 0
+Service started successfully.
+--- 10/17/2026 13:22:40 8005 AGV ControlServer 0
+Service stopped successfully.
+SCM 10/17/2026 13:32:17 7036 8005 AGV ControlServer V2 服务处于 正在运行 状态。
+SCM 10/17/2026 13:31:59 7036 Windows 预览体验服务 服务处于 正在运行 状态。
+SCM 10/17/2026 13:31:59 7000 由于下列错误，8005 AGV ControlServer V2 服务启动失败: 
+服务没有及时响应启动或控制请求。
+SCM 10/17/2026 13:31:59 7009 等待 8005 AGV ControlServer V2 服务的连接超时(30000 毫秒)。
+SCM 10/17/2026 13:31:54 7036 Windows Error Reporting Service 服务处于 正在运行 状态。
+SCM 10/17/2026 13:30:36 7036 8005 AGV ControlServer V2 服务处于 停止 状态。
+SCM 10/17/2026 13:22:44 7036 8005 AGV ControlServer V2 服务处于 正在运行 状态。
+SCM 10/17/2026 13:22:40 7036 8005 AGV ControlServer V2 服务处于 停止 状态。
+log C:\ProgramData\8005\ControlServer.V2\logs\controlserver-20261017_001.ndjson
+{"@t":"2026-10-17T05:30:36.0600960Z","@mt":"An error occurred using the connection to database '{database}' on server '{server}'.","@l":"Error","database":"main","server":"C:\\ProgramData\\8005\\ControlServer.V2\\data\\controlserver.db","EventId":{"Id":20004,"Name":"Microsoft.EntityFrameworkCore.Database.Connection.ConnectionError"},"SourceContext":"Microsoft.EntityFrameworkCore.Database.Connection"}
+{"@t":"2026-10-17T05:32:17.2403690Z","@mt":"No migrations were applied. The database is already up to date.","EventId":{"Id":20405,"Name":"Microsoft.EntityFrameworkCore.Migrations.MigrationsNotApplied"},"SourceContext":"Microsoft.EntityFrameworkCore.Migrations"}

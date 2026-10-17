@@ -1,0 +1,33 @@
+### now 2026-10-14T17:47:04.5905178+08:00
+### services
+  8005 AGV ControlServer Stopped/Disabled
+  8005 AGV ControlServer V2 Running/Manual
+### gate RiotCreateDispatch.enabled=False
+### area-assignments (read verb)
+{"command":"area-assignments","outcome":"OK","version":10,"contentSha256":"d801aa1fb7ddcc330a5e3173372ea6af4a3d08ec58074478e85aa5603e926658","snapshotId":"7837af0911e141e4a9c4d912c6bb7442","importedAt":"2026-10-14T11:05:42.9506898+08:00","entryCount":0,"entries":[]}
+### dispatch-zone-parameters (read verb)
+{"command":"dispatch-zone-parameters","outcome":"OK","version":1,"contentSha256":"fc98bae1b982dba7d04771e5ee24fb343baa852d47163d6f2c5c9ba145deb609","snapshotId":"52ec1c2803564adbbf1caeb12f8c4126","loadedAt":"2026-10-14T10:34:55.6710628+08:00","source":"GOVERNED_IMPORT","zones":[{"dispatchZone":"DIE_ATTACH","inTable":true,"inDispatchPolicy":true,"enRouteAddition":{"state":"ALLOWED","maxPathCostIncreaseMm":65000},"starvation":{"state":"UNCONFIGURED","thresholdSeconds":null}},{"dispatchZone":"WIRE_BONDING","inTable":true,"inDispatchPolicy":true,"enRouteAddition":{"state":"ALLOWED","maxPathCostIncreaseMm":65000},"starvation":{"state":"UNCONFIGURED","thresholdSeconds":null}}]}
+### journeys not Completed
+### journey count by stage
+  Stage=Completed | n=14
+### accepted not Succeeded
+### accepted total
+  n=10 | last=2026-10-14 03:04:49.8402166+00:00
+### journey demands (open journeys)
+### stops of open journeys
+### intents created since 2026-10-14 03:00 or not CONFIRMED
+  UpperId=W2G-CHARGE-dbd95748-20261013T135632707Z | Purpose=TO_CHARGER | TargetStationId=充电点1 | Status=PENDING_RECONCILIATION | OrderId= | CreateAttemptCount=0 | CreatedAt=2026-10-13 13:56:32.7075359+00:00
+  UpperId=W2G-CHARGE-dbd95748-20261013T142700981Z | Purpose=TO_CHARGER | TargetStationId=充电点1 | Status=PENDING_RECONCILIATION | OrderId= | CreateAttemptCount=0 | CreatedAt=2026-10-13 14:27:00.9816811+00:00
+  UpperId=W2G-7a30f56b-4c21-405b-a07a-c49896079d8a-PICKUP-1 | Purpose=TO_PICKUP | TargetStationId=派工待送取货 | Status=CONFIRMED | OrderId=order-2110206880235257856 | CreateAttemptCount=1 | CreatedAt=2026-10-14 03:04:47.3811388+00:00
+  UpperId=W2G-77a402f1-4627-4dd8-98d7-5dde36117c31-PICKUP-1 | Purpose=TO_GATE | TargetStationId=派工待送取货 | Status=CONFIRMED | OrderId=order-2110207376710828032 | CreateAttemptCount=1 | CreatedAt=2026-10-14 03:13:38.8618193+00:00
+  UpperId=W2G-7a30f56b-4c21-405b-a07a-c49896079d8a-GATE-1 | Purpose=TO_GATE | TargetStationId=N2-2_N3-1 | Status=CONFIRMED | OrderId=order-2110208853080670208 | CreateAttemptCount=1 | CreatedAt=2026-10-14 03:19:30.8278372+00:00
+  UpperId=W2G-77a402f1-4627-4dd8-98d7-5dde36117c31-GATE-1 | Purpose=TO_GATE | TargetStationId=N2-3_N3-2 | Status=CONFIRMED | OrderId=order-2110209650078121984 | CreateAttemptCount=1 | CreatedAt=2026-10-14 03:22:40.8957916+00:00
+  UpperId=W2G-CHARGE-62d6bd7c-20261014T055029143Z | Purpose=TO_CHARGER | TargetStationId=充电点1 | Status=PENDING_RECONCILIATION | OrderId= | CreateAttemptCount=0 | CreatedAt=2026-10-14 05:50:29.1438779+00:00
+  UpperId=W2G-CHARGE-62d6bd7c-20261014T063146883Z | Purpose=TO_CHARGER | TargetStationId=充电点1 | Status=PENDING_RECONCILIATION | OrderId= | CreateAttemptCount=0 | CreatedAt=2026-10-14 06:31:46.8830105+00:00
+  UpperId=W2G-CHARGE-62d6bd7c-20261014T063618893Z | Purpose=TO_CHARGER | TargetStationId=充电点1 | Status=PENDING_RECONCILIATION | OrderId= | CreateAttemptCount=0 | CreatedAt=2026-10-14 06:36:18.8930302+00:00
+### charging/purpose/holds
+### riot
+  agv01 st=211 proc=IDLE move=MT_FINISHED emerg=OK bat=89 batState=NO_CHARGE map=老厂前线new_wk status=1
+  agv02 st=215 proc=IDLE move=MT_FINISHED emerg=OK bat=79 batState=NO_CHARGE map=老厂前线new_wk status=1
+  agv03 st=216 proc=IDLE move=MT_FINISHED emerg=OK bat=50 batState=NO_CHARGE map=老厂前线new_wk status=1
+### warn/err since 2026-10-14 03:00 (UTC), last 40

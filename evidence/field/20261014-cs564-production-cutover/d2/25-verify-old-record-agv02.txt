@@ -1,0 +1,13 @@
+### now 2026-10-15T10:23:22.9806446+08:00 record=D:/zhengyushao/control-server-v2-ops/slot-verify-20261014-run3/02-agv02.json sha256=4588051B0497260F5B5A873E8B8CA78756B5A589505F840330C52D0216FDFD52
+=== verify
+Unhandled exception. System.InvalidOperationException: Vehicle model version 51caf7a3a1a241a1beb8d8269a1744e0 has no slots; there is nothing to verify against.
+   at ControlServer.Infrastructure.Persistence.SlotConfigurationReadinessGate.ModelSlotNumbersAsync(String slotModelVersionId, CancellationToken cancellationToken) in F:\8005-wt\rig-cutover-96a88db0-8005-agv-control-server\src\ControlServer.Infrastructure\Persistence\SlotConfigurationReadinessGate.cs:line 342
+   at ControlServer.Infrastructure.Persistence.SlotConfigurationReadinessGate.RecordVerificationAsync(String agvId, String slotModelVersionId, IReadOnlyList`1 confirmations, DateTimeOffset occurredAt, CancellationToken cancellationToken) in F:\8005-wt\rig-cutover-96a88db0-8005-agv-control-server\src\ControlServer.Infrastructure\Persistence\SlotConfigurationReadinessGate.cs:line 83
+   at ControlServer.FieldOps.Program.VerifyAsync(SlotConfigurationReadinessGate gate, Dictionary`2 options, DateTimeOffset now) in F:\8005-wt\rig-cutover-96a88db0-8005-agv-control-server\tools\ControlServer.FieldOps\Program.cs:line 332
+   at ControlServer.FieldOps.Program.Main(String[] args) in F:\8005-wt\rig-cutover-96a88db0-8005-agv-control-server\tools\ControlServer.FieldOps\Program.cs:line 109
+   at ControlServer.FieldOps.Program.Main(String[] args) in F:\8005-wt\rig-cutover-96a88db0-8005-agv-control-server\tools\ControlServer.FieldOps\Program.cs:line 138
+   at ControlServer.FieldOps.Program.<Main>(String[] args)
+exit=-532462766
+=== status
+{"command":"status","outcome":"OK","vehicles":[{"agvId":"老厂前线新多仓位1","slotModelVersionId":"74da3fee0e164c3e89b161c306ba5edb","ready":false,"reasonCode":"SLOT_CONFIGURATION_NEVER_VERIFIED","slotsMissingBinding":[],"slotsMissingVerification":[1,2,3,4,5,6,7,8],"slotsVerifiedNegative":[]},{"agvId":"老厂前线新多仓位2","slotModelVersionId":"74da3fee0e164c3e89b161c306ba5edb","ready":false,"reasonCode":"SLOT_CONFIGURATION_NEVER_VERIFIED","slotsMissingBinding":[],"slotsMissingVerification":[1,2,3,4,5,6,7,8],"slotsVerifiedNegative":[]},{"agvId":"老厂前线新多仓位3","slotModelVersionId":"74da3fee0e164c3e89b161c306ba5edb","ready":false,"reasonCode":"SLOT_CONFIGURATION_NEVER_VERIFIED","slotsMissingBinding":[],"slotsMissingVerification":[1,2,3,4,5,6,7,8],"slotsVerifiedNegative":[]}]}
+exit=0

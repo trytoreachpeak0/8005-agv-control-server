@@ -1,0 +1,42 @@
+### now 2026-10-14T20:22:12.1361451+08:00
+### services
+  8005 AGV ControlServer Stopped/Disabled
+  8005 AGV ControlServer V2 Running/Manual
+### gate RiotCreateDispatch.enabled=False
+### area-assignments (read verb)
+{"command":"area-assignments","outcome":"OK","version":2,"contentSha256":"d801aa1fb7ddcc330a5e3173372ea6af4a3d08ec58074478e85aa5603e926658","snapshotId":"e6f43d5adbb048c7a8053f9036fef5e8","importedAt":"2026-10-14T20:21:52.0898179+08:00","entryCount":0,"entries":[]}
+### dispatch-zone-parameters (read verb)
+{"command":"dispatch-zone-parameters","outcome":"OK","version":1,"contentSha256":"fc98bae1b982dba7d04771e5ee24fb343baa852d47163d6f2c5c9ba145deb609","snapshotId":"6e47a01112684cec8d72e41b63d89b9a","loadedAt":"2026-10-14T20:21:25.3155939+08:00","source":"GOVERNED_IMPORT","zones":[{"dispatchZone":"DIE_ATTACH","inTable":true,"inDispatchPolicy":true,"enRouteAddition":{"state":"ALLOWED","maxPathCostIncreaseMm":65000},"starvation":{"state":"UNCONFIGURED","thresholdSeconds":null}},{"dispatchZone":"WIRE_BONDING","inTable":true,"inDispatchPolicy":true,"enRouteAddition":{"state":"ALLOWED","maxPathCostIncreaseMm":65000},"starvation":{"state":"UNCONFIGURED","thresholdSeconds":null}}]}
+### journeys not Completed
+  j=journey:88d18582-365b-48e2-921b-60cd1aba | AgvId=老厂前线新多仓位2 | Stage=AwaitingPickupArrival | DispatchZone=WIRE_BONDING | LoadingPhaseState= | LoadingClosedReason= | CargoHoldingStartedAt= | ExpectedBasketCount=1 | BlockReasonCode=PICKUP_CreateDispatchDisabled
+  j=journey:63cc9da5-d228-44e3-8b3d-efdd4589 | AgvId=老厂前线新多仓位1 | Stage=AwaitingPickupArrival | DispatchZone=WIRE_BONDING | LoadingPhaseState= | LoadingClosedReason= | CargoHoldingStartedAt= | ExpectedBasketCount=2 | BlockReasonCode=PICKUP_CreateDispatchDisabled
+### journey count by stage
+  Stage=AwaitingPickupArrival | n=2
+### accepted not Succeeded
+  d=88d18582 | Sublot=Q26096572-7 | WorkType=STAGING_TO_WIRE | Status=Accepted | AcceptedAt=2026-10-14 12:21:47.6926126+00:00 | area=
+  d=63cc9da5 | Sublot=Q26097573-2 | WorkType=WIRE_TO_GATE | Status=Accepted | AcceptedAt=2026-10-14 12:21:49.5035357+00:00 | area=
+### accepted total
+  n=2 | last=2026-10-14 12:21:49.5035357+00:00
+### journey demands (open journeys)
+  JourneyId=journey:63cc9da5-d228-44e3-8b3d-efdd4589a0bd | DemandId=63cc9da5-d228-44e3-8b3d-efdd4589a0bd | PickupStopId=journey:63cc9da5-d228-44e3-8b3d-efdd4589a0bd|PICKUP | UnloadStopId=journey:63cc9da5-d228-44e3-8b3d-efdd4589a0bd|UNLOAD | ExpectedBasketCount=2 | TargetSlotsJson=[1,2] | LoadedSlotsJson= | LoadSlotOperationAttemptId=17f8ba3b-6a24-b35e-ab5c-fae137a064c2 | LoadCommandMessageId=091d708a-a72d-7b55-8eaa-94fe53a85435 | UnloadSlotOperationAttemptId=a45110dd-80ce-b854-b4a3-74d56449e457 | UnloadCommandMessageId=20295a11-0038-4c5a-ad21-b652b6199e65 | DispatchZone=WIRE_BONDING | DispatchGeneration=1 | Status=PENDING_LOAD | AddedAt=2026-10-14 12:21:49.4905709+00:00 | RemovedAt= | RemovalReason= | DispatchZoneParameterVersion=
+  JourneyId=journey:88d18582-365b-48e2-921b-60cd1aba82db | DemandId=88d18582-365b-48e2-921b-60cd1aba82db | PickupStopId=journey:88d18582-365b-48e2-921b-60cd1aba82db|PICKUP | UnloadStopId=journey:88d18582-365b-48e2-921b-60cd1aba82db|UNLOAD | ExpectedBasketCount=1 | TargetSlotsJson=[5] | LoadedSlotsJson= | LoadSlotOperationAttemptId=59e94dfa-a867-fc5d-83d4-0e94c5da42e4 | LoadCommandMessageId=1e7249c2-11ea-fe54-bccc-e4521ebdd90e | UnloadSlotOperationAttemptId=841a9248-ca86-e655-b344-ff1758a802a1 | UnloadCommandMessageId=851914af-63c8-c454-943b-be6462c2b86a | DispatchZone=WIRE_BONDING | DispatchGeneration=1 | Status=PENDING_LOAD | AddedAt=2026-10-14 12:21:47.6732261+00:00 | RemovedAt= | RemovalReason= | DispatchZoneParameterVersion=
+### stops of open journeys
+  j=journey: | Sequence=1 | StopRole=PICKUP | StationId=N4-1 | StationRiotId=33 | UpperId=W2G-63cc9da5-d228-44e3-8b3d-efdd4589a0bd-PICKUP-1 | Status=PENDING
+  j=journey: | Sequence=2 | StopRole=UNLOAD | StationId=关卡 | StationRiotId=210 | UpperId=W2G-63cc9da5-d228-44e3-8b3d-efdd4589a0bd-GATE-1 | Status=PENDING
+  j=journey: | Sequence=1 | StopRole=PICKUP | StationId=派工待送取货 | StationRiotId=217 | UpperId=W2G-88d18582-365b-48e2-921b-60cd1aba82db-PICKUP-1 | Status=PENDING
+  j=journey: | Sequence=2 | StopRole=UNLOAD | StationId=N2-4_N3-3 | StationRiotId=20 | UpperId=W2G-88d18582-365b-48e2-921b-60cd1aba82db-GATE-1 | Status=PENDING
+### intents created since 2026-10-14 12:00 or not CONFIRMED
+  UpperId=W2G-88d18582-365b-48e2-921b-60cd1aba82db-PICKUP-1 | Purpose=TO_PICKUP | TargetStationId=派工待送取货 | Status=PENDING_RECONCILIATION | OrderId= | CreateAttemptCount=0 | CreatedAt=2026-10-14 12:21:47.6732261+00:00
+  UpperId=W2G-63cc9da5-d228-44e3-8b3d-efdd4589a0bd-PICKUP-1 | Purpose=TO_PICKUP | TargetStationId=N4-1 | Status=PENDING_RECONCILIATION | OrderId= | CreateAttemptCount=0 | CreatedAt=2026-10-14 12:21:49.4905709+00:00
+### charging/purpose/holds
+  VehicleKey=BROKERX-f38975561adf46ccb1d2f23833c7d0e4 | Purpose=TRANSPORT | JourneyId=journey:88d18582-365b-48e2-921b-60cd1aba82db | ClaimedAt=2026-10-14 12:21:47.6926126+00:00
+  VehicleKey=BROKERX-0c20ff0600d644869a6a80c186065d85 | Purpose=TRANSPORT | JourneyId=journey:63cc9da5-d228-44e3-8b3d-efdd4589a0bd | ClaimedAt=2026-10-14 12:21:49.5035357+00:00
+### riot
+  agv01 st=214 proc=IDLE move=MT_FINISHED emerg=OK bat=66 batState=NO_CHARGE map=老厂前线new_wk status=1
+  agv02 st=215 proc=IDLE move=MT_FINISHED emerg=OK bat=56 batState=NO_CHARGE map=老厂前线new_wk status=1
+  agv03 st=211 proc=IDLE move=MT_FINISHED emerg=OK bat=56 batState=CHARGING map=老厂前线new_wk status=1
+### warn/err since 2026-10-14 12:00 (UTC), last 40
+now 2026-10-14T20:22:16.5231548+08:00 bytes=93941
+SLOT_CONFIGURATION_NOT_CONFIRMED occurrences=0
+reason codes: DIE_ATTACHx1 DIE_TO_OVENx27 DIE_TO_WIRE_STAGINGx85 NORMAL_BANDx198 VEHICLE_TASK_TYPE_NOT_ADMITTEDx198 WIRE_BONDINGx1 WIRE_TO_GATEx12 WIRE_TO_NITROGENx55 WIRE_TO_OPTICALx19
+{"starvationThresholdsApproved":false,"starvationThresholds":[{"dispatchZone":"DIE_ATTACH","thresholdSeconds":null},{"dispatchZone":"WIRE_BONDING","thresholdSeconds":null}],"backlog":[{"demandId":"30dbba5f-21b1-42da-b710-b5401d85c0ac","transportDemandKey":"Q26069Y01-1|DIE_TO_WIRE_STAGING","reasonCode":"VEHICLE_TASK_TYPE_NOT_ADMITTED","reasonDescription":null,"firstSeenAt":"2026-10-14T11:50:12.1222031+00:00","lastEvaluatedAt":"2026-10-14T12:22:14.4796614+00:00","waitingSeconds":3619066,"demandCreatedAt":"2026-09-02T15:04:30.4114141+00:00","waitingAgeKnown":true,"tier":"NORMAL_BAND","starvationEscalatedAt":null,"starvationEscalationParameterVersion":null},{"demandId":"dadde6f1-9e2b-4ef1-9141-ca7f7b5ef328","transportDemandKey":"Q26089Y01-1|DIE_TO_WIRE_STAGING","reasonCode":"VEHICLE_TASK_TYPE_NOT_ADMITTED","reasonDescription":null,"firstSeenAt":"2026-10-14T11:50:12.1222031+00:00","lastEvaluatedAt":"2026-10-14T12:22:14.4796614+00:00","waitingSeconds":3619066,"demandCreatedAt":"2026-09-02T15:04:30.4114141+00:00","waitingAgeKnown":true,"tier":"NORMAL_BAND","starvationEscalatedAt":null,"starvationEscalationParameterVersion":null},{"demandId":"4fee2fcc-20aa-4d8e-a6fa-ea9218eb7d9a","transportDemandKey":"Q26099167-1|DIE_TO_WIRE_STAGING","reasonCode":"VEHICLE_TASK_TYPE_NOT_ADMITTED","reasonDescription":null,"firstSeenAt":"2026-10-14T11:50:12.1222031+00:00","lastEvaluatedAt":"2026-10-14T12:22:14.4796614+00:00","waitingSeconds":1773494,"demandCreatedAt":"2026-09-23T23:44:02.0727483+00:00",

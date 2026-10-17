@@ -1,0 +1,45 @@
+[18:29:47] OnboardHmi deployment to agv02
+[18:29:47] ControlServer ports: NDJSON 58105, HTTP 58107 (not the MVP service)
+[18:29:49] Server phase: production (the IO must be the site file's real module)
+[18:29:49] Site values from site-agv02.json
+[18:29:49] Secrets loaded from the DPAPI store
+[18:29:50] Onboard client state on agv02: STOPPED
+[18:29:52] Installed IO on agv02: present 127.0.0.1:1502
+[18:29:52] Downloading artifact from run 38542183893
+[18:30:20] Package hash verified (f17f333135e4eaf0172e86b753593ade5d576b91c34c57816330f09f043d04a6)
+[18:30:27] OnboardHmi commit:    d495746117ae762cae96708edc9717f7f7d3e4f0
+[18:30:27] ControlServer commit: f12bc8097b462d0c88ddd252f28b6d7e8bd856ca
+[18:30:27] wireToGate endpoint: 172.19.205.222:58105
+[18:30:27] IO target: REAL MODULE 192.168.71.150:502, from the site file; before: simulator 127.0.0.1:1502 -- -UseSiteIo: this connects the vehicle to REAL IO; deploy only with the user's authorisation and someone on site
+WARNING: This deployment switches the vehicle's IO from simulator 127.0.0.1:1502 to REAL MODULE 192.168.71.150:502 (-UseSiteIo). The vehicle will drive real slot IO the next time the client starts.
+[18:30:28] vehicle-safety endpoint: http://172.19.205.222:58107/api/onboard/v1/vehicle-safety?vehicleKey=BROKERX-f38975561adf46ccb1d2f23833c7d0e4
+[18:30:28] Vehicle-safety credential: CONTROL_SERVER_ONBOARD_SAFETY_CREDENTIAL from OnboardSafetyCredential:BROKERX-f38975561adf46ccb1d2f23833c7d0e4 (this vehicle's own projection credential); value not shown
+[18:30:28] Configuration rendered and validated
+[18:30:28] Staging on agv02
+  ready
+ready
+[18:30:34] Copying payload (80.9 MB)
+[18:30:50] Placing the payload on the vehicle
+  hash verified
+  placed: C:\8005\OnboardHmi
+  wireToGate endpoint read back: 172.19.205.222:58105
+  vehicleSafety endpoint read back: http://172.19.205.222:58107/api/onboard/v1/vehicle-safety?vehicleKey=BROKERX-f38975561adf46ccb1d2f23833c7d0e4
+  ioModule read back: 192.168.71.150:502
+  credentials set (machine scope)
+  shortcut: C:\Users\Public\Desktop\8005 AGV 车载端.lnk
+  vehicle-safety 200: {"vehicleKey":"BROKERX-f38975561adf46ccb1d2f23833c7d0e4","motionState":"STOPPED","observedAt":"2026-10-14T10:31:06.8718512+00:00","source":"RIOT_BEHAVIOR_LAB_R41","reasonCodes":[]}
+
+[18:31:07] Staged. NOT started -- that part is yours.
+[18:31:07] IO target: REAL MODULE 192.168.71.150:502, from the site file; before: simulator 127.0.0.1:1502 -- -UseSiteIo: this connects the vehicle to REAL IO; deploy only with the user's authorisation and someone on site
+WARNING: This deployment switches the vehicle's IO from simulator 127.0.0.1:1502 to REAL MODULE 192.168.71.150:502 (-UseSiteIo). The vehicle will drive real slot IO the next time the client starts.
+
+  On the vehicle, from a desktop session:
+    C:\8005\OnboardHmi\SQCD.Agv.Wpf.exe
+
+  Before you do:
+    - confirm the vehicle is where you think it is and is meant to move;
+    - the vehicle-safety line above must be 200 with a matching vehicleKey,
+      motionState=STOPPED and fresh observedAt, or a clean session stays in
+      RecoveryRequired / DEPARTURE_SAFETY_NOT_READY. That is the gate working,
+      not a bug;
+    - the previous build is at C:\8005\OnboardHmi.previous if you need it back.

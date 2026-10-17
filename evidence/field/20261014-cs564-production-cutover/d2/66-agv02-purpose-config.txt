@@ -1,0 +1,58 @@
+== schema purpose
+name=DispatchZoneVehicles | sql=CREATE TABLE "DispatchZoneVehicles" (
+    "Zone" TEXT NOT NULL,
+    "AgvId" TEXT NOT NULL,
+    "ConfigurationVersion" TEXT NOT NULL,
+    "UpdatedAt" TEXT NOT NULL,
+    CONSTRAINT "PK_DispatchZoneVehicles" PRIMARY KEY ("Zone", "AgvId")
+)
+name=VehiclePurposeClaimRecords | sql=CREATE TABLE "VehiclePurposeClaimRecords" (
+    "RecordId" TEXT NOT NULL CONSTRAINT "PK_VehiclePurposeClaimRecords" PRIMARY KEY,
+    "VehicleKey" TEXT NOT NULL,
+    "Purpose" TEXT NOT NULL,
+    "JourneyId" TEXT NOT NULL,
+    "AcquiredAt" TEXT NOT NULL,
+    "ReleasedAt" TEXT NULL,
+    "ReleaseReason" TEXT NULL,
+    CONSTRAINT "CK_VehiclePurposeClaimRecords_Purpose" CHECK ("Purpose" IN ('TRANSPORT', 'CHARGING', 'CLEARING_MAINTENANCE', 'IDLE_RETURN'))
+)
+name=WaitingPoints | sql=CREATE TABLE "WaitingPoints" (
+    "Version" INTEGER NOT NULL,
+    "MapId" INTEGER NOT NULL,
+    "StationId" INTEGER NOT NULL,
+    "StationName" TEXT NOT NULL,
+    "Enabled" INTEGER NOT NULL,
+    CONSTRAINT "PK_WaitingPoints" PRIMARY KEY ("Version", "MapId", "StationId")
+)
+name=WaitingPointVehicleScopes | sql=CREATE TABLE "WaitingPointVehicleScopes" (
+    "Version" INTEGER NOT NULL,
+    "MapId" INTEGER NOT NULL,
+    "StationId" INTEGER NOT NULL,
+    "VehicleKey" TEXT NOT NULL,
+    CONSTRAINT "PK_WaitingPointVehicleScopes" PRIMARY KEY ("Version", "MapId", "StationId", "VehicleKey")
+)
+name=VehiclePurposeClaims | sql=CREATE TABLE "VehiclePurposeClaims" (
+    "VehicleKey" TEXT NOT NULL CONSTRAINT "PK_VehiclePurposeClaims" PRIMARY KEY,
+    "Purpose" TEXT NOT NULL,
+    "JourneyId" TEXT NOT NULL,
+    "ClaimedAt" TEXT NOT NULL,
+    CONSTRAINT "CK_VehiclePurposeClaims_Purpose" CHECK ("Purpose" IN ('TRANSPORT', 'CHARGING', 'CLEARING_MAINTENANCE', 'IDLE_RETURN'))
+)
+== claims
+VehicleKey=BROKERX-7daca4ee91da498d8026c68b7b941127 | Purpose=TRANSPORT | JourneyId=journey:dd3de04f-7f01-4c10-9976-dc79784af49b|g3 | ClaimedAt=2026-10-15 04:24:34.2686355+00:00
+VehicleKey=BROKERX-0c20ff0600d644869a6a80c186065d85 | Purpose=TRANSPORT | JourneyId=journey:45037494-7ecc-449e-b782-990e68d22051|g4 | ClaimedAt=2026-10-15 07:15:43.5519825+00:00
+VehicleKey=BROKERX-f38975561adf46ccb1d2f23833c7d0e4 | Purpose=TRANSPORT | JourneyId=journey:e9bd5f2c-b868-4697-b9e5-f68ef0cfb0eb|g2 | ClaimedAt=2026-10-15 07:33:33.2149303+00:00
+== claim records agv02 since 06:20
+[31;1mParentContainsErrorRecordException: [0mD:\zhengyushao\control-server-v2-ops\prod-20261014\ro-sql.ps1:13[0m
+[31;1m[0m[36;1mLine |[0m
+[31;1m[0m[36;1m[36;1m  13 | [0m … c.CreateCommand(); $cmd.CommandText = $Sql; [36;1m$r = $cmd.ExecuteReader()[0m
+[31;1m[0m[36;1m[36;1m[0m[36;1m[0m[36;1m     | [31;1m                                               ~~~~~~~~~~~~~~~~~~~~~~~~~[0m
+[31;1m[0m[36;1m[36;1m[0m[36;1m[0m[36;1m[31;1m[31;1m[36;1m     | [31;1mException calling "ExecuteReader" with "0" argument(s): "SQLite Error 1: 'no such column: AgvId'."[0m
+== waiting points
+Version=1 | MapId=26 | StationId=214 | StationName=等待点1 | Enabled=1
+Version=1 | MapId=26 | StationId=215 | StationName=等待点2 | Enabled=1
+Version=1 | MapId=26 | StationId=216 | StationName=等待点3 | Enabled=1
+== zone vehicles
+Zone=DIE_ATTACH | AgvId=老厂前线新多仓位3 | ConfigurationVersion=4231ec895ea669bc07cd73ad020cd04227c9bc5a6a503f5f8ed2991228e1b3ad | UpdatedAt=2026-10-15 02:19:46.9503079+00:00
+Zone=WIRE_BONDING | AgvId=老厂前线新多仓位1 | ConfigurationVersion=4231ec895ea669bc07cd73ad020cd04227c9bc5a6a503f5f8ed2991228e1b3ad | UpdatedAt=2026-10-15 02:19:46.9503079+00:00
+Zone=WIRE_BONDING | AgvId=老厂前线新多仓位2 | ConfigurationVersion=4231ec895ea669bc07cd73ad020cd04227c9bc5a6a503f5f8ed2991228e1b3ad | UpdatedAt=2026-10-15 02:19:46.9503079+00:00
