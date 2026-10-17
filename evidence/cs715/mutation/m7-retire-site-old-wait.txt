@@ -1,0 +1,47 @@
+== m7-retire-site-old-wait ( 1 file changed, 1 insertion(+), 1 deletion(-); files changed=1)
+diff --git a/scripts/parallel/Install-ParallelInstanceLocal.ps1 b/scripts/parallel/Install-ParallelInstanceLocal.ps1
+index 70e8f211f..fec349c3d 100644
+--- a/scripts/parallel/Install-ParallelInstanceLocal.ps1
++++ b/scripts/parallel/Install-ParallelInstanceLocal.ps1
+@@ -454,7 +454,7 @@ try {
+         $retiredProcesses | Stop-Process -Force -ErrorAction SilentlyContinue
+         # control-server#715: a process still running after 30 s is an error naming it, not a silent continue; the
+         # delete then retries while the just-exited process's image (clrjit.dll, 2026-10-13) is still mapped.
+-        Wait-ParallelInstanceProcessExit -Process $retiredProcesses -TimeoutSeconds 30
++        $retiredProcesses | Wait-Process -Timeout 30 -ErrorAction SilentlyContinue
+         Remove-ParallelInstanceDirectory -Path $retired.FakeInstallRoot
+         Write-Step 'Previous FakeMesIngest retired (task unregistered, process stopped, directory removed)'
+     }
+
+Remove-ParallelInstanceDirectory retries while a file is in use (control-server#715)
+  PASS  a child holding a file open for 2.5 s: the delete retries and succeeds once it lets go
+  PASS  a child holding a DLL mapped (the clrjit.dll shape) for 2.5 s: the delete retries and succeeds once it lets go
+  PASS  the installer sequence: Stop-Process, Wait-ParallelInstanceProcessExit, then the delete succeeds with the DLL just unmapped
+        error text: Could not delete 'C:\Users\szy\AppData\Local\Temp\cs715-111825a933dc4b8da43cc93f7b21fdbb\NeverReleased.V2' after 10 attempts over 9 s: 'C:\Users\szy\AppData\Local\Temp\cs715-111825a933dc4b8da43cc93f7b21fdbb\NeverReleased.V2\held.bin' is still in use (The process cannot access the file 'C:\Users\szy\AppData\Local\Temp\cs715-111825a933dc4b8da43cc93f7b21fdbb\NeverReleased.V2\held.bin' because it is being used by another process.). Held by: pid 24924 (pwsh).
+  PASS  a handle never released: every attempt is made, then the error names the file and the process holding it
+  PASS  a refusal is not retried: a path outside the allowlist throws at once, no wait
+  PASS  the path is re-checked before every retry: refused after the first attempt, nothing more is deleted
+
+Which errors are retried: in use or access denied, nothing else
+  PASS  retried=True: IOException sharing violation (0x80070020)
+  PASS  retried=True: IOException lock violation (0x80070021)
+  PASS  retried=True: IOException directory not empty (0x80070091)
+  PASS  retried=True: UnauthorizedAccessException (access denied)
+  PASS  retried=True: the same, wrapped as an inner exception
+  PASS  retried=False: IOException with no Win32 code
+  PASS  retried=False: IOException disk full (0x80070070)
+  PASS  retried=False: PathTooLongException
+  PASS  retried=False: DirectoryNotFoundException
+  PASS  retried=False: RuntimeException (a refusal)
+
+Wait-ParallelInstanceProcessExit: an exit, or an error naming the process
+  PASS  a process that does not exit within the timeout is an error naming its id
+  PASS  processes that exit (or already have, or none at all) return without an error
+
+Both installer call sites wait before deleting
+  FAIL  installer, retiring the previous FakeMesIngest: Stop-Process, then Wait-ParallelInstanceProcessExit (no Wait-Process), then the delete
+        segment 29288..30491; Stop-Process at 833, Wait-ParallelInstanceProcessExit at -1, Wait-Process present=True
+  PASS  installer, redeploying the FakeMesIngest: Stop-Process, then Wait-ParallelInstanceProcessExit (no Wait-Process), then the delete
+
+19 passed, 1 failed
+exit=1

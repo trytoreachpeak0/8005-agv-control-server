@@ -1,0 +1,62 @@
+
+Remove-ParallelInstanceDirectory retries while a file is in use (control-server#715)
+  FAIL  a child holding a file open for 2.5 s: the delete retries and succeeds once it lets go
+        threw: The process cannot access the file 'C:\Users\szy\AppData\Local\Temp\cs715-884fa6efe8fc422ea1b634832caf674c\HeldFile.V2\held.bin' because it is being used by another process.; directory left=True; waits=0
+  FAIL  a child holding a DLL mapped (the clrjit.dll shape) for 2.5 s: the delete retries and succeeds once it lets go
+        threw: Access to the path 'C:\Users\szy\AppData\Local\Temp\cs715-884fa6efe8fc422ea1b634832caf674c\HeldDll.V2\mapped.dll' is denied.; directory left=True; waits=0
+  FAIL  the installer sequence: Stop-Process, Wait-ParallelInstanceProcessExit, then the delete succeeds with the DLL just unmapped
+        threw: The term 'Wait-ParallelInstanceProcessExit' is not recognized as a name of a cmdlet, function, script file, or executable program.
+Check the spelling of the name, or if a path was included, verify that the path is correct and try again.
+  FAIL  a handle never released: every attempt is made, then the error names the file and the process holding it
+        threw: The variable '$script:DirectoryRemovalAttempts' cannot be retrieved because it has not been set.
+  PASS  a refusal is not retried: a path outside the allowlist throws at once, no wait
+  FAIL  the path is re-checked before every retry: refused after the first attempt, nothing more is deleted
+        waits=0; held.bin left=True; threw: The process cannot access the file 'C:\Users\szy\AppData\Local\Temp\cs715-884fa6efe8fc422ea1b634832caf674c\RecheckedEachTime.V2\held.bin' because it is being used by another process.
+
+Which errors are retried: in use or access denied, nothing else
+  FAIL  retried=True: IOException sharing violation (0x80070020)
+        threw: The term 'Test-ParallelInstanceRemovalRetryable' is not recognized as a name of a cmdlet, function, script file, or executable program.
+Check the spelling of the name, or if a path was included, verify that the path is correct and try again.
+  FAIL  retried=True: IOException lock violation (0x80070021)
+        threw: The term 'Test-ParallelInstanceRemovalRetryable' is not recognized as a name of a cmdlet, function, script file, or executable program.
+Check the spelling of the name, or if a path was included, verify that the path is correct and try again.
+  FAIL  retried=True: IOException directory not empty (0x80070091)
+        threw: The term 'Test-ParallelInstanceRemovalRetryable' is not recognized as a name of a cmdlet, function, script file, or executable program.
+Check the spelling of the name, or if a path was included, verify that the path is correct and try again.
+  FAIL  retried=True: UnauthorizedAccessException (access denied)
+        threw: The term 'Test-ParallelInstanceRemovalRetryable' is not recognized as a name of a cmdlet, function, script file, or executable program.
+Check the spelling of the name, or if a path was included, verify that the path is correct and try again.
+  FAIL  retried=True: the same, wrapped as an inner exception
+        threw: The term 'Test-ParallelInstanceRemovalRetryable' is not recognized as a name of a cmdlet, function, script file, or executable program.
+Check the spelling of the name, or if a path was included, verify that the path is correct and try again.
+  FAIL  retried=False: IOException with no Win32 code
+        threw: The term 'Test-ParallelInstanceRemovalRetryable' is not recognized as a name of a cmdlet, function, script file, or executable program.
+Check the spelling of the name, or if a path was included, verify that the path is correct and try again.
+  FAIL  retried=False: IOException disk full (0x80070070)
+        threw: The term 'Test-ParallelInstanceRemovalRetryable' is not recognized as a name of a cmdlet, function, script file, or executable program.
+Check the spelling of the name, or if a path was included, verify that the path is correct and try again.
+  FAIL  retried=False: PathTooLongException
+        threw: The term 'Test-ParallelInstanceRemovalRetryable' is not recognized as a name of a cmdlet, function, script file, or executable program.
+Check the spelling of the name, or if a path was included, verify that the path is correct and try again.
+  FAIL  retried=False: DirectoryNotFoundException
+        threw: The term 'Test-ParallelInstanceRemovalRetryable' is not recognized as a name of a cmdlet, function, script file, or executable program.
+Check the spelling of the name, or if a path was included, verify that the path is correct and try again.
+  FAIL  retried=False: RuntimeException (a refusal)
+        threw: The term 'Test-ParallelInstanceRemovalRetryable' is not recognized as a name of a cmdlet, function, script file, or executable program.
+Check the spelling of the name, or if a path was included, verify that the path is correct and try again.
+
+Wait-ParallelInstanceProcessExit: an exit, or an error naming the process
+  FAIL  a process that does not exit within the timeout is an error naming its id
+        threw: The term 'Wait-ParallelInstanceProcessExit' is not recognized as a name of a cmdlet, function, script file, or executable program.
+Check the spelling of the name, or if a path was included, verify that the path is correct and try again.
+  FAIL  processes that exit (or already have, or none at all) return without an error
+        threw: The term 'Wait-ParallelInstanceProcessExit' is not recognized as a name of a cmdlet, function, script file, or executable program.
+Check the spelling of the name, or if a path was included, verify that the path is correct and try again.
+
+Both installer call sites wait before deleting
+  FAIL  installer, retiring the previous FakeMesIngest: Stop-Process, then Wait-ParallelInstanceProcessExit (no Wait-Process), then the delete
+        segment 29288..30264; Stop-Process at 833, Wait-ParallelInstanceProcessExit at -1, Wait-Process present=True
+  FAIL  installer, redeploying the FakeMesIngest: Stop-Process, then Wait-ParallelInstanceProcessExit (no Wait-Process), then the delete
+        segment 51298..52977; Stop-Process at 1294, Wait-ParallelInstanceProcessExit at -1, Wait-Process present=False
+
+1 passed, 19 failed

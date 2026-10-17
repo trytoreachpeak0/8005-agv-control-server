@@ -1,0 +1,39 @@
+[17:43:51] Clone F:\8005-wt\rig-cutover-ba753b75-8005-agv-control-server is clean at ba753b75ac2e5265e59996062669e9ad5f251206; definition scripts/parallel/instance-factory01-v2.cutover-trial-s1.json is tracked there; the files sent match HEAD
+[17:43:51] ADMISSION_POLICY_VERSION=6 -- write it into the deployment record; a rollback needs the highest one ever installed + 1
+[17:43:52] Instance definition accepted: factory01-v2-parallel (from F:/8005-wt/rig-cutover-ba753b75-8005-agv-control-server/scripts/parallel/instance-factory01-v2.cutover-trial-s1.json)
+[17:43:52] MES_INGEST_SOURCE=production baseUrl=http://127.0.0.1:5088 allowedWorkTypes=DIE_TO_WIRE_STAGING,DIE_TO_OVEN,WIRE_TO_GATE,WIRE_TO_OPTICAL,STAGING_TO_WIRE,WIRE_TO_NITROGEN -- PRODUCTION CUTOVER (trial): this instance reads the PRODUCTION MesIngest for all six task types and drives agv01; the MVP must be stopped (control-server#564)
+WARNING: MES_INGEST_SOURCE=production baseUrl=http://127.0.0.1:5088 allowedWorkTypes=DIE_TO_WIRE_STAGING,DIE_TO_OVEN,WIRE_TO_GATE,WIRE_TO_OPTICAL,STAGING_TO_WIRE,WIRE_TO_NITROGEN -- PRODUCTION CUTOVER (trial): this instance reads the PRODUCTION MesIngest for all six task types and drives agv01; the MVP must be stopped (control-server#564)
+[17:43:52] Target: factory01  service '8005 AGV ControlServer V2'
+[17:43:52] Vehicle 1/1: 老厂前线新多仓位2 (BROKERX-f38975561adf46ccb1d2f23833c7d0e4)
+[17:43:52] RouteGraph: enabled=False mapId=26   RiotCreateDispatch: enabled=False
+[17:43:52] Clearance exit: VehicleFaultRecovery enabled=False   FieldOperatorRoles roster=D:\zhengyushao\control-server-v2-ops\field-operator-roles.json onboardEntryDeclared=False
+[17:43:52] Clearance to a waiting point (REQ-0178): journeyRuntime.clearanceToWaitingPointEnabled=False
+[17:43:53] INSTALLED_ADMISSION_POLICY_VERSION=5 (from D:\zhengyushao\control-server-v2-ops\installed-instance.json on factory01); sending 6
+[17:43:53] Secrets loaded from the DPAPI store (V2FaultRecoveryCredential present, will be sent)
+[17:43:53] Vehicle-safety projection credentials loaded for BROKERX-f38975561adf46ccb1d2f23833c7d0e4 (values not shown)
+[17:43:53] Using local package F:\8005-scratch\release-38363437445\WireToGate-20261013-075951-ba753b7\WireToGate-20261013-075951-ba753b7.zip
+[17:43:54] Package hash verified (4acb94bfe9507bbed2a67e488c473206bfa349dc0913797c2b568c223543e610)
+[17:43:54] PACKAGE_COMMIT_MATCHES_CLONE=ba753b75ac2e5265e59996062669e9ad5f251206 (release-manifest.json components.controlServer.commit)
+[17:43:54] Package onboard commit: 91766e383625baa1f56ba10f803bfc25fac9822b (components.onboardHmi.commit)
+[17:43:54] No FakeMesIngest: mesIngest.source is production
+[17:44:05] Parallel scripts and instance definition staged in D:\zhengyushao\control-server-v2-ops
+  ready: D:\zhengyushao\control-server-v2-ops
+  ready: D:\zhengyushao\control-server-v2-staging
+ready: D:\zhengyushao\control-server-v2-ops
+ready: D:\zhengyushao\control-server-v2-staging
+[17:44:08] Copying package (176.6 MB)
+[17:44:22] Running the parallel installer on the server
+  [17:44:24] Instance definition accepted: factory01-v2-parallel
+  WARNING: PRODUCTION CUTOVER: agv01 and all six task types from the production MesIngest. Approval: Zhengyu Shao 于 2026-10-13 在 Claude 对话中批准 v2 生产切换试跑：停 MVP，agv01 转 v2（map 26），v2 读生产 MesIngest 六类需求，三车按 S1→S3 逐台加入，仓位模拟、脚本自动扫码与上下货；每次动车与碰 MVP/agv01 仍逐次授权。（用户原话，8005-workspace-v2 ds-tasks/board.md 10-13 条目；control-server#564 第 7a 步）
+  [17:44:25] MES_INGEST_SOURCE=production baseUrl=http://127.0.0.1:5088 allowedWorkTypes=DIE_TO_WIRE_STAGING,DIE_TO_OVEN,WIRE_TO_GATE,WIRE_TO_OPTICAL,STAGING_TO_WIRE,WIRE_TO_NITROGEN -- PRODUCTION CUTOVER (trial): this instance reads the PRODUCTION MesIngest for all six task types and drives agv01; the MVP must be stopped (control-server#564)
+  WARNING: MES_INGEST_SOURCE=production baseUrl=http://127.0.0.1:5088 allowedWorkTypes=DIE_TO_WIRE_STAGING,DIE_TO_OVEN,WIRE_TO_GATE,WIRE_TO_OPTICAL,STAGING_TO_WIRE,WIRE_TO_NITROGEN -- PRODUCTION CUTOVER (trial): this instance reads the PRODUCTION MesIngest for all six task types and drives agv01; the MVP must be stopped (control-server#564)
+  [17:44:25] MVP service before: present=True status=Stopped startType=Disabled pathName="C:\Program Files\8005 AGV\ControlServer\ControlServer.Host.exe" --contentRoot "C:\Program Files\8005 AGV\ControlServer" --environment Production processId=0
+  [17:44:30] Package hash verified (4acb94bfe9507bbed2a67e488c473206bfa349dc0913797c2b568c223543e610)
+  [17:44:30] Retiring the previous install's FakeMesIngest: task '8005 AGV ControlServer V2 FakeMesIngest', C:\Program Files\8005 AGV\ControlServer.V2.FakeMesIngest
+  Remove-Item: Access to the path 'C:\Program Files\8005 AGV\ControlServer.V2.FakeMesIngest\clrjit.dll' is denied.
+  deploy-config.json: not on the server
+Exception: F:\8005-wt\cutover-trial-8005-workspace\remote-ops\factory-server\scripts\19-deploy-control-server-parallel.ps1:185
+Line |
+ 185 |  … EXITCODE -ne 0) { throw "ssh $SshAlias failed (exit $LASTEXITCODE)" }
+     |                      ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+     | ssh factory01 failed (exit 1)

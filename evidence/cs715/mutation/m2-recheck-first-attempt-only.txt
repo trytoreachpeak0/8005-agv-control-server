@@ -1,0 +1,52 @@
+== m2-recheck-first-attempt-only ( 1 file changed, 2 insertions(+), 2 deletions(-); files changed=1)
+diff --git a/scripts/parallel/ParallelInstance.psm1 b/scripts/parallel/ParallelInstance.psm1
+index fe094e435..9f2e3bda7 100644
+--- a/scripts/parallel/ParallelInstance.psm1
++++ b/scripts/parallel/ParallelInstance.psm1
+@@ -1985,11 +1985,11 @@ function Remove-ParallelInstanceDirectory {
+         # a temporary directory, but not at a path the allowlist accepts, so with the string checks
+         # first this branch would be unreachable from any test and its removal would go unnoticed.
+         # Both refuse; the order changes which reason is given, not whether the delete happens.
+-        if (Test-ParallelInstanceReparsePoint -Path $Path) {
++        if ($attempt -eq 1 -and (Test-ParallelInstanceReparsePoint -Path $Path)) {
+             throw "Refusing to delete '$Path': it is a junction or symbolic link, not a directory this instance created."
+         }
+         $refusal = Get-ParallelInstanceDeleteRefusal -Path $Path
+-        if ($refusal) { throw "Refusing to delete '$Path': $refusal." }
++        if ($attempt -eq 1 -and $refusal) { throw "Refusing to delete '$Path': $refusal." }
+         if (-not (Test-Path -LiteralPath $Path)) { return }
+         try {
+             Remove-Item -LiteralPath $Path -Recurse -Force -ErrorAction Stop
+
+Remove-ParallelInstanceDirectory retries while a file is in use (control-server#715)
+  PASS  a child holding a file open for 2.5 s: the delete retries and succeeds once it lets go
+  PASS  a child holding a DLL mapped (the clrjit.dll shape) for 2.5 s: the delete retries and succeeds once it lets go
+  PASS  the installer sequence: Stop-Process, Wait-ParallelInstanceProcessExit, then the delete succeeds with the DLL just unmapped
+        error text: Could not delete 'C:\Users\szy\AppData\Local\Temp\cs715-14c129ad5be94700bee60190321074ec\NeverReleased.V2' after 10 attempts over 9 s: 'C:\Users\szy\AppData\Local\Temp\cs715-14c129ad5be94700bee60190321074ec\NeverReleased.V2\held.bin' is still in use (The process cannot access the file 'C:\Users\szy\AppData\Local\Temp\cs715-14c129ad5be94700bee60190321074ec\NeverReleased.V2\held.bin' because it is being used by another process.). Held by: pid 26688 (pwsh).
+  PASS  a handle never released: every attempt is made, then the error names the file and the process holding it
+  PASS  a refusal is not retried: a path outside the allowlist throws at once, no wait
+  FAIL  the path is re-checked before every retry: refused after the first attempt, nothing more is deleted
+        waits=1; held.bin left=False; threw: 
+
+Which errors are retried: in use or access denied, nothing else
+  PASS  retried=True: IOException sharing violation (0x80070020)
+  PASS  retried=True: IOException lock violation (0x80070021)
+  PASS  retried=True: IOException directory not empty (0x80070091)
+  PASS  retried=True: UnauthorizedAccessException (access denied)
+  PASS  retried=True: the same, wrapped as an inner exception
+  PASS  retried=False: IOException with no Win32 code
+  PASS  retried=False: IOException disk full (0x80070070)
+  PASS  retried=False: PathTooLongException
+  PASS  retried=False: DirectoryNotFoundException
+  PASS  retried=False: RuntimeException (a refusal)
+
+Wait-ParallelInstanceProcessExit: an exit, or an error naming the process
+  PASS  a process that does not exit within the timeout is an error naming its id
+  PASS  processes that exit (or already have, or none at all) return without an error
+
+Both installer call sites wait before deleting
+  PASS  installer, retiring the previous FakeMesIngest: Stop-Process, then Wait-ParallelInstanceProcessExit (no Wait-Process), then the delete
+  PASS  installer, redeploying the FakeMesIngest: Stop-Process, then Wait-ParallelInstanceProcessExit (no Wait-Process), then the delete
+
+19 passed, 1 failed
+exit=1

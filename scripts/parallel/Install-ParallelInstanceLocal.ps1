@@ -452,7 +452,9 @@ try {
         $retiredProcesses = @(Get-Process -Name 'ControlServer.FakeMesIngest' -ErrorAction SilentlyContinue |
                 Where-Object { $_.Path -and $_.Path.StartsWith($retiredPrefix, [StringComparison]::OrdinalIgnoreCase) })
         $retiredProcesses | Stop-Process -Force -ErrorAction SilentlyContinue
-        $retiredProcesses | Wait-Process -Timeout 30 -ErrorAction SilentlyContinue
+        # control-server#715: a process still running after 30 s is an error naming it, not a silent continue; the
+        # delete then retries while the just-exited process's image (clrjit.dll, 2026-10-13) is still mapped.
+        Wait-ParallelInstanceProcessExit -Process $retiredProcesses -TimeoutSeconds 30
         Remove-ParallelInstanceDirectory -Path $retired.FakeInstallRoot
         Write-Step 'Previous FakeMesIngest retired (task unregistered, process stopped, directory removed)'
     }
@@ -735,9 +737,11 @@ try {
         }
         # The task is gone but the process it started is not: it was launched detached, and an
         # orphan still holds the port the new one is about to bind.
-        Get-Process -Name 'ControlServer.FakeMesIngest' -ErrorAction SilentlyContinue |
-            Where-Object { $_.Path -and $_.Path.StartsWith($fakeInstallRoot.TrimEnd('\') + '\', [StringComparison]::OrdinalIgnoreCase) } |
-            Stop-Process -Force -ErrorAction SilentlyContinue
+        $fakeProcesses = @(Get-Process -Name 'ControlServer.FakeMesIngest' -ErrorAction SilentlyContinue |
+                Where-Object { $_.Path -and $_.Path.StartsWith($fakeInstallRoot.TrimEnd('\') + '\', [StringComparison]::OrdinalIgnoreCase) })
+        $fakeProcesses | Stop-Process -Force -ErrorAction SilentlyContinue
+        # control-server#715: the same wait as retiring a double -- this path deleted straight after Stop-Process.
+        Wait-ParallelInstanceProcessExit -Process $fakeProcesses -TimeoutSeconds 30
 
         if ($Zip) {
             # Every delete in this script goes through Remove-ParallelInstanceDirectory, which re-checks
