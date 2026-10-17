@@ -1,20 +1,20 @@
 #Requires -Version 7
 
 <#
-站点超时放回待派，放回到上限转人工搬运告警（control-server#703）。
+站点期限第一次到点即终结、抑制并告警人工搬运，不放回（REQ-0365，CP-0016，control-server#751）。
 
-服务端用默认上限（StationTimeoutRedispatchLimit = 2），合成对端始终不答录入请求，同一条需求走满三趟：
+服务端用出厂上限（StationTimeoutRedispatchLimit = 0，setup 不设），合成对端始终不答录入请求：
 
-  第 1、2 趟：车到取货站，离站期限到期，需求放回待派——旅程以 RELEASED_AT_STATION_DEADLINE 收尾，需求仍 Accepted、
-             不写业务键抑制、不挂告警，下一轮以新的一代（新的 RIoT 取货单）重新派车。
-  第 3 趟：   已放回 2 次，这一次终结：CANCELLED_BY_STATION_TIMEOUT、需求 Cancelled、按业务键抑制，并在结构性派车阻断里挂
-             STATION_TIMEOUT_REDISPATCH_LIMIT_REACHED。之后目录里它还在，也不再派车，告警不被派车轮清掉；
-             它离开 MES 目录之后告警才清。
+  第 1 趟：车到取货站，离站期限到期，需求终结：CANCELLED_BY_STATION_TIMEOUT、需求 Cancelled、按业务键抑制，
+          并在结构性派车阻断里挂 STATION_TIMEOUT_REDISPATCH_LIMIT_REACHED；不放回（没有 RELEASED_AT_STATION_DEADLINE 的归属行）。
+          看板站点超时抑制清单（/api/dashboard/station-timeout-suppressions）列出它的批号与取货站点。
+  之后：   目录里它还在，也不再派车，告警不被派车轮清掉；它离开 MES 目录之后告警清、清单里不再有它。
 
-在这之前第 1 趟就终结并永久抑制，没有任何告警，MES 里那条需求一直挂着、货留在机台上没人知道。
+场景名还叫 redispatch-to-alarm，是 control-server#703 时「放回两次再告警」留下的；改名要动 l2.yml 与既有证据目录，没改。
+control-server#703 那时要防的「站点超时静默丢单、无告警」在这里照样被钉住：L2-STR-01 要求告警与终结同时出现。
 
 control-server#709 起这条只断言机台取货，并在待送点规则打开的情况下跑：规则只对 STAGING_TO_WIRE 在待送点的取货生效，
-机台取货的期限、放回与告警一条都不能变。待送点没有期限那一半由 staging-pickup-no-station-timeout 证明。
+机台取货的期限、终结与告警一条都不能变。待送点没有期限那一半由 staging-pickup-no-station-timeout 证明。
 #>
 [CmdletBinding()]
 param([Parameter(Mandatory)][object]$Context)
@@ -36,6 +36,8 @@ $demandGuid = [guid]::NewGuid()
 $demandWire = $demandGuid.ToString('N')
 $demandId = $demandGuid.ToString('D')
 $alarmCode = 'STATION_TIMEOUT_REDISPATCH_LIMIT_REACHED'
+$sublot = "L2-STR-$($Context.RunId)"
+$suppressionsEndpoint = "http://127.0.0.1:$($Context.HealthPort)/api/dashboard/station-timeout-suppressions"
 
 function Get-Count([string]$sql) {
     $rows = Invoke-L2Query -Connection $connection -Sql $sql
@@ -70,6 +72,13 @@ function Get-DemandState {
 function Format-DemandState($state) {
     $alarmText = (@($state.Alarms) | ForEach-Object { "$($_.ReasonCode)$(if ($null -ne $_.ClearedAt) { '/cleared' })" }) -join ','
     return "$($state.Status) / 放回 $($state.Released) 次 / 归属 $($state.Memberships) 行 / 抑制 $($state.Suppressions) / 告警 [$alarmText]"
+}
+
+# 看板站点超时抑制清单里这条需求的那一行；不在就是 $null。-DateKind String：时刻原样读回，不经本地时区换算。
+function Get-SuppressionEntry {
+    $response = Invoke-WebRequest -Uri $suppressionsEndpoint -NoProxy -TimeoutSec 10
+    $fact = $response.Content | ConvertFrom-Json -DateKind String
+    return @($fact.suppressions | Where-Object { [string]$_.demandId -eq $demandId }) | Select-Object -First 1
 }
 
 # 车跑第 $Visit 趟的取货单：接单、行驶、停在取货点。后两趟车本来就停在那里，但那是一张新的运单，到站判定要重跑一遍。
@@ -126,39 +135,37 @@ $journal.Note('Synthetic peer stops answering sublot entry requests: nobody come
 $null = $onboard.Command('Put', 'policy', @{ sublot = 'Silent' })
 $journal.Note("Publishing demand $demandWire.")
 $null = $mes.Command('Put', "demands/$demandWire", @{
-    sublot      = "L2-STR-$($Context.RunId)"
+    sublot      = $sublot
     area        = 'N1-3'
     eqp         = 'EQP-L2-01'
     package     = 'L2-PACKAGE'
     maxBoxCount = 4
 })
 
-# --- 第 1、2 趟：放回待派 ---------------------------------------------------------------------------
+# --- 第 1 趟：期限到，终结并告警，不放回 -------------------------------------------------------------
 
-foreach ($visit in 1, 2) {
-    $ended = Invoke-UnscannedVisit $visit
-    $state = Get-DemandState
-    $journal.Observe("after-visit-$visit", (Format-DemandState $state), @{ journey = $ended; state = $state })
-    $assertions.Add(
-        "L2-STR-0$visit", "第 $visit 趟期限到：旅程以 RELEASED_AT_STATION_DEADLINE 收尾，需求仍 Accepted、放回 $visit 次、不抑制、不告警",
-        ([string]$ended.BlockReasonCode -eq 'RELEASED_AT_STATION_DEADLINE' -and $state.Status -eq 'Accepted' -and
-            $state.Released -eq $visit -and $state.Suppressions -eq 0 -and @($state.Alarms).Count -eq 0),
-        "RELEASED_AT_STATION_DEADLINE / Accepted / 放回 $visit 次 / 抑制 0 / 告警 []",
-        "$($ended.BlockReasonCode) / $(Format-DemandState $state)")
-}
-
-# --- 第 3 趟：到上限，终结并告警 ---------------------------------------------------------------------
-
-$third = Invoke-UnscannedVisit 3
+$first = Invoke-UnscannedVisit 1
 $state = Get-DemandState
-$journal.Observe('after-visit-3', (Format-DemandState $state), @{ journey = $third; state = $state })
+$journal.Observe('after-visit-1', (Format-DemandState $state), @{ journey = $first; state = $state })
 $openAlarms = @($state.Alarms | Where-Object { [string]$_.ReasonCode -eq $alarmCode -and $null -eq $_.ClearedAt })
 $assertions.Add(
-    'L2-STR-03', '第 3 趟期限到（已放回 2 次）：CANCELLED_BY_STATION_TIMEOUT、需求 Cancelled、抑制 1 条、挂人工搬运告警',
-    ([string]$third.BlockReasonCode -eq 'CANCELLED_BY_STATION_TIMEOUT' -and $state.Status -eq 'Cancelled' -and
-        $state.Released -eq 2 -and $state.Suppressions -eq 1 -and $openAlarms.Count -eq 1),
-    "CANCELLED_BY_STATION_TIMEOUT / Cancelled / 放回 2 次 / 抑制 1 / 告警 [$alarmCode]",
-    "$($third.BlockReasonCode) / $(Format-DemandState $state)")
+    'L2-STR-01', '第 1 趟期限到（出厂上限 0）：CANCELLED_BY_STATION_TIMEOUT、需求 Cancelled、不放回、抑制 1 条、挂人工搬运告警',
+    ([string]$first.BlockReasonCode -eq 'CANCELLED_BY_STATION_TIMEOUT' -and $state.Status -eq 'Cancelled' -and
+        $state.Released -eq 0 -and $state.Suppressions -eq 1 -and $openAlarms.Count -eq 1),
+    "CANCELLED_BY_STATION_TIMEOUT / Cancelled / 放回 0 次 / 抑制 1 / 告警 [$alarmCode]",
+    "$($first.BlockReasonCode) / $(Format-DemandState $state)")
+
+$pickupStation = [string](Invoke-L2Query -Connection $connection -Sql (
+        "SELECT PickupStationId FROM JourneyRuntimes WHERE JourneyId = '$($first.JourneyId)'"))[0].PickupStationId
+$entry = Wait-L2ConditionOrLast -Description 'the station timeout suppression list shows the demand' `
+    -Journal $journal -Criterion 'suppression-listed' -TimeoutSeconds 30 `
+    -Probe { Get-SuppressionEntry } -Until { param($v) $null -ne $v }
+$assertions.Add(
+    'L2-STR-02', '看板站点超时抑制清单列出这条需求：批号、取货站点、终结时刻',
+    ($null -ne $entry -and [string]$entry.sublot -eq $sublot -and [string]$entry.stationId -eq $pickupStation -and
+        -not [string]::IsNullOrEmpty([string]$entry.endedAt)),
+    "$sublot / $pickupStation / 有终结时刻",
+    $(if ($null -eq $entry) { '(not listed)' } else { "$($entry.sublot) / $($entry.stationId) / $($entry.endedAt)" }))
 
 # 目录里它还在：运行时与派车轮再转几轮，不再派车，告警也不被派车轮清掉。
 $null = Wait-L2Iterations -Riot $riot -Count 4 -Journal $journal
@@ -168,9 +175,9 @@ $catalogStillLists = @($mes.Snapshot().body.demands | Where-Object { [string]$_.
 $state = Get-DemandState
 $openAlarms = @($state.Alarms | Where-Object { [string]$_.ReasonCode -eq $alarmCode -and $null -eq $_.ClearedAt })
 $assertions.Add(
-    'L2-STR-04', '目录仍列出这一单：不再派车（3 条旅程、3 张取货单），告警仍挂着',
-    ($catalogStillLists -ge 1 -and $journeys -eq 3 -and $pickupOrders -eq 3 -and $openAlarms.Count -eq 1),
-    '目录列出 / 3 / 3 / 告警未清', "目录列出 $catalogStillLists / $journeys / $pickupOrders / $(Format-DemandState $state)")
+    'L2-STR-04', '目录仍列出这一单：不再派车（1 条旅程、1 张取货单），告警仍挂着',
+    ($catalogStillLists -ge 1 -and $journeys -eq 1 -and $pickupOrders -eq 1 -and $openAlarms.Count -eq 1),
+    '目录列出 / 1 / 1 / 告警未清', "目录列出 $catalogStillLists / $journeys / $pickupOrders / $(Format-DemandState $state)")
 
 # --- MES 关单：告警清 -------------------------------------------------------------------------------
 
@@ -184,5 +191,12 @@ $assertions.Add(
     'L2-STR-05', '需求离开 MES 目录之后，人工搬运告警被清',
     (@($cleared.Alarms | Where-Object { [string]$_.ReasonCode -eq $alarmCode -and $null -ne $_.ClearedAt }).Count -eq 1),
     "告警 [$alarmCode/cleared]", (Format-DemandState $cleared))
+$stillListed = Wait-L2ConditionOrLast -Description 'the suppression list dropped the demand once MES closed it' `
+    -Journal $journal -Criterion 'suppression-unlisted' -TimeoutSeconds 30 `
+    -Probe { $listed = Get-SuppressionEntry; if ($null -eq $listed) { '(not listed)' } else { $listed } } `
+    -Until { param($v) $v -is [string] -and $v -eq '(not listed)' }
+$assertions.Add(
+    'L2-STR-06', '需求离开 MES 目录之后，站点超时抑制清单不再列出它',
+    ($stillListed -is [string] -and $stillListed -eq '(not listed)'), '(not listed)', [string]$stillListed)
 
 $journal.Note('Scenario finished.')

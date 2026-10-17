@@ -1,19 +1,21 @@
 #Requires -Version 7
 
 <#
-站点超时放回待派、同一辆车重新派回同一站，真车载端上走得通（control-server#703 审查 M3）。
+站点期限第一次到点即终结、不放回、不再派车，真车载端上走得通（REQ-0365，CP-0016，control-server#751）。
 
-生产用默认上限（StationTimeoutRedispatchLimit = 2）：车到站没人扫码，期限一到服务端把需求放回待派，旅程以
-RELEASED_AT_STATION_DEADLINE 收尾，车载端先收到说 DEMAND_RELEASED 的收尾快照；紧接着同一个 demandId 多半被重新派回这辆车、这一站。
-这一串真车载端从没跑过。合成对端只看得到线上报文，车上是不是撤干净了旧的那一站、新的一趟能不能照常扫码装货，只有真 WPF 加
-UI Automation 看得见。
+服务端用出厂上限（StationTimeoutRedispatchLimit = 0，setup 不设）：车到站没人扫码，期限一到服务端以 CANCELLED_BY_STATION_TIMEOUT
+终结需求、按业务键抑制、挂人工搬运告警，旅程收尾。车停在这一站，此后派车轮一轮轮跑，这条需求不再派回这辆车。
 
-一条需求，两趟：
-  1. 第一趟：车到站、车上要子批（正向锚点）；没人扫，期限到，服务端放回并收尾。车就停在这一站，下一轮多半立刻被重新派车，
-     所以「旧的那一站撤干净」不单独判，判的是下面新一趟的录入能用、全程没断线。
-  2. 第二趟：同一个 demandId 以新的一代被重新派车，车再到这一站；车上又要这个子批；操作员扫码，服务端受理并下装货命令。
-全程车载端没有重连（SessionHello 次数不变）、主窗口还在：收尾快照与新一趟的清单号若撞号，车会以 SNAPSHOT_REVISION_CONTENT_CONFLICT
-断会话，重连次数会多出来。
+control-server#703 审查 M3 时这条场景证的是「放回、同一辆车重新派回同一站、新一趟照常扫码」；v5 不再放回，那一串不复存在，
+场景名保留（改名要动 l2.yml 与既有证据），判据改成默认配置下的新行为。车上撤不撤干净那一站、迟到的取消与扫码，
+由 real-onboard-stale-stop-after-station-timeout 三趟细判；这里判的是出厂配置下的一整段：终结、告警、车上不再要这单、不再派车、全程不断线。
+
+一条需求，一趟：
+  1. 车到站、车上要子批（正向锚点）；
+  2. 没人扫，期限到：旅程以 CANCELLED_BY_STATION_TIMEOUT 收尾、需求 Cancelled、没有放回待派的归属行、人工搬运告警挂着；
+  3. 车上不再要这个子批、清单不再挂着这单；
+  4. 再等派车轮转十轮：仍只有这一条旅程、一张取货单，车上没再要这单，告警仍挂着；
+  5. 全程车载端没有重连（SessionHello 次数不变）、主窗口还在。
 #>
 [CmdletBinding()]
 param([Parameter(Mandatory)][object]$Context)
@@ -82,7 +84,7 @@ function Move-ToPickup([int]$Visit) {
     Move-L2RealVehicleTo $Context $intent $Context.PickupStationRiotId "the pickup station (visit $Visit)"
 }
 
-# --- 1. 第一趟：到站、没人扫、期限到放回 ------------------------------------------------------------------------------
+# --- 1. 到站、车上要子批 -----------------------------------------------------------------------------------------------
 
 $journal.Note("Publishing demand $($demandGuid.ToString('N')) (sublot $sublot).")
 $null = $Context.MesIngest.Command('Put', "demands/$($demandGuid.ToString('N'))", @{
@@ -95,56 +97,59 @@ $offered = Wait-L2RealOrLast -Description 'the vehicle asks for the sublot on vi
     -Journal $journal -Criterion 'visit-1-offered' -TimeoutSeconds 120 `
     -Probe { Get-VehicleView } -Until { param($v) $v.CanSubmit -and $v.ListsSublot }
 $assertions.Add(
-    'L2-RSTR-01', '第一趟：车到站后要子批、清单挂着这单（正向锚点）',
+    'L2-RSTR-01', '车到站后要子批、清单挂着这单（正向锚点）',
     ($offered.CanSubmit -and $offered.ListsSublot), 'canSubmit / listsSublot 均为 True', (Format-VehicleView $offered))
 $hellos = Get-HelloCount
 
-$journal.Note('Nobody scans. Waiting for the station deadline to release the demand.')
-$released = Wait-L2RealOrLast -Description 'the station deadline released the demand and closed visit 1' `
-    -Journal $journal -Criterion 'visit-1-released' -TimeoutSeconds 180 `
+# --- 2. 期限到：终结、告警，不放回 -------------------------------------------------------------------------------------
+
+$journal.Note('Nobody scans. Waiting for the station deadline to end the demand.')
+$ended = Wait-L2RealOrLast -Description 'the station deadline ended the demand and closed visit 1' `
+    -Journal $journal -Criterion 'visit-1-ended' -TimeoutSeconds 180 `
     -Probe { Get-Journey 1 } -Until { param($v) [string]$v.Stage -eq 'Completed' }
 $status = [string](Get-L2RealScalar $connection "SELECT Status AS Value FROM AcceptedDemands WHERE DemandId = '$demandId'")
+$released = Get-L2RealCount $connection (
+    "SELECT COUNT(*) AS Total FROM JourneyDemands WHERE DemandId = '$demandId' AND RemovalReason = 'RELEASED_AT_STATION_DEADLINE'")
+$alarms = Get-L2RealCount $connection (
+    "SELECT COUNT(*) AS Total FROM StructuralDispatchBlocks WHERE DemandId = '$demandId' " +
+    "AND ReasonCode = 'STATION_TIMEOUT_REDISPATCH_LIMIT_REACHED' AND ClearedAt IS NULL")
 $assertions.Add(
-    'L2-RSTR-02', '第一趟：期限到，旅程以 RELEASED_AT_STATION_DEADLINE 收尾，需求仍 Accepted（放回待派，不是终结）',
-    ([string]$released.Stage -eq 'Completed' -and [string]$released.BlockReasonCode -eq 'RELEASED_AT_STATION_DEADLINE' -and $status -eq 'Accepted'),
-    'Completed / RELEASED_AT_STATION_DEADLINE / Accepted', "$($released.Stage) / $($released.BlockReasonCode) / $status")
+    'L2-RSTR-02', '期限到（出厂上限 0）：旅程以 CANCELLED_BY_STATION_TIMEOUT 收尾、需求 Cancelled、没有放回、人工搬运告警挂着',
+    ([string]$ended.Stage -eq 'Completed' -and [string]$ended.BlockReasonCode -eq 'CANCELLED_BY_STATION_TIMEOUT' -and
+        $status -eq 'Cancelled' -and $released -eq 0 -and $alarms -eq 1),
+    'Completed / CANCELLED_BY_STATION_TIMEOUT / Cancelled / 放回 0 / 告警 1',
+    "$($ended.Stage) / $($ended.BlockReasonCode) / $status / 放回 $released / 告警 $alarms")
 
-# --- 2. 第二趟：重新派回、再到站、扫码装货 ----------------------------------------------------------------------------
+# --- 3. 车上不再要这单 ---------------------------------------------------------------------------------------------------
 
-$second = Wait-L2RealOrLast -Description 'the released demand was dispatched again' `
-    -Journal $journal -Criterion 'visit-2-dispatched' -TimeoutSeconds 120 `
-    -Probe { Get-Journey 2 } -Until { param($v) $null -ne $v }
-if ($null -eq $second) {
-    Add-L2RealNotReached $assertions @('L2-RSTR-03', 'L2-RSTR-04', 'L2-RSTR-05') 'the released demand was never dispatched again'
-    $journal.Note('Scenario finished early.')
-    return
-}
-Move-ToPickup 2
-$offeredAgain = Wait-L2RealOrLast -Description 'the vehicle asks for the sublot again on visit 2' `
-    -Journal $journal -Criterion 'visit-2-offered' -TimeoutSeconds 180 `
-    -Probe { Get-VehicleView } -Until { param($v) $v.CanSubmit -and $v.ListsSublot }
+$withdrawn = Wait-L2RealOrLast -Description 'the vehicle no longer asks for the sublot' `
+    -Journal $journal -Criterion 'visit-1-withdrawn' -TimeoutSeconds 60 `
+    -Probe { Get-VehicleView } -Until { param($v) -not $v.ListsSublot -and -not $v.CanSubmit }
 $assertions.Add(
-    'L2-RSTR-03', '第二趟：同一个需求重新派回、车再到站，车上又要这个子批',
-    ($offeredAgain.CanSubmit -and $offeredAgain.ListsSublot), 'canSubmit / listsSublot 均为 True', (Format-VehicleView $offeredAgain))
+    'L2-RSTR-03', '终结之后，车上不再要这个子批、清单不再挂着这单',
+    (-not $withdrawn.CanSubmit -and -not $withdrawn.ListsSublot), 'canSubmit / listsSublot 均为 False', (Format-VehicleView $withdrawn))
 
-$journal.Note("Typing sublot $sublot into ScanTextBox through UI Automation.")
-$onboard.SetSublot($sublot)
-$null = Wait-L2Condition -Description 'the manual submit button became enabled' `
-    -Journal $journal -Criterion 'visit-2-submit-ready' -TimeoutSeconds 30 `
-    -Probe { $onboard.SubmitReady() } -Until { param($v) $v }
-$onboard.Submit()
-$loadAttempt = Wait-L2RealOrLast -Description 'the server issued the load command for visit 2' `
-    -Journal $journal -Criterion 'visit-2-load' -TimeoutSeconds 120 `
-    -Probe { Get-L2RealScalar $connection "SELECT SlotOperationAttemptId AS Value FROM StationOperations WHERE DemandId = '$demandId' AND OperationType = 'Load'" } `
-    -Until { param($v) $v }
+# --- 4. 不再派车 ---------------------------------------------------------------------------------------------------------
+
+$null = Wait-L2Iterations -Riot $riot -Count 10 -TimeoutSeconds 90 -Journal $journal
+$journeys = Get-L2RealCount $connection "SELECT COUNT(*) AS Total FROM JourneyRuntimes WHERE DemandId = '$demandId'"
+$pickupOrders = Get-L2RealCount $connection (
+    "SELECT COUNT(*) AS Total FROM OrderIntents WHERE DemandId = '$demandId' AND Purpose = 'TO_PICKUP'")
+$view = Get-VehicleView
+$alarms = Get-L2RealCount $connection (
+    "SELECT COUNT(*) AS Total FROM StructuralDispatchBlocks WHERE DemandId = '$demandId' " +
+    "AND ReasonCode = 'STATION_TIMEOUT_REDISPATCH_LIMIT_REACHED' AND ClearedAt IS NULL")
 $assertions.Add(
-    'L2-RSTR-04', '第二趟：操作员扫码，服务端受理并下装货命令',
-    (Test-L2RealPresent $loadAttempt), '有一条装货仓位操作', $(if (Test-L2RealPresent $loadAttempt) { [string]$loadAttempt } else { '(none)' }))
+    'L2-RSTR-04', '派车轮再转十轮：仍只有一条旅程、一张取货单，车上没再要这单，告警仍挂着',
+    ($journeys -eq 1 -and $pickupOrders -eq 1 -and -not $view.ListsSublot -and $alarms -eq 1),
+    '1 / 1 / listsSublot False / 告警 1', "$journeys / $pickupOrders / listsSublot $($view.ListsSublot) / 告警 $alarms")
+
+# --- 5. 全程不断线 -------------------------------------------------------------------------------------------------------
 
 $hellosAfter = Get-HelloCount
 $alive = Test-OnboardAlive
 $assertions.Add(
-    'L2-RSTR-05', '全程车载端没有重连（SessionHello 次数不变，收尾快照与新一趟的清单号没撞）、主窗口还在',
+    'L2-RSTR-05', '全程车载端没有重连（SessionHello 次数不变）、主窗口还在',
     ($hellosAfter -eq $hellos -and $alive),
     "SessionHello $hellos → 不变；主窗口在", "SessionHello $hellos → $hellosAfter；主窗口 $(if ($alive) { '在' } else { '不在' })")
 
