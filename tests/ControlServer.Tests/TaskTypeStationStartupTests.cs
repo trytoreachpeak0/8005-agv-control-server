@@ -163,7 +163,6 @@ public sealed class TaskTypeStationStartupTests
     /// stations. Binding it is control-server#738's, once the user names the station and it is checked on site.
     /// </summary>
     [Fact]
-    [Trait("IntegrationSlice", "FP-IS-10")]
     public async Task TheMap26PresetRefusesOnlyTheUnboundFullInspectionTypeAndResolvesTheOtherSix()
     {
         await using Harness harness = await Harness.CreateAsync(
@@ -208,7 +207,6 @@ public sealed class TaskTypeStationStartupTests
     /// stops, not only the new one.
     /// </summary>
     [Fact]
-    [Trait("IntegrationSlice", "FP-IS-10")]
     public void RequiringTheUnboundFullInspectionTypeOnMap26RefusesTheWholeStart()
     {
         TaskTypeStationConfiguration shipped =
