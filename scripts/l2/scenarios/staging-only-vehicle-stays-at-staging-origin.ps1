@@ -20,6 +20,8 @@ RIoT 报单完成后到站，录入请求发到 V 的车上——清单可扫。
 的流程；真 RIoT 对「目的站就是当前站」的单怎么处理，不在这里证明（RIoT 行为实验室样本数为 0，上线前实测）。**
 
 **红证据**（缺陷版本）：去掉本票的规则，第二段 V 在 305 收尾后下一轮就承诺空闲返回、建开往等待点的单，L2-SIS-03 变红。
+control-server#752 之后不再是这样：关掉本票的规则，空闲返回以待送点为目标，承诺被 V 自己在 305 的占用挡住
+（`IDLE_RETURN_COMMITMENT_REFUSED`），车仍不动，只有 L2-SIS-06（看板结论码）变红。
 #>
 [CmdletBinding()]
 param([Parameter(Mandatory)][object]$Context)
