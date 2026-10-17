@@ -1,11 +1,11 @@
 {
   "minimumPostTaskBatteryMarginPercent": 20,
-  "mandatoryChargeEntryThresholdPercent": 30,
+  "mandatoryChargeEntryThresholdPercent": 40,
   "chargingCompletionThresholdPercent": 80,
   "estimatedTaskConsumptionPercent": 10,
   "progressStabilizationSeconds": 180,
   "progressObservationWindowSeconds": 600,
   "progressMinimumIncreasePercent": 3,
   "vehicleScope": [],
-  "changeNote": "投运参数：批次 9 方案第七节第 6 条的推荐值，用户 2026-09-29 同意（control-server#400）。80 > 30 >= 20（REQ-0281）。"
+  "changeNote": "强制充电线 30 改为 40：用户 2026-10-18 凌晨定（control-server#738 评论记录），充满线 80、任务后余量 20、单趟预计消耗 10 不变。起因：10-18 02:12 agv03 在 30% 仍被派搬运，两道电池判据都卡线放行（30 不低于强制线 30；30-10=20 不低于余量 20），三车近日约 25% 掉电断电。选提高强制线而不是提高余量：只提高余量时 30～39 的车既不接活也不会被派去充电。80 > 40 >= 20（REQ-0281）；救命告警线 waitingJourneyRescueBatteryPercent=15 低于 40。上一版为批次 9 方案第七节第 6 条的推荐值（用户 2026-09-29 同意，control-server#400）。"
 }
