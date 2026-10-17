@@ -456,6 +456,51 @@ public sealed class StagingLoadCancellationTests
     }
 
     /// <summary>
+    /// control-server#742 扩项只对机台取货（审查建议 2，CP-0015 修订项一）：待送点上出发请求带的清单号过期，即使新旧两版都没有待做项、已装没变，也照旧答
+    /// <c>WORKLIST_REVISION_STALE</c>，不出发（待送点另议）。待送点没有站点期限，不会有「只补期限」的那一版顶掉旧号，这里在库里补一版内容相同、号加一的空清单来造。
+    /// </summary>
+    [Fact]
+    [Trait("IntegrationSlice", "FP-IS-02")]
+    [Trait("IntegrationSlice", "FP-IS-11")]
+    public async Task AStaleDepartureAtAStagingStopIsRefusedEvenWithoutASubstantiveChange()
+    {
+        await using RuntimeFixture fixture = await TwoDemandsAtTheStagingStopAsync();
+        await SubmitAtCurrentStopAsync(fixture, "SUBLOT-001");
+        await RoundAsync(fixture);
+        await StaleWorklistDepartureTests.SettleLoadThroughTheInboxAsync(fixture, Demand);
+        await RoundAsync(fixture);
+        await CancelBeforeScanAsync(fixture, SecondDemand);
+        await RoundAsync(fixture);
+        Assert.Equal(JourneyRuntimeStage.AwaitingStationDeparture, (await fixture.RuntimeAsync()).Stage);
+
+        long shown = await CurrentStopDepartures.CurrentWorklistRevisionAsync(fixture.Context, fixture.Options.AgvId, Token);
+        JourneyRuntimeRow runtime = await fixture.RuntimeAsync();
+        JourneyStopCursor stops = await JourneyStopCursor.LoadAsync(fixture.Context, runtime, Token);
+        ProtocolOutboxRow last = await fixture.Context.ProtocolOutbox.AsNoTracking()
+            .SingleAsync(row => row.MessageId == stops.WorklistMessageIdAt(runtime.WorklistRevision, stops.Current, shown), Token);
+        System.Text.Json.Nodes.JsonNode next = System.Text.Json.Nodes.JsonNode.Parse(last.PayloadJson)!;
+        next["payload"]!["worklistRevision"] = shown + 1;
+        Assert.Empty(next["payload"]!["items"]!.AsArray());
+        fixture.Context.ProtocolOutbox.Add(new ProtocolOutboxRow
+        {
+            MessageId = stops.WorklistMessageIdAt(runtime.WorklistRevision, stops.Current, shown + 1),
+            MessageType = last.MessageType,
+            PayloadJson = next.ToJsonString(),
+            CreatedAt = fixture.Clock.GetUtcNow()
+        });
+        await fixture.Context.SaveChangesAsync(Token);
+        fixture.Context.ChangeTracker.Clear();
+
+        string departureRequestId = await StagingDepartureRequestTests.RequestDepartureAsync(
+            fixture, worklistRevision: shown, operationSessionId: null);
+        await RoundAsync(fixture);
+
+        JsonElement result = await StagingDepartureRequestTests.ResultAsync(fixture, departureRequestId);
+        Assert.True(result.GetProperty("outcome").GetString() == "REJECTED", $"A stale departure at a staging stop was taken: {result}");
+        Assert.Equal(ServerReasonCodes.WorklistRevisionStale, result.GetProperty("problem").GetProperty("reasonCode").GetString());
+    }
+
+    /// <summary>
     /// 车停在待送点上带着货等单：一路跑到持货期限前两秒，装货阶段一直是 CARGO_HOLDING_WAIT、离站核验一次都没发；过了持货期限，装货阶段以持货到期关闭
     /// （或车已在离站核验上）。
     /// </summary>
