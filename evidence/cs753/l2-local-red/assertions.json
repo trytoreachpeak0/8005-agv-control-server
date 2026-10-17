@@ -1,0 +1,73 @@
+{
+  "schemaVersion": 1,
+  "scenario": "g3-load-cancellation-before-load",
+  "runId": "20261017T151423404Z",
+  "outcome": "FAIL",
+  "failureReason": "",
+  "identity": {
+    "batchId": "fti-v5",
+    "protocolReleaseIdentity": {
+      "repository": "8005-agv-protocol",
+      "releaseVersion": "5.0.0",
+      "tag": "protocol-v5.0.0",
+      "commit": "13eca82ac199bd97c1ad49d036c70cb5b012250f",
+      "protocolVersion": 6,
+      "profileId": "AGV_FULL_PRODUCT",
+      "manifestSha256": "128daae52758749d4d6f346231fdb336ca5d1079773bcab5430c20c53ce6b10b",
+      "schemaBundleSha256": "d51abe44036f32b5b2c28fd1bea6ec7a89cf3b4dea0f0b1d6c9daaf52f350933",
+      "vectorsSha256": "291311b24bfcac75818ca9e4a888d436523e6ee14db661f6ba792ab8cc383e4a",
+      "approvalStatus": "SUPERSEDING_CANDIDATE"
+    },
+    "stageRoot": "C:\\Users\\szy\\AppData\\Local\\Temp\\l2-20261017T151423404Z",
+    "onboardHmiCommit": "adc1a28f153dc17aa54dcff1400abcc4bc21ff0b",
+    "agvId": "AGV-L2-001",
+    "slotsSimulatorCommit": "fb5f7c593742bf98bc3957b8729a38aad5321f28",
+    "controlServerCommit": "7b302c9ceeac2eac8a44545d8b76304819e0f4b5",
+    "rig": "RealOnboard",
+    "vehicleKey": "BROKERX-L2-0001"
+  },
+  "assertions": [
+    {
+      "id": "G3-02-31",
+      "description": "车到站、录入请求挂着、还没录入任何子批时，车载端清单里这一行出现可用的「取消」（机台取货停靠每行一个，CP-0016；不依赖恢复开关）",
+      "outcome": "FAIL",
+      "expected": "row 取消 pressable=True",
+      "actual": "row 取消 pressable=False / bottom 取消装货 offered=True"
+    },
+    {
+      "id": "G3-02-32",
+      "description": "未到达：车载端清单里这一行没有可按的「取消」",
+      "outcome": "FAIL",
+      "expected": "(reached)",
+      "actual": "(not reached) 车载端清单里这一行没有可按的「取消」"
+    },
+    {
+      "id": "G3-02-33",
+      "description": "未到达：车载端清单里这一行没有可按的「取消」",
+      "outcome": "FAIL",
+      "expected": "(reached)",
+      "actual": "(not reached) 车载端清单里这一行没有可按的「取消」"
+    },
+    {
+      "id": "G3-02-34",
+      "description": "未到达：车载端清单里这一行没有可按的「取消」",
+      "outcome": "FAIL",
+      "expected": "(reached)",
+      "actual": "(not reached) 车载端清单里这一行没有可按的「取消」"
+    },
+    {
+      "id": "G3-02-35",
+      "description": "未到达：车载端清单里这一行没有可按的「取消」",
+      "outcome": "FAIL",
+      "expected": "(reached)",
+      "actual": "(not reached) 车载端清单里这一行没有可按的「取消」"
+    },
+    {
+      "id": "G3-02-36",
+      "description": "未到达：车载端清单里这一行没有可按的「取消」",
+      "outcome": "FAIL",
+      "expected": "(reached)",
+      "actual": "(not reached) 车载端清单里这一行没有可按的「取消」"
+    }
+  ]
+}
