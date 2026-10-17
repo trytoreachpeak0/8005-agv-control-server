@@ -429,6 +429,11 @@ public sealed class MachinePickupDepartureTests
     /// <remarks>
     /// control-server#742（CP-0015）起，这种停靠不再停在离站等待里等期限：取消之后的那一轮服务端自己就发离站核验，所以这里改为先断言车已经自己在走，
     /// 再断言出发按键仍被拒、核验数不变。按键要拒的理由没变（本站不算装完），变的只是它到达时车已经不在离站等待里。
+    /// <para>
+    /// 因此这里的拒绝现在来自「车不在等录入或离站等待里」那道阶段闸（<c>AtStopAwaitingDeparture</c> 为假），不再来自「本站一篮没装」
+    /// （<c>MachinePickupLoadsComplete</c> 为假）——两者答的是同一个原因码。「本站一篮没装就拒」这个区分仍由同文件的
+    /// <see cref="DepartureAtASecondStopOfTheSameStationWithNothingLoadedThereIsRefused"/> 守着：那里持货等单把车留在离站等待里，拒绝只能来自装完那一条（PR #743 审查备注 4）。
+    /// </para>
     /// </remarks>
     [Fact]
     [Trait("IntegrationSlice", "FP-IS-02")]

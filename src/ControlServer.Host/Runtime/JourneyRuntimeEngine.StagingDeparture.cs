@@ -514,15 +514,16 @@ public sealed partial class JourneyRuntimeEngine
     /// 消息 id 落进发件箱的、站是当前站：请求指的是车此刻停着的这一站，不是上一站留下的清单。</item>
     /// <item>请求带的作业会话不在这里比：<see cref="CurrentStopDepartureRule"/> 照旧拿它与当前停靠比，为空不比。</item>
     /// <item>从请求号那一版到当前号，每一版的 <c>items</c> 都为空：车屏上那一版已经没有待做项，之后也再没有过。</item>
-    /// <item>请求号那一版落库之后，本站的已装集合没变：本站每一条 <c>LOADED</c> 的装货操作都在那一刻之前提交，那一刻之后本站没有开过纠错。</item>
+    /// <item>请求号那一版落库之后，本站的已装集合没变，多了少了都不行，之后也没开过纠错（<see cref="LoadsAtStopUnchangedSinceAsync"/>，只用服务端的钟）。</item>
     /// </list>
     /// <para>
-    /// 第 4 条在构造上由第 3 条推出——装上一篮之前，它必先作为待做项出现在某一版清单里；途中追加不并入当前停靠（REQ-0196，
-    /// <c>EnRouteAppendPlanner.MergeTargetAt</c>），本停靠不会凭空多出待做项。这里照样直接比，不只靠推论：那两个前提哪天被改了，第 3 条单独放行的就会是
-    /// 一个已装集合变过的请求。判据是 <c>StaleWorklistDepartureTests.AStaleRequestIsRefusedWhenTheLoadsAtTheStopChangedAfterItsWorklist</c>。
+    /// 只对机台取货停靠；待送点上过期请求照旧答过期（CP-0015 修订项一，待送点另议）。
     /// </para>
     /// <para>
-    /// 时刻比较在内存里做：SQLite 不能在库里比较 <c>DateTimeOffset</c>。两个时刻都是服务端自己的钟。
+    /// 「多了」一侧在构造上由第 3 条推出——装上一篮之前，它必先作为待做项出现在某一版清单里；途中追加不并入当前停靠（REQ-0196，
+    /// <c>EnRouteAppendPlanner.MergeTargetAt</c>），本停靠不会凭空多出待做项。这里照样直接比，不只靠推论：那两个前提哪天被改了，第 3 条单独放行的就会是
+    /// 一个已装集合变过的请求。判据是 <c>StaleWorklistDepartureTests.AStaleRequestIsRefusedWhenTheLoadsAtTheStopChangedAfterItsWorklist</c>；
+    /// 「少了」一侧推不出来（已装的被终结不会让任何一版多出待做项），判据是 <c>AStaleRequestIsRefusedWhenALoadedBasketLeftTheStopAfterItsWorklist</c>。
     /// </para>
     /// </remarks>
     private async Task<bool> StaleWorklistWithoutSubstantiveChangeAsync(
@@ -533,7 +534,9 @@ public sealed partial class JourneyRuntimeEngine
         CancellationToken cancellationToken)
     {
         JourneyStopRow stop = locked.Current;
-        if (stop.StopRole != JourneyStopRoles.Pickup || requested < locked.FirstWorklistRevisionAt(runtime.WorklistRevision, stop))
+        // 只对机台取货（审查建议 2，CP-0015 修订项一只对机台取货停靠；待送点另议）：待送点上过期请求照旧答过期。
+        if (stop.StopRole != JourneyStopRoles.Pickup || IsStagingPickup(stop) ||
+            requested < locked.FirstWorklistRevisionAt(runtime.WorklistRevision, stop))
         {
             return false;
         }
@@ -558,23 +561,83 @@ public sealed partial class JourneyRuntimeEngine
             }
         }
 
-        DateTimeOffset requestedQueuedAt = rows[ids[0]].CreatedAt;
-        JourneyStopDemand[] loadedHere =
-            [.. locked.AllAtStop(stop).Where(item => item.Membership.Status == JourneyDemandStatuses.Loaded)];
-        string[] attempts = [.. loadedHere.Select(item => item.Membership.LoadSlotOperationAttemptId)];
-        Dictionary<string, DateTimeOffset?> committedAt = await dbContext.StationOperations.AsNoTracking()
-            .Where(row => attempts.Contains(row.SlotOperationAttemptId))
-            .ToDictionaryAsync(row => row.SlotOperationAttemptId, row => row.CommittedAt, StringComparer.Ordinal, cancellationToken)
+        return await LoadsAtStopUnchangedSinceAsync(runtime, stop, rows[ids[0]].CreatedAt, cancellationToken).ConfigureAwait(false);
+    }
+
+    /// <summary>
+    /// <paramref name="since"/>（请求那一版清单落进发件箱的时刻）之后，本停靠的已装集合没变，两个方向都比（<see cref="StaleWorklistWithoutSubstantiveChangeAsync"/> 第 4 条）。
+    /// </summary>
+    /// <remarks>
+    /// <para>
+    /// <b>只用服务端自己的钟</b>（PR #743 审查建议 1）。装货的时刻取服务端收到那条 <c>OperationResult</c> 的时刻：收件箱那一行的 <c>ReceivedAt</c>
+    /// （<c>ProtocolInbox</c> 的主键就是结果的 messageId，即 <c>OperationResults.ResultId</c>）。不取 <c>StationOperations.CommittedAt</c>：那是车报的
+    /// <c>observedAt</c>，车上位机的钟，偏快时会误拒、偏慢时会漏拦（现场 agv01 曾快 1041 ms）。<c>OperationResults.ReceivedAt</c> 写入时填的也是
+    /// <c>observedAt</c>，同样不能用。清单落库时刻 <paramref name="since"/> 与纠错行的 <c>CreatedAt</c> 都是服务端的 <c>timeProvider</c>。
+    /// 没按版号判：版号只记本停靠做完了几条（装上与终结不分），也不记每版之间补发了几张空清单，从版号推不回「那一版时本站装了哪几条」；要逐条记装上时刻得加列。
+    /// </para>
+    /// <para>
+    /// <b>多了</b>：本停靠此刻每一条 <c>LOADED</c> 的装货结果，服务端都在 <paramref name="since"/> 之前收到。找不到收件箱那一行也算没证明，拒。
+    /// <b>少了</b>（审查建议 3）：本停靠上装过货（装货操作已 <c>Committed</c>）、此刻却不再是 <c>LOADED</c> 或已移除的，一律拒。它离开的时刻库里没有记，
+    /// 分不清是在那一版之前还是之后，取偏安全的一侧：最坏是一次本可受理的出发答了过期，操作员再按一次。
+    /// <b>纠错</b>：本停靠任一条需求（含已终结、已移除的）在 <paramref name="since"/> 之后开过装货纠错，拒——已装的放置可能被改过。
+    /// </para>
+    /// <para>
+    /// 时刻比较在内存里做：SQLite 不能在库里比较 <c>DateTimeOffset</c>。
+    /// </para>
+    /// </remarks>
+    private async Task<bool> LoadsAtStopUnchangedSinceAsync(
+        JourneyRuntimeRow runtime,
+        JourneyStopRow stop,
+        DateTimeOffset since,
+        CancellationToken cancellationToken)
+    {
+        JourneyDemandRow[] here = await dbContext.Set<JourneyDemandRow>().AsNoTracking()
+            .Where(row => row.JourneyId == runtime.JourneyId && row.PickupStopId == stop.StopId)
+            .ToArrayAsync(cancellationToken).ConfigureAwait(false);
+        string[] attempts = [.. here.Select(row => row.LoadSlotOperationAttemptId)];
+        HashSet<string> committedLoads = new(
+            await dbContext.StationOperations.AsNoTracking()
+                .Where(row => attempts.Contains(row.SlotOperationAttemptId) && row.Status == StationOperationStatus.Committed)
+                .Select(row => row.SlotOperationAttemptId)
+                .ToArrayAsync(cancellationToken).ConfigureAwait(false),
+            StringComparer.Ordinal);
+        (string Attempt, string ResultId)[] results = [.. (await dbContext.OperationResults.AsNoTracking()
+                .Where(row => attempts.Contains(row.SlotOperationAttemptId) && row.SupersededByResultId == null)
+                .Select(row => new { row.SlotOperationAttemptId, row.ResultId })
+                .ToArrayAsync(cancellationToken).ConfigureAwait(false))
+            .Select(row => (row.SlotOperationAttemptId, row.ResultId))];
+        string[] resultIds = [.. results.Select(result => result.ResultId)];
+        Dictionary<string, DateTimeOffset> receivedAt = await dbContext.ProtocolInbox.AsNoTracking()
+            .Where(row => resultIds.Contains(row.MessageId))
+            .ToDictionaryAsync(row => row.MessageId, row => row.ReceivedAt, StringComparer.Ordinal, cancellationToken)
             .ConfigureAwait(false);
-        if (loadedHere.Any(item =>
-                !committedAt.TryGetValue(item.Membership.LoadSlotOperationAttemptId, out DateTimeOffset? at) ||
-                at is not { } committed || committed > requestedQueuedAt))
+
+        foreach (JourneyDemandRow member in here)
         {
-            return false;
+            bool loadedNow = member.Status == JourneyDemandStatuses.Loaded && member.RemovedAt is null;
+            if (!loadedNow)
+            {
+                if (committedLoads.Contains(member.LoadSlotOperationAttemptId))
+                {
+                    return false;
+                }
+                continue;
+            }
+            string[] reported = [.. results.Where(result => result.Attempt == member.LoadSlotOperationAttemptId).Select(result => result.ResultId)];
+            if (reported.Length == 0 ||
+                reported.Any(id => !receivedAt.TryGetValue(id, out DateTimeOffset at) || at > since))
+            {
+                return false;
+            }
         }
-        HashSet<string> demandsHere = new(locked.AllAtStop(stop).Select(item => item.Demand.DemandId), StringComparer.Ordinal);
-        return !(await CorrectionsOnBoardAsync(runtime, locked, cancellationToken).ConfigureAwait(false))
-            .Any(row => demandsHere.Contains(row.DemandId!) && row.CreatedAt > requestedQueuedAt);
+
+        string[] demandIds = [.. here.Select(row => row.DemandId)];
+        return !(await dbContext.RecoveryWorkflows.AsNoTracking()
+                .Where(row => row.DemandId != null && demandIds.Contains(row.DemandId) &&
+                              row.WorkflowType == "LOAD_CORRECTION" && row.AgvId == runtime.AgvId)
+                .Select(row => row.CreatedAt)
+                .ToArrayAsync(cancellationToken).ConfigureAwait(false))
+            .Any(createdAt => createdAt > since);
     }
 
     /// <summary>锚需求还在这趟旅程上、没开始装。</summary>
