@@ -7,9 +7,14 @@ namespace ControlServer.Domain;
 /// <remarks>
 /// <para>
 /// <b>This names the unreleased <c>5.0.0</c> candidate.</b> Every value below is read off
-/// <c>8005-agv-protocol</c> commit <c>4e9f3df8fb1733311e1ce534c1129cfb904760a4</c>, the merge of protocol#22 (for protocol#21) into
-/// <c>fp/v2-candidate</c> on 2026-10-17, whose tree is the candidate <c>9d791578</c>'s byte for byte; it is pinned
-/// rather than the pull request's head, as <c>protocol-v4.0.0</c> pinned its merge <c>3fb214e5</c>. It appends <c>WIRE_TO_FULL_INSPECTION</c> to the closed
+/// <c>8005-agv-protocol</c> commit <c>13eca82ac199bd97c1ad49d036c70cb5b012250f</c>, the merge of protocol#24 (for protocol#23) into
+/// <c>fp/v2-candidate</c> on 2026-10-17, whose tree is the candidate <c>ce68f3d5</c>'s byte for byte; it is pinned
+/// rather than the pull request's head, as <c>protocol-v4.0.0</c> pinned its merge <c>3fb214e5</c>. That second
+/// revision of the candidate changed vectors and wording only, no schema, message or error code: a machine-pickup
+/// departure request whose worklist revision is stale but carries no material change is accepted
+/// (<c>CV-CURRENT-STOP-DEPARTURE-STALE-REVISION-ACCEPTED</c>, behaviour from <c>8005-agv-control-server#742</c>), and the
+/// journey plan is described as the remaining plan. The first revision, <c>4e9f3df8</c> (protocol#22 for protocol#21),
+/// appends <c>WIRE_TO_FULL_INSPECTION</c> to the closed
 /// enum <c>TransportTaskType</c> and otherwise changes nothing but the identity: release <c>5.0.0</c>,
 /// protocol version 6, schema <c>$id</c> segment <c>agv-full-product/v6</c>, base release
 /// <c>protocol-v4.0.0</c> (<c>3fb214e5</c>, released 2026-10-16, <c>8005-agv-program#184</c>). Appending to
@@ -22,7 +27,8 @@ namespace ControlServer.Domain;
 /// </para>
 /// <para>
 /// <b>Bound by <c>8005-agv-control-server#737</c>, to ship in one package with
-/// <c>8005-agv-onboard-hmi#360</c>.</b> Neither end may reach the integration branch alone: there is no
+/// <c>8005-agv-onboard-hmi#360</c>; repinned to the second revision by <c>8005-agv-control-server#748</c> together with
+/// <c>8005-agv-onboard-hmi#362</c>.</b> Neither end may reach the integration branch alone: there is no
 /// negotiation, so a server on this identity and a vehicle on <c>protocol-v4.0.0</c> refuse each other.
 /// Evidence produced on this identity is <c>UNRELEASED_CANDIDATE</c> and does not count towards a release;
 /// evidence bound to <c>protocol-v4.0.0</c> stops being current when this candidate is bound.
@@ -56,9 +62,9 @@ public static class ProtocolCandidateIdentity
     public const string ProfileId = "AGV_FULL_PRODUCT";
     public const string ReleaseVersion = "5.0.0";
     public const string Tag = "protocol-v5.0.0";
-    public const string RepositoryCommit = "4e9f3df8fb1733311e1ce534c1129cfb904760a4";
-    public const string ManifestSha256 = "743b886d99194038b893e98aed2a1dd01409cd7f80d39c734e02d860e0e5827c";
+    public const string RepositoryCommit = "13eca82ac199bd97c1ad49d036c70cb5b012250f";
+    public const string ManifestSha256 = "128daae52758749d4d6f346231fdb336ca5d1079773bcab5430c20c53ce6b10b";
     public const string SchemaBundleSha256 = "d51abe44036f32b5b2c28fd1bea6ec7a89cf3b4dea0f0b1d6c9daaf52f350933";
-    public const string VectorsSha256 = "24cc3a5e5023bc7ead70f609456136208a40c04c1ecd0982a7182880d8eaa0c7";
+    public const string VectorsSha256 = "291311b24bfcac75818ca9e4a888d436523e6ee14db661f6ba792ab8cc383e4a";
     public const string ApprovalStatus = "SUPERSEDING_CANDIDATE";
 }
