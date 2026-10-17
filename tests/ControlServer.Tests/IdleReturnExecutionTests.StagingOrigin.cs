@@ -76,8 +76,8 @@ public sealed partial class IdleReturnExecutionTests
     }
 
     /// <summary>
-    /// 开往待送点那一趟已确认失败（单被人在 RIoT 删了、车停稳）：冷却过后这一次回落到等待点（214），车不停在原地；
-    /// 等待点那一趟收敛之后，它停在等待点上，下一趟空闲返回在它做了别的旅程之后才有。
+    /// 开往待送点那一趟已确认失败（单被人在 RIoT 删了、车停稳）：冷却过后这一次回落到等待点（214），车不停在原地。
+    /// 下一次空闲返回仍以待送点为目标，见 <see cref="AfterTheFallbackTheNextIdleReturnAimsAtTheStagingOriginAgain"/>。
     /// </summary>
     [Fact]
     public async Task AfterTheIdleReturnToTheStagingOriginFailsTheNextOneFallsBackToAWaitingPoint()
@@ -99,6 +99,49 @@ public sealed partial class IdleReturnExecutionTests
         StationExclusivityRow fallback = (await StationAsync(fleet, Near.StationId))!;
         Assert.Equal((StationExclusivityKinds.WaitingPoint, next.Value.JourneyId), (fallback.StationKind, fallback.JourneyId));
         Assert.Null(await StationAsync(fleet, StagingOrigin));
+    }
+
+    /// <summary>
+    /// 回落只管这一次（票上评论第 2 条）：回落那一趟在 214 收敛；车被挪离 214、离点证据放掉 214 之后，下一次空闲返回又以待送点为目标，
+    /// 以 <c>FIXED_TASK_STATION</c> 预占它——「上一次在待送点失败」只看最近一趟，回落那一趟收敛了，它就不再是最近一趟的失败。
+    /// </summary>
+    /// <remarks>独立审查的探针（control-server#757 审查 M1）改名采用：只认最近一趟的读法被放宽时（审查变异 ME）这一条变红。</remarks>
+    [Fact]
+    public async Task AfterTheFallbackTheNextIdleReturnAimsAtTheStagingOriginAgain()
+    {
+        await using FleetFixture fleet = await StagingOnlyFleetAsync();
+        JourneyRuntimeRow failed = await CommittedAndSentAsync(fleet);
+        fleet.Riot.DeleteOrder(failed.PickupUpperId);
+        await RoundAsync(fleet);
+        await RoundAsync(fleet);
+        await fleet.HearFromEveryVehicleAsync();
+        await fleet.RunRoundAsync(fleet.Options.OwnOrderRebuildDelay);
+        (string Purpose, string JourneyId) fallbackClaim = (await ClaimOfAsync(fleet, KeyA))!.Value;
+        Assert.Equal(StationExclusivityKinds.WaitingPoint, (await StationAsync(fleet, Near.StationId))!.StationKind);
+
+        // The fallback is materialized, sent and converges at 214.
+        await RoundAsync(fleet);
+        await RoundAsync(fleet);
+        JourneyRuntimeRow fallback = (await IdleJourneyAsync(fleet, AgvA))!;
+        Assert.Equal((fallbackClaim.JourneyId, Near.StationId), (fallback.JourneyId, fallback.PickupStationRiotId));
+        await ArriveAsync(fleet, fallback, KeyA, Near.StationId);
+        Assert.Equal(JourneyRuntimeStage.Completed, (await IdleJourneyAsync(fleet, AgvA))!.Stage);
+        Assert.Null(await ClaimOfAsync(fleet, KeyA));
+
+        // Someone moves it off the waiting point (departure evidence frees 214); the next idle return is judged.
+        MoveTo(fleet, KeyA, Home);
+        for (int i = 0; i < 4 && await ClaimOfAsync(fleet, KeyA) is null; i++)
+        {
+            await RoundAsync(fleet);
+        }
+
+        (string Purpose, string JourneyId) next = (await ClaimOfAsync(fleet, KeyA))!.Value;
+        Assert.NotEqual(fallbackClaim.JourneyId, next.JourneyId);
+        StationExclusivityRow origin = (await StationAsync(fleet, StagingOrigin))!;
+        Assert.Equal(
+            (StationExclusivityKinds.FixedTaskStation, next.JourneyId),
+            (origin.StationKind, origin.JourneyId));
+        Assert.Null(await StationAsync(fleet, Near.StationId));
     }
 
     /// <summary>车队只留一辆、只做 <c>STAGING_TO_WIRE</c>；待送点绑在 215，登记里只有 214。</summary>
