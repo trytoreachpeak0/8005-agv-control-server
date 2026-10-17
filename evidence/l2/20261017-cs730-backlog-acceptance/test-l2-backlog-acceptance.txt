@@ -1,0 +1,13 @@
+ok    PASS <- CI 38721626350 row: rewritten to DEMAND_ALREADY_ACCEPTED by a later round: ReasonCode=DEMAND_ALREADY_ACCEPTED / AcceptedAt=2026-10-15 10:53:18.0348616+00:00 / LastSeenAt=2026-10-15 10:53:55.7551632+00:00 / AcceptedDemands.AcceptedAt=2026-10-15 10:53:18.0348616+00:00
+ok    PASS <- read before the next round: ACCEPTED as acceptance wrote it: ReasonCode=ACCEPTED / AcceptedAt=2026-10-15 10:53:18.0348616+00:00 / LastSeenAt=2026-10-15 10:53:18.0348616+00:00 / AcceptedDemands.AcceptedAt=2026-10-15 10:53:18.0348616+00:00
+ok    PASS <- same instant in another offset is the same acceptance: ReasonCode=ACCEPTED / AcceptedAt=2026-10-15 10:53:18.0348616+00:00 / LastSeenAt=2026-10-15 10:53:18.0348616+00:00 / AcceptedDemands.AcceptedAt=2026-10-15 18:53:18.0348616+08:00
+ok    FAIL <- not accepted: refused with another code, no AcceptedAt, no accepted row: (1 backlog rows, 0 accepted rows, expected 1 and 1)
+ok    FAIL <- ACCEPTED written but AcceptedAt never set: ReasonCode=ACCEPTED / AcceptedAt=(null) / LastSeenAt=2026-10-15 10:53:18.0348616+00:00 / AcceptedDemands.AcceptedAt=2026-10-15 10:53:18.0348616+00:00
+ok    FAIL <- AcceptedAt is not this acceptance (one second off AcceptedDemands): ReasonCode=ACCEPTED / AcceptedAt=2026-10-15 10:53:19.0348616+00:00 / LastSeenAt=2026-10-15 10:53:55.7551632+00:00 / AcceptedDemands.AcceptedAt=2026-10-15 10:53:18.0348616+00:00
+ok    FAIL <- backlog says accepted, AcceptedDemands has no row: (1 backlog rows, 0 accepted rows, expected 1 and 1)
+ok    FAIL <- DEMAND_ALREADY_ACCEPTED with no later round to have written it: ReasonCode=DEMAND_ALREADY_ACCEPTED / AcceptedAt=2026-10-15 10:53:18.0348616+00:00 / LastSeenAt=2026-10-15 10:53:18.0348616+00:00 / AcceptedDemands.AcceptedAt=2026-10-15 10:53:18.0348616+00:00
+ok    FAIL <- rewritten to a code other than DEMAND_ALREADY_ACCEPTED: ReasonCode=DEMAND_DECISION_FACT_CHANGED / AcceptedAt=2026-10-15 10:53:18.0348616+00:00 / LastSeenAt=2026-10-15 10:53:55.7551632+00:00 / AcceptedDemands.AcceptedAt=2026-10-15 10:53:18.0348616+00:00
+ok    FAIL <- no backlog row at all: (0 backlog rows, 1 accepted rows, expected 1 and 1)
+ok    FAIL <- two backlog rows: (2 backlog rows, 1 accepted rows, expected 1 and 1)
+ok    FAIL <- unparseable AcceptedAt: ReasonCode=ACCEPTED / AcceptedAt=not a time / LastSeenAt=2026-10-15 10:53:18.0348616+00:00 / AcceptedDemands.AcceptedAt=not a time
+Test-L2BacklogAcceptance: 12 cases, all as expected.
