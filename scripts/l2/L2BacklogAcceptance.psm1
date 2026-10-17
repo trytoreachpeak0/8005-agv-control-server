@@ -16,7 +16,8 @@ the next round has finished yet: control-server#724's only CI round went red on 
 (l2 run 38721626350). Waiting for 'ACCEPTED' instead is the same race, since what is waited for is the value that
 gets overwritten.
 
-What later rounds leave alone is AcceptedAt (only a release, DemandReleaseService, clears it). And the per-vehicle
+What later rounds leave alone is AcceptedAt (a release, DemandReleaseService, clears it, and the redispatch that
+follows rewrites it -- see KNOWN LIMITS). And the per-vehicle
 verdicts of control-server#744 are no help: the dashboard gives them for unaccepted rows only, from a board each round
 replaces whole.
 
@@ -28,8 +29,19 @@ THE CRITERION. All of these, from one read of each table:
     3. ReasonCode is ACCEPTED, or it is DEMAND_ALREADY_ACCEPTED and LastSeenAt is later than AcceptedAt -- the code was
        written by a round after the acceptance, not by the acceptance itself. Any other code is red.
 
-KNOWN LIMIT. The code acceptance wrote is not kept anywhere once a later round overwrites it. A product that accepted
-the demand but wrote some other code at that moment, then had it overwritten with DEMAND_ALREADY_ACCEPTED, passes.
+KNOWN LIMITS. The criterion is for a demand accepted once, by the only vehicle that bid for it in that round. Every
+scenario that uses it today is a single vehicle with no release (control-server#730 review checked the five).
+
+  - The code acceptance wrote is not kept anywhere once a later round overwrites it. A product that accepted the
+    demand but wrote some other code at that moment, then had it overwritten with DEMAND_ALREADY_ACCEPTED, passes.
+  - Several vehicles bidding in the acceptance round: DispatchRoundRunner writes the losers' verdict
+    DEMAND_ALREADY_ACCEPTED with that round's start time (`now`), which is earlier than AcceptedAt (taken when the
+    catalog is re-read during acceptance). Until the next round moves LastSeenAt, rule 3 is red. A multi-vehicle
+    scenario would have to wait for that round first.
+  - A release and redispatch: the redispatch reuses the first acceptance's AcceptedDemands row (WireToGateStore,
+    `if (!redispatch)`) but writes the backlog row's AcceptedAt again with the redispatch time, so rule 2 is red for
+    good. Not usable after a release.
+
 What goes red: not accepted, AcceptedAt missing or not this acceptance's, a code other than those two, and
 DEMAND_ALREADY_ACCEPTED without a later round to have written it.
 

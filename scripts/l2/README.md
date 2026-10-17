@@ -976,6 +976,15 @@ actual 里写着行数。`-Required` 给不在探针里的读取用：零行也�
 把查询包成 `SELECT * FROM (…) UNION ALL SELECT * FROM (…)`（行数翻倍）与 `SELECT * FROM (…) WHERE 0`（零行）各跑一次。
 翻倍后仍然绿的判据是在空转。做法与每处的结果见 `evidence/l2/cs428-whole-array-return/`。
 
+**「派车判定受理了这条需求」用 `Read-L2BacklogAcceptance` 判，不直读 `JourneyBacklog.ReasonCode`**（`L2BacklogAcceptance.psm1`，
+场景里自己 `Import-Module`，control-server#730）。受理时积压行写的是 `ACCEPTED`，但之后每一轮派车都会把它改写成
+`DEMAND_ALREADY_ACCEPTED`。所以读一次读到哪个值，取决于下一轮跑完没有；改成「等到 `ACCEPTED`」也一样，等的正是会被覆盖的值。
+它判的是后续派车轮不改的 `AcceptedAt`：两表各一行，积压行的 `AcceptedAt` 与 `AcceptedDemands.AcceptedAt` 是同一时刻，原因码是
+`ACCEPTED`，或者是 `LastSeenAt` 晚于 `AcceptedAt` 的 `DEMAND_ALREADY_ACCEPTED`。返回 `Passed`、`Expected`、`Actual`，直接交给
+`$assertions.Add`。只适用于单车受理、没有释放改派的需求：多车同轮出价时，落选车用开轮时刻写的 `DEMAND_ALREADY_ACCEPTED`
+早于 `AcceptedAt`，下一轮之前都是红的；释放改派会用新时刻重写积压行的 `AcceptedAt`，与第一次受理的那行永远对不上。
+三条局限的原文在模块头注释里，离线自检是 `Test-L2BacklogAcceptance.ps1`（`test.yml` 里跑）。
+
 **真装置下驱动条码只用 `SetSublot()` + `Submit()`，不注入按键。**`ValuePattern.SetValue` 和
 「手动提交」按钮的 `InvokePattern` 都不需要窗口有焦点，所以跑的时候不跟操作员抢键盘，别的窗口
 抢了焦点也不会失败。走 Enter 那条 `KeyBinding` 会命中 `ScannerSubmitCommand` 而不是

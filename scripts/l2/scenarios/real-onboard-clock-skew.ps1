@@ -147,10 +147,11 @@ $null = $skewProxy.Command('Put', 'skew', @{ skewMs = $withinToleranceMs })
 $null = Wait-L2Condition -Description 'the same demand was accepted once the evidence came back inside tolerance' `
     -Journal $journal -Criterion 'backlog-accepted-at' -TimeoutSeconds 120 `
     -Probe {
-        $rows = Invoke-L2Query -Connection $connection -Sql "SELECT AcceptedAt FROM JourneyBacklog WHERE DemandId = '$demandId'"
-        if ($rows.Count -eq 0) { $null } else { [string]$rows[0].AcceptedAt }
+        # The code rides along so that a timeout's "Last observed" says which reason the demand is still stuck on.
+        $rows = Invoke-L2Query -Connection $connection -Sql "SELECT ReasonCode, AcceptedAt FROM JourneyBacklog WHERE DemandId = '$demandId'"
+        if ($rows.Count -eq 0) { $null } else { "$([string]$rows[0].ReasonCode) / AcceptedAt=$([string]$rows[0].AcceptedAt)" }
     } `
-    -Until { param($v) -not [string]::IsNullOrEmpty($v) }
+    -Until { param($v) $null -ne $v -and $v -notmatch 'AcceptedAt=$' }
 $acceptance = Read-L2BacklogAcceptance -Connection $connection -DemandId $demandId
 $assertions.Add(
     'L2-CS-06', '偏差回到容差内后，同一条需求被受理——车载端自行恢复，没有重启',
