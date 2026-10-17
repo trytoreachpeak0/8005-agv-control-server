@@ -1,5 +1,8 @@
+using System.Text.Json;
 using ControlServer.Application;
+using ControlServer.Dashboard;
 using ControlServer.Domain;
+using ControlServer.Host.Dashboard;
 using ControlServer.Host.Runtime;
 using ControlServer.Infrastructure.Persistence;
 using Microsoft.EntityFrameworkCore;
@@ -181,6 +184,66 @@ public sealed class StationTimeoutRedispatchTests
         Assert.Equal(1, await fixture.Context.JourneyRuntimes.CountAsync(Token));
         Assert.Equal(1, fixture.Riot.CreateCount("TO_PICKUP"));
         Assert.Null(Assert.Single(await AlarmsAsync(fixture)).ClearedAt);
+    }
+
+    /// <summary>
+    /// 看板「站点超时抑制清单」（REQ-0365，control-server#751）：站点期限终结、人工搬运告警还挂着的需求，列批号、取货站点与终结时刻；
+    /// 需求离开 MES 目录（MES 关单）、告警清掉后就移出。渲染出的字不含看板禁用词。
+    /// </summary>
+    [Fact]
+    [Trait("IntegrationSlice", "FP-IS-02")]
+    public async Task TheSuppressionListShowsTheEndedDemandUntilMesClosesIt()
+    {
+        await using RuntimeFixture fixture = await SingleDemandAsync();
+        JourneyRuntimeRow first = await fixture.AdvanceToSublotWaitAsync();
+        DateTimeOffset deadline = await RunOutTheStationDeadlineAsync(fixture);
+
+        using (JsonDocument fact = await ReadSuppressionsAsync(fixture))
+        {
+            JsonElement row = Assert.Single(fact.RootElement.GetProperty("suppressions").EnumerateArray());
+            Assert.Equal(
+                (Demand, Sublot, first.PickupStationId, deadline),
+                (row.GetProperty("demandId").GetString(), row.GetProperty("sublot").GetString(),
+                    row.GetProperty("stationId").GetString(), row.GetProperty("endedAt").GetDateTimeOffset()));
+            string html = new StationTimeoutSuppressionCard().RenderFact(fact.RootElement);
+            Assert.Contains(Sublot, html, StringComparison.Ordinal);
+            Assert.Contains(first.PickupStationId, html, StringComparison.Ordinal);
+            AssertNoDashboardStaleWords(html);
+        }
+
+        fixture.Catalog.Set();
+        await fixture.HearFromPeerAsync();
+        await TickAndRunAsync(fixture);
+
+        using (JsonDocument fact = await ReadSuppressionsAsync(fixture))
+        {
+            Assert.Empty(fact.RootElement.GetProperty("suppressions").EnumerateArray());
+            string html = new StationTimeoutSuppressionCard().RenderFact(fact.RootElement);
+            Assert.DoesNotContain(Sublot, html, StringComparison.Ordinal);
+            AssertNoDashboardStaleWords(html);
+        }
+    }
+
+    /// <summary>
+    /// 确定的装货失败记同一个 <c>CANCELLED_BY_STATION_TIMEOUT</c>，但不是站点期限终结的，不进抑制清单（REQ-0365 只收站点期限到期终结的）；
+    /// 它的人工告警照旧在积压页的结构性阻断里。
+    /// </summary>
+    [Fact]
+    [Trait("IntegrationSlice", "FP-IS-02")]
+    [Trait("IntegrationSlice", "FP-IS-07")]
+    public async Task ADeterminateLoadFailureIsNotOnTheSuppressionList()
+    {
+        await using RuntimeFixture fixture = await RuntimeFixture.CreateAsync();
+        await JourneyRuntimeWorkerLoadDeadlineTests.AdvanceToLoadWithStationDeadlineAsync(fixture);
+        fixture.Clock.Advance(TimeSpan.FromSeconds(11));
+        await JourneyRuntimeWorkerLoadDeadlineTests.ReportLoadResultAsync(
+            fixture, JourneyRuntimeWorkerLoadDeadlineTests.DeterminateFailureSlots(fixture, "OPERATOR_TIMEOUT"));
+        await fixture.Engine.ExecuteOnceAsync(Token);
+        Assert.Equal(ManualCarryAlarms.DeterminateLoadFailureNeedsManual, Assert.Single(await AlarmsAsync(fixture)).ReasonCode);
+
+        using JsonDocument fact = await ReadSuppressionsAsync(fixture);
+
+        Assert.Empty(fact.RootElement.GetProperty("suppressions").EnumerateArray());
     }
 
     /// <summary>上限 0：第一次站点超时就终结并告警——今天的行为加上告警。</summary>
@@ -527,6 +590,23 @@ public sealed class StationTimeoutRedispatchTests
                 .Where(row => row.DemandId == Demand)
                 .ToArrayAsync(Token))
             .OrderBy(row => row.DispatchGeneration)];
+
+    private static async Task<JsonDocument> ReadSuppressionsAsync(RuntimeFixture fixture)
+    {
+        fixture.Context.ChangeTracker.Clear();
+        object fact = await new StationTimeoutSuppressionsQueryEndpoint().ReadAsync(fixture.Context, Token);
+        return JsonDocument.Parse(JsonSerializer.Serialize(fact));
+    }
+
+    /// <summary>看板禁用词（与 <see cref="DashboardSkeletonTests"/> 同一张表）。</summary>
+    private static void AssertNoDashboardStaleWords(string html)
+    {
+        foreach (string word in (string[])["已过期", "过期", "陈旧", "上次更新", "上一次更新", "最后更新",
+                     "stale", "expired", "lastUpdated", "LastUpdated", "last updated"])
+        {
+            Assert.DoesNotContain(word, html, StringComparison.OrdinalIgnoreCase);
+        }
+    }
 
     private static Task<StructuralDispatchBlockRow[]> AlarmsAsync(RuntimeFixture fixture) =>
         fixture.Context.Set<StructuralDispatchBlockRow>().AsNoTracking().ToArrayAsync(Token);
