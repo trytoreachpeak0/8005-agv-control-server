@@ -261,7 +261,6 @@ public sealed class Batch7JourneyAcceptanceTests
     [InlineData("UPDATE JourneyStops SET SublotRequestMessageId = 'another-message' WHERE StopRole = 'PICKUP'")]
     [InlineData("DELETE FROM JourneyStops WHERE StopRole = 'UNLOAD'")]
     [InlineData("UPDATE JourneyDemands SET LoadSlotOperationAttemptId = 'another-attempt'")]
-    [InlineData("UPDATE JourneyDemands SET TargetSlotsJson = '[3,4]'")]
     [InlineData("DELETE FROM JourneyDemands")]
     public async Task ReplayingAnAcceptanceWhoseStopsOrDemandDifferIsAConflict(string change)
     {
@@ -282,13 +281,15 @@ public sealed class Batch7JourneyAcceptanceTests
     public async Task ReplayingAnAcceptanceAfterTheRuntimeMovedItsStopsOnIsStillTheSameAcceptance()
     {
         // Status and sequence are the runtime's to move once control-server#208 and #211 land; a replayed acceptance must
-        // not read that as different content.
+        // not read that as different content. So, since control-server#754, are the membership's target slots: acceptance
+        // fixes only the basket count, and the slots assigned after the scan are written onto the membership (REQ-0352).
         await using Batch7JourneyFixture fixture = await Batch7JourneyFixture.CreateAsync();
         await Batch7JourneyFixture.AcceptAsync(fixture.Context, "D-717", "agv-01", "VK-01", Batch7JourneyFixture.Now);
         await using (SqliteCommand command = fixture.Connection.CreateCommand())
         {
             command.CommandText =
-                "UPDATE JourneyStops SET Status = 'COMPLETED', Sequence = Sequence + 10; UPDATE JourneyDemands SET Status = 'LOADED';";
+                "UPDATE JourneyStops SET Status = 'COMPLETED', Sequence = Sequence + 10; " +
+                "UPDATE JourneyDemands SET Status = 'LOADED', TargetSlotsJson = '[3,4]';";
             await command.ExecuteNonQueryAsync(TestContext.Current.CancellationToken);
         }
 

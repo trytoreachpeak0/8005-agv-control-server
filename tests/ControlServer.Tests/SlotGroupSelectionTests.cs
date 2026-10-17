@@ -14,6 +14,11 @@ namespace ControlServer.Tests;
 /// 所需分组内编号最小的空仓，其它分组的空仓不计入，分组取服务端的车型记录而不是仓号区间。推翻的是不变量 I8
 /// 「任何仓位服务任何站点」。
 /// </summary>
+/// <remarks>
+/// v5 起受理只判这一组的空仓<b>数量</b>够不够，具体仓号在扫码之后才分（REQ-0352，control-server#754）。本类原先断言判据
+/// 选出的 <c>TargetSlots</c>，现在判据不选仓号了：断言「受理与否」的那几条照旧，「选哪几个号」的那几条改成断言这一组在车型
+/// 记录里有哪几个空仓（扫码时就从这里取最小的），分到哪几个由 <see cref="SlotAssignmentAtScanTests"/> 钉住。
+/// </remarks>
 public sealed class SlotGroupSelectionTests
 {
     private const string AgvId = "AGV-1";
@@ -28,18 +33,16 @@ public sealed class SlotGroupSelectionTests
     // ---- 组内选仓 --------------------------------------------------------------------------------
 
     [Theory]
-    [InlineData("REAR", 3, "5,6,7")]
-    [InlineData("FRONT", 3, "1,2,3")]
-    [InlineData("REAR", 4, "5,6,7,8")]
-    public async Task TheWholeDemandGoesIntoTheLowestFreeSlotsOfItsAssignedGroup(
-        string group, int baskets, string expected)
+    [InlineData("REAR", 3)]
+    [InlineData("FRONT", 3)]
+    [InlineData("REAR", 4)]
+    public async Task TheWholeDemandIsAdmittedIntoItsAssignedGroupWhenTheGroupHasTheRoom(string group, int baskets)
     {
         DispatchCandidateEvaluation evaluation = Evaluation(group, ApprovedEightSlot(), AllEight);
 
         string reason = await EvaluateAsync(evaluation, baskets);
 
         Assert.Equal(DispatchAdmissionChain.Eligible, reason);
-        Assert.Equal(expected, string.Join(',', evaluation.TargetSlots));
         Assert.Equal(baskets, evaluation.ExpectedBasketCount);
         Assert.Equal(group, evaluation.RequiredSlotPosition);
     }
@@ -56,18 +59,6 @@ public sealed class SlotGroupSelectionTests
         string reason = await EvaluateAsync(evaluation, baskets: 3);
 
         Assert.Equal(DispatchReasonCodes.SlotGroupCapacityTemporarilyUnavailable, reason);
-        Assert.Empty(evaluation.TargetSlots);
-    }
-
-    [Fact]
-    public async Task TargetSlotsAreAscendingWhateverOrderTheVehicleReportsItsFreeSlotsIn()
-    {
-        DispatchCandidateEvaluation evaluation = Evaluation("REAR", ApprovedEightSlot(), [8, 3, 7, 6, 1]);
-
-        string reason = await EvaluateAsync(evaluation, baskets: 2);
-
-        Assert.Equal(DispatchAdmissionChain.Eligible, reason);
-        Assert.Equal([6, 7], evaluation.TargetSlots);
     }
 
     // ---- 四个原因码 ------------------------------------------------------------------------------
@@ -87,7 +78,6 @@ public sealed class SlotGroupSelectionTests
         string reason = await EvaluateAsync(evaluation, baskets: 5);
 
         Assert.Equal(DispatchReasonCodes.ExpectedBasketCountExceedsSlotGroup, reason);
-        Assert.Empty(evaluation.TargetSlots);
     }
 
     [Fact]
@@ -112,7 +102,6 @@ public sealed class SlotGroupSelectionTests
         string reason = await EvaluateAsync(evaluation, baskets: 1);
 
         Assert.Equal(DispatchReasonCodes.AreaSlotGroupNotAssigned, reason);
-        Assert.Empty(evaluation.TargetSlots);
     }
 
     /// <summary>车的仓位模型未解析时 fail-closed：不回退到默认八仓，也不按仓号区间推断 1～4 前、5～8 后。</summary>
@@ -124,7 +113,6 @@ public sealed class SlotGroupSelectionTests
         string reason = await EvaluateAsync(evaluation, baskets: 1);
 
         Assert.Equal(DispatchReasonCodes.VehicleSlotModelUnresolved, reason);
-        Assert.Empty(evaluation.TargetSlots);
     }
 
     [Fact]
@@ -201,7 +189,6 @@ public sealed class SlotGroupSelectionTests
             "FRONT", await fixture.SlotPositions.ReadAsync(AgvId, TestContext.Current.CancellationToken), AllEight);
 
         Assert.Equal(DispatchReasonCodes.VehicleSlotModelUnresolved, await EvaluateAsync(evaluation, baskets: 1));
-        Assert.Empty(evaluation.TargetSlots);
     }
 
     // ---- 排序不占优 ------------------------------------------------------------------------------
@@ -220,9 +207,9 @@ public sealed class SlotGroupSelectionTests
     public void RankingIgnoresHowMuchRoomACandidatesGroupHas(long? cheaperCost, long? dearerCost)
     {
         EligibleDispatchCandidate tight = Eligible("10000000-0000-4000-8000-000000000001", Now.AddMinutes(-10), cheaperCost)
-            with { TargetSlots = [3, 4], ExpectedBasketCount = 2, RequiredSlotPosition = "FRONT" };
+            with { ExpectedBasketCount = 2, RequiredSlotPosition = "FRONT" };
         EligibleDispatchCandidate roomy = Eligible("10000000-0000-4000-8000-000000000002", Now.AddMinutes(-5), dearerCost)
-            with { TargetSlots = [5], ExpectedBasketCount = 1, RequiredSlotPosition = "REAR" };
+            with { ExpectedBasketCount = 1, RequiredSlotPosition = "REAR" };
 
         // 两辆车成本相同（或都算不出），所以由带内层与车号定：agv-a 在前，不论它接的那条挤不挤。
         Assert.Equal("agv-a", DispatchVehicleOrdering.SelectNext(
@@ -256,12 +243,16 @@ public sealed class SlotGroupSelectionTests
                 new SessionBaselineSlotLedger())
             .EvaluateAsync(evaluation, TestContext.Current.CancellationToken);
 
+    /// <summary>
+    /// 这条需求在这辆空车上受理之后，扫码时会分到的仓位：这一组在库里车型记录下的空仓，编号最小的那几个
+    /// （control-server#754 起选仓从受理挪到扫码，取数的分组仍是这里读出来的那一份）。
+    /// </summary>
     private static async Task<int[]> ChooseAsync(AreaAssignmentPersistenceFixture fixture, string group, int baskets)
     {
-        DispatchCandidateEvaluation evaluation = Evaluation(
-            group, await fixture.SlotPositions.ReadAsync(AgvId, TestContext.Current.CancellationToken), AllEight);
+        VehicleSlotPositions? positions = await fixture.SlotPositions.ReadAsync(AgvId, TestContext.Current.CancellationToken);
+        DispatchCandidateEvaluation evaluation = Evaluation(group, positions, AllEight);
         Assert.Equal(DispatchAdmissionChain.Eligible, await EvaluateAsync(evaluation, baskets));
-        return evaluation.TargetSlots;
+        return [.. SessionBaselineSlotLedger.BaselineSlots(evaluation.Vehicle.Onboard, positions, group).Take(baskets)];
     }
 
     private static VehicleSlotPositions ApprovedEightSlot() =>
@@ -336,7 +327,6 @@ public sealed class SlotGroupSelectionTests
             snapshot,
             new ResolvedJourneyRoute(Zone, "ROUTE-1", "N1-3", 12, "关卡", 210, FixedTaskStationResolution.Resolved("WIRE_TO_GATE", FixedStationEnd.Destination, new RiotMapStation(210, "关卡"))),
             1,
-            [1],
             firstSeen,
             cost);
     }

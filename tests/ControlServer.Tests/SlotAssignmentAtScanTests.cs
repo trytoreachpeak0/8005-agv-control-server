@@ -4,6 +4,7 @@ using System.Text.Json.Nodes;
 using ControlServer.Application;
 using ControlServer.Domain;
 using ControlServer.Host.Runtime;
+using ControlServer.Host.Runtime.Dispatch;
 using ControlServer.Host.Transport;
 using ControlServer.Infrastructure.Persistence;
 using Microsoft.EntityFrameworkCore;
@@ -39,6 +40,32 @@ public sealed class SlotAssignmentAtScanTests
         JourneyDemandRow membership = await MembershipAsync(fixture, FirstDemandId);
         Assert.Equal((2, "[]"), (membership.ExpectedBasketCount, membership.TargetSlotsJson));
         Assert.Equal("[]", (await fixture.RuntimeAsync(FirstDemandId)).TargetSlotsJson);
+    }
+
+    /// <summary>
+    /// 还没分到仓位的预留只在它自己那一侧按数量扣：前侧 4 个空仓里留出 2 个，后侧 4 个一个不少；前侧哪一个具体的号都还没给出去。
+    /// </summary>
+    [Fact]
+    public async Task AnUnassignedReservationTakesItsCountFromItsOwnSideOnly()
+    {
+        await using RuntimeFixture fixture = await RuntimeFixture.CreateAsync();
+        fixture.Catalog.Set(fixture.Demand(FirstDemandId, FirstSublot, Now.AddMinutes(-10)));
+        fixture.BoxCounts.Set(FirstSublot, 8);
+        await TickAndRunAsync(fixture);
+        CancellationToken token = TestContext.Current.CancellationToken;
+        string agvId = fixture.Options.AgvId;
+        OnboardDispatchFacts? onboard = await new OnboardDispatchFactsReader(
+                fixture.Context, Microsoft.Extensions.Options.Options.Create(fixture.Options), fixture.Clock)
+            .ReadOnboardFactsAsync(agvId, token);
+        VehicleSlotPositions? positions = await new VehicleSlotPositionReader(fixture.Context).ReadAsync(agvId, token);
+        JourneyAwareSlotLedger ledger = new(fixture.Context);
+
+        int front = await ledger.ReadAvailableSlotCountAsync(agvId, onboard, positions, "FRONT", token);
+        int rear = await ledger.ReadAvailableSlotCountAsync(agvId, onboard, positions, "REAR", token);
+        IReadOnlyList<int> assignable = await ledger.ReadAssignableSlotsAsync(
+            agvId, SecondDemandId, onboard, positions, "FRONT", token);
+
+        Assert.Equal((2, 4, "1,2,3,4"), (front, rear, string.Join(',', assignable)));
     }
 
     /// <summary>
@@ -80,7 +107,7 @@ public sealed class SlotAssignmentAtScanTests
 
         int[] second = await LoadCommandSlotsAsync(fixture, SecondDemandId);
         int[] first = await LoadCommandSlotsAsync(fixture, FirstDemandId);
-        Assert.Equal(([1, 2], [3, 4]), (second, first));
+        Assert.Equal(("1,2", "3,4"), (string.Join(',', second), string.Join(',', first)));
     }
 
     /// <summary>
@@ -104,7 +131,7 @@ public sealed class SlotAssignmentAtScanTests
 
         int[] second = await LoadCommandSlotsAsync(fixture, SecondDemandId);
         int[] first = await LoadCommandSlotsAsync(fixture, FirstDemandId);
-        Assert.Equal(([1, 2], [3, 4]), (second, first));
+        Assert.Equal(("1,2", "3,4"), (string.Join(',', second), string.Join(',', first)));
     }
 
     /// <summary>

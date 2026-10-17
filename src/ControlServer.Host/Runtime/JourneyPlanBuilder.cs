@@ -120,7 +120,8 @@ public sealed class JourneyPlanBuilder(JourneyRuntimeOptions options)
             candidate.Route.DropoffStationId,
             candidate.Route.DropoffStationRiotId,
             candidate.ExpectedBasketCount,
-            candidate.TargetSlots,
+            // 受理不定仓号（REQ-0352，control-server#754）：扫码之后才分，写在归属行上，旅程行这一列一直是空的。
+            [],
             StableGuid(key, "operation-session"),
             StableGuid(key, "pickup-leg"),
             RiotUpperIds.Pickup(demandId, generation),

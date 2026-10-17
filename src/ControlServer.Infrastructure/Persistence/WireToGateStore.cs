@@ -3302,6 +3302,8 @@ public sealed class WireToGateStore(ControlServerDbContext dbContext)
         row.GateStationId == journey.GateStationId &&
         row.GateStationRiotId == journey.GateStationRiotId &&
         row.ExpectedBasketCount == journey.ExpectedBasketCount &&
+        // Since control-server#754 both sides are the empty list acceptance writes: the slots assigned after the scan go
+        // onto the membership, never back onto this row, so a replayed acceptance still matches after the scan.
         (JsonSerializer.Deserialize<int[]>(row.TransportColumn(row.TargetSlotsJson)) ?? []).SequenceEqual(journey.TargetSlots) &&
         row.OperationSessionId == journey.OperationSessionId &&
         row.PickupMovementLegId == journey.PickupMovementLegId &&

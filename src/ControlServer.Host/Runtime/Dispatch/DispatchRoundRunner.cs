@@ -794,7 +794,6 @@ public sealed class DispatchRoundRunner(
             candidate,
             evaluation.Route,
             evaluation.ExpectedBasketCount,
-            evaluation.TargetSlots,
             backlog.FirstSeenAt,
             evaluation.GraphTraversalCostMm,
             evaluation.CatalogRevision,
@@ -989,7 +988,7 @@ public sealed class DispatchRoundRunner(
         }
 
         if (!await FinalDynamicFactsReadyAsync(
-                selected.Vehicle, underWay, expectedSessionGeneration, selected.Candidate.TargetSlots, selected.Facts,
+                selected.Vehicle, underWay, expectedSessionGeneration, SlotRoom(selected.Candidate), selected.Facts,
                 cancellationToken).ConfigureAwait(false))
         {
             await SetBacklogReasonAsync(
@@ -1029,7 +1028,7 @@ public sealed class DispatchRoundRunner(
                     plan,
                     token => FinalDynamicFactsReadyAsync(
                         selected.Vehicle, underWay, expectedSessionGeneration,
-                        selected.Candidate.TargetSlots, selected.Facts, token),
+                        SlotRoom(selected.Candidate), selected.Facts, token),
                     cancellationToken)
                 .ConfigureAwait(false);
 
@@ -1147,7 +1146,7 @@ public sealed class DispatchRoundRunner(
                 append,
                 token => FinalDynamicFactsReadyAsync(
                     selected.Vehicle, underWay: true, expectedSessionGeneration,
-                    selected.Candidate.TargetSlots, selected.Facts, token),
+                    SlotRoom(selected.Candidate), selected.Facts, token),
                 cancellationToken)
             .ConfigureAwait(false);
         return new JourneyIntakeResult(outcome, null);
@@ -1308,29 +1307,45 @@ public sealed class DispatchRoundRunner(
             : new FleetVehicleOptions().RoundTimeoutMilliseconds);
     }
 
+    /// <summary>Which side a candidate's baskets go on and how many, for the re-check just before intake.</summary>
+    private static (string? SlotPosition, int BasketCount) SlotRoom(EligibleDispatchCandidate candidate) =>
+        (candidate.RequiredSlotPosition, candidate.ExpectedBasketCount);
+
     /// <summary>
     /// Re-reads the dynamic facts immediately before intake and re-runs the same verdict the
     /// admission chain reached.
     /// </summary>
     /// <remarks>
+    /// <para>
     /// It calls <see cref="VehicleDynamicFactsCriterion.Evaluate"/> rather than repeating its
     /// clauses, so this check and the chain's cannot drift apart. The session generation and slot
     /// checks sit on top of it: they are what makes this a re-check of *this* decision rather than
     /// a fresh one. The charging policy and the en-route plan are the round's (<paramref name="roundFacts"/>), not
     /// re-read: the battery is re-checked against the version the decision was taken under (control-server#403).
+    /// </para>
+    /// <para>
+    /// <b>The slot check is on the count (REQ-0352, control-server#754).</b> Acceptance reserves baskets on the demand's
+    /// side, not slot numbers, so what is re-checked is that the side still has that many free, unreserved slots on the
+    /// fresh onboard facts -- the same ledger, and the same question, the slot capacity criterion asked. Until v5 it
+    /// checked that the slots chosen at acceptance were all still in the vehicle's report.
+    /// </para>
     /// </remarks>
     private async Task<bool> FinalDynamicFactsReadyAsync(
         FleetVehicle fleetVehicle,
         bool underWay,
         long expectedSessionGeneration,
-        IReadOnlyCollection<int> targetSlots,
+        (string? SlotPosition, int BasketCount) slotRoom,
         DispatchVehicleFacts roundFacts,
         CancellationToken cancellationToken)
     {
         OnboardDispatchFacts? onboard = await onboardFacts.ReadOnboardFactsAsync(fleetVehicle.AgvId, cancellationToken)
             .ConfigureAwait(false);
         if (onboard is null || onboard.SessionGeneration != expectedSessionGeneration ||
-            targetSlots.Any(slot => !onboard.AvailableSlots.Contains(slot)))
+            slotRoom.SlotPosition is not { } slotPosition ||
+            await new JourneyAwareSlotLedger(dbContext)
+                .ReadAvailableSlotCountAsync(
+                    fleetVehicle.AgvId, onboard, roundFacts.SlotPositions, slotPosition, cancellationToken)
+                .ConfigureAwait(false) < slotRoom.BasketCount)
         {
             return false;
         }

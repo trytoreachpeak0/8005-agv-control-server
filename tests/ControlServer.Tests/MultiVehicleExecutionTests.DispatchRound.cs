@@ -1925,10 +1925,8 @@ public sealed partial class MultiVehicleExecutionTests
             {
                 Line(
                     $"  {vehicle.AgvId}: " + string.Join(' ', vehicle.Verdicts.Select(verdict =>
-                        $"{Short(verdict.Evaluation.Candidate.DemandId)}={verdict.ReasonCode}" +
-                        (verdict.Evaluation.TargetSlots.Length > 0
-                            ? $"[{string.Join(',', verdict.Evaluation.TargetSlots)}]"
-                            : string.Empty))));
+                        // control-server#754：受理不再选仓号，裁决上没有仓位可记；分到哪几个号看扫码之后的装货命令。
+                        $"{Short(verdict.Evaluation.Candidate.DemandId)}={verdict.ReasonCode}")));
             }
         }
 

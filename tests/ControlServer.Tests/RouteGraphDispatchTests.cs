@@ -279,7 +279,7 @@ public sealed class RouteGraphDispatchTests
 
     private static EligibleDispatchCandidate Candidate(string demandId, DateTimeOffset firstSeen, long? cost) =>
         new(Snapshot(demandId, firstSeen), new ResolvedJourneyRoute("ZONE", "EVIDENCE", "N1-3_N1-7", 12, "关卡", 210, FixedTaskStationResolution.Resolved("WIRE_TO_GATE", FixedStationEnd.Destination, new RiotMapStation(210, "关卡"))),
-            1, [1], firstSeen, cost);
+            1, firstSeen, cost);
 
     private static AcceptedDemandSnapshot Snapshot(string demandId, DateTimeOffset createdAt) => new(
         demandId,

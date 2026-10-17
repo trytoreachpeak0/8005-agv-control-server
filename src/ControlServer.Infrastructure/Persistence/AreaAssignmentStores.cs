@@ -275,6 +275,53 @@ public sealed class DemandAreaAssignmentFreezeStore(ControlServerDbContext conte
         ];
     }
 
+    /// <summary>
+    /// 每条需求受理时冻结的那一版分区归属给它的 AREA 指派的仓位分组（REQ-0352，control-server#754）。没有冻结、
+    /// AREA 不在那一版里的需求不出现在结果里。
+    /// </summary>
+    /// <remarks>
+    /// 与受理重放核对分组的那一处（<c>WireToGateStore.AreaAssignmentFreezeMatchesAsync</c>）同一条路：版本写入即不可改，
+    /// 所以那一版给这个 AREA 的分组就是受理时的分组，之后导入的新版本不改它。仓位账本拿它给还没分到具体仓位的需求定侧。
+    /// </remarks>
+    public async Task<IReadOnlyDictionary<string, string>> ReadFrozenSlotPositionsAsync(
+        IReadOnlyCollection<string> demandIds,
+        CancellationToken cancellationToken)
+    {
+        ArgumentNullException.ThrowIfNull(demandIds);
+        if (demandIds.Count == 0)
+        {
+            return new Dictionary<string, string>(StringComparer.Ordinal);
+        }
+
+        var frozen = await DemandFreezes().AsNoTracking()
+            .Where(row => demandIds.Contains(row.ConsumerId))
+            .Join(
+                _context.AcceptedDemands.AsNoTracking(),
+                binding => binding.ConsumerId,
+                demand => demand.DemandId,
+                (binding, demand) => new { demand.DemandId, binding.FrozenVersion, demand.LiveMesFieldsJson })
+            .ToArrayAsync(cancellationToken);
+        Dictionary<string, string> positions = new(StringComparer.Ordinal);
+        foreach (var row in frozen)
+        {
+            string? area = JsonSerializer.Deserialize<LiveMesFieldSet>(row.LiveMesFieldsJson)?.Area;
+            if (area is null)
+            {
+                continue;
+            }
+            string? position = await _context.Set<DispatchZoneAreaAssignmentRow>().AsNoTracking()
+                .Where(assignment => assignment.Version == row.FrozenVersion && assignment.Area == area)
+                .Select(assignment => assignment.SlotPosition)
+                .SingleOrDefaultAsync(cancellationToken);
+            if (position is not null)
+            {
+                positions[row.DemandId] = position;
+            }
+        }
+
+        return positions;
+    }
+
     private IQueryable<ConfigurationConsumerBindingRow> DemandFreezes() =>
         _context.Set<ConfigurationConsumerBindingRow>().Where(row =>
             row.ConsumerKind == DispatchZoneAreaAssignmentGovernance.DemandConsumerKind
