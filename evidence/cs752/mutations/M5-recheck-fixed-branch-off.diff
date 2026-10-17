@@ -1,0 +1,13 @@
+diff --git a/src/ControlServer.Host/Runtime/JourneyRuntimeEngine.IdleReturn.cs b/src/ControlServer.Host/Runtime/JourneyRuntimeEngine.IdleReturn.cs
+index 854ead2f8..1b2d1dc35 100644
+--- a/src/ControlServer.Host/Runtime/JourneyRuntimeEngine.IdleReturn.cs
++++ b/src/ControlServer.Host/Runtime/JourneyRuntimeEngine.IdleReturn.cs
+@@ -711,7 +711,7 @@ public sealed partial class JourneyRuntimeEngine
+         RiotMapStationCatalogSnapshot currentMap,
+         CancellationToken cancellationToken)
+     {
+-        if (held.StationKind == StationExclusivityKinds.FixedTaskStation)
++        if (held.StationKind == StationExclusivityKinds.FixedTaskStation && DateTime.UtcNow.Year < 2000)
+         {
+             TaskTypeStationBinding? origin = await StagingOriginBindingAsync(runtime.MapId, cancellationToken).ConfigureAwait(false);
+             if (origin is null || origin.StationRiotId != stop.StationRiotId)
