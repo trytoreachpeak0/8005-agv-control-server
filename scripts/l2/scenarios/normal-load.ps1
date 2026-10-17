@@ -13,6 +13,8 @@ param([Parameter(Mandatory)][object]$Context)
 Set-StrictMode -Version Latest
 $ErrorActionPreference = 'Stop'
 
+Import-Module (Join-Path (Split-Path -Parent $PSScriptRoot) 'L2BacklogAcceptance.psm1') -Force
+
 $journal = $Context.Journal
 $assertions = $Context.Assertions
 $riot = $Context.Riot
@@ -78,12 +80,13 @@ $assertions.Add(
     ($intentStatus -eq 'CONFIRMED'),
     'CONFIRMED', $intentStatus)
 
-$backlog = Invoke-L2Query -Connection $connection `
-    -Sql "SELECT ReasonCode FROM JourneyBacklog WHERE DemandId = '$demandId'"
+# 不只读 ReasonCode：受理之后的每一轮派车都会把它改写成 DEMAND_ALREADY_ACCEPTED，读一次读到哪个取决于
+# 下一轮跑完没有（control-server#730，#724 那一轮 CI 就红在这里）。判据读的是后续轮不改的 AcceptedAt，
+# 规则与已知局限写在 L2BacklogAcceptance.psm1。
+$acceptance = Read-L2BacklogAcceptance -Connection $connection -DemandId $demandId
 $assertions.Add(
-    'L2-NL-02', '候选判定结果是 ACCEPTED',
-    ($backlog.Count -eq 1 -and $backlog[0].ReasonCode -eq 'ACCEPTED'),
-    'ACCEPTED', $(if ($backlog.Count -eq 1) { $backlog[0].ReasonCode } else { '(no backlog row)' }))
+    'L2-NL-02', '候选判定结果是受理：积压行记着这一次受理的 AcceptedAt，原因码是受理或其后一轮写的「已受理」',
+    $acceptance.Passed, $acceptance.Expected, $acceptance.Actual)
 
 # --- 2. 车开到取货点：先运动，再停稳 ---------------------------------------------------------------
 

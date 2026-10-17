@@ -28,6 +28,8 @@ param([Parameter(Mandatory)][object]$Context)
 Set-StrictMode -Version Latest
 $ErrorActionPreference = 'Stop'
 
+Import-Module (Join-Path (Split-Path -Parent $PSScriptRoot) 'L2BacklogAcceptance.psm1') -Force
+
 $journal = $Context.Journal
 $assertions = $Context.Assertions
 $riot = $Context.Riot
@@ -139,13 +141,21 @@ $assertions.Add(
 $journal.Note("Bringing the skew back to ${withinToleranceMs}ms; the onboard must recover on its own.")
 $null = $skewProxy.Command('Put', 'skew', @{ skewMs = $withinToleranceMs })
 
-$reason = Wait-L2Condition -Description 'the same demand was accepted once the evidence came back inside tolerance' `
-    -Journal $journal -Criterion 'backlog-reason' -TimeoutSeconds 120 `
-    -Probe { Get-BacklogReason } -Until { param($v) $v -eq 'ACCEPTED' }
+# 等的是受理时间，不是原因码 ACCEPTED：受理之后的派车轮会把原因码改写成 DEMAND_ALREADY_ACCEPTED，
+# 等它等的是一个会被覆盖的值，下一轮先跑完就白等到超时（control-server#730）。AcceptedAt 后续轮不改，
+# 等到它之后再按 L2BacklogAcceptance.psm1 的规则判一次。
+$null = Wait-L2Condition -Description 'the same demand was accepted once the evidence came back inside tolerance' `
+    -Journal $journal -Criterion 'backlog-accepted-at' -TimeoutSeconds 120 `
+    -Probe {
+        $rows = Invoke-L2Query -Connection $connection -Sql "SELECT AcceptedAt FROM JourneyBacklog WHERE DemandId = '$demandId'"
+        if ($rows.Count -eq 0) { $null } else { [string]$rows[0].AcceptedAt }
+    } `
+    -Until { param($v) -not [string]::IsNullOrEmpty($v) }
+$acceptance = Read-L2BacklogAcceptance -Connection $connection -DemandId $demandId
 $assertions.Add(
     'L2-CS-06', '偏差回到容差内后，同一条需求被受理——车载端自行恢复，没有重启',
-    ($reason -eq 'ACCEPTED'),
-    'ACCEPTED', $reason)
+    $acceptance.Passed,
+    $acceptance.Expected, $acceptance.Actual)
 
 $stage = Wait-L2Condition -Description 'the journey was created and dispatched to the pickup station' `
     -Journal $journal -Criterion 'journey-stage' -TimeoutSeconds 120 `
