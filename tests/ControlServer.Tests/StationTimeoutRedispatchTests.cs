@@ -155,6 +155,32 @@ public sealed class StationTimeoutRedispatchTests
             fixture, second.JourneyId, ManualCarryAlarms.StationTimeoutRedispatchLimitReached, deadline);
     }
 
+    /// <summary>
+    /// 出厂配置（不设上限）：第一次站点期限到点就以 <c>CANCELLED_BY_STATION_TIMEOUT</c> 终结、按业务键抑制、挂人工搬运告警，不放回待派
+    /// （REQ-0365，CP-0016，control-server#751）。之后派车轮一轮轮跑、服务重启，都不再派车，告警一直挂着。
+    /// </summary>
+    [Fact]
+    [Trait("IntegrationSlice", "FP-IS-02")]
+    public async Task ByDefaultTheFirstStationDeadlineEndsTheDemandWithAManualCarryAlarmAndNeverDispatchesItAgain()
+    {
+        await using RuntimeFixture fixture = await SingleDemandAsync();
+        JourneyRuntimeRow first = await fixture.AdvanceToSublotWaitAsync();
+
+        DateTimeOffset deadline = await RunOutTheStationDeadlineAsync(fixture);
+
+        await AssertEndedWithManualCarryAlarmAsync(
+            fixture, first.JourneyId, ManualCarryAlarms.StationTimeoutRedispatchLimitReached, deadline);
+        await fixture.RecreateEngineAsync();
+        for (int round = 0; round < 3; round++)
+        {
+            await fixture.HearFromPeerAsync();
+            await TickAndRunAsync(fixture);
+        }
+        Assert.Equal(1, await fixture.Context.JourneyRuntimes.CountAsync(Token));
+        Assert.Equal(1, fixture.Riot.CreateCount("TO_PICKUP"));
+        Assert.Null(Assert.Single(await AlarmsAsync(fixture)).ClearedAt);
+    }
+
     /// <summary>上限 0：第一次站点超时就终结并告警——今天的行为加上告警。</summary>
     [Fact]
     [Trait("IntegrationSlice", "FP-IS-02")]
