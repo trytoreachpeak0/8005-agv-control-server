@@ -27,4 +27,12 @@ public static class TransportDemandKeys
         int separator = transportDemandKey.LastIndexOf(Separator);
         return separator >= 0 ? transportDemandKey[(separator + 1)..] : null;
     }
+
+    /// <summary>业务键里的批号（最后一个竖线之前的全部）；不是这个拼法（没有竖线）时原样返回整个键。看板的站点超时抑制清单按它列批号（control-server#751）。</summary>
+    public static string SublotOf(string transportDemandKey)
+    {
+        ArgumentNullException.ThrowIfNull(transportDemandKey);
+        int separator = transportDemandKey.LastIndexOf(Separator);
+        return separator >= 0 ? transportDemandKey[..separator] : transportDemandKey;
+    }
 }

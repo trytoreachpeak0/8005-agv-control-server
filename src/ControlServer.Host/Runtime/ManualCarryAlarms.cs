@@ -38,6 +38,16 @@ public static class ManualCarryAlarms
     };
 
     /// <summary>
+    /// 站点离站等待期限到期终结的两个码：看板「站点超时抑制清单」只收这两个（REQ-0365，control-server#751）。
+    /// 确定的装货失败终结时记同一个 <c>CANCELLED_BY_STATION_TIMEOUT</c>，但不是站点期限到期，不在其中。
+    /// </summary>
+    public static IReadOnlySet<string> StationDeadlineEndings { get; } = new HashSet<string>(StringComparer.Ordinal)
+    {
+        StationTimeoutRedispatchLimitReached,
+        StationTimeoutAnchorNotReleasable,
+    };
+
+    /// <summary>
     /// 暂存这一行告警，不保存：它与终结同一次保存落库，崩在中间不会留下「需求终结了、却没人知道」。同一需求同一个码已有一行时重开它。
     /// </summary>
     public static async Task StageAsync(
