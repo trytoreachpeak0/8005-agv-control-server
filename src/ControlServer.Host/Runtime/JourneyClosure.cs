@@ -78,6 +78,8 @@ internal static class JourneyClosure
         // 旅程终态：它各停靠（以及这辆车更早已结束的停靠）遗留的录入请求与拒收退役（control-server#740）。在暂存收尾快照之前：
         // 收尾时答迟到扫码新暂存的那一条是车要收的，只退已落库的行。
         await StopScopedOutbox.FenceEndedAsync(dbContext, runtime.AgvId, endedAt, cancellationToken).ConfigureAwait(false);
+        // 已被车确认过的更高一版盖过的快照退役（control-server#750 规则 A）。收尾快照此刻只暂存、查不到，规则 B 留给启动修复。
+        await SupersededSnapshotOutbox.FenceAcknowledgedOverAsync(dbContext, runtime.AgvId, endedAt, cancellationToken).ConfigureAwait(false);
         await StageSnapshotsAsync(dbContext, runtime, reasonCode, endedAt, cancellationToken).ConfigureAwait(false);
     }
 
@@ -119,6 +121,8 @@ internal static class JourneyClosure
         runtime.Stage = JourneyRuntimeStage.Completed;
         runtime.SetBlockReason(reasonCode, endedAt);
         runtime.UpdatedAt = endedAt;
+        // 已被车确认过的更高一版盖过的快照退役（control-server#750 规则 A）。收尾快照此刻只暂存、查不到，规则 B 留给启动修复。
+        await SupersededSnapshotOutbox.FenceAcknowledgedOverAsync(dbContext, runtime.AgvId, endedAt, cancellationToken).ConfigureAwait(false);
 
         SessionRecoveryRow? session = await dbContext.SessionRecoveries
             .SingleOrDefaultAsync(row => row.AgvId == runtime.AgvId, cancellationToken).ConfigureAwait(false);
@@ -187,6 +191,8 @@ internal static class JourneyClosure
         runtime.Stage = JourneyRuntimeStage.Completed;
         runtime.SetBlockReason(reasonCode, endedAt);
         runtime.UpdatedAt = endedAt;
+        // 已被车确认过的更高一版盖过的快照退役（control-server#750 规则 A）。收尾快照此刻只暂存、查不到，规则 B 留给启动修复。
+        await SupersededSnapshotOutbox.FenceAcknowledgedOverAsync(dbContext, runtime.AgvId, endedAt, cancellationToken).ConfigureAwait(false);
 
         SessionRecoveryRow? session = await dbContext.SessionRecoveries
             .SingleOrDefaultAsync(row => row.AgvId == runtime.AgvId, cancellationToken).ConfigureAwait(false);
@@ -247,6 +253,8 @@ internal static class JourneyClosure
         runtime.Stage = JourneyRuntimeStage.Completed;
         runtime.SetBlockReason(reasonCode, endedAt);
         runtime.UpdatedAt = endedAt;
+        // 已被车确认过的更高一版盖过的快照退役（control-server#750 规则 A）。收尾快照此刻只暂存、查不到，规则 B 留给启动修复。
+        await SupersededSnapshotOutbox.FenceAcknowledgedOverAsync(dbContext, runtime.AgvId, endedAt, cancellationToken).ConfigureAwait(false);
 
         SessionRecoveryRow? session = await dbContext.SessionRecoveries
             .SingleOrDefaultAsync(row => row.AgvId == runtime.AgvId, cancellationToken).ConfigureAwait(false);
@@ -315,6 +323,8 @@ internal static class JourneyClosure
         runtime.Stage = JourneyRuntimeStage.Completed;
         runtime.SetBlockReason(ChargingExecutionReasons.Completed, completedAt);
         runtime.UpdatedAt = completedAt;
+        // 已被车确认过的更高一版盖过的快照退役（control-server#750 规则 A）。收尾快照此刻只暂存、查不到，规则 B 留给启动修复。
+        await SupersededSnapshotOutbox.FenceAcknowledgedOverAsync(dbContext, runtime.AgvId, completedAt, cancellationToken).ConfigureAwait(false);
 
         SessionRecoveryRow? session = await dbContext.SessionRecoveries
             .SingleOrDefaultAsync(row => row.AgvId == runtime.AgvId, cancellationToken).ConfigureAwait(false);
