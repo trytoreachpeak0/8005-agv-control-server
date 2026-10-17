@@ -75,6 +75,9 @@ internal static class JourneyClosure
         runtime.Stage = JourneyRuntimeStage.Completed;
         runtime.SetBlockReason(reasonCode, endedAt);
         runtime.UpdatedAt = endedAt;
+        // 旅程终态：它各停靠（以及这辆车更早已结束的停靠）遗留的录入请求与拒收退役（control-server#740）。在暂存收尾快照之前：
+        // 收尾时答迟到扫码新暂存的那一条是车要收的，只退已落库的行。
+        await StopScopedOutbox.FenceEndedAsync(dbContext, runtime.AgvId, endedAt, cancellationToken).ConfigureAwait(false);
         await StageSnapshotsAsync(dbContext, runtime, reasonCode, endedAt, cancellationToken).ConfigureAwait(false);
     }
 

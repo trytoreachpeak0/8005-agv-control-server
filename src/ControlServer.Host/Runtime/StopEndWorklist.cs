@@ -156,6 +156,10 @@ internal static class StopEndWorklist
                 entryRequest.AcknowledgedAt ??= endedAt;
             }
         }
+        // 本停靠更早各版的录入请求与已发的拒收：站结束之后车不收、不回 ack，留着就永远挂在发件箱里（control-server#740）。
+        // 在下面暂存迟到扫码的答复之前退：那一条是车要收的，而且只退已落库的行。
+        await StopScopedOutbox.FenceStopAsync(dbContext, stop.OperationSessionId, endedAt, cancellationToken)
+            .ConfigureAwait(false);
 
         string messageId = staged.WorklistMessageIdAt(runtime.WorklistRevision, stop, revision);
         JourneyStopRow tracked = await dbContext.Set<JourneyStopRow>()

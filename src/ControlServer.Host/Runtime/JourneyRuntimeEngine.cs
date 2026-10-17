@@ -1873,6 +1873,8 @@ public sealed partial class JourneyRuntimeEngine(
                 // 车开走了，这个停靠就完成了：当前停靠指针从此是落库的状态（批次7-06），下一轮加载游标读到的是下一个。
                 (await TrackedStopAsync(departedFrom.StopId, cancellationToken).ConfigureAwait(false)).Status =
                     JourneyStopStatuses.Completed;
+                // 它（以及这辆车更早已结束的停靠）遗留的录入请求与拒收退役，同这次保存落库（control-server#740）。
+                await StopScopedOutbox.FenceEndedAsync(dbContext, runtime.AgvId, now, cancellationToken).ConfigureAwait(false);
                 // 让站（批次7-08，control-server#213）：车开走了，它的下一停靠从此是 nextStop。停在那个站持货等单的别的车，
                 // 与这个停靠完成落在同一次保存里被标记；装或卸都算（规格第 5.1 节第 8 条）。
                 await StationYield.StageTriggerAsync(

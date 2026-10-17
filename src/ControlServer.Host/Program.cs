@@ -249,6 +249,9 @@ await SlotFaultDeclarationResults.SettleAnsweredCommandsAsync(app.Services, Canc
 // control-server#383：人工判故障入口关着、库里却有未结判定时告警（它们在关着时不补发）。放在身份检查之前（cs#384 审查注 2）：
 // 未结判定的命令正是身份检查会拦下的行，检查拒绝启动时这条告警要已经打出来，解释那些行是什么。
 await SlotFaultDeclarationStartupCheck.WarnAsync(app.Services, CancellationToken.None);
+// control-server#740：所属停靠已结束、旅程已终态的录入请求与拒收（车不收、不回 ack）退役。幂等，每次启动都跑；放在身份检查之前，
+// 否则修之前留下这种行的库换协议身份起不来。身份检查本身不放宽。
+await StopScopedOutbox.FenceEndedAtStartupAsync(app.Services, CancellationToken.None);
 // control-server#382：发件箱里有未确认、信封身份不是本构建的行时拒绝启动——补发不改身份，车会拒收并反复断会话。
 await ProtocolOutboxIdentityStartupCheck.EnsureAsync(app.Services, CancellationToken.None);
 // control-server#72：当前分区归属版本把 AREA 归进了未允许的调度区时拒绝启动，并列出是哪几条。
