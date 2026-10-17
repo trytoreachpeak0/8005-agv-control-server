@@ -383,6 +383,34 @@ public sealed class CreateGateTests
         Assert.Empty(await fixture.Context.CreateGateAudit.ToListAsync(TestContext.Current.CancellationToken));
     }
 
+    /// <summary>
+    /// 多车时审计行记的是这一轮被判的那辆车，不是服务端单车配置的默认车（control-server#751）：闸门按 VehicleKey 判，审计与日志曾写
+    /// <c>JourneyRuntimeOptions.AgvId</c>（agv01 的名字）。
+    /// </summary>
+    [Fact]
+    public async Task TheCriterionAuditsTheVehicleBeingEvaluatedNotTheSingleVehicleDefault()
+    {
+        await using Fixture fixture = await Fixture.CreateAsync(approved: true);
+        fixture.RouteCosts.Set(12, 21500);
+        PreCreateGateCriterion criterion = new(fixture.Gate, Options.Create(new JourneyRuntimeOptions { AgvId = "agv01" }));
+        DispatchCandidateEvaluation evaluation = Evaluation(agvId: "agv03", vehicleKey: "BROKERX-TEST-0003");
+        evaluation.Route = new ResolvedJourneyRoute(
+            "MAP-25-WIRE_TO_GATE",
+            "route-agv03",
+            "ST-PICKUP",
+            12,
+            "ST-GATE",
+            210,
+            FixedTaskStationResolution.Resolved(
+                TransportTaskTypes.WireToGate, FixedStationEnd.Destination, new RiotMapStation(210, "关卡")));
+
+        string reason = await criterion.EvaluateAsync(evaluation, TestContext.Current.CancellationToken);
+
+        Assert.Equal(DispatchAdmissionChain.Eligible, reason);
+        CreateGateAuditRow audit = await fixture.SingleAuditAsync();
+        Assert.Equal("agv03", audit.AgvId);
+    }
+
     // ---- REQ-0308: one state per reason, not one alarm per round ------------------------------
 
     [Fact]
@@ -451,7 +479,7 @@ public sealed class CreateGateTests
         TargetStationId: 12,
         graphCostMm);
 
-    private static DispatchCandidateEvaluation Evaluation()
+    private static DispatchCandidateEvaluation Evaluation(string agvId = AgvId, string vehicleKey = VehicleKey)
     {
         AcceptedDemandSnapshot candidate = new(
             "10000000-0000-4000-8000-000000000001",
@@ -472,10 +500,10 @@ public sealed class CreateGateTests
             Origin,
             EmptyPolicy);
         DispatchVehicleFacts vehicle = new(
-            VehicleKey,
-            AgvId,
+            vehicleKey,
+            agvId,
             new OnboardDispatchFacts(1, [1, 2], true, true, true, true, false),
-            new RiotVehicleObservation(VehicleKey, true, true, "IDLE", "MAP", 11, 80, "NO_CHARGE", 0, Origin, 0, null),
+            new RiotVehicleObservation(vehicleKey, true, true, "IDLE", "MAP", 11, 80, "NO_CHARGE", 0, Origin, 0, null),
             Origin);
         return new DispatchCandidateEvaluation(candidate, round, vehicle);
     }
