@@ -28,3 +28,19 @@
 | `l2-green/same-direction-four-type-mixed-load-multi-drop/` | PASS，exit 0 | 四单同一趟；丁的取货是 12 号站上排在丙之后的第 4 个停靠；卸货依次 305、13、210、406；四单都 Succeeded |
 
 每份只留 `SUMMARY.md`、`assertions.json`、`timeline.jsonl`；整份日志与库快照留在本机 `F:/8005-scratch/cs737-l2/`，不入库。
+
+## 审查返工（`6b64acb66`）的自检与变异（`review-mutations/`）
+
+本机时段 10-17 第 2 轮（15:07～15:11，A1、A2）与第 3 轮（17:27～17:32，M1～M4）。每个变异只改一个文件一行（`M*.diff`），跑前核对、
+跑完 `git checkout` 还原，各跑一次、不重试。
+
+| 项 | 改动 | 结果 |
+| --- | --- | --- |
+| A1 | 无（`Test-ParallelInstance.ps1`） | exit 0，1203 passed, 0 failed |
+| A2 | 无（`Test-StagedG3ContentConflict.ps1 -ControlServerCommit 6b64acb66 -Expect Pass`） | exit 0，四项 PASS，`AS_EXPECTED`，服务端身份 5.0.0 |
+| M1 | `BoundFixedTaskStationResolver.cs:103` 需求集条件改成 `true` | exit 1，红 1：`ATaskTypeWithoutAnEffectiveBindingIsRefusedAndNeverFallsBackToADefaultStation(shape: "bound-but-not-required")` |
+| M2 | map-26 预置 `requiredTaskTypes` 加第七类 | exit 1，`TaskTypeStationStartupTests` 红 4 |
+| M3 | `ParallelInstance.psm1:171` agv01 删第七类 | exit 1，`Test-ParallelInstance.ps1` 1160 passed, 43 failed（带 agv01 的切换定义全部被拒） |
+| M4 | `Test-StagedG3ContentConflict.ps1:160` 删 `'5.0.0' = 6` | exit 1，`Unexpected identity 5.0.0 at protocolVersion 6.` |
+
+「版本不升」没有重跑：`guard-red-types-without-version.txt` 已覆盖。
