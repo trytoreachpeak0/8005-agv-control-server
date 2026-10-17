@@ -1,0 +1,50 @@
+== m1-no-retry ( 1 file changed, 1 insertion(+), 1 deletion(-); files changed=1)
+diff --git a/scripts/parallel/ParallelInstance.psm1 b/scripts/parallel/ParallelInstance.psm1
+index fe094e435..43f66c23a 100644
+--- a/scripts/parallel/ParallelInstance.psm1
++++ b/scripts/parallel/ParallelInstance.psm1
+@@ -1995,7 +1995,7 @@ function Remove-ParallelInstanceDirectory {
+             Remove-Item -LiteralPath $Path -Recurse -Force -ErrorAction Stop
+             return
+         } catch {
+-            if (-not (Test-ParallelInstanceRemovalRetryable -Exception $_.Exception)) { throw }
++            throw
+             if ($attempt -ge $script:DirectoryRemovalAttempts) {
+                 throw (Format-ParallelInstanceRemovalFailure -Path $Path -ErrorRecord $_ -Attempts $attempt)
+             }
+
+Remove-ParallelInstanceDirectory retries while a file is in use (control-server#715)
+  FAIL  a child holding a file open for 2.5 s: the delete retries and succeeds once it lets go
+        threw: The process cannot access the file 'C:\Users\szy\AppData\Local\Temp\cs715-e523a2cdd43d4c7e915f32e02c1ada18\HeldFile.V2\held.bin' because it is being used by another process.; directory left=True; waits=0
+  FAIL  a child holding a DLL mapped (the clrjit.dll shape) for 2.5 s: the delete retries and succeeds once it lets go
+        threw: Access to the path 'C:\Users\szy\AppData\Local\Temp\cs715-e523a2cdd43d4c7e915f32e02c1ada18\HeldDll.V2\mapped.dll' is denied.; directory left=True; waits=0
+  PASS  the installer sequence: Stop-Process, Wait-ParallelInstanceProcessExit, then the delete succeeds with the DLL just unmapped
+        error text: The process cannot access the file 'C:\Users\szy\AppData\Local\Temp\cs715-e523a2cdd43d4c7e915f32e02c1ada18\NeverReleased.V2\held.bin' because it is being used by another process.
+  FAIL  a handle never released: every attempt is made, then the error names the file and the process holding it
+        attempts=10 waits=0; threw: The process cannot access the file 'C:\Users\szy\AppData\Local\Temp\cs715-e523a2cdd43d4c7e915f32e02c1ada18\NeverReleased.V2\held.bin' because it is being used by another process.
+  PASS  a refusal is not retried: a path outside the allowlist throws at once, no wait
+  FAIL  the path is re-checked before every retry: refused after the first attempt, nothing more is deleted
+        waits=0; held.bin left=True; threw: The process cannot access the file 'C:\Users\szy\AppData\Local\Temp\cs715-e523a2cdd43d4c7e915f32e02c1ada18\RecheckedEachTime.V2\held.bin' because it is being used by another process.
+
+Which errors are retried: in use or access denied, nothing else
+  PASS  retried=True: IOException sharing violation (0x80070020)
+  PASS  retried=True: IOException lock violation (0x80070021)
+  PASS  retried=True: IOException directory not empty (0x80070091)
+  PASS  retried=True: UnauthorizedAccessException (access denied)
+  PASS  retried=True: the same, wrapped as an inner exception
+  PASS  retried=False: IOException with no Win32 code
+  PASS  retried=False: IOException disk full (0x80070070)
+  PASS  retried=False: PathTooLongException
+  PASS  retried=False: DirectoryNotFoundException
+  PASS  retried=False: RuntimeException (a refusal)
+
+Wait-ParallelInstanceProcessExit: an exit, or an error naming the process
+  PASS  a process that does not exit within the timeout is an error naming its id
+  PASS  processes that exit (or already have, or none at all) return without an error
+
+Both installer call sites wait before deleting
+  PASS  installer, retiring the previous FakeMesIngest: Stop-Process, then Wait-ParallelInstanceProcessExit (no Wait-Process), then the delete
+  PASS  installer, redeploying the FakeMesIngest: Stop-Process, then Wait-ParallelInstanceProcessExit (no Wait-Process), then the delete
+
+16 passed, 4 failed
+exit=1

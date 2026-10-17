@@ -1969,20 +1969,201 @@ function Remove-ParallelInstanceDirectory {
             relied on the one assertion at the start of the script. Each now re-checks the exact
             path it is about to delete, the same two layers and the reparse check the uninstaller
             uses. Throws on a refusal; does nothing when the path does not exist.
+
+            control-server#715: a file still in use is retried, briefly. The cutover trial's first
+            install stopped on "Access to the path '...\clrjit.dll' is denied." -- the retired
+            FakeMesIngest had been stopped and waited for, but the image mapping outlived the process
+            object by a moment. Only "in use" errors are retried (Test-ParallelInstanceRemovalRetryable),
+            anything else is thrown at once, and the refusal checks run again before EVERY attempt: a
+            retry is a new deletion and gets the same checks as the first. When the attempts run out
+            the error names the file and, when Windows can tell, the process holding it.
     #>
     [CmdletBinding()]
     param([Parameter(Mandatory = $true)][string] $Path)
-    # The link check comes first only so the self-test can reach it: a test can make a junction in
-    # a temporary directory, but not at a path the allowlist accepts, so with the string checks
-    # first this branch would be unreachable from any test and its removal would go unnoticed.
-    # Both refuse; the order changes which reason is given, not whether the delete happens.
-    if (Test-ParallelInstanceReparsePoint -Path $Path) {
-        throw "Refusing to delete '$Path': it is a junction or symbolic link, not a directory this instance created."
+    for ($attempt = 1; ; $attempt++) {
+        # The link check comes first only so the self-test can reach it: a test can make a junction in
+        # a temporary directory, but not at a path the allowlist accepts, so with the string checks
+        # first this branch would be unreachable from any test and its removal would go unnoticed.
+        # Both refuse; the order changes which reason is given, not whether the delete happens.
+        if (Test-ParallelInstanceReparsePoint -Path $Path) {
+            throw "Refusing to delete '$Path': it is a junction or symbolic link, not a directory this instance created."
+        }
+        $refusal = Get-ParallelInstanceDeleteRefusal -Path $Path
+        if ($refusal) { throw "Refusing to delete '$Path': $refusal." }
+        if (-not (Test-Path -LiteralPath $Path)) { return }
+        try {
+            Remove-Item -LiteralPath $Path -Recurse -Force -ErrorAction Stop
+            return
+        } catch {
+            if (-not (Test-ParallelInstanceRemovalRetryable -Exception $_.Exception)) { throw }
+            if ($attempt -ge $script:DirectoryRemovalAttempts) {
+                throw (Format-ParallelInstanceRemovalFailure -Path $Path -ErrorRecord $_ -Attempts $attempt)
+            }
+            Wait-ParallelInstanceRemovalRetry -Milliseconds $script:DirectoryRemovalRetryDelayMilliseconds
+        }
     }
-    $refusal = Get-ParallelInstanceDeleteRefusal -Path $Path
-    if ($refusal) { throw "Refusing to delete '$Path': $refusal." }
-    if (Test-Path -LiteralPath $Path) {
-        Remove-Item -LiteralPath $Path -Recurse -Force
+}
+
+# control-server#715: 10 attempts, 1 s apart -- at most 9 s of waiting on top of the deletes themselves. The
+# field case cleared in well under a second (the rerun a minute later succeeded); a handle held longer than
+# this is not a release race but a process nobody stopped, and the install should stop and say which.
+$script:DirectoryRemovalAttempts = 10
+$script:DirectoryRemovalRetryDelayMilliseconds = 1000
+
+function Wait-ParallelInstanceRemovalRetry {
+    # The pause between two attempts, a function of its own so the self-test can count it or act in it.
+    param([int] $Milliseconds)
+    Start-Sleep -Milliseconds $Milliseconds
+}
+
+function Test-ParallelInstanceRemovalRetryable {
+    <#
+        True for the errors a file still in use produces, and only those: access denied (a mapped image
+        such as clrjit.dll, or a file another process is deleting), a sharing or lock violation (a file
+        another process has open), and "directory not empty" (a file inside was delete-pending -- still
+        open elsewhere with delete sharing -- when its directory was removed). Looked for along the
+        inner-exception chain. Everything else, including every refusal, is not retried.
+    #>
+    param([Parameter(Mandatory = $true)][Exception] $Exception)
+    for ($e = $Exception; $null -ne $e; $e = $e.InnerException) {
+        if ($e -is [UnauthorizedAccessException]) { return $true }
+        # FACILITY_WIN32 (7) with ERROR_SHARING_VIOLATION 32, ERROR_LOCK_VIOLATION 33, ERROR_DIR_NOT_EMPTY 145.
+        if ($e -is [IO.IOException] -and (($e.HResult -shr 16) -band 0x1FFF) -eq 7 -and ($e.HResult -band 0xFFFF) -in @(32, 33, 145)) {
+            return $true
+        }
+    }
+    return $false
+}
+
+function Format-ParallelInstanceRemovalFailure {
+    # The error once the attempts run out: the directory, the entry the last attempt stopped on, the original
+    # message, and who holds it -- or that nobody could be found, and why.
+    #
+    # Review of #762: the entry the error names goes into the sentence whenever there is one -- a delete-pending
+    # file fails Test-Path but is exactly the file to name, and a directory (ERROR_DIR_NOT_EMPTY) is named with
+    # what is still in it. And "access denied" with no process holding the file is not reported as "in use":
+    # that is a permission or attribute problem, and calling it a release race sends the reader the wrong way.
+    param([string] $Path, [Management.Automation.ErrorRecord] $ErrorRecord, [int] $Attempts)
+    $target = [string] $ErrorRecord.TargetObject
+    $isDirectory = $target -and (Test-Path -LiteralPath $target -PathType Container)
+    $files = ($target -and -not $isDirectory) ? @($target) :
+        @(Get-ChildItem -LiteralPath ($target ? $target : $Path) -Recurse -File -Force -ErrorAction SilentlyContinue |
+                Select-Object -First 500 -ExpandProperty FullName)
+    $ids = $null
+    $lookupError = $null
+    try { $ids = @(Get-ParallelInstanceFileHolderId -Path $files) } catch { $lookupError = $_.Exception.Message }
+    $holders = $lookupError ? "could not be determined ($lookupError)" :
+        ($ids.Count -eq 0 ? 'no process found (the handle may have closed after the last attempt)' :
+            (@($ids | ForEach-Object {
+                        $name = (Get-Process -Id $_ -ErrorAction SilentlyContinue)?.ProcessName
+                        "pid $_ ($($name ?? 'exited'))"
+                    }) -join ', '))
+    $denied = $false
+    for ($e = $ErrorRecord.Exception; $null -ne $e; $e = $e.InnerException) { if ($e -is [UnauthorizedAccessException]) { $denied = $true } }
+    $named = $target ? "'$target'" : 'a file in it'
+    $what = if ($isDirectory) {
+        $left = @(Get-ChildItem -LiteralPath $target -Force -Name -ErrorAction SilentlyContinue)
+        $shown = @($left | Select-Object -First 5) -join ', '
+        "$named is not empty (still in it: $($left.Count -eq 0 ? 'nothing now' : $shown)$($left.Count -gt 5 ? ", and $($left.Count - 5) more" : ''))"
+    } elseif ($denied -and $null -ne $ids -and $ids.Count -eq 0) {
+        "access to $named is denied and no process holds it -- likely a permission or attribute problem, not a file still in use"
+    } else {
+        "$named is still in use"
+    }
+    $seconds = ($Attempts - 1) * $script:DirectoryRemovalRetryDelayMilliseconds / 1000
+    return "Could not delete '$Path' after $Attempts attempts over ${seconds} s: $what ($($ErrorRecord.Exception.Message)). Held by: $holders."
+}
+
+function Get-ParallelInstanceFileHolderId {
+    <#
+        The ids of the processes holding any of these files open or mapped, from the Restart Manager --
+        the same API Windows Installer asks "which programs use this file". Only called after a delete has
+        already failed; throws when the API does, and the caller reports that instead of a holder.
+    #>
+    param([AllowEmptyCollection()][string[]] $Path)
+    if ($Path.Count -eq 0) { return @() }
+    if (-not ('ParallelInstance.RestartManager' -as [type])) {
+        Add-Type -TypeDefinition @'
+using System;
+using System.Collections.Generic;
+using System.ComponentModel;
+using System.Runtime.InteropServices;
+using System.Text;
+namespace ParallelInstance {
+    public static class RestartManager {
+        [StructLayout(LayoutKind.Sequential)]
+        struct RM_UNIQUE_PROCESS { public int dwProcessId; public System.Runtime.InteropServices.ComTypes.FILETIME ProcessStartTime; }
+        [StructLayout(LayoutKind.Sequential, CharSet = CharSet.Unicode)]
+        struct RM_PROCESS_INFO {
+            public RM_UNIQUE_PROCESS Process;
+            [MarshalAs(UnmanagedType.ByValTStr, SizeConst = 256)] public string strAppName;
+            [MarshalAs(UnmanagedType.ByValTStr, SizeConst = 64)] public string strServiceShortName;
+            public int ApplicationType; public uint AppStatus; public uint TSSessionId;
+            [MarshalAs(UnmanagedType.Bool)] public bool bRestartable;
+        }
+        [DllImport("rstrtmgr.dll", CharSet = CharSet.Unicode)] static extern int RmStartSession(out uint handle, int flags, StringBuilder key);
+        [DllImport("rstrtmgr.dll")] static extern int RmEndSession(uint handle);
+        [DllImport("rstrtmgr.dll", CharSet = CharSet.Unicode)] static extern int RmRegisterResources(uint handle, uint nFiles, string[] files, uint nApps, IntPtr apps, uint nServices, string[] services);
+        [DllImport("rstrtmgr.dll")] static extern int RmGetList(uint handle, out uint needed, ref uint count, [In, Out] RM_PROCESS_INFO[] info, ref uint reasons);
+        public static int[] GetHolders(string[] files) {
+            uint handle;
+            int rc = RmStartSession(out handle, 0, new StringBuilder(33));
+            if (rc != 0) throw new Win32Exception(rc);
+            try {
+                rc = RmRegisterResources(handle, (uint)files.Length, files, 0, IntPtr.Zero, 0, null);
+                if (rc != 0) throw new Win32Exception(rc);
+                for (int tries = 0; tries < 3; tries++) {
+                    uint needed, count = 0, reasons = 0;
+                    rc = RmGetList(handle, out needed, ref count, null, ref reasons);
+                    if (rc == 0) return new int[0];
+                    if (rc != 234) throw new Win32Exception(rc);
+                    var info = new RM_PROCESS_INFO[needed];
+                    count = needed;
+                    rc = RmGetList(handle, out needed, ref count, info, ref reasons);
+                    if (rc == 234) continue;
+                    if (rc != 0) throw new Win32Exception(rc);
+                    var ids = new List<int>();
+                    for (int i = 0; i < count; i++) ids.Add(info[i].Process.dwProcessId);
+                    return ids.ToArray();
+                }
+                throw new Win32Exception(234);
+            } finally {
+                RmEndSession(handle);
+            }
+        }
+    }
+}
+'@
+    }
+    return [ParallelInstance.RestartManager]::GetHolders($Path)
+}
+
+function Wait-ParallelInstanceProcessExit {
+    <#
+        .SYNOPSIS
+            Waits for processes that were just stopped to exit, and throws naming the ones that did not.
+
+        .DESCRIPTION
+            control-server#715. The installer stops the FakeMesIngest before deleting its directory. It
+            used to wait with Wait-Process -ErrorAction SilentlyContinue, which turned a timeout into
+            silence (and the redeploy path did not wait at all), so the delete that followed met a process
+            still running and failed with a less useful error. A process still there after the timeout is
+            now the error, with its id. Exiting is necessary, not sufficient -- the image can stay mapped a
+            moment longer -- which is what the retry in Remove-ParallelInstanceDirectory is for.
+    #>
+    [CmdletBinding()]
+    param(
+        [Parameter(Mandatory = $true)][AllowEmptyCollection()][Diagnostics.Process[]] $Process,
+        [Parameter(Mandatory = $true)][int] $TimeoutSeconds
+    )
+    $deadline = [DateTime]::UtcNow.AddSeconds($TimeoutSeconds)
+    $lingering = @(foreach ($p in $Process) {
+            $left = [Math]::Max(0, [int] ($deadline - [DateTime]::UtcNow).TotalMilliseconds)
+            if (-not $p.WaitForExit($left)) { $p }
+        })
+    if ($lingering.Count -gt 0) {
+        $named = @($lingering | ForEach-Object { "pid $($_.Id) ($(try { $_.ProcessName } catch { '?' }))" }) -join ', '
+        throw "Still running $TimeoutSeconds s after being stopped: $named. Not deleting the directory it runs from."
     }
 }
 
@@ -4097,6 +4278,7 @@ Export-ModuleMember -Function @(
     'Get-ParallelInstanceDeleteRefusal'
     'Test-ParallelInstanceReparsePoint'
     'Remove-ParallelInstanceDirectory'
+    'Wait-ParallelInstanceProcessExit'
     'Test-ParallelInstanceDeploymentConfigPath'
     'Remove-ParallelInstanceDeploymentConfig'
     'Invoke-ParallelRemovalSequence'

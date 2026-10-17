@@ -1,0 +1,52 @@
+== m10-redeploy-site-no-handle-pin ( 1 file changed, 1 deletion(-); files changed=1)
+diff --git a/scripts/parallel/Install-ParallelInstanceLocal.ps1 b/scripts/parallel/Install-ParallelInstanceLocal.ps1
+index 14734009c..1f07823b2 100644
+--- a/scripts/parallel/Install-ParallelInstanceLocal.ps1
++++ b/scripts/parallel/Install-ParallelInstanceLocal.ps1
+@@ -742,7 +742,6 @@ try {
+         # orphan still holds the port the new one is about to bind.
+         $fakeProcesses = @(Get-Process -Name 'ControlServer.FakeMesIngest' -ErrorAction SilentlyContinue |
+                 Where-Object { $_.Path -and $_.Path.StartsWith($fakeInstallRoot.TrimEnd('\') + '\', [StringComparison]::OrdinalIgnoreCase) })
+-        $fakeProcesses | ForEach-Object { try { $null = $_.Handle } catch { } }
+         $fakeProcesses | Stop-Process -Force -ErrorAction SilentlyContinue
+         # control-server#715: the same wait as retiring a double -- this path deleted straight after Stop-Process.
+         Wait-ParallelInstanceProcessExit -Process $fakeProcesses -TimeoutSeconds 30
+
+Remove-ParallelInstanceDirectory retries while a file is in use (control-server#715)
+  PASS  a child holding a file open for 2.5 s: the delete retries and succeeds once it lets go
+  PASS  a child holding a DLL mapped (the clrjit.dll shape) for 2.5 s: the delete retries and succeeds once it lets go
+  PASS  the installer sequence: Stop-Process, Wait-ParallelInstanceProcessExit, then the delete succeeds with the DLL just unmapped
+        error text: Could not delete 'C:\Users\szy\AppData\Local\Temp\cs715-08970ba576aa45868c681e7b429d490d\NeverReleased.V2' after 10 attempts over 9 s: 'C:\Users\szy\AppData\Local\Temp\cs715-08970ba576aa45868c681e7b429d490d\NeverReleased.V2\held.bin' is still in use (The process cannot access the file 'C:\Users\szy\AppData\Local\Temp\cs715-08970ba576aa45868c681e7b429d490d\NeverReleased.V2\held.bin' because it is being used by another process.). Held by: pid 38632 (pwsh).
+  PASS  a handle never released: every attempt is made, then the error names the file and the process holding it
+  PASS  a refusal is not retried: a path outside the allowlist throws at once, no wait
+  PASS  the path is re-checked before every retry: refused after the first attempt, nothing more is deleted
+
+The error once the attempts run out names the entry and does not call a permission problem "in use" (review of #762)
+  PASS  access denied, nobody holds the file: reported as a likely permission or attribute problem, with the file name
+  PASS  access denied, a process holds the file: still reported as in use, with the holder
+  PASS  a delete-pending file (it no longer passes Test-Path) is still named in the sentence
+  PASS  directory not empty (145): the directory is named with what is still in it
+
+Which errors are retried: in use or access denied, nothing else
+  PASS  retried=True: IOException sharing violation (0x80070020)
+  PASS  retried=True: IOException lock violation (0x80070021)
+  PASS  retried=True: IOException directory not empty (0x80070091)
+  PASS  retried=True: UnauthorizedAccessException (access denied)
+  PASS  retried=True: the same, wrapped as an inner exception
+  PASS  retried=False: IOException with no Win32 code
+  PASS  retried=False: IOException disk full (0x80070070)
+  PASS  retried=False: PathTooLongException
+  PASS  retried=False: DirectoryNotFoundException
+  PASS  retried=False: RuntimeException (a refusal)
+
+Wait-ParallelInstanceProcessExit: an exit, or an error naming the process
+  PASS  a process that does not exit within the timeout is an error naming its id
+  PASS  processes that exit (or already have, or none at all) return without an error
+
+Both installer call sites wait before deleting
+  PASS  installer, retiring the previous FakeMesIngest: handles pinned, Stop-Process, then Wait-ParallelInstanceProcessExit (no Wait-Process), then the delete
+  FAIL  installer, redeploying the FakeMesIngest: handles pinned, Stop-Process, then Wait-ParallelInstanceProcessExit (no Wait-Process), then the delete
+        segment 51849..53764; handle pinned at -1, Stop-Process at 1329, Wait-ParallelInstanceProcessExit at 1504, Wait-Process present=False
+
+23 passed, 1 failed
+exit=1
