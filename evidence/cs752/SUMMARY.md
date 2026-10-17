@@ -22,6 +22,7 @@
 | M3 | 离点清扫的守卫退回只对等待点 | 红 3 |
 | M4 | 物化只找等待点预占 | 红 3 |
 | M5 | 建单前重核去掉公共站分支 | 红 3 |
+| ME（审查变异，10-17 23:04 补跑） | `FailedLastTimeAsync` 只看有原因码的旅程（回落那一趟收敛后不再算最近一趟） | 只跑 `AfterTheFallbackTheNextIdleReturnAimsAtTheStagingOriginAgain`：红 1（第 141 行，下一次承诺没落到待送点） |
 
 存活 0。
 
