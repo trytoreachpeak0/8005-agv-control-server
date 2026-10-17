@@ -132,7 +132,7 @@ public sealed class JourneyPlanCharacterizationTests
             runtime.GateStationId=关卡
             runtime.GateStationRiotId=210
             runtime.ExpectedBasketCount=1
-            runtime.TargetSlotsJson=[1]
+            runtime.TargetSlotsJson=[]
             runtime.OperationSessionId=7e7ee0e2-5b9f-0e52-a69a-df22d71c836a
             runtime.PickupMovementLegId=f13413b8-c674-ce57-a847-b4f653a98921
             runtime.PickupUpperId=W2G-10000000-0000-4000-8000-000000000001-PICKUP-1

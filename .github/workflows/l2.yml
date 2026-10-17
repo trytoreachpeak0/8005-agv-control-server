@@ -514,6 +514,10 @@ jobs:
               # control-server#749 (REQ-0196 as revised by CP-0015): after the vehicle leaves its first stop, the plan the
               # onboard acknowledges carries only the stops ahead, and an append after that is still placed.
               @{ Name = 'remaining-plan-after-passed-stop'; Runs = 3; BatchId = 'wire-to-full-inspection' }
+              # control-server#754 (REQ-0352 as revised by CP-0015): the slots are assigned after the sublot entry, at the
+              # lowest free slots of the side at that moment -- a demand appended behind one that the station deadline then
+              # ended gets the slots that one left free, not the ones that were next at its acceptance.
+              @{ Name = 'slot-assignment-after-scan'; Runs = 3; BatchId = 'wire-to-full-inspection' }
           )
           # One run's usual length in seconds, for dealing scenarios out to lanes longest first. Measured, not
           # remembered: scripts/l2/Get-L2LaneEstimates.ps1 reads them out of past rounds' logs, and its -AsJson

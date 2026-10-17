@@ -7,7 +7,8 @@
   - 整车 FRONT 组的仓全空着，放行旧的 I8 取仓足够装下，但需求不受理；
   - 积压原因是「所需分组暂时空仓不足」（SLOT_GROUP_CAPACITY_TEMPORARILY_UNAVAILABLE），几轮之后仍是，不建单；
   - StructuralDispatchBlocks 里没有这条需求的行：这是正常积压（REQ-0210），不是结构性问题。
-然后让 REAR 组编号最小的两个仓变空，断言下一轮受理、目标仓就是这两个（默认模型下 [5,6]）。
+然后让 REAR 组编号最小的两个仓变空，断言下一轮受理（只占数量，不定仓号），车到取货站扫码之后分到的目标仓就是这两个
+（默认模型下 [5,6]；control-server#754 起仓号在扫码之后才分，REQ-0352）。
 
 「变空」怎么做：服务端只从会话的两份握手快照读可用仓，而合成对端没有运行中改逐仓状态的入口（README「SlotStates」），
 所以按票面的第二条路走——断线、换种子、重连：停掉原对端进程，用同样的参数加新的逐仓种子在同一端口重起一个，
@@ -152,15 +153,41 @@ $stage = Wait-L2Condition -Description 'the demand was accepted once its group h
     -Journal $journal -Criterion 'journey-stage' -TimeoutSeconds 90 -Component $reseeded `
     -Probe { $r = Get-Runtime $demandId; if ($r) { [string]$r.Stage } else { $null } } `
     -Until { param($v) $v -eq 'AwaitingPickupArrival' }
-$targets = @([string](Get-Runtime $demandId).TargetSlotsJson | ConvertFrom-Json | ForEach-Object { [int]$_ })
-$assertions.Add(
-    'L2-SGF-06', "REAR 组有空仓后受理，目标仓恰好是变空的 [$($freed -join ',')]",
-    ($stage -eq 'AwaitingPickupArrival' -and ($targets -join ',') -eq ($freed -join ',')),
-    "AwaitingPickupArrival, [$($freed -join ',')]", "$stage, [$($targets -join ',')]")
+$unassigned = Assert-L2SlotsUnassignedAtAcceptance -Assertions $assertions -Id 'L2-SGF-06' -Connection $connection `
+    -DemandId $demandId -BasketCount $basketCount
+
+# 仓号在扫码之后才分（control-server#754）：车开到取货站，等装货命令发出去——分配与命令同一次提交。
+$pickupIntent = Wait-L2Condition -Description 'the TO_PICKUP intent was confirmed' `
+    -Journal $journal -Criterion 'to-pickup-intent' -TimeoutSeconds 60 -Component $reseeded `
+    -Probe {
+        $rows = Invoke-L2Query -Connection $connection `
+            -Sql "SELECT UpperId, OrderId, Status FROM OrderIntents WHERE DemandId = '$demandId' AND Purpose = 'TO_PICKUP'"
+        if ($rows.Count -gt 0 -and [string]$rows[0].Status -eq 'CONFIRMED') { $rows[0] } else { $null }
+    } -Until { param($v) $null -ne $v }
+$journal.Note('Vehicle drives to the pickup station and comes to rest.')
+$null = $riot.Command('Put', "orders/$($pickupIntent.UpperId)", @{ orderState = 3; executeVehicleKey = $Context.VehicleKey })
+$null = $riot.Command('Put', 'vehicle', @{
+    vehicleKey = $Context.VehicleKey; procState = 'RUNNING'; movementState = 'MT_RUNNING'; speed = 0.8
+    processingOrder = $true; orderTaskId = $pickupIntent.OrderId
+})
+$null = $riot.Command('Put', 'vehicle', @{
+    vehicleKey = $Context.VehicleKey; procState = 'IDLE'; movementState = 'MT_FINISHED'; speed = 0
+    currentPosition = $Context.PickupStationRiotId; processingOrder = $false; clearOrderTaskId = $true
+})
+$null = $riot.Command('Put', "orders/$($pickupIntent.UpperId)", @{ orderState = 5 })
+$null = Wait-L2Condition -Description 'the load was commanded after the sublot entry' `
+    -Journal $journal -Criterion 'load-commanded' -TimeoutSeconds 120 -Component $reseeded `
+    -Probe { Get-Count "SELECT COUNT(*) AS Total FROM StationOperations WHERE DemandId = '$demandId' AND OperationType = 'Load'" } `
+    -Until { param($v) $v -ge 1 }
+
 # Passed the availability read above rather than re-read: it is the same session's snapshot either way, and the
-# assertion is then about the facts the demand was judged against.
-$null = Assert-L2SlotGroupTargets -Assertions $assertions -Id 'L2-SGF-07' -Connection $connection `
+# assertion is then about the facts the slots were assigned against.
+$assigned = Assert-L2SlotGroupTargets -Assertions $assertions -Id 'L2-SGF-07' -Connection $connection `
     -DemandId $demandId -SlotPosition 'REAR' -AvailableSlots $expectedAvailable `
-    -Description "目标仓全部属于本车 REAR 组、升序，且恰好是该组编号最小的 $basketCount 个可用仓"
+    -Description "扫码后分到的目标仓恰好是变空的 [$($freed -join ',')]：全部属于本车 REAR 组、升序，且是该组编号最小的 $basketCount 个可用仓"
+$assertions.Add(
+    'L2-SGF-08', "分到的目标仓恰好是变空的 [$($freed -join ',')]",
+    ((@($assigned.Actual) -join ',') -eq ($freed -join ',')),
+    "[$($freed -join ',')]", "[$(@($assigned.Actual) -join ',')]")
 
 $journal.Note('Scenario finished.')

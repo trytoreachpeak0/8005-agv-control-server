@@ -96,6 +96,8 @@ internal static class ReconnectModel
         "IDLE_RETURN_ARRIVAL_NOT_PROVEN",
         // cs#404：去充电的旅程发现自己的充电周期不在了，停在原处等人来看。模型没有充电，走不到，理由同上。
         "CHARGING_CYCLE_MISSING",
+        // cs#754：扫码后这一侧分不出够数的仓位，录入被拒，等操作员取消这条需求。模型没有禁用仓位，走不到，理由同上。
+        "LOAD_SLOT_ASSIGNMENT_SHORT",
     };
 
     /// <summary>

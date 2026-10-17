@@ -119,6 +119,15 @@ namespace ControlServer.Tests;
 /// <c>|OperatorDepartedAt=NULL</c> 删掉，与<b>集成分支上的</b>旧基线（<c>fp/v2-impl@9a32f3fb</c>）逐字相同，十四份全部成立。先算出该是多少：
 /// 十份各两行停靠，应有 20 处、分布在 10 份文件，四份看板基线 0 处；实数 20 处、10 份；比对脚本另改一个无关字符验过会报红（#732 正文）。
 /// </para>
+/// <para>
+/// <b>control-server#754 把七份终结状态基线里 <c>TargetSlotsJson</c> 的值改成 <c>[]</c>，只改这一列的值，不加不删行与列。</b>那一票让受理只预留
+/// 花篮数、不定仓号，仓号在扫码通过之后写到归属行上（REQ-0352）：旅程行这一列从此一直是 <c>[]</c>，没扫过码就结束的需求，归属行这一列也是
+/// <c>[]</c>。这是行为本身的变化，不是重录：基线是对原值逐处改写的，不是把本票分支的输出抄进来。先算出该是多少：七份走过受理的基线
+/// （<c>cancellation-before-sublot</c>、<c>in-flight-cancellation</c>、<c>station-deadline</c>、<c>fault-cargo-handoff</c>、
+/// <c>forced-mechanical-recovery</c>、<c>determinate-load-failure</c>、<c>unload</c>）各有一行旅程行，应 7 处；其中两份是扫码前就结束的
+/// （<c>cancellation-before-sublot</c>、<c>station-deadline</c>），归属行再各 1 处，合计 9 处；实数 9 处。三份 <c>commanded-ending-*</c>
+/// 的旅程由 <c>JourneyMembershipSeed</c> 直接写成「已分配之后」的样子，不经受理，未动；四份看板基线不含这一列。
+/// </para>
 /// </remarks>
 internal static class ZeroChangePin
 {

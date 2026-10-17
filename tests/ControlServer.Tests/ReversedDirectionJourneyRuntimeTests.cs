@@ -227,6 +227,12 @@ public sealed class ReversedDirectionJourneyRuntimeTests
         DemandTaskTypeStationFreeze anchorFreeze = (await freezes.ReadAsync(ReverseDemand, Token))!;
         await freezes.FreezeAsync(
             FurtherDemand, anchorFreeze.RuleVersion, anchorFreeze.MapId, anchorFreeze.BindingSetVersion, Now, Token);
+        // And the anchor's area assignment, as a real append freezes it (WireToGateStore.AppendToJourneyAsync): since
+        // control-server#754 the slots are assigned after the sublot entry, on the side that freeze names, and a demand with
+        // none has its entry refused (LOAD_SLOT_ASSIGNMENT_SHORT) instead of being loaded.
+        DemandAreaAssignmentFreezeStore areaFreezes = new(fixture.Context);
+        DemandAreaAssignmentFreeze anchorArea = (await areaFreezes.ReadAsync(ReverseDemand, Token))!;
+        await areaFreezes.FreezeAsync(FurtherDemand, anchorArea.Version, Now, Token);
         await fixture.Context.SaveChangesAsync(Token);
         // The second machine admits STAGING_TO_WIRE -- the premise the further demand was dispatched on.
         if (!await fixture.Context.StationTaskTypeAdmissions.AnyAsync(

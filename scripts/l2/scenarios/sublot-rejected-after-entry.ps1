@@ -8,7 +8,7 @@
   A. 派车之后把假 MES 的箱数从 4 改成 8（容量对照 L2-PACKAGE 是 4 箱/篮），操作员录入本范围的子批号：
      服务端重算得 2，与受理时冻结的 1 不符 → 收到 SublotRejected，reasonCode 是
      EXPECTED_BASKET_COUNT_MISMATCH，correlationId 等于那条提交的 messageId，没有装货命令、没有仓位操作、
-     TargetSlotsJson 一点没动。
+     也没有分仓位（control-server#754 起仓号在扫码通过之后才分，被拒的录入不分）。
   B. 录入一个派车范围外的子批号 → SUBLOT_NOT_IN_DISPATCH_SCOPE、demandId 为空。
   C. 箱数改回 4，操作员重扫本范围的子批号（新的 messageId）→ 正常发装货命令。
   D. 这一段里本站一直没人成功录入：旅程的阻断原因始终为空、阶段始终是 AwaitingSublot、被拒的那条提交
@@ -200,9 +200,9 @@ $pickupIntent = Wait-L2Condition -Description 'the TO_PICKUP intent was confirme
     -Until { param($v) $null -ne $v }
 $dispatched = Get-Runtime
 $assertions.Add(
-    'L2-SRJ-01', '受理时冻结的花篮数量是 1（4 箱 ÷ 每篮 4 箱），仓位也已按它预留',
-    ([int]$dispatched.ExpectedBasketCount -eq 1 -and -not [string]::IsNullOrEmpty([string]$dispatched.TargetSlotsJson)),
-    'ExpectedBasketCount=1 / TargetSlotsJson 非空',
+    'L2-SRJ-01', '受理时冻结的花篮数量是 1（4 箱 ÷ 每篮 4 箱），只按它预留数量、不定仓号（control-server#754）',
+    ([int]$dispatched.ExpectedBasketCount -eq 1 -and [string]$dispatched.TargetSlotsJson -ceq '[]'),
+    'ExpectedBasketCount=1 / TargetSlotsJson=[]',
     "ExpectedBasketCount=$($dispatched.ExpectedBasketCount) / TargetSlotsJson=$($dispatched.TargetSlotsJson)")
 
 Invoke-PickupLeg $pickupIntent
@@ -263,15 +263,19 @@ $assertions.Add(
     "sublot=$($firstSubmission.Sublot) / revision=$($rejection.WorklistRevision) / $($rejection.AgvId)")
 
 $refusedRuntime = Get-Runtime
+# 仓号在扫码通过之后才写到归属行上（control-server#754）：被拒的录入不分仓，所以拒收之后归属行仍是 []。读归属行而不是
+# 旅程行——旅程行一直是 []，比它什么都证明不了。
+$refusedMembershipSlots = [string](Invoke-L2Query -Connection $connection `
+        -Sql "SELECT TargetSlotsJson FROM JourneyDemands WHERE DemandId = '$demandId' AND RemovedAt IS NULL")[0].TargetSlotsJson
 $slotCommands = @(Get-PeerInbound 'SlotOperationCommand' ([DateTimeOffset]::MinValue)).Count
 $loadOperations = Get-Count "SELECT COUNT(*) AS Total FROM StationOperations WHERE DemandId = '$demandId'"
 $assertions.Add(
-    'L2-SRJ-05', '拒收不发装货命令、不建仓位操作、不动已预留的仓位，旅程留在等录入',
+    'L2-SRJ-05', '拒收不发装货命令、不建仓位操作、不分仓位（仍是受理时的 []），旅程留在等录入',
     ([string]$refusedRuntime.Stage -eq 'AwaitingSublot' -and $slotCommands -eq 0 -and $loadOperations -eq 0 -and
-        [string]$refusedRuntime.TargetSlotsJson -eq [string]$dispatched.TargetSlotsJson -and
+        $refusedMembershipSlots -ceq '[]' -and
         [string]$refusedRuntime.ExpectedBasketCount -eq [string]$dispatched.ExpectedBasketCount),
-    "AwaitingSublot / 0 / 0 / $($dispatched.TargetSlotsJson) / $($dispatched.ExpectedBasketCount)",
-    "$($refusedRuntime.Stage) / $slotCommands / $loadOperations / $($refusedRuntime.TargetSlotsJson) / $($refusedRuntime.ExpectedBasketCount)")
+    "AwaitingSublot / 0 / 0 / 归属行 [] / $($dispatched.ExpectedBasketCount)",
+    "$($refusedRuntime.Stage) / $slotCommands / $loadOperations / 归属行 $refusedMembershipSlots / $($refusedRuntime.ExpectedBasketCount)")
 $assertions.Add(
     'L2-SRJ-06', '拒收不写阻断原因（被拒的提交不是旅程的阻断，它不上看板）',
     (Test-L2Null $refusedRuntime.BlockReasonCode),

@@ -269,7 +269,6 @@ public sealed class DispatchVehicleOrderingTests
             "ZONE", "EVIDENCE", "N1-3_N1-7", 12, "关卡", 210,
             FixedTaskStationResolution.Resolved("WIRE_TO_GATE", FixedStationEnd.Destination, new RiotMapStation(210, "关卡"))),
         1,
-        [1],
         Origin,
         cost);
 }

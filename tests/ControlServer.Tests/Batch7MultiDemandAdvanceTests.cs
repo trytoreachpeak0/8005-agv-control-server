@@ -451,8 +451,16 @@ public sealed class Batch7MultiDemandAdvanceTests
         second.TransportDemandKey = $"{sublot}|WIRE_TO_GATE";
         second.SeriesId = $"SERIES-{demandId}";
         fixture.Context.AcceptedDemands.Add(second);
+        // 分区归属照真实追加那样冻结（WireToGateStore.AppendToJourneyAsync）：还没分到仓位的需求占哪一侧，仓位账本按它定
+        // （control-server#754）。冻结的是锚需求那一版，两条同一个 AREA。
+        if (await new DemandAreaAssignmentFreezeStore(fixture.Context).ReadAsync(runtime.DemandId!, token) is { } frozen)
+        {
+            await new DemandAreaAssignmentFreezeStore(fixture.Context)
+                .FreezeAsync(demandId, frozen.Version, frozen.FrozenAt, token);
+        }
 
-        // 仓位要与锚需求错开：同一辆车上两条需求不能占同一个仓位，而装货结果按仓位回报。
+        // 仓位要与锚需求错开：同一辆车上两条需求不能占同一个仓位，而装货结果按仓位回报。受理不再定仓号之后（control-server#754）
+        // 锚需求那一段是空的，这一条也就是空的——两条都等扫码后再分。
         int[] anchorSlots = JsonSerializer.Deserialize<int[]>(anchorMembership.TargetSlotsJson) ?? [];
         int[] secondSlots = [.. anchorSlots.Select(slot => slot + anchorSlots.Length * slotBlock)];
         fixture.Context.Set<JourneyDemandRow>().Add(new JourneyDemandRow

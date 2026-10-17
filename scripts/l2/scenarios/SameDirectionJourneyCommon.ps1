@@ -36,7 +36,7 @@ $script:SameDirectionBaskets = 2
 
 function Get-L2SameDirectionRuntime([object]$Connection, [string]$DemandId) {
     return Read-L2SingleRow -Connection $Connection -Sql (
-        "SELECT Stage, PickupStationRiotId, GateStationRiotId, TargetSlotsJson, ExpectedBasketCount, BlockReasonCode " +
+        "SELECT Stage, AgvId, PickupStationRiotId, GateStationRiotId, TargetSlotsJson, ExpectedBasketCount, BlockReasonCode " +
         "FROM JourneyRuntimes WHERE DemandId = '$DemandId'")
 }
 
@@ -139,16 +139,18 @@ function Test-L2SameDirectionDemand {
     $frozen = Read-L2SingleRow -Connection $connection -Required `
         -Sql "SELECT StationId FROM FrozenDemandStations WHERE DemandId = '$demandId' AND Role = 'Dropoff'"
 
-    $targets = @([string]$runtime.TargetSlotsJson | ConvertFrom-Json | ForEach-Object { [int]$_ })
-    $null = Assert-L2SlotGroupTargets -Assertions $assertions -Id "$IdPrefix-03" -Connection $connection `
-        -DemandId $demandId -SlotPosition $SlotPosition `
-        -Description "$Area 指 ${SlotPosition}：取货时目标仓全部属于本车 $SlotPosition 组、升序，且恰好是该组编号最小的 $baskets 个可用仓"
+    # control-server#754（REQ-0352）：受理只占数量，仓号在扫码之后才分。扫码前的空仓表留到分配之后判。
+    $available = Get-L2AvailableSlots -Connection $connection -AgvId ([string]$runtime.AgvId)
 
     Move-L2SameDirectionVehicle $Context $pickupIntent $machine
     $null = Wait-L2Condition -Description "the $Area load committed and the journey reached the drop-off leg" `
         -Journal $journal -Criterion 'journey-stage' -TimeoutSeconds 120 `
         -Probe { $r = Get-L2SameDirectionRuntime $connection $demandId; if ($r) { [string]$r.Stage } else { $null } } `
         -Until { param($v) $v -eq 'AwaitingGateArrival' }
+    $assigned = Assert-L2SlotGroupTargets -Assertions $assertions -Id "$IdPrefix-03" -Connection $connection `
+        -DemandId $demandId -SlotPosition $SlotPosition -AvailableSlots $available `
+        -Description "$Area 指 ${SlotPosition}：取货扫码后分到的目标仓全部属于本车 $SlotPosition 组、升序，且恰好是该组编号最小的 $baskets 个可用仓"
+    $targets = @($assigned.Actual)
     $dropoffIntent = Wait-L2Condition -Description "the $Area drop-off-leg intent was confirmed" `
         -Journal $journal -Criterion 'to-gate-intent' -TimeoutSeconds 60 `
         -Probe { Get-L2SameDirectionIntent $connection $demandId 'TO_GATE' } `

@@ -123,26 +123,27 @@ function Wait-Intent([string]$DemandId, [string]$Purpose) {
 }
 
 <#
-一趟：放需求、等受理、断言目标仓在该组，开到 12 号站装货、开到关卡卸货，等到卸货命令发出且旅程 Completed，再断言装卸命令
-开的都是目标仓。返回这趟的旅程行。
+一趟：放需求、等受理，开到 12 号站扫码装货、断言扫码后分到的目标仓在该组（control-server#754 起仓号在扫码之后才分），
+开到关卡卸货，等到卸货命令发出且旅程 Completed，再断言装卸命令开的都是目标仓。返回这趟的旅程行。
 #>
 function Invoke-Trip([string]$Label, [string]$Name, [string]$Area, [string]$Group, [string]$IdPrefix) {
     $demandId = Publish-Demand $Label $Area
     $null = Wait-Stage $demandId 'AwaitingPickupArrival' "demand $Label ($Area) was accepted and dispatched to the pickup station" 90
     Save-BacklogReasons
 
-    $null = Assert-L2SlotGroupTargets -Assertions $assertions -Id "$IdPrefix-1" -Connection $connection `
-        -DemandId $demandId -SlotPosition $Group `
-        -Description "需求$Name（$Area，$basketCount 花篮）：目标仓全部属于 $Group 组、升序，且恰好是该组编号最小的 $basketCount 个可用仓"
     $runtime = Get-Runtime $demandId
-    $targets = @([string]$runtime.TargetSlotsJson | ConvertFrom-Json | ForEach-Object { [int]$_ })
     $vehicleKey = [string]$runtime.VehicleKey
-    $journal.Note("Demand $Label went to $($runtime.AgvId) ($vehicleKey), target slots [$($targets -join ',')].")
+    $available = Get-L2AvailableSlots -Connection $connection -AgvId ([string]$runtime.AgvId)
+    $journal.Note("Demand $Label went to $($runtime.AgvId) ($vehicleKey); slots are assigned after the scan.")
 
     $pickupIntent = Wait-Intent $demandId 'TO_PICKUP'
     $journal.Note("Vehicle drives to station $stationRiotId ($stationName) for demand $Label and comes to rest.")
     Move-Vehicle $vehicleKey $pickupIntent $stationRiotId
     $null = Wait-Stage $demandId 'AwaitingGateArrival' "demand $Label loaded and its journey reached the gate leg"
+    $assigned = Assert-L2SlotGroupTargets -Assertions $assertions -Id "$IdPrefix-1" -Connection $connection `
+        -DemandId $demandId -SlotPosition $Group -AvailableSlots $available `
+        -Description "需求$Name（$Area，$basketCount 花篮）：扫码后分到的目标仓全部属于 $Group 组、升序，且恰好是该组编号最小的 $basketCount 个可用仓"
+    $targets = @($assigned.Actual)
     $gateIntent = Wait-Intent $demandId 'TO_GATE'
     $journal.Note("Vehicle drives to the gate for demand $Label and comes to rest.")
     Move-Vehicle $vehicleKey $gateIntent $Context.GateStationRiotId

@@ -90,6 +90,14 @@ public static class ServerReasonCodes
     public const string SlotFaultDeclared = "SLOT_FAULT_DECLARED";
 
     /// <summary>
+    /// A sublot entry refused because the slots assigned after the scan cannot be found (control-server#754): the demand's side
+    /// has fewer free, unassigned slots than it reserved -- most often a slot disabled after acceptance -- or what the assignment
+    /// reads (the demand's area assignment freeze, the vehicle's slot model, its onboard facts) cannot be read. Nothing is loaded
+    /// and no door opens; the stop waits for the operator to cancel the demand.
+    /// </summary>
+    public const string SlotInoperable = "SLOT_INOPERABLE";
+
+    /// <summary>
     /// Recognised, not produced (control-server#481): the code the vehicle refuses a replayed
     /// <c>SlotFaultDeclarationCommand</c> with once it has given up its own answer to that declaration, which is how the
     /// server learns to stop waiting for it (<c>SlotFaultDeclarationResults.ObserveCommandRefusedAsync</c>).

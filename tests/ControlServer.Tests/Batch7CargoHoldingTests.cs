@@ -689,12 +689,31 @@ public sealed class Batch7CargoHoldingTests
             fixture, SecondDemandId, SecondSublot, SecondPickupArea, SecondPickupStationRiotId);
     }
 
-    /// <summary>把第一条需求目标仓位之外的每个仓位都禁用：前侧只剩它自己的货，后侧一个空仓都没有。</summary>
+    /// <summary>
+    /// 只留第一条需求那一侧编号最小的、恰好够它花篮数的仓位，其余都禁用：前侧只够它自己的货，后侧一个空仓都没有。
+    /// </summary>
+    /// <remarks>
+    /// control-server#754 之前留的是它受理时定下的目标仓位。受理不再定仓号之后，留下的是扫码时会分给它的那几个——这一侧
+    /// 编号最小的那几个——所以扫码后照样分到它们，满的判定与之前相同。
+    /// </remarks>
     internal static async Task LeaveOnlyTheFirstDemandsSlotsAsync(RuntimeFixture fixture)
     {
         CancellationToken token = TestContext.Current.CancellationToken;
-        int[] own = JsonSerializer.Deserialize<int[]>((await fixture.Context.Set<JourneyDemandRow>().AsNoTracking()
-            .SingleAsync(row => row.DemandId == FirstDemandId, token)).TargetSlotsJson)!;
+        JourneyDemandRow membership = await fixture.Context.Set<JourneyDemandRow>().AsNoTracking()
+            .SingleAsync(row => row.DemandId == FirstDemandId, token);
+        string side = (await new DemandAreaAssignmentFreezeStore(fixture.Context)
+            .ReadFrozenSlotPositionsAsync([FirstDemandId], token))[FirstDemandId];
+        VehicleSlotPositions positions = await new VehicleSlotPositionReader(fixture.Context)
+            .ReadAsync(fixture.Options.AgvId, token)
+            ?? throw new InvalidOperationException("The fixture binds the approved slot model.");
+        int[] own =
+        [
+            .. positions.SlotPositionByPhysicalSlot
+                .Where(pair => pair.Value == side)
+                .Select(pair => pair.Key)
+                .Order()
+                .Take(membership.ExpectedBasketCount)
+        ];
         ProtocolInboxRow[] rows = await fixture.Context.ProtocolInbox
             .Where(row => row.MessageType == "CapabilitySnapshot" || row.MessageType == "SafetyStateSnapshot")
             .ToArrayAsync(token);

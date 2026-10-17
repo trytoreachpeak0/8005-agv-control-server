@@ -402,7 +402,6 @@ public sealed class Batch7RedispatchIdentityTests
                     FixedTaskStationResolution.Resolved(
                         TransportTaskTypes.WireToGate, FixedStationEnd.Destination, new RiotMapStation(202, "ST-GATE"))),
                 2,
-                [1, 2],
                 Now),
             Now,
             redispatchGeneration);

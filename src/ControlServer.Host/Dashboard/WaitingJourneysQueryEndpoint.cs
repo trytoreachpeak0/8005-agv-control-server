@@ -138,8 +138,8 @@ internal sealed class WaitingJourneysQueryEndpoint : IDashboardQueryEndpoint
             freeSlots = new Dictionary<string, int>(StringComparer.Ordinal);
             foreach (string group in positions.PhysicalSlotCountByGroup.Keys.Order(StringComparer.Ordinal))
             {
-                freeSlots[group] = (await ledger.ReadAvailableSlotsAsync(
-                    journey.AgvId, onboard, positions, group, cancellationToken)).Count;
+                freeSlots[group] = await ledger.ReadAvailableSlotCountAsync(
+                    journey.AgvId, onboard, positions, group, cancellationToken);
             }
         }
 

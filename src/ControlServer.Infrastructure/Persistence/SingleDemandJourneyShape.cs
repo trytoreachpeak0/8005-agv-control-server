@@ -101,13 +101,19 @@ internal static class SingleDemandJourneyShape
     /// Whether a stored membership is the same membership, on what the acceptance fixed. Status, loaded slots and removal
     /// are left out for the reason <see cref="SameStop"/> leaves status out.
     /// </summary>
+    /// <remarks>
+    /// <b>Target slots are left out too (REQ-0352, control-server#754).</b> Acceptance fixes only the basket count; the
+    /// slots are assigned after the sublot entry and written onto this membership, while the journey row the expected
+    /// membership is built from keeps the empty list acceptance wrote. Comparing them would read a replayed acceptance of
+    /// a demand already scanned as a different acceptance. Two acceptances of one demand cannot differ in slots any more:
+    /// both carry none, and <see cref="ExpectedBasketCount"/> still has to match.
+    /// </remarks>
     internal static bool SameDemand(JourneyDemandRow stored, JourneyDemandRow expected) =>
         stored.JourneyId == expected.JourneyId &&
         stored.DemandId == expected.DemandId &&
         stored.PickupStopId == expected.PickupStopId &&
         stored.UnloadStopId == expected.UnloadStopId &&
         stored.ExpectedBasketCount == expected.ExpectedBasketCount &&
-        stored.TargetSlotsJson == expected.TargetSlotsJson &&
         stored.LoadSlotOperationAttemptId == expected.LoadSlotOperationAttemptId &&
         stored.LoadCommandMessageId == expected.LoadCommandMessageId &&
         stored.UnloadSlotOperationAttemptId == expected.UnloadSlotOperationAttemptId &&

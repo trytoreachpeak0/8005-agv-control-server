@@ -23,6 +23,12 @@ namespace ControlServer.Tests;
 /// 受理之后、装货之前，<c>LoadedSlots</c> 还是空的，而那几个仓位已经为这条需求留着了。拿 <c>LoadedSlots</c>
 /// 来减，一条还没装的需求就会被当成没占仓位，于是第二条需求被派进它预留的那一排——两条需求抢同一个物理仓。
 /// </para>
+/// <para>
+/// <b>v5 起账本答的是数量（REQ-0352，control-server#754）。</b>受理只占花篮数，扫码之后才分到具体仓位。本类的夹具
+/// （<see cref="Batch7JourneyFixture.Plan"/>）写的是 <c>[1, 2]</c>，代表的是「已分配之后」那一刻，所以下面多数用例仍按仓位减；
+/// 还没分到仓位的那一种由 <see cref="AnUnassignedDemandWhoseSideCannotBeToldIsCountedOnEverySide"/> 与
+/// <see cref="SlotAssignmentAtScanTests"/> 钉住。
+/// </para>
 /// </remarks>
 public sealed class Batch7JourneyAwareSlotLedgerTests
 {
@@ -56,12 +62,13 @@ public sealed class Batch7JourneyAwareSlotLedgerTests
     {
         await using Batch7JourneyFixture fixture = await Batch7JourneyFixture.CreateAsync();
 
-        IReadOnlyList<int> free = await new JourneyAwareSlotLedger(fixture.Context)
-            .ReadAvailableSlotsAsync(Vehicle(), side, TestContext.Current.CancellationToken);
+        IReadOnlyList<int> free = await Assignable(fixture.Context, side);
+        int count = await new JourneyAwareSlotLedger(fixture.Context)
+            .ReadAvailableSlotCountAsync(Vehicle(), side, TestContext.Current.CancellationToken);
 
-        IReadOnlyList<int> baseline = await new SessionBaselineSlotLedger()
-            .ReadAvailableSlotsAsync(Vehicle(), side, TestContext.Current.CancellationToken);
-        Assert.Equal(baseline, free);
+        int baseline = await new SessionBaselineSlotLedger()
+            .ReadAvailableSlotCountAsync(Vehicle(), side, TestContext.Current.CancellationToken);
+        Assert.Equal(baseline, count);
         Assert.Equal(expected, string.Join(',', free));
     }
 
@@ -75,13 +82,9 @@ public sealed class Batch7JourneyAwareSlotLedgerTests
         await Batch7JourneyFixture.AcceptAsync(
             fixture.Context, DemandId, AgvId, VehicleKey, Batch7JourneyFixture.Now);
 
-        JourneyAwareSlotLedger ledger = new(fixture.NewContext());
-        Assert.Equal(
-            [3, 4],
-            await ledger.ReadAvailableSlotsAsync(Vehicle(), "FRONT", TestContext.Current.CancellationToken));
-        Assert.Equal(
-            [5, 6, 7, 8],
-            await ledger.ReadAvailableSlotsAsync(Vehicle(), "REAR", TestContext.Current.CancellationToken));
+        Assert.Equal([3, 4], await Assignable(fixture.NewContext(), "FRONT"));
+        Assert.Equal([5, 6, 7, 8], await Assignable(fixture.NewContext(), "REAR"));
+        Assert.Equal((2, 4), (await Count(fixture.NewContext(), "FRONT"), await Count(fixture.NewContext(), "REAR")));
     }
 
     /// <summary>
@@ -105,10 +108,7 @@ public sealed class Batch7JourneyAwareSlotLedgerTests
         Assert.Null(membership.LoadedSlotsJson);
         Assert.Equal([1, 2], JsonSerializer.Deserialize<int[]>(membership.TargetSlotsJson) ?? []);
 
-        Assert.Equal(
-            [3, 4],
-            await new JourneyAwareSlotLedger(fixture.NewContext())
-                .ReadAvailableSlotsAsync(Vehicle(), "FRONT", TestContext.Current.CancellationToken));
+        Assert.Equal([3, 4], await Assignable(fixture.NewContext(), "FRONT"));
     }
 
     /// <summary>
@@ -143,10 +143,28 @@ public sealed class Batch7JourneyAwareSlotLedgerTests
 
         await context.SaveChangesAsync(TestContext.Current.CancellationToken);
 
-        Assert.Equal(
-            [1, 2, 3, 4],
-            await new JourneyAwareSlotLedger(fixture.NewContext())
-                .ReadAvailableSlotsAsync(Vehicle(), "FRONT", TestContext.Current.CancellationToken));
+        Assert.Equal([1, 2, 3, 4], await Assignable(fixture.NewContext(), "FRONT"));
+        Assert.Equal(4, await Count(fixture.NewContext(), "FRONT"));
+    }
+
+    /// <summary>
+    /// 还没分到仓位、也定不出在哪一侧的需求（没有分区归属冻结）：它的花篮数在每一侧都减，不占任何具体的号
+    /// （control-server#754）。少算一侧会把别的需求派进它将来要用的那几格。
+    /// </summary>
+    [Fact]
+    public async Task AnUnassignedDemandWhoseSideCannotBeToldIsCountedOnEverySide()
+    {
+        await using Batch7JourneyFixture fixture = await Batch7JourneyFixture.CreateAsync();
+        await Batch7JourneyFixture.AcceptAsync(
+            fixture.Context, DemandId, AgvId, VehicleKey, Batch7JourneyFixture.Now);
+        ControlServerDbContext context = fixture.NewContext();
+        JourneyDemandRow membership = await context.Set<JourneyDemandRow>()
+            .SingleAsync(row => row.DemandId == DemandId, TestContext.Current.CancellationToken);
+        membership.TargetSlotsJson = "[]";
+        await context.SaveChangesAsync(TestContext.Current.CancellationToken);
+
+        Assert.Equal([1, 2, 3, 4], await Assignable(fixture.NewContext(), "FRONT"));
+        Assert.Equal((2, 2), (await Count(fixture.NewContext(), "FRONT"), await Count(fixture.NewContext(), "REAR")));
     }
 
     /// <summary>
@@ -163,10 +181,7 @@ public sealed class Batch7JourneyAwareSlotLedgerTests
         await Batch7JourneyFixture.AcceptAsync(
             fixture.Context, DemandId, "AGV-L1-002", "BROKERX-L1-0002", Batch7JourneyFixture.Now);
 
-        Assert.Equal(
-            [1, 2, 3, 4],
-            await new JourneyAwareSlotLedger(fixture.NewContext())
-                .ReadAvailableSlotsAsync(Vehicle(), "FRONT", TestContext.Current.CancellationToken));
+        Assert.Equal(4, await Count(fixture.NewContext(), "FRONT"));
     }
 
     /// <summary>
@@ -177,8 +192,8 @@ public sealed class Batch7JourneyAwareSlotLedgerTests
     {
         await using Batch7JourneyFixture fixture = await Batch7JourneyFixture.CreateAsync();
 
-        Assert.Empty(await new JourneyAwareSlotLedger(fixture.Context)
-            .ReadAvailableSlotsAsync(VehicleWithoutBaseline(), "FRONT", TestContext.Current.CancellationToken));
+        Assert.Equal(0, await new JourneyAwareSlotLedger(fixture.Context)
+            .ReadAvailableSlotCountAsync(VehicleWithoutBaseline(), "FRONT", TestContext.Current.CancellationToken));
     }
 
     // ---- 判据把两种「装不下」分开（票面第 4 条） ----------------------------------------------
@@ -204,7 +219,7 @@ public sealed class Batch7JourneyAwareSlotLedgerTests
 
         Assert.Equal(
             DispatchReasonCodes.SlotGroupOccupiedByOwnCargo,
-            await EvaluateWithLedgerAsync(evaluation, ledgerAnswer: [1], baskets: 2));
+            await EvaluateWithLedgerAsync(evaluation, ledgerAnswer: 1, baskets: 2));
     }
 
     /// <summary>会话基线本身就不够：这是仓位被禁用或本来就没那么多，不是本车的货占的。</summary>
@@ -215,13 +230,13 @@ public sealed class Batch7JourneyAwareSlotLedgerTests
 
         Assert.Equal(
             DispatchReasonCodes.SlotGroupCapacityTemporarilyUnavailable,
-            await EvaluateWithLedgerAsync(evaluation, ledgerAnswer: [1], baskets: 2));
+            await EvaluateWithLedgerAsync(evaluation, ledgerAnswer: 1, baskets: 2));
     }
 
     private const int BoxesPerBasket = 4;
 
     private static Task<string> EvaluateWithLedgerAsync(
-        DispatchCandidateEvaluation evaluation, int[] ledgerAnswer, int baskets) =>
+        DispatchCandidateEvaluation evaluation, int ledgerAnswer, int baskets) =>
         new SlotCapacityCriterion(
                 new FixedBoxCount(baskets * BoxesPerBasket),
                 Microsoft.Extensions.Logging.Abstractions.NullLogger<SlotCapacityCriterion>.Instance,
@@ -271,12 +286,22 @@ public sealed class Batch7JourneyAwareSlotLedgerTests
     }
 
     /// <summary>账本的答案由用例给定，好让「基线够不够」成为两条用例之间唯一的差别。</summary>
-    private sealed class FixedSlotLedger(int[] answer) : IVehicleSlotLedger
+    private sealed class FixedSlotLedger(int answer) : IVehicleSlotLedger
     {
-        public Task<IReadOnlyList<int>> ReadAvailableSlotsAsync(
+        public Task<int> ReadAvailableSlotCountAsync(
             DispatchVehicleFacts vehicle, string slotPosition, CancellationToken cancellationToken) =>
-            Task.FromResult<IReadOnlyList<int>>(answer);
+            Task.FromResult(answer);
     }
+
+    /// <summary>扫码后给另一条需求分仓时能挑的号：这一侧的基线减去已分给本车需求的。</summary>
+    private static Task<IReadOnlyList<int>> Assignable(ControlServerDbContext context, string side) =>
+        new JourneyAwareSlotLedger(context).ReadAssignableSlotsAsync(
+            AgvId, "10000000-0000-4000-8000-0000000000ff", Vehicle().Onboard, EightSlot, side,
+            TestContext.Current.CancellationToken);
+
+    private static Task<int> Count(ControlServerDbContext context, string side) =>
+        new JourneyAwareSlotLedger(context).ReadAvailableSlotCountAsync(
+            Vehicle(), side, TestContext.Current.CancellationToken);
 
     /// <summary>八个仓位全在会话基线里的那辆车。</summary>
     private static DispatchVehicleFacts Vehicle() => VehicleWith([1, 2, 3, 4, 5, 6, 7, 8]);
