@@ -1,3 +1,4 @@
+## 第一次出发（REJECTED）
 08:07:47.137 Info 1103/LogSessionReadinessAppended SessionReadiness 4b8eb826-70e8-4c03-afd4-7560a92e32bd to 老厂前线新多仓位3 generation 5: RECOVERY_REQUIRED [DEPARTURE_UNSAFE], after the answer to SafetyStateChanged 4ee25489-be7a-3955-82dc-c5c98c227ff4.
 08:07:48.193 Info 1103/LogSessionReadinessAppended SessionReadiness 567d6479-5bba-4c21-9431-cfd39bcc1a0d to 老厂前线新多仓位3 generation 5: READY [], after the answer to SafetyStateChanged 4a3cf58c-c141-5453-80bf-5c61536089df.
 08:08:25.843 Info 1103/LogSessionReadinessAppended SessionReadiness c6330d96-5a50-48ac-9662-0bc472535a8e to 老厂前线新多仓位3 generation 5: READY [], after the answer to SafetyStateChanged 9714e15c-cde1-f755-b635-a841b0ac9e59.
@@ -11,7 +12,7 @@
 08:09:08.938 Info 1103/LogSessionReadinessAppended SessionReadiness b8536752-fa99-41c3-bbaf-5f8462b3b815 to 老厂前线新多仓位1 generation 2: READY [], after the answer to SafetyStateChanged 71e97e2f-2e3b-ff51-9870-de7d63ad1064.
 08:09:38.792 Info 2292/LogEmptiedStopEntersDepartureWait Vehicle 老厂前线新多仓位3's pickup T2-5_T3-5 has nothing left to enter (its last outstanding demand was ended before a sublot) while the journey goes on; it now waits for departure. Loaded at this stop: True; station departure deadline 10/17/2026 16:14:38 (none means the wait is off and the vehicle is sent on in this round).
 08:09:38.809 Info 2139/LogLoadedStopDeadlineRefreshed Vehicle 老厂前线新多仓位3 has loaded everything at pickup T2-5_T3-5 and still waits there; its worklist carried the station departure deadline , the server now judges by 10/17/2026 16:14:38, so worklist revision 31 was sent with no items and the server's deadline.
-08:09:48.032 Info 2314/LogDepartureAnswered Departure request 2a2e8d53-8f0f-4a46-9ee3-6e7dfc9b86de from operator S0020310 on vehicle 老厂前线新多仓位3 answered REJECTED (WORKLIST_REVISION_STALE); 1 basket(s) on board, 0 demand(s) released back to dispatch.
+08:09:48.032 Info 2314/LogDepartureAnswered Departure request 2a2e8d53-8f0f-4a46-9ee3-6e7dfc9b86de from operator S00***** on vehicle 老厂前线新多仓位3 answered REJECTED (WORKLIST_REVISION_STALE); 1 basket(s) on board, 0 demand(s) released back to dispatch.
 MessageType=SublotSubmitted | ReceivedAt=2026-10-17 08:08:19.6168703+00:00 | MessageId=0c5afeb9-5b2b-4413-8f6e-29cd597e3476
 MessageType=OperationProgress | ReceivedAt=2026-10-17 08:08:25.6754833+00:00 | MessageId=17cfc9f5-5431-825f-b548-0ecc8c0a3f79
 MessageType=OperationProgress | ReceivedAt=2026-10-17 08:08:25.7549373+00:00 | MessageId=663514e6-4b4b-dd5d-aba6-0c10ca6cbdfe
@@ -27,9 +28,9 @@ MessageType=CurrentStopDepartureRequested | ReceivedAt=2026-10-17 08:09:38.87114
 MessageType=DurableAck | ReceivedAt=2026-10-17 08:09:48.0642144+00:00 | MessageId=b2aa2caf-5c28-4fbb-b3c6-b06b0bc60b9e
 
 ## 第二次出发（ACCEPTED），补记 2026-10-17T16:16:16+08:00
-2026-10-17T16:09:38.7916659+08:00	Information	ExecutionPhase	WireToGateBusinessService	操作员按出发：departureRequestId=2a2e8d53-8f0f-4a46-9ee3-6e7dfc9b86de，messageId=2ce5018a-442d-4b7c-8da6-4b0d9704cbcf，station=T2-5_T3-5，worklistRevision=30，operationSession=null，unloadedItems=0，pickupStopsAfter=0，operator=S0020310。
+2026-10-17T16:09:38.7916659+08:00	Information	ExecutionPhase	WireToGateBusinessService	操作员按出发：departureRequestId=2a2e8d53-8f0f-4a46-9ee3-6e7dfc9b86de，messageId=2ce5018a-442d-4b7c-8da6-4b0d9704cbcf，station=T2-5_T3-5，worklistRevision=30，operationSession=null，unloadedItems=0，pickupStopsAfter=0，operator=S00*****。
 2026-10-17T16:09:48.0224798+08:00	Information	ExecutionPhase	WireToGateBusinessService	收到出发结果：departureRequestId=2a2e8d53-8f0f-4a46-9ee3-6e7dfc9b86de，messageId=c4912eca-eb9e-1c57-9b1b-c2e24335e583，outcome=REJECTED，reason=WORKLIST_REVISION_STALE，currentWorklistRevision=31，disposition=New。
-2026-10-17T16:13:08.8121511+08:00	Information	ExecutionPhase	WireToGateBusinessService	操作员按出发：departureRequestId=a56cd720-4141-47dc-a818-066ad3cb7e25，messageId=f4d14f6c-48f2-4922-a711-7ff3e97cf18a，station=T2-5_T3-5，worklistRevision=31，operationSession=null，unloadedItems=0，pickupStopsAfter=0，operator=S0020310。
+2026-10-17T16:13:08.8121511+08:00	Information	ExecutionPhase	WireToGateBusinessService	操作员按出发：departureRequestId=a56cd720-4141-47dc-a818-066ad3cb7e25，messageId=f4d14f6c-48f2-4922-a711-7ff3e97cf18a，station=T2-5_T3-5，worklistRevision=31，operationSession=null，unloadedItems=0，pickupStopsAfter=0，operator=S00*****。
 2026-10-17T16:13:13.8904800+08:00	Information	ExecutionPhase	WireToGateBusinessService	收到出发结果：departureRequestId=a56cd720-4141-47dc-a818-066ad3cb7e25，messageId=9aa90a99-b1e2-2754-8ead-3f5f28b3def0，outcome=ACCEPTED，reason=null，currentWorklistRevision=31，disposition=New。
 MessageType=CurrentStopDepartureRequested | ReceivedAt=2026-10-17 08:13:08.8781643+00:00
 MessageType=DurableAck | ReceivedAt=2026-10-17 08:13:13.9297247+00:00
@@ -39,6 +40,6 @@ MessageType=SessionHello | ReceivedAt=2026-10-17 08:15:07.950524+00:00
 MessageType=CapabilitySnapshot | ReceivedAt=2026-10-17 08:15:07.9812606+00:00
 MessageType=SafetyStateSnapshot | ReceivedAt=2026-10-17 08:15:07.9886992+00:00
 MessageType=RecoveryStateReport | ReceivedAt=2026-10-17 08:15:08.0253866+00:00
-08:13:13.912 Info 2314/LogDepartureAnswered Departure request a56cd720-4141-47dc-a818-066ad3cb7e25 from operator S0020310 on vehicle 老厂前线新多仓位3 answered ACCEPTED; 1 basket(s) on board, 0 demand(s) released back to dispatch.
+08:13:13.912 Info 2314/LogDepartureAnswered Departure request a56cd720-4141-47dc-a818-066ad3cb7e25 from operator S00***** on vehicle 老厂前线新多仓位3 answered ACCEPTED; 1 basket(s) on board, 0 demand(s) released back to dispatch.
 
 [exited with code 0]
