@@ -506,7 +506,6 @@ public sealed class IdleReturnCommitmentTests
     [Theory]
     [InlineData("staging-and-wire-at-origin")]
     [InlineData("wire-only-at-origin")]
-    [InlineData("staging-only-elsewhere")]
     [InlineData("not-configured-at-origin")]
     [InlineData("nothing-allowed-at-origin")]
     [InlineData("no-staging-binding")]
@@ -515,9 +514,8 @@ public sealed class IdleReturnCommitmentTests
         await using Harness harness = await Harness.CreateAsync();
         if (variant != "no-staging-binding")
         {
-            // 待送固定起点：多数情形就是车所在的 210；「停在别处」时绑到 216（到不了的那个点，车不在那里）。
-            await harness.BindAsStagingOriginAsync(
-                variant == "staging-only-elsewhere" ? 216 : 210, variant == "staging-only-elsewhere" ? "等待点3" : "关卡");
+            // 待送固定起点就是车所在的 210。只做待送的车停在别处的情形归下面「开回待送点」那一组（control-server#752）。
+            await harness.BindAsStagingOriginAsync(210, "关卡");
         }
         switch (variant)
         {
@@ -557,6 +555,108 @@ public sealed class IdleReturnCommitmentTests
         IdleReturnVerdict verdict = Assert.Single(await harness.EvaluateAsync(harness.Candidate(VehicleA, battery: 10)));
 
         Assert.Equal(IdleReturnReasons.BelowMandatoryChargeLine, verdict.Reason);
+    }
+
+    // ---- 开回派工待送点（control-server#752）----------------------------------------------------------------------------
+
+    /// <summary>
+    /// 只做 <c>STAGING_TO_WIRE</c> 的车停在别处、没有需求：空闲返回开往待送固定起点，不去等待点（用户 10-17：「这个 agv02 承担的任务类型
+    /// 在没有需求的时候，也应该去 217」）。那个站是单车位公共站，按 <c>REQ-0204</c> 以 <c>FIXED_TASK_STATION</c> 预占，不带等待点登记版本；
+    /// 用途占有与预占同一次保存，等待点一个都不碰。
+    /// </summary>
+    /// <remarks>
+    /// 待送点绑在 215：路网上它比 214 远（210 → 214 → 215），所以「去了 215」不可能是按最近等待点选出来的。登记里只留 214、216——
+    /// 一个站不会既是等待点又是公共站（批次8-17 的导入拒绝）。
+    /// </remarks>
+    [Fact]
+    public async Task AStagingOnlyVehicleElsewhereReturnsToTheStagingOriginReservingItAsTheFixedTaskStation()
+    {
+        await using Harness harness = await Harness.CreateStagingOriginElsewhereAsync();
+        harness.Configure(VehicleA, TransportTaskTypes.StagingToWire);
+
+        IdleReturnVerdict verdict = Assert.Single(await harness.EvaluateAsync(harness.Candidate(VehicleA)));
+
+        Assert.Equal(
+            (IdleReturnReasons.Committed, (int?)215, (long?)null, IdleReturnIdentity.JourneyIdFor(VehicleA, Now)),
+            (verdict.Reason, verdict.StationId, verdict.WaitingPointVersion, verdict.JourneyId));
+        VehiclePurposeClaim claim = Assert.IsType<VehiclePurposeClaim>(
+            await new VehiclePurposeLedgerStore(harness.Db.NewContext()).ReadClaimAsync(VehicleA, Token));
+        Assert.Equal((VehiclePurposes.IdleReturn, verdict.JourneyId), (claim.Purpose, claim.JourneyId));
+        StationExclusivity origin = Assert.IsType<StationExclusivity>(
+            await new StationExclusivityStore(harness.Db.NewContext()).ReadAsync(Map, 215, Token));
+        Assert.Equal(
+            (StationExclusivityKinds.FixedTaskStation, StationExclusivityStates.Reserved, VehicleA, verdict.JourneyId, (long?)null),
+            (origin.StationKind, origin.State, origin.VehicleKey, origin.JourneyId, origin.WaitingPointVersion));
+        Assert.Single(await harness.Db.DumpAsyncOf("StationExclusivities"));
+        Assert.Single(await harness.Db.DumpAsyncOf("VehiclePurposeClaimRecords"));
+        Assert.Single(await harness.Db.DumpAsyncOf("StationExclusivityRecords"));
+    }
+
+    /// <summary>
+    /// 兼做别的任务的车停在同一个地方，照旧走等待点白名单去最近的 214；不管车队配置里它兼做的是哪一种。
+    /// </summary>
+    [Theory]
+    [InlineData(TransportTaskTypes.WireToGate)]
+    [InlineData("WIRE_TO_FULL_INSPECTION")]
+    public async Task AVehicleThatAlsoDoesOtherTaskTypesStillReturnsToAWaitingPoint(string otherTaskType)
+    {
+        await using Harness harness = await Harness.CreateStagingOriginElsewhereAsync();
+        harness.Configure(VehicleA, TransportTaskTypes.StagingToWire, otherTaskType);
+
+        IdleReturnVerdict verdict = Assert.Single(await harness.EvaluateAsync(harness.Candidate(VehicleA)));
+
+        Assert.Equal((IdleReturnReasons.Committed, (int?)214), (verdict.Reason, verdict.StationId));
+        Assert.Equal(
+            StationExclusivityKinds.WaitingPoint,
+            (await new StationExclusivityStore(harness.Db.NewContext()).ReadAsync(Map, 214, Token))!.StationKind);
+        Assert.Null(await new StationExclusivityStore(harness.Db.NewContext()).ReadAsync(Map, 215, Token));
+    }
+
+    /// <summary>
+    /// 充电优先：电量在强制充电线下的待送专车不开往待送点，答充电线，什么也不写——车交给充电分配（它在派车轮里排在空闲返回之前）。
+    /// </summary>
+    [Fact]
+    public async Task AStagingOnlyVehicleElsewhereBelowTheChargeLineIsAnsweredForTheChargeLineNotSentToTheOrigin()
+    {
+        await using Harness harness = await Harness.CreateStagingOriginElsewhereAsync();
+        harness.Configure(VehicleA, TransportTaskTypes.StagingToWire);
+
+        IdleReturnVerdict verdict = Assert.Single(await harness.EvaluateAsync(harness.Candidate(VehicleA, battery: 10)));
+
+        Assert.Equal(IdleReturnReasons.BelowMandatoryChargeLine, verdict.Reason);
+        Assert.Empty(await harness.Db.DumpAsyncOf("VehiclePurposeClaims"));
+        Assert.Empty(await harness.Db.DumpAsyncOf("StationExclusivities"));
+    }
+
+    /// <summary>
+    /// 待送点此刻去不了时，这一次回落到等待点（照现有选点），车不因为唯一的目标去不了就停在原地——停在充电桩上的车会一直占着桩。
+    /// 到不了、不在实时目录里、被别的车占着，都是这样。217 被占是用户说过不会发生的事（「只有这个车做这个任务」），回落只是让它不卡死。
+    /// </summary>
+    [Theory]
+    [InlineData("unreachable")]
+    [InlineData("not-in-live-catalog")]
+    [InlineData("held-by-another")]
+    public async Task WhenTheStagingOriginCannotBeTakenTheVehicleFallsBackToAWaitingPoint(string why)
+    {
+        await using Harness harness = await Harness.CreateStagingOriginElsewhereAsync();
+        harness.Configure(VehicleA, TransportTaskTypes.StagingToWire);
+        switch (why)
+        {
+            case "unreachable":
+                harness.UnreachableStations.Add(215);
+                await harness.SeedRouteGraphAsync();
+                break;
+            case "not-in-live-catalog":
+                harness.CatalogStations.RemoveAll(station => station.StationId == 215);
+                break;
+            case "held-by-another":
+                await harness.HoldStationAsync(VehicleB, 215, StationExclusivityStates.Occupied, StationExclusivityKinds.FixedTaskStation);
+                break;
+        }
+
+        IdleReturnVerdict verdict = Assert.Single(await harness.EvaluateAsync(harness.Candidate(VehicleA)));
+
+        Assert.Equal((IdleReturnReasons.Committed, (int?)214), (verdict.Reason, verdict.StationId));
     }
 
     /// <summary>
@@ -965,6 +1065,15 @@ public sealed class IdleReturnCommitmentTests
             Harness harness = new(db, interceptor, enabled);
             await harness.SeedRouteGraphAsync();
             await harness.RegisterAsync(Point(214), Point(215), Point(216));
+            return harness;
+        }
+
+        /// <summary>待送固定起点绑在 215（比 214 远），登记里只留 214、216；车默认停在 210。</summary>
+        public static async Task<Harness> CreateStagingOriginElsewhereAsync()
+        {
+            Harness harness = await CreateAsync();
+            await harness.RegisterAsync(Point(214), Point(216));
+            await harness.BindAsStagingOriginAsync(215, "等待点2");
             return harness;
         }
 
