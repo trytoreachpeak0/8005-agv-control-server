@@ -1,0 +1,50 @@
+== m5-error-without-file-name ( 1 file changed, 2 insertions(+), 2 deletions(-); files changed=1)
+diff --git a/scripts/parallel/ParallelInstance.psm1 b/scripts/parallel/ParallelInstance.psm1
+index fe094e435..756897157 100644
+--- a/scripts/parallel/ParallelInstance.psm1
++++ b/scripts/parallel/ParallelInstance.psm1
+@@ -2053,9 +2053,9 @@ function Format-ParallelInstanceRemovalFailure {
+     } catch {
+         "could not be determined ($($_.Exception.Message))"
+     }
+-    $what = $file ? "'$file' is still in use" : 'a file in it is still in use'
++    $what = 'a file in it is still in use'
+     $seconds = ($Attempts - 1) * $script:DirectoryRemovalRetryDelayMilliseconds / 1000
+-    return "Could not delete '$Path' after $Attempts attempts over ${seconds} s: $what ($($ErrorRecord.Exception.Message)). Held by: $holders."
++    return "Could not delete '$Path' after $Attempts attempts over ${seconds} s: $what. Held by: $holders."
+ }
+ 
+ function Get-ParallelInstanceFileHolderId {
+
+Remove-ParallelInstanceDirectory retries while a file is in use (control-server#715)
+  PASS  a child holding a file open for 2.5 s: the delete retries and succeeds once it lets go
+  PASS  a child holding a DLL mapped (the clrjit.dll shape) for 2.5 s: the delete retries and succeeds once it lets go
+  PASS  the installer sequence: Stop-Process, Wait-ParallelInstanceProcessExit, then the delete succeeds with the DLL just unmapped
+        error text: Could not delete 'C:\Users\szy\AppData\Local\Temp\cs715-b7587f7ae3b5449ea0e9df202e754d1c\NeverReleased.V2' after 10 attempts over 9 s: a file in it is still in use. Held by: pid 44896 (pwsh).
+  FAIL  a handle never released: every attempt is made, then the error names the file and the process holding it
+        attempts=10 waits=9; threw: Could not delete 'C:\Users\szy\AppData\Local\Temp\cs715-b7587f7ae3b5449ea0e9df202e754d1c\NeverReleased.V2' after 10 attempts over 9 s: a file in it is still in use. Held by: pid 44896 (pwsh).
+  PASS  a refusal is not retried: a path outside the allowlist throws at once, no wait
+  PASS  the path is re-checked before every retry: refused after the first attempt, nothing more is deleted
+
+Which errors are retried: in use or access denied, nothing else
+  PASS  retried=True: IOException sharing violation (0x80070020)
+  PASS  retried=True: IOException lock violation (0x80070021)
+  PASS  retried=True: IOException directory not empty (0x80070091)
+  PASS  retried=True: UnauthorizedAccessException (access denied)
+  PASS  retried=True: the same, wrapped as an inner exception
+  PASS  retried=False: IOException with no Win32 code
+  PASS  retried=False: IOException disk full (0x80070070)
+  PASS  retried=False: PathTooLongException
+  PASS  retried=False: DirectoryNotFoundException
+  PASS  retried=False: RuntimeException (a refusal)
+
+Wait-ParallelInstanceProcessExit: an exit, or an error naming the process
+  PASS  a process that does not exit within the timeout is an error naming its id
+  PASS  processes that exit (or already have, or none at all) return without an error
+
+Both installer call sites wait before deleting
+  PASS  installer, retiring the previous FakeMesIngest: Stop-Process, then Wait-ParallelInstanceProcessExit (no Wait-Process), then the delete
+  PASS  installer, redeploying the FakeMesIngest: Stop-Process, then Wait-ParallelInstanceProcessExit (no Wait-Process), then the delete
+
+19 passed, 1 failed
+exit=1

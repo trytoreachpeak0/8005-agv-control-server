@@ -1318,6 +1318,16 @@ try {
     [IO.Directory]::Delete($junctionRoot, $true)
 }
 
+# control-server#715: the wait-and-retry around the delete, against real handles held by child processes. Its own
+# script so it can run alone in seconds; counted here as one case so CI runs it.
+Write-Host ''
+Write-Host 'Directory removal waits and retries while a file is in use (control-server#715)' -ForegroundColor Cyan
+$removalOutput = & (Get-Process -Id $PID).Path -NoProfile -NonInteractive -File (Join-Path $PSScriptRoot 'Test-ParallelInstanceDirectoryRemoval.ps1') 2>&1
+$removalExit = $LASTEXITCODE
+$removalOutput | ForEach-Object { Write-Host "    $_" }
+Write-Result -Ok ($removalExit -eq 0) -Name 'Test-ParallelInstanceDirectoryRemoval.ps1 passes' `
+    -Detail "exit $removalExit; $(@($removalOutput | Where-Object { "$_" -match '^\s*FAIL' }) -join ' | ')"
+
 <#
     A REGRESSION GUARD, NOT A PROOF. What keeps an uninstall or an install from deleting outside
     this instance is built into the code, not into this scan:
