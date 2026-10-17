@@ -115,7 +115,8 @@ public sealed class StopScopedOutboxFenceTests
 
         Assert.NotEqual(JourneyRuntimeStage.Completed, (await JourneyOfAsync(fixture, FirstDemandId)).Stage);
         await AssertFencedAsync(fixture, StrayEntryId, StrayRejectionId);
-        await AssertPendingAsync(fixture, OtherSessionEntryId);
+        // 待补发的这两类恰好只剩别的会话那一行：本站的全退了，别的一行没碰。
+        Assert.Equal([OtherSessionEntryId], (await PendingStopScopedAsync(fixture)).Select(row => row.MessageId));
     }
 
     /// <summary>一站两条都没装，扫码前先后取消：旅程被终结（<c>PickupStopTermination</c> → <c>JourneyClosure</c>），遗留的两行退役。</summary>
@@ -343,8 +344,14 @@ public sealed class StopScopedOutboxFenceTests
     /// 另外以站为生命周期的出站命令（审查说明 2）：旅程终态后，仓位命令、离站核验、离站结果都没有待补发的。
     /// </summary>
     /// <remarks>
-    /// 清单快照（<c>CurrentStopWorklistSnapshot</c>）不在这里断言：它是按修订号递增的快照，车收到就确认、只认更高一版，不因「站已结束」拒收；
-    /// 夹具里没有车来确认，本站发过的各版都留着未确认，这是夹具的样子，不是遗留。
+    /// <para>
+    /// 清单快照（<c>CurrentStopWorklistSnapshot</c>）不在这里断言，但它<b>可能遗留</b>，不要据此以为不会。同一停靠内被更新一版取代的旧版会被退役；
+    /// 各停靠的<b>最后一版</b>在正常离站与旅程收尾时都不退，只靠车确认。夹具里没有车来确认，这几行留着未确认。
+    /// </para>
+    /// <para>
+    /// 真车上：号比车上已采纳的低的，车以 <c>SNAPSHOT_REVISION_REGRESSION</c> 拒收、不会确认；已收尾旅程的中途版本也不再补发。
+    /// 于是一行断线漏了确认的中途快照（清单、计划、业务状态）会永久挂着，并在换协议身份时挡住启动——本票不处理，见 control-server#750。
+    /// </para>
     /// </remarks>
     private static async Task AssertOtherStopScopedTypesSettledAsync(RuntimeFixture fixture)
     {
