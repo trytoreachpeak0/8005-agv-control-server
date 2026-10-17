@@ -135,6 +135,12 @@ public static class DispatchReasonCodes
     public const string EnRouteAppendPlanLimitReached = "EN_ROUTE_APPEND_PLAN_LIMIT_REACHED";
 
     /// <summary>
+    /// 追加会让这趟旅程的停靠总数（含已完成的）超过服务端配置的上限（<c>JourneyRuntime:MaximumJourneyStops</c>，默认 20；
+    /// control-server#749，REQ-0196 经 CP-0015 修订）。剩余停靠的 9 段上限是另一道门，报 <see cref="EnRouteAppendPlanLimitReached"/>。
+    /// </summary>
+    public const string EnRouteAppendJourneyStopLimitReached = "EN_ROUTE_APPEND_JOURNEY_STOP_LIMIT_REACHED";
+
+    /// <summary>
     /// 当前下一站之后没有可用的插入位（REQ-0196）：车正驶向的那一站不能被插到前面去，而它之后已经没有位置了。
     /// </summary>
     public const string EnRouteAppendNoInsertionPoint = "EN_ROUTE_APPEND_NO_INSERTION_POINT";

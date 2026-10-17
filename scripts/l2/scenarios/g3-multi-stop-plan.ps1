@@ -20,7 +20,7 @@ G3 `FP-IS-08`：多停靠计划（批次 7，control-server#218）。协议向�
 - 服务端 `CATEGORISE_EVERY_STOP_PURPOSE`、序位从 1 连续（G3-08-01，每一版计划）；`PLAN_UP_TO_NINE_LEGS` 的 G3 面：追加后的
   计划修订号前进、腿数不少于 3、不多于 9（G3-08-02）；`ORDER_LEGS_BY_SEQUENCE`：线上 `legs` 数组的先后就是 `sequence`
   的先后，读发件箱原文、不排序（G3-08-03）；消息序列与向量一致、每份快照都被确认（G3-08-04）。
-- 车载端 `DISPLAY_FULL_JOURNEY_PLAN`、`NEVER_REORDER_LEGS_LOCALLY`：经 UIA 读计划腿列表 `JourneyPlanLegs`，追加前、追加后
+- 车载端 `DISPLAY_REMAINING_JOURNEY_PLAN`、`NEVER_REORDER_LEGS_LOCALLY`：经 UIA 读计划腿列表 `JourneyPlanLegs`，追加前、追加后
   各一次，行数与行序都等于服务端那一版的 `sequence`（G3-08-05、G3-08-06）。**读之前先等车载端确认那一版计划**
   （`scripts/l2/README.md` 第 14 条），再等视图跟上——确认是业务层的事，界面在它之后渲染。
   行序读的是每行第一个 TextBlock（序位），不是行上的 `ItemStatus`：那个值挂在模板里的 Grid 上，Grid 不进 UIA 树，
@@ -112,7 +112,7 @@ $rowsBefore = Wait-L2ConditionOrLast -Description 'the HMI shows the dispatch pl
 $journal.Note("Plan rows before the append: $(Format-L2PlanLegRows $rowsBefore); server $(if ($dispatchPlan) { Format-L2WireSnapshot $dispatchPlan } else { '(no acknowledged plan)' })")
 $assertions.Add(
     'G3-08-05',
-    '追加之前：车载端确认了追加前最后一版计划（两条腿，车在 12 号站装完甲之后）之后，计划腿列表的行数与行序等于服务端那一版的 sequence（DISPLAY_FULL_JOURNEY_PLAN）',
+    '追加之前：车载端确认了追加前最后一版计划（两条腿，车在 12 号站装完甲之后）之后，计划腿列表的行数与行序等于服务端那一版的 sequence（DISPLAY_REMAINING_JOURNEY_PLAN）',
     ($null -ne $dispatchPlan -and @($dispatchPlan.Legs).Count -eq 2 -and (Test-RowsShowPlan $rowsBefore $dispatchPlan)),
     "两条腿，行序 $(if ($dispatchPlan) { (@($dispatchPlan.Legs) | ForEach-Object { $_.sequence }) -join ',' } else { '(无计划)' })",
     "服务端 $(if ($dispatchPlan) { Format-L2WireSnapshot $dispatchPlan } else { '(无已确认计划)' }) / 界面 $(Format-L2PlanLegRows $rowsBefore)")
@@ -137,7 +137,7 @@ $rowsAfter = Wait-L2ConditionOrLast -Description 'the HMI shows the appended pla
 $journal.Note("Plan rows after the append: $(Format-L2PlanLegRows $rowsAfter); server $(Format-L2WireSnapshot $appendedPlan)")
 $assertions.Add(
     'G3-08-06',
-    '追加之后：车载端确认了三条腿那一版计划之后，计划腿列表的行数与行序等于服务端那一版的 sequence；站点刻意挑成按站名排会是 2,1,3，本地重排就红（DISPLAY_FULL_JOURNEY_PLAN、NEVER_REORDER_LEGS_LOCALLY）',
+    '追加之后：车载端确认了三条腿那一版计划之后，计划腿列表的行数与行序等于服务端那一版的 sequence；站点刻意挑成按站名排会是 2,1,3，本地重排就红（DISPLAY_REMAINING_JOURNEY_PLAN、NEVER_REORDER_LEGS_LOCALLY）',
     (Test-RowsShowPlan $rowsAfter $appendedPlan),
     "行序 $((@($appendedPlan.Legs) | ForEach-Object { $_.sequence }) -join ',')",
     "服务端 $(Format-L2WireSnapshot $appendedPlan) / 界面 $(Format-L2PlanLegRows $rowsAfter)")

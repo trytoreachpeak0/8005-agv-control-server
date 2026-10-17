@@ -213,6 +213,17 @@ public sealed class JourneyPlanBuilder(JourneyRuntimeOptions options)
     /// 它仍在停靠表里、仍有序位（修订把它排到所有开放停靠之后，审查 M1），所以不能指望调用方替这里滤掉它；
     /// 认它靠状态，不靠序位——序位只说明它排在哪，不说明它还要不要去。
     /// </para>
+    /// <para>
+    /// <b>只投影剩余停靠</b>（control-server#749，REQ-0196 经 CP-0015 修订；协议 wire notes「remaining plan」）：车所在的停靠
+    /// （行驶中为正驶向的停靠，即 <paramref name="current"/>）及其后的停靠。走过的停靠不再下发，车载屏也就不再显示它们；
+    /// 这之前它们以 <c>COMPLETED</c> 下发、占着协议 9 段里的名额。车所在站那条腿恒在：服务端的数据里车停着的那一站就是当前停靠——
+    /// 持货等单时同站追加出来的第二个停靠接手之后，第一个已 <c>COMPLETED</c>，车站在第二个上（现场 agv02 在 217，e6989792）。
+    /// </para>
+    /// <para>
+    /// 过滤只在这里，不在 <c>OnboardJourneyPublisher.WireLegs</c>：充电与清桩的计划不经这里，清桩途中那张带着已完成的桩腿，
+    /// 车载端清桩入口靠它认桩号（hmi <c>WireToGateStationClearance</c>，control-server#406）；追加后的重发判定
+    /// <c>PlanOnTheWireMatches</c> 拿这里的结果与线上那一版比，判定与下发读的是同一个投影。
+    /// </para>
     /// </remarks>
     public static UpcomingStopPlanProjection Plan(
         JourneyRuntimeRow runtime,
@@ -226,7 +237,7 @@ public sealed class JourneyPlanBuilder(JourneyRuntimeOptions options)
         ArgumentNullException.ThrowIfNull(current);
         return new UpcomingStopPlanProjection(
             revision,
-            [.. stops.Where(stop => stop.Status != JourneyStopStatuses.Removed).Select(stop => PlanLeg(
+            [.. stops.Where(stop => stop.Status != JourneyStopStatuses.Removed && stop.Sequence >= current.Sequence).Select(stop => PlanLeg(
                 runtime,
                 stop.MovementLegId,
                 stop.StopRole == JourneyStopRoles.Pickup ? "TO_PICKUP" : "TO_DROPOFF",

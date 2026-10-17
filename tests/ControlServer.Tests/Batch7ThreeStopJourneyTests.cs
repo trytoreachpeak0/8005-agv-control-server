@@ -767,6 +767,53 @@ public sealed class Batch7ThreeStopJourneyTests
     }
 
     /// <summary>
+    /// 车离开第一个取货站之后，发给车的每一版计划都只有剩余停靠：没有走过的那条腿、没有 <c>COMPLETED</c>，当前停靠是第 1 条
+    /// （control-server#749，REQ-0196 经 CP-0015 修订）。路上那一版是 <c>RefreshUpcomingStopPlanAsync</c> 按内容比较后重发的，
+    /// 到站那一版是到站时发的——两条路都经 <c>JourneyPlanBuilder.Plan</c>，两版都要对。
+    /// </summary>
+    [Fact]
+    [Trait("IntegrationSlice", "FP-IS-08")]
+    public async Task EveryPlanSentAfterLeavingTheFirstPickupCarriesOnlyTheStopsAhead()
+    {
+        await using RuntimeFixture fixture = await RuntimeFixture.CreateAsync();
+        CancellationToken token = TestContext.Current.CancellationToken;
+        await DriveToSecondPickupAsync(fixture);
+
+        JourneyStopRow[] stops = [.. (await fixture.Context.Set<JourneyStopRow>().AsNoTracking().ToArrayAsync(token))
+            .OrderBy(row => row.Sequence)];
+        JourneyStopRow passed = Assert.Single(stops, row => row.Status == JourneyStopStatuses.Completed);
+        DateTimeOffset leftAt = (await fixture.Context.ProtocolOutbox.AsNoTracking()
+                .Where(row => row.MessageType == "UpcomingStopPlanSnapshot")
+                .ToArrayAsync(token))
+            // 车停在第一个取货站上时的最后一版：那条腿是 ARRIVED。之后发的每一版都是车离开它之后的。
+            .Where(row => LegsOf(row).Any(leg => leg.MovementLegId == passed.MovementLegId && leg.State == "ARRIVED"))
+            .Max(row => row.CreatedAt);
+        ProtocolOutboxRow[] sentSince = [.. (await fixture.Context.ProtocolOutbox.AsNoTracking()
+                .Where(row => row.MessageType == "UpcomingStopPlanSnapshot")
+                .ToArrayAsync(token))
+            .Where(row => row.CreatedAt > leftAt)
+            .OrderBy(row => row.CreatedAt)];
+
+        // 路上一版（ACTIVE）与到站一版（ARRIVED）都在。
+        Assert.Equal(["ACTIVE", "ARRIVED"], sentSince.Select(row => LegsOf(row)[0].State));
+        foreach (ProtocolOutboxRow row in sentSince)
+        {
+            (string MovementLegId, int Sequence, string State)[] legs = LegsOf(row);
+            Assert.DoesNotContain(legs, leg => leg.MovementLegId == passed.MovementLegId);
+            Assert.DoesNotContain(legs, leg => leg.State == "COMPLETED");
+            Assert.Equal(Enumerable.Range(1, stops.Length - 1), legs.Select(leg => leg.Sequence));
+        }
+
+        static (string MovementLegId, int Sequence, string State)[] LegsOf(ProtocolOutboxRow row)
+        {
+            using JsonDocument document = JsonDocument.Parse(row.PayloadJson);
+            return [.. document.RootElement.GetProperty("payload").GetProperty("legs").EnumerateArray()
+                .Select(leg => (leg.GetProperty("movementLegId").GetString()!, leg.GetProperty("sequence").GetInt32(),
+                    leg.GetProperty("state").GetString()!))];
+        }
+    }
+
+    /// <summary>
     /// 旅程还带着别的需求时终结一条，它身后因此没有剩余作业的停靠被删掉，剩下的连续重编号，车上的计划随之撤掉那两条腿
     /// （批次7-10，control-server#215，REQ-0197）。
     /// </summary>

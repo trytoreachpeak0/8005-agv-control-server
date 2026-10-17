@@ -508,6 +508,9 @@ jobs:
               # pickup station while the vehicle holds cargo there, unloading at four drop-offs in turn.
               @{ Name = 'same-direction-wire-to-full-inspection-journey'; Runs = 3; BatchId = 'wire-to-full-inspection' }
               @{ Name = 'same-direction-four-type-mixed-load-multi-drop'; Runs = 3; BatchId = 'wire-to-full-inspection' }
+              # control-server#749 (REQ-0196 as revised by CP-0015): after the vehicle leaves its first stop, the plan the
+              # onboard acknowledges carries only the stops ahead, and an append after that is still placed.
+              @{ Name = 'remaining-plan-after-passed-stop'; Runs = 3; BatchId = 'wire-to-full-inspection' }
           )
           # One run's usual length in seconds, for dealing scenarios out to lanes longest first. Measured, not
           # remembered: scripts/l2/Get-L2LaneEstimates.ps1 reads them out of past rounds' logs, and its -AsJson

@@ -67,6 +67,15 @@ public sealed class JourneyRuntimeOptions
     public TimeSpan CargoHoldingTimeout { get; set; } = TimeSpan.FromMinutes(5);
 
     /// <summary>
+    /// How many stops one transport journey may have in all, the completed ones included (control-server#749, REQ-0196 as
+    /// revised by CP-0015). Twenty by default; never below <see cref="Dispatch.EnRouteAppendPlanner.MaximumLegs"/>, because
+    /// a journey must be able to carry a full plan on the wire. An en-route append that would take the journey over it is
+    /// refused as <c>EN_ROUTE_APPEND_JOURNEY_STOP_LIMIT_REACHED</c>; the nine-leg limit, which counts only the stops still
+    /// ahead, is a separate gate.
+    /// </summary>
+    public int MaximumJourneyStops { get; set; } = Dispatch.EnRouteAppendPlanner.DefaultMaximumJourneyStops;
+
+    /// <summary>
     /// How many times one demand may go back to the backlog because its pickup ran out the station departure deadline with
     /// nothing entered (control-server#703). The next such deadline ends it as <c>CANCELLED_BY_STATION_TIMEOUT</c> and raises
     /// a manual-carry alarm instead, so a machine nobody serves is not visited for ever. Zero sends every such deadline
@@ -382,6 +391,10 @@ public sealed class JourneyRuntimeOptionsValidator(IConfiguration configuration)
         }
         if (options.CargoHoldingTimeout <= TimeSpan.Zero) failures.Add("CargoHoldingTimeout must be positive.");
         if (options.StationTimeoutRedispatchLimit < 0) failures.Add("StationTimeoutRedispatchLimit must not be negative.");
+        if (options.MaximumJourneyStops < Dispatch.EnRouteAppendPlanner.MaximumLegs)
+        {
+            failures.Add($"MaximumJourneyStops must be at least {Dispatch.EnRouteAppendPlanner.MaximumLegs}.");
+        }
         if (options.StagingDepartureRules is null)
         {
             failures.Add("StagingDepartureRules must be present.");

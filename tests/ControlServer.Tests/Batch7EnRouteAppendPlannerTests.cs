@@ -422,37 +422,39 @@ public sealed class Batch7EnRouteAppendPlannerTests
     }
 
     /// <summary>
-    /// 已经走完的停靠也占协议的腿数：一个已完成加六个还要走的，新需求的两个进来正好九条腿，放行。
+    /// 已经走完的停靠不占协议的腿数（control-server#749，REQ-0196 经 CP-0015 修订）：一个已完成加七个还要走的，
+    /// 新需求的两个进来，剩下要走的正好九条腿，放行。
     /// </summary>
     /// <remarks>
     /// <para>
-    /// <b>这一对用例钉的是「按哪些停靠数」，不是「9 这个数字」</b>——上面那一对已经钉死了 9。把门禁改回只数
-    /// 还要走的那些，上面两条照样绿，因为它们没有已完成的停靠；红的是下面这一条。
+    /// <b>这一对用例钉的是「按哪些停靠数」，不是「9 这个数字」</b>——上面那一对已经钉死了 9。把门禁改回按整条旅程数，
+    /// 上面两条照样绿，因为它们没有已完成的停靠；红的是这一条。
     /// </para>
     /// <para>
-    /// 为什么按整条旅程数：<c>JourneyPlanBuilder.Plan</c> 把传给它的停靠全部投影成腿，而调用方传的是
-    /// <c>stops.Stops</c>，含已完成的。只数还要走的那些，差额正好是已完成的停靠数。
+    /// 为什么只数剩下的：<c>JourneyPlanBuilder.Plan</c> 只把当前停靠及其后投影成腿，走过的不再下发。
+    /// 批次7-06（control-server#211）时它还把已完成的也投影成腿，门禁因此按整条旅程数，这一条那时断言的是反面。
     /// </para>
     /// </remarks>
     [Fact]
-    public void ACompletedStopStillCountsTowardsTheNineLegLimit()
+    public void ACompletedStopNoLongerCountsTowardsTheNineLegLimit()
     {
         EnRouteAppendDecision decision = EnRouteAppendPlanner.Plan(
-            PlanFrom(vehicleAt: 0, currentNextStopIndex: 1, PickupChain(7)),
+            PlanFrom(vehicleAt: 0, currentNextStopIndex: 1, PickupChain(8)),
             CandidateOf(Pickup("new-p", 80, ZoneA), Unload("new-u", 82, ZoneA), ZoneA),
             Zones((ZoneA, 500_000)),
             Distance);
 
         Assert.Null(decision.RefusalReasonCode);
-        Assert.Equal(EnRouteAppendPlanner.MaximumLegs, decision.Placement!.Resequenced.Count);
+        // 序位仍覆盖整条旅程：已完成的那一个加上九条剩下的。
+        Assert.Equal(EnRouteAppendPlanner.MaximumLegs + 1, decision.Placement!.Resequenced.Count);
     }
 
-    /// <summary>一个已完成加七个还要走的，新需求进来就是第十条腿：拒。</summary>
+    /// <summary>一个已完成加八个还要走的，新需求进来剩下的就是十条腿：拒。</summary>
     [Fact]
-    public void ACompletedStopPushesAPlanOverTheNineLegLimit()
+    public void TheStopsAheadStillMayNotExceedNineLegsAfterACompletedStop()
     {
         EnRouteAppendDecision decision = EnRouteAppendPlanner.Plan(
-            PlanFrom(vehicleAt: 0, currentNextStopIndex: 1, PickupChain(8)),
+            PlanFrom(vehicleAt: 0, currentNextStopIndex: 1, PickupChain(9)),
             CandidateOf(Pickup("new-p", 80, ZoneA), Unload("new-u", 82, ZoneA), ZoneA),
             Zones((ZoneA, 500_000)),
             Distance);

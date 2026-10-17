@@ -123,7 +123,9 @@ internal sealed class DispatchBacklogQueryEndpoint : IDashboardQueryEndpoint
             [DispatchReasonCodes.EnRouteAppendBreaksZoneContiguity] =
                 "追加进去会让在途车的停靠在分区之间来回穿插，没有能保持分区连续的插入位，这一趟不追加",
             [DispatchReasonCodes.EnRouteAppendPlanLimitReached] =
-                "追加进去会让在途车的计划超过 9 段或某一站清单超过 8 项，这一趟不追加",
+                "追加进去会让在途车剩下要走的停靠超过 9 段或某一站清单超过 8 项，这一趟不追加",
+            [DispatchReasonCodes.EnRouteAppendJourneyStopLimitReached] =
+                "追加进去会让在途车这一趟的停靠总数（含已走过的）超过服务端配置的上限（默认 20），这一趟不追加，可以由别的车或这辆车的下一趟接",
             [DispatchReasonCodes.EnRouteAppendNoInsertionPoint] =
                 "在途车正驶向的那一站之后已经没有可插入的位置，这一趟不追加",
             [DispatchReasonCodes.EnRouteAppendDemandLeftThisJourney] =

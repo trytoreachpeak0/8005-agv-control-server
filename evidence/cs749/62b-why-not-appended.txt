@@ -1,0 +1,167 @@
+# 62b 只读追查：Q26101962-10 为什么一直没被 agv03 接（2026-10-17 16:20～16:27 CST）
+
+## A. 路网重算（map26 design rev 15，按 a799c998 EnRouteAppendPlanner 规则，T4-2=站 126，前侧 FRONT）
+dist 145->126 9573 126->220 171327 140->126 19235 126->140 42368
+W1 15:28:26 at T2-1(145): car@145 plan=[145, 164, 154, 150, 140, 220] legs_total? ; best insert pos 4 marginal=0 mm -> OK; all=[(0, 4), (61603, 1), (61603, 5), (115153, 2), (115153, 3)]
+W2 15:33:52 at T6-8(164): car@164 plan=[164, 160, 154, 150, 140, 220] legs_total? ; best insert pos 4 marginal=0 mm -> OK; all=[(0, 4), (61603, 5), (115153, 1), (115153, 2), (115153, 3)]
+W3 15:40:54 at T6-7(160): car@160 plan=[160, 160, 154, 150, 140, 220] legs_total? ; best insert pos 4 marginal=0 mm -> OK; all=[(0, 4), (61603, 5), (115153, 1), (115153, 2), (115153, 3)]
+W4 15:46:12 at T6-7(160): car@160 plan=[160, 160, 154, 150, 140, 220] legs_total? ; best insert pos 4 marginal=0 mm -> OK; all=[(0, 4), (61603, 5), (115153, 1), (115153, 2), (115153, 3)]
+W5 15:52 at T6-1(154): car@154 plan=[154, 150, 140, 220] legs_total? ; best insert pos 2 marginal=0 mm -> OK; all=[(0, 2), (61603, 3), (115153, 1)]
+W6 15:59 at T5-5(150): car@150 plan=[150, 140, 220] legs_total? ; best insert pos 1 marginal=0 mm -> OK; all=[(0, 1), (61603, 2)]
+W7 16:08 at T2-5(140): car@140 plan=[140, 220] legs_total? ; best insert pos 1 marginal=61603 mm -> OK; all=[(61603, 1)]
+
+## B. agv03 仓位模型（1-4 FRONT，5-8 REAR）
+c=SlotModelVersionId,PhysicalSlotNumber,SlotPosition,SlotTemplateId
+SlotModelVersionId=c2590b032a164c78897a15f2b951c2bb | PhysicalSlotNumber=1 | SlotPosition=FRONT | SlotTemplateId=471939777c4c4a238fe7e4aa0565c235
+SlotModelVersionId=c2590b032a164c78897a15f2b951c2bb | PhysicalSlotNumber=2 | SlotPosition=FRONT | SlotTemplateId=471939777c4c4a238fe7e4aa0565c235
+SlotModelVersionId=c2590b032a164c78897a15f2b951c2bb | PhysicalSlotNumber=3 | SlotPosition=FRONT | SlotTemplateId=471939777c4c4a238fe7e4aa0565c235
+SlotModelVersionId=c2590b032a164c78897a15f2b951c2bb | PhysicalSlotNumber=4 | SlotPosition=FRONT | SlotTemplateId=471939777c4c4a238fe7e4aa0565c235
+SlotModelVersionId=c2590b032a164c78897a15f2b951c2bb | PhysicalSlotNumber=5 | SlotPosition=REAR | SlotTemplateId=471939777c4c4a238fe7e4aa0565c235
+SlotModelVersionId=c2590b032a164c78897a15f2b951c2bb | PhysicalSlotNumber=6 | SlotPosition=REAR | SlotTemplateId=471939777c4c4a238fe7e4aa0565c235
+SlotModelVersionId=c2590b032a164c78897a15f2b951c2bb | PhysicalSlotNumber=7 | SlotPosition=REAR | SlotTemplateId=471939777c4c4a238fe7e4aa0565c235
+SlotModelVersionId=c2590b032a164c78897a15f2b951c2bb | PhysicalSlotNumber=8 | SlotPosition=REAR | SlotTemplateId=471939777c4c4a238fe7e4aa0565c235
+
+## C. 上一趟旅程接的需求：创建时间、区位、目标仓位、释放时间
+### accepted on agv03 journey: created/accepted/area/slots
+Sublot=Q26089Y01-1 | CreatedAt=2026-09-02 15:04:30.4114141+00:00 | AcceptedAt=2026-10-17 07:21:00.8091431+00:00 | LiveMesFieldsJson={"Area":"T2-1","Eqp":"2ZPB01","Step":"\u710A\u7EBF","MesSourceDate":"2026-08-05T22:07:44+08:00","Package":"TO-252-2L(6R)"} | TargetSlotsJson=[1] | Status=TERMINATED | RemovedAt=
+Sublot=Q26099652-1 | CreatedAt=2026-09-29 23:18:11.2720354+00:00 | AcceptedAt=2026-10-17 07:27:56.4100007+00:00 | LiveMesFieldsJson={"Area":"T3-5","Eqp":"2ZPB94","Step":"\u710A\u7EBF","MesSourceDate":"2026-09-30T07:17:09+08:00","Package":"TOLL-11L(6R)"} | TargetSlotsJson=[5] | Status=TERMINATED | RemovedAt=
+Sublot=Q26099653-1 | CreatedAt=2026-09-30 01:08:11.3953295+00:00 | AcceptedAt=2026-10-17 07:28:01.8339585+00:00 | LiveMesFieldsJson={"Area":"T3-5","Eqp":"2ZPB94","Step":"\u710A\u7EBF","MesSourceDate":"2026-09-30T09:07:51+08:00","Package":"TOLL-11L(6R)"} | TargetSlotsJson=[6] | Status=TERMINATED | RemovedAt=
+Sublot=Q26099E78-1 | CreatedAt=2026-10-07 17:35:19.7883229+00:00 | AcceptedAt=2026-10-17 07:28:08.1253654+00:00 | LiveMesFieldsJson={"Area":"T5-5","Eqp":"2ZPB77","Step":"\u710A\u7EBF","MesSourceDate":"2026-10-08T01:34:59+08:00","Package":"TO-247B-3L"} | TargetSlotsJson=[2] | Status=PENDING_LOAD | RemovedAt=2026-10-17 08:04:08.2185121+00:00
+Sublot=Q26099E92-1 | CreatedAt=2026-10-08 04:01:22.3203925+00:00 | AcceptedAt=2026-10-17 07:28:14.334373+00:00 | LiveMesFieldsJson={"Area":"T5-5","Eqp":"2ZPB77","Step":"\u710A\u7EBF","MesSourceDate":"2026-10-08T12:01:05+08:00","Package":"TO-247B-3L"} | TargetSlotsJson=[1] | Status=PENDING_LOAD | RemovedAt=2026-10-17 08:04:08.2185121+00:00
+Sublot=Q26099Y02-1 | CreatedAt=2026-10-08 06:57:23.2123483+00:00 | AcceptedAt=2026-10-17 07:28:20.6624787+00:00 | LiveMesFieldsJson={"Area":"T6-8","Eqp":"2ZPB98","Step":"\u710A\u7EBF","MesSourceDate":"2026-10-08T14:56:27+08:00","Package":"TO-263-7L(2R)"} | TargetSlotsJson=[7] | Status=TERMINATED | RemovedAt=
+Sublot=Q26099F29-1 | CreatedAt=2026-10-08 08:06:24.8544011+00:00 | AcceptedAt=2026-10-17 07:28:26.3510229+00:00 | LiveMesFieldsJson={"Area":"T6-1","Eqp":"2ZPB69","Step":"\u710A\u7EBF","MesSourceDate":"2026-10-08T16:05:21+08:00","Package":"TO-247Plus-4L"} | TargetSlotsJson=[3,4] | Status=PENDING_LOAD | RemovedAt=2026-10-17 07:57:14.53206+00:00
+Sublot=Q26099732-1 | CreatedAt=2026-10-10 03:40:05.4500055+00:00 | AcceptedAt=2026-10-17 07:33:52.0881188+00:00 | LiveMesFieldsJson={"Area":"T6-7","Eqp":"2ZPB97","Step":"\u710A\u7EBF","MesSourceDate":"2026-10-10T11:39:20+08:00","Package":"TOLL-11L(6R)"} | TargetSlotsJson=[7] | Status=TERMINATED | RemovedAt=
+Sublot=Q26099733-1 | CreatedAt=2026-10-10 04:53:06.097491+00:00 | AcceptedAt=2026-10-17 07:40:54.8278992+00:00 | LiveMesFieldsJson={"Area":"T6-7","Eqp":"2ZPB97","Step":"\u710A\u7EBF","MesSourceDate":"2026-10-10T12:52:59+08:00","Package":"TOLL-11L(6R)"} | TargetSlotsJson=[7] | Status=PENDING_LOAD | RemovedAt=2026-10-17 07:46:11.5704753+00:00
+Sublot=Q26099F53-1 | CreatedAt=2026-10-10 07:36:06.7259092+00:00 | AcceptedAt=2026-10-17 07:46:13.0100347+00:00 | LiveMesFieldsJson={"Area":"T6-7","Eqp":"2ZPB97","Step":"\u710A\u7EBF","MesSourceDate":"2026-10-10T15:35:37+08:00","Package":"TOLL-11L(6R)"} | TargetSlotsJson=[7] | Status=TERMINATED | RemovedAt=
+Sublot=Q26101619-2-1 | CreatedAt=2026-10-17 02:52:37.613874+00:00 | AcceptedAt=2026-10-17 07:46:39.619245+00:00 | LiveMesFieldsJson={"Area":"T7-1","Eqp":"2ZPB101","Step":"\u710A\u7EBF","MesSourceDate":"2026-10-17T10:51:54+08:00","Package":"TO-252-2L(8R)"} | TargetSlotsJson=[7] | Status=PENDING_LOAD | RemovedAt=2026-10-17 07:57:14.53206+00:00
+Sublot=Q26102082-1 | CreatedAt=2026-10-17 08:03:39.015939+00:00 | AcceptedAt=2026-10-17 08:03:53.8168119+00:00 | LiveMesFieldsJson={"Area":"T3-5","Eqp":"2ZPB94","Step":"\u710A\u7EBF","MesSourceDate":"2026-10-17T16:02:46+08:00","Package":"TOLL-11L(6R)"} | TargetSlotsJson=[7] | Status=UNLOADED | RemovedAt=
+### backlog DIE_TO_WIRE_STAGING unaccepted at 15:28 (created before 15:28:26)
+TransportDemandKey=Q26069Y01-1|DIE_TO_WIRE_STAGING | DemandCreatedAt=2026-09-02 15:04:30.4114141+00:00 | ReasonCode=OUT_OF_SCOPE_AREA
+TransportDemandKey=Q26099E76-1|DIE_TO_WIRE_STAGING | DemandCreatedAt=2026-10-05 22:42:08.143736+00:00 | ReasonCode=PACKAGE_CAPACITY_NOT_UNIQUE
+TransportDemandKey=Q26099E73-1|DIE_TO_WIRE_STAGING | DemandCreatedAt=2026-10-05 22:59:08.9135797+00:00 | ReasonCode=PACKAGE_CAPACITY_NOT_UNIQUE
+TransportDemandKey=Q26099E74-1|DIE_TO_WIRE_STAGING | DemandCreatedAt=2026-10-05 23:13:09.7822049+00:00 | ReasonCode=PACKAGE_CAPACITY_NOT_UNIQUE
+TransportDemandKey=Q26099E75-1|DIE_TO_WIRE_STAGING | DemandCreatedAt=2026-10-05 23:27:08.2813465+00:00 | ReasonCode=PACKAGE_CAPACITY_NOT_UNIQUE
+TransportDemandKey=Q26099E77-1|DIE_TO_WIRE_STAGING | DemandCreatedAt=2026-10-06 00:05:08.3991062+00:00 | ReasonCode=PACKAGE_CAPACITY_NOT_UNIQUE
+TransportDemandKey=Q26099E79-1|DIE_TO_WIRE_STAGING | DemandCreatedAt=2026-10-06 05:05:09.8254226+00:00 | ReasonCode=PACKAGE_CAPACITY_NOT_UNIQUE
+TransportDemandKey=Q26099E80-1|DIE_TO_WIRE_STAGING | DemandCreatedAt=2026-10-06 05:51:11.4323858+00:00 | ReasonCode=PACKAGE_CAPACITY_NOT_UNIQUE
+TransportDemandKey=Q26099F26-1|DIE_TO_WIRE_STAGING | DemandCreatedAt=2026-10-08 11:59:24.8353685+00:00 | ReasonCode=VEHICLE_TASK_TYPE_NOT_ADMITTED
+TransportDemandKey=Q26099F28-1|DIE_TO_WIRE_STAGING | DemandCreatedAt=2026-10-08 14:56:25.528459+00:00 | ReasonCode=SLOT_GROUP_OCCUPIED_BY_OWN_CARGO
+TransportDemandKey=Q26099F19-1|DIE_TO_WIRE_STAGING | DemandCreatedAt=2026-10-09 03:13:50.3575891+00:00 | ReasonCode=SLOT_GROUP_OCCUPIED_BY_OWN_CARGO
+TransportDemandKey=Q26099F20-1|DIE_TO_WIRE_STAGING | DemandCreatedAt=2026-10-09 06:08:52.0998307+00:00 | ReasonCode=SLOT_GROUP_OCCUPIED_BY_OWN_CARGO
+TransportDemandKey=Q26099F21-1|DIE_TO_WIRE_STAGING | DemandCreatedAt=2026-10-09 08:27:57.0349811+00:00 | ReasonCode=SLOT_GROUP_OCCUPIED_BY_OWN_CARGO
+TransportDemandKey=Q26099F22-1|DIE_TO_WIRE_STAGING | DemandCreatedAt=2026-10-09 12:13:00.6875014+00:00 | ReasonCode=SLOT_GROUP_OCCUPIED_BY_OWN_CARGO
+TransportDemandKey=Q26109013-1|DIE_TO_WIRE_STAGING | DemandCreatedAt=2026-10-09 17:13:03.0606854+00:00 | ReasonCode=SLOT_GROUP_OCCUPIED_BY_OWN_CARGO
+TransportDemandKey=Q26109014-1|DIE_TO_WIRE_STAGING | DemandCreatedAt=2026-10-09 19:42:03.8021782+00:00 | ReasonCode=SLOT_GROUP_OCCUPIED_BY_OWN_CARGO
+TransportDemandKey=Q26109015-1|DIE_TO_WIRE_STAGING | DemandCreatedAt=2026-10-09 22:48:04.5605379+00:00 | ReasonCode=SLOT_GROUP_OCCUPIED_BY_OWN_CARGO
+TransportDemandKey=Q26109017-1|DIE_TO_WIRE_STAGING | DemandCreatedAt=2026-10-09 23:58:04.7861085+00:00 | ReasonCode=SLOT_GROUP_OCCUPIED_BY_OWN_CARGO
+TransportDemandKey=Q26109016-1|DIE_TO_WIRE_STAGING | DemandCreatedAt=2026-10-10 04:27:05.79431+00:00 | ReasonCode=SLOT_GROUP_OCCUPIED_BY_OWN_CARGO
+TransportDemandKey=Q26099733-1|DIE_TO_WIRE_STAGING | DemandCreatedAt=2026-10-10 04:53:06.097491+00:00 | ReasonCode=ELIGIBLE
+TransportDemandKey=Q26109018-1|DIE_TO_WIRE_STAGING | DemandCreatedAt=2026-10-10 06:00:06.8741806+00:00 | ReasonCode=SLOT_GROUP_OCCUPIED_BY_OWN_CARGO
+TransportDemandKey=Q26109011-1|DIE_TO_WIRE_STAGING | DemandCreatedAt=2026-10-10 07:57:08.0694942+00:00 | ReasonCode=SLOT_GROUP_OCCUPIED_BY_OWN_CARGO
+TransportDemandKey=Q26109010-1|DIE_TO_WIRE_STAGING | DemandCreatedAt=2026-10-10 08:49:06.9805917+00:00 | ReasonCode=SLOT_GROUP_OCCUPIED_BY_OWN_CARGO
+TransportDemandKey=Q26099656-1|DIE_TO_WIRE_STAGING | DemandCreatedAt=2026-10-10 12:06:07.8801994+00:00 | ReasonCode=ELIGIBLE
+TransportDemandKey=Q26099F50-1|DIE_TO_WIRE_STAGING | DemandCreatedAt=2026-10-10 14:49:33.6030131+00:00 | ReasonCode=ELIGIBLE
+TransportDemandKey=Q26099798-1|DIE_TO_WIRE_STAGING | DemandCreatedAt=2026-10-12 05:41:09.6437665+00:00 | ReasonCode=DEMAND_LEFT_CATALOG
+TransportDemandKey=Q26099F51-1|DIE_TO_WIRE_STAGING | DemandCreatedAt=2026-10-12 15:07:13.2691012+00:00 | ReasonCode=ELIGIBLE
+TransportDemandKey=Q26099F52-1|DIE_TO_WIRE_STAGING | DemandCreatedAt=2026-10-12 23:06:14.9745688+00:00 | ReasonCode=ELIGIBLE
+TransportDemandKey=Q26093419-9|DIE_TO_WIRE_STAGING | DemandCreatedAt=2026-10-13 03:37:15.196204+00:00 | ReasonCode=ELIGIBLE
+TransportDemandKey=Q26098088-3|DIE_TO_WIRE_STAGING | DemandCreatedAt=2026-10-14 23:49:25.7964258+00:00 | ReasonCode=ELIGIBLE
+TransportDemandKey=Q26099F27-1|DIE_TO_WIRE_STAGING | DemandCreatedAt=2026-10-15 05:08:26.693618+00:00 | ReasonCode=ELIGIBLE
+TransportDemandKey=Q26101739-1-3|DIE_TO_WIRE_STAGING | DemandCreatedAt=2026-10-15 08:06:27.2341394+00:00 | ReasonCode=ELIGIBLE
+TransportDemandKey=Q26099779-1|DIE_TO_WIRE_STAGING | DemandCreatedAt=2026-10-15 18:32:30.1020659+00:00 | ReasonCode=ELIGIBLE
+TransportDemandKey=Q26109145-1|DIE_TO_WIRE_STAGING | DemandCreatedAt=2026-10-15 22:26:31.2387723+00:00 | ReasonCode=ELIGIBLE
+TransportDemandKey=Q26109146-1|DIE_TO_WIRE_STAGING | DemandCreatedAt=2026-10-15 22:57:31.1208778+00:00 | ReasonCode=ELIGIBLE
+TransportDemandKey=Q26109152-1|DIE_TO_WIRE_STAGING | DemandCreatedAt=2026-10-16 00:03:31.4449782+00:00 | ReasonCode=ELIGIBLE
+TransportDemandKey=Q26109147-1|DIE_TO_WIRE_STAGING | DemandCreatedAt=2026-10-16 04:55:32.3613013+00:00 | ReasonCode=ELIGIBLE
+TransportDemandKey=Q26109150-1|DIE_TO_WIRE_STAGING | DemandCreatedAt=2026-10-16 07:11:32.825079+00:00 | ReasonCode=ELIGIBLE
+TransportDemandKey=Q26101894-4|DIE_TO_WIRE_STAGING | DemandCreatedAt=2026-10-16 07:48:33.0664121+00:00 | ReasonCode=SLOT_GROUP_OCCUPIED_BY_OWN_CARGO
+TransportDemandKey=Q26102055-1|DIE_TO_WIRE_STAGING | DemandCreatedAt=2026-10-16 09:57:33.3634083+00:00 | ReasonCode=SLOT_GROUP_OCCUPIED_BY_OWN_CARGO
+TransportDemandKey=Q26102054-2|DIE_TO_WIRE_STAGING | DemandCreatedAt=2026-10-16 10:38:33.6745449+00:00 | ReasonCode=SLOT_GROUP_OCCUPIED_BY_OWN_CARGO
+TransportDemandKey=Q26109153-1|DIE_TO_WIRE_STAGING | DemandCreatedAt=2026-10-16 10:38:33.6745449+00:00 | ReasonCode=ELIGIBLE
+TransportDemandKey=Q26101965-5|DIE_TO_WIRE_STAGING | DemandCreatedAt=2026-10-16 11:31:33.8790623+00:00 | ReasonCode=DEMAND_LEFT_CATALOG
+TransportDemandKey=Q26109143-1|DIE_TO_WIRE_STAGING | DemandCreatedAt=2026-10-16 13:00:34.1625176+00:00 | ReasonCode=ELIGIBLE
+TransportDemandKey=Q26099F89-1|DIE_TO_WIRE_STAGING | DemandCreatedAt=2026-10-16 14:17:34.6188534+00:00 | ReasonCode=PACKAGE_CAPACITY_NOT_UNIQUE
+TransportDemandKey=Q26101965-7|DIE_TO_WIRE_STAGING | DemandCreatedAt=2026-10-16 14:49:34.6963459+00:00 | ReasonCode=SLOT_GROUP_OCCUPIED_BY_OWN_CARGO
+TransportDemandKey=Q26098009-3|DIE_TO_WIRE_STAGING | DemandCreatedAt=2026-10-16 15:02:34.6885933+00:00 | ReasonCode=DEMAND_LEFT_CATALOG
+TransportDemandKey=Q26099F86-1|DIE_TO_WIRE_STAGING | DemandCreatedAt=2026-10-16 15:17:34.6420633+00:00 | ReasonCode=PACKAGE_CAPACITY_NOT_UNIQUE
+TransportDemandKey=Q26109148-1|DIE_TO_WIRE_STAGING | DemandCreatedAt=2026-10-16 15:37:34.9164948+00:00 | ReasonCode=ELIGIBLE
+TransportDemandKey=Q26101965-8|DIE_TO_WIRE_STAGING | DemandCreatedAt=2026-10-16 16:27:35.2388579+00:00 | ReasonCode=DEMAND_LEFT_CATALOG
+TransportDemandKey=Q26101900-4|DIE_TO_WIRE_STAGING | DemandCreatedAt=2026-10-16 16:50:35.4441326+00:00 | ReasonCode=DEMAND_LEFT_CATALOG
+TransportDemandKey=Q26101965-10|DIE_TO_WIRE_STAGING | DemandCreatedAt=2026-10-16 19:01:35.748163+00:00 | ReasonCode=SLOT_GROUP_OCCUPIED_BY_OWN_CARGO
+TransportDemandKey=Q26092402-4|DIE_TO_WIRE_STAGING | DemandCreatedAt=2026-10-16 19:32:35.9956854+00:00 | ReasonCode=SLOT_GROUP_OCCUPIED_BY_OWN_CARGO
+TransportDemandKey=Q26092400-1|DIE_TO_WIRE_STAGING | DemandCreatedAt=2026-10-16 20:17:36.1986987+00:00 | ReasonCode=DEMAND_LEFT_CATALOG
+TransportDemandKey=Q26101690-3|DIE_TO_WIRE_STAGING | DemandCreatedAt=2026-10-16 22:38:36.7135442+00:00 | ReasonCode=ELIGIBLE
+TransportDemandKey=Q26102588-2|DIE_TO_WIRE_STAGING | DemandCreatedAt=2026-10-16 23:07:37.279273+00:00 | ReasonCode=ELIGIBLE
+TransportDemandKey=Q26109149-1|DIE_TO_WIRE_STAGING | DemandCreatedAt=2026-10-16 23:31:36.8828953+00:00 | ReasonCode=ELIGIBLE
+TransportDemandKey=Q26109162-1|DIE_TO_WIRE_STAGING | DemandCreatedAt=2026-10-17 00:09:37.0042267+00:00 | ReasonCode=ELIGIBLE
+TransportDemandKey=Q26101960-3|DIE_TO_WIRE_STAGING | DemandCreatedAt=2026-10-17 00:19:36.8606519+00:00 | ReasonCode=SLOT_GROUP_OCCUPIED_BY_OWN_CARGO
+TransportDemandKey=Q26101901-3|DIE_TO_WIRE_STAGING | DemandCreatedAt=2026-10-17 01:27:38.0334289+00:00 | ReasonCode=SLOT_GROUP_OCCUPIED_BY_OWN_CARGO
+TransportDemandKey=Q26092402-5|DIE_TO_WIRE_STAGING | DemandCreatedAt=2026-10-17 01:32:38.0463643+00:00 | ReasonCode=SLOT_GROUP_OCCUPIED_BY_OWN_CARGO
+TransportDemandKey=Q26101947-4|DIE_TO_WIRE_STAGING | DemandCreatedAt=2026-10-17 01:39:37.0507585+00:00 | ReasonCode=SLOT_GROUP_OCCUPIED_BY_OWN_CARGO
+TransportDemandKey=Q26102584-15|DIE_TO_WIRE_STAGING | DemandCreatedAt=2026-10-17 01:49:37.2247358+00:00 | ReasonCode=PACKAGE_CAPACITY_NOT_UNIQUE
+TransportDemandKey=Q26092403-2|DIE_TO_WIRE_STAGING | DemandCreatedAt=2026-10-17 01:50:37.5168757+00:00 | ReasonCode=ELIGIBLE
+TransportDemandKey=Q26101503-5|DIE_TO_WIRE_STAGING | DemandCreatedAt=2026-10-17 02:06:37.2039747+00:00 | ReasonCode=SLOT_GROUP_OCCUPIED_BY_OWN_CARGO
+TransportDemandKey=Q26101962-6|DIE_TO_WIRE_STAGING | DemandCreatedAt=2026-10-17 02:29:37.558439+00:00 | ReasonCode=SLOT_GROUP_OCCUPIED_BY_OWN_CARGO
+TransportDemandKey=Q26101748-2-2|DIE_TO_WIRE_STAGING | DemandCreatedAt=2026-10-17 02:35:37.4514254+00:00 | ReasonCode=DEMAND_LEFT_CATALOG
+TransportDemandKey=Q26101619-2-1|DIE_TO_WIRE_STAGING | DemandCreatedAt=2026-10-17 02:52:37.613874+00:00 | ReasonCode=ELIGIBLE
+TransportDemandKey=Q26101962-7|DIE_TO_WIRE_STAGING | DemandCreatedAt=2026-10-17 03:13:37.7366402+00:00 | ReasonCode=DEMAND_LEFT_CATALOG
+TransportDemandKey=Q26109141-1|DIE_TO_WIRE_STAGING | DemandCreatedAt=2026-10-17 04:00:38.0580542+00:00 | ReasonCode=ELIGIBLE
+TransportDemandKey=Q26101901-4|DIE_TO_WIRE_STAGING | DemandCreatedAt=2026-10-17 04:30:37.8384553+00:00 | ReasonCode=SLOT_GROUP_OCCUPIED_BY_OWN_CARGO
+TransportDemandKey=Q26101962-8|DIE_TO_WIRE_STAGING | DemandCreatedAt=2026-10-17 04:58:38.2406135+00:00 | ReasonCode=SLOT_GROUP_OCCUPIED_BY_OWN_CARGO
+TransportDemandKey=Q26102055-7|DIE_TO_WIRE_STAGING | DemandCreatedAt=2026-10-17 05:07:38.2160095+00:00 | ReasonCode=DEMAND_LEFT_CATALOG
+TransportDemandKey=Q26102584-16|DIE_TO_WIRE_STAGING | DemandCreatedAt=2026-10-17 05:30:38.4637578+00:00 | ReasonCode=PACKAGE_CAPACITY_NOT_UNIQUE
+TransportDemandKey=Q26102140-10|DIE_TO_WIRE_STAGING | DemandCreatedAt=2026-10-17 05:32:38.428685+00:00 | ReasonCode=DEMAND_LEFT_CATALOG
+TransportDemandKey=Q26101631-3|DIE_TO_WIRE_STAGING | DemandCreatedAt=2026-10-17 05:37:38.2644801+00:00 | ReasonCode=DEMAND_LEFT_CATALOG
+TransportDemandKey=Q26102656-28|DIE_TO_WIRE_STAGING | DemandCreatedAt=2026-10-17 05:38:38.454802+00:00 | ReasonCode=DEMAND_LEFT_CATALOG
+TransportDemandKey=Q26092400-2|DIE_TO_WIRE_STAGING | DemandCreatedAt=2026-10-17 05:41:38.582389+00:00 | ReasonCode=DEMAND_LEFT_CATALOG
+TransportDemandKey=Q26101962-9|DIE_TO_WIRE_STAGING | DemandCreatedAt=2026-10-17 05:47:38.6452383+00:00 | ReasonCode=SLOT_GROUP_OCCUPIED_BY_OWN_CARGO
+TransportDemandKey=Q26102656-29|DIE_TO_WIRE_STAGING | DemandCreatedAt=2026-10-17 05:53:38.3266127+00:00 | ReasonCode=DEMAND_LEFT_CATALOG
+TransportDemandKey=Q26101003-5|DIE_TO_WIRE_STAGING | DemandCreatedAt=2026-10-17 06:00:38.842044+00:00 | ReasonCode=PACKAGE_CAPACITY_NOT_UNIQUE
+TransportDemandKey=Q26102458-5|DIE_TO_WIRE_STAGING | DemandCreatedAt=2026-10-17 06:03:38.7325397+00:00 | ReasonCode=DEMAND_LEFT_CATALOG
+TransportDemandKey=Q26102307-2|DIE_TO_WIRE_STAGING | DemandCreatedAt=2026-10-17 06:05:42.4924049+00:00 | ReasonCode=SLOT_GROUP_OCCUPIED_BY_OWN_CARGO
+TransportDemandKey=Q26101898-1|DIE_TO_WIRE_STAGING | DemandCreatedAt=2026-10-17 06:22:38.4779452+00:00 | ReasonCode=SLOT_GROUP_OCCUPIED_BY_OWN_CARGO
+TransportDemandKey=Q26102587-1|DIE_TO_WIRE_STAGING | DemandCreatedAt=2026-10-17 06:24:38.6113659+00:00 | ReasonCode=ELIGIBLE
+TransportDemandKey=Q26097815-4|DIE_TO_WIRE_STAGING | DemandCreatedAt=2026-10-17 06:47:38.4984714+00:00 | ReasonCode=SLOT_GROUP_OCCUPIED_BY_OWN_CARGO
+TransportDemandKey=Q26102054-8|DIE_TO_WIRE_STAGING | DemandCreatedAt=2026-10-17 06:53:38.9120535+00:00 | ReasonCode=SLOT_GROUP_OCCUPIED_BY_OWN_CARGO
+TransportDemandKey=Q26098006-1|DIE_TO_WIRE_STAGING | DemandCreatedAt=2026-10-17 07:00:38.8454981+00:00 | ReasonCode=SLOT_GROUP_OCCUPIED_BY_OWN_CARGO
+TransportDemandKey=Q26109142-1|DIE_TO_WIRE_STAGING | DemandCreatedAt=2026-10-17 07:09:38.7283587+00:00 | ReasonCode=ELIGIBLE
+TransportDemandKey=Q26093420-6|DIE_TO_WIRE_STAGING | DemandCreatedAt=2026-10-17 07:11:38.8927788+00:00 | ReasonCode=ELIGIBLE
+TransportDemandKey=Q26101619-3-1|DIE_TO_WIRE_STAGING | DemandCreatedAt=2026-10-17 07:18:38.7945878+00:00 | ReasonCode=ELIGIBLE
+TransportDemandKey=Q26101962-10|DIE_TO_WIRE_STAGING | DemandCreatedAt=2026-10-17 07:24:38.7517105+00:00 | ReasonCode=SLOT_GROUP_OCCUPIED_BY_OWN_CARGO
+
+## D. 当前（16:25）agv03 新旅程、占用仓位、Q26101962 积压原因
+### now 2026-10-17T16:25:51.8616267+08:00
+### agv03 journeys
+JourneyId=journey:3283fc0b-e4b0-4b73-a672-8929af4dea3d|g101 | Stage=AwaitingStationDeparture | BlockReasonCode= | BlockReasonSince= | CreatedAt=2026-10-17 08:19:28.1476843+00:00 | UpdatedAt=2026-10-17 08:25:47.4136535+00:00
+JourneyId=journey:dadde6f1-9e2b-4ef1-9141-ca7f7b5ef328 | Stage=Completed | BlockReasonCode= | BlockReasonSince= | CreatedAt=2026-10-17 07:21:00.7946034+00:00 | UpdatedAt=2026-10-17 08:19:22.076172+00:00
+JourneyId=charging:BROKERX-7daca4ee91da498d8026c68b7b941127:20261017T060820134Z | Stage=Completed | BlockReasonCode=CHARGING_COMPLETE | BlockReasonSince=2026-10-17 07:18:29.686803+00:00 | CreatedAt=2026-10-17 06:08:20.1349527+00:00 | UpdatedAt=2026-10-17 07:18:29.686803+00:00
+### held by non-completed agv03 journeys
+JourneyId=journey:3283fc0b-e4b0-4b73-a672-8929af4dea3d|g101 | Sublot=Q26099E78-1 | TargetSlotsJson=[1] | Status=TERMINATED | dstatus=Cancelled | RemovedAt= | area=T5-5
+JourneyId=journey:3283fc0b-e4b0-4b73-a672-8929af4dea3d|g101 | Sublot=Q26099E92-1 | TargetSlotsJson=[2] | Status=TERMINATED | dstatus=Cancelled | RemovedAt= | area=T5-5
+JourneyId=journey:3283fc0b-e4b0-4b73-a672-8929af4dea3d|g101 | Sublot=Q26099F29-1 | TargetSlotsJson=[3,4] | Status=PENDING_LOAD | dstatus=Accepted | RemovedAt= | area=T6-1
+JourneyId=journey:3283fc0b-e4b0-4b73-a672-8929af4dea3d|g101 | Sublot=Q26099F19-1 | TargetSlotsJson=[1] | Status=PENDING_LOAD | dstatus=Accepted | RemovedAt= | area=T6-1
+JourneyId=journey:3283fc0b-e4b0-4b73-a672-8929af4dea3d|g101 | Sublot=Q26099733-1 | TargetSlotsJson=[5] | Status=PENDING_LOAD | dstatus=Accepted | RemovedAt= | area=T6-7
+JourneyId=journey:3283fc0b-e4b0-4b73-a672-8929af4dea3d|g101 | Sublot=Q26099656-1 | TargetSlotsJson=[6] | Status=PENDING_LOAD | dstatus=Accepted | RemovedAt= | area=T6-7
+JourneyId=journey:3283fc0b-e4b0-4b73-a672-8929af4dea3d|g101 | Sublot=Q26099F21-1 | TargetSlotsJson=[2] | Status=PENDING_LOAD | dstatus=Accepted | RemovedAt= | area=T6-1
+### Q26101962 backlog now
+TransportDemandKey=Q26101962-8|DIE_TO_WIRE_STAGING | ReasonCode=BATTERY_POLICY_NOT_SATISFIED | LastSeenAt=2026-10-17 08:25:47.4270438+00:00 | AcceptedAt=
+TransportDemandKey=Q26101962-7|DIE_TO_WIRE_STAGING | ReasonCode=DEMAND_LEFT_CATALOG | LastSeenAt=2026-10-17 06:20:37.0264749+00:00 | AcceptedAt=
+TransportDemandKey=Q26101962-6|DIE_TO_WIRE_STAGING | ReasonCode=BATTERY_POLICY_NOT_SATISFIED | LastSeenAt=2026-10-17 08:25:47.4270438+00:00 | AcceptedAt=
+TransportDemandKey=Q26101962-9|DIE_TO_WIRE_STAGING | ReasonCode=BATTERY_POLICY_NOT_SATISFIED | LastSeenAt=2026-10-17 08:25:47.4270438+00:00 | AcceptedAt=
+TransportDemandKey=Q26101962-5|WIRE_TO_GATE | ReasonCode=DEMAND_LEFT_CATALOG | LastSeenAt=2026-10-17 07:45:38.04953+00:00 | AcceptedAt=
+TransportDemandKey=Q26101962-10|DIE_TO_WIRE_STAGING | ReasonCode=BATTERY_POLICY_NOT_SATISFIED | LastSeenAt=2026-10-17 08:25:47.4270438+00:00 | AcceptedAt=
+
+## E. 当前电量与新旅程各站
+### now 2026-10-17T16:26:51.3832822+08:00
+JourneyId=journey:3283fc0b-e4b0-4b73-a672-8929af4dea3d|g101 | Stage=AwaitingStationDeparture | WaitingBatteryPercent=72 | WaitingBatteryObservedAt=2026-10-17 08:26:03.5468113+00:00 | PublishedBatteryState=SUFFICIENT | ChargingPolicyVersion=1
+### new journey stops
+Sequence=1 | StopRole=PICKUP | StationId=T5-5 | Status=COMPLETED | CreatedAt=2026-10-17 08:19:28.1476843+00:00
+Sequence=2 | StopRole=PICKUP | StationId=T5-5 | Status=PENDING | CreatedAt=2026-10-17 08:24:48.1161064+00:00
+Sequence=3 | StopRole=PICKUP | StationId=T6-7_T7-6 | Status=PENDING | CreatedAt=2026-10-17 08:25:12.1622859+00:00
+Sequence=4 | StopRole=PICKUP | StationId=T6-1_T6-2_T7-1 | Status=PENDING | CreatedAt=2026-10-17 08:24:55.8296619+00:00
+Sequence=5 | StopRole=UNLOAD | StationId=装片氮气柜 | Status=PENDING | CreatedAt=2026-10-17 08:19:28.1476843+00:00
+
+## F. 源码要点（a799c998）
+EnRouteAppendPlanner.cs: if (completed.Count + inserted.Count > MaximumLegs) -> EN_ROUTE_APPEND_PLAN_LIMIT_REACHED (MaximumLegs=9, 已完成的停靠也计入)
+SlotCapacityCriterion.cs:133 sessionBaseline.Count >= expectedBasketCount ? SlotGroupOccupiedByOwnCargo
+JourneyAwareSlotLedger.cs: 未完成旅程里 RemovedAt==null 且未终结的需求各自占着 TargetSlots

@@ -1,0 +1,28 @@
+18,19c18,19
+< 09 t=+6s type=UpcomingStopPlanSnapshot messageId=b3a68bab-29c8-785a-b4a0-1fdda0a8c242 correlationId=NULL sessionGeneration=1 revision=3 acknowledged=no fenced=no payloadSha256=97fce0797788ecaa25d2f8784262e8f8bf018aa98519e7a26dbe453575a7a265
+<    payload={"legs":[{"demandId":"10000000-0000-4000-8000-000000000001","legType":"TO_PICKUP","mapId":"MAP-25","movementLegId":"f13413b8-c674-ce57-a847-b4f653a98921","publicStationFunction":null,"sequence":1,"state":"COMPLETED","stationId":"N1-1","stopPurposeCategory":"BUSINESS"},{"demandId":"10000000-0000-4000-8000-000000000001","legType":"TO_DROPOFF","mapId":"MAP-25","movementLegId":"6418afc8-35b0-9b5b-95e5-5cea49ca7333","publicStationFunction":null,"sequence":2,"state":"ARRIVED","stationId":"\u5173\u5361","stopPurposeCategory":"BUSINESS"}],"planRevision":3}
+---
+> 09 t=+6s type=UpcomingStopPlanSnapshot messageId=b3a68bab-29c8-785a-b4a0-1fdda0a8c242 correlationId=NULL sessionGeneration=1 revision=3 acknowledged=no fenced=no payloadSha256=e9e7a61287d78e56a65fb808ca378c9effaa90f7daf9fec40b2b9664da648d24
+>    payload={"legs":[{"demandId":"10000000-0000-4000-8000-000000000001","legType":"TO_DROPOFF","mapId":"MAP-25","movementLegId":"6418afc8-35b0-9b5b-95e5-5cea49ca7333","publicStationFunction":null,"sequence":1,"state":"ARRIVED","stationId":"\u5173\u5361","stopPurposeCategory":"BUSINESS"}],"planRevision":3}
+48,49c48,49
+< 24 t=+13s type=UpcomingStopPlanSnapshot messageId=a8c759f4-6955-4750-b96b-b52e6cebec60 correlationId=NULL sessionGeneration=1 revision=7 acknowledged=no fenced=no payloadSha256=adc634bae52af7c5a9e6a2e97565df97e2b2584103f9f828256794346793e1a4
+<    payload={"legs":[{"demandId":"10000000-0000-4000-8000-000000000002","legType":"TO_PICKUP","mapId":"MAP-25","movementLegId":"87d6ffe2-d00e-0255-b519-527d25be1ba3","publicStationFunction":null,"sequence":1,"state":"COMPLETED","stationId":"N1-1","stopPurposeCategory":"BUSINESS"},{"demandId":"10000000-0000-4000-8000-000000000002","legType":"TO_DROPOFF","mapId":"MAP-25","movementLegId":"12928cb0-fda4-9758-840e-46eab0de5683","publicStationFunction":null,"sequence":2,"state":"ARRIVED","stationId":"\u5173\u5361","stopPurposeCategory":"BUSINESS"}],"planRevision":7}
+---
+> 24 t=+13s type=UpcomingStopPlanSnapshot messageId=a8c759f4-6955-4750-b96b-b52e6cebec60 correlationId=NULL sessionGeneration=1 revision=7 acknowledged=no fenced=no payloadSha256=99333d97c120cc00cf8db24017b52e92599f561f2697daf42dc575d76c037159
+>    payload={"legs":[{"demandId":"10000000-0000-4000-8000-000000000002","legType":"TO_DROPOFF","mapId":"MAP-25","movementLegId":"12928cb0-fda4-9758-840e-46eab0de5683","publicStationFunction":null,"sequence":1,"state":"ARRIVED","stationId":"\u5173\u5361","stopPurposeCategory":"BUSINESS"}],"planRevision":7}
+83c83
+< 25 type=UpcomingStopPlanSnapshot messageId=b3a68bab-29c8-785a-b4a0-1fdda0a8c242 correlationId=NULL sessionGeneration=1 revision=3 payloadSha256=97fce0797788ecaa25d2f8784262e8f8bf018aa98519e7a26dbe453575a7a265
+---
+> 25 type=UpcomingStopPlanSnapshot messageId=b3a68bab-29c8-785a-b4a0-1fdda0a8c242 correlationId=NULL sessionGeneration=1 revision=3 payloadSha256=e9e7a61287d78e56a65fb808ca378c9effaa90f7daf9fec40b2b9664da648d24
+89c89
+< 31 type=UpcomingStopPlanSnapshot messageId=b3a68bab-29c8-785a-b4a0-1fdda0a8c242 correlationId=NULL sessionGeneration=1 revision=3 payloadSha256=97fce0797788ecaa25d2f8784262e8f8bf018aa98519e7a26dbe453575a7a265
+---
+> 31 type=UpcomingStopPlanSnapshot messageId=b3a68bab-29c8-785a-b4a0-1fdda0a8c242 correlationId=NULL sessionGeneration=1 revision=3 payloadSha256=e9e7a61287d78e56a65fb808ca378c9effaa90f7daf9fec40b2b9664da648d24
+119c119
+< 61 type=UpcomingStopPlanSnapshot messageId=a8c759f4-6955-4750-b96b-b52e6cebec60 correlationId=NULL sessionGeneration=1 revision=7 payloadSha256=adc634bae52af7c5a9e6a2e97565df97e2b2584103f9f828256794346793e1a4
+---
+> 61 type=UpcomingStopPlanSnapshot messageId=a8c759f4-6955-4750-b96b-b52e6cebec60 correlationId=NULL sessionGeneration=1 revision=7 payloadSha256=99333d97c120cc00cf8db24017b52e92599f561f2697daf42dc575d76c037159
+126c126
+< 68 type=UpcomingStopPlanSnapshot messageId=a8c759f4-6955-4750-b96b-b52e6cebec60 correlationId=NULL sessionGeneration=1 revision=7 payloadSha256=adc634bae52af7c5a9e6a2e97565df97e2b2584103f9f828256794346793e1a4
+---
+> 68 type=UpcomingStopPlanSnapshot messageId=a8c759f4-6955-4750-b96b-b52e6cebec60 correlationId=NULL sessionGeneration=1 revision=7 payloadSha256=99333d97c120cc00cf8db24017b52e92599f561f2697daf42dc575d76c037159

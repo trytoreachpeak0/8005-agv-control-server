@@ -18,8 +18,9 @@ namespace ControlServer.Host.Runtime;
 /// <item>S 为空（没有等着的需求，或者都因别的原因被拒）→ 不自动走，等客户在车载屏点出发（control-server#713）。</item>
 /// </list>
 /// <para>
-/// <b>容量</b>是 <see cref="IsCapacityRefusal"/> 那三个码：本车货占着它要的那一侧、那一侧空仓不够、途中追加的 9 段或 8 条上限
-/// （<see cref="EnRouteAppendPlanner.MaximumLegs"/>、<see cref="EnRouteAppendPlanner.MaximumWorklistItems"/>，两者同一个码）。
+/// <b>容量</b>是 <see cref="IsCapacityRefusal"/> 那四个码：本车货占着它要的那一侧、那一侧空仓不够、途中追加的 9 段或 8 条上限
+/// （<see cref="EnRouteAppendPlanner.MaximumLegs"/>、<see cref="EnRouteAppendPlanner.MaximumWorklistItems"/>，两者同一个码），以及整趟停靠总数上限
+/// （<c>JourneyRuntime:MaximumJourneyStops</c>，control-server#749）——这一趟再也接不下任何一条，与装满同理。
 /// 超大需求（<see cref="DispatchReasonCodes.ExpectedBasketCountExceedsSlotGroup"/>，比那一侧的物理仓位还多）不算：它装不上任何一辆车，
 /// 与这辆车满没满无关，票面列的容量也只有这几样。它与别的非容量拒绝一样从 S 里去掉——不推车走，也不拦车走。
 /// </para>
@@ -68,7 +69,8 @@ public static class StagingDepartureRule
     public static bool IsCapacityRefusal(string reasonCode) =>
         reasonCode is DispatchReasonCodes.SlotGroupOccupiedByOwnCargo
             or DispatchReasonCodes.SlotGroupCapacityTemporarilyUnavailable
-            or DispatchReasonCodes.EnRouteAppendPlanLimitReached;
+            or DispatchReasonCodes.EnRouteAppendPlanLimitReached
+            or DispatchReasonCodes.EnRouteAppendJourneyStopLimitReached;
 
     /// <summary>
     /// 一辆车一轮的裁决里，取货站是 <paramref name="stationRiotId"/> 的待送候选各自的裁决。
