@@ -1,5 +1,6 @@
 using ControlServer.Application;
 using ControlServer.Host.Runtime.RouteGraph;
+using Microsoft.Extensions.Options;
 
 namespace ControlServer.Host.Runtime.Dispatch.Criteria;
 
@@ -16,7 +17,10 @@ namespace ControlServer.Host.Runtime.Dispatch.Criteria;
 /// <b>只对在途车问。</b>空闲车没有计划可插，它的「边际成本」是从当前位置走完新计划的全程，由排序层自己算。
 /// </para>
 /// </remarks>
-public sealed class EnRouteAppendCriterion(RouteGraphAccess routeGraph) : IDispatchAdmissionCriterion
+/// <param name="routeGraph">插位规划要用的路网。</param>
+/// <param name="options">读整趟停靠总数上限（<c>JourneyRuntime:MaximumJourneyStops</c>，control-server#749）；不给就用默认值。</param>
+public sealed class EnRouteAppendCriterion(RouteGraphAccess routeGraph, IOptions<JourneyRuntimeOptions>? options = null)
+    : IDispatchAdmissionCriterion
 {
     /// <summary>在可达性之后、仓位之前：插位规划要用路网，而路网不可用时那条判据已经先拒了。</summary>
     public int Order => 98;
@@ -70,7 +74,8 @@ public sealed class EnRouteAppendCriterion(RouteGraphAccess routeGraph) : IDispa
             evaluation.Round.ZoneParameters,
             (from, to) => availability.Graph!.Traverse(from, to) is { Reachable: true } traversal
                 ? traversal.TraversalCostMm
-                : null);
+                : null,
+            options?.Value.MaximumJourneyStops ?? EnRouteAppendPlanner.DefaultMaximumJourneyStops);
         if (decision.Placement is not { } placement)
         {
             return decision.RefusalReasonCode

@@ -27,6 +27,12 @@ public sealed class EnRouteAppendPlanner
     /// <summary>协议允许的最大腿数（<c>UpcomingStopPlanSnapshot.legs</c>）。</summary>
     public const int MaximumLegs = 9;
 
+    /// <summary>
+    /// 整趟旅程停靠总数（含已完成的）的默认上限（control-server#749，REQ-0196 经 CP-0015 修订）。实际用的是
+    /// <c>JourneyRuntime:MaximumJourneyStops</c>，它默认取这个值。
+    /// </summary>
+    public const int DefaultMaximumJourneyStops = 20;
+
     /// <summary>协议允许的一张清单最多几项（<c>CurrentStopWorklistSnapshot.items</c>）。</summary>
     public const int MaximumWorklistItems = 8;
 
@@ -37,11 +43,13 @@ public sealed class EnRouteAppendPlanner
     /// <param name="candidate">要追加的需求：它的取货站、卸货站与分区。</param>
     /// <param name="zoneParameters">每区参数的当前版本；为空即一个分区都没配置，全部禁止追加。</param>
     /// <param name="cost">两站之间的计划路径代价（毫米），算不出返回 null。</param>
+    /// <param name="maximumJourneyStops">整趟旅程停靠总数（含已完成的）的上限，取 <c>JourneyRuntime:MaximumJourneyStops</c>。</param>
     public static EnRouteAppendDecision Plan(
         EnRouteVehiclePlan plan,
         EnRouteAppendCandidate candidate,
         DispatchZoneParameterTableVersion? zoneParameters,
-        Func<int, int, long?> cost)
+        Func<int, int, long?> cost,
+        int maximumJourneyStops = DefaultMaximumJourneyStops)
     {
         ArgumentNullException.ThrowIfNull(plan);
         ArgumentNullException.ThrowIfNull(candidate);
@@ -272,6 +280,7 @@ public sealed class EnRouteAppendPlanner
         DispatchReasonCodes.EnRouteAppendDelayGateExceeded,
         DispatchReasonCodes.EnRouteAppendDelayUncomputable,
         DispatchReasonCodes.EnRouteAppendPlanLimitReached,
+        DispatchReasonCodes.EnRouteAppendJourneyStopLimitReached,
         DispatchReasonCodes.EnRouteAppendBreaksZoneContiguity,
         DispatchReasonCodes.EnRouteAppendNoInsertionPoint,
     ];

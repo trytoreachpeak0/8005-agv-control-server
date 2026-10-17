@@ -142,7 +142,7 @@ public static class DispatchAdmissionCriteria
              new LoadingPhaseOpenCriterion()];
         if (routeGraph is not null)
         {
-            criteria.Add(new EnRouteAppendCriterion(routeGraph));
+            criteria.Add(new EnRouteAppendCriterion(routeGraph, options));
         }
 
         // 公共站点单车位（批次8-20，control-server#391）与装货阶段同序（99），挪到它后面：同序按这张表的先后跑，装货阶段已结束的车
