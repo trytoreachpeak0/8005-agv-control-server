@@ -1,0 +1,13 @@
+diff --git a/src/ControlServer.Host/Runtime/FixedStationExclusivitySweep.cs b/src/ControlServer.Host/Runtime/FixedStationExclusivitySweep.cs
+index 193612dac..e44d88eff 100644
+--- a/src/ControlServer.Host/Runtime/FixedStationExclusivitySweep.cs
++++ b/src/ControlServer.Host/Runtime/FixedStationExclusivitySweep.cs
+@@ -266,7 +266,7 @@ internal sealed class FixedStationExclusivitySweep(
+         if (await dbContext.Set<VehiclePurposeClaimRow>().AsNoTracking()
+                 .AnyAsync(
+                     claim => claim.JourneyId == row.JourneyId &&
+-                             (row.StationKind == StationExclusivityKinds.WaitingPoint || claim.Purpose == VehiclePurposes.IdleReturn),
++                             row.StationKind == StationExclusivityKinds.WaitingPoint,
+                     cancellationToken)
+                 .ConfigureAwait(false))
+         {

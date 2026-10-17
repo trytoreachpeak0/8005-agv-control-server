@@ -98,6 +98,13 @@ public sealed class IdleReturnEvaluator(
 
     // Information, but only when this vehicle's reason or detail differs from the last round's (IdleReturnVerdictBoard): an
     // idle vehicle is judged every round, and a line per round per vehicle would bury everything else in the log.
+    private static readonly Action<ILogger, string, int, string, long, string, Exception?> LogCommittedToStagingOrigin =
+        LoggerMessage.Define<string, int, string, long, string>(
+            LogLevel.Information,
+            new EventId(2215, nameof(LogCommittedToStagingOrigin)),
+            "Idle return committed: STAGING_TO_WIRE-only vehicle {AgvId} reserved its staging origin {StationId} as a fixed task " +
+            "station (REQ-0204) as journey {JourneyId}, route cost {CostMm} mm; charge line {ChargeLine}.");
+
     private static readonly Action<ILogger, string, string, string, Exception?> LogNotCommitted =
         LoggerMessage.Define<string, string, string>(
             LogLevel.Information,
@@ -319,9 +326,10 @@ public sealed class IdleReturnEvaluator(
         IReadOnlySet<int> fixedTaskStations = WaitingPointFixedTaskStations.StationIds(
             await WaitingPointFixedTaskStations.ReadAsync(bindings, _runtime.MapId, cancellationToken).ConfigureAwait(false));
         // The staging origin is read from the active binding only: that is the station dispatch routes a STAGING_TO_WIRE
-        // pickup to, so it is the one a vehicle can have been left standing at.
-        int? stagingOrigin = (await bindings.ReadActiveAsync(_runtime.MapId, cancellationToken).ConfigureAwait(false))?.Bindings
-            .FirstOrDefault(binding => binding.TaskType == TransportTaskTypes.StagingToWire)?.StationRiotId;
+        // pickup to, so it is the one a vehicle can have been left standing at, and the one a STAGING_TO_WIRE-only vehicle
+        // returns to (control-server#752).
+        TaskTypeStationBinding? stagingOrigin = (await bindings.ReadActiveAsync(_runtime.MapId, cancellationToken).ConfigureAwait(false))?.Bindings
+            .FirstOrDefault(binding => binding.TaskType == TransportTaskTypes.StagingToWire);
         RouteGraphAvailability graph = routeGraph.Enabled && routeGraph.MapId == _runtime.MapId
             ? await routeGraph.ReadAsync(cancellationToken).ConfigureAwait(false)
             : RouteGraphAvailability.Stale("ROUTE_GRAPH_DISABLED_OR_OTHER_MAP");
@@ -336,12 +344,12 @@ public sealed class IdleReturnEvaluator(
     /// 不靠把它从等待点白名单里拿掉来做：多车部署启动时要求每辆车都分得到一个等待点（<see cref="WaitingPointStartupCheck"/>），
     /// 拿掉它服务端下次重启就起不来；它在充电桩上充满之后也还要靠空闲返回把桩让出来。
     /// </remarks>
-    private bool HeldAtStagingOrigin(FleetVehicle vehicle, int origin, int? stagingOrigin)
+    private bool HeldAtStagingOrigin(FleetVehicle vehicle, int origin, TaskTypeStationBinding? stagingOrigin) =>
+        stagingOrigin?.StationRiotId == origin && StagingOnly(vehicle);
+
+    /// <summary>车队配置里这辆车只做 <c>STAGING_TO_WIRE</c>（至少一种、全是它）。</summary>
+    private bool StagingOnly(FleetVehicle vehicle)
     {
-        if (stagingOrigin != origin)
-        {
-            return false;
-        }
         FleetVehicleOptions? configured = VehicleDispatchPolicyAccess.ConfiguredFleet(_runtime)
             .FirstOrDefault(entry => string.Equals(entry.AgvId, vehicle.AgvId, StringComparison.Ordinal));
         return configured is not null &&
@@ -370,6 +378,23 @@ public sealed class IdleReturnEvaluator(
         List<string> excluded = [];
         List<IdleReturnPointCandidate> eligible = [];
         int? failedLastTime = await FailedLastTimeAsync(vehicle, cancellationToken).ConfigureAwait(false);
+        if (reads.StagingOrigin is { } stagingOrigin && StagingOnly(vehicle))
+        {
+            string? why = stagingOrigin.StationRiotId == failedLastTime
+                ? IdleReturnReasons.PointFailedLastAttempt
+                : await ExcludeStagingOriginAsync(stagingOrigin, vehicle, origin, currentMap, reads, cancellationToken)
+                    .ConfigureAwait(false);
+            if (why is null)
+            {
+                return await CommitToStagingOriginAsync(
+                        vehicle, stagingOrigin.StationRiotId,
+                        reads.Graph.Graph!.Traverse(origin, stagingOrigin.StationRiotId).TraversalCostMm, cancellationToken)
+                    .ConfigureAwait(false);
+            }
+            // This time it falls back to a waiting point, so a vehicle whose one target cannot be taken does not stay where
+            // it is (on a charger it would hold the charger); the next idle return aims at the staging origin again.
+            excluded.Add($"{stagingOrigin.StationRiotId}={why}");
+        }
         foreach (WaitingPointEntry point in (reads.Registration?.Points ?? [])
                      .Where(point => point.MapId == _runtime.MapId)
                      .OrderBy(point => point.StationId))
@@ -411,6 +436,63 @@ public sealed class IdleReturnEvaluator(
         verdictBoard.Record(vehicle.AgvId, IdleReturnReasons.Committed, journeyId);
         return new IdleReturnVerdict(
             vehicle.AgvId, vehicle.VehicleKey, IdleReturnReasons.Committed, chosen.StationId, version, journeyId);
+    }
+
+    /// <summary>
+    /// 只做 <c>STAGING_TO_WIRE</c> 的车开回待送固定起点（control-server#752）：用途占有与那个公共站的预占同一次保存，按 <c>REQ-0204</c> 以
+    /// <c>FIXED_TASK_STATION</c> 预占——它是单车位公共站，不是等待点，没有登记版本。
+    /// </summary>
+    private async Task<IdleReturnVerdict> CommitToStagingOriginAsync(
+        FleetVehicle vehicle,
+        int stationId,
+        long costMm,
+        CancellationToken cancellationToken)
+    {
+        DateTimeOffset now = timeProvider.GetUtcNow();
+        string journeyId = IdleReturnIdentity.JourneyIdFor(vehicle.VehicleKey, now);
+        VehiclePurposeAcquisitionOutcome outcome = await ledger.TryAcquireAsync(
+                new VehiclePurposeClaim(vehicle.VehicleKey, VehiclePurposes.IdleReturn, journeyId, now),
+                new StationExclusivityRequest(
+                    _runtime.MapId, stationId, StationExclusivityKinds.FixedTaskStation, StationExclusivityStates.Reserved, null),
+                cancellationToken)
+            .ConfigureAwait(false);
+        if (outcome != VehiclePurposeAcquisitionOutcome.Acquired)
+        {
+            return Refuse(vehicle, IdleReturnReasons.CommitmentRefused, $"Station {stationId}: {outcome}.");
+        }
+
+        LogCommittedToStagingOrigin(logger, vehicle.AgvId, stationId, journeyId, costMm, chargeLine.Describe(vehicle.VehicleKey), null);
+        verdictBoard.Record(vehicle.AgvId, IdleReturnReasons.Committed, journeyId);
+        return new IdleReturnVerdict(vehicle.AgvId, vehicle.VehicleKey, IdleReturnReasons.Committed, stationId, null, journeyId);
+    }
+
+    /// <summary>
+    /// 待送固定起点此刻能不能接这辆车：在实时目录里、站名与绑定一致，没被别的车预占或占用，路网可达。能接答空。被这辆车自己持有的
+    /// （刚离开、离点清扫还没放）不算被占：承诺那一次保存由主键答，下一轮再判。
+    /// </summary>
+    private async Task<string?> ExcludeStagingOriginAsync(
+        TaskTypeStationBinding stagingOrigin,
+        FleetVehicle vehicle,
+        int origin,
+        RiotMapStationCatalogSnapshot currentMap,
+        RoundReads reads,
+        CancellationToken cancellationToken)
+    {
+        int stationId = stagingOrigin.StationRiotId;
+        if (currentMap.MapId != _runtime.MapId ||
+            !currentMap.Stations.Any(station => station.StationId == stationId &&
+                                                string.Equals(station.StationName, stagingOrigin.StationName, StringComparison.Ordinal)))
+        {
+            return WaitingPointEligibilityReasons.NotInLiveCatalog;
+        }
+
+        if (await stations.ReadAsync(_runtime.MapId, stationId, cancellationToken).ConfigureAwait(false) is { } held &&
+            !string.Equals(held.VehicleKey, vehicle.VehicleKey, StringComparison.Ordinal))
+        {
+            return IdleReturnReasons.PointTaken;
+        }
+
+        return reads.Graph.Graph!.Traverse(origin, stationId).Reachable ? null : IdleReturnReasons.PointUnreachable;
     }
 
     /// <summary>
@@ -609,7 +691,7 @@ public sealed class IdleReturnEvaluator(
     private sealed record RoundReads(
         WaitingPointRegistrationVersion? Registration,
         IReadOnlySet<int> FixedTaskStations,
-        int? StagingOrigin,
+        TaskTypeStationBinding? StagingOrigin,
         RouteGraphAvailability Graph);
 }
 

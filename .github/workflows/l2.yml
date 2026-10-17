@@ -264,6 +264,9 @@ jobs:
               # control-server#712: a vehicle that takes only STAGING_TO_WIRE, its journey ended at the staging station, stays
               # there instead of returning to a free waiting point, and takes the next staging demand where it stands.
               @{ Name = 'staging-only-vehicle-stays-at-staging-origin'; Runs = 1 }
+              # control-server#752: a vehicle that takes only STAGING_TO_WIRE, idle elsewhere, returns to the staging origin --
+              # reserved as its fixed task station -- instead of a waiting point; the second such vehicle falls back to one.
+              @{ Name = 'staging-only-vehicle-returns-to-staging-origin'; Runs = 1 }
               # program#184 (first-wave checklist item 1): at the staging station with nothing loaded and the battery below the
               # mandatory charge line, the journey closes in place and the vehicle -- one that takes only STAGING_TO_WIRE, held at
               # the staging origin by control-server#712 -- still joins the charging queue and is sent to the charger.

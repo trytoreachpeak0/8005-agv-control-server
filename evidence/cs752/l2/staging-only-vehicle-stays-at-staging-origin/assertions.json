@@ -1,0 +1,75 @@
+{
+  "schemaVersion": 1,
+  "scenario": "staging-only-vehicle-stays-at-staging-origin",
+  "runId": "20261017T140050803Z",
+  "outcome": "PASS",
+  "failureReason": "",
+  "identity": {
+    "controlServerCommit": "219687e70afad4f4f097b7e828a0a3a6762dd536",
+    "batchId": "unspecified",
+    "protocolReleaseIdentity": {
+      "repository": "8005-agv-protocol",
+      "releaseVersion": "5.0.0",
+      "tag": "protocol-v5.0.0",
+      "commit": "4e9f3df8fb1733311e1ce534c1129cfb904760a4",
+      "protocolVersion": 6,
+      "profileId": "AGV_FULL_PRODUCT",
+      "manifestSha256": "743b886d99194038b893e98aed2a1dd01409cd7f80d39c734e02d860e0e5827c",
+      "schemaBundleSha256": "d51abe44036f32b5b2c28fd1bea6ec7a89cf3b4dea0f0b1d6c9daaf52f350933",
+      "vectorsSha256": "24cc3a5e5023bc7ead70f609456136208a40c04c1ecd0982a7182880d8eaa0c7",
+      "approvalStatus": "SUPERSEDING_CANDIDATE"
+    },
+    "fleet": [
+      "AGV-L2-001/BROKERX-L2-0001",
+      "AGV-L2-002/BROKERX-L2-0002"
+    ],
+    "rig": "SyntheticOnboard",
+    "stageRoot": "C:\\Users\\szy\\AppData\\Local\\Temp\\l2-20261017T140050803Z",
+    "agvId": "AGV-L2-001",
+    "vehicleKey": "BROKERX-L2-0001"
+  },
+  "assertions": [
+    {
+      "id": "L2-SIS-01",
+      "description": "V 在待送点扫码前取消：旅程 Completed / CANCELLED_BY_OPERATOR，V 停在 305，305 的单占仍是 V 的",
+      "outcome": "PASS",
+      "expected": "CANCELLED_BY_OPERATOR / at 305 / 305 held by BROKERX-L2-0001",
+      "actual": "CANCELLED_BY_OPERATOR / at 305 / 305 held by BROKERX-L2-0001 FIXED_TASK_STATION"
+    },
+    {
+      "id": "L2-SIS-02",
+      "description": "V 停在 305 时有一个空着、开得过去的等待点（V 若是从等待点来的，那个点已被离点证据放掉）",
+      "outcome": "PASS",
+      "expected": "a free waiting point",
+      "actual": "free=215 former="
+    },
+    {
+      "id": "L2-SIS-03",
+      "description": "V 在 305 停了十几轮：没有 IDLE_RETURN 用途占有、没有新的开往等待点的单，车仍在 305，305 仍是 V 的",
+      "outcome": "PASS",
+      "expected": "no claim / 1 intents / at 305 / held by BROKERX-L2-0001",
+      "actual": "claim  / 1 intents / at 305 / held by BROKERX-L2-0001"
+    },
+    {
+      "id": "L2-SIS-06",
+      "description": "空闲返回看板上 V 这一轮的结论码是 IDLE_RETURN_HELD_AT_STAGING_ORIGIN",
+      "outcome": "PASS",
+      "expected": "IDLE_RETURN_HELD_AT_STAGING_ORIGIN",
+      "actual": "IDLE_RETURN_HELD_AT_STAGING_ORIGIN"
+    },
+    {
+      "id": "L2-SIS-04",
+      "description": "第二条待送需求派给已在待送点的 V；开往 305 的取货单在 V 停在 305 时建出",
+      "outcome": "PASS",
+      "expected": "BROKERX-L2-0001 / order to 305 / at 305",
+      "actual": "BROKERX-L2-0001 / order to 305 by BROKERX-L2-0001 / at 305"
+    },
+    {
+      "id": "L2-SIS-05",
+      "description": "取货单完成后 V 在 305 到站，录入请求发到 V 的车上（清单可扫）",
+      "outcome": "PASS",
+      "expected": "AwaitingSublot / >= 1",
+      "actual": "AwaitingSublot / 1"
+    }
+  ]
+}
