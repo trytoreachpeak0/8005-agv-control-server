@@ -554,7 +554,8 @@ public sealed class StagingDepartureRequestTests
             .First()
             .PayloadJson;
         (string? LegType, string? Function)[] legs = LegsOf(latest);
-        Assert.Equal(2, legs.Count(leg => leg.LegType == "TO_PICKUP"));
+        // 车已离开第一个待送点停靠，那条腿不再下发（control-server#749，只发剩余停靠）；车所在的第二个照样带着 WIRE_STAGING。
+        Assert.Single(legs, leg => leg.LegType == "TO_PICKUP");
         Assert.All(legs.Where(leg => leg.LegType == "TO_PICKUP"), leg => Assert.Equal("WIRE_STAGING", leg.Function));
         Assert.All(legs.Where(leg => leg.LegType != "TO_PICKUP"), leg => Assert.Null(leg.Function));
     }

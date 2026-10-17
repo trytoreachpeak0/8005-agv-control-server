@@ -62,7 +62,7 @@ public sealed class EnRouteAppendPlanner
             return EnRouteAppendDecision.Refused(DispatchReasonCodes.EnRouteAppendNotConfigured);
         }
 
-        // 已经完成的停靠在计划里、也在编号里，但不参与任何一步计算（批次7-06，control-server#211）。
+        // 已经完成的停靠在编号里，但除整趟停靠总数上限之外不参与任何一步计算（批次7-06，control-server#211；control-server#749）。
         //
         // <b>序位是整条旅程的属性，而这里要算的东西全都只关乎剩下的路。</b>两件事都成立，所以这里把计划切成
         // 「已完成的前缀」与「还要走的那一段」：下面每一步都只看后者——车已经走过的路不该算进代价，已经走过的
@@ -139,15 +139,24 @@ public sealed class EnRouteAppendPlanner
                     itemsByStop[mergePickup.StopId] = itemsByStop.GetValueOrDefault(mergePickup.StopId) + 1;
                 }
 
-                // 腿数按<b>整条旅程</b>数，已完成的那些也在内（批次7-06，control-server#211）。
+                // 腿数只数<b>剩下要走的</b>停靠：车所在的（行驶中为正驶向的）那一个及其后（control-server#749，REQ-0196 经
+                // CP-0015 修订）。这个门禁守的是协议上限 <c>UpcomingStopPlanSnapshot.legs</c> 的 <c>maxItems: 9</c>，而
+                // <see cref="JourneyPlanBuilder.Plan"/> 只投影当前停靠及其后——与这里的 <c>inserted</c> 是同一组停靠
+                // （当前之后已删的那些两边都不算，见 DispatchRoundRunner.EnRoutePlanOf）。
                 //
-                // 这个门禁守的是协议上限 <c>UpcomingStopPlanSnapshot.legs</c> 的 <c>maxItems: 9</c>，而
-                // <see cref="JourneyPlanBuilder.Plan"/> 把传给它的停靠<b>全部</b>投影成腿——调用方传的是
-                // <c>stops.Stops</c>，含已完成的。只数还要走的那些，差额正好是已完成的停靠数：已完成一个、
-                // 开放的到了 9 个，落库共 10 个停靠，发出去就是 10 条腿，出站 schema 门禁与车载端各拒一次。
-                if (completed.Count + inserted.Count > MaximumLegs)
+                // 这之前按整条旅程数，因为那时 Plan 把已完成的也投影成腿：走过 5 站、剩 3 站的车，追加一条就是 5 + 3 + 2 &gt; 9，
+                // 现场车因此少接活（control-server#749 的来源）。
+                if (inserted.Count > MaximumLegs)
                 {
                     refusals.Add(DispatchReasonCodes.EnRouteAppendPlanLimitReached);
+                    continue;
+                }
+
+                // 整趟停靠总数（含已完成的）另有服务端可配的上限，默认 20（control-server#749）。前缀里若有当前之前已删的停靠
+                // （只有充电清桩那条路会留下，它不经途中追加），这里会把它们也算进去——偏保守，只会多拒。
+                if (completed.Count + inserted.Count > maximumJourneyStops)
+                {
+                    refusals.Add(DispatchReasonCodes.EnRouteAppendJourneyStopLimitReached);
                     continue;
                 }
 

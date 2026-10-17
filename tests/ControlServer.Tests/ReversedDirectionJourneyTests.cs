@@ -68,8 +68,9 @@ public sealed class ReversedDirectionJourneyTests
             [("TO_PICKUP", 1, "派工待送取货", "ACTIVE"), ("TO_DROPOFF", 2, "N1-1", "PLANNED")],
             plan.Legs.Select(leg => (leg.LegType, leg.Sequence, leg.StationId, leg.State)));
         Assert.All(plan.Legs, leg => Assert.Null(leg.PublicStationFunction));
+        // 车到了机台：走过的待送点停靠不再下发（control-server#749，只发剩余停靠）。
         Assert.Equal(
-            ["派工待送取货", "N1-1"],
+            ["N1-1"],
             JourneyPlanBuilder
                 .Plan(runtime, stops, stops[1], arrivedAtCurrent: true, runtime.PlanRevision + 2)
                 .Legs.Select(leg => leg.StationId));
