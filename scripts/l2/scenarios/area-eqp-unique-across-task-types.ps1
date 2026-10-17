@@ -18,6 +18,7 @@ Set-StrictMode -Version Latest
 $ErrorActionPreference = 'Stop'
 
 Import-Module (Join-Path (Split-Path -Parent $PSScriptRoot) 'L2SingleRow.psm1') -Force
+Import-Module (Join-Path (Split-Path -Parent $PSScriptRoot) 'L2BacklogAcceptance.psm1') -Force
 
 $journal = $Context.Journal
 $assertions = $Context.Assertions
@@ -104,9 +105,12 @@ $null = $mes.Command('Delete', "demands/$($other.Wire)", @{})
 $stage = Wait-L2Condition -Description 'the WIRE_TO_GATE demand was accepted once the other row was gone' `
     -Journal $journal -Criterion 'journey-stage' -TimeoutSeconds 90 `
     -Probe { Get-Stage $gate.Id } -Until { param($v) $v -eq 'AwaitingPickupArrival' }
+# 受理之后的派车轮会把原因码改写成 DEMAND_ALREADY_ACCEPTED，所以判的是后续轮不改的受理证据
+# （control-server#730，规则在 L2BacklogAcceptance.psm1）。判定与记下的实际值来自同一次读取。
+$acceptance = Read-L2BacklogAcceptance -Connection $connection -DemandId $gate.Id
 $assertions.Add(
     'L2-AEUT-02', '删掉其它任务类型那一行后，WIRE_TO_GATE 在后续一轮被受理并派去取货点',
-    ($stage -eq 'AwaitingPickupArrival' -and [string](Get-Backlog $gate.Id).ReasonCode -eq 'ACCEPTED'),
-    'AwaitingPickupArrival / ACCEPTED', "$stage / $((Get-Backlog $gate.Id).ReasonCode)")
+    ($stage -eq 'AwaitingPickupArrival' -and $acceptance.Passed),
+    "AwaitingPickupArrival / $($acceptance.Expected)", "$stage / $($acceptance.Actual)")
 
 $journal.Note('REQ-0187 的唯一性跨任务类型：另一类的观测行挡住同 AREA 的 WIRE_TO_GATE，删掉后放行。')

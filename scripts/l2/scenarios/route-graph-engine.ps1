@@ -18,6 +18,7 @@ Set-StrictMode -Version Latest
 $ErrorActionPreference = 'Stop'
 
 Import-Module (Join-Path (Split-Path -Parent $PSScriptRoot) 'L2ConditionOrLast.psm1') -Force
+Import-Module (Join-Path (Split-Path -Parent $PSScriptRoot) 'L2BacklogAcceptance.psm1') -Force
 
 $journal = $Context.Journal
 $assertions = $Context.Assertions
@@ -117,13 +118,14 @@ $assertions.Add(
     'AwaitingPickupArrival',
     $stage)
 
-$backlog = Invoke-L2Query -Connection $connection `
-    -Sql "SELECT ReasonCode FROM JourneyBacklog WHERE DemandId = '$demandId'"
+# 原因码会被受理之后的派车轮改写成 DEMAND_ALREADY_ACCEPTED，所以判的是后续轮不改的受理证据
+# （control-server#730，规则在 L2BacklogAcceptance.psm1）。ROUTE_GRAPH_* 挡住时不会有 AcceptedAt，照样红。
+$acceptance = Read-L2BacklogAcceptance -Connection $connection -DemandId $demandId
 $assertions.Add(
     'L2-RG-07',
-    '候选判定结果是 ACCEPTED，没有被任何 ROUTE_GRAPH_* 原因挡住',
-    ($backlog.Count -eq 1 -and [string]$backlog[0].ReasonCode -eq 'ACCEPTED'),
-    'ACCEPTED',
-    $(if ($backlog.Count -eq 1) { [string]$backlog[0].ReasonCode } else { '(无 backlog 行)' }))
+    '候选判定结果是受理，没有被任何 ROUTE_GRAPH_* 原因挡住',
+    $acceptance.Passed,
+    $acceptance.Expected,
+    $acceptance.Actual)
 
 $journal.Note('引擎在真链路里工作：双周期都跑过、快照不陈旧、可达性判据放行、派车成立。')
