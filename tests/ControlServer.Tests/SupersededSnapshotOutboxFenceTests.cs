@@ -253,6 +253,59 @@ public sealed class SupersededSnapshotOutboxFenceTests
     }
 
     /// <summary>
+    /// 车载端日志簿被交还（换库、重部署）之后：新库里的号从头开始（C11 10-17 要求）。新库先真跑完一趟旅程，下一趟每条流在收尾快照之上发两版、
+    /// 车确认了前一版：启动修复只退被确认盖过的旧行，下一趟的两版一行不退，未确认的最新版照旧待补发。
+    /// </summary>
+    /// <remarks>
+    /// <para>
+    /// 规则 A：新库没有旧库那些高号的已确认行，门槛只来自本库自己的确认。规则 B：下一趟的号在第一趟收尾快照之上、写入也在它之后，两个条件都碰不到。
+    /// 第一趟的收尾快照被下一趟确认过的更高一版盖过，由 A 退掉，那是对的：车已经采纳了更高的。
+    /// </para>
+    /// <para>
+    /// 下一趟的行直接写进发件箱：夹具里同车第二趟受理后停在 <c>AwaitingPickupArrival</c>、不发快照（<c>Batch7VehicleOccupancyReleaseTests</c> 同样只走到那里）。
+    /// 号取「第一趟本流最大号 + 1、+ 2」，即下一趟基准的下限（受理时基准 = 按车计数器 + 预留，计数器已被收尾快照抬到收尾号）。
+    /// </para>
+    /// </remarks>
+    [Fact]
+    [Trait("IntegrationSlice", "FP-IS-08")]
+    public async Task AfterTheOnboardJournalIsHandedBackRevisionsRestartAndTheNextJourneyIsNotFenced()
+    {
+        await using RuntimeFixture fixture = await RuntimeFixture.CreateAsync();
+        JourneyRuntimeRow first = await CompleteOneJourneyAsync(fixture);
+        ProtocolOutboxRow[] firstJourney = await AllSnapshotRowsAsync(fixture);
+        Assert.All(firstJourney, row => Assert.True(
+            Revision(row) < 1000, $"a fresh database should number from the start, {row.MessageType} has {Revision(row)}"));
+        DateTimeOffset later = fixture.Clock.GetUtcNow().AddMinutes(10);
+        List<string> nextAcknowledged = [];
+        List<string> nextLatest = [];
+        foreach ((string type, string _) in Streams)
+        {
+            long top = firstJourney.Where(row => row.MessageType == type).Select(Revision).DefaultIfEmpty(0).Max();
+            ProtocolOutboxRow acknowledged = Line(
+                fixture, Id(type, top + 1), fixture.Options.AgvId, type, top + 1, current: true, acknowledged: true, createdAt: later);
+            ProtocolOutboxRow latest = Line(
+                fixture, Id(type, top + 2), fixture.Options.AgvId, type, top + 2, current: true, createdAt: later.AddSeconds(1));
+            fixture.Context.ProtocolOutbox.AddRange(acknowledged, latest);
+            nextAcknowledged.Add(acknowledged.MessageId);
+            nextLatest.Add(latest.MessageId);
+        }
+        await SaveAndClearAsync(fixture);
+
+        await using ServiceProvider services = HostServices(fixture);
+        await SupersededSnapshotOutbox.FenceSupersededAtStartupAsync(services, Token);
+
+        // 待补发的恰好是下一趟未确认的最新版：第一趟的中途版与收尾快照都已被盖过。
+        Assert.Equal(nextLatest.Order(StringComparer.Ordinal), (await PendingSnapshotIdsAsync(fixture)).Order(StringComparer.Ordinal));
+        foreach (string id in nextAcknowledged.Concat(nextLatest))
+        {
+            Assert.Null((await RowAsync(fixture, id)).FencedAt);
+        }
+        Assert.All(
+            await StoredClosureIdsAsync(fixture, first.JourneyId),
+            id => Assert.Contains(id, firstJourney.Select(row => row.MessageId)));
+    }
+
+    /// <summary>
     /// 运行时规则 A：旅程收尾时，这辆车上已被确认过的更高一版盖过的未确认行当场退役，不等下次启动。
     /// 规则 B 收尾时不做：同一次收尾里没被确认盖过的中途版此刻仍待补发（但已不在补发集合里），留给启动修复。
     /// </summary>
