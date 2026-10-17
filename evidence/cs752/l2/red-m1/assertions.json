@@ -1,0 +1,54 @@
+{
+  "schemaVersion": 1,
+  "scenario": "staging-only-vehicle-returns-to-staging-origin",
+  "runId": "20261017T135957063Z",
+  "outcome": "FAIL",
+  "failureReason": "",
+  "identity": {
+    "fleet": [
+      "AGV-L2-001/BROKERX-L2-0001",
+      "AGV-L2-002/BROKERX-L2-0002"
+    ],
+    "batchId": "unspecified",
+    "controlServerCommit": "219687e70afad4f4f097b7e828a0a3a6762dd536",
+    "stageRoot": "C:\\Users\\szy\\AppData\\Local\\Temp\\l2-20261017T135957063Z",
+    "agvId": "AGV-L2-001",
+    "rig": "SyntheticOnboard",
+    "protocolReleaseIdentity": {
+      "repository": "8005-agv-protocol",
+      "releaseVersion": "5.0.0",
+      "tag": "protocol-v5.0.0",
+      "commit": "4e9f3df8fb1733311e1ce534c1129cfb904760a4",
+      "protocolVersion": 6,
+      "profileId": "AGV_FULL_PRODUCT",
+      "manifestSha256": "743b886d99194038b893e98aed2a1dd01409cd7f80d39c734e02d860e0e5827c",
+      "schemaBundleSha256": "d51abe44036f32b5b2c28fd1bea6ec7a89cf3b4dea0f0b1d6c9daaf52f350933",
+      "vectorsSha256": "24cc3a5e5023bc7ead70f609456136208a40c04c1ecd0982a7182880d8eaa0c7",
+      "approvalStatus": "SUPERSEDING_CANDIDATE"
+    },
+    "vehicleKey": "BROKERX-L2-0001"
+  },
+  "assertions": [
+    {
+      "id": "L2-SRO-01",
+      "description": "只做待送的车开局空闲：一台（A）的空闲返回单开往待送点 305，305 被 A 以 FIXED_TASK_STATION 预占；另一台（B）这一次回落到等待点，以 WAITING_POINT 预占",
+      "outcome": "FAIL",
+      "expected": "A -> 305 FIXED_TASK_STATION RESERVED / B -> 214|215 WAITING_POINT",
+      "actual": "A= -> 305    / B=BROKERX-L2-0001 -> 214 BROKERX-L2-0001 WAITING_POINT"
+    },
+    {
+      "id": "L2-SRO-02",
+      "description": "未到达：没有一台车的空闲返回开往待送点",
+      "outcome": "FAIL",
+      "expected": "(reached)",
+      "actual": "(not reached) no idle return to the staging origin"
+    },
+    {
+      "id": "L2-SRO-03",
+      "description": "未到达：没有一台车的空闲返回开往待送点",
+      "outcome": "FAIL",
+      "expected": "(reached)",
+      "actual": "(not reached) no idle return to the staging origin"
+    }
+  ]
+}

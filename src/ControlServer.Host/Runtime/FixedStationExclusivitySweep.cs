@@ -260,10 +260,15 @@ internal sealed class FixedStationExclusivitySweep(
         // materialized, on its way, or held with its order unresolved (control-server#390). Every idle return passes
         // through the first of these: the dispatch round commits at the end of one engine round, and the next round runs
         // this sweep before it materializes, so without this check the reservation is released before the vehicle sets off
-        // (removing it turned 34 idle-return tests red).
-        if (row.StationKind == StationExclusivityKinds.WaitingPoint &&
-            await dbContext.Set<VehiclePurposeClaimRow>().AsNoTracking()
-                .AnyAsync(claim => claim.JourneyId == row.JourneyId, cancellationToken).ConfigureAwait(false))
+        // (removing it turned 34 idle-return tests red). The same holds for the staging origin a STAGING_TO_WIRE-only vehicle
+        // returns to (control-server#752): its idle return holds that fixed task station, not a waiting point. A transport
+        // journey's fixed task station is not covered: its claim is TRANSPORT, and it is left while that claim still stands.
+        if (await dbContext.Set<VehiclePurposeClaimRow>().AsNoTracking()
+                .AnyAsync(
+                    claim => claim.JourneyId == row.JourneyId &&
+                             (row.StationKind == StationExclusivityKinds.WaitingPoint || claim.Purpose == VehiclePurposes.IdleReturn),
+                    cancellationToken)
+                .ConfigureAwait(false))
         {
             return false;
         }

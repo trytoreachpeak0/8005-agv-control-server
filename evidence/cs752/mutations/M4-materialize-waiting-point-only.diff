@@ -1,0 +1,14 @@
+diff --git a/src/ControlServer.Host/Runtime/JourneyRuntimeEngine.IdleReturn.cs b/src/ControlServer.Host/Runtime/JourneyRuntimeEngine.IdleReturn.cs
+index 854ead2f8..344b3285d 100644
+--- a/src/ControlServer.Host/Runtime/JourneyRuntimeEngine.IdleReturn.cs
++++ b/src/ControlServer.Host/Runtime/JourneyRuntimeEngine.IdleReturn.cs
+@@ -161,8 +161,7 @@ public sealed partial class JourneyRuntimeEngine
+         StationExclusivityRow? station = await dbContext.Set<StationExclusivityRow>()
+             .SingleOrDefaultAsync(
+                 row => row.JourneyId == claim.JourneyId &&
+-                       (row.StationKind == StationExclusivityKinds.WaitingPoint ||
+-                        row.StationKind == StationExclusivityKinds.FixedTaskStation),
++                       row.StationKind == StationExclusivityKinds.WaitingPoint,
+                 cancellationToken).ConfigureAwait(false);
+         // A STAGING_TO_WIRE-only vehicle's idle return holds its staging origin, a fixed task station (control-server#752): it
+         // is named by the active binding, not by the waiting point registration.
