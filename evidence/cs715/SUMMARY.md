@@ -20,6 +20,12 @@
   `Could not delete '...\NeverReleased.V2' after 10 attempts over 9 s: '...\NeverReleased.V2\held.bin' is still in use (The process cannot access the file ... because it is being used by another process.). Held by: pid 31288 (pwsh).`
 - `test-parallelinstance-summary.txt`：主自测 `Test-ParallelInstance.ps1` 1201/1201（基线 1199，多出的两条是新脚本的解析检查与调用）。
 
+## 审查（#762）之后
+
+按审查改了 S1（拒绝访问且查不到占用进程时报「可能是权限或属性问题」）、S2（出错条目不为空就写进主句，目录非空时列出剩余条目）、
+L1（停进程前先读 `.Handle` 钉住进程）、L4（README）。`green/directory-removal-after-review.txt` 新自测 24/24，
+`green/test-parallelinstance-summary-after-review.txt` 主自测 1201/1201。
+
 ## mutation/ —— 变异结果，每个文件含变异 diff 与完整输出
 
 | 变异 | 被杀的用例 |
@@ -31,6 +37,9 @@
 | m5 用尽后报错不写文件名 | 「用尽重试」红 |
 | m6 部署新假 MES 处去掉等待 | 该调用点源码顺序用例红 |
 | m7 退役处换回吞超时的 `Wait-Process` | 该调用点源码顺序用例红 |
+| m8（审查后）拒绝访问且无人占用仍报「仍被占用」 | 「权限或属性问题」措辞用例红 |
+| m9（审查后）出错条目不是现存文件时丢掉名字 | 删除挂起文件、目录非空两条红 |
+| m10（审查后）部署处去掉 `.Handle` 钉住 | 该调用点源码顺序用例红 |
 
 m1 下「安装器顺序（停进程→等退出→删）」那条仍绿：本机上等到进程退出后映像已解除映射，不需要重试。
 现场那次正是等完仍未解除，所以两层都要；这条用例证明的是等待这一层。
