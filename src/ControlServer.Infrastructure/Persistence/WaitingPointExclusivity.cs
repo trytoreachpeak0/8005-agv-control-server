@@ -21,6 +21,10 @@ public static class WaitingPointExclusivity
     /// 这趟旅程在 <c>(mapId, stationId)</c> 上的等待点独占，带跟踪；这一行不在、或不是这趟旅程的（被人工释放、之后被别的车取得，
     /// control-server#419）时为空。
     /// </summary>
+    /// <remarks>
+    /// 只做 <c>STAGING_TO_WIRE</c> 的车开回待送固定起点时，空闲返回持有的是那个公共站的 <c>FIXED_TASK_STATION</c> 预占（<c>REQ-0204</c>，
+    /// control-server#752），它与等待点一样由这一趟转占用、由离点清扫放。按旅程认行，所以搬运旅程的公共站独占不会被当成这里的行。
+    /// </remarks>
     public static async Task<StationExclusivityRow?> HeldByAsync(
         ControlServerDbContext dbContext,
         int mapId,
@@ -35,7 +39,10 @@ public static class WaitingPointExclusivity
         StationExclusivityRow? row = await dbContext.Set<StationExclusivityRow>()
             .SingleOrDefaultAsync(item => item.MapId == mapId && item.StationId == stationId, cancellationToken)
             .ConfigureAwait(false);
-        return row is { StationKind: StationExclusivityKinds.WaitingPoint } && row.JourneyId == journeyId ? row : null;
+        return row is { StationKind: StationExclusivityKinds.WaitingPoint or StationExclusivityKinds.FixedTaskStation } &&
+               row.JourneyId == journeyId
+            ? row
+            : null;
     }
 
     /// <summary>
