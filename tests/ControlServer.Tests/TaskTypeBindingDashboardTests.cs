@@ -68,6 +68,7 @@ public sealed class TaskTypeBindingDashboardTests
         Assert.Equal("关卡", rows[TransportTaskTypes.WireToGate].GetProperty("stationName").GetString());
         Assert.Equal("NOT_REQUIRED", rows[TransportTaskTypes.WireToOptical].GetProperty("status").GetString());
         Assert.False(rows[TransportTaskTypes.WireToOptical].GetProperty("required").GetBoolean());
+        Assert.Equal("NOT_REQUIRED", rows["WIRE_TO_FULL_INSPECTION"].GetProperty("status").GetString());
         Assert.True(rows[TransportTaskTypes.StagingToWire].GetProperty("required").GetBoolean());
 
         JsonElement staging = rows[TransportTaskTypes.StagingToWire];
@@ -130,7 +131,8 @@ public sealed class TaskTypeBindingDashboardTests
                 {"source":"MANUAL","sourceLabel":"看板人工","raisedAt":"2026-09-19T08:00:00+00:00","reason":"取货点被占用"},
                 {"source":"CATALOG_CHANGE","sourceLabel":"目录变化","raisedAt":"2026-09-19T08:01:00+00:00","reason":"站点改名"},
                 {"source":"ACTIVATION_RESULT_UNKNOWN","sourceLabel":"激活结果未知","raisedAt":"2026-09-19T08:02:00+00:00","reason":null}]},
-              {"taskType":"WIRE_TO_NITROGEN","required":false,"stationRiotId":null,"stationName":null,"status":"NOT_REQUIRED","holds":[]}
+              {"taskType":"WIRE_TO_NITROGEN","required":false,"stationRiotId":null,"stationName":null,"status":"NOT_REQUIRED","holds":[]},
+              {"taskType":"WIRE_TO_FULL_INSPECTION","required":false,"stationRiotId":null,"stationName":null,"status":"NOT_REQUIRED","holds":[]}
             ]}]}
             """);
 
@@ -148,7 +150,9 @@ public sealed class TaskTypeBindingDashboardTests
         Assert.Contains("取货点被占用", held, StringComparison.Ordinal);
         Assert.Contains("2026-09-19T08:01:00", held, StringComparison.Ordinal);
         Assert.Contains("不在本图需求集合", RowOf(html, "WIRE_TO_NITROGEN"), StringComparison.Ordinal);
-        foreach (string taskType in new[] { "WIRE_TO_GATE", "STAGING_TO_WIRE", "WIRE_TO_NITROGEN" })
+        // control-server#737: how Map 26 shows the seventh type until control-server#738 binds it.
+        Assert.Contains("不在本图需求集合", RowOf(html, "WIRE_TO_FULL_INSPECTION"), StringComparison.Ordinal);
+        foreach (string taskType in new[] { "WIRE_TO_GATE", "STAGING_TO_WIRE", "WIRE_TO_NITROGEN", "WIRE_TO_FULL_INSPECTION" })
         {
             Assert.Contains(
                 $"href=\"/actions/task-type-hold?mapId=25&amp;taskType={taskType}\"",
@@ -181,7 +185,7 @@ public sealed class TaskTypeBindingDashboardTests
 
     private static async Task<long> ActivateWithRequirementAsync(TaskTypeStationPersistenceFixture fixture)
     {
-        TaskTypeStationRuleVersion rules = (await fixture.Rules.WriteVersionAsync(SixRules, Source, Now.AddDays(-1), Token)).Version;
+        TaskTypeStationRuleVersion rules = (await fixture.Rules.WriteVersionAsync(SevenRules, Source, Now.AddDays(-1), Token)).Version;
         TaskTypeStationBinding[] bindings = [GateBinding, StagingBinding];
         TaskTypeStationBindingSetVersion written = (await fixture.Bindings.WriteVersionAsync(
             25,

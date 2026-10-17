@@ -1,0 +1,37 @@
+{"at":"2026-10-16T15:25:15.9119450+00:00","note":"L2 run 20261016T152515864Z starting for scenario 'same-direction-wire-to-full-inspection-journey'."}
+{"at":"2026-10-16T15:25:15.9753408+00:00","note":"L2 port block lock acquired (slot 0, Global\\W2G-L2PortBlock)."}
+{"at":"2026-10-16T15:25:15.9792450+00:00","note":"Building ControlServer and the test doubles."}
+{"at":"2026-10-16T15:25:47.4547162+00:00","criterion":"fake-riot-live","value":"live"}
+{"at":"2026-10-16T15:25:47.7036209+00:00","criterion":"fake-mes-live","value":"live"}
+{"at":"2026-10-16T15:25:47.8985926+00:00","note":"Fake RIoT stations on map 25: 11=C15-13, 12=N1-3_N1-7, 210=关卡, 405=全检区"}
+{"at":"2026-10-16T15:25:47.9459697+00:00","note":"Task type station preset: the scenario's own (2 binding(s))"}
+{"at":"2026-10-16T15:25:55.2475106+00:00","note":"Package capacity rules imported."}
+{"at":"2026-10-16T15:25:55.2495255+00:00","note":"No waiting point registration: a single-vehicle rig, or WaitingPoints = $false."}
+{"at":"2026-10-16T15:25:57.3627772+00:00","criterion":"control-server-live","value":"(null)"}
+{"at":"2026-10-16T15:25:58.7464730+00:00","criterion":"control-server-live","value":"live"}
+{"at":"2026-10-16T15:25:58.9217440+00:00","note":"Protocol release identity: protocol-v5.0.0 (profileId AGV_FULL_PRODUCT, protocolVersion 6, SUPERSEDING_CANDIDATE)."}
+{"at":"2026-10-16T15:25:59.7283254+00:00","criterion":"onboard-readiness","value":"DISCONNECTED"}
+{"at":"2026-10-16T15:26:00.0149512+00:00","criterion":"onboard-readiness","value":"READY"}
+{"at":"2026-10-16T15:26:00.1051245+00:00","criterion":"control-server-ready","value":"ready"}
+{"at":"2026-10-16T15:26:00.1832087+00:00","note":"FieldOps: seed-approved-facts --database C:\\Users\\szy\\AppData\\Local\\Temp\\l2-20261016T152515864Z\\controlserver.db"}
+{"at":"2026-10-16T15:26:04.6947771+00:00","criterion":"slot-model-preseed:seed-approved-facts","value":"OK","detail":{"output":{"command":"seed-approved-facts","outcome":"OK","modelKey":"8005-eight-slot","slotModelVersionId":"481e2cb6e0b5421797567019535f0eec","version":1,"slotCount":8}}}
+{"at":"2026-10-16T15:26:04.7031414+00:00","note":"FieldOps: bind-io --database C:\\Users\\szy\\AppData\\Local\\Temp\\l2-20261016T152515864Z\\controlserver.db --agv AGV-L2-001"}
+{"at":"2026-10-16T15:26:06.2145565+00:00","criterion":"slot-model-preseed:bind-io:AGV-L2-001","value":"OK","detail":{"output":{"command":"bind-io","outcome":"OK","agvId":"AGV-L2-001","slotModelVersionId":"481e2cb6e0b5421797567019535f0eec","boundSlots":8,"version":1}}}
+{"at":"2026-10-16T15:26:06.3536236+00:00","criterion":"slot-model-preseed:dispatch-zones","value":"0"}
+{"at":"2026-10-16T15:26:06.3659551+00:00","note":"FieldOps: import-area-assignments --database C:\\Users\\szy\\AppData\\Local\\Temp\\l2-20261016T152515864Z\\controlserver.db --input F:\\8005-scratch\\cs737-l2\\red\\same-direction-wire-to-full-inspection-journey\\snapshots\\preseed-area-assignments.csv"}
+{"at":"2026-10-16T15:26:07.9335175+00:00","criterion":"slot-model-preseed:import-area-assignments","value":"OK","detail":{"output":{"command":"import-area-assignments","outcome":"OK","dryRun":false,"input":"F:\\8005-scratch\\cs737-l2\\red\\same-direction-wire-to-full-inspection-journey\\snapshots\\preseed-area-assignments.csv","entryCount":2,"version":1,"contentSha256":"04efbe7b636d311420caf517f8af22cd0a39d4e17d2976caf9251637eecc0556","snapshotId":"600bf87700d24aa48b78e0d104d58c00","importedAt":"2026-10-16T23:26:06.5651931+08:00","errorCount":0,"errors":[],"preview":[]}}}
+{"at":"2026-10-16T15:26:07.9581631+00:00","note":"FieldOps: import-charging-policy --database C:\\Users\\szy\\AppData\\Local\\Temp\\l2-20261016T152515864Z\\controlserver.db --input F:\\8005-scratch\\cs737-l2\\red\\same-direction-wire-to-full-inspection-journey\\snapshots\\preseed-charging-policy.json --fleet BROKERX-L2-0001"}
+{"at":"2026-10-16T15:26:09.4426876+00:00","note":"FieldOps: approve-charging-policy --database C:\\Users\\szy\\AppData\\Local\\Temp\\l2-20261016T152515864Z\\controlserver.db --version 1 --approved-by L2 orchestrator --role L2_PRESET --basis scripts/l2/L2ChargingPolicy.psm1 --source L2_PRESET"}
+{"at":"2026-10-16T15:26:11.3454445+00:00","note":"FieldOps: activate-charging-policy --database C:\\Users\\szy\\AppData\\Local\\Temp\\l2-20261016T152515864Z\\controlserver.db --version 1 --activated-by L2 orchestrator --fleet BROKERX-L2-0001 --allow-non-field-approval"}
+{"at":"2026-10-16T15:26:13.1763970+00:00","criterion":"preseed:charging-policy","value":"OK","detail":{"coveredAfter":["BROKERX-L2-0001"],"version":1,"source":"L2_PRESET","withoutPolicy":[]}}
+{"at":"2026-10-16T15:26:13.1770525+00:00","note":"Per-zone dispatch parameters left unconfigured (the default precondition)."}
+{"at":"2026-10-16T15:26:13.2074910+00:00","note":"Environment is up; entering scenario 'same-direction-wire-to-full-inspection-journey'."}
+{"at":"2026-10-16T15:26:13.4347932+00:00","note":"FieldOps: area-assignments --database C:\\Users\\szy\\AppData\\Local\\Temp\\l2-20261016T152515864Z\\controlserver.db"}
+{"at":"2026-10-16T15:26:15.7455178+00:00","note":"Vehicle AGV-L2-001 slot model 481e2cb6e0b5421797567019535f0eec via LatestPublishedIoBinding: 1=FRONT, 2=FRONT, 3=FRONT, 4=FRONT, 5=REAR, 6=REAR, 7=REAR, 8=REAR"}
+{"at":"2026-10-16T15:26:15.7563392+00:00","note":"Publishing WIRE_TO_FULL_INSPECTION demand b15ad053462345aab48dc22ee4efeb19 (sublot L2-SDJ-N1-3-20261016T152515864Z, AREA N1-3, 2 baskets)."}
+{"at":"2026-10-16T15:26:15.9168772+00:00","criterion":"L2-SDJ-WFI-REAR-admission","value":"@{Stage=; WorkType=; ReasonCode=}"}
+{"at":"2026-10-16T15:26:16.7206468+00:00","criterion":"L2-SDJ-WFI-REAR-admission","value":"@{Stage=; WorkType=; ReasonCode=TASK_TYPE_NOT_YET_EXECUTABLE}"}
+{"at":"2026-10-16T15:27:45.8828665+00:00","note":"Not reached: Timed out after 90s waiting for: the WIRE_TO_FULL_INSPECTION demand (N1-3) was accepted and dispatched to the machine station. Last observed: {\"Stage\":null,\"WorkType\":null,\"ReasonCode\":\"TASK_TYPE_NOT_YET_EXECUTABLE\"}"}
+{"at":"2026-10-16T15:27:45.8914027+00:00","note":"Run failed: L2-SDJ-WFI-REAR-01 did not hold: the WIRE_TO_FULL_INSPECTION demand (N1-3) was not accepted (backlog reason 'TASK_TYPE_NOT_YET_EXECUTABLE'); every later criterion needs its journey."}
+{"at":"2026-10-16T15:27:45.9039950+00:00","note":"Failure at: at Test-L2SameDirectionDemand, F:\\8005-wt\\fti-737-8005-agv-control-server\\scripts\\l2\\scenarios\\SameDirectionJourneyCommon.ps1: line 130\r\nat Invoke-L2SameDirectionJourneyScenario, F:\\8005-wt\\fti-737-8005-agv-control-server\\scripts\\l2\\scenarios\\SameDirectionJourneyCommon.ps1: line 238\r\nat <ScriptBlock>, F:\\8005-wt\\fti-737-8005-agv-control-server\\scripts\\l2\\scenarios\\same-direction-wire-to-full-inspection-journey.ps1: line 22\r\nat <ScriptBlock>, F:\\8005-wt\\fti-737-8005-agv-control-server\\scripts\\l2\\Invoke-L2Scenario.ps1: line 1490"}
+{"at":"2026-10-16T15:27:46.2901917+00:00","note":"L2 port block lock released."}

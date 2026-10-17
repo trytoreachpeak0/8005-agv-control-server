@@ -1,0 +1,44 @@
+  FAIL  cutover switch: each shipped cutover definition is accepted with -ProductionCutover once an approval record is written in, and with the switch but no record the two guards still fire beside CUTOVER_SWITCH_WITHOUT_RECORD (control-server#564)
+  FAIL  cutover trial stages: each stage definition carries the 2026-10-13 approval (phase trial), is accepted with -ProductionCutover, refused with CUTOVER_RECORD_WITHOUT_SWITCH without it, and holds its stage roster and zones (control-server#564 step 7a)
+  FAIL  cutover production stages: each stage definition carries the 2026-10-14 approval (phase production) and the release entries on, is accepted with -ProductionCutover, refused with CUTOVER_RECORD_WITHOUT_SWITCH without it, deploys the slot gate Enforcing, keeps the 5-minute departure and holding waits, leaves stationTimeoutRedispatchLimit to the package default, and holds its stage roster and zones (control-server#564 step 18a)
+  FAIL  cutover on: three dedicated cars, two zones, the seven types, production source, with record -- accepted
+  FAIL  cutover on: Assert- accepts it and returns it
+  FAIL  cutover on: stage S2 (agv02 and agv01) -- accepted
+  FAIL  cutover on: the seven types in another order -- accepted (a set; the read-back compares the definition's own order)
+  FAIL  cutover on: onboardPort 58005 (the MVP transport) is refused exactly as with the switch off
+  FAIL  cutover on: healthPort 58007 (the MVP health binding) is refused exactly as with the switch off
+  FAIL  cutover on: dashboardPort 58009 (the MVP dashboard) is refused exactly as with the switch off
+  FAIL  cutover on: serviceName of the MVP is refused exactly as with the switch off
+  FAIL  cutover on: installRoot of the MVP is refused exactly as with the switch off
+  FAIL  cutover on: dataRoot of the MVP is refused exactly as with the switch off
+  FAIL  cutover on: packageRoot of the MVP is refused exactly as with the switch off
+  FAIL  cutover on: journeyRuntime.mapId 25 (the MVP map) is refused exactly as with the switch off
+  FAIL  cutover on: journeyRuntime.mapIdentity of the MVP map is refused exactly as with the switch off
+  FAIL  cutover on: a MAP-25 deployment label is refused exactly as with the switch off
+  FAIL  cutover on: riotCreateDispatch open without -AllowRiotCreateDispatch is refused exactly as with the switch off
+  FAIL  cutover on: mesIngest.baseUrl not the production MesIngest is refused exactly as with the switch off
+  FAIL  cutover on: a fakeMesIngest beside the production source is refused exactly as with the switch off
+  FAIL  cutover on: a car outside the registry is refused, listing the three registry cars
+  FAIL  cutover on: agv01 is checked on all four coordinates -- its riotId as 59 is refused
+  FAIL  cutover on: agv01's key with agv02's name is refused
+  FAIL  cutover on: agv01 twice is refused
+  FAIL  cutover on: allowedWorkTypes left out is refused as not the full set
+  FAIL  cutover on: two cars sharing a task type is refused (one car per type)
+  FAIL  cutover dedicated split: S2: agv01 with its three types before control-server#737 (WIRE_TO_FULL_INSPECTION left out) -> CUTOVER_VEHICLE_TASK_TYPES_MISMATCH
+  FAIL  cutover dedicated split: each car with exactly its types, in another order -- accepted
+  FAIL  cutover on: a fake MesIngest source is refused (no cutover without the production catalog)
+  FAIL  cutover misuse: an empty approvalRecord is refused
+  FAIL  cutover misuse: approvalRecord left out is refused
+  FAIL  cutover misuse: approvalRecord as a JSON boolean is refused
+  FAIL  cutover misuse: productionCutover as a JSON boolean is refused
+  FAIL  cutover misuse: an unknown key beside the record is refused
+  FAIL  cutover misuse: phase left out (review S3) is refused
+  FAIL  cutover misuse: phase "Trial" (not exactly lower case) is refused
+  FAIL  cutover misuse: phase "pilot" is refused
+  FAIL  cutover installed: uninstall and closing the gate accept the installed cutover definition (switch from its record)
+  FAIL  cutover installed: Get-ParallelRetiredFakeMesIngest with a cutover as the previous install does not throw and retires nothing
+  FAIL  release: a production-phase cutover definition with the entry on is accepted
+  FAIL  release: a production-phase cutover definition without the section is refused, naming the plan step
+  FAIL  release: a production-phase cutover definition with the entry off is refused, naming the plan step
+  FAIL  release: a trial-phase cutover definition without the section is accepted (the trial stages ship without it)
+1160 passed, 43 failed

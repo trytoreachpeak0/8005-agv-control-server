@@ -11,7 +11,7 @@ public sealed class TaskTypeStationConfigurationValidatorTests
     private const int Map = 25;
 
 
-    private static readonly TaskTypeStationRule[] SixRules =
+    private static readonly TaskTypeStationRule[] SevenRules =
     [
         new(TransportTaskTypes.DieToWireStaging, TaskTypeFixedEnd.Destination),
         new(TransportTaskTypes.DieToOven, TaskTypeFixedEnd.Destination),
@@ -19,6 +19,8 @@ public sealed class TaskTypeStationConfigurationValidatorTests
         new(TransportTaskTypes.WireToOptical, TaskTypeFixedEnd.Destination),
         new(TransportTaskTypes.StagingToWire, TaskTypeFixedEnd.Origin),
         new(TransportTaskTypes.WireToNitrogen, TaskTypeFixedEnd.Destination),
+        // control-server#737: the seventh, written as its literal so the test data does not follow TransportTaskTypes.
+        new("WIRE_TO_FULL_INSPECTION", TaskTypeFixedEnd.Destination),
     ];
 
     private static readonly TaskTypeStationBinding GateBinding =
@@ -33,7 +35,7 @@ public sealed class TaskTypeStationConfigurationValidatorTests
         IReadOnlyList<TaskTypeStationBinding>? bindings = null,
         int mapId = Map) =>
         new(
-            rules ?? SixRules,
+            rules ?? SevenRules,
             new TaskTypeStationMapConfiguration(
                 mapId,
                 required ?? [TransportTaskTypes.WireToGate],
@@ -49,21 +51,22 @@ public sealed class TaskTypeStationConfigurationValidatorTests
     }
 
     [Fact]
-    public void ARuleForATaskTypeThatIsNotOneOfTheSixMesLiteralsRefusesStart()
+    public void ARuleForATaskTypeThatIsNotOneOfTheSevenMesLiteralsRefusesStart()
     {
         IReadOnlyList<TaskTypeStationViolation> violations =
-            Validate(Configuration(rules: [.. SixRules, new("WIRE_TO_MOON", TaskTypeFixedEnd.Destination)]));
+            Validate(Configuration(rules: [.. SevenRules, new("WIRE_TO_MOON", TaskTypeFixedEnd.Destination)]));
 
         TaskTypeStationViolation violation = Assert.Single(violations);
         Assert.Equal(TaskTypeStationReasonCodes.RuleUnknownTaskType, violation.ReasonCode);
         Assert.Equal("WIRE_TO_MOON", violation.TaskType);
+        Assert.Contains("not one of the seven MES literals", violation.Detail, StringComparison.Ordinal);
     }
 
     [Fact]
     public void TwoRulesForTheSameTaskTypeRefuseStart()
     {
         IReadOnlyList<TaskTypeStationViolation> violations = Validate(Configuration(
-            rules: [.. SixRules, new(TransportTaskTypes.WireToGate, TaskTypeFixedEnd.Destination)]));
+            rules: [.. SevenRules, new(TransportTaskTypes.WireToGate, TaskTypeFixedEnd.Destination)]));
 
         TaskTypeStationViolation violation = Assert.Single(violations);
         Assert.Equal(TaskTypeStationReasonCodes.RuleDuplicate, violation.ReasonCode);
@@ -77,7 +80,7 @@ public sealed class TaskTypeStationConfigurationValidatorTests
     public void AFixedEndThatIsNeitherOriginNorDestinationRefusesStart(string fixedEnd)
     {
         IReadOnlyList<TaskTypeStationViolation> violations = Validate(Configuration(
-            rules: [.. SixRules.Where(rule => rule.TaskType != TransportTaskTypes.WireToGate),
+            rules: [.. SevenRules.Where(rule => rule.TaskType != TransportTaskTypes.WireToGate),
                 new(TransportTaskTypes.WireToGate, fixedEnd)]));
 
         TaskTypeStationViolation violation = Assert.Single(violations);
@@ -89,7 +92,7 @@ public sealed class TaskTypeStationConfigurationValidatorTests
     public void ATaskTypeInTheRequirementSetWithoutARuleRefusesStart()
     {
         IReadOnlyList<TaskTypeStationViolation> violations = Validate(Configuration(
-            rules: [.. SixRules.Where(rule => rule.TaskType != TransportTaskTypes.StagingToWire)],
+            rules: [.. SevenRules.Where(rule => rule.TaskType != TransportTaskTypes.StagingToWire)],
             required: [TransportTaskTypes.WireToGate, TransportTaskTypes.StagingToWire],
             bindings: [GateBinding, StagingBinding]));
 
@@ -103,7 +106,7 @@ public sealed class TaskTypeStationConfigurationValidatorTests
     public void ABindingForATaskTypeWithoutARuleRefusesStartEvenWhenTheTaskTypeIsNotRequired()
     {
         IReadOnlyList<TaskTypeStationViolation> violations = Validate(Configuration(
-            rules: [.. SixRules.Where(rule => rule.TaskType != TransportTaskTypes.StagingToWire)],
+            rules: [.. SevenRules.Where(rule => rule.TaskType != TransportTaskTypes.StagingToWire)],
             bindings: [GateBinding, StagingBinding]));
 
         TaskTypeStationViolation violation = Assert.Single(violations);
@@ -260,7 +263,7 @@ public sealed class TaskTypeStationConfigurationValidatorTests
     public void EveryViolationIsListedInOnePassNotJustTheFirst()
     {
         IReadOnlyList<TaskTypeStationViolation> violations = Validate(Configuration(
-            rules: [.. SixRules, new("WIRE_TO_MOON", TaskTypeFixedEnd.Destination)],
+            rules: [.. SevenRules, new("WIRE_TO_MOON", TaskTypeFixedEnd.Destination)],
             required: [TransportTaskTypes.WireToGate, TransportTaskTypes.WireToOptical],
             bindings:
             [

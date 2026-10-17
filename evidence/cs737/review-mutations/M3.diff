@@ -1,0 +1,13 @@
+diff --git a/scripts/parallel/ParallelInstance.psm1 b/scripts/parallel/ParallelInstance.psm1
+index 3b2ffdccb..871566b96 100644
+--- a/scripts/parallel/ParallelInstance.psm1
++++ b/scripts/parallel/ParallelInstance.psm1
+@@ -168,7 +168,7 @@ $script:ProductionVehicle = [pscustomobject]@{
+     decisions 1 and 9, 2026-10-16): agv01 takes WIRE_TO_FULL_INSPECTION too, four types; the other two cars are unchanged.
+ #>
+ $script:CutoverDedicatedTaskTypes = @{
+-    'BROKERX-0c20ff0600d644869a6a80c186065d85' = @('WIRE_TO_GATE', 'WIRE_TO_OPTICAL', 'WIRE_TO_NITROGEN', 'WIRE_TO_FULL_INSPECTION')
++    'BROKERX-0c20ff0600d644869a6a80c186065d85' = @('WIRE_TO_GATE', 'WIRE_TO_OPTICAL', 'WIRE_TO_NITROGEN')
+     'BROKERX-f38975561adf46ccb1d2f23833c7d0e4' = @('STAGING_TO_WIRE')
+     'BROKERX-7daca4ee91da498d8026c68b7b941127' = @('DIE_TO_OVEN', 'DIE_TO_WIRE_STAGING')
+ }

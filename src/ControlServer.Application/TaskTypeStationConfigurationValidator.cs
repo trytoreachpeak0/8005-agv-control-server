@@ -111,7 +111,7 @@ public static class TaskTypeStationConfigurationValidator
                     TaskTypeStationReasonCodes.RuleUnknownTaskType,
                     rule.TaskType,
                     null,
-                    Invariant($"Rule task type '{rule.TaskType}' is not one of the six MES literals ({string.Join(", ", TransportTaskTypes.All)}).")));
+                    Invariant($"Rule task type '{rule.TaskType}' is not one of the seven MES literals ({string.Join(", ", TransportTaskTypes.All)}).")));
             }
             if (rule.FixedEnd is not (TaskTypeFixedEnd.Origin or TaskTypeFixedEnd.Destination))
             {

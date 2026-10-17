@@ -18,9 +18,9 @@ public sealed class DemandTaskTypeStationFreezeTests
         params IInterceptor[] interceptors)
     {
         TaskTypeStationPersistenceFixture fixture = await TaskTypeStationPersistenceFixture.CreateAsync(interceptors);
-        await fixture.Rules.WriteVersionAsync(SixRules, Source, Now, Token);
+        await fixture.Rules.WriteVersionAsync(SevenRules, Source, Now, Token);
         await fixture.Rules.WriteVersionAsync(
-            [.. SixRules.Where(rule => rule.TaskType != TransportTaskTypes.DieToOven)], Source, Now, Token);
+            [.. SevenRules.Where(rule => rule.TaskType != TransportTaskTypes.DieToOven)], Source, Now, Token);
         await fixture.Bindings.WriteVersionAsync(25, 1, [TransportTaskTypes.WireToGate], [GateBinding], null, Source, Now, Token);
         await fixture.Bindings.WriteVersionAsync(25, 2, [TransportTaskTypes.WireToGate], [GateBinding], null, Source, Now, Token);
         // Map 25 version 3 goes back to rule version 1 with a different binding, so "same rules, other binding set" exists.

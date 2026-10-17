@@ -54,6 +54,7 @@ public sealed class BoundFixedTaskStationResolverTests
     [Trait("IntegrationSlice", "FP-IS-10")]
     [InlineData("no-active-set")]
     [InlineData("not-required")]
+    [InlineData("bound-but-not-required")]
     [InlineData("required-but-unbound")]
     public async Task ATaskTypeWithoutAnEffectiveBindingIsRefusedAndNeverFallsBackToADefaultStation(string shape)
     {
@@ -61,11 +62,16 @@ public sealed class BoundFixedTaskStationResolverTests
         switch (shape)
         {
             case "no-active-set":
-                await fixture.Rules.WriteVersionAsync(SixRules, Source, Now, Token);
+                await fixture.Rules.WriteVersionAsync(SevenRules, Source, Now, Token);
                 fixture.Context.ChangeTracker.Clear();
                 break;
             case "not-required":
                 await ActivateAsync(fixture, [TransportTaskTypes.StagingToWire], [StagingBinding]);
+                break;
+            case "bound-but-not-required":
+                // control-server#737 review phase 2, item 3: the binding to 210 is in the active set, so only the
+                // requirement set keeps it out.
+                await ActivateAsync(fixture, [TransportTaskTypes.StagingToWire], [StagingBinding, GateBinding]);
                 break;
             default:
                 // No validated path writes a set that requires a task type it does not bind: since control-server#161
@@ -224,7 +230,7 @@ public sealed class BoundFixedTaskStationResolverTests
         IReadOnlyList<TaskTypeStationBinding> bindings,
         int mapId = 25)
     {
-        TaskTypeStationRuleVersion rules = (await fixture.Rules.WriteVersionAsync(SixRules, Source, Now, Token)).Version;
+        TaskTypeStationRuleVersion rules = (await fixture.Rules.WriteVersionAsync(SevenRules, Source, Now, Token)).Version;
         TaskTypeStationBindingSetVersion set = (await fixture.Bindings.WriteVersionAsync(
             mapId, rules.Version, required, bindings, null, Source, Now, Token)).Version;
         await fixture.Bindings.SetActiveAsync(mapId, set.Version, Now, Token);

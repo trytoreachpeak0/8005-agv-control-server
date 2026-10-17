@@ -504,7 +504,7 @@ public sealed class IdleReturnCommitmentTests
                 harness.Configure(VehicleA, TransportTaskTypes.StagingToWire, TransportTaskTypes.WireToGate);
                 break;
             case "wire-only-at-origin":
-                harness.Configure(VehicleA, TransportTaskTypes.WireToGate, TransportTaskTypes.WireToOptical, TransportTaskTypes.WireToNitrogen);
+                harness.Configure(VehicleA, TransportTaskTypes.WireToGate, TransportTaskTypes.WireToOptical, TransportTaskTypes.WireToNitrogen, "WIRE_TO_FULL_INSPECTION");
                 break;
             case "not-configured-at-origin":
                 harness.Configure(VehicleB, TransportTaskTypes.StagingToWire);

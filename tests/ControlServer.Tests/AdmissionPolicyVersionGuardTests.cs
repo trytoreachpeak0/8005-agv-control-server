@@ -43,6 +43,17 @@ public sealed class AdmissionPolicyVersionGuardTests
 
         /// <summary>The instance was installed into a new database under an override; nothing in the seed changed.</summary>
         NewDatabaseOverride,
+
+        /// <summary>
+        /// A binding set built on a newer rule version was activated on the instance: the seed is read from the rules the
+        /// active binding set was built on, so it changed although the build's executable set did not
+        /// (control-server#737 review item 2). On a database that existed before control-server#737 the seventh type has
+        /// a rule only in a version written at startup and no active binding set built on it, so the version 7 seed is
+        /// still six types; the activation that binds the full-inspection station (control-server#738) brings the seventh
+        /// in and must add the row of this kind -- otherwise the store refuses the seed and the fleet takes on no demand
+        /// (<c>TaskTypeAdmissionRuntimeTests.OnAnExistingDatabaseTheSeventhTypeEntersTheSeedOnlyWithTheActivationWhichMustRaiseTheVersion</c>).
+        /// </summary>
+        RuleVersionActivated,
     }
 
     /// <summary>
@@ -67,6 +78,10 @@ public sealed class AdmissionPolicyVersionGuardTests
             "2026-10-12: map 26 re-uploaded and finalised at 21:12, 78 machine stations (T08-11 renamed T8-11 among " +
             "others); set by hand for the finalised map. Whether the database bound 6, and to which content, is read on " +
             "factory01 before the reinstall (control-server#614 review M1)"),
+        (7, BumpKind.ExecutableSet,
+            ["WIRE_TO_GATE", "STAGING_TO_WIRE", "DIE_TO_WIRE_STAGING", "DIE_TO_OVEN", "WIRE_TO_OPTICAL", "WIRE_TO_NITROGEN",
+                "WIRE_TO_FULL_INSPECTION"],
+            "control-server#737: the seventh task type WIRE_TO_FULL_INSPECTION (protocol 5.0.0 candidate, protocol#21)"),
     ];
 
     /// <summary>
@@ -144,6 +159,31 @@ public sealed class AdmissionPolicyVersionGuardTests
             $"{Describe(undecided)} is a protocol task type that is neither in ExecutableTaskTypes nor in this test's " +
             "DeliberatelyNotExecutable list. Decide: list it here (it is refused as TASK_TYPE_NOT_YET_EXECUTABLE), or make " +
             "it executable, which is a new last row of the history and a version bump.");
+    }
+
+    /// <summary>
+    /// <see cref="TransportTaskTypes.All"/> is the vendored protocol's <c>TransportTaskType</c>, value for value.
+    /// </summary>
+    /// <remarks>
+    /// The test above reads "the protocol's task types" off <see cref="TransportTaskTypes.All"/>, a hand-kept list; until
+    /// control-server#737 nothing compared it with the schema, so a re-vendor that appended a value to the closed enum
+    /// (protocol 5.0.0 appended <c>WIRE_TO_FULL_INSPECTION</c>) would leave the list -- and the decision the test above
+    /// asks for -- silently behind. The vendored schema is pinned by
+    /// <c>ProtocolPayloadShapeArchitectureTests.ApprovedSchemaTreeSha256</c>, so this closes the chain.
+    /// </remarks>
+    [Fact]
+    [Trait("IntegrationSlice", "FP-IS-10")]
+    public void TheTaskTypeLiteralsAreTheVendoredTransportTaskTypeEnumeration()
+    {
+        using JsonDocument types = JsonDocument.Parse(File.ReadAllBytes(Path.Combine(
+            FindRepositoryRoot(), "vendor", "8005-agv-protocol", "schemas", "common", "types.schema.json")));
+        string[] vendored =
+        [
+            .. types.RootElement.GetProperty("$defs").GetProperty("TransportTaskType").GetProperty("enum")
+                .EnumerateArray().Select(taskType => taskType.GetString()!)
+        ];
+
+        Assert.Equal(vendored, TransportTaskTypes.All);
     }
 
     [Fact]

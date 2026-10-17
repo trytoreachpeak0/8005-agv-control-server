@@ -32,6 +32,8 @@ public sealed class SameDirectionTaskTypeJourneyRuntimeTests
         TransportTaskTypes.DieToOven,
         TransportTaskTypes.WireToOptical,
         TransportTaskTypes.WireToNitrogen,
+        // control-server#737: the seventh, a same-direction type to a public area like WIRE_TO_OPTICAL.
+        "WIRE_TO_FULL_INSPECTION",
     ];
 
     /// <summary>

@@ -502,6 +502,12 @@ jobs:
               @{ Name = 'same-direction-mixed-load-multi-drop'; Runs = 3; BatchId = 'batch-10' }
               @{ Name = 'same-direction-wire-to-nitrogen-journey'; Runs = 3; BatchId = 'batch-10' }
               @{ Name = 'same-direction-wire-to-optical-journey'; Runs = 3; BatchId = 'batch-10' }
+              # program#195, control-server#737: the seventh task type WIRE_TO_FULL_INSPECTION, on a simulated station (the
+              # full-inspection station is not on Map 26 yet) -- bound, it loads at the AREA machine and unloads at its
+              # station; and agv01's four types in one journey by appends while stopped, the seventh joining at the last
+              # pickup station while the vehicle holds cargo there, unloading at four drop-offs in turn.
+              @{ Name = 'same-direction-wire-to-full-inspection-journey'; Runs = 3; BatchId = 'wire-to-full-inspection' }
+              @{ Name = 'same-direction-four-type-mixed-load-multi-drop'; Runs = 3; BatchId = 'wire-to-full-inspection' }
           )
           # One run's usual length in seconds, for dealing scenarios out to lanes longest first. Measured, not
           # remembered: scripts/l2/Get-L2LaneEstimates.ps1 reads them out of past rounds' logs, and its -AsJson

@@ -34,6 +34,7 @@ public sealed class Batch7TaskPriorityOrderingTests
         TransportTaskTypes.WireToGate,
         TransportTaskTypes.DieToWireStaging,
         TransportTaskTypes.DieToOven,
+        "WIRE_TO_FULL_INSPECTION",
     ];
 
     // ---- 优先级带 ------------------------------------------------------------------------------------

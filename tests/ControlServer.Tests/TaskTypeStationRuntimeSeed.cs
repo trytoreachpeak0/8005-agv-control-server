@@ -34,7 +34,7 @@ internal static class TaskTypeStationRuntimeSeed
         await using ControlServerDbContext context = new(options);
         TaskTypeStationAccess access = Access(context);
         TaskTypeStationRuleVersion rules = (await access.Rules.WriteVersionAsync(
-            TaskTypeStationTestData.SixRules, "preset:test", at, TestContext.Current.CancellationToken)).Version;
+            TaskTypeStationTestData.SevenRules, "preset:test", at, TestContext.Current.CancellationToken)).Version;
         TaskTypeStationBindingSetVersion set = (await access.Bindings.WriteVersionAsync(
             mapId,
             rules.Version,

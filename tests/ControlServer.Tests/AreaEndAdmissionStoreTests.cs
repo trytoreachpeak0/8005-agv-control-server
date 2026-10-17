@@ -423,7 +423,7 @@ public sealed class AreaEndAdmissionStoreTests
     private static async Task<TaskTypeStationPersistenceFixture> WithFrozenReverseDemandAsync()
     {
         TaskTypeStationPersistenceFixture fixture = await TaskTypeStationPersistenceFixture.CreateAsync();
-        await fixture.Rules.WriteVersionAsync(SixRules, Source, Now, Token);
+        await fixture.Rules.WriteVersionAsync(SevenRules, Source, Now, Token);
         await fixture.Bindings.WriteVersionAsync(
             25, 1, [TransportTaskTypes.WireToGate, TransportTaskTypes.StagingToWire], [GateBinding, StagingBinding],
             null, Source, Now, Token);

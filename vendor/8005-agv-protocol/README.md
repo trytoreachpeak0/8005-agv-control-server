@@ -37,16 +37,22 @@ manifest 里的 `schemaBundleSha256`**——后者由协议仓自己的打包算
 | 项 | 值 |
 | --- | --- |
 | 来源仓库 | `8005-agv-protocol` |
-| 来源提交 | `3fb214e57d861a909d872511940d26133eb32dca`（tag `protocol-v4.0.0`） |
-| 取用日期 | 2026-10-15 |
+| 来源提交 | `4e9f3df8fb1733311e1ce534c1129cfb904760a4`（protocol#22 合入 `fp/v2-candidate` 的合并提交，树与候选 `9d791578` 逐字节相同；无 tag） |
+| 取用日期 | 2026-10-16 |
 
 | 来源路径 | 内容 |
 | --- | --- |
-| `integration-slices/index.json` | `schemaVersion 2.0.0`、16 条切片（`FP-IS-00`～`15`）、`vectorIds` 条目 53、去重 50 |
-| `manifest/release.json` | `status CONTENT_SNAPSHOT`、`releaseVersion 4.0.0`、`protocolVersion 5`、`profileId AGV_FULL_PRODUCT`、67 条消息、11 条 denylist |
-| `schemas/`（整棵树） | 73 个文件，`$id` 段 `agv-full-product/v5` |
+| `integration-slices/index.json` | `schemaVersion 2.0.0`、16 条切片（`FP-IS-00`～`15`）、`vectorIds` 条目 53、去重 50（与 v4 逐字节相同） |
+| `manifest/release.json` | `status CONTENT_SNAPSHOT`、`releaseVersion 5.0.0`、`protocolVersion 6`、`profileId AGV_FULL_PRODUCT`、67 条消息、11 条 denylist |
+| `schemas/`（整棵树） | 73 个文件，`$id` 段 `agv-full-product/v6` |
 
-那个提交即协议 `protocol-v4.0.0` 的发布内容（`ApprovalStatus APPROVED_RELEASE`）：2026-10-16 用注释 tag
+2026-10-16 由 `8005-agv-control-server#737` 刷新到 `9d791578`，10-17 protocol#22 合入后改钉合并提交 `4e9f3df8`（树相同，manifest 仍是 `743b886d…`，照 v4 钉合并提交 `3fb214e5` 的先例；`ApprovalStatus SUPERSEDING_CANDIDATE`，tag `protocol-v5.0.0` 尚不存在）：protocol#21 在闭合枚举
+`TransportTaskType` 末尾追加 `WIRE_TO_FULL_INSPECTION`（焊线/键合机台送全检区），其余只换身份；闭合枚举追加值是破坏性改动，所以升大版本，
+两端必须与车载端 `8005-agv-onboard-hmi#360` 同包换装。错误码表、向量（`vectorsSha256 24cc3a5e…`）与 `index.json` 不变。三份文件从该提交的
+对象里用 `git archive` 导出（不经协议仓工作树，避免行尾转换），逐个与 manifest 自带的文件表 SHA-256 核对一致
+（73 个 schema 与 `index.json`，74 项全部命中）后整份拷入，manifest SHA-256 为 `743b886d…`，与调度转来的值一致。在它上面跑出的 G2／L2 证据一律是 `UNRELEASED_CANDIDATE`。
+
+再早一份是 `3fb214e5`（tag `protocol-v4.0.0`，10-15 取用）：2026-10-16 用注释 tag
 `protocol-v4.0.0`（tag 对象 `daeebc5c`，解引用到 `3fb214e5`）发布**同一个提交**——manifest 与候选逐字节相同，批准只以
 外置 attestation（Release asset `release-approval.json`，SHA-256 `68f3516e…`）给出，追踪票 `8005-agv-program#184`；
 发布后服务端没有重新 vendor，只由 `8005-agv-control-server#735` 改批准状态。内容上，protocol#14 加了

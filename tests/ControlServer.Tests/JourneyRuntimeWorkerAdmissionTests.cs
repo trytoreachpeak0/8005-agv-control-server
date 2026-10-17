@@ -945,8 +945,9 @@ public sealed class JourneyRuntimeWorkerAdmissionTests
         string drift = Assert.Single(DriftLogs(fixture));
         Assert.Contains(
             "executable task types changed under bound version 1 (bound: STAGING_TO_WIRE, WIRE_TO_GATE; " +
-            "this build seeds: DIE_TO_OVEN, DIE_TO_WIRE_STAGING, STAGING_TO_WIRE, WIRE_TO_GATE, WIRE_TO_NITROGEN, " +
-            "WIRE_TO_OPTICAL; added: DIE_TO_OVEN, DIE_TO_WIRE_STAGING, WIRE_TO_NITROGEN, WIRE_TO_OPTICAL; removed: none)",
+            "this build seeds: DIE_TO_OVEN, DIE_TO_WIRE_STAGING, STAGING_TO_WIRE, WIRE_TO_FULL_INSPECTION, WIRE_TO_GATE, " +
+            "WIRE_TO_NITROGEN, WIRE_TO_OPTICAL; added: DIE_TO_OVEN, DIE_TO_WIRE_STAGING, WIRE_TO_FULL_INSPECTION, " +
+            "WIRE_TO_NITROGEN, WIRE_TO_OPTICAL; removed: none)",
             drift,
             StringComparison.Ordinal);
         Assert.DoesNotContain("stations changed", drift, StringComparison.Ordinal);
@@ -1090,16 +1091,16 @@ public sealed class JourneyRuntimeWorkerAdmissionTests
         // Same stations, same task types, same deployment identity, same version -- but one pairing missing, which no
         // build of this server seeds and no set comparison shows. The log says the cause was not found, never "none".
         await using RuntimeFixture fixture = await RuntimeFixture.CreateAsync();
-        string[] sixTypes =
+        string[] sevenTypes =
         [
             TransportTaskTypes.DieToOven, TransportTaskTypes.DieToWireStaging, TransportTaskTypes.StagingToWire,
-            TransportTaskTypes.WireToGate, TransportTaskTypes.WireToNitrogen, TransportTaskTypes.WireToOptical,
+            "WIRE_TO_FULL_INSPECTION", TransportTaskTypes.WireToGate, TransportTaskTypes.WireToNitrogen, TransportTaskTypes.WireToOptical,
         ];
         await BindUnderVersionOneAsync(
             fixture,
             [
-                .. sixTypes.Select(taskType => new StationTaskTypeAdmission("N1-1", taskType)),
-                .. sixTypes.Where(taskType => taskType != TransportTaskTypes.WireToOptical)
+                .. sevenTypes.Select(taskType => new StationTaskTypeAdmission("N1-1", taskType)),
+                .. sevenTypes.Where(taskType => taskType != TransportTaskTypes.WireToOptical)
                     .Select(taskType => new StationTaskTypeAdmission("N1-2_N1-3", taskType)),
             ]);
 

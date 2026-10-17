@@ -25,13 +25,14 @@
 
 Set-StrictMode -Version Latest
 
-$script:SixRules = @(
+$script:SevenRules = @(
     [ordered]@{ taskType = 'DIE_TO_WIRE_STAGING'; fixedEnd = 'DESTINATION' }
     [ordered]@{ taskType = 'DIE_TO_OVEN'; fixedEnd = 'DESTINATION' }
     [ordered]@{ taskType = 'WIRE_TO_GATE'; fixedEnd = 'DESTINATION' }
     [ordered]@{ taskType = 'WIRE_TO_OPTICAL'; fixedEnd = 'DESTINATION' }
     [ordered]@{ taskType = 'STAGING_TO_WIRE'; fixedEnd = 'ORIGIN' }
     [ordered]@{ taskType = 'WIRE_TO_NITROGEN'; fixedEnd = 'DESTINATION' }
+    [ordered]@{ taskType = 'WIRE_TO_FULL_INSPECTION'; fixedEnd = 'DESTINATION' }
 )
 
 # Not a real site verification record: nothing on this rig was verified on site, and the evidence says so.
@@ -165,7 +166,7 @@ function New-L2TaskTypeStationPreset {
         $required = [System.Collections.Generic.List[string]]::new()
         $bindings = [System.Collections.Generic.List[object]]::new()
         if ($null -eq $Setting) {
-            foreach ($rule in $script:SixRules) { $rules.Add($rule) }
+            foreach ($rule in $script:SevenRules) { $rules.Add($rule) }
             $required.Add('WIRE_TO_GATE')
             $bindings.Add([ordered]@{
                     taskType            = 'WIRE_TO_GATE'
@@ -177,7 +178,7 @@ function New-L2TaskTypeStationPreset {
             if ($Setting.ContainsKey('Rules')) {
                 foreach ($rule in @($Setting.Rules)) { $rules.Add([ordered]@{ taskType = $rule.TaskType; fixedEnd = $rule.FixedEnd }) }
             } else {
-                foreach ($rule in $script:SixRules) { $rules.Add($rule) }
+                foreach ($rule in $script:SevenRules) { $rules.Add($rule) }
             }
             foreach ($taskType in @($Setting.RequiredTaskTypes)) { $required.Add($taskType) }
             foreach ($binding in @($Setting.Bindings)) {
