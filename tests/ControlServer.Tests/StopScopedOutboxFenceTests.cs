@@ -340,20 +340,19 @@ public sealed class StopScopedOutboxFenceTests
     }
 
     /// <summary>
-    /// 另外四类以站为生命周期的出站行（审查说明 2）：旅程终态后，仓位命令、离站核验、离站结果都没有待补发的；清单只剩收尾那一张
-    /// （车要收它，夹具里没有车来确认）。这四类本票不改，这里守的是盘点时「已各有退役或结清路径」的结论。
+    /// 另外以站为生命周期的出站命令（审查说明 2）：旅程终态后，仓位命令、离站核验、离站结果都没有待补发的。
     /// </summary>
+    /// <remarks>
+    /// 清单快照（<c>CurrentStopWorklistSnapshot</c>）不在这里断言：它是按修订号递增的快照，车收到就确认、只认更高一版，不因「站已结束」拒收；
+    /// 夹具里没有车来确认，本站发过的各版都留着未确认，这是夹具的样子，不是遗留。
+    /// </remarks>
     private static async Task AssertOtherStopScopedTypesSettledAsync(RuntimeFixture fixture)
     {
         string[] commands = ["SlotOperationCommand", "PreDepartureSafetyCheck", "CurrentStopDepartureResult"];
         ProtocolOutboxRow[] pending = await fixture.Context.ProtocolOutbox.AsNoTracking()
-            .Where(row => (commands.Contains(row.MessageType) || row.MessageType == "CurrentStopWorklistSnapshot") &&
-                          row.AcknowledgedAt == null && row.FencedAt == null)
+            .Where(row => commands.Contains(row.MessageType) && row.AcknowledgedAt == null && row.FencedAt == null)
             .ToArrayAsync(Token);
-        string closingWorklist = JourneyClosure.SnapshotMessageIds((await JourneyOfAsync(fixture, FirstDemandId)).JourneyId)[0];
-        Assert.All(pending, row => Assert.True(
-            row.MessageType == "CurrentStopWorklistSnapshot" && row.MessageId == closingWorklist,
-            $"{row.MessageType} {row.MessageId} is still pending replay after the journey ended."));
+        Assert.All(pending, row => Assert.Fail($"{row.MessageType} {row.MessageId} is still pending replay after the journey ended."));
     }
 
     private static async Task<ProtocolOutboxRow[]> PendingStopScopedAsync(RuntimeFixture fixture) =>
