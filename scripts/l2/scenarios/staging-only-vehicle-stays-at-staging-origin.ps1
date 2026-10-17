@@ -5,12 +5,13 @@
 它原地受理，开往待送点的取货单照常建、到站、录入请求照常发到车上。
 
 **装置**：两台合成车，车队配置里都只接 STAGING_TO_WIRE；两个等待点都在路网上（setup 文件写了为什么）。开局两台车停在关卡、
-没有需求，各自被空闲返回派到一个等待点——场景把这两趟开完，两台车各停在一个等待点上。
+没有需求，各自承诺一趟空闲返回：control-server#752 之后先承诺的那台开往待送点 305，另一台看见 305 已被占、回落到一个等待点——
+场景把这两趟开完，一台停在 305、一台停在一个等待点上。
 
 **一、旅程在待送点结束**：一条待送需求被其中一台车（记为 V）接走，V 开到待送点 305；没人扫码，操作员扫码前取消，旅程
 Completed / CANCELLED_BY_OPERATOR，V 停在 305，305 的单占仍是 V 的（离点证据之前不放）。
 
-**二、车留在原地（本票的判据）**：V 离开等待点之后，它原来那个点被离点证据放掉，空着、开得过去。V 在 305 上停十几轮：
+**二、车留在原地（本票的判据）**：至少一个等待点空着、开得过去（V 若是从等待点来的，它原来那个点被离点证据放掉）。V 在 305 上停十几轮：
 它没有取得 IDLE_RETURN 用途占有，没有新的开往等待点的单。「没有」是一个要持续成立的状态，用 Wait-L2ConditionOrLast 另等
 一段，最后断言仍然没有；空闲返回看板上 V 的结论码就是本票的 IDLE_RETURN_HELD_AT_STAGING_ORIGIN（L2-SIS-06）。
 
@@ -138,12 +139,13 @@ $null = Wait-L2Condition -Description 'the route graph engine finished a refresh
 $journal.Note('Both synthetic peers stop answering sublot entry requests: nobody scans at the staging station.')
 foreach ($peer in $peerByKey.Values) { $null = $peer.Command('Put', 'policy', @{ sublot = 'Silent' }) }
 
-# 两台车停在关卡、没有需求：各自承诺一趟空闲返回（第一台取最近的 214，第二台看得见它、取 215）。开完它们，两台车各停在一个点上。
+# 两台车停在关卡、没有需求：各自承诺一趟空闲返回（control-server#752 起先承诺的那台开往待送点 305，第二台看得见 305 已被占，回落到
+# 一个等待点）。开完它们，一台停在 305、一台停在一个等待点上。
 foreach ($key in $peerByKey.Keys) {
     $intent = Wait-Confirmed "VehicleKey = '$key' AND Purpose = 'TO_WAITING_POINT'" "idle-return-$key"
     Move-Vehicle $key $intent ([int]$intent.DestinationStationId)
 }
-$null = Wait-L2Condition -Description 'both opening idle returns converged at their waiting points' -Journal $journal `
+$null = Wait-L2Condition -Description 'both opening idle returns converged' -Journal $journal `
     -Criterion 'opening-idle-returns-converged' -TimeoutSeconds 60 `
     -Probe { Get-Count "SELECT COUNT(*) AS Total FROM JourneyRuntimes WHERE JourneyId LIKE 'idle-return:%' AND Stage = 'Completed'" } `
     -Until { param($v) $v -ge 2 }
@@ -179,11 +181,14 @@ $assertions.Add('L2-SIS-01', 'V 在待送点扫码前取消：旅程 Completed /
 
 # --- 二、车留在原地 -------------------------------------------------------------------------------------------------
 
-# 前提：V 原来那个等待点被离点证据放掉、空着——V 有点可去。没有这一条，下面的「没去」什么也证明不了。
-$freed = Wait-L2Condition -Description "V's former waiting point $pointV was released on departure evidence" -Journal $journal `
-    -Criterion 'former-point-released' -TimeoutSeconds 60 -Probe { $null -eq (Get-Held $pointV) } -Until { param($v) $v }
-$assertions.Add('L2-SIS-02', 'V 离开等待点后那个点被放掉、空着：V 停在 305 时有一个开得过去的等待点',
-    ($null -ne $pointV -and $freed), "$pointV free", "$pointV free=$freed")
+# 前提：至少一个等待点空着——V 有点可去。没有这一条，下面的「没去」什么也证明不了。V 若是从等待点来的（control-server#752 之前开局
+# 两台都在等待点上），等它原来那个点被离点证据放掉；从开局就停在 305 的 V 没有原来的点，另一个等待点开局就空着。
+$freePoint = Wait-L2Condition -Description 'a waiting point is free for V' -Journal $journal `
+    -Criterion 'waiting-point-free' -TimeoutSeconds 60 `
+    -Probe { @($waitingPoints | Where-Object { $null -eq (Get-Held $_) }) | Select-Object -First 1 } -Until { param($v) $null -ne $v }
+$assertions.Add('L2-SIS-02', 'V 停在 305 时有一个空着、开得过去的等待点（V 若是从等待点来的，那个点已被离点证据放掉）',
+    ($null -ne $freePoint -and ($null -eq $pointV -or $null -eq (Get-Held $pointV))),
+    'a free waiting point', "free=$freePoint former=$pointV")
 
 $idleIntentsBefore = Get-Count "SELECT COUNT(*) AS Total FROM OrderIntents WHERE VehicleKey = '$keyV' AND Purpose = 'TO_WAITING_POINT'"
 $null = Wait-L2Iterations -Riot $riot -Count 6 -Journal $journal
