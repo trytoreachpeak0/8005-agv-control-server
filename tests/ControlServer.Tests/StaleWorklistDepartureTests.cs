@@ -53,6 +53,127 @@ public sealed class StaleWorklistDepartureTests
         Assert.Equal(JourneyRuntimeStage.AwaitingDepartureSafety, (await JourneyOfAsync(fixture, FirstDemandId)).Stage);
     }
 
+    /// <summary>
+    /// 请求号那一版还列着待做项（取消之前那一版，乙还在上面）：车屏上与此刻对操作员要做的事不是同一个答案，照旧答 <c>WORKLIST_REVISION_STALE</c>，不出发。
+    /// </summary>
+    [Fact]
+    [Trait("IntegrationSlice", "FP-IS-02")]
+    public async Task AStaleRequestFromAWorklistThatStillListedAnItemIsRefused()
+    {
+        await using RuntimeFixture fixture = await RuntimeFixture.CreateAsync();
+        Shape shape = await LoadOneThenCancelTheOtherAsync(fixture);
+
+        string departureRequestId = await RequestDepartureAsync(
+            fixture, worklistRevision: shape.CancelledRevision - 1, operationSessionId: null);
+        await RunAsync(fixture);
+
+        await AssertRefusedAsStaleAsync(fixture, departureRequestId, shape);
+    }
+
+    /// <summary>
+    /// 第 4 条的守卫：请求号那一版落库之后本站的已装集合变了（直接改库，让丙的装货在那一版之后才提交），而各版 <c>items</c> 照旧为空。第 4 条若只靠
+    /// 「items 为空」推出，这里会被放行；直接比已装集合的实现拒。
+    /// </summary>
+    [Fact]
+    [Trait("IntegrationSlice", "FP-IS-02")]
+    public async Task AStaleRequestIsRefusedWhenTheLoadsAtTheStopChangedAfterItsWorklist()
+    {
+        await using RuntimeFixture fixture = await RuntimeFixture.CreateAsync();
+        Shape shape = await LoadOneThenCancelTheOtherAsync(fixture);
+        JourneyRuntimeRow runtime = await JourneyOfAsync(fixture, FirstDemandId);
+        JourneyStopCursor stops = await JourneyStopCursor.LoadAsync(fixture.Context, runtime, Token);
+        string requestedId = stops.WorklistMessageIdAt(runtime.WorklistRevision, stops.Current, shape.CancelledRevision);
+        DateTimeOffset requestedQueuedAt = (await fixture.Context.ProtocolOutbox.AsNoTracking()
+            .SingleAsync(row => row.MessageId == requestedId, Token)).CreatedAt;
+        string attempt = (await Batch7MultiDemandAdvanceTests.MembershipAsync(fixture, StopEndedJourneyContinuesTests.ThirdDemandId))
+            .LoadSlotOperationAttemptId;
+        StationOperationRow load = await fixture.Context.StationOperations.SingleAsync(row => row.SlotOperationAttemptId == attempt, Token);
+        load.CommittedAt = requestedQueuedAt + TimeSpan.FromSeconds(1);
+        await fixture.Context.SaveChangesAsync(Token);
+        fixture.Context.ChangeTracker.Clear();
+
+        string departureRequestId = await RequestDepartureAsync(fixture, worklistRevision: shape.CancelledRevision, operationSessionId: null);
+        await RunAsync(fixture);
+
+        await AssertRefusedAsStaleAsync(fixture, departureRequestId, shape);
+    }
+
+    /// <summary>请求带的作业会话不是当前停靠的：照旧答 <c>WORKLIST_REVISION_STALE</c>（会话那一比不因号过期而放宽）。</summary>
+    [Fact]
+    [Trait("IntegrationSlice", "FP-IS-02")]
+    public async Task AStaleRequestCarryingAnotherStopsSessionIsRefused()
+    {
+        await using RuntimeFixture fixture = await RuntimeFixture.CreateAsync();
+        Shape shape = await LoadOneThenCancelTheOtherAsync(fixture);
+
+        string departureRequestId = await RequestDepartureAsync(
+            fixture, worklistRevision: shape.CancelledRevision, operationSessionId: Guid.NewGuid().ToString("D"));
+        await RunAsync(fixture);
+
+        await AssertRefusedAsStaleAsync(fixture, departureRequestId, shape);
+    }
+
+    /// <summary>请求号属于上一站（第一个取货站的第一版清单）：不是车此刻停着的这一站，照旧答 <c>WORKLIST_REVISION_STALE</c>。</summary>
+    [Fact]
+    [Trait("IntegrationSlice", "FP-IS-02")]
+    public async Task AStaleRequestFromThePreviousStopsWorklistIsRefused()
+    {
+        await using RuntimeFixture fixture = await RuntimeFixture.CreateAsync();
+        Shape shape = await LoadOneThenCancelTheOtherAsync(fixture);
+        JourneyRuntimeRow runtime = await JourneyOfAsync(fixture, FirstDemandId);
+        JourneyStopCursor stops = await JourneyStopCursor.LoadAsync(fixture.Context, runtime, Token);
+        long firstOfThisStop = stops.FirstWorklistRevisionAt(runtime.WorklistRevision, stops.Current);
+        Assert.True(firstOfThisStop > runtime.WorklistRevision);
+
+        string departureRequestId = await RequestDepartureAsync(
+            fixture, worklistRevision: firstOfThisStop - 1, operationSessionId: null);
+        await RunAsync(fixture);
+
+        await AssertRefusedAsStaleAsync(fixture, departureRequestId, shape);
+    }
+
+    /// <summary>
+    /// 重放：按旧号受理之后，同一个 <c>departureRequestId</c> 同内容换 messageId 再来，答的是存下的那一行，不多一条答复、不多发离站核验。
+    /// </summary>
+    [Fact]
+    [Trait("IntegrationSlice", "FP-IS-02")]
+    public async Task AStaleButAcceptedRequestRepeatedDoesNotDepartTwice()
+    {
+        await using RuntimeFixture fixture = await RuntimeFixture.CreateAsync();
+        Shape shape = await LoadOneThenCancelTheOtherAsync(fixture);
+        object payload = await DeparturePayloadAsync(
+            fixture, Guid.NewGuid().ToString("D"), worklistRevision: shape.CancelledRevision, operationSessionId: null);
+        string departureRequestId = (string)payload.GetType().GetProperty("departureRequestId")!.GetValue(payload)!;
+        await fixture.AddInboxAsync(Guid.NewGuid().ToString("D"), CurrentStopDepartures.RequestType, payload);
+        await RunAsync(fixture);
+        Assert.Equal("ACCEPTED", (await ResultAsync(fixture, departureRequestId)).GetProperty("outcome").GetString());
+        int checks = await Batch7CargoHoldingTests.DepartureChecksSentAsync(fixture);
+        int results = await ResultCountAsync(fixture);
+
+        await fixture.AddInboxAsync(Guid.NewGuid().ToString("D"), CurrentStopDepartures.RequestType, payload);
+        await RunAsync(fixture);
+        await RunAsync(fixture);
+
+        Assert.Equal(checks, await Batch7CargoHoldingTests.DepartureChecksSentAsync(fixture));
+        Assert.Equal(results, await ResultCountAsync(fixture));
+        Assert.Equal("ACCEPTED", (await ResultAsync(fixture, departureRequestId)).GetProperty("outcome").GetString());
+    }
+
+    private static Task<int> ResultCountAsync(RuntimeFixture fixture) =>
+        fixture.Context.ProtocolOutbox.AsNoTracking().CountAsync(row => row.MessageType == CurrentStopDepartures.ResultType, Token);
+
+    private static async Task AssertRefusedAsStaleAsync(RuntimeFixture fixture, string departureRequestId, Shape shape)
+    {
+        JsonElement result = await ResultAsync(fixture, departureRequestId);
+        Assert.True(result.GetProperty("outcome").GetString() == "REJECTED", $"Expected a refusal, got: {result}");
+        Assert.Equal(ServerReasonCodes.WorklistRevisionStale, result.GetProperty("problem").GetProperty("reasonCode").GetString());
+        Assert.Equal(shape.CurrentRevision, result.GetProperty("currentWorklistRevision").GetInt64());
+        Assert.Equal(JourneyRuntimeStage.AwaitingStationDeparture, (await JourneyOfAsync(fixture, FirstDemandId)).Stage);
+        JourneyStopRow stop = await fixture.Context.Set<JourneyStopRow>().AsNoTracking()
+            .SingleAsync(row => row.StopId == shape.Stop.StopId, Token);
+        Assert.Null(stop.OperatorDepartedAt);
+    }
+
     internal sealed record Shape(JourneyStopRow Stop, long CancelledRevision, long CurrentRevision);
 
     /// <summary>

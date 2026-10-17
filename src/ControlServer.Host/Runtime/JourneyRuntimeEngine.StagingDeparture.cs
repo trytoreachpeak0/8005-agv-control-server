@@ -1,3 +1,4 @@
+using System.Text.Json;
 using ControlServer.Application;
 using ControlServer.Domain;
 using ControlServer.Host.Runtime.Release;
@@ -129,7 +130,7 @@ public sealed partial class JourneyRuntimeEngine
             }
             JourneyStopCursor locked = await JourneyStopCursor.LoadAsync(dbContext, runtime, cancellationToken).ConfigureAwait(false);
             CurrentStopDepartureRule.Facts facts = await DepartureFactsAsync(
-                runtime, locked, session, stageNow.Value, cancellationToken).ConfigureAwait(false);
+                runtime, locked, session, stageNow.Value, request.WorklistRevision, cancellationToken).ConfigureAwait(false);
             problem = CurrentStopDepartureRule.Decide(request, facts);
             loadedBaskets = LoadedBaskets(locked);
             await OnboardJourneyPublisher.StageCurrentStopDepartureResultAsync(
@@ -454,6 +455,7 @@ public sealed partial class JourneyRuntimeEngine
         JourneyStopCursor locked,
         SessionRecoveryRow session,
         JourneyRuntimeStage stageNow,
+        long requestedRevision,
         CancellationToken cancellationToken)
     {
         long revision = await CurrentStopDepartures.CurrentWorklistRevisionAsync(dbContext, runtime.AgvId, cancellationToken)
@@ -489,7 +491,90 @@ public sealed partial class JourneyRuntimeEngine
             MachinePickupLoadsComplete: atMachinePickup &&
                                         stageNow == JourneyRuntimeStage.AwaitingStationDeparture &&
                                         locked.OutstandingAtCurrentStop.Count == 0 &&
-                                        locked.AllAtStop(current).Any(item => item.Membership.Status == JourneyDemandStatuses.Loaded));
+                                        locked.AllAtStop(current).Any(item => item.Membership.Status == JourneyDemandStatuses.Loaded),
+            StaleWorklistWithoutSubstantiveChange: requestedRevision < revision &&
+                                                   await StaleWorklistWithoutSubstantiveChangeAsync(
+                                                       runtime, locked, requestedRevision, revision, cancellationToken).ConfigureAwait(false));
+    }
+
+    /// <summary>
+    /// 出发请求带的清单号 <paramref name="requested"/> 已被顶掉，但它与此刻的 <paramref name="current"/> 之间没有实质差别（control-server#742 扩项，用户 10-17 定，
+    /// CP-0015；口径调度 10-17 核定）。
+    /// </summary>
+    /// <remarks>
+    /// <para>
+    /// 现场 agv03 140 站：本站装上一篮之后取消了另外两条，取消那一轮发了空清单（30），引擎随即补发只多一个期限的空清单（31）；按着 30 点的出发晚 62 ms 到，被拒，
+    /// 车多停了 3 分多钟。两版对操作员要做的事是同一个答案：本站没有要录的，已装的没变。
+    /// </para>
+    /// <para>
+    /// 四条都成立才算没有差别：
+    /// </para>
+    /// <list type="number">
+    /// <item>请求号落在当前停靠自己的清单号区间里（不小于 <see cref="JourneyStopCursor.FirstWorklistRevisionAt"/>），而且从请求号到当前号每一版都是按本停靠的
+    /// 消息 id 落进发件箱的、站是当前站：请求指的是车此刻停着的这一站，不是上一站留下的清单。</item>
+    /// <item>请求带的作业会话不在这里比：<see cref="CurrentStopDepartureRule"/> 照旧拿它与当前停靠比，为空不比。</item>
+    /// <item>从请求号那一版到当前号，每一版的 <c>items</c> 都为空：车屏上那一版已经没有待做项，之后也再没有过。</item>
+    /// <item>请求号那一版落库之后，本站的已装集合没变：本站每一条 <c>LOADED</c> 的装货操作都在那一刻之前提交，那一刻之后本站没有开过纠错。</item>
+    /// </list>
+    /// <para>
+    /// 第 4 条在构造上由第 3 条推出——装上一篮之前，它必先作为待做项出现在某一版清单里；途中追加不并入当前停靠（REQ-0196，
+    /// <c>EnRouteAppendPlanner.MergeTargetAt</c>），本停靠不会凭空多出待做项。这里照样直接比，不只靠推论：那两个前提哪天被改了，第 3 条单独放行的就会是
+    /// 一个已装集合变过的请求。判据是 <c>StaleWorklistDepartureTests.AStaleRequestIsRefusedWhenTheLoadsAtTheStopChangedAfterItsWorklist</c>。
+    /// </para>
+    /// <para>
+    /// 时刻比较在内存里做：SQLite 不能在库里比较 <c>DateTimeOffset</c>。两个时刻都是服务端自己的钟。
+    /// </para>
+    /// </remarks>
+    private async Task<bool> StaleWorklistWithoutSubstantiveChangeAsync(
+        JourneyRuntimeRow runtime,
+        JourneyStopCursor locked,
+        long requested,
+        long current,
+        CancellationToken cancellationToken)
+    {
+        JourneyStopRow stop = locked.Current;
+        if (stop.StopRole != JourneyStopRoles.Pickup || requested < locked.FirstWorklistRevisionAt(runtime.WorklistRevision, stop))
+        {
+            return false;
+        }
+        string[] ids = [.. Enumerable.Range(0, checked((int)(current - requested + 1)))
+            .Select(offset => locked.WorklistMessageIdAt(runtime.WorklistRevision, stop, requested + offset))];
+        Dictionary<string, ProtocolOutboxRow> rows = await dbContext.ProtocolOutbox.AsNoTracking()
+            .Where(row => ids.Contains(row.MessageId))
+            .ToDictionaryAsync(row => row.MessageId, StringComparer.Ordinal, cancellationToken).ConfigureAwait(false);
+        for (int offset = 0; offset < ids.Length; offset++)
+        {
+            if (!rows.TryGetValue(ids[offset], out ProtocolOutboxRow? row))
+            {
+                return false;
+            }
+            using JsonDocument document = JsonDocument.Parse(row.PayloadJson);
+            JsonElement payload = document.RootElement.GetProperty("payload");
+            if (payload.GetProperty("worklistRevision").GetInt64() != requested + offset ||
+                !string.Equals(payload.GetProperty("stationId").GetString(), stop.StationId, StringComparison.Ordinal) ||
+                payload.GetProperty("items").GetArrayLength() != 0)
+            {
+                return false;
+            }
+        }
+
+        DateTimeOffset requestedQueuedAt = rows[ids[0]].CreatedAt;
+        JourneyStopDemand[] loadedHere =
+            [.. locked.AllAtStop(stop).Where(item => item.Membership.Status == JourneyDemandStatuses.Loaded)];
+        string[] attempts = [.. loadedHere.Select(item => item.Membership.LoadSlotOperationAttemptId)];
+        Dictionary<string, DateTimeOffset?> committedAt = await dbContext.StationOperations.AsNoTracking()
+            .Where(row => attempts.Contains(row.SlotOperationAttemptId))
+            .ToDictionaryAsync(row => row.SlotOperationAttemptId, row => row.CommittedAt, StringComparer.Ordinal, cancellationToken)
+            .ConfigureAwait(false);
+        if (loadedHere.Any(item =>
+                !committedAt.TryGetValue(item.Membership.LoadSlotOperationAttemptId, out DateTimeOffset? at) ||
+                at is not { } committed || committed > requestedQueuedAt))
+        {
+            return false;
+        }
+        HashSet<string> demandsHere = new(locked.AllAtStop(stop).Select(item => item.Demand.DemandId), StringComparer.Ordinal);
+        return !(await CorrectionsOnBoardAsync(runtime, locked, cancellationToken).ConfigureAwait(false))
+            .Any(row => demandsHere.Contains(row.DemandId!) && row.CreatedAt > requestedQueuedAt);
     }
 
     /// <summary>锚需求还在这趟旅程上、没开始装。</summary>
