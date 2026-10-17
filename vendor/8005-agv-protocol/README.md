@@ -37,16 +37,23 @@ manifest 里的 `schemaBundleSha256`**——后者由协议仓自己的打包算
 | 项 | 值 |
 | --- | --- |
 | 来源仓库 | `8005-agv-protocol` |
-| 来源提交 | `4e9f3df8fb1733311e1ce534c1129cfb904760a4`（protocol#22 合入 `fp/v2-candidate` 的合并提交，树与候选 `9d791578` 逐字节相同；无 tag） |
-| 取用日期 | 2026-10-16 |
+| 来源提交 | `13eca82ac199bd97c1ad49d036c70cb5b012250f`（protocol#24 为 protocol#23 合入 `fp/v2-candidate` 的合并提交，树与候选 `ce68f3d5` 逐字节相同；无 tag） |
+| 取用日期 | 2026-10-17 |
 
 | 来源路径 | 内容 |
 | --- | --- |
-| `integration-slices/index.json` | `schemaVersion 2.0.0`、16 条切片（`FP-IS-00`～`15`）、`vectorIds` 条目 53、去重 50（与 v4 逐字节相同） |
+| `integration-slices/index.json` | `schemaVersion 2.0.0`、16 条切片（`FP-IS-00`～`15`）、`vectorIds` 条目 54、去重 51 |
 | `manifest/release.json` | `status CONTENT_SNAPSHOT`、`releaseVersion 5.0.0`、`protocolVersion 6`、`profileId AGV_FULL_PRODUCT`、67 条消息、11 条 denylist |
 | `schemas/`（整棵树） | 73 个文件，`$id` 段 `agv-full-product/v6` |
 
-2026-10-16 由 `8005-agv-control-server#737` 刷新到 `9d791578`，10-17 protocol#22 合入后改钉合并提交 `4e9f3df8`（树相同，manifest 仍是 `743b886d…`，照 v4 钉合并提交 `3fb214e5` 的先例；`ApprovalStatus SUPERSEDING_CANDIDATE`，tag `protocol-v5.0.0` 尚不存在）：protocol#21 在闭合枚举
+2026-10-17 由 `8005-agv-control-server#748` 刷新到 `13eca82a`（与车载端 `8005-agv-onboard-hmi#362` 同包）：protocol#23 是 5.0.0 候选的第二次修订，
+schema、消息与错误码不变，`schemas/` 树逐字节相同。`FP-IS-02` 加一条向量 `CV-CURRENT-STOP-DEPARTURE-STALE-REVISION-ACCEPTED`（机台取货停靠的出发请求，
+清单号过期但无实质差别时受理，服务端行为由 `8005-agv-control-server#742` 实现），旧向量 `CV-CURRENT-STOP-DEPARTURE-STALE-REVISION` 限定为有实质差别；
+`CV-MULTI-STOP-PLAN-NINE-LEGS` 的两个结果名改为 `UP_TO_NINE_REMAINING_LEGS_PLANNED`、`DISPLAY_REMAINING_JOURNEY_PLAN`。`index.json` 与
+`manifest/release.json` 变了（`vectorsSha256 291311b2…`），manifest SHA-256 为 `128daae5…`，与调度转来的值一致。两份文件用 `git archive` 从合并提交的对象导出，
+`index.json` 与 manifest 文件表里的 SHA-256 核对一致，`schemas/` 与上一份逐个比对无差异。
+
+再早一份是 `4e9f3df8`。2026-10-16 由 `8005-agv-control-server#737` 刷新到 `9d791578`，10-17 protocol#22 合入后改钉合并提交 `4e9f3df8`（树相同，manifest 仍是 `743b886d…`，照 v4 钉合并提交 `3fb214e5` 的先例；`ApprovalStatus SUPERSEDING_CANDIDATE`，tag `protocol-v5.0.0` 尚不存在）：protocol#21 在闭合枚举
 `TransportTaskType` 末尾追加 `WIRE_TO_FULL_INSPECTION`（焊线/键合机台送全检区），其余只换身份；闭合枚举追加值是破坏性改动，所以升大版本，
 两端必须与车载端 `8005-agv-onboard-hmi#360` 同包换装。错误码表、向量（`vectorsSha256 24cc3a5e…`）与 `index.json` 不变。三份文件从该提交的
 对象里用 `git archive` 导出（不经协议仓工作树，避免行尾转换），逐个与 manifest 自带的文件表 SHA-256 核对一致
