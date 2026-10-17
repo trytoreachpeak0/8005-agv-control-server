@@ -2036,24 +2036,40 @@ function Test-ParallelInstanceRemovalRetryable {
 }
 
 function Format-ParallelInstanceRemovalFailure {
-    # The error once the attempts run out: the directory, the file the last attempt stopped on, the original
-    # message, and who holds that file -- or that nobody could be found, and why.
+    # The error once the attempts run out: the directory, the entry the last attempt stopped on, the original
+    # message, and who holds it -- or that nobody could be found, and why.
+    #
+    # Review of #762: the entry the error names goes into the sentence whenever there is one -- a delete-pending
+    # file fails Test-Path but is exactly the file to name, and a directory (ERROR_DIR_NOT_EMPTY) is named with
+    # what is still in it. And "access denied" with no process holding the file is not reported as "in use":
+    # that is a permission or attribute problem, and calling it a release race sends the reader the wrong way.
     param([string] $Path, [Management.Automation.ErrorRecord] $ErrorRecord, [int] $Attempts)
     $target = [string] $ErrorRecord.TargetObject
-    $file = ($target -and (Test-Path -LiteralPath $target -PathType Leaf)) ? $target : $null
-    $files = $file ? @($file) :
-        @(Get-ChildItem -LiteralPath $Path -Recurse -File -Force -ErrorAction SilentlyContinue | Select-Object -First 500 -ExpandProperty FullName)
-    $holders = try {
-        $ids = @(Get-ParallelInstanceFileHolderId -Path $files)
-        $ids.Count -eq 0 ? 'no process found (the handle may have closed after the last attempt)' :
+    $isDirectory = $target -and (Test-Path -LiteralPath $target -PathType Container)
+    $files = ($target -and -not $isDirectory) ? @($target) :
+        @(Get-ChildItem -LiteralPath ($target ? $target : $Path) -Recurse -File -Force -ErrorAction SilentlyContinue |
+                Select-Object -First 500 -ExpandProperty FullName)
+    $ids = $null
+    $lookupError = $null
+    try { $ids = @(Get-ParallelInstanceFileHolderId -Path $files) } catch { $lookupError = $_.Exception.Message }
+    $holders = $lookupError ? "could not be determined ($lookupError)" :
+        ($ids.Count -eq 0 ? 'no process found (the handle may have closed after the last attempt)' :
             (@($ids | ForEach-Object {
-                    $name = (Get-Process -Id $_ -ErrorAction SilentlyContinue)?.ProcessName
-                    "pid $_ ($($name ?? 'exited'))"
-                }) -join ', ')
-    } catch {
-        "could not be determined ($($_.Exception.Message))"
+                        $name = (Get-Process -Id $_ -ErrorAction SilentlyContinue)?.ProcessName
+                        "pid $_ ($($name ?? 'exited'))"
+                    }) -join ', '))
+    $denied = $false
+    for ($e = $ErrorRecord.Exception; $null -ne $e; $e = $e.InnerException) { if ($e -is [UnauthorizedAccessException]) { $denied = $true } }
+    $named = $target ? "'$target'" : 'a file in it'
+    $what = if ($isDirectory) {
+        $left = @(Get-ChildItem -LiteralPath $target -Force -Name -ErrorAction SilentlyContinue)
+        $shown = @($left | Select-Object -First 5) -join ', '
+        "$named is not empty (still in it: $($left.Count -eq 0 ? 'nothing now' : $shown)$($left.Count -gt 5 ? ", and $($left.Count - 5) more" : ''))"
+    } elseif ($denied -and $null -ne $ids -and $ids.Count -eq 0) {
+        "access to $named is denied and no process holds it -- likely a permission or attribute problem, not a file still in use"
+    } else {
+        "$named is still in use"
     }
-    $what = $file ? "'$file' is still in use" : 'a file in it is still in use'
     $seconds = ($Attempts - 1) * $script:DirectoryRemovalRetryDelayMilliseconds / 1000
     return "Could not delete '$Path' after $Attempts attempts over ${seconds} s: $what ($($ErrorRecord.Exception.Message)). Held by: $holders."
 }

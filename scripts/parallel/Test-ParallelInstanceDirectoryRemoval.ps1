@@ -208,6 +208,41 @@ try {
     }
 
     Write-Host ''
+    Write-Host 'The error once the attempts run out names the entry and does not call a permission problem "in use" (review of #762)' -ForegroundColor Cyan
+    function Get-FailureText($Exception, [string] $Target, [string] $Directory) {
+        $record = [Management.Automation.ErrorRecord]::new($Exception, 'RemoveItemIOError', 'WriteError', $Target)
+        return & $module { param($p, $r) Format-ParallelInstanceRemovalFailure -Path $p -ErrorRecord $r -Attempts 10 } $Directory $record
+    }
+    Invoke-Case 'access denied, nobody holds the file: reported as a likely permission or attribute problem, with the file name' {
+        $directory = New-InstanceDirectory 'DeniedFree.V2'
+        $file = Join-Path $directory 'held.bin'
+        $text = Get-FailureText ([UnauthorizedAccessException]::new("Access to the path '$file' is denied.")) $file $directory
+        @{ Ok = ($text.Contains("access to '$file' is denied and no process holds it") -and $text.Contains('permission or attribute') -and
+                -not $text.Contains("' is still in use")); Detail = $text }
+    }
+    Invoke-Case 'access denied, a process holds the file: still reported as in use, with the holder' {
+        $directory = New-InstanceDirectory 'DeniedHeld.V2'
+        $file = Join-Path $directory 'held.bin'
+        $stream = [IO.File]::Open($file, 'Open', 'Read', 'None')
+        try {
+            $text = Get-FailureText ([UnauthorizedAccessException]::new("Access to the path '$file' is denied.")) $file $directory
+            @{ Ok = ($text.Contains("'$file' is still in use") -and $text.Contains("pid $PID") -and -not $text.Contains('permission')); Detail = $text }
+        } finally { $stream.Dispose() }
+    }
+    Invoke-Case 'a delete-pending file (it no longer passes Test-Path) is still named in the sentence' {
+        $directory = New-InstanceDirectory 'Pending.V2'
+        $file = Join-Path $directory 'gone-but-pending.bin'
+        $text = Get-FailureText ([IO.IOException]::new('x', [int] 0x80070020)) $file $directory
+        @{ Ok = $text.Contains("'$file' is still in use"); Detail = $text }
+    }
+    Invoke-Case 'directory not empty (145): the directory is named with what is still in it' {
+        $directory = New-InstanceDirectory 'NotEmpty.V2'
+        foreach ($i in 1..7) { Set-Content -LiteralPath (Join-Path $directory "extra$i.txt") -Value 'z' }
+        $text = Get-FailureText ([IO.IOException]::new('The directory is not empty.', [int] 0x80070091)) $directory $directory
+        @{ Ok = ($text.Contains("'$directory' is not empty (still in it: ") -and $text.Contains('extra1.txt') -and $text.Contains('and 5 more')); Detail = $text }
+    }
+
+    Write-Host ''
     Write-Host 'Which errors are retried: in use or access denied, nothing else' -ForegroundColor Cyan
     $classified = [ordered]@{
         'IOException sharing violation (0x80070020)'          = @{ E = { $e = [IO.IOException]::new('x', [int] 0x80070020); $e }; Retry = $true }
@@ -255,14 +290,15 @@ try {
         'redeploying the FakeMesIngest'       = @{ From = 'function Install-FakeMesIngest'; To = 'Remove-ParallelInstanceDirectory -Path $fakeInstallRoot' }
     }
     foreach ($site in $sites.Keys) {
-        Invoke-Case "installer, $site`: Stop-Process, then Wait-ParallelInstanceProcessExit (no Wait-Process), then the delete" {
+        Invoke-Case "installer, $site`: handles pinned, Stop-Process, then Wait-ParallelInstanceProcessExit (no Wait-Process), then the delete" {
             $from = $installer.IndexOf($sites[$site].From)
             $to = ($from -ge 0) ? $installer.IndexOf($sites[$site].To, $from) : -1
             $segment = ($from -ge 0 -and $to -gt $from) ? $installer.Substring($from, $to - $from) : ''
+            $pin = $segment.IndexOf('$null = $_.Handle')
             $stop = $segment.IndexOf('Stop-Process -Force')
             $wait = $segment.IndexOf('Wait-ParallelInstanceProcessExit')
-            @{ Ok = ($stop -ge 0 -and $wait -gt $stop -and -not $segment.Contains('Wait-Process'))
-                Detail = "segment $from..$to; Stop-Process at $stop, Wait-ParallelInstanceProcessExit at $wait, Wait-Process present=$($segment.Contains('Wait-Process'))" }
+            @{ Ok = ($pin -ge 0 -and $stop -gt $pin -and $wait -gt $stop -and -not $segment.Contains('Wait-Process'))
+                Detail = "segment $from..$to; handle pinned at $pin, Stop-Process at $stop, Wait-ParallelInstanceProcessExit at $wait, Wait-Process present=$($segment.Contains('Wait-Process'))" }
         }
     }
 } finally {
