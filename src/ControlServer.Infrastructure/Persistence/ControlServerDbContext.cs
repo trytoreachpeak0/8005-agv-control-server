@@ -268,10 +268,46 @@ public sealed class ControlServerDbContext(DbContextOptions<ControlServerDbConte
         }
     }
 
+    /// <summary>
+    /// Writes every time this save writes at offset zero, the same instant (control-server#728). SQLite keeps a
+    /// <see cref="DateTimeOffset"/> as text with its offset, and a time copied from a vehicle's message (its
+    /// <c>observedAt</c>, in the vehicle's local +08:00) used to land beside the server's own +00:00 rows and sort eight hours
+    /// off by text. Here rather than where a message is parsed: the content hashes are recomputed over the message's own
+    /// text, and a rule each writer had to remember would be broken by the next one. Not a value converter: EF's model
+    /// snapshot cannot record one, so every migration guard would see a pending model change no migration can clear.
+    /// </summary>
+    /// <remarks>
+    /// Only what this save writes: every time of an added row, and the times of a changed row that this save changes. A time
+    /// already stored, and not changed, keeps its text -- rewriting it would touch history the save is not about, audit rows
+    /// among it. "Not changed" is judged by value, offset included, not by <see cref="PropertyEntry.IsModified"/>: a row whose
+    /// state is set to <see cref="EntityState.Modified"/> wholesale (the runtime's restore and revert of a tracked row) has
+    /// every property marked modified, its old times among them. <c>ExecuteUpdate</c> and raw SQL do not pass through here.
+    /// </remarks>
+    private void NormalizeTimesToUtc()
+    {
+        foreach (EntityEntry entry in ChangeTracker.Entries())
+        {
+            if (entry.State is not (EntityState.Added or EntityState.Modified))
+            {
+                continue;
+            }
+            foreach (PropertyEntry property in entry.Properties)
+            {
+                if (property.CurrentValue is DateTimeOffset { Offset.Ticks: not 0 } time &&
+                    (entry.State == EntityState.Added ||
+                     (property.IsModified && !(property.OriginalValue is DateTimeOffset original && original.EqualsExact(time)))))
+                {
+                    property.CurrentValue = time.ToUniversalTime();
+                }
+            }
+        }
+    }
+
     public override int SaveChanges(bool acceptAllChangesOnSuccess)
     {
         ReconcileJourneyWaits();
         StampJourneyVersions();
+        NormalizeTimesToUtc();
         AuditImmutabilityGuard.Enforce(ChangeTracker, AuditRetention, AuditClock.GetUtcNow());
         PublishedVersionImmutabilityGuard.Enforce(ChangeTracker);
         return base.SaveChanges(acceptAllChangesOnSuccess);
@@ -283,6 +319,7 @@ public sealed class ControlServerDbContext(DbContextOptions<ControlServerDbConte
     {
         ReconcileJourneyWaits();
         StampJourneyVersions();
+        NormalizeTimesToUtc();
         AuditImmutabilityGuard.Enforce(ChangeTracker, AuditRetention, AuditClock.GetUtcNow());
         PublishedVersionImmutabilityGuard.Enforce(ChangeTracker);
         return base.SaveChangesAsync(acceptAllChangesOnSuccess, cancellationToken);
