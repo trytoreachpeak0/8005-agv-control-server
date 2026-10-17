@@ -4,6 +4,7 @@ using ControlServer.Host.Runtime.Dispatch;
 using ControlServer.Host.Runtime.Release;
 using ControlServer.Infrastructure.Persistence;
 using Microsoft.EntityFrameworkCore;
+using Microsoft.Extensions.DependencyInjection;
 
 namespace ControlServer.Host.Dashboard;
 
@@ -27,6 +28,12 @@ namespace ControlServer.Host.Dashboard;
 /// <para>
 /// 已受理旅程上的阻断原因不在这里，那是 control-server#80 的卡片。积压行没有 AREA 列（AREA 只在需求目录的实时字段里，
 /// 不落 <c>JourneyBacklog</c>），本票零 migration，所以不给。
+/// </para>
+/// <para>
+/// 积压行的 <c>reasonCode</c> 是这一轮最后判它的那辆车写的（<c>DispatchRoundRunner.UpsertBacklog</c>，空闲车先判、在途车后判），说不出别的车为什么
+/// 没接（2026-10-17 生产：78 条都显示在途车的 <c>VEHICLE_TASK_TYPE_NOT_ADMITTED</c>，把空闲 agv02 的电量原因盖住了）。所以每行另给
+/// <c>vehicleVerdicts</c>：上一轮每辆跑完的车对这条需求的原因码与说明（control-server#744），取自派车轮整张替换的那块单例
+/// （<see cref="SlotGroupFullnessBoard.VerdictsByDemand"/>），<c>reasonCode</c> 的写法与含义不变。
 /// </para>
 /// </remarks>
 internal sealed class DispatchBacklogQueryEndpoint : IDashboardQueryEndpoint
@@ -90,6 +97,13 @@ internal sealed class DispatchBacklogQueryEndpoint : IDashboardQueryEndpoint
             [DispatchReasonCodes.ChargingPolicyEntryNotAboveRescueLine] =
                 "这辆车生效的充电策略版本，强制充电线不高于服务端的救命告警线，这一版不能用，车不接任何新任务（在途的照常做完）；" +
                 "用 FieldOps 激活一版强制充电线高于救命线的策略即恢复，不需要改库，也不需要重启服务",
+            // control-server#744：逐车裁决一列让这几个车辆侧的码第一次直接出现在卡片上。
+            [DispatchAdmissionChain.Eligible] =
+                "这辆车对这条需求合格；这一轮它已接了别的单，或这条需求排在后面还没轮到，下一轮再派",
+            [Runtime.Dispatch.Criteria.VehicleDynamicFactsCriterion.BatteryPolicyNotSatisfiedReason] =
+                "这辆车电量不满足：预计做完这一趟后低于最低余量，或车正在充电还没充满（在 v2 充电安排之外被人充上桩的车，充到充满线才接活）",
+            [Runtime.Dispatch.Criteria.VehicleTaskTypeAdmissionCriterion.TaskTypeNotAdmittedReason] =
+                "这辆车的配置不接这个任务类型（车队配置里它的 allowedTaskTypes 没有这一类），由别的车接",
             [DispatchReasonCodes.MandatoryChargeRequired] =
                 "这辆车电量低于它所用充电策略的强制充电线，只等去充电，不接新任务也不接途中追加；别的车照常。"
                 + "它若一直没去充电，是在排队等桩：看服务端日志事件 2246（写明分不到桩的原因）——充电桩被占或被预占、"
@@ -139,16 +153,27 @@ internal sealed class DispatchBacklogQueryEndpoint : IDashboardQueryEndpoint
         };
 
     private readonly TimeProvider _clock;
+    private readonly SlotGroupFullnessBoard _verdicts;
 
     public DispatchBacklogQueryEndpoint()
         : this(TimeProvider.System)
     {
     }
 
-    internal DispatchBacklogQueryEndpoint(TimeProvider clock)
+    /// <summary>
+    /// 挂在宿主上时用这一个：每车裁决读派车轮写的那块单例。必填：宿主漏注册时看板查询在启动时就构造失败，而不是静默成「每行都没有逐车裁决」。
+    /// </summary>
+    [ActivatorUtilitiesConstructor]
+    public DispatchBacklogQueryEndpoint(SlotGroupFullnessBoard verdicts)
+        : this(TimeProvider.System, verdicts)
+    {
+    }
+
+    internal DispatchBacklogQueryEndpoint(TimeProvider clock, SlotGroupFullnessBoard? verdicts = null)
     {
         ArgumentNullException.ThrowIfNull(clock);
         _clock = clock;
+        _verdicts = verdicts ?? new SlotGroupFullnessBoard();
     }
 
     public string Path => DashboardQueryEndpointCatalog.QueryPrefix + "dispatch-backlog";
@@ -173,8 +198,11 @@ internal sealed class DispatchBacklogQueryEndpoint : IDashboardQueryEndpoint
             rowOf.Add(BacklogStanding.TaskOf(row, now), row);
         }
         IReadOnlyList<DispatchTask> ordered = DispatchCandidateOrdering.Ranker().Order([.. rowOf.Keys]);
+        (DateTimeOffset? verdictRoundAt, IReadOnlyDictionary<string, IReadOnlyList<(string AgvId, string ReasonCode)>> verdictsByDemand) =
+            _verdicts.VerdictsByDemand();
         return new
         {
+            vehicleVerdictsRoundAt = verdictRoundAt,
             starvationThresholdsApproved = thresholds.AnyApproved,
             starvationThresholds = thresholds.Zones
                 .Select(zone => new { dispatchZone = zone.Key, thresholdSeconds = zone.Value })
@@ -199,7 +227,17 @@ internal sealed class DispatchBacklogQueryEndpoint : IDashboardQueryEndpoint
                         _ => "NORMAL_BAND"
                     },
                     starvationEscalatedAt = item.Row.StarvationEscalatedAt,
-                    starvationEscalationParameterVersion = item.Row.StarvationEscalationParameterVersion
+                    starvationEscalationParameterVersion = item.Row.StarvationEscalationParameterVersion,
+                    vehicleVerdicts = (verdictsByDemand.TryGetValue(item.Row.DemandId, out IReadOnlyList<(string AgvId, string ReasonCode)>? verdicts)
+                            ? verdicts
+                            : [])
+                        .Select(verdict => new
+                        {
+                            agvId = verdict.AgvId,
+                            reasonCode = verdict.ReasonCode,
+                            reasonDescription = Describe(verdict.ReasonCode)
+                        })
+                        .ToArray()
                 })
                 .ToArray(),
             silentBacklogCount = pending.Count(row => DispatchReasonCodes.IsSilent(row.ReasonCode)),

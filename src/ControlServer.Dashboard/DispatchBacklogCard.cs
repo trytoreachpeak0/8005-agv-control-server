@@ -16,6 +16,9 @@ namespace ControlServer.Dashboard;
 /// 服务端没给说明的码原样显示码值并标「未登记说明」，不猜它是什么意思。
 /// </para>
 /// <para>
+/// 积压行的原因码是这一轮最后判它的那辆车写的，说不出别的车为什么没接；「各车上一轮的裁决」一列逐车列出（control-server#744）。
+/// </para>
+/// <para>
 /// 未映射 AREA 的需求按 REQ-0191 静默跳过：服务端不把它们放进积压列表，这里只在折叠处给一个计数，不用告警样式。
 /// </para>
 /// </remarks>
@@ -37,7 +40,7 @@ public sealed class DispatchBacklogCard : IDashboardCard
         StringBuilder html = new();
         RenderStructuralBlocks(html, Rows(fact, "structuralBlocks"));
         RenderThresholds(html, fact);
-        RenderBacklog(html, Rows(fact, "backlog"));
+        RenderBacklog(html, fact, Rows(fact, "backlog"));
         RenderSilentCount(html, fact);
         return html.ToString();
     }
@@ -65,7 +68,7 @@ public sealed class DispatchBacklogCard : IDashboardCard
         html.Append("</table></section>");
     }
 
-    private static void RenderBacklog(StringBuilder html, JsonElement[] backlog)
+    private static void RenderBacklog(StringBuilder html, JsonElement fact, JsonElement[] backlog)
     {
         html.Append("<section class=\"dispatch-backlog\"><h3>派车积压（等待派车）</h3>");
         if (backlog.Length == 0)
@@ -73,8 +76,9 @@ public sealed class DispatchBacklogCard : IDashboardCard
             html.Append("<p>无</p></section>");
             return;
         }
+        RenderVerdictRound(html, fact);
         html.Append(
-            "<table><tr><th>需求</th><th>所在层</th><th>原因码</th><th>说明</th><th>首次出现</th><th>已等待</th><th>最近评估</th><th>防饥饿升级</th></tr>");
+            "<table><tr><th>需求</th><th>所在层</th><th>原因码</th><th>说明</th><th>各车上一轮的裁决</th><th>首次出现</th><th>已等待</th><th>最近评估</th><th>防饥饿升级</th></tr>");
         foreach (JsonElement row in backlog)
         {
             html.Append("<tr>")
@@ -82,6 +86,7 @@ public sealed class DispatchBacklogCard : IDashboardCard
                 .Append(DashboardPageRenderer.Cell(Tier(row)))
                 .Append(DashboardPageRenderer.Cell(DashboardPageRenderer.Text(row, "reasonCode")))
                 .Append(DashboardPageRenderer.Cell(Description(row)))
+                .Append(DashboardPageRenderer.Cell(VehicleVerdicts(row)))
                 .Append(DashboardPageRenderer.Cell(Time(row, "firstSeenAt")))
                 .Append(DashboardPageRenderer.Cell(Waiting(row)))
                 .Append(DashboardPageRenderer.Cell(Time(row, "lastEvaluatedAt")))
@@ -89,6 +94,41 @@ public sealed class DispatchBacklogCard : IDashboardCard
                 .Append("</tr>");
         }
         html.Append("</table></section>");
+    }
+
+    /// <summary>
+    /// 「各车上一轮的裁决」取自哪一轮（control-server#744）：服务端给了时刻就写出来；给了空值是服务重启后还没跑完一轮；没有这个字段（旧服务端）什么都不写。
+    /// </summary>
+    private static void RenderVerdictRound(StringBuilder html, JsonElement fact)
+    {
+        if (!fact.TryGetProperty("vehicleVerdictsRoundAt", out JsonElement at))
+        {
+            return;
+        }
+        string text = at.ValueKind == JsonValueKind.String && at.TryGetDateTimeOffset(out DateTimeOffset roundAt)
+            ? string.Create(CultureInfo.InvariantCulture, $"各车的裁决取自 {roundAt.ToLocalTime():yyyy-MM-dd HH:mm:ss} 那一轮派车")
+            : "各车的裁决：服务启动后还没有跑完一轮派车";
+        html.Append("<p class=\"dispatch-backlog-verdict-round\">")
+            .Append(System.Net.WebUtility.HtmlEncode(text))
+            .Append("</p>");
+    }
+
+    /// <summary>
+    /// 一条需求上一轮被每辆车判成什么（control-server#744）：「车：原因码（说明）」，多辆车用「；」隔开。服务端说明为空时写「未登记说明」。
+    /// 空数组是上一轮没有车判过它（车都没进这一轮，或这条需求那一轮还不在目录里）；没有这个字段（旧服务端）留空。
+    /// </summary>
+    private static string VehicleVerdicts(JsonElement row)
+    {
+        if (!row.TryGetProperty("vehicleVerdicts", out JsonElement verdicts) || verdicts.ValueKind != JsonValueKind.Array)
+        {
+            return string.Empty;
+        }
+        string[] lines =
+        [
+            .. verdicts.EnumerateArray().Select(verdict =>
+                $"{DashboardPageRenderer.Text(verdict, "agvId")}：{DashboardPageRenderer.Text(verdict, "reasonCode")}（{Description(verdict)}）"),
+        ];
+        return lines.Length == 0 ? "上一轮没有车判过它" : string.Join("；", lines);
     }
 
     /// <summary>所在层（REQ-0202）。服务端给了一个这里不认识的层名时原样写出；没有这个字段（旧服务端）时留空。</summary>
