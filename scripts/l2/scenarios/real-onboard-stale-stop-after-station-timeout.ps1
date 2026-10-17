@@ -14,7 +14,8 @@ v2 的修法两端都有，缺一不可：
 扫码前取消的入口在 onboard-hmi#363（CP-0016）起从底部「取消装货」挪到了清单每一行侧边的「取消」（`WorklistItemCancellation`），
 底部按钮在机台上只留装货进行中的取消。下文「取消」都指这单那一行的按钮，按它、确认框「取消这条需求」、被拒时的「取消失败」
 （control-server#753）。行跟着清单走，所以「车不再给『取消』」在行已不在时自然成立；行还在时（第三趟 STALE 之后）它读的是
-按钮是否可按。
+按钮是否可按。行不在了，扫码前取消若还挂着，会作为收尾出现在底部「取消装货」上，所以 L2-SST-04、11 另要求底部也不给
+（#756 审查 L1）。
 
 合成车载端只看得到线上报文，看不到 _currentEntryRequest 与按钮；车上残不残留只有真 WPF 加 UI Automation 看得见。
 
@@ -73,6 +74,9 @@ function Get-VehicleView([string]$Sublot) {
     return [pscustomobject]@{
         CanSubmit     = [bool]$onboard.CanSubmit()
         OffersCancel  = Test-L2WorklistRowButtonPressable $onboard $Sublot $rowButton
+        # The bottom entry: before any sublot it is only the wind-up of a cancellation whose row has left the worklist
+        # (onboard-hmi#363's SentSelectionMissing), so a row gone with it still lit is the stop still on the vehicle.
+        BottomOffered = [bool]$onboard.ButtonAvailable('取消装货')
         ListsSublot   = $sublots -contains $Sublot
         WorklistShown = ($null -ne $rows)
         Rows          = ($sublots -join ',')
@@ -80,7 +84,7 @@ function Get-VehicleView([string]$Sublot) {
 }
 
 function Format-VehicleView([object]$View) {
-    return ("canSubmit=$($View.CanSubmit) offersCancel=$($View.OffersCancel) listsSublot=$($View.ListsSublot) " +
+    return ("canSubmit=$($View.CanSubmit) offersCancel=$($View.OffersCancel) bottomOffered=$($View.BottomOffered) listsSublot=$($View.ListsSublot) " +
         "worklist=[$($View.Rows)]")
 }
 
@@ -266,8 +270,9 @@ $assertions.Add(
     'L2-SST-03', '第一趟：旅程被站点期限结束之后，车不再要子批',
     (-not $afterFirst.CanSubmit), 'canSubmit=False', (Format-VehicleView $afterFirst))
 $assertions.Add(
-    'L2-SST-04', '第一趟：旅程被站点期限结束之后，车不再给那一行的「取消」',
-    (-not $afterFirst.OffersCancel), 'offersCancel=False', (Format-VehicleView $afterFirst))
+    'L2-SST-04', '第一趟：旅程被站点期限结束之后，车不再给那一行的「取消」，底部也不给「取消装货」',
+    (-not $afterFirst.OffersCancel -and -not $afterFirst.BottomOffered), 'offersCancel=False / bottomOffered=False',
+    (Format-VehicleView $afterFirst))
 $assertions.Add(
     'L2-SST-05', '第一趟：旅程被站点期限结束之后，车上的清单不再挂着这单',
     (-not $afterFirst.ListsSublot), 'listsSublot=False', (Format-VehicleView $afterFirst))
@@ -385,8 +390,9 @@ if ($second.Open) {
         '每一下 REJECTED/WORKLIST_REVISION_STALE / 0 条工作流 / Cancelled',
         "$pressText；$workflows 条工作流 / $statusAfterPresses")
     $assertions.Add(
-        'L2-SST-11', '第二趟：迟到的取消被拒之后，车不再给那一行的「取消」（撤按钮的是答复之后重发到车的那张收尾空清单，不是车载端看了 STALE）',
-        (-not $afterPresses.OffersCancel), 'offersCancel=False', (Format-VehicleView $afterPresses))
+        'L2-SST-11', '第二趟：迟到的取消被拒之后，车不再给那一行的「取消」（撤按钮的是答复之后重发到车的那张收尾空清单，不是车载端看了 STALE）；底部也不给「取消装货」',
+        (-not $afterPresses.OffersCancel -and -not $afterPresses.BottomOffered), 'offersCancel=False / bottomOffered=False',
+        (Format-VehicleView $afterPresses))
 } else {
     Add-L2RealNotReached $assertions @('L2-SST-06', 'L2-SST-07', 'L2-SST-11') '窗口没造出来：车上那一行没有可按的「取消」'
 }

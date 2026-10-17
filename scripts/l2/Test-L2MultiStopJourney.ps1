@@ -43,7 +43,8 @@ foreach ($case in $cases) {
 # Every file of this driver, not only the module: the scenarios and their common driver were written through the same
 # tools (control-server#218 review).
 $scanned = @('L2MultiStopJourney.psm1', 'scenarios/MultiStopRigCommon.ps1', 'scenarios/g3-multi-stop-plan.ps1',
-    'scenarios/real-onboard-mixed-side-one-stop.ps1')
+    'scenarios/real-onboard-mixed-side-one-stop.ps1', 'scenarios/g3-load-cancellation-before-load.ps1',
+    'scenarios/real-onboard-stale-stop-after-station-timeout.ps1')
 foreach ($relative in $scanned) {
     $bytes = [IO.File]::ReadAllBytes((Join-Path $PSScriptRoot $relative))
     $control = @(for ($i = 0; $i -lt $bytes.Length; $i++) { if ($bytes[$i] -lt 32 -and $bytes[$i] -notin 9, 10, 13) { $i } })
