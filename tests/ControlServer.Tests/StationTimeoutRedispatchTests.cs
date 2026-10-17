@@ -42,6 +42,8 @@ public sealed class StationTimeoutRedispatchTests
     public async Task AnUnscannedPickupGoesBackToTheBacklogAtTheStationDeadlineAndIsDispatchedAgain()
     {
         await using RuntimeFixture fixture = await SingleDemandAsync();
+        // 测的是放回路径：显式设 v4 的上限，不符合 REQ-0365（control-server#751）。
+        fixture.Options.StationTimeoutRedispatchLimit = JourneyRuntimeWorkerTestKit.NonConformingStationTimeoutRedispatchLimit;
         JourneyRuntimeRow first = await fixture.AdvanceToSublotWaitAsync();
 
         DateTimeOffset deadline = await RunOutTheStationDeadlineAsync(fixture);
@@ -228,6 +230,8 @@ public sealed class StationTimeoutRedispatchTests
     public async Task AtASecondPickupOnlyTheUnscannedDemandGoesBackAndTheJourneyCarriesOnWithItsCargo()
     {
         await using RuntimeFixture fixture = await RuntimeFixture.CreateAsync();
+        // 测的是放回路径：显式设 v4 的上限，不符合 REQ-0365（control-server#751）。
+        fixture.Options.StationTimeoutRedispatchLimit = JourneyRuntimeWorkerTestKit.NonConformingStationTimeoutRedispatchLimit;
         await StopEndedJourneyContinuesTests.ArriveAtTheSecondPickupAsync(fixture);
         string journeyId = (await JourneyOfAsync(fixture, FirstDemandId)).JourneyId;
         fixture.Options.StationDepartureWaitTimeout = TimeSpan.FromSeconds(10);
@@ -270,6 +274,8 @@ public sealed class StationTimeoutRedispatchTests
     public async Task AnUnscannedAnchorBesideALoadedSameStopAppendEndsWithTheAnchorAlarm()
     {
         await using RuntimeFixture fixture = await RuntimeFixture.CreateAsync();
+        // 测的是放回路径：显式设 v4 的上限，不符合 REQ-0365（control-server#751）。
+        fixture.Options.StationTimeoutRedispatchLimit = JourneyRuntimeWorkerTestKit.NonConformingStationTimeoutRedispatchLimit;
         fixture.Options.StationDepartureWaitTimeout = TimeSpan.FromSeconds(10);
         JourneyRuntimeRow runtime = await Batch7MultiDemandAdvanceTests.TwoDemandsAtThePickupAsync(fixture);
         Assert.Equal(JourneyRuntimeStage.AwaitingSublot, runtime.Stage);
@@ -369,6 +375,8 @@ public sealed class StationTimeoutRedispatchTests
     public async Task ARedispatchedJourneyWhileTheSessionIsNotReadyOnItsOwnOrderRunsItsOwnDeadlineFromItsArrival()
     {
         await using RuntimeFixture fixture = await SingleDemandAsync();
+        // 测的是放回路径：显式设 v4 的上限，不符合 REQ-0365（control-server#751）。
+        fixture.Options.StationTimeoutRedispatchLimit = JourneyRuntimeWorkerTestKit.NonConformingStationTimeoutRedispatchLimit;
         await fixture.AdvanceToSublotWaitAsync();
         await RunOutTheStationDeadlineAsync(fixture);
         JourneyRuntimeRow redispatched = await WaitForRedispatchAsync(fixture);

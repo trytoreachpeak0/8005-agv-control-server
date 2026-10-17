@@ -40,6 +40,8 @@ public sealed class StagingSwitchOffWireParityTests
     public async Task AnUnscannedStagingPickupSendsTheSameLinesWithTheSwitchOff()
     {
         await using RuntimeFixture fixture = await StagingFixtureAsync();
+        // 测的是放回路径：显式设 v4 的上限，不符合 REQ-0365（control-server#751）。
+        fixture.Options.StationTimeoutRedispatchLimit = JourneyRuntimeWorkerTestKit.NonConformingStationTimeoutRedispatchLimit;
         fixture.Options.StationDepartureWaitTimeout = TimeSpan.FromSeconds(10);
 
         await ArriveAtPickupAsync(fixture, FirstDemandId);

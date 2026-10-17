@@ -181,6 +181,8 @@ public sealed class StopEndedJourneyContinuesTests
     public async Task ARefillBeforeTheStopEndsAndTheEmptyWorklistStackAndTheRevisionsStillOnlyAdvance()
     {
         await using RuntimeFixture fixture = await RuntimeFixture.CreateAsync();
+        // 测的是放回路径：显式设 v4 的上限，不符合 REQ-0365（control-server#751）。
+        fixture.Options.StationTimeoutRedispatchLimit = JourneyRuntimeWorkerTestKit.NonConformingStationTimeoutRedispatchLimit;
         CancellationToken token = TestContext.Current.CancellationToken;
         JourneyStopRow secondPickup = await EndTheSecondPickupByItsDeadlineAsync(fixture, refillFirst: true);
 
@@ -564,6 +566,8 @@ public sealed class StopEndedJourneyContinuesTests
         CancellationToken token = TestContext.Current.CancellationToken;
         EntryInterleaver interleaver = new();
         await using RuntimeFixture fixture = await RuntimeFixture.CreateAsync(commands: interleaver);
+        // 测的是放回路径：显式设 v4 的上限，不符合 REQ-0365（control-server#751）。
+        fixture.Options.StationTimeoutRedispatchLimit = JourneyRuntimeWorkerTestKit.NonConformingStationTimeoutRedispatchLimit;
         fixture.Options.StationDepartureWaitTimeout = TimeSpan.FromSeconds(10);
         fixture.Catalog.Set(fixture.Demand(FirstDemandId, FirstSublot, Now.AddMinutes(-10)));
         fixture.BoxCounts.Set(FirstSublot, 7);
@@ -602,6 +606,8 @@ public sealed class StopEndedJourneyContinuesTests
     {
         CancellationToken token = TestContext.Current.CancellationToken;
         await using RuntimeFixture fixture = await RuntimeFixture.CreateAsync();
+        // 测的是放回路径：显式设 v4 的上限，不符合 REQ-0365（control-server#751）。
+        fixture.Options.StationTimeoutRedispatchLimit = JourneyRuntimeWorkerTestKit.NonConformingStationTimeoutRedispatchLimit;
         JourneyStopRow secondPickup = await EndTheSecondPickupByItsDeadlineAsync(fixture, thirdAtTheSecondPickup: true);
 
         // 前提：丙与乙挂在同一个停靠上，两条都被这一次期限放回待派（control-server#703 之前是终结）。
@@ -650,6 +656,8 @@ public sealed class StopEndedJourneyContinuesTests
     public async Task AStopWhoseDemandWentBackToTheBacklogTellsTheVehicleItWasReleased()
     {
         await using RuntimeFixture fixture = await RuntimeFixture.CreateAsync();
+        // 测的是放回路径：显式设 v4 的上限，不符合 REQ-0365（control-server#751）。
+        fixture.Options.StationTimeoutRedispatchLimit = JourneyRuntimeWorkerTestKit.NonConformingStationTimeoutRedispatchLimit;
         await EndTheSecondPickupByItsDeadlineAsync(fixture);
 
         Snapshot empty = Assert.Single(

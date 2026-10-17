@@ -645,6 +645,8 @@ public sealed class JourneyRuntimeWorkerLoadCancellationBeforeSublotTests
     {
         CancellationToken token = TestContext.Current.CancellationToken;
         await using RuntimeFixture fixture = await RuntimeFixture.CreateAsync();
+        // 测的是放回路径：显式设 v4 的上限，不符合 REQ-0365（control-server#751）。
+        fixture.Options.StationTimeoutRedispatchLimit = JourneyRuntimeWorkerTestKit.NonConformingStationTimeoutRedispatchLimit;
         fixture.Options.StationDepartureWaitTimeout = TimeSpan.FromSeconds(10);
         fixture.Catalog.Set(fixture.Demand(BeforeSublotDemandId, "SUBLOT-001", createdAt: Now.AddMinutes(-10)));
         fixture.BoxCounts.Set("SUBLOT-001", 7);

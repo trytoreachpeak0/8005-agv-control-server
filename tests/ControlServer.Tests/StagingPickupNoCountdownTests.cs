@@ -91,7 +91,7 @@ public sealed class StagingPickupNoCountdownTests
 
     /// <summary>
     /// 验收 2：没人扫码，钟拨过 60 分钟。待送点：本站不结束，需求不放回、不终结、不计 control-server#703 的放回次数、不挂告警。
-    /// 另两种：第一个期限就把本站结束、需求放回（control-server#703 的第一次放回）。
+    /// 另两种：第一个期限就把本站结束、需求以 <c>CANCELLED_BY_STATION_TIMEOUT</c> 终结并挂人工搬运告警（v5 出厂不放回，REQ-0365，control-server#751）。
     /// </summary>
     [Theory]
     [MemberData(nameof(Kinds))]
@@ -131,9 +131,10 @@ public sealed class StagingPickupNoCountdownTests
         else
         {
             Assert.Equal(JourneyRuntimeStage.Completed, journey.Stage);
-            Assert.Equal(DemandJourneyLookup.ReleasedAtStationDeadlineReason, journey.BlockReasonCode);
-            Assert.Equal(1, await StationDeadlineReleasesAsync(fixture));
-            Assert.Equal(DemandExecutionStatus.Accepted, (await fixture.DemandRowAsync()).Status);
+            Assert.Equal("CANCELLED_BY_STATION_TIMEOUT", journey.BlockReasonCode);
+            Assert.Equal(0, await StationDeadlineReleasesAsync(fixture));
+            Assert.Equal(DemandExecutionStatus.Cancelled, (await fixture.DemandRowAsync()).Status);
+            Assert.Equal(ManualCarryAlarms.StationTimeoutRedispatchLimitReached, Assert.Single(await AlarmsAsync(fixture)).ReasonCode);
         }
     }
 
