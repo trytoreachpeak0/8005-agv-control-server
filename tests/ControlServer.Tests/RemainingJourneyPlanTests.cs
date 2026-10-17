@@ -7,7 +7,10 @@ using ControlServer.Host.Transport;
 using ControlServer.Infrastructure.Persistence;
 using Microsoft.Data.Sqlite;
 using Microsoft.EntityFrameworkCore;
+using ControlServer.Host.Runtime.Dispatch.Criteria;
+using ControlServer.Host.Runtime.RouteGraph;
 using Microsoft.Extensions.Configuration;
+using Microsoft.Extensions.Options;
 
 namespace ControlServer.Tests;
 
@@ -114,6 +117,18 @@ public sealed class RemainingJourneyPlanTests
             maximumJourneyStops);
 
         Assert.Equal(expectedRefusal, decision.RefusalReasonCode);
+    }
+
+    /// <summary>在途链上的追加判据读的是配置里的上限，不是默认值：装配时漏传配置，改小上限在现场就不生效。</summary>
+    [Fact]
+    public void TheInTransitChainHandsTheConfiguredJourneyStopLimitToTheAppendGate()
+    {
+        IReadOnlyList<IDispatchAdmissionCriterion> chain = DispatchAdmissionCriteria.InTransit(
+            [],
+            Options.Create(new JourneyRuntimeOptions { MaximumJourneyStops = 12 }),
+            new RouteGraphAccess(store: null!, Options.Create(new RouteGraphOptions()), TimeProvider.System));
+
+        Assert.Equal(12, chain.OfType<EnRouteAppendCriterion>().Single().MaximumJourneyStops);
     }
 
     /// <summary>整趟上限挡住的车在待送点上算「装不下」（与 9 段同一类），否则车会在待送点白等到持货期限。</summary>

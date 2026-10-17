@@ -25,6 +25,10 @@ public sealed class EnRouteAppendCriterion(RouteGraphAccess routeGraph, IOptions
     /// <summary>在可达性之后、仓位之前：插位规划要用路网，而路网不可用时那条判据已经先拒了。</summary>
     public int Order => 98;
 
+    /// <summary>交给规划器的整趟停靠总数上限（control-server#749）。</summary>
+    internal int MaximumJourneyStops =>
+        options?.Value.MaximumJourneyStops ?? EnRouteAppendPlanner.DefaultMaximumJourneyStops;
+
     public async Task<string> EvaluateAsync(
         DispatchCandidateEvaluation evaluation,
         CancellationToken cancellationToken)
@@ -75,7 +79,7 @@ public sealed class EnRouteAppendCriterion(RouteGraphAccess routeGraph, IOptions
             (from, to) => availability.Graph!.Traverse(from, to) is { Reachable: true } traversal
                 ? traversal.TraversalCostMm
                 : null,
-            options?.Value.MaximumJourneyStops ?? EnRouteAppendPlanner.DefaultMaximumJourneyStops);
+            MaximumJourneyStops);
         if (decision.Placement is not { } placement)
         {
             return decision.RefusalReasonCode

@@ -1,0 +1,81 @@
+Test run for F:\8005-wt\fti-749-8005-agv-control-server\tests\ControlServer.Tests\bin\Debug\net8.0\win-x64\ControlServer.Tests.dll (.NETCoreApp,Version=v8.0)
+VSTest version 17.11.1 (x64)
+
+Starting test execution, please wait...
+A total of 1 test files matched the specified pattern.
+[xUnit.net 00:00:08.63]     ControlServer.Tests.RemainingJourneyPlanTests.TheNineLegLimitCountsOnlyTheStopsAhead(stops: 10, expectedRefusal: null) [FAIL]
+[xUnit.net 00:00:08.64]     ControlServer.Tests.Batch7EnRouteAppendPlannerTests.ACompletedStopNoLongerCountsTowardsTheNineLegLimit [FAIL]
+  Failed ControlServer.Tests.RemainingJourneyPlanTests.TheNineLegLimitCountsOnlyTheStopsAhead(stops: 10, expectedRefusal: null) [8 ms]
+  Error Message:
+   Assert.Equal() Failure: Strings differ
+Expected: null
+Actual:   "EN_ROUTE_APPEND_PLAN_LIMIT_REACHED"
+  Stack Trace:
+     at ControlServer.Tests.RemainingJourneyPlanTests.TheNineLegLimitCountsOnlyTheStopsAhead(Int32 stops, String expectedRefusal) in F:\8005-wt\fti-749-8005-agv-control-server\tests\ControlServer.Tests\RemainingJourneyPlanTests.cs:line 81
+   at InvokeStub_RemainingJourneyPlanTests.TheNineLegLimitCountsOnlyTheStopsAhead(Object, Span`1)
+   at System.Reflection.MethodBaseInvoker.InvokeWithFewArgs(Object obj, BindingFlags invokeAttr, Binder binder, Object[] parameters, CultureInfo culture)
+  Failed ControlServer.Tests.Batch7EnRouteAppendPlannerTests.ACompletedStopNoLongerCountsTowardsTheNineLegLimit [2 ms]
+  Error Message:
+   Assert.Null() Failure: Value is not null
+Expected: null
+Actual:   "EN_ROUTE_APPEND_PLAN_LIMIT_REACHED"
+  Stack Trace:
+     at ControlServer.Tests.Batch7EnRouteAppendPlannerTests.ACompletedStopNoLongerCountsTowardsTheNineLegLimit() in F:\8005-wt\fti-749-8005-agv-control-server\tests\ControlServer.Tests\Batch7EnRouteAppendPlannerTests.cs:line 447
+   at System.RuntimeMethodHandle.InvokeMethod(Object target, Void** arguments, Signature sig, Boolean isConstructor)
+   at System.Reflection.MethodBaseInvoker.InvokeWithNoArgs(Object obj, BindingFlags invokeAttr)
+[xUnit.net 00:00:08.69]     ControlServer.Tests.RemainingJourneyPlanTests.TheWholeJourneyMayHaveTwentyStopsByDefault(stops: 18, passed: 14, expectedRefusal: null) [FAIL]
+[xUnit.net 00:00:08.69]     ControlServer.Tests.RemainingJourneyPlanTests.TheWholeJourneyMayHaveTwentyStopsByDefault(stops: 19, passed: 15, expectedRefusal: "EN_ROUTE_APPEND_JOURNEY_STOP_LIMIT_REACHED") [FAIL]
+[xUnit.net 00:00:08.71]     ControlServer.Tests.RemainingJourneyPlanTests.TheJourneyStopLimitFollowsTheConfiguredValue(maximumJourneyStops: 13, expectedRefusal: null) [FAIL]
+  Failed ControlServer.Tests.RemainingJourneyPlanTests.TheWholeJourneyMayHaveTwentyStopsByDefault(stops: 18, passed: 14, expectedRefusal: null) [< 1 ms]
+  Error Message:
+   Assert.Equal() Failure: Strings differ
+Expected: null
+Actual:   "EN_ROUTE_APPEND_PLAN_LIMIT_REACHED"
+  Stack Trace:
+     at ControlServer.Tests.RemainingJourneyPlanTests.TheWholeJourneyMayHaveTwentyStopsByDefault(Int32 stops, Int32 passed, String expectedRefusal) in F:\8005-wt\fti-749-8005-agv-control-server\tests\ControlServer.Tests\RemainingJourneyPlanTests.cs:line 100
+   at System.RuntimeMethodHandle.InvokeMethod(Object target, Void** arguments, Signature sig, Boolean isConstructor)
+   at System.Reflection.MethodBaseInvoker.InvokeDirectByRefWithFewArgs(Object obj, Span`1 copyOfArgs, BindingFlags invokeAttr)
+  Failed ControlServer.Tests.RemainingJourneyPlanTests.TheWholeJourneyMayHaveTwentyStopsByDefault(stops: 19, passed: 15, expectedRefusal: "EN_ROUTE_APPEND_JOURNEY_STOP_LIMIT_REACHED") [1 ms]
+  Error Message:
+   Assert.Equal() Failure: Strings differ
+                           ↓ (pos 16)
+Expected: "EN_ROUTE_APPEND_JOURNEY_STOP_LIMIT_REACHED"
+Actual:   "EN_ROUTE_APPEND_PLAN_LIMIT_REACHED"
+                           ↑ (pos 16)
+  Stack Trace:
+     at ControlServer.Tests.RemainingJourneyPlanTests.TheWholeJourneyMayHaveTwentyStopsByDefault(Int32 stops, Int32 passed, String expectedRefusal) in F:\8005-wt\fti-749-8005-agv-control-server\tests\ControlServer.Tests\RemainingJourneyPlanTests.cs:line 100
+   at InvokeStub_RemainingJourneyPlanTests.TheWholeJourneyMayHaveTwentyStopsByDefault(Object, Span`1)
+   at System.Reflection.MethodBaseInvoker.InvokeWithFewArgs(Object obj, BindingFlags invokeAttr, Binder binder, Object[] parameters, CultureInfo culture)
+  Failed ControlServer.Tests.RemainingJourneyPlanTests.TheJourneyStopLimitFollowsTheConfiguredValue(maximumJourneyStops: 13, expectedRefusal: null) [< 1 ms]
+  Error Message:
+   Assert.Equal() Failure: Strings differ
+Expected: null
+Actual:   "EN_ROUTE_APPEND_PLAN_LIMIT_REACHED"
+  Stack Trace:
+     at ControlServer.Tests.RemainingJourneyPlanTests.TheJourneyStopLimitFollowsTheConfiguredValue(Int32 maximumJourneyStops, String expectedRefusal) in F:\8005-wt\fti-749-8005-agv-control-server\tests\ControlServer.Tests\RemainingJourneyPlanTests.cs:line 116
+   at System.RuntimeMethodHandle.InvokeMethod(Object target, Void** arguments, Signature sig, Boolean isConstructor)
+   at System.Reflection.MethodBaseInvoker.InvokeDirectByRefWithFewArgs(Object obj, Span`1 copyOfArgs, BindingFlags invokeAttr)
+[xUnit.net 00:00:08.71]     ControlServer.Tests.RemainingJourneyPlanTests.TheJourneyStopLimitFollowsTheConfiguredValue(maximumJourneyStops: 12, expectedRefusal: "EN_ROUTE_APPEND_JOURNEY_STOP_LIMIT_REACHED") [FAIL]
+  Failed ControlServer.Tests.RemainingJourneyPlanTests.TheJourneyStopLimitFollowsTheConfiguredValue(maximumJourneyStops: 12, expectedRefusal: "EN_ROUTE_APPEND_JOURNEY_STOP_LIMIT_REACHED") [< 1 ms]
+  Error Message:
+   Assert.Equal() Failure: Strings differ
+                           ↓ (pos 16)
+Expected: "EN_ROUTE_APPEND_JOURNEY_STOP_LIMIT_REACHED"
+Actual:   "EN_ROUTE_APPEND_PLAN_LIMIT_REACHED"
+                           ↑ (pos 16)
+  Stack Trace:
+     at ControlServer.Tests.RemainingJourneyPlanTests.TheJourneyStopLimitFollowsTheConfiguredValue(Int32 maximumJourneyStops, String expectedRefusal) in F:\8005-wt\fti-749-8005-agv-control-server\tests\ControlServer.Tests\RemainingJourneyPlanTests.cs:line 116
+   at InvokeStub_RemainingJourneyPlanTests.TheJourneyStopLimitFollowsTheConfiguredValue(Object, Span`1)
+   at System.Reflection.MethodBaseInvoker.InvokeWithFewArgs(Object obj, BindingFlags invokeAttr, Binder binder, Object[] parameters, CultureInfo culture)
+[xUnit.net 00:00:13.75]     ControlServer.Tests.RemainingJourneyPlanTests.AnAppendAfterFivePassedStopsIsPlacedWhenTheStopsAheadFit [FAIL]
+  Failed ControlServer.Tests.RemainingJourneyPlanTests.AnAppendAfterFivePassedStopsIsPlacedWhenTheStopsAheadFit [< 1 ms]
+  Error Message:
+   Assert.Null() Failure: Value is not null
+Expected: null
+Actual:   "EN_ROUTE_APPEND_PLAN_LIMIT_REACHED"
+  Stack Trace:
+     at ControlServer.Tests.RemainingJourneyPlanTests.AnAppendAfterFivePassedStopsIsPlacedWhenTheStopsAheadFit() in F:\8005-wt\fti-749-8005-agv-control-server\tests\ControlServer.Tests\RemainingJourneyPlanTests.cs:line 60
+   at System.RuntimeMethodHandle.InvokeMethod(Object target, Void** arguments, Signature sig, Boolean isConstructor)
+   at System.Reflection.MethodBaseInvoker.InvokeWithNoArgs(Object obj, BindingFlags invokeAttr)
+
+Failed!  - Failed:     7, Passed:    39, Skipped:     0, Total:    46, Duration: 5 s - ControlServer.Tests.dll (net8.0)
