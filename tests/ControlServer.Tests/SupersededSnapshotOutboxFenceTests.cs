@@ -1,6 +1,8 @@
 using System.Text.Json;
 using ControlServer.Domain;
 using ControlServer.Host.Runtime;
+using ControlServer.Host.Runtime.Charging;
+using ControlServer.Host.Runtime.Fleet;
 using ControlServer.Host.Transport;
 using ControlServer.Infrastructure.Persistence;
 using ControlServer.Application;
@@ -17,7 +19,7 @@ namespace ControlServer.Tests;
 /// </summary>
 /// <remarks>
 /// <para>
-/// <b>修之前。</b>车载端按消息类型记采纳过的最高号，号更低的当回退拒收、不回 ack，记录断线不丢。断线漏了确认的中途快照于是永久挂在发件箱里：
+/// <b>修之前。</b>车载端按消息类型记采纳过的最高号，号更低的当回退拒收（回 <c>ProtocolProblem</c>、不回 ack、拆会话），记录断线不丢。断线漏了确认的中途快照于是永久挂在发件箱里：
 /// 在途时被同流更高的一版盖过，或旅程收尾之后不再在任何补发集合里；换协议身份时 <c>ProtocolOutboxIdentityStartupCheck</c> 拒绝启动。
 /// </para>
 /// <para>
@@ -335,6 +337,43 @@ public sealed class SupersededSnapshotOutboxFenceTests
         // 这一趟的中途清单没有被确认盖过：收尾时不退。
         string[] worklistsAfter = await PendingIdsOfAsync(fixture, "CurrentStopWorklistSnapshot");
         Assert.All(worklistsBefore, id => Assert.Contains(id, worklistsAfter));
+    }
+
+    /// <summary>
+    /// 运行时规则 A 在充电收尾（<c>JourneyClosure.StageChargingAsync</c>）里同样当场退（审查 S3）：这辆车上被确认过的更高一版盖过的行退役，
+    /// 别的车的行不动。
+    /// </summary>
+    /// <remarks>
+    /// 直接调收尾入口，不搭一整趟充电：规则 A 在读会话之前，夹具里没有这辆车的会话行，入口退役之后就返回、不暂存收尾快照。
+    /// 另外三个非搬运收尾入口（空闲返回、等待点清桩、充满）同一行写法，没有各自的用例，见 PR 正文。
+    /// </remarks>
+    [Fact]
+    [Trait("IntegrationSlice", "FP-IS-08")]
+    public async Task ClosingAChargingJourneyFencesLinesBelowTheAcknowledgedRevisionAtOnce()
+    {
+        await using RuntimeFixture fixture = await RuntimeFixture.CreateAsync();
+        const string business = "VehicleBusinessStateSnapshot";
+        fixture.Context.ProtocolOutbox.Add(Line(fixture, Id(business, 900), AgvA, business, 900, current: true, acknowledged: true));
+        fixture.Context.ProtocolOutbox.Add(Line(fixture, Id(business, 899), AgvA, business, 899, current: true));
+        fixture.Context.ProtocolOutbox.Add(Line(fixture, Id(business, 800), AgvB, business, 800, current: true));
+        await SaveAndClearAsync(fixture);
+        JourneyRuntimeRow charging = ChargingJourneyShape.Build(
+            ChargingIdentity.JourneyIdFor("V750A", fixture.Clock.GetUtcNow()),
+            new FleetVehicle(AgvA, "V750A", 1),
+            new ChargerRosterEntry(fixture.Options.MapId, 750, "CHG-750", null, null, []),
+            1,
+            "MANDATORY_CHARGE",
+            fixture.Options,
+            fixture.Clock.GetUtcNow()).Runtime;
+        Assert.Equal(AgvA, charging.AgvId);
+
+        await JourneyClosure.StageChargingAsync(fixture.Context, charging, "CHARGING_TEST_END", fixture.Clock.GetUtcNow(), Token);
+        await SaveAndClearAsync(fixture);
+
+        Assert.Equal(JourneyRuntimeStage.Completed, charging.Stage);
+        Assert.NotNull((await RowAsync(fixture, Id(business, 899))).FencedAt);
+        Assert.Null((await RowAsync(fixture, Id(business, 900))).FencedAt);
+        Assert.Null((await RowAsync(fixture, Id(business, 800))).FencedAt);
     }
 
     /// <summary>

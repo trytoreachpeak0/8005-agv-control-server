@@ -6,12 +6,13 @@ using Microsoft.EntityFrameworkCore;
 namespace ControlServer.Host.Runtime;
 
 /// <summary>
-/// 已被更高一版盖过的旅程快照（业务状态、清单、计划）：未确认、未退役、车反正会当回退拒收的行退役（control-server#750）。
+/// 已被更高一版盖过的旅程快照（业务状态、清单、计划）：未确认、未退役、车收到只会当回退拒收并拆会话的行退役（control-server#750）。
 /// </summary>
 /// <remarks>
 /// <para>
 /// <b>为什么要退。</b>车载端按消息类型记它采纳过的最高号（onboard-hmi <c>WireToGateSessionClient.ApplyJourneyRevision</c>），号更低的
-/// 抛 <c>SNAPSHOT_REVISION_REGRESSION</c>、不回 ack；这份记录断线不丢，重连前从本地日志簿恢复。服务端只退同一停靠的上一号与少数几种站结束，
+/// 抛 <c>SNAPSHOT_REVISION_REGRESSION</c>：先回 <c>ProtocolProblem</c>、不回 ack，接收循环随之失败、拆掉会话（<c>FinishFailedSession</c>），
+/// 也就是每补发一次回退就断一次线。这份记录断线不丢，重连前从本地日志簿恢复。服务端只退同一停靠的上一号与少数几种站结束，
 /// 每个停靠的最后一版与已收尾旅程的中途版都只靠车确认。断线漏了确认的那一行之后既不在任何补发集合里、也不会被退，
 /// 换协议身份时 <c>ProtocolOutboxIdentityStartupCheck</c> 拒绝启动。
 /// </para>
@@ -96,45 +97,59 @@ internal static class SupersededSnapshotOutbox
     {
         ArgumentNullException.ThrowIfNull(dbContext);
 
-        // 被跟踪的查询：调用方同一次改动里刚确认、刚退役的行按改动后的值判。只读已落库的行，本次刚暂存的（收尾快照）不在里面。
         string[] types = [.. RevisionProperties.Keys];
-        ProtocolOutboxRow[] rows = await dbContext.ProtocolOutbox
-            .Where(row => types.Contains(row.MessageType))
-            .ToArrayAsync(cancellationToken).ConfigureAwait(false);
-        List<Line> lines = [];
-        foreach (ProtocolOutboxRow row in rows)
-        {
-            if (Read(row) is { } line && (agvId is null || line.AgvId == agvId))
-            {
-                lines.Add(line);
-            }
-        }
-
-        HashSet<string> closureIds = closures
+        string[] closureIds = closures
             ? await ClosureIdsAsync(dbContext, agvId, cancellationToken).ConfigureAwait(false)
             : [];
 
-        int fenced = 0;
-        foreach (IGrouping<(string AgvId, string MessageType), Line> stream in lines.GroupBy(line => (line.AgvId, line.Row.MessageType)))
+        // 门槛只读、不跟踪：已确认行与收尾快照投影出号来算，不载进调用方的上下文——引擎一轮所有车共用一个上下文，
+        // 运行时规则 A 若把整张表跟踪进去，同一轮后面按 id 的跟踪读会拿到这一刻的旧实例（control-server#750 审查 S2）。
+        // 调用方同一次改动里刚确认、还没保存的行因此不算进门槛：只会少退。
+        var thresholdRows = await dbContext.ProtocolOutbox.AsNoTracking()
+            .Where(row => types.Contains(row.MessageType) && (row.AcknowledgedAt != null || closureIds.Contains(row.MessageId)))
+            .Select(row => new { row.MessageId, row.MessageType, row.PayloadJson, row.CreatedAt, Acknowledged = row.AcknowledgedAt != null })
+            .ToArrayAsync(cancellationToken).ConfigureAwait(false);
+        HashSet<string> closing = new(closureIds, StringComparer.Ordinal);
+        List<Mark> marks = [];
+        foreach (var row in thresholdRows)
         {
-            long? acknowledged = stream.Where(line => line.Row.AcknowledgedAt is not null).Max(line => (long?)line.Revision);
-            Line[] closing = [.. stream.Where(line => closureIds.Contains(line.Row.MessageId))];
-            foreach (Line line in stream.Where(line => line.Row.AcknowledgedAt is null && line.Row.FencedAt is null))
+            if (Read(row.MessageType, row.PayloadJson) is { } read && (agvId is null || read.AgvId == agvId))
             {
-                bool overAcknowledged = line.Revision < acknowledged;
-                bool overClosure = closing.Any(close => line.Revision < close.Revision && line.Row.CreatedAt <= close.Row.CreatedAt);
-                if (overAcknowledged || overClosure)
-                {
-                    line.Row.FencedAt = fencedAt;
-                    fenced++;
-                }
+                marks.Add(new Mark(read.AgvId, row.MessageType, read.Revision, row.CreatedAt, row.Acknowledged, closing.Contains(row.MessageId)));
+            }
+        }
+        ILookup<(string AgvId, string MessageType), Mark> streams = marks.ToLookup(mark => (mark.AgvId, mark.MessageType));
+        if (streams.Count == 0)
+        {
+            return 0;
+        }
+
+        // 只跟踪要退的候选：未确认、未退役、已落库的行（本次刚暂存的收尾快照不在里面）。被跟踪的实体按本次改动里的值再判一次：
+        // 调用方刚确认、刚退役的不再退（同 StopScopedOutbox）。
+        ProtocolOutboxRow[] pending = await dbContext.ProtocolOutbox
+            .Where(row => types.Contains(row.MessageType) && row.AcknowledgedAt == null && row.FencedAt == null)
+            .ToArrayAsync(cancellationToken).ConfigureAwait(false);
+        int fenced = 0;
+        foreach (ProtocolOutboxRow row in pending.Where(row => row.AcknowledgedAt is null && row.FencedAt is null))
+        {
+            if (Read(row.MessageType, row.PayloadJson) is not { } line || (agvId is not null && line.AgvId != agvId))
+            {
+                continue;
+            }
+            IEnumerable<Mark> stream = streams[(line.AgvId, row.MessageType)];
+            bool overAcknowledged = stream.Any(mark => mark.Acknowledged && line.Revision < mark.Revision);
+            bool overClosure = stream.Any(mark => mark.Closure && line.Revision < mark.Revision && row.CreatedAt <= mark.CreatedAt);
+            if (overAcknowledged || overClosure)
+            {
+                row.FencedAt = fencedAt;
+                fenced++;
             }
         }
         return fenced;
     }
 
     /// <summary>已收尾旅程的收尾快照 id。</summary>
-    private static async Task<HashSet<string>> ClosureIdsAsync(
+    private static async Task<string[]> ClosureIdsAsync(
         ControlServerDbContext dbContext,
         string? agvId,
         CancellationToken cancellationToken)
@@ -143,26 +158,26 @@ internal static class SupersededSnapshotOutbox
             .Where(row => row.Stage == JourneyRuntimeStage.Completed && (agvId == null || row.AgvId == agvId))
             .Select(row => row.JourneyId)
             .ToArrayAsync(cancellationToken).ConfigureAwait(false);
-        return new HashSet<string>(journeyIds.SelectMany(JourneyClosure.SnapshotMessageIds), StringComparer.Ordinal);
+        return [.. journeyIds.SelectMany(JourneyClosure.SnapshotMessageIds)];
     }
 
     /// <summary>信封里的车与载荷里的号。读不出来的行返回 null，不替它判；身份检查照旧把它算作不匹配。</summary>
-    private static Line? Read(ProtocolOutboxRow row)
+    private static (string AgvId, long Revision)? Read(string messageType, string payloadJson)
     {
         try
         {
-            using JsonDocument document = JsonDocument.Parse(row.PayloadJson);
+            using JsonDocument document = JsonDocument.Parse(payloadJson);
             JsonElement root = document.RootElement;
             if (root.TryGetProperty("agvId", out JsonElement agv) &&
                 agv.ValueKind == JsonValueKind.String &&
                 agv.GetString() is { Length: > 0 } agvId &&
                 root.TryGetProperty("payload", out JsonElement payload) &&
                 payload.ValueKind == JsonValueKind.Object &&
-                payload.TryGetProperty(RevisionProperties[row.MessageType], out JsonElement revision) &&
+                payload.TryGetProperty(RevisionProperties[messageType], out JsonElement revision) &&
                 revision.ValueKind == JsonValueKind.Number &&
                 revision.TryGetInt64(out long value))
             {
-                return new Line(row, agvId, value);
+                return (agvId, value);
             }
         }
         catch (JsonException)
@@ -171,5 +186,6 @@ internal static class SupersededSnapshotOutbox
         return null;
     }
 
-    private sealed record Line(ProtocolOutboxRow Row, string AgvId, long Revision);
+    /// <summary>门槛行：车已确认的行（规则 A）或已收尾旅程的收尾快照（规则 B）。</summary>
+    private sealed record Mark(string AgvId, string MessageType, long Revision, DateTimeOffset CreatedAt, bool Acknowledged, bool Closure);
 }
