@@ -11,6 +11,11 @@ v2 的修法两端都有，缺一不可：
   才到的扫码答 SublotRejected / WORKLIST_REVISION_STALE，迟到的取消以同一个码拒绝。
 - 车载端 onboard-hmi#199：收到结束本站的清单（空或更高号）就撤掉录入请求与「取消装货」入口；收到 STALE 拒收同样撤掉。
 
+扫码前取消的入口在 onboard-hmi#363（CP-0016）起从底部「取消装货」挪到了清单每一行侧边的「取消」（`WorklistItemCancellation`），
+底部按钮在机台上只留装货进行中的取消。下文「取消」都指这单那一行的按钮，按它、确认框「取消这条需求」、被拒时的「取消失败」
+（control-server#753）。行跟着清单走，所以「车不再给『取消』」在行已不在时自然成立；行还在时（第三趟 STALE 之后）它读的是
+按钮是否可按。
+
 合成车载端只看得到线上报文，看不到 _currentEntryRequest 与按钮；车上残不残留只有真 WPF 加 UI Automation 看得见。
 
 **三趟。**
@@ -32,11 +37,11 @@ L2-SST-10 守的是服务端这一侧——STALE 拒收带的是收尾那一版�
 直接判：拒收载荷的 currentWorklistRevision 等于被丢那张空清单的 worklistRevision。修好的三端上 L2-SST-10 与 L2-SST-08 同源
 （都来自那一条 STALE 拒收），它不是另一端的独立证据。
 
-「某样东西不在」的判据都有正向锚点：第一趟 L2-SST-01、第二趟 L2-SST-09、第三趟 L2-SST-12 先读到了录入框可用、「取消装货」在、清单挂着这单，
+「某样东西不在」的判据都有正向锚点：第一趟 L2-SST-01、第二趟 L2-SST-09、第三趟 L2-SST-12 先读到了录入框可用、「取消」在、清单挂着这单，
 同一个读法后来读到「不在」才有意义（control-server#260 的教训）。
 
-断言读服务端 SQLite、代理的流量记录与车载端 UI Automation。「取消装货」被拒时车载端会另弹「取消装货失败」模态框
-（MainWindow.xaml.cs，#361 剩余风险），它挡住后续操作，所以每按一下都先关掉它；框在不在不当判据。
+断言读服务端 SQLite、代理的流量记录与车载端 UI Automation。「取消」被拒时车载端会另弹「取消失败」模态框
+（MainWindow.xaml.cs，#361 剩余风险；按底部「取消装货」时叫「取消装货失败」），它挡住后续操作，所以每按一下都先关掉它；框在不在不当判据。
 #>
 [CmdletBinding()]
 param([Parameter(Mandatory)][object]$Context)
@@ -54,18 +59,20 @@ $connection = $Context.Connection
 $proxy = $Context.ProtocolProxy
 
 if ($null -eq $proxy) { throw 'This scenario needs ProtocolFaultProxy = $true in its setup file.' }
-$button = '取消装货'
-$failure = '取消装货失败'
+# The row's own 「取消」 (onboard-hmi#363), its confirmation and the notice a refusal raises (MainWindow.OnWorklistRowCancellationClick).
+$rowButton = 'WorklistItemCancellation'
+$confirmation = '取消这条需求'
+$failure = '取消失败'
 
 # --- 读法 -------------------------------------------------------------------------------------------------------------
 
-# 车上此刻给的：录入框可用、「取消装货」在、清单里挂着哪些子批。Get-L2WorklistRows 返回 $null 表示清单不在树里——也就是没挂任何一条。
+# 车上此刻给的：录入框可用、这单那一行的「取消」可按、清单里挂着哪些子批。Get-L2WorklistRows 返回 $null 表示清单不在树里——也就是没挂任何一条。
 function Get-VehicleView([string]$Sublot) {
     $rows = Get-L2WorklistRows $onboard
     $sublots = @(if ($null -ne $rows) { $rows | ForEach-Object { [string]$_.Sublot } })
     return [pscustomobject]@{
         CanSubmit     = [bool]$onboard.CanSubmit()
-        OffersCancel  = [bool]$onboard.ButtonAvailable($button)
+        OffersCancel  = Test-L2WorklistRowButtonPressable $onboard $Sublot $rowButton
         ListsSublot   = $sublots -contains $Sublot
         WorklistShown = ($null -ne $rows)
         Rows          = ($sublots -join ',')
@@ -169,7 +176,7 @@ function Start-UnattendedStop([string]$Prefix) {
         -Until { param($v) $v -eq 'AwaitingPickupArrival' }
     $intent = Wait-L2RealIntent $Context $demandId 'TO_PICKUP'
     Move-L2RealVehicleTo $Context $intent $Context.PickupStationRiotId 'the pickup station'
-    $view = Wait-L2RealOrLast -Description "the vehicle offers sublot entry and $button for $Prefix" `
+    $view = Wait-L2RealOrLast -Description "the vehicle offers sublot entry and the row's 取消 for $Prefix" `
         -Journal $journal -Criterion "$Prefix-offered" -TimeoutSeconds 120 `
         -Probe { Get-VehicleView $sublot } `
         -Until { param($v) $v.CanSubmit -and $v.OffersCancel -and $v.ListsSublot }
@@ -189,10 +196,10 @@ function Test-TimedOut([object]$S) {
         $S.Stage -eq 'Completed' -and $S.Operations -eq 0)
 }
 
-# 按一下「取消装货」：确认框点「是」，被拒时关掉随后的「取消装货失败」框。返回按下之后服务端新收到的那一条请求的答复。
-function Invoke-CancelPress([string]$DemandId, [string]$Label) {
+# 按一下那一行的「取消」：确认框点「是」，被拒时关掉随后的「取消失败」框。返回按下之后服务端新收到的那一条请求的答复。
+function Invoke-CancelPress([string]$DemandId, [string]$Sublot, [string]$Label) {
     $before = (Get-L2RealInbound $connection 'LoadCancellationStartRequested').Count
-    $null = Invoke-L2RealConfirmedButton $onboard $journal $button $button
+    $null = Invoke-L2WorklistRowConfirmedButton $onboard $journal $Sublot $rowButton $confirmation
     $answered = Wait-L2RealOrLast -Description "the server answered the $Label press" `
         -Journal $journal -Criterion "cancel-$Label" -TimeoutSeconds 30 `
         -Probe {
@@ -228,7 +235,7 @@ $assertions.Add(
 
 $first = Start-UnattendedStop 'L2-SST-A'
 $assertions.Add(
-    'L2-SST-01', '第一趟：车到站后要子批、给「取消装货」、清单挂着这单（前提，也是下面三条「不在」的正向锚点）',
+    'L2-SST-01', '第一趟：车到站后要子批、这单那一行给「取消」、清单挂着这单（前提，也是下面三条「不在」的正向锚点）',
     ($first.View.CanSubmit -and $first.View.OffersCancel -and $first.View.ListsSublot),
     'canSubmit / offersCancel / listsSublot 均为 True', (Format-VehicleView $first.View))
 # 下面三条「不在」要在同一个会话、同一个窗口里读才算数：从这里起记下握手次数与代理连接数。
@@ -259,7 +266,7 @@ $assertions.Add(
     'L2-SST-03', '第一趟：旅程被站点期限结束之后，车不再要子批',
     (-not $afterFirst.CanSubmit), 'canSubmit=False', (Format-VehicleView $afterFirst))
 $assertions.Add(
-    'L2-SST-04', '第一趟：旅程被站点期限结束之后，车不再给「取消装货」',
+    'L2-SST-04', '第一趟：旅程被站点期限结束之后，车不再给那一行的「取消」',
     (-not $afterFirst.OffersCancel), 'offersCancel=False', (Format-VehicleView $afterFirst))
 $assertions.Add(
     'L2-SST-05', '第一趟：旅程被站点期限结束之后，车上的清单不再挂着这单',
@@ -334,12 +341,12 @@ function Format-Window([object]$W) {
 
 $windowExpected = 'Cancelled / CANCELLED_BY_STATION_TIMEOUT / Completed / 0；丢了的话恰好一张、是布下规则之后的空清单；canSubmit / offersCancel / listsSublot 均为 True'
 
-# --- 2. 第二趟：窗口里迟到地按「取消装货」 ---------------------------------------------------------------------------
+# --- 2. 第二趟：窗口里迟到地按那一行的「取消」 ---------------------------------------------------------------------------
 
 Clear-Residue $first.Sublot 'first'
 $second = Open-StaleWindow 'L2-SST-B' 'second'
 $assertions.Add(
-    'L2-SST-09', '第二趟（前提）：服务端已以站点期限收尾，车上仍要子批、仍给「取消装货」、清单仍挂着这单——迟到的取消只能发生在这个窗口里',
+    'L2-SST-09', '第二趟（前提）：服务端已以站点期限收尾，车上仍要子批、那一行仍给「取消」、清单仍挂着这单——迟到的取消只能发生在这个窗口里',
     $second.Open, $windowExpected, (Format-Window $second))
 if ($second.Open) {
     # 车给几次就按几次，最多两下（现场那次按了两下）。第一下答复之后被丢的空清单会重发（见文件头），按钮随之撤掉，所以通常只按得到一下。
@@ -347,11 +354,12 @@ if ($second.Open) {
     $connectionsBefore = Get-ProxyConnections
     $presses = @()
     foreach ($label in 'first', 'second') {
-        if ($label -ne 'first' -and -not (Wait-L2RealButtonOffered $onboard $journal $button "cancel-offered-$label" 10)) {
-            $journal.Note("No $button to press for the $label press.")
+        if ($label -ne 'first' -and
+            -not (Wait-L2WorklistRowButtonOffered $onboard $journal $second.Sublot $rowButton "cancel-offered-$label" 10)) {
+            $journal.Note("No 取消 on row $($second.Sublot) to press for the $label press.")
             break
         }
-        $presses += Invoke-CancelPress $second.DemandId $label
+        $presses += Invoke-CancelPress $second.DemandId $second.Sublot $label
     }
     $null = Wait-L2Iterations -Riot $riot -Count 8 -TimeoutSeconds 60 -Journal $journal
     $hellosAfter = Get-HelloCount
@@ -360,7 +368,7 @@ if ($second.Open) {
     $journal.Note("Second stop after the presses: $(Format-VehicleView $afterPresses)")
     $pressText = ($presses | ForEach-Object { "$($_.Decision)/$($_.ReasonCode)" }) -join '；'
     $assertions.Add(
-        'L2-SST-06', '第二趟：收尾之后按「取消装货」（车给几次按几次，最多两下），服务端不掐连接、车不重连',
+        'L2-SST-06', '第二趟：收尾之后按那一行的「取消」（车给几次按几次，最多两下），服务端不掐连接、车不重连',
         ($presses.Count -ge 1 -and $hellosAfter -eq $hellosBefore -and $connectionsAfter.Count -eq $connectionsBefore.Count -and
             $connectionsAfter.Count -ge 1 -and $null -eq $connectionsAfter[-1].closedAt),
         ">= 1 下；SessionHello 次数不变（$hellosBefore）；代理连接数不变（$($connectionsBefore.Count)）、当前连接未关",
@@ -377,10 +385,10 @@ if ($second.Open) {
         '每一下 REJECTED/WORKLIST_REVISION_STALE / 0 条工作流 / Cancelled',
         "$pressText；$workflows 条工作流 / $statusAfterPresses")
     $assertions.Add(
-        'L2-SST-11', '第二趟：迟到的取消被拒之后，车不再给「取消装货」（撤按钮的是答复之后重发到车的那张收尾空清单，不是车载端看了 STALE）',
+        'L2-SST-11', '第二趟：迟到的取消被拒之后，车不再给那一行的「取消」（撤按钮的是答复之后重发到车的那张收尾空清单，不是车载端看了 STALE）',
         (-not $afterPresses.OffersCancel), 'offersCancel=False', (Format-VehicleView $afterPresses))
 } else {
-    Add-L2RealNotReached $assertions @('L2-SST-06', 'L2-SST-07', 'L2-SST-11') '窗口没造出来：车上没有可按的「取消装货」'
+    Add-L2RealNotReached $assertions @('L2-SST-06', 'L2-SST-07', 'L2-SST-11') '窗口没造出来：车上那一行没有可按的「取消」'
 }
 
 # --- 3. 第三趟：窗口里迟到地扫码 -------------------------------------------------------------------------------------
@@ -388,7 +396,7 @@ if ($second.Open) {
 Clear-Residue $second.Sublot 'second'
 $third = Open-StaleWindow 'L2-SST-C' 'third'
 $assertions.Add(
-    'L2-SST-12', '第三趟（前提）：服务端已以站点期限收尾，车上仍要子批、仍给「取消装货」、清单仍挂着这单——迟到的扫码只能发生在这个窗口里',
+    'L2-SST-12', '第三趟（前提）：服务端已以站点期限收尾，车上仍要子批、那一行仍给「取消」、清单仍挂着这单——迟到的扫码只能发生在这个窗口里',
     $third.Open, $windowExpected, (Format-Window $third))
 if (-not $third.Open) {
     Add-L2RealNotReached $assertions @('L2-SST-08', 'L2-SST-10', 'L2-SST-14') '窗口没造出来：车上没有可用的录入框'
@@ -432,7 +440,7 @@ if (-not $third.Open) {
         '1 × WORKLIST_REVISION_STALE delivered=True；提示区 WORKLIST_REVISION_STALE',
         "录入 $(if ($submissionId) { $submissionId } else { '(not received)' })：$answerText；提示区 $(if ($shown) { $shown } else { '(none)' })")
     $assertions.Add(
-        'L2-SST-10', '第三趟：迟到的扫码被 STALE 拒绝之后，车不再要子批、不再给「取消装货」（守服务端一侧；修好的三端上与 L2-SST-08 同源）',
+        'L2-SST-10', '第三趟：迟到的扫码被 STALE 拒绝之后，车不再要子批、那一行不再给可按的「取消」（守服务端一侧；修好的三端上与 L2-SST-08 同源）',
         (-not $afterScan.CanSubmit -and -not $afterScan.OffersCancel), 'canSubmit=False / offersCancel=False',
         (Format-VehicleView $afterScan))
     # 服务端 STALE 带的是收尾那一版的号：拒收载荷的 currentWorklistRevision 等于被丢那张空清单的 worklistRevision（窗口里读到的）。

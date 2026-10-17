@@ -5,7 +5,9 @@ G3 `FP-IS-02`：扫码前取消（批次 5，control-server#87）。协议向量
 `protocol-v2.0.0` 新增；同一切片的其余向量在 `g3-pickup-load-and-correction`、`g3-load-cancellation`、`g3-sublot-rejected`。
 
 两端的半边：服务端 control-server#83（授权时 `slots` 为空、收到 `ALL_EMPTY` 空结果才终结需求），车载端
-onboard-hmi#76（录入请求挂着、本站什么都没下发时给「取消装货」，报不带逐仓结果的 `ALL_EMPTY`）。合成对端的同一条
+onboard-hmi#76（录入请求挂着、本站什么都没下发时给扫码前取消，报不带逐仓结果的 `ALL_EMPTY`）。这个入口原来是底部的
+「取消装货」，onboard-hmi#363（CP-0016）起挪到清单每一行侧边的「取消」（`WorklistItemCancellation`，与待送点 onboard-hmi#353
+同一个按钮），底部「取消装货」在机台上只留装货进行中的取消，所以这里按那一行（control-server#753）。合成对端的同一条
 路径在 `load-cancelled-before-sublot`，这里换成真车载端 WPF 与真模拟器，证的是两端的实现接得上。
 
 形状照向量的四步：`LoadCancellationStartRequested`（不带 attempt）→ `LoadCancellationAuthorization`（`AUTHORIZED`，
@@ -14,13 +16,14 @@ onboard-hmi#76（录入请求挂着、本站什么都没下发时给「取消装
 **「没有开过任何仓门」从模拟器读，不从车载端的话里读。**车到站之前记下模拟器上全部仓位的状态，收尾之后再读一遍，
 两份必须逐仓相同；车载端对这一笔没有报过任何 `OperationProgress`。
 
-**断言只读服务端的库与模拟器快照。**UI 只驱动；从界面上读的只有「取消装货」在不在、有没有弹出拒绝框。
+**断言只读服务端的库与模拟器快照。**UI 只驱动；从界面上读的只有那一行的「取消」在不在、有没有弹出拒绝框（「取消失败」）。
 #>
 [CmdletBinding()]
 param([Parameter(Mandatory)][object]$Context)
 
 Set-StrictMode -Version Latest
 $ErrorActionPreference = 'Stop'
+Import-Module (Join-Path (Split-Path -Parent $PSScriptRoot) 'L2MultiStopJourney.psm1') -Force
 
 $journal = $Context.Journal
 $assertions = $Context.Assertions
@@ -38,6 +41,10 @@ $demandGuid = [guid]::NewGuid()
 $demandIdWire = $demandGuid.ToString('N')
 $demandId = $demandGuid.ToString('D')
 $sublot = "G3-02B-$($Context.RunId)"
+# The row's own 「取消」 (onboard-hmi#363), its confirmation and the notice a refusal raises (MainWindow.OnWorklistRowCancellationClick).
+$rowButton = 'WorklistItemCancellation'
+$rowConfirmation = '取消这条需求'
+$rowFailure = '取消失败'
 
 function Get-Count([string]$sql) {
     $rows = Invoke-L2Query -Connection $connection -Sql $sql
@@ -156,40 +163,41 @@ $null = Wait-L2Condition -Description 'the onboard HMI holds the entry request o
     -Journal $journal -Criterion 'onboard-can-submit' -TimeoutSeconds 60 `
     -Probe { $onboard.CanSubmit() } -Until { param($v) $v }
 
-# --- 2. 操作员不扫码，经 UIA 按「取消装货」并确认 --------------------------------------------------
+# --- 2. 操作员不扫码，经 UIA 按那一行的「取消」并确认 ----------------------------------------------
 
 $laterIds = @('G3-02-32', 'G3-02-33', 'G3-02-34', 'G3-02-35', 'G3-02-36')
 $deadline = [DateTimeOffset]::UtcNow.AddSeconds(60)
 while ($true) {
-    $offered = [bool]$onboard.ButtonAvailable('取消装货')
+    $offered = Test-L2WorklistRowButtonPressable $onboard $sublot $rowButton
     $journal.Observe('onboard-cancellation-before-sublot-entry', $offered, $null)
     if ($offered -or [DateTimeOffset]::UtcNow -ge $deadline) { break }
     Start-Sleep -Milliseconds 500
 }
+# Recorded, not judged: before any sublot the bottom 「取消装货」 is only for a load in flight now, so it should be absent here.
+$bottomOffered = [bool]$onboard.ButtonAvailable('取消装货')
 $assertions.Add(
     'G3-02-31',
-    '车到站、录入请求挂着、还没录入任何子批时，车载端界面上出现可用的「取消装货」入口（不依赖恢复开关）',
-    $offered, $true, $offered)
+    '车到站、录入请求挂着、还没录入任何子批时，车载端清单里这一行出现可用的「取消」（机台取货停靠每行一个，CP-0016；不依赖恢复开关）',
+    $offered, 'row 取消 pressable=True', "row 取消 pressable=$offered / bottom 取消装货 offered=$bottomOffered")
 if (-not $offered) {
-    Add-NotReached $laterIds '车载端没有给出扫码前的「取消装货」入口'
+    Add-NotReached $laterIds '车载端清单里这一行没有可按的「取消」'
     return
 }
 
-$journal.Note('Operator finds nothing to load, presses 取消装货 and confirms.')
-$onboard.InvokeButton('取消装货')
-$null = $onboard.Confirm('取消装货')
+$journal.Note("Operator finds nothing to load, presses 取消 on row $sublot and confirms.")
+$null = Invoke-L2WorklistRowConfirmedButton $onboard $journal $sublot $rowButton $rowConfirmation
 
 $request = Wait-L2Condition -Description 'the server received LoadCancellationStartRequested, or the onboard refused it' `
     -Journal $journal -Criterion 'cancellation-requested' -TimeoutSeconds 60 `
     -Probe {
         $received = @((Get-Inbound 'LoadCancellationStartRequested') | Where-Object { [string]$_.Payload.demandId -eq $demandId })
         if ($received.Count -ge 1) { $received[0] }
-        elseif (@($onboard.WindowTitles()) -contains '取消装货失败') { 'REFUSED_BY_ONBOARD' }
+        elseif (@($onboard.WindowTitles()) -contains $rowFailure) { 'REFUSED_BY_ONBOARD' }
         else { $null }
     } `
     -Until { param($v) $null -ne $v }
 if ($request -is [string]) {
-    Add-NotReached $laterIds '车载端没有发出取消请求（弹出「取消装货失败」）'
+    Add-NotReached $laterIds '车载端没有发出取消请求（弹出「取消失败」）'
     return
 }
 $cancellationId = [string]$request.Payload.cancellationId
@@ -199,7 +207,7 @@ $cancellationResult = Wait-L2Condition -Description 'the server received the Loa
     -Probe {
         $received = @((Get-Inbound 'LoadCancellationResult') | Where-Object { [string]$_.Payload.cancellationId -eq $cancellationId })
         if ($received.Count -ge 1) { $received[0] }
-        elseif (@($onboard.WindowTitles()) -contains '取消装货失败') { 'REFUSED' }
+        elseif (@($onboard.WindowTitles()) -contains $rowFailure) { 'REFUSED' }
         else { $null }
     } `
     -Until { param($v) $null -ne $v }
@@ -220,7 +228,7 @@ $assertions.Add(
     'LoadCancellationAuthorization AUTHORIZED slots=[] attempt=',
     $authorizationText)
 if ($cancellationResult -is [string]) {
-    Add-NotReached @('G3-02-33', 'G3-02-34', 'G3-02-35', 'G3-02-36') '车载端没有报出取消结果（弹出「取消装货失败」）'
+    Add-NotReached @('G3-02-33', 'G3-02-34', 'G3-02-35', 'G3-02-36') '车载端没有报出取消结果（弹出「取消失败」）'
     return
 }
 

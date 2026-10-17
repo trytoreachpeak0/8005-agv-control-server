@@ -145,7 +145,8 @@ function Get-L2WorklistRows([object]$Onboard) {
 
 <#
 The button with AutomationId $AutomationId inside the WorklistItems row whose sublot (first text, as Get-L2WorklistRows reads it)
-is $Sublot -- a row's own 「取消」 at the staging pickup stop is WorklistItemCancellation (onboard-hmi#353, control-server#726).
+is $Sublot -- a row's own 「取消」 at a pickup stop is WorklistItemCancellation: the staging pickup stop since onboard-hmi#353
+(control-server#726), a machine pickup since onboard-hmi#363 (CP-0016, control-server#753).
 $null when the list, the row or the button is not in the tree.
 #>
 function Find-L2WorklistRowButton([object]$Onboard, [string]$Sublot, [string]$AutomationId) {
@@ -164,6 +165,57 @@ function Find-L2WorklistRowButton([object]$Onboard, [string]$Sublot, [string]$Au
     } catch [System.Windows.Automation.ElementNotAvailableException] {
         return $null
     }
+}
+
+# Whether that row's button can be pressed now: in the tree, enabled and on screen. A row or a button that is gone reads $false.
+function Test-L2WorklistRowButtonPressable([object]$Onboard, [string]$Sublot, [string]$AutomationId) {
+    $button = Find-L2WorklistRowButton $Onboard $Sublot $AutomationId
+    try {
+        return $null -ne $button -and [bool]$button.Current.IsEnabled -and -not [bool]$button.Current.IsOffscreen
+    } catch [System.Windows.Automation.ElementNotAvailableException] {
+        return $false
+    }
+}
+
+# Wait-L2RealButtonOffered for a row's button: polls until it is pressable or $TimeoutSeconds pass, and says which.
+function Wait-L2WorklistRowButtonOffered([object]$Onboard, [object]$Journal, [string]$Sublot, [string]$AutomationId,
+    [string]$Criterion, [int]$TimeoutSeconds) {
+    $deadline = [DateTimeOffset]::UtcNow.AddSeconds($TimeoutSeconds)
+    while ($true) {
+        $available = Test-L2WorklistRowButtonPressable $Onboard $Sublot $AutomationId
+        $Journal.Observe($Criterion, $available, $null)
+        if ($available -or [DateTimeOffset]::UtcNow -ge $deadline) { return $available }
+        Start-Sleep -Milliseconds 500
+    }
+}
+
+<#
+Invoke-L2RealConfirmedButton for a row's button: it must stay pressable for a second first, its confirmation is answered with
+Yes (IDYES = 6), and with no confirmation within 10 seconds it is pressed again, at most $Attempts times -- no confirmation means
+no request left the vehicle, so pressing again cannot duplicate one. The row is looked up again on every attempt: the list is
+rebuilt whenever a worklist snapshot is applied.
+#>
+function Invoke-L2WorklistRowConfirmedButton([object]$Onboard, [object]$Journal, [string]$Sublot, [string]$AutomationId,
+    [string]$DialogTitle, [int]$Attempts = 3) {
+    for ($attempt = 1; $attempt -le $Attempts; $attempt++) {
+        $stableSince = $null
+        $deadline = [DateTimeOffset]::UtcNow.AddSeconds(30)
+        while ([DateTimeOffset]::UtcNow -lt $deadline) {
+            if (Test-L2WorklistRowButtonPressable $Onboard $Sublot $AutomationId) {
+                if ($null -eq $stableSince) { $stableSince = [DateTimeOffset]::UtcNow }
+                elseif (([DateTimeOffset]::UtcNow - $stableSince).TotalSeconds -ge 1) { break }
+            } else { $stableSince = $null }
+            Start-Sleep -Milliseconds 200
+        }
+        $Journal.Note("Pressing $AutomationId on row $Sublot (attempt $attempt).")
+        $button = Find-L2WorklistRowButton $Onboard $Sublot $AutomationId
+        if ($null -eq $button) { throw "RIG_PRECONDITION: row $Sublot has no $AutomationId in the automation tree." }
+        # Posted, like every entry button: the handler goes straight into the confirmation MessageBox.
+        $button.GetCurrentPattern([System.Windows.Automation.InvokePattern]::Pattern).Invoke()
+        if (Invoke-L2RealDialogButton $Onboard $Journal $DialogTitle '6' 10) { return $true }
+        $Journal.Note("No '$DialogTitle' dialog after pressing $AutomationId on row $Sublot (attempt $attempt).")
+    }
+    throw "Pressing $AutomationId on row $Sublot never raised the '$DialogTitle' confirmation in $Attempts attempts."
 }
 
 function Format-L2WorklistRows([object]$Rows) {
@@ -309,5 +361,5 @@ function Stop-L2DoorSampler([object]$Job) {
 }
 
 Export-ModuleMember -Function ConvertFrom-L2PlanLegRowReading, Get-L2PlanLegRows, Format-L2PlanLegRows, Get-L2WorklistRows, Format-L2WorklistRows,
-    Find-L2WorklistRowButton,
+    Find-L2WorklistRowButton, Test-L2WorklistRowButtonPressable, Wait-L2WorklistRowButtonOffered, Invoke-L2WorklistRowConfirmedButton,
     Get-L2LoadingPhaseLine, Read-L2UiaItemStatus, Format-L2UiaReading, Get-L2JourneyWireSnapshots, Format-L2WireSnapshot, Start-L2DoorSampler, Stop-L2DoorSampler
