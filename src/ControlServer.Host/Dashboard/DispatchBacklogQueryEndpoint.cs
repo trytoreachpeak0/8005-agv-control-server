@@ -107,7 +107,7 @@ internal sealed class DispatchBacklogQueryEndpoint : IDashboardQueryEndpoint
             [DispatchReasonCodes.MandatoryChargeRequired] =
                 "这辆车电量低于它所用充电策略的强制充电线，只等去充电，不接新任务也不接途中追加；别的车照常。"
                 + "它若一直没去充电，是在排队等桩：看服务端日志事件 2246（写明分不到桩的原因）——充电桩被占或被预占、"
-                + "RIoT 读不到某辆车的位置或订单清单、路网引擎没开或过期、桩被暂停分配或在地图上改了名；"
+                + "RIoT 读不到某辆车的位置或订单清单、路网引擎没开或数据不新、桩被暂停分配或在地图上改了名；"
                 + "或者车本身此刻不能出发（原因码 CHARGING_DEPARTURE_NOT_PROVEN_AT_ALLOCATION，事件里写明缺哪一项）："
                 + "车上某个仓位没锁好或开锁输出没复位（到车前把仓门关好锁上）、车载端安全摘要带着阻断原因（看车载端屏上的原因）、"
                 + "RIoT 读不到车停稳（看 RIoT 里这辆车是否急停、在动或抱闸）。这几项恢复后下一轮就会分桩",
@@ -136,11 +136,13 @@ internal sealed class DispatchBacklogQueryEndpoint : IDashboardQueryEndpoint
                 "同一份 MES 快照里这个批次同时命中了不止一种任务类型，这个批次的需求都先不派，请到 MES 核对数据",
             [DemandReleaseReasons.Released] =
                 "这条需求已从原来的车上释放，正在等改派给别的车",
-            // control-server#703：站点超时不再静默丢单。放回的是正常调度结论；下面三条是人工搬运告警，挂在结构性阻断里，MES 关单后自动清除。
+            // control-server#703：站点超时不再静默丢单。下面三条是人工搬运告警，挂在结构性阻断里，MES 关单后自动清除。
+            // v5 起站点期限第一次到点就终结并告警、不放回（REQ-0365，control-server#751）；放回那一句只在放回上限配成非 0 时出现，
+            // 而那样的配置不符合 REQ-0365、部署检查拒绝，留着是为了库里还有 v4 时期的行时看板说得出它是什么。
             [DemandJourneyLookup.ReleasedAtStationDeadlineReason] =
-                "车到了取货站，但离站期限内没人录入条码，这条需求已放回待派，会重新派车（同一条需求放回次数有上限）",
+                "车到了取货站，但离站期限内没人录入条码，这条需求已放回待派，会重新派车（只在放回次数配置为非 0 时出现）",
             [ManualCarryAlarms.StationTimeoutRedispatchLimitReached] =
-                "这条需求车已去过几次、每次都超时没人录入，已达放回次数上限，系统不再派车；货还在机台上，请人工搬运或在 MES 处理，MES 关单后告警自动消失",
+                "车到了取货站，离站期限内没人录入，系统已终结这条需求、不再派车；货还在机台上，请人工搬运或在 MES 处理，MES 关单后告警自动消失",
             [ManualCarryAlarms.StationTimeoutAnchorNotReleasable] =
                 "这条需求在取货站超时没人录入，但它与同车其他需求绑在同一趟里无法单独放回，系统不再派车；货还在机台上，请人工搬运或在 MES 处理，MES 关单后告警自动消失",
             [ManualCarryAlarms.DeterminateLoadFailureNeedsManual] =

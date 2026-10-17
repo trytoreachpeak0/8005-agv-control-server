@@ -81,7 +81,13 @@ public sealed class JourneyRuntimeOptions
     /// a manual-carry alarm instead, so a machine nobody serves is not visited for ever. Zero sends every such deadline
     /// straight to the alarm.
     /// </summary>
-    public int StationTimeoutRedispatchLimit { get; set; } = 2;
+    /// <remarks>
+    /// Zero by default since v5 (control-server#751, REQ-0365 of CP-0016): the first station deadline ends the demand, suppresses
+    /// its key and raises the alarm; nothing goes back to the backlog. REQ-0365 states that a non-zero value does not conform, so
+    /// the parallel instance's definition check refuses one; the Host itself only refuses a negative value, and the release path
+    /// stays in the engine for the tests that cover it under a non-conforming value. v4 production ran with 2.
+    /// </remarks>
+    public int StationTimeoutRedispatchLimit { get; set; }
 
     /// <summary>
     /// The departure rules of a STAGING_TO_WIRE pickup at its dispatch staging station (control-server#709, program#184): no

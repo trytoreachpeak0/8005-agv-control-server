@@ -36,6 +36,12 @@ internal static class JourneyRuntimeWorkerTestKit
     internal static readonly DateTimeOffset Now = new(2026, 8, 26, 1, 0, 0, TimeSpan.Zero);
     internal static readonly JsonSerializerOptions SerializerOptions = new(JsonSerializerDefaults.Web);
 
+    /// <summary>
+    /// v4 生产用过的站点超时放回上限。<b>不符合 REQ-0365（CP-0016）的配置</b>：v5 出厂是 0，并行实例的部署检查拒绝非 0（control-server#751）。
+    /// 放回那条代码路径仍在引擎里，测它的用例显式设这个值，不是在钉一个仍要支持的部署配置。
+    /// </summary>
+    internal const int NonConformingStationTimeoutRedispatchLimit = 2;
+
     internal static string? SnapshotRevisionProperty(string messageType) => messageType switch
     {
         "VehicleBusinessStateSnapshot" => "vehicleBusinessStateRevision",

@@ -1232,14 +1232,15 @@ function Test-ParallelInstanceDefinition {
             $failures += "journeyRuntime.clearanceToWaitingPointEnabled must be a JSON boolean, got '$($journey['clearanceToWaitingPointEnabled'])'."
         }
 
-        # control-server#703. How often one demand goes back to the backlog at a station deadline before it ends with a
-        # manual-carry alarm (JourneyRuntimeOptions.StationTimeoutRedispatchLimit). Optional -- absent keeps the package default,
-        # 2 -- but when written it is a non-negative JSON integer that fits an Int32 (the option's type): a string, a fraction or
-        # a larger number would stop the Host at startup.
+        # control-server#703, narrowed by control-server#751. How often one demand goes back to the backlog at a station deadline
+        # before it ends with a manual-carry alarm (JourneyRuntimeOptions.StationTimeoutRedispatchLimit). Optional -- absent, the
+        # overlay writes 0 -- but when written it is the JSON integer 0: REQ-0365 (CP-0016) ends the demand at the first deadline
+        # and states that a non-zero value does not conform. v4 production ran with 2; a definition still carrying it is refused
+        # here rather than installed. A string "0" or a fraction is refused too: the Host's binder would read them anyway.
         if (Test-KeyPresent -Node $journey -Key 'stationTimeoutRedispatchLimit') {
             $limit = $journey['stationTimeoutRedispatchLimit']
-            if (-not (($limit -is [int] -or $limit -is [long]) -and $limit -ge 0 -and $limit -le [int]::MaxValue)) {
-                $failures += "journeyRuntime.stationTimeoutRedispatchLimit must be a non-negative JSON integer, got '$limit'."
+            if (-not (($limit -is [int] -or $limit -is [long]) -and $limit -eq 0)) {
+                $failures += "journeyRuntime.stationTimeoutRedispatchLimit must be the JSON integer 0 (REQ-0365: the first station deadline ends the demand), got '$limit'."
             }
         }
 
@@ -3196,9 +3197,10 @@ function New-ParallelInstanceConfigurationOverlay {
     # control-server#638. Always written, false when the definition leaves it out, so a true from an earlier install does not
     # survive a reinstall in appsettings.Production.json; the read-back compares what the Host bound with this same value.
     $journeyOverlay['clearanceToWaitingPointEnabled'] = Get-ParallelClearanceToWaitingPoint -Definition $Definition
-    # control-server#703 review L4. Always written too, the package default 2 when the definition leaves it out, for the same reason:
-    # a value from an earlier install (or a hand edit) must not survive a reinstall in appsettings.Production.json unseen.
-    $journeyOverlay['stationTimeoutRedispatchLimit'] = $journey.Contains('stationTimeoutRedispatchLimit') ? $journey['stationTimeoutRedispatchLimit'] : 2
+    # control-server#703 review L4. Always written too, 0 when the definition leaves it out, for the same reason: a value from an
+    # earlier install (or a hand edit, or a v4 package's 2) must not survive a reinstall in appsettings.Production.json unseen.
+    # 0 is the package default since control-server#751 and the only value the definition check accepts (REQ-0365).
+    $journeyOverlay['stationTimeoutRedispatchLimit'] = $journey.Contains('stationTimeoutRedispatchLimit') ? $journey['stationTimeoutRedispatchLimit'] : 0
 
     $routeGraphOverlay = [ordered]@{}
     foreach ($key in $routeGraph.Keys) { $routeGraphOverlay[$key] = $routeGraph[$key] }

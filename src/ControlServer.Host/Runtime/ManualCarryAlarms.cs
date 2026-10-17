@@ -20,7 +20,13 @@ namespace ControlServer.Host.Runtime;
 /// </remarks>
 public static class ManualCarryAlarms
 {
-    /// <summary>同一条需求因为站点超时已放回过 <see cref="JourneyRuntimeOptions.StationTimeoutRedispatchLimit"/> 次，这一次不再放回。</summary>
+    /// <summary>
+    /// 取货站点的离站期限到了、本站没人录入，这条需求终结、不再派车。v5 出厂（放回上限 0，REQ-0365，control-server#751）第一次到点就是这个码。
+    /// </summary>
+    /// <remarks>
+    /// 码名还带着 control-server#703 时的「放回次数到上限」，不改名：v4 生产库里已有这个码的告警行，改名后它们不在 <see cref="All"/> 里，
+    /// 派车轮末的写入器就认不出、MES 关单后也清不掉。上限 0 时「已放回 0 次、达到上限 0」字面上仍成立，看板说明不提放回次数。
+    /// </remarks>
     public const string StationTimeoutRedispatchLimitReached = "STATION_TIMEOUT_REDISPATCH_LIMIT_REACHED";
 
     /// <summary>站点超时的这条是旅程的锚需求、旅程上还有别的需求，按释放规则放不回去。</summary>
@@ -35,6 +41,16 @@ public static class ManualCarryAlarms
         StationTimeoutRedispatchLimitReached,
         StationTimeoutAnchorNotReleasable,
         DeterminateLoadFailureNeedsManual,
+    };
+
+    /// <summary>
+    /// 站点离站等待期限到期终结的两个码：看板「站点超时抑制清单」只收这两个（REQ-0365，control-server#751）。
+    /// 确定的装货失败终结时记同一个 <c>CANCELLED_BY_STATION_TIMEOUT</c>，但不是站点期限到期，不在其中。
+    /// </summary>
+    public static IReadOnlySet<string> StationDeadlineEndings { get; } = new HashSet<string>(StringComparer.Ordinal)
+    {
+        StationTimeoutRedispatchLimitReached,
+        StationTimeoutAnchorNotReleasable,
     };
 
     /// <summary>

@@ -6821,6 +6821,12 @@ public sealed partial class JourneyRuntimeEngine(
     /// </summary>
     /// <remarks>
     /// <para>
+    /// <b>v5 起不放回</b>（REQ-0365，CP-0016，control-server#751）：放回上限出厂为 0，第一次站点期限到点就走下面「到了上限」那一支——
+    /// 终结、按业务键抑制、挂人工搬运告警，看板站点超时抑制清单列出它。这样仍不是 control-server#703 要防的静默丢单：告警与终结同一次保存，
+    /// MES 关单前一直挂着。放回那一支只在上限配成非 0 时走，那样的配置不符合 REQ-0365，并行实例的部署检查拒绝；代码路径留着，有用例覆盖。
+    /// 下面两段是 control-server#703 当时的理由，保留作来历。
+    /// </para>
+    /// <para>
     /// <b>为什么放回。</b>先前一律以 <c>CANCELLED_BY_STATION_TIMEOUT</c> 终结。那个码按业务键永久抑制
     /// （<see cref="PickupStopTermination.KeySuppressingReasonCodes"/>），受理行又不删，v2 对 MesIngest 只读不回写——操作员只是没在时限内扫码，
     /// 这批料就被 v2 永久丢掉，货留在机台上没有任何告警。放回走的是释放改派那一步

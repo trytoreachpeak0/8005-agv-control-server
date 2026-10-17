@@ -245,8 +245,9 @@ jobs:
               # Batch 5 (control-server#79): the station departure deadline. In CI from its own ticket so
               # a batch-4 PR catches a regression before it merges; the batch-5 exit makes it three runs.
               @{ Name = 'station-deadline-sublot-timeout'; Runs = 1; BatchId = 'batch-5' }
-              # control-server#703: at the default limit a demand nobody scans goes back to the backlog twice, is
-              # dispatched again each time, and ends with a manual-carry alarm on the third deadline.
+              # control-server#751 (REQ-0365): at the default limit 0 a demand nobody scans ends at the first station deadline
+              # with a manual-carry alarm and a row on the station timeout suppression list, and is never dispatched again.
+              # The name is control-server#703's, when it went back to the backlog twice first.
               @{ Name = 'station-timeout-redispatch-to-alarm'; Runs = 1 }
               # control-server#709: a STAGING_TO_WIRE pickup at its staging station has no station deadline -- nobody scans,
               # three deadlines pass, and the stop neither ends nor releases its demand. The line above, run with the same
@@ -784,8 +785,8 @@ jobs:
               # control-server#325 (program#86 v2): once the station deadline ends a stop, the real onboard shows none of it,
               # and a late cancellation and a late scan made before the closing worklist arrives are both refused as STALE.
               @{ Name = 'real-onboard-stale-stop-after-station-timeout';     Runs = 1 }
-              # control-server#703 review M3: at the default limit the demand released at the deadline is dispatched again to the
-              # same vehicle and stop; the real onboard takes the new visit's entry without a reconnect.
+              # control-server#751 (REQ-0365): at the default limit 0 the station deadline ends the demand; the real onboard stops
+              # asking for it, it is not dispatched again, and nothing reconnects. The name is control-server#703 review M3's.
               @{ Name = 'real-onboard-station-timeout-redispatch';            Runs = 1 }
               # control-server#335 (REQ-0246): the real onboard, not Ready for the whole leg on this server's order, drives and
               # reconnects without a hold; a lock feedback forced to 0 holds this order and stops once; locked again, the

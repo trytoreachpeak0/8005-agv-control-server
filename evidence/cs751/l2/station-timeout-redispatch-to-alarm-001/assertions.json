@@ -1,0 +1,64 @@
+{
+  "schemaVersion": 1,
+  "scenario": "station-timeout-redispatch-to-alarm",
+  "runId": "20261017T214859299Z",
+  "outcome": "PASS",
+  "failureReason": "",
+  "identity": {
+    "controlServerCommit": "28d113dd023e892a40116ba0a888c52f1eff493d",
+    "protocolReleaseIdentity": {
+      "repository": "8005-agv-protocol",
+      "releaseVersion": "5.0.0",
+      "tag": "protocol-v5.0.0",
+      "commit": "13eca82ac199bd97c1ad49d036c70cb5b012250f",
+      "protocolVersion": 6,
+      "profileId": "AGV_FULL_PRODUCT",
+      "manifestSha256": "128daae52758749d4d6f346231fdb336ca5d1079773bcab5430c20c53ce6b10b",
+      "schemaBundleSha256": "d51abe44036f32b5b2c28fd1bea6ec7a89cf3b4dea0f0b1d6c9daaf52f350933",
+      "vectorsSha256": "291311b24bfcac75818ca9e4a888d436523e6ee14db661f6ba792ab8cc383e4a",
+      "approvalStatus": "SUPERSEDING_CANDIDATE"
+    },
+    "stageRoot": "C:\\Users\\szy\\AppData\\Local\\Temp\\l2-20261017T214859299Z",
+    "rig": "SyntheticOnboard",
+    "batchId": "unspecified",
+    "vehicleKey": "BROKERX-L2-0001",
+    "agvId": "AGV-L2-001"
+  },
+  "assertions": [
+    {
+      "id": "L2-STR-01",
+      "description": "第 1 趟期限到（出厂上限 0）：CANCELLED_BY_STATION_TIMEOUT、需求 Cancelled、不放回、抑制 1 条、挂人工搬运告警",
+      "outcome": "PASS",
+      "expected": "CANCELLED_BY_STATION_TIMEOUT / Cancelled / 放回 0 次 / 抑制 1 / 告警 [STATION_TIMEOUT_REDISPATCH_LIMIT_REACHED]",
+      "actual": "CANCELLED_BY_STATION_TIMEOUT / Cancelled / 放回 0 次 / 归属 1 行 / 抑制 1 / 告警 [STATION_TIMEOUT_REDISPATCH_LIMIT_REACHED]"
+    },
+    {
+      "id": "L2-STR-02",
+      "description": "看板站点超时抑制清单列出这条需求：批号、取货站点、终结时刻",
+      "outcome": "PASS",
+      "expected": "L2-STR-20261017T214859299Z / N1-3_N1-7 / 有终结时刻",
+      "actual": "L2-STR-20261017T214859299Z / N1-3_N1-7 / 2026-10-17T21:50:27.6808814+00:00"
+    },
+    {
+      "id": "L2-STR-04",
+      "description": "目录仍列出这一单：不再派车（1 条旅程、1 张取货单），告警仍挂着",
+      "outcome": "PASS",
+      "expected": "目录列出 / 1 / 1 / 告警未清",
+      "actual": "目录列出 1 / 1 / 1 / Cancelled / 放回 0 次 / 归属 1 行 / 抑制 1 / 告警 [STATION_TIMEOUT_REDISPATCH_LIMIT_REACHED]"
+    },
+    {
+      "id": "L2-STR-05",
+      "description": "需求离开 MES 目录之后，人工搬运告警被清",
+      "outcome": "PASS",
+      "expected": "告警 [STATION_TIMEOUT_REDISPATCH_LIMIT_REACHED/cleared]",
+      "actual": "Cancelled / 放回 0 次 / 归属 1 行 / 抑制 1 / 告警 [STATION_TIMEOUT_REDISPATCH_LIMIT_REACHED/cleared]"
+    },
+    {
+      "id": "L2-STR-06",
+      "description": "需求离开 MES 目录之后，站点超时抑制清单不再列出它",
+      "outcome": "PASS",
+      "expected": "(not listed)",
+      "actual": "(not listed)"
+    }
+  ]
+}
