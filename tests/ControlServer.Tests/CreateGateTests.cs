@@ -392,7 +392,7 @@ public sealed class CreateGateTests
     {
         await using Fixture fixture = await Fixture.CreateAsync(approved: true);
         fixture.RouteCosts.Set(12, 21500);
-        PreCreateGateCriterion criterion = new(fixture.Gate, Options.Create(new JourneyRuntimeOptions { AgvId = "agv01" }));
+        PreCreateGateCriterion criterion = new(fixture.Gate);
         DispatchCandidateEvaluation evaluation = Evaluation(agvId: "agv03", vehicleKey: "BROKERX-TEST-0003");
         evaluation.Route = new ResolvedJourneyRoute(
             "MAP-25-WIRE_TO_GATE",

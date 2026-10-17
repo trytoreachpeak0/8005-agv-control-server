@@ -116,7 +116,7 @@ public static class DispatchAdmissionCriteria
 
         if (createGate is not null)
         {
-            criteria.Add(new PreCreateGateCriterion(createGate, options));
+            criteria.Add(new PreCreateGateCriterion(createGate));
         }
 
         return criteria;

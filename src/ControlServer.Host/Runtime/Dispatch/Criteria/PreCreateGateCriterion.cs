@@ -1,5 +1,4 @@
 using ControlServer.Host.Runtime.CreateGate;
-using Microsoft.Extensions.Options;
 
 namespace ControlServer.Host.Runtime.Dispatch.Criteria;
 
@@ -18,13 +17,13 @@ namespace ControlServer.Host.Runtime.Dispatch.Criteria;
 /// created. When it and the route graph disagree, the demand is blocked and the disagreement is
 /// alarmed — see <see cref="PreCreateGate"/> for why neither source wins.
 /// </para>
+/// <para>
+/// The vehicle named in the audit row and the log is the one this candidate is evaluated against, not the single-vehicle
+/// default <c>JourneyRuntimeOptions.AgvId</c>, which every multi-vehicle audit row used to carry (control-server#751).
+/// </para>
 /// </remarks>
-public sealed class PreCreateGateCriterion(
-    PreCreateGate gate,
-    IOptions<JourneyRuntimeOptions> options) : IDispatchAdmissionCriterion
+public sealed class PreCreateGateCriterion(PreCreateGate gate) : IDispatchAdmissionCriterion
 {
-    private readonly JourneyRuntimeOptions _options = options.Value;
-
     public int Order => 96;
 
     public async Task<string> EvaluateAsync(
@@ -37,7 +36,7 @@ public sealed class PreCreateGateCriterion(
             new CreateGateRequest(
                 evaluation.Candidate.DemandId,
                 evaluation.Candidate.TransportDemandKey,
-                _options.AgvId,
+                evaluation.Vehicle.AgvId,
                 evaluation.Vehicle.VehicleKey,
                 evaluation.Round.Map.MapId,
                 evaluation.Route!.PickupStationRiotId,
