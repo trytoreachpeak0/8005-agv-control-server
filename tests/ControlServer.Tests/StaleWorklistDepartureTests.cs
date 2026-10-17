@@ -34,14 +34,19 @@ public sealed class StaleWorklistDepartureTests
 
     /// <summary>
     /// 140 站形状：第二个取货站乙、丙两条，丙装上一篮，乙扫码前取消。按着取消后那一版空清单（已被只补期限的下一版顶掉）点出发：受理，同一轮发离站核验。
+    /// 向量 <c>CV-CURRENT-STOP-DEPARTURE-STALE-REVISION-ACCEPTED</c>（protocol#23）：机台取货停靠、请求号过期但无实质差别，答 <c>ACCEPTED</c> 带此刻的号，
+    /// 经离站核验出发（多发恰好一条 <c>PreDepartureSafetyCheck</c>）。
     /// </summary>
     [Fact]
     [Trait("IntegrationSlice", "FP-IS-02")]
     [Trait("IntegrationSlice", "FP-IS-08")]
+    [Trait("ProtocolVector", "CV-CURRENT-STOP-DEPARTURE-STALE-REVISION-ACCEPTED")]
     public async Task ADepartureFromTheWorklistADeadlineRefreshReplacedIsAccepted()
     {
         await using RuntimeFixture fixture = await RuntimeFixture.CreateAsync();
         Shape shape = await LoadOneThenCancelTheOtherAsync(fixture);
+        Assert.True(shape.CancelledRevision < shape.CurrentRevision);
+        int checksBefore = await Batch7CargoHoldingTests.DepartureChecksSentAsync(fixture);
 
         string departureRequestId = await RequestDepartureAsync(fixture, worklistRevision: shape.CancelledRevision, operationSessionId: null);
         await RunAsync(fixture);
@@ -52,23 +57,29 @@ public sealed class StaleWorklistDepartureTests
             $"Revision {shape.CancelledRevision} differs from {shape.CurrentRevision} only by the deadline, yet: {result}");
         Assert.Equal(shape.CurrentRevision, result.GetProperty("currentWorklistRevision").GetInt64());
         Assert.Equal(JourneyRuntimeStage.AwaitingDepartureSafety, (await JourneyOfAsync(fixture, FirstDemandId)).Stage);
+        Assert.Equal(checksBefore + 1, await Batch7CargoHoldingTests.DepartureChecksSentAsync(fixture));
     }
 
     /// <summary>
     /// 请求号那一版还列着待做项（取消之前那一版，乙还在上面）：车屏上与此刻对操作员要做的事不是同一个答案，照旧答 <c>WORKLIST_REVISION_STALE</c>，不出发。
+    /// 向量 <c>CV-CURRENT-STOP-DEPARTURE-STALE-REVISION</c>（protocol#23 起限定为有实质差别）：机台取货停靠，请求那一版列着待做项、此刻那一版没有，
+    /// 这就是实质差别；答复带此刻的号，什么都不变（不出发、不发离站核验）。
     /// </summary>
     [Fact]
     [Trait("IntegrationSlice", "FP-IS-02")]
+    [Trait("ProtocolVector", "CV-CURRENT-STOP-DEPARTURE-STALE-REVISION")]
     public async Task AStaleRequestFromAWorklistThatStillListedAnItemIsRefused()
     {
         await using RuntimeFixture fixture = await RuntimeFixture.CreateAsync();
         Shape shape = await LoadOneThenCancelTheOtherAsync(fixture);
+        int checksBefore = await Batch7CargoHoldingTests.DepartureChecksSentAsync(fixture);
 
         string departureRequestId = await RequestDepartureAsync(
             fixture, worklistRevision: shape.CancelledRevision - 1, operationSessionId: null);
         await RunAsync(fixture);
 
         await AssertRefusedAsStaleAsync(fixture, departureRequestId, shape);
+        Assert.Equal(checksBefore, await Batch7CargoHoldingTests.DepartureChecksSentAsync(fixture));
     }
 
     /// <summary>
