@@ -297,18 +297,21 @@ $assertions.Add(
 $refusedRuntime = Read-L2SingleRow -Required -Connection $connection `
         -Sql "SELECT Stage, TargetSlotsJson, ExpectedBasketCount, BlockReasonCode FROM JourneyRuntimes WHERE DemandId = '$demandId'"
 $operationsAfterRefusal = Get-Count "SELECT COUNT(*) AS Total FROM StationOperations WHERE DemandId = '$demandId'"
+# 仓号在扫码通过之后才写到归属行上（control-server#754）：被拒的录入不分仓。读归属行，旅程行一直是 []，比它什么都证明不了。
+$membershipAfterRefusal = Read-L2SingleRow -Required -Connection $connection `
+        -Sql "SELECT TargetSlotsJson FROM JourneyDemands WHERE DemandId = '$demandId' AND RemovedAt IS NULL"
 $commandsAfterRefusal = Get-Count "SELECT COUNT(*) AS Total FROM ProtocolOutbox WHERE MessageType = 'SlotOperationCommand'"
 $slotsAfterRefusal = Get-AllSlotStates
 $assertions.Add(
     'G3-02-43',
-    '拒收的录入不开仓：0 笔仓位操作、0 条 SlotOperationCommand，模拟器上每个仓与到站时逐仓相同；旅程仍在等录入，预留的仓位与冻结的花篮数一点没动，没有阻断原因（NEVER_UNLOCK_ON_REJECTED_ENTRY；forbidden: duplicate-slot-unlock、expanded-active-unlock-set）',
+    '拒收的录入不开仓：0 笔仓位操作、0 条 SlotOperationCommand，模拟器上每个仓与到站时逐仓相同；旅程仍在等录入，仓位仍未分配（control-server#754 起扫码通过之后才分）、冻结的花篮数一点没动，没有阻断原因（NEVER_UNLOCK_ON_REJECTED_ENTRY；forbidden: duplicate-slot-unlock、expanded-active-unlock-set）',
     ($operationsAfterRefusal -eq 0 -and $commandsAfterRefusal -eq 0 -and $slotsAfterRefusal -eq $slotsBefore -and
         [string]$refusedRuntime.Stage -eq 'AwaitingSublot' -and
-        [string]$refusedRuntime.TargetSlotsJson -eq [string]$dispatched.TargetSlotsJson -and
+        [string]$membershipAfterRefusal.TargetSlotsJson -ceq '[]' -and
         [int]$refusedRuntime.ExpectedBasketCount -eq $frozenBasketCount -and -not (Test-Present $refusedRuntime.BlockReasonCode)),
-    "操作 0 / 命令 0 / $slotsBefore / AwaitingSublot / $($dispatched.TargetSlotsJson) / $frozenBasketCount / 无阻断",
+    "操作 0 / 命令 0 / $slotsBefore / AwaitingSublot / 归属行 [] / $frozenBasketCount / 无阻断",
     ("操作 $operationsAfterRefusal / 命令 $commandsAfterRefusal / $slotsAfterRefusal / $($refusedRuntime.Stage) / " +
-     "$($refusedRuntime.TargetSlotsJson) / $($refusedRuntime.ExpectedBasketCount) / 阻断=$($refusedRuntime.BlockReasonCode)"))
+     "归属行 $($membershipAfterRefusal.TargetSlotsJson) / $($refusedRuntime.ExpectedBasketCount) / 阻断=$($refusedRuntime.BlockReasonCode)"))
 
 $displayText = if ($null -ne $display) { "Name=「$($display.Name)」 ItemStatus=$($display.ItemStatus)" } else { '(SublotRejectionReason 不在 UIA 树里)' }
 $assertions.Add(

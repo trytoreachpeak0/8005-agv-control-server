@@ -8,10 +8,15 @@ using Microsoft.Extensions.Logging.Abstractions;
 namespace ControlServer.Tests;
 
 /// <summary>
-/// Batch 7-04 (control-server#209): which of a vehicle's slots are free on each side reaches dispatch through one port,
+/// Batch 7-04 (control-server#209): how many of a vehicle's slots are free on each side reaches dispatch through one port,
 /// and for an idle vehicle the port answers exactly what the slot capacity criterion used to read for itself -- the
 /// session baseline Onboard reported.
 /// </summary>
+/// <remarks>
+/// Since control-server#754 (REQ-0352) the port answers a count: acceptance reserves baskets, not slot numbers. The
+/// baseline the count comes from is still the slots below, so the first three cases keep asserting the slots
+/// (<see cref="SessionBaselineSlotLedger.BaselineSlots"/>) and that the port's count is theirs.
+/// </remarks>
 /// <remarks>
 /// <see cref="BaselineBeforeTheMove"/> is the expression <c>SlotCapacityCriterion</c> used on
 /// <c>fp/v2-impl@cc8e7992</c>, written out here so the four cases compare the port against it rather than against
@@ -44,11 +49,13 @@ public sealed class VehicleSlotLedgerTests
     {
         int[] baseline = [8, 1, 3, 6, 2];
 
-        IReadOnlyList<int> free = await new SessionBaselineSlotLedger().ReadAvailableSlotsAsync(
-            Vehicle(baseline), side, TestContext.Current.CancellationToken);
+        DispatchVehicleFacts vehicle = Vehicle(baseline);
+        IReadOnlyList<int> free = SessionBaselineSlotLedger.BaselineSlots(vehicle.Onboard, vehicle.SlotPositions, side);
 
         Assert.Equal(BaselineBeforeTheMove(baseline, side), free);
         Assert.Equal(expected, string.Join(',', free));
+        Assert.Equal(free.Count, await new SessionBaselineSlotLedger().ReadAvailableSlotCountAsync(
+            vehicle, side, TestContext.Current.CancellationToken));
     }
 
     /// <summary>
@@ -60,11 +67,13 @@ public sealed class VehicleSlotLedgerTests
     {
         int[] baselineWithoutDisabledSlotThree = [1, 2, 4, 5, 6, 7, 8];
 
-        IReadOnlyList<int> free = await new SessionBaselineSlotLedger().ReadAvailableSlotsAsync(
-            Vehicle(baselineWithoutDisabledSlotThree), "FRONT", TestContext.Current.CancellationToken);
+        DispatchVehicleFacts vehicle = Vehicle(baselineWithoutDisabledSlotThree);
+        IReadOnlyList<int> free = SessionBaselineSlotLedger.BaselineSlots(vehicle.Onboard, vehicle.SlotPositions, "FRONT");
 
         Assert.Equal(BaselineBeforeTheMove(baselineWithoutDisabledSlotThree, "FRONT"), free);
         Assert.Equal([1, 2, 4], free);
+        Assert.Equal(3, await new SessionBaselineSlotLedger().ReadAvailableSlotCountAsync(
+            vehicle, "FRONT", TestContext.Current.CancellationToken));
     }
 
     /// <summary>
@@ -76,27 +85,27 @@ public sealed class VehicleSlotLedgerTests
     {
         DispatchVehicleFacts vehicle = Vehicle(available: null);
 
-        IReadOnlyList<int> free = await new SessionBaselineSlotLedger().ReadAvailableSlotsAsync(
-            vehicle, "FRONT", TestContext.Current.CancellationToken);
-
-        Assert.Empty(free);
+        Assert.Equal(0, await new SessionBaselineSlotLedger().ReadAvailableSlotCountAsync(
+            vehicle, "FRONT", TestContext.Current.CancellationToken));
     }
 
     /// <summary>
-    /// The slot capacity criterion chooses its target slots from what the ledger reports, not from the vehicle's
-    /// facts: a ledger that reports other slots than the session baseline gets those slots chosen.
+    /// The slot capacity criterion judges against what the ledger reports, not against the vehicle's facts: a full
+    /// session baseline with a ledger that reports nothing free is refused, and the same baseline with one free slot
+    /// on the ledger is admitted. Since control-server#754 the criterion chooses no slot numbers either way.
     /// </summary>
-    [Fact]
-    public async Task TheSlotCapacityCriterionChoosesFromWhatTheLedgerReports()
+    [Theory]
+    [InlineData(0, DispatchReasonCodes.SlotGroupOccupiedByOwnCargo)]
+    [InlineData(1, DispatchAdmissionChain.Eligible)]
+    public async Task TheSlotCapacityCriterionJudgesWhatTheLedgerReports(int ledgerCount, string expected)
     {
         DispatchCandidateEvaluation evaluation = Evaluation(Vehicle([1, 2, 3, 4, 5, 6, 7, 8]));
 
         string reason = await new SlotCapacityCriterion(
-                new FourBoxes(), NullLogger<SlotCapacityCriterion>.Instance, new FixedLedger([3, 4]))
+                new FourBoxes(), NullLogger<SlotCapacityCriterion>.Instance, new FixedLedger(ledgerCount))
             .EvaluateAsync(evaluation, TestContext.Current.CancellationToken);
 
-        Assert.Equal(DispatchAdmissionChain.Eligible, reason);
-        Assert.Equal([3], evaluation.TargetSlots);
+        Assert.Equal(expected, reason);
     }
 
     /// <summary>What <c>SlotCapacityCriterion</c> read for itself before the port existed.</summary>
@@ -151,9 +160,9 @@ public sealed class VehicleSlotLedgerTests
         }
     }
 
-    private sealed class FixedLedger(int[] free) : IVehicleSlotLedger
+    private sealed class FixedLedger(int free) : IVehicleSlotLedger
     {
-        public Task<IReadOnlyList<int>> ReadAvailableSlotsAsync(
+        public Task<int> ReadAvailableSlotCountAsync(
             DispatchVehicleFacts vehicle,
             string slotPosition,
             CancellationToken cancellationToken)
@@ -161,7 +170,7 @@ public sealed class VehicleSlotLedgerTests
             _ = vehicle;
             _ = slotPosition;
             _ = cancellationToken;
-            return Task.FromResult<IReadOnlyList<int>>(free);
+            return Task.FromResult(free);
         }
     }
 }

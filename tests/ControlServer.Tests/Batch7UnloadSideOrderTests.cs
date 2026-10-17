@@ -254,7 +254,8 @@ public sealed class Batch7UnloadSideOrderTests
             ?? throw new InvalidOperationException("The fixture binds the approved slot model.");
         JourneyDemandRow membership = await fixture.Context.Set<JourneyDemandRow>()
             .SingleAsync(row => row.DemandId == demandId, token);
-        int count = (JsonSerializer.Deserialize<int[]>(membership.TargetSlotsJson) ?? []).Length;
+        // 条数取花篮数：受理不再写仓号（control-server#754），这里写的正是「扫码分配之后」那个状态，扫码时已分配的不重分。
+        int count = membership.ExpectedBasketCount;
         int[] Free(string group) =>
         [
             .. positions.SlotPositionByPhysicalSlot

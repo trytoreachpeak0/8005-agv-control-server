@@ -645,6 +645,8 @@ public sealed class Batch7CargoHoldingDashboardTests
     [InlineData("PICKUP_ResultUnknown")]
     [InlineData("GATE_ResultUnknown")]
     [InlineData("OWN_ORDER_NEVER_APPEARED")]
+    // control-server#754：扫码后分仓位，这一侧可用仓位不够。
+    [InlineData("LOAD_SLOT_ASSIGNMENT_SHORT")]
     public async Task AStalledInTransitOrderIsShownWithAChineseDescription(string code)
     {
         Assert.True(BlockedJourneysQueryEndpoint.Descriptions.ContainsKey(code), $"{code} has no description");

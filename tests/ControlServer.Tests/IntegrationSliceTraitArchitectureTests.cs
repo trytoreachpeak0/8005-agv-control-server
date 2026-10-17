@@ -209,6 +209,7 @@ public sealed class IntegrationSliceTraitArchitectureTests
             ["SchemaConformanceToolTests"] = "cross-cutting guard on the outbound gate's own validator (control-server#85), driven as its own process over the vendored contract; the gate stands behind every slice, so hanging it off one would defer it with that slice",
             ["SlotConfigurationAuthorityTests"] = "batch 3 FP-C7 slot configuration authority; two-layer versioning inside the server, no wire message",
             ["SlotConfigurationGateModeTests"] = "readiness gate mode validation; no wire message",
+            ["SlotAssignmentAtScanTests"] = "v5 control-server#754 REQ-0352/REQ-0208: the concrete target slots are assigned after the sublot entry rather than at acceptance; the slot numbers reach the wire only in the load command FP-IS-08 already covers, and this asserts the server's own choice of slots, so it sits outside the slice family",
             ["SlotConfigurationReadinessGateTests"] = "batch 3 per-vehicle IO integrity gate; a server-side readiness predicate, no wire message",
             ["SlotConfigurationReadinessDispatchTests"] = "REQ-0259/REQ-0263 the per-vehicle slot configuration readiness gate in the dispatch chain (control-server#686); server-internal, no wire message",
             ["SlotConfigurationVersionLineArchitectureTests"] = "cross-cutting guard that every writer on the shared ActiveSlotConfiguration line allocates through SlotConfigurationVersionLine; hanging it off a slice would defer the guard with the slice",

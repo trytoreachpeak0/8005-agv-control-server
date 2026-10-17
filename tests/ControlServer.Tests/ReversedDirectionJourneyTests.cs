@@ -171,7 +171,7 @@ public sealed class ReversedDirectionJourneyTests
     private static JourneyExecutionPlan Plan(DispatchCandidateEvaluation evaluation) =>
         new JourneyPlanBuilder(Options).CreatePlan(
             new FleetVehicle("AGV-1", "BROKERX-0001", 1),
-            new EligibleDispatchCandidate(evaluation.Candidate, evaluation.Route!, 1, [1], Now),
+            new EligibleDispatchCandidate(evaluation.Candidate, evaluation.Route!, 1, Now),
             Now);
 
     /// <summary>The factory rules: STAGING_TO_WIRE fixed at the origin, everything else at the destination.</summary>

@@ -6,8 +6,8 @@ using Microsoft.Extensions.Logging;
 namespace ControlServer.Host.Runtime.Dispatch.Criteria;
 
 /// <summary>
-/// Derives how many baskets the sublot needs and chooses that many free slots inside the slot group the
-/// demand's AREA is assigned.
+/// Derives how many baskets the sublot needs and checks that the slot group the demand's AREA is assigned has that many
+/// free, unreserved slots.
 /// </summary>
 /// <remarks>
 /// <para>
@@ -17,29 +17,33 @@ namespace ControlServer.Host.Runtime.Dispatch.Criteria;
 /// an assumed count either.
 /// </para>
 /// <para>
-/// The slots are chosen here, not later, because the count and the slots have to come from the
-/// same onboard observation. Choosing them against a newer observation could pick slots that the
-/// count was never checked against.
+/// <b>Acceptance reserves a count, not slots (REQ-0352, REQ-0208; CP-0015, control-server#754).</b> Until v5 the
+/// slots were chosen here, on the reasoning that the count and the slots had to come from the same onboard observation.
+/// That froze the slot numbers at acceptance: a demand accepted while slots 1 and 2 were still held by another got
+/// slot 3, and when the other was released and 1 and 2 came free, the vehicle still opened 3 after the scan (the plant,
+/// 2026-10-17). The concrete slots are now assigned after the sublot entry and before the load command, at the
+/// lowest-numbered free slots of the group at that moment, and written once (<c>JourneyRuntimeEngine</c>, the load's
+/// write transaction). What this criterion still guarantees is the count that assignment relies on: the group has at
+/// least this many slots that are neither assigned nor reserved for another demand of this vehicle.
 /// </para>
 /// <para>
-/// <b>Slots are chosen inside one group (REQ-0351, REQ-0352; ADR-cross-0059).</b> This replaces invariant I8,
-/// "any slot serves any station", which took the lowest free slots across the whole vehicle. A machine only
-/// opens one side's doors, so a basket put in the other side's slot cannot come out there. The whole demand
-/// goes into the group its AREA is assigned, lowest-numbered free slots first; free slots in any other group
-/// do not count, and when the group is short the demand waits rather than borrowing.
+/// <b>Slots are counted inside one group (REQ-0351, REQ-0352; ADR-cross-0059).</b> This replaces invariant I8,
+/// "any slot serves any station", which counted free slots across the whole vehicle. A machine only opens one side's
+/// doors, so a basket put in the other side's slot cannot come out there. The whole demand goes into the group its AREA
+/// is assigned; free slots in any other group do not count, and when the group is short the demand waits rather than
+/// borrowing.
 /// </para>
 /// <para>
 /// Which slot is in which group is the server's record of the vehicle's slot model
 /// (<see cref="DispatchVehicleFacts.SlotPositions"/>, program#70 decision 4), never a slot-number range: a
-/// vehicle bound to a different model is grouped by that model. Which slots in the group are free is the slot
+/// vehicle bound to a different model is grouped by that model. How many slots in the group are free is the slot
 /// ledger's answer (<see cref="IVehicleSlotLedger"/>, control-server#209); for an idle vehicle that is the vehicle's
 /// session baseline, as it was when this criterion read it for itself.
 /// </para>
 /// <para>
-/// <b>There is deliberately no branch on the station type.</b> Loading and unloading both read the one
-/// <see cref="DispatchCandidateEvaluation.TargetSlots"/> chosen here, so the gate being able to open either
-/// group needs no code: which group opens is decided by the demand's AREA alone. Do not add a per-station
-/// check of the door side (REQ-0353, program#80).
+/// <b>There is deliberately no branch on the station type.</b> Loading and unloading both read the one set of slots
+/// assigned after the scan, so the gate being able to open either group needs no code: which group opens is decided by
+/// the demand's AREA alone. Do not add a per-station check of the door side (REQ-0353, program#80).
 /// </para>
 /// </remarks>
 public sealed class SlotCapacityCriterion(
@@ -119,23 +123,22 @@ public sealed class SlotCapacityCriterion(
             return DispatchReasonCodes.ExpectedBasketCountExceedsSlotGroup;
         }
 
-        IReadOnlyList<int> groupAvailableSlots = await slotLedger
-            .ReadAvailableSlotsAsync(evaluation.Vehicle, requiredSlotPosition, cancellationToken)
+        int groupAvailableSlots = await slotLedger
+            .ReadAvailableSlotCountAsync(evaluation.Vehicle, requiredSlotPosition, cancellationToken)
             .ConfigureAwait(false);
-        if (groupAvailableSlots.Count < expectedBasketCount)
+        if (groupAvailableSlots < expectedBasketCount)
         {
             // 装不下有两种，而批次7-07（control-server#212）判「这一侧装满」只认后一种，所以这里把它们分开
             // （票面第 4 条，批次7-06）。基线是会话建立时车报的空仓位，账本在它之上扣掉本车自己已预留、已装的货：
             // 基线够而账本不够，差额就是本车自己的货占的；基线本身就不够，那是仓位被禁用或本来就没那么多。
-            IReadOnlyList<int> sessionBaseline = await new SessionBaselineSlotLedger()
-                .ReadAvailableSlotsAsync(evaluation.Vehicle, requiredSlotPosition, cancellationToken)
+            int sessionBaseline = await new SessionBaselineSlotLedger()
+                .ReadAvailableSlotCountAsync(evaluation.Vehicle, requiredSlotPosition, cancellationToken)
                 .ConfigureAwait(false);
-            return sessionBaseline.Count >= expectedBasketCount
+            return sessionBaseline >= expectedBasketCount
                 ? DispatchReasonCodes.SlotGroupOccupiedByOwnCargo
                 : DispatchReasonCodes.SlotGroupCapacityTemporarilyUnavailable;
         }
 
-        evaluation.TargetSlots = groupAvailableSlots.Take(expectedBasketCount).ToArray();
         return DispatchAdmissionChain.Eligible;
     }
 }

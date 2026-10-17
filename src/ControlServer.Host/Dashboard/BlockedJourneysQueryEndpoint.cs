@@ -76,6 +76,11 @@ internal sealed class BlockedJourneysQueryEndpoint : IDashboardQueryEndpoint
                 "车有未清除的故障，需求不释放也不取消，车留给故障处理（急停与故障监看跟着这趟旅程走）",
             [DemandReleaseReasons.OrderStalledOrRebuilding] =
                 "这一段的运单停住了（挂起、被取消后等着同车重建、故障清除后等着重建），需求不释放也不取消，车况变了由重建的护栏与人处理",
+            // control-server#754：扫码后分仓位时这一侧可用仓位不够（派车之后有仓位被禁用），这次录入已按 SLOT_INOPERABLE 拒收。
+            [JourneyRuntimeEngine.LoadSlotAssignmentShortReason] =
+                "操作员扫码之后，服务端给这条需求分仓位时，这一侧可分配的空仓不够它要的花篮数，或者读不到这一侧的仓位信息"
+                + "（常见原因是派车之后有仓位被禁用），服务端拒收了这次扫码，没有开门、没有装货，车停在站上。"
+                + "请在车载屏上取消这条需求，并请系统维护人员检查这辆车的仓位状态",
             // control-server#316：在途单在 RIoT 上停住，服务端不发任何命令，要人去 RIoT 或车前处理。
             [JourneyRuntimeEngine.OrderHangReason] =
                 "车正在执行的运单在 RIoT 上挂起（HANG）：服务端不暂停、不急停、不改派，这辆车也不接途中追加。请到现场确认原因，"

@@ -53,7 +53,10 @@ public interface IAreaAssignmentStore
         CancellationToken cancellationToken);
 }
 
-/// <summary>一条需求在分配目标仓位那一刻冻结的分区归属表版本。</summary>
+/// <summary>
+/// 一条需求受理那一刻冻结的分区归属表版本。具体仓位从 v5 起在扫码之后才分配（REQ-0352，control-server#754），分到哪一侧
+/// 仍按这一版定。
+/// </summary>
 public sealed record DemandAreaAssignmentFreeze(
     string DemandId,
     long Version,

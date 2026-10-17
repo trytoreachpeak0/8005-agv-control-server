@@ -1,0 +1,64 @@
+{
+  "schemaVersion": 1,
+  "scenario": "slot-assignment-after-scan",
+  "runId": "20261017T182445712Z",
+  "outcome": "PASS",
+  "failureReason": "",
+  "identity": {
+    "rig": "SyntheticOnboard",
+    "vehicleKey": "BROKERX-L2-0001",
+    "stageRoot": "C:\\Users\\szy\\AppData\\Local\\Temp\\l2-20261017T182445712Z",
+    "batchId": "wire-to-full-inspection",
+    "agvId": "AGV-L2-001",
+    "protocolReleaseIdentity": {
+      "repository": "8005-agv-protocol",
+      "releaseVersion": "5.0.0",
+      "tag": "protocol-v5.0.0",
+      "commit": "13eca82ac199bd97c1ad49d036c70cb5b012250f",
+      "protocolVersion": 6,
+      "profileId": "AGV_FULL_PRODUCT",
+      "manifestSha256": "128daae52758749d4d6f346231fdb336ca5d1079773bcab5430c20c53ce6b10b",
+      "schemaBundleSha256": "d51abe44036f32b5b2c28fd1bea6ec7a89cf3b4dea0f0b1d6c9daaf52f350933",
+      "vectorsSha256": "291311b24bfcac75818ca9e4a888d436523e6ee14db661f6ba792ab8cc383e4a",
+      "approvalStatus": "SUPERSEDING_CANDIDATE"
+    },
+    "controlServerCommit": "6b71be5175eb90151ae01dd050658ee99563fe7e"
+  },
+  "assertions": [
+    {
+      "id": "L2-SAS-01",
+      "description": "受理只预留 2 个花篮的数量，不定具体仓号（归属行与旅程行的目标仓位都是空的）",
+      "outcome": "PASS",
+      "expected": "baskets 2, membership [], journey []",
+      "actual": "baskets 2, membership [], journey []"
+    },
+    {
+      "id": "L2-SAS-02",
+      "description": "乙在车停站时同站追加进同一趟旅程：另开一个停靠排在甲的停靠后面、同一个站，只预留 2 个花篮的数量、不定仓号",
+      "outcome": "PASS",
+      "expected": "journey journey:d0dbc24e-62a2-4e5d-80e4-970a191f934e / new stop after sequence 1 at station 12 / baskets 2 / []",
+      "actual": "journey journey:d0dbc24e-62a2-4e5d-80e4-970a191f934e / stop journey:37ce76ee-5250-44bf-879a-03d7cb72358b|PICKUP seq 2 at 12 / baskets 2 / []"
+    },
+    {
+      "id": "L2-SAS-03",
+      "description": "甲在站点期限内没人扫码，被结掉（终结或放回），从没下装货命令，归属行上也没有仓号",
+      "outcome": "PASS",
+      "expected": "TERMINATED or removed / no load / []",
+      "actual": "TERMINATED removed=  / no load / []"
+    },
+    {
+      "id": "L2-SAS-04",
+      "description": "乙扫码后分到的仓全部属于前侧、升序，且恰好是扫码之前前侧编号最小的 2 个空仓（甲结掉后空回来的那两个也算）",
+      "outcome": "PASS",
+      "expected": "[1,2]（FRONT 组最小的可用仓，升序）",
+      "actual": "[1,2] on AGV-L2-001"
+    },
+    {
+      "id": "L2-SAS-05",
+      "description": "乙的装货命令开的就是分到的仓，与装货记录一致：现场那种「1～4 都空却开 3 号」不再出现",
+      "outcome": "PASS",
+      "expected": "LOAD [1,2] / StationOperations [1,2]",
+      "actual": "LOAD [1,2] / StationOperations [1,2]"
+    }
+  ]
+}

@@ -769,7 +769,7 @@ public sealed class Batch8FixedStationSingleOccupancyTests
             new OnboardDispatchFacts(1, [1], true, true, true, true, false),
             new RiotVehicleObservation($"VK-{agvId}", true, true, "IDLE", "MAP-25", currentStation, 50, "DISCHARGING", 0, At),
             At),
-        new EligibleDispatchCandidate(Batch7JourneyFixture.Snapshot(DemandB, At), route, 1, [1], At, cost),
+        new EligibleDispatchCandidate(Batch7JourneyFixture.Snapshot(DemandB, At), route, 1, At, cost),
         cost,
         Placement: null,
         DispatchZoneParameterVersion: null);

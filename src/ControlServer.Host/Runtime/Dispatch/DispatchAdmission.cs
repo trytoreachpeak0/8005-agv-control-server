@@ -222,8 +222,9 @@ public sealed class DispatchCandidateEvaluation(
     /// no second writer; null until the area assignment lookup has run, and when the AREA has no assignment.
     /// </summary>
     /// <remarks>
-    /// The slot capacity criterion chooses <see cref="TargetSlots"/> inside this group (control-server#73), so
-    /// a plan's target slots are always in the group it carries.
+    /// The slot capacity criterion counts free slots inside this group (control-server#73), and the slots assigned after
+    /// the sublot entry are taken from it too (REQ-0352, control-server#754), so a demand's slots are always in the group
+    /// its plan carries.
     /// </remarks>
     public string? RequiredSlotPosition => AreaAssignment?.SlotPosition;
 
@@ -241,9 +242,6 @@ public sealed class DispatchCandidateEvaluation(
 
     /// <summary>Derived by the slot-capacity criterion from box count and package capacity.</summary>
     public int ExpectedBasketCount { get; set; }
-
-    /// <summary>The slots this candidate would occupy, chosen by the slot-capacity criterion.</summary>
-    public int[] TargetSlots { get; set; } = [];
 
     /// <summary>
     /// What the route graph priced this vehicle's trip to the pickup station at, in mm; null when
@@ -349,7 +347,6 @@ public sealed record EligibleDispatchCandidate(
     AcceptedDemandSnapshot Snapshot,
     ResolvedJourneyRoute Route,
     int ExpectedBasketCount,
-    int[] TargetSlots,
     DateTimeOffset FirstSeenAt,
     long? GraphTraversalCostMm = null,
     long CatalogRevision = 0,

@@ -287,6 +287,13 @@ public sealed partial class JourneyRuntimeEngine(
     /// </summary>
     public const string AreaEndAdmissionRevokedTimeoutReason = "TASK_TYPE_NOT_ALLOWED_AT_STATION_TIMEOUT";
 
+    /// <summary>
+    /// 扫码之后给这条需求分仓位，分不出够数的仓位（REQ-0352，control-server#754）：这一侧能分的空仓比它预留的花篮数少——受理保证了数量，
+    /// 所以多半是受理之后这一侧有仓位被禁用——或者分配要读的东西读不到（这条需求没有分区归属冻结、车的仓位模型或车载端事实读不到）。
+    /// 这次录入按 <c>SLOT_INOPERABLE</c> 拒收，不装货、不开门，旅程停在等录入，等操作员在那一行取消这条需求。
+    /// </summary>
+    public const string LoadSlotAssignmentShortReason = "LOAD_SLOT_ASSIGNMENT_SHORT";
+
     /// <summary>The code a stop held at its AREA machine for the station's admission carries while it waits.</summary>
     private const string AreaEndAdmissionHeldReason = "TASK_TYPE_NOT_ALLOWED_AT_STATION";
 
@@ -1531,6 +1538,36 @@ public sealed partial class JourneyRuntimeEngine(
                         LogLoadYieldedToEndedDemand(logger, runtime.AgvId, sublot.MessageId, entered.Demand.DemandId, null);
                         return;
                     }
+                    // 具体仓位在这里分（REQ-0352，control-server#754）：受理只预留了数量。分配与装货命令、LOADING 同一个写事务，
+                    // 所以要么三者都在、要么都不在——崩在中间，下一轮重新分，不会多出第二组。已经分过的读回原值、不重分：
+                    // 重放（PrepareSlotOperationAsync）与恢复都按第一次写下的仓位判冲突。
+                    if (await AssignTargetSlotsAsync(runtime, entered, cancellationToken).ConfigureAwait(false)
+                        is not { } assigned)
+                    {
+                        // 这一侧能分的空仓不够：本事务什么都不写（重填的离站等待照存），提交之后在事务外拒收这次录入，与别的拒收
+                        // 同一条路（RefuseAsync 自己保存）。
+                        if (waitRefilled)
+                        {
+                            runtime.UpdatedAt = now;
+                            await dbContext.SaveChangesAsync(cancellationToken).ConfigureAwait(false);
+                        }
+                        await transaction.CommitAsync(cancellationToken).ConfigureAwait(false);
+                        runtime.SetBlockReason(LoadSlotAssignmentShortReason, now);
+                        await RefuseAsync(
+                            runtime,
+                            stops,
+                            session,
+                            sublot,
+                            entered.Demand.DemandId,
+                            entered.Demand.Sublot,
+                            ServerReasonCodes.SlotInoperable,
+                            $"子批 {entered.Demand.Sublot} 所需的这一侧可分配的空仓不足 {entered.Membership.ExpectedBasketCount} 个，"
+                            + "或读不到这一侧的仓位信息，不予开仓。请取消这条需求并联系系统维护人员。",
+                            now,
+                            cancellationToken).ConfigureAwait(false);
+                        return;
+                    }
+                    entered = entered with { Membership = assigned };
                     await StageLoadAsync(runtime, stops, entered, session, sublot.MessageId, cancellationToken)
                         .ConfigureAwait(false);
                     runtime.ConsumedSublotMessageId = sublot.MessageId;
@@ -4875,10 +4912,10 @@ public sealed partial class JourneyRuntimeEngine(
         List<string> full = [];
         foreach (string group in positions.PhysicalSlotCountByGroup.Keys.Order(StringComparer.Ordinal))
         {
-            IReadOnlyList<int> free = await ledger
-                .ReadAvailableSlotsAsync(runtime.AgvId, onboard, positions, group, cancellationToken)
+            int free = await ledger
+                .ReadAvailableSlotCountAsync(runtime.AgvId, onboard, positions, group, cancellationToken)
                 .ConfigureAwait(false);
-            if (free.Count == 0 || ownCargoBlocked.Contains(group))
+            if (free == 0 || ownCargoBlocked.Contains(group))
             {
                 full.Add(group);
             }
@@ -4945,11 +4982,11 @@ public sealed partial class JourneyRuntimeEngine(
             bool noneFree = true;
             foreach (string group in positions.PhysicalSlotCountByGroup.Keys.Order(StringComparer.Ordinal))
             {
-                IReadOnlyList<int> free = await ledger
-                    .ReadAvailableSlotsAsync(runtime.AgvId, onboard, positions, group, cancellationToken)
+                int free = await ledger
+                    .ReadAvailableSlotCountAsync(runtime.AgvId, onboard, positions, group, cancellationToken)
                     .ConfigureAwait(false);
-                noneFree &= free.Count == 0;
-                if (free.Count == 0 || ownCargoBlocked.Contains(group))
+                noneFree &= free == 0;
+                if (free == 0 || ownCargoBlocked.Contains(group))
                 {
                     full.Add(group);
                 }
@@ -5557,6 +5594,57 @@ public sealed partial class JourneyRuntimeEngine(
         return !await OpenCancellationAtCurrentStopAsync(stops, cancellationToken).ConfigureAwait(false);
     }
 
+    /// <summary>
+    /// 给被录入的那条需求定具体仓位（REQ-0352，control-server#754）：已经分过的读回原值；还没分的按它那一侧此刻编号最小的空仓
+    /// 分 <c>ExpectedBasketCount</c> 个，写进被跟踪的归属行，由调用方的那次保存落盘。能分的不够时返回空。
+    /// </summary>
+    /// <remarks>
+    /// <para>
+    /// 能分的是这一侧会话基线里的空仓去掉已分给本车别的需求的（<see cref="JourneyAwareSlotLedger.ReadAssignableSlotsAsync"/>），
+    /// 禁用的仓不在基线里。别的需求还没分到的只是数量，受理已保证这一侧够所有预留，所以先扫的拿最小的号，后扫的拿剩下里最小的。
+    /// </para>
+    /// <para>
+    /// 侧取这条需求受理时冻结的那一版分区归属（分组版本仍在受理时冻结）。读不到冻结、或车的仓位模型与车载端事实读不到，
+    /// 都按「能分的不够」处理：猜一侧开错门，比让操作员取消重派更糟。
+    /// </para>
+    /// <para>
+    /// 调用方在装货的写事务里调它（BEGIN IMMEDIATE）：同一辆车两次分配不会交错，读到的已分配集合就是此刻的。
+    /// </para>
+    /// </remarks>
+    private async Task<JourneyDemandRow?> AssignTargetSlotsAsync(
+        JourneyRuntimeRow runtime,
+        JourneyStopDemand entered,
+        CancellationToken cancellationToken)
+    {
+        JourneyDemandRow membership = await TrackedMembershipAsync(runtime, entered.Demand.DemandId, cancellationToken)
+            .ConfigureAwait(false);
+        if ((JsonSerializer.Deserialize<int[]>(membership.TargetSlotsJson) ?? []).Length > 0)
+        {
+            return membership;
+        }
+
+        IReadOnlyDictionary<string, string> sides = await new DemandAreaAssignmentFreezeStore(dbContext)
+            .ReadFrozenSlotPositionsAsync([entered.Demand.DemandId], cancellationToken).ConfigureAwait(false);
+        VehicleSlotPositions? positions = await new VehicleSlotPositionReader(dbContext)
+            .ReadAsync(runtime.AgvId, cancellationToken).ConfigureAwait(false);
+        OnboardDispatchFacts? onboard = await ReadOnboardFactsAsync(runtime.AgvId, cancellationToken).ConfigureAwait(false);
+        if (!sides.TryGetValue(entered.Demand.DemandId, out string? side) || positions is null || onboard is null)
+        {
+            return null;
+        }
+
+        IReadOnlyList<int> assignable = await new JourneyAwareSlotLedger(dbContext)
+            .ReadAssignableSlotsAsync(runtime.AgvId, entered.Demand.DemandId, onboard, positions, side, cancellationToken)
+            .ConfigureAwait(false);
+        if (assignable.Count < membership.ExpectedBasketCount)
+        {
+            return null;
+        }
+
+        membership.TargetSlotsJson = JsonSerializer.Serialize(assignable.Take(membership.ExpectedBasketCount).ToArray());
+        return membership;
+    }
+
     /// <summary>被跟踪的那一份归属行，用来写状态；游标读出来的是 <c>AsNoTracking</c> 的。</summary>
     private Task<JourneyDemandRow> TrackedMembershipAsync(
         JourneyRuntimeRow runtime,
@@ -5984,6 +6072,11 @@ public sealed partial class JourneyRuntimeEngine(
     /// 等的是车载端不是人。<see cref="CheckpointWaitExceededReason"/> 也不在里面：检查点等待本身随等随清，超时码被推进失败换掉的代价
     /// 小，记在 control-server#331 的 PR 剩余风险里。
     /// </para>
+    /// <para>
+    /// <see cref="LoadSlotAssignmentShortReason"/> 是 control-server#754 加的：扫码后这一侧分不出够数的仓位，录入已被拒收，车停在站上等操作员
+    /// 取消这条需求。它只在拒收那一刻写一次，之后没有录入就不再写；被推进失败换掉之后，下一轮走通时 <c>ClearFailedAdvanceAsync</c> 把码清空，
+    /// 仓位仍然不够而看板上没了原因。
+    /// </para>
     /// </remarks>
     private static bool CarriesACodeThatNamesAWaitOnAPerson(JourneyRuntimeRow runtime) =>
         runtime.Stage == JourneyRuntimeStage.Blocked ||
@@ -5996,6 +6089,8 @@ public sealed partial class JourneyRuntimeEngine(
         string.Equals(runtime.BlockReasonCode, StationTimeoutDoorNotClosedReason, StringComparison.Ordinal) ||
         string.Equals(runtime.BlockReasonCode, LoadCorrectionInProgressReason, StringComparison.Ordinal) ||
         string.Equals(runtime.BlockReasonCode, PreDepartureSafetyNotValidReason, StringComparison.Ordinal) ||
+        // control-server#754: the entry was refused for want of slots on the demand's side; the stop waits for a cancellation.
+        string.Equals(runtime.BlockReasonCode, LoadSlotAssignmentShortReason, StringComparison.Ordinal) ||
         // control-server#390: an idle return held because its order may still exist or its vehicle may still move.
         string.Equals(runtime.BlockReasonCode, IdleReturn.IdleReturnExecutionReasons.WaitingPointLostOrderInFlight, StringComparison.Ordinal) ||
         string.Equals(runtime.BlockReasonCode, IdleReturn.IdleReturnExecutionReasons.OrderEndedStopNotProven, StringComparison.Ordinal) ||

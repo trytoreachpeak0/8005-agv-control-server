@@ -68,14 +68,14 @@ public sealed partial class MultiVehicleExecutionTests
         await fixture.RunRoundAsync();
 
         await AssertTranscriptAsync(fixture, """
-            journey V1 D1 AwaitingPickupArrival block=- pickup=13 slots=[1] baskets=1
-            journey V2 D2 AwaitingPickupArrival block=- pickup=14 slots=[1] baskets=1
+            journey V1 D1 AwaitingPickupArrival block=- pickup=13 slots=[] baskets=1
+            journey V2 D2 AwaitingPickupArrival block=- pickup=14 slots=[] baskets=1
             backlog D0 ELIGIBLE first=2026-09-08T06:00:00.0020000+00:00 last=2026-09-08T06:00:00.0020000+00:00 accepted=-
             backlog D1 DEMAND_ALREADY_ACCEPTED first=2026-09-08T06:00:00.0020000+00:00 last=2026-09-08T06:00:00.0020000+00:00 accepted=2026-09-08T06:00:00.0000000+00:00
             backlog D2 ACCEPTED first=2026-09-08T06:00:00.0020000+00:00 last=2026-09-08T06:00:00.0000000+00:00 accepted=2026-09-08T06:00:00.0000000+00:00
             outcome accepted=D1,D2
-              V1: D1=ELIGIBLE[1] D2=ELIGIBLE[1] D0=ELIGIBLE[1]
-              V2: D1=DEMAND_ALREADY_ACCEPTED[1] D2=ELIGIBLE[1] D0=ELIGIBLE[1]
+              V1: D1=ELIGIBLE D2=ELIGIBLE D0=ELIGIBLE
+              V2: D1=DEMAND_ALREADY_ACCEPTED D2=ELIGIBLE D0=ELIGIBLE
             riot create BROKERX-0001 W2G-10000001-0000-4000-8000-000000000001-PICKUP-1 -> 13
             riot create BROKERX-0002 W2G-10000002-0000-4000-8000-000000000002-PICKUP-1 -> 14
             catalog reads 3
@@ -102,12 +102,12 @@ public sealed partial class MultiVehicleExecutionTests
         // The round's decision read and one intake re-read: nobody behind the first vehicle got as far as intake.
         Assert.Equal(2, fixture.Catalog.ReadCount);
         await AssertTranscriptAsync(fixture, """
-            journey V1 D0 AwaitingPickupArrival block=- pickup=12 slots=[1] baskets=1
+            journey V1 D0 AwaitingPickupArrival block=- pickup=12 slots=[] baskets=1
             backlog D0 DEMAND_ALREADY_ACCEPTED first=2026-09-08T06:00:00.0020000+00:00 last=2026-09-08T06:00:00.0020000+00:00 accepted=2026-09-08T06:00:00.0000000+00:00
             outcome accepted=D0
-              V1: D0=ELIGIBLE[1]
-              V2: D0=DEMAND_ALREADY_ACCEPTED[1]
-              V3: D0=DEMAND_ALREADY_ACCEPTED[1]
+              V1: D0=ELIGIBLE
+              V2: D0=DEMAND_ALREADY_ACCEPTED
+              V3: D0=DEMAND_ALREADY_ACCEPTED
             riot create BROKERX-0001 W2G-10000000-0000-4000-8000-000000000000-PICKUP-1 -> 12
             catalog reads 2
             """);
@@ -140,13 +140,13 @@ public sealed partial class MultiVehicleExecutionTests
                 vehicle.Verdicts.Single(verdict => verdict.Evaluation.Candidate.DemandId ==
                     FleetFixture.Demand(0, "N1-1", 0).DemandId).ReasonCode));
         await AssertTranscriptAsync(fixture, """
-            journey V2 D1 AwaitingPickupArrival block=- pickup=13 slots=[1] baskets=1
+            journey V2 D1 AwaitingPickupArrival block=- pickup=13 slots=[] baskets=1
             backlog D0 FINAL_CATALOG_CANDIDATE_GONE first=2026-09-08T06:00:00.0020000+00:00 last=2026-09-08T06:00:00.0020000+00:00 accepted=-
             backlog D1 DEMAND_ALREADY_ACCEPTED first=2026-09-08T06:00:00.0020000+00:00 last=2026-09-08T06:00:00.0020000+00:00 accepted=2026-09-08T06:00:00.0000000+00:00
             outcome accepted=D0,D1
-              V1: D0=ELIGIBLE[1] D1=ELIGIBLE[1]
-              V2: D0=DEMAND_ALREADY_ACCEPTED[1] D1=ELIGIBLE[1]
-              V3: D0=DEMAND_ALREADY_ACCEPTED[1] D1=DEMAND_ALREADY_ACCEPTED[1]
+              V1: D0=ELIGIBLE D1=ELIGIBLE
+              V2: D0=DEMAND_ALREADY_ACCEPTED D1=ELIGIBLE
+              V3: D0=DEMAND_ALREADY_ACCEPTED D1=DEMAND_ALREADY_ACCEPTED
             riot create BROKERX-0002 W2G-10000001-0000-4000-8000-000000000001-PICKUP-1 -> 13
             catalog reads 3
             """);
@@ -171,15 +171,15 @@ public sealed partial class MultiVehicleExecutionTests
         await fixture.RunRoundAsync();
 
         await AssertTranscriptAsync(fixture, """
-            journey V1 D0 AwaitingPickupArrival block=- pickup=12 slots=[1] baskets=1
-            journey V2 D1 AwaitingPickupArrival block=- pickup=13 slots=[1] baskets=1
-            journey V3 D2 AwaitingPickupArrival block=- pickup=14 slots=[1] baskets=1
+            journey V1 D0 AwaitingPickupArrival block=- pickup=12 slots=[] baskets=1
+            journey V2 D1 AwaitingPickupArrival block=- pickup=13 slots=[] baskets=1
+            journey V3 D2 AwaitingPickupArrival block=- pickup=14 slots=[] baskets=1
             backlog D0 DEMAND_ALREADY_ACCEPTED first=2026-09-08T06:00:00.0020000+00:00 last=2026-09-08T06:00:00.0020000+00:00 accepted=2026-09-08T06:00:00.0000000+00:00
             backlog D1 DEMAND_ALREADY_ACCEPTED first=2026-09-08T06:00:00.0020000+00:00 last=2026-09-08T06:00:00.0020000+00:00 accepted=2026-09-08T06:00:00.0000000+00:00
             backlog D2 ACCEPTED first=2026-09-08T06:00:00.0020000+00:00 last=2026-09-08T06:00:00.0000000+00:00 accepted=2026-09-08T06:00:00.0000000+00:00
             outcome accepted=D0,D1,D2
-              V2: D0=DEMAND_ALREADY_ACCEPTED[1] D1=ELIGIBLE[1] D2=ELIGIBLE[1]
-              V3: D0=DEMAND_ALREADY_ACCEPTED[1] D1=DEMAND_ALREADY_ACCEPTED[1] D2=ELIGIBLE[1]
+              V2: D0=DEMAND_ALREADY_ACCEPTED D1=ELIGIBLE D2=ELIGIBLE
+              V3: D0=DEMAND_ALREADY_ACCEPTED D1=DEMAND_ALREADY_ACCEPTED D2=ELIGIBLE
             riot create BROKERX-0001 W2G-10000000-0000-4000-8000-000000000000-PICKUP-1 -> 12
             riot create BROKERX-0002 W2G-10000001-0000-4000-8000-000000000001-PICKUP-1 -> 13
             riot create BROKERX-0003 W2G-10000002-0000-4000-8000-000000000002-PICKUP-1 -> 14
@@ -994,14 +994,14 @@ public sealed partial class MultiVehicleExecutionTests
                 .OrderBy(agvId => agvId)
                 .ToArrayAsync(TestContext.Current.CancellationToken));
         await AssertTranscriptAsync(fixture, """
-            journey V1 D0 AwaitingPickupArrival block=- pickup=12 slots=[1] baskets=1
-            journey V3 D1 AwaitingPickupArrival block=- pickup=13 slots=[1] baskets=1
+            journey V1 D0 AwaitingPickupArrival block=- pickup=12 slots=[] baskets=1
+            journey V3 D1 AwaitingPickupArrival block=- pickup=13 slots=[] baskets=1
             backlog D0 DEMAND_ALREADY_ACCEPTED first=2026-09-08T06:00:00.0020000+00:00 last=2026-09-08T06:00:00.0020000+00:00 accepted=2026-09-08T06:00:00.0000000+00:00
             backlog D1 ACCEPTED first=2026-09-08T06:00:00.0020000+00:00 last=2026-09-08T06:00:00.0000000+00:00 accepted=2026-09-08T06:00:00.0000000+00:00
             backlog D2 ELIGIBLE first=2026-09-08T06:00:00.0020000+00:00 last=2026-09-08T06:00:00.0020000+00:00 accepted=-
             outcome accepted=D0,D1
-              V1: D0=ELIGIBLE[1] D1=ELIGIBLE[1] D2=ELIGIBLE[1]
-              V3: D0=DEMAND_ALREADY_ACCEPTED[1] D1=ELIGIBLE[1] D2=ELIGIBLE[1]
+              V1: D0=ELIGIBLE D1=ELIGIBLE D2=ELIGIBLE
+              V3: D0=DEMAND_ALREADY_ACCEPTED D1=ELIGIBLE D2=ELIGIBLE
             riot create BROKERX-0001 W2G-10000000-0000-4000-8000-000000000000-PICKUP-1 -> 12
             riot create BROKERX-0003 W2G-10000001-0000-4000-8000-000000000001-PICKUP-1 -> 13
             log 2123 LogVehicleRoundFailed Warning: Vehicle V2 could not be served this round: HttpRequestException. The round moved on to the remaining vehicles.
@@ -1925,10 +1925,8 @@ public sealed partial class MultiVehicleExecutionTests
             {
                 Line(
                     $"  {vehicle.AgvId}: " + string.Join(' ', vehicle.Verdicts.Select(verdict =>
-                        $"{Short(verdict.Evaluation.Candidate.DemandId)}={verdict.ReasonCode}" +
-                        (verdict.Evaluation.TargetSlots.Length > 0
-                            ? $"[{string.Join(',', verdict.Evaluation.TargetSlots)}]"
-                            : string.Empty))));
+                        // control-server#754：受理不再选仓号，裁决上没有仓位可记；分到哪几个号看扫码之后的装货命令。
+                        $"{Short(verdict.Evaluation.Candidate.DemandId)}={verdict.ReasonCode}")));
             }
         }
 

@@ -179,13 +179,17 @@ function Test-L2SlotGroupTargets {
 }
 
 <#
-Adds one assertion: the demand's journey targets slots that all belong to SlotPosition, ascending, and are
-exactly the lowest-numbered N available slots of that group on the vehicle it was dispatched to.
+Adds one assertion: the demand was assigned slots that all belong to SlotPosition, ascending, and are exactly the
+lowest-numbered N available slots of that group on the vehicle it was dispatched to.
 
-Target slots come from JourneyRuntimes.TargetSlotsJson, the vehicle's groups from Get-L2VehicleSlotPositions, and
-the available slots from Get-L2AvailableSlots unless the scenario passes -AvailableSlots itself -- which it should
-whenever availability can have changed since dispatch, since the snapshot this reads is the session's current
-one. Returns the Test-L2SlotGroupTargets result.
+Since control-server#754 (REQ-0352) acceptance reserves only the basket count and the slots are assigned after the
+sublot entry, in the write that stages the load command; they are written onto the membership, never onto the
+journey row, whose TargetSlotsJson stays []. So the target slots come from JourneyDemands.TargetSlotsJson, and a
+scenario calls this once the load command is out (AwaitingLoadResult or later) -- before that there are none to
+judge. The vehicle's groups come from Get-L2VehicleSlotPositions, and the available slots from Get-L2AvailableSlots
+unless the scenario passes -AvailableSlots itself -- which it should whenever the assertion runs after the load,
+since the snapshot this reads is the session's current one and the assigned slots may no longer read as free in it:
+pass what was free just before the scan. Returns the Test-L2SlotGroupTargets result.
 #>
 function Assert-L2SlotGroupTargets {
     param(
@@ -200,8 +204,9 @@ function Assert-L2SlotGroupTargets {
     # Not `$Description ?? ...`: an unbound [string] parameter is '', never $null, so ?? would always keep it.
     $hasDescription = -not [string]::IsNullOrEmpty($Description)
 
-    $journey = Invoke-L2Query -Connection $Connection `
-        -Sql "SELECT AgvId, TargetSlotsJson FROM JourneyRuntimes WHERE DemandId = $(ConvertTo-L2SqlLiteral $DemandId)"
+    $journey = Invoke-L2Query -Connection $Connection -Sql (
+        'SELECT r.AgvId, d.TargetSlotsJson FROM JourneyDemands d JOIN JourneyRuntimes r ON r.JourneyId = d.JourneyId ' +
+        "WHERE d.DemandId = $(ConvertTo-L2SqlLiteral $DemandId) AND d.RemovedAt IS NULL")
     if ($journey.Count -eq 0) {
         $Assertions.Add($Id, ($hasDescription ? $Description : "需求 $DemandId 的目标仓位属于 $SlotPosition 组"), $false,
             "a journey for $DemandId", '(no journey row)')
@@ -226,6 +231,32 @@ function Assert-L2SlotGroupTargets {
         ($hasDescription ? $Description : "需求 $DemandId 的目标仓位全部属于 $SlotPosition 组、升序，且恰好是该组编号最小的 $($targets.Count) 个可用仓"),
         [bool]$result.Passed, $expectedText, $actualText)
     return $result
+}
+
+<#
+Adds one assertion: acceptance reserved the demand's basket count and no slot numbers (REQ-0352, control-server#754).
+Both the membership's and the journey row's TargetSlotsJson are [] until the sublot entry; ExpectedBasketCount is
+the count the scenario expects. Returns $true when it passed.
+#>
+function Assert-L2SlotsUnassignedAtAcceptance {
+    param(
+        [Parameter(Mandatory)][object]$Assertions,
+        [Parameter(Mandatory)][string]$Id,
+        [Parameter(Mandatory)][object]$Connection,
+        [Parameter(Mandatory)][string]$DemandId,
+        [Parameter(Mandatory)][int]$BasketCount
+    )
+    $rows = Invoke-L2Query -Connection $Connection -Sql (
+        'SELECT d.ExpectedBasketCount, d.TargetSlotsJson AS MembershipSlots, r.TargetSlotsJson AS JourneySlots ' +
+        'FROM JourneyDemands d JOIN JourneyRuntimes r ON r.JourneyId = d.JourneyId ' +
+        "WHERE d.DemandId = $(ConvertTo-L2SqlLiteral $DemandId) AND d.RemovedAt IS NULL")
+    $actual = if ($rows.Count -eq 0) { '(no membership)' }
+              else { "baskets $($rows[0].ExpectedBasketCount), membership $($rows[0].MembershipSlots), journey $($rows[0].JourneySlots)" }
+    $passed = $rows.Count -eq 1 -and [int]$rows[0].ExpectedBasketCount -eq $BasketCount -and
+        [string]$rows[0].MembershipSlots -ceq '[]' -and [string]$rows[0].JourneySlots -ceq '[]'
+    $Assertions.Add($Id, "受理只预留 $BasketCount 个花篮的数量，不定具体仓号（归属行与旅程行的目标仓位都是空的）",
+        $passed, "baskets $BasketCount, membership [], journey []", $actual)
+    return $passed
 }
 
 <#
@@ -261,4 +292,5 @@ function Get-L2JourneyBacklogRow {
 }
 
 Export-ModuleMember -Function Get-L2VehicleSlotPositions, Get-L2AvailableSlots, Test-L2SlotGroupTargets,
+    Assert-L2SlotsUnassignedAtAcceptance,
     Assert-L2SlotGroupTargets, Get-L2StructuralDispatchBlock, Get-L2JourneyBacklogRow
