@@ -6406,7 +6406,7 @@ public sealed partial class JourneyRuntimeEngine(
             return deadline;
         }
         if (stops.OpenStops.FirstOrDefault(stop => stop.Sequence > stops.Current.Sequence) is
-                { StopRole: JourneyStopRoles.Pickup } next &&
+            { StopRole: JourneyStopRoles.Pickup } next &&
             string.Equals(next.StationId, stops.Current.StationId, StringComparison.Ordinal))
         {
             DateTimeOffset early = startedAt + runtimeOptions.SameStationAppendCorrectionGrace;
