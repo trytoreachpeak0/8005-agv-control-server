@@ -37,6 +37,10 @@ public sealed class JourneyRuntimeWorkerSlotGroupAndRestartTests
     /// A demand whose AREA is assigned the rear group goes into the lowest free rear slots, and the journey
     /// carries them: loading and unloading both read that one <c>TargetSlotsJson</c>, whatever the station.
     /// </summary>
+    /// <remarks>
+    /// Since control-server#754 (REQ-0352) acceptance reserves the count only and the slots are assigned after the sublot
+    /// entry, onto the membership: the journey row stays <c>[]</c>, and the rear slots are read once the load is commanded.
+    /// </remarks>
     [Fact]
     [Trait("IntegrationSlice", "FP-IS-01")]
     public async Task ADemandAssignedTheRearGroupIsAcceptedIntoTheLowestFreeRearSlots()
@@ -52,8 +56,10 @@ public sealed class JourneyRuntimeWorkerSlotGroupAndRestartTests
 
         JourneyRuntimeRow runtime = await fixture.RuntimeAsync();
         Assert.Equal(3, runtime.ExpectedBasketCount);
-        Assert.Equal("[5,6,7]", runtime.TargetSlotsJson);
+        Assert.Equal("[]", runtime.TargetSlotsJson);
         Assert.Equal(1, fixture.Riot.CreateCount("TO_PICKUP"));
+        await fixture.AdvanceToLoadResultAsync();
+        Assert.Equal("[5,6,7]", await MembershipSlotsAsync(fixture, "10000000-0000-4000-8000-000000000001"));
     }
 
     /// <summary>
@@ -148,7 +154,10 @@ public sealed class JourneyRuntimeWorkerSlotGroupAndRestartTests
         await fixture.RecreateEngineAsync();
         await fixture.Engine.ExecuteOnceAsync(TestContext.Current.CancellationToken);
 
-        Assert.Equal("[5,6]", (await fixture.RuntimeAsync()).TargetSlotsJson);
+        // control-server#754: accepted on the count; the two freed rear slots are what the scan is assigned.
+        Assert.Equal("[]", (await fixture.RuntimeAsync()).TargetSlotsJson);
+        await fixture.AdvanceToLoadResultAsync();
+        Assert.Equal("[5,6]", await MembershipSlotsAsync(fixture, "10000000-0000-4000-8000-000000000001"));
     }
 
     /// <summary>
@@ -174,8 +183,16 @@ public sealed class JourneyRuntimeWorkerSlotGroupAndRestartTests
 
         JourneyRuntimeRow runtime = await fixture.RuntimeAsync();
         Assert.Equal("10000000-0000-4000-8000-000000000001", runtime.DemandId);
-        Assert.Equal("[3,4]", runtime.TargetSlotsJson);
+        // control-server#754: the slots come with the scan, the last two free front ones.
+        await fixture.AdvanceToLoadResultAsync();
+        Assert.Equal("[3,4]", await MembershipSlotsAsync(fixture, "10000000-0000-4000-8000-000000000001"));
     }
+
+    /// <summary>The slots assigned to the demand after its sublot entry (control-server#754), off its membership.</summary>
+    private static async Task<string> MembershipSlotsAsync(RuntimeFixture fixture, string demandId) =>
+        (await fixture.Context.Set<JourneyDemandRow>().AsNoTracking()
+            .SingleAsync(row => row.DemandId == demandId && row.RemovedAt == null, TestContext.Current.CancellationToken))
+        .TargetSlotsJson;
 
     /// <summary>Sets <c>physicalState</c> on the given slots in the session's stored handshake snapshots.</summary>
     private static async Task SetSlotPhysicalStateAsync(RuntimeFixture fixture, string physicalState, params int[] slotNumbers)
