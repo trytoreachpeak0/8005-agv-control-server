@@ -263,15 +263,19 @@ $assertions.Add(
     "sublot=$($firstSubmission.Sublot) / revision=$($rejection.WorklistRevision) / $($rejection.AgvId)")
 
 $refusedRuntime = Get-Runtime
+# 仓号在扫码通过之后才写到归属行上（control-server#754）：被拒的录入不分仓，所以拒收之后归属行仍是 []。读归属行而不是
+# 旅程行——旅程行一直是 []，比它什么都证明不了。
+$refusedMembershipSlots = [string](Invoke-L2Query -Connection $connection `
+        -Sql "SELECT TargetSlotsJson FROM JourneyDemands WHERE DemandId = '$demandId' AND RemovedAt IS NULL")[0].TargetSlotsJson
 $slotCommands = @(Get-PeerInbound 'SlotOperationCommand' ([DateTimeOffset]::MinValue)).Count
 $loadOperations = Get-Count "SELECT COUNT(*) AS Total FROM StationOperations WHERE DemandId = '$demandId'"
 $assertions.Add(
     'L2-SRJ-05', '拒收不发装货命令、不建仓位操作、不分仓位（仍是受理时的 []），旅程留在等录入',
     ([string]$refusedRuntime.Stage -eq 'AwaitingSublot' -and $slotCommands -eq 0 -and $loadOperations -eq 0 -and
-        [string]$refusedRuntime.TargetSlotsJson -eq [string]$dispatched.TargetSlotsJson -and
+        $refusedMembershipSlots -ceq '[]' -and
         [string]$refusedRuntime.ExpectedBasketCount -eq [string]$dispatched.ExpectedBasketCount),
-    "AwaitingSublot / 0 / 0 / $($dispatched.TargetSlotsJson) / $($dispatched.ExpectedBasketCount)",
-    "$($refusedRuntime.Stage) / $slotCommands / $loadOperations / $($refusedRuntime.TargetSlotsJson) / $($refusedRuntime.ExpectedBasketCount)")
+    "AwaitingSublot / 0 / 0 / 归属行 [] / $($dispatched.ExpectedBasketCount)",
+    "$($refusedRuntime.Stage) / $slotCommands / $loadOperations / 归属行 $refusedMembershipSlots / $($refusedRuntime.ExpectedBasketCount)")
 $assertions.Add(
     'L2-SRJ-06', '拒收不写阻断原因（被拒的提交不是旅程的阻断，它不上看板）',
     (Test-L2Null $refusedRuntime.BlockReasonCode),
