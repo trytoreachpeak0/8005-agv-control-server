@@ -1,5 +1,6 @@
 using ControlServer.Application;
 using ControlServer.Host.Runtime;
+using ControlServer.Host.Runtime.Charging;
 using ControlServer.Host.Runtime.Dispatch;
 using ControlServer.Host.Runtime.Dispatch.Criteria;
 
@@ -27,6 +28,9 @@ public sealed class BatteryThresholdEligibilityTests
         EstimatedTaskConsumptionPercent = 10,
     };
 
+    /// <summary>每趟耗电估计 70：85% 做完一趟只剩 15，低于余量 20（control-server#744 审查 S2：默认测试策略在 80% 以上永远过得了余量）。</summary>
+    private static readonly ChargingPolicyContent HeavyConsumption = EntryBoundary with { EstimatedTaskConsumptionPercent = 70 };
+
     private static readonly ChargingPolicyContent MarginBoundary = TestChargingPolicies.Content with
     {
         MandatoryChargeEntryThresholdPercent = 20,
@@ -45,7 +49,11 @@ public sealed class BatteryThresholdEligibilityTests
     [InlineData("margin", 34, "NO_CHARGE", VehicleDynamicFactsCriterion.BatteryPolicyNotSatisfiedReason)]
     [InlineData("entry", null, "NO_CHARGE", VehicleDynamicFactsCriterion.BatteryFactUnknownReason)]
     [InlineData("entry", 80, null, VehicleDynamicFactsCriterion.BatteryFactUnknownReason)]
-    [InlineData("entry", 80, "CHARGING", VehicleDynamicFactsCriterion.BatteryPolicyNotSatisfiedReason)]
+    // Charging with no open cycle (control-server#744): refused below the policy's completion line (80), admitted from it.
+    [InlineData("entry", 79, "CHARGING", VehicleDynamicFactsCriterion.BatteryPolicyNotSatisfiedReason)]
+    [InlineData("entry", 80, "CHARGING", DispatchAdmissionChain.Eligible)]
+    // Let go at the completion line is not let go past the margin: the rest of the battery segment still judges it (review S2).
+    [InlineData("heavy", 85, "CHARGING", VehicleDynamicFactsCriterion.BatteryPolicyNotSatisfiedReason)]
     [InlineData("none", 80, "NO_CHARGE", DispatchReasonCodes.ChargingPolicyNotApproved)]
     public void EachBatteryBoundaryAnswersItsOwnReason(string policy, int? battery, string? batteryState, string expected)
     {
@@ -53,6 +61,7 @@ public sealed class BatteryThresholdEligibilityTests
         {
             "entry" => new DispatchBatteryPolicy(1, EntryBoundary),
             "margin" => new DispatchBatteryPolicy(1, MarginBoundary),
+            "heavy" => new DispatchBatteryPolicy(1, HeavyConsumption),
             _ => null,
         });
 
@@ -61,6 +70,28 @@ public sealed class BatteryThresholdEligibilityTests
         {
             Assert.Equal(expected, InTransitVehicleFactsCriterion.Evaluate(facts with { Vehicle = UnderWay(facts.Vehicle) }, Options()));
         }
+    }
+
+    /// <summary>
+    /// 构造事实时没给充电周期（缺省 <see cref="ChargingCycleStanding.NotRead"/>）的车，报 <c>CHARGING</c> 电量再高也不放，空闲链与在途链一样
+    /// （control-server#744 审查 L3：缺省值落在放行一侧时，漏给参数的调用方会让充着电的车被派走）。
+    /// </summary>
+    [Fact]
+    public void AChargingVehicleWhoseCycleWasNeverReadIsRefusedHoweverFullItIs()
+    {
+        DispatchVehicleFacts facts = new(
+            VehicleKey,
+            "agv02",
+            new OnboardDispatchFacts(7, [3, 4], true, true, true, true, false),
+            new RiotVehicleObservation(VehicleKey, true, true, "IDLE", Map, 12, 100, "CHARGING", 0, Now, 0, null),
+            Now,
+            BatteryPolicy: new DispatchBatteryPolicy(1, EntryBoundary));
+
+        Assert.Equal(ChargingCycleStanding.NotRead, facts.ChargingCycle);
+        Assert.Equal(VehicleDynamicFactsCriterion.BatteryPolicyNotSatisfiedReason, VehicleDynamicFactsCriterion.Evaluate(facts, Options()));
+        Assert.Equal(
+            VehicleDynamicFactsCriterion.BatteryPolicyNotSatisfiedReason,
+            InTransitVehicleFactsCriterion.Evaluate(facts with { Vehicle = UnderWay(facts.Vehicle) }, Options()));
     }
 
     /// <summary>
@@ -165,6 +196,7 @@ public sealed class BatteryThresholdEligibilityTests
     /// <summary>
     /// 默认测试策略下与此前等价（票面「默认测试策略下与今天等价」）：入口线 30、余量 30、估计 0，0～100 每一个电量的合格与否都与
     /// 「充电中或低于 30 即拒」相同。原因码只在「低于线」那一侧从 <c>BATTERY_POLICY_NOT_SATISFIED</c> 换成了新码——这是票面要的分开。
+    /// 唯一的变化是 control-server#744：没有未结束周期、报充电中的车到充满线（80）起放行，所以「充电中即拒」只到 79。
     /// </summary>
     [Fact]
     public void UnderTheDefaultTestPolicyEveryBatteryIsAdmittedExactlyAsUnderTheOldThirtyPercentThreshold()
@@ -174,7 +206,8 @@ public sealed class BatteryThresholdEligibilityTests
         {
             foreach (string state in new[] { "NO_CHARGE", "CHARGING" })
             {
-                bool before = !(state == "CHARGING" || battery < 30);
+                bool before = !((state == "CHARGING" && battery < TestChargingPolicies.Content.ChargingCompletionThresholdPercent) ||
+                                battery < 30);
                 string now = VehicleDynamicFactsCriterion.Evaluate(Facts(battery, state, policy), Options());
                 Assert.True(before == (now == DispatchAdmissionChain.Eligible), $"{battery}% {state}: {now}");
                 if (!before)
@@ -245,14 +278,20 @@ public sealed class BatteryThresholdEligibilityTests
     private static JourneyRuntimeOptions Options() =>
         new() { MapIdentity = Map, MaximumEvidenceAge = TimeSpan.FromSeconds(30) };
 
-    private static DispatchVehicleFacts Facts(int? battery, string? batteryState, DispatchBatteryPolicy? policy) =>
+    /// <summary>没有未结束充电周期的一辆车（派车轮为它读出的是 <see cref="ChargingCycleStanding.None"/>）。</summary>
+    private static DispatchVehicleFacts Facts(
+        int? battery,
+        string? batteryState,
+        DispatchBatteryPolicy? policy,
+        ChargingCycleStanding chargingCycle = ChargingCycleStanding.None) =>
         new(
             VehicleKey,
             "agv02",
             new OnboardDispatchFacts(7, [3, 4], true, true, true, true, false),
             new RiotVehicleObservation(VehicleKey, true, true, "IDLE", Map, 12, battery, batteryState, 0, Now, 0, null),
             Now,
-            BatteryPolicy: policy);
+            BatteryPolicy: policy,
+            ChargingCycle: chargingCycle);
 
     private static RiotVehicleObservation UnderWay(RiotVehicleObservation vehicle) =>
         vehicle with { ProcState = "RUNNING", Speed = 0.8, LockStatus = 1, OrderTaskId = "RIOT-TASK-1" };

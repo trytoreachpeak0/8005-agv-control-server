@@ -3,6 +3,7 @@ using ControlServer.Application;
 using ControlServer.Domain;
 using ControlServer.Host.Composition;
 using ControlServer.Host.Runtime;
+using ControlServer.Host.Runtime.Charging;
 using ControlServer.Host.Runtime.Dispatch;
 using ControlServer.Host.Runtime.Dispatch.Criteria;
 using ControlServer.Host.Runtime.Fleet;
@@ -169,7 +170,8 @@ public sealed class IdleReturnCommitmentTests
                 expected = IdleReturnReasons.BatteryUnknownOrCharging;
                 break;
             case "charging":
-                candidate = harness.Candidate(VehicleA, batteryState: "CHARGING");
+                // Below the completion line: a vehicle charging outside a cycle from 80 on is let go (control-server#744).
+                candidate = harness.Candidate(VehicleA, battery: 79, batteryState: "CHARGING");
                 expected = IdleReturnReasons.BatteryUnknownOrCharging;
                 break;
             case "facts-stale":
@@ -203,6 +205,25 @@ public sealed class IdleReturnCommitmentTests
             row => row.Contains(VehiclePurposes.IdleReturn, StringComparison.Ordinal));
         Assert.Equal(intentsBefore, await harness.Db.DumpAsyncOf("OrderIntents"));
         Assert.Equal(journeysBefore, await harness.Db.DumpAsyncOf("JourneyRuntimes"));
+    }
+
+    /// <summary>
+    /// 在 v2 充电周期之外被充上桩、报 <c>CHARGING</c>、没有持桩的车（control-server#744）：到策略的充满线（80）就承诺空闲返回——去等待点就是离桩；
+    /// 差一点（79）不去。审查 S1：此前只有 79 拒那一格，把空闲返回这一处退化成「周期外一律不放」时一条用例都不红。
+    /// </summary>
+    [Theory]
+    [InlineData(80, IdleReturnReasons.Committed)]
+    [InlineData(79, IdleReturnReasons.BatteryUnknownOrCharging)]
+    public async Task AVehicleChargingOutsideACycleGoesToAWaitingPointOnceItReachesTheCompletionLine(int battery, string expected)
+    {
+        await using Harness harness = await Harness.CreateAsync();
+        Assert.Equal(80, TestChargingPolicies.Content.ChargingCompletionThresholdPercent);
+        IdleReturnCandidate candidate = harness.Candidate(
+            VehicleA, battery: battery, batteryState: "CHARGING", chargingCycle: ChargingCycleStanding.None);
+
+        IdleReturnVerdict verdict = Assert.Single(await harness.EvaluateAsync(candidate));
+
+        Assert.Equal(expected, verdict.Reason);
     }
 
     /// <summary>
@@ -986,7 +1007,8 @@ public sealed class IdleReturnCommitmentTests
             string batteryState = "NO_CHARGE",
             int? station = 210,
             DateTimeOffset? observedAt = null,
-            string? orderTaskId = null) =>
+            string? orderTaskId = null,
+            ChargingCycleStanding chargingCycle = ChargingCycleStanding.None) =>
             new(
                 new FleetVehicle(AgvIdOf(vehicleKey), vehicleKey, 1),
                 new DispatchVehicleFacts(
@@ -999,7 +1021,8 @@ public sealed class IdleReturnCommitmentTests
                     Now,
                     // 轮次为这辆车读的那一份策略（control-server#403），与空闲返回的线读同一个解析器。
                     BatteryPolicy: DispatchBatteryPolicy.From(
-                        ChargingPolicy.ResolveForNewDecisionAsync(vehicleKey, CancellationToken.None).GetAwaiter().GetResult())),
+                        ChargingPolicy.ResolveForNewDecisionAsync(vehicleKey, CancellationToken.None).GetAwaiter().GetResult()),
+                    ChargingCycle: chargingCycle),
                 LeftOverByTransport: true);
 
         public DispatchCandidateEvaluation Evaluation(string vehicleKey) =>

@@ -1,4 +1,5 @@
 using ControlServer.Application;
+using ControlServer.Host.Runtime.Charging;
 
 namespace ControlServer.Host.Runtime.Dispatch.Criteria;
 
@@ -38,7 +39,7 @@ public sealed record DispatchBatteryPolicy(long Version, ChargingPolicyContent C
 /// </remarks>
 public static class BatteryEligibility
 {
-    /// <summary>车在充电中：报这个值的车不派，除非本周期已充满（<see cref="ChargingVehicleMayTakeWork"/>）。</summary>
+    /// <summary>车在充电中：报这个值的车不派，除非本周期已充满或周期外已充到充满线（<see cref="ChargingVehicleMayTakeWork"/>）。</summary>
     public const string ChargingBatteryState = "CHARGING";
 
     /// <summary>
@@ -73,21 +74,40 @@ public static class BatteryEligibility
     }
 
     /// <summary>
-    /// 报 <c>CHARGING</c> 的车能不能接活离桩（批次9-07，control-server#405 放开）：只有本周期已 <c>COMPLETE</c> 的能——充满的车停在桩上只要还插着
-    /// 就一直报 <c>CHARGING</c>，一律拒绝会把它永远困在桩上（MVP 线踩过同一个坑）。充满之前的 <c>CHARGING</c> 照旧拒绝。
+    /// 报 <c>CHARGING</c> 的车能不能接活离桩（批次9-07，control-server#405 放开；control-server#744 补周期外那一支）。充满的车停在桩上只要还插着
+    /// 就一直报 <c>CHARGING</c>，一律拒绝会把它永远困在桩上（MVP 线踩过同一个坑）。按它与 v2 充电周期的关系分三支：
+    /// <list type="bullet">
+    /// <item>本周期已 <c>COMPLETE</c>、还在桩上：能。</item>
+    /// <item>有未结束而没充满的周期：不能（充满前不接活，cs#405 的初衷）。</item>
+    /// <item>
+    /// 没有未结束的周期（在 v2 周期之外被充上的，例如低电断电后人工推上桩）：电量不低于这一轮所用策略的 <c>ChargingCompletionThreshold</c> 才能——
+    /// 与 v2 自己安排的充电同一条线（用户 2026-10-17 选定）。不到充满线就留在桩上继续充；读不到电量或没有策略时不能。
+    /// </item>
+    /// <item>没读过（<see cref="ChargingCycleStanding.NotRead"/>）：不能。</item>
+    /// </list>
     /// </summary>
-    /// <param name="chargingCycleComplete">这一轮为这辆车读定的 <see cref="DispatchVehicleFacts.ChargingCycleComplete"/>。</param>
-    public static bool ChargingVehicleMayTakeWork(RiotVehicleObservation vehicle, bool chargingCycleComplete = false)
+    /// <param name="chargingCycle">这一轮为这辆车读定的 <see cref="DispatchVehicleFacts.ChargingCycle"/>。</param>
+    /// <param name="policy">这一轮为这辆车读定的策略内容；周期外那一支读它的充满线。</param>
+    public static bool ChargingVehicleMayTakeWork(
+        RiotVehicleObservation vehicle,
+        ChargingCycleStanding chargingCycle,
+        ChargingPolicyContent? policy)
     {
         ArgumentNullException.ThrowIfNull(vehicle);
-        return chargingCycleComplete;
+        return chargingCycle switch
+        {
+            ChargingCycleStanding.CompleteOnCharger => true,
+            ChargingCycleStanding.None => policy is not null && vehicle.BatteryPercent is int battery &&
+                                          battery >= policy.ChargingCompletionThresholdPercent,
+            _ => false,
+        };
     }
 
     /// <summary>
     /// 派车资格的电量一段（<c>REQ-0208</c> 电量那一半、<c>REQ-0281</c>、<c>REQ-0290</c>）。能接答
     /// <see cref="DispatchAdmissionChain.Eligible"/>；否则答第一条不满足的原因码，依次是：
     /// 没有策略 <see cref="DispatchReasonCodes.ChargingPolicyNotApproved"/>；电量或电池状态缺失 <c>BATTERY_FACT_UNKNOWN</c>；
-    /// 充电中 <c>BATTERY_POLICY_NOT_SATISFIED</c>；当前电量低于强制充电线 <see cref="DispatchReasonCodes.MandatoryChargeRequired"/>；
+    /// 充电中且不放行（<see cref="ChargingVehicleMayTakeWork"/>）<c>BATTERY_POLICY_NOT_SATISFIED</c>；当前电量低于强制充电线 <see cref="DispatchReasonCodes.MandatoryChargeRequired"/>；
     /// 预计任务后保不住余量 <c>BATTERY_POLICY_NOT_SATISFIED</c>。
     /// </summary>
     /// <param name="tasksToCover">
@@ -106,7 +126,7 @@ public static class BatteryEligibility
         DispatchBatteryPolicy? policy,
         int tasksToCover,
         int rescueBatteryPercent,
-        bool chargingCycleComplete = false)
+        ChargingCycleStanding chargingCycle)
     {
         ArgumentNullException.ThrowIfNull(vehicle);
         if (policy is null)
@@ -125,7 +145,7 @@ public static class BatteryEligibility
         }
 
         if (string.Equals(vehicle.BatteryState, ChargingBatteryState, StringComparison.Ordinal) &&
-            !ChargingVehicleMayTakeWork(vehicle, chargingCycleComplete))
+            !ChargingVehicleMayTakeWork(vehicle, chargingCycle, policy.Content))
         {
             return VehicleDynamicFactsCriterion.BatteryPolicyNotSatisfiedReason;
         }

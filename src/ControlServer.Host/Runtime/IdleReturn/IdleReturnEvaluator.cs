@@ -285,11 +285,13 @@ public sealed class IdleReturnEvaluator(
         }
 
         RiotVehicleObservation observed = candidate.Facts.Vehicle;
-        // 报 CHARGING 的车不去等待点，本周期已充满的除外（批次9-07：与派车电量判据同一个放开，读的是这一轮的同一份事实）。
+        // 报 CHARGING 的车不去等待点，本周期已充满的、周期外已充到充满线的除外（批次9-07、control-server#744：与派车电量判据同一个放开，
+        // 读的是这一轮的同一份事实）。
         if (observed.BatteryPercent is not int battery ||
             string.IsNullOrWhiteSpace(observed.BatteryState) ||
             (string.Equals(observed.BatteryState, "CHARGING", StringComparison.Ordinal) &&
-             !BatteryEligibility.ChargingVehicleMayTakeWork(observed, candidate.Facts.ChargingCycleComplete)))
+             !BatteryEligibility.ChargingVehicleMayTakeWork(
+                 observed, candidate.Facts.ChargingCycle, candidate.Facts.BatteryPolicy?.Content)))
         {
             return IdleReturnReasons.BatteryUnknownOrCharging;
         }

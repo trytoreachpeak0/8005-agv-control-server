@@ -20,6 +20,25 @@ public sealed partial class JourneyRuntimeEngine
             "({Gaps}). No order is created; the commitment, the charger reservation and the cycle stay, and the gate is asked " +
             "again next round.");
 
+    private static readonly Action<ILogger, string, string, int, string, Exception?> LogChargingDepartureRouteGraphUnavailable =
+        LoggerMessage.Define<string, string, int, string>(
+            LogLevel.Information,
+            new EventId(2282, nameof(LogChargingDepartureRouteGraphUnavailable)),
+            "Charging journey {JourneyId} of vehicle {VehicleKey} is not sent off to charger {StationId}: the route graph cannot " +
+            "be read right now ({StaleReason}), so the charger cannot be checked again before the create. Nothing is withdrawn; " +
+            "the commitment, the charger reservation and the cycle stay, and the charger is checked again next round " +
+            "(control-server#744).");
+
+    private static readonly Action<ILogger, string, string, int, DateTimeOffset, string, Exception?>
+        LogChargingDepartureRouteGraphStillUnavailable =
+            LoggerMessage.Define<string, string, int, DateTimeOffset, string>(
+                LogLevel.Warning,
+                new EventId(2283, nameof(LogChargingDepartureRouteGraphStillUnavailable)),
+                "Charging journey {JourneyId} of vehicle {VehicleKey} has been held before its departure to charger {StationId} " +
+                "since {Since} because the route graph cannot be read ({StaleReason}). The commitment and the charger " +
+                "reservation stay and nothing withdraws them by time; check the route graph's stale reason and the server's " +
+                "connection to RIoT (control-server#744).");
+
     private static readonly Action<ILogger, string, string, string, Exception?> LogChargingHeld =
         LoggerMessage.Define<string, string, string>(
             LogLevel.Warning,
@@ -421,6 +440,11 @@ public sealed partial class JourneyRuntimeEngine
     /// <summary>
     /// 出发前复核（独立审查 M1）：预占、这一个桩、还需不需要充电。任何一条不成立就撤回承诺并答真。
     /// </summary>
+    /// <remarks>
+    /// 路网快照暂时不可用（非 sticky 原因）不算「这个桩不成立」（control-server#744）：此刻核不了，不是核出来不行。这时保持承诺、
+    /// 旅程写 <see cref="ChargingExecutionReasons.DepartureRouteGraphUnavailable"/>、不建单，也答真（这一轮不往下走），下一轮重核。
+    /// 2026-10-17 生产上设计态 10 分钟到期与下一次刷新之间那一两秒，正好撤掉了一辆 25% 的车等了 95 秒的承诺。
+    /// </remarks>
     private async Task<bool> WithdrawChargingIfItNoLongerStandsAsync(
         JourneyRuntimeRow runtime,
         JourneyStopRow stop,
@@ -445,6 +469,7 @@ public sealed partial class JourneyRuntimeEngine
 
         string? charger;
         string? chargerDetail;
+        string? graphStale = null;
         RiotVehicleObservation? vehicle;
         try
         {
@@ -453,6 +478,7 @@ public sealed partial class JourneyRuntimeEngine
                 .ConfigureAwait(false);
             charger = check.Reason;
             chargerDetail = check.Detail;
+            graphStale = check.RouteGraphStaleReason;
             vehicle = charger is null
                 ? await vehicleFacts.ReadVehicleAsync(runtime.VehicleKey, cancellationToken).ConfigureAwait(false)
                 : null;
@@ -465,6 +491,32 @@ public sealed partial class JourneyRuntimeEngine
             chargerDetail = charger;
             vehicle = null;
         }
+
+        if (charger == ChargingAllocationReasons.RouteGraphUnavailable &&
+            !RouteGraphStickyStaleReasons.IsSticky(graphStale))
+        {
+            if (!string.Equals(
+                    runtime.BlockReasonCode, ChargingExecutionReasons.DepartureRouteGraphUnavailable, StringComparison.Ordinal))
+            {
+                LogChargingDepartureRouteGraphUnavailable(
+                    logger, runtime.JourneyId, runtime.VehicleKey, stop.StationRiotId, graphStale ?? "unknown", null);
+                runtime.SetBlockReason(ChargingExecutionReasons.DepartureRouteGraphUnavailable, now);
+                runtime.UpdatedAt = now;
+                await dbContext.SaveChangesAsync(cancellationToken).ConfigureAwait(false);
+            }
+            else if (runtime.BlockReasonSince is { } since &&
+                     now - since > runtimeOptions.OwnOrderRebuildRepeatWindow &&
+                     dispatchRound.Charging.Board.FirstTime(ChargingAllocationBoard.DepartureRouteGraphHoldKey(runtime.JourneyId)))
+            {
+                // Review L2: the hold has no time limit by design (nothing is withdrawn by time), so a hold that lasts is said
+                // once, loudly, past the same window the other charging waits use.
+                LogChargingDepartureRouteGraphStillUnavailable(
+                    logger, runtime.JourneyId, runtime.VehicleKey, stop.StationRiotId, since, graphStale ?? "unknown", null);
+            }
+            return true;
+        }
+
+        dispatchRound.Charging.Board.Unsay(ChargingAllocationBoard.DepartureRouteGraphHoldKey(runtime.JourneyId));
 
         if (charger is not null)
         {
@@ -484,7 +536,10 @@ public sealed partial class JourneyRuntimeEngine
                 Dispatch.Criteria.DispatchBatteryPolicy.From(
                     await chargingPolicy.ReadFrozenAsync(version, cancellationToken).ConfigureAwait(false)),
                 tasksToCover: 1,
-                runtimeOptions.WaitingJourneyRescueBatteryPercent)
+                runtimeOptions.WaitingJourneyRescueBatteryPercent,
+                // This journey's own cycle is open and not complete: a vehicle reporting CHARGING here is being charged by
+                // somebody else, and is not sent (control-server#744 keeps this exactly as it was).
+                ChargingCycleStanding.InProgress)
             : Dispatch.DispatchReasonCodes.ChargingPolicyNotApproved;
         if (battery is Dispatch.DispatchReasonCodes.MandatoryChargeRequired
             or Dispatch.DispatchReasonCodes.ChargingPolicyNotApproved

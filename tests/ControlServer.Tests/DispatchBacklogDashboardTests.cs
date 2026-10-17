@@ -1,8 +1,10 @@
 using System.Text.Json;
 using ControlServer.Application;
 using ControlServer.Dashboard;
+using ControlServer.Domain;
 using ControlServer.Host.Dashboard;
 using ControlServer.Host.Runtime.Dispatch;
+using ControlServer.Host.Runtime.Dispatch.Criteria;
 using ControlServer.Infrastructure.Persistence;
 
 namespace ControlServer.Tests;
@@ -232,6 +234,97 @@ public sealed class DispatchBacklogDashboardTests
             endpoint => endpoint is DispatchBacklogQueryEndpoint && endpoint.Path == card.SourcePath);
     }
 
+    /// <summary>
+    /// 积压行的原因码被这一轮最后判它的那辆车覆盖（2026-10-17 生产：78 条都显示在途车的 <c>VEHICLE_TASK_TYPE_NOT_ADMITTED</c>，空闲 agv02 的电量原因
+    /// 看不到）。每行另给上一轮每辆车的裁决，卡片逐车显示；行上的 <c>reasonCode</c> 照旧（control-server#744）。上一轮没判过的需求是空数组，
+    /// 服务启动后还没跑完一轮时取自哪一轮为空。
+    /// </summary>
+    [Fact]
+    public async Task EachBacklogRowCarriesEveryVehiclesVerdictFromTheLastRoundAndTheCardShowsThem()
+    {
+        await using AreaAssignmentPersistenceFixture fixture = await AreaAssignmentPersistenceFixture.CreateAsync();
+        DateTimeOffset now = DateTimeOffset.UtcNow;
+        AddBacklog(fixture, "D-744", VehicleTaskTypeAdmissionCriterion.TaskTypeNotAdmittedReason, now.AddMinutes(-30));
+        AddBacklog(fixture, "D-UNJUDGED", VehicleTaskTypeAdmissionCriterion.TaskTypeNotAdmittedReason, now.AddMinutes(-20));
+        await fixture.Context.SaveChangesAsync(TestContext.Current.CancellationToken);
+        SlotGroupFullnessBoard board = new();
+
+        using (JsonDocument before = await ReadAsync(fixture, board))
+        {
+            Assert.Equal(JsonValueKind.Null, before.RootElement.GetProperty("vehicleVerdictsRoundAt").ValueKind);
+            Assert.All(
+                before.RootElement.GetProperty("backlog").EnumerateArray(),
+                row => Assert.Empty(row.GetProperty("vehicleVerdicts").EnumerateArray()));
+        }
+
+        DispatchRoundFacts round = RoundOf(now, "D-744");
+        board.Record(new DispatchRoundOutcome(
+            round,
+            [
+                new DispatchVehicleOutcome("agv03", "KEY-agv03", [Verdict(round, "agv03", VehicleTaskTypeAdmissionCriterion.TaskTypeNotAdmittedReason)]),
+                new DispatchVehicleOutcome("agv02", "KEY-agv02", [Verdict(round, "agv02", VehicleDynamicFactsCriterion.BatteryPolicyNotSatisfiedReason)]),
+            ]));
+
+        using JsonDocument fact = await ReadAsync(fixture, board);
+        Assert.Equal(now, fact.RootElement.GetProperty("vehicleVerdictsRoundAt").GetDateTimeOffset());
+        JsonElement row = fact.RootElement.GetProperty("backlog").EnumerateArray()
+            .Single(item => item.GetProperty("demandId").GetString() == "D-744");
+        Assert.Equal(VehicleTaskTypeAdmissionCriterion.TaskTypeNotAdmittedReason, row.GetProperty("reasonCode").GetString());
+        Assert.Equal(
+            [
+                ("agv02", VehicleDynamicFactsCriterion.BatteryPolicyNotSatisfiedReason),
+                ("agv03", VehicleTaskTypeAdmissionCriterion.TaskTypeNotAdmittedReason),
+            ],
+            row.GetProperty("vehicleVerdicts").EnumerateArray()
+                .Select(verdict => (verdict.GetProperty("agvId").GetString(), verdict.GetProperty("reasonCode").GetString()))
+                .ToArray());
+        Assert.All(
+            row.GetProperty("vehicleVerdicts").EnumerateArray(),
+            verdict => Assert.Matches(@"\p{IsCJKUnifiedIdeographs}", verdict.GetProperty("reasonDescription").GetString()));
+        Assert.Empty(fact.RootElement.GetProperty("backlog").EnumerateArray()
+            .Single(item => item.GetProperty("demandId").GetString() == "D-UNJUDGED").GetProperty("vehicleVerdicts").EnumerateArray());
+
+        string html = new DispatchBacklogCard().RenderFact(fact.RootElement);
+        Assert.Contains("<th>各车上一轮的裁决</th>", html, StringComparison.Ordinal);
+        string rendered = RowOf(html, "TDK-D-744");
+        Assert.Contains(
+            $"agv02：{VehicleDynamicFactsCriterion.BatteryPolicyNotSatisfiedReason}（"
+            + DispatchBacklogQueryEndpoint.Descriptions[VehicleDynamicFactsCriterion.BatteryPolicyNotSatisfiedReason] + "）；agv03：",
+            System.Net.WebUtility.HtmlDecode(rendered),
+            StringComparison.Ordinal);
+        Assert.Contains("上一轮没有车判过它", RowOf(html, "TDK-D-UNJUDGED"), StringComparison.Ordinal);
+        Assert.Contains("各车的裁决取自", html, StringComparison.Ordinal);
+    }
+
+    private static DispatchRoundFacts RoundOf(DateTimeOffset now, string demandId) => new(
+        new DemandCatalogSnapshot(
+            "11111111-1111-4111-8111-111111111111",
+            21,
+            [
+                new AcceptedDemandSnapshot(
+                    demandId, $"TDK-{demandId}", 7, "11111111-1111-4111-8111-111111111111", 21, now, "SERIES-1", "STAGING_TO_WIRE",
+                    "SUBLOT-1", 1, now.AddMinutes(-10), now.AddMinutes(-9), "TRACE-1", "COMMIT-1",
+                    new LiveMesFieldSet("N1-3", "EQP-01", "STEP-01", now, "PDFN5×6-8L(12R)")),
+            ]),
+        new RiotMapStationCatalogSnapshot(26, now, new string('c', 64), []),
+        new SingleStationView(new RiotMapStation(210, "关卡")),
+        new HashSet<string>(StringComparer.Ordinal),
+        now,
+        new VehicleDispatchPolicy([], new Dictionary<string, IReadOnlySet<string>>(StringComparer.Ordinal), "TEST-POLICY"));
+
+    private static DispatchCandidateVerdict Verdict(DispatchRoundFacts round, string agvId, string reasonCode) =>
+        new(
+            new DispatchCandidateEvaluation(
+                round.Catalog.Items[0],
+                round,
+                new DispatchVehicleFacts(
+                    $"KEY-{agvId}",
+                    agvId,
+                    null,
+                    new RiotVehicleObservation($"KEY-{agvId}", true, true, "IDLE", "MAP-26", 4, 93, "CHARGING", 0, round.Now),
+                    round.Now)),
+            reasonCode);
+
     private static void AddBacklog(
         AreaAssignmentPersistenceFixture fixture,
         string demandId,
@@ -250,10 +343,12 @@ public sealed class DispatchBacklogDashboardTests
             AcceptedAt = acceptedAt
         });
 
-    private static async Task<JsonDocument> ReadAsync(AreaAssignmentPersistenceFixture fixture)
+    private static async Task<JsonDocument> ReadAsync(
+        AreaAssignmentPersistenceFixture fixture,
+        SlotGroupFullnessBoard? verdicts = null)
     {
         fixture.Context.ChangeTracker.Clear();
-        object fact = await new DispatchBacklogQueryEndpoint()
+        object fact = await new DispatchBacklogQueryEndpoint(TimeProvider.System, verdicts)
             .ReadAsync(fixture.Context, TestContext.Current.CancellationToken);
         return JsonDocument.Parse(JsonSerializer.Serialize(fact));
     }

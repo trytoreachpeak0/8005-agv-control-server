@@ -416,18 +416,75 @@ public sealed class ChargingCycleProgressTests
     }
 
     /// <summary>
-    /// 电量判据那一支的放开只认「本周期已 <c>COMPLETE</c>」：报 <c>CHARGING</c> 的车，周期没完成照旧 <c>BATTERY_POLICY_NOT_SATISFIED</c>，完成了才放行。
+    /// 在 v2 充电周期之外被充上桩的车（2026-10-17 生产：agv02 低电断电后被人推上 211，93% 仍一直不派，control-server#744）：
+    /// 不到充满线（80）留在桩上，不接搬运、也不被分去充电；到了充满线，下一轮就接搬运。红证据：把周期外那一支改回「一律拒绝」，后半段变红。
+    /// </summary>
+    [Fact]
+    public async Task AVehicleChargedOutsideACycleStaysBelowTheCompletionLineAndTakesATransportOnceItReachesIt()
+    {
+        await using FleetFixture fleet = await FleetAsync();
+        AtCharger(fleet, KeyA, 79, Charging);
+        fleet.Catalog.Set([FleetFixture.Demand(0, "N1-1", 0)]);
+
+        for (int round = 0; round < 3; round++)
+        {
+            await RoundAsync(fleet);
+        }
+
+        Assert.Empty(await fleet.Context.Set<ChargingCycleRow>().AsNoTracking().ToArrayAsync(Token));
+        Assert.Null(await ClaimOfAsync(fleet, KeyA));
+        Assert.Empty(fleet.Riot.Creates);
+
+        AtCharger(fleet, KeyA, 80, Charging);
+        for (int round = 0; round < 3; round++)
+        {
+            await RoundAsync(fleet);
+        }
+
+        Assert.Equal(VehiclePurposes.Transport, (await ClaimOfAsync(fleet, KeyA))!.Value.Purpose);
+        Assert.Contains(fleet.Riot.Creates, create => create.VehicleKey == KeyA && create.DestinationStationId == 12);
+        Assert.Empty(await fleet.Context.Set<ChargingCycleRow>().AsNoTracking().ToArrayAsync(Token));
+    }
+
+    /// <summary>
+    /// 电量判据那一支的放开：报 <c>CHARGING</c> 的车，本周期已 <c>COMPLETE</c> 的放行；周期没完成的照旧 <c>BATTERY_POLICY_NOT_SATISFIED</c>，
+    /// 电量再高也不放（充满由周期判，cs#405）；没有未结束周期的（周期外被人充上桩，control-server#744）到策略的充满线（80）才放，差一点也不放。
     /// </summary>
     [Theory]
-    [InlineData(false, VehicleDynamicFactsCriterion.BatteryPolicyNotSatisfiedReason)]
-    [InlineData(true, DispatchAdmissionChain.Eligible)]
-    public void OnlyACompletedCycleLetsAChargingVehicleTakeWork(bool complete, string expected)
+    [InlineData(ChargingCycleStanding.CompleteOnCharger, 90, DispatchAdmissionChain.Eligible)]
+    [InlineData(ChargingCycleStanding.InProgress, 90, VehicleDynamicFactsCriterion.BatteryPolicyNotSatisfiedReason)]
+    [InlineData(ChargingCycleStanding.InProgress, 100, VehicleDynamicFactsCriterion.BatteryPolicyNotSatisfiedReason)]
+    [InlineData(ChargingCycleStanding.None, 93, DispatchAdmissionChain.Eligible)]
+    [InlineData(ChargingCycleStanding.None, 80, DispatchAdmissionChain.Eligible)]
+    [InlineData(ChargingCycleStanding.None, 79, VehicleDynamicFactsCriterion.BatteryPolicyNotSatisfiedReason)]
+    [InlineData(ChargingCycleStanding.None, 35, VehicleDynamicFactsCriterion.BatteryPolicyNotSatisfiedReason)]
+    public void AChargingVehicleTakesWorkOnlyOnceItsCycleIsCompleteOrOutsideACycleAtTheCompletionLine(
+        ChargingCycleStanding cycle,
+        int battery,
+        string expected)
     {
         RiotVehicleObservation charging = new(
-            KeyA, true, true, "IDLE", "MAP", Near.StationId, 90, Charging, 0, DateTimeOffset.UnixEpoch, 0, null);
+            KeyA, true, true, "IDLE", "MAP", Near.StationId, battery, Charging, 0, DateTimeOffset.UnixEpoch, 0, null);
+        DispatchBatteryPolicy policy = TestChargingPolicies.Battery();
+        Assert.Equal(80, policy.Content.ChargingCompletionThresholdPercent);
 
-        Assert.Equal(expected, BatteryEligibility.Judge(charging, TestChargingPolicies.Battery(), 1, 10, complete));
-        Assert.Equal(complete, BatteryEligibility.ChargingVehicleMayTakeWork(charging, complete));
+        Assert.Equal(expected, BatteryEligibility.Judge(charging, policy, 1, 10, cycle));
+        Assert.Equal(
+            expected == DispatchAdmissionChain.Eligible,
+            BatteryEligibility.ChargingVehicleMayTakeWork(charging, cycle, policy.Content));
+    }
+
+    /// <summary>周期外那一支没有策略、或读不到电量时不放（control-server#744）：充满线无从比较，不猜。</summary>
+    [Fact]
+    public void AChargingVehicleOutsideACycleIsNotLetGoWithoutAPolicyOrABatteryReading()
+    {
+        RiotVehicleObservation unread = new(
+            KeyA, true, true, "IDLE", "MAP", Near.StationId, null, Charging, 0, DateTimeOffset.UnixEpoch, 0, null);
+        RiotVehicleObservation full = unread with { BatteryPercent = 100 };
+
+        Assert.False(BatteryEligibility.ChargingVehicleMayTakeWork(full, ChargingCycleStanding.None, policy: null));
+        Assert.False(BatteryEligibility.ChargingVehicleMayTakeWork(
+            unread, ChargingCycleStanding.None, TestChargingPolicies.Battery().Content));
     }
 
     // ---- 离桩与释放（REQ-0173）-------------------------------------------------------------------------------------------

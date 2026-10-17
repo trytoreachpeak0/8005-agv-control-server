@@ -12,7 +12,7 @@ namespace ControlServer.Host.Runtime.Charging;
 /// </para>
 /// <para>
 /// <b>保持类</b>（旅程停在原处，车、目标桩、用途占有、预占、周期都不放）：<see cref="DepartureNotProven"/>（只在宽限期内）、
-/// <see cref="CycleMissing"/>，以及建单结果的 <c>CHARGER_{结果}</c>。途中单停住用引擎共用的那几个码（<c>ORDER_HANG</c> 等）。
+/// <see cref="DepartureRouteGraphUnavailable"/>、<see cref="CycleMissing"/>，以及建单结果的 <c>CHARGER_{结果}</c>。途中单停住用引擎共用的那几个码（<c>ORDER_HANG</c> 等）。
 /// </para>
 /// <para>
 /// <b>撤回类</b>（独立审查 M1、M2）：单从没发出过的承诺，出发前复核不再成立就整笔撤回——周期结束、用途占有与桩预占同一次保存里释放，
@@ -34,6 +34,13 @@ public static class ChargingExecutionReasons
     /// 下一轮重评。
     /// </summary>
     public const string DepartureNotProven = "CHARGING_DEPARTURE_NOT_PROVEN";
+
+    /// <summary>
+    /// 出发前复核时路网快照暂时不可用（非 sticky 的过期或刷新失败，control-server#744）：不建单，承诺、预占与周期保持，下一轮重核。
+    /// 路网不可用说的是「此刻核不了」，不是「这个桩不能用了」；撤回只会让分配下一轮在同一个路网上什么也分不出来。sticky 的原因
+    /// （边组指纹变了、动态代价出现）要人放行，照旧按 <see cref="WithdrawnChargerNoLongerEligible"/> 撤回。
+    /// </summary>
+    public const string DepartureRouteGraphUnavailable = "CHARGING_DEPARTURE_ROUTE_GRAPH_UNAVAILABLE";
 
     // ---- 撤回码（单从没发出过）----
 

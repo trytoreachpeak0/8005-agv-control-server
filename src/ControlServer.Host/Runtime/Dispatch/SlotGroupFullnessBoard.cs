@@ -48,6 +48,7 @@ public sealed class SlotGroupFullnessBoard
     private readonly object _gate = new();
     private Dictionary<string, IReadOnlySet<string>> _ownCargoBlockedGroups = new(StringComparer.Ordinal);
     private Dictionary<string, IReadOnlyList<DispatchCandidateVerdict>> _verdicts = new(StringComparer.Ordinal);
+    private DateTimeOffset? _recordedRoundAt;
 
     /// <summary>用一轮的裁决替换整张表。</summary>
     public void Record(DispatchRoundOutcome outcome)
@@ -65,6 +66,8 @@ public sealed class SlotGroupFullnessBoard
         {
             _ownCargoBlockedGroups = next;
             _verdicts = verdicts;
+            // A round outcome built without its facts (tests of the per-side table) has no time to report.
+            _recordedRoundAt = outcome.Round?.Now;
         }
     }
 
@@ -74,6 +77,29 @@ public sealed class SlotGroupFullnessBoard
         lock (_gate)
         {
             return _verdicts.TryGetValue(agvId, out IReadOnlyList<DispatchCandidateVerdict>? verdicts) ? verdicts : null;
+        }
+    }
+
+    /// <summary>
+    /// 上一轮每条需求被每辆车判成什么（control-server#744，派车积压看板读）：需求号 → 按 <c>agvId</c> 排好的（车、原因码）。积压行上的原因码
+    /// 被这一轮最后判它的那辆车覆盖，说不出别的车为什么没接；这里每辆车各一条。只含上一轮跑完的车（同 <see cref="CandidateVerdictsOf"/>）；
+    /// 重启后第一轮之前 <c>RoundAt</c> 为空、表为空。
+    /// </summary>
+    public (DateTimeOffset? RoundAt, IReadOnlyDictionary<string, IReadOnlyList<(string AgvId, string ReasonCode)>> ByDemand)
+        VerdictsByDemand()
+    {
+        lock (_gate)
+        {
+            Dictionary<string, IReadOnlyList<(string AgvId, string ReasonCode)>> byDemand = _verdicts
+                .SelectMany(vehicle => vehicle.Value.Select(verdict =>
+                    (DemandId: verdict.Evaluation.Candidate.DemandId, AgvId: vehicle.Key, verdict.ReasonCode)))
+                .GroupBy(item => item.DemandId, StringComparer.Ordinal)
+                .ToDictionary(
+                    group => group.Key,
+                    group => (IReadOnlyList<(string, string)>)
+                        [.. group.OrderBy(item => item.AgvId, StringComparer.Ordinal).Select(item => (item.AgvId, item.ReasonCode))],
+                    StringComparer.Ordinal);
+            return (_recordedRoundAt, byDemand);
         }
     }
 

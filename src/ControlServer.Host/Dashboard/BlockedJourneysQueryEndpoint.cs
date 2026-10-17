@@ -241,6 +241,9 @@ internal sealed class BlockedJourneysQueryEndpoint : IDashboardQueryEndpoint
                 "去充电还没出发：车开往充电桩之前要过出发安全检查（车载端会话就绪、8 个仓门全部锁好、没有阻断事实、充电策略可用），"
                 + "有一样不满足就不建单。满足之后下一轮自动出发，不需要人确认；持续 30 秒仍不满足，这次充电安排作废、充电桩让出来，"
                 + "条件恢复后车重新排队。请检查车载端连接与仓门",
+            [ChargingExecutionReasons.DepartureRouteGraphUnavailable] =
+                "去充电还没出发：出发前要再核一次充电桩，而服务端的路网快照此刻暂时不可用（定期刷新的间隙或刷新失败）。车、充电桩预占与"
+                + "充电用途都保持不动，路网恢复后下一轮自动核对出发，不需要人确认",
             [ChargingExecutionReasons.WithdrawnDepartureNotProven] =
                 "去充电的安排已作废：出发安全检查持续 30 秒没通过（车载端掉线、仓门没锁好等）。车没有动，充电桩与充电用途已让出；"
                 + "条件恢复后车会重新排队去充电。请检查车载端连接与仓门",

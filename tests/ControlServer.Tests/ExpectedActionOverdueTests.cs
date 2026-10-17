@@ -594,6 +594,8 @@ public sealed class ExpectedActionOverdueTests
         // control-server#392: the idle return card reads the evaluator's verdict board, a host singleton.
         builder.Services.AddSingleton<ControlServer.Host.Runtime.IdleReturn.IdleReturnVerdictBoard>();
         builder.Services.AddSingleton<ControlServer.Host.Runtime.Charging.ChargingAllocationBoard>();
+        // control-server#744: the dispatch backlog card reads every vehicle's last-round verdict from the dispatch round's board.
+        builder.Services.AddSingleton<ControlServer.Host.Runtime.Dispatch.SlotGroupFullnessBoard>();
         await using WebApplication app = builder.Build();
         app.MapDashboardQueries();
         await app.StartAsync(TestContext.Current.CancellationToken);

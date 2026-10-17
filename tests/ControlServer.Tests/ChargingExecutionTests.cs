@@ -728,6 +728,91 @@ public sealed class ChargingExecutionTests
         }
     }
 
+    // ---- 出发前复核遇到路网暂时不可用（control-server#744）------------------------------------------------------------
+
+    /// <summary>
+    /// 承诺之后、建单之前路网快照不可用。非 sticky 的原因（设计态过期、刷新失败）是「此刻核不了」：承诺、周期、用途与 211 的预占都保持，旅程写
+    /// <c>CHARGING_DEPARTURE_ROUTE_GRAPH_UNAVAILABLE</c>，不建单；路网一恢复，同一个承诺去 211 建单。sticky 的原因（边组指纹变了）照旧撤回。
+    /// 2026-10-17 生产：设计态到期那一两秒撤掉了 agv02 等了 95 秒的承诺，3 秒后 211 给了另一辆车。红证据：把保持那一支删掉，前两行变红。
+    /// </summary>
+    [Theory]
+    [InlineData(Host.Runtime.RouteGraph.RouteGraphStaleReasons.DesignStateExpired, false)]
+    [InlineData(Host.Runtime.RouteGraph.RouteGraphStaleReasons.RefreshFailed, false)]
+    [InlineData(RouteGraphStickyStaleReasons.EdgeGroupFingerprintChanged, true)]
+    public async Task ARouteGraphThatCannotBeReadAtTheDepartureCheckHoldsTheCommitmentUnlessTheReasonIsSticky(
+        string staleReason, bool withdrawn)
+    {
+        await using FleetFixture fleet = await FleetAsync();
+        fleet.Riot.BatteryByVehicle[KeyA] = 20;
+        await RoundAsync(fleet);
+        (string CycleId, string JourneyId, string UpperId) before = await CommitmentOfAsync(fleet, KeyA);
+        Assert.Empty(fleet.Riot.Creates);
+
+        RouteGraphSnapshotStore graph = new(fleet.Context);
+        await graph.MarkStaleAsync(fleet.Options.MapId, staleReason, fleet.Clock.GetUtcNow(), Token);
+        fleet.Context.ChangeTracker.Clear();
+        await RoundAsync(fleet);
+        await RoundAsync(fleet);
+
+        Assert.DoesNotContain(fleet.Riot.Creates, create => create.VehicleKey == KeyA);
+        JourneyRuntimeRow journey = await fleet.Context.JourneyRuntimes.AsNoTracking()
+            .SingleAsync(row => row.JourneyId == before.JourneyId, Token);
+        if (withdrawn)
+        {
+            Assert.Equal(
+                (JourneyRuntimeStage.Completed, ChargingExecutionReasons.WithdrawnChargerNoLongerEligible),
+                (journey.Stage, journey.BlockReasonCode));
+            return;
+        }
+
+        Assert.NotEqual(JourneyRuntimeStage.Completed, journey.Stage);
+        Assert.Equal(ChargingExecutionReasons.DepartureRouteGraphUnavailable, journey.BlockReasonCode);
+        Assert.Equal(before, await CommitmentOfAsync(fleet, KeyA));
+        Assert.Equal((KeyA, StationExclusivityStates.Reserved), await HolderAsync(fleet, Near.StationId));
+        Assert.Equal(VehiclePurposes.Charging, (await ClaimOfAsync(fleet, KeyA))!.Value.Purpose);
+
+        await graph.ClearStaleAsync(fleet.Options.MapId, fleet.Clock.GetUtcNow(), Token);
+        fleet.Context.ChangeTracker.Clear();
+        await RoundAsync(fleet);
+        await RoundAsync(fleet);
+
+        Assert.Contains(fleet.Riot.Creates, create => create.VehicleKey == KeyA && create.DestinationStationId == Near.StationId);
+        Assert.Equal(before, await CommitmentOfAsync(fleet, KeyA));
+    }
+
+    /// <summary>
+    /// 路网一直不可用时保持没有时限（不按时间撤回），所以保持超过 <c>OwnOrderRebuildRepeatWindow</c> 记一条 Warning（事件 2283），只记一次；
+    /// 承诺照旧挂着（control-server#744 审查 L2）。
+    /// </summary>
+    [Fact]
+    public async Task ARouteGraphHoldThatLastsPastTheRepeatWindowIsWarnedOnceAndStillHolds()
+    {
+        await using FleetFixture fleet = await FleetAsync();
+        fleet.Riot.BatteryByVehicle[KeyA] = 20;
+        await RoundAsync(fleet);
+        (string CycleId, string JourneyId, string UpperId) before = await CommitmentOfAsync(fleet, KeyA);
+        RouteGraphSnapshotStore graph = new(fleet.Context);
+        await graph.MarkStaleAsync(
+            fleet.Options.MapId, Host.Runtime.RouteGraph.RouteGraphStaleReasons.RefreshFailed, fleet.Clock.GetUtcNow(), Token);
+        fleet.Context.ChangeTracker.Clear();
+        await RoundAsync(fleet);
+        Assert.DoesNotContain(fleet.EngineLog.Entries, entry => entry.EventId.Id == 2283);
+
+        fleet.Clock.Advance(fleet.Options.OwnOrderRebuildRepeatWindow);
+        for (int round = 0; round < 3; round++)
+        {
+            await RoundAsync(fleet);
+        }
+
+        Assert.Single(fleet.EngineLog.Entries, entry => entry.EventId.Id == 2283);
+        Assert.Equal(before, await CommitmentOfAsync(fleet, KeyA));
+        Assert.Equal(
+            ChargingExecutionReasons.DepartureRouteGraphUnavailable,
+            (await fleet.Context.JourneyRuntimes.AsNoTracking().SingleAsync(row => row.JourneyId == before.JourneyId, Token))
+                .BlockReasonCode);
+        Assert.DoesNotContain(fleet.Riot.Creates, create => create.VehicleKey == KeyA);
+    }
+
     // ---- 出发前复核撤回时写明哪一样事实未知（control-server#645）-------------------------------------------------------
 
     /// <summary>照网关读不全时的写法：250 来张单分三页读，第 2 页时总数变了（cs#566 续场三现场那一类）。</summary>
