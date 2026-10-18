@@ -36,7 +36,8 @@
     exactly once, and any other identity at protocolVersion 4 or later stops the script.
 
     The harness was compiled with v3's identity until the v4 exit (8005-agv-program#184) moved it to v4's: before
-    that a v4 commit was ported forward, since then a v3 one is ported back.
+    that a v4 commit was ported forward, since then a v3 one is ported back. The v5 exit (control-server#767) moved it
+    to the 5.0.0 candidate's: since then a v4 or v3 commit is ported back.
 
     Exits 0 when every judgment came out as expected, 1 otherwise. -Expect Pass wants all four PASS. -Expect Fail
     wants the judgments named in -FailingJudgment FAIL (all four when it is not given) and every other one PASS: a

@@ -160,10 +160,22 @@ param(
     #   $SimulatorCommit unchanged: origin/main is still fb5f7c59.
     #   $ProtocolCommit -> 3fb214e5, what the protocol-v4.0.0 tag dereferences to. The harness's tag literal moves to
     #     protocol-v4.0.0, its protocolVersion to 5 and its Protocol constants to the v4 identity in the same change.
-    [string]$ControlServerCommit = 'd481250c08d65b9b03ba854f22f563fb33bfa5aa',
-    [string]$OnboardCommit = 'c9d24dfd6e96dc43781735cac209dc3976fe3a83',
+    #
+    # 2026-10-18, protocol v5 exit, step 3 (control-server#767; 8005-agv-program#195): both halves are bound to the
+    #   protocol 5.0.0 candidate's third revision (control-server PR #768, onboard-hmi PR #368, same package), which is
+    #   not released yet: protocol-v5.0.0 does not exist and both say SUPERSEDING_CANDIDATE, so this round's evidence is
+    #   UNRELEASED_CANDIDATE. All three G3 bindings and the harness identity move; the harness payloads do not (5.0.0
+    #   appends WIRE_TO_FULL_INSPECTION to a closed enum the harness never sends, and the rest is wording and vectors).
+    #   $ControlServerCommit -> 63d83a0f, the fp/v2-impl tip before this ticket's own branch: PR #768's merge commit,
+    #     with batch v5 (cs#737 .. cs#754) on it.
+    #   $OnboardCommit -> a3a6753f, the w2g/fp-v2-impl tip: onboard-hmi PR #368's merge commit.
+    #   $SimulatorCommit unchanged: origin/main is still fb5f7c59.
+    #   $ProtocolCommit -> 18d4fb34, protocol#25's merge into fp/v2-candidate (tree = its head ede2060f). The harness's
+    #     tag literal moves to protocol-v5.0.0, its protocolVersion to 6 and its Protocol constants to the v5 candidate.
+    [string]$ControlServerCommit = '63d83a0f623a99d0260c2b1c95672a91584336b5',
+    [string]$OnboardCommit = 'a3a6753f6924b8f845483d6b886259c90af9b018',
     [string]$SimulatorCommit = 'fb5f7c593742bf98bc3957b8729a38aad5321f28',
-    [string]$ProtocolCommit = '3fb214e57d861a909d872511940d26133eb32dca',
+    [string]$ProtocolCommit = '18d4fb3495033624cab412a7ee784f675dfe4cc2',
     # The ref whose tip -OnboardCommit must equal. It is a parameter rather than a literal because the
     # branch carrying a line's onboard half moves with the line: batch 3 on the v2 line lives on
     # w2g/b3-on-v2, not on w2g/fp-v2-impl. The assertion is not weakened -- the clone source must
@@ -2866,9 +2878,9 @@ public static class StagedG3TlsHarness
         {
             ["repository"] = "8005-agv-protocol",
             ["releaseVersion"] = release,
-            ["tag"] = "protocol-v4.0.0",
+            ["tag"] = "protocol-v5.0.0",
             ["commit"] = Protocol.Commit,
-            ["protocolVersion"] = 5,
+            ["protocolVersion"] = 6,
             ["profileId"] = Protocol.Profile,
             ["manifestSha256"] = manifest,
             ["schemaBundleSha256"] = Protocol.Schema,
@@ -2915,7 +2927,7 @@ public static class StagedG3TlsHarness
         long? generation,
         object payload) => JsonSerializer.Serialize(new Dictionary<string, object?>
         {
-            ["protocolVersion"] = 5,
+            ["protocolVersion"] = 6,
             ["profileId"] = Protocol.Profile,
             ["protocolReleaseVersion"] = release,
             ["protocolReleaseManifestSha256"] = manifest,
@@ -2973,12 +2985,12 @@ public static class StagedG3TlsHarness
 
     private static class Protocol
     {
-        public const string Release = "4.0.0";
+        public const string Release = "5.0.0";
         public const string Profile = "AGV_FULL_PRODUCT";
-        public const string Commit = "3fb214e57d861a909d872511940d26133eb32dca";
-        public const string Manifest = "beca46a7fe98003ce1f21efb88f2c1406f3040883d0b372a51505a843e306f3a";
-        public const string Schema = "dad44a5e93203eb0b7ade50b23d12f2aaffc0e2abb3c8e5dcdd3de62d931d628";
-        public const string Vectors = "24cc3a5e5023bc7ead70f609456136208a40c04c1ecd0982a7182880d8eaa0c7";
+        public const string Commit = "18d4fb3495033624cab412a7ee784f675dfe4cc2";
+        public const string Manifest = "dd973918cc9c4fdf28ee2ad2ec4ad522bdcc6f2b6ecaa4a4fa1c57a29f29f5aa";
+        public const string Schema = "d51abe44036f32b5b2c28fd1bea6ec7a89cf3b4dea0f0b1d6c9daaf52f350933";
+        public const string Vectors = "291311b24bfcac75818ca9e4a888d436523e6ee14db661f6ba792ab8cc383e4a";
     }
 
     private sealed class Connection : IAsyncDisposable

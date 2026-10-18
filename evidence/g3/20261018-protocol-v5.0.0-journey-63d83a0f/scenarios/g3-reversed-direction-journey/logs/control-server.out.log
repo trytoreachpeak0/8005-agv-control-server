@@ -1,0 +1,367 @@
+[15:51:59 INF] No migrations were applied. The database is already up to date.
+[15:52:00 INF] Task type station preset C:\Users\szy\AppData\Local\Temp\l2-20261018T075136667Z\task-type-stations.settings.json loaded: rule version 1 (new), Map 25 binding set version 1 (new) active.
+[15:52:00 WRN] The manual station clearance exit is not available (FIELD_OPERATOR_ROSTER_EMPTY,STATION_CLEARANCE_ENTRY_NOT_OFFERED). Until it is, a vehicle that cannot charge at its charger is left on ORDER_HANG instead of being paused for a manual clearance (control-server#406). Configure FieldOperatorRoles:Path with at least one R-11 or R-13, and VehicleFaultRecovery:enabled or FieldOperatorRoles:OnboardClearanceEntryDeclared.
+[15:52:00 INF] Onboard NDJSON listener started on 127.0.0.1:48405; transport=plaintext
+[15:52:00 INF] Now listening on: http://127.0.0.1:48407
+[15:52:00 INF] Application started. Press Ctrl+C to shut down.
+[15:52:00 INF] Hosting environment: Production
+[15:52:00 INF] Content root path: F:\8005-scratch\p767-g3-r2\journey\stage\sources\control-server\src\ControlServer.Host\bin\Release\net8.0\win-x64
+[15:52:00 INF] EFFECTIVE_CONFIGURATION allowedWorkTypes=["DIE_TO_WIRE_STAGING", "DIE_TO_OVEN", "WIRE_TO_GATE", "WIRE_TO_OPTICAL", "STAGING_TO_WIRE", "WIRE_TO_NITROGEN", "WIRE_TO_FULL_INSPECTION"] allowedDispatchZones=["MAP-25-WIRE_TO_GATE"] mesIngestBaseUrl=http://127.0.0.1:48409 fleet=[] clearanceToWaitingPointEnabled=False mapStationCatalog={"ApprovedSyncPeriod": "00:00:30", "ApprovedMaxUnconfirmed": "00:05:00"} foreignRunningOrderRelease={"Enabled": false, "CredentialPresent": false} admissionPolicyVersion=7 admissionPolicyDeploymentId=L2-20261018T075136667Z cargoHoldingTimeout=00:05:00 stationDepartureWaitTimeout=00:00:30 slotConfigurationReadinessGate=Off stagingDepartureRulesEnabled=False stagingLoadNotSettledAlarmAfter=00:05:00
+[15:52:00 INF] HTTP GET /health/live responded 200 in 5.2624 ms
+[15:52:00 INF] HTTP GET /version responded 200 in 2.6034 ms
+[15:52:00 INF] Start processing HTTP request GET http://127.0.0.1:48409/api/v2/contract
+[15:52:00 INF] End processing HTTP request after 25.2797ms - 200
+[15:52:00 INF] Start processing HTTP request GET http://127.0.0.1:48409/api/v2/externally-readable-demand-catalog
+[15:52:00 INF] End processing HTTP request after 7.4996ms - 200
+[15:52:01 INF] Charging not allocated for vehicle AGV-L2-001: CHARGING_POLICY_NOT_APPROVED. 
+[15:52:01 INF] Idle return not committed for vehicle AGV-L2-001: IDLE_RETURN_DISABLED. 
+[15:52:01 INF] Start processing HTTP request GET http://127.0.0.1:48409/api/v2/contract
+[15:52:01 INF] End processing HTTP request after 1.5839ms - 200
+[15:52:01 INF] Start processing HTTP request GET http://127.0.0.1:48409/api/v2/externally-readable-demand-catalog
+[15:52:01 INF] End processing HTTP request after 1.3112ms - 200
+[15:52:02 INF] Start processing HTTP request GET http://127.0.0.1:48409/api/v2/contract
+[15:52:02 INF] End processing HTTP request after 1.4591ms - 200
+[15:52:02 INF] Start processing HTTP request GET http://127.0.0.1:48409/api/v2/externally-readable-demand-catalog
+[15:52:02 INF] End processing HTTP request after 1.0344ms - 200
+[15:52:02 INF] HTTP GET /api/onboard/v1/vehicle-safety responded 200 in 29.2360 ms
+[15:52:03 INF] Start processing HTTP request GET http://127.0.0.1:48409/api/v2/contract
+[15:52:03 INF] End processing HTTP request after 1.3559ms - 200
+[15:52:03 INF] Start processing HTTP request GET http://127.0.0.1:48409/api/v2/externally-readable-demand-catalog
+[15:52:03 INF] End processing HTTP request after 0.8496ms - 200
+[15:52:03 INF] HTTP GET /api/onboard/v1/vehicle-safety responded 200 in 4.3499 ms
+[15:52:03 ERR] HTTP GET /health/ready responded 503 in 29.0294 ms
+[15:52:03 INF] SessionReadiness 308cef84-665b-4eb0-881a-71de37b45210 to AGV-L2-001 generation 1: READY [null], after the answer to RecoveryStateReport 8485cfe2-3a38-4f4d-8e36-3ace4d94e258.
+[15:52:03 INF] HTTP GET /health/ready responded 200 in 2.6692 ms
+[15:52:03 INF] SessionReadiness 3b045a2c-cdeb-424d-bfb9-eecfe8df4324 to AGV-L2-001 generation 1: READY [null], after the answer to SafetyStateChanged a5fb94da-55b0-1f59-85f3-78536407c2cf.
+[15:52:04 INF] Start processing HTTP request GET http://127.0.0.1:48409/api/v2/contract
+[15:52:04 INF] End processing HTTP request after 1.3182ms - 200
+[15:52:04 INF] Start processing HTTP request GET http://127.0.0.1:48409/api/v2/externally-readable-demand-catalog
+[15:52:04 INF] End processing HTTP request after 1.0881ms - 200
+[15:52:04 INF] HTTP GET /api/onboard/v1/vehicle-safety responded 200 in 4.0720 ms
+[15:52:05 INF] Start processing HTTP request GET http://127.0.0.1:48409/api/v2/contract
+[15:52:05 INF] End processing HTTP request after 1.1367ms - 200
+[15:52:05 INF] Start processing HTTP request GET http://127.0.0.1:48409/api/v2/externally-readable-demand-catalog
+[15:52:05 INF] End processing HTTP request after 0.6939ms - 200
+[15:52:05 INF] HTTP GET /api/onboard/v1/vehicle-safety responded 200 in 2.7756 ms
+[15:52:06 INF] Start processing HTTP request GET http://127.0.0.1:48409/api/v2/contract
+[15:52:06 INF] End processing HTTP request after 1.0695ms - 200
+[15:52:06 INF] Start processing HTTP request GET http://127.0.0.1:48409/api/v2/externally-readable-demand-catalog
+[15:52:06 INF] End processing HTTP request after 0.6638ms - 200
+[15:52:06 INF] HTTP GET /api/onboard/v1/vehicle-safety responded 200 in 2.5385 ms
+[15:52:07 INF] Start processing HTTP request GET http://127.0.0.1:48409/api/v2/contract
+[15:52:07 INF] End processing HTTP request after 1.5189ms - 200
+[15:52:07 INF] Start processing HTTP request GET http://127.0.0.1:48409/api/v2/externally-readable-demand-catalog
+[15:52:07 INF] End processing HTTP request after 1.1396ms - 200
+[15:52:07 INF] HTTP GET /api/onboard/v1/vehicle-safety responded 200 in 2.3509 ms
+[15:52:08 INF] Start processing HTTP request GET http://127.0.0.1:48409/api/v2/contract
+[15:52:08 INF] End processing HTTP request after 7.8555ms - 200
+[15:52:08 INF] Start processing HTTP request GET http://127.0.0.1:48409/api/v2/externally-readable-demand-catalog
+[15:52:08 INF] End processing HTTP request after 2.9345ms - 200
+[15:52:08 INF] HTTP GET /api/onboard/v1/vehicle-safety responded 200 in 2.3932 ms
+[15:52:09 INF] Start processing HTTP request GET http://127.0.0.1:48409/api/v2/contract
+[15:52:09 INF] HTTP GET /api/onboard/v1/vehicle-safety responded 200 in 74.5197 ms
+[15:52:09 INF] End processing HTTP request after 16.51ms - 200
+[15:52:09 INF] Start processing HTTP request GET http://127.0.0.1:48409/api/v2/externally-readable-demand-catalog
+[15:52:09 INF] End processing HTTP request after 4.6528ms - 200
+[15:52:10 INF] Start processing HTTP request GET http://127.0.0.1:48409/api/v2/contract
+[15:52:10 INF] End processing HTTP request after 1.851ms - 200
+[15:52:10 INF] Start processing HTTP request GET http://127.0.0.1:48409/api/v2/externally-readable-demand-catalog
+[15:52:10 INF] End processing HTTP request after 1.5169ms - 200
+[15:52:10 INF] HTTP GET /api/onboard/v1/vehicle-safety responded 200 in 2.5529 ms
+[15:52:11 INF] Start processing HTTP request GET http://127.0.0.1:48409/api/v2/contract
+[15:52:11 INF] End processing HTTP request after 14.4161ms - 200
+[15:52:11 INF] Start processing HTTP request GET http://127.0.0.1:48409/api/v2/externally-readable-demand-catalog
+[15:52:11 INF] End processing HTTP request after 27.6518ms - 200
+[15:52:11 INF] HTTP GET /api/onboard/v1/vehicle-safety responded 200 in 2.9945 ms
+[15:52:12 INF] Start processing HTTP request GET http://127.0.0.1:48409/api/v2/contract
+[15:52:12 INF] End processing HTTP request after 1.1053ms - 200
+[15:52:12 INF] Start processing HTTP request GET http://127.0.0.1:48409/api/v2/externally-readable-demand-catalog
+[15:52:12 INF] End processing HTTP request after 0.9137ms - 200
+[15:52:12 INF] HTTP GET /api/onboard/v1/vehicle-safety responded 200 in 1.6305 ms
+[15:52:13 INF] Start processing HTTP request GET http://127.0.0.1:48409/api/v2/contract
+[15:52:13 INF] End processing HTTP request after 0.9985ms - 200
+[15:52:13 INF] Start processing HTTP request GET http://127.0.0.1:48409/api/v2/externally-readable-demand-catalog
+[15:52:13 INF] End processing HTTP request after 0.8589ms - 200
+[15:52:13 INF] HTTP GET /api/onboard/v1/vehicle-safety responded 200 in 1.8559 ms
+[15:52:14 INF] Start processing HTTP request GET http://127.0.0.1:48409/api/v2/contract
+[15:52:14 INF] End processing HTTP request after 1.0432ms - 200
+[15:52:14 INF] Start processing HTTP request GET http://127.0.0.1:48409/api/v2/externally-readable-demand-catalog
+[15:52:14 INF] End processing HTTP request after 0.9193ms - 200
+[15:52:14 INF] HTTP GET /api/onboard/v1/vehicle-safety responded 200 in 1.4124 ms
+[15:52:15 INF] HTTP GET /api/onboard/v1/vehicle-safety responded 200 in 2.5540 ms
+[15:52:15 INF] Start processing HTTP request GET http://127.0.0.1:48409/api/v2/contract
+[15:52:15 INF] End processing HTTP request after 1.6301ms - 200
+[15:52:15 INF] Start processing HTTP request GET http://127.0.0.1:48409/api/v2/externally-readable-demand-catalog
+[15:52:15 INF] End processing HTTP request after 1.0309ms - 200
+[15:52:15 INF] Charging not allocated for vehicle AGV-L2-001: CHARGING_NOT_REQUIRED. 
+[15:52:16 INF] Start processing HTTP request GET http://127.0.0.1:48409/api/v2/contract
+[15:52:16 INF] End processing HTTP request after 1.1458ms - 200
+[15:52:16 INF] Start processing HTTP request GET http://127.0.0.1:48409/api/v2/externally-readable-demand-catalog
+[15:52:16 INF] End processing HTTP request after 0.8634ms - 200
+[15:52:16 INF] HTTP GET /api/onboard/v1/vehicle-safety responded 200 in 2.1880 ms
+[15:52:17 INF] Start processing HTTP request GET http://127.0.0.1:48409/api/v2/contract
+[15:52:17 INF] End processing HTTP request after 1.0383ms - 200
+[15:52:17 INF] Start processing HTTP request GET http://127.0.0.1:48409/api/v2/externally-readable-demand-catalog
+[15:52:17 INF] End processing HTTP request after 5.134ms - 200
+[15:52:17 INF] RIoT command POST http://127.0.0.1:48408/api/task/v1/route/getRouteCostsBy sent
+[15:52:17 INF] RIoT command POST http://127.0.0.1:48408/api/task/v1/route/getRouteCostsBy answered 200 after 10.6442 ms
+[15:52:17 INF] Start processing HTTP request GET http://127.0.0.1:48409/api/v2/sublot-box-count?sublot=G3-11-20261018T075136667Z
+[15:52:17 INF] Sending HTTP request GET http://127.0.0.1:48409/api/v2/sublot-box-count?sublot=G3-11-20261018T075136667Z
+[15:52:17 INF] Received HTTP response headers after 7.2163ms - 200
+[15:52:17 INF] End processing HTTP request after 7.9538ms - 200
+[15:52:17 INF] Start processing HTTP request GET http://127.0.0.1:48409/api/v2/contract
+[15:52:17 INF] End processing HTTP request after 0.7585ms - 200
+[15:52:17 INF] Start processing HTTP request GET http://127.0.0.1:48409/api/v2/externally-readable-demand-catalog
+[15:52:17 INF] End processing HTTP request after 0.5538ms - 200
+[15:52:17 INF] HTTP GET /api/onboard/v1/vehicle-safety responded 200 in 1.6630 ms
+[15:52:17 INF] RIoT request GET http://127.0.0.1:48408/api/order/v1/orderRecord/detailByUpperId/W2G-746fc7db-23cf-4160-8d31-51a210bd0540-PICKUP-1 answered 404 after 7.8863 ms, which is not a success status
+[15:52:17 INF] RIoT command POST http://127.0.0.1:48408/api/order/v1/add/byDefaultMissions sent
+[15:52:17 INF] RIoT command POST http://127.0.0.1:48408/api/order/v1/add/byDefaultMissions answered 200 after 4.7543 ms
+[15:52:18 INF] Start processing HTTP request GET http://127.0.0.1:48409/api/v2/contract
+[15:52:18 INF] End processing HTTP request after 1.2829ms - 200
+[15:52:18 INF] Start processing HTTP request GET http://127.0.0.1:48409/api/v2/externally-readable-demand-catalog
+[15:52:18 INF] End processing HTTP request after 0.6864ms - 200
+[15:52:18 INF] HTTP GET /api/onboard/v1/vehicle-safety responded 200 in 2.5317 ms
+[15:52:18 INF] SessionReadiness 88e0613e-3a28-4926-9da9-0db87d0c546d to AGV-L2-001 generation 1: RECOVERY_REQUIRED [DEPARTURE_UNSAFE], after the answer to SafetyStateChanged de15df35-f6ff-4351-bf16-1846df377a32.
+[15:52:19 INF] Start processing HTTP request GET http://127.0.0.1:48409/api/v2/contract
+[15:52:19 INF] End processing HTTP request after 1.9514ms - 200
+[15:52:19 INF] Start processing HTTP request GET http://127.0.0.1:48409/api/v2/externally-readable-demand-catalog
+[15:52:19 INF] End processing HTTP request after 0.9502ms - 200
+[15:52:19 INF] HTTP GET /api/onboard/v1/vehicle-safety responded 200 in 2.5829 ms
+[15:52:19 INF] SessionReadiness 7b96b90e-26d2-435a-b3cb-9cda4ad8053f to AGV-L2-001 generation 1: READY [null], after the answer to SafetyStateChanged 1b75ac38-d021-8e5d-908c-b0c6f9556d50.
+[15:52:20 INF] Start processing HTTP request GET http://127.0.0.1:48409/api/v2/contract
+[15:52:20 INF] End processing HTTP request after 1.5012ms - 200
+[15:52:20 INF] Start processing HTTP request GET http://127.0.0.1:48409/api/v2/externally-readable-demand-catalog
+[15:52:20 INF] End processing HTTP request after 2.1212ms - 200
+[15:52:20 INF] HTTP GET /api/onboard/v1/vehicle-safety responded 200 in 5.8617 ms
+[15:52:21 INF] Start processing HTTP request GET http://127.0.0.1:48409/api/v2/contract
+[15:52:21 INF] End processing HTTP request after 3.2371ms - 200
+[15:52:21 INF] Start processing HTTP request GET http://127.0.0.1:48409/api/v2/externally-readable-demand-catalog
+[15:52:21 INF] End processing HTTP request after 2.6351ms - 200
+[15:52:21 INF] HTTP GET /api/onboard/v1/vehicle-safety responded 200 in 6.3840 ms
+[15:52:22 INF] Start processing HTTP request GET http://127.0.0.1:48409/api/v2/sublot-box-count?sublot=G3-11-20261018T075136667Z
+[15:52:22 INF] Sending HTTP request GET http://127.0.0.1:48409/api/v2/sublot-box-count?sublot=G3-11-20261018T075136667Z
+[15:52:22 INF] Received HTTP response headers after 1.4195ms - 200
+[15:52:22 INF] End processing HTTP request after 3.0521ms - 200
+[15:52:22 INF] Start processing HTTP request GET http://127.0.0.1:48409/api/v2/contract
+[15:52:22 INF] SessionReadiness 4e5c8720-6fe7-4bf6-9f8b-387324381aa9 to AGV-L2-001 generation 1: READY [null], after the answer to SafetyStateChanged 73ba8e46-9928-9659-a6ec-db28e9203e99.
+[15:52:22 INF] SessionReadiness da86462e-fe2a-4ba1-8d1b-b3f22c644431 to AGV-L2-001 generation 1: READY [null], after the answer to SafetyStateChanged 3a5285b6-2a59-fd5a-a11a-bff2daa8768e.
+[15:52:23 INF] SessionReadiness 34ad3a99-7c37-42fb-bb4e-96bcf892ebb2 to AGV-L2-001 generation 1: READY [null], after the answer to SafetyStateChanged ad704fec-921c-f456-ae52-a6ed840b26a4.
+[15:52:23 INF] End processing HTTP request after 886.3728ms - 200
+[15:52:23 INF] Start processing HTTP request GET http://127.0.0.1:48409/api/v2/externally-readable-demand-catalog
+[15:52:23 INF] HTTP GET /api/onboard/v1/vehicle-safety responded 200 in 552.3988 ms
+[15:52:23 INF] End processing HTTP request after 2.2138ms - 200
+[15:52:23 INF] Start processing HTTP request GET http://127.0.0.1:48409/api/v2/contract
+[15:52:23 INF] End processing HTTP request after 2.1424ms - 200
+[15:52:23 INF] Start processing HTTP request GET http://127.0.0.1:48409/api/v2/externally-readable-demand-catalog
+[15:52:23 INF] End processing HTTP request after 1.4742ms - 200
+[15:52:23 INF] SessionReadiness 1f9d2556-9408-40f6-aff3-8ba9081a948a to AGV-L2-001 generation 1: READY [null], after the answer to SafetyStateChanged 2ce09222-e1f1-7d55-82f5-554c24f205e6.
+[15:52:24 INF] Start processing HTTP request GET http://127.0.0.1:48409/api/v2/contract
+[15:52:24 INF] End processing HTTP request after 2.6452ms - 200
+[15:52:24 INF] Start processing HTTP request GET http://127.0.0.1:48409/api/v2/externally-readable-demand-catalog
+[15:52:24 INF] End processing HTTP request after 1.8107ms - 200
+[15:52:24 INF] HTTP GET /api/onboard/v1/vehicle-safety responded 200 in 3.9009 ms
+[15:52:25 INF] Vehicle AGV-L2-001 has loaded everything at pickup ÅÉ¹¤´ýËÍ and still waits there; its worklist carried the station departure deadline 10/18/2026 07:52:50 +00:00, the server now judges by 10/18/2026 07:52:55 +00:00, so worklist revision 2 was sent with no items and the server's deadline.
+[15:52:25 INF] Start processing HTTP request GET http://127.0.0.1:48409/api/v2/contract
+[15:52:25 INF] End processing HTTP request after 2.0036ms - 200
+[15:52:25 INF] Start processing HTTP request GET http://127.0.0.1:48409/api/v2/externally-readable-demand-catalog
+[15:52:25 INF] End processing HTTP request after 2.76ms - 200
+[15:52:25 INF] HTTP GET /api/onboard/v1/vehicle-safety responded 200 in 3.5305 ms
+[15:52:26 INF] Start processing HTTP request GET http://127.0.0.1:48409/api/v2/contract
+[15:52:26 INF] End processing HTTP request after 17.1282ms - 200
+[15:52:26 INF] Start processing HTTP request GET http://127.0.0.1:48409/api/v2/externally-readable-demand-catalog
+[15:52:26 INF] End processing HTTP request after 3.4307ms - 200
+[15:52:26 INF] HTTP GET /api/onboard/v1/vehicle-safety responded 200 in 16.4347 ms
+[15:52:27 INF] Start processing HTTP request GET http://127.0.0.1:48409/api/v2/contract
+[15:52:27 INF] End processing HTTP request after 1.227ms - 200
+[15:52:27 INF] Start processing HTTP request GET http://127.0.0.1:48409/api/v2/externally-readable-demand-catalog
+[15:52:27 INF] End processing HTTP request after 0.984ms - 200
+[15:52:27 INF] HTTP GET /api/onboard/v1/vehicle-safety responded 200 in 4.6588 ms
+[15:52:28 INF] Start processing HTTP request GET http://127.0.0.1:48409/api/v2/contract
+[15:52:28 INF] End processing HTTP request after 1.1557ms - 200
+[15:52:28 INF] Start processing HTTP request GET http://127.0.0.1:48409/api/v2/externally-readable-demand-catalog
+[15:52:28 INF] End processing HTTP request after 0.9737ms - 200
+[15:52:28 INF] HTTP GET /api/onboard/v1/vehicle-safety responded 200 in 3.9923 ms
+[15:52:29 INF] Start processing HTTP request GET http://127.0.0.1:48409/api/v2/contract
+[15:52:29 INF] End processing HTTP request after 0.929ms - 200
+[15:52:29 INF] Start processing HTTP request GET http://127.0.0.1:48409/api/v2/externally-readable-demand-catalog
+[15:52:29 INF] End processing HTTP request after 0.7704ms - 200
+[15:52:29 INF] HTTP GET /api/onboard/v1/vehicle-safety responded 200 in 1.6568 ms
+[15:52:30 INF] Start processing HTTP request GET http://127.0.0.1:48409/api/v2/contract
+[15:52:30 INF] End processing HTTP request after 0.9786ms - 200
+[15:52:30 INF] Start processing HTTP request GET http://127.0.0.1:48409/api/v2/externally-readable-demand-catalog
+[15:52:30 INF] End processing HTTP request after 2.6823ms - 200
+[15:52:30 INF] HTTP GET /api/onboard/v1/vehicle-safety responded 200 in 2.1141 ms
+[15:52:31 INF] Start processing HTTP request GET http://127.0.0.1:48409/api/v2/contract
+[15:52:31 INF] End processing HTTP request after 0.9247ms - 200
+[15:52:31 INF] Start processing HTTP request GET http://127.0.0.1:48409/api/v2/externally-readable-demand-catalog
+[15:52:31 INF] End processing HTTP request after 0.7026ms - 200
+[15:52:31 INF] HTTP GET /api/onboard/v1/vehicle-safety responded 200 in 1.7060 ms
+[15:52:32 INF] Start processing HTTP request GET http://127.0.0.1:48409/api/v2/contract
+[15:52:32 INF] End processing HTTP request after 1.1749ms - 200
+[15:52:32 INF] Start processing HTTP request GET http://127.0.0.1:48409/api/v2/externally-readable-demand-catalog
+[15:52:32 INF] End processing HTTP request after 0.9236ms - 200
+[15:52:32 INF] HTTP GET /api/onboard/v1/vehicle-safety responded 200 in 2.7736 ms
+[15:52:33 INF] Start processing HTTP request GET http://127.0.0.1:48409/api/v2/contract
+[15:52:33 INF] End processing HTTP request after 0.9592ms - 200
+[15:52:33 INF] Start processing HTTP request GET http://127.0.0.1:48409/api/v2/externally-readable-demand-catalog
+[15:52:33 INF] End processing HTTP request after 0.725ms - 200
+[15:52:33 INF] HTTP GET /api/onboard/v1/vehicle-safety responded 200 in 1.7686 ms
+[15:52:34 INF] Start processing HTTP request GET http://127.0.0.1:48409/api/v2/contract
+[15:52:34 INF] End processing HTTP request after 0.8536ms - 200
+[15:52:34 INF] Start processing HTTP request GET http://127.0.0.1:48409/api/v2/externally-readable-demand-catalog
+[15:52:34 INF] End processing HTTP request after 0.5713ms - 200
+[15:52:34 INF] HTTP GET /api/onboard/v1/vehicle-safety responded 200 in 4.0744 ms
+[15:52:35 INF] Start processing HTTP request GET http://127.0.0.1:48409/api/v2/contract
+[15:52:35 INF] End processing HTTP request after 1.3827ms - 200
+[15:52:35 INF] Start processing HTTP request GET http://127.0.0.1:48409/api/v2/externally-readable-demand-catalog
+[15:52:35 INF] End processing HTTP request after 1.036ms - 200
+[15:52:35 INF] HTTP GET /api/onboard/v1/vehicle-safety responded 200 in 2.2076 ms
+[15:52:36 INF] Start processing HTTP request GET http://127.0.0.1:48409/api/v2/contract
+[15:52:36 INF] End processing HTTP request after 0.8173ms - 200
+[15:52:36 INF] Start processing HTTP request GET http://127.0.0.1:48409/api/v2/externally-readable-demand-catalog
+[15:52:36 INF] End processing HTTP request after 1.0831ms - 200
+[15:52:36 INF] HTTP GET /api/onboard/v1/vehicle-safety responded 200 in 2.6153 ms
+[15:52:37 INF] Start processing HTTP request GET http://127.0.0.1:48409/api/v2/contract
+[15:52:37 INF] End processing HTTP request after 0.997ms - 200
+[15:52:37 INF] Start processing HTTP request GET http://127.0.0.1:48409/api/v2/externally-readable-demand-catalog
+[15:52:37 INF] End processing HTTP request after 0.7746ms - 200
+[15:52:37 INF] HTTP GET /api/onboard/v1/vehicle-safety responded 200 in 2.3120 ms
+[15:52:38 INF] Start processing HTTP request GET http://127.0.0.1:48409/api/v2/contract
+[15:52:38 INF] End processing HTTP request after 1.3599ms - 200
+[15:52:38 INF] Start processing HTTP request GET http://127.0.0.1:48409/api/v2/externally-readable-demand-catalog
+[15:52:38 INF] End processing HTTP request after 1.14ms - 200
+[15:52:38 INF] HTTP GET /api/onboard/v1/vehicle-safety responded 200 in 1.7656 ms
+[15:52:39 INF] Start processing HTTP request GET http://127.0.0.1:48409/api/v2/contract
+[15:52:39 INF] End processing HTTP request after 1.2606ms - 200
+[15:52:39 INF] Start processing HTTP request GET http://127.0.0.1:48409/api/v2/externally-readable-demand-catalog
+[15:52:39 INF] End processing HTTP request after 1.3384ms - 200
+[15:52:39 INF] HTTP GET /api/onboard/v1/vehicle-safety responded 200 in 1.5419 ms
+[15:52:40 INF] Start processing HTTP request GET http://127.0.0.1:48409/api/v2/contract
+[15:52:40 INF] End processing HTTP request after 0.9422ms - 200
+[15:52:40 INF] Start processing HTTP request GET http://127.0.0.1:48409/api/v2/externally-readable-demand-catalog
+[15:52:40 INF] End processing HTTP request after 0.7455ms - 200
+[15:52:40 INF] HTTP GET /api/onboard/v1/vehicle-safety responded 200 in 1.3917 ms
+[15:52:41 INF] Start processing HTTP request GET http://127.0.0.1:48409/api/v2/contract
+[15:52:41 INF] End processing HTTP request after 0.8396ms - 200
+[15:52:41 INF] Start processing HTTP request GET http://127.0.0.1:48409/api/v2/externally-readable-demand-catalog
+[15:52:41 INF] End processing HTTP request after 0.7597ms - 200
+[15:52:41 INF] HTTP GET /api/onboard/v1/vehicle-safety responded 200 in 1.2691 ms
+[15:52:42 INF] Start processing HTTP request GET http://127.0.0.1:48409/api/v2/contract
+[15:52:42 INF] End processing HTTP request after 0.8281ms - 200
+[15:52:42 INF] Start processing HTTP request GET http://127.0.0.1:48409/api/v2/externally-readable-demand-catalog
+[15:52:42 INF] End processing HTTP request after 0.6167ms - 200
+[15:52:42 INF] HTTP GET /api/onboard/v1/vehicle-safety responded 200 in 1.7346 ms
+[15:52:43 INF] Start processing HTTP request GET http://127.0.0.1:48409/api/v2/contract
+[15:52:43 INF] End processing HTTP request after 0.8911ms - 200
+[15:52:43 INF] Start processing HTTP request GET http://127.0.0.1:48409/api/v2/externally-readable-demand-catalog
+[15:52:43 INF] End processing HTTP request after 1.1919ms - 200
+[15:52:43 INF] HTTP GET /api/onboard/v1/vehicle-safety responded 200 in 1.5504 ms
+[15:52:44 INF] Start processing HTTP request GET http://127.0.0.1:48409/api/v2/contract
+[15:52:44 INF] End processing HTTP request after 0.8884ms - 200
+[15:52:44 INF] Start processing HTTP request GET http://127.0.0.1:48409/api/v2/externally-readable-demand-catalog
+[15:52:44 INF] End processing HTTP request after 0.8079ms - 200
+[15:52:44 INF] HTTP GET /api/onboard/v1/vehicle-safety responded 200 in 1.4328 ms
+[15:52:45 INF] Start processing HTTP request GET http://127.0.0.1:48409/api/v2/contract
+[15:52:45 INF] End processing HTTP request after 1.1531ms - 200
+[15:52:45 INF] Start processing HTTP request GET http://127.0.0.1:48409/api/v2/externally-readable-demand-catalog
+[15:52:45 INF] End processing HTTP request after 0.8944ms - 200
+[15:52:45 INF] HTTP GET /api/onboard/v1/vehicle-safety responded 200 in 1.9527 ms
+[15:52:46 INF] Start processing HTTP request GET http://127.0.0.1:48409/api/v2/contract
+[15:52:46 INF] End processing HTTP request after 1.4802ms - 200
+[15:52:46 INF] Start processing HTTP request GET http://127.0.0.1:48409/api/v2/externally-readable-demand-catalog
+[15:52:46 INF] End processing HTTP request after 1.1069ms - 200
+[15:52:46 INF] HTTP GET /api/onboard/v1/vehicle-safety responded 200 in 3.1469 ms
+[15:52:47 INF] Start processing HTTP request GET http://127.0.0.1:48409/api/v2/contract
+[15:52:47 INF] End processing HTTP request after 0.9585ms - 200
+[15:52:47 INF] Start processing HTTP request GET http://127.0.0.1:48409/api/v2/externally-readable-demand-catalog
+[15:52:47 INF] End processing HTTP request after 1.0179ms - 200
+[15:52:47 INF] HTTP GET /api/onboard/v1/vehicle-safety responded 200 in 5.5880 ms
+[15:52:48 INF] Start processing HTTP request GET http://127.0.0.1:48409/api/v2/contract
+[15:52:48 INF] End processing HTTP request after 0.8592ms - 200
+[15:52:48 INF] Start processing HTTP request GET http://127.0.0.1:48409/api/v2/externally-readable-demand-catalog
+[15:52:48 INF] End processing HTTP request after 0.6492ms - 200
+[15:52:48 INF] HTTP GET /api/onboard/v1/vehicle-safety responded 200 in 1.6449 ms
+[15:52:49 INF] Start processing HTTP request GET http://127.0.0.1:48409/api/v2/contract
+[15:52:49 INF] End processing HTTP request after 0.9465ms - 200
+[15:52:49 INF] Start processing HTTP request GET http://127.0.0.1:48409/api/v2/externally-readable-demand-catalog
+[15:52:49 INF] End processing HTTP request after 0.921ms - 200
+[15:52:49 INF] HTTP GET /api/onboard/v1/vehicle-safety responded 200 in 1.7429 ms
+[15:52:50 INF] Start processing HTTP request GET http://127.0.0.1:48409/api/v2/contract
+[15:52:50 INF] End processing HTTP request after 0.8136ms - 200
+[15:52:50 INF] Start processing HTTP request GET http://127.0.0.1:48409/api/v2/externally-readable-demand-catalog
+[15:52:50 INF] End processing HTTP request after 0.9389ms - 200
+[15:52:50 INF] HTTP GET /api/onboard/v1/vehicle-safety responded 200 in 1.9376 ms
+[15:52:51 INF] Start processing HTTP request GET http://127.0.0.1:48409/api/v2/contract
+[15:52:51 INF] End processing HTTP request after 1.3255ms - 200
+[15:52:51 INF] Start processing HTTP request GET http://127.0.0.1:48409/api/v2/externally-readable-demand-catalog
+[15:52:51 INF] End processing HTTP request after 0.7879ms - 200
+[15:52:51 INF] HTTP GET /api/onboard/v1/vehicle-safety responded 200 in 1.9565 ms
+[15:52:52 INF] Start processing HTTP request GET http://127.0.0.1:48409/api/v2/contract
+[15:52:52 INF] End processing HTTP request after 0.9111ms - 200
+[15:52:52 INF] Start processing HTTP request GET http://127.0.0.1:48409/api/v2/externally-readable-demand-catalog
+[15:52:52 INF] End processing HTTP request after 0.6626ms - 200
+[15:52:52 INF] HTTP GET /api/onboard/v1/vehicle-safety responded 200 in 2.2147 ms
+[15:52:53 INF] Start processing HTTP request GET http://127.0.0.1:48409/api/v2/contract
+[15:52:53 INF] End processing HTTP request after 0.8923ms - 200
+[15:52:53 INF] Start processing HTTP request GET http://127.0.0.1:48409/api/v2/externally-readable-demand-catalog
+[15:52:53 INF] End processing HTTP request after 0.644ms - 200
+[15:52:53 INF] HTTP GET /api/onboard/v1/vehicle-safety responded 200 in 2.5485 ms
+[15:52:54 INF] Start processing HTTP request GET http://127.0.0.1:48409/api/v2/contract
+[15:52:54 INF] End processing HTTP request after 0.9452ms - 200
+[15:52:54 INF] Start processing HTTP request GET http://127.0.0.1:48409/api/v2/externally-readable-demand-catalog
+[15:52:54 INF] End processing HTTP request after 1.022ms - 200
+[15:52:54 INF] HTTP GET /api/onboard/v1/vehicle-safety responded 200 in 2.3527 ms
+[15:52:55 INF] Start processing HTTP request GET http://127.0.0.1:48409/api/v2/contract
+[15:52:55 INF] End processing HTTP request after 1.5863ms - 200
+[15:52:55 INF] Start processing HTTP request GET http://127.0.0.1:48409/api/v2/externally-readable-demand-catalog
+[15:52:55 INF] End processing HTTP request after 0.7517ms - 200
+[15:52:55 INF] HTTP GET /api/onboard/v1/vehicle-safety responded 200 in 1.6510 ms
+[15:52:56 INF] RIoT command POST http://127.0.0.1:48408/api/task/v1/route/getRouteCostsBy sent
+[15:52:56 INF] RIoT command POST http://127.0.0.1:48408/api/task/v1/route/getRouteCostsBy answered 200 after 1.6661 ms
+[15:52:56 INF] RIoT request GET http://127.0.0.1:48408/api/order/v1/orderRecord/detailByUpperId/W2G-746fc7db-23cf-4160-8d31-51a210bd0540-GATE-1 answered 404 after 0.7309 ms, which is not a success status
+[15:52:56 INF] RIoT command POST http://127.0.0.1:48408/api/order/v1/add/byDefaultMissions sent
+[15:52:56 INF] RIoT command POST http://127.0.0.1:48408/api/order/v1/add/byDefaultMissions answered 200 after 1.2624 ms
+[15:52:56 INF] Start processing HTTP request GET http://127.0.0.1:48409/api/v2/contract
+[15:52:56 INF] End processing HTTP request after 1.1527ms - 200
+[15:52:56 INF] Start processing HTTP request GET http://127.0.0.1:48409/api/v2/externally-readable-demand-catalog
+[15:52:56 INF] End processing HTTP request after 0.9891ms - 200
+[15:52:56 INF] HTTP GET /api/onboard/v1/vehicle-safety responded 200 in 2.1164 ms
+[15:52:57 INF] FIXED_TASK_STATION 25/230 released by vehicle BROKERX-L2-0001 on departure evidence (journey journey:746fc7db-23cf-4160-8d31-51a210bd0540).
+[15:52:57 INF] Start processing HTTP request GET http://127.0.0.1:48409/api/v2/contract
+[15:52:57 INF] End processing HTTP request after 1.2849ms - 200
+[15:52:57 INF] Start processing HTTP request GET http://127.0.0.1:48409/api/v2/externally-readable-demand-catalog
+[15:52:57 INF] End processing HTTP request after 0.8833ms - 200
+[15:52:57 INF] SessionReadiness 966da09b-0317-4938-88c0-a6c2e9d970ea to AGV-L2-001 generation 1: READY [null], after the answer to SafetyStateChanged 5e1352cf-4c28-175b-b536-5cd34229402a.
+[15:52:57 INF] SessionReadiness 0d0ad356-fac5-4d37-b35d-7eb403953282 to AGV-L2-001 generation 1: READY [null], after the answer to SafetyStateChanged f6d9c5eb-ebed-5d55-8dfe-c29dd8e116f2.
+[15:52:57 INF] HTTP GET /api/onboard/v1/vehicle-safety responded 200 in 1.6749 ms
+[15:52:58 INF] SessionReadiness 66d96b9d-0d1d-4982-90ec-e3182d884dd2 to AGV-L2-001 generation 1: READY [null], after the answer to SafetyStateChanged 083eb31d-7698-4852-b12b-559b559513c7.
+[15:52:58 INF] Start processing HTTP request GET http://127.0.0.1:48409/api/v2/contract
+[15:52:58 INF] End processing HTTP request after 1.447ms - 200
+[15:52:58 INF] Start processing HTTP request GET http://127.0.0.1:48409/api/v2/externally-readable-demand-catalog
+[15:52:58 INF] End processing HTTP request after 0.768ms - 200
+[15:52:58 INF] HTTP GET /api/onboard/v1/vehicle-safety responded 200 in 2.5487 ms
+[15:52:58 INF] SessionReadiness 80e5ed1e-3372-43c6-bdc8-5911b9764690 to AGV-L2-001 generation 1: READY [null], after the answer to SafetyStateChanged 92f794dd-84ad-4350-a27d-c4f61d6140db.
+[15:52:59 INF] Start processing HTTP request GET http://127.0.0.1:48409/api/v2/contract
+[15:52:59 INF] End processing HTTP request after 0.8249ms - 200
+[15:52:59 INF] Start processing HTTP request GET http://127.0.0.1:48409/api/v2/externally-readable-demand-catalog
+[15:52:59 INF] End processing HTTP request after 1.4839ms - 200
+[15:52:59 INF] HTTP GET /api/onboard/v1/vehicle-safety responded 200 in 1.5422 ms
+[15:53:00 INF] Start processing HTTP request GET http://127.0.0.1:48409/api/v2/contract
+[15:53:00 INF] End processing HTTP request after 1.9935ms - 200
+[15:53:00 INF] Start processing HTTP request GET http://127.0.0.1:48409/api/v2/externally-readable-demand-catalog
+[15:53:00 INF] End processing HTTP request after 1.1625ms - 200
+[15:53:00 INF] HTTP GET /api/onboard/v1/vehicle-safety responded 200 in 1.7787 ms
+[15:53:01 WRN] Onboard connection ended with a protocol or transport error.
+System.IO.IOException: Unable to read data from the transport connection: An existing connection was forcibly closed by the remote host..
+ ---> System.Net.Sockets.SocketException (10054): An existing connection was forcibly closed by the remote host.
+   --- End of inner exception stack trace ---
+   at System.Net.Sockets.Socket.AwaitableSocketAsyncEventArgs.ThrowException(SocketError error, CancellationToken cancellationToken)
+   at System.Net.Sockets.Socket.AwaitableSocketAsyncEventArgs.System.Threading.Tasks.Sources.IValueTaskSource<System.Int32>.GetResult(Int16 token)
+   at System.IO.StreamReader.ReadBufferAsync(CancellationToken cancellationToken)
+   at System.IO.StreamReader.ReadLineAsyncInternal(CancellationToken cancellationToken)
+   at ControlServer.Host.Transport.OnboardTcpServer.HandleClientAsync(TcpClient client, CancellationToken cancellationToken) in F:\8005-scratch\p767-g3-r2\journey\stage\sources\control-server\src\ControlServer.Host\Transport\OnboardTcpServer.cs:line 165
+   at ControlServer.Host.Transport.OnboardTcpServer.HandleClientAsync(TcpClient client, CancellationToken cancellationToken) in F:\8005-scratch\p767-g3-r2\journey\stage\sources\control-server\src\ControlServer.Host\Transport\OnboardTcpServer.cs:line 274
+   at ControlServer.Host.Transport.OnboardTcpServer.HandleClientAsync(TcpClient client, CancellationToken cancellationToken) in F:\8005-scratch\p767-g3-r2\journey\stage\sources\control-server\src\ControlServer.Host\Transport\OnboardTcpServer.cs:line 274
+   at ControlServer.Host.Transport.OnboardTcpServer.HandleClientAsync(TcpClient client, CancellationToken cancellationToken) in F:\8005-scratch\p767-g3-r2\journey\stage\sources\control-server\src\ControlServer.Host\Transport\OnboardTcpServer.cs:line 274
+   at ControlServer.Host.Transport.OnboardTcpServer.ServeAsync(TcpClient client, SemaphoreSlim slots, CancellationToken cancellationToken) in F:\8005-scratch\p767-g3-r2\journey\stage\sources\control-server\src\ControlServer.Host\Transport\OnboardTcpServer.cs:line 117
