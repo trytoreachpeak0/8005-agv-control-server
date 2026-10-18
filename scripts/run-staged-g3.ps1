@@ -172,8 +172,18 @@ param(
     #   $SimulatorCommit unchanged: origin/main is still fb5f7c59.
     #   $ProtocolCommit -> 18d4fb34, protocol#25's merge into fp/v2-candidate (tree = its head ede2060f). The harness's
     #     tag literal moves to protocol-v5.0.0, its protocolVersion to 6 and its Protocol constants to the v5 candidate.
-    [string]$ControlServerCommit = '63d83a0f623a99d0260c2b1c95672a91584336b5',
-    [string]$OnboardCommit = 'a3a6753f6924b8f845483d6b886259c90af9b018',
+    #
+    # 2026-10-18, protocol v5 exit, step 6 (control-server#767): protocol-v5.0.0 was released on 18d4fb34 (annotated tag
+    #   object 7b108ccb), and both halves were turned to APPROVED_RELEASE on it (onboard-hmi PR #369, control-server
+    #   PR #773), as at the v4 exit. Only ControlServerCommit and OnboardCommit move, so that the package cut for the
+    #   v5 field switch (control-server#738) comes from commits G3 has run; the harness identity does not move (the
+    #   release is the candidate byte for byte, and approvalStatus is not part of what the harness sends).
+    #   $ControlServerCommit -> 7763bcf1, the fp/v2-impl tip before this ticket's own branch: PR #773's merge commit.
+    #   $OnboardCommit -> a3fdb194, the w2g/fp-v2-impl tip: onboard-hmi PR #369's merge commit.
+    #   $SimulatorCommit unchanged: origin/main is still fb5f7c59.
+    #   $ProtocolCommit unchanged: 18d4fb34 is what the protocol-v5.0.0 tag dereferences to.
+    [string]$ControlServerCommit = '7763bcf1a03df01e319dbb9a43452aa90ed6f2fc',
+    [string]$OnboardCommit = 'a3fdb194be045c23a4661807f4d180833a419cf8',
     [string]$SimulatorCommit = 'fb5f7c593742bf98bc3957b8729a38aad5321f28',
     [string]$ProtocolCommit = '18d4fb3495033624cab412a7ee784f675dfe4cc2',
     # The ref whose tip -OnboardCommit must equal. It is a parameter rather than a literal because the
