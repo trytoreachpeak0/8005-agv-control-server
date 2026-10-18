@@ -1,0 +1,89 @@
+{
+  "schemaVersion": "1.4.0",
+  "gate": "G3",
+  "runKind": "DEMAND_BEARING_G3_RESULT_AND_RIOT_UNKNOWN_VECTORS_NO_MOVEMENT",
+  "runId": "20261018T041342947Z",
+  "integrationSliceId": "FP-IS-06",
+  "status": "PASS",
+  "assuranceLevel": "DEMAND_BEARING_RESTORE",
+  "formalSlicePass": true,
+  "formalSliceWithheldReason": null,
+  "startedAt": "2026-10-18T04:13:42.9472434+00:00",
+  "finishedAt": "2026-10-18T04:16:34.9166500+00:00",
+  "implementationRepository": "8005-agv-control-server",
+  "commits": {
+    "controlServer": "63d83a0f623a99d0260c2b1c95672a91584336b5",
+    "controlServerCommitSource": "SHARED_BINDING",
+    "onboardHmi": "a3a6753f6924b8f845483d6b886259c90af9b018",
+    "onboardCommitSource": "SHARED_BINDING",
+    "slotsSimulator": "fb5f7c593742bf98bc3957b8729a38aad5321f28",
+    "simulatorCommitSource": "SHARED_BINDING",
+    "protocol": "18d4fb3495033624cab412a7ee784f675dfe4cc2",
+    "protocolCommitSource": "SHARED_BINDING",
+    "runner": "75e3c8d9083ea77547f3c65a29e8051eece62d7c",
+    "runnerWorktreeCleanAtStart": true,
+    "runnerSource": "COMMITTED_RUNNER"
+  },
+  "protocolReleaseVersion": "5.0.0",
+  "protocolTag": "protocol-v5.0.0",
+  "protocolProfileId": "AGV_FULL_PRODUCT",
+  "protocolVersion": 6,
+  "protocolApprovalStatus": "SUPERSEDING_CANDIDATE",
+  "protocolRepositoryCommit": "18d4fb3495033624cab412a7ee784f675dfe4cc2",
+  "protocolManifestSha256": "dd973918cc9c4fdf28ee2ad2ec4ad522bdcc6f2b6ecaa4a4fa1c57a29f29f5aa",
+  "protocolSchemaBundleSha256": "d51abe44036f32b5b2c28fd1bea6ec7a89cf3b4dea0f0b1d6c9daaf52f350933",
+  "protocolVectorsSha256": "291311b24bfcac75818ca9e4a888d436523e6ee14db661f6ba792ab8cc383e4a",
+  "integrationSliceIndexSha256": "5c64d0335218fe31b6a0d6362af3eaa7446832dda781eb9a7ffb6dbd90cbaa86",
+  "integrationSliceIndexSource": "vendor/8005-agv-protocol/integration-slices/index.json",
+  "vectorIds": [
+    "CV-RELIABLE-RETRY-SAME-CONTENT",
+    "CV-RELIABLE-RETRY-DIFFERENT-CONTENT",
+    "CV-REQUEST-FIRST-RESULT-REPLAY"
+  ],
+  "fieldStoreProvenance": {
+    "storeSource": "SYNTHETIC_RIG",
+    "protocolCommit": "18d4fb3495033624cab412a7ee784f675dfe4cc2",
+    "matchesBoundProtocolCommit": true,
+    "protocolCommitAsserted": true,
+    "protocolCommitConjunct": "SYNTHETIC_RIG: seventh conjunct in force; store protocolCommit 18d4fb3495033624cab412a7ee784f675dfe4cc2 must equal bound 18d4fb3495033624cab412a7ee784f675dfe4cc2 -> equal",
+    "exemption": null,
+    "generator": {
+      "scenario": "demand-bearing-store-at-unload",
+      "evidence": "store-generator",
+      "runId": "20261018T041424880Z",
+      "outcome": "PASS",
+      "rig": "SyntheticOnboard",
+      "controlServerCommit": "63d83a0f623a99d0260c2b1c95672a91584336b5"
+    },
+    "note": "Generated on the spot by the bound ControlServer commit on the synthetic rig: a synthetic onboard peer and the fake RIoT, not a real vehicle and not the real RIoT. Weaker than a field store in two ways (control-server#453): the state was not written by a real demand on a real vehicle; and it was written by the build under test in its own schema, so restoring it migrates nothing -- the restart and side-effect assertions no longer also show that a store another build wrote, in an older schema, is taken over. Its protocolCommit is asserted inside protocolAndBuildIdentityBoundToTheSharedBinding, where it holds by construction: it can only show the store was written by this build, not catch a product regression.",
+    "claimRecordBackfill": {
+      "expectation": {
+        "migrationState": "ALREADY_RETIRED",
+        "originalRecords": 1,
+        "claimBackfills": 0,
+        "leaseBackfills": 0,
+        "expected": 1
+      },
+      "afterProbeActual": 1,
+      "matches": true,
+      "rule": "Batch8RetireOldVehicleOccupancy BackfillClaimHistorySql, worked out from the baseline in its own order: original records + claims without an open record + released leases whose vehicle and journey have no record after that; 0 backfilled once the lease table is gone. Asserted in noMovementOrExternalSideEffects."
+    },
+    "riotCreateAuditHistory": {
+      "legs": 2,
+      "preCreateReconciliationObservedUnknownOnEveryLeg": false,
+      "unknownWasAnExactAbsentAtObservation": false,
+      "unknownStillCreatedExactlyOncePerLeg": true,
+      "unknownResolvedToTheOrderItCreated": true,
+      "note": "Written against the fake RIoT, whose answers are not the real RIoT's. Recorded, not asserted, and not evidence about RIoT."
+    }
+  },
+  "assertionIds": {
+    "identicalResultReplayReturnsTheStoredAcknowledgement": "PASS",
+    "sameMessageIdWithDifferentContentIsRefused": "PASS",
+    "protocolAndBuildIdentityBoundToTheSharedBinding": "PASS",
+    "controlServerHostProcessWasActuallyReplaced": "PASS",
+    "noMovementOrExternalSideEffects": "PASS",
+    "listenersReleased": "PASS",
+    "secretScan": "PASS"
+  }
+}

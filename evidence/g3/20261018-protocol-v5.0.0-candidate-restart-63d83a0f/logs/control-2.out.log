@@ -1,0 +1,39 @@
+[12:13:25 INF] No migrations were applied. The database is already up to date.
+[12:13:25 INF] Onboard NDJSON listener started on 127.0.0.1:58105; transport=plaintext
+[12:13:25 WRN] Journey runtime is disabled; MesIngest polling and movement dispatch are fail-closed.
+[12:13:25 INF] Now listening on: http://127.0.0.1:58107
+[12:13:25 INF] Application started. Press Ctrl+C to shut down.
+[12:13:25 INF] Hosting environment: Production
+[12:13:25 INF] Content root path: F:\8005-scratch\p767-g3\restart\stage\publish\control-server
+[12:13:25 INF] EFFECTIVE_CONFIGURATION allowedWorkTypes=["DIE_TO_WIRE_STAGING", "DIE_TO_OVEN", "WIRE_TO_GATE", "WIRE_TO_OPTICAL", "STAGING_TO_WIRE", "WIRE_TO_NITROGEN", "WIRE_TO_FULL_INSPECTION"] allowedDispatchZones=["MAP-25-WIRE_TO_GATE"] mesIngestBaseUrl=http://127.0.0.1:1 fleet=[] clearanceToWaitingPointEnabled=False mapStationCatalog={"ApprovedSyncPeriod": null, "ApprovedMaxUnconfirmed": null} foreignRunningOrderRelease={"Enabled": false, "CredentialPresent": false} admissionPolicyVersion=7 admissionPolicyDeploymentId=MAP-25-WIRE_TO_GATE-20260827 cargoHoldingTimeout=00:05:00 stationDepartureWaitTimeout=00:05:00 slotConfigurationReadinessGate=Off stagingDepartureRulesEnabled=False stagingLoadNotSettledAlarmAfter=00:05:00
+[12:13:25 INF] HTTP GET /api/runtime/sessions responded 200 in 22.9785 ms
+[12:13:26 INF] HTTP GET /api/runtime/sessions responded 200 in 5.9675 ms
+[12:13:26 INF] SessionReadiness 30c6b6aa-ff6c-4bc1-b190-371a0b8d4cbc to AGV-8005-STAGED-G3-RESTART-01 generation 3: RECOVERY_REQUIRED [SLOT_CONFIGURATION_FINGERPRINT_MISMATCH], after the answer to RecoveryStateReport 44712eef-d7e9-4f98-9c2f-11d40206aad3.
+[12:13:26 INF] SessionReadiness 99cb1721-e8fd-41cc-9e05-e42fd5a58942 to AGV-8005-STAGED-G3-RESTART-01 generation 3: RECOVERY_REQUIRED [SLOT_CONFIGURATION_FINGERPRINT_MISMATCH], after the answer to SafetyStateChanged 24698d9a-c609-2553-b547-5b94989ee023.
+[12:13:26 INF] HTTP GET /api/runtime/sessions responded 200 in 1.8421 ms
+[12:13:27 INF] HTTP GET /api/runtime/sessions responded 200 in 4.0759 ms
+[12:13:28 INF] HTTP GET /api/runtime/sessions responded 200 in 1.7821 ms
+[12:13:29 INF] HTTP GET /api/runtime/sessions responded 200 in 1.5746 ms
+[12:13:30 INF] HTTP GET /api/runtime/sessions responded 200 in 2.1080 ms
+[12:13:32 INF] HTTP GET /api/runtime/sessions responded 200 in 1.2604 ms
+[12:13:33 INF] HTTP GET /api/runtime/sessions responded 200 in 1.6208 ms
+[12:13:34 INF] HTTP GET /api/runtime/sessions responded 200 in 1.3382 ms
+[12:13:35 INF] HTTP GET /api/runtime/sessions responded 200 in 1.7423 ms
+[12:13:36 INF] HTTP GET /api/runtime/sessions responded 200 in 1.6574 ms
+[12:13:37 INF] HTTP GET /api/runtime/sessions responded 200 in 1.3138 ms
+[12:13:38 INF] HTTP GET /api/runtime/sessions responded 200 in 0.8564 ms
+[12:13:39 INF] HTTP GET /api/runtime/sessions responded 200 in 1.6625 ms
+[12:13:39 ERR] HTTP GET /health/ready responded 503 in 14.9461 ms
+[12:13:39 WRN] Onboard connection ended with a protocol or transport error.
+System.IO.IOException: Unable to read data from the transport connection: An existing connection was forcibly closed by the remote host..
+ ---> System.Net.Sockets.SocketException (10054): An existing connection was forcibly closed by the remote host.
+   --- End of inner exception stack trace ---
+   at System.Net.Sockets.Socket.AwaitableSocketAsyncEventArgs.ThrowException(SocketError error, CancellationToken cancellationToken)
+   at System.Net.Sockets.Socket.AwaitableSocketAsyncEventArgs.System.Threading.Tasks.Sources.IValueTaskSource<System.Int32>.GetResult(Int16 token)
+   at System.IO.StreamReader.ReadBufferAsync(CancellationToken cancellationToken)
+   at System.IO.StreamReader.ReadLineAsyncInternal(CancellationToken cancellationToken)
+   at ControlServer.Host.Transport.OnboardTcpServer.HandleClientAsync(TcpClient client, CancellationToken cancellationToken) in F:\8005-scratch\p767-g3\restart\stage\sources\control-server\src\ControlServer.Host\Transport\OnboardTcpServer.cs:line 165
+   at ControlServer.Host.Transport.OnboardTcpServer.HandleClientAsync(TcpClient client, CancellationToken cancellationToken) in F:\8005-scratch\p767-g3\restart\stage\sources\control-server\src\ControlServer.Host\Transport\OnboardTcpServer.cs:line 274
+   at ControlServer.Host.Transport.OnboardTcpServer.HandleClientAsync(TcpClient client, CancellationToken cancellationToken) in F:\8005-scratch\p767-g3\restart\stage\sources\control-server\src\ControlServer.Host\Transport\OnboardTcpServer.cs:line 274
+   at ControlServer.Host.Transport.OnboardTcpServer.HandleClientAsync(TcpClient client, CancellationToken cancellationToken) in F:\8005-scratch\p767-g3\restart\stage\sources\control-server\src\ControlServer.Host\Transport\OnboardTcpServer.cs:line 274
+   at ControlServer.Host.Transport.OnboardTcpServer.ServeAsync(TcpClient client, SemaphoreSlim slots, CancellationToken cancellationToken) in F:\8005-scratch\p767-g3\restart\stage\sources\control-server\src\ControlServer.Host\Transport\OnboardTcpServer.cs:line 117
