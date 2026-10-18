@@ -1,0 +1,129 @@
+[17:59:45 INF] No migrations were applied. The database is already up to date.
+[17:59:46 INF] Task type station preset C:\Users\szy\AppData\Local\Temp\l2-20261018T095934254Z\task-type-stations.settings.json loaded: rule version 1 (new), Map 25 binding set version 1 (new) active.
+[17:59:46 INF] Onboard NDJSON listener started on 127.0.0.1:48405; transport=plaintext
+[17:59:46 INF] Now listening on: http://127.0.0.1:48407
+[17:59:46 INF] Application started. Press Ctrl+C to shut down.
+[17:59:46 INF] Hosting environment: Production
+[17:59:46 INF] Content root path: F:\8005-scratch\p767-g3-r3\journey\stage\sources\control-server\src\ControlServer.Host\bin\Release\net8.0\win-x64
+[17:59:46 INF] EFFECTIVE_CONFIGURATION allowedWorkTypes=["DIE_TO_WIRE_STAGING", "DIE_TO_OVEN", "WIRE_TO_GATE", "WIRE_TO_OPTICAL", "STAGING_TO_WIRE", "WIRE_TO_NITROGEN", "WIRE_TO_FULL_INSPECTION"] allowedDispatchZones=["MAP-25-WIRE_TO_GATE"] mesIngestBaseUrl=http://127.0.0.1:48409 fleet=[] clearanceToWaitingPointEnabled=False mapStationCatalog={"ApprovedSyncPeriod": "00:00:30", "ApprovedMaxUnconfirmed": "00:05:00"} foreignRunningOrderRelease={"Enabled": false, "CredentialPresent": false} admissionPolicyVersion=7 admissionPolicyDeploymentId=L2-20261018T095934254Z cargoHoldingTimeout=00:05:00 stationDepartureWaitTimeout=00:00:30 slotConfigurationReadinessGate=Off stagingDepartureRulesEnabled=False stagingLoadNotSettledAlarmAfter=00:05:00
+[17:59:46 INF] Start processing HTTP request GET http://127.0.0.1:48409/api/v2/contract
+[17:59:46 INF] End processing HTTP request after 15.4877ms - 200
+[17:59:46 INF] Start processing HTTP request GET http://127.0.0.1:48409/api/v2/externally-readable-demand-catalog
+[17:59:46 INF] End processing HTTP request after 5.5306ms - 200
+[17:59:46 INF] HTTP GET /health/live responded 200 in 4.6966 ms
+[17:59:46 INF] HTTP GET /version responded 200 in 1.5068 ms
+[17:59:46 INF] Charging not allocated for vehicle AGV-L2-001: CHARGING_POLICY_NOT_APPROVED. 
+[17:59:46 INF] Idle return not committed for vehicle AGV-L2-001: IDLE_RETURN_DISABLED. 
+[17:59:47 INF] Start processing HTTP request GET http://127.0.0.1:48409/api/v2/contract
+[17:59:47 INF] End processing HTTP request after 1.4242ms - 200
+[17:59:47 INF] Start processing HTTP request GET http://127.0.0.1:48409/api/v2/externally-readable-demand-catalog
+[17:59:47 INF] End processing HTTP request after 1.1447ms - 200
+[17:59:47 INF] HTTP GET /api/onboard/v1/vehicle-safety responded 200 in 31.7606 ms
+[17:59:48 INF] Start processing HTTP request GET http://127.0.0.1:48409/api/v2/contract
+[17:59:48 INF] End processing HTTP request after 1.52ms - 200
+[17:59:48 INF] Start processing HTTP request GET http://127.0.0.1:48409/api/v2/externally-readable-demand-catalog
+[17:59:48 INF] End processing HTTP request after 0.7767ms - 200
+[17:59:48 ERR] HTTP GET /health/ready responded 503 in 8.6505 ms
+[17:59:49 INF] HTTP GET /api/onboard/v1/vehicle-safety responded 200 in 3.4664 ms
+[17:59:49 INF] SessionReadiness fec9a60b-cfb2-460b-b4c2-dc5ea631abae to AGV-L2-001 generation 1: READY [null], after the answer to RecoveryStateReport 921e2f25-5601-4bac-a417-e27916664268.
+[17:59:49 INF] SessionReadiness 8172e309-c940-4f69-9595-f96959dcfd6b to AGV-L2-001 generation 1: READY [null], after the answer to SafetyStateChanged 39e2ff94-6592-d755-baf7-3a4e0275ff54.
+[17:59:49 INF] HTTP GET /health/ready responded 200 in 2.0922 ms
+[17:59:49 INF] Start processing HTTP request GET http://127.0.0.1:48409/api/v2/contract
+[17:59:49 INF] End processing HTTP request after 1.4758ms - 200
+[17:59:49 INF] Start processing HTTP request GET http://127.0.0.1:48409/api/v2/externally-readable-demand-catalog
+[17:59:49 INF] End processing HTTP request after 0.9803ms - 200
+[17:59:50 INF] HTTP GET /api/onboard/v1/vehicle-safety responded 200 in 3.7976 ms
+[17:59:50 INF] Start processing HTTP request GET http://127.0.0.1:48409/api/v2/contract
+[17:59:50 INF] End processing HTTP request after 1.5324ms - 200
+[17:59:50 INF] Start processing HTTP request GET http://127.0.0.1:48409/api/v2/externally-readable-demand-catalog
+[17:59:50 INF] End processing HTTP request after 1.1212ms - 200
+[17:59:51 INF] HTTP GET /api/onboard/v1/vehicle-safety responded 200 in 2.3121 ms
+[17:59:51 INF] Start processing HTTP request GET http://127.0.0.1:48409/api/v2/contract
+[17:59:51 INF] End processing HTTP request after 1.4137ms - 200
+[17:59:51 INF] Start processing HTTP request GET http://127.0.0.1:48409/api/v2/externally-readable-demand-catalog
+[17:59:51 INF] End processing HTTP request after 1.4529ms - 200
+[17:59:52 INF] HTTP GET /api/onboard/v1/vehicle-safety responded 200 in 2.0452 ms
+[17:59:52 INF] Start processing HTTP request GET http://127.0.0.1:48409/api/v2/contract
+[17:59:52 INF] End processing HTTP request after 1.3205ms - 200
+[17:59:52 INF] Start processing HTTP request GET http://127.0.0.1:48409/api/v2/externally-readable-demand-catalog
+[17:59:52 INF] End processing HTTP request after 0.9065ms - 200
+[17:59:53 INF] HTTP GET /api/onboard/v1/vehicle-safety responded 200 in 2.0650 ms
+[17:59:53 INF] Start processing HTTP request GET http://127.0.0.1:48409/api/v2/contract
+[17:59:53 INF] End processing HTTP request after 1.4884ms - 200
+[17:59:53 INF] Start processing HTTP request GET http://127.0.0.1:48409/api/v2/externally-readable-demand-catalog
+[17:59:53 INF] End processing HTTP request after 0.9868ms - 200
+[17:59:54 INF] HTTP GET /api/onboard/v1/vehicle-safety responded 200 in 1.8066 ms
+[17:59:54 INF] Start processing HTTP request GET http://127.0.0.1:48409/api/v2/contract
+[17:59:54 INF] End processing HTTP request after 1.3046ms - 200
+[17:59:54 INF] Start processing HTTP request GET http://127.0.0.1:48409/api/v2/externally-readable-demand-catalog
+[17:59:54 INF] End processing HTTP request after 0.8749ms - 200
+[17:59:55 INF] HTTP GET /api/onboard/v1/vehicle-safety responded 200 in 1.9816 ms
+[17:59:55 INF] Start processing HTTP request GET http://127.0.0.1:48409/api/v2/contract
+[17:59:55 INF] End processing HTTP request after 1.1938ms - 200
+[17:59:55 INF] Start processing HTTP request GET http://127.0.0.1:48409/api/v2/externally-readable-demand-catalog
+[17:59:55 INF] End processing HTTP request after 0.8951ms - 200
+[17:59:56 INF] HTTP GET /api/onboard/v1/vehicle-safety responded 200 in 1.6270 ms
+[17:59:56 INF] Start processing HTTP request GET http://127.0.0.1:48409/api/v2/contract
+[17:59:56 INF] End processing HTTP request after 0.9677ms - 200
+[17:59:56 INF] Start processing HTTP request GET http://127.0.0.1:48409/api/v2/externally-readable-demand-catalog
+[17:59:56 INF] End processing HTTP request after 0.7156ms - 200
+[17:59:57 INF] HTTP GET /api/onboard/v1/vehicle-safety responded 200 in 1.7094 ms
+[17:59:57 INF] Start processing HTTP request GET http://127.0.0.1:48409/api/v2/contract
+[17:59:57 INF] End processing HTTP request after 1.1871ms - 200
+[17:59:57 INF] Start processing HTTP request GET http://127.0.0.1:48409/api/v2/externally-readable-demand-catalog
+[17:59:57 INF] End processing HTTP request after 0.7928ms - 200
+[17:59:57 INF] Charging not allocated for vehicle AGV-L2-001: CHARGING_NOT_REQUIRED. 
+[17:59:58 INF] HTTP GET /api/onboard/v1/vehicle-safety responded 200 in 1.6919 ms
+[17:59:58 INF] Start processing HTTP request GET http://127.0.0.1:48409/api/v2/contract
+[17:59:58 INF] End processing HTTP request after 1.1916ms - 200
+[17:59:58 INF] Start processing HTTP request GET http://127.0.0.1:48409/api/v2/externally-readable-demand-catalog
+[17:59:58 INF] End processing HTTP request after 0.8265ms - 200
+[17:59:59 INF] HTTP GET /api/onboard/v1/vehicle-safety responded 200 in 2.3370 ms
+[17:59:59 INF] Start processing HTTP request GET http://127.0.0.1:48409/api/v2/contract
+[17:59:59 INF] End processing HTTP request after 0.8258ms - 200
+[17:59:59 INF] Start processing HTTP request GET http://127.0.0.1:48409/api/v2/externally-readable-demand-catalog
+[17:59:59 INF] End processing HTTP request after 0.7081ms - 200
+[17:59:59 WRN] Vehicle BROKERX-L2-0001 is below its mandatory charge entry threshold: battery 25% < 30% (charging policy version 1). It takes no new transport, no en-route append and no idle return until it has charged (REQ-0290, MANDATORY_CHARGE_REQUIRED); a journey it is carrying finishes as planned (REQ-0281).
+[17:59:59 INF] Charging committed: vehicle AGV-L2-001 reserved charger 211 as journey charging:BROKERX-L2-0001:20261018T095959255Z, route cost 20000 mm, battery 25%. battery=25
+[18:00:00 INF] HTTP GET /api/onboard/v1/vehicle-safety responded 200 in 1.9584 ms
+[18:00:00 INF] RIoT request GET http://127.0.0.1:48408/api/order/v1/orderRecord/detailByUpperId/W2G-CHARGE-09c3783f-20261018T095959255Z answered 404 after 7.733 ms, which is not a success status
+[18:00:00 INF] RIoT command POST http://127.0.0.1:48408/api/order/v1/add/byDefaultMissions sent
+[18:00:00 INF] RIoT command POST http://127.0.0.1:48408/api/order/v1/add/byDefaultMissions answered 200 after 11.6877 ms
+[18:00:00 INF] Charging journey charging:BROKERX-L2-0001:20261018T095959255Z: RIoT confirmed order W2G-CHARGE-09c3783f-20261018T095959255Z; vehicle BROKERX-L2-0001 is en route to charger 211.
+[18:00:01 INF] HTTP GET /api/onboard/v1/vehicle-safety responded 200 in 1.9681 ms
+[18:00:01 INF] SessionReadiness 6cf6511e-f799-4868-9513-bc56952d6c77 to AGV-L2-001 generation 1: RECOVERY_REQUIRED [DEPARTURE_UNSAFE], after the answer to SafetyStateChanged 63fb91b1-0424-7653-8671-24efc246f50d.
+[18:00:01 WRN] RIoT reports order W2G-CHARGE-09c3783f-20261018T095959255Z of journey charging:BROKERX-L2-0001:20261018T095959255Z on vehicle AGV-L2-001 in state 9; the journey names ORDER_HANG and waits for a person. No order command, emergency stop or fault is issued for it.
+[18:00:02 INF] HTTP GET /api/onboard/v1/vehicle-safety responded 200 in 1.3817 ms
+[18:00:03 INF] HTTP GET /api/onboard/v1/vehicle-safety responded 200 in 1.8245 ms
+[18:00:04 INF] HTTP GET /api/onboard/v1/vehicle-safety responded 200 in 1.4165 ms
+[18:00:05 INF] HTTP GET /api/onboard/v1/vehicle-safety responded 200 in 1.3959 ms
+[18:00:06 INF] HTTP GET /api/onboard/v1/vehicle-safety responded 200 in 1.4522 ms
+[18:00:07 INF] HTTP GET /api/onboard/v1/vehicle-safety responded 200 in 1.3487 ms
+[18:00:08 INF] HTTP GET /api/onboard/v1/vehicle-safety responded 200 in 1.2292 ms
+[18:00:09 INF] HTTP GET /api/onboard/v1/vehicle-safety responded 200 in 1.6361 ms
+[18:00:10 INF] HTTP GET /api/onboard/v1/vehicle-safety responded 200 in 1.6973 ms
+[18:00:11 INF] HTTP GET /api/onboard/v1/vehicle-safety responded 200 in 1.9413 ms
+[18:00:12 INF] HTTP GET /api/onboard/v1/vehicle-safety responded 200 in 1.6159 ms
+[18:00:12 WRN] UNABLE_TO_CHARGE_FIELD_CONFIRMED: L2-OPERATOR (R-11) confirmed on site that vehicle AGV-L2-001 could not charge at charger ³äµçµã1 (CONNECTION_FAILED); charging policy decision MANUAL_CHARGING_HOLD. The charger is paused for all 8005 allocation (root cause UNKNOWN) and the vehicle stays where it is until a person moves it off and confirms the charger clear.
+[18:00:13 INF] HTTP GET /api/onboard/v1/vehicle-safety responded 200 in 1.7625 ms
+[18:00:14 INF] HTTP GET /api/onboard/v1/vehicle-safety responded 200 in 1.4046 ms
+[18:00:15 INF] HTTP GET /api/onboard/v1/vehicle-safety responded 200 in 1.7734 ms
+[18:00:16 INF] HTTP GET /api/onboard/v1/vehicle-safety responded 200 in 1.7057 ms
+[18:00:17 INF] HTTP GET /api/onboard/v1/vehicle-safety responded 200 in 1.5764 ms
+[18:00:18 INF] HTTP GET /api/onboard/v1/vehicle-safety responded 200 in 1.8367 ms
+[18:00:19 INF] HTTP GET /api/onboard/v1/vehicle-safety responded 200 in 1.5885 ms
+[18:00:20 INF] HTTP GET /api/onboard/v1/vehicle-safety responded 200 in 1.7579 ms
+[18:00:21 INF] HTTP GET /api/onboard/v1/vehicle-safety responded 200 in 1.1983 ms
+[18:00:21 WRN] Onboard connection ended with a protocol or transport error.
+System.IO.IOException: Unable to read data from the transport connection: An existing connection was forcibly closed by the remote host..
+ ---> System.Net.Sockets.SocketException (10054): An existing connection was forcibly closed by the remote host.
+   --- End of inner exception stack trace ---
+   at System.Net.Sockets.Socket.AwaitableSocketAsyncEventArgs.ThrowException(SocketError error, CancellationToken cancellationToken)
+   at System.Net.Sockets.Socket.AwaitableSocketAsyncEventArgs.System.Threading.Tasks.Sources.IValueTaskSource<System.Int32>.GetResult(Int16 token)
+   at System.IO.StreamReader.ReadBufferAsync(CancellationToken cancellationToken)
+   at System.IO.StreamReader.ReadLineAsyncInternal(CancellationToken cancellationToken)
+   at ControlServer.Host.Transport.OnboardTcpServer.HandleClientAsync(TcpClient client, CancellationToken cancellationToken) in F:\8005-scratch\p767-g3-r3\journey\stage\sources\control-server\src\ControlServer.Host\Transport\OnboardTcpServer.cs:line 165
+   at ControlServer.Host.Transport.OnboardTcpServer.HandleClientAsync(TcpClient client, CancellationToken cancellationToken) in F:\8005-scratch\p767-g3-r3\journey\stage\sources\control-server\src\ControlServer.Host\Transport\OnboardTcpServer.cs:line 274
+   at ControlServer.Host.Transport.OnboardTcpServer.HandleClientAsync(TcpClient client, CancellationToken cancellationToken) in F:\8005-scratch\p767-g3-r3\journey\stage\sources\control-server\src\ControlServer.Host\Transport\OnboardTcpServer.cs:line 274
+   at ControlServer.Host.Transport.OnboardTcpServer.HandleClientAsync(TcpClient client, CancellationToken cancellationToken) in F:\8005-scratch\p767-g3-r3\journey\stage\sources\control-server\src\ControlServer.Host\Transport\OnboardTcpServer.cs:line 274
+   at ControlServer.Host.Transport.OnboardTcpServer.ServeAsync(TcpClient client, SemaphoreSlim slots, CancellationToken cancellationToken) in F:\8005-scratch\p767-g3-r3\journey\stage\sources\control-server\src\ControlServer.Host\Transport\OnboardTcpServer.cs:line 117

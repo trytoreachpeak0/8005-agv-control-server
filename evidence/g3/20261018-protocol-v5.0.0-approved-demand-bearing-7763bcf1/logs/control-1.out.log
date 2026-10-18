@@ -1,0 +1,21 @@
+[17:32:14 INF] No migrations were applied. The database is already up to date.
+[17:32:15 INF] Onboard NDJSON listener started on 127.0.0.1:58305; transport=plaintext
+[17:32:15 WRN] Journey runtime is disabled; MesIngest polling and movement dispatch are fail-closed.
+[17:32:15 INF] Now listening on: http://127.0.0.1:58307
+[17:32:15 INF] Application started. Press Ctrl+C to shut down.
+[17:32:15 INF] Hosting environment: Production
+[17:32:15 INF] Content root path: F:\8005-scratch\p767-g3-r3\demand-bearing\stage\publish\control-server
+[17:32:15 INF] EFFECTIVE_CONFIGURATION allowedWorkTypes=["DIE_TO_WIRE_STAGING", "DIE_TO_OVEN", "WIRE_TO_GATE", "WIRE_TO_OPTICAL", "STAGING_TO_WIRE", "WIRE_TO_NITROGEN", "WIRE_TO_FULL_INSPECTION"] allowedDispatchZones=["MAP-25-WIRE_TO_GATE"] mesIngestBaseUrl=http://127.0.0.1:1 fleet=[] clearanceToWaitingPointEnabled=False mapStationCatalog={"ApprovedSyncPeriod": null, "ApprovedMaxUnconfirmed": null} foreignRunningOrderRelease={"Enabled": false, "CredentialPresent": false} admissionPolicyVersion=7 admissionPolicyDeploymentId=MAP-25-WIRE_TO_GATE-20260827 cargoHoldingTimeout=00:05:00 stationDepartureWaitTimeout=00:05:00 slotConfigurationReadinessGate=Off stagingDepartureRulesEnabled=False stagingLoadNotSettledAlarmAfter=00:05:00
+[17:32:15 INF] HTTP GET /version responded 200 in 7.9078 ms
+[17:32:18 WRN] Refused OperationResult 60e2187e-129a-8556-ac69-27b314e550e6 from AGV-L2-001 with ProtocolProblem MESSAGE_ID_CONTENT_CONFLICT; the connection stays and nothing of it was kept: MessageId was replayed with different normalized content.
+[17:32:18 WRN] Refused OperationResult edfb087d-a39e-9757-a469-5e7e0e2822bf from AGV-L2-001 with ProtocolProblem BUSINESS_ID_CONTENT_CONFLICT; the connection stays and nothing of it was kept: Operation result identity was replayed with different message or content.
+[17:32:18 WRN] Refused OperationResult 61c2f515-6822-245f-98ee-a8418bfcfb08 from AGV-L2-001 with ProtocolProblem BUSINESS_ID_CONTENT_CONFLICT; the connection stays and nothing of it was kept: Operation result identity was replayed with different message or content.
+[17:32:18 WRN] Onboard connection ended with a protocol or transport error.
+ControlServer.Domain.StaleSessionGenerationException: Message does not belong to the current connection session.
+   at ControlServer.Host.Transport.OnboardMessageProcessor.RequireCurrentSession(JsonElement root, OnboardConnectionState state, String agvId) in F:\8005-scratch\p767-g3-r3\demand-bearing\stage\sources\control-server\src\ControlServer.Host\Transport\OnboardMessageProcessor.cs:line 1394
+   at ControlServer.Host.Transport.OnboardMessageProcessor.ProcessAsync(String line, OnboardConnectionState state, CancellationToken cancellationToken) in F:\8005-scratch\p767-g3-r3\demand-bearing\stage\sources\control-server\src\ControlServer.Host\Transport\OnboardMessageProcessor.cs:line 130
+   at ControlServer.Host.Transport.OnboardTcpServer.HandleClientAsync(TcpClient client, CancellationToken cancellationToken) in F:\8005-scratch\p767-g3-r3\demand-bearing\stage\sources\control-server\src\ControlServer.Host\Transport\OnboardTcpServer.cs:line 216
+   at ControlServer.Host.Transport.OnboardTcpServer.HandleClientAsync(TcpClient client, CancellationToken cancellationToken) in F:\8005-scratch\p767-g3-r3\demand-bearing\stage\sources\control-server\src\ControlServer.Host\Transport\OnboardTcpServer.cs:line 274
+   at ControlServer.Host.Transport.OnboardTcpServer.HandleClientAsync(TcpClient client, CancellationToken cancellationToken) in F:\8005-scratch\p767-g3-r3\demand-bearing\stage\sources\control-server\src\ControlServer.Host\Transport\OnboardTcpServer.cs:line 274
+   at ControlServer.Host.Transport.OnboardTcpServer.HandleClientAsync(TcpClient client, CancellationToken cancellationToken) in F:\8005-scratch\p767-g3-r3\demand-bearing\stage\sources\control-server\src\ControlServer.Host\Transport\OnboardTcpServer.cs:line 274
+   at ControlServer.Host.Transport.OnboardTcpServer.ServeAsync(TcpClient client, SemaphoreSlim slots, CancellationToken cancellationToken) in F:\8005-scratch\p767-g3-r3\demand-bearing\stage\sources\control-server\src\ControlS
