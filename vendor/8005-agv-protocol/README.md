@@ -37,8 +37,8 @@ manifest 里的 `schemaBundleSha256`**——后者由协议仓自己的打包算
 | 项 | 值 |
 | --- | --- |
 | 来源仓库 | `8005-agv-protocol` |
-| 来源提交 | `13eca82ac199bd97c1ad49d036c70cb5b012250f`（protocol#24 为 protocol#23 合入 `fp/v2-candidate` 的合并提交，树与候选 `ce68f3d5` 逐字节相同；无 tag） |
-| 取用日期 | 2026-10-17 |
+| 来源提交 | `18d4fb3495033624cab412a7ee784f675dfe4cc2`（protocol#25 为 control-server#767 合入 `fp/v2-candidate` 的合并提交，树与候选 `ede2060f` 逐字节相同；无 tag） |
+| 取用日期 | 2026-10-18 |
 
 | 来源路径 | 内容 |
 | --- | --- |
@@ -46,7 +46,12 @@ manifest 里的 `schemaBundleSha256`**——后者由协议仓自己的打包算
 | `manifest/release.json` | `status CONTENT_SNAPSHOT`、`releaseVersion 5.0.0`、`protocolVersion 6`、`profileId AGV_FULL_PRODUCT`、67 条消息、11 条 denylist |
 | `schemas/`（整棵树） | 73 个文件，`$id` 段 `agv-full-product/v6` |
 
-2026-10-17 由 `8005-agv-control-server#748` 刷新到 `13eca82a`（与车载端 `8005-agv-onboard-hmi#362` 同包）：protocol#23 是 5.0.0 候选的第二次修订，
+2026-10-18 由 `8005-agv-control-server#767` 刷新到 `18d4fb34`（protocol#25 的合并提交，内容提交 `ede2060f`；与车载端同包）：v5 出口前的第三次修订，只改协议仓的 `docs/wire-notes.md`
+（剩余计划的规则对所有计划成立，唯一例外是清桩途中保留已完成的充电桩腿；出发口径 (4) 允许服务端从严；补出处 CP-0015 / REQ-0196），wire-notes 不在副本里，
+所以三份里只有 `manifest/release.json` 变了（文件表里 wire-notes 一行与 `fileTableSha256`），manifest SHA-256 为 `dd973918…`；
+`index.json` 与 `schemas/` 逐字节相同，`vectorsSha256 291311b2…` 不变。manifest 用 `git show` 从该提交的对象导出。
+
+再早一份是 `13eca82a`。2026-10-17 由 `8005-agv-control-server#748` 刷新到 `13eca82a`（与车载端 `8005-agv-onboard-hmi#362` 同包）：protocol#23 是 5.0.0 候选的第二次修订，
 schema、消息与错误码不变，`schemas/` 树逐字节相同。`FP-IS-02` 加一条向量 `CV-CURRENT-STOP-DEPARTURE-STALE-REVISION-ACCEPTED`（机台取货停靠的出发请求，
 清单号过期但无实质差别时受理，服务端行为由 `8005-agv-control-server#742` 实现），旧向量 `CV-CURRENT-STOP-DEPARTURE-STALE-REVISION` 限定为有实质差别；
 `CV-MULTI-STOP-PLAN-NINE-LEGS` 的两个结果名改为 `UP_TO_NINE_REMAINING_LEGS_PLANNED`、`DISPLAY_REMAINING_JOURNEY_PLAN`。`index.json` 与

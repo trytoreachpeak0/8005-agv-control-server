@@ -7,11 +7,15 @@ namespace ControlServer.Domain;
 /// <remarks>
 /// <para>
 /// <b>This names the unreleased <c>5.0.0</c> candidate.</b> Every value below is read off
-/// <c>8005-agv-protocol</c> commit <c>13eca82ac199bd97c1ad49d036c70cb5b012250f</c>, the merge of protocol#24 (for protocol#23) into
-/// <c>fp/v2-candidate</c> on 2026-10-17, whose tree is the candidate <c>ce68f3d5</c>'s byte for byte; it is pinned
-/// rather than the pull request's head, as <c>protocol-v4.0.0</c> pinned its merge <c>3fb214e5</c>. That second
-/// revision of the candidate changed vectors and wording only, no schema, message or error code: a machine-pickup
-/// departure request whose worklist revision is stale but carries no material change is accepted
+/// <c>8005-agv-protocol</c> commit <c>18d4fb3495033624cab412a7ee784f675dfe4cc2</c>, the merge of protocol#25 (for <c>8005-agv-control-server#767</c>) into
+/// <c>fp/v2-candidate</c> on 2026-10-18, whose tree is the candidate <c>ede2060f</c>'s byte for byte; it is pinned
+/// rather than the pull request's head, as <c>protocol-v4.0.0</c> pinned its merge <c>3fb214e5</c>. That third
+/// revision corrected <c>docs/wire-notes.md</c> only, so of the vendored files only the manifest changed: the remaining
+/// plan rule holds for every plan except a clearance move (<c>CLEARING_MAINTENANCE</c>), which keeps the <c>COMPLETED</c> charger leg it left, and
+/// departure condition (4) allows a server to count every basket no longer loaded as having left -- which is what
+/// <c>JourneyRuntimeEngine.StagingDeparture</c> does. The second revision, <c>13eca82a</c> (protocol#24 for protocol#23),
+/// changed vectors and wording only, no schema, message or error code: a machine-pickup departure request whose
+/// worklist revision is stale but carries no material change is accepted
 /// (<c>CV-CURRENT-STOP-DEPARTURE-STALE-REVISION-ACCEPTED</c>, behaviour from <c>8005-agv-control-server#742</c>), and the
 /// journey plan is described as the remaining plan. The first revision, <c>4e9f3df8</c> (protocol#22 for protocol#21),
 /// appends <c>WIRE_TO_FULL_INSPECTION</c> to the closed
@@ -28,7 +32,7 @@ namespace ControlServer.Domain;
 /// <para>
 /// <b>Bound by <c>8005-agv-control-server#737</c>, to ship in one package with
 /// <c>8005-agv-onboard-hmi#360</c>; repinned to the second revision by <c>8005-agv-control-server#748</c> together with
-/// <c>8005-agv-onboard-hmi#362</c>.</b> Neither end may reach the integration branch alone: there is no
+/// <c>8005-agv-onboard-hmi#362</c>, and to the third by <c>8005-agv-control-server#767</c>, again with the onboard HMI in the same package.</b> Neither end may reach the integration branch alone: there is no
 /// negotiation, so a server on this identity and a vehicle on <c>protocol-v4.0.0</c> refuse each other.
 /// Evidence produced on this identity is <c>UNRELEASED_CANDIDATE</c> and does not count towards a release;
 /// evidence bound to <c>protocol-v4.0.0</c> stops being current when this candidate is bound.
@@ -62,8 +66,8 @@ public static class ProtocolCandidateIdentity
     public const string ProfileId = "AGV_FULL_PRODUCT";
     public const string ReleaseVersion = "5.0.0";
     public const string Tag = "protocol-v5.0.0";
-    public const string RepositoryCommit = "13eca82ac199bd97c1ad49d036c70cb5b012250f";
-    public const string ManifestSha256 = "128daae52758749d4d6f346231fdb336ca5d1079773bcab5430c20c53ce6b10b";
+    public const string RepositoryCommit = "18d4fb3495033624cab412a7ee784f675dfe4cc2";
+    public const string ManifestSha256 = "dd973918cc9c4fdf28ee2ad2ec4ad522bdcc6f2b6ecaa4a4fa1c57a29f29f5aa";
     public const string SchemaBundleSha256 = "d51abe44036f32b5b2c28fd1bea6ec7a89cf3b4dea0f0b1d6c9daaf52f350933";
     public const string VectorsSha256 = "291311b24bfcac75818ca9e4a888d436523e6ee14db661f6ba792ab8cc383e4a";
     public const string ApprovalStatus = "SUPERSEDING_CANDIDATE";

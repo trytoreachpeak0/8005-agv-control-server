@@ -16,7 +16,7 @@ namespace ControlServer.Domain;
 /// <para>
 /// **This list and the identity beside it name the same candidate.** The 62 values below are
 /// <c>$defs/ErrorCode</c> of <c>schemas/common/types.schema.json</c> at protocol candidate manifest
-/// <c>128daae52758749d4d6f346231fdb336ca5d1079773bcab5430c20c53ce6b10b</c>
+/// <c>dd973918cc9c4fdf28ee2ad2ec4ad522bdcc6f2b6ecaa4a4fa1c57a29f29f5aa</c>
 /// (<c>status: CONTENT_SNAPSHOT</c>, profile <c>AGV_FULL_PRODUCT</c>, release <c>5.0.0</c>,
 /// <c>protocolVersion: 6</c>), and <see cref="ProtocolCandidateIdentity"/>
 /// names that same commit. The <c>2.0.0</c> candidate appended four:
