@@ -35,3 +35,7 @@ journey runner 自首版（`4ae54d6ac`，2026-09-13）起就把「协议 tag 存
 ## 之后怎么办
 
 由调度定（见 cs#767）。建议：用户同意并打 `protocol-v5.0.0`（指向 `18d4fb34`）之后，在同一绑定上只重跑 journey 一轮拿 `JOURNEY_G3_PASS`，脚本不用改。
+
+## 后续（同日）
+
+调度定的顺序是先跑出口 CI 真装置（control-server run 39098604634，13/13 PASS），再问用户打 tag。用户 13:44 确认后发布了 `protocol-v5.0.0`（tag 对象 `7b108ccb`，指向 `18d4fb34`）。之后在同一绑定上只重跑 journey 一轮（15:29:08～16:03:03）：`JOURNEY_G3_PASS`，20/20 场景、156/156 断言，九个切片全部 PASS。证据在 `evidence/g3/20261018-protocol-v5.0.0-journey-63d83a0f`。
