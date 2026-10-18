@@ -37,7 +37,7 @@ manifest 里的 `schemaBundleSha256`**——后者由协议仓自己的打包算
 | 项 | 值 |
 | --- | --- |
 | 来源仓库 | `8005-agv-protocol` |
-| 来源提交 | `18d4fb3495033624cab412a7ee784f675dfe4cc2`（protocol#25 为 control-server#767 合入 `fp/v2-candidate` 的合并提交，树与候选 `ede2060f` 逐字节相同；无 tag） |
+| 来源提交 | `18d4fb3495033624cab412a7ee784f675dfe4cc2`（protocol#25 为 control-server#767 合入 `fp/v2-candidate` 的合并提交，树与候选 `ede2060f` 逐字节相同；tag `protocol-v5.0.0`） |
 | 取用日期 | 2026-10-18 |
 
 | 来源路径 | 内容 |
@@ -50,6 +50,7 @@ manifest 里的 `schemaBundleSha256`**——后者由协议仓自己的打包算
 （剩余计划的规则对所有计划成立，唯一例外是清桩途中保留已完成的充电桩腿；出发口径 (4) 允许服务端从严；补出处 CP-0015 / REQ-0196），wire-notes 不在副本里，
 所以三份里只有 `manifest/release.json` 变了（文件表里 wire-notes 一行与 `fileTableSha256`），manifest SHA-256 为 `dd973918…`；
 `index.json` 与 `schemas/` 逐字节相同，`vectorsSha256 291311b2…` 不变。manifest 用 `git show` 从该提交的对象导出。
+同日 2026-10-18 用注释 tag `protocol-v5.0.0`（tag 对象 `7b108ccb`，解引用到 `18d4fb34`）发布**同一个提交**——manifest 与候选逐字节相同，批准只以外置 attestation（Release asset `release-approval.json`，SHA-256 `31d4d732…`）给出；发布后服务端没有重新 vendor，只由 `8005-agv-control-server#767` 把批准状态翻成 `APPROVED_RELEASE`。它还是候选时在它上面跑出的 G2／L2 证据一律是 `UNRELEASED_CANDIDATE`。
 
 再早一份是 `13eca82a`。2026-10-17 由 `8005-agv-control-server#748` 刷新到 `13eca82a`（与车载端 `8005-agv-onboard-hmi#362` 同包）：protocol#23 是 5.0.0 候选的第二次修订，
 schema、消息与错误码不变，`schemas/` 树逐字节相同。`FP-IS-02` 加一条向量 `CV-CURRENT-STOP-DEPARTURE-STALE-REVISION-ACCEPTED`（机台取货停靠的出发请求，
