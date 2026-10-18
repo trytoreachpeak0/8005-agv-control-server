@@ -1,0 +1,54 @@
+{"at":"2026-10-18T09:45:13.0952559+00:00","note":"L2 run 20261018T094513069Z starting for scenario 'g3-manual-charging-return'."}
+{"at":"2026-10-18T09:45:13.1216097+00:00","note":"L2 port block lock acquired (slot 0, Global\\W2G-L2PortBlock)."}
+{"at":"2026-10-18T09:45:13.1233287+00:00","note":"Building ControlServer and the test doubles."}
+{"at":"2026-10-18T09:45:17.8000263+00:00","note":"Reusing cached onboard-hmi publish for a3fdb194be045c23a4661807f4d180833a419cf8."}
+{"at":"2026-10-18T09:45:17.8803943+00:00","note":"Reusing cached slots-simulator publish for fb5f7c593742bf98bc3957b8729a38aad5321f28."}
+{"at":"2026-10-18T09:45:17.8831813+00:00","note":"Peers: onboard-hmi@a3fdb194be045c23a4661807f4d180833a419cf8, slots-simulator@fb5f7c593742bf98bc3957b8729a38aad5321f28."}
+{"at":"2026-10-18T09:45:17.8971308+00:00","note":"Interactive desktop lock acquired."}
+{"at":"2026-10-18T09:45:18.8411319+00:00","criterion":"fake-riot-live","value":"live"}
+{"at":"2026-10-18T09:45:18.9936748+00:00","criterion":"fake-mes-live","value":"live"}
+{"at":"2026-10-18T09:45:20.2443202+00:00","criterion":"simulator-ready","value":"READY/True"}
+{"at":"2026-10-18T09:45:20.3330612+00:00","note":"Task type station preset: default (map 25, WIRE_TO_GATE -> 关卡/210)"}
+{"at":"2026-10-18T09:45:23.5721068+00:00","note":"Package capacity rules imported."}
+{"at":"2026-10-18T09:45:23.5746762+00:00","note":"No waiting point registration: a single-vehicle rig, or WaitingPoints = $false."}
+{"at":"2026-10-18T09:45:25.7204938+00:00","criterion":"control-server-live","value":"live"}
+{"at":"2026-10-18T09:45:25.8023712+00:00","note":"Protocol release identity: protocol-v5.0.0 (profileId AGV_FULL_PRODUCT, protocolVersion 6, APPROVED_RELEASE)."}
+{"at":"2026-10-18T09:45:27.9798530+00:00","note":"Onboard window: 8005 多仓位AGV车载端"}
+{"at":"2026-10-18T09:45:27.9922875+00:00","criterion":"onboard-modbus","value":"1"}
+{"at":"2026-10-18T09:45:28.0715740+00:00","criterion":"control-server-ready","value":"(null)"}
+{"at":"2026-10-18T09:45:28.6188123+00:00","criterion":"control-server-ready","value":"ready"}
+{"at":"2026-10-18T09:45:28.6711361+00:00","note":"FieldOps: seed-approved-facts --database C:\\Users\\szy\\AppData\\Local\\Temp\\l2-20261018T094513069Z\\controlserver.db"}
+{"at":"2026-10-18T09:45:29.9290681+00:00","criterion":"slot-model-preseed:seed-approved-facts","value":"OK","detail":{"output":{"command":"seed-approved-facts","outcome":"OK","modelKey":"8005-eight-slot","slotModelVersionId":"3878b7896f0a42a59b6d9f0ed366c8f1","version":1,"slotCount":8}}}
+{"at":"2026-10-18T09:45:29.9361128+00:00","note":"FieldOps: bind-io --database C:\\Users\\szy\\AppData\\Local\\Temp\\l2-20261018T094513069Z\\controlserver.db --agv AGV-L2-001"}
+{"at":"2026-10-18T09:45:31.1241825+00:00","criterion":"slot-model-preseed:bind-io:AGV-L2-001","value":"OK","detail":{"output":{"command":"bind-io","outcome":"OK","agvId":"AGV-L2-001","slotModelVersionId":"3878b7896f0a42a59b6d9f0ed366c8f1","boundSlots":8,"version":1}}}
+{"at":"2026-10-18T09:45:31.2520095+00:00","criterion":"slot-model-preseed:dispatch-zones","value":"0"}
+{"at":"2026-10-18T09:45:31.2543199+00:00","note":"FieldOps: import-area-assignments --database C:\\Users\\szy\\AppData\\Local\\Temp\\l2-20261018T094513069Z\\controlserver.db --input F:\\8005-scratch\\p767-g3-r3\\journey\\evidence\\scenarios\\g3-manual-charging-return\\snapshots\\preseed-area-assignments.csv"}
+{"at":"2026-10-18T09:45:32.5376710+00:00","criterion":"slot-model-preseed:import-area-assignments","value":"OK","detail":{"output":{"command":"import-area-assignments","outcome":"OK","dryRun":false,"input":"F:\\8005-scratch\\p767-g3-r3\\journey\\evidence\\scenarios\\g3-manual-charging-return\\snapshots\\preseed-area-assignments.csv","entryCount":3,"version":1,"contentSha256":"4291a509c2c0b75ea4bde0ac4dcde04b6e8632b54a21a67eee2772a6f8d0ff8e","snapshotId":"c3b68d9e1d744e808473d63924079d67","importedAt":"2026-10-18T17:45:31.442179+08:00","errorCount":0,"errors":[],"preview":[]}}}
+{"at":"2026-10-18T09:45:32.5496767+00:00","note":"FieldOps: import-charging-policy --database C:\\Users\\szy\\AppData\\Local\\Temp\\l2-20261018T094513069Z\\controlserver.db --input F:\\8005-scratch\\p767-g3-r3\\journey\\evidence\\scenarios\\g3-manual-charging-return\\snapshots\\preseed-charging-policy.json --fleet BROKERX-L2-0001"}
+{"at":"2026-10-18T09:45:33.7597426+00:00","note":"FieldOps: approve-charging-policy --database C:\\Users\\szy\\AppData\\Local\\Temp\\l2-20261018T094513069Z\\controlserver.db --version 1 --approved-by L2 orchestrator --role L2_PRESET --basis scripts/l2/L2ChargingPolicy.psm1 --source L2_PRESET"}
+{"at":"2026-10-18T09:45:34.8752298+00:00","note":"FieldOps: activate-charging-policy --database C:\\Users\\szy\\AppData\\Local\\Temp\\l2-20261018T094513069Z\\controlserver.db --version 1 --activated-by L2 orchestrator --fleet BROKERX-L2-0001 --allow-non-field-approval"}
+{"at":"2026-10-18T09:45:36.0521573+00:00","criterion":"preseed:charging-policy","value":"OK","detail":{"source":"L2_PRESET","withoutPolicy":[],"coveredAfter":["BROKERX-L2-0001"],"version":1}}
+{"at":"2026-10-18T09:45:36.0529590+00:00","note":"Per-zone dispatch parameters left unconfigured (the default precondition)."}
+{"at":"2026-10-18T09:45:36.0680093+00:00","note":"Environment is up; entering scenario 'g3-manual-charging-return'."}
+{"at":"2026-10-18T09:45:36.1987650+00:00","criterion":"session-readiness","value":"Ready"}
+{"at":"2026-10-18T09:45:36.2143700+00:00","note":"Slot 8 lock feedback forced open: the vehicle is not departure-safe, the session needs recovery."}
+{"at":"2026-10-18T09:45:36.5654344+00:00","criterion":"session-readiness","value":"RecoveryRequired"}
+{"at":"2026-10-18T09:45:36.6372050+00:00","criterion":"return-request-1-entry","value":"True"}
+{"at":"2026-10-18T09:45:36.6381701+00:00","note":"Administrator presses 充电后返回服务 and confirms."}
+{"at":"2026-10-18T09:45:37.7570397+00:00","note":"Pressing 充电后返回服务 (attempt 1)."}
+{"at":"2026-10-18T09:45:42.0184677+00:00","note":"Invoke on '充电后返回服务' button 6 failed (Exception calling \"Invoke\" with \"0\" argument(s): \"Operation is not valid due to the current state of the object.\"); posting BM_CLICK to hwnd 13045296."}
+{"at":"2026-10-18T09:45:42.7069479+00:00","criterion":"return-request-1","value":"@{MessageId=4227d8ad-460a-4665-9f64-d5e9837c30b4; At=10/18/2026 09:45:42 +00:00; Generation=1; Payload=; PayloadJson={\"requestId\":\"4227d8ad-460a-4665-9f64-d5e9837c30b4\",\"administrator\":{\"operatorId\":\"L2-OPERATOR\",\"verificationMethod\":\"SESSION\",\"verifiedAt\":\"2026-10-18T17:45:42.0333154+08:00\"},\"administratorRole\":\"MAINTENANCE_ADMINISTRATOR\",\"reason\":\"手动充电结束，申请恢复业务资格评估。\",\"observedBatteryPercent\":null}; ContentHash=5701c8968aece3d8520841fb89df2c7de0b3ef8b286c5decb3669f6e568de203; Response=ManualChargingReturnToServiceResult; ResponsePayload=; ResponseLine=}"}
+{"at":"2026-10-18T09:45:45.4836291+00:00","note":"Slot 8 lock feedback released: the vehicle is departure-safe again."}
+{"at":"2026-10-18T09:45:45.7578186+00:00","criterion":"session-readiness","value":"Ready"}
+{"at":"2026-10-18T09:45:45.8201067+00:00","criterion":"return-request-2-entry","value":"True"}
+{"at":"2026-10-18T09:45:45.8211584+00:00","note":"Administrator presses 充电后返回服务 and confirms."}
+{"at":"2026-10-18T09:45:46.9470863+00:00","note":"Pressing 充电后返回服务 (attempt 1)."}
+{"at":"2026-10-18T09:45:51.2107221+00:00","note":"Invoke on '充电后返回服务' button 6 failed (Exception calling \"Invoke\" with \"0\" argument(s): \"Hot key is already registered.\"); posting BM_CLICK to hwnd 22939602."}
+{"at":"2026-10-18T09:45:51.8451764+00:00","criterion":"return-request-2","value":"@{MessageId=396279fc-0b2f-44ce-a4cc-8e2a2dd483a5; At=10/18/2026 09:45:51 +00:00; Generation=1; Payload=; PayloadJson={\"requestId\":\"396279fc-0b2f-44ce-a4cc-8e2a2dd483a5\",\"administrator\":{\"operatorId\":\"L2-OPERATOR\",\"verificationMethod\":\"SESSION\",\"verifiedAt\":\"2026-10-18T17:45:51.2193139+08:00\"},\"administratorRole\":\"MAINTENANCE_ADMINISTRATOR\",\"reason\":\"手动充电结束，申请恢复业务资格评估。\",\"observedBatteryPercent\":null}; ContentHash=0d4c05b86334a8d5ea0106bc57ebd0dfa694eb43f5ed5a499ad6694192c19380; Response=ManualChargingReturnToServiceResult; ResponsePayload=; ResponseLine=}"}
+{"at":"2026-10-18T09:45:51.8654671+00:00","criterion":"runtime-iterations","value":"27"}
+{"at":"2026-10-18T09:45:52.3901562+00:00","criterion":"runtime-iterations","value":"28"}
+{"at":"2026-10-18T09:45:53.4588609+00:00","criterion":"runtime-iterations","value":"29"}
+{"at":"2026-10-18T09:45:54.4996596+00:00","criterion":"runtime-iterations","value":"30"}
+{"at":"2026-10-18T09:45:55.3023068+00:00","criterion":"runtime-iterations","value":"31"}
+{"at":"2026-10-18T09:45:55.4603032+00:00","note":"FP-IS-07: a return to service after manual charging was refused while the session needed recovery and accepted once it was ready."}
+{"at":"2026-10-18T09:45:55.8116819+00:00","note":"L2 port block lock released."}
