@@ -10,11 +10,35 @@ namespace ControlServer.Tests;
 /// 空闲返回在派车轮里（批次8-18，control-server#389）：只评估任务优先派车剩下的空闲车；承诺之后搬运不抢它。
 /// </summary>
 /// <remarks>
-/// 夹具的路网里站 300「等待点」就是车停着的地方（节点 1），这里把它登记成唯一的等待点：第一辆被评估的车拿到它，后面的车一个点都不剩。
+/// 唯一的等待点是站 301：夹具的路网再接一条边，从车停着的站 300（节点 1）开 5 米到节点 6。第一辆被评估的车拿到它，后面的车一个点都不剩。
+/// 不用 300 本身：车就停在那里，评估器会原地认领、不形成承诺（control-server#793）——这里测的是承诺。
 /// </remarks>
 public sealed partial class MultiVehicleExecutionTests
 {
-    private static readonly WaitingPointEntry FleetWaitingPoint = new(25, 300, "等待点", true, []);
+    private const int FleetWaitingPointStation = 301;
+
+    private static readonly WaitingPointEntry FleetWaitingPoint = new(25, FleetWaitingPointStation, "等待点2", true, []);
+
+    /// <summary>夹具的路网加上开往 <see cref="FleetWaitingPoint"/> 的那条边，再打开空闲返回。</summary>
+    private static async Task EnableIdleReturnAtFleetWaitingPointAsync(FleetFixture fixture)
+    {
+        await fixture.ReplaceRouteGraphAsync(
+            [
+                new(1, 1, 2, 10000, 0, 0, 10000, 0, 1, false),
+                new(2, 2, 3, 10000, 10000, 0, 20000, 0, 1, false),
+                new(3, 3, 4, 10000, 20000, 0, 30000, 0, 1, false),
+                new(4, 4, 5, 10000, 30000, 0, 40000, 0, 1, false),
+                new(5, 1, 6, 5000, 0, 0, 0, 5000, 1, false),
+            ],
+            [
+                new(300, "等待点", 1, 0, 0, 1, 0),
+                new(12, "N1-1", 1, 10000, 0, 2, 0),
+                new(13, "N1-2_N1-3", 2, 20000, 0, 3, 0),
+                new(210, "关卡", 3, 30000, 0, 4, 0),
+                new(FleetWaitingPointStation, "等待点2", 5, 0, 5000, 6, 0),
+            ]);
+        await fixture.EnableIdleReturnAsync(FleetWaitingPoint);
+    }
 
     /// <summary>
     /// 一轮里接了单的车不做空闲返回；剩下的空闲车按名册次序评估，第一辆拿到唯一的等待点，第三辆一个点都不剩。
@@ -23,7 +47,7 @@ public sealed partial class MultiVehicleExecutionTests
     public async Task OnlyTheIdleVehiclesTheTransportPassLeftOverAreCommittedToAnIdleReturn()
     {
         await using FleetFixture fixture = await FleetFixture.CreateAsync(withRouteGraph: true);
-        await fixture.EnableIdleReturnAsync(FleetWaitingPoint);
+        await EnableIdleReturnAtFleetWaitingPointAsync(fixture);
         fixture.Catalog.Set([FleetFixture.Demand(0, "N1-1", 0)]);
 
         await fixture.RunRoundAsync();
@@ -40,7 +64,7 @@ public sealed partial class MultiVehicleExecutionTests
         StationExclusivityRow station = Assert.Single(
             await fixture.Context.Set<StationExclusivityRow>().AsNoTracking().ToArrayAsync(TestContext.Current.CancellationToken));
         Assert.Equal(
-            (300, FleetFixture.VehicleKeys[1], claims[FleetFixture.VehicleKeys[1]].JourneyId, StationExclusivityStates.Reserved),
+            (FleetWaitingPointStation, FleetFixture.VehicleKeys[1], claims[FleetFixture.VehicleKeys[1]].JourneyId, StationExclusivityStates.Reserved),
             (station.StationId, station.VehicleKey, station.JourneyId, station.State));
         // 承诺不建单：这一轮 RIoT 上只有接单那辆车的取货单。
         Assert.All(fixture.Riot.Creates, create => Assert.Equal(FleetFixture.VehicleKeys[0], create.VehicleKey));
@@ -67,7 +91,7 @@ public sealed partial class MultiVehicleExecutionTests
             configure: options => options.Fleet = options.Fleet[..1], withRouteGraph: true,
             commands: new IdleReturnNeverMaterializes());
         await fixture.AllowEnRouteAppendAsync(1_000_000);
-        await fixture.EnableIdleReturnAsync(FleetWaitingPoint);
+        await EnableIdleReturnAtFleetWaitingPointAsync(fixture);
         // 第一轮没有需求（夹具默认给每辆车一条，这里清掉）：没有合法搬运用途，才轮到空闲返回。
         fixture.Catalog.Set([]);
         await fixture.RunRoundAsync();
@@ -99,7 +123,7 @@ public sealed partial class MultiVehicleExecutionTests
         Assert.Equal((committed.Purpose, committed.JourneyId, committed.ClaimedAt), (still.Purpose, still.JourneyId, still.ClaimedAt));
         StationExclusivityRow station = Assert.Single(
             await fixture.Context.Set<StationExclusivityRow>().AsNoTracking().ToArrayAsync(TestContext.Current.CancellationToken));
-        Assert.Equal((300, committed.JourneyId), (station.StationId, station.JourneyId));
+        Assert.Equal((FleetWaitingPointStation, committed.JourneyId), (station.StationId, station.JourneyId));
     }
 
     /// <summary>
@@ -115,7 +139,7 @@ public sealed partial class MultiVehicleExecutionTests
         await using FleetFixture fixture = await FleetFixture.CreateAsync(
             configure: options => options.Fleet = options.Fleet[..1], withRouteGraph: true);
         await fixture.AllowEnRouteAppendAsync(1_000_000);
-        await fixture.EnableIdleReturnAsync(FleetWaitingPoint);
+        await EnableIdleReturnAtFleetWaitingPointAsync(fixture);
         fixture.Catalog.Set([FleetFixture.Demand(0, "N1-1", 0)]);
 
         await fixture.RunRoundAsync();
@@ -145,7 +169,7 @@ public sealed partial class MultiVehicleExecutionTests
         await using FleetFixture fixture = await FleetFixture.CreateAsync(
             configure: options => options.Fleet = options.Fleet[..1], withRouteGraph: true,
             commands: new IdleReturnNeverMaterializes());
-        await fixture.EnableIdleReturnAsync(FleetWaitingPoint);
+        await EnableIdleReturnAtFleetWaitingPointAsync(fixture);
         fixture.Catalog.Set([]);
         await fixture.RunRoundAsync();
         Assert.Equal(
