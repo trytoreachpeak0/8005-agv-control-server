@@ -519,6 +519,9 @@ jobs:
               # lowest free slots of the side at that moment -- a demand appended behind one that the station deadline then
               # ended gets the slots that one left free, not the ones that were next at its acceptance.
               @{ Name = 'slot-assignment-after-scan'; Runs = 3; BatchId = 'wire-to-full-inspection' }
+              # control-server#783: the stop waits for a sublot, someone drives the vehicle off and it comes to rest at another
+              # station, the operator scans -- the entry is refused as STATION_MISMATCH and no slot command reaches the vehicle.
+              @{ Name = 'scan-while-vehicle-away-from-stop'; Runs = 1 }
           )
           # One run's usual length in seconds, for dealing scenarios out to lanes longest first. Measured, not
           # remembered: scripts/l2/Get-L2LaneEstimates.ps1 reads them out of past rounds' logs, and its -AsJson
