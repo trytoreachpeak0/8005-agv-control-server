@@ -657,8 +657,9 @@ public sealed class ForeignRunningOrderManualReleaseTests
             ControlServer.Host.Dashboard.ForeignRunningOrdersQueryEndpoint.Descriptions,
             .. ControlServer.Host.Dashboard.ForeignRunningOrdersQueryEndpoint.OwnAbandonedOrderDescriptions.Values,
         ];
-        // control-server#673 added the fifth: a demand leg's order taken as never created.
-        Assert.Equal(5, sets.Length);
+        // control-server#673 added the fifth: a demand leg's order taken as never created; control-server#771 the sixth, an order
+        // of a withdrawn journey.
+        Assert.Equal(6, sets.Length);
         Assert.All(sets, set =>
         {
             string text = set[ForeignRunningOrders.UnsettledReason];

@@ -119,6 +119,21 @@ internal sealed class ForeignRunningOrdersQueryEndpoint : IDashboardQueryEndpoin
         };
 
     /// <summary>
+    /// 人工撤下的旅程名下的单（依据 <c>OWN_JOURNEY_WITHDRAWN_BY_OPERATOR</c>，control-server#771）的说明，理由同上。
+    /// </summary>
+    internal static IReadOnlyDictionary<string, string> WithdrawnJourneyOrderDescriptions { get; } =
+        new Dictionary<string, string>(StringComparer.Ordinal)
+        {
+            [ForeignRunningOrders.OwnershipUnprovenReason] =
+                "这是本服务端自己给这辆车建的搬运单，它所属的旅程已由现场人员人工撤下（撤下前要求核过 RIoT 上本车没有未结束的单）。"
+                + "没有旅程在管这张单，服务端不取消它，这辆车不接新单、不接途中追加。请到 RIoT 按订单号把这张单结束，"
+                + "再到车前核对车停在哪里、货在不在；不用去找外部建单人。它终结后这一行自动消失",
+            [ForeignRunningOrders.UnsettledReason] =
+                "这是人工撤下的旅程名下的搬运单。它已不在 RIoT 的运行列表里，但按订单号回查读不到它已终结：服务端只认明确终结才放车，"
+                + "这辆车一直不接新单、不接途中追加。请到 RIoT 按订单号核对这张单的状态；在 RIoT 里把它结束后这一行自动消失。" + ManualReleaseHint,
+        };
+
+    /// <summary>
     /// 每一种「本服务端自己建了又放弃的单」的依据，对应它自己的那组说明（control-server#611 审查 M1）。依据不在这里的走通用的
     /// <see cref="Descriptions"/>。新加一种 <c>OWN_*_ABANDONED</c> 依据而忘了这里，<c>IdleReturnExecutionTests</c> 的守卫就红。
     /// </summary>
@@ -129,6 +144,7 @@ internal sealed class ForeignRunningOrdersQueryEndpoint : IDashboardQueryEndpoin
             [Runtime.IdleReturn.AbandonedIdleReturnOrders.OwnershipBasis] = AbandonedIdleReturnOrderDescriptions,
             [Runtime.Charging.AbandonedClearanceMoves.OwnershipBasis] = AbandonedClearanceMoveDescriptions,
             [Runtime.AbandonedDemandLegOrders.OwnershipBasis] = AbandonedDemandLegOrderDescriptions,
+            [Runtime.Withdrawal.WithdrawnJourneyOrders.OwnershipBasis] = WithdrawnJourneyOrderDescriptions,
         };
 
     /// <summary>一行外来订单的说明：自己放弃的单按它的依据取专门说明，其余取通用说明。</summary>

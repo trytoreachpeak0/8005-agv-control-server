@@ -136,6 +136,8 @@ internal static partial class Program
             ActivateChargingPolicyCommand => await ActivateChargingPolicyAsync(context, governance, options, now),
             ReadChargingPolicyCommand => await ReadChargingPolicyAsync(context, governance, options),
             ReleaseStationExclusivityCommand => await ReleaseStationExclusivityAsync(context, governance, databasePath, options, now),
+            PlanJourneyWithdrawalCommand => await PlanJourneyWithdrawalAsync(context, options),
+            WithdrawJourneyCommand => await WithdrawJourneyAsync(context, governance, databasePath, options, now),
             _ => Usage($"unknown command '{args[0]}'")
         };
     }
@@ -146,7 +148,7 @@ internal static partial class Program
     internal static bool OpensReadOnly(string command) =>
         command is CheckBindingSnapshotsCommand or ReadAreaAssignmentsCommand or ReadTaskTypeStationsCommand
             or ReadDispatchZoneParametersCommand or ReadWaitingPointsCommand or ReadChargerRosterCommand
-            or ReadChargingPolicyCommand;
+            or ReadChargingPolicyCommand or PlanJourneyWithdrawalCommand;
 
     private const string CheckBindingSnapshotsCommand = "check-binding-snapshots";
 
@@ -730,7 +732,7 @@ internal static partial class Program
             + "|release-task-type-station-hold|accept-map-name|close-task-type-station-activation|task-type-stations"
             + "|import-dispatch-zone-parameters|dispatch-zone-parameters|release-station-exclusivity"
             + "|import-waiting-points|read-waiting-points|import-charger-roster|charger-roster|import-charging-policy"
-            + "|approve-charging-policy|activate-charging-policy|charging-policy>"
+            + "|approve-charging-policy|activate-charging-policy|charging-policy|plan-journey-withdrawal|withdraw-journey>"
             + " --database <path> [options]");
         Console.Error.WriteLine("  verify      --record <field-record.json>");
         Console.Error.WriteLine("  release     --agv <agvId> --model <slotModelVersionId>");

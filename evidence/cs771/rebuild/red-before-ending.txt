@@ -1,0 +1,8 @@
+# tests + plan shape only, before ending rebuild records (merge of fp/v2-impl 163b54fe)
+  Failed ControlServer.Tests.JourneyWithdrawalTests.APendingRebuildOfAJourneyOnItsWayToThePickupIsEndedByTheWithdrawal [6 s]
+  Failed ControlServer.Tests.JourneyWithdrawalTests.ARebuildNotYetOrderedIsEndedByTheWithdrawal(state: "STOPPED", stoppedReason: "MANDATORY_CHARGE_REQUIRED") [1 s]
+  Failed ControlServer.Tests.JourneyWithdrawalTests.ARebuildNotYetOrderedIsEndedByTheWithdrawal(state: "STOPPED", stoppedReason: "VEHICLE_NO_LONGER_ELIGIBLE") [968 ms]
+  Failed ControlServer.Tests.JourneyWithdrawalTests.ARebuildNotYetOrderedIsEndedByTheWithdrawal(state: "PENDING", stoppedReason: null) [515 ms]
+Failed!  - Failed:     4, Passed:     4, Skipped:     0, Total:     8, Duration: 11 s - ControlServer.Tests.dll (net8.0)
+  Error Message:
+   REBUILD_RECORD_OPEN

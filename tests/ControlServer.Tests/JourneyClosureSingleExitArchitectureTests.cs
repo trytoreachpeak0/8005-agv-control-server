@@ -112,6 +112,8 @@ public sealed class JourneyClosureSingleExitArchitectureTests
         "src/ControlServer.Host/Transport/OnboardRecoveryCoordinator.cs",
         // A person giving a stopped trip up (control-server#345).
         "src/ControlServer.Host/Runtime/Faults/VehicleFaultRecoveryService.StoppedRebuild.cs",
+        // A person withdrawing a stuck journey (control-server#771).
+        "src/ControlServer.Host/Runtime/Withdrawal/JourneyWithdrawal.cs",
     };
 
     /// <summary>构造了收尾尾巴、却从不让旅程收尾的文件。今天没有。</summary>

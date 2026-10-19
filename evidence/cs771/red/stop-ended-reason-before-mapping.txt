@@ -1,0 +1,30 @@
+Test run for F:\8005-wt\cs771-8005-agv-control-server\tests\ControlServer.Tests\bin\Release\net8.0\win-x64\ControlServer.Tests.dll (.NETCoreApp,Version=v8.0)
+VSTest version 17.11.1 (x64)
+
+Starting test execution, please wait...
+A total of 1 test files matched the specified pattern.
+[xUnit.net 00:00:09.59]     ControlServer.Tests.StopEndedReasonsTests.EachWayAStopCanEndNamesItsOwnReason(reasonCode: "WITHDRAWN_BY_OPERATOR", expected: "DEMAND_RELEASED") [FAIL]
+  Failed ControlServer.Tests.StopEndedReasonsTests.EachWayAStopCanEndNamesItsOwnReason(reasonCode: "WITHDRAWN_BY_OPERATOR", expected: "DEMAND_RELEASED") [2 ms]
+  Error Message:
+   System.ArgumentOutOfRangeException : No stop-ended reason is defined for this reason code; add it here together with the protocol value it means. (Parameter 'reasonCode')
+Actual value was WITHDRAWN_BY_OPERATOR.
+  Stack Trace:
+     at ControlServer.Host.Runtime.StopEndedReasons.ForEnding(String reasonCode) in F:\8005-wt\cs771-8005-agv-control-server\src\ControlServer.Host\Runtime\StopEndedReasons.cs:line 65
+   at ControlServer.Tests.StopEndedReasonsTests.EachWayAStopCanEndNamesItsOwnReason(String reasonCode, String expected) in F:\8005-wt\cs771-8005-agv-control-server\tests\ControlServer.Tests\StopEndedReasonsTests.cs:line 52
+   at InvokeStub_StopEndedReasonsTests.EachWayAStopCanEndNamesItsOwnReason(Object, Span`1)
+   at System.Reflection.MethodBaseInvoker.InvokeWithFewArgs(Object obj, BindingFlags invokeAttr, Binder binder, Object[] parameters, CultureInfo culture)
+[xUnit.net 00:00:09.61]     ControlServer.Tests.StopEndedReasonsTests.NoEndingIsReportedAsNullAndTheValuesAreExactlyTheSchemaEnumeration [FAIL]
+  Failed ControlServer.Tests.StopEndedReasonsTests.NoEndingIsReportedAsNullAndTheValuesAreExactlyTheSchemaEnumeration [14 ms]
+  Error Message:
+   System.ArgumentOutOfRangeException : No stop-ended reason is defined for this reason code; add it here together with the protocol value it means. (Parameter 'reasonCode')
+Actual value was WITHDRAWN_BY_OPERATOR.
+  Stack Trace:
+     at ControlServer.Host.Runtime.StopEndedReasons.ForEnding(String reasonCode) in F:\8005-wt\cs771-8005-agv-control-server\src\ControlServer.Host\Runtime\StopEndedReasons.cs:line 65
+   at ControlServer.Tests.StopEndedReasonsTests.<>c.<NoEndingIsReportedAsNullAndTheValuesAreExactlyTheSchemaEnumeration>b__2_2(String code) in F:\8005-wt\cs771-8005-agv-control-server\tests\ControlServer.Tests\StopEndedReasonsTests.cs:line 64
+   at System.Linq.Enumerable.SelectArrayIterator`2.MoveNext()
+   at System.Collections.Generic.List`1.AddRange(IEnumerable`1 collection)
+   at ControlServer.Tests.StopEndedReasonsTests.NoEndingIsReportedAsNullAndTheValuesAreExactlyTheSchemaEnumeration() in F:\8005-wt\cs771-8005-agv-control-server\tests\ControlServer.Tests\StopEndedReasonsTests.cs:line 64
+   at System.RuntimeMethodHandle.InvokeMethod(Object target, Void** arguments, Signature sig, Boolean isConstructor)
+   at System.Reflection.MethodBaseInvoker.InvokeWithNoArgs(Object obj, BindingFlags invokeAttr)
+
+Failed!  - Failed:     2, Passed:    12, Skipped:     0, Total:    14, Duration: 114 ms - ControlServer.Tests.dll (net8.0)

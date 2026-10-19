@@ -1,0 +1,307 @@
+Test run for F:\8005-wt\cs771-8005-agv-control-server\tests\ControlServer.Tests\bin\Release\net8.0\win-x64\ControlServer.Tests.dll (.NETCoreApp,Version=v8.0)
+VSTest version 17.11.1 (x64)
+
+Starting test execution, please wait...
+A total of 1 test files matched the specified pattern.
+[xUnit.net 00:00:17.37]     ControlServer.Tests.JourneyWithdrawalTests.AVehicleReportOfCargoInTheSlotRefusesTheWithdrawalWhateverTheSiteSays [FAIL]
+  Failed ControlServer.Tests.JourneyWithdrawalTests.AVehicleReportOfCargoInTheSlotRefusesTheWithdrawalWhateverTheSiteSays [7 s]
+  Error Message:
+   System.NotImplementedException : The method or operation is not implemented.
+  Stack Trace:
+     at ControlServer.Host.Runtime.Withdrawal.JourneyWithdrawal.PlanAsync(ControlServerDbContext dbContext, JourneyWithdrawalRequest request, CancellationToken cancellationToken) in F:\8005-wt\cs771-8005-agv-control-server\src\ControlServer.Host\Runtime\Withdrawal\JourneyWithdrawal.cs:line 141
+   at ControlServer.Tests.JourneyWithdrawalTests.AssertRefusedEverywhereAsync(RuntimeFixture fixture, JourneyWithdrawalRequest request, String code) in F:\8005-wt\cs771-8005-agv-control-server\tests\ControlServer.Tests\JourneyWithdrawalTests.cs:line 544
+   at ControlServer.Tests.JourneyWithdrawalTests.AVehicleReportOfCargoInTheSlotRefusesTheWithdrawalWhateverTheSiteSays() in F:\8005-wt\cs771-8005-agv-control-server\tests\ControlServer.Tests\JourneyWithdrawalTests.cs:line 257
+   at ControlServer.Tests.JourneyWithdrawalTests.AVehicleReportOfCargoInTheSlotRefusesTheWithdrawalWhateverTheSiteSays() in F:\8005-wt\cs771-8005-agv-control-server\tests\ControlServer.Tests\JourneyWithdrawalTests.cs:line 257
+--- End of stack trace from previous location ---
+[xUnit.net 00:00:17.69]     ControlServer.Tests.JourneyWithdrawalFieldOpsTests.ThePlanVerbIsReadOnlyAndGivesTheConfirmationCode [FAIL]
+[xUnit.net 00:00:18.17]     ControlServer.Tests.JourneyWithdrawalTests.SlotFactsThatDoNotCoverTheTargetSlotsAreRefused(facts: "99=EMPTY_LOCKED") [FAIL]
+[xUnit.net 00:00:18.25]     ControlServer.Tests.JourneyWithdrawalDispatchGateTests.AfterTheWithdrawalTheGateClosesAndOpensAgain [FAIL]
+[xUnit.net 00:00:18.66]     ControlServer.Tests.JourneyWithdrawalFieldOpsTests.AWithdrawalWithoutAServerProbeIsAUsageError [FAIL]
+[xUnit.net 00:00:18.89]     ControlServer.Tests.JourneyWithdrawalTests.SlotFactsThatDoNotCoverTheTargetSlotsAreRefused(facts: "5=EMPTY") [FAIL]
+  Failed ControlServer.Tests.JourneyWithdrawalFieldOpsTests.ThePlanVerbIsReadOnlyAndGivesTheConfirmationCode [7 s]
+  Error Message:
+   System.InvalidOperationException : Operation is not valid due to the current state of the object.
+  Stack Trace:
+     at System.Text.Json.JsonElement.GetProperty(String propertyName)
+   at ControlServer.Tests.JourneyWithdrawalFieldOpsTests.ThePlanVerbIsReadOnlyAndGivesTheConfirmationCode() in F:\8005-wt\cs771-8005-agv-control-server\tests\ControlServer.Tests\JourneyWithdrawalFieldOpsTests.cs:line 53
+--- End of stack trace from previous location ---
+  Failed ControlServer.Tests.JourneyWithdrawalTests.SlotFactsThatDoNotCoverTheTargetSlotsAreRefused(facts: "99=EMPTY_LOCKED") [796 ms]
+  Error Message:
+   System.NotImplementedException : The method or operation is not implemented.
+  Stack Trace:
+     at ControlServer.Host.Runtime.Withdrawal.JourneyWithdrawal.PlanAsync(ControlServerDbContext dbContext, JourneyWithdrawalRequest request, CancellationToken cancellationToken) in F:\8005-wt\cs771-8005-agv-control-server\src\ControlServer.Host\Runtime\Withdrawal\JourneyWithdrawal.cs:line 141
+   at ControlServer.Tests.JourneyWithdrawalTests.SlotFactsThatDoNotCoverTheTargetSlotsAreRefused(String facts) in F:\8005-wt\cs771-8005-agv-control-server\tests\ControlServer.Tests\JourneyWithdrawalTests.cs:line 319
+   at ControlServer.Tests.JourneyWithdrawalTests.SlotFactsThatDoNotCoverTheTargetSlotsAreRefused(String facts) in F:\8005-wt\cs771-8005-agv-control-server\tests\ControlServer.Tests\JourneyWithdrawalTests.cs:line 322
+--- End of stack trace from previous location ---
+  Failed ControlServer.Tests.JourneyWithdrawalDispatchGateTests.AfterTheWithdrawalTheGateClosesAndOpensAgain [8 s]
+  Error Message:
+   System.NotImplementedException : The method or operation is not implemented.
+  Stack Trace:
+     at ControlServer.Host.Runtime.Withdrawal.JourneyWithdrawal.PlanAsync(ControlServerDbContext dbContext, JourneyWithdrawalRequest request, CancellationToken cancellationToken) in F:\8005-wt\cs771-8005-agv-control-server\src\ControlServer.Host\Runtime\Withdrawal\JourneyWithdrawal.cs:line 141
+   at ControlServer.Tests.JourneyWithdrawalTests.PlanAndWithdrawAsync(RuntimeFixture fixture, JourneyWithdrawalRequest request) in F:\8005-wt\cs771-8005-agv-control-server\tests\ControlServer.Tests\JourneyWithdrawalTests.cs:line 530
+   at ControlServer.Tests.JourneyWithdrawalDispatchGateTests.AfterTheWithdrawalTheGateClosesAndOpensAgain() in F:\8005-wt\cs771-8005-agv-control-server\tests\ControlServer.Tests\JourneyWithdrawalDispatchGateTests.cs:line 44
+   at ControlServer.Tests.JourneyWithdrawalDispatchGateTests.AfterTheWithdrawalTheGateClosesAndOpensAgain() in F:\8005-wt\cs771-8005-agv-control-server\tests\ControlServer.Tests\JourneyWithdrawalDispatchGateTests.cs:line 52
+--- End of stack trace from previous location ---
+  Failed ControlServer.Tests.JourneyWithdrawalFieldOpsTests.AWithdrawalWithoutAServerProbeIsAUsageError [955 ms]
+  Error Message:
+   Assert.DoesNotContain() Failure: Sub-string found
+                                 ↓ (pos 24)
+String: "ControlServer.FieldOps: unknown command 'withdraw-"···
+Found:  "unknown command"
+  Stack Trace:
+     at ControlServer.Tests.JourneyWithdrawalFieldOpsTests.AWithdrawalWithoutAServerProbeIsAUsageError() in F:\8005-wt\cs771-8005-agv-control-server\tests\ControlServer.Tests\JourneyWithdrawalFieldOpsTests.cs:line 108
+--- End of stack trace from previous location ---
+  Failed ControlServer.Tests.JourneyWithdrawalTests.SlotFactsThatDoNotCoverTheTargetSlotsAreRefused(facts: "5=EMPTY") [714 ms]
+  Error Message:
+   System.NotImplementedException : The method or operation is not implemented.
+  Stack Trace:
+     at ControlServer.Host.Runtime.Withdrawal.JourneyWithdrawal.PlanAsync(ControlServerDbContext dbContext, JourneyWithdrawalRequest request, CancellationToken cancellationToken) in F:\8005-wt\cs771-8005-agv-control-server\src\ControlServer.Host\Runtime\Withdrawal\JourneyWithdrawal.cs:line 141
+   at ControlServer.Tests.JourneyWithdrawalTests.SlotFactsThatDoNotCoverTheTargetSlotsAreRefused(String facts) in F:\8005-wt\cs771-8005-agv-control-server\tests\ControlServer.Tests\JourneyWithdrawalTests.cs:line 319
+   at ControlServer.Tests.JourneyWithdrawalTests.SlotFactsThatDoNotCoverTheTargetSlotsAreRefused(String facts) in F:\8005-wt\cs771-8005-agv-control-server\tests\ControlServer.Tests\JourneyWithdrawalTests.cs:line 322
+--- End of stack trace from previous location ---
+[xUnit.net 00:00:19.81]     ControlServer.Tests.JourneyWithdrawalTests.SlotFactsThatDoNotCoverTheTargetSlotsAreRefused(facts: "EMPTY_LOCKED") [FAIL]
+[xUnit.net 00:00:19.90]     ControlServer.Tests.JourneyWithdrawalFieldOpsTests.WithTheDatabaseLockHeldADirectWithdrawalIsRefused [FAIL]
+  Failed ControlServer.Tests.JourneyWithdrawalTests.SlotFactsThatDoNotCoverTheTargetSlotsAreRefused(facts: "EMPTY_LOCKED") [911 ms]
+  Error Message:
+   System.NotImplementedException : The method or operation is not implemented.
+  Stack Trace:
+     at ControlServer.Host.Runtime.Withdrawal.JourneyWithdrawal.PlanAsync(ControlServerDbContext dbContext, JourneyWithdrawalRequest request, CancellationToken cancellationToken) in F:\8005-wt\cs771-8005-agv-control-server\src\ControlServer.Host\Runtime\Withdrawal\JourneyWithdrawal.cs:line 141
+   at ControlServer.Tests.JourneyWithdrawalTests.SlotFactsThatDoNotCoverTheTargetSlotsAreRefused(String facts) in F:\8005-wt\cs771-8005-agv-control-server\tests\ControlServer.Tests\JourneyWithdrawalTests.cs:line 319
+   at ControlServer.Tests.JourneyWithdrawalTests.SlotFactsThatDoNotCoverTheTargetSlotsAreRefused(String facts) in F:\8005-wt\cs771-8005-agv-control-server\tests\ControlServer.Tests\JourneyWithdrawalTests.cs:line 322
+--- End of stack trace from previous location ---
+  Failed ControlServer.Tests.JourneyWithdrawalFieldOpsTests.WithTheDatabaseLockHeldADirectWithdrawalIsRefused [1 s]
+  Error Message:
+   System.InvalidOperationException : Operation is not valid due to the current state of the object.
+  Stack Trace:
+     at System.Text.Json.JsonElement.GetProperty(String propertyName)
+   at ControlServer.Tests.JourneyWithdrawalFieldOpsTests.WithTheDatabaseLockHeldADirectWithdrawalIsRefused() in F:\8005-wt\cs771-8005-agv-control-server\tests\ControlServer.Tests\JourneyWithdrawalFieldOpsTests.cs:line 138
+--- End of stack trace from previous location ---
+[xUnit.net 00:00:20.83]     ControlServer.Tests.JourneyWithdrawalTests.AVehicleReportOfAnUnknownSlotStateRefusesTheWithdrawal [FAIL]
+[xUnit.net 00:00:21.26]     ControlServer.Tests.JourneyWithdrawalFieldOpsTests.AWithdrawalWithoutTheConfirmationCodeIsARefusal [FAIL]
+  Failed ControlServer.Tests.JourneyWithdrawalTests.AVehicleReportOfAnUnknownSlotStateRefusesTheWithdrawal [1 s]
+  Error Message:
+   System.NotImplementedException : The method or operation is not implemented.
+  Stack Trace:
+     at ControlServer.Host.Runtime.Withdrawal.JourneyWithdrawal.PlanAsync(ControlServerDbContext dbContext, JourneyWithdrawalRequest request, CancellationToken cancellationToken) in F:\8005-wt\cs771-8005-agv-control-server\src\ControlServer.Host\Runtime\Withdrawal\JourneyWithdrawal.cs:line 141
+   at ControlServer.Tests.JourneyWithdrawalTests.AssertRefusedEverywhereAsync(RuntimeFixture fixture, JourneyWithdrawalRequest request, String code) in F:\8005-wt\cs771-8005-agv-control-server\tests\ControlServer.Tests\JourneyWithdrawalTests.cs:line 544
+   at ControlServer.Tests.JourneyWithdrawalTests.AVehicleReportOfAnUnknownSlotStateRefusesTheWithdrawal() in F:\8005-wt\cs771-8005-agv-control-server\tests\ControlServer.Tests\JourneyWithdrawalTests.cs:line 266
+   at ControlServer.Tests.JourneyWithdrawalTests.AVehicleReportOfAnUnknownSlotStateRefusesTheWithdrawal() in F:\8005-wt\cs771-8005-agv-control-server\tests\ControlServer.Tests\JourneyWithdrawalTests.cs:line 266
+--- End of stack trace from previous location ---
+  Failed ControlServer.Tests.JourneyWithdrawalFieldOpsTests.AWithdrawalWithoutTheConfirmationCodeIsARefusal [1 s]
+  Error Message:
+   System.InvalidOperationException : Operation is not valid due to the current state of the object.
+  Stack Trace:
+     at System.Text.Json.JsonElement.GetProperty(String propertyName)
+   at ControlServer.Tests.JourneyWithdrawalFieldOpsTests.AWithdrawalWithoutTheConfirmationCodeIsARefusal() in F:\8005-wt\cs771-8005-agv-control-server\tests\ControlServer.Tests\JourneyWithdrawalFieldOpsTests.cs:line 88
+--- End of stack trace from previous location ---
+[xUnit.net 00:00:22.13]     ControlServer.Tests.JourneyWithdrawalTests.ALoadedDemandOnTheJourneyRefusesTheWithdrawal [FAIL]
+[xUnit.net 00:00:22.74]     ControlServer.Tests.JourneyWithdrawalFieldOpsTests.WithTheServerStoppedTheWithdrawVerbWithdrawsAgainstTheDatabase [FAIL]
+[xUnit.net 00:00:23.18]     ControlServer.Tests.JourneyWithdrawalTests.AJourneyBlockedOnAnUnknownLoadIsWithdrawnAndBothDemandsGoBackToTheBacklogUnsuppressed [FAIL]
+  Failed ControlServer.Tests.JourneyWithdrawalTests.ALoadedDemandOnTheJourneyRefusesTheWithdrawal [1 s]
+  Error Message:
+   System.NotImplementedException : The method or operation is not implemented.
+  Stack Trace:
+     at ControlServer.Host.Runtime.Withdrawal.JourneyWithdrawal.PlanAsync(ControlServerDbContext dbContext, JourneyWithdrawalRequest request, CancellationToken cancellationToken) in F:\8005-wt\cs771-8005-agv-control-server\src\ControlServer.Host\Runtime\Withdrawal\JourneyWithdrawal.cs:line 141
+   at ControlServer.Tests.JourneyWithdrawalTests.AssertRefusedEverywhereAsync(RuntimeFixture fixture, JourneyWithdrawalRequest request, String code) in F:\8005-wt\cs771-8005-agv-control-server\tests\ControlServer.Tests\JourneyWithdrawalTests.cs:line 544
+   at ControlServer.Tests.JourneyWithdrawalTests.ALoadedDemandOnTheJourneyRefusesTheWithdrawal() in F:\8005-wt\cs771-8005-agv-control-server\tests\ControlServer.Tests\JourneyWithdrawalTests.cs:line 286
+   at ControlServer.Tests.JourneyWithdrawalTests.ALoadedDemandOnTheJourneyRefusesTheWithdrawal() in F:\8005-wt\cs771-8005-agv-control-server\tests\ControlServer.Tests\JourneyWithdrawalTests.cs:line 288
+--- End of stack trace from previous location ---
+  Failed ControlServer.Tests.JourneyWithdrawalFieldOpsTests.WithTheServerStoppedTheWithdrawVerbWithdrawsAgainstTheDatabase [1 s]
+  Error Message:
+   System.InvalidOperationException : Operation is not valid due to the current state of the object.
+  Stack Trace:
+     at System.Text.Json.JsonElement.GetProperty(String propertyName)
+   at ControlServer.Tests.JourneyWithdrawalFieldOpsTests.WithTheServerStoppedTheWithdrawVerbWithdrawsAgainstTheDatabase() in F:\8005-wt\cs771-8005-agv-control-server\tests\ControlServer.Tests\JourneyWithdrawalFieldOpsTests.cs:line 64
+--- End of stack trace from previous location ---
+  Failed ControlServer.Tests.JourneyWithdrawalTests.AJourneyBlockedOnAnUnknownLoadIsWithdrawnAndBothDemandsGoBackToTheBacklogUnsuppressed [1 s]
+  Error Message:
+   System.NotImplementedException : The method or operation is not implemented.
+  Stack Trace:
+     at ControlServer.Host.Runtime.Withdrawal.JourneyWithdrawal.PlanAsync(ControlServerDbContext dbContext, JourneyWithdrawalRequest request, CancellationToken cancellationToken) in F:\8005-wt\cs771-8005-agv-control-server\src\ControlServer.Host\Runtime\Withdrawal\JourneyWithdrawal.cs:line 141
+   at ControlServer.Tests.JourneyWithdrawalTests.AJourneyBlockedOnAnUnknownLoadIsWithdrawnAndBothDemandsGoBackToTheBacklogUnsuppressed() in F:\8005-wt\cs771-8005-agv-control-server\tests\ControlServer.Tests\JourneyWithdrawalTests.cs:line 50
+   at ControlServer.Tests.JourneyWithdrawalTests.AJourneyBlockedOnAnUnknownLoadIsWithdrawnAndBothDemandsGoBackToTheBacklogUnsuppressed() in F:\8005-wt\cs771-8005-agv-control-server\tests\ControlServer.Tests\JourneyWithdrawalTests.cs:line 74
+--- End of stack trace from previous location ---
+[xUnit.net 00:00:24.43]     ControlServer.Tests.JourneyWithdrawalTests.AFaultInEffectRefusesTheWithdrawal [FAIL]
+[xUnit.net 00:00:24.85]     ControlServer.Tests.JourneyWithdrawalFieldOpsTests.WithTheServerRunningADirectWithdrawalIsRefused [FAIL]
+  Failed ControlServer.Tests.JourneyWithdrawalTests.AFaultInEffectRefusesTheWithdrawal [1 s]
+  Error Message:
+   System.NotImplementedException : The method or operation is not implemented.
+  Stack Trace:
+     at ControlServer.Host.Runtime.Withdrawal.JourneyWithdrawal.PlanAsync(ControlServerDbContext dbContext, JourneyWithdrawalRequest request, CancellationToken cancellationToken) in F:\8005-wt\cs771-8005-agv-control-server\src\ControlServer.Host\Runtime\Withdrawal\JourneyWithdrawal.cs:line 141
+   at ControlServer.Tests.JourneyWithdrawalTests.AssertRefusedEverywhereAsync(RuntimeFixture fixture, JourneyWithdrawalRequest request, String code) in F:\8005-wt\cs771-8005-agv-control-server\tests\ControlServer.Tests\JourneyWithdrawalTests.cs:line 544
+   at ControlServer.Tests.JourneyWithdrawalTests.AFaultInEffectRefusesTheWithdrawal() in F:\8005-wt\cs771-8005-agv-control-server\tests\ControlServer.Tests\JourneyWithdrawalTests.cs:line 444
+   at ControlServer.Tests.JourneyWithdrawalTests.AFaultInEffectRefusesTheWithdrawal() in F:\8005-wt\cs771-8005-agv-control-server\tests\ControlServer.Tests\JourneyWithdrawalTests.cs:line 444
+--- End of stack trace from previous location ---
+  Failed ControlServer.Tests.JourneyWithdrawalFieldOpsTests.WithTheServerRunningADirectWithdrawalIsRefused [2 s]
+  Error Message:
+   System.InvalidOperationException : Operation is not valid due to the current state of the object.
+  Stack Trace:
+     at System.Text.Json.JsonElement.GetProperty(String propertyName)
+   at ControlServer.Tests.JourneyWithdrawalFieldOpsTests.WithTheServerRunningADirectWithdrawalIsRefused() in F:\8005-wt\cs771-8005-agv-control-server\tests\ControlServer.Tests\JourneyWithdrawalFieldOpsTests.cs:line 124
+   at ControlServer.Tests.JourneyWithdrawalFieldOpsTests.WithTheServerRunningADirectWithdrawalIsRefused() in F:\8005-wt\cs771-8005-agv-control-server\tests\ControlServer.Tests\JourneyWithdrawalFieldOpsTests.cs:line 125
+--- End of stack trace from previous location ---
+[xUnit.net 00:00:25.38]     ControlServer.Tests.JourneyWithdrawalTests.EveryMissingFieldIsNamed [FAIL]
+  Failed ControlServer.Tests.JourneyWithdrawalTests.EveryMissingFieldIsNamed [950 ms]
+  Error Message:
+   System.NotImplementedException : The method or operation is not implemented.
+  Stack Trace:
+     at ControlServer.Host.Runtime.Withdrawal.JourneyWithdrawal.PlanAsync(ControlServerDbContext dbContext, JourneyWithdrawalRequest request, CancellationToken cancellationToken) in F:\8005-wt\cs771-8005-agv-control-server\src\ControlServer.Host\Runtime\Withdrawal\JourneyWithdrawal.cs:line 141
+   at ControlServer.Tests.JourneyWithdrawalTests.EveryMissingFieldIsNamed() in F:\8005-wt\cs771-8005-agv-control-server\tests\ControlServer.Tests\JourneyWithdrawalTests.cs:line 355
+   at ControlServer.Tests.JourneyWithdrawalTests.EveryMissingFieldIsNamed() in F:\8005-wt\cs771-8005-agv-control-server\tests\ControlServer.Tests\JourneyWithdrawalTests.cs:line 357
+--- End of stack trace from previous location ---
+[xUnit.net 00:00:26.51]     ControlServer.Tests.JourneyWithdrawalTests.AnUnresolvedLoadNeedsTheSlotFactsAndWhereTheBasketIs [FAIL]
+[xUnit.net 00:00:27.98]     ControlServer.Tests.JourneyWithdrawalTests.ThePlanNamesEveryDemandAndTheUnresolvedLoadAndItsCodeIsStable [FAIL]
+  Failed ControlServer.Tests.JourneyWithdrawalTests.AnUnresolvedLoadNeedsTheSlotFactsAndWhereTheBasketIs [1 s]
+  Error Message:
+   System.NotImplementedException : The method or operation is not implemented.
+  Stack Trace:
+     at ControlServer.Host.Runtime.Withdrawal.JourneyWithdrawal.PlanAsync(ControlServerDbContext dbContext, JourneyWithdrawalRequest request, CancellationToken cancellationToken) in F:\8005-wt\cs771-8005-agv-control-server\src\ControlServer.Host\Runtime\Withdrawal\JourneyWithdrawal.cs:line 141
+   at ControlServer.Tests.JourneyWithdrawalTests.AnUnresolvedLoadNeedsTheSlotFactsAndWhereTheBasketIs() in F:\8005-wt\cs771-8005-agv-control-server\tests\ControlServer.Tests\JourneyWithdrawalTests.cs:line 301
+   at ControlServer.Tests.JourneyWithdrawalTests.AnUnresolvedLoadNeedsTheSlotFactsAndWhereTheBasketIs() in F:\8005-wt\cs771-8005-agv-control-server\tests\ControlServer.Tests\JourneyWithdrawalTests.cs:line 305
+--- End of stack trace from previous location ---
+[xUnit.net 00:00:29.02]     ControlServer.Tests.JourneyWithdrawalTests.AConfirmationCodeFromBeforeTheStateChangedIsRefused [FAIL]
+  Failed ControlServer.Tests.JourneyWithdrawalTests.ThePlanNamesEveryDemandAndTheUnresolvedLoadAndItsCodeIsStable [1 s]
+  Error Message:
+   System.NotImplementedException : The method or operation is not implemented.
+  Stack Trace:
+     at ControlServer.Host.Runtime.Withdrawal.JourneyWithdrawal.PlanAsync(ControlServerDbContext dbContext, JourneyWithdrawalRequest request, CancellationToken cancellationToken) in F:\8005-wt\cs771-8005-agv-control-server\src\ControlServer.Host\Runtime\Withdrawal\JourneyWithdrawal.cs:line 141
+   at ControlServer.Tests.JourneyWithdrawalTests.ThePlanNamesEveryDemandAndTheUnresolvedLoadAndItsCodeIsStable() in F:\8005-wt\cs771-8005-agv-control-server\tests\ControlServer.Tests\JourneyWithdrawalTests.cs:line 137
+   at ControlServer.Tests.JourneyWithdrawalTests.ThePlanNamesEveryDemandAndTheUnresolvedLoadAndItsCodeIsStable() in F:\8005-wt\cs771-8005-agv-control-server\tests\ControlServer.Tests\JourneyWithdrawalTests.cs:line 146
+--- End of stack trace from previous location ---
+  Failed ControlServer.Tests.JourneyWithdrawalTests.AConfirmationCodeFromBeforeTheStateChangedIsRefused [1 s]
+  Error Message:
+   System.NotImplementedException : The method or operation is not implemented.
+  Stack Trace:
+     at ControlServer.Host.Runtime.Withdrawal.JourneyWithdrawal.PlanAsync(ControlServerDbContext dbContext, JourneyWithdrawalRequest request, CancellationToken cancellationToken) in F:\8005-wt\cs771-8005-agv-control-server\src\ControlServer.Host\Runtime\Withdrawal\JourneyWithdrawal.cs:line 141
+   at ControlServer.Tests.JourneyWithdrawalTests.AConfirmationCodeFromBeforeTheStateChangedIsRefused() in F:\8005-wt\cs771-8005-agv-control-server\tests\ControlServer.Tests\JourneyWithdrawalTests.cs:line 208
+   at ControlServer.Tests.JourneyWithdrawalTests.AConfirmationCodeFromBeforeTheStateChangedIsRefused() in F:\8005-wt\cs771-8005-agv-control-server\tests\ControlServer.Tests\JourneyWithdrawalTests.cs:line 216
+--- End of stack trace from previous location ---
+[xUnit.net 00:00:29.95]     ControlServer.Tests.JourneyWithdrawalTests.ASiteReportOfCargoInTheSlotRefusesTheWithdrawal [FAIL]
+[xUnit.net 00:00:30.80]     ControlServer.Tests.JourneyWithdrawalTests.TheVehicleIsToldTheStopEndedBecauseTheDemandsWereReleased [FAIL]
+  Failed ControlServer.Tests.JourneyWithdrawalTests.ASiteReportOfCargoInTheSlotRefusesTheWithdrawal [929 ms]
+  Error Message:
+   System.NotImplementedException : The method or operation is not implemented.
+  Stack Trace:
+     at ControlServer.Host.Runtime.Withdrawal.JourneyWithdrawal.PlanAsync(ControlServerDbContext dbContext, JourneyWithdrawalRequest request, CancellationToken cancellationToken) in F:\8005-wt\cs771-8005-agv-control-server\src\ControlServer.Host\Runtime\Withdrawal\JourneyWithdrawal.cs:line 141
+   at ControlServer.Tests.JourneyWithdrawalTests.AssertRefusedEverywhereAsync(RuntimeFixture fixture, JourneyWithdrawalRequest request, String code) in F:\8005-wt\cs771-8005-agv-control-server\tests\ControlServer.Tests\JourneyWithdrawalTests.cs:line 544
+   at ControlServer.Tests.JourneyWithdrawalTests.ASiteReportOfCargoInTheSlotRefusesTheWithdrawal() in F:\8005-wt\cs771-8005-agv-control-server\tests\ControlServer.Tests\JourneyWithdrawalTests.cs:line 247
+   at ControlServer.Tests.JourneyWithdrawalTests.ASiteReportOfCargoInTheSlotRefusesTheWithdrawal() in F:\8005-wt\cs771-8005-agv-control-server\tests\ControlServer.Tests\JourneyWithdrawalTests.cs:line 247
+--- End of stack trace from previous location ---
+  Failed ControlServer.Tests.JourneyWithdrawalTests.TheVehicleIsToldTheStopEndedBecauseTheDemandsWereReleased [846 ms]
+  Error Message:
+   System.NotImplementedException : The method or operation is not implemented.
+  Stack Trace:
+     at ControlServer.Host.Runtime.Withdrawal.JourneyWithdrawal.PlanAsync(ControlServerDbContext dbContext, JourneyWithdrawalRequest request, CancellationToken cancellationToken) in F:\8005-wt\cs771-8005-agv-control-server\src\ControlServer.Host\Runtime\Withdrawal\JourneyWithdrawal.cs:line 141
+   at ControlServer.Tests.JourneyWithdrawalTests.PlanAndWithdrawAsync(RuntimeFixture fixture, JourneyWithdrawalRequest request) in F:\8005-wt\cs771-8005-agv-control-server\tests\ControlServer.Tests\JourneyWithdrawalTests.cs:line 530
+   at ControlServer.Tests.JourneyWithdrawalTests.TheVehicleIsToldTheStopEndedBecauseTheDemandsWereReleased() in F:\8005-wt\cs771-8005-agv-control-server\tests\ControlServer.Tests\JourneyWithdrawalTests.cs:line 84
+   at ControlServer.Tests.JourneyWithdrawalTests.TheVehicleIsToldTheStopEndedBecauseTheDemandsWereReleased() in F:\8005-wt\cs771-8005-agv-control-server\tests\ControlServer.Tests\JourneyWithdrawalTests.cs:line 88
+--- End of stack trace from previous location ---
+[xUnit.net 00:00:31.57]     ControlServer.Tests.JourneyWithdrawalTests.AnOrderWhoseCreateOutcomeIsUnknownRefusesTheWithdrawal [FAIL]
+[xUnit.net 00:00:32.02]     ControlServer.Tests.JourneyWithdrawalTests.TheSameWithdrawalPressedTwiceRunsOnce [FAIL]
+[xUnit.net 00:00:32.37]     ControlServer.Tests.JourneyWithdrawalTests.ADoorTheVehicleDoesNotProveClosedRefusesTheWithdrawal [FAIL]
+  Failed ControlServer.Tests.JourneyWithdrawalTests.AnOrderWhoseCreateOutcomeIsUnknownRefusesTheWithdrawal [764 ms]
+  Error Message:
+   System.NotImplementedException : The method or operation is not implemented.
+  Stack Trace:
+     at ControlServer.Host.Runtime.Withdrawal.JourneyWithdrawal.PlanAsync(ControlServerDbContext dbContext, JourneyWithdrawalRequest request, CancellationToken cancellationToken) in F:\8005-wt\cs771-8005-agv-control-server\src\ControlServer.Host\Runtime\Withdrawal\JourneyWithdrawal.cs:line 141
+   at ControlServer.Tests.JourneyWithdrawalTests.AssertRefusedEverywhereAsync(RuntimeFixture fixture, JourneyWithdrawalRequest request, String code) in F:\8005-wt\cs771-8005-agv-control-server\tests\ControlServer.Tests\JourneyWithdrawalTests.cs:line 544
+   at ControlServer.Tests.JourneyWithdrawalTests.AnOrderWhoseCreateOutcomeIsUnknownRefusesTheWithdrawal() in F:\8005-wt\cs771-8005-agv-control-server\tests\ControlServer.Tests\JourneyWithdrawalTests.cs:line 405
+   at ControlServer.Tests.JourneyWithdrawalTests.AnOrderWhoseCreateOutcomeIsUnknownRefusesTheWithdrawal() in F:\8005-wt\cs771-8005-agv-control-server\tests\ControlServer.Tests\JourneyWithdrawalTests.cs:line 405
+--- End of stack trace from previous location ---
+  Failed ControlServer.Tests.JourneyWithdrawalTests.TheSameWithdrawalPressedTwiceRunsOnce [442 ms]
+  Error Message:
+   System.NotImplementedException : The method or operation is not implemented.
+  Stack Trace:
+     at ControlServer.Host.Runtime.Withdrawal.JourneyWithdrawal.PlanAsync(ControlServerDbContext dbContext, JourneyWithdrawalRequest request, CancellationToken cancellationToken) in F:\8005-wt\cs771-8005-agv-control-server\src\ControlServer.Host\Runtime\Withdrawal\JourneyWithdrawal.cs:line 141
+   at ControlServer.Tests.JourneyWithdrawalTests.TheSameWithdrawalPressedTwiceRunsOnce() in F:\8005-wt\cs771-8005-agv-control-server\tests\ControlServer.Tests\JourneyWithdrawalTests.cs:line 185
+   at ControlServer.Tests.JourneyWithdrawalTests.TheSameWithdrawalPressedTwiceRunsOnce() in F:\8005-wt\cs771-8005-agv-control-server\tests\ControlServer.Tests\JourneyWithdrawalTests.cs:line 193
+--- End of stack trace from previous location ---
+  Failed ControlServer.Tests.JourneyWithdrawalTests.ADoorTheVehicleDoesNotProveClosedRefusesTheWithdrawal [354 ms]
+  Error Message:
+   System.NotImplementedException : The method or operation is not implemented.
+  Stack Trace:
+     at ControlServer.Host.Runtime.Withdrawal.JourneyWithdrawal.PlanAsync(ControlServerDbContext dbContext, JourneyWithdrawalRequest request, CancellationToken cancellationToken) in F:\8005-wt\cs771-8005-agv-control-server\src\ControlServer.Host\Runtime\Withdrawal\JourneyWithdrawal.cs:line 141
+   at ControlServer.Tests.JourneyWithdrawalTests.AssertRefusedEverywhereAsync(RuntimeFixture fixture, JourneyWithdrawalRequest request, String code) in F:\8005-wt\cs771-8005-agv-control-server\tests\ControlServer.Tests\JourneyWithdrawalTests.cs:line 544
+   at ControlServer.Tests.JourneyWithdrawalTests.ADoorTheVehicleDoesNotProveClosedRefusesTheWithdrawal() in F:\8005-wt\cs771-8005-agv-control-server\tests\ControlServer.Tests\JourneyWithdrawalTests.cs:line 335
+   at ControlServer.Tests.JourneyWithdrawalTests.ADoorTheVehicleDoesNotProveClosedRefusesTheWithdrawal() in F:\8005-wt\cs771-8005-agv-control-server\tests\ControlServer.Tests\JourneyWithdrawalTests.cs:line 335
+--- End of stack trace from previous location ---
+[xUnit.net 00:00:32.70]     ControlServer.Tests.JourneyWithdrawalTests.AWithdrawalWritesWhoAndWhyIntoTheAdministratorAudit [FAIL]
+[xUnit.net 00:00:33.18]     ControlServer.Tests.JourneyWithdrawalTests.AnotherVehiclesKeyIsRefused [FAIL]
+[xUnit.net 00:00:33.78]     ControlServer.Tests.JourneyWithdrawalTests.AnOpenExceptionRecoverySessionRefusesTheWithdrawal [FAIL]
+  Failed ControlServer.Tests.JourneyWithdrawalTests.AWithdrawalWritesWhoAndWhyIntoTheAdministratorAudit [323 ms]
+  Error Message:
+   System.NotImplementedException : The method or operation is not implemented.
+  Stack Trace:
+     at ControlServer.Host.Runtime.Withdrawal.JourneyWithdrawal.PlanAsync(ControlServerDbContext dbContext, JourneyWithdrawalRequest request, CancellationToken cancellationToken) in F:\8005-wt\cs771-8005-agv-control-server\src\ControlServer.Host\Runtime\Withdrawal\JourneyWithdrawal.cs:line 141
+   at ControlServer.Tests.JourneyWithdrawalTests.PlanAndWithdrawAsync(RuntimeFixture fixture, JourneyWithdrawalRequest request) in F:\8005-wt\cs771-8005-agv-control-server\tests\ControlServer.Tests\JourneyWithdrawalTests.cs:line 530
+   at ControlServer.Tests.JourneyWithdrawalTests.AWithdrawalWritesWhoAndWhyIntoTheAdministratorAudit() in F:\8005-wt\cs771-8005-agv-control-server\tests\ControlServer.Tests\JourneyWithdrawalTests.cs:line 98
+   at ControlServer.Tests.JourneyWithdrawalTests.AWithdrawalWritesWhoAndWhyIntoTheAdministratorAudit() in F:\8005-wt\cs771-8005-agv-control-server\tests\ControlServer.Tests\JourneyWithdrawalTests.cs:line 104
+--- End of stack trace from previous location ---
+  Failed ControlServer.Tests.JourneyWithdrawalTests.AnotherVehiclesKeyIsRefused [465 ms]
+  Error Message:
+   System.NotImplementedException : The method or operation is not implemented.
+  Stack Trace:
+     at ControlServer.Host.Runtime.Withdrawal.JourneyWithdrawal.PlanAsync(ControlServerDbContext dbContext, JourneyWithdrawalRequest request, CancellationToken cancellationToken) in F:\8005-wt\cs771-8005-agv-control-server\src\ControlServer.Host\Runtime\Withdrawal\JourneyWithdrawal.cs:line 141
+   at ControlServer.Tests.JourneyWithdrawalTests.AssertRefusedEverywhereAsync(RuntimeFixture fixture, JourneyWithdrawalRequest request, String code) in F:\8005-wt\cs771-8005-agv-control-server\tests\ControlServer.Tests\JourneyWithdrawalTests.cs:line 544
+   at ControlServer.Tests.JourneyWithdrawalTests.AnotherVehiclesKeyIsRefused() in F:\8005-wt\cs771-8005-agv-control-server\tests\ControlServer.Tests\JourneyWithdrawalTests.cs:line 371
+   at ControlServer.Tests.JourneyWithdrawalTests.AnotherVehiclesKeyIsRefused() in F:\8005-wt\cs771-8005-agv-control-server\tests\ControlServer.Tests\JourneyWithdrawalTests.cs:line 371
+--- End of stack trace from previous location ---
+  Failed ControlServer.Tests.JourneyWithdrawalTests.AnOpenExceptionRecoverySessionRefusesTheWithdrawal [595 ms]
+  Error Message:
+   System.NotImplementedException : The method or operation is not implemented.
+  Stack Trace:
+     at ControlServer.Host.Runtime.Withdrawal.JourneyWithdrawal.PlanAsync(ControlServerDbContext dbContext, JourneyWithdrawalRequest request, CancellationToken cancellationToken) in F:\8005-wt\cs771-8005-agv-control-server\src\ControlServer.Host\Runtime\Withdrawal\JourneyWithdrawal.cs:line 141
+   at ControlServer.Tests.JourneyWithdrawalTests.AssertRefusedEverywhereAsync(RuntimeFixture fixture, JourneyWithdrawalRequest request, String code) in F:\8005-wt\cs771-8005-agv-control-server\tests\ControlServer.Tests\JourneyWithdrawalTests.cs:line 544
+   at ControlServer.Tests.JourneyWithdrawalTests.AnOpenExceptionRecoverySessionRefusesTheWithdrawal() in F:\8005-wt\cs771-8005-agv-control-server\tests\ControlServer.Tests\JourneyWithdrawalTests.cs:line 432
+   at ControlServer.Tests.JourneyWithdrawalTests.AnOpenExceptionRecoverySessionRefusesTheWithdrawal() in F:\8005-wt\cs771-8005-agv-control-server\tests\ControlServer.Tests\JourneyWithdrawalTests.cs:line 432
+--- End of stack trace from previous location ---
+[xUnit.net 00:00:34.13]     ControlServer.Tests.JourneyWithdrawalTests.AnUnknownJourneyIsRefused [FAIL]
+[xUnit.net 00:00:34.44]     ControlServer.Tests.JourneyWithdrawalTests.APlanWritesNothing [FAIL]
+[xUnit.net 00:00:34.75]     ControlServer.Tests.JourneyWithdrawalTests.AWithdrawalWithoutAConfirmationCodeIsRefused [FAIL]
+[xUnit.net 00:00:34.97]     ControlServer.Tests.JourneyWithdrawalTests.AJourneyOnItsWayToThePickupWithTheVehicleOfflineIsWithdrawnWithoutSlotFacts [FAIL]
+[xUnit.net 00:00:35.30]     ControlServer.Tests.JourneyWithdrawalTests.TheEngineRunsOnAfterAWithdrawal [FAIL]
+  Failed ControlServer.Tests.JourneyWithdrawalTests.AnUnknownJourneyIsRefused [345 ms]
+  Error Message:
+   System.NotImplementedException : The method or operation is not implemented.
+  Stack Trace:
+     at ControlServer.Host.Runtime.Withdrawal.JourneyWithdrawal.PlanAsync(ControlServerDbContext dbContext, JourneyWithdrawalRequest request, CancellationToken cancellationToken) in F:\8005-wt\cs771-8005-agv-control-server\src\ControlServer.Host\Runtime\Withdrawal\JourneyWithdrawal.cs:line 141
+   at ControlServer.Tests.JourneyWithdrawalTests.AnUnknownJourneyIsRefused() in F:\8005-wt\cs771-8005-agv-control-server\tests\ControlServer.Tests\JourneyWithdrawalTests.cs:line 381
+   at ControlServer.Tests.JourneyWithdrawalTests.AnUnknownJourneyIsRefused() in F:\8005-wt\cs771-8005-agv-control-server\tests\ControlServer.Tests\JourneyWithdrawalTests.cs:line 384
+--- End of stack trace from previous location ---
+  Failed ControlServer.Tests.JourneyWithdrawalTests.APlanWritesNothing [302 ms]
+  Error Message:
+   System.NotImplementedException : The method or operation is not implemented.
+  Stack Trace:
+     at ControlServer.Host.Runtime.Withdrawal.JourneyWithdrawal.PlanAsync(ControlServerDbContext dbContext, JourneyWithdrawalRequest request, CancellationToken cancellationToken) in F:\8005-wt\cs771-8005-agv-control-server\src\ControlServer.Host\Runtime\Withdrawal\JourneyWithdrawal.cs:line 141
+   at ControlServer.Tests.JourneyWithdrawalTests.APlanWritesNothing() in F:\8005-wt\cs771-8005-agv-control-server\tests\ControlServer.Tests\JourneyWithdrawalTests.cs:line 118
+   at ControlServer.Tests.JourneyWithdrawalTests.APlanWritesNothing() in F:\8005-wt\cs771-8005-agv-control-server\tests\ControlServer.Tests\JourneyWithdrawalTests.cs:line 124
+--- End of stack trace from previous location ---
+  Failed ControlServer.Tests.JourneyWithdrawalTests.AWithdrawalWithoutAConfirmationCodeIsRefused [312 ms]
+  Error Message:
+   System.NotImplementedException : The method or operation is not implemented.
+  Stack Trace:
+     at ControlServer.Host.Runtime.Withdrawal.JourneyWithdrawal.WithdrawAsync(ControlServerDbContext dbContext, IGovernanceAuditWriter audit, JourneyWithdrawalRequest request, DateTimeOffset now, OnboardJourneyPublisher publisher, CancellationToken cancellationToken) in F:\8005-wt\cs771-8005-agv-control-server\src\ControlServer.Host\Runtime\Withdrawal\JourneyWithdrawal.cs:line 154
+   at ControlServer.Tests.JourneyWithdrawalTests.WithdrawAsync(RuntimeFixture fixture, JourneyWithdrawalRequest request) in F:\8005-wt\cs771-8005-agv-control-server\tests\ControlServer.Tests\JourneyWithdrawalTests.cs:line 526
+   at ControlServer.Tests.JourneyWithdrawalTests.AWithdrawalWithoutAConfirmationCodeIsRefused() in F:\8005-wt\cs771-8005-agv-control-server\tests\ControlServer.Tests\JourneyWithdrawalTests.cs:line 228
+   at ControlServer.Tests.JourneyWithdrawalTests.AWithdrawalWithoutAConfirmationCodeIsRefused() in F:\8005-wt\cs771-8005-agv-control-server\tests\ControlServer.Tests\JourneyWithdrawalTests.cs:line 231
+--- End of stack trace from previous location ---
+  Failed ControlServer.Tests.JourneyWithdrawalTests.AJourneyOnItsWayToThePickupWithTheVehicleOfflineIsWithdrawnWithoutSlotFacts [213 ms]
+  Error Message:
+   System.NotImplementedException : The method or operation is not implemented.
+  Stack Trace:
+     at ControlServer.Host.Runtime.Withdrawal.JourneyWithdrawal.PlanAsync(ControlServerDbContext dbContext, JourneyWithdrawalRequest request, CancellationToken cancellationToken) in F:\8005-wt\cs771-8005-agv-control-server\src\ControlServer.Host\Runtime\Withdrawal\JourneyWithdrawal.cs:line 141
+   at ControlServer.Tests.JourneyWithdrawalTests.PlanAndWithdrawAsync(RuntimeFixture fixture, JourneyWithdrawalRequest request) in F:\8005-wt\cs771-8005-agv-control-server\tests\ControlServer.Tests\JourneyWithdrawalTests.cs:line 530
+   at ControlServer.Tests.JourneyWithdrawalTests.AJourneyOnItsWayToThePickupWithTheVehicleOfflineIsWithdrawnWithoutSlotFacts() in F:\8005-wt\cs771-8005-agv-control-server\tests\ControlServer.Tests\JourneyWithdrawalTests.cs:line 165
+   at ControlServer.Tests.JourneyWithdrawalTests.AJourneyOnItsWayToThePickupWithTheVehicleOfflineIsWithdrawnWithoutSlotFacts() in F:\8005-wt\cs771-8005-agv-control-server\tests\ControlServer.Tests\JourneyWithdrawalTests.cs:line 169
+--- End of stack trace from previous location ---
+  Failed ControlServer.Tests.JourneyWithdrawalTests.TheEngineRunsOnAfterAWithdrawal [323 ms]
+  Error Message:
+   System.NotImplementedException : The method or operation is not implemented.
+  Stack Trace:
+     at ControlServer.Host.Runtime.Withdrawal.JourneyWithdrawal.PlanAsync(ControlServerDbContext dbContext, JourneyWithdrawalRequest request, CancellationToken cancellationToken) in F:\8005-wt\cs771-8005-agv-control-server\src\ControlServer.Host\Runtime\Withdrawal\JourneyWithdrawal.cs:line 141
+   at ControlServer.Tests.JourneyWithdrawalTests.PlanAndWithdrawAsync(RuntimeFixture fixture, JourneyWithdrawalRequest request) in F:\8005-wt\cs771-8005-agv-control-server\tests\ControlServer.Tests\JourneyWithdrawalTests.cs:line 530
+   at ControlServer.Tests.JourneyWithdrawalTests.TheEngineRunsOnAfterAWithdrawal() in F:\8005-wt\cs771-8005-agv-control-server\tests\ControlServer.Tests\JourneyWithdrawalTests.cs:line 456
+   at ControlServer.Tests.JourneyWithdrawalTests.TheEngineRunsOnAfterAWithdrawal() in F:\8005-wt\cs771-8005-agv-control-server\tests\ControlServer.Tests\JourneyWithdrawalTests.cs:line 461
+--- End of stack trace from previous location ---
+
+Failed!  - Failed:    32, Passed:     0, Skipped:     0, Total:    32, Duration: 25 s - ControlServer.Tests.dll (net8.0)
