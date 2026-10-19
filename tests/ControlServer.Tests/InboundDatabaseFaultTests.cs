@@ -1,4 +1,3 @@
-using System.Data.Common;
 using System.Net;
 using System.Net.Sockets;
 using System.Text;
@@ -9,7 +8,6 @@ using ControlServer.Host.Transport;
 using ControlServer.Infrastructure.Persistence;
 using Microsoft.Data.Sqlite;
 using Microsoft.EntityFrameworkCore;
-using Microsoft.EntityFrameworkCore.Diagnostics;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Options;
@@ -32,8 +30,8 @@ namespace ControlServer.Tests;
 /// 断线，但断线前记清哪辆车、哪条消息、哪个异常（1108），1003 也带上车号与远端地址。
 /// </para>
 /// <para>
-/// <b>怎么注入。</b><see cref="InboxFault"/> 是一个 EF 命令拦截器，只认带着目标 messageId 参数的那几条 <c>ProtocolInbox</c> 语句：
-/// 去重查询（业务处理之前）与插入（业务处理之后、同一事务里）。
+/// <b>怎么注入。</b><see cref="InboxFault"/> 经一个 EF 命令拦截器，只认带着目标 messageId 参数的那几条 <c>ProtocolInbox</c> 语句：
+/// 去重查询（业务处理之前）、插入（业务处理之后、同一事务里），或去重查询之后的下一条语句（重放回调里的第一条）。
 /// </para>
 /// </remarks>
 public sealed class InboundDatabaseFaultTests
@@ -246,6 +244,98 @@ public sealed class InboundDatabaseFaultTests
         }
     }
 
+    /// <summary>
+    /// 审查 M1：06:48:25Z 那种形态。开库被池递来另一个使用者正在用的底层连接，注册 EF 函数失败，<c>Open</c> 自己的 catch 里
+    /// 注销函数又失败，这条连接就停在 <c>State == Open</c>、手里还挂着对方的句柄。重试在这里不成立：EF 看它开着就不再开，
+    /// 去重、事务、业务、写 ProtocolInbox、提交都会跑在对方的连接上，对方一次回滚就能抹掉已经应答过的那一行。所以不重试，
+    /// 记 1108、断线，什么都没写。<c>serialized</c> 由 <see cref="SerializedSqliteConnection"/> 把连接标成已损坏挡住，
+    /// <c>plain</c>（不走主机注册的连接）由重试条件里的「连接没开着」挡住。
+    /// </summary>
+    [Theory]
+    [InlineData("serialized")]
+    [InlineData("plain")]
+    [Trait("IntegrationSlice", "FP-IS-06")]
+    public async Task AnOpenLeftHoldingAnotherOwnersConnectionIsNotRetriedOnIt(string connection)
+    {
+        await using Rig rig = await Rig.StartAsync(nameof(AnOpenLeftHoldingAnotherOwnersConnectionIsNotRetriedOnIt) + connection, connection);
+        string messageId = Guid.NewGuid().ToString("D");
+        string requestId = Guid.NewGuid().ToString("D");
+        string line = ManualChargingReturn(messageId, requestId, rig.Generation);
+        Exception? error;
+        await using (PooledConnectionSharingShape shape = await PooledConnectionSharingShape.ArrangeAsync(rig.ConnectionString))
+        {
+            error = await Record.ExceptionAsync(() => rig.Processor.ProcessAsync(line, rig.State, Rig.Token));
+        }
+
+        Assert.True(error is not null, "开库拿着别人的连接，重试之后照常回了应答：处理跑在共用的连接上。");
+        Assert.DoesNotContain(rig.Log.Entries, entry => entry.EventId.Id == 1107);
+        Assert.Equal(0, await rig.InboxRowsAsync(messageId));
+        Assert.Equal(0, await rig.ManualChargingDecisionsAsync(requestId));
+        AssertFailureLogged(rig, messageId);
+    }
+
+    /// <summary>
+    /// 换代重发的持久报文（DurableAck 重绑那一支）：去重查询之后，重绑回调里第一次读库遇到 BUSY。回调已经开始，不重试。
+    /// </summary>
+    [Fact]
+    [Trait("IntegrationSlice", "FP-IS-06")]
+    public async Task ABusyFaultInsideTheDurableAckRebindIsNotRetried()
+    {
+        await using Rig rig = await Rig.StartAsync(nameof(ABusyFaultInsideTheDurableAckRebindIsNotRetried));
+        string changeId = Guid.NewGuid().ToString("D");
+        string original = Envelope("SafetyStateChanged", changeId, rig.Generation, new
+        {
+            safetyStateVersion = 2,
+            safety = Safety(departureSafe: true),
+            observedAt = "2026-08-25T09:00:00Z"
+        });
+        await rig.Processor.ProcessAsync(original, rig.State, Rig.Token);
+        OnboardConnectionState next = new();
+        await ReachReadyAsync(rig.Processor, next, Rig.Token);
+        JsonNode rebound = JsonNode.Parse(original)!;
+        rebound["sessionGeneration"] = next.SessionGeneration!.Value;
+        rig.Fault.FailAfterLookup(changeId, () => Fault("busy"));
+
+        Exception error = await Assert.ThrowsAnyAsync<Exception>(
+            () => rig.Processor.ProcessAsync(rebound.ToJsonString(), next, Rig.Token));
+
+        Assert.True(Rig.IsBusy(error), $"抛出的不是注入的 BUSY：{error}");
+        Assert.Equal(1, rig.Fault.Lookups);
+        AssertFailureLogged(rig, changeId, "SafetyStateChanged");
+    }
+
+    /// <summary>
+    /// 换代重发的 RecoveryStateReport（重新处理那一支）：去重查询之后、回调开始之后遇到 BUSY，不重试。
+    /// </summary>
+    /// <remarks>
+    /// 这一支先调 <c>RestoreSnapshotVersions</c>、紧接着调业务处理，两者之间没有库操作，业务处理在第一条语句之前已经把标志置上，
+    /// 所以这条用例杀不掉「删掉 <c>RestoreSnapshotVersions</c> 里置标志那一行」的变异（等价变异）。它守的是这一支整体不重试。
+    /// </remarks>
+    [Fact]
+    [Trait("IntegrationSlice", "FP-IS-06")]
+    public async Task ABusyFaultAfterARecoveryReportReplayBeganIsNotRetried()
+    {
+        await using Rig rig = await Rig.StartAsync(nameof(ABusyFaultAfterARecoveryReportReplayBeganIsNotRetried));
+        string reportMessageId = Guid.NewGuid().ToString("D");
+        string reportId = Guid.NewGuid().ToString("D");
+        OnboardConnectionState first = new();
+        await ReachReadyAsync(rig.Processor, first, Rig.Token, reportMessageId, reportId);
+
+        OnboardConnectionState next = new();
+        await rig.Processor.ProcessAsync(HandshakeLines(generation: 0)[0], next, Rig.Token);
+        string[] rebound = HandshakeLines(next.SessionGeneration!.Value, reportMessageId, reportId);
+        await rig.Processor.ProcessAsync(rebound[1], next, Rig.Token);
+        await rig.Processor.ProcessAsync(rebound[2], next, Rig.Token);
+        rig.Fault.FailAfterLookup(reportMessageId, () => Fault("busy"));
+
+        Exception error = await Assert.ThrowsAnyAsync<Exception>(
+            () => rig.Processor.ProcessAsync(rebound[3], next, Rig.Token));
+
+        Assert.True(Rig.IsBusy(error), $"抛出的不是注入的 BUSY：{error}");
+        Assert.Equal(1, rig.Fault.Lookups);
+        AssertFailureLogged(rig, reportMessageId, "RecoveryStateReport");
+    }
+
     private static EventRecordingLogger<OnboardTcpServer>.Entry[] Ended(EventRecordingLogger<OnboardTcpServer> log)
     {
         lock (log.Entries)
@@ -280,7 +370,8 @@ public sealed class InboundDatabaseFaultTests
         Assert.Equal(endedBefore + 1, Ended(log).Length);
     }
 
-    private static void AssertFailureLogged(Rig rig, string messageId)
+    private static void AssertFailureLogged(
+        Rig rig, string messageId, string messageType = "ManualChargingReturnToServiceRequested")
     {
         EventRecordingLogger<OnboardMessageProcessor>.Entry[] failures;
         lock (rig.Log.Entries)
@@ -290,7 +381,7 @@ public sealed class InboundDatabaseFaultTests
         EventRecordingLogger<OnboardMessageProcessor>.Entry failure = Assert.Single(failures);
         Assert.Contains(AgvId, failure.Message);
         Assert.Contains(messageId, failure.Message);
-        Assert.Contains("ManualChargingReturnToServiceRequested", failure.Message);
+        Assert.Contains(messageType, failure.Message);
         Assert.NotNull(failure.Error);
     }
 
@@ -319,7 +410,7 @@ public sealed class InboundDatabaseFaultTests
         })
         .Build();
 
-    private static string[] HandshakeLines(long generation) =>
+    private static string[] HandshakeLines(long generation, string? reportMessageId = null, string? reportId = null) =>
     [
         Envelope("SessionHello", Guid.NewGuid().ToString("D"), null, new
         {
@@ -330,9 +421,9 @@ public sealed class InboundDatabaseFaultTests
             new { capabilityVersion = 1, activeSlotConfigurationFingerprint = new string('0', 64) }),
         Envelope("SafetyStateSnapshot", Guid.NewGuid().ToString("D"), generation,
             new { safetyStateVersion = 1, safety = Safety(departureSafe: true) }),
-        Envelope("RecoveryStateReport", Guid.NewGuid().ToString("D"), generation, new
+        Envelope("RecoveryStateReport", reportMessageId ?? Guid.NewGuid().ToString("D"), generation, new
         {
-            reportId = Guid.NewGuid().ToString("D"),
+            reportId = reportId ?? Guid.NewGuid().ToString("D"),
             unsettledSlotOperationAttemptId = (string?)null,
             provenRecoveryCheckpoint = (string?)null,
             activeUnlockSlots = Array.Empty<int>(),
@@ -342,12 +433,16 @@ public sealed class InboundDatabaseFaultTests
     ];
 
     private static async Task ReachReadyAsync(
-        OnboardMessageProcessor processor, OnboardConnectionState state, CancellationToken token)
+        OnboardMessageProcessor processor,
+        OnboardConnectionState state,
+        CancellationToken token,
+        string? reportMessageId = null,
+        string? reportId = null)
     {
         string[] lines = HandshakeLines(generation: 0);
         await processor.ProcessAsync(lines[0], state, token);
         long generation = state.SessionGeneration!.Value;
-        foreach (string line in HandshakeLines(generation).Skip(1))
+        foreach (string line in HandshakeLines(generation, reportMessageId, reportId).Skip(1))
         {
             await processor.ProcessAsync(line, state, token);
         }
@@ -424,29 +519,34 @@ public sealed class InboundDatabaseFaultTests
         }
     }
 
-    /// <summary>One processor on one in-memory database, handshaken to READY, with the fault interceptor on its context.</summary>
+    /// <summary>
+    /// One processor on its own pooled file database, handshaken to READY, with the fault interceptor on its context. The
+    /// context opens and closes its connection around every query, as the host's do: a connection held open by the test would
+    /// look like the shape the retry must refuse (control-server#779 review M1). <c>serialized</c> is the host's
+    /// <see cref="SerializedSqliteConnection"/>; <c>plain</c> is a connection EF builds from the string, as a context outside the
+    /// host's registration would have.
+    /// </summary>
     private sealed class Rig : IAsyncDisposable
     {
-        private readonly SqliteConnection _connection;
+        private readonly string _path;
         private readonly string _credentialVariable;
         private readonly IConfiguration _configuration;
 
         private Rig(
-            SqliteConnection connection,
+            string path,
             string credentialVariable,
             IConfiguration configuration,
             InboxFault fault,
             ControlServerDbContext context,
-            OnboardMessageProcessor processor,
             OnboardConnectionState state)
         {
-            _connection = connection;
+            _path = path;
             _credentialVariable = credentialVariable;
             _configuration = configuration;
             Fault = fault;
             Context = context;
-            Processor = processor;
             State = state;
+            Processor = NewProcessor(context);
         }
 
         public InboxFault Fault { get; }
@@ -455,37 +555,47 @@ public sealed class InboundDatabaseFaultTests
 
         public ControlServerDbContext Context { get; }
 
-        public OnboardMessageProcessor Processor { get; private set; }
+        public OnboardMessageProcessor Processor { get; }
 
         public OnboardConnectionState State { get; }
+
+        public string ConnectionString => ControlServerSqlite.ForDatabaseFile(_path);
 
         public long Generation => State.SessionGeneration!.Value;
 
         public static CancellationToken Token => TestContext.Current.CancellationToken;
 
-        public static async Task<Rig> StartAsync(string test)
+        public static async Task<Rig> StartAsync(string test, string connection = "serialized")
         {
             string variable = "CONTROL_SERVER_TEST_INBOUND_DB_FAULT_" + test.ToUpperInvariant();
             Environment.SetEnvironmentVariable(variable, Credential);
-            SqliteConnection connection = new("Data Source=:memory:");
-            await connection.OpenAsync(TestContext.Current.CancellationToken);
+            string path = Path.Combine(Path.GetTempPath(), $"cs779-{Guid.NewGuid():N}.db");
+            string connectionString = ControlServerSqlite.ForDatabaseFile(path);
             IConfiguration configuration = Configuration(variable);
             InboxFault fault = new();
-            ControlServerDbContext context = new(new DbContextOptionsBuilder<ControlServerDbContext>()
-                .UseSqlite(connection)
-                .AddInterceptors(new FaultInterceptor(fault))
-                .Options);
-            await context.Database.EnsureCreatedAsync(TestContext.Current.CancellationToken);
+            DbContextOptionsBuilder<ControlServerDbContext> options = new();
+            _ = connection switch
+            {
+                "serialized" => options.UseSerializedSqlite(connectionString),
+                "plain" => options.UseSqlite(connectionString),
+                _ => throw new ArgumentOutOfRangeException(nameof(connection), connection, null)
+            };
+            ControlServerDbContext context = new(options.AddInterceptors(new InboxFaultInterceptor(fault)).Options);
+            await context.Database.EnsureCreatedAsync(Token);
             OnboardConnectionState state = new();
-            Rig rig = new(connection, variable, configuration, fault, context, null!, state);
-            rig.Processor = rig.NewProcessor(context);
-            await ReachReadyAsync(rig.Processor, state, TestContext.Current.CancellationToken);
+            Rig rig = new(path, variable, configuration, fault, context, state);
+            await ReachReadyAsync(rig.Processor, state, Token);
             return rig;
         }
 
-        /// <summary>A context on the same database without the interceptor: a new connection scope.</summary>
+        /// <summary>
+        /// A context on the same database without the interceptor, and outside its pool: what it reads is the file, whatever
+        /// state a test left the pool in.
+        /// </summary>
         public ControlServerDbContext NewContext() =>
-            new(new DbContextOptionsBuilder<ControlServerDbContext>().UseSqlite(_connection).Options);
+            new(new DbContextOptionsBuilder<ControlServerDbContext>()
+                .UseSqlite(new SqliteConnectionStringBuilder(ConnectionString) { Pooling = false }.ConnectionString)
+                .Options);
 
         public OnboardMessageProcessor NewProcessor(ControlServerDbContext context) => TestOnboardProcessorFactory.Create(
             context, new WireToGateStore(context), TimeProvider.System, _configuration, logger: Log);
@@ -522,107 +632,23 @@ public sealed class InboundDatabaseFaultTests
 
         public async ValueTask DisposeAsync()
         {
-            await Context.DisposeAsync();
-            await _connection.DisposeAsync();
+            await PooledConnectionSharingShape.Quietly(Context.DisposeAsync);
+            using (SqliteConnection pooled = new(ConnectionString))
+            {
+                SqliteConnection.ClearPool(pooled);
+            }
+            foreach (string file in new[] { _path, _path + "-wal", _path + "-shm" })
+            {
+                try
+                {
+                    File.Delete(file);
+                }
+                catch (IOException)
+                {
+                    // A handle the sharing shape left behind: the temp directory keeps it.
+                }
+            }
             Environment.SetEnvironmentVariable(_credentialVariable, null);
-        }
-    }
-
-    /// <summary>Hands every command the context runs to the fault.</summary>
-    private sealed class FaultInterceptor(InboxFault fault) : DbCommandInterceptor
-    {
-        public override InterceptionResult<DbDataReader> ReaderExecuting(
-            DbCommand command, CommandEventData eventData, InterceptionResult<DbDataReader> result)
-        {
-            fault.Inspect(command);
-            return result;
-        }
-
-        public override ValueTask<InterceptionResult<DbDataReader>> ReaderExecutingAsync(
-            DbCommand command,
-            CommandEventData eventData,
-            InterceptionResult<DbDataReader> result,
-            CancellationToken cancellationToken = default)
-        {
-            fault.Inspect(command);
-            return ValueTask.FromResult(result);
-        }
-
-        public override InterceptionResult<int> NonQueryExecuting(
-            DbCommand command, CommandEventData eventData, InterceptionResult<int> result)
-        {
-            fault.Inspect(command);
-            return result;
-        }
-
-        public override ValueTask<InterceptionResult<int>> NonQueryExecutingAsync(
-            DbCommand command,
-            CommandEventData eventData,
-            InterceptionResult<int> result,
-            CancellationToken cancellationToken = default)
-        {
-            fault.Inspect(command);
-            return ValueTask.FromResult(result);
-        }
-    }
-
-    /// <summary>
-    /// Throws on the ProtocolInbox statements that carry one messageId: the dedup lookup (before processing) and the insert
-    /// (after processing, inside its transaction). Counts every one it sees for that messageId.
-    /// </summary>
-    private sealed class InboxFault
-    {
-        private string? _messageId;
-        private int _lookupFailures;
-        private int _insertFailures;
-        private Func<Exception> _lookupFault = () => new InvalidOperationException();
-        private Func<Exception> _insertFault = () => new InvalidOperationException();
-
-        public int Lookups { get; private set; }
-
-        public int Inserts { get; private set; }
-
-        public void FailLookup(string messageId, int times, Func<Exception> fault)
-        {
-            _messageId = messageId;
-            _lookupFailures = times;
-            _lookupFault = fault;
-        }
-
-        public void FailInsert(string messageId, int times, Func<Exception> fault)
-        {
-            _messageId = messageId;
-            _insertFailures = times;
-            _insertFault = fault;
-        }
-
-        public void Inspect(DbCommand command)
-        {
-            if (_messageId is null ||
-                !command.Parameters.Cast<DbParameter>().Any(parameter => Equals(parameter.Value, _messageId)))
-            {
-                return;
-            }
-            string sql = command.CommandText;
-            if (sql.Contains("INSERT INTO \"ProtocolInbox\"", StringComparison.Ordinal))
-            {
-                Inserts++;
-                if (_insertFailures > 0)
-                {
-                    _insertFailures--;
-                    throw _insertFault();
-                }
-            }
-            else if (sql.StartsWith("SELECT", StringComparison.Ordinal) &&
-                     sql.Contains("FROM \"ProtocolInbox\"", StringComparison.Ordinal))
-            {
-                Lookups++;
-                if (_lookupFailures > 0)
-                {
-                    _lookupFailures--;
-                    throw _lookupFault();
-                }
-            }
         }
     }
 }
