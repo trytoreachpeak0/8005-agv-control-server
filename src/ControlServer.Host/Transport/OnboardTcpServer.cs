@@ -111,7 +111,7 @@ public sealed partial class OnboardTcpServer : BackgroundService
     private async Task ServeAsync(TcpClient client, SemaphoreSlim slots, CancellationToken cancellationToken)
     {
         // Read before anything can fail: once the socket is disposed its remote endpoint is gone.
-        ConnectionLabel label = new(client.Client.RemoteEndPoint?.ToString() ?? "(unknown)");
+        ConnectionLabel label = new(RemoteEndPointOf(client));
         try
         {
             using (client)
@@ -280,6 +280,22 @@ public sealed partial class OnboardTcpServer : BackgroundService
             {
                 _peer.EndHandshake(handshakingAgvId, connection);
             }
+        }
+    }
+
+    /// <summary>
+    /// The peer's address for the log, never a throw: this runs before the try that releases the connection's slot, and a
+    /// socket the peer already reset can refuse to say.
+    /// </summary>
+    private static string RemoteEndPointOf(TcpClient client)
+    {
+        try
+        {
+            return client.Client.RemoteEndPoint?.ToString() ?? "(unknown)";
+        }
+        catch (Exception error) when (error is SocketException or ObjectDisposedException)
+        {
+            return "(unknown)";
         }
     }
 

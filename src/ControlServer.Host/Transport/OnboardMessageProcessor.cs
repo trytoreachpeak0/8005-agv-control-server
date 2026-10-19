@@ -201,6 +201,8 @@ public sealed partial class OnboardMessageProcessor(
                 transientRetries++;
                 LogInboundTransientDatabaseFault(logger, agvId, messageType, messageId, transientRetries, fault);
                 await Task.Delay(TransientDatabaseRetryDelay, timeProvider, cancellationToken).ConfigureAwait(false);
+                // Counted in transientRetries alone: it must not use up the stale observation's two retries below.
+                attempt--;
                 continue;
             }
             catch (Exception fault) when (IsDatabaseFault(fault))
