@@ -37,6 +37,13 @@ public sealed class JourneyWithdrawalFieldOpsTests : IAsyncDisposable
         .GetCustomAttributes<AssemblyMetadataAttribute>()
         .Single(attribute => attribute.Key == "ControlServer.FieldOps.Path").Value!;
 
+    /// <summary>审查 S-5：演练以 SQLite 只读模式开库，撤下以读写开（与 <c>ChargingFieldOpsTests</c> 同一个判定）。</summary>
+    [Theory]
+    [InlineData(PlanVerb, true)]
+    [InlineData(WithdrawVerb, false)]
+    public void ThePlanOpensTheDatabaseReadOnlyAndTheWithdrawalDoesNot(string command, bool readOnly) =>
+        Assert.Equal(readOnly, ControlServer.FieldOps.Program.OpensReadOnly(command));
+
     private readonly string _directory = Path.Combine(Path.GetTempPath(), "w2g-withdraw-" + Guid.NewGuid().ToString("N"));
 
     private static CancellationToken Token => TestContext.Current.CancellationToken;

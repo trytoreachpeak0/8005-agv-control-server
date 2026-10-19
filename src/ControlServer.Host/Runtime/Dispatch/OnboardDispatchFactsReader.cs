@@ -213,6 +213,31 @@ public sealed class OnboardDispatchFactsReader(
     /// of every vehicle and generation, once per round per vehicle. Which row is taken does not change, ties on one tick included
     /// (<see cref="SafetyMessagesNewestFirst"/>); with no match it still reads them all, as before.
     /// </remarks>
+    /// <summary>
+    /// When the vehicle observed the safety summary this session carries at <paramref name="safetyRevision"/> (its <c>observedAt</c>),
+    /// read the way dispatch reads that summary; null when the message is not on file. The manual journey withdrawal shows it beside
+    /// the summary it judges doors on (control-server#771 review S-4).
+    /// </summary>
+    internal async Task<DateTimeOffset?> SafetySummaryObservedAtAsync(
+        string agvId,
+        long generation,
+        long safetyRevision,
+        CancellationToken cancellationToken)
+    {
+        ProtocolInboxRow? row = await LatestSafetySummaryForSessionAsync(agvId, generation, safetyRevision, cancellationToken)
+            .ConfigureAwait(false);
+        if (row is null)
+        {
+            return null;
+        }
+        using JsonDocument document = JsonDocument.Parse(row.RequestJson);
+        return document.RootElement.TryGetProperty("payload", out JsonElement payload) &&
+               payload.TryGetProperty("observedAt", out JsonElement observedAt) &&
+               observedAt.TryGetDateTimeOffset(out DateTimeOffset at)
+            ? at
+            : null;
+    }
+
     private async Task<ProtocolInboxRow?> LatestSafetySummaryForSessionAsync(
         string agvId,
         long generation,

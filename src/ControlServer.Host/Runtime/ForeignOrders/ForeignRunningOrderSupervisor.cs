@@ -244,13 +244,15 @@ public sealed class ForeignRunningOrderSupervisor(
         string.Equals(row.OwnershipBasis, Charging.AbandonedChargeOrders.OwnershipBasis, StringComparison.Ordinal);
 
     /// <summary>
-    /// An idle return or clearance move order this server gave up (control-server#611), or a demand leg's order taken as never
-    /// created (control-server#673): held and alarmed, never cancelled.
+    /// An idle return or clearance move order this server gave up (control-server#611), a demand leg's order taken as never
+    /// created (control-server#673), or an order of a journey a person withdrew (control-server#771): held and alarmed, never
+    /// cancelled.
     /// </summary>
     private static bool IsOwnAbandonedHeldOrder(ForeignRiotOrderRow row) =>
         string.Equals(row.OwnershipBasis, IdleReturn.AbandonedIdleReturnOrders.OwnershipBasis, StringComparison.Ordinal) ||
         string.Equals(row.OwnershipBasis, AbandonedDemandLegOrders.OwnershipBasis, StringComparison.Ordinal) ||
-        string.Equals(row.OwnershipBasis, Charging.AbandonedClearanceMoves.OwnershipBasis, StringComparison.Ordinal);
+        string.Equals(row.OwnershipBasis, Charging.AbandonedClearanceMoves.OwnershipBasis, StringComparison.Ordinal) ||
+        string.Equals(row.OwnershipBasis, Withdrawal.WithdrawnJourneyOrders.OwnershipBasis, StringComparison.Ordinal);
 
     /// <summary>
     /// Whether <paramref name="order"/> is still in play for <paramref name="row"/>: running on a vehicle of ours -- or, for a charge
@@ -607,6 +609,12 @@ public sealed class ForeignRunningOrderSupervisor(
                     .ConfigureAwait(false))
             {
                 return (ForeignRiotOrderOwnership.Unproven, AbandonedDemandLegOrders.OwnershipBasis);
+            }
+            // control-server#771 review S-3: and an order of a journey a person withdrew, which nothing of this server watches any more.
+            if (await Withdrawal.WithdrawnJourneyOrders.IsWithdrawnAsync(dbContext, orderId, upperId, cancellationToken)
+                    .ConfigureAwait(false))
+            {
+                return (ForeignRiotOrderOwnership.Unproven, Withdrawal.WithdrawnJourneyOrders.OwnershipBasis);
             }
             return await Charging.AbandonedClearanceMoves.IsAbandonedAsync(dbContext, orderId, upperId, cancellationToken)
                 .ConfigureAwait(false)

@@ -15,6 +15,11 @@
 - **装货结果未知、车上没有出口**（10-19 agv03，hmi#370）：扫了码、下了装货命令，结果以 UNKNOWN 收尾，服务端
   `Blocked/LOAD_RESULT_REQUIRES_RECOVERY`，车载端 RecoveryRequired；车上的恢复开关关着（用户定不打开），屏上没有能按的出口。
 
+**只从三种状态撤**（审查 S-2）：旅程 `Blocked/LOAD_RESULT_REQUIRES_RECOVERY`；旅程在开往取货站途中（`AwaitingPickupArrival`）；
+旅程的阻塞码是车载端会话丢失或没就绪（`ONBOARD_SESSION_LOST`／`ONBOARD_SESSION_NOT_READY`）。其余一律以
+`JOURNEY_STATE_NOT_WITHDRAWABLE` 拒绝，包括卸货结果要恢复（车上有货）、恢复结果没对上的那一族、结束需求上没对上的那一族
+（它们的出口是 control-server#485），以及引擎正常在跑的旅程。
+
 **车上有货不能用**（D2）：现场看见仓里有篮子，或车报的读数说有货、读不出，一律拒绝，改走车载端的恢复会话（18 号开窗）。
 
 ## 撤下会做什么
@@ -30,7 +35,9 @@
 
 撤下之后 20 号关闸、开闸都不会再因这趟旅程被拒（关闸只数没完成的旅程，开闸只查没完成的旅程名下的单）。
 
-**它不做的事**：不取消 RIoT 上的单（所以要先确认没有活单）；不动 MES；不动车载端的日志簿。车载端那条待答的 UNKNOWN 结果，
+**它不做的事**：不取消 RIoT 上的单（所以要先确认没有活单）。万一核错了、或撤下之后这一趟的单又在本车上跑起来，外来单监督器会认出它
+（依据 `OWN_JOURNEY_WITHDRAWN_BY_OPERATOR`），记成「归属证明不了」：挡住这辆车、看板告警，但不取消，要人去 RIoT 把它结束。
+不动 MES；不动车载端的日志簿。车载端那条待答的 UNKNOWN 结果，
 在车接到下一条仓位命令时，由车自己先核实门关着、再覆盖掉（车载端的既有设计）。
 
 ## 先决条件
@@ -48,8 +55,8 @@
 
    | 项 | 谁来核 | 怎么核 |
    | --- | --- | --- |
-   | a. 车报的未结操作就是要撤的那一次 | 入口自己查（车最近一次恢复报告），不一致拒绝 `VEHICLE_REPORTS_ANOTHER_UNSETTLED_ATTEMPT` | 演练输出的 `sessionUnsettledAttempt` 应等于 `unresolvedLoad.slotOperationAttemptId` |
-   | b. 开锁记录里的门关好、锁反馈读得到 | 入口查车最近的安全摘要（有门读不出、没锁、输出没复位就拒）；演练输出列出 `sessionActiveUnlockSlots` | 摘要可能是旧的（离线写法时服务端停着），现场再看一次锁反馈；读不到的要先修好或复位那路反馈，否则撤下后车回 READY、下一条命令却一直被拒 |
+   | a. 车报的未结操作就是要撤的那一次 | 入口自己查（车最近一次恢复报告），不一致拒绝 `VEHICLE_REPORTS_ANOTHER_UNSETTLED_ATTEMPT` | 演练输出的 `sessionUnsettledAttempt` 应等于 `unresolvedLoad.slotOperationAttemptId`。**它为空只表示这一代会话（`sessionGeneration`）还没报过恢复报告，不等于车上没有未结操作**，这时以读日志簿为准 |
+   | b. 开锁记录里的门关好、锁反馈读得到 | 入口查车最近的安全摘要（有门读不出、没锁、输出没复位就拒）；演练输出列出 `sessionActiveUnlockSlots`，以及判门所依据的那条摘要：`sessionSafetyRevision`、`sessionSafetyReasonCodes`、车观测它的时刻 `sessionSafetySummaryObservedAt` 和会话最后更新的时刻 `sessionUpdatedAt` | 摘要可能是旧的（离线写法时服务端停着），先看观测时刻是不是窗口之前很久的，现场再看一次锁反馈；读不到的要先修好或复位那路反馈，否则撤下后车回 READY、下一条命令却一直被拒 |
    | c. 日志簿里没有恢复向量，发件箱里没有被放弃的恢复结果 | 服务端看不见 | 读日志簿（见下）：恢复状态 `recoveryVector` 为空；发件箱里没有 `AbandonedReasonCode` 为 `BUSINESS_ID_CONTENT_CONFLICT`／`MESSAGE_ID_CONTENT_CONFLICT` 的恢复结果行。有的话先由维护人员在车上「人工核对后结束此恢复」 |
    | d. 没有强制隔离 | 服务端看不见 | 读日志簿：`forcedIsolation` 为空。有的话，下一趟的命令不能落在它的「物理状态不明」仓位上，交工程师 |
    | e. 发件箱里未确认的行 | 入口保证：车补发那条待答结果时服务端只确认、不改动（用例 `TheVehiclesReplayOfTheUnknownResultAfterAWithdrawalChangesNothing`） | 读日志簿时记下未确认的行。除了那条待答的操作结果，别的未确认行交工程师看 |
@@ -74,15 +81,25 @@ dotnet ControlServer.FieldOps.dll plan-journey-withdrawal --database <v2 库文�
   --slot-facts 5=EMPTY_LOCKED --cargo-location 在机台上
 ```
 
-输出里逐项核对：旅程、车、每条需求（都应是 `RELEASE_TO_BACKLOG`）、那一次装货与车报的逐仓读数、这一趟名下的单。记下
-`confirmationCode`。然后停 v2 服务，撤下（参数同上，加探测地址与确认码）：
+输出里逐项核对：旅程、车、每条需求（都应是 `RELEASE_TO_BACKLOG`）、那一次装货与车报的逐仓读数、这一趟名下的单、会话那几项。记下
+`confirmationCode`。
+
+### 演练输出怎么看
+
+- **用哪个 FieldOps**（审查 R-6）：从「生产 v2 在跑的那个提交」加上本入口的提交构建，单独放一个目录，不放进安装根。直接用开发分支顶端构建的话，
+  代码里的表结构可能比生产库新，读库会报错；报的是缺列、缺表一类的错，不是拒绝码。
+- **车报的逐仓读数**（`unresolvedLoad.reportedSlots`，审查 R-5）：每个目标仓都要是 `<仓>:EMPTY:LOCKED:RESET`。agv03 那一次，车只直接贴过
+  5 号的读数，6 号是从同一刻的 `SAFE_FINISH` 推出来的。6 号要是读成别的（有货、未知、没锁、输出没复位），演练会以
+  `SLOT_EVIDENCE_NOT_EMPTY` 拒绝，**而这一版没有绕过它的出口**：停下，退回原计划（18 号开窗、车载端补偿），不要改库去凑。
+- `codes` 不为空就是拒绝，对照下面的拒绝码表。然后停 v2 服务，撤下（参数同上，加探测地址与确认码）：
 
 ```powershell
 dotnet ControlServer.FieldOps.dll withdraw-journey --database <v2 库文件> --probe-server http://<v2 健康地址>/ `
   <同上的参数> --confirm <confirmationCode>
 ```
 
-`outcome` 为 `WITHDRAWN` 即成。之后启动 v2 服务（或直接用 20 号关闸，它会以闸门关着的状态重启服务）。车重连后收到收尾快照，
+`outcome` 为 `WITHDRAWN` 即成。之后**只用 20 号关闸重启 v2**，它会以闸门关着的状态起服务；不要直接启动 v2 服务（那样闸门的状态不由你定）。
+开闸让车接活是另一件事，每次单独问用户。车重连后收到收尾快照，
 会话不再因那一次装货而 RecoveryRequired；车要回到 Ready，还要它自己停稳（`MODE_AUTO`、`MT_FINISHED`）。
 
 演练之后状态变了（例如车掉线、又来了一条录入），撤下会以 `CONFIRMATION_STALE` 拒绝，并给出新计划与新确认码：重新核对再按。
@@ -96,6 +113,8 @@ dotnet ControlServer.FieldOps.dll withdraw-journey --database <v2 库文件> --p
 | `JOURNEY_NOT_FOUND`／`VEHICLE_MISMATCH` | 旅程号不对，或车不是这一趟的车 | 核对旅程号与 VehicleKey |
 | `JOURNEY_ALREADY_COMPLETED` | 这一趟已经结束 | 不用撤 |
 | `JOURNEY_KIND_NOT_WITHDRAWABLE` | 空闲返回或充电旅程 | 它们有自己的收尾，不走这里 |
+| `JOURNEY_STATE_NOT_WITHDRAWABLE` | 旅程不在可撤的三种状态里（见「什么时候用」） | 按阻塞码走它自己的出口，交工程师 |
+| `OTHER_DEMAND_RECOVERY_REQUIRED` | 除了那一次装货的需求，还有别的需求标着要恢复 | 那是没下结论的恢复结果，交工程师 |
 | `CARGO_ON_BOARD` | 这一趟有已装上或正在装的另一篮 | 车上有货，走车载端恢复会话 |
 | `OTHER_OPERATION_UNRESOLVED` | 除了阻塞的那一次，还有别的仓位操作没结 | 交工程师 |
 | `SLOT_FACTS_REQUIRED`／`CARGO_LOCATION_REQUIRED` | 结果未知的装货要现场仓位事实和篮子去向 | 到车前看过再填 |

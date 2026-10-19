@@ -6,11 +6,13 @@ using System.Text.Unicode;
 using ControlServer.Application;
 using ControlServer.Domain;
 using ControlServer.Host.Runtime.Commands;
+using ControlServer.Host.Runtime.Dispatch;
 using ControlServer.Host.Runtime.Release;
 using ControlServer.Host.Transport;
 using ControlServer.Infrastructure.Persistence;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.Storage;
+using Microsoft.Extensions.Options;
 
 namespace ControlServer.Host.Runtime.Withdrawal;
 
@@ -76,7 +78,12 @@ public sealed record JourneyWithdrawalPlan(
     string? SessionReadiness,
     string? SessionReasonCode,
     string? SessionUnsettledAttempt = null,
-    IReadOnlyList<int>? SessionActiveUnlockSlots = null);
+    IReadOnlyList<int>? SessionActiveUnlockSlots = null,
+    long? SessionGeneration = null,
+    long? SessionSafetyRevision = null,
+    IReadOnlyList<string>? SessionSafetyReasonCodes = null,
+    DateTimeOffset? SessionSafetySummaryObservedAt = null,
+    DateTimeOffset? SessionUpdatedAt = null);
 
 /// <summary>演练或撤下的结果。</summary>
 /// <param name="Outcome"><c>PLANNED</c>、<c>WITHDRAWN</c>、<c>ALREADY_DONE</c> 或 <c>REJECTED</c>。</param>
@@ -137,6 +144,8 @@ public static class JourneyWithdrawal
     public const string EmergencyStopOpen = "EMERGENCY_STOP_OPEN";
     public const string FaultedCargoBound = "FAULTED_CARGO_BOUND";
     public const string UnsettledAttemptElsewhere = "VEHICLE_REPORTS_ANOTHER_UNSETTLED_ATTEMPT";
+    public const string JourneyStateNotWithdrawable = "JOURNEY_STATE_NOT_WITHDRAWABLE";
+    public const string OtherDemandRecoveryRequired = "OTHER_DEMAND_RECOVERY_REQUIRED";
     public const string ConfirmationRequired = "CONFIRMATION_REQUIRED";
     public const string ConfirmationStale = "CONFIRMATION_STALE";
 
@@ -334,6 +343,11 @@ public static class JourneyWithdrawal
             codes.Add(JourneyKindNotWithdrawable);
             return Refused(codes);
         }
+        if (!InAWithdrawableState(runtime))
+        {
+            codes.Add(JourneyStateNotWithdrawable);
+            return Refused(codes);
+        }
 
         JourneyStopCursor stops = await JourneyStopCursor.LoadAsync(dbContext, runtime, cancellationToken).ConfigureAwait(false);
         JourneyStopDemand[] open = [.. stops.AllDemands.Where(item =>
@@ -358,6 +372,15 @@ public static class JourneyWithdrawal
                                   StringComparison.Ordinal))))
         {
             codes.Add(CargoOnBoard);
+        }
+
+        // Only the demand of the one load this exit settles may be marked for recovery (control-server#771 review S-2): another
+        // such mark is a recovery result that did not reconcile (BlockedJourneyRelease, criterion 4), a fact nobody has
+        // concluded, and releasing its demand would bury it.
+        if (open.Any(item => item.Demand.Status == DemandExecutionStatus.RecoveryRequired &&
+                             !string.Equals(item.Demand.DemandId, unresolvedLoad?.DemandId, StringComparison.Ordinal)))
+        {
+            codes.Add(OtherDemandRecoveryRequired);
         }
 
         SessionRecoveryRow? session = await dbContext.SessionRecoveries.AsNoTracking()
@@ -455,11 +478,40 @@ public static class JourneyWithdrawal
             session?.Readiness.ToString(),
             session?.ReasonCode,
             session?.UnsettledSlotOperationAttemptId,
-            session is null ? null : JsonSerializer.Deserialize<int[]>(session.ActiveUnlockSlotsJson) ?? []);
+            session is null ? null : JsonSerializer.Deserialize<int[]>(session.ActiveUnlockSlotsJson) ?? [],
+            session?.SessionGeneration,
+            session?.SafetyRevision,
+            session?.SafetyReasonCodesJson is { } reasonCodes ? JsonSerializer.Deserialize<string[]>(reasonCodes) : null,
+            session is { SafetyRevision: long revision }
+                ? await new OnboardDispatchFactsReader(dbContext, Options.Create(new JourneyRuntimeOptions()), TimeProvider.System)
+                    .SafetySummaryObservedAtAsync(session.AgvId, session.SessionGeneration, revision, cancellationToken)
+                    .ConfigureAwait(false)
+                : null,
+            session?.UpdatedAt);
         string[] distinct = [.. codes.Distinct(StringComparer.Ordinal)];
         return new Assessment(
             distinct, plan, distinct.Length == 0 ? CodeOf(plan, facts, Trimmed(request.CargoLocation)) : null, false);
     }
+
+    /// <summary>
+    /// The states this first part withdraws from (control-server#771 review S-2), and no other: a journey blocked on the unknown load
+    /// result (agv03, 10-19), one waiting on a lost or not-ready onboard session, or one on its way to its pickup (agv01, 10-18).
+    /// </summary>
+    /// <remarks>
+    /// Every other block is somebody else's to settle first: <c>UNLOAD_RESULT_REQUIRES_RECOVERY</c> (cargo on board), the
+    /// <c>*_NOT_RECONCILED</c> family and the unreleasable one (<see cref="BlockedJourneyRelease.IsUnreleasable"/>, whose exit is
+    /// control-server#485), a trip handed to the exception recovery session. A journey later than its pickup with no block at all is
+    /// the engine's, running.
+    /// </remarks>
+    private static bool InAWithdrawableState(JourneyRuntimeRow runtime) =>
+        runtime.Stage == JourneyRuntimeStage.Blocked
+            ? string.Equals(runtime.BlockReasonCode, LoadResultRequiresRecovery, StringComparison.Ordinal)
+            : runtime.Stage == JourneyRuntimeStage.AwaitingPickupArrival ||
+              runtime.BlockReasonCode is JourneyRuntimeEngine.OnboardSessionLostReason or OnboardSessionNotReady;
+
+    private const string LoadResultRequiresRecovery = "LOAD_RESULT_REQUIRES_RECOVERY";
+
+    private const string OnboardSessionNotReady = "ONBOARD_SESSION_NOT_READY";
 
     private static Assessment Refused(List<string> codes) => new([.. codes.Distinct(StringComparer.Ordinal)], null, null, false);
 
@@ -581,11 +633,11 @@ public static class JourneyWithdrawal
                 .ToArrayAsync(cancellationToken).ConfigureAwait(false))
             .Where(row => named.Contains(row.UpperId) || row.CreatedAt >= runtime.CreatedAt)
             .OrderBy(row => row.UpperId, StringComparer.Ordinal)];
-        WireToGateStore store = new(dbContext);
         foreach (OrderIntentRow intent in mine.Where(row => UnknownOutcomeIntentStatuses.Contains(row.Status, StringComparer.Ordinal)))
         {
-            if (!await store.IsNeverSentAsync(intent, cancellationToken).ConfigureAwait(false) &&
-                !await AbandonedDemandLegOrders.TakenAsNeverCreatedAsync(dbContext, intent, cancellationToken).ConfigureAwait(false))
+            // The idle return evaluator's own exemption and no wider (control-server#771 review M-1): an intent it would still count
+            // as RESULT_UNKNOWN holds this vehicle's idle return for good once the journey is gone, and nothing settles it then.
+            if (!await AbandonedDemandLegOrders.TakenAsNeverCreatedAsync(dbContext, intent, cancellationToken).ConfigureAwait(false))
             {
                 codes.Add(OrderOutcomeUnknown);
                 break;
@@ -632,7 +684,8 @@ public static class JourneyWithdrawal
         {
             AcceptedDemandRow demand = await dbContext.AcceptedDemands
                 .SingleAsync(row => row.DemandId == item.DemandId, cancellationToken).ConfigureAwait(false);
-            if (demand.Status == DemandExecutionStatus.RecoveryRequired)
+            if (demand.Status == DemandExecutionStatus.RecoveryRequired &&
+                string.Equals(demand.DemandId, plan.UnresolvedLoad?.DemandId, StringComparison.Ordinal))
             {
                 demand.Status = DemandExecutionStatus.Accepted;
             }

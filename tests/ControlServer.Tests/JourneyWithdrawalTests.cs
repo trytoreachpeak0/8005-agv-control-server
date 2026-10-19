@@ -2,6 +2,7 @@ using System.Text.Json;
 using ControlServer.Application;
 using ControlServer.Domain;
 using ControlServer.Host.Runtime;
+using ControlServer.Host.Runtime.ForeignOrders;
 using ControlServer.Host.Runtime.Withdrawal;
 using ControlServer.Infrastructure.Persistence;
 using Microsoft.EntityFrameworkCore;
@@ -412,9 +413,33 @@ public sealed class JourneyWithdrawalTests
         JourneyWithdrawalResult refused = await JourneyWithdrawal.PlanAsync(fixture.Context, Request(blocked, facts, CargoLocation), Token);
 
         Assert.Equal("REJECTED", refused.Outcome);
-        Assert.Contains(
-            refused.Codes,
-            code => code is JourneyWithdrawal.SlotFactsMalformed or JourneyWithdrawal.SlotFactsMismatch);
+        Assert.Equal([JourneyWithdrawal.SlotFactsMalformed], refused.Codes);
+    }
+
+    /// <summary>
+    /// 审查 S-5：格式对、仓号在 1..8、写的也是空且锁着，只是两个目标仓位只写了一个（或多写了一个）：只拒在「盖不住目标仓位」上，不是格式错。
+    /// </summary>
+    [Theory]
+    [InlineData(false)]
+    [InlineData(true)]
+    public async Task WellFormedSlotFactsThatNameOneTargetSlotOnlyOrOneTooManyAreRefusedAsAMismatch(bool oneTooMany)
+    {
+        await using RuntimeFixture fixture = await RuntimeFixture.CreateAsync();
+        JourneyRuntimeRow blocked = await BlockOnAnUnknownLoadWithAnotherDemandStillToLoadAsync(fixture, boxCount: 8);
+        int[] targets = await TargetSlotsAsync(fixture, FirstDemandId);
+        Assert.Equal(2, targets.Length);
+        int[] named = oneTooMany
+            ? [.. targets, Enumerable.Range(1, 8).First(slot => !targets.Contains(slot))]
+            : [targets[0]];
+
+        JourneyWithdrawalResult refused = await JourneyWithdrawal.PlanAsync(
+            fixture.Context, Request(blocked, EmptyLocked(named), CargoLocation), Token);
+
+        Assert.Equal("REJECTED", refused.Outcome);
+        Assert.Equal([JourneyWithdrawal.SlotFactsMismatch], refused.Codes);
+        JourneyWithdrawalResult covered = await JourneyWithdrawal.PlanAsync(
+            fixture.Context, Request(blocked, EmptyLocked(targets), CargoLocation), Token);
+        Assert.True(covered.Outcome == "PLANNED", string.Join(",", covered.Codes));
     }
 
     /// <summary>车最近报的安全摘要说仓门读不出、没锁或开锁输出没复位，或者车从没报过：门没证明关着，拒绝。</summary>
@@ -560,6 +585,263 @@ public sealed class JourneyWithdrawalTests
     }
 
     // ------------------------------------------------------------------------------------------------
+    // 审查 M-1：建单结果未知的意图，豁免只到空闲返回评估器自己的豁免为止。
+    // ------------------------------------------------------------------------------------------------
+
+    /// <summary>
+    /// 审查 M-1 探针 P1：RESULT_UNKNOWN、从没发出建单（建单前那次读什么也没读到）的那一形。<see cref="WireToGateStore.IsNeverSentAsync"/> 说它没发出，
+    /// 但空闲返回评估器只豁免「判作没建成」的那一种，不豁免它：旅程一收尾，它就永远挡着这辆车的空闲返回，谁也不再去结它。所以撤下拒。
+    /// </summary>
+    [Fact]
+    public async Task AnOrderNeverSentButStillResultUnknownRefusesTheWithdrawal()
+    {
+        await using RuntimeFixture fixture = await RuntimeFixture.CreateAsync();
+        JourneyRuntimeRow blocked = await BlockOnAnUnknownLoadWithAnotherDemandStillToLoadAsync(fixture);
+        // Moved onto a leg of its own, so the audit of the real create stays out of it: one pre-create read that answered nothing.
+        OrderIntentRow intent = await fixture.Context.OrderIntents.AsNoTracking().SingleAsync(row => row.UpperId == blocked.PickupUpperId, Token);
+        await fixture.Context.OrderIntents.Where(row => row.MovementLegId == intent.MovementLegId).ExecuteDeleteAsync(Token);
+        intent.MovementLegId = "leg-771-never-sent";
+        intent.Status = "RESULT_UNKNOWN";
+        intent.OrderId = null;
+        intent.CreateAttemptCount = 0;
+        intent.CreateAttemptId = null;
+        intent.DispatchAuditVersion = 1;
+        intent.ExperimentalCreateAuthorizationId = null;
+        fixture.Context.OrderIntents.Add(intent);
+        fixture.Context.RiotDispatchAuditEvents.Add(new RiotDispatchAuditEventRow
+        {
+            AuditEventId = "audit-771-never-sent",
+            MovementLegId = intent.MovementLegId,
+            UpperId = intent.UpperId,
+            Sequence = 1,
+            Phase = "PRE_CREATE_RECONCILIATION",
+            Outcome = "UNKNOWN",
+            OccurredAt = Now,
+        });
+        await fixture.Context.SaveChangesAsync(Token);
+        fixture.Context.ChangeTracker.Clear();
+        OrderIntentRow stored = await fixture.Context.OrderIntents.AsNoTracking().SingleAsync(row => row.UpperId == blocked.PickupUpperId, Token);
+        Assert.True(await new WireToGateStore(fixture.Context).IsNeverSentAsync(stored, Token));
+        Assert.False(await AbandonedDemandLegOrders.TakenAsNeverCreatedAsync(fixture.Context, stored, Token));
+
+        await AssertRefusedEverywhereAsync(fixture, await RequestAsync(fixture, blocked), JourneyWithdrawal.OrderOutcomeUnknown);
+    }
+
+    // ------------------------------------------------------------------------------------------------
+    // 审查 S-2：只从三种状态撤下。
+    // ------------------------------------------------------------------------------------------------
+
+    /// <summary>
+    /// 审查 S-2 探针 P2：阻塞码不是「装货结果要恢复」的都拒——卸货结果要恢复（车上有货）、恢复结果没对上的那一族、结束需求上没对上的（不可放行，
+    /// 出口在 control-server#485）。不在取货途中、也没有掉线码的未阻塞旅程同样拒：那是引擎在跑的。
+    /// </summary>
+    [Theory]
+    [InlineData(nameof(JourneyRuntimeStage.Blocked), "UNLOAD_RESULT_REQUIRES_RECOVERY")]
+    [InlineData(nameof(JourneyRuntimeStage.Blocked), "LOAD_RESULT_NOT_RECONCILED")]
+    [InlineData(nameof(JourneyRuntimeStage.Blocked), "LOAD_RESULT_NOT_RECONCILED_ON_ENDED_DEMAND")]
+    [InlineData(nameof(JourneyRuntimeStage.Blocked), "LOAD_RESULT_NOT_RECONCILED_BEFORE_UPGRADE")]
+    [InlineData(nameof(JourneyRuntimeStage.AwaitingLoadResult), null)]
+    public async Task AJourneyInAnyOtherStateIsRefused(string stage, string? blockReason)
+    {
+        await using RuntimeFixture fixture = await RuntimeFixture.CreateAsync();
+        JourneyRuntimeRow blocked = await BlockOnAnUnknownLoadWithAnotherDemandStillToLoadAsync(fixture);
+        await SetStateAsync(fixture, blocked, Enum.Parse<JourneyRuntimeStage>(stage), blockReason);
+
+        await AssertRefusedEverywhereAsync(fixture, await RequestAsync(fixture, blocked), JourneyWithdrawal.JourneyStateNotWithdrawable);
+    }
+
+    /// <summary>白名单的另一头：车载端会话掉线或没就绪时等装货结果的旅程可以撤（掉线就等不来结果）。</summary>
+    [Theory]
+    [InlineData(JourneyRuntimeEngine.OnboardSessionLostReason)]
+    [InlineData("ONBOARD_SESSION_NOT_READY")]
+    public async Task AJourneyWaitingOnALostOrNotReadySessionMayBeWithdrawn(string blockReason)
+    {
+        await using RuntimeFixture fixture = await RuntimeFixture.CreateAsync();
+        JourneyRuntimeRow blocked = await BlockOnAnUnknownLoadWithAnotherDemandStillToLoadAsync(fixture);
+        await SetStateAsync(fixture, blocked, JourneyRuntimeStage.AwaitingLoadResult, blockReason);
+
+        JourneyWithdrawalResult planned = await JourneyWithdrawal.PlanAsync(fixture.Context, await RequestAsync(fixture, blocked), Token);
+
+        Assert.True(planned.Outcome == "PLANNED", string.Join(",", planned.Codes));
+    }
+
+    /// <summary>
+    /// 审查 S-2：要恢复的只能是这一次装货那一条需求。另一条也标着要恢复，是一个没人下结论的恢复结果，放回待派等于把它埋了，拒。
+    /// </summary>
+    [Fact]
+    public async Task AnotherDemandMarkedForRecoveryRefusesTheWithdrawal()
+    {
+        await using RuntimeFixture fixture = await RuntimeFixture.CreateAsync();
+        JourneyRuntimeRow blocked = await BlockOnAnUnknownLoadWithAnotherDemandStillToLoadAsync(fixture);
+        await fixture.Context.AcceptedDemands
+            .Where(row => row.DemandId == SecondDemandId)
+            .ExecuteUpdateAsync(setters => setters.SetProperty(row => row.Status, DemandExecutionStatus.RecoveryRequired), Token);
+        fixture.Context.ChangeTracker.Clear();
+
+        await AssertRefusedEverywhereAsync(fixture, await RequestAsync(fixture, blocked), JourneyWithdrawal.OtherDemandRecoveryRequired);
+    }
+
+    // ------------------------------------------------------------------------------------------------
+    // 审查 S-5：此前没有用例的拒绝。
+    // ------------------------------------------------------------------------------------------------
+
+    [Fact]
+    public async Task AnOpenEmergencyStopRefusesTheWithdrawal()
+    {
+        await using RuntimeFixture fixture = await RuntimeFixture.CreateAsync();
+        JourneyRuntimeRow blocked = await BlockOnAnUnknownLoadWithAnotherDemandStillToLoadAsync(fixture);
+        await new RiotOrderCommandAuditStore(fixture.Context).ArmAttemptAsync(
+            RiotCommandTypeNames.TriggerEmergency,
+            fixture.Options.AgvId,
+            "vehicle:" + blocked.VehicleKey,
+            null,
+            new string('7', 64),
+            1,
+            fixture.Clock.GetUtcNow(),
+            Token);
+        fixture.Context.ChangeTracker.Clear();
+
+        await AssertRefusedEverywhereAsync(fixture, await RequestAsync(fixture, blocked), JourneyWithdrawal.EmergencyStopOpen);
+    }
+
+    [Fact]
+    public async Task ARebuildRecordStillWaitedOnRefusesTheWithdrawal()
+    {
+        await using RuntimeFixture fixture = await RuntimeFixture.CreateAsync();
+        JourneyRuntimeRow blocked = await BlockOnAnUnknownLoadWithAnotherDemandStillToLoadAsync(fixture);
+        DateTimeOffset now = fixture.Clock.GetUtcNow();
+        fixture.Context.OwnOrderRebuilds.Add(new OwnOrderRebuildRow
+        {
+            RebuildId = "rebuild-771",
+            JourneyId = blocked.JourneyId,
+            DemandId = FirstDemandId,
+            AgvId = fixture.Options.AgvId,
+            VehicleKey = blocked.VehicleKey,
+            StopId = blocked.JourneyId + "|PICKUP",
+            Source = OwnOrderRebuildSources.OrderNeverAppeared,
+            EndedUpperId = blocked.PickupUpperId,
+            NewUpperId = blocked.PickupUpperId + "-R1",
+            NewMovementLegId = "rebuild-771-leg",
+            IncidentAt = now,
+            RecordedAt = now,
+            DueAt = now,
+            State = OwnOrderRebuildStates.Pending,
+        });
+        await fixture.Context.SaveChangesAsync(Token);
+        fixture.Context.ChangeTracker.Clear();
+
+        await AssertRefusedEverywhereAsync(fixture, await RequestAsync(fixture, blocked), JourneyWithdrawal.RebuildRecordOpen);
+    }
+
+    /// <summary>那一次装货车从没回过结果（命令发出后车再没回话）：没有车的读数，现场说空也不信，拒。</summary>
+    [Fact]
+    public async Task AnUnresolvedLoadTheVehicleNeverReportedOnRefusesTheWithdrawal()
+    {
+        await using RuntimeFixture fixture = await RuntimeFixture.CreateAsync();
+        JourneyRuntimeRow blocked = await BlockOnAnUnknownLoadWithAnotherDemandStillToLoadAsync(fixture);
+        string attempt = (await OperationOfAsync(fixture, FirstDemandId)).SlotOperationAttemptId;
+        await fixture.Context.OperationResults
+            .Where(row => row.SlotOperationAttemptId == attempt)
+            .ExecuteUpdateAsync(setters => setters.SetProperty(row => row.HistoricalOnly, true), Token);
+        fixture.Context.ChangeTracker.Clear();
+
+        await AssertRefusedEverywhereAsync(fixture, await RequestAsync(fixture, blocked), JourneyWithdrawal.SlotEvidenceMissing);
+    }
+
+    /// <summary>没结的不是一次装货（这里把它改成卸货）：这一版只收拾一次装货，别的要人在车上处理，拒。</summary>
+    [Fact]
+    public async Task AnUnresolvedOperationOtherThanOneLoadRefusesTheWithdrawal()
+    {
+        await using RuntimeFixture fixture = await RuntimeFixture.CreateAsync();
+        JourneyRuntimeRow blocked = await BlockOnAnUnknownLoadWithAnotherDemandStillToLoadAsync(fixture);
+        int[] slots = await TargetSlotsAsync(fixture, FirstDemandId);
+        string attempt = (await OperationOfAsync(fixture, FirstDemandId)).SlotOperationAttemptId;
+        await fixture.Context.StationOperations
+            .Where(row => row.SlotOperationAttemptId == attempt)
+            .ExecuteUpdateAsync(setters => setters.SetProperty(row => row.OperationType, SlotOperationType.Unload), Token);
+        fixture.Context.ChangeTracker.Clear();
+
+        await AssertRefusedEverywhereAsync(
+            fixture, Request(blocked, EmptyLocked(slots), CargoLocation), JourneyWithdrawal.OtherOperationUnresolved);
+    }
+
+    /// <summary>充电旅程不带需求：没有可放回待派的东西，这个出口不收，拒。</summary>
+    [Fact]
+    public async Task AJourneyCarryingNoDemandIsRefused()
+    {
+        await using RuntimeFixture fixture = await RuntimeFixture.CreateAsync();
+        JourneyRuntimeRow charging = ControlServer.Host.Runtime.Charging.ChargingJourneyShape.Build(
+            ChargingIdentity.JourneyIdPrefix + fixture.Options.VehicleKey + ":771",
+            new ControlServer.Host.Runtime.Fleet.FleetVehicle(fixture.Options.AgvId, fixture.Options.VehicleKey, 1),
+            new ChargerRosterEntry(fixture.Options.MapId, 771, "CHG-771", null, null, []),
+            1,
+            "MANDATORY_CHARGE",
+            fixture.Options,
+            fixture.Clock.GetUtcNow()).Runtime;
+        fixture.Context.JourneyRuntimes.Add(charging);
+        await fixture.Context.SaveChangesAsync(Token);
+        fixture.Context.ChangeTracker.Clear();
+
+        await AssertRefusedEverywhereAsync(fixture, Request(charging, null, null), JourneyWithdrawal.JourneyKindNotWithdrawable);
+    }
+
+    // ------------------------------------------------------------------------------------------------
+    // 审查 S-4：计划里给出判门所依据的会话事实。
+    // ------------------------------------------------------------------------------------------------
+
+    /// <summary>
+    /// 计划列出会话代次、安全摘要的修订号、它的原因码、车观测它的时刻与会话最后更新的时刻：现场据此判断「门关着」那一条摘要是哪一刻的。
+    /// </summary>
+    [Fact]
+    public async Task ThePlanShowsTheSessionFactsTheDoorsAreJudgedOn()
+    {
+        await using RuntimeFixture fixture = await RuntimeFixture.CreateAsync();
+        JourneyRuntimeRow blocked = await BlockOnAnUnknownLoadWithAnotherDemandStillToLoadAsync(fixture);
+        SessionRecoveryRow session = await fixture.Context.SessionRecoveries.AsNoTracking().SingleAsync(Token);
+
+        JourneyWithdrawalPlan plan = (await JourneyWithdrawal.PlanAsync(fixture.Context, await RequestAsync(fixture, blocked), Token)).Plan!;
+
+        Assert.Equal(session.SessionGeneration, plan.SessionGeneration);
+        Assert.NotNull(plan.SessionSafetyRevision);
+        Assert.Equal(session.SafetyRevision, plan.SessionSafetyRevision);
+        Assert.NotNull(plan.SessionSafetyReasonCodes);
+        Assert.Equal(session.UpdatedAt, plan.SessionUpdatedAt);
+        Assert.NotNull(plan.SessionSafetySummaryObservedAt);
+    }
+
+    // ------------------------------------------------------------------------------------------------
+    // 审查 S-3：撤下之后那趟旅程名下的单若在 RIoT 上跑起来，外来单监督器挡车、不取消。
+    // ------------------------------------------------------------------------------------------------
+
+    /// <summary>
+    /// 撤下前现场要核过 RIoT 上本车没有未结束的单；核错了、或撤下之后那张取货单又在本车上跑起来时，它仍对得上一条订单意图，原本会被当成本服务端
+    /// 自己的在途单、没人管。现在依据 <c>OWN_JOURNEY_WITHDRAWN_BY_OPERATOR</c> 记成「归属证明不了」：挡车、告警，不发任何订单命令。
+    /// </summary>
+    [Fact]
+    public async Task AnOrderOfAWithdrawnJourneyRunningAgainHoldsTheVehicleAndIsNotCancelled()
+    {
+        await using RuntimeFixture fixture = await RuntimeFixture.CreateAsync();
+        JourneyRuntimeRow blocked = await BlockOnAnUnknownLoadWithAnotherDemandStillToLoadAsync(fixture);
+        await PlanAndWithdrawAsync(fixture, await RequestAsync(fixture, blocked));
+        int commandsBefore = fixture.Riot.OrderCommands.Count;
+
+        fixture.Riot.SetOrderState(blocked.PickupUpperId, 3, terminal: false);
+        string orderId = fixture.Riot.OrderIdOf(blocked.PickupUpperId)!;
+        fixture.Clock.Advance(TimeSpan.FromSeconds(1));
+        await fixture.HearFromPeerAsync();
+        fixture.Context.ChangeTracker.Clear();
+        await fixture.Engine.ExecuteOnceAsync(Token);
+        fixture.Context.ChangeTracker.Clear();
+
+        ForeignRiotOrderRow held = await fixture.Context.ForeignRiotOrders.AsNoTracking().SingleAsync(row => row.RiotOrderId == orderId, Token);
+        Assert.Equal(
+            (ForeignRiotOrderOwnership.Unproven, WithdrawnJourneyOrders.OwnershipBasis),
+            (held.Ownership, held.OwnershipBasis));
+        Assert.Contains(fixture.Options.AgvId, await ForeignRunningOrders.HeldAgvIdsAsync(fixture.Context, Token));
+        Assert.Equal(commandsBefore, fixture.Riot.OrderCommands.Count);
+    }
+
+    // ------------------------------------------------------------------------------------------------
     // 撤下之后：引擎照常推进，不因这趟旅程抛。
     // ------------------------------------------------------------------------------------------------
 
@@ -586,9 +868,9 @@ public sealed class JourneyWithdrawalTests
     /// 第二条还没装。
     /// </summary>
     internal static async Task<JourneyRuntimeRow> BlockOnAnUnknownLoadWithAnotherDemandStillToLoadAsync(
-        RuntimeFixture fixture, SlotBusinessState reported = SlotBusinessState.Empty)
+        RuntimeFixture fixture, SlotBusinessState reported = SlotBusinessState.Empty, int boxCount = 4)
     {
-        await Batch7MultiDemandAdvanceTests.TwoDemandsAtThePickupAsync(fixture);
+        await Batch7MultiDemandAdvanceTests.TwoDemandsAtThePickupAsync(fixture, boxCount);
         await EnterSublotAsync(fixture, FirstDemandId, FirstSublot, FirstSubmissionId);
         StationOperationRow operation = await OperationOfAsync(fixture, FirstDemandId);
         if (reported == SlotBusinessState.Empty)
@@ -634,6 +916,16 @@ public sealed class JourneyWithdrawalTests
 
     internal static async Task<int[]> TargetSlotsAsync(RuntimeFixture fixture, string demandId) =>
         JsonSerializer.Deserialize<int[]>((await OperationOfAsync(fixture, demandId)).TargetSlotsJson) ?? [];
+
+    /// <summary>Puts the journey into <paramref name="stage"/> with <paramref name="blockReason"/>, the rest of its state as it was.</summary>
+    private static async Task SetStateAsync(RuntimeFixture fixture, JourneyRuntimeRow journey, JourneyRuntimeStage stage, string? blockReason)
+    {
+        JourneyRuntimeRow row = await fixture.Context.JourneyRuntimes.SingleAsync(item => item.JourneyId == journey.JourneyId, Token);
+        row.Stage = stage;
+        row.SetBlockReason(blockReason, fixture.Clock.GetUtcNow());
+        await fixture.Context.SaveChangesAsync(Token);
+        fixture.Context.ChangeTracker.Clear();
+    }
 
     private static Task<StationOperationRow> OperationOfAsync(RuntimeFixture fixture, string demandId) =>
         fixture.Context.StationOperations.AsNoTracking()
