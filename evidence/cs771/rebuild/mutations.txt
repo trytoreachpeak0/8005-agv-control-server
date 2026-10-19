@@ -1,0 +1,13 @@
+# pending: EndsWithTheJourney no longer accepts PENDING; ended: the line writing ENDED removed
+## mutant: pending
+Failed!  - Failed:     2, Passed:     2, Skipped:     0, Total:     4, Duration: 5 s - ControlServer.Tests.dll (net8.0)
+  Failed ControlServer.Tests.JourneyWithdrawalTests.APendingRebuildOfAJourneyOnItsWayToThePickupIsEndedByTheWithdrawal [3 s]
+  Failed ControlServer.Tests.JourneyWithdrawalTests.ARebuildNotYetOrderedIsEndedByTheWithdrawal(state: "PENDING", stoppedReason: null) [461 ms]
+
+## mutant: ended
+Failed!  - Failed:     4, Passed:     0, Skipped:     0, Total:     4, Duration: 5 s - ControlServer.Tests.dll (net8.0)
+  Failed ControlServer.Tests.JourneyWithdrawalTests.APendingRebuildOfAJourneyOnItsWayToThePickupIsEndedByTheWithdrawal [3 s]
+  Failed ControlServer.Tests.JourneyWithdrawalTests.ARebuildNotYetOrderedIsEndedByTheWithdrawal(state: "STOPPED", stoppedReason: "MANDATORY_CHARGE_REQUIRED") [906 ms]
+  Failed ControlServer.Tests.JourneyWithdrawalTests.ARebuildNotYetOrderedIsEndedByTheWithdrawal(state: "STOPPED", stoppedReason: "VEHICLE_NO_LONGER_ELIGIBLE") [483 ms]
+  Failed ControlServer.Tests.JourneyWithdrawalTests.ARebuildNotYetOrderedIsEndedByTheWithdrawal(state: "PENDING", stoppedReason: null) [526 ms]
+
