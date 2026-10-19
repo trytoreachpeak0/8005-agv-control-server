@@ -1,3 +1,5 @@
+using System.Collections.Concurrent;
+using System.Data;
 using Microsoft.Data.Sqlite;
 using Microsoft.EntityFrameworkCore;
 
@@ -17,8 +19,13 @@ namespace ControlServer.Infrastructure.Persistence;
 /// 注销 EF 函数时报 SQLITE_BUSY（「这条连接上有别人的活动语句」），06:55:22Z 借到一个已被池释放的句柄。
 /// </para>
 /// <para>
-/// <b>怎么挡。</b>那两个窗口都只在 <see cref="Open"/> 与 <see cref="Close"/> 里面，看到它们的也只有另一次
-/// <see cref="Open"/>；让本进程所有这种连接的开与关互斥，就没有人能看到半截状态。异步与释放的路都落在这两个
+/// <b>怎么挡。</b>那两个窗口都只在 <see cref="Open"/> 与 <see cref="Close"/> 里面。会去看它们的
+/// <c>ReclaimLeakedConnections</c> 有两类调用方：另一次 <see cref="Open"/>（池为空、连接数为偶数时），和池的
+/// <c>Clear()</c>。前一类被这把锁挡住：本进程所有这种连接的开与关互斥，开库的人看不到别人的半截状态。后一类不经过
+/// 这把锁：<c>SqliteConnection.ClearPool</c>/<c>ClearAllPools</c>、工厂的清理定时器（4 分钟后起、每 30 秒清一次已停用的
+/// 池）、进程退出与域卸载时的 <c>ClearPools()</c>（v8.0.30 <c>SqliteConnectionFactory</c> :25-28、:99、:106-114；
+/// <c>SqliteConnectionPool.Clear</c> :93-113）。主机不调前两个，定时器只清已停用的池，退出时已不再开库，所以剩下的窗口
+/// 很窄，但不是零（control-server#779 审查 S4）。异步与释放的路都落在这两个
 /// 虚方法上：<c>DbConnection.OpenAsync</c> 同步调用 <c>Open()</c>，<c>CloseAsync</c> 调 <c>Close()</c>，
 /// <c>DisposeAsync</c> 调 <c>Dispose()</c>，而 <c>SqliteConnection.Dispose(bool)</c> 调 <c>Close()</c>；
 /// SqliteConnection 8.0.30 一个异步方法都没有重写（测试 <c>SerializedSqliteConnectionTests</c> 用计数证这一点）。
@@ -31,6 +38,15 @@ namespace ControlServer.Infrastructure.Persistence;
 /// 自锁。池内部那把锁只在池代码里拿、不回调出来，所以没有第二把锁与这把交叉。
 /// </para>
 /// <para>
+/// <b>开库失败、手里却还挂着别人的连接时（审查 M1）。</b>06:48:25Z 那一次：被池递来别人还在用的内部连接，注册 EF 函数
+/// 失败，<c>Open</c> 自己的 catch 里注销函数又失败（v8.0.30 <c>SqliteConnection.Open</c> :321-327），后两步被跳过，
+/// 连接停在 <c>Open</c>。EF 见它开着就不再开、也不会替它关，后面的查询、事务、提交都跑在别人的句柄上。这里把它标成
+/// <see cref="ConnectionState.Broken"/>：再开就抛 <see cref="SqliteConnectionPoisonedException"/>（EF 见 Broken 先关再开，
+/// 于是同一个上下文里后来的查询也到不了那个句柄），关它不碰池，那条内部连接留给它原来的使用者归还。这个对象本身留在
+/// <see cref="Poisoned"/> 里不被回收：内部连接只用弱引用记着它，它一旦被回收，池就会把那条还在别人手里的内部连接当作泄漏
+/// 再借出去。只有这种罕见的失败才进这个集合。
+/// </para>
+/// <para>
 /// <b>只保护走它的连接。</b>主机里所有 DbContext 由 <c>Program.cs</c> 的 <c>AddDbContext</c> 经它建出来。
 /// EF 在库文件还不存在时另开的只读探测连接、以及 <c>ControlServer.FieldOps</c>（另一个进程，一次命令一个上下文、
 /// 单线程，没有并发开库）不经过这里。
@@ -40,11 +56,31 @@ public class SerializedSqliteConnection(string connectionString) : SqliteConnect
 {
     private static readonly object Gate = new();
 
+    /// <summary>Connections left holding another owner's native connection, kept reachable on purpose (see remarks).</summary>
+    private static readonly ConcurrentBag<SerializedSqliteConnection> Poisoned = [];
+
+    private volatile bool _poisoned;
+
+    public override ConnectionState State => _poisoned ? ConnectionState.Broken : base.State;
+
     public override void Open()
     {
         lock (Gate)
         {
-            base.Open();
+            if (_poisoned)
+            {
+                throw new SqliteConnectionPoisonedException(PoisonedMessage);
+            }
+            try
+            {
+                base.Open();
+            }
+            catch (Exception error) when (base.State == ConnectionState.Open)
+            {
+                _poisoned = true;
+                Poisoned.Add(this);
+                throw new SqliteConnectionPoisonedException(PoisonedMessage, error);
+            }
         }
     }
 
@@ -52,9 +88,18 @@ public class SerializedSqliteConnection(string connectionString) : SqliteConnect
     {
         lock (Gate)
         {
+            if (_poisoned)
+            {
+                // Closing would hand the native connection back to the pool while its other owner may still be using it.
+                return;
+            }
             base.Close();
         }
     }
+
+    private const string PoisonedMessage =
+        "This SQLite connection failed to open while left holding a pooled native connection another owner may still be " +
+        "using (dotnet/efcore#39008, control-server#779). Nothing may run on it; the context it belongs to has to go.";
 }
 
 /// <summary>How the host gives each DbContext its own <see cref="SerializedSqliteConnection"/>.</summary>

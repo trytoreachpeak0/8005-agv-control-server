@@ -1,3 +1,4 @@
+using System.Data;
 using System.Security.Cryptography;
 using System.Text;
 using System.Text.Json;
@@ -153,6 +154,14 @@ public sealed partial class OnboardMessageProcessor(
         // inbox row, so the next attempt is the first one again and ProtocolInbox still dedups whatever comes after. A fault
         // met once processing began is never retried, because processing also changes this connection's state in memory;
         // it ends the connection as before, logged with the vehicle and the message first (1108).
+        //
+        // Nor is one retried unless this context's connection is closed again (review M1). An open that failed while left
+        // holding another owner's pooled native connection stays Open (Microsoft.Data.Sqlite 8.0.30 SqliteConnection.Open
+        // :321-327); EF then reuses it as it is and never closes it, so a retry would run the lookup, the transaction, the
+        // processing and the commit on that other owner's connection -- whose rollback could take back a row already answered.
+        // SerializedSqliteConnection marks such a connection Broken and throws a non-transient exception; this check covers a
+        // connection that does not come through it. The cost: a genuine busy timeout that leaves the connection open is not
+        // retried either and ends the connection, as before this ticket.
         int transientRetries = 0;
         for (int attempt = 0; ; attempt++)
         {
@@ -195,6 +204,7 @@ public sealed partial class OnboardMessageProcessor(
             }
             catch (Exception fault) when (!processingBegan &&
                                           transientRetries < MaxTransientDatabaseRetries &&
+                                          dbContext.Database.GetDbConnection().State == ConnectionState.Closed &&
                                           IsTransientDatabaseFault(fault))
             {
                 dbContext.ChangeTracker.Clear();
@@ -1607,7 +1617,8 @@ public sealed partial class OnboardMessageProcessor(
     /// <summary>
     /// A fault that says nothing about the data and goes away by itself. SQLITE_BUSY and SQLITE_LOCKED are the other writer
     /// holding the lock. An ObjectDisposedException on the native sqlite3 handle is Microsoft.Data.Sqlite 8's pool lending one
-    /// connection to two owners (dotnet/efcore#39008, seen 2026-10-19 06:55:22Z), whose next open gets another handle.
+    /// connection to two owners (dotnet/efcore#39008, seen 2026-10-19 06:55:22Z), whose next open gets another handle. A
+    /// SqliteConnectionPoisonedException is never transient. Retried only while the connection is closed again (see the loop).
     /// </summary>
     private static bool IsTransientDatabaseFault(Exception error)
     {
@@ -1626,7 +1637,7 @@ public sealed partial class OnboardMessageProcessor(
     {
         for (Exception? current = error; current is not null; current = current.InnerException)
         {
-            if (current is SqliteException or DbUpdateException ||
+            if (current is SqliteException or DbUpdateException or SqliteConnectionPoisonedException ||
                 current is ObjectDisposedException { ObjectName: "SQLitePCL.sqlite3" })
             {
                 return true;
