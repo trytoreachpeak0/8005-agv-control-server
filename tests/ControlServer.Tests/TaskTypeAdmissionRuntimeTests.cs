@@ -1,5 +1,6 @@
 using ControlServer.Application;
 using ControlServer.Domain;
+using ControlServer.Host.Runtime.Dispatch.Criteria;
 using ControlServer.Host.Runtime.TaskTypeStations;
 using ControlServer.Infrastructure.Persistence;
 using Microsoft.EntityFrameworkCore;
@@ -301,6 +302,191 @@ public sealed class TaskTypeAdmissionRuntimeTests
         Assert.Contains(
             "WIRE_TO_FULL_INSPECTION",
             await fixture.Context.StationTaskTypeAdmissions.AsNoTracking().Select(row => row.TaskType).Distinct().ToArrayAsync(Token));
+    }
+
+    /// <summary>
+    /// control-server#777：cs#738 在 factory01 上照做的顺序——先停服，在服务端最近一次完整确认后的批准窗口内（factory01 是 5 分钟）用 FieldOps
+    /// 激活含全检站的绑定集，再用把 <c>admissionPolicyVersion</c> 升到 8 的定义起服。任何一轮都不判漂移：停着的服务端不跑轮次，起来的第一轮
+    /// 就在新版本下绑定七类种子。新版本取自生产定义文件本身，所以定义不升，这条就红。
+    /// </summary>
+    /// <remarks>
+    /// 激活走真实的 <see cref="TaskTypeStationActivationService"/>（FieldOps 的同一服务），连同目录新鲜度：停服超过窗口后它拒绝激活
+    /// （<c>TASK_TYPE_BINDING_CATALOG_NOT_FRESH</c>，什么都不切换），所以停服到激活之间不能拖过 5 分钟。
+    /// </remarks>
+    [Fact]
+    [Trait("IntegrationSlice", "FP-IS-10")]
+    public async Task TheFullInspectionActivationDoesNotDriftWhenActivatedStoppedAndStartedUnderTheRaisedVersion()
+    {
+        await using RuntimeFixture fixture = await RuntimeFixture.CreateAsync();
+        long ruleVersion = await ProductionBeforeTheFullInspectionActivationAsync(fixture);
+        DateTimeOffset lastConfirmation = fixture.Clock.GetUtcNow();
+        TaskTypeStationBindingSetVersion sixTypeSet = (await ActiveBindingsAsync(fixture))!;
+
+        // The service stops here: no round runs until it starts again. Past the approved window nothing is activated.
+        TaskTypeStationActivationResult stale = await FieldOpsActivateAsync(
+            fixture, ruleVersion, lastConfirmation + TimeSpan.FromMinutes(5) + TimeSpan.FromSeconds(1));
+        Assert.Equal(TaskTypeStationActivationOutcome.Rejected, stale.Outcome);
+        Assert.Contains(stale.Violations, violation => violation.ReasonCode == TaskTypeStationReasonCodes.BindingCatalogNotFresh);
+        // Review L4: the refusal switched nothing -- the same binding set, still built on the six rules, is active.
+        fixture.Context.ChangeTracker.Clear();
+        TaskTypeStationBindingSetVersion afterRefusal = (await ActiveBindingsAsync(fixture))!;
+        Assert.Equal((sixTypeSet.Version, sixTypeSet.RuleVersion), (afterRefusal.Version, afterRefusal.RuleVersion));
+        Assert.Equal(sixTypeSet.Bindings, afterRefusal.Bindings);
+
+        fixture.Clock.Advance(TimeSpan.FromMinutes(2));
+        TaskTypeStationActivationResult activated = await FieldOpsActivateAsync(fixture, ruleVersion, fixture.Clock.GetUtcNow());
+        Assert.True(
+            activated.Outcome == TaskTypeStationActivationOutcome.Activated,
+            $"{activated.Outcome}: {string.Join("; ", activated.Violations.Select(violation => violation.Detail))}");
+
+        // 19-deploy starts the new package under the production definition.
+        fixture.Options.AdmissionPolicyVersion = ProductionDefinitionAdmissionPolicyVersion();
+        await fixture.RecreateEngineAsync();
+        fixture.Catalog.Set(fixture.Demand(DemandA, "SUBLOT-001", Now.AddMinutes(-10)));
+        fixture.BoxCounts.Set("SUBLOT-001", 4);
+        await fixture.Engine.ExecuteOnceAsync(Token);
+
+        Assert.Equal("ACCEPTED", (await fixture.BacklogAsync(DemandA)).ReasonCode);
+        AdmissionPolicyStateRow state = await fixture.Context.AdmissionPolicyState.AsNoTracking().SingleAsync(Token);
+        Assert.Equal(ProductionDefinitionAdmissionPolicyVersion(), state.Version);
+        Assert.Contains(
+            "WIRE_TO_FULL_INSPECTION",
+            await fixture.Context.StationTaskTypeAdmissions.AsNoTracking().Select(row => row.TaskType).Distinct().ToArrayAsync(Token));
+    }
+
+    /// <summary>
+    /// control-server#777 的错误顺序之一：先用 8 的定义部署起服，再经 FieldOps 激活。起服的第一轮在 8 下绑定的还是六类种子（生效绑定集仍依据
+    /// 六条规则），激活后种子在同一个 8 下变成七类，判漂移、不受理；再重启也不解，只能再升到 9。
+    /// </summary>
+    [Fact]
+    [Trait("IntegrationSlice", "FP-IS-10")]
+    public async Task StartingUnderTheRaisedVersionBeforeTheActivationDriftsAndARestartDoesNotClearIt()
+    {
+        await using RuntimeFixture fixture = await RuntimeFixture.CreateAsync();
+        long ruleVersion = await ProductionBeforeTheFullInspectionActivationAsync(fixture);
+
+        fixture.Options.AdmissionPolicyVersion = ProductionDefinitionAdmissionPolicyVersion();
+        await fixture.RecreateEngineAsync();
+        await fixture.Engine.ExecuteOnceAsync(Token);
+        AdmissionPolicyStateRow sixTypesUnderTheNewVersion =
+            await fixture.Context.AdmissionPolicyState.AsNoTracking().SingleAsync(Token);
+        Assert.Equal(ProductionDefinitionAdmissionPolicyVersion(), sixTypesUnderTheNewVersion.Version);
+        Assert.DoesNotContain(
+            "WIRE_TO_FULL_INSPECTION",
+            await fixture.Context.StationTaskTypeAdmissions.AsNoTracking().Select(row => row.TaskType).Distinct().ToArrayAsync(Token));
+
+        TaskTypeStationActivationResult activated = await FieldOpsActivateAsync(fixture, ruleVersion, fixture.Clock.GetUtcNow());
+        Assert.Equal(TaskTypeStationActivationOutcome.Activated, activated.Outcome);
+        fixture.Catalog.Set(fixture.Demand(DemandA, "SUBLOT-001", Now.AddMinutes(-10)));
+        fixture.BoxCounts.Set("SUBLOT-001", 4);
+        await fixture.Engine.ExecuteOnceAsync(Token);
+        Assert.Equal(AdmissionPolicyDriftCriterion.Reason, (await fixture.BacklogAsync(DemandA)).ReasonCode);
+
+        await fixture.RecreateEngineAsync();
+        await fixture.Engine.ExecuteOnceAsync(Token);
+        Assert.Equal(AdmissionPolicyDriftCriterion.Reason, (await fixture.BacklogAsync(DemandA)).ReasonCode);
+        Assert.Empty(await fixture.Context.JourneyRuntimes.AsNoTracking().ToArrayAsync(Token));
+    }
+
+    /// <summary>
+    /// control-server#777 的错误顺序之二：服务端还在 7 下跑着时激活，再用 8 起服。激活到重启之间的每一轮都判漂移、不受理；8 起来后才恢复。
+    /// 所以「先激活、再用 8 起服」只有在激活时服务已经停下才不漂移（见
+    /// <see cref="TheFullInspectionActivationDoesNotDriftWhenActivatedStoppedAndStartedUnderTheRaisedVersion"/>）。
+    /// </summary>
+    [Fact]
+    [Trait("IntegrationSlice", "FP-IS-10")]
+    public async Task ActivatingWhileTheOldVersionStillRunsDriftsUntilTheRaisedVersionStarts()
+    {
+        await using RuntimeFixture fixture = await RuntimeFixture.CreateAsync();
+        long ruleVersion = await ProductionBeforeTheFullInspectionActivationAsync(fixture);
+
+        TaskTypeStationActivationResult activated = await FieldOpsActivateAsync(fixture, ruleVersion, fixture.Clock.GetUtcNow());
+        Assert.Equal(TaskTypeStationActivationOutcome.Activated, activated.Outcome);
+        fixture.Catalog.Set(fixture.Demand(DemandA, "SUBLOT-001", Now.AddMinutes(-10)));
+        fixture.BoxCounts.Set("SUBLOT-001", 4);
+        await fixture.Engine.ExecuteOnceAsync(Token);
+        Assert.Equal(AdmissionPolicyDriftCriterion.Reason, (await fixture.BacklogAsync(DemandA)).ReasonCode);
+
+        fixture.Options.AdmissionPolicyVersion = ProductionDefinitionAdmissionPolicyVersion();
+        await fixture.RecreateEngineAsync();
+        await fixture.Engine.ExecuteOnceAsync(Token);
+        Assert.Equal("ACCEPTED", (await fixture.BacklogAsync(DemandA)).ReasonCode);
+    }
+
+    /// <summary>
+    /// The version factory01's database has bound since the v5 package (control-server#738, 2026-10-19: c0389b68 installed under
+    /// the definitions' 7). Written down, not read from a file, because it is a fact about that database.
+    /// </summary>
+    private const long ProductionBoundAdmissionPolicyVersion = 7;
+
+    /// <summary>The version the production definition 19-deploy installs, read from the file itself.</summary>
+    private static long ProductionDefinitionAdmissionPolicyVersion()
+    {
+        using System.Text.Json.JsonDocument definition = System.Text.Json.JsonDocument.Parse(File.ReadAllBytes(Path.Combine(
+            ProtocolIdentityArchitectureTests.RepositoryRoot(), "scripts", "parallel",
+            "instance-factory01-v2.cutover-production-s3.runtime-on.json")));
+        return definition.RootElement.GetProperty("journeyRuntime").GetProperty("admissionPolicyVersion").GetInt64();
+    }
+
+    /// <summary>
+    /// factory01 as #738 read it back after the v5 package: the active binding set built on the six rules of rule version 1, the
+    /// seven rules written at startup as the current rule version 2, the six-type seed bound under 7, and station 229 「全检」 on
+    /// the map the server has just confirmed. Returns the current rule version, which the candidate must name.
+    /// </summary>
+    private static async Task<long> ProductionBeforeTheFullInspectionActivationAsync(RuntimeFixture fixture)
+    {
+        fixture.Riot.SetMapStations(
+            new RiotMapStation(12, "N1-1"),
+            new RiotMapStation(13, "N1-2_N1-3"),
+            new RiotMapStation(210, "关卡"),
+            new RiotMapStation(FullInspectionStation.StationRiotId, FullInspectionStation.StationName),
+            new RiotMapStation(300, "等待点"));
+        fixture.Options.AdmissionPolicyVersion = ProductionBoundAdmissionPolicyVersion;
+        await ActivateBuiltOnAsync(
+            fixture, [.. TaskTypeStationTestData.SevenRules.Where(rule => rule.TaskType != FullInspectionStation.TaskType)]);
+        await fixture.Engine.ExecuteOnceAsync(Token);
+        string sixTypeSeed = (await fixture.Context.AdmissionPolicyState.AsNoTracking().SingleAsync(Token)).ContentHash;
+
+        long current;
+        await using (ControlServerDbContext writer = new(fixture.DbOptionsForTests))
+        {
+            current = (await TaskTypeStationRuntimeSeed.Access(writer).Rules.WriteVersionAsync(
+                TaskTypeStationTestData.SevenRules, "preset:test-v5", Now, Token)).Version.Version;
+        }
+        await fixture.RecreateEngineAsync();
+        await fixture.Engine.ExecuteOnceAsync(Token);
+
+        AdmissionPolicyStateRow state = await fixture.Context.AdmissionPolicyState.AsNoTracking().SingleAsync(Token);
+        Assert.Equal((ProductionBoundAdmissionPolicyVersion, sixTypeSeed), (state.Version, state.ContentHash));
+        return current;
+    }
+
+    private static readonly TaskTypeStationBinding FullInspectionStation =
+        new("WIRE_TO_FULL_INSPECTION", 229, "全检", "SITE-CHECK-229");
+
+    /// <summary>
+    /// FieldOps <c>activate-task-type-stations</c> with the full-inspection candidate, through the service the tool runs, on a
+    /// context of its own the way the tool opens the database. The catalog is the one the fake RIoT serves, under its content
+    /// hash, which is what the server's confirmation recorded.
+    /// </summary>
+    private static async Task<TaskTypeStationActivationResult> FieldOpsActivateAsync(
+        RuntimeFixture fixture,
+        long ruleVersion,
+        DateTimeOffset at)
+    {
+        RiotMapStationCatalogSnapshot served = await fixture.Riot.ReadMapStationsAsync(25, Token);
+        await using ControlServerDbContext context = new(fixture.DbOptionsForTests);
+        return await TaskTypeStationActivationHarness.StackOver(context).Service.ActivateAsync(
+            new TaskTypeStationCandidate(
+                25,
+                ruleVersion,
+                [TransportTaskTypes.WireToGate, FullInspectionStation.TaskType],
+                [TaskTypeStationRuntimeSeed.GateBinding, FullInspectionStation]),
+            served with { ObservedAt = at },
+            TaskTypeStationActivationHarness.Request,
+            dryRun: false,
+            at,
+            Token);
     }
 
     /// <summary>Writes these rules as the current version and makes a map 25 binding set built on them active.</summary>
