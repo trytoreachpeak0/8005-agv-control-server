@@ -42,6 +42,13 @@
     Required: the installed definition, <opsRoot>\installed-instance.json (for the shipped definition,
     D:\zhengyushao\control-server-v2-ops\installed-instance.json). 20-set-control-server-parallel-dispatch-gate.ps1
     passes it.
+
+.PARAMETER RecoveryJourney
+    8005-workspace#61, with -State Closed only. The journeys vehicles stuck on a slot operation result are recovered
+    from, as ConvertTo-ParallelRecoveryJourneyArgument encodes them (base64 of [{ journeyId, agvId, vehicleKey }, ...];
+    20 passes one per -RecoveryJourneyId). Closing then lets each through while it is on its vehicle, awaits recovery and
+    its vehicle holds no fault; everything else is judged as without it (Get-ParallelDispatchGateRefusal). Opening is not widened: the
+    journey ends Completed through control-server#771. Without it nothing changes.
 #>
 [CmdletBinding(SupportsShouldProcess = $true, ConfirmImpact = 'High')]
 param(
@@ -49,7 +56,9 @@ param(
 
     # Not Mandatory, so that a run without it is refused with the explanation below instead of a prompt
     # that hangs a non-interactive ssh session.
-    [string] $InstanceDefinitionPath
+    [string] $InstanceDefinitionPath,
+
+    [string] $RecoveryJourney
 )
 
 $ErrorActionPreference = 'Stop'
@@ -78,6 +87,12 @@ if (-not (Test-Path -LiteralPath $InstanceDefinitionPath -PathType Leaf)) {
 # Pinned by Test-ParallelInstance.ps1: -State Closed is Close, -State Open is Open, and nowhere else is it decided.
 # Decided before the assertion, which depends on it (control-server#518).
 $direction = ConvertTo-ParallelGateDirection -State $State
+# 8005-workspace#61: closing only, decoded before anything is read; a malformed argument refuses here.
+if ($RecoveryJourney -and $direction -cne 'Close') {
+    throw 'GATE_RECOVERY_JOURNEY_CLOSE_ONLY: -RecoveryJourney widens closing the gate only; opening is not widened (8005-workspace#61). Nothing was changed.'
+}
+$recovery = $RecoveryJourney ? @(ConvertFrom-ParallelRecoveryJourneyArgument -Encoded $RecoveryJourney) : $null
+$recoveryJourneyId = $recovery ? @($recovery | ForEach-Object { $_['journeyId'] }) : $null
 $definition = Read-ParallelInstanceDefinition -Path $InstanceDefinitionPath
 # -ForStopDirection for Close only: closing must work on an instance installed before taskTypeStations existed,
 # with the module 20 copies today; opening such an instance is refused like an install (control-server#518).
@@ -99,13 +114,14 @@ Write-Step "Definition: $InstanceDefinitionPath ($($definition['instanceId']))"
 Write-Step "Service: '$serviceName'  configuration: $configurationPath"
 Write-Step "Journey state (read-only): $databasePath"
 Write-Step "Requested: RiotCreateDispatch.enabled=$($State -eq 'Open' ? 'true' : 'false')"
+foreach ($named in @($recovery | Where-Object { $_ })) { Write-Step "Recovery journey (workspace#61): $($named['journeyId']) on $($named['agvId']) / $($named['vehicleKey'])" }
 
 $actions = @{
     ServiceStatus = {
         $service = Get-Service -Name $serviceName -ErrorAction SilentlyContinue
         $service ? [string] $service.Status : $null
     }
-    ReadState = { Get-ParallelJourneyDispatchState -DatabasePath $databasePath -AssemblyDirectory $layout.InstallRoot }
+    ReadState = { Get-ParallelJourneyDispatchState -DatabasePath $databasePath -AssemblyDirectory $layout.InstallRoot -RecoveryJourneyId $recoveryJourneyId }
     StopService = { Stop-Service -Name $serviceName -Force }
     StartService = { Start-Service -Name $serviceName }
     ProcessStartTimeUtc = { Get-ParallelServiceProcessStartTimeUtc -ServiceName $serviceName }
@@ -116,8 +132,8 @@ $actions = @{
 # "-WhatIf -State Open" open the gate for real, and journeys waiting for it would create orders at once.
 if (-not $PSCmdlet.ShouldProcess($serviceName, "Set RiotCreateDispatch.enabled=$($State -eq 'Open' ? 'true' : 'false') and restart")) {
     # Read-only preview: what the checks say right now. Nothing is stopped or written.
-    $journeyState = Get-ParallelJourneyDispatchState -DatabasePath $databasePath -AssemblyDirectory $layout.InstallRoot
-    $refusal = Get-ParallelDispatchGateRefusal -Direction $direction -State $journeyState -ServiceName $serviceName -DatabasePath $databasePath
+    $journeyState = Get-ParallelJourneyDispatchState -DatabasePath $databasePath -AssemblyDirectory $layout.InstallRoot -RecoveryJourneyId $recoveryJourneyId
+    $refusal = Get-ParallelDispatchGateRefusal -Direction $direction -State $journeyState -ServiceName $serviceName -DatabasePath $databasePath -RecoveryJourney $recovery
     Write-Step "WhatIf: service status '$((Get-Service -Name $serviceName -ErrorAction SilentlyContinue)?.Status ?? 'absent')'."
     Write-Step ($refusal ? "WhatIf: would refuse now: $refusal" : 'WhatIf: the journey check would let this through now (it is repeated after the service stops).')
     return
@@ -140,7 +156,7 @@ if ($direction -ceq 'Open' -and (Test-ParallelProductionCutoverDefinition -Defin
 }
 try {
     $result = Invoke-ParallelDispatchGateChange -Direction $direction -ConfigurationPath $configurationPath `
-        -ServiceName $serviceName -DatabasePath $databasePath -Actions $actions
+        -ServiceName $serviceName -DatabasePath $databasePath -Actions $actions -RecoveryJourney $recovery
     Write-Step $result.Message
     # The verdict comes from what was done, not from what was asked.
     if ($result.Now -ne ($State -eq 'Open')) {

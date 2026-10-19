@@ -1431,7 +1431,9 @@ $scanTargets = [ordered]@{
             'Invoke-ParallelJourneyRuntimeRelease::$Actions.ServiceProcessId', 'Invoke-ParallelJourneyRuntimeRelease::$Actions.StopService',
             'Invoke-ParallelJourneyRuntimeRelease::$Actions.ProcessExited', 'Invoke-ParallelJourneyRuntimeRelease::$Actions.StartService',
             # control-server#578 review: the machine environment read before the restart, and setting the flag back to false.
-            'Invoke-ParallelInstanceConfigurationStep::$Actions.GetMachineEnvironment', 'Invoke-ParallelJourneyRuntimeRelease::$setBackFalse'); Owners = @(); Expected = 40 }
+            'Invoke-ParallelInstanceConfigurationStep::$Actions.GetMachineEnvironment', 'Invoke-ParallelJourneyRuntimeRelease::$setBackFalse'); Owners = @()
+            # 8005-workspace#61: two more reads through the same $read, of each recovery journey's row and of the vehicle faults.
+            Expected = 42 }
     'Set-ParallelDispatchGateLocal.ps1'   = @{ Dynamic = @(); Owners = @(); Expected = 0 }
 }
 foreach ($file in $scanTargets.Keys) {
@@ -3003,6 +3005,121 @@ foreach ($case in $gateRefusalCases) {
         -Name "gate refusal: $($case.Name) -> $($case.Expect ?? 'allowed')" -Detail "got: $got"
 }
 
+# --- 8005-workspace#61: -RecoveryJourney, closing only: the one journey a vehicle stuck on a slot operation result is
+# recovered from. The id has the real shape (a '|' in it); agvId and vehicleKey are those of New-GateJourney's vehicle.
+$rjId = 'journey:40c5532e-d97d-4b29-a5bd-bf5343ea01dc|g102'
+$rjKey = 'BROKERX-f38975561adf46ccb1d2f23833c7d0e4'
+$rj = @(@{ journeyId = $rjId; agvId = '老厂前线新多仓位2'; vehicleKey = $rjKey })
+# A second stuck journey on another vehicle (agv01 of 2026-10-19, say).
+$rj2Id = 'journey:aa11bb22-0000-4000-8000-000000000001|g7'
+$rj2 = @{ journeyId = $rj2Id; agvId = '老厂前线新多仓位1'; vehicleKey = $otherVehicle }
+function New-RecoveryState {
+    <#
+        The agv03 journey of 2026-10-19 in miniature: Blocked on the load result at a stop it arrived on with a CONFIRMED order.
+        -Stage and -Block are the journey's; -Others adds other journeys and -OtherRows their rows as the reader returns
+        them; -RowAgvId/-RowVehicleKey change the row the reader returns for it; -NoRow leaves that row out; -Faults are the
+        VehicleFaultStates rows in effect, -NoFaults leaves that read out.
+    #>
+    param([string] $Stage = 'Blocked', [string] $Block = 'LOAD_RESULT_REQUIRES_RECOVERY', [object[]] $Others = @(), [object[]] $OtherRows = @(),
+        [string] $RowAgvId = '老厂前线新多仓位2', [string] $RowVehicleKey = $rjKey, [switch] $NoRow, [object[]] $Faults = @(), [switch] $NoFaults)
+    $journey = New-GateJourney $rjId -Stage $Stage -Pickup p1 -Gate g9 -CreatedAt '2026-10-19 09:00:00+08:00'
+    $state = New-GateState -Journeys (@($journey) + @($Others)) -Intents @(
+        (New-GateIntent p1 -Status CONFIRMED -Attempts 1L -AttemptId a1 -OrderId O1 -CreatedAt '2026-10-19 09:00:01+08:00')
+        (New-GateIntent s3 -Status CONFIRMED -Attempts 1L -AttemptId a3 -OrderId O3 -CreatedAt '2026-10-19 13:00:00+08:00'))
+    $own = $NoRow ? @() : @([ordered]@{ JourneyId = $rjId; Stage = $Stage; BlockReasonCode = $Block; AgvId = $RowAgvId; VehicleKey = $RowVehicleKey })
+    $state['RecoveryJourneys'] = @($own) + @($OtherRows)
+    if (-not $NoFaults) { $state['VehicleFaults'] = @($Faults) }
+    return $state
+}
+$stuck = New-RecoveryState
+# After COMPENSATE_LOAD_ALL_EMPTY the engine takes a multi-demand journey back (BlockedJourneyRelease): AwaitingLoadResult.
+$released = New-RecoveryState -Stage AwaitingLoadResult -Block $null
+$otherJourney = New-GateJourney j-other -Stage AwaitingGateArrival -Pickup q1 -VehicleKey $otherVehicle -CreatedAt '2026-10-19 10:00:00+08:00'
+$second = [ordered]@{ JourneyId = $rj2Id; Stage = 'Blocked'; AgvId = '老厂前线新多仓位1'; VehicleKey = $otherVehicle; PickupUpperId = 'r1'; GateUpperId = $null; CreatedAt = '2026-10-19 11:00:00+08:00' }
+$secondRow = { param([string] $Block) [ordered]@{ JourneyId = $rj2Id; Stage = 'Blocked'; BlockReasonCode = $Block; AgvId = '老厂前线新多仓位1'; VehicleKey = $otherVehicle } }
+$fault = { param([string] $AgvId, [string] $Level = 'Blocked') [ordered]@{ AgvId = $AgvId; Level = $Level; EvidenceCode = 'EMERGENCY_STOP_LATCHED' } }
+$both = @($rj) + @($rj2)
+$recoveryCases = @(
+    @{ Name = 'close, the stuck journey alone, named'; Direction = 'Close'; State = $stuck; Rj = $rj; Expect = $null }
+    @{ Name = 'close, the stuck journey alone, not named (unchanged)'; Direction = 'Close'; State = $stuck; Rj = $null; Expect = 'GATE_CLOSE_REFUSED_IN_FLIGHT' }
+    @{ Name = 'close, the stuck journey named and another journey active'; Direction = 'Close'; State = (New-RecoveryState -Others @($otherJourney)); Rj = $rj; Expect = 'GATE_CLOSE_REFUSED_IN_FLIGHT' }
+    @{ Name = 'close, another journey id named'; Direction = 'Close'; State = $stuck; Rj = @{ journeyId = 'journey:other|g1'; agvId = $rj.agvId; vehicleKey = $rjKey }; Expect = 'GATE_CLOSE_REFUSED_IN_FLIGHT' }
+    @{ Name = 'close, the named journey on another agvId'; Direction = 'Close'; State = (New-RecoveryState -RowAgvId '老厂前线新多仓位1'); Rj = $rj; Expect = 'GATE_RECOVERY_JOURNEY_VEHICLE_MISMATCH' }
+    @{ Name = 'close, the named journey with the agvId but another vehicleKey'; Direction = 'Close'; State = (New-RecoveryState -RowVehicleKey $otherVehicle); Rj = $rj; Expect = 'GATE_RECOVERY_JOURNEY_VEHICLE_MISMATCH' }
+    @{ Name = 'close, the named journey released back to the engine (AwaitingLoadResult)'; Direction = 'Close'; State = $released; Rj = $rj; Expect = 'GATE_CLOSE_RECOVERY_JOURNEY_NOT_AWAITING_RECOVERY' }
+    @{ Name = 'close, the named journey on its way to its next stop'; Direction = 'Close'; State = (New-RecoveryState -Stage AwaitingPickupArrival -Block CreateDispatchDisabled); Rj = $rj; Expect = 'GATE_CLOSE_RECOVERY_JOURNEY_NOT_AWAITING_RECOVERY' }
+    @{ Name = 'close, the named journey Blocked on ONBOARD_SESSION_LOST'; Direction = 'Close'; State = (New-RecoveryState -Block ONBOARD_SESSION_LOST); Rj = $rj; Expect = 'GATE_CLOSE_RECOVERY_JOURNEY_NOT_AWAITING_RECOVERY' }
+    @{ Name = 'close, the named journey Blocked on *_NOT_RECONCILED_ON_ENDED_DEMAND'; Direction = 'Close'; State = (New-RecoveryState -Block LoadCompensationResult_NOT_RECONCILED_ON_ENDED_DEMAND); Rj = $rj; Expect = 'GATE_CLOSE_RECOVERY_JOURNEY_NOT_AWAITING_RECOVERY' }
+    @{ Name = 'close, the named journey Blocked with no reason'; Direction = 'Close'; State = (New-RecoveryState -Block $null); Rj = $rj; Expect = 'GATE_CLOSE_RECOVERY_JOURNEY_NOT_AWAITING_RECOVERY' }
+    @{ Name = 'close, the named journey Blocked on UNLOAD_RESULT_REQUIRES_RECOVERY'; Direction = 'Close'; State = (New-RecoveryState -Block UNLOAD_RESULT_REQUIRES_RECOVERY); Rj = $rj; Expect = $null }
+    @{ Name = 'close, the named journey Blocked on LoadCompensationResult_NOT_RECONCILED'; Direction = 'Close'; State = (New-RecoveryState -Block LoadCompensationResult_NOT_RECONCILED); Rj = $rj; Expect = $null }
+    @{ Name = 'close, the named journey active but its row not read'; Direction = 'Close'; State = (New-RecoveryState -NoRow); Rj = $rj; Expect = 'GATE_RECOVERY_JOURNEY_UNREADABLE' }
+    @{ Name = 'close, named, no journey active at all'; Direction = 'Close'; State = (New-GateState); Rj = $rj; Expect = $null }
+    @{ Name = 'close, state unreadable, named'; Direction = 'Close'; State = [ordered]@{ Error = 'database is locked' }; Rj = $rj; Expect = 'GATE_STATE_UNREADABLE' }
+    @{ Name = 'close, the vehicle faults not read'; Direction = 'Close'; State = (New-RecoveryState -NoFaults); Rj = $rj; Expect = 'GATE_RECOVERY_JOURNEY_UNREADABLE' }
+    # The vehicle of a named journey holds a fault: the journey loop alone supervises it, so no restart.
+    @{ Name = "close, the named journey's vehicle holds a fault"; Direction = 'Close'; State = (New-RecoveryState -Faults @((& $fault '老厂前线新多仓位2'))); Rj = $rj; Expect = 'GATE_CLOSE_RECOVERY_JOURNEY_VEHICLE_FAULT' }
+    @{ Name = "close, the named journey's vehicle holds a SuspectedBlocked fault"; Direction = 'Close'; State = (New-RecoveryState -Faults @((& $fault '老厂前线新多仓位2' SuspectedBlocked))); Rj = $rj; Expect = 'GATE_CLOSE_RECOVERY_JOURNEY_VEHICLE_FAULT' }
+    @{ Name = "close, a fault row of the named journey's vehicle at Level None"; Direction = 'Close'; State = (New-RecoveryState -Faults @((& $fault '老厂前线新多仓位2' None))); Rj = $rj; Expect = $null }
+    @{ Name = 'close, a fault of another vehicle with no journey active'; Direction = 'Close'; State = (New-RecoveryState -Faults @((& $fault '老厂前线新多仓位1'))); Rj = $rj; Expect = $null }
+    # Several named journeys (repeated -RecoveryJourneyId).
+    @{ Name = 'close, two stuck journeys, both named'; Direction = 'Close'; State = (New-RecoveryState -Others @($second) -OtherRows @((& $secondRow 'UNLOAD_RESULT_REQUIRES_RECOVERY'))); Rj = $both; Expect = $null }
+    @{ Name = 'close, two stuck journeys, one named'; Direction = 'Close'; State = (New-RecoveryState -Others @($second) -OtherRows @((& $secondRow 'UNLOAD_RESULT_REQUIRES_RECOVERY'))); Rj = $rj; Expect = 'GATE_CLOSE_REFUSED_IN_FLIGHT' }
+    @{ Name = "close, two named, the second held by its vehicle's fault (agv01 after an emergency stop)"; Direction = 'Close'; State = (New-RecoveryState -Others @($second) -OtherRows @((& $secondRow 'UNLOAD_RESULT_REQUIRES_RECOVERY')) -Faults @((& $fault '老厂前线新多仓位1'))); Rj = $both; Expect = 'GATE_CLOSE_RECOVERY_JOURNEY_VEHICLE_FAULT' }
+    @{ Name = 'close, two named, the second Blocked for a person after a fault (AWAITING_CARGO_HANDOFF)'; Direction = 'Close'; State = (New-RecoveryState -Others @($second) -OtherRows @((& $secondRow 'AWAITING_CARGO_HANDOFF'))); Rj = $both; Expect = 'GATE_CLOSE_RECOVERY_JOURNEY_NOT_AWAITING_RECOVERY' }
+    @{ Name = "close, two named, the second's row not read"; Direction = 'Close'; State = (New-RecoveryState -Others @($second)); Rj = $both; Expect = 'GATE_RECOVERY_JOURNEY_UNREADABLE' }
+    @{ Name = "close, two named, the second named on the first's vehicle"; Direction = 'Close'; State = (New-RecoveryState -Others @($second) -OtherRows @((& $secondRow 'UNLOAD_RESULT_REQUIRES_RECOVERY'))); Rj = @(@($rj) + @(@{ journeyId = $rj2Id; agvId = '老厂前线新多仓位2'; vehicleKey = $rjKey })); Expect = 'GATE_RECOVERY_JOURNEY_VEHICLE_MISMATCH' }
+    # Opening is not widened: the same refusal with and without it.
+    @{ Name = 'open, the released journey named: not widened, its sent legs refuse as before'; Direction = 'Open'; State = $released; Rj = $rj; Expect = 'GATE_OPEN_REFUSED_ORDER_SENT' }
+    @{ Name = 'open, the stuck journey named: not widened'; Direction = 'Open'; State = $stuck; Rj = $rj; Expect = 'GATE_OPEN_REFUSED_ORDER_SENT' }
+)
+foreach ($case in $recoveryCases) {
+    try { $got = Get-ParallelDispatchGateRefusal -Direction $case.Direction -State $case.State -ServiceName $v2Service -DatabasePath $gateDatabase -RecoveryJourney $case.Rj } catch { $got = "THREW: $($_.Exception.Message)" }
+    $named = $null -eq $got -or ($got.Contains($v2Service) -and $got.Contains($gateDatabase) -and $got.EndsWith(' Nothing was stopped or changed.'))
+    Write-Result -Ok ($named -and ($null -eq $case.Expect ? ($null -eq $got) : ($null -ne $got -and $got.StartsWith("$($case.Expect):")))) `
+        -Name "gate refusal with -RecoveryJourney (workspace#61): $($case.Name) -> $($case.Expect ?? 'allowed')" -Detail "got: $got"
+}
+# Opening with it is the very text opening without it gives, every gate refusal case above included.
+$openSame = @(@($gateRefusalCases | Where-Object { $_.Direction -eq 'Open' } | ForEach-Object { $_.State }) + @($released, $stuck) | Where-Object {
+        $with = Get-ParallelDispatchGateRefusal -Direction Open -State $_ -ServiceName $v2Service -DatabasePath $gateDatabase -RecoveryJourney $rj
+        $without = Get-ParallelDispatchGateRefusal -Direction Open -State $_ -ServiceName $v2Service -DatabasePath $gateDatabase
+        $with -cne $without })
+Write-Result -Ok ($openSame.Count -eq 0) -Name 'gate refusal with -RecoveryJourney (workspace#61): opening answers exactly as without it, in every open case' -Detail "$($openSame.Count) state(s) differ"
+$awaitCases = @(
+    @('Blocked', 'LOAD_RESULT_REQUIRES_RECOVERY', $true), @('Blocked', 'UNLOAD_RESULT_REQUIRES_RECOVERY', $true),
+    @('Blocked', 'LoadCompensationResult_NOT_RECONCILED', $true), @('Blocked', 'LoadCompensationResult_NOT_RECONCILED_BEFORE_UPGRADE', $false),
+    @('Blocked', 'load_result_requires_recovery', $false), @('blocked', 'LOAD_RESULT_REQUIRES_RECOVERY', $false),
+    @('AwaitingLoadResult', 'LOAD_RESULT_REQUIRES_RECOVERY', $false), @('Blocked', 'X_NOT_RECONCILED_', $false), @('Blocked', '', $false)
+)
+foreach ($case in $awaitCases) {
+    $got = Test-ParallelJourneyAwaitsRecovery -Stage $case[0] -BlockReasonCode $case[1]
+    Write-Result -Ok ($got -eq $case[2]) -Name "journey awaits recovery (workspace#61): $($case[0]) / '$($case[1])' -> $($case[2])" -Detail "got $got"
+}
+# The argument survives the '|' and the Chinese agvId, one journey or several; anything else is refused.
+$one = @{ journeyId = $rjId; agvId = '老厂前线新多仓位3'; vehicleKey = 'BROKERX-7daca4ee91da498d8026c68b7b941127' }
+foreach ($list in @(@{ L = @($one) }, @{ L = @($one, $rj2) })) {
+    $encoded = ConvertTo-ParallelRecoveryJourneyArgument -Journeys $list.L
+    $decoded = @(ConvertFrom-ParallelRecoveryJourneyArgument -Encoded $encoded)
+    $differ = @(0..($list.L.Count - 1) | Where-Object {
+            $decoded[$_].journeyId -cne $list.L[$_].journeyId -or $decoded[$_].agvId -cne $list.L[$_].agvId -or $decoded[$_].vehicleKey -cne $list.L[$_].vehicleKey })
+    Write-Result -Ok ($encoded -cmatch '^[A-Za-z0-9+/=]+$' -and $decoded.Count -eq $list.L.Count -and $differ.Count -eq 0) `
+        -Name "recovery journey argument (workspace#61): $($list.L.Count) journey(s), base64 only, decodes to the same ids (with |), Chinese agvIds and vehicleKeys" -Detail "$encoded -> $($decoded | ConvertTo-Json -Compress)"
+}
+$b64 = { param($text) [Convert]::ToBase64String([Text.Encoding]::UTF8.GetBytes($text)) }
+foreach ($bad in @('', 'not base64!', (& $b64 'not json'), (& $b64 '[1,2]'), (& $b64 '[]'), (& $b64 '{"journeyId":"j","agvId":"a","vehicleKey":"k"}'),
+        (& $b64 '[{"journeyId":"j","agvId":"a"}]'), (& $b64 '[{"journeyId":"j","agvId":" ","vehicleKey":"k"}]'), (& $b64 '[{"journeyId":1,"agvId":"a","vehicleKey":"k"}]'),
+        (& $b64 '[{"journeyId":"j","agvId":"a","vehicleKey":"k"},{"journeyId":"j","agvId":"b","vehicleKey":"l"}]'))) {
+    try { $null = ConvertFrom-ParallelRecoveryJourneyArgument -Encoded $bad; $thrown = $null } catch { $thrown = $_.Exception.Message }
+    Write-Result -Ok ($thrown -and $thrown.StartsWith('GATE_RECOVERY_JOURNEY_MALFORMED:')) -Name "recovery journey argument (workspace#61): '$bad' is refused" -Detail "thrown: $thrown"
+}
+# Set-ParallelDispatchGateLocal.ps1 refuses it with -State Open before reading anything.
+$gateScriptText = Get-Content -LiteralPath (Join-Path $PSScriptRoot 'Set-ParallelDispatchGateLocal.ps1') -Raw
+$closeOnlyAt = $gateScriptText.IndexOf("if (`$RecoveryJourney -and `$direction -cne 'Close') {")
+$decodeAt = $gateScriptText.IndexOf('$recovery = $RecoveryJourney ? @(ConvertFrom-ParallelRecoveryJourneyArgument -Encoded $RecoveryJourney) : $null')
+$definitionAt = $gateScriptText.IndexOf('$definition = Read-ParallelInstanceDefinition -Path $InstanceDefinitionPath')
+Write-Result -Ok ($closeOnlyAt -gt 0 -and $decodeAt -gt $closeOnlyAt -and $definitionAt -gt $decodeAt -and $gateScriptText.Contains("throw 'GATE_RECOVERY_JOURNEY_CLOSE_ONLY:")) `
+    -Name 'Set-ParallelDispatchGateLocal.ps1 (workspace#61): -RecoveryJourney with -State Open is refused, and it is decoded, before anything is read' -Detail "close-only $closeOnlyAt decode $decodeAt definition $definitionAt"
+
 # --- The writer: section ignoring case, the Chinese agvId kept byte for byte, every read-back live.
 $gateInstalled = Merge-ConfigurationTree -Base (Copy-Definition $productConfiguration) -Overlay (New-ParallelInstanceConfigurationOverlay -Definition $baseline)
 $gateInstalled['RiotCreateDispatch'] = [ordered]@{ enabled = $true }
@@ -3070,7 +3187,8 @@ function Invoke-GateCase {
     #>
     param([string] $Direction, [string] $Text, $Status = 'Running', [object[]] $States = @(), [object[]] $StartTimes = @(),
         [string] $ServiceName = $v2Service, [string] $ConfigurationName = 'appsettings.Production.json', [scriptblock] $Writer,
-        [string] $StatusAfter = 'Running', [datetime] $WriteTime = $gateStarted.AddMinutes(-5), [string] $ConfigurationPath, [switch] $StartThrows)
+        [string] $StatusAfter = 'Running', [datetime] $WriteTime = $gateStarted.AddMinutes(-5), [string] $ConfigurationPath, [switch] $StartThrows,
+        [object[]] $RecoveryJourney)
     $directory = Join-Path ([IO.Path]::GetTempPath()) "cs472-gate-$([guid]::NewGuid().ToString('N'))"
     New-Item -ItemType Directory -Path $directory | Out-Null
     $file = $ConfigurationPath ? $ConfigurationPath : (Join-Path $directory $ConfigurationName)
@@ -3096,6 +3214,7 @@ function Invoke-GateCase {
     try {
         $arguments = @{ Direction = $Direction; ConfigurationPath = $file; ServiceName = $ServiceName; DatabasePath = $gateDatabase; Actions = $actions }
         if ($Writer) { $arguments['Writer'] = $Writer }
+        if ($RecoveryJourney) { $arguments['RecoveryJourney'] = $RecoveryJourney }
         $result = Invoke-ParallelDispatchGateChange @arguments
     } catch { $thrown = $_.Exception.Message }
     $bytesAfter = $own -and (Test-Path -LiteralPath $file) ? [IO.File]::ReadAllBytes($file) : $null
@@ -3193,8 +3312,19 @@ foreach ($select in $selects) {
         if ($columns -cnotcontains $column) { $schemaGaps += "$table.$column" }
     }
 }
-Write-Result -Ok ($selects.Count -eq 4 -and $schemaGaps.Count -eq 0) -Name 'gate reader: every column its SQL selects exists in the EF model snapshot (JourneyRuntimes, OrderIntents, RiotDispatchAuditEvents)' `
+Write-Result -Ok ($selects.Count -eq 6 -and $schemaGaps.Count -eq 0) -Name 'gate reader: every column its SQL selects exists in the EF model snapshot (JourneyRuntimes, OrderIntents, RiotDispatchAuditEvents; workspace#61 adds a JourneyRuntimes and a VehicleFaultStates read)' `
     -Detail "selects found: $($selects.Count) missing: $($schemaGaps -join ', ')"
+
+# --- 8005-workspace#61: -RecoveryJourney reaches both reads, the one with the service running and the one after the stop.
+$r = Invoke-GateCase -Direction Close -Text $openConfig -States @($stuck, $stuck) -StartTimes @($gateStarted, $afterWrite) -RecoveryJourney $rj
+Write-Result -Ok ($null -eq $r.Thrown -and $r.Result.Changed -and $r.Flag -eq $false -and $r.Calls -ceq 'Status,StartTime,ReadState,Stop,ReadState,Start,Status,StartTime') `
+    -Name 'gate change (workspace#61): close with the stuck journey named -> read, stop, read again, write, start, verified' -Detail "calls $($r.Calls) flag $($r.Flag) thrown $($r.Thrown)"
+$r = Invoke-GateCase -Direction Close -Text $openConfig -States @($stuck, $released) -StartTimes @($gateStarted) -RecoveryJourney $rj
+Write-Result -Ok ($r.Thrown -and $r.Thrown.StartsWith('AFTER_STOP GATE_CLOSE_RECOVERY_JOURNEY_NOT_AWAITING_RECOVERY:') -and $r.Unchanged) `
+    -Name 'gate change (workspace#61): close, named, the journey moved on between the two reads -> refused after the stop, file unchanged' -Detail "calls $($r.Calls) thrown $($r.Thrown)"
+$r = Invoke-GateCase -Direction Close -Text $openConfig -States @($stuck) -StartTimes @($gateStarted)
+Write-Result -Ok ($r.Thrown -and $r.Thrown.StartsWith('GATE_CLOSE_REFUSED_IN_FLIGHT:') -and $r.Unchanged -and $r.Calls -notmatch 'Stop|Start(?!Time)') `
+    -Name 'gate change (workspace#61): close, the stuck journey not named -> refused as before, before the stop' -Detail "calls $($r.Calls) thrown $($r.Thrown)"
 
 # --- Review N3: a process that started at the very instant of the write is not shown to have read it.
 $atWrite = { param($Path) [IO.File]::GetLastWriteTimeUtc($Path) }
@@ -3337,6 +3467,78 @@ INSERT INTO RiotDispatchAuditEvents VALUES ('e1', 'leg-p1', 'PRE_CREATE_RECONCIL
             $command = $writer.CreateCommand(); $command.CommandText = 'DROP TABLE RiotDispatchAuditEvents'; $null = $command.ExecuteNonQuery(); $command.Dispose(); $writer.Dispose()
             $broken = Get-ParallelJourneyDispatchState -DatabasePath $db -AssemblyDirectory $hostBuild
             Write-Result -Ok ($broken.Contains('Error') -and $broken['Error'] -match 'RiotDispatchAuditEvents') -Name 'gate reader: a missing table is an error, not an empty state' -Detail (ConvertTo-Json $broken -Compress)
+        } finally {
+            [Microsoft.Data.Sqlite.SqliteConnection]::ClearAllPools()
+            Remove-Item -LiteralPath $directory -Recurse -Force -ErrorAction SilentlyContinue
+        }
+    }
+    # 8005-workspace#61: the recovery journey read and judged on a real SQLite file -- the agv03 journey of 2026-10-19 in
+    # miniature, with its real id shape and a Chinese agvId.
+    Invoke-PathCase 'gate reader, recovery journey' {
+        $directory = Join-Path ([IO.Path]::GetTempPath()) "ws61-db-$([guid]::NewGuid().ToString('N'))"
+        New-Item -ItemType Directory -Path $directory | Out-Null
+        try {
+            $db = Join-Path $directory 'controlserver.db'
+            foreach ($assembly in @('SQLitePCLRaw.core.dll', 'SQLitePCLRaw.provider.e_sqlite3.dll', 'SQLitePCLRaw.batteries_v2.dll', 'Microsoft.Data.Sqlite.dll')) {
+                Add-Type -LiteralPath (Join-Path $hostBuild $assembly) -ErrorAction SilentlyContinue
+            }
+            try { [SQLitePCL.Batteries_V2]::Init() } catch { }
+            $execute = {
+                param([string] $Sql)
+                $writer = [Microsoft.Data.Sqlite.SqliteConnection]::new("Data Source=$db;Pooling=False"); $writer.Open()
+                $command = $writer.CreateCommand(); $command.CommandText = $Sql; $null = $command.ExecuteNonQuery(); $command.Dispose(); $writer.Dispose()
+            }
+            $id = 'journey:40c5532e-d97d-4b29-a5bd-bf5343ea01dc|g102'
+            & $execute @"
+CREATE TABLE JourneyRuntimes (JourneyId TEXT PRIMARY KEY, Stage TEXT, AgvId TEXT, VehicleKey TEXT, PickupUpperId TEXT, GateUpperId TEXT, CreatedAt TEXT, BlockReasonCode TEXT);
+CREATE TABLE OrderIntents (MovementLegId TEXT PRIMARY KEY, UpperId TEXT, VehicleKey TEXT, Status TEXT, OrderId TEXT, CreateAttemptCount INTEGER, CreateAttemptId TEXT, DispatchAuditVersion INTEGER, ExperimentalCreateAuthorizationId TEXT, CreatedAt TEXT);
+CREATE TABLE RiotDispatchAuditEvents (AuditEventId TEXT PRIMARY KEY, MovementLegId TEXT, Phase TEXT, Outcome TEXT, AttemptId TEXT, ReturnedOrderId TEXT, ResultPresent INTEGER);
+CREATE TABLE VehicleFaultStates (AgvId TEXT PRIMARY KEY, Level TEXT, EvidenceCode TEXT);
+INSERT INTO VehicleFaultStates VALUES ('老厂前线新多仓位3', 'None', NULL);
+INSERT INTO JourneyRuntimes VALUES ('j-done', 'Completed', '老厂前线新多仓位2', 'K2', 'q0', NULL, '2026-10-19 08:00:00+08:00', NULL);
+INSERT INTO JourneyRuntimes VALUES ('$id', 'Blocked', '老厂前线新多仓位3', 'K3', 'p1', 'g9', '2026-10-19 09:00:00+08:00', 'LOAD_RESULT_REQUIRES_RECOVERY');
+INSERT INTO OrderIntents VALUES ('leg-p1', 'p1', 'K3', 'CONFIRMED', 'O1', 1, 'a1', 1, NULL, '2026-10-19 09:00:01+08:00');
+INSERT INTO OrderIntents VALUES ('leg-s3', 's3', 'K3', 'CONFIRMED', 'O3', 1, 'a3', 1, NULL, '2026-10-19 13:00:00+08:00');
+"@
+            $rjDb = @(@{ journeyId = $id; agvId = '老厂前线新多仓位3'; vehicleKey = 'K3' })
+            $plain = Get-ParallelJourneyDispatchState -DatabasePath $db -AssemblyDirectory $hostBuild
+            Write-Result -Ok (-not $plain.Contains('Error') -and -not $plain.Contains('RecoveryJourneys') -and -not $plain.Contains('VehicleFaults')) `
+                -Name 'gate reader (workspace#61): without -RecoveryJourneyId it reads what it read before, nothing more' -Detail (ConvertTo-Json $plain -Compress -Depth 5)
+            $state = Get-ParallelJourneyDispatchState -DatabasePath $db -AssemblyDirectory $hostBuild -RecoveryJourneyId $id
+            $row = @($state['RecoveryJourneys'])[0]
+            Write-Result -Ok (-not $state.Contains('Error') -and @($state['RecoveryJourneys']).Count -eq 1 -and @($state['VehicleFaults']).Count -eq 0 -and $row['JourneyId'] -ceq $id -and $row['AgvId'] -ceq '老厂前线新多仓位3' -and $row['VehicleKey'] -ceq 'K3' -and
+                $row['Stage'] -ceq 'Blocked' -and $row['BlockReasonCode'] -ceq 'LOAD_RESULT_REQUIRES_RECOVERY') `
+                -Name 'gate reader (workspace#61): -RecoveryJourneyId reads that row with its block reason (Chinese agvId intact)' -Detail (ConvertTo-Json $state -Compress -Depth 5)
+            $got = Get-ParallelDispatchGateRefusal -Direction Close -State $state -ServiceName $v2Service -DatabasePath $db -RecoveryJourney $rjDb
+            Write-Result -Ok ($null -eq $got) -Name 'gate (workspace#61, real SQLite): close, the journey Blocked on LOAD_RESULT_REQUIRES_RECOVERY -> allowed when named' -Detail "got: $got"
+            $got = Get-ParallelDispatchGateRefusal -Direction Close -State $state -ServiceName $v2Service -DatabasePath $db
+            Write-Result -Ok ($null -ne $got -and $got.StartsWith('GATE_CLOSE_REFUSED_IN_FLIGHT:')) -Name 'gate (workspace#61, real SQLite): ... and refused as before when not named' -Detail "got: $got"
+            $got = Get-ParallelDispatchGateRefusal -Direction Close -State $state -ServiceName $v2Service -DatabasePath $db -RecoveryJourney @(@{ journeyId = $id; agvId = '老厂前线新多仓位2'; vehicleKey = 'K3' })
+            Write-Result -Ok ($null -ne $got -and $got.StartsWith('GATE_RECOVERY_JOURNEY_VEHICLE_MISMATCH:')) -Name 'gate (workspace#61, real SQLite): close, named on another vehicle -> refused' -Detail "got: $got"
+            $with = Get-ParallelDispatchGateRefusal -Direction Open -State $state -ServiceName $v2Service -DatabasePath $db -RecoveryJourney $rjDb
+            $without = Get-ParallelDispatchGateRefusal -Direction Open -State $plain -ServiceName $v2Service -DatabasePath $db
+            Write-Result -Ok ($null -ne $with -and $with.StartsWith('GATE_OPEN_REFUSED_ORDER_SENT:') -and $with -ceq $without) `
+                -Name 'gate (workspace#61, real SQLite): open is not widened: named or not, the same GATE_OPEN_REFUSED_ORDER_SENT' -Detail "with: $with"
+            # Its vehicle now holds a fault (an emergency stop latched, say): no restart.
+            & $execute "UPDATE VehicleFaultStates SET Level = 'Blocked', EvidenceCode = 'EMERGENCY_STOP_LATCHED';"
+            $faulted = Get-ParallelJourneyDispatchState -DatabasePath $db -AssemblyDirectory $hostBuild -RecoveryJourneyId $id
+            $got = Get-ParallelDispatchGateRefusal -Direction Close -State $faulted -ServiceName $v2Service -DatabasePath $db -RecoveryJourney $rjDb
+            Write-Result -Ok (@($faulted['VehicleFaults']).Count -eq 1 -and $null -ne $got -and $got.StartsWith('GATE_CLOSE_RECOVERY_JOURNEY_VEHICLE_FAULT:')) `
+                -Name 'gate (workspace#61, real SQLite): close, named, its vehicle holds a fault -> refused' -Detail "got: $got"
+            & $execute "UPDATE VehicleFaultStates SET Level = 'None', EvidenceCode = NULL;"
+            # After the recovery the engine takes it back: AwaitingLoadResult, no longer awaiting recovery.
+            & $execute "UPDATE JourneyRuntimes SET Stage = 'AwaitingLoadResult', BlockReasonCode = NULL WHERE JourneyId = '$id';"
+            $got = Get-ParallelDispatchGateRefusal -Direction Close -State (Get-ParallelJourneyDispatchState -DatabasePath $db -AssemblyDirectory $hostBuild -RecoveryJourneyId $id) -ServiceName $v2Service -DatabasePath $db -RecoveryJourney $rjDb
+            Write-Result -Ok ($null -ne $got -and $got.StartsWith('GATE_CLOSE_RECOVERY_JOURNEY_NOT_AWAITING_RECOVERY:')) `
+                -Name 'gate (workspace#61, real SQLite): close, named, released back to the engine -> refused' -Detail "got: $got"
+            & $execute ("UPDATE JourneyRuntimes SET Stage = 'Blocked', BlockReasonCode = 'LOAD_RESULT_REQUIRES_RECOVERY' WHERE JourneyId = '$id'; " +
+                "UPDATE JourneyRuntimes SET Stage = 'AwaitingGateArrival' WHERE JourneyId = 'j-done';")
+            $got = Get-ParallelDispatchGateRefusal -Direction Close -State (Get-ParallelJourneyDispatchState -DatabasePath $db -AssemblyDirectory $hostBuild -RecoveryJourneyId $id) -ServiceName $v2Service -DatabasePath $db -RecoveryJourney $rjDb
+            Write-Result -Ok ($null -ne $got -and $got.StartsWith('GATE_CLOSE_REFUSED_IN_FLIGHT:') -and $got.Contains('j-done') -and -not $got.Contains($id)) `
+                -Name 'gate (workspace#61, real SQLite): close, named, with another journey active -> refused, naming only the other' -Detail "got: $got"
+            $odd = Get-ParallelJourneyDispatchState -DatabasePath $db -AssemblyDirectory $hostBuild -RecoveryJourneyId "x' OR '1'='1"
+            Write-Result -Ok (-not $odd.Contains('Error') -and $odd.Contains('RecoveryJourneys') -and @($odd['RecoveryJourneys']).Count -eq 0) `
+                -Name 'gate reader (workspace#61): the journey id is a parameter, not SQL' -Detail (ConvertTo-Json $odd -Compress -Depth 5)
         } finally {
             [Microsoft.Data.Sqlite.SqliteConnection]::ClearAllPools()
             Remove-Item -LiteralPath $directory -Recurse -Force -ErrorAction SilentlyContinue

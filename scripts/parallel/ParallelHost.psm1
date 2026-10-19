@@ -744,11 +744,17 @@ function Get-ParallelJourneyDispatchState {
             test; Mode=ReadOnly so this can neither block nor alter the service that owns the file, and
             unpooled so nothing keeps the file open afterwards. A missing file is an error, not an empty
             state: opening it would not create it, and "no database" is not "no journey".
+
+            -RecoveryJourneyId (8005-workspace#61) adds reads, in the same connection, that Get-ParallelDispatchGateRefusal
+            -RecoveryJourney judges when closing: each named journey's row with its block reason (RecoveryJourneys, the rows
+            found), and the vehicle faults in effect (VehicleFaults: the VehicleFaultStates rows whose Level is not None).
+            Each id is a parameter, never text in the statement.
     #>
     [CmdletBinding()]
     param(
         [Parameter(Mandatory = $true)][string] $DatabasePath,
-        [Parameter(Mandatory = $true)][string] $AssemblyDirectory
+        [Parameter(Mandatory = $true)][string] $AssemblyDirectory,
+        [string[]] $RecoveryJourneyId
     )
     $connection = $null
     try {
@@ -763,9 +769,10 @@ function Get-ParallelJourneyDispatchState {
         $connection = [Microsoft.Data.Sqlite.SqliteConnection]::new("Data Source=$DatabasePath;Mode=ReadOnly;Pooling=False")
         $connection.Open()
         $read = {
-            param([string] $Sql)
+            param([string] $Sql, [string] $JourneyId)
             $command = $connection.CreateCommand()
             $command.CommandText = $Sql
+            if ($JourneyId) { $null = $command.Parameters.AddWithValue('$id', $JourneyId) }
             $reader = $command.ExecuteReader()
             $rows = [System.Collections.Generic.List[object]]::new()
             try {
@@ -777,13 +784,25 @@ function Get-ParallelJourneyDispatchState {
             } finally { $reader.Dispose(); $command.Dispose() }
             return , $rows.ToArray()
         }
-        return [ordered]@{
+        $state = [ordered]@{
             Journeys = & $read "SELECT JourneyId, Stage, AgvId, VehicleKey, PickupUpperId, GateUpperId, CreatedAt FROM JourneyRuntimes WHERE Stage <> 'Completed'"
             OrderIntents = & $read ('SELECT MovementLegId, UpperId, VehicleKey, Status, OrderId, CreateAttemptCount, CreateAttemptId, ' +
                 'DispatchAuditVersion, ExperimentalCreateAuthorizationId, CreatedAt FROM OrderIntents')
             AuditEvents = & $read ('SELECT MovementLegId, Phase, Outcome, AttemptId, ReturnedOrderId, ResultPresent FROM RiotDispatchAuditEvents ' +
                 "WHERE MovementLegId IN (SELECT MovementLegId FROM OrderIntents WHERE Status = 'RESULT_UNKNOWN')")
         }
+        $recoveryIds = @($RecoveryJourneyId | Where-Object { $_ })
+        if ($recoveryIds.Count -gt 0) {
+            $rows = [System.Collections.Generic.List[object]]::new()
+            foreach ($recoveryId in $recoveryIds) {
+                # Into a variable first: $read returns its rows with the unary comma, so they are counted here, not wrapped again.
+                $row = & $read 'SELECT JourneyId, Stage, BlockReasonCode, AgvId, VehicleKey FROM JourneyRuntimes WHERE JourneyId = $id' $recoveryId
+                foreach ($one in $row) { $rows.Add($one) }
+            }
+            $state['RecoveryJourneys'] = $rows.ToArray()
+            $state['VehicleFaults'] = & $read "SELECT AgvId, Level, EvidenceCode FROM VehicleFaultStates WHERE Level <> 'None'"
+        }
+        return $state
     } catch {
         return [ordered]@{ Error = $_.Exception.Message }
     } finally {
@@ -827,6 +846,10 @@ function Invoke-ParallelDispatchGateChange {
             Hashtable of scriptblocks, all required: ServiceStatus (the status as a string, $null when
             the service does not exist), ReadState (Get-ParallelJourneyDispatchState's output),
             StopService, StartService, ProcessStartTimeUtc ($null when unknown).
+
+        .PARAMETER RecoveryJourney
+            8005-workspace#61, closing only: the journeys Get-ParallelDispatchGateRefusal judges on their own (each journeyId,
+            agvId, vehicleKey), or $null. Passed to both reads of step 4 and 5; ReadState must then read with -RecoveryJourneyId.
     #>
     [CmdletBinding()]
     param(
@@ -835,7 +858,8 @@ function Invoke-ParallelDispatchGateChange {
         [Parameter(Mandatory = $true)][string] $ServiceName,
         [Parameter(Mandatory = $true)][string] $DatabasePath,
         [Parameter(Mandatory = $true)][hashtable] $Actions,
-        [scriptblock] $Writer = $script:WriteConfigurationFile
+        [scriptblock] $Writer = $script:WriteConfigurationFile,
+        [AllowNull()][AllowEmptyCollection()][object[]] $RecoveryJourney
     )
     $missing = @('ServiceStatus', 'ReadState', 'StopService', 'StartService', 'ProcessStartTimeUtc' | Where-Object { -not ($Actions.ContainsKey($_) -and $Actions[$_] -is [scriptblock]) })
     if ($missing.Count -gt 0) { throw "Invoke-ParallelDispatchGateChange: missing action(s) $($missing -join ', '); nothing was run." }
@@ -875,7 +899,8 @@ function Invoke-ParallelDispatchGateChange {
     }
 
     # 4.
-    $refusal = Get-ParallelDispatchGateRefusal -Direction $Direction -State (& $Actions.ReadState) -ServiceName $ServiceName -DatabasePath $DatabasePath
+    $refusal = Get-ParallelDispatchGateRefusal -Direction $Direction -State (& $Actions.ReadState) -ServiceName $ServiceName -DatabasePath $DatabasePath `
+        -RecoveryJourney $RecoveryJourney
     if ($refusal) { throw $refusal }
 
     # Starting the service again after a refusal or a failed write, and saying what it is now rather than
@@ -893,7 +918,8 @@ function Invoke-ParallelDispatchGateChange {
     # 5.
     $wasRunning = $status -ceq 'Running'
     if ($wasRunning) { $null = & $Actions.StopService }
-    $refusal = Get-ParallelDispatchGateRefusal -Direction $Direction -State (& $Actions.ReadState) -ServiceName $ServiceName -DatabasePath $DatabasePath
+    $refusal = Get-ParallelDispatchGateRefusal -Direction $Direction -State (& $Actions.ReadState) -ServiceName $ServiceName -DatabasePath $DatabasePath `
+        -RecoveryJourney $RecoveryJourney
     if ($refusal) {
         # A service that was Stopped was not touched, so the refusal's own "nothing was stopped or changed" holds.
         if (-not $wasRunning) { throw $refusal }

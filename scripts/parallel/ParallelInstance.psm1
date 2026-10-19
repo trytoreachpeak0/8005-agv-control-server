@@ -3951,6 +3951,76 @@ function Test-ParallelOrderIntentNeverSent {
     return $true
 }
 
+function Test-ParallelJourneyAwaitsRecovery {
+    <#
+        .SYNOPSIS
+            8005-workspace#61. Whether a journey stands Blocked on a slot operation result that needs an exception
+            recovery session. Pure.
+
+        .DESCRIPTION
+            The same definition as Test-V2JourneyAwaitsRecovery in 8005-workspace's
+            remote-ops/onboard-hmi/scripts/V2RecoveryWindow.psm1 (8005-workspace#58), read from this repository:
+            Block() sets Stage Blocked and the reason (src/ControlServer.Host/Runtime/JourneyRuntimeEngine.cs),
+            LOAD_RESULT_REQUIRES_RECOVERY when the load operation is RecoveryRequired, UNLOAD_RESULT_REQUIRES_RECOVERY
+            for the unload, and a session result that did not reconcile keeps it Blocked as <messageType>_NOT_RECONCILED
+            (OnboardRecoveryCoordinator.cs; BlockedJourneyRelease.NotReconciledSuffix). Not the unreleasable
+            *_NOT_RECONCILED_ON_ENDED_DEMAND / *_BEFORE_UPGRADE (BlockedJourneyRelease.IsUnreleasable), nor any other reason.
+    #>
+    [CmdletBinding()]
+    [OutputType([bool])]
+    param([AllowNull()][AllowEmptyString()][string] $Stage, [AllowNull()][AllowEmptyString()][string] $BlockReasonCode)
+    if ($Stage -cne 'Blocked' -or [string]::IsNullOrEmpty($BlockReasonCode)) { return $false }
+    return ($BlockReasonCode -cin @('LOAD_RESULT_REQUIRES_RECOVERY', 'UNLOAD_RESULT_REQUIRES_RECOVERY')) -or
+        ($BlockReasonCode -cmatch '^[A-Za-z]+_NOT_RECONCILED$')
+}
+
+function ConvertTo-ParallelRecoveryJourneyArgument {
+    <#
+        .SYNOPSIS
+            8005-workspace#61. The -RecoveryJourney argument of Set-ParallelDispatchGateLocal.ps1: base64 of the UTF-8 JSON
+            array [{ journeyId, agvId, vehicleKey }, ...], one entry per journey named. Pure.
+
+        .DESCRIPTION
+            Encoded because it travels inside an ssh command line: a journey id carries '|' (journey:<demandId>|g<generation>)
+            and an agvId is Chinese, and neither may be re-quoted or re-encoded on the way. Base64 has neither problem.
+    #>
+    [CmdletBinding()]
+    [OutputType([string])]
+    param([Parameter(Mandatory = $true)][System.Collections.IDictionary[]] $Journeys)
+    $list = @($Journeys | ForEach-Object { [ordered]@{ journeyId = [string] $_['journeyId']; agvId = [string] $_['agvId']; vehicleKey = [string] $_['vehicleKey'] } })
+    $json = ConvertTo-Json -InputObject $list -Compress -Depth 3
+    return [Convert]::ToBase64String([Text.Encoding]::UTF8.GetBytes($json))
+}
+
+function ConvertFrom-ParallelRecoveryJourneyArgument {
+    <#
+        .SYNOPSIS
+            8005-workspace#61. Decodes ConvertTo-ParallelRecoveryJourneyArgument's text into @{ journeyId; agvId; vehicleKey }
+            entries, written to the pipeline one by one (collect them with @(...)), at least one, no journey id twice. Throws GATE_RECOVERY_JOURNEY_MALFORMED on
+            anything else. Pure.
+    #>
+    [CmdletBinding()]
+    param([Parameter(Mandatory = $true)][AllowEmptyString()][string] $Encoded)
+    $malformed = ('GATE_RECOVERY_JOURNEY_MALFORMED: -RecoveryJourney must be the base64 of a JSON array of objects with journeyId, ' +
+        'agvId and vehicleKey, at least one, no journey twice. Nothing was stopped or changed.')
+    try {
+        $value = ConvertFrom-Json -InputObject ([Text.Encoding]::UTF8.GetString([Convert]::FromBase64String($Encoded))) -AsHashtable -NoEnumerate
+    } catch { throw $malformed }
+    if ($value -isnot [array] -or $value.Count -eq 0) { throw $malformed }
+    $result = foreach ($entry in $value) {
+        if ($entry -isnot [System.Collections.IDictionary]) { throw $malformed }
+        $one = @{}
+        foreach ($key in 'journeyId', 'agvId', 'vehicleKey') {
+            if (-not $entry.Contains($key) -or $entry[$key] -isnot [string] -or [string]::IsNullOrWhiteSpace($entry[$key])) { throw $malformed }
+            $one[$key] = $entry[$key]
+        }
+        $one
+    }
+    $result = @($result)
+    if (@($result | ForEach-Object { $_['journeyId'] } | Sort-Object -Unique -CaseSensitive).Count -ne $result.Count) { throw $malformed }
+    return $result
+}
+
 function ConvertTo-ParallelGateDirection {
     <#
         .SYNOPSIS
@@ -3992,13 +4062,30 @@ function Get-ParallelDispatchGateRefusal {
 
             $State is Get-ParallelJourneyDispatchState's output, or $null / an Error string when it could
             not be read, which refuses in both directions (fail closed). Pure.
+
+            -RecoveryJourney (8005-workspace#61; ConvertFrom-ParallelRecoveryJourneyArgument's list of journeyId, agvId,
+            vehicleKey), for closing only, names the journeys vehicles stuck on a slot operation result are recovered from.
+            Closing needs no journey active, and a stuck journey is active, while 18's recovery window, 19 and the task-type
+            station activation all need the gate closed first. With it, the journeys not Completed that are not named
+            refuse as before; each named one that is active passes only when all of these hold, read by
+            Get-ParallelJourneyDispatchState -RecoveryJourneyId:
+              * its row is on the vehicle named with it (AgvId and VehicleKey, ordinal);
+              * it awaits recovery (Test-ParallelJourneyAwaitsRecovery);
+              * its vehicle holds no fault (no VehicleFaultStates row of its AgvId with a Level other than None). A held
+                fault is supervised only by the journey loop -- the stop proof, the escalation and REQ-0248's re-trigger
+                (JourneyRuntimeEngine.cs:2245-2262) -- and the stop proof's samples live in memory, so a restart discards
+                them (Program.cs:88-91). Such a vehicle is taken out of its fault through VehicleFaultRecovery first.
+            A named journey that is not active waives nothing. Opening ignores it: it is not widened, because the journey
+            ends Completed through control-server#771 and is then no longer among the journeys judged. Without
+            -RecoveryJourney nothing here changes.
     #>
     [CmdletBinding()]
     param(
         [Parameter(Mandatory = $true)][ValidateSet('Close', 'Open')][string] $Direction,
         [AllowNull()] $State,
         [Parameter(Mandatory = $true)][string] $ServiceName,
-        [Parameter(Mandatory = $true)][string] $DatabasePath
+        [Parameter(Mandatory = $true)][string] $DatabasePath,
+        [AllowNull()][AllowEmptyCollection()][object[]] $RecoveryJourney
     )
     $nothing = ' Nothing was stopped or changed.'
     if ($null -eq $State -or $State -isnot [System.Collections.IDictionary] -or $State.Contains('Error')) {
@@ -4008,6 +4095,35 @@ function Get-ParallelDispatchGateRefusal {
     }
     $journeys = @($State['Journeys'] | Where-Object { [string] $_['Stage'] -cne 'Completed' })
     if ($Direction -eq 'Close') {
+        # 8005-workspace#61: each named journey that is among the active ones is judged on its own.
+        foreach ($named in @($RecoveryJourney | Where-Object { $null -ne $_ })) {
+            $recoveryId = [string] $named['journeyId']
+            if (@($journeys | Where-Object { [string] $_['JourneyId'] -ceq $recoveryId }).Count -eq 0) { continue }
+            $row = $State.Contains('RecoveryJourneys') ? @($State['RecoveryJourneys'] | Where-Object { [string] $_['JourneyId'] -ceq $recoveryId }) : @()
+            if ($row.Count -ne 1 -or -not $State.Contains('VehicleFaults')) {
+                return ("GATE_RECOVERY_JOURNEY_UNREADABLE: the recovery journey $recoveryId of '$ServiceName' is active in $DatabasePath, " +
+                    'but its row or the vehicle faults were not read, so it cannot be judged.' + $nothing)
+            }
+            $row = $row[0]
+            if ([string] $row['AgvId'] -cne [string] $named['agvId'] -or [string] $row['VehicleKey'] -cne [string] $named['vehicleKey']) {
+                return ("GATE_RECOVERY_JOURNEY_VEHICLE_MISMATCH: in $DatabasePath, journey $recoveryId of '$ServiceName' is on agvId " +
+                    "'$($row['AgvId'])' / vehicleKey '$($row['VehicleKey'])', not the named vehicle's '$($named['agvId'])' / " +
+                    "'$($named['vehicleKey'])'." + $nothing)
+            }
+            if (-not (Test-ParallelJourneyAwaitsRecovery -Stage ([string] $row['Stage']) -BlockReasonCode ([string] $row['BlockReasonCode']))) {
+                return ("GATE_CLOSE_RECOVERY_JOURNEY_NOT_AWAITING_RECOVERY: in $DatabasePath, journey $recoveryId of '$ServiceName' " +
+                    "is $($row['Stage']) / $($row['BlockReasonCode'] ?? '(no block reason)'), not Blocked on a slot operation result " +
+                    'that needs recovery, so it may be under way like any other active journey.' + $nothing)
+            }
+            $fault = @($State['VehicleFaults'] | Where-Object { [string] $_['AgvId'] -ceq [string] $row['AgvId'] -and [string] $_['Level'] -cne 'None' })
+            if ($fault.Count -gt 0) {
+                return ("GATE_CLOSE_RECOVERY_JOURNEY_VEHICLE_FAULT: in $DatabasePath, the vehicle '$($row['AgvId'])' of journey $recoveryId " +
+                    "holds a fault ($($fault[0]['Level']) / $($fault[0]['EvidenceCode'] ?? 'no evidence code')). Only the journey loop " +
+                    "supervises it, and a restart of '$ServiceName' would drop its stop proof; take the vehicle out of its fault " +
+                    'through VehicleFaultRecovery first.' + $nothing)
+            }
+            $journeys = @($journeys | Where-Object { [string] $_['JourneyId'] -cne $recoveryId })
+        }
         if ($journeys.Count -eq 0) { return $null }
         $listed = ($journeys | ForEach-Object { "$($_['JourneyId']) ($($_['AgvId']), $($_['Stage']))" }) -join '; '
         return ("GATE_CLOSE_REFUSED_IN_FLIGHT: $DatabasePath has $($journeys.Count) journey(s) of '$ServiceName' not Completed: " +
@@ -4331,4 +4447,7 @@ Export-ModuleMember -Function @(
     'Test-ParallelOrderIntentNeverSent'
     'Get-ParallelDispatchGateRefusal'
     'ConvertTo-ParallelGateDirection'
+    'Test-ParallelJourneyAwaitsRecovery'
+    'ConvertTo-ParallelRecoveryJourneyArgument'
+    'ConvertFrom-ParallelRecoveryJourneyArgument'
 )
