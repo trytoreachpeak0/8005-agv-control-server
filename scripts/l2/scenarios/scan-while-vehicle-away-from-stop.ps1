@@ -61,8 +61,8 @@ function Get-HeldEntryRequest {
 }
 
 function Get-Refusal {
-    $rows = @(Invoke-L2Query -Connection $connection `
-            -Sql "SELECT PayloadJson FROM ProtocolOutbox WHERE MessageType = 'SublotRejected'")
+    $rows = Invoke-L2Query -Connection $connection `
+        -Sql "SELECT PayloadJson FROM ProtocolOutbox WHERE MessageType = 'SublotRejected'"
     if ($rows.Count -eq 0) { return $null }
     return [string]($rows[-1].PayloadJson | ConvertFrom-Json -Depth 20).payload.problem.reasonCode
 }
