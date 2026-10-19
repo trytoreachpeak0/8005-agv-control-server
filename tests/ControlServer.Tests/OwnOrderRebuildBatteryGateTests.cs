@@ -130,6 +130,63 @@ public sealed class OwnOrderRebuildBatteryGateTests
         Assert.Equal(OwnOrderRebuildStates.Rebuilt, (await RebuildAsync(fixture, before.PickupUpperId)).State);
     }
 
+    // ---- 车上有货 -----------------------------------------------------------------------------------------------
+
+    /// <summary>
+    /// 装着货开往卸货站，单在 RIoT 被取消，重建到点时低电：不建、不释放、车不动——记录停在 <c>MANDATORY_CHARGE_WITH_CARGO_ON_BOARD</c>，
+    /// 旅程码 <c>OWN_ORDER_REBUILD_STOPPED</c>，告警 2173；交 control-server#345 的人工出口（人点「重建」照常受理）。
+    /// </summary>
+    /// <remarks>
+    /// 用户 2026-10-19 定的最终做法是先充电再续送（control-server#782）；那一支落地之前本票按「停下等人」兜底（调度裁定）。车上的货不放回：
+    /// 释放服务只放待装的，且只认没货那条停止原因。
+    /// </remarks>
+    [Fact]
+    [Trait("Requirement", "REQ-0360")]
+    public async Task AFlatVehicleWithCargoOnBoardIsNotSentOnAndWaitsForAPerson()
+    {
+        await using RuntimeFixture fixture = await RuntimeFixture.CreateAsync();
+        fixture.Catalog.Set(fixture.Demand(FirstDemandId, FirstSublot, createdAt: Now.AddMinutes(-10)));
+        fixture.BoxCounts.Set(FirstSublot, 7);
+        await fixture.AdvanceToGateArrivalAsync();
+        fixture.Riot.MovementState = "MT_FINISHED";
+        fixture.Context.ChangeTracker.Clear();
+        int gateCreates = fixture.Riot.CreateCount("TO_GATE");
+        string gateUpperId = (await fixture.RuntimeAsync(FirstDemandId)).GateUpperId!;
+        fixture.Riot.CancelOrder(gateUpperId);
+        fixture.Clock.Advance(TimeSpan.FromSeconds(1));
+        await fixture.HearFromPeerAsync();
+        await fixture.Engine.ExecuteOnceAsync(Token);
+        Flat(fixture, FlatBattery);
+
+        // The cargo shown in its slots after the rebuild fell due: without the battery gate this round would create.
+        await OwnOrderRebuildTests.PassTheDelayAsync(fixture);
+        fixture.Clock.Advance(TimeSpan.FromSeconds(1));
+        await fixture.AddCargoSnapshotAsync(fixture.Clock.GetUtcNow());
+        fixture.Clock.Advance(TimeSpan.FromSeconds(1));
+        await fixture.HearFromPeerAsync();
+        fixture.Context.ChangeTracker.Clear();
+        await fixture.Engine.ExecuteOnceAsync(Token);
+        fixture.Context.ChangeTracker.Clear();
+
+        Assert.Equal(gateCreates, fixture.Riot.CreateCount("TO_GATE"));
+        Assert.Equal("OWN_ORDER_REBUILD_STOPPED", (await fixture.RuntimeAsync(FirstDemandId)).BlockReasonCode);
+        OwnOrderRebuildRow stopped = await RebuildAsync(fixture, gateUpperId);
+        Assert.Equal(
+            (OwnOrderRebuildStates.Stopped, "MANDATORY_CHARGE_WITH_CARGO_ON_BOARD", $"BATTERY_{FlatBattery}_BELOW_40"),
+            (stopped.State, stopped.StoppedReason, stopped.WaitingReason));
+        var alarm = Assert.Single(fixture.EngineLog.Entries, entry =>
+            entry.Message.Contains("is not rebuilt", StringComparison.Ordinal) &&
+            entry.Message.Contains("MANDATORY_CHARGE_WITH_CARGO_ON_BOARD", StringComparison.Ordinal));
+        Assert.Equal(Microsoft.Extensions.Logging.LogLevel.Error, alarm.Level);
+        await ReleaseOnceAsync(fixture);
+        await AssertNotReleasedAsync(fixture);
+
+        Assert.Equal(
+            VehicleFaultRecoveryOutcome.RebuildRequested,
+            (await VehicleFaultRecoveryTests.Service(fixture, new(fixture))
+                .RecoverAsync(StoppedRebuildExitTests.Rebuild(fixture), Token)).Outcome);
+    }
+
     // ---- 重放与重复 ---------------------------------------------------------------------------------------------
 
     /// <summary>
