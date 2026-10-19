@@ -1,0 +1,32 @@
+第二组（18:40:01～18:42:05，提交 ccaf3c6b）：修复后基线、M1 方案 1 重做、M1 方案 2 重做。
+
+== 修复后基线
+    0 Error(s)
+Passed!  - Failed:     0, Passed:    19, Skipped:     0, Total:    19, Duration: 7 s - ControlServer.Tests.dll (net8.0)
+
+== M1 方案 1：去掉重试条件里的 State == Closed: free 2312 MB at 18:41:05
+== M1 方案 1：去掉重试条件里的 State == Closed
+-- diff
+207d206
+<                                           dbContext.Database.GetDbConnection().State == ConnectionState.Closed &&
+    0 Error(s)
+  Failed ControlServer.Tests.InboundDatabaseFaultTests.AnOpenLeftHoldingAnotherOwnersConnectionIsNotRetriedOnIt(connection: "plain") [242 ms]
+  Error Message:
+   开库拿着别人的连接，重试之后照常回了应答：处理跑在共用的连接上。
+Failed!  - Failed:     1, Passed:    12, Skipped:     0, Total:    13, Duration: 5 s - ControlServer.Tests.dll (net8.0)
+-- restored (cmp ok)
+
+== M1 方案 2：Open 的 catch 只认 Closed（不再识别仍处于 Open 的失败）: free 2754 MB at 18:41:34
+== M1 方案 2：Open 的 catch 只认 Closed（不再识别仍处于 Open 的失败）
+-- diff
+78c78
+<             catch (Exception error) when (base.State == ConnectionState.Open)
+---
+>             catch (Exception error) when (base.State == ConnectionState.Closed)
+    0 Error(s)
+  Failed ControlServer.Tests.SerializedSqliteConnectionTests.AnOpenLeftHoldingAnotherOwnersConnectionLeavesItBrokenAndUnusable [9 ms]
+  Error Message:
+   Assert.IsType() Failure: Value is not the exact type
+Failed!  - Failed:     1, Passed:     5, Skipped:     0, Total:     6, Duration: 4 s - ControlServer.Tests.dll (net8.0)
+-- restored (cmp ok)
+

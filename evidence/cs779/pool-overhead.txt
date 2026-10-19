@@ -20,7 +20,7 @@ pooled     lanes=8 3000/lane: wall 1737 ms, 72 us/query wall, 579 us/query per l
 serialized lanes=1 3000/lane: wall 859 ms, 286 us/query wall, 286 us/query per lane
 serialized lanes=8 3000/lane: wall 1582 ms, 66 us/query wall, 527 us/query per lane
 
-== 池竞态复现（pool-race-repro.Program.cs.txt，上游 efcore#39253 的复现程序改写，net8 + Microsoft.Data.Sqlite 8.0.30） ==
+== 池竞态复现（pool-race-repro.Program.cs.txt，竞态是 dotnet/efcore#39008；程序改写自它的重复报告 #39253 里的复现程序，net8 + Microsoft.Data.Sqlite 8.0.30） ==
 Microsoft.Data.Sqlite 8.0.30.0 pooling=True: 200 rounds x 16 threads: shared=0 errors=0
 Microsoft.Data.Sqlite 8.0.30.0 pooling=False: 200 rounds x 16 threads: shared=0 errors=0
 Microsoft.Data.Sqlite 8.0.30.0 pooling=True: 1500 rounds x 64 threads: shared=0 errors=0
