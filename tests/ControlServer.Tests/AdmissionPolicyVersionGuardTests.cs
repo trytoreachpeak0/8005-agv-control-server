@@ -82,6 +82,10 @@ public sealed class AdmissionPolicyVersionGuardTests
             ["WIRE_TO_GATE", "STAGING_TO_WIRE", "DIE_TO_WIRE_STAGING", "DIE_TO_OVEN", "WIRE_TO_OPTICAL", "WIRE_TO_NITROGEN",
                 "WIRE_TO_FULL_INSPECTION"],
             "control-server#737: the seventh task type WIRE_TO_FULL_INSPECTION (protocol 5.0.0 candidate, protocol#21)"),
+        (8, BumpKind.RuleVersionActivated, null,
+            "control-server#777 (for #738): map 26's binding set built on rule version 2 activated, WIRE_TO_FULL_INSPECTION " +
+            "bound to station 229 「全检」, so the seed takes in the seventh type. Activated with the service stopped and " +
+            "started under 8 (TaskTypeAdmissionRuntimeTests.TheFullInspectionActivationDoesNotDriftWhenActivatedStoppedAndStartedUnderTheRaisedVersion)"),
     ];
 
     /// <summary>

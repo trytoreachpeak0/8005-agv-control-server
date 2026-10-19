@@ -222,25 +222,32 @@ public sealed class TaskTypeStationStartupTests
     }
 
     [Fact]
-    public void TheMap26PresetAndTheActivationCandidateCarryTheSameBindings()
+    public void TheMap26ActivationCandidateIsThePresetPlusTheFullInspectionStation()
     {
         // control-server#548: an instance that keeps its database is changed by activating the candidate under
         // scripts/parallel/; one that gets a new database is loaded from this preset. The two must agree, or the same
         // instance ends up on different stations depending on whether its database was replaced.
+        // control-server#777 (for #738): the candidate is what factory01's existing database activates, so it binds the
+        // full-inspection station 229 the user built on 2026-10-19 and depends on that database's current rule version, 2
+        // (the v5 package wrote the seven rules as version 2 on top of the six of version 1; #738's read-back). The preset
+        // keeps its six until a new database is wanted: there it is loaded under rule version 1, and its catalog evidence
+        // (Map26CatalogPath) predates station 229. Every other binding and requirement must still be the preset's.
         string candidatePath = Path.Combine(
             ProtocolIdentityArchitectureTests.RepositoryRoot(), "scripts", "parallel", "task-type-stations.map-26.candidate.json");
         using JsonDocument candidate = JsonDocument.Parse(File.ReadAllText(candidatePath));
         JsonElement root = candidate.RootElement;
         TaskTypeStationMapConfiguration preset =
             TaskTypeStationPreset.Load(AppContext.BaseDirectory, Map26PresetFile)!.Configuration.Map;
+        TaskTypeStationBinding fullInspection = new(
+            "WIRE_TO_FULL_INSPECTION", 229, "全检", "Zhengyu Shao 2026-10-19 14:14 现场核对 229 全检站位与 RIoT 26 号图一致");
 
         Assert.Equal(preset.MapId, root.GetProperty("mapId").GetInt32());
-        Assert.Equal(1, root.GetProperty("ruleVersion").GetInt64());
+        Assert.Equal(2, root.GetProperty("ruleVersion").GetInt64());
         Assert.Equal(
-            preset.RequiredTaskTypes,
+            [.. preset.RequiredTaskTypes, fullInspection.TaskType],
             root.GetProperty("requiredTaskTypes").EnumerateArray().Select(taskType => taskType.GetString()!));
         Assert.Equal(
-            preset.Bindings,
+            [.. preset.Bindings, fullInspection],
             root.GetProperty("bindings").EnumerateArray().Select(binding => new TaskTypeStationBinding(
                 binding.GetProperty("taskType").GetString()!,
                 binding.GetProperty("stationRiotId").GetInt32(),

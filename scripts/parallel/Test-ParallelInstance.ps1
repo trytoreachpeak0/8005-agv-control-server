@@ -5518,9 +5518,9 @@ function Get-BindingReadBack($Definition, $Bound) {
 }
 function New-BoundBinding([hashtable] $Change = @{}) {
     # The baseline's own values, written here as literals rather than read from it: the baseline is the shipped definition
-    # (7, 00:05:00, 00:05:00) with the label Set-Map26TestValue gives it, and a case below pins that.
+    # (8, 00:05:00, 00:05:00) with the label Set-Map26TestValue gives it, and a case below pins that.
     $bound = [ordered]@{
-        AdmissionPolicyVersion = 7
+        AdmissionPolicyVersion = 8
         AdmissionPolicyDeploymentId = 'MAP-26-WIRE_TO_GATE-SELFTEST'
         CargoHoldingTimeout = '00:05:00'
         StationDepartureWaitTimeout = '00:05:00'
@@ -5532,10 +5532,10 @@ function New-BoundBinding([hashtable] $Change = @{}) {
     foreach ($key in @($Change.Keys)) { if ($null -eq $Change[$key]) { $bound.Remove($key) } else { $bound[$key] = $Change[$key] } }
     return $bound
 }
-Invoke-SourceCase 'binding read-back: the baseline says 7, MAP-26-WIRE_TO_GATE-SELFTEST, 00:05:00, 00:05:00 (what the cases below bind)' {
+Invoke-SourceCase 'binding read-back: the baseline says 8, MAP-26-WIRE_TO_GATE-SELFTEST, 00:05:00, 00:05:00 (what the cases below bind)' {
     $j = $baseline['journeyRuntime']
     $got = "$($j['admissionPolicyVersion'])|$($j['admissionPolicyDeploymentId'])|$($j['cargoHoldingTimeout'])|$($j['stationDepartureWaitTimeout'])"
-    @{ Ok = ($got -ceq '7|MAP-26-WIRE_TO_GATE-SELFTEST|00:05:00|00:05:00'); Detail = "got: $got" }
+    @{ Ok = ($got -ceq '8|MAP-26-WIRE_TO_GATE-SELFTEST|00:05:00|00:05:00'); Detail = "got: $got" }
 }
 $bindingWithoutDeparture = Copy-Definition $baseline
 $bindingWithoutDeparture['journeyRuntime'].Remove('stationDepartureWaitTimeout')
@@ -5545,7 +5545,7 @@ $bindingStagingOn['journeyRuntime']['stagingDepartureRules'] = [ordered]@{ enabl
 # One row per row of the module's $script:JourneyBindingFields (the case below holds the two lists equal): a value the Host
 # might bind instead, and the problem text naming the field. A field added to the table is added here too.
 $bindingFieldCases = @(
-    @{ Logged = 'AdmissionPolicyVersion'; Wrong = 5; Says = "admissionPolicyVersion bound '5', the definition says '7'" }
+    @{ Logged = 'AdmissionPolicyVersion'; Wrong = 5; Says = "admissionPolicyVersion bound '5', the definition says '8'" }
     @{ Logged = 'AdmissionPolicyDeploymentId'; Wrong = 'MAP-26-WIRE_TO_GATE-20261007'; Says = "admissionPolicyDeploymentId bound 'MAP-26-WIRE_TO_GATE-20261007', the definition says 'MAP-26-WIRE_TO_GATE-SELFTEST'" }
     @{ Logged = 'CargoHoldingTimeout'; Wrong = '00:30:00'; Says = "cargoHoldingTimeout bound '00:30:00', the definition says '00:05:00'" }
     @{ Logged = 'StationDepartureWaitTimeout'; Wrong = '00:30:00'; Says = "stationDepartureWaitTimeout bound '00:30:00', the definition says '00:05:00'" }
@@ -5577,8 +5577,8 @@ foreach ($fieldCase in $bindingFieldCases) {
 }
 foreach ($case in @(
         @{ Name = 'bound as defined -- pass'; Definition = $baseline; Bound = (New-BoundBinding); Action = 'Pass'; Says = $null }
-        @{ Name = 'version 8 bound (above the definition) -- stop and refuse'; Definition = $baseline; Bound = (New-BoundBinding @{ AdmissionPolicyVersion = 8 }); Action = 'StopServiceAndRefuse'; Says = "admissionPolicyVersion bound '8', the definition says '7'" }
-        @{ Name = 'version logged as the string "7" -- stop and refuse, not cast'; Definition = $baseline; Bound = (New-BoundBinding @{ AdmissionPolicyVersion = '7' }); Action = 'StopServiceAndRefuse'; Says = "admissionPolicyVersion bound '7', the definition says '7'" }
+        @{ Name = 'version 9 bound (above the definition) -- stop and refuse'; Definition = $baseline; Bound = (New-BoundBinding @{ AdmissionPolicyVersion = 9 }); Action = 'StopServiceAndRefuse'; Says = "admissionPolicyVersion bound '9', the definition says '8'" }
+        @{ Name = 'version logged as the string "8" -- stop and refuse, not cast'; Definition = $baseline; Bound = (New-BoundBinding @{ AdmissionPolicyVersion = '8' }); Action = 'StopServiceAndRefuse'; Says = "admissionPolicyVersion bound '8', the definition says '8'" }
         @{ Name = 'the label differing in case alone -- stop and refuse (ordinal)'; Definition = $baseline; Bound = (New-BoundBinding @{ AdmissionPolicyDeploymentId = 'map-26-wire_to_gate-selftest' }); Action = 'StopServiceAndRefuse'; Says = 'admissionPolicyDeploymentId bound' }
         @{ Name = 'a wait logged as 300 seconds rather than hh:mm:ss -- stop and refuse'; Definition = $baseline; Bound = (New-BoundBinding @{ CargoHoldingTimeout = 300 }); Action = 'StopServiceAndRefuse'; Says = "cargoHoldingTimeout bound '300'" }
         @{ Name = 'a key the definition leaves out is not compared (the package default is what the Host binds)'; Definition = $bindingWithoutDeparture; Bound = (New-BoundBinding @{ StationDepartureWaitTimeout = '00:30:00' }); Action = 'Pass'; Says = $null }
@@ -5595,7 +5595,7 @@ foreach ($case in @(
 }
 Invoke-SourceCase 'binding result line: the four values as bound, in a fixed order, for 19' {
     $line = Format-ParallelJourneyBindingLine -Effective (Get-BindingReadBack $baseline (New-BoundBinding)).Effective
-    @{ Ok = ($line -ceq 'EFFECTIVE_JOURNEY_BINDING=admissionPolicyVersion=7 admissionPolicyDeploymentId=MAP-26-WIRE_TO_GATE-SELFTEST cargoHoldingTimeout=00:05:00 stationDepartureWaitTimeout=00:05:00 slotConfigurationReadinessGate=Off stagingDepartureRulesEnabled=False'); Detail = "got: $line" }
+    @{ Ok = ($line -ceq 'EFFECTIVE_JOURNEY_BINDING=admissionPolicyVersion=8 admissionPolicyDeploymentId=MAP-26-WIRE_TO_GATE-SELFTEST cargoHoldingTimeout=00:05:00 stationDepartureWaitTimeout=00:05:00 slotConfigurationReadinessGate=Off stagingDepartureRulesEnabled=False'); Detail = "got: $line" }
 }
 Invoke-SourceCase 'binding result line: an event older than #672 reads EFFECTIVE_JOURNEY_BINDING=not-logged, nothing else' {
     $line = Format-ParallelJourneyBindingLine -Effective (Get-BindingReadBack $baseline '<absent>').Effective

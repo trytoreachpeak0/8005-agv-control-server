@@ -1,13 +1,14 @@
 {
   "mapId": 26,
-  "ruleVersion": 1,
+  "ruleVersion": 2,
   "requiredTaskTypes": [
     "WIRE_TO_GATE",
     "STAGING_TO_WIRE",
     "DIE_TO_WIRE_STAGING",
     "DIE_TO_OVEN",
     "WIRE_TO_OPTICAL",
-    "WIRE_TO_NITROGEN"
+    "WIRE_TO_NITROGEN",
+    "WIRE_TO_FULL_INSPECTION"
   ],
   "bindings": [
     {
@@ -45,6 +46,12 @@
       "stationRiotId": 221,
       "stationName": "焊线氮气柜",
       "siteVerificationRef": "MAP-26-WIRE_TO_NITROGEN-SITE-20261010"
+    },
+    {
+      "taskType": "WIRE_TO_FULL_INSPECTION",
+      "stationRiotId": 229,
+      "stationName": "全检",
+      "siteVerificationRef": "Zhengyu Shao 2026-10-19 14:14 现场核对 229 全检站位与 RIoT 26 号图一致"
     }
   ]
 }
