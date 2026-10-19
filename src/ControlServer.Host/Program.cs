@@ -18,6 +18,7 @@ using ControlServer.Host.Runtime.Commands;
 using ControlServer.Host.Runtime.Faults;
 using ControlServer.Host.Runtime.Fleet;
 using ControlServer.Host.Runtime.ForeignOrders;
+using ControlServer.Host.Runtime.IdleReturn;
 using ControlServer.Host.Runtime.TaskTypeStations;
 
 WebApplicationBuilder builder = WebApplication.CreateBuilder(args);
@@ -202,7 +203,7 @@ app.UseSerilogRequestLogging();
 // The v2 parallel installer reads this event back from the log and compares it with the instance
 // definition; reading the definition instead is how M1 (six work types bound where one was written) passed.
 // control-server#571 added the vehicle roster, control-server#531 REQ-0302's two approved values, control-server#672 the
-// admission policy version and label and the two waits (EffectiveConfigurationEvent).
+// admission policy version and label and the two waits, control-server#781 the idle return switch (EffectiveConfigurationEvent).
 app.Lifetime.ApplicationStarted.Register(() =>
 {
     JourneyRuntimeOptions effective = app.Services.GetRequiredService<IOptions<JourneyRuntimeOptions>>().Value;
@@ -212,10 +213,12 @@ app.Lifetime.ApplicationStarted.Register(() =>
         app.Services.GetRequiredService<IOptions<ForeignRunningOrderReleaseOptions>>().Value,
         app.Services.GetRequiredService<IOptions<VehicleFaultRecoveryOptions>>().Value,
         Environment.GetEnvironmentVariable);
+    // control-server#781: the idle return switch the evaluator reads (IOptions, bound once at startup).
+    IdleReturnOptions idleReturn = app.Services.GetRequiredService<IOptions<IdleReturnOptions>>().Value;
     // control-server#686: the slot configuration gate mode as resolved at startup, the one the dispatch criterion reads.
     SlotConfigurationGateMode gate = app.Services.GetRequiredService<SlotConfigurationGateSwitch>().Mode;
     MapStationCatalogOptions catalog = app.Services.GetRequiredService<IOptions<MapStationCatalogOptions>>().Value;
-    EffectiveConfigurationEvent.Log(app.Logger, effective, catalog, app.Configuration["MesIngest:baseUrl"] ?? "http://127.0.0.1:5088", release, gate);
+    EffectiveConfigurationEvent.Log(app.Logger, effective, catalog, app.Configuration["MesIngest:baseUrl"] ?? "http://127.0.0.1:5088", release, gate, idleReturn);
 });
 
 // control-server#473：数据库一碰之前先拿与库文件绑定的锁，进程活着就一直不放；另一个进程（另一个服务端实例、正在直接写库的
