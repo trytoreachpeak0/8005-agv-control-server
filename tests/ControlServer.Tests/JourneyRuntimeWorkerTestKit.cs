@@ -1962,8 +1962,14 @@ internal static class JourneyRuntimeWorkerTestKit
             {
                 await delay(cancellationToken);
             }
-            return Vehicle with { VehicleKey = vehicleKey, ObservedAt = _clock.GetUtcNow() };
+            return Vehicle with { VehicleKey = vehicleKey, ObservedAt = _clock.GetUtcNow() - VehicleObservedAtLag };
         }
+
+        /// <summary>
+        /// How far behind the clock a vehicle read is stamped. Zero by default; control-server#770 sets it past
+        /// <c>JourneyRuntimeOptions.MaximumEvidenceAge</c> to make the rebuild's battery read stale.
+        /// </summary>
+        public TimeSpan VehicleObservedAtLag { get; set; } = TimeSpan.Zero;
 
         /// <summary>
         /// Awaited inside every vehicle read, with the caller's token: a RIoT that answers late, or not at all until the
