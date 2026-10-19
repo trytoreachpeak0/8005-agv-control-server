@@ -1156,6 +1156,28 @@ public sealed class ChargingAllocationTests
     }
 
     /// <summary>
+    /// 位置为 0、报着 <c>CHARGING</c> 的车，只有在线且在本图上才让每个桩答未知（control-server#772 审查 S1、S3）：
+    /// 离线的车按 RIoT 最后报的位置算（独立审查 S2 的既有口径：有一台车没开机，不会让别的车都充不了电），最后位置 0 就不挡任何桩；
+    /// 另一张图上的车不站在本图任何桩上。两种情形下 A 照样分到最近的 211。
+    /// </summary>
+    [Theory]
+    [InlineData("offline")]
+    [InlineData("on-another-map")]
+    public async Task AVehicleChargingAtPositionZeroThatIsOfflineOrOnAnotherMapStopsNoOneFromCharging(string which)
+    {
+        await using FleetFixture fleet = await FleetAsync(vehicles: 2, chargers: [Near, Far]);
+        fleet.Riot.BatteryByVehicle[KeyA] = 20;
+        fleet.Riot.VehicleOverrides[KeyB] = which == "offline"
+            ? seen => seen with { Connected = false, CurrentStationId = 0, BatteryState = "CHARGING" }
+            : seen => seen with { CurrentMap = "老厂前线new_other", CurrentStationId = 0, BatteryState = "CHARGING" };
+
+        await RoundAsync(fleet);
+
+        Assert.Equal(KeyA, (await StationAsync(fleet, Near.StationId))?.VehicleKey);
+        Assert.Equal(ChargingAllocationReasons.Committed, fleet.ChargingBoard.Verdicts[AgvA].Reason);
+    }
+
+    /// <summary>
     /// 10-18 生产（control-server#772）：agv01 被人推上 211 手动充电，RIoT 报 <c>batteryState=CHARGING</c>、<c>currentPosition=0</c>，服务端把 0
     /// 当成站号 0，211 判为空闲，预留给了 agv02。修复后：一辆车在充电、RIoT 却说不出它在哪个站，它就停在某一个说不出名字的桩上——每一个桩都答
     /// <c>CHARGER_OCCUPANCY_UNKNOWN</c>，看板细节与等桩告警里写明是哪辆车。那辆车离开桩（不再充电、报回一个真站），或被 RIoT 重新定位到桩上，
