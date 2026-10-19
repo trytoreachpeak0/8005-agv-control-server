@@ -33,7 +33,7 @@ namespace ControlServer.Tests;
 /// 只断言原因码的话，一个先写了占有、再判出不合格的实现一样是绿的。
 /// </para>
 /// </remarks>
-public sealed class IdleReturnCommitmentTests
+public sealed partial class IdleReturnCommitmentTests
 {
     private const int Map = 25;
 
@@ -1033,6 +1033,9 @@ public sealed class IdleReturnCommitmentTests
 
         public HashSet<int> UnreachableStations { get; } = [];
 
+        /// <summary>再放进路网的站（站号、站名、节点），<see cref="SeedRouteGraphAsync"/> 重种时带上；例如与 214 同节点的站。</summary>
+        public List<(int Station, string Name, int Node)> ExtraPlacedStations { get; } = [];
+
         public List<RiotMapStation> CatalogStations { get; } =
         [
             new(210, "关卡"),
@@ -1146,7 +1149,8 @@ public sealed class IdleReturnCommitmentTests
                 new(1, 1, 2, 10_000, 0, 0, 10_000, 0, 1, false),
                 new(2, 2, 3, 10_000, 10_000, 0, 20_000, 0, 1, false),
             ];
-            (int Station, string Name, int Node)[] placed = [(210, "关卡", 1), (214, "等待点1", 2), (215, "等待点2", 3), (216, "等待点3", 4)];
+            (int Station, string Name, int Node)[] placed =
+                [(210, "关卡", 1), (214, "等待点1", 2), (215, "等待点2", 3), (216, "等待点3", 4), .. ExtraPlacedStations];
             RouteGraphStationFact[] stations =
             [
                 .. placed.Select(station => new RouteGraphStationFact(
