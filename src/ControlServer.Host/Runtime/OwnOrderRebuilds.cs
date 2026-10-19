@@ -61,6 +61,29 @@ internal static class OwnOrderRebuilds
     public const string VehicleNoLongerEligible = "VEHICLE_NO_LONGER_ELIGIBLE";
 
     /// <summary>
+    /// Why a rebuild was not made: when it fell due the vehicle's battery was below the mandatory charge line of the journey's
+    /// frozen charging policy, and nothing of the journey was on board (control-server#770). The record's waiting reason says
+    /// the reading and the line. The release service releases the demand back to the backlog, as for
+    /// <see cref="VehicleNoLongerEligible"/>; the same value as the dispatch reason <c>MANDATORY_CHARGE_REQUIRED</c>.
+    /// </summary>
+    public const string MandatoryChargeRequired = "MANDATORY_CHARGE_REQUIRED";
+
+    /// <summary>
+    /// Why a rebuild was not made: when it fell due the vehicle's battery was below the mandatory charge line, and a demand of
+    /// the journey was on board (control-server#770). Stopped for a person, like the third guard, so that control-server#345's
+    /// exits apply; nothing is released. The user chose charging first and carrying on afterwards (control-server#782); until
+    /// that lands this is the fallback the coordinator ruled.
+    /// </summary>
+    public const string MandatoryChargeWithCargoOnBoard = "MANDATORY_CHARGE_WITH_CARGO_ON_BOARD";
+
+    /// <summary>
+    /// Why a rebuild was not made: when it fell due the vehicle's battery was below the mandatory charge line, nothing of the
+    /// journey was on board, and the stop it was going to is not a pickup (control-server#770 review S-5) -- so there is no
+    /// demand still to be loaded that the release service could give back. Stopped for a person; control-server#345's exits apply.
+    /// </summary>
+    public const string MandatoryChargeNotAtPickup = "MANDATORY_CHARGE_NOT_AT_PICKUP";
+
+    /// <summary>
     /// Why a rebuild was not made: the new order ended in RIoT before it was ever confirmed, in a terminal state that is neither
     /// a cancellation nor FAILED -- RIoT's 8, SUSPENDED, which the gateway reads as terminal. Nothing then says what happened to
     /// the vehicle, so a person looks. (A SUCCESS before confirmation is taken as the order confirmed, and never ends here.)

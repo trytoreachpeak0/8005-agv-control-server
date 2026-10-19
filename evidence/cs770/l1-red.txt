@@ -1,0 +1,49 @@
+# L1 red: OwnOrderRebuildBatteryGateTests on be18101c5 (tests only, before the fix; base c0389b68)
+# dotnet test tests/ControlServer.Tests --no-build --filter FullyQualifiedName~OwnOrderRebuildBatteryGateTests
+  Failed ControlServer.Tests.OwnOrderRebuildBatteryGateTests.ARebuildStillQueuedAcrossARestartIsJudgedByTheBatteryGate(crashPoint: "pending") [603 ms]
+   Assert.Equal() Failure: Values differ
+Expected: 1
+Actual:   2
+  Failed ControlServer.Tests.OwnOrderRebuildBatteryGateTests.ARebuildStillQueuedAcrossARestartIsJudgedByTheBatteryGate(crashPoint: "decided-not-created") [690 ms]
+   Assert.Equal() Failure: Values differ
+Expected: 1
+Actual:   2
+  Failed ControlServer.Tests.OwnOrderRebuildBatteryGateTests.AFlatVehicleWithNothingOnBoardIsNotSentBackAndItsDemandGoesBackToTheBacklog(when: "flat-after-staged", battery: 9) [432 ms]
+   Assert.Equal() Failure: Values differ
+Expected: 1
+Actual:   2
+  Failed ControlServer.Tests.OwnOrderRebuildBatteryGateTests.AFlatVehicleWithNothingOnBoardIsNotSentBackAndItsDemandGoesBackToTheBacklog(when: "flat-before-cancel", battery: 9) [426 ms]
+   Assert.Equal() Failure: Values differ
+Expected: 1
+Actual:   2
+  Failed ControlServer.Tests.OwnOrderRebuildBatteryGateTests.AFlatVehicleWithNothingOnBoardIsNotSentBackAndItsDemandGoesBackToTheBacklog(when: "flat-after-staged", battery: 39) [406 ms]
+   Assert.Equal() Failure: Values differ
+Expected: 1
+Actual:   2
+  Failed ControlServer.Tests.OwnOrderRebuildBatteryGateTests.APersonsRebuildGoesAheadOnAFlatBatteryWithAWarning(stoppedBy: "third-guard") [696 ms]
+   Assert.Single() Failure: The collection did not contain any matching items
+Expected:   (predicate expression)
+  Failed ControlServer.Tests.OwnOrderRebuildBatteryGateTests.APersonsRebuildGoesAheadOnAFlatBatteryWithAWarning(stoppedBy: "declared-never-appeared") [659 ms]
+   Assert.Single() Failure: The collection did not contain any matching items
+Expected:   (predicate expression)
+  Failed ControlServer.Tests.OwnOrderRebuildBatteryGateTests.ARebuildWaitsWhileTheBatteryCannotBeReadAndIsMadeOnceItCan [489 ms]
+   Assert.Equal() Failure: Values differ
+Expected: 1
+Actual:   2
+  Failed ControlServer.Tests.OwnOrderRebuildBatteryGateTests.AClearedFaultOnAnEmptyFlatVehicleIsNotRebuilt [580 ms]
+   Assert.Equal() Failure: Values differ
+Expected: 1
+Actual:   2
+  Failed ControlServer.Tests.OwnOrderRebuildBatteryGateTests.ANeverAppearedOrderIsNotRebuiltOnAFlatBattery [612 ms]
+   Assert.Equal() Failure: Values differ
+Expected: 1
+Actual:   2
+  Failed ControlServer.Tests.OwnOrderRebuildBatteryGateTests.AFlatVehicleWhoseSessionIsNotReadyOnItsOwnOrderIsStillReleased [402 ms]
+   Assert.Equal() Failure: Strings differ
+Expected: "OWN_ORDER_REBUILD_MANDATORY_CHARGE"
+Actual:   "OWN_ORDER_REBUILD_WAITING_VEHICLE"
+  Failed ControlServer.Tests.OwnOrderRebuildBatteryGateTests.TheSecondRebuildOfTheSameDemandIsJudgedByTheBatteryGateToo [524 ms]
+   Assert.Equal() Failure: Values differ
+Expected: 2
+Actual:   3
+Failed!  - Failed:    12, Passed:     3, Skipped:     0, Total:    15, Duration: 14 s - ControlServer.Tests.dll (net8.0)
