@@ -29,3 +29,9 @@
   Failed ControlServer.Tests.SlotCommandStationRecheckTests.AScanAfterAReconnectIsRefusedWhileTheVehicleIsAway [762 ms]
    Assert.DoesNotContain() Failure: Item found in collection
 Failed!  - Failed:    14, Passed:     1, Skipped:     0, Total:    15, Duration: 26 s - ControlServer.Tests.dll (net8.0)
+
+# Second red, on c303660b0 (the scan/unload gate in, the resend not yet gated):
+# dotnet test --no-build --filter "FullyQualifiedName~AnUnansweredLoadCommandIsNotSentAgainWhileTheVehicleIsAway"
+  Failed ControlServer.Tests.SlotCommandStationRecheckTests.AnUnansweredLoadCommandIsNotSentAgainWhileTheVehicleIsAway [10 s]
+   The unanswered load command went out again while the vehicle stood away from the stop.
+Failed!  - Failed:     1, Passed:     0, Skipped:     0, Total:     1, Duration: 10 s - ControlServer.Tests.dll (net8.0)

@@ -246,6 +246,49 @@ public sealed class SlotCommandStationRecheckTests
         Assert.Null(resumed.BlockReasonCode);
     }
 
+    /// <summary>
+    /// 同一条命令的第二次下发：装货命令在站上发出，车载端还没答结果（发件箱里那一行未答复），会话掉线，车在这期间被开走，
+    /// 车载端以新的一代连上。服务端每一轮都把未答复的命令再发一次（<c>ReplayPendingForSessionAsync</c>），车载端按 attempt 去重——
+    /// 可它若根本没收到第一次，这一次就是第一次，会在站外执行。所以车回到站上之前不再发，回到站上那一轮照常发。
+    /// </summary>
+    /// <remarks>
+    /// 扣住不发不丢结果：车载端执行过的，握手时自己重放没被确认的结果（<c>WireToGateStore</c> 的 OperationResult 去重那一段）。
+    /// </remarks>
+    [Fact]
+    [Trait("IntegrationSlice", "FP-IS-02")]
+    public async Task AnUnansweredLoadCommandIsNotSentAgainWhileTheVehicleIsAway()
+    {
+        await using RuntimeFixture fixture = await ReachSublotWaitAsync();
+        await fixture.SubmitSublotAsync("SUBLOT-001");
+        await TickAndRunAsync(fixture);
+        await AssertLoadCommandedAsync(fixture);
+        string command = (await Batch7MultiDemandAdvanceTests.MembershipAsync(fixture, BeforeSublotDemandId)).LoadCommandMessageId;
+        RiotVehicleObservation atStop = fixture.Riot.Vehicle;
+
+        await fixture.DropOnboardSessionAsync();
+        await TickAndRunAsync(fixture);
+        fixture.Riot.Vehicle = atStop with { CurrentStationId = ElsewhereStationId };
+        await fixture.ReconnectAsync(2);
+        await fixture.AdvanceSessionAsync(2);
+        fixture.Peer.Lines.Clear();
+        await TickAndRunAsync(fixture);
+
+        Assert.False(Sent(fixture, command), "The unanswered load command went out again while the vehicle stood away from the stop.");
+
+        fixture.Riot.Vehicle = atStop;
+        await TickAndRunAsync(fixture);
+
+        Assert.True(Sent(fixture, command), "The unanswered load command was never sent again once the vehicle was back.");
+    }
+
+    /// <summary>这一条报文有没有经连接发给车。</summary>
+    private static bool Sent(RuntimeFixture fixture, string messageId) =>
+        fixture.Peer.Lines.Any(line =>
+        {
+            using JsonDocument document = JsonDocument.Parse(line);
+            return document.RootElement.GetProperty("messageId").GetString() == messageId;
+        });
+
     /// <summary>判据：录入被拒、原因码如期，没有装货命令，旅程停在等录入，看板挂不在站的码，没有分出仓位。</summary>
     private static async Task AssertRefusedAsync(RuntimeFixture fixture, string expectedReason)
     {
