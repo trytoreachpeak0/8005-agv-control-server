@@ -43,7 +43,9 @@ namespace ControlServer.Host.Runtime;
 /// pickup by a rebuild, because only a new dispatch asked the battery. Every source only records the rebuild, and this file
 /// alone creates it, so the question is asked here (<see cref="RebuildBatteryAsync"/>), before every create that has not been
 /// sent yet: below the line with nothing on board, the rebuild stops (<see cref="OwnOrderRebuildMandatoryChargeReason"/>) and the
-/// release service hands the demand back to the backlog; a battery not known waits, as a new dispatch would. A person's rebuild
+/// release service hands the demand back to the backlog; below it with cargo on board, it stops for a person
+/// (<see cref="OwnOrderRebuilds.MandatoryChargeWithCargoOnBoard"/>, until control-server#782 charges first and carries on); a
+/// battery not known waits, as a new dispatch would. A person's rebuild
 /// (<see cref="OwnOrderRebuilds.IsPersonsRebuild"/>) is not held, only logged: the person chose it.
 /// </para>
 /// <para>
@@ -497,6 +499,23 @@ public sealed partial class JourneyRuntimeEngine
                 $"{OwnOrderRebuilds.MandatoryChargeRequired}: {battery.Reading}", null);
             await dbContext.SaveChangesAsync(cancellationToken).ConfigureAwait(false);
             await NameRebuildAsync(runtime, OwnOrderRebuildMandatoryChargeReason, now, cancellationToken).ConfigureAwait(false);
+            return true;
+        }
+
+        // Below the line with cargo on board: the cargo cannot be handed back, and sending the vehicle on may strand it, cargo
+        // and all, on the way. Stopped for a person (event 2173); control-server#782 will charge first and carry on instead.
+        if (!personsRebuild && battery.State == BatteryStates.MandatoryCharge && cargoOnBoard)
+        {
+            rebuild.State = OwnOrderRebuildStates.Stopped;
+            rebuild.StoppedReason = OwnOrderRebuilds.MandatoryChargeWithCargoOnBoard;
+            rebuild.StoppedAt = now;
+            rebuild.WaitingReason = battery.Reading;
+            rebuild.WaitingSince = now;
+            LogOwnOrderRebuildStopped(
+                logger, rebuild.EndedUpperId, runtime.JourneyId, runtime.AgvId,
+                $"{OwnOrderRebuilds.MandatoryChargeWithCargoOnBoard}: {battery.Reading}", null);
+            await dbContext.SaveChangesAsync(cancellationToken).ConfigureAwait(false);
+            await NameRebuildAsync(runtime, StoppedCode(rebuild), now, cancellationToken).ConfigureAwait(false);
             return true;
         }
 
