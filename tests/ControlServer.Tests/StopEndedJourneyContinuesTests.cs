@@ -1142,9 +1142,15 @@ public sealed class StopEndedJourneyContinuesTests
         /// 引擎找录入那一段的<b>最后一条</b>读取：按 correlationId 查这条录入有没有被装货命令答复过
         /// （<c>JourneyRuntimeEngine.ConsumedSubmissionIdsAsync</c>）。在它之后触发，引擎已经按锁外读到的「没被拒收、没被消费」认定了录入。
         /// </summary>
+        /// <remarks>
+        /// 认它靠三样：发件箱、装货命令、按录入的 messageId 在报文正文里找（<c>PayloadJson.Contains</c>，SQLite 上是 <c>instr(</c>）。只认前两样时，
+        /// control-server#783 在每一轮推进之前加的那次读（跨代重发前查未答复的 <c>SlotOperationCommand</c>）也匹配，触发点前移到引擎认定录入
+        /// 之前，交错就不再发生——<c>CancelledDemandLoadCommandTests.AssertTheRuntimeYieldedOnceFor</c> 正是为这种前移留的前提断言，它报了出来。
+        /// </remarks>
         public static bool AfterTheEntryWasJudgedUnanswered(string text) =>
             text.Contains("ProtocolOutbox", StringComparison.Ordinal) &&
-            text.Contains("SlotOperationCommand", StringComparison.Ordinal);
+            text.Contains("SlotOperationCommand", StringComparison.Ordinal) &&
+            text.Contains("instr(", StringComparison.Ordinal);
 
         private Func<Task>? _pending;
 

@@ -442,6 +442,7 @@ public sealed class SlotCommandStationRecheckTests
 
     /// <summary>读数预算默认 2 秒；0 与超过 10 秒的值在启动时被拒（与 <c>WaitingJourneyBatteryReadBudget</c> 同一个范围）。</summary>
     [Theory]
+    [Trait("IntegrationSlice", "FP-IS-02")]
     [InlineData(null, true)]
     [InlineData("00:00:00", false)]
     [InlineData("00:00:11", false)]
