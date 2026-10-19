@@ -1,0 +1,46 @@
+using System.Diagnostics;
+using ControlServer.Infrastructure.Persistence;
+using Microsoft.Data.Sqlite;
+using Microsoft.EntityFrameworkCore;
+
+// cs#779: per-query cost of the pool as it was, the pool switched off, and the pool kept with opens and closes serialised
+// (SerializedSqliteConnection, the product class), one lane and then `lanes` lanes at once. A context per query, opened
+// and closed around it, on a WAL file database built by EnsureCreated -- the way the host runs one.
+int n = int.Parse(args[0]);
+int lanes = int.Parse(args[1]);
+string path = Path.Combine(Path.GetTempPath(), $"cs779-bench-{Guid.NewGuid():N}.db");
+string pooled = ControlServerSqlite.ForDatabaseFile(path);
+string unpooled = new SqliteConnectionStringBuilder(pooled) { Pooling = false }.ConnectionString;
+await using (var setup = Context("pooled")) { await setup.Database.EnsureCreatedAsync(); }
+string[] modes = args.Length > 2 ? args[2].Split(',') : ["pooled", "serialized", "unpooled"];
+for (int repeat = 0; repeat < 3; repeat++)
+{
+    foreach (string mode in modes)
+    {
+        foreach (int width in new[] { 1, lanes })
+        {
+            await Task.WhenAll(Enumerable.Range(0, width).Select(_ => Task.Run(() => LaneAsync(mode, 100))));
+            var sw = Stopwatch.StartNew();
+            await Task.WhenAll(Enumerable.Range(0, width).Select(_ => Task.Run(() => LaneAsync(mode, n))));
+            sw.Stop();
+            double total = (double)n * width;
+            Console.WriteLine($"{mode,-10} lanes={width} {n}/lane: wall {sw.Elapsed.TotalMilliseconds:0} ms, {sw.Elapsed.TotalMilliseconds * 1000 / total:0} us/query wall, {sw.Elapsed.TotalMilliseconds * 1000 / n:0} us/query per lane");
+        }
+    }
+}
+
+ControlServerDbContext Context(string mode) => mode switch
+{
+    "serialized" => new(new DbContextOptionsBuilder<ControlServerDbContext>().UseSerializedSqlite(pooled).Options),
+    "unpooled" => new(new DbContextOptionsBuilder<ControlServerDbContext>().UseSqlite(unpooled).Options),
+    _ => new(new DbContextOptionsBuilder<ControlServerDbContext>().UseSqlite(pooled).Options)
+};
+
+async Task LaneAsync(string mode, int count)
+{
+    for (int i = 0; i < count; i++)
+    {
+        await using var context = Context(mode);
+        _ = await context.ProtocolInbox.AsNoTracking().SingleOrDefaultAsync(row => row.MessageId == "absent");
+    }
+}

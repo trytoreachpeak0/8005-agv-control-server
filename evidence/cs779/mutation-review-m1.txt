@@ -1,0 +1,77 @@
+第一组（18:34:15～18:38:46，提交 99ccbe3b）。注意两处：
+- 「M1 方案 2」那项作废：when (false) 编译报 CS8360/CS0162，测试跑的是旧二进制。第二组（mutation-review-m1-round2.txt）用 when (base.State == ConnectionState.Closed) 重做。
+- 「M1 方案 1」那项 serialized 也红，暴露 IsTransientDatabaseFault 把 SqliteConnectionPoisonedException 按其内层 BUSY 判为瞬时；ccaf3c6b 修，第二组重做后只剩 plain 红。
+
+== M1 方案 1：去掉重试条件里的 State == Closed: free 2482 MB at 18:34:16
+== M1 方案 1：去掉重试条件里的 State == Closed
+-- diff
+207d206
+<                                           dbContext.Database.GetDbConnection().State == ConnectionState.Closed &&
+    0 Error(s)
+  Failed ControlServer.Tests.InboundDatabaseFaultTests.AnOpenLeftHoldingAnotherOwnersConnectionIsNotRetriedOnIt(connection: "plain") [349 ms]
+  Error Message:
+   开库拿着别人的连接，重试之后照常回了应答：处理跑在共用的连接上。
+  Failed ControlServer.Tests.InboundDatabaseFaultTests.AnOpenLeftHoldingAnotherOwnersConnectionIsNotRetriedOnIt(connection: "serialized") [387 ms]
+  Error Message:
+   Assert.DoesNotContain() Failure: Filter matched in collection
+   --- End of inner exception stack trace ---
+Failed!  - Failed:     2, Passed:    11, Skipped:     0, Total:    13, Duration: 15 s - ControlServer.Tests.dll (net8.0)
+-- restored (cmp ok)
+
+== M1 方案 2：Open 的 catch 不再识别仍处于 Open 的失败: free 1470 MB at 18:35:57
+== M1 方案 2：Open 的 catch 不再识别仍处于 Open 的失败
+-- diff
+78c78
+<             catch (Exception error) when (base.State == ConnectionState.Open)
+---
+>             catch (Exception error) when (false)
+F:\8005-wt\cs779-8005-agv-control-server\src\ControlServer.Infrastructure\Persistence\SerializedSqliteConnection.cs(78,43): error CS8360: Filter expression is a constant 'false', consider removing the try-catch block [F:\8005-wt\cs779-8005-agv-control-server\src\ControlServer.Infrastructure\ControlServer.Infrastructure.csproj]
+F:\8005-wt\cs779-8005-agv-control-server\src\ControlServer.Infrastructure\Persistence\SerializedSqliteConnection.cs(80,17): error CS0162: Unreachable code detected [F:\8005-wt\cs779-8005-agv-control-server\src\ControlServer.Infrastructure\ControlServer.Infrastructure.csproj]
+F:\8005-wt\cs779-8005-agv-control-server\src\ControlServer.Infrastructure\Persistence\SerializedSqliteConnection.cs(78,43): error CS8360: Filter expression is a constant 'false', consider removing the try-catch block [F:\8005-wt\cs779-8005-agv-control-server\src\ControlServer.Infrastructure\ControlServer.Infrastructure.csproj]
+F:\8005-wt\cs779-8005-agv-control-server\src\ControlServer.Infrastructure\Persistence\SerializedSqliteConnection.cs(80,17): error CS0162: Unreachable code detected [F:\8005-wt\cs779-8005-agv-control-server\src\ControlServer.Infrastructure\ControlServer.Infrastructure.csproj]
+    2 Error(s)
+Passed!  - Failed:     0, Passed:     6, Skipped:     0, Total:     6, Duration: 4 s - ControlServer.Tests.dll (net8.0)
+-- restored (cmp ok)
+
+== S1：两处 lock (Gate) 换成 if (Gate is not null): free 1504 MB at 18:36:16
+== S1：两处 lock (Gate) 换成 if (Gate is not null)
+-- diff
+68c68
+<         lock (Gate)
+---
+>         if (Gate is not null)
+89c89
+<         lock (Gate)
+---
+>         if (Gate is not null)
+    0 Error(s)
+  Failed ControlServer.Tests.SerializedSqliteConnectionTests.OpenAndCloseWaitForTheGate [10 ms]
+  Error Message:
+   锁被拿住时 Open 照样走完了。
+Failed!  - Failed:     1, Passed:     5, Skipped:     0, Total:     6, Duration: 5 s - ControlServer.Tests.dll (net8.0)
+-- restored (cmp ok)
+
+== S2：删掉 attempt--: free 2723 MB at 18:36:58
+== S2：删掉 attempt--
+-- diff
+215d214
+<                 attempt--;
+    0 Error(s)
+  Failed ControlServer.Tests.FieldConfirmationWriteLockTests.ATransientFaultBeforeStaleObservationsDoesNotUseUpTheirRetries [416 ms]
+  Error Message:
+   Assert.Equal() Failure: Values differ
+Failed!  - Failed:     1, Passed:     9, Skipped:     0, Total:    10, Duration: 17 s - ControlServer.Tests.dll (net8.0)
+-- restored (cmp ok)
+
+== S3：删掉 RebindAck 里的 processingBegan = true: free 1890 MB at 18:37:49
+== S3：删掉 RebindAck 里的 processingBegan = true
+-- diff
+185d184
+<                 processingBegan = true;
+    0 Error(s)
+  Failed ControlServer.Tests.InboundDatabaseFaultTests.ABusyFaultInsideTheDurableAckRebindIsNotRetried [244 ms]
+  Error Message:
+   Assert.ThrowsAny() Failure: No exception was thrown
+Failed!  - Failed:     1, Passed:    12, Skipped:     0, Total:    13, Duration: 5 s - ControlServer.Tests.dll (net8.0)
+-- restored (cmp ok)
+

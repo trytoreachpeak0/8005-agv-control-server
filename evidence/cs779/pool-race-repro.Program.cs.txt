@@ -1,0 +1,39 @@
+using System.Collections.Concurrent;
+using Microsoft.Data.Sqlite;
+
+// Repro of dotnet/efcore#39008 on Microsoft.Data.Sqlite 8.0.30: concurrent opens against a pool that has to grow
+// can hand one sqlite3 handle to two SqliteConnection objects that are open at the same time.
+int rounds = int.Parse(args[0]), threads = int.Parse(args[1]);
+bool pooling = args[2] == "pooled";
+var path = Path.Combine(Path.GetTempPath(), $"poolrace-{Guid.NewGuid():N}.db");
+var cs = new SqliteConnectionStringBuilder { DataSource = path, Pooling = pooling }.ToString();
+int shared = 0, errors = 0;
+var messages = new ConcurrentDictionary<string, int>();
+for (var round = 0; round < rounds; round++)
+{
+    SqliteConnection.ClearAllPools();
+    var held = new ConcurrentDictionary<nint, int>();
+    using var barrier = new Barrier(threads);
+    var workers = Enumerable.Range(0, threads).Select(_ => Task.Factory.StartNew(() =>
+    {
+        barrier.SignalAndWait();
+        try
+        {
+            using var c = new SqliteConnection(cs);
+            c.CreateFunction("probe", (long x) => x);   // EF Core registers its functions before Open
+            c.Open();
+            var h = c.Handle!.DangerousGetHandle();
+            if (held.AddOrUpdate(h, 1, (_, n) => n + 1) > 1) Interlocked.Increment(ref shared);
+            try { using var cmd = c.CreateCommand(); cmd.CommandText = "SELECT probe(1)"; cmd.ExecuteScalar(); }
+            finally { held.AddOrUpdate(h, 0, (_, n) => n - 1); }
+        }
+        catch (Exception e)
+        {
+            Interlocked.Increment(ref errors);
+            messages.AddOrUpdate($"{e.GetType().Name}: {e.Message}", 1, (_, n) => n + 1);
+        }
+    }, TaskCreationOptions.LongRunning)).ToArray();
+    Task.WaitAll(workers);
+}
+Console.WriteLine($"Microsoft.Data.Sqlite {typeof(SqliteConnection).Assembly.GetName().Version} pooling={pooling}: {rounds} rounds x {threads} threads: shared={shared} errors={errors}");
+foreach (var (m, n) in messages) Console.WriteLine($"  {n} x {m}");
