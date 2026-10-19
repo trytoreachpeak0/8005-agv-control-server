@@ -1,0 +1,20 @@
+## mutant: codes.Add(EmergencyStopOpen) removed from JourneyWithdrawal.cs
+Failed!  - Failed:     1, Passed:     0, Skipped:     0, Total:     1, Duration: 4 s - ControlServer.Tests.dll (net8.0)
+plan: PLANNED [], expected EMERGENCY_STOP_OPEN
+
+## mutant: codes.Add(RebuildRecordOpen) removed from JourneyWithdrawal.cs
+Failed!  - Failed:     1, Passed:     0, Skipped:     0, Total:     1, Duration: 4 s - ControlServer.Tests.dll (net8.0)
+plan: PLANNED [], expected REBUILD_RECORD_OPEN
+
+## mutant: codes.Add(SlotEvidenceMissing) removed from JourneyWithdrawal.cs
+Failed!  - Failed:     1, Passed:     0, Skipped:     0, Total:     1, Duration: 3 s - ControlServer.Tests.dll (net8.0)
+plan: PLANNED [], expected SLOT_EVIDENCE_MISSING
+
+## mutant: codes.Add(OtherOperationUnresolved) removed from JourneyWithdrawal.cs
+Failed!  - Failed:     1, Passed:     0, Skipped:     0, Total:     1, Duration: 3 s - ControlServer.Tests.dll (net8.0)
+plan: REJECTED [CARGO_ON_BOARD,OTHER_DEMAND_RECOVERY_REQUIRED], expected OTHER_OPERATION_UNRESOLVED
+
+## mutant: codes.Add(JourneyKindNotWithdrawable) removed from JourneyWithdrawal.cs
+Failed!  - Failed:     1, Passed:     0, Skipped:     0, Total:     1, Duration: 1 s - ControlServer.Tests.dll (net8.0)
+plan: PLANNED [], expected JOURNEY_KIND_NOT_WITHDRAWABLE
+
