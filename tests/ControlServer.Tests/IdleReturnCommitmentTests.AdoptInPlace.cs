@@ -1,6 +1,12 @@
+using System.Data.Common;
 using ControlServer.Application;
+using ControlServer.Domain;
+using ControlServer.Host.Runtime;
 using ControlServer.Host.Runtime.IdleReturn;
 using ControlServer.Infrastructure.Persistence;
+using Microsoft.Data.Sqlite;
+using Microsoft.EntityFrameworkCore.Diagnostics;
+using Microsoft.Extensions.Logging.Abstractions;
 
 namespace ControlServer.Tests;
 
@@ -43,7 +49,7 @@ public sealed partial class IdleReturnCommitmentTests
         Assert.Empty(await harness.Db.DumpAsyncOf("VehiclePurposeClaimRecords"));
         Assert.Empty(await harness.Db.DumpAsyncOf("JourneyRuntimes"));
         Assert.Empty(await harness.Db.DumpAsyncOf("OrderIntents"));
-        Assert.Contains(harness.Log.Entries, entry => entry.EventId.Id == 2318);
+        Assert.Contains(harness.Log.Entries, entry => entry.EventId.Id == 2320);
     }
 
     /// <summary>
@@ -105,10 +111,11 @@ public sealed partial class IdleReturnCommitmentTests
     }
 
     /// <summary>
-    /// 与车所在的站吸附到同一个路网节点、代价为 0 的等待点按同样方式认领：车停在 212（不是等待点，与 214 同在节点 2）。
+    /// 车停在 212：不是等待点，与 214 同在节点 2（代价为 0）。不认领 214，也不承诺开往 214（#796 审查 M1）——认领了的话，下一轮离点清扫
+    /// 见 RIoT 报 212≠214 就判它已离开、放掉，每轮反复。它去下一个最近的 215；别的车也不被派进 214，因为 A 就站在那个位置上。
     /// </summary>
     [Fact]
-    public async Task AWaitingPointOnTheSameNodeAsTheVehiclesStationIsAdoptedTheSameWay()
+    public async Task AWaitingPointOnTheSameNodeAsTheVehiclesStationIsNeitherAdoptedNorDrivenToAndStaysClosedToOthers()
     {
         await using Harness harness = await Harness.CreateAsync();
         harness.ExtraPlacedStations.Add((212, "等待点1旁", 2));
@@ -118,10 +125,72 @@ public sealed partial class IdleReturnCommitmentTests
             await harness.EvaluateAsync(harness.Candidate(VehicleA, station: 212), harness.Candidate(VehicleB));
 
         Assert.Equal(
-            [(VehicleA, IdleReturnReasons.AdoptedInPlace, (int?)214), (VehicleB, IdleReturnReasons.Committed, (int?)215)],
+            [(VehicleA, IdleReturnReasons.Committed, (int?)215), (VehicleB, IdleReturnReasons.NoWaitingPointAvailable, (int?)null)],
             verdicts.Select(verdict => (verdict.VehicleKey, verdict.Reason, verdict.StationId)));
-        Assert.DoesNotContain(
-            await harness.Db.DumpAsyncOf("VehiclePurposeClaimRecords"), row => row.Contains(VehicleA, StringComparison.Ordinal));
+        Assert.Null(await new StationExclusivityStore(harness.Db.NewContext()).ReadAsync(Map, 214, Token));
+    }
+
+    /// <summary>
+    /// 认领 → 下一轮开头的离点清扫 → 再评估：车没动（RIoT 仍报 214），清扫不放这一行，车留在原地、点仍是它的；车开走（RIoT 报 215）之后，
+    /// 清扫凭离点证据放掉。
+    /// </summary>
+    [Fact]
+    public async Task AnAdoptedPointSurvivesTheNextRoundsDepartureSweepAndIsReleasedOnlyOnceTheVehicleHasLeft()
+    {
+        await using Harness harness = await Harness.CreateAsync();
+        IdleReturnVerdict adopted = Assert.Single(await harness.EvaluateAsync(harness.Candidate(VehicleA, station: 214)));
+        Assert.Equal(IdleReturnReasons.AdoptedInPlace, adopted.Reason);
+
+        await DepartureSweep(harness, VehicleA, station: 214).ReleaseDepartedAsync(Token);
+        IdleReturnVerdict next = Assert.Single(await harness.EvaluateAsync(harness.Candidate(VehicleA, station: 214)));
+
+        Assert.Equal(IdleReturnReasons.VehicleHoldsStation, next.Reason);
+        StationExclusivity held = Assert.IsType<StationExclusivity>(
+            await new StationExclusivityStore(harness.Db.NewContext()).ReadAsync(Map, 214, Token));
+        Assert.Equal((VehicleA, adopted.JourneyId, StationExclusivityStates.Occupied), (held.VehicleKey, held.JourneyId, held.State));
+        Assert.Single(await harness.Db.DumpAsyncOf("StationExclusivityRecords"));
+
+        await DepartureSweep(harness, VehicleA, station: 215).ReleaseDepartedAsync(Token);
+
+        Assert.Null(await new StationExclusivityStore(harness.Db.NewContext()).ReadAsync(Map, 214, Token));
+        StationExclusivityRecord record = Assert.Single(
+            await new StationExclusivityStore(harness.Db.NewContext()).ListHistoryAsync(Map, 214, Token));
+        Assert.Equal(FixedStationExclusivity.ReleasedOnDepartureEvidence, record.ReleaseReason);
+    }
+
+    /// <summary>
+    /// 认领那一次保存撞上主键（读到点空着之后、插入之前被别的车拿到）：什么也没写，这一轮不把车从它站着的点派走、也不换点，下一轮重评。
+    /// </summary>
+    [Fact]
+    public async Task AnAdoptionRefusedByTheStationKeyLeavesNothingAndDoesNotSendTheVehicleAway()
+    {
+        StationKeyConflictOnInsert conflict = new(VehicleA);
+        await using Harness harness = await Harness.CreateAsync(interceptor: conflict);
+
+        IdleReturnVerdict verdict = Assert.Single(await harness.EvaluateAsync(harness.Candidate(VehicleA, station: 214)));
+
+        Assert.True(conflict.Fired, "The injected key conflict never fired, so this proves nothing.");
+        Assert.Equal((IdleReturnReasons.CommitmentRefused, (int?)null), (verdict.Reason, verdict.StationId));
+        Assert.Empty(await harness.Db.DumpAsyncOf("StationExclusivities"));
+        Assert.Empty(await harness.Db.DumpAsyncOf("StationExclusivityRecords"));
+        Assert.Empty(await harness.Db.DumpAsyncOf("VehiclePurposeClaims"));
+        Assert.Empty(await harness.Db.DumpAsyncOf("VehiclePurposeClaimRecords"));
+    }
+
+    /// <summary>
+    /// 只做待送的车开回待送固定起点（215）之前，另一辆车正站在 215 上（没有行）：不取那个固定起点，这一次回落到等待点 214。
+    /// </summary>
+    [Fact]
+    public async Task AStagingOriginAnotherVehicleStandsOnIsNotTakenAndTheVehicleFallsBackToAWaitingPoint()
+    {
+        await using Harness harness = await Harness.CreateStagingOriginElsewhereAsync();
+        harness.Configure(VehicleA, TransportTaskTypes.StagingToWire);
+
+        IReadOnlyList<IdleReturnVerdict> verdicts =
+            await harness.EvaluateAsync(harness.Candidate(VehicleA), harness.Candidate(VehicleB, station: 215));
+
+        Assert.Equal((IdleReturnReasons.Committed, (int?)214), (verdicts[0].Reason, verdicts[0].StationId));
+        Assert.Null(await new StationExclusivityStore(harness.Db.NewContext()).ReadAsync(Map, 215, Token));
     }
 
     /// <summary>
@@ -165,5 +234,56 @@ public sealed partial class IdleReturnCommitmentTests
 
         Assert.Equal((IdleReturnReasons.AdoptedInPlace, (int?)214), (verdict.Reason, verdict.StationId));
         Assert.Null(await new StationExclusivityStore(harness.Db.NewContext()).ReadAsync(Map, 215, Token));
+    }
+
+    /// <summary>每轮开头的离点清扫，RIoT 报这辆车在线、停在 <paramref name="station"/>。</summary>
+    private static FixedStationExclusivitySweep DepartureSweep(Harness harness, string vehicleKey, int station) =>
+        new(harness.Db.NewContext(), new StandingFacts(vehicleKey, station), TimeProvider.System, NullLogger.Instance,
+            new FixedStationSweepWarnings());
+
+    private sealed class StandingFacts(string vehicleKey, int station) : IRiotVehicleFacts
+    {
+        public Task<RiotVehicleObservation> ReadVehicleAsync(string key, CancellationToken cancellationToken) =>
+            Task.FromResult(new RiotVehicleObservation(
+                key, true, true, "IDLE", "MAP-25", key == vehicleKey ? station : null, 80, "NO_CHARGE", 0, Now));
+
+        public Task<RiotOrderObservation> ReconcileByUpperIdAsync(string upperId, CancellationToken cancellationToken) =>
+            throw new InvalidOperationException("The departure sweep reads no order.");
+
+        public Task<RiotOrderObservation> CreateAsync(OrderIntent intent, CancellationToken cancellationToken) =>
+            throw new InvalidOperationException("The departure sweep creates no order.");
+    }
+
+    /// <summary>这辆车的站点独占插入撞上主键，像读到点空着之后、插入之前被别的车先拿到。</summary>
+    private sealed class StationKeyConflictOnInsert(string vehicleKey) : DbCommandInterceptor
+    {
+        public bool Fired { get; private set; }
+
+        public override ValueTask<InterceptionResult<DbDataReader>> ReaderExecutingAsync(
+            DbCommand command, CommandEventData eventData, InterceptionResult<DbDataReader> result,
+            CancellationToken cancellationToken = default)
+        {
+            ConflictIfTargeted(command);
+            return base.ReaderExecutingAsync(command, eventData, result, cancellationToken);
+        }
+
+        public override ValueTask<InterceptionResult<int>> NonQueryExecutingAsync(
+            DbCommand command, CommandEventData eventData, InterceptionResult<int> result,
+            CancellationToken cancellationToken = default)
+        {
+            ConflictIfTargeted(command);
+            return base.NonQueryExecutingAsync(command, eventData, result, cancellationToken);
+        }
+
+        private void ConflictIfTargeted(DbCommand command)
+        {
+            if (command.CommandText.Contains("INSERT INTO \"StationExclusivities\"", StringComparison.Ordinal) &&
+                command.Parameters.Cast<DbParameter>().Any(parameter => Equals(parameter.Value, vehicleKey)))
+            {
+                Fired = true;
+                // SQLITE_CONSTRAINT (19) / SQLITE_CONSTRAINT_PRIMARYKEY (1555): what the key answers when another vehicle got there first.
+                throw new SqliteException("UNIQUE constraint failed: StationExclusivities.MapId, StationExclusivities.StationId", 19, 1555);
+            }
+        }
     }
 }

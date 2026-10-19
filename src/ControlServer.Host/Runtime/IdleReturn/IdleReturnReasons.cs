@@ -15,8 +15,7 @@ public static class IdleReturnReasons
     public const string Committed = "IDLE_RETURN_COMMITTED";
 
     /// <summary>
-    /// 原地认领（control-server#793）：车此刻就停在一个已登记、接纳它的等待点上（或与它所在的站同一个路网节点、代价为 0 的等待点上），
-    /// 而这个点没有站点独占行——人手把车开过去、换库之后都会这样。不建单、不取用途占有，只在一次保存里写下这个点的 <c>OCCUPIED</c>
+    /// 原地认领（control-server#793）：车此刻就停在一个已登记、接纳它的等待点上，而这个点没有站点独占行——人手把车开过去、换库之后都会这样。不建单、不取用途占有，只在一次保存里写下这个点的 <c>OCCUPIED</c>
     /// 等待点独占，与空闲返回到点之后的样子相同：车离开、RIoT 报出它到了别的站，由离点清扫释放。
     /// </summary>
     /// <remarks>
@@ -97,6 +96,12 @@ public static class IdleReturnReasons
 
     /// <summary>路网上从车的位置到不了这个等待点，或它不在路网上。</summary>
     public const string PointUnreachable = "WAITING_POINT_UNREACHABLE";
+
+    /// <summary>
+    /// 车此刻停的站与这个点吸附在路网的同一个节点上、代价为 0，却不是同一个站（#796 审查 M1）：不承诺开往它。到了那里 RIoT 仍报原来
+    /// 那个站，离点证据比的是站号，点会在下一轮被当成已离开放掉。别的车由「另一辆车站在上面」挡住。
+    /// </summary>
+    public const string PointAtVehicleNode = "WAITING_POINT_AT_VEHICLE_NODE";
 
     /// <summary>
     /// 这辆车上一次开往这个等待点已确认失败（单被取消或删除后车停稳、单 FAILED 后故障被人工清除；control-server#390）：

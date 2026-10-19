@@ -105,6 +105,8 @@ internal static class IdleReturnCodeDescriptions
                 + "请到现场与 RIoT 查明为什么反复取消；车停在原地不影响派搬运",
             [IdleReturnReasons.PointTaken] = "这个等待点此刻被别的承诺预占或占用着，或者另一辆车此刻就停在点上",
             [IdleReturnReasons.PointUnreachable] = "路网上从车的位置到不了这个等待点，或它不在路网上",
+            [IdleReturnReasons.PointAtVehicleNode] =
+                "车此刻停的站与这个点在路网上是同一个位置（路程为 0）、却不是同一个站：不让车开过去，这个点也不派给别的车",
             [IdleReturnReasons.PointFailedLastAttempt] = "这辆车上一次开往这个等待点已确认失败：这一次排除它",
         };
 
