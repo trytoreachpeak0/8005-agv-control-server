@@ -74,6 +74,36 @@ public sealed class JourneyWithdrawalTests
         Assert.False(await new WireToGateStore(fixture.Context).OperationNeedsRecoveryAsync(fixture.Options.AgvId, Token));
     }
 
+    /// <summary>
+    /// agv03 在 10-19 16:36 v2 重启之后的样子（gen42）：车重连时在恢复报告里报「还有一次没结的操作」，服务端只拿掉已结的，那一次仍是
+    /// RecoveryRequired，所以它留在待核实事实里，会话原因码排成 <c>PENDING_FACT_RECONCILIATION_REQUIRED</c>（排在
+    /// <c>OPERATION_RECOVERY_REQUIRED</c> 之前，<c>WireToGateStore.GetRecoveryReason</c>）。底下是同一件事。撤下不看这个码；撤下之后那一次结成取消，
+    /// 待核实里拿掉它（与握手时同一条规则），会话不再因它而 RecoveryRequired。
+    /// </summary>
+    [Fact]
+    public async Task AfterAReconnectThePendingFactIsTheSameUnknownLoadAndTheWithdrawalClearsIt()
+    {
+        await using RuntimeFixture fixture = await RuntimeFixture.CreateAsync();
+        JourneyRuntimeRow blocked = await BlockOnAnUnknownLoadWithAnotherDemandStillToLoadAsync(fixture);
+        string attempt = (await OperationOfAsync(fixture, FirstDemandId)).SlotOperationAttemptId;
+        SessionRecoveryRow session = await fixture.Context.SessionRecoveries.SingleAsync(Token);
+        session.PendingAttemptIdsJson = JsonSerializer.Serialize(new List<string> { attempt });
+        await fixture.Context.SaveChangesAsync(Token);
+        fixture.Context.ChangeTracker.Clear();
+        WireToGateStore store = new(fixture.Context);
+        Assert.Equal(
+            "PENDING_FACT_RECONCILIATION_REQUIRED",
+            (await store.DecideReadinessAsync(fixture.Options.AgvId, session.SessionGeneration, Token)).ReasonCode);
+        fixture.Context.ChangeTracker.Clear();
+
+        await PlanAndWithdrawAsync(fixture, await RequestAsync(fixture, blocked));
+
+        SessionRecoveryRow after = await fixture.Context.SessionRecoveries.AsNoTracking().SingleAsync(Token);
+        Assert.Equal("[]", after.PendingAttemptIdsJson);
+        Assert.NotEqual("PENDING_FACT_RECONCILIATION_REQUIRED", after.ReasonCode);
+        Assert.NotEqual("OPERATION_RECOVERY_REQUIRED", after.ReasonCode);
+    }
+
     /// <summary>车要收的收尾快照落进发件箱，空清单说「本站因任务释放结束」：这批会重新派车，不是丢了。</summary>
     [Fact]
     public async Task TheVehicleIsToldTheStopEndedBecauseTheDemandsWereReleased()
