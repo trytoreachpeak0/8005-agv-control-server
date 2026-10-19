@@ -2605,6 +2605,11 @@ function Get-ParallelRetiredFakeMesIngest {
             The previous definition is asserted first, as an uninstall would (-ForStopDirection): a task
             name or directory is acted on only when it passed the same checks. A previous definition
             that does not pass throws, before anything changes.
+
+            control-server#775: a previous definition that is itself 'production' names no double, so there
+            is nothing to retire and it is not asserted. Asserting it took this version's rules to an older
+            install's definition: the v4 -> v5 cutover upgrade was refused because the installed definition
+            had the six types and agv01 three, which the v5 cutover rules no longer accept.
     #>
     [CmdletBinding()]
     param(
@@ -2614,6 +2619,7 @@ function Get-ParallelRetiredFakeMesIngest {
     if ($null -eq $Previous) { return $null }
     if ((Get-MesIngestSource -Definition $Current) -cne 'production') { return $null }
     if ($Previous -isnot [hashtable]) { throw 'The previously installed definition is not a JSON object; its FakeMesIngest cannot be retired.' }
+    if ((Get-MesIngestSource -Definition $Previous) -ceq 'production') { return $null }
     # control-server#564: an installed cutover definition carries its record; it got there only through an install with the switch.
     [string[]] $failures = @(Test-ParallelInstanceDefinition -Definition $Previous -AllowRiotCreateDispatch -AllowRiotForeignOrderCancel -ForStopDirection `
             -ProductionCutover:(Test-ParallelProductionCutoverDefinition -Definition $Previous))
