@@ -2339,9 +2339,12 @@ public sealed partial class JourneyRuntimeEngine(
         DateTimeOffset now,
         CancellationToken cancellationToken)
     {
-        if (await VehicleNotAtStopAsync(runtime, stop, SlotOperationType.Unload, cancellationToken).ConfigureAwait(false) is null)
+        // 2318 只在第一次挂上这个码的那一轮记：车离站期间这里每一轮都会走到。
+        bool alreadyHeld = string.Equals(runtime.BlockReasonCode, SlotCommandVehicleNotAtStopReason, StringComparison.Ordinal);
+        if (await VehicleNotAtStopAsync(runtime, stop, SlotOperationType.Unload, cancellationToken, log: !alreadyHeld)
+                .ConfigureAwait(false) is null)
         {
-            if (string.Equals(runtime.BlockReasonCode, SlotCommandVehicleNotAtStopReason, StringComparison.Ordinal))
+            if (alreadyHeld)
             {
                 runtime.SetBlockReason(null, now);
             }
