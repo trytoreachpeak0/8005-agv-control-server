@@ -1,0 +1,22 @@
+# cs#783 L1 green on 8f5c496b4
+# dotnet test --no-build --filter "FullyQualifiedName~SlotCommandStationRecheckTests|FullyQualifiedName~RecoveryEndingReleasesBlockedJourneyTests|FullyQualifiedName~UnloadCrashResumeTests|FullyQualifiedName~SlotAssignmentAtScanTests|FullyQualifiedName~WaitingJourneyBatteryWatchTests|FullyQualifiedName~AFailedAdvanceLeavesACodeThatNamesAWaitOnAPersonAsItIs|FullyQualifiedName~AStalledInTransitOrderIsShownWithAChineseDescription|FullyQualifiedName~ReconnectModelTests|FullyQualifiedName~ProtocolReasonCodeArchitectureTests|FullyQualifiedName~JourneyRuntimeWorkerAdmissionTests|FullyQualifiedName~StagingDepartureRequestTests"
+Passed!  - Failed:     0, Passed:   246, Skipped:     0, Total:   246, Duration: 3 m 3 s - ControlServer.Tests.dll (net8.0)
+
+# Review rework green on 2e49c7c44
+# dotnet test --no-build --filter "FullyQualifiedName~SlotCommandStationRecheckTests|FullyQualifiedName~RecoveryEndingReleasesBlockedJourneyTests|FullyQualifiedName~UnloadCrashResumeTests|FullyQualifiedName~WaitingJourneyBatteryWatchTests|FullyQualifiedName~AStalledInTransitOrderIsShownWithAChineseDescription|FullyQualifiedName~AFailedAdvanceLeavesACodeThatNamesAWaitOnAPersonAsItIs|FullyQualifiedName~ReconnectModelTests"
+Passed!  - Failed:     0, Passed:   155, Skipped:     0, Total:   155, Duration: 2 m 29 s - ControlServer.Tests.dll (net8.0)
+
+# Mutation for the rewritten hang assertions: the read budget replaced by an unbounded token (restored afterwards)
+  Failed ControlServer.Tests.SlotCommandStationRecheckTests.APositionReadThatHangsIsCutOffAtItsBudgetAndTheScanRefused [34 s]
+   The scan's position read added 00:00:08.5955917 to the round (baseline 00:00:10.2855319, with the scan 00:00:18.8811236).
+  Failed ControlServer.Tests.SlotCommandStationRecheckTests.AnUnloadPositionReadThatHangsIsCutOffAtItsBudgetAndHoldsTheUnload [32 s]
+   The unload's position read added 00:00:08.1025866 to the round (baseline 00:00:10.0624453, with it 00:00:18.1650319).
+Failed!  - Failed:     2, Passed:     0, Skipped:     0, Total:     2, Duration: 1 m 6 s - ControlServer.Tests.dll (net8.0)
+
+# Third CI round fix, local slot 10-19 21:40 (Coordinator13), on 066f208cb
+# dotnet test --no-build --filter "FullyQualifiedName~CancelledDemandLoadCommandTests|FullyQualifiedName~StopEndedJourneyContinuesTests|FullyQualifiedName~SlotCommandStationRecheckTests|FullyQualifiedName~ArchitectureTests"
+Passed!  - Failed:     0, Passed:   134, Skipped:     0, Total:   134, Duration: 1 m 19 s - ControlServer.Tests.dll (net8.0)
+
+# Counter-check: the product's WithholdSlotCommandsOffTheirStopAsync call removed (restored afterwards), with the narrowed interceptor
+# dotnet test --filter "FullyQualifiedName~CancelledDemandLoadCommandTests|FullyQualifiedName~WhenTheCancellationEndsTheStopAfterTheRuntimeReadTheEntryTheRoundDoesNotThrowAndAnswersOnce"
+Passed!  - Failed:     0, Passed:     9, Skipped:     0, Total:     9, Duration: 35 s - ControlServer.Tests.dll (net8.0)

@@ -1966,8 +1966,9 @@ internal static class JourneyRuntimeWorkerTestKit
         }
 
         /// <summary>
-        /// How far behind the clock a vehicle read is stamped. Zero by default; control-server#770 sets it past
-        /// <c>JourneyRuntimeOptions.MaximumEvidenceAge</c> to make the rebuild's battery read stale.
+        /// How far behind the clock a vehicle read is stamped. Zero by default. It ages every vehicle read the stand-in answers
+        /// from then on, not one caller's: control-server#770 sets it past <c>JourneyRuntimeOptions.MaximumEvidenceAge</c> to make
+        /// the rebuild's battery read stale, control-server#783 to make the position read before a slot command stale.
         /// </summary>
         public TimeSpan VehicleObservedAtLag { get; set; } = TimeSpan.Zero;
 

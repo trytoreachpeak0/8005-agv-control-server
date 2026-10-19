@@ -114,5 +114,12 @@ public static class ServerReasonCodes
     public const string StationMismatch = "STATION_MISMATCH";
     public const string SublotBoxCountUnavailable = "SUBLOT_BOX_COUNT_UNAVAILABLE";
     public const string SublotNotInDispatchScope = "SUBLOT_NOT_IN_DISPATCH_SCOPE";
+
+    /// <summary>
+    /// A sublot entry refused because this server cannot read where the vehicle stands right now: RIoT's reading is offline,
+    /// stale, on another map or moving (control-server#783). A reading that is trustworthy but names another station, or none,
+    /// is <see cref="StationMismatch"/> instead.
+    /// </summary>
+    public const string VehicleNotReady = "VEHICLE_NOT_READY";
     public const string WorklistRevisionStale = "WORKLIST_REVISION_STALE";
 }

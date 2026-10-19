@@ -438,6 +438,8 @@ public sealed class ArrivalPublishInterruptedThenReconnectedTests
     [InlineData("PRE_DEPARTURE_SAFETY_NOT_VALID", JourneyRuntimeStage.AwaitingDepartureSafety)]
     // control-server#754：扫码后分不出够数的仓位、录入已拒收，等操作员取消；只在拒收那一刻写一次，被换掉就不会再写回来。
     [InlineData("LOAD_SLOT_ASSIGNMENT_SHORT", JourneyRuntimeStage.AwaitingSublot)]
+    // control-server#783：装卸命令前车不在这一站上，等人把车开回来；装货那一侧只在拒收那一刻写。
+    [InlineData("SLOT_COMMAND_VEHICLE_NOT_AT_STOP", JourneyRuntimeStage.AwaitingSublot)]
     public async Task AFailedAdvanceLeavesACodeThatNamesAWaitOnAPersonAsItIs(string code, JourneyRuntimeStage stage)
     {
         (RuntimeFixture fixture, ConnectionCut cut) = await ArrivalPublishCutAfterTheWorklistAsync();

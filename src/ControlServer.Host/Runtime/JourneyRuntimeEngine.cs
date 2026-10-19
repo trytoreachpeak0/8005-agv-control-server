@@ -96,6 +96,16 @@ public sealed partial class JourneyRuntimeEngine(
             LogLevel.Information,
             new EventId(2108, nameof(LogSublotRejected)),
             "The sublot entered for demand {DemandId} was refused: {ReasonCode}.");
+    private static readonly Action<ILogger, string, string, string, string, Exception?> LogSlotCommandHeldOffStop =
+        LoggerMessage.Define<string, string, string, string>(
+            LogLevel.Warning,
+            new EventId(2318, nameof(LogSlotCommandHeldOffStop)),
+            "The {OperationType} command for vehicle {AgvId} was not sent: the vehicle is not proven at its stop. {Expected} {Observed}");
+    private static readonly Action<ILogger, string, string, Exception?> LogSlotCommandResendWithheld =
+        LoggerMessage.Define<string, string>(
+            LogLevel.Debug,
+            new EventId(2319, nameof(LogSlotCommandResendWithheld)),
+            "Unanswered slot commands {MessageIds} for vehicle {AgvId} were not sent again: the vehicle is not proven at their stop.");
     private static readonly Action<ILogger, Exception?> LogMapStationCatalogFailed = LoggerMessage.Define(
         LogLevel.Warning,
         new EventId(2103, nameof(LogMapStationCatalogFailed)),
@@ -293,6 +303,20 @@ public sealed partial class JourneyRuntimeEngine(
     /// 这次录入按 <c>SLOT_INOPERABLE</c> 拒收，不装货、不开门，旅程停在等录入，等操作员在那一行取消这条需求。
     /// </summary>
     public const string LoadSlotAssignmentShortReason = "LOAD_SLOT_ASSIGNMENT_SHORT";
+
+    /// <summary>
+    /// 要下装货或下一条卸货命令时，RIoT 读不出车此刻停在这个停靠上（control-server#783）：当前站不是这一站（含 0，即没有当前站）、
+    /// 读数离线、过期、在别的地图上或车在动。命令不发、不开门：装货那一侧这次录入被拒收，车回到站上之后操作员再扫一次；
+    /// 卸货那一侧每一轮再核，车回到站上的那一轮照常发。
+    /// </summary>
+    /// <remarks>
+    /// 到站判定（<see cref="CheckArrivalAsync"/>）只在到站那一刻核一次位置。之后补偿放回、修复续行、重连、服务端重启、急停释放都不重进到站阶段，
+    /// 而车可能在阻塞或断线期间被人开走、在别处停稳、会话恢复 Ready——10-19 agv03 一事。所以在开门的那一处再核，哪一条入口都绕不过去。
+    /// </remarks>
+    public const string SlotCommandVehicleNotAtStopReason = "SLOT_COMMAND_VEHICLE_NOT_AT_STOP";
+
+    /// <summary>卸货因车不在站上扣着期间，多久再记一次当前读数（事件 2318，control-server#783 审查 S-1）。</summary>
+    private static readonly TimeSpan HeldSlotCommandLogInterval = TimeSpan.FromMinutes(5);
 
     /// <summary>The code a stop held at its AREA machine for the station's admission carries while it waits.</summary>
     private const string AreaEndAdmissionHeldReason = "TASK_TYPE_NOT_ALLOWED_AT_STATION";
@@ -1173,6 +1197,8 @@ public sealed partial class JourneyRuntimeEngine(
         CancellationToken cancellationToken)
     {
         DateTimeOffset now = timeProvider.GetUtcNow();
+        // 上一轮推进落库的时刻，这一轮任何写入之前读（control-server#783 审查 S-1：长时间扣着卸货时按它判这一轮该不该再记读数）。
+        DateTimeOffset previousAdvanceAt = runtime.UpdatedAt;
         SessionRecoveryRow? session = await CurrentReadySessionAsync(runtime.AgvId, cancellationToken)
             .ConfigureAwait(false);
         if (session is null)
@@ -1267,6 +1293,7 @@ public sealed partial class JourneyRuntimeEngine(
         HashSet<string> replayable = RuntimeMessageIds(runtime, stops);
         replayable.UnionWith(await CurrentStopDepartures.PendingResultIdsAsync(dbContext, runtime.AgvId, cancellationToken)
             .ConfigureAwait(false));
+        await WithholdSlotCommandsOffTheirStopAsync(replayable, runtime, stops, session, cancellationToken).ConfigureAwait(false);
         await publisher.ReplayPendingForSessionAsync(
             runtime.AgvId,
             session.SessionGeneration,
@@ -1495,6 +1522,30 @@ public sealed partial class JourneyRuntimeEngine(
                 if (await RevalidateEnteredSublotAsync(runtime, stops, session, sublot, now, cancellationToken)
                         .ConfigureAwait(false) is not { } entered)
                 {
+                    return;
+                }
+                // 开门之前核车此刻是不是停在这个停靠上（control-server#783）。读 RIoT 放在写事务之外：事务是 BEGIN IMMEDIATE，
+                // 不该拿着写锁等一次 HTTP。读数就在这一轮取、这一轮用，不跨轮沿用。不在站就拒收这次录入，与上面那些拒收同一条路，
+                // 停靠不动；车回到站上之后操作员再扫一次。
+                if (await VehicleNotAtStopAsync(runtime, stops.Current, SlotOperationType.Load, cancellationToken)
+                        .ConfigureAwait(false) is { } notAtStop)
+                {
+                    runtime.SetBlockReason(SlotCommandVehicleNotAtStopReason, now);
+                    await RefuseAsync(
+                        runtime,
+                        stops,
+                        session,
+                        sublot,
+                        entered.Demand.DemandId,
+                        entered.Demand.Sublot,
+                        notAtStop,
+                        notAtStop == ServerReasonCodes.StationMismatch
+                            ? $"车此刻不在 {stops.Current.StationId} 站上，不予开仓。请把车开回这一站、停稳之后重新扫码；"
+                              + "车确实在站上而仍被拒收，请联系系统维护人员。"
+                            : $"读不出车此刻的位置（离线、读数过期或车在移动），不能确认车停在 {stops.Current.StationId} 站上，"
+                              + "不予开仓。请确认车停稳在这一站之后重新扫码；持续出现请联系系统维护人员。",
+                        now,
+                        cancellationToken).ConfigureAwait(false);
                     return;
                 }
                 // 下命令之前在写锁里再判一次（control-server#362）。上面读收件箱、查取消、按游标认需求都是锁外读，
@@ -2040,6 +2091,12 @@ public sealed partial class JourneyRuntimeEngine(
                         cancellationToken).ConfigureAwait(false);
                     if (unload is null && unloadedHereBefore)
                     {
+                        // 开门之前核位置（control-server#783）：补偿或交接把旅程放回这里、重启后续跑，都走这一处。不在站就每一轮再核。
+                        if (await HoldUnloadOffStopAsync(runtime, stops.Current, previousAdvanceAt, now, cancellationToken)
+                                .ConfigureAwait(false))
+                        {
+                            return;
+                        }
                         // 前一条已存为 UNLOADED，这一条的卸货命令没落库（U1、U5）：发这一版清单与这一条的命令，与刚卸完时同一段。
                         // 两条报文的 id 都由停靠进度确定地派生，已经写盘的那一版清单按同一个 id 复用，不会再起一行——同一代、或那一行车还没
                         // 确认时如此；车确认过、又换了一代时，候选报文只有信封不同，靠 keepAcknowledgedIgnoring 沿用已确认那一行，否则被重放
@@ -2081,7 +2138,13 @@ public sealed partial class JourneyRuntimeEngine(
                     .ConfigureAwait(false);
                 if (stops.OutstandingAtCurrentStop.Count > 0)
                 {
-                    // 本停靠还有没卸的：发这一版清单与下一条卸货命令，留在等结果。
+                    // 本停靠还有没卸的：发这一版清单与下一条卸货命令，留在等结果。开门之前核位置（control-server#783）；不在站就先不发，
+                    // 刚卸完那一条已经单独存过，下一轮按上面「前一条已卸、这一条的命令没落库」那一支再核再发。
+                    if (await HoldUnloadOffStopAsync(runtime, stops.Current, previousAdvanceAt, now, cancellationToken)
+                            .ConfigureAwait(false))
+                    {
+                        return;
+                    }
                     await PublishStopWorklistAsync(
                         runtime, stops, session, stationDepartureDeadlineAt: null, cancellationToken)
                         .ConfigureAwait(false);
@@ -2167,6 +2230,161 @@ public sealed partial class JourneyRuntimeEngine(
         OrderIntentRow Intent,
         RiotOrderObservation Order,
         RiotVehicleObservation? Vehicle);
+
+    /// <summary>
+    /// 要下装货或下一条卸货命令的这一刻，RIoT 说车停在 <paramref name="stop"/> 上吗（control-server#783）。停在上面答 null；
+    /// 否则答拒收用的原因码：读数可信而站号不对（含 0 与空，RIoT 用 0 表示没有当前站，与 control-server#772 同一口径）答
+    /// <see cref="ServerReasonCodes.StationMismatch"/>，读数本身不可信（离线、地图不对、在动、过期）答 <see cref="ServerReasonCodes.VehicleNotReady"/>。
+    /// </summary>
+    /// <remarks>
+    /// 判据就是 <see cref="CheckArrivalAsync"/> 里车辆位置那一部分，不含订单与车载端那几项：装卸阶段车应当停在站上，所以位置读成 0
+    /// 就是不在站——这只在过了到站判定之后的装卸阶段用，不碰到站之前。每次调用都重读 RIoT，结论不跨轮沿用。不满足时记一条 2318，
+    /// 带期望与读到的值，现场据此判断是车真被挪走了还是读数抖动。
+    /// </remarks>
+    private async Task<string?> VehicleNotAtStopAsync(
+        JourneyRuntimeRow runtime,
+        JourneyStopRow stop,
+        SlotOperationType operation,
+        CancellationToken cancellationToken,
+        bool log = true)
+    {
+        // 读数有自己的预算（审查 S-4）：网关自己的超时是 30 秒，RIoT 卡住时每辆停站的车每轮多等一个网关超时，整轮——急停确认也在内——
+        // 都排在后面。预算到点或读失败，都按读不到处理：位置证明不了，不开门。做法同 WaitingJourneyWatch.ReadBatteryAsync。
+        RiotVehicleObservation? vehicle;
+        using (CancellationTokenSource expiry = new(runtimeOptions.SlotCommandPositionReadBudget, timeProvider))
+        using (CancellationTokenSource linked = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken, expiry.Token))
+        {
+            try
+            {
+                vehicle = await vehicleFacts.ReadVehicleAsync(runtime.VehicleKey, linked.Token).ConfigureAwait(false);
+            }
+            catch (Exception error) when (error is not OperationCanceledException || !cancellationToken.IsCancellationRequested)
+            {
+                vehicle = null;
+            }
+        }
+        DateTimeOffset now = timeProvider.GetUtcNow();
+        bool trustworthy = vehicle is not null &&
+                           vehicle.Connected &&
+                           vehicle.CurrentMap == runtime.MapIdentity &&
+                           vehicle.Speed == 0 &&
+                           vehicle.ObservedAt <= now && now - vehicle.ObservedAt <= runtimeOptions.MaximumEvidenceAge;
+        string? reason = !trustworthy
+            ? ServerReasonCodes.VehicleNotReady
+            : vehicle!.CurrentStationId is > 0 and int station && station == stop.StationRiotId
+                ? null
+                : ServerReasonCodes.StationMismatch;
+        if (reason is not null && log)
+        {
+            LogSlotCommandHeldOffStop(
+                logger,
+                operation.ToString(),
+                runtime.AgvId,
+                $"Expected station {stop.StationRiotId} ({stop.StationId}) on map {runtime.MapIdentity}.",
+                vehicle is null
+                    ? $"No reading within {runtimeOptions.SlotCommandPositionReadBudget.TotalSeconds:0.###} s; answered {reason}."
+                    : $"Observed connected={vehicle.Connected} map={vehicle.CurrentMap} station={vehicle.CurrentStationId} " +
+                      $"speed={vehicle.Speed} observedAt={vehicle.ObservedAt:O}; answered {reason}.",
+                null);
+        }
+        return reason;
+    }
+
+    /// <summary>
+    /// 未答复的装卸命令跨代重发之前核位置（control-server#783）：<paramref name="replayable"/> 里有车载端没答结果、而且是在更早一代会话里
+    /// 发出的 <c>SlotOperationCommand</c> 时，按它所属的停靠核车在不在那里，不在就把它从这一轮的重发里拿掉。
+    /// </summary>
+    /// <remarks>
+    /// <para>
+    /// 装卸命令的答复是结果不是 DurableAck，所以在结果到来之前，它每一轮都随 <c>ReplayPendingForSessionAsync</c> 再发一次。同一代里这无害：
+    /// 同一条连接按序送达，车收到过第一次，再发只会被按 attempt 去重。危险的是跨代那一次——命令发出后连接断了、车没收到、车被开走、
+    /// 以新的一代连上，换代重发就是车收到的第一次，会在站外开门。
+    /// </para>
+    /// <para>
+    /// 所以只在有跨代的未答复命令时读 RIoT：等结果、阻塞的旅程可能一挂几个小时，每轮都读，RIoT 一卡就拖住整轮（WaitingJourneyBatteryWatchTests
+    /// 的读挂住、读失败两条就是这样红的）。扣住不发不丢东西：车载端执行过的，握手时自己重放没被确认的结果；没执行过的，车回到站上那一轮照常重发。
+    /// 记 Debug 级的 2319 而不是 2318：车离站期间这里每一轮都会走到。
+    /// </para>
+    /// </remarks>
+    private async Task WithholdSlotCommandsOffTheirStopAsync(
+        HashSet<string> replayable,
+        JourneyRuntimeRow runtime,
+        JourneyStopCursor stops,
+        SessionRecoveryRow session,
+        CancellationToken cancellationToken)
+    {
+        Dictionary<string, (string StopId, SlotOperationType Type)> commands = new(StringComparer.Ordinal);
+        foreach (JourneyStopDemand demand in stops.AllDemands)
+        {
+            commands[demand.Membership.LoadCommandMessageId] = (demand.Membership.PickupStopId, SlotOperationType.Load);
+            commands[demand.Membership.UnloadCommandMessageId] = (demand.Membership.UnloadStopId, SlotOperationType.Unload);
+        }
+        string[] candidates = [.. commands.Keys.Where(replayable.Contains)];
+        if (candidates.Length == 0)
+        {
+            return;
+        }
+        ProtocolOutboxRow[] unanswered = await dbContext.ProtocolOutbox.AsNoTracking()
+            .Where(row => candidates.Contains(row.MessageId) && row.MessageType == "SlotOperationCommand" &&
+                          row.AcknowledgedAt == null && row.FencedAt == null)
+            .ToArrayAsync(cancellationToken).ConfigureAwait(false);
+        string[] fromAnEarlierSession = [.. unanswered
+            .Where(row => StoredSessionGeneration(row) < session.SessionGeneration)
+            .Select(row => row.MessageId)];
+        foreach (IGrouping<string, string> atStop in fromAnEarlierSession.GroupBy(id => commands[id].StopId, StringComparer.Ordinal))
+        {
+            // 停靠不在游标里（不该有）时也扣住：扣住只是推迟，放出去可能是站外开门。
+            JourneyStopRow? stop = stops.Stops.FirstOrDefault(row => row.StopId == atStop.Key);
+            if (stop is null ||
+                await VehicleNotAtStopAsync(runtime, stop, commands[atStop.First()].Type, cancellationToken, log: false)
+                    .ConfigureAwait(false) is not null)
+            {
+                replayable.ExceptWith(atStop);
+                LogSlotCommandResendWithheld(logger, string.Join(',', atStop), runtime.AgvId, null);
+            }
+        }
+    }
+
+    private static long StoredSessionGeneration(ProtocolOutboxRow row)
+    {
+        using JsonDocument envelope = JsonDocument.Parse(row.PayloadJson);
+        return envelope.RootElement.GetProperty("sessionGeneration").GetInt64();
+    }
+
+    /// <summary>
+    /// 卸货那一侧的位置闸（control-server#783）：车不在 <paramref name="stop"/> 上时写下 <see cref="SlotCommandVehicleNotAtStopReason"/>、
+    /// 保存、答 true，调用方这一轮不发命令；车在站上时清掉这个码（别的码不动）、答 false，调用方照常发。卸货没有录入可拒，
+    /// 所以是每一轮再核，车回到站上的那一轮自己接着走。
+    /// </summary>
+    private async Task<bool> HoldUnloadOffStopAsync(
+        JourneyRuntimeRow runtime,
+        JourneyStopRow stop,
+        DateTimeOffset previousAdvanceAt,
+        DateTimeOffset now,
+        CancellationToken cancellationToken)
+    {
+        // 2318 在第一次挂上这个码的那一轮记，之后每满 HeldSlotCommandLogInterval 再记一次（审查 S-1）：车离站期间这里每一轮都会走到，
+        // 每轮都记是刷屏；只记第一次，现场又看不出车此刻读成哪一站——推回站上的车 RIoT 常报 0，要在 RIoT 上重新定位（10-18 实测）。
+        // 「满一格」按挂码以来的时长算：上一轮推进时还在前一格、这一轮进了下一格就记。不另存状态，上一轮的时刻是旅程行的 UpdatedAt。
+        bool alreadyHeld = string.Equals(runtime.BlockReasonCode, SlotCommandVehicleNotAtStopReason, StringComparison.Ordinal);
+        bool logDue = !alreadyHeld ||
+                      (runtime.BlockReasonSince is { } since &&
+                       (now - since).Ticks / HeldSlotCommandLogInterval.Ticks >
+                       (previousAdvanceAt - since).Ticks / HeldSlotCommandLogInterval.Ticks);
+        if (await VehicleNotAtStopAsync(runtime, stop, SlotOperationType.Unload, cancellationToken, log: logDue)
+                .ConfigureAwait(false) is null)
+        {
+            if (alreadyHeld)
+            {
+                runtime.SetBlockReason(null, now);
+            }
+            return false;
+        }
+        runtime.SetBlockReason(SlotCommandVehicleNotAtStopReason, now);
+        runtime.UpdatedAt = now;
+        await dbContext.SaveChangesAsync(cancellationToken).ConfigureAwait(false);
+        return true;
+    }
 
     /// <param name="stop">车正驶向的那个停靠——这一次到站判定的全部依据（批次7-06，control-server#211）。</param>
     /// <remarks>
@@ -6077,6 +6295,10 @@ public sealed partial class JourneyRuntimeEngine(
     /// 取消这条需求。它只在拒收那一刻写一次，之后没有录入就不再写；被推进失败换掉之后，下一轮走通时 <c>ClearFailedAdvanceAsync</c> 把码清空，
     /// 仓位仍然不够而看板上没了原因。
     /// </para>
+    /// <para>
+    /// <see cref="SlotCommandVehicleNotAtStopReason"/> 是 control-server#783 加的：车不在这个停靠上，装卸命令扣着不发，要有人把车开回来。
+    /// 装货那一侧只在拒收那一刻写，与上一个码同理；卸货那一侧每轮再核，被换掉之后下一轮按「码不同」写回，开始时间归零。
+    /// </para>
     /// </remarks>
     private static bool CarriesACodeThatNamesAWaitOnAPerson(JourneyRuntimeRow runtime) =>
         runtime.Stage == JourneyRuntimeStage.Blocked ||
@@ -6091,6 +6313,8 @@ public sealed partial class JourneyRuntimeEngine(
         string.Equals(runtime.BlockReasonCode, PreDepartureSafetyNotValidReason, StringComparison.Ordinal) ||
         // control-server#754: the entry was refused for want of slots on the demand's side; the stop waits for a cancellation.
         string.Equals(runtime.BlockReasonCode, LoadSlotAssignmentShortReason, StringComparison.Ordinal) ||
+        // control-server#783: a slot command held because the vehicle is not proven at its stop; someone has to bring it back.
+        string.Equals(runtime.BlockReasonCode, SlotCommandVehicleNotAtStopReason, StringComparison.Ordinal) ||
         // control-server#390: an idle return held because its order may still exist or its vehicle may still move.
         string.Equals(runtime.BlockReasonCode, IdleReturn.IdleReturnExecutionReasons.WaitingPointLostOrderInFlight, StringComparison.Ordinal) ||
         string.Equals(runtime.BlockReasonCode, IdleReturn.IdleReturnExecutionReasons.OrderEndedStopNotProven, StringComparison.Ordinal) ||

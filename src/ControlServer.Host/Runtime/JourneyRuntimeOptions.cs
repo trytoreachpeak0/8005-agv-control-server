@@ -181,6 +181,14 @@ public sealed class JourneyRuntimeOptions
     public TimeSpan WaitingJourneyBatteryReadBudget { get; set; } = TimeSpan.FromSeconds(2);
 
     /// <summary>
+    /// How long the check before a load or unload command waits for RIoT's vehicle reading before it treats the position as
+    /// unproven and sends nothing (control-server#783, review S-4). Two seconds by default; must be positive and at most ten
+    /// seconds. The gateway's own timeout is thirty, and without this a RIoT that stopped answering would hold every round back
+    /// that long for every vehicle at a stop, emergency stop confirmations included.
+    /// </summary>
+    public TimeSpan SlotCommandPositionReadBudget { get; set; } = TimeSpan.FromSeconds(2);
+
+    /// <summary>
     /// How long after one of this server's own orders ended -- cancelled or deleted in RIoT, or its FAILED fault cleared by a
     /// person -- the server waits before it rebuilds the order for the same vehicle and the same demand (control-server#318,
     /// the first of its three guards). Thirty seconds by default, the user's decision of 2026-09-22: time for whoever is by
@@ -424,6 +432,11 @@ public sealed class JourneyRuntimeOptionsValidator(IConfiguration configuration)
             options.WaitingJourneyBatteryReadBudget > TimeSpan.FromSeconds(10))
         {
             failures.Add("WaitingJourneyBatteryReadBudget must be positive and at most 10 s.");
+        }
+        if (options.SlotCommandPositionReadBudget <= TimeSpan.Zero ||
+            options.SlotCommandPositionReadBudget > TimeSpan.FromSeconds(10))
+        {
+            failures.Add("SlotCommandPositionReadBudget must be positive and at most 10 s.");
         }
         if (options.UnableToChargeOldOrderCancelSettleWindow <= TimeSpan.Zero ||
             options.UnableToChargeOldOrderCancelSettleWindow > TimeSpan.FromMinutes(10))

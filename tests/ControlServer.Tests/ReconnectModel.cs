@@ -100,6 +100,8 @@ internal static class ReconnectModel
         "CHARGING_CYCLE_MISSING",
         // cs#754：扫码后这一侧分不出够数的仓位，录入被拒，等操作员取消这条需求。模型没有禁用仓位，走不到，理由同上。
         "LOAD_SLOT_ASSIGNMENT_SHORT",
+        // cs#783：装卸命令前车不在这一站上，命令扣着、等人把车开回来。模型的车不离站，走不到，理由同上。
+        "SLOT_COMMAND_VEHICLE_NOT_AT_STOP",
     };
 
     /// <summary>
