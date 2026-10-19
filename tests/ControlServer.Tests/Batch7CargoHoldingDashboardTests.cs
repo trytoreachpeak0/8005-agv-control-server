@@ -634,6 +634,8 @@ public sealed class Batch7CargoHoldingDashboardTests
     [InlineData("OWN_ORDER_REBUILD_WAITING_CARGO_EVIDENCE")]
     [InlineData("OWN_ORDER_REBUILD_CARGO_NOT_IN_PLACE")]
     [InlineData("OWN_ORDER_REBUILD_VEHICLE_INELIGIBLE")]
+    // control-server#770：重建到点时低于强制充电线、车上没货。
+    [InlineData("OWN_ORDER_REBUILD_MANDATORY_CHARGE")]
     // control-server#345：停住且车上有货的旅程转进异常处置会话之后的码。
     [InlineData("OWN_ORDER_REBUILD_AWAITING_CARGO_HANDOFF")]
     // control-server#331：推进每轮抛异常时写的码。之前这种情况看板上只剩上一次写下的旧码。

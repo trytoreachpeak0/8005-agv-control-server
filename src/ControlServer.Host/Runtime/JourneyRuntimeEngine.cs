@@ -349,7 +349,7 @@ public sealed partial class JourneyRuntimeEngine(
         OwnOrderRebuildOrderUnconfirmedReason or OwnOrderRebuildStoppedReason or
         OwnOrderRebuildWaitingCargoEvidenceReason or OwnOrderRebuildCargoNotInPlaceReason or
         OwnOrderRebuildCargoUnprovenReason or
-        OwnOrderRebuildVehicleIneligibleReason or OwnOrderNeverAppearedReason;
+        OwnOrderRebuildVehicleIneligibleReason or OwnOrderRebuildMandatoryChargeReason or OwnOrderNeverAppearedReason;
 
     /// <summary>
     /// The journey is waiting on a fact only the vehicle can supply, and the vehicle has gone quiet: no legal inbound

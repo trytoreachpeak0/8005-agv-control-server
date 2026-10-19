@@ -39,6 +39,14 @@ namespace ControlServer.Host.Runtime;
 /// through REQ-0305's create gate (<see cref="OwnOrderRebuildBlockedByCreateGateReason"/>).
 /// </para>
 /// <para>
+/// <b>And the battery</b> (control-server#770): 10-18 a vehicle at 9%, under a mandatory charge line of 40%, was sent back to its
+/// pickup by a rebuild, because only a new dispatch asked the battery. Every source only records the rebuild, and this file
+/// alone creates it, so the question is asked here (<see cref="RebuildBatteryAsync"/>), before every create that has not been
+/// sent yet: below the line with nothing on board, the rebuild stops (<see cref="OwnOrderRebuildMandatoryChargeReason"/>) and the
+/// release service hands the demand back to the backlog; a battery not known waits, as a new dispatch would. A person's rebuild
+/// (<see cref="OwnOrderRebuilds.IsPersonsRebuild"/>) is not held, only logged: the person chose it.
+/// </para>
+/// <para>
 /// <b>Both sides of the readiness gate, but an order only in front of it.</b> A real onboard reports its session not ready
 /// for the whole of a leg that carries this server's order, so the ending is usually read behind the gate, and the record is
 /// kept and named there. The new order, though, is created only when the session is Ready and Onboard's safety summary says
@@ -116,6 +124,13 @@ public sealed partial class JourneyRuntimeEngine
     public const string OwnOrderRebuildVehicleIneligibleReason = "OWN_ORDER_REBUILD_VEHICLE_INELIGIBLE";
 
     /// <summary>
+    /// When the rebuild fell due the vehicle's battery was below the mandatory charge line of the journey's frozen charging
+    /// policy, with nothing of the journey on board: no rebuild, and the release service releases the demand back to the
+    /// backlog, so that the vehicle, left with no purpose, goes to the charging allocation (control-server#770).
+    /// </summary>
+    public const string OwnOrderRebuildMandatoryChargeReason = "OWN_ORDER_REBUILD_MANDATORY_CHARGE";
+
+    /// <summary>
     /// How old a snapshot that could not settle where the cargo is, and the last request for one, both have to be before the
     /// vehicle is asked for another (review S4, incremental review B1). Long enough that a door someone is closing is not polled every message, short enough that the rebuild follows
     /// within seconds of the slot being secured.
@@ -159,6 +174,13 @@ public sealed partial class JourneyRuntimeEngine
             LogLevel.Error,
             new EventId(2173, nameof(LogOwnOrderRebuildStopped)),
             "Order {EndedUpperId} of journey {JourneyId} on {AgvId} is not rebuilt ({StoppedReason}); the journey waits for a person.");
+
+    private static readonly Action<ILogger, string, string, string, string, Exception?> LogPersonsRebuildOnLowBattery =
+        LoggerMessage.Define<string, string, string, string>(
+            LogLevel.Warning,
+            new EventId(2175, nameof(LogPersonsRebuildOnLowBattery)),
+            "The rebuild of order {EndedUpperId} of journey {JourneyId} on {AgvId} was asked for by a person and goes ahead " +
+            "although the battery does not allow new work ({Battery}).");
 
     /// <summary>
     /// Takes the rebuild the journey's current stop is waiting on one step further, and says whether this round stops here.
@@ -453,6 +475,31 @@ public sealed partial class JourneyRuntimeEngine
             return true;
         }
 
+        // control-server#770: the battery, judged as a new dispatch would be. A person's rebuild is not held by it.
+        bool personsRebuild = OwnOrderRebuilds.IsPersonsRebuild(
+            rebuild,
+            await dbContext.OwnOrderRebuilds.AsNoTracking()
+                .Where(row => row.JourneyId == runtime.JourneyId)
+                .ToArrayAsync(cancellationToken).ConfigureAwait(false));
+        RebuildBattery battery = await RebuildBatteryAsync(runtime, cancellationToken).ConfigureAwait(false);
+        // Below the line with nothing on board: like the ineligible vehicle above, asked on either side of the gate -- the
+        // release does not wait on the session, and a low battery does not get better while the vehicle holds the demand.
+        if (!personsRebuild && battery.State == BatteryStates.MandatoryCharge && !cargoOnBoard &&
+            stop.StopRole == JourneyStopRoles.Pickup)
+        {
+            rebuild.State = OwnOrderRebuildStates.Stopped;
+            rebuild.StoppedReason = OwnOrderRebuilds.MandatoryChargeRequired;
+            rebuild.StoppedAt = now;
+            rebuild.WaitingReason = battery.Reading;
+            rebuild.WaitingSince = now;
+            LogOwnOrderRebuildStopped(
+                logger, rebuild.EndedUpperId, runtime.JourneyId, runtime.AgvId,
+                $"{OwnOrderRebuilds.MandatoryChargeRequired}: {battery.Reading}", null);
+            await dbContext.SaveChangesAsync(cancellationToken).ConfigureAwait(false);
+            await NameRebuildAsync(runtime, OwnOrderRebuildMandatoryChargeReason, now, cancellationToken).ConfigureAwait(false);
+            return true;
+        }
+
         // Held for the peer: what the record waits on is the caller's reason for not reaching it -- the readiness gate's, or
         // a silent session's since control-server#358 (the same code the journey carries once the new order is confirmed).
         if (!mayCreate)
@@ -471,6 +518,15 @@ public sealed partial class JourneyRuntimeEngine
             await MarkVehicleHeldAsync(rebuild, cargoOnBoard, now, cancellationToken).ConfigureAwait(false);
             await WaitForRebuildAsync(
                 runtime, rebuild, string.Join(',', vehicle), OwnOrderRebuildWaitingVehicleReason, now, cancellationToken)
+                .ConfigureAwait(false);
+            return true;
+        }
+
+        // Not known: not sent off, as a new dispatch is not; it changes by itself, so it waits and releases nothing.
+        if (!personsRebuild && battery.State == BatteryStates.Unknown)
+        {
+            await WaitForRebuildAsync(
+                runtime, rebuild, battery.Reading, OwnOrderRebuildWaitingVehicleReason, now, cancellationToken)
                 .ConfigureAwait(false);
             return true;
         }
@@ -497,7 +553,74 @@ public sealed partial class JourneyRuntimeEngine
             return true;
         }
 
-        return cargoOnBoard && await CargoNotProvenAsync(runtime, rebuild, now, cancellationToken).ConfigureAwait(false);
+        if (cargoOnBoard && await CargoNotProvenAsync(runtime, rebuild, now, cancellationToken).ConfigureAwait(false))
+        {
+            return true;
+        }
+
+        // Logged in the round that decides, once: every earlier round returned above.
+        if (personsRebuild && battery.State is BatteryStates.MandatoryCharge or BatteryStates.Unknown)
+        {
+            LogPersonsRebuildOnLowBattery(logger, rebuild.EndedUpperId, runtime.JourneyId, runtime.AgvId, battery.Said, null);
+        }
+
+        return false;
+    }
+
+    /// <summary>
+    /// The vehicle's battery as the rebuild gate reads it (control-server#770): <see cref="BatteryEligibility.Project"/> against
+    /// the charging policy version the journey was dispatched under (REQ-0282), so that the line is the one a new dispatch of
+    /// that journey was judged by. <see cref="BatteryStates.Unknown"/> when the read fails, carries no battery, is stale by
+    /// this server's clock taken after the read, or the journey has no frozen version -- the same read as
+    /// <see cref="MandatoryChargeBatteryAsync"/> (control-server#709). <c>Reading</c> is what the record and the logs say.
+    /// </summary>
+    /// <remarks>
+    /// Only the mandatory line holds a rebuild, not the post-task margin (<see cref="BatteryStates.Low"/>): a rebuild carries on
+    /// work already dispatched, and REQ-0281 leaves a threshold crossed on the way to after the journey -- except the one line
+    /// below which nothing is sent off at all.
+    /// </remarks>
+    private async Task<RebuildBattery> RebuildBatteryAsync(JourneyRuntimeRow runtime, CancellationToken cancellationToken)
+    {
+        if (runtime.ChargingPolicyVersion is not long policyVersion)
+        {
+            return RebuildBattery.NotKnown;
+        }
+
+        RiotVehicleObservation vehicle;
+        try
+        {
+            vehicle = await vehicleFacts.ReadVehicleAsync(runtime.VehicleKey, cancellationToken).ConfigureAwait(false);
+        }
+        catch (Exception error) when (error is HttpRequestException or InvalidDataException or TaskCanceledException &&
+                                      !cancellationToken.IsCancellationRequested)
+        {
+            return RebuildBattery.NotKnown;
+        }
+
+        DateTimeOffset readAt = timeProvider.GetUtcNow();
+        bool fresh = vehicle.ObservedAt <= readAt && readAt - vehicle.ObservedAt <= runtimeOptions.MaximumEvidenceAge;
+        DispatchBatteryPolicy policy = DispatchBatteryPolicy.From(
+            await chargingPolicy.ReadFrozenAsync(policyVersion, cancellationToken).ConfigureAwait(false));
+        string state = BatteryEligibility.Project(vehicle, policy, fresh);
+        int line = policy.Content.MandatoryChargeEntryThresholdPercent;
+        return state switch
+        {
+            BatteryStates.Unknown => RebuildBattery.NotKnown,
+            BatteryStates.MandatoryCharge => new RebuildBattery(
+                state, $"BATTERY_{vehicle.BatteryPercent}_BELOW_{line}",
+                $"{vehicle.BatteryPercent}% below the mandatory charge line {line}%"),
+            _ => new RebuildBattery(state, $"BATTERY_{vehicle.BatteryPercent}", $"{vehicle.BatteryPercent}%"),
+        };
+    }
+
+    /// <summary>
+    /// The battery as <see cref="RebuildBatteryAsync"/> read it: a <see cref="BatteryStates"/> value, what the record says, and
+    /// what the log says.
+    /// </summary>
+    private sealed record RebuildBattery(string State, string Reading, string Said)
+    {
+        public static RebuildBattery NotKnown { get; } = new(
+            BatteryStates.Unknown, VehicleDynamicFactsCriterion.BatteryFactUnknownReason, "battery not known");
     }
 
     /// <summary>
@@ -665,6 +788,7 @@ public sealed partial class JourneyRuntimeEngine
     {
         OwnOrderRebuilds.CargoNotProvenInOriginalSlots => OwnOrderRebuildCargoNotInPlaceReason,
         OwnOrderRebuilds.VehicleNoLongerEligible => OwnOrderRebuildVehicleIneligibleReason,
+        OwnOrderRebuilds.MandatoryChargeRequired => OwnOrderRebuildMandatoryChargeReason,
         _ => OwnOrderRebuildStoppedReason,
     };
 

@@ -61,6 +61,14 @@ internal static class OwnOrderRebuilds
     public const string VehicleNoLongerEligible = "VEHICLE_NO_LONGER_ELIGIBLE";
 
     /// <summary>
+    /// Why a rebuild was not made: when it fell due the vehicle's battery was below the mandatory charge line of the journey's
+    /// frozen charging policy, and nothing of the journey was on board (control-server#770). The record's waiting reason says
+    /// the reading and the line. The release service releases the demand back to the backlog, as for
+    /// <see cref="VehicleNoLongerEligible"/>; the same value as the dispatch reason <c>MANDATORY_CHARGE_REQUIRED</c>.
+    /// </summary>
+    public const string MandatoryChargeRequired = "MANDATORY_CHARGE_REQUIRED";
+
+    /// <summary>
     /// Why a rebuild was not made: the new order ended in RIoT before it was ever confirmed, in a terminal state that is neither
     /// a cancellation nor FAILED -- RIoT's 8, SUSPENDED, which the gateway reads as terminal. Nothing then says what happened to
     /// the vehicle, so a person looks. (A SUCCESS before confirmation is taken as the order confirmed, and never ends here.)

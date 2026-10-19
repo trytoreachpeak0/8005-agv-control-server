@@ -128,6 +128,9 @@ internal sealed class BlockedJourneysQueryEndpoint : IDashboardQueryEndpoint
             [JourneyRuntimeEngine.OwnOrderRebuildVehicleIneligibleReason] =
                 "这辆车的单被取消后、重建之前，它对这条需求已不再合格（任务类型或分区准入被收回）：不再给它重建，"
                 + "需求随即由释放服务释放、改派给别的车。持续不消失请看释放服务写下的拒绝原因",
+            [JourneyRuntimeEngine.OwnOrderRebuildMandatoryChargeReason] =
+                "这辆车的单被取消后、重建之前，电量已低于强制充电线，车上没货：不再给它重建，"
+                + "需求随即由释放服务放回积压、改派给别的车，车交给充电分配去充电。持续不消失请看释放服务写下的拒绝原因",
             [JourneyRuntimeEngine.OwnOrderRebuildBlockedByCreateGateReason] =
                 "要为同一辆车、同一条需求重建运单，但建单门禁此刻不放行（地图目录不新鲜、任务类型被挂起、目标站不可达等）："
                 + "门禁放行后自动重建。具体原因见服务端日志事件 2172",
