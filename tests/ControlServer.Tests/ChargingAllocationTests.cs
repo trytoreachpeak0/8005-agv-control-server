@@ -1200,11 +1200,11 @@ public sealed class ChargingAllocationTests
 
     /// <summary>
     /// 预留之后、单发出之前，另一辆车在某个说不出名字的桩上充起电来（control-server#772）：出发前复核对这个桩重跑候选链，答
-    /// <c>CHARGER_OCCUPANCY_UNKNOWN</c>，单不建，预留留着不丢；第三辆低电的车也拿不到这个桩（它已被预留）。那辆车离开后，原先那张单照常建出，
-    /// 桩始终只有一辆车的预留。
+    /// <c>CHARGER_OCCUPANCY_UNKNOWN</c>，按出发前复核的既有口径撤回承诺（不算失败、不进冷却），单一张不建；第三辆低电的车这时也拿不到桩，
+    /// 桩上不会出现第二份预留。那辆车离开后，下一轮重新分配，桩上恰好一份预留、一张充电单。
     /// </summary>
     [Fact]
-    public async Task AReservedChargerIsNotSentToWhileAnotherVehicleChargesWithoutAStationAndIsNotReservedTwice()
+    public async Task AChargerCommittedBeforeAnotherVehicleChargesWithoutAStationIsNotSentToAndIsReservedOnceAfterItLeaves()
     {
         await using FleetFixture fleet = await FleetAsync(vehicles: 3, chargers: [Near]);
         fleet.Riot.BatteryByVehicle[KeyA] = 20;
@@ -1213,23 +1213,24 @@ public sealed class ChargingAllocationTests
         Assert.Empty(fleet.Riot.Creates);
 
         fleet.Riot.VehicleOverrides[KeyB] = seen => seen with { CurrentStationId = 0, BatteryState = "CHARGING" };
-        fleet.Riot.BatteryByVehicle[KeyC] = 15;
+        fleet.Riot.BatteryByVehicle[KeyC] = 25;
         await RoundAsync(fleet);
         await RoundAsync(fleet);
 
         Assert.Empty(fleet.Riot.Creates);
-        Assert.Equal((KeyA, StationExclusivityStates.Reserved), await HolderAsync(fleet, Near.StationId));
-        Assert.Equal(VehiclePurposes.Charging, (await ClaimOfAsync(fleet, KeyA))!.Value.Purpose);
+        Assert.Null(await StationAsync(fleet, Near.StationId));
+        Assert.NotEqual(ChargingAllocationReasons.Committed, fleet.ChargingBoard.Verdicts[AgvA].Reason);
         Assert.NotEqual(ChargingAllocationReasons.Committed, fleet.ChargingBoard.Verdicts[AgvC].Reason);
+        await AssertNothingOfACommitmentAsync(fleet, KeyA);
         await AssertNothingOfACommitmentAsync(fleet, KeyC);
 
         fleet.Riot.VehicleOverrides[KeyB] = seen => seen with { CurrentStationId = 12, BatteryState = "NO_CHARGE" };
         await RoundAsync(fleet);
+        await RoundAsync(fleet);
 
         Assert.Equal(Near.StationId, Assert.Single(fleet.Riot.Creates).DestinationStationId);
-        Assert.Single(await fleet.Context.Set<StationExclusivityRow>().AsNoTracking()
-            .Where(row => row.MapId == Map && row.StationId == Near.StationId).ToArrayAsync(Token));
-        Assert.Equal(KeyA, (await StationAsync(fleet, Near.StationId))?.VehicleKey);
+        Assert.Equal(KeyA, Assert.Single(await fleet.Context.Set<StationExclusivityRow>().AsNoTracking()
+            .Where(row => row.MapId == Map && row.StationId == Near.StationId).ToArrayAsync(Token)).VehicleKey);
     }
 
     // ---- 夹具 ------------------------------------------------------------------------------------------------------------

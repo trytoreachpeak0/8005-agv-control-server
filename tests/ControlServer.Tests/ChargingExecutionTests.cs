@@ -639,6 +639,8 @@ public sealed class ChargingExecutionTests
     {
         { "roster-emptied", ChargingExecutionReasons.WithdrawnChargerNoLongerEligible },
         { "another-vehicle-charging-on-it", ChargingExecutionReasons.WithdrawnChargerNoLongerEligible },
+        // control-server#772: charging where RIoT places it at no station (currentPosition 0) -- maybe on 211.
+        { "another-vehicle-charging-at-position-zero", ChargingExecutionReasons.WithdrawnChargerNoLongerEligible },
         { "charger-allocation-held", ChargingExecutionReasons.WithdrawnChargerNoLongerEligible },
         { "battery-back-above-the-line", ChargingExecutionReasons.WithdrawnNoLongerRequired },
     };
@@ -671,6 +673,10 @@ public sealed class ChargingExecutionTests
             case "another-vehicle-charging-on-it":
                 fleet.Riot.VehicleOverrides[FleetFixture.VehicleKeys[1]] =
                     seen => seen with { CurrentStationId = Near.StationId, BatteryState = "CHARGING" };
+                break;
+            case "another-vehicle-charging-at-position-zero":
+                fleet.Riot.VehicleOverrides[FleetFixture.VehicleKeys[1]] =
+                    seen => seen with { CurrentStationId = 0, BatteryState = "CHARGING" };
                 break;
             case "charger-allocation-held":
                 await new ChargingHoldStore(fleet.Context).RecordStationHoldAsync(
