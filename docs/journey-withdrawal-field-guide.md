@@ -43,8 +43,22 @@
    - 那一篮现在在哪里（`--cargo-location`，例如「在机台上」）；
    - 车最近一次报的安全摘要里，没有仓位读不出、门没锁、开锁输出没复位这三样。车没停稳不挡撤下（那是开锁前的事）。
 4. 这辆车没有开着的异常恢复会话（有就先用管理员关闭入口关掉）。
-5. **车上没有挂着冲突恢复**（onboard-hmi#254：恢复结果被服务端永久拒收、等维护人员人工核对的那种）。挂着的话，车接到新的仓位命令一律拒收，
-   撤下之后车也接不了活：先在屏上做「人工核对后关闭」。服务端看不见这一项，靠现场看屏（或 `18-read-hmi-screen-state.ps1` 只读读屏）。
+5. **车载日志簿里的几项**（onboard-hmi#372 / PR #376 的结论：撤下之后，车要在下一条仓位命令时自己覆盖那条待答记录，靠的是下面这几项都成立）。
+   服务端看得见的，入口自己查；看不见的，现场读车载日志簿：
+
+   | 项 | 谁来核 | 怎么核 |
+   | --- | --- | --- |
+   | a. 车报的未结操作就是要撤的那一次 | 入口自己查（车最近一次恢复报告），不一致拒绝 `VEHICLE_REPORTS_ANOTHER_UNSETTLED_ATTEMPT` | 演练输出的 `sessionUnsettledAttempt` 应等于 `unresolvedLoad.slotOperationAttemptId` |
+   | b. 开锁记录里的门关好、锁反馈读得到 | 入口查车最近的安全摘要（有门读不出、没锁、输出没复位就拒）；演练输出列出 `sessionActiveUnlockSlots` | 摘要可能是旧的（离线写法时服务端停着），现场再看一次锁反馈；读不到的要先修好或复位那路反馈，否则撤下后车回 READY、下一条命令却一直被拒 |
+   | c. 日志簿里没有恢复向量，发件箱里没有被放弃的恢复结果 | 服务端看不见 | 读日志簿（见下）：恢复状态 `recoveryVector` 为空；发件箱里没有 `AbandonedReasonCode` 为 `BUSINESS_ID_CONTENT_CONFLICT`／`MESSAGE_ID_CONTENT_CONFLICT` 的恢复结果行。有的话先由维护人员在车上「人工核对后结束此恢复」 |
+   | d. 没有强制隔离 | 服务端看不见 | 读日志簿：`forcedIsolation` 为空。有的话，下一趟的命令不能落在它的「物理状态不明」仓位上，交工程师 |
+   | e. 发件箱里未确认的行 | 入口保证：车补发那条待答结果时服务端只确认、不改动（用例 `TheVehiclesReplayOfTheUnknownResultAfterAWithdrawalChangesNothing`） | 读日志簿时记下未确认的行。除了那条待答的操作结果，别的未确认行交工程师看 |
+
+   **怎么读日志簿**：`19-archive-onboard-journal.ps1 -SshAlias <车> -Suffix check-<日期> -CheckOnly -EvidencePath <新目录>`（`-Suffix` 必填，
+   只判定时不会用到），只复制、只判定、不改名，结果在 `journal-check.json`：里面有未结操作、开锁记录、恢复向量和未确认的行（a、b、c、e）。
+   它不抽强制隔离，d 要看它复制下来的日志簿副本（`<新目录>/read`）里恢复状态的 `forcedIsolation`。它要求车载客户端停着，所以放在窗口里、停 v2 之后做（停车载客户端用 `10-start-onboard-stack.ps1 -Stop`）。
+   它报 `JOURNAL_OUTBOX_PENDING`、`JOURNAL_UNLOCK_ACTIVE` 不是撤不了，是列出上面 b、e 两项要看的东西。不想停客户端时，可以照 onboard-hmi#370
+   的做法只读复制日志簿再读；屏上有没有「人工核对后关闭」入口也可以用 `18-read-hmi-screen-state.ps1` 只读读屏看（只能看 c 的一半）。
 
 会话原因码是 `OPERATION_RECOVERY_REQUIRED` 还是 `PENDING_FACT_RECONCILIATION_REQUIRED` 都不影响撤下：车重连之后，它报的那次没结的操作留在
 待核实事实里，原因就排成后者，底下是同一件事。撤下之后那次操作结成取消，两个码都会消失。
@@ -89,6 +103,7 @@ dotnet ControlServer.FieldOps.dll withdraw-journey --database <v2 库文件> --p
 | `SITE_REPORTS_CARGO` | 现场说仓里有货 | 走车载端恢复会话 |
 | `SLOT_EVIDENCE_MISSING`／`SLOT_EVIDENCE_NOT_EMPTY` | 车没报过那一次的结果，或报的读数不是空、锁着、输出复位 | 现场与车对不上，交工程师 |
 | `DOOR_NOT_PROVEN_CLOSED` | 车最近的安全摘要说有门读不出、没锁或输出没复位，或车从没报过 | 先让门证明关着 |
+| `VEHICLE_REPORTS_ANOTHER_UNSETTLED_ATTEMPT` | 车最近报的未结操作不是要撤的这一次 | 撤下之后车仍挂着它，交工程师 |
 | `RECOVERY_SESSION_OPEN`／`SLOT_FAULT_DECLARATION_OPEN` | 这辆车有开着的恢复会话，或这一趟有未了结的判故障声明 | 先把它们了结 |
 | `REBUILD_RECORD_OPEN` | 这一趟有还在等的自动重建 | 第一部分不处理，交工程师（了结重建记录随后补上） |
 | `ORDER_OUTCOME_UNKNOWN` | 这一趟有一张建单结果未知的单 | RIoT 上可能有活单，先查清 |

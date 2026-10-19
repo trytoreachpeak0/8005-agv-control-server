@@ -88,6 +88,8 @@ public sealed class JourneyWithdrawalTests
         string attempt = (await OperationOfAsync(fixture, FirstDemandId)).SlotOperationAttemptId;
         SessionRecoveryRow session = await fixture.Context.SessionRecoveries.SingleAsync(Token);
         session.PendingAttemptIdsJson = JsonSerializer.Serialize(new List<string> { attempt });
+        // The vehicle also reports it as its unsettled attempt (hmi PR #376 item a): the one this exit settles, so allowed.
+        session.UnsettledSlotOperationAttemptId = attempt;
         await fixture.Context.SaveChangesAsync(Token);
         fixture.Context.ChangeTracker.Clear();
         WireToGateStore store = new(fixture.Context);
@@ -102,6 +104,65 @@ public sealed class JourneyWithdrawalTests
         Assert.Equal("[]", after.PendingAttemptIdsJson);
         Assert.NotEqual("PENDING_FACT_RECONCILIATION_REQUIRED", after.ReasonCode);
         Assert.NotEqual("OPERATION_RECOVERY_REQUIRED", after.ReasonCode);
+    }
+
+    /// <summary>
+    /// 车最近报的未结操作不是要撤的这一次（onboard-hmi PR #376 第 a 项）：撤下之后车仍挂着一次服务端没结的操作，下一条命令覆盖不了，拒绝。
+    /// </summary>
+    [Fact]
+    public async Task AnotherUnsettledAttemptReportedByTheVehicleRefusesTheWithdrawal()
+    {
+        await using RuntimeFixture fixture = await RuntimeFixture.CreateAsync();
+        JourneyRuntimeRow blocked = await BlockOnAnUnknownLoadWithAnotherDemandStillToLoadAsync(fixture);
+        SessionRecoveryRow session = await fixture.Context.SessionRecoveries.SingleAsync(Token);
+        session.UnsettledSlotOperationAttemptId = "77100000-0000-4000-8000-0000000000aa";
+        await fixture.Context.SaveChangesAsync(Token);
+        fixture.Context.ChangeTracker.Clear();
+
+        await AssertRefusedEverywhereAsync(fixture, await RequestAsync(fixture, blocked), JourneyWithdrawal.UnsettledAttemptElsewhere);
+    }
+
+    /// <summary>
+    /// 撤下之后车重连、补发那条待答的 UNKNOWN 结果（onboard-hmi PR #376 第 e 项）：服务端认出是同一条，只确认，不改任何东西——
+    /// 那次操作仍是取消，旅程仍是收尾，需求仍在待派。
+    /// </summary>
+    [Fact]
+    public async Task TheVehiclesReplayOfTheUnknownResultAfterAWithdrawalChangesNothing()
+    {
+        await using RuntimeFixture fixture = await RuntimeFixture.CreateAsync();
+        JourneyRuntimeRow blocked = await BlockOnAnUnknownLoadWithAnotherDemandStillToLoadAsync(fixture);
+        StationOperationRow operation = await OperationOfAsync(fixture, FirstDemandId);
+        OperationResultRow sent = await fixture.Context.OperationResults.AsNoTracking()
+            .SingleAsync(row => row.SlotOperationAttemptId == operation.SlotOperationAttemptId, Token);
+        await PlanAndWithdrawAsync(fixture, await RequestAsync(fixture, blocked));
+
+        OperationResultDisposition replay = await new WireToGateStore(fixture.Context).ApplyOperationResultAsync(
+            new StationOperationResult(
+                sent.ResultId,
+                sent.SlotOperationAttemptId,
+                operation.DemandId,
+                SlotOperationType.Load,
+                sent.OverallOutcome,
+                JsonSerializer.Deserialize<SlotPhysicalEvidence[]>(sent.EvidenceJson)!,
+                false,
+                sent.ObservedAt,
+                sent.ResultContentSha256,
+                sent.ContentHash),
+            fixture.Options.AgvId,
+            sent.ForcedRecoveryGeneration,
+            Token);
+        fixture.Context.ChangeTracker.Clear();
+
+        Assert.Equal(OperationResultDisposition.Replay, replay);
+        Assert.Equal(
+            StationOperationStatus.Cancelled,
+            (await fixture.Context.StationOperations.AsNoTracking()
+                .SingleAsync(row => row.SlotOperationAttemptId == operation.SlotOperationAttemptId, Token)).Status);
+        Assert.Equal(JourneyRuntimeStage.Completed, (await JourneyOfAsync(fixture, FirstDemandId)).Stage);
+        Assert.Equal(
+            DemandExecutionStatus.Accepted,
+            (await fixture.Context.AcceptedDemands.AsNoTracking().SingleAsync(row => row.DemandId == FirstDemandId, Token)).Status);
+        Assert.False(await new WireToGateStore(fixture.Context).OperationNeedsRecoveryAsync(fixture.Options.AgvId, Token));
     }
 
     /// <summary>车要收的收尾快照落进发件箱，空清单说「本站因任务释放结束」：这批会重新派车，不是丢了。</summary>

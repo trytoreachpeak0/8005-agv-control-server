@@ -74,7 +74,9 @@ public sealed record JourneyWithdrawalPlan(
     JourneyWithdrawalOperation? UnresolvedLoad,
     IReadOnlyList<JourneyWithdrawalIntent> OrderIntents,
     string? SessionReadiness,
-    string? SessionReasonCode);
+    string? SessionReasonCode,
+    string? SessionUnsettledAttempt = null,
+    IReadOnlyList<int>? SessionActiveUnlockSlots = null);
 
 /// <summary>演练或撤下的结果。</summary>
 /// <param name="Outcome"><c>PLANNED</c>、<c>WITHDRAWN</c>、<c>ALREADY_DONE</c> 或 <c>REJECTED</c>。</param>
@@ -134,6 +136,7 @@ public static class JourneyWithdrawal
     public const string FaultInEffect = "FAULT_IN_EFFECT";
     public const string EmergencyStopOpen = "EMERGENCY_STOP_OPEN";
     public const string FaultedCargoBound = "FAULTED_CARGO_BOUND";
+    public const string UnsettledAttemptElsewhere = "VEHICLE_REPORTS_ANOTHER_UNSETTLED_ATTEMPT";
     public const string ConfirmationRequired = "CONFIRMATION_REQUIRED";
     public const string ConfirmationStale = "CONFIRMATION_STALE";
 
@@ -375,6 +378,15 @@ public static class JourneyWithdrawal
                 unresolvedLoad.SlotOperationAttemptId, unresolvedLoad.DemandId, unresolvedLoad.Status.ToString(), targets, reported);
         }
 
+        // onboard-hmi#372 / PR #376, item a: the attempt the vehicle last reported unsettled is the one this exit settles, or none.
+        // Another one means the vehicle holds an operation this server is not settling here, and after the withdrawal it would
+        // still hold it -- the next command overwrites only once the server has settled what the vehicle reports.
+        if (session?.UnsettledSlotOperationAttemptId is { } reportedUnsettled &&
+            !string.Equals(reportedUnsettled, unresolvedLoad?.SlotOperationAttemptId, StringComparison.Ordinal))
+        {
+            codes.Add(UnsettledAttemptElsewhere);
+        }
+
         if (await dbContext.ExceptionRecoverySessions.AsNoTracking()
                 .AnyAsync(row => row.AgvId == runtime.AgvId && row.State != "CLOSED", cancellationToken).ConfigureAwait(false) ||
             await dbContext.RecoveryWorkflows.AsNoTracking()
@@ -441,7 +453,9 @@ public static class JourneyWithdrawal
             operation,
             intents,
             session?.Readiness.ToString(),
-            session?.ReasonCode);
+            session?.ReasonCode,
+            session?.UnsettledSlotOperationAttemptId,
+            session is null ? null : JsonSerializer.Deserialize<int[]>(session.ActiveUnlockSlotsJson) ?? []);
         string[] distinct = [.. codes.Distinct(StringComparer.Ordinal)];
         return new Assessment(
             distinct, plan, distinct.Length == 0 ? CodeOf(plan, facts, Trimmed(request.CargoLocation)) : null, false);
