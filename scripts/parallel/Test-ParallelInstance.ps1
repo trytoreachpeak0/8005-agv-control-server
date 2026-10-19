@@ -5999,6 +5999,38 @@ Invoke-SourceCase 'cutover installed: Get-ParallelRetiredFakeMesIngest with a cu
     $r = Get-ParallelRetiredFakeMesIngest -Previous (Copy-Definition $cutoverDefinition) -Current (Copy-Definition $cutoverDefinition)
     @{ Ok = ($null -eq $r); Detail = "got: $(ConvertTo-Json $r -Compress)" }
 }
+# control-server#775: the v4 -> v5 cutover upgrade on factory01 (cs#738, 2026-10-19) was refused because the installed v4
+# definition (six types, agv01 three) was asserted with the v5 cutover rules (seven, agv01 four). A production previous
+# install names no double, so it is not asserted at all; a fake previous install still is.
+$v4CutoverDefinition = Copy-Definition $cutoverDefinition
+$v4CutoverDefinition['journeyRuntime']['allowedWorkTypes'] = @($cutoverSeven | Where-Object { $_ -cne 'WIRE_TO_FULL_INSPECTION' })
+$v4CutoverDefinition['journeyRuntime']['fleet'][0]['allowedTaskTypes'] = @('WIRE_TO_GATE', 'WIRE_TO_OPTICAL', 'WIRE_TO_NITROGEN')
+Invoke-SourceCase 'cutover upgrade (#775): a v4-shaped production previous install under a v5 cutover returns $null and does not throw' {
+    # Precondition: the v4 shape is exactly what the v5 rules refuse, or this case proves nothing.
+    [string[]] $refused = @(Test-ParallelInstanceDefinition -Definition (Copy-Definition $v4CutoverDefinition) -AllowRiotCreateDispatch -AllowRiotForeignOrderCancel `
+            -ForStopDirection -ProductionCutover)
+    $codes = @($refused | ForEach-Object { ($_ -split ':')[0] } | Sort-Object -Unique)
+    $thrown = $null
+    $r = 'unset'
+    try { $r = Get-ParallelRetiredFakeMesIngest -Previous (Copy-Definition $v4CutoverDefinition) -Current (Copy-Definition $cutoverDefinition) } catch { $thrown = $_.Exception.Message }
+    @{ Ok = (($codes -join ',') -ceq 'CUTOVER_VEHICLE_TASK_TYPES_MISMATCH,CUTOVER_WORK_TYPES_NOT_FULL_SET' -and $null -eq $thrown -and $null -eq $r)
+        Detail = "v5 rules on v4: $($refused -join ' | '); thrown: $thrown; got: $(ConvertTo-Json $r -Compress)" }
+}
+Invoke-SourceCase 'cutover upgrade (#775): a fake previous install under a v5 cutover is still asserted and its double still retired' {
+    $r = Get-ParallelRetiredFakeMesIngest -Previous (Copy-Definition $baseline) -Current (Copy-Definition $cutoverDefinition)
+    $bad = Copy-Definition $baseline
+    $bad['fakeMesIngest']['taskName'] = '*'
+    $thrown = $null
+    try { $null = Get-ParallelRetiredFakeMesIngest -Previous $bad -Current (Copy-Definition $cutoverDefinition) } catch { $thrown = $_.Exception.Message }
+    @{ Ok = ($null -ne $r -and $r.TaskName -ceq $baseline['fakeMesIngest']['taskName'] -and $r.FakeInstallRoot -ceq $baseline['fakeMesIngest']['installRoot'] -and
+            $null -ne $thrown -and $thrown.Contains('contains a wildcard character'))
+        Detail = "got: $(ConvertTo-Json $r -Compress); bad previous threw: $thrown" }
+}
+Invoke-SourceCase 'cutover upgrade (#775): a previous install that is not a JSON object still throws' {
+    $thrown = $null
+    try { $null = Get-ParallelRetiredFakeMesIngest -Previous 'not an object' -Current (Copy-Definition $cutoverDefinition) } catch { $thrown = $_.Exception.Message }
+    @{ Ok = ($null -ne $thrown -and $thrown.Contains('is not a JSON object')); Detail = "got: $thrown" }
+}
 foreach ($file in @('Uninstall-ParallelInstanceLocal.ps1', 'Set-ParallelDispatchGateLocal.ps1')) {
     Invoke-SourceCase "cutover installed: $file asserts with -ProductionCutover taken from the installed record" {
         $text = Get-Content -LiteralPath (Join-Path $PSScriptRoot $file) -Raw
