@@ -7,6 +7,7 @@ using ControlServer.Domain;
 using ControlServer.Host.Runtime;
 using ControlServer.Host.Runtime.Charging;
 using ControlServer.Infrastructure.Persistence;
+using Microsoft.Data.Sqlite;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Options;
 
@@ -145,10 +146,37 @@ public sealed partial class OnboardMessageProcessor(
         // judged inside it only if the database still says what it said then. If not, nothing was written: the whole inbox
         // transaction rolls back -- no inbox row, no answer -- and the observation is made again. Twice at most, as the
         // decisions themselves retry; then the same exception they throw, which ends the connection as it always did.
+        //
+        // control-server#779: a transient database fault met before any of this message's processing began -- the dedup
+        // lookup, opening the connection, BEGIN IMMEDIATE -- is retried the same way, at most twice. Nothing of the message
+        // has run then: no callback below was entered, the transaction (if one was begun) rolled back, and there is no
+        // inbox row, so the next attempt is the first one again and ProtocolInbox still dedups whatever comes after. A fault
+        // met once processing began is never retried, because processing also changes this connection's state in memory;
+        // it ends the connection as before, logged with the vehicle and the message first (1108).
+        int transientRetries = 0;
         for (int attempt = 0; ; attempt++)
         {
             FieldConfirmationObservation? observed = await ObserveFieldConfirmationAsync(
                 root, state, messageType, messageId, cancellationToken).ConfigureAwait(false);
+            // Each of the three is where this message's processing begins, whichever branch the inbox takes.
+            bool processingBegan = false;
+            Task<string> Process()
+            {
+                processingBegan = true;
+                return ProcessCurrentSessionMessageAsync(
+                    root, state, messageType, messageId, contentHash, observed, cancellationToken);
+            }
+            void RestoreSnapshotVersions(string response)
+            {
+                processingBegan = true;
+                RestoreAcceptedSnapshotVersions(response, state);
+            }
+            Task<string?> RebindAck(string firstResponse)
+            {
+                processingBegan = true;
+                return RebindDurableAckAsync(
+                    firstResponse, messageType, messageId, agvId, contentHash, state, cancellationToken);
+            }
             try
             {
                 capturedResponse = await store.CaptureFirstResponseAsync(
@@ -156,20 +184,29 @@ public sealed partial class OnboardMessageProcessor(
                     messageType,
                     persistedRequest,
                     contentHash,
-                    () => ProcessCurrentSessionMessageAsync(
-                        root, state, messageType, messageId, contentHash, observed, cancellationToken),
+                    Process,
                     timeProvider.GetUtcNow(),
                     cancellationToken,
                     GenerationRebindReplayHash,
-                    messageType == "RecoveryStateReport"
-                        ? response => RestoreAcceptedSnapshotVersions(response, state)
-                        : null,
-                    reprocessedInTheNewSession
-                        ? null
-                        : firstResponse => RebindDurableAckAsync(
-                            firstResponse, messageType, messageId, agvId, contentHash, state, cancellationToken))
+                    messageType == "RecoveryStateReport" ? RestoreSnapshotVersions : null,
+                    reprocessedInTheNewSession ? null : RebindAck)
                     .ConfigureAwait(false);
                 break;
+            }
+            catch (Exception fault) when (!processingBegan &&
+                                          transientRetries < MaxTransientDatabaseRetries &&
+                                          IsTransientDatabaseFault(fault))
+            {
+                dbContext.ChangeTracker.Clear();
+                transientRetries++;
+                LogInboundTransientDatabaseFault(logger, agvId, messageType, messageId, transientRetries, fault);
+                await Task.Delay(TransientDatabaseRetryDelay, timeProvider, cancellationToken).ConfigureAwait(false);
+                continue;
+            }
+            catch (Exception fault) when (IsDatabaseFault(fault))
+            {
+                LogInboundDatabaseFailure(logger, agvId, messageType, messageId, processingBegan, fault);
+                throw;
             }
             catch (FieldConfirmationObservationStaleException stale)
             {
@@ -1554,6 +1591,72 @@ public sealed partial class OnboardMessageProcessor(
         string messageId,
         string reasonCode,
         string detail);
+
+    /// <summary>Retries after a transient database fault before processing began; the attempts are this plus one.</summary>
+    private const int MaxTransientDatabaseRetries = 2;
+
+    /// <summary>
+    /// How long a retry waits. Short on purpose: the faults retried fail at once (control-server#779), and a wait for the
+    /// write lock has already been spent inside the driver's busy timeout. The connection's liveness window keeps running
+    /// while a message is processed (ADR-cross-0027), so a longer wait would only trade this disconnect for a 1005.
+    /// </summary>
+    private static readonly TimeSpan TransientDatabaseRetryDelay = TimeSpan.FromMilliseconds(100);
+
+    /// <summary>
+    /// A fault that says nothing about the data and goes away by itself. SQLITE_BUSY and SQLITE_LOCKED are the other writer
+    /// holding the lock. An ObjectDisposedException on the native sqlite3 handle is Microsoft.Data.Sqlite 8's pool lending one
+    /// connection to two owners (dotnet/efcore#39008, seen 2026-10-19 06:55:22Z), whose next open gets another handle.
+    /// </summary>
+    private static bool IsTransientDatabaseFault(Exception error)
+    {
+        for (Exception? current = error; current is not null; current = current.InnerException)
+        {
+            if (current is SqliteException { SqliteErrorCode: SqliteBusy or SqliteLocked } or
+                ObjectDisposedException { ObjectName: "SQLitePCL.sqlite3" })
+            {
+                return true;
+            }
+        }
+        return false;
+    }
+
+    private static bool IsDatabaseFault(Exception error)
+    {
+        for (Exception? current = error; current is not null; current = current.InnerException)
+        {
+            if (current is SqliteException or DbUpdateException ||
+                current is ObjectDisposedException { ObjectName: "SQLitePCL.sqlite3" })
+            {
+                return true;
+            }
+        }
+        return false;
+    }
+
+    private const int SqliteBusy = 5;
+    private const int SqliteLocked = 6;
+
+    [LoggerMessage(EventId = 1107, Level = LogLevel.Warning,
+        Message = "Transient database fault on {MessageType} {MessageId} from {AgvId} before its processing began; " +
+                  "nothing of it was kept, retrying it ({Retry} of 2) on the same connection.")]
+    private static partial void LogInboundTransientDatabaseFault(
+        ILogger logger,
+        string agvId,
+        string messageType,
+        string messageId,
+        int retry,
+        Exception error);
+
+    [LoggerMessage(EventId = 1108, Level = LogLevel.Error,
+        Message = "Database fault on {MessageType} {MessageId} from {AgvId} (processing began: {ProcessingBegan}); its " +
+                  "transaction rolled back, nothing of it was kept, and the connection ends.")]
+    private static partial void LogInboundDatabaseFailure(
+        ILogger logger,
+        string agvId,
+        string messageType,
+        string messageId,
+        bool processingBegan,
+        Exception error);
 
     [LoggerMessage(EventId = 1106, Level = LogLevel.Warning,
         Message = "Vehicle {AgvId} reported a result for slot operation {SlotOperationAttemptId} of demand {DemandId} that " +
