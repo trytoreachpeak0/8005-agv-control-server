@@ -23,7 +23,8 @@ namespace ControlServer.Host.Runtime.IdleReturn;
 /// <para>
 /// v2 并行实例上只经实例定义的 <c>idleReturn.enabled</c> 打开（control-server#781，<c>scripts/parallel/ParallelInstance.psm1</c>）：覆盖层每次都写出
 /// 这一节（定义没写就写 false），环境变量 <c>IdleReturn__*</c> 被安装器拒绝；Host 在 <see cref="EffectiveConfigurationEvent"/> 里记下实际绑定的值，
-/// 安装器回读比对。生产定义 2026-10-19 起打开（用户定，与全检站同一次停机）。
+/// 安装器回读比对。生产定义 <c>cutover-production-s3.runtime-on</c> 显式写关：用户 2026-10-19 看过独立审查后定「这次先不开」——车停在已登记的等待点上
+/// 而没有站点占用行时，评估器会承诺开往车当前所在的站（control-server#793），修好之前不要打开。
 /// </para>
 /// </remarks>
 public sealed class IdleReturnOptions

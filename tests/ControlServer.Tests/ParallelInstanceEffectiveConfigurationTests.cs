@@ -762,6 +762,8 @@ public sealed class ParallelInstanceEffectiveConfigurationTests
     /// control-server#781: the idle return switch is logged last, as the boolean the evaluator reads, so the installer can hold the
     /// Host to the definition's <c>idleReturn.enabled</c>. Off when the caller does not pass it -- the product default.
     /// </summary>
+    private const string IdleReturnOn = "$d['idleReturn'] = [ordered]@{ enabled = $true }; ";
+
     [Theory]
     [InlineData(null, false)]
     [InlineData(false, false)]
@@ -782,23 +784,25 @@ public sealed class ParallelInstanceEffectiveConfigurationTests
 
     /// <summary>
     /// control-server#781, end to end: the overlay generated from the definition over the package's appsettings.json, bound the
-    /// way IdleReturnModule binds it, logged, and judged by the installer's read-back. The production stage-3 definition turns it
-    /// on; the shipped one leaves it out (off). flipped stands for a Host that bound the other value -- an environment layer, or a
-    /// true left over from an earlier layer.
+    /// way IdleReturnModule binds it, logged, and judged by the installer's read-back. The shipped definition with idle return turned
+    /// on (production stage 3 writes it off until control-server#793), and the shipped one as it is (left out, off). flipped stands
+    /// for a Host that bound the other value -- an environment layer, or a true left over from an earlier layer.
     /// </summary>
     [Theory]
-    [InlineData("instance-factory01-v2.cutover-production-s3.runtime-on.json", false, true, "Pass", null)]
-    [InlineData("instance-factory01-v2.cutover-production-s3.runtime-on.json", true, true, "StopServiceAndRefuse", "idleReturnEnabled bound 'False', the definition says 'True'")]
-    [InlineData("instance-factory01-v2.json", false, false, "Pass", null)]
-    [InlineData("instance-factory01-v2.json", true, false, "StopServiceAndRefuse", "idleReturnEnabled bound 'True', the definition says 'False'")]
+    [InlineData("instance-factory01-v2.json", IdleReturnOn, false, true, "Pass", null)]
+    [InlineData("instance-factory01-v2.json", IdleReturnOn, true, true, "StopServiceAndRefuse", "idleReturnEnabled bound 'False', the definition says 'True'")]
+    [InlineData("instance-factory01-v2.json", "", false, false, "Pass", null)]
+    [InlineData("instance-factory01-v2.json", "", true, false, "StopServiceAndRefuse", "idleReturnEnabled bound 'True', the definition says 'False'")]
+    [InlineData("instance-factory01-v2.cutover-production-s3.runtime-on.json", "", false, false, "Pass", null)]
+    [InlineData("instance-factory01-v2.cutover-production-s3.runtime-on.json", "", true, false, "StopServiceAndRefuse", "idleReturnEnabled bound 'True', the definition says 'False'")]
     public void TheIdleReturnSwitchTheDefinitionWritesIsWhatTheHostBindsAndTheReadBackHoldsItThere(
-        string definitionFile, bool flipped, bool expectedBound, string expectedAction, string? says)
+        string definitionFile, string definitionEdit, bool flipped, bool expectedBound, string expectedAction, string? says)
     {
         string root = FindRepositoryRoot();
         bool shipped = definitionFile == "instance-factory01-v2.json";
         JourneyRuntimeOptions options = Bind(
             File.ReadAllText(Path.Combine(root, "src", "ControlServer.Host", "appsettings.json")),
-            GenerateOverlay(root, definitionFile, checkDefinition: shipped),
+            GenerateOverlay(root, definitionFile, definitionEdit, checkDefinition: shipped),
             out IConfiguration configuration);
         IdleReturnOptions idleReturn = new();
         configuration.GetSection(IdleReturnOptions.SectionName).Bind(idleReturn);
@@ -810,7 +814,7 @@ public sealed class ParallelInstanceEffectiveConfigurationTests
         SlotConfigurationGateMode gate = GovernanceModule.ResolveGateMode(configuration);
         string line = RenderEvent(options, configuration["MesIngest:baseUrl"]!, BindCatalog(configuration), gate, idleReturn);
 
-        string verdict = JudgeReadBack(root, definitionFile, line);
+        string verdict = JudgeReadBack(root, definitionFile, line, definitionEdit);
 
         if (says is null)
         {

@@ -2869,9 +2869,13 @@ $script:JourneyBindingFields = @(
     # one that leaves the section out is not compared. Printed as True / False, never a space.
     [pscustomobject]@{ Name = 'stagingDepartureRulesEnabled'; Logged = 'StagingDepartureRulesEnabled'; Compare = 'Boolean'; Source = 'journeyRuntime.stagingDepartureRules.enabled'; AbsentMeans = $false }
     # control-server#781. The idle return switch, outside journeyRuntime. Derived like the gate, so always compared: the
-    # definition's boolean, false when it leaves the section out -- the value the overlay always writes. A package that does not
-    # log it (older than #781) is read as off: a definition that turns idle return on is refused over such a package, one that
-    # leaves it off is not. Printed as True / False, never a space.
+    # definition's boolean, false when it leaves the section out -- the value the overlay always writes. An event without it
+    # (a package older than #781) is compared as off: a definition that turns idle return on is refused over such a package, one
+    # that leaves it off is not. That proves nothing about what such a package bound -- its Host does not say. Off is guaranteed by
+    # this module's overlay, which always writes IdleReturn:enabled, not by the read-back; an install from a checkout older than
+    # #781 writes no such key, and Update-ControlServerLocal.ps1 carries the installed appsettings.Production.json forward, so a
+    # true left there survives it (cs#781 review H2): set it to false by hand before installing with such a checkout. Printed
+    # as True / False, never a space.
     [pscustomobject]@{ Name = 'idleReturnEnabled'; Logged = 'IdleReturnEnabled'; Compare = 'Boolean'; Source = 'idleReturn.enabled'; AbsentMeans = $false }
 )
 

@@ -66,7 +66,8 @@ namespace ControlServer.Host.Runtime;
 /// <b>The idle return switch</b> (<see cref="IdleReturn.IdleReturnOptions.Enabled"/>, control-server#781) is appended after them, as a
 /// boolean: on, a vehicle with no demand drives itself to a waiting point (REQ-0291; agv02 to its staging origin, CP-0016). The
 /// installer compares it with the definition's <c>idleReturn.enabled</c> and prints it for 19-deploy-control-server-parallel.ps1. An
-/// event without it is from a package older than #781, which the installer reads as off.
+/// event without it is from a package older than #781; the installer compares it as off, which proves nothing about what that Host
+/// bound -- off is guaranteed by the overlay writing the key, not by this event.
 /// </para>
 /// <para>
 /// More placeholders than the six <c>LoggerMessage.Define</c> takes, so the event hands the logger its state the way

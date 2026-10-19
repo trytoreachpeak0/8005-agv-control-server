@@ -6785,13 +6785,19 @@ Invoke-SourceCase 'idle return read-back: the Host source logs the switch last, 
     @{ Ok = ($eventSource.Count -eq 1 -and $eventSource[0].Name -ceq 'EffectiveConfigurationEvent.cs' -and ($logged -join ',') -ceq 'IdleReturnEnabled')
         Detail = "template found in: $(@($eventSource | ForEach-Object Name) -join ', '); module reads: $($logged -join ',')" }
 }
-Invoke-SourceCase 'idle return: only the production stage-3 definition writes it, and turns it on' {
+# The user, 2026-10-19, after the independent review: "这次先不开" -- not before control-server#793 (a vehicle standing on a
+# registered waiting point without a station row is committed to the station it is on). The section stays in stage 3, written off,
+# so turning it on later is that one value; the definition must still pass the check with it.
+Invoke-SourceCase 'idle return: only the production stage-3 definition writes it, writes it off, and still passes the definition check' {
     $writing = @(Get-ChildItem -LiteralPath $PSScriptRoot -Filter 'instance-*.json' | Where-Object {
             (Get-Content -Raw -LiteralPath $_.FullName).Contains('idleReturn') } | ForEach-Object Name)
     $s3 = Read-ParallelInstanceDefinition -Path (Join-Path $PSScriptRoot 'instance-factory01-v2.cutover-production-s3.runtime-on.json')
-    $f = @(Test-ParallelInstanceDefinition -Definition $s3)
-    @{ Ok = (($writing -join ',') -ceq 'instance-factory01-v2.cutover-production-s3.runtime-on.json' -and (Test-ParallelIdleReturnEnabled -Definition $s3))
-        Detail = "written in: $($writing -join ', '); s3 on: $(Test-ParallelIdleReturnEnabled -Definition $s3); s3 check: $($f -join ' | ')" }
+    $f = @(Test-ParallelInstanceDefinition -Definition $s3 | Where-Object { $_ -match 'idleReturn' })
+    $written = $s3['idleReturn']
+    @{ Ok = (($writing -join ',') -ceq 'instance-factory01-v2.cutover-production-s3.runtime-on.json' -and
+            $written -is [System.Collections.IDictionary] -and $written['enabled'] -is [bool] -and -not $written['enabled'] -and
+            -not (Test-ParallelIdleReturnEnabled -Definition $s3) -and $f.Count -eq 0)
+        Detail = "written in: $($writing -join ', '); s3 idleReturn: $(ConvertTo-Json $written -Compress); idleReturn failures: $($f -join ' | ')" }
 }
 
 Write-Host ''
