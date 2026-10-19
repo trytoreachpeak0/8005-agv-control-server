@@ -62,7 +62,12 @@ public enum GovernedObjectKind
     /// 一台车上 8005 的三类急停（按 <c>agvId</c>）。不是受治理配置、没有版本：审计的是车上有货时管理员经受治理入口解除它这一次操作
     /// （REQ-0356 按 CP-0011 修订，control-server#539）。
     /// </summary>
-    EmergencyStop
+    EmergencyStop,
+
+    /// <summary>
+    /// 一趟旅程（按 <c>JourneyId</c>）。不是受治理配置、没有版本：审计的是现场人员撤下它这一次操作（control-server#771）。
+    /// </summary>
+    Journey
 }
 
 /// <summary>
