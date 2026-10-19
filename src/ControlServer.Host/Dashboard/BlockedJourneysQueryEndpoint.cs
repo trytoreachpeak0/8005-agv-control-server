@@ -132,7 +132,7 @@ internal sealed class BlockedJourneysQueryEndpoint : IDashboardQueryEndpoint
                 "这辆车的单被取消或出问题后、重建之前，电量已低于强制充电线，车上没货：不再给它重建，"
                 + "交给释放服务把需求放回积压、改派给别的车；放回之后车没有任务，由充电分配派去充电。"
                 + "释放服务也可能拒绝放回（例如这一站上还有别的需求、车有未清除的故障），这时车就停在那里：持续不消失请看释放服务写下的拒绝原因，"
-                + "按现场说明处理。这一种不能人工重建",
+                + "按现场说明处理。这一种不能人工重建，但可以放弃这一趟",
             [JourneyRuntimeEngine.OwnOrderRebuildBlockedByCreateGateReason] =
                 "要为同一辆车、同一条需求重建运单，但建单门禁此刻不放行（地图目录不新鲜、任务类型被挂起、目标站不可达等）："
                 + "门禁放行后自动重建。具体原因见服务端日志事件 2172",
@@ -167,7 +167,7 @@ internal sealed class BlockedJourneysQueryEndpoint : IDashboardQueryEndpoint
                 "这条需求第一次出问题之后不久又出问题了（又被取消、删除，或又失败，或建单结果未知后又判作没建成），"
                 + "或者现场人员已经确认那张建单结果未知的单没建成（DECLARE_ORDER_NEVER_APPEARED），"
                 + "或者到了该重建的时候电量已低于强制充电线、而车上有货或这一站不是取货站：服务端不再自动重建，挡住并报警，等人处理。"
-                + "注意人工重建不查电量：低电时请先确认车的电量够走完这一趟再点，必要时先给车充电"
+                + "注意人工重建不查电量：低电时请先确认车的电量够走完这一趟再点，必要时先给车充电。"
                 + "请到现场与 RIoT 查明为什么反复停下，然后由现场人员经故障清除入口选一个出口（见现场说明）："
                 + "REBUILD_STOPPED_ORDER 人工重建一次（照样过车况与安全检查，之后在重复出问题的窗口内——默认 10 分钟，"
                 + "配置项 JourneyRuntime:OwnOrderRebuildRepeatWindow——再出问题仍会停住）；"

@@ -122,6 +122,13 @@ public sealed partial class VehicleFaultRecoveryService
         {
             reasons.Add(trip.Refusal);
         }
+        else if (trip.Stopped is { StoppedReason: OwnOrderRebuilds.MandatoryChargeRequired })
+        {
+            // control-server#770 review round 3 M-A: only the rebuild is refused here. Giving the trip up and the handoff stay
+            // open -- the release service may refuse to give the demand back for as long as another demand waits at the same
+            // pickup, and the person must then still have a way out.
+            reasons.Add(ExitMandatoryChargeReason);
+        }
 
         if (reasons.Count > 0)
         {
@@ -419,8 +426,6 @@ public sealed partial class VehicleFaultRecoveryService
                 ExitCargoNotInPlaceReason,
             { State: OwnOrderRebuildStates.Stopped, StoppedReason: OwnOrderRebuilds.VehicleNoLongerEligible } =>
                 ExitVehicleIneligibleReason,
-            { State: OwnOrderRebuildStates.Stopped, StoppedReason: OwnOrderRebuilds.MandatoryChargeRequired } =>
-                ExitMandatoryChargeReason,
             { State: OwnOrderRebuildStates.Stopped } => null,
             _ => ExitNotStoppedReason,
         };

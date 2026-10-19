@@ -184,6 +184,13 @@ public sealed partial class JourneyRuntimeEngine
             "The rebuild of order {EndedUpperId} of journey {JourneyId} on {AgvId} was asked for by a person and goes ahead " +
             "although the battery does not allow new work ({Battery}).");
 
+    private static readonly Action<ILogger, string, string, string, string, Exception?> LogStoppedTripBatteryFell =
+        LoggerMessage.Define<string, string, string, string>(
+            LogLevel.Warning,
+            new EventId(2176, nameof(LogStoppedTripBatteryFell)),
+            "The rebuild of order {EndedUpperId} of journey {JourneyId} on {AgvId}, stopped for a person, still waits while the " +
+            "battery fell below the mandatory charge line ({Battery}); the vehicle is not sent to charge until a person handles it.");
+
     /// <summary>
     /// Takes the rebuild the journey's current stop is waiting on one step further, and says whether this round stops here.
     /// False when there is none, or when the new order was just confirmed and the round may go on to watch it like any other.
@@ -619,13 +626,10 @@ public sealed partial class JourneyRuntimeEngine
     }
 
     /// <summary>
-    /// The battery as <see cref="RebuildBatteryAsync"/> read it: a <see cref="BatteryStates"/> value, what the record says, and
-    /// what the log says.
-    /// </summary>
-    /// <summary>
     /// Stops <paramref name="rebuild"/> for the battery (control-server#770) under <paramref name="stoppedReason"/>, records the
     /// reading, logs event 2173 and names the journey: <see cref="OwnOrderRebuildMandatoryChargeReason"/> when the release service
-    /// takes it on, <see cref="OwnOrderRebuildStoppedReason"/> when a person does.
+    /// takes it on, <see cref="OwnOrderRebuildStoppedReason"/> when a person does. A record that had already stopped for another
+    /// reason keeps it in front of the reading in the waiting reason (<paramref name="stoppedBefore"/>).
     /// </summary>
     private async Task StopForChargeAsync(
         JourneyRuntimeRow runtime,
@@ -633,12 +637,13 @@ public sealed partial class JourneyRuntimeEngine
         string stoppedReason,
         RebuildBattery battery,
         DateTimeOffset now,
-        CancellationToken cancellationToken)
+        CancellationToken cancellationToken,
+        string? stoppedBefore = null)
     {
         rebuild.State = OwnOrderRebuildStates.Stopped;
         rebuild.StoppedReason = stoppedReason;
         rebuild.StoppedAt = now;
-        rebuild.WaitingReason = battery.Reading;
+        rebuild.WaitingReason = stoppedBefore is null ? battery.Reading : $"{stoppedBefore};{battery.Reading}";
         rebuild.WaitingSince = now;
         LogOwnOrderRebuildStopped(
             logger, rebuild.EndedUpperId, runtime.JourneyId, runtime.AgvId, $"{stoppedReason}: {battery.Reading}", null);
@@ -646,13 +651,27 @@ public sealed partial class JourneyRuntimeEngine
         await NameRebuildAsync(runtime, StoppedCode(rebuild), now, cancellationToken).ConfigureAwait(false);
     }
 
+    /// <summary>What a third-guard stop's waiting reason starts with once the engine has read the battery at the stop.</summary>
+    private const string BatteryAtStop = "BATTERY_AT_STOP:";
+
+    /// <summary>What it starts with once the battery was found below the line later, while the trip waits for a person.</summary>
+    private const string BatteryLowWhileWaiting = "BATTERY_LOW_WHILE_WAITING:";
+
     /// <summary>
     /// Review S-2: the third guard stops a rebuild when the ending is recorded (<see cref="OwnOrderRebuilds.EndedAgainWithinWindow"/>),
-    /// before the battery gate is ever asked. With nothing on board at a pickup and the battery below the line, that record is
-    /// handed to the release service exactly as the gate would have, so that the vehicle does not hold its purpose -- and keep
-    /// out of the charging queue -- with the demand stuck on it until a person comes. Asked every round such a record stands,
-    /// so a battery that falls below the line while the trip waits for a person is handed over too. True when it was.
+    /// before the battery gate is ever asked. The first round that finds such a record reads the battery once: below the line,
+    /// with nothing on board at a pickup, the record is handed to the release service exactly as the gate would have (the stop
+    /// it replaces kept in the waiting reason), so that the vehicle does not hold its purpose -- out of the charging queue --
+    /// with the demand stuck on it. True when it was.
     /// </summary>
+    /// <remarks>
+    /// <b>Only at the stop</b> (review round 3, suggestion 2). A battery that falls below the line later, while the trip waits for a
+    /// person, is warned once (event 2176) and not handed over: the third guard is there so that a person finds out why the
+    /// order keeps being cancelled, and handed over the vehicle could be sent by the charging allocation down the very path
+    /// being looked into. The waiting reason records the reading at the stop, then the low one, so neither is asked twice.
+    /// Only the third guard's stop: a rebuild stopped on its new order's RIoT 8 says nothing about what happened at the vehicle,
+    /// and the release service would read that order as ended and send no cancel.
+    /// </remarks>
     private async Task<bool> HandStoppedTripOverForChargeAsync(
         JourneyRuntimeRow runtime,
         OwnOrderRebuildRow rebuild,
@@ -661,23 +680,46 @@ public sealed partial class JourneyRuntimeEngine
         CancellationToken cancellationToken)
     {
         if (rebuild.StoppedReason != OwnOrderRebuilds.EndedAgainWithinWindow ||
-            stop.StopRole != JourneyStopRoles.Pickup ||
-            await CarriesAnyCargoAsync(runtime, cancellationToken).ConfigureAwait(false))
+            rebuild.WaitingReason?.StartsWith(BatteryLowWhileWaiting, StringComparison.Ordinal) == true)
         {
             return false;
         }
 
+        bool atTheStop = rebuild.WaitingReason is null;
         RebuildBattery battery = await RebuildBatteryAsync(runtime, cancellationToken).ConfigureAwait(false);
-        if (battery.State != BatteryStates.MandatoryCharge)
+        if (atTheStop)
         {
+            if (battery.State == BatteryStates.MandatoryCharge && stop.StopRole == JourneyStopRoles.Pickup &&
+                !await CarriesAnyCargoAsync(runtime, cancellationToken).ConfigureAwait(false))
+            {
+                await StopForChargeAsync(
+                        runtime, rebuild, OwnOrderRebuilds.MandatoryChargeRequired, battery, now, cancellationToken,
+                        stoppedBefore: OwnOrderRebuilds.EndedAgainWithinWindow)
+                    .ConfigureAwait(false);
+                return true;
+            }
+
+            rebuild.WaitingReason = BatteryAtStop + battery.Reading;
+            rebuild.WaitingSince = now;
+            await dbContext.SaveChangesAsync(cancellationToken).ConfigureAwait(false);
             return false;
         }
 
-        await StopForChargeAsync(runtime, rebuild, OwnOrderRebuilds.MandatoryChargeRequired, battery, now, cancellationToken)
-            .ConfigureAwait(false);
-        return true;
+        if (battery.State == BatteryStates.MandatoryCharge)
+        {
+            rebuild.WaitingReason = BatteryLowWhileWaiting + battery.Reading;
+            rebuild.WaitingSince = now;
+            await dbContext.SaveChangesAsync(cancellationToken).ConfigureAwait(false);
+            LogStoppedTripBatteryFell(logger, rebuild.EndedUpperId, runtime.JourneyId, runtime.AgvId, battery.Said, null);
+        }
+
+        return false;
     }
 
+    /// <summary>
+    /// The battery as <see cref="RebuildBatteryAsync"/> read it: a <see cref="BatteryStates"/> value, what the record says, and
+    /// what the log says.
+    /// </summary>
     private sealed record RebuildBattery(string State, string Reading, string Said)
     {
         public static RebuildBattery NotKnown { get; } = new(
