@@ -97,6 +97,9 @@ dotnet ControlServer.FieldOps.dll plan-journey-withdrawal --database <v2 库文�
 - **车报的逐仓读数**（`unresolvedLoad.reportedSlots`，审查 R-5）：每个目标仓都要是 `<仓>:EMPTY:LOCKED:RESET`。agv03 那一次，车只直接贴过
   5 号的读数，6 号是从同一刻的 `SAFE_FINISH` 推出来的。6 号要是读成别的（有货、未知、没锁、输出没复位），演练会以
   `SLOT_EVIDENCE_NOT_EMPTY` 拒绝，**而这一版没有绕过它的出口**：停下，退回原计划（18 号开窗、车载端补偿），不要改库去凑。
+- **2026-10-20 agv03 用的那份单独构建的 FieldOps**（生产 `c0389b68` 加本入口截至 `eb5cd393` 的提交，本地提交 `518b806d`）**没有「重建记录随撤下了结」**：
+  这一趟名下只要有一条既没重建成、也没结束的重建记录（包括待发 `PENDING`、停住 `STOPPED`），它就以 `REBUILD_RECORD_OPEN` 拒绝。
+  那天遇到这个码就停下，不撤，退回原计划，交工程师。
 - `codes` 不为空就是拒绝，对照下面的拒绝码表。然后停 v2 服务，撤下（参数同上，加探测地址与确认码）：
 
 ```powershell
