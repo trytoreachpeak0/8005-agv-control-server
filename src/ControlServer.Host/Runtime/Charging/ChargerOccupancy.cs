@@ -1,4 +1,5 @@
 using ControlServer.Application;
+using ControlServer.Host.Runtime.Dispatch.Criteria;
 using ControlServer.Host.Runtime.Fleet;
 using ControlServer.Infrastructure.Persistence;
 using Microsoft.EntityFrameworkCore;
@@ -87,7 +88,7 @@ public sealed class ChargerOccupancySnapshot
 /// </para>
 /// <para>
 /// <b>未知即不分配</b>（fail-closed）：某辆车的位置读不到、读数过期（超过 <c>JourneyRuntime:MaximumEvidenceAge</c>，或时刻在未来）、
-/// 当前站为空；清单不完整；清单里本项目车辆的某张单没有 <c>upperId</c>、或按 <c>upperId</c> 读不到它——任何一条，这一轮所有桩都不是候选。
+/// 当前站为空、或报的是「不在任何站」（<see cref="NoStation"/>）却正在充电；清单不完整；清单里本项目车辆的某张单没有 <c>upperId</c>、或按 <c>upperId</c> 读不到它——任何一条，这一轮所有桩都不是候选。
 /// </para>
 /// </remarks>
 public sealed class ChargerOccupancyReader(
@@ -100,6 +101,9 @@ public sealed class ChargerOccupancyReader(
     TimeProvider timeProvider)
 {
     private readonly JourneyRuntimeOptions _runtime = runtimeOptions.Value;
+
+    /// <summary>RIoT 车辆卡片的 <c>currentPosition</c> 在车不在任何站上时报的值（行驶中、被推离站点后）：不是一个站号（control-server#772）。</summary>
+    public const int NoStation = 0;
 
     /// <summary>
     /// 按 <c>upperId</c> 读一张单的状态与每一段任务（<c>detailByUpperId</c>）的那一个读者：引擎判「已确认充不上」时读充电动作的结果码
@@ -144,6 +148,22 @@ public sealed class ChargerOccupancyReader(
             }
 
             vehicles[vehicle.VehicleKey] = observed;
+            // control-server#772: RIoT reports currentPosition 0 for a vehicle it places at no station -- every vehicle on the
+            // move, all the time. It stands on no charger, so it blocks none: taking 0 as unknown would stop the whole fleet from
+            // charging whenever one vehicle drives. A vehicle charging there is the exception: charging happens only on a
+            // charger, and RIoT cannot say which (10-18 agv01, pushed onto 211 by hand), so every charger is unknown.
+            if (station <= NoStation)
+            {
+                if (string.Equals(observed.BatteryState, BatteryEligibility.ChargingBatteryState, StringComparison.Ordinal))
+                {
+                    unknown.Add((
+                        $"{vehicle.AgvId}[{vehicle.VehicleKey}]:VEHICLE_CHARGING_WITHOUT_STATION",
+                        $"RIoT reports it charging at currentPosition {station}, which is no station"));
+                }
+
+                continue;
+            }
+
             // A vehicle RIoT places on another Map stands on none of this Map's chargers. One with no Map reported is taken to
             // stand where its station number says, on this Map: the side that keeps a charger from being handed out.
             if (string.IsNullOrEmpty(observed.CurrentMap) ||

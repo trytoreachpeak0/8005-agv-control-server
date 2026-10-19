@@ -1608,7 +1608,8 @@ public sealed class ChargingExecutionTests
         fleet.Riot.VehicleOverrides[keyB] = seen => seen with { CurrentStationId = 13, BatteryState = "NO_CHARGE" };
         await RoundAsync(fleet);
 
-        Assert.Null(await StationAsync(fleet, Near.StationId));
+        // Released. A is still below its line and past its cooldown, so the same round may hand it 211 again -- on a new journey.
+        Assert.NotEqual(journey.JourneyId, (await StationAsync(fleet, Near.StationId))?.JourneyId);
         Assert.Equal(
             ChargingExecutionReasons.ReservationReleasedAfterEndedCycle,
             (await fleet.Context.Set<StationExclusivityRecordRow>().AsNoTracking()

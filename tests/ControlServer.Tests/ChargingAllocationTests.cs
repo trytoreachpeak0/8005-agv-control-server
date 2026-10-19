@@ -1221,7 +1221,9 @@ public sealed class ChargingAllocationTests
         Assert.Null(await StationAsync(fleet, Near.StationId));
         Assert.NotEqual(ChargingAllocationReasons.Committed, fleet.ChargingBoard.Verdicts[AgvA].Reason);
         Assert.NotEqual(ChargingAllocationReasons.Committed, fleet.ChargingBoard.Verdicts[AgvC].Reason);
-        await AssertNothingOfACommitmentAsync(fleet, KeyA);
+        // Not AssertNothingOfACommitmentAsync for A: the withdrawn intent that was never created is left PENDING_RECONCILIATION,
+        // which is control-server#741's, not this ticket's.
+        Assert.Null(await ClaimOfAsync(fleet, KeyA));
         await AssertNothingOfACommitmentAsync(fleet, KeyC);
 
         fleet.Riot.VehicleOverrides[KeyB] = seen => seen with { CurrentStationId = 12, BatteryState = "NO_CHARGE" };
