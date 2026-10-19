@@ -139,7 +139,7 @@ control-server#262。约 2026-10-08 起 `factory01` 上同时跑两套 ControlSe
 | `journeyRuntime.mapIdentity` | `老厂前线new_wk` | `evidence/field/2026-09-19-B6-map-name-baseline-check/real-riot/fields.json` |
 | `journeyRuntime.dispatchZone`、`allowedDispatchZones` | `WIRE` | 用户 2026-09-18 定：`evidence/field/2026-09-18-B4-site-prerequisites/03-area-assignment-table.md` 第 58、122 行（区域分配表的 `dispatch_zone` 全部是 `WIRE`，实例必须配成同一个值，否则那张表导入会报 `DISPATCH_ZONE_NOT_FOUND`） |
 | `journeyRuntime.admissionPolicyDeploymentId` | `MAP-26-WIRE_TO_GATE-20261007` | 调度 2026-10-07 定，格式沿用 map 25 的 `MAP-25-WIRE_TO_GATE-20260827`（control-server#411）。它是部署标签，不是业务参数。**实例第一次带着运行时启动之后，它就和 `admissionPolicyVersion` 一起固定在库里**：只改标签、不升版本，服务端会报 `Admission policy version is already bound to different content or deployment identity.`，判为准入策略漂移（`WireToGateStore.cs` 的 `ApplyAdmissionPolicyAsync`）。要换标签，就同时升 `admissionPolicyVersion` |
-| `journeyRuntime.admissionPolicyVersion` | `6` | 批次 10（control-server#545）放开同向四类时由 2 升到 3；之后 26 号图机台站两次改名、一次重传，factory01 v2 库依次绑了 4、5、6，control-server#614 把七份定义一起升到 6。包里的 `appsettings.json` 仍是 3（它绑的是 25 号图，不随 26 号图站名走）。**今后重装时，定义都必须是这个值或更高**，见下文「准入策略版本」 |
+| `journeyRuntime.admissionPolicyVersion` | `8` | 批次 10（control-server#545）放开同向四类时由 2 升到 3；之后 26 号图机台站两次改名、一次重传，factory01 v2 库依次绑了 4、5、6，control-server#614 把七份定义一起升到 6；control-server#737 第七类可执行升到 7（包里的 `appsettings.json` 随可执行集合由 3 直接升到 7）；control-server#777 激活全检站绑定升到 8（只改定义，`appsettings.json` 仍是 7）。**今后重装时，定义都必须是这个值或更高**，见下文「准入策略版本」 |
 | `taskTypeStations.settingsFile` | `task-type-stations.map-26.settings.json` | control-server#518。包里随 Host 带一份 26 号图站点清单，定义点名它，覆盖层写成 `TaskTypeStations:settingsFile`（Host 按安装目录解析相对路径）。包内默认的 `task-type-stations.settings.json` 仍绑 25，给 MVP 线用，不动。见下文 |
 
 这三个值都是服务端自己的配置：调度区存在本实例的库里，准入策略部署号是服务端写库时带的标签。**RIoT 里没有它们，也就无从「从 RIoT 取回」**——此前这里和工作区文档都这么写过，那是错的（control-server#411）。
@@ -394,7 +394,31 @@ control-server#548 那次（候选还是六类、`ruleVersion: 1`）的记录，
 FieldOps 是进程外直连库的工具，服务停着也能激活；但它要求带来的目录就是服务端最近一次完整确认的那份，且确认还在批准窗口内
 （factory01 的 `approvedMaxUnconfirmed` 是 5 分钟）。停着的服务端不再确认目录，所以**停服后 5 分钟内要做完 dry-run 与激活**，
 超时被 `TASK_TYPE_BINDING_CATALOG_NOT_FRESH` 拒绝、什么都不切换，起一下旧服务再来即可。19 接受停着的服务，升级后先以旅程运行时
-关闭起一次（引擎不跑、不绑种子），打开后的第一轮在 8 下绑七类。逐步的现场清单在 control-server#778 的正文里。
+关闭起一次（引擎不跑、不绑种子），打开后的第一轮在 8 下绑七类。
+
+#### 现场顺序清单（cs#738 照做；control-server#778 独立审查 M1～M3、L1、L2 已并入）
+
+前提：control-server#777 已合入；用**合并提交**跑 `release.yml` 出包（车载端提交与 v5 相同）；`8005-workspace#56`（19 号写死六类）已合入；在 F 盘建合并提交的干净 worktree（下称「新 checkout」，定义是 8），并保留 c0389b68 的 worktree（下称「旧 checkout」，定义是 7）。`<db>` 是 `C:\ProgramData\8005\ControlServer.V2\data\controlserver.db`，`<ops>` 是 `D:\zhengyushao\control-server-v2-ops`，`FieldOps` 用当前已装包 c0389b68 的那份（本票没有迁移，库结构相同）。
+
+1. **起服、闸开，只读核对。** `FieldOps task-type-stations --database <db> --map 26`：记下 `activeVersion`，核 `state=Active`、`active.ruleVersion=1`、六条绑定、`unreleasedHolds` 与 `openAttempt` 为空；`TaskTypeStationRuleVersions` 最大版本是 2；`AdmissionPolicyState.Version` 是 7。不符就停。把新 checkout 里的候选 `scripts/parallel/task-type-stations.map-26.candidate.json` 和 `scripts/field/Export-RiotStationCatalog.ps1` 拷到 `<ops>`。**把第 5～7 步写成一个脚本放到 `<ops>`**（导目录 → dry-run → 按第 6 步的期望核对 dry-run 输出，不符即停 → 正式激活 → 只读复核），第 5～7 步在 factory01 上一次 ssh 跑完，不要在会话里逐条敲，免得权限确认吃掉窗口。
+2. **起服：关闸。** `20-set-control-server-parallel-dispatch-gate.ps1 -State Closed`（有未完成旅程会拒绝，等收尾）。读回 `RiotCreateDispatch.enabled=false`、非终态旅程 0、`ProtocolOutbox` 未确认 0。
+3. **起服、闸关：19 号 `-WhatIf`。** 新包 + 新 checkout + `-InstanceDefinitionPath scripts/parallel/instance-factory01-v2.cutover-production-s3.runtime-on.json`（与 v5 换装同样带 `-ProductionCutover`）。核包与 checkout 同一提交、定义 8 高于已装的 7、什么都没改。失败就停在这里，服务仍在跑，没有任何改动。
+4. **停服。** `Stop-Service '8005 AGV ControlServer V2'`，先不备份。停下后立刻只读读 `MapStationCatalogStates` 里 map 26 的 `LastCompleteConfirmationAt`：**5 分钟窗口从它起算，不是从停服起算**。它若明显早于停服时刻（停服前目录读取在失败），先起服等它刷新，再停。
+5. **（脚本）取目录。** `Export-RiotStationCatalog.ps1 -MapId 26 -OutFile <ops>\stations-26-<时刻>.json`（只读 GET），核 229「全检」在里面。
+6. **（脚本）dry-run。** `FieldOps activate-task-type-stations --database <db> --input <ops>\task-type-stations.map-26.candidate.json --catalog <第 5 步文件> --reason "cs#738 全检站 229 dry-run" --dry-run`。期望退出码 0、`PREVIEW`、`violations` 空、`changes` 恰好一条新增 `WIRE_TO_FULL_INSPECTION` → 229、`impact.affected` 空。
+7. **（脚本）正式激活与复核。** 去掉 `--dry-run`，`--reason` 写清谁、为什么。期望 `OK`、`targetVersion = 第 1 步 activeVersion + 1`。再跑第 1 步的只读命令：`activeVersion` 等于 `targetVersion`、`active.ruleVersion=2`、七类需求集、七条绑定、无暂停。
+   - **被拒**（包括超时的 `TASK_TYPE_BINDING_CATALOG_NOT_FRESH`）：什么都没切换。用旧 checkout（定义 7）起服——绑定没变，不漂移——等它确认目录，回第 4 步。
+   - **`RESULT_UNKNOWN`**：不重试激活，跑 `FieldOps reconcile-task-type-stations --database <db> --map 26 --reason "<为什么>"`。**只有对账结论是目标版本生效、且只读复核 `ruleVersion=2` 和七条绑定都对上，才进第 8 步。** 结论是原版本仍生效：按「被拒」那一支，用 7 起服回第 4 步。结论是矛盾、要手工收尾时，**不要起服**，停下报调度：手工收尾会让该图没有生效版本，种子改读当前规则变成七类，7 下起服就漂移。
+   - 为什么不能提前进第 8 步：激活结果未知时生效版本仍是旧的六类，此时用 8 起服，8 下先绑六类，之后激活成功就判漂移，只能升到 9。
+8. **19 号正式部署（从停着的服务开始，19 号升级并起服）。** 同第 3 步去掉 `-WhatIf`。安装器接受停着的服务，升级后先以旅程运行时关闭起一次（引擎不跑、不绑种子），再打开重启。读回：日志 `EFFECTIVE_JOURNEY_BINDING=admissionPolicyVersion=8 …`；`AdmissionPolicyState.Version=8`，`StationTaskTypeAdmissions` 含 `WIRE_TO_FULL_INSPECTION`；日志里没有 EventId 2116（准入策略漂移）；backlog 里没有 `ADMISSION_POLICY_DRIFT`；`/version` 是新提交。9305（预置与生效绑定集不同）仍会出现，属预期。然后再备份库。
+   - **19 号在换代之前失败**（安装器在旅程运行时放行成功之后才换代，`Install-ParallelInstanceLocal.ps1:941-947`；这时 `.previous` 里还是 v5 之前那一代）：**不要用 `-Rollback`**，那会装回 v4 包，三台 v5 车载端全连不上。用新包 + 新 checkout（定义 8）重新部署；或用 c0389b68 包 + 旧 checkout 加 `-AdmissionPolicyVersionOverride <N>` 重新部署。**不要**按安装器 `JOURNEY_RUNTIME_LEFT_DISABLED` 的提示用 c0389b68 自带的定义 7 重新部署：激活之后在 7 下起服，全车队漂移。产品升级自己的自动回退是在运行时关闭下重启的，不跑种子，本身不漂移。
+   - **19 号在换代之后失败**：才用 `19 -Rollback -AdmissionPolicyVersionOverride <N>`。
+   - **覆盖值 `<N>`**：取「所用 checkout 里定义的版本、服务器 `installed-instance.json` 记录的版本、库里 `AdmissionPolicyState.Version`」三者的最大值 + 1。19 号要求它高于 checkout 的定义和已装记录，库要求它不低于已绑过的最高版本。
+   - **激活之后唯一的出路是升版本。** FieldOps 回滚到六类会被 `TASK_TYPE_BINDING_RULE_VERSION_NOT_CURRENT` 拒绝（回滚沿用旧版本的规则版本 1，当前是 2，`TaskTypeStationActivationService.cs:82`、`:833-841`）；在规则版本 2 上激活什么绑定，种子都是七类。所以不要指望把绑定退回六类、在 7 下跑。
+9. **车载端不动。** 包里车载端提交与 v5 相同，不跑 06、不重启车载栈；区表不重导。
+10. **开闸（要用户单独点头，会动车）。** `20-check-production-io.ps1` 生成 IoCheckRecord，`20 … -State Open -IoCheckRecord …`。读回 `RiotCreateDispatch=True`，盯第一轮受理。
+
+**换了新库时**：新库首启，预置的七条规则成为规则版本 1，种子从第一轮起就是七类，8 下首启不漂移，之后激活全检也不用升版本。但候选写死 `ruleVersion: 2`，在新库上会被 `TASK_TYPE_BINDING_RULE_VERSION_NOT_CURRENT` 拒绝，要先改成新库的当前规则版本（1）再激活。影响只限全检这一类。
 
 ### 与部署的关系
 

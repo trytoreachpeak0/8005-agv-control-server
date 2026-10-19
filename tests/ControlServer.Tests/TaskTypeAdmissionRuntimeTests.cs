@@ -320,12 +320,18 @@ public sealed class TaskTypeAdmissionRuntimeTests
         await using RuntimeFixture fixture = await RuntimeFixture.CreateAsync();
         long ruleVersion = await ProductionBeforeTheFullInspectionActivationAsync(fixture);
         DateTimeOffset lastConfirmation = fixture.Clock.GetUtcNow();
+        TaskTypeStationBindingSetVersion sixTypeSet = (await ActiveBindingsAsync(fixture))!;
 
         // The service stops here: no round runs until it starts again. Past the approved window nothing is activated.
         TaskTypeStationActivationResult stale = await FieldOpsActivateAsync(
             fixture, ruleVersion, lastConfirmation + TimeSpan.FromMinutes(5) + TimeSpan.FromSeconds(1));
         Assert.Equal(TaskTypeStationActivationOutcome.Rejected, stale.Outcome);
         Assert.Contains(stale.Violations, violation => violation.ReasonCode == TaskTypeStationReasonCodes.BindingCatalogNotFresh);
+        // Review L4: the refusal switched nothing -- the same binding set, still built on the six rules, is active.
+        fixture.Context.ChangeTracker.Clear();
+        TaskTypeStationBindingSetVersion afterRefusal = (await ActiveBindingsAsync(fixture))!;
+        Assert.Equal((sixTypeSet.Version, sixTypeSet.RuleVersion), (afterRefusal.Version, afterRefusal.RuleVersion));
+        Assert.Equal(sixTypeSet.Bindings, afterRefusal.Bindings);
 
         fixture.Clock.Advance(TimeSpan.FromMinutes(2));
         TaskTypeStationActivationResult activated = await FieldOpsActivateAsync(fixture, ruleVersion, fixture.Clock.GetUtcNow());
