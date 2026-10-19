@@ -52,7 +52,8 @@
 #>
 [CmdletBinding(SupportsShouldProcess = $true, ConfirmImpact = 'High')]
 param(
-    [Parameter(Mandatory = $true)][ValidateSet('Closed', 'Open')][string] $State,
+    # Exactly as spelled (8005-workspace#61): 'closed' used to bind and then be taken for Open.
+    [Parameter(Mandatory = $true)][ValidateSet('Closed', 'Open', IgnoreCase = $false)][string] $State,
 
     # Not Mandatory, so that a run without it is refused with the explanation below instead of a prompt
     # that hangs a non-interactive ssh session.

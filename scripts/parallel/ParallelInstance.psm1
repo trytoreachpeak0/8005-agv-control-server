@@ -4043,11 +4043,17 @@ function ConvertTo-ParallelGateDirection {
         .DESCRIPTION
             control-server#472 review S2. One place, pinned by Test-ParallelInstance.ps1: a swapped mapping makes
             "-State Closed" a no-op on an open gate that still reports success. Pure.
+
+            8005-workspace#61: both spellings exact, and nothing else. Until then the ValidateSet ignored case while the
+            mapping did not, so "-State closed" got past the one and fell into Open -- a close that opened the gate (present
+            at aba28e30). The set is case-sensitive now, and a value that is neither throws instead of becoming Open.
     #>
     [CmdletBinding()]
     [OutputType([string])]
-    param([Parameter(Mandatory = $true)][ValidateSet('Closed', 'Open')][string] $State)
-    return $State -ceq 'Closed' ? 'Close' : 'Open'
+    param([Parameter(Mandatory = $true)][ValidateSet('Closed', 'Open', IgnoreCase = $false)][string] $State)
+    if ($State -ceq 'Closed') { return 'Close' }
+    if ($State -ceq 'Open') { return 'Open' }
+    throw "GATE_STATE_INVALID: -State is 'Closed' or 'Open', exactly; '$State' is neither. Nothing was stopped or changed."
 }
 
 function Get-ParallelDispatchGateRefusal {

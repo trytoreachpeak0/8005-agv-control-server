@@ -3401,6 +3401,31 @@ Write-Result -Ok ($riotAt -ge 0 -and $handAt -gt $riotAt -and $restartAt -gt $ha
 # --- Review S2: -State maps to the direction in one place, and the script takes it from there and reports what was done.
 Write-Result -Ok ((ConvertTo-ParallelGateDirection -State Closed) -ceq 'Close' -and (ConvertTo-ParallelGateDirection -State Open) -ceq 'Open') `
     -Name 'gate: -State Closed is Close and -State Open is Open' -Detail "Closed -> $(ConvertTo-ParallelGateDirection -State Closed), Open -> $(ConvertTo-ParallelGateDirection -State Open)"
+# 8005-workspace#61: any other spelling is refused, never taken for Open (aba28e30 took 'closed' for Open).
+foreach ($spelling in @('closed', 'CLOSED', 'open', 'OPEN', 'cLosed')) {
+    try { $got = ConvertTo-ParallelGateDirection -State $spelling; $thrown = $null } catch { $got = $null; $thrown = $_.Exception.Message }
+    Write-Result -Ok ($null -eq $got -and $thrown) -Name "gate (workspace#61): -State '$spelling' is refused, not mapped" -Detail "got '$got' thrown $thrown"
+}
+# The mapping's own last line refuses too, past the ValidateSet (called with validation bypassed through the body).
+$directionAst = (Get-Command ConvertTo-ParallelGateDirection).ScriptBlock.Ast
+$directionBody = ($directionAst.Body.EndBlock.Statements | ForEach-Object { $_.Extent.Text }) -join [Environment]::NewLine
+$bodyOnly = [scriptblock]::Create("param([string] `$State)`n" + $directionBody)
+try { $got = & $bodyOnly 'closed'; $thrown = $null } catch { $got = $null; $thrown = $_.Exception.Message }
+Write-Result -Ok ($null -eq $got -and $thrown -and $thrown.StartsWith('GATE_STATE_INVALID:')) `
+    -Name 'gate (workspace#61): the mapping itself, without its ValidateSet, throws on closed -- it does not fall into Open' -Detail "got '$got' thrown $thrown"
+# Set-ParallelDispatchGateLocal.ps1 refuses 'closed' at binding, before anything is read or written.
+$caseRoot = Join-Path ([IO.Path]::GetTempPath()) "ws61-case-$([guid]::NewGuid().ToString('N'))"
+New-Item -ItemType Directory -Path $caseRoot | Out-Null
+try {
+    $marker = Join-Path $caseRoot 'installed-instance.json'
+    foreach ($spelling in @('closed', 'CLOSED', 'open')) {
+        $out = & pwsh -NoProfile -NonInteractive -File (Join-Path $PSScriptRoot 'Set-ParallelDispatchGateLocal.ps1') -State $spelling -InstanceDefinitionPath $marker -WhatIf 2>&1
+        $exit = $LASTEXITCODE
+        $text = ($out | Out-String)
+        Write-Result -Ok ($exit -ne 0 -and $text -match 'ValidateSet|does not belong to the set' -and $text -notmatch 'Definition:|Journey state') `
+            -Name "Set-ParallelDispatchGateLocal.ps1 (workspace#61): -State $spelling is refused at binding, before anything is read" -Detail "exit $exit`n$text"
+    }
+} finally { Remove-Item -LiteralPath $caseRoot -Recurse -Force -ErrorAction SilentlyContinue }
 $directionAssignments = @($gateAst.FindAll({ param($n) $n -is [System.Management.Automation.Language.AssignmentStatementAst] -and $n.Left.Extent.Text -ieq '$direction' }, $true))
 Write-Result -Ok ($directionAssignments.Count -eq 1 -and $directionAssignments[0].Right.Extent.Text -ceq 'ConvertTo-ParallelGateDirection -State $State') `
     -Name 'Set-ParallelDispatchGateLocal.ps1 takes its direction only from ConvertTo-ParallelGateDirection -State $State' `
