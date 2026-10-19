@@ -306,6 +306,49 @@ public sealed class FieldConfirmationWriteLockTests : IAsyncDisposable
     }
 
     /// <summary>
+    /// control-server#779 审查 S2：去重查询先遇到一次瞬时 BUSY（重试一次），之后每一次观察都过期。瞬时那次重试不占观察过期的两次重试：
+    /// RIoT 读了四次（瞬时那一轮一次，加观察过期的三次），收件箱读了八次（每一轮一次重放检查加一次去重），然后照旧以判定用尽重试的那条异常结束。
+    /// </summary>
+    [Fact]
+    public async Task ATransientFaultBeforeStaleObservationsDoesNotUseUpTheirRetries()
+    {
+        await using FleetFixture fleet = await FleetAsync(databaseFile: _database);
+        await FailingAtChargerAsync(fleet, resultCode: 1);
+        await RoundAsync(fleet);
+        await RoundAsync(fleet);
+        Assert.Empty(await HoldsAsync(fleet));
+
+        ObservingRiot riot = new(fleet.Riot);
+        riot.AfterOrderRead = async () =>
+        {
+            await using ControlServerDbContext engine = fleet.NewContext();
+            await engine.Set<ChargingCycleRow>()
+                .Where(row => row.VehicleKey == FleetFixture.VehicleKeys[0] && row.Phase != ChargingCyclePhases.Ended)
+                .ExecuteUpdateAsync(setters => setters.SetProperty(row => row.Version, row => row.Version + 1), Token);
+        };
+        InboxFault fault = new();
+        await using ControlServerDbContext deciding = new(new DbContextOptionsBuilder<ControlServerDbContext>()
+            .UseSqlite(ControlServerSqlite.ForDatabaseFile(_database, busyTimeoutSeconds: 1))
+            .AddInterceptors(new InboxFaultInterceptor(fault))
+            .Options);
+        OnboardMessageProcessor processor = Processor(fleet, deciding, fieldConfirmations: FieldConfirmations(fleet, deciding, riot));
+        OnboardConnectionState state = await SessionAsync(fleet, AgvA);
+        const string id = "00000000-0000-4000-8000-000000077901";
+        string line = UnableToChargeLine(state, id);
+        string messageId = MessageIdOf(line);
+        // The first inbox read is the replay check ahead of the observation, outside the retry (review S6); the second is the dedup lookup.
+        fault.FailLookup(messageId, times: 1, () => new SqliteException("SQLite Error 5: 'database is locked'.", 5), pass: 1);
+
+        InvalidOperationException failed = await Assert.ThrowsAsync<InvalidOperationException>(
+            () => processor.ProcessAsync(line, state, Token));
+
+        Assert.Equal(UnableToChargeFieldConfirmations.LostEveryRace(id), failed.Message);
+        Assert.Equal(4, riot.OrderReads);
+        Assert.Equal(8, fault.Lookups);
+        Assert.False(await fleet.Context.ProtocolInbox.AsNoTracking().AnyAsync(row => row.MessageId == messageId, Token));
+    }
+
+    /// <summary>
     /// 重放不观察：同一行（同一个 <c>messageId</c>）再来，收件箱去重命中，一次 RIoT 都不读，答逐字相同的那一行；换了 <c>messageId</c> 的重提（同一个确认号），
     /// 确认号已判过，同样一次 RIoT 都不读，答相同的载荷。两种确认都一样。
     /// </summary>

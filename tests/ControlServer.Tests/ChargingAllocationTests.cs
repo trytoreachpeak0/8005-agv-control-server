@@ -191,6 +191,11 @@ public sealed class ChargingAllocationTests
         // 见 AnOfflineVehicleCountsWhereRiotLastPlacedItAndDoesNotStopTheFleetFromCharging）。这一格守的是读者自己的新鲜度检查。
         { "a-vehicle-position-stale", ChargingAllocationReasons.ChargerOccupancyUnknown, false },
         { "a-vehicle-position-missing", ChargingAllocationReasons.ChargerOccupancyUnknown, false },
+        // control-server#772: RIoT reports currentPosition 0 when it places a vehicle at no station. Charging there means it
+        // stands on a charger nobody can name -- 10-18 agv01, pushed onto 211 by hand.
+        { "a-vehicle-charging-at-position-zero", ChargingAllocationReasons.ChargerOccupancyUnknown, false },
+        { "a-vehicle-charging-with-no-position", ChargingAllocationReasons.ChargerOccupancyUnknown, false },
+        { "a-vehicle-charging-at-position-zero-stale", ChargingAllocationReasons.ChargerOccupancyUnknown, false },
         { "order-listing-incomplete", ChargingAllocationReasons.ChargerOccupancyUnknown, false },
         { "running-order-destination-unreadable", ChargingAllocationReasons.ChargerOccupancyUnknown, false },
     };
@@ -248,6 +253,20 @@ public sealed class ChargingAllocationTests
                 break;
             case "a-vehicle-position-missing":
                 fleet.Riot.VehicleOverrides[KeyB] = seen => seen with { CurrentStationId = null };
+                break;
+            case "a-vehicle-charging-at-position-zero":
+                fleet.Riot.VehicleOverrides[KeyB] = seen => seen with { CurrentStationId = 0, BatteryState = "CHARGING" };
+                break;
+            case "a-vehicle-charging-with-no-position":
+                fleet.Riot.VehicleOverrides[KeyB] = seen => seen with { CurrentStationId = null, BatteryState = "CHARGING" };
+                break;
+            case "a-vehicle-charging-at-position-zero-stale":
+                fleet.Riot.VehicleOverrides[KeyB] = seen => seen with
+                {
+                    CurrentStationId = 0,
+                    BatteryState = "CHARGING",
+                    ObservedAt = seen.ObservedAt.AddMinutes(-10),
+                };
                 break;
             case "order-listing-incomplete":
                 fleet.Riot.OrderListingIncomplete = true;
@@ -1115,6 +1134,127 @@ public sealed class ChargingAllocationTests
         Assert.Contains(
             typeof(DispatchRoundRunner).GetConstructors().Single().GetParameters(),
             parameter => parameter.ParameterType == typeof(ChargingAllocator) && !parameter.HasDefaultValue);
+    }
+
+    // ---- 位置为 0（control-server#772）-----------------------------------------------------------------------------------
+
+    /// <summary>
+    /// RIoT 在车不在任何站上时报 <c>currentPosition</c> 为 0：行驶中的车一直是这样（10-18 巡检原始记录：<c>st=0 proc=PROCESSING_ORDER</c>）。
+    /// 0 不是一个站，它不挡任何桩，也不是「位置未知」——否则只要有一辆车在路上，全车队就分不到桩。
+    /// </summary>
+    [Fact]
+    public async Task AVehicleDrivingBetweenStationsReportsPositionZeroAndStopsNoOneFromCharging()
+    {
+        await using FleetFixture fleet = await FleetAsync(vehicles: 2, chargers: [Near, Far]);
+        fleet.Riot.BatteryByVehicle[KeyA] = 20;
+        fleet.Riot.VehicleOverrides[KeyB] = seen => seen with { CurrentStationId = 0, ProcState = "PROCESSING_ORDER", Speed = 0.8 };
+
+        await RoundAsync(fleet);
+
+        Assert.Equal(KeyA, (await StationAsync(fleet, Near.StationId))?.VehicleKey);
+        Assert.Equal(ChargingAllocationReasons.Committed, fleet.ChargingBoard.Verdicts[AgvA].Reason);
+    }
+
+    /// <summary>
+    /// 位置为 0、报着 <c>CHARGING</c> 的车，只有在线且在本图上才让每个桩答未知（control-server#772 审查 S1、S3）：
+    /// 离线的车按 RIoT 最后报的位置算（独立审查 S2 的既有口径：有一台车没开机，不会让别的车都充不了电），最后位置 0 就不挡任何桩；
+    /// 另一张图上的车不站在本图任何桩上。两种情形下 A 照样分到最近的 211。
+    /// </summary>
+    [Theory]
+    [InlineData("offline")]
+    [InlineData("on-another-map")]
+    public async Task AVehicleChargingAtPositionZeroThatIsOfflineOrOnAnotherMapStopsNoOneFromCharging(string which)
+    {
+        await using FleetFixture fleet = await FleetAsync(vehicles: 2, chargers: [Near, Far]);
+        fleet.Riot.BatteryByVehicle[KeyA] = 20;
+        fleet.Riot.VehicleOverrides[KeyB] = which == "offline"
+            ? seen => seen with { Connected = false, CurrentStationId = 0, BatteryState = "CHARGING" }
+            : seen => seen with { CurrentMap = "老厂前线new_other", CurrentStationId = 0, BatteryState = "CHARGING" };
+
+        await RoundAsync(fleet);
+
+        Assert.Equal(KeyA, (await StationAsync(fleet, Near.StationId))?.VehicleKey);
+        Assert.Equal(ChargingAllocationReasons.Committed, fleet.ChargingBoard.Verdicts[AgvA].Reason);
+    }
+
+    /// <summary>
+    /// 10-18 生产（control-server#772）：agv01 被人推上 211 手动充电，RIoT 报 <c>batteryState=CHARGING</c>、<c>currentPosition=0</c>，服务端把 0
+    /// 当成站号 0，211 判为空闲，预留给了 agv02。修复后：一辆车在充电、RIoT 却说不出它在哪个站，它就停在某一个说不出名字的桩上——每一个桩都答
+    /// <c>CHARGER_OCCUPANCY_UNKNOWN</c>，看板细节与等桩告警里写明是哪辆车。那辆车离开桩（不再充电、报回一个真站），或被 RIoT 重新定位到桩上，
+    /// 下一轮照常分配：前者分最近的 211，后者 211 答「另一辆车停在上面」，分 221。
+    /// </summary>
+    [Theory]
+    [InlineData("leaves-the-charger")]
+    [InlineData("placed-on-the-charger")]
+    public async Task AVehicleChargingWhereRiotCannotPlaceItHoldsEveryChargerUntilItIsPlacedOrLeaves(string then)
+    {
+        await using FleetFixture fleet = await FleetAsync(vehicles: 2, chargers: [Near, Far]);
+        fleet.Riot.BatteryByVehicle[KeyA] = 20;
+        fleet.Riot.VehicleOverrides[KeyB] = seen => seen with { CurrentStationId = 0, BatteryState = "CHARGING" };
+
+        await RoundAsync(fleet);
+
+        (string reason, string detail) = fleet.ChargingBoard.Verdicts[AgvA];
+        Assert.Equal(ChargingAllocationReasons.NoChargerAvailable, reason);
+        Assert.Contains($"{Near.StationId}={ChargingAllocationReasons.ChargerOccupancyUnknown}", detail, StringComparison.Ordinal);
+        Assert.Contains($"{Far.StationId}={ChargingAllocationReasons.ChargerOccupancyUnknown}", detail, StringComparison.Ordinal);
+        Assert.Contains($"{AgvB}[{KeyB}]:VEHICLE_CHARGING_WITHOUT_STATION", detail, StringComparison.Ordinal);
+        Assert.Contains(
+            fleet.ChargingLog.Entries,
+            entry => entry.EventId.Id == 2246 && entry.Message.Contains("VEHICLE_CHARGING_WITHOUT_STATION", StringComparison.Ordinal));
+        await AssertNothingOfACommitmentAsync(fleet, KeyA);
+
+        fleet.Riot.VehicleOverrides[KeyB] = then == "leaves-the-charger"
+            ? seen => seen with { CurrentStationId = 12, BatteryState = "NO_CHARGE" }
+            : seen => seen with { CurrentStationId = Near.StationId, BatteryState = "CHARGING" };
+        await RoundAsync(fleet);
+
+        int expected = then == "leaves-the-charger" ? Near.StationId : Far.StationId;
+        Assert.Equal(KeyA, (await StationAsync(fleet, expected))?.VehicleKey);
+        Assert.Equal(ChargingAllocationReasons.Committed, fleet.ChargingBoard.Verdicts[AgvA].Reason);
+        if (then == "placed-on-the-charger")
+        {
+            Assert.Contains(
+                $"{Near.StationId}={ChargingAllocationReasons.ChargerOccupiedByVehicle}",
+                fleet.ChargingBoard.Verdicts[AgvA].Detail, StringComparison.Ordinal);
+        }
+    }
+
+    /// <summary>
+    /// 预留之后、单发出之前，另一辆车在某个说不出名字的桩上充起电来（control-server#772）：出发前复核对这个桩重跑候选链，答
+    /// <c>CHARGER_OCCUPANCY_UNKNOWN</c>，按出发前复核的既有口径撤回承诺（不算失败、不进冷却），单一张不建；第三辆低电的车这时也拿不到桩，
+    /// 桩上不会出现第二份预留。那辆车离开后，下一轮重新分配，桩上恰好一份预留、一张充电单。
+    /// </summary>
+    [Fact]
+    public async Task AChargerCommittedBeforeAnotherVehicleChargesWithoutAStationIsNotSentToAndIsReservedOnceAfterItLeaves()
+    {
+        await using FleetFixture fleet = await FleetAsync(vehicles: 3, chargers: [Near]);
+        fleet.Riot.BatteryByVehicle[KeyA] = 20;
+        await RoundAsync(fleet);
+        Assert.Equal((KeyA, StationExclusivityStates.Reserved), await HolderAsync(fleet, Near.StationId));
+        Assert.Empty(fleet.Riot.Creates);
+
+        fleet.Riot.VehicleOverrides[KeyB] = seen => seen with { CurrentStationId = 0, BatteryState = "CHARGING" };
+        fleet.Riot.BatteryByVehicle[KeyC] = 25;
+        await RoundAsync(fleet);
+        await RoundAsync(fleet);
+
+        Assert.Empty(fleet.Riot.Creates);
+        Assert.Null(await StationAsync(fleet, Near.StationId));
+        Assert.NotEqual(ChargingAllocationReasons.Committed, fleet.ChargingBoard.Verdicts[AgvA].Reason);
+        Assert.NotEqual(ChargingAllocationReasons.Committed, fleet.ChargingBoard.Verdicts[AgvC].Reason);
+        // Not AssertNothingOfACommitmentAsync for A: the withdrawn intent that was never created is left PENDING_RECONCILIATION,
+        // which is control-server#741's, not this ticket's.
+        Assert.Null(await ClaimOfAsync(fleet, KeyA));
+        await AssertNothingOfACommitmentAsync(fleet, KeyC);
+
+        fleet.Riot.VehicleOverrides[KeyB] = seen => seen with { CurrentStationId = 12, BatteryState = "NO_CHARGE" };
+        await RoundAsync(fleet);
+        await RoundAsync(fleet);
+
+        Assert.Equal(Near.StationId, Assert.Single(fleet.Riot.Creates).DestinationStationId);
+        Assert.Equal(KeyA, Assert.Single(await fleet.Context.Set<StationExclusivityRow>().AsNoTracking()
+            .Where(row => row.MapId == Map && row.StationId == Near.StationId).ToArrayAsync(Token)).VehicleKey);
     }
 
     // ---- 夹具 ------------------------------------------------------------------------------------------------------------

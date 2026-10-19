@@ -202,7 +202,7 @@ $script:AllowedKeys = [ordered]@{
         'opsRoot', 'stagingRoot', 'listenAddress', 'healthBindAddress', 'onboardPort', 'healthPort',
         'dashboardPort', 'mesIngest', 'fakeMesIngest', 'routeGraph', 'riotCreateDispatch', 'riotForeignOrderCancel',
         'journeyRuntime', 'vehicleFaultRecovery', 'foreignRunningOrderRelease', 'fieldOperatorRoles', 'taskTypeStations',
-        'mapStationCatalog', 'productionCutover', 'emergencyStopRelease')
+        'mapStationCatalog', 'productionCutover', 'emergencyStopRelease', 'idleReturn')
     # control-server#564. Who approved the production cutover, when, and where that is recorded; and which phase it is --
     # 'trial' (real MES, simulated slots) or 'production' (cs#564 review S3: the step between them needs a new database).
     # This deployment's, like mesIngest.source -- the overlay does not write it; installed-instance.json keeps it.
@@ -227,6 +227,9 @@ $script:AllowedKeys = [ordered]@{
     # workspace#49. REQ-0356's two release entries (EmergencyStopReleaseOptions). Both credential variable names are
     # deliberately absent, as for vehicleFaultRecovery: the overlay writes this instance's own.
     'emergencyStopRelease' = @('enabled')
+    # control-server#781. REQ-0291's idle return switch (IdleReturnOptions, section IdleReturn): on, a vehicle with no demand drives
+    # itself to a waiting point (agv02 to its STAGING_TO_WIRE origin, CP-0016).
+    'idleReturn' = @('enabled')
     'fieldOperatorRoles' = @('path', 'onboardClearanceEntryDeclared')
     # control-server#518. TaskTypeStationPreset.SettingsFileKey; there is no options class to mirror.
     'taskTypeStations' = @('settingsFile')
@@ -1426,6 +1429,18 @@ function Test-ParallelInstanceDefinition {
             $failures += 'emergencyStopRelease.enabled must be stated explicitly.'
         } elseif ($releaseNode['enabled'] -isnot [bool]) {
             $failures += "emergencyStopRelease.enabled must be a JSON boolean, got '$($releaseNode['enabled'])'."
+        }
+    }
+    # control-server#781. The idle return switch (IdleReturnOptions). Optional -- absent is off, the product default, and the overlay
+    # writes false -- but when written it is an object with an explicit JSON boolean: .NET would bind the string "true" as on.
+    if (Test-KeyPresent -Node $Definition -Key 'idleReturn') {
+        $idleNode = $Definition['idleReturn']
+        if ($idleNode -isnot [System.Collections.IDictionary]) {
+            $failures += 'idleReturn must be an object with enabled; leave the section out to keep idle return off.'
+        } elseif (-not (Test-KeyPresent -Node $idleNode -Key 'enabled')) {
+            $failures += 'idleReturn.enabled must be stated explicitly.'
+        } elseif ($idleNode['enabled'] -isnot [bool]) {
+            $failures += "idleReturn.enabled must be a JSON boolean, got '$($idleNode['enabled'])'."
         }
     }
     $phaseNode = (Test-KeyPresent -Node $Definition -Key 'productionCutover') ? $Definition['productionCutover'] : $null
@@ -2853,6 +2868,15 @@ $script:JourneyBindingFields = @(
     # does not log it does not have the rules, which is off: a definition that turns them on is refused over such a package,
     # one that leaves the section out is not compared. Printed as True / False, never a space.
     [pscustomobject]@{ Name = 'stagingDepartureRulesEnabled'; Logged = 'StagingDepartureRulesEnabled'; Compare = 'Boolean'; Source = 'journeyRuntime.stagingDepartureRules.enabled'; AbsentMeans = $false }
+    # control-server#781. The idle return switch, outside journeyRuntime. Derived like the gate, so always compared: the
+    # definition's boolean, false when it leaves the section out -- the value the overlay always writes. An event without it
+    # (a package older than #781) is compared as off: a definition that turns idle return on is refused over such a package, one
+    # that leaves it off is not. That proves nothing about what such a package bound -- its Host does not say. Off is guaranteed by
+    # this module's overlay, which always writes IdleReturn:enabled, not by the read-back; an install from a checkout older than
+    # #781 writes no such key, and Update-ControlServerLocal.ps1 carries the installed appsettings.Production.json forward, so a
+    # true left there survives it (cs#781 review H2): set it to false by hand before installing with such a checkout. Printed
+    # as True / False, never a space.
+    [pscustomobject]@{ Name = 'idleReturnEnabled'; Logged = 'IdleReturnEnabled'; Compare = 'Boolean'; Source = 'idleReturn.enabled'; AbsentMeans = $false }
 )
 
 function Get-ParallelJourneyBindingExpected {
@@ -2869,6 +2893,8 @@ function Get-ParallelJourneyBindingExpected {
     }
     # control-server#686. Derived, so always compared: Enforcing for a production phase, Off for every other definition.
     if ($Field.Source -ceq 'productionCutover.phase') { return Get-ParallelSlotConfigurationGateMode -Definition $Definition }
+    # control-server#781. Derived, so always compared: the definition's idleReturn.enabled, false when it leaves the section out.
+    if ($Field.Source -ceq 'idleReturn.enabled') { return Test-ParallelIdleReturnEnabled -Definition $Definition }
     throw "JourneyBindingFields: $($Field.Name) has an unknown Source '$($Field.Source)'."
 }
 
@@ -3236,6 +3262,9 @@ function New-ParallelInstanceConfigurationOverlay {
             credentialEnvironmentVariable = $script:EmergencyReleaseCredentialVariable
             loadedCredentialEnvironmentVariable = $script:EmergencyLoadedReleaseCredentialVariable
         }
+        # control-server#781. Always written, false when the definition leaves the section out, so an earlier install's (or a
+        # hand edit's) true does not survive a reinstall; the read-back compares what the Host bound ($script:JourneyBindingFields).
+        IdleReturn = [ordered]@{ enabled = Test-ParallelIdleReturnEnabled -Definition $Definition }
         FieldOperatorRoles = [ordered]@{
             path = $Definition['fieldOperatorRoles']['path']
             onboardClearanceEntryDeclared = $Definition['fieldOperatorRoles']['onboardClearanceEntryDeclared']
@@ -3432,6 +3461,9 @@ function Get-ParallelJourneyRuntimeEnvironmentOverride {
             workspace#49 review L5: EmergencyStopRelease too. EmergencyStopRelease__LoadedCredentialEnvironmentVariable in an
             environment layer could point the loaded entry at the MVP's variable, and __Enabled could turn the entries off
             under a production definition; neither would show in the overlay.
+
+            control-server#781: IdleReturn too. IdleReturn__Enabled=true in an environment layer would turn idle return on --
+            vehicles driving themselves with no demand -- whatever the definition says, and only a restart would show it.
     #>
     [CmdletBinding()]
     [OutputType([string])]
@@ -3441,7 +3473,7 @@ function Get-ParallelJourneyRuntimeEnvironmentOverride {
     )
     # control-server#686: Governance:slotConfigurationReadinessGate too -- that key alone, the other Governance keys are the
     # product's. The gate comes from the definition's phase, and an environment layer would bind over it.
-    $pattern = '^(?i:(?:DOTNET_|ASPNETCORE_)?(?:(?:JourneyRuntime|MapStationCatalog|EmergencyStopRelease)(?:__|:)|Governance(?:__|:)slotConfigurationReadinessGate$))'
+    $pattern = '^(?i:(?:DOTNET_|ASPNETCORE_)?(?:(?:JourneyRuntime|MapStationCatalog|EmergencyStopRelease|IdleReturn)(?:__|:)|Governance(?:__|:)slotConfigurationReadinessGate$))'
     foreach ($pair in @(@{ Where = 'service'; Entries = $ServiceEnvironment }, @{ Where = 'machine'; Entries = $MachineEnvironment })) {
         foreach ($entry in @($pair.Entries | Where-Object { -not [string]::IsNullOrEmpty($_) })) {
             $name = ($entry -split '=', 2)[0]
@@ -3613,6 +3645,19 @@ function Resolve-ParallelFaultRecoveryCredential {
             'The service would refuse to start without it. Nothing was stopped or changed.')
     }
     return $null
+}
+
+function Test-ParallelIdleReturnEnabled {
+    <#
+        .SYNOPSIS
+            control-server#781. Whether the definition turns idle return on (IdleReturnOptions.Enabled), as the overlay writes it
+            and the read-back expects it: only a JSON true counts, absent is off (the product default).
+    #>
+    [CmdletBinding()]
+    [OutputType([bool])]
+    param([Parameter(Mandatory = $true)][System.Collections.IDictionary] $Definition)
+    $node = $Definition.Contains('idleReturn') ? $Definition['idleReturn'] : $null
+    return ($node -is [System.Collections.IDictionary] -and $node.Contains('enabled') -and $node['enabled'] -is [bool] -and $node['enabled'])
 }
 
 function Test-ParallelEmergencyReleaseEnabled {
@@ -3951,6 +3996,90 @@ function Test-ParallelOrderIntentNeverSent {
     return $true
 }
 
+function Test-ParallelJourneyAwaitsRecovery {
+    <#
+        .SYNOPSIS
+            8005-workspace#61. Whether a journey stands Blocked on a slot operation result that needs an exception
+            recovery session. Pure.
+
+        .DESCRIPTION
+            The same definition as Test-V2JourneyAwaitsRecovery in 8005-workspace's
+            remote-ops/onboard-hmi/scripts/V2RecoveryWindow.psm1 (8005-workspace#58), read from this repository:
+            Block() sets Stage Blocked and the reason (src/ControlServer.Host/Runtime/JourneyRuntimeEngine.cs),
+            LOAD_RESULT_REQUIRES_RECOVERY when the load operation is RecoveryRequired, UNLOAD_RESULT_REQUIRES_RECOVERY
+            for the unload, and a session result that did not reconcile keeps it Blocked as <messageType>_NOT_RECONCILED
+            (OnboardRecoveryCoordinator.cs; BlockedJourneyRelease.NotReconciledSuffix). Not the unreleasable
+            *_NOT_RECONCILED_ON_ENDED_DEMAND / *_BEFORE_UPGRADE (BlockedJourneyRelease.IsUnreleasable), nor any other reason.
+    #>
+    [CmdletBinding()]
+    [OutputType([bool])]
+    param([AllowNull()][AllowEmptyString()][string] $Stage, [AllowNull()][AllowEmptyString()][string] $BlockReasonCode)
+    if ($Stage -cne 'Blocked' -or [string]::IsNullOrEmpty($BlockReasonCode)) { return $false }
+    return ($BlockReasonCode -cin @('LOAD_RESULT_REQUIRES_RECOVERY', 'UNLOAD_RESULT_REQUIRES_RECOVERY')) -or
+        ($BlockReasonCode -cmatch '^[A-Za-z]+_NOT_RECONCILED$')
+}
+
+function ConvertTo-ParallelRecoveryJourneyArgument {
+    <#
+        .SYNOPSIS
+            8005-workspace#61. The -RecoveryJourney argument of Set-ParallelDispatchGateLocal.ps1: base64 of the UTF-8 JSON
+            array [{ journeyId, agvId, vehicleKey }, ...], one entry per journey named. Pure.
+
+        .DESCRIPTION
+            Encoded because it travels inside an ssh command line: a journey id carries '|' (journey:<demandId>|g<generation>)
+            and an agvId is Chinese, and neither may be re-quoted or re-encoded on the way. Base64 has neither problem.
+    #>
+    [CmdletBinding()]
+    [OutputType([string])]
+    param([Parameter(Mandatory = $true)][System.Collections.IDictionary[]] $Journeys)
+    $list = @($Journeys | ForEach-Object { [ordered]@{ journeyId = [string] $_['journeyId']; agvId = [string] $_['agvId']; vehicleKey = [string] $_['vehicleKey'] } })
+    $json = ConvertTo-Json -InputObject $list -Compress -Depth 3
+    return [Convert]::ToBase64String([Text.Encoding]::UTF8.GetBytes($json))
+}
+
+function ConvertFrom-ParallelRecoveryJourneyArgument {
+    <#
+        .SYNOPSIS
+            8005-workspace#61. Decodes ConvertTo-ParallelRecoveryJourneyArgument's text into @{ journeyId; agvId; vehicleKey }
+            entries, written to the pipeline one by one (collect them with @(...)), at least one, no journey id twice. Throws GATE_RECOVERY_JOURNEY_MALFORMED on
+            anything else. Pure.
+    #>
+    [CmdletBinding()]
+    param([Parameter(Mandatory = $true)][AllowEmptyString()][string] $Encoded)
+    $malformed = ('GATE_RECOVERY_JOURNEY_MALFORMED: -RecoveryJourney must be the base64 of a JSON array of objects with journeyId, ' +
+        'agvId and vehicleKey, at least one, no journey twice. Nothing was stopped or changed.')
+    try {
+        $value = ConvertFrom-Json -InputObject ([Text.Encoding]::UTF8.GetString([Convert]::FromBase64String($Encoded))) -AsHashtable -NoEnumerate
+    } catch { throw $malformed }
+    if ($value -isnot [array] -or $value.Count -eq 0) { throw $malformed }
+    $result = foreach ($entry in $value) {
+        if ($entry -isnot [System.Collections.IDictionary]) { throw $malformed }
+        $one = @{}
+        foreach ($key in 'journeyId', 'agvId', 'vehicleKey') {
+            if (-not $entry.Contains($key) -or $entry[$key] -isnot [string] -or [string]::IsNullOrWhiteSpace($entry[$key])) { throw $malformed }
+            $one[$key] = $entry[$key]
+        }
+        $one
+    }
+    $result = @($result)
+    if (@($result | ForEach-Object { $_['journeyId'] } | Sort-Object -Unique -CaseSensitive).Count -ne $result.Count) { throw $malformed }
+    return $result
+}
+
+function Get-ParallelRecoveryJourneyNotInFlight {
+    <#
+        .SYNOPSIS
+            8005-workspace#61 review L2. The journey ids -RecoveryJourney names that are not among $State's journeys not
+            Completed -- finished already, or mistyped -- so that a refusal and the dry run can say so instead of passing
+            over them in silence. Pure; nothing on an unreadable state.
+    #>
+    [CmdletBinding()]
+    param([AllowNull()] $State, [AllowNull()][AllowEmptyCollection()][object[]] $RecoveryJourney)
+    if ($State -isnot [System.Collections.IDictionary] -or $State.Contains('Error')) { return }
+    $active = @($State['Journeys'] | Where-Object { [string] $_['Stage'] -cne 'Completed' } | ForEach-Object { [string] $_['JourneyId'] })
+    @($RecoveryJourney | Where-Object { $null -ne $_ } | ForEach-Object { [string] $_['journeyId'] } | Where-Object { $active -cnotcontains $_ })
+}
+
 function ConvertTo-ParallelGateDirection {
     <#
         .SYNOPSIS
@@ -3959,11 +4088,17 @@ function ConvertTo-ParallelGateDirection {
         .DESCRIPTION
             control-server#472 review S2. One place, pinned by Test-ParallelInstance.ps1: a swapped mapping makes
             "-State Closed" a no-op on an open gate that still reports success. Pure.
+
+            8005-workspace#61: both spellings exact, and nothing else. Until then the ValidateSet ignored case while the
+            mapping did not, so "-State closed" got past the one and fell into Open -- a close that opened the gate (present
+            at aba28e30). The set is case-sensitive now, and a value that is neither throws instead of becoming Open.
     #>
     [CmdletBinding()]
     [OutputType([string])]
-    param([Parameter(Mandatory = $true)][ValidateSet('Closed', 'Open')][string] $State)
-    return $State -ceq 'Closed' ? 'Close' : 'Open'
+    param([Parameter(Mandatory = $true)][ValidateSet('Closed', 'Open', IgnoreCase = $false)][string] $State)
+    if ($State -ceq 'Closed') { return 'Close' }
+    if ($State -ceq 'Open') { return 'Open' }
+    throw "GATE_STATE_INVALID: -State is 'Closed' or 'Open', exactly; '$State' is neither. Nothing was stopped or changed."
 }
 
 function Get-ParallelDispatchGateRefusal {
@@ -3992,13 +4127,38 @@ function Get-ParallelDispatchGateRefusal {
 
             $State is Get-ParallelJourneyDispatchState's output, or $null / an Error string when it could
             not be read, which refuses in both directions (fail closed). Pure.
+
+            -RecoveryJourney (8005-workspace#61; ConvertFrom-ParallelRecoveryJourneyArgument's list of journeyId, agvId,
+            vehicleKey), for closing only, names the journeys vehicles stuck on a slot operation result are recovered from.
+            Closing needs no journey active, and a stuck journey is active, while 18's recovery window, 19 and the task-type
+            station activation all need the gate closed first. With it, the journeys not Completed that are not named
+            refuse as before; each named one that is active passes only when all of these hold, read by
+            Get-ParallelJourneyDispatchState -RecoveryJourneyId:
+              * its row is on the vehicle named with it (AgvId and VehicleKey, ordinal);
+              * it awaits recovery (Test-ParallelJourneyAwaitsRecovery): Blocked, so the restart takes nothing from it --
+                AdvanceAsync returns at once for a Blocked journey (JourneyRuntimeEngine.cs:2133-2135), and the fault model
+                is observed only on the arrival-stage paths (faults.ObserveAsync at JourneyRuntimeEngine.cs:2283 and
+                JourneyRuntimeEngine.InTransitDoors.cs:118, :208), so a Blocked journey has no supervision that rides on
+                it. (Not that its vehicle is at a station: a *_NOT_RECONCILED can follow a handoff after a fault, with the
+                vehicle wherever it stopped, VehicleFaultRecoveryService.StoppedRebuild.cs:260-345.)
+              * its vehicle holds no fault (no VehicleFaultStates row of its AgvId with a Level other than None) -- a
+                guard on top: while a fault stands, its stop proof (JourneyRuntimeEngine.cs:2245-2262) lives in memory and
+                a restart discards it (Program.cs:88-91). It rests on the invariant that an emergency-stop episode not yet
+                released keeps its vehicle's Level other than None (VehicleFaultCoordinator: NewDispatchBlocked is
+                Level != None). Such a vehicle waits for its fault to clear -- the order resumed automatically
+                (RESUME_HELD_ORDER) -- or for the system maintainer (control-server#771); the instance's
+                vehicleFaultRecovery entry is off in production.
+            A named journey that is not active waives nothing; a refusal names it (Get-ParallelRecoveryJourneyNotInFlight). Opening ignores it: it is not widened, because the journey
+            ends Completed through control-server#771 and is then no longer among the journeys judged. Without
+            -RecoveryJourney nothing here changes.
     #>
     [CmdletBinding()]
     param(
         [Parameter(Mandatory = $true)][ValidateSet('Close', 'Open')][string] $Direction,
         [AllowNull()] $State,
         [Parameter(Mandatory = $true)][string] $ServiceName,
-        [Parameter(Mandatory = $true)][string] $DatabasePath
+        [Parameter(Mandatory = $true)][string] $DatabasePath,
+        [AllowNull()][AllowEmptyCollection()][object[]] $RecoveryJourney
     )
     $nothing = ' Nothing was stopped or changed.'
     if ($null -eq $State -or $State -isnot [System.Collections.IDictionary] -or $State.Contains('Error')) {
@@ -4008,8 +4168,39 @@ function Get-ParallelDispatchGateRefusal {
     }
     $journeys = @($State['Journeys'] | Where-Object { [string] $_['Stage'] -cne 'Completed' })
     if ($Direction -eq 'Close') {
+        # 8005-workspace#61: each named journey that is among the active ones is judged on its own.
+        foreach ($named in @($RecoveryJourney | Where-Object { $null -ne $_ })) {
+            $recoveryId = [string] $named['journeyId']
+            if (@($journeys | Where-Object { [string] $_['JourneyId'] -ceq $recoveryId }).Count -eq 0) { continue }
+            $row = $State.Contains('RecoveryJourneys') ? @($State['RecoveryJourneys'] | Where-Object { [string] $_['JourneyId'] -ceq $recoveryId }) : @()
+            if ($row.Count -ne 1 -or -not $State.Contains('VehicleFaults')) {
+                return ("GATE_RECOVERY_JOURNEY_UNREADABLE: the recovery journey $recoveryId of '$ServiceName' is active in $DatabasePath, " +
+                    'but its row or the vehicle faults were not read, so it cannot be judged.' + $nothing)
+            }
+            $row = $row[0]
+            if ([string] $row['AgvId'] -cne [string] $named['agvId'] -or [string] $row['VehicleKey'] -cne [string] $named['vehicleKey']) {
+                return ("GATE_RECOVERY_JOURNEY_VEHICLE_MISMATCH: in $DatabasePath, journey $recoveryId of '$ServiceName' is on agvId " +
+                    "'$($row['AgvId'])' / vehicleKey '$($row['VehicleKey'])', not the named vehicle's '$($named['agvId'])' / " +
+                    "'$($named['vehicleKey'])'." + $nothing)
+            }
+            if (-not (Test-ParallelJourneyAwaitsRecovery -Stage ([string] $row['Stage']) -BlockReasonCode ([string] $row['BlockReasonCode']))) {
+                return ("GATE_CLOSE_RECOVERY_JOURNEY_NOT_AWAITING_RECOVERY: in $DatabasePath, journey $recoveryId of '$ServiceName' " +
+                    "is $($row['Stage']) / $($row['BlockReasonCode'] ?? '(no block reason)'), not Blocked on a slot operation result " +
+                    'that needs recovery, so it may be under way like any other active journey.' + $nothing)
+            }
+            $fault = @($State['VehicleFaults'] | Where-Object { [string] $_['AgvId'] -ceq [string] $row['AgvId'] -and [string] $_['Level'] -cne 'None' })
+            if ($fault.Count -gt 0) {
+                return ("GATE_CLOSE_RECOVERY_JOURNEY_VEHICLE_FAULT: in $DatabasePath, the vehicle '$($row['AgvId'])' of journey $recoveryId " +
+                    "holds a fault ($($fault[0]['Level']) / $($fault[0]['EvidenceCode'] ?? 'no evidence code')), and a restart of " +
+                    "'$ServiceName' would drop its stop proof. Wait until the fault clears (the held order resumed automatically, " +
+                    'RESUME_HELD_ORDER) and run this again, or have the system maintainer settle the journey (control-server#771).' + $nothing)
+            }
+            $journeys = @($journeys | Where-Object { [string] $_['JourneyId'] -cne $recoveryId })
+        }
         if ($journeys.Count -eq 0) { return $null }
         $listed = ($journeys | ForEach-Object { "$($_['JourneyId']) ($($_['AgvId']), $($_['Stage']))" }) -join '; '
+        $notInFlight = @(Get-ParallelRecoveryJourneyNotInFlight -State $State -RecoveryJourney $RecoveryJourney)
+        if ($notInFlight.Count -gt 0) { $listed += " (named but not in flight: $($notInFlight -join ', '))" }
         return ("GATE_CLOSE_REFUSED_IN_FLIGHT: $DatabasePath has $($journeys.Count) journey(s) of '$ServiceName' not Completed: " +
             "$listed. Stop new intake first -- fake source: stop injecting demand into its FakeMesIngest; production source (the " +
             'cutover): import a header-only area assignment table, so that no AREA is in scope (docs/production-cutover-mode-plan.md ' +
@@ -4318,6 +4509,7 @@ Export-ModuleMember -Function @(
     'Set-ParallelServiceEnvironmentEntry'
     'Resolve-ParallelFaultRecoveryCredential'
     'Test-ParallelEmergencyReleaseEnabled'
+    'Test-ParallelIdleReturnEnabled'
     'Resolve-ParallelEmergencyReleaseCredential'
     'Format-ParallelEmergencyReleaseLine'
     'Get-ParallelRosterRoleHolderCount'
@@ -4331,4 +4523,8 @@ Export-ModuleMember -Function @(
     'Test-ParallelOrderIntentNeverSent'
     'Get-ParallelDispatchGateRefusal'
     'ConvertTo-ParallelGateDirection'
+    'Test-ParallelJourneyAwaitsRecovery'
+    'ConvertTo-ParallelRecoveryJourneyArgument'
+    'ConvertFrom-ParallelRecoveryJourneyArgument'
+    'Get-ParallelRecoveryJourneyNotInFlight'
 )

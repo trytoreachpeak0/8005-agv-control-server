@@ -1,0 +1,14 @@
+# Review round: red on top of dabee7ee (tests + slice ledger + fixture lag only)
+  Failed ControlServer.Tests.OwnOrderRebuildBatteryGateTests.APersonsRebuildIsRefusedOnceAFlatEmptyTripIsHandedToTheRelease [1 s]
+   Assert.Equal() Failure: Values differ
+Expected: Refused
+Actual:   RebuildRequested
+  Failed ControlServer.Tests.OwnOrderRebuildBatteryGateTests.TheThirdGuardOnAFlatEmptyVehicleHandsTheDemandBackToo [711 ms]
+   Assert.Equal() Failure: Strings differ
+Expected: "OWN_ORDER_REBUILD_MANDATORY_CHARGE"
+Actual:   "OWN_ORDER_REBUILD_STOPPED"
+  Failed ControlServer.Tests.OwnOrderRebuildBatteryGateTests.AFlatEmptyVehicleWhoseStopIsNotAPickupStopsForAPerson [2 s]
+   Assert.Equal() Failure: Values differ
+Expected: 1
+Actual:   2
+Failed!  - Failed:     3, Passed:    23, Skipped:     0, Total:    26, Duration: 34 s - ControlServer.Tests.dll (net8.0)

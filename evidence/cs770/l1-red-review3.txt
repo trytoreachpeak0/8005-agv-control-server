@@ -1,0 +1,14 @@
+# Review round 3: red on top of 6bd4822e (tests only)
+  Failed ControlServer.Tests.OwnOrderRebuildBatteryGateTests.ABatteryThatFallsWhileTheThirdGuardWaitsIsWarnedNotHandedOver [447 ms]
+   Assert.Equal() Failure: Strings differ
+Expected: "OWN_ORDER_REBUILD_STOPPED"
+Actual:   "OWN_ORDER_REBUILD_MANDATORY_CHARGE"
+  Failed ControlServer.Tests.OwnOrderRebuildBatteryGateTests.TheThirdGuardOnAFlatEmptyVehicleHandsTheDemandBackToo [716 ms]
+   Assert.Equal() Failure: Values differ
+Expected: Tuple ("STOPPED", "MANDATORY_CHARGE_REQUIRED", "REBUILT_ORDER_ENDED_AGAIN_WITHIN_WINDOW;BATTERY_9_"···)
+Actual:   Tuple ("STOPPED", "MANDATORY_CHARGE_REQUIRED", "BATTERY_9_BELOW_40")
+  Failed ControlServer.Tests.OwnOrderRebuildBatteryGateTests.GivingUpAFlatEmptyTripHandedToTheReleaseIsStillAccepted [187 ms]
+   Assert.Equal() Failure: Values differ
+Expected: Tuple (TripTerminated, "TRIP_TERMINATED")
+Actual:   Tuple (Refused, "NONE")
+Failed!  - Failed:     3, Passed:    22, Skipped:     0, Total:    25, Duration: 31 s - ControlServer.Tests.dll (net8.0)
