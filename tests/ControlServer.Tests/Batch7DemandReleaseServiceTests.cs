@@ -1558,7 +1558,7 @@ public sealed class Batch7DemandReleaseServiceTests
     private static void LeaveTheMap(RuntimeFixture fixture) =>
         fixture.Riot.Vehicle = fixture.Riot.Vehicle with { CurrentMap = "MAP-ELSEWHERE" };
 
-    private static DemandReleaseService Service(
+    internal static DemandReleaseService Service(
         RuntimeFixture fixture, CancellingGateway gateway, IRiotMovementGateway? commandReads = null)
     {
         Microsoft.Extensions.Options.IOptions<JourneyRuntimeOptions> options =
@@ -1585,7 +1585,7 @@ public sealed class Batch7DemandReleaseServiceTests
     }
 
     /// <summary>RIoT 的订单命令面替身：数取消次数，收到取消时做用例交代的事（把订单置成 CANCELLED，或者什么都不做）。</summary>
-    private sealed class CancellingGateway(TimeProvider clock, Action<string> onCancel) : IRiotOrderCommandGateway
+    internal sealed class CancellingGateway(TimeProvider clock, Action<string> onCancel) : IRiotOrderCommandGateway
     {
         public int Cancels { get; private set; }
 

@@ -144,11 +144,17 @@ public sealed class DemandReleaseService(
         VehicleFaultFact? fault = await faults.ReadAsync(journey.AgvId, cancellationToken).ConfigureAwait(false);
         RiotVehicleObservation? observation = await ReadVehicleAsync(journey, cancellationToken).ConfigureAwait(false);
         DateTimeOffset now = timeProvider.GetUtcNow();
+        // control-server#770：电量不在上面的判据里（会自己恢复的事实不拿来释放），只认引擎落下的那一条停止记录——重建到点时低于强制充电线、
+        // 车上没货。车随即没有用途，交给充电分配。
+        string? stoppedForCharge = await RebuildStoppedForChargeAsync(stops.Current, cancellationToken).ConfigureAwait(false)
+            ? OwnOrderRebuilds.MandatoryChargeRequired
+            : null;
         List<DemandReleaseOutcome> outcomes = [];
         foreach (JourneyStopDemand item in waiting)
         {
             string? trigger = DemandReleaseRules.VehicleNoLongerEligible(
-                fault, policy, journey.AgvId, item.Demand.WorkType, item.Membership.DispatchZone, observation, now, _options);
+                fault, policy, journey.AgvId, item.Demand.WorkType, item.Membership.DispatchZone, observation, now, _options)
+                ?? stoppedForCharge;
             if (trigger is null)
             {
                 continue;
@@ -379,12 +385,14 @@ public sealed class DemandReleaseService(
         }
 
         // The engine gave the rebuild up because the vehicle is no longer eligible for a demand still to be loaded here (review
-        // S1): releasing it for redispatch is exactly what that record hands over. The order it waited on has ended, so the
-        // release's settlement reads it as ended and sends no cancel.
+        // S1), or because its battery was below the mandatory charge line with nothing on board (control-server#770): releasing
+        // it for redispatch is exactly what that record hands over. The order it waited on has ended, so the release's
+        // settlement reads it as ended and sends no cancel.
         if (await dbContext.OwnOrderRebuilds.AsNoTracking()
                 .AnyAsync(
                     row => row.StopId == current.StopId && row.State == OwnOrderRebuildStates.Stopped &&
-                           row.StoppedReason == OwnOrderRebuilds.VehicleNoLongerEligible,
+                           (row.StoppedReason == OwnOrderRebuilds.VehicleNoLongerEligible ||
+                            row.StoppedReason == OwnOrderRebuilds.MandatoryChargeRequired),
                     cancellationToken)
                 .ConfigureAwait(false))
         {
@@ -397,10 +405,22 @@ public sealed class DemandReleaseService(
                        row => row.JourneyId == journey.JourneyId && row.State != OwnOrderRebuildStates.Rebuilt &&
                               row.State != OwnOrderRebuildStates.Ended &&
                               !(row.State == OwnOrderRebuildStates.Stopped &&
-                                row.StoppedReason == OwnOrderRebuilds.VehicleNoLongerEligible),
+                                (row.StoppedReason == OwnOrderRebuilds.VehicleNoLongerEligible ||
+                                 row.StoppedReason == OwnOrderRebuilds.MandatoryChargeRequired)),
                        cancellationToken)
                    .ConfigureAwait(false);
     }
+
+    /// <summary>
+    /// 这个停靠等着的重建被引擎以 <see cref="OwnOrderRebuilds.MandatoryChargeRequired"/> 停下了（control-server#770）：重建到点时电量低于这趟旅程
+    /// 冻结策略的强制充电线、车上没货。引擎只在取货停靠上这样停，所以这里的需求都是待装的。
+    /// </summary>
+    private Task<bool> RebuildStoppedForChargeAsync(JourneyStopRow current, CancellationToken cancellationToken) =>
+        dbContext.OwnOrderRebuilds.AsNoTracking()
+            .AnyAsync(
+                row => row.StopId == current.StopId && row.State == OwnOrderRebuildStates.Stopped &&
+                       row.StoppedReason == OwnOrderRebuilds.MandatoryChargeRequired,
+                cancellationToken);
 
     /// <summary>
     /// 这张单确定从没向 RIoT 发出过创建：意图不在，或者按 store 的唯一定义从没发出过（<c>WireToGateStore.IsNeverSentAsync</c>）——

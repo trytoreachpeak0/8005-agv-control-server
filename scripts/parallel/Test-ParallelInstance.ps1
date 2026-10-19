@@ -1431,7 +1431,9 @@ $scanTargets = [ordered]@{
             'Invoke-ParallelJourneyRuntimeRelease::$Actions.ServiceProcessId', 'Invoke-ParallelJourneyRuntimeRelease::$Actions.StopService',
             'Invoke-ParallelJourneyRuntimeRelease::$Actions.ProcessExited', 'Invoke-ParallelJourneyRuntimeRelease::$Actions.StartService',
             # control-server#578 review: the machine environment read before the restart, and setting the flag back to false.
-            'Invoke-ParallelInstanceConfigurationStep::$Actions.GetMachineEnvironment', 'Invoke-ParallelJourneyRuntimeRelease::$setBackFalse'); Owners = @(); Expected = 40 }
+            'Invoke-ParallelInstanceConfigurationStep::$Actions.GetMachineEnvironment', 'Invoke-ParallelJourneyRuntimeRelease::$setBackFalse'); Owners = @()
+            # 8005-workspace#61: two more reads through the same $read, of each recovery journey's row and of the vehicle faults.
+            Expected = 42 }
     'Set-ParallelDispatchGateLocal.ps1'   = @{ Dynamic = @(); Owners = @(); Expected = 0 }
 }
 foreach ($file in $scanTargets.Keys) {
@@ -1715,6 +1717,8 @@ $optionSources = @(
     # workspace#49. Both credential variable NAMES are excluded, as for vehicleFaultRecovery: the overlay writes this instance's
     # own names, so a definition cannot point the parallel service at the MVP's variables.
     @{ Section = 'emergencyStopRelease'; Path = 'src/ControlServer.Host/Runtime/EmergencyStopReleaseOptions.cs'; Class = 'EmergencyStopReleaseOptions'; Excluded = @('CredentialEnvironmentVariable', 'LoadedCredentialEnvironmentVariable') }
+    # control-server#781.
+    @{ Section = 'idleReturn'; Path = 'src/ControlServer.Host/Runtime/IdleReturn/IdleReturnOptions.cs'; Class = 'IdleReturnOptions'; Excluded = @() }
 )
 foreach ($source in $optionSources) {
     $properties = Get-OptionProperty -RelativePath $source.Path -ClassName $source.Class
@@ -3003,6 +3007,154 @@ foreach ($case in $gateRefusalCases) {
         -Name "gate refusal: $($case.Name) -> $($case.Expect ?? 'allowed')" -Detail "got: $got"
 }
 
+# --- 8005-workspace#61: -RecoveryJourney, closing only: the one journey a vehicle stuck on a slot operation result is
+# recovered from. The id has the real shape (a '|' in it); agvId and vehicleKey are those of New-GateJourney's vehicle.
+$rjId = 'journey:40c5532e-d97d-4b29-a5bd-bf5343ea01dc|g102'
+$rjKey = 'BROKERX-f38975561adf46ccb1d2f23833c7d0e4'
+$rj = @(@{ journeyId = $rjId; agvId = '老厂前线新多仓位2'; vehicleKey = $rjKey })
+# A second stuck journey on another vehicle (agv01 of 2026-10-19, say).
+$rj2Id = 'journey:aa11bb22-0000-4000-8000-000000000001|g7'
+$rj2 = @{ journeyId = $rj2Id; agvId = '老厂前线新多仓位1'; vehicleKey = $otherVehicle }
+function New-RecoveryState {
+    <#
+        The agv03 journey of 2026-10-19 in miniature: Blocked on the load result at a stop it arrived on with a CONFIRMED order.
+        -Stage and -Block are the journey's; -Others adds other journeys and -OtherRows their rows as the reader returns
+        them; -RowAgvId/-RowVehicleKey change the row the reader returns for it; -NoRow leaves that row out; -Faults are the
+        VehicleFaultStates rows in effect, -NoFaults leaves that read out.
+    #>
+    param([string] $Stage = 'Blocked', [string] $Block = 'LOAD_RESULT_REQUIRES_RECOVERY', [object[]] $Others = @(), [object[]] $OtherRows = @(),
+        [string] $RowAgvId = '老厂前线新多仓位2', [string] $RowVehicleKey = $rjKey, [switch] $NoRow, [object[]] $Faults = @(), [switch] $NoFaults)
+    $journey = New-GateJourney $rjId -Stage $Stage -Pickup p1 -Gate g9 -CreatedAt '2026-10-19 09:00:00+08:00'
+    $state = New-GateState -Journeys (@($journey) + @($Others)) -Intents @(
+        (New-GateIntent p1 -Status CONFIRMED -Attempts 1L -AttemptId a1 -OrderId O1 -CreatedAt '2026-10-19 09:00:01+08:00')
+        (New-GateIntent s3 -Status CONFIRMED -Attempts 1L -AttemptId a3 -OrderId O3 -CreatedAt '2026-10-19 13:00:00+08:00'))
+    $own = $NoRow ? @() : @([ordered]@{ JourneyId = $rjId; Stage = $Stage; BlockReasonCode = $Block; AgvId = $RowAgvId; VehicleKey = $RowVehicleKey })
+    $state['RecoveryJourneys'] = @($own) + @($OtherRows)
+    if (-not $NoFaults) { $state['VehicleFaults'] = @($Faults) }
+    return $state
+}
+$stuck = New-RecoveryState
+# After COMPENSATE_LOAD_ALL_EMPTY the engine takes a multi-demand journey back (BlockedJourneyRelease): AwaitingLoadResult.
+$released = New-RecoveryState -Stage AwaitingLoadResult -Block $null
+$otherJourney = New-GateJourney j-other -Stage AwaitingGateArrival -Pickup q1 -VehicleKey $otherVehicle -CreatedAt '2026-10-19 10:00:00+08:00'
+$second = [ordered]@{ JourneyId = $rj2Id; Stage = 'Blocked'; AgvId = '老厂前线新多仓位1'; VehicleKey = $otherVehicle; PickupUpperId = 'r1'; GateUpperId = $null; CreatedAt = '2026-10-19 11:00:00+08:00' }
+$secondRow = { param([string] $Block) [ordered]@{ JourneyId = $rj2Id; Stage = 'Blocked'; BlockReasonCode = $Block; AgvId = '老厂前线新多仓位1'; VehicleKey = $otherVehicle } }
+$fault = { param([string] $AgvId, [string] $Level = 'Blocked') [ordered]@{ AgvId = $AgvId; Level = $Level; EvidenceCode = 'EMERGENCY_STOP_LATCHED' } }
+$both = @($rj) + @($rj2)
+$recoveryCases = @(
+    @{ Name = 'close, the stuck journey alone, named'; Direction = 'Close'; State = $stuck; Rj = $rj; Expect = $null }
+    @{ Name = 'close, the stuck journey alone, not named (unchanged)'; Direction = 'Close'; State = $stuck; Rj = $null; Expect = 'GATE_CLOSE_REFUSED_IN_FLIGHT' }
+    @{ Name = 'close, the stuck journey named and another journey active'; Direction = 'Close'; State = (New-RecoveryState -Others @($otherJourney)); Rj = $rj; Expect = 'GATE_CLOSE_REFUSED_IN_FLIGHT' }
+    @{ Name = 'close, another journey id named'; Direction = 'Close'; State = $stuck; Rj = @{ journeyId = 'journey:other|g1'; agvId = $rj.agvId; vehicleKey = $rjKey }; Expect = 'GATE_CLOSE_REFUSED_IN_FLIGHT' }
+    @{ Name = 'close, the named journey on another agvId'; Direction = 'Close'; State = (New-RecoveryState -RowAgvId '老厂前线新多仓位1'); Rj = $rj; Expect = 'GATE_RECOVERY_JOURNEY_VEHICLE_MISMATCH' }
+    @{ Name = 'close, the named journey with the agvId but another vehicleKey'; Direction = 'Close'; State = (New-RecoveryState -RowVehicleKey $otherVehicle); Rj = $rj; Expect = 'GATE_RECOVERY_JOURNEY_VEHICLE_MISMATCH' }
+    @{ Name = 'close, the named journey released back to the engine (AwaitingLoadResult)'; Direction = 'Close'; State = $released; Rj = $rj; Expect = 'GATE_CLOSE_RECOVERY_JOURNEY_NOT_AWAITING_RECOVERY' }
+    @{ Name = 'close, the named journey on its way to its next stop'; Direction = 'Close'; State = (New-RecoveryState -Stage AwaitingPickupArrival -Block CreateDispatchDisabled); Rj = $rj; Expect = 'GATE_CLOSE_RECOVERY_JOURNEY_NOT_AWAITING_RECOVERY' }
+    @{ Name = 'close, the named journey Blocked on ONBOARD_SESSION_LOST'; Direction = 'Close'; State = (New-RecoveryState -Block ONBOARD_SESSION_LOST); Rj = $rj; Expect = 'GATE_CLOSE_RECOVERY_JOURNEY_NOT_AWAITING_RECOVERY' }
+    @{ Name = 'close, the named journey Blocked on *_NOT_RECONCILED_ON_ENDED_DEMAND'; Direction = 'Close'; State = (New-RecoveryState -Block LoadCompensationResult_NOT_RECONCILED_ON_ENDED_DEMAND); Rj = $rj; Expect = 'GATE_CLOSE_RECOVERY_JOURNEY_NOT_AWAITING_RECOVERY' }
+    @{ Name = 'close, the named journey Blocked with no reason'; Direction = 'Close'; State = (New-RecoveryState -Block $null); Rj = $rj; Expect = 'GATE_CLOSE_RECOVERY_JOURNEY_NOT_AWAITING_RECOVERY' }
+    @{ Name = 'close, the named journey Blocked on UNLOAD_RESULT_REQUIRES_RECOVERY'; Direction = 'Close'; State = (New-RecoveryState -Block UNLOAD_RESULT_REQUIRES_RECOVERY); Rj = $rj; Expect = $null }
+    @{ Name = 'close, the named journey Blocked on LoadCompensationResult_NOT_RECONCILED'; Direction = 'Close'; State = (New-RecoveryState -Block LoadCompensationResult_NOT_RECONCILED); Rj = $rj; Expect = $null }
+    @{ Name = 'close, the named journey active but its row not read'; Direction = 'Close'; State = (New-RecoveryState -NoRow); Rj = $rj; Expect = 'GATE_RECOVERY_JOURNEY_UNREADABLE' }
+    @{ Name = 'close, named, no journey active at all'; Direction = 'Close'; State = (New-GateState); Rj = $rj; Expect = $null }
+    @{ Name = 'close, state unreadable, named'; Direction = 'Close'; State = [ordered]@{ Error = 'database is locked' }; Rj = $rj; Expect = 'GATE_STATE_UNREADABLE' }
+    @{ Name = 'close, the vehicle faults not read'; Direction = 'Close'; State = (New-RecoveryState -NoFaults); Rj = $rj; Expect = 'GATE_RECOVERY_JOURNEY_UNREADABLE' }
+    # The vehicle of a named journey holds a fault: the journey loop alone supervises it, so no restart.
+    @{ Name = "close, the named journey's vehicle holds a fault"; Direction = 'Close'; State = (New-RecoveryState -Faults @((& $fault '老厂前线新多仓位2'))); Rj = $rj; Expect = 'GATE_CLOSE_RECOVERY_JOURNEY_VEHICLE_FAULT' }
+    @{ Name = "close, the named journey's vehicle holds a SuspectedBlocked fault"; Direction = 'Close'; State = (New-RecoveryState -Faults @((& $fault '老厂前线新多仓位2' SuspectedBlocked))); Rj = $rj; Expect = 'GATE_CLOSE_RECOVERY_JOURNEY_VEHICLE_FAULT' }
+    @{ Name = "close, a fault row of the named journey's vehicle at Level None"; Direction = 'Close'; State = (New-RecoveryState -Faults @((& $fault '老厂前线新多仓位2' None))); Rj = $rj; Expect = $null }
+    @{ Name = 'close, a fault of another vehicle with no journey active'; Direction = 'Close'; State = (New-RecoveryState -Faults @((& $fault '老厂前线新多仓位1'))); Rj = $rj; Expect = $null }
+    # Several named journeys (repeated -RecoveryJourneyId).
+    @{ Name = 'close, two stuck journeys, both named'; Direction = 'Close'; State = (New-RecoveryState -Others @($second) -OtherRows @((& $secondRow 'UNLOAD_RESULT_REQUIRES_RECOVERY'))); Rj = $both; Expect = $null }
+    @{ Name = 'close, two stuck journeys, one named'; Direction = 'Close'; State = (New-RecoveryState -Others @($second) -OtherRows @((& $secondRow 'UNLOAD_RESULT_REQUIRES_RECOVERY'))); Rj = $rj; Expect = 'GATE_CLOSE_REFUSED_IN_FLIGHT' }
+    @{ Name = "close, two named, the second held by its vehicle's fault (agv01 after an emergency stop)"; Direction = 'Close'; State = (New-RecoveryState -Others @($second) -OtherRows @((& $secondRow 'UNLOAD_RESULT_REQUIRES_RECOVERY')) -Faults @((& $fault '老厂前线新多仓位1'))); Rj = $both; Expect = 'GATE_CLOSE_RECOVERY_JOURNEY_VEHICLE_FAULT' }
+    @{ Name = 'close, two named, the second Blocked for a person after a fault (AWAITING_CARGO_HANDOFF)'; Direction = 'Close'; State = (New-RecoveryState -Others @($second) -OtherRows @((& $secondRow 'AWAITING_CARGO_HANDOFF'))); Rj = $both; Expect = 'GATE_CLOSE_RECOVERY_JOURNEY_NOT_AWAITING_RECOVERY' }
+    @{ Name = "close, two named, the second's row not read"; Direction = 'Close'; State = (New-RecoveryState -Others @($second)); Rj = $both; Expect = 'GATE_RECOVERY_JOURNEY_UNREADABLE' }
+    @{ Name = "close, two named, the second named on the first's vehicle"; Direction = 'Close'; State = (New-RecoveryState -Others @($second) -OtherRows @((& $secondRow 'UNLOAD_RESULT_REQUIRES_RECOVERY'))); Rj = @(@($rj) + @(@{ journeyId = $rj2Id; agvId = '老厂前线新多仓位2'; vehicleKey = $rjKey })); Expect = 'GATE_RECOVERY_JOURNEY_VEHICLE_MISMATCH' }
+    # Opening is not widened: the same refusal with and without it.
+    @{ Name = 'open, the released journey named: not widened, its sent legs refuse as before'; Direction = 'Open'; State = $released; Rj = $rj; Expect = 'GATE_OPEN_REFUSED_ORDER_SENT' }
+    @{ Name = 'open, the stuck journey named: not widened'; Direction = 'Open'; State = $stuck; Rj = $rj; Expect = 'GATE_OPEN_REFUSED_ORDER_SENT' }
+)
+foreach ($case in $recoveryCases) {
+    try { $got = Get-ParallelDispatchGateRefusal -Direction $case.Direction -State $case.State -ServiceName $v2Service -DatabasePath $gateDatabase -RecoveryJourney $case.Rj } catch { $got = "THREW: $($_.Exception.Message)" }
+    $named = $null -eq $got -or ($got.Contains($v2Service) -and $got.Contains($gateDatabase) -and $got.EndsWith(' Nothing was stopped or changed.'))
+    Write-Result -Ok ($named -and ($null -eq $case.Expect ? ($null -eq $got) : ($null -ne $got -and $got.StartsWith("$($case.Expect):")))) `
+        -Name "gate refusal with -RecoveryJourney (workspace#61): $($case.Name) -> $($case.Expect ?? 'allowed')" -Detail "got: $got"
+}
+# Opening with it is the very text opening without it gives, every gate refusal case above included.
+$openSame = @(@($gateRefusalCases | Where-Object { $_.Direction -eq 'Open' } | ForEach-Object { $_.State }) + @($released, $stuck) | Where-Object {
+        $with = Get-ParallelDispatchGateRefusal -Direction Open -State $_ -ServiceName $v2Service -DatabasePath $gateDatabase -RecoveryJourney $rj
+        $without = Get-ParallelDispatchGateRefusal -Direction Open -State $_ -ServiceName $v2Service -DatabasePath $gateDatabase
+        $with -cne $without })
+Write-Result -Ok ($openSame.Count -eq 0) -Name 'gate refusal with -RecoveryJourney (workspace#61): opening answers exactly as without it, in every open case' -Detail "$($openSame.Count) state(s) differ"
+$awaitCases = @(
+    @('Blocked', 'LOAD_RESULT_REQUIRES_RECOVERY', $true), @('Blocked', 'UNLOAD_RESULT_REQUIRES_RECOVERY', $true),
+    @('Blocked', 'LoadCompensationResult_NOT_RECONCILED', $true), @('Blocked', 'LoadCompensationResult_NOT_RECONCILED_BEFORE_UPGRADE', $false),
+    @('Blocked', 'load_result_requires_recovery', $false), @('blocked', 'LOAD_RESULT_REQUIRES_RECOVERY', $false),
+    @('AwaitingLoadResult', 'LOAD_RESULT_REQUIRES_RECOVERY', $false), @('Blocked', 'X_NOT_RECONCILED_', $false), @('Blocked', '', $false)
+)
+foreach ($case in $awaitCases) {
+    $got = Test-ParallelJourneyAwaitsRecovery -Stage $case[0] -BlockReasonCode $case[1]
+    Write-Result -Ok ($got -eq $case[2]) -Name "journey awaits recovery (workspace#61): $($case[0]) / '$($case[1])' -> $($case[2])" -Detail "got $got"
+}
+# The argument survives the '|' and the Chinese agvId, one journey or several; anything else is refused.
+$one = @{ journeyId = $rjId; agvId = '老厂前线新多仓位3'; vehicleKey = 'BROKERX-7daca4ee91da498d8026c68b7b941127' }
+foreach ($list in @(@{ L = @($one) }, @{ L = @($one, $rj2) })) {
+    $encoded = ConvertTo-ParallelRecoveryJourneyArgument -Journeys $list.L
+    $decoded = @(ConvertFrom-ParallelRecoveryJourneyArgument -Encoded $encoded)
+    $differ = @(0..($list.L.Count - 1) | Where-Object {
+            $decoded[$_].journeyId -cne $list.L[$_].journeyId -or $decoded[$_].agvId -cne $list.L[$_].agvId -or $decoded[$_].vehicleKey -cne $list.L[$_].vehicleKey })
+    Write-Result -Ok ($encoded -cmatch '^[A-Za-z0-9+/=]+$' -and $decoded.Count -eq $list.L.Count -and $differ.Count -eq 0) `
+        -Name "recovery journey argument (workspace#61): $($list.L.Count) journey(s), base64 only, decodes to the same ids (with |), Chinese agvIds and vehicleKeys" -Detail "$encoded -> $($decoded | ConvertTo-Json -Compress)"
+}
+$b64 = { param($text) [Convert]::ToBase64String([Text.Encoding]::UTF8.GetBytes($text)) }
+foreach ($bad in @('', 'not base64!', (& $b64 'not json'), (& $b64 '[1,2]'), (& $b64 '[]'), (& $b64 '{"journeyId":"j","agvId":"a","vehicleKey":"k"}'),
+        (& $b64 '[{"journeyId":"j","agvId":"a"}]'), (& $b64 '[{"journeyId":"j","agvId":" ","vehicleKey":"k"}]'), (& $b64 '[{"journeyId":1,"agvId":"a","vehicleKey":"k"}]'),
+        (& $b64 '[{"journeyId":"j","agvId":"a","vehicleKey":"k"},{"journeyId":"j","agvId":"b","vehicleKey":"l"}]'))) {
+    try { $null = ConvertFrom-ParallelRecoveryJourneyArgument -Encoded $bad; $thrown = $null } catch { $thrown = $_.Exception.Message }
+    Write-Result -Ok ($thrown -and $thrown.StartsWith('GATE_RECOVERY_JOURNEY_MALFORMED:')) -Name "recovery journey argument (workspace#61): '$bad' is refused" -Detail "thrown: $thrown"
+}
+# Set-ParallelDispatchGateLocal.ps1 refuses it with -State Open before reading anything.
+$gateScriptText = Get-Content -LiteralPath (Join-Path $PSScriptRoot 'Set-ParallelDispatchGateLocal.ps1') -Raw
+$closeOnlyAt = $gateScriptText.IndexOf("if (`$RecoveryJourney -and `$direction -cne 'Close') {")
+$decodeAt = $gateScriptText.IndexOf('$recovery = $RecoveryJourney ? @(ConvertFrom-ParallelRecoveryJourneyArgument -Encoded $RecoveryJourney) : $null')
+$definitionAt = $gateScriptText.IndexOf('$definition = Read-ParallelInstanceDefinition -Path $InstanceDefinitionPath')
+Write-Result -Ok ($closeOnlyAt -gt 0 -and $decodeAt -gt $closeOnlyAt -and $definitionAt -gt $decodeAt -and $gateScriptText.Contains("throw 'GATE_RECOVERY_JOURNEY_CLOSE_ONLY:")) `
+    -Name 'Set-ParallelDispatchGateLocal.ps1 (workspace#61): -RecoveryJourney with -State Open is refused, and it is decoded, before anything is read' -Detail "close-only $closeOnlyAt decode $decodeAt definition $definitionAt"
+# Review M2: the wiring the field relies on. Every read of the state passes the named ids, the dry run's refusal and the
+# change pass the named journeys -- each of the three, dropped, would leave the gate judged as without the parameter.
+$gateLocalAst = [System.Management.Automation.Language.Parser]::ParseInput($gateScriptText, [ref]$null, [ref]$null)
+$boundTo = {
+    param([string] $Command, [string] $Parameter, [string] $Variable)
+    @($gateLocalAst.FindAll({ param($n) $n -is [System.Management.Automation.Language.CommandAst] -and $n.GetCommandName() -ceq $Command }, $true) | ForEach-Object {
+            $elements = $_.CommandElements
+            $at = -1
+            for ($i = 0; $i -lt $elements.Count; $i++) {
+                if ($elements[$i] -is [System.Management.Automation.Language.CommandParameterAst] -and $elements[$i].ParameterName -ceq $Parameter) { $at = $i }
+            }
+            [pscustomobject]@{ Text = $_.Extent.Text; Bound = $at -ge 0 -and $at + 1 -lt $elements.Count -and $elements[$at + 1].Extent.Text -ceq $Variable }
+        })
+}
+foreach ($wire in @(
+        @{ Command = 'Get-ParallelJourneyDispatchState'; Parameter = 'RecoveryJourneyId'; Variable = '$recoveryJourneyId'; Count = 2; Where = 'ReadState and the dry run' }
+        @{ Command = 'Get-ParallelDispatchGateRefusal'; Parameter = 'RecoveryJourney'; Variable = '$recovery'; Count = 1; Where = 'the dry run' }
+        @{ Command = 'Invoke-ParallelDispatchGateChange'; Parameter = 'RecoveryJourney'; Variable = '$recovery'; Count = 1; Where = 'the change' })) {
+    $calls = @(& $boundTo $wire.Command $wire.Parameter $wire.Variable)
+    Write-Result -Ok ($calls.Count -eq $wire.Count -and @($calls | Where-Object { -not $_.Bound }).Count -eq 0) `
+        -Name "Set-ParallelDispatchGateLocal.ps1 (workspace#61): every $($wire.Command) call ($($wire.Where)) passes -$($wire.Parameter) $($wire.Variable)" `
+        -Detail (($calls | ForEach-Object { "$($_.Bound): $($_.Text)" }) -join ' | ')
+}
+# Review L2: a named journey not in flight is named, on the refusal and in the dry run.
+$notInFlightState = New-RecoveryState -Others @($otherJourney)
+$got = Get-ParallelDispatchGateRefusal -Direction Close -State $notInFlightState -ServiceName $v2Service -DatabasePath $gateDatabase -RecoveryJourney (@($rj) + @(@{ journeyId = 'journey:done|g1'; agvId = 'a'; vehicleKey = 'k' }))
+Write-Result -Ok ($null -ne $got -and $got.StartsWith('GATE_CLOSE_REFUSED_IN_FLIGHT:') -and $got.Contains('named but not in flight: journey:done|g1') -and -not $got.Contains("not in flight: $rjId")) `
+    -Name 'gate refusal with -RecoveryJourney (workspace#61, review L2): a named journey not in flight is named on the in-flight refusal' -Detail "got: $got"
+$got = @(Get-ParallelRecoveryJourneyNotInFlight -State $notInFlightState -RecoveryJourney (@($rj) + @(@{ journeyId = 'journey:done|g1'; agvId = 'a'; vehicleKey = 'k' })))
+Write-Result -Ok ($got.Count -eq 1 -and $got[0] -ceq 'journey:done|g1' -and @(Get-ParallelRecoveryJourneyNotInFlight -State ([ordered]@{ Error = 'x' }) -RecoveryJourney $rj).Count -eq 0) `
+    -Name 'recovery journey not in flight (workspace#61, review L2): only the named ids not among the active journeys; nothing on an unreadable state' -Detail ($got -join ', ')
+Write-Result -Ok ($gateScriptText.Contains('if ($notInFlight.Count -gt 0) { Write-Step "WhatIf: named but not in flight (nothing to waive): $($notInFlight -join '', '')" }')) `
+    -Name 'Set-ParallelDispatchGateLocal.ps1 (workspace#61, review L2): the dry run names the named journeys not in flight' -Detail 'pinned text missing'
+
 # --- The writer: section ignoring case, the Chinese agvId kept byte for byte, every read-back live.
 $gateInstalled = Merge-ConfigurationTree -Base (Copy-Definition $productConfiguration) -Overlay (New-ParallelInstanceConfigurationOverlay -Definition $baseline)
 $gateInstalled['RiotCreateDispatch'] = [ordered]@{ enabled = $true }
@@ -3070,7 +3222,8 @@ function Invoke-GateCase {
     #>
     param([string] $Direction, [string] $Text, $Status = 'Running', [object[]] $States = @(), [object[]] $StartTimes = @(),
         [string] $ServiceName = $v2Service, [string] $ConfigurationName = 'appsettings.Production.json', [scriptblock] $Writer,
-        [string] $StatusAfter = 'Running', [datetime] $WriteTime = $gateStarted.AddMinutes(-5), [string] $ConfigurationPath, [switch] $StartThrows)
+        [string] $StatusAfter = 'Running', [datetime] $WriteTime = $gateStarted.AddMinutes(-5), [string] $ConfigurationPath, [switch] $StartThrows,
+        [object[]] $RecoveryJourney)
     $directory = Join-Path ([IO.Path]::GetTempPath()) "cs472-gate-$([guid]::NewGuid().ToString('N'))"
     New-Item -ItemType Directory -Path $directory | Out-Null
     $file = $ConfigurationPath ? $ConfigurationPath : (Join-Path $directory $ConfigurationName)
@@ -3096,6 +3249,7 @@ function Invoke-GateCase {
     try {
         $arguments = @{ Direction = $Direction; ConfigurationPath = $file; ServiceName = $ServiceName; DatabasePath = $gateDatabase; Actions = $actions }
         if ($Writer) { $arguments['Writer'] = $Writer }
+        if ($RecoveryJourney) { $arguments['RecoveryJourney'] = $RecoveryJourney }
         $result = Invoke-ParallelDispatchGateChange @arguments
     } catch { $thrown = $_.Exception.Message }
     $bytesAfter = $own -and (Test-Path -LiteralPath $file) ? [IO.File]::ReadAllBytes($file) : $null
@@ -3193,8 +3347,19 @@ foreach ($select in $selects) {
         if ($columns -cnotcontains $column) { $schemaGaps += "$table.$column" }
     }
 }
-Write-Result -Ok ($selects.Count -eq 4 -and $schemaGaps.Count -eq 0) -Name 'gate reader: every column its SQL selects exists in the EF model snapshot (JourneyRuntimes, OrderIntents, RiotDispatchAuditEvents)' `
+Write-Result -Ok ($selects.Count -eq 6 -and $schemaGaps.Count -eq 0) -Name 'gate reader: every column its SQL selects exists in the EF model snapshot (JourneyRuntimes, OrderIntents, RiotDispatchAuditEvents; workspace#61 adds a JourneyRuntimes and a VehicleFaultStates read)' `
     -Detail "selects found: $($selects.Count) missing: $($schemaGaps -join ', ')"
+
+# --- 8005-workspace#61: -RecoveryJourney reaches both reads, the one with the service running and the one after the stop.
+$r = Invoke-GateCase -Direction Close -Text $openConfig -States @($stuck, $stuck) -StartTimes @($gateStarted, $afterWrite) -RecoveryJourney $rj
+Write-Result -Ok ($null -eq $r.Thrown -and $r.Result.Changed -and $r.Flag -eq $false -and $r.Calls -ceq 'Status,StartTime,ReadState,Stop,ReadState,Start,Status,StartTime') `
+    -Name 'gate change (workspace#61): close with the stuck journey named -> read, stop, read again, write, start, verified' -Detail "calls $($r.Calls) flag $($r.Flag) thrown $($r.Thrown)"
+$r = Invoke-GateCase -Direction Close -Text $openConfig -States @($stuck, $released) -StartTimes @($gateStarted) -RecoveryJourney $rj
+Write-Result -Ok ($r.Thrown -and $r.Thrown.StartsWith('AFTER_STOP GATE_CLOSE_RECOVERY_JOURNEY_NOT_AWAITING_RECOVERY:') -and $r.Unchanged) `
+    -Name 'gate change (workspace#61): close, named, the journey moved on between the two reads -> refused after the stop, file unchanged' -Detail "calls $($r.Calls) thrown $($r.Thrown)"
+$r = Invoke-GateCase -Direction Close -Text $openConfig -States @($stuck) -StartTimes @($gateStarted)
+Write-Result -Ok ($r.Thrown -and $r.Thrown.StartsWith('GATE_CLOSE_REFUSED_IN_FLIGHT:') -and $r.Unchanged -and $r.Calls -notmatch 'Stop|Start(?!Time)') `
+    -Name 'gate change (workspace#61): close, the stuck journey not named -> refused as before, before the stop' -Detail "calls $($r.Calls) thrown $($r.Thrown)"
 
 # --- Review N3: a process that started at the very instant of the write is not shown to have read it.
 $atWrite = { param($Path) [IO.File]::GetLastWriteTimeUtc($Path) }
@@ -3238,6 +3403,31 @@ Write-Result -Ok ($riotAt -ge 0 -and $handAt -gt $riotAt -and $restartAt -gt $ha
 # --- Review S2: -State maps to the direction in one place, and the script takes it from there and reports what was done.
 Write-Result -Ok ((ConvertTo-ParallelGateDirection -State Closed) -ceq 'Close' -and (ConvertTo-ParallelGateDirection -State Open) -ceq 'Open') `
     -Name 'gate: -State Closed is Close and -State Open is Open' -Detail "Closed -> $(ConvertTo-ParallelGateDirection -State Closed), Open -> $(ConvertTo-ParallelGateDirection -State Open)"
+# 8005-workspace#61: any other spelling is refused, never taken for Open (aba28e30 took 'closed' for Open).
+foreach ($spelling in @('closed', 'CLOSED', 'open', 'OPEN', 'cLosed')) {
+    try { $got = ConvertTo-ParallelGateDirection -State $spelling; $thrown = $null } catch { $got = $null; $thrown = $_.Exception.Message }
+    Write-Result -Ok ($null -eq $got -and $thrown) -Name "gate (workspace#61): -State '$spelling' is refused, not mapped" -Detail "got '$got' thrown $thrown"
+}
+# The mapping's own last line refuses too, past the ValidateSet (called with validation bypassed through the body).
+$directionAst = (Get-Command ConvertTo-ParallelGateDirection).ScriptBlock.Ast
+$directionBody = ($directionAst.Body.EndBlock.Statements | ForEach-Object { $_.Extent.Text }) -join [Environment]::NewLine
+$bodyOnly = [scriptblock]::Create("param([string] `$State)`n" + $directionBody)
+try { $got = & $bodyOnly 'closed'; $thrown = $null } catch { $got = $null; $thrown = $_.Exception.Message }
+Write-Result -Ok ($null -eq $got -and $thrown -and $thrown.StartsWith('GATE_STATE_INVALID:')) `
+    -Name 'gate (workspace#61): the mapping itself, without its ValidateSet, throws on closed -- it does not fall into Open' -Detail "got '$got' thrown $thrown"
+# Set-ParallelDispatchGateLocal.ps1 refuses 'closed' at binding, before anything is read or written.
+$caseRoot = Join-Path ([IO.Path]::GetTempPath()) "ws61-case-$([guid]::NewGuid().ToString('N'))"
+New-Item -ItemType Directory -Path $caseRoot | Out-Null
+try {
+    $marker = Join-Path $caseRoot 'installed-instance.json'
+    foreach ($spelling in @('closed', 'CLOSED', 'open')) {
+        $out = & pwsh -NoProfile -NonInteractive -File (Join-Path $PSScriptRoot 'Set-ParallelDispatchGateLocal.ps1') -State $spelling -InstanceDefinitionPath $marker -WhatIf 2>&1
+        $exit = $LASTEXITCODE
+        $text = ($out | Out-String)
+        Write-Result -Ok ($exit -ne 0 -and $text -match 'ValidateSet|does not belong to the set' -and $text -notmatch 'Definition:|Journey state') `
+            -Name "Set-ParallelDispatchGateLocal.ps1 (workspace#61): -State $spelling is refused at binding, before anything is read" -Detail "exit $exit`n$text"
+    }
+} finally { Remove-Item -LiteralPath $caseRoot -Recurse -Force -ErrorAction SilentlyContinue }
 $directionAssignments = @($gateAst.FindAll({ param($n) $n -is [System.Management.Automation.Language.AssignmentStatementAst] -and $n.Left.Extent.Text -ieq '$direction' }, $true))
 Write-Result -Ok ($directionAssignments.Count -eq 1 -and $directionAssignments[0].Right.Extent.Text -ceq 'ConvertTo-ParallelGateDirection -State $State') `
     -Name 'Set-ParallelDispatchGateLocal.ps1 takes its direction only from ConvertTo-ParallelGateDirection -State $State' `
@@ -3267,7 +3457,8 @@ if ($whatIf.Count -eq 1) {
     # and "[IO.File]::WriteAllText(...)" in this branch passed it and would have stopped the service or written the file
     # on a dry run. Only these read-only commands; no reference to $actions; no .NET method call or static member access
     # of any kind (which also covers [IO.*]); no type expression naming IO.
-    $readOnlyCommands = @('Get-ParallelJourneyDispatchState', 'Get-ParallelDispatchGateRefusal', 'Get-Service', 'Write-Step')
+    # workspace#61 review L2: the pure Get-ParallelRecoveryJourneyNotInFlight, which only names the ids not in flight.
+    $readOnlyCommands = @('Get-ParallelJourneyDispatchState', 'Get-ParallelDispatchGateRefusal', 'Get-ParallelRecoveryJourneyNotInFlight', 'Get-Service', 'Write-Step')
     $changing = @($commands | Where-Object { $null -eq $_ -or $readOnlyCommands -notcontains $_ } | ForEach-Object { "command $($_ ?? '(dynamic)')" })
     $changing += @($body.FindAll({ param($n) $n -is [System.Management.Automation.Language.VariableExpressionAst] -and $n.VariablePath.UserPath -ieq 'actions' }, $true) |
             ForEach-Object { "reference $($_.Extent.Text)" })
@@ -3337,6 +3528,78 @@ INSERT INTO RiotDispatchAuditEvents VALUES ('e1', 'leg-p1', 'PRE_CREATE_RECONCIL
             $command = $writer.CreateCommand(); $command.CommandText = 'DROP TABLE RiotDispatchAuditEvents'; $null = $command.ExecuteNonQuery(); $command.Dispose(); $writer.Dispose()
             $broken = Get-ParallelJourneyDispatchState -DatabasePath $db -AssemblyDirectory $hostBuild
             Write-Result -Ok ($broken.Contains('Error') -and $broken['Error'] -match 'RiotDispatchAuditEvents') -Name 'gate reader: a missing table is an error, not an empty state' -Detail (ConvertTo-Json $broken -Compress)
+        } finally {
+            [Microsoft.Data.Sqlite.SqliteConnection]::ClearAllPools()
+            Remove-Item -LiteralPath $directory -Recurse -Force -ErrorAction SilentlyContinue
+        }
+    }
+    # 8005-workspace#61: the recovery journey read and judged on a real SQLite file -- the agv03 journey of 2026-10-19 in
+    # miniature, with its real id shape and a Chinese agvId.
+    Invoke-PathCase 'gate reader, recovery journey' {
+        $directory = Join-Path ([IO.Path]::GetTempPath()) "ws61-db-$([guid]::NewGuid().ToString('N'))"
+        New-Item -ItemType Directory -Path $directory | Out-Null
+        try {
+            $db = Join-Path $directory 'controlserver.db'
+            foreach ($assembly in @('SQLitePCLRaw.core.dll', 'SQLitePCLRaw.provider.e_sqlite3.dll', 'SQLitePCLRaw.batteries_v2.dll', 'Microsoft.Data.Sqlite.dll')) {
+                Add-Type -LiteralPath (Join-Path $hostBuild $assembly) -ErrorAction SilentlyContinue
+            }
+            try { [SQLitePCL.Batteries_V2]::Init() } catch { }
+            $execute = {
+                param([string] $Sql)
+                $writer = [Microsoft.Data.Sqlite.SqliteConnection]::new("Data Source=$db;Pooling=False"); $writer.Open()
+                $command = $writer.CreateCommand(); $command.CommandText = $Sql; $null = $command.ExecuteNonQuery(); $command.Dispose(); $writer.Dispose()
+            }
+            $id = 'journey:40c5532e-d97d-4b29-a5bd-bf5343ea01dc|g102'
+            & $execute @"
+CREATE TABLE JourneyRuntimes (JourneyId TEXT PRIMARY KEY, Stage TEXT, AgvId TEXT, VehicleKey TEXT, PickupUpperId TEXT, GateUpperId TEXT, CreatedAt TEXT, BlockReasonCode TEXT);
+CREATE TABLE OrderIntents (MovementLegId TEXT PRIMARY KEY, UpperId TEXT, VehicleKey TEXT, Status TEXT, OrderId TEXT, CreateAttemptCount INTEGER, CreateAttemptId TEXT, DispatchAuditVersion INTEGER, ExperimentalCreateAuthorizationId TEXT, CreatedAt TEXT);
+CREATE TABLE RiotDispatchAuditEvents (AuditEventId TEXT PRIMARY KEY, MovementLegId TEXT, Phase TEXT, Outcome TEXT, AttemptId TEXT, ReturnedOrderId TEXT, ResultPresent INTEGER);
+CREATE TABLE VehicleFaultStates (AgvId TEXT PRIMARY KEY, Level TEXT, EvidenceCode TEXT);
+INSERT INTO VehicleFaultStates VALUES ('老厂前线新多仓位3', 'None', NULL);
+INSERT INTO JourneyRuntimes VALUES ('j-done', 'Completed', '老厂前线新多仓位2', 'K2', 'q0', NULL, '2026-10-19 08:00:00+08:00', NULL);
+INSERT INTO JourneyRuntimes VALUES ('$id', 'Blocked', '老厂前线新多仓位3', 'K3', 'p1', 'g9', '2026-10-19 09:00:00+08:00', 'LOAD_RESULT_REQUIRES_RECOVERY');
+INSERT INTO OrderIntents VALUES ('leg-p1', 'p1', 'K3', 'CONFIRMED', 'O1', 1, 'a1', 1, NULL, '2026-10-19 09:00:01+08:00');
+INSERT INTO OrderIntents VALUES ('leg-s3', 's3', 'K3', 'CONFIRMED', 'O3', 1, 'a3', 1, NULL, '2026-10-19 13:00:00+08:00');
+"@
+            $rjDb = @(@{ journeyId = $id; agvId = '老厂前线新多仓位3'; vehicleKey = 'K3' })
+            $plain = Get-ParallelJourneyDispatchState -DatabasePath $db -AssemblyDirectory $hostBuild
+            Write-Result -Ok (-not $plain.Contains('Error') -and -not $plain.Contains('RecoveryJourneys') -and -not $plain.Contains('VehicleFaults')) `
+                -Name 'gate reader (workspace#61): without -RecoveryJourneyId it reads what it read before, nothing more' -Detail (ConvertTo-Json $plain -Compress -Depth 5)
+            $state = Get-ParallelJourneyDispatchState -DatabasePath $db -AssemblyDirectory $hostBuild -RecoveryJourneyId $id
+            $row = @($state['RecoveryJourneys'])[0]
+            Write-Result -Ok (-not $state.Contains('Error') -and @($state['RecoveryJourneys']).Count -eq 1 -and @($state['VehicleFaults']).Count -eq 0 -and $row['JourneyId'] -ceq $id -and $row['AgvId'] -ceq '老厂前线新多仓位3' -and $row['VehicleKey'] -ceq 'K3' -and
+                $row['Stage'] -ceq 'Blocked' -and $row['BlockReasonCode'] -ceq 'LOAD_RESULT_REQUIRES_RECOVERY') `
+                -Name 'gate reader (workspace#61): -RecoveryJourneyId reads that row with its block reason (Chinese agvId intact)' -Detail (ConvertTo-Json $state -Compress -Depth 5)
+            $got = Get-ParallelDispatchGateRefusal -Direction Close -State $state -ServiceName $v2Service -DatabasePath $db -RecoveryJourney $rjDb
+            Write-Result -Ok ($null -eq $got) -Name 'gate (workspace#61, real SQLite): close, the journey Blocked on LOAD_RESULT_REQUIRES_RECOVERY -> allowed when named' -Detail "got: $got"
+            $got = Get-ParallelDispatchGateRefusal -Direction Close -State $state -ServiceName $v2Service -DatabasePath $db
+            Write-Result -Ok ($null -ne $got -and $got.StartsWith('GATE_CLOSE_REFUSED_IN_FLIGHT:')) -Name 'gate (workspace#61, real SQLite): ... and refused as before when not named' -Detail "got: $got"
+            $got = Get-ParallelDispatchGateRefusal -Direction Close -State $state -ServiceName $v2Service -DatabasePath $db -RecoveryJourney @(@{ journeyId = $id; agvId = '老厂前线新多仓位2'; vehicleKey = 'K3' })
+            Write-Result -Ok ($null -ne $got -and $got.StartsWith('GATE_RECOVERY_JOURNEY_VEHICLE_MISMATCH:')) -Name 'gate (workspace#61, real SQLite): close, named on another vehicle -> refused' -Detail "got: $got"
+            $with = Get-ParallelDispatchGateRefusal -Direction Open -State $state -ServiceName $v2Service -DatabasePath $db -RecoveryJourney $rjDb
+            $without = Get-ParallelDispatchGateRefusal -Direction Open -State $plain -ServiceName $v2Service -DatabasePath $db
+            Write-Result -Ok ($null -ne $with -and $with.StartsWith('GATE_OPEN_REFUSED_ORDER_SENT:') -and $with -ceq $without) `
+                -Name 'gate (workspace#61, real SQLite): open is not widened: named or not, the same GATE_OPEN_REFUSED_ORDER_SENT' -Detail "with: $with"
+            # Its vehicle now holds a fault (an emergency stop latched, say): no restart.
+            & $execute "UPDATE VehicleFaultStates SET Level = 'Blocked', EvidenceCode = 'EMERGENCY_STOP_LATCHED';"
+            $faulted = Get-ParallelJourneyDispatchState -DatabasePath $db -AssemblyDirectory $hostBuild -RecoveryJourneyId $id
+            $got = Get-ParallelDispatchGateRefusal -Direction Close -State $faulted -ServiceName $v2Service -DatabasePath $db -RecoveryJourney $rjDb
+            Write-Result -Ok (@($faulted['VehicleFaults']).Count -eq 1 -and $null -ne $got -and $got.StartsWith('GATE_CLOSE_RECOVERY_JOURNEY_VEHICLE_FAULT:')) `
+                -Name 'gate (workspace#61, real SQLite): close, named, its vehicle holds a fault -> refused' -Detail "got: $got"
+            & $execute "UPDATE VehicleFaultStates SET Level = 'None', EvidenceCode = NULL;"
+            # After the recovery the engine takes it back: AwaitingLoadResult, no longer awaiting recovery.
+            & $execute "UPDATE JourneyRuntimes SET Stage = 'AwaitingLoadResult', BlockReasonCode = NULL WHERE JourneyId = '$id';"
+            $got = Get-ParallelDispatchGateRefusal -Direction Close -State (Get-ParallelJourneyDispatchState -DatabasePath $db -AssemblyDirectory $hostBuild -RecoveryJourneyId $id) -ServiceName $v2Service -DatabasePath $db -RecoveryJourney $rjDb
+            Write-Result -Ok ($null -ne $got -and $got.StartsWith('GATE_CLOSE_RECOVERY_JOURNEY_NOT_AWAITING_RECOVERY:')) `
+                -Name 'gate (workspace#61, real SQLite): close, named, released back to the engine -> refused' -Detail "got: $got"
+            & $execute ("UPDATE JourneyRuntimes SET Stage = 'Blocked', BlockReasonCode = 'LOAD_RESULT_REQUIRES_RECOVERY' WHERE JourneyId = '$id'; " +
+                "UPDATE JourneyRuntimes SET Stage = 'AwaitingGateArrival' WHERE JourneyId = 'j-done';")
+            $got = Get-ParallelDispatchGateRefusal -Direction Close -State (Get-ParallelJourneyDispatchState -DatabasePath $db -AssemblyDirectory $hostBuild -RecoveryJourneyId $id) -ServiceName $v2Service -DatabasePath $db -RecoveryJourney $rjDb
+            Write-Result -Ok ($null -ne $got -and $got.StartsWith('GATE_CLOSE_REFUSED_IN_FLIGHT:') -and $got.Contains('j-done') -and -not $got.Contains($id)) `
+                -Name 'gate (workspace#61, real SQLite): close, named, with another journey active -> refused, naming only the other' -Detail "got: $got"
+            $odd = Get-ParallelJourneyDispatchState -DatabasePath $db -AssemblyDirectory $hostBuild -RecoveryJourneyId "x' OR '1'='1"
+            Write-Result -Ok (-not $odd.Contains('Error') -and $odd.Contains('RecoveryJourneys') -and @($odd['RecoveryJourneys']).Count -eq 0) `
+                -Name 'gate reader (workspace#61): the journey id is a parameter, not SQL' -Detail (ConvertTo-Json $odd -Compress -Depth 5)
         } finally {
             [Microsoft.Data.Sqlite.SqliteConnection]::ClearAllPools()
             Remove-Item -LiteralPath $directory -Recurse -Force -ErrorAction SilentlyContinue
@@ -5293,6 +5556,8 @@ Invoke-SourceCase 'cutover production stages: apart from productionCutover, emer
             $twin = Copy-Definition $d
             $twin.Remove('productionCutover')
             $twin.Remove('emergencyStopRelease')
+            # control-server#781: idle return is turned on in production stage 3 alone (pinned by its own case below).
+            $twin.Remove('idleReturn')
             $trial = Read-ParallelInstanceDefinition -Path $trialPath
             $trial.Remove('productionCutover')
             # program#184: the staging rules and the dispatch generation are production's alone (pinned by the case above); the
@@ -5494,7 +5759,7 @@ Invoke-SourceCase 'catalog read-back: Program.cs logs the MapStationCatalogOptio
 # the cargo holding and station departure waits, as the Host bound them, read back from its EFFECTIVE_CONFIGURATION event
 # and compared with the definition; and the result line 19-deploy-control-server-parallel.ps1 compares after the install.
 # ------------------------------------------------------------------------------------------------
-$bindingTemplate = "$catalogTemplate foreignRunningOrderRelease={ForeignRunningOrderRelease} admissionPolicyVersion={AdmissionPolicyVersion} admissionPolicyDeploymentId={AdmissionPolicyDeploymentId} cargoHoldingTimeout={CargoHoldingTimeout} stationDepartureWaitTimeout={StationDepartureWaitTimeout} slotConfigurationReadinessGate={SlotConfigurationReadinessGate} stagingDepartureRulesEnabled={StagingDepartureRulesEnabled}"
+$bindingTemplate = "$catalogTemplate foreignRunningOrderRelease={ForeignRunningOrderRelease} admissionPolicyVersion={AdmissionPolicyVersion} admissionPolicyDeploymentId={AdmissionPolicyDeploymentId} cargoHoldingTimeout={CargoHoldingTimeout} stationDepartureWaitTimeout={StationDepartureWaitTimeout} slotConfigurationReadinessGate={SlotConfigurationReadinessGate} stagingDepartureRulesEnabled={StagingDepartureRulesEnabled} stagingLoadNotSettledAlarmAfter={StagingLoadNotSettledAlarmAfter} idleReturnEnabled={IdleReturnEnabled}"
 # -Bound '<absent>' leaves all four out, as a package older than #672 logs the event; otherwise a hashtable of the four
 # values as the Host would log them, a key left out of it left out of the event.
 function Get-BindingReadBack($Definition, $Bound) {
@@ -5508,7 +5773,7 @@ function Get-BindingReadBack($Definition, $Bound) {
         ClearanceToWaitingPointEnabled = $false
     }
     if ($Bound -isnot [string] -or $Bound -cne '<absent>') {
-        foreach ($key in @('AdmissionPolicyVersion', 'AdmissionPolicyDeploymentId', 'CargoHoldingTimeout', 'StationDepartureWaitTimeout', 'SlotConfigurationReadinessGate', 'StagingDepartureRulesEnabled')) {
+        foreach ($key in @('AdmissionPolicyVersion', 'AdmissionPolicyDeploymentId', 'CargoHoldingTimeout', 'StationDepartureWaitTimeout', 'SlotConfigurationReadinessGate', 'StagingDepartureRulesEnabled', 'IdleReturnEnabled')) {
             if ($Bound.Contains($key)) { $event[$key] = $Bound[$key] }
         }
     }
@@ -5528,6 +5793,8 @@ function New-BoundBinding([hashtable] $Change = @{}) {
         SlotConfigurationReadinessGate = 'Off'
         # program#184. The package default; the baseline leaves the section out, so it is printed, not compared.
         StagingDepartureRulesEnabled = $false
+        # control-server#781. The baseline leaves idle return out, which is off, and the row always compares it.
+        IdleReturnEnabled = $false
     }
     foreach ($key in @($Change.Keys)) { if ($null -eq $Change[$key]) { $bound.Remove($key) } else { $bound[$key] = $Change[$key] } }
     return $bound
@@ -5542,6 +5809,9 @@ $bindingWithoutDeparture['journeyRuntime'].Remove('stationDepartureWaitTimeout')
 # program#184. The baseline with the staging rules on: the only definition the stagingDepartureRulesEnabled row compares.
 $bindingStagingOn = Copy-Definition $baseline
 $bindingStagingOn['journeyRuntime']['stagingDepartureRules'] = [ordered]@{ enabled = $true }
+# control-server#781. The baseline with idle return on.
+$bindingIdleOn = Copy-Definition $baseline
+$bindingIdleOn['idleReturn'] = [ordered]@{ enabled = $true }
 # One row per row of the module's $script:JourneyBindingFields (the case below holds the two lists equal): a value the Host
 # might bind instead, and the problem text naming the field. A field added to the table is added here too.
 $bindingFieldCases = @(
@@ -5555,6 +5825,8 @@ $bindingFieldCases = @(
     # Definition: the baseline leaves the staging rules out, which the row does not compare; this one turns them on, and binds
     # them on too (Right) apart from the field under test. Missing from the event reads as its AbsentMeans, off: refused.
     @{ Logged = 'StagingDepartureRulesEnabled'; Wrong = $false; Right = $true; Definition = $bindingStagingOn; Says = "stagingDepartureRulesEnabled bound 'False', the definition says 'True'" }
+    # control-server#781. Always compared; the definition turns idle return on, so off -- bound, or missing (read as off) -- is refused.
+    @{ Logged = 'IdleReturnEnabled'; Wrong = $false; Right = $true; Definition = $bindingIdleOn; Says = "idleReturnEnabled bound 'False', the definition says 'True'" }
 )
 Invoke-SourceCase 'binding read-back: every row of the module''s JourneyBindingFields has a field case here, in table order' {
     $table = @(& (Get-Module ParallelInstance) { $script:JourneyBindingFields } | ForEach-Object Logged)
@@ -5587,7 +5859,13 @@ foreach ($case in @(
         @{ Name = 'staging rules defined on, bound on -- pass'; Definition = $bindingStagingOn; Bound = (New-BoundBinding @{ StagingDepartureRulesEnabled = $true }); Action = 'Pass'; Says = $null }
         @{ Name = 'staging rules defined on, logged as the string "True" -- stop and refuse, not cast'; Definition = $bindingStagingOn; Bound = (New-BoundBinding @{ StagingDepartureRulesEnabled = 'True' }); Action = 'StopServiceAndRefuse'; Says = "stagingDepartureRulesEnabled bound 'True', the definition says 'True'" }
         @{ Name = 'staging rules defined on, event older than #672 -- stop and refuse (that package has no staging rules)'; Definition = $bindingStagingOn; Bound = '<absent>'; Action = 'StopServiceAndRefuse'; Says = "stagingDepartureRulesEnabled bound 'not logged', the definition says 'True'" }
-        @{ Name = 'staging rules left out of the definition, bound on -- pass (not compared: the package default is what the Host binds)'; Definition = $baseline; Bound = (New-BoundBinding @{ StagingDepartureRulesEnabled = $true }); Action = 'Pass'; Says = $null })) {
+        @{ Name = 'staging rules left out of the definition, bound on -- pass (not compared: the package default is what the Host binds)'; Definition = $baseline; Bound = (New-BoundBinding @{ StagingDepartureRulesEnabled = $true }); Action = 'Pass'; Says = $null }
+        # control-server#781.
+        @{ Name = 'idle return defined on, bound on -- pass'; Definition = $bindingIdleOn; Bound = (New-BoundBinding @{ IdleReturnEnabled = $true }); Action = 'Pass'; Says = $null }
+        @{ Name = 'idle return defined on, logged as the string "True" -- stop and refuse, not cast'; Definition = $bindingIdleOn; Bound = (New-BoundBinding @{ IdleReturnEnabled = 'True' }); Action = 'StopServiceAndRefuse'; Says = "idleReturnEnabled bound 'True', the definition says 'True'" }
+        @{ Name = 'idle return defined on, event older than #672 -- stop and refuse (that package does not say)'; Definition = $bindingIdleOn; Bound = '<absent>'; Action = 'StopServiceAndRefuse'; Says = "idleReturnEnabled bound 'not logged', the definition says 'True'" }
+        @{ Name = 'idle return left out of the definition, bound on (left over, or an environment layer) -- stop and refuse: always compared'; Definition = $baseline; Bound = (New-BoundBinding @{ IdleReturnEnabled = $true }); Action = 'StopServiceAndRefuse'; Says = "idleReturnEnabled bound 'True', the definition says 'False'" }
+        @{ Name = 'idle return left out, a package older than #781 (logs the others, not it) -- pass, so a rollback to v5 with it off is not blocked'; Definition = $baseline; Bound = (New-BoundBinding @{ IdleReturnEnabled = $null }); Action = 'Pass'; Says = $null })) {
     Invoke-SourceCase "binding read-back: $($case.Name)" {
         $a = (Get-BindingReadBack $case.Definition $case.Bound).Action
         @{ Ok = ($a.Action -ceq $case.Action -and ($null -eq $case.Says -or (([string] $a.Message).Contains('EFFECTIVE_CONFIGURATION_MISMATCH') -and ([string] $a.Message).Contains($case.Says)))); Detail = "got: $(ConvertTo-Json $a -Compress)" }
@@ -5595,7 +5873,7 @@ foreach ($case in @(
 }
 Invoke-SourceCase 'binding result line: the four values as bound, in a fixed order, for 19' {
     $line = Format-ParallelJourneyBindingLine -Effective (Get-BindingReadBack $baseline (New-BoundBinding)).Effective
-    @{ Ok = ($line -ceq 'EFFECTIVE_JOURNEY_BINDING=admissionPolicyVersion=8 admissionPolicyDeploymentId=MAP-26-WIRE_TO_GATE-SELFTEST cargoHoldingTimeout=00:05:00 stationDepartureWaitTimeout=00:05:00 slotConfigurationReadinessGate=Off stagingDepartureRulesEnabled=False'); Detail = "got: $line" }
+    @{ Ok = ($line -ceq 'EFFECTIVE_JOURNEY_BINDING=admissionPolicyVersion=8 admissionPolicyDeploymentId=MAP-26-WIRE_TO_GATE-SELFTEST cargoHoldingTimeout=00:05:00 stationDepartureWaitTimeout=00:05:00 slotConfigurationReadinessGate=Off stagingDepartureRulesEnabled=False idleReturnEnabled=False'); Detail = "got: $line" }
 }
 Invoke-SourceCase 'binding result line: an event older than #672 reads EFFECTIVE_JOURNEY_BINDING=not-logged, nothing else' {
     $line = Format-ParallelJourneyBindingLine -Effective (Get-BindingReadBack $baseline '<absent>').Effective
@@ -6451,7 +6729,7 @@ Invoke-SourceCase 'gate read-back: Program.cs logs the gate mode the Host resolv
     $program = Get-Content -Raw -LiteralPath (Join-Path $repoRoot 'src/ControlServer.Host/Program.cs')
     $ok = [regex]::IsMatch($program, 'SlotConfigurationGateMode gate = app\.Services\.GetRequiredService<SlotConfigurationGateSwitch>\(\)\.Mode;\s+' +
         'MapStationCatalogOptions catalog = app\.Services\.GetRequiredService<IOptions<MapStationCatalogOptions>>\(\)\.Value;\s+' +
-        'EffectiveConfigurationEvent\.Log\(app\.Logger, effective, catalog, app\.Configuration\["MesIngest:baseUrl"\] \?\? "http://127\.0\.0\.1:5088", release, gate\);')
+        'EffectiveConfigurationEvent\.Log\(app\.Logger, effective, catalog, app\.Configuration\["MesIngest:baseUrl"\] \?\? "http://127\.0\.0\.1:5088", release, gate, idleReturn\);')
     @{ Ok = $ok; Detail = 'Program.cs does not pass GetRequiredService<SlotConfigurationGateSwitch>().Mode to EffectiveConfigurationEvent.Log' }
 }
 foreach ($case in @(
@@ -6696,6 +6974,91 @@ Invoke-SourceCase 'release: the installer resolves the two credentials before an
     @{ Ok = ($resolveAt -gt 0 -and $resolveAt -lt $firstChange -and $calls.Count -ge 2 -and $withRelease.Count -eq $calls.Count -and
             $installer.Contains('Format-ParallelEmergencyReleaseLine -Definition $definition -EnvironmentNames $populatedNames -RosterText $rosterText'))
         Detail = "resolved at $resolveAt, first change at $firstChange; calls $($calls.Count), with the credentials $($withRelease.Count)" }
+}
+
+# ------------------------------------------------------------------------------------------------
+# control-server#781. The idle return switch (IdleReturnOptions, section IdleReturn; REQ-0291, CP-0016): the only governed way to
+# turn it on for this instance. Written, it reaches the overlay; left out, the overlay writes false; IdleReturn__* in the
+# environment is refused; what the Host bound is read back through $script:JourneyBindingFields (the binding cases above).
+# ------------------------------------------------------------------------------------------------
+Write-Host ''
+Write-Host 'Idle return switch (control-server#781)' -ForegroundColor Cyan
+
+function Set-IdleReturnSection($Definition, $Section) {
+    $d = Copy-Definition $Definition
+    $d['idleReturn'] = $Section
+    return $d
+}
+Invoke-SourceCase 'idle return: a definition that turns it on is accepted (the section is whitelisted)' {
+    $f = @(Test-ParallelInstanceDefinition -Definition $bindingIdleOn)
+    @{ Ok = ($f.Count -eq 0); Detail = "failures: $($f -join ' | ')" }
+}
+Invoke-SourceCase 'idle return: a definition that writes it off is accepted' {
+    $f = @(Test-ParallelInstanceDefinition -Definition (Set-IdleReturnSection $baseline ([ordered]@{ enabled = $false })))
+    @{ Ok = ($f.Count -eq 0); Detail = "failures: $($f -join ' | ')" }
+}
+# A hash literal cannot hold both spellings; ConvertFrom-Json -AsHashtable, which reads definitions, can.
+$idleCaseTwin = [hashtable]::new([StringComparer]::Ordinal)
+$idleCaseTwin['enabled'] = $false
+$idleCaseTwin['Enabled'] = $true
+foreach ($case in @(
+        @{ Name = 'an unknown sub-key is refused'; Section = [ordered]@{ enabled = $true; vehicleScope = 'agv02' }; Says = 'idleReturn' }
+        @{ Name = 'a case twin (Enabled beside enabled) is refused'; Section = $idleCaseTwin; Says = 'differs only in case' }
+        @{ Name = 'a string "true" is refused, not bound as on behind the check'; Section = [ordered]@{ enabled = 'true' }; Says = 'idleReturn.enabled must be a JSON boolean' }
+        @{ Name = 'a section without enabled is refused'; Section = [ordered]@{}; Says = 'idleReturn.enabled must be stated explicitly' }
+        @{ Name = 'a bare true instead of an object is refused'; Section = $true; Says = 'idleReturn must be an object with enabled' })) {
+    Invoke-SourceCase "idle return: $($case.Name)" {
+        $f = @(Test-ParallelInstanceDefinition -Definition (Set-IdleReturnSection $baseline $case.Section))
+        @{ Ok = ($f.Count -ge 1 -and @($f | Where-Object { $_.Contains($case.Says) }).Count -ge 1); Detail = "failures: $($f -join ' | ')" }
+    }
+}
+Invoke-SourceCase 'idle return: on in the definition is written on in the overlay, as IdleReturn:enabled and nothing else' {
+    $o = New-ParallelInstanceConfigurationOverlay -Definition $bindingIdleOn
+    $v = $o['IdleReturn']['enabled']
+    @{ Ok = ($v -is [bool] -and $v -and @($o['IdleReturn'].Keys).Count -eq 1); Detail = "got: $(ConvertTo-Json $o['IdleReturn'] -Compress)" }
+}
+Invoke-SourceCase 'idle return: left out, the overlay writes false, so an earlier install''s true does not survive a reinstall' {
+    $o = New-ParallelInstanceConfigurationOverlay -Definition $baseline
+    $earlier = Merge-ConfigurationTree -Base (Copy-Definition $productConfiguration) -Overlay (New-ParallelInstanceConfigurationOverlay -Definition $bindingIdleOn)
+    $again = Merge-ConfigurationTree -Base $earlier -Overlay $o
+    $v = $o['IdleReturn']['enabled']
+    @{ Ok = ($v -is [bool] -and -not $v -and $earlier['IdleReturn']['enabled'] -eq $true -and $again['IdleReturn']['enabled'] -eq $false)
+        Detail = "overlay: $v; earlier: $($earlier['IdleReturn']['enabled']); reinstalled: $($again['IdleReturn']['enabled'])" }
+}
+Invoke-SourceCase 'idle return environment override: IdleReturn keys count like JourneyRuntime ones, ignoring case, prefixes included' {
+    $found = @(Get-ParallelJourneyRuntimeEnvironmentOverride -ServiceEnvironment @('IdleReturn__Enabled=true', 'IdleReturnX=1') `
+            -MachineEnvironment @('DOTNET_idlereturn:enabled=true', 'MyIdleReturn__Enabled=true'))
+    $expected = 'service IdleReturn__Enabled|machine DOTNET_idlereturn:enabled'
+    @{ Ok = (($found -join '|') -ceq $expected); Detail = "got: $($found -join '|')" }
+}
+Invoke-SourceCase 'idle return read-back: Program.cs logs the IdleReturnOptions the evaluator reads, not the event''s default off' {
+    # Without this, dropping the argument would log False on every Host: a production read-back would refuse a Host that really
+    # has idle return on, and one with the definition off would pass a Host that has it on through some other layer.
+    $program = Get-Content -Raw -LiteralPath (Join-Path $repoRoot 'src/ControlServer.Host/Program.cs')
+    $ok = [regex]::IsMatch($program, 'IdleReturnOptions idleReturn = app\.Services\.GetRequiredService<IOptions<IdleReturnOptions>>\(\)\.Value;[\s\S]{0,600}?' +
+        'EffectiveConfigurationEvent\.Log\(app\.Logger, effective, catalog, app\.Configuration\["MesIngest:baseUrl"\] \?\? "http://127\.0\.0\.1:5088", release, gate, idleReturn\);')
+    @{ Ok = $ok; Detail = 'Program.cs does not pass IOptions<IdleReturnOptions>.Value to EffectiveConfigurationEvent.Log' }
+}
+Invoke-SourceCase 'idle return read-back: the Host source logs the switch last, under the name the module reads' {
+    $eventSource = @(Get-ChildItem -LiteralPath (Join-Path $repoRoot 'src/ControlServer.Host') -Recurse -Filter '*.cs' |
+            Where-Object { (Get-Content -Raw -LiteralPath $_.FullName).Contains(' stagingLoadNotSettledAlarmAfter={StagingLoadNotSettledAlarmAfter} idleReturnEnabled={IdleReturnEnabled}";') })
+    $logged = @(& (Get-Module ParallelInstance) { $script:JourneyBindingFields } | Where-Object Name -CEQ 'idleReturnEnabled' | ForEach-Object Logged)
+    @{ Ok = ($eventSource.Count -eq 1 -and $eventSource[0].Name -ceq 'EffectiveConfigurationEvent.cs' -and ($logged -join ',') -ceq 'IdleReturnEnabled')
+        Detail = "template found in: $(@($eventSource | ForEach-Object Name) -join ', '); module reads: $($logged -join ',')" }
+}
+# The user, 2026-10-19, after the independent review: "这次先不开" -- not before control-server#793 (a vehicle standing on a
+# registered waiting point without a station row is committed to the station it is on). The section stays in stage 3, written off,
+# so turning it on later is that one value; the definition must still pass the check with it.
+Invoke-SourceCase 'idle return: only the production stage-3 definition writes it, writes it off, and still passes the definition check' {
+    $writing = @(Get-ChildItem -LiteralPath $PSScriptRoot -Filter 'instance-*.json' | Where-Object {
+            (Get-Content -Raw -LiteralPath $_.FullName).Contains('idleReturn') } | ForEach-Object Name)
+    $s3 = Read-ParallelInstanceDefinition -Path (Join-Path $PSScriptRoot 'instance-factory01-v2.cutover-production-s3.runtime-on.json')
+    $f = @(Test-ParallelInstanceDefinition -Definition $s3 | Where-Object { $_ -match 'idleReturn' })
+    $written = $s3['idleReturn']
+    @{ Ok = (($writing -join ',') -ceq 'instance-factory01-v2.cutover-production-s3.runtime-on.json' -and
+            $written -is [System.Collections.IDictionary] -and $written['enabled'] -is [bool] -and -not $written['enabled'] -and
+            -not (Test-ParallelIdleReturnEnabled -Definition $s3) -and $f.Count -eq 0)
+        Detail = "written in: $($writing -join ', '); s3 idleReturn: $(ConvertTo-Json $written -Compress); idleReturn failures: $($f -join ' | ')" }
 }
 
 Write-Host ''

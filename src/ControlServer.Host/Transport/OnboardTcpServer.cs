@@ -110,11 +110,13 @@ public sealed partial class OnboardTcpServer : BackgroundService
     /// </remarks>
     private async Task ServeAsync(TcpClient client, SemaphoreSlim slots, CancellationToken cancellationToken)
     {
+        // Read before anything can fail: once the socket is disposed its remote endpoint is gone.
+        ConnectionLabel label = new(RemoteEndPointOf(client));
         try
         {
             using (client)
             {
-                await HandleClientAsync(client, cancellationToken).ConfigureAwait(false);
+                await HandleClientAsync(client, label, cancellationToken).ConfigureAwait(false);
             }
         }
         catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
@@ -123,7 +125,10 @@ public sealed partial class OnboardTcpServer : BackgroundService
         }
         catch (Exception error)
         {
-            LogConnectionEnded(_logger, error);
+            // control-server#779: until then this named no vehicle, and on 2026-10-19 which car a database fault had cut
+            // off was read from which car reconnected seconds later.
+            LogConnectionEnded(
+                _logger, label.AgvId ?? "(no session)", label.State?.SessionGeneration, label.RemoteEndPoint, error);
         }
         finally
         {
@@ -131,7 +136,7 @@ public sealed partial class OnboardTcpServer : BackgroundService
         }
     }
 
-    private async Task HandleClientAsync(TcpClient client, CancellationToken cancellationToken)
+    private async Task HandleClientAsync(TcpClient client, ConnectionLabel label, CancellationToken cancellationToken)
     {
         await using NetworkStream stream = client.GetStream();
         using StreamReader reader = new(stream, Encoding.UTF8, detectEncodingFromByteOrderMarks: false, leaveOpen: true);
@@ -139,6 +144,7 @@ public sealed partial class OnboardTcpServer : BackgroundService
         await using AsyncServiceScope scope = _scopeFactory.CreateAsyncScope();
         OnboardMessageProcessor processor = scope.ServiceProvider.GetRequiredService<OnboardMessageProcessor>();
         OnboardConnectionState state = new() { DeferOutboundUntilResponseWritten = true };
+        label.State = state;
         string? attachedAgvId = null;
         // The vehicle this connection's SessionHello named while its handshake is not done (control-server#483).
         string? handshakingAgvId = null;
@@ -206,6 +212,7 @@ public sealed partial class OnboardTcpServer : BackgroundService
                 // answered, so from here until the attach below an administrator must not read it as gone.
                 if (hello && helloAgvId is not null)
                 {
+                    label.HelloAgvId = helloAgvId;
                     if (handshakingAgvId is not null)
                     {
                         _peer.EndHandshake(handshakingAgvId, connection);
@@ -274,6 +281,37 @@ public sealed partial class OnboardTcpServer : BackgroundService
                 _peer.EndHandshake(handshakingAgvId, connection);
             }
         }
+    }
+
+    /// <summary>
+    /// The peer's address for the log, never a throw: this runs before the try that releases the connection's slot, and a
+    /// socket the peer already reset can refuse to say.
+    /// </summary>
+    private static string RemoteEndPointOf(TcpClient client)
+    {
+        try
+        {
+            return client.Client.RemoteEndPoint?.ToString() ?? "(unknown)";
+        }
+        catch (Exception error) when (error is SocketException or ObjectDisposedException)
+        {
+            return "(unknown)";
+        }
+    }
+
+    /// <summary>
+    /// Who a connection belongs to, as far as it got, for the log line that ends it: the session's vehicle once the hello
+    /// was processed, the vehicle the hello named while it was not, and the remote endpoint always.
+    /// </summary>
+    private sealed class ConnectionLabel(string remoteEndPoint)
+    {
+        public string RemoteEndPoint { get; } = remoteEndPoint;
+
+        public OnboardConnectionState? State { get; set; }
+
+        public string? HelloAgvId { get; set; }
+
+        public string? AgvId => State?.AgvId ?? HelloAgvId;
     }
 
     /// <summary>
@@ -347,9 +385,12 @@ public sealed partial class OnboardTcpServer : BackgroundService
         Message = "Onboard NDJSON listener started on {Address}:{Port}; transport=plaintext")]
     private static partial void LogTransportStarted(ILogger logger, IPAddress address, int port);
 
+    // The first sentence is what RELEASE-CANDIDATE.md has operators look for; keep it as it is.
     [LoggerMessage(EventId = 1003, Level = LogLevel.Warning,
-        Message = "Onboard connection ended with a protocol or transport error.")]
-    private static partial void LogConnectionEnded(ILogger logger, Exception error);
+        Message = "Onboard connection ended with a protocol or transport error. Vehicle {AgvId} (generation " +
+                  "{SessionGeneration}), remote {RemoteEndPoint}.")]
+    private static partial void LogConnectionEnded(
+        ILogger logger, string agvId, long? sessionGeneration, string remoteEndPoint, Exception error);
 
     [LoggerMessage(EventId = 1004, Level = LogLevel.Warning,
         Message = "Onboard connection refused: {MaxConcurrentSessions} concurrent sessions are already open.")]

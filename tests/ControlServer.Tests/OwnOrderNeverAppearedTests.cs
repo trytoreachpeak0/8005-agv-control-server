@@ -485,7 +485,7 @@ public sealed class OwnOrderNeverAppearedTests
         Assert.Empty(site.OrderCommands);
     }
 
-    private static VehicleFaultRecoveryRequest Declare(RuntimeFixture fixture) => new(
+    internal static VehicleFaultRecoveryRequest Declare(RuntimeFixture fixture) => new(
         new EmergencyStopSubject(fixture.Options.AgvId, fixture.Options.VehicleKey),
         VehicleFaultRecoveryAction.DeclareOrderNeverAppeared,
         OperatorId,
@@ -493,7 +493,7 @@ public sealed class OwnOrderNeverAppearedTests
         Note: "L1 673");
 
     /// <summary>受理后派往取货站：建单回 00002（结果未知、单没落地），之后的对账是真实 RIoT 的查无此单。</summary>
-    private static async Task<RuntimeFixture> PickupCreateRefusedAsync()
+    internal static async Task<RuntimeFixture> PickupCreateRefusedAsync()
     {
         RuntimeFixture fixture = await RuntimeFixture.CreateAsync();
         fixture.Catalog.Set(fixture.Demand(FirstDemandId, FirstSublot, Now.AddMinutes(-10)));
@@ -541,7 +541,7 @@ public sealed class OwnOrderNeverAppearedTests
     }
 
     /// <summary>拨钟、车载端说一句话、跑一轮。</summary>
-    private static async Task RunAfterAsync(RuntimeFixture fixture, TimeSpan elapsed)
+    internal static async Task RunAfterAsync(RuntimeFixture fixture, TimeSpan elapsed)
     {
         fixture.Clock.Advance(elapsed);
         await fixture.HearFromPeerAsync();
@@ -568,7 +568,7 @@ public sealed class OwnOrderNeverAppearedTests
             .ExecuteUpdateAsync(set => set.SetProperty(row => row.ReturnedOrderId, "ORDER-ANSWERED"), Token) > 0);
     }
 
-    private static async Task<OwnOrderRebuildRow[]> RebuildsAsync(RuntimeFixture fixture)
+    internal static async Task<OwnOrderRebuildRow[]> RebuildsAsync(RuntimeFixture fixture)
     {
         await using ControlServerDbContext reading = new(fixture.DbOptionsForTests);
         return await reading.OwnOrderRebuilds.AsNoTracking().ToArrayAsync(Token);

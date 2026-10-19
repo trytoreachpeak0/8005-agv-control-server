@@ -1,0 +1,27 @@
+cs#779 连接池开销（本机，2026-10-19，同时有其他会话负载，数字有噪声，看量级）
+程序：pool-overhead-bench.Program.cs.txt（引用产品 ControlServer.Infrastructure；每次新建上下文、做一次 ProtocolInbox 去重查询；WAL 文件库）
+
+== 单路，3000 次 × 3 轮交替（第一版程序，串行化用的是同等的临时子类） ==
+pooled    127～225 us/query（首轮冷启动 791～1257）
+unpooled  3115～7526 us/query   ← 关池约 20 倍，未采用（A1）
+serialized 325～443 us/query
+
+== 产品类 SerializedSqliteConnection，单路与 8 路并发，各 3000 次/路，3 轮 ==
+pooled     lanes=1 3000/lane: wall 2348 ms, 783 us/query wall, 783 us/query per lane
+pooled     lanes=8 3000/lane: wall 5812 ms, 242 us/query wall, 1937 us/query per lane
+serialized lanes=1 3000/lane: wall 1916 ms, 639 us/query wall, 639 us/query per lane
+serialized lanes=8 3000/lane: wall 5603 ms, 233 us/query wall, 1868 us/query per lane
+pooled     lanes=1 3000/lane: wall 2102 ms, 701 us/query wall, 701 us/query per lane
+pooled     lanes=8 3000/lane: wall 7098 ms, 296 us/query wall, 2366 us/query per lane
+serialized lanes=1 3000/lane: wall 2159 ms, 720 us/query wall, 720 us/query per lane
+serialized lanes=8 3000/lane: wall 2000 ms, 83 us/query wall, 667 us/query per lane
+pooled     lanes=1 3000/lane: wall 608 ms, 203 us/query wall, 203 us/query per lane
+pooled     lanes=8 3000/lane: wall 1737 ms, 72 us/query wall, 579 us/query per lane
+serialized lanes=1 3000/lane: wall 859 ms, 286 us/query wall, 286 us/query per lane
+serialized lanes=8 3000/lane: wall 1582 ms, 66 us/query wall, 527 us/query per lane
+
+== 池竞态复现（pool-race-repro.Program.cs.txt，竞态是 dotnet/efcore#39008；程序改写自它的重复报告 #39253 里的复现程序，net8 + Microsoft.Data.Sqlite 8.0.30） ==
+Microsoft.Data.Sqlite 8.0.30.0 pooling=True: 200 rounds x 16 threads: shared=0 errors=0
+Microsoft.Data.Sqlite 8.0.30.0 pooling=False: 200 rounds x 16 threads: shared=0 errors=0
+Microsoft.Data.Sqlite 8.0.30.0 pooling=True: 1500 rounds x 64 threads: shared=0 errors=0
+→ 本机没有复现出共用句柄。

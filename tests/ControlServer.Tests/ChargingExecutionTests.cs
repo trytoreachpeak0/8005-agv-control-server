@@ -639,6 +639,8 @@ public sealed class ChargingExecutionTests
     {
         { "roster-emptied", ChargingExecutionReasons.WithdrawnChargerNoLongerEligible },
         { "another-vehicle-charging-on-it", ChargingExecutionReasons.WithdrawnChargerNoLongerEligible },
+        // control-server#772: charging where RIoT places it at no station (currentPosition 0) -- maybe on 211.
+        { "another-vehicle-charging-at-position-zero", ChargingExecutionReasons.WithdrawnChargerNoLongerEligible },
         { "charger-allocation-held", ChargingExecutionReasons.WithdrawnChargerNoLongerEligible },
         { "battery-back-above-the-line", ChargingExecutionReasons.WithdrawnNoLongerRequired },
     };
@@ -671,6 +673,10 @@ public sealed class ChargingExecutionTests
             case "another-vehicle-charging-on-it":
                 fleet.Riot.VehicleOverrides[FleetFixture.VehicleKeys[1]] =
                     seen => seen with { CurrentStationId = Near.StationId, BatteryState = "CHARGING" };
+                break;
+            case "another-vehicle-charging-at-position-zero":
+                fleet.Riot.VehicleOverrides[FleetFixture.VehicleKeys[1]] =
+                    seen => seen with { CurrentStationId = 0, BatteryState = "CHARGING" };
                 break;
             case "charger-allocation-held":
                 await new ChargingHoldStore(fleet.Context).RecordStationHoldAsync(
@@ -1562,6 +1568,52 @@ public sealed class ChargingExecutionTests
             Assert.Contains($"[{KeyA}]:VEHICLE_POSITION_UNREADABLE (HttpRequestException)", alarm.Message, StringComparison.Ordinal);
         }
         Assert.Equal((KeyA, StationExclusivityStates.Reserved), await HolderAsync(fleet, Near.StationId));
+    }
+
+    /// <summary>
+    /// control-server#772：失败周期留下的预占，在另一辆车于某个说不出名字的桩上充电时（RIoT 报 <c>CHARGING</c>、<c>currentPosition=0</c>）
+    /// 不释放——那辆车可能正停在这个桩上，桩不能确认空闲。原车早已离桩、充电已停，缺的只有这一项；超过窗口告警一次（2247），写明是哪辆车。
+    /// 那辆车离开桩之后，下一轮照常释放。
+    /// </summary>
+    [Fact]
+    public async Task AReservationLeftByAFailedCycleIsKeptWhileAnotherVehicleChargesWithoutAStationAndReleasedOnceItLeaves()
+    {
+        await using FleetFixture fleet = await FleetAsync(vehicles: 2);
+        string agvB = FleetFixture.AgvIds[1];
+        string keyB = FleetFixture.VehicleKeys[1];
+        fleet.Riot.BatteryByVehicle[KeyA] = 20;
+        JourneyRuntimeRow journey = await CommittedAndSentAsync(fleet);
+        fleet.Riot.VehicleOverrides[KeyA] = seen => seen with { CurrentStationId = 12 };
+        fleet.Riot.VehicleOverrides[keyB] = seen => seen with { CurrentStationId = 0, BatteryState = "CHARGING" };
+        fleet.Riot.CancelOrder(journey.PickupUpperId);
+        await RoundAsync(fleet);
+        await RoundAsync(fleet);
+        await RoundAsync(fleet);
+
+        Assert.Equal(
+            ChargingExecutionReasons.OrderEnded,
+            (await fleet.Context.Set<ChargingCycleRow>().AsNoTracking().SingleAsync(Token)).EndReason);
+        Assert.Equal((KeyA, StationExclusivityStates.Reserved), await HolderAsync(fleet, Near.StationId));
+
+        await fleet.HearFromEveryVehicleAsync();
+        await fleet.RunRoundAsync(fleet.Options.OwnOrderRebuildRepeatWindow + TimeSpan.FromMinutes(1));
+        await RoundAsync(fleet);
+
+        var alarm = Assert.Single(fleet.ChargingLog.Entries, entry => entry.EventId.Id == 2247);
+        Assert.Contains(
+            $"the charger is not confirmed free ({ChargingAllocationReasons.ChargerOccupancyUnknown}; unknown: {agvB}[{keyB}]:VEHICLE_CHARGING_WITHOUT_STATION",
+            alarm.Message, StringComparison.Ordinal);
+        Assert.Equal((KeyA, StationExclusivityStates.Reserved), await HolderAsync(fleet, Near.StationId));
+
+        fleet.Riot.VehicleOverrides[keyB] = seen => seen with { CurrentStationId = 13, BatteryState = "NO_CHARGE" };
+        await RoundAsync(fleet);
+
+        // Released. A is still below its line and past its cooldown, so the same round may hand it 211 again -- on a new journey.
+        Assert.NotEqual(journey.JourneyId, (await StationAsync(fleet, Near.StationId))?.JourneyId);
+        Assert.Equal(
+            ChargingExecutionReasons.ReservationReleasedAfterEndedCycle,
+            (await fleet.Context.Set<StationExclusivityRecordRow>().AsNoTracking()
+                .SingleAsync(row => row.JourneyId == journey.JourneyId, Token)).ReleaseReason);
     }
 
     // ---- 按车冷却（独立审查 M3）--------------------------------------------------------------------------------------
