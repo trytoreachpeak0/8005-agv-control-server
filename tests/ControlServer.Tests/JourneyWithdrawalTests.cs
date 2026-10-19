@@ -740,10 +740,11 @@ public sealed class JourneyWithdrawalTests
         Assert.Contains(
             FirstDemandId,
             await DemandJourneyLookup.ReleasedForRedispatch(fixture.Context).AsNoTracking().Select(row => row.DemandId).ToArrayAsync(Token));
-        int createsBefore = fixture.Riot.CreateCount("TO_PICKUP");
+        // The released demand may be dispatched again under a journey of its own; the rebuild's new order never is.
         fixture.Clock.Advance(fixture.Options.OwnOrderRebuildDelay);
         Assert.Null(await UnloadCrashResumeTests.RunRoundAsync(fixture));
-        Assert.Equal(createsBefore, fixture.Riot.CreateCount("TO_PICKUP"));
+        fixture.Context.ChangeTracker.Clear();
+        Assert.False(await fixture.Context.OrderIntents.AsNoTracking().AnyAsync(row => row.UpperId == pending.NewUpperId, Token));
         Assert.Equal(OwnOrderRebuildStates.Ended, (await fixture.Context.OwnOrderRebuilds.AsNoTracking().SingleAsync(Token)).State);
     }
 

@@ -28,6 +28,8 @@
 
 - 那一次结果未知的装货结成「已取消」（与对上的补偿、取消同一个终态）；之后车再报那一次的结果，服务端只记历史。
 - 旅程上每一条还没装的需求退回待派：不抑制，等待年龄不重置，下一轮派车按「已释放待改派」重新受理。
+- 这一趟还没建新单的重建记录（待发 `PENDING`、停住等人 `STOPPED`，包括因电量低于强制充电线停住的）转成 `ENDED`，记下操作人，
+  与故障处置入口「放弃停住的这一趟」同一个写法。之后引擎不再为它建单。演练输出的 `rebuilds` 列出这些记录。
 - 旅程收尾，收尾码 `WITHDRAWN_BY_OPERATOR`。车上的空清单说「本站因任务释放结束」（`DEMAND_RELEASED`）。
   租约、订单占用、用途占用一起放。
 - 写一条管理员审计（`JOURNEY_MANUAL_WITHDRAWAL`），记操作人、理由、两条核实记录、仓位事实、篮子去向和整份计划。
@@ -132,7 +134,7 @@ dotnet ControlServer.FieldOps.dll withdraw-journey --database <v2 库文件> --p
 | `DOOR_NOT_PROVEN_CLOSED` | 车最近的安全摘要说有门读不出、没锁或输出没复位，或车从没报过 | 先让门证明关着 |
 | `VEHICLE_REPORTS_ANOTHER_UNSETTLED_ATTEMPT` | 车最近报的未结操作不是要撤的这一次 | 撤下之后车仍挂着它，交工程师 |
 | `RECOVERY_SESSION_OPEN`／`SLOT_FAULT_DECLARATION_OPEN` | 这辆车有开着的恢复会话，或这一趟有未了结的判故障声明 | 先把它们了结 |
-| `REBUILD_RECORD_OPEN` | 这一趟有还在等的自动重建 | 第一部分不处理，交工程师（了结重建记录随后补上） |
+| `REBUILD_RECORD_OPEN` | 这一趟有一条重建记录已经在建新单（`ORDERING`）、新单确认前就 FAILED 或终结了、或已转车载端交接货物 | RIoT 上可能有新单，或者另一条出口在管它，这一版不碰，交工程师。只是待发（`PENDING`）或停住等人（`STOPPED`）的不拒，随撤下了结 |
 | `ORDER_OUTCOME_UNKNOWN` | 这一趟有一张建单结果未知的单 | RIoT 上可能有活单，先查清 |
 | `FAULT_IN_EFFECT`／`EMERGENCY_STOP_OPEN`／`FAULTED_CARGO_BOUND` | 车的故障在效、急停没解除，或有故障货物绑定 | 先走故障清除与急停解除 |
 | `CONFIRMATION_REQUIRED`／`CONFIRMATION_STALE` | 没带确认码，或演练之后状态变了 | 重新演练 |

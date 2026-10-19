@@ -250,7 +250,8 @@ public static class JourneyWithdrawal
                 }
                 else
                 {
-                    await StageWithdrawalAsync(dbContext, assessment.Plan!, now, cancellationToken).ConfigureAwait(false);
+                    await StageWithdrawalAsync(dbContext, assessment.Plan!, Trimmed(request.OperatorId)!, now, cancellationToken)
+                        .ConfigureAwait(false);
                     await dbContext.SaveChangesAsync(cancellationToken).ConfigureAwait(false);
                     string id = await WriteAuditAsync(
                         audit, request, assessment, GovernanceActionOutcome.Succeeded, Withdrawn, now, cancellationToken)
@@ -432,11 +433,16 @@ public static class JourneyWithdrawal
         {
             codes.Add(SlotFaultDeclarationOpen);
         }
-        // control-server#771 first part: a rebuild record still waited on is refused; ending it lands after control-server#770.
-        if (await dbContext.OwnOrderRebuilds.AsNoTracking()
-                .AnyAsync(row => row.JourneyId == runtime.JourneyId &&
-                                 row.State != OwnOrderRebuildStates.Rebuilt && row.State != OwnOrderRebuildStates.Ended,
-                    cancellationToken).ConfigureAwait(false))
+        // A rebuild that has not yet ordered anything -- waiting (PENDING) or stopped for a person (STOPPED) -- is ended with the
+        // journey, as giving a stopped trip up does (VehicleFaultRecoveryService.TerminateStoppedAsync). One that may have an order
+        // in RIoT (ORDERING, FAILED, a new order ended before its confirmation) or that another exit holds (AWAITING_CARGO_HANDOFF)
+        // is refused: this part does not touch orders.
+        OwnOrderRebuildRow[] rebuilds = await dbContext.OwnOrderRebuilds.AsNoTracking()
+            .Where(row => row.JourneyId == runtime.JourneyId &&
+                          row.State != OwnOrderRebuildStates.Rebuilt && row.State != OwnOrderRebuildStates.Ended)
+            .OrderBy(row => row.RebuildId)
+            .ToArrayAsync(cancellationToken).ConfigureAwait(false);
+        if (rebuilds.Any(row => !EndsWithTheJourney(row)))
         {
             codes.Add(RebuildRecordOpen);
         }
@@ -491,7 +497,8 @@ public static class JourneyWithdrawal
                     .SafetySummaryObservedAtAsync(session.AgvId, session.SessionGeneration, revision, cancellationToken)
                     .ConfigureAwait(false)
                 : null,
-            session?.UpdatedAt);
+            session?.UpdatedAt,
+            [.. rebuilds.Select(row => new JourneyWithdrawalRebuild(row.RebuildId, row.State, row.StoppedReason, row.EndedUpperId))]);
         string[] distinct = [.. codes.Distinct(StringComparer.Ordinal)];
         return new Assessment(
             distinct, plan, distinct.Length == 0 ? CodeOf(plan, facts, Trimmed(request.CargoLocation)) : null, false);
@@ -516,6 +523,12 @@ public static class JourneyWithdrawal
     private const string LoadResultRequiresRecovery = "LOAD_RESULT_REQUIRES_RECOVERY";
 
     private const string OnboardSessionNotReady = "ONBOARD_SESSION_NOT_READY";
+
+    /// <summary>A rebuild record that has not ordered anything, so ends with the journey (control-server#771, after #770).</summary>
+    private static bool EndsWithTheJourney(OwnOrderRebuildRow row) =>
+        row.State == OwnOrderRebuildStates.Pending ||
+        (row.State == OwnOrderRebuildStates.Stopped &&
+         !string.Equals(row.StoppedReason, OwnOrderRebuilds.EndedBeforeConfirmation, StringComparison.Ordinal));
 
     private static Assessment Refused(List<string> codes) => new([.. codes.Distinct(StringComparer.Ordinal)], null, null, false);
 
@@ -667,6 +680,7 @@ public static class JourneyWithdrawal
     private static async Task StageWithdrawalAsync(
         ControlServerDbContext dbContext,
         JourneyWithdrawalPlan plan,
+        string operatorId,
         DateTimeOffset now,
         CancellationToken cancellationToken)
     {
@@ -681,6 +695,15 @@ public static class JourneyWithdrawal
             StationOperationRow operation = await dbContext.StationOperations
                 .SingleAsync(row => row.SlotOperationAttemptId == load.SlotOperationAttemptId, cancellationToken).ConfigureAwait(false);
             operation.Status = StationOperationStatus.Cancelled;
+        }
+
+        // Who ended them, on the records themselves, as TerminateStoppedAsync writes it.
+        foreach (JourneyWithdrawalRebuild item in plan.Rebuilds ?? [])
+        {
+            OwnOrderRebuildRow rebuild = await dbContext.OwnOrderRebuilds
+                .SingleAsync(row => row.RebuildId == item.RebuildId, cancellationToken).ConfigureAwait(false);
+            rebuild.OperatorId = operatorId;
+            rebuild.State = OwnOrderRebuildStates.Ended;
         }
 
         int releasedFromCurrentStop = 0;
