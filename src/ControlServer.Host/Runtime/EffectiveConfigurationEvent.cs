@@ -63,6 +63,12 @@ namespace ControlServer.Host.Runtime;
 /// read-back does not compare them; an event without them is from a package older than #709.
 /// </para>
 /// <para>
+/// <b>The idle return switch</b> (<see cref="IdleReturn.IdleReturnOptions.Enabled"/>, control-server#781) is appended after them, as a
+/// boolean: on, a vehicle with no demand drives itself to a waiting point (REQ-0291; agv02 to its staging origin, CP-0016). The
+/// installer compares it with the definition's <c>idleReturn.enabled</c> and prints it for 19-deploy-control-server-parallel.ps1. An
+/// event without it is from a package older than #781, which the installer reads as off.
+/// </para>
+/// <para>
 /// More placeholders than the six <c>LoggerMessage.Define</c> takes, so the event hands the logger its state the way
 /// <c>Define</c> does -- the template under <c>{OriginalFormat}</c> and each value as it is. Not the logging source generator: its
 /// state formats a collection into a string, and the installer reads the roster and the catalog back as JSON structure.
@@ -71,7 +77,7 @@ namespace ControlServer.Host.Runtime;
 public static class EffectiveConfigurationEvent
 {
     public const string Template =
-        "EFFECTIVE_CONFIGURATION allowedWorkTypes={AllowedWorkTypes} allowedDispatchZones={AllowedDispatchZones} mesIngestBaseUrl={MesIngestBaseUrl} fleet={Fleet} clearanceToWaitingPointEnabled={ClearanceToWaitingPointEnabled} mapStationCatalog={MapStationCatalog} foreignRunningOrderRelease={ForeignRunningOrderRelease} admissionPolicyVersion={AdmissionPolicyVersion} admissionPolicyDeploymentId={AdmissionPolicyDeploymentId} cargoHoldingTimeout={CargoHoldingTimeout} stationDepartureWaitTimeout={StationDepartureWaitTimeout} slotConfigurationReadinessGate={SlotConfigurationReadinessGate} stagingDepartureRulesEnabled={StagingDepartureRulesEnabled} stagingLoadNotSettledAlarmAfter={StagingLoadNotSettledAlarmAfter}";
+        "EFFECTIVE_CONFIGURATION allowedWorkTypes={AllowedWorkTypes} allowedDispatchZones={AllowedDispatchZones} mesIngestBaseUrl={MesIngestBaseUrl} fleet={Fleet} clearanceToWaitingPointEnabled={ClearanceToWaitingPointEnabled} mapStationCatalog={MapStationCatalog} foreignRunningOrderRelease={ForeignRunningOrderRelease} admissionPolicyVersion={AdmissionPolicyVersion} admissionPolicyDeploymentId={AdmissionPolicyDeploymentId} cargoHoldingTimeout={CargoHoldingTimeout} stationDepartureWaitTimeout={StationDepartureWaitTimeout} slotConfigurationReadinessGate={SlotConfigurationReadinessGate} stagingDepartureRulesEnabled={StagingDepartureRulesEnabled} stagingLoadNotSettledAlarmAfter={StagingLoadNotSettledAlarmAfter} idleReturnEnabled={IdleReturnEnabled}";
 
     public static readonly EventId Id = new(5350, "EffectiveConfiguration");
 
@@ -81,7 +87,8 @@ public static class EffectiveConfigurationEvent
         MapStationCatalogOptions catalog,
         string mesIngestBaseUrl,
         ForeignOrders.ForeignRunningOrderReleaseState? foreignRunningOrderRelease = null,
-        ControlServer.Domain.SlotConfigurationGateMode slotConfigurationGate = ControlServer.Domain.SlotConfigurationGateMode.Off)
+        ControlServer.Domain.SlotConfigurationGateMode slotConfigurationGate = ControlServer.Domain.SlotConfigurationGateMode.Off,
+        IdleReturn.IdleReturnOptions? idleReturn = null)
     {
         ArgumentNullException.ThrowIfNull(logger);
         ArgumentNullException.ThrowIfNull(effective);
@@ -107,6 +114,7 @@ public static class EffectiveConfigurationEvent
             new("StagingDepartureRulesEnabled", effective.StagingDepartureRules.Enabled),
             new("StagingLoadNotSettledAlarmAfter",
                 effective.StagingDepartureRules.LoadNotSettledAlarmAfter.ToString("c", CultureInfo.InvariantCulture)),
+            new("IdleReturnEnabled", (idleReturn ?? new IdleReturn.IdleReturnOptions()).Enabled),
             new("{OriginalFormat}", Template),
         ];
         logger.Log(LogLevel.Information, Id, state, null, static (values, _) => Render(values));

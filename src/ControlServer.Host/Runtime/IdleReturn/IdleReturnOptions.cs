@@ -20,6 +20,11 @@ namespace ControlServer.Host.Runtime.IdleReturn;
 /// 关掉只阻止新承诺，不取消、不改写既有的承诺（<c>REQ-0291</c>）：已形成的承诺照常物化、执行到收敛或失败收尾。打开、或等待点登记激活新版本，
 /// 下一轮派车即对所有当前满足条件的车重评：评估每一轮都做，所以「立即重评」不需要另外的触发。
 /// </para>
+/// <para>
+/// v2 并行实例上只经实例定义的 <c>idleReturn.enabled</c> 打开（control-server#781，<c>scripts/parallel/ParallelInstance.psm1</c>）：覆盖层每次都写出
+/// 这一节（定义没写就写 false），环境变量 <c>IdleReturn__*</c> 被安装器拒绝；Host 在 <see cref="EffectiveConfigurationEvent"/> 里记下实际绑定的值，
+/// 安装器回读比对。生产定义 2026-10-19 起打开（用户定，与全检站同一次停机）。
+/// </para>
 /// </remarks>
 public sealed class IdleReturnOptions
 {

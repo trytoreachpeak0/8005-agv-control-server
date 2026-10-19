@@ -202,7 +202,7 @@ $script:AllowedKeys = [ordered]@{
         'opsRoot', 'stagingRoot', 'listenAddress', 'healthBindAddress', 'onboardPort', 'healthPort',
         'dashboardPort', 'mesIngest', 'fakeMesIngest', 'routeGraph', 'riotCreateDispatch', 'riotForeignOrderCancel',
         'journeyRuntime', 'vehicleFaultRecovery', 'foreignRunningOrderRelease', 'fieldOperatorRoles', 'taskTypeStations',
-        'mapStationCatalog', 'productionCutover', 'emergencyStopRelease')
+        'mapStationCatalog', 'productionCutover', 'emergencyStopRelease', 'idleReturn')
     # control-server#564. Who approved the production cutover, when, and where that is recorded; and which phase it is --
     # 'trial' (real MES, simulated slots) or 'production' (cs#564 review S3: the step between them needs a new database).
     # This deployment's, like mesIngest.source -- the overlay does not write it; installed-instance.json keeps it.
@@ -227,6 +227,9 @@ $script:AllowedKeys = [ordered]@{
     # workspace#49. REQ-0356's two release entries (EmergencyStopReleaseOptions). Both credential variable names are
     # deliberately absent, as for vehicleFaultRecovery: the overlay writes this instance's own.
     'emergencyStopRelease' = @('enabled')
+    # control-server#781. REQ-0291's idle return switch (IdleReturnOptions, section IdleReturn): on, a vehicle with no demand drives
+    # itself to a waiting point (agv02 to its STAGING_TO_WIRE origin, CP-0016).
+    'idleReturn' = @('enabled')
     'fieldOperatorRoles' = @('path', 'onboardClearanceEntryDeclared')
     # control-server#518. TaskTypeStationPreset.SettingsFileKey; there is no options class to mirror.
     'taskTypeStations' = @('settingsFile')
@@ -1426,6 +1429,18 @@ function Test-ParallelInstanceDefinition {
             $failures += 'emergencyStopRelease.enabled must be stated explicitly.'
         } elseif ($releaseNode['enabled'] -isnot [bool]) {
             $failures += "emergencyStopRelease.enabled must be a JSON boolean, got '$($releaseNode['enabled'])'."
+        }
+    }
+    # control-server#781. The idle return switch (IdleReturnOptions). Optional -- absent is off, the product default, and the overlay
+    # writes false -- but when written it is an object with an explicit JSON boolean: .NET would bind the string "true" as on.
+    if (Test-KeyPresent -Node $Definition -Key 'idleReturn') {
+        $idleNode = $Definition['idleReturn']
+        if ($idleNode -isnot [System.Collections.IDictionary]) {
+            $failures += 'idleReturn must be an object with enabled; leave the section out to keep idle return off.'
+        } elseif (-not (Test-KeyPresent -Node $idleNode -Key 'enabled')) {
+            $failures += 'idleReturn.enabled must be stated explicitly.'
+        } elseif ($idleNode['enabled'] -isnot [bool]) {
+            $failures += "idleReturn.enabled must be a JSON boolean, got '$($idleNode['enabled'])'."
         }
     }
     $phaseNode = (Test-KeyPresent -Node $Definition -Key 'productionCutover') ? $Definition['productionCutover'] : $null
@@ -2853,6 +2868,11 @@ $script:JourneyBindingFields = @(
     # does not log it does not have the rules, which is off: a definition that turns them on is refused over such a package,
     # one that leaves the section out is not compared. Printed as True / False, never a space.
     [pscustomobject]@{ Name = 'stagingDepartureRulesEnabled'; Logged = 'StagingDepartureRulesEnabled'; Compare = 'Boolean'; Source = 'journeyRuntime.stagingDepartureRules.enabled'; AbsentMeans = $false }
+    # control-server#781. The idle return switch, outside journeyRuntime. Derived like the gate, so always compared: the
+    # definition's boolean, false when it leaves the section out -- the value the overlay always writes. A package that does not
+    # log it (older than #781) is read as off: a definition that turns idle return on is refused over such a package, one that
+    # leaves it off is not. Printed as True / False, never a space.
+    [pscustomobject]@{ Name = 'idleReturnEnabled'; Logged = 'IdleReturnEnabled'; Compare = 'Boolean'; Source = 'idleReturn.enabled'; AbsentMeans = $false }
 )
 
 function Get-ParallelJourneyBindingExpected {
@@ -2869,6 +2889,8 @@ function Get-ParallelJourneyBindingExpected {
     }
     # control-server#686. Derived, so always compared: Enforcing for a production phase, Off for every other definition.
     if ($Field.Source -ceq 'productionCutover.phase') { return Get-ParallelSlotConfigurationGateMode -Definition $Definition }
+    # control-server#781. Derived, so always compared: the definition's idleReturn.enabled, false when it leaves the section out.
+    if ($Field.Source -ceq 'idleReturn.enabled') { return Test-ParallelIdleReturnEnabled -Definition $Definition }
     throw "JourneyBindingFields: $($Field.Name) has an unknown Source '$($Field.Source)'."
 }
 
@@ -3236,6 +3258,9 @@ function New-ParallelInstanceConfigurationOverlay {
             credentialEnvironmentVariable = $script:EmergencyReleaseCredentialVariable
             loadedCredentialEnvironmentVariable = $script:EmergencyLoadedReleaseCredentialVariable
         }
+        # control-server#781. Always written, false when the definition leaves the section out, so an earlier install's (or a
+        # hand edit's) true does not survive a reinstall; the read-back compares what the Host bound ($script:JourneyBindingFields).
+        IdleReturn = [ordered]@{ enabled = Test-ParallelIdleReturnEnabled -Definition $Definition }
         FieldOperatorRoles = [ordered]@{
             path = $Definition['fieldOperatorRoles']['path']
             onboardClearanceEntryDeclared = $Definition['fieldOperatorRoles']['onboardClearanceEntryDeclared']
@@ -3432,6 +3457,9 @@ function Get-ParallelJourneyRuntimeEnvironmentOverride {
             workspace#49 review L5: EmergencyStopRelease too. EmergencyStopRelease__LoadedCredentialEnvironmentVariable in an
             environment layer could point the loaded entry at the MVP's variable, and __Enabled could turn the entries off
             under a production definition; neither would show in the overlay.
+
+            control-server#781: IdleReturn too. IdleReturn__Enabled=true in an environment layer would turn idle return on --
+            vehicles driving themselves with no demand -- whatever the definition says, and only a restart would show it.
     #>
     [CmdletBinding()]
     [OutputType([string])]
@@ -3441,7 +3469,7 @@ function Get-ParallelJourneyRuntimeEnvironmentOverride {
     )
     # control-server#686: Governance:slotConfigurationReadinessGate too -- that key alone, the other Governance keys are the
     # product's. The gate comes from the definition's phase, and an environment layer would bind over it.
-    $pattern = '^(?i:(?:DOTNET_|ASPNETCORE_)?(?:(?:JourneyRuntime|MapStationCatalog|EmergencyStopRelease)(?:__|:)|Governance(?:__|:)slotConfigurationReadinessGate$))'
+    $pattern = '^(?i:(?:DOTNET_|ASPNETCORE_)?(?:(?:JourneyRuntime|MapStationCatalog|EmergencyStopRelease|IdleReturn)(?:__|:)|Governance(?:__|:)slotConfigurationReadinessGate$))'
     foreach ($pair in @(@{ Where = 'service'; Entries = $ServiceEnvironment }, @{ Where = 'machine'; Entries = $MachineEnvironment })) {
         foreach ($entry in @($pair.Entries | Where-Object { -not [string]::IsNullOrEmpty($_) })) {
             $name = ($entry -split '=', 2)[0]
@@ -3613,6 +3641,19 @@ function Resolve-ParallelFaultRecoveryCredential {
             'The service would refuse to start without it. Nothing was stopped or changed.')
     }
     return $null
+}
+
+function Test-ParallelIdleReturnEnabled {
+    <#
+        .SYNOPSIS
+            control-server#781. Whether the definition turns idle return on (IdleReturnOptions.Enabled), as the overlay writes it
+            and the read-back expects it: only a JSON true counts, absent is off (the product default).
+    #>
+    [CmdletBinding()]
+    [OutputType([bool])]
+    param([Parameter(Mandatory = $true)][System.Collections.IDictionary] $Definition)
+    $node = $Definition.Contains('idleReturn') ? $Definition['idleReturn'] : $null
+    return ($node -is [System.Collections.IDictionary] -and $node.Contains('enabled') -and $node['enabled'] -is [bool] -and $node['enabled'])
 }
 
 function Test-ParallelEmergencyReleaseEnabled {
@@ -4318,6 +4359,7 @@ Export-ModuleMember -Function @(
     'Set-ParallelServiceEnvironmentEntry'
     'Resolve-ParallelFaultRecoveryCredential'
     'Test-ParallelEmergencyReleaseEnabled'
+    'Test-ParallelIdleReturnEnabled'
     'Resolve-ParallelEmergencyReleaseCredential'
     'Format-ParallelEmergencyReleaseLine'
     'Get-ParallelRosterRoleHolderCount'

@@ -5,6 +5,7 @@ using ControlServer.Domain;
 using ControlServer.Host.Composition;
 using ControlServer.Host.Runtime;
 using ControlServer.Host.Runtime.CreateGate;
+using ControlServer.Host.Runtime.IdleReturn;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Options;
@@ -742,7 +743,8 @@ public sealed class ParallelInstanceEffectiveConfigurationTests
 
         using (JsonDocument shipped = JsonDocument.Parse(RenderEvent(options, "http://127.0.0.1:58188")))
         {
-            Assert.EndsWith(
+            // No longer the last fields since control-server#781 appended the idle return switch.
+            Assert.Contains(
                 " stagingDepartureRulesEnabled={StagingDepartureRulesEnabled} stagingLoadNotSettledAlarmAfter={StagingLoadNotSettledAlarmAfter}",
                 shipped.RootElement.GetProperty("@mt").GetString()!, StringComparison.Ordinal);
             Assert.Equal(JsonValueKind.False, shipped.RootElement.GetProperty("StagingDepartureRulesEnabled").ValueKind);
@@ -754,6 +756,71 @@ public sealed class ParallelInstanceEffectiveConfigurationTests
         using JsonDocument on = JsonDocument.Parse(RenderEvent(options, "http://127.0.0.1:58188"));
         Assert.Equal(JsonValueKind.True, on.RootElement.GetProperty("StagingDepartureRulesEnabled").ValueKind);
         Assert.Equal("00:03:00", on.RootElement.GetProperty("StagingLoadNotSettledAlarmAfter").GetString());
+    }
+
+    /// <summary>
+    /// control-server#781: the idle return switch is logged last, as the boolean the evaluator reads, so the installer can hold the
+    /// Host to the definition's <c>idleReturn.enabled</c>. Off when the caller does not pass it -- the product default.
+    /// </summary>
+    [Theory]
+    [InlineData(null, false)]
+    [InlineData(false, false)]
+    [InlineData(true, true)]
+    public void EffectiveConfigurationEventCarriesTheIdleReturnSwitchAsABoolean(bool? enabled, bool logged)
+    {
+        JourneyRuntimeOptions options = new()
+        {
+            AgvId = "老厂前线新多仓位2", VehicleKey = Agv02Key, AllowedWorkTypes = ["STAGING_TO_WIRE"], AllowedDispatchZones = ["WIRE"],
+        };
+        IdleReturnOptions? idleReturn = enabled is { } value ? new IdleReturnOptions { Enabled = value } : null;
+
+        using JsonDocument rendered = JsonDocument.Parse(RenderEvent(options, "http://127.0.0.1:58188", idleReturn: idleReturn));
+
+        Assert.EndsWith(" idleReturnEnabled={IdleReturnEnabled}", rendered.RootElement.GetProperty("@mt").GetString()!, StringComparison.Ordinal);
+        Assert.Equal(logged ? JsonValueKind.True : JsonValueKind.False, rendered.RootElement.GetProperty("IdleReturnEnabled").ValueKind);
+    }
+
+    /// <summary>
+    /// control-server#781, end to end: the overlay generated from the definition over the package's appsettings.json, bound the
+    /// way IdleReturnModule binds it, logged, and judged by the installer's read-back. The production stage-3 definition turns it
+    /// on; the shipped one leaves it out (off). flipped stands for a Host that bound the other value -- an environment layer, or a
+    /// true left over from an earlier layer.
+    /// </summary>
+    [Theory]
+    [InlineData("instance-factory01-v2.cutover-production-s3.runtime-on.json", false, true, "Pass", null)]
+    [InlineData("instance-factory01-v2.cutover-production-s3.runtime-on.json", true, true, "StopServiceAndRefuse", "idleReturnEnabled bound 'False', the definition says 'True'")]
+    [InlineData("instance-factory01-v2.json", false, false, "Pass", null)]
+    [InlineData("instance-factory01-v2.json", true, false, "StopServiceAndRefuse", "idleReturnEnabled bound 'True', the definition says 'False'")]
+    public void TheIdleReturnSwitchTheDefinitionWritesIsWhatTheHostBindsAndTheReadBackHoldsItThere(
+        string definitionFile, bool flipped, bool expectedBound, string expectedAction, string? says)
+    {
+        string root = FindRepositoryRoot();
+        bool shipped = definitionFile == "instance-factory01-v2.json";
+        JourneyRuntimeOptions options = Bind(
+            File.ReadAllText(Path.Combine(root, "src", "ControlServer.Host", "appsettings.json")),
+            GenerateOverlay(root, definitionFile, checkDefinition: shipped),
+            out IConfiguration configuration);
+        IdleReturnOptions idleReturn = new();
+        configuration.GetSection(IdleReturnOptions.SectionName).Bind(idleReturn);
+        Assert.Equal(expectedBound, idleReturn.Enabled);
+        if (flipped)
+        {
+            idleReturn.Enabled = !idleReturn.Enabled;
+        }
+        SlotConfigurationGateMode gate = GovernanceModule.ResolveGateMode(configuration);
+        string line = RenderEvent(options, configuration["MesIngest:baseUrl"]!, BindCatalog(configuration), gate, idleReturn);
+
+        string verdict = JudgeReadBack(root, definitionFile, line);
+
+        if (says is null)
+        {
+            Assert.StartsWith(expectedAction + "|", verdict, StringComparison.Ordinal);
+        }
+        else
+        {
+            Assert.StartsWith(expectedAction + "|EFFECTIVE_CONFIGURATION_MISMATCH: ", verdict, StringComparison.Ordinal);
+            Assert.Contains(says, verdict, StringComparison.Ordinal);
+        }
     }
 
     [Theory]
@@ -855,7 +922,8 @@ public sealed class ParallelInstanceEffectiveConfigurationTests
         JourneyRuntimeOptions options,
         string mesIngestBaseUrl,
         MapStationCatalogOptions? catalog = null,
-        SlotConfigurationGateMode gate = SlotConfigurationGateMode.Off)
+        SlotConfigurationGateMode gate = SlotConfigurationGateMode.Off,
+        IdleReturnOptions? idleReturn = null)
     {
         using StringWriter writer = new();
         using (Serilog.Core.Logger serilog = new Serilog.LoggerConfiguration()
@@ -865,7 +933,7 @@ public sealed class ParallelInstanceEffectiveConfigurationTests
         {
             EffectiveConfigurationEvent.Log(
                 factory.CreateLogger("ControlServer.Host"), options, catalog ?? new MapStationCatalogOptions(), mesIngestBaseUrl,
-                slotConfigurationGate: gate);
+                slotConfigurationGate: gate, idleReturn: idleReturn);
         }
         return writer.ToString().Trim();
     }

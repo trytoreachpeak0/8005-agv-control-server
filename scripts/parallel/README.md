@@ -62,6 +62,15 @@ control-server#262。约 2026-10-08 起 `factory01` 上同时跑两套 ControlSe
 `EFFECTIVE_CONFIGURATION_CLEARANCE_UNREAD` 并停掉 v2 服务——旧包不记这个字段，没法确认它到底开没开。这是往安全方向的失败：
 把定义里的开关去掉（或改成 `false`）后再回滚一次即可。
 
+**空闲返回的开关**（顶层一节 `idleReturn.enabled`，REQ-0291，control-server#781）打开后，没有需求的车会自己开往等待点，只做
+`STAGING_TO_WIRE` 的车先回它的固定起点（CP-0016，agv02 回 217）。做法与上面清桩开关相同：定义里可以不写，不写就是关；写了必须是
+`{ "enabled": <JSON 布尔值> }`，别的子键一律拒绝；覆盖层每次都写出 `IdleReturn:enabled`（没写就写 `false`）；环境变量 `IdleReturn__*`
+按 `JOURNEY_RUNTIME_ENVIRONMENT_OVERRIDE` 拒绝。Host 在 `EFFECTIVE_CONFIGURATION` 事件末尾记 `idleReturnEnabled`，回读走
+`EFFECTIVE_JOURNEY_BINDING` 那张表：不一致按 `EFFECTIVE_CONFIGURATION_MISMATCH` 停服务，结果行多一项 `idleReturnEnabled=True|False`，
+19 号照打。不记这一项的包（control-server#781 之前，包括 v5 的 c0389b68）按「关」读：定义打开时拒绝、停服务，定义没打开时照旧放行；
+所以 `-Rollback` 到这样的包之前要先把定义里的开关改成 `false`。只有生产段定义 `cutover-production-s3.runtime-on` 打开它（用户 2026-10-19 定），
+其余定义不写。闸门（`riotCreateDispatch`）关着时空闲返回不建单；开闸是一次会让车动的运行，要用户逐次授权。
+
 **准入版本、部署标签与两个等待时长**（control-server#672）：Host 在 `EFFECTIVE_CONFIGURATION` 事件末尾记下实际绑定的
 `AdmissionPolicyVersion`（数字）、`AdmissionPolicyDeploymentId`、`CargoHoldingTimeout`、`StationDepartureWaitTimeout`（`hh:mm:ss`）。
 回读把定义里写了的那几项逐个比对，不一致按 `EFFECTIVE_CONFIGURATION_MISMATCH` 停服务；定义没写的那项由包里的 `appsettings.json`
