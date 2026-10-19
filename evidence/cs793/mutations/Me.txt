@@ -1,0 +1,7 @@
+[xUnit.net 00:00:32.93]     ControlServer.Tests.IdleReturnCommitmentTests.AnAdoptionRefusedByTheStationKeyLeavesNothingAndDoesNotSendTheVehicleAway [FAIL]
+  Failed ControlServer.Tests.IdleReturnCommitmentTests.AnAdoptionRefusedByTheStationKeyLeavesNothingAndDoesNotSendTheVehicleAway [132 ms]
+  Error Message:
+   Assert.Equal() Failure: Values differ
+Expected: Tuple ("IDLE_RETURN_COMMITMENT_REFUSED", null)
+Actual:   Tuple ("IDLE_RETURN_COMMITTED", 214)
+Failed!  - Failed:     1, Passed:    87, Skipped:     0, Total:    88, Duration: 28 s - ControlServer.Tests.dll (net8.0)

@@ -98,8 +98,9 @@ public static class IdleReturnReasons
     public const string PointUnreachable = "WAITING_POINT_UNREACHABLE";
 
     /// <summary>
-    /// 车此刻停的站与这个点吸附在路网的同一个节点上、代价为 0，却不是同一个站（#796 审查 M1）：不承诺开往它。到了那里 RIoT 仍报原来
-    /// 那个站，离点证据比的是站号，点会在下一轮被当成已离开放掉。别的车由「另一辆车站在上面」挡住。
+    /// 车此刻停的站与这个点吸附在路网的同一个节点上、代价为 0，却不是同一个站（#796 审查 M1）：保守排除，不承诺开往它。同节点只说明两个站
+    /// 吸附到同一个端点（<c>RouteGraph.TraversalCostsFrom</c>），两站实际可能相隔一段；开过去之后 RIoT 报哪个站没有验证过。若仍报原来那个站，
+    /// 离点证据比的是站号，点会在下一轮被当成已离开放掉。别的车由「另一辆车站在上面」挡住——只在本车属于这一轮交来评估的车时成立。
     /// </summary>
     public const string PointAtVehicleNode = "WAITING_POINT_AT_VEHICLE_NODE";
 

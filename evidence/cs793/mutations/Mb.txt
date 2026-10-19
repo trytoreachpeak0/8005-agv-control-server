@@ -1,0 +1,31 @@
+[xUnit.net 00:00:10.46]     ControlServer.Tests.IdleReturnCommitmentTests.AnAdoptedPointSurvivesTheNextRoundsDepartureSweepAndIsReleasedOnlyOnceTheVehicleHasLeft [FAIL]
+  Failed ControlServer.Tests.IdleReturnCommitmentTests.AnAdoptedPointSurvivesTheNextRoundsDepartureSweepAndIsReleasedOnlyOnceTheVehicleHasLeft [25 ms]
+  Error Message:
+   Assert.Equal() Failure: Strings differ
+                       ↓ (pos 12)
+Expected: "IDLE_RETURN_ADOPTED_IN_PLACE"
+[xUnit.net 00:00:10.50]     ControlServer.Tests.IdleReturnCommitmentTests.InOneRoundAVehicleJudgedFirstIsNotSentToThePointAnotherStandsOn [FAIL]
+  Failed ControlServer.Tests.IdleReturnCommitmentTests.InOneRoundAVehicleJudgedFirstIsNotSentToThePointAnotherStandsOn [42 ms]
+  Error Message:
+   Assert.Equal() Failure: Collections differ
+                                                                                                                                 ↓ (pos 1)
+Expected: <>z__ReadOnlyArray<ValueTuple<string, string, int?>>                    [Tuple ("VK-B", "IDLE_RETURN_COMMITTED", 215), Tuple ("VK-A", "IDLE_RETURN_ADOPTED_IN_PLACE", 214)]
+[xUnit.net 00:00:11.56]     ControlServer.Tests.IdleReturnCommitmentTests.TheNextRoundSendsNoOtherVehicleToThePointAnAdoptedVehicleStandsOn [FAIL]
+  Failed ControlServer.Tests.IdleReturnCommitmentTests.TheNextRoundSendsNoOtherVehicleToThePointAnAdoptedVehicleStandsOn [17 ms]
+  Error Message:
+   Assert.Equal() Failure: Strings differ
+                       ↓ (pos 12)
+Expected: "IDLE_RETURN_ADOPTED_IN_PLACE"
+[xUnit.net 00:00:11.61]     ControlServer.Tests.IdleReturnCommitmentTests.AVehicleStandingOnARegisteredWaitingPointWithoutARowAdoptsItInPlaceAndCreatesNothing [FAIL]
+  Failed ControlServer.Tests.IdleReturnCommitmentTests.AVehicleStandingOnARegisteredWaitingPointWithoutARowAdoptsItInPlaceAndCreatesNothing [21 ms]
+  Error Message:
+   Assert.Equal() Failure: Values differ
+Expected: Tuple ("IDLE_RETURN_ADOPTED_IN_PLACE", 214, 1, "idle-return:VK-A:20260919T090000000Z")
+Actual:   Tuple ("IDLE_RETURN_COMMITTED", 214, 1, "idle-return:VK-A:20260919T090000000Z")
+[xUnit.net 00:00:12.48]     ControlServer.Tests.IdleReturnCommitmentTests.AStagingOnlyVehicleStandingOnAWaitingPointAdoptsItRatherThanDrivingToTheStagingOrigin [FAIL]
+  Failed ControlServer.Tests.IdleReturnCommitmentTests.AStagingOnlyVehicleStandingOnAWaitingPointAdoptsItRatherThanDrivingToTheStagingOrigin [33 ms]
+  Error Message:
+   Assert.Equal() Failure: Values differ
+Expected: Tuple ("IDLE_RETURN_ADOPTED_IN_PLACE", 214)
+Actual:   Tuple ("IDLE_RETURN_COMMITTED", 215)
+Failed!  - Failed:     5, Passed:    83, Skipped:     0, Total:    88, Duration: 7 s - ControlServer.Tests.dll (net8.0)
