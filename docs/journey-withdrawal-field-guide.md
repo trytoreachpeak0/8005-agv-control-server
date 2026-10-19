@@ -102,7 +102,11 @@ dotnet ControlServer.FieldOps.dll withdraw-journey --database <v2 库文件> --p
   <同上的参数> --confirm <confirmationCode>
 ```
 
-`outcome` 为 `WITHDRAWN` 即成。之后**只用 20 号关闸重启 v2**，它会以闸门关着的状态起服务；不要直接启动 v2 服务（那样闸门的状态不由你定）。
+`outcome` 为 `WITHDRAWN` 即成。之后分两步把 v2 起回来：
+
+1. **先跑 20 号关闸。**服务停着时它只把配置文件里的派车闸门写成「关」，**不启动服务**
+   （`scripts/parallel/ParallelHost.psm1` 第 7 步：服务原本停着就保持停着，下次启动时才读这个文件）。
+2. **再单独 `Start-Service` 启动 v2**，起来就是闸门关着的。不要跳过第 1 步直接启动，那样闸门是什么状态不由你定。
 开闸让车接活是另一件事，每次单独问用户。车重连后收到收尾快照，
 会话不再因那一次装货而 RecoveryRequired；车要回到 Ready，还要它自己停稳（`MODE_AUTO`、`MT_FINISHED`）。
 
