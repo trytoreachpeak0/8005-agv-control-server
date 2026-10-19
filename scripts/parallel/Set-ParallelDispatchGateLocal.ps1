@@ -134,6 +134,8 @@ if (-not $PSCmdlet.ShouldProcess($serviceName, "Set RiotCreateDispatch.enabled=$
     # Read-only preview: what the checks say right now. Nothing is stopped or written.
     $journeyState = Get-ParallelJourneyDispatchState -DatabasePath $databasePath -AssemblyDirectory $layout.InstallRoot -RecoveryJourneyId $recoveryJourneyId
     $refusal = Get-ParallelDispatchGateRefusal -Direction $direction -State $journeyState -ServiceName $serviceName -DatabasePath $databasePath -RecoveryJourney $recovery
+    $notInFlight = @(Get-ParallelRecoveryJourneyNotInFlight -State $journeyState -RecoveryJourney $recovery)
+    if ($notInFlight.Count -gt 0) { Write-Step "WhatIf: named but not in flight (nothing to waive): $($notInFlight -join ', ')" }
     Write-Step "WhatIf: service status '$((Get-Service -Name $serviceName -ErrorAction SilentlyContinue)?.Status ?? 'absent')'."
     Write-Step ($refusal ? "WhatIf: would refuse now: $refusal" : 'WhatIf: the journey check would let this through now (it is repeated after the service stops).')
     return

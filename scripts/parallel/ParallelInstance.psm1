@@ -4021,6 +4021,20 @@ function ConvertFrom-ParallelRecoveryJourneyArgument {
     return $result
 }
 
+function Get-ParallelRecoveryJourneyNotInFlight {
+    <#
+        .SYNOPSIS
+            8005-workspace#61 review L2. The journey ids -RecoveryJourney names that are not among $State's journeys not
+            Completed -- finished already, or mistyped -- so that a refusal and the dry run can say so instead of passing
+            over them in silence. Pure; nothing on an unreadable state.
+    #>
+    [CmdletBinding()]
+    param([AllowNull()] $State, [AllowNull()][AllowEmptyCollection()][object[]] $RecoveryJourney)
+    if ($State -isnot [System.Collections.IDictionary] -or $State.Contains('Error')) { return }
+    $active = @($State['Journeys'] | Where-Object { [string] $_['Stage'] -cne 'Completed' } | ForEach-Object { [string] $_['JourneyId'] })
+    @($RecoveryJourney | Where-Object { $null -ne $_ } | ForEach-Object { [string] $_['journeyId'] } | Where-Object { $active -cnotcontains $_ })
+}
+
 function ConvertTo-ParallelGateDirection {
     <#
         .SYNOPSIS
@@ -4070,12 +4084,20 @@ function Get-ParallelDispatchGateRefusal {
             refuse as before; each named one that is active passes only when all of these hold, read by
             Get-ParallelJourneyDispatchState -RecoveryJourneyId:
               * its row is on the vehicle named with it (AgvId and VehicleKey, ordinal);
-              * it awaits recovery (Test-ParallelJourneyAwaitsRecovery);
-              * its vehicle holds no fault (no VehicleFaultStates row of its AgvId with a Level other than None). A held
-                fault is supervised only by the journey loop -- the stop proof, the escalation and REQ-0248's re-trigger
-                (JourneyRuntimeEngine.cs:2245-2262) -- and the stop proof's samples live in memory, so a restart discards
-                them (Program.cs:88-91). Such a vehicle is taken out of its fault through VehicleFaultRecovery first.
-            A named journey that is not active waives nothing. Opening ignores it: it is not widened, because the journey
+              * it awaits recovery (Test-ParallelJourneyAwaitsRecovery): Blocked, so the restart takes nothing from it --
+                AdvanceAsync returns at once for a Blocked journey (JourneyRuntimeEngine.cs:2133-2135), and the fault model
+                is observed only on the arrival-stage paths (faults.ObserveAsync at JourneyRuntimeEngine.cs:2283 and
+                JourneyRuntimeEngine.InTransitDoors.cs:118, :208), so a Blocked journey has no supervision that rides on
+                it. (Not that its vehicle is at a station: a *_NOT_RECONCILED can follow a handoff after a fault, with the
+                vehicle wherever it stopped, VehicleFaultRecoveryService.StoppedRebuild.cs:260-345.)
+              * its vehicle holds no fault (no VehicleFaultStates row of its AgvId with a Level other than None) -- a
+                guard on top: while a fault stands, its stop proof (JourneyRuntimeEngine.cs:2245-2262) lives in memory and
+                a restart discards it (Program.cs:88-91). It rests on the invariant that an emergency-stop episode not yet
+                released keeps its vehicle's Level other than None (VehicleFaultCoordinator: NewDispatchBlocked is
+                Level != None). Such a vehicle waits for its fault to clear -- the order resumed automatically
+                (RESUME_HELD_ORDER) -- or for the system maintainer (control-server#771); the instance's
+                vehicleFaultRecovery entry is off in production.
+            A named journey that is not active waives nothing; a refusal names it (Get-ParallelRecoveryJourneyNotInFlight). Opening ignores it: it is not widened, because the journey
             ends Completed through control-server#771 and is then no longer among the journeys judged. Without
             -RecoveryJourney nothing here changes.
     #>
@@ -4118,14 +4140,16 @@ function Get-ParallelDispatchGateRefusal {
             $fault = @($State['VehicleFaults'] | Where-Object { [string] $_['AgvId'] -ceq [string] $row['AgvId'] -and [string] $_['Level'] -cne 'None' })
             if ($fault.Count -gt 0) {
                 return ("GATE_CLOSE_RECOVERY_JOURNEY_VEHICLE_FAULT: in $DatabasePath, the vehicle '$($row['AgvId'])' of journey $recoveryId " +
-                    "holds a fault ($($fault[0]['Level']) / $($fault[0]['EvidenceCode'] ?? 'no evidence code')). Only the journey loop " +
-                    "supervises it, and a restart of '$ServiceName' would drop its stop proof; take the vehicle out of its fault " +
-                    'through VehicleFaultRecovery first.' + $nothing)
+                    "holds a fault ($($fault[0]['Level']) / $($fault[0]['EvidenceCode'] ?? 'no evidence code')), and a restart of " +
+                    "'$ServiceName' would drop its stop proof. Wait until the fault clears (the held order resumed automatically, " +
+                    'RESUME_HELD_ORDER) and run this again, or have the system maintainer settle the journey (control-server#771).' + $nothing)
             }
             $journeys = @($journeys | Where-Object { [string] $_['JourneyId'] -cne $recoveryId })
         }
         if ($journeys.Count -eq 0) { return $null }
         $listed = ($journeys | ForEach-Object { "$($_['JourneyId']) ($($_['AgvId']), $($_['Stage']))" }) -join '; '
+        $notInFlight = @(Get-ParallelRecoveryJourneyNotInFlight -State $State -RecoveryJourney $RecoveryJourney)
+        if ($notInFlight.Count -gt 0) { $listed += " (named but not in flight: $($notInFlight -join ', '))" }
         return ("GATE_CLOSE_REFUSED_IN_FLIGHT: $DatabasePath has $($journeys.Count) journey(s) of '$ServiceName' not Completed: " +
             "$listed. Stop new intake first -- fake source: stop injecting demand into its FakeMesIngest; production source (the " +
             'cutover): import a header-only area assignment table, so that no AREA is in scope (docs/production-cutover-mode-plan.md ' +
@@ -4450,4 +4474,5 @@ Export-ModuleMember -Function @(
     'Test-ParallelJourneyAwaitsRecovery'
     'ConvertTo-ParallelRecoveryJourneyArgument'
     'ConvertFrom-ParallelRecoveryJourneyArgument'
+    'Get-ParallelRecoveryJourneyNotInFlight'
 )

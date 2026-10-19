@@ -3119,6 +3119,39 @@ $decodeAt = $gateScriptText.IndexOf('$recovery = $RecoveryJourney ? @(ConvertFro
 $definitionAt = $gateScriptText.IndexOf('$definition = Read-ParallelInstanceDefinition -Path $InstanceDefinitionPath')
 Write-Result -Ok ($closeOnlyAt -gt 0 -and $decodeAt -gt $closeOnlyAt -and $definitionAt -gt $decodeAt -and $gateScriptText.Contains("throw 'GATE_RECOVERY_JOURNEY_CLOSE_ONLY:")) `
     -Name 'Set-ParallelDispatchGateLocal.ps1 (workspace#61): -RecoveryJourney with -State Open is refused, and it is decoded, before anything is read' -Detail "close-only $closeOnlyAt decode $decodeAt definition $definitionAt"
+# Review M2: the wiring the field relies on. Every read of the state passes the named ids, the dry run's refusal and the
+# change pass the named journeys -- each of the three, dropped, would leave the gate judged as without the parameter.
+$gateLocalAst = [System.Management.Automation.Language.Parser]::ParseInput($gateScriptText, [ref]$null, [ref]$null)
+$boundTo = {
+    param([string] $Command, [string] $Parameter, [string] $Variable)
+    @($gateLocalAst.FindAll({ param($n) $n -is [System.Management.Automation.Language.CommandAst] -and $n.GetCommandName() -ceq $Command }, $true) | ForEach-Object {
+            $elements = $_.CommandElements
+            $at = -1
+            for ($i = 0; $i -lt $elements.Count; $i++) {
+                if ($elements[$i] -is [System.Management.Automation.Language.CommandParameterAst] -and $elements[$i].ParameterName -ceq $Parameter) { $at = $i }
+            }
+            [pscustomobject]@{ Text = $_.Extent.Text; Bound = $at -ge 0 -and $at + 1 -lt $elements.Count -and $elements[$at + 1].Extent.Text -ceq $Variable }
+        })
+}
+foreach ($wire in @(
+        @{ Command = 'Get-ParallelJourneyDispatchState'; Parameter = 'RecoveryJourneyId'; Variable = '$recoveryJourneyId'; Count = 2; Where = 'ReadState and the dry run' }
+        @{ Command = 'Get-ParallelDispatchGateRefusal'; Parameter = 'RecoveryJourney'; Variable = '$recovery'; Count = 1; Where = 'the dry run' }
+        @{ Command = 'Invoke-ParallelDispatchGateChange'; Parameter = 'RecoveryJourney'; Variable = '$recovery'; Count = 1; Where = 'the change' })) {
+    $calls = @(& $boundTo $wire.Command $wire.Parameter $wire.Variable)
+    Write-Result -Ok ($calls.Count -eq $wire.Count -and @($calls | Where-Object { -not $_.Bound }).Count -eq 0) `
+        -Name "Set-ParallelDispatchGateLocal.ps1 (workspace#61): every $($wire.Command) call ($($wire.Where)) passes -$($wire.Parameter) $($wire.Variable)" `
+        -Detail (($calls | ForEach-Object { "$($_.Bound): $($_.Text)" }) -join ' | ')
+}
+# Review L2: a named journey not in flight is named, on the refusal and in the dry run.
+$notInFlightState = New-RecoveryState -Others @($otherJourney)
+$got = Get-ParallelDispatchGateRefusal -Direction Close -State $notInFlightState -ServiceName $v2Service -DatabasePath $gateDatabase -RecoveryJourney (@($rj) + @(@{ journeyId = 'journey:done|g1'; agvId = 'a'; vehicleKey = 'k' }))
+Write-Result -Ok ($null -ne $got -and $got.StartsWith('GATE_CLOSE_REFUSED_IN_FLIGHT:') -and $got.Contains('named but not in flight: journey:done|g1') -and -not $got.Contains("not in flight: $rjId")) `
+    -Name 'gate refusal with -RecoveryJourney (workspace#61, review L2): a named journey not in flight is named on the in-flight refusal' -Detail "got: $got"
+$got = @(Get-ParallelRecoveryJourneyNotInFlight -State $notInFlightState -RecoveryJourney (@($rj) + @(@{ journeyId = 'journey:done|g1'; agvId = 'a'; vehicleKey = 'k' })))
+Write-Result -Ok ($got.Count -eq 1 -and $got[0] -ceq 'journey:done|g1' -and @(Get-ParallelRecoveryJourneyNotInFlight -State ([ordered]@{ Error = 'x' }) -RecoveryJourney $rj).Count -eq 0) `
+    -Name 'recovery journey not in flight (workspace#61, review L2): only the named ids not among the active journeys; nothing on an unreadable state' -Detail ($got -join ', ')
+Write-Result -Ok ($gateScriptText.Contains('if ($notInFlight.Count -gt 0) { Write-Step "WhatIf: named but not in flight (nothing to waive): $($notInFlight -join '', '')" }')) `
+    -Name 'Set-ParallelDispatchGateLocal.ps1 (workspace#61, review L2): the dry run names the named journeys not in flight' -Detail 'pinned text missing'
 
 # --- The writer: section ignoring case, the Chinese agvId kept byte for byte, every read-back live.
 $gateInstalled = Merge-ConfigurationTree -Base (Copy-Definition $productConfiguration) -Overlay (New-ParallelInstanceConfigurationOverlay -Definition $baseline)
@@ -3397,7 +3430,8 @@ if ($whatIf.Count -eq 1) {
     # and "[IO.File]::WriteAllText(...)" in this branch passed it and would have stopped the service or written the file
     # on a dry run. Only these read-only commands; no reference to $actions; no .NET method call or static member access
     # of any kind (which also covers [IO.*]); no type expression naming IO.
-    $readOnlyCommands = @('Get-ParallelJourneyDispatchState', 'Get-ParallelDispatchGateRefusal', 'Get-Service', 'Write-Step')
+    # workspace#61 review L2: the pure Get-ParallelRecoveryJourneyNotInFlight, which only names the ids not in flight.
+    $readOnlyCommands = @('Get-ParallelJourneyDispatchState', 'Get-ParallelDispatchGateRefusal', 'Get-ParallelRecoveryJourneyNotInFlight', 'Get-Service', 'Write-Step')
     $changing = @($commands | Where-Object { $null -eq $_ -or $readOnlyCommands -notcontains $_ } | ForEach-Object { "command $($_ ?? '(dynamic)')" })
     $changing += @($body.FindAll({ param($n) $n -is [System.Management.Automation.Language.VariableExpressionAst] -and $n.VariablePath.UserPath -ieq 'actions' }, $true) |
             ForEach-Object { "reference $($_.Extent.Text)" })
