@@ -1624,6 +1624,12 @@ public sealed partial class OnboardMessageProcessor(
     {
         for (Exception? current = error; current is not null; current = current.InnerException)
         {
+            // Checked before what it wraps: its inner exception is the very BUSY that left the connection holding another
+            // owner's native connection, and that must not read as "go round again" (review M1).
+            if (current is SqliteConnectionPoisonedException)
+            {
+                return false;
+            }
             if (current is SqliteException { SqliteErrorCode: SqliteBusy or SqliteLocked } or
                 ObjectDisposedException { ObjectName: "SQLitePCL.sqlite3" })
             {
