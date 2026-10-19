@@ -62,6 +62,9 @@ public sealed record JourneyWithdrawalOperation(
 /// <summary>这一趟名下的一条订单意图。撤下不改它，只列出来、绑进确认码。</summary>
 public sealed record JourneyWithdrawalIntent(string UpperId, string Status, string? OrderId);
 
+/// <summary>这一趟名下一条还没建新单的重建记录（待发或停住）。撤下把它转成 <c>ENDED</c>、记下操作人（control-server#771，#770 之后）。</summary>
+public sealed record JourneyWithdrawalRebuild(string RebuildId, string State, string? StoppedReason, string EndedUpperId);
+
 /// <summary>
 /// 撤下会做的每一件事。演练与撤下各算一次，两次算出的确认码相同才执行：中间任何一项变了，执行就拒。
 /// </summary>
@@ -83,7 +86,8 @@ public sealed record JourneyWithdrawalPlan(
     long? SessionSafetyRevision = null,
     IReadOnlyList<string>? SessionSafetyReasonCodes = null,
     DateTimeOffset? SessionSafetySummaryObservedAt = null,
-    DateTimeOffset? SessionUpdatedAt = null);
+    DateTimeOffset? SessionUpdatedAt = null,
+    IReadOnlyList<JourneyWithdrawalRebuild>? Rebuilds = null);
 
 /// <summary>演练或撤下的结果。</summary>
 /// <param name="Outcome"><c>PLANNED</c>、<c>WITHDRAWN</c>、<c>ALREADY_DONE</c> 或 <c>REJECTED</c>。</param>

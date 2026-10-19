@@ -704,33 +704,109 @@ public sealed class JourneyWithdrawalTests
         await AssertRefusedEverywhereAsync(fixture, await RequestAsync(fixture, blocked), JourneyWithdrawal.EmergencyStopOpen);
     }
 
+    // ------------------------------------------------------------------------------------------------
+    // 重建记录（control-server#770 合入之后）：待发、停住的随撤下了结，其余仍拒。
+    // ------------------------------------------------------------------------------------------------
+
+    /// <summary>
+    /// agv01 那一形（10-18）：车开往取货站途中，单在 RIoT 被取消，服务端记下一条待发的重建；车随后掉线。撤下把这条重建转成
+    /// <c>ENDED</c>、记下操作人，需求退回待派；之后延迟过了，引擎也不再为这一趟建新单。
+    /// </summary>
     [Fact]
-    public async Task ARebuildRecordStillWaitedOnRefusesTheWithdrawal()
+    public async Task APendingRebuildOfAJourneyOnItsWayToThePickupIsEndedByTheWithdrawal()
+    {
+        await using RuntimeFixture fixture = await RuntimeFixture.CreateAsync();
+        fixture.Catalog.Set(fixture.Demand(FirstDemandId, FirstSublot, Now.AddMinutes(-10)));
+        fixture.BoxCounts.Set(FirstSublot, 4);
+        await TickAndRunAsync(fixture);
+        JourneyRuntimeRow onItsWay = await JourneyOfAsync(fixture, FirstDemandId);
+        fixture.Riot.CancelOrder(onItsWay.PickupUpperId);
+        await TickAndRunAsync(fixture);
+        OwnOrderRebuildRow pending = await fixture.Context.OwnOrderRebuilds.AsNoTracking().SingleAsync(Token);
+        Assert.Equal(OwnOrderRebuildStates.Pending, pending.State);
+        await fixture.DropOnboardSessionAsync();
+        fixture.Context.ChangeTracker.Clear();
+        JourneyWithdrawalRequest request = Request(await JourneyOfAsync(fixture, FirstDemandId), slotFacts: null, cargoLocation: null);
+
+        JourneyWithdrawalResult planned = await JourneyWithdrawal.PlanAsync(fixture.Context, request, Token);
+        Assert.True(planned.Outcome == "PLANNED", string.Join(",", planned.Codes));
+        Assert.Equal(
+            [(pending.RebuildId, OwnOrderRebuildStates.Pending)],
+            planned.Plan!.Rebuilds!.Select(item => (item.RebuildId, item.State)));
+        await PlanAndWithdrawAsync(fixture, request);
+
+        OwnOrderRebuildRow ended = await fixture.Context.OwnOrderRebuilds.AsNoTracking().SingleAsync(Token);
+        Assert.Equal((OwnOrderRebuildStates.Ended, Operator), (ended.State, ended.OperatorId));
+        Assert.Contains(
+            FirstDemandId,
+            await DemandJourneyLookup.ReleasedForRedispatch(fixture.Context).AsNoTracking().Select(row => row.DemandId).ToArrayAsync(Token));
+        int createsBefore = fixture.Riot.CreateCount("TO_PICKUP");
+        fixture.Clock.Advance(fixture.Options.OwnOrderRebuildDelay);
+        Assert.Null(await UnloadCrashResumeTests.RunRoundAsync(fixture));
+        Assert.Equal(createsBefore, fixture.Riot.CreateCount("TO_PICKUP"));
+        Assert.Equal(OwnOrderRebuildStates.Ended, (await fixture.Context.OwnOrderRebuilds.AsNoTracking().SingleAsync(Token)).State);
+    }
+
+    /// <summary>待发的、停住等人的（含 control-server#770 的强制充电停住）都随撤下转 <c>ENDED</c>，记下操作人。</summary>
+    [Theory]
+    [InlineData(OwnOrderRebuildStates.Pending, null)]
+    [InlineData(OwnOrderRebuildStates.Stopped, "VEHICLE_NO_LONGER_ELIGIBLE")]
+    [InlineData(OwnOrderRebuildStates.Stopped, "MANDATORY_CHARGE_REQUIRED")]
+    public async Task ARebuildNotYetOrderedIsEndedByTheWithdrawal(string state, string? stoppedReason)
     {
         await using RuntimeFixture fixture = await RuntimeFixture.CreateAsync();
         JourneyRuntimeRow blocked = await BlockOnAnUnknownLoadWithAnotherDemandStillToLoadAsync(fixture);
+        await AddRebuildAsync(fixture, blocked, state, stoppedReason);
+
+        await PlanAndWithdrawAsync(fixture, await RequestAsync(fixture, blocked));
+
+        OwnOrderRebuildRow ended = await fixture.Context.OwnOrderRebuilds.AsNoTracking().SingleAsync(Token);
+        Assert.Equal((OwnOrderRebuildStates.Ended, Operator), (ended.State, ended.OperatorId));
+    }
+
+    /// <summary>
+    /// 新单的意图已写下、正在建（<c>ORDERING</c>），新单确认前就 FAILED 或终结了、还没人接手，或者已转车载端交接货物：RIoT 上可能有一张单，
+    /// 或者另一条出口正在管它。这一版不碰，仍以 <c>REBUILD_RECORD_OPEN</c> 拒。
+    /// </summary>
+    [Theory]
+    [InlineData(OwnOrderRebuildStates.Ordering, null)]
+    [InlineData(OwnOrderRebuildStates.Failed, null)]
+    [InlineData(OwnOrderRebuildStates.AwaitingCargoHandoff, null)]
+    [InlineData(OwnOrderRebuildStates.Stopped, "REBUILT_ORDER_ENDED_BEFORE_CONFIRMATION")]
+    public async Task ARebuildThatMayHaveAnOrderOrAnotherExitRefusesTheWithdrawal(string state, string? stoppedReason)
+    {
+        await using RuntimeFixture fixture = await RuntimeFixture.CreateAsync();
+        JourneyRuntimeRow blocked = await BlockOnAnUnknownLoadWithAnotherDemandStillToLoadAsync(fixture);
+        await AddRebuildAsync(fixture, blocked, state, stoppedReason);
+
+        await AssertRefusedEverywhereAsync(fixture, await RequestAsync(fixture, blocked), JourneyWithdrawal.RebuildRecordOpen);
+        Assert.Equal(state, (await fixture.Context.OwnOrderRebuilds.AsNoTracking().SingleAsync(Token)).State);
+    }
+
+    private static async Task AddRebuildAsync(RuntimeFixture fixture, JourneyRuntimeRow journey, string state, string? stoppedReason)
+    {
         DateTimeOffset now = fixture.Clock.GetUtcNow();
         fixture.Context.OwnOrderRebuilds.Add(new OwnOrderRebuildRow
         {
             RebuildId = "rebuild-771",
-            JourneyId = blocked.JourneyId,
+            JourneyId = journey.JourneyId,
             DemandId = FirstDemandId,
             AgvId = fixture.Options.AgvId,
-            VehicleKey = blocked.VehicleKey,
-            StopId = blocked.JourneyId + "|PICKUP",
+            VehicleKey = journey.VehicleKey,
+            StopId = journey.JourneyId + "|PICKUP",
             Source = OwnOrderRebuildSources.OrderNeverAppeared,
-            EndedUpperId = blocked.PickupUpperId,
-            NewUpperId = blocked.PickupUpperId + "-R1",
+            EndedUpperId = journey.PickupUpperId,
+            NewUpperId = journey.PickupUpperId + "-R1",
             NewMovementLegId = "rebuild-771-leg",
             IncidentAt = now,
             RecordedAt = now,
             DueAt = now,
-            State = OwnOrderRebuildStates.Pending,
+            State = state,
+            StoppedReason = stoppedReason,
+            StoppedAt = stoppedReason is null ? null : now,
         });
         await fixture.Context.SaveChangesAsync(Token);
         fixture.Context.ChangeTracker.Clear();
-
-        await AssertRefusedEverywhereAsync(fixture, await RequestAsync(fixture, blocked), JourneyWithdrawal.RebuildRecordOpen);
     }
 
     /// <summary>那一次装货车从没回过结果（命令发出后车再没回话）：没有车的读数，现场说空也不信，拒。</summary>
