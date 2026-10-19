@@ -281,9 +281,9 @@ attaching里的」，弃用 `WIRE`，代号 `WIRE_BONDING`、`DIE_ATTACH`。三�
 | `DIE_TO_WIRE_STAGING` | 装片氮气柜 | 220 | `MAP-26-DIE_TO_WIRE_STAGING-SITE-20261010` |
 | `WIRE_TO_NITROGEN` | 焊线氮气柜 | 221 | `MAP-26-WIRE_TO_NITROGEN-SITE-20261010` |
 
-第七类 `WIRE_TO_FULL_INSPECTION` 不在表里：全检站还没加到 26 号图上（program#195 决定 4）。预置与本候选里它只有规则（`DESTINATION`），
-不进 `requiredTaskTypes`、也没有绑定，所以派车只把它判为 `TASK_TYPE_BINDING_MISSING`，其余六类照常；若把它放进需求集又不绑，
-整个实例拒绝启动（control-server#737）。等用户给出站号与站名、现场核对之后，由 control-server#738 把它加进候选与预置。
+第七类 `WIRE_TO_FULL_INSPECTION` 不在表里，由下文「全检站 229 的绑定（control-server#777）」一节单独说明：**候选**已加上
+`WIRE_TO_FULL_INSPECTION` → 229「全检」，`ruleVersion` 改为 2；**预置没改**，仍是这六类，所以两者不再逐条相同。本节以下的步骤是
+control-server#548 那次（候选还是六类、`ruleVersion: 1`）的记录，激活全检站照下文那一节做。
 
 站号与站名是用户 2026-10-10 回填的（control-server#547），2026-10-11 只读读 RIoT 核对过：六个站都在、站名逐字一致、在图上各自唯一、
 都不是 AREA 格式；每站的坐标与所在边见 `evidence/field/20261011-B10-05-map26-task-type-stations/`。六条核对都是用户本人 2026-10-10
@@ -307,7 +307,8 @@ attaching里的」，弃用 `WIRE`，代号 `WIRE_BONDING`、`DIE_ATTACH`。三�
 
 ### 步骤
 
-前提：实例在跑、旅程运行时开着（目录只有运行着的服务端才会每轮确认）；FieldOps 用与已装包同一提交发布的那份（10-09 起放在运维目录
+前提（control-server#548 那次）：实例在跑、旅程运行时开着（目录只有运行着的服务端才会每轮确认；激活全检站要在服务停着时做，见下文
+「全检站 229 的绑定」）；FieldOps 用与已装包同一提交发布的那份（10-09 起放在运维目录
 `D:\zhengyushao\control-server-v2-ops` 下）；库是 v2 的 `C:\ProgramData\8005\ControlServer.V2\data\controlserver.db`，**不是** MVP 的那个。
 下面 `<db>` 指 v2 库，`<ops>` 指运维目录，`FieldOps` 指那里的 `ControlServer.FieldOps.exe`。
 
@@ -377,14 +378,34 @@ attaching里的」，弃用 `WIRE`，代号 `WIRE_BONDING`、`DIE_ATTACH`。三�
 本地演练（假 RIoT 给的就是 RIoT 读回的 216 个站，库从本票之前的预置起步）四段输出与三种错误候选被拒的输出，在
 `evidence/field/20261011-B10-05-map26-task-type-stations/rehearsal/`。
 
+### 全检站 229 的绑定（control-server#777）
+
+用户 2026-10-19 在 26 号图上建了全检站 229「全检」（control-server#738）。候选已加上 `WIRE_TO_FULL_INSPECTION` → 229，需求集加了这一类
+（派车只采用需求集里的类型的绑定），`ruleVersion` 是 2——factory01 的库在 v5 包启动时把七条规则写成了规则版本 2，生效绑定集仍依据
+六条的版本 1。激活后绑定集改为依据版本 2，准入种子由六类变成七类，所以**激活必须与把 `admissionPolicyVersion` 升到 8 配对**，
+而且先后顺序决定会不会出现 `ADMISSION_POLICY_DRIFT`（全车队停止受理）：
+
+| 顺序 | 结果 | 用例（`TaskTypeAdmissionRuntimeTests`） |
+| --- | --- | --- |
+| 先用 8 的定义起服，再激活 | 起服第一轮在 8 下绑定六类；激活后同一个 8 下变七类，判漂移，重启不解，只能再升到 9 | `StartingUnderTheRaisedVersionBeforeTheActivationDriftsAndARestartDoesNotClearIt` |
+| 7 还在跑时激活，再用 8 起服 | 激活到重启之间每一轮都判漂移 | `ActivatingWhileTheOldVersionStillRunsDriftsUntilTheRaisedVersionStarts` |
+| **停服 → 5 分钟内激活 → 用 8 起服** | 任何一轮都不漂移 | `TheFullInspectionActivationDoesNotDriftWhenActivatedStoppedAndStartedUnderTheRaisedVersion` |
+
+FieldOps 是进程外直连库的工具，服务停着也能激活；但它要求带来的目录就是服务端最近一次完整确认的那份，且确认还在批准窗口内
+（factory01 的 `approvedMaxUnconfirmed` 是 5 分钟）。停着的服务端不再确认目录，所以**停服后 5 分钟内要做完 dry-run 与激活**，
+超时被 `TASK_TYPE_BINDING_CATALOG_NOT_FRESH` 拒绝、什么都不切换，起一下旧服务再来即可。19 接受停着的服务，升级后先以旅程运行时
+关闭起一次（引擎不跑、不绑种子），打开后的第一轮在 8 下绑七类。逐步的现场清单在 control-server#778 的正文里。
+
 ### 与部署的关系
 
 - 这一步不装包。以后要换包，照常走 19（`8005-workspace` 仓 `remote-ops/factory-server/scripts/19-deploy-control-server-parallel.ps1`）：
   它会核对包与克隆是同一提交、读服务器上记下的已装准入策略版本（control-server#552，见「准入策略版本」）；回滚用的
   `admissionPolicyVersion` 是**装过的最高版本 + 1**，带 `-AdmissionPolicyVersionOverride`。
 - **保留数据目录装包，绑定就一直在**：启动时库里已有生效版本，就不写预置，只记一条 Warning `9305 TaskTypeStationPresetNotApplied`。
-- **换了新库**（或删了数据目录），启动时预置作为第一版装进新库，六类绑定随之生效，不用再激活；这就是预置必须与候选逐条相同的原因，
-  `TaskTypeStationStartupTests.TheMap26PresetAndTheActivationCandidateCarryTheSameBindings` 钉着。换库还要连车载端日志簿一起清，那是另一回事。
+- **换了新库**（或删了数据目录），启动时预置作为第一版装进新库，六类绑定随之生效，不用再激活。control-server#777 起候选比预置多一条
+  全检站绑定（预置的目录证据里还没有 229，这次没改预置，调度 2026-10-19 定），所以**换新库后只有六类，全检要按下文那一节再激活一次**
+  （激活前只拒全检这一类）；其余绑定仍须与预置逐条相同，`TaskTypeStationStartupTests.TheMap26ActivationCandidateIsThePresetPlusTheFullInspectionStation`
+  钉着。换库还要连车载端日志簿一起清，那是另一回事。
 
 ## 地图站点目录的两个批准值由定义带上，不再装完手改（control-server#531）
 
@@ -560,6 +581,9 @@ control-server#737 让第七类 `WIRE_TO_FULL_INSPECTION` 可执行，实例定�
    （`TaskTypeAdmissionRuntimeTests.OnAnExistingDatabaseTheSeventhTypeEntersTheSeedOnlyWithTheActivationWhichMustRaiseTheVersion` 钉住）。
 2. 部署本包之后、上面那次激活之前，**不要重新激活** `task-type-stations.map-26.candidate.json`：部署后当前规则版本变成 2，候选写死的
    `ruleVersion: 1` 会被 `TASK_TYPE_BINDING_RULE_VERSION_NOT_CURRENT` 拒绝。cs#738 改候选时要把 `ruleVersion` 换成激活时的当前版本。
+
+control-server#777 做了这两件事：实例定义升到 8、`History` 加了 `RuleVersionActivated` 一行、候选 `ruleVersion` 改为 2 并绑上 229。
+激活的先后顺序也有讲究，见「全检站 229 的绑定（control-server#777）」。
 
 `AdmissionPolicyVersionGuardTests` 守着这件事：版本表逐个写出每一代的可执行集合，版本必须严格递增，本构建的集合必须等于最后
 一行；协议里每个任务类型都必须明确表态可执行或不可执行；`appsettings.json` 与 `scripts/parallel/instance-*.json` 的每一份定义
