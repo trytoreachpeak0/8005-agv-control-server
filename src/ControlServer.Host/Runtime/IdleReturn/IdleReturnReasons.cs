@@ -14,6 +14,16 @@ public static class IdleReturnReasons
     /// <summary>形成了承诺：用途占有与等待点预占在同一次保存里取得。</summary>
     public const string Committed = "IDLE_RETURN_COMMITTED";
 
+    /// <summary>
+    /// 原地认领（control-server#793）：车此刻就停在一个已登记、接纳它的等待点上，而这个点没有站点独占行——人手把车开过去、换库之后都会这样。不建单、不取用途占有，只在一次保存里写下这个点的 <c>OCCUPIED</c>
+    /// 等待点独占，与空闲返回到点之后的样子相同：车离开、RIoT 报出它到了别的站，由离点清扫释放。
+    /// </summary>
+    /// <remarks>
+    /// 没有这一步，选点会把车所在的点当成空点：到自己所在站的路网代价是 0，它必被选中，于是承诺「开往当前站」；别的车也会被派到
+    /// 这个有车的点上（#787 审查 H1）。
+    /// </remarks>
+    public const string AdoptedInPlace = "IDLE_RETURN_ADOPTED_IN_PLACE";
+
     /// <summary>开关关着（默认）。关掉只挡新承诺，既有承诺不动。</summary>
     public const string Disabled = "IDLE_RETURN_DISABLED";
 
@@ -78,11 +88,21 @@ public static class IdleReturnReasons
 
     // 候选等待点被排除的原因：前五个是 WaitingPointEligibilityReasons（批次8-17）的码，原样沿用；下面两个是本票的。
 
-    /// <summary>这个等待点此刻被别的承诺预占或占用着。</summary>
+    /// <summary>
+    /// 这个等待点此刻被别的承诺预占或占用着，或者这一轮交来评估的另一辆车此刻就停在点上（或与点同一个路网节点、代价为 0 的站上），
+    /// 哪怕它没有独占行（control-server#793）。
+    /// </summary>
     public const string PointTaken = "WAITING_POINT_RESERVED_OR_OCCUPIED";
 
     /// <summary>路网上从车的位置到不了这个等待点，或它不在路网上。</summary>
     public const string PointUnreachable = "WAITING_POINT_UNREACHABLE";
+
+    /// <summary>
+    /// 车此刻停的站与这个点吸附在路网的同一个节点上、代价为 0，却不是同一个站（#796 审查 M1）：保守排除，不承诺开往它。同节点只说明两个站
+    /// 吸附到同一个端点（<c>RouteGraph.TraversalCostsFrom</c>），两站实际可能相隔一段；开过去之后 RIoT 报哪个站没有验证过。若仍报原来那个站，
+    /// 离点证据比的是站号，点会在下一轮被当成已离开放掉。别的车由「另一辆车站在上面」挡住——只在本车属于这一轮交来评估的车时成立。
+    /// </summary>
+    public const string PointAtVehicleNode = "WAITING_POINT_AT_VEHICLE_NODE";
 
     /// <summary>
     /// 这辆车上一次开往这个等待点已确认失败（单被取消或删除后车停稳、单 FAILED 后故障被人工清除；control-server#390）：

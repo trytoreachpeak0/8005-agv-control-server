@@ -1,0 +1,13 @@
+[xUnit.net 00:00:18.26]     ControlServer.Tests.IdleReturnCommitmentTests.InOneRoundAVehicleJudgedFirstIsNotSentToThePointAnotherStandsOn [FAIL]
+  Failed ControlServer.Tests.IdleReturnCommitmentTests.InOneRoundAVehicleJudgedFirstIsNotSentToThePointAnotherStandsOn [64 ms]
+  Error Message:
+   Assert.Equal() Failure: Collections differ
+                                                                                   ↓ (pos 0)
+Expected: <>z__ReadOnlyArray<ValueTuple<string, string, int?>>                    [Tuple ("VK-B", "IDLE_RETURN_COMMITTED", 215), Tuple ("VK-A", "IDLE_RETURN_ADOPTED_IN_PLACE", 214)]
+[xUnit.net 00:00:22.81]     ControlServer.Tests.IdleReturnCommitmentTests.AVehicleStandingOnAPointKeepsOthersAwayEvenWhenItIsNotEligibleItself [FAIL]
+  Failed ControlServer.Tests.IdleReturnCommitmentTests.AVehicleStandingOnAPointKeepsOthersAwayEvenWhenItIsNotEligibleItself [64 ms]
+  Error Message:
+   Assert.Equal() Failure: Collections differ
+                                                                                                                                                    ↓ (pos 1)
+Expected: <>z__ReadOnlyArray<ValueTuple<string, string, int?>>                    [Tuple ("VK-A", "IDLE_RETURN_BELOW_MANDATORY_CHARGE_LINE", null), Tuple ("VK-B", "IDLE_RETURN_COMMITTED", 215)]
+Failed!  - Failed:     2, Passed:    83, Skipped:     0, Total:    85, Duration: 18 s - ControlServer.Tests.dll (net8.0)

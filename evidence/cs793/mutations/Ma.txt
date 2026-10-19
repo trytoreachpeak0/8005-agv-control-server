@@ -1,0 +1,7 @@
+[xUnit.net 00:00:16.06]     ControlServer.Tests.IdleReturnCommitmentTests.AWaitingPointOnTheSameNodeAsTheVehiclesStationIsNeitherAdoptedNorDrivenToAndStaysClosedToOthers [FAIL]
+  Failed ControlServer.Tests.IdleReturnCommitmentTests.AWaitingPointOnTheSameNodeAsTheVehiclesStationIsNeitherAdoptedNorDrivenToAndStaysClosedToOthers [42 ms]
+  Error Message:
+   Assert.Equal() Failure: Collections differ
+                                                                                   ↓ (pos 0)
+Expected: <>z__ReadOnlyArray<ValueTuple<string, string, int?>>                    [Tuple ("VK-A", "IDLE_RETURN_COMMITTED", 215), Tuple ("VK-B", "IDLE_RETURN_NO_WAITING_POINT_AVAILABLE", null)]
+Failed!  - Failed:     1, Passed:    87, Skipped:     0, Total:    88, Duration: 11 s - ControlServer.Tests.dll (net8.0)

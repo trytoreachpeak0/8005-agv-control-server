@@ -71,6 +71,9 @@ internal static class IdleReturnCodeDescriptions
         new Dictionary<string, string>(StringComparer.Ordinal)
         {
             [IdleReturnReasons.Committed] = "已承诺：这辆车的空闲返回用途与一个等待点的预占已在同一次保存里取得",
+            [IdleReturnReasons.AdoptedInPlace] =
+                "原地认领：车本来就停在一个接纳它的等待点上，只是服务端没有这个点的占用记录（例如人手把车开过去、换库之后）。"
+                + "服务端补记这个点归它占用，不建单、车不动；之后与空闲返回到点的车一样，车开走后自动放掉这个点。这是正常状态，不需要人处理",
             [IdleReturnReasons.Disabled] = "空闲返回开关关着（出厂默认）：不形成新的空闲返回，已有的照常走完",
             [IdleReturnReasons.NotLeftOverByTransportThisRound] =
                 "这一轮派车选中了它去搬运，或它这一轮中途退出了派车：空闲返回只在没有搬运可派时才轮到",
@@ -100,8 +103,11 @@ internal static class IdleReturnCodeDescriptions
                 + "两次以单被取消、删除或失败收尾，说明有人要它别动，服务端不再自动让它回等待点，并在服务端日志里告警（事件 2227）。"
                 + "窗口过去也不会自己解除：这辆车被派了一趟搬运（或别的旅程）之后才重新开始自动空闲返回。"
                 + "请到现场与 RIoT 查明为什么反复取消；车停在原地不影响派搬运",
-            [IdleReturnReasons.PointTaken] = "这个等待点此刻被别的承诺预占或占用着",
+            [IdleReturnReasons.PointTaken] = "这个等待点此刻被别的承诺预占或占用着，或者另一辆车此刻就停在点上",
             [IdleReturnReasons.PointUnreachable] = "路网上从车的位置到不了这个等待点，或它不在路网上",
+            [IdleReturnReasons.PointAtVehicleNode] =
+                "车此刻停的站与这个点在路网上吸附到同一个位置（路程为 0）、却不是同一个站：保守起见不让车开过去。"
+                + "这辆车本轮也在评估中时，这个点也不派给别的车",
             [IdleReturnReasons.PointFailedLastAttempt] = "这辆车上一次开往这个等待点已确认失败：这一次排除它",
         };
 

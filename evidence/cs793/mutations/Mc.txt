@@ -1,0 +1,24 @@
+[xUnit.net 00:00:09.01]     ControlServer.Tests.IdleReturnCommitmentTests.AStagingOriginAnotherVehicleStandsOnIsNotTakenAndTheVehicleFallsBackToAWaitingPoint [FAIL]
+  Failed ControlServer.Tests.IdleReturnCommitmentTests.AStagingOriginAnotherVehicleStandsOnIsNotTakenAndTheVehicleFallsBackToAWaitingPoint [56 ms]
+  Error Message:
+   Assert.Equal() Failure: Values differ
+Expected: Tuple ("IDLE_RETURN_COMMITTED", 214)
+Actual:   Tuple ("IDLE_RETURN_COMMITTED", 215)
+[xUnit.net 00:00:09.30]     ControlServer.Tests.IdleReturnCommitmentTests.InOneRoundAVehicleJudgedFirstIsNotSentToThePointAnotherStandsOn [FAIL]
+  Failed ControlServer.Tests.IdleReturnCommitmentTests.InOneRoundAVehicleJudgedFirstIsNotSentToThePointAnotherStandsOn [53 ms]
+  Error Message:
+   Assert.Equal() Failure: Collections differ
+                                                                                   ↓ (pos 0)
+Expected: <>z__ReadOnlyArray<ValueTuple<string, string, int?>>                    [Tuple ("VK-B", "IDLE_RETURN_COMMITTED", 215), Tuple ("VK-A", "IDLE_RETURN_ADOPTED_IN_PLACE", 214)]
+[xUnit.net 00:00:10.92]     ControlServer.Tests.IdleReturnCommitmentTests.AVehicleStandingOnAPointKeepsOthersAwayEvenWhenItIsNotEligibleItself [FAIL]
+[xUnit.net 00:00:11.00]     ControlServer.Tests.IdleReturnCommitmentTests.AWaitingPointOnTheSameNodeAsTheVehiclesStationIsNeitherAdoptedNorDrivenToAndStaysClosedToOthers [FAIL]
+  Failed ControlServer.Tests.IdleReturnCommitmentTests.AVehicleStandingOnAPointKeepsOthersAwayEvenWhenItIsNotEligibleItself [21 ms]
+  Error Message:
+   Assert.Equal() Failure: Collections differ
+                                                                                                                                                    ↓ (pos 1)
+Expected: <>z__ReadOnlyArray<ValueTuple<string, string, int?>>                    [Tuple ("VK-A", "IDLE_RETURN_BELOW_MANDATORY_CHARGE_LINE", null), Tuple ("VK-B", "IDLE_RETURN_COMMITTED", 215)]
+  Error Message:
+   Assert.Equal() Failure: Collections differ
+                                                                                                                                 ↓ (pos 1)
+Expected: <>z__ReadOnlyArray<ValueTuple<string, string, int?>>                    [Tuple ("VK-A", "IDLE_RETURN_COMMITTED", 215), Tuple ("VK-B", "IDLE_RETURN_NO_WAITING_POINT_AVAILABLE", null)]
+Failed!  - Failed:     4, Passed:    84, Skipped:     0, Total:    88, Duration: 7 s - ControlServer.Tests.dll (net8.0)
