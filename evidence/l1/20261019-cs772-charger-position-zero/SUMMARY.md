@@ -29,7 +29,7 @@
 那样做等于充电分配常年答 `CHARGER_OCCUPANCY_UNKNOWN`，全车队分不到桩。所以：
 
 - 0（含负数）视为「不在任何站」：不挡任何桩，也不是未知。
-- 0 且 `batteryState=CHARGING`：充电只发生在桩上，却说不出是哪一个——记 unknown 事实
+- 在线、在本图上、位置 0 且 `batteryState=CHARGING`：充电只发生在桩上，却说不出是哪一个——记 unknown 事实
   `VEHICLE_CHARGING_WITHOUT_STATION`，所有桩答 `CHARGER_OCCUPANCY_UNKNOWN`（现有原因码，看板已有中文说明，不新增原因码）。
 
 ## L1 红绿
@@ -40,5 +40,7 @@
 | `red/02-failed-cycle-release-09bd8a2a.txt` | 失败周期留下的预占：另一辆车「充电中、位置 0」时被释放了（期望保持） |
 | `red/03-departure-recheck-55b3beef.txt` | 出发前复核两条（按既有撤回口径改写后），只在这一轮把 `ChargerOccupancy.cs` 临时还原成修复前：都建出了去 211 的单 |
 | `green/01-0689122f.txt` | 修复后 `ChargingAllocationTests` 66/66、`ChargingExecutionTests` 64/64 |
+| `red/04-offline-and-other-map-review.txt` | 独立审查 S1、S3：离线的车、另一张图上的车位置 0 且充电时，修复前（`2b89b329`）挡住了所有桩 |
+| `green/02-after-review.txt` | 审查返工后 `ChargingAllocationTests` 68/68、`ChargingExecutionTests` 64/64 |
 
 全量走 CI，见 PR。

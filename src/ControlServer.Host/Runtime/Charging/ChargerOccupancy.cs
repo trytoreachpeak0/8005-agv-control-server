@@ -88,7 +88,7 @@ public sealed class ChargerOccupancySnapshot
 /// </para>
 /// <para>
 /// <b>未知即不分配</b>（fail-closed）：某辆车的位置读不到、读数过期（超过 <c>JourneyRuntime:MaximumEvidenceAge</c>，或时刻在未来）、
-/// 当前站为空、或报的是「不在任何站」（<see cref="NoStation"/>）却正在充电；清单不完整；清单里本项目车辆的某张单没有 <c>upperId</c>、或按 <c>upperId</c> 读不到它——任何一条，这一轮所有桩都不是候选。
+/// 当前站为空、或在线、在本图、报的是「不在任何站」（<see cref="NoStation"/>）却正在充电；清单不完整；清单里本项目车辆的某张单没有 <c>upperId</c>、或按 <c>upperId</c> 读不到它——任何一条，这一轮所有桩都不是候选。
 /// </para>
 /// </remarks>
 public sealed class ChargerOccupancyReader(
@@ -148,13 +148,25 @@ public sealed class ChargerOccupancyReader(
             }
 
             vehicles[vehicle.VehicleKey] = observed;
+            // A vehicle RIoT places on another Map stands on none of this Map's chargers, whatever its station or battery says
+            // (control-server#772 review S3). One with no Map reported is taken to be on this Map: the side that keeps a charger
+            // from being handed out.
+            if (!string.IsNullOrEmpty(observed.CurrentMap) &&
+                !string.Equals(observed.CurrentMap, _runtime.MapIdentity, StringComparison.Ordinal))
+            {
+                continue;
+            }
+
             // control-server#772: RIoT reports currentPosition 0 for a vehicle it places at no station -- every vehicle on the
             // move, all the time. It stands on no charger, so it blocks none: taking 0 as unknown would stop the whole fleet from
             // charging whenever one vehicle drives. A vehicle charging there is the exception: charging happens only on a
-            // charger, and RIoT cannot say which (10-18 agv01, pushed onto 211 by hand), so every charger is unknown.
+            // charger, and RIoT cannot say which (10-18 agv01, pushed onto 211 by hand), so every charger is unknown. Not for an
+            // offline vehicle (review S1): it counts where RIoT last placed it, like any offline vehicle, and a reading the gateway
+            // stamps at read time never goes stale -- one vehicle switched off would otherwise keep the whole fleet from charging.
             if (station <= NoStation)
             {
-                if (string.Equals(observed.BatteryState, BatteryEligibility.ChargingBatteryState, StringComparison.Ordinal))
+                if (observed.Connected &&
+                    string.Equals(observed.BatteryState, BatteryEligibility.ChargingBatteryState, StringComparison.Ordinal))
                 {
                     unknown.Add((
                         $"{vehicle.AgvId}[{vehicle.VehicleKey}]:VEHICLE_CHARGING_WITHOUT_STATION",
@@ -164,13 +176,7 @@ public sealed class ChargerOccupancyReader(
                 continue;
             }
 
-            // A vehicle RIoT places on another Map stands on none of this Map's chargers. One with no Map reported is taken to
-            // stand where its station number says, on this Map: the side that keeps a charger from being handed out.
-            if (string.IsNullOrEmpty(observed.CurrentMap) ||
-                string.Equals(observed.CurrentMap, _runtime.MapIdentity, StringComparison.Ordinal))
-            {
-                standing[vehicle.VehicleKey] = (_runtime.MapId, station);
-            }
+            standing[vehicle.VehicleKey] = (_runtime.MapId, station);
         }
 
         List<(string VehicleKey, int MapId, int StationId)> targets = [];
