@@ -1,0 +1,24 @@
+# red 1: tests at 09bd8a2a, src at c0389b68 (before the fix). Filter: FullyQualifiedName~ControlServer.Tests.ChargingAllocationTests
+  Failed ControlServer.Tests.ChargingAllocationTests.EachReasonAChargerIsNotACandidateIsNamedAndOnlyTheFilteredSetIsSearched(why: "a-vehicle-charging-at-position-zero", expected: "CHARGER_OCCUPANCY_UNKNOWN", theFarChargerIsStillChosen: False) [113 ms]
+  Error Message:
+   Assert.Equal() Failure: Strings differ
+Expected: "CHARGING_NO_CHARGER_AVAILABLE"
+Actual:   "CHARGING_COMMITTED"
+  Failed ControlServer.Tests.ChargingAllocationTests.AVehicleChargingWhereRiotCannotPlaceItHoldsEveryChargerUntilItIsPlacedOrLeaves(then: "leaves-the-charger") [85 ms]
+  Error Message:
+   Assert.Equal() Failure: Strings differ
+Expected: "CHARGING_NO_CHARGER_AVAILABLE"
+Actual:   "CHARGING_COMMITTED"
+  Failed ControlServer.Tests.ChargingAllocationTests.AVehicleChargingWhereRiotCannotPlaceItHoldsEveryChargerUntilItIsPlacedOrLeaves(then: "placed-on-the-charger") [117 ms]
+  Error Message:
+   Assert.Equal() Failure: Strings differ
+Expected: "CHARGING_NO_CHARGER_AVAILABLE"
+Actual:   "CHARGING_COMMITTED"
+  Failed ControlServer.Tests.ChargingAllocationTests.AReservedChargerIsNotSentToWhileAnotherVehicleChargesWithoutAStationAndIsNotReservedTwice [298 ms]
+  Error Message:
+   Assert.Empty() Failure: Collection was not empty
+Collection: [Tuple ("BROKERX-0001", "W2G-CHARGE-0f6b49a8-20260908T060001000Z", 211)]
+Total tests: 66
+     Passed: 62
+     Failed: 4
+exit=1

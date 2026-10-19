@@ -1,0 +1,12 @@
+# red 2: tests at 55b3beef, ChargerOccupancy.cs reverted to c0389b68 for this run only
+  Failed ControlServer.Tests.ChargingAllocationTests.AChargerCommittedBeforeAnotherVehicleChargesWithoutAStationIsNotSentToAndIsReservedOnceAfterItLeaves [12 s]
+  Error Message:
+   Assert.Empty() Failure: Collection was not empty
+Collection: [Tuple ("BROKERX-0001", "W2G-CHARGE-0f6b49a8-20260908T060001000Z", 211)]
+--
+  Failed ControlServer.Tests.ChargingExecutionTests.ACommitmentHeldAtTheDepartureGateIsWithdrawnOnceItNoLongerStandsAndNoOrderGoesToThatCharger(what: "another-vehicle-charging-at-position-zero", expected: "CHARGING_WITHDRAWN_CHARGER_NO_LONGER_ELIGIBLE") [364 ms]
+  Error Message:
+   Assert.DoesNotContain() Failure: Filter matched in collection
+             ↓ (pos 0)
+Collection: [Tuple ("BROKERX-0001", "W2G-CHARGE-0f6b49a8-20260908T060001000Z", 211)]
+Failed!  - Failed:     2, Passed:     4, Skipped:     0, Total:     6, Duration: 13 s - ControlServer.Tests.dll (net8.0)
