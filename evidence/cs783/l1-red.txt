@@ -1,0 +1,31 @@
+# cs#783 L1 red: the new tests on fp/v2-impl@aba28e301 before the fix (test commit only)
+# dotnet test --no-build --filter "FullyQualifiedName~SlotCommandStationRecheckTests|FullyQualifiedName~RecoveryEndingReleasesBlockedJourneyTests.After"
+  Failed ControlServer.Tests.SlotCommandStationRecheckTests.AScanAfterAServerRestartIsRefusedWhileTheVehicleIsAway [11 s]
+   Assert.DoesNotContain() Failure: Item found in collection
+  Failed ControlServer.Tests.SlotCommandStationRecheckTests.AScanWhileTheVehicleStandsAtAnotherStationIsRefusedAndOpensNoSlot [875 ms]
+   Assert.DoesNotContain() Failure: Item found in collection
+  Failed ControlServer.Tests.SlotCommandStationRecheckTests.AScanIsRefusedWhenThePositionCannotBeProven(reading: "stale", expectedReason: "VEHICLE_NOT_READY") [1 s]
+   Assert.DoesNotContain() Failure: Item found in collection
+  Failed ControlServer.Tests.SlotCommandStationRecheckTests.AScanIsRefusedWhenThePositionCannotBeProven(reading: "other-map", expectedReason: "VEHICLE_NOT_READY") [1 s]
+   Assert.DoesNotContain() Failure: Item found in collection
+  Failed ControlServer.Tests.RecoveryEndingReleasesBlockedJourneyTests.AfterAHandoffTheOtherUnloadWaitsWhileTheVehicleIsAwayAndGoesOutOnceItIsBack [16 s]
+   The other unload went out, or the stop was not named as waiting for the vehicle, while it stood away from the stop. stage=AwaitingUnloadResult block= round=
+  Failed ControlServer.Tests.SlotCommandStationRecheckTests.AScanIsRefusedWhenThePositionCannotBeProven(reading: "position-zero", expectedReason: "STATION_MISMATCH") [810 ms]
+   Assert.DoesNotContain() Failure: Item found in collection
+  Failed ControlServer.Tests.SlotCommandStationRecheckTests.AScanIsRefusedWhenThePositionCannotBeProven(reading: "position-null", expectedReason: "STATION_MISMATCH") [803 ms]
+   Assert.DoesNotContain() Failure: Item found in collection
+  Failed ControlServer.Tests.SlotCommandStationRecheckTests.AScanIsRefusedWhenThePositionCannotBeProven(reading: "unreadable", expectedReason: "VEHICLE_NOT_READY") [757 ms]
+   Assert.DoesNotContain() Failure: Item found in collection
+  Failed ControlServer.Tests.SlotCommandStationRecheckTests.AScanIsRefusedWhenThePositionCannotBeProven(reading: "moving", expectedReason: "VEHICLE_NOT_READY") [720 ms]
+   Assert.DoesNotContain() Failure: Item found in collection
+  Failed ControlServer.Tests.RecoveryEndingReleasesBlockedJourneyTests.AfterACompensationTheNextScanIsRefusedWhileTheVehicleIsAwayAndLoadsOnceItIsBack [3 s]
+   A load was commanded, or the stop was not named as waiting for the vehicle, while it stood away from the stop. third=LOADING stage=AwaitingLoadResult block= round=
+  Failed ControlServer.Tests.SlotCommandStationRecheckTests.TheNextUnloadAtAStopWaitsWhileTheVehicleIsAwayAndGoesOutOnceItIsBack [4 s]
+   The second unload went out while the vehicle was away from the stop.
+  Failed ControlServer.Tests.SlotCommandStationRecheckTests.AScanAfterAnEmergencyStopIsReleasedIsRefusedWhileTheVehicleIsAway [848 ms]
+   Assert.DoesNotContain() Failure: Item found in collection
+  Failed ControlServer.Tests.SlotCommandStationRecheckTests.OnceTheVehicleIsBackAtTheStopTheNextScanLoads [610 ms]
+   Assert.DoesNotContain() Failure: Item found in collection
+  Failed ControlServer.Tests.SlotCommandStationRecheckTests.AScanAfterAReconnectIsRefusedWhileTheVehicleIsAway [762 ms]
+   Assert.DoesNotContain() Failure: Item found in collection
+Failed!  - Failed:    14, Passed:     1, Skipped:     0, Total:    15, Duration: 26 s - ControlServer.Tests.dll (net8.0)
