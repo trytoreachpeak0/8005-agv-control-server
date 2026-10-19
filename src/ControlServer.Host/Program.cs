@@ -38,7 +38,10 @@ string configuredConnection = builder.Configuration.GetConnectionString("Control
 // 上限都由 ControlServerSqlite 说了算。
 string connectionString = ControlServerSqlite.FromConfigured(configuredConnection);
 ControlServerSqlite.EnsureDataSourceDirectory(connectionString);
-builder.Services.AddDbContext<ControlServerDbContext>(options => options.UseSqlite(connectionString));
+// control-server#779: every context gets its own SerializedSqliteConnection, whose open and close are mutually exclusive
+// in this process, so Microsoft.Data.Sqlite 8's pool cannot lend one native connection to two owners
+// (dotnet/efcore#39008). The pool stays on: turning it off cost twenty times a query's time.
+builder.Services.AddDbContext<ControlServerDbContext>(options => options.UseSerializedSqlite(connectionString));
 builder.Services.AddScoped<WireToGateStore>();
 builder.Services.AddScoped<IDemandAcceptanceStore>(services => services.GetRequiredService<WireToGateStore>());
 builder.Services.AddScoped<IMovementIntentStore>(services => services.GetRequiredService<WireToGateStore>());
