@@ -281,6 +281,46 @@ public sealed class SlotCommandStationRecheckTests
         Assert.True(Sent(fixture, command), "The unanswered load command was never sent again once the vehicle was back.");
     }
 
+    /// <summary>
+    /// 真车载端的常态：会话因本服务端自己的单而未就绪（<c>DEPARTURE_SAFETY_NOT_READY</c>，形状照
+    /// <c>PickupDispatchPlanPastOwnOrderTests.DropSessionOnOwnOrderAsync</c>）。新的一代连上之后先停在这个样子：这期间未答复的装货命令一次都不发，
+    /// 推进停在就绪闸前，位置核对根本走不到。会话回到 <c>Ready</c> 的第一轮，车仍不在站上，照样不发；车回到站上才发。
+    /// </summary>
+    [Fact]
+    [Trait("IntegrationSlice", "FP-IS-02")]
+    public async Task AnUnansweredLoadCommandStaysUnsentThroughASessionNotReadyOnTheServersOwnOrder()
+    {
+        await using RuntimeFixture fixture = await ReachSublotWaitAsync();
+        await fixture.SubmitSublotAsync("SUBLOT-001");
+        await TickAndRunAsync(fixture);
+        await AssertLoadCommandedAsync(fixture);
+        string command = (await Batch7MultiDemandAdvanceTests.MembershipAsync(fixture, BeforeSublotDemandId)).LoadCommandMessageId;
+        RiotVehicleObservation atStop = fixture.Riot.Vehicle;
+        await fixture.DropOnboardSessionAsync();
+        await TickAndRunAsync(fixture);
+        fixture.Riot.Vehicle = atStop with { CurrentStationId = ElsewhereStationId };
+        await fixture.ReconnectAsync(2);
+        await fixture.AdvanceSessionAsync(2);
+        await PickupDispatchPlanPastOwnOrderTests.DropSessionOnOwnOrderAsync(fixture);
+        fixture.Peer.Lines.Clear();
+
+        await TickAndRunAsync(fixture);
+        await TickAndRunAsync(fixture);
+        JourneyRuntimeRow notReady = await fixture.RuntimeAsync();
+        Assert.Equal(
+            (JourneyRuntimeStage.AwaitingLoadResult, "ONBOARD_SESSION_NOT_READY"),
+            (notReady.Stage, notReady.BlockReasonCode));
+        Assert.False(Sent(fixture, command), "The unanswered load command went out while the session was not ready.");
+
+        await fixture.RestoreSessionReadyAsync();
+        await TickAndRunAsync(fixture);
+        Assert.False(Sent(fixture, command), "The first ready round sent the load command with the vehicle still away.");
+
+        fixture.Riot.Vehicle = atStop;
+        await TickAndRunAsync(fixture);
+        Assert.True(Sent(fixture, command), "The unanswered load command was never sent again once the vehicle was back.");
+    }
+
     /// <summary>这一条报文有没有经连接发给车。</summary>
     private static bool Sent(RuntimeFixture fixture, string messageId) =>
         fixture.Peer.Lines.Any(line =>

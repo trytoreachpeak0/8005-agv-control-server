@@ -101,6 +101,11 @@ public sealed partial class JourneyRuntimeEngine(
             LogLevel.Warning,
             new EventId(2318, nameof(LogSlotCommandHeldOffStop)),
             "The {OperationType} command for vehicle {AgvId} was not sent: the vehicle is not proven at its stop. {Expected} {Observed}");
+    private static readonly Action<ILogger, string, string, Exception?> LogSlotCommandResendWithheld =
+        LoggerMessage.Define<string, string>(
+            LogLevel.Debug,
+            new EventId(2319, nameof(LogSlotCommandResendWithheld)),
+            "Unanswered slot commands {MessageIds} for vehicle {AgvId} were not sent again: the vehicle is not proven at their stop.");
     private static readonly Action<ILogger, Exception?> LogMapStationCatalogFailed = LoggerMessage.Define(
         LogLevel.Warning,
         new EventId(2103, nameof(LogMapStationCatalogFailed)),
@@ -1283,6 +1288,7 @@ public sealed partial class JourneyRuntimeEngine(
         HashSet<string> replayable = RuntimeMessageIds(runtime, stops);
         replayable.UnionWith(await CurrentStopDepartures.PendingResultIdsAsync(dbContext, runtime.AgvId, cancellationToken)
             .ConfigureAwait(false));
+        await WithholdSlotCommandsOffTheirStopAsync(replayable, runtime, stops, session, cancellationToken).ConfigureAwait(false);
         await publisher.ReplayPendingForSessionAsync(
             runtime.AgvId,
             session.SessionGeneration,
@@ -2232,7 +2238,8 @@ public sealed partial class JourneyRuntimeEngine(
         JourneyRuntimeRow runtime,
         JourneyStopRow stop,
         SlotOperationType operation,
-        CancellationToken cancellationToken)
+        CancellationToken cancellationToken,
+        bool log = true)
     {
         RiotVehicleObservation vehicle = await vehicleFacts.ReadVehicleAsync(runtime.VehicleKey, cancellationToken)
             .ConfigureAwait(false);
@@ -2246,7 +2253,7 @@ public sealed partial class JourneyRuntimeEngine(
             : vehicle.CurrentStationId is > 0 and int station && station == stop.StationRiotId
                 ? null
                 : ServerReasonCodes.StationMismatch;
-        if (reason is not null)
+        if (reason is not null && log)
         {
             LogSlotCommandHeldOffStop(
                 logger,
@@ -2258,6 +2265,67 @@ public sealed partial class JourneyRuntimeEngine(
                 null);
         }
         return reason;
+    }
+
+    /// <summary>
+    /// 未答复的装卸命令跨代重发之前核位置（control-server#783）：<paramref name="replayable"/> 里有车载端没答结果、而且是在更早一代会话里
+    /// 发出的 <c>SlotOperationCommand</c> 时，按它所属的停靠核车在不在那里，不在就把它从这一轮的重发里拿掉。
+    /// </summary>
+    /// <remarks>
+    /// <para>
+    /// 装卸命令的答复是结果不是 DurableAck，所以在结果到来之前，它每一轮都随 <c>ReplayPendingForSessionAsync</c> 再发一次。同一代里这无害：
+    /// 同一条连接按序送达，车收到过第一次，再发只会被按 attempt 去重。危险的是跨代那一次——命令发出后连接断了、车没收到、车被开走、
+    /// 以新的一代连上，换代重发就是车收到的第一次，会在站外开门。
+    /// </para>
+    /// <para>
+    /// 所以只在有跨代的未答复命令时读 RIoT：等结果、阻塞的旅程可能一挂几个小时，每轮都读，RIoT 一卡就拖住整轮（WaitingJourneyBatteryWatchTests
+    /// 的读挂住、读失败两条就是这样红的）。扣住不发不丢东西：车载端执行过的，握手时自己重放没被确认的结果；没执行过的，车回到站上那一轮照常重发。
+    /// 记 Debug 级的 2319 而不是 2318：车离站期间这里每一轮都会走到。
+    /// </para>
+    /// </remarks>
+    private async Task WithholdSlotCommandsOffTheirStopAsync(
+        HashSet<string> replayable,
+        JourneyRuntimeRow runtime,
+        JourneyStopCursor stops,
+        SessionRecoveryRow session,
+        CancellationToken cancellationToken)
+    {
+        Dictionary<string, (string StopId, SlotOperationType Type)> commands = new(StringComparer.Ordinal);
+        foreach (JourneyStopDemand demand in stops.AllDemands)
+        {
+            commands[demand.Membership.LoadCommandMessageId] = (demand.Membership.PickupStopId, SlotOperationType.Load);
+            commands[demand.Membership.UnloadCommandMessageId] = (demand.Membership.UnloadStopId, SlotOperationType.Unload);
+        }
+        string[] candidates = [.. commands.Keys.Where(replayable.Contains)];
+        if (candidates.Length == 0)
+        {
+            return;
+        }
+        ProtocolOutboxRow[] unanswered = await dbContext.ProtocolOutbox.AsNoTracking()
+            .Where(row => candidates.Contains(row.MessageId) && row.MessageType == "SlotOperationCommand" &&
+                          row.AcknowledgedAt == null && row.FencedAt == null)
+            .ToArrayAsync(cancellationToken).ConfigureAwait(false);
+        string[] fromAnEarlierSession = [.. unanswered
+            .Where(row => StoredSessionGeneration(row) < session.SessionGeneration)
+            .Select(row => row.MessageId)];
+        foreach (IGrouping<string, string> atStop in fromAnEarlierSession.GroupBy(id => commands[id].StopId, StringComparer.Ordinal))
+        {
+            // 停靠不在游标里（不该有）时也扣住：扣住只是推迟，放出去可能是站外开门。
+            JourneyStopRow? stop = stops.Stops.FirstOrDefault(row => row.StopId == atStop.Key);
+            if (stop is null ||
+                await VehicleNotAtStopAsync(runtime, stop, commands[atStop.First()].Type, cancellationToken, log: false)
+                    .ConfigureAwait(false) is not null)
+            {
+                replayable.ExceptWith(atStop);
+                LogSlotCommandResendWithheld(logger, string.Join(',', atStop), runtime.AgvId, null);
+            }
+        }
+    }
+
+    private static long StoredSessionGeneration(ProtocolOutboxRow row)
+    {
+        using JsonDocument envelope = JsonDocument.Parse(row.PayloadJson);
+        return envelope.RootElement.GetProperty("sessionGeneration").GetInt64();
     }
 
     /// <summary>
