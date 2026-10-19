@@ -1,6 +1,7 @@
 using System.Text.Json;
 using ControlServer.Application;
 using ControlServer.Domain;
+using ControlServer.Host.Runtime;
 using ControlServer.Infrastructure.Persistence;
 using Microsoft.EntityFrameworkCore;
 using static ControlServer.Tests.Batch7StopDrivenAdvanceDriver;
@@ -82,6 +83,8 @@ public sealed class SlotCommandStationRecheckTests
     [InlineData("stale", VehicleNotReady)]
     [InlineData("unreadable", VehicleNotReady)]
     [InlineData("moving", VehicleNotReady)]
+    // 审查 S-2：只有 Connected=false，站号、地图、速度全对。真网关按读取时刻盖时间，离线车的最后读数永远不过期，挡住它的只有在线这一项。
+    [InlineData("offline", VehicleNotReady)]
     [InlineData("other-map", VehicleNotReady)]
     public async Task AScanIsRefusedWhenThePositionCannotBeProven(string reading, string expectedReason)
     {
@@ -108,6 +111,9 @@ public sealed class SlotCommandStationRecheckTests
                     CurrentStationId = null,
                     Speed = null,
                 };
+                break;
+            case "offline":
+                fixture.Riot.Vehicle = atStop with { Connected = false };
                 break;
             case "moving":
                 fixture.Riot.Vehicle = atStop with { Speed = 0.4 };
@@ -328,6 +334,122 @@ public sealed class SlotCommandStationRecheckTests
             using JsonDocument document = JsonDocument.Parse(line);
             return document.RootElement.GetProperty("messageId").GetString() == messageId;
         });
+
+    /// <summary>
+    /// 审查 S-4：位置读数有自己的预算。RIoT 卡住时这一次读在预算到点就放弃、按位置证明不了处理（拒收，<c>VEHICLE_NOT_READY</c>），
+    /// 这一轮在预算量级内结束，不等网关自己的 30 秒——否则每辆车每轮多等一个网关超时，急停确认也排在后面。替身的读车 20 秒才答，
+    /// 预算设 200 毫秒，判据给 5 秒；计时用真实时钟，预算的计时器就是真实的（同 <c>WaitingJourneyBatteryWatchTests</c>）。
+    /// </summary>
+    [Fact]
+    [Trait("IntegrationSlice", "FP-IS-02")]
+    public async Task APositionReadThatHangsIsCutOffAtItsBudgetAndTheScanRefused()
+    {
+        await using RuntimeFixture fixture = await ReachSublotWaitAsync();
+        fixture.Options.SlotCommandPositionReadBudget = TimeSpan.FromMilliseconds(200);
+        await fixture.RecreateEngineAsync();
+        fixture.Riot.ReadVehicleDelay = token => Task.Delay(TimeSpan.FromSeconds(20), token);
+
+        await fixture.SubmitSublotAsync("SUBLOT-001");
+        System.Diagnostics.Stopwatch elapsed = System.Diagnostics.Stopwatch.StartNew();
+        await TickAndRunAsync(fixture);
+        elapsed.Stop();
+
+        Assert.True(elapsed.Elapsed < TimeSpan.FromSeconds(5), $"The round took {elapsed.Elapsed}.");
+        await AssertRefusedAsync(fixture, VehicleNotReady);
+    }
+
+    /// <summary>读位置抛异常（网关之外的失败）：这一轮不抛，按位置证明不了拒收。</summary>
+    [Fact]
+    [Trait("IntegrationSlice", "FP-IS-02")]
+    public async Task APositionReadThatFailsRefusesTheScanWithoutFailingTheRound()
+    {
+        await using RuntimeFixture fixture = await ReachSublotWaitAsync();
+        fixture.Riot.BeforeReadVehicle = () => throw new HttpRequestException("RIoT is not answering.");
+
+        await fixture.SubmitSublotAsync("SUBLOT-001");
+        await TickAndRunAsync(fixture);
+
+        await AssertRefusedAsync(fixture, VehicleNotReady);
+    }
+
+    /// <summary>卸货那一侧同样有预算：读挂住时这一轮在预算量级内结束，下一条卸货命令不发。</summary>
+    [Fact]
+    [Trait("IntegrationSlice", "FP-IS-08")]
+    public async Task AnUnloadPositionReadThatHangsIsCutOffAtItsBudgetAndHoldsTheUnload()
+    {
+        await using RuntimeFixture fixture = await RuntimeFixture.CreateAsync();
+        await LoadBothAndArriveAtTheUnloadStopAsync(fixture);
+        (string first, string second) = await UnloadOrderAsync(fixture);
+        fixture.Options.SlotCommandPositionReadBudget = TimeSpan.FromMilliseconds(200);
+        await fixture.RecreateEngineAsync();
+        await ApplySafeResultAsync(fixture, first, SlotOperationType.Unload, SlotBusinessState.Empty);
+        fixture.Riot.ReadVehicleDelay = token => Task.Delay(TimeSpan.FromSeconds(20), token);
+
+        System.Diagnostics.Stopwatch elapsed = System.Diagnostics.Stopwatch.StartNew();
+        await TickAndRunAsync(fixture);
+        elapsed.Stop();
+
+        Assert.True(elapsed.Elapsed < TimeSpan.FromSeconds(5), $"The round took {elapsed.Elapsed}.");
+        Assert.False(await UnloadCommandedAsync(fixture, second), "The second unload went out on a position read that never answered.");
+        Assert.Equal(NotAtStopCode, (await JourneyOfAsync(fixture, first)).BlockReasonCode);
+    }
+
+    /// <summary>
+    /// 审查 S-1：卸货站没有离站期限，车被推回站上而 RIoT 仍报 0（10-18 实测要在 RIoT 上重新定位），卸货会一直扣着。挂码期间每 5 分钟
+    /// 记一次当前读数（2318），不只记第一次：现场要能从日志看出车此刻读成哪一站。十二分钟里记三次：挂码那一轮、第 5 分钟、第 10 分钟。
+    /// </summary>
+    [Fact]
+    [Trait("IntegrationSlice", "FP-IS-08")]
+    public async Task AHeldUnloadLogsThePositionAgainEveryFiveMinutes()
+    {
+        await using RuntimeFixture fixture = await RuntimeFixture.CreateAsync();
+        await LoadBothAndArriveAtTheUnloadStopAsync(fixture);
+        (string first, _) = await UnloadOrderAsync(fixture);
+        await ApplySafeResultAsync(fixture, first, SlotOperationType.Unload, SlotBusinessState.Empty);
+        fixture.Riot.Vehicle = fixture.Riot.Vehicle with { CurrentStationId = 0 };
+
+        await TickAndRunAsync(fixture);
+        for (int minute = 1; minute <= 12; minute++)
+        {
+            fixture.Clock.Advance(TimeSpan.FromSeconds(59));
+            await fixture.HearFromPeerAsync();
+            await TickAndRunAsync(fixture);
+        }
+
+        Assert.Equal(NotAtStopCode, (await JourneyOfAsync(fixture, first)).BlockReasonCode);
+        int logged;
+        lock (fixture.EngineLog.Entries)
+        {
+            logged = fixture.EngineLog.Entries.Count(entry =>
+                entry.Message.Contains("was not sent: the vehicle is not proven at its stop", StringComparison.Ordinal));
+        }
+        Assert.Equal(3, logged);
+    }
+
+    /// <summary>读数预算默认 2 秒；0 与超过 10 秒的值在启动时被拒（与 <c>WaitingJourneyBatteryReadBudget</c> 同一个范围）。</summary>
+    [Theory]
+    [InlineData(null, true)]
+    [InlineData("00:00:00", false)]
+    [InlineData("00:00:11", false)]
+    [InlineData("00:00:10", true)]
+    public async Task ThePositionReadBudgetDefaultsToTwoSecondsAndStaysWithinTen(string? value, bool valid)
+    {
+        Assert.Equal(TimeSpan.FromSeconds(2), new JourneyRuntimeOptions().SlotCommandPositionReadBudget);
+        // 校验器只在 Enabled 时逐项查，所以用夹具那份已启用的选项（同 WaitingJourneyBatteryWatchTests 的做法）。
+        await using RuntimeFixture fixture = await RuntimeFixture.CreateAsync();
+        JourneyRuntimeOptions options = fixture.Options;
+        if (value is not null)
+        {
+            options.SlotCommandPositionReadBudget = TimeSpan.Parse(value, System.Globalization.CultureInfo.InvariantCulture);
+        }
+
+        Microsoft.Extensions.Options.ValidateOptionsResult result =
+            new JourneyRuntimeOptionsValidator(new Microsoft.Extensions.Configuration.ConfigurationBuilder().Build()).Validate(null, options);
+
+        Assert.Equal(
+            !valid,
+            (result.Failures ?? []).Contains("SlotCommandPositionReadBudget must be positive and at most 10 s."));
+    }
 
     /// <summary>判据：录入被拒、原因码如期，没有装货命令，旅程停在等录入，看板挂不在站的码，没有分出仓位。</summary>
     private static async Task AssertRefusedAsync(RuntimeFixture fixture, string expectedReason)

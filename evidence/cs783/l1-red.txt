@@ -35,3 +35,18 @@ Failed!  - Failed:    14, Passed:     1, Skipped:     0, Total:    15, Duration:
   Failed ControlServer.Tests.SlotCommandStationRecheckTests.AnUnansweredLoadCommandIsNotSentAgainWhileTheVehicleIsAway [10 s]
    The unanswered load command went out again while the vehicle stood away from the stop.
 Failed!  - Failed:     1, Passed:     0, Skipped:     0, Total:     1, Duration: 10 s - ControlServer.Tests.dll (net8.0)
+
+
+# Third red (review rework S-1, S-4), on b91832116 + the option SlotCommandPositionReadBudget (no behaviour yet):
+# dotnet test --no-build --filter "FullyQualifiedName~SlotCommandStationRecheckTests"
+  Failed ControlServer.Tests.SlotCommandStationRecheckTests.AHeldUnloadLogsThePositionAgainEveryFiveMinutes [3 s]
+   Assert.Equal() Failure: Values differ   (expected 3 position logs in 12 minutes, got 1)
+  Failed ControlServer.Tests.SlotCommandStationRecheckTests.APositionReadThatHangsIsCutOffAtItsBudgetAndTheScanRefused [42 s]
+   The round took 00:00:42.1857093.
+  Failed ControlServer.Tests.SlotCommandStationRecheckTests.APositionReadThatFailsRefusesTheScanWithoutFailingTheRound [397 ms]
+   System.Net.Http.HttpRequestException : RIoT is not answering.
+  Failed ControlServer.Tests.SlotCommandStationRecheckTests.AnUnloadPositionReadThatHangsIsCutOffAtItsBudgetAndHoldsTheUnload [44 s]
+   The round took 00:00:42.1946511.
+Failed!  - Failed:     6, Passed:    18, Skipped:     0, Total:    24, Duration: 1 m 56 s - ControlServer.Tests.dll (net8.0)
+# The summary's other two failures were ThePositionReadBudgetDefaultsToTwoSecondsAndStaysWithinTen's invalid rows: a test
+# mistake (it validated options with Enabled=false, which the validator passes wholesale), fixed before this commit.
