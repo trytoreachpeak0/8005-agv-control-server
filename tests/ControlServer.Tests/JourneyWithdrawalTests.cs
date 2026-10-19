@@ -84,8 +84,8 @@ public sealed class JourneyWithdrawalTests
         await PlanAndWithdrawAsync(fixture, await RequestAsync(fixture, blocked));
 
         JsonElement worklist = await fixture.OutboxPayloadAsync(JourneyClosure.SnapshotMessageIds(blocked.JourneyId)[0]);
-        Assert.Equal("DEMAND_RELEASED", worklist.GetProperty("payload").GetProperty("stopEndedReason").GetString());
-        Assert.Equal(0, worklist.GetProperty("payload").GetProperty("items").GetArrayLength());
+        Assert.Equal("DEMAND_RELEASED", worklist.GetProperty("stopEndedReason").GetString());
+        Assert.Equal(0, worklist.GetProperty("items").GetArrayLength());
     }
 
     /// <summary>每一次撤下写一条管理员审计：谁、为什么、现场核实了什么、计划是什么。</summary>
@@ -210,7 +210,8 @@ public sealed class JourneyWithdrawalTests
 
         JourneyWithdrawalResult refused = await WithdrawAsync(fixture, request with { ConfirmationCode = planned.ConfirmationCode });
 
-        Assert.Equal(("REJECTED", [JourneyWithdrawal.ConfirmationStale]), (refused.Outcome, refused.Codes.ToArray()));
+        Assert.Equal("REJECTED", refused.Outcome);
+        Assert.Equal([JourneyWithdrawal.ConfirmationStale], refused.Codes);
         Assert.NotEqual(planned.ConfirmationCode, refused.ConfirmationCode);
         await AssertNothingWithdrawnAsync(fixture);
         Assert.Equal(
@@ -227,7 +228,8 @@ public sealed class JourneyWithdrawalTests
 
         JourneyWithdrawalResult refused = await WithdrawAsync(fixture, await RequestAsync(fixture, blocked));
 
-        Assert.Equal(("REJECTED", [JourneyWithdrawal.ConfirmationRequired]), (refused.Outcome, refused.Codes.ToArray()));
+        Assert.Equal("REJECTED", refused.Outcome);
+        Assert.Equal([JourneyWithdrawal.ConfirmationRequired], refused.Codes);
         await AssertNothingWithdrawnAsync(fixture);
     }
 
@@ -324,15 +326,36 @@ public sealed class JourneyWithdrawalTests
             code => code is JourneyWithdrawal.SlotFactsMalformed or JourneyWithdrawal.SlotFactsMismatch);
     }
 
-    /// <summary>车最近报的安全摘要说有门没锁（或有未知）：门没证明关着，拒绝。</summary>
-    [Fact]
-    public async Task ADoorTheVehicleDoesNotProveClosedRefusesTheWithdrawal()
+    /// <summary>车最近报的安全摘要说仓门读不出、没锁或开锁输出没复位，或者车从没报过：门没证明关着，拒绝。</summary>
+    [Theory]
+    [InlineData("LOCK_NOT_CLOSED")]
+    [InlineData("SLOT_STATE_UNKNOWN")]
+    [InlineData("UNLOCK_OUTPUT_NOT_RESET")]
+    [InlineData(null)]
+    public async Task ADoorTheVehicleDoesNotProveClosedRefusesTheWithdrawal(string? reason)
     {
         await using RuntimeFixture fixture = await RuntimeFixture.CreateAsync();
         JourneyRuntimeRow blocked = await BlockOnAnUnknownLoadWithAnotherDemandStillToLoadAsync(fixture);
-        await fixture.SetSafetyEvidenceAsync(unknownPresent: false, reasonCodes: ["LOCK_NOT_CLOSED"]);
+        await fixture.SetSafetyEvidenceAsync(unknownPresent: reason is not "LOCK_NOT_CLOSED", reasonCodes: reason is null ? null : [reason]);
+        fixture.Context.ChangeTracker.Clear();
 
         await AssertRefusedEverywhereAsync(fixture, await RequestAsync(fixture, blocked), JourneyWithdrawal.DoorNotProvenClosed);
+    }
+
+    /// <summary>
+    /// 车只是没停稳或运动状态读不到（agv03 10-19 被人开走之后就是这样）：那是现场顺序里的另一步，不是门的事，不挡撤下。
+    /// </summary>
+    [Fact]
+    public async Task AVehicleNotYetStoppedDoesNotRefuseTheWithdrawal()
+    {
+        await using RuntimeFixture fixture = await RuntimeFixture.CreateAsync();
+        JourneyRuntimeRow blocked = await BlockOnAnUnknownLoadWithAnotherDemandStillToLoadAsync(fixture);
+        await fixture.SetSafetyEvidenceAsync(unknownPresent: true, reasonCodes: ["VEHICLE_NOT_READY", "ACTION_NOT_ALLOWED_IN_STATE"]);
+        fixture.Context.ChangeTracker.Clear();
+
+        JourneyWithdrawalResult planned = await JourneyWithdrawal.PlanAsync(fixture.Context, await RequestAsync(fixture, blocked), Token);
+
+        Assert.True(planned.Outcome == "PLANNED", string.Join(",", planned.Codes));
     }
 
     // ------------------------------------------------------------------------------------------------
@@ -381,7 +404,8 @@ public sealed class JourneyWithdrawalTests
         JourneyWithdrawalResult refused = await JourneyWithdrawal.PlanAsync(
             fixture.Context, await RequestAsync(fixture, blocked) with { JourneyId = "journey:nobody" }, Token);
 
-        Assert.Equal(("REJECTED", [JourneyWithdrawal.JourneyNotFound]), (refused.Outcome, refused.Codes.ToArray()));
+        Assert.Equal("REJECTED", refused.Outcome);
+        Assert.Equal([JourneyWithdrawal.JourneyNotFound], refused.Codes);
     }
 
     // ------------------------------------------------------------------------------------------------
@@ -503,6 +527,8 @@ public sealed class JourneyWithdrawalTests
         JourneyRuntimeRow blocked = await JourneyOfAsync(fixture, FirstDemandId);
         Assert.Equal((JourneyRuntimeStage.Blocked, "LOAD_RESULT_REQUIRES_RECOVERY"), (blocked.Stage, blocked.BlockReasonCode));
         Assert.Equal(JourneyDemandStatuses.PendingLoad, (await Batch7MultiDemandAdvanceTests.MembershipAsync(fixture, SecondDemandId)).Status);
+        // agv03 after the timeout: the lock read closed again (14:37:07.00), so its safety summary names no door.
+        await fixture.ProveSlotDoorsClosedAsync();
         return blocked;
     }
 

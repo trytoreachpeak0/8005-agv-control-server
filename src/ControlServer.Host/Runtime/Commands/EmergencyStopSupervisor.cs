@@ -1191,7 +1191,33 @@ public sealed class EmergencyStopSupervisor(
     /// triggers alone, or a recorded class would be invisible to the very rules -- REQ-0248's re-trigger, REQ-0356's
     /// "raised by 8005" -- it exists for.
     /// </summary>
-    private async Task<IReadOnlyList<RiotOrderCommandAttempt>> ReadStopsAsync(
+    private Task<IReadOnlyList<RiotOrderCommandAttempt>> ReadStopsAsync(
+        string deviceKey,
+        CancellationToken cancellationToken) =>
+        ReadStopsAsync(audit, deviceKey, cancellationToken);
+
+    /// <summary>
+    /// <see cref="HasOpenEpisodeAsync(EmergencyStopSubject, CancellationToken)"/> from the audit trail alone, for a caller that holds no
+    /// supervisor: the manual journey withdrawal (control-server#771), which FieldOps runs against the database with the server stopped.
+    /// The same reads and the same episode rule, so the two cannot disagree.
+    /// </summary>
+    internal static async Task<bool> HasOpenEpisodeAsync(
+        IRiotOrderCommandAuditStore audit,
+        string deviceKey,
+        CancellationToken cancellationToken)
+    {
+        ArgumentNullException.ThrowIfNull(audit);
+        IReadOnlyList<RiotOrderCommandAttempt> triggers = await ReadStopsAsync(audit, deviceKey, cancellationToken)
+            .ConfigureAwait(false);
+        IReadOnlyList<RiotOrderCommandAttempt> releases = await audit.ReadAttemptsAsync(
+            RiotCommandTypeNames.CancelEmergency,
+            VehicleTarget(deviceKey),
+            cancellationToken).ConfigureAwait(false);
+        return OpenEpisode(triggers, releases) is not null;
+    }
+
+    private static async Task<IReadOnlyList<RiotOrderCommandAttempt>> ReadStopsAsync(
+        IRiotOrderCommandAuditStore audit,
         string deviceKey,
         CancellationToken cancellationToken)
     {

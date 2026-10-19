@@ -37,6 +37,8 @@ public sealed class StopEndedReasonsTests
         { "TERMINATED_BY_FAULT_CARGO_HANDOFF", "CARGO_HANDED_OFF" },
         { DemandJourneyLookup.ReleasedForRedispatchReason, "DEMAND_RELEASED" },
         { VehicleFaultRecoveryService.TripTerminatedReason, "TRIP_TERMINATED" },
+        // 人工撤下（control-server#771）：车上没装的都放回待派、会重新派车，所以与释放改派说同一句。
+        { ControlServer.Host.Runtime.Withdrawal.JourneyWithdrawal.WithdrawnReason, "DEMAND_RELEASED" },
         // 协议 4.0.0 候选（control-server#713）：待送点因客户出发、或因缺电而结束一站，需求放回待派，空清单说这两个，不说 DEMAND_RELEASED。
         { CurrentStopDepartures.OperatorDepartedReason, "OPERATOR_DEPARTED" },
         { CurrentStopDepartures.ChargingRequiredReason, "CHARGING_REQUIRED" },

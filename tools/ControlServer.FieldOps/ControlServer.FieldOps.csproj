@@ -5,6 +5,9 @@
   </PropertyGroup>
   <ItemGroup>
     <ProjectReference Include="..\..\src\ControlServer.Infrastructure\ControlServer.Infrastructure.csproj" />
+    <!-- control-server#771: withdraw-journey closes a journey through the Host's single exit (JourneyClosure), so the closure
+         snapshots, the occupancies and the releases are the product's own, not a second copy here. -->
+    <ProjectReference Include="..\..\src\ControlServer.Host\ControlServer.Host.csproj" />
   </ItemGroup>
   <ItemGroup>
     <!-- TaskTypeStationFieldOpsTests asks Program.OpensReadOnly which commands open the database read-only. -->
