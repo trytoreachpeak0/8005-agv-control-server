@@ -62,6 +62,27 @@ control-server#262。约 2026-10-08 起 `factory01` 上同时跑两套 ControlSe
 `EFFECTIVE_CONFIGURATION_CLEARANCE_UNREAD` 并停掉 v2 服务——旧包不记这个字段，没法确认它到底开没开。这是往安全方向的失败：
 把定义里的开关去掉（或改成 `false`）后再回滚一次即可。
 
+**空闲返回的开关**（顶层一节 `idleReturn.enabled`，REQ-0291，control-server#781）打开后，没有需求的车会自己开往等待点，只做
+`STAGING_TO_WIRE` 的车先回它的固定起点（CP-0016，agv02 回 217）。做法与上面清桩开关相同：定义里可以不写，不写就是关；写了必须是
+`{ "enabled": <JSON 布尔值> }`，别的子键一律拒绝；覆盖层每次都写出 `IdleReturn:enabled`（没写就写 `false`）；环境变量 `IdleReturn__*`
+按 `JOURNEY_RUNTIME_ENVIRONMENT_OVERRIDE` 拒绝。Host 在 `EFFECTIVE_CONFIGURATION` 事件末尾记 `idleReturnEnabled`，回读走
+`EFFECTIVE_JOURNEY_BINDING` 那张表：不一致按 `EFFECTIVE_CONFIGURATION_MISMATCH` 停服务，结果行多一项 `idleReturnEnabled=True|False`，
+19 号照打。
+
+**关闭靠的是覆盖层，不是回读。**不记这一项的包（control-server#781 之前，包括 v5 的 c0389b68）回读时按「关」比对：定义打开时拒绝、
+停服务，定义没打开时放行。但这只是比对的口径，旧包的 Host 并没有说它绑了什么。真正保证关闭的，是这一版脚本的覆盖层每次都写出
+`IdleReturn:enabled`。用 control-server#781 之前的 checkout 安装时，覆盖层不写这个键，`Update-ControlServerLocal.ps1` 又会把已装的
+`appsettings.Production.json` 原样带过去，上次留下的 `true` 会照旧生效，旧的定义校验也不认 `idleReturn` 这一节。所以用旧 checkout
+安装或回滚之前，先手工把已装配置里的 `IdleReturn:enabled` 改成 `false`。
+
+用这一版 checkout 带着打开的定义做 `-Rollback` 回到旧包，要到包目录交换、服务重启之后回读才拒，然后停服务；回滚前先把定义里的开关改成
+`false`。
+
+生产段定义 `cutover-production-s3.runtime-on` 显式写 `"enabled": false`：用户 2026-10-19 看过独立审查后定「这次先不开」。车停在已登记的
+等待点上、却没有站点占用行时（人手开过去、换库之后），评估器会承诺开往车当前所在的站，还会把别的车派到这个点（control-server#793）；
+**#793 合入之前不要打开空闲返回。**其余定义不写。闸门（`riotCreateDispatch`）关着时空闲返回不建单；打开空闲返回、开闸都是会让车动的事，
+要用户逐次授权。
+
 **准入版本、部署标签与两个等待时长**（control-server#672）：Host 在 `EFFECTIVE_CONFIGURATION` 事件末尾记下实际绑定的
 `AdmissionPolicyVersion`（数字）、`AdmissionPolicyDeploymentId`、`CargoHoldingTimeout`、`StationDepartureWaitTimeout`（`hh:mm:ss`）。
 回读把定义里写了的那几项逐个比对，不一致按 `EFFECTIVE_CONFIGURATION_MISMATCH` 停服务；定义没写的那项由包里的 `appsettings.json`

@@ -357,7 +357,7 @@ try {
     $environmentOverrides = @(Get-ParallelJourneyRuntimeEnvironmentOverride -ServiceEnvironment @() `
             -MachineEnvironment @([Environment]::GetEnvironmentVariables('Machine').GetEnumerator() | ForEach-Object { "$($_.Key)=$($_.Value)" }))
     if ($environmentOverrides.Count -gt 0) {
-        throw ("JOURNEY_RUNTIME_ENVIRONMENT_OVERRIDE (nothing was stopped or changed): $($environmentOverrides -join ', ') set JourneyRuntime, Governance:slotConfigurationReadinessGate (control-server#686), EmergencyStopRelease (workspace#49) " +
+        throw ("JOURNEY_RUNTIME_ENVIRONMENT_OVERRIDE (nothing was stopped or changed): $($environmentOverrides -join ', ') set JourneyRuntime, Governance:slotConfigurationReadinessGate (control-server#686), EmergencyStopRelease (workspace#49), IdleReturn (control-server#781) " +
             'or MapStationCatalog (control-server#531) above appsettings.Production.json. Remove the variable(s), then install again.')
     }
 

@@ -1715,6 +1715,8 @@ $optionSources = @(
     # workspace#49. Both credential variable NAMES are excluded, as for vehicleFaultRecovery: the overlay writes this instance's
     # own names, so a definition cannot point the parallel service at the MVP's variables.
     @{ Section = 'emergencyStopRelease'; Path = 'src/ControlServer.Host/Runtime/EmergencyStopReleaseOptions.cs'; Class = 'EmergencyStopReleaseOptions'; Excluded = @('CredentialEnvironmentVariable', 'LoadedCredentialEnvironmentVariable') }
+    # control-server#781.
+    @{ Section = 'idleReturn'; Path = 'src/ControlServer.Host/Runtime/IdleReturn/IdleReturnOptions.cs'; Class = 'IdleReturnOptions'; Excluded = @() }
 )
 foreach ($source in $optionSources) {
     $properties = Get-OptionProperty -RelativePath $source.Path -ClassName $source.Class
@@ -5293,6 +5295,8 @@ Invoke-SourceCase 'cutover production stages: apart from productionCutover, emer
             $twin = Copy-Definition $d
             $twin.Remove('productionCutover')
             $twin.Remove('emergencyStopRelease')
+            # control-server#781: idle return is turned on in production stage 3 alone (pinned by its own case below).
+            $twin.Remove('idleReturn')
             $trial = Read-ParallelInstanceDefinition -Path $trialPath
             $trial.Remove('productionCutover')
             # program#184: the staging rules and the dispatch generation are production's alone (pinned by the case above); the
@@ -5494,7 +5498,7 @@ Invoke-SourceCase 'catalog read-back: Program.cs logs the MapStationCatalogOptio
 # the cargo holding and station departure waits, as the Host bound them, read back from its EFFECTIVE_CONFIGURATION event
 # and compared with the definition; and the result line 19-deploy-control-server-parallel.ps1 compares after the install.
 # ------------------------------------------------------------------------------------------------
-$bindingTemplate = "$catalogTemplate foreignRunningOrderRelease={ForeignRunningOrderRelease} admissionPolicyVersion={AdmissionPolicyVersion} admissionPolicyDeploymentId={AdmissionPolicyDeploymentId} cargoHoldingTimeout={CargoHoldingTimeout} stationDepartureWaitTimeout={StationDepartureWaitTimeout} slotConfigurationReadinessGate={SlotConfigurationReadinessGate} stagingDepartureRulesEnabled={StagingDepartureRulesEnabled}"
+$bindingTemplate = "$catalogTemplate foreignRunningOrderRelease={ForeignRunningOrderRelease} admissionPolicyVersion={AdmissionPolicyVersion} admissionPolicyDeploymentId={AdmissionPolicyDeploymentId} cargoHoldingTimeout={CargoHoldingTimeout} stationDepartureWaitTimeout={StationDepartureWaitTimeout} slotConfigurationReadinessGate={SlotConfigurationReadinessGate} stagingDepartureRulesEnabled={StagingDepartureRulesEnabled} stagingLoadNotSettledAlarmAfter={StagingLoadNotSettledAlarmAfter} idleReturnEnabled={IdleReturnEnabled}"
 # -Bound '<absent>' leaves all four out, as a package older than #672 logs the event; otherwise a hashtable of the four
 # values as the Host would log them, a key left out of it left out of the event.
 function Get-BindingReadBack($Definition, $Bound) {
@@ -5508,7 +5512,7 @@ function Get-BindingReadBack($Definition, $Bound) {
         ClearanceToWaitingPointEnabled = $false
     }
     if ($Bound -isnot [string] -or $Bound -cne '<absent>') {
-        foreach ($key in @('AdmissionPolicyVersion', 'AdmissionPolicyDeploymentId', 'CargoHoldingTimeout', 'StationDepartureWaitTimeout', 'SlotConfigurationReadinessGate', 'StagingDepartureRulesEnabled')) {
+        foreach ($key in @('AdmissionPolicyVersion', 'AdmissionPolicyDeploymentId', 'CargoHoldingTimeout', 'StationDepartureWaitTimeout', 'SlotConfigurationReadinessGate', 'StagingDepartureRulesEnabled', 'IdleReturnEnabled')) {
             if ($Bound.Contains($key)) { $event[$key] = $Bound[$key] }
         }
     }
@@ -5528,6 +5532,8 @@ function New-BoundBinding([hashtable] $Change = @{}) {
         SlotConfigurationReadinessGate = 'Off'
         # program#184. The package default; the baseline leaves the section out, so it is printed, not compared.
         StagingDepartureRulesEnabled = $false
+        # control-server#781. The baseline leaves idle return out, which is off, and the row always compares it.
+        IdleReturnEnabled = $false
     }
     foreach ($key in @($Change.Keys)) { if ($null -eq $Change[$key]) { $bound.Remove($key) } else { $bound[$key] = $Change[$key] } }
     return $bound
@@ -5542,6 +5548,9 @@ $bindingWithoutDeparture['journeyRuntime'].Remove('stationDepartureWaitTimeout')
 # program#184. The baseline with the staging rules on: the only definition the stagingDepartureRulesEnabled row compares.
 $bindingStagingOn = Copy-Definition $baseline
 $bindingStagingOn['journeyRuntime']['stagingDepartureRules'] = [ordered]@{ enabled = $true }
+# control-server#781. The baseline with idle return on.
+$bindingIdleOn = Copy-Definition $baseline
+$bindingIdleOn['idleReturn'] = [ordered]@{ enabled = $true }
 # One row per row of the module's $script:JourneyBindingFields (the case below holds the two lists equal): a value the Host
 # might bind instead, and the problem text naming the field. A field added to the table is added here too.
 $bindingFieldCases = @(
@@ -5555,6 +5564,8 @@ $bindingFieldCases = @(
     # Definition: the baseline leaves the staging rules out, which the row does not compare; this one turns them on, and binds
     # them on too (Right) apart from the field under test. Missing from the event reads as its AbsentMeans, off: refused.
     @{ Logged = 'StagingDepartureRulesEnabled'; Wrong = $false; Right = $true; Definition = $bindingStagingOn; Says = "stagingDepartureRulesEnabled bound 'False', the definition says 'True'" }
+    # control-server#781. Always compared; the definition turns idle return on, so off -- bound, or missing (read as off) -- is refused.
+    @{ Logged = 'IdleReturnEnabled'; Wrong = $false; Right = $true; Definition = $bindingIdleOn; Says = "idleReturnEnabled bound 'False', the definition says 'True'" }
 )
 Invoke-SourceCase 'binding read-back: every row of the module''s JourneyBindingFields has a field case here, in table order' {
     $table = @(& (Get-Module ParallelInstance) { $script:JourneyBindingFields } | ForEach-Object Logged)
@@ -5587,7 +5598,13 @@ foreach ($case in @(
         @{ Name = 'staging rules defined on, bound on -- pass'; Definition = $bindingStagingOn; Bound = (New-BoundBinding @{ StagingDepartureRulesEnabled = $true }); Action = 'Pass'; Says = $null }
         @{ Name = 'staging rules defined on, logged as the string "True" -- stop and refuse, not cast'; Definition = $bindingStagingOn; Bound = (New-BoundBinding @{ StagingDepartureRulesEnabled = 'True' }); Action = 'StopServiceAndRefuse'; Says = "stagingDepartureRulesEnabled bound 'True', the definition says 'True'" }
         @{ Name = 'staging rules defined on, event older than #672 -- stop and refuse (that package has no staging rules)'; Definition = $bindingStagingOn; Bound = '<absent>'; Action = 'StopServiceAndRefuse'; Says = "stagingDepartureRulesEnabled bound 'not logged', the definition says 'True'" }
-        @{ Name = 'staging rules left out of the definition, bound on -- pass (not compared: the package default is what the Host binds)'; Definition = $baseline; Bound = (New-BoundBinding @{ StagingDepartureRulesEnabled = $true }); Action = 'Pass'; Says = $null })) {
+        @{ Name = 'staging rules left out of the definition, bound on -- pass (not compared: the package default is what the Host binds)'; Definition = $baseline; Bound = (New-BoundBinding @{ StagingDepartureRulesEnabled = $true }); Action = 'Pass'; Says = $null }
+        # control-server#781.
+        @{ Name = 'idle return defined on, bound on -- pass'; Definition = $bindingIdleOn; Bound = (New-BoundBinding @{ IdleReturnEnabled = $true }); Action = 'Pass'; Says = $null }
+        @{ Name = 'idle return defined on, logged as the string "True" -- stop and refuse, not cast'; Definition = $bindingIdleOn; Bound = (New-BoundBinding @{ IdleReturnEnabled = 'True' }); Action = 'StopServiceAndRefuse'; Says = "idleReturnEnabled bound 'True', the definition says 'True'" }
+        @{ Name = 'idle return defined on, event older than #672 -- stop and refuse (that package does not say)'; Definition = $bindingIdleOn; Bound = '<absent>'; Action = 'StopServiceAndRefuse'; Says = "idleReturnEnabled bound 'not logged', the definition says 'True'" }
+        @{ Name = 'idle return left out of the definition, bound on (left over, or an environment layer) -- stop and refuse: always compared'; Definition = $baseline; Bound = (New-BoundBinding @{ IdleReturnEnabled = $true }); Action = 'StopServiceAndRefuse'; Says = "idleReturnEnabled bound 'True', the definition says 'False'" }
+        @{ Name = 'idle return left out, a package older than #781 (logs the others, not it) -- pass, so a rollback to v5 with it off is not blocked'; Definition = $baseline; Bound = (New-BoundBinding @{ IdleReturnEnabled = $null }); Action = 'Pass'; Says = $null })) {
     Invoke-SourceCase "binding read-back: $($case.Name)" {
         $a = (Get-BindingReadBack $case.Definition $case.Bound).Action
         @{ Ok = ($a.Action -ceq $case.Action -and ($null -eq $case.Says -or (([string] $a.Message).Contains('EFFECTIVE_CONFIGURATION_MISMATCH') -and ([string] $a.Message).Contains($case.Says)))); Detail = "got: $(ConvertTo-Json $a -Compress)" }
@@ -5595,7 +5612,7 @@ foreach ($case in @(
 }
 Invoke-SourceCase 'binding result line: the four values as bound, in a fixed order, for 19' {
     $line = Format-ParallelJourneyBindingLine -Effective (Get-BindingReadBack $baseline (New-BoundBinding)).Effective
-    @{ Ok = ($line -ceq 'EFFECTIVE_JOURNEY_BINDING=admissionPolicyVersion=8 admissionPolicyDeploymentId=MAP-26-WIRE_TO_GATE-SELFTEST cargoHoldingTimeout=00:05:00 stationDepartureWaitTimeout=00:05:00 slotConfigurationReadinessGate=Off stagingDepartureRulesEnabled=False'); Detail = "got: $line" }
+    @{ Ok = ($line -ceq 'EFFECTIVE_JOURNEY_BINDING=admissionPolicyVersion=8 admissionPolicyDeploymentId=MAP-26-WIRE_TO_GATE-SELFTEST cargoHoldingTimeout=00:05:00 stationDepartureWaitTimeout=00:05:00 slotConfigurationReadinessGate=Off stagingDepartureRulesEnabled=False idleReturnEnabled=False'); Detail = "got: $line" }
 }
 Invoke-SourceCase 'binding result line: an event older than #672 reads EFFECTIVE_JOURNEY_BINDING=not-logged, nothing else' {
     $line = Format-ParallelJourneyBindingLine -Effective (Get-BindingReadBack $baseline '<absent>').Effective
@@ -6451,7 +6468,7 @@ Invoke-SourceCase 'gate read-back: Program.cs logs the gate mode the Host resolv
     $program = Get-Content -Raw -LiteralPath (Join-Path $repoRoot 'src/ControlServer.Host/Program.cs')
     $ok = [regex]::IsMatch($program, 'SlotConfigurationGateMode gate = app\.Services\.GetRequiredService<SlotConfigurationGateSwitch>\(\)\.Mode;\s+' +
         'MapStationCatalogOptions catalog = app\.Services\.GetRequiredService<IOptions<MapStationCatalogOptions>>\(\)\.Value;\s+' +
-        'EffectiveConfigurationEvent\.Log\(app\.Logger, effective, catalog, app\.Configuration\["MesIngest:baseUrl"\] \?\? "http://127\.0\.0\.1:5088", release, gate\);')
+        'EffectiveConfigurationEvent\.Log\(app\.Logger, effective, catalog, app\.Configuration\["MesIngest:baseUrl"\] \?\? "http://127\.0\.0\.1:5088", release, gate, idleReturn\);')
     @{ Ok = $ok; Detail = 'Program.cs does not pass GetRequiredService<SlotConfigurationGateSwitch>().Mode to EffectiveConfigurationEvent.Log' }
 }
 foreach ($case in @(
@@ -6696,6 +6713,91 @@ Invoke-SourceCase 'release: the installer resolves the two credentials before an
     @{ Ok = ($resolveAt -gt 0 -and $resolveAt -lt $firstChange -and $calls.Count -ge 2 -and $withRelease.Count -eq $calls.Count -and
             $installer.Contains('Format-ParallelEmergencyReleaseLine -Definition $definition -EnvironmentNames $populatedNames -RosterText $rosterText'))
         Detail = "resolved at $resolveAt, first change at $firstChange; calls $($calls.Count), with the credentials $($withRelease.Count)" }
+}
+
+# ------------------------------------------------------------------------------------------------
+# control-server#781. The idle return switch (IdleReturnOptions, section IdleReturn; REQ-0291, CP-0016): the only governed way to
+# turn it on for this instance. Written, it reaches the overlay; left out, the overlay writes false; IdleReturn__* in the
+# environment is refused; what the Host bound is read back through $script:JourneyBindingFields (the binding cases above).
+# ------------------------------------------------------------------------------------------------
+Write-Host ''
+Write-Host 'Idle return switch (control-server#781)' -ForegroundColor Cyan
+
+function Set-IdleReturnSection($Definition, $Section) {
+    $d = Copy-Definition $Definition
+    $d['idleReturn'] = $Section
+    return $d
+}
+Invoke-SourceCase 'idle return: a definition that turns it on is accepted (the section is whitelisted)' {
+    $f = @(Test-ParallelInstanceDefinition -Definition $bindingIdleOn)
+    @{ Ok = ($f.Count -eq 0); Detail = "failures: $($f -join ' | ')" }
+}
+Invoke-SourceCase 'idle return: a definition that writes it off is accepted' {
+    $f = @(Test-ParallelInstanceDefinition -Definition (Set-IdleReturnSection $baseline ([ordered]@{ enabled = $false })))
+    @{ Ok = ($f.Count -eq 0); Detail = "failures: $($f -join ' | ')" }
+}
+# A hash literal cannot hold both spellings; ConvertFrom-Json -AsHashtable, which reads definitions, can.
+$idleCaseTwin = [hashtable]::new([StringComparer]::Ordinal)
+$idleCaseTwin['enabled'] = $false
+$idleCaseTwin['Enabled'] = $true
+foreach ($case in @(
+        @{ Name = 'an unknown sub-key is refused'; Section = [ordered]@{ enabled = $true; vehicleScope = 'agv02' }; Says = 'idleReturn' }
+        @{ Name = 'a case twin (Enabled beside enabled) is refused'; Section = $idleCaseTwin; Says = 'differs only in case' }
+        @{ Name = 'a string "true" is refused, not bound as on behind the check'; Section = [ordered]@{ enabled = 'true' }; Says = 'idleReturn.enabled must be a JSON boolean' }
+        @{ Name = 'a section without enabled is refused'; Section = [ordered]@{}; Says = 'idleReturn.enabled must be stated explicitly' }
+        @{ Name = 'a bare true instead of an object is refused'; Section = $true; Says = 'idleReturn must be an object with enabled' })) {
+    Invoke-SourceCase "idle return: $($case.Name)" {
+        $f = @(Test-ParallelInstanceDefinition -Definition (Set-IdleReturnSection $baseline $case.Section))
+        @{ Ok = ($f.Count -ge 1 -and @($f | Where-Object { $_.Contains($case.Says) }).Count -ge 1); Detail = "failures: $($f -join ' | ')" }
+    }
+}
+Invoke-SourceCase 'idle return: on in the definition is written on in the overlay, as IdleReturn:enabled and nothing else' {
+    $o = New-ParallelInstanceConfigurationOverlay -Definition $bindingIdleOn
+    $v = $o['IdleReturn']['enabled']
+    @{ Ok = ($v -is [bool] -and $v -and @($o['IdleReturn'].Keys).Count -eq 1); Detail = "got: $(ConvertTo-Json $o['IdleReturn'] -Compress)" }
+}
+Invoke-SourceCase 'idle return: left out, the overlay writes false, so an earlier install''s true does not survive a reinstall' {
+    $o = New-ParallelInstanceConfigurationOverlay -Definition $baseline
+    $earlier = Merge-ConfigurationTree -Base (Copy-Definition $productConfiguration) -Overlay (New-ParallelInstanceConfigurationOverlay -Definition $bindingIdleOn)
+    $again = Merge-ConfigurationTree -Base $earlier -Overlay $o
+    $v = $o['IdleReturn']['enabled']
+    @{ Ok = ($v -is [bool] -and -not $v -and $earlier['IdleReturn']['enabled'] -eq $true -and $again['IdleReturn']['enabled'] -eq $false)
+        Detail = "overlay: $v; earlier: $($earlier['IdleReturn']['enabled']); reinstalled: $($again['IdleReturn']['enabled'])" }
+}
+Invoke-SourceCase 'idle return environment override: IdleReturn keys count like JourneyRuntime ones, ignoring case, prefixes included' {
+    $found = @(Get-ParallelJourneyRuntimeEnvironmentOverride -ServiceEnvironment @('IdleReturn__Enabled=true', 'IdleReturnX=1') `
+            -MachineEnvironment @('DOTNET_idlereturn:enabled=true', 'MyIdleReturn__Enabled=true'))
+    $expected = 'service IdleReturn__Enabled|machine DOTNET_idlereturn:enabled'
+    @{ Ok = (($found -join '|') -ceq $expected); Detail = "got: $($found -join '|')" }
+}
+Invoke-SourceCase 'idle return read-back: Program.cs logs the IdleReturnOptions the evaluator reads, not the event''s default off' {
+    # Without this, dropping the argument would log False on every Host: a production read-back would refuse a Host that really
+    # has idle return on, and one with the definition off would pass a Host that has it on through some other layer.
+    $program = Get-Content -Raw -LiteralPath (Join-Path $repoRoot 'src/ControlServer.Host/Program.cs')
+    $ok = [regex]::IsMatch($program, 'IdleReturnOptions idleReturn = app\.Services\.GetRequiredService<IOptions<IdleReturnOptions>>\(\)\.Value;[\s\S]{0,600}?' +
+        'EffectiveConfigurationEvent\.Log\(app\.Logger, effective, catalog, app\.Configuration\["MesIngest:baseUrl"\] \?\? "http://127\.0\.0\.1:5088", release, gate, idleReturn\);')
+    @{ Ok = $ok; Detail = 'Program.cs does not pass IOptions<IdleReturnOptions>.Value to EffectiveConfigurationEvent.Log' }
+}
+Invoke-SourceCase 'idle return read-back: the Host source logs the switch last, under the name the module reads' {
+    $eventSource = @(Get-ChildItem -LiteralPath (Join-Path $repoRoot 'src/ControlServer.Host') -Recurse -Filter '*.cs' |
+            Where-Object { (Get-Content -Raw -LiteralPath $_.FullName).Contains(' stagingLoadNotSettledAlarmAfter={StagingLoadNotSettledAlarmAfter} idleReturnEnabled={IdleReturnEnabled}";') })
+    $logged = @(& (Get-Module ParallelInstance) { $script:JourneyBindingFields } | Where-Object Name -CEQ 'idleReturnEnabled' | ForEach-Object Logged)
+    @{ Ok = ($eventSource.Count -eq 1 -and $eventSource[0].Name -ceq 'EffectiveConfigurationEvent.cs' -and ($logged -join ',') -ceq 'IdleReturnEnabled')
+        Detail = "template found in: $(@($eventSource | ForEach-Object Name) -join ', '); module reads: $($logged -join ',')" }
+}
+# The user, 2026-10-19, after the independent review: "这次先不开" -- not before control-server#793 (a vehicle standing on a
+# registered waiting point without a station row is committed to the station it is on). The section stays in stage 3, written off,
+# so turning it on later is that one value; the definition must still pass the check with it.
+Invoke-SourceCase 'idle return: only the production stage-3 definition writes it, writes it off, and still passes the definition check' {
+    $writing = @(Get-ChildItem -LiteralPath $PSScriptRoot -Filter 'instance-*.json' | Where-Object {
+            (Get-Content -Raw -LiteralPath $_.FullName).Contains('idleReturn') } | ForEach-Object Name)
+    $s3 = Read-ParallelInstanceDefinition -Path (Join-Path $PSScriptRoot 'instance-factory01-v2.cutover-production-s3.runtime-on.json')
+    $f = @(Test-ParallelInstanceDefinition -Definition $s3 | Where-Object { $_ -match 'idleReturn' })
+    $written = $s3['idleReturn']
+    @{ Ok = (($writing -join ',') -ceq 'instance-factory01-v2.cutover-production-s3.runtime-on.json' -and
+            $written -is [System.Collections.IDictionary] -and $written['enabled'] -is [bool] -and -not $written['enabled'] -and
+            -not (Test-ParallelIdleReturnEnabled -Definition $s3) -and $f.Count -eq 0)
+        Detail = "written in: $($writing -join ', '); s3 idleReturn: $(ConvertTo-Json $written -Compress); idleReturn failures: $($f -join ' | ')" }
 }
 
 Write-Host ''
