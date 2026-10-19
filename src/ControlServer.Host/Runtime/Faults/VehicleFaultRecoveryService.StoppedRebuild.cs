@@ -52,6 +52,12 @@ public sealed partial class VehicleFaultRecoveryService
     public const string ExitVehicleIneligibleReason = "OWN_ORDER_REBUILD_EXIT_VEHICLE_INELIGIBLE";
 
     /// <summary>
+    /// The rebuild stopped because the battery was below the mandatory charge line with nothing on board (control-server#770):
+    /// the release service gives the demand back and the vehicle goes to charge; a rebuild would send a flat vehicle off again.
+    /// </summary>
+    public const string ExitMandatoryChargeReason = "OWN_ORDER_REBUILD_EXIT_MANDATORY_CHARGE";
+
+    /// <summary>
     /// The code a journey closes under when a person gives its stopped trip up (control-server#345). Not one of the codes
     /// <c>PickupStopTermination.KeySuppressingReasonCodes</c> suppresses by business key: the demand is ended under its
     /// <c>DemandId</c> alone, because the cargo never left its pickup (REQ-0156 as revised by CP-0008; a fault cargo handoff,
@@ -413,6 +419,8 @@ public sealed partial class VehicleFaultRecoveryService
                 ExitCargoNotInPlaceReason,
             { State: OwnOrderRebuildStates.Stopped, StoppedReason: OwnOrderRebuilds.VehicleNoLongerEligible } =>
                 ExitVehicleIneligibleReason,
+            { State: OwnOrderRebuildStates.Stopped, StoppedReason: OwnOrderRebuilds.MandatoryChargeRequired } =>
+                ExitMandatoryChargeReason,
             { State: OwnOrderRebuildStates.Stopped } => null,
             _ => ExitNotStoppedReason,
         };

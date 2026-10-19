@@ -77,6 +77,13 @@ internal static class OwnOrderRebuilds
     public const string MandatoryChargeWithCargoOnBoard = "MANDATORY_CHARGE_WITH_CARGO_ON_BOARD";
 
     /// <summary>
+    /// Why a rebuild was not made: when it fell due the vehicle's battery was below the mandatory charge line, nothing of the
+    /// journey was on board, and the stop it was going to is not a pickup (control-server#770 review S-5) -- so there is no
+    /// demand still to be loaded that the release service could give back. Stopped for a person; control-server#345's exits apply.
+    /// </summary>
+    public const string MandatoryChargeNotAtPickup = "MANDATORY_CHARGE_NOT_AT_PICKUP";
+
+    /// <summary>
     /// Why a rebuild was not made: the new order ended in RIoT before it was ever confirmed, in a terminal state that is neither
     /// a cancellation nor FAILED -- RIoT's 8, SUSPENDED, which the gateway reads as terminal. Nothing then says what happened to
     /// the vehicle, so a person looks. (A SUCCESS before confirmation is taken as the order confirmed, and never ends here.)

@@ -207,7 +207,11 @@ public sealed partial class JourneyRuntimeEngine
         DateTimeOffset now = timeProvider.GetUtcNow();
         if (rebuild.State == OwnOrderRebuildStates.Stopped)
         {
-            await NameRebuildAsync(runtime, StoppedCode(rebuild), now, cancellationToken).ConfigureAwait(false);
+            if (!await HandStoppedTripOverForChargeAsync(runtime, rebuild, stop, now, cancellationToken).ConfigureAwait(false))
+            {
+                await NameRebuildAsync(runtime, StoppedCode(rebuild), now, cancellationToken).ConfigureAwait(false);
+            }
+
             return true;
         }
 
@@ -484,38 +488,20 @@ public sealed partial class JourneyRuntimeEngine
                 .Where(row => row.JourneyId == runtime.JourneyId)
                 .ToArrayAsync(cancellationToken).ConfigureAwait(false));
         RebuildBattery battery = await RebuildBatteryAsync(runtime, cancellationToken).ConfigureAwait(false);
-        // Below the line with nothing on board: like the ineligible vehicle above, asked on either side of the gate -- the
-        // release does not wait on the session, and a low battery does not get better while the vehicle holds the demand.
-        if (!personsRebuild && battery.State == BatteryStates.MandatoryCharge && !cargoOnBoard &&
-            stop.StopRole == JourneyStopRoles.Pickup)
+        // Below the line, a rebuild that is not a person's is never sent: like the ineligible vehicle above, asked on either
+        // side of the gate -- nothing here waits on the session, and a low battery does not get better while the vehicle holds
+        // the trip. Nothing on board at a pickup: handed to the release service, which gives the demand back (the vehicle then
+        // goes to the charging allocation). Otherwise stopped for a person (event 2173): cargo on board cannot be handed back,
+        // and sending the vehicle on may strand it, cargo and all, on the way (control-server#782 will charge first and carry
+        // on instead); an empty vehicle at any other stop has nothing the release service could give back (review S-5).
+        if (!personsRebuild && battery.State == BatteryStates.MandatoryCharge)
         {
-            rebuild.State = OwnOrderRebuildStates.Stopped;
-            rebuild.StoppedReason = OwnOrderRebuilds.MandatoryChargeRequired;
-            rebuild.StoppedAt = now;
-            rebuild.WaitingReason = battery.Reading;
-            rebuild.WaitingSince = now;
-            LogOwnOrderRebuildStopped(
-                logger, rebuild.EndedUpperId, runtime.JourneyId, runtime.AgvId,
-                $"{OwnOrderRebuilds.MandatoryChargeRequired}: {battery.Reading}", null);
-            await dbContext.SaveChangesAsync(cancellationToken).ConfigureAwait(false);
-            await NameRebuildAsync(runtime, OwnOrderRebuildMandatoryChargeReason, now, cancellationToken).ConfigureAwait(false);
-            return true;
-        }
-
-        // Below the line with cargo on board: the cargo cannot be handed back, and sending the vehicle on may strand it, cargo
-        // and all, on the way. Stopped for a person (event 2173); control-server#782 will charge first and carry on instead.
-        if (!personsRebuild && battery.State == BatteryStates.MandatoryCharge && cargoOnBoard)
-        {
-            rebuild.State = OwnOrderRebuildStates.Stopped;
-            rebuild.StoppedReason = OwnOrderRebuilds.MandatoryChargeWithCargoOnBoard;
-            rebuild.StoppedAt = now;
-            rebuild.WaitingReason = battery.Reading;
-            rebuild.WaitingSince = now;
-            LogOwnOrderRebuildStopped(
-                logger, rebuild.EndedUpperId, runtime.JourneyId, runtime.AgvId,
-                $"{OwnOrderRebuilds.MandatoryChargeWithCargoOnBoard}: {battery.Reading}", null);
-            await dbContext.SaveChangesAsync(cancellationToken).ConfigureAwait(false);
-            await NameRebuildAsync(runtime, StoppedCode(rebuild), now, cancellationToken).ConfigureAwait(false);
+            await StopForChargeAsync(
+                runtime, rebuild,
+                !cargoOnBoard && stop.StopRole == JourneyStopRoles.Pickup
+                    ? OwnOrderRebuilds.MandatoryChargeRequired
+                    : cargoOnBoard ? OwnOrderRebuilds.MandatoryChargeWithCargoOnBoard : OwnOrderRebuilds.MandatoryChargeNotAtPickup,
+                battery, now, cancellationToken).ConfigureAwait(false);
             return true;
         }
 
@@ -636,6 +622,62 @@ public sealed partial class JourneyRuntimeEngine
     /// The battery as <see cref="RebuildBatteryAsync"/> read it: a <see cref="BatteryStates"/> value, what the record says, and
     /// what the log says.
     /// </summary>
+    /// <summary>
+    /// Stops <paramref name="rebuild"/> for the battery (control-server#770) under <paramref name="stoppedReason"/>, records the
+    /// reading, logs event 2173 and names the journey: <see cref="OwnOrderRebuildMandatoryChargeReason"/> when the release service
+    /// takes it on, <see cref="OwnOrderRebuildStoppedReason"/> when a person does.
+    /// </summary>
+    private async Task StopForChargeAsync(
+        JourneyRuntimeRow runtime,
+        OwnOrderRebuildRow rebuild,
+        string stoppedReason,
+        RebuildBattery battery,
+        DateTimeOffset now,
+        CancellationToken cancellationToken)
+    {
+        rebuild.State = OwnOrderRebuildStates.Stopped;
+        rebuild.StoppedReason = stoppedReason;
+        rebuild.StoppedAt = now;
+        rebuild.WaitingReason = battery.Reading;
+        rebuild.WaitingSince = now;
+        LogOwnOrderRebuildStopped(
+            logger, rebuild.EndedUpperId, runtime.JourneyId, runtime.AgvId, $"{stoppedReason}: {battery.Reading}", null);
+        await dbContext.SaveChangesAsync(cancellationToken).ConfigureAwait(false);
+        await NameRebuildAsync(runtime, StoppedCode(rebuild), now, cancellationToken).ConfigureAwait(false);
+    }
+
+    /// <summary>
+    /// Review S-2: the third guard stops a rebuild when the ending is recorded (<see cref="OwnOrderRebuilds.EndedAgainWithinWindow"/>),
+    /// before the battery gate is ever asked. With nothing on board at a pickup and the battery below the line, that record is
+    /// handed to the release service exactly as the gate would have, so that the vehicle does not hold its purpose -- and keep
+    /// out of the charging queue -- with the demand stuck on it until a person comes. Asked every round such a record stands,
+    /// so a battery that falls below the line while the trip waits for a person is handed over too. True when it was.
+    /// </summary>
+    private async Task<bool> HandStoppedTripOverForChargeAsync(
+        JourneyRuntimeRow runtime,
+        OwnOrderRebuildRow rebuild,
+        JourneyStopRow stop,
+        DateTimeOffset now,
+        CancellationToken cancellationToken)
+    {
+        if (rebuild.StoppedReason != OwnOrderRebuilds.EndedAgainWithinWindow ||
+            stop.StopRole != JourneyStopRoles.Pickup ||
+            await CarriesAnyCargoAsync(runtime, cancellationToken).ConfigureAwait(false))
+        {
+            return false;
+        }
+
+        RebuildBattery battery = await RebuildBatteryAsync(runtime, cancellationToken).ConfigureAwait(false);
+        if (battery.State != BatteryStates.MandatoryCharge)
+        {
+            return false;
+        }
+
+        await StopForChargeAsync(runtime, rebuild, OwnOrderRebuilds.MandatoryChargeRequired, battery, now, cancellationToken)
+            .ConfigureAwait(false);
+        return true;
+    }
+
     private sealed record RebuildBattery(string State, string Reading, string Said)
     {
         public static RebuildBattery NotKnown { get; } = new(
@@ -663,13 +705,16 @@ public sealed partial class JourneyRuntimeEngine
         CancellationToken cancellationToken) =>
         rebuild.Source is OwnOrderRebuildSources.FaultClearedCargoOnBoard or OwnOrderRebuildSources.CancelledInRiot
             or OwnOrderRebuildSources.OrderNeverAppeared &&
-        await dbContext.Set<JourneyDemandRow>().AsNoTracking()
+        await CarriesAnyCargoAsync(runtime, cancellationToken).ConfigureAwait(false);
+
+    /// <summary>Whether a demand of the journey is loaded, or being loaded, and not yet unloaded or ended.</summary>
+    private Task<bool> CarriesAnyCargoAsync(JourneyRuntimeRow runtime, CancellationToken cancellationToken) =>
+        dbContext.Set<JourneyDemandRow>().AsNoTracking()
             .AnyAsync(row => row.JourneyId == runtime.JourneyId && row.RemovedAt == null &&
                              row.Status != JourneyDemandStatuses.PendingLoad &&
                              row.Status != JourneyDemandStatuses.Unloaded &&
                              row.Status != JourneyDemandStatuses.Terminated,
-                cancellationToken)
-            .ConfigureAwait(false);
+                cancellationToken);
 
     /// <summary>A hold of a rebuild with cargo on board begins: written once, on the first held round (control-server#366).</summary>
     private async Task MarkVehicleHeldAsync(
