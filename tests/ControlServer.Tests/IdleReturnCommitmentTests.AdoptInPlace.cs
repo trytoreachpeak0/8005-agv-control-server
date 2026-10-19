@@ -161,6 +161,10 @@ public sealed partial class IdleReturnCommitmentTests
     /// <summary>
     /// 认领那一次保存撞上主键（读到点空着之后、插入之前被别的车拿到）：什么也没写，这一轮不把车从它站着的点派走、也不换点，下一轮重评。
     /// </summary>
+    /// <remarks>
+    /// 只拦第一次插入：撞键之后要是不返回、落回正常选点，车所在的 214 没有行、路程为 0，会被选中并承诺开过去（又是 H1），
+    /// 那一次插入不拦才看得出来。每次都拦的话，落回选点也会被拦成同一个原因码，这条用例就区分不出来（#796 第 3 轮变异 Me 存活）。
+    /// </remarks>
     [Fact]
     public async Task AnAdoptionRefusedByTheStationKeyLeavesNothingAndDoesNotSendTheVehicleAway()
     {
@@ -171,6 +175,7 @@ public sealed partial class IdleReturnCommitmentTests
 
         Assert.True(conflict.Fired, "The injected key conflict never fired, so this proves nothing.");
         Assert.Equal((IdleReturnReasons.CommitmentRefused, (int?)null), (verdict.Reason, verdict.StationId));
+        Assert.Equal(1, conflict.Attempts);
         Assert.Empty(await harness.Db.DumpAsyncOf("StationExclusivities"));
         Assert.Empty(await harness.Db.DumpAsyncOf("StationExclusivityRecords"));
         Assert.Empty(await harness.Db.DumpAsyncOf("VehiclePurposeClaims"));
@@ -254,10 +259,13 @@ public sealed partial class IdleReturnCommitmentTests
             throw new InvalidOperationException("The departure sweep creates no order.");
     }
 
-    /// <summary>这辆车的站点独占插入撞上主键，像读到点空着之后、插入之前被别的车先拿到。</summary>
+    /// <summary>这辆车的第一次站点独占插入撞上主键，像读到点空着之后、插入之前被别的车先拿到；之后的插入照常执行。</summary>
     private sealed class StationKeyConflictOnInsert(string vehicleKey) : DbCommandInterceptor
     {
-        public bool Fired { get; private set; }
+        public bool Fired => Attempts > 0;
+
+        /// <summary>这辆车的站点独占插入一共发出过几次（第一次被拦下）。</summary>
+        public int Attempts { get; private set; }
 
         public override ValueTask<InterceptionResult<DbDataReader>> ReaderExecutingAsync(
             DbCommand command, CommandEventData eventData, InterceptionResult<DbDataReader> result,
@@ -278,9 +286,9 @@ public sealed partial class IdleReturnCommitmentTests
         private void ConflictIfTargeted(DbCommand command)
         {
             if (command.CommandText.Contains("INSERT INTO \"StationExclusivities\"", StringComparison.Ordinal) &&
-                command.Parameters.Cast<DbParameter>().Any(parameter => Equals(parameter.Value, vehicleKey)))
+                command.Parameters.Cast<DbParameter>().Any(parameter => Equals(parameter.Value, vehicleKey)) &&
+                ++Attempts == 1)
             {
-                Fired = true;
                 // SQLITE_CONSTRAINT (19) / SQLITE_CONSTRAINT_PRIMARYKEY (1555): what the key answers when another vehicle got there first.
                 throw new SqliteException("UNIQUE constraint failed: StationExclusivities.MapId, StationExclusivities.StationId", 19, 1555);
             }
