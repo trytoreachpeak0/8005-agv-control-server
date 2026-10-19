@@ -327,6 +327,14 @@ public sealed class SlotCommandStationRecheckTests
         Assert.True(Sent(fixture, command), "The unanswered load command was never sent again once the vehicle was back.");
     }
 
+    /// <summary>跑一轮，按真实时钟量它花了多久。</summary>
+    private static async Task<TimeSpan> TimedRoundAsync(RuntimeFixture fixture)
+    {
+        System.Diagnostics.Stopwatch elapsed = System.Diagnostics.Stopwatch.StartNew();
+        await TickAndRunAsync(fixture);
+        return elapsed.Elapsed;
+    }
+
     /// <summary>这一条报文有没有经连接发给车。</summary>
     private static bool Sent(RuntimeFixture fixture, string messageId) =>
         fixture.Peer.Lines.Any(line =>
@@ -337,9 +345,13 @@ public sealed class SlotCommandStationRecheckTests
 
     /// <summary>
     /// 审查 S-4：位置读数有自己的预算。RIoT 卡住时这一次读在预算到点就放弃、按位置证明不了处理（拒收，<c>VEHICLE_NOT_READY</c>），
-    /// 这一轮在预算量级内结束，不等网关自己的 30 秒——否则每辆车每轮多等一个网关超时，急停确认也排在后面。替身的读车 20 秒才答，
-    /// 预算设 200 毫秒，判据给 5 秒；计时用真实时钟，预算的计时器就是真实的（同 <c>WaitingJourneyBatteryWatchTests</c>）。
+    /// 这一次读不再多等一个网关超时——否则每辆车每轮多等 30 秒，急停确认也排在后面。替身的读车 8 秒才答，预算设 200 毫秒；计时用真实时钟，
+    /// 预算的计时器就是真实的（同 <c>WaitingJourneyBatteryWatchTests</c>）。
     /// </summary>
+    /// <remarks>
+    /// 判的是「扫码那一轮比不扫码的一轮多花多久」，不是整轮多长：同一轮里还有别的原有读车不带预算（例如固定站独占巡检），RIoT 卡住时
+    /// 整轮照样要等它们，那不归本票（已报调度）。没有预算时多出整整一次挂住的时长（8 秒），有预算时多出约 0.2 秒，判据给 4 秒。
+    /// </remarks>
     [Fact]
     [Trait("IntegrationSlice", "FP-IS-02")]
     public async Task APositionReadThatHangsIsCutOffAtItsBudgetAndTheScanRefused()
@@ -347,14 +359,15 @@ public sealed class SlotCommandStationRecheckTests
         await using RuntimeFixture fixture = await ReachSublotWaitAsync();
         fixture.Options.SlotCommandPositionReadBudget = TimeSpan.FromMilliseconds(200);
         await fixture.RecreateEngineAsync();
-        fixture.Riot.ReadVehicleDelay = token => Task.Delay(TimeSpan.FromSeconds(20), token);
+        fixture.Riot.ReadVehicleDelay = token => Task.Delay(TimeSpan.FromSeconds(8), token);
+        TimeSpan baseline = await TimedRoundAsync(fixture);
 
         await fixture.SubmitSublotAsync("SUBLOT-001");
-        System.Diagnostics.Stopwatch elapsed = System.Diagnostics.Stopwatch.StartNew();
-        await TickAndRunAsync(fixture);
-        elapsed.Stop();
+        TimeSpan withScan = await TimedRoundAsync(fixture);
 
-        Assert.True(elapsed.Elapsed < TimeSpan.FromSeconds(5), $"The round took {elapsed.Elapsed}.");
+        Assert.True(
+            withScan - baseline < TimeSpan.FromSeconds(4),
+            $"The scan's position read added {withScan - baseline} to the round (baseline {baseline}, with the scan {withScan}).");
         await AssertRefusedAsync(fixture, VehicleNotReady);
     }
 
@@ -372,7 +385,7 @@ public sealed class SlotCommandStationRecheckTests
         await AssertRefusedAsync(fixture, VehicleNotReady);
     }
 
-    /// <summary>卸货那一侧同样有预算：读挂住时这一轮在预算量级内结束，下一条卸货命令不发。</summary>
+    /// <summary>卸货那一侧同样有预算：读挂住时这一次读不多等一个网关超时，下一条卸货命令不发。判法同上一条，比的是多出来的时长。</summary>
     [Fact]
     [Trait("IntegrationSlice", "FP-IS-08")]
     public async Task AnUnloadPositionReadThatHangsIsCutOffAtItsBudgetAndHoldsTheUnload()
@@ -382,14 +395,15 @@ public sealed class SlotCommandStationRecheckTests
         (string first, string second) = await UnloadOrderAsync(fixture);
         fixture.Options.SlotCommandPositionReadBudget = TimeSpan.FromMilliseconds(200);
         await fixture.RecreateEngineAsync();
+        fixture.Riot.ReadVehicleDelay = token => Task.Delay(TimeSpan.FromSeconds(8), token);
+        TimeSpan baseline = await TimedRoundAsync(fixture);
+
         await ApplySafeResultAsync(fixture, first, SlotOperationType.Unload, SlotBusinessState.Empty);
-        fixture.Riot.ReadVehicleDelay = token => Task.Delay(TimeSpan.FromSeconds(20), token);
+        TimeSpan withUnload = await TimedRoundAsync(fixture);
 
-        System.Diagnostics.Stopwatch elapsed = System.Diagnostics.Stopwatch.StartNew();
-        await TickAndRunAsync(fixture);
-        elapsed.Stop();
-
-        Assert.True(elapsed.Elapsed < TimeSpan.FromSeconds(5), $"The round took {elapsed.Elapsed}.");
+        Assert.True(
+            withUnload - baseline < TimeSpan.FromSeconds(4),
+            $"The unload's position read added {withUnload - baseline} to the round (baseline {baseline}, with it {withUnload}).");
         Assert.False(await UnloadCommandedAsync(fixture, second), "The second unload went out on a position read that never answered.");
         Assert.Equal(NotAtStopCode, (await JourneyOfAsync(fixture, first)).BlockReasonCode);
     }

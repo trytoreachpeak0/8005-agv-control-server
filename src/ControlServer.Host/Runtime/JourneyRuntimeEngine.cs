@@ -315,6 +315,9 @@ public sealed partial class JourneyRuntimeEngine(
     /// </remarks>
     public const string SlotCommandVehicleNotAtStopReason = "SLOT_COMMAND_VEHICLE_NOT_AT_STOP";
 
+    /// <summary>卸货因车不在站上扣着期间，多久再记一次当前读数（事件 2318，control-server#783 审查 S-1）。</summary>
+    private static readonly TimeSpan HeldSlotCommandLogInterval = TimeSpan.FromMinutes(5);
+
     /// <summary>The code a stop held at its AREA machine for the station's admission carries while it waits.</summary>
     private const string AreaEndAdmissionHeldReason = "TASK_TYPE_NOT_ALLOWED_AT_STATION";
 
@@ -1194,6 +1197,8 @@ public sealed partial class JourneyRuntimeEngine(
         CancellationToken cancellationToken)
     {
         DateTimeOffset now = timeProvider.GetUtcNow();
+        // 上一轮推进落库的时刻，这一轮任何写入之前读（control-server#783 审查 S-1：长时间扣着卸货时按它判这一轮该不该再记读数）。
+        DateTimeOffset previousAdvanceAt = runtime.UpdatedAt;
         SessionRecoveryRow? session = await CurrentReadySessionAsync(runtime.AgvId, cancellationToken)
             .ConfigureAwait(false);
         if (session is null)
@@ -1519,20 +1524,6 @@ public sealed partial class JourneyRuntimeEngine(
                 {
                     return;
                 }
-                // 下命令之前在写锁里再判一次（control-server#362）。上面读收件箱、查取消、按游标认需求都是锁外读，
-                // 取消的结果走入站、不拿 JourneyMutationGate，可以落在这几次读之间：车报 ALL_EMPTY，需求已 Cancelled、取消已
-                // Reconciled、归属已 TERMINATED，而这一轮手里的游标还说它待装。照旧读下命令，车会给一条已取消的需求开仓，装上的货
-                // 需求记着取消、业务键已抑制，关卡也不给它下卸货命令——货留在车上。所以判断挪到命令落库的同一个写事务里：这个库的
-                // BeginTransaction 是 BEGIN IMMEDIATE，下面读到的是此前提交的一切，入站那次写要么在前（这里读到、让开），要么在后
-                // （它读到命令已下，照已下命令处理）。
-                //
-                // 输的一方这一轮不装也不答，下一轮按新读重判：本站已被那次终结结束时，它已一并答了这条录入 STALE
-                // （control-server#324），下一轮按「已拒收」跳过；本站还有别的待做项时，下一轮按新游标判它不在派车范围。
-                // 两条都是没有竞态时这条录入本来会得到的答复。同站另一条需求的扫码前取消在这期间开了的，下一轮由上面锁外那次
-                // 查取消扣住本站，直到车报结果。
-                //
-                // 这一支自己开写事务，而且必须是它自己的：命令在提交之后才上线，有外层事务就意味着上线早于外层提交，车可能照一条
-                // 最后没落库的命令开仓。今天没有这样的调用者，所以直接拒绝，而不是悄悄加入。
                 // 开门之前核车此刻是不是停在这个停靠上（control-server#783）。读 RIoT 放在写事务之外：事务是 BEGIN IMMEDIATE，
                 // 不该拿着写锁等一次 HTTP。读数就在这一轮取、这一轮用，不跨轮沿用。不在站就拒收这次录入，与上面那些拒收同一条路，
                 // 停靠不动；车回到站上之后操作员再扫一次。
@@ -1557,6 +1548,20 @@ public sealed partial class JourneyRuntimeEngine(
                         cancellationToken).ConfigureAwait(false);
                     return;
                 }
+                // 下命令之前在写锁里再判一次（control-server#362）。上面读收件箱、查取消、按游标认需求都是锁外读，
+                // 取消的结果走入站、不拿 JourneyMutationGate，可以落在这几次读之间：车报 ALL_EMPTY，需求已 Cancelled、取消已
+                // Reconciled、归属已 TERMINATED，而这一轮手里的游标还说它待装。照旧读下命令，车会给一条已取消的需求开仓，装上的货
+                // 需求记着取消、业务键已抑制，关卡也不给它下卸货命令——货留在车上。所以判断挪到命令落库的同一个写事务里：这个库的
+                // BeginTransaction 是 BEGIN IMMEDIATE，下面读到的是此前提交的一切，入站那次写要么在前（这里读到、让开），要么在后
+                // （它读到命令已下，照已下命令处理）。
+                //
+                // 输的一方这一轮不装也不答，下一轮按新读重判：本站已被那次终结结束时，它已一并答了这条录入 STALE
+                // （control-server#324），下一轮按「已拒收」跳过；本站还有别的待做项时，下一轮按新游标判它不在派车范围。
+                // 两条都是没有竞态时这条录入本来会得到的答复。同站另一条需求的扫码前取消在这期间开了的，下一轮由上面锁外那次
+                // 查取消扣住本站，直到车报结果。
+                //
+                // 这一支自己开写事务，而且必须是它自己的：命令在提交之后才上线，有外层事务就意味着上线早于外层提交，车可能照一条
+                // 最后没落库的命令开仓。今天没有这样的调用者，所以直接拒绝，而不是悄悄加入。
                 if (dbContext.Database.CurrentTransaction is not null)
                 {
                     throw new InvalidOperationException(
@@ -2087,7 +2092,8 @@ public sealed partial class JourneyRuntimeEngine(
                     if (unload is null && unloadedHereBefore)
                     {
                         // 开门之前核位置（control-server#783）：补偿或交接把旅程放回这里、重启后续跑，都走这一处。不在站就每一轮再核。
-                        if (await HoldUnloadOffStopAsync(runtime, stops.Current, now, cancellationToken).ConfigureAwait(false))
+                        if (await HoldUnloadOffStopAsync(runtime, stops.Current, previousAdvanceAt, now, cancellationToken)
+                                .ConfigureAwait(false))
                         {
                             return;
                         }
@@ -2134,7 +2140,8 @@ public sealed partial class JourneyRuntimeEngine(
                 {
                     // 本停靠还有没卸的：发这一版清单与下一条卸货命令，留在等结果。开门之前核位置（control-server#783）；不在站就先不发，
                     // 刚卸完那一条已经单独存过，下一轮按上面「前一条已卸、这一条的命令没落库」那一支再核再发。
-                    if (await HoldUnloadOffStopAsync(runtime, stops.Current, now, cancellationToken).ConfigureAwait(false))
+                    if (await HoldUnloadOffStopAsync(runtime, stops.Current, previousAdvanceAt, now, cancellationToken)
+                            .ConfigureAwait(false))
                     {
                         return;
                     }
@@ -2241,16 +2248,30 @@ public sealed partial class JourneyRuntimeEngine(
         CancellationToken cancellationToken,
         bool log = true)
     {
-        RiotVehicleObservation vehicle = await vehicleFacts.ReadVehicleAsync(runtime.VehicleKey, cancellationToken)
-            .ConfigureAwait(false);
+        // 读数有自己的预算（审查 S-4）：网关自己的超时是 30 秒，RIoT 卡住时每辆停站的车每轮多等一个网关超时，整轮——急停确认也在内——
+        // 都排在后面。预算到点或读失败，都按读不到处理：位置证明不了，不开门。做法同 WaitingJourneyWatch.ReadBatteryAsync。
+        RiotVehicleObservation? vehicle;
+        using (CancellationTokenSource expiry = new(runtimeOptions.SlotCommandPositionReadBudget, timeProvider))
+        using (CancellationTokenSource linked = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken, expiry.Token))
+        {
+            try
+            {
+                vehicle = await vehicleFacts.ReadVehicleAsync(runtime.VehicleKey, linked.Token).ConfigureAwait(false);
+            }
+            catch (Exception error) when (error is not OperationCanceledException || !cancellationToken.IsCancellationRequested)
+            {
+                vehicle = null;
+            }
+        }
         DateTimeOffset now = timeProvider.GetUtcNow();
-        bool trustworthy = vehicle.Connected &&
+        bool trustworthy = vehicle is not null &&
+                           vehicle.Connected &&
                            vehicle.CurrentMap == runtime.MapIdentity &&
                            vehicle.Speed == 0 &&
                            vehicle.ObservedAt <= now && now - vehicle.ObservedAt <= runtimeOptions.MaximumEvidenceAge;
         string? reason = !trustworthy
             ? ServerReasonCodes.VehicleNotReady
-            : vehicle.CurrentStationId is > 0 and int station && station == stop.StationRiotId
+            : vehicle!.CurrentStationId is > 0 and int station && station == stop.StationRiotId
                 ? null
                 : ServerReasonCodes.StationMismatch;
         if (reason is not null && log)
@@ -2260,8 +2281,10 @@ public sealed partial class JourneyRuntimeEngine(
                 operation.ToString(),
                 runtime.AgvId,
                 $"Expected station {stop.StationRiotId} ({stop.StationId}) on map {runtime.MapIdentity}.",
-                $"Observed connected={vehicle.Connected} map={vehicle.CurrentMap} station={vehicle.CurrentStationId} " +
-                $"speed={vehicle.Speed} observedAt={vehicle.ObservedAt:O}; answered {reason}.",
+                vehicle is null
+                    ? $"No reading within {runtimeOptions.SlotCommandPositionReadBudget.TotalSeconds:0.###} s; answered {reason}."
+                    : $"Observed connected={vehicle.Connected} map={vehicle.CurrentMap} station={vehicle.CurrentStationId} " +
+                      $"speed={vehicle.Speed} observedAt={vehicle.ObservedAt:O}; answered {reason}.",
                 null);
         }
         return reason;
@@ -2336,12 +2359,19 @@ public sealed partial class JourneyRuntimeEngine(
     private async Task<bool> HoldUnloadOffStopAsync(
         JourneyRuntimeRow runtime,
         JourneyStopRow stop,
+        DateTimeOffset previousAdvanceAt,
         DateTimeOffset now,
         CancellationToken cancellationToken)
     {
-        // 2318 只在第一次挂上这个码的那一轮记：车离站期间这里每一轮都会走到。
+        // 2318 在第一次挂上这个码的那一轮记，之后每满 HeldSlotCommandLogInterval 再记一次（审查 S-1）：车离站期间这里每一轮都会走到，
+        // 每轮都记是刷屏；只记第一次，现场又看不出车此刻读成哪一站——推回站上的车 RIoT 常报 0，要在 RIoT 上重新定位（10-18 实测）。
+        // 「满一格」按挂码以来的时长算：上一轮推进时还在前一格、这一轮进了下一格就记。不另存状态，上一轮的时刻是旅程行的 UpdatedAt。
         bool alreadyHeld = string.Equals(runtime.BlockReasonCode, SlotCommandVehicleNotAtStopReason, StringComparison.Ordinal);
-        if (await VehicleNotAtStopAsync(runtime, stop, SlotOperationType.Unload, cancellationToken, log: !alreadyHeld)
+        bool logDue = !alreadyHeld ||
+                      (runtime.BlockReasonSince is { } since &&
+                       (now - since).Ticks / HeldSlotCommandLogInterval.Ticks >
+                       (previousAdvanceAt - since).Ticks / HeldSlotCommandLogInterval.Ticks);
+        if (await VehicleNotAtStopAsync(runtime, stop, SlotOperationType.Unload, cancellationToken, log: logDue)
                 .ConfigureAwait(false) is null)
         {
             if (alreadyHeld)

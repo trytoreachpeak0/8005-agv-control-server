@@ -84,8 +84,9 @@ internal sealed class BlockedJourneysQueryEndpoint : IDashboardQueryEndpoint
             // control-server#783：装卸命令发出前核车的位置，车不在这一站上，命令扣着不发、不开门。
             [JourneyRuntimeEngine.SlotCommandVehicleNotAtStopReason] =
                 "要开仓装货或卸货时，RIoT 读不出车此刻停在这一站上（车被开离或推离了站点，或者位置读数离线、过期、在动），"
-                + "服务端没有开门。装货：这次扫码已被拒收，把车开回这一站、停稳之后重新扫码即可；卸货：车回到这一站停稳后自动继续。"
-                + "车确实停在站上而这一行一直不消失，请联系系统维护人员查服务端日志事件 2318",
+                + "服务端没有开门。装货：这次扫码已被拒收，把车开回这一站、停稳之后重新扫码即可；卸货：车回到这一站停稳后自动继续，"
+                + "卸货站没有离站期限，在那之前会一直等。人推回站上的车，RIoT 常报不出当前站（读成 0），要在 RIoT 上把车重新定位到这一站。"
+                + "车确实停在站上而这一行一直不消失，请联系系统维护人员查服务端日志事件 2318（扣着期间每 5 分钟记一次读到的位置）",
             // control-server#316：在途单在 RIoT 上停住，服务端不发任何命令，要人去 RIoT 或车前处理。
             [JourneyRuntimeEngine.OrderHangReason] =
                 "车正在执行的运单在 RIoT 上挂起（HANG）：服务端不暂停、不急停、不改派，这辆车也不接途中追加。请到现场确认原因，"
