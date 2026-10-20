@@ -355,6 +355,48 @@ public sealed class OnboardHandshakePushGateTests
     }
 
     /// <summary>
+    /// The test's contexts are on a connection of their own, not on the one the server's processor uses
+    /// (control-server#813).
+    /// </summary>
+    /// <remarks>
+    /// <c>SqliteConnection</c> is no more thread-safe than <c>DbContext</c>. The synthetic vehicle sends a heartbeat every
+    /// 2 s and the server writes the inbox for each, inside a transaction, on its connection; a test context on that
+    /// same connection, used meanwhile from the test thread, runs into it.
+    /// </remarks>
+    [Fact]
+    [Trait("IntegrationSlice", "FP-IS-00")]
+    public async Task TheTestReadsThroughAConnectionOfItsOwn()
+    {
+        await using Rig rig = await Rig.StartAsync();
+        await using ControlServerDbContext read = rig.NewContext();
+
+        Assert.False(rig.SharesStateWith(read), "测试拿到的上下文与服务端处理器共用了连接。");
+    }
+
+    // EVIDENCE ONLY (control-server#813): removed before the PR leaves draft. Uses test contexts for 5 s across two or
+    // three heartbeats, then expects the connection still to take a push.
+    [Fact]
+    [Trait("IntegrationSlice", "FP-IS-00")]
+    public async Task Cs813EvidenceTestContextsAcrossHeartbeats()
+    {
+        await using Rig rig = await Rig.StartAsync();
+        await rig.Onboard.StartAsync(rig.Lifetime.Token).WaitAsync(Guard, TestContext.Current.CancellationToken);
+        await rig.SendWhenRoutableAsync(Push("FaultCargoRecoveryCommand"));
+
+        DateTime until = DateTime.UtcNow + TimeSpan.FromSeconds(5);
+        while (DateTime.UtcNow < until)
+        {
+            await using ControlServerDbContext context = rig.NewContext();
+            await context.ProtocolInbox.AsNoTracking().CountAsync(TestContext.Current.CancellationToken);
+        }
+
+        await rig.SendWhenRoutableAsync(Push("FaultCargoRecoveryCommand"));
+        await rig.WaitForInboundCountAsync("FaultCargoRecoveryCommand", 2);
+        Assert.Equal("READY", rig.Engine.Snapshot().State.Readiness);
+        Assert.Equal(1L, rig.Engine.Snapshot().State.SessionGeneration);
+    }
+
+    /// <summary>
     /// A new <c>SessionHello</c> on a connection whose handshake was done starts a new handshake, and the gate
     /// closes again before its answer goes out.
     /// </summary>
@@ -557,6 +599,11 @@ public sealed class OnboardHandshakePushGateTests
         }
 
         public ControlServerDbContext NewContext() => NewContext(_connection);
+
+        /// <summary>Whether <paramref name="context"/> is, or shares a connection with, the server's own context.</summary>
+        public bool SharesStateWith(ControlServerDbContext context) =>
+            ReferenceEquals(context, _serverContext) ||
+            ReferenceEquals(context.Database.GetDbConnection(), _serverContext.Database.GetDbConnection());
 
         /// <summary>What the vehicle has read, in order, heartbeat answers left out.</summary>
         public WireEvent[] Inbound() =>
