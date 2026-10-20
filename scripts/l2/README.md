@@ -134,7 +134,7 @@ resume 是设计不是缺陷。
 
 ## CI：合成场景每次跑，真装置按需跑
 
-`.github/workflows/l2.yml` 有两个作业。合成场景在 `scenarios` 作业里，跑在本仓自己的 `headless` runner 上，每次 push 与 PR。真装置场景在 `real-rig` 作业里，只能手动触发，见本节末尾「真装置（`rig=real`）」。证据当作 artifact 传上去
+`.github/workflows/l2.yml` 有两个作业。合成场景在 `scenarios` 作业里，跑在本仓带 `cs-l2` 标签的那一个 runner 上（control-server#820 起；此前是 `headless`），每次 push 与 PR。真装置场景在 `real-rig` 作业里，只能手动触发，见本节末尾「真装置（`rig=real`）」。证据当作 artifact 传上去
 （失败时也传——失败那次的证据才是唯一说明原因的东西）。
 
 **PR 上默认每个场景跑一遍，三连按需手动跑**（2026-09-17 起）。清单里每行的 `Runs` 是这个场景的**三连次数**，
@@ -160,7 +160,7 @@ gh workflow run l2.yml --ref <分支> -f mode=consecutive-all -f scenarios=a,b  
 
 ### 分路并行（control-server#130，2026-09-18 起）
 
-作业先 `dotnet build ControlServer.sln -c Release` **构建一次**，再把场景分到几路（`L2_LANES`，现在是 4）同时跑，
+作业先 `dotnet build ControlServer.sln -c Release` **构建一次**，再把场景分到几路（`L2_LANES`，control-server#820 起是 8）同时跑，
 每一路占一个端口槽位（槽位 1～N，见下面「端口槽位」），路内一个接一个跑，每一趟都带 `-SkipBuild`。分路由
 `L2Lanes.psm1` 的 `Get-L2LanePlan` 做：按「单遍估时 × 遍数」从长到短，每次放进当前最空的那一路。估时是 `l2.yml`
 里的 `$estimates` 表（09-17 那 31 个作业的中位数），没列的场景按 30 秒算；估时只影响各路是否均衡，不影响跑什么。
@@ -180,7 +180,7 @@ vCPU 大部分时间闲着。每一趟里大头是起服务端和替身、再等
   攒了 3607 个。
 - **并行下哪个场景红了一次，不靠重跑，把它固定到单独一路**，并在 PR 里写明（票的验收标准）。
 
-`L2_LANES` 是 4，因为除槽位 0 外一共只有四个槽位。它依赖 win11-01 的页面文件：一路合成 L2 约占 0.7 GB 已提交内存，
+`L2_LANES` 在 win11-01 上是 4（control-server#820 起在 vm-win-01 上是 8，依据见 `l2.yml` 该行注释）。4 那时依赖 win11-01 的页面文件：一路合成 L2 约占 0.7 GB 已提交内存，
 车载端一次 CI 约 2.9 GB，页面文件还是 512 MB 时提交上限只有 8.7 GB，两者撞在一起就会超，超过时内存申请直接失败
 而不是变慢。2026-09-18 页面文件调成固定 4 GB，上限 12.0 GB（`remote-ops/factory-server/scripts/06-configure-golden-renderer-vm.ps1 -GuestPageFile`）。
 
@@ -252,8 +252,8 @@ gh workflow run l2.yml --ref <分支> -f rig=real -f onboard_ref=<车载端提�
 gh workflow run l2.yml --ref <分支> -f rig=real -f onboard_ref=<...> -f simulator_ref=<...> -f mode=consecutive -f scenarios=a,b
 ```
 
-- **跑在哪里。** vm01（win11-01）上的交互式 runner `win11-01-control-server-desktop`，唯一带 `cs-desktop` 标签的那个，
-  在自动登录的 session 1 里由登录触发的计划任务拉起；服务模式的两个 runner 在 session 0，没有桌面，起不了 WPF 窗口。
+- **跑在哪里。** vm-win-01 上的交互式 runner `vmwin01-control-server-desktop`（2026-10-20 前是 vm01 上的 `win11-01-control-server-desktop`），唯一带 `cs-desktop` 标签的那个，
+  在自动登录的 session 1 里由登录触发的计划任务拉起；服务模式的 runner 在 session 0，没有桌面，起不了 WPF 窗口。
   安装脚本是工作区的 `remote-ops/factory-server/scripts/18-install-control-server-desktop-runner.ps1`。
 - **为什么放进 `l2.yml` 而不是新文件。** `workflow_dispatch` 只认默认分支（`main`）上存在的 workflow 文件，而 v2
   这条线不合入 `main`，新文件根本触发不了。`rig=real` 的手动触发用自己的 `concurrency` 分组（组名加 `-real`），所以同一分支上先后触发合成与真装置两轮会各跑各的，排队中的真装置轮次也不会被下一次合成触发顶掉。
@@ -273,8 +273,8 @@ gh workflow run l2.yml --ref <分支> -f rig=real -f onboard_ref=<...> -f simula
   `Global\W2G-InteractiveDesktop`：本仓每个真装置场景拿一次、排队最多 30 分钟；mes-ingest 那边同日改成排队
   （`8005-mes-ingest#8`）。撞上夜里的黄金渲染 verify（北京时间 03:00 触发，实际多在 05:30 前后开跑）只是多等，
   不会变红，但长的连跑别挑那个时段。作业收尾检查本轮目录里起的残留进程和新出现的崩溃对话框，有就关掉并判红。
-- **端口。** 槽位 0，与本机真装置一样；合成作业用 1～4，两边互不排队。
-- **内存。** 看整机已提交内存，不看进程树。每个场景开跑前若整机已提交超过 12 GiB 就等（最多 30 分钟）；等满仍超，
+- **端口。** 槽位 0，与本机真装置一样；合成作业用 1～8，两边互不排队。
+- **内存。** 看整机已提交内存，不看进程树。每个场景开跑前若整机已提交超过 `RIG_COMMIT_START_CEILING_GIB`（control-server#820 起 vm-win-01 上是 20 GiB，此前 win11-01 上是 12）就等（最多 30 分钟）；等满仍超，
   这一遍记为 `NOT_STARTED_COMMIT_GUARD`，本轮停下，作业以 `RIG_COMMIT_GUARD` 判红，不靠作业超时去结束它。整轮每 2 秒
   采样一次，写进证据的 `commit-samples.csv`，作业摘要给出最低与峰值。作业不留构建服务器（MSBuild 节点、VBCSCompiler）。
   实测见下表。
@@ -384,7 +384,7 @@ control-server#581 下评论一条，全绿也写一行，**某晚没有评论�
 | 作业 | runner | 做什么 |
 | --- | --- | --- |
 | `gate` | headless | 只取两个提交和开跑截止时间，已过截止就本晚记 `NOT_STARTED_DEADLINE`、不排 `g3`。control-server#807 起不再等真装置：原先在这里查 `l2.yml` `real-rig` 作业、最多等 30 分钟；一晚从 22:37 开始、到 07:00 截止，在这里等会把 L2 场景也要用的唯一 headless runner 占上几个小时 |
-| `g3` | `cs-desktop` | 在 cs-desktop 上排队，真装置作业在跑就排在它后面，GitHub 的排队不占任何 runner；cs-desktop 只有一个 runner，作业一个接一个跑，staged、restart、journey 还和真装置一样拿 `Global\W2G-InteractiveDesktop` 桌面锁，所以本轮不会和真装置同时跑。第一步记下拿到 runner 的时刻（评论里的「本轮开始」）。然后 `scripts/Invoke-NightlyG3.ps1`：按出口顺序 staged → restart → 需求承载 → journey 串行（staged 与 restart 都占 Modbus 1502，三个要桌面）。每个 runner 开跑前三道闸门，依次是：整机已提交内存（照真装置那套，超过 12 GiB 等最多 30 分钟）、截止时间（放在内存等待之后，等完再看一次）、C 盘剩余至少 4 GiB；任一不过，其余 runner 记 `NOT_STARTED_COMMIT_GUARD`／`NOT_STARTED_DEADLINE`／`NOT_STARTED_DISK`，不启动。处理某个 runner 时编排自己抛了异常，这一轮停下：`stoppedBy` 写 `ERROR_ROUND: <runner>: <报错>`，那个 runner 记 ERROR，其余记 `NOT_STARTED_ERROR`。跑完关掉本轮留在桌面上的残留进程和崩溃对话框，有就判作业失败。「本轮的」指可执行文件路径或命令行落在本作业的工作目录（`$RUNNER_TEMP\g3`）或检出目录下：staged、restart、需求承载都用 `dotnet <dll>` 起进程，路径是 `dotnet.exe`，只有命令行里才有 dll；崩溃对话框要是开跑后新出现的、且是为本轮进程弹的。L2 的对端缓存 `8005-l2-peers` 不算（G3 用不到它，有人手动跑 L2 时它的进程不能被误杀）。判定在 `Select-NightlyG3LeftoverProcess` 里，有离线自检 |
+| `g3` | `cs-desktop` | 在 cs-desktop 上排队，真装置作业在跑就排在它后面，GitHub 的排队不占任何 runner；cs-desktop 只有一个 runner，作业一个接一个跑，staged、restart、journey 还和真装置一样拿 `Global\W2G-InteractiveDesktop` 桌面锁，所以本轮不会和真装置同时跑。第一步记下拿到 runner 的时刻（评论里的「本轮开始」）。然后 `scripts/Invoke-NightlyG3.ps1`：按出口顺序 staged → restart → 需求承载 → journey 串行（staged 与 restart 都占 Modbus 1502，三个要桌面）。每个 runner 开跑前三道闸门，依次是：整机已提交内存（做法与真装置的门槛相同，但数值是 `Invoke-NightlyG3.ps1` 自己的 `-CommitCeilingGiB`，仍是 12 GiB，超过就等最多 30 分钟）、截止时间（放在内存等待之后，等完再看一次）、C 盘剩余至少 4 GiB；任一不过，其余 runner 记 `NOT_STARTED_COMMIT_GUARD`／`NOT_STARTED_DEADLINE`／`NOT_STARTED_DISK`，不启动。处理某个 runner 时编排自己抛了异常，这一轮停下：`stoppedBy` 写 `ERROR_ROUND: <runner>: <报错>`，那个 runner 记 ERROR，其余记 `NOT_STARTED_ERROR`。跑完关掉本轮留在桌面上的残留进程和崩溃对话框，有就判作业失败。「本轮的」指可执行文件路径或命令行落在本作业的工作目录（`$RUNNER_TEMP\g3`）或检出目录下：staged、restart、需求承载都用 `dotnet <dll>` 起进程，路径是 `dotnet.exe`，只有命令行里才有 dll；崩溃对话框要是开跑后新出现的、且是为本轮进程弹的。L2 的对端缓存 `8005-l2-peers` 不算（G3 用不到它，有人手动跑 L2 时它的进程不能被误杀）。判定在 `Select-NightlyG3LeftoverProcess` 里，有离线自检 |
 | `report` | headless | `if: always()`：不管前两个作业怎样，都在 #581 下评论 |
 
 - **时间。** 一晚从北京时间 19:00 算到次日 19:00；夜间一轮（`nightly=true`）不在这一晚次日早上 07:00 之后开新 runner，22:37 准时

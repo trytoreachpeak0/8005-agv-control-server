@@ -1,0 +1,86 @@
+PASS Get-G3PortLockName: Global\W2G-Port-<port>
+PASS lock: a port another process holds is G3_PORT_LOCK_BUSY naming it
+PASS lock: after G3_PORT_LOCK_BUSY the ports taken before the busy one are released
+PASS lock: a disjoint port is not held up by another run's lock
+PASS lock: duplicates taken once, in ascending port order
+PASS lock: Exit-G3PortLock takes $null
+PASS lock: a lock its holder exited without releasing is taken, not reported busy
+PASS port set: a port named twice is refused, naming both
+PASS port set: 40405 is inside the L2 port slots, refused
+PASS port set: 44410 is inside the L2 port slots, refused
+PASS port set: 48429 is inside the L2 port slots, refused
+PASS port set: 40404 is accepted
+PASS port set: 48430 is accepted
+PASS port set: 1502 is accepted
+PASS port set: 58006 is accepted
+PASS port set: every L2 slot port (Get-L2PortBlock 0-8, peers up to +9) lies inside the refused range
+FAIL preflight: a held port is G3_PORT_IN_USE naming the holder's id and path -- G3_PORT_IN_USE: SimulatorHttpPort=39011 is held by pid 120376 pwsh (C:\Program Files\PowerShell\7\pwsh.exe). Something other than this run is on its ports -- a simulator or server left open, or the survivors of a killed run; stop it, or pass this run other ports.
+PASS preflight: a free port passes
+PASS before #809: the health wait alone takes the squatter's READY for the run's own simulator
+FAIL owner: a port another process holds fails, naming the holder's id and path and the component -- G3_PORT_OWNER: Port 39011 is held by pid 120376 pwsh (C:\Program Files\PowerShell\7\pwsh.exe), not only by 'slots-simulator' (pid 175052), while waiting for: the simulator is serving. Something other than this run is on the L2 port block.
+FAIL owner: a component holding its own port passes -- G3_PORT_OWNER: Port 39013 is held by pid 122420 pwsh (C:\Program Files\PowerShell\7\pwsh.exe), not only by 'slots-simulator' (pid 58316), while waiting for: the simulator is serving. Something other than this run is on the L2 port block.
+PASS owner: nobody listening within the timeout fails, naming the port
+PASS Set-G3SimulatorPorts: modbus and automation on loopback at the given ports, the rest kept
+PASS Set-G3OnboardIoModulePort: the onboard's IO module at the simulator's loopback Modbus port
+PASS run-staged-g3.ps1: -ControlPort, an [int] defaulting to 58205, ValidateRange(1024, 65535)
+PASS run-staged-g3.ps1: -HealthPort, an [int] defaulting to 58207, ValidateRange(1024, 65535)
+PASS run-staged-g3.ps1: -ProxyPort, an [int] defaulting to 58215, ValidateRange(1024, 65535)
+PASS run-staged-g3.ps1: -BusinessProxyPort, an [int] defaulting to 58216, ValidateRange(1024, 65535)
+PASS run-staged-g3.ps1: -SimulatorModbusPort, an [int] defaulting to 1502, ValidateRange(1024, 65535)
+PASS run-staged-g3.ps1: -SimulatorHttpPort, an [int] defaulting to 58006, ValidateRange(1024, 65535)
+PASS run-staged-g3.ps1: no port number outside the param block and the provenance's -Settings defaults
+PASS run-staged-g3.ps1: one top-level [ordered] $runPorts naming each port parameter
+PASS run-staged-g3.ps1: Assert-G3RunnerPortSet -Ports $runPorts, once, at top level, before the run creates anything
+PASS run-staged-g3.ps1: Enter-G3PortLock -Port $runPorts.Values, once
+PASS run-staged-g3.ps1: Assert-G3PortsFree -Ports $runPorts, once, right after the lock
+PASS run-staged-g3.ps1: the port lock and the preflight come before the desktop lock, the first clone and the first process
+PASS run-staged-g3.ps1: Exit-G3PortLock once, after Exit-DesktopLock
+PASS run-staged-g3.ps1: Set-G3SimulatorPorts -ModbusPort $SimulatorModbusPort -HttpPort $SimulatorHttpPort
+PASS run-staged-g3.ps1: Set-G3OnboardIoModulePort -ModbusPort $SimulatorModbusPort
+PASS run-staged-g3.ps1: the ports go into simulator.settings.json beside the simulator binary it starts, read and written back through the object Set-G3SimulatorPorts gets
+PASS run-staged-g3.ps1: every simulator health URL is http://127.0.0.1:$SimulatorHttpPort/api/v1/health
+PASS run-staged-g3.ps1: every ControlServer /version URL is on $HealthPort
+PASS run-staged-g3.ps1: Assert-G3PortOwner -Process $runnerProcess -Port $ProxyPort (an in-process proxy)
+PASS run-staged-g3.ps1: Assert-G3PortOwner -Process $runnerProcess -Port $BusinessProxyPort (an in-process proxy)
+PASS run-staged-g3.ps1: $runnerProcess is this process (Get-Process -Id $PID), assigned once
+PASS run-staged-g3.ps1: Assert-G3PortOwner -Process $simulator -Port $SimulatorHttpPort, $SimulatorModbusPort
+PASS run-staged-g3.ps1: Assert-G3PortOwner -Process $control -Port $ControlPort, $HealthPort
+PASS run-staged-g3-restart.ps1: -ControlPort, an [int] defaulting to 58105, ValidateRange(1024, 65535)
+PASS run-staged-g3-restart.ps1: -HealthPort, an [int] defaulting to 58107, ValidateRange(1024, 65535)
+PASS run-staged-g3-restart.ps1: -SimulatorModbusPort, an [int] defaulting to 1502, ValidateRange(1024, 65535)
+PASS run-staged-g3-restart.ps1: -SimulatorHttpPort, an [int] defaulting to 58006, ValidateRange(1024, 65535)
+PASS run-staged-g3-restart.ps1: no port number outside the param block and the provenance's -Settings defaults
+PASS run-staged-g3-restart.ps1: one top-level [ordered] $runPorts naming each port parameter
+PASS run-staged-g3-restart.ps1: Assert-G3RunnerPortSet -Ports $runPorts, once, at top level, before the run creates anything
+PASS run-staged-g3-restart.ps1: Enter-G3PortLock -Port $runPorts.Values, once
+PASS run-staged-g3-restart.ps1: Assert-G3PortsFree -Ports $runPorts, once, right after the lock
+PASS run-staged-g3-restart.ps1: the port lock and the preflight come before the desktop lock, the first clone and the first process
+PASS run-staged-g3-restart.ps1: Exit-G3PortLock once, after Exit-DesktopLock
+PASS run-staged-g3-restart.ps1: Set-G3SimulatorPorts -ModbusPort $SimulatorModbusPort -HttpPort $SimulatorHttpPort
+PASS run-staged-g3-restart.ps1: Set-G3OnboardIoModulePort -ModbusPort $SimulatorModbusPort
+PASS run-staged-g3-restart.ps1: the ports go into simulator.settings.json beside the simulator binary it starts, read and written back through the object Set-G3SimulatorPorts gets
+PASS run-staged-g3-restart.ps1: every simulator health URL is http://127.0.0.1:$SimulatorHttpPort/api/v1/health
+PASS run-staged-g3-restart.ps1: every ControlServer /version URL is on $HealthPort
+PASS run-staged-g3-restart.ps1: Assert-G3PortOwner -Process $simulator -Port $SimulatorHttpPort, $SimulatorModbusPort
+PASS run-staged-g3-restart.ps1: Assert-G3PortOwner -Process $process -Port $ControlPort, $HealthPort
+PASS Invoke-AuthorizedAbsentObservationShadow.ps1: -ProxyPort, an [int] defaulting to 58888, ValidateRange(1024, 65535)
+PASS Invoke-AuthorizedAbsentObservationShadow.ps1: -SessionPort, an [int] defaulting to 59005, ValidateRange(1024, 65535)
+PASS Invoke-AuthorizedAbsentObservationShadow.ps1: -HealthPort, an [int] defaulting to 59007, ValidateRange(1024, 65535)
+PASS Invoke-AuthorizedAbsentObservationShadow.ps1: -SimulatorModbusPort, an [int] defaulting to 1502, ValidateRange(1024, 65535)
+PASS Invoke-AuthorizedAbsentObservationShadow.ps1: -SimulatorHttpPort, an [int] defaulting to 58006, ValidateRange(1024, 65535)
+PASS Invoke-AuthorizedAbsentObservationShadow.ps1: no port number outside the param block and the provenance's -Settings defaults
+PASS Invoke-AuthorizedAbsentObservationShadow.ps1: one top-level [ordered] $runPorts naming each port parameter
+PASS Invoke-AuthorizedAbsentObservationShadow.ps1: Assert-G3RunnerPortSet -Ports $runPorts, once, at top level, before the run creates anything
+PASS Invoke-AuthorizedAbsentObservationShadow.ps1: Enter-G3PortLock -Port $runPorts.Values, once
+PASS Invoke-AuthorizedAbsentObservationShadow.ps1: Assert-G3PortsFree -Ports $runPorts, once, right after the lock
+PASS Invoke-AuthorizedAbsentObservationShadow.ps1: the port lock and the preflight come before the desktop lock, the first clone and the first process
+PASS Invoke-AuthorizedAbsentObservationShadow.ps1: Exit-G3PortLock once, after Exit-DesktopLock
+PASS Invoke-AuthorizedAbsentObservationShadow.ps1: Set-G3SimulatorPorts -ModbusPort $SimulatorModbusPort -HttpPort $SimulatorHttpPort
+PASS Invoke-AuthorizedAbsentObservationShadow.ps1: Set-G3OnboardIoModulePort -ModbusPort $SimulatorModbusPort
+PASS Invoke-AuthorizedAbsentObservationShadow.ps1: the ports go into simulator.settings.json beside the simulator binary it starts, read and written back through the object Set-G3SimulatorPorts gets
+PASS Invoke-AuthorizedAbsentObservationShadow.ps1: every simulator health URL is http://127.0.0.1:$SimulatorHttpPort/api/v1/health
+PASS Invoke-AuthorizedAbsentObservationShadow.ps1: its own Assert-PortFree is gone (Assert-G3PortsFree names the holder)
+PASS Invoke-AuthorizedAbsentObservationShadow.ps1: its exact-owner checks name the holder (Get-G3PortHolderText)
+PASS Invoke-AuthorizedAbsentObservationShadow.ps1: the lock is taken by one assignment in Start-ExactPeers, which the run calls plainly, and released once
+PASS Invoke-AuthorizedAbsentObservationShadow.ps1: after its finally's Exit-DesktopLock, with the process still alive, another process takes the desktop lock at once
+3 check(s) failed.

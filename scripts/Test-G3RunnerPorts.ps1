@@ -28,6 +28,9 @@
          lock and released after it; the simulator's and the onboard's settings written from the parameters; and
          (the two staged runners) the owner check on the simulator's two ports and the ControlServer's two.
 
+    Two copies on one machine queue on Global\W2G-SelfCheck-G3RunnerPorts (control-server#820: test.yml runs on two
+    cs-test runners on one machine), since the cases' ports and port locks are fixed.
+
     Exit 0 when every check passes, 1 otherwise, each check printed PASS or FAIL.
 #>
 [CmdletBinding()]
@@ -36,6 +39,38 @@ param(
 )
 
 $ErrorActionPreference = 'Stop'
+
+# One copy of this check per machine at a time (control-server#820). Its cases bind fixed ports (39011, 39013, 39019),
+# take fixed Global\W2G-Port-39001..39031 mutexes, some with no wait, and assert who holds them, so a second copy on
+# the same machine sees the first one's listeners and locks and goes red: run on two cs-test runners at once, one of
+# each pair exited 1 every time (G3_PORT_IN_USE and G3_PORT_OWNER naming the other copy's pwsh). The cases take
+# about ten seconds, so the other copy queues for that rather than the cases moving to ports of their own. Created
+# with the same DACL as L2PortLock.psm1's (Authenticated Users), so runners under different accounts can open it; an
+# abandoned mutex counts as taken, as there.
+$selfCheckLockName = 'Global\W2G-SelfCheck-G3RunnerPorts'
+$selfCheckLockSecurity = [Security.AccessControl.MutexSecurity]::new()
+$selfCheckLockSecurity.AddAccessRule([Security.AccessControl.MutexAccessRule]::new(
+        [Security.Principal.SecurityIdentifier]::new([Security.Principal.WellKnownSidType]::AuthenticatedUserSid, $null),
+        [Security.AccessControl.MutexRights]::FullControl, [Security.AccessControl.AccessControlType]::Allow))
+$selfCheckLockCreated = $false
+$selfCheckLock = [Threading.MutexAcl]::Create($false, $selfCheckLockName, [ref]$selfCheckLockCreated, $selfCheckLockSecurity)
+$selfCheckLockOwned = $false
+try {
+    $selfCheckLockOwned = $selfCheckLock.WaitOne(0)
+    if (-not $selfCheckLockOwned) {
+        Write-Host "SELF_CHECK_LOCK_WAITING: another copy of this check holds $selfCheckLockName; queueing up to 300 s"
+        $selfCheckLockOwned = $selfCheckLock.WaitOne([TimeSpan]::FromSeconds(300))
+    }
+} catch [Threading.AbandonedMutexException] {
+    $selfCheckLockOwned = $true
+}
+if (-not $selfCheckLockOwned) {
+    $selfCheckLock.Dispose()
+    Write-Host "SELF_CHECK_LOCK_BUSY: $selfCheckLockName still held after 300 s; no check ran."
+    exit 1
+}
+
+try {
 
 $failures = [System.Collections.Generic.List[string]]::new()
 function Check([string]$name, [bool]$ok, [string]$detail) {
@@ -476,3 +511,9 @@ if ($failures.Count -gt 0) {
 }
 Write-Host 'All G3 runner port checks passed.'
 exit 0
+
+} finally {
+    # exit inside the try still runs this, on the thread that took the mutex.
+    $selfCheckLock.ReleaseMutex()
+    $selfCheckLock.Dispose()
+}
