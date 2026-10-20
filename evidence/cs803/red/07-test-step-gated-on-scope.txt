@@ -1,0 +1,62 @@
+mutation: 07-test-step-gated-on-scope in .github/workflows/test.yml
+tracked files changed during the run:  M .github/workflows/test.yml
+---
+swept 202 input paths over 40 steps
+BAD   parallel_instance: 'Test', which it needs, is never gated on the self-check scope ->       - name: Test
+        if: steps.self-check-scope.outputs.scenario_sql_explain == 'true'
+        shell: pwsh
+        # 60 = the longest Test step seen, 38m57s (37784270398 attempt 1, unfinished when the job
+        # timed out), x 1.5, rounded up. It is the step's own limit, below the job's, so a suite that
+        # outgrows it is recorded as a failed step -- "failure", not "cancelled" -- and never goes down
+        # the job-cancel path (control-server#521). It does NOT save the results: the step timeout
+        # kills dotnet test the same way, and VSTest writes the .trx only when the run ends, so the
+        # upload below finds nothing, exactly as it did on 37784270398 attempt 1 ("No files were
+        # found"). Restore, build and the outbound schema check run inside this step too, but take
+        # under a minute and about 30 s.
+        timeout-minutes: 60
+        # BelowNormal is inherited by every process this step starts (dotnet, MSBuild nodes, the
+        # test host), so while an l2 job runs next to it, the scenarios get the CPU first. l2 is on
+        # the critical path and has timing-sensitive scenarios; a slower test run costs nothing.
+        run: |
+          [System.Diagnostics.Process]::GetCurrentProcess().PriorityClass = 'BelowNormal'
+          dotnet test tests/ControlServer.Tests/ControlServer.Tests.csproj -c Release --logger 'trx;LogFileName=test-results.trx'
+
+      # control-server#571. The v2 parallel instance's offline self-check: the definition checks (agv01 never in
+      # the vehicle roster, each roster row's identity against remote-ops/fleet.md), the overlay, and the
+      # read-back of what the Host really bound. Nothing in it touches a machine. It was run by hand only, and
+      # what is run by hand only is found broken at a batch exit. After Test, so its one case that borrows the
+      # SQLite provider from a Host build finds one instead of skipping; !cancelled() so it reports even when
+      # the suite is red. About 40 s on the laptop; with the step limit the job's 120 (see timeout-minutes
+      # above) stays above every step's, so a hang here is a failed step, not a cancelled job.
+
+BAD   g3_journey_v3_branches: 'Test', which it needs, is never gated on the self-check scope ->       - name: Test
+        if: steps.self-check-scope.outputs.scenario_sql_explain == 'true'
+        shell: pwsh
+        # 60 = the longest Test step seen, 38m57s (37784270398 attempt 1, unfinished when the job
+        # timed out), x 1.5, rounded up. It is the step's own limit, below the job's, so a suite that
+        # outgrows it is recorded as a failed step -- "failure", not "cancelled" -- and never goes down
+        # the job-cancel path (control-server#521). It does NOT save the results: the step timeout
+        # kills dotnet test the same way, and VSTest writes the .trx only when the run ends, so the
+        # upload below finds nothing, exactly as it did on 37784270398 attempt 1 ("No files were
+        # found"). Restore, build and the outbound schema check run inside this step too, but take
+        # under a minute and about 30 s.
+        timeout-minutes: 60
+        # BelowNormal is inherited by every process this step starts (dotnet, MSBuild nodes, the
+        # test host), so while an l2 job runs next to it, the scenarios get the CPU first. l2 is on
+        # the critical path and has timing-sensitive scenarios; a slower test run costs nothing.
+        run: |
+          [System.Diagnostics.Process]::GetCurrentProcess().PriorityClass = 'BelowNormal'
+          dotnet test tests/ControlServer.Tests/ControlServer.Tests.csproj -c Release --logger 'trx;LogFileName=test-results.trx'
+
+      # control-server#571. The v2 parallel instance's offline self-check: the definition checks (agv01 never in
+      # the vehicle roster, each roster row's identity against remote-ops/fleet.md), the overlay, and the
+      # read-back of what the Host really bound. Nothing in it touches a machine. It was run by hand only, and
+      # what is run by hand only is found broken at a batch exit. After Test, so its one case that borrows the
+      # SQLite provider from a Host build finds one instead of skipping; !cancelled() so it reports even when
+      # the suite is red. About 40 s on the laptop; with the step limit the job's 120 (see timeout-minutes
+      # above) stays above every step's, so a hang here is a failed step, not a cancelled job.
+
+inputs of the v3 check that are not inputs of the Scenario SQL check: 0
+997 case(s) passed
+TEST_SELF_CHECK_SCOPE_SELFTEST_FAILED: 2 case(s)
+exit=1

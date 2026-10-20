@@ -1,0 +1,70 @@
+mutation: 03-explicit-inputs-ignored in scripts/Select-TestSelfCheckRun.ps1
+changed files during the run:  M scripts/Select-TestSelfCheckRun.ps1; ?? evidence/cs803/red/02-registration-removed.txt
+---
+BAD   self_check_scope runs when scripts/authorized-experiment-readonly-proxy.py changes -> not among the paths it counted
+BAD   self_check_scope runs when scripts/authorized-experiment-state.py changes -> not among the paths it counted
+BAD   self_check_scope runs when scripts/a-new-directory/a-new-file.ps1 changes -> not among the paths it counted
+BAD   self_check_scope runs when .github/workflows/g3.yml changes -> not among the paths it counted
+BAD   self_check_scope runs when .github/workflows/l2.yml changes -> not among the paths it counted
+BAD   self_check_scope runs when .github/workflows/a-new-directory/a-new-file.ps1 changes -> not among the paths it counted
+BAD   l2_onboard_handle runs when scripts/l2/scenarios/area-assignment-import-rejects.ps1 changes -> not among the paths it counted
+BAD   l2_onboard_handle runs when scripts/l2/scenarios/area-assignment-import-rejects.setup.psd1 changes -> not among the paths it counted
+BAD   l2_onboard_handle runs when scripts/l2/scenarios/a-new-directory/a-new-file.ps1 changes -> not among the paths it counted
+BAD   l2_onboard_handle runs when scripts/l2/counterexamples/a-new-directory/a-new-file.ps1 changes -> not among the paths it counted
+BAD   l2_probe_closures runs when scripts/l2/L2BacklogAcceptance.psm1 changes -> not among the paths it counted
+BAD   l2_probe_closures runs when scripts/l2/a-new-file.psm1 changes -> not among the paths it counted
+BAD   l2_screen_state runs when scripts/l2/scenarios/area-assignment-import-rejects.ps1 changes -> not among the paths it counted
+BAD   l2_screen_state runs when scripts/l2/scenarios/area-assignment-import-rejects.setup.psd1 changes -> not among the paths it counted
+BAD   l2_screen_state runs when scripts/l2/scenarios/a-new-directory/a-new-file.ps1 changes -> not among the paths it counted
+BAD   l2_scenario_round_scope runs when scripts/authorized-experiment-readonly-proxy.py changes -> not among the paths it counted
+BAD   l2_scenario_round_scope runs when scripts/authorized-experiment-state.py changes -> not among the paths it counted
+BAD   l2_scenario_round_scope runs when scripts/a-new-directory/a-new-file.ps1 changes -> not among the paths it counted
+BAD   l2_scenario_round_scope runs when .github/workflows/g3.yml changes -> not among the paths it counted
+BAD   l2_scenario_round_scope runs when .github/workflows/l2.yml changes -> not among the paths it counted
+BAD   l2_scenario_round_scope runs when .github/workflows/a-new-directory/a-new-file.ps1 changes -> not among the paths it counted
+BAD   l2_closure_capture runs when scripts/authorized-experiment-readonly-proxy.py changes -> not among the paths it counted
+BAD   l2_closure_capture runs when scripts/authorized-experiment-state.py changes -> not among the paths it counted
+BAD   l2_closure_capture runs when scripts/a-new-directory/a-new-file.ps1 changes -> not among the paths it counted
+BAD   l2_whole_array_return runs when scripts/authorized-experiment-readonly-proxy.py changes -> not among the paths it counted
+BAD   l2_whole_array_return runs when scripts/authorized-experiment-state.py changes -> not among the paths it counted
+BAD   l2_whole_array_return runs when scripts/a-new-directory/a-new-file.ps1 changes -> not among the paths it counted
+BAD   script_static_checks runs when scripts/authorized-experiment-readonly-proxy.py changes -> not among the paths it counted
+BAD   script_static_checks runs when scripts/authorized-experiment-state.py changes -> not among the paths it counted
+BAD   script_static_checks runs when scripts/a-new-directory/a-new-file.ps1 changes -> not among the paths it counted
+BAD   g3_runner_claims runs when scripts/build.ps1 changes -> not among the paths it counted
+BAD   g3_runner_claims runs when scripts/a-new-file.ps1 changes -> not among the paths it counted
+BAD   l2_lanes runs when scripts/l2/L2.psm1 changes -> not among the paths it counted
+BAD   l2_lanes runs when scripts/l2/L2BacklogAcceptance.psm1 changes -> not among the paths it counted
+BAD   l2_lanes runs when scripts/l2/a-new-file.psm1 changes -> not among the paths it counted
+BAD   scenario_sql_explain runs when scripts/authorized-experiment-readonly-proxy.py changes -> not among the paths it counted
+BAD   scenario_sql_explain runs when scripts/authorized-experiment-state.py changes -> not among the paths it counted
+BAD   scenario_sql_explain runs when scripts/a-new-directory/a-new-file.ps1 changes -> not among the paths it counted
+BAD   scenario_sql_explain runs when src/ControlServer.Application/AreaAssignmentImport.cs changes -> not among the paths it counted
+BAD   scenario_sql_explain runs when src/ControlServer.Application/AreaAssignmentPorts.cs changes -> not among the paths it counted
+BAD   scenario_sql_explain runs when src/a-new-directory/a-new-file.ps1 changes -> not among the paths it counted
+BAD   scenario_sql_explain runs when vendor/8005-agv-program/README.md changes -> not among the paths it counted
+BAD   scenario_sql_explain runs when vendor/8005-agv-program/docs/riot-call-allowlist.md changes -> not among the paths it counted
+BAD   scenario_sql_explain runs when vendor/a-new-directory/a-new-file.ps1 changes -> not among the paths it counted
+BAD   scenario_sql_explain runs when global.json changes -> not among the paths it counted
+BAD   scenario_sql_explain runs when Directory.Build.props changes -> not among the paths it counted
+BAD   scenario_sql_explain runs when Directory.Build.targets changes -> not among the paths it counted
+BAD   scenario_sql_explain runs when Directory.Packages.props changes -> not among the paths it counted
+BAD   scenario_sql_explain runs when NuGet.Config changes -> not among the paths it counted
+BAD   scenario_sql_explain runs when .config/dotnet-tools.json changes -> not among the paths it counted
+BAD   scenario_sql_explain runs when .config/a-new-directory/a-new-file.ps1 changes -> not among the paths it counted
+BAD   parallel_instance runs when scripts/parallel/a-new-directory/a-new-file.ps1 changes -> not among the paths it counted
+BAD   parallel_instance runs when src/ControlServer.Application/AreaAssignmentImport.cs changes -> not among the paths it counted
+BAD   parallel_instance runs when src/ControlServer.Application/AreaAssignmentPorts.cs changes -> not among the paths it counted
+BAD   parallel_instance runs when src/a-new-directory/a-new-file.ps1 changes -> not among the paths it counted
+BAD   parallel_instance runs when tools/ControlServer.ClockSkewProxy/ClockSkewProxyHost.cs changes -> not among the paths it counted
+BAD   parallel_instance runs when tools/ControlServer.ClockSkewProxy/ControlPlane.cs changes -> not among the paths it counted
+BAD   parallel_instance runs when tools/a-new-directory/a-new-file.ps1 changes -> not among the paths it counted
+swept 194 input paths over 40 steps
+BAD   src/ControlServer.Host/Program.cs runs scenario_sql_explain -> {"Key":"scenario_sql_explain","Name":"Scenario SQL self-check (literal SQL against the migrated schema)","Run":false,"Reason":"skipped: none of the changed paths is its input","Hits":[],"Reached":["docs/RELEASE-CANDIDATE.md","scripts/l2/L2.psm1","scripts/l2/L2Change.psm1","scripts/l2/L2ConditionOrLast.psm1","scripts/l2/L2RealOnboard.psm1","scripts/l2/L2RealStation.psm1","scripts/l2/L2TaskTypeJourney.psm1","scripts/l2/scenarios/g3-forced-mechanical-recovery.ps1","scripts/l2/scenarios/G3RecoveryCommon.ps1","scripts/ScriptStaticChecks.psm1","scripts/Test-ScenarioSqlExplain.ps1","src/ControlServer.Host/ControlServer.Host.csproj","src/ControlServer.Infrastructure/Persistence/Migrations/ControlServerDbContextModelSnapshot.cs"]}
+BAD   scripts/l2/L2.psm1 runs l2_closure_capture -> {"Key":"l2_closure_capture","Name":"L2 scenario self-check (closure variable capture)","Run":false,"Reason":"skipped: none of the changed paths is its input","Hits":[],"Reached":["scripts/l2/L2ClosureCapture.psm1","scripts/l2/Test-L2ClosureCapture.ps1"]}
+BAD   .github/workflows/l2.yml runs l2_scenario_round_scope -> {"Key":"l2_scenario_round_scope","Name":"L2 self-check (scenario round scope)","Run":false,"Reason":"skipped: none of the changed paths is its input","Hits":[],"Reached":["scripts/Test-L2ScenarioRunScope.ps1"]}
+BAD   scripts/l2/scenarios/g3-forced-mechanical-recovery.ps1 runs l2_onboard_handle -> {"Key":"l2_onboard_handle","Name":"L2 scenario self-check (onboard handle after restart)","Run":false,"Reason":"skipped: none of the changed paths is its input","Hits":[],"Reached":["scripts/l2/counterexamples/onboard-handle-after-restart/","scripts/l2/Test-L2OnboardHandleAfterRestart.ps1"]}
+BAD   vendor/8005-agv-protocol/integration-slices/index.json runs scenario_sql_explain -> {"Key":"scenario_sql_explain","Name":"Scenario SQL self-check (literal SQL against the migrated schema)","Run":false,"Reason":"skipped: none of the changed paths is its input","Hits":[],"Reached":["docs/RELEASE-CANDIDATE.md","scripts/l2/L2.psm1","scripts/l2/L2Change.psm1","scripts/l2/L2ConditionOrLast.psm1","scripts/l2/L2RealOnboard.psm1","scripts/l2/L2RealStation.psm1","scripts/l2/L2TaskTypeJourney.psm1","scripts/l2/scenarios/g3-forced-mechanical-recovery.ps1","scripts/l2/scenarios/G3RecoveryCommon.ps1","scripts/ScriptStaticChecks.psm1","scripts/Test-ScenarioSqlExplain.ps1","src/ControlServer.Host/ControlServer.Host.csproj","src/ControlServer.Infrastructure/Persistence/Migrations/ControlServerDbContextModelSnapshot.cs"]}
+872 case(s) passed
+TEST_SELF_CHECK_SCOPE_SELFTEST_FAILED: 63 case(s)
+exit=1

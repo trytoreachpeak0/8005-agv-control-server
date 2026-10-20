@@ -1,0 +1,4 @@
+commit f93ff3f84232754ea9488ebb13ed58fd6cc2cd09
+command: dotnet test tests/ControlServer.Tests -c Release --no-build --filter "FullyQualifiedName~OnboardHandshakePushGateTests.TheTestReadsThroughAConnectionOfItsOwn"  (loop: C:/work/8005-scratch/cs813/loop.ps1 via Invoke-HeavyLocal.ps1)
+rounds (exit code, test count, result; first error line when failed):
+run-1: exit=1; Total tests: 1;  Failed: 1; last test took [818 ms] | 测试拿到的上下文与服务端处理器共用了连接。

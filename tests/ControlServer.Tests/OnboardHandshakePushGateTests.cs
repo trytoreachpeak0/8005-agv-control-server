@@ -355,6 +355,25 @@ public sealed class OnboardHandshakePushGateTests
     }
 
     /// <summary>
+    /// The test's contexts are on a connection of their own, not on the one the server's processor uses
+    /// (control-server#813).
+    /// </summary>
+    /// <remarks>
+    /// <c>SqliteConnection</c> is no more thread-safe than <c>DbContext</c>. The synthetic vehicle sends a heartbeat every
+    /// 2 s and the server writes the inbox for each, inside a transaction, on its connection; a test context on that
+    /// same connection, used meanwhile from the test thread, runs into it.
+    /// </remarks>
+    [Fact]
+    [Trait("IntegrationSlice", "FP-IS-00")]
+    public async Task TheTestReadsThroughAConnectionOfItsOwn()
+    {
+        await using Rig rig = await Rig.StartAsync();
+        await using ControlServerDbContext read = rig.NewContext();
+
+        Assert.False(rig.SharesStateWith(read), "测试拿到的上下文与服务端处理器共用了连接。");
+    }
+
+    /// <summary>
     /// A new <c>SessionHello</c> on a connection whose handshake was done starts a new handshake, and the gate
     /// closes again before its answer goes out.
     /// </summary>
@@ -509,9 +528,13 @@ public sealed class OnboardHandshakePushGateTests
         public static async Task<Rig> StartAsync()
         {
             Environment.SetEnvironmentVariable(CredentialVariable, Credential);
-            SqliteConnection connection = new("Data Source=:memory:");
+            // Named and shared-cache so that NewContext can reach it on a connection of its own; this one stays open
+            // for the rig's lifetime, which is what keeps an in-memory database alive.
+            SqliteConnection connection = new(
+                $"Data Source=push-gate-{Guid.NewGuid():N};Mode=Memory;Cache=Shared");
             await connection.OpenAsync(TestContext.Current.CancellationToken);
-            ControlServerDbContext context = NewContext(connection);
+            ControlServerDbContext context = new(
+                new DbContextOptionsBuilder<ControlServerDbContext>().UseSqlite(connection).Options);
             await context.Database.EnsureCreatedAsync(TestContext.Current.CancellationToken);
 
             IConfiguration configuration = new ConfigurationBuilder()
@@ -556,7 +579,23 @@ public sealed class OnboardHandshakePushGateTests
             return new Rig(connection, context, provider, server, peer, relay, engine, onboard);
         }
 
-        public ControlServerDbContext NewContext() => NewContext(_connection);
+        /// <summary>
+        /// A context of the test's own, on a connection of its own, to the same database the server writes
+        /// (control-server#813). The caller disposes it.
+        /// </summary>
+        /// <remarks>
+        /// Neither <see cref="DbContext"/> nor <see cref="SqliteConnection"/> is thread-safe, and the server's processor
+        /// uses its connection on the listener's threads, for every heartbeat as well. The database is a named
+        /// shared-cache in-memory one, kept alive by the server's connection, so another connection sees the same rows;
+        /// SQLite serialises the two connections itself. The same shape as OnboardSilentLivenessLossTests (#256).
+        /// </remarks>
+        public ControlServerDbContext NewContext() =>
+            new(new DbContextOptionsBuilder<ControlServerDbContext>().UseSqlite(_connection.ConnectionString).Options);
+
+        /// <summary>Whether <paramref name="context"/> is, or shares a connection with, the server's own context.</summary>
+        public bool SharesStateWith(ControlServerDbContext context) =>
+            ReferenceEquals(context, _serverContext) ||
+            ReferenceEquals(context.Database.GetDbConnection(), _serverContext.Database.GetDbConnection());
 
         /// <summary>What the vehicle has read, in order, heartbeat answers left out.</summary>
         public WireEvent[] Inbound() =>
@@ -616,9 +655,6 @@ public sealed class OnboardHandshakePushGateTests
             await _connection.DisposeAsync();
             Lifetime.Dispose();
         }
-
-        private static ControlServerDbContext NewContext(SqliteConnection connection) =>
-            new(new DbContextOptionsBuilder<ControlServerDbContext>().UseSqlite(connection).Options);
 
         private static int ReserveFreePort()
         {
