@@ -44,3 +44,12 @@
 - 这些作业对 git 只做 `rev-parse HEAD`、`status --porcelain`、提交之间的 `diff --name-only`（不做改名检测）：稀疏检出排除的文件不算改动，按名字比较不读 blob。
 - 实跑：改后那一轮 L2 就在不带 `evidence/` 的 worktree 里跑；真装置一轮走 CI（见 PR）。
 - actions/checkout v7 的 `src/git-source-provider.ts:182-186`：给了 `sparse-checkout` 就用 `--filter=blob:none` 取；`:253-258`：之后同目录的非稀疏检出会先 `sparse-checkout disable`。所以真装置作业的两个对端（车载端、模拟器）不做稀疏：`Get-L2PeerPublish` 要从检出目录 `git clone`，部分克隆缺的 blob 会让那次克隆回 GitHub 取。
+
+## 6. 独立审查之后（`20da6b47`）
+
+- **S1**：场景侧 `$Context.InvokeFieldOps` 改走 `Invoke-L2FieldOpsProcess`，stdout/stderr 按 UTF-8 读，不改控制台代码页。`tools/Test-FieldOpsDecoding.ps1` 在子进程里把控制台设成指定代码页，同一条输出含「等待点」（9 个 UTF-8 字节、奇数）的 `import-waiting-points --dry-run`：
+  - 936：旧写法 `PARSE FAILED: ... unexpected character ... Path 'changes[0].after.stationName'`；新写法 `U+7B49 U+5F85 U+70B9`（`decoding/cp936-*.txt`）。
+  - 437：旧写法解析成 9 个乱码字符；新写法同上（`decoding/cp437-*.txt`）。
+  - 受影响的 30 个合成场景（`scripts/l2/scenarios` 里用到 `InvokeFieldOps` 的，加上点源 `SameDirectionJourneyCommon.ps1` 的；`g3-*`、`real-onboard-*` 不在合成清单）重跑：30/30 PASS，环境就绪后场景侧 FieldOps 调用合计 65 次（`l2-compare/RESULT-s1-rerun-20da6b47.txt`）。
+- **S3**：`ForTheSameDatabaseStateTheSessionPrintsWhatItsOwnProcessPrints` 把 8 条命令（成功、被拒、用法错误、库不存在）在会话里的输出与单独进程的 stdout+stderr 逐行比，退出码一并比。去掉会话里的 `Console.SetError(Console.Out)`：这条与另两条红（`unit/mutation-no-stderr-merge.txt`）；`unit/green-20da6b47.txt` 86/86。
+- **S5**：改后那轮同一个环境红场景的断言：`l2-compare/env-red-task-type-binding-station-reused-refuses-start-after.assertions.json`。
