@@ -21,6 +21,12 @@
 # Never skipped: an event that is not a pull request (a push, a dispatched run), a change list that could not be read, and
 # a pull request that changes anything in Always.
 #
+# Needs: steps whose output this one reads (a build under bin/, a generated file), by Key for a self-check or by name for a
+# step this table does not decide. A needed self-check runs whenever the step that needs it runs, and comes before it in
+# test.yml; a needed step this table does not decide must never be gated on the scope. A step whose script reads
+# src/ControlServer.Host/bin without building it itself must say what it needs. As of control-server#803 nothing reads
+# another self-check's output: the two that read a Host build read the Test step's, which no pull request skips.
+#
 @{
     Always = @(
         '.github/workflows/test.yml'
@@ -152,9 +158,18 @@
         @{ Key = 'parallel_instance'; Name = 'Parallel instance self-check'
             Script = 'scripts/parallel/Test-ParallelInstance.ps1'
             # Reads the Host's options, presets, project and migrations, and borrows the SQLite provider from its build.
-            Inputs = @('scripts/parallel/', 'src/', 'tools/', 'docs/production-cutover-mode-plan.md') }
+            Inputs = @('scripts/parallel/', 'src/', 'tools/', 'docs/production-cutover-mode-plan.md')
+            # The provider comes from src/ControlServer.Host/bin, which the Test step's build fills; without it the case is a
+            # yellow SKIP, not a red.
+            Needs = @('Test') }
         @{ Key = 'g3_journey_v3_branches'; Name = 'G3 scenario self-check (journey v3 script branches)'
-            Script = 'scripts/l2/Test-G3JourneyV3ScriptBranches.ps1'; Inputs = @() }
+            Script = 'scripts/l2/Test-G3JourneyV3ScriptBranches.ps1'; Inputs = @()
+            # Microsoft.Data.Sqlite from src/ControlServer.Host/bin/Release/net8.0/win-x64, which the Test step's build of
+            # the test project (it references the Host; Directory.Build.props sets win-x64) fills. Without it: exit 2,
+            # INCOMPLETE -- run 39428641491, where a red step before Test skipped both Test and the Scenario SQL check.
+            # The Scenario SQL check builds the Host too, but this does not need it: measured on a clean worktree, a build
+            # of the test project alone leaves the DLL there and this passes (evidence/cs803/dependency/).
+            Needs = @('Test') }
         # Decided by its own selector, Select-StagedG3ContentConflictRun.ps1 (control-server#567); here so that every
         # self-check step is accounted for.
         @{ Key = 'staged_content_conflict'; Name = 'G3 runner self-check (staged content conflict)'

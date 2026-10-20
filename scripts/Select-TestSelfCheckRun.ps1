@@ -170,6 +170,25 @@ $steps = foreach ($entry in $ownSteps) {
     }
 }
 $steps = @($steps)
+
+# A self-check another running step Needs runs too, transitively (the table's header). A Need that is not a self-check this
+# table decides (the Test step) is never skipped here, so there is nothing to do for it.
+$byKey = @{}
+foreach ($step in $steps) { $byKey[$step.Key] = $step }
+do {
+    $raised = $false
+    foreach ($entry in $ownSteps) {
+        if (-not $byKey[$entry.Key].Run -or -not $entry.ContainsKey('Needs')) { continue }
+        foreach ($need in @($entry.Needs)) {
+            if ($byKey.ContainsKey($need) -and -not $byKey[$need].Run) {
+                $byKey[$need].Run = $true
+                $byKey[$need].Reason = "runs: $($entry.Key) runs and needs it"
+                $raised = $true
+            }
+        }
+    }
+} while ($raised)
+
 $skipped = @($steps | Where-Object { -not $_.Run })
 $reason = if ($null -ne $runAll) { $runAll }
 elseif ($skipped.Count -eq 0) { "runs all $($steps.Count): every self-check has a changed input" }

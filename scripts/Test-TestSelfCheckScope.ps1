@@ -57,8 +57,26 @@ function Finish {
     exit 0
 }
 function Decide([string[]]$Changed, [hashtable]$Extra = @{}) {
-    & $Selector -ChangedPath $Changed -Repository $Repository -ScopeFile $ScopeFile @Extra 6>$null
+    $decision = & $Selector -ChangedPath $Changed -Repository $Repository -ScopeFile $ScopeFile @Extra 6>$null
+    Assert-NeedsHold $decision (($Changed | Select-Object -First 3) -join ', ') $script:registeredForNeeds
+    $decision
 }
+# Section 7's invariant, checked on every decision this file asks for: no step runs while a self-check it Needs is skipped.
+$script:needsChecked = 0
+function Assert-NeedsHold($Decision, [string]$Label, [object[]]$Entries) {
+    if ($null -eq $Decision -or -not ($Decision.PSObject.Properties.Name -contains 'Steps')) { return }
+    $runs = @{}
+    foreach ($step in @($Decision.Steps)) { $runs[$step.Key] = $step.Run }
+    foreach ($entry in @($Entries)) {
+        if (-not $entry.ContainsKey('Needs') -or -not $runs[$entry.Key]) { continue }
+        foreach ($need in @($entry.Needs)) {
+            if (-not $runs.ContainsKey($need)) { continue }
+            $script:needsChecked++
+            Check "($Label) $($entry.Key) runs, so $need, which it needs, runs" ($runs[$need] -eq $true) "$need skipped"
+        }
+    }
+}
+$script:registeredForNeeds = @()
 function StepOf($Decision, [string]$Key) { @($Decision.Steps | Where-Object Key -ceq $Key)[0] }
 
 foreach ($required in $Selector, $ScopeFile) {
@@ -73,6 +91,7 @@ Check 'the selector parses' ($errors.Count -eq 0) "$($errors.Count) parse errors
 $scope = Import-PowerShellDataFile -LiteralPath $ScopeFile
 $registered = @($scope.Steps)
 $ownSteps = @($registered | Where-Object { -not $_.ContainsKey('DecidedBy') })
+$script:registeredForNeeds = $ownSteps
 
 # --- 1. Every step of test.yml is accounted for. ----------------------------------------------------------------------
 $workflow = Get-Content -Raw -LiteralPath (Join-Path $Repository '.github/workflows/test.yml')
@@ -317,5 +336,94 @@ $tree = Join-Path (Split-Path -Parent $PSScriptRoot) '../src/Lib/Deep'
 } finally {
     Remove-Item -LiteralPath $sandbox -Recurse -Force -ErrorAction SilentlyContinue
 }
+
+# --- 7. What a step needs from another (control-server#803, the coordinator's check after run 39428641491). -----------------
+# A step that reads another step's output -- a build under bin/ -- must say so in Needs, the step it needs must come first,
+# and must run whenever it does: a needed self-check by the selector raising it, a needed step this table does not decide
+# by never being gated on the scope.
+foreach ($entry in $registered) {
+    # The scripts strings, not its comments: a comment that mentions a build reads nothing.
+    $tokens = $null
+    $null = [System.Management.Automation.Language.Parser]::ParseFile((Join-Path $Repository $entry.Script), [ref]$tokens, [ref]$null)
+    $source = [string]::Join([char]10, [string[]]@(foreach ($token in $tokens) { if ($token -is [System.Management.Automation.Language.StringToken]) { $token.Value } }))
+    $readsBuild = $source -match 'ControlServer\.Host[\\/]+bin[\\/]+(Release|Debug|\$)'
+    $buildsItself = $source -match 'dotnet (build|publish)\b'
+    $needs = @(if ($entry.ContainsKey('Needs')) { $entry.Needs })
+    if ($readsBuild -and -not $buildsItself) {
+        Check "$($entry.Key) reads src/ControlServer.Host/bin without building it, so it says what it needs" ($needs.Count -gt 0) 'no Needs'
+    }
+    $self = $workflowSteps | Where-Object Title -ceq $entry.Name | Select-Object -First 1
+    foreach ($need in $needs) {
+        $neededEntry = $registered | Where-Object { $_.Key -ceq $need } | Select-Object -First 1
+        $neededTitle = if ($null -ne $neededEntry) { $neededEntry.Name } elseif ($notSelfChecks -ccontains $need) { $need } else { $null }
+        Check "$($entry.Key) needs '$need', a registered step" ($null -ne $neededTitle) 'neither a Key nor a NotSelfChecks step'
+        if ($null -eq $neededTitle -or $null -eq $self) { continue }
+        $needed = $workflowSteps | Where-Object Title -ceq $neededTitle | Select-Object -First 1
+        Check "$($entry.Key): '$neededTitle', which it needs, comes before it in test.yml" ($null -ne $needed -and $needed.Index -lt $self.Index) "it is at $($self.Index)"
+        if ($null -eq $neededEntry -and $null -ne $needed) {
+            Check "$($entry.Key): '$neededTitle', which it needs, is never gated on the self-check scope" (
+                $needed.Block -notmatch 'self-check-scope') $needed.Block
+        }
+    }
+}
+Check 'g3_journey_v3_branches says it needs the Test step''s build' (
+    @(@($registered | Where-Object Key -ceq 'g3_journey_v3_branches')[0].Needs) -ccontains 'Test') 'no Needs = Test'
+# The combination asked about: the journey v3 check runs and the Scenario SQL check, which also builds the Host, does not.
+# On this table it does not happen today -- the SQL check scans all of scripts/ and builds all of src/, which covers what
+# the v3 check reaches (printed, not asserted: a coincidence, not a rule). So it is made to happen on a copy of this table
+# whose SQL check reads only its own script, and must then be allowed: the v3 check reads the Test step's build, not the SQL
+# check's (measured, evidence/cs803/dependency/), and the Test step is not among the selector's outputs, so no pull request
+# skips it.
+$sqlEntry = @($registered | Where-Object Key -ceq 'scenario_sql_explain')[0]
+$sqlCovers = @(@($sqlEntry.Inputs) + @((StepOf $listing 'scenario_sql_explain').Reached))
+$v3NotSql = @(@((StepOf $listing 'g3_journey_v3_branches').Reached) | Where-Object { $path = $_
+        @($sqlCovers | Where-Object { $path.StartsWith($_.TrimEnd('/') + '/', [StringComparison]::OrdinalIgnoreCase) -or $path -eq $_ }).Count -eq 0 })
+Write-Host "inputs of the v3 check that are not inputs of the Scenario SQL check: $($v3NotSql.Count)$(if ($v3NotSql.Count) { ' -- ' + ($v3NotSql -join ', ') })"
+$narrowScope = Join-Path ([IO.Path]::GetTempPath()) "self-check-narrow-$([guid]::NewGuid().ToString('N')).psd1"
+try {
+    $text = Get-Content -Raw -LiteralPath $ScopeFile
+    $sqlInputsLine = [regex]::Match($text, "(?ms)Key = 'scenario_sql_explain'.*?Inputs = (@\(.*?\)) \}").Groups[1]
+    Check 'the copy finds the SQL check''s Inputs to narrow' ($sqlInputsLine.Success) 'not found'
+    $narrowed = $text.Remove($sqlInputsLine.Index, $sqlInputsLine.Length).Insert($sqlInputsLine.Index, '@(); NameClosure = $false')
+    Set-Content -LiteralPath $narrowScope -Value $narrowed
+    $combination = & $Selector -ChangedPath @('scripts/l2/Test-G3JourneyV3ScriptBranches.ps1') -Repository $Repository -ScopeFile $narrowScope 6>$null
+    Assert-NeedsHold $combination 'narrowed copy, v3 changed' @((Import-PowerShellDataFile -LiteralPath $narrowScope).Steps)
+    Check 'the combination: the v3 check runs' ((StepOf $combination 'g3_journey_v3_branches').Run) ((StepOf $combination 'g3_journey_v3_branches').Reason)
+    Check 'the combination: the Scenario SQL check is skipped' (-not (StepOf $combination 'scenario_sql_explain').Run) (
+        (StepOf $combination 'scenario_sql_explain').Reason)
+    Check 'the combination: the Test step, which the v3 check needs, is not the selector''s to skip' (
+        @($combination.Steps | Where-Object Key -ceq 'Test').Count -eq 0) 'Test decided here'
+} finally {
+    Remove-Item -LiteralPath $narrowScope -Force -ErrorAction SilentlyContinue
+}
+
+# Raising, on a throwaway table over this repository: B needs A; a change to B's input alone runs A too, transitively.
+$needsScope = Join-Path ([IO.Path]::GetTempPath()) "self-check-needs-$([guid]::NewGuid().ToString('N')).psd1"
+try {
+    Set-Content -LiteralPath $needsScope -Value @'
+@{
+    Always = @('scripts/TestSelfCheckScope.psd1')
+    NotSelfChecks = @(@{ Step = 'Test'; Why = 'suite' })
+    Steps = @(
+        @{ Key = 'a'; Name = 'A'; Script = 'scripts/l2/Test-L2SingleRow.ps1'; Inputs = @() }
+        @{ Key = 'b'; Name = 'B'; Script = 'scripts/l2/Test-L2SlotGroups.ps1'; Inputs = @(); Needs = @('a') }
+        @{ Key = 'c'; Name = 'C'; Script = 'scripts/l2/Test-L2SessionContinuity.ps1'; Inputs = @(); Needs = @('b', 'Test') }
+        @{ Key = 'd'; Name = 'D'; Script = 'scripts/l2/Test-L2BacklogAcceptance.ps1'; Inputs = @() }
+    )
+}
+'@
+    $needsEntries = @((Import-PowerShellDataFile -LiteralPath $needsScope).Steps)
+    $raised = & $Selector -ChangedPath @('scripts/l2/Test-L2SessionContinuity.ps1') -Repository $Repository -ScopeFile $needsScope 6>$null
+    Assert-NeedsHold $raised 'throwaway table, C changed' $needsEntries
+    $state = (@($raised.Steps) | ForEach-Object { "$($_.Key)=$($_.Run)" }) -join ' '
+    Check 'needs: a change to C alone runs C, B (C needs it) and A (B needs it), and not D' ($state -ceq 'a=True b=True c=True d=False') $state
+    Check 'needs: B says why it runs' ((StepOf $raised 'b').Reason -like '*c runs and needs it*') ((StepOf $raised 'b').Reason)
+    $plain = & $Selector -ChangedPath @('scripts/l2/Test-L2SingleRow.ps1') -Repository $Repository -ScopeFile $needsScope 6>$null
+    $state = (@($plain.Steps) | ForEach-Object { "$($_.Key)=$($_.Run)" }) -join ' '
+    Check 'needs: a change to A alone runs A only -- needing runs downward, not up' ($state -ceq 'a=True b=False c=False d=False') $state
+} finally {
+    Remove-Item -LiteralPath $needsScope -Force -ErrorAction SilentlyContinue
+}
+Check 'the needs invariant was exercised on a self-check that needs another' ($script:needsChecked -ge 2) "$script:needsChecked"
 
 Finish
