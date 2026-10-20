@@ -1,0 +1,31 @@
+FAIL  1 second run queues -- queued=False building=True
+FAIL  1 first run's build untouched while the second is there -- marker C:\Users\szy\AppData\Local\Temp\l2-peer-publish-selftest-80e9ce501288\concurrent\cache\selfcheck-peer-f6b3fea73d5ca1459bec0b83469d778533e9ab6e\publish\marker-152900 present=False
+PASS  1 both succeed -- a: ok=True ; b: ok=True 
+PASS  1 both get the published path -- a=C:\Users\szy\AppData\Local\Temp\l2-peer-publish-selftest-80e9ce501288\concurrent\cache\selfcheck-peer-f6b3fea73d5ca1459bec0b83469d778533e9ab6e\publish b=C:\Users\szy\AppData\Local\Temp\l2-peer-publish-selftest-80e9ce501288\concurrent\cache\selfcheck-peer-f6b3fea73d5ca1459bec0b83469d778533e9ab6e\publish
+FAIL  1 built exactly once -- builds=2
+FAIL  1 the publish is the first run's build -- expected C:\Users\szy\AppData\Local\Temp\l2-peer-publish-selftest-80e9ce501288\concurrent\cache\selfcheck-peer-f6b3fea73d5ca1459bec0b83469d778533e9ab6e\publish\marker-152900
+FAIL  1 the second run reports FromCache -- a=False b=False
+PASS  1 publish.ok written -- C:\Users\szy\AppData\Local\Temp\l2-peer-publish-selftest-80e9ce501288\concurrent\cache\selfcheck-peer-f6b3fea73d5ca1459bec0b83469d778533e9ab6e\publish.ok
+PASS  1 nothing left beside the cache directory -- 
+FAIL  5 a later call reuses without building or waiting -- ok=True fromCache=True builds=2
+PASS  2 the failed build is reported -- Publishing selfcheck-peer failed; see C:\Users\szy\AppData\Local\Temp\l2-peer-publish-selftest-80e9ce501288\failure\failed.json.logs\build-selfcheck-peer.log (the stand-in build failed halfway)
+FAIL  2 the failed build leaves nothing in the cache root -- selfcheck-peer-f6b3fea73d5ca1459bec0b83469d778533e9ab6e
+PASS  2 the next call builds afresh -- ok=True  fromCache=False builds=2
+FAIL  3 the waiter queues behind the holder -- queued=False
+PASS  3 the waiter builds after the holder died -- ok=True  fromCache=False
+FAIL  3 the abandoned lock is reported -- 
+PASS  3 the dead run's temporary directory is cleared -- 
+FAIL  4 the impatient waiter fails with a named reason -- A parameter cannot be found that matches parameter name 'LockTimeoutSeconds'.
+PASS  4 the holder's build is untouched -- C:\Users\szy\AppData\Local\Temp\l2-peer-publish-selftest-80e9ce501288\timeout\cache\selfcheck-peer-f6b3fea73d5ca1459bec0b83469d778533e9ab6e\publish\marker-62100
+PASS  4 the holder then completes, and nobody else built -- ok=True  builds=1
+PASS  6 an unstamped cache directory is rebuilt -- ok=True 
+PASS  6 nothing left beside the cache directory -- 
+PASS  7 a run on another cache root does not wait -- queued=False
+PASS  7 both roots publish -- first= second=
+PASS  8 run-journey-g3.ps1 still matches peer notes as "<name> (publish for|at) <commit>" -- everyScenarioPublishedThePeersAtTheBinding
+PASS  8 journal of 1a built matches -- Building selfcheck-peer at f6b3fea73d5ca1459bec0b83469d778533e9ab6e from a throwaway clone.
+PASS  8 journal of 1b reused after waiting matches -- Building selfcheck-peer at f6b3fea73d5ca1459bec0b83469d778533e9ab6e from a throwaway clone.
+PASS  8 journal of 5 reused matches -- Reusing cached selfcheck-peer publish for f6b3fea73d5ca1459bec0b83469d778533e9ab6e.
+
+FAILED: 10 assertion(s): 1 second run queues; 1 first run's build untouched while the second is there; 1 built exactly once; 1 the publish is the first run's build; 1 the second run reports FromCache; 5 a later call reuses without building or waiting; 2 the failed build leaves nothing in the cache root; 3 the waiter queues behind the holder; 3 the abandoned lock is reported; 4 the impatient waiter fails with a named reason
+Stage kept for inspection: C:\Users\szy\AppData\Local\Temp\l2-peer-publish-selftest-80e9ce501288

@@ -1,0 +1,12 @@
+CI real rig, l2.yml run 39471104014 (vm-win-01, runner vmwin01-control-server-desktop), control-server 77b2229e (the fix commit),
+onboard-hmi 2b25aa5d07b53a01826a832429f8db3833fdb4c5, slots-simulator fb5f7c593742bf98bc3957b8729a38aad5321f28, scenario real-onboard-normal-load x1.
+
+Conclusion: success.
+  L2 real-onboard-normal-load -> PASS
+
+Journal notes from the run's timeline.jsonl (artifact of the run):
+  Building onboard-hmi at 2b25aa5d07b53a01826a832429f8db3833fdb4c5 from a throwaway clone.
+  Reusing cached slots-simulator publish for fb5f7c593742bf98bc3957b8729a38aad5321f28.
+
+The onboard went through the new path (lock, .tmp- directory, publish.ok inside, rename). The simulator reused a cache
+directory already on the runner, written by the code before this change: the stamped fast path reads the old layout as is.

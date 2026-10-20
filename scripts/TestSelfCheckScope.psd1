@@ -174,6 +174,8 @@
             Script = 'scripts/l2/Test-L2SlotGroups.ps1'; Inputs = @() }
         @{ Key = 'l2_task_type_stations'; Name = 'L2 scenario self-check (task type stations)'
             Script = 'scripts/l2/Test-L2TaskTypeStations.ps1'; Inputs = @() }
+        @{ Key = 'l2_peer_publish_cache'; Name = 'L2 scenario self-check (peer publish cache concurrency)'
+            Script = 'scripts/Test-L2PeerPublishCache.ps1'; Inputs = @() }
         @{ Key = 'g3_claim_record_backfill'; Name = 'G3 runner self-check (demand-bearing claim record backfill)'
             Script = 'scripts/Test-DemandBearingClaimRecordBackfill.ps1'
             # -SkipStores: no build, no database; the runner's AST only. The script can build (without -SkipStores), so the

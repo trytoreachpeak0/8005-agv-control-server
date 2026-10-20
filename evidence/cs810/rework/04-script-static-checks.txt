@@ -1,0 +1,36 @@
+parse: 282 files read, 0 with errors
+property: 143 variables recognised, 337 reads checked; skipped: 2 variables also assigned from something unrecognised, 0 calls in files that shadow a listed name
+string-null: 2 NULL-folding readers (Get-G3Scalar, Get-Scalar); 2432 comparisons with $null read, 38 variables held a reader's result, 1 exempted
+ok    parse: a syntax error is reported with its file and line
+ok    parse: a clean file is not reported
+ok    parse: both files were read
+ok    catalog: every listed helper resolved to a literal object
+ok    catalog: Get-L2OperationResults has the shape of Get-L2Inbound, without PayloadJson
+ok    catalog: Get-L2RealInbound carries PayloadJson
+ok    catalog: a listed function without a literal object is refused
+ok    property: $result.PayloadJson off Get-L2OperationResults through Wait-L2RealOrLast is reported at line 12
+ok    property: $refusal.PayloadJson off Get-L2RealInbound is not reported (bc22cfd25^ line 222)
+ok    property: both variables were recognised
+ok    property: direct assignment, foreach variable and an index into @() are each checked
+ok    property: a variable also assigned from something unknown is skipped and counted
+ok    property: a file that defines its own function of a listed name is not judged by the listed shape
+ok    string catalog: only an unguarded any-SQL reader casting to [string] is a NULL-folding helper
+ok    string catalog: Get-G3Scalar is derived from G3RecoveryCommon.ps1, Get-G3Count is not
+ok    string catalog: Get-L2RealScalar (guarded) and Get-L2JourneyStage (fixed column) are not NULL-folding
+ok    string-null: $null -eq $closedReason (bc22cfd25^ line 170), $x -eq $null and $null -ne (Get-G3Scalar ...) are reported
+ok    string-null: the comparisons that were checked include the three
+ok    string-null: a file whose own Get-G3Scalar returns rows is not judged as the shared one
+ok    string-null: an exempted comparison is not reported, the one beside it is
+ok    string-null: an exemption that matches nothing is reported stale
+ok    string-null premise: ForcedRecoveryGeneration is a non-null long in the repository's model snapshot
+ok    string-null premise: the same column as long? in that entity voids it (a long in another entity does not save it)
+ok    string-null premise: a voided exemption lets the comparison be reported, saying why
+ok    string-null premise: an exempted function that no longer reads the premised column is reported
+ok    repository: every script parses
+ok    repository: parse read at least 200 scripts
+ok    repository: no property read outside its helper's object
+ok    repository: property audit recognised at least 100 variables and 250 reads
+ok    repository: no NULL-folding reader result compared with $null
+ok    repository: every string-null exemption still matches
+ok    repository: string-null derived Get-G3Scalar, read at least 1000 $null comparisons and 30 reader variables
+32/32 passed

@@ -1,0 +1,6 @@
+swept 1233 tracked input files
+BAD   skips when only scripts/run-staged-g3.ps1 changed -> {"Run":true,"Reason":"runs: 1 of the 1 changed path(s) can reach the L2 round, first scripts/run-staged-g3.ps1","Inputs":["scripts/run-staged-g3.ps1"],"LeftOut":[]}
+BAD   skips when only scripts/run-journey-g3.ps1 changed -> {"Run":true,"Reason":"runs: 1 of the 1 changed path(s) can reach the L2 round, first scripts/run-journey-g3.ps1","Inputs":["scripts/run-journey-g3.ps1"],"LeftOut":[]}
+BAD   skips when all of those changed together -> {"Run":true,"Reason":"runs: 2 of the 16 changed path(s) can reach the L2 round, first scripts/run-staged-g3.ps1","Inputs":["scripts/run-staged-g3.ps1","scripts/run-journey-g3.ps1"],"LeftOut":["docs/README.md","docs/defects/20260916-arrival-trusted-on-a-session-row-pinned-for-one-iteration.md","evidence/cs630/green/anything.txt","tests/ControlServer.Tests/MultiVehicleExecutionTests.cs","README.md","CLAUDE.md","ControlServer.http",".github/workflows/test.yml",".github/workflows/g3.yml",".github/workflows/release.yml","scripts/Invoke-NightlyG3.ps1","scripts/Install-ControlServerLocal.ps1","scripts/Update-ControlServerLocal.ps1","scripts/Test-DataRootLockWait.ps1"]}
+1309 case(s) passed
+L2_SCENARIO_RUN_SCOPE_SELFTEST_FAILED: 3 case(s)
