@@ -130,7 +130,15 @@ jobs:
       UseSharedCompilation: 'false'
 
     steps:
+      # Without evidence/ (control-server#804): about nine tenths of the repository's files, and nothing this job runs
+      # reads them -- not the build, not Invoke-L2Scenario.ps1 or a module or scenario it loads (they name evidence/ only
+      # in comments), not Test-L2ReadSnapshot.ps1. The scope step below diffs commits, which needs no worktree file.
       - uses: actions/checkout@v7
+        with:
+          sparse-checkout-cone-mode: false
+          sparse-checkout: |
+            /*
+            !/evidence/
 
       # Since control-server#630 (the user's decision on 2026-10-11): a pull request whose changes reach nothing this
       # round consumes ends the job green here, without building or running a scenario, and says so in a notice and
@@ -597,12 +605,23 @@ jobs:
 
           # Build once, here, for every lane: a build under a running lane would overwrite the executables
           # it is running, so each scenario gets -SkipBuild. From the repository root so global.json picks
-          # the SDK.
+          # the SDK. Every project in the solution but tests/ (control-server#804): no L2 process loads the test
+          # project, and compiling it was about 25 of the build's 57 seconds. The list is read out of the solution
+          # each time, so a project added to it is built here without anyone remembering to.
+          $l2Projects = @([regex]::Matches((Get-Content -Raw -LiteralPath ./ControlServer.sln), '"([^"]+\.csproj)"') |
+              ForEach-Object { $_.Groups[1].Value } | Where-Object { -not $_.StartsWith('tests\') })
+          if (@($l2Projects | Where-Object { $_ -ceq 'src\ControlServer.Host\ControlServer.Host.csproj' }).Count -ne 1) {
+              Stop-L2Setup "Could not read the projects out of ControlServer.sln: $($l2Projects -join ', ')"
+          }
+          $l2Filter = Join-Path $env:RUNNER_TEMP "l2-build-$env:GITHUB_RUN_ID-$env:GITHUB_RUN_ATTEMPT.slnf"
+          @{ solution = @{ path = (Resolve-Path ./ControlServer.sln).Path; projects = $l2Projects } } |
+              ConvertTo-Json -Depth 4 | Set-Content -LiteralPath $l2Filter -Encoding utf8NoBOM
           Write-Host '::group::Build'
-          & dotnet build ./ControlServer.sln -c Release --nologo
+          Write-Host "Building $($l2Projects.Count) projects (ControlServer.sln without tests/): $($l2Projects -join ', ')"
+          & dotnet build $l2Filter -c Release --nologo
           $buildCode = $LASTEXITCODE
           Write-Host '::endgroup::'
-          if ($buildCode -ne 0) { Stop-L2Setup "dotnet build ControlServer.sln -c Release exited with $buildCode" }
+          if ($buildCode -ne 0) { Stop-L2Setup "dotnet build ControlServer.sln (without tests/) -c Release exited with $buildCode" }
 
           # A few seconds, here and not in test.yml because it needs this build's Microsoft.Data.Sqlite: the read snapshot
           # the multi-read charging probes go through (control-server#510), against real SQLite in WAL mode. A transaction
@@ -723,9 +742,16 @@ jobs:
     steps:
       # Each repository in its own subdirectory. A peer checked out into the server's work tree would
       # sit inside it, and a peer's clean-tree check is what Get-L2PeerPublish relies on.
+      # Without evidence/, as in the scenarios job (control-server#804). The two peers below keep a full checkout:
+      # Get-L2PeerPublish clones each one from its checkout, and a sparse checkout is a blob:none partial clone that
+      # such a clone would have to fill from GitHub.
       - uses: actions/checkout@v7
         with:
           path: control-server
+          sparse-checkout-cone-mode: false
+          sparse-checkout: |
+            /*
+            !/evidence/
 
       - uses: actions/checkout@v7
         with:
@@ -895,12 +921,21 @@ jobs:
           $werBefore = @(Get-Process WerFault -ErrorAction SilentlyContinue | ForEach-Object Id)
 
           # Build once for every run: -SkipBuild then, as in the scenarios job. From the repository root so
-          # global.json picks the SDK.
+          # global.json picks the SDK. Without tests/, read out of the solution as in the scenarios job (control-server#804).
+          $l2Projects = @([regex]::Matches((Get-Content -Raw -LiteralPath ./ControlServer.sln), '"([^"]+\.csproj)"') |
+              ForEach-Object { $_.Groups[1].Value } | Where-Object { -not $_.StartsWith('tests\') })
+          if (@($l2Projects | Where-Object { $_ -ceq 'src\ControlServer.Host\ControlServer.Host.csproj' }).Count -ne 1) {
+              Stop-RigSetup "Could not read the projects out of ControlServer.sln: $($l2Projects -join ', ')"
+          }
+          $l2Filter = Join-Path $env:RUNNER_TEMP "real-rig-build-$env:GITHUB_RUN_ID-$env:GITHUB_RUN_ATTEMPT.slnf"
+          @{ solution = @{ path = (Resolve-Path ./ControlServer.sln).Path; projects = $l2Projects } } |
+              ConvertTo-Json -Depth 4 | Set-Content -LiteralPath $l2Filter -Encoding utf8NoBOM
           Write-Host '::group::Build'
-          & dotnet build ./ControlServer.sln -c Release --nologo
+          Write-Host "Building $($l2Projects.Count) projects (ControlServer.sln without tests/): $($l2Projects -join ', ')"
+          & dotnet build $l2Filter -c Release --nologo
           $buildCode = $LASTEXITCODE
           Write-Host '::endgroup::'
-          if ($buildCode -ne 0) { Stop-RigSetup "dotnet build ControlServer.sln -c Release exited with $buildCode" }
+          if ($buildCode -ne 0) { Stop-RigSetup "dotnet build ControlServer.sln (without tests/) -c Release exited with $buildCode" }
           # Belt and braces for the environment above: anything a build still left running goes now.
           & dotnet build-server shutdown *> $null
 

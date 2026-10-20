@@ -1,0 +1,17 @@
+Test run for C:\work\8005-wt\cs804-8005-agv-control-server\tests\ControlServer.Tests\bin\Release\net8.0\win-x64\ControlServer.Tests.dll (.NETCoreApp,Version=v8.0)
+VSTest version 17.11.1 (x64)
+
+Starting test execution, please wait...
+A total of 1 test files matched the specified pattern.
+[xUnit.net 00:00:12.31]     ControlServer.Tests.FieldOpsSessionTests.BetweenCommandsTheSessionHoldsNoHandleOnTheDatabaseFile [FAIL]
+  Failed ControlServer.Tests.FieldOpsSessionTests.BetweenCommandsTheSessionHoldsNoHandleOnTheDatabaseFile [1 s]
+  Error Message:
+   System.IO.IOException : The process cannot access the file because it is being used by another process.
+  Stack Trace:
+     at System.IO.FileSystem.MoveFile(String sourceFullPath, String destFullPath, Boolean overwrite)
+   at ControlServer.Tests.FieldOpsSessionTests.BetweenCommandsTheSessionHoldsNoHandleOnTheDatabaseFile() in C:\work\8005-wt\cs804-8005-agv-control-server\tests\ControlServer.Tests\FieldOpsSessionTests.cs:line 81
+   at ControlServer.Tests.FieldOpsSessionTests.BetweenCommandsTheSessionHoldsNoHandleOnTheDatabaseFile() in C:\work\8005-wt\cs804-8005-agv-control-server\tests\ControlServer.Tests\FieldOpsSessionTests.cs:line 83
+   at ControlServer.Tests.FieldOpsSessionTests.BetweenCommandsTheSessionHoldsNoHandleOnTheDatabaseFile() in C:\work\8005-wt\cs804-8005-agv-control-server\tests\ControlServer.Tests\FieldOpsSessionTests.cs:line 83
+--- End of stack trace from previous location ---
+
+Failed!  - Failed:     1, Passed:     3, Skipped:     0, Total:     4, Duration: 7 s - ControlServer.Tests.dll (net8.0)

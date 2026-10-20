@@ -45,6 +45,16 @@ internal static partial class Program
         // evidence ends up holding a mangled agvId -- which reads as a real mismatch later.
         Console.OutputEncoding = new System.Text.UTF8Encoding(false);
 
+        if (args.Length > 0 && args[0] == SessionCommand)
+        {
+            return await SessionAsync(args);
+        }
+        return await RunCommandAsync(args);
+    }
+
+    /// <summary>一条命令：解析参数、开库、执行。进程入口与 <see cref="SessionAsync"/> 的每一行都走这里。</summary>
+    private static async Task<int> RunCommandAsync(string[] args)
+    {
         if (args.Length == 0)
         {
             return Usage("no command given");
@@ -788,6 +798,9 @@ internal static partial class Program
             "  activate-charging-policy --version <n> --activated-by <person> --fleet <keys>"
             + " [--allow-non-field-approval] [--dry-run]");
         Console.Error.WriteLine("  charging-policy                 [--version <n>] [--fleet <keys>]   read-only");
+        Console.Error.WriteLine(
+            "  session   reads commands from stdin, one JSON array of arguments per line, runs each in this process and"
+            + $" ends each one's output with '{SessionExitMarker}<exit code>' (control-server#804, the L2 rig's setup)");
         Console.Error.WriteLine();
         Console.Error.WriteLine(
             "import-area-assignments takes a UTF-8 CSV whose header is exactly"
