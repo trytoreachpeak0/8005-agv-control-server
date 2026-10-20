@@ -347,6 +347,57 @@ Start-Sleep -Seconds 120
                 ($exact.Count -eq 2 -and @($exact | Where-Object { $_.Extent.Text -match 'Get-G3PortHolderText' }).Count -eq 2) "$($exact.Count) function(s)"
         }
     }
+
+    # --- 3. the shadow runner releases its desktop lock ------------------------------------------------------------
+    # Invoke-AuthorizedAbsentObservationShadow.ps1 takes the desktop lock inside Start-ExactPeers and releases it in
+    # the script's finally. Until control-server#809 the function assigned a local $desktopLock, the script-level one
+    # stayed $null, and Exit-DesktopLock released nothing: the lock went only when the process exited. Here the
+    # function's own lock statement and the finally's release, lifted verbatim, run in that same shape -- a script
+    # declaring $desktopLock, a function taking the lock, a plain call, the release -- in a child that stays alive
+    # afterwards, so that only the release can free the lock. Enter-/Exit-DesktopLock stand in over a mutex of this
+    # check's own: the scope is under test, not DesktopLock.psm1 (Test-DesktopLockQueueing.ps1 has that).
+    $shadowFile = 'Invoke-AuthorizedAbsentObservationShadow.ps1'
+    $shadowAst = Get-RunnerAst (Join-Path $ScriptRoot $shadowFile)
+    $peers = @($shadowAst.FindAll({ param($n) $n -is [System.Management.Automation.Language.FunctionDefinitionAst] -and $n.Name -eq 'Start-ExactPeers' }, $true))
+    $enters = @(if ($peers.Count -eq 1) { Get-Calls $peers[0] 'Enter-DesktopLock' })
+    $lockStatement = if ($enters.Count -eq 1 -and $enters[0].Parent.Parent -is [System.Management.Automation.Language.AssignmentStatementAst]) { $enters[0].Parent.Parent }
+    $exits = @(Get-Calls $shadowAst 'Exit-DesktopLock')
+    $peerCalls = @(Get-Calls $shadowAst 'Start-ExactPeers' | Where-Object { -not (Test-InsideFunction $_) })
+    $declarations = @($shadowAst.EndBlock.Statements | Where-Object {
+            $_ -is [System.Management.Automation.Language.AssignmentStatementAst] -and $_.Left.Extent.Text -eq '$desktopLock' })
+    Check "${shadowFile}: the lock is taken by one assignment in Start-ExactPeers, which the run calls plainly, and released once" `
+        ($null -ne $lockStatement -and $exits.Count -eq 1 -and $peerCalls.Count -eq 1 -and $peerCalls[0].InvocationOperator -eq 'Unknown' -and
+         $declarations.Count -eq 1) "$($enters.Count) Enter-DesktopLock in Start-ExactPeers, $($exits.Count) Exit-DesktopLock, $($peerCalls.Count) call(s), $($declarations.Count) declaration(s)"
+    if ($null -ne $lockStatement -and $exits.Count -eq 1 -and $declarations.Count -eq 1) {
+        $lockName = "Global\W2G-SelfCheck-ShadowDesktopLock-$([guid]::NewGuid().ToString('n'))"
+        $released = Join-Path $work 'shadow-released'
+        $done = Join-Path $work 'shadow-done'
+        $harness = @"
+`$selfCheckLockName = '$lockName'
+function Enter-DesktopLock { param([string]`$Reason) `$m = [Threading.Mutex]::new(`$false, `$selfCheckLockName); `$null = `$m.WaitOne(0); [pscustomobject]@{ Mutex = `$m } }
+function Exit-DesktopLock { param(`$Handle) if (`$null -eq `$Handle) { return }; `$Handle.Mutex.ReleaseMutex(); `$Handle.Mutex.Dispose() }
+`$stamp = 'self-check'
+$($declarations[0].Extent.Text)
+function Start-ExactPeers {
+    $($lockStatement.Extent.Text)
+}
+Start-ExactPeers
+$($exits[0].Parent.Extent.Text)
+Set-Content -LiteralPath '$released' -Value released
+Set-Content -LiteralPath '__MARKER__' -Value ready
+while (-not (Test-Path -LiteralPath '$done')) { Start-Sleep -Milliseconds 100 }
+"@
+        $shadowChild = Start-Child 'shadow-desktop-lock' $harness
+        $probeMutex = [Threading.Mutex]::new($false, $lockName)
+        $free = $false
+        try { $free = $probeMutex.WaitOne(0) } catch [Threading.AbandonedMutexException] { $free = $true }
+        if ($free) { $probeMutex.ReleaseMutex() }
+        $probeMutex.Dispose()
+        Set-Content -LiteralPath $done -Value done
+        $null = $shadowChild.WaitForExit(10000)
+        Check "${shadowFile}: after its finally's Exit-DesktopLock, with the process still alive, another process takes the desktop lock at once" `
+            $free "the lock is still held: Start-ExactPeers' $($lockStatement.Extent.Text) left the script's `$desktopLock `$null"
+    }
 }
 finally {
     foreach ($child in $children) {
