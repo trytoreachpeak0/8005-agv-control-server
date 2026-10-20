@@ -1,0 +1,39 @@
+# g3.yml run 39436562681 (manual), control-server perf/cs585-g3-runner-speedup 52127c0f6307eea241cac916206f8ec03ab6a676, onboard 985bfc9c (w2g/fp-v2-impl tip, same as the before round), vm01 cs-desktop, 2026-10-20
+staged          exit 0    248s  stageRemoved=True  stage there now: n/a (runner machine)
+restart         exit 0    236s  stageRemoved=True  stage there now: n/a (runner machine)
+demand-bearing  exit 0    250s  stageRemoved=True  stage there now: n/a (runner machine)
+journey         exit 0   1829s  stageRemoved=True  stage there now: n/a (runner machine)
+verdict staged          PASS
+verdict restart         PASS
+verdict demand-bearing  PASS
+verdict journey         PASS
+
+journey status: JOURNEY_G3_PASS
+scenario                                           outcome   build   setup   total
+build-control-server                               exit 0      146
+g3-journey-demand-to-pickup                        PASS          0      69      96
+g3-pickup-load-and-correction                      PASS          0      11      73
+g3-load-cancellation                               PASS          0      12     134
+g3-load-cancellation-before-load                   PASS          0      11      39
+g3-sublot-rejected                                 PASS          0      11      48
+g3-predeparture-check-expires                      PASS          0      11      78
+g3-operation-result-unknown-reconcile              PASS          0      12      42
+g3-exception-resume                                PASS          0      11      50
+g3-exception-compensate                            PASS          0      12      44
+g3-fault-cargo-handoff                             PASS          0      12      44
+g3-forced-mechanical-recovery                      PASS          0      12      46
+g3-manual-charging-return                          PASS          0      12      39
+g3-slot-fault-declaration                          PASS          0      11     216
+g3-task-type-admission-fail-closed                 PASS          0      12      79
+g3-reversed-direction-journey                      PASS          0      12      74
+g3-multi-stop-plan                                 PASS          0      11     223
+g3-waiting-point-idle-return                       PASS          0      15      89
+g3-automatic-charging-cycle                        PASS          0      11     131
+g3-manual-station-clearance                        PASS          0      11      37
+g3-unable-to-charge-field-confirmation             PASS          0      11      53
+
+clone+fetch+checkout (four repositories): 35s
+runner build (once):                       146s
+scenario builds (sum):                     0s
+scenario setup to ControlServer live (sum): 290s
+scenarios (sum):                           1,635s

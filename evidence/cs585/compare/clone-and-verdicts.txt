@@ -1,0 +1,9 @@
+# control-server#585 before (run 39428537143) vs after (run 39436562681): ControlServer clone steps per runner, and verdicts
+staged          before STAGED_G3_RECOVERY_REPLAY_PASS   not-PASS assertions 0; clone-control-server 4s, fetch-control-server 2s, checkout-control-server 80s
+staged          after  STAGED_G3_RECOVERY_REPLAY_PASS   not-PASS assertions 0; clone-control-server 12s, sparse-control-server 0s, fetch-control-server 2s, checkout-control-server 4s
+restart         before STAGED_G3_PROCESS_RESTART_PASS   not-PASS assertions 0; clone-control-server 4s, fetch-control-server 2s, checkout-control-server 81s
+restart         after  STAGED_G3_PROCESS_RESTART_PASS   not-PASS assertions 0; clone-control-server 5s, sparse-control-server 0s, fetch-control-server 2s, checkout-control-server 3s
+demand-bearing  before DEMAND_BEARING_G3_VECTORS_PASS   not-PASS assertions 0; clone-control-server 4s, checkout-control-server 102s
+demand-bearing  after  DEMAND_BEARING_G3_VECTORS_PASS   not-PASS assertions 0; clone-control-server 13s, sparse-control-server 0s, checkout-control-server 3s
+journey         before JOURNEY_G3_PASS                  not-PASS assertions 0; clone-control-server 4s, fetch-control-server 2s, checkout-control-server 85s
+journey         after  JOURNEY_G3_PASS                  not-PASS assertions 0; clone-control-server 5s, sparse-control-server 0s, fetch-control-server 2s, checkout-control-server 3s

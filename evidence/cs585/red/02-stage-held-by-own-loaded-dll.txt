@@ -1,0 +1,9 @@
+# Test-G3RunnerStage.ps1 with the held-by-self case, on Complete-G3RunnerStage as of 52127c0f.
+# Same failure as g3.yml run 39436562681 (staged, restart, demand-bearing: G3_STAGE_NOT_REMOVED on
+# publish\control-server\e_sqlite3.dll, which the runner's own pwsh loaded with Add-Type -Path).
+G3 disk: 769.21 GiB free on C:\ (floor 0 GiB)
+FAIL Complete-G3RunnerStage: a DLL this process loaded from its stage -- the rest goes at once, the DLL stays while it runs -- {"removed":false,"reason":"NOT_REMOVED","sourcesLeft":true,"runtimeLeft":true,"dllLeft":true} WARNING: G3_STAGE_NOT_REMOVED: C:\Users\szy\AppData\Local\Temp\g3-runner-stage-selfcheck-b2e6e0309f1346cfadfb03ae8547ac3a\stage-held-by-self keeps 3 files, 0 GiB, after 2 attempts: Access to the path 'C:\Users\szy\AppData\Local\Temp\g3-runner-stage-selfcheck-b2e6e0309f1346cfadfb03ae8547ac3a\stage-held-by-self\publish\control-server\G3SelfCheckHeld.dll' is denied. The verdict stands; remove it once whatever holds it has exited.
+
+FAIL Complete-G3RunnerStage: ... and once that process has exited, the stage is gone -- still there after 60 s: publish, runtime, sources, control-server, G3SelfCheckHeld.dll, controlserver.db, control-server, src, a.cs
+2 check(s) failed.
+exit 1

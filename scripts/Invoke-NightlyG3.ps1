@@ -145,7 +145,10 @@ try {
         $evidence = Join-Path $evidenceRoot $runner.Name
         $log = Join-Path $logsRoot "$($runner.Name).log"
         $arguments = @('-NoProfile', '-File', (Join-Path $RunnerRoot $runner.Script), '-StageRoot', $stage, '-EvidenceRoot', $evidence,
-            '-SelfCheckControlServerCommit', $ControlServerCommit)
+            '-SelfCheckControlServerCommit', $ControlServerCommit,
+            # This round's floor, checked above, not the runner's own default of 30 (control-server#585): vm01's C:
+            # is smaller than that, and the round already stops at its own floor before each runner.
+            '-MinFreeGiB', $MinFreeGiB)
         if ($runner.Onboard) { $arguments += '-SelfCheckOnboardCommit', $OnboardCommit }
         if ($runner.Name -eq 'journey') { $arguments += '-BatchId', 'nightly-g3' }
 

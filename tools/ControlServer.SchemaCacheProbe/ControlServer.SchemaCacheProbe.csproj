@@ -1,0 +1,18 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <!-- Test-only driver for CompiledSchemaCache (control-server#584), run as its own process by
+       SchemaCompilationCacheTests. It exists so the cache can be tested over a schema tree a test has changed: the
+       validator itself refuses any tree that is not the contract ProtocolCandidateIdentity names, and gets no switch
+       to skip that check. It has the validator's reason to be a process of its own, too: Corvus.Json.Validator brings
+       System.Text.Json 10 and Roslyn, which must stay out of the test host. Corvus is referenced here directly because
+       the validator keeps it PrivateAssets, and because its build targets are what preserve the compilation context
+       the generated code is compiled against. -->
+  <PropertyGroup>
+    <OutputType>Exe</OutputType>
+  </PropertyGroup>
+  <ItemGroup>
+    <PackageReference Include="Corvus.Json.Validator" PrivateAssets="all" />
+  </ItemGroup>
+  <ItemGroup>
+    <ProjectReference Include="..\ControlServer.SchemaConformance\ControlServer.SchemaConformance.csproj" />
+  </ItemGroup>
+</Project>

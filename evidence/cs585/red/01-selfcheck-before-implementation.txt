@@ -1,0 +1,46 @@
+# Test-G3RunnerStage.ps1 on the test commit (stub G3RunnerStage.psm1, runners unchanged at 1f31a4a490c08f46ab07564418c67f8a0cef9aa9)
+PASS run-staged-g3.ps1 defines one New-ExactClone
+FAIL run-staged-g3.ps1: New-ExactClone takes -ExcludeEvidence -- no such parameter
+PASS run-staged-g3-restart.ps1 defines one New-ExactClone
+FAIL run-staged-g3-restart.ps1: New-ExactClone takes -ExcludeEvidence -- no such parameter
+FAIL run-demand-bearing-g3-vectors.ps1 defines one New-ExactClone -- not exactly one
+PASS run-journey-g3.ps1 defines one New-ExactClone
+FAIL run-journey-g3.ps1: New-ExactClone takes -ExcludeEvidence -- no such parameter
+FAIL run-journey-g3.ps1 builds once: one build-control-server, dotnet build ControlServer.sln -c Release in the clone -- 0 found: 
+FAIL run-journey-g3.ps1: the build is in the scenarios' try, before them, outside the loop, and a failed build throws -- builds 0, scenario calls 1, tries 1
+FAIL run-journey-g3.ps1: every scenario is started with -SkipBuild -- Invoke-LoggedCommand -Name "scenario-$scenario" -WorkingDirectory $controlSource -FilePath 'pwsh' `
+            -Arguments @('-NoProfile', '-File', $rig,
+                '-Scenario', $scenario,
+                '-EvidenceRoot', $scenarioEvidence,
+                '-Repository', $controlSource,
+                '-OnboardRepository', $onboardSource,
+                '-SimulatorRepository', $simulatorSource,
+                '-PeerCacheRoot', $peerCacheRoot,
+                '-BatchId', $BatchId) `
+            -LogPath (Join-Path $logsRoot "scenario-$scenario.log") -AllowNonZeroExit
+FAIL Assert-G3FreeDiskSpace: a floor of 0 passes and returns the free GiB -- Not implemented (control-server#585). / 
+FAIL Assert-G3FreeDiskSpace: red -- below the floor throws G3_DISK_LOW naming the drive and the floor -- Not implemented (control-server#585).
+FAIL Assert-G3FreeDiskSpace: a relative path is the drive of the current location -- Not implemented (control-server#585).
+FAIL run-staged-g3.ps1: -MinFreeGiB, default 30 -- 
+FAIL run-staged-g3.ps1: the disk is checked once, at top level, before the stage is created -- check at , stage at 46
+FAIL run-staged-g3-restart.ps1: -MinFreeGiB, default 30 -- 
+FAIL run-staged-g3-restart.ps1: the disk is checked once, at top level, before the stage is created -- check at , stage at 38
+FAIL run-demand-bearing-g3-vectors.ps1: -MinFreeGiB, default 30 -- 
+FAIL run-demand-bearing-g3-vectors.ps1: the disk is checked once, at top level, before the stage is created -- check at , stage at 38
+FAIL run-journey-g3.ps1: -MinFreeGiB, default 30 -- 
+FAIL run-journey-g3.ps1: the disk is checked once, at top level, before the stage is created -- check at , stage at 33
+FAIL Invoke-NightlyG3.ps1 hands its own -MinFreeGiB to every runner -- not found in $arguments
+FAIL Complete-G3RunnerStage: a passed run's stage is removed -- Not implemented (control-server#585).
+FAIL Complete-G3RunnerStage: a red run's stage stays, whole -- Not implemented (control-server#585).
+FAIL Complete-G3RunnerStage: a stage it cannot remove is a warning and removed=false, not a throw -- Not implemented (control-server#585). / removed  / warnings ''
+PASS G3RunnerStage.psm1 never runs dotnet build-server shutdown (it would stop other sessions' builds)
+FAIL run-staged-g3.ps1 ends: $passed once, Complete-G3RunnerStage with it, then the throw -- assignments 0; last two: $resultJson | if ($status -notin @('STAGED_SLICE_PASS', 'STAGED_G3_RECOVERY_REPLAY_PASS') -or
+
+FAIL run-staged-g3-restart.ps1 ends: $passed once, Complete-G3RunnerStage with it, then the throw -- assignments 0; last two: $resultJson | if ($status -ne 'STAGED_G3_PROCESS_RESTART_PASS' -or $secretLeakFiles.Count -ne 0) {
+
+FAIL run-demand-bearing-g3-vectors.ps1 ends: $passed once, Complete-G3RunnerStage with it, then the throw -- assignments 0; last two: $resultJson | if ($status -ne 'DEMAND_BEARING_G3_VECTORS_PASS' -or $secretLeakFiles.Count -ne 0) {
+
+FAIL run-journey-g3.ps1 ends: $passed once, Complete-G3RunnerStage with it, then the throw -- assignments 0; last two: $resultJson | if ($status -ne 'JOURNEY_G3_PASS' -or $secretLeakFiles.Count -ne 0) {
+
+26 check(s) failed.
+exit 1
