@@ -20,13 +20,17 @@
          reason, or four PASS from a failed job, read 未跑完; a red runner's own job failure is not blamed twice), naming
          each red runner and what is red in it (cut at ten, saying how many more), the commits and
          the run link, saying that it is not gate evidence; a round that stopped early or never started says why. A
-         `|` inside a failure reason is escaped, so it cannot break the table.
+         `|` inside a failure reason is escaped, so it cannot break the table. A night is named by the morning it runs
+         into, and says when main's trigger was planned, when GitHub fired it and how late, when the round started and
+         its deadline (control-server#807); without the trigger's inputs it makes no lateness up.
       3. Waiting for the CI real rig (l2.yml's real-rig job, the other holder of the cs-desktop runner): which runs are
          busy, read from the REST shapes, and the wait on a fake clock -- idle at once, busy then idle, busy for the
          whole limit (NOT_STARTED_RIG_BUSY, naming what was busy), and a query that cannot answer, which is busy, not
          idle. Nothing is ever cancelled; the wait only decides whether this night starts.
-      4. The start deadline: a scheduled night starts no runner after 04:00 CST of the night it started in, a schedule
-         GitHub started late runs nothing, and a manual dispatch is bounded by its own length.
+      4. The start deadline: a night runs from 19:00 CST to 19:00 CST, and a scheduled night starts no runner after
+         07:00 CST of the morning it runs into, whichever side of midnight GitHub started it; a schedule started past
+         that runs nothing; both hours are parameters; a manual dispatch is bounded by its own length. And how late
+         GitHub fired main's trigger, from its daily cron and the moment its run was created (control-server#807).
       5. The round itself (Invoke-NightlyG3.ps1, most of the minute), against stand-in runners named like the real
          ones: the four run in order, each with the override parameters its real runner declares (demand-bearing has
          no onboard one) and a stage and evidence root of its own; a PASS runner's stage is removed, a red one keeps
@@ -191,9 +195,25 @@ try {
                    (New-Verdict 'staged' 'FAIL' @('secondForcedRecoveryWhileFirstUnsettledIsRejected')), (New-Verdict 'restart' 'PASS'),
                    (New-Verdict 'demand-bearing' 'PASS'), (New-Verdict 'journey' 'PASS')) }
            Contains = @('红：staged**'); NotContains = @('g3 作业', '全绿') }
+        # control-server#807: a night says when it was planned, when GitHub fired it and how late, when it started and
+        # its deadline, so that a night that did not run reads as late, not as red. Times are CST.
+        @{ Name = 'a late night says planned, fired, how late, started and the deadline'; Args = @{ Trigger = 'schedule'; Verdicts = $allPass
+                TriggerCron = '37 14 * * *'; TriggeredAtUtc = [DateTimeOffset]::Parse('2026-10-20T17:19:11Z')
+                StartedAtUtc = [DateTimeOffset]::Parse('2026-10-20T17:21:00Z'); DeadlineUtc = [DateTimeOffset]::Parse('2026-10-20T23:00:00Z') }
+           Contains = @('2026-10-21', '计划 22:37', '实际触发 01:19（晚 162 分钟）', '本轮开始 01:21', '截止 07:00', '全绿'); NotContains = @('2026-10-20') }
+        # A night that starts on time, before midnight, is named by the morning it runs into, as one that GitHub started
+        # after midnight is: the same night has one name.
+        @{ Name = 'a night started before midnight is named by its morning'; Args = @{ Trigger = 'schedule'; Verdicts = $allPass
+                TriggerCron = '37 14 * * *'; TriggeredAtUtc = [DateTimeOffset]::Parse('2026-10-20T14:37:09Z')
+                StartedAtUtc = [DateTimeOffset]::Parse('2026-10-20T14:38:00Z'); DeadlineUtc = [DateTimeOffset]::Parse('2026-10-20T23:00:00Z') }
+           Contains = @('2026-10-21', '实际触发 22:37（晚 0 分钟）', '本轮开始 22:38'); NotContains = @('2026-10-20') }
+        @{ Name = 'past the deadline, without the trigger inputs: the deadline, and no lateness made up'; Args = @{ Trigger = 'schedule'; Verdicts = @()
+                StoppedBy = 'NOT_STARTED_DEADLINE'; DeadlineUtc = [DateTimeOffset]::Parse('2026-10-10T23:00:00Z') }
+           Contains = @('未跑：NOT_STARTED_DEADLINE', '截止 07:00', '本轮开始 01:05'); NotContains = @('计划', '实际触发', '晚 ') }
     )
     foreach ($case in $commentCases) {
-        $arguments = @{} + $common + $case.Args
+        $arguments = @{} + $common
+        foreach ($key in $case.Args.Keys) { $arguments[$key] = $case.Args[$key] }
         $comment = $null
         $thrown = $null
         try { $comment = Format-NightlyG3Comment @arguments } catch { $thrown = $_.Exception.Message }
@@ -260,23 +280,52 @@ try {
     }
 
     # --- 4. the start deadline -----------------------------------------------------------------------------------
-    # A scheduled night starts no runner after 04:00 CST (20:00 UTC) of the night it started in, which keeps it clear of
-    # the golden renderer's 05:30 verify; GitHub may start a schedule late, and a start already past it runs nothing. A
-    # manual dispatch is bounded by its own length instead.
+    # A night runs from 19:00 CST to 19:00 CST the next day, and a scheduled night starts no runner after 07:00 CST
+    # (23:00 UTC) of the morning it runs into (control-server#807; 04:00 until then, which only kept clear of the golden
+    # renderer that did not move to vm-win-01). main's trigger fires at 22:37 CST and GitHub has started it up to six and
+    # a half hours late: a start on either side of midnight belongs to the same night and the same 07:00, a start already
+    # past it runs nothing, and from 19:00 it is the next night. The hours are parameters. A manual dispatch is bounded
+    # by its own length instead.
     $deadlineCases = @(
-        @{ Name = 'scheduled at 01:05 CST'; Event = 'schedule'; Start = '2026-10-10T17:05:00Z'; Deadline = '2026-10-10T20:00:00Z' }
-        @{ Name = 'scheduled at 00:50 CST'; Event = 'schedule'; Start = '2026-10-10T16:50:00Z'; Deadline = '2026-10-10T20:00:00Z' }
-        @{ Name = 'scheduled at 03:59 CST'; Event = 'schedule'; Start = '2026-10-10T19:59:00Z'; Deadline = '2026-10-10T20:00:00Z' }
-        @{ Name = 'a schedule GitHub started at 05:30 CST'; Event = 'schedule'; Start = '2026-10-10T21:30:00Z'; Deadline = '2026-10-10T20:00:00Z' }
-        @{ Name = 'a schedule GitHub started at 09:10 CST, the next UTC day'; Event = 'schedule'; Start = '2026-10-11T01:10:00Z'; Deadline = '2026-10-10T20:00:00Z' }
+        @{ Name = 'scheduled at 22:37 CST, on time'; Event = 'schedule'; Start = '2026-10-20T14:37:00Z'; Deadline = '2026-10-20T23:00:00Z' }
+        @{ Name = 'a schedule GitHub started at 01:19 CST, after midnight'; Event = 'schedule'; Start = '2026-10-20T17:19:00Z'; Deadline = '2026-10-20T23:00:00Z' }
+        @{ Name = 'a schedule GitHub started at 06:59 CST'; Event = 'schedule'; Start = '2026-10-20T22:59:00Z'; Deadline = '2026-10-20T23:00:00Z' }
+        @{ Name = 'a schedule GitHub started at 07:01 CST'; Event = 'schedule'; Start = '2026-10-20T23:01:00Z'; Deadline = '2026-10-20T23:00:00Z' }
+        @{ Name = 'a schedule GitHub started at 18:59 CST, still that night'; Event = 'schedule'; Start = '2026-10-21T10:59:00Z'; Deadline = '2026-10-20T23:00:00Z' }
+        @{ Name = 'a schedule started at 19:00 CST is the next night'; Event = 'schedule'; Start = '2026-10-21T11:00:00Z'; Deadline = '2026-10-21T23:00:00Z' }
+        @{ Name = 'the old 01:05 CST trigger'; Event = 'schedule'; Start = '2026-10-10T17:05:00Z'; Deadline = '2026-10-10T23:00:00Z' }
+        @{ Name = 'a deadline hour of 4 still gives 04:00 CST'; Event = 'schedule'; Start = '2026-10-10T17:05:00Z'; Deadline = '2026-10-10T20:00:00Z'; Extra = @{ DeadlineHourCst = 4 } }
+        @{ Name = 'a night starting at 21:00 CST puts 20:30 in the night before'; Event = 'schedule'; Start = '2026-10-20T12:30:00Z'; Deadline = '2026-10-19T23:00:00Z'; Extra = @{ NightStartHourCst = 21 } }
         @{ Name = 'a manual dispatch in the afternoon'; Event = 'workflow_dispatch'; Start = '2026-10-11T06:00:00Z'; Deadline = '2026-10-11T09:00:00Z' }
+        @{ Name = 'a manual dispatch at 22:37 CST is not a night'; Event = 'workflow_dispatch'; Start = '2026-10-20T14:37:00Z'; Deadline = '2026-10-20T17:37:00Z' }
     )
     foreach ($case in $deadlineCases) {
         $deadline = $null
         $thrown = $null
-        try { $deadline = Get-NightlyG3StartDeadline -EventName $case.Event -StartedAtUtc ([DateTimeOffset]::Parse($case.Start)) } catch { $thrown = $_.Exception.Message }
+        $extra = if ($case.Extra) { $case.Extra } else { @{} }
+        try { $deadline = Get-NightlyG3StartDeadline -EventName $case.Event -StartedAtUtc ([DateTimeOffset]::Parse($case.Start)) @extra } catch { $thrown = $_.Exception.Message }
         Check "start deadline, $($case.Name): $($case.Deadline)" ($null -eq $thrown -and $deadline -is [DateTimeOffset] -and $deadline -eq [DateTimeOffset]::Parse($case.Deadline)) `
             "$thrown got $deadline"
+    }
+
+    # How late GitHub fired main's trigger (control-server#807): the trigger passes its cron and the moment its own run
+    # was created, and the latest planned firing at or before that moment is what it was late against. Only a daily
+    # 'M H * * *' cron is read; anything else, or no cron (the trigger dispatched by hand), gives nothing, not an error.
+    $delayCases = @(
+        @{ Name = 'fired on time'; Cron = '37 14 * * *'; At = '2026-10-20T14:37:20Z'; Scheduled = '2026-10-20T14:37:00Z'; Late = 0 }
+        @{ Name = 'fired 162 minutes late, past midnight UTC+8'; Cron = '37 14 * * *'; At = '2026-10-20T17:19:11Z'; Scheduled = '2026-10-20T14:37:00Z'; Late = 162 }
+        @{ Name = 'fired late enough to cross the UTC date'; Cron = '0 17 * * *'; At = '2026-10-19T21:19:11Z'; Scheduled = '2026-10-19T17:00:00Z'; Late = 259 }
+        @{ Name = 'fired before the hour on the next UTC day'; Cron = '37 14 * * *'; At = '2026-10-21T02:10:00Z'; Scheduled = '2026-10-20T14:37:00Z'; Late = 693 }
+        @{ Name = 'no cron: the trigger dispatched by hand'; Cron = ''; At = '2026-10-20T14:37:20Z'; Scheduled = $null }
+        @{ Name = 'not a daily cron'; Cron = '*/15 * * * *'; At = '2026-10-20T14:37:20Z'; Scheduled = $null }
+    )
+    foreach ($case in $delayCases) {
+        $delay = $null
+        $thrown = $null
+        try { $delay = Get-NightlyG3TriggerDelay -Cron $case.Cron -TriggeredAtUtc ([DateTimeOffset]::Parse($case.At)) } catch { $thrown = $_.Exception.Message }
+        $ok = $null -eq $thrown -and $(if ($null -eq $case.Scheduled) { $null -eq $delay } else {
+                $null -ne $delay -and $delay.scheduledAtUtc -eq [DateTimeOffset]::Parse($case.Scheduled) -and $delay.lateMinutes -eq $case.Late })
+        Check "trigger delay, $($case.Name)" $ok "$thrown got $(${delay}?.scheduledAtUtc) late $(${delay}?.lateMinutes)"
     }
 
     # --- 5. the round itself, against stand-in runners ------------------------------------------------------------
@@ -422,6 +471,14 @@ if ([DateTimeOffset]::UtcNow -lt [DateTimeOffset]::Parse($env:NIGHTLY_G3_TEST_CO
     Check 'g3.yml: no schedule of its own, a nightly input, and nightly runs are graded as the schedule in gate and report' `
         ($workflow -notmatch '(?m)^\s*schedule:\s*$' -and $workflow -match '(?m)^\s*nightly:\s*$' -and
          ([regex]::Matches($workflow, "G3_NIGHTLY\s*-eq\s*'true'")).Count -ge 2) 'see g3.yml'
+    # control-server#807: main's trigger passes its cron and the moment GitHub fired it, and the report job hands both,
+    # with the gate's deadline, to the comment. Inputs main sends that this file does not declare make GitHub refuse the
+    # dispatch, so both are declared here (this merges before the trigger that sends them).
+    $reportJobText = [regex]::Match($workflow, '(?ms)^  report:\s*$.*').Value
+    Check 'g3.yml: trigger_cron and triggered_at inputs, and the report passes them and the deadline to the comment' `
+        ($workflow -match '(?m)^      trigger_cron:\s*$' -and $workflow -match '(?m)^      triggered_at:\s*$' -and
+         $reportJobText -match 'inputs\.trigger_cron' -and $reportJobText -match 'inputs\.triggered_at' -and $reportJobText -match 'needs\.gate\.outputs\.deadline' -and
+         $reportJobText -match '-TriggerCron\b' -and $reportJobText -match '-TriggeredAtUtc\b' -and $reportJobText -match '-DeadlineUtc\b') 'see g3.yml'
 
     # Review A, D, E of PR #591. A: this self-check runs in test.yml, beside the override one, as the documents say.
     # D: the report job runs whatever the other two did, or a red g3 job leaves no comment and "no comment = no run" lies.
