@@ -17,9 +17,10 @@ name: g3-nightly-trigger
 # nightly=true is what makes g3.yml treat the dispatch as the night it stands for (its 07:00 CST start deadline and its
 # label), since to g3.yml every run from here is a workflow_dispatch. trigger_cron and triggered_at (the cron this run
 # fired for, and when GitHub created this run) let the night's comment say how late GitHub fired it (control-server#807).
-# g3.yml must declare both before this sends them, or GitHub refuses the dispatch (Unexpected inputs provided): the
-# fp/v2-impl side of control-server#807 merges first. Reading triggered_at may fail; the night is dispatched anyway,
-# without it.
+# g3.yml must declare both before this sends them, or GitHub refuses the dispatch (422, Unexpected inputs provided): the
+# fp/v2-impl side of control-server#807 merges first. Should the order be reversed anyway, or g3.yml lose the inputs,
+# a refusal that names unexpected inputs is retried once without these two, so the night still runs, only without its
+# lateness (review S2 of PR #817). Reading triggered_at may fail; the night is dispatched anyway, without it.
 #
 # 14:37 UTC, 22:37 CST (control-server#807). Until then 01:00 CST, which GitHub started two to six and a half hours late
 # (10-11 to 10-19), past g3.yml's 04:00 CST deadline on three of the four nights to 10-20. Off the hour, where GitHub's
@@ -34,6 +35,9 @@ on:
   schedule:
     - cron: '37 14 * * *'
   # By hand, to check the trigger itself: gh workflow run g3-nightly-trigger.yml -R trytoreachpeak0/8005-agv-control-server
+  # This dispatches a real night (nightly=true): between 19:00 and 07:00 CST it runs a whole round, holding cs-desktop
+  # about an hour, and comments on control-server#581; from 07:00 to 19:00 it starts no runner and comments
+  # NOT_STARTED_DEADLINE (review S3 of PR #817). Ask the coordinator first, as for the CI real rig.
   workflow_dispatch:
 
 permissions:
@@ -62,13 +66,26 @@ jobs:
               Write-Host "::warning title=Nightly G3 trigger::Could not read when this run was created, so the comment will not say how late: $($_.Exception.Message)"
           }
           $inputs = @{ ref = 'fp/v2-impl'; nightly = 'true'; trigger_cron = "$env:TRIGGER_CRON"; triggered_at = $triggeredAt }
-          $request = @{
-              Uri = "$api/workflows/g3.yml/dispatches"
-              Method = 'POST'
-              Headers = $headers
-              Body = (@{ ref = 'fp/v2-impl'; inputs = $inputs } | ConvertTo-Json -Compress)
-              ContentType = 'application/json; charset=utf-8'
-              TimeoutSec = 45
+          $dispatch = {
+              param($with)
+              $request = @{
+                  Uri = "$api/workflows/g3.yml/dispatches"
+                  Method = 'POST'
+                  Headers = $headers
+                  Body = (@{ ref = 'fp/v2-impl'; inputs = $with } | ConvertTo-Json -Compress)
+                  ContentType = 'application/json; charset=utf-8'
+                  TimeoutSec = 45
+              }
+              Invoke-RestMethod @request | Out-Null
           }
-          Invoke-RestMethod @request | Out-Null
+          try {
+              & $dispatch $inputs
+          } catch {
+              # g3.yml on fp/v2-impl without these two inputs: once more without them, so the night is not lost.
+              if ([int]$_.Exception.Response?.StatusCode -ne 422 -or "$($_.ErrorDetails.Message)" -notmatch 'Unexpected inputs') { throw }
+              Write-Host "::warning title=Nightly G3 trigger::g3.yml refused trigger_cron/triggered_at ($(($_.ErrorDetails.Message -replace '\s+', ' ').Trim())); dispatching without them, so tonight's comment will not say how late."
+              $inputs.Remove('trigger_cron')
+              $inputs.Remove('triggered_at')
+              & $dispatch $inputs
+          }
           Write-Host "Dispatched g3.yml on fp/v2-impl (cron '$env:TRIGGER_CRON', triggered at '$triggeredAt'). The run: $env:GITHUB_SERVER_URL/$env:GITHUB_REPOSITORY/actions/workflows/g3.yml"
