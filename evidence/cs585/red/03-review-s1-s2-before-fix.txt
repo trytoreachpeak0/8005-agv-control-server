@@ -1,0 +1,23 @@
+# Test-G3RunnerStage.ps1 with review S1 (remover checks the process it waits for) and S2 (evidence root outside the stage, absolute stage root), on 2d9c568fc before the fix
+G3 disk: 761.82 GiB free on C:\ (floor 0 GiB)
+FAIL Start-G3StageRemovalAfterExit: red -- a process id now naming another process keeps the stage and logs G3_STAGE_REMOVAL_SKIPPED -- The term 'Start-G3StageRemovalAfterExit' is not recognized as a name of a cmdlet, function, script file, or executable program.
+Check the spelling of the name, or if a path was included, verify that the path is correct and try again. / exited False / stage there True / log ''
+FAIL Start-G3StageRemovalAfterExit: red -- a wait that runs out keeps the stage and logs G3_STAGE_REMOVAL_SKIPPED -- The term 'Start-G3StageRemovalAfterExit' is not recognized as a name of a cmdlet, function, script file, or executable program.
+Check the spelling of the name, or if a path was included, verify that the path is correct and try again. / exited False / stage there True / log ''
+FAIL Assert-G3EvidenceOutsideStage: evidence inside the stage throws G3_EVIDENCE_IN_STAGE -- The term 'Assert-G3EvidenceOutsideStage' is not recognized as a name of a cmdlet, function, script file, or executable program.
+Check the spelling of the name, or if a path was included, verify that the path is correct and try again.
+FAIL Assert-G3EvidenceOutsideStage: the stage inside the evidence throws G3_EVIDENCE_IN_STAGE -- The term 'Assert-G3EvidenceOutsideStage' is not recognized as a name of a cmdlet, function, script file, or executable program.
+Check the spelling of the name, or if a path was included, verify that the path is correct and try again.
+FAIL Assert-G3EvidenceOutsideStage: the same directory throws G3_EVIDENCE_IN_STAGE -- The term 'Assert-G3EvidenceOutsideStage' is not recognized as a name of a cmdlet, function, script file, or executable program.
+Check the spelling of the name, or if a path was included, verify that the path is correct and try again.
+FAIL Assert-G3EvidenceOutsideStage: a relative evidence root inside the stage throws G3_EVIDENCE_IN_STAGE -- The term 'Assert-G3EvidenceOutsideStage' is not recognized as a name of a cmdlet, function, script file, or executable program.
+Check the spelling of the name, or if a path was included, verify that the path is correct and try again.
+FAIL Assert-G3EvidenceOutsideStage: siblings sharing a prefix passes -- The term 'Assert-G3EvidenceOutsideStage' is not recognized as a name of a cmdlet, function, script file, or executable program.
+Check the spelling of the name, or if a path was included, verify that the path is correct and try again.
+FAIL run-staged-g3.ps1: the evidence root is refused inside the stage, before either is created -- guard at , stage at 48
+FAIL run-staged-g3-restart.ps1: the evidence root is refused inside the stage, before either is created -- guard at , stage at 40
+FAIL run-demand-bearing-g3-vectors.ps1: the evidence root is refused inside the stage, before either is created -- guard at , stage at 40
+FAIL run-journey-g3.ps1: the evidence root is refused inside the stage, before either is created -- guard at , stage at 35
+FAIL Complete-G3RunnerStage: red -- a relative stage root throws, nothing removed -- 
+12 check(s) failed.
+exit 1

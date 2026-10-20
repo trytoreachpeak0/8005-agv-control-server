@@ -342,6 +342,60 @@ $result = Complete-G3RunnerStage -StageRoot $Stage -Passed $true -Attempts 2 -Re
     Check 'Complete-G3RunnerStage: ... and once that process has exited, the stage is gone' (-not (Test-Path -LiteralPath $stage)) `
         "still there after 60 s: $(@(Get-ChildItem -LiteralPath $stage -Recurse -Force -ErrorAction Ignore | ForEach-Object Name) -join ', ')"
 
+    # The remover after exit deletes nothing unless the process it waits for is the one that loaded the files (review S1
+    # of PR #806): a process id reused by another process, or a wait that runs out, keeps the stage and says why in
+    # <stage>.removal.log beside it. Both against this very process, which outlives the remover.
+    $me = [Diagnostics.Process]::GetCurrentProcess()
+    foreach ($case in @(
+            @{ Name = 'a process id now naming another process'; Start = $me.StartTime.ToUniversalTime().AddMinutes(-5); Timeout = 60; Expect = 'another process' },
+            @{ Name = 'a wait that runs out'; Start = $me.StartTime.ToUniversalTime(); Timeout = 2; Expect = 'still running' })) {
+        $stage = New-Stage "stage-remover-$($case.Expect -replace ' ', '-')"
+        $thrown = $null
+        $remover = $null
+        try { $remover = Start-G3StageRemovalAfterExit -StageRoot $stage -ProcessId $PID -ProcessStartTimeUtc $case.Start -TimeoutSeconds $case.Timeout }
+        catch { $thrown = $_.Exception.Message }
+        $exited = $null -ne $remover -and $remover.WaitForExit(30000)
+        $log = "$stage.removal.log"
+        $logText = if (Test-Path -LiteralPath $log) { Get-Content -Raw -LiteralPath $log } else { '' }
+        Check "Start-G3StageRemovalAfterExit: red -- $($case.Name) keeps the stage and logs G3_STAGE_REMOVAL_SKIPPED" `
+            ($null -eq $thrown -and $exited -and (Test-Path -LiteralPath (Join-Path $stage 'runtime\controlserver.db')) -and
+             $logText -match "^G3_STAGE_REMOVAL_SKIPPED: .*$([regex]::Escape($case.Expect))") `
+            "$thrown / exited $exited / stage there $(Test-Path -LiteralPath $stage) / log '$logText'"
+    }
+
+    # The evidence root is never inside the stage, nor the stage inside it (review S2 of PR #806): a PASS would remove
+    # run-result.json with the stage.
+    $nested = @(
+        @{ Name = 'evidence inside the stage'; Stage = (Join-Path $scratch 'w\st'); Evidence = (Join-Path $scratch 'w\st\ev'); Throws = $true },
+        @{ Name = 'the stage inside the evidence'; Stage = (Join-Path $scratch 'w\ev\st'); Evidence = (Join-Path $scratch 'w\ev'); Throws = $true },
+        @{ Name = 'the same directory'; Stage = (Join-Path $scratch 'w\x'); Evidence = (Join-Path $scratch 'w\X\'); Throws = $true },
+        @{ Name = 'a relative evidence root inside the stage'; Stage = (Join-Path $scratch 'w\rel'); Evidence = 'rel\ev'; Throws = $true },
+        @{ Name = 'siblings sharing a prefix'; Stage = (Join-Path $scratch 'w\st'); Evidence = (Join-Path $scratch 'w\st2'); Throws = $false })
+    New-Item -ItemType Directory -Path (Join-Path $scratch 'w') | Out-Null
+    Push-Location -LiteralPath (Join-Path $scratch 'w')
+    try {
+        foreach ($case in $nested) {
+            $thrown = $null
+            try { Assert-G3EvidenceOutsideStage -StageRoot $case.Stage -EvidenceRoot $case.Evidence } catch { $thrown = $_.Exception.Message }
+            $ok = if ($case.Throws) { $thrown -match '^G3_EVIDENCE_IN_STAGE: ' } else { $null -eq $thrown }
+            Check "Assert-G3EvidenceOutsideStage: $($case.Name) $(if ($case.Throws) { 'throws G3_EVIDENCE_IN_STAGE' } else { 'passes' })" $ok "$thrown"
+        }
+    }
+    finally { Pop-Location }
+    foreach ($runner in $runnerFiles.Keys) {
+        $top = @($runnerAsts[$runner].EndBlock.Statements)
+        $guardAt = @(for ($i = 0; $i -lt $top.Count; $i++) {
+                if ($top[$i].Extent.Text -match '^Assert-G3EvidenceOutsideStage -StageRoot \$StageRoot -EvidenceRoot \$EvidenceRoot$') { $i } })
+        $stageAt = @(for ($i = 0; $i -lt $top.Count; $i++) { if ($top[$i].Extent.Text -match '^New-Item -ItemType Directory -Path \$StageRoot\b') { $i } })
+        Check "$($runnerFiles[$runner]): the evidence root is refused inside the stage, before either is created" `
+            ($guardAt.Count -eq 1 -and $stageAt.Count -eq 1 -and $guardAt[0] -lt $stageAt[0]) "guard at $($guardAt -join ','), stage at $($stageAt -join ',')"
+    }
+    $thrown = $null
+    Push-Location -LiteralPath $scratch
+    try { $null = Complete-G3RunnerStage -StageRoot 'relative-stage' -Passed $true -RetrySeconds 0 6>$null } catch { $thrown = $_.Exception.Message }
+    finally { Pop-Location }
+    Check 'Complete-G3RunnerStage: red -- a relative stage root throws, nothing removed' ($thrown -match 'not an absolute path') "$thrown"
+
     $moduleAst = Get-RunnerAst (Join-Path $ScriptRoot 'G3RunnerStage.psm1')
     $shutdown = @($moduleAst.FindAll({ param($node) $node -is [System.Management.Automation.Language.CommandAst] -and $node.Extent.Text -match 'build-server' }, $true))
     Check 'G3RunnerStage.psm1 never runs dotnet build-server shutdown (it would stop other sessions'' builds)' ($shutdown.Count -eq 0) "$($shutdown.Count) found"
