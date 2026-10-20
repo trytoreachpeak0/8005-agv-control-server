@@ -39,7 +39,20 @@ param(
     [Parameter(Mandatory = $true)]
     [ValidatePattern('^[0-9a-f]{64}$')]
     [string] $ExpectedPythonRuntimeSha256,
-    [switch] $PreflightOnly
+    [switch] $PreflightOnly,
+    # control-server#809: this run's loopback ports, by default the ones it always bound. The slots simulator's two are
+    # now written into its settings and the onboard's IO module rather than left at the builds' own 1502 and 58006.
+    # All five are locked for the run and checked free before anything starts (G3RunnerPorts.psm1).
+    [ValidateRange(1024, 65535)]
+    [int] $ProxyPort = 58888,
+    [ValidateRange(1024, 65535)]
+    [int] $SessionPort = 59005,
+    [ValidateRange(1024, 65535)]
+    [int] $HealthPort = 59007,
+    [ValidateRange(1024, 65535)]
+    [int] $SimulatorModbusPort = 1502,
+    [ValidateRange(1024, 65535)]
+    [int] $SimulatorHttpPort = 58006
 )
 
 $ErrorActionPreference = 'Stop'
@@ -48,12 +61,19 @@ Set-StrictMode -Version Latest
 # This run puts WPF windows on the machine's single interactive desktop, which 8005-mes-ingest's
 # golden renderer and desktop suite also claim. The mutex name is the cross-repository contract.
 Import-Module (Join-Path $PSScriptRoot 'DesktopLock.psm1') -Force
+Import-Module (Join-Path $PSScriptRoot 'G3RunnerPorts.psm1') -Force
 
 $productionDatabase = 'C:\ProgramData\8005\ControlServer\data\controlserver.db'
-$proxyPort = 58888
-$sessionPort = 59005
-$healthPort = 59007
-$simulatorPorts = @(1502, 58006)
+# control-server#809: every port this run binds, for the lock and the preflight. Refused here when two are the same
+# or one is in the L2 port slots.
+$runPorts = [ordered]@{
+    ProxyPort = $ProxyPort
+    SessionPort = $SessionPort
+    HealthPort = $HealthPort
+    SimulatorModbusPort = $SimulatorModbusPort
+    SimulatorHttpPort = $SimulatorHttpPort
+}
+Assert-G3RunnerPortSet -Ports $runPorts
 $stamp = [DateTimeOffset]::UtcNow.ToString('yyyyMMddTHHmmssfffZ') + '-' +
     [guid]::NewGuid().ToString('N')
 $root = Join-Path $env:TEMP "controlserver-authorized-absent-shadow-$stamp"
@@ -81,6 +101,8 @@ $stateProcess = $null
 # Released in `finally` after every peer is stopped. Declared here so that release is unconditional
 # even when the run dies during preflight, before the lock was ever taken.
 $desktopLock = $null
+# control-server#809. Released last, after the desktop lock.
+$portLock = $null
 $result = 'FAIL'
 $failure = $null
 $sessionGeneration = $null
@@ -128,7 +150,7 @@ function Wait-ExactListeningPort(
         }
         if ($owners.Count -gt 0) {
             $script:boundaryViolation = $true
-            throw "Port $Port is owned by an unexpected process."
+            throw "Port $Port is owned by an unexpected process: $(Get-G3PortHolderText -Port $Port)."
         }
         Start-Sleep -Milliseconds 200
     }
@@ -146,15 +168,10 @@ function Assert-ExactListeningPort(
     if ($Process.HasExited -or $Process.ProcessName -ne $ExpectedName -or
         $owners.Count -ne 1 -or [int]$owners[0] -ne $Process.Id) {
         $script:boundaryViolation = $true
-        throw "$ExpectedName no longer exclusively owns port $Port."
+        $holders = Get-G3PortHolderText -Port $Port
+        throw "$ExpectedName no longer exclusively owns port $Port (listening: $(if ($holders) { $holders } else { 'nobody' }))."
     }
     $script:boundaryCheckCount++
-}
-
-function Assert-PortFree([int] $Port) {
-    if (Get-NetTCPConnection -State Listen -LocalPort $Port -ErrorAction SilentlyContinue) {
-        throw "Port $Port is already in use."
-    }
 }
 
 function Set-RestrictedDirectoryAcl([string] $Path) {
@@ -570,9 +587,21 @@ function Start-ExactPeers {
     $config.vehicleSafety.endpoint = 'http://localhost:58007/api/onboard/v1/vehicle-safety'
     $config.vehicleSafety.expectedVehicleKey = [string]$serviceConfig.JourneyRuntime.vehicleKey
     $config.logging.directory = Join-Path $logRoot 'onboard'
+    # control-server#809: the simulator's Modbus port, told rather than left at the build's own 1502.
+    Set-G3OnboardIoModulePort -Settings $config -ModbusPort $SimulatorModbusPort
     [IO.File]::WriteAllText(
         $configPath,
         ($config | ConvertTo-Json -Depth 30),
+        [Text.UTF8Encoding]::new($false))
+
+    # control-server#809: the simulator's two ports, told rather than left at its build's own 1502 and 58006. After
+    # the artifact hash above, like the onboard's settings.
+    $simulatorConfigPath = Join-Path $simulatorRoot 'simulator.settings.json'
+    $simulatorConfig = [IO.File]::ReadAllText($simulatorConfigPath) | ConvertFrom-Json
+    Set-G3SimulatorPorts -Settings $simulatorConfig -ModbusPort $SimulatorModbusPort -HttpPort $SimulatorHttpPort
+    [IO.File]::WriteAllText(
+        $simulatorConfigPath,
+        ($simulatorConfig | ConvertTo-Json -Depth 30),
         [Text.UTF8Encoding]::new($false))
 
     # The simulator and the onboard client are both WPF -- the onboard one deliberately visible --
@@ -582,7 +611,9 @@ function Start-ExactPeers {
     #
     # Taken here rather than at the top of the run: everything above is hashing, ACL work and
     # preflight assertions, none of which touch the desktop, so a queued run waits holding nothing.
-    $desktopLock = Enter-DesktopLock -Reason "authorized absent-observation shadow run $stamp"
+    # $script:, not a local: the finally's Exit-DesktopLock releases the script's $desktopLock. Until control-server#809
+    # this assigned a local, the script's stayed $null, and the lock went only when the process exited.
+    $script:desktopLock = Enter-DesktopLock -Reason "authorized absent-observation shadow run $stamp"
 
     $simulatorArguments = @{
         FilePath = Join-Path $simulatorRoot 'SQCD_8005AGV_Simulator.exe'
@@ -592,9 +623,9 @@ function Start-ExactPeers {
         Environment = (New-ChildEnvironment @{})
     }
     $script:simulatorProcess = Start-Process @simulatorArguments
-    Wait-ExactListeningPort 1502 $script:simulatorProcess 'SQCD_8005AGV_Simulator' 30
-    Wait-ExactListeningPort 58006 $script:simulatorProcess 'SQCD_8005AGV_Simulator' 30
-    $health = Invoke-RestMethod -Uri 'http://127.0.0.1:58006/api/v1/health' -TimeoutSec 3
+    Wait-ExactListeningPort $SimulatorModbusPort $script:simulatorProcess 'SQCD_8005AGV_Simulator' 30
+    Wait-ExactListeningPort $SimulatorHttpPort $script:simulatorProcess 'SQCD_8005AGV_Simulator' 30
+    $health = Invoke-RestMethod -Uri "http://127.0.0.1:$SimulatorHttpPort/api/v1/health" -TimeoutSec 3
     if ([string]$health.status -ne 'READY') { throw 'Simulator is not READY.' }
 
     $onboardArguments = @{
@@ -615,8 +646,8 @@ function Start-ExactPeers {
         Assert-ExactListeningPort $proxyPort $proxyProcess 'python'
         Assert-ExactListeningPort $sessionPort $hostProcess 'ControlServer.Host'
         Assert-ExactListeningPort $healthPort $hostProcess 'ControlServer.Host'
-        Assert-ExactListeningPort 1502 $simulatorProcess 'SQCD_8005AGV_Simulator'
-        Assert-ExactListeningPort 58006 $simulatorProcess 'SQCD_8005AGV_Simulator'
+        Assert-ExactListeningPort $SimulatorModbusPort $simulatorProcess 'SQCD_8005AGV_Simulator'
+        Assert-ExactListeningPort $SimulatorHttpPort $simulatorProcess 'SQCD_8005AGV_Simulator'
         if ($script:onboardProcess.HasExited) {
             throw "Onboard exited with code $($script:onboardProcess.ExitCode)."
         }
@@ -671,9 +702,10 @@ try {
     Copy-Item -LiteralPath $stateScript -Destination $runStateScript
     Assert-RunToolHashes
 
-    foreach ($port in @($proxyPort, $sessionPort, $healthPort) + $simulatorPorts) {
-        Assert-PortFree $port
-    }
+    # control-server#809: the ports are ours for the run, and nobody listens on them -- a holder is named, not just
+    # reported as "in use". Before Start-ExactPeers takes the desktop lock.
+    $portLock = Enter-G3PortLock -Port $runPorts.Values -Reason "authorized absent-observation shadow run $stamp"
+    Assert-G3PortsFree -Ports $runPorts
     if (-not (Test-Path -LiteralPath $stopMarker -PathType Leaf)) {
         throw 'The installed journey stop marker is missing.'
     }
@@ -876,8 +908,8 @@ try {
         Assert-ExactListeningPort $proxyPort $proxyProcess 'python'
         Assert-ExactListeningPort $sessionPort $hostProcess 'ControlServer.Host'
         Assert-ExactListeningPort $healthPort $hostProcess 'ControlServer.Host'
-        Assert-ExactListeningPort 1502 $simulatorProcess 'SQCD_8005AGV_Simulator'
-        Assert-ExactListeningPort 58006 $simulatorProcess 'SQCD_8005AGV_Simulator'
+        Assert-ExactListeningPort $SimulatorModbusPort $simulatorProcess 'SQCD_8005AGV_Simulator'
+        Assert-ExactListeningPort $SimulatorHttpPort $simulatorProcess 'SQCD_8005AGV_Simulator'
         Assert-SafetyStopped
         Assert-SafetyToolHashes
         Assert-RunToolHashes
@@ -1013,7 +1045,7 @@ finally {
     }
     catch { $cleanupFailures.Add('Restricted Python runtime cleanup failed.') }
 
-    $portsStillListening = @(@($proxyPort, $sessionPort, $healthPort) + $simulatorPorts |
+    $portsStillListening = @(@($proxyPort, $sessionPort, $healthPort, $SimulatorModbusPort, $SimulatorHttpPort) |
         Where-Object { Get-NetTCPConnection -State Listen -LocalPort $_ -ErrorAction SilentlyContinue })
     try {
         $productionDatabaseAfter = Get-FileBundleSha256 @(
@@ -1150,6 +1182,8 @@ finally {
     # Last, after every peer has been stopped and every post-check has run. Releasing earlier would
     # hand the desktop to another repository while this run's WPF windows were still closing.
     Exit-DesktopLock -Handle $desktopLock
+    # After the desktop lock (G3RunnerPorts.psm1: port locks first, released last).
+    Exit-G3PortLock -Handle $portLock
 }
 
 if ($result -notin @('PASS', 'PREFLIGHT_PASS')) { exit 1 }

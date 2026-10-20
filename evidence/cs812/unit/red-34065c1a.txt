@@ -1,0 +1,30 @@
+  Determining projects to restore...
+  All projects are up-to-date for restore.
+  ControlServer.Domain -> C:\work\8005-wt\cs812-8005-agv-control-server\src\ControlServer.Domain\bin\Debug\net8.0\win-x64\ControlServer.Domain.dll
+  ControlServer.TestDoubles -> C:\work\8005-wt\cs812-8005-agv-control-server\tools\ControlServer.TestDoubles\bin\Debug\net8.0\win-x64\ControlServer.TestDoubles.dll
+  ControlServer.Dashboard -> C:\work\8005-wt\cs812-8005-agv-control-server\src\ControlServer.Dashboard\bin\Debug\net8.0\win-x64\ControlServer.Dashboard.dll
+  ControlServer.Application -> C:\work\8005-wt\cs812-8005-agv-control-server\src\ControlServer.Application\bin\Debug\net8.0\win-x64\ControlServer.Application.dll
+  ControlServer.ClockSkewProxy -> C:\work\8005-wt\cs812-8005-agv-control-server\tools\ControlServer.ClockSkewProxy\bin\Debug\net8.0\win-x64\ControlServer.ClockSkewProxy.dll
+  ControlServer.ProtocolFaultProxy -> C:\work\8005-wt\cs812-8005-agv-control-server\tools\ControlServer.ProtocolFaultProxy\bin\Debug\net8.0\win-x64\ControlServer.ProtocolFaultProxy.dll
+  ControlServer.FakeOnboard -> C:\work\8005-wt\cs812-8005-agv-control-server\tools\ControlServer.FakeOnboard\bin\Debug\net8.0\win-x64\ControlServer.FakeOnboard.dll
+  ControlServer.FakeRiot -> C:\work\8005-wt\cs812-8005-agv-control-server\tools\ControlServer.FakeRiot\bin\Debug\net8.0\win-x64\ControlServer.FakeRiot.dll
+  ControlServer.Infrastructure -> C:\work\8005-wt\cs812-8005-agv-control-server\src\ControlServer.Infrastructure\bin\Debug\net8.0\win-x64\ControlServer.Infrastructure.dll
+  ControlServer.Host -> C:\work\8005-wt\cs812-8005-agv-control-server\src\ControlServer.Host\bin\Debug\net8.0\win-x64\ControlServer.Host.dll
+  ControlServer.FieldOps -> C:\work\8005-wt\cs812-8005-agv-control-server\tools\ControlServer.FieldOps\bin\Debug\net8.0\win-x64\ControlServer.FieldOps.dll
+  ControlServer.SchemaConformance -> C:\work\8005-wt\cs812-8005-agv-control-server\tools\ControlServer.SchemaConformance\bin\Debug\net8.0\win-x64\ControlServer.SchemaConformance.dll
+  ControlServer.SchemaCacheProbe -> C:\work\8005-wt\cs812-8005-agv-control-server\tools\ControlServer.SchemaCacheProbe\bin\Debug\net8.0\win-x64\ControlServer.SchemaCacheProbe.dll
+  ControlServer.Tests -> C:\work\8005-wt\cs812-8005-agv-control-server\tests\ControlServer.Tests\bin\Debug\net8.0\win-x64\ControlServer.Tests.dll
+Test run for C:\work\8005-wt\cs812-8005-agv-control-server\tests\ControlServer.Tests\bin\Debug\net8.0\win-x64\ControlServer.Tests.dll (.NETCoreApp,Version=v8.0)
+VSTest version 17.11.1 (x64)
+
+Starting test execution, please wait...
+A total of 1 test files matched the specified pattern.
+[xUnit.net 00:00:04.05]     ControlServer.Tests.ServerConsoleEncodingTests.RedirectedStandardOutputIsUtf8WithoutAByteOrderMark [FAIL]
+  Failed ControlServer.Tests.ServerConsoleEncodingTests.RedirectedStandardOutputIsUtf8WithoutAByteOrderMark [295 ms]
+  Error Message:
+   关卡 (E585B3E58DA1) is not in the redirected output as UTF-8. The line it is in: 416E6F746865722070726F6365737320686F6C647320746865206C6F636B206F6E20646174616261736520433A5C55736572735C737A795C417070446174615C4C6F63616C5C54656D705C7732672D636F6E736F6C652D656E636F64696E672D39643362636234363530656334636632383465306662396637393030613762665C3F3F5C636F6E74726F6C7365727665722E64623B2077616974696E6720757020746F203130207320666F7220697420746F2062652072656C65617365642E0D
+  Stack Trace:
+     at ControlServer.Tests.ServerConsoleEncodingTests.RedirectedStandardOutputIsUtf8WithoutAByteOrderMark() in C:\work\8005-wt\cs812-8005-agv-control-server\tests\ControlServer.Tests\ServerConsoleEncodingTests.cs:line 55
+--- End of stack trace from previous location ---
+
+Failed!  - Failed:     1, Passed:     0, Skipped:     0, Total:     1, Duration: 313 ms - ControlServer.Tests.dll (net8.0)

@@ -129,6 +129,10 @@
         @{ Key = 'g3_runner_stage'; Name = 'G3 runner self-check (stage, clone and disk)'
             # control-server#585. Reads the four runners from a table of literal file names, which the name closure reaches.
             Script = 'scripts/Test-G3RunnerStage.ps1'; Inputs = @() }
+        @{ Key = 'g3_runner_ports'; Name = 'G3 runner self-check (ports, port locks and owner checks)'
+            # control-server#809. Reads the three runners and G3RunnerPorts.psm1 (with the L2 modules it imports) by
+            # literal file name, which the name closure reaches.
+            Script = 'scripts/Test-G3RunnerPorts.ps1'; Inputs = @() }
         @{ Key = 'install_data_root_lock_wait'; Name = 'Install and upgrade self-check (data root lock wait)'
             Script = 'scripts/Test-DataRootLockWait.ps1'; Inputs = @() }
         @{ Key = 'install_two_car_paths'; Name = 'Install and upgrade self-check (two-car safety projection, first readiness)'
@@ -170,6 +174,8 @@
             Script = 'scripts/l2/Test-L2SlotGroups.ps1'; Inputs = @() }
         @{ Key = 'l2_task_type_stations'; Name = 'L2 scenario self-check (task type stations)'
             Script = 'scripts/l2/Test-L2TaskTypeStations.ps1'; Inputs = @() }
+        @{ Key = 'l2_peer_publish_cache'; Name = 'L2 scenario self-check (peer publish cache concurrency)'
+            Script = 'scripts/Test-L2PeerPublishCache.ps1'; Inputs = @() }
         @{ Key = 'g3_claim_record_backfill'; Name = 'G3 runner self-check (demand-bearing claim record backfill)'
             Script = 'scripts/Test-DemandBearingClaimRecordBackfill.ps1'
             # -SkipStores: no build, no database; the runner's AST only. The script can build (without -SkipStores), so the

@@ -360,6 +360,16 @@ jobs:
         shell: pwsh
         run: pwsh -NoProfile -File ./scripts/Test-G3RunnerStage.ps1
 
+      # Seconds, no rig, no desktop: the staged, restart and shadow runners' ports (control-server#809). The port
+      # parameters and where they flow (the simulator's settings beside its binary, the onboard's IO module, the health
+      # URLs); G3RunnerPorts.psm1 against real mutexes and real listeners on 39001-39099 -- the per-port locks in
+      # ascending order, an abandoned one taken, the L2 slot range refused, a held port named by pid and path where the
+      # old health wait took it for the simulator; and the shadow runner's finally releasing its desktop lock.
+      - name: G3 runner self-check (ports, port locks and owner checks)
+        if: steps.self-check-scope.outputs.g3_runner_ports == 'true'
+        shell: pwsh
+        run: pwsh -NoProfile -File ./scripts/Test-G3RunnerPorts.ps1
+
       # About three minutes, no rig, no elevation, nothing outside %TEMP%: four cases wait out the scripts' real
       # 30-second limit. Install-ControlServerLocal.ps1 and Update-ControlServerLocal.ps1 run end to end against
       # stubs, and must neither copy nor delete a data root a live Host still holds (its <db>.instance-lock), nor
@@ -493,6 +503,16 @@ jobs:
         timeout-minutes: 2
         shell: pwsh
         run: pwsh -NoProfile -File ./scripts/l2/Test-L2TaskTypeStations.ps1
+
+      # control-server#810. Two pwsh processes publish the same peer commit into the same cache through
+      # Get-L2PeerPublish, with a stand-in build held mid-way: the second queues on the per-commit lock and reuses the
+      # first one's publish, a failed or killed build leaves nothing half-built, a waiter that times out touches
+      # nothing. git and pwsh only, under %TEMP%: no dotnet, no window, no fixed port, no rig. About 30 s on the laptop.
+      - name: L2 scenario self-check (peer publish cache concurrency)
+        if: steps.self-check-scope.outputs.l2_peer_publish_cache == 'true'
+        timeout-minutes: 3
+        shell: pwsh
+        run: pwsh -NoProfile -File ./scripts/Test-L2PeerPublishCache.ps1
 
       # control-server#627. The no-build half of control-server#544's self-check: section 0 hands hand-seeded baselines
       # to run-demand-bearing-g3-vectors.ps1's Get-ExpectedClaimRecordCount (taken from its AST) and asserts the

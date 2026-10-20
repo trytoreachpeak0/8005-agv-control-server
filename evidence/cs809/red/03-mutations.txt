@@ -1,0 +1,22 @@
+=== M1 restart -Settings default drifts from the param default (files changed: 1)
+FAIL run-staged-g3-restart.ps1: -SimulatorHttpPort is a -Settings entry of Get-G3RunnerProvenance, Given $SimulatorHttpPort, Default its param default -- Given SimulatorHttpPort, Default 58007; param default 58006
+G3EvidenceHonesty self-check: 1 check(s) came out the other way.
+exit=1
+=== M2 Get-G3RunnerProvenance ignores -Settings (files changed: 1)
+FAIL provenance, another simulator port: RUNNER_INPUT_OVERRIDE: SimulatorHttpPort, withheld -- {"runnerRepository":"C:\\Users\\szy\\AppData\\Local\\Temp\\g3-provenance-2537201d\\repo","runnerCommit":"d2088abc6ebe2129eea5755e671332f0901ebfd6","runnerWorktreeClean":true,"bindingAtHead":{"ControlServerCommit":"7763bcf1a03df01e319dbb9a43452aa90ed6f2fc","OnboardCommit":"a3fdb194be045c23a4661807f4d180833a419cf8","SimulatorCommit":"fb5f7c593742bf98bc3957b8729a38aad5321f28","ProtocolCommit":"18d4fb3495033624cab412a7ee784f675dfe4cc2"},"runnerSource":"COMMITTED_RUNNER","runnerDirtyPaths":[]}
+FAIL provenance, a path and a port overridden: one RUNNER_INPUT_OVERRIDE naming both -- {"runnerRepository":"C:\\Users\\szy\\AppData\\Local\\Temp\\g3-provenance-2537201d\\repo","runnerCommit":"d2088abc6ebe2129eea5755e671332f0901ebfd6","runnerWorktreeClean":true,"bindingAtHead":{"ControlServerCommit":"7763bcf1a03df01e319dbb9a43452aa90ed6f2fc","OnboardCommit":"a3fdb194be045c23a4661807f4d180833a419cf8","SimulatorCommit":"fb5f7c593742bf98bc3957b8729a38aad5321f28","ProtocolCommit":"18d4fb3495033624cab412a7ee784f675dfe4cc2"},"runnerSource":"RUNNER_INPUT_OVERRIDE: SharedRunnerSource","runnerDirtyPaths":[]}
+G3EvidenceHonesty self-check: 2 check(s) came out the other way.
+exit=1
+=== M3 staged drops the simulator owner check (files changed: 1)
+FAIL run-staged-g3.ps1: Assert-G3PortOwner -Process $simulator -Port $SimulatorHttpPort, $SimulatorModbusPort -- Assert-G3PortOwner -Process $control -Name 'control-server' -Port $ControlPort, $HealthPort `
+        -Description 'ControlServer answered /version' -ErrLog (Join-Path $logsRoot 'control.err.log')
+1 check(s) failed.
+exit=1
+=== M4 port locks taken in the given order (files changed: 1)
+FAIL lock: duplicates taken once, in ascending port order --  Global\W2G-Port-39007,Global\W2G-Port-39005,Global\W2G-Port-39006
+1 check(s) failed.
+exit=1
+=== M5 locks taken before a busy one are kept (files changed: 1)
+FAIL lock: after G3_PORT_LOCK_BUSY the ports taken before the busy one are released -- held: G3_PORT_LOCK_BUSY: another run holds port 39001 (Global\W2G-Port-39001); waited 0s for: self-check prober
+1 check(s) failed.
+exit=1

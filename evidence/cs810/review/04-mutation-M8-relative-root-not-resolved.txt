@@ -1,0 +1,57 @@
+mutation: 04-mutation-M8-relative-root-not-resolved
+self-check exit code: 1
+
+--- diff ---
+diff --git a/scripts/l2/L2.psm1 b/scripts/l2/L2.psm1
+index a9c4e043d..259f29428 100644
+--- a/scripts/l2/L2.psm1
++++ b/scripts/l2/L2.psm1
+@@ -628,7 +628,7 @@ function Get-L2PeerPublish {
+     # Absolute from here on, against PowerShell's location as the cmdlets below would resolve it: the lock name, git
+     # and the rename are .NET or native calls, which would resolve a relative root against the process's current
+     # directory instead (review S2 of PR #822).
+-    $CacheRoot = $ExecutionContext.SessionState.Path.GetUnresolvedProviderPathFromPSPath($CacheRoot)
++    $CacheRoot = $CacheRoot
+ 
+     $target = Join-Path $CacheRoot "$Name-$commit"
+     $publish = Join-Path $target 'publish'
+
+--- self-check ---
+PASS  1 second run queues -- queued=True building=False
+PASS  1 first run's build untouched while the second is there -- marker C:\Users\szy\AppData\Local\Temp\l2-peer-publish-selftest-f2b8b5b45de7\concurrent\cache\selfcheck-peer-27f086167f47ed05bece96219b6b89412e3c4c72.tmp-7655f69c\publish\marker-39800 present=True
+PASS  1 both succeed -- a: ok=True ; b: ok=True 
+PASS  1 both get the published path -- a=C:\Users\szy\AppData\Local\Temp\l2-peer-publish-selftest-f2b8b5b45de7\concurrent\cache\selfcheck-peer-27f086167f47ed05bece96219b6b89412e3c4c72\publish b=C:\Users\szy\AppData\Local\Temp\l2-peer-publish-selftest-f2b8b5b45de7\concurrent\cache\selfcheck-peer-27f086167f47ed05bece96219b6b89412e3c4c72\publish
+PASS  1 built exactly once -- builds=1
+PASS  1 the publish is the first run's build -- expected C:\Users\szy\AppData\Local\Temp\l2-peer-publish-selftest-f2b8b5b45de7\concurrent\cache\selfcheck-peer-27f086167f47ed05bece96219b6b89412e3c4c72\publish\marker-39800
+PASS  1 the second run reports FromCache -- a=False b=True
+PASS  1 publish.ok written -- C:\Users\szy\AppData\Local\Temp\l2-peer-publish-selftest-f2b8b5b45de7\concurrent\cache\selfcheck-peer-27f086167f47ed05bece96219b6b89412e3c4c72\publish.ok
+PASS  1 nothing left beside the cache directory -- 
+PASS  5 a later call reuses without building or waiting -- ok=True fromCache=True builds=1
+PASS  2 the failed build is reported -- Publishing selfcheck-peer failed; see C:\Users\szy\AppData\Local\Temp\l2-peer-publish-selftest-f2b8b5b45de7\failure\failed.json.logs\build-selfcheck-peer.log (the stand-in build failed halfway)
+PASS  2 the failed build leaves nothing in the cache root -- 
+PASS  2 the next call builds afresh -- ok=True  fromCache=False builds=2
+PASS  3 the waiter queues behind the holder -- queued=True
+PASS  3 the waiter builds after the holder died -- ok=True  fromCache=False
+PASS  3 the abandoned lock is reported -- L2_PEER_PUBLISH_WAITING: another run is publishing selfcheck-peer@27f086167f47ed05bece96219b6b89412e3c4c72 into C:\Users\szy\AppData\Local\Temp\l2-peer-publish-selftest-f2b8b5b45de7\killed\cache; queueing up to 1800s (Global\W2G-L2PeerPublish-selfcheck-peer-27f086167f47ed05bece96219b6b89412e3c4c72-47197614d54ead69)
+L2_PEER_PUBLISH_ABANDONED: the previous holder of Global\W2G-L2PeerPublish-selfcheck-peer-27f086167f47ed05bece96219b6b89412e3c4c72-47197614d54ead69 died without releasing it; taking it over and clearing what it left.
+L2_PEER_PUBLISH_ACQUIRED: selfcheck-peer@27f086167f47ed05bece96219b6b89412e3c4c72 is ours to publish or reuse
+PASS  3 the dead run's temporary directory is cleared -- 
+PASS  4 the impatient waiter fails with a named reason -- L2_PEER_PUBLISH_LOCK_BUSY: another run is still publishing selfcheck-peer@27f086167f47ed05bece96219b6b89412e3c4c72 into C:\Users\szy\AppData\Local\Temp\l2-peer-publish-selftest-f2b8b5b45de7\timeout\cache; waited 2s (Global\W2G-L2PeerPublish-selfcheck-peer-27f086167f47ed05bece96219b6b89412e3c4c72-9ed140abe6af12c6)
+PASS  4 the holder's build is untouched -- C:\Users\szy\AppData\Local\Temp\l2-peer-publish-selftest-f2b8b5b45de7\timeout\cache\selfcheck-peer-27f086167f47ed05bece96219b6b89412e3c4c72.tmp-21272d74\publish\marker-30464
+PASS  4 the holder then completes, and nobody else built -- ok=True  builds=1
+PASS  6 an unstamped cache directory is rebuilt -- ok=True 
+PASS  6 nothing left beside the cache directory -- 
+PASS  7 a run on another cache root does not wait -- queued=False
+PASS  7 both roots publish -- first= second=
+FAIL  9 a relative cache root resolves against PowerShell's location -- ok=False Could not rename the finished build cache\selfcheck-peer-27f086167f47ed05bece96219b6b89412e3c4c72.tmp-ebc8bd40 to cache\selfcheck-peer-27f086167f47ed05bece96219b6b89412e3c4c72 after 4 attempts: Could not find a part of the path. path=
+PASS  9 nothing is built under the process's current directory -- 
+PASS  10 the rename fails with a named reason -- Could not rename the finished build C:\Users\szy\AppData\Local\Temp\l2-peer-publish-selftest-f2b8b5b45de7\appears\cache\selfcheck-peer-27f086167f47ed05bece96219b6b89412e3c4c72.tmp-8f581044 to C:\Users\szy\AppData\Local\Temp\l2-peer-publish-selftest-f2b8b5b45de7\appears\cache\selfcheck-peer-27f086167f47ed05bece96219b6b89412e3c4c72 after 4 attempts: Cannot create 'C:\Users\szy\AppData\Local\Temp\l2-peer-publish-selftest-f2b8b5b45de7\appears\cache\selfcheck-peer-27f086167f47ed05bece96219b6b89412e3c4c72' because a file or directory with the same name already exists.
+PASS  10 the other checkout's directory is left alone -- C:\Users\szy\AppData\Local\Temp\l2-peer-publish-selftest-f2b8b5b45de7\appears\cache\selfcheck-peer-27f086167f47ed05bece96219b6b89412e3c4c72\publish\old-checkout-building
+PASS  10 the run's own temporary directory is removed -- 
+PASS  8 run-journey-g3.ps1 still matches peer notes as "<name> (publish for|at) <commit>" -- everyScenarioPublishedThePeersAtTheBinding
+PASS  8 journal of 1a built matches -- Building selfcheck-peer at 27f086167f47ed05bece96219b6b89412e3c4c72 from a throwaway clone.
+PASS  8 journal of 1b reused after waiting matches -- Reusing cached selfcheck-peer publish for 27f086167f47ed05bece96219b6b89412e3c4c72, published by another run while this one waited.
+PASS  8 journal of 5 reused matches -- Reusing cached selfcheck-peer publish for 27f086167f47ed05bece96219b6b89412e3c4c72.
+
+FAILED: 1 assertion(s): 9 a relative cache root resolves against PowerShell's location
+Stage kept for inspection: C:\Users\szy\AppData\Local\Temp\l2-peer-publish-selftest-f2b8b5b45de7

@@ -13,15 +13,21 @@ name: g3
 # clone check requires anyway.
 #
 # Three jobs:
-#   gate    (headless)   resolves the commits and the start deadline, and waits up to 30 minutes for any l2.yml
-#                        real-rig job (the other holder of cs-desktop) to finish. Still busy: NOT_STARTED_RIG_BUSY.
-#                        Waiting here and not on cs-desktop matters: a real-rig job queued behind this workflow's own
-#                        desktop job could never finish while that job waited for it.
-#   g3      (cs-desktop) scripts/Invoke-NightlyG3.ps1: the four runners in a row (staged and restart both bind Modbus
+#   gate    (headless)   resolves the commits and the start deadline, and nothing else: it no longer waits for the CI
+#                        real rig (control-server#807, review S1 of PR #817). A night has from 22:37 to 07:00 CST, and
+#                        waiting that out here would hold the one headless runner every L2 scenario needs for hours.
+#   g3      (cs-desktop) queues for the one cs-desktop runner, which l2.yml's real-rig job also takes: GitHub's queue
+#                        holds no runner, and the two take it in turn, so the round never runs beside the real rig
+#                        (staged, restart and journey also take the Global\W2G-InteractiveDesktop lock, as the real rig
+#                        does). It records when it started, which may be hours after the gate.
+#                        scripts/Invoke-NightlyG3.ps1: the four runners in a row (staged and restart both bind Modbus
 #                        1502; three put WPF windows on the one desktop), each behind l2.yml real-rig's commit guard,
-#                        the start deadline and a free-disk floor. A night (nightly=true) starts no runner after 04:00 CST,
-#                        clear of 8005-mes-ingest's golden-renderer verify near 05:30.
-#   report  (headless)   comments the verdict on control-server#581, whatever the other two did.
+#                        the start deadline and a free-disk floor. A night (nightly=true) starts no runner after 07:00 CST
+#                        of the morning it runs into (04:00 until control-server#807; that only kept clear of
+#                        8005-mes-ingest's golden-renderer verify, which did not move to vm-win-01).
+#   report  (headless)   comments the verdict on control-server#581, whatever the other two did, with when main's trigger
+#                        was planned, when GitHub fired it and how late, when the round started and how long it queued
+#                        for cs-desktop, and the deadline (control-server#807).
 # Nothing here cancels a job, and no job's timeout is meant to be what ends it (a cancel can wedge a self-hosted
 # runner: workspace CLAUDE.md). The verdict is decided offline-testably in scripts/NightlyG3.psm1, checked by
 # scripts/Test-NightlyG3.ps1 in test.yml.
@@ -29,8 +35,10 @@ name: g3
 # The night is started from main. GitHub runs `schedule` only from the workflow files on the default branch (main), and
 # this line (fp/v2-impl) never merges into main, so a schedule here would never fire and there is none. Instead main
 # carries .github/workflows/g3-nightly-trigger.yml (control-server PR #592, the user's choice on 2026-10-11), which at
-# 17:00 UTC (01:00 CST) dispatches this workflow on fp/v2-impl with nightly=true. That input, not the event name, is what
-# makes a run a night: the 04:00 CST start deadline and the 定时触发 label in the comment.
+# 14:37 UTC (22:37 CST, control-server#807) dispatches this workflow on fp/v2-impl with nightly=true. That input, not the
+# event name, is what makes a run a night: the 07:00 CST start deadline and the 定时触发 label in the comment. The trigger
+# also passes trigger_cron and triggered_at, so the comment says how late GitHub fired it. Both are optional, and this
+# file declares them before main's trigger sends them: an input it does not declare makes GitHub refuse the dispatch.
 #
 # By hand, on any branch that has this file (the input picks what is tested; the workflow file comes from --ref):
 #   gh workflow run g3.yml -R trytoreachpeak0/8005-agv-control-server --ref fp/v2-impl -f ref=fp/v2-impl [-f note=...]
@@ -39,7 +47,7 @@ on:
   workflow_dispatch:
     inputs:
       nightly:
-        description: 'true only from main''s g3-nightly-trigger.yml: the 04:00 CST start deadline and the nightly label'
+        description: 'true only from main''s g3-nightly-trigger.yml: the 07:00 CST start deadline and the nightly label'
         type: boolean
         default: false
       ref:
@@ -48,6 +56,14 @@ on:
         default: 'fp/v2-impl'
       note:
         description: 'One line added to the comment (for example: red evidence on a throwaway branch)'
+        type: string
+        default: ''
+      trigger_cron:
+        description: 'Only from main''s g3-nightly-trigger.yml: the cron it fired for, so the comment can say how late'
+        type: string
+        default: ''
+      triggered_at:
+        description: 'Only from main''s g3-nightly-trigger.yml: when GitHub created its run (ISO 8601)'
         type: string
         default: ''
       comment_issue:
@@ -62,7 +78,6 @@ on:
 
 permissions:
   contents: read
-  actions: read
   issues: write
 
 # One night at a time. cancel-in-progress stays false (workspace CLAUDE.md: never cancel a running self-hosted job).
@@ -73,6 +88,11 @@ concurrency:
 env:
   G3_REF: ${{ inputs.ref || 'fp/v2-impl' }}
   G3_ONBOARD_REF: refs/heads/w2g/fp-v2-impl
+  # A night runs from G3_NIGHT_START_HOUR_CST to the same hour the next day and starts no runner after
+  # G3_DEADLINE_HOUR_CST of the morning it runs into (control-server#807). Here once, so that the gate's deadline and the
+  # report's night name cannot disagree (review S4 of PR #817).
+  G3_NIGHT_START_HOUR_CST: '19'
+  G3_DEADLINE_HOUR_CST: '7'
 
 jobs:
   register:
@@ -87,12 +107,10 @@ jobs:
   gate:
     if: github.event_name != 'pull_request'
     runs-on: [self-hosted, headless]
-    # The rig wait is 30 minutes; this bounds it with room, and is never what ends it.
-    timeout-minutes: 60
+    timeout-minutes: 10
     outputs:
       proceed: ${{ steps.gate.outputs.proceed }}
       stopped_by: ${{ steps.gate.outputs.stopped_by }}
-      busy: ${{ steps.gate.outputs.busy }}
       control_server: ${{ steps.gate.outputs.control_server }}
       onboard: ${{ steps.gate.outputs.onboard }}
       started: ${{ steps.gate.outputs.started }}
@@ -103,40 +121,28 @@ jobs:
           ref: ${{ env.G3_REF }}
           sparse-checkout: scripts
 
-      - name: Commits, deadline and the real rig
+      - name: Commits and deadline
         id: gate
         shell: pwsh
         env:
-          GH_TOKEN: ${{ github.token }}
           G3_NIGHTLY: ${{ inputs.nightly }}
         run: |
           Import-Module ./scripts/NightlyG3.psm1 -Force
           $started = [DateTimeOffset]::UtcNow
           # A night arrives as a workflow_dispatch from main's trigger; nightly=true grades it as the schedule it stands for.
           $kind = if ($env:G3_NIGHTLY -eq 'true') { 'schedule' } else { $env:GITHUB_EVENT_NAME }
-          $deadline = Get-NightlyG3StartDeadline -EventName $kind -StartedAtUtc $started
+          $deadline = Get-NightlyG3StartDeadline -EventName $kind -StartedAtUtc $started `
+              -NightStartHourCst $env:G3_NIGHT_START_HOUR_CST -DeadlineHourCst $env:G3_DEADLINE_HOUR_CST
           $controlServer = (git rev-parse HEAD).Trim()
           $onboard = ((git ls-remote https://github.com/trytoreachpeak0/8005-agv-onboard-hmi.git $env:G3_ONBOARD_REF) -split '\s+')[0]
           if ($onboard -notmatch '^[0-9a-f]{40}$') { throw "Unable to read the tip of $env:G3_ONBOARD_REF in 8005-agv-onboard-hmi: '$onboard'" }
           Write-Host "control-server $controlServer ($env:G3_REF); onboard-hmi $onboard ($env:G3_ONBOARD_REF); start deadline $($deadline.ToString('o'))"
 
-          $stoppedBy = ''
-          $busy = ''
-          if ([DateTimeOffset]::UtcNow -gt $deadline) {
-              $stoppedBy = 'NOT_STARTED_DEADLINE'
-          } else {
-              $wait = Wait-NightlyG3RigIdle -WaitMinutes 30 -PollSeconds 60 -GetBusy {
-                  Get-NightlyG3BusyRealRigJob -Repository $env:GITHUB_REPOSITORY -Token $env:GH_TOKEN }
-              if (-not $wait.idle) {
-                  $stoppedBy = 'NOT_STARTED_RIG_BUSY'
-                  $busy = "等了 $($wait.waitedMinutes) 分钟仍忙：$($wait.busy -join '; ')"
-                  Write-Host "::warning title=Nightly G3::$busy"
-              }
-          }
+          # Past the deadline already (GitHub fired the trigger too late): no round is queued at all.
+          $stoppedBy = if ([DateTimeOffset]::UtcNow -gt $deadline) { 'NOT_STARTED_DEADLINE' } else { '' }
           @(
               "proceed=$(if ($stoppedBy) { 'false' } else { 'true' })"
               "stopped_by=$stoppedBy"
-              "busy=$busy"
               "control_server=$controlServer"
               "onboard=$onboard"
               "started=$($started.ToString('o'))"
@@ -158,7 +164,15 @@ jobs:
       UseSharedCompilation: 'false'
     outputs:
       results: ${{ steps.round.outputs.results }}
+      round_started: ${{ steps.start.outputs.started }}
     steps:
+      - name: Round start
+        id: start
+        shell: pwsh
+        # This job queues for cs-desktop behind the CI real rig; when it got the runner is what the comment calls 本轮开始.
+        run: |
+          "started=$([DateTimeOffset]::UtcNow.ToString('o'))" | Out-File -FilePath $env:GITHUB_OUTPUT -Append -Encoding utf8
+
       # The whole history: the runners clone the ControlServer from this local checkout (New-ExactClone), and the staged
       # harness reads its own identity from it.
       - uses: actions/checkout@v7
@@ -279,17 +293,20 @@ jobs:
           G3_GATE_RESULT: ${{ needs.gate.result }}
           G3_JOB_RESULT: ${{ needs.g3.result }}
           G3_STOPPED_BY: ${{ needs.gate.outputs.stopped_by }}
-          G3_BUSY: ${{ needs.gate.outputs.busy }}
           G3_CONTROL_SERVER: ${{ needs.gate.outputs.control_server }}
           G3_ONBOARD: ${{ needs.gate.outputs.onboard }}
           G3_STARTED: ${{ needs.gate.outputs.started }}
+          G3_ROUND_STARTED: ${{ needs.g3.outputs.round_started }}
+          G3_DEADLINE: ${{ needs.gate.outputs.deadline }}
+          G3_TRIGGER_CRON: ${{ inputs.trigger_cron }}
+          G3_TRIGGERED_AT: ${{ inputs.triggered_at }}
           G3_NOTE: ${{ inputs.note }}
           G3_NIGHTLY: ${{ inputs.nightly }}
           G3_ISSUE: ${{ inputs.comment_issue || '581' }}
         run: |
           Import-Module ./scripts/NightlyG3.psm1 -Force
           $runUrl = "$env:GITHUB_SERVER_URL/$env:GITHUB_REPOSITORY/actions/runs/$env:GITHUB_RUN_ID"
-          $notes = @($env:G3_NOTE, $env:G3_BUSY | Where-Object { $_ })
+          $notes = @($env:G3_NOTE | Where-Object { $_ })
           $verdicts = @()
           $stoppedBy = $env:G3_STOPPED_BY
           $commits = [ordered]@{ controlServer = $env:G3_CONTROL_SERVER; onboardHmi = $env:G3_ONBOARD }
@@ -304,8 +321,17 @@ jobs:
           }
           $started = if ($env:G3_STARTED) { [DateTimeOffset]::Parse($env:G3_STARTED) } else { [DateTimeOffset]::UtcNow }
           $kind = if ($env:G3_NIGHTLY -eq 'true') { 'schedule' } else { $env:GITHUB_EVENT_NAME }
+          # All optional: one that is empty or does not parse leaves its part out (the lateness, the deadline, the round's start), never the comment.
+          $triggeredAt = $deadline = $roundStarted = $null
+          $parsed = [DateTimeOffset]::MinValue
+          $styles = [Globalization.DateTimeStyles]::AssumeUniversal
+          if ([DateTimeOffset]::TryParse($env:G3_TRIGGERED_AT, [cultureinfo]::InvariantCulture, $styles, [ref]$parsed)) { $triggeredAt = $parsed }
+          if ([DateTimeOffset]::TryParse($env:G3_DEADLINE, [cultureinfo]::InvariantCulture, $styles, [ref]$parsed)) { $deadline = $parsed }
+          if ([DateTimeOffset]::TryParse($env:G3_ROUND_STARTED, [cultureinfo]::InvariantCulture, $styles, [ref]$parsed)) { $roundStarted = $parsed }
           $body = Format-NightlyG3Comment -Verdicts $verdicts -RunUrl $runUrl -Trigger $kind -Ref $env:G3_REF `
-              -Commits $commits -StartedAtUtc $started -StoppedBy $stoppedBy -Note ($notes -join ' ') -JobResult $env:G3_JOB_RESULT
+              -Commits $commits -StartedAtUtc $started -StoppedBy $stoppedBy -Note ($notes -join ' ') -JobResult $env:G3_JOB_RESULT `
+              -TriggerCron $env:G3_TRIGGER_CRON -TriggeredAtUtc $triggeredAt -DeadlineUtc $deadline -NightStartHourCst $env:G3_NIGHT_START_HOUR_CST `
+              -RoundStartedAtUtc $roundStarted
           $body | Out-File -FilePath $env:GITHUB_STEP_SUMMARY -Append -Encoding utf8
           $comment = Send-NightlyG3Comment -Repository $env:GITHUB_REPOSITORY -Issue ([int]$env:G3_ISSUE) -Body $body -Token $env:GH_TOKEN
           Write-Host "Commented: $($comment.html_url)"

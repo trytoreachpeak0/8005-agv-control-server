@@ -84,14 +84,28 @@ function Format-NightlyG3Comment {
         # The g3 job's result, when it ran. Anything but success keeps a night from reading 全绿 (review B of PR #591).
         [string]$JobResult,
         # The runners a complete round has a verdict for; one missing keeps a night from reading 全绿.
-        [string[]]$ExpectedRunners = @('staged', 'restart', 'demand-bearing', 'journey')
+        [string[]]$ExpectedRunners = @('staged', 'restart', 'demand-bearing', 'journey'),
+        # main's trigger: its cron and the moment GitHub fired it (control-server#807). Without both, no lateness is written.
+        [string]$TriggerCron,
+        [Nullable[DateTimeOffset]]$TriggeredAtUtc,
+        # The gate's start deadline, said so that a night that did not start reads as late, not as red.
+        [Nullable[DateTimeOffset]]$DeadlineUtc,
+        # When the g3 job itself started. It queues for cs-desktop behind the CI real rig, so this can be hours after the
+        # gate (StartedAtUtc); saying so keeps a night the rig crowded out from reading as a late trigger (review S1 of
+        # PR #817). Without it -- the g3 job never ran -- nothing is said about the round's start.
+        [Nullable[DateTimeOffset]]$RoundStartedAtUtc,
+        # The night start the gate's deadline used, so that the night is named by the same night (review S4 of PR #817).
+        [ValidateRange(0, 23)][int]$NightStartHourCst = 19
     )
 
     # One comment a night on control-server#581, in Chinese because a person reads it. Its absence means the night did
     # not run, so even an all-green night writes one, and a night that never started writes why.
     function ConvertTo-Cell([string]$Text) { return (($Text -replace '\s+', ' ').Trim() -replace '\|', '\|') }
 
-    $night = $StartedAtUtc.ToOffset([TimeSpan]::FromHours(8)).ToString('yyyy-MM-dd')
+    $cst = [TimeSpan]::FromHours(8)
+    # A night is named by the morning it runs into, whichever side of midnight it started; anything else by its own date.
+    $night = if ($Trigger -eq 'schedule') { (Get-NightlyG3NightMorning -StartedAtUtc $StartedAtUtc -NightStartHourCst $NightStartHourCst).ToString('yyyy-MM-dd') } else {
+        $StartedAtUtc.ToOffset($cst).ToString('yyyy-MM-dd') }
     $red = @($Verdicts | Where-Object { $_.result -in 'FAIL', 'ERROR' })
     $notStarted = @($Verdicts | Where-Object { "$($_.result)" -like 'NOT_STARTED_*' })
     $passed = @($Verdicts | Where-Object { $_.result -eq 'PASS' } | ForEach-Object runner)
@@ -117,7 +131,19 @@ function Format-NightlyG3Comment {
     $lines = [System.Collections.Generic.List[string]]::new()
     $lines.Add("**每晚 G3 · $night · $headline**")
     $lines.Add('')
-    $meta = @("$(if ($Trigger -eq 'schedule') { '定时触发' } else { '手动触发' })", "[run]($RunUrl)", "ref ``$Ref``")
+    $meta = @("$(if ($Trigger -eq 'schedule') { '定时触发' } else { '手动触发' })")
+    $delay = if ($null -ne $TriggeredAtUtc) { Get-NightlyG3TriggerDelay -Cron $TriggerCron -TriggeredAtUtc $TriggeredAtUtc } else { $null }
+    if ($null -ne $delay) {
+        $meta += "计划 $($delay.scheduledAtUtc.ToOffset($cst).ToString('HH:mm'))"
+        $meta += "实际触发 $($TriggeredAtUtc.ToOffset($cst).ToString('HH:mm'))（晚 $($delay.lateMinutes) 分钟）"
+    }
+    $meta += "gate $($StartedAtUtc.ToOffset($cst).ToString('HH:mm'))"
+    if ($null -ne $RoundStartedAtUtc) {
+        $queued = [Math]::Max(0, [int][Math]::Floor(($RoundStartedAtUtc - $StartedAtUtc).TotalMinutes))
+        $meta += "本轮开始 $($RoundStartedAtUtc.ToOffset($cst).ToString('HH:mm'))（在 cs-desktop 排队 $queued 分钟）"
+    }
+    if ($null -ne $DeadlineUtc) { $meta += "截止 $($DeadlineUtc.ToOffset($cst).ToString('HH:mm'))" }
+    $meta += @("[run]($RunUrl)", "ref ``$Ref``")
     foreach ($pair in @(@('controlServer', 'control-server', ''), @('onboardHmi', 'onboard-hmi', '（顶端）'),
             @('slotsSimulator', 'slots-simulator', '（写死的绑定）'), @('protocol', 'protocol', '（写死的绑定）'))) {
         if ($Commits.Contains($pair[0]) -and -not [string]::IsNullOrEmpty("$($Commits[$pair[0]])")) {
@@ -146,72 +172,62 @@ function Format-NightlyG3Comment {
     return ($lines -join "`n")
 }
 
-function Select-NightlyG3BusyRealRigJob {
+function Get-NightlyG3NightMorning {
     param(
-        [Parameter(Mandatory)][AllowEmptyCollection()][object[]]$Runs,
-        [Parameter(Mandatory)][System.Collections.IDictionary]$JobsByRun
+        [Parameter(Mandatory)][DateTimeOffset]$StartedAtUtc,
+        [int]$NightStartHourCst = 19
     )
 
-    # A real-rig job of l2.yml that is not completed holds or wants the one cs-desktop runner. Its run's event does not
-    # matter: every l2.yml run carries a real-rig job, skipped (completed) unless it is a rig=real dispatch.
-    $busy = [System.Collections.Generic.List[string]]::new()
-    foreach ($run in $Runs) {
-        if ("$($run['status'])" -ceq 'completed') { continue }
-        foreach ($job in @($JobsByRun[$run['id']])) {
-            if ($null -ne $job -and "$($job['name'])" -ceq 'real-rig' -and "$($job['status'])" -cne 'completed') {
-                $busy.Add("run $($run['id']) job real-rig $($job['status'])")
-            }
-        }
-    }
-    return @($busy)
-}
-
-function Wait-NightlyG3RigIdle {
-    param(
-        [Parameter(Mandatory)][scriptblock]$GetBusy,
-        [Parameter(Mandatory)][double]$WaitMinutes,
-        [int]$PollSeconds = 60,
-        [scriptblock]$Sleep = { param($seconds) Start-Sleep -Seconds $seconds },
-        [scriptblock]$Now = { [DateTimeOffset]::UtcNow }
-    )
-
-    # Waits while GetBusy names something, up to WaitMinutes, and never cancels anything: it only decides whether this
-    # night starts. A GetBusy that throws counts as busy, with its message, so a query that cannot answer never reads as
-    # an idle rig. Returns idle, busy (what was busy last) and waitedMinutes.
-    $poll = {
-        try { return @(& $GetBusy) } catch { return @("real-rig query failed: $($_.Exception.Message)") }
-    }
-    $started = & $Now
-    $busy = @(& $poll)
-    while ($busy.Count -gt 0) {
-        $elapsed = ((& $Now) - $started).TotalSeconds
-        if ($elapsed -ge $WaitMinutes * 60) { break }
-        Write-Host "G3_RIG_BUSY_WAITING: $($busy -join '; ') ($([Math]::Floor($elapsed / 60)) of $WaitMinutes minutes)"
-        & $Sleep ([Math]::Min($PollSeconds, $WaitMinutes * 60 - $elapsed))
-        $busy = @(& $poll)
-    }
-    return [pscustomobject][ordered]@{
-        idle = $busy.Count -eq 0
-        busy = @($busy)
-        waitedMinutes = [Math]::Round(((& $Now) - $started).TotalMinutes, 1)
-    }
+    # The plant's date (CST) of the morning a night runs into. A night runs from NightStartHourCst to NightStartHourCst
+    # the next day, so main's trigger at 22:37 CST and the same trigger that GitHub started at 01:19 belong to one night.
+    $local = $StartedAtUtc.ToOffset([TimeSpan]::FromHours(8))
+    return $local.AddHours(-$NightStartHourCst).Date.AddDays(1)
 }
 
 function Get-NightlyG3StartDeadline {
     param(
         [Parameter(Mandatory)][string]$EventName,
         [Parameter(Mandatory)][DateTimeOffset]$StartedAtUtc,
-        [double]$DispatchMinutes = 180
+        [double]$DispatchMinutes = 180,
+        [ValidateRange(0, 23)][int]$DeadlineHourCst = 7,
+        [ValidateRange(0, 23)][int]$NightStartHourCst = 19
     )
 
-    # The last moment a runner may start. A schedule: 04:00 CST of the plant's date it started on, which is in the past
-    # when GitHub started it after 04:00, and then nothing runs. A manual dispatch: DispatchMinutes after its start.
+    # The last moment a runner may start. A schedule: DeadlineHourCst (07:00) CST of the morning its night runs into,
+    # which is in the past when GitHub started it later than that, and then nothing runs. 04:00 until control-server#807:
+    # it only kept clear of 8005-mes-ingest's golden-renderer verify near 05:30, which did not move to vm-win-01, while
+    # GitHub started the 01:00 trigger two to six hours late. A manual dispatch: DispatchMinutes after its start.
     if ($EventName -ceq 'schedule') {
-        $cst = [TimeSpan]::FromHours(8)
-        $local = $StartedAtUtc.ToOffset($cst)
-        return ([DateTimeOffset]::new($local.Year, $local.Month, $local.Day, 4, 0, 0, $cst)).ToUniversalTime()
+        # A deadline at or after the hour the next night starts would fall inside that next night (review S4 of PR #817).
+        if ($DeadlineHourCst -ge $NightStartHourCst) {
+            throw "DeadlineHourCst ($DeadlineHourCst) must be earlier than NightStartHourCst ($NightStartHourCst)."
+        }
+        $morning = Get-NightlyG3NightMorning -StartedAtUtc $StartedAtUtc -NightStartHourCst $NightStartHourCst
+        return ([DateTimeOffset]::new($morning.Year, $morning.Month, $morning.Day, $DeadlineHourCst, 0, 0, [TimeSpan]::FromHours(8))).ToUniversalTime()
     }
     return $StartedAtUtc.ToUniversalTime().AddMinutes($DispatchMinutes)
+}
+
+function Get-NightlyG3TriggerDelay {
+    param(
+        [AllowEmptyString()][string]$Cron,
+        [Parameter(Mandatory)][DateTimeOffset]$TriggeredAtUtc
+    )
+
+    # How late GitHub fired main's g3-nightly-trigger.yml: the latest firing its daily cron ('M H * * *', UTC) planned
+    # at or before the moment the trigger's run was created, and the whole minutes since. Anything but a daily cron --
+    # none at all when the trigger was dispatched by hand -- gives $null: no lateness is made up.
+    if ($Cron -cnotmatch '^\s*(\d{1,2})\s+(\d{1,2})\s+\*\s+\*\s+\*\s*$') { return $null }
+    $minute = [int]$Matches[1]
+    $hour = [int]$Matches[2]
+    if ($minute -gt 59 -or $hour -gt 23) { return $null }
+    $at = $TriggeredAtUtc.ToUniversalTime()
+    $scheduled = [DateTimeOffset]::new($at.Year, $at.Month, $at.Day, $hour, $minute, 0, [TimeSpan]::Zero)
+    if ($scheduled -gt $at) { $scheduled = $scheduled.AddDays(-1) }
+    return [pscustomobject][ordered]@{
+        scheduledAtUtc = $scheduled
+        lateMinutes = [int][Math]::Floor(($at - $scheduled).TotalMinutes)
+    }
 }
 
 function Select-NightlyG3LeftoverProcess {
@@ -257,7 +273,7 @@ function Select-NightlyG3LeftoverProcess {
     return @($selected)
 }
 
-# The two calls to GitHub, kept thin: everything they decide is in the functions above, which the self-check covers.
+# The one call to GitHub, kept thin: what the comment says is decided by Format-NightlyG3Comment, which the self-check covers.
 function Invoke-NightlyG3Api {
     param(
         [Parameter(Mandatory)][string]$Path,
@@ -275,22 +291,6 @@ function Invoke-NightlyG3Api {
     return Invoke-RestMethod @request
 }
 
-function Get-NightlyG3BusyRealRigJob {
-    param(
-        [Parameter(Mandatory)][string]$Repository,
-        [Parameter(Mandatory)][string]$Token
-    )
-    # The most recent l2.yml runs are enough: a run that holds or waits for the rig is among the newest.
-    $runs = @((Invoke-NightlyG3Api -Path "repos/$Repository/actions/workflows/l2.yml/runs?per_page=50" -Token $Token).workflow_runs |
-        Where-Object { $_.status -ne 'completed' } | ForEach-Object { [ordered]@{ id = $_.id; event = $_.event; status = $_.status } })
-    $jobsByRun = @{}
-    foreach ($run in $runs) {
-        $jobsByRun[$run['id']] = @((Invoke-NightlyG3Api -Path "repos/$Repository/actions/runs/$($run['id'])/jobs?per_page=100" -Token $Token).jobs |
-            ForEach-Object { [ordered]@{ name = $_.name; status = $_.status; conclusion = $_.conclusion } })
-    }
-    return @(Select-NightlyG3BusyRealRigJob -Runs $runs -JobsByRun $jobsByRun)
-}
-
 function Send-NightlyG3Comment {
     param(
         [Parameter(Mandatory)][string]$Repository,
@@ -301,5 +301,5 @@ function Send-NightlyG3Comment {
     return Invoke-NightlyG3Api -Path "repos/$Repository/issues/$Issue/comments" -Token $Token -Method POST -Body @{ body = $Body }
 }
 
-Export-ModuleMember -Function Get-NightlyG3Verdict, Format-NightlyG3Comment, Select-NightlyG3BusyRealRigJob, Wait-NightlyG3RigIdle,
-    Get-NightlyG3StartDeadline, Get-NightlyG3BusyRealRigJob, Send-NightlyG3Comment, Select-NightlyG3LeftoverProcess
+Export-ModuleMember -Function Get-NightlyG3Verdict, Format-NightlyG3Comment, Get-NightlyG3StartDeadline, Get-NightlyG3TriggerDelay,
+    Send-NightlyG3Comment, Select-NightlyG3LeftoverProcess

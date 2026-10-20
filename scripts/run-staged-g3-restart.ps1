@@ -24,7 +24,16 @@ param(
     # The free space, in GiB, the drive under -StageRoot must have before anything is cloned (G3_DISK_LOW otherwise).
     # 30 is the batch exit's rule since the batch-8 exit filled C: with G3 stages; see run-journey-g3.ps1. Not a path
     # input, so not a RUNNER_INPUT_OVERRIDE.
-    [double]$MinFreeGiB = 30
+    [double]$MinFreeGiB = 30,
+    # control-server#809, as in run-staged-g3.ps1: this run's loopback ports, by default the ones it always bound.
+    # ControlServer's onboard listener and health endpoint, and the slots simulator's Modbus and HTTP, which the
+    # simulator and the onboard are now told rather than left at their builds' own 1502 and 58006. Locked for the run,
+    # checked free before the clone, and checked to be each component's own after its health wait
+    # (G3RunnerPorts.psm1). Anything but these defaults is a RUNNER_INPUT_OVERRIDE.
+    [ValidateRange(1024, 65535)][int]$ControlPort = 58105,
+    [ValidateRange(1024, 65535)][int]$HealthPort = 58107,
+    [ValidateRange(1024, 65535)][int]$SimulatorModbusPort = 1502,
+    [ValidateRange(1024, 65535)][int]$SimulatorHttpPort = 58006
 )
 
 $ErrorActionPreference = 'Stop'
@@ -39,15 +48,12 @@ $env:DOTNET_CLI_USE_MSBUILD_SERVER = '0'
 # golden renderer and desktop suite also claim. The mutex name is the cross-repository contract.
 Import-Module (Join-Path $PSScriptRoot 'DesktopLock.psm1') -Force
 Import-Module (Join-Path $PSScriptRoot 'G3RunnerStage.psm1') -Force
+Import-Module (Join-Path $PSScriptRoot 'G3RunnerPorts.psm1') -Force
 
 # This runner speaks plaintext loopback only. It never installs a temporary trust root, so it needs
 # no interactive security-warning acknowledgement and can run unattended. Since ticket 03 stripped the
 # certificate mechanism, run-staged-g3.ps1 is unattended on the same terms; this is no longer the one
 # runner that is.
-$controlPort = 58105
-$healthPort = 58107
-$modbusPort = 1502
-$simulatorHttpPort = 58006
 $agvId = 'AGV-8005-STAGED-G3-RESTART-01'
 $onboardInstanceId = '2f2a2f01-3a58-4a2f-9b41-8b7f3f7b2c19'
 $stableWindowSamples = 12
@@ -130,6 +136,11 @@ $G3RunKind = 'STAGED_G3_REAL_PEERS_PROCESS_RESTART_NO_MOVEMENT'
 # SHARED_BINDING whatever that file said; now an edited default there is SELF_CHECK_OVERRIDE.
 $runnerProvenance = Get-G3RunnerProvenance -ScriptRoot $PSScriptRoot -Inputs ([ordered]@{
         ControlServerRepository = @{ Given = $ControlServerRepository; Default = (Split-Path -Parent $PSScriptRoot) }
+    }) -Settings ([ordered]@{
+        ControlPort = @{ Given = $ControlPort; Default = 58105 }
+        HealthPort = @{ Given = $HealthPort; Default = 58107 }
+        SimulatorModbusPort = @{ Given = $SimulatorModbusPort; Default = 1502 }
+        SimulatorHttpPort = @{ Given = $SimulatorHttpPort; Default = 58006 }
     })
 Write-G3RunnerProvenance -Provenance $runnerProvenance
 $runnerCommit = $runnerProvenance.runnerCommit
@@ -148,6 +159,15 @@ if (-not [string]::IsNullOrEmpty($SelfCheckOnboardCommit)) {
 # Before the clones and the builds, not after: naming a slice this runner cannot certify
 # should cost a message, not an hour of cloning and publishing.
 if (-not [string]::IsNullOrEmpty($Slice)) { Assert-G3SliceIsClaimedBy -RunKind $G3RunKind -Slice $Slice }
+# control-server#809: every port this run binds, for the lock, the preflight and the provenance. Refused here, before
+# anything is created, when two are the same or one is in the L2 port slots.
+$runPorts = [ordered]@{
+    ControlPort = $ControlPort
+    HealthPort = $HealthPort
+    SimulatorModbusPort = $SimulatorModbusPort
+    SimulatorHttpPort = $SimulatorHttpPort
+}
+Assert-G3RunnerPortSet -Ports $runPorts
 
 if (Test-Path -LiteralPath $StageRoot) {
     throw "StageRoot must not already exist: $StageRoot"
@@ -336,6 +356,10 @@ function Start-ControlServer {
         -Environment $controlEnvironment -WindowStyle Hidden -PassThru
     Wait-TcpPort -Port $controlPort
     Wait-TcpPort -Port $healthPort
+    # control-server#809: a connection proves only that something listens. Both ports must be this process's and
+    # nobody else's -- in phase 3 too, where the killed server's survivors are what it would find.
+    Assert-G3PortOwner -Process $process -Name "control-server-$Ordinal" -Port $ControlPort, $HealthPort `
+        -Description 'ControlServer accepted connections' -ErrLog (Join-Path $logsRoot "control-$Ordinal.err.log")
     return $process
 }
 
@@ -608,8 +632,14 @@ $governanceCredential = [Convert]::ToHexString([Security.Cryptography.RandomNumb
 # Released in `finally` after the peers are stopped. Declared here so that release is unconditional
 # even when the run dies during the clone or build phase, before the lock was ever taken.
 $desktopLock = $null
+# control-server#809. Released last, after the desktop lock.
+$portLock = $null
 
 try {
+    # First, before the clone and the publishes: the ports this run binds are ours, and nobody listens on them.
+    $portLock = Enter-G3PortLock -Port $runPorts.Values -Reason "staged G3 restart run $runId"
+    Assert-G3PortsFree -Ports $runPorts
+
     New-ExactClone -Name 'control-server' -Repository $ControlServerRepository -Destination $controlSource `
         -Commit $ControlServerCommit -ExcludeEvidence | Out-Null
     New-ExactClone -Name 'onboard-hmi' -Repository $OnboardRepository -Destination $onboardSource `
@@ -660,6 +690,8 @@ try {
     $settings.wireToGate.journalPath = $onboardJournalPath
     $settings.logging.directory = Join-Path $runtimeRoot 'onboard-logs'
     $settings.logging.writeToConsole = $true
+    # control-server#809: the simulator's Modbus port, told rather than left at the build's own 1502.
+    Set-G3OnboardIoModulePort -Settings $settings -ModbusPort $SimulatorModbusPort
     $settings | ConvertTo-Json -Depth 30 | Set-Content -LiteralPath $onboardConfig -Encoding utf8NoBOM
     $onboardConfigSha256 = (Get-FileHash -LiteralPath $onboardConfig -Algorithm SHA256).Hash.ToLowerInvariant()
 
@@ -679,6 +711,12 @@ try {
         'CONTROL_SERVER_GOVERNANCE_CREDENTIAL' = $governanceCredential
     }
 
+    # control-server#809: the simulator's two ports, told rather than left at its build's own 1502 and 58006.
+    $simulatorConfig = Join-Path $simulatorPublish 'simulator.settings.json'
+    $simulatorSettings = Get-Content -LiteralPath $simulatorConfig -Raw | ConvertFrom-Json
+    Set-G3SimulatorPorts -Settings $simulatorSettings -ModbusPort $SimulatorModbusPort -HttpPort $SimulatorHttpPort
+    $simulatorSettings | ConvertTo-Json -Depth 30 | Set-Content -LiteralPath $simulatorConfig -Encoding utf8NoBOM
+
     # The simulator and the onboard client are both WPF, and this runner starts the onboard three
     # times across its phases, so it owns the machine's single interactive desktop from here to
     # teardown. 8005-mes-ingest's desktop suites take the same machine-wide mutex; see
@@ -691,8 +729,12 @@ try {
         -RedirectStandardOutput (Join-Path $logsRoot 'simulator.out.log') `
         -RedirectStandardError (Join-Path $logsRoot 'simulator.err.log') `
         -WindowStyle Hidden -PassThru
-    Wait-TcpPort -Port $modbusPort
-    $simulatorHealth = Wait-HttpJson -Uri "http://127.0.0.1:$simulatorHttpPort/api/v1/health"
+    Wait-TcpPort -Port $SimulatorModbusPort
+    $simulatorHealth = Wait-HttpJson -Uri "http://127.0.0.1:$SimulatorHttpPort/api/v1/health"
+    # control-server#809: until this check a simulator left open on 58006 answered that wait, and the run went on
+    # against it. Both ports must be this simulator's and nobody else's.
+    Assert-G3PortOwner -Process $simulator -Name 'slots-simulator' -Port $SimulatorHttpPort, $SimulatorModbusPort `
+        -Description 'the slots simulator answered /api/v1/health' -ErrLog (Join-Path $logsRoot 'simulator.err.log')
 
     # Phase 1: a fresh ControlServer database and a fresh onboard journal.
     $control = Start-ControlServer -Ordinal 1
@@ -840,6 +882,8 @@ finally {
     # Last, after the peers are stopped. Releasing earlier would hand the desktop to another
     # repository while this run's WPF windows were still closing.
     Exit-DesktopLock -Handle $desktopLock
+    # After the desktop lock (G3RunnerPorts.psm1: port locks first, released last).
+    Exit-G3PortLock -Handle $portLock
 }
 
 Start-Sleep -Seconds 2
@@ -1063,7 +1107,7 @@ $configuration = [ordered]@{
     ports = [ordered]@{
         controlPlaintext = $controlPort
         controlHealth = $healthPort
-        simulatorModbus = $modbusPort
+        simulatorModbus = $SimulatorModbusPort
         simulatorHttp = $simulatorHttpPort
     }
     agvId = $agvId
