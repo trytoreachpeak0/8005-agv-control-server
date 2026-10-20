@@ -356,6 +356,7 @@ jobs:
       # assertions still go red; the journey builds once and starts every scenario with -SkipBuild; the -MinFreeGiB
       # floor before the stage; a passed run's stage removed, a red one's kept. No G3 run is short enough to show these.
       - name: G3 runner self-check (stage, clone and disk)
+        if: steps.self-check-scope.outputs.g3_runner_stage == 'true'
         shell: pwsh
         run: pwsh -NoProfile -File ./scripts/Test-G3RunnerStage.ps1
 

@@ -379,14 +379,17 @@ $goneTree = Join-Path (Split-Path -Parent $PSScriptRoot) '../src/Lib/GoneDir'
 # and must run whenever it does: a needed self-check by the selector raising it, a needed step this table does not decide
 # by never being gated on the scope.
 foreach ($entry in $registered) {
-    # The script's code, not its comments: a comment that mentions a build reads nothing. Strings for the path it reads; the
-    # code as written, one space between tokens, for a command that builds.
+    # The script's code, not its comments: a comment that mentions a build reads nothing. Strings for the path it reads; a
+    # command for a build it makes -- dotnet build or dotnet publish as a command in the syntax tree, not the words in a
+    # message (Test-G3RunnerStage.ps1 asserts that a runner "builds once: ... dotnet build ControlServer.sln" and builds
+    # nothing itself).
     $tokens = $null
-    $null = [System.Management.Automation.Language.Parser]::ParseFile((Join-Path $Repository $entry.Script), [ref]$tokens, [ref]$null)
+    $ast = [System.Management.Automation.Language.Parser]::ParseFile((Join-Path $Repository $entry.Script), [ref]$tokens, [ref]$null)
     $source = [string]::Join([char]10, [string[]]@(foreach ($token in $tokens) { if ($token -is [System.Management.Automation.Language.StringToken]) { $token.Value } }))
-    $code = [string]::Join(' ', [string[]]@(foreach ($token in $tokens) { if ($token.Kind -ne 'Comment') { $token.Text } }))
     $readsBuild = $source -match 'ControlServer\.Host[\\/]+bin[\\/]+(Release|Debug|\$)'
-    $buildsItself = $code -match '\bdotnet (build|publish)\b'
+    $buildsItself = @($ast.FindAll({ param($n)
+                $n -is [System.Management.Automation.Language.CommandAst] -and $n.GetCommandName() -eq 'dotnet' -and
+                $n.CommandElements.Count -gt 1 -and $n.CommandElements[1].Extent.Text -in 'build', 'publish' }, $true)).Count -gt 0
     $needs = @(if ($entry.ContainsKey('Needs')) { $entry.Needs })
     if ($readsBuild -and -not $buildsItself) {
         Check "$($entry.Key) reads src/ControlServer.Host/bin without building it, so it says what it needs" ($needs.Count -gt 0) 'no Needs'
