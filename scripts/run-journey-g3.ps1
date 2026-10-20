@@ -69,12 +69,19 @@ param(
     [ValidatePattern('^[0-9a-f]{40}$')][string]$SelfCheckOnboardCommit,
     # Which batch's exit this run is evidence for, passed through to every scenario's assertions.json
     # (control-server#201). Left out it says 'unspecified' -- it used to be a literal 'batch-2'.
-    [string]$BatchId = 'unspecified'
+    [string]$BatchId = 'unspecified',
+    # The free space, in GiB, the drive under -StageRoot must have before anything is cloned (G3_DISK_LOW otherwise).
+    # 30 is the batch exit's rule since the batch-8 exit filled C: with G3 stages: it is room for this round and for
+    # what the other sessions on the machine write meanwhile, not this runner's own need (a few GiB since
+    # control-server#585). The nightly Invoke-NightlyG3.ps1 hands down its own floor. Not a path input: changing it
+    # does not change what the run reads, so it is not a RUNNER_INPUT_OVERRIDE.
+    [double]$MinFreeGiB = 30
 )
 
 $ErrorActionPreference = 'Stop'
 $ProgressPreference = 'SilentlyContinue'
 Import-Module (Join-Path $PSScriptRoot 'G3EvidenceLocation.psm1') -Force
+Import-Module (Join-Path $PSScriptRoot 'G3RunnerStage.psm1') -Force
 # R-4: no MSBuild node outlives the command that started it (see run-staged-g3.ps1).
 $env:MSBUILDDISABLENODEREUSE = '1'
 $env:DOTNET_CLI_USE_MSBUILD_SERVER = '0'
@@ -378,6 +385,8 @@ if (-not [string]::IsNullOrEmpty($Slice)) { Assert-G3SliceIsClaimedBy -RunKind $
 
 if (Test-Path -LiteralPath $StageRoot) { throw "StageRoot must not already exist: $StageRoot" }
 if (Test-Path -LiteralPath $EvidenceRoot) { throw "EvidenceRoot must not already exist: $EvidenceRoot" }
+Assert-G3EvidenceOutsideStage -StageRoot $StageRoot -EvidenceRoot $EvidenceRoot
+$null = Assert-G3FreeDiskSpace -Path $StageRoot -MinFreeGiB $MinFreeGiB
 New-Item -ItemType Directory -Path $StageRoot, $EvidenceRoot | Out-Null
 # Absolute from here on, and this is the runner where a relative path actually bit (control-server#211).
 # Below, every scenario is started as a child pwsh with -WorkingDirectory $controlSource -- the staged
@@ -453,7 +462,9 @@ function New-ExactClone {
         [string]$Repository,
         [string]$Destination,
         [string]$Commit,
-        [string]$RemoteRef = ''
+        [string]$RemoteRef = '',
+        # Everything but the top-level evidence/ (G3RunnerStage.psm1). The assertions below hold as before.
+        [switch]$ExcludeEvidence
     )
 
     $null = Invoke-LoggedCommand -Name "clone-$Name" -WorkingDirectory $sourcesRoot -FilePath 'git' `
@@ -463,6 +474,10 @@ function New-ExactClone {
     if ($LASTEXITCODE -ne 0) { throw "Unable to set core.autocrlf=false for $Name" }
     & git -C $Destination config core.longpaths true
     if ($LASTEXITCODE -ne 0) { throw "Unable to set core.longpaths=true for $Name" }
+    if ($ExcludeEvidence) {
+        $null = Invoke-LoggedCommand -Name "sparse-$Name" -WorkingDirectory $Destination -FilePath 'git' `
+            -Arguments (Get-G3EvidenceSparseCheckoutArguments) -LogPath (Join-Path $logsRoot "sparse-$Name.log")
+    }
     $null = Invoke-LoggedCommand -Name "fetch-$Name" -WorkingDirectory $Destination -FilePath 'git' `
         -Arguments @('fetch', 'origin', '--prune', '--tags') `
         -LogPath (Join-Path $logsRoot "fetch-$Name.log")
@@ -496,7 +511,7 @@ $scenarioResults = [System.Collections.Generic.List[object]]::new()
 
 try {
     New-ExactClone -Name 'control-server' -Repository $ControlServerRepository -Destination $controlSource `
-        -Commit $ControlServerCommit
+        -Commit $ControlServerCommit -ExcludeEvidence
     New-ExactClone -Name 'onboard-hmi' -Repository $OnboardRepository -Destination $onboardSource `
         -Commit $OnboardCommit -RemoteRef $OnboardRemoteRef
     New-ExactClone -Name 'slots-simulator' -Repository $SimulatorRepository -Destination $simulatorSource `
@@ -530,6 +545,15 @@ try {
         throw "The identity claims APPROVED_RELEASE but $($expectedProtocol.tag) does not exist in $protocolSource"
     }
 
+    # Built once, here, and every scenario runs that output with -SkipBuild (control-server#585): each used to build
+    # the same clone again. On vm01 that was 184 s a round (71 s for the first, ~6 s incremental for each of the other
+    # 19) against 146 s for this one build, so it saves ~40 s; the ticket's ~240 s did not hold. It also takes the
+    # compiler off every scenario's start. The command is the rig's own build, from inside the clone so
+    # its global.json picks the SDK. A failed build throws, so the run is a runner error and no scenario starts.
+    $null = Invoke-LoggedCommand -Name 'build-control-server' -WorkingDirectory $controlSource -FilePath 'dotnet' `
+        -Arguments @('build', (Join-Path $controlSource 'ControlServer.sln'), '-c', 'Release', '--nologo') `
+        -LogPath (Join-Path $logsRoot 'build-control-server.log')
+
     $rig = Join-Path $controlSource 'scripts\l2\Invoke-L2Scenario.ps1'
     foreach ($scenario in $scenarioAssertions.Keys) {
         $scenarioEvidence = Join-Path $scenariosRoot $scenario
@@ -541,7 +565,8 @@ try {
                 '-OnboardRepository', $onboardSource,
                 '-SimulatorRepository', $simulatorSource,
                 '-PeerCacheRoot', $peerCacheRoot,
-                '-BatchId', $BatchId) `
+                '-BatchId', $BatchId,
+                '-SkipBuild') `
             -LogPath (Join-Path $logsRoot "scenario-$scenario.log") -AllowNonZeroExit
         $assertionsPath = Join-Path $scenarioEvidence 'assertions.json'
         $document = if (Test-Path -LiteralPath $assertionsPath) {
@@ -785,6 +810,9 @@ $resultJson = $result | ConvertTo-Json -Depth 40
     (Join-Path $EvidenceRoot 'run-result.json'), $resultJson, [Text.UTF8Encoding]::new($false))
 $resultJson
 
-if ($status -ne 'JOURNEY_G3_PASS' -or $secretLeakFiles.Count -ne 0) {
+$passed = $status -eq 'JOURNEY_G3_PASS' -and $secretLeakFiles.Count -eq 0
+# After run-result.json: a passed run's stage goes, a red one's stays (G3RunnerStage.psm1, control-server#585).
+$null = Complete-G3RunnerStage -StageRoot $StageRoot -Passed $passed
+if (-not $passed) {
     throw "Journey G3 did not pass: $status. Evidence: $EvidenceRoot"
 }

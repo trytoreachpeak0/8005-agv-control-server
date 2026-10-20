@@ -20,7 +20,11 @@ param(
     # formalSlicePass false.
     # -cmatch, not ValidatePattern, as in run-staged-g3.ps1: an uppercase SHA-1 is refused here, not compared wrongly later.
     [ValidateScript({ $_ -cmatch '^[0-9a-f]{40}$' })][string]$SelfCheckControlServerCommit,
-    [ValidateScript({ $_ -cmatch '^[0-9a-f]{40}$' })][string]$SelfCheckOnboardCommit
+    [ValidateScript({ $_ -cmatch '^[0-9a-f]{40}$' })][string]$SelfCheckOnboardCommit,
+    # The free space, in GiB, the drive under -StageRoot must have before anything is cloned (G3_DISK_LOW otherwise).
+    # 30 is the batch exit's rule since the batch-8 exit filled C: with G3 stages; see run-journey-g3.ps1. Not a path
+    # input, so not a RUNNER_INPUT_OVERRIDE.
+    [double]$MinFreeGiB = 30
 )
 
 $ErrorActionPreference = 'Stop'
@@ -34,6 +38,7 @@ $env:DOTNET_CLI_USE_MSBUILD_SERVER = '0'
 # This run puts WPF windows on the machine's single interactive desktop, which 8005-mes-ingest's
 # golden renderer and desktop suite also claim. The mutex name is the cross-repository contract.
 Import-Module (Join-Path $PSScriptRoot 'DesktopLock.psm1') -Force
+Import-Module (Join-Path $PSScriptRoot 'G3RunnerStage.psm1') -Force
 
 # This runner speaks plaintext loopback only. It never installs a temporary trust root, so it needs
 # no interactive security-warning acknowledgement and can run unattended. Since ticket 03 stripped the
@@ -150,6 +155,8 @@ if (Test-Path -LiteralPath $StageRoot) {
 if (Test-Path -LiteralPath $EvidenceRoot) {
     throw "EvidenceRoot must not already exist: $EvidenceRoot"
 }
+Assert-G3EvidenceOutsideStage -StageRoot $StageRoot -EvidenceRoot $EvidenceRoot
+$null = Assert-G3FreeDiskSpace -Path $StageRoot -MinFreeGiB $MinFreeGiB
 New-Item -ItemType Directory -Path $StageRoot, $EvidenceRoot | Out-Null
 # Absolute from here on. Unlike run-journey-g3.ps1, this runner does not hand an $EvidenceRoot-derived
 # path to any child process today -- measured, not assumed, with the taint analysis kept at
@@ -225,7 +232,9 @@ function New-ExactClone {
         [string]$Repository,
         [string]$Destination,
         [string]$Commit,
-        [string]$RemoteRef = ''
+        [string]$RemoteRef = '',
+        # Everything but the top-level evidence/ (G3RunnerStage.psm1). The assertions below hold as before.
+        [switch]$ExcludeEvidence
     )
 
     Invoke-LoggedCommand -Name "clone-$Name" -WorkingDirectory $sourcesRoot -FilePath 'git' `
@@ -233,6 +242,10 @@ function New-ExactClone {
         -LogPath (Join-Path $logsRoot "clone-$Name.log") | Out-Null
     & git -C $Destination config core.autocrlf false
     if ($LASTEXITCODE -ne 0) { throw "Unable to set core.autocrlf=false for $Name" }
+    if ($ExcludeEvidence) {
+        Invoke-LoggedCommand -Name "sparse-$Name" -WorkingDirectory $Destination -FilePath 'git' `
+            -Arguments (Get-G3EvidenceSparseCheckoutArguments) -LogPath (Join-Path $logsRoot "sparse-$Name.log") | Out-Null
+    }
     Invoke-LoggedCommand -Name "fetch-$Name" -WorkingDirectory $Destination -FilePath 'git' `
         -Arguments @('fetch', 'origin', '--prune', '--tags') `
         -LogPath (Join-Path $logsRoot "fetch-$Name.log") | Out-Null
@@ -598,7 +611,7 @@ $desktopLock = $null
 
 try {
     New-ExactClone -Name 'control-server' -Repository $ControlServerRepository -Destination $controlSource `
-        -Commit $ControlServerCommit | Out-Null
+        -Commit $ControlServerCommit -ExcludeEvidence | Out-Null
     New-ExactClone -Name 'onboard-hmi' -Repository $OnboardRepository -Destination $onboardSource `
         -Commit $OnboardCommit -RemoteRef $OnboardRemoteRef | Out-Null
     New-ExactClone -Name 'slots-simulator' -Repository $SimulatorRepository -Destination $simulatorSource `
@@ -1243,6 +1256,9 @@ $resultJson = $result | ConvertTo-Json -Depth 40
     [Text.UTF8Encoding]::new($false))
 $resultJson
 
-if ($status -ne 'STAGED_G3_PROCESS_RESTART_PASS' -or $secretLeakFiles.Count -ne 0) {
+$passed = $status -eq 'STAGED_G3_PROCESS_RESTART_PASS' -and $secretLeakFiles.Count -eq 0
+# After run-result.json: a passed run's stage goes, a red one's stays (G3RunnerStage.psm1, control-server#585).
+$null = Complete-G3RunnerStage -StageRoot $StageRoot -Passed $passed
+if (-not $passed) {
     throw "Staged G3 process restart did not pass: $status. Evidence: $EvidenceRoot"
 }
