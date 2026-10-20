@@ -29,7 +29,7 @@ name: l2
 #     repository's two workflows queue for it too instead of failing fast. A collision with the
 #     nightly golden-renderer verify (03:00 CST, in practice starting nearer 05:30) costs a wait,
 #     not a red run; still, prefer not to start a long round in that window.
-#   - Port slot 0, the one every real rig has always used; the synthetic lanes use 1..4.
+#   - Port slot 0, the one every real rig has always used; the synthetic lanes use 1..8.
 #   - It pairs the server with explicit peer commits, each checked out into its own subdirectory:
 #       gh workflow run l2.yml --ref <branch> -f rig=real -f onboard_ref=<sha> -f simulator_ref=<sha> \
 #           [-f mode=consecutive] [-f scenarios=a,b]
@@ -92,11 +92,16 @@ jobs:
   scenarios:
     # Skipped, not cancelled: GitHub decides this before any runner is involved.
     if: (github.event_name != 'pull_request' || !github.event.pull_request.draft) && inputs.rig != 'real'
-    # `headless` matters: win11-01 also hosts an interactive runner, and a job that only asked for
-    # [self-hosted] could be taken by either. This one must NOT land on the golden-renderer runner.
-    # It also keeps l2 off win11-01-control-server-2, which carries 'cs-test' and not 'headless':
-    # l2 runs on win11-01-control-server alone, so two l2 jobs never contend for the port slots.
-    runs-on: [self-hosted, headless]
+    # `cs-l2` since control-server#820: one runner on vm-win-01 carries it, vmwin01-control-server-l2, and nothing else
+    # asks for it. Until then this job asked for `headless`, the label release.yml, g3.yml's register/gate/report and the
+    # nightly trigger also ask for, and they queued behind a half-hour L2 round on the one runner that carries it. One
+    # runner keeps two l2 jobs from ever contending for the port slots: two runners on lanes 1..8 would queue scenario by
+    # scenario on the same slot locks and neither round would finish sooner (control-server#820 measured one runner with
+    # eight lanes against two with four each and chose the first; its pull request has the numbers). Any label is still
+    # needed: vm-win-01 also hosts an interactive runner, and a job that asked only for [self-hosted] could land there.
+    # If vmwin01-control-server-l2 is ever gone or wedged, switching this line back to [self-hosted, headless] restores
+    # the old setup.
+    runs-on: [self-hosted, cs-l2]
     # A timeout ends the job by cancelling it, which may well take the path that wedged this runner,
     # so it must never be what ends a run. The consecutive modes, and a pull request's L2-Consecutive
     # line, run scenarios up to three times over; give them room.
@@ -108,13 +113,14 @@ jobs:
       NuGetAudit: 'false'
       L2_MODE: ${{ inputs.mode || 'default' }}
       # How many port slots the scenarios run in side by side (scripts/l2/L2Lanes.psm1, control-server#130).
-      # Four of the eight slots besides slot 0 (eight since control-server#630). Memory, not slots, is what
-      # holds it at four: a lane commits about 0.7 GB, an onboard-hmi CI round about 2.9 GB, and past
-      # win11-01's commit limit (18.5 GiB since 2026-10-11: 10.5 GB of memory, 8 GB of page file) an
-      # allocation fails outright rather than slowing down. Raise it only after measuring the commit peak
-      # with the other repositories' jobs running too (the v2 workspace's ci-research/memory-budget.md).
+      # All eight slots besides slot 0 since control-server#820. Four until then, held there by win11-01's memory (an
+      # 18.5 GiB commit limit, past which an allocation fails outright rather than slowing down). On vm-win-01 (16 vCPU,
+      # dynamic memory 8-32 GB, 16 GB page file) eight lanes ran the default round in 845 s against 1656 s on four, every
+      # scenario passing, with the whole machine's commit peaking at 13.4 GiB while an onboard-hmi round ran beside it
+      # (run 39438597483, the v2 workspace's ci-research/migration-vm-win-01-build-log.md 2.6-2.8); control-server#820's
+      # pull request has the rounds measured on this file. Lower it before adding a second l2 runner, never both.
       # 1 is the old serial run, in slot 1.
-      L2_LANES: '4'
+      L2_LANES: '8'
       L2_ONLY: ${{ inputs.scenarios || '' }}
       L2_PR_NUMBER: ${{ github.event.pull_request.number }}
       L2_HEAD_SHA: ${{ github.event.pull_request.head.sha }}
@@ -645,7 +651,7 @@ jobs:
           $wall = [Math]::Round($clock.Elapsed.TotalSeconds)
 
           # Every run's own console output, lane by lane; while the lanes ran only their start and end lines
-          # were printed, because four interleaved logs read as one garbled one.
+          # were printed, because eight interleaved logs read as one garbled one.
           foreach ($record in $records) {
               Write-Host "::group::$($record.Label) -- lane $($record.Lane), slot $($record.Slot), $(if ($record.ExitCode -eq 0) { 'PASS' } else { "FAIL ($($record.ExitCode))" }), $($record.Seconds)s"
               if (Test-Path -LiteralPath $record.Log) { Get-Content -LiteralPath $record.Log | ForEach-Object { Write-Host $_ } }
@@ -722,11 +728,13 @@ jobs:
       RIG_MODE: ${{ inputs.mode }}
       RIG_ONLY: ${{ inputs.scenarios }}
       RIG_BATCH_ID: ${{ inputs.batch_id }}
-      # Whole-machine commit guard (see the run step). win11-01's commit limit is 16 GiB since
-      # 2026-09-19 (8 GB page file). A scenario starts only while at most this much is committed, so
-      # that its own increment, measured on the first CI round and recorded in scripts/l2/README.md,
-      # fits under the limit with a margin.
-      RIG_COMMIT_START_CEILING_GIB: '12'
+      # Whole-machine commit guard (see the run step). A scenario starts only while at most this much is committed, so
+      # that its own increment fits under what the machine can back with a margin. 12 until control-server#820, set for
+      # win11-01 (a 16 GiB commit limit). 20 for vm-win-01, an absolute number because its commit limit moves with dynamic
+      # memory (20-33 GiB measured): a real-onboard scenario adds 3-5 GiB there (8.59 -> 13.33 and 8.48 -> 11.51 on
+      # 2026-10-20), so 20 + 5 stays under the guest's 32 GB maximum and under the 28 GB or so the host was seen able to
+      # give it (the v2 workspace's ci-research/migration-vm-win-01-build-log.md 2.7).
+      RIG_COMMIT_START_CEILING_GIB: '20'
       RIG_COMMIT_WAIT_MINUTES: '30'
       RIG_START_DEADLINE_MINUTES: '270'
       # No build servers. They outlive the build by minutes, and on the first CI round (run
@@ -982,7 +990,7 @@ jobs:
                       }
 
                       # The commit guard. Waits first: whatever holds the memory (the synthetic job's
-                      # four lanes, test.yml, the onboard HMI's CI) finishes in minutes.
+                      # eight lanes, the two test.yml runners, the onboard HMI's CI) finishes in minutes.
                       $waitClock = [Diagnostics.Stopwatch]::StartNew()
                       $commit = Get-CommitGiB
                       while ($commit.Committed -gt $ceiling -and $waitClock.Elapsed.TotalMinutes -lt [double]$env:RIG_COMMIT_WAIT_MINUTES) {

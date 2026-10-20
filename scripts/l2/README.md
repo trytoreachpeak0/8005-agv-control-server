@@ -134,7 +134,7 @@ resume 是设计不是缺陷。
 
 ## CI：合成场景每次跑，真装置按需跑
 
-`.github/workflows/l2.yml` 有两个作业。合成场景在 `scenarios` 作业里，跑在本仓自己的 `headless` runner 上，每次 push 与 PR。真装置场景在 `real-rig` 作业里，只能手动触发，见本节末尾「真装置（`rig=real`）」。证据当作 artifact 传上去
+`.github/workflows/l2.yml` 有两个作业。合成场景在 `scenarios` 作业里，跑在本仓带 `cs-l2` 标签的那一个 runner 上（control-server#820 起；此前是 `headless`），每次 push 与 PR。真装置场景在 `real-rig` 作业里，只能手动触发，见本节末尾「真装置（`rig=real`）」。证据当作 artifact 传上去
 （失败时也传——失败那次的证据才是唯一说明原因的东西）。
 
 **PR 上默认每个场景跑一遍，三连按需手动跑**（2026-09-17 起）。清单里每行的 `Runs` 是这个场景的**三连次数**，
@@ -160,7 +160,7 @@ gh workflow run l2.yml --ref <分支> -f mode=consecutive-all -f scenarios=a,b  
 
 ### 分路并行（control-server#130，2026-09-18 起）
 
-作业先 `dotnet build ControlServer.sln -c Release` **构建一次**，再把场景分到几路（`L2_LANES`，现在是 4）同时跑，
+作业先 `dotnet build ControlServer.sln -c Release` **构建一次**，再把场景分到几路（`L2_LANES`，control-server#820 起是 8）同时跑，
 每一路占一个端口槽位（槽位 1～N，见下面「端口槽位」），路内一个接一个跑，每一趟都带 `-SkipBuild`。分路由
 `L2Lanes.psm1` 的 `Get-L2LanePlan` 做：按「单遍估时 × 遍数」从长到短，每次放进当前最空的那一路。估时是 `l2.yml`
 里的 `$estimates` 表（09-17 那 31 个作业的中位数），没列的场景按 30 秒算；估时只影响各路是否均衡，不影响跑什么。
@@ -180,7 +180,7 @@ vCPU 大部分时间闲着。每一趟里大头是起服务端和替身、再等
   攒了 3607 个。
 - **并行下哪个场景红了一次，不靠重跑，把它固定到单独一路**，并在 PR 里写明（票的验收标准）。
 
-`L2_LANES` 是 4，因为除槽位 0 外一共只有四个槽位。它依赖 win11-01 的页面文件：一路合成 L2 约占 0.7 GB 已提交内存，
+`L2_LANES` 在 win11-01 上是 4（control-server#820 起在 vm-win-01 上是 8，依据见 `l2.yml` 该行注释）。4 那时依赖 win11-01 的页面文件：一路合成 L2 约占 0.7 GB 已提交内存，
 车载端一次 CI 约 2.9 GB，页面文件还是 512 MB 时提交上限只有 8.7 GB，两者撞在一起就会超，超过时内存申请直接失败
 而不是变慢。2026-09-18 页面文件调成固定 4 GB，上限 12.0 GB（`remote-ops/factory-server/scripts/06-configure-golden-renderer-vm.ps1 -GuestPageFile`）。
 
@@ -273,7 +273,7 @@ gh workflow run l2.yml --ref <分支> -f rig=real -f onboard_ref=<...> -f simula
   `Global\W2G-InteractiveDesktop`：本仓每个真装置场景拿一次、排队最多 30 分钟；mes-ingest 那边同日改成排队
   （`8005-mes-ingest#8`）。撞上夜里的黄金渲染 verify（北京时间 03:00 触发，实际多在 05:30 前后开跑）只是多等，
   不会变红，但长的连跑别挑那个时段。作业收尾检查本轮目录里起的残留进程和新出现的崩溃对话框，有就关掉并判红。
-- **端口。** 槽位 0，与本机真装置一样；合成作业用 1～4，两边互不排队。
+- **端口。** 槽位 0，与本机真装置一样；合成作业用 1～8，两边互不排队。
 - **内存。** 看整机已提交内存，不看进程树。每个场景开跑前若整机已提交超过 12 GiB 就等（最多 30 分钟）；等满仍超，
   这一遍记为 `NOT_STARTED_COMMIT_GUARD`，本轮停下，作业以 `RIG_COMMIT_GUARD` 判红，不靠作业超时去结束它。整轮每 2 秒
   采样一次，写进证据的 `commit-samples.csv`，作业摘要给出最低与峰值。作业不留构建服务器（MSBuild 节点、VBCSCompiler）。
