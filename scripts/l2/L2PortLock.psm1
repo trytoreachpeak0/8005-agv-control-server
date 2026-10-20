@@ -56,14 +56,15 @@ LOCK ORDERING, which is what keeps this from deadlocking against the desktop loc
 
     Port lock first, desktop lock second. Never take the port lock while holding the desktop lock.
 
-Invoke-L2Scenario.ps1 is the only process that takes both. It takes the port lock before the build
-and the desktop lock after the peers are published, and releases them in reverse. Every other
-holder takes exactly one: run-staged-g3.ps1, run-staged-g3-restart.ps1 and
-Invoke-AuthorizedAbsentObservationShadow.ps1 take only the desktop lock (their ports are 58xxx/59xxx
-and the simulator's defaults 1502/58006, none of them in this block), and 8005-mes-ingest takes only
-the desktop lock. One process holding both in a fixed order and everyone else holding one leaves no
-cycle. The price is that a real-onboard run queued for the desktop keeps synthetic runs queued
-behind it.
+Invoke-L2Scenario.ps1 takes this lock before the build and the desktop lock after the peers are
+published, and releases them in reverse. run-staged-g3.ps1, run-staged-g3-restart.ps1 and
+Invoke-AuthorizedAbsentObservationShadow.ps1 never take this lock: since control-server#809 they take
+their own per-port locks (G3RunnerPorts.psm1, Global\W2G-Port-<port>, in ascending port order) before
+the desktop lock and release them after it, and refuse any port inside the L2 slots, so no G3 port is
+ever in this block. 8005-mes-ingest takes only the desktop lock. Every holder of two takes its port
+locks first and the desktop lock second, and no process holds an L2 slot lock and a G3 port lock at
+once, so no cycle forms. The price is that a real-onboard run queued for the desktop keeps synthetic
+runs queued behind it.
 #>
 
 Set-StrictMode -Version Latest

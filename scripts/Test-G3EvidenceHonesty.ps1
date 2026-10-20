@@ -52,6 +52,7 @@
        nobody defined each withhold it with its reason. From each runner's AST: one $runnerProvenance statement
        measuring $PSScriptRoot, before the first statement that touches $StageRoot or $EvidenceRoot; every path
        parameter whose default derives from $PSScriptRoot is one of its -Inputs, with the param default verbatim;
+       every port parameter (control-server#809) is one of its -Settings, likewise, and nothing else is;
        the record's runnerSource is the provenance's. The four runners' source statements are run with HEAD
        binding another commit than the one on disk (or off -SharedRunnerSource): that commit is
        SELF_CHECK_OVERRIDE. Then Get-G3RunnerProvenance against a throwaway repository of the runner scripts:
@@ -271,13 +272,26 @@ foreach ($file in $runnerSources.Keys) {
     # (the shared runner, the binding reader, the repository the slice index and identity are read from), so
     # every one is an -Inputs entry, with its Given the parameter itself and its Default the param block's own
     # default, character for character. A new such parameter that is not added goes red here.
-    $inputs = [ordered]@{}
-    if ($provenance.Count -eq 1) {
-        foreach ($m in [regex]::Matches($provenance[0].Extent.Text,
-                '(?m)^\s*(\w+)\s*=\s*@\{\s*Given\s*=\s*\$(\w+)\s*;\s*Default\s*=\s*(.+?)\s*\}\s*$')) {
-            $inputs[$m.Groups[1].Value] = @{ Given = $m.Groups[2].Value; Default = $m.Groups[3].Value }
-        }
+    # The entries of one table argument of the call, -Inputs or -Settings (control-server#809), each read from that
+    # argument alone so that neither's entries count as the other's.
+    $provenanceCall = if ($provenance.Count -eq 1) {
+        @($provenance[0].Right.FindAll({ param($n)
+                    $n -is [System.Management.Automation.Language.CommandAst] -and $n.GetCommandName() -eq 'Get-G3RunnerProvenance' }, $true))[0]
     }
+    $readEntries = {
+        param([string]$ParameterName)
+        $entries = [ordered]@{}
+        $elements = @(${provenanceCall}?.CommandElements)
+        for ($i = 0; $i -lt $elements.Count - 1; $i++) {
+            if ($elements[$i] -isnot [System.Management.Automation.Language.CommandParameterAst] -or $elements[$i].ParameterName -ne $ParameterName) { continue }
+            foreach ($m in [regex]::Matches($elements[$i + 1].Extent.Text,
+                    '(?m)^\s*(\w+)\s*=\s*@\{\s*Given\s*=\s*\$(\w+)\s*;\s*Default\s*=\s*(.+?)\s*\}\s*$')) {
+                $entries[$m.Groups[1].Value] = @{ Given = $m.Groups[2].Value; Default = $m.Groups[3].Value }
+            }
+        }
+        return $entries
+    }
+    $inputs = & $readEntries 'Inputs'
     $located = @($ast.ParamBlock.Parameters | Where-Object { $null -ne $_.DefaultValue -and $_.DefaultValue.Extent.Text -match '\$PSScriptRoot\b' })
     foreach ($parameter in $located) {
         $name = $parameter.Name.VariablePath.UserPath
@@ -287,6 +301,21 @@ foreach ($file in $runnerSources.Keys) {
     }
     Check "${file}: -Inputs names only those parameters" ($inputs.Count -eq $located.Count -and $located.Count -ge 1) `
         "$($inputs.Count) entries, $($located.Count) located parameters: $($inputs.Keys -join ', ')"
+
+    # control-server#809: every port parameter is a -Settings entry, Given the parameter and Default the param block's
+    # own default, character for character. A port is not a path and decides nothing the run reads, but another port
+    # is for a run beside another one, and that is not gate evidence: anything but the default withholds the pass.
+    $settings = & $readEntries 'Settings'
+    $ports = @($ast.ParamBlock.Parameters | Where-Object { $_.Name.VariablePath.UserPath -cmatch 'Port$' })
+    foreach ($parameter in $ports) {
+        $name = $parameter.Name.VariablePath.UserPath
+        Check "${file}: -$name is a -Settings entry of Get-G3RunnerProvenance, Given `$$name, Default its param default" `
+            ($settings.Contains($name) -and $settings[$name].Given -eq $name -and $null -ne $parameter.DefaultValue -and
+             $settings[$name].Default -ceq $parameter.DefaultValue.Extent.Text) `
+            "$(if ($settings.Contains($name)) { "Given $($settings[$name].Given), Default $($settings[$name].Default)" } else { 'missing' }); param default $(${parameter}?.DefaultValue?.Extent.Text)"
+    }
+    Check "${file}: -Settings names only its port parameters" ($settings.Count -eq $ports.Count) `
+        "$($settings.Count) entries, $($ports.Count) port parameters: $($settings.Keys -join ', ')"
 }
 
 # run-staged-g3.ps1's own sources: its four bindings are its param defaults, so an override is any value passed
@@ -723,6 +752,27 @@ try {
     } finally {
         Pop-Location
     }
+
+    # control-server#809: -Settings, compared as values. The defaults (an [int] given, its literal default) are
+    # COMMITTED_RUNNER; another port is RUNNER_INPUT_OVERRIDE naming it, beside a path override in the same list.
+    $defaultSettings = { [ordered]@{
+            SimulatorModbusPort = @{ Given = 1502; Default = 1502 }
+            SimulatorHttpPort = @{ Given = 58006; Default = 58006 }
+        } }
+    $portsDefault = Get-G3RunnerProvenance -ScriptRoot $runnerScripts -Inputs (& $defaultInputs) -Settings (& $defaultSettings)
+    Check 'provenance, the default ports: COMMITTED_RUNNER, a formal pass' `
+        ($portsDefault.runnerSource -ceq 'COMMITTED_RUNNER' -and (Get-Graded $portsDefault).formalSlicePass -eq $true) "$($portsDefault | ConvertTo-Json -Compress)"
+    $settings = & $defaultSettings
+    $settings['SimulatorHttpPort'] = @{ Given = 39006; Default = 58006 }
+    $portMoved = Get-G3RunnerProvenance -ScriptRoot $runnerScripts -Inputs (& $defaultInputs) -Settings $settings
+    Check 'provenance, another simulator port: RUNNER_INPUT_OVERRIDE: SimulatorHttpPort, withheld' `
+        ($portMoved.runnerSource -ceq 'RUNNER_INPUT_OVERRIDE: SimulatorHttpPort' -and $portMoved.runnerWorktreeClean -eq $true -and
+         (Get-Graded $portMoved).formalSlicePass -eq $false) "$($portMoved | ConvertTo-Json -Compress)"
+    $inputs = & $defaultInputs
+    $inputs['SharedRunnerSource'] = @{ Given = $copy; Default = (Join-Path $runnerScripts 'run-staged-g3.ps1') }
+    $bothMoved = Get-G3RunnerProvenance -ScriptRoot $runnerScripts -Inputs $inputs -Settings $settings
+    Check 'provenance, a path and a port overridden: one RUNNER_INPUT_OVERRIDE naming both' `
+        ($bothMoved.runnerSource -ceq 'RUNNER_INPUT_OVERRIDE: SharedRunnerSource, SimulatorHttpPort') "$($bothMoved | ConvertTo-Json -Compress)"
 
     # Dirty and through a copy at once: both reasons, dirty first.
     Set-Content -LiteralPath $stray -Value 'x'

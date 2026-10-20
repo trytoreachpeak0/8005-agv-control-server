@@ -360,6 +360,16 @@ jobs:
         shell: pwsh
         run: pwsh -NoProfile -File ./scripts/Test-G3RunnerStage.ps1
 
+      # Seconds, no rig, no desktop: the staged, restart and shadow runners' ports (control-server#809). The port
+      # parameters and where they flow (the simulator's settings beside its binary, the onboard's IO module, the health
+      # URLs); G3RunnerPorts.psm1 against real mutexes and real listeners on 39001-39099 -- the per-port locks in
+      # ascending order, an abandoned one taken, the L2 slot range refused, a held port named by pid and path where the
+      # old health wait took it for the simulator; and the shadow runner's finally releasing its desktop lock.
+      - name: G3 runner self-check (ports, port locks and owner checks)
+        if: steps.self-check-scope.outputs.g3_runner_ports == 'true'
+        shell: pwsh
+        run: pwsh -NoProfile -File ./scripts/Test-G3RunnerPorts.ps1
+
       # About three minutes, no rig, no elevation, nothing outside %TEMP%: four cases wait out the scripts' real
       # 30-second limit. Install-ControlServerLocal.ps1 and Update-ControlServerLocal.ps1 run end to end against
       # stubs, and must neither copy nor delete a data root a live Host still holds (its <db>.instance-lock), nor

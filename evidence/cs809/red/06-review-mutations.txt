@@ -1,0 +1,34 @@
+commit b7cd5a8c3
+FAIL run-staged-g3.ps1: Assert-G3PortOwner -Process $runnerProcess -Port $ProxyPort (an in-process proxy) -- Assert-G3PortOwner -Process $control -Name 'control-server' -Port $ControlPort, $HealthPort `
+        -Description 'ControlServer answered /version' -ErrLog (Join-Path $logsRoot 'control.err.log') | Assert-G3PortOwner -Process $simulator -Name 'slots-simulator' -Port $SimulatorHttpPort, $SimulatorModbusPort `
+        -Description 'the slots simulator answered /api/v1/health' -ErrLog (Join-Path $logsRoot 'simulator.err.log')
+FAIL run-staged-g3.ps1: Assert-G3PortOwner -Process $runnerProcess -Port $BusinessProxyPort (an in-process proxy) -- Assert-G3PortOwner -Process $control -Name 'control-server' -Port $ControlPort, $HealthPort `
+        -Description 'ControlServer answered /version' -ErrLog (Join-Path $logsRoot 'control.err.log') | Assert-G3PortOwner -Process $simulator -Name 'slots-simulator' -Port $SimulatorHttpPort, $SimulatorModbusPort `
+        -Description 'the slots simulator answered /api/v1/health' -ErrLog (Join-Path $logsRoot 'simulator.err.log')
+FAIL run-staged-g3.ps1: $runnerProcess is this process (Get-Process -Id $PID), assigned once -- 
+3 check(s) failed.
+exit=1 (unmutated: only the fault-proxy owner checks, not yet implemented)
+=== R1 staged writes the simulator's settings into another directory (files changed: 1)
+FAIL run-staged-g3.ps1: the ports go into simulator.settings.json beside the simulator binary it starts, read and written back through the object Set-G3SimulatorPorts gets -- binary in $simulatorPublish; 1 config path(s): $simulatorConfig = Join-Path $runtimeRoot 'simulator.settings.json'; settings $simulatorSettings; read True; written True
+        -Description 'ControlServer answered /version' -ErrLog (Join-Path $logsRoot 'control.err.log') | Assert-G3PortOwner -Process $simulator -Name 'slots-simulator' -Port $SimulatorHttpPort, $SimulatorModbusPort `
+        -Description 'the slots simulator answered /api/v1/health' -ErrLog (Join-Path $logsRoot 'simulator.err.log')
+        -Description 'ControlServer answered /version' -ErrLog (Join-Path $logsRoot 'control.err.log') | Assert-G3PortOwner -Process $simulator -Name 'slots-simulator' -Port $SimulatorHttpPort, $SimulatorModbusPort `
+        -Description 'the slots simulator answered /api/v1/health' -ErrLog (Join-Path $logsRoot 'simulator.err.log')
+4 check(s) failed.
+exit=1
+=== R3 the abandoned-mutex branch returns false (files changed: 1)
+FAIL lock: a lock its holder exited without releasing is taken, not reported busy -- G3_PORT_LOCK_BUSY: another run holds port 39031 (Global\W2G-Port-39031); waited 0s for: self-check after an abandoner
+        -Description 'ControlServer answered /version' -ErrLog (Join-Path $logsRoot 'control.err.log') | Assert-G3PortOwner -Process $simulator -Name 'slots-simulator' -Port $SimulatorHttpPort, $SimulatorModbusPort `
+        -Description 'the slots simulator answered /api/v1/health' -ErrLog (Join-Path $logsRoot 'simulator.err.log')
+        -Description 'ControlServer answered /version' -ErrLog (Join-Path $logsRoot 'control.err.log') | Assert-G3PortOwner -Process $simulator -Name 'slots-simulator' -Port $SimulatorHttpPort, $SimulatorModbusPort `
+        -Description 'the slots simulator answered /api/v1/health' -ErrLog (Join-Path $logsRoot 'simulator.err.log')
+4 check(s) failed.
+exit=1
+=== R6 staged waits on the simulator's health at $ControlPort (files changed: 1)
+FAIL run-staged-g3.ps1: every simulator health URL is http://127.0.0.1:$SimulatorHttpPort/api/v1/health -- http://127.0.0.1:$ControlPort/api/v1/health
+        -Description 'ControlServer answered /version' -ErrLog (Join-Path $logsRoot 'control.err.log') | Assert-G3PortOwner -Process $simulator -Name 'slots-simulator' -Port $SimulatorHttpPort, $SimulatorModbusPort `
+        -Description 'the slots simulator answered /api/v1/health' -ErrLog (Join-Path $logsRoot 'simulator.err.log')
+        -Description 'ControlServer answered /version' -ErrLog (Join-Path $logsRoot 'control.err.log') | Assert-G3PortOwner -Process $simulator -Name 'slots-simulator' -Port $SimulatorHttpPort, $SimulatorModbusPort `
+        -Description 'the slots simulator answered /api/v1/health' -ErrLog (Join-Path $logsRoot 'simulator.err.log')
+4 check(s) failed.
+exit=1

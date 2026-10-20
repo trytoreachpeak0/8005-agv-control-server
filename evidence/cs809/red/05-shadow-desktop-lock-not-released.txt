@@ -1,0 +1,4 @@
+commit fe39a94bb
+FAIL Invoke-AuthorizedAbsentObservationShadow.ps1: after its finally's Exit-DesktopLock, with the process still alive, another process takes the desktop lock at once -- the lock is still held: Start-ExactPeers' $desktopLock = Enter-DesktopLock -Reason "authorized absent-observation shadow run $stamp" left the script's $desktopLock $null
+1 check(s) failed.
+exit=1

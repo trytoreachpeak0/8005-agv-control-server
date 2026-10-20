@@ -855,10 +855,16 @@ function Get-G3DirtyStatusEntries {
 # its default (Test-G3EvidenceHonesty pins those defaults to the param block's own). Call it before the run writes
 # anything: an EvidenceRoot or StageRoot inside the repository would otherwise make every run dirty -- or, measured
 # late, hide nothing, since a dirty tree must be seen before the run's own output joins it.
+#
+# -Settings (control-server#809) names each parameter that is not a path but still keeps a run from being gate evidence
+# when it is not its default -- the runners' ports: another port is for a run beside another one, and G3 gate runs are
+# run alone. Same shape as -Inputs, compared as values ("$Given" -ceq "$Default"), not as paths; a difference joins
+# the same RUNNER_INPUT_OVERRIDE list, so Get-G3FormalSliceWithheldReason reads it unchanged.
 function Get-G3RunnerProvenance {
     param(
         [Parameter(Mandatory)][string]$ScriptRoot,
-        [System.Collections.IDictionary]$Inputs = [ordered]@{}
+        [System.Collections.IDictionary]$Inputs = [ordered]@{},
+        [System.Collections.IDictionary]$Settings = [ordered]@{}
     )
 
     $reasons = [System.Collections.Generic.List[string]]::new()
@@ -895,6 +901,9 @@ function Get-G3RunnerProvenance {
         $resolve = { param($path) $ExecutionContext.SessionState.Path.GetUnresolvedProviderPathFromPSPath($path).TrimEnd('\', '/') }
         if ([string]::IsNullOrEmpty($given) -or [string]::IsNullOrEmpty($default) -or
             (& $resolve $given) -ne (& $resolve $default)) { $overridden.Add($name) }
+    }
+    foreach ($name in $Settings.Keys) {
+        if ("$($Settings[$name].Given)" -cne "$($Settings[$name].Default)") { $overridden.Add($name) }
     }
     if ($overridden.Count -ne 0) {
         $reasons.Insert([int]($clean -eq $false), "RUNNER_INPUT_OVERRIDE: $($overridden -join ', ')")
