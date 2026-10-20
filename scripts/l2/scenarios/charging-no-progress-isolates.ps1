@@ -11,7 +11,9 @@ ChargingPolicy.Progress 缩短观察参数（稳定期 5 秒、窗口 20 秒、�
 **第一个事实（窗口起点不被新样本重置）**：等到观察窗口开了，记下起点；L2-CNP-01 等到形成，断言形成时周期上记的起点仍是开窗那一刻的
 （落库的起点只在窗口作废或另开时才变，形成那一次保存不改它），且形成时刻距起点不少于 20 秒。
 
-**第二个事实（两侧隔离、之后不建单不发命令）**：L2-CNP-02 一次读出两侧暂停与清桩中；L2-CNP-03 另等十秒（Wait-L2ConditionOrLast）：
+**第二个事实（两侧隔离、之后不建单不发命令）**：L2-CNP-02 在等形成的同一次读里取两侧暂停、清桩中、用途、占用与旅程原因；旅程原因
+只认两种：形成那次保存写的 CHARGING_NO_PROGRESS_CONFIRMED，或下一轮读到车仍在充电后推进到的 CHARGING_CLEARING_VEHICLE_STILL_CHARGING
+（control-server#823：分两次读时，第二次读前原因已经推进，误红）；L2-CNP-03 另等十秒（Wait-L2ConditionOrLast）：
 RIoT 上一直只有那一张充电单、命令审计 0 条、211 一直是这一趟的占用、两侧各一条暂停。
 
 **红证据（缺陷版本）**：窗口起点每个样本都重置（control-server#407 的变异 M02），窗口永远满不了，L2-CNP-01 等到超时变红。
@@ -136,10 +138,20 @@ $journal.Observe('window-start', $windowStart, @{ seen = $opened })
 
 # --- 3. 形成：窗口满、增量不足 ----------------------------------------------------------------------------------------
 
+# Everything L2-CNP-02 judges comes from this one probe read, the cycle first: the isolating save writes the pauses, the
+# claim and the journey's block reason together with the cycle's CLEARING, so whatever is read after it is at least
+# that far along. Until control-server#823 the journey was read again after the wait, and the next round once moved
+# its reason on in between (CI run 39481673510).
 $formed = Wait-L2Condition -Description 'no progress was confirmed and both sides paused' `
     -Journal $journal -Criterion 'no-progress-isolated' -TimeoutSeconds 90 `
-    -Probe { $cycle = Get-Cycle; "$(Get-Pauses) | $(${cycle}?.Phase) $(${cycle}?.WireState)" } `
-    -Until { param($v) $v.EndsWith('| CLEARING UNABLE_TO_CHARGE') }
+    -Probe {
+        $cycle = Get-Cycle
+        $journey = Read-L2SingleRow -Connection $connection -Sql (
+            "SELECT Stage, IFNULL(BlockReasonCode, '') AS Code FROM JourneyRuntimes WHERE JourneyId = '$journeyId'")
+        "$(Get-Pauses) | $(${cycle}?.Phase) $(${cycle}?.WireState) | claim $(Get-Claim) | $(Get-ChargerHeld) | " +
+            "journey $(${journey}?.Stage) $(${journey}?.Code)"
+    } `
+    -Until { param($v) $v.Contains('| CLEARING UNABLE_TO_CHARGE | claim ') }
 $cycle = Get-Cycle
 $hold = Read-L2SingleRow -Required -Connection $connection -Sql (
     "SELECT HeldAt FROM ChargingStationAllocationHolds WHERE MapId = $($Context.MapId) AND StationId = $charger")
@@ -151,17 +163,19 @@ $assertions.Add(
     "window start $windowStart / >= $window s",
     "window start $($cycle.WindowStart) / $([math]::Round($elapsed, 1)) s")
 
-$journey = Read-L2SingleRow -Required -Connection $connection -Sql (
-    "SELECT Stage, IFNULL(BlockReasonCode, '') AS Code FROM JourneyRuntimes WHERE JourneyId = '$journeyId'")
-$state = "$formed | claim $(Get-Claim) | $(Get-ChargerHeld) | journey $($journey.Stage) $($journey.Code)"
-$expected = "NO_PROGRESS_CONFIRMED UNKNOWN | NO_PROGRESS_CONFIRMED | CLEARING UNABLE_TO_CHARGE | claim CLEARING_MAINTENANCE $journeyId | " +
-    "OCCUPIED $vehicleKey $journeyId | journey AwaitingPickupArrival CHARGING_NO_PROGRESS_CONFIRMED"
+# Two block reasons are right, and only these two. The isolating save writes CHARGING_NO_PROGRESS_CONFIRMED; the next
+# round's clearing wait reads the vehicle, which the fake RIoT still reports CHARGING, and moves the reason on to
+# CHARGING_CLEARING_VEHICLE_STILL_CHARGING (ClearingWaitCodeAsync) about a second later, so even a single read can land
+# on either side of that. Any other code -- the interruption's, the unable-to-charge one, none -- is still red.
+$clearingCodes = @('CHARGING_NO_PROGRESS_CONFIRMED', 'CHARGING_CLEARING_VEHICLE_STILL_CHARGING')
+$expectedHead = "NO_PROGRESS_CONFIRMED UNKNOWN | NO_PROGRESS_CONFIRMED | CLEARING UNABLE_TO_CHARGE | " +
+    "claim CLEARING_MAINTENANCE $journeyId | OCCUPIED $vehicleKey $journeyId | journey AwaitingPickupArrival"
 $assertions.Add(
     'L2-CNP-02',
-    '一直报 CHARGING、电量不涨：窗口满后桩的分配暂停与车的充电资格暂停都写下（NO_PROGRESS_CONFIRMED，根因 UNKNOWN），周期进清桩中，用途转 CLEARING_MAINTENANCE，211 仍是这一趟的占用',
-    ($state -eq $expected),
-    $expected,
-    $state)
+    '一直报 CHARGING、电量不涨：窗口满后桩的分配暂停与车的充电资格暂停都写下（NO_PROGRESS_CONFIRMED，根因 UNKNOWN），周期进清桩中，用途转 CLEARING_MAINTENANCE，211 仍是这一趟的占用；旅程原因是无进展已确认，或下一轮读到车仍在充电后推进到的清桩中车仍在充电',
+    (@($clearingCodes | ForEach-Object { "$expectedHead $_" }) -contains $formed),
+    "$expectedHead $($clearingCodes -join ' or ')",
+    $formed)
 
 # --- 4. 另等：之后若干轮没有新单、没有第二条暂停、不发命令 --------------------------------------------------------------
 
