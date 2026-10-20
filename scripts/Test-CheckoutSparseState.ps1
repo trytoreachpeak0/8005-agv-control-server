@@ -131,9 +131,15 @@ function Get-Env($Step, [string]$Key) {
 }
 function Split-List([string]$Text) { @(($Text ?? '') -split '\n' | ForEach-Object Trim | Where-Object { $_ }) }
 
-$workflowFiles = @(Get-ChildItem -LiteralPath (Join-Path $Repository '.github/workflows') -Filter '*.yml' | Sort-Object Name)
+$workflowFiles = @(Get-ChildItem -LiteralPath (Join-Path $Repository '.github/workflows') -File | Where-Object { $_.Extension -in '.yml', '.yaml' } | Sort-Object Name)
 $jobs = @(foreach ($file in $workflowFiles) { Get-WorkflowJobs $file.FullName })
 Check 'the workflows have jobs' ($jobs.Count -gt 5) "$($jobs.Count) jobs"
+# Review S4 of PR #825: a job whose runs-on this cannot read (an expression, a mapping) would be skipped silently, its
+# checkouts unchecked. Red instead; teach the reader the new form when one is needed.
+foreach ($job in $jobs) {
+    Check "$($job.Workflow) $($job.Job): runs-on is a literal label or label list" (
+        $job.RunsOn -cmatch '^(\[[^\[\]$]+\]|[A-Za-z0-9_.-]+)$') "runs-on '$($job.RunsOn)'"
+}
 
 # Every checkout of this repository on a self-hosted runner, with the steps around it.
 $ownCheckouts = @(foreach ($job in $jobs) {
@@ -201,6 +207,18 @@ foreach ($c in $ownCheckouts) {
         Check "$($c.Label): its cone list is every top-level directory but evidence/" (
             (@($c.Sparse | Sort-Object) -join '|') -ceq (@($topLevel | Sort-Object) -join '|')) (
             "listed: $($c.Sparse -join ' '); in the repository: $($topLevel -join ' ')")
+        # Review S1 of PR #825: the line above runs only where this self-check runs, and a pull request adding a top-level
+        # directory changes no input of it. The check after the checkout compares HEAD's top-level directories with the
+        # list plus CHECKOUT_EXCLUDE, so that pull request's own l2 job goes red.
+        if ($assertOk) {
+            Check "$($c.Label): '$assertName' has CHECKOUT_EXCLUDE evidence" ((Get-Env $after 'CHECKOUT_EXCLUDE') -ceq 'evidence') (
+                "CHECKOUT_EXCLUDE '$(Get-Env $after 'CHECKOUT_EXCLUDE')'")
+        }
+    }
+    # Review S3 of PR #825: Assert-CheckoutTree.ps1 knows cone mode for top-level directories only (a nested one also
+    # brings the files directly in each parent directory).
+    foreach ($entry in $c.Sparse) {
+        Check "$($c.Label): sparse-checkout entry '$entry' is a top-level directory" ($entry.TrimEnd('/') -notmatch '/') $entry
     }
 }
 Check "every '$healName' step runs the same script" (@($healRuns | Sort-Object -Unique).Count -le 1) "$(@($healRuns | Sort-Object -Unique).Count) variants"
@@ -210,7 +228,7 @@ Check "every '$assertName' step runs the same script" (@($assertRuns | Sort-Obje
 $root = Join-Path ([IO.Path]::GetTempPath()) "checkout-sparse-state-$([guid]::NewGuid().ToString('N'))"
 $null = New-Item -ItemType Directory -Path $root
 $savedEnv = @{}
-foreach ($name in 'GIT_CONFIG_NOSYSTEM', 'GIT_CONFIG_GLOBAL', 'GITHUB_WORKSPACE', 'CHECKOUT_PATH', 'CHECKOUT_SPARSE') {
+foreach ($name in 'GIT_CONFIG_NOSYSTEM', 'GIT_CONFIG_GLOBAL', 'GITHUB_WORKSPACE', 'CHECKOUT_PATH', 'CHECKOUT_SPARSE', 'CHECKOUT_EXCLUDE') {
     $savedEnv[$name] = [Environment]::GetEnvironmentVariable($name)
 }
 $gitConfig = Join-Path $root 'gitconfig'
@@ -255,6 +273,10 @@ try {
     $null = Invoke-Git $source @('add', '-A')
     $null = Invoke-Git $source @('commit', '-q', '-m', 'newer')
     $newer = (Invoke-Git $source @('rev-parse', 'HEAD')).Output[0]
+    Write-RepoFile $source 'newdir/x.txt' 'a new top-level directory'
+    $null = Invoke-Git $source @('add', '-A')
+    $null = Invoke-Git $source @('commit', '-q', '-m', 'adds a top-level directory')
+    $withNewDir = (Invoke-Git $source @('rev-parse', 'HEAD')).Output[0]
     $origin = Join-Path $root 'origin.git'
     $null = & git clone -q --bare $source $origin 2>&1
 
@@ -294,15 +316,17 @@ try {
         $env:GITHUB_WORKSPACE = $Workspace
         $env:CHECKOUT_PATH = Get-Env $Step 'CHECKOUT_PATH'
         $env:CHECKOUT_SPARSE = Get-Env $Step 'CHECKOUT_SPARSE'
+        $env:CHECKOUT_EXCLUDE = Get-Env $Step 'CHECKOUT_EXCLUDE'
         Push-Location -LiteralPath $Directory
         try { $output = & pwsh -NoProfile -NonInteractive -Command ". '$file'" 2>&1 } finally { Pop-Location }
         [pscustomobject]@{ ExitCode = $LASTEXITCODE; Output = @($output | ForEach-Object { "$_" }) }
     }
-    function Invoke-Assert([string]$Directory, [string[]]$Sparse) {
+    function Invoke-Assert([string]$Directory, [string[]]$Sparse, [string[]]$Exclude = @()) {
         if (-not (Test-Path -LiteralPath $assertScript)) {
             return [pscustomobject]@{ ExitCode = -1; Output = @("$assertScript is missing") }
         }
         $env:CHECKOUT_SPARSE = $Sparse -join "`n"
+        $env:CHECKOUT_EXCLUDE = $Exclude -join "`n"
         Push-Location -LiteralPath $Directory
         try { $output = & pwsh -NoProfile -NonInteractive -File $assertScript 2>&1 } finally { Pop-Location }
         [pscustomobject]@{ ExitCode = $LASTEXITCODE; Output = @($output | ForEach-Object { "$_" }) }
@@ -439,6 +463,19 @@ try {
         $null = Invoke-ActionsCheckout $notApplied $newer @() $true
         $r = Invoke-Assert $notApplied @('scripts')
         Check 'assert: a cone list the checkout did not apply is red' ($r.ExitCode -eq 1) ($r.Output -join ' | ')
+
+        # Review S1 of PR #825: a pull request that adds a top-level directory and not to the lists.
+        $newDir = Join-Path $root 'assert-new-dir'
+        $null = Invoke-ActionsCheckout $newDir $withNewDir $topLevel $true
+        $r = Invoke-Assert $newDir $topLevel @('evidence')
+        Check 'assert: a top-level directory in HEAD neither listed nor excluded is red, by name' (
+            $r.ExitCode -eq 1 -and ($r.Output -join "`n") -match 'CHECKOUT_TREE_INCOMPLETE' -and ($r.Output -join "`n") -match 'newdir') ($r.Output -join ' | ')
+        $listed = Join-Path $root 'assert-new-dir-listed'
+        $null = Invoke-ActionsCheckout $listed $withNewDir (@($topLevel) + 'newdir') $true
+        $r = Invoke-Assert $listed (@($topLevel) + 'newdir') @('evidence')
+        Check 'assert: the same directory listed passes' ($r.ExitCode -eq 0) ($r.Output -join ' | ')
+        $r = Invoke-Assert $cone @('scripts')
+        Check 'assert: without CHECKOUT_EXCLUDE the top-level directories are not compared (g3''s scripts)' ($r.ExitCode -eq 0) ($r.Output -join ' | ')
     }
 } finally {
     foreach ($name in $savedEnv.Keys) { [Environment]::SetEnvironmentVariable($name, $savedEnv[$name]) }
